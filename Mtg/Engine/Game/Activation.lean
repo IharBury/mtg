@@ -19,12 +19,13 @@ def mayActivateLoyaltyAtInstantSpeed (g : Game) (p : PlayerId) (o : GameObject) 
 def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=
   let sacOrExileSrc := ab.cost.sacrificeSource || ab.cost.fra == .exileSource
   let discOrExileHandSrc := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+  let allPicks := costPicksWithSacrificeOther (costPicksOf ab) ab.cost.sacrificeAnotherCreatureOrArtifact
   match ab.cost.fra with
   | .none => true
   | .exileAnotherCreatureCardFromGraveyard | .sacrificeAnotherArtifact
   | .sacrificeAnotherCreatureOrPlaneswalker | .sacrificeArtifactOrLand
   | .discardLegendaryCard | .tapTwoUntappedArtifacts =>
-    g.costPicksPayable p (some o.id) (costPicksOf ab)
+    g.costPicksPayable p (some o.id) allPicks
       (tapSource := ab.cost.tap)
       (sacrificeOrExileSource := sacOrExileSrc)
       (discardOrExileHandSource := discOrExileHandSrc)
@@ -37,8 +38,10 @@ def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbil
         (g.findObject? id).any (fun card => (g.colors card).contains col))) col
   | .crew n =>
     o.isOnBattlefield &&
-      ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).foldl
-        (fun acc c => acc + (g.power c).toNat) 0 ≥ n
+      (g.firstPayableCrewSelection? p o.id n allPicks
+        (tapSource := ab.cost.tap)
+        (sacrificeOrExileSource := sacOrExileSrc)
+        (discardOrExileHandSource := discOrExileHandSrc)).isSome
 
 /-- Shared activation legality (CR 602.5a / 602.5d). `canActivate` is this check as a
 `Bool`; `activateAbility` reports the first failing reason. -/
@@ -125,7 +128,8 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   if ab.cost.sacrificeAnotherCreatureOrArtifact &&
       (g.sacrificeCreatureOrArtifactChoices p o.id).isEmpty then
     throw s!"{g.name o}'s ability requires sacrificing another creature or artifact"
-  if !g.costPicksPayable p (some o.id) (costPicksOf ab)
+  let allPicks := costPicksWithSacrificeOther (costPicksOf ab) ab.cost.sacrificeAnotherCreatureOrArtifact
+  if !g.costPicksPayable p (some o.id) allPicks
       (tapSource := ab.cost.tap)
       (sacrificeOrExileSource := ab.cost.sacrificeSource || ab.cost.fra == .exileSource)
       (discardOrExileHandSource := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand) then

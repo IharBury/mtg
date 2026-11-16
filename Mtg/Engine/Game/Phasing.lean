@@ -40,10 +40,34 @@ private def attachmentDepth (g : Game) (o : GameObject) : Nat :=
       if host.zone == .battlefield then 1 + go fuel host else 0
   go g.objects.size o
 
+/-- Earliest event index in `g.events` belonging to the batch recorded at `idx`
+(stepping backward across `.engine _` changes and any `.rules _` event carrying
+the same `some bid` batch tag, CR 702.26b,g–h / 800.4c). -/
+def phaseOutBatchStartIdx (g : Game) (idx : Nat) : Nat :=
+  if idx ≥ g.events.size then g.events.size
+  else
+    match g.events[idx]!.batch with
+    | none => idx
+    | some bid => Id.run do
+      let mut preBatchIdx := idx
+      let mut j := idx
+      while j > 0 do
+        let evPrev := g.events[j - 1]!
+        match evPrev.change with
+        | .engine _ =>
+          j := j - 1
+        | .rules _ =>
+          if evPrev.batch != some bid then
+            break
+          preBatchIdx := j - 1
+          j := j - 1
+      return preBatchIdx
+
 /-- Phase `o` out, along with Auras, Equipment, and Fortifications attached to it.
 Does not trigger leaves-the-battlefield abilities (CR 702.26b / 702.26d / 702.26g). -/
 def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none)
-    (preSnaps : Array (ObjectId × EventObject) := #[]) : Game :=
+    (preSnaps : Array (ObjectId × EventObject) := #[])
+    (reconcile : Bool := true) : Game :=
   match g.findObject? o.id with
   | none => g
   | some live =>
@@ -72,7 +96,7 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none)
       let batchCause :=
         g.resolveOptionalCause cause (fallbackCtrl := fallbackCtrl)
           (defaultCause := .turnBased .phaseInOut)
-      (g.withBatchCore (some batchCause) fun g =>
+      let runBody (g : Game) : Game :=
         let pre := g
         let stepCause (g : Game) : EventCause :=
           g.resolveOptionalCause cause (fallbackCtrl := fallbackCtrl)
@@ -98,7 +122,13 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none)
                 let attName := (preSnapOf? att.id).map (·.name) |>.getD (acc.name att)
                 acc.record (GameEvent.phasedOut acc.turnNumber (snapWithStatus acc att) true (cause := stepCause acc))
                   |>.logMsg s!"{attName} phases out attached to {hostName}") g
-        reconcileControlAfterTransitionFwd pre g (cause := some (stepCause g))).flushQueuedLinkedExileFwd
+        if reconcile then
+          reconcileControlAfterTransitionFwd pre g (cause := some (stepCause g))
+        else g
+      if reconcile then
+        (g.withBatchCore (some batchCause) runBody).flushQueuedLinkedExileFwd
+      else
+        g.withBatchCore (some batchCause) runBody
 
 /-- Continue phasing out `remainingIds` sequentially inside the enclosing
 simultaneous phase-out batch, pausing and chaining `.phaseOutPermanentsLoop` if
@@ -106,12 +136,13 @@ a CR 616.1 / 800.4c replacement or legend choice opens (CR 702.26g–h). -/
 def phaseOutPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
     (cause : Option EventCause := none)
     (preSnaps : Array (ObjectId × EventObject) := #[]) : Game := Id.run do
+  let entryEvLen := g.events.size
   let mut g := g
   for i in [0:remainingIds.size] do
     let id := remainingIds[i]!
     if let some o := g.findObject? id then
       if o.isOnBattlefield then
-        g := g.phaseOut o (cause := cause) (preSnaps := preSnaps)
+        g := g.phaseOut o (cause := cause) (preSnaps := preSnaps) (reconcile := false)
         let paused :=
           match g.pending with
           | .chooseReplacement .. | .chooseLegend .. => true
@@ -121,6 +152,21 @@ def phaseOutPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
           if !rem.isEmpty then
             g := g.chainPendingReplacement (.phaseOutPermanentsLoop rem cause preSnaps)
           return g
+  let preBatchIdx? : Option Nat :=
+    match g.currentBatch with
+    | some (bid, _) =>
+      Id.run do
+        for rev in [0:g.events.size] do
+          let idx := g.events.size - 1 - rev
+          if g.events[idx]!.batch == some bid then
+            return some (g.phaseOutBatchStartIdx idx)
+        return none
+    | none =>
+      if entryEvLen < g.events.size then some entryEvLen else none
+  if let some preBatchIdx := preBatchIdx? then
+    let pre := g.mkHistoricalGameAt preBatchIdx
+    let stepCause := g.resolveOptionalCause cause (defaultCause := .turnBased .phaseInOut)
+    g := reconcileControlAfterTransitionFwd pre g (cause := some stepCause)
   return g
 
 /-- Phase out all currently phased-in battlefield permanents in `targets`
@@ -257,19 +303,44 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
             let s0 := team.extract 0 (prevPos + 1)
             if s0.isEmpty then #[prev] else s0
           else #[prev]
-        return (prev, prevSeats, if sameSharedPrev then extra else false)
+        return (prev, prevSeats, if sameSharedPrev then extra else g.hasPreLogPowerUpsForbidden)
       | _ => pure ()
     let fallback := if g.activePlayer.idx < n then g.activePlayer else ⟨0⟩
-    return (fallback, #[fallback], false)
+    let fbTeam := g.teamMembers fallback
+    let fbPos := (fbTeam.findIdx? (· == fallback)).getD 0
+    let fbSeats0 := fbTeam.extract 0 (fbPos + 1)
+    let fbSeats := if fbSeats0.isEmpty then #[fallback] else fbSeats0
+    return (fallback, fbSeats, g.inferPreLogTurnIsExtra fallback g.turnNumber)
   let teamEndOf (q : PlayerId) : PlayerId :=
     (g.teamMembers q).back? |>.getD q
   let mut activePlayer : PlayerId := initAp
-  let mut extraTurns : Array PlayerId :=
+  let mut extraTurns : Array PlayerId := Id.run do
+    if g.events.any (fun ev => match ev.change with | .engine (.startingPlayer _) => true | _ => false) then
+      return #[]
+    let mut qAcc := g.extraTurns
+    for rev in [0:g.events.size] do
+      let idx := g.events.size - 1 - rev
+      match g.events[idx]!.change with
+      | .rules (.turn (.turnBegan p true)) =>
+        qAcc := #[p] ++ qAcc
+      | .rules (.turn (.extraTurnAdded player _)) =>
+        let (stSeats, stExtra) := g.currentSharedTurnState (some idx)
+        let inProg := g.countInProgressSharedExtraSeats stSeats stExtra qAcc
+        let team := g.teamMembers player
+        let mut postIdx := inProg
+        for m in team do
+          if postIdx < qAcc.size && qAcc[postIdx]! == m then
+            postIdx := postIdx + 1
+        qAcc := qAcc.extract 0 inProg ++ qAcc.extract postIdx qAcc.size
+      | _ => pure ()
     if initSeatsExtra then
       let team := g.teamMembers initAp
       let apPos := (team.findIdx? (· == initAp)).getD 0
-      (team.extract (apPos + 1) team.size).filter (fun m => m.idx < n && alive[m.idx]!)
-    else #[]
+      let remInProg :=
+        (team.extract (apPos + 1) team.size).filter (fun m => m.idx < n && alive[m.idx]!)
+      let missingPrefix := remInProg.filter (fun m => !qAcc.contains m)
+      qAcc := missingPrefix ++ qAcc
+    return qAcc
   let mut seats : Array PlayerId := initSeats
   let mut seatsExtra : Bool := initSeatsExtra
   let initRegSeat : PlayerId :=
@@ -342,9 +413,9 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
             for k in [1:n+1] do
               let q : PlayerId := ⟨(anchor.idx + k) % n⟩
               if !isAlive alive q then
-                let endingCurrentShared :=
-                  !sameShared && seats.any (fun s => s == q || g.areTeammates s q)
-                if !(g.teamMembers q).any (isAlive alive) && !endingCurrentShared &&
+                let endingCurrentRegularShared :=
+                  !seatsExtra && !sameShared && seats.any (fun s => s == q || g.areTeammates s q)
+                if !(g.teamMembers q).any (isAlive alive) && !endingCurrentRegularShared &&
                     !depSkipped.contains q then
                   depSkipped := depSkipped.push q
               else
@@ -385,42 +456,13 @@ def phaseInControlled (g : Game) (p : PlayerId) : Game :=
   let fallbackCtrlOf (o : GameObject) : Option PlayerId :=
     (g.controllerOf o).orElse (fun _ =>
       some ((o.defaultController.orElse (fun _ => o.controller)).getD o.owner))
-  let phaseOutBatchStartIdx (idx : Nat) : Nat :=
-    match g.events[idx]!.batch with
-    | none => idx
-    | some bid => Id.run do
-      let mut preBatchIdx := idx
-      let mut j := idx
-      while j > 0 do
-        let evPrev := g.events[j - 1]!
-        match evPrev.change with
-        | .engine _ =>
-          j := j - 1
-        | .rules (.permanent (.phasedOut ..))
-        | .rules (.combat (.removedFromCombat ..)) =>
-          if evPrev.batch != some bid then
-            break
-          preBatchIdx := j - 1
-          j := j - 1
-        | .rules (.permanent (.designation _ .ringBearer false)) =>
-          if evPrev.batch != some bid then
-            break
-          j := j - 1
-        | .rules (.zone (.moved _ _ .battlefield _ ..)) =>
-          if evPrev.batch == some bid && evPrev.cause? == some (.gameRule .playerLeftGame) then
-            j := j - 1
-          else
-            break
-        | _ =>
-          break
-      return preBatchIdx
   let phaseOutControllerOf (o : GameObject) : Option PlayerId × Option Nat := Id.run do
     for rev in [0:g.events.size] do
       let idx := g.events.size - 1 - rev
       match g.events[idx]!.change with
       | .rules (.permanent (.phasedOut eo _)) =>
         if eo.id == some o.id then
-          let preBatchIdx := phaseOutBatchStartIdx idx
+          let preBatchIdx := g.phaseOutBatchStartIdx idx
           return (g.controllerOfAt o preBatchIdx <|> eo.controller <|> fallbackCtrlOf o, some idx)
       | .engine (.materializeObject obj _) =>
         if obj.id == o.id && obj.zone == .battlefield && obj.status.phasedOut &&

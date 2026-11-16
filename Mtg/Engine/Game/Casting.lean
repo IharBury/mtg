@@ -133,7 +133,7 @@ def morphSpellFace : CardDef :=
 def canCastMorphFaceDown (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   let bc := { g.baseCard o with keywords := g.currentKeywords o }
   let fromGraveyard := o.zone == .graveyard o.owner
-  let origPerm := g.playPermission o
+  let origPerm := g.playPermissionFor? p o
   let altPerm := origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
   bc.morph.isSome && !fromGraveyard && !altPerm &&
     (origPerm.bind (·.prepareSource)).isNone &&
@@ -157,7 +157,7 @@ def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   (o.zone != .library p || g.isCreature o) &&
   g.mayPlay p o &&
   g.graveyardCastThresholdMet p o.id bc &&
-  (match g.playPermission o with
+  (match g.playPermissionFor? p o with
    | some perm =>
      (perm.ignoreTiming || g.timingAllowsCast p bc) &&
        (!perm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o))
@@ -232,8 +232,13 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
   | none, none => true
 
 /-- True when the CR 715.3d exile permission forbids recasting as an Adventure. -/
-def adventureExileForbidsRecast (g : Game) (o : GameObject) : Bool :=
-  match g.playPermission o with
+def adventureExileForbidsRecast (g : Game) (o : GameObject)
+    (player? : Option PlayerId := none) : Bool :=
+  let perm? :=
+    match player? with
+    | some p => g.playPermissionFor? p o
+    | none => g.playPermission o
+  match perm? with
   | some perm => perm.fromAdventure
   | none => false
 
@@ -258,7 +263,7 @@ def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : 
   if !g.graveyardCastThresholdMet p card.id face then
     let n := face.castOnlyIfGraveyardAtLeast.getD 0
     throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
-  let origPerm := origPermOverride.orElse (fun _ => g.playPermission card)
+  let origPerm := origPermOverride.orElse (fun _ => g.playPermissionFor? p card)
   if !(g.timingAllowsCast p face (excludeStackId := excludeIdOverride) ||
       origPerm.any (·.ignoreTiming) || sneakCost.isSome) then
     throw s!"{face.name} has sorcery speed"
@@ -294,13 +299,13 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     !g.opponentsCantCastOnActiveTurn p &&
     !g.spellNameForbidden face.name &&
     !g.cantCastSpellsThisTurn p &&
-    !g.adventureExileForbidsRecast o &&
+    !g.adventureExileForbidsRecast o (some p) &&
     -- CR 601.3e / 715.3a: the Adventure's own (Instant / Sorcery) characteristics decide
     -- whether a creature-only library-top permission applies.
     (o.zone != .library p || face.isCreature) &&
     g.mayPlay p o &&
     g.graveyardCastThresholdMet p o.id face &&
-    (match g.playPermission o with
+    (match g.playPermissionFor? p o with
      | some perm =>
        (perm.ignoreTiming || g.timingAllowsCast p face) &&
          (!perm.payLifeEqualManaValue || g.canPayLife p face.manaValue)
@@ -426,7 +431,7 @@ Sources reserved for `{T}` or another battlefield-source cost, or whose mana
 cannot be spent on this spell or ability, are omitted. -/
 def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Array (GameObject × Array ManaType) :=
-  let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD g.events.size
+  let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   (g.manaSources p).filterMap (fun (src, types) =>
     if (prop.sourceId == some src.id && prop.tapSource &&
           !g.sourceTappedForCost src.id (some prop.spellId) sinceIdx) ||
@@ -527,22 +532,65 @@ def betterManaTap (g : Game) (src : GameObject) (t : ManaType)
 /-- Next source to tap for `prop`. Noncreatures are chosen before creatures
 when both help, and colorless is preferred when that type can be spent.
 A flexible source such as Hidden Lair is tapped for `{U}` or `{B}` when
-that choice still lets the remaining sources pay. -/
+that choice still lets the remaining sources pay. Sources whose tapping would
+make unpaid `.crew` or tap `CostPick`s unpayable are avoided whenever
+cost-preserving sources can still advance payment (CR 601.2g–h). -/
 def preferredManaTap (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Option (GameObject × ManaType) :=
   let allowElf := g.proposedAllowsElfRestricted prop
   let allowInst := g.proposedAllowsInstRestricted prop
+  let allowances := g.proposedAllowances prop
   let sources := g.manaSourcesForProposed p prop
-  sources.foldl (fun acc (src, types) =>
-    let others := sources.filter (fun (o, _) => o.id != src.id) |>.toList
-    match g.preferredManaType p src types prop.cost allowElf allowInst others
-        (g.proposedAllowances prop) with
-    | none => acc
-    | some t =>
-      match acc with
-      | none => some (src, t)
-      | some (bestSrc, bestT) =>
-        if g.betterManaTap src t bestSrc bestT then some (src, t) else acc) none
+  let tapPreservesPostManaCosts (src : GameObject) : Bool :=
+    if prop.kind != .activatedAbility then true
+    else
+      match prop.sourceId, prop.activation with
+      | some sid, some ab =>
+        let basePicks := costPicksOf ab
+        let allPicks := costPicksWithSacrificeOther basePicks
+          (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
+        let hasTapPick :=
+          allPicks.any (fun pk => pk == .tapUntappedCreature || pk == .tapTwoUntappedArtifacts)
+        let crewN? : Option Nat :=
+          if !prop.fraCostPaid then
+            match ab.cost.fra with
+            | .crew n => some n
+            | _ => none
+          else none
+        if !hasTapPick && crewN?.isNone then true
+        else
+          let sacSrc :=
+            prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.fra == .exileSource
+          let discSrc :=
+            prop.discardSource || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+          match crewN? with
+          | some n =>
+            (g.firstPayableCrewSelection? p sid n allPicks
+              (tapSource := prop.tapSource)
+              (sacrificeOrExileSource := sacSrc)
+              (discardOrExileHandSource := discSrc)
+              (preTappedIds := #[src.id])).isSome
+          | none =>
+            g.costPicksPayable p (some sid) allPicks
+              (tapSource := prop.tapSource)
+              (sacrificeOrExileSource := sacSrc)
+              (discardOrExileHandSource := discSrc)
+              (preTappedIds := #[src.id])
+      | _, _ => true
+  let safeSources := sources.filter (fun (src, _) => tapPreservesPostManaCosts src)
+  let pickFrom (candSources : Array (GameObject × Array ManaType))
+      (poolSources : Array (GameObject × Array ManaType)) : Option (GameObject × ManaType) :=
+    candSources.foldl (fun acc (src, types) =>
+      let others := poolSources.filter (fun (o, _) => o.id != src.id) |>.toList
+      match g.preferredManaType p src types prop.cost allowElf allowInst others allowances with
+      | none => acc
+      | some t =>
+        match acc with
+        | none => some (src, t)
+        | some (bestSrc, bestT) =>
+          if g.betterManaTap src t bestSrc bestT then some (src, t) else acc) none
+  (if safeSources.isEmpty then none else pickFrom safeSources safeSources).orElse
+    (fun _ => pickFrom sources sources)
 
 def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
     (allowElfRestricted : Bool := false) (allowInstRestricted : Bool := false)
@@ -1289,7 +1337,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
   else
     let chosenX :=
       ((abilityId.bind g.findObject?).bind (·.chosenX)).getD 0
-    let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD 0
+    let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD 0
     let unpaidLoyaltyUnpayable : Bool :=
       match activation.bind (·.cost.loyalty) with
       | none => false

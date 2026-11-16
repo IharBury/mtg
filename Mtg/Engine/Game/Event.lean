@@ -2379,6 +2379,16 @@ def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
   | .seq a b => b.endsWithPriorityGrant (a.nextQueuedPending hasQueuedPending)
   | _ => false
 
+/-- Whether a `PendingReplacement` continuation ends with a non-proposal priority
+grant (`.receivePriority`, `.finishFraChoice`, `.finishConcede`,
+`.afterWardResolved`, or an idle `.concedePlayersLoop`), excluding
+proposal-completion continuations. -/
+def PendingReplacement.endsWithNonProposalPriorityGrant : PendingReplacement → Bool
+  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved => true
+  | .concedePlayersLoop _ wp mid .. => !wp && !mid
+  | .seq _ b => b.endsWithNonProposalPriorityGrant
+  | _ => false
+
 /-- Ensure a `PendingReplacement` continuation ends with a priority grant
 without appending `.finishFraChoice` onto a continuation that already grants priority. -/
 def PendingReplacement.ensureEndsWithFinishFra (pr : PendingReplacement) : PendingReplacement :=
@@ -3794,9 +3804,9 @@ def dealtNoncombat (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool
       | _ => false
 
 /-- Index of the `CastEvent.spellCast` event for `spell`, `0` when `events`
-identifies `spell` as a non-spell stack ability or uncast battlefield permanent,
-or `events.size` when `spell` is a spell that has not yet finished casting
-(CR 601.2h–i). -/
+identifies `spell` as a non-spell stack ability, uncast stack copy, or
+battlefield permanent (CR 400.7 / 707.10), or `events.size` when `spell` is a
+spell that has not yet finished casting (CR 601.2h–i). -/
 def castEventBound (events : Array GameEvent) (spell : ObjectId) : Nat :=
   match events.findIdx? (fun e =>
     match e.change with
@@ -3815,11 +3825,12 @@ def castEventBound (events : Array GameEvent) (spell : ObjectId) : Nat :=
         match e.change with
         | .rules (.cast (.abilityActivated ab ..)) => ab == spell
         | .rules (.triggerQueue (.putOnStack stObj ..)) => stObj == spell
+        | .rules (.stackObject (.copied _ copy _)) => copy.id == some spell
         | .engine (.materializeObject obj _) =>
           obj.id == spell &&
             (obj.abilityEffect.isSome || obj.triggeredAbility.isSome || obj.zone == .battlefield)
-        | .rules (.zone (.moved _ after fromZ .battlefield ..)) =>
-          fromZ != .stack && after.id == some spell
+        | .rules (.zone (.moved _ after _ .battlefield ..)) =>
+          after.id == some spell
         | .rules (.zone (.created eo _)) =>
           eo.zone == .battlefield && eo.id == some spell
         | _ => false

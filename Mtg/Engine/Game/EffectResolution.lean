@@ -2715,6 +2715,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           g.addMana controller (.colored .white) 1 (source := sourceId)
       | .addAnyColorSpendOnlyArtifactSpell =>
         g.addMana controller (.colored .white) 1 (source := sourceId)
+          (restriction := some (.fra .artifactSpell))
       | .addTwoAnyColorCreatureSources =>
         g.addMana controller (.colored .green) 2 (source := sourceId) (restriction := some .creatureSource)
       | .addBlueCantNonartifact =>
@@ -2726,6 +2727,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.addMana controller (.colored .white) 4 (source := sourceId)
       | .addTwoAnyColorEquipment =>
         g.addMana controller (.colored .white) 2 (source := sourceId)
+          (restriction := some (.fra .equipmentOrEquip))
       | .drawPerDiscardedThisTurn =>
         g.draw controller (g.loggedDiscards controller)
       | .createTokensEqualRemovedPlusOnes kind =>

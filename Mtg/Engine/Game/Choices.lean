@@ -611,7 +611,7 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
     let exileSource := prop.activation.any (·.cost.fra == .exileSource)
     let sacrificeOrExileSource :=
       prop.sacrificeSource || exileSource || prop.activation.any (·.cost.sacrificeSource)
-    let sinceIdx := (g.proposalCheckpoint.map (·.eventsSize)).getD 0
+    let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD 0
     let fromGyAb := prop.activation.any (·.isFromGraveyard)
     let fromHandAb := prop.discardSource || prop.activation.any (·.isFromHand)
     let needsBfSource :=

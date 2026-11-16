@@ -739,7 +739,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
     else
       let (g, emb) := g.allocObject {
           name := "Elspeth emblem"
-          types := #[.enchantment]
+          types := #[]
           grantTeamPlusTwoFlying := true
         } controller .command (some controller)
       g.logMsg s!"{pl.name} gets an emblem ({g.name emb})"

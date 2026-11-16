@@ -434,9 +434,10 @@ deriving Repr, Inhabited, BEq
 /-- The object a `GameEvent` is about, as it existed when the change happened
 (CR 113.7a / 613.1). -/
 structure EventObject where
-  id              : Option ObjectId      := none
-  controller      : Option PlayerId      := none
-  owner           : PlayerId             := ⟨0⟩
+  id                : Option ObjectId      := none
+  controller        : Option PlayerId      := none
+  defaultController : Option PlayerId      := none
+  owner             : PlayerId             := ⟨0⟩
   -- characteristics (CR 109.3)
   name            : String               := ""
   colors          : ColorSet             := {}

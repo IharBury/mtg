@@ -735,7 +735,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       prop.discardSource ||
         prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
     if !(gPre.sourceStillPayable prop && gPre.canPayLife prop.caster prop.payLife) ||
-        !gPre.costPicksPayable p (some sourceId) picks
+        !gPre.costPicksPayable p (some sourceId)
+          (costPicksWithSacrificeOther picks prop.needsSacrificeOther)
           (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
           (discardOrExileHandSource := discSrc) then
       return (← gPre.reverseProposedSpell? (resumeContinuation := true))
@@ -818,9 +819,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       gPre.proposedSpell.any fun prop =>
         prop.discardSource ||
           prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+    let allPicks :=
+      costPicksWithSacrificeOther picks (gPre.proposedSpell.any (·.needsSacrificeOther))
     if !gPre.proposalCostPromptStillPayable p gPre.pending ||
-        (!picks.isEmpty &&
-          !gPre.costPicksPayable p (some sourceId) picks
+        (!allPicks.isEmpty &&
+          !gPre.costPicksPayable p (some sourceId) allPicks
             (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
             (discardOrExileHandSource := discSrc)) then
       return (← gPre.reverseProposedSpell? (resumeContinuation := true))
@@ -1674,7 +1677,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some o := g.findObject? id | throw "no such object"
     if g.isLand o then throw s!"{g.name o} can't be cast this way"
     let face := g.baseCard o
-    let rawPerm := if withoutPaying then none else g.playPermission o
+    let rawPerm := if withoutPaying then none else g.playPermissionFor? p o
     let canMorph :=
       !withoutPaying && face.morph.isSome && face.kicker.isNone &&
         o.zone != .graveyard o.owner &&
@@ -1748,7 +1751,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw s!"{face.name} has no legal target"
     if let some err := g.mandatorySacrificeError? p o.id face then
       throw err
-    if (g.playPermission o).any (·.payLifeEqualManaValue) &&
+    if (g.playPermissionFor? p o).any (·.payLifeEqualManaValue) &&
         !g.canPayLife p (g.objectManaValue o) then
       throw s!"{(g.player p).name} can't pay {g.objectManaValue o} life to cast {face.name} (CR 119.4)"
     let g := gPre.change .saveProposalCheckpoint
@@ -1992,14 +1995,30 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .discardTwo .. => .choosePermanents ((g.player p).hand.extract 0 2)
   | .mayMoveAllCounters .. => .accept
   | .crew _ vehicleId n =>
+    let tapSrc := g.proposedSpell.any (·.tapSource)
+    let sacSrc :=
+      g.proposedSpell.any fun prop =>
+        prop.sacrificeSource ||
+          prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource)
+    let discSrc :=
+      g.proposedSpell.any fun prop =>
+        prop.discardSource ||
+          prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+    let allPicks :=
+      costPicksWithSacrificeOther
+        ((g.proposedSpell.bind (·.activation)).map costPicksOf |>.getD #[])
+        (g.proposedSpell.any (·.needsSacrificeOther))
+    let manaSrcs := g.manaSources p
     let cands := ((g.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).qsort
       (fun a b =>
-        let aNonMana := (g.manaAbilitiesOf a).isEmpty
-        let bNonMana := (g.manaAbilitiesOf b).isEmpty
+        let aNonMana := !manaSrcs.any (·.1.id == a.id)
+        let bNonMana := !manaSrcs.any (·.1.id == b.id)
         if aNonMana != bNonMana then aNonMana else g.power a > g.power b)
-    let (picked, total) := cands.foldl (fun (acc : Array ObjectId × Nat) c =>
-      if acc.2 ≥ n then acc else (acc.1.push c.id, acc.2 + (g.power c).toNat)) (#[], 0)
-    if total < n then .decline else .choosePermanents picked
+    match g.firstPayableCrewSelection? p vehicleId n allPicks
+        (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+        (discardOrExileHandSource := discSrc) (orderedCands? := some cands) with
+    | some picked => .choosePermanents picked
+    | none => .decline
   | .costPicks sourceId picks _ =>
     let tapSrc := g.proposedSpell.any (·.tapSource)
     let sacSrc :=
@@ -2010,11 +2029,15 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       g.proposedSpell.any fun prop =>
         prop.discardSource ||
           prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
-    match g.firstPayableCostPickSlice? p (some sourceId) picks
-        (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
-        (discardOrExileHandSource := discSrc) with
-    | some chosen => .choosePermanents chosen
-    | none => .decline
+    if picks.isEmpty then .decline
+    else
+      let allPicks :=
+        costPicksWithSacrificeOther picks (g.proposedSpell.any (·.needsSacrificeOther))
+      match g.firstPayableCostPickSlice? p (some sourceId) allPicks
+          (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
+          (discardOrExileHandSource := discSrc) with
+      | some chosen => .choosePermanents chosen
+      | none => .decline
   | .mayPayPickThen .. => .decline
   | .chooseCreatureType _ => .chooseMode 0
   | .maySacrificeAnotherCreatureForPower _ => .decline
@@ -2175,7 +2198,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
           let face := g.baseCard o
           let origPerm : Option PlayPermission :=
             if withoutPaying then some { player := p, withoutManaCost := true }
-            else g.playPermission o
+            else g.playPermissionFor? p o
           let spend : ManaSpend :=
             { spell := true, fromHand := o.zone == .hand p
               supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
@@ -2205,7 +2228,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
         (g.findObject? id).any (fun o =>
           let face := g.baseCard o
           let tcs := g.evalLayer3 o
-          let origPerm := g.playPermission o
+          let origPerm := g.playPermissionFor? p o
           let hasTargets :=
             !g.isLand o && !g.spellNameForbidden face.name &&
               g.graveyardCastThresholdMet p o.id face &&

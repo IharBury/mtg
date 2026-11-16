@@ -75,6 +75,82 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId)
     g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves) (cause := cause)
       |>.logMsg s!"{(g.player p).name} gains control of {g.name o}"
 
+/-- Compute the transitive closure of `seedIds` under CR 800.4a / 800.4c control-loss
+exile (including `.gameRule (.fraEmblem embId)` -> `.whileInZone embId .command` emblem
+chains), so co-departing permanents suppress spurious copy/control-reversion and
+unattach logs before they are exiled (CR 114.5 / 611.2a / 702.26b / 800.4a,c). -/
+def coDepartingIds (g : Game) (seedIds : Array ObjectId)
+    (endingCtrlEids : Array EffectId := #[])
+    (departingPlayer? : Option PlayerId := none) : Array ObjectId := Id.run do
+  let pushUnique (arr : Array ObjectId) (oid : ObjectId) : Array ObjectId :=
+    if arr.contains oid then arr else arr.push oid
+  let expandEmblemSources (effs : Array (EffectId × ContinuousEffectSpec))
+      (srcs : Array ObjectId) : Array ObjectId := Id.run do
+    let mut out := srcs
+    for _ in [0:effs.size] do
+      let prevSize := out.size
+      for (_, e) in effs do
+        if let .gameRule (.fraEmblem embId) d := e then
+          let matchesSrc :=
+            match d with
+            | .whileSourceOnBattlefield src
+            | .untilSourceLeaves src
+            | .whileSourceHasCounter src _
+            | .whileInZone src _ => out.contains src
+            | _ => false
+          if matchesSrc && !out.contains embId then
+            out := out.push embId
+      if out.size == prevSize then
+        break
+    return out
+  let filterAfterSources (curG : Game) (srcs : Array ObjectId)
+      (dropEids : Array EffectId := #[]) : Game × Array ObjectId :=
+    let allSrcs := expandEmblemSources curG.activeEffects srcs
+    let nextObjs := curG.objects.filter (fun o => !allSrcs.contains o.id)
+    let nextEffs := curG.activeEffects.filter fun (eid, e) =>
+      !dropEids.contains eid &&
+        !(allSrcs.any (fun sid => effectObject? e == some sid)) &&
+        match e with
+        | .gameRule (.fraEmblem _) (.whileSourceOnBattlefield src)
+        | .gameRule (.fraEmblem _) (.untilSourceLeaves src)
+        | .gameRule (.fraEmblem _) (.whileSourceHasCounter src _)
+        | .gameRule (.fraEmblem _) (.whileInZone src _)
+        | .layered _ (.control _) (.whileSourceOnBattlefield src)
+        | .layered _ (.control _) (.untilSourceLeaves src)
+        | .layered _ (.control _) (.whileSourceHasCounter src _)
+        | .layered _ (.control _) (.whileInZone src _) =>
+          !allSrcs.contains src
+        | .layered (.objects ids) (.control _) _ =>
+          !(ids.any allSrcs.contains &&
+            ids.all (fun id => allSrcs.contains id || !(nextObjs.any (·.id == id))))
+        | _ => true
+    ({ curG with objects := nextObjs, activeEffects := nextEffs }, allSrcs)
+  let initSeeds := seedIds.foldl pushUnique #[]
+  let (cur0, expanded0) := filterAfterSources g initSeeds endingCtrlEids
+  let mut cur := cur0
+  let mut result := expanded0.foldl pushUnique initSeeds
+  for _ in [0:cur.objects.size] do
+    let departing := cur.objects.filter fun o =>
+      let fallback := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
+      match departingPlayer? with
+      | some p =>
+        cur.controlledBy o p ||
+          (o.isBattlefieldObject && (cur.appliedControlEffectIds o).isEmpty &&
+            (cur.player fallback).leftTheGame)
+      | none =>
+        o.isOnBattlefield && (cur.appliedControlEffectIds o).isEmpty &&
+          (cur.player fallback).leftTheGame
+    if departing.isEmpty then
+      break
+    let depIds := departing.map (·.id)
+    let (nextCur, expandedDep) := filterAfterSources cur depIds
+    for oid in depIds do
+      result := pushUnique result oid
+    for oid in expandedDep do
+      result := pushUnique result oid
+    cur := nextCur
+  return result
+
 /-- Exile each `(oid, logLine, prevCtrl)` in `remaining` sequentially (CR 800.4a /
 800.4c), pausing and chaining `.endControlExileLoop` if a CR 616.1 replacement
 choice opens and emitting `logLine` only once the permanent has arrived in
@@ -103,8 +179,9 @@ def runEndControlExileLoop (g : Game)
         if let some cur := g.findObject? oid then
           if cur.isBattlefieldObject || cur.zone == .stack || cur.zone == .command then
             let remExileIds := (remaining.extract i remaining.size).map (·.1)
+            let skipIds := g.coDepartingIds (remExileIds ++ extraSkipIds)
             let (g', _) := g.move oid .exile none (cause := cause)
-              (lkiController? := prevCtrl) (skipUnattachIds := remExileIds ++ extraSkipIds)
+              (lkiController? := prevCtrl) (skipUnattachIds := skipIds)
               (suppressInteractive := suppressInteractive)
             g := g'
             let nowQuiet :=
@@ -112,7 +189,7 @@ def runEndControlExileLoop (g : Game)
             if !nowQuiet && g.sbaPaused then
               let rem := remaining.extract (i + 1) remaining.size
               g := g.chainPendingReplacement
-                (.endControlExileLoop rem cause (some (oid, logLine)) extraSkipIds)
+                (.endControlExileLoop rem cause (some (oid, logLine)) skipIds)
               return g
             if (g.followMovedToZone? oid (· == .exile)).isSome then
               g := g.logMsg logLine
@@ -187,8 +264,9 @@ def endControlEffectById (g : Game) (eid : EffectId)
               else if curCtrl != prevCtrl then
                 (acc.logMsg s!"{acc.name cur} reverts to {(acc.player dest).name}'s control", exiles)
               else (acc, exiles)) (g, #[])
+    let skipIds := g.coDepartingIds (exileQueue.map (·.1))
     g.runEndControlExileLoop exileQueue (cause := some (.gameRule .playerLeftGame))
-      (suppressInteractive := suppressInteractive)
+      (extraSkipIds := skipIds) (suppressInteractive := suppressInteractive)
 
 private def inActiveEndControlExile (oid : ObjectId) : PendingReplacement → Bool
   | .endControlExileLoop remaining _ pendingLog _ =>
@@ -224,12 +302,12 @@ def reconcileControlAfterTransition (pre post : Game)
   let g := removeFromCombatOnControlChange pre g (cause := cause)
   let exileQueue : Array (ObjectId × String × Option PlayerId) :=
     g.objects.filterMap fun cur =>
-      if !cur.isBattlefieldObject then none
+      if !cur.isOnBattlefield then none
       else
         match pre.findObject? cur.id with
         | none => none
         | some preObj =>
-          if !preObj.isBattlefieldObject then none
+          if !preObj.isOnBattlefield then none
           else if !(pre.appliedControlEffectIds preObj).isEmpty &&
               (g.appliedControlEffectIds cur).isEmpty then
             let fallback := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
@@ -238,7 +316,10 @@ def reconcileControlAfterTransition (pre post : Game)
             else none
           else none
   if exileQueue.isEmpty then g
-  else g.runEndControlExileLoop exileQueue (cause := some (.gameRule .playerLeftGame))
+  else
+    let skipIds := g.coDepartingIds (exileQueue.map (·.1))
+    g.runEndControlExileLoop exileQueue (cause := some (.gameRule .playerLeftGame))
+      (extraSkipIds := skipIds)
 
 /-- Expire a simultaneous group of `.copy` (`preExpire`, run with
 `reconcileControl := false`) and `.control` (`eids`) continuous effects against
@@ -373,16 +454,18 @@ def endControlEffectsSimultaneously (g : Game) (eids : Array EffectId)
   let g :=
     if exileQueue.isEmpty then g
     else
+      let skipIds := g.coDepartingIds (exileQueue.map (·.1) ++ extraSkipIds)
       g.runEndControlExileLoop exileQueue (cause := some (.gameRule .playerLeftGame))
-        (extraSkipIds := extraSkipIds) (suppressInteractive := suppressInteractive)
+        (extraSkipIds := skipIds) (suppressInteractive := suppressInteractive)
   if !hadOpenBatch then
     g.flushQueuedLinkedExile (suppressInteractive := suppressInteractive)
   else g
 
 /-- Reconcile game-over finality, departed Layer 2 `.control` effects, departed
-CR 718.6 `.controlsPlayer` effects, and unqueued CR 800.4c orphan battlefield
-permanents after checkpoint replay completes on either synchronous or resumed
-paths (CR 104.2a / 718.6 / 800.4a,c). -/
+CR 718.6 `.controlsPlayer` effects, departed non-card `.stack` / `.command`
+objects, and unqueued CR 800.4c orphan battlefield permanents after checkpoint
+replay completes on either synchronous or resumed paths (CR 104.2a / 506.4 /
+701.54a / 718.6 / 800.4a,c). -/
 @[export mtg_game_reconcile_post_replay_departures]
 def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := false) : Game :=
   let g := (g.decideGameIfFinished).getD g
@@ -396,6 +479,18 @@ def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := fals
         | .layered _ (.control c) _ =>
           if (g.player c).leftTheGame then some eid else none
         | _ => none
+    let withoutDepartingCtrl (g0 : Game) : Game :=
+      if ctrlEids.isEmpty then g0
+      else { g0 with activeEffects := g0.activeEffects.filter (fun (eid, _) => !ctrlEids.contains eid) }
+    let stackCmdCeaseIds : Array ObjectId :=
+      let postCtrlG := withoutDepartingCtrl g
+      g.objects.filterMap fun o =>
+        if !representedByCard o &&
+            ((o.zone == .stack && departedIds.any (postCtrlG.controlledBy o ·)) ||
+             (o.zone == .command &&
+               departedIds.any (fun p => o.owner == p || postCtrlG.controlledBy o p))) then
+          some o.id
+        else none
     let expireDepartedControlsPlayers (g0 : Game) : Game :=
       g0.activeEffects.foldl (fun acc (eid, e) =>
         match e with
@@ -405,12 +500,29 @@ def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := fals
             acc.expireEffectById eid (cause := leaveCause)
           else acc
         | _ => acc) g0
+    let pre := g
+    let skipPreIds := g.coDepartingIds stackCmdCeaseIds (endingCtrlEids := ctrlEids)
+    let ceaseDepartedStackAndCommand (g0 : Game) : Game :=
+      let g1 :=
+        g0.objects.foldl (fun acc o =>
+          if o.zone == .stack && !representedByCard o &&
+              departedIds.any ((withoutDepartingCtrl acc).controlledBy o ·) then
+            acc.ceaseToExist o.id (cause := leaveCause) (reconcileControl := false)
+              (preState? := some pre) (skipLogIds := skipPreIds)
+          else acc) g0
+      g1.objects.foldl (fun acc o =>
+        if o.zone == .command && !representedByCard o &&
+            departedIds.any (fun p => o.owner == p || (withoutDepartingCtrl acc).controlledBy o p) then
+          acc.ceaseToExist o.id (cause := leaveCause) (reconcileControl := false)
+            (preState? := some pre) (skipLogIds := skipPreIds)
+        else acc) g1
     let g :=
-      if ctrlEids.isEmpty then
+      if ctrlEids.isEmpty && stackCmdCeaseIds.isEmpty then
         expireDepartedControlsPlayers g
       else
         g.endControlEffectsSimultaneously ctrlEids (cause := leaveCause)
-          (preExpire := expireDepartedControlsPlayers)
+          (preExpire := fun g0 => ceaseDepartedStackAndCommand (expireDepartedControlsPlayers g0))
+          (preState? := some pre) (extraSkipIds := skipPreIds)
           (suppressInteractive := suppressInteractive)
     let alreadyQueued (oid : ObjectId) : Bool :=
       g.pendingReplacement.any (inActiveEndControlExile oid) ||
@@ -428,8 +540,9 @@ def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := fals
           else none
     if orphanExiles.isEmpty then g
     else
+      let skipIds := g.coDepartingIds (orphanExiles.map (·.1))
       let g := g.runEndControlExileLoop orphanExiles (cause := leaveCause)
-        (suppressInteractive := suppressInteractive)
+        (extraSkipIds := skipIds) (suppressInteractive := suppressInteractive)
       if g.currentBatch.isNone then
         g.flushQueuedLinkedExile (suppressInteractive := suppressInteractive)
       else g
@@ -1074,42 +1187,44 @@ def preBatchLegendSnapshotValid (g : Game)
               (g.pendingReplacement.bind (findPausedCloseBatchFor? curBid)).orElse
                 (fun _ => g.outerPendingReplacements.findSomeRev? (findPausedCloseBatchFor? curBid))
             min (closeIdx?.getD earliestBatchIdx) earliestBatchIdx
-      let pendingLegend? : Option (PlayerId × String × Array ObjectId) :=
-        match g.pending with
-        | .chooseLegend q n pIds => some (q, n, pIds)
-        | _ =>
-          match g.openBatchPending with
-          | .chooseLegend q n pIds => some (q, n, pIds)
-          | _ => none
-      let targetIds : Array ObjectId :=
-        if !candidateIds.isEmpty then candidateIds
-        else
-          match pendingLegend? with
-          | some (_, _, pIds) => pIds
-          | none => #[]
+      let targetIds : Array ObjectId := candidateIds
       let overlapsTarget (pIds : Array ObjectId) : Bool :=
         targetIds.isEmpty || pIds.any targetIds.contains
       let mut promptIds : Array ObjectId := #[]
-      let mut effCtrl? : Option PlayerId := promptCtrl?
+      let mut effCtrls : Array PlayerId :=
+        match promptCtrl? with
+        | some q => #[q]
+        | none => #[]
+      let pushEffCtrl (arr : Array PlayerId) (q : PlayerId) : Array PlayerId :=
+        if arr.contains q then arr else arr.push q
+      if let .chooseLegend q _ pIds := g.pending then
+        if overlapsTarget pIds then
+          effCtrls := pushEffCtrl effCtrls q
+      if let .chooseLegend q _ pIds := g.openBatchPending then
+        if overlapsTarget pIds then
+          effCtrls := pushEffCtrl effCtrls q
       for i in [startIdx : g.events.size] do
         if let .engine _ (.pending (.chooseLegend q _ pIds)) _ := g.events[i]! then
           if overlapsTarget pIds then
-            if effCtrl?.isNone then
-              effCtrl? := some q
+            effCtrls := pushEffCtrl effCtrls q
             for x in pIds do
               if !promptIds.contains x then
                 promptIds := promptIds.push x
       if promptIds.isEmpty then
-        match pendingLegend? with
-        | some (q, _, pIds) =>
+        let mut fromPending : Array ObjectId := #[]
+        if let .chooseLegend q _ pIds := g.pending then
           if overlapsTarget pIds then
-            if effCtrl?.isNone then
-              effCtrl? := some q
-            promptIds := pIds
-          else
-            promptIds := candidateIds
-        | none =>
-          promptIds := candidateIds
+            effCtrls := pushEffCtrl effCtrls q
+            for x in pIds do
+              if !fromPending.contains x then
+                fromPending := fromPending.push x
+        if let .chooseLegend q _ pIds := g.openBatchPending then
+          if overlapsTarget pIds then
+            effCtrls := pushEffCtrl effCtrls q
+            for x in pIds do
+              if !fromPending.contains x then
+                fromPending := fromPending.push x
+        promptIds := if !fromPending.isEmpty then fromPending else candidateIds
       if promptIds.isEmpty then
         return false
       let survivingPromptIds : Array ObjectId :=
@@ -1134,23 +1249,27 @@ def preBatchLegendSnapshotValid (g : Game)
           | _, _ => false
       let mut curPreG : Game := preG
       let mut earliestPromptIdx? : Option Nat := none
-      let mut inPlayerDeparture := false
+      let mut depBid? : Option BatchId := none
       for i in [startIdx : g.events.size] do
         match g.events[i]! with
         | .rules _ r cause batch =>
           if let .player (.leftGame _) := r then
-            inPlayerDeparture := true
+            depBid? := batch
           let isDepartureCleanup :=
-            inPlayerDeparture || cause == .gameRule .playerLeftGame
+            (depBid?.isSome && batch == depBid?) || cause == .gameRule .playerLeftGame
           if isDepartureCleanup then
             match r with
             | .player (.leftGame depP) =>
               curPreG := curPreG.applyPlayerEvent (.leftGame depP)
-            | .zone (.ceasedToExist before)
-            | .zone (.moved before ..) =>
+            | .zone (.ceasedToExist before) =>
               if let some tid := before.id then
                 if !survivingPromptIds.contains tid then
                   curPreG := { curPreG with objects := curPreG.objects.filter (·.id != tid) }
+            | .zone (.moved before _ _ to_ ..) =>
+              if to_ != .battlefield then
+                if let some tid := before.id then
+                  if !survivingPromptIds.contains tid then
+                    curPreG := { curPreG with objects := curPreG.objects.filter (·.id != tid) }
             | .permanent (.unattached att fromHost) =>
               curPreG := curPreG.applyPermanentEvent (.unattached att fromHost)
             | .continuousEffect (.expired eid spec?) =>
@@ -1162,9 +1281,14 @@ def preBatchLegendSnapshotValid (g : Game)
             | .triggerQueue _ | .delayedTrigger _ => true
             | .player (.manaEmptied ..) | .player (.becameMonarch ..)
             | .player (.gainedDesignation ..) => isDepartureCleanup
-            | .zone (.ceasedToExist before)
-            | .zone (.moved before ..) =>
+            | .zone (.ceasedToExist before) =>
               isDepartureCleanup &&
+                match before.id with
+                | none => false
+                | some tid =>
+                  !survivingPromptIds.contains tid && !promptLegendChanged curPreG
+            | .zone (.moved before _ _ to_ ..) =>
+              to_ != .battlefield && isDepartureCleanup &&
                 match before.id with
                 | none => false
                 | some tid =>
@@ -1181,7 +1305,7 @@ def preBatchLegendSnapshotValid (g : Game)
                   | .permission .. | .replacement .. | .prevention .. | .gameRule .. =>
                     !promptLegendChanged curPreG
                   | .playerRule q r _ =>
-                    (r != .legendRuleOff || effCtrl?.any (· != q)) && !promptLegendChanged curPreG
+                    (r != .legendRuleOff || !effCtrls.contains q) && !promptLegendChanged curPreG
                   | .layered scope eff _ =>
                     if promptLegendChanged curPreG then false
                     else
@@ -1202,7 +1326,7 @@ def preBatchLegendSnapshotValid (g : Game)
                         | .objects tgtIds =>
                           !tgtIds.any survivingPromptIds.contains && !tgtIds.any isPromptAttachment
                         | .creaturesControlledBy q | .permanentsOfSubtype q _ =>
-                          effCtrl?.any (· != q) &&
+                          !effCtrls.contains q &&
                             !survivingPromptIds.any (fun pid =>
                               (preG.findObject? pid).any (fun o => preG.controlledBy o q)) &&
                             !preG.objects.any (fun att =>
@@ -1221,15 +1345,14 @@ def preBatchLegendSnapshotValid (g : Game)
             return false
         | .engine _ (.pauseBatch bid ..) _ =>
           if bid == curBid then
-            inPlayerDeparture := false
+            depBid? := none
         | .engine _ (.object ..) _ | .engine _ (.materializeObject ..) _ =>
           if earliestPromptIdx?.isSome then
             return false
         | .engine _ (.pending (.chooseLegend q _ pIds)) _ =>
-          inPlayerDeparture := false
+          depBid? := none
           if overlapsTarget pIds then
-            if effCtrl?.isNone then
-              effCtrl? := some q
+            effCtrls := pushEffCtrl effCtrls q
             if earliestPromptIdx?.isNone then
               earliestPromptIdx? := some i
             for x in pIds do
@@ -1277,6 +1400,90 @@ def validLegendChoiceIds (g : Game) (p : PlayerId) (name : String)
     ids.filter fun oid =>
       (g.findObject? oid).any (g.isMatchingLegendCandidate p name preBatchLegendIds)
 
+/-- Whether `g.proposalCheckpoint` (`current`) is a nested mana-ability
+checkpoint inside an enclosing spell/ability proposal
+(`!g.outerProposalCheckpoints.isEmpty` and `g.events` after
+`current.eventsSize` has an unclosed
+`EngineChange.beginProposalAction (.manaAbility _)` with no
+`EngineChange.proposedSpell (some _)`) (CR 601.2 / 602.2 / 605.3 / 733.1). -/
+def isNestedManaProposalCheckpoint (g : Game) : Bool :=
+  if g.outerProposalCheckpoints.isEmpty then false
+  else
+    match g.proposalCheckpoint with
+    | none => false
+    | some current => Id.run do
+      let slice := g.events.extract (min current.eventsSize g.events.size) g.events.size
+      let mut depth : Nat := 0
+      let mut outerIsMana : Bool := false
+      for ev in slice do
+        match ev.change with
+        | .engine (.proposedSpell (some _)) =>
+          return false
+        | .engine (.beginProposalAction kind) =>
+          if depth == 0 then
+            outerIsMana :=
+              match kind with
+              | .manaAbility _ => true
+              | _ => false
+          depth := depth + 1
+        | .engine .endProposalAction =>
+          if depth > 0 then
+            depth := depth - 1
+            if depth == 0 then
+              outerIsMana := false
+        | _ => pure ()
+      return depth > 0 && outerIsMana
+
+/-- Whether `g.proposalCheckpoint` is a standalone mana-ability checkpoint
+with no enclosing spell/ability proposal (`g.outerProposalCheckpoints.isEmpty &&
+g.proposalCheckpoint.isSome && g.proposedSpell.isNone`). -/
+def isStandaloneManaProposalCheckpoint (g : Game) : Bool :=
+  g.outerProposalCheckpoints.isEmpty && g.proposalCheckpoint.isSome && g.proposedSpell.isNone
+
+/-- Whether `g.proposalCheckpoint` is an active mana-ability checkpoint
+(either nested inside a spell/ability proposal or standalone). -/
+def hasActiveManaProposalCheckpoint (g : Game) : Bool :=
+  g.isNestedManaProposalCheckpoint || g.isStandaloneManaProposalCheckpoint
+
+/-- If `g.proposalCheckpoint` is a nested mana-ability checkpoint inside an
+enclosing spell/ability proposal, pop that nested mana checkpoint once via
+`EngineChange.clearProposalCheckpoint` so the caller reads and reverses the
+enclosing spell checkpoint (CR 601.2 / 602.2 / 605.3 / 733.1). -/
+def popNestedManaProposalCheckpoint (g : Game) : Game :=
+  if g.isNestedManaProposalCheckpoint then g.change .clearProposalCheckpoint else g
+
+/-- The active spell/ability proposal checkpoint that an aborted proposal rewind
+targets: when `g.isNestedManaProposalCheckpoint` holds, the outer spell/ability
+checkpoint on `g.outerProposalCheckpoints.back?` (falling back to
+`g.proposalCheckpoint`), and `g.proposalCheckpoint` otherwise (matching
+`popNestedManaProposalCheckpoint` and `EngineChange.clearProposalCheckpoint`). -/
+def targetProposalCheckpoint? (g : Game) : Option ProposalCheckpoint :=
+  if g.isNestedManaProposalCheckpoint then
+    g.outerProposalCheckpoints.back?.orElse (fun _ => g.proposalCheckpoint)
+  else
+    g.proposalCheckpoint
+
+/-- Whether `g.currentBatch` is the pre-existing open batch recorded on
+`g.targetProposalCheckpoint?` (`ckpt.currentBatch.map Prod.fst ==
+g.currentBatch.map Prod.fst` for some open batch). -/
+def isPreProposalCheckpointBatch (g : Game) : Bool :=
+  match g.currentBatch, g.targetProposalCheckpoint? with
+  | some (curBid, _), some ckpt => ckpt.currentBatch.map Prod.fst == some curBid
+  | _, _ => false
+
+/-- `EngineChange`s to clear an aborted no-rewind proposal (popping any active
+nested mana checkpoint first before clearing `proposedSpell` and the promoted
+spell/ability checkpoint, unless `alreadyClearedCkpt` indicates the aborted
+proposal's checkpoints were already popped earlier in the same departure). -/
+private def clearAbortedProposalChanges (g : Game) (alreadyClearedCkpt : Bool := false) :
+    Array EngineChange :=
+  if alreadyClearedCkpt then
+    if g.proposedSpell.isSome then #[.proposedSpell none] else #[]
+  else
+    (if g.isNestedManaProposalCheckpoint then #[.clearProposalCheckpoint] else #[]) ++
+      #[.proposedSpell none] ++
+      (if g.proposalCheckpoint.isSome then #[.clearProposalCheckpoint] else #[])
+
 /-- After `p` leaves, pending costs they would pay are not paid (CR 800.4f)
 and other pending choices they would make are skipped or passed on
 (CR 800.4g / 800.4h / 800.4j). Returns `(g, nextPending)` without journaling
@@ -1284,13 +1491,15 @@ and other pending choices they would make are skipped or passed on
 after the departure batch, control-loss exiles, and linked-exile returns.
 Does not grant priority. -/
 def redirectPendingAfterLeave (g : Game) (p : PlayerId)
-    (abortedProposal : Bool := false) (pending : Pending := g.pending) : Game × Pending :=
+    (abortedProposal : Bool := false) (pending : Pending := g.pending)
+    (alreadyClearedProposalCkpt : Bool := false) : Game × Pending :=
   let abortedProp := abortedProposal || g.isProposalAbortedByLeave p
   let rewindAbortedProp :=
     abortedProp && g.proposalCheckpoint.isSome &&
       g.proposedSpell.any (fun prop => prop.caster != p && g.stillInGame prop.caster)
   let clearProp : Array EngineChange :=
-    if abortedProp && !rewindAbortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
+    if abortedProp && !rewindAbortedProp then
+      clearAbortedProposalChanges g alreadyClearedProposalCkpt
     else #[]
   let clearPending (g : Game) : Game :=
     if g.pending != .none then g.change (.pending .none) else g
@@ -2357,9 +2566,6 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       else (g, pending)
   | .mayDiscardDraw q _ | .maySacArtifactOrDiscard q _ =>
     if q == p then
-      let clearProp : Array EngineChange :=
-        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
-        else #[]
       let g := g.changes (#[.chooseModesRest none] ++ clearProp)
       let g :=
         if g.mayThenDrop > 0 then g.declineMayThenCore
@@ -2368,9 +2574,6 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
     else (g, pending)
   | .scry q .. | .surveil q .. =>
     if q == p then
-      let clearProp : Array EngineChange :=
-        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
-        else #[]
       let g := g.changes (#[
         .chooseModesRest none,
         .surveilReturnMvAtMost none,
@@ -2385,9 +2588,6 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
     else (g, pending)
   | .sacrificeCreature q =>
     if q == p then
-      let clearProp : Array EngineChange :=
-        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
-        else #[]
       let g := g.changes (#[.chooseModesRest none] ++ clearProp)
       let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
       (g, .none)
@@ -2399,9 +2599,6 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
     else (g, pending)
   | .mayAttachEquipment q hostId sourceId =>
     if q == p then
-      let clearProp : Array EngineChange :=
-        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
-        else #[]
       let g := g.changes (#[.chooseModesRest none] ++ clearProp)
       let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
       (g, .none)
@@ -2414,9 +2611,6 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
     else (g, pending)
   | .maySacrificeAnotherBolg q bolgId =>
     if q == p then
-      let clearProp : Array EngineChange :=
-        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
-        else #[]
       let g := g.changes (#[.chooseModesRest none] ++ clearProp)
       let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
       (g, .none)
@@ -2430,9 +2624,6 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
   | .mayPutLandFromHand q
   | .mayHaveVillainConnive q _ _ | .declareMulligan q | .chooseProliferate q _ =>
     if q == p then
-      let clearProp : Array EngineChange :=
-        if abortedProp then #[.proposedSpell none, .clearProposalCheckpoint]
-        else #[]
       let g := g.changes (#[.chooseModesRest none] ++ clearProp)
       let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
       (g, .none)
@@ -2645,76 +2836,66 @@ def batchPausePromptGoneOrInvalid (g : Game) : Pending → Bool
   | p@(.chooseReplacement ..) | p@(.chooseLegend ..) => !g.batchPausePromptValid p
   | _ => false
 
-/-- Whether `g.proposalCheckpoint` (`current`) is a nested mana-ability
-checkpoint inside an enclosing spell/ability proposal
-(`!g.outerProposalCheckpoints.isEmpty` and `g.events` after
-`current.eventsSize` has an unclosed
-`EngineChange.beginProposalAction (.manaAbility _)` with no
-`EngineChange.proposedSpell (some _)`) (CR 601.2 / 602.2 / 605.3 / 733.1). -/
-def isNestedManaProposalCheckpoint (g : Game) : Bool :=
-  if g.outerProposalCheckpoints.isEmpty then false
-  else
-    match g.proposalCheckpoint with
-    | none => false
-    | some current => Id.run do
-      let slice := g.events.extract (min current.eventsSize g.events.size) g.events.size
-      let mut depth : Nat := 0
-      let mut outerIsMana : Bool := false
-      for ev in slice do
-        match ev.change with
-        | .engine (.proposedSpell (some _)) =>
-          return false
-        | .engine (.beginProposalAction kind) =>
-          if depth == 0 then
-            outerIsMana :=
-              match kind with
-              | .manaAbility _ => true
-              | _ => false
-          depth := depth + 1
-        | .engine .endProposalAction =>
-          if depth > 0 then
-            depth := depth - 1
-            if depth == 0 then
-              outerIsMana := false
+/-- Whether `g.currentBatch` is a paused batch that was awaiting a batch-pausing
+prompt (`.chooseReplacement` or `.chooseLegend`), rather than an open resolving
+or discard batch whose prompt was a non-pause choice (CR 608.2 / 616.1 / 704.3 /
+704.5j / 800.4a). -/
+def openBatchAwaitedPausePrompt (g : Game) : Bool :=
+  let isPausePrompt : Pending → Bool
+    | .chooseReplacement .. | .chooseLegend .. => true
+    | _ => false
+  match g.currentBatch with
+  | none => false
+  | some (curBid, _) =>
+    if isPausePrompt g.openBatchPending then true
+    else Id.run do
+      let earliestBatchIdx := findEarliestBatchIdx g curBid
+      let startIdx :=
+        if g.discardBatch.map Prod.fst == some curBid then
+          min ((g.discardBatch.map Prod.snd).getD earliestBatchIdx) earliestBatchIdx
+        else
+          let closeIdx? :=
+            (g.pendingReplacement.bind (findPausedCloseBatchFor? curBid)).orElse
+              (fun _ => g.outerPendingReplacements.findSomeRev? (findPausedCloseBatchFor? curBid))
+          min (closeIdx?.getD earliestBatchIdx) earliestBatchIdx
+      let endIdx :=
+        match g.targetProposalCheckpoint? with
+        | some ckpt =>
+          if ckpt.currentBatch.map Prod.fst == some curBid then
+            min ckpt.eventsSize g.events.size
+          else g.events.size
+        | none => g.events.size
+      let mut inCurBid := true
+      let mut lastNonNone? : Option Pending := none
+      for i in [startIdx : endIdx] do
+        match g.events[i]! with
+        | .engine _ .clearPausedBatch _ =>
+          inCurBid := false
+        | .engine _ (.pauseBatch bid ..) _ =>
+          inCurBid := bid == curBid
+        | .rules _ (.player (.leftGame _)) _ batch =>
+          if batch != some curBid then
+            inCurBid := false
+        | .engine _ (.pending p) _ =>
+          if inCurBid && p != .none then
+            lastNonNone? := some p
         | _ => pure ()
-      return depth > 0 && outerIsMana
-
-/-- Whether `g.proposalCheckpoint` is a standalone mana-ability checkpoint
-with no enclosing spell/ability proposal (`g.outerProposalCheckpoints.isEmpty &&
-g.proposalCheckpoint.isSome && g.proposedSpell.isNone`). -/
-def isStandaloneManaProposalCheckpoint (g : Game) : Bool :=
-  g.outerProposalCheckpoints.isEmpty && g.proposalCheckpoint.isSome && g.proposedSpell.isNone
-
-/-- Whether `g.proposalCheckpoint` is an active mana-ability checkpoint
-(either nested inside a spell/ability proposal or standalone). -/
-def hasActiveManaProposalCheckpoint (g : Game) : Bool :=
-  g.isNestedManaProposalCheckpoint || g.isStandaloneManaProposalCheckpoint
-
-/-- If `g.proposalCheckpoint` is a nested mana-ability checkpoint inside an
-enclosing spell/ability proposal, pop that nested mana checkpoint once via
-`EngineChange.clearProposalCheckpoint` so the caller reads and reverses the
-enclosing spell checkpoint (CR 601.2 / 602.2 / 605.3 / 733.1). -/
-def popNestedManaProposalCheckpoint (g : Game) : Game :=
-  if g.isNestedManaProposalCheckpoint then g.change .clearProposalCheckpoint else g
-
-/-- The active spell/ability proposal checkpoint that an aborted proposal rewind
-targets: when `g.isNestedManaProposalCheckpoint` holds, the outer spell/ability
-checkpoint on `g.outerProposalCheckpoints.back?` (falling back to
-`g.proposalCheckpoint`), and `g.proposalCheckpoint` otherwise (matching
-`popNestedManaProposalCheckpoint` and `EngineChange.clearProposalCheckpoint`). -/
-def targetProposalCheckpoint? (g : Game) : Option ProposalCheckpoint :=
-  if g.isNestedManaProposalCheckpoint then
-    g.outerProposalCheckpoints.back?.orElse (fun _ => g.proposalCheckpoint)
-  else
-    g.proposalCheckpoint
-
-/-- Whether `g.currentBatch` is the pre-existing open batch recorded on
-`g.targetProposalCheckpoint?` (`ckpt.currentBatch.map Prod.fst ==
-g.currentBatch.map Prod.fst` for some open batch). -/
-def isPreProposalCheckpointBatch (g : Game) : Bool :=
-  match g.currentBatch, g.targetProposalCheckpoint? with
-  | some (curBid, _), some ckpt => ckpt.currentBatch.map Prod.fst == some curBid
-  | _, _ => false
+      match lastNonNone? with
+      | some p => return isPausePrompt p
+      | none =>
+        let mut j := startIdx
+        while j > 0 do
+          j := j - 1
+          match g.events[j]! with
+          | .engine _ (.pending p) _ =>
+            if p != .none then
+              return isPausePrompt p
+          | .engine _ .clearPausedBatch _
+          | .engine _ (.pauseBatch ..) _
+          | .rules _ (.player (.leftGame _)) _ _ =>
+            return false
+          | _ => pure ()
+        return false
 
 /-- Roll back an active proposal aborted by a player's departure using
 `reverseToProposalCheckpoint?`, the reversal log, and `runPostCastCleanup`
@@ -2969,6 +3150,7 @@ def flushDismissedPausedBatch (g : Game) (saved? : Option Pending) (popOuter : B
     Game × Bool :=
   if g.over || g.sbaPaused || g.pending != .none then (g, popOuter)
   else if hasDeferredRewind && g.isPreProposalCheckpointBatch then (g, popOuter)
+  else if !g.openBatchAwaitedPausePrompt then (g, popOuter)
   else if !saved?.all g.batchPausePromptGoneOrInvalid then
     (g, popOuter)
   else
@@ -3039,7 +3221,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
     let wasMonarch := (g.player p).isMonarch
     let owned := g.objects.filter (fun o =>
       o.owner == p && o.zone != .ante &&
-        ((o.zone != .stack && o.zone != .command) || representedByCard o || g.controlledBy o p))
+        (o.zone != .stack || representedByCard o || g.controlledBy o p))
     let linkedExileIds := owned.foldl (fun acc o =>
       if o.zone == .battlefield then acc ++ o.linkedExile else acc) #[]
     let savedPausedBatch? :=
@@ -3103,13 +3285,18 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               g.changes #[.popOuterPendingReplacement, .pushOuterPendingReplacement cleared]
             else g
         | _, _ => g
+      let clearingAtStart := abortingReplacementProposal && !rewindAbortedProposal
+      let startClearChanges :=
+        if clearingAtStart then clearAbortedProposalChanges g false else #[]
+      let clearedAbortedCkpt0 :=
+        clearingAtStart &&
+          startClearChanges.any (fun c =>
+            match c with | .clearProposalCheckpoint => true | _ => false)
       let g :=
         g.changes
           ((if g.pending != .none then #[EngineChange.pending .none] else #[]) ++
            (if g.pendingReplacement.isSome then #[EngineChange.pendingReplacement none] else #[]) ++
-           (if abortingReplacementProposal && !rewindAbortedProposal then
-              #[EngineChange.proposedSpell none, EngineChange.clearProposalCheckpoint]
-            else #[]))
+           startClearChanges)
       let g := g.appendDepartedManyToContinuations departed
       let preLeave := g
       let g := g.record (GameEvent.playerLeftGame g.turnNumber p (cause := cause))
@@ -3132,6 +3319,9 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           match e with
           | .layered _ (.control c) _ => if c == p then some eid else none
           | _ => none
+      let withoutDepartingCtrl (g0 : Game) : Game :=
+        if ctrlEids.isEmpty then g0
+        else { g0 with activeEffects := g0.activeEffects.filter (fun (eid, _) => !ctrlEids.contains eid) }
       let expireControlsPlayers (g0 : Game) : Game :=
         g0.activeEffects.foldl (fun acc (eid, e) =>
           match e with
@@ -3141,46 +3331,17 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
             else acc
           | _ => acc) g0
       let ownedIds := owned.map (·.id)
-      let coDepartingIds : Array ObjectId := Id.run do
-        let mut cur : Game := {
-          g with
-          objects := g.objects.filter (fun o => !ownedIds.contains o.id)
-          activeEffects := g.activeEffects.filter fun (eid, e) =>
-            !ctrlEids.contains eid &&
-              match e with
-              | .layered _ (.control _) (.whileSourceOnBattlefield src)
-              | .layered _ (.control _) (.untilSourceLeaves src)
-              | .layered _ (.control _) (.whileSourceHasCounter src _)
-              | .layered _ (.control _) (.whileInZone src _) =>
-                !ownedIds.contains src
-              | _ => true
-        }
-        let mut extra : Array ObjectId := #[]
-        for _ in [0:cur.objects.size] do
-          let departing := cur.objects.filter fun o =>
-            let fallback := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
-            cur.controlledBy o p ||
-              (o.isBattlefieldObject && (cur.appliedControlEffectIds o).isEmpty &&
-                (cur.player fallback).leftTheGame)
-          if departing.isEmpty then
-            break
-          for o in departing do
-            if !extra.contains o.id then
-              extra := extra.push o.id
-          let depIds := departing.map (·.id)
-          cur := {
-            cur with
-            objects := cur.objects.filter (fun o => !depIds.contains o.id)
-            activeEffects := cur.activeEffects.filter fun (_, e) =>
-              match e with
-              | .layered _ (.control _) (.whileSourceOnBattlefield src)
-              | .layered _ (.control _) (.untilSourceLeaves src)
-              | .layered _ (.control _) (.whileSourceHasCounter src _)
-              | .layered _ (.control _) (.whileInZone src _) =>
-                !depIds.contains src
-              | _ => true
-          }
-        return ownedIds ++ extra
+      let stackCmdCeaseIds :=
+        let postCtrlG := withoutDepartingCtrl g
+        g.objects.filterMap fun o =>
+          if !ownedIds.contains o.id && !representedByCard o &&
+              ((o.zone == .stack && postCtrlG.controlledBy o p) ||
+               (o.zone == .command && (o.owner == p || postCtrlG.controlledBy o p))) then
+            some o.id
+          else none
+      let coDepartingIds : Array ObjectId :=
+        g.coDepartingIds (ownedIds ++ stackCmdCeaseIds)
+          (endingCtrlEids := ctrlEids) (departingPlayer? := some p)
       let preExpireLeave (g0 : Game) : Game :=
         let g1 :=
           owned.foldl (fun acc o =>
@@ -3190,7 +3351,20 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               acc.objectLeavesTheGame o p (reconcileControl := false)
                 (returnLinkedExile := false) (preState? := some preLeave)
                 (skipUnattachIds := coDepartingIds)) g0
-        expireControlsPlayers g1
+        let g2 := expireControlsPlayers g1
+        let g3 :=
+          g2.objects.foldl (fun acc o =>
+            if o.zone == .stack && (withoutDepartingCtrl acc).controlledBy o p && !representedByCard o then
+              acc.ceaseToExist o.id (cause := cause) (reconcileControl := false)
+                (preState? := some preLeave) (skipLogIds := coDepartingIds)
+            else acc) g2
+        g3.objects.foldl (fun acc o =>
+          if o.zone == .command &&
+              (o.owner == p || (withoutDepartingCtrl acc).controlledBy o p) &&
+              !representedByCard o then
+            acc.ceaseToExist o.id (cause := cause) (reconcileControl := false)
+              (preState? := some preLeave) (skipLogIds := coDepartingIds)
+          else acc) g3
       let g :=
         g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (preExpire := preExpireLeave) (preState? := some preLeave)
@@ -3205,11 +3379,13 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
         g.objects.foldl (fun acc o =>
           if o.zone == .stack && acc.controlledBy o p && !representedByCard o then
             acc.ceaseToExist o.id (cause := cause) (reconcileControl := false)
+              (preState? := some preLeave) (skipLogIds := coDepartingIds)
           else acc) g
       let g :=
         g.objects.foldl (fun acc o =>
-          if o.zone == .command && acc.controlledBy o p && !representedByCard o then
+          if o.zone == .command && (o.owner == p || acc.controlledBy o p) && !representedByCard o then
             acc.ceaseToExist o.id (cause := cause) (reconcileControl := false)
+              (preState? := some preLeave) (skipLogIds := coDepartingIds)
           else acc) g
       let still := g.objects.filter (fun o =>
         let fallback := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
@@ -3237,9 +3413,11 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
         if g.priority == p then g.change (.priority (g.nextLiving p)) else g
       let g :=
         if g.pendingPriority == some p then g.change (.pendingPriority (some (g.nextLiving p))) else g
-      let runPostCastAndPropCleanup (g : Game) (curPending : Pending := g.pending) : Game × Pending :=
+      let runPostCastAndPropCleanup (g : Game) (curPending : Pending := g.pending)
+          (alreadyClearedCkpt : Bool := false) : Game × Pending :=
         let clearPropInCleanup : Array EngineChange :=
-          if !rewindAbortedProposal then #[.proposedSpell none, .clearProposalCheckpoint]
+          if !rewindAbortedProposal then
+            clearAbortedProposalChanges g alreadyClearedCkpt
           else #[]
         let orderBottomInCleanup (g : Game) (ids : Array ObjectId) (dest : Zone)
             (log : String) (cause : Option EventCause := none) : Game × Pending :=
@@ -3345,39 +3523,63 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               else (g, curPending)
             else (g, curPending)
           | none => (g, curPending)
+        let postCastSlice := g.events.extract prePostCastEvCount g.events.size
         let postCastTouchedPending :=
-          (g.events.extract prePostCastEvCount g.events.size).any fun ev =>
+          postCastSlice.any fun ev =>
             match ev with
             | .engine _ (.pending _) _ => true
             | _ => false
+        let postCastClearedCkpt :=
+          alreadyClearedCkpt ||
+            postCastSlice.any fun ev =>
+              match ev.change with
+              | .engine .clearProposalCheckpoint => true
+              | _ => false
         let curPending := if curPending == .none && postCastTouchedPending then g.pending else curPending
         let g :=
           if (!rewindAbortedProposal && wasAbortedProposal &&
-                (g.proposedSpell.isSome || g.proposalCheckpoint.isSome)) ||
+                (g.proposedSpell.isSome || (!postCastClearedCkpt && g.proposalCheckpoint.isSome))) ||
               g.proposedSpell.any (fun (prop : ProposedSpell) => prop.caster == p) then
-            g.changes #[.proposedSpell none, .clearProposalCheckpoint]
+            let cs := clearAbortedProposalChanges g postCastClearedCkpt
+            if cs.isEmpty then g else g.changes cs
           else g
         let (g, curPending) :=
           match g.pendingMayCastFromExile with
           | some (q, ids, left) =>
             let alive := ids.filter (fun id =>
               (g.findObject? id).any (fun (o : GameObject) => o.zone == Zone.exile && !g.isLand o))
-            if q == p || !g.stillInGame q || alive.isEmpty || left == 0 then
+            let ckptRestoresMayCast :=
+              (g : Game).targetProposalCheckpoint?.any fun (ckpt : ProposalCheckpoint) =>
+                (match ckpt.pending with
+                 | Pending.fraChoice r (.mayCastUpToFromExile ..) => r == q
+                 | _ => false) ||
+                  (ckpt.continuations.back?.getD {}).pendingMayCastFromExile.isSome
+            if q == p || !g.stillInGame q then
               (g.change (.pendingMayCastFromExile none), curPending)
-            else if wasAbortedProposal && curPending == Pending.none then
-              let nextP := Pending.fraChoice q (.mayCastUpToFromExile alive left)
-              let g :=
-                (g.change (.pendingMayCastFromExile none)).logMsg
-                  s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
-              (g, nextP)
-            else if alive != ids then
-              (g.change (.pendingMayCastFromExile (some (q, alive, left))), curPending)
+            else if !(wasAbortedProposal && rewindAbortedProposal && ckptRestoresMayCast) then
+              if alive.isEmpty || left == 0 then
+                (g.change (.pendingMayCastFromExile none), curPending)
+              else if wasAbortedProposal && curPending == Pending.none then
+                let nextP := Pending.fraChoice q (.mayCastUpToFromExile alive left)
+                let g :=
+                  (g.change (.pendingMayCastFromExile none)).logMsg
+                    s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
+                (g, nextP)
+              else if alive != ids then
+                (g.change (.pendingMayCastFromExile (some (q, alive, left))), curPending)
+              else (g, curPending)
             else (g, curPending)
           | none => (g, curPending)
         match g.pendingFreeCopies with
         | some (q, ids, budget, castsLeft) =>
           let alive := ids.filter (fun id =>
             (g.findObject? id).any (fun (o : GameObject) => o.zone == Zone.exile))
+          let ckptRestoresFreeCopies :=
+            (g : Game).targetProposalCheckpoint?.any fun (ckpt : ProposalCheckpoint) =>
+              (match ckpt.pending with
+               | Pending.fraChoice r (.castCopiesFree ..) => r == q
+               | _ => false) ||
+                (ckpt.continuations.back?.getD {}).pendingFreeCopies.isSome
           if q == p || !g.stillInGame q then
             let g :=
               if alive.isEmpty then g
@@ -3386,7 +3588,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                   alive.foldl (fun g id =>
                     g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
             (g.change (.pendingFreeCopies none), curPending)
-          else
+          else if !(wasAbortedProposal && rewindAbortedProposal && ckptRestoresFreeCopies) then
             let castable := alive.filter (fun id =>
               (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
             if castable.isEmpty || castsLeft == 0 then
@@ -3404,6 +3606,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
             else if alive != ids then
               (g.change (.pendingFreeCopies (some (q, alive, budget, castsLeft))), curPending)
             else (g, curPending)
+          else (g, curPending)
         | none => (g, curPending)
       let origBid? : Option BatchId := savedPausedBatch?.map (·.1)
       let deferPostCleanupAfterOrigBatch (preDismissed : Bool) (postPrompt : Pending)
@@ -3432,6 +3635,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           let choicesStillValidPre := g.replacementChoiceValid q choices (allowLost := true)
           let (g, postCleanupPending) :=
             runPostCastAndPropCleanup g (if choicesStillValidPre then preBodyPending else .none)
+              (alreadyClearedCkpt := clearedAbortedCkpt0)
           let g :=
             if g.pending != .none then g.change (.pending .none) else g
           let combinedOuter0? : Option PendingReplacement :=
@@ -3467,7 +3671,8 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
             if choicesStillValid then some preBodyPending else deferredPost?
           (g, (savedPreLeavePending?, combinedOuter?, hadPreBodyCont))
         else
-          let (g, postCleanupPending) := runPostCastAndPropCleanup g .none
+          let (g, postCleanupPending) :=
+            runPostCastAndPropCleanup g .none (alreadyClearedCkpt := clearedAbortedCkpt0)
           let openedNewReplacement :=
             match postCleanupPending with
             | .chooseReplacement .. => true
@@ -3520,12 +3725,14 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
             let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
             (g, (savedPreLeavePending?, combinedOuter?, hadPreBodyCont))
       | _ =>
+        let preRedirEvSize := g.events.size
         let (g, redirPending) : Game × Pending :=
           match preBodyPending, savedPausedBatch? with
           | .chooseLegend q name ids,
               some (origBid, origStartIdx, _, origCause, origObjs, origPls, origEffs, origPend, origStk) =>
             if q == p then
-              g.redirectPendingAfterLeave p (abortedProposal := wasAbortedProposal) (pending := preBodyPending)
+              g.redirectPendingAfterLeave p (abortedProposal := wasAbortedProposal)
+                (pending := preBodyPending) (alreadyClearedProposalCkpt := clearedAbortedCkpt0)
             else
               let gView : Game :=
                 { g with
@@ -3545,8 +3752,16 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               else
                 (g, preBodyPending)
           | _, _ =>
-            g.redirectPendingAfterLeave p (abortedProposal := wasAbortedProposal) (pending := preBodyPending)
-        let (g, postRedirPending) := runPostCastAndPropCleanup g redirPending
+            g.redirectPendingAfterLeave p (abortedProposal := wasAbortedProposal)
+              (pending := preBodyPending) (alreadyClearedProposalCkpt := clearedAbortedCkpt0)
+        let redirClearedCkpt :=
+          clearedAbortedCkpt0 ||
+            (g.events.extract preRedirEvSize g.events.size).any fun ev =>
+              match ev.change with
+              | .engine .clearProposalCheckpoint => true
+              | _ => false
+        let (g, postRedirPending) :=
+          runPostCastAndPropCleanup g redirPending (alreadyClearedCkpt := redirClearedCkpt)
         let openedNewReplacement :=
           match postRedirPending with
           | .chooseReplacement .. => true
