@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.TriggerArgs
+import Mtg.Engine.Game.Chapters
 
 /-!
 # Triggered-ability resolution (CR 603)
@@ -2826,26 +2826,6 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | .none =>
         g.withBatch none fun g =>
           g.destroyPermanentsLoop (objs.map (·.id)) (preBattlefield := some preBf)
-
-/-- Resolve `TriggerResolution.addMana`. Each printed combination keeps
-the behavior of the constructor it replaced. Any other count adds that
-much mana. A count that cannot be read adds nothing. -/
-def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (types : Array ManaType) (amount : TriggeredAbility.NumberSelector)
-    (targets : Array Target := #[])
-    (lastKnownPower : Option Int := none)
-    (lastKnownToughness : Option Int := none) : Game :=
-  let ctx : TriggerRead :=
-    { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
-  -- Zero additions log nothing. `.perChargeCounter` uses the last-known
-  -- charge total when the source has left.
-  match g.triggerCount ctx amount with
-  | none => g
-  | some n =>
-    if n == 0 then g
-    else
-      let types := types.foldl (fun acc t => acc ++ Array.replicate n t) #[]
-      g.addManaLogged controller types (source := sourceId)
 
 /-- Resolve `TriggerResolution.draw`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -5702,8 +5682,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
   | .createTokens kind (.fixed n) tapped .kind .you .none =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
-  | .addMana types (.fixed 1) =>
-    g.addManaLogged controller types (source := sourceId)
+  | .addMana types amount =>
+    g.applyAddMana controller sourceId types amount targets lastKnownPower lastKnownToughness
   | .discard (.cards n) => g.beginDiscardCards #[controller] n
   | r =>
     match Resolution.toSpell r with

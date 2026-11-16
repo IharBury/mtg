@@ -285,13 +285,16 @@ def reconcileControlAfterTransition (pre post : Game)
       g.outerPendingReplacements.any (inActiveEndControlExile oid)
   let g :=
     post.objects.foldl (fun acc o =>
-      if !o.isBattlefieldObject then acc
+      if !o.isOnBattlefield then acc
       else
         match pre.findObject? o.id, acc.findObject? o.id with
         | some preObj, some cur =>
-          if !preObj.isBattlefieldObject || !cur.isBattlefieldObject then acc
+          if !preObj.isBattlefieldObject || !cur.isOnBattlefield then acc
           else
-            match pre.controllerOf preObj with
+            let prev? :=
+              if preObj.isOnBattlefield then pre.controllerOf preObj
+              else (acc.players.find? (fun pl => pl.ringBearerId == some cur.id)).map (·.id)
+            match prev? with
             | some prev =>
               if acc.controllerOf cur != some prev && (acc.player prev).ringBearerId == some cur.id then
                 acc.record (GameEvent.designation acc.turnNumber (acc.snapshot cur) .ringBearer false
@@ -307,13 +310,36 @@ def reconcileControlAfterTransition (pre post : Game)
         match pre.findObject? cur.id with
         | none => none
         | some preObj =>
-          if !preObj.isOnBattlefield then none
-          else if !(pre.appliedControlEffectIds preObj).isEmpty &&
-              (g.appliedControlEffectIds cur).isEmpty then
-            let fallback := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
-            if (g.player fallback).leftTheGame && !alreadyQueuedForExile g cur.id then
-              some (cur.id, s!"{g.name cur} is exiled (CR 800.4c)", pre.controllerOf preObj)
+          if preObj.isOnBattlefield then
+            if !(pre.appliedControlEffectIds preObj).isEmpty &&
+                (g.appliedControlEffectIds cur).isEmpty then
+              let fallback := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
+              if (g.player fallback).leftTheGame && !alreadyQueuedForExile g cur.id then
+                some (cur.id, s!"{g.name cur} is exiled (CR 800.4c)", pre.controllerOf preObj)
+              else none
             else none
+          else if preObj.isBattlefieldObject then
+            if !(g.appliedControlEffectIds cur).isEmpty then none
+            else
+              let fallback := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
+              if !(g.player fallback).leftTheGame || alreadyQueuedForExile g cur.id then none
+              else
+                let prePoIdx :=
+                  match pre.latestPhaseOutIdxOf? preObj with
+                  | some poIdx => pre.phaseOutBatchStartIdx poIdx
+                  | none => 0
+                let gAtPo :=
+                  if !(pre.appliedControlEffectIds preObj).isEmpty then pre
+                  else pre.mkHistoricalGameAt prePoIdx
+                let hadPriorCtrl :=
+                  !(pre.appliedControlEffectIds preObj).isEmpty ||
+                    (gAtPo.findObject? cur.id).any (fun oPo => !(gAtPo.appliedControlEffectIds oPo).isEmpty)
+                if hadPriorCtrl then
+                  let lkiCtrl :=
+                    (pre.controllerOf preObj).orElse fun _ =>
+                      (gAtPo.findObject? cur.id).bind gAtPo.controllerOf
+                  some (cur.id, s!"{g.name cur} is exiled (CR 800.4c)", lkiCtrl)
+                else none
           else none
   if exileQueue.isEmpty then g
   else
@@ -529,7 +555,7 @@ def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := fals
         g.outerPendingReplacements.any (inActiveEndControlExile oid)
     let orphanExiles : Array (ObjectId × String × Option PlayerId) :=
       g.objects.filterMap fun cur =>
-        if !cur.isBattlefieldObject || alreadyQueued cur.id then none
+        if !cur.isOnBattlefield || alreadyQueued cur.id then none
         else
           let noLiveCtrl :=
             match g.controllerOf cur with
@@ -596,6 +622,14 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
         | .layered _ (.control _) (.whileSourceHasCounter src k) =>
           if src == id && zeroedKinds.contains k then some eid else none
         | _ => none
+      let endingEmbIds : Array ObjectId :=
+        g.activeEffects.foldl (fun acc (_, e) =>
+          match e with
+          | .gameRule (.fraEmblem embId) (.whileSourceHasCounter src k) =>
+            if src == id && zeroedKinds.contains k && !acc.contains embId then acc.push embId
+            else acc
+          | _ => acc) #[]
+      let skipIds := g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
       let preExpire (g0 : Game) : Game :=
         let g1 :=
           g0.restoreCopiesWhere
@@ -603,7 +637,7 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
               match d with
               | .whileSourceHasCounter src k => src == id && zeroedKinds.contains k
               | _ => false)
-            (cause := expCause) (reconcileControl := false)
+            (cause := expCause) (reconcileControl := false) (skipLogIds := skipIds)
         let g2 :=
           g1.ceaseEndingFraEmblemsWhere
             (fun _ d =>
@@ -611,6 +645,7 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
               | .whileSourceHasCounter src k => src == id && zeroedKinds.contains k
               | _ => false)
             (cause := expCause) (reconcileControl := false) (preState? := some pre)
+            (skipLogIds := skipIds)
         g2.expireMatching
           (fun s =>
             match s with
@@ -622,7 +657,7 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
           (cause := expCause) (reconcileControl := false) (preState? := some pre)
       if !ctrlEids.isEmpty || hadWhileCounterCtrlOrCopy then
         return g.endControlEffectsSimultaneously ctrlEids (cause := expCause)
-          (preExpire := preExpire) (preState? := some pre)
+          (preExpire := preExpire) (preState? := some pre) (extraSkipIds := skipIds)
       else
         return preExpire g
 
@@ -3561,7 +3596,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                   alive.foldl (fun g id =>
                     g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
             (g.change (.pendingFreeCopies none), curPending)
-          else if !(wasAbortedProposal && rewindAbortedProposal) then
+          else if wasAbortedProposal && !rewindAbortedProposal then
             let castable := alive.filter (fun id =>
               (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
             if castable.isEmpty || castsLeft == 0 then
@@ -3572,10 +3607,16 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                     alive.foldl (fun g id =>
                       g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
               (g.change (.pendingFreeCopies none), curPending)
-            else if wasAbortedProposal && curPending == Pending.none then
+            else if curPending == Pending.none then
               let nextP := Pending.fraChoice q (.castCopiesFree alive budget castsLeft)
               let g := g.change (.pendingFreeCopies none)
               (g, nextP)
+            else if alive != ids then
+              (g.change (.pendingFreeCopies (some (q, alive, budget, castsLeft))), curPending)
+            else (g, curPending)
+          else if !wasAbortedProposal then
+            if alive.isEmpty then
+              (g.change (.pendingFreeCopies none), curPending)
             else if alive != ids then
               (g.change (.pendingFreeCopies (some (q, alive, budget, castsLeft))), curPending)
             else (g, curPending)

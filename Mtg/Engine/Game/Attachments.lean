@@ -60,6 +60,11 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
         zone := old.zone }
     let g := g.record (GameEvent.ceasedToExist g.turnNumber snap (cause := effCause))
     let expCause := cause.orElse (fun _ => some (.gameRule .leavingZone))
+    let g :=
+      if old.zone == .command then
+        g.restoreCopiesWhere (fun _ _ _ d => d == .whileInZone id .command)
+          (cause := expCause) (reconcileControl := false) (skipLogIds := skipLogIds)
+      else g
     let g := g.expireEffectsOnLeavingObject old (cause := expCause) (reconcileControl := false)
     let g :=
       if old.zone == .battlefield then
@@ -78,7 +83,8 @@ matching `pred eid d`, recording `ceasedToExist` before `effectExpired` and logg
 `s!"{embName} ends"` (CR 114.5 / 611.2a). -/
 def ceaseEndingFraEmblemsWhere (g : Game) (pred : EffectId → EffectDuration → Bool)
     (cause : Option EventCause := none) (reconcileControl : Bool := false)
-    (preState? : Option Game := none) : Game :=
+    (preState? : Option Game := none)
+    (skipLogIds : Array ObjectId := #[]) : Game :=
   let pre := preState?.getD g
   let endingIds : Array ObjectId :=
     g.activeEffects.foldl (fun acc (eid, e) =>
@@ -92,7 +98,8 @@ def ceaseEndingFraEmblemsWhere (g : Game) (pred : EffectId → EffectDuration �
       if o.zone == .command then
         let embName := pre.name ((pre.findObject? o.id).getD o)
         (acc.ceaseToExist o.id (cause := cause) (reconcileControl := reconcileControl)
-          (suppressReturnLog := true) (preState? := some pre)).logMsg s!"{embName} ends"
+          (suppressReturnLog := true) (preState? := some pre)
+          (skipLogIds := skipLogIds)).logMsg s!"{embName} ends"
       else acc
     | none => acc) g
 

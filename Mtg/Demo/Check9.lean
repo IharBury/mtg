@@ -252,3 +252,99 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   mustHoldCheck9 "parseTargetOk" parseTargetOk &&
   mustHoldCheck9 "prioActionOk" prioActionOk &&
   mustHoldCheck9 "renderLayeredOk" renderLayeredOk
+
+
+/- Phase 46 Items 2 & 4: `Demo.Render` multi-grantee / `prepareSource` exile permissions and
+`Demo` full `proposedAllowances` + `tapPreservesPostManaCosts` on `uniquePayingSourceSet`. -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let gMain := emptyHand afterDraw p0
+  -- 1. Multi-grantee exile permissions: `p0` free (`withoutManaCost := true`) + later `p1` paid:
+  let gMultiEx0 := insertObject gMain grayOgre p1 .exile
+  let exId := (gMultiEx0.objects.filter (·.zone == .exile)).back!.id
+  let gMultiEx :=
+    ((gMultiEx0.createEffect
+        (.permission (some p0) (.playFromExile exId { player := p0, withoutManaCost := true }) (.untilNextTurnOf p0))
+        (cause := some (.gameRule .staticAbility))).createEffect
+      (.permission (some p1) (.playFromExile exId { player := p1 }) .untilEndOfTurn)
+      (cause := some (.gameRule .staticAbility)))
+  let multiExObj := gMultiEx.object! exId
+  let multiRenderOk :=
+    exilePlayManaCost gMultiEx multiExObj == "{0}" &&
+    mentions (exilePlayPermissionClause gMultiEx multiExObj) "may be played by Chandra without paying its mana cost" &&
+    mentions (exilePlayPermissionClause gMultiEx multiExObj) "may be played by Nissa)"
+  -- 2. Stolen `prepareSource` attributes exile permission to new controller `p1`:
+  let prepDef : CardDef := {
+    grizzlyBears with
+    name := "P46 PrepScout"
+    prepareFace := some {
+      name := "P46 ScoutCall"
+      manaCost := ManaCost.empty
+      types := #[.instant]
+      spellEffect := some (Effect.gainLife 1)
+    }
+  }
+  let gPrep0 := (addPermanent gMain prepDef p0 p0)
+  let prepObj := (gPrep0.permanentsOf p0).back!
+  let gPrep1 := gPrep0.becomePrepared prepObj
+  let prepCopyId := (gPrep1.objects.filter (·.zone == .exile)).back!.id
+  let gPrepStolen :=
+    gPrep1.createEffect (.layered (.objects #[prepObj.id]) (.control p1) .untilEndOfTurn)
+  let stolenPrepRenderOk :=
+    mentions (exilePlayPermissionClause gPrepStolen (gPrepStolen.object! prepCopyId)) "may be played by Nissa" &&
+    !mentions (exilePlayPermissionClause gPrepStolen (gPrepStolen.object! prepCopyId)) "Chandra"
+  -- 3. `Demo` `canPayProposed`, `defaultTapMana`, `hasGameStatePriorityAction`, and `hasUniqueManaPayment`
+  --    with `.subtypeSpellOrSource .goblin` and post-mana `.crew 2` preservation:
+  let gobShrineDef : CardDef := {
+    name := "P46 GobShrine"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { tap := true }
+      effect := { resolution := .addAnyColorSpendOnlySubtype .goblin, phrase := "Add one mana for Goblin." }
+    }]
+  }
+  let gobAbDef : CardDef := {
+    ragingGoblin with
+    name := "P46 GobMage"
+    activatedAbilities := #[{ cost := { mana := ManaCost.ofGeneric 1 }, effect := Effect.gainLife 1 }]
+  }
+  let gGobDemo0 := addPermanent (addPermanent gMain gobShrineDef p0 p0) gobAbDef p0 p0
+  let shrineObj := (gGobDemo0.permanentsOf p0).find? (·.name == "P46 GobShrine") |>.get!
+  let gobMageId := (gGobDemo0.permanentsOf p0).find? (·.name == "P46 GobMage") |>.get!.id
+  let gGobPool :=
+    match gGobDemo0.activateManaAbility p0 shrineObj.id 0 #[.colored .red] with
+    | .ok g => g
+    | .error e => panic! e
+  let gGobPoolProp := mustApply gGobPool p0 (.activate gobMageId 0)
+  let gGobProp := mustApply gGobDemo0 p0 (.activate gobMageId 0)
+  -- Post-mana `.crew 2` preservation in `hasUniqueManaPayment`: `[dork22 ({G}, 2/2), forest ({G})]` for `{1}` + `Crew 2`
+  -- has a UNIQUE cost-preserving paying source (`#[forest]`, since `#[dork22]` breaks `Crew 2`!):
+  let dork22 : CardDef := { grizzlyBears with name := "P46 CrewDork", tapAddMana := #[.colored .green] }
+  let crewVeh : CardDef := {
+    name := "P46 Skiff"
+    types := #[.artifact]
+    subtypes := #["Vehicle"]
+    power := some 4
+    toughness := some 4
+    activatedAbilities := #[{ cost := { mana := ManaCost.ofGeneric 1, fra := .crew 2 }, effect := Effect.gainLife 1 }]
+  }
+  let gUniqueCrew0 := addPermanent (addPermanent (addPermanent gMain crewVeh p0 p0) dork22 p0 p0) forest p0 p0
+  let skiffId := (gUniqueCrew0.permanentsOf p0).find? (·.name == "P46 Skiff") |>.get!.id
+  let forestId := (gUniqueCrew0.permanentsOf p0).find? (·.name == forest.name) |>.get!.id
+  let gUniqueCrewProp := mustApply gUniqueCrew0 p0 (.activate skiffId 0)
+  let demoAllowancesAndCrewOk :=
+    hasGameStatePriorityAction gGobPool p0 &&
+    canPayProposed gGobPoolProp p0 gGobPoolProp.proposedSpell.get! &&
+    defaultTapMana gGobProp p0 (gGobProp.object! shrineObj.id) == some (.colored .white) &&
+    hasUniqueManaPayment gUniqueCrewProp &&
+    (let prop := gUniqueCrewProp.proposedSpell.get!
+     let a := gUniqueCrewProp.proposedAllowances prop
+     match uniquePayingSourceSet gUniqueCrewProp (gUniqueCrewProp.player p0).manaPool prop.cost
+       false false (gUniqueCrewProp.manaSourcesForProposed p0 prop) a (some (p0, prop)) with
+     | some #[src] => src.1.id == forestId
+     | _ => false)
+  mustHoldCheck9 "p46_multiRenderOk" multiRenderOk &&
+  mustHoldCheck9 "p46_stolenPrepRenderOk" stolenPrepRenderOk &&
+  mustHoldCheck9 "p46_demoAllowancesAndCrewOk" demoAllowancesAndCrewOk
+

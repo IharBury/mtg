@@ -104,7 +104,9 @@ private def preBatchBoardFor (g : Game) (old : GameObject) : Game × GameObject 
         stack := g.openBatchStack }
     match preG.findObject? old.id with
     | some preOld =>
-      if preOld.zone == old.zone then (preG, preOld) else (g, old)
+      if preOld.zone == old.zone && preOld.status.phasedOut == old.status.phasedOut then
+        (preG, preOld)
+      else (g, old)
     | none => (g, old)
   else (g, old)
 

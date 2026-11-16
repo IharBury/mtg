@@ -192,7 +192,8 @@ def phaseOutPermanents (g : Game) (targets : Array GameObject)
 
 /-- Phase `o` in, along with anything that phased out attached to it.
 Counters and “as this enters” choices are kept. Does not trigger enters (CR 702.26c / 702.26d / 702.26g). -/
-def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Game :=
+def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none)
+    (reconcile : Bool := true) : Game :=
   match g.findObject? o.id with
   | none => g
   | some live =>
@@ -201,7 +202,7 @@ def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Ga
       let resolvedCause :=
         g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf live)
           (defaultCause := .turnBased .phaseInOut)
-      (g.withBatchCore (some resolvedCause) fun g =>
+      let runBody (g : Game) : Game :=
         let pre := g
         let g := g.record (GameEvent.phasedIn g.turnNumber (g.snapshot live) false (cause := resolvedCause))
         let oName := g.name (g.object! live.id)
@@ -221,19 +222,26 @@ def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none) : Ga
                 acc := acc.logMsg s!"{acc.name (acc.object! att.id)} phases in still attached to {hostName}"
                 queue := queue.push att.id
           return acc
-        reconcileControlAfterTransitionFwd pre g (cause := some resolvedCause)).flushQueuedLinkedExileFwd
+        if reconcile then
+          reconcileControlAfterTransitionFwd pre g (cause := some resolvedCause)
+        else g
+      if reconcile then
+        (g.withBatchCore (some resolvedCause) runBody).flushQueuedLinkedExileFwd
+      else
+        g.withBatchCore (some resolvedCause) runBody
 
 /-- Continue phasing in `remainingIds` sequentially inside the enclosing
 simultaneous phase-in batch, pausing and chaining `.phaseInControlledLoop` if
 a CR 616.1 / 800.4c replacement or legend choice opens (CR 502.1 / 703.4a). -/
 def phaseInControlledLoop (g : Game) (remainingIds : Array ObjectId)
-    (cause : Option EventCause := none) : Game := Id.run do
+    (cause : Option EventCause := none) (preSnap? : Option Game := none) : Game := Id.run do
+  let entryEvLen := g.events.size
   let mut g := g
   for i in [0:remainingIds.size] do
     let id := remainingIds[i]!
     if let some o := g.findObject? id then
       if o.zone == .battlefield && o.status.phasedOut && o.status.phasedWith.isNone then
-        g := g.phaseIn o (cause := cause)
+        g := g.phaseIn o (cause := cause) (reconcile := false)
         let paused :=
           match g.pending with
           | .chooseReplacement .. | .chooseLegend .. => true
@@ -243,6 +251,26 @@ def phaseInControlledLoop (g : Game) (remainingIds : Array ObjectId)
           if !rem.isEmpty then
             g := g.chainPendingReplacement (.phaseInControlledLoop rem cause)
           return g
+  let resolvedPre? : Option Game :=
+    match preSnap? with
+    | some preSnap =>
+      if entryEvLen < g.events.size then some preSnap else none
+    | none =>
+      let preBatchIdx? : Option Nat :=
+        match g.currentBatch with
+        | some (bid, _) =>
+          Id.run do
+            for rev in [0:g.events.size] do
+              let idx := g.events.size - 1 - rev
+              if g.events[idx]!.batch == some bid then
+                return some (g.phaseOutBatchStartIdx idx)
+            return none
+        | none =>
+          if entryEvLen < g.events.size then some entryEvLen else none
+      preBatchIdx?.map g.mkHistoricalGameAt
+  if let some preSnap := resolvedPre? then
+    let stepCause := g.resolveOptionalCause cause (defaultCause := .turnBased .phaseInOut)
+    g := reconcileControlAfterTransitionFwd preSnap g (cause := some stepCause)
   return g
 
 /-- Whether departed player `dep`'s next turn would have begun in `g.events`
@@ -262,6 +290,47 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
   let mut alive : Array Bool := Array.ofFn (n := n) fun ⟨k, _⟩ =>
     let pk : PlayerId := ⟨k⟩
     g.stillInGame pk || hasLeaveEvent pk
+  let preLogRegSeat : PlayerId := Id.run do
+    let mut aliveScan := alive
+    let mut seenTurnBegan := false
+    let mut preStepReg? : Option PlayerId := none
+    for ev in g.events do
+      match ev.change with
+      | .engine (.addPlayer pl) =>
+        if pl.id.idx < n then
+          aliveScan := aliveScan.set! pl.id.idx (!pl.lost && !pl.leftTheGame)
+      | .engine (.startingPlayer v) =>
+        return v
+      | .rules (.player (.lost q ..))
+      | .rules (.player (.leftGame q)) =>
+        if q.idx < n then
+          aliveScan := aliveScan.set! q.idx false
+      | .rules (.turn (.stepBegan _ ap))
+      | .rules (.turn (.turnEnded ap)) =>
+        if !seenTurnBegan && preStepReg?.isNone && !g.inferPreLogTurnIsExtra ap ev.turn then
+          preStepReg? := some ap
+      | .rules (.turn (.turnBegan q extra)) =>
+        seenTurnBegan := true
+        if !extra then
+          if let some ap := preStepReg? then
+            return ap
+          let qTeam := g.teamMembers q
+          let qPos := (qTeam.findIdx? (· == q)).getD 0
+          let earlierAlive :=
+            (qTeam.extract 0 qPos).filter (fun m => m.idx < n && aliveScan[m.idx]!)
+          if !earlierAlive.isEmpty then
+            return earlierAlive.back!
+          for k in [1 : n + 1] do
+            let prev : PlayerId := ⟨(q.idx + n - k) % n⟩
+            if prev.idx < n && aliveScan[prev.idx]! && !g.areTeammates prev q then
+              return prev
+          let lr := g.lastRegularTurnSeat
+          return if lr.idx < n then lr else q
+      | _ => pure ()
+    if let some ap := preStepReg? then
+      return ap
+    let lr := g.lastRegularTurnSeat
+    return if lr.idx < n then lr else (if g.activePlayer.idx < n then g.activePlayer else ⟨0⟩)
   let (initAp, initSeats, initSeatsExtra) : PlayerId × Array PlayerId × Bool := Id.run do
     let mut aliveScan := alive
     for ev in g.events do
@@ -284,26 +353,17 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
         let isExtra := g.inferPreLogTurnIsExtra ap ev.turn
         return (ap, initSeats, isExtra)
       | .rules (.turn (.turnBegan p extra)) =>
-        let mut prev? : Option PlayerId := none
-        for k in [1 : n + 1] do
-          let q : PlayerId := ⟨(p.idx + n - k) % n⟩
-          if q.idx < n && aliveScan[q.idx]! then
-            prev? := some q
-            break
-        let prev := prev?.getD (if g.startingPlayer.idx < n then g.startingPlayer else p)
         let team := g.teamMembers p
-        let sameSharedPrev :=
-          g.areTeammates prev p &&
-            match team.findIdx? (· == prev), team.findIdx? (· == p) with
-            | some ia, some ib => ia < ib
-            | _, _ => false
-        let prevPos := (team.findIdx? (· == prev)).getD 0
-        let prevSeats :=
-          if sameSharedPrev then
-            let s0 := team.extract 0 (prevPos + 1)
-            if s0.isEmpty then #[prev] else s0
-          else #[prev]
-        return (prev, prevSeats, if sameSharedPrev then extra else g.hasPreLogPowerUpsForbidden)
+        let pPos := (team.findIdx? (· == p)).getD 0
+        let earlierAlive :=
+          (team.extract 0 pPos).filter (fun m => m.idx < n && aliveScan[m.idx]!)
+        if !earlierAlive.isEmpty then
+          return (earlierAlive.back!, earlierAlive, extra)
+        let prevTeam := g.teamMembers preLogRegSeat
+        let prevTeamAlive := prevTeam.filter (fun m => m.idx < n && aliveScan[m.idx]!)
+        let prevSeats := if prevTeamAlive.isEmpty then #[preLogRegSeat] else prevTeamAlive
+        let prevAp := prevSeats.back? |>.getD preLogRegSeat
+        return (prevAp, prevSeats, g.hasPreLogPowerUpsForbidden)
       | _ => pure ()
     let fallback := if g.activePlayer.idx < n then g.activePlayer else ⟨0⟩
     let fbTeam := g.teamMembers fallback
@@ -345,8 +405,7 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
   let mut seatsExtra : Bool := initSeatsExtra
   let initRegSeat : PlayerId :=
     if !initSeatsExtra then initAp
-    else if g.startingPlayer.idx < n then g.startingPlayer
-    else initAp
+    else preLogRegSeat
   let mut lastRegEnd : PlayerId := teamEndOf initRegSeat
   let isAlive (al : Array Bool) (q : PlayerId) : Bool :=
     q.idx < n && al[q.idx]!
@@ -492,7 +551,7 @@ def phaseInControlled (g : Game) (p : PlayerId) : Game :=
         if shouldPhaseIn then some o.id else none
       else none
   (g.withBatchCore cause fun g =>
-    g.phaseInControlledLoop targetIds (cause := cause)).flushQueuedLinkedExileFwd
+    g.phaseInControlledLoop targetIds (cause := cause) (preSnap? := some g)).flushQueuedLinkedExileFwd
 
 end Game
 end Mtg.Engine

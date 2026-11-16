@@ -437,34 +437,20 @@ private def mergeLeaveArgs (g : Game)
   let rw? := rw0 <|> rewindProposalIn
   return (g, saved?, popOuter, departed, rw?)
 
-private def mergeLeaveIntoCont? (g : Game)
-    (savedIn : Option Pending) (popOuterIn : Bool)
-    (departedIn : Array PlayerId) (rewindProposalIn : Option Bool) :
-    PendingReplacement → Option (Game × PendingReplacement)
-  | .leavePlayersWhoLost s0 po0 d0 rw0 =>
-    let (g', sm, pom, dm, rwm) :=
-      mergeLeaveArgs g s0 po0 d0 rw0 savedIn popOuterIn departedIn rewindProposalIn
-    some (g', .leavePlayersWhoLost sm pom dm rwm)
+private def splitFirstLeaveOrSba? :
+    PendingReplacement →
+      Option (Option PendingReplacement × PendingReplacement × Option PendingReplacement)
+  | pr@(.leavePlayersWhoLost ..) => some (none, pr, none)
+  | .checkSBA => some (none, .checkSBA, none)
   | .seq a b =>
-    match mergeLeaveIntoCont? g savedIn popOuterIn departedIn rewindProposalIn a with
-    | some (g', a') => some (g', .seq a' b)
+    match splitFirstLeaveOrSba? a with
+    | some (before?, leaf, after?) =>
+      some (before?, leaf, seqOptPending after? (some b))
     | none =>
-      match mergeLeaveIntoCont? g savedIn popOuterIn departedIn rewindProposalIn b with
-      | some (g', b') => some (g', .seq a b')
+      match splitFirstLeaveOrSba? b with
+      | some (before?, leaf, after?) =>
+        some (seqOptPending (some a) before?, leaf, after?)
       | none => none
-  | _ => none
-
-private def upgradeCheckSbaToLeave?
-    (savedIn : Option Pending) (popOuterIn : Bool)
-    (departedIn : Array PlayerId) (rewindProposalIn : Option Bool) :
-    PendingReplacement → Option PendingReplacement
-  | .checkSBA =>
-    some (.leavePlayersWhoLost savedIn popOuterIn departedIn rewindProposalIn)
-  | .seq a b =>
-    match upgradeCheckSbaToLeave? savedIn popOuterIn departedIn rewindProposalIn a with
-    | some a' => some (.seq a' b)
-    | none =>
-      (upgradeCheckSbaToLeave? savedIn popOuterIn departedIn rewindProposalIn b).map (.seq a ·)
   | _ => none
 
 private def chainOrMergeLeave (g0 : Game)
@@ -475,14 +461,46 @@ private def chainOrMergeLeave (g0 : Game)
     g0.chainPendingReplacement
       (.leavePlayersWhoLost saved? popOuter departed rewindProposal)
   | some pr =>
-    match mergeLeaveIntoCont? g0 saved? popOuter departed rewindProposal pr with
-    | some (g1, pr') => g1.change (.pendingReplacement (some pr'))
-    | none =>
-      match upgradeCheckSbaToLeave? saved? popOuter departed rewindProposal pr with
-      | some pr' => g0.change (.pendingReplacement (some pr'))
-      | none =>
-        g0.chainPendingReplacement
-          (.leavePlayersWhoLost saved? popOuter departed rewindProposal)
+    match splitFirstLeaveOrSba? pr with
+    | some (before?, .leavePlayersWhoLost s0 po0 d0 rw0, after?) =>
+      let foldTail :=
+        after?.isSome && (po0 || popOuter || s0.isSome || saved?.isSome)
+      let (g1, sm, pom, dm, rwm) :=
+        mergeLeaveArgs g0 s0 po0 d0 rw0 saved? popOuter departed rewindProposal
+          (rest? := if foldTail then after? else none)
+      let newLeaf : PendingReplacement := .leavePlayersWhoLost sm pom dm rwm
+      let withBefore :=
+        match before? with
+        | some bef => .seq bef newLeaf
+        | none => newLeaf
+      let pr' :=
+        if foldTail then withBefore
+        else
+          match after? with
+          | some tail => .seq withBefore tail
+          | none => withBefore
+      g1.change (.pendingReplacement (some pr'))
+    | some (before?, .checkSBA, after?) =>
+      let foldTail := after?.isSome && (popOuter || saved?.isSome)
+      let (g1, pom) :=
+        if foldTail then combineOuterContinuations g0 false after? popOuter
+        else (g0, popOuter)
+      let newLeaf : PendingReplacement :=
+        .leavePlayersWhoLost saved? pom departed rewindProposal
+      let withBefore :=
+        match before? with
+        | some bef => .seq bef newLeaf
+        | none => newLeaf
+      let pr' :=
+        if foldTail then withBefore
+        else
+          match after? with
+          | some tail => .seq withBefore tail
+          | none => withBefore
+      g1.change (.pendingReplacement (some pr'))
+    | _ =>
+      g0.chainPendingReplacement
+        (.leavePlayersWhoLost saved? popOuter departed rewindProposal)
 
 private def rewriteRepausedPostCloseBatch (g : Game) (curBid : BatchId)
     (flushedFromPending : Bool)

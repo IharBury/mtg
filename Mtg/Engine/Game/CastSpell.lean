@@ -89,7 +89,38 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
           att.status.attacking && !att.status.blocked) then
         throw s!"{g.name att} is not an unblocked attacker you control"
       pure (some c)
-  let origPerm := g.playPermissionFor? p card
+  let allPerms := g.playPermissionsFor p card
+  let cleanPerms :=
+    allPerms.filter fun pm =>
+      !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone
+  let candPerms :=
+    let p1 := if asAdventure then allPerms.filter (!·.fromAdventure) else allPerms
+    let p2 :=
+      if sneakCost.isSome then
+        let nonAlt := p1.filter (fun pm => !pm.withoutManaCost && !pm.payLifeEqualManaValue)
+        if nonAlt.isEmpty then p1 else nonAlt
+      else p1
+    let baseTimingOk := g.timingAllowsCast p face || sneakCost.isSome
+    let p3 :=
+      if !baseTimingOk && p2.any (·.ignoreTiming) then p2.filter (·.ignoreTiming) else p2
+    let mv := if asAdventure then face.manaValue else g.objectManaValue card
+    let p4 :=
+      let lifeOk := p3.filter (fun pm => !pm.payLifeEqualManaValue || g.canPayLife p mv)
+      if lifeOk.isEmpty then p3 else lifeOk
+    p4
+  let rankPerm (pm : PlayPermission) : Nat :=
+    (if pm.withoutManaCost then 8 else 0) +
+      (if pm.ignoreTiming then 4 else 0) +
+      (if pm.anyMana then 2 else 0) +
+      (if !pm.fromAdventure then 1 else 0)
+  let origPerm : Option PlayPermission :=
+    if candPerms.isEmpty then
+      if g.mayCastExiledBySource p card then none else g.playPermissionFor? p card
+    else
+      candPerms.foldl (fun best? pm =>
+        match best? with
+        | none => some pm
+        | some b => if rankPerm pm >= rankPerm b then some pm else some b) none
   let prepPerm :=
     origPerm <|>
       (g.playPermissionEntriesOf card.id).findSome? (fun (_, _, pm, _) =>
@@ -108,19 +139,31 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let hadFlashbackPerm := fromGraveyard && g.flashbackUntilEot card
   let isFlashbackCast := fromGraveyard && (face.flashback.isSome || hadFlashbackPerm)
   if sneakCost.isSome &&
-      (isFlashbackCast || origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)) then
+      (isFlashbackCast ||
+        (origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue) &&
+          !g.mayCastExiledBySource p card)) then
     throw "You can't apply more than one alternative cost to a spell (CR 118.9a)"
+  let origPerm :=
+    if sneakCost.isSome &&
+        origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue) &&
+        g.mayCastExiledBySource p card then
+      none
+    else origPerm
   let altCost :=
     sneakCost.isSome || isFlashbackCast ||
       origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
+  let morphPermOk :=
+    allPerms.isEmpty || !cleanPerms.isEmpty || g.mayCastExiledBySource p card
   let hasMorphChoice :=
-    !asAdventure && !altCost && face.morph.isSome && face.kicker.isNone &&
-      (origPerm.bind (·.prepareSource)).isNone && !fromGraveyard
+    !asAdventure && sneakCost.isNone && !isFlashbackCast && morphPermOk &&
+      face.morph.isSome && face.kicker.isNone &&
+      (allPerms.isEmpty || !cleanPerms.isEmpty || (origPerm.bind (·.prepareSource)).isNone) &&
+      !fromGraveyard
   if hasMorphChoice then
     if !g.canCastMorphFaceDown p card then
-      g.validateFrontFaceCast p card face (sneakCost := sneakCost)
+      g.validateFrontFaceCast p card face (sneakCost := sneakCost) (origPermOverride := origPerm)
   else
-    g.validateFrontFaceCast p card face (sneakCost := sneakCost)
+    g.validateFrontFaceCast p card face (sneakCost := sneakCost) (origPermOverride := origPerm)
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
@@ -185,7 +228,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       ((g.currentSpellEffect spellObj).any (·.requiresTarget) || g.isAura spellObj)
   let needsAdditionalCostChoice := face.announcesAdditionalCost
   let needsKicker :=
-    face.kicker.isSome || (!altCost && (face.morph.isSome || face.impending.isSome))
+    face.kicker.isSome || hasMorphChoice || (!altCost && face.impending.isSome)
   let needsGift := face.giftTreasure
   let needsTeamwork := face.teamwork.isSome
   -- CR 702.34a: a flashback cost that includes discarding a card.

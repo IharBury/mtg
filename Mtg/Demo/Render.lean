@@ -162,13 +162,12 @@ def abilityActivator (g : Game) (o : GameObject) : PlayerId :=
 without paying mana (CR 118.9). Play-from-exile permissions are rendered
 separately by `exilePlayPermissionClause`. -/
 def withoutPayingManaClause (g : Game) (o : GameObject) : String :=
+  let perms := g.activePlayPermissions o
   let play :=
-    match g.playPermission o with
-    | some _ => ""
-    | none =>
-      if g.playsWithoutPayingManaCost o then
-        " (may be cast without paying its mana cost)"
-      else ""
+    if !perms.isEmpty then ""
+    else if g.playsWithoutPayingManaCost o then
+      " (may be cast without paying its mana cost)"
+    else ""
   let activate :=
     if (g.activatedAbilitiesOf o).any (g.activatesWithoutPayingManaCost (abilityActivator g o))
     then " (may be activated without paying its mana cost)"
@@ -275,24 +274,31 @@ Lands and other cards with no mana cost omit it rather than printing `{0}`
 (CR 202.1b / 118.6). A granted “without paying its mana cost” permission
 prints `{0}` (CR 107.4d / 118.5 / 118.9). -/
 def exilePlayManaCost (g : Game) (o : GameObject) : String :=
-  match g.playPermission o with
-  | some perm =>
+  let perms := g.activePlayPermissions o
+  if perms.isEmpty then ""
+  else
     let mc := (g.baseCard o).manaCost
-    if perm.withoutManaCost && mc.includesManaPayment then
+    if perms.any (·.withoutManaCost) && mc.includesManaPayment then
       toString ManaCost.zero
     else
       toString mc
-  | none => ""
 
 /-- Who may play `o` from exile, if anyone (CR 701.18 / 715.3d), including
 when the permission replaces the mana cost with `{0}`. -/
 def exilePlayPermissionClause (g : Game) (o : GameObject) : String :=
-  match g.playPermission o with
-  | some perm =>
-    let free :=
-      if perm.withoutManaCost then " without paying its mana cost" else ""
-    s!" (may be played by {g.player perm.player |>.name}{free})"
-  | none => ""
+  let perms := g.activePlayPermissions o
+  if perms.isEmpty then ""
+  else
+    let grantees :=
+      perms.foldl (fun (acc : Array (PlayerId × Bool)) perm =>
+        match acc.findIdx? (fun (q, _) => q == perm.player) with
+        | some idx =>
+          let (_, wasFree) := acc[idx]!
+          acc.set! idx (perm.player, wasFree || perm.withoutManaCost)
+        | none => acc.push (perm.player, perm.withoutManaCost)) #[]
+    String.join (grantees.toList.map fun (p, isFree) =>
+      let free := if isFree then " without paying its mana cost" else ""
+      s!" (may be played by {(g.player p).name}{free})")
 
 /-- One card in exile: printed face (mana cost, type line, P/T), a granted play
 permission if any, and a linked-exile return condition (CR 610.3) if any. -/

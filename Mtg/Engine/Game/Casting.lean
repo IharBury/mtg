@@ -133,17 +133,20 @@ def morphSpellFace : CardDef :=
 def canCastMorphFaceDown (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   let bc := { g.baseCard o with keywords := g.currentKeywords o }
   let fromGraveyard := o.zone == .graveyard o.owner
-  let origPerm := g.playPermissionFor? p o
-  let altPerm := origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
-  bc.morph.isSome && !fromGraveyard && !altPerm &&
-    (origPerm.bind (·.prepareSource)).isNone &&
+  let perms := g.playPermissionsFor p o
+  let cleanPerms :=
+    perms.filter fun pm =>
+      !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone
+  bc.morph.isSome && !fromGraveyard &&
     !g.splitSecondOnStack && !g.combatLocksNonManaAbilities &&
     !g.opponentsCantCastOnActiveTurn p && !g.spellNameForbidden "" &&
     !g.cantCastSpellsThisTurn p &&
     g.mayPlay p o &&
-    (match origPerm with
-     | some perm => perm.ignoreTiming || g.timingAllowsCast p morphSpellFace
-     | none => g.timingAllowsCast p morphSpellFace)
+    (if perms.isEmpty then
+      g.timingAllowsCast p morphSpellFace
+     else
+      cleanPerms.any (fun pm => pm.ignoreTiming || g.timingAllowsCast p morphSpellFace) ||
+        (g.mayCastExiledBySource p o && g.timingAllowsCast p morphSpellFace))
 
 /-- Whether `p` may begin to cast `o` using its front-face characteristics (CR 601.3). -/
 def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
@@ -151,17 +154,20 @@ def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   let fromGraveyard := o.zone == .graveyard o.owner
   let hadFlashbackPerm := fromGraveyard && g.flashbackUntilEot o
   let isFlashbackCast := fromGraveyard && (bc.flashback.isSome || hadFlashbackPerm)
+  let perms := g.playPermissionsFor p o
   !g.isLand o && !g.splitSecondOnStack && !g.combatLocksNonManaAbilities &&
   !g.opponentsCantCastOnActiveTurn p && !g.spellNameForbidden (g.name o) &&
   !g.cantCastSpellsThisTurn p &&
   (o.zone != .library p || g.isCreature o) &&
   g.mayPlay p o &&
   g.graveyardCastThresholdMet p o.id bc &&
-  (match g.playPermissionFor? p o with
-   | some perm =>
-     (perm.ignoreTiming || g.timingAllowsCast p bc) &&
-       (!perm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o))
-   | none => g.timingAllowsCast p bc) &&
+  (if perms.isEmpty then
+    g.timingAllowsCast p bc
+   else
+    perms.any (fun perm =>
+      (perm.ignoreTiming || g.timingAllowsCast p bc) &&
+        (!perm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o))) ||
+      (g.mayCastExiledBySource p o && g.timingAllowsCast p bc)) &&
   (g.mandatorySacrificeError? p o.id bc).isNone &&
   (!(isFlashbackCast && bc.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
   -- Untargeted permanents, and untargeted instants/sorceries with a modeled
@@ -234,13 +240,16 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
 /-- True when the CR 715.3d exile permission forbids recasting as an Adventure. -/
 def adventureExileForbidsRecast (g : Game) (o : GameObject)
     (player? : Option PlayerId := none) : Bool :=
-  let perm? :=
-    match player? with
-    | some p => g.playPermissionFor? p o
-    | none => g.playPermission o
-  match perm? with
-  | some perm => perm.fromAdventure
-  | none => false
+  match player? with
+  | some p =>
+    let perms := g.playPermissionsFor p o
+    !perms.isEmpty && perms.all (·.fromAdventure) && !g.mayCastExiledBySource p o
+  | none =>
+    let perms := g.activePlayPermissions o
+    if perms.isEmpty then
+      (g.playPermission o).any (·.fromAdventure)
+    else
+      perms.all (·.fromAdventure)
 
 /-- Validate front-face timing, prohibitions, targets, and mandatory additional
 costs when casting `card` as `face` (either upfront in `castSpell` or when
@@ -263,9 +272,13 @@ def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : 
   if !g.graveyardCastThresholdMet p card.id face then
     let n := face.castOnlyIfGraveyardAtLeast.getD 0
     throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
-  let origPerm := origPermOverride.orElse (fun _ => g.playPermissionFor? p card)
+  let perms := g.playPermissionsFor p card
+  let anyIgnoreTiming :=
+    match origPermOverride with
+    | some pm => pm.ignoreTiming
+    | none => perms.any (·.ignoreTiming)
   if !(g.timingAllowsCast p face (excludeStackId := excludeIdOverride) ||
-      origPerm.any (·.ignoreTiming) || sneakCost.isSome) then
+      anyIgnoreTiming || sneakCost.isSome) then
     throw s!"{face.name} has sorcery speed"
   if isModalSpellFace face then
     let tcs := g.evalLayer3 card
@@ -294,6 +307,8 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     let fromGraveyard := o.zone == .graveyard o.owner
     let hadFlashbackPerm := fromGraveyard && g.flashbackUntilEot o
     let isFlashbackCast := fromGraveyard && (face.flashback.isSome || hadFlashbackPerm)
+    let perms := g.playPermissionsFor p o
+    let advPerms := perms.filter (!·.fromAdventure)
     !g.splitSecondOnStack &&
     !g.combatLocksNonManaAbilities &&
     !g.opponentsCantCastOnActiveTurn p &&
@@ -305,11 +320,13 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     (o.zone != .library p || face.isCreature) &&
     g.mayPlay p o &&
     g.graveyardCastThresholdMet p o.id face &&
-    (match g.playPermissionFor? p o with
-     | some perm =>
-       (perm.ignoreTiming || g.timingAllowsCast p face) &&
-         (!perm.payLifeEqualManaValue || g.canPayLife p face.manaValue)
-     | none => g.timingAllowsCast p face) &&
+    (if perms.isEmpty then
+      g.timingAllowsCast p face
+     else
+      advPerms.any (fun perm =>
+        (perm.ignoreTiming || g.timingAllowsCast p face) &&
+          (!perm.payLifeEqualManaValue || g.canPayLife p face.manaValue)) ||
+        (g.mayCastExiledBySource p o && g.timingAllowsCast p face)) &&
     (g.mandatorySacrificeError? p o.id face).isNone &&
     (!(isFlashbackCast && face.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
     let tcs := g.evalLayer3 o
@@ -398,7 +415,12 @@ def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
 /-- What paying `prop` is for, as Reality Fracture mana restrictions see it. -/
 def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
   match prop.kind with
-  | .activatedAbility => { equip := prop.activation.any (·.isEquip) }
+  | .activatedAbility =>
+    { equip := prop.activation.any (·.isEquip)
+      abilitySourceSubtypes :=
+        match g.proposedRestrictionSource prop with
+        | some src => g.subtypes src
+        | none => #[] }
   | .turnFaceUp => {}
   | .spell =>
     match g.findObject? prop.spellId with
@@ -522,75 +544,150 @@ def preferredManaType (g : Game) (p : PlayerId) (src : GameObject)
       else some first
 
 /-- Whether `(src, t)` is a better next tap than `(bestSrc, bestT)`: avoid
-creatures when another source helps, then prefer colorless. Equal ranks keep
-the earlier source. -/
+creatures (and artifacts when `avoidArtifacts` is set) when another source
+helps, then prefer colorless. Equal ranks keep the earlier source. -/
 def betterManaTap (g : Game) (src : GameObject) (t : ManaType)
-    (bestSrc : GameObject) (bestT : ManaType) : Bool :=
-  (!g.isCreature src && g.isCreature bestSrc) ||
-    (g.isCreature src == g.isCreature bestSrc && t == .colorless && bestT != .colorless)
+    (bestSrc : GameObject) (bestT : ManaType) (avoidArtifacts : Bool := false) : Bool :=
+  let penalize (o : GameObject) : Bool :=
+    g.isCreature o || (avoidArtifacts && g.isArtifact o)
+  (!penalize src && penalize bestSrc) ||
+    (penalize src == penalize bestSrc && !g.isCreature src && g.isCreature bestSrc) ||
+    (penalize src == penalize bestSrc && g.isCreature src == g.isCreature bestSrc &&
+      t == .colorless && bestT != .colorless)
 
-/-- Next source to tap for `prop`. Noncreatures are chosen before creatures
+/-- Whether tapping `preTappedIds` for mana leaves `prop`'s unpaid post-mana
+`.crew` and tap `CostPick` costs payable (CR 601.2g–h). -/
+def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
+    (preTappedIds : Array ObjectId) : Bool :=
+  if prop.kind != .activatedAbility then true
+  else
+    match prop.sourceId, prop.activation with
+    | some sid, some ab =>
+      let basePicks := costPicksOf ab
+      let allPicks := costPicksWithSacrificeOther basePicks
+        (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
+      let hasTapPick :=
+        allPicks.any (fun pk => pk == .tapUntappedCreature || pk == .tapTwoUntappedArtifacts)
+      let crewN? : Option Nat :=
+        if !prop.fraCostPaid then
+          match ab.cost.fra with
+          | .crew n => some n
+          | _ => none
+        else none
+      if !hasTapPick && crewN?.isNone then true
+      else
+        let sacSrc :=
+          prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.fra == .exileSource
+        let discSrc :=
+          prop.discardSource || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+        match crewN? with
+        | some n =>
+          (g.firstPayableCrewSelection? p sid n allPicks
+            (tapSource := prop.tapSource)
+            (sacrificeOrExileSource := sacSrc)
+            (discardOrExileHandSource := discSrc)
+            (preTappedIds := preTappedIds)).isSome
+        | none =>
+          g.costPicksPayable p (some sid) allPicks
+            (tapSource := prop.tapSource)
+            (sacrificeOrExileSource := sacSrc)
+            (discardOrExileHandSource := discSrc)
+            (preTappedIds := preTappedIds)
+    | _, _ => true
+
+/-- Next source to tap for `prop`. Noncreatures (and non-artifacts when
+`.tapTwoUntappedArtifacts` is unpaid) are chosen before creatures/artifacts
 when both help, and colorless is preferred when that type can be spent.
 A flexible source such as Hidden Lair is tapped for `{U}` or `{B}` when
-that choice still lets the remaining sources pay. Sources whose tapping would
-make unpaid `.crew` or tap `CostPick`s unpayable are avoided whenever
-cost-preserving sources can still advance payment (CR 601.2g–h). -/
+that choice still lets the remaining sources pay. Sources are restricted to
+subsets whose combined mana plus `(g.player p).manaPool` pays `prop.cost`
+while preserving unpaid `.crew` and tap `CostPick`s whenever such a subset
+exists (CR 601.2g–h). -/
 def preferredManaTap (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Option (GameObject × ManaType) :=
   let allowElf := g.proposedAllowsElfRestricted prop
   let allowInst := g.proposedAllowsInstRestricted prop
   let allowances := g.proposedAllowances prop
   let sources := g.manaSourcesForProposed p prop
-  let tapPreservesPostManaCosts (src : GameObject) : Bool :=
-    if prop.kind != .activatedAbility then true
+  let pool := (g.player p).manaPool
+  let avoidArtifacts : Bool :=
+    prop.kind == .activatedAbility &&
+      prop.activation.any (fun ab => (costPicksOf ab).contains .tapTwoUntappedArtifacts)
+  let pickViableType (viable : Array ManaType) : Option ManaType :=
+    match viable[0]? with
+    | none => none
+    | some first =>
+      match Color.all.find? (fun c =>
+        let req := prop.cost.coloredCount c
+        let held := pool.usable (.colored c) allowElf allowInst allowances.hero
+          allowances.villain allowances.cantNonartifact allowances.creature allowances.spend
+        held < req && viable.contains (.colored c)) with
+      | some c => some (.colored c)
+      | none =>
+        if viable.contains .colorless then some .colorless
+        else some first
+  let rec hasCostPreservingCompletion (curPool : ManaPool) (chosenIds : Array ObjectId)
+      (critRem freeOthers : List (GameObject × Array ManaType)) : Bool :=
+    if !g.tapPreservesPostManaCosts p prop chosenIds then false
+    else if g.canPayFromSources curPool prop.cost allowElf allowInst freeOthers allowances then true
+    else if !g.canPayFromSources curPool prop.cost allowElf allowInst
+        (critRem ++ freeOthers) allowances then false
     else
-      match prop.sourceId, prop.activation with
-      | some sid, some ab =>
-        let basePicks := costPicksOf ab
-        let allPicks := costPicksWithSacrificeOther basePicks
-          (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
-        let hasTapPick :=
-          allPicks.any (fun pk => pk == .tapUntappedCreature || pk == .tapTwoUntappedArtifacts)
-        let crewN? : Option Nat :=
-          if !prop.fraCostPaid then
-            match ab.cost.fra with
-            | .crew n => some n
-            | _ => none
-          else none
-        if !hasTapPick && crewN?.isNone then true
+      match critRem with
+      | [] => false
+      | (o, ts) :: rest =>
+        ts.any (fun t =>
+          hasCostPreservingCompletion (g.poolAfterTap curPool o t) (chosenIds.push o.id)
+            rest freeOthers) ||
+          hasCostPreservingCompletion curPool chosenIds rest freeOthers
+  let allPreserve := g.tapPreservesPostManaCosts p prop (sources.map (·.1.id))
+  let allPay := g.canPayFromSources pool prop.cost allowElf allowInst sources.toList allowances
+  let fullPick? : Option (GameObject × ManaType) :=
+    if !allPay then none
+    else
+      sources.foldl (fun acc (src, types) =>
+        let helpful := types.filter (fun t =>
+          g.typeHelpsPay p src t prop.cost allowElf allowInst allowances)
+        if helpful.isEmpty then acc
         else
-          let sacSrc :=
-            prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.fra == .exileSource
-          let discSrc :=
-            prop.discardSource || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
-          match crewN? with
-          | some n =>
-            (g.firstPayableCrewSelection? p sid n allPicks
-              (tapSource := prop.tapSource)
-              (sacrificeOrExileSource := sacSrc)
-              (discardOrExileHandSource := discSrc)
-              (preTappedIds := #[src.id])).isSome
-          | none =>
-            g.costPicksPayable p (some sid) allPicks
-              (tapSource := prop.tapSource)
-              (sacrificeOrExileSource := sacSrc)
-              (discardOrExileHandSource := discSrc)
-              (preTappedIds := #[src.id])
-      | _, _ => true
-  let safeSources := sources.filter (fun (src, _) => tapPreservesPostManaCosts src)
-  let pickFrom (candSources : Array (GameObject × Array ManaType))
-      (poolSources : Array (GameObject × Array ManaType)) : Option (GameObject × ManaType) :=
-    candSources.foldl (fun acc (src, types) =>
-      let others := poolSources.filter (fun (o, _) => o.id != src.id) |>.toList
-      match g.preferredManaType p src types prop.cost allowElf allowInst others allowances with
-      | none => acc
-      | some t =>
-        match acc with
-        | none => some (src, t)
-        | some (bestSrc, bestT) =>
-          if g.betterManaTap src t bestSrc bestT then some (src, t) else acc) none
-  (if safeSources.isEmpty then none else pickFrom safeSources safeSources).orElse
-    (fun _ => pickFrom sources sources)
+          let others := sources.filter (fun (o, _) => o.id != src.id) |>.toList
+          let viable :=
+            if allPreserve then
+              helpful.filter (fun t =>
+                g.canPayFromSources (g.poolAfterTap pool src t) prop.cost
+                  allowElf allowInst others allowances)
+            else
+              let freeOthers := others.filter (fun (o, _) => !g.isCreature o && !g.isArtifact o)
+              let critOthers := others.filter (fun (o, _) => g.isCreature o || g.isArtifact o)
+              helpful.filter (fun t =>
+                hasCostPreservingCompletion (g.poolAfterTap pool src t) #[src.id]
+                  critOthers freeOthers)
+          match pickViableType viable with
+          | none => acc
+          | some t =>
+            match acc with
+            | none => some (src, t)
+            | some (bestSrc, bestT) =>
+              if g.betterManaTap src t bestSrc bestT (avoidArtifacts := avoidArtifacts) then
+                some (src, t)
+              else acc) none
+  fullPick?.orElse fun _ =>
+    let safeSources := sources.filter (fun (src, _) => g.tapPreservesPostManaCosts p prop #[src.id])
+    let pickFrom (candSources : Array (GameObject × Array ManaType))
+        (poolSources : Array (GameObject × Array ManaType)) : Option (GameObject × ManaType) :=
+      candSources.foldl (fun acc (src, types) =>
+        let others := poolSources.filter (fun (o, _) => o.id != src.id) |>.toList
+        match g.preferredManaType p src types prop.cost allowElf allowInst others allowances with
+        | none => acc
+        | some t =>
+          match acc with
+          | none => some (src, t)
+          | some (bestSrc, bestT) =>
+            if g.betterManaTap src t bestSrc bestT (avoidArtifacts := avoidArtifacts) then
+              some (src, t)
+            else acc) none
+    (if safeSources.isEmpty then none else pickFrom safeSources safeSources).orElse
+      (fun _ => pickFrom sources sources)
 
 def payCost (g : Game) (p : PlayerId) (cost : ManaCost)
     (allowElfRestricted : Bool := false) (allowInstRestricted : Bool := false)
@@ -690,7 +787,9 @@ whether `Decisions.finishFraChoice` should resume an active continuation
 def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none)
     (alwaysGrantPriority : Bool := false)
-    (skipDepartureReconcile : Bool := false) : Except String (Game × Bool) := do
+    (skipDepartureReconcile : Bool := false)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Except String (Game × Bool) := do
   match g.proposedSpell with
   | none => return (g, false)
   | some prop =>
@@ -858,18 +957,48 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
           return g
     if quiet || g.suppressInteractiveReplay then
       return (g, false)
-    let prio := g.priorityInstead prop.caster
+    let explicitPrio? : Option PlayerId :=
+      if followedByFinishFra then none else followedByExplicitPriority?
+    let prio := g.priorityInstead (explicitPrio?.getD prop.caster)
     let stashPendingPrio (g : Game) : Game :=
       if g.pendingPriority == some prio then g
       else g.change (.pendingPriority (some prio))
     if g.over then
       return (g.receivePriority prio, false)
+    if followedByFinishFra && g.sbaPaused then
+      let g :=
+        if let some cur := g.pendingReplacement then
+          let next := cur.ensureEndsWithFinishFra
+          if next == cur then g else g.change (.pendingReplacement (some next))
+        else
+          let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+          g.change (.pendingReplacement (some .finishFraChoice))
+      return (g, false)
+    if explicitPrio?.isSome then
+      if g.sbaPaused then
+        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+        let g :=
+          if g.pendingReplacement.any (·.endsWithPriorityGrant) then g
+          else g.chainPendingReplacement (.receivePriority prio)
+        return (g, false)
+      else if g.pending != .none || g.afterRandom != .none then
+        return (stashPendingPrio g, false)
+      else if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
+          g.triggerSequenceRest.isSome || g.mayThenResume then
+        return (g, true)
+      else if !g.over && g.triggerNeedingTargets.isSome then
+        let g := stashPendingPrio g
+        return (if alwaysGrantPriority then g else g.promptTriggerTargetsIfNeeded, false)
+      else
+        return (g.receivePriority prio, false)
     let g :=
-      if g.pending == .none && g.continuations.isEmpty &&
+      if g.pending == .none && g.continuations.isEmpty && !followedByFinishFra &&
           g.priority != prio then
         g.change (.priority prio)
       else g
-    if (resumeContinuation || (doReconcileDep && g.pending == .none && g.afterRandom == .none)) &&
+    if followedByFinishFra && !g.sbaPaused then
+      return (g, true)
+    else if (resumeContinuation || (doReconcileDep && g.pending == .none && g.afterRandom == .none)) &&
         (!g.continuations.isEmpty || g.pendingReplacement.isSome) then
       return (g, true)
     else if g.pending == .none && g.continuations.isEmpty then
@@ -898,7 +1027,9 @@ private opaque drainPendingContinuations (g : Game) : Game := g
 @[extern "mtg_game_reverse_proposed_spell"]
 private opaque reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none) (alwaysGrantPriority : Bool := false)
-    (skipDepartureReconcile : Bool := false) : Game := g
+    (skipDepartureReconcile : Bool := false)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Game := g
 
 @[extern "mtg_game_proposal_cost_prompt_still_payable"]
 opaque proposalCostPromptStillPayableFwd (g : Game) (caster : PlayerId) (p : Pending) : Bool := false
@@ -906,7 +1037,9 @@ opaque proposalCostPromptStillPayableFwd (g : Game) (caster : PlayerId) (p : Pen
 @[extern "mtg_game_reverse_proposed_spell_except"]
 opaque reverseProposedSpellExceptFwd (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none) (alwaysGrantPriority : Bool := false)
-    (skipDepartureReconcile : Bool := false) :
+    (skipDepartureReconcile : Bool := false)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) :
     Except String Game := .ok g
 
 @[extern "mtg_game_resume_after_become_cast"]
@@ -1409,8 +1542,12 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
 def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : ObjectId) :
     Array GameObject :=
   let src := g.findObject? sourceId
-  let creatureOrPlaneswalker := src.any (fun s => (g.baseCard s).additionalCostSacrificeCreatureOrPlaneswalker)
-  let creatureOnly := src.any (fun s => (g.baseCard s).additionalCostSacrificeCreature)
+  let isSpellSource (s : GameObject) : Bool :=
+    s.zone == .stack && g.proposedSpell.all (fun pr => pr.spellId != sourceId || pr.kind == .spell)
+  let creatureOrPlaneswalker :=
+    src.any (fun s => isSpellSource s && (g.baseCard s).additionalCostSacrificeCreatureOrPlaneswalker)
+  let creatureOnly :=
+    src.any (fun s => isSpellSource s && (g.baseCard s).additionalCostSacrificeCreature)
   g.permanentsOf p |>.filter (fun o =>
     o.id != sourceId &&
       if creatureOrPlaneswalker then g.isCreature o || g.isPlaneswalker o

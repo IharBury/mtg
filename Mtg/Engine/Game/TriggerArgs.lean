@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Chapters
+import Mtg.Engine.Game.FraResolve
 
 /-!
 # Reading `TriggerResolution` arguments
@@ -462,6 +462,26 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
 def triggerCount (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberSelector) :
     Option Nat :=
   g.triggerInt ctx amount |>.map (·.toNat)
+
+/-- Resolve `Resolution.addMana` / `TriggerResolution.addMana`. Each printed
+combination keeps the behavior of the constructor it replaced. Any other count
+adds that much mana. A count that cannot be read adds nothing. -/
+def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (types : Array ManaType) (amount : TriggeredAbility.NumberSelector)
+    (targets : Array Target := #[])
+    (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Game :=
+  let ctx : TriggerRead :=
+    { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
+  -- Zero additions log nothing. `.perChargeCounter` uses the last-known
+  -- charge total when the source has left.
+  match g.triggerCount ctx amount with
+  | none => g
+  | some n =>
+    if n == 0 then g
+    else
+      let types := types.foldl (fun acc t => acc ++ Array.replicate n t) #[]
+      g.addManaLogged controller types (source := sourceId)
 
 /-- Create `n` tokens with `face` for each player. The last token's id is
 returned when at least one was created. -/

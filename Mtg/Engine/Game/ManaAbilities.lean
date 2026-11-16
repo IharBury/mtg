@@ -196,6 +196,9 @@ def landsCouldProduce (g : Game) (lands : Array GameObject) : Array ManaType :=
 /-- Mana abilities from a card's printed `{T}: Add` lines, for `o`. -/
 def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbilityDef :=
   let p := (g.controllerOf o).getD o.owner
+  let tcs := g.evalLayer3 o
+  let sub (s : CardSubtype) : CardSubtype :=
+    if tcs.isEmpty then s else TextChange.applySubtype tcs s
   let count (subtype : CardSubtype) := ((g.permanentsOf p).filter (g.hasSubtype · subtype)).size
   let power := (g.power o).toNat
   let one (out : ManaOutput) (r : ManaRestriction := .none) : Array ManaAbilityDef :=
@@ -214,10 +217,11 @@ def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbil
   simple ++
   (if c.tapAddOneOf.isEmpty then #[] else one (.oneOf c.tapAddOneOf 1)) ++
   c.tapAddManaForEach.map (fun a =>
-    ({ output := .fixed (Array.replicate (count a.subtype) a.mana) } : ManaAbilityDef)) ++
+    ({ output := .fixed (Array.replicate (count (sub a.subtype)) a.mana) } : ManaAbilityDef)) ++
   (if c.tapAddOneOfIfEnteredOrBasic.isEmpty || !g.canUseEnteredOrBasicAdd o then #[]
    else one (.oneOf c.tapAddOneOfIfEnteredOrBasic 1)) ++
-  (if c.tapAddAnyColorEqualToPower then one (.oneOf anyColorMana power) .elf else #[]) ++
+  (if c.tapAddAnyColorEqualToPower then
+    one (.oneOf anyColorMana power) (.forSubtypeSpellOrSource (sub .elf)) else #[]) ++
   (if c.tapAddAnyColorForInstantOrSorcery then
     one (.oneOf anyColorMana 1) .instantOrSorcery else #[]) ++
   (if c.tapAddAnyColor then one (.oneOf anyColorMana 1) else #[]) ++
@@ -258,6 +262,89 @@ def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbil
     #[{ output := .colorAmong (g.landsCouldProduce lands) }]
    else #[])
 
+/-- Evaluate `amount` for a battlefield mana ability on `o` (CR 605.3b). -/
+def manaSelectorCount (g : Game) (o : GameObject) (amount : TriggeredAbility.NumberSelector) : Nat :=
+  let controller := (g.controllerOf o).getD o.owner
+  match amount with
+  | .fixed n => n.toNat
+  | .double | .chosenCreatureType | .chosenX => 0
+  | .greatestPower => (g.greatestPowerAmongCreatures controller).toNat
+  | .perLookedAt | .lastKnownPower | .thatManyLost | .spellManaValue
+  | .equalToManaSpent | .equalToTargetPower | .blueManaSymbols => 0
+  | .perOtherCreature =>
+    (g.battlefield.filter (fun c =>
+      g.isCreature c && g.controlledBy c controller && c.id != o.id)).size
+  | .perPlains => ((g.permanentsOf controller).filter (g.hasSubtype · .plains)).size
+  | .equalSourcePower => (g.power o).toNat
+  | .equalSourceToughness => (g.toughness o).toNat
+  | .subtypeCount subtype | .perSubtype subtype =>
+    ((g.permanentsOf controller).filter (g.hasSubtype · subtype)).size
+  | .discardedHand => g.handDiscardedThisWay.getD 0
+  | .greatestArtifactMv =>
+    (g.permanentsOf controller).foldl (fun acc x =>
+      if g.isArtifact x then max acc (g.objectManaValue x) else acc) 0
+  | .forEachTappedHuman => g.humansTappedThisWay
+  | .perFatGraveyard => (g.players.filter (fun pl => pl.graveyard.size >= 7)).size
+  | .perControlled ty => ((g.permanentsOf controller).filter (g.hasType · ty)).size
+  | .upToHandSize n =>
+    let cards := (g.player controller).hand.size
+    if cards < n then n - cards else 0
+  | .plusOneCounters => if o.isOnBattlefield then o.status.plusOnePlusOne else 0
+  | .forEachDestroyedThisWay => g.permanentsDestroyedThisWay
+  | .attachedEquipment => g.attachedEquipmentCount o
+  | .perBurden => o.status.burden
+  | .notedExcess => g.excessDamageThisWay
+  | .notedPower => if g.destroyedForAmassThisWay then g.amassAmountThisWay else 0
+  | .perChargeCounter =>
+    let n := if o.isOnBattlefield then o.status.charge else 0
+    if n == 0 then
+      match g.lastKnownCounterStatus? o.id with
+      | some last => last.charge
+      | none => n
+    else n
+  | .oppArtifacts =>
+    (g.battlefield.filter (fun x =>
+      g.isArtifact x && (g.controllerOf x).any (g.isLivingOpponentOf controller ·))).size
+  | .damagedPlayerArtifacts =>
+    match g.loggedLastCombatDamagePlayer.orElse (fun _ => g.firstLivingOpponent? controller) with
+    | some pid => ((g.permanentsOf pid).filter (g.isArtifact ·)).size
+    | none => 0
+  | .cardsDrawnThisTurn => g.loggedDraws controller
+  | .libraryCards => (g.player controller).library.size
+  | .count what =>
+    match what with
+    | .questCounters => if o.isOnBattlefield then o.status.quest else 0
+    | .creatureCardsInGraveyard =>
+      ((g.player controller).graveyard.filter (fun id => (g.findObject? id).any g.isCreature)).size
+    | .harnessedSource => if o.status.harnessed then 1 else 0
+    | .source | .sourceIfPresent | .sacrificedSource _ | .plan =>
+      if o.isOnBattlefield then 1 else 0
+    | .creaturesYouControl => (g.creaturesControlledBy controller).size
+    | .othersOfSubtype subtype =>
+      (g.battlefield.filter (fun x =>
+        g.controlledBy x controller && x.id != o.id && g.hasSubtype x subtype)).size
+    | .youControl (.subtype s) => ((g.permanentsOf controller).filter (g.hasSubtype · s)).size
+    | .youControl _ => (g.creaturesControlledBy controller).size
+    | .eachOther =>
+      (g.battlefield.filter (fun x =>
+        g.isCreature x && g.controlledBy x controller && x.id != o.id)).size
+    | .landsYouControl => ((g.permanentsOf controller).filter (g.isLand ·)).size
+    | .legendaryCreaturesYouControl =>
+      ((g.permanentsOf controller).filter (fun x => g.isCreature x && g.isLegendary x)).size
+    | .planeswalkersYouControl => ((g.permanentsOf controller).filter (g.isPlaneswalker ·)).size
+    | .artifact => ((g.permanentsOf controller).filter (g.isArtifact ·)).size
+    | .anotherCreatureOrArtifact =>
+      ((g.permanentsOf controller).filter (fun x =>
+        x.id != o.id && (g.isCreature x || g.isArtifact x))).size
+    | .attackingCreatures => (g.battlefield.filter (·.status.attacking)).size
+    | .humans =>
+      (g.battlefield.filter (fun x =>
+        g.isCreature x && g.controlledBy x controller && g.hasSubtype x .human)).size
+    | .opponentsCreatures =>
+      (g.battlefield.filter (fun x =>
+        g.isCreature x && (g.controllerOf x).any (g.isLivingOpponentOf controller ·))).size
+    | _ => 0
+
 /-- Mana abilities `o` has as printed activated abilities (CR 605.1a). Loyalty
 abilities, modal abilities, non-battlefield abilities, and targeted abilities
 are not mana abilities. -/
@@ -285,11 +372,12 @@ def activatedManaAbilities (g : Game) (o : GameObject) : Array ManaAbilityDef :=
       let with_ (out : ManaOutput) (r : ManaRestriction := .none) :=
         some { base with output := out, restriction := r }
       match ab.effect.resolution with
-      | .addMana types => with_ (.fixed types)
+      | .addMana types amount =>
+        let n := g.manaSelectorCount o amount
+        with_ (.fixed (types.foldl (fun acc t => acc ++ Array.replicate n t) #[]))
       | .addAnyColor => with_ (.oneOf anyColorMana 1)
       | .addAnyColorSpendOnlySubtype s =>
-        with_ (.oneOf anyColorMana 1)
-          (if s == .elf then .elf else if s == .hero then .hero else if s == .villain then .villain else .none)
+        with_ (.oneOf anyColorMana 1) (.forSubtypeSpellOrSource s)
       | .addAnyColorSpendOnlyArtifactSpell => with_ (.oneOf anyColorMana 1) (.fra .artifactSpell)
       | .addTwoAnyColorCreatureSources => with_ (.oneOf anyColorMana 2) .creatureSource
       | .addBlueCantNonartifact => with_ (.fixed #[.colored .blue]) .cantNonartifact
