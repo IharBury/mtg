@@ -18677,19 +18677,20 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
    remaining cost/activation leaves, and `StateBasedActions.mergeLeaveArgs` / `Leaving.playerLeavesGameCore`
    preservation**
    (`ActivationCosts.lean:20–21, 396, 479–483, 541, 702, 838, 931`,
-   `Casting.lean:960–1022, 1150–1192, 1228–1250, 1314, 1366–1371, 1380, 1406, 1498, 1538, 1577–1614`,
+   `Casting.lean:960–1022, 1150–1192, 1228–1250, 1314–1325, 1366–1371, 1380, 1406, 1498–1506, 1538, 1577–1614`,
    `Core.lean:187–188`,
-   `Decisions.lean:210–215, 337–464, 475–481, 524–527, 585–609, 618–668, 863–1006, 1045–1082, 1168–1185, 1293–1315, 1419–1421, 1477–1479, 1543–1608, 2369–2376, 2403–2433, 4138–4219, 4555–4556`,
-   `Event.lean:1730–1732, 2326–2329, 2345–2348, 2381–2407`, `Leaving.lean:3573–3673, 3806–3820`,
+   `Decisions.lean:210–215, 337–464, 475–481, 524–527, 585–609, 618–668, 863–1006, 1045–1093, 1169–1185, 1293–1315, 1419–1421, 1477–1479, 1543–1608, 2369–2433, 4138–4219, 4555–4556`,
+   `Event.lean:1730–1732, 2326–2329, 2345–2348, 2375–2376, 2381–2407`, `Leaving.lean:3573–3673, 3806–3820`,
    `ManaAbilities.lean:635–636, 720–731, 755–756`, `StateBasedActions.lean:414–500`, `Triggers.lean:511–525`,
-   `Turns.lean:319–356, 663–670, 963–967`;
+   `Turn.lean:91`, `Turns.lean:319–356, 663–670, 963–967`;
    **CR 103.8a–b / 104.5 / 117.3a,c / 500.11 / 502.4 / 503.1 / 514.3a / 601.2a–i / 602.2 / 603.3b,d / 605.3b /
    616.1 / 704.3 / 704.5e / 707.10a / 733.1–733.2 / 800.4a,i**):
    - **`concedePlayersLoop` `anyContinuationGrantsPriority`, `continuationGrantsPriority` /
      `firstPriorityGrantRecipient?` `some none` separation, and proposal / trigger-target recipient parity**
-     (`Casting.lean:1150–1192, 1228–1250, 1366–1371, 1538, 1582–1614`,
-     `Decisions.lean:475–481, 524–527, 585–609, 618–668, 863–1006, 1045–1082, 1310–1315, 1419–1421, 1477–1479, 4181–4197, 4555–4556`,
-     `Event.lean:2345–2348, 2381–2407`, `ManaAbilities.lean:635–636, 720–731, 755–756`, `Triggers.lean:511–525`):
+     (`Casting.lean:1150–1192, 1228–1250, 1321, 1366–1371, 1505, 1582–1598`,
+     `Decisions.lean:446–453, 475–481, 524–527, 585–609, 618–668, 863–1006, 1045–1082, 1310–1315, 1419–1421, 1477–1479, 2401, 4181–4197, 4555–4556`,
+     `Event.lean:2345–2348, 2375–2376, 2381–2407`, `ManaAbilities.lean:635–636, 720–731, 755–756`,
+     `Triggers.lean:511–525`, `Turn.lean:91`):
      - Three priority-continuation bugs remain after Phase 46:
        (i) `Decisions.concedePlayersLoop` (`1419–1421, 1477–1479`) checks
        `g.outerPendingReplacements.any (continuationGrantsPriority g false)` on raw `g` instead of
@@ -18698,16 +18699,21 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
        `outer = .seq (.restorePending _ true ..) tail`, `nextQueuedPendingOnResume` (`475–481, 524–527`) reads
        `g.outerPendingReplacements.back? == some outer` and recurses infinitely on `(g, outer)`;
        (ii) `Decisions.nextQueuedPendingOnResume` (`587, 592, 597, 607`) and `continuationGrantsPriority`
-       (`871, 877, 883, 889, 895`) short-circuit on `PendingReplacement.stepAlwaysGrantsPriority`
-       (`Event.lean:2345–2348`, ignoring `g.over` and cleanup replacement pauses while `.untap` at `586, 591, 596,
-       605` and `870, 876, 882, 893` intentionally preserves `hasQueuedPending` so `anyContinuationGrantsPriority`
-       does not chain a duplicate `.finishFraChoice`), line `897` falls back to `Game`-free
-       `pr.endsWithPriorityGrant hasQueuedPending` (`Event.lean:2381–2407`, returning `true` for `.finishPostCast`,
-       `.finishConcede`, idle `.concedePlayersLoop`, `.beginTurnAfterStartExpiry`, `.finishCleanupAfterClearEot`,
-       and `.finishPostStep` of `.startNextTurnAndBegin` / `.endTurnAfterCleanupStepEnded` /
-       `.cleanupStepAfterDiscard` / `.postSbaCleanup _` even when `g.over` holds or `finishPostCast` /
-       `finishConcede` opens a non-granting prompt), and `firstPriorityGrantRecipient?` (`970–972`) returns
-       `some none` (`hasImplicitPriorityContinuation == true` at `1005–1006`) whenever
+       (`871, 877, 883, 895`) short-circuit on `PendingReplacement.stepAlwaysGrantsPriority`
+       (`Event.lean:2345–2348`) while the additional-combat `.endOfCombat` arms at `602` (`then false`) and `889`
+       (`then true`) hardcode their results without consulting `advanceAfterStepEndedRecipient? gR` (`446–453`, which
+       already routes `g.step == .endOfCombat && g.additionalCombatPhases > 0` to
+       `beginStepContRecipient? gClean .beginningOfCombat` before reading `Step.next?`, whose `.endOfCombat` successor
+       is `.postcombatMain` at `Turn.lean:91`) — ignoring `g.over` and cleanup replacement pauses (whereas `.untap` at
+       `586, 591, 596, 605` and `870, 876, 882, 893` intentionally preserves `hasQueuedPending` so
+       `anyContinuationGrantsPriority` does not chain a duplicate `.finishFraChoice`), line `897` falls back to
+       `Game`-free `pr.endsWithPriorityGrant hasQueuedPending` (`Event.lean:2381–2407`, returning unconditional `true`
+       at `2384–2390` for `.finishConcede`, `.beginTurnAfterStartExpiry`, `.finishCleanupAfterClearEot`, and
+       `.finishPostStep` of `.startNextTurnAndBegin` / `.endTurnAfterCleanupStepEnded` / `.cleanupStepAfterDiscard` /
+       `.postSbaCleanup _`, `!wp && !mid` at `2395` for idle `.concedePlayersLoop`, and `grantPriority && !hadOuter` at
+       `2396` for `.finishPostCast` even when `g.over` holds or `finishPostCast` at `665` / `finishConcede` opens a
+       non-granting prompt), and `firstPriorityGrantRecipient?` (`970–972`) returns `some none`
+       (`hasImplicitPriorityContinuation == true` at `1005–1006`) whenever
        `continuationGrantsPriority g hasQueuedPending pr` is `true` and `priorityRecipientOfContinuation?` is `none`
        — misclassifying `hasQueuedPending` carry-through bits (`.untap` at `870, 876, 882, 893` and `hadOuter ==
        true` activation/turn-face-up leaves at `Event.lean:2401–2405`) as well as non-implicit `.finishConcede` /
@@ -18715,8 +18721,9 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
        (`1046–1048, 1063–1065, 1076–1078`) and `ManaAbilities` (`635–636, 720–721, 728–731, 755–756`) overwrite
        `g.pendingPriority`; and
        (iii) `PendingReplacement.endsWithPriorityGrant` (`Event.lean:2397–2400`) requires `!openCont` and
-       `priorityRecipientOfContinuation?` (`905–915`) omits `openCont == true` (`some g.activePlayer` at
-       `Casting.lean:1371, 1538, 1609`) on `.completeActivation false true`,
+       `priorityRecipientOfContinuation?` (`905–915`) omits `openCont == true` (`if openCont` / `hadOpenContinuation`
+       `then g.activePlayer else caster` at `Casting.lean:1186, 1192, 1321, 1371, 1505` and `Decisions.lean:2401`) on
+       `.completeActivation false true`,
        `.finishBecomeActivated .. false true`, `.finishPostLoyaltyActivated .. false true`,
        `.finishBecomeCast _ _ true false true`, and `.finishProposedSpellCosts _ true false true`, while
        `.completeActivation` (`908–910`) omits `prop.needsSacrificeOther` (`Casting.lean:1582–1598`) and
@@ -18730,16 +18737,25 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
        - Use `g.anyContinuationGrantsPriority` in `Decisions.concedePlayersLoop` (`1419–1421, 1477–1479`); drop the
          `stepAlwaysGrantsPriority` short-circuits in `nextQueuedPendingOnResume` (`587, 592, 597, 607`, draining to
          `false` when the `Game`-aware step recipient helper is `.isSome` and preserving `hasQueuedPending` when
-         `.isNone`) and `continuationGrantsPriority` (`871, 877, 883, 889, 895`, keeping `.untap => hasQueuedPending`
-         at `870, 876, 882, 893`), add `Game`-aware arms in `continuationGrantsPriority` for `.finishPostCast` /
+         `.isNone`) and `continuationGrantsPriority` (`871, 877, 883, 895`, keeping `.untap => hasQueuedPending` at
+         `586, 591, 596, 605` and `870, 876, 882, 893`), and replace the hardcoded additional-combat `.endOfCombat`
+         arms at `602` (`if (advanceAfterStepEndedRecipient? gR).isSome then false else hasQueuedPending`) and `889`
+         (`(advanceAfterStepEndedRecipient? gR).isSome`, keeping `889` ahead of `gR.step.next?` so additional combat
+         still probes `.beginningOfCombat` via `446–453` instead of falling through to `.postcombatMain`); add
+         `Game`-aware arms in `continuationGrantsPriority` for `.finishPostCast caster true false hadOpenContinuation`
+         (matching `priorityRecipientOfContinuation?` at `903–904` and `finishPostCastRecipient?` at `626–668`: `false`
+         when `finishPostCast` opens a non-granting prompt at `665`, `true` when `(finishPostCastRecipient? ...).isSome`
+         or it chains `.finishFraChoice` at `666` / `Casting.finishPostCast` `1190–1191`, while leaving
+         `grantPriority == false` or `hadOuter == true` as `false` per `Event.lean:2375–2376, 2396`) as well as
          `.finishConcede` / idle `.concedePlayersLoop` / turn-and-cleanup leaves (preserving `Game`-free
          `Event.endsWithPriorityGrant`'s step/cleanup arms), and return `some none` in `firstPriorityGrantRecipient?`
          (`970–972`) only when `pr` itself performs or chains an implicit `g.pendingPriority` grant
          (`.finishFraChoice`, `.afterWardResolved`, `!hadOuter` cast/activation/turn-face-up leaves chaining
          `.finishFraChoice`, or `finishConcedePriority`'s `finishFraChoice` branch — never for `hasQueuedPending`-only
          grant bits on `.untap` or `hadOuter == true` leaves); drop `&& !openCont` in `Event.endsWithPriorityGrant`
-         (`2397–2400`), handle `openCont == true` (`if openCont then g.activePlayer else caster`) and post-cost
-         prompts (`needsSacrificeOther`, `needsDiscardCard`, Ancestry scry, `finishPostCastRecipient?` without adding
+         (`2397–2400`), handle `openCont == true` (`if openCont then g.activePlayer else caster`, matching
+         `Casting.lean:1186, 1192, 1321, 1371, 1505` and `Decisions.lean:2401`) and post-cost prompts
+         (`needsSacrificeOther`, `needsDiscardCard`, Ancestry scry, `finishPostCastRecipient?` without adding
          `hasQueuedPending` to `626–668`) in `priorityRecipientOfContinuation?` (`905–915`), and stash
          `g.priorityInstead p` / `nextP` into `g.pendingPriority` before `promptTriggerTargetsIfNeeded` in
          `finishAndGrantPriority` (`1080–1081`) and `finishConcedePriority` (`1312–1314`).
@@ -18747,8 +18763,8 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
      remaining cost/activation leaves, and `StateBasedActions.mergeLeaveArgs` / `Leaving.playerLeavesGameCore`
      preservation**
      (`ActivationCosts.lean:20–21, 396, 479–483, 541, 702, 838, 931`,
-     `Casting.lean:960–1022, 1150–1188, 1314, 1380, 1406, 1498, 1577, 1609`, `Core.lean:187–188`,
-     `Decisions.lean:210–215, 337–464, 1051, 1168–1185, 1293–1298, 1543–1608, 2369–2376, 2403–2433, 4138–4219`,
+     `Casting.lean:960–1022, 1150–1191, 1314, 1380, 1406, 1498, 1538, 1577, 1609`, `Core.lean:187–188`,
+     `Decisions.lean:210–215, 337–464, 1080–1093, 1169–1185, 1293–1298, 1543–1608, 2369–2433, 4138–4219`,
      `Event.lean:1730–1732, 2326–2329`, `Leaving.lean:3573–3673, 3806–3820`, `StateBasedActions.lean:414–500`,
      `Turns.lean:319–356, 663–670, 963–967`):
      - Three continuation-probe, `.seq`-reversal, and post-leave ordering bugs remain:
@@ -18773,17 +18789,19 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
        (rewindProposal := none)` (`Event.lean:1730–1732`) whose outer `g.outerPendingReplacements.back?` can reverse,
        and while `.completeActivation`'s `.error` arm (`2366–2368`) and `.finishBecomeCast` (`2377–2402`, at
        `2389–2391`) already forward `followedByFinishFra` / `followedByExplicitPriority?`, the remaining 6
-       cost/activation leaves omit them on inner reversals — `.payCostPickItems` (`Decisions.lean:2426–2427`, via
-       `reverseProposedSpellFwd` at `ActivationCosts.lean:20–21, 396, 479–483` and `payCostPick` at `541`),
-       `.finishActivationExtraCosts` (`Decisions.lean:2428–2430`, via `reverseProposedSpellFwd` at
-       `ActivationCosts.lean:702` and `payActivationExtraCosts` at `838, 931`, including from
+       cost/activation leaves omit them on inner reversals — `.payCostPickItems` (`Decisions.lean:2426–2427` -> wrapper
+       `ActivationCosts.payCostPickItems` at `479–483` -> `reverseProposedSpellFwd` in `payCostPickItemsChecked` at
+       `396`, plus `payCostPick` at `541`; `opaque reverseProposedSpellFwd` at `20–21` already declares both
+       parameters), `.finishActivationExtraCosts` (`Decisions.lean:2428–2430` -> `reverseProposedSpellFwd` at
+       `ActivationCosts.lean:702`, plus `payActivationExtraCosts` at `838, 931`, including from
        `Casting.completeActivation` at `1577`), `.finishProposedSpellCosts` (`Decisions.lean:2412–2419`, whose `.error`
        arm forwards while its 7 inner `reverseProposedSpell? (resumeContinuation := true)` calls at
        `Decisions.lean:4138, 4157, 4177, 4184, 4192, 4202, 4219` omit both flags), `.finishBecomeActivated`
        (`Decisions.lean:2369–2376` -> `Casting.becomeActivated` at `1498`, including from `completeActivation` at
        `1609`), `.finishPostLoyaltyActivated` (`Decisions.lean:2431–2433` -> `Casting.finishPostLoyaltyActivated` at
-       `1314`), and `.finishTurnFaceUp` (`Decisions.lean:2420–2422` -> `Casting.completeTurnFaceUp` at `1380, 1406`,
-       plus `Decisions.lean:4205`) — before `.seq` discards `rest` on `reversed == true`; and
+       `1314`, including via `becomeActivated` at `1538`), and `.finishTurnFaceUp` (`Decisions.lean:2420–2422` and
+       `finishProposedSpellCosts`'s `.turnFaceUp` caller at `4205` -> `Casting.completeTurnFaceUp`'s
+       `reverseProposedSpell` calls at `1380, 1406`) — before `.seq` discards `rest` on `reversed == true`; and
        (iii) in `StateBasedActions.mergeLeaveArgs` (`414–438`), when `s0 = some oldP`, `savedIn = some newP`
        (`newP != .none`), and `rest?.isSome`, setting `saved? := some newP` and pushing `restoreOld` onto
        `outerPendingReplacements` restores `newP` *before* `oldP` and `rest?` instead of preserving `oldP` ahead of
@@ -18806,18 +18824,23 @@ arbitrary-subtype `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`) + Lay
          `followedByFinishFra || rest.endsWithFinishFra` and `followedByExplicitPriority?` when no granting leaf is
          found), match `.restorePending _ (popOuter := true) (rewindProposal := none)` in `stepCanReverseProposal`
          (`1543–1570`) when `g.outerPendingReplacements.back?` (distinct from the continuation being probed) can
-         reverse, and thread `followedByFinishFra` / `followedByExplicitPriority?` into the 6 remaining
-         cost/activation reverse paths (`ActivationCosts.lean:396, 479–483, 541, 702, 838, 931`,
-         `Decisions.lean:2420–2433, 4112–4219`, `Casting.lean:1314, 1380, 1406, 1498, 1577, 1609`, without re-editing
-         `.completeActivation`'s `.error` arm or `.finishBecomeCast`); prefer an existing `.leavePlayersWhoLost` leaf
-         over an earlier `.checkSBA` in `chainOrMergeLeave` (`440–500`) and keep `saved? := some oldP` while
-         sequencing `.restorePending newP` after `rest?` in `mergeLeaveArgs` (`414–438`); and when
-         `wasAbortedProposal && !rewindAbortedProposal && curPending != .none` in `Leaving.playerLeavesGameCore`
-         (`3573–3616`), do not chain `.finishPostCast` while `curPending` is still installed (`Casting.lean:1150,
-         1165`, `Decisions.lean:2408`), instead deferring the reopen of `topFrame`'s `pendingMayCastFromExile` /
-         `pendingFreeCopies` until after `curPending` resolves and `g.pending == .none` (via a post-`curPending`
-         outer continuation in `Leaving.lean:3655–3673, 3806–3820` and idle reopen in `Decisions.finishFraChoice` at
-         `1168` / `finishAndGrantPriority` at `1051`).
+         reverse, and thread `followedByFinishFra` / `followedByExplicitPriority?` from their callers
+         (`Decisions.lean:2369–2376, 2412–2415, 2420–2422, 2426–2433, 4205`, `ActivationCosts.payCostPickItems` at
+         `479–483`, and `Casting.lean:1538, 1577, 1609`) into the inner reverse calls across those 6 cost/activation
+         paths (`ActivationCosts.lean:396, 541, 702, 838, 931`,
+         `Decisions.lean:4138, 4157, 4177, 4184, 4192, 4202, 4219`, and `Casting.lean:1314, 1380, 1406, 1498`, without
+         re-editing `.completeActivation`'s `.error` arm or `.finishBecomeCast`); prefer an existing
+         `.leavePlayersWhoLost` leaf over an earlier `.checkSBA` in `chainOrMergeLeave` (`440–500`) and keep
+         `saved? := some oldP` while sequencing `.restorePending newP` after `rest?` in `mergeLeaveArgs` (`414–438`);
+         and when `wasAbortedProposal && !rewindAbortedProposal && curPending != .none` in
+         `Leaving.playerLeavesGameCore` (`3573–3616`), do not chain `.finishPostCast` while `curPending` is still
+         installed (`Casting.lean:1150, 1165`, `Decisions.lean:2408`), instead deferring the reopen of `topFrame`'s
+         `pendingMayCastFromExile` / `pendingFreeCopies` until after `curPending` resolves and `g.pending == .none`
+         (via a post-`curPending` outer continuation in `Leaving.lean:3655–3673, 3806–3820` and on the idle paths of
+         `Decisions.finishAndGrantPriority` at `1080–1093` and `finishFraChoice` at `1169–1185` — once
+         `g.pending == .none` and `g.proposedSpell.isNone`, mirroring `Casting.finishPostCast` at `1150, 1165,
+         1190–1191` so an opened fra choice becomes `g.pending` or `triggerSequenceRest` chains `.finishFraChoice`
+         before `receivePriority`, rather than touching `popEmptyContinuationFrames` at `1051` / `1168`).
 
 2. **Strict `requireSubtype` filtering & historical `prepareSource` / CR 707.12 / rollback `.playFromExile` scoping,
    one-shot resolution casts vs continuous `.playFromExile` grants, and simultaneous copy / `.fraEmblem` /
