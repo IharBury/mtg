@@ -2880,22 +2880,7 @@ def openBatchAwaitedPausePrompt (g : Game) : Bool :=
           if inCurBid && p != .none then
             lastNonNone? := some p
         | _ => pure ()
-      match lastNonNone? with
-      | some p => return isPausePrompt p
-      | none =>
-        let mut j := startIdx
-        while j > 0 do
-          j := j - 1
-          match g.events[j]! with
-          | .engine _ (.pending p) _ =>
-            if p != .none then
-              return isPausePrompt p
-          | .engine _ .clearPausedBatch _
-          | .engine _ (.pauseBatch ..) _
-          | .rules _ (.player (.leftGame _)) _ _ =>
-            return false
-          | _ => pure ()
-        return false
+      return lastNonNone?.any isPausePrompt
 
 /-- Roll back an active proposal aborted by a player's departure using
 `reverseToProposalCheckpoint?`, the reversal log, and `runPostCastCleanup`
@@ -3548,15 +3533,9 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           | some (q, ids, left) =>
             let alive := ids.filter (fun id =>
               (g.findObject? id).any (fun (o : GameObject) => o.zone == Zone.exile && !g.isLand o))
-            let ckptRestoresMayCast :=
-              (g : Game).targetProposalCheckpoint?.any fun (ckpt : ProposalCheckpoint) =>
-                (match ckpt.pending with
-                 | Pending.fraChoice r (.mayCastUpToFromExile ..) => r == q
-                 | _ => false) ||
-                  (ckpt.continuations.back?.getD {}).pendingMayCastFromExile.isSome
             if q == p || !g.stillInGame q then
               (g.change (.pendingMayCastFromExile none), curPending)
-            else if !(wasAbortedProposal && rewindAbortedProposal && ckptRestoresMayCast) then
+            else if !(wasAbortedProposal && rewindAbortedProposal) then
               if alive.isEmpty || left == 0 then
                 (g.change (.pendingMayCastFromExile none), curPending)
               else if wasAbortedProposal && curPending == Pending.none then
@@ -3574,12 +3553,6 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
         | some (q, ids, budget, castsLeft) =>
           let alive := ids.filter (fun id =>
             (g.findObject? id).any (fun (o : GameObject) => o.zone == Zone.exile))
-          let ckptRestoresFreeCopies :=
-            (g : Game).targetProposalCheckpoint?.any fun (ckpt : ProposalCheckpoint) =>
-              (match ckpt.pending with
-               | Pending.fraChoice r (.castCopiesFree ..) => r == q
-               | _ => false) ||
-                (ckpt.continuations.back?.getD {}).pendingFreeCopies.isSome
           if q == p || !g.stillInGame q then
             let g :=
               if alive.isEmpty then g
@@ -3588,7 +3561,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                   alive.foldl (fun g id =>
                     g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
             (g.change (.pendingFreeCopies none), curPending)
-          else if !(wasAbortedProposal && rewindAbortedProposal && ckptRestoresFreeCopies) then
+          else if !(wasAbortedProposal && rewindAbortedProposal) then
             let castable := alive.filter (fun id =>
               (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
             if castable.isEmpty || castsLeft == 0 then

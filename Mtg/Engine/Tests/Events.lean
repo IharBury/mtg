@@ -19804,8 +19804,9 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
   -- `p0` proposes `p1ExId` (paused at `.activateManaAbilities p0`) with `pendingMayCastFromExile` waiting;
   -- `p1` concedes -> `p0`'s proposal of `p1`'s card is aborted and `p2ExId` is re-offered!
   let gNonOwnerProp :=
-    (mustApply (gExPerm.change (.pushContinuationFrame {})) p0 (.cast p1ExId)).change
-      (.continuation (.pendingMayCastFromExile (some (p0, #[p1ExId, p2ExId], 1))))
+    (mustApply (gExPerm.change (.pushContinuationFrame {})) p0 (.cast p1ExId)).changes #[
+      .clearProposalCheckpoint,
+      .continuation (.pendingMayCastFromExile (some (p0, #[p1ExId, p2ExId], 1))) ]
   let gNonOwnerAborted := mustApply gNonOwnerProp p1 .concede
   let nonOwnerAbortOk :=
     gNonOwnerProp.proposedSpell.isSome &&
@@ -36883,9 +36884,28 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
   let resBidProtectedAcrossTeamB : Bool :=
     (match p3LeftPos?, gain6Pos? with | some lPos, some gPos => decide (lPos < gPos) | _, _ => false) &&
     wispMovePos?.all (fun wPos => gain6Pos?.any (fun gPos => decide (gPos < wPos)))
+  let wisp4pDef : CardDef := creature "P45i1 Wisp4p" ManaCost.empty #[] 0 0
+  let gPriorReplBase := addPermanent g4 wisp4pDef p0 p0
+  let wisp4pId := (gPriorReplBase.permanentsOf p0).back!.id
+  let priorRid : ReplacementId := { kind := .entersWithExtraCounters, object := some wisp4pId, counterKind := some .plusOnePlusOne }
+  let gAfterSyncRepl :=
+    gPriorReplBase.changes #[
+      .pending (.chooseReplacement p0 #[priorRid]),
+      .pending .none ]
+  let freshResBid : BatchId := ⟨9465⟩
+  let gFreshRes :=
+    (gAfterSyncRepl.change (.pauseBatch freshResBid (some testCause)
+      gAfterSyncRepl.objects gAfterSyncRepl.players gAfterSyncRepl.activeEffects .none gAfterSyncRepl.stack)).gainLife
+      p0 2 (cause := some testCause)
+  let (gFreshAfterSba, _) := gFreshRes.checkSBACountedWithLeavesCore
+  let freshResSkipOk : Bool :=
+    !gFreshRes.openBatchAwaitedPausePrompt &&
+    gFreshAfterSba.currentBatch.map Prod.fst == some freshResBid &&
+    (gFreshAfterSba.findObject? wisp4pId).any (·.isOnBattlefield)
 
   -- 1a(v). `!rewindAbortedProposal` preserves `pendingMayCastFromExile` and `pendingFreeCopies`
-  --        when a third party `p2` departs and rewinds `p0`'s proposal:
+  --        when a third party `p2` departs and rewinds `p0`'s proposal (and does not rebuild a
+  --        decremented prompt when `ckpt` did not carry that stash):
   let drawDivDef : CardDef := {
     name := "P45i1 DrawTwo"
     manaCost := ManaCost.ofGeneric 2
@@ -36901,6 +36921,18 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
     gMayEx0.change (.pending (.fraChoice p0 (.mayCastUpToFromExile #[p2ExId, p0ExId] 2)))
   let gMayExProposed := mustApply gMayExPrompt p0 (.choosePermanents #[p2ExId])
   let gMayExAfterP2 := mustApply gMayExProposed p2 .concede
+
+  let gNoStashBase :=
+    (gMayEx0.createEffect (.permission p0 (.playFromExile p2ExId { player := p0 }) .untilEndOfTurn)
+      (cause := some testCause))
+  let gNoStashMay :=
+    (mustApply gNoStashBase p0 (.cast p2ExId)).change
+      (.continuation (.pendingMayCastFromExile (some (p0, #[p2ExId, p0ExId], 1))))
+  let gNoStashMayAfterP2 := mustApply gNoStashMay p2 .concede
+  let gNoStashCp :=
+    (mustApply gNoStashBase p0 (.cast p2ExId)).change
+      (.continuation (.pendingFreeCopies (some (p0, #[p2ExId, p0ExId], 5, 1))))
+  let gNoStashCpAfterP2 := mustApply gNoStashCp p2 .concede
 
   let gCp0 := insertObject (insertObject g4 shock p2 .exile) drawDivDef p0 .exile
   let cpP2Id := (gCp0.objects.filter (fun o => o.zone == .exile && o.owner == p2))[0]!.id
@@ -36922,13 +36954,16 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
     mustHold45i1 "1a_iv"
       ((g2hgAfterTeamB.player ⟨2⟩).leftTheGame &&
        (g2hgAfterTeamB.player ⟨3⟩).leftTheGame &&
-       resBidProtectedAcrossTeamB) &&
+       resBidProtectedAcrossTeamB &&
+       freshResSkipOk) &&
     mustHold45i1 "1a_v_mayEx"
       (gMayExProposed.pendingMayCastFromExile == some (p0, #[p0ExId], 1) &&
-       gMayExAfterP2.pending == .fraChoice p0 (.mayCastUpToFromExile #[p0ExId] 2)) &&
+       gMayExAfterP2.pending == .fraChoice p0 (.mayCastUpToFromExile #[p0ExId] 2) &&
+       gNoStashMayAfterP2.pending == .none) &&
     mustHold45i1 "1a_v_freeCp"
       ((gCpAfterP2.findObject? cpP0Id).any (·.zone == .exile) &&
-       gCpAfterP2.pending == .fraChoice p0 (.castCopiesFree #[cpP2Id, cpP0Id] 5 1))
+       gCpAfterP2.pending == .fraChoice p0 (.castCopiesFree #[cpP2Id, cpP0Id] 5 1) &&
+       gNoStashCpAfterP2.pending == .none)
 
   -- 1b. `Leaving.preBatchLegendSnapshotValid`:
   --     (i) `depBid?` excludes post-departure CR 610.3 `returnLinkedExileMoves` batch (`retBid != depBid`);
@@ -37084,7 +37119,8 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
   mustHold45i1 "1c.explicitPriorityPreservation" item1cOk &&
   mustHold45i1 "1.replay"
     (replayOk45i1 #[gOrd1Done, gInnerAfter2, gNonSbaDone, gDirectDrained,
-      g2hgAfterTeamB, gMayExAfterP2, gCpAfterP2, gDepBoundaryAfterP2, gMultiAfterP2,
+      g2hgAfterTeamB, gFreshAfterSba, gMayExAfterP2, gNoStashMayAfterP2,
+      gCpAfterP2, gNoStashCpAfterP2, gDepBoundaryAfterP2, gMultiAfterP2,
       gEntryExpDone, gPostCastExp, gRevExp1, gOuterFra, gSacRes2])
 
 end Phase45Item1EventAlignment
@@ -37788,6 +37824,26 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
   let gArmedAb1Done :=
     mustApply (mustApply gArmedAb1Step1 p0 (.choosePermanents #[spareId])) p0 (.choosePermanents #[bladeObj0.id])
 
+  -- `Agent.choose` (`chooseActivate`) rejects non-disjoint `.crew` + sacrifice cost picks on a lone 2/2:
+  let crewSacVehDef : CardDef := {
+    name := "P45i4 SacSkiff"
+    types := #[.artifact]
+    subtypes := #["Vehicle"]
+    power := some 4
+    toughness := some 4
+    activatedAbilities := #[{
+      cost := { fra := .crew 2, sacrificeAnotherCreature := true }
+      effect := Effect.gainLife 3
+    }]
+  }
+  let gCrewSacOne :=
+    mustApply (mustApply (mustApply (addPermanent (addPermanent g3 crewSacVehDef p0 p0) bear p0 p0) p0 .pass) p1 .pass) p2 .pass
+  let crewSacVehId := (gCrewSacOne.permanentsOf p0).find? (·.name == crewSacVehDef.name) |>.get!.id
+  let gCrewSacTwo := addPermanent gCrewSacOne bear p0 p0
+  let agentCrewSacDisjointOk :=
+    (match Agent.choose gCrewSacOne p0 with | some (.activate _ _) => false | _ => true) &&
+    (match Agent.choose gCrewSacTwo p0 with | some (.activate id idx) => id == crewSacVehId && idx == 0 | _ => false)
+
   -- Stack-resolved `.addAnyColorSpendOnlyArtifactSpell` & `.addTwoAnyColorEquipment`:
   let anchor4 := (addPermanent g3 loneArtDef p0 p0).permanentsOf p0 |>.back!
   let (gArtMana0, _) :=
@@ -37806,6 +37862,7 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
     gDsStep3.stack.size == 1 &&
     onePilotCrewTapRejected &&
     gCtDone.stack.size == 1 &&
+    agentCrewSacDisjointOk &&
     armedReservedAtMana &&
     armedNoSpareRejected &&
     defaultPicksSpare &&

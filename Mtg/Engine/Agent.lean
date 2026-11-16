@@ -517,8 +517,8 @@ where
         costPicksWithSacrificeOther (costPicksOf ab) ab.cost.sacrificeAnotherCreatureOrArtifact
       let sacSrc := ab.cost.sacrificeSource || ab.cost.fra == .exileSource
       let discSrc := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
-      let (crewOk, crewExcl, crewUsed) : Bool × Array ObjectId × Array ObjectId :=
-        if isTurnFaceUp then (true, #[], #[])
+      let (crewOk, crewExcl) : Bool × Array ObjectId :=
+        if isTurnFaceUp then (true, #[])
         else
           match ab.cost.fra with
           | .crew n =>
@@ -535,16 +535,9 @@ where
                 (discardOrExileHandSource := discSrc)
                 (orderedCands? := some cands)
                 (disjointFromAllPicks := true) with
-            | some picked => (true, picked, picked)
-            | none =>
-              match g.firstPayableCrewSelection? p o.id n allPicks
-                  (tapSource := ab.cost.tap)
-                  (sacrificeOrExileSource := sacSrc)
-                  (discardOrExileHandSource := discSrc)
-                  (orderedCands? := some cands) with
-              | some picked => (true, picked, #[])
-              | none => (false, #[], #[])
-          | _ => (true, #[], #[])
+            | some picked => (true, picked)
+            | none => (false, #[])
+          | _ => (true, #[])
       let (picksOk, tapPickExcl) : Bool × Array ObjectId :=
         if isTurnFaceUp then (true, #[])
         else if !crewOk then (false, #[])
@@ -557,7 +550,7 @@ where
                 (tapSource := ab.cost.tap)
                 (sacrificeOrExileSource := sacSrc)
                 (discardOrExileHandSource := discSrc)
-                (used := crewUsed ++ usedPicks)
+                (used := crewExcl ++ usedPicks)
                 (preTappedIds := crewExcl) with
             | some chosen =>
               if chosen.size != pick.count then
