@@ -339,7 +339,7 @@ inductive PlayerSelector where
   last-known toughness is that player's index.
   `.revealLibrary .untilNonland (.may (.putCounters (.ofKind .plusOnePlusOne) .source) (.exile .top .forLater .anyManaThisTurn) .ifYouDont) .announced`. -/
   | announced
-deriving Repr, Inhabited, BEq
+deriving Inhabited
 
 /-- Who `TriggerResolution.pump` gives +P/+T until end of turn, who
 `TriggerResolution.dealDamage` damages, what `TriggerResolution.discard`
@@ -915,9 +915,15 @@ inductive ObjectSelector where
   The creatures among them are
   `.intersection [.creaturesYouControl, .union (subtypes.toList.map .othersOfSubtype)]`. -/
   | union (what : List ObjectSelector)
-deriving Repr, Inhabited, BEq
+deriving Inhabited
 
 end
+
+-- Derive the mutual `Repr` and `BEq` pair once instead of once per mutual type.
+deriving instance Repr, BEq for PlayerSelector
+
+instance : BEq ObjectSelector := ⟨instBEqPlayerSelector.beq_2⟩
+instance : Repr ObjectSelector := ⟨instReprPlayerSelector.repr_2⟩
 
 /-- Where one statistic of `TriggerResolution.pump` reads its bonus,
 where `TriggerResolution.dealDamage` reads its amount, how many cards

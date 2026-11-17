@@ -1524,7 +1524,7 @@ inductive PostStep where
       (sourceId : Option ObjectId) (sagaChapter : Option Nat)
       (ab? : Option TriggeredAbility) (alreadyResolved : Bool)
   | untapStepAfterPhaseIn
-deriving Repr, Inhabited, BEq
+deriving Inhabited, BEq
 
 /-- Stage of `StateBasedActions.finishSbaSweep` across `Pending.chooseReplacement` pauses. -/
 inductive SbaSweepStage where
@@ -1966,7 +1966,7 @@ inductive PendingReplacement where
   | phaseInControlledLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
       (startEventIdx : Option Nat := none)
-deriving Repr, Inhabited, BEq
+deriving Inhabited
 
 /-- One frame of mid-resolution continuation state (CR 608.2). Grouping the
 per-step/per-card registers plus `resolvingContext`, `resolvingSpell`,
@@ -2150,7 +2150,7 @@ structure ContinuationFrame where
   /-- Deferred `StackObjectEvent.resolved` payload waiting on an ETB replacement
   or as-enters choice opened during `resolutionFinish`. -/
   pendingResolvedEvent : Option (EventObject × PlayerId × EventCause) := none
-deriving Repr, Inhabited, BEq
+deriving Inhabited
 
 /-- Mutations to the top frame of `Game.continuations`. -/
 inductive ContinuationChange where
@@ -2244,7 +2244,7 @@ inductive ContinuationChange where
   | afterRandom (v : AfterRandom)
   | resolutionFinish (v : Option ResolutionFinish)
   | pendingResolvedEvent (v : Option (EventObject × PlayerId × EventCause))
-deriving Repr, Inhabited, BEq
+deriving Inhabited
 
 /-- Internal engine state mutations that are not rules-level occurrences. -/
 inductive EngineChange where
@@ -2308,13 +2308,13 @@ inductive EngineChange where
   | replacementOrder (ids : Array ReplacementId)
   | castingFromTop (v : Bool)
   | sbaChecked
-deriving Repr, Inhabited, BEq
+deriving Inhabited
 
 /-- One change to the game, without the turn number. -/
 inductive GameChange where
   | rules (e : RulesEvent)
   | engine (c : EngineChange)
-deriving Repr, Inhabited, BEq
+deriving Inhabited
 
 /-- A game state change on a given turn (CR 500). `Game.events` records each
 one that happens. Every `RulesEvent` carries an explicit `EventCause`;
@@ -2322,9 +2322,19 @@ internal `EngineChange` mutations are cause-free. -/
 inductive GameEvent where
   | rules (turn : Nat) (e : RulesEvent) (cause : EventCause) (batch : Option BatchId := none)
   | engine (turn : Nat) (c : EngineChange) (batch : Option BatchId := none)
-deriving Repr, Inhabited, BEq
+deriving Inhabited
 
 end
+
+-- Derive the 6-way mutual `BEq` tuple once instead of emitting six identical
+-- copies across `PendingReplacement`..`GameEvent` (`Repr` is unused on game state).
+deriving instance BEq for PendingReplacement
+
+instance : BEq ContinuationFrame := ⟨instBEqPendingReplacement.beq_2⟩
+instance : BEq ContinuationChange := ⟨instBEqPendingReplacement.beq_3⟩
+instance : BEq EngineChange := ⟨instBEqPendingReplacement.beq_4⟩
+instance : BEq GameChange := ⟨instBEqPendingReplacement.beq_5⟩
+instance : BEq GameEvent := ⟨instBEqPendingReplacement.beq_6⟩
 
 /-- Whether a `PendingReplacement` continuation ends with `.finishFraChoice`. -/
 def PendingReplacement.endsWithFinishFra : PendingReplacement → Bool

@@ -1,5 +1,4 @@
 import Mtg.Demo
-import Mtg.Engine.Tests
 
 open Mtg.Engine
 open Mtg.Engine.Catalog

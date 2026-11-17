@@ -63,7 +63,7 @@ structure ProposalCheckpoint where
   delayedTriggers : Array DelayedTrigger := #[]
   extraTurns : Array PlayerId := #[]
   additionalCombatPhases : Nat := 0
-deriving Repr, Inhabited, BEq
+deriving Inhabited, BEq
 
 structure Game where
   players : Array Player := #[]
@@ -163,7 +163,7 @@ structure Game where
   /-- Derived invariant (`== continuationsHaveSuppressedReplay continuations`):
   true while a suppressed checkpoint replay continuation is active. -/
   suppressInteractiveReplay : Bool := false
-deriving Repr, Inhabited, BEq
+deriving Inhabited, BEq
 
 /-- Pre-batch game state snapshot for CR 603.10 look-back trigger evaluation. -/
 abbrev GameSnapshot := Game
@@ -14137,15 +14137,15 @@ each `runBatch` and stopping only when `Pending.chooseReplacement` or
 `Pending.chooseLegend` opens, chaining any remaining slice via
 `PendingReplacement.continueCheckpointReplay` (CR 603.2c / 610.3 / 616.1 /
 733.1–733.2 / 800.4a). -/
-def replayKeptStreamCore (g : Game)
-    (remainingStream fullKeptStream : Array (Bool × GameEvent))
+@[noinline] private def replayKeptStreamStepEvent
+    (fullKeptStream : Array (Bool × GameEvent))
     (revMap : Array (ObjectId × ObjectId))
-    (liveObjMap : Array (ObjectId × ObjectId) := #[])
-    (effRevMap : Array (EffectId × EffectId) := #[])
-    (minPostCkptEffId : Nat := 0)
-    (suppressInteractive : Bool := false)
-    (keptOrigNextEffs : Array Nat := #[])
-    (runBatch : Game → (Game → Game) → Game := fun g0 f => g0.withBatchCore none f) : Game := Id.run do
+    (minPostCkptEffId : Nat)
+    (effectiveOrigNextEffs : Array Nat)
+    (fullIdx : Nat) (fromAction : Bool)
+    (st : Game × Array (ObjectId × ObjectId) × Array (EffectId × EffectId) × Array ObjectId)
+    (ev : GameEvent) :
+    Game × Array (ObjectId × ObjectId) × Array (EffectId × EffectId) × Array ObjectId :=
   let isLibZone : Zone → Bool
     | .library _ => true
     | _ => false
@@ -14196,28 +14196,6 @@ def replayKeptStreamCore (g : Game)
            | _ => false)
       if tied then acc.record (GameEvent.effectExpired acc.turnNumber eid eff (cause := cause))
       else acc) g0
-  let stepOrigNextEff (cur : Nat) (ev : GameEvent) : Nat :=
-    match ev with
-    | .engine _ (.nextEffectId v) _ => v
-    | .rules _ r cause _ =>
-      let cur1 :=
-        match r with
-        | .continuousEffect (.created eid _)
-        | .continuousEffect (.expired eid _) => max cur (eid.raw + 1)
-        | _ => cur
-      match cause.oneShotEffectId? with
-      | some eid => max cur1 (eid.raw + 1)
-      | none => cur1
-    | _ => cur
-  let effectiveOrigNextEffs : Array Nat :=
-    if keptOrigNextEffs.size >= fullKeptStream.size then keptOrigNextEffs
-    else Id.run do
-      let mut arr : Array Nat := #[]
-      let mut cur : Nat := minPostCkptEffId
-      for (_, kev) in fullKeptStream do
-        arr := arr.push cur
-        cur := stepOrigNextEff cur kev
-      return arr
   let roWith (lm : Array (ObjectId × ObjectId)) (g0 : Game) (oid : ObjectId) : ObjectId :=
     let r1 := resolveProposalRevId revMap oid
     let r2 := resolveProposalRevId lm r1
@@ -14823,6 +14801,47 @@ def replayKeptStreamCore (g : Game)
         (gCur.record (.rules t r cause' batch), liveMap, effRev1, matIds)
       | _ =>
         (gCur.record ev, liveMap, effRev, matIds)
+  stepEvent fullIdx fromAction st ev
+
+/-- Shared core for CR 733.1 / 733.2 kept-stream replay (`restoreProposalCheckpointWith`
+and `PendingReplacement.continueCheckpointReplay`). Replays `remainingStream`,
+draining local non-paused `pendingReplacement` continuations immediately after
+each `runBatch` and stopping only when `Pending.chooseReplacement` or
+`Pending.chooseLegend` opens, chaining any remaining slice via
+`PendingReplacement.continueCheckpointReplay` (CR 603.2c / 610.3 / 616.1 /
+733.1–733.2 / 800.4a). -/
+def replayKeptStreamCore (g : Game)
+    (remainingStream fullKeptStream : Array (Bool × GameEvent))
+    (revMap : Array (ObjectId × ObjectId))
+    (liveObjMap : Array (ObjectId × ObjectId) := #[])
+    (effRevMap : Array (EffectId × EffectId) := #[])
+    (minPostCkptEffId : Nat := 0)
+    (suppressInteractive : Bool := false)
+    (keptOrigNextEffs : Array Nat := #[])
+    (runBatch : Game → (Game → Game) → Game := fun g0 f => g0.withBatchCore none f) : Game := Id.run do
+  let stepOrigNextEff (cur : Nat) (ev : GameEvent) : Nat :=
+    match ev with
+    | .engine _ (.nextEffectId v) _ => v
+    | .rules _ r cause _ =>
+      let cur1 :=
+        match r with
+        | .continuousEffect (.created eid _)
+        | .continuousEffect (.expired eid _) => max cur (eid.raw + 1)
+        | _ => cur
+      match cause.oneShotEffectId? with
+      | some eid => max cur1 (eid.raw + 1)
+      | none => cur1
+    | _ => cur
+  let effectiveOrigNextEffs : Array Nat :=
+    if keptOrigNextEffs.size >= fullKeptStream.size then keptOrigNextEffs
+    else Id.run do
+      let mut arr : Array Nat := #[]
+      let mut cur : Nat := minPostCkptEffId
+      for (_, kev) in fullKeptStream do
+        arr := arr.push cur
+        cur := stepOrigNextEff cur kev
+      return arr
+  let stepEvent := replayKeptStreamStepEvent fullKeptStream revMap minPostCkptEffId effectiveOrigNextEffs
   let prefixLen := fullKeptStream.size - min remainingStream.size fullKeptStream.size
   let mut materializedIds : Array ObjectId := Id.run do
     let mut ids : Array ObjectId := #[]

@@ -1,6 +1,11 @@
 name = "mtg"
 version = "0.1.0"
 defaultTargets = ["Mtg.Engine", "MtgDemo", "mtg-demo", "oracle-roundtrip"]
+# Lean emits large single-function C files for inductive matchers and derived
+# instances; `-O1` keeps LLVM IR optimizations and `lean.h` inlining so `#guard`
+# tests run at native speed, while `-regalloc=fast` avoids Clang's superlinear
+# greedy register allocation on 10k+-line functions.
+moreLeancArgs = ["-O1", "-mllvm", "-regalloc=fast"]
 
 [leanOptions]
 autoImplicit = false

@@ -90,8 +90,6 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | some o => some #[o]
     | none => someEmpty
   | .any | .ifPresent | .eachPermanent | .laterCreature | .eachEquipment
-    | .target .any | .target .ifPresent | .target .eachPermanent
-    | .target .laterCreature | .target .eachEquipment
     | .permanent _ | .announced | .announcedCreature
     | .optionalCreature | .artifactEnchantmentOrLand
     | .eachUpToLastKnown | .announcedEquipment
@@ -106,7 +104,7 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
         | none => someEmpty
       else someEmpty
     | none => someEmpty
-  | .whileSource | .target .whileSource =>
+  | .whileSource =>
     match sourceId.bind onBf with
     | some _ => some permanentTargets
     | none => someEmpty
@@ -207,14 +205,29 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     let cause : Option ObjectId := g.recordedCauseId
     some ((g.permanentsOf controller).filter fun o =>
       g.hasSubtype o .forest && some o.id != cause)
-  | .creature | .target .creature =>
+  | .creature =>
     some (permanentTargets.filter (g.isCreature ·))
-  | .planeswalker | .target .planeswalker =>
+  | .planeswalker =>
     some (permanentTargets.filter (g.isPlaneswalker ·))
-  | .anotherSubtype subtype | .target (.anotherSubtype subtype) =>
+  | .anotherSubtype subtype =>
     some (permanentTargets.filter fun o =>
       g.hasSubtype o subtype && some o.id != sourceId)
-  | .target _ => none
+  | .target inner =>
+    match inner with
+    | .any | .ifPresent | .eachPermanent | .laterCreature | .eachEquipment =>
+      some permanentTargets
+    | .whileSource =>
+      match sourceId.bind onBf with
+      | some _ => some permanentTargets
+      | none => someEmpty
+    | .creature =>
+      some (permanentTargets.filter (g.isCreature ·))
+    | .planeswalker =>
+      some (permanentTargets.filter (g.isPlaneswalker ·))
+    | .anotherSubtype subtype =>
+      some (permanentTargets.filter fun o =>
+        g.hasSubtype o subtype && some o.id != sourceId)
+    | _ => none
   | .putArtifact | .putEquipment =>
     match g.putArtifactThisWay with
     | some (oid, _) =>
