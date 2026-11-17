@@ -19258,7 +19258,7 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
    `Costs.lean:241–245, 280–291`, `Decisions.lean:4586–4600, 4700–4733, 4995–4997, 5045–5047, 5952–5957`,
    `Demo.lean:2076–2078, 2106–2108`, `FraChoices.lean:76, 1749–1751, 2194–2255`,
    `Game/Object.lean:143–144`, `Leaving.lean:82–152, 308, 366–498`,
-   `Turns.lean:68–78, 135–169, 256–290, 400–425, 473–503, 1158–1164`;
+   `Turns.lean:23, 68–78, 135–169, 254–290, 374–425, 452–503, 804–825, 1158–1164`;
    **CR 114.5 / 118.9a,c / 119.4 / 400.7 / 514.2 / 601.1a / 601.2b / 608.2g / 609.4b / 611.2a / 702.26b,d / 702.37a /
    702.176a / 707.10f / 715.3d / 800.4c**):
    - **`Costs.playManaCost` `origPerm == none` fallback hijack, colored tax `anyMana`, and unified `PlayPermission`
@@ -19303,7 +19303,7 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
      `CastSpell.lean:163–172, 428–429`, `Core.lean:9811–9825, 9878–9881, 9938–9941, 16371–16376, 16409–16412`,
      `Decisions.lean:4586–4600, 4700–4718, 4995–4997, 5045–5047`, `FraChoices.lean:76, 1749–1751, 2194–2255`,
      `Game/Object.lean:143–144`, `Leaving.lean:82–152, 308, 366–498`,
-     `Turns.lean:68–78, 135–169, 256–290, 400–425, 473–503, 1158–1164`):
+     `Turns.lean:23, 68–78, 135–169, 254–290, 374–425, 452–503, 804–825, 1158–1164`):
      - Three resolution-cast / Morph-Impending, historical-permission, and expiry-log bugs remain:
        (i) `FraChoices` `.mayCastFromGraveyard` (`1749–1751`) still aborts with CR 119.4 on an unrelated unpayable
        `payLifeEqualManaValue` permission (and `FraChoices.defaultFraAction` at `2194–2255` plus `Agent.choose`
@@ -19327,9 +19327,15 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
        treating phased-out permanents (`o.status.phasedOut` / `!o.isOnBattlefield`) as co-departing even on source-leave
        cascades where `reconcileControlAfterTransition` (`Leaving.lean:308`, `!cur.isOnBattlefield`, CR 702.26b) keeps
        them phased out rather than `endControlEffectsSimultaneously` (`Leaving.lean:366–498`, whose secondary-exile
-       filter at `474` uses `cur.isBattlefieldObject`, CR 702.26d / 800.4c); `Turns.lean` (`70–76, 159–165, 256–290,
-       402–423, 473–503`) evaluates `hadPlayable` *after* simultaneous `.copy` / `.control` / `.fraEmblem` expiry has
-       already changed subtype or `prepareSource` control rather than on `pre`; `Core.expireWhileSourceEffects`
+       filter at `474` uses `cur.isBattlefieldObject`, CR 702.26d / 800.4c); in `Turns.lean`, `hadPlayable` at `70–76`
+       (`expireEffectsByDuration`, after `endControlEffectsSimultaneously` with `pre` at `23`), `281–287` (`clearEOT`, after
+       `endControlEffectsSimultaneously` and `273` with `pre` at `254`), `414–422` (`expireFraUntilTurnEffects`, inside
+       `expireNonControl` after `ceaseEndingFraEmblemsWhere` at `402–405` — and after `restoreCopiesUntilNextTurn` when
+       called from `473–477` or `1160–1164`, before `.control` effects end — with `pre` at `376`), `159–165`
+       (`expirePlayPermissions` at `135–169`, which has no `pre` binding when called at `273`, `503` — where
+       `expireUntilNextTurnEffects` has no `hadPlayable` binding of its own — and `806`), and `814–820`
+       (`startNextTurnCore`'s post-`806` non-`ending` `.untilEndOfTurn` loop at `807–824`) evaluates
+       `activePlayPermissions` on the post-expiry game rather than the pre-expiry state; `Core.expireWhileSourceEffects`
        (`16371–16376, 16409–16412`) folds `fraEmblemEntries` in `activeEffects` order instead of `emblemIds`
        parent-before-child BFS order; and `Attachments.ceaseToExist` (`54–86`) omits single-target return-control logs
        (`"{name} returns to {player}'s control"`) when a `.command` emblem with a `.whileInZone embId .command` control
@@ -19344,10 +19350,13 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
          `Core.lean:9879–9881, 9939–9941` to live `.stack` objects and stop `latestExileToStackAfterController?`
          (`9811–9825`) on `.zone (.created _ .exile)` and non-`.stack` `.exile` departures; and require
          `o.isOnBattlefield` for phased-out permanents in `Leaving.coDepartingIds` (`138–142`) unless
-         `departingPlayer?.isSome` or `endingCtrlEids` is expiring them, snapshot `hadPlayable` on `pre` across
-         `Turns.lean:70–76, 159–165, 256–290, 402–423, 473–503`, order `fraEmblemEntries` by `emblemIds` in
-         `Core.expireWhileSourceEffects` (`16371–16376`), and emit return-control logs on direct `.command` emblem
-         departure in `Attachments.ceaseToExist` (`54–86`).
+         `departingPlayer?.isSome` or `endingCtrlEids` is expiring them, evaluate `hadPlayable` on `pre` at
+         `Turns.lean:70–76` (`pre` at `23`), `281–287` (`pre` at `254`), `414–422` (threading `preState?` into
+         `expireFraUntilTurnEffects` at `374–376` from `456, 475–477` and `1158–1164`), and `814–820` (`pre` bound before
+         `806` at `804–825`) while threading `preState?` into `expirePlayPermissions` (`135–169`, `159–165`) from `273`,
+         `452–503`, and `806` (without double-logging when multiple permissions on `oid` expire together), order
+         `fraEmblemEntries` by `emblemIds` in `Core.expireWhileSourceEffects` (`16371–16376`), and emit return-control logs
+         on direct `.command` emblem departure in `Attachments.ceaseToExist` (`54–86`).
 
 3. **Controllerless CR 800.4c `lkiCtrl` attribution, post-batch `Phasing` CR 800.4c reconciliation & CR 702.26h orphaned
    indirect phase-in, complete `etbCostProspective?` threading in `Core`, historical counter LKI, and
@@ -19356,7 +19365,7 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
    `Core.lean:2089–2101, 2134–2751, 2797–2798, 2812, 2855–2856, 2873, 2896, 2914–2915, 2938, 3002–3003, 3516–3518, 7370–7419, 7862–7909, 7932–7946, 11927`,
    `Leaving.lean:347–351, 570–575`, `Movement.lean:132–133, 311–315`,
    `Phasing.lean:90–122, 141–161, 181–182, 196–265, 390–415, 681–692`,
-   `Tests/Events/Part13.lean:640–645, 678–688`;
+   `Tests/Events/Part13.lean:678–688`;
    **CR 110.2 / 122.1 / 400.7 / 500.7 / 502.1 / 603.10a / 611.2b / 613.1,4c / 614.1c / 616.1 / 701.3d /
    702.26b,c,f,g,h,n / 733.1–733.2 / 800.4a,c,d / 805.4**):
    - **Controllerless CR 800.4c `lkiCtrl` fallback attribution, post-batch `Phasing` reconciliation, and CR 702.26h
@@ -19397,11 +19406,11 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
          `!(g.findObject? hostId).any (·.isBattlefieldObject)` (CR 702.26h).
    - **Complete `etbCostProspective?` forwarding in `Core.*AnyObjId`, historical counter LKI across `mkHistoricalGameAt` /
      `unattachFrom` / `objectCounterCountAt`, `departedNextTurnWouldHaveBegunSince` `prevClearEotExtra` pre-log departure
-     guard, and `Part13.lean` test-path fixes**
+     guard, and `Part13.lean` `gNoCtrlPhIn` test-path fix**
      (`Attachments.lean:135–146`,
      `Core.lean:2089–2101, 2134–2751, 2797–2798, 2812, 2855–2856, 2873, 2896, 2914–2915, 2938, 3002–3003, 3516–3518, 7370–7419, 7862–7909, 7932–7946`,
-     `Phasing.lean:390–415`, `Tests/Events/Part13.lean:640–645, 678–688`):
-     - Three historical-reconstruction gaps and two test-path omissions remain from Phase 47 Item 3:
+     `Phasing.lean:390–415`, `Tests/Events/Part13.lean:678–688`):
+     - Three historical-reconstruction gaps and one test-path omission remain from Phase 47 Item 3:
        (i) `Core.isInitialMaterialize` passes `etbCostProspective?` into `gameChangeAnyObjId` (`2877–3006`),
        `continuationChangeAnyObjId` (`2753–2816`), and `continuationFrameAnyObjId` (`2818–2875`), yet those functions
        drop `etbCostProspective?` when calling `delayedTriggerAnyObjId` (`2089–2093`), `stackEntryAnyObjId`
@@ -19423,10 +19432,8 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
        (iii) `Phasing.departedNextTurnWouldHaveBegunSince`'s exact-turn-count `clearEOT` extra-turn inference
        `prevClearEotExtra` (`390–413`, or-ed with `g.hasPreLogPowerUpsForbidden` at `414`) assumes no non-starting team
        took a turn and departed *before* `g.events[0]`, misclassifying a normal turn count inflated by a pre-log-departed
-       team as a pre-log extra turn; and in `Tests/Events/Part13.lean`, `gPreCntQuiet` (`640–645`) keeps `cntSrc0`'s
-       `.whileSourceHasCounter` effect active before `ceaseToExist` (so `counterSources` already tracks
-       `(cntSrc0.id, .charge)` at `Core.lean:7382` without exercising line `7399`), and `gNoCtrlPhIn` (`679`) calls
-       `phaseIn` with default `reconcile := true` before `681` and `687`:
+       team as a pre-log extra turn; and in `Tests/Events/Part13.lean` (`678–688`), `gNoCtrlPhIn` (`679`) calls `phaseIn`
+       with default `reconcile := true` before `681` and `687`:
        - Thread `etbCostProspective?` through `delayedTriggerAnyObjId`, `stackEntryAnyObjId`, `fraChoiceAnyObjId` (`2233`),
          `pendingAnyObjId`, `frcPostStepAnyObjId`, `postStepAnyObjId`, `pendingReplacementAnyObjId` (including `2632` and
          `2743` and its callers at `2797–2798, 2855–2856`), and line `3003` in `Core.lean`; track all non-zero counter
@@ -19435,8 +19442,7 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
          `Attachments.unattachFrom` (`138–144`) to carry live `o.status.counters` on `snap` while keeping `pre` for Layer
          1–6 characteristics, and guard `Core.objectCounterCountAt` (`3516–3518`) with `count?.isNone`; add a pre-log
          departure check (whether any non-starting team departed before `g.events[0]`) in
-         `Phasing.departedNextTurnWouldHaveBegunSince` and gate `prevClearEotExtra` (`390–414`) on its negation; and
-         expire the counter-dependent effect before `quiet` at `Tests/Events/Part13.lean:640–645` while passing
+         `Phasing.departedNextTurnWouldHaveBegunSince` and gate `prevClearEotExtra` (`390–414`) on its negation; and pass
          `(reconcile := false)` at `Tests/Events/Part13.lean:679`.
 
 4. **`Demo` post-mana subset monotonicity & non-plain CR 605 mana abilities, `mountainExtraRedThisTurn` simulation &
@@ -19552,8 +19558,8 @@ single-permission Morph/Impending binding + `FraChoices` `.mayCastFromGraveyard`
 `lkiCtrl` fallback attribution suppressing departed-controller LTB triggers + post-batch `Phasing` CR 800.4c reconciliation &
 paused empty-tail `.phaseOutPermanentsLoop` + CR 702.26h orphaned indirect phase-in + complete `etbCostProspective?`
 forwarding across `Core.*AnyObjId` + `mkHistoricalGameAt` `missingObjs` / `Attachments.unattachFrom` / `objectCounterCountAt`
-counter LKI + `departedNextTurnWouldHaveBegunSince` `prevClearEotExtra` pre-log departure guard & `Part13.lean` test-path
-fixes; and `Demo.uniquePayingSourceSetLarge` post-mana subset check & non-plain CR 605 mana abilities +
+counter LKI + `departedNextTurnWouldHaveBegunSince` `prevClearEotExtra` pre-log departure guard & `Part13.lean`
+`(reconcile := false)` test-path fix; and `Demo.uniquePayingSourceSetLarge` post-mana subset check & non-plain CR 605 mana abilities +
 `mountainExtraRedThisTurn` source provenance & `manaTypesFromTap` simulation + `manaAbilityIndexFor` shadowing /
 `ManaOutput.combination` mixed-color tuples + `Agent` `.chooseX` cost-preserving search, plus strict `Event.isTreasureManaUnit`
 & battlefield-departure `isTreasureSourceInLog` + modal `runSpellModesAndEmpower` `lastKnownToughness` / `lastKnownPower` +
