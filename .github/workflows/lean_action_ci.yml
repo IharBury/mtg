@@ -32,7 +32,8 @@ jobs:
           key: elan-${{ runner.os }}-${{ hashFiles('lean-toolchain') }}
 
       - name: Restore Lake build cache
-        uses: actions/cache@v5
+        id: lake-cache
+        uses: actions/cache/restore@v5
         with:
           path: .lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
@@ -50,6 +51,17 @@ jobs:
         # `--wfail` fails the build on warnings (for example deprecations).
         # The script also fails when Lean logs a runtime panic.
         run: bash scripts/ci-lake-build.sh --wfail
+
+      # Save before the oracle and example checks. A combined `actions/cache`
+      # step uploads only when the whole job succeeds, so a later check would
+      # drop a build that already succeeded. Skip an exact cache hit, and skip
+      # a failed build so an aborted panic does not cache a partial `.lake`.
+      - name: Save Lake build cache
+        if: success() && steps.lake-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: .lake
+          key: ${{ steps.lake-cache.outputs.cache-primary-key }}
 
       - name: Check Oracle parsing
         run: .lake/build/bin/oracle-roundtrip
