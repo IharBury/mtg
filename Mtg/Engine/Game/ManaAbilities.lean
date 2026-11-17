@@ -153,7 +153,30 @@ deriving Inhabited
 spelled out on a card. -/
 def restrictionOfText (text : String) : ManaRestriction :=
   if text == "Dwarf, Equipment, and Saga spells" then .fra .dwarfEquipmentSagaSpell
-  else .none
+  else
+    match text.splitOn ", Equipment, and Saga spells" with
+    | [subStr, ""] =>
+      match CardSubtype.ofOracle? subStr.trimAscii.copy with
+      | some st => .fra (FraManaUse.forEquipmentSagaSubtype st)
+      | none => .none
+    | _ =>
+      let stripSpellSuffix? : Option String :=
+        match text.splitOn " spells" with
+        | [s, ""] => some s.trimAscii.copy
+        | _ =>
+          match text.splitOn " spell" with
+          | [s, ""] =>
+            let s := s.trimAscii.copy
+            match s.splitOn "an " with
+            | ["", rest] => some rest.trimAscii.copy
+            | _ =>
+              match s.splitOn "a " with
+              | ["", rest] => some rest.trimAscii.copy
+              | _ => some s
+          | _ => none
+      match stripSpellSuffix?.bind CardSubtype.ofOracle? with
+      | some st => .fra (FraManaUse.forSubtype st)
+      | none => .none
 
 private def uniqMana (ts : Array ManaType) : Array ManaType :=
   ts.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
@@ -218,6 +241,9 @@ def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbil
   (if c.tapAddOneOf.isEmpty then #[] else one (.oneOf c.tapAddOneOf 1)) ++
   c.tapAddManaForEach.map (fun a =>
     ({ output := .fixed (Array.replicate (count (sub a.subtype)) a.mana) } : ManaAbilityDef)) ++
+  (match c.tapAddColorlessPerSubtype with
+   | some st => #[({ output := .fixed (Array.replicate (count (sub st)) .colorless) } : ManaAbilityDef)]
+   | none => #[]) ++
   (if c.tapAddOneOfIfEnteredOrBasic.isEmpty || !g.canUseEnteredOrBasicAdd o then #[]
    else one (.oneOf c.tapAddOneOfIfEnteredOrBasic 1)) ++
   (if c.tapAddAnyColorEqualToPower then
@@ -235,7 +261,9 @@ def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbil
   (if c.tapAddCommanderIdentity then
     one (.colorAmong (identity.map ManaType.colored).toArray) else #[]) ++
   (match c.tapAddRestricted with
-   | some (ts, text) => one (.fixed ts) (restrictionOfText text)
+   | some (ts, text) =>
+     let effText := if tcs.isEmpty then text else TextChange.applyCreatureTypeWords tcs text
+     one (.fixed ts) (restrictionOfText effText)
    | none => #[]) ++
   (match c.tapPayLifeAddOneOf with
    | some (n, ts) => #[{ output := .oneOf ts 1, payLife := n }]
@@ -261,6 +289,54 @@ def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbil
     let lands := (g.permanentsOf p).filter (fun land => g.isLand land && land.id != o.id)
     #[{ output := .colorAmong (g.landsCouldProduce lands) }]
    else #[])
+
+private partial def manaNamedPermanents (g : Game) (o : GameObject) (controller : PlayerId) :
+    TriggeredAbility.ObjectSelector → Option (Array GameObject)
+  | .source | .sourceIfPresent | .sacrificedSource _ | .plan =>
+    some (if o.isOnBattlefield then #[o] else #[])
+  | .creaturesYouControl => some (g.creaturesControlledBy controller)
+  | .othersOfSubtype subtype =>
+    some (g.battlefield.filter (fun x =>
+      g.controlledBy x controller && x.id != o.id && g.hasSubtype x subtype))
+  | .youControl (.subtype s) =>
+    some ((g.permanentsOf controller).filter (g.hasSubtype · s))
+  | .youControl _ => some (g.creaturesControlledBy controller)
+  | .eachOther =>
+    some (g.battlefield.filter (fun x =>
+      g.isCreature x && g.controlledBy x controller && x.id != o.id))
+  | .landsYouControl => some ((g.permanentsOf controller).filter (g.isLand ·))
+  | .legendaryCreaturesYouControl =>
+    some ((g.permanentsOf controller).filter (fun x => g.isCreature x && g.isLegendary x))
+  | .planeswalkersYouControl =>
+    some ((g.permanentsOf controller).filter (g.isPlaneswalker ·))
+  | .artifact => some ((g.permanentsOf controller).filter (g.isArtifact ·))
+  | .anotherCreatureOrArtifact =>
+    some ((g.permanentsOf controller).filter (fun x =>
+      x.id != o.id && (g.isCreature x || g.isArtifact x)))
+  | .attackingCreatures => some (g.battlefield.filter (·.status.attacking))
+  | .humans =>
+    some (g.battlefield.filter (fun x =>
+      g.isCreature x && g.controlledBy x controller && g.hasSubtype x .human))
+  | .opponentsCreatures =>
+    some (g.battlefield.filter (fun x =>
+      g.isCreature x && (g.controllerOf x).any (g.isLivingOpponentOf controller ·)))
+  | .eachNonSubtypeAndOpponents subtype =>
+    some (g.battlefield.filter (fun x => g.isCreature x && !g.hasSubtype x subtype))
+  | .intersection ws =>
+    match ws with
+    | [] => some #[]
+    | w0 :: rest =>
+      rest.foldl (fun acc? w =>
+        match acc?, manaNamedPermanents g o controller w with
+        | some acc, some ys => some (acc.filter fun x => ys.any (·.id == x.id))
+        | _, _ => none) (manaNamedPermanents g o controller w0)
+  | .union ws =>
+    ws.foldl (fun acc? w =>
+      match acc?, manaNamedPermanents g o controller w with
+      | some acc, some ys =>
+        some (ys.foldl (fun a y => if a.any (·.id == y.id) then a else a.push y) acc)
+      | _, _ => none) (some #[])
+  | _ => none
 
 /-- Evaluate `amount` for a battlefield mana ability on `o` (CR 605.3b). -/
 def manaSelectorCount (g : Game) (o : GameObject) (amount : TriggeredAbility.NumberSelector) : Nat :=
@@ -317,33 +393,7 @@ def manaSelectorCount (g : Game) (o : GameObject) (amount : TriggeredAbility.Num
     | .creatureCardsInGraveyard =>
       ((g.player controller).graveyard.filter (fun id => (g.findObject? id).any g.isCreature)).size
     | .harnessedSource => if o.status.harnessed then 1 else 0
-    | .source | .sourceIfPresent | .sacrificedSource _ | .plan =>
-      if o.isOnBattlefield then 1 else 0
-    | .creaturesYouControl => (g.creaturesControlledBy controller).size
-    | .othersOfSubtype subtype =>
-      (g.battlefield.filter (fun x =>
-        g.controlledBy x controller && x.id != o.id && g.hasSubtype x subtype)).size
-    | .youControl (.subtype s) => ((g.permanentsOf controller).filter (g.hasSubtype · s)).size
-    | .youControl _ => (g.creaturesControlledBy controller).size
-    | .eachOther =>
-      (g.battlefield.filter (fun x =>
-        g.isCreature x && g.controlledBy x controller && x.id != o.id)).size
-    | .landsYouControl => ((g.permanentsOf controller).filter (g.isLand ·)).size
-    | .legendaryCreaturesYouControl =>
-      ((g.permanentsOf controller).filter (fun x => g.isCreature x && g.isLegendary x)).size
-    | .planeswalkersYouControl => ((g.permanentsOf controller).filter (g.isPlaneswalker ·)).size
-    | .artifact => ((g.permanentsOf controller).filter (g.isArtifact ·)).size
-    | .anotherCreatureOrArtifact =>
-      ((g.permanentsOf controller).filter (fun x =>
-        x.id != o.id && (g.isCreature x || g.isArtifact x))).size
-    | .attackingCreatures => (g.battlefield.filter (·.status.attacking)).size
-    | .humans =>
-      (g.battlefield.filter (fun x =>
-        g.isCreature x && g.controlledBy x controller && g.hasSubtype x .human)).size
-    | .opponentsCreatures =>
-      (g.battlefield.filter (fun x =>
-        g.isCreature x && (g.controllerOf x).any (g.isLivingOpponentOf controller ·))).size
-    | _ => 0
+    | _ => (manaNamedPermanents g o controller what).map (·.size) |>.getD 0
 
 /-- Mana abilities `o` has as printed activated abilities (CR 605.1a). Loyalty
 abilities, modal abilities, non-battlefield abilities, and targeted abilities
@@ -676,8 +726,13 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
     return abortDepartedManaAbilityCont g p prevPending
       (wasPaused := wasPaused) (hasFollowingSeq := hasFollowingSeq)
   g := g.record (GameEvent.abilityActivated g.turnNumber id srcSnap p (.mana activatedIdx powerUp exhaust))
-  let rOpt : Option ManaRestriction := if restriction == .none then none else some restriction
-  let addedUnits := mana.map (fun t => ({ mana := t, source := some id, restriction := rOpt } : ManaUnit))
+  let isTreasure := srcSnap.subtypes.contains .treasure || restriction == .fra .fromTreasure
+  let rOpt : Option ManaRestriction :=
+    if restriction == .none then
+      if isTreasure then some (.fra .fromTreasure) else none
+    else some restriction
+  let addedUnits := mana.map (fun t =>
+    ({ mana := t, source := some id, restriction := rOpt, fromTreasure := isTreasure } : ManaUnit))
   g := g.record (GameEvent.manaAdded g.turnNumber p addedUnits)
   let produced :=
     match mana[0]? with
@@ -1023,7 +1078,8 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   let spentUnits? ←
     if effCost.includesManaPayment then
       match pl.manaPool.payUnits? effCost (g.hasSubtype o .elf) false (g.hasSubtype o .hero)
-          (g.hasSubtype o .villain) true (g.isCreature o) with
+          (g.hasSubtype o .villain) true (g.isCreature o)
+          (spend := { abilitySourceSubtypes := g.subtypes o }) with
       | some (_, spentUnits) => pure (some spentUnits)
       | none => throw s!"{pl.name} cannot pay {effCost}"
     else pure none
@@ -1111,7 +1167,8 @@ def manaAbilityIndexFor (g : Game) (o : GameObject) (mana : ManaType) (plainOnly
         let effCost := g.manaAbilityEffectiveCost p o d
         !effCost.includesManaPayment ||
           ((g.player p).manaPool.payUnits? effCost (g.hasSubtype o .elf) false
-            (g.hasSubtype o .hero) (g.hasSubtype o .villain) true (g.isCreature o)).isSome) &&
+            (g.hasSubtype o .hero) (g.hasSubtype o .villain) true (g.isCreature o)
+            (spend := { abilitySourceSubtypes := g.subtypes o })).isSome) &&
       (match g.proposedSpell with
        | none => true
        | some prop =>
@@ -1186,14 +1243,19 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
   let some added := d.output.withType mana | throw s!"{g.nameWithToken o} cannot produce {mana}"
   g.activateManaAbility p id i added
 
-/-- Mana `o` adds when tapped for `mana` with a plain `{T}` ability. -/
-def manaFromTap (g : Game) (o : GameObject) (mana : ManaType) : Nat :=
+/-- Mana types `o` adds when tapped for `mana` with a plain `{T}` ability
+(preserving mixed-type `.fixed` outputs such as `{U}{R}`, CR 106.1 / 605.3b). -/
+def manaTypesFromTap (g : Game) (o : GameObject) (mana : ManaType) : Array ManaType :=
   match g.manaAbilityIndexFor o mana with
   | some i =>
     match (g.manaAbilityDefs o)[i]? with
-    | some d => ((d.output.withType mana).map (·.size)).getD 0
-    | none => 0
-  | none => 0
+    | some d => (d.output.withType mana).getD #[]
+    | none => #[]
+  | none => #[]
+
+/-- Mana count `o` adds when tapped for `mana` with a plain `{T}` ability. -/
+def manaFromTap (g : Game) (o : GameObject) (mana : ManaType) : Nat :=
+  (g.manaTypesFromTap o mana).size
 
 /-- Restriction on mana `o` adds when tapped for `mana` with a plain `{T}`
 ability. -/

@@ -411,31 +411,51 @@ private def mergeLeaveArgs (g : Game)
     (departedIn : Array PlayerId) (rewindProposalIn : Option Bool)
     (rest? : Option PendingReplacement := none) :
     Game × Option Pending × Bool × Array PlayerId × Option Bool := Id.run do
-  let (g0, popOuter0) := combineOuterContinuations g po0 rest? popOuterIn
-  let mut g := g0
   let departed :=
     departedIn.foldl (fun acc pid => if acc.contains pid then acc else acc.push pid) d0
-  let mut popOuter := popOuter0
+  let rw? := rw0 <|> rewindProposalIn
+  match s0, savedIn with
+  | some oldP, some newP =>
+    if oldP != .none && newP != .none then
+      let mut g := g
+      let oCaller? : Option PendingReplacement :=
+        if popOuterIn then g.outerPendingReplacements.back? else none
+      if oCaller?.isSome then
+        g := g.change .popOuterPendingReplacement
+      let o0? : Option PendingReplacement :=
+        if po0 then g.outerPendingReplacements.back? else none
+      if o0?.isSome then
+        g := g.change .popOuterPendingReplacement
+      let restoreNew : PendingReplacement := .restorePending newP false (departed := departed)
+      let tailAfterRest := g.chainRestoreAfterOpenBatch restoreNew oCaller?
+      let outer :=
+        match seqOptPending o0? rest? with
+        | some pre => .seq pre tailAfterRest
+        | none => tailAfterRest
+      return (pushOuterSuffix g outer, some oldP, true, departed, rw?)
+  | _, _ => pure ()
+  let (g0, popOuter0) := combineOuterContinuations g po0 rest? popOuterIn
   let mut saved? := s0
   match s0, savedIn with
   | none, s => saved? := s
   | some .none, s => saved? := s.orElse (fun _ => some .none)
-  | some oldP, some newP =>
-    if newP != .none then
-      let popped? : Option PendingReplacement :=
-        if popOuter then g.outerPendingReplacements.back? else none
-      if popped?.isSome then
-        g := g.change .popOuterPendingReplacement
-      let restoreOld : PendingReplacement := .restorePending oldP false (departed := departed)
-      let outer := g.chainRestoreAfterOpenBatch restoreOld popped?
-      if g.continuations.isEmpty then
-        g := g.change (.pushContinuationFrame {})
-      g := g.change (.pushOuterPendingReplacement outer)
-      popOuter := true
-      saved? := some newP
-  | some _, none => pure ()
-  let rw? := rw0 <|> rewindProposalIn
-  return (g, saved?, popOuter, departed, rw?)
+  | some _, _ => pure ()
+  return (g0, saved?, popOuter0, departed, rw?)
+
+private def splitFirstLeave? :
+    PendingReplacement →
+      Option (Option PendingReplacement × PendingReplacement × Option PendingReplacement)
+  | pr@(.leavePlayersWhoLost ..) => some (none, pr, none)
+  | .seq a b =>
+    match splitFirstLeave? a with
+    | some (before?, leaf, after?) =>
+      some (before?, leaf, seqOptPending after? (some b))
+    | none =>
+      match splitFirstLeave? b with
+      | some (before?, leaf, after?) =>
+        some (seqOptPending (some a) before?, leaf, after?)
+      | none => none
+  | _ => none
 
 private def splitFirstLeaveOrSba? :
     PendingReplacement →
@@ -461,7 +481,7 @@ private def chainOrMergeLeave (g0 : Game)
     g0.chainPendingReplacement
       (.leavePlayersWhoLost saved? popOuter departed rewindProposal)
   | some pr =>
-    match splitFirstLeaveOrSba? pr with
+    match (splitFirstLeave? pr).orElse (fun _ => splitFirstLeaveOrSba? pr) with
     | some (before?, .leavePlayersWhoLost s0 po0 d0 rw0, after?) =>
       let foldTail :=
         after?.isSome && (po0 || popOuter || s0.isSome || saved?.isSome)

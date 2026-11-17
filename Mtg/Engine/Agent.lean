@@ -66,7 +66,7 @@ def payGenericOrTapFirstSource (g : Game) (p : PlayerId) (n : Nat) : Option Acti
     let totalPool :=
       usableSources.foldl
         (fun pool (src, t) =>
-          addRestrictedMana pool (Array.replicate (g.manaFromTap src t) t) (g.tapRestrictionOf src t))
+          addRestrictedMana pool (g.manaTypesFromTap src t) (g.tapRestrictionOf src t))
         (g.player p).manaPool
     if !totalPool.canPay cost (allowCantNonartifact := true) then
       some .decline
@@ -204,7 +204,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                         (sacrificeOrExileSource := sacSrc)
                         (discardOrExileHandSource := discSrc)
                         (orderedCands? := some cands)
-                        (disjointFromAllPicks := true) with
+                        (disjointFromAllPicks := false) with
                     | some picked => (true, picked)
                     | none => (false, #[])
                   | _ => (true, #[])
@@ -218,7 +218,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                       (tapSource := prop.tapSource)
                       (sacrificeOrExileSource := sacSrc)
                       (discardOrExileHandSource := discSrc)
-                      (used := cExcl ++ usedPicks)
+                      (used := usedPicks)
                       (preTappedIds := cExcl) with
                   | some chosen =>
                     if chosen.size != pick.count then
@@ -572,53 +572,7 @@ where
         costPicksWithSacrificeOther (costPicksOf ab) ab.cost.sacrificeAnotherCreatureOrArtifact
       let sacSrc := ab.cost.sacrificeSource || ab.cost.fra == .exileSource
       let discSrc := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
-      let (crewOk, crewExcl) : Bool × Array ObjectId :=
-        if isTurnFaceUp then (true, #[])
-        else
-          match ab.cost.fra with
-          | .crew n =>
-            let manaSrcs := g.manaSources p
-            let cands :=
-              ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).qsort
-                (fun a b =>
-                  let aNonMana := !manaSrcs.any (·.1.id == a.id)
-                  let bNonMana := !manaSrcs.any (·.1.id == b.id)
-                  if aNonMana != bNonMana then aNonMana else g.power a > g.power b)
-            match g.firstPayableCrewSelection? p o.id n allPicks
-                (tapSource := ab.cost.tap)
-                (sacrificeOrExileSource := sacSrc)
-                (discardOrExileHandSource := discSrc)
-                (orderedCands? := some cands)
-                (disjointFromAllPicks := true) with
-            | some picked => (true, picked)
-            | none => (false, #[])
-          | _ => (true, #[])
-      let (picksOk, tapPickExcl) : Bool × Array ObjectId :=
-        if isTurnFaceUp then (true, #[])
-        else if !crewOk then (false, #[])
-        else Id.run do
-          let mut usedPicks : Array ObjectId := #[]
-          let mut tapExcl : Array ObjectId := #[]
-          for i in [0:allPicks.size] do
-            let pick := allPicks[i]!
-            match g.firstPayableCostPickSlice? p (some o.id) (allPicks.extract i allPicks.size)
-                (tapSource := ab.cost.tap)
-                (sacrificeOrExileSource := sacSrc)
-                (discardOrExileHandSource := discSrc)
-                (used := crewExcl ++ usedPicks)
-                (preTappedIds := crewExcl) with
-            | some chosen =>
-              if chosen.size != pick.count then
-                return (false, #[])
-              usedPicks := usedPicks ++ chosen
-              if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
-                tapExcl := tapExcl ++ chosen
-            | none =>
-              return (false, #[])
-          return (true, tapExcl)
-      let excludeIds := selfExcl ++ crewExcl ++ tapPickExcl
-      let available := g.availableManaExceptIds p excludeIds
-      let manaCost := g.activationManaCost p ab (some o)
+      let manaCost := if isTurnFaceUp then ab.cost.mana else g.activationManaCost p ab (some o)
       let allowElf := !isTurnFaceUp && g.hasSubtype o .elf
       let allowHero := !isTurnFaceUp && g.hasSubtype o .hero
       let allowVillain := !isTurnFaceUp && g.hasSubtype o .villain
@@ -629,29 +583,141 @@ where
       let spellSpend : ManaSpend :=
         { spell := true, fromHand := o.zone == .hand p
           supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
-      crewOk && picksOk &&
-      g.canActivate p o ab (idx? := some idx) &&
-      available.canPay manaCost
-        (allowElfRestricted := allowElf)
-        (allowInstRestricted := false)
-        (allowHeroRestricted := allowHero)
-        (allowVillainRestricted := allowVillain)
-        (allowCantNonartifact := true)
-        (allowCreatureRestricted := allowCreature)
-        (spend := actSpend) &&
-      -- Don't pay life that would reduce the player to 0 or less.
-      (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&
-      -- Don't spend a once-only X power-up at X = 0.
-      !(ab.effect == Effect.plusOneX &&
-        maxAffordableX g p manaCost
+      let manaOkForExcl (excludeIds : Array ObjectId) : Bool :=
+        let available := g.availableManaExceptIds p excludeIds
+        available.canPay manaCost
           (allowElfRestricted := allowElf)
           (allowInstRestricted := false)
           (allowHeroRestricted := allowHero)
           (allowVillainRestricted := allowVillain)
           (allowCantNonartifact := true)
           (allowCreatureRestricted := allowCreature)
-          (spend := actSpend)
-          (excludeIds := excludeIds) == 0) &&
+          (spend := actSpend) &&
+        !(ab.effect == Effect.plusOneX &&
+          maxAffordableX g p manaCost
+            (allowElfRestricted := allowElf)
+            (allowInstRestricted := false)
+            (allowHeroRestricted := allowHero)
+            (allowVillainRestricted := allowVillain)
+            (allowCantNonartifact := true)
+            (allowCreatureRestricted := allowCreature)
+            (spend := actSpend)
+            (excludeIds := excludeIds) == 0)
+      let greedyPicksForCrew (crewExcl : Array ObjectId) : Option (Array ObjectId) := Id.run do
+        let mut usedPicks : Array ObjectId := #[]
+        let mut tapExcl : Array ObjectId := #[]
+        for i in [0:allPicks.size] do
+          let pick := allPicks[i]!
+          match g.firstPayableCostPickSlice? p (some o.id) (allPicks.extract i allPicks.size)
+              (tapSource := ab.cost.tap)
+              (sacrificeOrExileSource := sacSrc)
+              (discardOrExileHandSource := discSrc)
+              (used := usedPicks)
+              (preTappedIds := crewExcl) with
+          | some chosen =>
+            if chosen.size != pick.count then
+              return none
+            usedPicks := usedPicks ++ chosen
+            if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
+              tapExcl := tapExcl ++ chosen
+          | none =>
+            return none
+        return some tapExcl
+      let rec chooseK : List ObjectId → Nat → Array ObjectId → (Array ObjectId → Bool) → Bool
+        | _, 0, picked, k => k picked
+        | [], _ + 1, _, _ => false
+        | c :: rest, m + 1, picked, k =>
+          if rest.length < m then false
+          else chooseK rest m (picked.push c) k || chooseK rest (m + 1) picked k
+      let rec searchPicksForCrew :
+          List CostPick → Array ObjectId → Array ObjectId → Array ObjectId → Bool
+        | [], _, tapExcl, crewExcl =>
+          manaOkForExcl (selfExcl ++ crewExcl ++ tapExcl)
+        | pick :: restPicks, usedPicks, tapExcl, crewExcl =>
+          let rem := (pick :: restPicks).toArray
+          let remHasTap :=
+            rem.any (fun pk => pk == .tapUntappedCreature || pk == .tapTwoUntappedArtifacts)
+          if !remHasTap then
+            g.costPicksPayable p (some o.id) rem
+              (tapSource := ab.cost.tap)
+              (sacrificeOrExileSource := sacSrc)
+              (discardOrExileHandSource := discSrc)
+              (used := usedPicks)
+              (preTappedIds := crewExcl ++ tapExcl) &&
+            manaOkForExcl (selfExcl ++ crewExcl ++ tapExcl)
+          else
+            let isTapPick :=
+              pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts
+            let isBfSacPick : Bool :=
+              match pick with
+              | .tapUntappedCreature | .tapTwoUntappedArtifacts
+              | .discardACard | .discardNonland | .discardLegendaryCard | .discardLegendarySameName
+              | .exileAnotherCreatureCardFromGraveyard => false
+              | _ => true
+            let laterSacAttachedEquip :=
+              isBfSacPick && restPicks.contains .sacrificeEquipmentAttachedToSource
+            let cands :=
+              (g.costPickCandidates p (some o.id) pick
+                (tapSource := ab.cost.tap)
+                (sacrificeOrExileSource := sacSrc || laterSacAttachedEquip)
+                (discardOrExileHandSource := discSrc)).filter fun cid =>
+                  !usedPicks.contains cid &&
+                    !(isTapPick && (crewExcl.contains cid || tapExcl.contains cid))
+            if cands.size < pick.count then false
+            else
+              chooseK cands.toList pick.count #[] fun picked =>
+                let nextTap := if isTapPick then tapExcl ++ picked else tapExcl
+                searchPicksForCrew restPicks (usedPicks ++ picked) nextTap crewExcl
+      let crewAndPicksAndManaOk : Bool :=
+        if isTurnFaceUp then
+          manaOkForExcl selfExcl
+        else
+          let checkWithCrew (crewExcl : Array ObjectId) : Bool :=
+            (match greedyPicksForCrew crewExcl with
+             | some tapExcl => manaOkForExcl (selfExcl ++ crewExcl ++ tapExcl)
+             | none => false) ||
+              searchPicksForCrew allPicks.toList #[] #[] crewExcl
+          match ab.cost.fra with
+          | .crew n =>
+            let manaSrcs := g.manaSources p
+            let cands :=
+              ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).qsort
+                (fun a b =>
+                  let aNonMana := !manaSrcs.any (·.1.id == a.id)
+                  let bNonMana := !manaSrcs.any (·.1.id == b.id)
+                  if aNonMana != bNonMana then aNonMana else g.power a > g.power b)
+            let fastOk :=
+              match g.firstPayableCrewSelection? p o.id n allPicks
+                  (tapSource := ab.cost.tap)
+                  (sacrificeOrExileSource := sacSrc)
+                  (discardOrExileHandSource := discSrc)
+                  (orderedCands? := some cands)
+                  (disjointFromAllPicks := false) with
+              | some picked => checkWithCrew picked
+              | none => false
+            if fastOk then true
+            else if n == 0 then checkWithCrew #[]
+            else
+              let candsWithSuf : List (GameObject × Nat) :=
+                cands.toList.foldr (fun c acc =>
+                  let prev := match acc with | (_, s) :: _ => s | [] => 0
+                  (c, Int.toNat (max 0 (g.power c)) + prev) :: acc) []
+              let rec searchCrew : List (GameObject × Nat) → Nat → Array ObjectId → Bool
+                | [], accPow, picked => accPow ≥ n && checkWithCrew picked
+                | (c, suf) :: rest, accPow, picked =>
+                  if accPow ≥ n then
+                    checkWithCrew picked
+                  else if accPow + suf < n then
+                    false
+                  else
+                    let cPow := Int.toNat (max 0 (g.power c))
+                    (cPow > 0 && searchCrew rest (accPow + cPow) (picked.push c.id)) ||
+                      searchCrew rest accPow picked
+              searchCrew candsWithSuf 0 #[]
+          | _ => checkWithCrew #[]
+      g.canActivate p o ab (idx? := some idx) &&
+      -- Don't pay life that would reduce the player to 0 or less.
+      (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&
       -- Don't spend mana re-equipping a creature that is already equipped.
       !(ab.isEquip && o.attachedTo.isSome) &&
       -- Spend {4}{T} on Rogue's Passage only after attackers are declared.
@@ -666,7 +732,8 @@ where
           (allowVillainRestricted := allowVillain)
           (allowCantNonartifact := g.isArtifact o)
           (allowCreatureRestricted := false)
-          (spend := spellSpend))
+          (spend := spellSpend)) &&
+      crewAndPicksAndManaOk
     let firstAbility (o : GameObject) : Option Nat :=
       let abs := g.activatedAbilitiesOf o
       (List.range abs.size).find? (fun idx => shouldActivate o idx abs[idx]!)
@@ -706,7 +773,19 @@ where
         | some adv =>
           let face := adv.toCardDef
           let advObj := { o with controller := some p, printed := face, adventurerCard := some o.printed }
-          let perm? := g.playPermissionFor? p o
+          let perm? :=
+            let perms := (g.playPermissionsFor p o).filter (!·.fromAdventure)
+            let score (perm : PlayPermission) : Nat :=
+              let lifeOk := !perm.payLifeEqualManaValue || g.canPayLife p face.manaValue
+              (if lifeOk then 16 else 0) +
+                (if perm.ignoreTiming then 8 else 0) +
+                (if perm.withoutManaCost then 4 else 0) +
+                (if perm.anyMana then 2 else 0) +
+                (if !perm.fromAdventure then 1 else 0)
+            perms.foldl (fun best? perm =>
+              match best? with
+              | none => some perm
+              | some b => if score perm >= score b then some perm else some b) none
           let spend : ManaSpend :=
             { spell := true, fromHand := o.zone == .hand p
               supertypes := g.supertypes advObj, types := g.types advObj, subtypes := g.subtypes advObj }

@@ -5689,9 +5689,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     match Resolution.toSpell r with
     | some _ =>
       g.applyUnified controller ab.effect targets (sourceId := sourceId)
+        (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
     | none =>
       g.applyUnifiedAbility controller { ab.effect with resolution := r }
-        targets sourceId lastKnownPower
+        targets sourceId lastKnownPower (lastKnownToughness := lastKnownToughness)
 
 end
 

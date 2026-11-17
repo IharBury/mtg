@@ -245,11 +245,39 @@ def adventureExileForbidsRecast (g : Game) (o : GameObject)
     let perms := g.playPermissionsFor p o
     !perms.isEmpty && perms.all (·.fromAdventure) && !g.mayCastExiledBySource p o
   | none =>
-    let perms := g.activePlayPermissions o
-    if perms.isEmpty then
-      (g.playPermission o).any (·.fromAdventure)
+    if g.livingPlayers.any (fun pl => g.mayCastExiledBySource pl.id o) then
+      false
     else
-      perms.all (·.fromAdventure)
+      let perms := g.activePlayPermissions o
+      if perms.isEmpty then
+        (g.playPermission o).any (·.fromAdventure)
+      else
+        perms.all (·.fromAdventure)
+
+/-- Select a continuous `.playFromExile` permission for a one-shot paid
+resolution cast (`!withoutManaCost` / `!withoutPaying`) only when it strictly
+improves payment over the resolving effect's own clean mana-cost permission
+(`withoutManaCost`, payable `payLifeEqualManaValue`, `anyMana`, or `ignoreTiming`
+when `!ignoreTiming`), never picking an unpayable `payLifeEqualManaValue` grant
+(CR 601.1a / 608.2g / 119.4). -/
+def paidResolutionOrigPerm? (g : Game) (p : PlayerId) (o : GameObject)
+    (ignoreTiming : Bool := true) : Option PlayPermission :=
+  let mv := g.objectManaValue o
+  let cands :=
+    (g.playPermissionsFor p o).filter fun pm =>
+      pm.prepareSource.isNone &&
+        (pm.withoutManaCost ||
+          (pm.payLifeEqualManaValue && g.canPayLife p mv) ||
+          (!pm.payLifeEqualManaValue && (pm.anyMana || (!ignoreTiming && pm.ignoreTiming))))
+  let rank (pm : PlayPermission) : Nat :=
+    (if pm.withoutManaCost then 8 else 0) +
+      (if pm.ignoreTiming then 4 else 0) +
+      (if pm.anyMana then 2 else 0) +
+      (if pm.payLifeEqualManaValue then 1 else 0)
+  cands.foldl (fun best? pm =>
+    match best? with
+    | none => some pm
+    | some b => if rank pm >= rank b then some pm else some b) none
 
 /-- Validate front-face timing, prohibitions, targets, and mandatory additional
 costs when casting `card` as `face` (either upfront in `castSpell` or when
@@ -467,7 +495,43 @@ def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
 /-- Pool after tapping `src` for `t`, including spending restrictions. -/
 def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType) :
     ManaPool :=
-  addRestrictedMana pool (Array.replicate (g.manaFromTap src t) t) (g.tapRestrictionOf src t)
+  addRestrictedMana pool (g.manaTypesFromTap src t) (g.tapRestrictionOf src t)
+
+/-- Minimum number of mana units needed to pay `cost` (1 per colored,
+colorless, hybrid, or twobrid symbol, plus generic; `{X}` is 0). -/
+private def minManaUnitsForCost (cost : ManaCost) : Nat :=
+  cost.symbols.foldl
+    (fun acc s =>
+      match s with
+      | .generic n => acc + n
+      | .colored _ | .colorless | .hybrid _ _ | .twobrid _ => acc + 1
+      | .x => acc)
+    0
+
+/-- Collapse multiple colored mana types on `src` that have zero symbols in
+`cost` (`cost.symbolsIncludingColor c == 0`) and identical single-unit output
+and restriction to a single representative, avoiding exponential branching on
+any-color sources (CR 106.1 / 605). -/
+private def dedupZeroReqManaTypes (g : Game) (src : GameObject) (types : Array ManaType)
+    (cost : ManaCost) : Array ManaType :=
+  if types.size ≤ 1 then types
+  else Id.run do
+    let mut out : Array ManaType := #[]
+    let mut seenZero : Array (Option ManaRestriction) := #[]
+    for t in types do
+      match t with
+      | .colored c =>
+        if cost.symbolsIncludingColor c == 0 &&
+            g.manaTypesFromTap src t == #[t] then
+          let rn := ManaRestriction.normalize? (some (g.tapRestrictionOf src t))
+          if !seenZero.contains rn then
+            seenZero := seenZero.push rn
+            out := out.push t
+        else
+          out := out.push t
+      | .colorless =>
+        out := out.push t
+    return out
 
 /-- Restricted mana beyond Elf and instant/sorcery mana that may pay a
 cost (CR 106.6). -/
@@ -489,11 +553,33 @@ def proposedAllowances (g : Game) (prop : ProposedSpell) : ManaAllowances :=
 def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
     (allowElf allowInst : Bool) (sources : List (GameObject × Array ManaType))
     (a : ManaAllowances := {}) : Bool :=
-  match sources with
-  | [] => pool.canPay cost allowElf allowInst a.hero a.villain a.cantNonartifact a.creature a.spend
-  | (src, types) :: rest =>
-    types.any (fun t =>
-      g.canPayFromSources (g.poolAfterTap pool src t) cost allowElf allowInst rest a)
+  let minUnits := minManaUnitsForCost cost
+  let srcArr := sources.toArray.map fun (src, types) =>
+    let ts := dedupZeroReqManaTypes g src types cost
+    let maxOut := ts.foldl (fun m t => max m (g.manaTypesFromTap src t).size) 0
+    (src, ts, maxOut)
+  let allNonEmpty := srcArr.all (!·.2.1.isEmpty)
+  let sufMax : Array Nat := Id.run do
+    let mut out := Array.replicate (srcArr.size + 1) 0
+    let mut i := srcArr.size
+    while i > 0 do
+      i := i - 1
+      out := out.set! i (srcArr[i]!.2.2 + out[i + 1]!)
+    return out
+  let rec go (curPool : ManaPool) (idx : Nat) : Bool :=
+    if allNonEmpty &&
+        curPool.canPay cost allowElf allowInst a.hero a.villain a.cantNonartifact
+          a.creature a.spend then
+      true
+    else if idx ≥ srcArr.size then
+      curPool.canPay cost allowElf allowInst a.hero a.villain a.cantNonartifact
+        a.creature a.spend
+    else if curPool.total + sufMax[idx]! < minUnits then
+      false
+    else
+      let (src, ts, _) := srcArr[idx]!
+      ts.any (fun t => go (g.poolAfterTap curPool src t) (idx + 1))
+  go pool 0
 
 /-- Whether tapping `src` for `t` covers more of `cost` than the current pool. -/
 def typeHelpsPay (g : Game) (p : PlayerId) (src : GameObject) (t : ManaType)
@@ -636,7 +722,8 @@ def preferredManaTap (g : Game) (p : PlayerId) (prop : ProposedSpell) :
       match critRem with
       | [] => false
       | (o, ts) :: rest =>
-        ts.any (fun t =>
+        let ts' := dedupZeroReqManaTypes g o ts prop.cost
+        ts'.any (fun t =>
           hasCostPreservingCompletion (g.poolAfterTap curPool o t) (chosenIds.push o.id)
             rest freeOthers) ||
           hasCostPreservingCompletion curPool chosenIds rest freeOthers
@@ -1306,12 +1393,16 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceSnap : Option EventObject := none)
     (srcObj? : Option GameObject := none)
     (hadOuterReplacement : Bool := false)
-    (openCont : Bool := false) : Game :=
+    (openCont : Bool := false)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   if g.over || !g.stillInGame p ||
       !abilityId.all (fun aid =>
         sourceId == some aid || (g.findObject? aid).any (·.zone == .stack)) then
     if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
       g.reverseProposedSpell (resumeContinuation := true)
+        (followedByFinishFra := followedByFinishFra)
+        (followedByExplicitPriority? := followedByExplicitPriority?)
     else
       let clearProp := if g.proposedSpell.isSome then #[EngineChange.proposedSpell none] else #[]
       let clearCkpt := if g.proposalCheckpoint.isSome then #[EngineChange.clearProposalCheckpoint] else #[]
@@ -1374,10 +1465,14 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
 costs have been paid, deferring `GameEvent.turnedFaceUp`, clearing proposal state,
 and granting priority across `Pending.chooseReplacement` (CR 116.2b / 708.8). -/
 def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
-    (hadOuterReplacement : Bool := false) : Game × Bool :=
+    (hadOuterReplacement : Bool := false)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Game × Bool :=
   if g.over || !g.stillInGame caster then
     if !g.over && g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
-      (g.reverseProposedSpell (resumeContinuation := true), false)
+      (g.reverseProposedSpell (resumeContinuation := true)
+        (followedByFinishFra := followedByFinishFra)
+        (followedByExplicitPriority? := followedByExplicitPriority?), false)
     else if g.over then
       (g, false)
     else
@@ -1403,7 +1498,9 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
         o.isOnBattlefield && o.status.faceDown && g.controlledBy o caster) with
     | none =>
       if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
-        (g.reverseProposedSpell (resumeContinuation := true), false)
+        (g.reverseProposedSpell (resumeContinuation := true)
+          (followedByFinishFra := followedByFinishFra)
+          (followedByExplicitPriority? := followedByExplicitPriority?), false)
       else
         let wasIdle := g.pending == .none || isProposalPromptFor caster g.pending
         let clearPending : Array EngineChange :=
@@ -1455,7 +1552,9 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceSnapshot : Option EventObject := none)
     (sourceOriginal : Option GameObject := none)
     (hadOuterReplacement : Bool := false)
-    (hadOpenContinuation : Option Bool := none) : Game :=
+    (hadOpenContinuation : Option Bool := none)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   let openCont := g.proposalHadOpenContinuation hadOpenContinuation
   let activation := activation <|> g.proposedSpell.bind (·.activation)
   let abilityId := abilityId <|> g.proposedSpell.map (·.spellId) <|> g.stack.back?.map (·.objectId)
@@ -1496,6 +1595,8 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     if unpaidLoyaltyUnpayable then
       if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
         g.reverseProposedSpell (resumeContinuation := true)
+          (followedByFinishFra := followedByFinishFra)
+          (followedByExplicitPriority? := followedByExplicitPriority?)
       else
         let clearProp := if g.proposedSpell.isSome then #[EngineChange.proposedSpell none] else #[]
         let clearCkpt := if g.proposalCheckpoint.isSome then #[EngineChange.clearProposalCheckpoint] else #[]
@@ -1537,6 +1638,8 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
           | none => g
         g.finishPostLoyaltyActivated p sourceName sourceId activation abilityId sourceSnap
           srcObj? hadOuter openCont
+          (followedByFinishFra := followedByFinishFra)
+          (followedByExplicitPriority? := followedByExplicitPriority?)
 
 /-- Permanents `p` may sacrifice to pay “sacrifice another creature or artifact”. -/
 def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : ObjectId) :
@@ -1559,7 +1662,9 @@ chosen cost is paid: tap, life, and the source's own costs, then put it on
 the stack (CR 601.2h–i / 602.2b). -/
 def completeActivation (g : Game) (prop : ProposedSpell)
     (hadOuterReplacement : Bool := false)
-    (hadOpenContinuation : Option Bool := none) : Except String Game := do
+    (hadOpenContinuation : Option Bool := none)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Except String Game := do
   let openCont := g.proposalHadOpenContinuation hadOpenContinuation
   if let .chooseReplacement .. := g.pending then
     return (g.change (.consecutivePasses 0)).chainPendingReplacement
@@ -1577,6 +1682,8 @@ def completeActivation (g : Game) (prop : ProposedSpell)
   let g ← g0.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
     prop.payLife prop.discardSource prop.activation (if prop.removePlusOneX then x else 0)
     (callerOuter? := localOuter?)
+    (followedByFinishFra := followedByFinishFra)
+    (followedByExplicitPriority? := followedByExplicitPriority?)
   if g.proposedSpell.isNone then
     return g
   if prop.needsSacrificeOther then
@@ -1612,6 +1719,8 @@ def completeActivation (g : Game) (prop : ProposedSpell)
     (sourceOriginal := some prop.original)
     (hadOuterReplacement := hadOuter)
     (hadOpenContinuation := some openCont)
+    (followedByFinishFra := followedByFinishFra)
+    (followedByExplicitPriority? := followedByExplicitPriority?)
   let g :=
     if paused then
       match localOuter? with

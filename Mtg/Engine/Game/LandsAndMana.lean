@@ -84,7 +84,7 @@ def availableManaExceptIds (g : Game) (p : PlayerId) (excludeIds : Array ObjectI
         let green := ManaType.colored .green
         match (if types.size ≥ 5 && types.contains green then some green else types[0]?) with
         | some t =>
-          addRestrictedMana pool (Array.replicate (g.manaFromTap src t) t) (g.tapRestrictionOf src t)
+          addRestrictedMana pool (g.manaTypesFromTap src t) (g.tapRestrictionOf src t)
         | none => pool)
     (g.player p).manaPool
 
