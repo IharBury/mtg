@@ -39,8 +39,11 @@ def chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
         (spend := spend) then
       some .pay
     else
-      match g.preferredManaTap p prop with
-      | some (src, t) => some (.tapForMana src.id t)
+      match g.preferredManaTapChoice p prop with
+      | some (src, ch) =>
+        match ch.singleTapType? with
+        | some t => some (.tapForMana src.id t)
+        | none => some (.activateManaAbility src.id ch.abilityIdx ch.baseAdded #[])
       | none => some .pay
 
 /-- Discard the newest card in hand, or decline with an empty hand. -/
@@ -65,8 +68,7 @@ def payGenericOrTapFirstSource (g : Game) (p : PlayerId) (n : Nat) : Option Acti
         |>.map (fun t => (src, t))
     let totalPool :=
       usableSources.foldl
-        (fun pool (src, t) =>
-          addRestrictedMana pool (g.manaTypesFromTap src t) (g.tapRestrictionOf src t))
+        (fun pool (src, t) => g.addTapManaToPool pool src t)
         (g.player p).manaPool
     if !totalPool.canPay cost (allowCantNonartifact := true) then
       some .decline
@@ -175,11 +177,25 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
             if prop.tapSource && !g.sourceTappedForCost sid (some prop.spellId) sinceIdx then #[sid]
             else #[]
           | none => #[]
-        let (crewExcl, tapPickExcl) : Array ObjectId × Array ObjectId :=
-          if prop.kind != .activatedAbility then (#[], #[])
+        let baseExcl := selfTapExcl ++ prop.teamworkCreatures
+        let xForExtraExcl (extraExcl : Array ObjectId) : Nat :=
+          maxAffordableX g p prop.cost
+            (allowElfRestricted := g.proposedAllowsElfRestricted prop)
+            (allowInstRestricted := g.proposedAllowsInstRestricted prop)
+            (allowHeroRestricted := g.proposedAllowsHeroRestricted prop)
+            (allowVillainRestricted := g.proposedAllowsVillainRestricted prop)
+            (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
+            (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
+            (spend := g.proposedManaSpend prop)
+            (excludeIds := baseExcl ++ extraExcl)
+        let manaBound? : Option Nat :=
+          if !prop.cost.containsX then none
+          else if prop.kind != .activatedAbility then
+            some (xForExtraExcl #[])
           else
             match prop.sourceId, prop.activation with
             | some sid, some ab =>
+              let upperX := xForExtraExcl #[]
               let allPicks :=
                 costPicksWithSacrificeOther (costPicksOf ab)
                   (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
@@ -187,8 +203,100 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                 prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.fra == .exileSource
               let discSrc :=
                 prop.discardSource || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
-              let (crewOk, cExcl) : Bool × Array ObjectId :=
-                if prop.fraCostPaid then (true, #[])
+              let greedyPicksForCrew (crewExcl : Array ObjectId) : Option (Array ObjectId) := Id.run do
+                let mut usedPicks : Array ObjectId := #[]
+                let mut tExcl : Array ObjectId := #[]
+                for i in [0:allPicks.size] do
+                  let pick := allPicks[i]!
+                  match g.firstPayableCostPickSlice? p (some sid) (allPicks.extract i allPicks.size)
+                      (tapSource := prop.tapSource)
+                      (sacrificeOrExileSource := sacSrc)
+                      (discardOrExileHandSource := discSrc)
+                      (used := usedPicks)
+                      (preTappedIds := crewExcl) with
+                  | some chosen =>
+                    if chosen.size != pick.count then
+                      return none
+                    usedPicks := usedPicks ++ chosen
+                    if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
+                      tExcl := tExcl ++ chosen
+                  | none =>
+                    return none
+                return some tExcl
+              let updateBest (best? : Option Nat) (cand : Nat) : Option Nat :=
+                match best? with
+                | none => some cand
+                | some b => some (max b cand)
+              let canBeatBest (best? : Option Nat) (curExcl : Array ObjectId) : Bool :=
+                match best? with
+                | none => true
+                | some b => b < upperX && xForExtraExcl curExcl > b
+              let rec chooseKMax :
+                  List ObjectId → Nat → Array ObjectId → Option Nat →
+                  (Array ObjectId → Option Nat → Option Nat) → Option Nat
+                | _, 0, picked, best?, k => k picked best?
+                | [], _ + 1, _, best?, _ => best?
+                | c :: rest, m + 1, picked, best?, k =>
+                  if rest.length < m || best? == some upperX then best?
+                  else
+                    let best1? := chooseKMax rest m (picked.push c) best? k
+                    if best1? == some upperX then best1?
+                    else chooseKMax rest (m + 1) picked best1? k
+              let rec searchPicksMax :
+                  List CostPick → Array ObjectId → Array ObjectId → Array ObjectId →
+                  Option Nat → Option Nat
+                | [], _, tapExcl, crewExcl, best? =>
+                  updateBest best? (xForExtraExcl (crewExcl ++ tapExcl))
+                | pick :: restPicks, usedPicks, tapExcl, crewExcl, best? =>
+                  if !canBeatBest best? (crewExcl ++ tapExcl) then best?
+                  else
+                    let rem := (pick :: restPicks).toArray
+                    let remHasTap :=
+                      rem.any (fun pk => pk == .tapUntappedCreature || pk == .tapTwoUntappedArtifacts)
+                    if !remHasTap then
+                      if g.costPicksPayable p (some sid) rem
+                          (tapSource := prop.tapSource)
+                          (sacrificeOrExileSource := sacSrc)
+                          (discardOrExileHandSource := discSrc)
+                          (used := usedPicks)
+                          (preTappedIds := crewExcl ++ tapExcl) then
+                        updateBest best? (xForExtraExcl (crewExcl ++ tapExcl))
+                      else best?
+                    else
+                      let isTapPick :=
+                        pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts
+                      let isBfSacPick : Bool :=
+                        match pick with
+                        | .tapUntappedCreature | .tapTwoUntappedArtifacts
+                        | .discardACard | .discardNonland | .discardLegendaryCard | .discardLegendarySameName
+                        | .exileAnotherCreatureCardFromGraveyard => false
+                        | _ => true
+                      let laterSacAttachedEquip :=
+                        isBfSacPick && restPicks.contains .sacrificeEquipmentAttachedToSource
+                      let cands :=
+                        (g.costPickCandidates p (some sid) pick
+                          (tapSource := prop.tapSource)
+                          (sacrificeOrExileSource := sacSrc || laterSacAttachedEquip)
+                          (discardOrExileHandSource := discSrc)).filter fun cid =>
+                            !usedPicks.contains cid &&
+                              !(isTapPick && (crewExcl.contains cid || tapExcl.contains cid))
+                      if cands.size < pick.count then best?
+                      else
+                        chooseKMax cands.toList pick.count #[] best? fun picked curBest? =>
+                          let nextTap := if isTapPick then tapExcl ++ picked else tapExcl
+                          searchPicksMax restPicks (usedPicks ++ picked) nextTap crewExcl curBest?
+              let evalForCrew (crewExcl : Array ObjectId) (best? : Option Nat) : Option Nat :=
+                if !canBeatBest best? crewExcl then best?
+                else
+                  let best1? :=
+                    match greedyPicksForCrew crewExcl with
+                    | some tExcl => updateBest best? (xForExtraExcl (crewExcl ++ tExcl))
+                    | none => best?
+                  if best1? == some upperX then best1?
+                  else searchPicksMax allPicks.toList #[] #[] crewExcl best1?
+              let bestX? : Option Nat :=
+                if prop.fraCostPaid then
+                  evalForCrew #[] none
                 else
                   match ab.cost.fra with
                   | .crew n =>
@@ -199,50 +307,44 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                           let aNonMana := !manaSrcs.any (·.1.id == a.id)
                           let bNonMana := !manaSrcs.any (·.1.id == b.id)
                           if aNonMana != bNonMana then aNonMana else g.power a > g.power b)
-                    match g.firstPayableCrewSelection? p sid n allPicks
-                        (tapSource := prop.tapSource)
-                        (sacrificeOrExileSource := sacSrc)
-                        (discardOrExileHandSource := discSrc)
-                        (orderedCands? := some cands)
-                        (disjointFromAllPicks := false) with
-                    | some picked => (true, picked)
-                    | none => (false, #[])
-                  | _ => (true, #[])
-              if !crewOk then (#[], #[])
-              else Id.run do
-                let mut usedPicks : Array ObjectId := #[]
-                let mut tExcl : Array ObjectId := #[]
-                for i in [0:allPicks.size] do
-                  let pick := allPicks[i]!
-                  match g.firstPayableCostPickSlice? p (some sid) (allPicks.extract i allPicks.size)
-                      (tapSource := prop.tapSource)
-                      (sacrificeOrExileSource := sacSrc)
-                      (discardOrExileHandSource := discSrc)
-                      (used := usedPicks)
-                      (preTappedIds := cExcl) with
-                  | some chosen =>
-                    if chosen.size != pick.count then
-                      return (cExcl, #[])
-                    usedPicks := usedPicks ++ chosen
-                    if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
-                      tExcl := tExcl ++ chosen
-                  | none =>
-                    return (cExcl, #[])
-                return (cExcl, tExcl)
-            | _, _ => (#[], #[])
-        let excludeIds := selfTapExcl ++ prop.teamworkCreatures ++ crewExcl ++ tapPickExcl
-        let manaBound? : Option Nat :=
-          if prop.cost.containsX then
-            some (maxAffordableX g p prop.cost
-              (allowElfRestricted := g.proposedAllowsElfRestricted prop)
-              (allowInstRestricted := g.proposedAllowsInstRestricted prop)
-              (allowHeroRestricted := g.proposedAllowsHeroRestricted prop)
-              (allowVillainRestricted := g.proposedAllowsVillainRestricted prop)
-              (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
-              (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
-              (spend := g.proposedManaSpend prop)
-              (excludeIds := excludeIds))
-          else none
+                    let initBest? :=
+                      match g.firstPayableCrewSelection? p sid n allPicks
+                          (tapSource := prop.tapSource)
+                          (sacrificeOrExileSource := sacSrc)
+                          (discardOrExileHandSource := discSrc)
+                          (orderedCands? := some cands)
+                          (disjointFromAllPicks := false) with
+                      | some picked => evalForCrew picked none
+                      | none => none
+                    if initBest? == some upperX then initBest?
+                    else if n == 0 then evalForCrew #[] initBest?
+                    else
+                      let candsWithSuf : List (GameObject × Nat) :=
+                        cands.toList.foldr (fun c acc =>
+                          let prev := match acc with | (_, s) :: _ => s | [] => 0
+                          (c, Int.toNat (max 0 (g.power c)) + prev) :: acc) []
+                      let rec searchCrewMax :
+                          List (GameObject × Nat) → Nat → Array ObjectId → Option Nat → Option Nat
+                        | [], accPow, picked, best? =>
+                          if accPow ≥ n then evalForCrew picked best? else best?
+                        | (c, suf) :: rest, accPow, picked, best? =>
+                          if best? == some upperX || !canBeatBest best? picked then best?
+                          else if accPow ≥ n then
+                            evalForCrew picked best?
+                          else if accPow + suf < n then
+                            best?
+                          else
+                            let cPow := Int.toNat (max 0 (g.power c))
+                            let best1? :=
+                              if cPow > 0 then
+                                searchCrewMax rest (accPow + cPow) (picked.push c.id) best?
+                              else best?
+                            if best1? == some upperX then best1?
+                            else searchCrewMax rest accPow picked best1?
+                      searchCrewMax candsWithSuf 0 #[] initBest?
+                  | _ => evalForCrew #[] none
+              some (bestX?.getD 0)
+            | _, _ => some (xForExtraExcl #[])
         let minusLoyaltyBound? : Option Nat :=
           if prop.loyaltyX && prop.activation.bind (·.cost.loyalty) == some .minusX then
             -- Remove all but one loyalty counter so the planeswalker survives when loyalty > 0.
@@ -261,15 +363,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
           if prop.loyaltyX && prop.activation.bind (·.cost.loyalty) == some .plusX then
             some (.chooseX 1)
           else
-            some (.chooseX (maxAffordableX g p prop.cost
-              (allowElfRestricted := g.proposedAllowsElfRestricted prop)
-              (allowInstRestricted := g.proposedAllowsInstRestricted prop)
-              (allowHeroRestricted := g.proposedAllowsHeroRestricted prop)
-              (allowVillainRestricted := g.proposedAllowsVillainRestricted prop)
-              (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
-              (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
-              (spend := g.proposedManaSpend prop)
-              (excludeIds := excludeIds)))
+            some (.chooseX (xForExtraExcl #[]))
       | none => some (.chooseX 0)
     | .chooseTargets _ =>
       chooseSpellTarget g p
@@ -439,13 +533,17 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       let affordable :=
         (g.findObject? cardId).any (fun o =>
           let available := g.availableMana p
-          let origPerm := g.playPermissionFor? p o
+          let face := g.baseCard o
+          let origPerm : Option PlayPermission :=
+            some ((g.paidResolutionOrigPerm? p o (face? := some face)).getD
+              { player := p, ignoreTiming := true })
           let spend : ManaSpend :=
             { spell := true, fromHand := o.zone == .hand p
               supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
           (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
-          available.canPay (g.playManaCost { o with controller := some p } (g.baseCard o)
-              (origPerm := origPerm) (flashback := some false))
+          available.canPay (g.playManaCost { o with controller := some p } face
+              (origPerm := origPerm) (flashback := some false)
+              (useImplicitPermissions := false))
             (allowElfRestricted := g.hasSubtype o .elf)
             (allowInstRestricted := g.isInstantOrSorcery o)
             (allowHeroRestricted := g.hasSubtype o .hero)
@@ -453,7 +551,8 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
             (allowCantNonartifact := g.isArtifact o)
             (allowCreatureRestricted := false)
             (spend := spend) &&
-            g.canPayAnnouncedAdditional p o available (origPerm := origPerm))
+            g.canPayAnnouncedAdditional p o available (origPerm := origPerm)
+              (useImplicitPermissions := false))
       if !affordable then some .decline
       else
         match (g.apply actor (.cast cardId)) with
@@ -725,14 +824,18 @@ where
         !(g.permanentsOf p).any (fun c => g.isCreature c && c.status.attacking)) &&
       -- Don't typecycle a card you can currently afford to cast.
       !(ab.activateFromHand && g.canCast p o &&
-        (g.availableMana p).canPay (g.playManaCost { o with controller := some p } (g.baseCard o))
-          (allowElfRestricted := allowElf)
-          (allowInstRestricted := g.isInstantOrSorcery o)
-          (allowHeroRestricted := allowHero)
-          (allowVillainRestricted := allowVillain)
-          (allowCantNonartifact := g.isArtifact o)
-          (allowCreatureRestricted := false)
-          (spend := spellSpend)) &&
+        (let face := g.baseCard o
+         let perm? := g.playPermissionFor? p o (face? := some face)
+         (g.availableMana p).canPay
+           (g.playManaCost { o with controller := some p } face
+             (origPerm := perm?) (useImplicitPermissions := false))
+           (allowElfRestricted := allowElf)
+           (allowInstRestricted := g.isInstantOrSorcery o)
+           (allowHeroRestricted := allowHero)
+           (allowVillainRestricted := allowVillain)
+           (allowCantNonartifact := g.isArtifact o)
+           (allowCreatureRestricted := false)
+           (spend := spellSpend))) &&
       crewAndPicksAndManaOk
     let firstAbility (o : GameObject) : Option Nat :=
       let abs := g.activatedAbilitiesOf o
@@ -750,15 +853,41 @@ where
     | none => chooseCast g p
   chooseCast (g : Game) (p : PlayerId) : Option Action :=
     let available := g.availableMana p
+    let selectBestPerm (o : GameObject) (face : CardDef) (mv : Nat)
+        (asAdventure : Bool := false) : Option PlayPermission :=
+      let raw :=
+        g.playPermissionsFor p o ++
+          (if o.zone == .exile && g.mayCastExiledBySource p o then
+            #[{ player := p, anyMana := true }]
+           else #[])
+      let p1 := if asAdventure then raw.filter (!·.fromAdventure) else raw
+      let baseTimingOk := g.timingAllowsCast p face
+      let cands :=
+        if !baseTimingOk && p1.any (·.ignoreTiming) then p1.filter (·.ignoreTiming)
+        else p1
+      let score (perm : PlayPermission) : Nat :=
+        let lifeOk := !perm.payLifeEqualManaValue || g.canPayLife p mv
+        (if lifeOk then 32 else 0) +
+          (if perm.withoutManaCost then 16 else 0) +
+          (if perm.payLifeEqualManaValue && lifeOk then 8 else 0) +
+          (if perm.anyMana then 4 else 0) +
+          (if perm.ignoreTiming then 2 else 0) +
+          (if !perm.fromAdventure then 1 else 0)
+      cands.foldl (fun best? perm =>
+        match best? with
+        | none => some perm
+        | some b => if score perm >= score b then some perm else some b) none
     let playable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
-      let perm? := g.playPermissionFor? p o
+      let face := g.baseCard o
+      let mv := g.objectManaValue o
+      let perm? := selectBestPerm o face mv
       let spend : ManaSpend :=
         { spell := true, fromHand := o.zone == .hand p
           supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
       g.canCast p o &&
-        (!perm?.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
-        available.canPay (g.playManaCost { o with controller := some p } (g.baseCard o)
-            (origPerm := perm?))
+        (!perm?.any (·.payLifeEqualManaValue) || g.canPayLife p mv) &&
+        available.canPay (g.playManaCost { o with controller := some p } face
+            (origPerm := perm?) (useImplicitPermissions := false))
           (allowElfRestricted := g.hasSubtype o .elf)
           (allowInstRestricted := g.isInstantOrSorcery o)
           (allowHeroRestricted := g.hasSubtype o .hero)
@@ -766,31 +895,21 @@ where
           (allowCantNonartifact := g.isArtifact o)
           (allowCreatureRestricted := false)
           (spend := spend) &&
-        g.canPayAnnouncedAdditional p o available (origPerm := perm?))
+        g.canPayAnnouncedAdditional p o available (origPerm := perm?)
+          (useImplicitPermissions := false))
     let adventurePlayable := (g.handObjects p ++ g.exiledPlayable p).filter (fun o =>
       g.canCastAdventure p o &&
         match (g.baseCard o).adventure with
         | some adv =>
           let face := adv.toCardDef
           let advObj := { o with controller := some p, printed := face, adventurerCard := some o.printed }
-          let perm? :=
-            let perms := (g.playPermissionsFor p o).filter (!·.fromAdventure)
-            let score (perm : PlayPermission) : Nat :=
-              let lifeOk := !perm.payLifeEqualManaValue || g.canPayLife p face.manaValue
-              (if lifeOk then 16 else 0) +
-                (if perm.ignoreTiming then 8 else 0) +
-                (if perm.withoutManaCost then 4 else 0) +
-                (if perm.anyMana then 2 else 0) +
-                (if !perm.fromAdventure then 1 else 0)
-            perms.foldl (fun best? perm =>
-              match best? with
-              | none => some perm
-              | some b => if score perm >= score b then some perm else some b) none
+          let perm? := selectBestPerm o face face.manaValue (asAdventure := true)
           let spend : ManaSpend :=
             { spell := true, fromHand := o.zone == .hand p
               supertypes := g.supertypes advObj, types := g.types advObj, subtypes := g.subtypes advObj }
           (!perm?.any (·.payLifeEqualManaValue) || g.canPayLife p face.manaValue) &&
-          available.canPay (g.playManaCost { o with controller := some p } face (origPerm := perm?))
+          available.canPay (g.playManaCost { o with controller := some p } face
+              (origPerm := perm?) (useImplicitPermissions := false))
             (allowElfRestricted := g.hasSubtype advObj .elf)
             (allowInstRestricted := g.isInstantOrSorcery advObj)
             (allowHeroRestricted := g.hasSubtype advObj .hero)
@@ -799,6 +918,7 @@ where
             (allowCreatureRestricted := false)
             (spend := spend) &&
           g.canPayAnnouncedAdditional p advObj available (origPerm := perm?)
+            (useImplicitPermissions := false)
         | none => false)
     let oppHasCreature := !(g.creaturesControlledBy (g.opponent p)).isEmpty
     let ownCreature := (g.creaturesControlledBy p).back?

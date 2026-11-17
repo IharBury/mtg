@@ -237,12 +237,15 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     (increase : ManaCost := ManaCost.empty)
     (origPerm : Option PlayPermission := none)
     (flashback : Option Bool := none)
-    (explicitAltCost : Bool := false) : ManaCost :=
+    (explicitAltCost : Bool := false)
+    (useImplicitPermissions : Bool := true) : ManaCost :=
   let effPerm :=
     origPerm <|>
-      match card.controller with
-      | some c => g.playPermissionFor? c card
-      | none => g.bestActivePlayPermission? card
+      (if !useImplicitPermissions then none
+       else
+         match card.controller with
+         | some c => g.playPermissionFor? c card (face? := some face)
+         | none => g.bestActivePlayPermission? card)
   let caster := card.controller.getD ((effPerm.map (·.player)).getD card.owner)
   -- Thalia, the Survivor: each one an opponent controls adds {1}.
   let tax :=
@@ -281,12 +284,13 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
       | some perm =>
         if (perm.withoutManaCost || perm.payLifeEqualManaValue) &&
             !(explicitAltCost || usedFlashback || usedMorph || usedSubstitutedAlt) then
-          g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+          let c := g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+          if perm.anyMana then c.asAnyMana else c
         else if perm.anyMana then afterEquip.asAnyMana
         else afterEquip
       | none =>
-        -- Null Summoner: mana of any type can be spent.
-        if card.zone == .exile && card.exiledBy.isSome then
+        -- Null Summoner: mana of any type can be spent when implicit exile permissions apply.
+        if useImplicitPermissions && card.zone == .exile && card.exiledBy.isSome then
           afterEquip.asAnyMana
         else afterEquip
   -- Omnipresence: from hand, a spell with mana value at most the number of

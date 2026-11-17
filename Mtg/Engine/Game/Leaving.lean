@@ -126,6 +126,23 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
         | _ => true
     ({ curG with objects := nextObjs, activeEffects := nextEffs }, allSrcs)
   let initSeeds := seedIds.foldl pushUnique #[]
+  let cmdInitSeeds :=
+    expandEmblemSources g.activeEffects
+      (initSeeds.filter (fun sid => (g.findObject? sid).any (·.zone == .command)))
+  let simultaneousEndCtrlEids : Array EffectId :=
+    g.activeEffects.filterMap fun (eid, e) =>
+      if endingCtrlEids.contains eid then some eid
+      else
+        match e with
+        | .layered _ (.control _) (.whileSourceOnBattlefield src)
+        | .layered _ (.control _) (.untilSourceLeaves src)
+        | .layered _ (.control _) (.whileSourceHasCounter src _)
+        | .layered _ (.control _) (.whileInZone src _) =>
+          if cmdInitSeeds.contains src then some eid else none
+        | _ => none
+  let phasedOutExpiringSimultaneously (o : GameObject) : Bool :=
+    let applied := g.appliedControlEffectIds o
+    !applied.isEmpty && applied.all simultaneousEndCtrlEids.contains
   let (cur0, expanded0) := filterAfterSources g initSeeds endingCtrlEids
   let mut cur := cur0
   let mut result := expanded0.foldl pushUnique initSeeds
@@ -138,7 +155,8 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
           (o.isBattlefieldObject && (cur.appliedControlEffectIds o).isEmpty &&
             (cur.player fallback).leftTheGame)
       | none =>
-        o.isBattlefieldObject && (cur.appliedControlEffectIds o).isEmpty &&
+        (o.isOnBattlefield || (o.isBattlefieldObject && phasedOutExpiringSimultaneously o)) &&
+          (cur.appliedControlEffectIds o).isEmpty &&
           (cur.player fallback).leftTheGame
     if departing.isEmpty then
       break
@@ -324,18 +342,26 @@ def reconcileControlAfterTransition (pre post : Game)
               let fallback := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
               if !(g.player fallback).leftTheGame || alreadyQueuedForExile g cur.id then none
               else
-                let prePoIdx :=
+                let (prePoIdx, poSnapCtrl?) : Nat × Option PlayerId :=
                   match pre.latestPhaseOutIdxOf? preObj with
                   | some poIdx =>
                     match pre.events[poIdx]? with
                     | some ev =>
                       match ev.change with
-                      | .engine (.materializeObject ..)
-                      | .rules (.zone (.moved ..))
-                      | .rules (.zone (.created ..)) => poIdx + 1
-                      | _ => pre.phaseOutBatchStartIdx poIdx
-                    | none => pre.phaseOutBatchStartIdx poIdx
-                  | none => 0
+                      | .engine (.materializeObject obj _) =>
+                        (poIdx + 1,
+                         (obj.defaultController.orElse (fun _ => obj.controller)).orElse
+                           (fun _ => some obj.owner))
+                      | .rules (.zone (.moved _ after ..)) =>
+                        (poIdx + 1, after.controller)
+                      | .rules (.zone (.created eo c)) =>
+                        (poIdx + 1, eo.controller.orElse (fun _ => some c))
+                      | .rules (.permanent (.phasedOut eo _)) =>
+                        (pre.phaseOutBatchStartIdx poIdx, eo.controller)
+                      | _ =>
+                        (pre.phaseOutBatchStartIdx poIdx, none)
+                    | none => (pre.phaseOutBatchStartIdx poIdx, none)
+                  | none => (0, none)
                 let gAtPo :=
                   if !(pre.appliedControlEffectIds preObj).isEmpty then pre
                   else pre.mkHistoricalGameAt prePoIdx
@@ -345,8 +371,10 @@ def reconcileControlAfterTransition (pre post : Game)
                     (g.controllerOf cur).isNone
                 if hadPriorCtrl then
                   let lkiCtrl :=
-                    (pre.controllerOf preObj).orElse fun _ =>
-                      (gAtPo.findObject? cur.id).bind gAtPo.controllerOf
+                    (pre.controllerOf preObj)
+                      |>.orElse (fun _ => (gAtPo.findObject? cur.id).bind gAtPo.controllerOf)
+                      |>.orElse (fun _ => poSnapCtrl?)
+                      |>.orElse (fun _ => some fallback)
                   some (cur.id, s!"{g.name cur} is exiled (CR 800.4c)", lkiCtrl)
                 else none
           else none
@@ -549,7 +577,7 @@ def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := fals
         if o.zone == .command && !representedByCard o &&
             departedIds.any (fun p => o.owner == p || (withoutDepartingCtrl acc).controlledBy o p) then
           acc.ceaseToExist o.id (cause := leaveCause) (reconcileControl := false)
-            (preState? := some pre) (skipLogIds := skipPreIds)
+            (suppressReturnLog := true) (preState? := some pre) (skipLogIds := skipPreIds)
         else acc) g1
     let g :=
       if ctrlEids.isEmpty && stackCmdCeaseIds.isEmpty then
@@ -571,7 +599,9 @@ def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := fals
             | none => true
             | some c => (g.player c).leftTheGame
           if noLiveCtrl then
-            some (cur.id, s!"{g.name cur} is exiled (no controller, CR 800.4c)", g.controllerOf cur)
+            let fallback := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
+            let lkiCtrl := (g.controllerOf cur).orElse (fun _ => some fallback)
+            some (cur.id, s!"{g.name cur} is exiled (no controller, CR 800.4c)", lkiCtrl)
           else none
     if orphanExiles.isEmpty then g
     else
@@ -941,8 +971,16 @@ def splitAfterCloseBatchFor? (target : BatchId) :
       match b with
       | .finishLinkedExileMove ids =>
         some (.seq pre (.finishLinkedExileMove ids), none)
+      | .phaseOutPermanentsLoop #[] c ps s true =>
+        some (.seq pre (.phaseOutPermanentsLoop #[] c ps s true), none)
+      | .phaseInControlledLoop #[] c s true =>
+        some (.seq pre (.phaseInControlledLoop #[] c s true), none)
       | .seq (.finishLinkedExileMove ids) rest =>
         some (.seq pre (.finishLinkedExileMove ids), some rest)
+      | .seq (.phaseOutPermanentsLoop #[] c ps s true) rest =>
+        some (.seq pre (.phaseOutPermanentsLoop #[] c ps s true), some rest)
+      | .seq (.phaseInControlledLoop #[] c s true) rest =>
+        some (.seq pre (.phaseInControlledLoop #[] c s true), some rest)
       | _ =>
         some (pre, some b)
     | none =>
@@ -3392,7 +3430,8 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               (o.owner == p || (withoutDepartingCtrl acc).controlledBy o p) &&
               !representedByCard o then
             acc.ceaseToExist o.id (cause := cause) (reconcileControl := false)
-              (preState? := some preLeave) (skipLogIds := coDepartingIds)
+              (suppressReturnLog := true) (preState? := some preLeave)
+              (skipLogIds := coDepartingIds)
           else acc) g3
       let g :=
         g.endControlEffectsSimultaneously ctrlEids (cause := cause)
@@ -3652,6 +3691,24 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           | _, _ => (saved?, combined?)
         else
           (saved?, combined?)
+      let ensureDeferredExileReopen (gCur : Game) (hasActivePrompt : Bool)
+          (outer? : Option PendingReplacement) : Option PendingReplacement :=
+        let canReopen :=
+          (if wasAbortedProposal then !rewindAbortedProposal else gCur.proposedSpell.isNone) &&
+            (gCur.pendingMayCastFromExile.isSome || gCur.pendingFreeCopies.isSome)
+        if canReopen && (hasActivePrompt || preBodyPending != .none || outer?.isSome) then
+          let rec appendFinishFraIfNeeded (pr : PendingReplacement) : PendingReplacement :=
+            if !pr.endsWithPriorityGrant then pr.ensureEndsWithFinishFra
+            else
+              match pr with
+              | .seq a b => .seq a (appendFinishFraIfNeeded b)
+              | .finishTurnFaceUp _ _ true => .seq pr .finishFraChoice
+              | _ => pr
+          match outer? with
+          | some outer => some (appendFinishFraIfNeeded outer)
+          | none => some .finishFraChoice
+        else
+          outer?
       match preBodyPending with
       | .chooseReplacement q choices =>
         if q != p && !abortingReplacementProposal then
@@ -3661,15 +3718,6 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               (alreadyClearedCkpt := clearedAbortedCkpt0)
           let g :=
             if g.pending != .none then g.change (.pending .none) else g
-          let ensureDeferredExileReopen (gCur : Game) (hasActivePrompt : Bool)
-              (outer? : Option PendingReplacement) : Option PendingReplacement :=
-            if wasAbortedProposal && !rewindAbortedProposal && hasActivePrompt &&
-                (gCur.pendingMayCastFromExile.isSome || gCur.pendingFreeCopies.isSome) then
-              match outer? with
-              | some outer => some outer.ensureEndsWithFinishFra
-              | none => some .finishFraChoice
-            else
-              outer?
           let combinedOuter0? : Option PendingReplacement :=
             ensureDeferredExileReopen g
               (choicesStillValidPre || postCleanupPending != .none)
@@ -3707,15 +3755,6 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
         else
           let (g, postCleanupPending) :=
             runPostCastAndPropCleanup g .none (alreadyClearedCkpt := clearedAbortedCkpt0)
-          let ensureDeferredExileReopen (gCur : Game) (hasActivePrompt : Bool)
-              (outer? : Option PendingReplacement) : Option PendingReplacement :=
-            if wasAbortedProposal && !rewindAbortedProposal && hasActivePrompt &&
-                (gCur.pendingMayCastFromExile.isSome || gCur.pendingFreeCopies.isSome) then
-              match outer? with
-              | some outer => some outer.ensureEndsWithFinishFra
-              | none => some .finishFraChoice
-            else
-              outer?
           let openedNewReplacement :=
             match postCleanupPending with
             | .chooseReplacement .. => true
@@ -3807,15 +3846,6 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               | _ => false
         let (g, postRedirPending) :=
           runPostCastAndPropCleanup g redirPending (alreadyClearedCkpt := redirClearedCkpt)
-        let ensureDeferredExileReopen (gCur : Game) (hasActivePrompt : Bool)
-            (outer? : Option PendingReplacement) : Option PendingReplacement :=
-          if wasAbortedProposal && !rewindAbortedProposal && hasActivePrompt &&
-              (gCur.pendingMayCastFromExile.isSome || gCur.pendingFreeCopies.isSome) then
-            match outer? with
-            | some outer => some outer.ensureEndsWithFinishFra
-            | none => some .finishFraChoice
-          else
-            outer?
         let openedNewReplacement :=
           match postRedirPending with
           | .chooseReplacement .. => true
@@ -3829,13 +3859,13 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           let g :=
             match bodyExilePending? with
             | some bp =>
-              let redirP := postRedirPending
-              let redirC? := g.pendingReplacement
-              let g := g.changes #[.pending bp, .pendingReplacement bodyExileCont?]
-              let g := g.chainPendingReplacement (.restorePending redirP false (departed := departed))
-              match redirC? with
-              | some rc => g.chainPendingReplacement rc
-              | none => g
+                let redirP := postRedirPending
+                let redirC? := g.pendingReplacement
+                let g := g.changes #[.pending bp, .pendingReplacement bodyExileCont?]
+                let g := g.chainPendingReplacement (.restorePending redirP false (departed := departed))
+                match redirC? with
+                | some rc => g.chainPendingReplacement rc
+                | none => g
             | none => g
           let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
           (g, (none, preBodyContReopen?, hadPreBodyCont))

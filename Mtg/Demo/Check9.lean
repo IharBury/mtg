@@ -500,3 +500,131 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   mustHoldCheck9 "p47_demoConvImpOk" demoConvImpOk
 
 
+/- Phase 48 Items 2 & 4: `Demo.hasGameStatePriorityAction` Null Summoner `anyMana` &
+`useImplicitPermissions := false` + usable non-plain CR 605 mana abilities,
+`uniquePayingSourceSetLarge` post-mana cost-preserving subset check (`anySubsetOk rest`),
+`hasUniqueManaPayment` non-plain CR 605 guard, and mixed-color `.combination` `autopay`. -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := emptyHand afterDraw p0
+
+  -- 1. `hasGameStatePriorityAction` Null Summoner (`mayCastExiledBySource`) `anyMana` & unpayable `payLifeEqualManaValue` guard:
+  let nullSummonerDef : CardDef := {
+    grizzlyBears with
+    name := "P48 NullSummoner"
+    castExiledWithSevenInGraveyard := true
+    activatedAbilities := #[]
+  }
+  let rrSorcDef : CardDef := {
+    name := "P48 RedPyre"
+    manaCost := { symbols := #[.colored .red, .colored .red] }
+    types := #[.sorcery]
+    spellEffect := some (Effect.gainLife 1)
+  }
+  let gNullBase :=
+    Id.run do
+      let mut g := addPermanent gMain nullSummonerDef p0 p0
+      for _ in [0:7] do
+        g := insertObject g grizzlyBears p0 (.graveyard p0)
+      return g
+  let nullId := (gNullBase.permanentsOf p0).find? (·.name == nullSummonerDef.name) |>.get!.id
+  let gNullHand := insertObject gNullBase rrSorcDef p0 (.hand p0)
+  let (gNullExRaw, nullExId) := gNullHand.move (gNullHand.player p0).hand.back! .exile none
+  let gNullEx := (gNullExRaw.changeObject nullExId (.exiledBy (some nullId))).loseLife p0 19
+  let gNullUnpayableLifeNoMana :=
+    gNullEx.createEffect
+      (.permission (some p0) (.playFromExile nullExId { player := p0, payLifeEqualManaValue := true }) .untilEndOfTurn)
+  let gNullUnpayableLifeGreen := gNullUnpayableLifeNoMana.addMana p0 (.colored .green) 2
+  let gNullFromAdvGreen :=
+    (gNullEx.createEffect
+      (.permission (some p0) (.playFromExile nullExId { player := p0, fromAdventure := true }) .untilEndOfTurn)).addMana
+      p0 (.colored .green) 2
+  let demoNullPrioOk :=
+    !hasGameStatePriorityAction gNullUnpayableLifeNoMana p0 &&
+    hasGameStatePriorityAction gNullUnpayableLifeGreen p0 &&
+    hasGameStatePriorityAction gNullFromAdvGreen p0
+
+  -- 2. Non-plain CR 605 mana abilities (`Catalog.treasureToken`) in `hasGameStatePriorityAction` & `hasUniqueManaPayment`:
+  let (gWithTreasure, trObj) := gMain.createOneToken p0 Catalog.treasureToken
+  let gGreenSpellDef : CardDef := {
+    name := "P48 GreenChant"
+    manaCost := { symbols := #[.colored .green] }
+    types := #[.sorcery]
+    spellEffect := some (Effect.gainLife 1)
+  }
+  let gTrForest0 := insertObject (addPermanent gWithTreasure forest p0 p0) gGreenSpellDef p0 (.hand p0)
+  let gTrForestProp := mustApply gTrForest0 p0 (.cast (gTrForest0.player p0).hand.back!)
+  let (gNoTrForestProp, _) := gTrForestProp.move trObj.id .exile none
+  let demoNonPlainOk :=
+    !hasGameStatePriorityAction gMain p0 &&
+    hasGameStatePriorityAction gWithTreasure p0 &&
+    !hasUniqueManaPayment gTrForestProp &&
+    hasUniqueManaPayment gNoTrForestProp
+
+  -- 3. `uniquePayingSourceSetLarge` (>20 sources, `singles.size == 1`, `anySubsetOk rest` preserving post-mana tap pick):
+  let solRingDef : CardDef := {
+    name := "P48 SolRing"
+    types := #[.artifact]
+    tapAddTogether := #[.colorless, .colorless]
+  }
+  let hasteElfDef : CardDef := {
+    llanowarElves with
+    name := "P48 HasteElf"
+    keywords := { haste := true }
+  }
+  let tapCreature2Def : CardDef := {
+    name := "P48 TapShrine"
+    types := #[.enchantment]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 2, tapAnUntappedCreatureYouControl := true }
+      effect := Effect.gainLife 2
+    }]
+  }
+  let gLargeTap0 :=
+    Id.run do
+      let mut g := addPermanent (addPermanent gMain tapCreature2Def p0 p0) solRingDef p0 p0
+      for _ in [0:20] do
+        g := addPermanent g hasteElfDef p0 p0
+      return g
+  let shrineId := (gLargeTap0.permanentsOf p0).find? (·.name == tapCreature2Def.name) |>.get!.id
+  let solRingId := (gLargeTap0.permanentsOf p0).find? (·.name == solRingDef.name) |>.get!.id
+  let gLargeTapProp := mustApply gLargeTap0 p0 (.activate shrineId 0)
+  let largeTapProp := gLargeTapProp.proposedSpell.get!
+  let largeTapSrcs := gLargeTapProp.manaSourcesForProposed p0 largeTapProp
+  let ccCost : ManaCost := { symbols := #[.colorless, .colorless] }
+  let largePostManaSubsetOk :=
+    largeTapSrcs.size == 21 &&
+    (uniquePayingSourceSetLarge gLargeTapProp ManaPool.empty (ManaCost.ofGeneric 2) false false
+      largeTapSrcs (gLargeTapProp.proposedAllowances largeTapProp) (some (p0, largeTapProp))).isNone &&
+    !hasUniqueManaPayment gLargeTapProp &&
+    (match uniquePayingSourceSetLarge gLargeTapProp ManaPool.empty ccCost false false
+        largeTapSrcs (gLargeTapProp.proposedAllowances largeTapProp) (some (p0, largeTapProp)) with
+     | some #[src] => src.1.id == solRingId
+     | _ => false)
+
+  -- 4. `applyAutopay` (`applyAutopaySteps`) emitting `mana <id> 1 UR` + `pay` on a mixed-color `.combination` ability:
+  let comboFilterDef : CardDef := {
+    name := "P48 CascadeConduit"
+    types := #[.land]
+    tapAddTwoAmong := #[.colored .blue, .colored .red]
+  }
+  let urSpellDef : CardDef := {
+    name := "P48 SteamSurge"
+    manaCost := { symbols := #[.colored .blue, .colored .red] }
+    types := #[.sorcery]
+    spellEffect := some (Effect.gainLife 2)
+  }
+  let gCombo0 := insertObject (addPermanent gMain comboFilterDef p0 p0) urSpellDef p0 (.hand p0)
+  let conduitId := (gCombo0.permanentsOf p0).find? (·.name == comboFilterDef.name) |>.get!.id
+  let gComboProp := mustApply gCombo0 p0 (.cast (gCombo0.player p0).hand.back!)
+  let demoComboAutopayOk :=
+    match applyAutopay gComboProp p0 [] with
+    | .ok res =>
+      res.game.stack.size == 1 &&
+      res.commands == #[s!"mana {conduitId} 1 UR", "pay"]
+    | .error _ => false
+
+  mustHoldCheck9 "p48_demoNullPrioOk" demoNullPrioOk &&
+  mustHoldCheck9 "p48_demoNonPlainOk" demoNonPlainOk &&
+  mustHoldCheck9 "p48_largePostManaSubsetOk" largePostManaSubsetOk &&
+  mustHoldCheck9 "p48_demoComboAutopayOk" demoComboAutopayOk

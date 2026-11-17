@@ -1329,6 +1329,11 @@ def applyAutopaySteps (g : Game) (p : PlayerId) (fuel : Nat) (cmds : Array Strin
       | some (.tapForMana id m) =>
         let g ← applyTap g p [toString id, m.letter]
         applyAutopaySteps g p n (cmds.push (tapCommand id m))
+      | some (.activateManaAbility id abilityIdx mana #[]) =>
+        let letters := String.join (mana.toList.map ManaType.letter)
+        let cmd := s!"mana {id} {abilityIdx + 1} {letters}"
+        let g ← applyManaAbility g p [toString id, toString (abilityIdx + 1), letters]
+        applyAutopaySteps g p n (cmds.push cmd)
       | some .pay =>
         match g.proposedSpell with
         | some prop =>
@@ -2064,18 +2069,23 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
           (allowCreatureRestricted := false)
           (spend := spend) &&
         g.canPayAnnouncedAdditional p o available (origPerm := perm?)
+          (useImplicitPermissions := false)
       g.canCast p o &&
         (if o.zone == .exile then
           let perms := g.playPermissionsFor p o
           let face := g.baseCard o
           let casterObj := { o with controller := some p }
+          let nullPerm : Option PlayPermission :=
+            if g.mayCastExiledBySource p o then some { player := p, anyMana := true } else none
           perms.any (fun pm =>
             (pm.ignoreTiming || g.timingAllowsCast p face) &&
               (!pm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o)) &&
-              payOk (g.playManaCost casterObj face (origPerm := some pm)) (some pm)) ||
+              payOk (g.playManaCost casterObj face (origPerm := some pm)
+                (useImplicitPermissions := false)) (some pm)) ||
             ((perms.isEmpty || g.mayCastExiledBySource p o) &&
               g.timingAllowsCast p face &&
-              payOk (g.playManaCost casterObj face (origPerm := none)) none)
+              payOk (g.playManaCost casterObj face (origPerm := nullPerm)
+                (useImplicitPermissions := false)) nullPerm)
          else
           payOk (g.baseCard o).manaCost))
     let canCastAdventure := playable.any (fun o =>
@@ -2099,13 +2109,17 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
           if o.zone == .exile then
             let advPerms := (g.playPermissionsFor p o).filter (!·.fromAdventure)
             let casterObj := { o with controller := some p }
+            let nullPerm : Option PlayPermission :=
+              if g.mayCastExiledBySource p o then some { player := p, anyMana := true } else none
             advPerms.any (fun pm =>
               (pm.ignoreTiming || g.timingAllowsCast p face) &&
                 (!pm.payLifeEqualManaValue || g.canPayLife p face.manaValue) &&
-                payAdv (g.playManaCost casterObj face (origPerm := some pm))) ||
+                payAdv (g.playManaCost casterObj face (origPerm := some pm)
+                  (useImplicitPermissions := false))) ||
               ((advPerms.isEmpty || g.mayCastExiledBySource p o) &&
                 g.timingAllowsCast p face &&
-                payAdv (g.playManaCost casterObj face (origPerm := none)))
+                payAdv (g.playManaCost casterObj face (origPerm := nullPerm)
+                  (useImplicitPermissions := false)))
           else
             payAdv adv.manaCost
         | none => false)
@@ -2128,7 +2142,8 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
             (allowCantNonartifact := true)
             (allowCreatureRestricted := !isTurnFaceUp && g.isCreature o)
             (spend := actSpend)))
-    canPlayLand || !(g.manaSources p).isEmpty || canCast || canCastAdventure || canActivate
+    canPlayLand || !(g.manaSources p).isEmpty || g.hasUsableNonPlainManaAbility p ||
+      canCast || canCastAdventure || canActivate
 
 /-- Whether bit `i` of `mask` is set. -/
 def maskBit (mask i : Nat) : Bool :=
@@ -2153,8 +2168,8 @@ def payingSourceSubset (a b : Array (GameObject × Array ManaType)) : Bool :=
 type assignment. -/
 def canPayTappingAll (g : Game) (pool : ManaPool) (cost : ManaCost)
     (allowElf allowInst : Bool) (sources : List (GameObject × Array ManaType))
-    (a : ManaAllowances := {}) : Bool :=
-  g.canPayFromSources pool cost allowElf allowInst sources a
+    (a : ManaAllowances := {}) (prop? : Option ProposedSpell := none) : Bool :=
+  g.canPayFromSources pool cost allowElf allowInst sources a (prop? := prop?)
 
 /-- Unique source set that can pay when there are too many sources to
 enumerate every subset. Recognizes a single sufficient source, or that
@@ -2165,8 +2180,15 @@ def uniquePayingSourceSetLarge (g : Game) (pool : ManaPool) (cost : ManaCost)
     (prop? : Option (PlayerId × ProposedSpell) := none) :
     Option (Array (GameObject × Array ManaType)) :=
   let subOk (sub : Array (GameObject × Array ManaType)) : Bool :=
-    canPayTappingAll g pool cost allowElf allowInst sub.toList a &&
+    canPayTappingAll g pool cost allowElf allowInst sub.toList a (prop? := prop?.map (·.2)) &&
       prop?.all (fun (p, prop) => g.tapPreservesPostManaCosts p prop (sub.map (·.1.id)))
+  let anySubsetOk (sub : Array (GameObject × Array ManaType)) : Bool :=
+    match prop? with
+    | some (p, prop) =>
+      g.hasCostPreservingPaymentSubset pool cost allowElf allowInst sub a
+        (some (p, prop))
+    | none =>
+      canPayTappingAll g pool cost allowElf allowInst sub.toList a
   Id.run do
     let mut singles : Array (Nat × (GameObject × Array ManaType)) := #[]
     for i in [0:sources.size] do
@@ -2176,7 +2198,7 @@ def uniquePayingSourceSetLarge (g : Game) (pool : ManaPool) (cost : ManaCost)
     if singles.size == 1 then
       let (idx, src) := singles[0]!
       let rest := sources.extract 0 idx ++ sources.extract (idx + 1) sources.size
-      if !subOk rest then
+      if !anySubsetOk rest then
         return some #[src]
       else
         return none
@@ -2186,7 +2208,7 @@ def uniquePayingSourceSetLarge (g : Game) (pool : ManaPool) (cost : ManaCost)
       return none
     for i in [0:sources.size] do
       let rest := sources.extract 0 i ++ sources.extract (i + 1) sources.size
-      if subOk rest then
+      if anySubsetOk rest then
         return none
     return some sources
 
@@ -2205,7 +2227,7 @@ def uniquePayingSourceSet (g : Game) (pool : ManaPool) (cost : ManaCost)
       let mut best : Option (Array (GameObject × Array ManaType)) := none
       for mask in [1:limit] do
         let sub := subsetFromMask sources mask
-        if canPayTappingAll g pool cost allowElf allowInst sub.toList a &&
+        if canPayTappingAll g pool cost allowElf allowInst sub.toList a (prop? := prop?.map (·.2)) &&
             prop?.all (fun (p, prop) => g.tapPreservesPostManaCosts p prop (sub.map (·.1.id))) then
           match best with
           | none => best := some sub
@@ -2252,8 +2274,9 @@ def hasUniqueManaPayment (g : Game) : Bool :=
         let a := g.proposedAllowances prop
         (pool.canPay prop.cost allowElf allowInst a.hero a.villain a.cantNonartifact a.creature a.spend &&
           g.tapPreservesPostManaCosts p prop #[]) ||
-          (uniquePayingSourceSet g pool prop.cost allowElf allowInst
-            (g.manaSourcesForProposed p prop) a (some (p, prop))).isSome
+          (!g.hasUsableNonPlainManaAbility p (some prop) &&
+            (uniquePayingSourceSet g pool prop.cost allowElf allowInst
+              (g.manaSourcesForProposed p prop) a (some (p, prop))).isSome)
   | _, _ => false
 
 /-- `sacrifice <id>` when exactly one permanent can pay that cost. -/

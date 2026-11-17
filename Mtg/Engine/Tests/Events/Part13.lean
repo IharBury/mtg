@@ -676,7 +676,7 @@ private def replayOk47i3 (gs : Array Game) : Bool :=
 
   -- Controllerless newly phased-in permanent (`defaultController == none`, `owner == p2` departed, no control effect ever):
   let (gNoCtrlPh0, noCtrlPhObj) := gP2Gone.allocObject bear p2 .battlefield none { phasedOut := true }
-  let gNoCtrlPhIn := gNoCtrlPh0.phaseIn (gNoCtrlPh0.object! noCtrlPhObj.id)
+  let gNoCtrlPhIn := gNoCtrlPh0.phaseIn (gNoCtrlPh0.object! noCtrlPhObj.id) (reconcile := false)
   let gNoCtrlReconciled :=
     Game.reconcileControlAfterTransition gNoCtrlPh0 gNoCtrlPhIn (cause := some testCause)
 

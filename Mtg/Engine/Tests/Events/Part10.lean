@@ -159,7 +159,7 @@ private def replayOk42i1 (gs : Array Game) : Bool :=
   let gRepOuterDeferDone := mustApply gRepOuterDeferMid p0 (.keepLegend secondKeepId)
 
   let repauseRewriteOk :=
-    repPendDid && repPendSaved? == some (.mayPayGeneric p0 1) && !repPendPop && repPendDep == #[p2] && repPendRw.isNone &&
+    repPendDid && repPendSaved? == some (.mayPayGeneric p0 1) && repPendPop && repPendDep == #[p2] && repPendRw.isNone &&
     gRepPendMid.currentBatch.map Prod.fst == some origTwoBid &&
     (match gRepPendMid.pending with | .chooseLegend q nm ids => q == p0 && nm == secondGrpName && ids.size == 2 | _ => false) &&
     (gRepPendDone.player p1).leftTheGame &&
@@ -167,7 +167,7 @@ private def replayOk42i1 (gs : Array Game) : Bool :=
     -- With `deferRestore := true`, `.checkSBA` was stripped so `.gainLife p1 5` ran right after `.closeBatch` and saved `p1` at 5 life:
     !(gRepPendDeferDone.player p1).leftTheGame &&
     (gRepPendDeferDone.player p1).life == 5 &&
-    repOuterDid && !repOuterPop &&
+    repOuterDid && repOuterPop &&
     gRepOuterMid.currentBatch.map Prod.fst == some origTwoBid &&
     (gRepOuterDone.player p1).leftTheGame &&
     gRepOuterDone.pending == .mayPayGeneric p0 1 &&

@@ -78,7 +78,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
   let cost := g.playManaCost { card with controller := some p } face
     (origPerm := origPerm) (flashback := some false)
-    (explicitAltCost := false)
+    (explicitAltCost := false) (useImplicitPermissions := false)
   let needsSacrifice :=
     face.additionalCostSacrificeCreature ||
       (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
@@ -1746,7 +1746,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw s!"{face.name} has no legal target"
     if let some err := g.mandatorySacrificeError? p o.id face then
       throw err
-    if (g.playPermissionFor? p o).any (·.payLifeEqualManaValue) &&
+    let rawPerm := g.paidResolutionOrigPerm? p o (face? := some face)
+    if rawPerm.any (·.payLifeEqualManaValue) &&
         !g.canPayLife p (g.objectManaValue o) then
       throw s!"{(g.player p).name} can't pay {g.objectManaValue o} life to cast {face.name} (CR 119.4)"
     let g := gPre.change .saveProposalCheckpoint
@@ -2127,7 +2128,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
             hasTargets &&
             available.canPay
               (g.playManaCost { o with controller := some p } face
-                (origPerm := origPerm) (flashback := some false))
+                (origPerm := origPerm) (flashback := some false)
+                (useImplicitPermissions := false))
               (allowElfRestricted := g.hasSubtype o .elf)
               (allowInstRestricted := g.isInstantOrSorcery o)
               (allowHeroRestricted := g.hasSubtype o .hero)
@@ -2135,7 +2137,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
               (allowCantNonartifact := g.isArtifact o)
               (allowCreatureRestricted := false)
               (spend := spend) &&
-            g.canPayAnnouncedAdditional p o available (origPerm := origPerm))
+            g.canPayAnnouncedAdditional p o available (origPerm := origPerm)
+              (useImplicitPermissions := false))
       if castable then .accept else .decline
   | .mayCastGrima .. => .decline
   | .palantirMayDraw .. => .decline
@@ -2192,8 +2195,10 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
         (g.findObject? id).any (fun o =>
           let face := g.baseCard o
           let origPerm : Option PlayPermission :=
-            if withoutPaying then some { player := p, withoutManaCost := true }
-            else g.playPermissionFor? p o
+            if withoutPaying then some { player := p, withoutManaCost := true, ignoreTiming := true }
+            else
+              some ((g.paidResolutionOrigPerm? p o (face? := some face)).getD
+                { player := p, ignoreTiming := true })
           let spend : ManaSpend :=
             { spell := true, fromHand := o.zone == .hand p
               supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
@@ -2201,7 +2206,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
             (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
             available.canPay
               (g.playManaCost { o with controller := some p } face
-                (origPerm := origPerm) (flashback := some false) (explicitAltCost := false))
+                (origPerm := origPerm) (flashback := some false) (explicitAltCost := false)
+                (useImplicitPermissions := false))
               (allowElfRestricted := g.hasSubtype o .elf)
               (allowInstRestricted := g.isInstantOrSorcery o)
               (allowHeroRestricted := g.hasSubtype o .hero)
@@ -2210,7 +2216,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
               (allowCreatureRestricted := false)
               (spend := spend) &&
             g.canPayAnnouncedAdditional p o available (origPerm := origPerm)
-              (flashback := some false))) with
+              (flashback := some false) (useImplicitPermissions := false))) with
       | some id => .cast id
       | none => .decline
   | .mayCastFromGraveyard eligible =>
@@ -2223,7 +2229,9 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
         (g.findObject? id).any (fun o =>
           let face := g.baseCard o
           let tcs := g.evalLayer3 o
-          let origPerm := g.playPermissionFor? p o
+          let origPerm : Option PlayPermission :=
+            some ((g.paidResolutionOrigPerm? p o (face? := some face)).getD
+              { player := p, ignoreTiming := true })
           let hasTargets :=
             !g.isLand o && !g.spellNameForbidden face.name &&
               g.graveyardCastThresholdMet p o.id face &&
@@ -2243,7 +2251,8 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
             (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
             available.canPay
               (g.playManaCost { o with controller := some p } face
-                (origPerm := origPerm) (flashback := some false) (explicitAltCost := false))
+                (origPerm := origPerm) (flashback := some false) (explicitAltCost := false)
+                (useImplicitPermissions := false))
               (allowElfRestricted := g.hasSubtype o .elf)
               (allowInstRestricted := g.isInstantOrSorcery o)
               (allowHeroRestricted := g.hasSubtype o .hero)
@@ -2252,7 +2261,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
               (allowCreatureRestricted := false)
               (spend := spend) &&
             g.canPayAnnouncedAdditional p o available (origPerm := origPerm)
-              (flashback := some false))) with
+              (flashback := some false) (useImplicitPermissions := false))) with
       | some id => .cast id
       | none => .decline
   | .maySearchLibrary eligible .. =>

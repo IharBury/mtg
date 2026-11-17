@@ -4849,7 +4849,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyAttach controller ab sourceId targets what host
   | .addMana types amount =>
     g.applyAddMana controller sourceId types amount targets lastKnownPower
-      lastKnownToughness
+      lastKnownToughness (chosenX := (sourceId.bind g.chosenXOf?).getD 0)
   | .becomePT power toughness =>
     let ctx : TriggerRead := {
       controller, sourceId, targets, lastKnownPower, lastKnownToughness,
@@ -5683,16 +5683,20 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .createTokens kind (.fixed n) tapped .kind .you .none =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
   | .addMana types amount =>
+    let chosenX := (sourceId.bind g.chosenXOf?).getD 0
     g.applyAddMana controller sourceId types amount targets lastKnownPower lastKnownToughness
+      (chosenX := chosenX)
   | .discard (.cards n) => g.beginDiscardCards #[controller] n
   | r =>
+    let chosenX := (sourceId.bind g.chosenXOf?).getD 0
     match Resolution.toSpell r with
     | some _ =>
-      g.applyUnified controller ab.effect targets (sourceId := sourceId)
+      g.applyUnified controller ab.effect targets (chosenX := chosenX) (sourceId := sourceId)
         (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
     | none =>
       g.applyUnifiedAbility controller { ab.effect with resolution := r }
-        targets sourceId lastKnownPower (lastKnownToughness := lastKnownToughness)
+        targets sourceId lastKnownPower (chosenX := chosenX)
+        (lastKnownToughness := lastKnownToughness)
 
 end
 
