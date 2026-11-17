@@ -1,5 +1,7 @@
 import Mtg.Demo
-import Mtg.Engine.Tests
+import Mtg.Engine.Tests.Equipment
+import Mtg.Engine.Tests.Removal
+import Mtg.Engine.Tests.Turns
 
 open Mtg.Engine
 open Mtg.Engine.Catalog

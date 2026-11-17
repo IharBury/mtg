@@ -1,4 +1,4 @@
-import Mtg.Engine.Tests
+import Mtg.Engine.Tests.Fixtures
 import Mtg.Engine.Tests.RulingFixtures
 import Mtg.Demo.Render
 

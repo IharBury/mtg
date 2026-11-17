@@ -1,5 +1,5 @@
 import Mtg.Demo
-import Mtg.Engine.Tests
+import Mtg.Engine.Tests.Fixtures
 
 open Mtg.Engine
 open Mtg.Engine.Catalog
