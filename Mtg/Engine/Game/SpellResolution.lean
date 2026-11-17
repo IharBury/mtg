@@ -295,7 +295,7 @@ def resolveTop (g : Game) : Game :=
               entry.lastKnownPower
           else
             g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
-              entry.lastKnownPower chosenX
+              entry.lastKnownPower chosenX (lastKnownToughness := entry.lastKnownToughness)
         match obj.triggeredAbility with
         | some rawT =>
           let t := if tcs.isEmpty then rawT else TextChange.applyTriggeredAbility tcs rawT

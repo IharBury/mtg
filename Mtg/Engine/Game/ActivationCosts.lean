@@ -383,7 +383,9 @@ chaining `.payCostPickItems` if an earlier move or sacrifice pauses on
 item in `ids` was paid or queued across a replacement pause. -/
 def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
     (pick : CostPick) (ids : Array ObjectId)
-    (outerToRestore? : Option PendingReplacement := none) : Game × Bool :=
+    (outerToRestore? : Option PendingReplacement := none)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Game × Bool :=
   if let .chooseReplacement .. := g.pending then
     (g.chainPendingReplacement (.payCostPickItems p abilityId sourceId pick ids), true)
   else
@@ -394,6 +396,8 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
           | some outer => g0.chainPendingReplacement outer
           | none => g0
         g1.reverseProposedSpellFwd (resumeContinuation := true)
+          (followedByFinishFra := followedByFinishFra)
+          (followedByExplicitPriority? := followedByExplicitPriority?)
       else g0
     let itemPayable (g0 : Game) (id : ObjectId) : Bool :=
       match g0.findObject? id with
@@ -478,9 +482,13 @@ chaining `.payCostPickItems` if an earlier move or sacrifice pauses on
 `Pending.chooseReplacement` (`pick.count >= 2`). -/
 def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
     (pick : CostPick) (ids : Array ObjectId)
-    (outerToRestore? : Option PendingReplacement := none) : Game :=
+    (outerToRestore? : Option PendingReplacement := none)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   (g.payCostPickItemsChecked p abilityId sourceId pick ids
-    (outerToRestore? := outerToRestore?)).1
+    (outerToRestore? := outerToRestore?)
+    (followedByFinishFra := followedByFinishFra)
+    (followedByExplicitPriority? := followedByExplicitPriority?)).1
 
 /-- Pay a loyalty cost: put or remove loyalty counters on the source (CR 606.3 / 606.4 / 118.11). -/
 def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymbol)
@@ -517,7 +525,9 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
     (tapSource : Bool := false)
     (sacrificeOrExileSource : Bool := false)
     (discardOrExileHandSource : Bool := false)
-    (callerOuter? : Option PendingReplacement := none) : Except String Game :=
+    (callerOuter? : Option PendingReplacement := none)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Except String Game :=
   g.withProposalActionM .costAction fun g => do
   if ids.size != pick.count || ids.toList.eraseDups.length != ids.size then
     throw s!"Choose {pick.count} to {pick.phrase}"
@@ -539,6 +549,8 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
         | some outer => g0.chainPendingReplacement outer
         | none => g0
       g1.reverseProposedSpellFwd (resumeContinuation := true)
+        (followedByFinishFra := followedByFinishFra)
+        (followedByExplicitPriority? := followedByExplicitPriority?)
     else
       match outer? with
       | some outer => g0.chainPendingReplacement outer
@@ -677,6 +689,8 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
                     | some outer => g.chainPendingReplacement outer
                     | none => g
   g := g.payCostPickItems p abilityId sourceId pick ids (outerToRestore? := outerForAbort?)
+    (followedByFinishFra := followedByFinishFra)
+    (followedByExplicitPriority? := followedByExplicitPriority?)
   if hadProp && g.proposedSpell.isNone then
     return g
   return match outer? with
@@ -689,7 +703,9 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (forObject : Option ObjectId) (sacrificeSource exileSource : Bool)
     (stage : ActivationExtraCostStage := .sacrificeAndExile)
     (sinceIdx : Nat := 0)
-    (outerToRestore? : Option PendingReplacement := none) : Game := Id.run do
+    (outerToRestore? : Option PendingReplacement := none)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx)
@@ -700,6 +716,8 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         | some outer => g0.chainPendingReplacement outer
         | none => g0
       g1.reverseProposedSpellFwd (resumeContinuation := true)
+        (followedByFinishFra := followedByFinishFra)
+        (followedByExplicitPriority? := followedByExplicitPriority?)
     else g0
   if g.over || !g.stillInGame p then
     return abortOrNoop g
@@ -764,7 +782,9 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (discardSource : Bool := false)
     (ab : Option ActivatedAbility := none) (removePlusOnes : Nat := 0)
     (forObject? : Option ObjectId := none)
-    (callerOuter? : Option PendingReplacement := none) :
+    (callerOuter? : Option PendingReplacement := none)
+    (followedByFinishFra : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) :
     Except String Game :=
   g.withProposalActionM .costAction fun g => do
   let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
@@ -836,6 +856,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
           | some outer => g.chainPendingReplacement outer
           | none => g
         return g1.reverseProposedSpellFwd (resumeContinuation := true)
+          (followedByFinishFra := followedByFinishFra)
+          (followedByExplicitPriority? := followedByExplicitPriority?)
       else
         return g
     let outer? := g.pendingReplacement
@@ -929,6 +951,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         | some outer => g0.chainPendingReplacement outer
         | none => g0
       g1.reverseProposedSpellFwd (resumeContinuation := true)
+        (followedByFinishFra := followedByFinishFra)
+        (followedByExplicitPriority? := followedByExplicitPriority?)
     else
       match outer? with
       | some outer => g0.chainPendingReplacement outer
@@ -1017,6 +1041,8 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   | none => pure ()
   g := g.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
     .sacrificeAndExile (sinceIdx := sinceIdx) (outerToRestore? := outerForAbort?)
+    (followedByFinishFra := followedByFinishFra)
+    (followedByExplicitPriority? := followedByExplicitPriority?)
   if hadProp && g.proposedSpell.isNone then
     return g
   if let some outer := outer? then

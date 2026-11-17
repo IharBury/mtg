@@ -2054,8 +2054,8 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
       let spend : ManaSpend :=
         { spell := true, fromHand := o.zone == .hand p
           supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
-      g.canCast p o &&
-        available.canPay (g.baseCard o).manaCost
+      let payOk (cost : ManaCost) (perm? : Option PlayPermission := none) : Bool :=
+        available.canPay cost
           (allowElfRestricted := g.hasSubtype o .elf)
           (allowInstRestricted := g.isInstantOrSorcery o)
           (allowHeroRestricted := g.hasSubtype o .hero)
@@ -2063,7 +2063,21 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
           (allowCantNonartifact := g.isArtifact o)
           (allowCreatureRestricted := false)
           (spend := spend) &&
-        g.canPayAnnouncedAdditional p o available)
+        g.canPayAnnouncedAdditional p o available (origPerm := perm?)
+      g.canCast p o &&
+        (if o.zone == .exile then
+          let perms := g.playPermissionsFor p o
+          let face := g.baseCard o
+          let casterObj := { o with controller := some p }
+          perms.any (fun pm =>
+            (pm.ignoreTiming || g.timingAllowsCast p face) &&
+              (!pm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o)) &&
+              payOk (g.playManaCost casterObj face (origPerm := some pm)) (some pm)) ||
+            ((perms.isEmpty || g.mayCastExiledBySource p o) &&
+              g.timingAllowsCast p face &&
+              payOk (g.playManaCost casterObj face (origPerm := none)) none)
+         else
+          payOk (g.baseCard o).manaCost))
     let canCastAdventure := playable.any (fun o =>
       g.canCastAdventure p o &&
         match (g.baseCard o).adventure with
@@ -2073,24 +2087,40 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
           let spend : ManaSpend :=
             { spell := true, fromHand := o.zone == .hand p
               supertypes := g.supertypes advObj, types := g.types advObj, subtypes := g.subtypes advObj }
-          available.canPay adv.manaCost
-            (allowElfRestricted := g.hasSubtype advObj .elf)
-            (allowInstRestricted := g.isInstantOrSorcery advObj)
-            (allowHeroRestricted := g.hasSubtype advObj .hero)
-            (allowVillainRestricted := g.hasSubtype advObj .villain)
-            (allowCantNonartifact := g.isArtifact advObj)
-            (allowCreatureRestricted := false)
-            (spend := spend)
+          let payAdv (cost : ManaCost) : Bool :=
+            available.canPay cost
+              (allowElfRestricted := g.hasSubtype advObj .elf)
+              (allowInstRestricted := g.isInstantOrSorcery advObj)
+              (allowHeroRestricted := g.hasSubtype advObj .hero)
+              (allowVillainRestricted := g.hasSubtype advObj .villain)
+              (allowCantNonartifact := g.isArtifact advObj)
+              (allowCreatureRestricted := false)
+              (spend := spend)
+          if o.zone == .exile then
+            let advPerms := (g.playPermissionsFor p o).filter (!·.fromAdventure)
+            let casterObj := { o with controller := some p }
+            advPerms.any (fun pm =>
+              (pm.ignoreTiming || g.timingAllowsCast p face) &&
+                (!pm.payLifeEqualManaValue || g.canPayLife p face.manaValue) &&
+                payAdv (g.playManaCost casterObj face (origPerm := some pm))) ||
+              ((advPerms.isEmpty || g.mayCastExiledBySource p o) &&
+                g.timingAllowsCast p face &&
+                payAdv (g.playManaCost casterObj face (origPerm := none)))
+          else
+            payAdv adv.manaCost
         | none => false)
     let canActivate := g.objects.any (fun o =>
-      (g.activatedAbilitiesOf o).any (fun ab =>
+      let abs := g.activatedAbilitiesOf o
+      (List.range abs.size).any (fun idx =>
+        let ab := abs[idx]!
         let isTurnFaceUp := o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp
         let actSpend : ManaSpend :=
           if isTurnFaceUp then {}
           else { equip := ab.isEquip, abilitySourceSubtypes := g.subtypes o }
-        g.canActivate p o ab &&
+        let manaCost := if isTurnFaceUp then ab.cost.mana else g.activationManaCost p ab (some o)
+        g.canActivate p o ab (idx? := some idx) &&
           (g.availableManaExcept p (if !isTurnFaceUp && ab.cost.tap then some o.id else none)).canPay
-            ab.cost.mana
+            manaCost
             (allowElfRestricted := !isTurnFaceUp && g.hasSubtype o .elf)
             (allowInstRestricted := false)
             (allowHeroRestricted := !isTurnFaceUp && g.hasSubtype o .hero)
@@ -2138,12 +2168,18 @@ def uniquePayingSourceSetLarge (g : Game) (pool : ManaPool) (cost : ManaCost)
     canPayTappingAll g pool cost allowElf allowInst sub.toList a &&
       prop?.all (fun (p, prop) => g.tapPreservesPostManaCosts p prop (sub.map (·.1.id)))
   Id.run do
-    let mut singles : Array (GameObject × Array ManaType) := #[]
-    for src in sources do
+    let mut singles : Array (Nat × (GameObject × Array ManaType)) := #[]
+    for i in [0:sources.size] do
+      let src := sources[i]!
       if subOk #[src] then
-        singles := singles.push src
+        singles := singles.push (i, src)
     if singles.size == 1 then
-      return some singles
+      let (idx, src) := singles[0]!
+      let rest := sources.extract 0 idx ++ sources.extract (idx + 1) sources.size
+      if !subOk rest then
+        return some #[src]
+      else
+        return none
     if singles.size > 1 then
       return none
     if !subOk sources then
@@ -2195,14 +2231,29 @@ def hasUniqueManaPayment (g : Game) : Bool :=
     else if prop.needsDiscardCard && (g.player p).hand.isEmpty then
       false
     else
-      let pool := (g.player p).manaPool
-      let allowElf := g.proposedAllowsElfRestricted prop
-      let allowInst := g.proposedAllowsInstRestricted prop
-      let a := g.proposedAllowances prop
-      (pool.canPay prop.cost allowElf allowInst a.hero a.villain a.cantNonartifact a.creature a.spend &&
-        g.tapPreservesPostManaCosts p prop #[]) ||
-        (uniquePayingSourceSet g pool prop.cost allowElf allowInst
-          (g.manaSourcesForProposed p prop) a (some (p, prop))).isSome
+      let canConvokeOrImprovise : Bool :=
+        prop.kind == .spell && prop.cost.includesManaPayment &&
+          match g.findObject? prop.spellId with
+          | none => false
+          | some spell =>
+            let hasConvoke := (g.currentKeywords spell).convoke
+            let hasImprovise := g.spellHasImprovise (g.baseCard spell) p
+            (hasConvoke || hasImprovise) &&
+              (g.permanentsOf p).any (fun o =>
+                !o.status.tapped && !prop.teamworkCreatures.contains o.id &&
+                  ((hasConvoke && g.isCreature o &&
+                      (Game.convokePayOne prop.cost (g.colors o)).isSome) ||
+                    (hasImprovise && g.isArtifact o && prop.cost.genericCount > 0)))
+      if canConvokeOrImprovise then false
+      else
+        let pool := (g.player p).manaPool
+        let allowElf := g.proposedAllowsElfRestricted prop
+        let allowInst := g.proposedAllowsInstRestricted prop
+        let a := g.proposedAllowances prop
+        (pool.canPay prop.cost allowElf allowInst a.hero a.villain a.cantNonartifact a.creature a.spend &&
+          g.tapPreservesPostManaCosts p prop #[]) ||
+          (uniquePayingSourceSet g pool prop.cost allowElf allowInst
+            (g.manaSourcesForProposed p prop) a (some (p, prop))).isSome
   | _, _ => false
 
 /-- `sacrifice <id>` when exactly one permanent can pay that cost. -/

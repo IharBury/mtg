@@ -348,3 +348,155 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   mustHoldCheck9 "p46_stolenPrepRenderOk" stolenPrepRenderOk &&
   mustHoldCheck9 "p46_demoAllowancesAndCrewOk" demoAllowancesAndCrewOk
 
+
+/- Phase 47 Items 2 & 4: `Demo.hasGameStatePriorityAction` exile permissions & `canActivate`
+(`idx? := some idx` + `activationManaCost`), `uniquePayingSourceSetLarge` `!subOk rest`, and
+`hasUniqueManaPayment` Convoke / Improvise guard. -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := emptyHand afterDraw p0
+  -- 1. `hasGameStatePriorityAction` exile permissions (`withoutManaCost`, `payLifeEqualManaValue`, `fromAdventure`):
+  let sorc3Def : CardDef := {
+    name := "P47 Sorc3"
+    manaCost := ManaCost.ofGeneric 3
+    types := #[.sorcery]
+    spellEffect := some (Effect.gainLife 1)
+  }
+  let adv3Def : CardDef := {
+    grizzlyBears with
+    name := "P47 AdvKnight"
+    manaCost := ManaCost.ofGeneric 3
+    adventure := some {
+      name := "P47 AdvQuest"
+      manaCost := ManaCost.zero
+      types := #[.instant]
+      spellEffect := some (Effect.gainLife 1)
+    }
+  }
+  let gEx0 := insertObject gMain sorc3Def p0 .exile
+  let exSorcId := (gEx0.objects.filter (·.zone == .exile)).back!.id
+  let gExPaidNoMana :=
+    gEx0.createEffect (.permission (some p0) (.playFromExile exSorcId { player := p0 }) .untilEndOfTurn)
+  let gExFree :=
+    gEx0.createEffect (.permission (some p0) (.playFromExile exSorcId { player := p0, withoutManaCost := true }) .untilEndOfTurn)
+  let gExPayLifeOk :=
+    gEx0.createEffect (.permission (some p0) (.playFromExile exSorcId { player := p0, payLifeEqualManaValue := true }) .untilEndOfTurn)
+  let gExPayLifeLow := gExPayLifeOk.loseLife p0 18
+  let gExAdv0 := insertObject gMain adv3Def p0 .exile
+  let exAdvId := (gExAdv0.objects.filter (·.zone == .exile)).back!.id
+  let gExFromAdv :=
+    gExAdv0.createEffect (.permission (some p0) (.playFromExile exAdvId { player := p0, fromAdventure := true }) .untilEndOfTurn)
+  let gExCleanAdv :=
+    gExAdv0.createEffect (.permission (some p0) (.playFromExile exAdvId { player := p0 }) .untilEndOfTurn)
+  let demoExilePrioOk :=
+    !hasGameStatePriorityAction gExPaidNoMana p0 &&
+    hasGameStatePriorityAction gExFree p0 &&
+    hasGameStatePriorityAction gExPayLifeOk p0 &&
+    !hasGameStatePriorityAction gExPayLifeLow p0 &&
+    !hasGameStatePriorityAction gExFromAdv p0 &&
+    hasGameStatePriorityAction gExCleanAdv p0
+
+  -- 2. `hasGameStatePriorityAction` `canActivate` (`(idx? := some idx)` & `activationManaCost`):
+  let onceAb : ActivatedAbility := {
+    cost := {}
+    onceEachTurn := true
+    effect := Effect.gainLife 1
+  }
+  let twinOnceDef : CardDef := {
+    name := "P47 TwinShrine"
+    types := #[.artifact]
+    activatedAbilities := #[onceAb, onceAb]
+  }
+  let gTwin0 := addPermanent gMain twinOnceDef p0 p0
+  let twinId := (gTwin0.permanentsOf p0).back!.id
+  let gTwinUsed0 := mustApply gTwin0 p0 (.activate twinId 0)
+  let gTwinUsedBoth := mustApply gTwinUsed0 p0 (.activate twinId 1)
+  let legCreatureDef : CardDef := {
+    grizzlyBears with
+    name := "P47 LegendHero"
+    supertypes := #[.legendary]
+  }
+  let discRelicDef : CardDef := {
+    name := "P47 LegendRelic"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 2 }
+      costReductionIfYouControlLegendary := 2
+      effect := Effect.gainLife 1
+    }]
+  }
+  let gMainOneMana := gMain.addMana p0 (.colored .green) 1
+  let gRelicNoLeg := addPermanent gMainOneMana discRelicDef p0 p0
+  let gRelicWithLeg := addPermanent gRelicNoLeg legCreatureDef p0 p0
+  let demoCanActivateOk :=
+    hasGameStatePriorityAction gTwinUsed0 p0 &&
+    !hasGameStatePriorityAction gTwinUsedBoth p0 &&
+    !hasGameStatePriorityAction gRelicNoLeg p0 &&
+    hasGameStatePriorityAction gRelicWithLeg p0
+
+  -- 3. `uniquePayingSourceSetLarge` (>20 sources, `singles.size == 1`, `!subOk rest`):
+  let urBoilerDef : CardDef := {
+    name := "P47 Boilerworks"
+    types := #[.land]
+    tapAddTogether := #[.colored .blue, .colored .red]
+  }
+  let gLarge0 :=
+    Id.run do
+      let mut g := addPermanent gMain urBoilerDef p0 p0
+      for _ in [0:20] do
+        g := addPermanent g forest p0 p0
+      return g
+  let boilerId := (gLarge0.permanentsOf p0).find? (·.name == urBoilerDef.name) |>.get!.id
+  let largeSrcs := gLarge0.manaSources p0
+  let urCost : ManaCost := { symbols := #[.colored .blue, .colored .red] }
+  let largeGenericNotUnique :=
+    largeSrcs.size == 21 &&
+    (uniquePayingSourceSetLarge gLarge0 ManaPool.empty (ManaCost.ofGeneric 2) false false largeSrcs).isNone
+  let largeUrUnique :=
+    match uniquePayingSourceSetLarge gLarge0 ManaPool.empty urCost false false largeSrcs with
+    | some #[src] => src.1.id == boilerId
+    | _ => false
+
+  -- 4. `hasUniqueManaPayment` Convoke & Improvise guard:
+  let convokeSpellDef : CardDef := {
+    name := "P47 ConvokeChant"
+    manaCost := ManaCost.ofGenericAndColor 1 .green
+    types := #[.sorcery]
+    keywords := { convoke := true }
+    spellEffect := some (Effect.gainLife 2)
+  }
+  let improviseSpellDef : CardDef := {
+    name := "P47 ImproviseBolt"
+    manaCost := ManaCost.ofGenericAndColor 1 .blue
+    types := #[.sorcery]
+    staticAbilities := #[.improvise]
+    spellEffect := some (Effect.gainLife 2)
+  }
+  let inertArtDef : CardDef := { name := "P47 InertCog", types := #[.artifact] }
+  let gConv0 :=
+    insertObject
+      (addPermanent (addPermanent (addPermanent gMain forest p0 p0) forest p0 p0) grizzlyBears p0 p0)
+      convokeSpellDef p0 (.hand p0)
+  let gConvProp := mustApply gConv0 p0 (.cast (gConv0.player p0).hand.back!)
+  let convBearId := (gConv0.permanentsOf p0).find? (·.name == grizzlyBears.name) |>.get!.id
+  let (gConvNoCreature, _) := gConvProp.move convBearId .exile none
+  let gImp0 :=
+    insertObject
+      (addPermanent (addPermanent (addPermanent gMain island p0 p0) forest p0 p0) inertArtDef p0 p0)
+      improviseSpellDef p0 (.hand p0)
+  let gImpProp := mustApply gImp0 p0 (.cast (gImp0.player p0).hand.back!)
+  let impCogId := (gImp0.permanentsOf p0).find? (·.name == inertArtDef.name) |>.get!.id
+  let (gImpNoArtifact, _) := gImpProp.move impCogId .exile none
+  let demoConvImpOk :=
+    !hasUniqueManaPayment gConvProp &&
+    hasUniqueManaPayment gConvNoCreature &&
+    !hasUniqueManaPayment gImpProp &&
+    hasUniqueManaPayment gImpNoArtifact
+
+  mustHoldCheck9 "p47_demoExilePrioOk" demoExilePrioOk &&
+  mustHoldCheck9 "p47_demoCanActivateOk" demoCanActivateOk &&
+  mustHoldCheck9 "p47_largeGenericNotUnique" largeGenericNotUnique &&
+  mustHoldCheck9 "p47_largeUrUnique" largeUrUnique &&
+  mustHoldCheck9 "p47_demoConvImpOk" demoConvImpOk
+
+

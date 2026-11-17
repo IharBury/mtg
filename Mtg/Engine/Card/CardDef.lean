@@ -531,6 +531,7 @@ def hasAnyColorActivatedAdd (c : CardDef) : Bool :=
 /-- All `{T}: Add` mana types this card can produce. -/
 def manaAbilities (c : CardDef) : Array ManaType :=
   c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddManaForEach.map (·.mana) ++
+    (match c.tapAddColorlessPerSubtype with | some _ => #[.colorless] | none => #[]) ++
     c.enteredOrBasicAddMana ++
     (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery ||
         c.tapAddAnyColor || c.tapSacrificeAddAnyColor ||
@@ -644,7 +645,10 @@ def tapAddOneOfIfEnteredLines (c : CardDef) : List String :=
 
 /-- `{T}: Add` for each permanent of a listed type. -/
 def tapAddForEachLines (c : CardDef) : List String :=
-  c.tapAddManaForEach.toList.map TapAddForEach.toNotation
+  c.tapAddManaForEach.toList.map TapAddForEach.toNotation ++
+    match c.tapAddColorlessPerSubtype with
+    | some sub => [TapAddForEach.toNotation { mana := .colorless, subtype := sub }]
+    | none => []
 
 /-- Elf-restricted `{T}: Add` X mana of any color equal to power. -/
 def tapAddAnyColorEqualToPowerLine (c : CardDef) : List String :=

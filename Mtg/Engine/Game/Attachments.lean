@@ -60,12 +60,21 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
         zone := old.zone }
     let g := g.record (GameEvent.ceasedToExist g.turnNumber snap (cause := effCause))
     let expCause := cause.orElse (fun _ => some (.gameRule .leavingZone))
+    let allEmbIds := if old.zone == .command then g.expandTransitiveCommandEmblems #[id] else #[]
     let g :=
       if old.zone == .command then
-        g.restoreCopiesWhere (fun _ _ _ d => d == .whileInZone id .command)
+        g.restoreCopiesWhere
+          (fun acc cEid _ _ =>
+            match acc.activeEffect? cEid with
+            | some ce =>
+              allEmbIds.any (fun embId => acc.effectExpiresWithLeavingObj embId .command allEmbIds ce)
+            | none => false)
           (cause := expCause) (reconcileControl := false) (skipLogIds := skipLogIds)
       else g
     let g := g.expireEffectsOnLeavingObject old (cause := expCause) (reconcileControl := false)
+      (preState? := some pre) (suppressEmblemLog := suppressEmblemLog)
+      (suppressReturnLog := suppressReturnLog) (skipLogIds := skipLogIds)
+      (coLeavingIds := allEmbIds)
     let g :=
       if old.zone == .battlefield then
         g.expireWhileSourceEffects id (cause := expCause) (preState? := some pre)
@@ -79,29 +88,39 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
     g.record (GameEvent.ceasedToExist g.turnNumber { id := some id } (cause := effCause))
 
 /-- Cease every command-zone object referenced by an active `.gameRule (.fraEmblem id) d`
-matching `pred eid d`, recording `ceasedToExist` before `effectExpired` and logging
-`s!"{embName} ends"` (CR 114.5 / 611.2a). -/
+matching `pred eid d` (plus transitive child emblems), recording `ceasedToExist` before
+`effectExpired` and logging `s!"{embName} ends"` (CR 114.5 / 611.2a). -/
 def ceaseEndingFraEmblemsWhere (g : Game) (pred : EffectId → EffectDuration → Bool)
     (cause : Option EventCause := none) (reconcileControl : Bool := false)
     (preState? : Option Game := none)
     (skipLogIds : Array ObjectId := #[]) : Game :=
   let pre := preState?.getD g
-  let endingIds : Array ObjectId :=
+  let seedIds : Array ObjectId :=
     g.activeEffects.foldl (fun acc (eid, e) =>
       match e with
       | .gameRule (.fraEmblem id) d =>
         if pred eid d && !acc.contains id then acc.push id else acc
       | _ => acc) #[]
-  endingIds.foldl (fun acc id =>
-    match acc.findObject? id with
-    | some o =>
-      if o.zone == .command then
-        let embName := pre.name ((pre.findObject? o.id).getD o)
-        (acc.ceaseToExist o.id (cause := cause) (reconcileControl := reconcileControl)
-          (suppressReturnLog := true) (preState? := some pre)
-          (skipLogIds := skipLogIds)).logMsg s!"{embName} ends"
-      else acc
-    | none => acc) g
+  let endingIds := g.expandTransitiveCommandEmblems seedIds
+  let embEntries : Array (ObjectId × String) :=
+    endingIds.filterMap fun id =>
+      match g.findObject? id with
+      | some o =>
+        if o.zone == .command then
+          some (id, pre.name ((pre.findObject? id).getD o))
+        else none
+      | none => none
+  let g :=
+    embEntries.foldl (fun acc (id, _) =>
+      match acc.findObject? id with
+      | some o =>
+        if o.zone == .command then
+          acc.ceaseToExist o.id (cause := cause) (reconcileControl := reconcileControl)
+            (suppressReturnLog := true) (preState? := some pre)
+            (skipLogIds := skipLogIds) (suppressEmblemLog := true)
+        else acc
+      | none => acc) g
+  embEntries.foldl (fun acc (_, embName) => acc.logMsg s!"{embName} ends") g
 
 /-- Move an object to a new zone, assigning a new object identity (CR 400.7).
 Auras and Equipment attached to a permanent that leaves the battlefield

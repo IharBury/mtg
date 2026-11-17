@@ -1827,9 +1827,12 @@ inductive PendingReplacement where
       (steps : Array Resolution) (targets : Array Target)
       (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
       (sourceId : Option ObjectId)
+      (lastKnownPower : Option Int := none)
+      (lastKnownToughness : Option Int := none)
   | continueUnifiedAbility (controller : PlayerId) (effect : Effect)
       (steps : Array Resolution) (targets : Array Target)
       (sourceId : Option ObjectId) (lastKnownPower : Option Int) (chosenX : Nat)
+      (lastKnownToughness : Option Int := none)
   | continueSpellModes (controller : PlayerId) (modeEffects : Array Effect)
       (remainingTargets : Array Target)
       (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
@@ -1962,6 +1965,7 @@ inductive PendingReplacement where
       (preSnaps : Array (ObjectId × EventObject) := #[])
   | phaseInControlledLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
+      (startEventIdx : Option Nat := none)
 deriving Repr, Inhabited, BEq
 
 /-- One frame of mid-resolution continuation state (CR 608.2). Grouping the
@@ -2394,10 +2398,10 @@ def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
     stepAlwaysGrantsPriority st
   | .concedePlayersLoop _ wp mid .. => !wp && !mid
   | .finishPostCast _ grantPriority hadOuter _ => grantPriority && !hadOuter
-  | .finishBecomeCast _ _ grantPriority hadOuter openCont =>
-    grantPriority && !hadOuter && !openCont
-  | .finishProposedSpellCosts _ grantPriority hadOuter openCont =>
-    grantPriority && !hadOuter && !openCont
+  | .finishBecomeCast _ _ grantPriority hadOuter _ =>
+    grantPriority && !hadOuter
+  | .finishProposedSpellCosts _ grantPriority hadOuter _ =>
+    grantPriority && !hadOuter
   | .completeActivation hadOuter _
   | .finishBecomeActivated _ _ _ _ _ _ _ hadOuter _
   | .finishPostLoyaltyActivated _ _ _ _ _ _ _ hadOuter _
@@ -3885,21 +3889,27 @@ def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
       if forObj == some spell then max n units.size else n
     | _, _ => n) 0
 
-/-- Whether `srcId` was recorded as a Treasure permanent when its ability was activated or triggered. -/
-def isTreasureSourceInLog (events : Array GameEvent) (srcId : ObjectId) : Bool :=
-  events.any fun e =>
-    match e.change with
+/-- Whether `srcId` was recorded as a Treasure permanent when its latest ability was activated or triggered. -/
+def isTreasureSourceInLog (events : Array GameEvent) (srcId : ObjectId) : Bool := Id.run do
+  let mut i := events.size
+  while i > 0 do
+    i := i - 1
+    match events[i]!.change with
     | .rules (.cast (.abilityActivated id snap _ _)) =>
-      (id == srcId || snap.id == some srcId) && snap.subtypes.contains .treasure
+      if id == srcId || snap.id == some srcId then
+        return snap.subtypes.contains .treasure
     | .rules (.triggerQueue (.triggered snap _ _ _)) =>
-      snap.id == some srcId && snap.subtypes.contains .treasure
+      if snap.id == some srcId then
+        return snap.subtypes.contains .treasure
     | .rules (.triggerQueue (.putOnStack _ snap _ spec)) =>
-      (snap.id == some srcId || spec.sourceId == some srcId) && snap.subtypes.contains .treasure
-    | _ => false
+      if snap.id == some srcId || spec.sourceId == some srcId then
+        return snap.subtypes.contains .treasure
+    | _ => pure ()
+  return false
 
-/-- Whether `u` came from a Treasure source (via spending restriction or `source` provenance). -/
+/-- Whether `u` came from a Treasure source (via explicit provenance, spending restriction, or `source` provenance). -/
 private def isTreasureManaUnit (events : Array GameEvent) (u : ManaUnit) : Bool :=
-  u.restriction == some (.fra .fromTreasure) || u.source.any (isTreasureSourceInLog events)
+  u.fromTreasure || u.restriction == some (.fra .fromTreasure) || u.source.any (isTreasureSourceInLog events)
 
 /-- Whether mana from a Treasure was spent to cast `spell` (CR 106.6). -/
 def treasureManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=

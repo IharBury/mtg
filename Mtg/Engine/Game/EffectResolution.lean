@@ -1497,7 +1497,9 @@ mutual
 partial def runUnifiedSteps (g : Game) (controller : PlayerId) (effect : Effect)
     (steps : Array Resolution) (targets : Array Target)
     (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
-    (sourceId : Option ObjectId) : Game := Id.run do
+    (sourceId : Option ObjectId)
+    (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Game := Id.run do
   let mut g := g
   for i in [0:steps.size] do
     let pendingBefore := g.pending
@@ -1506,6 +1508,7 @@ partial def runUnifiedSteps (g : Game) (controller : PlayerId) (effect : Effect)
       (castFromGraveyard := castFromGraveyard) (kicked := kicked)
       (giftPromised := giftPromised) (chosenX := chosenX)
       (sourceId := sourceId)
+      (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
     let rem := steps.extract (i + 1) steps.size
     if !rem.isEmpty then
       let opened :=
@@ -1514,23 +1517,27 @@ partial def runUnifiedSteps (g : Game) (controller : PlayerId) (effect : Effect)
       if opened then
         return g.chainPendingReplacement
           (.continueUnified controller effect rem targets
-            castFromGraveyard kicked giftPromised chosenX sourceId)
+            castFromGraveyard kicked giftPromised chosenX sourceId
+            lastKnownPower lastKnownToughness)
   return g
 
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
     (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
-    (sourceId : Option ObjectId := none) : Game :=
+    (sourceId : Option ObjectId := none)
+    (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Game :=
   if g.continuations.isEmpty then
     g.withContinuationFrame fun g =>
       g.applyUnified controller effect targets
         (castFromGraveyard := castFromGraveyard) (kicked := kicked)
         (giftPromised := giftPromised) (chosenX := chosenX)
         (sourceId := sourceId)
+        (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
   else
   let sourceId := sourceId.orElse (fun _ => g.resolvingSpell)
-  match g.applyFraResolution? controller effect targets sourceId with
+  match g.applyFraResolution? controller effect targets sourceId (lastKnownPower := lastKnownPower) with
   | some g => g
   | none =>
   match effect.resolution with
@@ -1548,6 +1555,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | steps =>
           g.runUnifiedSteps controller effect steps.toArray targets
             castFromGraveyard kicked giftPromised chosenX sourceId
+            lastKnownPower lastKnownToughness
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary none
   | .gainLife (.fixed n) => g.gainLife controller n.toNat
@@ -1555,7 +1563,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.grantUntilEotToControlledCreatures controller k k.joinedAnd
   | .recruit _ => g.beginRecruit controller
   | .addMana types amount =>
-    g.applyAddMana controller sourceId types amount targets
+    g.applyAddMana controller sourceId types amount targets lastKnownPower lastKnownToughness
+      (chosenX := chosenX)
   | .discard (.cards n) =>
     g.beginDiscardCards #[controller] n
   | .onSource a =>
@@ -2414,13 +2423,14 @@ or `afterRandom` and chaining `.continueUnifiedAbility` so later steps run after
 the pause. -/
 partial def runUnifiedAbilitySteps (g : Game) (controller : PlayerId) (effect : Effect)
     (steps : Array Resolution) (targets : Array Target)
-    (sourceId : Option ObjectId) (lastKnownPower : Option Int) (chosenX : Nat) : Game := Id.run do
+    (sourceId : Option ObjectId) (lastKnownPower : Option Int) (chosenX : Nat)
+    (lastKnownToughness : Option Int := none) : Game := Id.run do
   let mut g := g
   for i in [0:steps.size] do
     let pendingBefore := g.pending
     let randomBefore := g.afterRandom
     g := g.applyUnifiedAbility controller { effect with resolution := steps[i]! } targets
-      sourceId lastKnownPower chosenX
+      sourceId lastKnownPower chosenX (lastKnownToughness := lastKnownToughness)
     let rem := steps.extract (i + 1) steps.size
     if !rem.isEmpty then
       let opened :=
@@ -2429,16 +2439,18 @@ partial def runUnifiedAbilitySteps (g : Game) (controller : PlayerId) (effect : 
       if opened then
         return g.chainPendingReplacement
           (.continueUnifiedAbility controller effect rem targets
-            sourceId lastKnownPower chosenX)
+            sourceId lastKnownPower chosenX lastKnownToughness)
   return g
 
 /-- Resolve a unified activated-ability `Effect` (CR 608). -/
 partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
-    (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
+    (lastKnownPower : Option Int := none) (chosenX : Nat := 0)
+    (lastKnownToughness : Option Int := none) : Game :=
   if g.continuations.isEmpty then
     g.withContinuationFrame fun g =>
       g.applyUnifiedAbility controller effect targets sourceId lastKnownPower chosenX
+        (lastKnownToughness := lastKnownToughness)
   else
   match g.applyFraResolution? controller effect targets sourceId (lastKnownPower := lastKnownPower) with
   | some g => g
@@ -2458,7 +2470,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
         | steps =>
           g.runUnifiedAbilitySteps controller effect steps.toArray targets
-            sourceId lastKnownPower chosenX
+            sourceId lastKnownPower chosenX (lastKnownToughness := lastKnownToughness)
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary sourceId
   | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
@@ -2517,12 +2529,14 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.withBatch (some linkCause) fun g =>
           g.exileIdsUntilSourceLeavesLoop sourceId validIds (some linkCause)
   | .addMana types amount =>
-    g.applyAddMana controller sourceId types amount targets lastKnownPower
+    g.applyAddMana controller sourceId types amount targets lastKnownPower lastKnownToughness
+      (chosenX := chosenX)
   | r =>
     match Resolution.toSpell r with
     | some _ =>
       g.applyUnified controller { effect with resolution := r } targets
         (chosenX := chosenX) (sourceId := sourceId)
+        (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
     | none =>
       match r with
       | .searchBasicLand => g.resolveSearchBasicLandTapped controller

@@ -350,6 +350,8 @@ inductive FraManaUse where
   | legendarySpell
   /-- Only casting Dwarf, Equipment, and Saga spells (Fíli and Kíli, Joyous). -/
   | dwarfEquipmentSagaSpell
+  /-- Only casting `<subtype>`, Equipment, and Saga spells (text-changed CR 612.2). -/
+  | subtypeEquipmentSagaSpell (subtype : CardSubtype)
   /-- Only casting Equipment spells or activating equip abilities (Ronin,
   Shadow Stalker). -/
   | equipmentOrEquip
@@ -414,6 +416,9 @@ def FraManaUse.allows : FraManaUse → ManaSpend → Bool
   | .dwarfEquipmentSagaSpell, s =>
     s.spell && (s.subtypes.contains .dwarf || s.subtypes.contains .equipment ||
       s.subtypes.contains .saga)
+  | .subtypeEquipmentSagaSpell sub, s =>
+    s.spell && (s.subtypes.contains sub || s.subtypes.contains .equipment ||
+      s.subtypes.contains .saga)
   | .equipmentOrEquip, s => (s.spell && s.subtypes.contains .equipment) || s.equip
   | .artifactSpell, s => s.spell && s.artifact
   | .dragonSpell, s => s.spell && s.subtypes.contains .dragon
@@ -429,6 +434,7 @@ def FraManaUse.label : FraManaUse → String
   | .fromTreasure => "Treasure"
   | .legendarySpell => "legendary spells"
   | .dwarfEquipmentSagaSpell => "Dwarf, Equipment, and Saga spells"
+  | .subtypeEquipmentSagaSpell sub => s!"{sub}, Equipment, and Saga spells"
   | .equipmentOrEquip => "Equipment spells and equip abilities"
   | .artifactSpell => "artifact spells"
   | .dragonSpell => "Dragon spells"
@@ -438,6 +444,10 @@ def FraManaUse.label : FraManaUse → String
 /-- Spend restriction for spells of `subtype`. Dragon keeps its dedicated constructor. -/
 def FraManaUse.forSubtype (subtype : CardSubtype) : FraManaUse :=
   if subtype == .dragon then .dragonSpell else .subtypeSpell subtype
+
+/-- Spend restriction for `<subtype>`, Equipment, and Saga spells. Dwarf keeps its dedicated constructor. -/
+def FraManaUse.forEquipmentSagaSubtype (subtype : CardSubtype) : FraManaUse :=
+  if subtype == .dwarf then .dwarfEquipmentSagaSpell else .subtypeEquipmentSagaSpell subtype
 
 /-- How mana from a mana ability may be spent (CR 106.6). -/
 inductive ManaRestriction where
@@ -477,11 +487,12 @@ def ManaRestriction.note : ManaRestriction → String
   | some r => some r
 
 /-- One unit of mana in a mana pool or mana event, with its type, producing
-source, and spending restriction (CR 106.1 / 106.6). -/
+source, spending restriction, and Treasure provenance (CR 106.1 / 106.6). -/
 structure ManaUnit where
   mana : ManaType
   source : Option ObjectId := none
   restriction : Option ManaRestriction := none
+  fromTreasure : Bool := false
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Unspent mana a player currently has, stored as individual `ManaUnit`s
@@ -609,13 +620,18 @@ def removeUnit (p : ManaPool) (u : ManaUnit) : ManaPool :=
       ({ u' with restriction := ManaRestriction.normalize? u'.restriction } : ManaUnit) == uNorm) with
   | some (us, _) => { units := us }
   | none =>
-    if uNorm.source.isNone then
+    if uNorm.source.isSome then
+      match eraseFirst? p.units (fun u' =>
+          u'.mana == uNorm.mana && u'.source == uNorm.source &&
+            ManaRestriction.normalize? u'.restriction == uNorm.restriction) with
+      | some (us, _) => { units := us }
+      | none => p
+    else
       match eraseFirst? p.units (fun u' =>
           u'.mana == uNorm.mana &&
             ManaRestriction.normalize? u'.restriction == uNorm.restriction) with
       | some (us, _) => { units := us }
       | none => p
-    else p
 
 /-- Remove `units` from `p` in order (CR 106.4 / 106.6). -/
 def removeUnits (p : ManaPool) (units : Array ManaUnit) : ManaPool :=
@@ -637,7 +653,7 @@ def add (p : ManaPool) (t : ManaType) (n : Nat := 1) (elfRestricted : Bool := fa
       else if creatureRestricted then some .creatureSource
       else if cantNonartifact then some .cantNonartifact
       else none
-  p.addUnits (Array.replicate n { mana := t, source, restriction := r })
+  p.addUnits (Array.replicate n { mana := t, source, restriction := r, fromTreasure := r == some (.fra .fromTreasure) })
 
 /-- Try to spend one mana of the given type, returning the updated pool and the
 `ManaUnit` spent (CR 106.6). -/
@@ -651,13 +667,17 @@ def spendOneUnit? (p : ManaPool) (t : ManaType) (allowElfRestricted : Bool := fa
     (eraseFirst? p.units (fun u => u.mana == t && pred u)).map fun (us, u) => ({ units := us }, u)
   let hasRestr (r : ManaRestriction) (u : ManaUnit) : Bool :=
     ManaRestriction.normalize? u.restriction == some r
-  (take fun u => match u.restriction with | some (.fra fu) => fu != .fromTreasure && fu.allows spend | _ => false)
+  (take fun u =>
+      match u.restriction with
+      | some (.fra fu) => fu != .fromTreasure && fu != .notSpellsFromHand && fu.allows spend
+      | _ => false)
     <|> (if allowHeroRestricted then take (hasRestr .hero) else none)
     <|> (if allowVillainRestricted then take (hasRestr .villain) else none)
     <|> (if allowCreatureRestricted then take (hasRestr .creatureSource) else none)
     <|> (if allowElfRestricted then take (hasRestr .elf) else none)
     <|> (if allowInstRestricted then take (hasRestr .instantOrSorcery) else none)
     <|> (if allowCantNonartifact then take (hasRestr .cantNonartifact) else none)
+    <|> (if FraManaUse.notSpellsFromHand.allows spend then take (hasRestr (.fra .notSpellsFromHand)) else none)
     <|> take (fun u => match ManaRestriction.normalize? u.restriction with
       | none | some (.fra .fromTreasure) => true
       | _ => false)
@@ -693,9 +713,13 @@ def spendAnyUnit? (p : ManaPool) (allowElfRestricted : Bool := false)
           return some ({ units := us }, u)
       return none
   Id.run do
-    if let some (us, u) := eraseFirst? p.units (fun u =>
-        match u.restriction with | some (.fra fu) => fu != .fromTreasure && fu.allows spend | _ => false) then
-      return some ({ units := us }, u)
+    for t in order do
+      if let some (us, u) := eraseFirst? p.units (fun u =>
+          u.mana == t &&
+            match u.restriction with
+            | some (.fra fu) => fu != .fromTreasure && fu != .notSpellsFromHand && fu.allows spend
+            | _ => false) then
+        return some ({ units := us }, u)
     if allowElfRestricted then
       if let some res := takeRestr .elf then return some res
     if allowInstRestricted then
@@ -708,6 +732,8 @@ def spendAnyUnit? (p : ManaPool) (allowElfRestricted : Bool := false)
       if let some res := takeRestr .creatureSource then return some res
     if allowCantNonartifact then
       if let some res := takeRestr .cantNonartifact then return some res
+    if FraManaUse.notSpellsFromHand.allows spend then
+      if let some res := takeRestr (.fra .notSpellsFromHand) then return some res
     for t in order do
       if let some res := p.spendOneUnit? t allowElfRestricted allowInstRestricted
           allowHeroRestricted allowVillainRestricted allowCantNonartifact

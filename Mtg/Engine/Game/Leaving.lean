@@ -138,7 +138,7 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
           (o.isBattlefieldObject && (cur.appliedControlEffectIds o).isEmpty &&
             (cur.player fallback).leftTheGame)
       | none =>
-        o.isOnBattlefield && (cur.appliedControlEffectIds o).isEmpty &&
+        o.isBattlefieldObject && (cur.appliedControlEffectIds o).isEmpty &&
           (cur.player fallback).leftTheGame
     if departing.isEmpty then
       break
@@ -326,14 +326,23 @@ def reconcileControlAfterTransition (pre post : Game)
               else
                 let prePoIdx :=
                   match pre.latestPhaseOutIdxOf? preObj with
-                  | some poIdx => pre.phaseOutBatchStartIdx poIdx
+                  | some poIdx =>
+                    match pre.events[poIdx]? with
+                    | some ev =>
+                      match ev.change with
+                      | .engine (.materializeObject ..)
+                      | .rules (.zone (.moved ..))
+                      | .rules (.zone (.created ..)) => poIdx + 1
+                      | _ => pre.phaseOutBatchStartIdx poIdx
+                    | none => pre.phaseOutBatchStartIdx poIdx
                   | none => 0
                 let gAtPo :=
                   if !(pre.appliedControlEffectIds preObj).isEmpty then pre
                   else pre.mkHistoricalGameAt prePoIdx
                 let hadPriorCtrl :=
                   !(pre.appliedControlEffectIds preObj).isEmpty ||
-                    (gAtPo.findObject? cur.id).any (fun oPo => !(gAtPo.appliedControlEffectIds oPo).isEmpty)
+                    (gAtPo.findObject? cur.id).any (fun oPo => !(gAtPo.appliedControlEffectIds oPo).isEmpty) ||
+                    (g.controllerOf cur).isNone
                 if hadPriorCtrl then
                   let lkiCtrl :=
                     (pre.controllerOf preObj).orElse fun _ =>
@@ -3652,12 +3661,23 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               (alreadyClearedCkpt := clearedAbortedCkpt0)
           let g :=
             if g.pending != .none then g.change (.pending .none) else g
+          let ensureDeferredExileReopen (gCur : Game) (hasActivePrompt : Bool)
+              (outer? : Option PendingReplacement) : Option PendingReplacement :=
+            if wasAbortedProposal && !rewindAbortedProposal && hasActivePrompt &&
+                (gCur.pendingMayCastFromExile.isSome || gCur.pendingFreeCopies.isSome) then
+              match outer? with
+              | some outer => some outer.ensureEndsWithFinishFra
+              | none => some .finishFraChoice
+            else
+              outer?
           let combinedOuter0? : Option PendingReplacement :=
-            match g.pendingReplacement, preBodyCont? with
-            | some rCont, some preCont => some (.seq rCont preCont)
-            | some rCont, none => some rCont
-            | none, some preCont => some preCont
-            | none, none => none
+            ensureDeferredExileReopen g
+              (choicesStillValidPre || postCleanupPending != .none)
+              (match g.pendingReplacement, preBodyCont? with
+               | some rCont, some preCont => some (.seq rCont preCont)
+               | some rCont, none => some rCont
+               | none, some preCont => some preCont
+               | none, none => none)
           let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
           let postSaved0? : Option Pending :=
             if postCleanupPending != .none && postCleanupPending != preBodyPending then
@@ -3687,13 +3707,23 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
         else
           let (g, postCleanupPending) :=
             runPostCastAndPropCleanup g .none (alreadyClearedCkpt := clearedAbortedCkpt0)
+          let ensureDeferredExileReopen (gCur : Game) (hasActivePrompt : Bool)
+              (outer? : Option PendingReplacement) : Option PendingReplacement :=
+            if wasAbortedProposal && !rewindAbortedProposal && hasActivePrompt &&
+                (gCur.pendingMayCastFromExile.isSome || gCur.pendingFreeCopies.isSome) then
+              match outer? with
+              | some outer => some outer.ensureEndsWithFinishFra
+              | none => some .finishFraChoice
+            else
+              outer?
           let openedNewReplacement :=
             match postCleanupPending with
             | .chooseReplacement .. => true
             | _ => false
           if openedNewReplacement then
+            let preBodyContReopen? := ensureDeferredExileReopen g true preBodyCont?
             let g :=
-              match preBodyCont? with
+              match preBodyContReopen? with
               | some outer => g.change (.pushOuterPendingReplacement outer)
               | none => g
             let g :=
@@ -3708,18 +3738,19 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                 | none => g
               | none => g
             let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
-            (g, (none, preBodyCont?, hadPreBodyCont))
+            (g, (none, preBodyContReopen?, hadPreBodyCont))
           else
             let savedPreLeavePending0? : Option Pending :=
               if postCleanupPending != .none then some postCleanupPending else none
             let g :=
               if g.pending != .none then g.change (.pending .none) else g
             let combinedOuter0? : Option PendingReplacement :=
-              match g.pendingReplacement, preBodyCont? with
-              | some rCont, some preCont => some (.seq rCont preCont)
-              | some rCont, none => some rCont
-              | none, some preCont => some preCont
-              | none, none => none
+              ensureDeferredExileReopen g (postCleanupPending != .none)
+                (match g.pendingReplacement, preBodyCont? with
+                 | some rCont, some preCont => some (.seq rCont preCont)
+                 | some rCont, none => some rCont
+                 | none, some preCont => some preCont
+                 | none, none => none)
             let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
             let (savedPreLeavePending?, combinedOuter?) :=
               deferPostCleanupAfterOrigBatch true postCleanupPending
@@ -3776,13 +3807,23 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               | _ => false
         let (g, postRedirPending) :=
           runPostCastAndPropCleanup g redirPending (alreadyClearedCkpt := redirClearedCkpt)
+        let ensureDeferredExileReopen (gCur : Game) (hasActivePrompt : Bool)
+            (outer? : Option PendingReplacement) : Option PendingReplacement :=
+          if wasAbortedProposal && !rewindAbortedProposal && hasActivePrompt &&
+              (gCur.pendingMayCastFromExile.isSome || gCur.pendingFreeCopies.isSome) then
+            match outer? with
+            | some outer => some outer.ensureEndsWithFinishFra
+            | none => some .finishFraChoice
+          else
+            outer?
         let openedNewReplacement :=
           match postRedirPending with
           | .chooseReplacement .. => true
           | _ => false
         if openedNewReplacement then
+          let preBodyContReopen? := ensureDeferredExileReopen g true preBodyCont?
           let g :=
-            match preBodyCont? with
+            match preBodyContReopen? with
             | some outer => g.change (.pushOuterPendingReplacement outer)
             | none => g
           let g :=
@@ -3797,18 +3838,19 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               | none => g
             | none => g
           let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
-          (g, (none, preBodyCont?, hadPreBodyCont))
+          (g, (none, preBodyContReopen?, hadPreBodyCont))
         else
           let savedPreLeavePending0? : Option Pending :=
             if postRedirPending != .none then some postRedirPending else none
           let g :=
             if g.pending != .none then g.change (.pending .none) else g
           let combinedOuter0? : Option PendingReplacement :=
-            match g.pendingReplacement, preBodyCont? with
-            | some rCont, some preCont => some (.seq rCont preCont)
-            | some rCont, none => some rCont
-            | none, some preCont => some preCont
-            | none, none => none
+            ensureDeferredExileReopen g (postRedirPending != .none)
+              (match g.pendingReplacement, preBodyCont? with
+               | some rCont, some preCont => some (.seq rCont preCont)
+               | some rCont, none => some rCont
+               | none, some preCont => some preCont
+               | none, none => none)
           let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
           let (savedPreLeavePending?, combinedOuter?) :=
             deferPostCleanupAfterOrigBatch

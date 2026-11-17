@@ -1677,11 +1677,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some o := g.findObject? id | throw "no such object"
     if g.isLand o then throw s!"{g.name o} can't be cast this way"
     let face := g.baseCard o
-    let rawPerm := if withoutPaying then none else g.playPermissionFor? p o
     let canMorph :=
       !withoutPaying && face.morph.isSome && face.kicker.isNone &&
         o.zone != .graveyard o.owner &&
-        !(rawPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)) &&
         !g.spellNameForbidden ""
     if !canMorph then
       if g.spellNameForbidden face.name then
@@ -1701,9 +1699,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         throw s!"{face.name} has no legal target"
       if let some err := g.mandatorySacrificeError? p o.id face then
         throw err
-      if !withoutPaying && rawPerm.any (·.payLifeEqualManaValue) &&
-          !g.canPayLife p (g.objectManaValue o) then
-        throw s!"{(g.player p).name} can't pay {g.objectManaValue o} life to cast {face.name} (CR 119.4)"
     let g := gPre.change .saveProposalCheckpoint
     let g :=
       match g.pendingReplacement with

@@ -89,7 +89,11 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
           att.status.attacking && !att.status.blocked) then
         throw s!"{g.name att} is not an unblocked attacker you control"
       pure (some c)
-  let allPerms := g.playPermissionsFor p card
+  let allPerms :=
+    g.playPermissionsFor p card ++
+      (if card.zone == .exile && g.mayCastExiledBySource p card then
+        #[{ player := p, anyMana := true }]
+       else #[])
   let cleanPerms :=
     allPerms.filter fun pm =>
       !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone
@@ -123,8 +127,10 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
         | some b => if rankPerm pm >= rankPerm b then some pm else some b) none
   let prepPerm :=
     origPerm <|>
-      (g.playPermissionEntriesOf card.id).findSome? (fun (_, _, pm, _) =>
-        if pm.prepareSource.isSome then some pm else none)
+      (if card.zone == .exile && allPerms.isEmpty && !g.mayCastExiledBySource p card then
+        (g.playPermissionEntriesOf card.id).findSome? (fun (_, _, pm, _) =>
+          if pm.prepareSource.isSome then some pm else none)
+       else none)
   match prepPerm.bind (·.prepareSource) with
   | some src =>
     match g.findObject? src with
@@ -227,8 +233,13 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     !needsMode &&
       ((g.currentSpellEffect spellObj).any (·.requiresTarget) || g.isAura spellObj)
   let needsAdditionalCostChoice := face.announcesAdditionalCost
+  let impPermOk :=
+    !altCost ||
+      (sneakCost.isNone && !isFlashbackCast &&
+        ((!cleanPerms.isEmpty && (g.timingAllowsCast p face || cleanPerms.any (·.ignoreTiming))) ||
+          (g.mayCastExiledBySource p card && g.timingAllowsCast p face)))
   let needsKicker :=
-    face.kicker.isSome || hasMorphChoice || (!altCost && face.impending.isSome)
+    face.kicker.isSome || hasMorphChoice || (impPermOk && face.impending.isSome)
   let needsGift := face.giftTreasure
   let needsTeamwork := face.teamwork.isSome
   -- CR 702.34a: a flashback cost that includes discarding a card.
