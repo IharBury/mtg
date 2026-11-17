@@ -180,8 +180,9 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     !gPh0.canAttachEquipmentTo (gPh0.object! eqId) (gPh0.object! proId) &&
     !gAnimEq.canAttachEquipmentTo (gAnimEq.object! eqId) (gAnimEq.object! hostId)
   -- 2b. Phase out `oppHostId` (with `eqId` attached) -> `eqId` phases out indirectly (`phasedWith == some oppHostId`).
-  --     `phaseInControlled me` does NOT phase `eqId` in by itself; when `oppHostId` leaves `.battlefield`
-  --     (exiled), `eqId` unattaches (`attachedTo == none`) AND stays phased out on `phaseInControlled me` (CR 702.26g)!
+  --     `phaseInControlled me` does NOT phase `eqId` in while `oppHostId` is still phased out on `.battlefield` (CR 702.26g);
+  --     once `oppHostId` leaves `.battlefield` (exiled), `eqId` unattaches (`attachedTo == none`), stays phased out
+  --     immediately (`gHostExiled`), and phases in directly on `phaseInControlled me` (CR 702.26h)!
   let gPhOpp0 : Game := addPermanent gAtt1 bear opp21 opp21
   let oppHostId := (gPhOpp0.battlefield.filter (fun o => o.name == bear.name && o.controller == some opp21))[0]!.id
   let gAttOpp : Game := gPhOpp0.attachSourceTo (gPhOpp0.object! eqId) (gPhOpp0.object! oppHostId)
@@ -194,7 +195,9 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     (gPhased.object! eqId).status.phasedWith == some oppHostId &&
     (gTrySelfIn.object! eqId).status.phasedOut &&
     (gHostExiled.object! eqId).attachedTo == none &&
-    (gEqAfterIn.object! eqId).status.phasedOut &&
+    (gHostExiled.object! eqId).status.phasedOut &&
+    !(gEqAfterIn.object! eqId).status.phasedOut &&
+    (gEqAfterIn.object! eqId).status.phasedWith.isNone &&
     (gEqAfterIn.object! eqId).attachedTo == none
 
   mustHold21 "2a.attachLegalityOk" attachLegalityOk &&

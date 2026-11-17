@@ -61,6 +61,23 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
     let g := g.record (GameEvent.ceasedToExist g.turnNumber snap (cause := effCause))
     let expCause := cause.orElse (fun _ => some (.gameRule .leavingZone))
     let allEmbIds := if old.zone == .command then g.expandTransitiveCommandEmblems #[id] else #[]
+    let cmdControlSingles : Array (ObjectId × GameObject × String) :=
+      if old.zone != .command || suppressReturnLog then #[]
+      else
+        g.activeEffects.foldl (fun singles (_, e) =>
+          if !allEmbIds.any (fun embId => g.effectExpiresWithLeavingObj embId .command allEmbIds e) then
+            singles
+          else
+            match e with
+            | .layered (.objects #[tid]) (.control _) _ =>
+              if singles.any (·.1 == tid) then singles
+              else
+                match g.findObject? tid with
+                | some o =>
+                  let preObj := (pre.findObject? tid).getD o
+                  singles.push (tid, preObj, pre.name preObj)
+                | none => singles
+            | _ => singles) #[]
     let g :=
       if old.zone == .command then
         g.restoreCopiesWhere
@@ -73,8 +90,34 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
       else g
     let g := g.expireEffectsOnLeavingObject old (cause := expCause) (reconcileControl := false)
       (preState? := some pre) (suppressEmblemLog := suppressEmblemLog)
-      (suppressReturnLog := suppressReturnLog) (skipLogIds := skipLogIds)
+      (suppressReturnLog := if old.zone == .command then true else suppressReturnLog)
+      (skipLogIds := skipLogIds)
       (coLeavingIds := allEmbIds)
+    let g :=
+      if old.zone == .command && !suppressReturnLog then
+        cmdControlSingles.foldl (fun acc (tid, o, objName) =>
+          if skipLogIds.contains tid then acc
+          else
+            match acc.findObject? tid with
+            | none => acc
+            | some cur =>
+              let prevCtrl := pre.controllerOf ((pre.findObject? tid).getD o)
+              let curCtrl := acc.controllerOf cur
+              if curCtrl == prevCtrl then acc
+              else
+                let p := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
+                let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
+                if othersRemain then
+                  match curCtrl with
+                  | some q =>
+                    if (acc.player q).leftTheGame then acc
+                    else acc.logMsg s!"{objName} returns to {(acc.player q).name}'s control"
+                  | none => acc
+                else if (acc.player p).leftTheGame then
+                  acc
+                else
+                  acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control") g
+      else g
     let g :=
       if old.zone == .battlefield then
         g.expireWhileSourceEffects id (cause := expCause) (preState? := some pre)
@@ -139,7 +182,8 @@ def unattachFrom (g : Game) (hostId : ObjectId) (skipIds : Array ObjectId := #[]
           { (pre.snapshot preObj) with
             id := some o.id
             zone := o.zone
-            attachedTo := o.attachedTo }
+            attachedTo := o.attachedTo
+            counters := o.status.toCounterBag }
         g := g.record (GameEvent.unattached g.turnNumber snap hostId
           (cause := .gameRule .unattachOnHostLeave))
         g := g.logMsg s!"{oName} becomes unattached"

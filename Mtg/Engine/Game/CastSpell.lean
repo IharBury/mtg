@@ -112,14 +112,16 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       let lifeOk := p3.filter (fun pm => !pm.payLifeEqualManaValue || g.canPayLife p mv)
       if lifeOk.isEmpty then p3 else lifeOk
     p4
+  let mvForRank := if asAdventure then face.manaValue else g.objectManaValue card
   let rankPerm (pm : PlayPermission) : Nat :=
-    (if pm.withoutManaCost then 8 else 0) +
-      (if pm.ignoreTiming then 4 else 0) +
-      (if pm.anyMana then 2 else 0) +
+    (if pm.withoutManaCost then 16 else 0) +
+      (if pm.payLifeEqualManaValue && g.canPayLife p mvForRank then 8 else 0) +
+      (if pm.anyMana then 4 else 0) +
+      (if pm.ignoreTiming then 2 else 0) +
       (if !pm.fromAdventure then 1 else 0)
   let origPerm : Option PlayPermission :=
     if candPerms.isEmpty then
-      if g.mayCastExiledBySource p card then none else g.playPermissionFor? p card
+      none
     else
       candPerms.foldl (fun best? pm =>
         match best? with
@@ -153,7 +155,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     if sneakCost.isSome &&
         origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue) &&
         g.mayCastExiledBySource p card then
-      none
+      some { player := p, anyMana := true }
     else origPerm
   let altCost :=
     sneakCost.isSome || isFlashbackCast ||
@@ -164,11 +166,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     !asAdventure && sneakCost.isNone && !isFlashbackCast && morphPermOk &&
       face.morph.isSome && face.kicker.isNone &&
       (allPerms.isEmpty || !cleanPerms.isEmpty || (origPerm.bind (·.prepareSource)).isNone) &&
-      !fromGraveyard
-  if hasMorphChoice then
-    if !g.canCastMorphFaceDown p card then
-      g.validateFrontFaceCast p card face (sneakCost := sneakCost) (origPermOverride := origPerm)
-  else
+      !fromGraveyard && g.canCastMorphFaceDown p card
+  if !hasMorphChoice then
     g.validateFrontFaceCast p card face (sneakCost := sneakCost) (origPermOverride := origPerm)
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
@@ -200,9 +199,11 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     | some c => g.playManaCost casterCard { face with manaCost := c }
         (origPerm := origPerm)
         (flashback := some isFlashbackCast) (explicitAltCost := true)
+        (useImplicitPermissions := false)
     | none => g.playManaCost casterCard face
         (origPerm := origPerm)
         (flashback := some isFlashbackCast) (explicitAltCost := false)
+        (useImplicitPermissions := false)
   -- Casting the exiled copy of a prepare spell unprepares its permanent. The
   -- spell on the stack is a copy, so it isn't put into a graveyard later
   -- (CR 707.10 / 704.5e).
@@ -234,12 +235,18 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       ((g.currentSpellEffect spellObj).any (·.requiresTarget) || g.isAura spellObj)
   let needsAdditionalCostChoice := face.announcesAdditionalCost
   let impPermOk :=
-    !altCost ||
-      (sneakCost.isNone && !isFlashbackCast &&
-        ((!cleanPerms.isEmpty && (g.timingAllowsCast p face || cleanPerms.any (·.ignoreTiming))) ||
-          (g.mayCastExiledBySource p card && g.timingAllowsCast p face)))
+    match face.impending, face.kicker with
+    | some (_, alt), none =>
+      let impFace := { face with manaCost := alt }
+      !asAdventure && sneakCost.isNone && !isFlashbackCast &&
+        (origPerm.bind (·.prepareSource)).isNone &&
+        (if !allPerms.isEmpty then
+          cleanPerms.any (fun pm => pm.ignoreTiming || g.timingAllowsCast p impFace (excludeStackId := some newId))
+         else
+          g.timingAllowsCast p impFace (excludeStackId := some newId))
+    | _, _ => false
   let needsKicker :=
-    face.kicker.isSome || hasMorphChoice || (impPermOk && face.impending.isSome)
+    face.kicker.isSome || hasMorphChoice || impPermOk
   let needsGift := face.giftTreasure
   let needsTeamwork := face.teamwork.isSome
   -- CR 702.34a: a flashback cost that includes discarding a card.
@@ -388,6 +395,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
           (origPerm := prop.origPerm)
           (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
           (explicitAltCost := prop.sneakAttacker.isSome)
+          (useImplicitPermissions := false)
       | _, _, _ => prop.cost.substituteX x
     let extraChanges : Array ProposalChange :=
       if prop.kind == .spell && prop.origPerm.any (·.payLifeEqualManaValue) then
@@ -426,7 +434,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
           needsTarget "CR 601.2b / 700.2"
           (needsAdditionalCost := face.announcesAdditionalCost)
           (needsKicker := !prop.kickerAnnounced &&
-            (face.kicker.isSome || (!prop.alternativeCost && (face.morph.isSome || face.impending.isSome))))
+            (face.kicker.isSome || g.proposalCanChooseMorph prop || g.proposalCanChooseImpending prop))
           (needsGift := face.giftTreasure)
           (needsTeamwork := face.teamwork.isSome)
     | .turnFaceUp =>

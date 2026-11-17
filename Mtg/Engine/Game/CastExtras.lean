@@ -157,7 +157,9 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     if prop.sneakAttacker.isNone && face.morph.isSome && face.kicker.isNone then
       let effPerm :=
         if prop.resolutionCast then
-          some { (prop.origPerm.getD { player := prop.caster }) with ignoreTiming := true }
+          some { (prop.origPerm.getD { player := prop.caster }) with
+            ignoreTiming :=
+              prop.resolutionIgnoreTiming || prop.origPerm.any (·.ignoreTiming) }
         else prop.origPerm
       g.validateFrontFaceCast prop.caster prop.original face
         (origPermOverride := effPerm)
@@ -173,83 +175,57 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   | some _, _, none =>
     if g.spellNameForbidden "" then
       throw "Nameless spells can't be cast"
-    let implicitClean : Array PlayPermission :=
-      if prop.resolutionCast then
-        #[{ player := prop.caster, ignoreTiming := true,
-            anyMana := preSpell.zone == .exile && g.mayCastExiledBySource prop.caster preSpell }]
-      else if preSpell.zone == .exile && g.mayCastExiledBySource prop.caster preSpell then
-        #[{ player := prop.caster, anyMana := true }]
-      else #[]
-    let cleanPerms :=
-      ((g.playPermissionsFor prop.caster preSpell).filter fun pm =>
-        !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone) ++
-        implicitClean
-    let morphPerm :=
-      match prop.origPerm with
-      | some pm =>
-        if !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone then
-          some pm
-        else
-          cleanPerms.foldl (fun best? q =>
-            match best? with
-            | none => some q
-            | some b =>
-              let sQ := (if q.ignoreTiming then 2 else 0) + (if q.anyMana then 1 else 0)
-              let sB := (if b.ignoreTiming then 2 else 0) + (if b.anyMana then 1 else 0)
-              if sQ >= sB then some q else some b) none
-      | none => none
-    if !(g.timingAllowsCast prop.caster morphSpellFace (excludeStackId := some spell.id) ||
-        prop.resolutionCast || morphPerm.any (·.ignoreTiming) ||
-        cleanPerms.any (·.ignoreTiming)) then
-      throw "Morph can be cast face down only when you could cast a creature spell (CR 702.37a)"
+    if prop.sneakAttacker.isSome ||
+        GameEvent.castWithFlashback g.events prop.spellId ||
+        (prop.origPerm.bind (·.prepareSource)).isSome ||
+        g.isForcedWithoutManaCostProposal prop then
+      throw "You can't apply more than one alternative cost to a spell (CR 118.9a)"
+    if prop.original.zone == .graveyard prop.original.owner then
+      throw "Morph can't be used when casting from a graveyard (CR 702.37a)"
+    let some morphPerm := g.proposalAltCleanPerm? prop morphSpellFace
+      | do
+        let allExilePerms := g.playPermissionsFor prop.caster preSpell
+        let contClean :=
+          allExilePerms.filter fun pm =>
+            !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone
+        let hasNullSummoner := preSpell.zone == .exile && g.mayCastExiledBySource prop.caster preSpell
+        if !allExilePerms.isEmpty && contClean.isEmpty && !prop.resolutionCast && !hasNullSummoner then
+          throw "You can't apply more than one alternative cost to a spell (CR 118.9a)"
+        throw "Morph can be cast face down only when you could cast a creature spell (CR 702.37a)"
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.morph]))
     let cost :=
       g.playManaCost preSpell morphSpellFace extraGen
         (origPerm := morphPerm)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
         (explicitAltCost := true)
+        (useImplicitPermissions := false)
     return g.changeProposals
       #[.kicked true, .kickerAnnounced true, .cost cost, .payLife 0, .alternativeCost true,
         .needsSacrificeOther false, .needsDiscardCard false]
   | _, some (n, alt), none =>
-    if prop.sneakAttacker.isSome || GameEvent.castWithFlashback g.events prop.spellId then
+    if prop.sneakAttacker.isSome ||
+        GameEvent.castWithFlashback g.events prop.spellId ||
+        (prop.origPerm.bind (·.prepareSource)).isSome ||
+        g.isForcedWithoutManaCostProposal prop then
       throw "You can't apply more than one alternative cost to a spell (CR 118.9a)"
-    let implicitClean : Array PlayPermission :=
-      if prop.resolutionCast then
-        #[{ player := prop.caster, ignoreTiming := true,
-            anyMana := preSpell.zone == .exile && g.mayCastExiledBySource prop.caster preSpell }]
-      else if preSpell.zone == .exile && g.mayCastExiledBySource prop.caster preSpell then
-        #[{ player := prop.caster, anyMana := true }]
-      else #[]
-    let cleanPerms :=
-      ((g.playPermissionsFor prop.caster preSpell).filter fun pm =>
-        !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone) ++
-        implicitClean
-    let impPerm :=
-      match prop.origPerm with
-      | some pm =>
-        if !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone then
-          some pm
-        else
-          cleanPerms.foldl (fun best? q =>
-            match best? with
-            | none => some q
-            | some b =>
-              let sQ := (if q.ignoreTiming then 2 else 0) + (if q.anyMana then 1 else 0)
-              let sB := (if b.ignoreTiming then 2 else 0) + (if b.anyMana then 1 else 0)
-              if sQ >= sB then some q else some b) none
-      | none => none
     let impFace : CardDef := { face with manaCost := alt }
-    if !(g.timingAllowsCast prop.caster impFace (excludeStackId := some spell.id) ||
-        prop.resolutionCast || impPerm.any (·.ignoreTiming) ||
-        cleanPerms.any (·.ignoreTiming)) then
-      throw s!"{face.name} has sorcery speed"
+    let some impPerm := g.proposalAltCleanPerm? prop impFace
+      | do
+        let allExilePerms := g.playPermissionsFor prop.caster preSpell
+        let contClean :=
+          allExilePerms.filter fun pm =>
+            !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone
+        let hasNullSummoner := preSpell.zone == .exile && g.mayCastExiledBySource prop.caster preSpell
+        if !allExilePerms.isEmpty && contClean.isEmpty && !prop.resolutionCast && !hasNullSummoner then
+          throw "You can't apply more than one alternative cost to a spell (CR 118.9a)"
+        throw s!"{face.name} has sorcery speed"
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.impending n]))
     let cost :=
       g.playManaCost preSpell impFace extraGen
         (origPerm := impPerm)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
         (explicitAltCost := true)
+        (useImplicitPermissions := false)
     return g.changeProposals
       #[.kicked true, .kickerAnnounced true, .cost cost, .payLife 0, .alternativeCost true]
   | _, _, none => throw "That spell has no kicker"
@@ -267,6 +243,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
         (origPerm := effPerm)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
         (explicitAltCost := prop.sneakAttacker.isSome)
+        (useImplicitPermissions := false)
     return g.changeProposals #[.kicked true, .kickerAnnounced true, .cost cost]
 
 /-- Promise a gift to `to`. Cannot promise more than once. -/

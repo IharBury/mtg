@@ -152,6 +152,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
         (origPerm := prop.origPerm)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
         (explicitAltCost := prop.sneakAttacker.isSome)
+        (useImplicitPermissions := false)
       g.changeProposals #[
         .cost newCost,
         .additionalGeneric n,

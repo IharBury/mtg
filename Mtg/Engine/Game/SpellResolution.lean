@@ -196,7 +196,8 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
     (sourceId : Option ObjectId) (empowerJaceN : Option Nat)
     (skippedOptionalSlots : Array Nat := #[])
-    (lastKnownPower : Option Int := none) : Game :=
+    (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Game :=
   match modeEffects[0]? with
   | none =>
     match empowerJaceN with
@@ -226,7 +227,8 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     let randomBefore := g.afterRandom
     let g :=
       if g.resolvingAbility.isSome then
-        g.applyUnifiedAbility controller e curTargets sourceId lastKnownPower (chosenX := chosenX)
+        g.applyUnifiedAbility controller e curTargets sourceId lastKnownPower
+          (chosenX := chosenX) (lastKnownToughness := lastKnownToughness)
       else
         g.applyUnified controller e curTargets
           (castFromGraveyard := castFromGraveyard)
@@ -234,15 +236,19 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
           (giftPromised := giftPromised)
           (chosenX := chosenX)
           (sourceId := sourceId)
+          (lastKnownPower := lastKnownPower)
+          (lastKnownToughness := lastKnownToughness)
     if restModes.isEmpty && empowerJaceN.isNone then g
     else if (g.pending != pendingBefore && g.pending != .none) ||
         (g.afterRandom != randomBefore && g.afterRandom != .none) then
       g.chainPendingReplacement
         (.continueSpellModes controller restModes restTargets
-          castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN restSkipped lastKnownPower)
+          castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN
+          restSkipped lastKnownPower lastKnownToughness)
     else
       g.runSpellModesAndEmpower controller restModes restTargets
-        castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN restSkipped lastKnownPower
+        castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN
+        restSkipped lastKnownPower lastKnownToughness
 
 def resolveTop (g : Game) : Game :=
   if g.stack.isEmpty then g
@@ -283,7 +289,8 @@ def resolveTop (g : Game) : Game :=
         let e0 := if tcs.isEmpty then rawE else TextChange.applyEffect tcs rawE
         let e := g.expandEachOpponentEffect entry.controller e0 (some obj.id)
         let runAbilityBody (g : Game) : Game :=
-          let chosenX := (g.chosenXOf? obj.id).getD 0
+          let chosenX :=
+            ((g.chosenXOf? obj.id).orElse (fun _ => obj.sourceId.bind g.chosenXOf?)).getD 0
           let trigModes := g.triggerModesOf obj
           if !entry.extraModes.isEmpty && !trigModes.isEmpty then
             let modeEffects :=
@@ -292,7 +299,7 @@ def resolveTop (g : Game) : Game :=
                   if tcs.isEmpty then mEff else TextChange.applyEffect tcs mEff
             g.runSpellModesAndEmpower entry.controller modeEffects entry.targets
               false false false chosenX obj.sourceId none entry.skippedOptionalSlots
-              entry.lastKnownPower
+              entry.lastKnownPower entry.lastKnownToughness
           else
             g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
               entry.lastKnownPower chosenX (lastKnownToughness := entry.lastKnownToughness)
@@ -480,12 +487,12 @@ def resolveTop (g : Game) : Game :=
                 g.chainPendingReplacement
                   (.continueSpellModes entry.controller modeEffects entry.targets
                     fromGy kicked giftTo.isSome chosenX (some obj.id) empowerJaceN
-                    entry.skippedOptionalSlots entry.lastKnownPower)
+                    entry.skippedOptionalSlots entry.lastKnownPower entry.lastKnownToughness)
               else g
             else
               g.runSpellModesAndEmpower entry.controller modeEffects entry.targets
                 fromGy kicked giftTo.isSome chosenX (some obj.id) empowerJaceN
-                entry.skippedOptionalSlots entry.lastKnownPower
+                entry.skippedOptionalSlots entry.lastKnownPower entry.lastKnownToughness
           g.completeActiveResolutions
 
 end Game

@@ -1839,6 +1839,7 @@ inductive PendingReplacement where
       (sourceId : Option ObjectId) (empowerJaceN : Option Nat)
       (skippedOptionalSlots : Array Nat := #[])
       (lastKnownPower : Option Int := none)
+      (lastKnownToughness : Option Int := none)
   | empowerJace (controller : PlayerId) (n : Nat) (stage : EmpowerJaceStage := .initial)
       (targetId : Option ObjectId := none) (cause : Option EventCause := none)
   | continueTriggeredSequence (controller : PlayerId) (steps : Array TriggeredAbility)
@@ -1963,9 +1964,12 @@ inductive PendingReplacement where
   | phaseOutPermanentsLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
       (preSnaps : Array (ObjectId × EventObject) := #[])
+      (startEventIdx : Option Nat := none)
+      (reconcile : Bool := true)
   | phaseInControlledLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
       (startEventIdx : Option Nat := none)
+      (reconcile : Bool := true)
 deriving Inhabited
 
 /-- One frame of mid-resolution continuation state (CR 608.2). Grouping the
@@ -2366,7 +2370,7 @@ state: clears to `false` on draining leaves and preserves on neutral leaves. -/
 def PendingReplacement.nextQueuedPending (hasQueuedPending : Bool := false) :
     PendingReplacement → Bool
   | .seq a1 a2 => a2.nextQueuedPending (a1.nextQueuedPending hasQueuedPending)
-  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved
+  | .receivePriority _ | .finishFraChoice | .afterWardResolved
   | .runPostCastCleanup _
   | .beginTurnAfterStartExpiry
   | .finishCleanupAfterClearEot
@@ -2374,11 +2378,13 @@ def PendingReplacement.nextQueuedPending (hasQueuedPending : Bool := false) :
   | .finishPostStep .endTurnAfterCleanupStepEnded
   | .finishPostStep .cleanupStepAfterDiscard
   | .finishPostStep (.postSbaCleanup _) => false
+  | .finishConcede _ _ wc .. => if wc.isNone then false else hasQueuedPending
   | .beginStepCont st
   | .finishPostStep (.beginStepBody st)
   | .finishPostStep (.beginStepAfterPhaseBegan st) =>
     if stepAlwaysGrantsPriority st then false else hasQueuedPending
-  | .concedePlayersLoop _ wp mid .. => if !wp && !mid then false else hasQueuedPending
+  | .concedePlayersLoop _ wp mid _ _ wc .. =>
+    if !wp && !mid && wc.isNone then false else hasQueuedPending
   | .finishPostCast _ _ hadOuter _
   | .finishBecomeCast _ _ _ hadOuter _
   | .finishProposedSpellCosts _ _ hadOuter _
@@ -2395,18 +2401,19 @@ priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` /
 def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
     (hasQueuedPending : Bool := false) : Bool :=
   match pr with
-  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved
+  | .receivePriority _ | .finishFraChoice | .afterWardResolved
   | .beginTurnAfterStartExpiry
   | .finishCleanupAfterClearEot
   | .finishPostStep .startNextTurnAndBegin
   | .finishPostStep .endTurnAfterCleanupStepEnded
   | .finishPostStep .cleanupStepAfterDiscard
   | .finishPostStep (.postSbaCleanup _) => true
+  | .finishConcede _ _ wc .. => wc.isNone
   | .beginStepCont st
   | .finishPostStep (.beginStepBody st)
   | .finishPostStep (.beginStepAfterPhaseBegan st) =>
     stepAlwaysGrantsPriority st
-  | .concedePlayersLoop _ wp mid .. => !wp && !mid
+  | .concedePlayersLoop _ wp mid _ _ wc .. => !wp && !mid && wc.isNone
   | .finishPostCast _ grantPriority hadOuter _ => grantPriority && !hadOuter
   | .finishBecomeCast _ _ grantPriority hadOuter _ =>
     grantPriority && !hadOuter
@@ -2426,18 +2433,19 @@ grant (`.receivePriority`, `.finishFraChoice`, `.finishConcede`,
 priority-granting step/turn/cleanup continuation), excluding
 proposal-completion continuations. -/
 def PendingReplacement.endsWithNonProposalPriorityGrant : PendingReplacement → Bool
-  | .receivePriority _ | .finishFraChoice | .finishConcede .. | .afterWardResolved
+  | .receivePriority _ | .finishFraChoice | .afterWardResolved
   | .beginTurnAfterStartExpiry
   | .finishCleanupAfterClearEot
   | .finishPostStep .startNextTurnAndBegin
   | .finishPostStep .endTurnAfterCleanupStepEnded
   | .finishPostStep .cleanupStepAfterDiscard
   | .finishPostStep (.postSbaCleanup _) => true
+  | .finishConcede _ _ wc .. => wc.isNone
   | .beginStepCont st
   | .finishPostStep (.beginStepBody st)
   | .finishPostStep (.beginStepAfterPhaseBegan st) =>
     stepAlwaysGrantsPriority st
-  | .concedePlayersLoop _ wp mid .. => !wp && !mid
+  | .concedePlayersLoop _ wp mid _ _ wc .. => !wp && !mid && wc.isNone
   | .seq _ b => b.endsWithNonProposalPriorityGrant
   | _ => false
 
@@ -3899,12 +3907,18 @@ def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
       if forObj == some spell then max n units.size else n
     | _, _ => n) 0
 
-/-- Whether `srcId` was recorded as a Treasure permanent when its latest ability was activated or triggered. -/
+/-- Whether `srcId` was recorded as a Treasure permanent at its latest battlefield departure, activation, or trigger snapshot (CR 608.2h). -/
 def isTreasureSourceInLog (events : Array GameEvent) (srcId : ObjectId) : Bool := Id.run do
   let mut i := events.size
   while i > 0 do
     i := i - 1
     match events[i]!.change with
+    | .rules (.zone (.moved before _ .battlefield _ ..)) =>
+      if before.id == some srcId then
+        return before.subtypes.contains .treasure
+    | .rules (.zone (.ceasedToExist snap)) =>
+      if snap.zone == .battlefield && snap.id == some srcId then
+        return snap.subtypes.contains .treasure
     | .rules (.cast (.abilityActivated id snap _ _)) =>
       if id == srcId || snap.id == some srcId then
         return snap.subtypes.contains .treasure
@@ -3917,9 +3931,9 @@ def isTreasureSourceInLog (events : Array GameEvent) (srcId : ObjectId) : Bool :
     | _ => pure ()
   return false
 
-/-- Whether `u` came from a Treasure source (via explicit provenance, spending restriction, or `source` provenance). -/
-private def isTreasureManaUnit (events : Array GameEvent) (u : ManaUnit) : Bool :=
-  u.fromTreasure || u.restriction == some (.fra .fromTreasure) || u.source.any (isTreasureSourceInLog events)
+/-- Whether `u` came from a Treasure source (via explicit `fromTreasure` provenance or Treasure spending restriction). -/
+private def isTreasureManaUnit (u : ManaUnit) : Bool :=
+  u.fromTreasure || u.restriction == some (.fra .fromTreasure)
 
 /-- Whether mana from a Treasure was spent to cast `spell` (CR 106.6). -/
 def treasureManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
@@ -3928,9 +3942,9 @@ def treasureManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
     match e.change, e.cause? with
     | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
       (forObj == some spell || oid? == some spell) &&
-        units.any (isTreasureManaUnit preCast)
+        units.any isTreasureManaUnit
     | .rules (.player (.manaSpent _ units forObj)), _ =>
-      forObj == some spell && units.any (isTreasureManaUnit preCast)
+      forObj == some spell && units.any isTreasureManaUnit
     | _, _ => false
 
 /-- Whether legendary-restricted mana (Delighted Halfling) was spent to cast `spell` (CR 106.6). -/

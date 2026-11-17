@@ -333,13 +333,52 @@ def finishOneResolution (g : Game) (fin : ResolutionFinish) : Game :=
         else
           g.change (.pendingResolvedEvent (some (snap, entry.controller, finishCause)))
 
+/-- Reopen a deferred `pendingMayCastFromExile` or `pendingFreeCopies` stash on
+`topFrame` once any intervening `Pending` prompt and `proposedSpell` have
+cleared (CR 704.5e / 707.10a / 800.4a). -/
+partial def reopenDeferredExileCasts (g : Game) : Game :=
+  let g : Game :=
+    match g.pendingMayCastFromExile with
+    | some (q, ids, left) =>
+      if g.pending != .none then g
+      else
+        let alive := ids.filter (fun id =>
+          (g.findObject? id).any (fun (o : GameObject) =>
+            o.zone == Zone.exile && !g.isLand o))
+        let g := g.change (.pendingMayCastFromExile none)
+        if !g.stillInGame q || alive.isEmpty || left == 0 then g
+        else
+          g.beginFraChoice q (.mayCastUpToFromExile alive left)
+            s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
+    | none => g
+  match g.pendingFreeCopies with
+  | some (q, ids, budget, castsLeft) =>
+    if g.pending != .none then g
+    else
+      let alive := ids.filter (fun id => (g.findObject? id).any (·.zone == .exile))
+      let castable := alive.filter (fun id =>
+        (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
+      if !g.stillInGame q || castable.isEmpty || castsLeft == 0 then
+        let g :=
+          if alive.isEmpty then g
+          else
+            g.withBatch (some (.stateBased .copyOutsideStackOrBf)) fun g =>
+              alive.foldl (fun g id =>
+                g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
+        g.change (.pendingFreeCopies none)
+      else
+        (g.change (.pendingFreeCopies none)).beginFraChoice q (.castCopiesFree alive budget castsLeft)
+  | none => g
+
 /-- Drain completed `ContinuationFrame`s once all `Pending`, `afterRandom`, and
 batch continuations have finished, running deferred CR 608.2n / 608.2p / 608.3
 stack-exit actions and popping frames back to `#[]`. -/
 partial def completeActiveResolutions (g : Game) : Game :=
   if !g.over && (g.pending != .none || g.afterRandom != .none || g.currentBatch.isSome ||
       g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
-      g.triggerSequenceRest.isSome) then g
+      g.triggerSequenceRest.isSome || g.mayThenResume ||
+      (g.proposedSpell.isNone &&
+        (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome))) then g
   else
     match g.continuations.back? with
     | none =>
@@ -395,7 +434,11 @@ partial def completeActiveResolutions (g : Game) : Game :=
           .resolvingAbility none,
           .resolvingDivision #[]]
         let g := g.finishOneResolution fin
-        if g.pending != .none || g.afterRandom != .none || g.currentBatch.isSome then g
+        if g.pending != .none || g.afterRandom != .none || g.currentBatch.isSome ||
+            g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
+            g.triggerSequenceRest.isSome || g.mayThenResume ||
+            (g.proposedSpell.isNone &&
+              (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)) then g
         else completeActiveResolutions (g.change .popContinuationFrame)
       else
         completeActiveResolutions (g.change .popContinuationFrame)
@@ -410,68 +453,82 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
   let savePendingP (g : Game) : Game :=
     if g.pendingPriority == some p then g else g.change (.pendingPriority (some p))
   let hadEntryPending := g.pending != .none
-  let g :=
-    if g.over || (g.pending == .none && g.afterRandom == .none) then
-      g.completeActiveResolutions
-    else g
-  if g.over then g
-  else if g.legendChoicePending? then
-    if hadEntryPending then g else savePendingP g
-  else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.receivePriority p)
-  else if g.pending != .none then
-    if hadEntryPending then g else savePendingP g
+  if !g.over && g.pending == .none && g.afterRandom == .none &&
+      g.proposedSpell.isNone &&
+      (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
+    let g := (savePendingP g).reopenDeferredExileCasts
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.receivePriority p)
+    else if g.pending != .none || g.afterRandom != .none then
+      g
+    else if g.triggerSequenceRest.isSome || g.mayThenResume ||
+        g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty then
+      g.finishAndGrantPriorityFwd p
+    else
+      g.receivePriority p recheckSba
   else
-    let g := if recheckSba then g.checkSBA else g
-    if g.over then g.completeActiveResolutions
-    -- CR 704.3 / 704.5j: a required legend-rule choice is part of performing
-    -- the SBA. Do not put triggers on the stack or grant priority yet.
-    else if g.legendChoicePending? then savePendingP g
+    let g :=
+      if g.over || (g.pending == .none && g.afterRandom == .none) then
+        g.completeActiveResolutions
+      else g
+    if g.over then g
+    else if g.legendChoicePending? then
+      if hadEntryPending then g else savePendingP g
     else if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.receivePriority p)
-    else if g.pending != .none then savePendingP g
+    else if g.pending != .none then
+      if hadEntryPending then g else savePendingP g
     else
-      match g.nextTriggerStackingPlayer? with
-      | none =>
-        if g.waitingTriggers.isEmpty then
-          if recheckSba then
-            if g.pendingPriority.isSome then
-              g.changes #[.priority p, .consecutivePasses 0, .pendingPriority none]
+      let g := if recheckSba then g.checkSBA else g
+      if g.over then g.completeActiveResolutions
+      -- CR 704.3 / 704.5j: a required legend-rule choice is part of performing
+      -- the SBA. Do not put triggers on the stack or grant priority yet.
+      else if g.legendChoicePending? then savePendingP g
+      else if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.receivePriority p)
+      else if g.pending != .none then savePendingP g
+      else
+        match g.nextTriggerStackingPlayer? with
+        | none =>
+          if g.waitingTriggers.isEmpty then
+            if recheckSba then
+              if g.pendingPriority.isSome then
+                g.changes #[.priority p, .consecutivePasses 0, .pendingPriority none]
+              else
+                g.changes #[.priority p, .consecutivePasses 0]
             else
-              g.changes #[.priority p, .consecutivePasses 0]
+              -- Finished this CR 603.3b pass; check SBAs and any new triggers.
+              receivePriority g p true
           else
-            -- Finished this CR 603.3b pass; check SBAs and any new triggers.
-            receivePriority g p true
-        else
-          let g := g.putTriggerBatch g.currentTriggerBatch
-          if g.over then g.completeActiveResolutions
-          else if g.pending != .none then savePendingP g
-          else receivePriority g p true
-      | some q =>
-        let mine := g.waitingTriggersOf q
-        let allIdentical :=
-          mine.size ≤ 1 ||
-            mine.all (fun w =>
-              w.source.id == mine[0]!.source.id &&
-                w.ability == mine[0]!.ability &&
-                w.event == mine[0]!.event &&
-                w.causeId == mine[0]!.causeId &&
-                w.causeIds == mine[0]!.causeIds &&
-                w.causeController == mine[0]!.causeController &&
-                w.lastKnownPower == mine[0]!.lastKnownPower &&
-                w.lastKnownToughness == mine[0]!.lastKnownToughness &&
-                w.delayedTrigger == mine[0]!.delayedTrigger &&
-                w.abilityEffect == mine[0]!.abilityEffect &&
-                w.reflexiveResolution == mine[0]!.reflexiveResolution)
-        if allIdentical || mine.all (·.ordered) then
-          let g := g.putTriggerBatch mine
-          if g.over then g.completeActiveResolutions
-          else if g.pending != .none then savePendingP g
-          else receivePriority g p false
-        else
-          let g := savePendingP g
-          (g.change (.pending (.chooseTriggerToStack q))).logMsg
-            s!"{(g.player q).name} chooses the order of triggered abilities (CR 603.3b)"
+            let g := g.putTriggerBatch g.currentTriggerBatch
+            if g.over then g.completeActiveResolutions
+            else if g.pending != .none then savePendingP g
+            else receivePriority g p true
+        | some q =>
+          let mine := g.waitingTriggersOf q
+          let allIdentical :=
+            mine.size ≤ 1 ||
+              mine.all (fun w =>
+                w.source.id == mine[0]!.source.id &&
+                  w.ability == mine[0]!.ability &&
+                  w.event == mine[0]!.event &&
+                  w.causeId == mine[0]!.causeId &&
+                  w.causeIds == mine[0]!.causeIds &&
+                  w.causeController == mine[0]!.causeController &&
+                  w.lastKnownPower == mine[0]!.lastKnownPower &&
+                  w.lastKnownToughness == mine[0]!.lastKnownToughness &&
+                  w.delayedTrigger == mine[0]!.delayedTrigger &&
+                  w.abilityEffect == mine[0]!.abilityEffect &&
+                  w.reflexiveResolution == mine[0]!.reflexiveResolution)
+          if allIdentical || mine.all (·.ordered) then
+            let g := g.putTriggerBatch mine
+            if g.over then g.completeActiveResolutions
+            else if g.pending != .none then savePendingP g
+            else receivePriority g p false
+          else
+            let g := savePendingP g
+            (g.change (.pending (.chooseTriggerToStack q))).logMsg
+              s!"{(g.player q).name} chooses the order of triggered abilities (CR 603.3b)"
 
 /-- Emit the post-`recordPutCounters` log for `oid` from its `kind` counter
 delta since `before`. -/

@@ -114,6 +114,9 @@ structure ProposedSpell where
   alternativeCost : Bool := false
   /-- Cast as part of a resolving spell or ability (CR 608.2g). -/
   resolutionCast : Bool := false
+  /-- Whether a resolution cast ignores normal timing restrictions (CR 608.2g);
+  `false` when `castAsPartOfResolution` was explicitly passed `ignoreTiming := false`. -/
+  resolutionIgnoreTiming : Bool := true
   /-- Active play permission captured on the pre-move card before `Movement.move`
   expires zone-scoped permissions on leaving its origin zone (CR 601.2a,f). -/
   origPerm : Option PlayPermission := none
