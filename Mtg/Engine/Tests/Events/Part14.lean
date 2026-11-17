@@ -177,6 +177,50 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   let gSbaFoldStep2 := mustApply gSbaFoldStep1 p0 .decline
   let gSbaFoldDone := mustApply gSbaFoldStep2 p0 .decline
 
+  -- Pushed-outer (`!flushedFromPending`) `rewriteRepausedPostCloseBatch` with `savedIn := none` and `popOuterIn := true`
+  -- folds `outerTail?` onto `outerPendingReplacements` (`poM == true`) for `.leavePlayersWhoLost none false`, `.checkSBA`, and plain tails:
+  let legHero48Def : CardDef := { hero with supertypes := #[.legendary] }
+  let gTwoGrp48Base :=
+    addPermanent
+      (addPermanent gLegBase legHero48Def p0 p0)
+      legHero48Def p0 p0
+  let gTwoGrp48Paused := gTwoGrp48Base.checkSBA
+  let firstGrp48Ids :=
+    match gTwoGrp48Paused.pending with | .chooseLegend _ _ ids => ids | _ => #[]
+  let closeOnly48 :=
+    match gTwoGrp48Paused.pendingReplacement with | some (.seq cb _) => cb | _ => .checkSBA
+  let mkPushedOuterRepauseInv (afterClose : PendingReplacement) : Game :=
+    let (gInv, _) :=
+      (gTwoGrp48Paused.changes #[
+        .pendingReplacement none,
+        .pushContinuationFrame {},
+        .pushOuterPendingReplacement (.seq closeOnly48 afterClose)
+      ]).move firstGrp48Ids[0]! .exile none (cause := some testCause)
+    gInv
+  let gRepOuterLeaveInv :=
+    mkPushedOuterRepauseInv
+      (.seq (.leavePlayersWhoLost none false #[p2] none) (.gainLife p0 5 (some testCause)))
+  let (gRepOuterLeaveMid, repOuterLeaveDid, _, repOuterLeavePop, repOuterLeaveDep, _) :=
+    gRepOuterLeaveInv.checkSBACountedWithLeavesCore
+      (savedIn := none) (popOuterIn := true) (departedIn := #[]) (deferRestore := false)
+  let secondKeep48Id :=
+    match gRepOuterLeaveMid.pending with | .chooseLegend _ _ ids => ids[0]! | _ => ⟨999999⟩
+  let gRepOuterLeaveDone := mustApply gRepOuterLeaveMid p0 (.keepLegend secondKeep48Id)
+
+  let gRepOuterSbaInv :=
+    mkPushedOuterRepauseInv (.seq .checkSBA (.gainLife p0 6 (some testCause)))
+  let (gRepOuterSbaMid, repOuterSbaDid, _, repOuterSbaPop, _, _) :=
+    gRepOuterSbaInv.checkSBACountedWithLeavesCore
+      (savedIn := none) (popOuterIn := true) (departedIn := #[]) (deferRestore := false)
+  let gRepOuterSbaDone := mustApply gRepOuterSbaMid p0 (.keepLegend secondKeep48Id)
+
+  let gRepOuterPlainInv :=
+    mkPushedOuterRepauseInv (.gainLife p0 8 (some testCause))
+  let (gRepOuterPlainMid, repOuterPlainDid, _, repOuterPlainPop, _, _) :=
+    gRepOuterPlainInv.checkSBACountedWithLeavesCore
+      (savedIn := none) (popOuterIn := true) (departedIn := #[p2]) (deferRestore := false)
+  let gRepOuterPlainDone := mustApply gRepOuterPlainMid p0 (.keepLegend secondKeep48Id)
+
   -- Combat-damage `wasAssigningCombatDamage := some true` does NOT report priority grant or clear `nextQueuedPending`:
   let fcCombat : PendingReplacement :=
     .finishConcede false none (some true) (some (.mayPayGeneric p0 1)) false #[] none
@@ -203,6 +247,16 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
        (gSbaFoldDone.player p0).life == 29 &&
        (gSbaFoldDone.player p2).leftTheGame &&
        (gSbaFoldDone.player p3).leftTheGame) &&
+    mustHold48i1 "1b_pushedOuterRepauseFoldTail"
+      (repOuterLeaveDid && repOuterLeavePop && repOuterLeaveDep == #[p2] &&
+       gRepOuterLeaveMid.outerPendingReplacements == #[.gainLife p0 5 (some testCause)] &&
+       (gRepOuterLeaveDone.player p0).life == 25 &&
+       repOuterSbaDid && repOuterSbaPop &&
+       gRepOuterSbaMid.outerPendingReplacements == #[.gainLife p0 6 (some testCause)] &&
+       (gRepOuterSbaDone.player p0).life == 26 &&
+       repOuterPlainDid && repOuterPlainPop &&
+       gRepOuterPlainMid.outerPendingReplacements == #[.gainLife p0 8 (some testCause)] &&
+       (gRepOuterPlainDone.player p0).life == 28) &&
     mustHold48i1 "1b_eventCombatDamageGuards" eventCombatGuardsOk
 
   -- 1c(i). `Decisions` `.restorePending` outer-pop threading across nested `.restorePending _ true`
@@ -303,8 +357,9 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   mustHold48i1 "1.replay"
     (replayOk48i1 #[gMayThenHold, gDefExHold, gDefCopyHold, gLeaveNonFraReopened,
       gFgpBeforeTrig, gFfcBeforeTrig, gRecvCeaseThenTrig, gAfterTrigTgtReopen,
-      gWardAfterDecline, gRepReopened, gSbaFoldDone, gNestedRestoreResumed,
-      gOuterFraResumed, gOuterP3Resumed])
+      gWardAfterDecline, gRepReopened, gSbaFoldDone,
+      gRepOuterLeaveDone, gRepOuterSbaDone, gRepOuterPlainDone,
+      gNestedRestoreResumed, gOuterFraResumed, gOuterP3Resumed])
 
 end Phase48Item1EventAlignment
 

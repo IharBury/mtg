@@ -605,7 +605,7 @@ private def rewriteRepausedPostCloseBatch (g : Game) (curBid : BatchId)
       let (g1, savedM, poM, depM, rwM, remTail?) :=
         match pushedAfter?.bind peelLeadingSbaOrLeave? with
         | some (.leavePlayersWhoLost s0 po0 d0 rw0, outerTail?) =>
-          if outerTail?.isSome && (po0 || s0.isSome || savedIn.isSome) then
+          if outerTail?.isSome && (po0 || popOuterAfterFlush || s0.isSome || savedIn.isSome) then
             let (gm, sm, pom, dm, rwm) :=
               mergeLeaveArgs g s0 po0 d0 rw0 savedIn false departedIn rewindProposalIn
                 (rest? := outerTail?)
@@ -615,13 +615,13 @@ private def rewriteRepausedPostCloseBatch (g : Game) (curBid : BatchId)
               mergeLeaveArgs g s0 po0 d0 rw0 savedIn false departedIn rewindProposalIn
             (gm, sm, pom, dm, rwm, outerTail?)
         | some (.checkSBA, outerTail?) =>
-          if outerTail?.isSome && savedIn.isSome then
+          if outerTail?.isSome && (popOuterAfterFlush || savedIn.isSome) then
             let (gp, po1) := combineOuterContinuations g false outerTail? false
             (gp, savedIn, po1, departedIn, rewindProposalIn, none)
           else
             (g, savedIn, false, departedIn, rewindProposalIn, outerTail?)
         | _ =>
-          if pushedAfter?.isSome && savedIn.isSome then
+          if pushedAfter?.isSome && (popOuterAfterFlush || savedIn.isSome) then
             let (gp, po1) := combineOuterContinuations g false pushedAfter? false
             (gp, savedIn, po1, departedIn, rewindProposalIn, none)
           else
