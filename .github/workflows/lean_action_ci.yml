@@ -17,6 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    env:
+      # `panic!` during elaboration is an information diagnostic unless this
+      # is set, so a panicking test module would still let `lake build` exit 0.
+      LEAN_ABORT_ON_PANIC: "1"
+
     steps:
       - uses: actions/checkout@v5
 
@@ -26,10 +31,25 @@ jobs:
           path: ~/.elan
           key: elan-${{ runner.os }}-${{ hashFiles('lean-toolchain') }}
 
+      - name: Restore Lake build cache
+        uses: actions/cache@v5
+        with:
+          path: .lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: |
+            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+
       - uses: leanprover/lean-action@v1
         with:
-          # Fail if Lean or Lake logs any warning (e.g. deprecations).
-          build-args: "--wfail"
+          # Install the toolchain only. The build step below fails the job
+          # when a runtime panic is logged as an information diagnostic.
+          build: "false"
+          use-github-cache: "false"
+
+      - name: Build
+        # `--wfail` fails the build on warnings (for example deprecations).
+        # The script also fails when Lean logs a runtime panic.
+        run: bash scripts/ci-lake-build.sh --wfail
 
       - name: Check Oracle parsing
         run: .lake/build/bin/oracle-roundtrip
