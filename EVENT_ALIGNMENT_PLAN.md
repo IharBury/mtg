@@ -19258,7 +19258,7 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
    `Costs.lean:241–245, 280–291`, `Decisions.lean:4586–4600, 4700–4733, 4995–4997, 5045–5047, 5952–5957`,
    `Demo.lean:2076–2078, 2106–2108`, `FraChoices.lean:76, 1749–1751, 2194–2255`,
    `Game/Object.lean:143–144`, `Leaving.lean:82–152, 308, 366–498`,
-   `Turns.lean:23, 68–78, 135–169, 254–290, 374–425, 452–503, 804–825, 1158–1164`;
+   `Turns.lean:23, 68–78, 135–169, 254–290, 376, 400–425, 452–503, 804–825`;
    **CR 114.5 / 118.9a,c / 119.4 / 400.7 / 514.2 / 601.1a / 601.2b / 608.2g / 609.4b / 611.2a / 702.26b,d / 702.37a /
    702.176a / 707.10f / 715.3d / 800.4c**):
    - **`Costs.playManaCost` `origPerm == none` fallback hijack, colored tax `anyMana`, and unified `PlayPermission`
@@ -19303,7 +19303,7 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
      `CastSpell.lean:163–172, 428–429`, `Core.lean:9811–9825, 9878–9881, 9938–9941, 16371–16376, 16409–16412`,
      `Decisions.lean:4586–4600, 4700–4718, 4995–4997, 5045–5047`, `FraChoices.lean:76, 1749–1751, 2194–2255`,
      `Game/Object.lean:143–144`, `Leaving.lean:82–152, 308, 366–498`,
-     `Turns.lean:23, 68–78, 135–169, 254–290, 374–425, 452–503, 804–825, 1158–1164`):
+     `Turns.lean:23, 68–78, 135–169, 254–290, 376, 400–425, 452–503, 804–825`):
      - Three resolution-cast / Morph-Impending, historical-permission, and expiry-log bugs remain:
        (i) `FraChoices` `.mayCastFromGraveyard` (`1749–1751`) still aborts with CR 119.4 on an unrelated unpayable
        `payLifeEqualManaValue` permission (and `FraChoices.defaultFraAction` at `2194–2255` plus `Agent.choose`
@@ -19330,10 +19330,9 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
        filter at `474` uses `cur.isBattlefieldObject`, CR 702.26d / 800.4c); in `Turns.lean`, `hadPlayable` at `70–76`
        (`expireEffectsByDuration`, after `endControlEffectsSimultaneously` with `pre` at `23`), `281–287` (`clearEOT`, after
        `endControlEffectsSimultaneously` and `273` with `pre` at `254`), `414–422` (`expireFraUntilTurnEffects`, inside
-       `expireNonControl` after `ceaseEndingFraEmblemsWhere` at `402–405` — and after `restoreCopiesUntilNextTurn` when
-       called from `473–477` or `1160–1164`, before `.control` effects end — with `pre` at `376`), `159–165`
-       (`expirePlayPermissions` at `135–169`, which has no `pre` binding when called at `273`, `503` — where
-       `expireUntilNextTurnEffects` has no `hadPlayable` binding of its own — and `806`), and `814–820`
+       `expireNonControl` after `ceaseEndingFraEmblemsWhere` at `402–405` with `pre` at `376`, before `.control` effects
+       end), `159–165` (`expirePlayPermissions` at `135–169`, which has no `pre` parameter when called at `273`, `503` —
+       after `452–502`, where `456`'s `pre` is scoped to the `!teamHasLiving` `else` branch — and `806`), and `814–820`
        (`startNextTurnCore`'s post-`806` non-`ending` `.untilEndOfTurn` loop at `807–824`) evaluates
        `activePlayPermissions` on the post-expiry game rather than the pre-expiry state; `Core.expireWhileSourceEffects`
        (`16371–16376, 16409–16412`) folds `fraEmblemEntries` in `activeEffects` order instead of `emblemIds`
@@ -19350,13 +19349,15 @@ extra-turn reconstruction; and `Game.manaTypesFromTap` mixed-type `.fixed` tap s
          `Core.lean:9879–9881, 9939–9941` to live `.stack` objects and stop `latestExileToStackAfterController?`
          (`9811–9825`) on `.zone (.created _ .exile)` and non-`.stack` `.exile` departures; and require
          `o.isOnBattlefield` for phased-out permanents in `Leaving.coDepartingIds` (`138–142`) unless
-         `departingPlayer?.isSome` or `endingCtrlEids` is expiring them, evaluate `hadPlayable` on `pre` at
-         `Turns.lean:70–76` (`pre` at `23`), `281–287` (`pre` at `254`), `414–422` (threading `preState?` into
-         `expireFraUntilTurnEffects` at `374–376` from `456, 475–477` and `1158–1164`), and `814–820` (`pre` bound before
-         `806` at `804–825`) while threading `preState?` into `expirePlayPermissions` (`135–169`, `159–165`) from `273`,
-         `452–503`, and `806` (without double-logging when multiple permissions on `oid` expire together), order
-         `fraEmblemEntries` by `emblemIds` in `Core.expireWhileSourceEffects` (`16371–16376`), and emit return-control logs
-         on direct `.command` emblem departure in `Attachments.ceaseToExist` (`54–86`).
+         `departingPlayer?.isSome` or `endingCtrlEids` is expiring them, evaluate `hadPlayable` on the existing `pre`
+         bindings at `Turns.lean:70–76` (`pre` at `23`), `281–287` (`pre` at `254`), and `414–422` (`pre` at `376`), bind a
+         pre-expiry snapshot before `expirePlayPermissions` in `startNextTurnCore` (`805–806`) for `806` and `814–820` and
+         before the `!teamHasLiving` control-effect expiry block in `expireUntilNextTurnEffects` (`452–503`, matching `456`
+         on the departed-team path while remaining in scope at `503` when `teamHasLiving` is `true`), and thread
+         `preState?` into `expirePlayPermissions` (`135–169`, `159–165`) from `273` (`pre` at `254`), `503`, and `806`
+         (without double-logging when multiple permissions on `oid` expire together), order `fraEmblemEntries` by
+         `emblemIds` in `Core.expireWhileSourceEffects` (`16371–16376`), and emit return-control logs on direct `.command`
+         emblem departure in `Attachments.ceaseToExist` (`54–86`).
 
 3. **Controllerless CR 800.4c `lkiCtrl` attribution, post-batch `Phasing` CR 800.4c reconciliation & CR 702.26h orphaned
    indirect phase-in, complete `etbCostProspective?` threading in `Core`, historical counter LKI, and
