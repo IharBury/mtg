@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build:
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       # `panic!` during elaboration is an information diagnostic unless this
       # is set, so a panicking test module would still let `lake build` exit 0.

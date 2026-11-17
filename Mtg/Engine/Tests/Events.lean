@@ -33396,13 +33396,29 @@ private def replayOk41i3 (gs : Array Game) : Bool :=
     ((gMat4.expireMatching (fun _ => true) (cause := some testCause)).record
       (GameEvent.playerLost gMat4.turnNumber p1 .conceded (cause := some testCause))).record
       (GameEvent.playerLeftGame gMat4.turnNumber p1 (cause := some testCause))
+  let preSkipP1Idx := gP1DepartedRaw.events.size
   let gAfterSkipP1 := gP1DepartedRaw.startNextTurnAndBegin
+  let skipP1Events := gAfterSkipP1.events.extract preSkipP1Idx gAfterSkipP1.events.size
+  let phasedInAndExiled8004c (oid : ObjectId) : Bool :=
+    skipP1Events.any (fun ev =>
+      match ev.change with
+      | .rules (.permanent (.phasedIn eo _)) => eo.id == some oid
+      | _ => false) &&
+    skipP1Events.any (fun ev =>
+      match ev.change with
+      | .rules (.zone (.moved before _ .battlefield .exile ..)) =>
+        before.id == some oid && !before.phasedOut
+      | _ => false)
   let matMovedCreatedPhaseInOk :=
     gAfterSkipP1.activePlayer == p2 &&
-    !(gAfterSkipP1.object! matPhId).status.phasedOut &&
-    !(gAfterSkipP1.object! movedPhId).status.phasedOut &&
-    !(gAfterSkipP1.object! createdPhId).status.phasedOut &&
-    !(gAfterSkipP1.object! fallbackPhId).status.phasedOut
+    phasedInAndExiled8004c matPhId &&
+    (gAfterSkipP1.followMovedToZone? matPhId (· == .exile)).isSome &&
+    phasedInAndExiled8004c movedPhId &&
+    (gAfterSkipP1.followMovedToZone? movedPhId (· == .exile)).isSome &&
+    phasedInAndExiled8004c createdPhId &&
+    (gAfterSkipP1.findObject? createdPhId).isNone &&
+    phasedInAndExiled8004c fallbackPhId &&
+    (gAfterSkipP1.followMovedToZone? fallbackPhId (· == .exile)).isSome
   let item3cOk := queuedExtraPhaseInOk && matMovedCreatedPhaseInOk
 
   -- 3d. Multi-extra-turn mid-pause departure expiry in `Turns.continueStartNextTurn`
@@ -35348,7 +35364,11 @@ private def replayOk43i3 (gs : Array Game) : Bool :=
   let item3cOk :=
     (gPhSkip0.object! phSkipId).status.phasedOut &&
     gPhSkipRegular.activePlayer == p2 &&
-    !(gPhSkipRegular.object! phSkipId).status.phasedOut &&
+    gPhSkipRegular.events.any (fun ev =>
+      match ev.change with
+      | .rules (.permanent (.phasedIn eo _)) => eo.id == some phSkipId
+      | _ => false) &&
+    (gPhSkipRegular.followMovedToZone? phSkipId (· == .exile)).isSome &&
     gPhSkipOnExtra.activePlayer == p2 &&
     (gPhSkipOnExtra.object! phSkipId).status.phasedOut
 
@@ -36343,7 +36363,9 @@ private def replayOk44i3 (gs : Array Game) : Bool :=
   let g2hgQuietSlice :=
     ((quiet g2hgExtraA0).record (GameEvent.stepBegan g2hgExtraA0.turnNumber .precombatMain ⟨0⟩)).startNextTurnAndBegin
   let g2hgResumeRegA0 := g2hgQuietSlice.startNextTurnAndBegin
+  let preAfterTeamAIdx := g2hgResumeRegA0.events.size
   let g2hgAfterTeamAToC0 := g2hgResumeRegA0.startNextTurnAndBegin.startNextTurnAndBegin
+  let afterTeamAEvents := g2hgAfterTeamAToC0.events.extract preAfterTeamAIdx g2hgAfterTeamAToC0.events.size
 
   let item3dOk :=
     (gPhSim1.object! phCtrlSrc.id).status.phasedOut &&
@@ -36355,7 +36377,11 @@ private def replayOk44i3 (gs : Array Game) : Bool :=
     g2hgResumeRegA0.activePlayer == ⟨0⟩ &&
     (g2hgResumeRegA0.object! b0PhasedId).status.phasedOut &&
     g2hgAfterTeamAToC0.activePlayer == ⟨4⟩ &&
-    !(g2hgAfterTeamAToC0.object! b0PhasedId).status.phasedOut
+    afterTeamAEvents.any (fun ev =>
+      match ev.change with
+      | .rules (.permanent (.phasedIn eo _)) => eo.id == some b0PhasedId
+      | _ => false) &&
+    (g2hgAfterTeamAToC0.followMovedToZone? b0PhasedId (· == .exile)).isSome
 
   let gFullSent := gSent1
   mustHold44i3 "3a.controlChangedGuards" item3aOk &&
