@@ -138,6 +138,34 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
         .continuation (.pendingMayCastFromExile (some (p0, #[exCardId], 1))) ])
       p0 (.chooseMode 0)
 
+  -- 1a(iv). `afterWardResolved` with `triggerSequenceRest.isSome` + `pendingMayCastFromExile.isSome`
+  --         reopens `.fraChoice` and parks `.afterWardResolved` on `outerPendingReplacements` instead of looping;
+  --         `afterTriggerTargetsChosen` consumes only `.chooseTargets _` and defers reopen while `pending != .none || afterRandom != .none`:
+  let trigSeqP0 : TriggerSequenceRest := {
+    controller := p0
+    ability := .triggered .dies { resolution := .gainLife (.fixed 4), phrase := "You gain 4 life." } {}
+    sourceId := some tgtAnchor.id
+    sourceName := tgtAnchor.name
+    steps := [.gainLife (.fixed 4)]
+  }
+  let gWardTrigSeqReopen :=
+    mustApply
+      (gWardTriggered.change (.pushContinuationFrame {
+        triggerSequenceRest := some trigSeqP0
+        pendingMayCastFromExile := some (p0, #[exCardId], 1)
+      }))
+      p0 .decline
+  let gWardTrigSeqFinished := mustApply gWardTrigSeqReopen p0 .decline
+  let gTrigKeepNonTargetPending :=
+    (gEx0.changes #[
+      .pushContinuationFrame { pendingMayCastFromExile := some (p0, #[exCardId], 1) },
+      .pending (.mayPayGeneric p0 1) ]).afterTriggerTargetsChosen
+  let gTrigKeepAfterRandom :=
+    (gEx0.changes #[
+      .pushContinuationFrame { pendingMayCastFromExile := some (p0, #[exCardId], 1) },
+      .pending (.chooseTargets p0),
+      .afterRandom (.gainLife p0 2) ]).afterTriggerTargetsChosen
+
   let item1aOk :=
     mustHold48i1 "1a_completeActiveResolutionsPreservesFrames"
       (gMayThenHold.continuations.size == 1 &&
@@ -155,7 +183,19 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
        gRecvCeaseThenTrig.pendingPriority == some p2 &&
        gAfterTrigTgtReopen.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
        gWardAfterDecline.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
-       gRepReopened.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1))
+       gRepReopened.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1)) &&
+    mustHold48i1 "1a_wardTrigSeqReopenAndAfterTrigIdleGuard"
+      (gWardTrigSeqReopen.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
+       gWardTrigSeqReopen.pendingMayCastFromExile.isNone &&
+       gWardTrigSeqReopen.triggerSequenceRest.isSome &&
+       gWardTrigSeqReopen.outerPendingReplacements == #[.afterWardResolved] &&
+       gWardTrigSeqFinished.pending == .none &&
+       (gWardTrigSeqFinished.player p0).life == 24 &&
+       gTrigKeepNonTargetPending.pending == .mayPayGeneric p0 1 &&
+       gTrigKeepNonTargetPending.pendingMayCastFromExile.isSome &&
+       gTrigKeepAfterRandom.pending == .none &&
+       gTrigKeepAfterRandom.afterRandom == .gainLife p0 2 &&
+       gTrigKeepAfterRandom.pendingMayCastFromExile.isSome)
 
   -- 1b. `StateBasedActions` `checkSBACounted` / `rewriteRepausedPostCloseBatch` `foldTail`
   --     (`s0.isSome && savedIn.isSome && !po0 && !popOuter`) & `Event` `wasAssigningCombatDamage` guards:
@@ -221,6 +261,24 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
       (savedIn := none) (popOuterIn := true) (departedIn := #[p2]) (deferRestore := false)
   let gRepOuterPlainDone := mustApply gRepOuterPlainMid p0 (.keepLegend secondKeep48Id)
 
+  -- Post-flush peel in `checkSBACountedWithLeavesCore` (`shouldFlush && currentBatch.isNone`) with `popOuterIn := false` and `savedIn := none`
+  -- keeps tails sequenced on `pendingReplacement` (`popOuter == false`, `outerPendingReplacements.isEmpty`) for `.leavePlayersWhoLost none false`, `.checkSBA`, and plain `some pr`:
+  let mkStaleLegendFlush (pr : PendingReplacement) : Game :=
+    g4.changes #[
+      .pending (.chooseLegend p0 "Stale48" #[⟨999998⟩]),
+      .pushContinuationFrame {},
+      .pendingReplacement (some pr) ]
+  let (gFlushLeaveNoFold, _, _, flushLeavePop, flushLeaveDep, _) :=
+    (mkStaleLegendFlush
+      (.seq (.leavePlayersWhoLost none false #[p2] none) (.gainLife p0 5 (some testCause)))).checkSBACountedWithLeavesCore
+      (savedIn := none) (popOuterIn := false) (departedIn := #[]) (deferRestore := false)
+  let (gFlushSbaNoFold, _, _, flushSbaPop, _, _) :=
+    (mkStaleLegendFlush (.seq .checkSBA (.gainLife p0 6 (some testCause)))).checkSBACountedWithLeavesCore
+      (savedIn := none) (popOuterIn := false) (departedIn := #[]) (deferRestore := false)
+  let (gFlushPlainNoFold, _, _, flushPlainPop, _, _) :=
+    (mkStaleLegendFlush (.gainLife p0 8 (some testCause))).checkSBACountedWithLeavesCore
+      (savedIn := none) (popOuterIn := false) (departedIn := #[p2]) (deferRestore := false)
+
   -- Combat-damage `wasAssigningCombatDamage := some true` does NOT report priority grant or clear `nextQueuedPending`:
   let fcCombat : PendingReplacement :=
     .finishConcede false none (some true) (some (.mayPayGeneric p0 1)) false #[] none
@@ -257,6 +315,16 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
        repOuterPlainDid && repOuterPlainPop &&
        gRepOuterPlainMid.outerPendingReplacements == #[.gainLife p0 8 (some testCause)] &&
        (gRepOuterPlainDone.player p0).life == 28) &&
+    mustHold48i1 "1b_flushPeelNoFoldWhenNoSavedOrPopOuter"
+      (!flushLeavePop && flushLeaveDep == #[p2] &&
+       gFlushLeaveNoFold.outerPendingReplacements.isEmpty &&
+       gFlushLeaveNoFold.pendingReplacement == some (.gainLife p0 5 (some testCause)) &&
+       !flushSbaPop &&
+       gFlushSbaNoFold.outerPendingReplacements.isEmpty &&
+       gFlushSbaNoFold.pendingReplacement == some (.gainLife p0 6 (some testCause)) &&
+       !flushPlainPop &&
+       gFlushPlainNoFold.outerPendingReplacements.isEmpty &&
+       gFlushPlainNoFold.pendingReplacement == some (.gainLife p0 8 (some testCause))) &&
     mustHold48i1 "1b_eventCombatDamageGuards" eventCombatGuardsOk
 
   -- 1c(i). `Decisions` `.restorePending` outer-pop threading across nested `.restorePending _ true`
@@ -337,6 +405,25 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
       .pendingReplacement (some .finishCleanupAfterClearEot),
       .pending (.chooseReplacement p0 #[]) ]
 
+  -- 1c(iii). `advanceProbeOnResume` walks non-pausing `.assignCombatDamage` outer pops AND departed
+  --          `redirectPendingAfterLeave` `prior` continuations:
+  let gAssignProbeBase :=
+    g4.changes #[
+      .pushContinuationFrame {},
+      .pushOuterPendingReplacement (.gainLife p0 2 (some testCause)),
+      .pushOuterPendingReplacement (.receivePriority p1),
+      .pushOuterPendingReplacement (.restorePending .none true none #[] none) ]
+  let assignThenPop : PendingReplacement :=
+    .seq (.restorePending (.assignCombatDamage p0 true) true none #[] none)
+         (.restorePending .none true none #[] none)
+  let gDepPriorBase :=
+    (mustApply g4 p2 .concede).changes #[
+      .pushContinuationFrame {},
+      .pushOuterPendingReplacement (.gainLife p0 2 (some testCause)) ]
+  let depTargetThenComplete : PendingReplacement :=
+    .seq (.restorePending (.chooseTargets p0) true none #[p2] none)
+         (.completeActivation true false)
+
   let item1cOk :=
     mustHold48i1 "1c_nestedRestoreOuterPop"
       (nestedGrantsP1 &&
@@ -346,7 +433,9 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
        gOuterFraResumed.proposedSpell.isNone &&
        gOuterFraResumed.priority == p2 &&
        gOuterP3Resumed.proposedSpell.isNone &&
-       gOuterP3Resumed.priority == p3) &&
+       gOuterP3Resumed.priority == p3 &&
+       !gAssignProbeBase.continuationGrantsPriority false assignThenPop &&
+       !gDepPriorBase.continuationGrantsPriority false depTargetThenComplete) &&
     mustHold48i1 "1c_drainProbeLinkedExileSba"
       (gProbeLinked.firstContinuationPriorityGrant? == some (some p0) &&
        gProbeEmptyLinked.firstContinuationPriorityGrant? == some (some p1))
@@ -357,7 +446,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   mustHold48i1 "1.replay"
     (replayOk48i1 #[gMayThenHold, gDefExHold, gDefCopyHold, gLeaveNonFraReopened,
       gFgpBeforeTrig, gFfcBeforeTrig, gRecvCeaseThenTrig, gAfterTrigTgtReopen,
-      gWardAfterDecline, gRepReopened, gSbaFoldDone,
+      gWardAfterDecline, gRepReopened, gWardTrigSeqFinished, gSbaFoldDone,
       gRepOuterLeaveDone, gRepOuterSbaDone, gRepOuterPlainDone,
       gNestedRestoreResumed, gOuterFraResumed, gOuterP3Resumed])
 
@@ -700,6 +789,22 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
       | .rules (.zone (.ceasedToExist snap)) => snap.id
       | _ => none
 
+  -- `expireUntilNextTurnEffects` calls `expireFraUntilTurnEffects` AFTER `restoreCopiesUntilNextTurn`
+  -- without passing a pre-restore `preState?`, matching `beginTurn`: an exiled spell playable only while
+  -- an `.untilNextTurnOf p2` copy made `bear` an Elf does NOT log `"can no longer be played from exile"`!
+  let gDepCopy0 := insertObject (addPermanent (mustApply g4 p2 .concede) bear p0 p0) gySorcDef p0 .exile
+  let depCopyBearId := (gDepCopy0.permanentsOf p0)[0]!.id
+  let depExCardId := (gDepCopy0.objects.filter (fun (o : GameObject) => o.zone == Zone.exile)).back!.id
+  let gDepCopy1 :=
+    ((gDepCopy0.createEffect
+        (.layered (.objects #[depCopyBearId]) (.copy llanowarElves) (.untilNextTurnOf p2))
+        (cause := some testCause)).createEffect
+      (.permission (some p0) (.playFromExile depExCardId { player := p0, requireSubtype := some .elf }) (.untilNextTurnOf p2))
+      (cause := some testCause))
+  let preDepExpLog := gDepCopy1.log.size
+  let gDepCopyExpired := gDepCopy1.expireUntilNextTurnEffects p2
+  let depCopyLogs := gDepCopyExpired.log.extract preDepExpLog gDepCopyExpired.log.size
+
   let item2cOk :=
     mustHold48i2 "2c_nonStackSynthCtrlAndExileStop"
       ((gPrep1.playPermissionsFor p0 synthGyObj).isEmpty &&
@@ -710,6 +815,8 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
       ((gPhSrcLeft.object! phOwnedP3Id).status.phasedOut &&
        phSrcLeaveLogs.any (· == s!"{bear.name} is no longer a copy of {hero.name}") &&
        turnsExpLogs.size == 2 &&
+       !depCopyLogs.any (· == s!"{gySorcDef.name} can no longer be played from exile") &&
+       depCopyLogs.any (· == s!"{bear.name} is no longer a copy of {llanowarElves.name}") &&
        directEmbLogs.any (· == s!"{bear.name} returns to {(gBfs1.player p1).name}'s control") &&
        ceasedOrder == #[parentEmbId, childEmbId])
 
@@ -718,7 +825,7 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
   mustHold48i2 "2c.nonStackLkiCoDepartingTurnsBfsAndCmdLog" item2cOk &&
   mustHold48i2 "2.replay"
     (replayOk48i2 #[gNullAgentCast, gRankBoth, gMorphSpliceChosen, gGyCastPaid,
-      gFreeCopyCast, gFlashMorphCast, gExToGy, gPhSrcLeft, gTurnsEot,
+      gFreeCopyCast, gFlashMorphCast, gExToGy, gPhSrcLeft, gTurnsEot, gDepCopyExpired,
       gDirectEmbCeased, gBfsSrcLeft])
 
 end Phase48Item2EventAlignment

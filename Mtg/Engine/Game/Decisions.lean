@@ -500,9 +500,12 @@ private partial def advanceProbeOnResume (g : Game) (hasQueuedPending : Bool) :
       match popped? with
       | some popped => advanceProbeOnResume gCur queued popped
       | none => (gCur, queued)
+    let gAfterRewind :=
+      if gPopped.proposedSpell.isSome then gPopped.change (.proposedSpell none)
+      else gPopped
     if rewindProposal.isSome then
       if gPopped.batchPausePromptValid p then (gPopped, hasQueuedPending)
-      else resumePopped gPopped hasQueuedPending
+      else resumePopped gAfterRewind hasQueuedPending
     else
       let reverseOrPopped : Game × Bool :=
         if gPopped.proposedSpell.isSome then
@@ -516,7 +519,7 @@ private partial def advanceProbeOnResume (g : Game) (hasQueuedPending : Bool) :
                     (ckpt.pending != .none && !allDep.isEmpty)
             (gPopped, q)
           else
-            (gPopped, false)
+            (gAfterRewind, false)
         else
           resumePopped gPopped hasQueuedPending
       match p with
@@ -550,6 +553,33 @@ private partial def advanceProbeOnResume (g : Game) (hasQueuedPending : Bool) :
       | .chooseReplacement q choices =>
         if gPopped.replacementChoiceValid q choices then (gPopped, hasQueuedPending)
         else resumePopped gPopped hasQueuedPending
+      | .assignCombatDamage q forAttackers =>
+        let cleanAsgns := gPopped.pendingBlockerAssignments.filter fun a =>
+          (gPopped.findObject? a.source).any (·.isOnBattlefield) &&
+            a.toCreatures.all (fun (tid, _) => (gPopped.findObject? tid).any (·.isOnBattlefield))
+        let already := cleanAsgns.map (·.source)
+        let playerStillNeeds (r : PlayerId) : Bool :=
+          (gPopped.creaturesAssigningCombatDamage forAttackers).any fun o =>
+            (if forAttackers then gPopped.isOnActiveTeam r && (gPopped.controllerOf o).any gPopped.isOnActiveTeam
+             else gPopped.controlledBy o r) &&
+              !already.contains o.id &&
+              (gPopped.legalCombatDamageRecipients o forAttackers).size ≥ 2 &&
+              gPopped.combatDamageAmount o > 0
+        if gPopped.stillInGame q && playerStillNeeds q then
+          (gPopped, hasQueuedPending)
+        else if forAttackers then
+          if !gPopped.stillInGame q &&
+              (gPopped.teamMembers q).any (fun r =>
+                r != q && gPopped.stillInGame r && playerStillNeeds r) then
+            (gPopped, hasQueuedPending)
+          else
+            resumePopped gPopped hasQueuedPending
+        else
+          if gPopped.apnapPlayers.any (fun r =>
+              r != q && !gPopped.isOnActiveTeam r && gPopped.stillInGame r && playerStillNeeds r) then
+            (gPopped, hasQueuedPending)
+          else
+            resumePopped gPopped hasQueuedPending
       | .fraChoice q (.tricksterLibrary caster id connive _) =>
         if gPopped.stillInGame q && gPopped.stillInGame caster &&
             (gPopped.findObject? id).any (fun o => o.isOnBattlefield && gPopped.isCreature o) then
@@ -587,14 +617,22 @@ private partial def advanceProbeOnResume (g : Game) (hasQueuedPending : Bool) :
           let (gAfter, nextP) := effectiveDeparted.foldl (fun (acc, curP) dep =>
             if curP == .none then (acc, .none)
             else acc.redirectPendingAfterLeave dep (pending := curP)) (gProbeClean, p)
-          if nextP != .none then
+          if nextP != .none || gAfter.pending != .none then
             (gAfter, hasQueuedPending)
-          else if popped?.isNone && gAfter.unlessPaysDue && !gAfter.sbaPaused && gAfter.pending == .none then
-            (gAfter, false)
           else
-            let queuedHere :=
-              hasQueuedPending || (gAfter.pending == .none && gAfter.pendingReplacement.isSome)
-            resumePopped gAfter queuedHere
+            match popped? with
+            | some popped =>
+              match gAfter.pendingReplacement with
+              | some prior =>
+                advanceProbeOnResume (gAfter.change (.pendingReplacement none)) hasQueuedPending (.seq prior popped)
+              | none =>
+                advanceProbeOnResume gAfter hasQueuedPending popped
+            | none =>
+              if gAfter.unlessPaysDue && !gAfter.sbaPaused then
+                (gAfter, false)
+              else
+                let queuedHere := hasQueuedPending || gAfter.pendingReplacement.isSome
+                (gAfter, queuedHere)
   | .finishFraChoice | .receivePriority _ =>
     (g, if g.afterRandom == .none then false else hasQueuedPending)
   | .finishPostCast _ grantPriority false _ =>
@@ -5047,34 +5085,42 @@ partial def afterTriggerTargetsChosen (g : Game) : Game :=
     g.completeActiveResolutions
   else if g.sbaPaused then
     g.chainPendingReplacement (.finishPostStep .afterTriggerTargetsChosen)
-  else if g.proposedSpell.isNone &&
-      (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
-    let g := if g.pending == .none then g else g.change (.pending .none)
-    let g := g.reopenDeferredExileCasts
-    if let .chooseReplacement .. := g.pending then
-      if g.anyContinuationGrantsPriority then g
-      else g.chainPendingReplacement .finishFraChoice
-    else if g.pending != .none then g
-    else g.afterTriggerTargetsChosen
   else
-    match g.triggerNeedingTargets with
-    | some _ =>
-      promptTriggerTargetsIfNeeded (g.change (.pending .none))
-    | none =>
-      if g.proposedSpell.any (fun prop =>
-          !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
-        let g :=
-          (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
-            (resumeContinuation := true) (alwaysGrantPriority := true)
-        if !g.over && g.pending == .none && g.continuations.isEmpty &&
-            g.triggerNeedingTargets.isSome then
-          g.promptTriggerTargetsIfNeeded
-        else g
-      else if g.proposedSpell.isSome then
-        if g.pending == .none then g else g.change (.pending .none)
-      else
-        let prio := g.pendingPriority.getD g.activePlayer
-        receivePriority (g.change (.pending .none)) prio false
+    let g :=
+      match g.pending with
+      | .chooseTargets _ => g.change (.pending .none)
+      | _ => g
+    if g.pending != .none || g.afterRandom != .none then
+      g
+    else if g.proposedSpell.isNone &&
+        (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
+      let g := g.reopenDeferredExileCasts
+      if let .chooseReplacement .. := g.pending then
+        if g.anyContinuationGrantsPriority then g
+        else g.chainPendingReplacement .finishFraChoice
+      else if g.pending != .none || g.afterRandom != .none then g
+      else if g.triggerSequenceRest.isSome || g.mayThenResume ||
+          g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty then
+        g.finishFraChoice
+      else g.afterTriggerTargetsChosen
+    else
+      match g.triggerNeedingTargets with
+      | some _ =>
+        g.promptTriggerTargetsIfNeeded
+      | none =>
+        if g.proposedSpell.any (fun prop =>
+            !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
+          let g :=
+            g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
+          if !g.over && g.pending == .none && g.continuations.isEmpty &&
+              g.triggerNeedingTargets.isSome then
+            g.promptTriggerTargetsIfNeeded
+          else g
+        else if g.proposedSpell.isSome then
+          g
+        else
+          let prio := g.pendingPriority.getD g.activePlayer
+          receivePriority g prio false
 
 /-- Start paying the proposed activation's costs that need chosen objects,
 reversing it if they can't be paid (CR 601.2h / 733.1). -/

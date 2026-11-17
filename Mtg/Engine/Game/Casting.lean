@@ -1281,7 +1281,17 @@ partial def afterWardResolved (g : Game) : Game :=
     let stashedOuters := g.outerPendingReplacements
     let g := if stashedPending.isSome then g.change (.pendingReplacement none) else g
     let g := (Array.replicate stashedOuters.size EngineChange.popOuterPendingReplacement).foldl Game.change g
-    let g := g.drainPendingContinuations
+    let rec drainTriggerWithDeferredExile (g : Game) : Game :=
+      let g := g.drainPendingContinuations
+      if !g.over && (g.mayThenResume || g.triggerSequenceRest.isSome) &&
+          g.pending == .none && g.afterRandom == .none && g.proposedSpell.isNone &&
+          (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
+        let g := g.reopenDeferredExileCasts
+        if !g.over && g.pending == .none && g.afterRandom == .none then
+          drainTriggerWithDeferredExile g
+        else g
+      else g
+    let g := drainTriggerWithDeferredExile g
     if g.over then
       reverseOrphanedIfOver g
     else
