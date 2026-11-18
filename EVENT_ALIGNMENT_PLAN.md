@@ -19595,13 +19595,14 @@ permanent-spell `chosenX` on triggered abilities).
        deferred stash after that replacement choice resolves; and
        (iii) `Casting.finishPostCast` (`1345–1346`) and `Decisions.simulateFinishPostCastBody` (`826–827`) clear
        `pendingMayCastFromExile` *before* checking `q != p` / `q != caster` (wiping another player `q`'s deferred exile
-       casts whenever `p != q` finishes casting), open `.fraChoice q (.castCopiesFree alive budget castsLeft)` at
-       `Casting.lean:1369` and `Decisions.lean:848` *without* `g.change (.pendingFreeCopies none)` (unlike
-       `Entering.reopenDeferredExileCasts` at `370`), and `Decisions.finishPostCastRecipient?` (`852–863`) /
-       `finishPostCastGrantsPriority` (`865–871`) report an idle priority grant when `q != caster` still holds a live
-       `pendingMayCastFromExile` / `pendingFreeCopies` stash even though `Casting.finishPostCast` (`1382`) ->
-       `Entering.receivePriority` (`456–469`) intercepts that stash via `reopenDeferredExileCasts` without granting idle
-       priority:
+       casts whenever `p != q` finishes casting so `Entering.receivePriority` at `456–469` never sees them), open
+       `.fraChoice q (.castCopiesFree alive budget castsLeft)` at `Casting.lean:1369` and `Decisions.lean:848` *without*
+       `g.change (.pendingFreeCopies none)` (unlike `Entering.reopenDeferredExileCasts` at `370`), and
+       `Decisions.finishPostCastRecipient?` (`852–863`) / `finishPostCastGrantsPriority` (`865–871`) report an idle
+       priority grant when `q != caster` still holds a live `pendingFreeCopies` stash (which survives `Casting.lean:1355`
+       into `Entering.receivePriority` at `456–469` and is intercepted via `reopenDeferredExileCasts` without granting
+       idle priority — as `pendingMayCastFromExile` will also do once its premature clear is gated on `q == p` /
+       `q == caster`):
        - Invoke `g.finishFraChoice` whenever `reopenDeferredExileCasts` at `Decisions.lean:6945–6953` leaves
          `g.pending == .none && g.afterRandom == .none` (even when `triggerSequenceRest`, `pendingReplacement`, and
          `outerPendingReplacements` are all empty); also ensure `Leaving.playerLeavesGameCore` (`3694–3711, 3894–3910`)
@@ -19610,7 +19611,8 @@ permanent-spell `chosenX` on triggered abilities).
          and guard `q == p` / `q == caster` *before* clearing `pendingMayCastFromExile` (`Casting.lean:1345–1346`,
          `Decisions.lean:826–827`), clear `pendingFreeCopies` before `beginFraChoice` (`Casting.lean:1369`,
          `Decisions.lean:848`), and simulate `Entering.receivePriority`'s cross-seat `reopenDeferredExileCasts` intercept
-         in `finishPostCastRecipient?` (`852–863`) and `finishPostCastGrantsPriority` (`865–871`).
+         (covering surviving `pendingFreeCopies` and preserved `pendingMayCastFromExile`) in `finishPostCastRecipient?`
+         (`852–863`) and `finishPostCastGrantsPriority` (`865–871`).
    - **`StateBasedActions.checkSBACountedWithLeavesCore` `outerAfter?` ordering across `deferRestore`, rewinds, and inner
      restores, plus `.restorePending` & `PendingReplacement.move` probe parity in `Decisions`**
      (`Decisions.lean:165–212, 506–524, 609–610, 667–676, 695–705, 783, 1714–1724, 2179–2194, 2575–2636, 2766–2820`,
@@ -19659,9 +19661,9 @@ permanent-spell `chosenX` on triggered abilities).
    `CastSpell.lean:163–171, 183–189, 211–220`, `Casting.lean:270–299`,
    `Core.lean:9841–9860, 9913–9925, 9975–10021, 10054–10070, 15970–16021, 16362–16418, 16476–16508`,
    `Costs.lean:242–249, 280–295, 318–327`, `Demo.lean:2073–2090`,
-   `Leaving.lean:129–146`, `Movement.lean:592–597`,
+   `Movement.lean:592–597`,
    `Turns.lean:23–46, 155–175, 448–498`;
-   **CR 118.9a,c / 119.4 / 400.7 / 601.1a / 601.2a–b,h / 609.4b / 611.2a–b / 613.1a–b / 702.26b / 702.37a / 707.10 / 715.3a–b,d / 800.4c,m**):
+   **CR 118.9a,c / 119.4 / 400.7 / 601.1a / 601.2a–b,h / 609.4b / 611.2a–b / 613.1a–b / 702.37a / 707.10 / 715.3a–b,d / 800.4c,m**):
    - **`Casting.paidResolutionOrigPerm?` off-turn splicing, `CastSpell` `hasMorphChoice` `prepareSource` guard, and `Costs.playManaCost` / `Core.playPermissionFor?` `anyMana` & Adventure `face?` parity**
      (`CastSpell.lean:163–171, 183–189, 211–220`, `Casting.lean:270–299`,
      `Core.lean:9975–10002, 10054–10070`, `Costs.lean:242–249, 280–295, 318–327`):
@@ -19700,7 +19702,7 @@ permanent-spell `chosenX` on triggered abilities).
      `latestExileToStackAfterController?` LKI, and `Turns` / `Attachments` / `Core` / `Movement` expiry logs**
      (`Agent.lean:880–900`, `Attachments.lean:64–129`,
      `Core.lean:9841–9860, 9913–9925, 10009–10021, 15970–16021, 16362–16418, 16476–16508`,
-     `Demo.lean:2073–2090`, `Leaving.lean:129–146`, `Movement.lean:592–597`,
+     `Demo.lean:2073–2090`, `Movement.lean:592–597`,
      `Turns.lean:23–46, 155–175, 448–498`):
      - Four cast-selection, historical-permission, and expiry-log bugs remain:
        (i) `Agent.chooseCast` (`880–899`) and `Demo.hasGameStatePriorityAction` (`2073–2090`) pair `g.canCast p o` (true
@@ -19724,12 +19726,9 @@ permanent-spell `chosenX` on triggered abilities).
        exile"` even when Null Summoner still grants exile playability; and
        (iv) single-target control-return log builders in `Attachments.ceaseToExist` (`77–78, 114, 119`) and
        `Core` (`15971, 16015, 16018, 16364, 16412, 16417, 16478`) snapshot `pre.name preObj` *before* copy effects on
-       `tid` are restored (logging the expired copy's name instead of `acc.name cur`), `Movement.move` (`592`) calls
+       `tid` are restored (logging the expired copy's name instead of `acc.name cur`), and `Movement.move` (`592`) calls
        `g.expireEffectsOnLeavingObject old (reconcileControl := false)` without `(preState? := some preMove)` or
-       `(skipLogIds := skipUnattachIds)`, and `Leaving.coDepartingIds` (`129–146`) treats `.command` `initSeeds` as
-       `simultaneousEndCtrlEids` for phased-out permanents even when `Attachments.ceaseToExist` (`127–129`) reconciles via
-       `reconcileControlAfterTransitionFwd` (which leaves phased-out permanents phased out per CR 702.26b rather than
-       exiling them):
+       `(skipLogIds := skipUnattachIds)`:
        - Split front-face (`g.canCastFrontFace p o` with `{ g.baseCard o with keywords := g.currentKeywords o }`) and
          face-down Morph (`g.canCastMorphFaceDown p o` with `morphSpellFace` / `{3}` and clean-permission check)
          affordability checks in `Agent.chooseCast` (`880–900`) and `Demo.hasGameStatePriorityAction` (`2073–2090`);
@@ -19740,19 +19739,17 @@ permanent-spell `chosenX` on triggered abilities).
          whether an earlier `.expired` event occurred while another permission was still active) and suppress the log
          when `g.livingPlayers.any (fun pl => g.mayCastExiledBySource pl.id o)`; and format return-control logs with
          post-restore `acc.name cur` in `Attachments.lean:77–78, 114, 119` and `Core.lean:15971–16018, 16364–16417,
-         16478`, pass `(preState? := some preMove)` and `(skipLogIds := skipUnattachIds)` at `Movement.lean:592`, and
-         restrict `cmdInitSeeds` phased-out inclusion in `Leaving.coDepartingIds` (`129–146`) to callers that actually
-         exile phased-out permanents via `endControlEffectsSimultaneously`.
+         16478`, and pass `(preState? := some preMove)` and `(skipLogIds := skipUnattachIds)` at `Movement.lean:592`.
 
 3. **Phased-out CR 800.4a/c guard & `prevCtrl` fallback in `Leaving`, `!phasedOut` LTB/ETB trigger suppression in `Core.matchTriggers` & `Event.matchesTrigger`, `Phasing` entry `sbaPausedOnPhasing` batch deferral, and `departedNextTurnWouldHaveBegunSince` `preLogRegSeat` mid-log departure parity**
    (`Core.lean:11568–11572, 11843, 12002–12004, 12135`,
    `Event.lean:3402–3477, 3493–3562`,
-   `Leaving.lean:150–160, 279–281, 331–337, 426–441, 475–481, 509–514, 1087–1092, 3458–3468`,
+   `Leaving.lean:150–160, 251, 279–281, 426–441, 475–481, 509–514, 1087–1092, 3458–3468`,
    `Phasing.lean:64–136, 149–189, 194–225, 228–273, 277–320, 390–415, 714–772`;
    **CR 500.7 / 502.1 / 514.2 / 603.6a / 603.10a / 611.2a / 616.1 / 702.26b,g,m,n / 800.4a,c,d**):
    - **Phased-out CR 800.4a/c departure guards & `prevCtrl` fallback in `Leaving`, and `!phasedOut` LTB/ETB guards in `Core.matchTriggers` & `Event.matchesTrigger`**
      (`Core.lean:11568–11572, 11843, 12002–12004, 12135`, `Event.lean:3402–3477, 3493–3562`,
-     `Leaving.lean:150–160, 279–281, 331–337, 426–441, 475–481, 509–514, 1087–1092, 3458–3468`):
+     `Leaving.lean:150–160, 251, 279–281, 426–441, 475–481, 509–514, 1087–1092, 3458–3468`):
      - Three CR 702.26b / CR 800.4a,c,d departure and trigger-matching bugs remain after Phase 48:
        (i) in `Leaving.playerLeavesGameCore` (`3458–3468`), `coDepartingIds` (`152–157`), and
        `isProposalAbortedByLeave` (`1087–1092`), the departed-fallback arm checks
@@ -19761,9 +19758,11 @@ permanent-spell `chosenX` on triggered abilities).
        phased out (`!o.isOnBattlefield`), `p1`'s departure falsely exiles `o` under CR 800.4a (`fallback = p2 != p1`,
        violating CR 702.26b / 800.4a); meanwhile `still` (`3460`) checks only
        `!bodyExileCont?.any (inActiveEndControlExile o.id)` (missing `preBodyCont?` and `g.outerPendingReplacements`),
-       and `exileQueue` (`3466`, plus `281, 336, 480, 513`) omits the pre-phase-out / `some fallback` `prevCtrl`
-       fallback when `preLeave.controllerOf` is `none` (attributing replacement ordering and LTB triggers to living
-       `o.owner` instead of departed `fallback`, CR 616.1 / 800.4d);
+       and `exileQueue` in `playerLeavesGameCore` (`3466`), along with `endControlEffectById` (`251, 281`) and
+       `endControlEffectsSimultaneously`'s candidate (`440, 480`) and `secondaryExileQueue` (`513`) paths, omits the
+       pre-phase-out / `some fallback` `prevCtrl` fallback when `preLeave.controllerOf` / `pre.controllerOf` is `none`
+       (attributing replacement ordering and LTB triggers to living `o.owner` instead of departed `fallback`, CR 616.1 /
+       800.4d);
        (ii) in `Leaving.endControlEffectsSimultaneously` (`426–441, 475–481`), when `o` had
        `pre.appliedControlEffectIds o == #[]` (`o` was phased out with `pre.controllerOf o == none` under a Layer 1 copy
        effect that prevented a conditional `.control` effect from matching `o`) and `preExpire` (`405`) removes the copy
@@ -19779,10 +19778,11 @@ permanent-spell `chosenX` on triggered abilities).
        - Require `(o.isOnBattlefield || (o.isBattlefieldObject && fallback == p))` on the departed-fallback arm in
          `Leaving.coDepartingIds` (`155`), `isProposalAbortedByLeave` (`1090`), and `playerLeavesGameCore` (`3462`),
          guard `still` (`3460`) against `preBodyCont?` and `g.outerPendingReplacements`, and fall back `prevCtrl` to the
-         pre-phase-out snapshot controller then `some fallback` / `some dest` across `Leaving.lean:281, 336, 480, 513,
-         3466`; require `!applied.isEmpty` for `appliedChangedInPreExpire` at `Leaving.lean:440`; and guard `.battlefield`
-         LTB/dies `.moved` arms with `!before.phasedOut` and `.battlefield` ETB `.moved` / `.created` arms with
-         `fromZone != .battlefield && !after.phasedOut` / `!obj.phasedOut` across `Core.matchTriggers`
+         pre-phase-out snapshot controller then `some fallback` / `some dest` across `endControlEffectById`
+         (`Leaving.lean:251, 281`), `endControlEffectsSimultaneously` (`440, 480, 513`), and `playerLeavesGameCore`
+         (`3466`); require `!applied.isEmpty` for `appliedChangedInPreExpire` at `Leaving.lean:440`; and guard
+         `.battlefield` LTB/dies `.moved` arms with `!before.phasedOut` and `.battlefield` ETB `.moved` / `.created` arms
+         with `fromZone != .battlefield && !after.phasedOut` / `!obj.phasedOut` across `Core.matchTriggers`
          (`11568–11572, 11843, 12004, 12135`) and `Event.matchesTrigger` (`3402–3477, 3493–3562`).
    - **Entry `sbaPausedOnPhasing` batch deferral in `Phasing` and mid-log departure handling in `departedNextTurnWouldHaveBegunSince` `preLogRegSeat`**
      (`Phasing.lean:64–136, 149–189, 194–225, 228–273, 277–320, 390–415, 714–772`):
@@ -19818,22 +19818,27 @@ permanent-spell `chosenX` on triggered abilities).
    `Casting.lean:762–787`, `Decisions.lean:5980–5986, 6029–6035`,
    `Demo.lean:2063, 2101, 2136`,
    `EffectResolution.lean:112–114, 314, 1186–1246, 1540, 1704–1728, 2455`,
-   `Event.lean:3911–3933`, `FraAbilities.lean:401`,
+   `Event.lean:60, 3911–3933`, `FraAbilities.lean:401`,
    `FraResolve.lean:370–379, 1197`, `FrcResolve.lean:13–15`,
-   `LandsAndMana.lean:80–89, 107–204`, `ModeledTriggers.lean:616–641`,
+   `LandsAndMana.lean:80–89, 107–204`, `ManaAbilities.lean:169, 550–552`,
+   `ModeledTriggers.lean:616–641, 768–801`,
    `TriggerArgs.lean:16–23, 473`, `TriggeredAbilities.lean:568–5537`;
    **CR 106.1,4,6 / 107.3a,m / 109.2 / 113.7a / 400.7d / 601.2b,f–h / 602.2b / 605.3a,4a / 608.2h / 702.26b / 702.122a**):
    - **`LandsAndMana.hasUsableNonPlainManaAbility` & `availableManaExceptIds`, `Casting.hasCostPreservingPaymentSubset` `equivKey` soundness, and `Agent` `.mountainExtraRed` / `.chooseX` / `canPayFromSources` parity**
      (`Agent.lean:56–78, 181–195, 640–664, 686–704, 855, 889, 911`, `Casting.lean:762–787`,
-     `Demo.lean:2063, 2101, 2136`, `LandsAndMana.lean:80–89, 107–204`):
+     `Demo.lean:2063, 2101, 2136`, `LandsAndMana.lean:80–89, 107–204`,
+     `ManaAbilities.lean:169, 550–552`):
      - Four mana-affordability, subset-pruning, and `Agent` cost-choice bugs remain after Phase 48:
        (i) `LandsAndMana.hasUsableNonPlainManaAbility` (`107–204`) tests `effCost` (`118–127`) with single-type
        `availableManaExcept` instead of `canPayFromSources` (causing false negatives on `{W/B}` filter lands paired with
-       dual/any-color sources) while ignoring `prop`'s reserved `tapSource` / `teamworkCreatures` / battlefield-required
-       sources when checking `d.picks` (`113`), `effCost` (`120`), and `otherManaCosts` (`161–170`); meanwhile
-       `availableManaExceptIds` (`80–89`) picks `types[0]?` (even when `types[0]` is restricted or `{1}` and `types[1]`
-       is unrestricted or `{2}`), and `Demo.hasGameStatePriorityAction` (`2063, 2101, 2136`), `Agent.chooseCast` (`855,
-       889, 911`), and `Agent.chooseActivate` (`686`) rely on single-type `available.canPay` instead of multi-choice
+       dual/any-color sources) while never filtering `d.picks` (`ManaAbilities.lean:169`, checked only unreserved inside
+       `manaAbilityDefUsable` at `ManaAbilities.lean:550–552` and never re-filtered against `prop` in
+       `LandsAndMana.lean:111–147, 161–170`), `effCost` (`120`), or `otherManaCosts` (`161–170`) against `prop`'s
+       reserved `tapSource` / `teamworkCreatures` / `sneakAttacker` / battlefield-required sources; meanwhile
+       `availableManaExceptIds` (`80–89`) falls back to `types[0]?` outside its `types.size ≥ 5 && types.contains green`
+       any-color shortcut (`86`, even when `types[0]` is restricted or `{1}` and a later entry in `types` is unrestricted
+       or `{2}`), and `Demo.hasGameStatePriorityAction` (`2063, 2101, 2136`), `Agent.chooseCast` (`855, 889, 911`), and
+       `Agent.chooseActivate` (`686`) rely on single-type `available.canPay` instead of multi-choice
        `canPayFromSources`;
        (ii) `Casting.hasCostPreservingPaymentSubset` (`762–787`) keys `skippedKeys` (`764–768`) only on
        `(g.isCreature o, g.isArtifact o, g.power o, choices...)` — omitting `some o.id == prop.sourceId` (a Vehicle
@@ -19850,19 +19855,21 @@ permanent-spell `chosenX` on triggered abilities).
        non-ability `{X}` spells at `193–194`):
        - Route `LandsAndMana.hasUsableNonPlainManaAbility` (`118–127`), `Demo.hasGameStatePriorityAction`
          (`2063, 2101, 2136`), `Agent.chooseCast` (`889, 911`), and `Agent.chooseActivate` (`686`) through
-         `canPayFromSources` while excluding `prop`'s reserved sources across `d.picks`, `effCost`, and
-         `otherManaCosts` (`LandsAndMana.lean:113, 120, 161–170`), and prefer unrestricted / max-yield tap outputs in
-         `availableManaExceptIds` (`80–89`); include `some o.id == prop.sourceId` and per-pick post-mana eligibility in
-         `Casting.hasCostPreservingPaymentSubset`'s `equivKey` (`764–768`); accept `.mountain` sources with
-         `g.extraMountainRedFromTap src > 0` in `Agent.payGenericOrTapFirstSource` (`66–68`); and evaluate `{X}` via
-         `playManaCost` / `activationManaCost (chosenX := some x)` + `canPayFromSources` (including spell post-mana
-         cost-pick reservation) in `Agent` `.chooseX` / `maxAffordableX` (`181–195, 640–664, 695–704`).
+         `canPayFromSources`, add `prop` reserved-source filtering for `d.picks` (`ManaAbilities.lean:169, 550–552`)
+         alongside `effCost` and `otherManaCosts` in `hasUsableNonPlainManaAbility` (`LandsAndMana.lean:118–147,
+         161–170`), and prefer unrestricted / max-yield tap outputs over `types[0]?` while preserving the
+         `types.size ≥ 5 && types.contains green` five-color shortcut in `availableManaExceptIds` (`80–89`); include
+         `some o.id == prop.sourceId` and per-pick post-mana eligibility in `Casting.hasCostPreservingPaymentSubset`'s
+         `equivKey` (`764–768`); accept `.mountain` sources with `g.extraMountainRedFromTap src > 0` in
+         `Agent.payGenericOrTapFirstSource` (`66–68`); and evaluate `{X}` via `playManaCost` /
+         `activationManaCost (chosenX := some x)` + `canPayFromSources` (including spell post-mana cost-pick reservation)
+         in `Agent` `.chooseX` / `maxAffordableX` (`181–195, 640–664, 695–704`).
    - **`TriggeredAbilities` `TriggerRead.chosenX`, `FraAbilities` / `FrcResolve` / `EffectResolution` / `Decisions` / `ModeledTriggers` LKI forwarding, and `Event.isTreasureSourceInLog` phased-out & `.battlefield` zone LKI**
      (`Decisions.lean:5980–5986, 6029–6035`,
      `EffectResolution.lean:112–114, 314, 1186–1246, 1540, 1704–1728, 2455`,
-     `Event.lean:3911–3933`, `FraAbilities.lean:401`,
+     `Event.lean:60, 3911–3933`, `FraAbilities.lean:401`,
      `FraResolve.lean:370–379, 1197`, `FrcResolve.lean:13–15`,
-     `ModeledTriggers.lean:616–641`, `TriggerArgs.lean:16–23, 473`,
+     `ModeledTriggers.lean:616–641, 768–801`, `TriggerArgs.lean:16–23, 473`,
      `TriggeredAbilities.lean:568–5537`):
      - Three resolution-context LKI and Treasure-provenance bugs remain:
        (i) `TriggeredAbilities.lean` (`568–5537`) constructs `TriggerRead` without setting `chosenX` (leaving
@@ -19876,7 +19883,10 @@ permanent-spell `chosenX` on triggered abilities).
        `.«if»` (`1718–1720`), and `.ifElse` (`1724–1726`); `EffectResolution.beginMay` / `beginSpellOr` (`1186–1246`) and
        `Decisions.acceptMay` (`5980–5986`) / `chooseSpellOr` (`6029–6035`) drop `chosenX`, `lastKnownPower`,
        `lastKnownToughness`, `castFromGraveyard`, `kicked`, and `giftPromised`; and
-       `ModeledTriggers.offerVisionModes` (`616–641`) omits `lastKnownToughness` when populating `chooseModesRest`; and
+       `ModeledTriggers.offerVisionModes` (`616–641`) and `applyModeledTrigger` (`768–801`) take no
+       `lastKnownToughness` parameter (and `TriggeredAbilities.applyTriggeredAbility`'s `.vision` arm at `5072` does not
+       pass its in-scope `lastKnownToughness`), leaving `ChooseModesRest.lastKnownToughness` (`Event.lean:60`) unset at
+       `632–640`; and
        (iii) `Event.isTreasureSourceInLog` (`3911–3933`) misses `.rules (.permanent (.phasedOut snap _))` and
        `.rules (.zone (.created snap _))` (`snap.zone == .battlefield`) when a Treasure permanent phased out before its
        mana ability or delayed trigger resolved (`!src.isOnBattlefield`, CR 608.2h / 702.26b), and omits
@@ -19891,8 +19901,10 @@ permanent-spell `chosenX` on triggered abilities).
          `lastKnownPower` / `lastKnownToughness` across `.or [r]`, `.«if»`, and `.ifElse` (`EffectResolution.lean:1704–
          1728`), preserve spell/ability resolution context (`castFromGraveyard`, `kicked`, `giftPromised`, `chosenX`,
          `lastKnownPower`, `lastKnownToughness`) across `beginMay` / `acceptMay` and `beginSpellOr` / `chooseSpellOr`
-         (`EffectResolution.lean:1186–1246`, `Decisions.lean:5980–5986, 6029–6035`), and thread `lastKnownToughness`
-         through `ModeledTriggers.offerVisionModes` (`616–641`); and require `snap.zone == .battlefield` on
+         (`EffectResolution.lean:1186–1246`, `Decisions.lean:5980–5986, 6029–6035`), and add
+         `(lastKnownToughness : Option Int := none)` to `ModeledTriggers.offerVisionModes` (`616–641`) and
+         `applyModeledTrigger` (`768–801`) while forwarding `lastKnownToughness` at `TriggeredAbilities.lean:5072` and
+         `ModeledTriggers.lean:801` into `ChooseModesRest` (`632–640`); and require `snap.zone == .battlefield` on
          `.abilityActivated` / `.triggered` / `.putOnStack` while handling `.permanent (.phasedOut snap _)` and
          `.zone (.created snap _)` (`snap.zone == .battlefield`) in `Event.isTreasureSourceInLog` (`3911–3933`).
 
@@ -19908,8 +19920,8 @@ off-turn timing & Adventure `fromAdventure` guard + `CastSpell` `hasMorphChoice`
 `bestActivePlayPermission?` `mayCastExiledBySource` & `face?` parity + `Agent.chooseCast` / `Demo.hasGameStatePriorityAction`
 `canCastFrontFace` vs `canCastMorphFaceDown` + live non-stack `stackCtrl?` / `latestExileToStackAfterController?` LKI +
 `Turns.expirePlayFromExileEffect` multi-stage `expireUntilNextTurnEffects` & `mayCastExiledBySource` log guard +
-post-restore `acc.name cur` return-control logs, `Movement.move` `expireEffectsOnLeavingObject` `preMove` / `skipUnattachIds`,
-and `Leaving.coDepartingIds` `.command` phased-out guard; `Leaving` phased-out CR 800.4a unrelated-player guard,
+post-restore `acc.name cur` return-control logs and `Movement.move` `expireEffectsOnLeavingObject` `preMove` /
+`skipUnattachIds`; `Leaving` phased-out CR 800.4a unrelated-player guard,
 `preBodyCont?` / `outerPendingReplacements` dedup, & `prevCtrl` fallback + `endControlEffectsSimultaneously`
 `!applied.isEmpty` `appliedChangedInPreExpire` guard + `!phasedOut` LTB/ETB trigger suppression in `Core.matchTriggers` &
 `Event.matchesTrigger` + `Phasing` entry `sbaPausedOnPhasing` batch deferral + `departedNextTurnWouldHaveBegunSince`
@@ -19917,8 +19929,8 @@ and `Leaving.coDepartingIds` `.command` phased-out guard; `Leaving` phased-out C
 `Demo` / `Agent` `canPayFromSources` & reserved-source parity + `Casting.hasCostPreservingPaymentSubset` Vehicle/pick
 `equivKey` soundness + `Agent` `.mountainExtraRed` `payGenericOrTapFirstSource` & cost-reduced `.chooseX` search, plus
 `TriggeredAbilities` `TriggerRead.chosenX` & `FraAbilities` / `FrcResolve` / `applyFraResolution?` `chosenX` +
-`applyUnified` / `acceptMay` / `chooseSpellOr` / `offerVisionModes` LKI forwarding + `Event.isTreasureSourceInLog`
-phased-out & `.battlefield` zone LKI).
+`applyUnified` / `acceptMay` / `chooseSpellOr` / `offerVisionModes` & `applyModeledTrigger` LKI forwarding +
+`Event.isTreasureSourceInLog` phased-out & `.battlefield` zone LKI).
 
 Final check (after Phase 49): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
