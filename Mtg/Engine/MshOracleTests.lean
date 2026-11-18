@@ -3481,13 +3481,13 @@ def rickJonesMillOk : Bool :=
 
 /-- Create X tokens uses the chosen X, including zero. -/
 def createTokensXOk : Bool :=
-  let g := afterDraw.applyEffect ⟨0⟩ (Effect.createTokensX .dwarf) #[] (chosenX := 3)
+  let g := afterDraw.applyEffect ⟨0⟩ (Effect.createTokensX .dwarf) #[] (chosenX := some 3)
   let dwarves := g.battlefield.filter (fun o => o.printed.isToken && g.hasSubtype o .dwarf)
   dwarves.size == 3 && dwarves.all (fun o => g.power o == 2) &&
-    (let gZero := afterDraw.applyEffect ⟨0⟩ (Effect.createTokensX .dwarf) #[] (chosenX := 0)
+    (let gZero := afterDraw.applyEffect ⟨0⟩ (Effect.createTokensX .dwarf) #[] (chosenX := some 0)
      (gZero.battlefield.filter (fun o => o.printed.isToken)).isEmpty) &&
     (let treasures := afterDraw.applyUnifiedAbility ⟨0⟩
-        (Effect.abilityCreateTokensX .treasure) #[] (chosenX := 2)
+        (Effect.abilityCreateTokensX .treasure) #[] (chosenX := some 2)
      (treasures.battlefield.filter (fun o => treasures.hasSubtype o .treasure)).size == 2)
 
 #guard createTokensXOk
@@ -3743,7 +3743,7 @@ def callForthCountsOtherSpellsOk : Bool :=
 def insideInformationExpiresThisTurnOk : Bool :=
   let g := addToLibraryTop afterDraw shock ⟨1⟩
   let g := g.applyEffect ⟨0⟩ Effect.exileTopXOppPlayForLife #[Target.player ⟨1⟩]
-    (chosenX := 1)
+    (chosenX := some 1)
   match g.objects.find? (fun o => o.name == "Shock" && o.zone == .exile) with
   | some card =>
     match g.playPermission card with

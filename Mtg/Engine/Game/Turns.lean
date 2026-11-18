@@ -382,8 +382,9 @@ def expireGoadedFor (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
 Veiled Butcher's toughness and power reduction and the command-zone effects of Jace, Reality Sculptor
 and Garruk, Curse Breaker (CR 611.2a / 805.4 / 810.2). -/
 def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
-    (skipControl : Bool := false) (skipLogIds : Array ObjectId := #[]) : Game :=
-  let pre := g
+    (skipControl : Bool := false) (skipLogIds : Array ObjectId := #[])
+    (preState? : Option Game := none) : Game :=
+  let pre := preState?.getD g
   let matchesTurnOf (q : PlayerId) : Bool :=
     q == p || (includeTeammates && g.areTeammates q p)
   let cause := some (EventCause.turnBased .expireAtStepBegin)
@@ -475,7 +476,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
             (skipLogIds := skipIds)
           let g0 := g0.expireFraUntilTurnEffects p
             (includeTeammates := !teamHasLiving) (skipControl := true)
-            (skipLogIds := skipIds)
+            (skipLogIds := skipIds) (preState? := some pre)
           let g0 :=
             g0.ceaseEndingFraEmblemsWhere
               (fun _ d => match d with | .untilEndOfNextTurnOf q => matchesDeparted q | _ => false)
@@ -1154,7 +1155,7 @@ partial def beginTurn (g : Game) : Game :=
               (g0.restoreCopiesUntilNextTurn p (reconcileControl := false)
                 (skipLogIds := skipIds))
                 |>.expireFraUntilTurnEffects p (includeTeammates := true) (skipControl := true)
-                  (skipLogIds := skipIds))
+                  (skipLogIds := skipIds) (preState? := some g0))
           let paused :=
             match g.pending with
             | .chooseReplacement .. | .chooseLegend .. => true

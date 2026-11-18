@@ -881,7 +881,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let gStunResolved := mustApply (mustApply (mustApply gStunAct p0 .pass) p1 .pass) p2 .pass
 
   let warriorsXEffect : Effect := { resolution := .frc .warriorsX, phrase := "Create X 1/1 Warrior creature tokens." }
-  let gWarriorsX := g3.applyEffect p0 warriorsXEffect #[] (chosenX := 2)
+  let gWarriorsX := g3.applyEffect p0 warriorsXEffect #[] (chosenX := some 2)
 
   -- 4b(ii). `EffectResolution.applyUnified` (`.or [r]`, `.«if»`, `.ifElse`), `beginMay`/`acceptMay`,
   --         `beginSpellOr`/`chooseSpellOr`, and `ModeledTriggers.applyModeledTrigger`/`offerVisionModes` LKI forwarding:
@@ -897,16 +897,16 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
       (castFromGraveyard := true) (lastKnownPower := some 4) (lastKnownToughness := some 6)
   let gIfElseGift :=
     g3.applyEffect p0 (mkSpellEff (.ifElse .giftPromised rChX (.loseLife (.fixed 1) .eachOpponent))) #[]
-      (giftPromised := true) (chosenX := 3) (lastKnownPower := some 4) (lastKnownToughness := some 6)
+      (giftPromised := true) (chosenX := some 3) (lastKnownPower := some 4) (lastKnownToughness := some 6)
 
   let gMayPrompt :=
     g3.applyEffect p0 (mkSpellEff (.may rTgh (.sequence []) .ifYouDont)) #[]
-      (chosenX := 3) (lastKnownPower := some 4) (lastKnownToughness := some 6)
+      (chosenX := some 3) (lastKnownPower := some 4) (lastKnownToughness := some 6)
   let gMayAccepted := mustApply gMayPrompt p0 .accept
 
   let gSpellOrPrompt :=
     g3.applyEffect p0 (mkSpellEff (.or [rPow, rTgh])) #[]
-      (chosenX := 3) (lastKnownPower := some 4) (lastKnownToughness := some 6)
+      (chosenX := some 3) (lastKnownPower := some 4) (lastKnownToughness := some 6)
   let gSpellOrChosen :=
     match gSpellOrPrompt.chooseSpellOr p0 1 with
     | .ok g' => g'

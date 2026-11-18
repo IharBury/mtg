@@ -120,7 +120,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     targets
     lastKnownPower
     lastKnownToughness
-    chosenX := chosenX.getD 0
+    chosenX
   }
   match effect.resolution with
   | .empowerJace amt =>
@@ -1521,7 +1521,7 @@ mutual
 `afterRandom` and chaining `.continueUnified` so later steps run after the pause. -/
 partial def runUnifiedSteps (g : Game) (controller : PlayerId) (effect : Effect)
     (steps : Array Resolution) (targets : Array Target)
-    (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
+    (castFromGraveyard kicked giftPromised : Bool) (chosenX : Option Nat)
     (sourceId : Option ObjectId)
     (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) : Game := Id.run do
@@ -1549,7 +1549,7 @@ partial def runUnifiedSteps (g : Game) (controller : PlayerId) (effect : Effect)
 /-- Resolve a unified `Effect` as a spell (CR 608). -/
 partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
-    (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
+    (kicked := false) (giftPromised := false) (chosenX : Option Nat := none)
     (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) : Game :=
@@ -1564,7 +1564,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   let sourceId := sourceId.orElse (fun _ => g.resolvingSpell)
   match g.applyFraResolution? controller effect targets sourceId
       (lastKnownPower := lastKnownPower)
-      (chosenX := if chosenX != 0 then some chosenX else none)
+      (chosenX := chosenX)
       (lastKnownToughness := lastKnownToughness) with
   | some g => g
   | none =>
@@ -1733,7 +1733,9 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | some (Target.card id) => g.counterStackSpell id (controller := some controller)
     | _ => g.logMsg "The target is no longer legal"
   | .unlessPays r n =>
-    g.beginUnlessPays controller effect targets r n sourceId
+    let resCtx : SpellResolutionCtx :=
+      { castFromGraveyard, kicked, giftPromised, chosenX, lastKnownPower, lastKnownToughness }
+    g.beginUnlessPays controller effect targets r n sourceId (resCtx := resCtx)
   | .counterExilePermanentMayCast =>
     match targets[0]? with
     | some (Target.card id) =>
@@ -1991,9 +1993,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .exileTopXOppPlayForLife =>
     match targets[0]? with
     | some (Target.player pid) =>
+      let xVal := chosenX.getD 0
       if !g.stillInGame pid || !g.playerCanBeTargetedBy controller pid sourceId then
         g.logMsg "The target is no longer legal"
-      else if chosenX == 0 then g
+      else if xVal == 0 then g
       else
         let (g0, cause?) : Game × Option EventCause :=
           if (g.player pid).library.isEmpty then (g, none)
@@ -2001,7 +2004,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
             let (g, c) := g.allocDelayedCause (some controller) sourceId
             (g, some c)
         g0.withBatch cause? fun g0 =>
-          g0.exileTopXOppPlayForLifeLoop controller pid chosenX cause? none
+          g0.exileTopXOppPlayForLifeLoop controller pid xVal cause? none
     | _ => g.logMsg "The target is no longer legal"
   | .riddlesInTheDark n =>
     let looked := g.scryLookedIds controller n
@@ -2155,7 +2158,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | some pid =>
       let count := match amount with
         | .fixed n => n.toNat
-        | .chosenX => chosenX
+        | .chosenX => chosenX.getD 0
         | .perSubtype subtype => g.countSubtype pid subtype
         | _ => 0
       g.createKindTokens pid kind count (tapped := tapped)
@@ -2250,7 +2253,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .millThenPutPermanentGainLife n life =>
     g.millMayPutPermanentGainLife controller n life
   | .searchLibraryOrGyArtifactCreatureX =>
-    g.beginVisionQuest controller chosenX
+    g.beginVisionQuest controller (chosenX.getD 0)
   | .gainLifeSearchBasicPlusOne life =>
     g.applyGainLifeSearchBasicPlusOne controller targets life sourceId
   | .nextFreeRGCreature =>
@@ -2301,7 +2304,7 @@ end
 /-- Resolve a printed spell effect (CR 608). -/
 def applyEffect (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
-    (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
+    (kicked := false) (giftPromised := false) (chosenX : Option Nat := none)
     (sourceId : Option ObjectId := none)
     (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) : Game :=
@@ -2481,7 +2484,7 @@ or `afterRandom` and chaining `.continueUnifiedAbility` so later steps run after
 the pause. -/
 partial def runUnifiedAbilitySteps (g : Game) (controller : PlayerId) (effect : Effect)
     (steps : Array Resolution) (targets : Array Target)
-    (sourceId : Option ObjectId) (lastKnownPower : Option Int) (chosenX : Nat)
+    (sourceId : Option ObjectId) (lastKnownPower : Option Int) (chosenX : Option Nat := none)
     (lastKnownToughness : Option Int := none) : Game := Id.run do
   let mut g := g
   for i in [0:steps.size] do
@@ -2503,7 +2506,7 @@ partial def runUnifiedAbilitySteps (g : Game) (controller : PlayerId) (effect : 
 /-- Resolve a unified activated-ability `Effect` (CR 608). -/
 partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
-    (lastKnownPower : Option Int := none) (chosenX : Nat := 0)
+    (lastKnownPower : Option Int := none) (chosenX : Option Nat := none)
     (lastKnownToughness : Option Int := none) : Game :=
   if g.continuations.isEmpty then
     g.withContinuationFrame fun g =>
@@ -2512,7 +2515,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
   else
   match g.applyFraResolution? controller effect targets sourceId
       (lastKnownPower := lastKnownPower)
-      (chosenX := if chosenX != 0 then some chosenX else none)
+      (chosenX := chosenX)
       (lastKnownToughness := lastKnownToughness) with
   | some g => g
   | none =>
@@ -2654,7 +2657,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       | .searchBasicLandToHand =>
         g.resolveSearchBasicLandToHand controller
       | .createTokensX kind =>
-        g.createKindTokens controller kind chosenX
+        g.createKindTokens controller kind (chosenX.getD 0)
       | .searchTwoBasicsSplit =>
         g.beginLibrarySearch controller isBasicLandCard "a basic land card"
           .battlefieldTappedThenHand (count := 2)
@@ -2763,7 +2766,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
             (fun g o => g.addPlusOnePlusOneTo o n)
       | .plusOneX =>
         g.withSourceOnBattlefield sourceId fun g o =>
-          g.addPlusOnePlusOneTo o chosenX
+          g.addPlusOnePlusOneTo o (chosenX.getD 0)
       | .eachOppDiscardThenPlusOne =>
         let opps := (g.livingOpponents controller).map (·.id)
         let g := g.change (.plusOneAfterDiscards sourceId)
@@ -2777,7 +2780,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       | .transform =>
         g.transformPermanent controller sourceId
       | .drawX =>
-        g.draw controller chosenX
+        g.draw controller (chosenX.getD 0)
       | .lookAtTopRevealArtifact n =>
         g.beginLookRevealToHand controller n (fun o => g.isArtifact o) false
       | .addAnyColorSpendOnlySubtype subtype =>
@@ -2806,7 +2809,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       | .drawPerDiscardedThisTurn =>
         g.draw controller (g.loggedDiscards controller)
       | .createTokensEqualRemovedPlusOnes kind =>
-        g.createKindTokens controller kind chosenX
+        g.createKindTokens controller kind (chosenX.getD 0)
       | .exileTopXPlayThisTurn =>
         let x := g.sourcePowerNatAtResolution sourceId lastKnownPower
         g.exileTopPlayThisTurn controller x
@@ -2919,9 +2922,10 @@ end
 /-- Resolve a printed activated ability (CR 608). -/
 def applyAbilityEffect (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId := none)
-    (lastKnownPower : Option Int := none) (chosenX : Nat := 0) : Game :=
+    (lastKnownPower : Option Int := none) (chosenX : Option Nat := none)
+    (lastKnownToughness : Option Int := none) : Game :=
   g.applyUnifiedAbility controller effect targets
-    sourceId lastKnownPower chosenX
+    sourceId lastKnownPower chosenX (lastKnownToughness := lastKnownToughness)
 
 end Game
 end Mtg.Engine

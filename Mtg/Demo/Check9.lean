@@ -747,3 +747,47 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   mustHoldCheck9 "p49_demoComboPayOk" demoComboPayOk &&
   mustHoldCheck9 "p49_demoFilterManaOk" demoFilterManaOk
 
+
+/- Phase 50 Items 2b & 4a: `Demo.hasGameStatePriorityAction` recognizes Impending (`CR 702.176a`)
+and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservations in
+`hasUsableNonPlainManaAbility`. -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := emptyHand afterDraw p0
+  let impCardDef : CardDef := {
+    grizzlyBears with
+    name := "P50 DemoOverlord"
+    types := #[.enchantment, .creature]
+    manaCost := ManaCost.ofGeneric 6
+    impending := some (4, ManaCost.ofGeneric 2)
+  }
+  let gImp1 := (insertObject gMain impCardDef p0 (.hand p0)).addMana p0 .colorless 1
+  let gImp2 := (insertObject gMain impCardDef p0 (.hand p0)).addMana p0 .colorless 2
+  let demoImpendingPrioOk :=
+    !hasGameStatePriorityAction gImp1 p0 &&
+    hasGameStatePriorityAction gImp2 p0
+
+  let sacSpellDef : CardDef := {
+    name := "P50 DemoSacBolt"
+    manaCost := { symbols := #[.colored .green] }
+    types := #[.instant]
+    additionalCostSacrificeArtifactOrCreature := true
+    spellEffect := some (Effect.gainLife 2)
+  }
+  let (gTrOnly0, _) :=
+    (insertObject (addPermanent gMain forest p0 p0) sacSpellDef p0 (.hand p0)).createOneToken
+      p0 Game.treasureToken (cause := some (.gameRule .staticAbility))
+  let gTrOnlyProp := mustApply gTrOnly0 p0 (.cast (gTrOnly0.player p0).hand.back!)
+  let gTrExtra0 := addPermanent gTrOnly0 grizzlyBears p0 p0
+  let gTrExtraProp := mustApply gTrExtra0 p0 (.cast (gTrExtra0.player p0).hand.back!)
+  -- When Treasure is the sole sacrificeable permanent, sacrificing it for mana would make the
+  -- spell's sacrifice cost unpayable, so tapping the Forest is the unique mana payment (`true`);
+  -- when an extra creature exists, Treasure is also usable for mana (`false`):
+  let demoUniqueManaSacOk :=
+    hasUniqueManaPayment gTrOnlyProp &&
+    !hasUniqueManaPayment gTrExtraProp
+
+  mustHoldCheck9 "p50_demoImpendingPrioOk" demoImpendingPrioOk &&
+  mustHoldCheck9 "p50_demoUniqueManaSacOk" demoUniqueManaSacOk
+
+

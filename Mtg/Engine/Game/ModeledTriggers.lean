@@ -1003,7 +1003,8 @@ def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=
 Countering uses the existing “pay or let the spell be countered” choice. -/
 def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (r : SpellResolution) (n : Nat)
-    (sourceId : Option ObjectId := none) : Game :=
+    (sourceId : Option ObjectId := none)
+    (resCtx : SpellResolutionCtx := {}) : Game :=
   g.withContinuationFrame fun g =>
     match r with
     | .counter => g.beginPayOrLetCounter targets n
@@ -1034,7 +1035,8 @@ def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
           .unlessPaysController controller,
           .unlessPaysTargets targets,
           .unlessPaysSource sourceId,
-          .unlessPaysDue false]).logMsg
+          .unlessPaysDue false,
+          .unlessPaysResCtx resCtx]).logMsg
           s!"{(g.player payer).name} may pay \{{n}} or {SpellResolution.toPhrase r effect.targeting.kind.noun}"
 
 /-- Exile `o`, then immediately return it to the battlefield under its

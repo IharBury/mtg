@@ -180,13 +180,16 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
       .pushOuterPendingReplacement revCostStep ]).resumePendingReplacement
       (.seq (.restorePending .none true none #[] none) (.seq .finishFraChoice (.receivePriority p3)))
 
+  let g2pOver := mustApply started p0 .concede
   let item1bOk :=
     mustHold47i1 "1b_stepTurnCleanupProbes"
       (!g4.continuationGrantsPriority false csntNoBegin &&
        g4.priorityRecipientOfContinuation? false csntNoBegin == none &&
        g4.continuationGrantsPriority false .beginTurnAfterStartExpiry &&
        g4.priorityRecipientOfContinuation? false .beginTurnAfterStartExpiry == some p0 &&
-       !gP0Gone.continuationGrantsPriority false .beginTurnAfterStartExpiry &&
+       gP0Gone.continuationGrantsPriority false .beginTurnAfterStartExpiry &&
+       gP0Gone.priorityRecipientOfContinuation? false .beginTurnAfterStartExpiry == some p1 &&
+       !g2pOver.continuationGrantsPriority false .beginTurnAfterStartExpiry &&
        csntLegendPauseOk &&
        skippedDrawOk &&
        cleanupDrainOk) &&

@@ -283,7 +283,8 @@ def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none)
   | some live =>
     if !live.status.phasedOut || live.zone != .battlefield then g
     else if sbaPausedOnPhasing g then
-      g.chainPendingReplacement (.phaseInControlledLoop #[live.id] cause none reconcile)
+      g.chainPendingReplacement
+        (.phaseInControlledLoop #[live.id] cause none reconcile (allowDirectSingle := true))
     else
       let resolvedCause :=
         g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf live)
@@ -335,10 +336,10 @@ partial def phaseInControlledLoop (g : Game) (remainingIds : Array ObjectId)
   if sbaPausedOnPhasing g then
     if remainingIds.isEmpty && !reconcile then return g
     else
-      let savedStartIdx := if allowDirectSingle then none else startEventIdx
-      return g.chainPendingReplacement (.phaseInControlledLoop remainingIds cause savedStartIdx reconcile)
+      return g.chainPendingReplacement
+        (.phaseInControlledLoop remainingIds cause startEventIdx reconcile allowDirectSingle)
   let singleDirectPhaseIn :=
-    (allowDirectSingle || startEventIdx.isNone) && remainingIds.size == 1 &&
+    allowDirectSingle && remainingIds.size == 1 &&
       (g.findObject? remainingIds[0]!).any (fun o => o.zone == .battlefield && o.status.phasedOut)
   let entryEvLen := g.events.size
   if !remainingIds.isEmpty && g.currentBatch.isNone then
@@ -820,49 +821,48 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
 any phased-out permanent whose phase-out controller has left the game and whose
 next turn would have begun since it phased out (CR 502.1 / 702.26m,n / 703.4a). -/
 def phaseInControlled (g : Game) (p : PlayerId) : Game :=
-  let cause := some (EventCause.turnBased .phaseInOut)
-  let fallbackCtrlOf (o : GameObject) : Option PlayerId :=
-    (g.controllerOf o).orElse (fun _ =>
-      some ((o.defaultController.orElse (fun _ => o.controller)).getD o.owner))
-  let phaseOutControllerOf (o : GameObject) : Option PlayerId × Option Nat := Id.run do
-    for rev in [0:g.events.size] do
-      let idx := g.events.size - 1 - rev
-      match g.events[idx]!.change with
-      | .rules (.permanent (.phasedOut eo _)) =>
-        if eo.id == some o.id then
-          let preBatchIdx := g.phaseOutBatchStartIdx idx
-          return (g.controllerOfAt o preBatchIdx <|> eo.controller <|> fallbackCtrlOf o, some idx)
-      | .engine (.materializeObject obj _) =>
-        if obj.id == o.id && obj.zone == .battlefield && obj.status.phasedOut &&
-            !g.objectWasPhasedOutAt o idx then
-          let matCtrl :=
-            (g.controllerOfAt o (idx + 1)).orElse (fun _ =>
-              some ((obj.defaultController.orElse (fun _ => obj.controller)).getD obj.owner))
-          return (matCtrl, some idx)
-      | .rules (.zone (.moved before after _ toZone ..)) =>
-        if after.id == some o.id && toZone == .battlefield && after.phasedOut &&
-            (before.id != some o.id || !g.objectWasPhasedOutAt o idx) then
-          return (g.controllerOfAt o (idx + 1) <|> after.controller <|> fallbackCtrlOf o, some idx)
-      | .rules (.zone (.created eo c)) =>
-        if eo.id == some o.id && eo.zone == .battlefield && eo.phasedOut then
-          return (g.controllerOfAt o (idx + 1) <|> eo.controller <|> some c, some idx)
-      | _ => pure ()
-    return (g.controllerOfAt o 0 <|> fallbackCtrlOf o, none)
-  let targetIds :=
-    g.objects.filterMap fun o =>
-      if o.zone == .battlefield && o.status.phasedOut && g.canPhaseInDirectly o then
-        let (ctrl?, sinceIdx?) := phaseOutControllerOf o
-        let shouldPhaseIn :=
-          ctrl? == some p ||
-            match ctrl? with
-            | some dep => !g.stillInGame dep && departedNextTurnWouldHaveBegunSince g dep sinceIdx?
-            | none => false
-        if shouldPhaseIn then some o.id else none
-      else none
   if sbaPausedOnPhasing g then
-    if targetIds.isEmpty then g
-    else g.chainPendingReplacement (.phaseInControlledLoop targetIds cause none true)
+    g.chainPendingReplacement (.phaseInControlled p)
   else
+    let cause := some (EventCause.turnBased .phaseInOut)
+    let fallbackCtrlOf (o : GameObject) : Option PlayerId :=
+      (g.controllerOf o).orElse (fun _ =>
+        some ((o.defaultController.orElse (fun _ => o.controller)).getD o.owner))
+    let phaseOutControllerOf (o : GameObject) : Option PlayerId × Option Nat := Id.run do
+      for rev in [0:g.events.size] do
+        let idx := g.events.size - 1 - rev
+        match g.events[idx]!.change with
+        | .rules (.permanent (.phasedOut eo _)) =>
+          if eo.id == some o.id then
+            let preBatchIdx := g.phaseOutBatchStartIdx idx
+            return (g.controllerOfAt o preBatchIdx <|> eo.controller <|> fallbackCtrlOf o, some idx)
+        | .engine (.materializeObject obj _) =>
+          if obj.id == o.id && obj.zone == .battlefield && obj.status.phasedOut &&
+              !g.objectWasPhasedOutAt o idx then
+            let matCtrl :=
+              (g.controllerOfAt o (idx + 1)).orElse (fun _ =>
+                some ((obj.defaultController.orElse (fun _ => obj.controller)).getD obj.owner))
+            return (matCtrl, some idx)
+        | .rules (.zone (.moved before after _ toZone ..)) =>
+          if after.id == some o.id && toZone == .battlefield && after.phasedOut &&
+              (before.id != some o.id || !g.objectWasPhasedOutAt o idx) then
+            return (g.controllerOfAt o (idx + 1) <|> after.controller <|> fallbackCtrlOf o, some idx)
+        | .rules (.zone (.created eo c)) =>
+          if eo.id == some o.id && eo.zone == .battlefield && eo.phasedOut then
+            return (g.controllerOfAt o (idx + 1) <|> eo.controller <|> some c, some idx)
+        | _ => pure ()
+      return (g.controllerOfAt o 0 <|> fallbackCtrlOf o, none)
+    let targetIds :=
+      g.objects.filterMap fun o =>
+        if o.zone == .battlefield && o.status.phasedOut && g.canPhaseInDirectly o then
+          let (ctrl?, sinceIdx?) := phaseOutControllerOf o
+          let shouldPhaseIn :=
+            ctrl? == some p ||
+              match ctrl? with
+              | some dep => !g.stillInGame dep && departedNextTurnWouldHaveBegunSince g dep sinceIdx?
+              | none => false
+          if shouldPhaseIn then some o.id else none
+        else none
     let hadOpenBatch := g.currentBatch.isSome
     let startIdx := g.events.size
     if hadOpenBatch then

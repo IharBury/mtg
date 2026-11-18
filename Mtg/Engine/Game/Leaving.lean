@@ -1004,14 +1004,14 @@ def splitAfterCloseBatchFor? (target : BatchId) :
         some (.seq pre (.finishLinkedExileMove ids), none)
       | .phaseOutPermanentsLoop #[] c ps s true =>
         some (.seq pre (.phaseOutPermanentsLoop #[] c ps s true), none)
-      | .phaseInControlledLoop #[] c s true =>
-        some (.seq pre (.phaseInControlledLoop #[] c s true), none)
+      | .phaseInControlledLoop #[] c s true allowDirectSingle =>
+        some (.seq pre (.phaseInControlledLoop #[] c s true allowDirectSingle), none)
       | .seq (.finishLinkedExileMove ids) rest =>
         some (.seq pre (.finishLinkedExileMove ids), some rest)
       | .seq (.phaseOutPermanentsLoop #[] c ps s true) rest =>
         some (.seq pre (.phaseOutPermanentsLoop #[] c ps s true), some rest)
-      | .seq (.phaseInControlledLoop #[] c s true) rest =>
-        some (.seq pre (.phaseInControlledLoop #[] c s true), some rest)
+      | .seq (.phaseInControlledLoop #[] c s true allowDirectSingle) rest =>
+        some (.seq pre (.phaseInControlledLoop #[] c s true allowDirectSingle), some rest)
       | _ =>
         some (pre, some b)
     | none =>
@@ -3245,7 +3245,8 @@ through `.closeBatch curBid _` so `curBid` closes cleanly before any deferred
 proposal rewind or post-departure SBA pass runs (CR 616.1 / 704.5j / 733.1 /
 800.4a). -/
 def flushDismissedPausedBatch (g : Game) (saved? : Option Pending) (popOuter : Bool)
-    (hasDeferredRewind : Bool := false) :
+    (hasDeferredRewind : Bool := false)
+    (chainAfterOnRepause : Bool := true) :
     Game × Bool :=
   if g.over || g.sbaPaused || g.pending != .none then (g, popOuter)
   else if hasDeferredRewind && g.isPreProposalCheckpointBatch then (g, popOuter)
@@ -3260,9 +3261,11 @@ def flushDismissedPausedBatch (g : Game) (saved? : Option Pending) (popOuter : B
       | some (closePrefix, afterClose?) =>
         let g := (g.change (.pendingReplacement none)).resumePendingReplacementFwd closePrefix
         let g :=
-          match afterClose? with
-          | some after => g.chainPendingReplacement after
-          | none => g
+          if chainAfterOnRepause || !g.sbaPaused then
+            match afterClose? with
+            | some after => g.chainPendingReplacement after
+            | none => g
+          else g
         (g, popOuter)
       | none =>
         if !popOuter then (g, popOuter)
