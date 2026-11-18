@@ -563,25 +563,25 @@ private def simulateFinishPostCastBody (g : Game) (caster : PlayerId) : Game :=
   let g : Game :=
     match g.pendingMayCastFromExile with
     | some (q, ids, left) =>
-      if q != caster || !g.stillInGame q || g.pending != Pending.none then g
+      if q != caster || g.pending != Pending.none then g
       else
         let alive := ids.filter (fun id =>
           (g.findObject? id).any (fun (o : GameObject) =>
             o.zone == Zone.exile && !g.isLand o))
         let g := g.change (.pendingMayCastFromExile none)
-        if alive.isEmpty || left == 0 then g
+        if !g.stillInGame q || alive.isEmpty || left == 0 then g
         else
           g.beginFraChoice q (.mayCastUpToFromExile alive left) ""
     | none => g
   let g : Game :=
     match g.pendingFreeCopies with
     | some (q, ids, budget, castsLeft) =>
-      if q != caster || !g.stillInGame q || g.pending != Pending.none then g
+      if q != caster || g.pending != Pending.none then g
       else
         let alive := ids.filter (fun id => (g.findObject? id).any (fun (o : GameObject) => o.zone == Zone.exile))
         let castable := alive.filter (fun id =>
           (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
-        if castable.isEmpty || castsLeft == 0 then
+        if !g.stillInGame q || castable.isEmpty || castsLeft == 0 then
           let g :=
             if alive.isEmpty then g
             else

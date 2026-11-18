@@ -330,15 +330,21 @@ a CR 616.1 / 800.4c replacement or legend choice opens (CR 502.1 / 703.4a). -/
 partial def phaseInControlledLoop (g : Game) (remainingIds : Array ObjectId)
     (cause : Option EventCause := none) (preSnap? : Option Game := none)
     (startEventIdx : Option Nat := none)
-    (reconcile : Bool := true) : Game := Id.run do
+    (reconcile : Bool := true)
+    (allowDirectSingle : Bool := false) : Game := Id.run do
   if sbaPausedOnPhasing g then
     if remainingIds.isEmpty && !reconcile then return g
-    else return g.chainPendingReplacement (.phaseInControlledLoop remainingIds cause startEventIdx reconcile)
+    else
+      let savedStartIdx := if allowDirectSingle then none else startEventIdx
+      return g.chainPendingReplacement (.phaseInControlledLoop remainingIds cause savedStartIdx reconcile)
+  let singleDirectPhaseIn :=
+    (allowDirectSingle || startEventIdx.isNone) && remainingIds.size == 1 &&
+      (g.findObject? remainingIds[0]!).any (fun o => o.zone == .battlefield && o.status.phasedOut)
   let entryEvLen := g.events.size
   if !remainingIds.isEmpty && g.currentBatch.isNone then
     let liveObjs := remainingIds.filterMap fun id =>
       (g.findObject? id).filter (fun o =>
-        o.zone == .battlefield && o.status.phasedOut && (startEventIdx.isNone || g.canPhaseInDirectly o))
+        o.zone == .battlefield && o.status.phasedOut && (singleDirectPhaseIn || g.canPhaseInDirectly o))
     if liveObjs.isEmpty then
       if !reconcile || startEventIdx.isNone then return g
     else
@@ -350,11 +356,13 @@ partial def phaseInControlledLoop (g : Game) (remainingIds : Array ObjectId)
         return g.withBatchCore (some batchCause) fun g =>
           g.phaseInControlledLoop remainingIds (cause := cause) (preSnap? := preSnap?.orElse (fun _ => some g))
             (startEventIdx := some startIdx) (reconcile := false)
+            (allowDirectSingle := singleDirectPhaseIn)
       else
         let gPost :=
           g.withBatchCore (some batchCause) fun g =>
             g.phaseInControlledLoop remainingIds (cause := cause) (preSnap? := preSnap?.orElse (fun _ => some g))
               (startEventIdx := some startIdx) (reconcile := false)
+              (allowDirectSingle := singleDirectPhaseIn)
         if sbaPausedOnPhasing gPost then
           return gPost.chainPendingReplacement (.phaseInControlledLoop #[] cause (some startIdx) true)
         else if startIdx < gPost.events.size then
@@ -363,9 +371,6 @@ partial def phaseInControlledLoop (g : Game) (remainingIds : Array ObjectId)
           return (reconcileControlAfterTransitionFwd pre gPost (cause := some stepCause)).flushQueuedLinkedExileFwd
         else
           return gPost.flushQueuedLinkedExileFwd
-  let singleDirectPhaseIn :=
-    startEventIdx.isNone && remainingIds.size == 1 &&
-      (g.findObject? remainingIds[0]!).any (fun o => o.zone == .battlefield && o.status.phasedOut)
   let startIdx := startEventIdx.getD (preSnap?.map (·.events.size) |>.getD entryEvLen)
   let mut g := g
   for i in [0:remainingIds.size] do

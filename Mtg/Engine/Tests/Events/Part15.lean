@@ -112,6 +112,26 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
     gFreeCopyCast1.change (.pushContinuationFrame { pendingFreeCopies := some (p0, #[freeCopyId], 5, 1) })
   let gAfterP0CastFreeCopy := mustApply gFreeCopyCast2 p0 (.cast (gFreeCopyCast2.player p0).hand.back!)
 
+  -- Departed grantee (`!g.stillInGame p2`): `finishPostCast p2 (grantPriority := false)` and
+  -- `Decisions` probes clear `p2`'s own `pendingMayCastFromExile` / `pendingFreeCopies` stashes
+  -- and cease leftover exiled copies without opening `.beginFraChoice`, letting `completeActiveResolutions` pop:
+  let gDepStash0 := mustApply (insertObject (insertObject g4 zeroInstDef p0 .exile) zeroInstDef p0 (.hand p0)) p2 .concede
+  let depExInstId := (gDepStash0.objects.filter (fun (o : GameObject) => o.zone == .exile)).back!.id
+  let (gDepStash1, depFreeCopyId) :=
+    gDepStash0.move (gDepStash0.player p0).hand.back! .exile none (isCopy := some true) (cause := some testCause)
+  let gDepStash2 :=
+    gDepStash1.change
+      (.pushContinuationFrame {
+        pendingMayCastFromExile := some (p2, #[depExInstId], 1)
+        pendingFreeCopies := some (p2, #[depFreeCopyId], 5, 1)
+      })
+  let depStashGrants :=
+    gDepStash2.continuationGrantsPriority false (.finishPostCast p2 true false false)
+  let depStashRecip :=
+    gDepStash2.priorityRecipientOfContinuation? false (.finishPostCast p2 true false true)
+  let gDepPostCastDone :=
+    (gDepStash2.finishPostCast p2 (grantPriority := false)).completeActiveResolutions
+
   let item1aOk :=
     mustHold49i1 "1a_chooseReplacementEmptyStashFinishFraChoice"
       ((gRepEmptyDone.findObject? copyExId).isNone &&
@@ -130,7 +150,14 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
        emptyStashGrants &&
        emptyStashRecip == some p1 &&
        gAfterP0CastFreeCopy.pending == .fraChoice p0 (.castCopiesFree #[freeCopyId] 5 1) &&
-       gAfterP0CastFreeCopy.pendingFreeCopies.isNone)
+       gAfterP0CastFreeCopy.pendingFreeCopies.isNone &&
+       depStashGrants &&
+       depStashRecip == some p0 &&
+       gDepPostCastDone.pending == .none &&
+       gDepPostCastDone.pendingMayCastFromExile.isNone &&
+       gDepPostCastDone.pendingFreeCopies.isNone &&
+       (gDepPostCastDone.findObject? depFreeCopyId).isNone &&
+       gDepPostCastDone.continuations.isEmpty)
 
   -- 1b(i). `StateBasedActions.checkSBACountedWithLeavesCore` folds `outerAfterIn?` AFTER
   --        restoring `saved?` (`Pending.mayPayGeneric p1 1`), rather than executing `outerAfterIn?` early:
@@ -190,7 +217,7 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
   mustHold49i1 "1b" item1bOk &&
   mustHold49i1 "1.replay"
     (replayOk49i1 #[gRepEmptyDone, gLinkPaused, gLinkReopened, gCrossAfterP1Cast,
-      gAfterP0CastFreeCopy, gSbaOuterPaused, gSbaOuterAfterDecline, gMovePausedSeq])
+      gAfterP0CastFreeCopy, gDepPostCastDone, gSbaOuterPaused, gSbaOuterAfterDecline, gMovePausedSeq])
 
 end Phase49Item1EventAlignment
 
@@ -593,7 +620,8 @@ private def replayOk49i3 (gs : Array Game) : Bool :=
     mustHold49i3 "3a_phasedOutLtbTriggerSuppression"
       gTrigPoMoved.waitingTriggers.isEmpty
 
-  -- 3b(i). `Phasing` entry `sbaPausedOnPhasing` batch deferral (`phaseOut`, `phaseInControlled`):
+  -- 3b(i). `Phasing` entry `sbaPausedOnPhasing` batch deferral (`phaseOut`, `phaseInControlled`,
+  --        and direct `phaseIn` on an indirectly phased-out attached permanent resuming with `currentBatch.isNone`):
   let gPhPause0 := insertObject (addPermanent g4 bear p0 p0) oddEvenDef p0 (.hand p0)
   let phBearId := (gPhPause0.permanentsOf p0)[0]!.id
   let (gPhPausedBase, _) :=
@@ -609,6 +637,33 @@ private def replayOk49i3 (gs : Array Game) : Bool :=
   let gDeferredPhaseInCtrl := gPhInPaused1.phaseInControlled p0
   let bearStillPhasedOutWhilePaused := (gDeferredPhaseInCtrl.object! phBearId).status.phasedOut
   let gAfterResumePhaseInCtrl := mustApply gDeferredPhaseInCtrl p0 (.chooseMode 0)
+
+  let outerEqDef : CardDef := {
+    name := "P49i3 Blade"
+    types := #[.artifact]
+    subtypes := #["Equipment"]
+  }
+  let subAuraDef : CardDef := {
+    name := "P49i3 Polish"
+    types := #[.enchantment]
+    subtypes := #["Aura"]
+    staticAbilities := #[.fra .enchantArtifactOrNonAuraEnchantment]
+  }
+  let gAtt0 :=
+    addPermanent (addPermanent (addPermanent g4 bear p0 p0) outerEqDef p0 p0) subAuraDef p0 p0
+  let attHostObj := (gAtt0.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let attEqObj := (gAtt0.permanentsOf p0).find? (·.name == outerEqDef.name) |>.get!
+  let attSubObj := (gAtt0.permanentsOf p0).find? (·.name == subAuraDef.name) |>.get!
+  let gAttPhasedOut :=
+    ((gAtt0.attachSourceTo attEqObj attHostObj (cause := some testCause)).attachSourceTo
+      attSubObj attEqObj (cause := some testCause)).phaseOut attHostObj (cause := some testCause)
+  let gAttPaused0 := insertObject gAttPhasedOut oddEvenDef p0 (.hand p0)
+  let (gAttPaused1, _) :=
+    gAttPaused0.putOntoBattlefield (gAttPaused0.player p0).hand.back! p0 (cause := some testCause)
+  let gDeferredAttPhaseIn :=
+    gAttPaused1.phaseIn (gAttPaused1.object! attEqObj.id) (cause := some testCause)
+  let attEqStillPhasedOutWhilePaused := (gDeferredAttPhaseIn.object! attEqObj.id).status.phasedOut
+  let gAfterResumeAttPhaseIn := mustApply gDeferredAttPhaseIn p0 (.chooseMode 0)
 
   -- 3b(ii). `Phasing.departedNextTurnWouldHaveBegunSince` `preLogRegSeat` mid-log departure handling:
   let gT2 := g4.startNextTurnAndBegin -- turn 2, `p1` active
@@ -632,7 +687,11 @@ private def replayOk49i3 (gs : Array Game) : Bool :=
        bearStillPhasedInWhilePaused &&
        (gAfterResumePhaseOut.object! phBearId).status.phasedOut &&
        bearStillPhasedOutWhilePaused &&
-       !(gAfterResumePhaseInCtrl.object! phBearId).status.phasedOut) &&
+       !(gAfterResumePhaseInCtrl.object! phBearId).status.phasedOut &&
+       attEqStillPhasedOutWhilePaused &&
+       (gAfterResumeAttPhaseIn.object! attHostObj.id).status.phasedOut &&
+       !(gAfterResumeAttPhaseIn.object! attEqObj.id).status.phasedOut &&
+       !(gAfterResumeAttPhaseIn.object! attSubObj.id).status.phasedOut) &&
     mustHold49i3 "3b_midLogDeparturePreLogRegSeat"
       ((gMidDepT4P3.object! midBearId).status.phasedOut &&
        (gMidDepT5P0.object! midBearId).status.phasedOut &&
@@ -642,7 +701,7 @@ private def replayOk49i3 (gs : Array Game) : Bool :=
   mustHold49i3 "3b" item3bOk &&
   mustHold49i3 "3.replay"
     (replayOk49i3 #[gP2Conceded, gP1Conceded, gSimEot, gTrigPoMoved,
-      gAfterResumePhaseOut, gAfterResumePhaseInCtrl])
+      gAfterResumePhaseOut, gAfterResumePhaseInCtrl, gAfterResumeAttPhaseIn])
 
 end Phase49Item3EventAlignment
 

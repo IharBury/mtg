@@ -1251,13 +1251,13 @@ def finishPostCast (g : Game) (p : PlayerId)
   let g : Game :=
     match g.pendingMayCastFromExile with
     | some (q, ids, left) =>
-      if q != p || !g.stillInGame q || g.pending != Pending.none then g
+      if q != p || g.pending != Pending.none then g
       else
         let alive := ids.filter (fun id =>
           (g.findObject? id).any (fun (o : GameObject) =>
             o.zone == Zone.exile && !g.isLand o))
         let g := g.change (.pendingMayCastFromExile none)
-        if alive.isEmpty || left == 0 then g
+        if !g.stillInGame q || alive.isEmpty || left == 0 then g
         else
           g.beginFraChoice q (.mayCastUpToFromExile alive left)
             s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
@@ -1266,12 +1266,12 @@ def finishPostCast (g : Game) (p : PlayerId)
   let g :=
     match g.pendingFreeCopies with
     | some (q, ids, budget, castsLeft) =>
-      if q != p || !g.stillInGame q || g.pending != .none then g
+      if q != p || g.pending != .none then g
       else
         let alive := ids.filter (fun id => (g.findObject? id).any (·.zone == .exile))
         let castable := alive.filter (fun id =>
           (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
-        if castable.isEmpty || castsLeft == 0 then
+        if !g.stillInGame q || castable.isEmpty || castsLeft == 0 then
           let g :=
             if alive.isEmpty then g
             else
