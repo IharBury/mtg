@@ -19940,7 +19940,7 @@ post-restore `acc.name cur` return-control logs and `Movement.move` `expireEffec
    (`Decisions.lean:414, 436, 438, 443, 455, 462, 474, 480, 597–616, 1463–1464, 1524, 1527, 1541, 1552–1553, 1561, 1565, 1572, 1583–1584, 1591, 1726–1730, 1736, 1753, 1762, 1766, 1787, 1807, 1810, 3038, 6772–6773, 6817–6818`,
    `Entering.lean:452`,
    `Leaving.lean:3247–3281`,
-   `StateBasedActions.lean:526–665, 695–718, 1007–1046, 1218–1221`,
+   `StateBasedActions.lean:526–665, 695–730, 1007–1052, 1218–1221`,
    `Turns.lean:1094–1119`;
    **CR 104.3a / 117.3a–c,5 / 500.4 / 514.3a / 601.2i / 602.2b / 616.1 / 704.3 / 704.5j / 800.4a,j**):
    - **CR 800.4j `priorityInstead` redirection across `Decisions` step, cast, and continuation priority probes, `.beginTurnAfterStartExpiry` departed-active-player probe parity, and `Decisions.keepLegend` continuation-first priority routing**
@@ -19982,7 +19982,7 @@ post-restore `acc.name cur` return-control logs and `Movement.move` `expireEffec
          `g.finishAndGrantPriority` with its default continuation-first parameter in `Decisions.keepLegend`
          (`6772–6773, 6817–6818`).
    - **`StateBasedActions.checkSBACounted` & `checkSBACountedWithLeavesCore` post-close repause (`flushedBid?.isSome && g.sbaPaused` when `g.currentBatch.isNone` or `splitAfterCloseBatchFor?` misses) restoration and `outerAfterIn?` ordering**
-     (`Leaving.lean:3247–3281`, `StateBasedActions.lean:526–665, 695–718, 1007–1046, 1218–1221`):
+     (`Leaving.lean:3247–3281`, `StateBasedActions.lean:526–665, 695–730, 1007–1052, 1218–1221`):
      - Two post-close SBA batch-repause and continuation-ordering bugs remain:
        (i) in `rewriteRepausedPostCloseBatch` (`526–665`), the `flushedFromPending = true` branch (`533–589`) splits
        `g.pendingReplacement` on `curBid` (`534`), peeling `curAfter?` (`536–573`) and, when `!deferRestore`, splicing
@@ -20011,24 +20011,37 @@ post-restore `acc.name cur` return-control logs and `Movement.move` `expireEffec
        `deferRestore || savedIn.isSome || popOuterIn || rewindProposalIn.isSome` (testing pre-peel inputs and omitting
        `!departedIn.isEmpty` and `g.players.any (fun r => r.lost && !r.leftTheGame)`) — chaining `outerAfterIn?` ahead of
        pending-loser departure or without threading accumulated `departed` into the restored continuation:
-       - Pre-split `flushedPendingAfter?` from `g.pendingReplacement` before `flushDismissedPausedBatch` (`703–709,
-         1015–1021`, gated on `flushDismissedPausedBatch`'s exact flush condition `Leaving.lean:3250–3258` so
-         `flushedPendingAfter?` is not glued onto an unbatched repause continuation at `Leaving.lean:3262–3265`, and
-         re-chaining `flushedPendingAfter?` when `!g.over && !g.sbaPaused`); generalize `rewriteRepausedPostCloseBatch`
-         (`526–665`) to accept `(curBid? : Option BatchId)` (`g.currentBatch.map Prod.fst`) and `(flushedPendingAfter? :
-         Option PendingReplacement)` and invoke it unconditionally whenever `flushedBid?.isSome && g.sbaPaused` in both
-         `checkSBACounted` (`711–718`) and `checkSBACountedWithLeavesCore` (`1023–1046`, collapsing the `some newBid` and
-         `g.currentBatch.isNone` arms into one `(g, savedM, poM, depM, rwM)` binding) so `flushedFromPending = true`
-         (`533–589`) peels `seqOptPending innerAfter? flushedPendingAfter?` on `curBid?` split hit (`535–587`) and peels
-         `flushedPendingAfter?` + chains `seqOptPending newHead? remTail?` onto `g` when `!deferRestore` on `curBid? ==
-         none` or split miss (`588–589`), while `flushedFromPending = false` (`590–665`) pops/peels
-         `outerPendingReplacements` (`591–631`) and chains `seqOptPending newHead? remTail?` onto `g` when
-         `!deferRestore` on `curBid? == none` or split miss (`656–665`, with `newHead?` selecting `.leavePlayersWhoLost
-         savedM poM depM rwM` whenever `savedM.isSome || poM || !depM.isEmpty || rwM.isSome || g.players.any (fun r =>
-         r.lost && !r.leftTheGame)` and `.checkSBA` otherwise); and gate `checkSBACountedWithLeavesCore`'s unified
-         post-rewrite `outerAfterIn?` `combineOuterContinuations` check (`1028–1046`) on
-         `deferRestore || savedM.isSome || poM || !depM.isEmpty || rwM.isSome || g.players.any (fun r => r.lost &&
-         !r.leftTheGame)`.
+       - Snapshot `flushedPendingAfter?` alongside `flushedFromPending` before `flushDismissedPausedBatch` (`703–704,
+         1015–1016`), and add `(chainAfterOnRepause : Bool := true)` to `Leaving.flushDismissedPausedBatch`
+         (`Leaving.lean:3247–3266`, passed as `false` at `StateBasedActions.lean:707, 1019`) so its `some (closePrefix,
+         afterClose?)` arm (`Leaving.lean:3259–3266`) still chains `afterClose?` (`3262–3265`) when `!g.sbaPaused` (for the
+         unpaused `g.currentBatch.isNone` peels at `727` and `1050`, without re-chaining at the call site) while skipping
+         `chainPendingReplacement after` when `resumePendingReplacementFwd closePrefix` re-pauses (`g.sbaPaused`);
+         generalize `rewriteRepausedPostCloseBatch` (`526–665`) to accept `(curBid? : Option BatchId)` (`g.currentBatch.map
+         Prod.fst`) and `(flushedPendingAfter? : Option PendingReplacement := none)` and invoke it unconditionally whenever
+         `flushedBid?.isSome && g.sbaPaused` in both `checkSBACounted` (`711–718`, which discards the tuple's trailing
+         fields as at `713–716`) and `checkSBACountedWithLeavesCore` (`1023–1046`, collapsing the `some newBid` and
+         `g.currentBatch.isNone` arms into one `(g, savedM, poM, depM, rwM)` binding that returns the merged `deferRestore`
+         result):
+         - in `flushedFromPending = true` (`533–589`), decide `curBid?` before `splitAfterCloseBatchFor?` (`534`): on a
+           `some curBid` split hit (`535–587`, binding `(throughClose, curAfter?)`), combine `let curAfter? :=
+           seqOptPending curAfter? flushedPendingAfter?` (peeled once because `flushDismissedPausedBatch` did not chain
+           `flushedPendingAfter?` on repause) and run `536–547` (`deferRestore`: write `throughClose` back and merge into
+           the returned tuple) or `548–587` (`!deferRestore`: peel `curAfter?` at `550–573` and splice `seqOptPending
+           newHead? remTail?` onto `throughClose` at `575–586`); on `curBid? == none` or a `some curBid` split miss
+           (replacing `588–589`), peel/merge `flushedPendingAfter?` directly on `g` into the returned `(gp, savedM, poM,
+           depM, rwM)` tuple via `538–547`'s `peelLeadingSbaOrLeave?` / `mergeLeaveArgs` / `combineOuterContinuations`
+           logic when `deferRestore`, and peel `flushedPendingAfter?` via `550–573` + chain `seqOptPending newHead?
+           remTail?` onto `g` when `!deferRestore`;
+         - in `flushedFromPending = false` (`590–665`), pop `outerPendingReplacements` (`591–594`), return the merged tuple
+           on `deferRestore` (`595–605`, before the batch split), and when `!deferRestore` (`606–665`) peel `pushedAfter?`
+           (`608–631`) and route `curBid? == none` alongside an open-batch split miss into `656–665` (chaining
+           `seqOptPending newHead? remTail?` onto `g`, with `newHead?` selecting `.leavePlayersWhoLost savedM poM depM rwM`
+           whenever `savedM.isSome || poM || !depM.isEmpty || rwM.isSome || g.players.any (fun r => r.lost &&
+           !r.leftTheGame)` and `.checkSBA` otherwise); and
+         - gate `checkSBACountedWithLeavesCore`'s unified post-rewrite `outerAfterIn?` `combineOuterContinuations` check
+           (`1028–1046`) on `deferRestore || savedM.isSome || poM || !depM.isEmpty || rwM.isSome || g.players.any (fun r =>
+           r.lost && !r.leftTheGame)`.
 
 2. **`Turns.expireFraUntilTurnEffects` simultaneous `preState?` forwarding and Impending (`CR 702.176a`) castability & affordability parity across `Casting`, `Agent`, `Demo`, and `FraChoices`**
    (`Agent.lean:105–141, 710–733, 773–812, 1096–1106, 1148–1161, 1216`,
