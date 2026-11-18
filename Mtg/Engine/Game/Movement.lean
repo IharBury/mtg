@@ -590,6 +590,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             (cause := baseHappenedCause))
         | none => g
       let g := g.expireEffectsOnLeavingObject old (reconcileControl := false)
+        (preState? := some preMove) (skipLogIds := skipUnattachIds)
       let g :=
         if old.zone == .battlefield then
           g.expireWhileSourceEffects old.id (preState? := some preMove) (reconcileControl := false)

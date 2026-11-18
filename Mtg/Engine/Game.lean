@@ -192,38 +192,6 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 
 namespace Mtg.Engine
 
-/-- Resolve a `ReplacementId` for heuristic/idle agents, filling in open-ended
-`*Prompt` replacement kinds with a legal creature type or nonland card name. -/
-def Game.defaultReplacementId (g : Game) (p : PlayerId) (choices : Array ReplacementId)
-    (payLifeIfSafe : Bool := false) : Option ReplacementId :=
-  let base? :=
-    (if payLifeIfSafe then
-      choices.find? (fun c =>
-        match c.kind with
-        | .entersUntappedPayLife n => (g.player p).life > (n : Int)
-        | _ => false)
-     else none)
-    |>.orElse (fun _ =>
-      choices.find? (fun c =>
-        match c.kind with
-        | .entersTappedDeclinePayLife | .entersTappedDeclineBehold | .declineEntersAsCopy => true
-        | _ => false))
-    |>.orElse (fun _ => choices[0]?)
-  base?.map fun c =>
-    match c.kind with
-    | .asEntersChooseCreatureTypePrompt =>
-      let yours :=
-        (g.permanentsOf p).foldl (fun acc o =>
-          (g.subtypes o).foldl (fun acc s =>
-            if s.isCreatureType && !acc.contains s then acc.push s else acc) acc) #[]
-      { c with kind := .asEntersChooseCreatureType (yours[0]?.getD .human) }
-    | .asEntersChooseCardNamePrompt =>
-      let opp := g.objects.find? (fun o => o.owner != p && !g.isLand o)
-      let any := g.knownCardFaces.find? (fun card => !card.isLand)
-      let nm := (opp.map (·.name)).getD ((any.map (·.name)).getD "Grizzly Bears")
-      { c with kind := .asEntersChooseCardName nm }
-    | _ => c
-
 /-- Apply one legal action, or panic with the rules error. -/
 def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
   match g.apply p a with

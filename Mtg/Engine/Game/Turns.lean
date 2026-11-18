@@ -23,24 +23,30 @@ from exile"` at most once for `oid` when `oid` had a playable permission in
 private def expirePlayFromExileEffect (pre g : Game) (eid : EffectId) (oid : ObjectId)
     (cause : Option EventCause) (reconcileControl : Bool := true) : Game :=
   let hadPlayable :=
-    (pre.findObject? oid).any (fun o => o.zone == .exile && !(pre.activePlayPermissions o).isEmpty)
-  let alreadyLostInBatch :=
-    (g.findObject? oid).any (fun o => o.zone == .exile && (g.activePlayPermissions o).isEmpty) &&
-      (g.events.extract pre.events.size g.events.size).any fun ev =>
-        match ev.change with
-        | .rules (.continuousEffect (.expired _ (some (.permission _ (.playFromExile oid' pm) d)))) =>
-          oid' == oid && !pm.fromAdventure && !pm.whileExiled &&
-            match d with
-            | .whileSourceOnBattlefield _ | .untilSourceLeaves _
-            | .whileSourceHasCounter _ _ | .whileInZone _ _ => false
-            | _ => true
-        | _ => false
+    (pre.findObject? oid).any fun o =>
+      o.zone == .exile &&
+        (!(pre.activePlayPermissions o).isEmpty ||
+          pre.livingPlayers.any (fun pl => pre.mayCastExiledBySource pl.id o))
+  let slice := g.events.extract pre.events.size g.events.size
+  let alreadyLogged := Id.run do
+    for j in [0:slice.size] do
+      match slice[j]! with
+      | .rules _ (.continuousEffect (.expired _ (some (.permission _ (.playFromExile oid' _) _)))) _ _ =>
+        if oid' == oid then
+          match slice[j + 1]? with
+          | some (.engine _ (.logMsg m) _) =>
+            if m.endsWith " can no longer be played from exile" then
+              return true
+          | _ => pure ()
+      | _ => pure ()
+    return false
   let g := g.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)
     (preState? := some pre)
   match g.findObject? oid with
   | some o =>
-    if o.zone == .exile && hadPlayable && !alreadyLostInBatch &&
-        (g.activePlayPermissions o).isEmpty then
+    if o.zone == .exile && hadPlayable && !alreadyLogged &&
+        (g.activePlayPermissions o).isEmpty &&
+        !g.livingPlayers.any (fun pl => g.mayCastExiledBySource pl.id o) then
       g.logMsg s!"{g.name o} can no longer be played from exile"
     else g
   | none => g

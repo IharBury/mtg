@@ -269,8 +269,20 @@ permission (`withoutManaCost` > payable `payLifeEqualManaValue` > `anyMana` >
 never picking an unpayable `payLifeEqualManaValue` grant (CR 601.1a / 608.2g / 119.4). -/
 def paidResolutionOrigPerm? (g : Game) (p : PlayerId) (o : GameObject)
     (ignoreTiming : Bool := true) (face? : Option CardDef := none) : Option PlayPermission :=
-  let f := face?.getD (g.baseCard o)
-  let mv := match face? with | some fc => fc.manaValue | none => g.objectManaValue o
+  let isAdv :=
+    o.isAdventureSpell ||
+      face?.any (fun fc =>
+        (g.baseCard o).adventure.any (fun adv =>
+          adv.toCardDef == fc || (adv.name == fc.name && fc.name != (g.baseCard o).name)))
+  let defaultFace := { g.baseCard o with keywords := g.currentKeywords o }
+  let f :=
+    match face? with
+    | some fc => if !isAdv && fc == g.baseCard o then defaultFace else fc
+    | none => defaultFace
+  let mv :=
+    match face? with
+    | some fc => if !isAdv && fc == g.baseCard o then g.objectManaValue o else fc.manaCost.manaValue
+    | none => g.objectManaValue o
   let timingOk := g.timingAllowsCast p f (ignorePending := true)
   let nullPerm? : Option PlayPermission :=
     if o.zone == .exile && g.mayCastExiledBySource p o && timingOk then
@@ -279,7 +291,8 @@ def paidResolutionOrigPerm? (g : Game) (p : PlayerId) (o : GameObject)
   let cands :=
     ((g.playPermissionsFor p o).filter fun pm =>
       pm.prepareSource.isNone &&
-        (ignoreTiming || pm.ignoreTiming || timingOk) &&
+        (!isAdv || !pm.fromAdventure) &&
+        (pm.ignoreTiming || timingOk) &&
         (pm.withoutManaCost ||
           (pm.payLifeEqualManaValue && g.canPayLife p mv) ||
           (!pm.payLifeEqualManaValue && (pm.anyMana || (!ignoreTiming && pm.ignoreTiming))))) ++
@@ -290,12 +303,10 @@ def paidResolutionOrigPerm? (g : Game) (p : PlayerId) (o : GameObject)
       (if pm.anyMana then 4 else 0) +
       (if pm.ignoreTiming then 2 else 0) +
       (if !pm.fromAdventure then 1 else 0)
-  let picked? :=
-    cands.foldl (fun best? pm =>
-      match best? with
-      | none => some pm
-      | some b => if rank pm >= rank b then some pm else some b) none
-  picked?.map (fun pm => { pm with ignoreTiming := pm.ignoreTiming || ignoreTiming })
+  cands.foldl (fun best? pm =>
+    match best? with
+    | none => some pm
+    | some b => if rank pm >= rank b then some pm else some b) none
 
 /-- Whether `prop` was proposed under a forced one-shot free cost
 (`.alternative "withoutManaCost"` or `.alternative "free copy"`), forbidding
@@ -477,125 +488,6 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
         face.allowsZeroTargets || g.castFaceHasLegalTarget p face tcs (some o.id)
       else true
 
-/-- Mana types `src` can produce that may be spent on `prop` (CR 106.6). -/
-def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array ManaType)
-    (prop : ProposedSpell) : Array ManaType :=
-  types.filter fun t =>
-    g.restrictionAllowsProposed (g.tapRestrictionOf src t (prop? := some prop)) prop ||
-      (!(g.extraMountainRedFromTap src (g.baseManaTypesFromTap src t (prop? := some prop))).isEmpty &&
-        g.restrictionAllowsProposed .none prop)
-
-/-- Untapped mana sources `p` may activate while paying `prop` (CR 601.2g).
-Sources reserved for `{T}` or another battlefield-source cost, or whose mana
-cannot be spent on this spell or ability, are omitted. -/
-def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
-    Array (GameObject × Array ManaType) :=
-  let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
-  (g.manaSources p).filterMap (fun (src, types) =>
-    if (prop.sourceId == some src.id && prop.tapSource &&
-          !g.sourceTappedForCost src.id (some prop.spellId) sinceIdx) ||
-        prop.teamworkCreatures.contains src.id then
-      none
-    else
-      let usable := g.usableManaTypesForProposed src types prop
-      if usable.isEmpty then none
-      else some (src, usable))
-
-/-- Pool after tapping `src` for `t`, including spending restrictions (and
-leaving `.mountainExtraRed` extra `{R}` unrestricted). -/
-def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType)
-    (prop? : Option ProposedSpell := none) : ManaPool :=
-  g.addTapManaToPool pool src t (prop? := prop?)
-
-/-- Minimum number of mana units needed to pay `cost` (1 per colored,
-colorless, hybrid, or twobrid symbol, plus generic; `{X}` is 0). -/
-private def minManaUnitsForCost (cost : ManaCost) : Nat :=
-  cost.symbols.foldl
-    (fun acc s =>
-      match s with
-      | .generic n => acc + n
-      | .colored _ | .colorless | .hybrid _ _ | .twobrid _ => acc + 1
-      | .x => acc)
-    0
-
-/-- Collapse multiple colored mana types on `src` that have zero symbols in
-`cost` (`cost.symbolsIncludingColor c == 0`) and identical single-unit output
-and restriction to a single representative, avoiding exponential branching on
-any-color sources (CR 106.1 / 605). -/
-private def dedupZeroReqManaTypes (g : Game) (src : GameObject) (types : Array ManaType)
-    (cost : ManaCost) (prop? : Option ProposedSpell := none) : Array ManaType :=
-  if types.size ≤ 1 then types
-  else Id.run do
-    let mut out : Array ManaType := #[]
-    let mut seenZero : Array (Option ManaRestriction × Nat) := #[]
-    for t in types do
-      match t with
-      | .colored c =>
-        let base := g.baseManaTypesFromTap src t (prop? := prop?)
-        let extra := g.extraMountainRedFromTap src base
-        if cost.symbolsIncludingColor c == 0 && base == #[t] then
-          let rn := (ManaRestriction.normalize? (some (g.tapRestrictionOf src t (prop? := prop?))), extra.size)
-          if !seenZero.contains rn then
-            seenZero := seenZero.push rn
-            out := out.push t
-        else
-          out := out.push t
-      | .colorless =>
-        out := out.push t
-    return out
-
-/-- Restricted mana beyond Elf and instant/sorcery mana that may pay a
-cost (CR 106.6). -/
-structure ManaAllowances where
-  hero : Bool := false
-  villain : Bool := false
-  cantNonartifact : Bool := false
-  creature : Bool := false
-  spend : ManaSpend := {}
-deriving Inhabited
-
-/-- What restricted mana may pay for `prop`. -/
-def proposedAllowances (g : Game) (prop : ProposedSpell) : ManaAllowances :=
-  { hero := g.proposedAllowsHeroRestricted prop, villain := g.proposedAllowsVillainRestricted prop
-    cantNonartifact := g.proposedAllowsCantNonartifact prop
-    creature := g.proposedAllowsCreatureRestricted prop, spend := g.proposedManaSpend prop }
-
-/-- Whether some assignment of tap choices (including mixed-color
-`ManaOutput.combination` tuples) from `sources` pays `cost`. -/
-def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf allowInst : Bool) (sources : List (GameObject × Array ManaType))
-    (a : ManaAllowances := {}) (prop? : Option ProposedSpell := none) : Bool :=
-  let minUnits := minManaUnitsForCost cost
-  let srcArr := sources.toArray.map fun (src, types) =>
-    let choices :=
-      g.tapChoicesForSource src types cost
-        (dedupSingleTypes := fun ts => dedupZeroReqManaTypes g src ts cost prop?)
-        (prop? := prop?)
-    let maxOut := choices.foldl (fun m (ch : TapManaChoice) => max m ch.totalSize) 0
-    (src, choices, maxOut)
-  let allNonEmpty := srcArr.all (!·.2.1.isEmpty)
-  let sufMax : Array Nat := Id.run do
-    let mut out := Array.replicate (srcArr.size + 1) 0
-    let mut i := srcArr.size
-    while i > 0 do
-      i := i - 1
-      out := out.set! i (srcArr[i]!.2.2 + out[i + 1]!)
-    return out
-  let rec go (curPool : ManaPool) (idx : Nat) : Bool :=
-    if allNonEmpty &&
-        curPool.canPay cost allowElf allowInst a.hero a.villain a.cantNonartifact
-          a.creature a.spend then
-      true
-    else if idx ≥ srcArr.size then
-      curPool.canPay cost allowElf allowInst a.hero a.villain a.cantNonartifact
-        a.creature a.spend
-    else if curPool.total + sufMax[idx]! < minUnits then
-      false
-    else
-      let (_, choices, _) := srcArr[idx]!
-      choices.any (fun (ch : TapManaChoice) => go (ch.applyToPool curPool) (idx + 1))
-  go pool 0
-
 /-- Whether activating `ch` covers more of `cost` than `pool`. -/
 def choiceHelpsPay (pool : ManaPool) (ch : TapManaChoice)
     (cost : ManaCost) (allowElfRestricted allowInstRestricted : Bool)
@@ -761,11 +653,33 @@ def hasCostPreservingPaymentSubset (g : Game) (pool : ManaPool) (cost : ManaCost
     else
       let freeOthers := (sources.filter (fun (o, _) => !g.isCreature o && !g.isArtifact o)).toList
       let critRem := (sources.filter (fun (o, _) => g.isCreature o || g.isArtifact o)).toList
+      let allPicks : Array CostPick :=
+        if prop.kind != .activatedAbility then #[]
+        else
+          match prop.activation with
+          | some ab =>
+            costPicksWithSacrificeOther (costPicksOf ab)
+              (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
+          | none => #[]
+      let sacSrc :=
+        prop.sacrificeSource ||
+          prop.activation.any (fun ab => ab.cost.sacrificeSource || ab.cost.fra == .exileSource)
+      let discSrc :=
+        prop.discardSource ||
+          prop.activation.any (fun ab => ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand)
       let equivKey (o : GameObject) (choices : Array TapManaChoice) :=
-        (g.isCreature o, g.isArtifact o, g.power o,
+        let pickMask :=
+          allPicks.map fun pk =>
+            g.costPickAllows p prop.sourceId pk o
+              (tapSource := prop.tapSource)
+              (sacrificeOrExileSource := sacSrc)
+              (discardOrExileHandSource := discSrc)
+        (some o.id == prop.sourceId, o.attachedTo == prop.sourceId,
+          g.isCreature o, g.isArtifact o, g.power o, pickMask,
           choices.map (fun (ch : TapManaChoice) => (ch.baseAdded, ch.extraRed, ch.restriction)))
       let rec go (curPool : ManaPool) (chosenIds : Array ObjectId)
-          (skippedKeys : Array (Bool × Bool × Int × Array (Array ManaType × Array ManaType × ManaRestriction)))
+          (skippedKeys : Array (Bool × Bool × Bool × Bool × Int × Array Bool ×
+            Array (Array ManaType × Array ManaType × ManaRestriction)))
           (rem : List (GameObject × Array ManaType)) : Bool :=
         if !g.tapPreservesPostManaCosts p prop chosenIds then false
         else if g.canPayFromSources curPool cost allowElf allowInst freeOthers a activeProp? then true
@@ -1337,13 +1251,13 @@ def finishPostCast (g : Game) (p : PlayerId)
   let g : Game :=
     match g.pendingMayCastFromExile with
     | some (q, ids, left) =>
-      if g.pending != Pending.none then g
+      if q != p || g.pending != Pending.none then g
       else
         let alive := ids.filter (fun id =>
           (g.findObject? id).any (fun (o : GameObject) =>
             o.zone == Zone.exile && !g.isLand o))
         let g := g.change (.pendingMayCastFromExile none)
-        if q != p || alive.isEmpty || left == 0 then g
+        if !g.stillInGame q || alive.isEmpty || left == 0 then g
         else
           g.beginFraChoice q (.mayCastUpToFromExile alive left)
             s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
@@ -1357,7 +1271,7 @@ def finishPostCast (g : Game) (p : PlayerId)
         let alive := ids.filter (fun id => (g.findObject? id).any (·.zone == .exile))
         let castable := alive.filter (fun id =>
           (g.findObject? id).any (fun o => g.objectManaValue o ≤ budget))
-        if castable.isEmpty || castsLeft == 0 then
+        if !g.stillInGame q || castable.isEmpty || castsLeft == 0 then
           let g :=
             if alive.isEmpty then g
             else
@@ -1366,7 +1280,7 @@ def finishPostCast (g : Game) (p : PlayerId)
                   g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
           g.change (.pendingFreeCopies none)
         else
-          g.beginFraChoice q (.castCopiesFree alive budget castsLeft)
+          (g.change (.pendingFreeCopies none)).beginFraChoice q (.castCopiesFree alive budget castsLeft)
     | none => g
   if !grantPriority then g
   else if let .chooseReplacement .. := g.pending then

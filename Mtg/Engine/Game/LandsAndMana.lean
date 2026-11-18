@@ -83,21 +83,163 @@ def availableManaExceptIds (g : Game) (p : PlayerId) (excludeIds : Array ObjectI
       if excludeIds.contains src.id then pool
       else
         let green := ManaType.colored .green
-        match (if types.size ≥ 5 && types.contains green then some green else types[0]?) with
-        | some t => g.addTapManaToPool pool src t
+        let ordered :=
+          if types.size ≥ 5 && types.contains green then
+            #[green] ++ types.filter (· != green)
+          else types
+        let score (t : ManaType) : Nat × Nat × Nat :=
+          let base := g.baseManaTypesFromTap src t
+          let extra := g.extraMountainRedFromTap src base
+          let isUnr :=
+            match ManaRestriction.normalize? (some (g.tapRestrictionOf src t)) with
+            | none | some (.fra .fromTreasure) => 1
+            | _ => 0
+          (isUnr, base.size + extra.size, extra.size)
+        let best? :=
+          ordered.foldl (fun (acc? : Option (ManaType × (Nat × Nat × Nat))) t =>
+            let sc := score t
+            match acc? with
+            | none => some (t, sc)
+            | some (_, bestSc) =>
+              if sc.1 > bestSc.1 ||
+                  (sc.1 == bestSc.1 && sc.2.1 > bestSc.2.1) ||
+                  (sc.1 == bestSc.1 && sc.2.1 == bestSc.2.1 && sc.2.2 > bestSc.2.2) then
+                some (t, sc)
+              else acc?) none
+        match best? with
+        | some (t, _) => g.addTapManaToPool pool src t
         | none => pool)
     (g.player p).manaPool
 
 /-- Mana in `p`'s pool plus mana from each of their untapped sources, skipping
 `exclude` (used when that source's `{T}` is part of an activation cost).
-Each source is counted as its first mana type (green for any color), with
-its spending restriction. -/
+Each source is counted as its best unrestricted/max-yield mana type (green for
+five-color ties), with its spending restriction. -/
 def availableManaExcept (g : Game) (p : PlayerId) (exclude : Option ObjectId) : ManaPool :=
   g.availableManaExceptIds p exclude.toArray
 
 /-- Mana in `p`'s pool plus mana from each of their untapped sources. -/
 def availableMana (g : Game) (p : PlayerId) : ManaPool :=
   g.availableManaExceptIds p #[]
+
+/-- Mana types `src` can produce that may be spent on `prop` (CR 106.6). -/
+def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array ManaType)
+    (prop : ProposedSpell) : Array ManaType :=
+  types.filter fun t =>
+    g.restrictionAllowsProposed (g.tapRestrictionOf src t (prop? := some prop)) prop ||
+      (!(g.extraMountainRedFromTap src (g.baseManaTypesFromTap src t (prop? := some prop))).isEmpty &&
+        g.restrictionAllowsProposed .none prop)
+
+/-- Untapped mana sources `p` may activate while paying `prop` (CR 601.2g).
+Sources reserved for `{T}` or another battlefield-source cost, or whose mana
+cannot be spent on this spell or ability, are omitted. -/
+def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
+    Array (GameObject × Array ManaType) :=
+  let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
+  (g.manaSources p).filterMap (fun (src, types) =>
+    if (prop.sourceId == some src.id && prop.tapSource &&
+          !g.sourceTappedForCost src.id (some prop.spellId) sinceIdx) ||
+        prop.teamworkCreatures.contains src.id then
+      none
+    else
+      let usable := g.usableManaTypesForProposed src types prop
+      if usable.isEmpty then none
+      else some (src, usable))
+
+/-- Pool after tapping `src` for `t`, including spending restrictions (and
+leaving `.mountainExtraRed` extra `{R}` unrestricted). -/
+def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType)
+    (prop? : Option ProposedSpell := none) : ManaPool :=
+  g.addTapManaToPool pool src t (prop? := prop?)
+
+/-- Minimum number of mana units needed to pay `cost` (1 per colored,
+colorless, hybrid, or twobrid symbol, plus generic; `{X}` is 0). -/
+def minManaUnitsForCost (cost : ManaCost) : Nat :=
+  cost.symbols.foldl
+    (fun acc s =>
+      match s with
+      | .generic n => acc + n
+      | .colored _ | .colorless | .hybrid _ _ | .twobrid _ => acc + 1
+      | .x => acc)
+    0
+
+/-- Collapse multiple colored mana types on `src` that have zero symbols in
+`cost` (`cost.symbolsIncludingColor c == 0`) and identical single-unit output
+and restriction to a single representative, avoiding exponential branching on
+any-color sources (CR 106.1 / 605). -/
+def dedupZeroReqManaTypes (g : Game) (src : GameObject) (types : Array ManaType)
+    (cost : ManaCost) (prop? : Option ProposedSpell := none) : Array ManaType :=
+  if types.size ≤ 1 then types
+  else Id.run do
+    let mut out : Array ManaType := #[]
+    let mut seenZero : Array (Option ManaRestriction × Nat) := #[]
+    for t in types do
+      match t with
+      | .colored c =>
+        let base := g.baseManaTypesFromTap src t (prop? := prop?)
+        let extra := g.extraMountainRedFromTap src base
+        if cost.symbolsIncludingColor c == 0 && base == #[t] then
+          let rn := (ManaRestriction.normalize? (some (g.tapRestrictionOf src t (prop? := prop?))), extra.size)
+          if !seenZero.contains rn then
+            seenZero := seenZero.push rn
+            out := out.push t
+        else
+          out := out.push t
+      | .colorless =>
+        out := out.push t
+    return out
+
+/-- Restricted mana beyond Elf and instant/sorcery mana that may pay a
+cost (CR 106.6). -/
+structure ManaAllowances where
+  hero : Bool := false
+  villain : Bool := false
+  cantNonartifact : Bool := false
+  creature : Bool := false
+  spend : ManaSpend := {}
+deriving Inhabited
+
+/-- What restricted mana may pay for `prop`. -/
+def proposedAllowances (g : Game) (prop : ProposedSpell) : ManaAllowances :=
+  { hero := g.proposedAllowsHeroRestricted prop, villain := g.proposedAllowsVillainRestricted prop
+    cantNonartifact := g.proposedAllowsCantNonartifact prop
+    creature := g.proposedAllowsCreatureRestricted prop, spend := g.proposedManaSpend prop }
+
+/-- Whether some assignment of tap choices (including mixed-color
+`ManaOutput.combination` tuples) from `sources` pays `cost`. -/
+def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
+    (allowElf allowInst : Bool) (sources : List (GameObject × Array ManaType))
+    (a : ManaAllowances := {}) (prop? : Option ProposedSpell := none) : Bool :=
+  let minUnits := minManaUnitsForCost cost
+  let srcArr := sources.toArray.map fun (src, types) =>
+    let choices :=
+      g.tapChoicesForSource src types cost
+        (dedupSingleTypes := fun ts => dedupZeroReqManaTypes g src ts cost prop?)
+        (prop? := prop?)
+    let maxOut := choices.foldl (fun m (ch : TapManaChoice) => max m ch.totalSize) 0
+    (src, choices, maxOut)
+  let allNonEmpty := srcArr.all (!·.2.1.isEmpty)
+  let sufMax : Array Nat := Id.run do
+    let mut out := Array.replicate (srcArr.size + 1) 0
+    let mut i := srcArr.size
+    while i > 0 do
+      i := i - 1
+      out := out.set! i (srcArr[i]!.2.2 + out[i + 1]!)
+    return out
+  let rec go (curPool : ManaPool) (idx : Nat) : Bool :=
+    if allNonEmpty &&
+        curPool.canPay cost allowElf allowInst a.hero a.villain a.cantNonartifact
+          a.creature a.spend then
+      true
+    else if idx ≥ srcArr.size then
+      curPool.canPay cost allowElf allowInst a.hero a.villain a.cantNonartifact
+        a.creature a.spend
+    else if curPool.total + sufMax[idx]! < minUnits then
+      false
+    else
+      let (_, choices, _) := srcArr[idx]!
+      choices.any (fun (ch : TapManaChoice) => go (ch.applyToPool curPool) (idx + 1))
+  go pool 0
 
 /-- Whether `p` currently controls a usable non-plain CR 605 mana ability
 (`!isPlainTapManaAbilityDef`, such as Treasures, life/mana filter lands, or
@@ -108,6 +250,99 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
     (prop? : Option ProposedSpell := none) : Bool :=
   let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   let perms := g.permanentsOf p
+  let plainManaSrcs := g.manaSources p
+  let propTapReservedIds : Array ObjectId :=
+    match prop? with
+    | none => #[]
+    | some prop =>
+      let srcTap :=
+        match prop.sourceId with
+        | some sid =>
+          if prop.tapSource && !g.sourceTappedForCost sid (some prop.spellId) sinceIdx then #[sid]
+          else #[]
+        | none => #[]
+      srcTap ++ prop.teamworkCreatures
+  let propBfSacReservedIds : Array ObjectId :=
+    match prop? with
+    | none => #[]
+    | some prop =>
+      let srcSac :=
+        match prop.sourceId with
+        | some sid => if g.proposedNeedsBattlefieldSource prop sinceIdx then #[sid] else #[]
+        | none => #[]
+      let sneakSac :=
+        match prop.sneakAttacker with
+        | some aid => if !g.sneakPaid prop.spellId then #[aid] else #[]
+        | none => #[]
+      srcSac ++ prop.teamworkCreatures ++ sneakSac
+  let respectsPropReservations (o : GameObject) (d : ManaAbilityDef) : Bool :=
+    match prop? with
+    | none => true
+    | some prop =>
+      prop.cost.includesManaPayment &&
+      (!d.tap || !propTapReservedIds.contains o.id) &&
+      (!(d.sacrificeSelf || d.exileSelf) || !propBfSacReservedIds.contains o.id) &&
+      (!d.removeStoryCounter ||
+        !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeStoryCounter) &&
+          !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .story) sinceIdx &&
+          o.status.story ≤ 1)) &&
+      (!d.removeIndestructibleCounter ||
+        !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeIndestructibleCounter) &&
+          !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .indestructible) sinceIdx &&
+          o.status.indestructibleCounters ≤ 1)) &&
+      (d.picks.isEmpty ||
+        g.costPicksPayable p (some o.id) d.picks
+          (tapSource := d.tap)
+          (sacrificeOrExileSource := d.sacrificeSelf || d.exileSelf)
+          (preTappedIds := propTapReservedIds)
+          (sacReservedIds := propBfSacReservedIds))
+  let canPayEffCost (o : GameObject) (d : ManaAbilityDef) (effCost : ManaCost) : Bool :=
+    if !effCost.includesManaPayment then true
+    else
+      let allowElf := g.hasSubtype o .elf
+      let aEff : ManaAllowances := {
+        hero := g.hasSubtype o .hero
+        villain := g.hasSubtype o .villain
+        cantNonartifact := true
+        creature := g.isCreature o
+        spend := { abilitySourceSubtypes := g.subtypes o }
+      }
+      let effSrcs :=
+        plainManaSrcs.filter fun (src, _) =>
+          !(d.tap && src.id == o.id) && !propTapReservedIds.contains src.id
+      let hasTapPick :=
+        d.picks.any (fun pk => pk == .tapUntappedCreature || pk == .tapTwoUntappedArtifacts)
+      let picksOkWith (extraTapped : Array ObjectId) : Bool :=
+        d.picks.isEmpty ||
+          g.costPicksPayable p (some o.id) d.picks
+            (tapSource := d.tap)
+            (sacrificeOrExileSource := d.sacrificeSelf || d.exileSelf)
+            (preTappedIds := propTapReservedIds ++ extraTapped)
+            (sacReservedIds := propBfSacReservedIds)
+      if !hasTapPick || picksOkWith (effSrcs.map (·.1.id)) then
+        g.canPayFromSources (g.player p).manaPool effCost allowElf false effSrcs.toList aEff none
+      else
+        let freeOthers :=
+          (effSrcs.filter (fun (s, _) => !g.isCreature s && !g.isArtifact s)).toList
+        let critRem :=
+          (effSrcs.filter (fun (s, _) => g.isCreature s || g.isArtifact s)).toList
+        let rec searchEff (curPool : ManaPool) (tappedIds : Array ObjectId)
+            (rem : List (GameObject × Array ManaType)) : Bool :=
+          if !picksOkWith tappedIds then false
+          else if g.canPayFromSources curPool effCost allowElf false freeOthers aEff none then true
+          else if !g.canPayFromSources curPool effCost allowElf false (rem ++ freeOthers) aEff none then false
+          else
+            match rem with
+            | [] => false
+            | (s, ts) :: rest =>
+              let choices :=
+                g.tapChoicesForSource s ts effCost
+                  (dedupSingleTypes := fun xs => dedupZeroReqManaTypes g s xs effCost none)
+                  (prop? := none)
+              choices.any (fun (ch : TapManaChoice) =>
+                searchEff (ch.applyToPool curPool) (tappedIds.push s.id) rest) ||
+                searchEff curPool tappedIds rest
+        searchEff (g.player p).manaPool #[] critRem
   let usableAbilityOn (o : GameObject) (d : ManaAbilityDef) (requireNonPlain : Bool) : Bool :=
     (!requireNonPlain || !g.isPlainTapManaAbilityDef p o d) &&
       g.manaAbilityDefUsable p o d &&
@@ -115,36 +350,8 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
       (!d.tap ||
         (!o.status.tapped &&
           !(g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p)))) &&
-      (let effCost := g.manaAbilityEffectiveCost p o d
-       !effCost.includesManaPayment ||
-         (g.availableManaExcept p (if d.tap then some o.id else none)).canPay effCost
-           (allowElfRestricted := g.hasSubtype o .elf)
-           (allowInstRestricted := false)
-           (allowHeroRestricted := g.hasSubtype o .hero)
-           (allowVillainRestricted := g.hasSubtype o .villain)
-           (allowCantNonartifact := true)
-           (allowCreatureRestricted := g.isCreature o)
-           (spend := { abilitySourceSubtypes := g.subtypes o })) &&
-      (match prop? with
-       | none => true
-       | some prop =>
-         prop.cost.includesManaPayment &&
-         (!d.tap ||
-           !((prop.tapSource && prop.sourceId == some o.id &&
-               !g.sourceTappedForCost o.id (some prop.spellId) sinceIdx) ||
-             prop.teamworkCreatures.contains o.id)) &&
-         (!(d.sacrificeSelf || d.exileSelf) ||
-           !((prop.sourceId == some o.id && g.proposedNeedsBattlefieldSource prop sinceIdx) ||
-             prop.teamworkCreatures.contains o.id ||
-             (prop.sneakAttacker == some o.id && !g.sneakPaid prop.spellId))) &&
-         (!d.removeStoryCounter ||
-           !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeStoryCounter) &&
-             !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .story) sinceIdx &&
-             o.status.story ≤ 1)) &&
-         (!d.removeIndestructibleCounter ||
-           !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeIndestructibleCounter) &&
-             !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .indestructible) sinceIdx &&
-             o.status.indestructibleCounters ≤ 1)))
+      respectsPropReservations o d &&
+      canPayEffCost o d (g.manaAbilityEffectiveCost p o d)
   match prop? with
   | none =>
     perms.any (fun o => (g.manaAbilityDefs o).any (fun d => usableAbilityOn o d true))
@@ -163,9 +370,11 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
           (g.manaAbilityDefs o2).foldl (fun acc d2 =>
             let eff2 := g.manaAbilityEffectiveCost p o2 d2
             if eff2.includesManaPayment && g.manaAbilityDefUsable p o2 d2 &&
+                !(d2.output.allChoices (fun ts => if ts.size > 1 then #[ts[0]!] else ts)).isEmpty &&
                 (!d2.tap ||
                   (!o2.status.tapped &&
-                    !(g.hasSummoningSickness o2 && !(g.isCreature o2 && g.activatesAsThoughHaste p)))) then
+                    !(g.hasSummoningSickness o2 && !(g.isCreature o2 && g.activatesAsThoughHaste p)))) &&
+                respectsPropReservations o2 d2 then
               acc.push (o2, eff2)
             else acc) acc) #[]
       perms.any fun o =>

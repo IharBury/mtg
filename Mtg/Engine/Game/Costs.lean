@@ -245,8 +245,12 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
        else
          match card.controller with
          | some c => g.playPermissionFor? c card (face? := some face)
-         | none => g.bestActivePlayPermission? card)
+         | none => g.bestActivePlayPermission? card (face? := some face))
   let caster := card.controller.getD ((effPerm.map (·.player)).getD card.owner)
+  let hasAnyMana : Bool :=
+    match effPerm with
+    | some perm => perm.anyMana
+    | none => useImplicitPermissions && card.zone == .exile && g.mayCastExiledBySource caster card
   -- Thalia, the Survivor: each one an opponent controls adds {1}.
   let tax :=
     if face.isCreature then 0
@@ -278,7 +282,8 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
       | none => false
   let cost :=
     if freeRG then
-      g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+      let c := g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+      if hasAnyMana then c.asAnyMana else c
     else
       match effPerm with
       | some perm =>
@@ -290,7 +295,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
         else afterEquip
       | none =>
         -- Null Summoner: mana of any type can be spent when implicit exile permissions apply.
-        if useImplicitPermissions && card.zone == .exile && card.exiledBy.isSome then
+        if hasAnyMana then
           afterEquip.asAnyMana
         else afterEquip
   -- Omnipresence: from hand, a spell with mana value at most the number of
@@ -307,7 +312,9 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
           | .castFromHandFreeUpToCreatures => true
           | _ => false))
   let cost :=
-    if omnipresent then g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+    if omnipresent then
+      let c := g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+      if hasAnyMana then c.asAnyMana else c
     else cost
   -- Flawless Maneuver: if you control a commander, you may cast this spell
   -- without paying its mana cost unless another alternative cost was chosen (CR 118.9a).
@@ -317,7 +324,8 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
       (g.permanentsOf caster).any (·.isCommander)
   let cost :=
     if freeCommander then
-      g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+      let c := g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+      if hasAnyMana then c.asAnyMana else c
     else cost
   ManaCost.afterReduction face.manaCost cost
 

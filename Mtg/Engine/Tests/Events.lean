@@ -13,6 +13,7 @@ import Mtg.Engine.Tests.Events.Part11
 import Mtg.Engine.Tests.Events.Part12
 import Mtg.Engine.Tests.Events.Part13
 import Mtg.Engine.Tests.Events.Part14
+import Mtg.Engine.Tests.Events.Part15
 
 /-!
 # Game events

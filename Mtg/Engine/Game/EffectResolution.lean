@@ -111,10 +111,22 @@ partial def copyNontokenCreaturesStep (g : Game) (p : PlayerId)
 abilities. `none` for every other resolution. -/
 def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (sourceId : Option ObjectId)
-    (lastKnownPower : Option Int := none) : Option Game :=
+    (lastKnownPower : Option Int := none)
+    (chosenX : Option Nat := none)
+    (lastKnownToughness : Option Int := none) : Option Game :=
+  let ctx : TriggerRead := {
+    controller
+    sourceId
+    targets
+    lastKnownPower
+    lastKnownToughness
+    chosenX := chosenX.getD 0
+  }
   match effect.resolution with
-  | .empowerJace (.fixed n) => some (g.empowerJace controller n.toNat)
-  | .surveil (.fixed n) => some (g.beginSurveil controller n.toNat)
+  | .empowerJace amt =>
+    some (match g.triggerCount ctx amt with | some n => g.empowerJace controller n | none => g)
+  | .surveil amt =>
+    some (match g.triggerCount ctx amt with | some n => g.beginSurveil controller n | none => g)
   | .millSelf n => some (g.mill controller n)
   | .mayDiscardDraw n =>
     let pl := g.player controller
@@ -301,8 +313,10 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
           g.createEffect (.legendRuleOffThisTurn controller)
         g.logMsg s!"The legend rule doesn't apply to permanents {(g.player controller).name} controls this turn")
         "The source is no longer in play") sourceId (some "The target is no longer legal"))
-  | .loseLife (.fixed n) .you => some (g.loseLife controller n.toNat)
-  | .gainLife (.fixed n) => some (g.gainLife controller n.toNat)
+  | .loseLife amt .you =>
+    some (match g.triggerCount ctx amt with | some n => g.loseLife controller n | none => g)
+  | .gainLife amt =>
+    some (match g.triggerCount ctx amt with | some n => g.gainLife controller n | none => g)
   | .damageEachOpponent n =>
     let src? := (g.resolvingSpell.bind g.damageSourceById?).orElse (fun _ => sourceId.bind g.damageSourceById?)
     some (g.dealDamageToEachOpponent controller n (source := src?))
@@ -311,7 +325,11 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     let g := g.createEffect (.jaceLoyaltyAtInstantSpeedThisTurn controller)
     some (g.logMsg s!"Until end of turn, {(g.player controller).name} may activate loyalty abilities of Jace planeswalkers they control any time they could cast an instant")
   | r =>
-    if r.isFra then some (g.applyFra controller effect r targets sourceId (lastKnownPower := lastKnownPower)) else none
+    if r.isFra then
+      some (g.applyFra controller effect r targets sourceId
+        (lastKnownPower := lastKnownPower) (chosenX := chosenX)
+        (lastKnownToughness := lastKnownToughness))
+    else none
 
 /-- Pause-safe loop exiling `ids` from `p`'s hand and granting `.playPermission`
 for `exileHandDrawPlayUntilNext` (CR 616.1). -/
@@ -1185,12 +1203,15 @@ existing choice of one Equipment or declining. Any other resolution is
 accept or decline. -/
 def beginMay (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (r : SpellResolution)
-    (sourceId : Option ObjectId := none) : Game :=
+    (sourceId : Option ObjectId := none)
+    (resCtx : SpellResolutionCtx := {}) : Game :=
   g.withContinuationFrame fun g =>
     match r with
     | .attachEquipment =>
       g.withLegalKindPermanent controller effect.targetKind targets (fun g o =>
-        ((g.clearMay).change (.pending (.mayAttachEquipment controller o.id sourceId))).logMsg
+        ((g.clearMay).changes #[
+          .pending (.mayAttachEquipment controller o.id sourceId),
+          .mayResCtx resCtx]).logMsg
           s!"{(g.player controller).name} may attach an Equipment to {g.name o}") sourceId
     | r =>
       let phrase := SpellResolution.toPhrase r effect.targeting.kind.noun
@@ -1201,7 +1222,8 @@ def beginMay (g : Game) (controller : PlayerId) (effect : Effect)
         .mayEffect (some inner),
         .mayController controller,
         .mayTargets targets,
-        .maySource sourceId]).logMsg
+        .maySource sourceId,
+        .mayResCtx resCtx]).logMsg
         s!"{(g.player controller).name} may {phrase}"
 
 /-- Ask a player to choose one resolution in `rs`. A library top-or-bottom
@@ -1209,7 +1231,8 @@ pair is the owner's choice; any other list is the caster's. One alternative
 is applied by `applyUnified` before this is called. -/
 def beginSpellOr (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (rs : List SpellResolution)
-    (sourceId : Option ObjectId := none) : Game :=
+    (sourceId : Option ObjectId := none)
+    (resCtx : SpellResolutionCtx := {}) : Game :=
   g.withContinuationFrame fun g =>
     let asEffect (r : SpellResolution) : Effect :=
       { effect with resolution := Resolution.ofSpell r }
@@ -1230,7 +1253,8 @@ def beginSpellOr (g : Game) (controller : PlayerId) (effect : Effect)
               .spellOrController controller,
               .spellOrTargets targets,
               .spellOrLibrary true,
-              .spellOrSource sourceId]).logMsg
+              .spellOrSource sourceId,
+              .spellOrResCtx resCtx]).logMsg
               s!"{(g.player o.owner).name} chooses top or bottom of their library for {g.name o}"
           else g.logMsg "The target is no longer legal"
         | none => g.logMsg "The target is no longer legal"
@@ -1242,7 +1266,8 @@ def beginSpellOr (g : Game) (controller : PlayerId) (effect : Effect)
         .spellOrController controller,
         .spellOrTargets targets,
         .spellOrLibrary false,
-        .spellOrSource sourceId]).logMsg
+        .spellOrSource sourceId,
+        .spellOrResCtx resCtx]).logMsg
         s!"{(g.player controller).name} chooses {SpellResolution.toPhrase (.or rs) effect.targeting.kind.noun}"
 
 /-- Apply `whenHolds` when `cond` is true and `whenNot` otherwise.
@@ -1537,7 +1562,10 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
   else
   let sourceId := sourceId.orElse (fun _ => g.resolvingSpell)
-  match g.applyFraResolution? controller effect targets sourceId (lastKnownPower := lastKnownPower) with
+  match g.applyFraResolution? controller effect targets sourceId
+      (lastKnownPower := lastKnownPower)
+      (chosenX := if chosenX != 0 then some chosenX else none)
+      (lastKnownToughness := lastKnownToughness) with
   | some g => g
   | none =>
   match effect.resolution with
@@ -1661,12 +1689,26 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .exileGraveyardCreaturesGrantCast ty =>
     g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.exileCreaturesFromGraveyard controller pid ty) sourceId
-  | .draw (.fixed n) .you => g.draw controller n.toNat
-  | .draw (.fixed n) .player =>
-    g.withLegalKindPlayer controller effect.targetKind targets
-      (fun g pid => g.draw pid n.toNat) sourceId
-  | .scry (.fixed n) =>
-    g.beginScry controller n.toNat
+  | .draw amt .you =>
+    let ctx : TriggerRead :=
+      { controller, sourceId, targets, lastKnownPower, lastKnownToughness, chosenX }
+    match g.triggerCount ctx amt with
+    | some n => g.draw controller n
+    | none => g
+  | .draw amt .player =>
+    let ctx : TriggerRead :=
+      { controller, sourceId, targets, lastKnownPower, lastKnownToughness, chosenX }
+    match g.triggerCount ctx amt with
+    | some n =>
+      g.withLegalKindPlayer controller effect.targetKind targets
+        (fun g pid => g.draw pid n) sourceId
+    | none => g
+  | .scry amt =>
+    let ctx : TriggerRead :=
+      { controller, sourceId, targets, lastKnownPower, lastKnownToughness, chosenX }
+    match g.triggerCount ctx amt with
+    | some n => g.beginScry controller n
+    | none => g
   | .tapTargets =>
     g.withBatch none fun g =>
       (List.range targets.size).foldl (fun g i =>
@@ -1705,12 +1747,19 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
         (castFromGraveyard := castFromGraveyard) (kicked := kicked)
         (giftPromised := giftPromised) (chosenX := chosenX) (sourceId := sourceId)
+        (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
     | rs =>
-      g.beginSpellOr controller effect targets rs sourceId
+      let resCtx : SpellResolutionCtx :=
+        { castFromGraveyard, kicked, giftPromised, chosenX, lastKnownPower, lastKnownToughness }
+      g.beginSpellOr controller effect targets rs sourceId (resCtx := resCtx)
   | .attachEquipment =>
-    g.beginMay controller effect targets .attachEquipment sourceId
+    let resCtx : SpellResolutionCtx :=
+      { castFromGraveyard, kicked, giftPromised, chosenX, lastKnownPower, lastKnownToughness }
+    g.beginMay controller effect targets .attachEquipment sourceId (resCtx := resCtx)
   | .may r _ _ =>
-    g.beginMay controller effect targets r sourceId
+    let resCtx : SpellResolutionCtx :=
+      { castFromGraveyard, kicked, giftPromised, chosenX, lastKnownPower, lastKnownToughness }
+    g.beginMay controller effect targets r sourceId (resCtx := resCtx)
   | .recruit _ =>
     g.beginRecruit controller
   | .«if» cond r =>
@@ -1718,12 +1767,14 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
         (castFromGraveyard := castFromGraveyard) (kicked := kicked)
         (giftPromised := giftPromised) (chosenX := chosenX) (sourceId := sourceId)
+        (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
     g.branchOnSpellIf controller effect targets cond castFromGraveyard run id giftPromised sourceId
   | .ifElse cond whenTrue whenFalse =>
     let run (r : SpellResolution) (g : Game) : Game :=
       g.applyUnified controller { effect with resolution := Resolution.ofSpell r } targets
         (castFromGraveyard := castFromGraveyard) (kicked := kicked)
         (giftPromised := giftPromised) (chosenX := chosenX) (sourceId := sourceId)
+        (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
     g.branchOnSpellIf controller effect targets cond castFromGraveyard
       (run whenTrue) (run whenFalse) giftPromised sourceId
   | .exchangeControl =>
@@ -2162,8 +2213,12 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   | .discardTwoUnlessArtifact n ty =>
     let g := g.changes #[.thirstDiscardsLeft n, .thirstDiscardType ty]
     g.beginDiscardCards #[controller]
-  | .loseLife (.fixed n) .eachOpponent =>
-    g.loseLifeEachOpponent controller n.toNat
+  | .loseLife amt .eachOpponent =>
+    let ctx : TriggerRead :=
+      { controller, sourceId, targets, lastKnownPower, lastKnownToughness, chosenX }
+    match g.triggerCount ctx amt with
+    | some n => g.loseLifeEachOpponent controller n
+    | none => g
   | .plusOneOnEachYouControl n which =>
     let exclude :=
       match which with
@@ -2247,12 +2302,15 @@ end
 def applyEffect (g : Game) (controller : PlayerId) (effect : Effect)
     (targets : Array Target) (castFromGraveyard := false)
     (kicked := false) (giftPromised := false) (chosenX : Nat := 0)
-    (sourceId : Option ObjectId := none) : Game :=
+    (sourceId : Option ObjectId := none)
+    (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Game :=
   g.withContinuationFrame fun g =>
     g.applyUnified controller effect targets
       (castFromGraveyard := castFromGraveyard) (kicked := kicked)
       (giftPromised := giftPromised) (chosenX := chosenX)
       (sourceId := sourceId)
+      (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
 
 /-- Apply `action` if `sourceId` is still on the battlefield. -/
 def applyOnSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction)
@@ -2452,7 +2510,10 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       g.applyUnifiedAbility controller effect targets sourceId lastKnownPower chosenX
         (lastKnownToughness := lastKnownToughness)
   else
-  match g.applyFraResolution? controller effect targets sourceId (lastKnownPower := lastKnownPower) with
+  match g.applyFraResolution? controller effect targets sourceId
+      (lastKnownPower := lastKnownPower)
+      (chosenX := if chosenX != 0 then some chosenX else none)
+      (lastKnownToughness := lastKnownToughness) with
   | some g => g
   | none =>
   match effect.resolution with

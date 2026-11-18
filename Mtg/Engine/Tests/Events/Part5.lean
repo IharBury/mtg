@@ -2368,10 +2368,12 @@ def replayOk26i2 (gs : Array Game) : Bool :=
   let computedAnyCost :=
     gAny0.playManaCost { (gAny0.object! exTwobridId) with controller := some p0 } twobridCard
       (origPerm := some anyPerm)
-  let gNull0 := addPermanent afterDraw bear p0 p0
-  let summonerId := (gNull0.battlefield.filter (·.name == bear.name))[0]!.id
+  let nullSummonerDef : CardDef := { bear with name := "P26i2 Null Summoner", castExiledWithSevenInGraveyard := true }
+  let gNullBase := (List.range 7).foldl (fun g _ => insertObject g bear p0 (.graveyard p0)) gAny0
+  let gNull0 := addPermanent gNullBase nullSummonerDef p0 p0
+  let summonerId := (gNull0.battlefield.filter (·.name == nullSummonerDef.name))[0]!.id
   let nullExiledObj : GameObject :=
-    { (gAny0.object! exTwobridId) with controller := some p0, exiledBy := some summonerId }
+    { (gNull0.object! exTwobridId) with controller := some p0, exiledBy := some summonerId }
   let computedNullCost := gNull0.playManaCost nullExiledObj twobridCard
   let asAnyManaOk :=
     xTwobridCost.asAnyMana == ⟨#[.x, .generic 2]⟩ &&

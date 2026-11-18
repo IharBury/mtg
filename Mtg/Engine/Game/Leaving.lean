@@ -152,7 +152,8 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
       match departingPlayer? with
       | some p =>
         cur.controlledBy o p ||
-          (o.isBattlefieldObject && (cur.appliedControlEffectIds o).isEmpty &&
+          ((o.isOnBattlefield || (o.isBattlefieldObject && (fallback == p || phasedOutExpiringSimultaneously o))) &&
+            (cur.appliedControlEffectIds o).isEmpty &&
             (cur.player fallback).leftTheGame)
       | none =>
         (o.isOnBattlefield || (o.isBattlefieldObject && phasedOutExpiringSimultaneously o)) &&
@@ -168,6 +169,34 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
       result := pushUnique result oid
     cur := nextCur
   return result
+
+private def prePhaseOutLkiCtrl? (pre : Game) (preObj : GameObject)
+    (fallback : PlayerId) : Option PlayerId :=
+  (pre.controllerOf preObj).orElse fun _ =>
+    let (prePoIdx, poSnapCtrl?) : Nat × Option PlayerId :=
+      match pre.latestPhaseOutIdxOf? preObj with
+      | some poIdx =>
+        match pre.events[poIdx]? with
+        | some ev =>
+          match ev.change with
+          | .engine (.materializeObject obj _) =>
+            (poIdx + 1,
+             (obj.defaultController.orElse (fun _ => obj.controller)).orElse
+               (fun _ => some obj.owner))
+          | .rules (.zone (.moved _ after ..)) =>
+            (poIdx + 1, after.controller)
+          | .rules (.zone (.created eo c)) =>
+            (poIdx + 1, eo.controller.orElse (fun _ => some c))
+          | .rules (.permanent (.phasedOut eo _)) =>
+            (pre.phaseOutBatchStartIdx poIdx, eo.controller)
+          | _ =>
+            (pre.phaseOutBatchStartIdx poIdx, none)
+        | none => (pre.phaseOutBatchStartIdx poIdx, none)
+      | none => (0, none)
+    let gAtPo := pre.mkHistoricalGameAt prePoIdx
+    (gAtPo.findObject? preObj.id).bind gAtPo.controllerOf
+      |>.orElse (fun _ => poSnapCtrl?)
+      |>.orElse (fun _ => some fallback)
 
 /-- Exile each `(oid, logLine, prevCtrl)` in `remaining` sequentially (CR 800.4a /
 800.4c), pausing and chaining `.endControlExileLoop` if a CR 616.1 replacement
@@ -278,7 +307,8 @@ def endControlEffectById (g : Game) (eid : EffectId)
             else
               let dest := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
               if (acc.player dest).leftTheGame then
-                (acc, exiles.push (oid, s!"{acc.name cur} is exiled (CR 800.4c)", prevCtrl))
+                let exileCtrl := prevCtrl.orElse (fun _ => prePhaseOutLkiCtrl? pre ((pre.findObject? oid).getD cur) dest)
+                (acc, exiles.push (oid, s!"{acc.name cur} is exiled (CR 800.4c)", exileCtrl))
               else if curCtrl != prevCtrl then
                 (acc.logMsg s!"{acc.name cur} reverts to {(acc.player dest).name}'s control", exiles)
               else (acc, exiles)) (g, #[])
@@ -437,7 +467,7 @@ def endControlEffectsSimultaneously (g : Game) (eids : Array EffectId)
               (g.controllerOf postO != pre.controllerOf o || appliedChangedInPreExpire)
           | none => false
         if anyApplied || explicitIds.contains o.id || changedInPreExpire then
-          some (o.id, pre.controllerOf o, anyApplied || appliedChangedInPreExpire)
+          some (o.id, pre.controllerOf o, anyApplied || (!applied.isEmpty && appliedChangedInPreExpire))
         else none
   let combatCause : Option EventCause :=
     if allEndingEids.isEmpty && candidates.isEmpty then cause
@@ -477,7 +507,8 @@ def endControlEffectsSimultaneously (g : Game) (eids : Array EffectId)
               if alreadyQueuedForExile acc oid || exiles.any (·.1 == oid) then
                 (acc, exiles)
               else
-                (acc, exiles.push (oid, s!"{acc.name cur} is exiled (CR 800.4c)", prevCtrl))
+                let exileCtrl := prevCtrl.orElse (fun _ => prePhaseOutLkiCtrl? pre ((pre.findObject? oid).getD cur) dest)
+                (acc, exiles.push (oid, s!"{acc.name cur} is exiled (CR 800.4c)", exileCtrl))
             else if curCtrl != prevCtrl then
               (acc.logMsg s!"{acc.name cur} reverts to {(acc.player dest).name}'s control", exiles)
             else (acc, exiles)) (g, #[])
@@ -510,7 +541,7 @@ def endControlEffectsSimultaneously (g : Game) (eids : Array EffectId)
               (g.appliedControlEffectIds cur).isEmpty then
             let fallback := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
             if (g.player fallback).leftTheGame then
-              some (cur.id, s!"{g.name cur} is exiled (CR 800.4c)", pre.controllerOf preObj)
+              some (cur.id, s!"{g.name cur} is exiled (CR 800.4c)", prePhaseOutLkiCtrl? pre preObj fallback)
             else none
           else none
   let exileQueue := candExileQueue ++ secondaryExileQueue
@@ -1087,7 +1118,8 @@ def isProposalAbortedByLeave (g : Game) (p : PlayerId) : Bool :=
       let nextObjs := cur.objects.filter fun o =>
         let fallback := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
         !(cur.controlledBy o p ||
-            (o.isBattlefieldObject && (cur.appliedControlEffectIds o).isEmpty &&
+            ((o.isOnBattlefield || (o.isBattlefieldObject && fallback == p)) &&
+              (cur.appliedControlEffectIds o).isEmpty &&
               (cur.player fallback).leftTheGame))
       if nextObjs.size == cur.objects.size then
         break
@@ -3458,12 +3490,17 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
       let still := g.objects.filter (fun o =>
         let fallback := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
         !bodyExileCont?.any (inActiveEndControlExile o.id) &&
+          !preBodyCont?.any (inActiveEndControlExile o.id) &&
+          !g.pendingReplacement.any (inActiveEndControlExile o.id) &&
+          !g.outerPendingReplacements.any (inActiveEndControlExile o.id) &&
           (g.controlledBy o p ||
-            (o.isBattlefieldObject && (g.appliedControlEffectIds o).isEmpty &&
+            ((o.isOnBattlefield || (o.isBattlefieldObject && fallback == p)) &&
+              (g.appliedControlEffectIds o).isEmpty &&
               (g.player fallback).leftTheGame)))
       let exileQueue := still.filterMap fun o =>
         (g.findObject? o.id).map fun cur =>
-          let prevCtrl := preLeave.controllerOf ((preLeave.findObject? cur.id).getD cur)
+          let fallback := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
+          let prevCtrl := prePhaseOutLkiCtrl? preLeave ((preLeave.findObject? cur.id).getD cur) fallback
           (cur.id, s!"{g.name cur} is exiled (CR 800.4a)", prevCtrl)
       let g :=
         if g.mulliganToDeclare.contains p then
@@ -3720,7 +3757,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
             if g.pending != .none then g.change (.pending .none) else g
           let combinedOuter0? : Option PendingReplacement :=
             ensureDeferredExileReopen g
-              (choicesStillValidPre || postCleanupPending != .none)
+              (choicesStillValidPre || postCleanupPending != .none || bodyExilePending?.isSome)
               (match g.pendingReplacement, preBodyCont? with
                | some rCont, some preCont => some (.seq rCont preCont)
                | some rCont, none => some rCont
@@ -3784,7 +3821,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
             let g :=
               if g.pending != .none then g.change (.pending .none) else g
             let combinedOuter0? : Option PendingReplacement :=
-              ensureDeferredExileReopen g (postCleanupPending != .none)
+              ensureDeferredExileReopen g (postCleanupPending != .none || bodyExilePending?.isSome)
                 (match g.pendingReplacement, preBodyCont? with
                  | some rCont, some preCont => some (.seq rCont preCont)
                  | some rCont, none => some rCont
@@ -3875,7 +3912,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           let g :=
             if g.pending != .none then g.change (.pending .none) else g
           let combinedOuter0? : Option PendingReplacement :=
-            ensureDeferredExileReopen g (postRedirPending != .none)
+            ensureDeferredExileReopen g (postRedirPending != .none || bodyExilePending?.isSome)
               (match g.pendingReplacement, preBodyCont? with
                | some rCont, some preCont => some (.seq rCont preCont)
                | some rCont, none => some rCont
@@ -3938,6 +3975,13 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
         g.targetProposalCheckpoint?.any fun ckpt =>
           ckpt.currentBatch.map Prod.fst == some info.1
     let depPaused := depPaused0 || g.sbaPaused || (g.currentBatch.isSome && !isPreCkptBatch)
+    let (g, pushedOuterCont?) :=
+      if pushedOuterCont?.isNone && depPaused && !g.over && !g.suppressInteractiveReplay &&
+          (if wasAbortedProposal then !rewindAbortedProposal else g.proposedSpell.isNone) &&
+          (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
+        let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+        (g.change (.pushOuterPendingReplacement .finishFraChoice), some .finishFraChoice)
+      else (g, pushedOuterCont?)
     let (g, savedPreLeavePending?, pushedOuterCont?, deferredRewind) :=
       if shouldRewindProposal then
         if !depPaused then

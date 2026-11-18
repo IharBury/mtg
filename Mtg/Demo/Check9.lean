@@ -628,3 +628,122 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   mustHoldCheck9 "p48_demoNonPlainOk" demoNonPlainOk &&
   mustHoldCheck9 "p48_largePostManaSubsetOk" largePostManaSubsetOk &&
   mustHoldCheck9 "p48_demoComboAutopayOk" demoComboAutopayOk
+
+
+/- Phase 49 Items 2 & 4: `Demo.hasGameStatePriorityAction` `canCastFrontFace` vs
+`canCastAndPayMorphFaceDown`, `canPaySpellCostFromSources` /
+`canPayAnnouncedAdditionalFromSources` / `canPayAbilityCostFromSources` on
+`.combination` sources, and `hasUsableNonPlainManaAbility` `canPayFromSources` parity. -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := emptyHand afterDraw p0
+
+  -- 1. `hasGameStatePriorityAction` separates `canCastFrontFace` from `canCastAndPayMorphFaceDown`:
+  --    (a) `{2}` creature whose front face requires >= 3 cards in graveyard + `morph := some {2}`:
+  --        at `{2}` mana in pool, neither front face (forbidden) nor Morph `{3}` (too expensive) is castable;
+  --        at `{3}` mana in pool, Morph `{3}` IS castable!
+  --    (b) `{6}` creature whose front face is legal + `morph := some {2}`:
+  --        at `{2}` mana, neither is affordable; at `{3}` mana, Morph `{3}` makes `hasGameStatePriorityAction` true!
+  let gyThresholdMorphDef : CardDef := {
+    grizzlyBears with
+    name := "P49 ThresholdMorph"
+    manaCost := ManaCost.ofGeneric 2
+    castOnlyIfGraveyardAtLeast := some 3
+    morph := some (ManaCost.ofGeneric 2)
+  }
+  let bigMorphDef : CardDef := {
+    grizzlyBears with
+    name := "P49 ColossusMorph"
+    manaCost := ManaCost.ofGeneric 6
+    morph := some (ManaCost.ofGeneric 2)
+  }
+  let gForbidFront2 := (insertObject gMain gyThresholdMorphDef p0 (.hand p0)).addMana p0 .colorless 2
+  let gForbidFront3 := gForbidFront2.addMana p0 .colorless 1
+  let gBigMorph2 := (insertObject gMain bigMorphDef p0 (.hand p0)).addMana p0 .colorless 2
+  let gBigMorph3 := gBigMorph2.addMana p0 .colorless 1
+  let demoMorphSplitOk :=
+    !hasGameStatePriorityAction gForbidFront2 p0 &&
+    hasGameStatePriorityAction gForbidFront3 p0 &&
+    !hasGameStatePriorityAction gBigMorph2 p0 &&
+    hasGameStatePriorityAction gBigMorph3 p0
+
+  -- 2. `canPaySpellCostFromSources` (spell + Adventure) & `canPayAbilityCostFromSources`
+  --    succeed on a mixed-color `.combination` source (`tapAddTwoAmong := #[{U}, {R}]`)
+  --    where single-color `availableMana` collapses to `{U}{U}`:
+  let comboFilterDef : CardDef := {
+    name := "P49 SteamConduit"
+    types := #[.land]
+    tapAddTwoAmong := #[.colored .blue, .colored .red]
+  }
+  let urSpellDef : CardDef := {
+    name := "P49 SteamBolt"
+    manaCost := { symbols := #[.colored .blue, .colored .red] }
+    types := #[.sorcery]
+    spellEffect := some (Effect.gainLife 2)
+  }
+  let urAdvCardDef : CardDef := {
+    grizzlyBears with
+    name := "P49 SteamKnight"
+    manaCost := ManaCost.ofGeneric 5
+    adventure := some {
+      name := "P49 SteamSpark"
+      manaCost := { symbols := #[.colored .blue, .colored .red] }
+      types := #[.instant]
+      spellEffect := some (Effect.gainLife 1)
+    }
+  }
+  let urShrineDef : CardDef := {
+    name := "P49 SteamShrine"
+    types := #[.enchantment]
+    activatedAbilities := #[{
+      cost := { mana := { symbols := #[.colored .blue, .colored .red] } }
+      effect := Effect.gainLife 1
+    }]
+  }
+  let gComboBase := addPermanent gMain comboFilterDef p0 p0
+  let gComboSpell := insertObject gComboBase urSpellDef p0 (.hand p0)
+  let urSpellObj := gComboSpell.object! (gComboSpell.player p0).hand.back!
+  let gComboAdv := insertObject gComboBase urAdvCardDef p0 (.hand p0)
+  let urAdvObj := gComboAdv.object! (gComboAdv.player p0).hand.back!
+  let gComboAct := addPermanent gComboBase urShrineDef p0 p0
+  let shrineObj := (gComboAct.permanentsOf p0).find? (·.name == urShrineDef.name) |>.get!
+  let demoComboPayOk :=
+    !(gComboBase.availableMana p0).canPay urSpellDef.manaCost &&
+    gComboSpell.canPaySpellCostFromSources p0 urSpellObj urSpellDef.manaCost &&
+    gComboAdv.canPaySpellCostFromSources p0 urAdvObj
+      (urAdvCardDef.adventure.get!.toCardDef).manaCost &&
+    gComboAct.canPayAbilityCostFromSources p0 shrineObj
+      shrineObj.printed.activatedAbilities[0]!
+      shrineObj.printed.activatedAbilities[0]!.cost.mana
+
+  -- 3. `hasUsableNonPlainManaAbility` uses `canPayFromSources` (unpayable `{1}, {T}: Add {G}{G}`
+  --    without mana keeps `hasGameStatePriorityAction` false; `{U}{R}, {T}: Add {G}{G}` with
+  --    `comboFilterDef` makes `hasUsableNonPlainManaAbility` true):
+  let filter1ToGGDef : CardDef := {
+    name := "P49 Signet1GG"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 1, tap := true }
+      effect := { resolution := .addMana #[.colored .green] (.fixed 2), phrase := "Add {G}{G}." }
+    }]
+  }
+  let filterURToGGDef : CardDef := {
+    name := "P49 SignetURGG"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { mana := { symbols := #[.colored .blue, .colored .red] }, tap := true }
+      effect := { resolution := .addMana #[.colored .green] (.fixed 2), phrase := "Add {G}{G}." }
+    }]
+  }
+  let gUnpayableFilter := addPermanent gMain filter1ToGGDef p0 p0
+  let gPayableFilter := gUnpayableFilter.addMana p0 .colorless 1
+  let gComboFilterSignet := addPermanent gComboBase filterURToGGDef p0 p0
+  let demoFilterManaOk :=
+    !hasGameStatePriorityAction gUnpayableFilter p0 &&
+    hasGameStatePriorityAction gPayableFilter p0 &&
+    gComboFilterSignet.hasUsableNonPlainManaAbility p0
+
+  mustHoldCheck9 "p49_demoMorphSplitOk" demoMorphSplitOk &&
+  mustHoldCheck9 "p49_demoComboPayOk" demoComboPayOk &&
+  mustHoldCheck9 "p49_demoFilterManaOk" demoFilterManaOk
+

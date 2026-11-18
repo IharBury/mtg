@@ -175,18 +175,6 @@ def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
        | some t => g.controlsAnySubtype p #[t])
   | none => false
 
-/-- Null Summoner: `p` may cast a card it exiled while seven or more cards are
-in their graveyard. -/
-def mayCastExiledBySource (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  o.zone == .exile &&
-    match o.exiledBy.bind g.findObject? with
-    | some src =>
-      src.isOnBattlefield && g.controlledBy src p &&
-        (g.baseCard src).castExiledWithSevenInGraveyard &&
-        g.retainsPrintedAbilities src &&
-        (g.player p).graveyard.size ≥ 7
-    | none => false
-
 /-- Cards in exile that `p` currently may play. -/
 def exiledPlayable (g : Game) (p : PlayerId) : Array GameObject :=
   g.objects.filter (fun o => g.mayPlayFromExile p o || g.mayCastExiledBySource p o)

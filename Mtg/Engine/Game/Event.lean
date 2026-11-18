@@ -64,6 +64,17 @@ structure ChooseModesRest where
   how : TriggeredAbility.TriggerModeHow := .oneUnused
 deriving Repr, Inhabited, BEq
 
+/-- Resolution-context flags and LKI preserved across `SpellResolution.may` and
+`SpellResolution.or` prompts (CR 107.3a,m / 608.2h). -/
+structure SpellResolutionCtx where
+  castFromGraveyard : Bool := false
+  kicked : Bool := false
+  giftPromised : Bool := false
+  chosenX : Option Nat := none
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+deriving Repr, Inhabited, BEq
+
 /-- One non-rules engine metadata change on a `GameObject` (CR 109 / 607). -/
 inductive ObjectChange where
   | abilityEffect (v : Option Effect)
@@ -2093,6 +2104,7 @@ structure ContinuationFrame where
   mayController : PlayerId := ⟨0⟩
   mayTargets : Array Target := #[]
   maySource : Option ObjectId := none
+  mayResCtx : SpellResolutionCtx := {}
   /-- Alternatives for a pending `SpellResolution.or`. -/
   spellOr : Array Effect := #[]
   spellOrController : PlayerId := ⟨0⟩
@@ -2100,6 +2112,7 @@ structure ContinuationFrame where
   spellOrSource : Option ObjectId := none
   /-- `chooseTop` and `chooseBottom` name the library side, not list order. -/
   spellOrLibrary : Bool := false
+  spellOrResCtx : SpellResolutionCtx := {}
   /-- After the pending surveil, a card with mana value at most this put into the graveyard goes to hand. -/
   surveilReturnMvAtMost : Option Nat := none
   /-- A noncreature, nonland card put into the graveyard by the pending surveil goes to hand. -/
@@ -2220,11 +2233,13 @@ inductive ContinuationChange where
   | mayController (v : PlayerId)
   | mayTargets (v : Array Target)
   | maySource (v : Option ObjectId)
+  | mayResCtx (v : SpellResolutionCtx)
   | spellOr (v : Array Effect)
   | spellOrController (v : PlayerId)
   | spellOrTargets (v : Array Target)
   | spellOrSource (v : Option ObjectId)
   | spellOrLibrary (v : Bool)
+  | spellOrResCtx (v : SpellResolutionCtx)
   | surveilReturnMvAtMost (v : Option Nat)
   | surveilReturnNoncreatureNonland (v : Bool)
   | pendingReplacement (v : Option PendingReplacement)
@@ -2645,11 +2660,13 @@ namespace EngineChange
 @[inline] def mayController (v : PlayerId) : EngineChange := .continuation (.mayController v)
 @[inline] def mayTargets (v : Array Target) : EngineChange := .continuation (.mayTargets v)
 @[inline] def maySource (v : Option ObjectId) : EngineChange := .continuation (.maySource v)
+@[inline] def mayResCtx (v : SpellResolutionCtx) : EngineChange := .continuation (.mayResCtx v)
 @[inline] def spellOr (v : Array Effect) : EngineChange := .continuation (.spellOr v)
 @[inline] def spellOrController (v : PlayerId) : EngineChange := .continuation (.spellOrController v)
 @[inline] def spellOrTargets (v : Array Target) : EngineChange := .continuation (.spellOrTargets v)
 @[inline] def spellOrSource (v : Option ObjectId) : EngineChange := .continuation (.spellOrSource v)
 @[inline] def spellOrLibrary (v : Bool) : EngineChange := .continuation (.spellOrLibrary v)
+@[inline] def spellOrResCtx (v : SpellResolutionCtx) : EngineChange := .continuation (.spellOrResCtx v)
 @[inline] def surveilReturnMvAtMost (v : Option Nat) : EngineChange := .continuation (.surveilReturnMvAtMost v)
 @[inline] def surveilReturnNoncreatureNonland (v : Bool) : EngineChange := .continuation (.surveilReturnNoncreatureNonland v)
 @[inline] def pendingReplacement (v : Option PendingReplacement) : EngineChange := .continuation (.pendingReplacement v)
@@ -3400,81 +3417,84 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
           | .player _ => yours pkt.source && pkt.source.hero
           | _ => false)
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .dying =>
-      this before
-    | .zone (.moved before _ .battlefield _ _ _ _ _), .leaving => this before
+      !before.phasedOut && this before
+    | .zone (.moved before _ .battlefield toZone _ _ _ _), .leaving =>
+      toZone != .battlefield && !before.phasedOut && this before
     | .zone (.ceasedToExist before), .leaving => before.zone == .battlefield && !before.phasedOut && this before
-    | .zone (.moved before after _ .battlefield _ _ _ _), .entering => this after || this before
-    | .zone (.created object _), .entering => object.zone == .battlefield && this object
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .landYouControlEnters =>
-      yours after && after.land
+    | .zone (.moved before after fromZone .battlefield _ _ _ _), .entering =>
+      fromZone != .battlefield && !after.phasedOut && (this after || this before)
+    | .zone (.created object _), .entering =>
+      object.zone == .battlefield && !object.phasedOut && this object
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .landYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && after.land
     | .zone (.created object controller), .landYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && object.land
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .forestYouControlEnters =>
-      yours after && after.forest
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.land
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .forestYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && after.forest
     | .zone (.created object controller), .forestYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && object.forest
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .mountainYouControlEnters =>
-      yours after && after.mountain
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.forest
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .mountainYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && after.mountain
     | .zone (.created object controller), .mountainYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && object.mountain
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .artifactYouControlEnters =>
-      yours after && after.artifact
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.mountain
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .artifactYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && after.artifact
     | .zone (.created object controller), .artifactYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && object.artifact
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .creatureYouControlEnters =>
-      yours after && after.creature
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.artifact
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .creatureYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && after.creature
     | .zone (.created object controller), .creatureYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && object.creature
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherCreatureYouControlEnters =>
-      yours after && other after && after.creature
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.creature
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherCreatureYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && other after && after.creature
     | .zone (.created object controller), .anotherCreatureYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && other object && object.creature
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherElfYouControlEnters =>
-      yours after && other after && after.elf
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && object.creature
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherElfYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && other after && after.elf
     | .zone (.created object controller), .anotherElfYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && other object && object.elf
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .tokenYouControlEnters =>
-      yours after && after.token
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && object.elf
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .tokenYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && after.token
     | .zone (.created object controller), .tokenYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && object.token
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .equipmentYouControlEnters =>
-      yours after && after.equipment
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.token
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .equipmentYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && after.equipment
     | .zone (.created object controller), .equipmentYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && object.equipment
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherArtifactEnters =>
-      yours after && other after && after.artifact
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.equipment
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherArtifactEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && other after && after.artifact
     | .zone (.created object controller), .anotherArtifactEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && other object && object.artifact
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherVillainEnters =>
-      yours after && other after && after.villain
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && object.artifact
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherVillainEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && other after && after.villain
     | .zone (.created object controller), .anotherVillainEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && other object && object.villain
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherVillainOrArtifactEnters =>
-      yours after && other after && (after.villain || after.artifact)
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && object.villain
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherVillainOrArtifactEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && other after && (after.villain || after.artifact)
     | .zone (.created object controller), .anotherVillainOrArtifactEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && other object && (object.villain || object.artifact)
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherNontokenHeroEnters =>
-      yours after && other after && !after.token && after.hero
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && (object.villain || object.artifact)
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherNontokenHeroEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && other after && !after.token && after.hero
     | .zone (.created object controller), .anotherNontokenHeroEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && other object && !object.token && object.hero
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherNontokenArtifactEnters =>
-      yours after && other after && !after.token && after.artifact
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && !object.token && object.hero
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherNontokenArtifactEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && other after && !after.token && after.artifact
     | .zone (.created object controller), .anotherNontokenArtifactEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && other object && !object.token && object.artifact
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && !object.token && object.artifact
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .creatureYouControlDies =>
-      yours before && before.creature
+      !before.phasedOut && yours before && before.creature
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .nontokenYouControlDies =>
-      yours before && before.creature && !before.token
+      !before.phasedOut && yours before && before.creature && !before.token
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .anotherGoblinOrcArmyDies =>
-      yours before && other before && before.creature && before.goblinOrcArmy
+      !before.phasedOut && yours before && other before && before.creature && before.goblinOrcArmy
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .villainYouControlDies =>
-      yours before && before.creature && before.villain
+      !before.phasedOut && yours before && before.creature && before.villain
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .attackingCreatureYouControlDies =>
-      yours before && before.creature && before.attacking
+      !before.phasedOut && yours before && before.creature && before.attacking
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .oneOrMoreOtherCreaturesDie =>
-      other before && before.creature
+      !before.phasedOut && other before && before.creature
     | .zone (.moved before _ .battlefield (.hand _) _ _ _ _), .anotherNonlandReturned =>
-      yours before && other before && !before.land
+      !before.phasedOut && yours before && other before && !before.land
     | .zone (.moved before _ (.graveyard owner) _ _ _ _ _), .creatureCardLeavesYourGy =>
       you owner && before.creature
     | .zone (.moved _ after _ (.graveyard owner) _ _ _ _), .creatureCardsPutIntoYourGy =>
@@ -3491,75 +3511,78 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .zone (.moved _ _ (.hand p) toZone .discard _ _ _), .fra .playerDiscards =>
       toZone != .hand p
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .fra .enchantedDies =>
-      before.creature
+      !before.phasedOut && before.creature
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .fra .nontokenCreatureYouControlDies =>
-      yours before && before.creature && !before.token
+      !before.phasedOut && yours before && before.creature && !before.token
     | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .fra .anotherCreatureOrPlaneswalkerYouControlDies =>
-      yours before && other before && (before.creature || before.planeswalker)
-    | .zone (.moved before _ .battlefield _ _ _ _ _), .fra .creatureYouControlLeaves =>
-      yours before && other before && before.creature
+      !before.phasedOut && yours before && other before && (before.creature || before.planeswalker)
+    | .zone (.moved before _ .battlefield toZone _ _ _ _), .fra .creatureYouControlLeaves =>
+      toZone != .battlefield && !before.phasedOut && yours before && other before && before.creature
     | .zone (.ceasedToExist before), .fra .creatureYouControlLeaves =>
       before.zone == .battlefield && !before.phasedOut && yours before && other before && before.creature
-    | .zone (.moved before after _ .battlefield _ _ _ _), .thisOrNontokenSubtypeYouControlEnters =>
-      (this after || this before) || (yours after && !after.token && !after.subtypes.isEmpty)
+    | .zone (.moved before after fromZone .battlefield _ _ _ _), .thisOrNontokenSubtypeYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut &&
+        ((this after || this before) || (yours after && !after.token && !after.subtypes.isEmpty))
     | .zone (.created object _), .thisOrNontokenSubtypeYouControlEnters =>
-      object.zone == .battlefield && this object
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .anotherSubtypeOrEquipmentYouControlEnters =>
-      yours after && other after && (after.equipment || !after.subtypes.isEmpty)
+      object.zone == .battlefield && !object.phasedOut && this object
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherSubtypeOrEquipmentYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut &&
+        yours after && other after && (after.equipment || !after.subtypes.isEmpty)
     | .zone (.created object controller), .anotherSubtypeOrEquipmentYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && other object && (object.equipment || !object.subtypes.isEmpty)
-    | .zone (.moved before after _ .battlefield _ _ _ _), .thisOrAnotherSubtypeYouControlEnters =>
-      (this after || this before) || (yours after && !after.subtypes.isEmpty)
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && (object.equipment || !object.subtypes.isEmpty)
+    | .zone (.moved before after fromZone .battlefield _ _ _ _), .thisOrAnotherSubtypeYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut &&
+        ((this after || this before) || (yours after && !after.subtypes.isEmpty))
     | .zone (.created object controller), .thisOrAnotherSubtypeYouControlEnters =>
-      object.zone == .battlefield && (this object || (you (object.controller.getD controller) && !object.subtypes.isEmpty))
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .fra .anotherCreatureOrPlaneswalkerYouControlEnters =>
-      yours after && other after && (after.creature || after.planeswalker)
+      object.zone == .battlefield && !object.phasedOut && (this object || (you (object.controller.getD controller) && !object.subtypes.isEmpty))
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .fra .anotherCreatureOrPlaneswalkerYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && other after && (after.creature || after.planeswalker)
     | .zone (.created object controller), .fra .anotherCreatureOrPlaneswalkerYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && other object && (object.creature || object.planeswalker)
-    | .zone (.moved before after _ .battlefield _ _ _ _), .fra .thisOrAnotherCreatureYouControlEnters =>
-      (this after || this before) || (yours after && after.creature)
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && (object.creature || object.planeswalker)
+    | .zone (.moved before after fromZone .battlefield _ _ _ _), .fra .thisOrAnotherCreatureYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && ((this after || this before) || (yours after && after.creature))
     | .zone (.created object controller), .fra .thisOrAnotherCreatureYouControlEnters =>
-      object.zone == .battlefield && (this object || (you (object.controller.getD controller) && object.creature))
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .fra .anotherNontokenCreatureYouControlEnters =>
-      yours after && other after && !after.token && after.creature
+      object.zone == .battlefield && !object.phasedOut && (this object || (you (object.controller.getD controller) && object.creature))
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .fra .anotherNontokenCreatureYouControlEnters =>
+      fromZone != .battlefield && !after.phasedOut && yours after && other after && !after.token && after.creature
     | .zone (.created object controller), .fra .anotherNontokenCreatureYouControlEnters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && other object && !object.token && object.creature
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .fra .creatureOpponentControlsEnters =>
-      after.controller.any opp && after.creature
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && !object.token && object.creature
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .fra .creatureOpponentControlsEnters =>
+      fromZone != .battlefield && !after.phasedOut && after.controller.any opp && after.creature
     | .zone (.created object controller), .fra .creatureOpponentControlsEnters =>
-      object.zone == .battlefield && opp (object.controller.getD controller) && object.creature
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .fra (.creatureYouControlPowerAtLeastEnters n) =>
-      yours after && after.creature && after.power.any (· ≥ n)
+      object.zone == .battlefield && !object.phasedOut && opp (object.controller.getD controller) && object.creature
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .fra (.creatureYouControlPowerAtLeastEnters n) =>
+      fromZone != .battlefield && !after.phasedOut && yours after && after.creature && after.power.any (· ≥ n)
     | .zone (.created object controller), .fra (.creatureYouControlPowerAtLeastEnters n) =>
-      object.zone == .battlefield && you (object.controller.getD controller) && object.creature && object.power.any (· ≥ n)
-    | .zone (.moved _ after _ .battlefield _ _ _ _), .subtypeYouControlEnters sub =>
-      yours after && after.hasSubtype sub
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.creature && object.power.any (· ≥ n)
+    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .subtypeYouControlEnters sub =>
+      fromZone != .battlefield && !after.phasedOut && yours after && after.hasSubtype sub
     | .zone (.created object controller), .subtypeYouControlEnters sub =>
-      object.zone == .battlefield && you (object.controller.getD controller) && object.hasSubtype sub
-    | .zone (.moved before after _ .battlefield _ _ entersWith _), .sagaChapter =>
-      (this after || this before) && entersWith.count .lore > 0
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.hasSubtype sub
+    | .zone (.moved before after fromZone .battlefield _ _ entersWith _), .sagaChapter =>
+      fromZone != .battlefield && !after.phasedOut && (this after || this before) && entersWith.count .lore > 0
     | .zone (.created object _), .sagaChapter =>
-      object.zone == .battlefield && this object && object.counters.count .lore > 0
-    | .zone (.moved before after _ .battlefield _ _ entersWith _), .nthPlanCounter _ =>
-      (this after || this before) && entersWith.count .plan > 0
+      object.zone == .battlefield && !object.phasedOut && this object && object.counters.count .lore > 0
+    | .zone (.moved before after fromZone .battlefield _ _ entersWith _), .nthPlanCounter _ =>
+      fromZone != .battlefield && !after.phasedOut && (this after || this before) && entersWith.count .plan > 0
     | .zone (.created object _), .nthPlanCounter _ =>
-      object.zone == .battlefield && this object && object.counters.count .plan > 0
-    | .zone (.moved _ after _ .battlefield _ actor entersWith _), .youPutPlusOne =>
+      object.zone == .battlefield && !object.phasedOut && this object && object.counters.count .plan > 0
+    | .zone (.moved _ after fromZone .battlefield _ actor entersWith _), .youPutPlusOne =>
       let p := actor.orElse (fun _ => after.controller)
-      p.any you && entersWith.count .plusOnePlusOne > 0 && after.creature
+      fromZone != .battlefield && !after.phasedOut && p.any you && entersWith.count .plusOnePlusOne > 0 && after.creature
     | .zone (.created object controller), .youPutPlusOne =>
-      object.zone == .battlefield && you (object.controller.getD controller) && object.counters.count .plusOnePlusOne > 0 && object.creature
-    | .zone (.moved _ after _ .battlefield _ actor entersWith _), .youPutCountersOnGoblinOrcArmy =>
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.counters.count .plusOnePlusOne > 0 && object.creature
+    | .zone (.moved _ after fromZone .battlefield _ actor entersWith _), .youPutCountersOnGoblinOrcArmy =>
       let p := actor.orElse (fun _ => after.controller)
-      p.any you && yours after && entersWith.any (fun (_, n) => n > 0) && after.goblinOrcArmy
+      fromZone != .battlefield && !after.phasedOut && p.any you && yours after && entersWith.any (fun (_, n) => n > 0) && after.goblinOrcArmy
     | .zone (.created object controller), .youPutCountersOnGoblinOrcArmy =>
       let enterCtrl := object.controller.getD controller
-      object.zone == .battlefield && you enterCtrl && object.counters.any (fun (_, n) => n > 0) && object.goblinOrcArmy
-    | .zone (.moved _ after _ .battlefield _ actor entersWith _), .fra .youPutLoyaltyCounters =>
+      object.zone == .battlefield && !object.phasedOut && you enterCtrl && object.counters.any (fun (_, n) => n > 0) && object.goblinOrcArmy
+    | .zone (.moved _ after fromZone .battlefield _ actor entersWith _), .fra .youPutLoyaltyCounters =>
       let p := actor.orElse (fun _ => after.controller)
-      p.any you && entersWith.count .loyalty > 0 && after.planeswalker
+      fromZone != .battlefield && !after.phasedOut && p.any you && entersWith.count .loyalty > 0 && after.planeswalker
     | .zone (.created object controller), .fra .youPutLoyaltyCounters =>
-      object.zone == .battlefield && you (object.controller.getD controller) && object.counters.count .loyalty > 0 && object.planeswalker
+      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.counters.count .loyalty > 0 && object.planeswalker
     | .cast (.spellCast spell p _), .youCastInstantOrSorcery =>
       you p && spell.instantOrSorcery
     | .cast (.spellCast spell p _), .youCastNoncreature =>
@@ -3703,10 +3726,10 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .turn (.stepBegan .upkeep active), .enchantedControllerUpkeep => you active
     | .zone (.moved before _ .battlefield toZone .sacrifice actor _ _), .youSacrificeToken =>
       let p := actor.getD (before.controller.getD before.owner)
-      you p && before.token && toZone != .battlefield
+      !before.phasedOut && you p && before.token && toZone != .battlefield
     | .zone (.moved before _ .battlefield toZone .sacrifice actor _ _), .bolgSacrificedForReflexive =>
       let p := actor.getD (before.controller.getD before.owner)
-      you p && other before && before.creature && toZone != .battlefield
+      !before.phasedOut && you p && other before && before.creature && toZone != .battlefield
     | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .youActivateLoyaltyAbility => you p
     | .cast (.abilityActivated _ source p _), .youActivateCreatureAbility =>
       you p && source.creature
@@ -3738,7 +3761,7 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
       causeYou &&
         targets.any (fun t => match t with | .permanent _ | .player _ => true | _ => false)
     | .zone (.created object p), .fra .youCreateCreatureTokens =>
-      object.zone == .battlefield && object.token && you p && object.creature
+      object.zone == .battlefield && !object.phasedOut && object.token && you p && object.creature
     | _, _ => false
 
 /-- Counters put on objects in `e` (CR 122.1 / 122.6), including counters
@@ -3748,11 +3771,13 @@ def countersPutInEvent (e : GameEvent) : Array (EventObject × CounterKind × Na
   match e.change with
   | .rules (.permanent (.counters (.object o) kind (.put n) actor)) =>
     if n > 0 then #[(o, kind, n, actor)] else #[]
-  | .rules (.zone (.moved _ after _ .battlefield _ actor entersWith _)) =>
-    entersWith.foldl (fun acc (kind, n) =>
-      if n > 0 then acc.push (after, kind, n, actor.orElse (fun _ => after.controller)) else acc) #[]
+  | .rules (.zone (.moved _ after fromZone .battlefield _ actor entersWith _)) =>
+    if fromZone == .battlefield || after.phasedOut then #[]
+    else
+      entersWith.foldl (fun acc (kind, n) =>
+        if n > 0 then acc.push (after, kind, n, actor.orElse (fun _ => after.controller)) else acc) #[]
   | .rules (.zone (.created object controller)) =>
-    if object.zone != .battlefield then #[]
+    if object.zone != .battlefield || object.phasedOut then #[]
     else
       let enterCtrl := object.controller.getD controller
       object.counters.foldl (fun acc (kind, n) =>
@@ -3907,26 +3932,34 @@ def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
       if forObj == some spell then max n units.size else n
     | _, _ => n) 0
 
-/-- Whether `srcId` was recorded as a Treasure permanent at its latest battlefield departure, activation, or trigger snapshot (CR 608.2h). -/
+/-- Whether `srcId` was recorded as a Treasure permanent at its latest battlefield snapshot, departure, activation, or trigger (CR 109.2 / 608.2h / 702.26b). -/
 def isTreasureSourceInLog (events : Array GameEvent) (srcId : ObjectId) : Bool := Id.run do
   let mut i := events.size
   while i > 0 do
     i := i - 1
     match events[i]!.change with
-    | .rules (.zone (.moved before _ .battlefield _ ..)) =>
-      if before.id == some srcId then
+    | .rules (.permanent (.phasedOut snap _)) =>
+      if snap.zone == .battlefield && snap.id == some srcId then
+        return snap.subtypes.contains .treasure
+    | .rules (.zone (.moved before after fromZ toZ ..)) =>
+      if fromZ == .battlefield && before.id == some srcId then
         return before.subtypes.contains .treasure
+      if toZ == .battlefield && after.zone == .battlefield && after.id == some srcId then
+        return after.subtypes.contains .treasure
     | .rules (.zone (.ceasedToExist snap)) =>
       if snap.zone == .battlefield && snap.id == some srcId then
         return snap.subtypes.contains .treasure
+    | .rules (.zone (.created snap _)) =>
+      if snap.zone == .battlefield && snap.id == some srcId then
+        return snap.subtypes.contains .treasure
     | .rules (.cast (.abilityActivated id snap _ _)) =>
-      if id == srcId || snap.id == some srcId then
+      if snap.zone == .battlefield && (id == srcId || snap.id == some srcId) then
         return snap.subtypes.contains .treasure
     | .rules (.triggerQueue (.triggered snap _ _ _)) =>
-      if snap.id == some srcId then
+      if snap.zone == .battlefield && snap.id == some srcId then
         return snap.subtypes.contains .treasure
     | .rules (.triggerQueue (.putOnStack _ snap _ spec)) =>
-      if snap.id == some srcId || spec.sourceId == some srcId then
+      if snap.zone == .battlefield && (snap.id == some srcId || spec.sourceId == some srcId) then
         return snap.subtypes.contains .treasure
     | _ => pure ()
   return false

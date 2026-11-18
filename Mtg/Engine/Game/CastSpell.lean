@@ -157,16 +157,27 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
         g.mayCastExiledBySource p card then
       some { player := p, anyMana := true }
     else origPerm
+  let morphPermOk :=
+    allPerms.isEmpty || !cleanPerms.isEmpty || g.mayCastExiledBySource p card
+  let morphCandidateOk :=
+    !asAdventure && sneakCost.isNone && !isFlashbackCast && morphPermOk &&
+      face.morph.isSome && face.kicker.isNone &&
+      !fromGraveyard && g.canCastMorphFaceDown p card
+  let origPerm :=
+    if (origPerm.bind (·.prepareSource)).isSome && morphCandidateOk &&
+        !(g.validateFrontFaceCast p card face (sneakCost := sneakCost) (origPermOverride := origPerm)).isOk then
+      let morphClean :=
+        cleanPerms.filter (fun pm => pm.ignoreTiming || g.timingAllowsCast p morphSpellFace)
+      morphClean.foldl (fun best? pm =>
+        match best? with
+        | none => some pm
+        | some b => if rankPerm pm >= rankPerm b then some pm else some b) none
+    else origPerm
   let altCost :=
     sneakCost.isSome || isFlashbackCast ||
       origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
-  let morphPermOk :=
-    allPerms.isEmpty || !cleanPerms.isEmpty || g.mayCastExiledBySource p card
   let hasMorphChoice :=
-    !asAdventure && sneakCost.isNone && !isFlashbackCast && morphPermOk &&
-      face.morph.isSome && face.kicker.isNone &&
-      (allPerms.isEmpty || !cleanPerms.isEmpty || (origPerm.bind (·.prepareSource)).isNone) &&
-      !fromGraveyard && g.canCastMorphFaceDown p card
+    morphCandidateOk && (origPerm.bind (·.prepareSource)).isNone
   if !hasMorphChoice then
     g.validateFrontFaceCast p card face (sneakCost := sneakCost) (origPermOverride := origPerm)
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
