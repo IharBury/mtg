@@ -1836,18 +1836,19 @@ inductive PendingReplacement where
   | loseLifeAfterDraw (p : PlayerId) (life : Nat) (cause : Option EventCause)
   | continueUnified (controller : PlayerId) (effect : Effect)
       (steps : Array Resolution) (targets : Array Target)
-      (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
-      (sourceId : Option ObjectId)
+      (castFromGraveyard kicked giftPromised : Bool) (chosenX : Option Nat := none)
+      (sourceId : Option ObjectId := none)
       (lastKnownPower : Option Int := none)
       (lastKnownToughness : Option Int := none)
   | continueUnifiedAbility (controller : PlayerId) (effect : Effect)
       (steps : Array Resolution) (targets : Array Target)
-      (sourceId : Option ObjectId) (lastKnownPower : Option Int) (chosenX : Nat)
+      (sourceId : Option ObjectId) (lastKnownPower : Option Int)
+      (chosenX : Option Nat := none)
       (lastKnownToughness : Option Int := none)
   | continueSpellModes (controller : PlayerId) (modeEffects : Array Effect)
       (remainingTargets : Array Target)
-      (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
-      (sourceId : Option ObjectId) (empowerJaceN : Option Nat)
+      (castFromGraveyard kicked giftPromised : Bool) (chosenX : Option Nat := none)
+      (sourceId : Option ObjectId := none) (empowerJaceN : Option Nat := none)
       (skippedOptionalSlots : Array Nat := #[])
       (lastKnownPower : Option Int := none)
       (lastKnownToughness : Option Int := none)
@@ -1977,10 +1978,12 @@ inductive PendingReplacement where
       (preSnaps : Array (ObjectId × EventObject) := #[])
       (startEventIdx : Option Nat := none)
       (reconcile : Bool := true)
+  | phaseInControlled (p : PlayerId)
   | phaseInControlledLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
       (startEventIdx : Option Nat := none)
       (reconcile : Bool := true)
+      (allowDirectSingle : Bool := false)
 deriving Inhabited
 
 /-- One frame of mid-resolution continuation state (CR 608.2). Grouping the
@@ -2099,6 +2102,7 @@ structure ContinuationFrame where
   unlessPaysSource : Option ObjectId := none
   /-- The payer left without paying (CR 800.4f). -/
   unlessPaysDue : Bool := false
+  unlessPaysResCtx : SpellResolutionCtx := {}
   /-- Accepting `mayResolve` resolves this effect. -/
   mayEffect : Option Effect := none
   mayController : PlayerId := ⟨0⟩
@@ -2229,6 +2233,7 @@ inductive ContinuationChange where
   | unlessPaysTargets (v : Array Target)
   | unlessPaysSource (v : Option ObjectId)
   | unlessPaysDue (v : Bool)
+  | unlessPaysResCtx (v : SpellResolutionCtx)
   | mayEffect (v : Option Effect)
   | mayController (v : PlayerId)
   | mayTargets (v : Array Target)
@@ -2656,6 +2661,7 @@ namespace EngineChange
 @[inline] def unlessPaysTargets (v : Array Target) : EngineChange := .continuation (.unlessPaysTargets v)
 @[inline] def unlessPaysSource (v : Option ObjectId) : EngineChange := .continuation (.unlessPaysSource v)
 @[inline] def unlessPaysDue (v : Bool) : EngineChange := .continuation (.unlessPaysDue v)
+@[inline] def unlessPaysResCtx (v : SpellResolutionCtx) : EngineChange := .continuation (.unlessPaysResCtx v)
 @[inline] def mayEffect (v : Option Effect) : EngineChange := .continuation (.mayEffect v)
 @[inline] def mayController (v : PlayerId) : EngineChange := .continuation (.mayController v)
 @[inline] def mayTargets (v : Array Target) : EngineChange := .continuation (.mayTargets v)
@@ -3685,14 +3691,17 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
           (blocker.power.any (· ≤ 1) || blocker.toughness.any (· ≤ 1)))
     | .combat (.becameBlocked attacker _), .becomesBlocked =>
       this attacker
-    | .permanent (.tapped object _), .sourceBecomesTapped => this object
+    | .permanent (.tapped object _), .sourceBecomesTapped =>
+      !object.phasedOut && this object
     | .permanent (.tapped object _), .creaturesYouControlBecomeTapped =>
-      yours object && object.creature
-    | .permanent (.tapped object _), .equippedBecomesTapped => object.creature
+      !object.phasedOut && yours object && object.creature
+    | .permanent (.tapped object _), .equippedBecomesTapped =>
+      !object.phasedOut && object.creature
     | .permanent (.tapped object during), .creatureYouControlTapped =>
-      yours object && object.creature && during
+      !object.phasedOut && yours object && object.creature && during
     | .permanent (.tapped object _), .tappedForTeamwork =>
-      this object && match e.cause? with | some (.costPayment .teamwork _ _) => true | _ => false
+      !object.phasedOut && this object &&
+        match e.cause? with | some (.costPayment .teamwork _ _) => true | _ => false
     | .player (.scried p _ _ _ asked), .youScry => you p && asked > 0
     | .player (.scried p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
     | .player (.surveilled p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
@@ -3702,15 +3711,15 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     | .stackObject (.resolved obj nth _ _), .finalSagaChapterResolves =>
       nth == 0 && yours obj && obj.types.isEmpty && obj.hasSubtype .saga
     | .permanent (.counters (.object object) .plusOnePlusOne (.put n) (some p)), .youPutPlusOne =>
-      you p && n > 0 && object.creature
+      object.zone == .battlefield && !object.phasedOut && you p && n > 0 && object.creature
     | .permanent (.counters (.object object) _ (.put n) (some p)), .youPutCountersOnGoblinOrcArmy =>
-      you p && yours object && n > 0 && object.goblinOrcArmy
+      object.zone == .battlefield && !object.phasedOut && you p && yours object && n > 0 && object.goblinOrcArmy
     | .permanent (.counters (.object object) .loyalty (.put n) (some p)), .fra .youPutLoyaltyCounters =>
-      you p && n > 0 && object.planeswalker
+      object.zone == .battlefield && !object.phasedOut && you p && n > 0 && object.planeswalker
     | .permanent (.counters (.object object) .plan (.put n) _), .nthPlanCounter _ =>
-      this object && n > 0
+      object.zone == .battlefield && !object.phasedOut && this object && n > 0
     | .permanent (.counters (.object object) .lore (.put n) _), .sagaChapter =>
-      this object && n > 0
+      object.zone == .battlefield && !object.phasedOut && this object && n > 0
     | .turn (.stepBegan .upkeep active), .yourUpkeep => you active || isTeammate active
     | .turn (.stepBegan .upkeep _), .eachUpkeep => true
     | .turn (.stepBegan .upkeep _), .fra .eachUpkeepFromGraveyard => true
@@ -3770,7 +3779,7 @@ or `ZoneEvent.created`. -/
 def countersPutInEvent (e : GameEvent) : Array (EventObject × CounterKind × Nat × Option PlayerId) :=
   match e.change with
   | .rules (.permanent (.counters (.object o) kind (.put n) actor)) =>
-    if n > 0 then #[(o, kind, n, actor)] else #[]
+    if o.zone == .battlefield && !o.phasedOut && n > 0 then #[(o, kind, n, actor)] else #[]
   | .rules (.zone (.moved _ after fromZone .battlefield _ actor entersWith _)) =>
     if fromZone == .battlefield || after.phasedOut then #[]
     else

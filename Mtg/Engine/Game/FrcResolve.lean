@@ -781,7 +781,8 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
         .unlessPaysController controller,
         .unlessPaysTargets #[.player ap],
         .unlessPaysSource sourceId,
-        .unlessPaysDue false]).logMsg
+        .unlessPaysDue false,
+        .unlessPaysResCtx { chosenX, lastKnownPower, lastKnownToughness }]).logMsg
         s!"{(g.player ap).name} may pay \{2} or their creatures can't attack Jaces {(g.player controller).name} controls this turn"
   | .jaceTaxApply =>
     match targets[0]? with

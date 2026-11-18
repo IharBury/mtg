@@ -193,7 +193,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
 a pending choice or `--norandom` request, then running `empowerJace` when done. -/
 partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     (modeEffects : Array Effect) (remainingTargets : Array Target)
-    (castFromGraveyard kicked giftPromised : Bool) (chosenX : Nat)
+    (castFromGraveyard kicked giftPromised : Bool) (chosenX : Option Nat)
     (sourceId : Option ObjectId) (empowerJaceN : Option Nat)
     (skippedOptionalSlots : Array Nat := #[])
     (lastKnownPower : Option Int := none)
@@ -290,7 +290,7 @@ def resolveTop (g : Game) : Game :=
         let e := g.expandEachOpponentEffect entry.controller e0 (some obj.id)
         let runAbilityBody (g : Game) : Game :=
           let chosenX :=
-            ((g.chosenXOf? obj.id).orElse (fun _ => obj.sourceId.bind g.chosenXOf?)).getD 0
+            (g.chosenXOf? obj.id).orElse (fun _ => obj.sourceId.bind g.chosenXOf?)
           let trigModes := g.triggerModesOf obj
           if !entry.extraModes.isEmpty && !trigModes.isEmpty then
             let modeEffects :=
@@ -392,7 +392,7 @@ def resolveTop (g : Game) : Game :=
         let kicked := g.wasKicked obj.id
         let fromGy := g.castFromGraveyard obj.id
         let giftTo := g.giftPromisedTo? obj.id
-        let chosenX := (g.chosenXOf? obj.id).getD 0
+        let chosenX := g.chosenXOf? obj.id
         let auraTargetsAllIllegal :=
           g.isAura obj && !entry.targets.isEmpty &&
             !entry.targets.any fun

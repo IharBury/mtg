@@ -523,16 +523,18 @@ private def chainOrMergeLeave (g0 : Game)
       g0.chainPendingReplacement
         (.leavePlayersWhoLost saved? popOuter departed rewindProposal)
 
-private def rewriteRepausedPostCloseBatch (g : Game) (curBid : BatchId)
+private def rewriteRepausedPostCloseBatch (g : Game) (curBid? : Option BatchId)
     (flushedFromPending : Bool)
     (savedIn : Option Pending) (popOuterAfterFlush : Bool)
     (departedIn : Array PlayerId) (rewindProposalIn : Option Bool)
-    (deferRestore : Bool) :
+    (deferRestore : Bool)
+    (flushedPendingAfter? : Option PendingReplacement := none) :
     Game × Option Pending × Bool × Array PlayerId × Option Bool := Id.run do
   let mut g := g
   if flushedFromPending then
-    match g.pendingReplacement.bind (splitAfterCloseBatchFor? curBid) with
-    | some (throughClose, curAfter?) =>
+    match curBid?.bind (fun curBid => g.pendingReplacement.bind (splitAfterCloseBatchFor? curBid)) with
+    | some (throughClose, curAfter0?) =>
+      let curAfter? := seqOptPending curAfter0? flushedPendingAfter?
       if deferRestore then
         let g0 := g.change (.pendingReplacement (some throughClose))
         match curAfter?.bind peelLeadingSbaOrLeave? with
@@ -586,7 +588,53 @@ private def rewriteRepausedPostCloseBatch (g : Game) (curBid : BatchId)
         g := g.change (.pendingReplacement (some newPr))
         return (g, savedM, poM, depM, rwM)
     | none =>
-      return (g, savedIn, popOuterAfterFlush, departedIn, rewindProposalIn)
+      if deferRestore then
+        match flushedPendingAfter?.bind peelLeadingSbaOrLeave? with
+        | some (.leavePlayersWhoLost s0 po0 d0 rw0, outerTail?) =>
+          return mergeLeaveArgs g s0 po0 d0 rw0 savedIn popOuterAfterFlush departedIn rewindProposalIn
+            (rest? := outerTail?)
+        | some (.checkSBA, outerTail?) =>
+          let (gp, po1) := combineOuterContinuations g false outerTail? popOuterAfterFlush
+          return (gp, savedIn, po1, departedIn, rewindProposalIn)
+        | _ =>
+          let (gp, po1) := combineOuterContinuations g false flushedPendingAfter? popOuterAfterFlush
+          return (gp, savedIn, po1, departedIn, rewindProposalIn)
+      else
+        let (g1, savedM, poM, depM, rwM, remTail?) :=
+          match flushedPendingAfter?.bind peelLeadingSbaOrLeave? with
+          | some (.leavePlayersWhoLost s0 po0 d0 rw0, outerTail?) =>
+            if outerTail?.isSome &&
+                (po0 || popOuterAfterFlush || s0.isSome || savedIn.isSome || rw0.isSome || rewindProposalIn.isSome) then
+              let (gm, sm, pom, dm, rwm) :=
+                mergeLeaveArgs g s0 po0 d0 rw0 savedIn popOuterAfterFlush departedIn rewindProposalIn
+                  (rest? := outerTail?)
+              (gm, sm, pom, dm, rwm, none)
+            else
+              let (gm, sm, pom, dm, rwm) :=
+                mergeLeaveArgs g s0 po0 d0 rw0 savedIn popOuterAfterFlush departedIn rewindProposalIn
+              (gm, sm, pom, dm, rwm, outerTail?)
+          | some (.checkSBA, outerTail?) =>
+            if outerTail?.isSome && (popOuterAfterFlush || savedIn.isSome || rewindProposalIn.isSome) then
+              let (gp, po1) := combineOuterContinuations g false outerTail? popOuterAfterFlush
+              (gp, savedIn, po1, departedIn, rewindProposalIn, none)
+            else
+              (g, savedIn, popOuterAfterFlush, departedIn, rewindProposalIn, outerTail?)
+          | _ =>
+            if flushedPendingAfter?.isSome && (popOuterAfterFlush || savedIn.isSome || rewindProposalIn.isSome) then
+              let (gp, po1) := combineOuterContinuations g false flushedPendingAfter? popOuterAfterFlush
+              (gp, savedIn, po1, departedIn, rewindProposalIn, none)
+            else
+              (g, savedIn, popOuterAfterFlush, departedIn, rewindProposalIn, flushedPendingAfter?)
+        g := g1
+        let newHead? : Option PendingReplacement :=
+          if savedM.isSome || poM || !depM.isEmpty || rwM.isSome ||
+              g.players.any (fun r => r.lost && !r.leftTheGame) then
+            some (.leavePlayersWhoLost savedM poM depM rwM)
+          else
+            some .checkSBA
+        if let some suf := seqOptPending newHead? remTail? then
+          g := g.chainPendingReplacement suf
+        return (g, savedM, poM, depM, rwM)
   else
     let pushedAfter? : Option PendingReplacement :=
       if popOuterAfterFlush then g.outerPendingReplacements.back? else none
@@ -630,7 +678,7 @@ private def rewriteRepausedPostCloseBatch (g : Game) (curBid : BatchId)
           else
             (g, savedIn, false, departedIn, rewindProposalIn, pushedAfter?)
       g := g1
-      match g.pendingReplacement.bind (splitAfterCloseBatchFor? curBid) with
+      match curBid?.bind (fun curBid => g.pendingReplacement.bind (splitAfterCloseBatchFor? curBid)) with
       | some (throughClose, innerAfter?) =>
         let (g', poM, remTail?) :=
           if poM && innerAfter?.isSome then
@@ -702,20 +750,21 @@ partial def checkSBACounted (g : Game)
       if shouldFlush then g.currentBatch.map Prod.fst else none
     let flushedFromPending : Bool :=
       flushedBid?.any (fun bid => (g.pendingReplacement.bind (splitAfterCloseBatchFor? bid)).isSome)
+    let flushedPendingAfter? : Option PendingReplacement :=
+      flushedBid?.bind (fun bid => (g.pendingReplacement.bind (splitAfterCloseBatchFor? bid)).bind Prod.snd)
     let (g, popOuterIn) :=
       if shouldFlush then
         g.flushDismissedPausedBatch savedForFlush popOuterIn
           (hasDeferredRewind := rewindProposalIn.isSome)
+          (chainAfterOnRepause := false)
       else (g, popOuterIn)
     if g.over then (g, true)
     else if flushedBid?.isSome && g.sbaPaused then
-      if let some newBid := g.currentBatch.map Prod.fst then
-        let (g, _, _, _, _) :=
-          rewriteRepausedPostCloseBatch g newBid flushedFromPending
-            savedIn popOuterIn departedIn rewindProposalIn deferRestore
-        (g, true)
-      else
-        (g, true)
+      let (g, _, _, _, _) :=
+        rewriteRepausedPostCloseBatch g (g.currentBatch.map Prod.fst) flushedFromPending
+          savedIn popOuterIn departedIn rewindProposalIn deferRestore
+          (flushedPendingAfter? := flushedPendingAfter?)
+      (g, true)
     else
     match g.pending with
     | .chooseReplacement .. | .chooseLegend .. =>
@@ -1014,36 +1063,35 @@ partial def checkSBACountedWithLeavesCore (g : Game)
     if shouldFlush then g.currentBatch.map Prod.fst else none
   let flushedFromPending : Bool :=
     flushedBid?.any (fun bid => (g.pendingReplacement.bind (splitAfterCloseBatchFor? bid)).isSome)
+  let flushedPendingAfter? : Option PendingReplacement :=
+    flushedBid?.bind (fun bid => (g.pendingReplacement.bind (splitAfterCloseBatchFor? bid)).bind Prod.snd)
   let (g, popOuterIn) :=
     if shouldFlush then
       g.flushDismissedPausedBatch savedForFlush popOuterIn
         (hasDeferredRewind := rewindProposalIn.isSome)
+        (chainAfterOnRepause := false)
     else (g, popOuterIn)
   if g.over then (g, shouldFlush, none, false, departedIn, none)
   else if flushedBid?.isSome && g.sbaPaused then
-    if let some newBid := g.currentBatch.map Prod.fst then
-      let (g, savedM, poM, depM, rwM) :=
-        rewriteRepausedPostCloseBatch g newBid flushedFromPending
-          savedIn popOuterIn departedIn rewindProposalIn deferRestore
-      let (g, poM) :=
-        match outerAfterIn? with
-        | some oa =>
-          if deferRestore || savedM.isSome || poM || rwM.isSome then
-            combineOuterContinuations g poM (some oa) false
-          else
-            (g.chainPendingReplacement oa, poM)
-        | none => (g, poM)
-      (g, true, savedM, poM, depM, rwM)
-    else
-      let (g, popOuterIn) :=
-        match outerAfterIn? with
-        | some oa =>
-          if deferRestore || savedIn.isSome || popOuterIn || rewindProposalIn.isSome then
-            combineOuterContinuations g popOuterIn (some oa) false
-          else
-            (g.chainPendingReplacement oa, popOuterIn)
-        | none => (g, popOuterIn)
-      (g, true, savedIn, popOuterIn, departedIn, rewindProposalIn)
+    let (g, savedM, poM, depM, rwM) :=
+      rewriteRepausedPostCloseBatch g (g.currentBatch.map Prod.fst) flushedFromPending
+        savedIn popOuterIn departedIn rewindProposalIn deferRestore
+        (flushedPendingAfter? := flushedPendingAfter?)
+    let (g, poM) :=
+      match outerAfterIn? with
+      | some oa =>
+        if deferRestore || savedM.isSome || poM || !depM.isEmpty || rwM.isSome ||
+            g.players.any (fun r => r.lost && !r.leftTheGame) then
+          let (g1, po1) := combineOuterContinuations g poM (some oa) false
+          let g2 :=
+            if !deferRestore && po1 && !poM then
+              chainOrMergeLeave g1 savedM po1 depM rwM
+            else g1
+          (g2, po1)
+        else
+          (g.chainPendingReplacement oa, poM)
+      | none => (g, poM)
+    (g, true, savedM, poM, depM, rwM)
   else
   let (g, savedIn, popOuterIn, departedIn, rewindProposalIn, outerAfter?) :
       Game × Option Pending × Bool × Array PlayerId × Option Bool × Option PendingReplacement :=

@@ -244,6 +244,182 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
     (g.player p).hand.any (fun id => id != o.id) || payExtra n
   | none, none => true
 
+/-- Whether `p` can pay `cost` for spell `spellObj` from their current mana pool
+plus plain tap mana sources (including multi-color `ManaOutput.combination`
+choices), excluding `excludeIds` (CR 106.1,6 / 601.2g). -/
+def canPaySpellCostFromSources (g : Game) (p : PlayerId) (spellObj : GameObject)
+    (cost : ManaCost) (fromHand : Bool := spellObj.zone == .hand p)
+    (excludeIds : Array ObjectId := #[])
+    (prop? : Option ProposedSpell := none) : Bool :=
+  let allowElf := g.hasSubtype spellObj .elf
+  let allowInst := g.isInstantOrSorcery spellObj
+  let allowances : ManaAllowances :=
+    { hero := g.hasSubtype spellObj .hero
+      villain := g.hasSubtype spellObj .villain
+      cantNonartifact := g.isArtifact spellObj
+      creature := false
+      spend :=
+        { spell := true, fromHand := fromHand
+          supertypes := g.supertypes spellObj
+          types := g.types spellObj
+          subtypes := g.subtypes spellObj } }
+  let sources :=
+    ((g.manaSources p).filter (fun (src, _) => !excludeIds.contains src.id)).toList
+  g.canPayFromSources (g.player p).manaPool cost allowElf allowInst sources allowances
+    (prop? := prop?)
+
+/-- Multi-choice `canPayFromSources` counterpart of `canPayAnnouncedAdditional`:
+whether `p` can satisfy `o`'s mandatory behold/sacrifice/discard-or-pay-generic
+additional cost (CR 118.8 / 601.2b,g). -/
+def canPayAnnouncedAdditionalFromSources (g : Game) (p : PlayerId) (o : GameObject)
+    (origPerm : Option PlayPermission := none)
+    (explicitAltCost : Bool := false) (flashback : Option Bool := none)
+    (useImplicitPermissions : Bool := true)
+    (fromHand : Bool := o.zone == .hand p)
+    (excludeIds : Array ObjectId := #[])
+    (faceOverride? : Option CardDef := none) : Bool :=
+  let rawBc := g.baseCard o
+  let bc :=
+    faceOverride?.getD
+      (if o.printed.adventure.any (fun adv => adv.name == rawBc.name) then rawBc
+       else { rawBc with keywords := g.currentKeywords o })
+  let payExtra (n : Nat) : Bool :=
+    g.canPaySpellCostFromSources p o
+      (g.playManaCost { o with controller := some p } bc (ManaCost.ofGeneric n)
+        (origPerm := origPerm) (flashback := flashback)
+        (explicitAltCost := explicitAltCost)
+        (useImplicitPermissions := useImplicitPermissions))
+      (fromHand := fromHand) (excludeIds := excludeIds)
+  match bc.additionalCostBeholdOrPay with
+  | some (quality, n) =>
+    let hasPerm := (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality)
+    let hasHand :=
+      (g.player p).hand.any (fun id =>
+        match g.findObject? id with
+        | some card => g.hasSubtype card quality
+        | none => false)
+    hasPerm || hasHand || payExtra n
+  | none =>
+  match bc.additionalCostOrPayGeneric, bc.additionalCostDiscardOrPayGeneric with
+  | some n, _ =>
+    (g.permanentsOf p).any (fun perm =>
+      perm.id != o.id &&
+        if bc.additionalCostSacrificeCreatureOrPlaneswalker then
+          g.isCreature perm || g.isPlaneswalker perm
+        else g.isCreature perm || g.isArtifact perm) || payExtra n
+  | none, some n =>
+    (g.player p).hand.any (fun id => id != o.id) || payExtra n
+  | none, none => true
+
+/-- Whether `p` can pay `cost` for activated ability `ab` on `o` from their
+current mana pool plus plain tap mana sources, excluding `excludeIds`
+(CR 106.1,6 / 602.2b). -/
+def canPayAbilityCostFromSources (g : Game) (p : PlayerId) (o : GameObject)
+    (ab : ActivatedAbility) (cost : ManaCost)
+    (isTurnFaceUp : Bool := false)
+    (excludeIds : Array ObjectId := #[])
+    (prop? : Option ProposedSpell := none) : Bool :=
+  let allowElf := !isTurnFaceUp && g.hasSubtype o .elf
+  let allowHero := !isTurnFaceUp && g.hasSubtype o .hero
+  let allowVillain := !isTurnFaceUp && g.hasSubtype o .villain
+  let allowCreature := !isTurnFaceUp && g.isCreature o
+  let actSpend : ManaSpend :=
+    if isTurnFaceUp then {}
+    else { equip := ab.isEquip, abilitySourceSubtypes := g.subtypes o }
+  let allowances : ManaAllowances :=
+    { hero := allowHero, villain := allowVillain
+      cantNonartifact := true, creature := allowCreature
+      spend := actSpend }
+  let sources :=
+    ((g.manaSources p).filter (fun (src, _) => !excludeIds.contains src.id)).toList
+  g.canPayFromSources (g.player p).manaPool cost allowElf false sources allowances
+    (prop? := prop?)
+
+/-- Whether `p` can legally propose and afford casting `o` face down via Morph `{3}`
+(CR 702.37a,c / 708.2), accounting for `CastSpell`'s `prepareSource` precedence
+(when `o` is a prepared copy whose front face is castable, `Action.cast o.id` casts
+the prepared front-face copy rather than opening Morph `{3}`). -/
+def canCastAndPayMorphFaceDown (g : Game) (p : PlayerId) (o : GameObject)
+    (excludeIds : Array ObjectId := #[]) : Bool :=
+  let bc := g.baseCard o
+  let face := { bc with keywords := g.currentKeywords o }
+  let preparedBlocksMorph :=
+    o.zone == .exile &&
+      ((g.playPermissionFor? p o (face? := some face)).bind (·.prepareSource)).isSome &&
+      g.canCastFrontFace p o
+  bc.kicker.isNone && !preparedBlocksMorph && g.canCastMorphFaceDown p o &&
+    let casterObj := { o with controller := some p }
+    let morphObj :=
+      { o with
+        controller := some p
+        printed := morphSpellFace
+        adventurerCard := none
+        status := { o.status with faceDown := true } }
+    let payMorph (perm? : Option PlayPermission) : Bool :=
+      let cost :=
+        g.playManaCost casterObj morphSpellFace
+          (origPerm := perm?) (flashback := some false)
+          (explicitAltCost := true) (useImplicitPermissions := false)
+      g.canPaySpellCostFromSources p morphObj cost
+        (fromHand := o.zone == .hand p) (excludeIds := excludeIds)
+    if o.zone == .exile then
+      let perms := g.playPermissionsFor p o
+      let cleanPerms :=
+        perms.filter fun pm =>
+          !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone &&
+            (pm.ignoreTiming || g.timingAllowsCast p morphSpellFace)
+      let nullPerm : Option PlayPermission :=
+        if g.mayCastExiledBySource p o then some { player := p, anyMana := true } else none
+      cleanPerms.any (fun pm => payMorph (some pm)) ||
+        ((perms.isEmpty || g.mayCastExiledBySource p o) &&
+          g.timingAllowsCast p morphSpellFace && payMorph nullPerm)
+    else
+      payMorph none
+
+/-- Whether `p` can legally propose and afford casting `o` via its Impending
+alternative cost (CR 118.9a / 601.1a / 702.176a), accounting for `prepareSource`
+and Flashback precedence in `CastSpell`. -/
+def canCastAndPayImpending (g : Game) (p : PlayerId) (o : GameObject)
+    (excludeIds : Array ObjectId := #[]) : Bool :=
+  let bc := g.baseCard o
+  let face := { bc with keywords := g.currentKeywords o }
+  match face.morph, face.impending, face.kicker with
+  | none, some (_, alt), none =>
+    let fromGraveyard := o.zone == .graveyard o.owner
+    let isFlashbackCast := fromGraveyard && (face.flashback.isSome || g.flashbackUntilEot o)
+    let preparedBlocksImpending :=
+      o.zone == .exile &&
+        ((g.playPermissionFor? p o (face? := some face)).bind (·.prepareSource)).isSome
+    !isFlashbackCast && !preparedBlocksImpending && g.canCastFrontFace p o &&
+      let casterObj := { o with controller := some p }
+      let impFace := { face with manaCost := alt }
+      let payImpending (perm? : Option PlayPermission) : Bool :=
+        let cost :=
+          g.playManaCost casterObj impFace
+            (origPerm := perm?) (flashback := some false)
+            (explicitAltCost := true) (useImplicitPermissions := false)
+        g.canPaySpellCostFromSources p o cost
+          (fromHand := o.zone == .hand p) (excludeIds := excludeIds) &&
+          g.canPayAnnouncedAdditionalFromSources p o
+            (origPerm := perm?) (explicitAltCost := true)
+            (flashback := some false) (useImplicitPermissions := false)
+            (fromHand := o.zone == .hand p) (excludeIds := excludeIds)
+            (faceOverride? := some impFace)
+      let perms := g.playPermissionsFor p o
+      let hasNullSummoner := o.zone == .exile && g.mayCastExiledBySource p o
+      if perms.isEmpty && !hasNullSummoner then
+        g.timingAllowsCast p impFace && payImpending none
+      else
+        let cleanPerms :=
+          perms.filter fun pm =>
+            !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone &&
+              (pm.ignoreTiming || g.timingAllowsCast p impFace)
+        let nullPerm : Option PlayPermission :=
+          if hasNullSummoner then some { player := p, anyMana := true } else none
+        cleanPerms.any (fun pm => payImpending (some pm)) ||
+          (hasNullSummoner && g.timingAllowsCast p impFace && payImpending nullPerm)
+  | _, _, _ => false
+
 /-- True when the CR 715.3d exile permission forbids recasting as an Adventure. -/
 def adventureExileForbidsRecast (g : Game) (o : GameObject)
     (player? : Option PlayerId := none) : Bool :=

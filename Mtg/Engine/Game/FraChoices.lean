@@ -379,7 +379,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.discardFromHand p id
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.continueUnifiedAbility p default #[next.toResolution] #[] sourceId none 0)
+        g.chainPendingReplacement (.continueUnifiedAbility p default #[next.toResolution] #[] sourceId none none)
       else
         g.applyFra p default next.toResolution #[] sourceId
     return g.finishFraChoice
@@ -417,7 +417,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {g.name o}"
     let g :=
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.continueUnifiedAbility p default #[next.toResolution] #[] sourceId none 0)
+        g.chainPendingReplacement (.continueUnifiedAbility p default #[next.toResolution] #[] sourceId none none)
       else
         g.applyFra p default next.toResolution #[] sourceId
     return g.finishFraChoice
@@ -873,7 +873,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g :=
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement
-            (.continueUnifiedAbility p drawn #[.draw 1, .createTokens .treasure 1] #[] (some sourceId) none 0)
+            (.continueUnifiedAbility p drawn #[.draw 1, .createTokens .treasure 1] #[] (some sourceId) none none)
         else
           g.applyUnifiedAbility p drawn #[] (some sourceId)
       return g.finishFraChoice
@@ -961,7 +961,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g :=
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement
-            (.continueUnifiedAbility p default #[next.toResolution] #[] sourceId none 0)
+            (.continueUnifiedAbility p default #[next.toResolution] #[] sourceId none none)
         else
           g.applyFra p default next.toResolution #[] sourceId
       return g.finishFraChoice
@@ -2104,15 +2104,11 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
         g.opponentsCantCastOnActiveTurn p then
       .decline
     else
-      let available := g.availableMana p
       let origPerm : Option PlayPermission := some { player := p, withoutManaCost := true }
       let castable :=
         (g.findObject? cardId).any (fun o =>
-          let face := g.baseCard o
+          let face := { g.baseCard o with keywords := g.currentKeywords o }
           let tcs := g.evalLayer3 o
-          let spend : ManaSpend :=
-            { spell := true, fromHand := o.zone == .hand p
-              supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
           let hasTargets :=
             if isModalSpellFace face then
               (effectiveSpellModes face).any (fun e =>
@@ -2126,19 +2122,14 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
             g.graveyardCastThresholdMet p o.id face &&
             (g.mandatorySacrificeError? p o.id face).isNone &&
             hasTargets &&
-            available.canPay
+            g.canPaySpellCostFromSources p o
               (g.playManaCost { o with controller := some p } face
                 (origPerm := origPerm) (flashback := some false)
                 (useImplicitPermissions := false))
-              (allowElfRestricted := g.hasSubtype o .elf)
-              (allowInstRestricted := g.isInstantOrSorcery o)
-              (allowHeroRestricted := g.hasSubtype o .hero)
-              (allowVillainRestricted := g.hasSubtype o .villain)
-              (allowCantNonartifact := g.isArtifact o)
-              (allowCreatureRestricted := false)
-              (spend := spend) &&
-            g.canPayAnnouncedAdditional p o available (origPerm := origPerm)
-              (useImplicitPermissions := false))
+              (fromHand := o.zone == .hand p) &&
+            g.canPayAnnouncedAdditionalFromSources p o (origPerm := origPerm)
+              (flashback := some false) (useImplicitPermissions := false)
+              (fromHand := o.zone == .hand p))
       if castable then .accept else .decline
   | .mayCastGrima .. => .decline
   | .palantirMayDraw .. => .decline
@@ -2176,8 +2167,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
         g.opponentsCantCastOnActiveTurn p then
       .decline
     else
-      let hasTargets (o : GameObject) : Bool :=
-        let face := g.baseCard o
+      let hasTargets (o : GameObject) (face : CardDef) : Bool :=
         let tcs := g.evalLayer3 o
         !g.isLand o && !g.spellNameForbidden face.name &&
           g.graveyardCastThresholdMet p o.id face &&
@@ -2190,33 +2180,66 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
           else if face.requiresTarget || face.isAura then
             g.castFaceHasLegalTarget p face tcs (some o.id) || face.allowsZeroTargets
           else true
-      let available := g.availableMana p
       match eligible.find? (fun id =>
         (g.findObject? id).any (fun o =>
-          let face := g.baseCard o
+          let face := { g.baseCard o with keywords := g.currentKeywords o }
           let origPerm : Option PlayPermission :=
             if withoutPaying then some { player := p, withoutManaCost := true, ignoreTiming := true }
             else
               some ((g.paidResolutionOrigPerm? p o (face? := some face)).getD
                 { player := p, ignoreTiming := true })
-          let spend : ManaSpend :=
-            { spell := true, fromHand := o.zone == .hand p
-              supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
-          hasTargets o &&
-            (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
-            available.canPay
-              (g.playManaCost { o with controller := some p } face
-                (origPerm := origPerm) (flashback := some false) (explicitAltCost := false)
-                (useImplicitPermissions := false))
-              (allowElfRestricted := g.hasSubtype o .elf)
-              (allowInstRestricted := g.isInstantOrSorcery o)
-              (allowHeroRestricted := g.hasSubtype o .hero)
-              (allowVillainRestricted := g.hasSubtype o .villain)
-              (allowCantNonartifact := g.isArtifact o)
-              (allowCreatureRestricted := false)
-              (spend := spend) &&
-            g.canPayAnnouncedAdditional p o available (origPerm := origPerm)
-              (flashback := some false) (useImplicitPermissions := false))) with
+          let frontOk :=
+            hasTargets o face &&
+              (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
+              g.canPaySpellCostFromSources p o
+                (g.playManaCost { o with controller := some p } face
+                  (origPerm := origPerm) (flashback := some false) (explicitAltCost := false)
+                  (useImplicitPermissions := false))
+                (fromHand := o.zone == .hand p) &&
+              g.canPayAnnouncedAdditionalFromSources p o (origPerm := origPerm)
+                (flashback := some false) (useImplicitPermissions := false)
+                (fromHand := o.zone == .hand p)
+          let morphOk :=
+            !withoutPaying && face.morph.isSome && face.kicker.isNone &&
+              o.zone != .graveyard o.owner && !g.spellNameForbidden "" &&
+              (let morphObj :=
+                 { o with
+                   controller := some p
+                   printed := morphSpellFace
+                   adventurerCard := none
+                   status := { o.status with faceDown := true } }
+               let morphPerm : Option PlayPermission :=
+                 some ((g.paidResolutionOrigPerm? p o (face? := some morphSpellFace))
+                   |>.filter (fun pm =>
+                     !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone)
+                   |>.getD { player := p, ignoreTiming := true })
+               let morphCost :=
+                 g.playManaCost { o with controller := some p } morphSpellFace
+                   (origPerm := morphPerm) (flashback := some false)
+                   (explicitAltCost := true) (useImplicitPermissions := false)
+               g.canPaySpellCostFromSources p morphObj morphCost (fromHand := o.zone == .hand p))
+          let impendingOk :=
+            !withoutPaying &&
+              match face.morph, face.impending, face.kicker with
+              | none, some (_, alt), none =>
+                hasTargets o face &&
+                  (let impFace := { face with manaCost := alt }
+                   let impPerm : Option PlayPermission :=
+                     some ((g.paidResolutionOrigPerm? p o (face? := some impFace))
+                       |>.filter (fun pm =>
+                         !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone)
+                       |>.getD { player := p, ignoreTiming := true })
+                   let impCost :=
+                     g.playManaCost { o with controller := some p } impFace
+                       (origPerm := impPerm) (flashback := some false)
+                       (explicitAltCost := true) (useImplicitPermissions := false)
+                   g.canPaySpellCostFromSources p o impCost (fromHand := o.zone == .hand p) &&
+                     g.canPayAnnouncedAdditionalFromSources p o (origPerm := impPerm)
+                       (explicitAltCost := true) (flashback := some false)
+                       (useImplicitPermissions := false)
+                       (fromHand := o.zone == .hand p) (faceOverride? := some impFace))
+              | _, _, _ => false
+          frontOk || morphOk || impendingOk)) with
       | some id => .cast id
       | none => .decline
   | .mayCastFromGraveyard eligible =>
@@ -2224,10 +2247,9 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
         g.opponentsCantCastOnActiveTurn p then
       .decline
     else
-      let available := g.availableMana p
       match eligible.find? (fun id =>
         (g.findObject? id).any (fun o =>
-          let face := g.baseCard o
+          let face := { g.baseCard o with keywords := g.currentKeywords o }
           let tcs := g.evalLayer3 o
           let origPerm : Option PlayPermission :=
             some ((g.paidResolutionOrigPerm? p o (face? := some face)).getD
@@ -2244,24 +2266,16 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
               else if face.requiresTarget || face.isAura then
                 g.castFaceHasLegalTarget p face tcs (some o.id) || face.allowsZeroTargets
               else true
-          let spend : ManaSpend :=
-            { spell := true, fromHand := o.zone == .hand p
-              supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
           hasTargets &&
             (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
-            available.canPay
+            g.canPaySpellCostFromSources p o
               (g.playManaCost { o with controller := some p } face
                 (origPerm := origPerm) (flashback := some false) (explicitAltCost := false)
                 (useImplicitPermissions := false))
-              (allowElfRestricted := g.hasSubtype o .elf)
-              (allowInstRestricted := g.isInstantOrSorcery o)
-              (allowHeroRestricted := g.hasSubtype o .hero)
-              (allowVillainRestricted := g.hasSubtype o .villain)
-              (allowCantNonartifact := g.isArtifact o)
-              (allowCreatureRestricted := false)
-              (spend := spend) &&
-            g.canPayAnnouncedAdditional p o available (origPerm := origPerm)
-              (flashback := some false) (useImplicitPermissions := false))) with
+              (fromHand := o.zone == .hand p) &&
+            g.canPayAnnouncedAdditionalFromSources p o (origPerm := origPerm)
+              (flashback := some false) (useImplicitPermissions := false)
+              (fromHand := o.zone == .hand p))) with
       | some id => .cast id
       | none => .decline
   | .maySearchLibrary eligible .. =>

@@ -4462,7 +4462,7 @@ private def replayOk27i3 (gs : Array Game) : Bool :=
       p0BearId (.graveyard p0) none (cause := some testCause)
   let gManaLki :=
     gDepartedBear.applyUnifiedAbility p0
-      { resolution := .addAnyColorEqualToSourcePower } #[] (some p0BearId) (some 4) 0
+      { resolution := .addAnyColorEqualToSourcePower } #[] (some p0BearId) (some 4) none
   let gAlienLki :=
     (gDepartedBear.change (.pushContinuationFrame {})).applyCreateTokens p0
       (some p0BearId) #[] none .treasure (.fixed 1) false .alien .you .invasion

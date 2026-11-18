@@ -235,6 +235,7 @@ namespace Game
 @[inline] def unlessPaysTargets (g : Game) := g.topFrame.unlessPaysTargets
 @[inline] def unlessPaysSource (g : Game) := g.topFrame.unlessPaysSource
 @[inline] def unlessPaysDue (g : Game) := g.topFrame.unlessPaysDue
+@[inline] def unlessPaysResCtx (g : Game) := g.topFrame.unlessPaysResCtx
 @[inline] def mayEffect (g : Game) := g.topFrame.mayEffect
 @[inline] def mayController (g : Game) := g.topFrame.mayController
 @[inline] def mayTargets (g : Game) := g.topFrame.mayTargets
@@ -2685,7 +2686,7 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
   | .untapPermanentsLoop ids c
   | .millCardsLoop _ ids _ c _ _
   | .moveCardsToGraveyardLoop ids c
-  | .phaseInControlledLoop ids c _ _ =>
+  | .phaseInControlledLoop ids c _ _ _ =>
     checkValidObjIds pred ids || c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .finishProliferateTarget _ tid _ _ rtgts pids _ _ _ c =>
     checkValidObjId pred tid || rtgts.any (targetAnyObjId pred) ||
@@ -4445,6 +4446,7 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       | .unlessPaysTargets v => { f with unlessPaysTargets := v }
       | .unlessPaysSource v => { f with unlessPaysSource := v }
       | .unlessPaysDue v => { f with unlessPaysDue := v }
+      | .unlessPaysResCtx v => { f with unlessPaysResCtx := v }
       | .mayEffect v => { f with mayEffect := v }
       | .mayController v => { f with mayController := v }
       | .mayTargets v => { f with mayTargets := v }
@@ -11410,12 +11412,23 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       g.loggedAttackedWithSubtype controller st || g.loggedSubtypeEntered controller st
     | .death .deathtouchOppSac =>
       cause.any (fun c => some c.id != source.map (·.id) && g.hasDeathtouch c)
-    | .resource .plusOneCreateInsectOnce => cause.any (g.isCreature ·)
+    | .resource .plusOneCreateInsectOnce =>
+      cause.any (fun c =>
+        if g.findObject? c.id == some c && c.isOnBattlefield then g.isCreature c
+        else c.printed.types.contains .creature)
     | .resource .plusOneOnThisOnce =>
-      cause.any (fun c => g.isCreature c && some c.id != source.map (·.id))
+      cause.any (fun c =>
+        some c.id != source.map (·.id) &&
+          (if g.findObject? c.id == some c && c.isOnBattlefield then g.isCreature c
+           else c.printed.types.contains .creature))
     | .resource .plusOneOnHeroesCreateWall =>
-      cause.any (fun c => some c.id != source.map (·.id) && g.controlledBy c controller &&
-        g.hasSubtype c .hero)
+      cause.any (fun c =>
+        some c.id != source.map (·.id) &&
+          (if g.findObject? c.id == some c && c.isOnBattlefield then
+             g.controlledBy c controller && g.hasSubtype c .hero
+           else
+             c.controller == some controller &&
+               (CardSubtype.ofSubtypes c.printed.subtypes).contains .hero))
     | .watch .sheHulkRedirectOnce => !g.loggedSheHulkDealtDamage
     | _ =>
       match ab.effect.resolution with
@@ -11734,6 +11747,40 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
           | _ => false) then
         let (w, fs) := queueCtrl post q .heroesDealDamageToPlayer (w := waiting) (fs := firedSources)
         waiting := w; firedSources := fs
+    let makeEventObjFromSnapshot (eo : EventObject) : GameObject :=
+      let id := eo.id.getD noSourceSentinelId
+      let printed := adjustTokenCardDef eo.token eo.toCardDef
+      let st := ({} : Status).withCounterBag eo.counters
+      { id
+        printed
+        owner := eo.owner
+        defaultController := eo.defaultController
+        controller := eo.controller
+        zone := eo.zone
+        status :=
+          { st with
+            tapped := eo.tapped
+            summoningSick := eo.summoningSick
+            attacking := eo.attacking
+            attackingTarget := eo.attackingTarget
+            blocking := eo.blockingIds
+            phasedOut := eo.phasedOut
+            faceDown := eo.faceDown
+            transformed := eo.transformed
+            chosenOdd := eo.chosenOdd
+            chosenCreatureType := eo.chosenCreatureType
+            chosenColor := eo.chosenColor
+            chosenName := eo.chosenName
+            chosenCardType := eo.chosenCardType
+            chosenAnchor := eo.chosenAnchor }
+        attachedTo := eo.attachedTo
+        chosenX := eo.chosenX
+        isCopy := eo.isCopy
+        isCommander := eo.isCommander }
+    let findEventObj (board : Game) (eo : EventObject) : GameObject :=
+      match eo.id.bind board.findObject? with
+      | some o => o
+      | none => makeEventObjFromSnapshot eo
     -- 11. “Whenever you put one or more counters on a Goblin, Orc, or Army you control” (post-batch).
     for pl in post.livingPlayers do
       let p := pl.id
@@ -11741,9 +11788,14 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         e.matchesTrigger p none .youPutCountersOnGoblinOrcArmy ||
           e.countersPutInEvent.any (fun (eo, _, n, actor?) =>
             actor? == some p && n > 0 &&
-              (eo.id.bind post.findObject?).any (fun obj =>
-                post.controlledBy obj p &&
-                  (post.hasSubtype obj .goblin || post.hasSubtype obj .orc || post.hasSubtype obj .army))))
+              match (eo.id.bind post.findObject?).filter (·.isOnBattlefield) with
+              | some liveObj =>
+                post.controlledBy liveObj p &&
+                  (post.hasSubtype liveObj .goblin ||
+                    post.hasSubtype liveObj .orc ||
+                    post.hasSubtype liveObj .army)
+              | none =>
+                eo.controller == some p && eo.goblinOrcArmy))
       if matched then
         let (w, fs) := queueCtrl post p .youPutCountersOnGoblinOrcArmy (w := waiting) (fs := firedSources)
         waiting := w; firedSources := fs
@@ -11756,65 +11808,48 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
     -- 13. “Whenever you put one or more +1/+1 counters on …” (post-batch, including enters-with per CR 122.6).
     for pl in post.livingPlayers do
       let q := pl.id
-      let putObjs : Array GameObject :=
+      let putObjs : Array (EventObject × GameObject) :=
         batch.foldl (fun objs e =>
           e.countersPutInEvent.foldl (fun objs (eo, kind, n, actor?) =>
             if kind == .plusOnePlusOne && n > 0 && actor? == some q then
-              match eo.id.bind post.findObject? with
-              | some obj => objs.push obj
-              | none => objs
+              objs.push (eo, findEventObj post eo)
             else objs) objs) #[]
       if !putObjs.isEmpty then
         for src in post.permanentsOf q do
           for ab in post.matchingTriggers src .youPutPlusOne do
-            let matchesAb (obj : GameObject) : Bool :=
+            let matchesAb (pair : EventObject × GameObject) : Bool :=
+              let (eo, obj) := pair
+              let liveBf? := (eo.id.bind post.findObject?).filter (·.isOnBattlefield)
+              let notSelf := obj.id != src.id && eo.id != some src.id
+              let ctrlByQ :=
+                match liveBf? with
+                | some liveObj => post.controlledBy liveObj q
+                | none => eo.controller == some q
+              let isCreat :=
+                match liveBf? with
+                | some liveObj => post.isCreature liveObj
+                | none => eo.creature
+              let isHero :=
+                match liveBf? with
+                | some liveObj => post.hasSubtype liveObj .hero
+                | none => eo.hero
               match ab.shared with
               | .resource .plusOneOnHeroesCreateWall =>
-                obj.id != src.id && post.controlledBy obj q && post.hasSubtype obj .hero
+                notSelf && ctrlByQ && isHero
               | .resource .plusOneOnThisOnce =>
-                post.isCreature obj && obj.id != src.id
-              | _ => post.isCreature obj
+                notSelf && isCreat
+              | _ => isCreat
             match putObjs.find? matchesAb with
-            | some causeObj =>
+            | some (eo, causeObj) =>
+              let causeForQueue :=
+                if (eo.id.bind post.findObject?).any (·.isOnBattlefield) then causeObj
+                else makeEventObjFromSnapshot { eo with printed := none }
               let (w, fs) :=
-                queueAb post q src ab .youPutPlusOne (cause := some causeObj)
+                queueAb post q src ab .youPutPlusOne (cause := some causeForQueue)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
             | none => pure ()
     -- Per-event triggers across the batch
-    let findEventObj (board : Game) (eo : EventObject) : GameObject :=
-      match eo.id.bind board.findObject? with
-      | some o => o
-      | none =>
-        let id := eo.id.getD noSourceSentinelId
-        let printed := adjustTokenCardDef eo.token eo.toCardDef
-        let st := ({} : Status).withCounterBag eo.counters
-        { id
-          printed
-          owner := eo.owner
-          defaultController := eo.defaultController
-          controller := eo.controller
-          zone := eo.zone
-          status :=
-            { st with
-              tapped := eo.tapped
-              summoningSick := eo.summoningSick
-              attacking := eo.attacking
-              attackingTarget := eo.attackingTarget
-              blocking := eo.blockingIds
-              phasedOut := eo.phasedOut
-              faceDown := eo.faceDown
-              transformed := eo.transformed
-              chosenOdd := eo.chosenOdd
-              chosenCreatureType := eo.chosenCreatureType
-              chosenColor := eo.chosenColor
-              chosenName := eo.chosenName
-              chosenCardType := eo.chosenCardType
-              chosenAnchor := eo.chosenAnchor }
-          attachedTo := eo.attachedTo
-          chosenX := eo.chosenX
-          isCopy := eo.isCopy
-          isCommander := eo.isCommander }
     -- Pre-sum damage dealt to each permanent across the entire batch so
     -- `.sourceDealtDamage` queues once per `(source, ability)` per batch with
     -- the summed damage before `queueAb` replicates `extraTriggerCopies`.
@@ -12404,37 +12439,38 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   (w := waiting) (fs := firedSources)
               waiting := w; firedSources := fs
         | .permanent (.tapped obj _) =>
-          let tObj := findEventObj post obj
-          match (post.controllerOf tObj).orElse (fun _ => obj.controller) with
-          | some p =>
-            if e.matchesTrigger p (some tObj.id) .sourceBecomesTapped then
-              let (w, fs) := queueSrc post p tObj .sourceBecomesTapped (w := waiting) (fs := firedSources)
-              waiting := w; firedSources := fs
-            let wasAlreadyTapped :=
-              pre.becameTappedThisTurn tObj.id ||
-                tappedInBatch.contains tObj.id
-            tappedInBatch := tappedInBatch.push tObj.id
-            if !wasAlreadyTapped && e.matchesTrigger p (some tObj.id) .creatureYouControlTapped then
-              let (w, fs) :=
-                queueCtrl post p .creatureYouControlTapped (cause := some tObj)
-                  (w := waiting) (fs := firedSources)
-              waiting := w; firedSources := fs
-            match e.cause? with
-            | some (.costPayment .teamwork actor _) =>
-              if e.matchesTrigger actor (some tObj.id) .tappedForTeamwork then
-                let (w, fs) :=
-                  queueSrc post actor tObj .tappedForTeamwork (w := waiting) (fs := firedSources)
+          if !obj.phasedOut then
+            let tObj := findEventObj post obj
+            match (post.controllerOf tObj).orElse (fun _ => obj.controller) with
+            | some p =>
+              if e.matchesTrigger p (some tObj.id) .sourceBecomesTapped then
+                let (w, fs) := queueSrc post p tObj .sourceBecomesTapped (w := waiting) (fs := firedSources)
                 waiting := w; firedSources := fs
-            | _ => pure ()
-          | none => pure ()
-          for eq in post.attachmentsOf tObj do
-            if post.isEquipment eq then
-              if let some eqCtrl := post.controllerOf eq then
-                if e.matchesTrigger eqCtrl (some eq.id) .equippedBecomesTapped then
+              let wasAlreadyTapped :=
+                pre.becameTappedThisTurn tObj.id ||
+                  tappedInBatch.contains tObj.id
+              tappedInBatch := tappedInBatch.push tObj.id
+              if !wasAlreadyTapped && e.matchesTrigger p (some tObj.id) .creatureYouControlTapped then
+                let (w, fs) :=
+                  queueCtrl post p .creatureYouControlTapped (cause := some tObj)
+                    (w := waiting) (fs := firedSources)
+                waiting := w; firedSources := fs
+              match e.cause? with
+              | some (.costPayment .teamwork actor _) =>
+                if e.matchesTrigger actor (some tObj.id) .tappedForTeamwork then
                   let (w, fs) :=
-                    queueSrc post eqCtrl eq .equippedBecomesTapped (cause := some tObj)
-                      (w := waiting) (fs := firedSources)
+                    queueSrc post actor tObj .tappedForTeamwork (w := waiting) (fs := firedSources)
                   waiting := w; firedSources := fs
+              | _ => pure ()
+            | none => pure ()
+            for eq in post.attachmentsOf tObj do
+              if post.isEquipment eq then
+                if let some eqCtrl := post.controllerOf eq then
+                  if e.matchesTrigger eqCtrl (some eq.id) .equippedBecomesTapped then
+                    let (w, fs) :=
+                      queueSrc post eqCtrl eq .equippedBecomesTapped (cause := some tObj)
+                        (w := waiting) (fs := firedSources)
+                    waiting := w; firedSources := fs
         | .permanent (.untapped _)
         | .permanent (.phasedOut _ _)
         | .permanent (.phasedIn _ _)
@@ -16303,7 +16339,8 @@ def clearUnlessPays (g : Game) : Game :=
     .unlessPaysInstead none,
     .unlessPaysDue false,
     .unlessPaysTargets #[],
-    .unlessPaysSource none]
+    .unlessPaysSource none,
+    .unlessPaysResCtx {}]
 
 /-- Drop a stashed `SpellResolution.may` after the player accepts or declines. -/
 def clearMay (g : Game) : Game :=

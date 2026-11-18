@@ -275,11 +275,156 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         | some aid => if !g.sneakPaid prop.spellId then #[aid] else #[]
         | none => #[]
       srcSac ++ prop.teamworkCreatures ++ sneakSac
+  let propRemoveReservedIds : Array ObjectId :=
+    match prop? with
+    | none => #[]
+    | some prop =>
+      let handOrGySrc :=
+        match prop.sourceId with
+        | some sid =>
+          if prop.kind == .activatedAbility &&
+              (prop.discardSource ||
+                prop.activation.any (fun a =>
+                  a.cost.discardSource || a.cost.fra == .exileSourceFromHand || a.isFromGraveyard)) then
+            #[sid]
+          else #[]
+        | none => #[]
+      propBfSacReservedIds ++ handOrGySrc
+  let propPostManaPayableAfter (tappedIds removedIds : Array ObjectId) : Bool :=
+    match prop? with
+    | none => true
+    | some prop =>
+      let beholdOk :=
+        match prop.needsBehold with
+        | none => true
+        | some quality =>
+          perms.any (fun perm =>
+            !removedIds.contains perm.id && g.hasSubtype perm quality) ||
+            (g.player p).hand.any (fun id =>
+              !removedIds.contains id &&
+                (g.findObject? id).any (fun card => g.hasSubtype card quality))
+      if !beholdOk then false
+      else if prop.kind != .activatedAbility then
+        let excludeId := prop.sourceId.getD prop.spellId
+        let src := g.findObject? excludeId
+        let isSpellSrc (s : GameObject) : Bool :=
+          s.zone == .stack && (prop.spellId != excludeId || prop.kind == .spell)
+        let creatureOrPw :=
+          src.any (fun s => isSpellSrc s && (g.baseCard s).additionalCostSacrificeCreatureOrPlaneswalker)
+        let creatureOnly :=
+          src.any (fun s => isSpellSrc s && (g.baseCard s).additionalCostSacrificeCreature)
+        let sacOk :=
+          !prop.needsSacrificeOther ||
+            perms.any (fun perm =>
+              perm.id != excludeId && !removedIds.contains perm.id &&
+                !propBfSacReservedIds.contains perm.id &&
+                if creatureOrPw then g.isCreature perm || g.isPlaneswalker perm
+                else if creatureOnly then g.isCreature perm
+                else g.isCreature perm || g.isArtifact perm)
+        let discardOk :=
+          !prop.needsDiscardCard ||
+            (g.player p).hand.any (fun id =>
+              id != prop.spellId && !removedIds.contains id)
+        sacOk && discardOk
+      else
+        match prop.sourceId, prop.activation with
+        | some sid, some ab =>
+          let sacSrc :=
+            prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.fra == .exileSource
+          let discSrc :=
+            prop.discardSource || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+          let gySrc := ab.isFromGraveyard
+          let srcZoneOk :=
+            (!discSrc || !removedIds.contains sid) &&
+              (!gySrc || !removedIds.contains sid)
+          let allPicks :=
+            costPicksWithSacrificeOther (costPicksOf ab)
+              (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
+          let zemoOk :=
+            prop.fraCostPaid || ab.cost.fra != .zemoBoast ||
+              (let col :=
+                 match (g.findObject? sid).map g.evalLayer3 with
+                 | some tcs => TextChange.applyColor tcs .black
+                 | none => .black
+               let remGy :=
+                 (g.player p).graveyard.filter (fun id =>
+                   !removedIds.contains id &&
+                     (g.findObject? id).any (fun o => (g.colors o).contains col))
+               g.canPayZemoBoast p remGy col)
+          let crewOrPicksOk :=
+            if !prop.fraCostPaid then
+              match ab.cost.fra with
+              | .crew n =>
+                (g.firstPayableCrewSelection? p sid n allPicks
+                  (tapSource := prop.tapSource)
+                  (sacrificeOrExileSource := sacSrc)
+                  (discardOrExileHandSource := discSrc)
+                  (preTappedIds := propTapReservedIds ++ tappedIds)
+                  (used := removedIds)
+                  (sacReservedIds := propBfSacReservedIds)).isSome
+              | _ =>
+                allPicks.isEmpty ||
+                  g.costPicksPayable p (some sid) allPicks
+                    (tapSource := prop.tapSource)
+                    (sacrificeOrExileSource := sacSrc)
+                    (discardOrExileHandSource := discSrc)
+                    (used := removedIds)
+                    (preTappedIds := propTapReservedIds ++ tappedIds)
+                    (sacReservedIds := propBfSacReservedIds)
+            else
+              allPicks.isEmpty ||
+                g.costPicksPayable p (some sid) allPicks
+                  (tapSource := prop.tapSource)
+                  (sacrificeOrExileSource := sacSrc)
+                  (discardOrExileHandSource := discSrc)
+                  (used := removedIds)
+                  (preTappedIds := propTapReservedIds ++ tappedIds)
+                  (sacReservedIds := propBfSacReservedIds)
+          srcZoneOk && zemoOk && crewOrPicksOk
+        | _, _ =>
+          let excludeId := prop.sourceId.getD prop.spellId
+          !prop.needsSacrificeOther ||
+            perms.any (fun perm =>
+              perm.id != excludeId && !removedIds.contains perm.id &&
+                !propBfSacReservedIds.contains perm.id &&
+                (g.isCreature perm || g.isArtifact perm))
+  let rec chooseK : List ObjectId → Nat → Array ObjectId → (Array ObjectId → Bool) → Bool
+    | _, 0, picked, k => k picked
+    | [], _ + 1, _, _ => false
+    | c :: rest, m + 1, picked, k =>
+      if rest.length < m then false
+      else chooseK rest m (picked.push c) k || chooseK rest (m + 1) picked k
+  let rec existsValidDPicks (o : GameObject) (d : ManaAbilityDef)
+      : List CostPick → Array ObjectId → Array ObjectId → Array ObjectId → Array ObjectId → Bool
+    | [], _, dTap, dRem, extraEffTapped =>
+      let totTapped := (if d.tap then #[o.id] else #[]) ++ dTap ++ extraEffTapped
+      let totRemoved := (if d.sacrificeSelf || d.exileSelf then #[o.id] else #[]) ++ dRem
+      propPostManaPayableAfter totTapped totRemoved
+    | pick :: restPicks, usedD, dTap, dRem, extraEffTapped =>
+      let isTapPick : Bool :=
+        pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts
+      let laterSacAttachedEquip :=
+        !isTapPick && restPicks.contains .sacrificeEquipmentAttachedToSource
+      let cands :=
+        (g.costPickCandidates p (some o.id) pick
+          (tapSource := d.tap)
+          (sacrificeOrExileSource := d.sacrificeSelf || d.exileSelf || laterSacAttachedEquip)).filter fun cid =>
+            !usedD.contains cid &&
+              !(isTapPick && (propTapReservedIds.contains cid || extraEffTapped.contains cid)) &&
+              !(!isTapPick && propRemoveReservedIds.contains cid)
+      if cands.size < pick.count then false
+      else
+        chooseK cands.toList pick.count #[] fun picked =>
+          existsValidDPicks o d restPicks (usedD ++ picked)
+            (if isTapPick then dTap ++ picked else dTap)
+            (if isTapPick then dRem else dRem ++ picked)
+            extraEffTapped
   let respectsPropReservations (o : GameObject) (d : ManaAbilityDef) : Bool :=
     match prop? with
     | none => true
     | some prop =>
       prop.cost.includesManaPayment &&
+      (d.payLife == 0 || g.canPayLife p (prop.payLife + d.payLife)) &&
       (!d.tap || !propTapReservedIds.contains o.id) &&
       (!(d.sacrificeSelf || d.exileSelf) || !propBfSacReservedIds.contains o.id) &&
       (!d.removeStoryCounter ||
@@ -290,12 +435,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeIndestructibleCounter) &&
           !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .indestructible) sinceIdx &&
           o.status.indestructibleCounters ≤ 1)) &&
-      (d.picks.isEmpty ||
-        g.costPicksPayable p (some o.id) d.picks
-          (tapSource := d.tap)
-          (sacrificeOrExileSource := d.sacrificeSelf || d.exileSelf)
-          (preTappedIds := propTapReservedIds)
-          (sacReservedIds := propBfSacReservedIds))
+      existsValidDPicks o d d.picks.toList #[] #[] #[] #[]
   let canPayEffCost (o : GameObject) (d : ManaAbilityDef) (effCost : ManaCost) : Bool :=
     if !effCost.includesManaPayment then true
     else
@@ -310,39 +450,35 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
       let effSrcs :=
         plainManaSrcs.filter fun (src, _) =>
           !(d.tap && src.id == o.id) && !propTapReservedIds.contains src.id
-      let hasTapPick :=
-        d.picks.any (fun pk => pk == .tapUntappedCreature || pk == .tapTwoUntappedArtifacts)
       let picksOkWith (extraTapped : Array ObjectId) : Bool :=
-        d.picks.isEmpty ||
-          g.costPicksPayable p (some o.id) d.picks
-            (tapSource := d.tap)
-            (sacrificeOrExileSource := d.sacrificeSelf || d.exileSelf)
-            (preTappedIds := propTapReservedIds ++ extraTapped)
-            (sacReservedIds := propBfSacReservedIds)
-      if !hasTapPick || picksOkWith (effSrcs.map (·.1.id)) then
+        existsValidDPicks o d d.picks.toList #[] #[] #[] extraTapped
+      if picksOkWith (effSrcs.map (·.1.id)) then
         g.canPayFromSources (g.player p).manaPool effCost allowElf false effSrcs.toList aEff none
       else
         let freeOthers :=
           (effSrcs.filter (fun (s, _) => !g.isCreature s && !g.isArtifact s)).toList
         let critRem :=
           (effSrcs.filter (fun (s, _) => g.isCreature s || g.isArtifact s)).toList
-        let rec searchEff (curPool : ManaPool) (tappedIds : Array ObjectId)
-            (rem : List (GameObject × Array ManaType)) : Bool :=
-          if !picksOkWith tappedIds then false
-          else if g.canPayFromSources curPool effCost allowElf false freeOthers aEff none then true
-          else if !g.canPayFromSources curPool effCost allowElf false (rem ++ freeOthers) aEff none then false
-          else
-            match rem with
-            | [] => false
-            | (s, ts) :: rest =>
+        let rec searchEff :
+            List (GameObject × Array ManaType) → ManaPool → Array ObjectId → Bool
+          | [], curPool, tappedIds =>
+            picksOkWith tappedIds &&
+              g.canPayFromSources curPool effCost allowElf false freeOthers aEff none
+          | (s, ts) :: rest, curPool, tappedIds =>
+            if !picksOkWith tappedIds then false
+            else if g.canPayFromSources curPool effCost allowElf false freeOthers aEff none then true
+            else if !g.canPayFromSources curPool effCost allowElf false (((s, ts) :: rest) ++ freeOthers) aEff none then false
+            else
               let choices :=
                 g.tapChoicesForSource s ts effCost
                   (dedupSingleTypes := fun xs => dedupZeroReqManaTypes g s xs effCost none)
                   (prop? := none)
-              choices.any (fun (ch : TapManaChoice) =>
-                searchEff (ch.applyToPool curPool) (tappedIds.push s.id) rest) ||
-                searchEff curPool tappedIds rest
-        searchEff (g.player p).manaPool #[] critRem
+              let rec tryChoices : List TapManaChoice → Bool
+                | [] => false
+                | ch :: chs =>
+                  searchEff rest (ch.applyToPool curPool) (tappedIds.push s.id) || tryChoices chs
+              tryChoices choices.toList || searchEff rest curPool tappedIds
+        searchEff critRem (g.player p).manaPool #[]
   let usableAbilityOn (o : GameObject) (d : ManaAbilityDef) (requireNonPlain : Bool) : Bool :=
     (!requireNonPlain || !g.isPlainTapManaAbilityDef p o d) &&
       g.manaAbilityDefUsable p o d &&

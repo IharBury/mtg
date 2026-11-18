@@ -335,26 +335,25 @@ partial def firstPayableCrewSelection? (g : Game) (p : PlayerId) (vehicleId : Ob
     (discardOrExileHandSource : Bool := false)
     (orderedCands? : Option (Array GameObject) := none)
     (disjointFromAllPicks : Bool := false)
-    (preTappedIds : Array ObjectId := #[]) : Option (Array ObjectId) :=
+    (preTappedIds : Array ObjectId := #[])
+    (used : Array ObjectId := #[])
+    (sacReservedIds : Array ObjectId := #[]) : Option (Array ObjectId) :=
   let cands :=
     (orderedCands?.getD
       ((g.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped))).filter
-      (fun c => c.id != vehicleId && !c.status.tapped && !preTappedIds.contains c.id)
+      (fun c =>
+        c.id != vehicleId && !c.status.tapped &&
+          !used.contains c.id && !preTappedIds.contains c.id)
   let okAfterCrew (picked : Array ObjectId) : Bool :=
     if allPicks.isEmpty then true
-    else if disjointFromAllPicks then
-      g.costPicksPayable p (some vehicleId) allPicks
-        (tapSource := tapSource)
-        (sacrificeOrExileSource := sacrificeOrExileSource)
-        (discardOrExileHandSource := discardOrExileHandSource)
-        (used := picked)
-        (preTappedIds := preTappedIds ++ picked)
     else
       g.costPicksPayable p (some vehicleId) allPicks
         (tapSource := tapSource)
         (sacrificeOrExileSource := sacrificeOrExileSource)
         (discardOrExileHandSource := discardOrExileHandSource)
+        (used := if disjointFromAllPicks then used ++ picked else used)
         (preTappedIds := preTappedIds ++ picked)
+        (sacReservedIds := sacReservedIds)
   if crewN == 0 then
     if okAfterCrew #[] then some #[] else none
   else

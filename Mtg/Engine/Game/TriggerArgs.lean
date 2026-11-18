@@ -19,7 +19,7 @@ structure TriggerRead where
   lastKnownPower : Option Int := none
   lastKnownToughness : Option Int := none
   sequencedCardPower : Option Nat := none
-  chosenX : Nat := 0
+  chosenX : Option Nat := none
 
 /-- Object id recorded as the cause of the ability now resolving. -/
 private def recordedCauseId (g : Game) : Option ObjectId :=
@@ -472,8 +472,8 @@ def triggerInt (g : Game) (ctx : TriggerRead) (amount : TriggeredAbility.NumberS
   | .libraryCards => some (g.player controller).library.size
   | .chosenX =>
     let x :=
-      if ctx.chosenX != 0 then ctx.chosenX
-      else (g.resolvingAbility.bind g.chosenXOf? <|> ctx.sourceId.bind g.chosenXOf?).getD 0
+      (ctx.chosenX <|> g.resolvingAbility.bind g.chosenXOf? <|>
+        g.resolvingSpell.bind g.chosenXOf? <|> ctx.sourceId.bind g.chosenXOf?).getD 0
     some (Int.ofNat x)
 
 /-- `triggerInt` as a `Nat`. A negative integer counts as zero. -/
@@ -489,7 +489,7 @@ def applyAddMana (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (targets : Array Target := #[])
     (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none)
-    (chosenX : Nat := 0) : Game :=
+    (chosenX : Option Nat := none) : Game :=
   let ctx : TriggerRead :=
     { controller, sourceId, targets, lastKnownPower, lastKnownToughness, chosenX }
   -- Zero additions log nothing. `.perChargeCounter` uses the last-known

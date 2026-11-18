@@ -2078,7 +2078,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
                    (useImplicitPermissions := false)) nullPerm)
            else
              payOk (g.playManaCost casterObj face (useImplicitPermissions := false)))
-      frontOk || g.canCastAndPayMorphFaceDown p o)
+      frontOk || g.canCastAndPayMorphFaceDown p o || g.canCastAndPayImpending p o)
     let canCastAdventure := playable.any (fun o =>
       g.canCastAdventure p o &&
         match (g.baseCard o).adventure with

@@ -789,9 +789,9 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
       | .rules (.zone (.ceasedToExist snap)) => snap.id
       | _ => none
 
-  -- `expireUntilNextTurnEffects` calls `expireFraUntilTurnEffects` AFTER `restoreCopiesUntilNextTurn`
-  -- without passing a pre-restore `preState?`, matching `beginTurn`: an exiled spell playable only while
-  -- an `.untilNextTurnOf p2` copy made `bear` an Elf does NOT log `"can no longer be played from exile"`!
+  -- `expireUntilNextTurnEffects` forwards the pre-`restoreCopiesUntilNextTurn` `preState?` into
+  -- `expireFraUntilTurnEffects` (matching `beginTurn`, CR 500.4 / 611.2a / 800.4m): an exiled spell
+  -- playable while an `.untilNextTurnOf p2` copy made `bear` an Elf DOES log `"can no longer be played from exile"`!
   let gDepCopy0 := insertObject (addPermanent (mustApply g4 p2 .concede) bear p0 p0) gySorcDef p0 .exile
   let depCopyBearId := (gDepCopy0.permanentsOf p0)[0]!.id
   let depExCardId := (gDepCopy0.objects.filter (fun (o : GameObject) => o.zone == Zone.exile)).back!.id
@@ -815,7 +815,7 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
       ((gPhSrcLeft.object! phOwnedP3Id).status.phasedOut &&
        phSrcLeaveLogs.any (· == s!"{bear.name} is no longer a copy of {hero.name}") &&
        turnsExpLogs.size == 2 &&
-       !depCopyLogs.any (· == s!"{gySorcDef.name} can no longer be played from exile") &&
+       depCopyLogs.any (· == s!"{gySorcDef.name} can no longer be played from exile") &&
        depCopyLogs.any (· == s!"{bear.name} is no longer a copy of {llanowarElves.name}") &&
        directEmbLogs.any (· == s!"{bear.name} returns to {(gBfs1.player p1).name}'s control") &&
        ceasedOrder == #[parentEmbId, childEmbId])
