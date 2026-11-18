@@ -250,7 +250,8 @@ def costPickCandidates (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (p
 
 private partial def assignDisjointPicks (g : Game) (p : PlayerId) (sourceId : Option ObjectId)
     (picks : Array CostPick) (tapSource sacrificeOrExileSource discardOrExileHandSource : Bool)
-    (idx : Nat) (used : Array ObjectId) (preTappedIds : Array ObjectId := #[]) :
+    (idx : Nat) (used : Array ObjectId) (preTappedIds : Array ObjectId := #[])
+    (sacReservedIds : Array ObjectId := #[]) :
     Option (Array ObjectId) :=
   if idx ≥ picks.size then some #[]
   else
@@ -270,7 +271,8 @@ private partial def assignDisjointPicks (g : Game) (p : PlayerId) (sourceId : Op
         (tapSource := tapSource)
         (sacrificeOrExileSource := sacrificeOrExileSource || laterSacAttachedEquip)
         (discardOrExileHandSource := discardOrExileHandSource)).filter fun cid =>
-          !used.contains cid && !(isTapPick && preTappedIds.contains cid)
+          !used.contains cid && !(isTapPick && preTappedIds.contains cid) &&
+            !(isBfSacPick && sacReservedIds.contains cid)
     if cands.size < pick.count then none
     else if idx + 1 == picks.size then
       some (cands.extract 0 pick.count)
@@ -278,7 +280,7 @@ private partial def assignDisjointPicks (g : Game) (p : PlayerId) (sourceId : Op
       let rec chooseK (start left : Nat) (picked : Array ObjectId) : Option (Array ObjectId) :=
         if left == 0 then
           if (assignDisjointPicks g p sourceId picks tapSource sacrificeOrExileSource
-                discardOrExileHandSource (idx + 1) (used ++ picked) preTappedIds).isSome then
+                discardOrExileHandSource (idx + 1) (used ++ picked) preTappedIds sacReservedIds).isSome then
             some picked
           else none
         else if start + left > cands.size then none
@@ -296,11 +298,12 @@ def firstPayableCostPickSlice? (g : Game) (p : PlayerId) (sourceId : Option Obje
     (sacrificeOrExileSource : Bool := false)
     (discardOrExileHandSource : Bool := false)
     (used : Array ObjectId := #[])
-    (preTappedIds : Array ObjectId := #[]) : Option (Array ObjectId) :=
+    (preTappedIds : Array ObjectId := #[])
+    (sacReservedIds : Array ObjectId := #[]) : Option (Array ObjectId) :=
   if picks.isEmpty then none
   else
     assignDisjointPicks g p sourceId picks tapSource sacrificeOrExileSource
-      discardOrExileHandSource 0 used preTappedIds
+      discardOrExileHandSource 0 used preTappedIds sacReservedIds
 
 /-- Whether every pick can be paid by different objects, accounting for whether
 `sourceId` itself is separately tapped, sacrificed/exiled, or discarded/exiled
@@ -310,10 +313,11 @@ def costPicksPayable (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pic
     (sacrificeOrExileSource : Bool := false)
     (discardOrExileHandSource : Bool := false)
     (used : Array ObjectId := #[])
-    (preTappedIds : Array ObjectId := #[]) :
+    (preTappedIds : Array ObjectId := #[])
+    (sacReservedIds : Array ObjectId := #[]) :
     Bool :=
   (assignDisjointPicks g p sourceId picks tapSource sacrificeOrExileSource
-    discardOrExileHandSource 0 used preTappedIds).isSome
+    discardOrExileHandSource 0 used preTappedIds sacReservedIds).isSome
 
 /-- Append `CostPick.sacrificeAnotherCreatureOrArtifact` when `needsSacrificeOther`
 holds so disjointness is checked across all non-mana object picks (CR 118.10 / 602.2b). -/

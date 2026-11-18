@@ -4849,7 +4849,8 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     g.applyAttach controller ab sourceId targets what host
   | .addMana types amount =>
     g.applyAddMana controller sourceId types amount targets lastKnownPower
-      lastKnownToughness (chosenX := (sourceId.bind g.chosenXOf?).getD 0)
+      lastKnownToughness
+      (chosenX := (g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?).getD 0)
   | .becomePT power toughness =>
     let ctx : TriggerRead := {
       controller, sourceId, targets, lastKnownPower, lastKnownToughness,
@@ -5070,6 +5071,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           lastKnownPower lastKnownToughness sourceName sequencedCardPower
       else
         g.offerVisionModes controller ab sourceId targets lastKnownPower sourceName
+          (lastKnownToughness := lastKnownToughness)
     | .fromLastKnown =>
       let idx :=
         (g.resolvingModes.bind (·[0]?)).orElse (fun _ =>
@@ -5683,12 +5685,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .createTokens kind (.fixed n) tapped .kind .you .none =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
   | .addMana types amount =>
-    let chosenX := (sourceId.bind g.chosenXOf?).getD 0
+    let chosenX := (g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?).getD 0
     g.applyAddMana controller sourceId types amount targets lastKnownPower lastKnownToughness
       (chosenX := chosenX)
   | .discard (.cards n) => g.beginDiscardCards #[controller] n
   | r =>
-    let chosenX := (sourceId.bind g.chosenXOf?).getD 0
+    let chosenX := (g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?).getD 0
     match Resolution.toSpell r with
     | some _ =>
       g.applyUnified controller ab.effect targets (chosenX := chosenX) (sourceId := sourceId)

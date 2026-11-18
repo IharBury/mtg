@@ -239,11 +239,13 @@ namespace Game
 @[inline] def mayController (g : Game) := g.topFrame.mayController
 @[inline] def mayTargets (g : Game) := g.topFrame.mayTargets
 @[inline] def maySource (g : Game) := g.topFrame.maySource
+@[inline] def mayResCtx (g : Game) := g.topFrame.mayResCtx
 @[inline] def spellOr (g : Game) := g.topFrame.spellOr
 @[inline] def spellOrController (g : Game) := g.topFrame.spellOrController
 @[inline] def spellOrTargets (g : Game) := g.topFrame.spellOrTargets
 @[inline] def spellOrSource (g : Game) := g.topFrame.spellOrSource
 @[inline] def spellOrLibrary (g : Game) := g.topFrame.spellOrLibrary
+@[inline] def spellOrResCtx (g : Game) := g.topFrame.spellOrResCtx
 @[inline] def surveilReturnMvAtMost (g : Game) := g.topFrame.surveilReturnMvAtMost
 @[inline] def surveilReturnNoncreatureNonland (g : Game) := g.topFrame.surveilReturnNoncreatureNonland
 @[inline] def pendingReplacement (g : Game) := g.topFrame.pendingReplacement
@@ -4447,11 +4449,13 @@ def applyEngineChange (g : Game) (c : EngineChange) : Game :=
       | .mayController v => { f with mayController := v }
       | .mayTargets v => { f with mayTargets := v }
       | .maySource v => { f with maySource := v }
+      | .mayResCtx v => { f with mayResCtx := v }
       | .spellOr v => { f with spellOr := v }
       | .spellOrController v => { f with spellOrController := v }
       | .spellOrTargets v => { f with spellOrTargets := v }
       | .spellOrSource v => { f with spellOrSource := v }
       | .spellOrLibrary v => { f with spellOrLibrary := v }
+      | .spellOrResCtx v => { f with spellOrResCtx := v }
       | .surveilReturnMvAtMost v => { f with surveilReturnMvAtMost := v }
       | .surveilReturnNoncreatureNonland v => { f with surveilReturnNoncreatureNonland := v }
       | .pendingReplacement v => { f with pendingReplacement := v }
@@ -9846,15 +9850,14 @@ private def latestExileToStackAfterController? (g : Game) (id : ObjectId) : Opti
     | .rules (.zone (.moved before after fromZ toZ ..)) =>
       if fromZ == .exile && toZ == .stack && (before.id == some id || after.id == some id) then
         return after.controller
-      if fromZ == .exile && toZ != .stack && (before.id == some id || after.id == some id) then
-        return none
-      if toZ == .exile && after.id == some id then
+      if (fromZ == .exile && toZ != .stack && (before.id == some id || after.id == some id)) ||
+          (toZ != .stack && after.id == some id) then
         return none
     | .rules (.zone (.created obj _)) =>
-      if obj.id == some id && obj.zone == .exile then
+      if obj.id == some id && obj.zone != .stack then
         return none
     | .engine (.materializeObject obj _) =>
-      if obj.id == id && obj.zone == .exile then
+      if obj.id == id && obj.zone != .stack then
         return none
     | _ => pure ()
   return none
@@ -9902,6 +9905,18 @@ private def exileDepartureIdx? (g : Game) (id : ObjectId) : Option Nat := Id.run
       | _ => pure ()
     return none
 
+/-- Null Summoner: `p` may cast a card it exiled while seven or more cards are
+in their graveyard. -/
+def mayCastExiledBySource (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  o.zone == .exile &&
+    match o.exiledBy.bind g.findObject? with
+    | some src =>
+      src.isOnBattlefield && g.controlledBy src p &&
+        (g.baseCard src).castExiledWithSevenInGraveyard &&
+        g.retainsPrintedAbilities src &&
+        (g.player p).graveyard.size ≥ 7
+    | none => false
+
 /-- Active or pre-departure `.playFromExile` permissions granting `p` permission
 to play `o` from exile (CR 601.1a / 611.2a). -/
 def playPermissionsFor (g : Game) (p : PlayerId) (o : GameObject) : Array PlayPermission :=
@@ -9911,13 +9926,10 @@ def playPermissionsFor (g : Game) (p : PlayerId) (o : GameObject) : Array PlayPe
     if entries.isEmpty then #[]
     else
       let liveInExile := (g.findObject? o.id).any (·.zone == .exile)
-      let liveStackCtrl? : Option PlayerId :=
+      let stackCtrl? : Option PlayerId :=
         match g.findObject? o.id with
         | some live => if live.zone == .stack then live.controller.orElse (fun _ => o.controller) else none
-        | none => none
-      let stackCtrl? :=
-        if liveInExile then none
-        else liveStackCtrl?.orElse (fun _ => g.latestExileToStackAfterController? o.id)
+        | none => g.latestExileToStackAfterController? o.id
       let needsHistGAt : Bool :=
         !liveInExile &&
           entries.any fun (_, _, perm, _) =>
@@ -9970,23 +9982,49 @@ private def coreSorceryTimingOk (g : Game) (p : PlayerId) (o : GameObject) (face
   else
     true
 
+private def isAdventureFace (g : Game) (o : GameObject) (face? : Option CardDef) : Bool :=
+  o.isAdventureSpell ||
+    face?.any (fun fc =>
+      (g.baseCard o).adventure.any (fun adv =>
+        adv.toCardDef == fc || (adv.name == fc.name && fc.name != (g.baseCard o).name)))
+
+private def faceManaValue (g : Game) (o : GameObject) (face? : Option CardDef) : Nat :=
+  match face? with
+  | some fc =>
+    if !isAdventureFace g o face? && fc == g.baseCard o then
+      g.objectManaValue o
+    else if o.isOnBattlefield && o.status.faceDown then 0
+    else
+      let x := if o.zone == .stack then (o.chosenX.orElse (fun _ => g.chosenXOf? o.id)).getD 0 else 0
+      fc.manaCost.manaValue + x
+  | none => g.objectManaValue o
+
 /-- Best active or pre-departure `.playFromExile` permission granting `p` permission
 to play `o` from exile (CR 601.1a / 611.2a). -/
 def playPermissionFor? (g : Game) (p : PlayerId) (o : GameObject)
     (face? : Option CardDef := none) : Option PlayPermission :=
-  let perms0 := g.playPermissionsFor p o
+  let perms0 :=
+    let base := g.playPermissionsFor p o
+    if g.stillInGame p && o.zone == .exile && g.mayCastExiledBySource p o then
+      base.push { player := p, anyMana := true }
+    else base
+  let isAdv := isAdventureFace g o face?
   let perms :=
-    if o.isAdventureSpell then perms0.filter (!·.fromAdventure) else perms0
+    if isAdv then perms0.filter (!·.fromAdventure) else perms0
   if perms.isEmpty then none
   else
-    let face := face?.getD { g.baseCard o with keywords := g.currentKeywords o }
+    let defaultFace := { g.baseCard o with keywords := g.currentKeywords o }
+    let face :=
+      match face? with
+      | some fc => if !isAdv && fc == g.baseCard o then defaultFace else fc
+      | none => defaultFace
     let timingOk := coreSorceryTimingOk g p o face
     let timingFiltered :=
       if timingOk then perms
       else
         let ign := perms.filter (·.ignoreTiming)
         if ign.isEmpty then perms else ign
-    let mv := g.objectManaValue o
+    let mv := faceManaValue g o face?
     let score (perm : PlayPermission) : Nat :=
       let lifeOk := !perm.payLifeEqualManaValue || g.canPayLife p mv
       (if lifeOk then 32 else 0) +
@@ -10007,13 +10045,10 @@ def activePlayPermissions (g : Game) (o : GameObject) : Array PlayPermission :=
   if entries.isEmpty then #[]
   else
     let liveInExile := (g.findObject? o.id).any (·.zone == .exile)
-    let liveStackCtrl? : Option PlayerId :=
+    let stackCtrl? : Option PlayerId :=
       match g.findObject? o.id with
       | some live => if live.zone == .stack then live.controller <|> o.controller else none
-      | none => none
-    let stackCtrl? :=
-      if liveInExile then none
-      else liveStackCtrl? <|> g.latestExileToStackAfterController? o.id
+      | none => g.latestExileToStackAfterController? o.id
     let needsHistGAt : Bool :=
       !liveInExile &&
         entries.any fun (_, _, perm, _) =>
@@ -10051,11 +10086,19 @@ def activePlayPermissions (g : Game) (o : GameObject) : Array PlayPermission :=
 
 /-- Best active `.playFromExile` permission across living grantees for unattributed
 mana-cost queries (`Costs.playManaCost` when `origPerm == none && card.controller == none`). -/
-def bestActivePlayPermission? (g : Game) (o : GameObject) : Option PlayPermission :=
-  let perms := g.activePlayPermissions o
+def bestActivePlayPermission? (g : Game) (o : GameObject)
+    (face? : Option CardDef := none) : Option PlayPermission :=
+  let perms0 :=
+    g.activePlayPermissions o ++
+      (if o.zone == .exile then
+        g.livingPlayers.filterMap (fun pl =>
+          if g.mayCastExiledBySource pl.id o then some { player := pl.id, anyMana := true } else none)
+       else #[])
+  let perms :=
+    if isAdventureFace g o face? then perms0.filter (!·.fromAdventure) else perms0
   if perms.isEmpty then none
   else
-    let mv := g.objectManaValue o
+    let mv := faceManaValue g o face?
     let score (perm : PlayPermission) : Nat :=
       let lifeOk := !perm.payLifeEqualManaValue || g.canPayLife perm.player mv
       (if lifeOk then 32 else 0) +
@@ -11566,9 +11609,9 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         else
           match e.change with
           | .rules (.zone (.created obj ctrl)) =>
-            (obj.controller.getD ctrl) == p && obj.zone == .battlefield && obj.token
-          | .rules (.zone (.moved _ after _ .battlefield ..)) =>
-            after.controller == some p && after.token
+            (obj.controller.getD ctrl) == p && obj.zone == .battlefield && !obj.phasedOut && obj.token
+          | .rules (.zone (.moved _ after fromZone .battlefield ..)) =>
+            fromZone != .battlefield && !after.phasedOut && after.controller == some p && after.token
           | _ => false)
       if tokenEntered then
         let (w, fs) :=
@@ -11799,8 +11842,9 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
       -- Saga chapter and Nth-plan-counter triggers on counters put in this event
       let isZoneArrival : Bool :=
         match e.change with
-        | .rules (.zone (.moved _ _ _ .battlefield ..)) => true
-        | .rules (.zone (.created obj _)) => obj.zone == .battlefield
+        | .rules (.zone (.moved _ after fromZone .battlefield ..)) =>
+          fromZone != .battlefield && !after.phasedOut
+        | .rules (.zone (.created obj _)) => obj.zone == .battlefield && !obj.phasedOut
         | _ => false
       for (eo, kind, n, _) in e.countersPutInEvent do
         if n > 0 then
@@ -11840,7 +11884,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
       | .rules r =>
         match r with
         | .zone (.created obj ctrl) =>
-          if obj.zone == .battlefield && !post.eventSuppressedByKarn e then
+          if obj.zone == .battlefield && !obj.phasedOut && !post.eventSuppressedByKarn e then
             let enterCtrl := obj.controller.getD ctrl
             let entered := findEventObj post { obj with controller := some enterCtrl }
             -- Self enters triggers
@@ -12001,7 +12045,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
           let afterObj := findEventObj post after
           let ctrl := (before.controller.orElse (fun _ => after.controller)).getD before.owner
           -- Leaving the battlefield (CR 603.10a(1)): look-back on `pre`
-          if fromZone == .battlefield && toZone != .battlefield then
+          if fromZone == .battlefield && toZone != .battlefield && !before.phasedOut then
             let lkp : Option Int := some (pre.snapshotPower beforeObj)
             let toGy : Bool := match toZone with | .graveyard _ => true | _ => false
             let died : Bool := toGy && before.creature
@@ -12132,7 +12176,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
               waiting := w; firedSources := fs
           | _ => pure ()
           -- Entering the battlefield from another zone (CR 603.6a / 603.10): post-state
-          if fromZone != .battlefield && toZone == .battlefield && !post.eventSuppressedByKarn e then
+          if fromZone != .battlefield && toZone == .battlefield && !after.phasedOut && !post.eventSuppressedByKarn e then
             let entered := afterObj
             let p := (after.controller.orElse (fun _ => post.controllerOf entered)).getD entered.owner
             let (w, fs) := queueSrc post p entered .entering (w := waiting) (fs := firedSources)
@@ -15959,7 +16003,7 @@ partial def expireEffectById (g : Game) (eid : EffectId)
             effectExpiresWithLeavingObj g old.id .command allEmbIds e)
           let allLeaving := g.activeEffects.filter (fun (_, e) =>
             allEmbIds.any (fun embId => effectExpiresWithLeavingObj g embId .command allEmbIds e))
-          let controlSingles : Array (ObjectId × GameObject × String) :=
+          let controlSingles : Array (ObjectId × GameObject) :=
             allLeaving.foldl (fun singles (_, e) =>
               match e with
               | .layered (.objects #[cid]) (.control _) _ =>
@@ -15968,7 +16012,7 @@ partial def expireEffectById (g : Game) (eid : EffectId)
                   match g.findObject? cid with
                   | some o =>
                     let preObj := (pre.findObject? cid).getD o
-                    singles.push (cid, preObj, pre.name preObj)
+                    singles.push (cid, preObj)
                   | none => singles
               | _ => singles) #[]
           let g :=
@@ -15996,7 +16040,7 @@ partial def expireEffectById (g : Game) (eid : EffectId)
           let g :=
             if suppressReturnLog then g
             else
-              controlSingles.foldl (fun acc (cid, o, objName) =>
+              controlSingles.foldl (fun acc (cid, o) =>
                 if skipLogIds.contains cid then acc
                 else
                   match acc.findObject? cid with
@@ -16006,6 +16050,7 @@ partial def expireEffectById (g : Game) (eid : EffectId)
                     let curCtrl := acc.controllerOf cur
                     if curCtrl == prevCtrl then acc
                     else
+                      let objName := acc.name cur
                       let p := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
                       let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
                       if othersRemain then
@@ -16269,7 +16314,8 @@ def clearMay (g : Game) : Game :=
     .maySource none,
     .mayOnAccept none,
     .mayOnDecline none,
-    .mayContext none]
+    .mayContext none,
+    .mayResCtx {}]
 
 /-- Drop a stashed `SpellResolution.or` after the player has chosen. -/
 def clearSpellOr (g : Game) : Game :=
@@ -16278,7 +16324,8 @@ def clearSpellOr (g : Game) : Game :=
     .spellOr #[],
     .spellOrTargets #[],
     .spellOrSource none,
-    .spellOrLibrary false]
+    .spellOrLibrary false,
+    .spellOrResCtx {}]
 
 /-- Record that combat damage was dealt to `p`. -/
 def noteCombatDamageTo (g : Game) (p : PlayerId) (source : EventObject)
@@ -16344,7 +16391,7 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
     (reconcileControl : Bool := true)
     (suppressReturnLog : Bool := false)
     (skipLogIds : Array ObjectId := #[])
-    (extraSingleTargets : Array (ObjectId × GameObject × String) := #[])
+    (extraSingleTargets : Array (ObjectId × GameObject) := #[])
     (forceReconcile : Bool := false) : Game :=
   let preRef := preState?.getD g
   let (matchingEids, singleTargets) :=
@@ -16361,7 +16408,7 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
               match g.findObject? id with
               | some o =>
                 let preObj := (preRef.findObject? id).getD o
-                singles.push (id, preObj, preRef.name preObj)
+                singles.push (id, preObj)
               | none => singles
           (eids.push eid, singles')
       | .layered _ (.control _) (.whileSourceOnBattlefield s)
@@ -16393,7 +16440,7 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
       else g
     if suppressReturnLog then g
     else
-      singleTargets.foldl (fun acc (id, o, objName) =>
+      singleTargets.foldl (fun acc (id, o) =>
         if skipLogIds.contains id then acc
         else
           match acc.findObject? id with
@@ -16403,6 +16450,7 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
             let curCtrl := acc.controllerOf cur
             if curCtrl == prevCtrl then acc
             else
+              let objName := acc.name cur
               let p := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
               let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
               if othersRemain then
@@ -16475,7 +16523,7 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
                 match g.findObject? id with
                 | some o =>
                   let preObj := (preRef.findObject? id).getD o
-                  singles.push (id, preObj, preRef.name preObj)
+                  singles.push (id, preObj)
                 | none => singles
             (true, singles')
           | .layered _ (.control _) _ => (true, singles)

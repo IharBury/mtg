@@ -369,14 +369,23 @@ def finishUldarosCopiesOffer (g : Game) (controller : PlayerId)
 
 partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
     (targets : Array Target) (sourceId : Option ObjectId)
-    (lastKnownPower : Option Int := none) : Game :=
+    (lastKnownPower : Option Int := none)
+    (chosenX : Option Nat := none)
+    (lastKnownToughness : Option Int := none) : Game :=
   g.withContinuationFrame fun g =>
+  let _ := lastKnownToughness
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
   let srcName := g.fraSourceName sourceId
   let src? := (g.resolvingSpell.bind g.damageSourceById?).orElse (fun _ => sourceId.bind g.damageSourceById?)
+  let xVal :=
+    (chosenX <|> g.resolvingSpell.bind g.chosenXOf? <|>
+      g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?).getD 0
   match r with
-  | .frc e => g.applyFrc controller effect e targets sourceId (lastKnownPower := lastKnownPower)
+  | .frc e =>
+    g.applyFrc controller effect e targets sourceId
+      (lastKnownPower := lastKnownPower) (chosenX := chosenX)
+      (lastKnownToughness := lastKnownToughness)
   | .bounce =>
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
@@ -741,7 +750,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.beginFraChoice controller (.mayPayThen n .reflexiveDestroyPerOpponent sourceId)
       s!"{(g.player controller).name} may pay \{{n}}"
   | .damageX =>
-    let x := (sourceId.bind g.chosenXOf?).getD 0
+    let x := xVal
     g.withLegalKindTarget controller kind targets (fun g t =>
       match t with
       | Target.player pid => g.dealDamageToPlayer pid x (source := src?)
@@ -964,6 +973,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .jiangYangguAlone =>
     if (g.player controller).hand.isEmpty then
       g.applyFra controller effect .drawThenCountersPerDiscard targets sourceId
+        (lastKnownPower := lastKnownPower) (chosenX := chosenX)
+        (lastKnownToughness := lastKnownToughness)
     else
       g.beginFraChoice controller
         (.discardThen .drawThenCountersPerDiscard sourceId
@@ -996,7 +1007,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .fblthpSearch =>
     if !g.stillInGame controller then g
     else
-      let x := (sourceId.bind g.chosenXOf?).getD 0
+      let x := xVal
       let (pickedIds, _) := (g.player controller).library.foldl
         (fun (acc : Array ObjectId × Array String) id =>
           let (picked, names) := acc
@@ -1195,6 +1206,8 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .sarumanExileCopyMayCast
   | .extort =>
     g.applyFraAbility controller effect r targets sourceId
+      (chosenX := chosenX) (lastKnownPower := lastKnownPower)
+      (lastKnownToughness := lastKnownToughness)
   | _ => g
 
 end Game

@@ -615,7 +615,8 @@ def createMerfolkForBlueSymbols (g : Game) (controller : PlayerId)
 resolution is `TriggerResolution.visionModes`. -/
 def offerVisionModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
-    (lastKnownPower : Option Int := none) (sourceName : String := "This creature") : Game :=
+    (lastKnownPower : Option Int := none) (sourceName : String := "This creature")
+    (lastKnownToughness : Option Int := none) : Game :=
   match sourceId with
   | some sid =>
     if (g.findObject? sid).isNone && (g.lastKnownBefore? sid).isNone then
@@ -635,6 +636,7 @@ def offerVisionModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
             sourceId
             targets
             lastKnownPower
+            lastKnownToughness
             sourceName
             modes := TriggeredAbility.TriggerResolution.visionModes
             how := .vision }))
@@ -768,7 +770,8 @@ Effects are applied from that structured payload — not from Oracle text. -/
 def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target := #[])
     (sourceName : String := "This creature")
-    (lastKnownPower : Option Int := none) : Game :=
+    (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Game :=
   match t.shared with
   | (.step .copyAbsorbingMan) =>
     g.applyBecomeCopy controller sourceId targets .artifactEnchantmentOrLand
@@ -799,6 +802,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       "The source is no longer in play"
   | (.casting .visionModes) =>
     g.offerVisionModes controller t sourceId targets lastKnownPower sourceName
+      (lastKnownToughness := lastKnownToughness)
   | (.casting .ironFistTap) =>
     g.grantIronFistTap sourceId
   | (.casting .drawPowerEqualHand) =>

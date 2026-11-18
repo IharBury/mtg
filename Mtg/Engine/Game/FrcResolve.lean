@@ -10,9 +10,10 @@ import Mtg.Engine.Game.FraHelpers
 namespace Mtg.Engine
 namespace Game
 
-private def spellX (g : Game) : Nat :=
+private def spellX (g : Game) (sourceId : Option ObjectId := none)
+    (chosenX : Option Nat := none) : Nat :=
   let chosen := fun (id? : Option ObjectId) => id?.bind g.chosenXOf?
-  (chosen g.resolvingSpell).getD ((chosen g.resolvingAbility).getD 0)
+  (chosenX <|> chosen g.resolvingSpell <|> chosen g.resolvingAbility <|> chosen sourceId).getD 0
 
 private def frcCause? (g : Game) : Option GameObject :=
   g.resolvingAbilityObject?.bind fun ab =>
@@ -417,10 +418,14 @@ def teferiExileSpell (g : Game) : Game :=
 
 def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect)
     (targets : Array Target) (sourceId : Option ObjectId)
-    (lastKnownPower : Option Int := none) : Game :=
+    (lastKnownPower : Option Int := none)
+    (chosenX : Option Nat := none)
+    (lastKnownToughness : Option Int := none) : Game :=
   g.withContinuationFrame fun g =>
+  let _ := lastKnownToughness
   let pl := g.player controller
   let nKnown := g.knownN lastKnownPower
+  let xSpell := g.spellX sourceId chosenX
   match e with
   | .drawPutOnTop drawN putN =>
     let g := g.draw controller drawN
@@ -478,13 +483,13 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       | none => g
     | _ => g
   | .grandCrescendo =>
-    let g := g.makeFrc controller .citizen (g.spellX)
+    let g := g.makeFrc controller .citizen xSpell
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.finishFrcPostStep (.grantControlledCreaturesIndestructible controller))
     else
       g.grantUntilEotToControlledCreatures controller Keyword.indestructible "indestructible"
   | .martialCoup =>
-    let x := g.spellX
+    let x := xSpell
     let g := g.createKindTokens controller .soldier11white x
     if let .chooseReplacement .. := g.pending then
       if x >= 5 then
@@ -495,7 +500,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
         (fun o => !g.recentTokenIds.contains o.id)
     else g
   | .whiteSuns =>
-    let x := g.spellX
+    let x := xSpell
     let g := g.gainLife controller x
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.finishFrcPostStep (.makeMitesThenDestroyAtFive controller x))
@@ -510,7 +515,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
           (fun o => !g.recentTokenIds.contains o.id)
       else g
   | .occult =>
-    let x := g.spellX
+    let x := xSpell
     let g := g.draw controller x
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.finishFrcPostStep (.discardBackHandThenCreateSpirits controller x))
@@ -1003,8 +1008,8 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
     | some o => g.pumpPermanent o n 0
     | none => g
   | .kobold => g.makeFrc controller .kobold
-  | .warriorsX => g.makeFrc controller .warrior (g.spellX)
-  | .citizensX => g.makeFrc controller .citizen (g.spellX)
+  | .warriorsX => g.makeFrc controller .warrior xSpell
+  | .citizensX => g.makeFrc controller .citizen xSpell
   | .explore =>
     let lib := (g.player controller).library
     if lib.isEmpty then g.logMsg s!"{pl.name} explores (empty library)"

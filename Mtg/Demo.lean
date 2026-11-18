@@ -2051,97 +2051,71 @@ would not currently be useful, since tapping their source changes the game. -/
 def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
   if !g.hasPriority p then false
   else
-    let available := g.availableMana p
     let playable := g.handObjects p ++ g.exiledPlayable p
     let canPlayLand :=
       g.canPlayLand p && playable.any g.isLand
     let canCast := playable.any (fun o =>
-      let spend : ManaSpend :=
-        { spell := true, fromHand := o.zone == .hand p
-          supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
-      let payOk (cost : ManaCost) (perm? : Option PlayPermission := none) : Bool :=
-        available.canPay cost
-          (allowElfRestricted := g.hasSubtype o .elf)
-          (allowInstRestricted := g.isInstantOrSorcery o)
-          (allowHeroRestricted := g.hasSubtype o .hero)
-          (allowVillainRestricted := g.hasSubtype o .villain)
-          (allowCantNonartifact := g.isArtifact o)
-          (allowCreatureRestricted := false)
-          (spend := spend) &&
-        g.canPayAnnouncedAdditional p o available (origPerm := perm?)
-          (useImplicitPermissions := false)
-      g.canCast p o &&
-        (if o.zone == .exile then
-          let perms := g.playPermissionsFor p o
-          let face := g.baseCard o
-          let casterObj := { o with controller := some p }
-          let nullPerm : Option PlayPermission :=
-            if g.mayCastExiledBySource p o then some { player := p, anyMana := true } else none
-          perms.any (fun pm =>
-            (pm.ignoreTiming || g.timingAllowsCast p face) &&
-              (!pm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o)) &&
-              payOk (g.playManaCost casterObj face (origPerm := some pm)
-                (useImplicitPermissions := false)) (some pm)) ||
-            ((perms.isEmpty || g.mayCastExiledBySource p o) &&
-              g.timingAllowsCast p face &&
-              payOk (g.playManaCost casterObj face (origPerm := nullPerm)
-                (useImplicitPermissions := false)) nullPerm)
-         else
-          payOk (g.baseCard o).manaCost))
+      let frontOk :=
+        g.canCastFrontFace p o &&
+          (let face := { g.baseCard o with keywords := g.currentKeywords o }
+           let casterObj := { o with controller := some p }
+           let payOk (cost : ManaCost) (perm? : Option PlayPermission := none) : Bool :=
+             g.canPaySpellCostFromSources p o cost &&
+               g.canPayAnnouncedAdditionalFromSources p o (origPerm := perm?)
+                 (useImplicitPermissions := false)
+           if o.zone == .exile then
+             let perms := g.playPermissionsFor p o
+             let nullPerm : Option PlayPermission :=
+               if g.mayCastExiledBySource p o then some { player := p, anyMana := true } else none
+             perms.any (fun pm =>
+               (pm.ignoreTiming || g.timingAllowsCast p face) &&
+                 (!pm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o)) &&
+                 payOk (g.playManaCost casterObj face (origPerm := some pm)
+                   (useImplicitPermissions := false)) (some pm)) ||
+               ((perms.isEmpty || g.mayCastExiledBySource p o) &&
+                 g.timingAllowsCast p face &&
+                 payOk (g.playManaCost casterObj face (origPerm := nullPerm)
+                   (useImplicitPermissions := false)) nullPerm)
+           else
+             payOk (g.playManaCost casterObj face (useImplicitPermissions := false)))
+      frontOk || g.canCastAndPayMorphFaceDown p o)
     let canCastAdventure := playable.any (fun o =>
       g.canCastAdventure p o &&
         match (g.baseCard o).adventure with
         | some adv =>
           let face := adv.toCardDef
           let advObj := { o with controller := some p, printed := face, adventurerCard := some o.printed }
-          let spend : ManaSpend :=
-            { spell := true, fromHand := o.zone == .hand p
-              supertypes := g.supertypes advObj, types := g.types advObj, subtypes := g.subtypes advObj }
-          let payAdv (cost : ManaCost) : Bool :=
-            available.canPay cost
-              (allowElfRestricted := g.hasSubtype advObj .elf)
-              (allowInstRestricted := g.isInstantOrSorcery advObj)
-              (allowHeroRestricted := g.hasSubtype advObj .hero)
-              (allowVillainRestricted := g.hasSubtype advObj .villain)
-              (allowCantNonartifact := g.isArtifact advObj)
-              (allowCreatureRestricted := false)
-              (spend := spend)
+          let casterObj := { o with controller := some p }
+          let payAdv (cost : ManaCost) (perm? : Option PlayPermission := none) : Bool :=
+            g.canPaySpellCostFromSources p advObj cost (fromHand := o.zone == .hand p) &&
+              g.canPayAnnouncedAdditionalFromSources p advObj (origPerm := perm?)
+                (useImplicitPermissions := false) (fromHand := o.zone == .hand p)
           if o.zone == .exile then
             let advPerms := (g.playPermissionsFor p o).filter (!·.fromAdventure)
-            let casterObj := { o with controller := some p }
             let nullPerm : Option PlayPermission :=
               if g.mayCastExiledBySource p o then some { player := p, anyMana := true } else none
             advPerms.any (fun pm =>
               (pm.ignoreTiming || g.timingAllowsCast p face) &&
                 (!pm.payLifeEqualManaValue || g.canPayLife p face.manaValue) &&
                 payAdv (g.playManaCost casterObj face (origPerm := some pm)
-                  (useImplicitPermissions := false))) ||
+                  (useImplicitPermissions := false)) (some pm)) ||
               ((advPerms.isEmpty || g.mayCastExiledBySource p o) &&
                 g.timingAllowsCast p face &&
                 payAdv (g.playManaCost casterObj face (origPerm := nullPerm)
-                  (useImplicitPermissions := false)))
+                  (useImplicitPermissions := false)) nullPerm)
           else
-            payAdv adv.manaCost
+            payAdv (g.playManaCost casterObj face (useImplicitPermissions := false))
         | none => false)
     let canActivate := g.objects.any (fun o =>
       let abs := g.activatedAbilitiesOf o
       (List.range abs.size).any (fun idx =>
         let ab := abs[idx]!
         let isTurnFaceUp := o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp
-        let actSpend : ManaSpend :=
-          if isTurnFaceUp then {}
-          else { equip := ab.isEquip, abilitySourceSubtypes := g.subtypes o }
         let manaCost := if isTurnFaceUp then ab.cost.mana else g.activationManaCost p ab (some o)
+        let excludeIds := if !isTurnFaceUp && ab.cost.tap then #[o.id] else #[]
         g.canActivate p o ab (idx? := some idx) &&
-          (g.availableManaExcept p (if !isTurnFaceUp && ab.cost.tap then some o.id else none)).canPay
-            manaCost
-            (allowElfRestricted := !isTurnFaceUp && g.hasSubtype o .elf)
-            (allowInstRestricted := false)
-            (allowHeroRestricted := !isTurnFaceUp && g.hasSubtype o .hero)
-            (allowVillainRestricted := !isTurnFaceUp && g.hasSubtype o .villain)
-            (allowCantNonartifact := true)
-            (allowCreatureRestricted := !isTurnFaceUp && g.isCreature o)
-            (spend := actSpend)))
+          g.canPayAbilityCostFromSources p o ab manaCost
+            (isTurnFaceUp := isTurnFaceUp) (excludeIds := excludeIds)))
     canPlayLand || !(g.manaSources p).isEmpty || g.hasUsableNonPlainManaAbility p ||
       canCast || canCastAdventure || canActivate
 

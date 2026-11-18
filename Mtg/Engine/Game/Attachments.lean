@@ -61,7 +61,7 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
     let g := g.record (GameEvent.ceasedToExist g.turnNumber snap (cause := effCause))
     let expCause := cause.orElse (fun _ => some (.gameRule .leavingZone))
     let allEmbIds := if old.zone == .command then g.expandTransitiveCommandEmblems #[id] else #[]
-    let cmdControlSingles : Array (ObjectId × GameObject × String) :=
+    let cmdControlSingles : Array (ObjectId × GameObject) :=
       if old.zone != .command || suppressReturnLog then #[]
       else
         g.activeEffects.foldl (fun singles (_, e) =>
@@ -75,7 +75,7 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
                 match g.findObject? tid with
                 | some o =>
                   let preObj := (pre.findObject? tid).getD o
-                  singles.push (tid, preObj, pre.name preObj)
+                  singles.push (tid, preObj)
                 | none => singles
             | _ => singles) #[]
     let g :=
@@ -95,7 +95,7 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
       (coLeavingIds := allEmbIds)
     let g :=
       if old.zone == .command && !suppressReturnLog then
-        cmdControlSingles.foldl (fun acc (tid, o, objName) =>
+        cmdControlSingles.foldl (fun acc (tid, o) =>
           if skipLogIds.contains tid then acc
           else
             match acc.findObject? tid with
@@ -105,6 +105,7 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
               let curCtrl := acc.controllerOf cur
               if curCtrl == prevCtrl then acc
               else
+                let objName := acc.name cur
                 let p := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
                 let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
                 if othersRemain then

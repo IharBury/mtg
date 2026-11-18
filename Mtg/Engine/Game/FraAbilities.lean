@@ -387,7 +387,11 @@ partial def exileOpponentLibrariesLoop (g : Game) (remainingOpps : Array PlayerI
 
 /-- Resolve an FRA activated or loyalty ability resolution. -/
 def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Resolution)
-    (targets : Array Target) (sourceId : Option ObjectId) : Game :=
+    (targets : Array Target) (sourceId : Option ObjectId)
+    (chosenX : Option Nat := none)
+    (lastKnownPower : Option Int := none)
+    (lastKnownToughness : Option Int := none) : Game :=
+  let _ := (lastKnownPower, lastKnownToughness)
   let kind := effect.targetKind
   let illegal := some "The target is no longer legal"
   let srcName := g.fraSourceName sourceId
@@ -398,7 +402,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     match source? with
     | some o => if o.isOnBattlefield then f g o else g
     | none => g
-  let chosenX := (g.resolvingAbility.bind g.chosenXOf?).getD 0
+  let chosenX :=
+    (chosenX <|> g.resolvingAbility.bind g.chosenXOf? <|>
+      g.resolvingSpell.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?).getD 0
   match r with
   | .emrakulGrantMana =>
     match sourceId.bind (fun id => g.followMovedToZone? id (· == Zone.exile)) with

@@ -68,6 +68,8 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none)
   | none => g
   | some live =>
     if !live.isOnBattlefield then g
+    else if sbaPausedOnPhasing g then
+      g.chainPendingReplacement (.phaseOutPermanentsLoop #[live.id] cause preSnaps none reconcile)
     else
       let preSnapOf? (oid : ObjectId) : Option EventObject :=
         preSnaps.findSome? (fun (sid, s) => if sid == oid then some s else none)
@@ -146,12 +148,63 @@ private def canPhaseInDirectly (g : Game) (o : GameObject) : Bool :=
 /-- Continue phasing out `remainingIds` sequentially inside the enclosing
 simultaneous phase-out batch, pausing and chaining `.phaseOutPermanentsLoop` if
 a CR 616.1 / 800.4c replacement or legend choice opens (CR 702.26g–h). -/
-def phaseOutPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
+partial def phaseOutPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
     (cause : Option EventCause := none)
     (preSnaps : Array (ObjectId × EventObject) := #[])
     (startEventIdx : Option Nat := none)
     (reconcile : Bool := true) : Game := Id.run do
+  if sbaPausedOnPhasing g then
+    if remainingIds.isEmpty && !reconcile then return g
+    else return g.chainPendingReplacement (.phaseOutPermanentsLoop remainingIds cause preSnaps startEventIdx reconcile)
   let entryEvLen := g.events.size
+  let liveObjs :=
+    if remainingIds.isEmpty then #[]
+    else remainingIds.filterMap (fun id => (g.findObject? id).filter (·.isOnBattlefield))
+  if !remainingIds.isEmpty && g.currentBatch.isNone then
+    if liveObjs.isEmpty then
+      if !reconcile || startEventIdx.isNone then return g
+    else
+      let preSnaps :=
+        if preSnaps.isEmpty && startEventIdx.isNone then
+          g.battlefield.map (fun obj => (obj.id, g.snapshot obj))
+        else preSnaps
+      let ordered :=
+        if startEventIdx.isNone then
+          let withDepth := liveObjs.mapIdx (fun idx o => (g.attachmentDepth o, idx, o))
+          (withDepth.qsort (fun (d1, i1, _) (d2, i2, _) =>
+            d1 < d2 || (d1 == d2 && i1 < i2))).map (fun (_, _, o) => o)
+        else liveObjs
+      let orderedIds := ordered.map (·.id)
+      let startIdx := startEventIdx.getD entryEvLen
+      let batchCause :=
+        g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf ordered[0]!)
+          (defaultCause := .turnBased .phaseInOut)
+      if !reconcile then
+        return g.withBatchCore (some batchCause) fun g =>
+          g.phaseOutPermanentsLoop orderedIds (cause := cause) (preSnaps := preSnaps)
+            (startEventIdx := some startIdx) (reconcile := false)
+      else
+        let gPost :=
+          g.withBatchCore (some batchCause) fun g =>
+            g.phaseOutPermanentsLoop orderedIds (cause := cause) (preSnaps := preSnaps)
+              (startEventIdx := some startIdx) (reconcile := false)
+        if sbaPausedOnPhasing gPost then
+          return gPost.chainPendingReplacement (.phaseOutPermanentsLoop #[] cause preSnaps (some startIdx) true)
+        else if startIdx < gPost.events.size then
+          let pre := gPost.mkHistoricalGameAt startIdx
+          return (reconcileControlAfterTransitionFwd pre gPost (cause := some batchCause)).flushQueuedLinkedExileFwd
+        else
+          return gPost
+  let (remainingIds, preSnaps) :=
+    if startEventIdx.isNone && !liveObjs.isEmpty then
+      let ps :=
+        if preSnaps.isEmpty then g.battlefield.map (fun obj => (obj.id, g.snapshot obj))
+        else preSnaps
+      let withDepth := liveObjs.mapIdx (fun idx o => (g.attachmentDepth o, idx, o))
+      let sorted := (withDepth.qsort (fun (d1, i1, _) (d2, i2, _) =>
+        d1 < d2 || (d1 == d2 && i1 < i2))).map (fun (_, _, o) => o.id)
+      (sorted, ps)
+    else (remainingIds, preSnaps)
   let startIdx := startEventIdx.getD entryEvLen
   let mut g := g
   for i in [0:remainingIds.size] do
@@ -159,11 +212,7 @@ def phaseOutPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
     if let some o := g.findObject? id then
       if o.isOnBattlefield then
         g := g.phaseOut o (cause := cause) (preSnaps := preSnaps) (reconcile := false)
-        let paused :=
-          match g.pending with
-          | .chooseReplacement .. | .chooseLegend .. => true
-          | _ => false
-        if paused then
+        if sbaPausedOnPhasing g then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           g := g.chainPendingReplacement (.phaseOutPermanentsLoop rem cause preSnaps (some startIdx) reconcile)
           return g
@@ -195,6 +244,8 @@ def phaseOutPermanents (g : Game) (targets : Array GameObject)
     (cause : Option EventCause := none) : Game :=
   let live := targets.filter (·.isOnBattlefield)
   if live.isEmpty then g
+  else if sbaPausedOnPhasing g then
+    g.chainPendingReplacement (.phaseOutPermanentsLoop (live.map (·.id)) cause #[] none true)
   else
     let preSnaps : Array (ObjectId × EventObject) :=
       g.battlefield.map (fun obj => (obj.id, g.snapshot obj))
@@ -231,6 +282,8 @@ def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none)
   | none => g
   | some live =>
     if !live.status.phasedOut || live.zone != .battlefield then g
+    else if sbaPausedOnPhasing g then
+      g.chainPendingReplacement (.phaseInControlledLoop #[live.id] cause none reconcile)
     else
       let resolvedCause :=
         g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf live)
@@ -274,23 +327,53 @@ def phaseIn (g : Game) (o : GameObject) (cause : Option EventCause := none)
 /-- Continue phasing in `remainingIds` sequentially inside the enclosing
 simultaneous phase-in batch, pausing and chaining `.phaseInControlledLoop` if
 a CR 616.1 / 800.4c replacement or legend choice opens (CR 502.1 / 703.4a). -/
-def phaseInControlledLoop (g : Game) (remainingIds : Array ObjectId)
+partial def phaseInControlledLoop (g : Game) (remainingIds : Array ObjectId)
     (cause : Option EventCause := none) (preSnap? : Option Game := none)
     (startEventIdx : Option Nat := none)
     (reconcile : Bool := true) : Game := Id.run do
+  if sbaPausedOnPhasing g then
+    if remainingIds.isEmpty && !reconcile then return g
+    else return g.chainPendingReplacement (.phaseInControlledLoop remainingIds cause startEventIdx reconcile)
   let entryEvLen := g.events.size
+  if !remainingIds.isEmpty && g.currentBatch.isNone then
+    let liveObjs := remainingIds.filterMap fun id =>
+      (g.findObject? id).filter (fun o =>
+        o.zone == .battlefield && o.status.phasedOut && (startEventIdx.isNone || g.canPhaseInDirectly o))
+    if liveObjs.isEmpty then
+      if !reconcile || startEventIdx.isNone then return g
+    else
+      let startIdx := startEventIdx.getD (preSnap?.map (·.events.size) |>.getD entryEvLen)
+      let batchCause :=
+        g.resolveOptionalCause cause (fallbackCtrl := g.controllerOf liveObjs[0]!)
+          (defaultCause := .turnBased .phaseInOut)
+      if !reconcile then
+        return g.withBatchCore (some batchCause) fun g =>
+          g.phaseInControlledLoop remainingIds (cause := cause) (preSnap? := preSnap?.orElse (fun _ => some g))
+            (startEventIdx := some startIdx) (reconcile := false)
+      else
+        let gPost :=
+          g.withBatchCore (some batchCause) fun g =>
+            g.phaseInControlledLoop remainingIds (cause := cause) (preSnap? := preSnap?.orElse (fun _ => some g))
+              (startEventIdx := some startIdx) (reconcile := false)
+        if sbaPausedOnPhasing gPost then
+          return gPost.chainPendingReplacement (.phaseInControlledLoop #[] cause (some startIdx) true)
+        else if startIdx < gPost.events.size then
+          let pre := (preSnap?.orElse (fun _ => some (gPost.mkHistoricalGameAt startIdx))).getD g
+          let stepCause := gPost.resolveOptionalCause cause (defaultCause := .turnBased .phaseInOut)
+          return (reconcileControlAfterTransitionFwd pre gPost (cause := some stepCause)).flushQueuedLinkedExileFwd
+        else
+          return gPost.flushQueuedLinkedExileFwd
+  let singleDirectPhaseIn :=
+    startEventIdx.isNone && remainingIds.size == 1 &&
+      (g.findObject? remainingIds[0]!).any (fun o => o.zone == .battlefield && o.status.phasedOut)
   let startIdx := startEventIdx.getD (preSnap?.map (·.events.size) |>.getD entryEvLen)
   let mut g := g
   for i in [0:remainingIds.size] do
     let id := remainingIds[i]!
     if let some o := g.findObject? id then
-      if o.zone == .battlefield && o.status.phasedOut && g.canPhaseInDirectly o then
+      if o.zone == .battlefield && o.status.phasedOut && (singleDirectPhaseIn || g.canPhaseInDirectly o) then
         g := g.phaseIn o (cause := cause) (reconcile := false)
-        let paused :=
-          match g.pending with
-          | .chooseReplacement .. | .chooseLegend .. => true
-          | _ => false
-        if paused then
+        if sbaPausedOnPhasing g then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           g := g.chainPendingReplacement (.phaseInControlledLoop rem cause (some startIdx) reconcile)
           return g
@@ -357,6 +440,7 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
     let mut aliveScan := alive
     let mut seenTurnBegan := false
     let mut preStepReg? : Option PlayerId := none
+    let mut seenPreLogExtraStep := false
     for idx in [0 : g.events.size] do
       let ev := g.events[idx]!
       match ev.change with
@@ -371,8 +455,11 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
           aliveScan := aliveScan.set! q.idx false
       | .rules (.turn (.stepBegan _ ap))
       | .rules (.turn (.turnEnded ap)) =>
-        if !seenTurnBegan && preStepReg?.isNone && !g.inferPreLogTurnIsExtra ap ev.turn then
-          preStepReg? := some ap
+        if !seenTurnBegan && preStepReg?.isNone then
+          if !g.inferPreLogTurnIsExtra ap ev.turn then
+            preStepReg? := some ap
+          else
+            seenPreLogExtraStep := true
       | .rules (.turn (.turnBegan q extra)) =>
         let wasFirstTb := !seenTurnBegan
         seenTurnBegan := true
@@ -397,7 +484,7 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
                 let s : PlayerId := ⟨(startEnd.idx + k) % n⟩
                 if sameTeam s q then break
                 if !sameTeam s startSeat &&
-                    (g.teamMembers s).any (fun m => m.idx < n && alive[m.idx]!) &&
+                    (g.teamMembers s).any (fun m => m.idx < n && aliveScan[m.idx]!) &&
                     !betweenTeams.any (sameTeam · s) then
                   betweenTeams := betweenTeams.push s
               if ev.turn <= betweenTeams.size + 3 then
@@ -406,6 +493,22 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
                 else if (!g.hasPreLogPowerUpsForbidden && ev.turn == betweenTeams.size + 2) ||
                     ev.turn == betweenTeams.size + 3 then
                   return betweenTeams.back!
+          let extraTurnOnlyPrefix := !wasFirstTb || seenPreLogExtraStep || g.hasPreLogPowerUpsForbidden
+          if extraTurnOnlyPrefix && !hasStartingPlayer && g.startingPlayer.idx < n &&
+              !sameTeam q g.startingPlayer then
+            let startSeat := g.startingPlayer
+            let startEnd := (g.teamMembers startSeat).back? |>.getD startSeat
+            let allBetweenDeadInScan := Id.run do
+              for k in [1 : n + 1] do
+                let s : PlayerId := ⟨(startEnd.idx + k) % n⟩
+                if sameTeam s q then break
+                if !sameTeam s startSeat &&
+                    (g.teamMembers s).any (fun m => m.idx < n && aliveScan[m.idx]!) then
+                  return false
+              return true
+            if allBetweenDeadInScan &&
+                (g.teamMembers startSeat).any (fun m => m.idx < n && (alive[m.idx]! || aliveScan[m.idx]!)) then
+              return startSeat
           for k in [1 : n + 1] do
             let prev : PlayerId := ⟨(q.idx + n - k) % n⟩
             if prev.idx < n && aliveScan[prev.idx]! && !sameTeam prev q then
@@ -751,24 +854,28 @@ def phaseInControlled (g : Game) (p : PlayerId) : Game :=
             | none => false
         if shouldPhaseIn then some o.id else none
       else none
-  let hadOpenBatch := g.currentBatch.isSome
-  let startIdx := g.events.size
-  if hadOpenBatch then
-    (g.withBatchCore cause fun g =>
-      g.phaseInControlledLoop targetIds (cause := cause) (preSnap? := some g)
-        (startEventIdx := some startIdx) (reconcile := true)).flushQueuedLinkedExileFwd
+  if sbaPausedOnPhasing g then
+    if targetIds.isEmpty then g
+    else g.chainPendingReplacement (.phaseInControlledLoop targetIds cause none true)
   else
-    let gPost :=
-      g.withBatchCore cause fun g =>
+    let hadOpenBatch := g.currentBatch.isSome
+    let startIdx := g.events.size
+    if hadOpenBatch then
+      (g.withBatchCore cause fun g =>
         g.phaseInControlledLoop targetIds (cause := cause) (preSnap? := some g)
-          (startEventIdx := some startIdx) (reconcile := false)
-    if sbaPausedOnPhasing gPost then
-      gPost.chainPendingReplacement (.phaseInControlledLoop #[] cause (some startIdx) true)
-    else if startIdx < gPost.events.size then
-      let stepCause := gPost.resolveOptionalCause cause (defaultCause := .turnBased .phaseInOut)
-      (reconcileControlAfterTransitionFwd g gPost (cause := some stepCause)).flushQueuedLinkedExileFwd
+          (startEventIdx := some startIdx) (reconcile := true)).flushQueuedLinkedExileFwd
     else
-      gPost.flushQueuedLinkedExileFwd
+      let gPost :=
+        g.withBatchCore cause fun g =>
+          g.phaseInControlledLoop targetIds (cause := cause) (preSnap? := some g)
+            (startEventIdx := some startIdx) (reconcile := false)
+      if sbaPausedOnPhasing gPost then
+        gPost.chainPendingReplacement (.phaseInControlledLoop #[] cause (some startIdx) true)
+      else if startIdx < gPost.events.size then
+        let stepCause := gPost.resolveOptionalCause cause (defaultCause := .turnBased .phaseInOut)
+        (reconcileControlAfterTransitionFwd g gPost (cause := some stepCause)).flushQueuedLinkedExileFwd
+      else
+        gPost.flushQueuedLinkedExileFwd
 
 end Game
 end Mtg.Engine
