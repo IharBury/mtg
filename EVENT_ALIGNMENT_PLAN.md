@@ -19570,7 +19570,7 @@ permanent-spell `chosenX` on triggered abilities).
 
 1. **Cross-seat & post-pause deferred `pendingMayCastFromExile` / `pendingFreeCopies` reopen, `StateBasedActions.checkSBACountedWithLeavesCore` `outerAfter?` ordering, and `.restorePending` / `PendingReplacement.move` probes**
    (`Casting.lean:1338–1383`,
-   `Decisions.lean:165–212, 506–524, 609–610, 667–676, 695–705, 783, 815–871, 1714–1724, 2179–2194, 2575–2636, 2766–2820, 6941–6958`,
+   `Decisions.lean:165–212, 506–524, 609–610, 667–676, 695–705, 783, 815–871, 1714–1724, 2179–2194, 2424–2636, 2766–2820, 6941–6958`,
    `Entering.lean:339–371, 401, 456–469`,
    `Leaving.lean:3694–3711, 3722–3810, 3854–3910`,
    `StateBasedActions.lean:535–546, 593–603, 724, 1021–1146`;
@@ -19615,7 +19615,7 @@ permanent-spell `chosenX` on triggered abilities).
          (`852–863`) and `finishPostCastGrantsPriority` (`865–871`).
    - **`StateBasedActions.checkSBACountedWithLeavesCore` `outerAfter?` ordering across `deferRestore`, rewinds, and inner
      restores, plus `.restorePending` & `PendingReplacement.move` probe parity in `Decisions`**
-     (`Decisions.lean:165–212, 506–524, 609–610, 667–676, 695–705, 783, 1714–1724, 2179–2194, 2575–2636, 2766–2820`,
+     (`Decisions.lean:165–212, 506–524, 609–610, 667–676, 695–705, 783, 1714–1724, 2179–2194, 2424–2636, 2766–2820`,
      `StateBasedActions.lean:535–546, 593–603, 724, 1021–1146`):
      - Three continuation-ordering and probe-simulation bugs remain:
        (i) `StateBasedActions.checkSBACountedWithLeavesCore` (`1021–1070, 1140–1146`) peels `outerAfter?` even when
@@ -19636,8 +19636,9 @@ permanent-spell `chosenX` on triggered abilities).
        non-replacement/non-legend prompt such as `.mayPayGeneric`) instead of simulating `rewindAbortedProposalOnLeave` +
        `stashPostRewindPending` (including popping the extra `hadPreBodyCont` outer frame); and `reverseOrPopped`
        (`511–522`) returns `(gAfterRewind, false)` without running `resumePopped` when `gPopped.afterRandom == .none`,
-       while `reverseToPopped?` (`699–701`) ignores `postCastCleanup` / `sbaPaused` / restored checkpoint prompts in
-       `reverseAbortedProposal` (`2575–2636`); and
+       while `reverseToPopped?` (`699–701`) ignores `sbaPaused` and restored checkpoint prompts (`hasBlockingPrompt` at
+       `2556–2558` and the checkpoint-restore / `finishFraChoice` tail at `2563–2634`) in `.restorePending`'s
+       `reverseOrResumePopped` (`2424–2636`); and
        (iii) `Decisions.drainProbeNonPriorityCont` (`165–195`) and `advanceProbeOnResume` (`667–676`) omit
        `PendingReplacement.move` (`2179–2194`), while `drainProbePausedStep` (`197–212`) clears
        `Pending.chooseReplacement _ choices` (`206`) without recording `choices[0]?` in `g.replacementOrder` (causing
@@ -19652,7 +19653,8 @@ permanent-spell `chosenX` on triggered abilities).
          false` and no inner `saved?`, `popOuter`, `rewindProposal`, or prompt restore occurs); align
          `advanceProbeOnResume` (`506–524, 609–610`) and `nonPausingRestorePoppedOuter?` (`695–705, 783`) with runtime
          `.restorePending` on `.resolveRandom (.chooseObject ids)` (`2766–2820`), `rewindProposal = some hadPreBodyCont`,
-         and `reverseAbortedProposal` (`2575–2636`); and handle `PendingReplacement.move` in `drainProbeNonPriorityCont`
+         and `reverseOrResumePopped` (`2424–2636`, mirroring its `sbaPaused` and checkpoint-restore / `finishFraChoice`
+         tail at `2556–2634`); and handle `PendingReplacement.move` in `drainProbeNonPriorityCont`
          (`165–195`) / `advanceProbeOnResume` (`667–676`) while recording the first `ReplacementId` in
          `g.replacementOrder` when `drainProbePausedStep` (`197–212`) advances past `.chooseReplacement`.
 
@@ -19913,7 +19915,7 @@ Tests: `Events.lean` / `Tests/Events/` (unit + replay-determinism `#guard`s for 
 `Casting.finishPostCast` & `Decisions.simulateFinishPostCastBody` / `finishPostCastRecipient?` /
 `finishPostCastGrantsPriority` cross-seat `pendingMayCastFromExile` & `pendingFreeCopies` clearing, plus
 `StateBasedActions.checkSBACountedWithLeavesCore` `outerAfter?` folding across `deferRestore`, rewinds, and inner restores +
-`Decisions` `.restorePending` probes on `.resolveRandom (.chooseObject ..)` / `rewindProposal` / `reverseAbortedProposal` +
+`Decisions` `.restorePending` probes on `.resolveRandom (.chooseObject ..)` / `rewindProposal` / `reverseOrResumePopped` +
 `PendingReplacement.move` & `.chooseReplacement` `replacementOrder` step-probe draining; `Casting.paidResolutionOrigPerm?`
 off-turn timing & Adventure `fromAdventure` guard + `CastSpell` `hasMorphChoice` `prepareSource` guard +
 `Costs.playManaCost` `freeRG` / `freeCommander` `anyMana` & `mayCastExiledBySource` + `Core.playPermissionFor?` /
