@@ -20523,31 +20523,36 @@ precedence over permanent `sourceId` `chosenXOf?` across `applyFraResolution?`, 
        `isPermanentToGraveyard` (`3263–3266`), `enteredBattlefield` (`3282–3286`), `watches` `.wouldCreateToken` /
        `.wouldPutCounter` (`3335–3346`), `artifactEntered` (`3850–3858`), `subtypeEntered` (`3871–3880`),
        `creaturesToGraveyard` (`4139–4150`), `lastDiedAttacker` (`4153–4158`), `lastBecameTapped` (`4161–4165`),
-       `objectEntered` (`4187–4194`), and `Core.eventSuppressedByKarn` (`11307–11312`) omit `!phasedOut` (and `fromZone !=
-       .battlefield` on ETB `.moved`), causing `.wouldDie` / `.wouldEnterGraveyardFromBattlefield` replacement effects
-       (`Movement.lean:169, 177, 185`) and those `Event` queries (together with their delegating `Core.logged*` wrappers at
-       `Core.lean:5865–5967`) to match phased-out permanents (CR 603.6a / 700.4 / 702.26b):
+       `objectEntered` (`4187–4194`), and `Core.eventSuppressedByKarn` (`11307–11312`) omit `!phasedOut` — and unlike
+       `enteredBattlefield` (`3284`), the ETB `.moved` arms of `artifactEntered` (`3854`), `subtypeEntered` (`3876`),
+       `objectEntered` (`4191`), and `Core.eventSuppressedByKarn` (`11308`) also omit `fromZone != .battlefield` — causing
+       `.wouldDie` / `.wouldEnterGraveyardFromBattlefield` replacement effects (`Movement.lean:169, 177, 185`) and those
+       `Event` queries (together with their delegating `Core.logged*` wrappers at `Core.lean:5865–5967`) to match phased-out
+       permanents (CR 603.6a / 700.4 / 702.26b):
        - Filter `attachmentsOf tObj` by `eq.isOnBattlefield` in `Core.matchTriggers` `.permanent (.tapped ..)` (`12466–12473`,
          falling back to `pre.attachmentsOf` `isOnBattlefield` LKI if unattached later in the same batch while still phased in
-         at tap time), and enforce `!before.phasedOut` / `!after.phasedOut` / `!object.phasedOut` (plus `fromZone !=
-         .battlefield` on ETB `.moved`) across `Event.isCreatureToGraveyard` (`3257–3260`, covering `Event.creatureDeaths` at
-         `3820–3822` and `Core.loggedCreatureDeaths` at `5865–5866`), `isPermanentToGraveyard` (`3263–3266`),
-         `enteredBattlefield` (`3282–3286`), `watches` `.wouldCreateToken` / `.wouldPutCounter` (`3335–3346`),
-         `artifactEntered` (`3850–3858`), `subtypeEntered` (`3871–3880`), `creaturesToGraveyard` (`4139–4150`),
-         `lastDiedAttacker` (`4153–4158`), `lastBecameTapped` (`4161–4165`), `objectEntered` (`4187–4194`), and
-         `Core.eventSuppressedByKarn` (`11307–11312`).
+         at tap time); enforce `!before.phasedOut` on death predicates `Event.isCreatureToGraveyard` (`3257–3260`, covering
+         `Event.creatureDeaths` at `3820–3822` and `Core.loggedCreatureDeaths` at `5865–5866`), `isPermanentToGraveyard`
+         (`3263–3266`), `creaturesToGraveyard` (`4139–4150`), and `lastDiedAttacker` (`4153–4158`), `!object.phasedOut` /
+         `!obj.phasedOut` on `watches` `.wouldCreateToken` / `.wouldPutCounter` (`3335–3346`) and `lastBecameTapped`
+         (`4161–4165`), and `!after.phasedOut` / `!obj.phasedOut` on `enteredBattlefield` (`3282–3286`, which already checks
+         `fromZone != .battlefield` at `3284`); and enforce both `fromZone != .battlefield` (on `.moved`) and
+         `!after.phasedOut` / `!object.phasedOut` / `!obj.phasedOut` across `artifactEntered` (`3854–3857`), `subtypeEntered`
+         (`3876–3879`), `objectEntered` (`4191–4192`), and `Core.eventSuppressedByKarn` (`11308–11311`).
 
 4. **Continuous-`flash` in `Decisions.castAsPartOfResolution`, `.mayCastFromGraveyard` Impending & precondition parity in `FraChoices.defaultFraAction`, `Agent.choose` `.chooseKicker` / `.mayCastFromLooked` affordability, and `Demo.hasUniqueManaPayment` rider/combination/post-mana soundness**
    (`Agent.lean:577–641, 654–658`,
-   `Casting.lean:774–810, 1838–1851`,
+   `Casting.lean:250–290, 774–810, 1838–1851`,
    `Choices.lean:604–609`,
-   `Decisions.lean:4887–4918, 5106–5147, 5258–5274, 5343–5370`,
+   `Decisions.lean:4887–4918, 5098–5147, 5258–5274, 5343–5370`,
    `Demo.lean:2151–2254`,
-   `FraChoices.lean:1716–1763, 2245–2280`,
+   `FraChoices.lean:1716–1763, 2107–2132, 2245–2280`,
+   `Object.lean:26–50`,
    `PriorityActions.lean:36–65`;
    **CR 106.4,6,12 / 118.8 / 118.9a,d / 601.2b,f–h / 601.3b / 602.2b / 608.2g / 613.1f / 702.8a / 702.37a / 702.176a / 733.1**):
    - **Continuous-`flash` in `Decisions.castAsPartOfResolution`, `.mayCastFromGraveyard` Impending & zone/type parity in `FraChoices.defaultFraAction`, and `Agent.choose` `.chooseKicker` / `.mayCastFromLooked` affordability**
-     (`Agent.lean:577–641, 654–658`, `Decisions.lean:5106–5147, 5258–5274`, `FraChoices.lean:1716–1763, 2245–2280`):
+     (`Agent.lean:577–641, 654–658`, `Casting.lean:250–290`, `Decisions.lean:5098–5147, 5258–5274`,
+     `FraChoices.lean:1716–1763, 2107–2132, 2245–2280`, `Object.lean:26–50`):
      - Four resolution-cast timing, default-choice, and `Agent` affordability bugs remain after Phase 50:
        (i) `Decisions.castAsPartOfResolution` (`5106, 5109, 5131`) binds `let face := g.baseCard o` without `keywords :=
        g.currentKeywords o`, rejecting Layer-6 `flash`-granted non-instant cards when `ignoreTiming = false` (CR 613.1f /
@@ -20566,16 +20571,21 @@ precedence over permanent `sourceId` `chosenXOf?` across `applyFraResolution?`, 
        (`613–637`, including `(g.apply actor (.announceKicker true)).isOk`) never runs and `Agent.play` repeats
        `.announceKicker false` -> `.pay` -> `reverseProposedSpell` back to `.chooseKicker`; and
        (iv) `Agent.choose` `.mayCastFromLooked` (`654–658`) checks only `mayCastFromLookedError` without verifying
-       `canPaySpellCostFromSources` / `canPayAnnouncedAdditionalFromSources` (`withoutManaCost := true` still incurs spell
-       taxes and mandatory/or-pay additional costs), looping infinitely when `chooseCastFromLooked` reverses back to the
+       `canPaySpellCostFromSources` / `canPayAnnouncedAdditionalFromSources` (`chooseCastFromLooked` casts from `.library` via
+       `castAsPartOfResolution` with default `withoutManaCost := true` at `Decisions.lean:5098–5099, 5273`, which still incurs
+       spell taxes and mandatory/or-pay additional costs), looping infinitely when `chooseCastFromLooked` reverses back to the
        pre-choice checkpoint (`Decisions.lean:5258–5274`):
        - Bind `let face := { g.baseCard o with keywords := g.currentKeywords o }` in `Decisions.castAsPartOfResolution`
          (`5106`); enforce `o.zone == .graveyard o.owner && (g.isArtifact o || g.isInstantOrSorcery o)` and add the
          `face.impending` fallback check in `FraChoices.defaultFraAction` `.mayCastFromGraveyard` (`2250–2280`); drop the
          `!prop.alternativeCost &&` gate at `Agent.lean:584` so `altAffordable` (`613–637`, including
          `(g.apply actor (.announceKicker true)).isOk`) can compare against an unpayable `prop.alternativeCost == true` front
-         permission; and require `canPaySpellCostFromSources` + `canPayAnnouncedAdditionalFromSources` (with `origPerm := some
-         { zone := .library, withoutManaCost := true }`) in `Agent.choose` `.mayCastFromLooked` (`654–658`).
+         permission; and in `Agent.choose` `.mayCastFromLooked` (`654–658`), mirror the cascade payment check
+         (`FraChoices.lean:2107–2132`) with `let origPerm : Option PlayPermission := some { player := p, withoutManaCost :=
+         true }`, passing `g.playManaCost { o with controller := some p } face (origPerm := origPerm) (flashback := some false)
+         (useImplicitPermissions := false)` to `g.canPaySpellCostFromSources p o · (fromHand := false)` and passing `origPerm`
+         (with `flashback := some false`, `useImplicitPermissions := false`, `fromHand := false`) to
+         `g.canPayAnnouncedAdditionalFromSources p o`.
    - **Spell-modifying mana riders (`FraManaUse.legendarySpell`), `ManaOutput.combination` leftover mana, and remaining post-mana cost preconditions in `Demo.hasUniqueManaPayment` & `Casting.tapPreservesPostManaCosts`**
      (`Casting.lean:774–810, 1838–1851`, `Choices.lean:604–609`, `Decisions.lean:4887–4918, 5343–5370`,
      `Demo.lean:2151–2254`, `PriorityActions.lean:36–65`):
