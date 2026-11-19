@@ -4492,7 +4492,10 @@ targets, `controller` chooses once per token before the tokens enter. -/
 def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
     (kind : TokenSpec) (n : Nat) (tapped holds : Bool)
     (sourceId : Option ObjectId := none)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (copyCtx : CopyTokenContext := {}) : Game :=
+  let effectiveCopyCtx : CopyTokenContext :=
+    { copyCtx with sourceId := copyCtx.sourceId.orElse (fun _ => sourceId) }
   let (g, c) : Game × EventCause :=
     match cause with
     | some existing => (g, existing)
@@ -4502,19 +4505,19 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
     if n == 0 then g
     else
       g.chainPendingReplacement
-        (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause)
+        (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause effectiveCopyCtx)
   else if !holds then
     g.createKindTokens controller kind n (tapped := tapped) (attacking := false) (cause := cause)
-      (copyCtx := { sourceId })
+      (copyCtx := effectiveCopyCtx)
   else if !g.stillInGame controller then
     let g := g.change (.recentTokenIds #[])
     if n == 0 then g
     else g.logMsg "no token is created (CR 800.4b)"
   else
-    match g.resolveTokenPrinted? kind 0 { sourceId } with
+    match g.resolveTokenPrinted? kind 0 effectiveCopyCtx with
     | none =>
       let g := g.change (.recentTokenIds #[])
-      if n == 0 then g else g.logMsg "no token is created (CR 111.12)"
+      if n == 0 then g else g.logMsg "no token is created (CR 111.5 / 111.12)"
     | some rawPrinted =>
     let (batches, applied, choice?) := g.replaceTokenCreationChoice {
       controller := controller
@@ -4529,7 +4532,7 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
       let outerCont? := g.pendingReplacement
       let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
       let g := g.promptChooseReplacement chooser choices
-        (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause)
+        (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause effectiveCopyCtx)
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
       | none => g
@@ -4723,6 +4726,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let (g, holds) :=
           g.triggerIfHolds controller ab sourceId targets lastKnownPower cond lastKnownToughness
         g.createAndMarkTokensAttacking controller kind n.toNat tapped holds sourceId
+          (copyCtx := g.copyTokenContextOf sourceId targets)
       | steps =>
       let rec runSteps (g : Game) (waiting : List TriggeredAbility.TriggerResolution)
           (paused dropped : Bool) :
@@ -5673,6 +5677,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           let (g, holds) :=
             g.triggerIfHolds controller ab sourceId targets lastKnownPower cond lastKnownToughness
           g.createAndMarkTokensAttacking controller kind n.toNat tapped holds sourceId
+            (copyCtx := g.copyTokenContextOf sourceId targets)
         | steps =>
           let stepAbs := steps.toArray.map fun r =>
             match ab with

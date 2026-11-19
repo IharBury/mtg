@@ -1054,9 +1054,10 @@ def tokenPrinted? (spec : TokenSpec) (x : Nat := 0) : Option CardDef :=
   | .copyOf _ _ => none
 
 /-- Resolve any `TokenSpec` into its printed `CardDef` in game state `g`
-(CR 111 / 707.2 / 707.9 / 111.12). For `.copyOf`, copies the referenced object's
-copiable values plus `mods`, or returns `none` when the referenced object does
-not exist (CR 111.12: no token is created). -/
+(CR 111 / 111.5 / 707.2 / 707.9 / 111.12). For `.copyOf`, copies the referenced
+object's copiable values plus `mods`, returning `none` when the referenced
+object does not exist (CR 111.12) or when the resulting token would be an
+instant or sorcery with no permanent type (CR 111.5). -/
 def resolveTokenPrinted? (g : Game) (spec : TokenSpec) (x : Nat := 0)
     (copyCtx : CopyTokenContext := {}) : Option CardDef :=
   match spec with
@@ -1083,9 +1084,11 @@ def resolveTokenPrinted? (g : Game) (spec : TokenSpec) (x : Nat := 0)
               |>.orElse (fun _ => some (g.copiableValues src))
       | none =>
         (oid?.bind g.lastKnownBefore?).map (fun eo => eo.copiable.getD eo.toCardDef)
-    base?.map fun cv =>
+    base?.bind fun cv =>
       let copied : CardDef := { cv with isToken := true }
-      mods.foldl applyCopyModification copied
+      let modified := mods.foldl applyCopyModification copied
+      if modified.isInstantOrSorcery && !modified.isPermanentCard then none
+      else some modified
 
 /-- Reverse lookup of a `TokenSpec` matching `c` (ignoring `isToken`), if any. -/
 def tokenSpecOfCardDef? (c : CardDef) : Option TokenSpec :=
@@ -1199,7 +1202,7 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenSpec)
     if n == 0 then g
     else
       match g.resolveTokenPrinted? kind 0 copyCtx with
-      | none => g.logMsg "no token is created (CR 111.12)"
+      | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
       | some printed =>
         let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
         let isAttacking := resolvedTarget.isSome

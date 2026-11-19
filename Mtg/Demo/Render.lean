@@ -845,7 +845,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         | .mayPayExtort _ => "extort: pay {W/B} (accept), or decline"
         | .mayDrawThenDiscard n k => s!"may draw {n} cards, then discard {k} (accept or decline)"
         | .sacrificeNontokenEach .. => "sacrifice a nontoken creature: choose <id>"
-        | .mayCreateTokens _ n => s!"may create {n} token(s) (accept or decline)"
+        | .mayCreateTokens _ n _ => s!"may create {n} token(s) (accept or decline)"
         | .mayBecomeBasePT _ pw tw => s!"may have base power and toughness become {pw}/{tw} (accept or decline)"
         | .mayRevealToHand _ eligible anyOrder =>
           let order := if anyOrder then " The rest go on the bottom in any order." else ""
@@ -922,6 +922,8 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           s!"choose an artifact creature card ({ids.size}), or decline to find nothing"
         | .kingpinMayPay2Life => "may pay 2 life (accept), or decline"
         | .daredevilMayExile _ => "may exile the top card of your library (accept), or decline"
+        | .exploreMayGraveyard _ =>
+          "may put the revealed card into your graveyard (accept), or decline"
         | .mayChangeSpellTarget .. =>
           "may choose a new target for the spell: choose <id>, or decline to keep it"
         | .mayCastCards eligible withoutPaying exileInstead =>

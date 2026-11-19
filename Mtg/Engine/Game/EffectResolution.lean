@@ -136,7 +136,8 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         s!"{pl.name} may discard a card. If they do, they draw {n}")
   | .createTokensLifeGained kind =>
     -- Ruling 755: counts life gained, ignoring life lost this turn.
-    some (g.createKindTokens controller kind (g.loggedLifeGained controller))
+    some (g.createKindTokens controller kind (g.loggedLifeGained controller)
+      (copyCtx := g.copyTokenContextOf sourceId targets))
   | .oppSacrificesGreatestMv =>
     some (g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.sacrificeGreatestManaValue pid) sourceId)

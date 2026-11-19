@@ -2197,6 +2197,10 @@ private def fraChoiceAnyObjId (fc : FraChoice) (pred : ObjectId → Bool)
   | .hydeMode sid
   | .oddOrEvenDestroy sid
   | .daredevilMayExile sid => checkValidOptObjId pred sid
+  | .exploreMayGraveyard cid => checkValidObjId pred cid
+  | .mayCreateTokens _ _ copyCtx =>
+    checkValidOptObjId pred copyCtx.sourceId || checkValidOptObjId pred copyCtx.targetId ||
+      checkValidOptObjId pred copyCtx.triggerSubjectId
   | .discardThen _ sid cid => checkValidOptObjId pred sid || checkValidOptObjId pred cid
   | .stackTriggerUnusedMode oid sid _ _ =>
     checkValidObjId pred oid || checkValidOptObjId pred sid
@@ -2294,7 +2298,9 @@ private def frcPostStepAnyObjId (st : FrcPostStep) (pred : ObjectId → Bool)
   | .swordsGainLife tid _ _
   | .logHandDiscard _ tid _ _
   | .logHandDiscardToBottom _ tid _ _
-  | .logExploreLandToHand _ tid _ => checkValidObjId pred tid
+  | .logExploreLandToHand _ tid _
+  | .offerExploreMayGraveyard _ tid
+  | .logExploreToGraveyard _ tid _ => checkValidObjId pred tid
   | _ => false
 
 private def postStepAnyObjId (st : PostStep) (pred : ObjectId → Bool)
@@ -2614,8 +2620,11 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
       b.attackingTarget.any (attackTargetAnyObjId pred) ||
         b.cause.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)) ||
       atgt.any (attackTargetAnyObjId pred) || c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
-  | .createAndMarkTokensAttacking _ _ _ _ _ sid c =>
-    checkValidOptObjId pred sid || c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
+  | .createAndMarkTokensAttacking _ _ _ _ _ sid c copyCtx =>
+    checkValidOptObjId pred sid ||
+      checkValidOptObjId pred copyCtx.sourceId || checkValidOptObjId pred copyCtx.targetId ||
+      checkValidOptObjId pred copyCtx.triggerSubjectId ||
+      c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .commitEnteringAttackItems chosen c _ pe pb =>
     chosen.any (fun (it, atgt) =>
       enteringAttackItemAnyObjId it pred || atgt.any (attackTargetAnyObjId pred)) ||

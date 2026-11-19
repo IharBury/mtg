@@ -996,7 +996,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw "Choose a nontoken creature you control"
     return (g.continueNontokenSacrifices rest (chosen.push id)).finishFraChoice
   | .sacrificeNontokenEach .., _ => throw "Choose a nontoken creature to sacrifice"
-  | .mayCreateTokens kind n, .accept => return (g.createKindTokens p kind n).finishFraChoice
+  | .mayCreateTokens kind n copyCtx, .accept =>
+    return (g.createKindTokens p kind n (copyCtx := copyCtx)).finishFraChoice
   | .mayCreateTokens .., .decline => return g.finishFraChoice
   | .mayCreateTokens .., _ => throw "Answer accept or decline"
   | .mayBecomeBasePT id pw tw, .accept =>
@@ -1607,6 +1608,26 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .daredevilMayExile _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't exile the top card").finishFraChoice
   | .daredevilMayExile _, _ => throw "Exile the top card (accept), or decline"
+  | .exploreMayGraveyard cardId, .accept =>
+    let pl := g.player p
+    if pl.library.back? == some cardId then
+      let cName := (g.findObject? cardId).map g.name |>.getD "the revealed card"
+      let (g, _) := g.move cardId (.graveyard p) none
+      if let .chooseReplacement .. := g.pending then
+        return (g.chainPendingReplacement
+          (.finishFrcPostStep (.logExploreToGraveyard p cardId cName))).finishFraChoice
+      else
+        let g :=
+          if (g.followMovedToZone? cardId (· == .graveyard p)).isSome then
+            g.logMsg s!"{pl.name} puts {cName} into their graveyard"
+          else g
+        return g.finishFraChoice
+    else
+      return g.finishFraChoice
+  | .exploreMayGraveyard cardId, .decline =>
+    let cName := (g.findObject? cardId).map g.name |>.getD "the revealed card"
+    return (g.logMsg s!"{(g.player p).name} leaves {cName} on top of their library").finishFraChoice
+  | .exploreMayGraveyard _, _ => throw "Put the revealed card into your graveyard (accept), or decline"
   | .mayChangeSpellTarget spellId index staged, .objects #[id] =>
     let tgt : Target :=
       match g.findObject? id with
@@ -2161,6 +2182,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     | none => .decline
   | .kingpinMayPay2Life => .decline
   | .daredevilMayExile _ => .decline
+  | .exploreMayGraveyard _ => .decline
   | .mayChangeSpellTarget .. => .decline
   | .mayCastCards eligible withoutPaying _ =>
     if g.cantCastSpellsThisTurn p || g.splitSecondOnStack || g.combatLocksNonManaAbilities ||

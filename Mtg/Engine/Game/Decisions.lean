@@ -2865,9 +2865,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     g.createKindTokens controller kind n (tapped := tapped) (attacking := attacking)
       (attackingTarget := attackingTarget) (resetRecent := resetRecent) (cause := cause)
       (copyCtx := copyCtx)
-  | .createAndMarkTokensAttacking controller kind n tapped holds sourceId cause =>
+  | .createAndMarkTokensAttacking controller kind n tapped holds sourceId cause copyCtx =>
     g.createAndMarkTokensAttacking controller kind n tapped holds (sourceId := sourceId)
-      (cause := cause)
+      (cause := cause) (copyCtx := copyCtx)
   | .commitEnteringAttackItems chosen cause resetRecent postEntries preBattlefield =>
     g.commitEnteringAttackItems chosen (cause := cause) (resetRecent := resetRecent)
       (postEntries := postEntries) (preBattlefield := preBattlefield)

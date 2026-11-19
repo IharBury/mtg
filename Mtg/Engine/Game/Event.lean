@@ -1064,6 +1064,8 @@ inductive FrcPostStep where
   | logHandDiscardToBottom (p : PlayerId) (cardId : ObjectId) (destOwner : PlayerId)
       (cardName : String)
   | logExploreLandToHand (controller : PlayerId) (cardId : ObjectId) (cardName : String)
+  | offerExploreMayGraveyard (controller : PlayerId) (cardId : ObjectId)
+  | logExploreToGraveyard (controller : PlayerId) (cardId : ObjectId) (cardName : String)
   | teferiExileSpell
 deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -1532,13 +1534,6 @@ inductive StackEntryChange where
   | clearChosenModes
 deriving Repr, Inhabited, BEq
 
-/-- Object references available to resolve `TokenSpec.copyOf` (CR 707.2 / 707.9 / 111.12). -/
-structure CopyTokenContext where
-  sourceId : Option ObjectId := none
-  targetId : Option ObjectId := none
-  triggerSubjectId : Option ObjectId := none
-deriving DecidableEq, Repr, Inhabited, BEq
-
 mutual
 
 /-- Continuation stored while waiting for a player to answer `Pending.chooseReplacement`
@@ -1615,6 +1610,7 @@ inductive PendingReplacement where
   | createAndMarkTokensAttacking (controller : PlayerId) (kind : TokenSpec)
       (n : Nat) (tapped holds : Bool) (sourceId : Option ObjectId)
       (cause : Option EventCause := none)
+      (copyCtx : CopyTokenContext := {})
   | commitEnteringAttackItems (chosen : Array (EnteringAttackItem × Option AttackTarget))
       (cause : Option EventCause) (resetRecent : Bool)
       (postEntries : Array (ObjectId × PlayerId × String × List TriggeredAbility.TriggerEnterWith × EnteringAttackLog) := #[])

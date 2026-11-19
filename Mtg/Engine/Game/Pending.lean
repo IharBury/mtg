@@ -10,6 +10,13 @@ and the `Pending` prompt a player must answer before the game continues.
 
 namespace Mtg.Engine
 
+/-- Object references available to resolve `TokenSpec.copyOf` (CR 707.2 / 707.9 / 111.12). -/
+structure CopyTokenContext where
+  sourceId : Option ObjectId := none
+  targetId : Option ObjectId := none
+  triggerSubjectId : Option ObjectId := none
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- A random event the engine would otherwise resolve with `Rng`.
 `--norandom` leaves it pending so a host (the demo) can supply the result. -/
 inductive RandomRequest where
@@ -394,7 +401,7 @@ inductive FraChoice where
   `chosen` are sacrificed together at the end (The Serpent Society). -/
   | sacrificeNontokenEach (rest : Array PlayerId) (chosen : Array ObjectId)
   /-- You may create `n` tokens of `kind`. -/
-  | mayCreateTokens (kind : TokenSpec) (n : Nat)
+  | mayCreateTokens (kind : TokenSpec) (n : Nat) (copyCtx : CopyTokenContext := {})
   /-- You may have `objectId`'s base power and toughness become `p`/`t`
   until end of turn. -/
   | mayBecomeBasePT (objectId : ObjectId) (p t : Int)
@@ -518,6 +525,9 @@ inductive FraChoice where
   | kingpinMayPay2Life
   /-- You may exile the top card of your library (Daredevil). -/
   | daredevilMayExile (sourceId : Option ObjectId)
+  /-- Explore (CR 701.44a): you may put the revealed top card `cardId` of your
+  library into your graveyard. Declining leaves it on top. -/
+  | exploreMayGraveyard (cardId : ObjectId)
   /-- You may choose a new target for one slot of `spellId`, or decline to
   keep it. `index` walks the spell's targets (Speedball). -/
   | mayChangeSpellTarget (spellId : ObjectId) (index : Nat) (staged : Array Target := #[])

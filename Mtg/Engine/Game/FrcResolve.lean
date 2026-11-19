@@ -76,7 +76,7 @@ def makeFrcLoop (g : Game) (p : PlayerId) (k : TokenSpec) (remaining : Nat) (x :
     g.chainPendingReplacement (.makeFrcLoop p k remaining x extraCounters cause copyCtx)
   else
     match g.resolveTokenPrinted? k x copyCtx with
-    | none => g.logMsg "no token is created (CR 111.12)"
+    | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
     | some printed =>
       (g.createToken p printed (extraCounters := extraCounters)
         (recordRecent := true) (cause := cause) (count := remaining)).1
@@ -93,6 +93,16 @@ private def makeFrc (g : Game) (p : PlayerId) (k : TokenSpec) (n : Nat := 1) (x 
     let batchCause := cause.orElse (fun _ => g.resolvingBatchCause p none)
     g.withBatch batchCause fun g =>
       g.makeFrcLoop p k n x extraCounters cause copyCtx
+
+/-- Offer `p` the optional explore choice to put the revealed top card `cardId`
+of their library into their graveyard (CR 701.44a / 701.44c). -/
+def offerExploreMayGraveyard (g : Game) (p : PlayerId) (cardId : ObjectId) : Game :=
+  if !g.stillInGame p then g
+  else if (g.player p).library.back? != some cardId then g
+  else
+    let cName := (g.findObject? cardId).map g.name |>.getD "the revealed card"
+    g.beginFraChoice p (.exploreMayGraveyard cardId)
+      s!"{(g.player p).name} may put {cName} into their graveyard"
 
 private def revealUntil (g : Game) (p : PlayerId) (pred : CardDef → Bool) (limit : Nat)
     (cause : Option EventCause := none) :
@@ -984,10 +994,27 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
     match resolvedTarget? with
     | .error gIllegal => gIllegal
     | .ok explorer? =>
-      let explorerCtrl := (explorer?.bind g.controllerOf).getD controller
+      -- CR 701.44c: if the exploring permanent left the battlefield before
+      -- exploring, use last-known information to determine who controlled it.
+      let explorerLki? :=
+        if explorer?.isNone then sourceId.bind g.lastKnownBefore? else none
+      let explorerCtrl :=
+        match explorer? with
+        | some o => (g.controllerOf o).getD controller
+        | none =>
+          (explorerLki?.bind (fun eo => eo.controller.orElse (fun _ => some eo.owner))).getD
+            controller
       let explorerPl := g.player explorerCtrl
       let lib := explorerPl.library
-      if lib.isEmpty then g.logMsg s!"{explorerPl.name} explores (empty library)"
+      if lib.isEmpty then
+        let g := g.logMsg s!"{explorerPl.name} explores (empty library)"
+        -- CR 701.44a: no land card was revealed, so put a +1/+1 counter on the exploring permanent.
+        match explorer? with
+        | some o =>
+          if o.isOnBattlefield then
+            g.addPlusOnePlusOneTo o 1 (byPlayer := some explorerCtrl)
+          else g
+        | none => g
       else
         let top := lib.back!
         let card := g.object! top
@@ -1003,14 +1030,23 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
             g.logMsg s!"{explorerPl.name} explores and puts {cName} into their hand"
           else g
         else
-          let g := g.logMsg s!"{explorerPl.name} puts {cName} on top of their library"
-          match explorer? with
-          | some o =>
-            if o.isOnBattlefield && (effect.requiresTarget || g.isCreature o) then
-              (g.logMsg s!"{explorerPl.name} explores").addPlusOnePlusOneTo o 1
-                (byPlayer := some explorerCtrl)
-            else g.logMsg s!"{explorerPl.name} explores and leaves {cName} on top"
-          | none => g.logMsg s!"{explorerPl.name} explores and leaves {cName} on top"
+          -- CR 701.44a: nonland revealed — put a +1/+1 counter on the exploring
+          -- permanent (if still on the battlefield, even if not a creature), then
+          -- offer the controller the optional choice to put the revealed card into
+          -- their graveyard (CR 701.44c still offers this choice if the permanent left).
+          let g := g.logMsg s!"{explorerPl.name} explores and reveals {cName}"
+          let g :=
+            match explorer? with
+            | some o =>
+              if o.isOnBattlefield then
+                g.addPlusOnePlusOneTo o 1 (byPlayer := some explorerCtrl)
+              else g
+            | none => g
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement
+              (.finishFrcPostStep (.offerExploreMayGraveyard explorerCtrl top))
+          else
+            g.offerExploreMayGraveyard explorerCtrl top
   | .transformIncubator =>
     match g.srcObj? sourceId with
     | some o =>
@@ -1110,6 +1146,12 @@ partial def runFrcPostStep (g : Game) (step : FrcPostStep) : Game :=
   | .logExploreLandToHand controller cardId cardName =>
     if (g.followMovedToZone? cardId (· == .hand controller)).isSome then
       g.logMsg s!"{(g.player controller).name} explores and puts {cardName} into their hand"
+    else g
+  | .offerExploreMayGraveyard controller cardId =>
+    g.offerExploreMayGraveyard controller cardId
+  | .logExploreToGraveyard controller cardId cardName =>
+    if (g.followMovedToZone? cardId (· == .graveyard controller)).isSome then
+      g.logMsg s!"{(g.player controller).name} puts {cardName} into their graveyard"
     else g
   | .offerMaySearchBasics owner => g.offerMaySearchBasics owner
   | .makeHumanToken owner => g.makeFrc owner .human11white
