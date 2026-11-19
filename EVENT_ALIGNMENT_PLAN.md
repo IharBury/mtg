@@ -20913,7 +20913,7 @@ soundness).
 4. **`Demo.hasUniqueManaPayment` rider/provenance/combination/multi-source soundness, `Casting` cost-preserving tap subsets, `Decisions.castAsPartOfResolution` clean-permission `canMorph` gate, and `Agent` / `PriorityActions` / `Casting` additional-cost parity**
    (`Agent.lean:202–228, 281–314, 582–612`,
    `CastExtras.lean:156–167`,
-   `Casting.lean:34–37, 87–108, 528–539, 579–621, 791–866, 872–934, 1564–1567`,
+   `Casting.lean:34–37, 87–108, 133–135, 528–561, 579–621, 791–866, 872–934, 1564–1567`,
    `CastSpell.lean:81–91, 168, 182, 432–436`,
    `Core.lean:8672–8677, 8775–8797, 13409–13411, 15835–15848`,
    `Decisions.lean:5102–5120, 5205–5237, 5329–5344, 5424–5465`,
@@ -20954,19 +20954,19 @@ soundness).
          prop.sourceId` + `teamworkCreatures` membership in `Casting.tapPreservesPostManaCosts` (`857–866`) and
          `Casting.hasCostPreservingPaymentSubset` (`886, 902–911`).
    - **`Decisions.castAsPartOfResolution` clean-permission `canMorph` gate, `Agent.choose` `.chooseX` / `.chooseKicker` resolution-cast & `preSpell` affordability, and Sneak mandatory-sacrifice exclusion across `Casting` / `PriorityActions` / `Agent`**
-     (`Agent.lean:202–228, 281–314, 582–612`, `CastExtras.lean:156–167`, `Casting.lean:34–37, 87–108, 528–539, 579–621`,
+     (`Agent.lean:202–228, 281–314, 582–612`, `CastExtras.lean:156–167`, `Casting.lean:34–37, 87–108, 133–135, 528–561, 579–621`,
      `CastSpell.lean:81–91, 168, 182, 432–436`, `Decisions.lean:5102–5120, 5205–5237, 5329–5344, 5424–5465`,
      `PriorityActions.lean:123, 190–191`):
      - Four resolution-cast `canMorph`, `Agent` affordability, and Sneak additional-cost bugs remain after Phase 51:
-       (i) `Decisions.castAsPartOfResolution` (`Decisions.lean:5428–5446, 5450–5451, 5460–5465`) omits the resolving effect's
-       own clean `!withoutManaCost` permission (`{ player := p, ignoreTiming := ignoreTiming }`, cf.
-       `Casting.proposalAltCleanPerm?`'s `resClean` at `Casting.lean:528–531`) from `cleanPerms`, forcing `morphTimingOk` and
-       `canMorph` to `false` when `!withoutManaCost && !ignoreTiming && hasZonePerms` holds only via non-clean permissions
-       (`withoutManaCost` / `payLifeEqualManaValue` / `prepareSource.isSome`) — rejecting Morph resolution casts that
-       `proposalCanChooseMorph` would allow whenever the front face is blocked by `g.spellNameForbidden face.name` (`5460`),
-       `!g.graveyardCastThresholdMet p o.id face` (`5462`, `Casting.lean:87–90`, `!frontLegalExceptTiming` at `5464`), or
-       non-creature `face` lacking `firstCreatureHasFlash` (`Casting.lean:34–37`, `!frontTimingOk` at `5464`) (CR 601.3 /
-       608.2g / 702.37a);
+       (i) `Decisions.castAsPartOfResolution` (`Decisions.lean:5428–5449, 5460–5465`) omits the resolving effect's own clean
+       `!withoutManaCost` permission (`{ player := p, ignoreTiming := ignoreTiming }`, cf. `Casting.proposalAltCleanPerm?`'s
+       `resClean` at `Casting.lean:528–531`) from `cleanPerms`, forcing `morphTimingOk` and `canMorph` to `false` when
+       `!withoutManaCost && !ignoreTiming && hasZonePerms` holds only via non-clean permissions (`withoutManaCost` /
+       `payLifeEqualManaValue` / `prepareSource.isSome`) — rejecting Morph resolution casts that `proposalCanChooseMorph`
+       (`Casting.lean:553–561`) would allow when the front name is forbidden (`5460`), a non-graveyard card (`o.zone !=
+       .graveyard o.owner`, `5444`) fails the graveyard-size threshold (`5462`, `Casting.lean:87–90`), or a non-creature front
+       is not timing-legal (`!frontTimingOk`) while creature `morphSpellFace` (`Casting.lean:133–135`) is timing-legal via
+       Radagast flash (`Casting.lean:34–37`, `5464`) (CR 601.3 / 608.2g / 702.37a);
        (ii) `Agent.choose` `.chooseX` (`Agent.lean:214–218, 283`, and `312–313` where `allPicks.isEmpty` returns `upperX`
        immediately) zeroes `upcomingAddGen` via a leading `prop.resolutionCast ||` disjunct (`214`) and gates `unchosenAdd` on
        `!prop.resolutionCast &&` (`283`) even though `Decisions.beginResolutionCastTargets` (`5329–5344`) prompts `.chooseX`
