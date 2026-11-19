@@ -257,7 +257,7 @@ inductive EnteringAttackItem where
       (extraEntersWith : CounterBag)
       (mods : List TriggeredAbility.TriggerEnterWith)
       (logKind : EnteringAttackLog) (options : Array AttackTarget)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 namespace EnteringAttackItem
 
@@ -571,7 +571,18 @@ inductive FraChoice where
       (remaining : Array EnteringAttackItem)
       (chosen : Array (EnteringAttackItem × Option AttackTarget))
       (cause : Option EventCause := none)
-deriving DecidableEq, Repr, Inhabited, BEq
+  /-- Choose which of the tied candidate objects (`ids`) to copy when creating
+  `count` copy tokens (CR 707.2 / 707.9; e.g. tied `ObjectExpr.extremum`). -/
+  | chooseTokenCopyObject
+      (ids : Array ObjectId)
+      (mods : Array CopyModification)
+      (count : Nat)
+      (tapped attacking : Bool)
+      (attackingTarget : Option AttackTarget := none)
+      (extraCounters : CounterBag := #[])
+      (cause : Option EventCause := none)
+      (sourceId : Option ObjectId := none)
+deriving Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/
 inductive Pending where
@@ -689,7 +700,7 @@ inductive Pending where
   | chooseReplacement (player : PlayerId) (choices : Array ReplacementId)
   /-- A random event must be resolved by supplying its result (`--norandom`). -/
   | resolveRandom (req : RandomRequest)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 /-- The prompt player stored directly on `p` (`none` when `p` does not store a
 player id directly, such as `.none`, `.declareAttackers`, `.declareBlockers`, or

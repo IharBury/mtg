@@ -4514,7 +4514,23 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
     if n == 0 then g
     else g.logMsg "no token is created (CR 800.4b)"
   else
-    match g.resolveTokenPrinted? kind 0 effectiveCopyCtx with
+    let tiedCopyIds? : Option (Array ObjectId × Array CopyModification) :=
+      match kind with
+      | .copyOf ref mods =>
+        let cands := g.resolveCopyTokenCandidates ref mods 0 effectiveCopyCtx (controller := controller)
+        let ids := cands.filterMap Prod.fst
+        if cands.size > 1 && ids.size > 1 then some (ids, mods) else none
+      | _ => none
+    match tiedCopyIds? with
+    | some (ids, mods) =>
+      let g := g.change (.recentTokenIds #[])
+      if n == 0 then g
+      else
+        g.beginFraChoice controller
+          (.chooseTokenCopyObject ids mods n tapped true none #[] cause sourceId)
+          s!"{(g.player controller).name} chooses an object to copy"
+    | none =>
+    match g.resolveTokenPrinted? kind 0 effectiveCopyCtx (controller := controller) with
     | none =>
       let g := g.change (.recentTokenIds #[])
       if n == 0 then g else g.logMsg "no token is created (CR 111.5 / 111.12)"

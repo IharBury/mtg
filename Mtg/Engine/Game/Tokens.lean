@@ -1,4 +1,5 @@
 import Mtg.Engine.Game.Allocation
+import Mtg.Engine.Game.EvalExpr
 
 /-!
 # Tokens (CR 111)
@@ -974,8 +975,36 @@ def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
   | .onLandYouControlEntersPutPlusOne _ =>
     { c with triggeredAbilities := c.triggeredAbilities.push .onLandYouControlEntersPlusOnePlusOne }
 
-/-- Realize a `CustomTokenSpec` into its printed `CardDef` (CR 111.3 / 111.4 / 111.11). -/
-def customTokenPrinted (s : CustomTokenSpec) (x : Nat := 0) : CardDef :=
+/-- Realize a context-independent `CustomTokenSpec` into its printed `CardDef`
+(CR 111.3 / 111.4 / 111.11). Returns `none` when `power?` or `toughness?` requires
+live game state (use `Game.resolveTokenPrinted?` in that case). -/
+def customTokenPrinted? (s : CustomTokenSpec) (x : Nat := 0) : Option CardDef :=
+  let evalOpt : Option ValueExpr → Option (Option Int)
+    | none => some none
+    | some v => (v.evalConst? x).map some
+  match evalOpt s.power?, evalOpt s.toughness? with
+  | some pw, some tg =>
+    let defaultName :=
+      if s.subtypes == #[.sculpture, .treasure] then "Sculpture"
+      else String.intercalate " " (s.subtypes.toList.map CardSubtype.englishName)
+    let base : CardDef := {
+      name := s.name?.getD defaultName
+      supertypes := s.supertypes
+      types := s.types
+      subtypes := s.subtypes.map CardSubtype.englishName
+      power := pw
+      toughness := tg
+      loyalty := s.loyalty?
+      colorIndicator := if s.colors.isColorless then none else some s.colors
+      keywords := s.keywords
+      isToken := true
+    }
+    some (s.abilities.foldl applyTokenAbility base)
+  | _, _ => none
+
+/-- Realize a `CustomTokenSpec` into its printed `CardDef` in `(g, env)`
+(CR 111.3 / 111.4 / 111.11), evaluating `ValueExpr` power/toughness dynamically. -/
+def resolveCustomTokenPrinted (g : Game) (env : EvalEnv) (s : CustomTokenSpec) : CardDef :=
   let defaultName :=
     if s.subtypes == #[.sculpture, .treasure] then "Sculpture"
     else String.intercalate " " (s.subtypes.toList.map CardSubtype.englishName)
@@ -984,8 +1013,8 @@ def customTokenPrinted (s : CustomTokenSpec) (x : Nat := 0) : CardDef :=
     supertypes := s.supertypes
     types := s.types
     subtypes := s.subtypes.map CardSubtype.englishName
-    power := s.power?.map (·.eval x)
-    toughness := s.toughness?.map (·.eval x)
+    power := s.power?.map (EvalExpr.evalValue g env)
+    toughness := s.toughness?.map (EvalExpr.evalValue g env)
     loyalty := s.loyalty?
     colorIndicator := if s.colors.isColorless then none else some s.colors
     keywords := s.keywords
@@ -1046,59 +1075,108 @@ def copyTokenContextOf (g : Game) (sourceId : Option ObjectId := none)
   { sourceId, targetId, triggerSubjectId := subjId }
 
 /-- Printed characteristics for a context-independent `TokenSpec` (CR 111).
-Returns `none` for `.copyOf`, which requires game state via `Game.resolveTokenPrinted?`. -/
+Returns `none` for `.copyOf` or dynamic `ValueExpr` P/T specs requiring game state
+via `Game.resolveTokenPrinted?`. -/
 def tokenPrinted? (spec : TokenSpec) (x : Nat := 0) : Option CardDef :=
   match spec with
   | .predefined p => some (predefinedTokenPrinted p)
   | .custom s =>
-    let printed := customTokenPrinted s x
-    if printed.isInstantOrSorcery then none else some printed
+    match customTokenPrinted? s x with
+    | some printed => if printed.isInstantOrSorcery then none else some printed
+    | none => none
   | .copyOf _ _ => none
 
-/-- Resolve any `TokenSpec` into its printed `CardDef` in game state `g`
-(CR 111 / 111.5 / 304.4 / 307.4 / 707.2 / 707.9 / 111.12). For `.copyOf`, copies
-the referenced object's copiable values plus `mods`, returning `none` when the
-referenced object does not exist (CR 111.12), when the copied object is an
-instant or sorcery (CR 111.5), or when the resulting token's characteristics
-include instant or sorcery (CR 111.5 / 304.4 / 307.4). -/
+/-- Apply CR 111.5 / 304.4 / 307.4 instant/sorcery filtering and CR 707.9
+`CopyModification`s to copied characteristics `cv`. -/
+private def finalizeCopyTokenPrinted (cv : CardDef) (mods : Array CopyModification) :
+    Option CardDef :=
+  -- CR 111.5: no token is created if the effect would create a token that is a
+  -- copy of an instant or sorcery card, or a token with instant/sorcery types
+  -- (CR 304.4 / 307.4).
+  if cv.isInstantOrSorcery then none
+  else
+    let copied : CardDef := { cv with isToken := true }
+    let modified := mods.foldl applyCopyModification copied
+    if modified.isInstantOrSorcery then none
+    else some modified
+
+/-- Resolve a specific chosen `ObjectId` into its copy-token printed `CardDef`,
+honoring CR 111.5 / 304.4 / 307.4 / 111.12 / 707.9d. -/
+def resolveCopyTokenForObject? (g : Game) (oid : ObjectId)
+    (mods : Array CopyModification := #[]) : Option CardDef :=
+  let cv? : Option CardDef :=
+    match g.findObject? oid with
+    | some src => some (g.copiableValues src)
+    | none => (g.lastKnownBefore? oid).map (fun eo => eo.copiable.getD eo.toCardDef)
+  cv?.bind (finalizeCopyTokenPrinted · mods)
+
+/-- Evaluate every legal copy candidate for `TokenSpec.copyOf ref mods` in
+game state `g`, applying CR 111.5 / 304.4 / 307.4 instant/sorcery filtering and
+CR 111.12 LKI fallback per candidate. Returns `(ObjectId?, CardDef)` pairs so
+callers create directly when unique and prompt `controller` to choose when
+multiple objects tie (e.g. tied `ObjectExpr.extremum`). -/
+def resolveCopyTokenCandidates (g : Game) (ref : ObjectExpr)
+    (mods : Array CopyModification := #[]) (x : Nat := 0)
+    (copyCtx : CopyTokenContext := {}) (controller : PlayerId := ⟨0⟩) :
+    Array (Option ObjectId × CardDef) :=
+  let effectiveSubjId :=
+    copyCtx.triggerSubjectId.orElse (fun _ =>
+      (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId))
+  let effectiveCopyCtx : CopyTokenContext := { copyCtx with triggerSubjectId := effectiveSubjId }
+  let env : EvalEnv := EvalEnv.ofCopyTokenContext controller x effectiveCopyCtx
+  let singleWithLki (oid? : Option ObjectId) (preferBfOrStack : Bool) :
+      Array (Option ObjectId × CardDef) :=
+    let cv? : Option CardDef :=
+      match oid?.bind g.findObject? with
+      | some src =>
+        if !preferBfOrStack || src.isOnBattlefield || src.zone == .stack then
+          some (g.copiableValues src)
+        else
+          (oid?.bind g.lastKnownBefore?).map (fun eo => eo.copiable.getD eo.toCardDef)
+            |>.orElse (fun _ => some (g.copiableValues src))
+      | none =>
+        (oid?.bind g.lastKnownBefore?).map (fun eo => eo.copiable.getD eo.toCardDef)
+    match cv?.bind (finalizeCopyTokenPrinted · mods) with
+    | some c => #[(oid?, c)]
+    | none => #[]
+  match ref with
+  | .this => singleWithLki env.sourceId true
+  | .triggerSubject => singleWithLki env.triggerSubjectId true
+  | .target slot =>
+    let oids := (env.targetSlots[slot]?.getD #[]).filterMap fun
+      | .permanent id | .card id => some id
+      | .player _ => none
+    oids.foldl (fun acc oid => acc ++ singleWithLki (some oid) false) #[]
+  | other =>
+    (EvalExpr.evalObjects g env other).filterMap fun view =>
+      let cv :=
+        match view with
+        | .live src => g.copiableValues src
+        | .lki eo => eo.copiable.getD eo.toCardDef
+      (finalizeCopyTokenPrinted cv mods).map (view.id?, ·)
+
+/-- Resolve any unambiguous `TokenSpec` into its printed `CardDef` in game state `g`
+(CR 111 / 111.5 / 304.4 / 307.4 / 707.2 / 707.9 / 111.12). Evaluates dynamic
+`ValueExpr` P/T on `.custom` tokens and `ObjectExpr` source references on `.copyOf`,
+returning `none` when no referenced object exists (CR 111.12), when multiple
+objects tie and require a player choice (use `resolveCopyTokenCandidates`), when
+the copied object is an instant or sorcery (CR 111.5), or when the resulting
+token's characteristics include instant or sorcery (CR 111.5 / 304.4 / 307.4). -/
 def resolveTokenPrinted? (g : Game) (spec : TokenSpec) (x : Nat := 0)
-    (copyCtx : CopyTokenContext := {}) : Option CardDef :=
+    (copyCtx : CopyTokenContext := {}) (controller : PlayerId := ⟨0⟩) : Option CardDef :=
+  let effectiveSubjId :=
+    copyCtx.triggerSubjectId.orElse (fun _ =>
+      (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId))
+  let effectiveCopyCtx : CopyTokenContext := { copyCtx with triggerSubjectId := effectiveSubjId }
+  let env : EvalEnv := EvalEnv.ofCopyTokenContext controller x effectiveCopyCtx
   match spec with
   | .predefined p => some (predefinedTokenPrinted p)
   | .custom s =>
-    let printed := customTokenPrinted s x
+    let printed := resolveCustomTokenPrinted g env s
     if printed.isInstantOrSorcery then none else some printed
   | .copyOf ref mods =>
-    let oid? :=
-      match ref with
-      | .source => copyCtx.sourceId
-      | .target => copyCtx.targetId
-      | .triggerSubject =>
-        copyCtx.triggerSubjectId.orElse (fun _ =>
-          (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId))
-    let base? : Option CardDef :=
-      match oid?.bind g.findObject? with
-      | some src =>
-        if src.isOnBattlefield || src.zone == .stack then
-          some (g.copiableValues src)
-        else
-          match ref with
-          | .target => some (g.copiableValues src)
-          | .source | .triggerSubject =>
-            (oid?.bind g.lastKnownBefore?).map (fun eo => eo.copiable.getD eo.toCardDef)
-              |>.orElse (fun _ => some (g.copiableValues src))
-      | none =>
-        (oid?.bind g.lastKnownBefore?).map (fun eo => eo.copiable.getD eo.toCardDef)
-    base?.bind fun cv =>
-      -- CR 111.5: no token is created if the effect would create a token that is a
-      -- copy of an instant or sorcery card, or a token with instant/sorcery types
-      -- (CR 304.4 / 307.4).
-      if cv.isInstantOrSorcery then none
-      else
-        let copied : CardDef := { cv with isToken := true }
-        let modified := mods.foldl applyCopyModification copied
-        if modified.isInstantOrSorcery then none
-        else some modified
+    let cands := g.resolveCopyTokenCandidates ref mods x effectiveCopyCtx (controller := controller)
+    if cands.size == 1 then some cands[0]!.2 else none
 
 /-- Reverse lookup of a `TokenSpec` matching `c` (ignoring `isToken`), if any. -/
 def tokenSpecOfCardDef? (c : CardDef) : Option TokenSpec :=
@@ -1191,7 +1269,10 @@ def logCreatedTokensSummary (g : Game) (controller : PlayerId) (startEventIdx : 
         s!"{String.intercalate ", " pre}, and {phrases[k - 1]!}"
     g.logMsg s!"{(g.player controller).name} creates {joined}"
 
-/-- Create `n` tokens specified by `kind` (CR 111 / 707.9 / 111.12). -/
+/-- Create `n` tokens specified by `kind` (CR 111 / 707.9 / 111.12). When
+`kind` is `.copyOf` and multiple candidate objects tie (e.g. tied
+`ObjectExpr.extremum`), pauses on `FraChoice.chooseTokenCopyObject` so
+`controller` chooses which object to copy. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenSpec)
     (n : Nat) (tapped := false) (attacking := false)
     (attackingTarget : Option AttackTarget := none)
@@ -1211,15 +1292,41 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenSpec)
     let g := if resetRecent then g.change (.recentTokenIds #[]) else g
     if n == 0 then g
     else
-      match g.resolveTokenPrinted? kind 0 copyCtx with
-      | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
-      | some printed =>
-        let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
-        let isAttacking := resolvedTarget.isSome
-        (g.createToken controller printed (tapped := tapped)
-          (attacking := isAttacking)
-          (attackingTarget := resolvedTarget) (recordRecent := true) (cause := cause)
-          (count := n)).1
+      match kind with
+      | .copyOf ref mods =>
+        let cands := g.resolveCopyTokenCandidates ref mods 0 copyCtx (controller := controller)
+        if cands.isEmpty then
+          g.logMsg "no token is created (CR 111.5 / 111.12)"
+        else if cands.size > 1 then
+          let ids := cands.filterMap Prod.fst
+          if ids.size > 1 then
+            g.beginFraChoice controller
+              (.chooseTokenCopyObject ids mods n tapped attacking attackingTarget #[] cause)
+              s!"{(g.player controller).name} chooses an object to copy"
+          else
+            let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
+            let isAttacking := resolvedTarget.isSome
+            (g.createToken controller cands[0]!.2 (tapped := tapped)
+              (attacking := isAttacking)
+              (attackingTarget := resolvedTarget) (recordRecent := true) (cause := cause)
+              (count := n)).1
+        else
+          let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
+          let isAttacking := resolvedTarget.isSome
+          (g.createToken controller cands[0]!.2 (tapped := tapped)
+            (attacking := isAttacking)
+            (attackingTarget := resolvedTarget) (recordRecent := true) (cause := cause)
+            (count := n)).1
+      | _ =>
+        match g.resolveTokenPrinted? kind 0 copyCtx (controller := controller) with
+        | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
+        | some printed =>
+          let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
+          let isAttacking := resolvedTarget.isSome
+          (g.createToken controller printed (tapped := tapped)
+            (attacking := isAttacking)
+            (attackingTarget := resolvedTarget) (recordRecent := true) (cause := cause)
+            (count := n)).1
 
 end Game
 end Mtg.Engine

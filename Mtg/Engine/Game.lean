@@ -5,6 +5,7 @@ import Mtg.Engine.Game.Pending
 import Mtg.Engine.Game.Player
 import Mtg.Engine.Game.Core
 import Mtg.Engine.Game.Designations
+import Mtg.Engine.Game.EvalExpr
 import Mtg.Engine.Game.Phasing
 import Mtg.Engine.Game.BasePT
 import Mtg.Engine.Game.Allocation

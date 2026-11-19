@@ -1264,8 +1264,8 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let customInstSpec : TokenSpec := .custom {
     name? := some "Illegal Instant Token"
     types := #[.instant, .creature]
-    power? := some (.fixed 1)
-    toughness? := some (.fixed 1)
+    power? := some (.const 1)
+    toughness? := some (.const 1)
   }
   let gCustomInstNone := g0.createKindTokens p0 customInstSpec 1
   let copyInstantSorceryOk :=

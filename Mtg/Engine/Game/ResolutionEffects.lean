@@ -985,7 +985,7 @@ def commitEnteringAttackItems (g : Game)
             let initialBatches : Array ProposedTokenBatch := chosen.filterMap fun (item, atkTgt) =>
               match item with
               | .token ctrl kind tapped _ _ =>
-                (g.resolveTokenPrinted? kind).map fun printed => {
+                (g.resolveTokenPrinted? kind (controller := ctrl)).map fun printed => {
                   controller := ctrl
                   printed
                   count := 1

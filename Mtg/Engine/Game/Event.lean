@@ -256,12 +256,6 @@ def ReplacementOrPrevention.toCandidate : ReplacementOrPrevention → Replacemen
   | .replacement s => { id := s.id, spec := .replacement s, affectedPlayer := s.affectedPlayer, tier := s.tier }
   | .prevention s => { id := s.id, spec := .prevention s, affectedPlayer := s.affectedPlayer, tier := .other }
 
-/-- Step or phase anchor for `EffectDuration` (CR 500.4 / 500.5). -/
-inductive StepOrPhase where
-  | step (s : Step)
-  | phase (p : Phase)
-deriving DecidableEq, Repr, Inhabited, BEq
-
 /-- Duration of a continuous effect (CR 611.2a–b / 514.2). -/
 inductive EffectDuration where
   /-- Ends in the cleanup step of the current turn (CR 514.2 / 703.4p). -/

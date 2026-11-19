@@ -2351,6 +2351,38 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
             if live != copies then
               (g, .fraChoice q (.newTargetsForCopies live))
             else (g, pending)
+    | .chooseTokenCopyObject ids mods count tapped attacking attackingTarget extraCounters cause sourceId =>
+      if q == p then
+        let g := g.changes (#[.chooseModesRest none] ++ clearProp)
+        let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
+        (g, .none)
+      else
+        let liveIds := ids.filter fun oid =>
+          (g.findObject? oid).isSome || (g.lastKnownBefore? oid).isSome
+        if liveIds.isEmpty then
+          (clearPending g, .none)
+        else if liveIds.size == 1 then
+          if attacking && attackingTarget.isNone then
+            let g := g.withOuterContStashed fun g =>
+              (clearPending g).chainPendingReplacement
+                (.createAndMarkTokensAttacking q (.copyOf (.target 0) mods) count tapped true
+                  sourceId cause { targetId := some liveIds[0]! })
+            (g, .none)
+          else
+            let g := g.withOuterContStashed fun g =>
+              let g := clearPending g
+              match g.resolveCopyTokenForObject? liveIds[0]! mods with
+              | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
+              | some printed =>
+                let resolvedTarget := g.resolveEnteringAttackTarget? q attacking attackingTarget
+                let isAttacking := resolvedTarget.isSome
+                (g.createToken q printed (tapped := tapped) (attacking := isAttacking)
+                  (attackingTarget := resolvedTarget) (extraCounters := extraCounters)
+                  (recordRecent := true) (cause := cause) (count := count)).1
+            (g, g.pending)
+        else if liveIds != ids then
+          (g, .fraChoice q (.chooseTokenCopyObject liveIds mods count tapped attacking attackingTarget extraCounters cause sourceId))
+        else (g, pending)
     | .sacrificeLeastPower ids =>
       if q == p then
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)
