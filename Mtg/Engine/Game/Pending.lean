@@ -571,6 +571,16 @@ inductive FraChoice where
       (remaining : Array EnteringAttackItem)
       (chosen : Array (EnteringAttackItem × Option AttackTarget))
       (cause : Option EventCause := none)
+  /-- Choose which of the tied candidate objects (`ids`) to copy when creating
+  `count` copy tokens (CR 707.2 / 707.9; e.g. tied `ObjectExpr.extremum`). -/
+  | chooseTokenCopyObject
+      (ids : Array ObjectId)
+      (mods : Array CopyModification)
+      (count : Nat)
+      (tapped attacking : Bool)
+      (attackingTarget : Option AttackTarget := none)
+      (extraCounters : CounterBag := #[])
+      (cause : Option EventCause := none)
 deriving Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

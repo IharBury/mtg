@@ -491,6 +491,16 @@ instance : HasTextChange CastContextPred where
       | .manaSpentMatches mp obj => .manaSpentMatches (HasTextChange.applyTextChanges tcs mp) obj
       | other => other
 
+/-- Object category tested by `ObjectPred.isKind` (CR 108.2 / 110.4a / 111.6 / 112.1). -/
+inductive ObjectCategory where
+  /-- Represented by a card (not a token, stack ability, emblem, or non-card copy; CR 108.2 / 111.6). -/
+  | card
+  /-- A card with at least one permanent card type (CR 110.4a / 111.6). -/
+  | permanentCard
+  /-- A spell on the stack (card or copy of a card on the stack, never an ability; CR 112.1). -/
+  | spell
+deriving DecidableEq, Repr, Inhabited, BEq
+
 mutual
 
 /-- Player relation paired with a player predicate (CR 102 / 810). -/
@@ -580,7 +590,7 @@ inductive ObjectPred where
   | isFaceDown (v : Bool := true)
   | isCopy (v : Bool := true)
   | isCommander
-  | isPermanentCard
+  | isKind (kind : ObjectCategory)
   | tapped (v : Bool := true)
   | phasedOut (v : Bool := true)
   | combatRole (role : CombatRolePred)
@@ -779,6 +789,15 @@ namespace ObjectPred
 /-- Tautology predicate matching any object. -/
 def anyObject : ObjectPred := .all #[]
 
+/-- Represented by a card (not a token, stack ability, emblem, or non-card copy; CR 108.2 / 111.6). -/
+def isCard : ObjectPred := .isKind .card
+
+/-- A card with at least one permanent card type (CR 110.4a / 111.6). -/
+def isPermanentCard : ObjectPred := .isKind .permanentCard
+
+/-- A spell on the stack (never an ability; CR 112.1). -/
+def isSpell : ObjectPred := .isKind .spell
+
 /-- Historic: artifact, legendary, or Saga (CR 700.6). -/
 def historic : ObjectPred :=
   .any #[.hasType .artifact, .hasSupertype .legendary, .hasSubtype (.literal .saga)]
@@ -951,7 +970,7 @@ private partial def applyTcObjectPred (tcs : Array TextChange) : ObjectPred → 
   | .isFaceDown v => .isFaceDown v
   | .isCopy v => .isCopy v
   | .isCommander => .isCommander
-  | .isPermanentCard => .isPermanentCard
+  | .isKind k => .isKind k
   | .tapped v => .tapped v
   | .phasedOut v => .phasedOut v
   | .combatRole r => .combatRole (applyTcCombatRolePred tcs r)
@@ -1274,6 +1293,10 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
     | single => [single]
   let isBf := zones.zones == #[.battlefield]
   let isStack := zones.zones == #[.stack]
+  let hasCard := atoms.any (· == .isKind .card)
+  let hasPermCard := atoms.any (· == .isKind .permanentCard)
+  let hasSpell := atoms.any (· == .isKind .spell)
+  let typeIsHead := !hasCard && !hasPermCard && !hasSpell && isBf
   let mut preMods : List String := []
   let mut colorMods : List String := []
   let mut superMods : List String := []
@@ -1283,7 +1306,6 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
   let mut withClauses : List String := []
   let mut withoutClauses : List String := []
   let mut thatClauses : List String := []
-  let mut hasPermCard := false
   for a in atoms do
     match a with
     | .otherThan .this =>
@@ -1325,15 +1347,15 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
     | .hasSubtype .chosenOnSource => thatClauses := thatClauses ++ ["of the chosen type"]
     | .not (.hasSubtype (.literal s)) => subtypeMods := subtypeMods ++ [s!"non-{s.englishName}"]
     | .hasType t =>
-      typeWords := typeWords ++ [if ctx.plural then t.pluralName else t.oracleWord]
+      typeWords := typeWords ++ [if ctx.plural && typeIsHead then t.pluralName else t.oracleWord]
     | .not (.hasType t) => preMods := preMods ++ [s!"non{t.oracleWord}"]
-    | .isPermanentCard => hasPermCard := true
+    | .isKind _ => pure ()
     | .any ps =>
       if a == ObjectPred.historic then
         superMods := superMods ++ ["historic"]
       else if ps.all (fun | .hasType _ => true | _ => false) then
         let ws := ps.toList.filterMap (fun
-          | .hasType t => some (if ctx.plural then t.pluralName else t.oracleWord)
+          | .hasType t => some (if ctx.plural && typeIsHead then t.pluralName else t.oracleWord)
           | _ => none)
         typeWords := typeWords ++ [orJoin ws]
       else if ps.all (fun | .hasColor (.literal _) => true | _ => false) then
@@ -1429,12 +1451,16 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
       thatClauses := thatClauses ++ [s!"that isn't {printObjectPredParts ctx inner zones}"]
     | .all _ => pure ()
   let headNoun : List String :=
-    if !typeWords.isEmpty then
-      if isStack then typeWords ++ [if ctx.plural then "spells" else "spell"]
-      else if !isBf && !hasPermCard then typeWords ++ [if ctx.plural then "cards" else "card"]
-      else typeWords
+    if hasSpell then
+      typeWords ++ [if ctx.plural then "spells" else "spell"]
     else if hasPermCard then
-      [if ctx.plural then "permanent cards" else "permanent card"]
+      typeWords ++ [if ctx.plural then "permanent cards" else "permanent card"]
+    else if hasCard then
+      typeWords ++ [if ctx.plural then "cards" else "card"]
+    else if !typeWords.isEmpty then
+      if isStack then typeWords ++ [if ctx.plural then "spells" else "spell"]
+      else if !isBf then typeWords ++ [if ctx.plural then "cards" else "card"]
+      else typeWords
     else if !subtypeMods.isEmpty then
       if isStack then [if ctx.plural then "spells" else "spell"]
       else if !isBf then [if ctx.plural then "cards" else "card"]

@@ -43,6 +43,7 @@ open Mtg.Engine.Tests
     np.filter.pred == .all #[
       .tapped false,
       .any #[.hasType .artifact, .hasType .enchantment],
+      .isKind .card,
       .stat .manaValue .le (.const 3)
     ]
   | none => false
@@ -79,6 +80,7 @@ open Mtg.Engine.Tests
     np.filter.pred == .all #[
       .colorCount .ge 2,
       .not (.hasType .land),
+      .isKind .spell,
       .statParity .manaValue .odd
     ]
   | none => false
@@ -96,7 +98,7 @@ open Mtg.Engine.Tests
   match parseNounPhrase "a permanent card in an opponent's graveyard that was cast from exile" with
   | some np =>
     np.filter.zones == .opponentGraveyard &&
-    np.filter.pred == .all #[.isPermanentCard, .castFrom .exile]
+    np.filter.pred == .all #[.isKind .permanentCard, .castFrom .exile]
   | none => false
 
 #guard
@@ -142,10 +144,15 @@ open Mtg.Engine.Tests
       pred := .all #[.otherThan .this, .tapped false, .isToken false, .hasColor (.literal .white),
         .hasSupertype .legendary, .hasSubtype (.literal .human), .hasType .creature,
         .controlledBy .you, .hasKeyword .firstStrike, .stat .power .ge (.const 3)] },
+    { zones := .battlefield
+      pred := .all #[.hasType .creature, .isKind .card, .controlledBy .you] },
+    { zones := .battlefield
+      pred := .all #[.isKind .permanentCard, .controlledBy .you] },
     { zones := .yourGraveyard
-      pred := .all #[.any #[.hasType .instant, .hasType .sorcery], .stat .manaValue .le (.const 2)] },
+      pred := .all #[.any #[.hasType .instant, .hasType .sorcery], .isKind .card,
+        .stat .manaValue .le (.const 2)] },
     { zones := .stack
-      pred := .all #[.not (.hasType .creature), .statParity .manaValue .even] },
+      pred := .all #[.not (.hasType .creature), .isKind .spell, .statParity .manaValue .even] },
     { zones := .battlefield
       pred := .all #[.hasType .creature, .controlledBy .opponent,
         .counterCount (some .stun) .ge (.const 1), .attackedThisTurn] }
@@ -173,7 +180,7 @@ open Mtg.Engine.Tests
 #guard parseValueExpr "the number of basic land types among lands you control" ==
   some (.basicLandTypeCount ObjectExpr.landsYouControl)
 #guard parseValueExpr "the number of card types among cards in your graveyard" ==
-  some (.cardTypeCount (.inZones .yourGraveyard .anyObject))
+  some (.cardTypeCount (.inZones .yourGraveyard .isCard))
 #guard parseValueExpr "the number of planeswalker types among planeswalkers you control" ==
   some (.subtypeCount .planeswalker (.inZones .battlefield (.all #[.hasType .planeswalker, .controlledBy .you])))
 #guard parseValueExpr "your devotion to blue" ==
@@ -191,11 +198,11 @@ open Mtg.Engine.Tests
     .counterCount none (.target 0),
     .aggregate .count .one ObjectExpr.creaturesYouControl,
     .aggregate .sum (.stat .power) ObjectExpr.creaturesYouControl,
-    .aggregate .max (.stat .manaValue) (.inZones .yourGraveyard .anyObject),
+    .aggregate .max (.stat .manaValue) (.inZones .yourGraveyard .isCard),
     .aggregate .min (.stat .toughness) ObjectExpr.creaturesYouControl,
     .aggregate .countDistinct (.stat .power) ObjectExpr.creaturesYouControl,
     .basicLandTypeCount ObjectExpr.landsYouControl,
-    .cardTypeCount (.inZones .yourGraveyard .anyObject),
+    .cardTypeCount (.inZones .yourGraveyard .isCard),
     .subtypeCount .planeswalker (.inZones .battlefield (.all #[.hasType .planeswalker, .controlledBy .you])),
     .playerMetric .life .you,
     .playerMetric .handSize .you,
@@ -474,13 +481,15 @@ private def testSwamp : CardDef := {
   let (gAfterDie, _) := g16.move elfId (.graveyard p0) none (verb := some .destroy) (cause := some (.gameRule .leavingZone))
   let envLki : EvalEnv := { env with triggerSubjectId := some elfId }
   let envSnap : EvalEnv := { env with lookBackState? := some g16 }
-  -- Explicit frozen snapshot overrides even a live object's current characteristics (CR 113.7a / 608.2h)
+  -- Explicit frozen snapshot is used ONLY after the object leaves its zone (CR 113.7a / 608.2h)
   let dragonLkiSnap : EventObject := {
     (g16.snapshot (g16.findObject? dragonId).get!) with power := some 9
   }
   let envExplicitSnap : EvalEnv := {
     env with triggerSubjectId := some dragonId, triggerSubjectSnapshot := some dragonLkiSnap
   }
+  let (gAfterDragonDies, _) :=
+    g16.move dragonId (.graveyard p0) none (verb := some .destroy) (cause := some (.gameRule .leavingZone))
   -- Owner-scoped shared zone query (cards you own in exile vs opponent's)
   let gWithExile := insertObject (insertObject g16 lightningBolt p0 .exile) grizzlyBears p1 .exile
   let yourExile : ObjectExpr :=
@@ -495,8 +504,10 @@ private def testSwamp : CardDef := {
     -- Look-back snapshot sees pre-death board count (2 creatures) while post-death board has 1
     EvalExpr.evalValue gAfterDie env (.aggregate .count .one ObjectExpr.creaturesYouControl) == 1 &&
     EvalExpr.evalValue gAfterDie envSnap (.aggregate .count .one ObjectExpr.creaturesYouControl) == 2 &&
-    -- Explicit frozen snapshot takes precedence over live power (9 vs 5)
-    EvalExpr.evalValue g16 envExplicitSnap (.objectStat .power .triggerSubject) == 9 &&
+    -- While Dragon is still live on the battlefield, read live Layer 1–7d power (5);
+    -- only after Dragon leaves its zone does the explicit LKI snapshot (9) apply (CR 113.7a / 608.2h).
+    EvalExpr.evalValue g16 envExplicitSnap (.objectStat .power .triggerSubject) == 5 &&
+    EvalExpr.evalValue gAfterDragonDies envExplicitSnap (.objectStat .power .triggerSubject) == 9 &&
     -- Owner-scoped exile sees only p0's exiled card
     (EvalExpr.evalObjects gWithExile env yourExile).size == 1
 
@@ -543,5 +554,163 @@ private def testSwamp : CardDef := {
     g16.evalManaSpec env reflectingPoolMana == .colorAmong #[.colored .red, .colored .green]
 
   playerOk && predOk && valOk && condDurOk && lkiOk && tokenOk && manaSpecOk
+
+/-! ### 3. Regression Tests for CR Edge Cases (208.3, 112.1, 108.2/111.6, 506.5, 509.1h, 707.2 Ties) -/
+
+private def testVehicle : CardDef := {
+  name := "Test Skyship"
+  manaCost := ManaCost.ofGeneric 3
+  types := #[.artifact]
+  subtypes := #["Vehicle"]
+  power := some 4
+  toughness := some 4
+}
+
+private def testColossus : CardDef := {
+  name := "Test Colossus"
+  manaCost := ManaCost.ofGenericAndColors 4 [.green]
+  types := #[.creature]
+  subtypes := #["Giant"]
+  power := some 5
+  toughness := some 5
+}
+
+-- CR 208.3: uncrewed Vehicle has NO power or toughness (both live and LKI), even with printed 4/4.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let g0 := afterDraw
+  let g1 := addPermanent g0 testVehicle p0 p0
+  let vehId := (lastPermanent g1).id
+  let vehLiveView := (EvalExpr.resolveObjectView? g1 { controller := p0 } vehId).get!
+  let vehSnap : EventObject := g1.snapshot (g1.findObject? vehId).get!
+  let g2 := insertObject g1 elf22 p0 (.graveyard p0)
+  let gyElfId := (g2.player p0).graveyard.back!
+  let gyElfView := (EvalExpr.resolveObjectView? g2 { controller := p0 } gyElfId).get!
+  let env : EvalEnv := { controller := p0 }
+  -- Live uncrewed Vehicle has no power/toughness (CR 208.3)
+  (EvalExpr.viewStat? g1 vehLiveView .power).isNone &&
+  (EvalExpr.viewStat? g1 vehLiveView .toughness).isNone &&
+  !EvalExpr.evalObjectPred g1 env vehLiveView (.stat .power .ge (.const 1)) &&
+  !EvalExpr.evalObjectPred g1 env vehLiveView (.stat .power .le (.const 10)) &&
+  !EvalExpr.evalObjectPred g1 env vehLiveView (.statParity .power .even) &&
+  -- LKI snapshot of uncrewed Vehicle also has no power/toughness even if `eo.power` was populated
+  (EvalExpr.viewStat? g1 (.lki { vehSnap with power := some 4, toughness := some 4 }) .power).isNone &&
+  (EvalExpr.viewStat? g1 (.lki { vehSnap with power := some 4, toughness := some 4 }) .toughness).isNone &&
+  !EvalExpr.evalObjectPred g1 env (.lki { vehSnap with power := some 4 }) (.stat .power .eq (.const 4)) &&
+  -- Creature card in graveyard DOES have printed power/toughness
+  EvalExpr.viewStat? g2 gyElfView .power == some 2 &&
+  EvalExpr.viewStat? g2 gyElfView .toughness == some 2
+
+-- CR 112.1 ("spell" excludes stack abilities) & CR 108.2 / 111.6 ("card"/"permanent card" excludes tokens).
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let g0 := afterDraw
+  let g1 := addPermanent g0 elf22 p0 p0
+  let elfObj := lastPermanent g1
+  let g2 := g1.createKindTokens p0 .bear 1
+  let tokId := (lastPermanent g2).id
+  -- Put a real instant spell AND a stack ability onto the stack.
+  let g3 := insertObject g2 lightningBolt p0 .stack (controller := some p0)
+  let boltId := (g3.objects.back!).id
+  let g4 := g3.putStackEntry p0 boltId
+  let (g5, abObj) := g4.putStackAbility elfObj p0 (abilityEffect := some (.draw 1))
+  let env : EvalEnv := { controller := p0 }
+  let spellFilter := (parseNounPhrase "target spell").get!.filter
+  let noncreatureSpellFilter := (parseNounPhrase "target noncreature spell").get!.filter
+  let permCardFilter := (parseNounPhrase "permanent card you control").get!.filter
+  let creatureCardsFilter := (parseNounPhrase "creature cards you control").get!.filter
+  let spellsMatched := (EvalExpr.evalObjects g5 env spellFilter.toExpr).filterMap ObjectView.id?
+  let noncreatureMatched := (EvalExpr.evalObjects g5 env noncreatureSpellFilter.toExpr).filterMap ObjectView.id?
+  let permCardsMatched := (EvalExpr.evalObjects g5 env permCardFilter.toExpr).filterMap ObjectView.id?
+  let creatureCardsMatched := (EvalExpr.evalObjects g5 env creatureCardsFilter.toExpr).filterMap ObjectView.id?
+  -- Both "target spell" and "target noncreature spell" match Bolt and REJECT the stack ability
+  spellsMatched == #[boltId] &&
+  !spellsMatched.contains abObj.id &&
+  noncreatureMatched == #[boltId] &&
+  !noncreatureMatched.contains abObj.id &&
+  -- Both "permanent card you control" and "creature cards you control" include Elf and REJECT the Bear token
+  permCardsMatched.contains elfObj.id && !permCardsMatched.contains tokId &&
+  creatureCardsMatched == #[elfObj.id] && !creatureCardsMatched.contains tokId
+
+-- CR 506.5 (LKI `attackingAlone`) & CR 509.1h (LKI `.blocked` / `.unblocked` via `becameBlocked`).
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let g0 := afterDraw
+  -- Case A: Solo attacker declared, marked blocked via `Game.markBlocked`, then dies.
+  let gA1 := addPermanent g0 elf22 p0 p0
+  let soloId := (lastPermanent gA1).id
+  let soloSnap := gA1.snapshot (gA1.findObject? soloId).get!
+  let gA2 := gA1.record (GameEvent.attackersDeclared gA1.turnNumber p0 #[(soloSnap, .player p1)])
+  let gA3 := gA2.markBlocked soloId #[]
+  let (gA4, _) := gA3.move soloId (.graveyard p0) none (verb := some .destroy) (cause := some (.gameRule .leavingZone))
+  let envSolo : EvalEnv := { controller := p0, triggerSubjectId := some soloId }
+  let soloLki := (EvalExpr.resolveObjectView? gA4 envSolo soloId).get!
+  let caseA :=
+    EvalExpr.evalObjectPred gA4 envSolo soloLki (.combatRole .attackingAlone) &&
+    EvalExpr.evalObjectPred gA4 envSolo soloLki (.combatRole .blocked) &&
+    !EvalExpr.evalObjectPred gA4 envSolo soloLki (.combatRole .unblocked)
+
+  -- Case B: Two co-attackers declared; attacker 1 dies while attacker 2 stays on board (unblocked).
+  let gB1 := addPermanent (addPermanent g0 elf22 p0 p0) legendDragon p0 p0
+  let a1Id := (gB1.objects[gB1.objects.size - 2]!).id
+  let a2Id := (gB1.objects[gB1.objects.size - 1]!).id
+  let gB2 := gB1.record (GameEvent.attackersDeclared gB1.turnNumber p0 #[
+    (gB1.snapshot (gB1.findObject? a1Id).get!, .player p1),
+    (gB1.snapshot (gB1.findObject? a2Id).get!, .player p1)
+  ])
+  let (gB3, _) := gB2.move a1Id (.graveyard p0) none (verb := some .destroy) (cause := some (.gameRule .leavingZone))
+  let envB : EvalEnv := { controller := p0, triggerSubjectId := some a1Id }
+  let a1LkiB := (EvalExpr.resolveObjectView? gB3 envB a1Id).get!
+  let caseB :=
+    !EvalExpr.evalObjectPred gB3 envB a1LkiB (.combatRole .attackingAlone) &&
+    !EvalExpr.evalObjectPred gB3 envB a1LkiB (.combatRole .blocked) &&
+    EvalExpr.evalObjectPred gB3 envB a1LkiB (.combatRole .unblocked)
+
+  -- Case C: Both co-attackers die simultaneously in the same batch (0 attackers left on board);
+  -- NEITHER was attacking alone!
+  let gC := gB2.withBatch (some (.gameRule .leavingZone)) fun g =>
+    let (g, _) := g.move a1Id (.graveyard p0) none (verb := some .destroy) (cause := some (.gameRule .leavingZone))
+    let (g, _) := g.move a2Id (.graveyard p0) none (verb := some .destroy) (cause := some (.gameRule .leavingZone))
+    g
+  let a1LkiC := (EvalExpr.resolveObjectView? gC { controller := p0 } a1Id).get!
+  let a2LkiC := (EvalExpr.resolveObjectView? gC { controller := p0 } a2Id).get!
+  let caseC :=
+    !EvalExpr.evalObjectPred gC { controller := p0 } a1LkiC (.combatRole .attackingAlone) &&
+    !EvalExpr.evalObjectPred gC { controller := p0 } a2LkiC (.combatRole .attackingAlone)
+
+  caseA && caseB && caseC
+
+-- CR 707.2 / 707.9: tied `ObjectExpr.extremum` in `TokenSpec.copyOf` prompts controller to choose.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let g0 := afterDraw
+  let g1 := addPermanent g0 legendDragon p0 p0
+  let dragonId := (lastPermanent g1).id
+  let g2 := addPermanent g1 testColossus p0 p0
+  let colossusId := (lastPermanent g2).id
+  let maxPowerCopySpec : TokenSpec :=
+    .copyOf (.extremum .max .power ObjectExpr.creaturesYouControl) #[.removeSupertype .legendary]
+  let cands :=
+    g2.resolveCopyTokenCandidates (.extremum .max .power ObjectExpr.creaturesYouControl)
+      #[.removeSupertype .legendary] (controller := p0)
+  let gPaused := g2.createKindTokens p0 maxPowerCopySpec 1
+  let pausedOk :=
+    match gPaused.pending with
+    | .fraChoice who (.chooseTokenCopyObject ids _ 1 false false none _ _) =>
+      who == p0 && ids == #[dragonId, colossusId]
+    | _ => false
+  -- Choose the SECOND tied creature (`colossusId`), proving the player's choice (not board order) wins.
+  let chosenOk :=
+    match gPaused.answerFraChoice p0 (.objects #[colossusId]) with
+    | .ok gDone =>
+      let tok := lastPermanent gDone
+      gDone.pending == .none &&
+      tok.name == "Test Colossus" && tok.printed.isToken &&
+      gDone.power tok == 5 && gDone.toughness tok == 5
+    | .error _ => false
+  cands.size == 2 &&
+  (g2.resolveTokenPrinted? maxPowerCopySpec (controller := p0)).isNone &&
+  pausedOk && chosenOk
 
 end Mtg.Engine.Tests.EvalExprSuite

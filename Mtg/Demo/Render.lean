@@ -960,6 +960,11 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
               let nm := ((g.findObject? oid).map g.name).getD s!"#{oid.raw}"
               s!"{i} {nm} (#{oid.raw})")
           s!"choose what it enters attacking ({remaining.size} left): {String.intercalate ", " names}"
+        | .chooseTokenCopyObject ids _ count _ _ _ _ _ =>
+          let names := ids.toList.map fun oid =>
+            let nm := ((g.findObject? oid).map g.name).getD s!"#{oid.raw}"
+            s!"{nm} (#{oid.raw})"
+          s!"choose an object to copy ({count} token(s)): choose <id> from {String.intercalate ", " names}"
         | .mayBeginOnBattlefield ids =>
           s!"may begin the game with it on the battlefield ({ids.size} left): accept, or decline"
       s!" [{what} ({g.player p |>.name})]"

@@ -893,7 +893,7 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
            lower (stripTrailingComma toks[idx + 1]!) == "cards") then
         let nextW := lower (stripTrailingComma toks[idx + 1]!)
         if nextW == "cards" then sawPluralHead := true
-        preds := preds.push .isPermanentCard
+        preds := preds.push (.isKind .permanentCard)
         sawCardHead := true
         sawAnyNounOrMod := true
         idx := idx + 2
@@ -903,11 +903,13 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
         idx := idx + 1
       else if tok == "spell" || tok == "spells" then
         if tok == "spells" then sawPluralHead := true
+        preds := preds.push (.isKind .spell)
         sawSpellHead := true
         sawAnyNounOrMod := true
         idx := idx + 1
       else if tok == "card" || tok == "cards" then
         if tok == "cards" then sawPluralHead := true
+        preds := preds.push (.isKind .card)
         sawCardHead := true
         sawAnyNounOrMod := true
         idx := idx + 1

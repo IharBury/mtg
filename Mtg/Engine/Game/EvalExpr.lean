@@ -139,30 +139,22 @@ private def dedupViews (views : Array ObjectView) : Array ObjectView :=
 @[inline] def boardState (g : Game) (env : EvalEnv) : Game :=
   env.lookBackState?.getD g
 
-/-- Resolve an `ObjectId` to a live `GameObject` in `boardState`, honoring
-explicit LKI snapshots in `env` (`sourceSnapshot`, `triggerSubjectSnapshot`,
-`lkiObjects`) when not evaluating against a `lookBackState?` snapshot, and
-falling back to `lastKnownBefore?` if the object left its zone
-(CR 113.7a / 400.7 / 608.2h). -/
+/-- Resolve an `ObjectId` to a live `GameObject` in `boardState`, falling back
+to explicit LKI snapshots in `env` (`sourceSnapshot`, `triggerSubjectSnapshot`,
+`lkiObjects`) or `lastKnownBefore?` only when the object is no longer in
+`boardState` (CR 113.7a / 400.7 / 608.2h). `lookBackState?` selects the
+CR 603.10 pre-event board. -/
 def resolveObjectView? (g : Game) (env : EvalEnv) (oid : ObjectId) : Option ObjectView :=
   let st := boardState g env
-  if env.lookBackState?.isNone then
+  match st.findObject? oid with
+  | some o => some (.live o)
+  | none =>
     match env.lkiOf? oid with
     | some eo => some (.lki eo)
     | none =>
-      match st.findObject? oid with
-      | some o => some (.live o)
-      | none => (g.lastKnownBefore? oid).map ObjectView.lki
-  else
-    match st.findObject? oid with
-    | some o => some (.live o)
-    | none =>
-      match env.lkiOf? oid with
+      match g.lastKnownBefore? oid with
       | some eo => some (.lki eo)
-      | none =>
-        match g.lastKnownBefore? oid with
-        | some eo => some (.lki eo)
-        | none => (st.lastKnownBefore? oid).map ObjectView.lki
+      | none => (st.lastKnownBefore? oid).map ObjectView.lki
 
 /-- Resolve an `ObjectRef` to its `ObjectId?` and/or `ObjectView?`. -/
 def resolveRefViews (g : Game) (env : EvalEnv) (ref : ObjectRef) : Array ObjectView :=
@@ -264,8 +256,35 @@ def viewIsCommander : ObjectView → Bool
   | .live o => o.isCommander
   | .lki eo => eo.isCommander
 
+/-- Whether `v` is an activated, triggered, or delayed-triggered ability on the stack
+(not a spell or card; CR 112.1 / 113.1). -/
+def viewIsStackAbility (st : Game) : ObjectView → Bool
+  | .live o =>
+    o.abilityEffect.isSome || o.triggeredAbility.isSome || o.reflexiveResolution.isSome ||
+      (o.zone == .stack && st.stack.any (fun e => e.objectId == o.id && e.delayedTrigger.isSome))
+  | .lki eo => eo.zone == .stack && eo.types.isEmpty
+
+/-- Whether `v` is represented by a card (not a token, stack ability, emblem, or
+non-card copy; CR 108.2 / 111.6 / 114.4 / 707.10 / 707.12). -/
+def viewIsCard (st : Game) : ObjectView → Bool
+  | .live o =>
+    !o.printed.isToken && !o.isCopy && !viewIsStackAbility st (.live o) &&
+      (o.zone != .command || !(st.types o).isEmpty) && !(st.types o).isEmpty
+  | .lki eo =>
+    !eo.token && !(eo.zone != .battlefield && eo.isCopy) && !eo.types.isEmpty
+
+/-- Whether `v` is a permanent card (a card with at least one permanent card type;
+CR 110.4a / 108.2 / 111.6). Tokens are never permanent cards. -/
 def viewIsPermanentCard (st : Game) (v : ObjectView) : Bool :=
-  (viewTypes st v).any CardType.isPermanentType
+  viewIsCard st v && (viewTypes st v).any CardType.isPermanentType
+
+/-- Whether `v` is a spell on the stack (a card or copy of a card on the stack,
+never an ability; CR 112.1). -/
+def viewIsSpell (st : Game) : ObjectView → Bool
+  | .live o =>
+    o.zone == .stack && !viewIsStackAbility st (.live o) && !(st.types o).isEmpty
+  | .lki eo =>
+    eo.zone == .stack && !eo.types.isEmpty
 
 def viewTapped : ObjectView → Bool
   | .live o => o.status.tapped
@@ -305,15 +324,15 @@ def viewCounterCount (v : ObjectView) (kind? : Option CounterKind) : Nat :=
   | none => bag.foldl (fun acc (_, n) => acc + n) 0
 
 /-- Numeric stat of `v`, returning `none` when `v` does not have that
-characteristic (CR 208.3 / 209.2 / 210.2). -/
+characteristic (CR 208.3 / 209.2 / 210.2). Only creatures have power and
+toughness (CR 208.3), even when a noncreature has a printed P/T box (e.g. an
+uncrewed Vehicle or a permanent that lost the creature type in Layer 4). -/
 def viewStat? (st : Game) (v : ObjectView) (kind : StatKind) : Option Int :=
   match v, kind with
-  | .live o, .power =>
-    if st.isCreature o || (st.baseCard o).power.isSome then some (st.power o) else none
-  | .lki eo, .power => eo.power
-  | .live o, .toughness =>
-    if st.isCreature o || (st.baseCard o).toughness.isSome then some (st.toughness o) else none
-  | .lki eo, .toughness => eo.toughness
+  | .live o, .power => if st.isCreature o then some (st.power o) else none
+  | .lki eo, .power => if eo.hasType .creature then eo.power else none
+  | .live o, .toughness => if st.isCreature o then some (st.toughness o) else none
+  | .lki eo, .toughness => if eo.hasType .creature then eo.toughness else none
   | .live o, .manaValue => some (Int.ofNat (st.objectManaValue o))
   | .lki eo, .manaValue => some (Int.ofNat eo.manaValue)
   | .live o, .loyalty =>
@@ -536,6 +555,122 @@ def evalPlayerMetricSingle (g : Game) (env : EvalEnv) (m : PlayerMetric) (p : Pl
   | .poisonCounters => Int.ofNat pl.poison
   | .opponentsCount => Int.ofNat (st.livingOpponents p).size
 
+/-- Index of the start of the most recent combat phase on `turn` in `events`
+(or `0` when no explicit combat-phase transition was logged on `turn`). -/
+private def combatPhaseStartIdx (events : Array GameEvent) (turn : Nat) : Nat := Id.run do
+  let mut start := 0
+  for i in [0:events.size] do
+    let e := events[i]!
+    if e.turn == turn then
+      match e.change with
+      | .rules (.turn (.phaseBegan .combat))
+      | .rules (.turn (.stepBegan .beginningOfCombat _)) => start := i
+      | _ => pure ()
+  return start
+
+/-- Departure boundary `(batchStartIdx, departEventIdx)` in `events` for when `oid`
+last left the battlefield or was removed from combat during `[startIdx, events.size)`
+on `turn`. Returns `(events.size, events.size)` when `oid` did not depart in that slice. -/
+private def lkiCombatDepartBounds (events : Array GameEvent) (startIdx turn : Nat)
+    (oid : ObjectId) : Nat × Nat := Id.run do
+  let mut departIdx : Option Nat := none
+  let mut departBatch : Option BatchId := none
+  for i in [startIdx:events.size] do
+    let e := events[i]!
+    if e.turn == turn then
+      let left : Bool :=
+        match e.change with
+        | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
+          toZ != .battlefield && before.id == some oid
+        | .rules (.combat (.removedFromCombat eo)) =>
+          eo.id == some oid
+        | _ => false
+      if left then
+        departIdx := some i
+        departBatch := e.batch
+  match departIdx with
+  | none => return (events.size, events.size)
+  | some idx =>
+    match departBatch with
+    | none => return (idx, idx)
+    | some bid =>
+      let mut bStart := idx
+      while bStart > startIdx && events[bStart - 1]!.batch == some bid do
+        bStart := bStart - 1
+      return (bStart, idx)
+
+/-- Whether an LKI attacking creature `eo` was attacking alone when it left combat
+(CR 506.5 / 608.2h): reconstructs the set of attacking creatures controlled by
+`eo.controller` in the current combat phase up to `eo`'s departure batch
+(`attackersDeclared` / `becameAttacking` minus earlier departures/removals). -/
+private def lkiAttackingAlone (st : Game) (events : Array GameEvent) (eo : EventObject) : Bool :=
+  if !eo.attacking then false
+  else
+    let turn := st.turnNumber
+    let startIdx := combatPhaseStartIdx events turn
+    let endIdx :=
+      match eo.id with
+      | some oid => (lkiCombatDepartBounds events startIdx turn oid).1
+      | none => events.size
+    let (attackers, sawSelf) : Array ObjectId × Bool := Id.run do
+      let mut active : Array ObjectId := #[]
+      let mut foundSelf := false
+      for i in [startIdx:endIdx] do
+        let e := events[i]!
+        if e.turn == turn then
+          match e.change with
+          | .rules (.combat (.attackersDeclared p decls)) =>
+            if some p == eo.controller then
+              for (atk, _) in decls do
+                if let some aid := atk.id then
+                  active := pushUnique active aid
+                  if eo.id == some aid then foundSelf := true
+          | .rules (.combat (.becameAttacking atk _)) =>
+            if atk.controller == eo.controller then
+              if let some aid := atk.id then
+                active := pushUnique active aid
+                if eo.id == some aid then foundSelf := true
+          | .rules (.combat (.removedFromCombat obj)) =>
+            if let some rid := obj.id then
+              active := active.filter (· != rid)
+          | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
+            if toZ != .battlefield then
+              if let some lid := before.id then
+                active := active.filter (· != lid)
+          | _ => pure ()
+      return (active, foundSelf)
+    if sawSelf then
+      attackers.size == 1
+    else
+      -- Fallback when no `attackersDeclared`/`becameAttacking` event logged `eo.id`.
+      let liveOthers := st.battlefield.filter fun x =>
+        x.status.attacking && st.controllerOf x == eo.controller && some x.id != eo.id
+      liveOthers.isEmpty && (attackers.filter fun id => some id != eo.id).isEmpty
+
+/-- Whether an LKI attacking creature `eo` became blocked in the current combat
+phase (CR 509.1h / 608.2h), reconstructed from `CombatEvent.becameBlocked`. -/
+private def lkiWasBlocked (st : Game) (events : Array GameEvent) (eo : EventObject) : Bool :=
+  if !eo.attacking then false
+  else
+    match eo.id with
+    | none => false
+    | some oid =>
+      let turn := st.turnNumber
+      let startIdx := combatPhaseStartIdx events turn
+      let endIdx := (lkiCombatDepartBounds events startIdx turn oid).2
+      Id.run do
+        let mut blocked := false
+        for i in [startIdx:endIdx] do
+          let e := events[i]!
+          if e.turn == turn then
+            match e.change with
+            | .rules (.combat (.becameBlocked atk _)) =>
+              if atk.id == some oid then blocked := true
+            | .rules (.combat (.removedFromCombat obj)) =>
+              if obj.id == some oid then blocked := false
+            | _ => pure ()
+        return blocked
+
 /-! ### Core Mutual Evaluators -/
 
 mutual
@@ -665,34 +800,13 @@ private partial def evalCombatRole (g : Game) (env : EvalEnv) (v : ObjectView)
         match eo.attackingTarget with
         | some (.player p) => ps.contains p
         | _ => false
-    | .attackingAlone =>
-      eo.attacking &&
-        (st.battlefield.filter (fun x =>
-          x.status.attacking && st.controllerOf x == eo.controller)).size ≤ 1
+    | .attackingAlone => lkiAttackingAlone st g.events eo
     | .blocking => eo.blocking
     | .blockingObject atkExpr =>
       let atkIds := (evalObjects g env atkExpr).filterMap ObjectView.id?
       eo.blockingIds.any atkIds.contains
-    | .blocked =>
-      eo.attacking &&
-        match eo.id with
-        | some oid =>
-          g.events.any fun e =>
-            e.turn == st.turnNumber &&
-              match e.change with
-              | .rules (.combat (.blockersDeclared _ decls)) => decls.any (·.2 == oid)
-              | _ => false
-        | none => false
-    | .unblocked =>
-      eo.attacking &&
-        match eo.id with
-        | some oid =>
-          !(g.events.any fun e =>
-            e.turn == st.turnNumber &&
-              match e.change with
-              | .rules (.combat (.blockersDeclared _ decls)) => decls.any (·.2 == oid)
-              | _ => false)
-        | none => true
+    | .blocked => eo.attacking && lkiWasBlocked st g.events eo
+    | .unblocked => eo.attacking && !lkiWasBlocked st g.events eo
 
 /-- Evaluate `ObjectPred` on an `ObjectView` (live or LKI). -/
 partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : ObjectPred) : Bool :=
@@ -746,7 +860,9 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
   | .isFaceDown want => viewIsFaceDown v == want
   | .isCopy want => viewIsCopy st v == want
   | .isCommander => viewIsCommander v
-  | .isPermanentCard => viewIsPermanentCard st v
+  | .isKind .card => viewIsCard st v
+  | .isKind .permanentCard => viewIsPermanentCard st v
+  | .isKind .spell => viewIsSpell st v
   | .tapped want => viewTapped v == want
   | .phasedOut want => viewPhasedOut v == want
   | .combatRole role => evalCombatRole g env v role

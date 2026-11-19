@@ -2243,6 +2243,10 @@ private def fraChoiceAnyObjId (fc : FraChoice) (pred : ObjectId → Bool)
       chosen.any (fun (it, atgt) =>
         enteringAttackItemAnyObjId it pred || atgt.any (attackTargetAnyObjId pred)) ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
+  | .chooseTokenCopyObject ids _ _ _ _ atgt _ c =>
+    checkValidObjIds pred ids ||
+      atgt.any (attackTargetAnyObjId pred) ||
+      c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | _ => false
 
 private def pendingAnyObjId (p : Pending) (pred : ObjectId → Bool)

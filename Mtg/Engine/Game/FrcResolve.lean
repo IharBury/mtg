@@ -75,11 +75,29 @@ def makeFrcLoop (g : Game) (p : PlayerId) (k : TokenSpec) (remaining : Nat) (x :
   else if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.makeFrcLoop p k remaining x extraCounters cause copyCtx)
   else
-    match g.resolveTokenPrinted? k x copyCtx (controller := p) with
-    | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
-    | some printed =>
-      (g.createToken p printed (extraCounters := extraCounters)
-        (recordRecent := true) (cause := cause) (count := remaining)).1
+    match k with
+    | .copyOf ref mods =>
+      let cands := g.resolveCopyTokenCandidates ref mods x copyCtx (controller := p)
+      if cands.isEmpty then
+        g.logMsg "no token is created (CR 111.5 / 111.12)"
+      else if cands.size > 1 then
+        let ids := cands.filterMap Prod.fst
+        if ids.size > 1 then
+          g.beginFraChoice p
+            (.chooseTokenCopyObject ids mods remaining false false none extraCounters cause)
+            s!"{(g.player p).name} chooses an object to copy"
+        else
+          (g.createToken p cands[0]!.2 (extraCounters := extraCounters)
+            (recordRecent := true) (cause := cause) (count := remaining)).1
+      else
+        (g.createToken p cands[0]!.2 (extraCounters := extraCounters)
+          (recordRecent := true) (cause := cause) (count := remaining)).1
+    | _ =>
+      match g.resolveTokenPrinted? k x copyCtx (controller := p) with
+      | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
+      | some printed =>
+        (g.createToken p printed (extraCounters := extraCounters)
+          (recordRecent := true) (cause := cause) (count := remaining)).1
 
 private def makeFrc (g : Game) (p : PlayerId) (k : TokenSpec) (n : Nat := 1) (x : Nat := 0)
     (extraCounters : CounterBag := #[]) (cause : Option EventCause := none)
