@@ -581,6 +581,7 @@ inductive FraChoice where
       (attackingTarget : Option AttackTarget := none)
       (extraCounters : CounterBag := #[])
       (cause : Option EventCause := none)
+      (sourceId : Option ObjectId := none)
 deriving Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/

@@ -1913,7 +1913,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | none =>
       let g := g.commitEnteringAttackItems chosen' cause
       return g.finishFraChoice
-  | .chooseTokenCopyObject ids mods count tapped attacking attackingTarget extraCounters cause, ans =>
+  | .chooseTokenCopyObject ids mods count tapped attacking attackingTarget extraCounters cause sourceId, ans =>
     let chosen? : Option ObjectId :=
       match ans with
       | .objects #[oid] => if ids.contains oid then some oid else none
@@ -1922,14 +1922,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some oid := chosen?
       | throw "Choose one of the tied objects to copy"
     let g :=
-      match g.resolveCopyTokenForObject? oid mods with
-      | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
-      | some printed =>
-        let resolvedTarget := g.resolveEnteringAttackTarget? p attacking attackingTarget
-        let isAttacking := resolvedTarget.isSome
-        (g.createToken p printed (tapped := tapped) (attacking := isAttacking)
-          (attackingTarget := resolvedTarget) (extraCounters := extraCounters)
-          (recordRecent := true) (cause := cause) (count := count)).1
+      if attacking && attackingTarget.isNone then
+        g.createAndMarkTokensAttacking p (.copyOf (.target 0) mods) count tapped true
+          (sourceId := sourceId) (cause := cause) (copyCtx := { targetId := some oid })
+      else
+        match g.resolveCopyTokenForObject? oid mods with
+        | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
+        | some printed =>
+          let resolvedTarget := g.resolveEnteringAttackTarget? p attacking attackingTarget
+          let isAttacking := resolvedTarget.isSome
+          (g.createToken p printed (tapped := tapped) (attacking := isAttacking)
+            (attackingTarget := resolvedTarget) (extraCounters := extraCounters)
+            (recordRecent := true) (cause := cause) (count := count)).1
     return g.finishFraChoice
   | .mayBeginOnBattlefield ids, .accept =>
     let wasAwaiting := g.awaitingOpeningBegin

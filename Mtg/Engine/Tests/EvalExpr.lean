@@ -679,11 +679,48 @@ private def testColossus : CardDef := {
     !EvalExpr.evalObjectPred gC { controller := p0 } a1LkiC (.combatRole .attackingAlone) &&
     !EvalExpr.evalObjectPred gC { controller := p0 } a2LkiC (.combatRole .attackingAlone)
 
-  caseA && caseB && caseC
+  -- Case D: Extra combat phase starts later on the same turn — earlier combat's LKI
+  -- `attackingAlone` and `becameBlocked` must remain anchored on the combat phase where
+  -- those creatures departed, while a solo unblocked attacker in combat 2 stays isolated.
+  let gD0 := addPermanent (addPermanent g0 elf22 p0 p0) legendDragon p0 p0
+  let d1Id := (gD0.objects[gD0.objects.size - 2]!).id
+  let d2Id := (gD0.objects[gD0.objects.size - 1]!).id
+  let gD1 := gD0.record (GameEvent.phaseBegan gD0.turnNumber .combat)
+  let gD2 := gD1.record (GameEvent.attackersDeclared gD1.turnNumber p0 #[
+    (gD1.snapshot (gD1.findObject? d1Id).get!, .player p1),
+    (gD1.snapshot (gD1.findObject? d2Id).get!, .player p1)
+  ])
+  let gD3 := gD2.markBlocked d1Id #[]
+  let gD4 := gD3.withBatch (some (.gameRule .leavingZone)) fun g =>
+    let (g, _) := g.move d1Id (.graveyard p0) none (verb := some .destroy) (cause := some (.gameRule .leavingZone))
+    let (g, _) := g.move d2Id (.graveyard p0) none (verb := some .destroy) (cause := some (.gameRule .leavingZone))
+    g
+  -- Start a second combat phase on the same turn with a fresh solo unblocked attacker.
+  let gD5 := addPermanent (gD4.record (GameEvent.phaseBegan gD4.turnNumber .combat)) grizzlyBears p0 p0
+  let d3Id := (lastPermanent gD5).id
+  let gD6 := gD5.record (GameEvent.attackersDeclared gD5.turnNumber p0 #[
+    (gD5.snapshot (gD5.findObject? d3Id).get!, .player p1)
+  ])
+  let (gD7, _) := gD6.move d3Id (.graveyard p0) none (verb := some .destroy) (cause := some (.gameRule .leavingZone))
+  let d1LkiD := (EvalExpr.resolveObjectView? gD7 { controller := p0 } d1Id).get!
+  let d3LkiD := (EvalExpr.resolveObjectView? gD7 { controller := p0 } d3Id).get!
+  let caseD :=
+    -- `d1` from combat 1 was NOT attacking alone and WAS blocked, even after combat 2 started
+    !EvalExpr.evalObjectPred gD7 { controller := p0 } d1LkiD (.combatRole .attackingAlone) &&
+    EvalExpr.evalObjectPred gD7 { controller := p0 } d1LkiD (.combatRole .blocked) &&
+    !EvalExpr.evalObjectPred gD7 { controller := p0 } d1LkiD (.combatRole .unblocked) &&
+    -- `d3` from combat 2 WAS attacking alone and WAS unblocked
+    EvalExpr.evalObjectPred gD7 { controller := p0 } d3LkiD (.combatRole .attackingAlone) &&
+    !EvalExpr.evalObjectPred gD7 { controller := p0 } d3LkiD (.combatRole .blocked) &&
+    EvalExpr.evalObjectPred gD7 { controller := p0 } d3LkiD (.combatRole .unblocked)
 
--- CR 707.2 / 707.9: tied `ObjectExpr.extremum` in `TokenSpec.copyOf` prompts controller to choose.
+  caseA && caseB && caseC && caseD
+
+-- CR 707.2 / 707.9 / 508.4: tied `ObjectExpr.extremum` in `TokenSpec.copyOf` prompts
+-- controller to choose, and attacking copies continue through per-token `promptEnteringAttackItems`.
 #guard
   let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
   let g0 := afterDraw
   let g1 := addPermanent g0 legendDragon p0 p0
   let dragonId := (lastPermanent g1).id
@@ -697,7 +734,7 @@ private def testColossus : CardDef := {
   let gPaused := g2.createKindTokens p0 maxPowerCopySpec 1
   let pausedOk :=
     match gPaused.pending with
-    | .fraChoice who (.chooseTokenCopyObject ids _ 1 false false none _ _) =>
+    | .fraChoice who (.chooseTokenCopyObject ids _ 1 false false none ..) =>
       who == p0 && ids == #[dragonId, colossusId]
     | _ => false
   -- Choose the SECOND tied creature (`colossusId`), proving the player's choice (not board order) wins.
@@ -709,8 +746,46 @@ private def testColossus : CardDef := {
       tok.name == "Test Colossus" && tok.printed.isToken &&
       gDone.power tok == 5 && gDone.toughness tok == 5
     | .error _ => false
+  -- Tied attacking copies (`count := 2`) with an opponent planeswalker must offer per-token
+  -- CR 508.4 `chooseEnteringAttackTarget` prompts after choosing which tied creature to copy.
+  let gWithOppPw := insertObject g2 testPw p1 .battlefield (controller := some p1)
+    (status := { counters := #[(.loyalty, 4)] })
+  let oppPwId := (lastPermanent gWithOppPw).id
+  let gAtkTie := gWithOppPw.createAndMarkTokensAttacking p0 maxPowerCopySpec 2
+    (tapped := true) (holds := true)
+  let atkTieOk :=
+    match gAtkTie.pending with
+    | .fraChoice who (.chooseTokenCopyObject ids _ 2 true true none ..) =>
+      who == p0 && ids == #[dragonId, colossusId] &&
+      match gAtkTie.answerFraChoice p0 (.objects #[colossusId]) with
+      | .ok gNeedAtk1 =>
+        match gNeedAtk1.pending with
+        | .fraChoice who1 (.chooseEnteringAttackTarget rem1 _ _) =>
+          who1 == p0 && rem1.size == 2 &&
+          rem1[0]!.options.contains (.player p1) &&
+          rem1[0]!.options.contains (.planeswalker oppPwId) &&
+          -- Send token 1 at opponent's planeswalker, token 2 at opponent player
+          match gNeedAtk1.answerFraChoice p0 (.objects #[oppPwId]) with
+          | .ok gNeedAtk2 =>
+            match gNeedAtk2.pending with
+            | .fraChoice who2 (.chooseEnteringAttackTarget rem2 _ _) =>
+              who2 == p0 && rem2.size == 1 &&
+              match gNeedAtk2.answerFraChoice p0 (.mode 0) with
+              | .ok gDone =>
+                let toks := gDone.objects.filter fun o =>
+                  o.isOnBattlefield && o.printed.isToken && o.name == "Test Colossus"
+                gDone.pending == .none &&
+                toks.size == 2 &&
+                toks.any (fun t => t.status.attacking && t.status.attackingTarget == some (.planeswalker oppPwId)) &&
+                toks.any (fun t => t.status.attacking && t.status.attackingTarget == some (.player p1))
+              | .error _ => false
+            | _ => false
+          | .error _ => false
+        | _ => false
+      | .error _ => false
+    | _ => false
   cands.size == 2 &&
   (g2.resolveTokenPrinted? maxPowerCopySpec (controller := p0)).isNone &&
-  pausedOk && chosenOk
+  pausedOk && chosenOk && atkTieOk
 
 end Mtg.Engine.Tests.EvalExprSuite

@@ -4527,7 +4527,7 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
       if n == 0 then g
       else
         g.beginFraChoice controller
-          (.chooseTokenCopyObject ids mods n tapped true none #[] cause)
+          (.chooseTokenCopyObject ids mods n tapped true none #[] cause sourceId)
           s!"{(g.player controller).name} chooses an object to copy"
     | none =>
     match g.resolveTokenPrinted? kind 0 effectiveCopyCtx (controller := controller) with

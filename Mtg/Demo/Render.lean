@@ -960,7 +960,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
               let nm := ((g.findObject? oid).map g.name).getD s!"#{oid.raw}"
               s!"{i} {nm} (#{oid.raw})")
           s!"choose what it enters attacking ({remaining.size} left): {String.intercalate ", " names}"
-        | .chooseTokenCopyObject ids _ count _ _ _ _ _ =>
+        | .chooseTokenCopyObject ids _ count .. =>
           let names := ids.toList.map fun oid =>
             let nm := ((g.findObject? oid).map g.name).getD s!"#{oid.raw}"
             s!"{nm} (#{oid.raw})"

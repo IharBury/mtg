@@ -555,11 +555,13 @@ def evalPlayerMetricSingle (g : Game) (env : EvalEnv) (m : PlayerMetric) (p : Pl
   | .poisonCounters => Int.ofNat pl.poison
   | .opponentsCount => Int.ofNat (st.livingOpponents p).size
 
-/-- Index of the start of the most recent combat phase on `turn` in `events`
-(or `0` when no explicit combat-phase transition was logged on `turn`). -/
-private def combatPhaseStartIdx (events : Array GameEvent) (turn : Nat) : Nat := Id.run do
+/-- Index of the last combat-phase start (`phaseBegan .combat` or
+`stepBegan .beginningOfCombat`) on `turn` at or before `limit` in `events`
+(or `0` if none was logged at or before `limit`). -/
+private def combatPhaseStartIdxAtOrBefore (events : Array GameEvent) (turn limit : Nat) : Nat := Id.run do
+  let hi := min limit events.size
   let mut start := 0
-  for i in [0:events.size] do
+  for i in [0:hi] do
     let e := events[i]!
     if e.turn == turn then
       match e.change with
@@ -568,14 +570,18 @@ private def combatPhaseStartIdx (events : Array GameEvent) (turn : Nat) : Nat :=
       | _ => pure ()
   return start
 
-/-- Departure boundary `(batchStartIdx, departEventIdx)` in `events` for when `oid`
-last left the battlefield or was removed from combat during `[startIdx, events.size)`
-on `turn`. Returns `(events.size, events.size)` when `oid` did not depart in that slice. -/
-private def lkiCombatDepartBounds (events : Array GameEvent) (startIdx turn : Nat)
-    (oid : ObjectId) : Nat × Nat := Id.run do
+/-- Combat-phase event window `(combatStartIdx, batchStartIdx, departEventIdx)`
+for LKI object `oid` on `turn`: anchors on `oid`'s last battlefield departure or
+`removedFromCombat` event on `turn` (or, if `oid` did not depart, its last combat
+event on `turn`, else `events.size`), and picks the combat phase containing that
+anchor so additional combat phases later in the same turn never hide an earlier
+combat's `attackersDeclared` / `becameAttacking` / `becameBlocked` events. -/
+private def lkiCombatWindow (events : Array GameEvent) (turn : Nat)
+    (oid : ObjectId) : Nat × Nat × Nat := Id.run do
   let mut departIdx : Option Nat := none
   let mut departBatch : Option BatchId := none
-  for i in [startIdx:events.size] do
+  let mut lastCombatIdx : Option Nat := none
+  for i in [0:events.size] do
     let e := events[i]!
     if e.turn == turn then
       let left : Bool :=
@@ -588,30 +594,61 @@ private def lkiCombatDepartBounds (events : Array GameEvent) (startIdx turn : Na
       if left then
         departIdx := some i
         departBatch := e.batch
+      let mentionsCombat : Bool :=
+        match e.change with
+        | .rules (.combat (.attackersDeclared _ decls)) => decls.any (·.1.id == some oid)
+        | .rules (.combat (.becameAttacking atk _)) => atk.id == some oid
+        | .rules (.combat (.becameBlocked atk _)) => atk.id == some oid
+        | .rules (.combat (.remainedUnblocked atk)) => atk.id == some oid
+        | _ => false
+      if mentionsCombat then
+        lastCombatIdx := some i
   match departIdx with
-  | none => return (events.size, events.size)
   | some idx =>
-    match departBatch with
-    | none => return (idx, idx)
-    | some bid =>
-      let mut bStart := idx
-      while bStart > startIdx && events[bStart - 1]!.batch == some bid do
-        bStart := bStart - 1
-      return (bStart, idx)
+    let startIdx := combatPhaseStartIdxAtOrBefore events turn (idx + 1)
+    let bStart :=
+      match departBatch with
+      | none => idx
+      | some bid => Id.run do
+        let mut s := idx
+        while s > startIdx && events[s - 1]!.batch == some bid do
+          s := s - 1
+        return s
+    return (startIdx, bStart, idx)
+  | none =>
+    match lastCombatIdx with
+    | some cIdx =>
+      let startIdx := combatPhaseStartIdxAtOrBefore events turn (cIdx + 1)
+      -- Stop before any subsequent combat phase started after `cIdx`.
+      let mut endIdx := events.size
+      for i in [(cIdx + 1):events.size] do
+        let e := events[i]!
+        if e.turn == turn then
+          match e.change with
+          | .rules (.turn (.phaseBegan .combat))
+          | .rules (.turn (.stepBegan .beginningOfCombat _)) =>
+            if endIdx == events.size then endIdx := i
+          | _ => pure ()
+      return (startIdx, endIdx, endIdx)
+    | none =>
+      let startIdx := combatPhaseStartIdxAtOrBefore events turn events.size
+      return (startIdx, events.size, events.size)
 
 /-- Whether an LKI attacking creature `eo` was attacking alone when it left combat
 (CR 506.5 / 608.2h): reconstructs the set of attacking creatures controlled by
-`eo.controller` in the current combat phase up to `eo`'s departure batch
-(`attackersDeclared` / `becameAttacking` minus earlier departures/removals). -/
+`eo.controller` in the combat phase containing `eo`'s departure up to `eo`'s
+departure batch (`attackersDeclared` / `becameAttacking` minus earlier
+departures/removals). -/
 private def lkiAttackingAlone (st : Game) (events : Array GameEvent) (eo : EventObject) : Bool :=
   if !eo.attacking then false
   else
     let turn := st.turnNumber
-    let startIdx := combatPhaseStartIdx events turn
-    let endIdx :=
+    let (startIdx, endIdx) : Nat × Nat :=
       match eo.id with
-      | some oid => (lkiCombatDepartBounds events startIdx turn oid).1
-      | none => events.size
+      | some oid =>
+        let (s, b, _) := lkiCombatWindow events turn oid
+        (s, b)
+      | none => (combatPhaseStartIdxAtOrBefore events turn events.size, events.size)
     let (attackers, sawSelf) : Array ObjectId × Bool := Id.run do
       let mut active : Array ObjectId := #[]
       let mut foundSelf := false
@@ -647,8 +684,9 @@ private def lkiAttackingAlone (st : Game) (events : Array GameEvent) (eo : Event
         x.status.attacking && st.controllerOf x == eo.controller && some x.id != eo.id
       liveOthers.isEmpty && (attackers.filter fun id => some id != eo.id).isEmpty
 
-/-- Whether an LKI attacking creature `eo` became blocked in the current combat
-phase (CR 509.1h / 608.2h), reconstructed from `CombatEvent.becameBlocked`. -/
+/-- Whether an LKI attacking creature `eo` became blocked in the combat phase
+containing its departure (CR 509.1h / 608.2h), reconstructed from
+`CombatEvent.becameBlocked`. -/
 private def lkiWasBlocked (st : Game) (events : Array GameEvent) (eo : EventObject) : Bool :=
   if !eo.attacking then false
   else
@@ -656,8 +694,7 @@ private def lkiWasBlocked (st : Game) (events : Array GameEvent) (eo : EventObje
     | none => false
     | some oid =>
       let turn := st.turnNumber
-      let startIdx := combatPhaseStartIdx events turn
-      let endIdx := (lkiCombatDepartBounds events startIdx turn oid).2
+      let (startIdx, _, endIdx) := lkiCombatWindow events turn oid
       Id.run do
         let mut blocked := false
         for i in [startIdx:endIdx] do
