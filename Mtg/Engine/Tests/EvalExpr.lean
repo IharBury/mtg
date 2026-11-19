@@ -714,7 +714,56 @@ private def testColossus : CardDef := {
     !EvalExpr.evalObjectPred gD7 { controller := p0 } d3LkiD (.combatRole .blocked) &&
     EvalExpr.evalObjectPred gD7 { controller := p0 } d3LkiD (.combatRole .unblocked)
 
-  caseA && caseB && caseC && caseD
+  -- Case E: Earlier-turn death (`.eventOccurredLastTurn` & direct LKI on the next turn):
+  -- `e1` attacks alongside co-attacker `e2`, becomes blocked via `Game.markBlocked`, and dies on
+  -- turn `T`; `e2` is removed from combat so turn `T + 1` has 0 live attackers. On turn `T + 1`,
+  -- both direct LKI evaluation and `.eventOccurredLastTurn` queries (including parsed Oracle text)
+  -- must still reconstruct `e1`'s turn-`T` combat window (NOT attacking alone, blocked, NOT
+  -- unblocked), even if a fresh solo unblocked creature `e3` attacks and dies on turn `T + 1`.
+  let gE0 := addPermanent (addPermanent g0 elf22 p0 p0) legendDragon p0 p0
+  let e1Id := (gE0.objects[gE0.objects.size - 2]!).id
+  let e2Id := (gE0.objects[gE0.objects.size - 1]!).id
+  let gE1 := gE0.record (GameEvent.phaseBegan gE0.turnNumber .combat)
+  let gE2 := gE1.record (GameEvent.attackersDeclared gE1.turnNumber p0 #[
+    (gE1.snapshot (gE1.findObject? e1Id).get!, .player p1),
+    (gE1.snapshot (gE1.findObject? e2Id).get!, .player p1)
+  ])
+  let gE3 := gE2.markBlocked e1Id #[]
+  let (gE4, _) := gE3.move e1Id (.graveyard p0) none (verb := some .destroy) (cause := some (.gameRule .leavingZone))
+  let gE5 := gE4.clearCombat
+  -- Advance to turn `T + 1` (0 live attackers on board).
+  let gE6 := { gE5 with turnNumber := gE5.turnNumber + 1 }
+  let envE : EvalEnv := { controller := p0 }
+  let e1LkiE := (EvalExpr.resolveObjectView? gE6 envE e1Id).get!
+  let parsedAloneLastTurn := (parseCondition "a creature attacking alone died last turn").get!
+  let parsedBlockedLastTurn := (parseCondition "a blocked creature died last turn").get!
+  let caseEBase :=
+    -- Direct LKI evaluation on turn `T + 1`
+    !EvalExpr.evalObjectPred gE6 envE e1LkiE (.combatRole .attackingAlone) &&
+    EvalExpr.evalObjectPred gE6 envE e1LkiE (.combatRole .blocked) &&
+    !EvalExpr.evalObjectPred gE6 envE e1LkiE (.combatRole .unblocked) &&
+    -- `.eventOccurredLastTurn` via both AST and parsed Oracle conditions
+    !EvalExpr.evalCondition gE6 envE (.turnHistory (.eventOccurredLastTurn .any (.permanentDied (.combatRole .attackingAlone)))) &&
+    EvalExpr.evalCondition gE6 envE (.turnHistory (.eventOccurredLastTurn .any (.permanentDied (.combatRole .blocked)))) &&
+    !EvalExpr.evalCondition gE6 envE (.turnHistory (.eventOccurredLastTurn .any (.permanentDied (.combatRole .unblocked)))) &&
+    !EvalExpr.evalCondition gE6 envE parsedAloneLastTurn &&
+    EvalExpr.evalCondition gE6 envE parsedBlockedLastTurn
+  -- Also verify a fresh solo unblocked death on turn `T + 1` stays isolated from turn `T`.
+  let gE7 := addPermanent (gE6.record (GameEvent.phaseBegan gE6.turnNumber .combat)) grizzlyBears p0 p0
+  let e3Id := (lastPermanent gE7).id
+  let gE8 := gE7.record (GameEvent.attackersDeclared gE7.turnNumber p0 #[
+    (gE7.snapshot (gE7.findObject? e3Id).get!, .player p1)
+  ])
+  let (gE9, _) := gE8.move e3Id (.graveyard p0) none (verb := some .destroy) (cause := some (.gameRule .leavingZone))
+  let caseE :=
+    caseEBase &&
+    !EvalExpr.evalCondition gE9 envE parsedAloneLastTurn &&
+    EvalExpr.evalCondition gE9 envE parsedBlockedLastTurn &&
+    EvalExpr.evalCondition gE9 envE (.turnHistory (.eventOccurredThisTurn .any (.permanentDied (.combatRole .attackingAlone)))) &&
+    !EvalExpr.evalCondition gE9 envE (.turnHistory (.eventOccurredThisTurn .any (.permanentDied (.combatRole .blocked)))) &&
+    EvalExpr.evalCondition gE9 envE (.turnHistory (.eventOccurredThisTurn .any (.permanentDied (.combatRole .unblocked))))
+
+  caseA && caseB && caseC && caseD && caseE
 
 -- CR 707.2 / 707.9 / 508.4: tied `ObjectExpr.extremum` in `TokenSpec.copyOf` prompts
 -- controller to choose, and attacking copies continue through per-token `promptEnteringAttackItems`.

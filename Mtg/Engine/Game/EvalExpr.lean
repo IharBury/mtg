@@ -63,6 +63,9 @@ structure EvalEnv where
   lkiObjects : Array (ObjectId × EventObject) := #[]
   /-- Pre-resolved player choices for `PlayerExpr.chosenBy` (pure query). -/
   chosenPlayers : Array PlayerId := #[]
+  /-- Optional index into `g.events` when evaluating an object predicate against a
+  specific historical event inside `evalEventPatternOnTurn`. -/
+  eventIdx? : Option Nat := none
 deriving Inhabited
 
 namespace EvalEnv
@@ -570,91 +573,152 @@ private def combatPhaseStartIdxAtOrBefore (events : Array GameEvent) (turn limit
       | _ => pure ()
   return start
 
-/-- Combat-phase event window `(combatStartIdx, batchStartIdx, departEventIdx)`
-for LKI object `oid` on `turn`: anchors on `oid`'s last battlefield departure or
-`removedFromCombat` event on `turn` (or, if `oid` did not depart, its last combat
-event on `turn`, else `events.size`), and picks the combat phase containing that
-anchor so additional combat phases later in the same turn never hide an earlier
-combat's `attackersDeclared` / `becameAttacking` / `becameBlocked` events. -/
-private def lkiCombatWindow (events : Array GameEvent) (turn : Nat)
-    (oid : ObjectId) : Nat × Nat × Nat := Id.run do
-  let mut departIdx : Option Nat := none
-  let mut departBatch : Option BatchId := none
+/-- Locate the start index of `batch` within `[startIdx, idx]` on `wTurn`. -/
+private def batchStartAt (events : Array GameEvent) (wTurn startIdx idx : Nat)
+    (batch : Option BatchId) : Nat :=
+  match batch with
+  | none => idx
+  | some bid => Id.run do
+    let mut s := idx
+    while s > startIdx && s ≤ events.size &&
+        events[s - 1]!.turn == wTurn && events[s - 1]!.batch == some bid do
+      s := s - 1
+    return s
+
+/-- Locate the exclusive end index of the combat phase containing `anchorIdx` on `wTurn`,
+stopping before any turn change, subsequent combat phase, or `oid`'s departure/removal. -/
+private def combatPhaseEndAfter (events : Array GameEvent) (oid : ObjectId)
+    (wTurn anchorIdx : Nat) : Nat := Id.run do
+  let mut endIdx := events.size
+  for i in [(anchorIdx + 1):events.size] do
+    if endIdx == events.size then
+      let e := events[i]!
+      if e.turn != wTurn then
+        endIdx := i
+      else
+        match e.change with
+        | .rules (.turn (.phaseBegan .combat))
+        | .rules (.turn (.stepBegan .beginningOfCombat _)) => endIdx := i
+        | .rules (.combat (.removedFromCombat eo)) =>
+          if eo.id == some oid then endIdx := i
+        | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
+          if toZ != .battlefield && before.id == some oid then endIdx := i
+        | _ => pure ()
+  return endIdx
+
+/-- Combat-phase event window `(windowTurn, combatStartIdx, atkEndIdx, blockEndIdx)`
+for LKI object `oid`: when `eventIdx?` points to an event for `oid`, anchors directly on
+that event; otherwise locates `oid`'s last attacking battlefield departure or
+`removedFromCombat` event on any turn `≤ defaultTurn` (or its last combat event if it
+did not depart while attacking), and opens the combat window on **that event's turn**
+(combat-phase start at or before the anchor). This ensures both extra combats on the same
+turn and earlier-turn history queries (`.eventOccurredLastTurn`) reconstruct
+`attackingAlone` and `blocked`/`unblocked` from the exact combat phase the creature
+participated in. -/
+private def lkiCombatWindow (events : Array GameEvent) (oid : ObjectId)
+    (defaultTurn : Nat) (eventIdx? : Option Nat := none) : Nat × Nat × Nat × Nat := Id.run do
+  -- Direct event-index anchor when `evalEventPatternOnTurn` evaluates a specific event.
+  if let some eIdx := eventIdx? then
+    if h : eIdx < events.size then
+      let e := events[eIdx]
+      let wTurn := e.turn
+      let startIdx := combatPhaseStartIdxAtOrBefore events wTurn (eIdx + 1)
+      match e.change with
+      | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
+        if toZ != .battlefield && before.id == some oid then
+          let bStart := batchStartAt events wTurn startIdx eIdx e.batch
+          return (wTurn, startIdx, bStart, eIdx)
+      | .rules (.combat (.removedFromCombat eo)) =>
+        if eo.id == some oid then
+          let bStart := batchStartAt events wTurn startIdx eIdx e.batch
+          return (wTurn, startIdx, bStart, eIdx)
+      | .rules (.combat (.attackersDeclared _ decls)) =>
+        if decls.any (·.1.id == some oid) then
+          let blkEnd := combatPhaseEndAfter events oid wTurn eIdx
+          return (wTurn, startIdx, eIdx + 1, blkEnd)
+      | .rules (.combat (.becameAttacking atk _)) =>
+        if atk.id == some oid then
+          let blkEnd := combatPhaseEndAfter events oid wTurn eIdx
+          return (wTurn, startIdx, eIdx + 1, blkEnd)
+      | .rules (.zone (.created obj _)) =>
+        if obj.id == some oid then
+          let mut atkEnd := eIdx + 1
+          if let some bid := e.batch then
+            while atkEnd < events.size &&
+                events[atkEnd]!.turn == wTurn && events[atkEnd]!.batch == some bid do
+              atkEnd := atkEnd + 1
+          let blkEnd := combatPhaseEndAfter events oid wTurn eIdx
+          return (wTurn, startIdx, atkEnd, blkEnd)
+      | _ => pure ()
+  let maxTurn :=
+    match eventIdx?.bind (events[·]?) with
+    | some e => min defaultTurn e.turn
+    | none => defaultTurn
+  let mut atkDepart : Option (Nat × Option BatchId) := none
   let mut lastCombatIdx : Option Nat := none
   for i in [0:events.size] do
     let e := events[i]!
-    if e.turn == turn then
-      let left : Bool :=
-        match e.change with
-        | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
-          toZ != .battlefield && before.id == some oid
-        | .rules (.combat (.removedFromCombat eo)) =>
-          eo.id == some oid
-        | _ => false
-      if left then
-        departIdx := some i
-        departBatch := e.batch
-      let mentionsCombat : Bool :=
-        match e.change with
-        | .rules (.combat (.attackersDeclared _ decls)) => decls.any (·.1.id == some oid)
-        | .rules (.combat (.becameAttacking atk _)) => atk.id == some oid
-        | .rules (.combat (.becameBlocked atk _)) => atk.id == some oid
-        | .rules (.combat (.remainedUnblocked atk)) => atk.id == some oid
-        | _ => false
-      if mentionsCombat then
-        lastCombatIdx := some i
-  match departIdx with
-  | some idx =>
-    let startIdx := combatPhaseStartIdxAtOrBefore events turn (idx + 1)
-    let bStart :=
-      match departBatch with
-      | none => idx
-      | some bid => Id.run do
-        let mut s := idx
-        while s > startIdx && events[s - 1]!.batch == some bid do
-          s := s - 1
-        return s
-    return (startIdx, bStart, idx)
+    if e.turn ≤ maxTurn then
+      match e.change with
+      | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
+        if toZ != .battlefield && before.id == some oid && before.attacking then
+          atkDepart := some (i, e.batch)
+      | .rules (.combat (.removedFromCombat eo)) =>
+        if eo.id == some oid then
+          atkDepart := some (i, e.batch)
+      | .rules (.combat (.attackersDeclared _ decls)) =>
+        if decls.any (·.1.id == some oid) then lastCombatIdx := some i
+      | .rules (.combat (.becameAttacking atk _)) =>
+        if atk.id == some oid then lastCombatIdx := some i
+      | .rules (.combat (.becameBlocked atk _)) =>
+        if atk.id == some oid then lastCombatIdx := some i
+      | .rules (.combat (.remainedUnblocked atk)) =>
+        if atk.id == some oid then lastCombatIdx := some i
+      | _ => pure ()
+  match atkDepart with
+  | some (idx, departBatch) =>
+    let wTurn := events[idx]!.turn
+    let startIdx := combatPhaseStartIdxAtOrBefore events wTurn (idx + 1)
+    let bStart := batchStartAt events wTurn startIdx idx departBatch
+    return (wTurn, startIdx, bStart, idx)
   | none =>
     match lastCombatIdx with
     | some cIdx =>
-      let startIdx := combatPhaseStartIdxAtOrBefore events turn (cIdx + 1)
-      -- Stop before any subsequent combat phase started after `cIdx`.
-      let mut endIdx := events.size
-      for i in [(cIdx + 1):events.size] do
-        let e := events[i]!
-        if e.turn == turn then
-          match e.change with
-          | .rules (.turn (.phaseBegan .combat))
-          | .rules (.turn (.stepBegan .beginningOfCombat _)) =>
-            if endIdx == events.size then endIdx := i
-          | _ => pure ()
-      return (startIdx, endIdx, endIdx)
+      let wTurn := events[cIdx]!.turn
+      let startIdx := combatPhaseStartIdxAtOrBefore events wTurn (cIdx + 1)
+      let blkEnd := combatPhaseEndAfter events oid wTurn cIdx
+      return (wTurn, startIdx, cIdx + 1, blkEnd)
     | none =>
-      let startIdx := combatPhaseStartIdxAtOrBefore events turn events.size
-      return (startIdx, events.size, events.size)
+      let startIdx := combatPhaseStartIdxAtOrBefore events maxTurn events.size
+      return (maxTurn, startIdx, events.size, events.size)
 
 /-- Whether an LKI attacking creature `eo` was attacking alone when it left combat
 (CR 506.5 / 608.2h): reconstructs the set of attacking creatures controlled by
-`eo.controller` in the combat phase containing `eo`'s departure up to `eo`'s
-departure batch (`attackersDeclared` / `becameAttacking` minus earlier
+`eo.controller` in the combat phase (and turn) containing `eo`'s departure up to
+`eo`'s departure batch (`attackersDeclared` / `becameAttacking` minus earlier
 departures/removals). -/
-private def lkiAttackingAlone (st : Game) (events : Array GameEvent) (eo : EventObject) : Bool :=
+private def lkiAttackingAlone (st : Game) (env : EvalEnv) (events : Array GameEvent)
+    (eo : EventObject) : Bool :=
   if !eo.attacking then false
   else
-    let turn := st.turnNumber
-    let (startIdx, endIdx) : Nat × Nat :=
+    let defaultTurn := st.turnNumber
+    let (wTurn, startIdx, endIdx) : Nat × Nat × Nat :=
       match eo.id with
       | some oid =>
-        let (s, b, _) := lkiCombatWindow events turn oid
-        (s, b)
-      | none => (combatPhaseStartIdxAtOrBefore events turn events.size, events.size)
+        let (wt, s, atkEnd, _) := lkiCombatWindow events oid defaultTurn env.eventIdx?
+        (wt, s, atkEnd)
+      | none =>
+        let wt :=
+          match env.eventIdx?.bind (events[·]?) with
+          | some e => e.turn
+          | none => defaultTurn
+        (wt, combatPhaseStartIdxAtOrBefore events wt events.size, events.size)
     let (attackers, sawSelf) : Array ObjectId × Bool := Id.run do
       let mut active : Array ObjectId := #[]
       let mut foundSelf := false
       for i in [startIdx:endIdx] do
         let e := events[i]!
-        if e.turn == turn then
+        if e.turn == wTurn then
           match e.change with
           | .rules (.combat (.attackersDeclared p decls)) =>
             if some p == eo.controller then
@@ -680,26 +744,29 @@ private def lkiAttackingAlone (st : Game) (events : Array GameEvent) (eo : Event
       attackers.size == 1
     else
       -- Fallback when no `attackersDeclared`/`becameAttacking` event logged `eo.id`.
-      let liveOthers := st.battlefield.filter fun x =>
-        x.status.attacking && st.controllerOf x == eo.controller && some x.id != eo.id
+      let liveOthers :=
+        if wTurn == st.turnNumber then
+          st.battlefield.filter fun x =>
+            x.status.attacking && st.controllerOf x == eo.controller && some x.id != eo.id
+        else #[]
       liveOthers.isEmpty && (attackers.filter fun id => some id != eo.id).isEmpty
 
 /-- Whether an LKI attacking creature `eo` became blocked in the combat phase
-containing its departure (CR 509.1h / 608.2h), reconstructed from
+(and turn) containing its departure (CR 509.1h / 608.2h), reconstructed from
 `CombatEvent.becameBlocked`. -/
-private def lkiWasBlocked (st : Game) (events : Array GameEvent) (eo : EventObject) : Bool :=
+private def lkiWasBlocked (st : Game) (env : EvalEnv) (events : Array GameEvent)
+    (eo : EventObject) : Bool :=
   if !eo.attacking then false
   else
     match eo.id with
     | none => false
     | some oid =>
-      let turn := st.turnNumber
-      let (startIdx, _, endIdx) := lkiCombatWindow events turn oid
+      let (wTurn, startIdx, _, endIdx) := lkiCombatWindow events oid st.turnNumber env.eventIdx?
       Id.run do
         let mut blocked := false
         for i in [startIdx:endIdx] do
           let e := events[i]!
-          if e.turn == turn then
+          if e.turn == wTurn then
             match e.change with
             | .rules (.combat (.becameBlocked atk _)) =>
               if atk.id == some oid then blocked := true
@@ -837,13 +904,13 @@ private partial def evalCombatRole (g : Game) (env : EvalEnv) (v : ObjectView)
         match eo.attackingTarget with
         | some (.player p) => ps.contains p
         | _ => false
-    | .attackingAlone => lkiAttackingAlone st g.events eo
+    | .attackingAlone => lkiAttackingAlone st env g.events eo
     | .blocking => eo.blocking
     | .blockingObject atkExpr =>
       let atkIds := (evalObjects g env atkExpr).filterMap ObjectView.id?
       eo.blockingIds.any atkIds.contains
-    | .blocked => eo.attacking && lkiWasBlocked st g.events eo
-    | .unblocked => eo.attacking && !lkiWasBlocked st g.events eo
+    | .blocked => eo.attacking && lkiWasBlocked st env g.events eo
+    | .unblocked => eo.attacking && !lkiWasBlocked st env g.events eo
 
 /-- Evaluate `ObjectPred` on an `ObjectView` (live or LKI). -/
 partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : ObjectPred) : Bool :=
@@ -1237,60 +1304,64 @@ def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
       match p? with
       | some p => pids.contains p
       | none => anyPlayer
+    let anyEventOnTurn (f : Nat → GameEvent → Bool) : Bool := Id.run do
+      for i in [0:g.events.size] do
+        let e := g.events[i]!
+        if e.turn == targetTurn && f i e then
+          return true
+      return false
     match pat with
     | .permanentEntered pred =>
-      g.events.any fun e =>
-        e.turn == targetTurn &&
-          match e.change with
-          | .rules (.zone (.moved _ after fromZ .battlefield _ _ _ _)) =>
-            fromZ != .battlefield && !after.phasedOut &&
-              matchesOwnerOrCtrl after.controller &&
-              evalObjectPred g env (.lki after) pred
-          | .rules (.zone (.created obj ctrl)) =>
-            obj.zone == .battlefield && !obj.phasedOut &&
-              pids.contains (obj.controller.getD ctrl) &&
-              evalObjectPred g env (.lki obj) pred
-          | _ => false
+      anyEventOnTurn fun i e =>
+        let eEnv : EvalEnv := { env with eventIdx? := some i }
+        match e.change with
+        | .rules (.zone (.moved _ after fromZ .battlefield _ _ _ _)) =>
+          fromZ != .battlefield && !after.phasedOut &&
+            matchesOwnerOrCtrl after.controller &&
+            evalObjectPred g eEnv (.lki after) pred
+        | .rules (.zone (.created obj ctrl)) =>
+          obj.zone == .battlefield && !obj.phasedOut &&
+            pids.contains (obj.controller.getD ctrl) &&
+            evalObjectPred g eEnv (.lki obj) pred
+        | _ => false
     | .permanentDied pred =>
-      g.events.any fun e =>
-        e.turn == targetTurn &&
-          match e.change with
-          | .rules (.zone (.moved before _ .battlefield (.graveyard _) _ _ _ _)) =>
-            !before.phasedOut && matchesOwnerOrCtrl before.controller &&
-              evalObjectPred g env (.lki before) pred
-          | _ => false
+      anyEventOnTurn fun i e =>
+        match e.change with
+        | .rules (.zone (.moved before _ .battlefield (.graveyard _) _ _ _ _)) =>
+          !before.phasedOut && matchesOwnerOrCtrl before.controller &&
+            evalObjectPred g { env with eventIdx? := some i } (.lki before) pred
+        | _ => false
     | .permanentLeftBattlefield pred =>
-      g.events.any fun e =>
-        e.turn == targetTurn &&
-          match e.change with
-          | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
-            toZ != .battlefield && !before.phasedOut &&
-              matchesOwnerOrCtrl before.controller &&
-              evalObjectPred g env (.lki before) pred
-          | _ => false
+      anyEventOnTurn fun i e =>
+        match e.change with
+        | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
+          toZ != .battlefield && !before.phasedOut &&
+            matchesOwnerOrCtrl before.controller &&
+            evalObjectPred g { env with eventIdx? := some i } (.lki before) pred
+        | _ => false
     | .attackedWith pred =>
-      g.events.any fun e =>
-        e.turn == targetTurn &&
-          match e.change with
-          | .rules (.combat (.attackersDeclared q decls)) =>
-            pids.contains q && decls.any (fun (eo, _) => evalObjectPred g env (.lki eo) pred)
-          | _ => false
+      anyEventOnTurn fun i e =>
+        match e.change with
+        | .rules (.combat (.attackersDeclared q decls)) =>
+          pids.contains q &&
+            decls.any (fun (eo, _) =>
+              evalObjectPred g { env with eventIdx? := some i } (.lki eo) pred)
+        | _ => false
     | .castSpell pred =>
-      g.events.any fun e =>
-        e.turn == targetTurn &&
-          match e.change with
-          | .rules (.cast (.spellCast eo q _)) =>
-            pids.contains q && evalObjectPred g env (.lki eo) pred
-          | _ => false
+      anyEventOnTurn fun i e =>
+        match e.change with
+        | .rules (.cast (.spellCast eo q _)) =>
+          pids.contains q && evalObjectPred g { env with eventIdx? := some i } (.lki eo) pred
+        | _ => false
     | .drewCard minCount =>
       pids.any fun p => GameEvent.draws g.events targetTurn p ≥ minCount
     | .discardedCard pred =>
-      g.events.any fun e =>
-        e.turn == targetTurn &&
-          match e.change with
-          | .rules (.zone (.moved before _ (.hand q) toZ .discard _ _ _)) =>
-            pids.contains q && toZ != .hand q && evalObjectPred g env (.lki before) pred
-          | _ => false
+      anyEventOnTurn fun i e =>
+        match e.change with
+        | .rules (.zone (.moved before _ (.hand q) toZ .discard _ _ _)) =>
+          pids.contains q && toZ != .hand q &&
+            evalObjectPred g { env with eventIdx? := some i } (.lki before) pred
+        | _ => false
     | .milledCard minCount =>
       pids.any fun p => GameEvent.milled g.events targetTurn p ≥ minCount
     | .gainedLife minAmount =>
