@@ -90,10 +90,7 @@ def availableManaExceptIds (g : Game) (p : PlayerId) (excludeIds : Array ObjectI
         let score (t : ManaType) : Nat × Nat × Nat :=
           let base := g.baseManaTypesFromTap src t
           let extra := g.extraMountainRedFromTap src base
-          let isUnr :=
-            match ManaRestriction.normalize? (some (g.tapRestrictionOf src t)) with
-            | none | some (.fra .fromTreasure) => 1
-            | _ => 0
+          let isUnr := if (g.tapRestrictionOf src t).isNone then 1 else 0
           (isUnr, base.size + extra.size, extra.size)
         let best? :=
           ordered.foldl (fun (acc? : Option (ManaType × (Nat × Nat × Nat))) t =>
@@ -128,7 +125,7 @@ def usableManaTypesForProposed (g : Game) (src : GameObject) (types : Array Mana
   types.filter fun t =>
     g.restrictionAllowsProposed (g.tapRestrictionOf src t (prop? := some prop)) prop ||
       (!(g.extraMountainRedFromTap src (g.baseManaTypesFromTap src t (prop? := some prop))).isEmpty &&
-        g.restrictionAllowsProposed .none prop)
+        g.restrictionAllowsProposed none prop)
 
 /-- Untapped mana sources `p` may activate while paying `prop` (CR 601.2g).
 Sources reserved for `{T}` or another battlefield-source cost, or whose mana
@@ -172,14 +169,14 @@ def dedupZeroReqManaTypes (g : Game) (src : GameObject) (types : Array ManaType)
   if types.size ≤ 1 then types
   else Id.run do
     let mut out : Array ManaType := #[]
-    let mut seenZero : Array (Option ManaRestriction × Nat) := #[]
+    let mut seenZero : Array (Option ManaSpendRestriction × Nat) := #[]
     for t in types do
       match t with
       | .colored c =>
         let base := g.baseManaTypesFromTap src t (prop? := prop?)
         let extra := g.extraMountainRedFromTap src base
         if cost.symbolsIncludingColor c == 0 && base == #[t] then
-          let rn := (ManaRestriction.normalize? (some (g.tapRestrictionOf src t (prop? := prop?))), extra.size)
+          let rn := (g.tapRestrictionOf src t (prop? := prop?), extra.size)
           if !seenZero.contains rn then
             seenZero := seenZero.push rn
             out := out.push t

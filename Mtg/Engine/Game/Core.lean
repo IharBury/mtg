@@ -5032,35 +5032,35 @@ def firstStrikeOnYourTurn (g : Game) (o : GameObject) : Bool :=
 def onlyFoodArtifact (g : Game) (o : GameObject) : Bool :=
   g.activeEffects.any fun (_, s) =>
     match s with
-    | .layered (.objects #[id]) (.types .set ts subs _) d =>
+    | .layered (.objects #[id]) (.types .set ts subs _ _ _ _) d =>
       id == o.id && ts == #[.artifact] && subs == #[.food] && g.durationActive d
     | _ => false
 
 def returnedAsArtifact (g : Game) (o : GameObject) : Bool :=
   g.activeEffects.any fun (_, s) =>
     match s with
-    | .layered (.objects #[id]) (.types .addArtifactRemoveCreature _ _ _) d =>
-      id == o.id && g.durationActive d
+    | .layered (.objects #[id]) (.types .add ts _ _ remTs _ _) d =>
+      id == o.id && ts.contains .artifact && remTs.contains .creature && g.durationActive d
     | _ => false
 
 def notACreature (g : Game) (o : GameObject) : Bool :=
   g.activeEffects.any fun (_, s) =>
     match s with
-    | .layered (.objects #[id]) (.types .removeCreature _ _ _) d =>
-      id == o.id && g.durationActive d
+    | .layered (.objects #[id]) (.types .add ts _ _ remTs _ _) d =>
+      id == o.id && ts.isEmpty && remTs.contains .creature && g.durationActive d
     | _ => false
 
 def additionalArtifactUntilEot (g : Game) (o : GameObject) : Bool :=
   g.activeEffects.any fun (_, s) =>
     match s with
-    | .layered (.objects #[id]) (.types .add ts _ _) .untilEndOfTurn =>
+    | .layered (.objects #[id]) (.types .add ts _ _ _ _ _) .untilEndOfTurn =>
       id == o.id && ts.contains .artifact
     | _ => false
 
 def additionalCreature (g : Game) (o : GameObject) : Bool :=
   g.activeEffects.any fun (_, s) =>
     match s with
-    | .layered (.objects #[id]) (.types .add ts _ _) .indefinite =>
+    | .layered (.objects #[id]) (.types .add ts _ _ _ _ _) .indefinite =>
       id == o.id && ts.contains .creature
     | _ => false
 
@@ -5170,222 +5170,47 @@ private structure Layer3Entry where
   tc : TextChange
 deriving Inhabited
 
-/-- Apply a sequence of Layer 3 text changes to a `CardSubtype` (CR 612.2 / 613.1c). -/
-def TextChange.applySubtype (tcs : Array TextChange) (sub : CardSubtype) : CardSubtype :=
-  tcs.foldl (fun cur tc =>
-    match tc with
-    | .replaceCreatureType fromSub toSub => if cur == fromSub then toSub else cur
-    | .replaceColorWord _ _ => cur) sub
-
-/-- Apply a sequence of Layer 3 text changes to a `Color` word (CR 612.2 / 613.1c). -/
-def TextChange.applyColor (tcs : Array TextChange) (c : Color) : Color :=
-  tcs.foldl (fun cur tc =>
-    match tc with
-    | .replaceColorWord fromC toC => if cur == fromC then toC else cur
-    | .replaceCreatureType _ _ => cur) c
-
 /-- Apply Layer 3 text changes to a `StaticAbility` (CR 612.2 / 613.1c). -/
-def TextChange.applyStaticAbility (tcs : Array TextChange) (ab : StaticAbility) : StaticAbility :=
-  if tcs.isEmpty then ab
-  else
-    let ms := TextChange.applySubtype tcs
-    match ab with
-    | .otherCreaturesHaveTrample subs => .otherCreaturesHaveTrample (subs.map ms)
-    | .otherCreaturesGet subs p t => .otherCreaturesGet (subs.map ms) p t
-    | .cantBlockUnlessYouControl subs => .cantBlockUnlessYouControl (subs.map ms)
-    | .enchantedIsOnlySubtypeCantAttackOrBlock s => .enchantedIsOnlySubtypeCantAttackOrBlock (ms s)
-    | .hasteIfYouControlOtherSubtype s => .hasteIfYouControlOtherSubtype (ms s)
-    | .cantAttackUnlessYouControlNOther n s => .cantAttackUnlessYouControlNOther n (ms s)
-    | .lifelinkIfYouControlOtherSubtype s => .lifelinkIfYouControlOtherSubtype (ms s)
-    | .otherSubtypeHaveTapAddOneOf subs mana => .otherSubtypeHaveTapAddOneOf (subs.map ms) mana
-    | .otherSubtypeGetPowerPerArtifactToken s => .otherSubtypeGetPowerPerArtifactToken (ms s)
-    | .extraTriggerIfEnduringStorySubtype s => .extraTriggerIfEnduringStorySubtype (ms s)
-    | .extraTriggerAnotherYouControl subs ts => .extraTriggerAnotherYouControl (subs.map ms) ts
-    | .copyActivatedFromGySubtype s => .copyActivatedFromGySubtype (ms s)
-    | .creaturesYouControlOfSubtypeGet s p t => .creaturesYouControlOfSubtypeGet (ms s) p t
-    | .youAndOtherSubtypeHaveHexproofIfShield s => .youAndOtherSubtypeHaveHexproofIfShield (ms s)
-    | .subtypeSpellsCostLess s n => .subtypeSpellsCostLess (ms s) n
-    | .powerEqualSubtypeYouControl s => .powerEqualSubtypeYouControl (ms s)
-    | .enchantedCreatureGetsHasAndTypes p t k subs =>
-      .enchantedCreatureGetsHasAndTypes p t k (subs.map ms)
-    | other => other
+@[inline] def TextChange.applyStaticAbility (tcs : Array TextChange) (ab : StaticAbility) : StaticAbility :=
+  HasTextChange.applyTextChanges tcs ab
 
 /-- Apply Layer 3 text changes to a `SharedTriggerWhen` clause (CR 612.2 / 613.1c). -/
-def TextChange.applyTriggerWhen (tcs : Array TextChange) : SharedTriggerWhen → SharedTriggerWhen
-  | .youCastColor c => .youCastColor (TextChange.applyColor tcs c)
-  | .youCastColorFromHand c => .youCastColorFromHand (TextChange.applyColor tcs c)
-  | .youCastGreen =>
-    let c := TextChange.applyColor tcs .green
-    if c == .green then .youCastGreen else .youCastColor c
-  | .subtypeYouControlEnters s => .subtypeYouControlEnters (TextChange.applySubtype tcs s)
-  | .forestYouControlEnters =>
-    let s := TextChange.applySubtype tcs .forest
-    if s == .forest then .forestYouControlEnters else .subtypeYouControlEnters s
-  | .mountainYouControlEnters =>
-    let s := TextChange.applySubtype tcs .mountain
-    if s == .mountain then .mountainYouControlEnters else .subtypeYouControlEnters s
-  | .or a b => .or (TextChange.applyTriggerWhen tcs a) (TextChange.applyTriggerWhen tcs b)
-  | w => w
+@[inline] def TextChange.applyTriggerWhen (tcs : Array TextChange) (w : SharedTriggerWhen) : SharedTriggerWhen :=
+  HasTextChange.applyTextChanges tcs w
 
 /-- Apply Layer 3 text changes to a `TargetFilter` (CR 612.2 / 613.1c). -/
-def TextChange.applyTargetFilter (tcs : Array TextChange) (f : TargetFilter) : TargetFilter :=
-  if tcs.isEmpty then f
-  else
-    { f with
-      subtypes := if f.subtypes.isEmpty then f.subtypes else f.subtypes.map (TextChange.applySubtype tcs)
-      colors := if f.colors.isEmpty then f.colors else f.colors.map (TextChange.applyColor tcs) }
+@[inline] def TextChange.applyTargetFilter (tcs : Array TextChange) (f : TargetFilter) : TargetFilter :=
+  HasTextChange.applyTextChanges tcs f
 
 /-- Apply Layer 3 text changes to an `EffectTargetKind` (CR 612.2 / 613.1c). -/
-def TextChange.applyTargetKind (tcs : Array TextChange) : EffectTargetKind → EffectTargetKind
-  | .creatureYouControlSubtype s => .creatureYouControlSubtype (TextChange.applySubtype tcs s)
-  | .creatureYouControlAnySubtype ss => .creatureYouControlAnySubtype (ss.map (TextChange.applySubtype tcs))
-  | .filtered f => .filtered (TextChange.applyTargetFilter tcs f)
-  | .multi fs opt => .multi (fs.map (TextChange.applyTargetFilter tcs)) opt
-  | .pair a b => .pair (TextChange.applyTargetKind tcs a) (TextChange.applyTargetKind tcs b)
-  | .instanceSlots inner minC maxC => .instanceSlots (TextChange.applyTargetKind tcs inner) minC maxC
-  | k => k
-
-/-- Apply a sequence of Layer 3 `.replaceCreatureType` text changes to singular and
-plural creature-subtype words in free-form restriction text (CR 612.2 / 613.1c). -/
-def TextChange.applyCreatureTypeWords (tcs : Array TextChange) (text : String) : String :=
-  if tcs.isEmpty || text.isEmpty then text
-  else
-    let isWordChar (c : Char) : Bool := c.isAlpha || c == '-' || c == '\'' || c == '’'
-    let applyOne (cur : String) (fromSub toSub : CardSubtype) : String :=
-      if fromSub == toSub then cur
-      else
-        let singPat := fromSub.englishName.toList
-        let singRepl := toSub.englishName.toList
-        let plurPat := fromSub.pluralName.toList
-        let plurRepl := toSub.pluralName.toList
-        let hasDistinctPlural := fromSub.pluralName != fromSub.englishName && !plurPat.isEmpty
-        let pairs : List (List Char × List Char) :=
-          if hasDistinctPlural then
-            if plurPat.length ≥ singPat.length then
-              [(plurPat, plurRepl), (singPat, singRepl)]
-            else
-              [(singPat, singRepl), (plurPat, plurRepl)]
-          else
-            [(singPat, singRepl)]
-        let matchAt? (rem : List Char) : Option (List Char × List Char) :=
-          pairs.findSome? fun (pat, repl) =>
-            if !pat.isEmpty && pat.isPrefixOf rem then
-              let after := rem.drop pat.length
-              let nextWord := match after with | nxt :: _ => isWordChar nxt | [] => false
-              if !nextWord then some (repl, after) else none
-            else none
-        let rec go (fuel : Nat) (prevWord : Bool) (rem : List Char) : List Char :=
-          match fuel, rem with
-          | 0, _ => rem
-          | _, [] => []
-          | fuel + 1, c :: rest =>
-            if !prevWord then
-              match matchAt? rem with
-              | some (repl, after) => repl ++ go fuel true after
-              | none => c :: go fuel (isWordChar c) rest
-            else
-              c :: go fuel (isWordChar c) rest
-        let cs := cur.toList
-        String.ofList (go (cs.length + 1) false cs)
-    tcs.foldl (fun cur tc =>
-      match tc with
-      | .replaceCreatureType fromSub toSub => applyOne cur fromSub toSub
-      | .replaceColorWord _ _ => cur) text
+@[inline] def TextChange.applyTargetKind (tcs : Array TextChange) (k : EffectTargetKind) : EffectTargetKind :=
+  HasTextChange.applyTextChanges tcs k
 
 /-- Apply Layer 3 text changes to an `ObjectSelector` (CR 612.2 / 613.1c). -/
-partial def TextChange.applyObjectSelector (tcs : Array TextChange) :
-    TriggeredAbility.ObjectSelector → TriggeredAbility.ObjectSelector :=
-  let ms := TextChange.applySubtype tcs
-  fun sel =>
-    match sel with
-    | .anotherSubtype s => .anotherSubtype (ms s)
-    | .target w => .target (TextChange.applyObjectSelector tcs w)
-    | .cause (some s) => .cause (some (ms s))
-    | .othersOfSubtype s => .othersOfSubtype (ms s)
-    | .eachNonSubtypeAndOpponents s => .eachNonSubtypeAndOpponents (ms s)
-    | .milledSubtype s => .milledSubtype (ms s)
-    | .youControl (.subtype s) => .youControl (.subtype (ms s))
-    | .basicUpTo s max => .basicUpTo (ms s) max
-    | .creatureFromHand s maxMv => .creatureFromHand (ms s) maxMv
-    | .humans =>
-      let s := ms .human
-      if s == .human then .humans
-      else .intersection [.creaturesYouControl, .youControl (.subtype s)]
-    | .enteringVillain =>
-      let s := ms .villain
-      if s == .villain then .enteringVillain else .cause (some s)
-    | .forestsExceptCause =>
-      let s := ms .forest
-      if s == .forest then .forestsExceptCause else .othersOfSubtype s
-    | .intersection ws => .intersection (ws.map (TextChange.applyObjectSelector tcs))
-    | .union ws => .union (ws.map (TextChange.applyObjectSelector tcs))
-    | w => w
+@[inline] def TextChange.applyObjectSelector (tcs : Array TextChange)
+    (sel : TriggeredAbility.ObjectSelector) : TriggeredAbility.ObjectSelector :=
+  HasTextChange.applyTextChanges tcs sel
 
 /-- Apply Layer 3 text changes to a `NumberSelector` (CR 612.2 / 613.1c). -/
-def TextChange.applyNumberSelector (tcs : Array TextChange) :
-    TriggeredAbility.NumberSelector → TriggeredAbility.NumberSelector :=
-  let ms := TextChange.applySubtype tcs
-  fun num =>
-    match num with
-    | .subtypeCount s => .subtypeCount (ms s)
-    | .perSubtype s => .perSubtype (ms s)
-    | .perPlains =>
-      let s := ms .plains
-      if s == .plains then .perPlains else .subtypeCount s
-    | .count w => .count (TextChange.applyObjectSelector tcs w)
-    | n => n
+@[inline] def TextChange.applyNumberSelector (tcs : Array TextChange)
+    (num : TriggeredAbility.NumberSelector) : TriggeredAbility.NumberSelector :=
+  HasTextChange.applyTextChanges tcs num
 
 /-- Apply Layer 3 text changes to a `Resolution` (CR 612.2 / 613.1c). -/
-partial def TextChange.applyResolution (tcs : Array TextChange) : Resolution → Resolution
-  | .addAnyColorSpendOnlySubtype s =>
-    .addAnyColorSpendOnlySubtype (TextChange.applySubtype tcs s)
-  | .addFourManaDragonSpells n s =>
-    .addFourManaDragonSpells n (TextChange.applySubtype tcs s)
-  | .addMana types amount =>
-    .addMana types (TextChange.applyNumberSelector tcs amount)
-  | .dealDamageToEachCreature n (.nonSubtype s) amount =>
-    .dealDamageToEachCreature n (.nonSubtype (TextChange.applySubtype tcs s)) amount
-  | .sequence rs =>
-    .sequence (rs.map (TextChange.applyResolution tcs))
-  | .may action follow w =>
-    .may (TextChange.applyResolution tcs action) (TextChange.applyResolution tcs follow) w
-  | .or rs =>
-    .or (rs.map (TextChange.applyResolution tcs))
-  | r => r
+@[inline] def TextChange.applyResolution (tcs : Array TextChange) (r : Resolution) : Resolution :=
+  HasTextChange.applyTextChanges tcs r
 
 /-- Apply Layer 3 text changes to a one-shot `Effect` (CR 612.2 / 613.1c). -/
-def TextChange.applyEffect (tcs : Array TextChange) (e : Effect) : Effect :=
-  if tcs.isEmpty then e
-  else
-    { e with
-      targeting := { e.targeting with kind := TextChange.applyTargetKind tcs e.targeting.kind }
-      resolution := TextChange.applyResolution tcs e.resolution }
+@[inline] def TextChange.applyEffect (tcs : Array TextChange) (e : Effect) : Effect :=
+  HasTextChange.applyTextChanges tcs e
 
 /-- Apply Layer 3 text changes to an `ActivatedAbility` (CR 612.2 / 613.1c). -/
-def TextChange.applyActivatedAbility (tcs : Array TextChange) (ab : ActivatedAbility) : ActivatedAbility :=
-  if tcs.isEmpty then ab
-  else
-    let ms := TextChange.applySubtype tcs
-    { ab with
-      cost := { ab.cost with sacrificeAnotherSubtype := ab.cost.sacrificeAnotherSubtype.map ms }
-      effect := TextChange.applyEffect tcs ab.effect
-      otherModes := if ab.otherModes.isEmpty then ab.otherModes else ab.otherModes.map (TextChange.applyEffect tcs)
-      equipSubtype := ab.equipSubtype.map ms }
+@[inline] def TextChange.applyActivatedAbility (tcs : Array TextChange) (ab : ActivatedAbility) : ActivatedAbility :=
+  HasTextChange.applyTextChanges tcs ab
 
 /-- Apply Layer 3 text changes to a `TriggeredAbility` (CR 612.2 / 613.1c). -/
-def TextChange.applyTriggeredAbility (tcs : Array TextChange) (ab : TriggeredAbility) : TriggeredAbility :=
-  if tcs.isEmpty then ab
-  else
-    let ms := TextChange.applySubtype tcs
-    match ab with
-    | .triggered w eff opts =>
-      let opts' : SharedTriggerOpts := { opts with
-        thisOrNontokenSubtype := opts.thisOrNontokenSubtype.map ms
-        thisOrAnotherSubtype := opts.thisOrAnotherSubtype.map ms
-        anotherSubtypeOrEquipment := opts.anotherSubtypeOrEquipment.map ms
-        watchedSubtype := opts.watchedSubtype.map ms
-      }
-      .triggered (TextChange.applyTriggerWhen tcs w) (TextChange.applyEffect tcs eff) opts'
+@[inline] def TextChange.applyTriggeredAbility (tcs : Array TextChange) (ab : TriggeredAbility) : TriggeredAbility :=
+  HasTextChange.applyTextChanges tcs ab
 
 /-- Evaluate Layer 3 text-changing effects on `o` across every `ObjectScope` in
 CR 613.7 timestamp and CR 613.8 dependency order (CR 612 / 613.1c). -/
@@ -5467,10 +5292,7 @@ private structure Layer4Entry where
   idx : Nat
   ts : Nat × Nat
   scope : ObjectScope
-  mode : SetOrAdd
-  tsAdd : Array CardType
-  subs : Array CardSubtype
-  sups : Array Supertype
+  mod : TypeSetMod
 deriving Inhabited
 
 /-- Unified Layer 4 evaluation of `(types, subtypes, supertypes)` on `o` in
@@ -5500,17 +5322,6 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
   else
     let bc := g.baseCard o
     let oTcs := g.evalLayer3 o
-    let subtypeCorrelatedWith (ts : Array CardType) (sub : CardSubtype) : Bool :=
-      match sub.kind with
-      | .artifact => ts.contains .artifact
-      | .enchantment => ts.contains .enchantment
-      | .land => ts.contains .land
-      | .planeswalker => ts.contains .planeswalker
-      | .spell => ts.contains .instant || ts.contains .sorcery
-      | .creature => ts.contains .creature || ts.contains .kindred
-      | .planar => ts.contains .plane
-      | .dungeon => ts.contains .dungeon
-      | .battle => ts.contains .battle
     let effectiveSubs (ts : Array CardType) (subs : Array CardSubtype) : Array CardSubtype :=
       if ts.contains .creature || ts.contains .kindred then subs
       else subs.filter CardSubtype.isNoncreature
@@ -5542,18 +5353,18 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
               | .enchantedIsOnlySubtypeCantAttackOrBlock sub =>
                 pending := pending.push (.attach att, {
                   idx := pending.size, ts := (0, 0), scope := .objects #[o.id]
-                  mode := .setAndKeepNoncreatureSubtypes, tsAdd := #[], subs := #[sub], sups := #[]
+                  mod := { mode := .setAndKeepNoncreatureSubtypes, subtypes := #[sub] }
                 })
               | .enchantedCreatureGetsHasAndTypes _ _ _ addSubs =>
                 if !addSubs.isEmpty then
                   pending := pending.push (.attach att, {
                     idx := pending.size, ts := (0, 0), scope := .objects #[o.id]
-                    mode := .addDedup, tsAdd := #[], subs := addSubs, sups := #[.legendary]
+                    mod := { mode := .addDedup, subtypes := addSubs, supertypes := #[.legendary] }
                   })
               | .fra .enchantedIsConstruct55 =>
                 pending := pending.push (.attach att, {
                   idx := pending.size, ts := (0, 0), scope := .objects #[o.id]
-                  mode := .addConstruct55, tsAdd := #[.artifact, .creature], subs := #[.construct], sups := #[]
+                  mod := { mode := .addDedup, types := #[.artifact, .creature], subtypes := #[.construct] }
                 })
               | _ => pure ()
       -- 2. Conditional self subtype static (`getsAndAllTypesIfGyCreatureCards`, Undercover Skrull).
@@ -5569,18 +5380,21 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
             if condOk then
               pending := pending.push (.base, {
                 idx := pending.size, ts := (0, 0), scope := .objects #[o.id]
-                mode := .addDedup, tsAdd := #[], subs := CardSubtype.allCreatureSubtypes, sups := #[]
+                mod := { mode := .addDedup, subtypes := CardSubtype.allCreatureSubtypes }
               })
           | _ => pure ()
       -- 3. Active `.layered sc (.types ...)` continuous effects.
       for pos in [0:g.activeEffects.size] do
         let (eid, s) := g.activeEffects[pos]!
         match s with
-        | .layered sc (.types mode ts subs sups) d =>
+        | .layered sc (.types mode ts subs sups remTs remSubs remSups) d =>
           if g.durationActive d && g.effectPhasingAllows o eid sc d then
             pending := pending.push (.eff eid pos, {
               idx := pending.size, ts := (0, 0), scope := sc
-              mode := mode, tsAdd := ts, subs := subs, sups := sups
+              mod := {
+                mode := mode, types := ts, subtypes := subs, supertypes := sups
+                removeTypes := remTs, removeSubtypes := remSubs, removeSupertypes := remSups
+              }
             })
         | _ => pure ()
       if pending.isEmpty then
@@ -5596,29 +5410,7 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
           g.controlledBy o p && (effectiveSubs cur.1 cur.2.1).contains s
       let applyStep (cur : Array CardType × Array CardSubtype × Array Supertype)
           (e : Layer4Entry) : Array CardType × Array CardSubtype × Array Supertype :=
-        let (ts, subs, sups) := cur
-        match e.mode with
-        | .set =>
-          let ts' := if e.tsAdd.isEmpty then ts else e.tsAdd
-          let subs' := if !e.subs.isEmpty then e.subs else subs.filter (subtypeCorrelatedWith ts')
-          let sups' := if e.sups.isEmpty then sups else e.sups
-          (ts', subs', sups')
-        | .add =>
-          (pushDedup ts e.tsAdd, subs ++ e.subs, pushDedup sups e.sups)
-        | .addDedup =>
-          (pushDedup ts e.tsAdd, pushDedup subs e.subs, pushDedup sups e.sups)
-        | .addConstruct55 =>
-          let addTs := if e.tsAdd.isEmpty then #[.artifact, .creature] else e.tsAdd
-          let addSubs := if e.subs.isEmpty then #[.construct] else e.subs
-          (pushDedup ts addTs, pushDedup subs addSubs, pushDedup sups e.sups)
-        | .setAndKeepNoncreatureSubtypes =>
-          (pushDedup ts e.tsAdd, subs.filter CardSubtype.isNoncreature ++ e.subs, pushDedup sups e.sups)
-        | .addArtifactRemoveCreature =>
-          let ts1 := ts.filter (· != .creature)
-          let ts2 := pushDedup ts1 (if e.tsAdd.isEmpty then #[.artifact] else e.tsAdd)
-          (ts2, subs.filter CardSubtype.isNoncreature ++ e.subs, pushDedup sups e.sups)
-        | .removeCreature =>
-          (ts.filter (· != .creature), subs.filter CardSubtype.isNoncreature, sups)
+        e.mod.apply cur.1 cur.2.1 cur.2.2
       let needTs := pending.size >= 2
       let sorted : Array Layer4Entry :=
         if !needTs then
@@ -5824,8 +5616,7 @@ private structure Layer5Entry where
   idx : Nat
   ts : Nat × Nat
   scope : ObjectScope
-  mode : SetOrAdd
-  cols : ColorSet
+  mod : ColorSetMod
 deriving Inhabited
 
 /-- Evaluated colors of `o` in Layer 5 across all `ObjectScope`s in CR 613.7
@@ -5841,7 +5632,7 @@ def colors (g : Game) (o : GameObject) : ColorSet :=
     else
       let hasCol := g.activeEffects.any fun (_, s) =>
         match s with
-        | .layered _ (.colors _ _) _ => true
+        | .layered _ (.colors ..) _ => true
         | _ => false
       if !hasCol then initCols
       else
@@ -5853,23 +5644,19 @@ def colors (g : Game) (o : GameObject) : ColorSet :=
             g.isCreature o && Keywords.merge bc.keywords kw != bc.keywords
           | .permanentsOfSubtype p s => g.controlledBy o p && g.hasSubtype o s
         let applyStep (cur : ColorSet) (e : Layer5Entry) : ColorSet :=
-          match e.mode with
-          | .set => e.cols
-          | .add | .addDedup => ColorSet.union cur e.cols
-          | _ => cur
+          e.mod.apply cur
         Id.run do
           let mut raw : Array Layer5Entry := #[]
           for pos in [0:g.activeEffects.size] do
             let (eid, s) := g.activeEffects[pos]!
             match s with
-            | .layered sc (.colors mode cols) d =>
+            | .layered sc (.colors mode cols remCols) d =>
               if g.durationActive d && g.effectPhasingAllows o eid sc d then
                 raw := raw.push {
                   idx := raw.size
                   ts := g.effectTimestamp eid pos
                   scope := sc
-                  mode := mode
-                  cols := cols
+                  mod := { mode := mode, colors := cols, removeColors := remCols }
                 }
             | _ => pure ()
           let sorted := raw.qsort fun a b =>
@@ -9444,17 +9231,16 @@ private structure Layer7bEntry where
 deriving Inhabited
 
 /-- Layer 7b base P/T-setting evaluation on `o` across `.ptSet` effects,
-Puppet Crafting 5/5 animation (`.types .addConstruct55` and attached
-`.fra .enchantedIsConstruct55`), and spell/granted hand-size power-setting
-effects (`.ptCda .cardsInHandPower` and granted `isCardsInHandPower`) in
-CR 613.7 timestamp and CR 613.8 dependency order (CR 613.4b). -/
+attached `.fra .enchantedIsConstruct55` Auras (Puppet Crafting), and
+spell/granted hand-size power-setting effects (`.ptCda .cardsInHandPower` and
+granted `isCardsInHandPower`) in CR 613.7 timestamp and CR 613.8 dependency
+order (CR 613.4b). -/
 def evalLayer7b (g : Game) (o : GameObject) : Option Int × Option Int :=
   if !o.isOnBattlefield then (none, none)
   else
     let has7bEff := g.activeEffects.any fun (_, s) =>
       match s with
       | .layered _ (.ptSet ..) d
-      | .layered _ (.types .addConstruct55 ..) d
       | .layered _ (.ptCda .cardsInHandPower) d => g.durationActive d
       | _ => false
     let hasConstructAtt :=
@@ -9506,7 +9292,7 @@ def evalLayer7b (g : Game) (o : GameObject) : Option Int × Option Int :=
                 setP := some handP
                 setT := none
               }
-        -- 3. Active `.ptSet`, `.types .addConstruct55`, and `.ptCda .cardsInHandPower` effects.
+        -- 3. Active `.ptSet` and `.ptCda .cardsInHandPower` effects.
         if has7bEff then
           for pos in [0:g.activeEffects.size] do
             let (eid, s) := g.activeEffects[pos]!
@@ -9519,15 +9305,6 @@ def evalLayer7b (g : Game) (o : GameObject) : Option Int × Option Int :=
                   scope := sc
                   setP := some pw
                   setT := some tg
-                }
-            | .layered sc (.types .addConstruct55 _ _ _) d =>
-              if g.durationActive d && g.effectPhasingAllows o eid sc d then
-                raw := raw.push {
-                  idx := raw.size
-                  ts := g.effectTimestamp eid pos
-                  scope := sc
-                  setP := some 5
-                  setT := some 5
                 }
             | .layered sc (.ptCda .cardsInHandPower) d =>
               if g.durationActive d && g.effectPhasingAllows o eid sc d then
@@ -15831,9 +15608,8 @@ def addManaUnits (g : Game) (p : PlayerId) (units : Array ManaUnit)
   else
     let units :=
       units.map fun u =>
-        let normRestr := ManaRestriction.normalize? u.restriction
         let isTreasureSrc : Bool :=
-          u.fromTreasure || normRestr == some (.fra .fromTreasure) ||
+          u.fromTreasure ||
             match u.source with
             | some srcId =>
               match g.findObject? srcId with
@@ -15842,21 +15618,19 @@ def addManaUnits (g : Game) (p : PlayerId) (units : Array ManaUnit)
                 else GameEvent.isTreasureSourceInLog g.events srcId
               | none => GameEvent.isTreasureSourceInLog g.events srcId
             | none => false
-        let inferred :=
-          if normRestr.isNone && isTreasureSrc then some (.fra .fromTreasure)
-          else normRestr
-        { u with restriction := inferred, fromTreasure := isTreasureSrc }
+        { u with fromTreasure := isTreasureSrc }
     let c := cause.orElse (fun _ => g.resolvingOneShotCause p (units[0]?.bind (·.source)))
     g.record (GameEvent.manaAdded g.turnNumber p units (cause := c))
 
 /-- Record `PlayerEvent.manaAdded` for `n` mana of type `t` on `p` (CR 106.4 / 106.6). -/
 def addMana (g : Game) (p : PlayerId) (t : ManaType) (n : Nat := 1)
     (source : Option ObjectId := none)
-    (restriction : Option ManaRestriction := none)
-    (cause : Option EventCause := none) : Game :=
+    (restriction : Option ManaSpendRestriction := none)
+    (cause : Option EventCause := none)
+    (fromTreasure : Bool := false) : Game :=
   if n == 0 then g
   else
-    let units := Array.replicate n { mana := t, source, restriction := ManaRestriction.normalize? restriction }
+    let units := Array.replicate n { mana := t, source, restriction, fromTreasure }
     g.addManaUnits p units (cause := cause.orElse (fun _ => g.resolvingOneShotCause p source))
 
 /-- Resolving one-shot cause for a batch when a spell or ability is actively

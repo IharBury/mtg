@@ -318,4 +318,15 @@ instance : ToString ActivatedAbility where
 
 end ActivatedAbility
 
+instance : HasTextChange ActivatedAbility where
+  applyTextChanges tcs ab :=
+    if tcs.isEmpty then ab
+    else
+      { ab with
+        cost := { ab.cost with
+          sacrificeAnotherSubtype := HasTextChange.applyTextChanges tcs ab.cost.sacrificeAnotherSubtype }
+        effect := HasTextChange.applyTextChanges tcs ab.effect
+        otherModes := HasTextChange.applyTextChanges tcs ab.otherModes
+        equipSubtype := HasTextChange.applyTextChanges tcs ab.equipSubtype }
+
 end Mtg.Engine

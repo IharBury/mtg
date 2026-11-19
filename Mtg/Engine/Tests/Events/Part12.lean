@@ -1014,13 +1014,13 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
        gDualSacAbDone.stack.size == 1 &&
        spellChoicesExcludeArtifact) &&
     mustHold46i4 "4b_treasureProvenance"
-      ((gTrBfDirect.player p0).manaPool.units.all (fun u => u.restriction == some (.fra .fromTreasure)) &&
+      ((gTrBfDirect.player p0).manaPool.units.all (fun u => u.fromTreasure && u.restriction.isNone) &&
        (gTrStackRes.player p0).manaPool.units.size == 2 &&
        (gTrStackRes.player p0).manaPool.units.all (fun u =>
-         u.mana == .colored .red && u.restriction == some (.fra .fromTreasure)) &&
+         u.mana == .colored .red && u.fromTreasure && u.restriction.isNone) &&
        (gTrTrigRes.player p0).manaPool.units.size == 2 &&
        (gTrTrigRes.player p0).manaPool.units.all (fun u =>
-         u.mana == .colored .blue && u.restriction == some (.fra .fromTreasure)))
+         u.mana == .colored .blue && u.fromTreasure && u.restriction.isNone))
 
   -- 4c. `Resolution.addMana` `NumberSelector` (`amount != .fixed 1`), arbitrary-subtype
   --     `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`), and Layer 3 `TextChange` mana parity:
@@ -1051,7 +1051,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
   let gRitRes :=
     mustApply (mustApply (mustApply (mustApply gRit0 p0 (.cast (gRit0.player p0).hand.back!)) p0 .pass) p1 .pass) p2 .pass
 
-  -- Arbitrary-subtype `.addAnyColorSpendOnlySubtype .goblin` (`ManaRestriction.fra (.subtypeSpellOrSource .goblin)`):
+  -- Arbitrary-subtype `.addAnyColorSpendOnlySubtype .goblin` (`ManaSpendRestriction.subtypeSpellOrSource .goblin`):
   let gobShrineDef : CardDef := {
     name := "P46i4 GoblinShrine"
     types := #[.artifact]
@@ -1103,7 +1103,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
   let nonGobAbRejected :=
     gNonGobAbRev.stack.isEmpty &&
     gNonGobAbRev.proposedSpell.isNone &&
-    (gNonGobAbRev.player p0).manaPool.fraRestricted == #[(.colored .red, .subtypeSpellOrSource .goblin)]
+    (gNonGobAbRev.player p0).manaPool.restrictedEntries == #[(.colored .red, .subtypeSpellOrSource .goblin)]
 
   -- Layer 3 `TextChange` (`.replaceCreatureType`) mana parity:
   -- (1) `tapAddManaForEach` (`.elf` -> `.bear` with two Bears on battlefield -> `{G}{G}`),
@@ -1174,15 +1174,15 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
       ((gDynTapped.player p0).manaPool.red == 3 &&
        (gRitRes.player p0).manaPool.red == 3) &&
     mustHold46i4 "4c_arbitrarySubtypeSpendOnly"
-      ((gGobMana.player p0).manaPool.fraRestricted == #[(.colored .red, .subtypeSpellOrSource .goblin)] &&
+      ((gGobMana.player p0).manaPool.restrictedEntries == #[(.colored .red, .subtypeSpellOrSource .goblin)] &&
        gGobAbPaid.stack.size == 1 &&
        gGobSpellPaid.stack.size == 1 &&
        nonGobAbRejected) &&
     mustHold46i4 "4c_layer3TextChangeMana"
       ((gArchTapped.player p0).manaPool.green == 2 &&
-       (gPchanTapped.player p0).manaPool.fraRestricted ==
+       (gPchanTapped.player p0).manaPool.restrictedEntries ==
          #[(.colored .red, .subtypeSpellOrSource .goblin), (.colored .red, .subtypeSpellOrSource .goblin)] &&
-       (gL3ShrineTapped.player p0).manaPool.fraRestricted == #[(.colored .blue, .subtypeSpellOrSource .wizard)] &&
+       (gL3ShrineTapped.player p0).manaPool.restrictedEntries == #[(.colored .blue, .subtypeSpellOrSource .wizard)] &&
        gHoardResPrompt.pending == .fraChoice p0 (.addManaColors 4 (.subtypeSpell .goblin)))
 
   mustHold46i4 "4a.multiTapSubsetAndChooseX" item4aOk &&

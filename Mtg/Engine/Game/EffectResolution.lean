@@ -1935,7 +1935,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.millThenPutFromGy controller n
         (fun o => g.hasType o a || g.hasType o b) (types := #[a, b])
   | .addFourManaDragonSpells n subtype =>
-    g.beginFraChoice controller (.addManaColors n (.forSubtype subtype))
+    g.beginFraChoice controller (.addManaColors n (.subtypeSpell subtype))
       s!"{(g.player controller).name} chooses the colors of {englishNumber n} mana that can be spent only on {subtype} spells"
   | .exileAttackersSearchBasics =>
     g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
@@ -2142,7 +2142,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.beginFraChoice controller
         (.revealPutCreatures top creatures g.resolvingTeamworkPaid)
         s!"{(g.player controller).name} may put creature cards from among them onto the battlefield"
-  | .createTokens kind amount tapped _ who _ =>
+  | .createTokens kind amount tapped who _ =>
     let pid? : Option PlayerId := match who with
       | .you => some controller
       | .player =>
@@ -2790,10 +2790,10 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           | .villain => .black
           | _ => .white
         g.addMana controller (.colored color) 1 (source := sourceId)
-          (restriction := some (.forSubtypeSpellOrSource subtype))
+          (restriction := some (.subtypeSpellOrSource subtype))
       | .addAnyColorSpendOnlyArtifactSpell =>
         g.addMana controller (.colored .white) 1 (source := sourceId)
-          (restriction := some (.fra .artifactSpell))
+          (restriction := some .artifactSpell)
       | .addTwoAnyColorCreatureSources =>
         g.addMana controller (.colored .green) 2 (source := sourceId) (restriction := some .creatureSource)
       | .addBlueCantNonartifact =>
@@ -2805,7 +2805,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.addMana controller (.colored .white) 4 (source := sourceId)
       | .addTwoAnyColorEquipment =>
         g.addMana controller (.colored .white) 2 (source := sourceId)
-          (restriction := some (.fra .equipmentOrEquip))
+          (restriction := some .equipmentOrEquip)
       | .drawPerDiscardedThisTurn =>
         g.draw controller (g.loggedDiscards controller)
       | .createTokensEqualRemovedPlusOnes kind =>

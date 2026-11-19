@@ -724,7 +724,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let dragonRockDef : CardDef := {
     name := "P49i4 DragonLantern"
     types := #[.land]
-    tapAddRestricted := some (#[.colored .red], "Dragon spells")
+    tapAddRestricted := some (#[.colored .red], .dragonSpell)
   }
   let lanternGrantDef : CardDef := {
     name := "P49i4 ChromaticOrb"

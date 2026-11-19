@@ -175,7 +175,7 @@ only cast planeswalker spells. -/
   let g := mustApply g me (.cast (handObj g me "Shock").id)
   let g := mustApply g me (.target (.player opp))
   let g := mustApply g me .pay
-  g.stack.isEmpty && (g.player me).manaPool.fraRestricted.size == 1
+  g.stack.isEmpty && (g.player me).manaPool.restrictedEntries.size == 1
 #guard
   let g := addPermanent afterDraw gideonsMemorial me me
   let g := mustApply g me (.tapForMana (namedPermanent g "Gideon's Memorial").id (.colored .blue))
@@ -184,7 +184,7 @@ only cast planeswalker spells. -/
   let g := addToHand g jaceRealitySculptor me
   let g := mustApply g me (.cast (handObj g me "Jace, Reality Sculptor").id)
   let g := mustApply g me .pay
-  (g.player me).manaPool.fraRestricted.isEmpty && !g.stack.isEmpty
+  (g.player me).manaPool.restrictedEntries.isEmpty && !g.stack.isEmpty
 
 /- Liliana the Faultless gives another creature you control hexproof. -/
 #guard
@@ -333,7 +333,7 @@ library. -/
   let g := pw chandraChillOfCompliance 3
   let o := namedPermanent g "Chandra, Chill of Compliance"
   let g := resolved (activateId g o.id (abIdx g o "Add"))
-  (g.player me).manaPool.fraRestricted.contains (.colored .blue, .noncreatureSpell)
+  (g.player me).manaPool.restrictedEntries.contains (.colored .blue, .noncreatureSpell)
 #guard
   let g := pw chandraChillOfCompliance 3 withBears
   let g := resolved (loyaltyAbility g "Chandra, Chill of Compliance" .minusX

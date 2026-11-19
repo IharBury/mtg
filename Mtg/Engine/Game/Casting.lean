@@ -911,7 +911,7 @@ def hasCostPreservingPaymentSubset (g : Game) (pool : ManaPool) (cost : ManaCost
           choices.map (fun (ch : TapManaChoice) => (ch.baseAdded, ch.extraRed, ch.restriction)))
       let rec go (curPool : ManaPool) (chosenIds : Array ObjectId)
           (skippedKeys : Array (Bool × Bool × Bool × Bool × Int × Array Bool ×
-            Array (Array ManaType × Array ManaType × ManaRestriction)))
+            Array (Array ManaType × Array ManaType × Option ManaSpendRestriction)))
           (rem : List (GameObject × Array ManaType)) : Bool :=
         if !g.tapPreservesPostManaCosts p prop chosenIds then false
         else if g.canPayFromSources curPool cost allowElf allowInst freeOthers a activeProp? then true

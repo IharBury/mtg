@@ -10,26 +10,6 @@ the payload of `Resolution.frc`. This module does not import `Effect`.
 
 namespace Mtg.Engine
 
-/-- A token created by an FRC effect. Printed characteristics live in the
-resolver so `TokenKind` stays closed. -/
-inductive FrcToken where
-  | citizen
-  | warrior
-  | insect
-  | myr
-  | kobold
-  | mite
-  | shark
-  | gingerbrute
-  | angel
-  | human
-  | goblin
-  | map
-  | treasure
-  | rogue
-  | incubator
-deriving Repr, Inhabited, BEq
-
 /-- One Reality Fracture Commander resolution. -/
 inductive FrcEffect where
   /-- Draw `draw` cards, then put `put` cards from your hand on top of your

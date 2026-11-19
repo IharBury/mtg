@@ -1059,7 +1059,7 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
        gAltAfterP2.stack.isEmpty)
 
   -- 4c. Disjoint combined activation costs (`needsSacrificeOther`, `.crew`, `.sacrificeEquipmentAttachedToSource`)
-  --     and stack-resolved `ManaRestriction` parity in `EffectResolution`:
+  --     and stack-resolved `ManaSpendRestriction` parity in `EffectResolution`:
   let sacComboEnchDef : CardDef := {
     name := "P45i4 DoubleSacEnch"
     types := #[.enchantment]
@@ -1198,10 +1198,10 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
     armedNoSpareRejected &&
     defaultPicksSpare &&
     gArmedAb1Done.stack.size == 1 &&
-    artPool.fraRestricted == #[(.colored .white, .artifactSpell)] &&
+    artPool.restrictedEntries == #[(.colored .white, .artifactSpell)] &&
     artPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, types := #[.artifact] }) &&
     !artPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, types := #[.creature] }) &&
-    eqPool.fraRestricted == #[(.colored .white, .equipmentOrEquip), (.colored .white, .equipmentOrEquip)] &&
+    eqPool.restrictedEntries == #[(.colored .white, .equipmentOrEquip), (.colored .white, .equipmentOrEquip)] &&
     eqPool.canPay (ManaCost.ofGeneric 2) (spend := { equip := true }) &&
     !eqPool.canPay (ManaCost.ofGeneric 2) (spend := { spell := true, types := #[.artifact] })
 

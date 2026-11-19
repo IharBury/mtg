@@ -391,7 +391,7 @@ def exileAttackersSearchBasics : Effect :=
   mkSpell (.of .player) (.exileAttackersSearchBasics)
     (castKind := .destroyCreature)
 
-def createTokensX (kind : TokenKind) : Effect :=
+def createTokensX (kind : TokenSpec) : Effect :=
   mkSpell (.of .none) (.createTokens kind .chosenX)
     (castKind := .extraLand)
 
@@ -478,7 +478,7 @@ def revealTopPutCreatures (n : Nat) : Effect :=
   mkSpell (.of .none) (.revealTopPutCreatures n)
     (castKind := .extraLand)
 
-def createTokens (kind : TokenKind) (n : Nat) : Effect :=
+def createTokens (kind : TokenSpec) (n : Nat) : Effect :=
   mkSpell (.of .none) (.createTokens kind n)
     (castKind := .extraLand)
 
@@ -506,7 +506,7 @@ def plusOneOnCreature : Effect :=
   mkSpell (.of .creature) (.onPermanent (.plusOne 1))
     (castKind := .pump)
 
-def targetPlayerCreatesTokens (kind : TokenKind) (n : Nat) : Effect :=
+def targetPlayerCreatesTokens (kind : TokenSpec) (n : Nat) : Effect :=
   mkSpell (.of .player) (.createTokens kind n (who := .player))
     (castKind := .extraLand)
 
@@ -598,11 +598,11 @@ def creatureYouControlDealsTwicePower (k : Nat := 2) : Effect :=
   mkSpell (.of .creatureYouControlThenOppCreature) (.fight .announced (.timesPower k))
     (castKind := .fight)
 
-def createTokensThenTeamPump (kind : TokenKind) (n : Nat) (power toughness : Int) : Effect :=
+def createTokensThenTeamPump (kind : TokenSpec) (n : Nat) (power toughness : Int) : Effect :=
   mkSpell (.of .none) (.sequence [.createTokens kind n, .creaturesPump power toughness])
     (castKind := .pump)
 
-def createTokensPerSubtype (kind : TokenKind) (subtype : String) : Effect :=
+def createTokensPerSubtype (kind : TokenSpec) (subtype : String) : Effect :=
   mkSpell (.of .none) (.createTokens kind (.perSubtype (CardSubtype.ofOracleD subtype)))
     (castKind := .extraLand)
 
@@ -935,7 +935,7 @@ def addTwoAnyColorEquipment : Effect :=
 def drawPerDiscardedThisTurn : Effect :=
   mkAbility ({}) (.drawPerDiscardedThisTurn)
 
-def createTokensEqualRemovedPlusOnes (kind : TokenKind) : Effect :=
+def createTokensEqualRemovedPlusOnes (kind : TokenSpec) : Effect :=
   mkAbility ({}) (.createTokensEqualRemovedPlusOnes kind)
 
 def exileTopXPlayThisTurn : Effect :=
@@ -944,10 +944,10 @@ def exileTopXPlayThisTurn : Effect :=
 def copyControlledAbility (ty : CardType) : Effect :=
   mkAbility (.of (.stackAbilityFromSource ty)) (.copyControlledAbility ty)
 
-def createTokensEqualSubtype (kind : TokenKind) (subtype : String) : Effect :=
+def createTokensEqualSubtype (kind : TokenSpec) (subtype : String) : Effect :=
   mkAbility ({}) (.createTokensEqualSubtype kind (CardSubtype.ofOracleD subtype))
 
-def createTappedTokens (kind : TokenKind) (n : Nat) : Effect :=
+def createTappedTokens (kind : TokenSpec) (n : Nat) : Effect :=
   mkAbility ({}) (.createTokens kind n (tapped := true))
 
 def destroyUpToOneThenPlusOne : Effect :=
@@ -1000,10 +1000,10 @@ def plusOneAndCreateTigerGod : Effect :=
     (phraseOverride := some
       "Put a +1/+1 counter on this and create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\"")
 
-def plusOneAndCreateTokens (n : Nat) (kind : TokenKind) : Effect :=
+def plusOneAndCreateTokens (n : Nat) (kind : TokenSpec) : Effect :=
   { resolution := .sequence [.onSource (.plusOne n), .createTokens kind 1]
     phrase :=
-      s!"Put {plusOnePlusOneCountersPhrase n} on this creature and {TokenKind.createPhrase kind 1}" }
+      s!"Put {plusOnePlusOneCountersPhrase n} on this creature and {TokenSpec.createPhrase kind 1}" }
 
 def plusTwoThenOddEvenDestroy : Effect :=
   mkAbility ({})
@@ -1063,10 +1063,10 @@ def targetGets (p t : Int) : Effect :=
 
 /-- Ability-phrased factories for leftover names that overlap spells. -/
 
-def abilityCreateTokens (kind : TokenKind) (n : Nat) : Effect :=
+def abilityCreateTokens (kind : TokenSpec) (n : Nat) : Effect :=
   mkAbility ({}) (.createTokens kind n)
 
-def abilityCreateTokensX (kind : TokenKind) : Effect :=
+def abilityCreateTokensX (kind : TokenSpec) : Effect :=
   mkAbility ({}) (.createTokensX kind)
 
 def abilityCreaturesYouControlGet (power toughness : Int) : Effect :=
@@ -1118,10 +1118,10 @@ def millSelf (n : Nat) : Effect :=
 def mayDiscardDraw (n : Nat) : Effect :=
   { mkAbility ({}) (.mayDiscardDraw n) with spellCastKind := .draw }
 
-def createTokensThenSurveil (kind : TokenKind) (n s : Nat) : Effect :=
+def createTokensThenSurveil (kind : TokenSpec) (n s : Nat) : Effect :=
   mkAbility ({}) (.sequence [.createTokens kind n, .surveil s])
 
-def createTokensLifeGained (kind : TokenKind) : Effect :=
+def createTokensLifeGained (kind : TokenSpec) : Effect :=
   mkAbility ({}) (.createTokensLifeGained kind)
 
 def setBasePT (power toughness : Int) : Effect :=

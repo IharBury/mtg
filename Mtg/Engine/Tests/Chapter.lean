@@ -105,7 +105,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.spell { resolution := .mutualFight .upToOne })).resolution ==
   .fight .announced .upToOneOther
 #guard (timing (.spell { resolution := .createGalactus })).resolution ==
-  .createTokens .treasure (.fixed 1) false .galactus
+  .createTokens .galactus (.fixed 1) false
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .createTokens .treasure .perOtherCreature false } ==
   "create a token"

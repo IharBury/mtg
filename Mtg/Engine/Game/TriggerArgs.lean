@@ -522,16 +522,16 @@ def spawnFace (g : Game) (pids : Array PlayerId) (face : CardDef) (n : Nat)
 
 /-- Recipients of a created token. The Void with no announced opponent is
 created for the controller. -/
-def tokenRecipients (g : Game) (ctx : TriggerRead) (token : TriggeredAbility.TriggerToken)
+def tokenRecipients (g : Game) (ctx : TriggerRead) (token : TokenSpec)
     (who : TriggeredAbility.PlayerSelector) : Array PlayerId :=
-  match who, token with
-  | .target .opponent, .theVoid =>
+  if who == .target .opponent && token == .theVoid then
     match ctx.targets.findSome? fun
       | Target.player pid => some pid
       | _ => none with
     | some pid => #[pid]
     | none => #[ctx.controller]
-  | _, _ => (g.collectPlayers ctx who).getD #[]
+  else
+    (g.collectPlayers ctx who).getD #[]
 
 /-- Mill `opponents` (and any non-opponent `allPids`) `n` cards in one batch and
 record `opponentsMilledThisWay`, pausing safely on entry or mid-batch. -/

@@ -2145,7 +2145,7 @@ def canPayTappingAll (g : Game) (pool : ManaPool) (cost : ManaCost)
     (a : ManaAllowances := {}) (prop? : Option ProposedSpell := none) : Bool :=
   g.canPayFromSources pool cost allowElf allowInst sources a (prop? := prop?)
 
-/-- Whether spending `FraManaUse.legendarySpell` mana changes the outcome of
+/-- Whether spending `ManaSpendRestriction.legendarySpell` mana changes the outcome of
 paying for `prop?` by granting `.uncounterableThisCast` (CR 106.6). -/
 def legendaryRiderMatters (g : Game) (a : ManaAllowances)
     (prop? : Option ProposedSpell := none) : Bool :=
@@ -2155,11 +2155,11 @@ def legendaryRiderMatters (g : Game) (a : ManaAllowances)
     | some prop =>
       prop.kind == .spell && !(g.findObject? prop.spellId).any g.uncounterableThisCast
 
-/-- Compare two post-payment leftover `ManaPool`s as multisets of normalized
-`ManaUnit`s (CR 106.4 / 106.6). -/
+/-- Compare two post-payment leftover `ManaPool`s as multisets of `ManaUnit`s
+(CR 106.4 / 106.6). -/
 private def sameLeftoverPool (a b : ManaPool) : Bool :=
-  let ua := a.units.map fun u => { u with restriction := ManaRestriction.normalize? u.restriction }
-  let ub := b.units.map fun u => { u with restriction := ManaRestriction.normalize? u.restriction }
+  let ua := a.units
+  let ub := b.units
   ua.size == ub.size &&
     ua.all (fun x => (ua.filter (· == x)).size == (ub.filter (· == x)).size)
 
@@ -2197,7 +2197,7 @@ private def plainTapChoicesForUniqueness (g : Game) (o : GameObject) (types : Ar
           | none => true
           | some prop =>
             g.restrictionAllowsProposed d.restriction prop ||
-              (!extraSample.isEmpty && g.restrictionAllowsProposed .none prop)
+              (!extraSample.isEmpty && g.restrictionAllowsProposed none prop)
         if spendOk then
           let dedupTs (ts : Array ManaType) : Array ManaType := Id.run do
             let allowed := ts.filter types.contains
@@ -2238,7 +2238,7 @@ private def plainTapChoicesForUniqueness (g : Game) (o : GameObject) (types : Ar
 
 /-- Whether tapping `minSub` yields a single `(leftoverPool, riderSpent)`
 outcome and no additional cost-preserving source in `allSources` can flip
-`FraManaUse.legendarySpell` on `cost` (CR 106.4 / 106.6). -/
+`ManaSpendRestriction.legendarySpell` on `cost` (CR 106.4 / 106.6). -/
 private def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : ManaCost)
     (allowElf allowInst : Bool)
     (allSources minSub : Array (GameObject × Array ManaType))
@@ -2273,7 +2273,7 @@ private def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : Ma
       | none => (outcomes, repPool?)
       | some (leftPool, spentUnits) =>
         let rSpent :=
-          riderMatters && spentUnits.any (·.restriction == some (.fra .legendarySpell))
+          riderMatters && spentUnits.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered))
         let repPool? := repPool? <|> some curPool
         if outcomes.any (fun (lp, rs) => rs == rSpent && sameLeftoverPool lp leftPool) then
           (outcomes, repPool?)
@@ -2300,7 +2300,7 @@ private def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : Ma
             match (ch.applyToPool basePool).payUnits? cost allowElf allowInst
                 a.hero a.villain a.cantNonartifact a.creature a.spend with
             | some (_, units) =>
-              units.any (·.restriction == some (.fra .legendarySpell)) != riderSpent0
+              units.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered)) != riderSpent0
             | none => false
   | _, _ => false
 
@@ -2410,7 +2410,7 @@ def hasUniqueManaPayment (g : Game) : Bool :=
         | some (_, spent0) =>
           if !legendaryRiderMatters g a (some prop) then true
           else
-            let rider0 := spent0.any (·.restriction == some (.fra .legendarySpell))
+            let rider0 := spent0.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered))
             let plainFlips :=
               sources.any fun (src, types) =>
                 g.tapPreservesPostManaCosts p prop #[src.id] &&
@@ -2418,13 +2418,13 @@ def hasUniqueManaPayment (g : Game) : Bool :=
                     match (ch.applyToPool pool).payUnits? prop.cost allowElf allowInst
                         a.hero a.villain a.cantNonartifact a.creature a.spend with
                     | some (_, units) =>
-                      units.any (·.restriction == some (.fra .legendarySpell)) != rider0
+                      units.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered)) != rider0
                     | none => false
             let nonPlainRider :=
               !rider0 && g.hasUsableNonPlainManaAbility p (some prop) &&
                 (g.permanentsOf p).any (fun o =>
                   (g.manaAbilityDefs o).any (fun d =>
-                    d.restriction == .fra .legendarySpell &&
+                    d.restriction.any (·.grantsRider .cantBeCountered) &&
                       !g.isPlainTapManaAbilityDef p o d &&
                       g.manaAbilityDefUsable p o d))
             !plainFlips && !nonPlainRider

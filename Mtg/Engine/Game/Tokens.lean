@@ -827,66 +827,155 @@ def empowerJace (g : Game) (controller : PlayerId) (n : Nat)
   if !g.stillInGame controller then g
   else g.empowerJaceStep controller n .initial chosen cause
 
-/-- Printed characteristics for a `TokenKind`. -/
-def tokenPrinted (k : TokenKind) : CardDef :=
-  match k with
+/-- Realize a CR 111.10a–x predefined token into its printed `CardDef`. -/
+def predefinedTokenPrinted : PredefinedToken → CardDef
   | .treasure => treasureToken
   | .food => foodToken
-  | .humanSoldier => humanSoldierToken
-  | .wolf => wolfToken
-  | .dwarf => dwarfToken
-  | .bear => bearToken
-  | .elf => elfToken
-  | .spirit => spiritToken
-  | .birdSoldier => birdSoldierToken
-  | .wall => wallToken
-  | .dragon => dragonToken
   | .clue => clueToken
-  | .hero32vigilance => hero32vigilanceToken
-  | .villain21menace => villain21menaceToken
-  | .robotVillain22 => robotVillain22Token
-  | .leviathan65hexproof => leviathan65hexproofToken
-  | .soldier11white => soldier11whiteToken
-  | .squirrel11green => squirrel11greenToken
-  | .wall04defender => wall04defenderToken
-  | .doombot => doombotToken
-  | .insect11green => insect11greenToken
+  | .incubator => {
+      name := "Incubator"
+      types := #[.artifact]
+      subtypes := #["Incubator"]
+      isToken := true
+      otherFace := some {
+        name := "Phyrexian"
+        types := #[.artifact, .creature]
+        subtypes := #["Phyrexian"]
+        power := some 0
+        toughness := some 0
+        isToken := true }
+      activatedAbilities := #[
+        { effect := { resolution := .frc .transformIncubator, phrase := "Transform this token." }
+          cost := { mana := ManaCost.ofGeneric 2 } } ] }
+  | .map => {
+      name := "Map"
+      types := #[.artifact]
+      subtypes := #["Map"]
+      isToken := true
+      activatedAbilities := #[
+        { effect := { resolution := .frc .explore, phrase := "You explore." }
+          cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } } ] }
+  | .junk => { name := "Junk", types := #[.artifact], subtypes := #["Junk"], isToken := true }
+  | .lander => { name := "Lander", types := #[.artifact], subtypes := #["Lander"], isToken := true }
+  | .mutagen => { name := "Mutagen", types := #[.artifact], subtypes := #["Mutagen"], isToken := true }
   | .vibranium => vibraniumToken
-  | .moloid => moloidToken
-  | .cadet => cadetToken
   | .heartwood => heartwoodToken
-  | .lotus => lotusToken
-  | .jace => jacePlaneswalkerToken
-  | .sculpture => sculptureToken
-  | .mowu => mowuToken
-  | .pridemate => pridemateToken
-  | .beast44trample => beast44trampleToken
-  | .dragon55flying => dragon55flyingToken
-  | .forestTentacle => forestTentacleToken
-  | .thopter =>
-    creatureToken "Thopter" #[.thopter] 1 1 (keywords := Keyword.flying)
-      (types := #[.artifact, .creature])
-  | .angel33blue => creatureToken "Angel" #[.angel] 3 3 (some .blue) (keywords := Keyword.flying)
-  | .illusion11blue => creatureToken "Illusion" #[.illusion] 1 1 (some .blue)
-  | .leviathan88hexproof =>
-    creatureToken "Leviathan" #[.leviathan] 8 8 (some .blue) (keywords := Keyword.hexproof)
 
-/-- Reverse lookup of a `TokenKind` matching `c` (ignoring `isToken`), if any. -/
-def tokenKindOfCardDef? (c : CardDef) : Option TokenKind :=
-  let allKinds : Array TokenKind := #[
-    .treasure, .food, .humanSoldier, .wolf, .dwarf, .bear, .elf, .spirit,
-    .birdSoldier, .wall, .dragon, .clue, .hero32vigilance, .villain21menace,
-    .robotVillain22, .leviathan65hexproof, .soldier11white, .squirrel11green,
-    .wall04defender, .doombot, .insect11green, .vibranium, .moloid, .cadet,
-    .heartwood, .lotus, .jace, .sculpture, .mowu, .pridemate,
-    .beast44trample, .dragon55flying, .forestTentacle, .thopter,
-    .angel33blue, .illusion11blue, .leviathan88hexproof
+/-- Apply a parameterized `TokenAbilitySpec` onto a custom token's printed `CardDef` (CR 111.3). -/
+def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
+  match ab with
+  | .toxic n => { c with toxic := c.toxic + n }
+  | .cantBlock => { c with cantBlock := true }
+  | .attacksEachCombatIfAble =>
+    { c with staticAbilities := c.staticAbilities.push .attacksEachCombatIfAble }
+  | .cantBeBlockedByMoreThan n =>
+    { c with staticAbilities := c.staticAbilities.push (.cantBeBlockedByMoreThan n) }
+  | .equippedCreatureGets p t =>
+    { c with staticAbilities := c.staticAbilities.push (.equippedCreatureGets p t) }
+  | .equipGeneric generic =>
+    { c with
+      activatedAbilities := c.activatedAbilities.push {
+        cost := { mana := ManaCost.ofGeneric generic }
+        effect := Effect.attachToTargetCreatureYouControl
+        onlyAsSorcery := true
+      } }
+  | .tapSacrificeAddAnyOneColor 3 =>
+    { c with staticAbilities := c.staticAbilities.push (.fra .tapSacrificeAddThreeOfOneColor) }
+  | .tapSacrificeAddAnyOneColor _ =>
+    { c with tapSacrificeAddAnyColor := true }
+  | .tapSacrificeGainLife generic life =>
+    { c with
+      activatedAbilities := c.activatedAbilities.push {
+        effect := Effect.gainLife life
+        cost := { mana := ManaCost.ofGeneric generic, tap := true, sacrificeSource := true }
+      } }
+  | .payGenericCantBeBlockedExceptHaste generic =>
+    { c with
+      activatedAbilities := c.activatedAbilities.push {
+        effect := {
+          resolution := .frc .gingerDash
+          phrase := "This token can't be blocked this turn except by creatures with haste."
+        }
+        cost := { mana := ManaCost.ofGeneric generic }
+      } }
+  | .loyaltyMinusSurveil cost n =>
+    { c with
+      activatedAbilities := c.activatedAbilities.push {
+        cost := { loyalty := some (.minus cost) }
+        effect := { resolution := .surveil n, phrase := s!"Surveil {n}" }
+      } }
+  | .loyaltyMinusDraw cost n =>
+    { c with
+      activatedAbilities := c.activatedAbilities.push {
+        cost := { loyalty := some (.minus cost) }
+        effect := {
+          resolution := .draw n
+          phrase := if n == 1 then "Draw a card" else s!"Draw {n} cards"
+        }
+      } }
+  | .onAttackMayMill _ => c
+  | .onAttackScry n =>
+    { c with triggeredAbilities := c.triggeredAbilities.push (.onAttackScry n) }
+  | .onAttackDestroyTargetLand =>
+    let trigName := if c.name.isEmpty then "this token" else c.name
+    let eff : Effect := {
+      targeting := .of (.filtered { noun := "target land", types := #[.land] })
+      resolution := .onPermanent .destroy
+      phrase := s!"Whenever {trigName} attacks, destroy target land."
+    }
+    { c with triggeredAbilities := c.triggeredAbilities.push (.triggered .attack eff) }
+  | .onGainLifePutPlusOne _ =>
+    { c with triggeredAbilities := c.triggeredAbilities.push .onGainLifePlusOne }
+  | .onLandYouControlEntersPutPlusOne _ =>
+    { c with triggeredAbilities := c.triggeredAbilities.push .onLandYouControlEntersPlusOnePlusOne }
+
+/-- Realize a `CustomTokenSpec` into its printed `CardDef` (CR 111.3 / 111.4 / 111.11). -/
+def customTokenPrinted (s : CustomTokenSpec) (x : Nat := 0) : CardDef :=
+  let defaultName :=
+    if s.subtypes == #[.sculpture, .treasure] then "Sculpture"
+    else String.intercalate " " (s.subtypes.toList.map CardSubtype.englishName)
+  let base : CardDef := {
+    name := s.name?.getD defaultName
+    supertypes := s.supertypes
+    types := s.types
+    subtypes := s.subtypes.map CardSubtype.englishName
+    power := s.power?.map (·.eval x)
+    toughness := s.toughness?.map (·.eval x)
+    loyalty := s.loyalty?
+    colorIndicator := if s.colors.isColorless then none else some s.colors
+    keywords := s.keywords
+    isToken := true
+  }
+  s.abilities.foldl applyTokenAbility base
+
+/-- Printed characteristics for any `TokenSpec` (CR 111 / 707.9). -/
+def tokenPrinted (spec : TokenSpec) (x : Nat := 0) : CardDef :=
+  match spec with
+  | .predefined p => predefinedTokenPrinted p
+  | .custom s => customTokenPrinted s x
+  | .copyOf _ _ => { name := "Token", types := #[], isToken := true }
+
+/-- Reverse lookup of a `TokenSpec` matching `c` (ignoring `isToken`), if any. -/
+def tokenSpecOfCardDef? (c : CardDef) : Option TokenSpec :=
+  let known : Array TokenSpec := #[
+    .treasure, .food, .clue, .incubator, .map, .junk, .lander, .mutagen,
+    .vibranium, .heartwood,
+    .humanSoldier, .wolf, .dwarf, .bear, .elf, .spirit, .birdSoldier, .wall,
+    .dragon, .hero32vigilance, .villain21menace, .robotVillain22,
+    .leviathan65hexproof, .soldier11white, .squirrel11green, .wall04defender,
+    .doombot, .insect11green, .moloid, .cadet, .lotus, .jace, .sculpture,
+    .mowu, .pridemate, .beast44trample, .dragon55flying, .forestTentacle,
+    .thopter, .angel33blue, .illusion11blue, .leviathan88hexproof,
+    .axe, .zabu, .theVoid, .redwing, .alien, .sturdyShield, .galactus,
+    .merfolk, .tigerGod,
+    .citizen, .warrior, .insect21flying, .myr, .kobold, .mite, .gingerbrute,
+    .angel44white, .human11white, .goblin11red, .rogue22black
   ]
-  allKinds.find? (fun k =>
+  known.find? (fun k =>
     let tk := tokenPrinted k
     { c with isToken := tk.isToken } == tk)
     |>.orElse (fun _ =>
-      allKinds.find? (fun k => (tokenPrinted k).name == c.name))
+      known.find? (fun k => (tokenPrinted k).name == c.name))
 
 /-- Token `ObjectId`s created on the battlefield since `startEventIdx` in `g.events`. -/
 def tokensCreatedSince (g : Game) (startEventIdx : Nat) : Array ObjectId :=
@@ -956,8 +1045,8 @@ def logCreatedTokensSummary (g : Game) (controller : PlayerId) (startEventIdx : 
         s!"{String.intercalate ", " pre}, and {phrases[k - 1]!}"
     g.logMsg s!"{(g.player controller).name} creates {joined}"
 
-/-- Create `n` tokens of `kind`. -/
-def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenKind)
+/-- Create `n` tokens specified by `kind` (CR 111). -/
+def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenSpec)
     (n : Nat) (tapped := false) (attacking := false)
     (attackingTarget : Option AttackTarget := none)
     (resetRecent : Bool := true)

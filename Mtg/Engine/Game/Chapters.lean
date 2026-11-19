@@ -17,7 +17,7 @@ def gainLandfallCreateElf (g : Game) (sourceId : Option ObjectId) : Game :=
     if !src.isOnBattlefield then g
     else
       let landfall : TriggeredAbility :=
-        .onLandYouControlEntersCreateTokens TokenKind.elf 1
+        .onLandYouControlEntersCreateTokens TokenSpec.elf 1
       let g := g.createEffect (.grantedTriggered src.id landfall false)
       g.logMsg s!"{g.name src} gains landfall"
   | none => g

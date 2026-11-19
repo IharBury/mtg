@@ -1,3 +1,4 @@
+import Mtg.Engine.Card.Primitives
 import Mtg.Engine.Card.Text
 import Mtg.Engine.TypeLine
 
@@ -777,5 +778,26 @@ def targetCount (e : α) : Nat := targeting e |>.targetCount
 def requiresTarget (e : α) : Bool := targeting e |>.requiresTarget
 
 end HasTargeting
+
+instance : HasTextChange TargetFilter where
+  applyTextChanges tcs f :=
+    if tcs.isEmpty then f
+    else
+      { f with
+        subtypes := HasTextChange.applyTextChanges tcs f.subtypes
+        colors := HasTextChange.applyTextChanges tcs f.colors }
+
+def EffectTargetKind.applyTextChangesAux (tcs : Array TextChange) : EffectTargetKind → EffectTargetKind
+  | .creatureYouControlSubtype s => .creatureYouControlSubtype (HasTextChange.applyTextChanges tcs s)
+  | .creatureYouControlAnySubtype ss => .creatureYouControlAnySubtype (HasTextChange.applyTextChanges tcs ss)
+  | .filtered f => .filtered (HasTextChange.applyTextChanges tcs f)
+  | .multi fs opt => .multi (HasTextChange.applyTextChanges tcs fs) opt
+  | .pair a b => .pair (EffectTargetKind.applyTextChangesAux tcs a) (EffectTargetKind.applyTextChangesAux tcs b)
+  | .instanceSlots inner minC maxC => .instanceSlots (EffectTargetKind.applyTextChangesAux tcs inner) minC maxC
+  | k => k
+
+instance : HasTextChange EffectTargetKind where
+  applyTextChanges tcs k :=
+    if tcs.isEmpty then k else EffectTargetKind.applyTextChangesAux tcs k
 
 end Mtg.Engine

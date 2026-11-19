@@ -1,3 +1,5 @@
+import Mtg.Engine.Card.Primitives
+import Mtg.Engine.Card.ManaSpec
 import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.Text
 import Mtg.Engine.Card.Counter
@@ -31,10 +33,14 @@ triggered, activated, and spell abilities we currently model.
 
 This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 
+- `Primitives`: shared zone, designation, cost, replacement-tier, type/color
+  modification, and Layer 3 `TextChange`/`HasTextChange` primitives.
+- `ManaSpec`: mana types, `ManaOutput`, `ManaSpec`, and compositional
+  `ManaSpendRestriction` (CR 106).
 - `Keywords`: keyword abilities (CR 702).
 - `Text`: shared Oracle-text phrase helpers.
 - `Counter`: counter kinds a permanent can carry (CR 122).
-- `Token`: token kinds (CR 111).
+- `Token`: unified parameterized `TokenSpec` (CR 111 / 707.9).
 - `Targeting`: targeting shapes and `HasTargeting` (CR 115.1).
 - `PermanentAction`: shared actions on permanents (CR 608.2b).
 - `SpellResolution` / `AbilityCastKind` / `Chapter`: how spells resolve,

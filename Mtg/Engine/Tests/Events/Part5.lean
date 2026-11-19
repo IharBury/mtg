@@ -4465,7 +4465,7 @@ private def replayOk27i3 (gs : Array Game) : Bool :=
       { resolution := .addAnyColorEqualToSourcePower } #[] (some p0BearId) (some 4) none
   let gAlienLki :=
     (gDepartedBear.change (.pushContinuationFrame {})).applyCreateTokens p0
-      (some p0BearId) #[] none .treasure (.fixed 1) false .alien .you .invasion
+      (some p0BearId) #[] none .alien (.fixed 1) false .you .invasion
   let cascadeSpellDef : CardDef := {
     name := "P27i3 Cascade 3"
     manaCost := ManaCost.ofGeneric 3

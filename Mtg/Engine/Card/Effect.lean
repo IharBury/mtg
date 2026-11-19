@@ -113,8 +113,8 @@ private def phraseWith (r : Resolution) (noun : String)
     "Recruit"
   | .amass (.fixed n) .goblin _ _ =>
     s!"Amass Goblins {n.toNat}"
-  | .createTokens kind (.fixed n) tapped _ _ _ =>
-    capitalizeAscii (TokenKind.createPhrase kind n.toNat (tapped := tapped))
+  | .createTokens kind (.fixed n) tapped _ _ =>
+    capitalizeAscii (TokenSpec.createPhrase kind n.toNat (tapped := tapped))
   | .addMana types (.fixed 1) =>
     s!"Add {manaSymbolsText types}"
   | .discard (.cards n) =>
@@ -331,7 +331,7 @@ def ofSpellStep : SpellResolution → Resolution
   | .returnTargetToHand .spell => .returnTargetSpell
   | .returnTargetToHand .graveyard => .returnFromGyToHand
   | .creaturesPump p t .youControl => .creaturesYouControlPump p t
-  | .createTokens kind .chosenX false .kind .you .none => .createTokensX kind
+  | .createTokens kind .chosenX false .you .none => .createTokensX kind
   | .sequence rs => .sequence (rs.map ofSpellStep)
   | r => r
 
@@ -438,5 +438,13 @@ partial def doesNothingAsActivated (r : Resolution) : Bool :=
   | _ => false
 
 end Resolution
+
+instance : HasTextChange Effect where
+  applyTextChanges tcs e :=
+    if tcs.isEmpty then e
+    else
+      { e with
+        targeting := { e.targeting with kind := HasTextChange.applyTextChanges tcs e.targeting.kind }
+        resolution := HasTextChange.applyTextChanges tcs e.resolution }
 
 end Mtg.Engine

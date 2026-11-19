@@ -904,7 +904,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   }
   let gGobFilt0 :=
     (addPermanent (addPermanent g3 gobFilterDef p0 p0) rockFilterDef p0 p0).addMana
-      p0 (.colored .red) 1 (restriction := some (.forSubtypeSpellOrSource .goblin))
+      p0 (.colored .red) 1 (restriction := some (.subtypeSpellOrSource .goblin))
   let gobFiltObj := (gGobFilt0.permanentsOf p0).find? (·.name == gobFilterDef.name) |>.get!
   let rockFiltObj := (gGobFilt0.permanentsOf p0).find? (·.name == rockFilterDef.name) |>.get!
   let gGobFiltPaid : Game :=
@@ -912,18 +912,18 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     | .ok g => g
     | .error e => panic! e
 
-  -- 4b(ii). `ManaPool` `.notSpellsFromHand` after narrow positive restrictions & `.colorless` before colored `.fra`:
+  -- 4b(ii). `ManaPool` `.notSpellsFromHand` after narrow positive restrictions & `.colorless` before colored restricted mana:
   let poolNarrowVsHand : ManaPool :=
-    ((ManaPool.empty.addUnit { mana := .colored .red, restriction := some (.fra (.subtypeSpell .goblin)) }).addUnit
-      { mana := .colored .blue, restriction := some (.fra .notSpellsFromHand) })
+    ((ManaPool.empty.addUnit { mana := .colored .red, restriction := some (.subtypeSpell .goblin) }).addUnit
+      { mana := .colored .blue, restriction := some .notSpellsFromHand })
   let poolAfterExileGob :=
     match poolNarrowVsHand.pay? (ManaCost.ofGeneric 1)
         (spend := { spell := true, fromHand := false, subtypes := #[.goblin] }) with
     | some p' => p'
     | none => panic! "expected poolNarrowVsHand payment"
   let poolColorlessFirst : ManaPool :=
-    ((ManaPool.empty.addUnit { mana := .colored .red, restriction := some (.fra .notSpellsFromHand) }).addUnit
-      { mana := .colorless, restriction := some (.fra .notSpellsFromHand) })
+    ((ManaPool.empty.addUnit { mana := .colored .red, restriction := some .notSpellsFromHand }).addUnit
+      { mana := .colorless, restriction := some .notSpellsFromHand })
   let poolAfterGeneric :=
     match poolColorlessFirst.pay? (ManaCost.ofGeneric 1)
         (spend := { spell := true, fromHand := false }) with
@@ -967,10 +967,10 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
        gGobFilt0.manaAbilityIndexFor rockFiltObj (.colored .blue) (plainOnly := false) == none &&
        (gGobFilt0.activateManaAbility p0 rockFiltObj.id 0 #[.colored .blue, .colored .blue]).toOption.isNone &&
        (gGobFiltPaid.player p0).manaPool.blue == 2 &&
-       (gGobFiltPaid.player p0).manaPool.fraRestricted.isEmpty) &&
+       (gGobFiltPaid.player p0).manaPool.restrictedEntries.isEmpty) &&
     mustHold47i4 "4b_poolNotSpellsFromHandAndColorlessOrder"
-      (poolAfterExileGob.fraRestricted == #[(.colored .blue, .notSpellsFromHand)] &&
-       poolAfterGeneric.fraRestricted == #[(.colored .red, .notSpellsFromHand)]) &&
+      (poolAfterExileGob.restrictedEntries == #[(.colored .blue, .notSpellsFromHand)] &&
+       poolAfterGeneric.restrictedEntries == #[(.colored .red, .notSpellsFromHand)]) &&
     mustHold47i4 "4b_restrictedTreasureAndLiveNonTreasure"
       ((gTrRestrTapped.player p0).manaPool.units.all (·.fromTreasure) &&
        !(gTrRestrTapped.player p0).manaPool.units.isEmpty &&
@@ -1007,7 +1007,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   let gToughDestroyed := (gTough0.destroyPermanent (gTough0.object! wallId) (cause := some testCause)).receivePriority p0
   let gToughRes := mustApply (mustApply (mustApply gToughDestroyed p0 .pass) p1 .pass) p2 .pass
 
-  -- 4c(ii). Layer 3 `TextChange` `Resolution.addMana` `NumberSelector` / `tapAddRestricted` (`FraManaUse.subtypeEquipmentSagaSpell`)
+  -- 4c(ii). Layer 3 `TextChange` `Resolution.addMana` `NumberSelector` / `tapAddRestricted` (`ManaSpendRestriction.subtypeEquipmentSagaSpell`)
   --         & `CardDef.tapAddColorlessPerSubtype` parity:
   let countElfRitualDef : CardDef := {
     name := "P47i4 ElfRite"
@@ -1018,7 +1018,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   let dwarfForgeDef : CardDef := {
     name := "P47i4 DwarfForge"
     types := #[.land]
-    tapAddRestricted := some (#[.colored .red], "Dwarf, Equipment, and Saga spells")
+    tapAddRestricted := some (#[.colored .red], .dwarfEquipmentSagaSpell)
   }
   let elfTowerDef : CardDef := {
     name := "P47i4 ElfTower"
@@ -1063,7 +1063,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
       ((gXManaRes.player p0).manaPool.red == 3 &&
        (gToughRes.player p0).manaPool.green == 4) &&
     mustHold47i4 "4c_layer3AddManaRestrictedAndColorlessPerSub"
-      ((gForgeTapped.player p0).manaPool.fraRestricted == #[(.colored .red, .subtypeEquipmentSagaSpell .bear)] &&
+      ((gForgeTapped.player p0).manaPool.restrictedEntries == #[(.colored .red, .subtypeEquipmentSagaSpell .bear)] &&
        ((gForgeTapped.player p0).manaPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, subtypes := #[.bear] })) &&
        !((gForgeTapped.player p0).manaPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, subtypes := #[.dwarf] })) &&
        (gTowerTapped.player p0).manaPool.colorless == 2 &&

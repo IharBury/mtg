@@ -233,32 +233,6 @@ inductive SpecialActionKind where
   | unlockDoor          -- 116.2m / 709.5
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- A cost payment kind (CR 118, 601.2h, 602.2b). -/
-inductive CostKind where
-  | mana                -- 118.3
-  | tap                 -- 118.3 / 602.2b ({T} symbol or "Tap an untapped …")
-  | untap               -- 118.3 ({Q} symbol)
-  | life                -- 118.3 / 119.4 ("Pay N life")
-  | sacrifice           -- 118.3 / 701.21
-  | discard             -- 118.3 / 701.9
-  | exile               -- 118.3 / 406
-  | removeCounters      -- 118.3 / 122.1
-  | loyalty             -- 606.4 (+N, -N, 0 on a planeswalker)
-  | collectEvidence     -- 701.59
-  | behold              -- 701.4
-  | waterbend           -- 701.67
-  | convoke             -- 702.51
-  | delve               -- 702.66
-  | emerge              -- 702.119
-  | casualty            -- 702.153
-  | bargain             -- 702.166
-  | ward                -- 702.21
-  | teamwork            -- 702.194
-  | returnToHand        -- 118.3 / 702.190a (sneak / return permanent to hand)
-  | putCounters         -- 118.3 / 122.1
-  | cycle               -- 702.29
-deriving DecidableEq, Repr, Inhabited, BEq
-
 /-- The rule or effect kind that a `ReplacementId` identifies (CR 614 / 615). -/
 inductive ReplacementEffectKind where
   | entersTappedSelf                     -- 616.1e / 614.1c / 614.12

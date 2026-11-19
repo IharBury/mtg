@@ -116,33 +116,6 @@ inductive ProposalChange where
   | fraCostPaid (v : Bool)
 deriving Repr, Inhabited, BEq
 
-/-- Priority tiers for choosing among multiple applicable replacement or
-prevention effects on the same event (CR 616.1a–e). -/
-inductive ReplacementTier where
-  /-- CR 616.1a: Self-replacement effects of a resolving spell or ability (CR 614.15). -/
-  | self
-  /-- CR 616.1b: Effects modifying under whose control an object enters the battlefield. -/
-  | control
-  /-- CR 616.1c: Effects making an object become a copy as it enters the battlefield. -/
-  | copy
-  /-- CR 616.1d: Effects causing an object to enter the battlefield with its back face up. -/
-  | backFaceUp
-  /-- CR 303.4f–g: Choosing an object for a non-cast Aura to enchant as it enters. -/
-  | auraHost
-  /-- CR 616.1e: Any other applicable replacement or prevention effect. -/
-  | other
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Numeric priority rank for `ReplacementTier` (CR 616.1a–e): smaller ranks
-apply first. -/
-def ReplacementTier.rank : ReplacementTier → Nat
-  | .self => 0
-  | .control => 1
-  | .copy => 2
-  | .backFaceUp => 3
-  | .auraHost => 4
-  | .other => 5
-
 /-- The kind of replacement effect (CR 614 / 616.1a–e). -/
 inductive ReplacementKind where
   /-- CR 616.1e / 614.1c / 614.12: Intrinsic enters-tapped replacement on `object`. -/
@@ -336,30 +309,6 @@ inductive ObjectScope where
   | permanentsOfSubtype (p : PlayerId) (s : CardSubtype)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Mode for Layer 4 (types) and Layer 5 (colors) continuous effects (CR 205.1a–b / 613.1d–e). -/
-inductive SetOrAdd where
-  /-- Replace existing types/subtypes/colors with the given set (CR 205.1a). -/
-  | set
-  /-- Add the given types/subtypes/colors in addition to existing ones (CR 205.1b). -/
-  | add
-  /-- Add the given subtypes in addition to existing ones, deduplicating if already present. -/
-  | addDedup
-  /-- Replace existing creature subtypes with the given subtypes while keeping noncreature subtypes (CR 205.1a). -/
-  | setAndKeepNoncreatureSubtypes
-  /-- Become an artifact and lose the creature card type (Tom, Bert, and William). -/
-  | addArtifactRemoveCreature
-  /-- Lose the creature card type (Impending, CR 702.176). -/
-  | removeCreature
-  /-- Become an artifact creature with subtype Construct (Puppet Crafting). -/
-  | addConstruct55
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Layer 3 text-changing effect (CR 612 / 613.1c). -/
-inductive TextChange where
-  | replaceCreatureType (fromSub toSub : CardSubtype)
-  | replaceColorWord (fromCol toCol : Color)
-deriving DecidableEq, Repr, Inhabited, BEq
-
 /-- Abilities added by a Layer 6 effect (CR 613.1f). -/
 structure AbilitySet where
   keywords : Keywords := {}
@@ -388,8 +337,12 @@ inductive LayerEffect where
   | control (p : PlayerId)                                             -- Layer 2 (CR 613.1b)
   | text (change : TextChange)                                         -- Layer 3 (CR 613.1c / 612)
   | types (mode : SetOrAdd) (types : Array CardType)
-      (subtypes : Array CardSubtype) (supertypes : Array Supertype)    -- Layer 4 (CR 613.1d)
-  | colors (mode : SetOrAdd) (colors : ColorSet)                       -- Layer 5 (CR 613.1e)
+      (subtypes : Array CardSubtype) (supertypes : Array Supertype)
+      (removeTypes : Array CardType := #[])
+      (removeSubtypes : Array CardSubtype := #[])
+      (removeSupertypes : Array Supertype := #[])                      -- Layer 4 (CR 613.1d)
+  | colors (mode : SetOrAdd) (colors : ColorSet)
+      (removeColors : ColorSet := ColorSet.empty)                      -- Layer 5 (CR 613.1e)
   | abilities (add : AbilitySet) (remove : AbilityRemoval)             -- Layer 6 (CR 613.1f)
   | ptCda (cda : PtCda)                                                -- Layer 7a–7c dynamic P/T (CR 613.4a–c)
   | ptSet (power toughness : Int)                                      -- Layer 7b (CR 613.4b)
@@ -448,10 +401,6 @@ deriving Repr, Inhabited, BEq
 abbrev ContinuousEffect := ContinuousEffectSpec
 
 namespace ContinuousEffectSpec
-
-/-- An Aura's static ability setting `object` to a 5/5 Construct artifact creature (CR 611.3). -/
-@[inline] def auraConstruct55 (object : ObjectId) : ContinuousEffectSpec :=
-  .layered (.objects #[object]) (.types .addConstruct55 #[.artifact, .creature] #[.construct] #[]) .indefinite
 
 /-- `object` gets `power`/`toughness` until end of turn (CR 611.2 / 613.4c). -/
 @[inline] def pump (object : ObjectId) (power toughness : Int) : ContinuousEffectSpec :=
@@ -516,11 +465,11 @@ namespace ContinuousEffectSpec
 
 /-- `object` is an artifact and not a creature (CR 611.2 / 613.1d). -/
 @[inline] def returnedAsArtifact (object : ObjectId) : ContinuousEffectSpec :=
-  .layered (.objects #[object]) (.types .addArtifactRemoveCreature #[.artifact] #[] #[]) .indefinite
+  .layered (.objects #[object]) (.types .add #[.artifact] #[] #[] #[.creature]) .indefinite
 
 /-- `object` isn't a creature (CR 611.2 / 702.176). -/
 @[inline] def notACreature (object : ObjectId) : ContinuousEffectSpec :=
-  .layered (.objects #[object]) (.types .removeCreature #[] #[] #[]) .indefinite
+  .layered (.objects #[object]) (.types .add #[] #[] #[] #[.creature]) .indefinite
 
 /-- `object` gains static ability `ability` (CR 611.2 / 613.1f). -/
 @[inline] def grantedStatic (object : ObjectId) (ability : StaticAbility) : ContinuousEffectSpec :=
@@ -745,14 +694,6 @@ inductive CounterDelta where
   | removed (count : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Designations a permanent can have on the battlefield (CR 400.7 / 701.15b / 701.54b). -/
-inductive PermanentDesignation where
-  | ringBearer                 -- 701.54a
-  | goaded (byPlayer : PlayerId) (untilNextTurn : Bool := true) -- 701.15b
-  | prepared                   -- set mechanic
-  | harnessed                  -- set mechanic
-deriving DecidableEq, Repr, Inhabited, BEq
-
 /-- Permanent status, counter, attachment, control, and designation events
 (CR 110.5, 122, 701.3, 701.26, 702.26, 708, 712). -/
 inductive PermanentEvent where
@@ -816,31 +757,6 @@ inductive LifeEvent where
       (fromDamage : Bool := false) (combat : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Why an object moved between zones (CR 400.6, 121.1, 701.8, 701.9, 701.17, 701.21). -/
-inductive ZoneVerb where
-  | cast
-  | draw (nth : Nat) (firstOfOwnDrawStep : Bool := false)
-  | discard
-  | mill
-  | sacrifice
-  | destroy
-  | exile
-  | counter
-  | resolve
-  | put
-  | returnToHand
-  | shuffleIntoLibrary
-  | playLand
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Where an object is placed in a library when moving to `.library _` (CR 401). -/
-inductive LibraryPosition where
-  | top
-  | bottom
-  | fromTop (offset : Nat)
-  | shuffledIn
-deriving DecidableEq, Repr, Inhabited, BEq
-
 /-- Zone-change, token/copy creation, and cease-to-exist events (CR 400.6, 400.7, 111.10, 704.5d–e). -/
 inductive ZoneEvent where
   | moved
@@ -857,12 +773,6 @@ inductive ZoneEvent where
   | ceasedToExist
       (object : EventObject)
 deriving Repr, Inhabited, BEq
-
-/-- Lasting player designations (CR 702.131). -/
-inductive PlayerDesignation where
-  | citysBlessing
-  | enduringStory
-deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Why a player lost the game (CR 104.3 / 704.5a–c). -/
 inductive LossReason where
@@ -1691,10 +1601,10 @@ inductive PendingReplacement where
       (cause : Option EventCause)
   | createTreasureTokens (controller : PlayerId) (n : Nat) (tapped : Bool)
       (cause : Option EventCause)
-  | createKindTokens (controller : PlayerId) (kind : TokenKind) (n : Nat)
+  | createKindTokens (controller : PlayerId) (kind : TokenSpec) (n : Nat)
       (tapped : Bool) (attacking : Bool) (attackingTarget : Option AttackTarget)
       (resetRecent : Bool) (cause : Option EventCause)
-  | createAndMarkTokensAttacking (controller : PlayerId) (kind : TokenKind)
+  | createAndMarkTokensAttacking (controller : PlayerId) (kind : TokenSpec)
       (n : Nat) (tapped holds : Bool) (sourceId : Option ObjectId)
       (cause : Option EventCause := none)
   | commitEnteringAttackItems (chosen : Array (EnteringAttackItem × Option AttackTarget))
@@ -1778,12 +1688,12 @@ inductive PendingReplacement where
   | finishActivateManaAbilityPicks (p : PlayerId) (id : ObjectId) (oname : String)
       (mana : Array ManaType) (remainingPicks : Array CostPick)
       (remainingCostIds : Array ObjectId) (tap sacrificeSelf : Bool)
-      (activatedIdx : Option Nat) (restriction : ManaRestriction)
+      (activatedIdx : Option Nat) (restriction : Option ManaSpendRestriction)
       (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
       (exileSelf : Bool := false) (powerUp : Bool := false) (exhaust : Bool := false)
   | finishActivateManaAbilityPostSac (p : PlayerId) (id : ObjectId) (oname : String)
       (srcSnap : EventObject) (mana : Array ManaType) (tap : Bool)
-      (activatedIdx : Option Nat) (restriction : ManaRestriction)
+      (activatedIdx : Option Nat) (restriction : Option ManaSpendRestriction)
       (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
       (powerUp : Bool := false) (exhaust : Bool := false)
   | finishBeginRecruit (p : PlayerId)
@@ -1923,7 +1833,7 @@ inductive PendingReplacement where
       (types : Array CardType) (matchedPreIds : Array ObjectId)
       (max : Nat) (mustOne : Bool) (allMatches : Bool := false)
       (maxPut : Option Nat := none) (cause : Option EventCause := none)
-  | makeFrcLoop (p : PlayerId) (kind : FrcToken) (remaining : Nat) (x : Nat)
+  | makeFrcLoop (p : PlayerId) (kind : TokenSpec) (remaining : Nat) (x : Nat)
       (extraCounters : CounterBag) (cause : Option EventCause)
   | finishFrcRestBottom (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool := false)
       (cause : Option EventCause := none)
@@ -3978,9 +3888,9 @@ def isTreasureSourceInLog (events : Array GameEvent) (srcId : ObjectId) : Bool :
     | _ => pure ()
   return false
 
-/-- Whether `u` came from a Treasure source (via explicit `fromTreasure` provenance or Treasure spending restriction). -/
+/-- Whether `u` came from a Treasure source (CR 111.10a provenance). -/
 private def isTreasureManaUnit (u : ManaUnit) : Bool :=
-  u.fromTreasure || u.restriction == some (.fra .fromTreasure)
+  u.fromTreasure
 
 /-- Whether mana from a Treasure was spent to cast `spell` (CR 106.6). -/
 def treasureManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
@@ -3994,16 +3904,17 @@ def treasureManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
       forObj == some spell && units.any isTreasureManaUnit
     | _, _ => false
 
-/-- Whether legendary-restricted mana (Delighted Halfling) was spent to cast `spell` (CR 106.6). -/
+/-- Whether mana carrying a `.cantBeCountered` spell rider (e.g. Delighted Halfling)
+was spent to cast `spell` (CR 106.6 / 106.12). -/
 def legendaryManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
   let preCast := events.extract 0 (castEventBound events spell)
   preCast.any fun e =>
     match e.change, e.cause? with
     | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
       (forObj == some spell || oid? == some spell) &&
-        units.any (·.restriction == some (.fra .legendarySpell))
+        units.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered))
     | .rules (.player (.manaSpent _ units forObj)), _ =>
-      forObj == some spell && units.any (·.restriction == some (.fra .legendarySpell))
+      forObj == some spell && units.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered))
     | _, _ => false
 
 /-- Creature spells `p` cast on `turn`. -/

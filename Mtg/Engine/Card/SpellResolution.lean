@@ -1383,31 +1383,6 @@ inductive CounterSelector where
   | missingKeywordsFromTarget
 deriving Repr, Inhabited, BEq
 
-/-- Which token `TriggerResolution.createTokens` creates.
-`.kind` uses the `kind` argument. -/
-inductive TriggerToken where
-  /-- The `kind` argument. -/
-  | kind
-  /-- A colorless Equipment artifact token named Axe. -/
-  | axe
-  /-- Zabu, a legendary 2/2 green Cat. -/
-  | zabu
-  /-- The Void, a legendary 5/5 black Horror Villain. -/
-  | theVoid
-  /-- Redwing, a legendary 1/1 blue Bird Scout. -/
-  | redwing
-  /-- A 1/1 red Alien creature token with haste. -/
-  | alien
-  /-- A colorless Equipment artifact token named Sturdy Shield. -/
-  | sturdyShield
-  /-- Galactus, a legendary 16/16 black Elder Alien with flying and trample. -/
-  | galactus
-  /-- A 1/1 blue Merfolk creature token. With amount `.blueManaSymbols`,
-  the count is the blue mana symbols in the spell that caused this.
-  No blue symbol creates nothing. -/
-  | merfolk
-deriving Repr, Inhabited, BEq
-
 /-- What `TriggerResolution.createTokens` records or queues after the token exists. -/
 inductive TriggerTokenNote where
   /-- The tokens only. -/
@@ -2543,19 +2518,18 @@ inductive Resolution where
   `.createTokens .treasure (.fixed 1) false .theVoid (.target .opponent)`.
   Redwing is `.createTokens .treasure (.fixed 1) false .redwing`.
   An Alien, remembering invasion counters, is
-  `.createTokens .treasure (.fixed 1) false .alien (note := .invasion)`.
+  `.createTokens .alien (.fixed 1) false (note := .invasion)`.
   A Sturdy Shield, remembered for a later attach, is
-  `.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember)`.
+  `.createTokens .sturdyShield (.fixed 1) false (note := .remember)`.
   The target's controller creates a Treasure with
   `.createTokens .treasure (.fixed 1) false (who := .controller .target)`.
   One 1/1 blue Merfolk for each blue mana symbol in the spell that caused
-  this is `.createTokens .treasure .blueManaSymbols false .merfolk`.
+  this is `.createTokens .merfolk .blueManaSymbols false`.
   Any other count creates that many of the named token for the players
   the selector names. Zero creates nothing. A count that cannot be read
   creates nothing. -/
-  | createTokens (kind : TokenKind) (amount : NumberSelector) (tapped : Bool := false)
-      (token : TriggerToken := .kind) (who : PlayerSelector := .you)
-      (note : TriggerTokenNote := .none)
+  | createTokens (kind : TokenSpec) (amount : NumberSelector) (tapped : Bool := false)
+      (who : PlayerSelector := .you) (note : TriggerTokenNote := .none)
   /-- Attach `what` to `host`.
   The source to the token created by the previous step is
   `.attach .source .createdToken`.
@@ -3094,7 +3068,7 @@ inductive Resolution where
   /-- Search for a basic land and put it into hand. -/
   | searchBasicLandToHand
   /-- Create X tokens of this kind. -/
-  | createTokensX (kind : TokenKind)
+  | createTokensX (kind : TokenSpec)
   /-- Search two basics; one tapped, one to hand. -/
   | searchTwoBasicsSplit
   /-- These subtypes you control gain menace. -/
@@ -3158,7 +3132,7 @@ inductive Resolution where
   /-- Draw a card for each card you've discarded this turn. -/
   | drawPerDiscardedThisTurn
   /-- Create that many tokens of this kind (X = removed +1/+1 counters). -/
-  | createTokensEqualRemovedPlusOnes (kind : TokenKind)
+  | createTokensEqualRemovedPlusOnes (kind : TokenSpec)
   /-- Exile the top X cards; you may play them this turn. -/
   | exileTopXPlayThisTurn
   /-- Target player draws `n` cards. -/
@@ -3166,7 +3140,7 @@ inductive Resolution where
   /-- Copy target activated or triggered ability you control from this source type. -/
   | copyControlledAbility (ty : CardType)
   /-- Create tokens equal to the number of permanents you control of this subtype. -/
-  | createTokensEqualSubtype (kind : TokenKind) (subtype : CardSubtype)
+  | createTokensEqualSubtype (kind : TokenSpec) (subtype : CardSubtype)
   /-- For each kind of counter on target permanent or player, give another of that kind. -/
   | proliferateEachKind
   /-- If this Equipment isn't a creature, it becomes a 0/0 Construct Hero with flying. -/
@@ -3198,7 +3172,7 @@ inductive Resolution where
   /-- You may discard a card. If you do, draw `n` cards. -/
   | mayDiscardDraw (n : Nat)
   /-- Create X tokens, where X is the life you gained this turn. -/
-  | createTokensLifeGained (kind : TokenKind)
+  | createTokensLifeGained (kind : TokenSpec)
   /-- The target opponent sacrifices a creature or planeswalker with the
   greatest mana value among those they control. -/
   | oppSacrificesGreatestMv
@@ -3945,7 +3919,7 @@ def ofSpell : TriggerResolution → TriggerResolution
   | .destroyUpToOneNonland => .destroy .target
   | .mutualFight .upToOne => .fight .announced .upToOneOther
   | .mutualFight .both => .fight .announced .mutual
-  | .createGalactus => .createTokens .treasure (.fixed 1) false .galactus
+  | .createGalactus => .createTokens .galactus (.fixed 1) false
   | .nextFreeRGCreature =>
     .mayCast .nextRedOrGreenCreature .unlimited .withoutPaying
   | .mayDrawPerArtifactOppsDraw ty =>
@@ -4267,14 +4241,14 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
     s!"choose target creature card in your graveyard with mana value {n} or less. If this spell was cast using teamwork, instead choose target creature card in your graveyard. Return the chosen card to the battlefield"
   | .revealTopPutCreatures n =>
     s!"reveal the top {n} cards of your library. You may put a creature card from among them onto the battlefield. If this spell was cast using teamwork, put any number of creature cards from among them onto the battlefield instead. Put the rest into your graveyard"
-  | .createTokens kind .chosenX _ _ _ _ =>
+  | .createTokens kind .chosenX _ _ _ =>
     s!"create X {kind.pluralNoun}"
-  | .createTokens kind (.perSubtype subtype) _ _ _ _ =>
+  | .createTokens kind (.perSubtype subtype) _ _ _ =>
     s!"Create a {kind.oracleNoun} for each {subtype} you control"
-  | .createTokens kind (.fixed n) _ .kind .you _ =>
-    TokenKind.createPhrase kind n.toNat
-  | .createTokens kind (.fixed n) _ .kind .player _ =>
-    s!"{noun} creates {TokenKind.createdTokensPhrase kind n.toNat}"
+  | .createTokens kind (.fixed n) _ .you _ =>
+    TokenSpec.createPhrase kind n.toNat
+  | .createTokens kind (.fixed n) _ .player _ =>
+    s!"{noun} creates {TokenSpec.createdTokensPhrase kind n.toNat}"
   | .returnOneOrTwoNonlands =>
     "return one or two target nonland permanents to their owners' hands"
   | .targetPlayerInvestigates =>
@@ -4359,8 +4333,8 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     s!"return up to one {noun} to your hand. Amass {pluralizeName subtype} {n}"
   | [.draw (.fixed 1), .loseLife (.fixed 1), .amass (.fixed n) subtype] =>
     s!"you draw a card and lose 1 life. Amass {pluralizeName subtype} {n}"
-  | [.createTokens kind (.fixed n) _ .kind .you _, .creaturesPump p t .youControl] =>
-    let tokens := capitalizeAscii (TokenKind.createPhrase kind n.toNat)
+  | [.createTokens kind (.fixed n) _ .you _, .creaturesPump p t .youControl] =>
+    let tokens := capitalizeAscii (TokenSpec.createPhrase kind n.toNat)
     s!"{tokens}, then creatures you control get {signedStat p}/{signedStat t} until end of turn."
   | [.onPermanent .destroy, .gainLife (.fixed n)] =>
     s!"destroy {noun}. You gain {n} life"
@@ -4453,5 +4427,84 @@ def toPhrase (r : SpellResolution) (noun : String) : String :=
   | r => phraseOne r noun
 
 end SpellResolution
+
+private partial def TriggeredAbility.ObjectSelector.applyTextChangesAux
+    (tcs : Array TextChange) : TriggeredAbility.ObjectSelector → TriggeredAbility.ObjectSelector :=
+  let ms : CardSubtype → CardSubtype := HasTextChange.applyTextChanges tcs
+  fun sel =>
+    match sel with
+    | .anotherSubtype s => .anotherSubtype (ms s)
+    | .target w => .target (TriggeredAbility.ObjectSelector.applyTextChangesAux tcs w)
+    | .cause (some s) => .cause (some (ms s))
+    | .othersOfSubtype s => .othersOfSubtype (ms s)
+    | .eachNonSubtypeAndOpponents s => .eachNonSubtypeAndOpponents (ms s)
+    | .milledSubtype s => .milledSubtype (ms s)
+    | .youControl (.subtype s) => .youControl (.subtype (ms s))
+    | .basicUpTo s max => .basicUpTo (ms s) max
+    | .creatureFromHand s maxMv => .creatureFromHand (ms s) maxMv
+    | .humans =>
+      let s := ms .human
+      if s == .human then .humans
+      else .intersection [.creaturesYouControl, .youControl (.subtype s)]
+    | .enteringVillain =>
+      let s := ms .villain
+      if s == .villain then .enteringVillain else .cause (some s)
+    | .forestsExceptCause =>
+      let s := ms .forest
+      if s == .forest then .forestsExceptCause else .othersOfSubtype s
+    | .intersection ws => .intersection (ws.map (TriggeredAbility.ObjectSelector.applyTextChangesAux tcs))
+    | .union ws => .union (ws.map (TriggeredAbility.ObjectSelector.applyTextChangesAux tcs))
+    | w => w
+
+instance : HasTextChange TriggeredAbility.ObjectSelector where
+  applyTextChanges tcs sel :=
+    if tcs.isEmpty then sel else TriggeredAbility.ObjectSelector.applyTextChangesAux tcs sel
+
+instance : HasTextChange TriggeredAbility.NumberSelector where
+  applyTextChanges tcs num :=
+    if tcs.isEmpty then num
+    else
+      let ms : CardSubtype → CardSubtype := HasTextChange.applyTextChanges tcs
+      match num with
+      | .subtypeCount s => .subtypeCount (ms s)
+      | .perSubtype s => .perSubtype (ms s)
+      | .perPlains =>
+        let s := ms .plains
+        if s == .plains then .perPlains else .subtypeCount s
+      | .count w => .count (HasTextChange.applyTextChanges tcs w)
+      | n => n
+
+private partial def Resolution.applyTextChangesAux (tcs : Array TextChange) : Resolution → Resolution
+  | .addAnyColorSpendOnlySubtype s =>
+    .addAnyColorSpendOnlySubtype (HasTextChange.applyTextChanges tcs s)
+  | .addFourManaDragonSpells n s =>
+    .addFourManaDragonSpells n (HasTextChange.applyTextChanges tcs s)
+  | .addMana types amount =>
+    .addMana types (HasTextChange.applyTextChanges tcs amount)
+  | .createTokens kind amount tapped who note =>
+    .createTokens (HasTextChange.applyTextChanges tcs kind)
+      (HasTextChange.applyTextChanges tcs amount) tapped who note
+  | .createTokensX kind =>
+    .createTokensX (HasTextChange.applyTextChanges tcs kind)
+  | .createTokensEqualRemovedPlusOnes kind =>
+    .createTokensEqualRemovedPlusOnes (HasTextChange.applyTextChanges tcs kind)
+  | .createTokensEqualSubtype kind s =>
+    .createTokensEqualSubtype (HasTextChange.applyTextChanges tcs kind)
+      (HasTextChange.applyTextChanges tcs s)
+  | .createTokensLifeGained kind =>
+    .createTokensLifeGained (HasTextChange.applyTextChanges tcs kind)
+  | .dealDamageToEachCreature n (.nonSubtype s) amount =>
+    .dealDamageToEachCreature n (.nonSubtype (HasTextChange.applyTextChanges tcs s)) amount
+  | .sequence rs =>
+    .sequence (rs.map (Resolution.applyTextChangesAux tcs))
+  | .may action follow w =>
+    .may (Resolution.applyTextChangesAux tcs action) (Resolution.applyTextChangesAux tcs follow) w
+  | .or rs =>
+    .or (rs.map (Resolution.applyTextChangesAux tcs))
+  | r => r
+
+instance : HasTextChange Resolution where
+  applyTextChanges tcs r :=
+    if tcs.isEmpty then r else Resolution.applyTextChangesAux tcs r
 
 end Mtg.Engine

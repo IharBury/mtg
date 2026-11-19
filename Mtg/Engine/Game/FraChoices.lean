@@ -972,7 +972,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some c := Color.all[idx]? | throw "Choose white, blue, black, red, or green (0-4)"
     let g := g.addMana p (.colored c) 1
       (source := g.currentResolvingContext?.bind Prod.fst)
-      (restriction := some (.fra use))
+      (restriction := some use)
     let g := g.logMsg s!"{(g.player p).name} adds {ManaType.colored c} ({use.label})"
     if left > 1 then return g.change (.pending (.fraChoice p (.addManaColors (left - 1) use)))
     return g.finishFraChoice
