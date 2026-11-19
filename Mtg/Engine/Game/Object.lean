@@ -12,8 +12,169 @@ triggered abilities waiting to go on the stack (CR 603.3).
 
 namespace Mtg.Engine
 
-set_option maxRecDepth 2048 in
-deriving instance BEq for CardDef
+-- Split `BEq CardDef` across small `@[noinline]` field groups so Clang does not
+-- have to compile a single 17k-line C function for all 141 fields.
+@[noinline] private def cardDefBeq1 (a b : CardDef) : Bool :=
+  a.name == b.name &&
+  a.manaCost == b.manaCost &&
+  a.types == b.types &&
+  a.subtypes == b.subtypes &&
+  a.supertypes == b.supertypes &&
+  a.power == b.power &&
+  a.toughness == b.toughness &&
+  a.powerStar == b.powerStar &&
+  a.toughnessStar == b.toughnessStar &&
+  a.loyalty == b.loyalty &&
+  a.defense == b.defense &&
+  a.handModifier == b.handModifier &&
+  a.lifeModifier == b.lifeModifier &&
+  a.colorIndicator == b.colorIndicator &&
+  a.keywords == b.keywords &&
+  a.spellEffect == b.spellEffect &&
+  a.additionalCostSacrificeArtifactOrCreature == b.additionalCostSacrificeArtifactOrCreature &&
+  a.additionalCostSacrificeCreatureOrPlaneswalker == b.additionalCostSacrificeCreatureOrPlaneswalker &&
+  a.additionalCostOrPayGeneric == b.additionalCostOrPayGeneric &&
+  a.additionalCostDiscardOrPayGeneric == b.additionalCostDiscardOrPayGeneric &&
+  a.costReductionIfCreatureDied == b.costReductionIfCreatureDied &&
+  a.costReductionIfTargetDamaged == b.costReductionIfTargetDamaged &&
+  a.costReductionIfTargetTapped == b.costReductionIfTargetTapped &&
+  a.costReductionIfTargetAttackingNontoken == b.costReductionIfTargetAttackingNontoken &&
+  a.costReductionIfTargetAttacking == b.costReductionIfTargetAttacking
+
+@[noinline] private def cardDefBeq2 (a b : CardDef) : Bool :=
+  a.costReductionIfYouControl == b.costReductionIfYouControl &&
+  a.costReductionIfYouControlLegendary == b.costReductionIfYouControlLegendary &&
+  a.costReductionIfGyCreaturesAtLeast == b.costReductionIfGyCreaturesAtLeast &&
+  a.spellModes == b.spellModes &&
+  a.fraTriggerModes == b.fraTriggerModes &&
+  a.tapAddMana == b.tapAddMana &&
+  a.tapAddManaForEach == b.tapAddManaForEach &&
+  a.tapAddAnyColorEqualToPower == b.tapAddAnyColorEqualToPower &&
+  a.tapAddAnyColorForInstantOrSorcery == b.tapAddAnyColorForInstantOrSorcery &&
+  a.entersWithHopePerCreature == b.entersWithHopePerCreature &&
+  a.entersTapped == b.entersTapped &&
+  a.tapAddOneOf == b.tapAddOneOf &&
+  a.tapAddOneOfIfEnteredOrBasic == b.tapAddOneOfIfEnteredOrBasic &&
+  a.tapAddAnyColor == b.tapAddAnyColor &&
+  a.tapSacrificeAddAnyColor == b.tapSacrificeAddAnyColor &&
+  a.isToken == b.isToken &&
+  a.cantBeCountered == b.cantBeCountered &&
+  a.flashIfYouControlSubtype == b.flashIfYouControlSubtype &&
+  a.ward == b.ward &&
+  a.flashback == b.flashback &&
+  a.flashbackDiscard == b.flashbackDiscard &&
+  a.castExiledWithSevenInGraveyard == b.castExiledWithSevenInGraveyard &&
+  a.entersTappedUnlessLegendary == b.entersTappedUnlessLegendary &&
+  a.entersTappedUnlessEquipment == b.entersTappedUnlessEquipment &&
+  a.planeswalkersYouControlHave == b.planeswalkersYouControlHave
+
+@[noinline] private def cardDefBeq3 (a b : CardDef) : Bool :=
+  a.entersWithPlusOneCounters == b.entersWithPlusOneCounters &&
+  a.tapAddChosenColorPerDifferentPower == b.tapAddChosenColorPerDifferentPower &&
+  a.anyNumberInDeck == b.anyNumberInDeck &&
+  a.castOnlyIfGraveyardAtLeast == b.castOnlyIfGraveyardAtLeast &&
+  a.entersTappedUnlessPlaneswalker == b.entersTappedUnlessPlaneswalker &&
+  a.entersTappedUnlessTwoOtherLands == b.entersTappedUnlessTwoOtherLands &&
+  a.tapAddAnyColorForLegendary == b.tapAddAnyColorForLegendary &&
+  a.costReductionEqualFlyingPower == b.costReductionEqualFlyingPower &&
+  a.costReductionGreatestPower == b.costReductionGreatestPower &&
+  a.costReductionGreatestToughness == b.costReductionGreatestToughness &&
+  a.crew == b.crew &&
+  a.tapAddTwoAmong == b.tapAddTwoAmong &&
+  a.chooseOneOrBoth == b.chooseOneOrBoth &&
+  a.chooseTwoIfYouControlSubtype == b.chooseTwoIfYouControlSubtype &&
+  a.tapAddAnyColorAmongLegendaries == b.tapAddAnyColorAmongLegendaries &&
+  a.tapAddRestricted == b.tapAddRestricted &&
+  a.tapPayLifeAddOneOf == b.tapPayLifeAddOneOf &&
+  a.entersTappedUnlessPayLife == b.entersTappedUnlessPayLife &&
+  a.entersTappedUnlessBehold == b.entersTappedUnlessBehold &&
+  a.tapAddCommanderIdentity == b.tapAddCommanderIdentity &&
+  a.additionalCostSacrificeCreature == b.additionalCostSacrificeCreature &&
+  a.asEntersChooseCreatureType == b.asEntersChooseCreatureType &&
+  a.saga == b.saga &&
+  a.affinityForSubtype == b.affinityForSubtype &&
+  a.costReductionEqualOppArtifacts == b.costReductionEqualOppArtifacts
+
+@[noinline] private def cardDefBeq4 (a b : CardDef) : Bool :=
+  a.giftTreasure == b.giftTreasure &&
+  a.foodAlsoCreatesTreasure == b.foodAlsoCreatesTreasure &&
+  a.othersEnterWithPlusOneEqualToughness == b.othersEnterWithPlusOneEqualToughness &&
+  a.powerPerMountain == b.powerPerMountain &&
+  a.extraLandIfOtherSubtype == b.extraLandIfOtherSubtype &&
+  a.tapAddColorlessPerSubtype == b.tapAddColorlessPerSubtype &&
+  a.cascade == b.cascade &&
+  a.kicker == b.kicker &&
+  a.tokenDoubling == b.tokenDoubling &&
+  a.drawTwoExceptFirstDrawStep == b.drawTwoExceptFirstDrawStep &&
+  a.activatedAbilities == b.activatedAbilities &&
+  a.staticAbilities == b.staticAbilities &&
+  a.triggeredAbilities == b.triggeredAbilities &&
+  a.exileOppCreaturesInstead == b.exileOppCreaturesInstead &&
+  a.prowessInstances == b.prowessInstances &&
+  a.mayLookAtTopAnytime == b.mayLookAtTopAnytime &&
+  a.mayCastCreaturesFromTop == b.mayCastCreaturesFromTop &&
+  a.mayPlayLandsFromTop == b.mayPlayLandsFromTop &&
+  a.grantCreaturesTapAddAnyColor == b.grantCreaturesTapAddAnyColor &&
+  a.firstCreatureCostsLess == b.firstCreatureCostsLess &&
+  a.firstCreatureHasFlash == b.firstCreatureHasFlash &&
+  a.hexproofIndestructibleIfLore == b.hexproofIndestructibleIfLore &&
+  a.entersWithIndestructibleCounter == b.entersWithIndestructibleCounter &&
+  a.asEntersChooseOddEven == b.asEntersChooseOddEven &&
+  a.costReductionNotFromHand == b.costReductionNotFromHand
+
+@[noinline] private def cardDefBeq5 (a b : CardDef) : Bool :=
+  a.adventure == b.adventure &&
+  a.teamwork == b.teamwork &&
+  a.chooseBothIfTeamwork == b.chooseBothIfTeamwork &&
+  a.entersWithShield == b.entersWithShield &&
+  a.daybound == b.daybound &&
+  a.empowerJace == b.empowerJace &&
+  a.entersPrepared == b.entersPrepared &&
+  a.prepareFace == b.prepareFace &&
+  a.additionalCostBeholdOrPay == b.additionalCostBeholdOrPay &&
+  a.tapAddTogether == b.tapAddTogether &&
+  a.tapAddOneOfDealsDamage == b.tapAddOneOfDealsDamage &&
+  a.tapAddOppCouldProduce == b.tapAddOppCouldProduce &&
+  a.tapAddYouCouldProduce == b.tapAddYouCouldProduce &&
+  a.grantLandsTapAnyColor == b.grantLandsTapAnyColor &&
+  a.filterMana == b.filterMana &&
+  a.entersTappedUnlessAnySubtype == b.entersTappedUnlessAnySubtype &&
+  a.entersTappedUnlessNBasics == b.entersTappedUnlessNBasics &&
+  a.entersTappedUnlessOppLands == b.entersTappedUnlessOppLands &&
+  a.commanderIdentityScryCreature == b.commanderIdentityScryCreature &&
+  a.morph == b.morph &&
+  a.impending == b.impending &&
+  a.protectionFromColors == b.protectionFromColors &&
+  a.cycling == b.cycling &&
+  a.freeCastIfControlCommander == b.freeCastIfControlCommander
+
+@[noinline] private def cardDefBeq6 (a b : CardDef) : Bool :=
+  a.canBeCommander == b.canBeCommander &&
+  a.opponentsCantGainLife == b.opponentsCantGainLife &&
+  a.cantLoseGame == b.cantLoseGame &&
+  a.opponentsCantWin == b.opponentsCantWin &&
+  a.creaturesCantGetMinusCounters == b.creaturesCantGetMinusCounters &&
+  a.powerPerUnspentMana == b.powerPerUnspentMana &&
+  a.unspentManaBecomesColorless == b.unspentManaBecomesColorless &&
+  a.eminenceSphinxReduction == b.eminenceSphinxReduction &&
+  a.asEntersChooseCardType == b.asEntersChooseCardType &&
+  a.protectionFromChosenCardType == b.protectionFromChosenCardType &&
+  a.corruptedToxicLifelink == b.corruptedToxicLifelink &&
+  a.asEntersChooseMarduOrJeskai == b.asEntersChooseMarduOrJeskai &&
+  a.asEntersMayCopyCreatureHasteUntilEot == b.asEntersMayCopyCreatureHasteUntilEot &&
+  a.toxic == b.toxic &&
+  a.cantBlock == b.cantBlock &&
+  a.grantTeamPlusTwoFlying == b.grantTeamPlusTwoFlying
+
+private partial def cardDefBeq (a b : CardDef) : Bool :=
+  cardDefBeq1 a b && cardDefBeq2 a b && cardDefBeq3 a b &&
+    cardDefBeq4 a b && cardDefBeq5 a b && cardDefBeq6 a b &&
+    match a.otherFace, b.otherFace with
+    | none, none => true
+    | some x, some y => cardDefBeq x y
+    | _, _ => false
+
+instance : BEq CardDef := ⟨cardDefBeq⟩
 
 /-- Sentinel `ObjectId` used only for source-less waiting triggers (such as
 delayed triggers created by game rules or player actions without a source

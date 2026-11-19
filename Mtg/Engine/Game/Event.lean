@@ -3277,8 +3277,9 @@ def watches (e : GameEvent) (watch : ReplacementWatch) : Bool :=
 “This” abilities require `sourceId` to be `some` of the object that changed.
 “You” abilities require `listener` to be the player who did it.
 An event this change does not describe does not match. -/
-def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option ObjectId := none)
-    (te : TriggerEvent) (isTeammate : PlayerId → Bool := fun _ => false) : Bool :=
+@[noinline] private def matchesTriggerZone (ze : ZoneEvent) (cause? : Option EventCause)
+    (listener : PlayerId) (sourceId : Option ObjectId) (te : TriggerEvent)
+    (isTeammate : PlayerId → Bool) : Bool :=
   let you (p : PlayerId) : Bool := p == listener
   let opp (p : PlayerId) : Bool := !you p && !isTeammate p
   let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
@@ -3287,415 +3288,562 @@ def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option Obje
     match sourceId with
     | some sid => o.id.any (· != sid)
     | none => true
-  match e.change with
-  | .engine _ => false
-  | .rules r =>
-    match r, te with
-    | .zone (.moved _ _ _ _ (.draw _ _) (some p) _ _), .youDraw => you p
-    | .zone (.moved _ _ _ _ (.draw nth _) (some p) _ _), .youDrawSecondCard => you p && nth == 2
-    | .zone (.moved _ _ _ _ (.draw nth _) _ _ _), .anyPlayerDrawsSecond => nth == 2
-    | .zone (.moved _ _ _ _ (.draw _ first) (some p) _ _), .opponentDrawsExceptFirstDrawStep => opp p && !first
-    | .zone (.moved _ _ _ _ (.draw nth _) (some p) _ _), .opponentDrawsSecondCard => opp p && nth == 2
-    | .life (.gained p amount), .youGainLife => you p && amount > 0
-    | .life (.lost _ amount _ _), .playerLosesLife => amount > 0
-    | .damage (.dealt pkts), .sourceDealtDamage =>
+  match ze with
+  | .moved before after fromZone toZone verb actor entersWith _ =>
+    match te with
+    | .youDraw =>
+      match verb, actor with | .draw _ _, some p => you p | _, _ => false
+    | .youDrawSecondCard =>
+      match verb, actor with | .draw nth _, some p => you p && nth == 2 | _, _ => false
+    | .anyPlayerDrawsSecond =>
+      match verb with | .draw nth _ => nth == 2 | _ => false
+    | .opponentDrawsExceptFirstDrawStep =>
+      match verb, actor with | .draw _ first, some p => opp p && !first | _, _ => false
+    | .opponentDrawsSecondCard =>
+      match verb, actor with | .draw nth _, some p => opp p && nth == 2 | _, _ => false
+    | .dying =>
+      match fromZone, toZone with
+      | .battlefield, .graveyard _ => !before.phasedOut && this before
+      | _, _ => false
+    | .leaving =>
+      fromZone == .battlefield && toZone != .battlefield && !before.phasedOut && this before
+    | .entering =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        (this after || this before)
+    | .landYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && after.land
+    | .forestYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && after.forest
+    | .mountainYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && after.mountain
+    | .artifactYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && after.artifact
+    | .creatureYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && after.creature
+    | .anotherCreatureYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && other after && after.creature
+    | .anotherElfYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && other after && after.elf
+    | .tokenYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && after.token
+    | .equipmentYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && after.equipment
+    | .anotherArtifactEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && other after && after.artifact
+    | .anotherVillainEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && other after && after.villain
+    | .anotherVillainOrArtifactEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && other after && (after.villain || after.artifact)
+    | .anotherNontokenHeroEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && other after && !after.token && after.hero
+    | .anotherNontokenArtifactEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && other after && !after.token && after.artifact
+    | .creatureYouControlDies =>
+      match fromZone, toZone with
+      | .battlefield, .graveyard _ => !before.phasedOut && yours before && before.creature
+      | _, _ => false
+    | .nontokenYouControlDies =>
+      match fromZone, toZone with
+      | .battlefield, .graveyard _ => !before.phasedOut && yours before && before.creature && !before.token
+      | _, _ => false
+    | .anotherGoblinOrcArmyDies =>
+      match fromZone, toZone with
+      | .battlefield, .graveyard _ => !before.phasedOut && yours before && other before && before.creature && before.goblinOrcArmy
+      | _, _ => false
+    | .villainYouControlDies =>
+      match fromZone, toZone with
+      | .battlefield, .graveyard _ => !before.phasedOut && yours before && before.creature && before.villain
+      | _, _ => false
+    | .attackingCreatureYouControlDies =>
+      match fromZone, toZone with
+      | .battlefield, .graveyard _ => !before.phasedOut && yours before && before.creature && before.attacking
+      | _, _ => false
+    | .oneOrMoreOtherCreaturesDie =>
+      match fromZone, toZone with
+      | .battlefield, .graveyard _ => !before.phasedOut && other before && before.creature
+      | _, _ => false
+    | .anotherNonlandReturned =>
+      match fromZone, toZone with
+      | .battlefield, .hand _ => !before.phasedOut && yours before && other before && !before.land
+      | _, _ => false
+    | .creatureCardLeavesYourGy =>
+      match fromZone with
+      | .graveyard owner => you owner && before.creature
+      | _ => false
+    | .creatureCardsPutIntoYourGy =>
+      match toZone with
+      | .graveyard owner => you owner && after.creature && !after.token
+      | _ => false
+    | .youDiscard =>
+      match fromZone, verb with
+      | .hand p, .discard => you p && toZone != .hand p
+      | _, _ => false
+    | .thisOrNontokenSubtypeYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        ((this after || this before) || (yours after && !after.token && !after.subtypes.isEmpty))
+    | .anotherSubtypeOrEquipmentYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && other after && (after.equipment || !after.subtypes.isEmpty)
+    | .thisOrAnotherSubtypeYouControlEnters =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        ((this after || this before) || (yours after && !after.subtypes.isEmpty))
+    | .subtypeYouControlEnters sub =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        yours after && after.hasSubtype sub
+    | .sagaChapter =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        (this after || this before) && entersWith.count .lore > 0
+    | .nthPlanCounter _ =>
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        (this after || this before) && entersWith.count .plan > 0
+    | .youPutPlusOne =>
+      let p := actor.orElse (fun _ => after.controller)
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        p.any you && entersWith.count .plusOnePlusOne > 0 && after.creature
+    | .youPutCountersOnGoblinOrcArmy =>
+      let p := actor.orElse (fun _ => after.controller)
+      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+        p.any you && yours after && entersWith.any (fun (_, n) => n > 0) && after.goblinOrcArmy
+    | .youSacrificeToken =>
+      match fromZone, verb with
+      | .battlefield, .sacrifice =>
+        let p := actor.getD (before.controller.getD before.owner)
+        !before.phasedOut && you p && before.token && toZone != .battlefield
+      | _, _ => false
+    | .bolgSacrificedForReflexive =>
+      match fromZone, verb with
+      | .battlefield, .sacrifice =>
+        let p := actor.getD (before.controller.getD before.owner)
+        !before.phasedOut && you p && other before && before.creature && toZone != .battlefield
+      | _, _ => false
+    | .fra fe =>
+      match fe with
+      | .youDiscardThis =>
+        match fromZone, verb with
+        | .hand p, .discard => you p && toZone != .hand p && (this before || this after)
+        | _, _ => false
+      | .youCycle =>
+        match fromZone, verb with
+        | .hand p, .discard =>
+          you p && toZone != .hand p && (this before || this after) &&
+            match cause? with | some (.costPayment .cycle _ _) => true | _ => false
+        | _, _ => false
+      | .youDiscardOne =>
+        match fromZone, verb with
+        | .hand p, .discard => you p && toZone != .hand p
+        | _, _ => false
+      | .playerDiscards =>
+        match fromZone, verb with
+        | .hand p, .discard => toZone != .hand p
+        | _, _ => false
+      | .enchantedDies =>
+        match fromZone, toZone with
+        | .battlefield, .graveyard _ => !before.phasedOut && before.creature
+        | _, _ => false
+      | .nontokenCreatureYouControlDies =>
+        match fromZone, toZone with
+        | .battlefield, .graveyard _ => !before.phasedOut && yours before && before.creature && !before.token
+        | _, _ => false
+      | .anotherCreatureOrPlaneswalkerYouControlDies =>
+        match fromZone, toZone with
+        | .battlefield, .graveyard _ => !before.phasedOut && yours before && other before && (before.creature || before.planeswalker)
+        | _, _ => false
+      | .creatureYouControlLeaves =>
+        fromZone == .battlefield && toZone != .battlefield && !before.phasedOut &&
+          yours before && other before && before.creature
+      | .anotherCreatureOrPlaneswalkerYouControlEnters =>
+        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+          yours after && other after && (after.creature || after.planeswalker)
+      | .thisOrAnotherCreatureYouControlEnters =>
+        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+          ((this after || this before) || (yours after && after.creature))
+      | .anotherNontokenCreatureYouControlEnters =>
+        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+          yours after && other after && !after.token && after.creature
+      | .creatureOpponentControlsEnters =>
+        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+          after.controller.any opp && after.creature
+      | .creatureYouControlPowerAtLeastEnters n =>
+        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+          yours after && after.creature && after.power.any (· ≥ n)
+      | .youPutLoyaltyCounters =>
+        let p := actor.orElse (fun _ => after.controller)
+        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
+          p.any you && entersWith.count .loyalty > 0 && after.planeswalker
+      | _ => false
+    | _ => false
+  | .created object controller =>
+    if object.zone != .battlefield || object.phasedOut then false
+    else
+      let enterCtrl := object.controller.getD controller
+      match te with
+      | .entering => this object
+      | .landYouControlEnters => you enterCtrl && object.land
+      | .forestYouControlEnters => you enterCtrl && object.forest
+      | .mountainYouControlEnters => you enterCtrl && object.mountain
+      | .artifactYouControlEnters => you enterCtrl && object.artifact
+      | .creatureYouControlEnters => you enterCtrl && object.creature
+      | .anotherCreatureYouControlEnters => you enterCtrl && other object && object.creature
+      | .anotherElfYouControlEnters => you enterCtrl && other object && object.elf
+      | .tokenYouControlEnters => you enterCtrl && object.token
+      | .equipmentYouControlEnters => you enterCtrl && object.equipment
+      | .anotherArtifactEnters => you enterCtrl && other object && object.artifact
+      | .anotherVillainEnters => you enterCtrl && other object && object.villain
+      | .anotherVillainOrArtifactEnters =>
+        you enterCtrl && other object && (object.villain || object.artifact)
+      | .anotherNontokenHeroEnters =>
+        you enterCtrl && other object && !object.token && object.hero
+      | .anotherNontokenArtifactEnters =>
+        you enterCtrl && other object && !object.token && object.artifact
+      | .thisOrNontokenSubtypeYouControlEnters => this object
+      | .anotherSubtypeOrEquipmentYouControlEnters =>
+        you enterCtrl && other object && (object.equipment || !object.subtypes.isEmpty)
+      | .thisOrAnotherSubtypeYouControlEnters =>
+        this object || (you enterCtrl && !object.subtypes.isEmpty)
+      | .subtypeYouControlEnters sub => you enterCtrl && object.hasSubtype sub
+      | .sagaChapter => this object && object.counters.count .lore > 0
+      | .nthPlanCounter _ => this object && object.counters.count .plan > 0
+      | .youPutPlusOne =>
+        you enterCtrl && object.counters.count .plusOnePlusOne > 0 && object.creature
+      | .youPutCountersOnGoblinOrcArmy =>
+        you enterCtrl && object.counters.any (fun (_, n) => n > 0) && object.goblinOrcArmy
+      | .fra fe =>
+        match fe with
+        | .anotherCreatureOrPlaneswalkerYouControlEnters =>
+          you enterCtrl && other object && (object.creature || object.planeswalker)
+        | .thisOrAnotherCreatureYouControlEnters =>
+          this object || (you enterCtrl && object.creature)
+        | .anotherNontokenCreatureYouControlEnters =>
+          you enterCtrl && other object && !object.token && object.creature
+        | .creatureOpponentControlsEnters => opp enterCtrl && object.creature
+        | .creatureYouControlPowerAtLeastEnters n =>
+          you enterCtrl && object.creature && object.power.any (· ≥ n)
+        | .youPutLoyaltyCounters =>
+          you enterCtrl && object.counters.count .loyalty > 0 && object.planeswalker
+        | .youCreateCreatureTokens =>
+          object.token && you controller && object.creature
+        | _ => false
+      | _ => false
+  | .ceasedToExist before =>
+    if before.zone != .battlefield || before.phasedOut then false
+    else
+      match te with
+      | .leaving => this before
+      | .fra .creatureYouControlLeaves => yours before && other before && before.creature
+      | _ => false
+
+@[noinline] private def matchesTriggerDamage (de : DamageEvent)
+    (listener : PlayerId) (sourceId : Option ObjectId) (te : TriggerEvent)
+    (isTeammate : PlayerId → Bool) : Bool :=
+  let you (p : PlayerId) : Bool := p == listener
+  let opp (p : PlayerId) : Bool := !you p && !isTeammate p
+  let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
+  let yours (o : EventObject) : Bool := o.controller == some listener
+  match de with
+  | .dealt pkts =>
+    match te with
+    | .sourceDealtDamage =>
       pkts.any (fun pkt => pkt.amount > 0 && match pkt.recipient with | .permanent o | .battle o => this o | .player _ => false)
-    | .damage (.dealt pkts), .sourceDealtNoncombatDamage =>
+    | .sourceDealtNoncombatDamage =>
       pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .permanent o | .battle o => this o | .player _ => false)
-    | .damage (.dealt pkts), .creatureYouControlDealtDamage =>
+    | .creatureYouControlDealtDamage =>
       pkts.any (fun pkt => pkt.amount > 0 && match pkt.recipient with | .permanent o => yours o && o.creature | _ => false)
-    | .damage (.dealt pkts), .dealsCombatDamageToPlayer =>
+    | .dealsCombatDamageToPlayer =>
       pkts.any (fun pkt =>
         pkt.combat && pkt.amount > 0 &&
           (sourceId.isNone || pkt.source.id.isNone || this pkt.source) &&
           match pkt.recipient with | .player _ => true | _ => false)
-    | .damage (.dealt pkts), .fra .dealsCombatDamageToPlayerOrPlaneswalker =>
-      pkts.any (fun pkt =>
-        pkt.combat && pkt.amount > 0 &&
-          (sourceId.isNone || pkt.source.id.isNone || this pkt.source) &&
-          match pkt.recipient with
-          | .player _ => true
-          | .permanent o => o.planeswalker
-          | .battle _ => false)
-    | .damage (.dealt pkts), .dealsCombatDamageToPlayerOrBattle =>
+    | .dealsCombatDamageToPlayerOrBattle =>
       pkts.any (fun pkt =>
         pkt.combat && pkt.amount > 0 &&
           (pkt.source.controller.isNone || yours pkt.source || this pkt.source) &&
           match pkt.recipient with | .player _ | .battle _ => true | _ => false)
-    | .damage (.dealt pkts), .combatDamageToYou =>
+    | .combatDamageToYou =>
       pkts.any (fun pkt =>
         pkt.combat && pkt.amount > 0 && (pkt.source.types.isEmpty || pkt.source.creature) &&
           match pkt.recipient with | .player p => you p | _ => false)
-    | .damage (.dealt pkts), .opponentsDealtCombatDamageYourTurn =>
+    | .opponentsDealtCombatDamageYourTurn =>
       pkts.any (fun pkt => pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => opp p | _ => false)
-    | .damage (.dealt pkts), .fra .opponentsDealtNoncombatDamage =>
-      pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => opp p | _ => false)
-    | .damage (.dealt pkts), .fra .opponentDealtNoncombatDamage =>
-      pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => opp p | _ => false)
-    | .damage (.dealt pkts), .armyYouControlCombatDamage =>
+    | .armyYouControlCombatDamage =>
       pkts.any (fun pkt =>
         pkt.combat && pkt.amount > 0 && yours pkt.source && pkt.source.hasSubtype .army &&
           match pkt.recipient with | .player _ => true | _ => false)
-    | .damage (.dealt pkts), .equippedDealsCombatDamageToPlayer =>
+    | .equippedDealsCombatDamageToPlayer =>
       pkts.any (fun pkt =>
         pkt.combat && pkt.amount > 0 && pkt.source.creature &&
           match pkt.recipient with | .player _ => true | _ => false)
-    | .damage (.dealt pkts), .heroesDealDamageToPlayer =>
+    | .heroesDealDamageToPlayer =>
       pkts.any (fun pkt =>
         pkt.amount > 0 &&
           match pkt.recipient with
           | .player _ => yours pkt.source && pkt.source.hero
           | _ => false)
-    | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .dying =>
-      !before.phasedOut && this before
-    | .zone (.moved before _ .battlefield toZone _ _ _ _), .leaving =>
-      toZone != .battlefield && !before.phasedOut && this before
-    | .zone (.ceasedToExist before), .leaving => before.zone == .battlefield && !before.phasedOut && this before
-    | .zone (.moved before after fromZone .battlefield _ _ _ _), .entering =>
-      fromZone != .battlefield && !after.phasedOut && (this after || this before)
-    | .zone (.created object _), .entering =>
-      object.zone == .battlefield && !object.phasedOut && this object
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .landYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && after.land
-    | .zone (.created object controller), .landYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.land
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .forestYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && after.forest
-    | .zone (.created object controller), .forestYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.forest
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .mountainYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && after.mountain
-    | .zone (.created object controller), .mountainYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.mountain
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .artifactYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && after.artifact
-    | .zone (.created object controller), .artifactYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.artifact
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .creatureYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && after.creature
-    | .zone (.created object controller), .creatureYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.creature
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherCreatureYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && other after && after.creature
-    | .zone (.created object controller), .anotherCreatureYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && object.creature
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherElfYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && other after && after.elf
-    | .zone (.created object controller), .anotherElfYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && object.elf
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .tokenYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && after.token
-    | .zone (.created object controller), .tokenYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.token
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .equipmentYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && after.equipment
-    | .zone (.created object controller), .equipmentYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.equipment
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherArtifactEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && other after && after.artifact
-    | .zone (.created object controller), .anotherArtifactEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && object.artifact
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherVillainEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && other after && after.villain
-    | .zone (.created object controller), .anotherVillainEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && object.villain
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherVillainOrArtifactEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && other after && (after.villain || after.artifact)
-    | .zone (.created object controller), .anotherVillainOrArtifactEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && (object.villain || object.artifact)
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherNontokenHeroEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && other after && !after.token && after.hero
-    | .zone (.created object controller), .anotherNontokenHeroEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && !object.token && object.hero
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherNontokenArtifactEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && other after && !after.token && after.artifact
-    | .zone (.created object controller), .anotherNontokenArtifactEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && !object.token && object.artifact
-    | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .creatureYouControlDies =>
-      !before.phasedOut && yours before && before.creature
-    | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .nontokenYouControlDies =>
-      !before.phasedOut && yours before && before.creature && !before.token
-    | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .anotherGoblinOrcArmyDies =>
-      !before.phasedOut && yours before && other before && before.creature && before.goblinOrcArmy
-    | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .villainYouControlDies =>
-      !before.phasedOut && yours before && before.creature && before.villain
-    | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .attackingCreatureYouControlDies =>
-      !before.phasedOut && yours before && before.creature && before.attacking
-    | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .oneOrMoreOtherCreaturesDie =>
-      !before.phasedOut && other before && before.creature
-    | .zone (.moved before _ .battlefield (.hand _) _ _ _ _), .anotherNonlandReturned =>
-      !before.phasedOut && yours before && other before && !before.land
-    | .zone (.moved before _ (.graveyard owner) _ _ _ _ _), .creatureCardLeavesYourGy =>
-      you owner && before.creature
-    | .zone (.moved _ after _ (.graveyard owner) _ _ _ _), .creatureCardsPutIntoYourGy =>
-      you owner && after.creature && !after.token
-    | .zone (.moved _ _ (.hand p) toZone .discard _ _ _), .youDiscard =>
-      you p && toZone != .hand p
-    | .zone (.moved before after (.hand p) toZone .discard _ _ _), .fra .youDiscardThis =>
-      you p && toZone != .hand p && (this before || this after)
-    | .zone (.moved before after (.hand p) toZone .discard _ _ _), .fra .youCycle =>
-      you p && toZone != .hand p && (this before || this after) &&
-        match e.cause? with | some (.costPayment .cycle _ _) => true | _ => false
-    | .zone (.moved _ _ (.hand p) toZone .discard _ _ _), .fra .youDiscardOne =>
-      you p && toZone != .hand p
-    | .zone (.moved _ _ (.hand p) toZone .discard _ _ _), .fra .playerDiscards =>
-      toZone != .hand p
-    | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .fra .enchantedDies =>
-      !before.phasedOut && before.creature
-    | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .fra .nontokenCreatureYouControlDies =>
-      !before.phasedOut && yours before && before.creature && !before.token
-    | .zone (.moved before _ .battlefield (.graveyard _) _ _ _ _), .fra .anotherCreatureOrPlaneswalkerYouControlDies =>
-      !before.phasedOut && yours before && other before && (before.creature || before.planeswalker)
-    | .zone (.moved before _ .battlefield toZone _ _ _ _), .fra .creatureYouControlLeaves =>
-      toZone != .battlefield && !before.phasedOut && yours before && other before && before.creature
-    | .zone (.ceasedToExist before), .fra .creatureYouControlLeaves =>
-      before.zone == .battlefield && !before.phasedOut && yours before && other before && before.creature
-    | .zone (.moved before after fromZone .battlefield _ _ _ _), .thisOrNontokenSubtypeYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut &&
-        ((this after || this before) || (yours after && !after.token && !after.subtypes.isEmpty))
-    | .zone (.created object _), .thisOrNontokenSubtypeYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && this object
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .anotherSubtypeOrEquipmentYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut &&
-        yours after && other after && (after.equipment || !after.subtypes.isEmpty)
-    | .zone (.created object controller), .anotherSubtypeOrEquipmentYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && (object.equipment || !object.subtypes.isEmpty)
-    | .zone (.moved before after fromZone .battlefield _ _ _ _), .thisOrAnotherSubtypeYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut &&
-        ((this after || this before) || (yours after && !after.subtypes.isEmpty))
-    | .zone (.created object controller), .thisOrAnotherSubtypeYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && (this object || (you (object.controller.getD controller) && !object.subtypes.isEmpty))
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .fra .anotherCreatureOrPlaneswalkerYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && other after && (after.creature || after.planeswalker)
-    | .zone (.created object controller), .fra .anotherCreatureOrPlaneswalkerYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && (object.creature || object.planeswalker)
-    | .zone (.moved before after fromZone .battlefield _ _ _ _), .fra .thisOrAnotherCreatureYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && ((this after || this before) || (yours after && after.creature))
-    | .zone (.created object controller), .fra .thisOrAnotherCreatureYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && (this object || (you (object.controller.getD controller) && object.creature))
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .fra .anotherNontokenCreatureYouControlEnters =>
-      fromZone != .battlefield && !after.phasedOut && yours after && other after && !after.token && after.creature
-    | .zone (.created object controller), .fra .anotherNontokenCreatureYouControlEnters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && other object && !object.token && object.creature
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .fra .creatureOpponentControlsEnters =>
-      fromZone != .battlefield && !after.phasedOut && after.controller.any opp && after.creature
-    | .zone (.created object controller), .fra .creatureOpponentControlsEnters =>
-      object.zone == .battlefield && !object.phasedOut && opp (object.controller.getD controller) && object.creature
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .fra (.creatureYouControlPowerAtLeastEnters n) =>
-      fromZone != .battlefield && !after.phasedOut && yours after && after.creature && after.power.any (· ≥ n)
-    | .zone (.created object controller), .fra (.creatureYouControlPowerAtLeastEnters n) =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.creature && object.power.any (· ≥ n)
-    | .zone (.moved _ after fromZone .battlefield _ _ _ _), .subtypeYouControlEnters sub =>
-      fromZone != .battlefield && !after.phasedOut && yours after && after.hasSubtype sub
-    | .zone (.created object controller), .subtypeYouControlEnters sub =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.hasSubtype sub
-    | .zone (.moved before after fromZone .battlefield _ _ entersWith _), .sagaChapter =>
-      fromZone != .battlefield && !after.phasedOut && (this after || this before) && entersWith.count .lore > 0
-    | .zone (.created object _), .sagaChapter =>
-      object.zone == .battlefield && !object.phasedOut && this object && object.counters.count .lore > 0
-    | .zone (.moved before after fromZone .battlefield _ _ entersWith _), .nthPlanCounter _ =>
-      fromZone != .battlefield && !after.phasedOut && (this after || this before) && entersWith.count .plan > 0
-    | .zone (.created object _), .nthPlanCounter _ =>
-      object.zone == .battlefield && !object.phasedOut && this object && object.counters.count .plan > 0
-    | .zone (.moved _ after fromZone .battlefield _ actor entersWith _), .youPutPlusOne =>
-      let p := actor.orElse (fun _ => after.controller)
-      fromZone != .battlefield && !after.phasedOut && p.any you && entersWith.count .plusOnePlusOne > 0 && after.creature
-    | .zone (.created object controller), .youPutPlusOne =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.counters.count .plusOnePlusOne > 0 && object.creature
-    | .zone (.moved _ after fromZone .battlefield _ actor entersWith _), .youPutCountersOnGoblinOrcArmy =>
-      let p := actor.orElse (fun _ => after.controller)
-      fromZone != .battlefield && !after.phasedOut && p.any you && yours after && entersWith.any (fun (_, n) => n > 0) && after.goblinOrcArmy
-    | .zone (.created object controller), .youPutCountersOnGoblinOrcArmy =>
-      let enterCtrl := object.controller.getD controller
-      object.zone == .battlefield && !object.phasedOut && you enterCtrl && object.counters.any (fun (_, n) => n > 0) && object.goblinOrcArmy
-    | .zone (.moved _ after fromZone .battlefield _ actor entersWith _), .fra .youPutLoyaltyCounters =>
-      let p := actor.orElse (fun _ => after.controller)
-      fromZone != .battlefield && !after.phasedOut && p.any you && entersWith.count .loyalty > 0 && after.planeswalker
-    | .zone (.created object controller), .fra .youPutLoyaltyCounters =>
-      object.zone == .battlefield && !object.phasedOut && you (object.controller.getD controller) && object.counters.count .loyalty > 0 && object.planeswalker
-    | .cast (.spellCast spell p _), .youCastInstantOrSorcery =>
-      you p && spell.instantOrSorcery
-    | .cast (.spellCast spell p _), .youCastNoncreature =>
-      you p && !spell.creature
-    | .cast (.spellCast spell p _), .youCastCreature =>
-      you p && spell.creature
-    | .cast (.spellCast _ p _), .youCastSpell => you p
-    | .cast (.spellCast spell p _), .youCastColor c => you p && spell.colors.contains c
-    | .cast (.spellCast spell p (.hand _)), .youCastColorFromHand c => you p && spell.colors.contains c
-    | .cast (.spellCast spell p _), .youCastGreen => you p && spell.colors.contains .green
-    | .cast (.spellCast spell p _), .youCastVillain => you p && spell.villain
-    | .cast (.spellCast _ p _), .youCastWithTreasure => you p
-    | .cast (.spellCast _ p _), .youCastTargetingCreatureYouControl => you p
-    | .cast (.spellCast _ p _), .youCastTargetingCreature => you p
-    | .cast (.spellCast spell p _), .youCastInstantSorceryTargetingArtifactOrLand =>
-      you p && spell.instantOrSorcery
-    | .cast (.spellCast _ p _), .youCastTargetingOpponentOrTheirCreature => you p
-    | .cast (.spellCast _ p _), .opponentCastsSpell => opp p
-    | .cast (.spellCast _ p _), .opponentCastsMatchingParity => opp p
-    | .cast (.spellCast spell p _), .youCastFirstNoncreature => you p && !spell.creature
-    | .cast (.spellCast _ p _), .youCastSecondSpell => you p
-    | .cast (.spellCast _ _ _), .anyPlayerCastsSecondSpell => true
-    | .cast (.spellCast _ p _), .opponentCastsFirstNoncreature => opp p
-    | .cast (.spellCast spell p _), .cascade => you p && (sourceId.isNone || this spell)
-    | .cast (.spellCast spell p _), .fra .castThis => you p && this spell
-    | .cast (.spellCast spell p _), .fra (.opponentCastsSpellMvAtMost n) =>
-      opp p && spell.manaValue ≤ n
-    | .cast (.spellCast spell p fromZone), .fra .youCastPreparedSpell =>
-      you p && spell.isCopy && fromZone == .exile
-    | .cast (.spellCast spell p _), .fra .youCastArtifactOrCreature =>
-      you p && (spell.artifact || spell.creature)
-    | .cast (.spellCast _ p _), .fra .youCastEquipmentOrTargetingCreatureYouControl =>
-      you p
-    | .cast (.spellCast _ p _), .becomesTarget =>
-      sourceId.isSome && opp p
-    | .cast (.spellCast _ p _), .ward =>
-      sourceId.isSome && opp p
-    | .cast (.spellCast _ _ _), .spellTargetsSource =>
-      sourceId.isSome
-    | .combat (.attackersDeclared p decls), .attacking =>
+    | .fra fe =>
+      match fe with
+      | .dealsCombatDamageToPlayerOrPlaneswalker =>
+        pkts.any (fun pkt =>
+          pkt.combat && pkt.amount > 0 &&
+            (sourceId.isNone || pkt.source.id.isNone || this pkt.source) &&
+            match pkt.recipient with
+            | .player _ => true
+            | .permanent o => o.planeswalker
+            | .battle _ => false)
+      | .opponentsDealtNoncombatDamage
+      | .opponentDealtNoncombatDamage =>
+        pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => opp p | _ => false)
+      | _ => false
+    | _ => false
+  | _ => false
+
+@[noinline] private def matchesTriggerCast (ce : CastEvent) (cause? : Option EventCause)
+    (listener : PlayerId) (sourceId : Option ObjectId) (te : TriggerEvent)
+    (isTeammate : PlayerId → Bool) : Bool :=
+  let you (p : PlayerId) : Bool := p == listener
+  let opp (p : PlayerId) : Bool := !you p && !isTeammate p
+  let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
+  match ce with
+  | .spellCast spell p fromZone =>
+    match te with
+    | .youCastInstantOrSorcery => you p && spell.instantOrSorcery
+    | .youCastNoncreature => you p && !spell.creature
+    | .youCastCreature => you p && spell.creature
+    | .youCastSpell => you p
+    | .youCastColor c => you p && spell.colors.contains c
+    | .youCastColorFromHand c =>
+      match fromZone with | .hand _ => you p && spell.colors.contains c | _ => false
+    | .youCastGreen => you p && spell.colors.contains .green
+    | .youCastVillain => you p && spell.villain
+    | .youCastWithTreasure
+    | .youCastTargetingCreatureYouControl
+    | .youCastTargetingCreature
+    | .youCastTargetingOpponentOrTheirCreature
+    | .youCastSecondSpell => you p
+    | .youCastInstantSorceryTargetingArtifactOrLand => you p && spell.instantOrSorcery
+    | .opponentCastsSpell
+    | .opponentCastsMatchingParity
+    | .opponentCastsFirstNoncreature => opp p
+    | .youCastFirstNoncreature => you p && !spell.creature
+    | .anyPlayerCastsSecondSpell => true
+    | .cascade => you p && (sourceId.isNone || this spell)
+    | .becomesTarget | .ward => sourceId.isSome && opp p
+    | .spellTargetsSource => sourceId.isSome
+    | .fra fe =>
+      match fe with
+      | .castThis => you p && this spell
+      | .opponentCastsSpellMvAtMost n => opp p && spell.manaValue ≤ n
+      | .youCastPreparedSpell => you p && spell.isCopy && fromZone == .exile
+      | .youCastArtifactOrCreature => you p && (spell.artifact || spell.creature)
+      | .youCastEquipmentOrTargetingCreatureYouControl => you p
+      | _ => false
+    | _ => false
+  | .abilityActivated _ source p kind =>
+    match te with
+    | .youActivateLoyaltyAbility =>
+      match kind with | .nonMana (some _) .. => you p | _ => false
+    | .youActivateCreatureAbility => you p && source.creature
+    | .fra .opponentActivatesLoyaltyAbility =>
+      match kind with | .nonMana (some _) .. => opp p | _ => false
+    | .youTargetSomething =>
+      match kind with | .nonMana .. => you p | _ => false
+    | .becomesTarget | .ward =>
+      match kind with | .nonMana .. => sourceId.isSome && opp p | _ => false
+    | _ => false
+  | .targeted _ targets .. =>
+    match te with
+    | .becomesTarget | .ward =>
+      let causeOpp :=
+        match cause? with
+        | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => opp p
+        | _ => true
+      sourceId.isSome && causeOpp &&
+        targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
+    | .youTargetSomething =>
+      let causeYou :=
+        match cause? with
+        | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => you p
+        | _ => true
+      causeYou &&
+        targets.any (fun t => match t with | .permanent _ | .player _ => true | _ => false)
+    | _ => false
+  | _ => false
+
+@[noinline] private def matchesTriggerCombat (ce : CombatEvent)
+    (listener : PlayerId) (sourceId : Option ObjectId) (te : TriggerEvent)
+    (isTeammate : PlayerId → Bool) : Bool :=
+  let you (p : PlayerId) : Bool := p == listener
+  let opp (p : PlayerId) : Bool := !you p && !isTeammate p
+  let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
+  match ce with
+  | .attackersDeclared p decls =>
+    match te with
+    | .attacking =>
       (you p || isTeammate p) && decls.any (fun (attacker, _) => this attacker)
-    | .combat (.attackersDeclared p decls), .youAttack =>
+    | .youAttack | .youAttackWithTotalPower | .equippedAttacks =>
       (you p || isTeammate p) && !decls.isEmpty
-    | .combat (.attackersDeclared p decls), .youAttackWithElves =>
+    | .youAttackWithElves =>
       (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.elf)
-    | .combat (.attackersDeclared p decls), .youAttackWithTwoOrMore =>
+    | .youAttackWithTwoOrMore =>
       (you p || isTeammate p) && decls.size ≥ 2 &&
         decls.any (fun (_, tgt) =>
           match tgt with
           | .player d => (decls.filter (fun (_, tgt') => tgt' == .player d)).size ≥ 2
           | _ => false)
-    | .combat (.attackersDeclared p decls), .creatureYouControlAttacksAlone =>
+    | .creatureYouControlAttacksAlone =>
       (you p || isTeammate p) && decls.size == 1 && decls[0]!.1.creature
-    | .combat (.attackersDeclared _ decls), .equippedAttacksAlone =>
+    | .equippedAttacksAlone =>
       decls.size == 1 && decls[0]!.1.creature
-    | .combat (.attackersDeclared p decls), .youAttackWithTotalPower =>
-      (you p || isTeammate p) && !decls.isEmpty
-    | .combat (.attackersDeclared p decls), .equippedAttacks =>
-      (you p || isTeammate p) && !decls.isEmpty
-    | .combat (.attackersDeclared p decls), .equippedCreatureYouControlAttacks =>
+    | .equippedCreatureYouControlAttacks =>
       (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.creature)
-    | .combat (.attackersDeclared p decls), .merfolkAttackPlayer =>
+    | .merfolkAttackPlayer =>
       (you p || isTeammate p) && decls.any (fun (attacker, tgt) =>
         attacker.merfolk && match tgt with | .player _ => true | _ => false)
-    | .combat (.attackersDeclared p decls), .fra .creatureYouControlAttacks =>
-      (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.creature)
-    | .combat (.attackersDeclared p decls), .fra .creatureYouControlAttacksPlayerAlone =>
-      (you p || isTeammate p) &&
-        decls.any (fun (attacker, tgt) =>
-          attacker.creature &&
-            match tgt with
-            | .player d => !decls.any (fun (a', tgt') => a'.id != attacker.id && tgt' == .player d)
-            | _ => false)
-    | .combat (.attackersDeclared p decls), .fra .creatureAttacksYouOrYourPlaneswalker =>
-      opp p &&
-        decls.any (fun (attacker, tgt) =>
-          attacker.creature &&
-            match tgt with
-            | .player d => you d
-            | .planeswalker _ => true
-            | .battle _ => false)
-    | .combat (.attackersDeclared _ decls), .fra .creaturesAttackYourOpponent =>
-      decls.any (fun (attacker, tgt) =>
-        attacker.creature &&
-          match tgt with
-          | .player d => opp d
-          | _ => false)
-    | .combat (.attackersDeclared p decls), .fra .zombieTokenAttacks =>
-      (you p || isTeammate p) && decls.any (fun (attacker, _) =>
-        attacker.token && attacker.hasSubtype .zombie && attacker.power.any (· ≥ 6))
-    | .combat (.attackersDeclared p decls), .fra .sphinxesAttack =>
-      (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.hasSubtype .sphinx)
-    | .combat (.attackersDeclared _ decls), .enchantedAttacksOrBlocks =>
+    | .enchantedAttacksOrBlocks =>
       decls.any (fun (attacker, _) => attacker.creature)
-    | .combat (.blockersDeclared _ decls), .enchantedAttacksOrBlocks =>
+    | .fra fe =>
+      match fe with
+      | .creatureYouControlAttacks =>
+        (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.creature)
+      | .creatureYouControlAttacksPlayerAlone =>
+        (you p || isTeammate p) &&
+          decls.any (fun (attacker, tgt) =>
+            attacker.creature &&
+              match tgt with
+              | .player d => !decls.any (fun (a', tgt') => a'.id != attacker.id && tgt' == .player d)
+              | _ => false)
+      | .creatureAttacksYouOrYourPlaneswalker =>
+        opp p &&
+          decls.any (fun (attacker, tgt) =>
+            attacker.creature &&
+              match tgt with
+              | .player d => you d
+              | .planeswalker _ => true
+              | .battle _ => false)
+      | .creaturesAttackYourOpponent =>
+        decls.any (fun (attacker, tgt) =>
+          attacker.creature &&
+            match tgt with
+            | .player d => opp d
+            | _ => false)
+      | .zombieTokenAttacks =>
+        (you p || isTeammate p) && decls.any (fun (attacker, _) =>
+          attacker.token && attacker.hasSubtype .zombie && attacker.power.any (· ≥ 6))
+      | .sphinxesAttack =>
+        (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.hasSubtype .sphinx)
+      | _ => false
+    | _ => false
+  | .blockersDeclared _ decls =>
+    match te with
+    | .enchantedAttacksOrBlocks =>
       decls.any (fun (blocker, _) => blocker.creature)
-    | .combat (.blockersDeclared _ decls), .fra .opponentSmallCreatureBlocks =>
+    | .fra .opponentSmallCreatureBlocks =>
       decls.any (fun (blocker, _) =>
         blocker.controller.any opp && blocker.creature &&
           (blocker.power.any (· ≤ 1) || blocker.toughness.any (· ≤ 1)))
-    | .combat (.becameBlocked attacker _), .becomesBlocked =>
-      this attacker
-    | .permanent (.tapped object _), .sourceBecomesTapped =>
-      !object.phasedOut && this object
-    | .permanent (.tapped object _), .creaturesYouControlBecomeTapped =>
-      !object.phasedOut && yours object && object.creature
-    | .permanent (.tapped object _), .equippedBecomesTapped =>
-      !object.phasedOut && object.creature
-    | .permanent (.tapped object during), .creatureYouControlTapped =>
-      !object.phasedOut && yours object && object.creature && during
-    | .permanent (.tapped object _), .tappedForTeamwork =>
-      !object.phasedOut && this object &&
-        match e.cause? with | some (.costPayment .teamwork _ _) => true | _ => false
-    | .player (.scried p _ _ _ asked), .youScry => you p && asked > 0
-    | .player (.scried p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
-    | .player (.surveilled p _ _ _ asked), .youScryOrSurveil => you p && asked > 0
-    | .player (.proliferated p _ _), .fra .youProliferate => you p
-    | .player (.ringTempted p _ _), .theRingTemptsYou => you p
-    | .player (.ringTempted p (some _) _), .youChooseRingBearer => you p
-    | .stackObject (.resolved obj nth _ _), .finalSagaChapterResolves =>
-      nth == 0 && yours obj && obj.types.isEmpty && obj.hasSubtype .saga
-    | .permanent (.counters (.object object) .plusOnePlusOne (.put n) (some p)), .youPutPlusOne =>
-      object.zone == .battlefield && !object.phasedOut && you p && n > 0 && object.creature
-    | .permanent (.counters (.object object) _ (.put n) (some p)), .youPutCountersOnGoblinOrcArmy =>
-      object.zone == .battlefield && !object.phasedOut && you p && yours object && n > 0 && object.goblinOrcArmy
-    | .permanent (.counters (.object object) .loyalty (.put n) (some p)), .fra .youPutLoyaltyCounters =>
-      object.zone == .battlefield && !object.phasedOut && you p && n > 0 && object.planeswalker
-    | .permanent (.counters (.object object) .plan (.put n) _), .nthPlanCounter _ =>
-      object.zone == .battlefield && !object.phasedOut && this object && n > 0
-    | .permanent (.counters (.object object) .lore (.put n) _), .sagaChapter =>
-      object.zone == .battlefield && !object.phasedOut && this object && n > 0
-    | .turn (.stepBegan .upkeep active), .yourUpkeep => you active || isTeammate active
-    | .turn (.stepBegan .upkeep _), .eachUpkeep => true
-    | .turn (.stepBegan .upkeep _), .fra .eachUpkeepFromGraveyard => true
-    | .turn (.stepBegan .end active), .yourEndStep => you active || isTeammate active
-    | .turn (.stepBegan .end _), .eachEndStep => true
-    | .turn (.stepBegan .beginningOfCombat active), .yourBeginCombat => you active || isTeammate active
-    | .turn (.stepBegan .beginningOfCombat active), .fra .yourBeginCombatFromGraveyard => you active || isTeammate active
-    | .turn (.stepBegan .beginningOfCombat _), .eachBeginCombat => true
-    | .turn (.stepBegan .beginningOfCombat active), .fra .opponentBeginCombat => opp active
-    | .turn (.stepBegan .precombatMain active), .yourFirstMain => you active || isTeammate active
-    | .turn (.stepBegan .draw active), .eachOpponentDrawStep => opp active
-    | .turn (.stepBegan .upkeep _), .eaglesCreateBirds => true
-    | .turn (.stepBegan .upkeep active), .enchantedControllerUpkeep => you active
-    | .zone (.moved before _ .battlefield toZone .sacrifice actor _ _), .youSacrificeToken =>
-      let p := actor.getD (before.controller.getD before.owner)
-      !before.phasedOut && you p && before.token && toZone != .battlefield
-    | .zone (.moved before _ .battlefield toZone .sacrifice actor _ _), .bolgSacrificedForReflexive =>
-      let p := actor.getD (before.controller.getD before.owner)
-      !before.phasedOut && you p && other before && before.creature && toZone != .battlefield
-    | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .youActivateLoyaltyAbility => you p
-    | .cast (.abilityActivated _ source p _), .youActivateCreatureAbility =>
-      you p && source.creature
-    | .cast (.abilityActivated _ _ p (.nonMana (some _) ..)), .fra .opponentActivatesLoyaltyAbility => opp p
-    | .cast (.abilityActivated _ _ p (.nonMana ..)), .youTargetSomething => you p
-    | .cast (.abilityActivated _ _ p (.nonMana ..)), .becomesTarget =>
-      sourceId.isSome && opp p
-    | .cast (.abilityActivated _ _ p (.nonMana ..)), .ward =>
-      sourceId.isSome && opp p
-    | .cast (.targeted _ targets ..), .becomesTarget =>
-      let causeOpp :=
-        match e.cause? with
-        | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => opp p
-        | _ => true
-      sourceId.isSome && causeOpp &&
-        targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
-    | .cast (.targeted _ targets ..), .ward =>
-      let causeOpp :=
-        match e.cause? with
-        | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => opp p
-        | _ => true
-      sourceId.isSome && causeOpp &&
-        targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
-    | .cast (.targeted _ targets ..), .youTargetSomething =>
-      let causeYou :=
-        match e.cause? with
-        | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => you p
-        | _ => true
-      causeYou &&
-        targets.any (fun t => match t with | .permanent _ | .player _ => true | _ => false)
-    | .zone (.created object p), .fra .youCreateCreatureTokens =>
-      object.zone == .battlefield && !object.phasedOut && object.token && you p && object.creature
-    | _, _ => false
+    | _ => false
+  | .becameBlocked attacker _ =>
+    match te with
+    | .becomesBlocked => this attacker
+    | _ => false
+  | _ => false
+
+@[noinline] private def matchesTriggerPermanent (pe : PermanentEvent) (cause? : Option EventCause)
+    (listener : PlayerId) (sourceId : Option ObjectId) (te : TriggerEvent) : Bool :=
+  let you (p : PlayerId) : Bool := p == listener
+  let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
+  let yours (o : EventObject) : Bool := o.controller == some listener
+  match pe with
+  | .tapped object during =>
+    if object.phasedOut then false
+    else
+      match te with
+      | .sourceBecomesTapped => this object
+      | .creaturesYouControlBecomeTapped => yours object && object.creature
+      | .equippedBecomesTapped => object.creature
+      | .creatureYouControlTapped => yours object && object.creature && during
+      | .tappedForTeamwork =>
+        this object && match cause? with | some (.costPayment .teamwork _ _) => true | _ => false
+      | _ => false
+  | .counters (.object object) kind (.put n) actor =>
+    if object.zone != .battlefield || object.phasedOut || n == 0 then false
+    else
+      match te with
+      | .youPutPlusOne =>
+        kind == .plusOnePlusOne && actor.any you && object.creature
+      | .youPutCountersOnGoblinOrcArmy =>
+        actor.any you && yours object && object.goblinOrcArmy
+      | .fra .youPutLoyaltyCounters =>
+        kind == .loyalty && actor.any you && object.planeswalker
+      | .nthPlanCounter _ =>
+        kind == .plan && this object
+      | .sagaChapter =>
+        kind == .lore && this object
+      | _ => false
+  | _ => false
+
+def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option ObjectId := none)
+    (te : TriggerEvent) (isTeammate : PlayerId → Bool := fun _ => false) : Bool :=
+  let you (p : PlayerId) : Bool := p == listener
+  let opp (p : PlayerId) : Bool := !you p && !isTeammate p
+  let yours (o : EventObject) : Bool := o.controller == some listener
+  match e.change with
+  | .engine _ => false
+  | .rules r =>
+    match r with
+    | .zone ze => matchesTriggerZone ze e.cause? listener sourceId te isTeammate
+    | .damage de => matchesTriggerDamage de listener sourceId te isTeammate
+    | .cast ce => matchesTriggerCast ce e.cause? listener sourceId te isTeammate
+    | .combat ce => matchesTriggerCombat ce listener sourceId te isTeammate
+    | .permanent pe => matchesTriggerPermanent pe e.cause? listener sourceId te
+    | .life le =>
+      match le, te with
+      | .gained p amount, .youGainLife => you p && amount > 0
+      | .lost _ amount _ _, .playerLosesLife => amount > 0
+      | _, _ => false
+    | .player pe =>
+      match pe, te with
+      | .scried p _ _ _ asked, .youScry => you p && asked > 0
+      | .scried p _ _ _ asked, .youScryOrSurveil => you p && asked > 0
+      | .surveilled p _ _ _ asked, .youScryOrSurveil => you p && asked > 0
+      | .proliferated p _ _, .fra .youProliferate => you p
+      | .ringTempted p _ _, .theRingTemptsYou => you p
+      | .ringTempted p (some _) _, .youChooseRingBearer => you p
+      | _, _ => false
+    | .stackObject se =>
+      match se, te with
+      | .resolved obj nth _ _, .finalSagaChapterResolves =>
+        nth == 0 && yours obj && obj.types.isEmpty && obj.hasSubtype .saga
+      | _, _ => false
+    | .turn (.stepBegan step active) =>
+      match step, te with
+      | .upkeep, .yourUpkeep => you active || isTeammate active
+      | .upkeep, .eachUpkeep
+      | .upkeep, .fra .eachUpkeepFromGraveyard
+      | .upkeep, .eaglesCreateBirds => true
+      | .upkeep, .enchantedControllerUpkeep => you active
+      | .end, .yourEndStep => you active || isTeammate active
+      | .end, .eachEndStep => true
+      | .beginningOfCombat, .yourBeginCombat
+      | .beginningOfCombat, .fra .yourBeginCombatFromGraveyard => you active || isTeammate active
+      | .beginningOfCombat, .eachBeginCombat => true
+      | .beginningOfCombat, .fra .opponentBeginCombat => opp active
+      | .precombatMain, .yourFirstMain => you active || isTeammate active
+      | .draw, .eachOpponentDrawStep => opp active
+      | _, _ => false
+    | _ => false
 
 /-- Counters put on objects in `e` (CR 122.1 / 122.6), including counters
 placed as an object enters the battlefield via `ZoneEvent.moved.entersWith`
