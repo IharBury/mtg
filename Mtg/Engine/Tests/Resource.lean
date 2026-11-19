@@ -310,7 +310,7 @@ def sueWall : Game :=
 
 #guard
   match sueOffer.pending with
-  | .fraChoice _ (.mayCreateTokens .wall04defender 1) =>
+  | .fraChoice _ (.mayCreateTokens .wall04defender 1 _) =>
     logContains sueOffer "may create a 0/4 Wall"
   | _ => false
 #guard tokensNamed sueDeclined "Wall" == 0

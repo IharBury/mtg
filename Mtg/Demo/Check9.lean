@@ -792,7 +792,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
 
 
 /- Phase 51 Item 4b: `Demo.hasUniqueManaPayment` / `uniquePayingSourceSet` /
-`uniquePayingSourceSetLarge` soundness for `FraManaUse.legendarySpell` riders,
+`uniquePayingSourceSetLarge` soundness for `ManaSpendRestriction.legendarySpell` riders,
 `ManaOutput.combination` leftover mana (CR 106.4), and post-mana preconditions
 (`teamworkCreatures`, `needsBehold`, `sneakAttacker` exclusion, tap-less
 `costPicksPayable`, and `zemoBoast`). -/
@@ -801,7 +801,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
   let p1 : PlayerId := ⟨1⟩
   let gMain := emptyHand afterDraw p0
 
-  -- 1. `FraManaUse.legendarySpell` (*Delighted Halfling*):
+  -- 1. `ManaSpendRestriction.legendarySpell` (*Delighted Halfling*):
   let legGreen2Def : CardDef := {
     grizzlyBears with
     name := "P51 LegendBear"

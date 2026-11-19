@@ -136,7 +136,8 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
         s!"{pl.name} may discard a card. If they do, they draw {n}")
   | .createTokensLifeGained kind =>
     -- Ruling 755: counts life gained, ignoring life lost this turn.
-    some (g.createKindTokens controller kind (g.loggedLifeGained controller))
+    some (g.createKindTokens controller kind (g.loggedLifeGained controller)
+      (copyCtx := g.copyTokenContextOf sourceId targets))
   | .oppSacrificesGreatestMv =>
     some (g.withLegalKindPlayer controller effect.targetKind targets
       (fun g pid => g.sacrificeGreatestManaValue pid) sourceId)
@@ -1935,7 +1936,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.millThenPutFromGy controller n
         (fun o => g.hasType o a || g.hasType o b) (types := #[a, b])
   | .addFourManaDragonSpells n subtype =>
-    g.beginFraChoice controller (.addManaColors n (.forSubtype subtype))
+    g.beginFraChoice controller (.addManaColors n (.subtypeSpell subtype))
       s!"{(g.player controller).name} chooses the colors of {englishNumber n} mana that can be spent only on {subtype} spells"
   | .exileAttackersSearchBasics =>
     g.withLegalKindTarget controller effect.targetKind targets (fun g tgt =>
@@ -2142,7 +2143,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       g.beginFraChoice controller
         (.revealPutCreatures top creatures g.resolvingTeamworkPaid)
         s!"{(g.player controller).name} may put creature cards from among them onto the battlefield"
-  | .createTokens kind amount tapped _ who _ =>
+  | .createTokens kind amount tapped who _ =>
     let pid? : Option PlayerId := match who with
       | .you => some controller
       | .player =>
@@ -2161,7 +2162,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | .chosenX => chosenX.getD 0
         | .perSubtype subtype => g.countSubtype pid subtype
         | _ => 0
-      g.createKindTokens pid kind count (tapped := tapped)
+      let copyCtx := g.copyTokenContextOf sourceId targets
+      g.createKindTokens pid kind count (tapped := tapped) (copyCtx := copyCtx)
   | .returnOneOrTwoNonlands =>
     g.withBatch none fun g =>
       targets.foldl (fun g t =>
@@ -2658,6 +2660,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.resolveSearchBasicLandToHand controller
       | .createTokensX kind =>
         g.createKindTokens controller kind (chosenX.getD 0)
+          (copyCtx := g.copyTokenContextOf sourceId targets)
       | .searchTwoBasicsSplit =>
         g.beginLibrarySearch controller isBasicLandCard "a basic land card"
           .battlefieldTappedThenHand (count := 2)
@@ -2790,10 +2793,10 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           | .villain => .black
           | _ => .white
         g.addMana controller (.colored color) 1 (source := sourceId)
-          (restriction := some (.forSubtypeSpellOrSource subtype))
+          (restriction := some (.subtypeSpellOrSource subtype))
       | .addAnyColorSpendOnlyArtifactSpell =>
         g.addMana controller (.colored .white) 1 (source := sourceId)
-          (restriction := some (.fra .artifactSpell))
+          (restriction := some .artifactSpell)
       | .addTwoAnyColorCreatureSources =>
         g.addMana controller (.colored .green) 2 (source := sourceId) (restriction := some .creatureSource)
       | .addBlueCantNonartifact =>
@@ -2805,11 +2808,12 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.addMana controller (.colored .white) 4 (source := sourceId)
       | .addTwoAnyColorEquipment =>
         g.addMana controller (.colored .white) 2 (source := sourceId)
-          (restriction := some (.fra .equipmentOrEquip))
+          (restriction := some .equipmentOrEquip)
       | .drawPerDiscardedThisTurn =>
         g.draw controller (g.loggedDiscards controller)
       | .createTokensEqualRemovedPlusOnes kind =>
         g.createKindTokens controller kind (chosenX.getD 0)
+          (copyCtx := g.copyTokenContextOf sourceId targets)
       | .exileTopXPlayThisTurn =>
         let x := g.sourcePowerNatAtResolution sourceId lastKnownPower
         g.exileTopPlayThisTurn controller x
@@ -2839,6 +2843,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       | .createTokensEqualSubtype kind subtype =>
         let n := g.countSubtype controller subtype
         g.createKindTokens controller kind n
+          (copyCtx := g.copyTokenContextOf sourceId targets)
       | .proliferateEachKind =>
         g.proliferateTarget controller targets sourceId
       | .equipmentBecomesConstructHero =>

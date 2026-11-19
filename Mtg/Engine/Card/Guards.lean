@@ -1393,7 +1393,7 @@ namespace CardDef
   "When this permanent enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\"."
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterOppCreatesTheVoid) == .opponent
 #guard TriggeredAbility.resolution (.onEnter Effect.enterCreateSturdyShieldAttach) ==
-  .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
+  .sequence [.createTokens .sturdyShield (.fixed 1) false (note := .remember),
     .attach .createdToken .source]
 #guard TriggeredAbility.targetKind (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
   .equipmentInstantOrSorceryInYourGraveyard
@@ -1458,9 +1458,9 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onAttackFerociousPlusOneEach ==
   .putCounters (.ofKind .plusOnePlusOne) .youControl
 #guard TriggeredAbility.resolution .onEnterCreateAxe ==
-  .createTokens .treasure (.fixed 1) false .axe
+  .createTokens .axe (.fixed 1) false
 #guard TriggeredAbility.resolution .onEnterCreateAxeAttach ==
-  .createTokens .treasure (.fixed 1) false .axe (note := .attachReflexive)
+  .createTokens .axe (.fixed 1) false (note := .attachReflexive)
 #guard TriggeredAbility.resolution .onEquippedAttacksPlusOneEachIfCityBlessing ==
   .putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing)
 #guard TriggeredAbility.resolution
@@ -1625,7 +1625,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
   .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.gainLife (.fixed 2))]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
-  .sequence [.createTokens .treasure (.fixed 1) false .alien (note := .invasion),
+  .sequence [.createTokens .alien (.fixed 1) false (note := .invasion),
     .putCounters .plusOneNoted .createdToken,
     .putCounters (.ofKind .invasion) .source]
 #guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
@@ -1654,7 +1654,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onDiesDrawPerFatGraveyard ==
   .draw .perFatGraveyard
 #guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
-  .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield (note := .remember),
+  .sequence [.createTokens .sturdyShield (.fixed 1) false (note := .remember),
     .attach .createdToken .source]
 #guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
   .sequence [.tap (.target .ifPresent), .lose .allAbilities (.target .ifPresent)]
@@ -1693,5 +1693,94 @@ end CardDef
     }
   }
   c.choosableNames == #["Smaug, the Great Calamity", "Spew Flame"]
+
+-- Phase 1 foundation `#guard`s: Primitives, ManaSpec, TokenSpec, and HasTextChange.
+#guard Zone.battlefield.kind == .battlefield
+#guard (Zone.hand ⟨0⟩).kind == .hand
+#guard (Zone.graveyard ⟨1⟩).kind == .graveyard
+#guard (Zone.library ⟨0⟩).kind == .library
+#guard Zone.stack.kind == .stack
+#guard Zone.exile.kind == .exile
+#guard Zone.command.kind == .command
+#guard (Zone.outside ⟨0⟩).kind == .outside
+#guard ZoneKind.hand.toZone ⟨2⟩ == .hand ⟨2⟩
+#guard ZoneKind.battlefield.isPublic && !ZoneKind.hand.isPublic && ZoneKind.library.isHidden
+#guard ZoneKind.graveyard.isOwned && !ZoneKind.exile.isOwned
+#guard (PermanentDesignation.goaded ⟨0⟩).tag == .goaded
+#guard PermanentDesignation.ringBearer.tag == .ringBearer
+#guard ReplacementTier.self.rank < ReplacementTier.control.rank
+#guard ReplacementTier.control.rank < ReplacementTier.copy.rank
+#guard ReplacementTier.copy.rank < ReplacementTier.backFaceUp.rank
+#guard ReplacementTier.backFaceUp.rank < ReplacementTier.auraHost.rank
+#guard ReplacementTier.auraHost.rank < ReplacementTier.other.rank
+
+-- Layer 4 `TypeSetMod.apply` and Layer 5 `ColorSetMod.apply` (CR 205.1a–b / 205.3d / 613.1d–e).
+#guard
+  let m : TypeSetMod := { mode := .add, types := #[.artifact], removeTypes := #[.creature] }
+  m.apply #[.creature] #[.elf, .warrior] #[] == (#[.artifact], #[], #[])
+#guard
+  let m : TypeSetMod := { mode := .add, removeTypes := #[.creature] }
+  m.apply #[.kindred, .creature] #[.elf] #[] == (#[.kindred], #[.elf], #[])
+#guard
+  let m : TypeSetMod := { mode := .add, types := #[.artifact], removeTypes := #[.creature] }
+  m.apply #[.artifact, .creature] #[.construct, .food] #[] == (#[.artifact], #[.food], #[])
+#guard
+  let m : TypeSetMod := { mode := .set, types := #[.artifact], subtypes := #[.food] }
+  m.apply #[.creature] #[.bear] #[.legendary] == (#[.artifact], #[.food], #[.legendary])
+#guard
+  let m : ColorSetMod := { mode := .add, colors := ColorSet.singleton .red, removeColors := ColorSet.singleton .green }
+  m.apply (ColorSet.singleton .green) == ColorSet.singleton .red
+
+-- `ManaSpec` / `ManaOutput` / `ManaSpendRestriction` (CR 106.1 / 106.6 / 106.12).
+#guard (ManaSpec.ofOutput (.fixed #[.colored .red, .colored .red])).toConstantOutput? ==
+  some (.fixed #[.colored .red, .colored .red])
+#guard (ManaSpec.ofOutput (.oneOf anyColorMana 2)).toConstantOutput? ==
+  some (.oneOf anyColorMana 2)
+#guard (ManaSpec.ofOutput (.combination #[.colored .blue, .colored .red] 2)).toConstantOutput? ==
+  some (.combination #[.colored .blue, .colored .red] 2)
+#guard ManaSpendRestriction.parseOracle? "Dwarf, Equipment, and Saga spells" ==
+  some .dwarfEquipmentSagaSpell
+#guard ManaSpendRestriction.parseOracle? "Dragon spells" == some .dragonSpell
+#guard ManaSpendRestriction.parseOracle? "a Goblin spell" == some (.subtypeSpell .goblin)
+#guard ManaSpendRestriction.legendarySpell.grantsRider .cantBeCountered
+#guard !ManaSpendRestriction.dragonSpell.grantsRider .cantBeCountered
+#guard ManaSpendRestriction.elf.isNarrow && !ManaSpendRestriction.cantNonartifact.isNarrow
+#guard !ManaSpendRestriction.notSpellsFromHand.isNarrow
+#guard ManaSpendRestriction.legendarySpell.allows { spell := true, supertypes := #[.legendary] }
+#guard !ManaSpendRestriction.legendarySpell.allows { spell := true, supertypes := #[] }
+#guard ManaSpendRestriction.cantNonartifact.allows { spell := true, types := #[.artifact] }
+#guard !ManaSpendRestriction.cantNonartifact.allows { spell := true, types := #[.creature] }
+#guard ManaSpendRestriction.cantNonartifact.allows { spell := false }
+#guard ManaSpendRestriction.creatureSource.allows { spell := false, abilitySourceTypes := #[.creature] }
+#guard !ManaSpendRestriction.creatureSource.allows { spell := true, types := #[.creature] }
+#guard ManaSpendRestriction.notSpellsFromHand.allows { spell := true, fromHand := false }
+#guard !ManaSpendRestriction.notSpellsFromHand.allows { spell := true, fromHand := true }
+#guard !ManaSpendRestriction.notSpellsFromHand.allows { spell := true, castFromZone := some .hand }
+#guard ManaSpendRestriction.notSpellsFromHand.allows { spell := true, castFromZone := some .graveyard }
+#guard !(ManaSpendRestriction.notFromZone .graveyard).allows { spell := true, castFromZone := some .graveyard }
+#guard (ManaSpendRestriction.notFromZone .graveyard).allows { spell := true, castFromZone := some .exile }
+#guard (ManaSpendRestriction.notFromZone .graveyard).allows { spell := true, fromHand := true, castFromZone := some .hand }
+#guard (ManaSpendRestriction.notFromZone .graveyard).allows { spell := false, castFromZone := some .graveyard }
+#guard !(ManaSpendRestriction.notFromZone .exile).allows { spell := true, castFromZone := some .exile }
+#guard (ManaSpendRestriction.notFromZone .exile).allows { spell := true, castFromZone := some .graveyard }
+
+-- `HasTextChange` identity, composition, and token/mana/ability traversal (CR 612.2 / 613.1c).
+#guard
+  let tcs : Array TextChange := #[.replaceCreatureType .dwarf .bear, .replaceColorWord .red .blue]
+  HasTextChange.applyTextChanges #[] ManaSpendRestriction.dwarfEquipmentSagaSpell ==
+    ManaSpendRestriction.dwarfEquipmentSagaSpell &&
+  HasTextChange.applyTextChanges tcs ManaSpendRestriction.dwarfEquipmentSagaSpell ==
+    .subtypeEquipmentSagaSpell .bear &&
+  HasTextChange.applyTextChanges tcs TokenSpec.dwarf ==
+    TokenSpec.creature #[.bear] 2 2 (ColorSet.singleton .blue) &&
+  HasTextChange.applyTextChanges tcs (TokenSpec.copyOf .target #[.addSubtypes #[.dwarf], .addColors (ColorSet.singleton .red)]) ==
+    TokenSpec.copyOf .target #[.addSubtypes #[.bear], .addColors (ColorSet.singleton .blue)] &&
+  HasTextChange.applyTextChanges tcs (Resolution.createTokens .dwarf (.fixed 2) false) ==
+    Resolution.createTokens (TokenSpec.creature #[.bear] 2 2 (ColorSet.singleton .blue)) (.fixed 2) false &&
+  HasTextChange.applyTextChanges #[] (StaticAbility.otherCreaturesGet #[.elf] 1 1) ==
+    StaticAbility.otherCreaturesGet #[.elf] 1 1 &&
+  HasTextChange.applyTextChanges #[.replaceCreatureType .elf .goblin]
+    (StaticAbility.otherCreaturesGet #[.elf] 1 1) ==
+    StaticAbility.otherCreaturesGet #[.goblin] 1 1
 
 end Mtg.Engine

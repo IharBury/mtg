@@ -1768,8 +1768,8 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     gPreCastSpent.record
       (GameEvent.spellCast gPreCastSpent.turnNumber p0 (gPreCastSpent.snapshot castSpellObj) (.hand p0))
   let postUnits : Array ManaUnit := #[
-    { mana := .colorless, source := some trSrcId, restriction := some (.fra .fromTreasure) },
-    { mana := .colorless, source := some legSrcId, restriction := some (.fra .legendarySpell) },
+    { mana := .colorless, source := some trSrcId, fromTreasure := true },
+    { mana := .colorless, source := some legSrcId, restriction := some .legendarySpell },
     { mana := .colorless, source := some ancId }
   ]
   let gPostCastSpent :=

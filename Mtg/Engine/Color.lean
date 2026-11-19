@@ -110,6 +110,14 @@ def union (a b : ColorSet) : ColorSet :=
     red := a.red || b.red
     green := a.green || b.green }
 
+/-- Remove all colors in `b` from `a` (CR 105.2 / 613.1e). -/
+def diff (a b : ColorSet) : ColorSet :=
+  { white := a.white && !b.white
+    blue := a.blue && !b.blue
+    black := a.black && !b.black
+    red := a.red && !b.red
+    green := a.green && !b.green }
+
 instance : ToString ColorSet where
   toString s :=
     if s.isColorless then "colorless"

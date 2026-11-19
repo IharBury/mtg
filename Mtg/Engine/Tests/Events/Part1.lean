@@ -2125,18 +2125,26 @@ changes), Layer 5 (subtype-scoped color grant vs text change), and Layer 6
   l2DepOk && l5DepOk && l6DepOk
 
 /- Phase 9 isolation suite (CR 613.4b–d):
-1. Layer 7b timestamp order across `setBasePTUntilEot`, `auraConstruct55` (5/5),
-   and `cardsInHandPowerUntilEot`.
+1. Layer 7b timestamp order across `setBasePTUntilEot`, an attached
+   `.fra .enchantedIsConstruct55` Aura (5/5), and `cardsInHandPowerUntilEot`.
 2. Layer 7c (`pumpPerArtifactUntilEot` and +1/+1 counters) applies after 7b
    regardless of timestamp, and Layer 7d (`ptSwitch`) applies after 7b and 7c. -/
 #guard
   let baubleDef : CardDef := { name := "Phase9 Bauble", types := #[.artifact] }
+  let constructAuraDef : CardDef := {
+    name := "Phase9 Construct Aura"
+    types := #[.enchantment]
+    subtypes := #["Aura"]
+    staticAbilities := #[.fra .enchantedIsConstruct55]
+  }
   let g0 := addPermanent (addPermanent (quiet afterDraw) bear me me) baubleDef me me
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let handCount : Int := Int.ofNat (g0.player me).hand.size
-  -- 7b timestamp order: (8, 4) -> Construct 5/5 -> handSize -> (3, 6)
+  -- 7b timestamp order: (8, 4) -> attached Construct 5/5 Aura -> handSize -> (3, 6)
   let g7b1 := g0.createEffect (.setBasePTUntilEot b.id (8, 4))
-  let g7b2 := g7b1.createEffect (.auraConstruct55 b.id)
+  let g7b2a := addPermanent g7b1 constructAuraDef me me
+  let auraObj := (g7b2a.battlefield.filter (·.name == "Phase9 Construct Aura"))[0]!
+  let g7b2 := g7b2a.record (GameEvent.attached g7b2a.turnNumber (g7b2a.snapshot auraObj) b.id (cause := .gameRule .spellCast))
   let g7b3 := g7b2.createEffect (.cardsInHandPowerUntilEot b.id)
   let g7b4 := g7b3.createEffect (.setBasePTUntilEot b.id (3, 6))
   let order7bOk :=
@@ -2664,7 +2672,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let unitLeg : ManaUnit :=
     { mana := .colored .green
       source := none
-      restriction := some (.fra .legendarySpell) }
+      restriction := some .legendarySpell }
   let gManaAdded := gTrMana.record (GameEvent.manaAdded gTrMana.turnNumber me #[unitLeg] (cause := some p10Cause))
   let gManaConv := gManaAdded.emptyManaPools
   let convUnits := (gManaConv.player me).manaPool.units
@@ -2674,12 +2682,12 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     convUnits.size == 2 &&
     convUnits.all (·.mana == .colorless) &&
     convUnits[0]!.source == some trObj.id &&
-    convUnits[1]!.restriction == some (.fra .legendarySpell) &&
+    convUnits[1]!.restriction == some .legendarySpell &&
     gManaConv.events.any (fun e =>
       match e.change with
       | .rules (.player (.manaEmptied p us true)) =>
         p == me && us.size == 2 && us[0]!.source == some trObj.id &&
-          us[1]!.restriction == some (.fra .legendarySpell)
+          us[1]!.restriction == some .legendarySpell
       | _ => false) &&
     GameEvent.treasureManaSpentOn gManaSpent.events targetSpellId &&
     GameEvent.legendaryManaSpentOn gManaSpent.events targetSpellId

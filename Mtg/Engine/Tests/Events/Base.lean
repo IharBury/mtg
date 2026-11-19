@@ -1741,7 +1741,7 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
      | none => false) &&
     gSunfall.waitingTriggers.isEmpty &&
     sunfallIncAfter.status.transformed &&
-    sunfallIncAfter.name == "Phyrexian" &&
+    sunfallIncAfter.name == "Phyrexian Token" &&
     sunfallIncAfter.printed.power == some 0 &&
     sunfallIncAfter.printed.toughness == some 0 &&
     sunfallIncAfter.status.plusOnePlusOne == 2 &&

@@ -501,8 +501,8 @@ inductive SharedTrigger where
   | scry (n : Nat)
   /-- Draw `n` cards. -/
   | draw (n : Nat)
-  /-- Create `n` tokens of this kind. `tapped` is Treasure-style “create a tapped …”. -/
-  | createTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false)
+  /-- Create `n` tokens of this spec. `tapped` is Treasure-style “create a tapped …”. -/
+  | createTokens (kind : TokenSpec) (n : Nat) (tapped : Bool := false)
   /-- Amass `subtype` `n`. Goblins `n` is `.amass n`.
   Orcs `n` is `.amass n "Orc"`.
   Amass equal to this creature's power is `.amass 0 (amount := .sourcePower)`.
@@ -596,7 +596,7 @@ inductive SharedTrigger where
   | returnLinkedExile
   /-- Create one token, then attach the source to it.
   Resolves as `.sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken]`. -/
-  | createThenAttach (kind : TokenKind)
+  | createThenAttach (kind : TokenSpec)
   /-- Gain `n` life, then you may search a basic land to the top.
   Resolves as `.sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)]`. -/
   | gainLifeSearchBasicOnTop (n : Nat)
@@ -1144,5 +1144,25 @@ def SharedTriggerOpts.once : SharedTriggerOpts :=
 /-- Shared effect has targeting; this printed ability does not. -/
 def SharedTriggerOpts.noTarget : SharedTriggerOpts :=
   { untargeted := true }
+
+def SharedTriggerWhen.applyTextChangesAux (tcs : Array TextChange) : SharedTriggerWhen → SharedTriggerWhen
+  | .youCastColor c => .youCastColor (HasTextChange.applyTextChanges tcs c)
+  | .youCastColorFromHand c => .youCastColorFromHand (HasTextChange.applyTextChanges tcs c)
+  | .youCastGreen =>
+    let c := HasTextChange.applyTextChanges tcs Color.green
+    if c == .green then .youCastGreen else .youCastColor c
+  | .subtypeYouControlEnters s => .subtypeYouControlEnters (HasTextChange.applyTextChanges tcs s)
+  | .forestYouControlEnters =>
+    let s := HasTextChange.applyTextChanges tcs CardSubtype.forest
+    if s == .forest then .forestYouControlEnters else .subtypeYouControlEnters s
+  | .mountainYouControlEnters =>
+    let s := HasTextChange.applyTextChanges tcs CardSubtype.mountain
+    if s == .mountain then .mountainYouControlEnters else .subtypeYouControlEnters s
+  | .or a b => .or (SharedTriggerWhen.applyTextChangesAux tcs a) (SharedTriggerWhen.applyTextChangesAux tcs b)
+  | w => w
+
+instance : HasTextChange SharedTriggerWhen where
+  applyTextChanges tcs w :=
+    if tcs.isEmpty then w else SharedTriggerWhen.applyTextChangesAux tcs w
 
 end Mtg.Engine

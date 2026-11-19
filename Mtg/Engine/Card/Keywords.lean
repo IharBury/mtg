@@ -46,7 +46,7 @@ structure Keywords where
   changeling : Bool := false
   /-- Convoke (CR 702.51): tap creatures to help pay this spell. -/
   convoke : Bool := false
-deriving BEq, Repr, Inhabited
+deriving DecidableEq, BEq, Repr, Inhabited
 
 namespace Keywords
 

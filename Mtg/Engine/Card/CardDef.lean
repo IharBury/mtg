@@ -212,7 +212,7 @@ structure CardDef where
   planeswalkers you control`. -/
   tapAddAnyColorAmongLegendaries : Bool := false
   /-- `{T}: Add these mana types. Spend this mana only to cast …`. -/
-  tapAddRestricted : Option (Array ManaType × String) := none
+  tapAddRestricted : Option (Array ManaType × ManaSpendRestriction) := none
   /-- `{T}, Pay n life: Add one of these types`. -/
   tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none
   /-- As this land enters, you may pay `n` life. If you don't, it enters tapped. -/

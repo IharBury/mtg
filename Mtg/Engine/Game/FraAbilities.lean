@@ -506,7 +506,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
     | _ => g
   | .addBlueNoncreatureOnly =>
     (g.addMana controller (.colored .blue) 1 (source := sourceId)
-      (restriction := some (.fra .noncreatureSpell))).logMsg
+      (restriction := some .noncreatureSpell)).logMsg
       s!"{(g.player controller).name} adds \{U} (noncreature spells only)"
   | .tapAndStunX =>
     g.withLegalKindPermanent controller kind targets (fun g o =>

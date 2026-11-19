@@ -72,19 +72,19 @@ def onChooseRingBearerDraw : TriggeredAbility :=
   .triggered .youChooseRingBearer (Effect.ofTrigger (.draw 1))
 def onCombatDamageDraw (n : Nat) : TriggeredAbility :=
   .triggered .combatDamageToPlayer (Effect.ofTrigger (.draw n))
-def onEnterCreateTokens (kind : TokenKind) (n : Nat) (tapped : Bool := false) :
+def onEnterCreateTokens (kind : TokenSpec) (n : Nat) (tapped : Bool := false) :
     TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.createTokens kind n tapped))
-def onYourUpkeepCreateTokens (kind : TokenKind) (n : Nat) : TriggeredAbility :=
+def onYourUpkeepCreateTokens (kind : TokenSpec) (n : Nat) : TriggeredAbility :=
   .triggered .yourUpkeep (Effect.ofTrigger (.createTokens kind n))
-def onLandYouControlEntersCreateTokens (kind : TokenKind) (n : Nat) :
+def onLandYouControlEntersCreateTokens (kind : TokenSpec) (n : Nat) :
     TriggeredAbility :=
   .triggered .landYouControlEnters (Effect.ofTrigger (.createTokens kind n))
-def onDiesCreateTokens (kind : TokenKind) (n : Nat) : TriggeredAbility :=
+def onDiesCreateTokens (kind : TokenSpec) (n : Nat) : TriggeredAbility :=
   .triggered .dies (Effect.ofTrigger (.createTokens kind n))
-def onYouDrawSecondCreateTokens (kind : TokenKind) : TriggeredAbility :=
+def onYouDrawSecondCreateTokens (kind : TokenSpec) : TriggeredAbility :=
   .triggered .youDrawSecond (Effect.ofTrigger (.createTokens kind 1))
-def onCastColorCreateTokens (c : Color) (kind : TokenKind) (n : Nat) :
+def onCastColorCreateTokens (c : Color) (kind : TokenSpec) (n : Nat) :
     TriggeredAbility :=
   .triggered (.youCastColor c) (Effect.ofTrigger (.createTokens kind n))
 def onEnterOrAttackCreateWall : TriggeredAbility :=
@@ -188,15 +188,15 @@ def onAnotherSubtypeOrEquipmentEntersDrawOnce (subtype : String) : TriggeredAbil
     { onceEachTurn := true, anotherSubtypeOrEquipment := CardSubtype.ofOracle? subtype }
 def onEachEndStepDrawIfGainedLife (n : Nat) : TriggeredAbility :=
   .triggered .eachEndStep (Effect.ofTrigger (.draw 1)) { gainedLifeAtLeast := some n }
-def onThisOrNontokenSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
+def onThisOrNontokenSubtypeEntersCreateTokens (subtype : String) (kind : TokenSpec)
     (n : Nat) : TriggeredAbility :=
   .triggered .thisOrNontokenSubtypeEnters (Effect.ofTrigger (.createTokens kind n))
     { thisOrNontokenSubtype := CardSubtype.ofOracle? subtype }
-def onThisOrAnotherSubtypeEntersCreateTokens (subtype : String) (kind : TokenKind)
+def onThisOrAnotherSubtypeEntersCreateTokens (subtype : String) (kind : TokenSpec)
     (n : Nat) : TriggeredAbility :=
   .triggered .thisOrAnotherSubtypeEnters (Effect.ofTrigger (.createTokens kind n))
     { thisOrAnotherSubtype := CardSubtype.ofOracle? subtype }
-def onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : TokenKind)
+def onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : TokenSpec)
     (n : Nat) : TriggeredAbility :=
   .triggered .combatDamageToPlayerOrBattle (Effect.ofTrigger (.createTokens kind n))
     { watchedSubtype := CardSubtype.ofOracle? subtype }
@@ -287,7 +287,7 @@ def onAttackWithTwoOrMoreGrantFlying : TriggeredAbility :=
     (Effect.ofTrigger (.onPermanent .attackingCreatureWithoutFlying (.grantKeywords Keyword.flying)))
 def onLeaveReturnExiled : TriggeredAbility :=
   .triggered .leaving (Effect.ofTrigger .returnLinkedExile)
-def onEnterCreateThenAttach (kind : TokenKind) : TriggeredAbility :=
+def onEnterCreateThenAttach (kind : TokenSpec) : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.createThenAttach kind))
 def onEnterAmassThenAttach (n : Nat) : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger (.amass n (attachSource := true)))
@@ -907,7 +907,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "if that creature has haste and this doesn't, put a haste counter on this. Do the same for flying, first strike, double strike, deathtouch, indestructible, lifelink, menace, reach, trample, and vigilance"
     | _, _ => "put counters"
   | .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [.destroy .target,
-      .createTokens .treasure (.fixed 1) false .kind (.controller .target)]) =>
+      .createTokens _ (.fixed 1) false (.controller .target) _]) =>
     s!"if you control six or more lands, destroy {noun}. They create a Treasure token"
   | .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target) =>
@@ -1088,8 +1088,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
   | .sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman _] =>
     "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
-  | .sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken] =>
-    s!"{TokenKind.createPhrase kind 1}, then attach this Equipment to it"
+  | .sequence [.createTokens kind (.fixed 1) false _ _, .attach .source .createdToken] =>
+    s!"{TokenSpec.createPhrase kind 1}, then attach this Equipment to it"
   | .sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop .asPrinted .none)] =>
     s!"you gain {n} life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top"
   | .sequence [.destroy .oppArtifactsEnchantments .countDestroyed, .gainLife .forEachDestroyedThisWay] =>
@@ -1119,7 +1119,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control"
   | .sequence [.dealDamage .lastKnownPower .permanent .excess, .amass .notedExcess _ _ _] =>
     s!"Bolg deals damage equal to the sacrificed creature's power to {noun}. If excess damage was dealt this way, amass Goblins X, where X is that excess damage"
-  | .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking] =>
+  | .sequence [.createTokens _ (.fixed 2) true _ _, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking] =>
     "create two tapped 1/1 white Spirit creature tokens with flying. If that creature is legendary, instead create two of those tokens that are tapped and attacking"
   | .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) .orc false _] =>
     s!"this creature deals 1 damage to {noun}. Then amass Orcs 1"
@@ -1164,13 +1164,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"scry {n} and put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .discard (.cards 1)] =>
     "draw a card, then discard a card and put a plan counter on this enchantment"
-  | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .villain21menace (.fixed 1) false] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .createTokens _ (.fixed 1) false _ _] =>
     "create a 2/1 black Villain creature token with menace and put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .loseLife (.fixed n) .eachOpponent, .gainLife (.fixed m)] =>
     s!"each opponent loses {n} life and you gain {m} life. Put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)] =>
     "you draw a card, lose 1 life, and put a plan counter on this enchantment"
-  | .sequence [.putCounters (.ofKind .plan) .source, .createTokens .treasure (.fixed 1) true] =>
+  | .sequence [.putCounters (.ofKind .plan) .source, .createTokens _ (.fixed 1) true _ _] =>
     "create a tapped Treasure token and put a plan counter on this enchantment"
   | .sequence [.putCounters (.ofKind .plan) .source,
       .putCounters (.ofKind .plusOnePlusOne) (.permanent true)] =>
@@ -1186,7 +1186,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.sacrifice .plan .forReflexive,
       .«if» .planWasSacrificed (.queueReflexive (.exile (.opponentTop 5) (.mayCastUpTo 2)))] =>
     "sacrifice it. When you do, target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs"
-  | .sequence [.sacrifice .plan, .createTokens .robotVillain22 (.fixed n) false] =>
+  | .sequence [.sacrifice .plan, .createTokens _ (.fixed n) false _ _] =>
     s!"sacrifice it and create {englishNumber n.toNat} 2/2 colorless Robot Villain artifact creature tokens"
   | .sequence [.sacrifice .plan .forReflexive,
       .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed n) .target .divided))] =>
@@ -1204,11 +1204,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "draw a card, then you may put a land card from your hand onto the battlefield tapped"
   | .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.gainLife (.fixed 2))] =>
     "draw a card. If you control another Hero, you gain 2 life"
-  | .sequence [.createTokens .treasure (.fixed 1) false .alien .you .invasion,
+  | .sequence [.createTokens _ (.fixed 1) false .you .invasion,
       .putCounters .plusOneNoted .createdToken,
       .putCounters (.ofKind .invasion) .source] =>
     "create a 1/1 red Alien creature token with haste and \"This token attacks each combat if able.\" Put a +1/+1 counter on it for each invasion counter on this enchantment, then put an invasion counter on this enchantment"
-  | .sequence [.createTokens .treasure (.fixed 1) false .sturdyShield .you .remember,
+  | .sequence [.createTokens _ (.fixed 1) false .you .remember,
       .attach .createdToken .source] =>
     "create a colorless Equipment artifact token named Sturdy Shield with \"Equipped creature gets +1/+2\" and equip {2}. Attach it to this creature"
   | .sequence [.exile .graveyardCard .forLater .playCard, .grantPlayNotedUntilNextTurn] =>
@@ -1240,7 +1240,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.tap .target, .putCounters (.ofKind .stun) .permanent] =>
     s!"tap {noun} and put a stun counter on it"
   | .sequence [.destroy .target,
-      .createTokens .treasure (.fixed 1) false .kind (.controller .target)] =>
+      .createTokens _ (.fixed 1) false (.controller .target) _] =>
     s!"destroy {noun}. They create a Treasure token"
   | .sequence [.may (.put .artifactFromHand _ .forAttach) _, .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)] =>
     "you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature"
@@ -1255,9 +1255,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.searchLibrary (.exile (.basicUpTo .plains max) .forLater .linked),
       .gainLife (.fixed life)] =>
     s!"search your library for up to {max} basic Plains cards, exile them, then shuffle. You gain {life} life"
-  | .sequence [.createTokens .treasure (.fixed 1) false,
+  | .sequence [.createTokens _ (.fixed 1) false _ _,
       .«if» ((.atLeast (.count (.youControl (.subtype .treasure))) (.fixed 4))) (.sacrifice (.sacrificedSource .isSacrificed) .noted),
-      .«if» .sourceWasSacrificed (.createTokens .dragon (.fixed 1) false)] =>
+      .«if» .sourceWasSacrificed (.createTokens _ (.fixed 1) false _ _)] =>
     "create a Treasure token. Then if you control four or more Treasures, sacrifice this Saga. If you do, create a 6/6 red Dragon creature token with flying"
   | .sequence [.draw (.fixed 1), .grant .basePowerEqualHand .source] =>
     "draw a card. Until end of turn, this creature's base power is equal to the number of cards in your hand"
@@ -1404,45 +1404,48 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"amass {pluralizeName subtype} {n}"
   | .amass _ _ _ _ =>
     "amass"
-  | .createTokens kind amount tapped token who note =>
-    match token, who, amount, note with
-    | .axe, _, _, .attachReflexive =>
-      "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control"
-    | .axe, _, _, _ =>
-      "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
-    | .kind, .you, .oppArtifacts, _ =>
-      "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
-    | .kind, .you, .damagedPlayerArtifacts, _ =>
-      "you create a Treasure token for each artifact that player controls"
-    | .kind, .you, .lastKnownPower, _ =>
-      if kind == .birdSoldier then
-        "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
-      else
-        "create that many Treasure tokens"
-    | .kind, .you, .perSubtype subtype, _ =>
-      s!"create a {TokenKind.oracleNoun kind} token for each {subtype} you control"
-    | .kind, .you, .chosenCreatureType, _ =>
-      "choose a creature type. Create a Treasure token for each creature you control of that type"
-    | .zabu, _, _, _ =>
+  | .createTokens kind amount tapped who note =>
+    if kind == .axe then
+      match note with
+      | .attachReflexive =>
+        "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}. When you do, attach it to target creature you control"
+      | _ =>
+        "create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}"
+    else if kind == .zabu then
       "create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
-    | .theVoid, _, _, _ =>
+    else if kind == .theVoid then
       s!"{noun} creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
-    | .redwing, _, _, _ =>
+    else if kind == .redwing then
       "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
-    | .alien, _, _, _ =>
+    else if kind == .alien then
       "create a 1/1 red Alien creature token with haste"
-    | .galactus, _, _, _ =>
+    else if kind == .galactus then
       "create Galactus, a legendary 16/16 black Elder Alien creature token with flying and trample"
-    | .sturdyShield, _, _, _ =>
+    else if kind == .sturdyShield then
       "create a colorless Equipment artifact token named Sturdy Shield"
-    | .merfolk, _, .blueManaSymbols, _ =>
+    else if kind == .merfolk && amount == .blueManaSymbols then
       "create a 1/1 blue Merfolk creature token for each blue mana symbol in that spell's mana cost"
-    | .kind, .controller .target, _, _ =>
-      "they create a Treasure token"
-    | .kind, .you, .fixed n, _ =>
-      TokenKind.createPhrase kind n.toNat (tapped := tapped)
-    | _, _, _, _ =>
-      "create a token"
+    else
+      match who, amount with
+      | .you, .oppArtifacts =>
+        "create X tapped Treasure tokens, where X is the number of artifacts your opponents control"
+      | .you, .damagedPlayerArtifacts =>
+        "you create a Treasure token for each artifact that player controls"
+      | .you, .lastKnownPower =>
+        if kind == .birdSoldier then
+          "create a 4/4 white Bird Soldier creature token with flying for each creature returned to your hand this way"
+        else
+          "create that many Treasure tokens"
+      | .you, .perSubtype subtype =>
+        s!"create a {TokenSpec.oracleNoun kind} token for each {subtype} you control"
+      | .you, .chosenCreatureType =>
+        "choose a creature type. Create a Treasure token for each creature you control of that type"
+      | .controller .target, _ =>
+        "they create a Treasure token"
+      | .you, .fixed n =>
+        TokenSpec.createPhrase kind n.toNat (tapped := tapped)
+      | _, _ =>
+        "create a token"
   | .attach what host =>
     match what, host with
     | .source, .createdToken =>
@@ -1535,7 +1538,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "return that card to its owner's hand"
     | _, _ =>
       "return it to a hand"
-  | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false] =>
+  | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens _ (.fixed 1) false _ _] =>
     "choose one — • Put a +1/+1 counter on target Wolf you control. • Create a Treasure token"
   | .mayCast origin maxMv cost note =>
     match origin, maxMv, cost, note with
@@ -1630,7 +1633,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .copySelfNonlegendary =>
     "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
   | .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
-      (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo =>
+      (.sequence [.draw (.fixed 1), .createTokens _ (.fixed 1) false _ _]) .ifYouDo =>
     "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
   | .ringTempts =>
     "the Ring tempts you"
@@ -1653,10 +1656,10 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     let attackedNoun := if attacked == .hero then "a Hero" else s!"a {attacked}"
     let enteredNoun := if entered == .hero then "a Hero" else s!"a {entered}"
     s!"if you attacked with {attackedNoun} this turn or {enteredNoun} entered the battlefield under your control this turn, draw a card"
-  | .or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
+  | .or [.createTokens _ (.fixed 1) false _ _, .createTokens _ (.fixed 1) false _ _] =>
     "create a Food token or a Treasure token"
   | .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
-      (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2)) =>
+      (.createTokens _ (.fixed 1) true _ _) (.mill (.fixed 2)) =>
     "create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards"
   | .ifElse ((.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1)))
       (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
@@ -1791,7 +1794,9 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "copy that spell. You may choose new targets for the copy"
   | .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo =>
     "you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card"
-  | .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo =>
+  | .may (.mill (.fixed n) .you .none) (.sequence []) .ifYouDo =>
+    if n == 1 then "you may mill a card" else s!"you may mill {n} cards"
+  | .may (.createTokens _ (.fixed 1) false _ _) (.sequence []) .ifYouDo =>
     "you may create a 0/4 colorless Wall creature token with defender"
   | .may (.pay (.sacrifice _ _)) _ .ifYouDo =>
     "you may sacrifice that. If you do, do that"
@@ -1870,7 +1875,7 @@ def sequenceClause (e : Effect) : Option String :=
       [.onPermanent .untap,
        .«if» (.subtype subtype) (.onPermanent (.plusOne n))] =>
     some s!"untap {noun}. If that creature is a {subtype}, put {plusOnePlusOneCountersPhrase n} on it"
-  | .sequence [.loseLife (.fixed n) .you, .createTokens .treasure 1 false] =>
+  | .sequence [.loseLife (.fixed n) .you, .createTokens _ 1 false _ _] =>
     some s!"you lose {n} life and create a Treasure token"
   | .sequence [.exileCardFromGraveyard, .loseLife (.fixed n) .eachOpponent] =>
     some s!"exile up to one {noun}. Each opponent loses {n} life"
@@ -2070,12 +2075,12 @@ def toNotation (ab : TriggeredAbility) : String :=
     | .enterOrOpponentDrawsExceptFirst, some .deal1ThenAmassOrcs, _ =>
     "When this creature enters and whenever an opponent draws a card except the first one they draw in each of their draw steps, this creature deals 1 damage to any target. Then amass Orcs 1."
     | .eachUpkeep, some (.createTokens k n), _ =>
-    s!"At the beginning of each player's upkeep, you {TokenKind.createPhrase k n}."
+    s!"At the beginning of each player's upkeep, you {TokenSpec.createPhrase k n}."
     | .eachOpponentDrawStep, some (.draw 1), _ =>
     "At the beginning of each opponent's draw step, you draw a card."
     | .youGainLife, some .loyaltyOnSource, _ =>
     "Whenever you gain life, put a loyalty counter on Ajani."
-    | .opponentDrawsSecond, some (.createTokens .treasure 1), _ =>
+    | .opponentDrawsSecond, some (.createTokens _ 1), _ =>
     "Whenever an opponent draws their second card each turn, you create a Treasure token."
     | .youAttackWithTotalPower, some (.untapAttackersExtraCombat n), _ =>
       leadInSentence ab
@@ -2084,7 +2089,7 @@ def toNotation (ab : TriggeredAbility) : String :=
       leadInSentence ab "Alliance — Whenever another creature you control enters"
     | .enter, some .destroyOtherAmassControllerPower, _ =>
     "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
-    | .combatDamageToPlayerOrBattle, some (.createTokens .treasure 2), { watchedSubtype := some .dwarf, .. } =>
+    | .combatDamageToPlayerOrBattle, some (.createTokens _ 2), { watchedSubtype := some .dwarf, .. } =>
       leadInSentence ab "Whenever a Dwarf you control deals combat damage to a player or battle"
     | (.youCastColor .red), some (.damageEachOpponent 3), _ =>
     "Whenever you cast a red spell, Aragorn deals 3 damage to target opponent."
@@ -2214,5 +2219,21 @@ def fra (w : SharedTriggerWhen) (printed : String) (r : Resolution)
     { printed, onceEachTurn := once, fraCondition := cond, allowsZeroTargets }
 
 end TriggeredAbility
+
+instance : HasTextChange TriggeredAbility where
+  applyTextChanges tcs ab :=
+    if tcs.isEmpty then ab
+    else
+      let ms : Option CardSubtype → Option CardSubtype := HasTextChange.applyTextChanges tcs
+      match ab with
+      | .triggered w eff opts =>
+        let opts' : SharedTriggerOpts := { opts with
+          thisOrNontokenSubtype := ms opts.thisOrNontokenSubtype
+          thisOrAnotherSubtype := ms opts.thisOrAnotherSubtype
+          anotherSubtypeOrEquipment := ms opts.anotherSubtypeOrEquipment
+          watchedSubtype := ms opts.watchedSubtype
+        }
+        .triggered (HasTextChange.applyTextChanges tcs w)
+          (HasTextChange.applyTextChanges tcs eff) opts'
 
 end Mtg.Engine

@@ -213,6 +213,7 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
   let allowCantNonartifact := g.isArtifact o
   let spend : ManaSpend :=
     { spell := true, fromHand := o.zone == .hand p
+      castFromZone := some o.zone.kind
       supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
   let canPay (cost : ManaCost) : Bool :=
     available.canPay cost (allowElfRestricted := allowElf) (allowInstRestricted := allowInst)
@@ -250,9 +251,12 @@ choices), excluding `excludeIds` (CR 106.1,6 / 601.2g). -/
 def canPaySpellCostFromSources (g : Game) (p : PlayerId) (spellObj : GameObject)
     (cost : ManaCost) (fromHand : Bool := spellObj.zone == .hand p)
     (excludeIds : Array ObjectId := #[])
-    (prop? : Option ProposedSpell := none) : Bool :=
+    (prop? : Option ProposedSpell := none)
+    (castFromZone : Option ZoneKind := none) : Bool :=
   let allowElf := g.hasSubtype spellObj .elf
   let allowInst := g.isInstantOrSorcery spellObj
+  let originZone : ZoneKind :=
+    castFromZone.getD (match prop? with | some pr => pr.original.zone.kind | none => spellObj.zone.kind)
   let allowances : ManaAllowances :=
     { hero := g.hasSubtype spellObj .hero
       villain := g.hasSubtype spellObj .villain
@@ -260,6 +264,7 @@ def canPaySpellCostFromSources (g : Game) (p : PlayerId) (spellObj : GameObject)
       creature := false
       spend :=
         { spell := true, fromHand := fromHand
+          castFromZone := some originZone
           supertypes := g.supertypes spellObj
           types := g.types spellObj
           subtypes := g.subtypes spellObj } }
@@ -277,7 +282,8 @@ def canPayAnnouncedAdditionalFromSources (g : Game) (p : PlayerId) (o : GameObje
     (useImplicitPermissions : Bool := true)
     (fromHand : Bool := o.zone == .hand p)
     (excludeIds : Array ObjectId := #[])
-    (faceOverride? : Option CardDef := none) : Bool :=
+    (faceOverride? : Option CardDef := none)
+    (castFromZone : Option ZoneKind := none) : Bool :=
   let rawBc := g.baseCard o
   let bc :=
     faceOverride?.getD
@@ -289,7 +295,7 @@ def canPayAnnouncedAdditionalFromSources (g : Game) (p : PlayerId) (o : GameObje
         (origPerm := origPerm) (flashback := flashback)
         (explicitAltCost := explicitAltCost)
         (useImplicitPermissions := useImplicitPermissions))
-      (fromHand := fromHand) (excludeIds := excludeIds)
+      (fromHand := fromHand) (excludeIds := excludeIds) (castFromZone := castFromZone)
   match bc.additionalCostBeholdOrPay with
   | some (quality, n) =>
     let hasPerm := (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality)
@@ -911,7 +917,7 @@ def hasCostPreservingPaymentSubset (g : Game) (pool : ManaPool) (cost : ManaCost
           choices.map (fun (ch : TapManaChoice) => (ch.baseAdded, ch.extraRed, ch.restriction)))
       let rec go (curPool : ManaPool) (chosenIds : Array ObjectId)
           (skippedKeys : Array (Bool × Bool × Bool × Bool × Int × Array Bool ×
-            Array (Array ManaType × Array ManaType × ManaRestriction)))
+            Array (Array ManaType × Array ManaType × Option ManaSpendRestriction)))
           (rem : List (GameObject × Array ManaType)) : Bool :=
         if !g.tapPreservesPostManaCosts p prop chosenIds then false
         else if g.canPayFromSources curPool cost allowElf allowInst freeOthers a activeProp? then true

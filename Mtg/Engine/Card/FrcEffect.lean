@@ -10,26 +10,6 @@ the payload of `Resolution.frc`. This module does not import `Effect`.
 
 namespace Mtg.Engine
 
-/-- A token created by an FRC effect. Printed characteristics live in the
-resolver so `TokenKind` stays closed. -/
-inductive FrcToken where
-  | citizen
-  | warrior
-  | insect
-  | myr
-  | kobold
-  | mite
-  | shark
-  | gingerbrute
-  | angel
-  | human
-  | goblin
-  | map
-  | treasure
-  | rogue
-  | incubator
-deriving Repr, Inhabited, BEq
-
 /-- One Reality Fracture Commander resolution. -/
 inductive FrcEffect where
   /-- Draw `draw` cards, then put `put` cards from your hand on top of your
@@ -166,7 +146,10 @@ inductive FrcEffect where
   | warriorsX
   /-- Create X 1/1 green and white Citizens. -/
   | citizensX
-  /-- The source explores: a land goes to hand, otherwise a +1/+1 counter. -/
+  /-- The exploring permanent's controller reveals the top card of their library:
+  if it's a land card, put it into their hand; otherwise put a +1/+1 counter on
+  the exploring permanent (if on the battlefield) and they may put the revealed
+  card into their graveyard (CR 701.44a / 701.44c). -/
   | explore
   /-- Transform this Incubator into a 0/0 Phyrexian artifact creature. -/
   | transformIncubator

@@ -523,7 +523,7 @@ Saga spells. -/
 #guard
   let g := tapFor (addPermanent afterDraw filiAndKiliJoyous me me) "Fíli and Kíli, Joyous" (.colored .red)
   (pool g).red == 2 &&
-    (pool g).fraRestricted == #[(.colored .red, .dwarfEquipmentSagaSpell), (.colored .red, .dwarfEquipmentSagaSpell)]
+    (pool g).restrictedEntries == #[(.colored .red, .dwarfEquipmentSagaSpell), (.colored .red, .dwarfEquipmentSagaSpell)]
 
 /- Relic of Sauron adds two mana in any combination of {U}, {B}, and {R}. -/
 #guard
@@ -557,7 +557,7 @@ Equipment; only once each turn. -/
   let i := manaIdx g "Ronin, Shadow Stalker" (·.payLife == 2)
   let g := mustApply g me (.activateManaAbility o.id i #[.colored .black, .colored .black])
   (pool g).black == 2 && life g me == 18 && !(namedPermanent g "Ronin, Shadow Stalker").status.tapped &&
-    (pool g).fraRestricted.all (·.2 == .equipmentOrEquip) &&
+    (pool g).restrictedEntries.all (·.2 == .equipmentOrEquip) &&
     manaRejected g (.activateManaAbility o.id i #[.colored .black, .colored .black])
 
 /- Doc Samson adds X mana of one color, X = its power. -/
@@ -576,9 +576,9 @@ Equipment; only once each turn. -/
 #guard
   let g := addPermanent afterDraw castleDoom me me
   let o := namedPermanent g "Castle Doom"
-  let i := manaIdx g "Castle Doom" (·.restriction == .fra .artifactSpell)
+  let i := manaIdx g "Castle Doom" (·.restriction == some .artifactSpell)
   let g := mustApply g me (.activateManaAbility o.id i #[.colored .red])
-  (pool g).fraRestricted == #[(.colored .red, .artifactSpell)]
+  (pool g).restrictedEntries == #[(.colored .red, .artifactSpell)]
 
 /- Chandra, Torch of Defiance's +1 that adds {R}{R} is a loyalty ability, so it
 uses the stack (CR 605.1a). -/
@@ -610,7 +610,7 @@ uses the stack (CR 605.1a). -/
 /- Its colored mana can't pay for a nonlegendary spell. -/
 #guard
   let g := tapFor (addPermanent afterDraw delightedHalfling me me) "Delighted Halfling" (.colored .red)
-  (pool g).fraRestricted == #[(.colored .red, .legendarySpell)]
+  (pool g).restrictedEntries == #[(.colored .red, .legendarySpell)]
 
 /- Desolation of Smaug: the player chooses the colors of four mana that can be
 spent only on Dragon spells. -/
@@ -618,7 +618,7 @@ spent only on Dragon spells. -/
   let g := castFra afterDraw desolationOfSmaug
   let g := passBoth g
   let g := [3, 3, 0, 4].foldl (fun g i => mustApply g me (.chooseMode i)) g
-  let restricted := (pool g).fraRestricted.filter (·.2 == .dragonSpell)
+  let restricted := (pool g).restrictedEntries.filter (·.2 == .dragonSpell)
   restricted.size == 4 && (restricted.filter (·.1 == .colored .red)).size == 2
 
 /-! ## Extort and “you may pay … When you do” triggers -/

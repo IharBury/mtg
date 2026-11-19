@@ -393,22 +393,10 @@ def returnLinkedExile (g : Game) (source : GameObject) : Game :=
   g.withBatch none fun g =>
     g.returnLinkedExileLoop (source.leaveTriggerExile ++ source.linkedExile)
 
-/-- Named MSH tokens that carry extra rules text. -/
-def zabuToken : CardDef :=
-  { (creatureToken "Zabu" #[.cat] 2 2 (some .green)) with
-    supertypes := #[.legendary]
-    triggeredAbilities := #[.onLandYouControlEntersPlusOnePlusOne] }
-
-def redwingToken : CardDef :=
-  { (creatureToken "Redwing" #[.bird, .scout] 1 1 (some .blue) Keyword.flying) with
-    supertypes := #[.legendary]
-    triggeredAbilities := #[.onAttackScry 1] }
-
-def theVoidToken : CardDef :=
-  { (creatureToken "The Void" #[.horror, .villain] 5 5 (some .black)
-      ((Keyword.flying).merge Keyword.indestructible)) with
-    supertypes := #[.legendary]
-    staticAbilities := #[.attacksEachCombatIfAble] }
+/-- Named MSH tokens that carry extra rules text (backed by `TokenSpec`). -/
+def zabuToken : CardDef := (tokenPrinted? .zabu).getD default
+def redwingToken : CardDef := (tokenPrinted? .redwing).getD default
+def theVoidToken : CardDef := (tokenPrinted? .theVoid).getD default
 
 def galactusAttackTrigger : Effect := {
   targeting := .of (.filtered { noun := "target land", types := #[.land] })
@@ -416,27 +404,9 @@ def galactusAttackTrigger : Effect := {
   phrase := "Whenever Galactus attacks, destroy target land."
 }
 
-def galactusToken : CardDef :=
-  { (creatureToken "Galactus" #[.elder, .alien] 16 16 (some .black)
-      ((Keyword.flying).merge Keyword.trample)) with
-    supertypes := #[.legendary]
-    triggeredAbilities := #[.triggered .attack galactusAttackTrigger] }
-
-def tigerGodToken : CardDef :=
-  { (creatureToken "The Tiger God" #[.cat, .god] 4 4 (some .green)) with
-    supertypes := #[.legendary]
-    staticAbilities := #[.cantBeBlockedByMoreThan 1] }
-
-def sturdyShieldToken : CardDef :=
-  { name := "Sturdy Shield"
-    types := #[.artifact]
-    subtypes := #["Equipment"]
-    staticAbilities := #[.equippedCreatureGets 1 2]
-    activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGeneric 2 }
-        effect := Effect.attachToTargetCreatureYouControl
-        onlyAsSorcery := true }]
-    isToken := true }
+def galactusToken : CardDef := (tokenPrinted? .galactus).getD default
+def tigerGodToken : CardDef := (tokenPrinted? .tigerGod).getD default
+def sturdyShieldToken : CardDef := (tokenPrinted? .sturdyShield).getD default
 
 def createNamedToken (g : Game) (controller : PlayerId) (printed : CardDef) : Game :=
   let (g, _) := g.createToken controller printed
@@ -1015,9 +985,9 @@ def commitEnteringAttackItems (g : Game)
             let initialBatches : Array ProposedTokenBatch := chosen.filterMap fun (item, atkTgt) =>
               match item with
               | .token ctrl kind tapped _ _ =>
-                some {
+                (g.resolveTokenPrinted? kind).map fun printed => {
                   controller := ctrl
-                  printed := tokenPrinted kind
+                  printed
                   count := 1
                   tapped := tapped
                   attacking := atkTgt.isSome

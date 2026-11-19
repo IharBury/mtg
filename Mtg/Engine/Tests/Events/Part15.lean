@@ -724,7 +724,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let dragonRockDef : CardDef := {
     name := "P49i4 DragonLantern"
     types := #[.land]
-    tapAddRestricted := some (#[.colored .red], "Dragon spells")
+    tapAddRestricted := some (#[.colored .red], .dragonSpell)
   }
   let lanternGrantDef : CardDef := {
     name := "P49i4 ChromaticOrb"
@@ -969,5 +969,445 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
       gOrSingleton, gIfGy, gIfElseGift, gMayAccepted, gSpellOrChosen, gVisOffered])
 
 end Phase49Item4EventAlignment
+
+section Phase1AbilityAlignmentReview
+
+private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase1AbilityAlignmentReview failed: {label}"
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let g0 := afterDraw
+
+  -- 1. Incubator back face named "Phyrexian Token" (CR 111.10i)
+  let gInc0 := g0.createKindTokens p0 .incubator 1
+  let incObj := (gInc0.permanentsOf p0).find? (·.name == "Incubator") |>.get!
+  let gIncTr := gInc0.withResolvingContext (some incObj.id) p0 (fun g =>
+    g.applyFrc p0 default .transformIncubator #[] (some incObj.id))
+  let incAfter := gIncTr.object! incObj.id
+  let incubatorOk :=
+    (Game.predefinedTokenPrinted .incubator).otherFace.map (·.name) == some "Phyrexian Token" &&
+    incAfter.status.transformed &&
+    incAfter.name == "Phyrexian Token" &&
+    gIncTr.isArtifact incAfter && gIncTr.isCreature incAfter
+
+  -- 2. Map token (CR 111.10s) & Explore (CR 701.44a / 701.44c):
+  --    sorcery speed, targets creature you control, explores targeted creature;
+  --    nonland puts +1/+1 counter BEFORE offering optional graveyard put;
+  --    noncreature permanent exploring nonland still gets +1/+1 counter + may-graveyard;
+  --    empty library still puts +1/+1 counter on exploring permanent;
+  --    departed permanent uses LKI controller (CR 701.44c) and still reveals/offers choice.
+  let mapDef := Game.predefinedTokenPrinted .map
+  let mapAb := mapDef.activatedAbilities[0]!
+  let gMap0 := addPermanent (g0.createKindTokens p0 .map 1) bear p0 p0
+  let gMap0 := addPermanent gMap0 bear p1 p1
+  let myBear := (gMap0.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let oppBear := (gMap0.permanentsOf p1).find? (·.name == bear.name) |>.get!
+  let mapTok := (gMap0.permanentsOf p0).find? (·.name == "Map") |>.get!
+  -- Nonland on top -> +1/+1 counter on targeted creature BEFORE FraChoice.exploreMayGraveyard
+  let gMapNonland0 :=
+    let g := addPermanent gMap0 bear p0 p0
+    let topId := g.battlefield.back!.id
+    (g.move topId (.library p0) none (libraryPosition := some .top)).1
+  let topNonlandId := (gMapNonland0.player p0).library.back!
+  let gyBeforeMap := (gMapNonland0.player p0).graveyard.size
+  let gMapNonland :=
+    gMapNonland0.applyEffect p0 mapAb.effect #[.permanent myBear.id] (sourceId := some mapTok.id)
+  let gMapNonlandAccept := mustApply gMapNonland p0 .accept
+  let gMapNonlandDecline := mustApply gMapNonland p0 .decline
+  -- Land on top -> land moved into hand, no graveyard prompt
+  let gMapLand0 :=
+    let g := addPermanent gMap0 forest p0 p0
+    let topId := g.battlefield.back!.id
+    (g.move topId (.library p0) none (libraryPosition := some .top)).1
+  let handBeforeLand := (gMapLand0.player p0).hand.size
+  let gMapLand :=
+    gMapLand0.applyEffect p0 mapAb.effect #[.permanent myBear.id] (sourceId := some mapTok.id)
+  -- Illegal target (opponent's creature) -> no counter added, no prompt
+  let gMapIllegal :=
+    gMapNonland0.applyEffect p0 mapAb.effect #[.permanent oppBear.id] (sourceId := some mapTok.id)
+  let mapOk :=
+    mapAb.onlyAsSorcery &&
+    mapAb.cost == { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } &&
+    mapAb.effect.targetKind == .creatureYouControl &&
+    (gMapNonland.object! myBear.id).status.plusOnePlusOne == 1 &&
+    gMapNonland.pending == .fraChoice p0 (.exploreMayGraveyard topNonlandId) &&
+    gMapNonlandAccept.pending == .none &&
+    (gMapNonlandAccept.player p0).graveyard.size == gyBeforeMap + 1 &&
+    (gMapNonlandAccept.player p0).library.back? != some topNonlandId &&
+    gMapNonlandDecline.pending == .none &&
+    (gMapNonlandDecline.player p0).graveyard.size == gyBeforeMap &&
+    (gMapNonlandDecline.player p0).library.back? == some topNonlandId &&
+    (gMapLand.player p0).hand.size == handBeforeLand + 1 &&
+    gMapLand.pending == .none &&
+    (gMapIllegal.object! oppBear.id).status.plusOnePlusOne == 0 &&
+    gMapIllegal.pending == .none
+
+  -- 2b. CR 701.44a noncreature & empty library; CR 701.44c departed permanent uses LKI controller
+  let relicDef : CardDef := { name := "Explore Relic", types := #[.artifact] }
+  let gRelic0 :=
+    let g := addPermanent g0 relicDef p0 p0
+    let g := addPermanent g bear p0 p0
+    let topId := g.battlefield.back!.id
+    (g.move topId (.library p0) none (libraryPosition := some .top)).1
+  let relicObj := (gRelic0.permanentsOf p0).find? (·.name == "Explore Relic") |>.get!
+  let relicTopId := (gRelic0.player p0).library.back!
+  let gRelicExp := gRelic0.applyFrc p0 default .explore #[] (some relicObj.id)
+  let gRelicExpAccept := mustApply gRelicExp p0 .accept
+  let gEmptyLib0 :=
+    let g := addPermanent g0 bear p0 p0
+    (g.player p0).library.foldl (fun acc id => (acc.move id .exile none).1) g
+  let emptyBear := (gEmptyLib0.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let gEmptyExp := gEmptyLib0.applyFrc p0 default .explore #[] (some emptyBear.id)
+  -- Departed permanent: owned by p0, controlled by p1 on battlefield before leaving;
+  -- ability controller is p0, yet CR 701.44c reveals p1's library (LKI controller).
+  let gStolen0 := addPermanent g0 bear p0 p1
+  let stolenObj := (gStolen0.permanentsOf p1).find? (·.name == bear.name) |>.get!
+  let (gDepartedBase, _) := gStolen0.move stolenObj.id (.graveyard p0) none
+  let gDepNonland0 :=
+    let g := addPermanent gDepartedBase bear p1 p1
+    let topId := g.battlefield.back!.id
+    (g.move topId (.library p1) none (libraryPosition := some .top)).1
+  let p1TopNonland := (gDepNonland0.player p1).library.back!
+  let p0LibSizeBefore := (gDepNonland0.player p0).library.size
+  let p1GyBefore := (gDepNonland0.player p1).graveyard.size
+  let gDepNonland := gDepNonland0.applyFrc p0 default .explore #[] (some stolenObj.id)
+  let gDepNonlandAccept := mustApply gDepNonland p1 .accept
+  let gDepLand0 :=
+    let g := addPermanent gDepartedBase forest p1 p1
+    let topId := g.battlefield.back!.id
+    (g.move topId (.library p1) none (libraryPosition := some .top)).1
+  let p1HandBefore := (gDepLand0.player p1).hand.size
+  let gDepLand := gDepLand0.applyFrc p0 default .explore #[] (some stolenObj.id)
+  -- CR 400.3: top card of p0's library owned by p1 goes to p1's hand (land) or p1's graveyard (nonland)
+  let gOwnBase := addPermanent g0 bear p0 p0
+  let ownExplorer := (gOwnBase.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let gOwnLand0 :=
+    let g := addPermanent gOwnBase forest p1 p1
+    let topId := g.battlefield.back!.id
+    (g.move topId (.library p0) none (libraryPosition := some .top)).1
+  let p0HandBeforeOwn := (gOwnLand0.player p0).hand.size
+  let p1HandBeforeOwn := (gOwnLand0.player p1).hand.size
+  let gOwnLand := gOwnLand0.applyFrc p0 default .explore #[] (some ownExplorer.id)
+  let gOwnNonland0 :=
+    let g := addPermanent gOwnBase bear p1 p1
+    let topId := g.battlefield.back!.id
+    (g.move topId (.library p0) none (libraryPosition := some .top)).1
+  let p0GyBeforeOwn := (gOwnNonland0.player p0).graveyard.size
+  let p1GyBeforeOwn := (gOwnNonland0.player p1).graveyard.size
+  let gOwnNonland := gOwnNonland0.applyFrc p0 default .explore #[] (some ownExplorer.id)
+  let gOwnNonlandAccept := mustApply gOwnNonland p0 .accept
+  let exploreCr70144Ok :=
+    !gRelic0.isCreature relicObj &&
+    (gRelicExp.object! relicObj.id).status.plusOnePlusOne == 1 &&
+    gRelicExp.pending == .fraChoice p0 (.exploreMayGraveyard relicTopId) &&
+    (gRelicExpAccept.player p0).graveyard.size == (gRelic0.player p0).graveyard.size + 1 &&
+    (gEmptyLib0.player p0).library.isEmpty &&
+    (gEmptyExp.object! emptyBear.id).status.plusOnePlusOne == 1 &&
+    gEmptyExp.pending == .none &&
+    gDepNonland.pending == .fraChoice p1 (.exploreMayGraveyard p1TopNonland) &&
+    (gDepNonlandAccept.player p1).graveyard.size == p1GyBefore + 1 &&
+    (gDepNonlandAccept.player p0).library.size == p0LibSizeBefore &&
+    (gDepLand.player p1).hand.size == p1HandBefore + 1 &&
+    gDepLand.pending == .none &&
+    (gOwnLand.player p1).hand.size == p1HandBeforeOwn + 1 &&
+    (gOwnLand.player p0).hand.size == p0HandBeforeOwn &&
+    gOwnLand.log.any (·.contains "'s hand") &&
+    (gOwnNonlandAccept.player p1).graveyard.size == p1GyBeforeOwn + 1 &&
+    (gOwnNonlandAccept.player p0).graveyard.size == p0GyBeforeOwn &&
+    gOwnNonlandAccept.log.any (·.contains "'s graveyard")
+
+  -- 3. Junk (CR 111.10t), Lander (CR 111.10u), Mutagen (CR 111.10v)
+  let junkDef := Game.predefinedTokenPrinted .junk
+  let junkAb := junkDef.activatedAbilities[0]!
+  let gJunk0 := g0.createKindTokens p0 .junk 1
+  let topLibId := (gJunk0.player p0).library.back!
+  let gJunk := gJunk0.applyEffect p0 junkAb.effect #[]
+  let junkMoved? := gJunk.followMovedToZone? topLibId (· == .exile)
+  let junkExiled := junkMoved?.isSome
+  let junkPlayableThisTurn :=
+    match junkMoved? with
+    | none => false
+    | some moved =>
+      gJunk.activeEffects.any fun (_, s) =>
+        match s with
+        | .permission _ (.playFromExile oid perm) .untilEndOfTurn => oid == moved.id && perm.player == p0
+        | _ => false
+
+  let landerDef := Game.predefinedTokenPrinted .lander
+  let landerAb := landerDef.activatedAbilities[0]!
+  let gLander := (g0.createKindTokens p0 .lander 1).applyEffect p0 landerAb.effect #[]
+  let landerSearches := match gLander.pending with
+    | .fraChoice q (.searchLibrary _ 1 (.battlefield true) _ _) => q == p0
+    | _ => false
+
+  let mutagenDef := Game.predefinedTokenPrinted .mutagen
+  let mutagenAb := mutagenDef.activatedAbilities[0]!
+  let gMut0 := addPermanent (g0.createKindTokens p0 .mutagen 1) bear p0 p0
+  let mutBear := (gMut0.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let gMut := gMut0.applyEffect p0 mutagenAb.effect #[.permanent mutBear.id]
+  let junkLanderMutagenOk :=
+    mustHoldP1Rev "3a.junk" (junkAb.onlyAsSorcery &&
+      junkAb.cost == { tap := true, sacrificeSource := true } &&
+      junkExiled && junkPlayableThisTurn) &&
+    mustHoldP1Rev "3b.lander" (!landerAb.onlyAsSorcery &&
+      landerAb.cost == { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true } &&
+      landerSearches) &&
+    mustHoldP1Rev "3c.mutagen" (mutagenAb.onlyAsSorcery &&
+      mutagenAb.cost == { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } &&
+      mutagenAb.effect.targetKind == .creature &&
+      (gMut.object! mutBear.id).status.plusOnePlusOne == 1)
+
+  -- 4. Moloid .onAttackMayMill 1 (and generalized n = 2) wired onto printed CardDef & runtime
+  let gMol0 := g0.createKindTokens p0 .moloid 1
+  let molObj := (gMol0.permanentsOf p0).find? (·.name == "Moloid") |>.get!
+  let molAb := molObj.printed.triggeredAbilities[0]!
+  let gyBeforeMol := (gMol0.player p0).graveyard.size
+  let gMolPrompt := gMol0.applyTriggeredAbility p0 molAb (some molObj.id) #[]
+  let gMolAccept := mustApply gMolPrompt p0 .accept
+  let gMolDecline := mustApply gMolPrompt p0 .decline
+  let mill2Spec : TokenSpec :=
+    TokenSpec.creature #[.minion] 1 1 (ColorSet.singleton .green)
+      (name? := some "Big Moloid") (abilities := #[.onAttackMayMill 2])
+  let gMol20 := g0.createKindTokens p0 mill2Spec 1
+  let mol2Obj := (gMol20.permanentsOf p0).find? (·.name == "Big Moloid") |>.get!
+  let gMol2Accept :=
+    mustApply (gMol20.applyTriggeredAbility p0 mol2Obj.printed.triggeredAbilities[0]! (some mol2Obj.id) #[])
+      p0 .accept
+  let moloidOk :=
+    molObj.printed.triggeredAbilities.size == 1 &&
+    molAb.firesOn .attacking &&
+    gMolPrompt.pending == .mayResolve p0 &&
+    (gMolAccept.player p0).graveyard.size == gyBeforeMol + 1 &&
+    (gMolDecline.player p0).graveyard.size == gyBeforeMol &&
+    (gMol2Accept.player p0).graveyard.size == gyBeforeMol + 2
+
+  -- 5. TokenSpec.copyOf: copies real object's copiable values + CR 707.9 mods (including 707.9d CDA strip);
+  --    nonexistent object creates no tokens (CR 111.12); instant/sorcery copy creates no tokens unless
+  --    CopyModification adds a permanent type (CR 111.5).
+  let cdaLegendDef : CardDef := {
+    name := "Multani Test"
+    manaCost := ManaCost.ofGenericAndColors 2 [.green]
+    supertypes := #[.legendary]
+    types := #[.creature]
+    subtypes := #["Elf"]
+    power := some 0
+    toughness := some 0
+    staticAbilities := #[.powerToughnessEqualLandsYouControl]
+  }
+  let gCopy0 := addPermanent (addPermanent (addPermanent g0 cdaLegendDef p0 p0) forest p0 p0) forest p0 p0
+  let origObj := (gCopy0.permanentsOf p0).find? (·.name == "Multani Test") |>.get!
+  let copySpec : TokenSpec :=
+    .copyOf .target #[
+      .setName "Shadow Copy",
+      .setBasePT 1 1,
+      .removeSupertype .legendary,
+      .addTypes #[.artifact],
+      .addSubtypes #[.zombie],
+      .addColors (ColorSet.singleton .black),
+      .addKeywords Keyword.haste,
+      .addAbilities #[.onAttackMayMill 1]
+    ]
+  let gCopyReal := gCopy0.createKindTokens p0 copySpec 1 (copyCtx := { targetId := some origObj.id })
+  let copyTok? := (gCopyReal.permanentsOf p0).find? (·.name == "Shadow Copy")
+  let copyRealOk :=
+    match copyTok? with
+    | none => false
+    | some tok =>
+      tok.printed.isToken &&
+      !gCopyReal.isLegendary tok &&
+      gCopyReal.isArtifact tok && gCopyReal.isCreature tok &&
+      gCopyReal.hasSubtype tok .elf && gCopyReal.hasSubtype tok .zombie &&
+      (gCopyReal.colors tok).contains .green && (gCopyReal.colors tok).contains .black &&
+      gCopyReal.hasHaste tok &&
+      gCopyReal.power tok == 1 && gCopyReal.toughness tok == 1 &&
+      tok.printed.triggeredAbilities.size == 1
+  let bfCountBeforeMissing := gCopy0.battlefield.size
+  let gCopyMissing := gCopy0.createKindTokens p0 (.copyOf .target #[]) 2
+  let gCopyBadId := gCopy0.createKindTokens p0 (.copyOf .target #[]) 2 (copyCtx := { targetId := some ⟨999999⟩ })
+  let copyMissingOk :=
+    (gCopy0.resolveTokenPrinted? (.copyOf .target #[]) 0 {}).isNone &&
+    (Game.tokenPrinted? (.copyOf .target #[])).isNone &&
+    gCopyMissing.battlefield.size == bfCountBeforeMissing &&
+    gCopyMissing.recentTokenIds.isEmpty &&
+    gCopyBadId.battlefield.size == bfCountBeforeMissing &&
+    gCopyBadId.recentTokenIds.isEmpty
+
+  -- 5b. CR 111.5 / 304.4 / 307.4: no token is created for a copy of an instant/sorcery
+  --     (even with CopyModification.addTypes #[.creature]) or any token with instant/sorcery type
+  let testInstDef : CardDef := {
+    name := "Test Bolt"
+    manaCost := ManaCost.ofColors [.red]
+    types := #[.instant]
+  }
+  let testSorcDef : CardDef := {
+    name := "Test Ritual"
+    manaCost := ManaCost.ofColors [.black]
+    types := #[.sorcery]
+  }
+  let gInst0 := insertObject (insertObject g0 testInstDef p0 (.graveyard p0)) testSorcDef p0 (.graveyard p0)
+  let instId := (gInst0.player p0).graveyard[0]!
+  let sorcId := (gInst0.player p0).graveyard[1]!
+  let bfBeforeInst := gInst0.battlefield.size
+  let gInstNone := gInst0.createKindTokens p0 (.copyOf .target #[]) 1 (copyCtx := { targetId := some instId })
+  let gSorcNone := gInst0.createKindTokens p0 (.copyOf .target #[]) 1 (copyCtx := { targetId := some sorcId })
+  let gInstWithCreatureNone :=
+    gInst0.createKindTokens p0 (.copyOf .target #[.addTypes #[.creature], .setBasePT 2 2]) 1
+      (copyCtx := { targetId := some instId })
+  let gCreatureAddInstNone :=
+    gCopy0.createKindTokens p0 (.copyOf .target #[.addTypes #[.instant]]) 1
+      (copyCtx := { targetId := some origObj.id })
+  let gCreatureAddSorcNone :=
+    gCopy0.createKindTokens p0 (.copyOf .target #[.addTypes #[.sorcery]]) 1
+      (copyCtx := { targetId := some origObj.id })
+  let customInstSpec : TokenSpec := .custom {
+    name? := some "Illegal Instant Token"
+    types := #[.instant, .creature]
+    power? := some (.fixed 1)
+    toughness? := some (.fixed 1)
+  }
+  let gCustomInstNone := g0.createKindTokens p0 customInstSpec 1
+  let copyInstantSorceryOk :=
+    (gInst0.resolveTokenPrinted? (.copyOf .target #[]) 0 { targetId := some instId }).isNone &&
+    (gInst0.resolveTokenPrinted? (.copyOf .target #[]) 0 { targetId := some sorcId }).isNone &&
+    (gInst0.resolveTokenPrinted? (.copyOf .target #[.addTypes #[.creature], .setBasePT 2 2]) 0
+      { targetId := some instId }).isNone &&
+    (gCopy0.resolveTokenPrinted? (.copyOf .target #[.addTypes #[.instant]]) 0
+      { targetId := some origObj.id }).isNone &&
+    (gCopy0.resolveTokenPrinted? (.copyOf .target #[.addTypes #[.sorcery]]) 0
+      { targetId := some origObj.id }).isNone &&
+    (g0.resolveTokenPrinted? customInstSpec 0 {}).isNone &&
+    gInstNone.battlefield.size == bfBeforeInst && gInstNone.recentTokenIds.isEmpty &&
+    gSorcNone.battlefield.size == bfBeforeInst && gSorcNone.recentTokenIds.isEmpty &&
+    gInstWithCreatureNone.battlefield.size == bfBeforeInst && gInstWithCreatureNone.recentTokenIds.isEmpty &&
+    gCreatureAddInstNone.battlefield.size == bfCountBeforeMissing && gCreatureAddInstNone.recentTokenIds.isEmpty &&
+    gCreatureAddSorcNone.battlefield.size == bfCountBeforeMissing && gCreatureAddSorcNone.recentTokenIds.isEmpty &&
+    gCustomInstNone.battlefield.size == g0.battlefield.size && gCustomInstNone.recentTokenIds.isEmpty
+
+  -- 6. ManaSpendRestriction.notFromZone across graveyard, exile, hand, and live proposedManaSpend
+  let gyRestrPool :=
+    ManaPool.empty.addUnit { mana := .colorless, restriction := some (.notFromZone .graveyard) }
+  let exileRestrPool :=
+    ManaPool.empty.addUnit { mana := .colorless, restriction := some (.notFromZone .exile) }
+  let gCastGy0 := insertObject g0 bear p0 (.graveyard p0)
+  let gyBearId := (gCastGy0.player p0).graveyard.back!
+  let gyBearObj := gCastGy0.object! gyBearId
+  let fakeProp : ProposedSpell := {
+    kind := .spell
+    spellId := gyBearId
+    caster := p0
+    original := gyBearObj
+    cost := ManaCost.ofGeneric 1
+  }
+  let gySpend := gCastGy0.proposedManaSpend fakeProp
+  let notFromZoneOk :=
+    !gyRestrPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, castFromZone := some .graveyard }) &&
+    gyRestrPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, castFromZone := some .exile }) &&
+    gyRestrPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, fromHand := true, castFromZone := some .hand }) &&
+    gyRestrPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := false }) &&
+    !exileRestrPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, castFromZone := some .exile }) &&
+    gySpend.castFromZone == some .graveyard &&
+    !gySpend.fromHand &&
+    !gCastGy0.restrictionAllowsProposed (some (.notFromZone .graveyard)) fakeProp &&
+    gCastGy0.restrictionAllowsProposed (some .notSpellsFromHand) fakeProp
+
+  -- 7. CopyTokenContext propagation across createAndMarkTokensAttacking (both holds arms &
+  --    across PendingReplacement pause), EffectResolution.createTokensLifeGained, and
+  --    FraChoice.mayCreateTokens
+  let atkCopyNoHolds :=
+    gCopy0.createAndMarkTokensAttacking p0 copySpec 1 false false
+      (copyCtx := { targetId := some origObj.id })
+  let atkCopyHolds :=
+    gCopy0.createAndMarkTokensAttacking p0 copySpec 1 true true
+      (copyCtx := { targetId := some origObj.id })
+  let atkCopySubjSpec : TokenSpec := .copyOf .triggerSubject #[.setName "Subject Copy", .setBasePT 2 2]
+  let atkCopySubj :=
+    gCopy0.createAndMarkTokensAttacking p0 atkCopySubjSpec 1 true true
+      (copyCtx := { triggerSubjectId := some origObj.id })
+  -- Replacement pause inside createAndMarkTokensAttacking preserves copyCtx across both
+  -- promptChooseReplacement and chainPendingReplacement:
+  let foodCopySpec : TokenSpec :=
+    .copyOf .target #[.setName "Paused Copy", .setBasePT 1 1, .removeSupertype .legendary,
+      .addTypes #[.artifact], .addSubtypes #[.food]]
+  let chainedCopySpec : TokenSpec :=
+    .copyOf .target #[.setName "Chained Copy", .setBasePT 3 3, .removeSupertype .legendary]
+  let idPauseExtra : ReplacementId := { kind := .foodAlsoCreatesTreasure, player := some p0 }
+  let idPauseBecome : ReplacementId := { kind := .artifactTokensBecome, player := some p0 }
+  let bonusBearDef : CardDef := { bear with name := "Bonus Food Bear", isToken := true }
+  let replacedArtDef : CardDef := { bear with name := "Replaced Artifact", isToken := true }
+  let gPause0 :=
+    (gCopy0.createEffect (.replacement {
+      id := idPauseExtra, affectedPlayer := p0,
+      kind := .createExtraTokenWithFood p0 bonusBearDef
+    })).createEffect (.replacement {
+      id := idPauseBecome, affectedPlayer := p0,
+      kind := .artifactTokensBecome p0 replacedArtDef
+    })
+  let gPause1 :=
+    gPause0.createAndMarkTokensAttacking p0 foodCopySpec 1 true true
+      (copyCtx := { targetId := some origObj.id })
+  let gPauseChained :=
+    gPause1.createAndMarkTokensAttacking p0 chainedCopySpec 1 true true
+      (copyCtx := { targetId := some origObj.id })
+  let gPauseDone := mustApply gPauseChained p0 (.chooseReplacement idPauseExtra)
+  -- Triggered sequence caller (`applyTriggeredAbility`) forwards targets into createAndMarkTokensAttacking:
+  let atkSeqAb : TriggeredAbility :=
+    TriggeredAbility.triggered .attack {
+      targeting := .of .creature
+      resolution := .sequence [
+        .createTokens copySpec (.fixed 1) true .you .none,
+        .«if» (.atLeast (.count .creaturesYouControl) (.fixed 1)) .markRecentTokensAttacking
+      ]
+    }
+  let gSeqRes := gCopy0.applyTriggeredAbility p0 atkSeqAb none #[.permanent origObj.id]
+  -- EffectResolution.createTokensLifeGained forwards copyCtx:
+  let gLifeGain0 := gCopy0.gainLife p0 2
+  let gLifeGainTok :=
+    gLifeGain0.applyEffect p0 {
+      targeting := .of .creature
+      resolution := .createTokensLifeGained copySpec
+    } #[.permanent origObj.id]
+  let lifeGainCopies := (gLifeGainTok.permanentsOf p0).filter (·.name == "Shadow Copy")
+  -- FraChoice.mayCreateTokens forwards copyCtx:
+  let gMayTok0 :=
+    gCopy0.beginFraChoice p0 (.mayCreateTokens copySpec 1 { targetId := some origObj.id })
+  let gMayTokAccept := mustApply gMayTok0 p0 .accept
+  let copyCtxSitesOk :=
+    ((atkCopyNoHolds.permanentsOf p0).find? (·.name == "Shadow Copy")).any (fun o => !o.status.attacking) &&
+    ((atkCopyHolds.permanentsOf p0).find? (·.name == "Shadow Copy")).any (fun o => o.status.attacking) &&
+    ((atkCopySubj.permanentsOf p0).find? (·.name == "Subject Copy")).any (fun o => o.status.attacking) &&
+    gPause1.pending == .chooseReplacement p0 #[idPauseExtra, idPauseBecome] &&
+    ((gPauseDone.permanentsOf p0).find? (·.name == "Bonus Food Bear")).any (·.status.attacking) &&
+    ((gPauseDone.permanentsOf p0).find? (·.name == "Replaced Artifact")).any (·.status.attacking) &&
+    ((gPauseDone.permanentsOf p0).find? (·.name == "Chained Copy")).any (·.status.attacking) &&
+    ((gSeqRes.permanentsOf p0).find? (·.name == "Shadow Copy")).any (fun o => o.status.attacking) &&
+    lifeGainCopies.size == 2 &&
+    ((gMayTokAccept.permanentsOf p0).find? (·.name == "Shadow Copy")).isSome
+
+  let replayOk :=
+    replayOk49i1 #[
+      gMapNonland, gMapNonlandAccept, gMapNonlandDecline, gMapLand,
+      gRelicExp, gRelicExpAccept, gEmptyExp,
+      gDepNonland, gDepNonlandAccept, gDepLand,
+      gOwnLand, gOwnNonland, gOwnNonlandAccept,
+      gInstNone, gInstWithCreatureNone, gCreatureAddInstNone, gCustomInstNone,
+      atkCopyNoHolds, atkCopyHolds, atkCopySubj, gPause1, gPauseDone, gSeqRes, gLifeGainTok,
+      gMayTok0, gMayTokAccept
+    ]
+
+  mustHoldP1Rev "1.incubatorName" incubatorOk &&
+  mustHoldP1Rev "2.mapToken" mapOk &&
+  mustHoldP1Rev "2b.exploreCr70144" exploreCr70144Ok &&
+  mustHoldP1Rev "3.junkLanderMutagen" junkLanderMutagenOk &&
+  mustHoldP1Rev "4.moloidAttackMayMill" moloidOk &&
+  mustHoldP1Rev "5.copyOfReal" copyRealOk &&
+  mustHoldP1Rev "5.copyOfMissing" copyMissingOk &&
+  mustHoldP1Rev "5b.copyOfInstantSorceryCr1115" copyInstantSorceryOk &&
+  mustHoldP1Rev "6.notFromZone" notFromZoneOk &&
+  mustHoldP1Rev "7.copyTokenContextSites" copyCtxSitesOk &&
+  mustHoldP1Rev "8.replayEquivalence" replayOk
+
+end Phase1AbilityAlignmentReview
 
 end Mtg.Engine.EventTests

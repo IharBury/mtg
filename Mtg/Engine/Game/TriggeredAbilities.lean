@@ -683,8 +683,11 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
 def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
   match rs with
-  | [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
-    s!"{name} creates a Food token or a Treasure token"
+  | [.createTokens k1 (.fixed 1) false .you .none, .createTokens k2 (.fixed 1) false .you .none] =>
+    if k1 == .food && k2 == .treasure then
+      s!"{name} creates a Food token or a Treasure token"
+    else
+      s!"{name} chooses one"
   | [.tap .target, .untap .target] =>
     s!"{name} chooses tap or untap"
   | _ =>
@@ -693,8 +696,11 @@ def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) 
 /-- Pending-header text for a `TriggerResolution.or` choice. -/
 def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution) : String :=
   match rs with
-  | [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false] =>
-    "create a Food token or a Treasure token"
+  | [.createTokens k1 (.fixed 1) false .you .none, .createTokens k2 (.fixed 1) false .you .none] =>
+    if k1 == .food && k2 == .treasure then
+      "create a Food token or a Treasure token"
+    else
+      "choose one"
   | [.tap .target, .untap .target] =>
     "choose tap or untap"
   | _ =>
@@ -1593,19 +1599,17 @@ the behavior of the constructor it replaced. Any other count is created
 for the players the selector names. A missing count creates nothing. -/
 def applyCreateTokens (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (lastKnownPower : Option Int) (kind : TokenKind)
+    (lastKnownPower : Option Int) (kind : TokenSpec)
     (amount : TriggeredAbility.NumberSelector) (tapped : Bool)
-    (token : TriggeredAbility.TriggerToken)
     (who : TriggeredAbility.PlayerSelector)
     (note : TriggeredAbility.TriggerTokenNote)
     (lastKnownToughness : Option Int := none) : Game :=
   let ctx : TriggerRead :=
     { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
   let counted := g.triggerCount ctx amount
-  let recipients (token : TriggeredAbility.TriggerToken) (who : TriggeredAbility.PlayerSelector) :=
+  let recipients (token : TokenSpec) (who : TriggeredAbility.PlayerSelector) :=
     g.tokenRecipients ctx token who
-  match token, who, amount, note with
-  | .axe, who, _, note =>
+  if kind == .axe then
     let n := counted.getD 0
     let startEventIdx := g.events.size
     let (g, _) := g.spawnFace (recipients .axe who) axeToken n (tapped := tapped)
@@ -1618,54 +1622,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         (.finishPostStep (.createdTokenNote controller followup startEventIdx))
     else
       g.finishCreatedTokenNote controller followup startEventIdx
-  | .kind, .you, .oppArtifacts, _ =>
-    let n := g.countOpponentArtifacts controller
-    g.createTreasureTokens controller n (tapped := true)
-  | .kind, .you, .damagedPlayerArtifacts, _ =>
-    let n :=
-      match g.loggedLastCombatDamagePlayer.orElse (fun _ => g.firstLivingOpponent? controller) with
-      | some pid => g.countArtifactsControlledBy pid
-      | none => 0
-    let startEventIdx := g.events.size
-    let g := g.createTreasureTokens controller n
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep (.createdTokenNote controller .logTreasuresDamagedPlayer startEventIdx))
-    else
-      g.finishCreatedTokenNote controller .logTreasuresDamagedPlayer startEventIdx
-  | .kind, .you, .lastKnownPower, _ =>
-    if kind == .birdSoldier then
-      let n := lastKnownPower.getD 0
-      let startEventIdx := g.events.size
-      let g := g.createKindTokens controller .birdSoldier n.toNat
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement
-          (.finishPostStep (.createdTokenNote controller .logBirdSoldiers startEventIdx))
-      else
-        g.finishCreatedTokenNote controller .logBirdSoldiers startEventIdx
-    else
-      let n := (lastKnownPower.getD 0).toNat
-      g.createTreasureTokens controller n
-  | .kind, .you, .perSubtype subtype, _ =>
-    g.createKindTokens controller kind (g.countSubtype controller subtype) (tapped := tapped)
-  | .kind, .you, .chosenCreatureType, _ =>
-    let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
-      (g.subtypes o).foldl (fun acc t =>
-        if t.isCreatureType && !acc.contains t then acc.push t else acc) acc) #[]
-    if types.isEmpty then
-      g.logMsg s!"{(g.player controller).name} controls no creatures, so no Treasures are created"
-    else
-      g.beginFraChoice controller (.chooseCreatureType types)
-        s!"{(g.player controller).name} chooses a creature type"
-  | .zabu, who, _, _ =>
-    (g.spawnFace (recipients .zabu who) zabuToken (counted.getD 0) (tapped := tapped)).1
-  | .theVoid, who, _, _ =>
-    (g.spawnFace (recipients .theVoid who) theVoidToken (counted.getD 0)
-      (tapped := tapped)).1
-  | .redwing, who, _, _ =>
-    (g.spawnFace (recipients .redwing who) redwingToken (counted.getD 0)
-      (tapped := tapped)).1
-  | .alien, who, _, _ =>
+  else if kind == .alien then
     let inv :=
       match sourceId.bind g.findObject? with
       | some src => src.status.invasion
@@ -1680,10 +1637,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         (.finishPostStep (.createdTokenNote controller followup startEventIdx))
     else
       g.finishCreatedTokenNote controller followup startEventIdx
-  | .galactus, who, _, _ =>
-    (g.spawnFace (recipients .galactus who) galactusToken (counted.getD 0)
-      (tapped := tapped)).1
-  | .sturdyShield, who, _, _ =>
+  else if kind == .sturdyShield then
     let startEventIdx := g.events.size
     let (g, _) :=
       g.spawnFace (recipients .sturdyShield who) sturdyShieldToken (counted.getD 0)
@@ -1693,69 +1647,95 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         (.finishPostStep (.createdTokenNote controller .remember startEventIdx))
     else
       g.finishCreatedTokenNote controller .remember startEventIdx
-  | .merfolk, _, .blueManaSymbols, _ =>
-    g.createMerfolkForBlueSymbols controller lastKnownPower
-  | .kind, .you, .fixed n, _ =>
-    g.createKindTokens controller kind n.toNat (tapped := tapped)
-  | .kind, .controller .target, _, _ =>
-    -- Destroy may already have moved the permanent. The controller who
-    -- creates the token is the one it had on the battlefield.
-    let n := counted.getD 0
-    match (g.collectPlayers ctx (.controller .target)).bind (·[0]?) with
-    | some pid =>
-      if kind == .treasure && !tapped then g.createTreasureTokens pid n
-      else g.createKindTokens pid kind n (tapped := tapped)
+  else if kind == .zabu || kind == .theVoid || kind == .redwing || kind == .galactus then
+    match tokenPrinted? kind with
+    | some printed => (g.spawnFace (recipients kind who) printed (counted.getD 0) (tapped := tapped)).1
     | none => g
-  | .kind, _who, .chosenCreatureType, _ =>
-    let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
-      (g.subtypes o).foldl (fun acc t =>
-        if t.isCreatureType && !acc.contains t then acc.push t else acc) acc) #[]
-    if types.isEmpty then
-      g.logMsg s!"{(g.player controller).name} controls no creatures, so no Treasures are created"
-    else
-      g.beginFraChoice controller (.chooseCreatureType types)
-        s!"{(g.player controller).name} chooses a creature type"
-  | token, who, _, note =>
-    let n := counted.getD 0
-    let pids := recipients token who
-    if n == 0 || pids.isEmpty then g
-    else
+  else if kind == .merfolk && amount == .blueManaSymbols then
+    g.createMerfolkForBlueSymbols controller lastKnownPower
+  else
+    let copyCtx := g.copyTokenContextOf sourceId targets
+    match who, amount, note with
+    | .you, .oppArtifacts, _ =>
+      let n := g.countOpponentArtifacts controller
+      g.createTreasureTokens controller n (tapped := true)
+    | .you, .damagedPlayerArtifacts, _ =>
+      let n :=
+        match g.loggedLastCombatDamagePlayer.orElse (fun _ => g.firstLivingOpponent? controller) with
+        | some pid => g.countArtifactsControlledBy pid
+        | none => 0
       let startEventIdx := g.events.size
-      let inv :=
-        match sourceId.bind g.findObject? with
-        | some src => src.status.invasion
-        | none => (sourceId.bind g.lastKnownCounterStatus?).map (·.invasion) |>.getD 0
-      let (g, _) :=
-        match token with
-        | .kind =>
-          let g := g.change (.recentTokenIds #[])
-          let g : Game := g.withBatch none fun g =>
-            pids.foldl (fun (g : Game) (pid : PlayerId) =>
-              g.createKindTokens pid kind n (tapped := tapped) (resetRecent := false)) g
-          (g, g.recentTokenIds.back?)
-        | .merfolk =>
-          g.spawnFace pids merfolk11blueToken n (tapped := tapped)
-        | .axe => g.spawnFace pids axeToken n (tapped := tapped)
-        | .zabu => g.spawnFace pids zabuToken n (tapped := tapped)
-        | .theVoid => g.spawnFace pids theVoidToken n (tapped := tapped)
-        | .redwing => g.spawnFace pids redwingToken n (tapped := tapped)
-        | .alien => g.spawnFace pids alien11redHasteToken n (tapped := tapped)
-        | .galactus => g.spawnFace pids galactusToken n (tapped := tapped)
-        | .sturdyShield => g.spawnFace pids sturdyShieldToken n (tapped := tapped)
-      let followup? : Option CreatedTokenFollowup :=
-        match note with
-        | .attachReflexive => some .attachReflexive
-        | .remember => some .remember
-        | .invasion => some (.invasion inv)
-        | _ => none
-      match followup? with
-      | none => g
-      | some followup =>
+      let g := g.createTreasureTokens controller n
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep (.createdTokenNote controller .logTreasuresDamagedPlayer startEventIdx))
+      else
+        g.finishCreatedTokenNote controller .logTreasuresDamagedPlayer startEventIdx
+    | .you, .lastKnownPower, _ =>
+      if kind == .birdSoldier then
+        let n := lastKnownPower.getD 0
+        let startEventIdx := g.events.size
+        let g := g.createKindTokens controller .birdSoldier n.toNat
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement
-            (.finishPostStep (.createdTokenNote controller followup startEventIdx))
+            (.finishPostStep (.createdTokenNote controller .logBirdSoldiers startEventIdx))
         else
-          g.finishCreatedTokenNote controller followup startEventIdx
+          g.finishCreatedTokenNote controller .logBirdSoldiers startEventIdx
+      else
+        let n := (lastKnownPower.getD 0).toNat
+        g.createTreasureTokens controller n
+    | .you, .perSubtype subtype, _ =>
+      g.createKindTokens controller kind (g.countSubtype controller subtype)
+        (tapped := tapped) (copyCtx := copyCtx)
+    | _, .chosenCreatureType, _ =>
+      let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
+        (g.subtypes o).foldl (fun acc t =>
+          if t.isCreatureType && !acc.contains t then acc.push t else acc) acc) #[]
+      if types.isEmpty then
+        g.logMsg s!"{(g.player controller).name} controls no creatures, so no Treasures are created"
+      else
+        g.beginFraChoice controller (.chooseCreatureType types)
+          s!"{(g.player controller).name} chooses a creature type"
+    | .you, .fixed n, .none =>
+      g.createKindTokens controller kind n.toNat (tapped := tapped) (copyCtx := copyCtx)
+    | .controller .target, _, .none =>
+      -- Destroy may already have moved the permanent. The controller who
+      -- creates the token is the one it had on the battlefield.
+      let n := counted.getD 0
+      match (g.collectPlayers ctx (.controller .target)).bind (·[0]?) with
+      | some pid =>
+        if kind == .treasure && !tapped then g.createTreasureTokens pid n
+        else g.createKindTokens pid kind n (tapped := tapped) (copyCtx := copyCtx)
+      | none => g
+    | who, _, note =>
+      let n := counted.getD 0
+      let pids := recipients kind who
+      if n == 0 || pids.isEmpty then g
+      else
+        let startEventIdx := g.events.size
+        let inv :=
+          match sourceId.bind g.findObject? with
+          | some src => src.status.invasion
+          | none => (sourceId.bind g.lastKnownCounterStatus?).map (·.invasion) |>.getD 0
+        let g := g.change (.recentTokenIds #[])
+        let g : Game := g.withBatch none fun g =>
+          pids.foldl (fun (g : Game) (pid : PlayerId) =>
+            g.createKindTokens pid kind n (tapped := tapped) (resetRecent := false)
+              (copyCtx := copyCtx)) g
+        let followup? : Option CreatedTokenFollowup :=
+          match note with
+          | .attachReflexive => some .attachReflexive
+          | .remember => some .remember
+          | .invasion => some (.invasion inv)
+          | _ => none
+        match followup? with
+        | none => g
+        | some followup =>
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement
+              (.finishPostStep (.createdTokenNote controller followup startEventIdx))
+          else
+            g.finishCreatedTokenNote controller followup startEventIdx
 
 /-- Pause-safe loop for `applyExile` across `ids`, resolving post-move `newId`
 effects via `followMovedToZone?` after any `Pending.chooseReplacement` pause
@@ -4510,9 +4490,12 @@ is a single legal attack target, the tokens enter attacking that target
 immediately; when multiple players, planeswalkers, or battles are legal attack
 targets, `controller` chooses once per token before the tokens enter. -/
 def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
-    (kind : TokenKind) (n : Nat) (tapped holds : Bool)
+    (kind : TokenSpec) (n : Nat) (tapped holds : Bool)
     (sourceId : Option ObjectId := none)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (copyCtx : CopyTokenContext := {}) : Game :=
+  let effectiveCopyCtx : CopyTokenContext :=
+    { copyCtx with sourceId := copyCtx.sourceId.orElse (fun _ => sourceId) }
   let (g, c) : Game × EventCause :=
     match cause with
     | some existing => (g, existing)
@@ -4522,15 +4505,20 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
     if n == 0 then g
     else
       g.chainPendingReplacement
-        (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause)
+        (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause effectiveCopyCtx)
   else if !holds then
     g.createKindTokens controller kind n (tapped := tapped) (attacking := false) (cause := cause)
+      (copyCtx := effectiveCopyCtx)
   else if !g.stillInGame controller then
     let g := g.change (.recentTokenIds #[])
     if n == 0 then g
     else g.logMsg "no token is created (CR 800.4b)"
   else
-    let rawPrinted := tokenPrinted kind
+    match g.resolveTokenPrinted? kind 0 effectiveCopyCtx with
+    | none =>
+      let g := g.change (.recentTokenIds #[])
+      if n == 0 then g else g.logMsg "no token is created (CR 111.5 / 111.12)"
+    | some rawPrinted =>
     let (batches, applied, choice?) := g.replaceTokenCreationChoice {
       controller := controller
       printed := rawPrinted
@@ -4544,7 +4532,7 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
       let outerCont? := g.pendingReplacement
       let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
       let g := g.promptChooseReplacement chooser choices
-        (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause)
+        (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause effectiveCopyCtx)
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
       | none => g
@@ -4564,7 +4552,7 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
         let items := expanded.map fun b =>
           let isCreature := g.isCreature (g.tokenBatchProbe b.controller b.printed)
           let opts := if isCreature then g.legalEnteringAttackTargets b.controller else #[]
-          let itemKind := (tokenKindOfCardDef? b.printed).getD kind
+          let itemKind := (tokenSpecOfCardDef? b.printed).getD kind
           EnteringAttackItem.token b.controller itemKind b.tapped opts (some b.printed.name)
         g.promptEnteringAttackItems items (cause := cause)
 
@@ -4733,11 +4721,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           | _ => none
       let steps := rs.flatMap TriggeredAbility.TriggerResolution.flatten
       match steps with
-      | [.createTokens kind (.fixed n) tapped .kind .you .none,
+      | [.createTokens kind (.fixed n) tapped .you .none,
           .«if» cond .markRecentTokensAttacking] =>
         let (g, holds) :=
           g.triggerIfHolds controller ab sourceId targets lastKnownPower cond lastKnownToughness
         g.createAndMarkTokensAttacking controller kind n.toNat tapped holds sourceId
+          (copyCtx := g.copyTokenContextOf sourceId targets)
       | steps =>
       let rec runSteps (g : Game) (waiting : List TriggeredAbility.TriggerResolution)
           (paused dropped : Bool) :
@@ -4842,9 +4831,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .amass amount subtype attachSource who =>
     g.applyAmass controller sourceId lastKnownPower amount subtype attachSource who
       targets lastKnownToughness
-  | .createTokens kind amount tapped token who note =>
+  | .createTokens kind amount tapped who note =>
     g.applyCreateTokens controller sourceId targets lastKnownPower
-      kind amount tapped token who note (lastKnownToughness := lastKnownToughness)
+      kind amount tapped who note (lastKnownToughness := lastKnownToughness)
   | .attach what host =>
     g.applyAttach controller ab sourceId targets what host
   | .addMana types amount =>
@@ -5378,6 +5367,26 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       .mayOnDecline none,
       .mayContext (some ctx)]
       |>.logMsg s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution := action }}"
+  | .may (.mill (.fixed n) .you .none) (.sequence []) .ifYouDo =>
+    let action : TriggeredAbility.TriggerResolution := .mill (.fixed n) .you .none
+    let ctx : TriggerSequenceRest := {
+      controller
+      ability := ab
+      sourceId
+      targets
+      dividedDamage
+      lastKnownPower
+      lastKnownToughness
+      sourceName
+      cardPower := sequencedCardPower
+      steps := [] }
+    let millText := if n == 1 then "mill a card" else s!"mill {n} cards"
+    g.changes #[
+      .pending (.mayResolve controller),
+      .mayOnAccept (some action),
+      .mayOnDecline none,
+      .mayContext (some ctx)]
+      |>.logMsg s!"{(g.player controller).name} may {millText}"
   | .may (.dealDamage .lastKnownPower .target .none) (.sequence []) .ifYouDo =>
     if g.loggedSheHulkDealtDamage then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
@@ -5411,8 +5420,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.applyTriggeredAbility controller ab sourceId targets dividedDamage
         lastKnownPower lastKnownToughness sourceName
         (some (.sequence [.pay (.mana symbols), follow])) sequencedCardPower
-  | .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo =>
-    g.offerMayCreateWall controller
+  | .may (.createTokens k (.fixed 1) false .you .none) (.sequence []) .ifYouDo =>
+    if k == .wall04defender then
+      g.offerMayCreateWall controller
+    else
+      let g := g.changes #[.mayThenDrop 0, .mayThenConditional (some (.sequence []))]
+      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+        lastKnownPower lastKnownToughness sourceName
+        (some (.sequence [.createTokens k (.fixed 1) false .you .none])) sequencedCardPower
   | .may optional conditional .ifYouDo =>
     let cond := TriggeredAbility.TriggerResolution.flatten conditional
     let g := g.changes #[.mayThenDrop cond.length, .mayThenConditional (some conditional)]
@@ -5657,11 +5672,12 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         match steps with
         | [.shuffleSource, .draw (.fixed n)] =>
           g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
-        | [.createTokens kind (.fixed n) tapped .kind .you .none,
+        | [.createTokens kind (.fixed n) tapped .you .none,
             .«if» cond .markRecentTokensAttacking] =>
           let (g, holds) :=
             g.triggerIfHolds controller ab sourceId targets lastKnownPower cond lastKnownToughness
           g.createAndMarkTokensAttacking controller kind n.toNat tapped holds sourceId
+            (copyCtx := g.copyTokenContextOf sourceId targets)
         | steps =>
           let stepAbs := steps.toArray.map fun r =>
             match ab with
@@ -5682,13 +5698,17 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .gainLife (.fixed n) => g.gainLife controller n.toNat
   | .recruit _ => g.beginRecruit controller
   | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
-  | .createTokens kind (.fixed n) tapped .kind .you .none =>
+  | .createTokens kind (.fixed n) tapped .you .none =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
+      (copyCtx := g.copyTokenContextOf sourceId targets)
   | .addMana types amount =>
     let chosenX := g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?
     g.applyAddMana controller sourceId types amount targets lastKnownPower lastKnownToughness
       (chosenX := chosenX)
   | .discard (.cards n) => g.beginDiscardCards #[controller] n
+  | r@(.may (.mill (.fixed _) .you .none) (.sequence []) .ifYouDo) =>
+    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
   | r =>
     let chosenX := g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?
     match Resolution.toSpell r with

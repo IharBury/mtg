@@ -58,16 +58,15 @@ def payGenericOrTapFirstSource (g : Game) (p : PlayerId) (n : Nat) : Option Acti
   if (g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
     some .payGeneric
   else
-    let usable (r : ManaRestriction) : Bool :=
+    let usable (r : Option ManaSpendRestriction) : Bool :=
       match r with
-      | .none | .cantNonartifact => true
-      | .fra u => u.allows {}
-      | _ => false
+      | none => true
+      | some u => u.allows {}
     let usableYield (src : GameObject) (t : ManaType) : Nat :=
       let base := g.baseManaTypesFromTap src t
       let extra := g.extraMountainRedFromTap src base
       (if usable (g.tapRestrictionOf src t) then base.size else 0) +
-        (if usable .none then extra.size else 0)
+        (if usable none then extra.size else 0)
     let usableSources := (g.manaSources p).filterMap fun (src, types) =>
       let best? :=
         types.foldl (fun (acc? : Option (ManaType × Nat)) t =>
@@ -602,6 +601,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                     (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
                     (useImplicitPermissions := false)
                     (fromHand := prop.original.zone == .hand p)
+                    (castFromZone := some prop.original.zone.kind)
                 else
                   spellSacOk && spellDiscardOk && spellBeholdOk
               let frontAffordable :=

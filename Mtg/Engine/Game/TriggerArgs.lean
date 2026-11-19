@@ -58,18 +58,8 @@ private def unionPermanentSets (parts : List (Option (Array GameObject))) :
     if named.isEmpty then none
     else some (named.foldl (fun acc xs => unionObjects acc xs) #[])
 
-/-- Permanents `who` names. Selectors that name a card, a hand, or a
-choice that has not been offered are `none`. An empty array means the
-selector named permanents and none of them are on the battlefield.
-`.any` and `.target .any` are the announced permanents. A restriction
-read on its own names the same permanents as `.target` of that
-restriction. Any other `.target` restriction names nothing.
-`.intersection` names permanents every selector names. One selector that
-does not name permanents names nothing. `.union` names permanents any
-selector names. A selector that does not name permanents adds nothing.
-An empty list names nothing. -/
-def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.ObjectSelector) :
-    Option (Array GameObject) :=
+@[noinline] private def permanentsNamedLeaf (g : Game) (ctx : TriggerRead)
+    (who : TriggeredAbility.ObjectSelector) : Option (Array GameObject) :=
   let controller := ctx.controller
   let sourceId := ctx.sourceId
   let onBf (id : ObjectId) : Option GameObject :=
@@ -258,12 +248,26 @@ def permanentsNamed (g : Game) (ctx : TriggerRead) (who : TriggeredAbility.Objec
     | .artifactFromHand | .randomCreature | .forest | .basicLandOnTop
     | .dragon | .creatureMvAtMost _ | .creatureFromHand _ _
     | .creatureCard | .anyYouControl | .questCounters | .creatureCardsInGraveyard
-    | .card | .nonland =>
+    | .card | .nonland | .intersection _ | .union _ =>
     none
+
+/-- Permanents `who` names. Selectors that name a card, a hand, or a
+choice that has not been offered are `none`. An empty array means the
+selector named permanents and none of them are on the battlefield.
+`.any` and `.target .any` are the announced permanents. A restriction
+read on its own names the same permanents as `.target` of that
+restriction. Any other `.target` restriction names nothing.
+`.intersection` names permanents every selector names. One selector that
+does not name permanents names nothing. `.union` names permanents any
+selector names. A selector that does not name permanents adds nothing.
+An empty list names nothing. -/
+def permanentsNamed (g : Game) (ctx : TriggerRead) :
+    TriggeredAbility.ObjectSelector → Option (Array GameObject)
   | .intersection sels =>
     intersectPermanentSets (sels.map (g.permanentsNamed ctx))
   | .union sels =>
     unionPermanentSets (sels.map (g.permanentsNamed ctx))
+  | who => g.permanentsNamedLeaf ctx who
 
 /-- Controllers of the objects `what` names.
 `none` means `what` does not name objects, or a single object it names
@@ -522,16 +526,16 @@ def spawnFace (g : Game) (pids : Array PlayerId) (face : CardDef) (n : Nat)
 
 /-- Recipients of a created token. The Void with no announced opponent is
 created for the controller. -/
-def tokenRecipients (g : Game) (ctx : TriggerRead) (token : TriggeredAbility.TriggerToken)
+def tokenRecipients (g : Game) (ctx : TriggerRead) (token : TokenSpec)
     (who : TriggeredAbility.PlayerSelector) : Array PlayerId :=
-  match who, token with
-  | .target .opponent, .theVoid =>
+  if who == .target .opponent && token == .theVoid then
     match ctx.targets.findSome? fun
       | Target.player pid => some pid
       | _ => none with
     | some pid => #[pid]
     | none => #[ctx.controller]
-  | _, _ => (g.collectPlayers ctx who).getD #[]
+  else
+    (g.collectPlayers ctx who).getD #[]
 
 /-- Mill `opponents` (and any non-opponent `allPids`) `n` cards in one batch and
 record `opponentsMilledThisWay`, pausing safely on entry or mid-batch. -/

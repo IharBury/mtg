@@ -46,19 +46,20 @@ def finishProposedSpell (g : Game) : Except String Game := do
         (g.findObject? id).any (fun card => g.hasSubtype card quality))
     if !(hasPerm || hasHand) then
       return (← g.reverseProposedSpell? (resumeContinuation := true))
-  let count (g : Game) (u : FraManaUse) :=
-    ((g.player prop.caster).manaPool.fraRestricted.filter (·.2 == u)).size
+  let countCantBeCountered (g : Game) :=
+    ((g.player prop.caster).manaPool.restrictedEntries.filter (fun (_, r) =>
+      r.grantsRider .cantBeCountered)).size
   let g ← g.withProposalActionM .costAction fun g0 => do
     let paid ← g0.payCost prop.caster prop.cost allowElf allowInst
       allowHero allowVillain allowCant allowCreature spend (forObject := some prop.spellId)
     let paid ←
       if prop.kind == .activatedAbility then pure paid
       else paid.payLifeCost prop.caster prop.payLife (forObject := some prop.spellId)
-    let spent (u : FraManaUse) := count paid u < count g0 u
+    let spentCantBeCountered := countCantBeCountered paid < countCantBeCountered g0
     pure <|
       match prop.kind, paid.findObject? prop.spellId with
       | .spell, some o =>
-        if spent .legendarySpell then
+        if spentCantBeCountered then
           paid.createEffect (.uncounterableThisCast o.id)
             |>.logMsg s!"{paid.name o} can't be countered (Delighted Halfling)"
         else paid

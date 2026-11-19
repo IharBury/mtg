@@ -68,80 +68,41 @@ private def destroyIds (g : Game) (ids : Array ObjectId) (pred : GameObject → 
   g.withBatch none fun g =>
     g.destroyPermanentsLoop validIds (preBattlefield := some preBf)
 
-private def creatureTokenOf (name : String) (subtypes : Array CardSubtype) (p t : Int)
-    (color : Option Color := none) (keywords : Keywords := Keywords.none)
-    (types : Array CardType := #[.creature]) (toxic : Nat := 0) (cantBlock : Bool := false) : CardDef :=
-  { creatureToken name subtypes p t color keywords types with toxic, cantBlock }
-
-private def frcPrinted (k : FrcToken) (x : Nat) : CardDef :=
-  match k with
-  | .citizen =>
-    { creatureTokenOf "Citizen" #[.citizen] 1 1 with
-      colorIndicator := some (ColorSet.ofList [.green, .white]) }
-  | .warrior => creatureTokenOf "Warrior" #[.warrior] 1 1 (some .white)
-  | .insect => creatureTokenOf "Insect" #[.insect] 2 1 (some .white) Keyword.flying
-  | .myr =>
-    creatureTokenOf "Myr" #[.myr] 1 1 (types := #[.artifact, .creature])
-  | .kobold =>
-    { creatureTokenOf "Kobolds of Kher Keep" #[.kobold] 0 1 (some .red) with name := "Kobolds of Kher Keep" }
-  | .mite =>
-    creatureTokenOf "Phyrexian Mite" #[.phyrexian, .mite] 1 1
-      (types := #[.artifact, .creature]) (toxic := 1) (cantBlock := true)
-  | .shark =>
-    creatureTokenOf "Shark" #[.shark] (Int.ofNat x) (Int.ofNat x) (some .blue) Keyword.flying
-  | .gingerbrute =>
-    { creatureTokenOf "Gingerbrute" #[.food, .golem] 1 1
-        (keywords := Keyword.haste) (types := #[.artifact, .creature]) with
-      activatedAbilities := #[
-        { effect := { resolution := .frc .gingerDash, phrase := "This token can't be blocked this turn except by creatures with haste." }
-          cost := { mana := ManaCost.ofGeneric 1 } },
-        { effect := Effect.gainLife 3
-          cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true } } ] }
-  | .angel => creatureTokenOf "Angel" #[.angel] 4 4 (some .white) Keyword.flying
-  | .human => creatureTokenOf "Human" #[.human] 1 1 (some .white)
-  | .goblin => creatureTokenOf "Goblin" #[.goblin] 1 1 (some .red)
-  | .map => {
-      name := "Map"
-      types := #[.artifact]
-      isToken := true
-      activatedAbilities := #[
-        { effect := { resolution := .frc .explore, phrase := "You explore." }
-          cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } } ] }
-  | .treasure => treasureToken
-  | .rogue => creatureTokenOf "Rogue" #[.rogue] 2 2 (some .black)
-  | .incubator => {
-      name := "Incubator"
-      types := #[.artifact]
-      subtypes := #["Incubator"]
-      isToken := true
-      otherFace := some {
-        creatureTokenOf "Phyrexian" #[.phyrexian] 0 0 (types := #[.artifact, .creature]) with
-        name := "Phyrexian" }
-      activatedAbilities := #[
-        { effect := { resolution := .frc .transformIncubator, phrase := "Transform this token." }
-          cost := { mana := ManaCost.ofGeneric 2 } } ] }
-
-def makeFrcLoop (g : Game) (p : PlayerId) (k : FrcToken) (remaining : Nat) (x : Nat)
-    (extraCounters : CounterBag) (cause : Option EventCause) : Game :=
+def makeFrcLoop (g : Game) (p : PlayerId) (k : TokenSpec) (remaining : Nat) (x : Nat)
+    (extraCounters : CounterBag) (cause : Option EventCause)
+    (copyCtx : CopyTokenContext := {}) : Game :=
   if remaining == 0 then g
   else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.makeFrcLoop p k remaining x extraCounters cause)
+    g.chainPendingReplacement (.makeFrcLoop p k remaining x extraCounters cause copyCtx)
   else
-    let printed := frcPrinted k x
-    (g.createToken p printed (extraCounters := extraCounters)
-      (recordRecent := true) (cause := cause) (count := remaining)).1
+    match g.resolveTokenPrinted? k x copyCtx with
+    | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
+    | some printed =>
+      (g.createToken p printed (extraCounters := extraCounters)
+        (recordRecent := true) (cause := cause) (count := remaining)).1
 
-private def makeFrc (g : Game) (p : PlayerId) (k : FrcToken) (n : Nat := 1) (x : Nat := 0)
-    (extraCounters : CounterBag := #[]) (cause : Option EventCause := none) : Game :=
+private def makeFrc (g : Game) (p : PlayerId) (k : TokenSpec) (n : Nat := 1) (x : Nat := 0)
+    (extraCounters : CounterBag := #[]) (cause : Option EventCause := none)
+    (copyCtx : CopyTokenContext := {}) : Game :=
   if let .chooseReplacement .. := g.pending then
     if n == 0 || !g.stillInGame p then g
-    else g.chainPendingReplacement (.makeFrcLoop p k n x extraCounters cause)
+    else g.chainPendingReplacement (.makeFrcLoop p k n x extraCounters cause copyCtx)
   else if n == 0 || !g.stillInGame p then g.change (.recentTokenIds #[])
   else
     let g := g.change (.recentTokenIds #[])
     let batchCause := cause.orElse (fun _ => g.resolvingBatchCause p none)
     g.withBatch batchCause fun g =>
-      g.makeFrcLoop p k n x extraCounters cause
+      g.makeFrcLoop p k n x extraCounters cause copyCtx
+
+/-- Offer `p` the optional explore choice to put the revealed top card `cardId`
+of their library into their graveyard (CR 701.44a / 701.44c). -/
+def offerExploreMayGraveyard (g : Game) (p : PlayerId) (cardId : ObjectId) : Game :=
+  if !g.stillInGame p then g
+  else if (g.player p).library.back? != some cardId then g
+  else
+    let cName := (g.findObject? cardId).map g.name |>.getD "the revealed card"
+    g.beginFraChoice p (.exploreMayGraveyard cardId)
+      s!"{(g.player p).name} may put {cName} into their graveyard"
 
 private def revealUntil (g : Game) (p : PlayerId) (pred : CardDef → Bool) (limit : Nat)
     (cause : Option EventCause := none) :
@@ -479,7 +440,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
         if let .chooseReplacement .. := g.pending then
           g.chainPendingReplacement (.finishFrcPostStep (.makeHumanToken owner))
         else
-          g.makeFrc owner .human
+          g.makeFrc owner .human11white
       | none => g
     | _ => g
   | .grandCrescendo =>
@@ -732,7 +693,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
     g.withBatch none fun g =>
       g.destroyPermanentsLoop ids (obGainLifeFor := some controller) (preBattlefield := some preBf)
   | .obAngel =>
-    if g.loggedLifeGained controller > 0 then g.makeFrc controller .angel
+    if g.loggedLifeGained controller > 0 then g.makeFrc controller .angel44white
     else g
   | .omnathCc =>
     g.addMana controller .colorless 2 (source := sourceId)
@@ -891,7 +852,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       | none => (sourceId.bind g.lastKnownBefore?).any (·.chosenAnchor == some "Jeskai")
     if !jeskai then g
     else
-      let g := g.makeFrc controller .goblin
+      let g := g.makeFrc controller .goblin11red
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.finishFrcPostStep .grantRecentTokensLifelinkHaste)
       else
@@ -946,7 +907,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
               (.finishFrcPostStep (.currencyReturnCreateToken controller id sid land))
           else if (g.followMovedToZone? id (· != .exile)).isSome then
             let g := g.pruneLinkedExileId sid id
-            if land then g.makeFrc controller .treasure else g.makeFrc controller .rogue
+            if land then g.makeFrc controller .treasure else g.makeFrc controller .rogue22black
           else g
   | .despair =>
     g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
@@ -980,9 +941,9 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
           | some eo => eo.manaValue
           | none => 0
       | none => 0
-    g.makeFrc controller .shark 1 x
+    g.makeFrc controller .sharkX 1 x
   | .sharkCycle =>
-    g.makeFrc controller .shark 1 nKnown
+    g.makeFrc controller .sharkX 1 nKnown
   | .skrelv =>
     let (g, cause?) : Game × Option EventCause :=
       match g.currentResolvingContext? with
@@ -991,7 +952,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
         (g, some c)
       | none => (g, none)
     (g.loseLife controller 1 (cause := cause?)).makeFrc controller .mite (cause := cause?)
-  | .insects => g.makeFrc controller .insect 2
+  | .insects => g.makeFrc controller .insect21flying 2
   | .factOrFiction =>
     let lib := (g.player controller).library
     let n := min 5 lib.size
@@ -1012,30 +973,84 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
   | .warriorsX => g.makeFrc controller .warrior xSpell
   | .citizensX => g.makeFrc controller .citizen xSpell
   | .explore =>
-    let lib := (g.player controller).library
-    if lib.isEmpty then g.logMsg s!"{pl.name} explores (empty library)"
-    else
-      let top := lib.back!
-      let card := g.object! top
-      let cName := g.name card
-      let g := g.record (GameEvent.revealed g.turnNumber controller #[top]
-        (cause := some (g.resolvingOrRuleCause controller sourceId)))
-      if g.isLand card then
-        let (g, _) := g.move top (.hand controller) none
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.finishFrcPostStep (.logExploreLandToHand controller top cName))
-        else if (g.followMovedToZone? top (· == .hand controller)).isSome then
-          g.logMsg s!"{pl.name} explores and puts {cName} into their hand"
-        else g
+    let resolvedTarget? : Except Game (Option GameObject) :=
+      if effect.requiresTarget || !targets.isEmpty then
+        match targets[0]? with
+        | some t@(Target.permanent tid) =>
+          let legal :=
+            if effect.targetKind != .none then
+              g.targetLegalAt controller effect.targetKind 0 t sourceId
+            else
+              (g.findObject? tid).any (fun o => o.isOnBattlefield && g.isCreature o)
+          if !legal then
+            .error (g.illegalAbilityTarget t)
+          else
+            match g.findObject? tid with
+            | some o => .ok (some o)
+            | none => .error (g.illegalAbilityTarget t)
+        | _ => .error (g.logMsg "The target is no longer legal")
       else
-        let g := g.logMsg s!"{pl.name} puts {cName} on top of their library"
-        match g.srcObj? sourceId with
+        .ok (g.srcObj? sourceId)
+    match resolvedTarget? with
+    | .error gIllegal => gIllegal
+    | .ok explorer? =>
+      -- CR 701.44c: if the exploring permanent left the battlefield before
+      -- exploring, use last-known information to determine who controlled it.
+      let explorerLki? :=
+        if explorer?.isNone then sourceId.bind g.lastKnownBefore? else none
+      let explorerCtrl :=
+        match explorer? with
+        | some o => (g.controllerOf o).getD controller
+        | none =>
+          (explorerLki?.bind (fun eo => eo.controller.orElse (fun _ => some eo.owner))).getD
+            controller
+      let explorerPl := g.player explorerCtrl
+      let lib := explorerPl.library
+      if lib.isEmpty then
+        let g := g.logMsg s!"{explorerPl.name} explores (empty library)"
+        -- CR 701.44a: no land card was revealed, so put a +1/+1 counter on the exploring permanent.
+        match explorer? with
         | some o =>
-          if g.isCreature o then
-            (g.logMsg s!"{pl.name} explores").addPlusOnePlusOneTo o 1 (byPlayer := some controller)
-          else g.logMsg s!"{pl.name} explores and leaves {cName} on top"
-        | none => g.logMsg s!"{pl.name} explores and leaves {cName} on top"
+          if o.isOnBattlefield then
+            g.addPlusOnePlusOneTo o 1 (byPlayer := some explorerCtrl)
+          else g
+        | none => g
+      else
+        let top := lib.back!
+        let card := g.object! top
+        let cName := g.name card
+        let g := g.record (GameEvent.revealed g.turnNumber explorerCtrl #[top]
+          (cause := some (g.resolvingOrRuleCause controller sourceId)))
+        if g.isLand card then
+          let destOwner := card.owner
+          let (g, _) := g.move top (.hand destOwner) none
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement
+              (.finishFrcPostStep (.logExploreLandToHand explorerCtrl top destOwner cName))
+          else if (g.followMovedToZone? top (· == .hand destOwner)).isSome then
+            let destDesc :=
+              if destOwner == explorerCtrl then "their hand"
+              else s!"{(g.player destOwner).name}'s hand"
+            g.logMsg s!"{explorerPl.name} explores and puts {cName} into {destDesc}"
+          else g
+        else
+          -- CR 701.44a: nonland revealed — put a +1/+1 counter on the exploring
+          -- permanent (if still on the battlefield, even if not a creature), then
+          -- offer the controller the optional choice to put the revealed card into
+          -- their graveyard (CR 701.44c still offers this choice if the permanent left).
+          let g := g.logMsg s!"{explorerPl.name} explores and reveals {cName}"
+          let g :=
+            match explorer? with
+            | some o =>
+              if o.isOnBattlefield then
+                g.addPlusOnePlusOneTo o 1 (byPlayer := some explorerCtrl)
+              else g
+            | none => g
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement
+              (.finishFrcPostStep (.offerExploreMayGraveyard explorerCtrl top))
+          else
+            g.offerExploreMayGraveyard explorerCtrl top
   | .transformIncubator =>
     match g.srcObj? sourceId with
     | some o =>
@@ -1050,7 +1065,8 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       let g := g.record
         (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
           (cause := transformCause))
-      let g := g.logMsg s!"{oName} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
+      let backName := g.name (g.object! o.id)
+      let g := g.logMsg s!"{oName} transforms into a 0/0 {backName} with {counters} +1/+1 counters"
       reconcileControlAfterTransition pre g (cause := some transformCause)
     | none => g
   | .turnFaceUp =>
@@ -1131,12 +1147,24 @@ partial def runFrcPostStep (g : Game) (step : FrcPostStep) : Game :=
     if (g.followMovedToZone? cardId (· == .library destOwner)).isSome then
       g.logMsg s!"{(g.player p).name} puts {cardName} on the bottom of their library"
     else g
-  | .logExploreLandToHand controller cardId cardName =>
-    if (g.followMovedToZone? cardId (· == .hand controller)).isSome then
-      g.logMsg s!"{(g.player controller).name} explores and puts {cardName} into their hand"
+  | .logExploreLandToHand controller cardId destOwner cardName =>
+    if (g.followMovedToZone? cardId (· == .hand destOwner)).isSome then
+      let destDesc :=
+        if destOwner == controller then "their hand"
+        else s!"{(g.player destOwner).name}'s hand"
+      g.logMsg s!"{(g.player controller).name} explores and puts {cardName} into {destDesc}"
+    else g
+  | .offerExploreMayGraveyard controller cardId =>
+    g.offerExploreMayGraveyard controller cardId
+  | .logExploreToGraveyard controller cardId destOwner cardName =>
+    if (g.followMovedToZone? cardId (· == .graveyard destOwner)).isSome then
+      let destDesc :=
+        if destOwner == controller then "their graveyard"
+        else s!"{(g.player destOwner).name}'s graveyard"
+      g.logMsg s!"{(g.player controller).name} puts {cardName} into {destDesc}"
     else g
   | .offerMaySearchBasics owner => g.offerMaySearchBasics owner
-  | .makeHumanToken owner => g.makeFrc owner .human
+  | .makeHumanToken owner => g.makeFrc owner .human11white
   | .grantControlledCreaturesIndestructible controller =>
     g.grantUntilEotToControlledCreatures controller Keyword.indestructible "indestructible"
   | .destroyNonRecentCreaturesAtFive x =>
@@ -1259,7 +1287,7 @@ partial def runFrcPostStep (g : Game) (step : FrcPostStep) : Game :=
   | .currencyReturnCreateToken controller exiledId sourceId isLand =>
     if (g.followMovedToZone? exiledId (· != .exile)).isSome then
       let g := g.pruneLinkedExileId sourceId exiledId
-      if isLand then g.makeFrc controller .treasure else g.makeFrc controller .rogue
+      if isLand then g.makeFrc controller .treasure else g.makeFrc controller .rogue22black
     else g
   | .urSphinxCastNext controller buckets =>
     g.urSphinxCastNext controller buckets

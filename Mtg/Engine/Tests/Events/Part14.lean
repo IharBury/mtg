@@ -1083,7 +1083,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
   let dragonCavernDef : CardDef := {
     name := "P48i4 DragonCavern"
     types := #[.land]
-    tapAddRestricted := some (#[.colored .red], "Dragon spells")
+    tapAddRestricted := some (#[.colored .red], .dragonSpell)
   }
   let lanternDef : CardDef := {
     name := "P48i4 ChromaticLantern"
@@ -1146,7 +1146,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
     mustHold48i4 "4a_manaAbilityRankingAndCombination"
       (gShadow0.manaAbilityIndexFor cavernObj (.colored .red) == some 1 &&
        (gShadowTapped.player p0).manaPool.red == 1 &&
-       (gShadowTapped.player p0).manaPool.fraRestricted.isEmpty &&
+       (gShadowTapped.player p0).manaPool.restrictedEntries.isEmpty &&
        comboSourcesPayUR &&
        gComboDone.stack.size == 1 &&
        gComboDone.pending == .none) &&

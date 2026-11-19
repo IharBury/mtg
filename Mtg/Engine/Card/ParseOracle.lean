@@ -874,9 +874,9 @@ where
       let add := (raw.splitOn "Add ").getLastD "" |>.splitOn "." |>.headD ""
       let restriction :=
         ((raw.splitOn "to cast ").getLastD "").replace "." "" |>.trimAscii.copy
-      match manaLetters add with
-      | some ts => some { c with tapAddRestricted := some (ts.toArray, restriction) }
-      | none => none
+      match manaLetters add, ManaSpendRestriction.parseOracle? restriction with
+      | some ts, some r => some { c with tapAddRestricted := some (ts.toArray, r) }
+      | _, _ => none
     else if low.contains "for each" && low.contains "you control" then
       if low.contains "where x is this creature's power" || low.contains "x mana of any" then
         some { c with tapAddAnyColorEqualToPower := true }

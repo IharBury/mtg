@@ -20,7 +20,7 @@ name = "Mtg.Engine"
 [[lean_lib]]
 name = "Mtg.Engine.Card"
 precompileModules = true
-globs = ["Mtg.Engine.Card.*", "Mtg.Engine.Color", "Mtg.Engine.Mana", "Mtg.Engine.TypeLine", "Mtg.Engine.Zone"]
+globs = ["Mtg.Engine.Card.*", "Mtg.Engine.Color", "Mtg.Engine.Mana", "Mtg.Engine.Turn", "Mtg.Engine.TypeLine", "Mtg.Engine.Zone"]
 
 # `Mtg.Engine.Catalog` is the root of every `Mtg.Engine.Catalog.*` module.
 # Lake treats those submodules as part of this library, so precompiling it
@@ -34,15 +34,19 @@ globs = ["Mtg.Engine.Catalog"]
 
 # The rules engine is one plugin, so `#guard` runs compiled game code.
 # Catalog card bodies stay out of this library.
+# Override the package `-O1` to `-O0` here: `Mtg.Engine.Game` emits tens of
+# megabytes of generated C (`Core.c`, `Event.c`, `Decisions.c`, `FraChoices.c`)
+# on the serial critical path, so `-O0` cuts C compilation ~10x (~4 min saved on
+# CI) while keeping `Mtg.Engine.Card` (`parseOracleCard`) at `-O1`.
 [[lean_lib]]
 name = "Mtg.Engine.Game"
 precompileModules = true
+moreLeancArgs = ["-O0"]
 globs = [
   "Mtg.Engine.Game.*",
   "Mtg.Engine.Deck",
   "Mtg.Engine.Rng",
   "Mtg.Engine.Rules",
-  "Mtg.Engine.Turn",
 ]
 
 # Opening hands and other reused test games. One plugin, so `#guard` reads the

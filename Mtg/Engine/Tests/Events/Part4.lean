@@ -1585,18 +1585,18 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
       | .rules (.cast (.announced _ _ _ costs)) => costs == #[.sacrifice sacVictimId]
       | _ => false)
 
-  -- 3d. CR 106.6 `.fromTreasure` does NOT preempt `.elf`, `.cantNonartifact` pays Ward/counter but NOT non-artifact spell,
+  -- 3d. CR 106.6 `fromTreasure` provenance does NOT preempt `.elf`, `.cantNonartifact` pays Ward/counter but NOT non-artifact spell,
   --     and `payWard` / `payOrLetCounter` do NOT credit `manaSpentOn` to the targeted `spellId`!
   let poolTreasureAndElf : ManaPool :=
     (({} : ManaPool).addUnits #[
-      { mana := .colored .red, restriction := some (.fra .fromTreasure) },
+      { mana := .colored .red, fromTreasure := true },
       { mana := .colored .green, restriction := some .elf }
     ])
   let afterElfGeneric := poolTreasureAndElf.pay? (ManaCost.ofGeneric 1) (allowElfRestricted := true)
   let poolCantNonart : ManaPool :=
     ({} : ManaPool).addUnits #[{ mana := .colored .blue, restriction := some .cantNonartifact }]
   let manaPriorityAndRestrOk : Bool :=
-    afterElfGeneric.any (fun p => p.units.size == 1 && p.units[0]!.restriction == some (.fra .fromTreasure)) &&
+    afterElfGeneric.any (fun p => p.units.size == 1 && p.units[0]!.fromTreasure && p.units[0]!.restriction.isNone) &&
     !poolCantNonart.canPay (ManaCost.ofGeneric 1) &&
     poolCantNonart.canPay (ManaCost.ofGeneric 1) (allowCantNonartifact := true)
 

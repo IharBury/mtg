@@ -10,6 +10,13 @@ and the `Pending` prompt a player must answer before the game continues.
 
 namespace Mtg.Engine
 
+/-- Object references available to resolve `TokenSpec.copyOf` (CR 707.2 / 707.9 / 111.12). -/
+structure CopyTokenContext where
+  sourceId : Option ObjectId := none
+  targetId : Option ObjectId := none
+  triggerSubjectId : Option ObjectId := none
+deriving DecidableEq, Repr, Inhabited, BEq
+
 /-- A random event the engine would otherwise resolve with `Rng`.
 `--norandom` leaves it pending so a host (the demo) can supply the result. -/
 inductive RandomRequest where
@@ -243,7 +250,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 /-- A card or token waiting for its controller to choose what it enters
 attacking (CR 508.4 / ruling 181). -/
 inductive EnteringAttackItem where
-  | token (controller : PlayerId) (kind : TokenKind) (tapped : Bool)
+  | token (controller : PlayerId) (kind : TokenSpec) (tapped : Bool)
       (options : Array AttackTarget) (tokenName : Option String := none)
   | card (cardId : ObjectId) (enteringController : PlayerId)
       (effectController : PlayerId) (tapped : Bool) (returnedAsArtifact : Bool)
@@ -385,7 +392,7 @@ inductive FraChoice where
   /-- Choose the color of each of `left` more mana to add, spendable only as
   `use` allows. Answered with `Action.chooseMode` (white, blue, black, red,
   green by index). -/
-  | addManaColors (left : Nat) (use : FraManaUse)
+  | addManaColors (left : Nat) (use : ManaSpendRestriction)
   /-- Extort: you may pay {W/B}; if you do, drain each opponent for 1. -/
   | mayPayExtort (sourceId : Option ObjectId)
   /-- You may draw `draw` cards; if you do, discard `discard` cards. -/
@@ -394,7 +401,7 @@ inductive FraChoice where
   `chosen` are sacrificed together at the end (The Serpent Society). -/
   | sacrificeNontokenEach (rest : Array PlayerId) (chosen : Array ObjectId)
   /-- You may create `n` tokens of `kind`. -/
-  | mayCreateTokens (kind : TokenKind) (n : Nat)
+  | mayCreateTokens (kind : TokenSpec) (n : Nat) (copyCtx : CopyTokenContext := {})
   /-- You may have `objectId`'s base power and toughness become `p`/`t`
   until end of turn. -/
   | mayBecomeBasePT (objectId : ObjectId) (p t : Int)
@@ -518,6 +525,9 @@ inductive FraChoice where
   | kingpinMayPay2Life
   /-- You may exile the top card of your library (Daredevil). -/
   | daredevilMayExile (sourceId : Option ObjectId)
+  /-- Explore (CR 701.44a): you may put the revealed top card `cardId` of your
+  library into your graveyard. Declining leaves it on top. -/
+  | exploreMayGraveyard (cardId : ObjectId)
   /-- You may choose a new target for one slot of `spellId`, or decline to
   keep it. `index` walks the spell's targets (Speedball). -/
   | mayChangeSpellTarget (spellId : ObjectId) (index : Nat) (staged : Array Target := #[])

@@ -196,7 +196,7 @@ def text : FraStatic → String
   | .chosenNameSpellsCantBeCast => "Spells with the chosen name can't be cast."
 
 /-- The restricted mana this ability adds, if it is a mana ability. -/
-def manaUse? : FraStatic → Option FraManaUse
+def manaRestriction? : FraStatic → Option ManaSpendRestriction
   | .tapAddColorlessNotFromHand => some .notSpellsFromHand
   | .tapAddAnyColorPlaneswalkerOnly => some .planeswalkerSpell
   | _ => none
@@ -1372,5 +1372,31 @@ def attackTaxIfEnduringStory? (ab : StaticAbility) : Option Nat :=
   ab.shape.spec.attackTaxIfEnduringStory
 
 end StaticAbility
+
+instance : HasTextChange StaticAbility where
+  applyTextChanges tcs ab :=
+    if tcs.isEmpty then ab
+    else
+      let ms := HasTextChange.applyTextChanges tcs
+      match ab with
+      | .otherCreaturesHaveTrample subs => .otherCreaturesHaveTrample (subs.map ms)
+      | .otherCreaturesGet subs p t => .otherCreaturesGet (subs.map ms) p t
+      | .cantBlockUnlessYouControl subs => .cantBlockUnlessYouControl (subs.map ms)
+      | .enchantedIsOnlySubtypeCantAttackOrBlock s => .enchantedIsOnlySubtypeCantAttackOrBlock (ms s)
+      | .hasteIfYouControlOtherSubtype s => .hasteIfYouControlOtherSubtype (ms s)
+      | .cantAttackUnlessYouControlNOther n s => .cantAttackUnlessYouControlNOther n (ms s)
+      | .lifelinkIfYouControlOtherSubtype s => .lifelinkIfYouControlOtherSubtype (ms s)
+      | .otherSubtypeHaveTapAddOneOf subs mana => .otherSubtypeHaveTapAddOneOf (subs.map ms) mana
+      | .otherSubtypeGetPowerPerArtifactToken s => .otherSubtypeGetPowerPerArtifactToken (ms s)
+      | .extraTriggerIfEnduringStorySubtype s => .extraTriggerIfEnduringStorySubtype (ms s)
+      | .extraTriggerAnotherYouControl subs ts => .extraTriggerAnotherYouControl (subs.map ms) ts
+      | .copyActivatedFromGySubtype s => .copyActivatedFromGySubtype (ms s)
+      | .creaturesYouControlOfSubtypeGet s p t => .creaturesYouControlOfSubtypeGet (ms s) p t
+      | .youAndOtherSubtypeHaveHexproofIfShield s => .youAndOtherSubtypeHaveHexproofIfShield (ms s)
+      | .subtypeSpellsCostLess s n => .subtypeSpellsCostLess (ms s) n
+      | .powerEqualSubtypeYouControl s => .powerEqualSubtypeYouControl (ms s)
+      | .enchantedCreatureGetsHasAndTypes p t k subs =>
+        .enchantedCreatureGetsHasAndTypes p t k (subs.map ms)
+      | other => other
 
 end Mtg.Engine
