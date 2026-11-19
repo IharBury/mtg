@@ -20645,59 +20645,85 @@ soundness).
 
 1. **`Entering.receivePriority` `.chooseReplacement` settlement guards, `Decisions` concession / cleanup / turn-transition probe parity, and resolution-cast / `.finishFraChoice` / `sneakAttacker` continuation probes**
    (`Core.lean:8894, 14147–14155`,
-   `Decisions.lean:262–284, 286–432, 518–560, 635–643, 1370–1377, 1431–1460, 1662–1701, 1718–1733, 1774–1776, 1810–1845, 1881–1914, 1934–1949, 1989–2011, 2123–2132, 2167–2169, 2235–2294, 2414–2426, 5155–5311, 5383–5388, 7489–7491`,
+   `Decisions.lean:208–256, 262–284, 286–432, 518–560, 635–643, 685–720, 1370–1377, 1431–1460, 1662–1701, 1718–1733, 1774–1776, 1810–1845, 1881–1914, 1934–1949, 1989–2011, 2123–2132, 2167–2169, 2235–2294, 2414–2426, 5155–5311, 5383–5388, 5483–5490, 5746–5751, 7489–7491`,
    `Entering.lean:451–539`,
    `ManaAbilities.lean:906–925`,
-   `Turns.lean:865–986, 1186–1244`;
+   `PriorityActions.lean:72`,
+   `StateBasedActions.lean:740, 1188`,
+   `Turns.lean:713–986, 1186–1244`;
    **CR 117.3a–c / 117.4 / 500.2–4 / 503.1 / 514.3,3a / 601.2f–i / 603.3b / 605.3b / 608.2g / 616.1 / 704.3 / 704.5j / 800.4a,c,i,j**):
    - **`Entering.receivePriority` `.chooseReplacement` settlement guards and `Decisions` `classifyFinishConcedePriority` / `finishCleanupAfterClearEotRecipient?` / turn-transition probe parity**
      (`Core.lean:8894, 14147–14155`,
-     `Decisions.lean:262–284, 286–432, 518–560, 635–643, 1431–1460, 1718–1733, 1934–1949, 2123–2132, 2167–2169, 2414–2426`,
-     `Entering.lean:451–539`, `Turns.lean:865–986, 1186–1244`):
+     `Decisions.lean:208–256, 262–284, 286–432, 518–560, 635–643, 1431–1460, 1718–1733, 1790–1798, 1934–1949, 2123–2132, 2167–2169, 2414–2426`,
+     `Entering.lean:451–539`, `StateBasedActions.lean:740, 1188`, `Turns.lean:713–986, 1186–1244`):
      - Three priority-continuation guard and concession/turn-transition probe mismatches remain after Phase 51:
        (i) `Entering.receivePriority` (`Entering.lean:463–464, 481–482, 492–493`) chains `.receivePriority p` whenever
        `g.pending` is `.chooseReplacement ..` without checking `g.anyContinuationSettlesControlFlowFwd` (`Core.lean:14151`),
        unlike `Decisions.finishAndGrantPriority` (`2123–2132, 2167–2169`) and `Decisions.finishConcedePriority` (`2420–2421`)
        — appending an orphaned or duplicate `.receivePriority p` behind an already-queued prompt-opening or priority-granting
        continuation in `g.pendingReplacement` / `g.outerPendingReplacements`;
-       (ii) in `Decisions.classifyFinishConcedePriority`'s `!g0.stack.isEmpty` (`resolveTop`) arm (`1434–1456`), `1445`
-       evaluates `let gSba := drainProbePausedStep g1.checkSBA` *before* draining `g1`'s `.chooseReplacement` pause
-       (`g1.sbaPaused == true`, making `g1.checkSBA` a no-op instead of draining `g1` first), and both `1445–1448` and
-       `1452–1455` omit `Entering.receivePriority`'s non-priority prompt-settling paths (`2421, 2423`, `Entering.lean:457–539`:
-       `reopenDeferredExileCasts` opening a non-`.chooseReplacement` prompt at `457–466`, `checkSBA` opening
-       `Pending.chooseLegend` / another non-`.chooseReplacement` prompt at `486–494`, or `waitingTriggers` opening
-       `Pending.chooseTriggerToStack` at `537` / `putTriggerBatch` opening `Pending.chooseTargets` at `511, 533`), returning
-       `.grants (some q)` instead of `.settlesPromptOrOver`; and
-       (iii) `Decisions.finishCleanupAfterClearEotRecipient?` (`418–425`) neither drains a `.chooseReplacement` pause from
-       `checkSBACountedWithLeaves` (`418`) nor treats `g1.pending == .chooseLegend ..` (`421`) or post-cleanup
-       `Entering.receivePriority` trigger/deferred-cast prompts as non-priority prompts (`Turns.finishCleanupAfterClearEot`
-       pauses on `Pending.chooseLegend` at `Turns.lean:975–976` with `continuationGrantsPriority == false`), while
-       `continueStartNextTurnRecipient?` (`410–413`) returns raw `some gNext.activePlayer` before `Turns.beginTurn`
-       (`1186–1244`) and `nextTurnSeatOf` (`262–284`, called at `424, 642, 1722–1729, 1938–1945`) returns raw `some q`
-       without simulating `Turns.startNextTurnCore true` (`865–938`) -> `Turns.beginTurn` ->
-       `beginTurnAfterStartExpiryRecipient?` (`518–560`, where turn-start expiry / `.untap` / `.upkeep` `checkSBA` or triggers
-       can end the game, open a non-priority prompt, or redirect priority via `priorityInstead` under CR 800.4j):
+       (ii) in `Decisions.classifyFinishConcedePriority`'s `!g0.stack.isEmpty` (`resolveTop`) arm (`1434–1456`), on `1445`
+       (`g1.pending == .chooseReplacement ..`, where `g1.sbaPaused == true` so `g1.checkSBA` is a no-op via `checkSBACounted`
+       at `StateBasedActions.lean:740` / `checkSBACountedWithLeavesCore` at `1188`, whereas `1452` already has `g1.pending ==
+       .none`), `1445` evaluates `g1.checkSBA` before draining `g1`'s non-priority `.chooseReplacement` continuation
+       (`drainProbePausedStep` at `Decisions.lean:234–255`, whose `drainProbeNonPriorityCont` at `209–232` does not run
+       `.receivePriority`), and both `1445–1448` and `1452–1455` omit `Entering.receivePriority`'s non-priority
+       prompt-settling paths (`2421, 2423`, `Entering.lean:457–539`: `reopenDeferredExileCasts` opening a
+       non-`.chooseReplacement` prompt at `457–466`, `checkSBA` opening `Pending.chooseLegend` / another
+       non-`.chooseReplacement` prompt at `486–494`, or `waitingTriggers` opening `Pending.chooseTriggerToStack` at `537` /
+       `putTriggerBatch` opening `Pending.chooseTargets` at `511, 533`), returning `.grants (some q)` instead of
+       `.settlesPromptOrOver`; and
+       (iii) `Decisions.finishCleanupAfterClearEotRecipient?` (`418–425`) does not drain a non-priority `.chooseReplacement`
+       pause from `checkSBACountedWithLeaves` (`418`), explicitly matches `g1.pending == .chooseLegend ..` (`420–422`) to
+       return `livingPriorityInstead? g1 g1.activePlayer` (making `.finishCleanupAfterClearEot`'s grant probe `true` at
+       `1730–1731` even though runtime `Turns.finishCleanupAfterClearEot` at `Turns.lean:975–976` pauses on the open
+       `Pending.chooseLegend` prompt and only chains `.finishPostStep (.postSbaCleanup true)` behind it), and — together with
+       `.finishPostStep (.postSbaCleanup sba)` (`1725–1728, 1941–1944`) — assumes `sba || hasWaitingTriggers` always grants
+       priority without probing `Entering.receivePriority` (`Turns.lean:957`), while `continueStartNextTurnRecipient?`
+       (`410–413`, entered from `Turns.startNextTurnCore` `937` *after* turn-end expiry, `turnEnded`, and seat selection)
+       returns raw `some gNext.activePlayer` before `Turns.continueStartNextTurn`'s remaining `expireFinishedNextTurnPlayerControl`
+       + `gNext.beginTurn` tail (`Turns.lean:852–857, 1186–1244`), and `nextTurnSeatOf` (`262–284`, called by the callers that
+       actually start the next turn: `finishCleanupAfterClearEotRecipient?` `424`, `advanceStepRecipient?` `642`, and
+       `.finishPostStep .startNextTurnAndBegin` / `.endTurnAfterCleanupStepEnded` / non-SBA `.postSbaCleanup` at
+       `1722–1729, 1938–1945`) returns raw `some q` without simulating `Turns.startNextTurnCore true` (`860–938`) ->
+       `continueStartNextTurnRecipient?` -> `beginTurn` -> `beginTurnAfterStartExpiryRecipient?` (`518–560`, where turn-start
+       expiry / `.untap` / `.upkeep` `checkSBA` or triggers can end the game, open a non-priority prompt, or redirect priority
+       via `priorityInstead` under CR 800.4j):
        - Guard `.receivePriority p` chaining in `Entering.receivePriority` (`463–464, 481–482, 492–493`) on
          `!g.anyContinuationSettlesControlFlowFwd` (preserving `savePendingP g p` when `g.anyContinuationGrantsPriorityFwd &&
-         g.hasImplicitPriorityContinuationFwd && (!hadEntryPending || g.pendingPriority.isNone)`); drain `g1` before
-         `checkSBA` and classify `Entering.receivePriority`'s post-`resolveTop` / post-cleanup outcome through a shared
-         `receivePriorityOutcome` probe in `classifyFinishConcedePriority` (`1442–1456`) and
-         `finishCleanupAfterClearEotRecipient?` (`415–425`, returning `none` when `g1` settles on `Pending.chooseLegend` or
-         another non-priority prompt); and route `continueStartNextTurnRecipient?` (`410–413`) and `nextTurnSeatOf` callers
-         (`424, 642, 1722–1729, 1938–1945`) through full `startNextTurnCore true` -> `beginTurn` ->
-         `beginTurnAfterStartExpiryRecipient?` probing (plus a companion settlement probe for `continuationSettlesControlFlow`).
+         g.hasImplicitPriorityContinuationFwd && (!hadEntryPending || g.pendingPriority.isNone)`); classify
+         `Entering.receivePriority` (`Entering.lean:451–539`) through a shared `receivePriorityOutcome` probe (`recheckSba :
+         Bool`), evaluating `receivePriorityOutcome (drainProbePausedStep g1) ... (recheckSba := true)` at `1445`,
+         `receivePriorityOutcome g1 ... (recheckSba := true)` at `1452`, and `receivePriorityOutcome ... (recheckSba :=
+         false)` on the `sba || hasWaitingTriggers` cleanup paths in `finishCleanupAfterClearEotRecipient?` (`415–425`, after
+         draining non-priority `.chooseReplacement` pauses and returning `none` when `g1.pending` is `.chooseLegend ..`) and
+         `.finishPostStep (.postSbaCleanup sba)` (`1725–1728, 1941–1944`); and route `continueStartNextTurnRecipient?`
+         (`410–413`) on post-`turnBegan` `gNext` through `expireFinishedNextTurnPlayerControl` + `Turns.beginTurn`
+         (`1186–1244`, drained via `drainProbePausedStep`) -> `beginTurnAfterStartExpiryRecipient?` (`518–560`) without
+         re-entering `startNextTurnCore`, while routing the turn-starting `nextTurnSeatOf` callers (`424, 642, 1722–1729,
+         1938–1945`) through full `startNextTurnCore true` (`860–938`) -> `continueStartNextTurnRecipient?` simulation (plus
+         companion settlement checks in `continuationSettlesControlFlow` at `1790–1798`).
    - **Resolution-cast `.finishProposedSpellCosts` (`grantPriority == false`), pre-`.finalize` stage & unpaid `sneakAttacker` exclusion, and `.finishFraChoice` prompt-vs-priority probes**
-     (`Decisions.lean:1370–1377, 1662–1701, 1774–1776, 1810–1845, 1881–1914, 1989–2011, 2235–2294, 5155–5311, 5383–5388, 7489–7491`,
-     `ManaAbilities.lean:906–925`):
+     (`Decisions.lean:685–720, 1370–1377, 1662–1701, 1774–1776, 1810–1845, 1881–1914, 1989–2011, 2123–2132, 2235–2294, 5155–5311, 5383–5388, 5483–5490, 5746–5751, 7489–7491`,
+     `ManaAbilities.lean:906–925`, `PriorityActions.lean:72`):
      - Three continuation-probe gaps remain across `.finishProposedSpellCosts` and `.finishFraChoice`:
-       (i) resolution-cast callers (`5160, 5185, 5211, 5385`) queue `.finishProposedSpellCosts stage false hadOuter openCont`
-       with `grantPriority := false`, yet at runtime (`5303–5309`) `!hadOuter && prop.resolutionCast` enters
-       `g.finishFraChoice` (`5308`) — so gating `1675` / `1993` on `grantPriority` and checking only
-       `spellOpensAncestryScry` / `simulateFinishPostCastBody` at `1837–1840` makes `continuationGrantsPriority`,
-       `firstPriorityGrantLeaf?`, and `continuationSettlesControlFlow` all return `false` on an ordinary resolution cast
-       paused on `Pending.chooseReplacement` (`hadOuter == false`), causing `ManaAbilities` (`906–918`),
-       `chooseReplacement` (`7490–7491`), and `finishAndGrantPriority` (`2123–2132`) to chain a duplicate
-       `.finishFraChoice` / `.receivePriority` and `classifyFinishConcedePriority` (`1371–1377`) to return `.noGrant`;
+       (i) resolution casts introduce `grantPriority := false` on `.finishProposedSpellCosts` at `Decisions.afterTargetsChosen`
+       (`Decisions.lean:5748`, `!isResCast`), `PriorityActions.finishProposedSpell` (`PriorityActions.lean:72`,
+       `!prop.resolutionCast`), and `Decisions.beginResolutionCastTargets` (`5385`, literal `false` starting at `.behold`
+       after `tapTeamworkCreaturesForProposed` pauses on `Pending.chooseReplacement`), forwarding `grantPriority` across
+       `.teamwork` / `.behold` / `.sneak` (`5160, 5185, 5211`) into `.finalize`, where `becomeCast` (`5282–5309`) chains
+       `.finishFraChoice` if `becomeCast` pauses (`5292–5293`) and otherwise enters `g.finishFraChoice` when
+       `!hadOuterReplacement && isResCast` (`5308`). On a pre-`becomeCast` `.finishProposedSpellCosts stage false false
+       openCont` leaf, `continuationGrantsPriority` (`1675`) returns `false` because `!grantPriority`,
+       `priorityRecipientOfContinuation?` (`1881`, leaving `1898`'s `prop.resolutionCast` guard unreachable for
+       `grantPriority == false`) and `firstPriorityGrantLeaf?` (`1993`) match only `.finishProposedSpellCosts _ true false _`,
+       and in `continuationSettlesControlFlow` (`1837–1841`), while an off-stack or departed-caster proposal falls through to
+       `g.proposalCheckpoint.isSome` (`1841`, `true` from `castAsPartOfResolution` `5483`), an in-flight resolution cast whose
+       `prop.spellId` is already on `.stack` (`5489`) with `g.stillInGame prop.caster` takes `1837–1840`
+       (`spellOpensAncestryScry || simulateFinishPostCastBody` at `685–720`) instead of `1841` and misses `.finishFraChoice`
+       settling via priority grant or outer continuation (misclassifying pre-`becomeCast` pauses in `finishAndGrantPriority`
+       `2123–2132`, `ManaAbilities` `906–918`, `chooseReplacement` `7490–7491`, and `classifyFinishConcedePriority`
+       `1371–1377` whenever `1838–1840` is `false`);
        (ii) `.finishProposedSpellCosts` (`1680–1683, 1830–1833, 1887`) ignores pre-`.finalize` `stage` failures
        (`tapTeamworkCreaturesForProposed` / `payBeholdForProposed` / `paySneak` reversing via `reverseProposedSpell?
        (resumeContinuation := true)` at `5172, 5197, 5223`) and checks `sacrificeCreatureOrArtifactChoices prop.caster
@@ -20708,11 +20734,15 @@ soundness).
        (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)` opening a non-`.chooseReplacement` prompt in
        `reopenDeferredExileCasts` at `2274–2278`, or `g.triggerNeedingTargets.isSome` opening `Pending.chooseTargets` at
        `2282–2283, 2288–2289` when no queued continuation/sequence intervenes):
-       - Model `!hadOuter && prop.resolutionCast` delegating to `.finishFraChoice` in `continuationGrantsPriority` (`1675`),
-         `continuationSettlesControlFlow` (`1837–1842`), and `firstPriorityGrantLeaf?` (`1993`); simulate pre-`.finalize`
-         `stage` preconditions (`.teamwork` / `.behold` / `.sneak`) and exclude unpaid `prop.sneakAttacker` from
-         `sacrificeCreatureOrArtifactChoices` in `.finishProposedSpellCosts` probes (`1676–1700, 1825–1842, 1887`); and split
-         `.finishFraChoice` priority-grant vs prompt-settlement checks (`1662–1665, 1774–1776, 1990`) so
+       - Widen `.finishProposedSpellCosts` across `continuationGrantsPriority` (`1674–1690`), `continuationSettlesControlFlow`
+         (`1824–1841`), `priorityRecipientOfContinuation?` (`1881–1905`, matching `grantPriority` so `!hadOuter &&
+         prop.resolutionCast` reaches the resolution-cast arm and returns `none` for an implicit `.finishFraChoice` grant while
+         keeping non-resolution `grantPriority == false` at `none`), and `firstPriorityGrantLeaf?` (`1993`, matching
+         `.finishProposedSpellCosts _ grantPriority false _` when `grantPriority || g.proposedSpell.any (·.resolutionCast)`)
+         so `!hadOuter && prop.resolutionCast` delegates its post-`becomeCast` outcome to `.finishFraChoice`; simulate
+         pre-`.finalize` `stage` preconditions (`.teamwork` / `.behold` / `.sneak`) and exclude unpaid `prop.sneakAttacker`
+         from `sacrificeCreatureOrArtifactChoices` in `.finishProposedSpellCosts` probes (`1676–1700, 1825–1842, 1887`); and
+         split `.finishFraChoice` priority-grant vs prompt-settlement checks (`1662–1665, 1774–1776, 1990`) so
          `continuationGrantsPriority` is `false` (while `continuationSettlesControlFlow` remains `true`) when
          `finishFraChoice` opens a non-priority deferred-cast or trigger-target prompt.
 
@@ -20811,20 +20841,23 @@ soundness).
        even when `eo.faceDown` or Layer-6 ability loss cleared `eo.keywords.prowess`) short-circuit `o.isLkiSnapshot` before
        `o.status.faceDown`, leaking hidden front-face `cascade` / `spellEffect` (`13255, 13263`), `prowess`,
        `protectionFromColors`, and abilities on face-down LKI snapshots (violating CR 707.2 / 708.2a); and
-       (iii) on `o.isLkiSnapshot`, `retainsPrintedAbilities` (`7231`) returns `true` unconditionally (firing stripped
-       `.sagaChapter` at `12014` and preserving stripped printed protection in `frcProtectedFrom` at `10287, 10291`),
-       `triggeredAbilities` (`8216–8232`) returns raw `o.printed.triggeredAbilities ++ impTrig` (both firing stripped printed
-       triggers and dropping Layer-6 granted triggers such as Equipment `.equippedGetsTrampleAndCombatTreasures` at
-       `12662–12669, 12710–12715`), and `prowessTriggers` (`8271–8280`), `ironFistTapGrants` (`8282–8289`), `wardCostsOn`
-       (`8291–8292`), and `activatedAbilitiesOf` (`8311–8340`) lack `o.isLkiSnapshot` snapshot fidelity:
+       (iii) on face-up `o.isLkiSnapshot` (`!o.status.faceDown`), `retainsPrintedAbilities` (`7230–7231`, `if o.isLkiSnapshot
+       then !o.status.faceDown`) ignores Layer-6 ability removal and returns `true` (firing stripped `.sagaChapter` at `12014`
+       and preserving stripped printed protection in `frcProtectedFrom` at `10287, 10291`), and `triggeredAbilities`
+       (`8216–8231`, which already returns `#[]` when `o.status.faceDown` at `8217` and otherwise returns `rawPrintedTrigs ++
+       impTrig` at `8218–8231`) both fires Layer-6-stripped printed triggers and drops Layer-6 granted triggers such as
+       Equipment `.equippedGetsTrampleAndCombatTreasures` (`12662–12669, 12710–12715`), while `prowessTriggers` (`8271–8280`),
+       `ironFistTapGrants` (`8282–8289`), `wardCostsOn` (`8291–8292`), and `activatedAbilitiesOf` (`8311–8340`) lack
+       `o.isLkiSnapshot` snapshot fidelity:
        - Preserve `eo.manaValue` directly on `isLkiSnapshot` in `Core.objectManaValue` (`9958–9963`) without overwriting
          `basePrinted.manaCost` when `eo.printed.isSome` (`11131–11133`); mask hidden front-face characteristics when
          `eo.faceDown` in `damageSourceObjectFromLki` (`11124–11144`, `faceDownCreatureCardDef` on `.battlefield` / `.stack`
          per CR 708.2a) and stop re-injecting `bc.prowessInstances > 0` into `currentKeywords` on `o.isLkiSnapshot`
          (`7248–7251`); and capture evaluated Layer-6 ability-retention and effective Layer-6 abilities/counts on
-         `EventObject` (`Object.lean:447–495`, `Core.snapshot` at `11339–11395`) so `retainsPrintedAbilities`,
-         `triggeredAbilities`, `prowessTriggers`, `ironFistTapGrants`, `wardCostsOn`, and `activatedAbilitiesOf` return exact
-         snapshot Layer-6 values on `o.isLkiSnapshot`.
+         `EventObject` (`Object.lean:447–495`, `Core.snapshot` at `11339–11395`) so face-up `retainsPrintedAbilities` and
+         `triggeredAbilities` (keeping `!o.status.faceDown` / `#[]` for face-down LKI) together with `prowessTriggers`,
+         `ironFistTapGrants`, `wardCostsOn`, and `activatedAbilitiesOf` return exact snapshot Layer-6 values on
+         `o.isLkiSnapshot`.
    - **`.phasedIn` & `!before.phasedOut` LKI boundaries, trigger-queue source snapshots, and phased-out attachment / combat LKI**
      (`Core.lean:8985–8986, 11179–11180, 13756–13758, 13782–13784`, `Event.lean:3950–3980, 4402–4411`,
      `ManaAbilities.lean:404–410`, `Phasing.lean:76–124, 296, 310`, `ResolutionEffects.lean:488–512`,
@@ -20937,18 +20970,20 @@ soundness).
 
 Tests: `Events.lean` / `Tests/Events/` (unit + replay-determinism `#guard`s for `Entering.receivePriority`
 `!anyContinuationSettlesControlFlowFwd` `.chooseReplacement` guards, `Decisions` post-`resolveTop` / post-cleanup
-`receivePriorityOutcome` & `startNextTurnCore`->`beginTurn`->`beginTurnAfterStartExpiryRecipient?` probes, resolution-cast
-`.finishProposedSpellCosts` (`grantPriority == false`) / pre-`.finalize` stage & unpaid `sneakAttacker` / `.finishFraChoice`
-prompt-vs-priority probes; `Turns.beginTurn` `preTurnExp` `expireFraUntilTurnEffects` `.copy` emblem LKI, pre-removal &
-`.copy`-aware `Leaving.coDepartingIds`, multi-step `Core.restoreCopiesWhere`, 2HG departed-team `Phasing.phaseInControlled`,
-and paused/non-`Turns` `.playFromExile` + `.whileInZone` `.copy`/`.control` expiry logs; `isLkiSnapshot` stack `{X}` mana
-value, `eo.faceDown` masking, and Layer-6 ability-loss / granted-ability fidelity, `.phasedIn` & `!before.phasedOut`
-`Event.lastKnownBefore?` / `isTreasureSourceInLog` boundaries, `findLiveSourceObject?` trigger-queue snapshots, and phased-out
-attachment & pre-`removeFromCombat` `Phasing.phaseOut` / `.enrageGrantsCombat` LKI; and `Demo.hasUniqueManaPayment` Treasure /
-*Path of Ancestry* / `addRestrictedMana` provenance / `ManaOutput.combination` color order / multi-source rider flips,
-`Casting` `tapSource` & `teamworkCreatures` cost-preserving tap subsets, `Decisions.castAsPartOfResolution` clean-permission
-Morph timing, `Agent.choose` `.chooseX` / `.chooseKicker` resolution-cast & `preSpell` affordability, and Sneak
-`sneakAttacker` mandatory-sacrifice exclusion).
+`receivePriorityOutcome` & `continueStartNextTurnRecipient?` (`beginTurn`->`beginTurnAfterStartExpiryRecipient?`) +
+turn-starting `startNextTurnCore` probes, resolution-cast `.finishProposedSpellCosts` (`grantPriority == false` across
+`continuationGrantsPriority` / `continuationSettlesControlFlow` / `priorityRecipientOfContinuation?` / `firstPriorityGrantLeaf?`)
+/ pre-`.finalize` stage & unpaid `sneakAttacker` / `.finishFraChoice` prompt-vs-priority probes; `Turns.beginTurn` `preTurnExp`
+`expireFraUntilTurnEffects` `.copy` emblem LKI, pre-removal & `.copy`-aware `Leaving.coDepartingIds`, multi-step
+`Core.restoreCopiesWhere`, 2HG departed-team `Phasing.phaseInControlled`, and paused/non-`Turns` `.playFromExile` +
+`.whileInZone` `.copy`/`.control` expiry logs; `isLkiSnapshot` stack `{X}` mana value, `eo.faceDown` masking, and face-up
+Layer-6 ability-loss / granted-ability fidelity, `.phasedIn` & `!before.phasedOut` `Event.lastKnownBefore?` /
+`isTreasureSourceInLog` boundaries, `findLiveSourceObject?` trigger-queue snapshots, and phased-out attachment &
+pre-`removeFromCombat` `Phasing.phaseOut` / `.enrageGrantsCombat` LKI; and `Demo.hasUniqueManaPayment` Treasure / *Path of
+Ancestry* / `addRestrictedMana` provenance / `ManaOutput.combination` color order / multi-source rider flips, `Casting`
+`tapSource` & `teamworkCreatures` cost-preserving tap subsets, `Decisions.castAsPartOfResolution` clean-permission Morph
+timing, `Agent.choose` `.chooseX` / `.chooseKicker` resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker`
+mandatory-sacrifice exclusion).
 
 Final check (after Phase 52): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
