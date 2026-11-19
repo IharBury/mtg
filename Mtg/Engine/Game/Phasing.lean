@@ -820,9 +820,9 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
 /-- Phase in every phased-out permanent `p` controlled when it phased out, plus
 any phased-out permanent whose phase-out controller has left the game and whose
 next turn would have begun since it phased out (CR 502.1 / 702.26m,n / 703.4a). -/
-def phaseInControlled (g : Game) (p : PlayerId) : Game :=
+def phaseInControlled (g : Game) (p : PlayerId) (includeTeammates : Bool := false) : Game :=
   if sbaPausedOnPhasing g then
-    g.chainPendingReplacement (.phaseInControlled p)
+    g.chainPendingReplacement (.phaseInControlled p includeTeammates)
   else
     let cause := some (EventCause.turnBased .phaseInOut)
     let fallbackCtrlOf (o : GameObject) : Option PlayerId :=
@@ -857,7 +857,7 @@ def phaseInControlled (g : Game) (p : PlayerId) : Game :=
         if o.zone == .battlefield && o.status.phasedOut && g.canPhaseInDirectly o then
           let (ctrl?, sinceIdx?) := phaseOutControllerOf o
           let shouldPhaseIn :=
-            ctrl? == some p ||
+            ctrl?.any (fun c => c == p || (includeTeammates && g.areTeammates c p)) ||
               match ctrl? with
               | some dep => !g.stillInGame dep && departedNextTurnWouldHaveBegunSince g dep sinceIdx?
               | none => false

@@ -219,7 +219,8 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
        gFcAfterQueued.priority == p2 &&
        g4.priorityRecipientOfContinuation? false fcCombatDmg == none &&
        gWithQueuedCont.priorityRecipientOfContinuation? false (.finishConcede false (some p2) none none false #[] none) == none &&
-       gAllPassed.priorityRecipientOfContinuation? false (.finishConcede true none none none false #[] none) == none &&
+       gAllPassed.priorityRecipientOfContinuation? false (.finishConcede true none none none false #[] none) == some p0 &&
+       (((gAllPassed.record (GameEvent.stepBegan gAllPassed.turnNumber .beginningOfCombat p0)).priorityRecipientOfContinuation? false (.finishConcede true none none none false #[] none)) == none) &&
        g4.priorityRecipientOfContinuation? false cplOrdinary == some p2 &&
        g4.priorityRecipientOfContinuation? true cplOrdinary == some p2) &&
     mustHold46i1 "1b_finishPostCast"

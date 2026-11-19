@@ -54,6 +54,11 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
   match g.findObject? id with
   | some old =>
     let pre := preState?.getD g
+    let effSkipLogIds : Array ObjectId :=
+      if old.isBattlefieldObject || old.zone == .command then
+        (coDepartingIdsFwd g #[old.id]).foldl
+          (fun acc cid => if acc.contains cid then acc else acc.push cid) skipLogIds
+      else skipLogIds
     let snap :=
       { (pre.snapshot ((pre.findObject? id).getD old)) with
         id := some old.id
@@ -86,17 +91,17 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
             | some ce =>
               allEmbIds.any (fun embId => acc.effectExpiresWithLeavingObj embId .command allEmbIds ce)
             | none => false)
-          (cause := expCause) (reconcileControl := false) (skipLogIds := skipLogIds)
+          (cause := expCause) (reconcileControl := false) (skipLogIds := effSkipLogIds)
       else g
     let g := g.expireEffectsOnLeavingObject old (cause := expCause) (reconcileControl := false)
       (preState? := some pre) (suppressEmblemLog := suppressEmblemLog)
       (suppressReturnLog := if old.zone == .command then true else suppressReturnLog)
-      (skipLogIds := skipLogIds)
+      (skipLogIds := effSkipLogIds)
       (coLeavingIds := allEmbIds)
     let g :=
       if old.zone == .command && !suppressReturnLog then
         cmdControlSingles.foldl (fun acc (tid, o) =>
-          if skipLogIds.contains tid then acc
+          if effSkipLogIds.contains tid then acc
           else
             match acc.findObject? tid with
             | none => acc
@@ -123,7 +128,7 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
       if old.zone == .battlefield then
         g.expireWhileSourceEffects id (cause := expCause) (preState? := some pre)
           (reconcileControl := false) (suppressReturnLog := suppressReturnLog)
-          (skipLogIds := skipLogIds) (suppressEmblemLog := suppressEmblemLog)
+          (skipLogIds := effSkipLogIds) (suppressEmblemLog := suppressEmblemLog)
       else g
     if reconcileControl then
       reconcileControlAfterTransitionFwd pre g (cause := expCause)

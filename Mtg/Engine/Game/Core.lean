@@ -1885,6 +1885,7 @@ def maxTs (a b : Nat × Nat) : Nat × Nat :=
 
 private structure Layer1Entry where
   idx : Nat
+  eid : EffectId
   ts : Nat × Nat
   scope : ObjectScope
   card : CardDef
@@ -3647,24 +3648,25 @@ is supplied (Layers 1–2 while `o.status.phasedOut`), continuous active duratio
 across `[pIdx .. now]` (CR 611.3a / 702.26b,d,e,f). -/
 private def effectPhasingAllows (g : Game) (o : GameObject) (eid : EffectId)
     (sc : ObjectScope) (d : EffectDuration)
-    (phaseOutIdx? : Option Nat := none) : Bool :=
+    (phaseOutIdx? : Option Nat := none)
+    (ignoreDuration : Bool := false) : Bool :=
   let isExplicitObjects := match sc with | .objects _ => true | _ => false
   if isExplicitObjects && phaseOutIdx?.isNone then true
   else
+    let contActive (pIdx : Nat) : Bool :=
+      ignoreDuration || d.isTimedResolvingDuration || g.durationActiveContinuouslySince d pIdx
     match g.effectCreatedInfo? eid with
     | none =>
       match phaseOutIdx? with
       | none => true
-      | some pIdx => d.isTimedResolvingDuration || g.durationActiveContinuouslySince d pIdx
+      | some pIdx => contActive pIdx
     | some (createdIdx, createdCause) =>
       let isLocked := d.isTimedResolvingDuration || isOneShotEffectCause createdCause
       let lockOk := isExplicitObjects || !isLocked || !g.objectWasPhasedOutAt o createdIdx
       let curPhaseOutOk :=
         match phaseOutIdx? with
         | none => true
-        | some pIdx =>
-          createdIdx < pIdx &&
-            (d.isTimedResolvingDuration || g.durationActiveContinuouslySince d pIdx)
+        | some pIdx => createdIdx < pIdx && contActive pIdx
       lockOk && curPhaseOutOk
 
 /-- Initial Layer 2 controller of `o` before active `LayerEffect.control` effects,
@@ -3678,12 +3680,79 @@ private def initialControllerOf (g : Game) (o : GameObject) : Option PlayerId :=
     let defP := (o.defaultController.orElse (fun _ => o.controller)).getD o.owner
     if playerAlive defP then some defP else none
 
+/-- Ordered `(EffectId, CardDef)` chain of active Layer 1a copy effects applied
+to `o` in CR 613.7 timestamp and CR 613.8 dependency order (CR 613.2a / 707.2). -/
+def activeLayer1CopyChain (g : Game) (o : GameObject)
+    (ignoreDurationFor : Array EffectId := #[]) : Array (EffectId × CardDef) :=
+  if o.isLkiSnapshot then #[]
+  else
+    let hasCopy := g.activeEffects.any fun (_, s) =>
+      match s with
+      | .layered _ (.copy _) _ => true
+      | _ => false
+    if !hasCopy then #[]
+    else
+      let initCtrl := g.initialControllerOf o
+      let phaseOutIdx? :=
+        if o.status.phasedOut then some ((g.latestPhaseOutIdxOf? o).getD 0) else none
+      let scopeMatchesL1 (cur : CardDef) (sc : ObjectScope) : Bool :=
+        match sc with
+        | .objects ids => ids.contains o.id
+        | .creaturesControlledBy p =>
+          o.isBattlefieldObject && initCtrl == some p && cur.types.contains .creature
+        | .creaturesWithout kw =>
+          o.isBattlefieldObject && cur.types.contains .creature &&
+            Keywords.merge cur.keywords kw != cur.keywords
+        | .permanentsOfSubtype p s =>
+          o.isBattlefieldObject && initCtrl == some p &&
+            ((CardSubtype.ofSubtypes cur.subtypes).contains s ||
+              (cur.keywords.changeling &&
+                (cur.types.contains .creature || cur.types.contains .kindred) && !s.isNoncreature))
+      Id.run do
+        let mut raw : Array Layer1Entry := #[]
+        for pos in [0:g.activeEffects.size] do
+          let (eid, s) := g.activeEffects[pos]!
+          match s with
+          | .layered sc (.copy card) d =>
+            let ig := ignoreDurationFor.contains eid
+            if (ig || g.durationActive d) &&
+                g.effectPhasingAllows o eid sc d (phaseOutIdx? := phaseOutIdx?) (ignoreDuration := ig) then
+              raw := raw.push {
+                idx := raw.size
+                eid := eid
+                ts := g.effectTimestamp eid pos
+                scope := sc
+                card := card
+              }
+          | _ => pure ()
+        let sorted := raw.qsort fun a b =>
+          if a.ts.1 != b.ts.1 then a.ts.1 < b.ts.1
+          else if a.ts.2 != b.ts.2 then a.ts.2 < b.ts.2
+          else a.idx < b.idx
+        let mut rem := sorted
+        let mut cur := o.printed
+        let mut applied : Array (EffectId × CardDef) := #[]
+        for _ in [0:sorted.size] do
+          let applicable := rem.filter (fun e => scopeMatchesL1 cur e.scope)
+          if applicable.isEmpty then break
+          let dependsOn (a b : Layer1Entry) : Bool :=
+            a.idx != b.idx &&
+              scopeMatchesL1 cur a.scope != scopeMatchesL1 b.card a.scope
+          let chosen :=
+            (applicable.find? (fun a => !applicable.any (fun b => dependsOn a b))).getD applicable[0]!
+          cur := chosen.card
+          applied := applied.push (chosen.eid, chosen.card)
+          rem := rem.filter (fun e => e.idx != chosen.idx)
+        return applied
+
 /-- Layer 1a copiable values of `o` before Layer 1b face-down masking, paired with
 the CR 613.7a base ability timestamp (`max(objectEntryTimestamp,
 lastCopyEffectTimestamp)`) (CR 613.2a / 702.37e). Used only where rules look past
 face-down status (such as reading a face-down permanent's morph cost). -/
 def unmaskedCopiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat × Nat) :=
   let objTs := g.objectEntryTimestamp o
+  if o.isLkiSnapshot then (o.printed, objTs)
+  else
   let hasCopy := g.activeEffects.any fun (_, s) =>
     match s with
     | .layered _ (.copy _) _ => true
@@ -3715,6 +3784,7 @@ def unmaskedCopiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat �
           if g.durationActive d && g.effectPhasingAllows o eid sc d (phaseOutIdx? := phaseOutIdx?) then
             raw := raw.push {
               idx := raw.size
+              eid := eid
               ts := g.effectTimestamp eid pos
               scope := sc
               card := card
@@ -3742,6 +3812,8 @@ def unmaskedCopiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat �
 
 /-- Layer 1a copiable values of `o` before Layer 1b face-down masking (CR 613.2a / 702.37e). -/
 def unmaskedCopiableValues (g : Game) (o : GameObject) : CardDef :=
+  if o.isLkiSnapshot then o.printed
+  else
   let hasCopy := g.activeEffects.any fun (_, s) =>
     match s with
     | .layered _ (.copy _) _ => true
@@ -3753,7 +3825,8 @@ def unmaskedCopiableValues (g : Game) (o : GameObject) : CardDef :=
 face-down status (CR 613.2a–c / 707.2 / 708.2), paired with the CR 613.7a base
 timestamp. -/
 def copiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat × Nat) :=
-  if o.status.faceDown then
+  if o.isLkiSnapshot then (o.printed, g.objectEntryTimestamp o)
+  else if o.status.faceDown then
     ({ name := "", types := #[.creature], power := some 2, toughness := some 2 },
      g.objectEntryTimestamp o)
   else
@@ -3762,7 +3835,8 @@ def copiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat × Nat) :
 /-- Layer 1 copiable values of `o` after Layer 1a copy effects and Layer 1b
 face-down status (CR 613.2a–c / 707.2 / 708.2). -/
 def copiableValues (g : Game) (o : GameObject) : CardDef :=
-  if o.status.faceDown then
+  if o.isLkiSnapshot then o.printed
+  else if o.status.faceDown then
     { name := "", types := #[.creature], power := some 2, toughness := some 2 }
   else
     g.unmaskedCopiableValues o
@@ -3800,6 +3874,8 @@ active `LayerEffect.control` effects that applied to `o` in CR 613.7 timestamp
 and CR 613.8 dependency order (CR 613.1b). -/
 def effectiveControllerWithApplied (g : Game) (o : GameObject) :
     Option PlayerId × Array EffectId :=
+  if o.isLkiSnapshot then (o.controller, #[])
+  else
   let initCtrl := g.initialControllerOf o
   if o.zone != .battlefield then (initCtrl, #[])
   else
@@ -5314,7 +5390,7 @@ def TextChange.applyTriggeredAbility (tcs : Array TextChange) (ab : TriggeredAbi
 /-- Evaluate Layer 3 text-changing effects on `o` across every `ObjectScope` in
 CR 613.7 timestamp and CR 613.8 dependency order (CR 612 / 613.1c). -/
 def evalLayer3 (g : Game) (o : GameObject) : Array TextChange :=
-  if o.status.faceDown then #[]
+  if o.isLkiSnapshot || o.status.faceDown then #[]
   else
     let hasText := g.activeEffects.any fun (_, s) =>
       match s with
@@ -5403,7 +5479,15 @@ first per CR 613.3 / 702.73a and enforcing CR 205.3d subtype correlation. -/
 def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype × Array Supertype :=
   let pushDedup {α : Type} [BEq α] (acc elems : Array α) : Array α :=
     elems.foldl (fun a x => if a.contains x then a else a.push x) acc
-  if !o.isOnBattlefield then
+  if o.isLkiSnapshot then
+    let bc := o.printed
+    let baseSubs := CardSubtype.ofSubtypes bc.subtypes
+    let subs :=
+      if bc.keywords.changeling && (bc.types.contains .creature || bc.types.contains .kindred) then
+        pushDedup baseSubs CardSubtype.allCreatureSubtypes
+      else baseSubs
+    (bc.types, subs, bc.supertypes)
+  else if !o.isOnBattlefield then
     let bc := g.baseCard o
     let tcs := g.evalLayer3 o
     let rawSubs := CardSubtype.ofSubtypes bc.subtypes
@@ -5567,7 +5651,8 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
 
 /-- Evaluated card types of `o` after Layer 4 type-changing effects (CR 613.1d). -/
 def types (g : Game) (o : GameObject) : Array CardType :=
-  if !o.isOnBattlefield then (g.baseCard o).types
+  if o.isLkiSnapshot then o.printed.types
+  else if !o.isOnBattlefield then (g.baseCard o).types
   else
     let hasTypesEff := g.activeEffects.any fun (_, s) =>
       match s with
@@ -5636,7 +5721,8 @@ def isPermanentCard (g : Game) (o : GameObject) : Bool :=
 
 /-- Evaluated supertypes of `o` after Layer 4 type-changing effects (CR 613.1d). -/
 def supertypes (g : Game) (o : GameObject) : Array Supertype :=
-  if !o.isOnBattlefield then (g.baseCard o).supertypes
+  if o.isLkiSnapshot then o.printed.supertypes
+  else if !o.isOnBattlefield then (g.baseCard o).supertypes
   else
     let hasTypesEff := g.activeEffects.any fun (_, s) =>
       match s with
@@ -5677,17 +5763,19 @@ def subtypes (g : Game) (o : GameObject) : Array CardSubtype :=
 
 /-- Whether `o` currently has subtype `s` after Layer 4 (CR 205.3d / 613.1d / 702.73a). -/
 def hasSubtype (g : Game) (o : GameObject) (s : CardSubtype) : Bool :=
-  let bc := g.baseCard o
-  if !o.isOnBattlefield then
-    if bc.subtypes.isEmpty && !bc.keywords.changeling then false
-    else (g.subtypes o).contains s
-  else if bc.subtypes.isEmpty && !bc.keywords.changeling && bc.staticAbilities.isEmpty &&
-      !g.activeEffects.any (fun (_, sp) =>
-        match sp with | .layered _ (.types ..) d => g.durationActive d | _ => false) &&
-      !g.objects.any (fun att => att.isOnBattlefield && att.attachedTo == some o.id) then
-    false
+  if o.isLkiSnapshot then (g.subtypes o).contains s
   else
-    (g.subtypes o).contains s
+    let bc := g.baseCard o
+    if !o.isOnBattlefield then
+      if bc.subtypes.isEmpty && !bc.keywords.changeling then false
+      else (g.subtypes o).contains s
+    else if bc.subtypes.isEmpty && !bc.keywords.changeling && bc.staticAbilities.isEmpty &&
+        !g.activeEffects.any (fun (_, sp) =>
+          match sp with | .layered _ (.types ..) d => g.durationActive d | _ => false) &&
+        !g.objects.any (fun att => att.isOnBattlefield && att.attachedTo == some o.id) then
+      false
+    else
+      (g.subtypes o).contains s
 
 def cantAttackJace (g : Game) (attacker : PlayerId) (pw : GameObject) : Bool :=
   g.activeEffects.any fun (_, s) =>
@@ -5744,7 +5832,8 @@ deriving Inhabited
 timestamp and CR 613.8 dependency order, after Layer 1 copy/face-down
 (CR 202.2 / 612.1 / 613.1e / 613.3). -/
 def colors (g : Game) (o : GameObject) : ColorSet :=
-  if o.status.faceDown then ColorSet.empty
+  if o.isLkiSnapshot then o.printed.colors
+  else if o.status.faceDown then ColorSet.empty
   else
     let bc := g.baseCard o
     let initCols := bc.colors
@@ -7113,6 +7202,8 @@ def evalLayer6 (g : Game) (o : GameObject) : Layer6State :=
 
 /-- Evaluated static abilities of `o` in Layer 6 (CR 613.1f / 613.7 / 613.8). -/
 def staticAbilities (g : Game) (o : GameObject) : Array StaticAbility :=
+  if o.isLkiSnapshot then o.printed.staticAbilities
+  else
   let hasEff := g.hasAnyStaticLayer6Effect
   let hasStripAtt :=
     o.isOnBattlefield &&
@@ -7137,6 +7228,8 @@ def staticAbilities (g : Game) (o : GameObject) : Array StaticAbility :=
 /-- Whether `o`'s base/printed abilities still apply after Layer 6 ability
 removals in CR 613.7 / 613.8 order (CR 613.1f). -/
 def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
+  if o.isLkiSnapshot then !o.status.faceDown
+  else
   let hasEff := g.hasAnyStaticLayer6Effect
   let hasStripAtt :=
     o.isOnBattlefield &&
@@ -7152,7 +7245,11 @@ def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
 
 /-- Evaluated keywords of `o` in Layer 6 (CR 613.1f / 613.7 / 613.8). -/
 def currentKeywords (g : Game) (o : GameObject) : Keywords :=
-  if !o.isOnBattlefield && o.status.counters.isEmpty &&
+  if o.isLkiSnapshot then
+    let bc := o.printed
+    if bc.prowessInstances > 0 then { bc.keywords with prowess := true }
+    else bc.keywords
+  else if !o.isOnBattlefield && o.status.counters.isEmpty &&
       !g.activeEffects.any (fun (_, s) =>
         match s with | .layered _ (.abilities ..) d => g.durationActive d | _ => false) then
     if o.status.faceDown then Keywords.none
@@ -8116,6 +8213,23 @@ def hasSummoningSickness (g : Game) (o : GameObject) : Bool :=
 
 /-- Evaluated triggered abilities of `o` in Layer 6 (CR 613.1f / 613.7 / 613.8). -/
 def triggeredAbilities (g : Game) (o : GameObject) : Array TriggeredAbility :=
+  if o.isLkiSnapshot then
+    if o.status.faceDown then #[]
+    else
+      let bc := o.printed
+      let impTrig : Array TriggeredAbility :=
+        if bc.impending.isSome then
+          #[TriggeredAbility.fra .yourEndStep
+              "At the beginning of your end step, if this permanent's impending cost was paid and it has a time counter on it, remove a time counter from it."
+              (.removeCounters .time .source)
+              (cond := .impendingCostPaidWithTimeCounter)]
+        else #[]
+      let rawPrintedTrigs :=
+        if bc.asEntersChooseMarduOrJeskai && o.status.chosenAnchor != some "Jeskai" then
+          bc.triggeredAbilities.filter (·.effect.resolution != .frc .goblin)
+        else bc.triggeredAbilities
+      rawPrintedTrigs ++ impTrig
+  else
   let hasTrigEff := g.activeEffects.any fun (_, s) =>
     match s with
     | .layered _ (.abilities add rem) d =>
@@ -9456,9 +9570,11 @@ def setBasePower (g : Game) (o : GameObject) : Option Int :=
 base-setting effects, before Layer 7c pumps/counters/bonuses and Layer 7d
 switches (CR 613.4a–b). -/
 def characteristicBasePT (g : Game) (o : GameObject) : Int × Int :=
-  let (cdaP, cdaT) := g.cdaBasePT o
-  let (setP, setT) := g.evalLayer7b o
-  (setP.getD cdaP, setT.getD cdaT)
+  if o.isLkiSnapshot then (o.printed.power.getD 0, o.printed.toughness.getD 0)
+  else
+    let (cdaP, cdaT) := g.cdaBasePT o
+    let (setP, setT) := g.evalLayer7b o
+    (setP.getD cdaP, setT.getD cdaT)
 
 /-- Characteristic power before pumps, counters, and attached bonuses. -/
 def characteristicBasePower (g : Game) (o : GameObject) : Int :=
@@ -9781,6 +9897,8 @@ def fraStatBonus (g : Game) (o : GameObject) : Int × Int :=
 -- Layer 7d: P/T-switching effects (CR 613.4d / 613.7)
 
 def snapshotPT (g : Game) (o : GameObject) : Int × Int :=
+  if o.isLkiSnapshot then (o.printed.power.getD 0, o.printed.toughness.getD 0)
+  else
   let n : Int := (o.status.plusOnePlusOne : Int) - (o.status.minusOneMinusOne : Int)
   let s0 := addStats (g.characteristicBasePT o) (g.pumpOf o)
   let s1 := addStats (addStats s0 (n, n)) (g.attachedStatBonus o)
@@ -11003,7 +11121,10 @@ def wasPreparedAtDeparture (g : Game) (sid : ObjectId) : Bool :=
 replacement, protection, targeting, and lifelink queries on a departed source
 use its last known characteristics and controller (CR 113.7a / 608.2h). -/
 def damageSourceObjectFromLki (eo : EventObject) (prepared : Bool := false) : GameObject :=
-  let basePrinted := eo.toCardDef
+  let rawCard :=
+    (if !eo.faceDown then eo.copiable else none).getD
+      (if eo.transformed then swapCardFace eo.toCardDef else eo.toCardDef)
+  let basePrinted := adjustTokenCardDef eo.token rawCard
   let printed : CardDef :=
     { basePrinted with
       name := eo.name
@@ -11018,8 +11139,10 @@ def damageSourceObjectFromLki (eo : EventObject) (prepared : Bool := false) : Ga
       toughness := eo.toughness
       keywords := { eo.keywords with changeling := eo.keywords.changeling || eo.changeling }
       toxic := eo.toxic
+      commanderIdentityScryCreature := eo.commanderIdentityScryCreature
       staticAbilities := eo.staticAbilities
       isToken := eo.token }
+  let st := ({} : Status).withCounterBag eo.counters
   { id := eo.id.getD noSourceSentinelId
     printed := printed
     owner := eo.owner
@@ -11027,14 +11150,15 @@ def damageSourceObjectFromLki (eo : EventObject) (prepared : Bool := false) : Ga
     defaultController := eo.defaultController.orElse (fun _ => eo.controller)
     zone := eo.zone
     status := {
+      st with
       tapped := eo.tapped
+      summoningSick := eo.summoningSick
       attacking := eo.attacking
       attackingTarget := eo.attackingTarget
       blocking := eo.blockingIds
       phasedOut := eo.phasedOut
       faceDown := eo.faceDown
       transformed := eo.transformed
-      counters := eo.counters
       prepared := prepared
       chosenOdd := eo.chosenOdd
       chosenCreatureType := eo.chosenCreatureType
@@ -11044,13 +11168,22 @@ def damageSourceObjectFromLki (eo : EventObject) (prepared : Bool := false) : Ga
       chosenAnchor := eo.chosenAnchor
     }
     attachedTo := eo.attachedTo
+    adventurerCard := eo.adventurerCard
+    chosenX := eo.chosenX
     isCopy := eo.isCopy
-    isCommander := eo.isCommander }
+    isCommander := eo.isCommander
+    isLkiSnapshot := true }
 
-/-- Look up a damage or ability source by `id`: live `GameObject` if still at
-`id`, otherwise its `lastKnownBefore?` LKI snapshot (CR 113.7a / 608.2h). -/
+/-- Look up a live `GameObject` at `sid`, treating phased-out battlefield
+permanents as absent so callers consult pre-phase-out LKI (CR 702.26b). -/
+def findLiveSourceObject? (g : Game) (sid : ObjectId) : Option GameObject :=
+  (g.findObject? sid).filter (fun o => !(o.zone == .battlefield && o.status.phasedOut))
+
+/-- Look up a damage or ability source by `id`: live `GameObject` if still
+present (and not phased out), otherwise its `lastKnownBefore?` LKI snapshot
+(CR 113.7a / 608.2h / 702.26b). -/
 def damageSourceById? (g : Game) (sid : ObjectId) : Option GameObject :=
-  (g.findObject? sid).orElse (fun _ =>
+  (g.findLiveSourceObject? sid).orElse (fun _ =>
     (g.lastKnownBefore? sid).map (fun eo =>
       damageSourceObjectFromLki eo (prepared := g.wasPreparedAtDeparture sid)))
 
@@ -11098,6 +11231,8 @@ def targetingSourceObject? (g : Game) (sourceId : Option ObjectId := none) : Opt
     | some o =>
       if o.zone == .stack && (o.abilityEffect.isSome || o.triggeredAbility.isSome) then
         o.sourceId.bind g.damageSourceById?
+      else if o.zone == .battlefield && o.status.phasedOut then
+        g.damageSourceById? sid
       else some o
     | none => g.damageSourceById? sid
   | none =>
@@ -11305,10 +11440,10 @@ def eventSuppressedByKarn (g : Game) (e : GameEvent) : Bool :=
   if !hasKarn then false
   else
     match e.change with
-    | .rules (.zone (.moved _ after _ .battlefield ..)) =>
-      after.creature || after.artifact
+    | .rules (.zone (.moved _ after fromZone .battlefield ..)) =>
+      fromZone != .battlefield && !after.phasedOut && (after.creature || after.artifact)
     | .rules (.zone (.created obj _)) =>
-      obj.zone == .battlefield && (obj.creature || obj.artifact)
+      obj.zone == .battlefield && !obj.phasedOut && (obj.creature || obj.artifact)
     | _ => false
 
 /-- A Reality Fracture intervening “if” clause on the trigger's options. -/
@@ -11479,8 +11614,10 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
               (board.baseCard o).asEntersChooseMarduOrJeskai && board.retainsPrintedAbilities o &&
                 o.status.chosenAnchor == some "Mardu") then 1 else 0
         let curSource :=
-          if board.findObject? source.id == some source then source
-          else (post.findObject? source.id).getD source
+          if source.isLkiSnapshot || board.findObject? source.id == some source then source
+          else
+            ((post.findObject? source.id).filter fun o =>
+              !(o.zone == .battlefield && o.status.phasedOut && !source.status.phasedOut)).getD source
         let copies := board.extraTriggerCopies controller source + 1 + mardu
         let wt : WaitingTrigger :=
           { controller, source := curSource, ability := ab, event,
@@ -11748,38 +11885,17 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         let (w, fs) := queueCtrl post q .heroesDealDamageToPlayer (w := waiting) (fs := firedSources)
         waiting := w; firedSources := fs
     let makeEventObjFromSnapshot (eo : EventObject) : GameObject :=
-      let id := eo.id.getD noSourceSentinelId
-      let printed := adjustTokenCardDef eo.token eo.toCardDef
-      let st := ({} : Status).withCounterBag eo.counters
-      { id
-        printed
-        owner := eo.owner
-        defaultController := eo.defaultController
-        controller := eo.controller
-        zone := eo.zone
-        status :=
-          { st with
-            tapped := eo.tapped
-            summoningSick := eo.summoningSick
-            attacking := eo.attacking
-            attackingTarget := eo.attackingTarget
-            blocking := eo.blockingIds
-            phasedOut := eo.phasedOut
-            faceDown := eo.faceDown
-            transformed := eo.transformed
-            chosenOdd := eo.chosenOdd
-            chosenCreatureType := eo.chosenCreatureType
-            chosenColor := eo.chosenColor
-            chosenName := eo.chosenName
-            chosenCardType := eo.chosenCardType
-            chosenAnchor := eo.chosenAnchor }
-        attachedTo := eo.attachedTo
-        chosenX := eo.chosenX
-        isCopy := eo.isCopy
-        isCommander := eo.isCommander }
+      damageSourceObjectFromLki eo
+    let isFullSnapshot (eo : EventObject) : Bool :=
+      !eo.types.isEmpty || eo.printed.isSome || eo.copiable.isSome || !eo.name.isEmpty
     let findEventObj (board : Game) (eo : EventObject) : GameObject :=
       match eo.id.bind board.findObject? with
-      | some o => o
+      | some o =>
+        if isFullSnapshot eo &&
+            ((!eo.phasedOut && o.zone == .battlefield && o.status.phasedOut) ||
+              (eo.zone == .battlefield && !eo.phasedOut && !o.isOnBattlefield)) then
+          makeEventObjFromSnapshot eo
+        else o
       | none => makeEventObjFromSnapshot eo
     -- 11. “Whenever you put one or more counters on a Goblin, Orc, or Army you control” (post-batch).
     for pl in post.livingPlayers do
@@ -11843,7 +11959,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
             | some (eo, causeObj) =>
               let causeForQueue :=
                 if (eo.id.bind post.findObject?).any (·.isOnBattlefield) then causeObj
-                else makeEventObjFromSnapshot { eo with printed := none }
+                else makeEventObjFromSnapshot eo
               let (w, fs) :=
                 queueAb post q src ab .youPutPlusOne (cause := some causeForQueue)
                   (w := waiting) (fs := firedSources)
@@ -11873,7 +11989,8 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
     let mut firedSourceDealtDamage : Array ObjectId := #[]
     let mut firedCreatureDealtDamage : Array ObjectId := #[]
     let mut noncombatDamagedPlayers : Array PlayerId := #[]
-    for e in batch do
+    for eIdx in [0:batch.size] do
+      let e := batch[eIdx]!
       -- Saga chapter and Nth-plan-counter triggers on counters put in this event
       let isZoneArrival : Bool :=
         match e.change with
@@ -11883,36 +12000,43 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         | _ => false
       for (eo, kind, n, _) in e.countersPutInEvent do
         if n > 0 then
-          match eo.id.bind post.findObject? with
+          let counterObj? : Option GameObject :=
+            match (eo.id.bind post.findObject?).filter (·.isOnBattlefield) with
+            | some postObj =>
+              if !postObj.status.faceDown then some postObj else none
+            | none =>
+              if eo.zone == .battlefield && !eo.phasedOut && !eo.faceDown && isFullSnapshot eo then
+                some (makeEventObjFromSnapshot eo)
+              else none
+          match counterObj? with
           | some postObj =>
-            if postObj.isOnBattlefield && !postObj.status.faceDown then
-              if kind == .lore then
-                if post.retainsPrintedAbilities postObj then
-                  match post.controllerOf postObj, (post.baseCard postObj).saga with
-                  | some p, some sdef =>
-                    let prevLore := if isZoneArrival then 0 else eo.counters.count .lore
-                    for i in [0:n] do
-                      let lore := prevLore + i + 1
-                      for ch in sdef.chaptersForLore lore do
-                        match ch.chapterEffect with
-                        | some ce =>
-                          let (w, fs) :=
-                            queueAb post p postObj (TriggeredAbility.sagaChapter lore ce) .sagaChapter
-                              (w := waiting) (fs := firedSources)
-                          waiting := w; firedSources := fs
-                        | none => pure ()
-                  | _, _ => pure ()
-              else if kind == .plan then
-                match post.controllerOf postObj with
-                | some p =>
-                  let prevPlan := if isZoneArrival then 0 else eo.counters.count .plan
+            if kind == .lore then
+              if post.retainsPrintedAbilities postObj then
+                match (post.controllerOf postObj).orElse (fun _ => eo.controller), (post.baseCard postObj).saga with
+                | some p, some sdef =>
+                  let prevLore := if isZoneArrival then 0 else eo.counters.count .lore
                   for i in [0:n] do
-                    let planCnt := prevPlan + i + 1
-                    let (w, fs) :=
-                      queueSrc post p postObj (.nthPlanCounter planCnt)
-                        (w := waiting) (fs := firedSources)
-                    waiting := w; firedSources := fs
-                | none => pure ()
+                    let lore := prevLore + i + 1
+                    for ch in sdef.chaptersForLore lore do
+                      match ch.chapterEffect with
+                      | some ce =>
+                        let (w, fs) :=
+                          queueAb post p postObj (TriggeredAbility.sagaChapter lore ce) .sagaChapter
+                            (w := waiting) (fs := firedSources)
+                        waiting := w; firedSources := fs
+                      | none => pure ()
+                | _, _ => pure ()
+            else if kind == .plan then
+              match (post.controllerOf postObj).orElse (fun _ => eo.controller) with
+              | some p =>
+                let prevPlan := if isZoneArrival then 0 else eo.counters.count .plan
+                for i in [0:n] do
+                  let planCnt := prevPlan + i + 1
+                  let (w, fs) :=
+                    queueSrc post p postObj (.nthPlanCounter planCnt)
+                      (w := waiting) (fs := firedSources)
+                  waiting := w; firedSources := fs
+              | none => pure ()
           | none => pure ()
       match e.change with
       | .engine _ => pure ()
@@ -12463,12 +12587,27 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                   waiting := w; firedSources := fs
               | _ => pure ()
             | none => pure ()
-            for eq in post.attachmentsOf tObj do
-              if post.isEquipment eq then
-                if let some eqCtrl := post.controllerOf eq then
+            let postLiveEqs := (post.attachmentsOf tObj).filter (·.isOnBattlefield)
+            let detachedBeforeTap (eqId : ObjectId) : Bool :=
+              (batch.extract 0 eIdx).any fun prevEv =>
+                match prevEv.change with
+                | .rules (.permanent (.unattached att _)) => att.id == some eqId
+                | .rules (.permanent (.attached att newHost _)) =>
+                  att.id == some eqId && newHost != tObj.id
+                | .rules (.permanent (.phasedOut b _)) => b.id == some eqId
+                | .rules (.zone (.moved b _ .battlefield toZ ..)) =>
+                  b.id == some eqId && toZ != .battlefield
+                | .rules (.zone (.ceasedToExist b)) => b.id == some eqId
+                | _ => false
+            let preFallbackEqs :=
+              ((pre.attachmentsOf tObj).filter (·.isOnBattlefield)).filter fun eq =>
+                !postLiveEqs.any (·.id == eq.id) && !detachedBeforeTap eq.id
+            for (eqBoard, eq) in postLiveEqs.map (post, ·) ++ preFallbackEqs.map (pre, ·) do
+              if eqBoard.isEquipment eq then
+                if let some eqCtrl := eqBoard.controllerOf eq then
                   if e.matchesTrigger eqCtrl (some eq.id) .equippedBecomesTapped then
                     let (w, fs) :=
-                      queueSrc post eqCtrl eq .equippedBecomesTapped (cause := some tObj)
+                      queueSrc eqBoard eqCtrl eq .equippedBecomesTapped (cause := some tObj)
                         (w := waiting) (fs := firedSources)
                     waiting := w; firedSources := fs
         | .permanent (.untapped _)
@@ -12482,26 +12621,41 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         | .permanent (.unattached _ _)
         | .permanent (.designation _ _ _) => pure ()
         | .damage (.dealt pkts) =>
-          let mut dealtToPerm : Array (GameObject × Nat × Nat × Bool) := #[]
+          let mut dealtToPerm : Array (GameObject × EventObject × Nat × Nat × Bool) := #[]
           for pkt in pkts do
             if pkt.amount > 0 then
+              let filterLive (o : GameObject) : Bool :=
+                !(o.zone == .battlefield && o.status.phasedOut && !pkt.source.phasedOut)
+              let postSrc? := (pkt.source.id.bind post.findObject?).filter filterLive
+              let preSrc? := (pkt.source.id.bind pre.findObject?).filter filterLive
               let srcObj? :=
-                (pkt.source.id.bind post.findObject?).orElse (fun _ => pkt.source.id.bind pre.findObject?)
+                match postSrc? with
+                | some so =>
+                  if pkt.source.zone == Zone.battlefield && !pkt.source.phasedOut &&
+                      !so.isOnBattlefield && isFullSnapshot pkt.source then
+                    some (makeEventObjFromSnapshot pkt.source)
+                  else some so
+                | none =>
+                  if isFullSnapshot pkt.source && pkt.source.id.isSome then
+                    some (makeEventObjFromSnapshot pkt.source)
+                  else preSrc?
               let srcCtrl? :=
                 pkt.source.controller.orElse (fun _ =>
-                  match pkt.source.id.bind post.findObject? with
-                  | some so => post.controllerOf so
-                  | none => (pkt.source.id.bind pre.findObject?).bind pre.controllerOf)
+                  match postSrc? with
+                  | some so =>
+                    if so.isOnBattlefield then post.controllerOf so
+                    else preSrc?.bind pre.controllerOf
+                  | none => preSrc?.bind pre.controllerOf)
               match pkt.recipient with
               | .permanent recSnap =>
                 let recObj := findEventObj post recSnap
                 let noncombatAdd := if pkt.combat then 0 else pkt.amount
-                match dealtToPerm.findIdx? (fun (ro, _, _, _) => ro.id == recObj.id) with
+                match dealtToPerm.findIdx? (fun (ro, _, _, _, _) => ro.id == recObj.id) with
                 | some idx =>
-                  let (ro, amt, ncAmt, comb) := dealtToPerm[idx]!
-                  dealtToPerm := dealtToPerm.set! idx (ro, amt + pkt.amount, ncAmt + noncombatAdd, comb || pkt.combat)
+                  let (ro, _, amt, ncAmt, comb) := dealtToPerm[idx]!
+                  dealtToPerm := dealtToPerm.set! idx (ro, recSnap, amt + pkt.amount, ncAmt + noncombatAdd, comb || pkt.combat)
                 | none =>
-                  dealtToPerm := dealtToPerm.push (recObj, pkt.amount, noncombatAdd, pkt.combat)
+                  dealtToPerm := dealtToPerm.push (recObj, recSnap, pkt.amount, noncombatAdd, pkt.combat)
                 if pkt.combat && (recSnap.planeswalker || post.isPlaneswalker recObj) then
                   match srcCtrl? with
                   | some pid =>
@@ -12603,13 +12757,17 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                             (w := waiting) (fs := firedSources)
                         waiting := w; firedSources := fs
           -- Per-permanent dealt-damage triggers
-          for (recObj, totalAmt, noncombatAmt, _) in dealtToPerm do
-            let recSnap := post.snapshot recObj
+          for (recObj, pktRecSnap, totalAmt, noncombatAmt, _) in dealtToPerm do
+            let recLiveOnPost := (post.findObject? recObj.id).any (·.isOnBattlefield)
+            let recSnap :=
+              if recLiveOnPost || !isFullSnapshot pktRecSnap then
+                post.snapshot recObj
+              else pktRecSnap
             let dmgCause := e.cause?.getD (.turnBased (.assignCombatDamage false))
             let pktEv :=
               GameEvent.damaged e.turn { owner := recObj.owner } recSnap totalAmt (noncombatAmt == 0)
                 (cause := dmgCause)
-            match post.controllerOf recObj with
+            match (post.controllerOf recObj).orElse (fun _ => recSnap.controller) with
             | some c =>
               let batchTotal :=
                 (batchDamageByPerm.find? (fun (id, _) => id == recObj.id)).map Prod.snd |>.getD totalAmt
@@ -13987,6 +14145,10 @@ opaque finishAndGrantPriorityFwd (g : Game) (prio : PlayerId) : Game := g
 /-- Forward reference to `Decisions.anyContinuationGrantsPriority` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_any_continuation_grants_priority"]
 opaque anyContinuationGrantsPriorityFwd (g : Game) : Bool := false
+
+/-- Forward reference to `Decisions.anyContinuationSettlesControlFlow` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_any_continuation_settles_control_flow"]
+opaque anyContinuationSettlesControlFlowFwd (g : Game) : Bool := false
 
 /-- Forward reference to `Decisions.hasImplicitPriorityContinuation` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_has_implicit_priority_continuation"]
@@ -15857,6 +16019,10 @@ def removeFromCombatOnControlChange (pre post : Game)
 opaque reconcileControlAfterTransitionFwd (pre post : Game)
     (cause : Option EventCause := none) : Game := post
 
+/-- Forward reference to `Leaving.coDepartingIdsExport` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_co_departing_ids"]
+opaque coDepartingIdsFwd (g : Game) (seedIds : Array ObjectId) : Array ObjectId := seedIds
+
 /-- Record and apply the creation of a continuous effect (CR 611). Assigns a
 fresh unique `EffectId` from `g.nextEffectId`; Layers 1–7d derive characteristics
 purely from `g.activeEffects` without imperative mutations on creation. -/
@@ -16059,6 +16225,7 @@ partial def expireEffectById (g : Game) (eid : EffectId)
                   allEmbIds.any (fun embId => effectExpiresWithLeavingObj acc embId .command allEmbIds ce)
                 | none => false)
               (cause := some embCause) (reconcileControl := false) (skipLogIds := skipLogIds)
+              (preState? := some pre)
           let g := leaving.foldl (fun acc (mEid, _) =>
             let mCause := if mEid == eid then some expCause else some embCause
             expireEffectById acc mEid (cause := mCause) (reconcileControl := false)
@@ -16125,32 +16292,65 @@ partial def restoreCopiesWhere (g : Game)
     (cause : Option EventCause := none)
     (reconcileControl : Bool := true)
     (suppressLog : Bool := false)
-    (skipLogIds : Array ObjectId := #[]) : Game :=
-  g.activeEffects.foldl (fun acc (eid, e) =>
-    match e with
-    | .layered (.objects ids) (.copy printed) d =>
-      let bfObjs := ids.filterMap (fun id => (acc.findObject? id).filter (fun o => o.zone == .battlefield))
-      let matchesAny := bfObjs.any (fun o => sel acc eid (some o) d) || sel acc eid none d
-      if matchesAny then
-        let acc := expireEffectById acc eid (cause := cause) (reconcileControl := reconcileControl)
-        if suppressLog then acc
-        else
-          bfObjs.foldl (fun acc2 o =>
-            if skipLogIds.contains o.id then acc2
+    (skipLogIds : Array ObjectId := #[])
+    (preState? : Option Game := none) : Game :=
+  let preRef := preState?.getD g
+  let expEids : Array EffectId :=
+    g.activeEffects.foldl (fun acc (eid, e) =>
+      match e with
+      | .layered (.objects ids) (.copy _) d =>
+        let bfObjs := ids.filterMap (fun id => (g.findObject? id).filter (fun o => o.zone == .battlefield))
+        if bfObjs.any (fun o => sel g eid (some o) d) || sel g eid none d then
+          acc.push eid
+        else acc
+      | .layered _ (.copy _) d =>
+        if g.battlefield.any (fun o => sel g eid (some o) d) || sel g eid none d then
+          acc.push eid
+        else acc
+      | _ => acc) #[]
+  if expEids.isEmpty then g
+  else
+    let candLogs : Array (ObjectId × CardDef) :=
+      if suppressLog then #[]
+      else
+        let candIds : Array ObjectId :=
+          g.activeEffects.foldl (fun idsAcc (eid, e) =>
+            if !expEids.contains eid then idsAcc
             else
-              match (acc2.findObject? o.id).filter (fun cur => cur.zone == .battlefield) with
-              | some cur =>
-                let restName := acc2.name cur
-                acc2.logMsg s!"{restName} is no longer a copy of {printed.name}"
-              | none => acc2) acc
+              match e with
+              | .layered (.objects ids) (.copy _) _ =>
+                ids.foldl (fun a id =>
+                  if a.contains id || skipLogIds.contains id then a
+                  else if (g.findObject? id).any (fun o => o.zone == .battlefield) then a.push id
+                  else a) idsAcc
+              | _ => idsAcc) #[]
+        candIds.filterMap fun oid =>
+          let preObj? := (preRef.findObject? oid).orElse (fun _ => g.findObject? oid)
+          match preObj? with
+          | none => none
+          | some preObj =>
+            let chain := preRef.activeLayer1CopyChain preObj (ignoreDurationFor := expEids)
+            match chain.back? with
+            | some (topEid, topCard) =>
+              if expEids.contains topEid then some (oid, topCard) else none
+            | none => none
+    let acc :=
+      expEids.foldl (fun acc2 eid =>
+        expireEffectById acc2 eid (cause := cause) (reconcileControl := false)
+          (preState? := some preRef) (skipLogIds := skipLogIds)) g
+    let acc :=
+      if reconcileControl then
+        let expCause := acc.resolveOptionalCause cause (defaultCause := .gameRule .continuousEffect)
+        reconcileControlAfterTransitionFwd preRef acc (cause := some expCause)
       else acc
-    | .layered _ (.copy _) d =>
-      let matchesAny :=
-        acc.battlefield.any (fun o => sel acc eid (some o) d) || sel acc eid none d
-      if matchesAny then
-        expireEffectById acc eid (cause := cause) (reconcileControl := reconcileControl)
-      else acc
-    | _ => acc) g
+    candLogs.foldl (fun acc2 (oid, topCard) =>
+      if skipLogIds.contains oid then acc2
+      else
+        match (acc2.findObject? oid).filter (fun cur => cur.zone == .battlefield) with
+        | some cur =>
+          let restName := acc2.name cur
+          acc2.logMsg s!"{restName} is no longer a copy of {topCard.name}"
+        | none => acc2) acc
 
 end
 
@@ -16411,13 +16611,14 @@ def restoreCopiesUntilNextTurn (g : Game) (p : PlayerId) (departed : Bool := fal
 def restoreCopiesUntilSourceLeaves (g : Game) (srcId : ObjectId)
     (cause : Option EventCause := some (.gameRule .leavingZone))
     (suppressLog : Bool := false)
-    (skipLogIds : Array ObjectId := #[]) : Game :=
+    (skipLogIds : Array ObjectId := #[])
+    (preState? : Option Game := none) : Game :=
   g.restoreCopiesWhere (fun _ _ _ d =>
     match d with
     | .untilSourceLeaves s | .whileSourceOnBattlefield s | .whileSourceHasCounter s _ => s == srcId
     | _ => false)
     (cause := cause) (reconcileControl := false) (suppressLog := suppressLog)
-    (skipLogIds := skipLogIds)
+    (skipLogIds := skipLogIds) (preState? := preState?)
 
 /-- End the control-changing effects that last until `srcId` leaves, each under
 its own `EffectId` (Super Hero Civil War; MSH 143). Other control-changing
@@ -16518,7 +16719,7 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
       src == srcId
     | _ => false
   let g := g.restoreCopiesUntilSourceLeaves srcId (cause := cause)
-    (suppressLog := false) (skipLogIds := skipLogIds)
+    (suppressLog := false) (skipLogIds := skipLogIds) (preState? := some preRef)
   let seedEmbIds : Array ObjectId :=
     g.activeEffects.foldl (fun acc (_, s) =>
       match s with
@@ -16574,7 +16775,7 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
           | some e => emblemIds.any (acc.effectExpiresWithLeavingObj · .command emblemIds e)
           | none => false)
         (cause := cause) (reconcileControl := false) (suppressLog := false)
-        (skipLogIds := skipLogIds)
+        (skipLogIds := skipLogIds) (preState? := some preRef)
   let g :=
     fraEmblemEntries.foldl (fun acc (eid, _) =>
       acc.expireEffectById eid (cause := cause) (reconcileControl := false)

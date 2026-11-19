@@ -103,6 +103,11 @@ structure GameObject where
   /-- Value chosen for `{X}` while this spell is on the stack (CR 107.3a).
   Off the stack, `{X}` is 0. -/
   chosenX : Option Nat := none
+  /-- Transient marker set only on synthetic `GameObject`s reconstructed from an
+  `EventObject` snapshot (`damageSourceObjectFromLki` / `makeEventObjFromSnapshot`)
+  so Layer 1–7 evaluators return the frozen snapshot characteristics without
+  re-applying post-departure continuous effects or counter deltas (CR 113.7a / 608.2h). -/
+  isLkiSnapshot : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/

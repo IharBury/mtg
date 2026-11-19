@@ -450,17 +450,20 @@ again. Repeat until idle, then `p` receives priority. `recheckSba` is false
 while still placing the current batch (targets or the next player's triggers). -/
 partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Game :=
   let p := g.priorityInstead p
-  let savePendingP (g : Game) : Game :=
-    if g.pendingPriority == some p then g else g.change (.pendingPriority (some p))
+  let savePendingP (g : Game) (prio : PlayerId) : Game :=
+    let target := g.priorityInstead prio
+    if g.pendingPriority == some target then g else g.change (.pendingPriority (some target))
   let hadEntryPending := g.pending != .none
   if !g.over && g.pending == .none && g.afterRandom == .none &&
       g.proposedSpell.isNone &&
       (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
-    let g := (savePendingP g).reopenDeferredExileCasts
+    let oldP := p
+    let g := (savePendingP g p).reopenDeferredExileCasts
+    let p := g.priorityInstead p
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.receivePriority p)
     else if g.pending != .none || g.afterRandom != .none then
-      g
+      if g.pendingPriority == some oldP && oldP != p then savePendingP g p else g
     else if g.triggerSequenceRest.isSome || g.mayThenResume ||
         g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty then
       g.finishAndGrantPriorityFwd p
@@ -471,22 +474,24 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
       if g.over || (g.pending == .none && g.afterRandom == .none) then
         g.completeActiveResolutions
       else g
+    let p := g.priorityInstead p
     if g.over then g
     else if g.legendChoicePending? then
-      if hadEntryPending then g else savePendingP g
+      if hadEntryPending then g else savePendingP g p
     else if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.receivePriority p)
     else if g.pending != .none then
-      if hadEntryPending then g else savePendingP g
+      if hadEntryPending then g else savePendingP g p
     else
       let g := if recheckSba then g.checkSBA else g
+      let p := g.priorityInstead p
       if g.over then g.completeActiveResolutions
       -- CR 704.3 / 704.5j: a required legend-rule choice is part of performing
       -- the SBA. Do not put triggers on the stack or grant priority yet.
-      else if g.legendChoicePending? then savePendingP g
+      else if g.legendChoicePending? then savePendingP g p
       else if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement (.receivePriority p)
-      else if g.pending != .none then savePendingP g
+      else if g.pending != .none then savePendingP g p
       else
         match g.nextTriggerStackingPlayer? with
         | none =>
@@ -501,8 +506,9 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
               receivePriority g p true
           else
             let g := g.putTriggerBatch g.currentTriggerBatch
+            let p := g.priorityInstead p
             if g.over then g.completeActiveResolutions
-            else if g.pending != .none then savePendingP g
+            else if g.pending != .none then savePendingP g p
             else receivePriority g p true
         | some q =>
           let mine := g.waitingTriggersOf q
@@ -522,11 +528,12 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
                   w.reflexiveResolution == mine[0]!.reflexiveResolution)
           if allIdentical || mine.all (·.ordered) then
             let g := g.putTriggerBatch mine
+            let p := g.priorityInstead p
             if g.over then g.completeActiveResolutions
-            else if g.pending != .none then savePendingP g
+            else if g.pending != .none then savePendingP g p
             else receivePriority g p false
           else
-            let g := savePendingP g
+            let g := savePendingP g p
             (g.change (.pending (.chooseTriggerToStack q))).logMsg
               s!"{(g.player q).name} chooses the order of triggered abilities (CR 603.3b)"
 

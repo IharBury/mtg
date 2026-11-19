@@ -81,7 +81,8 @@ chains), so co-departing permanents suppress spurious copy/control-reversion and
 unattach logs before they are exiled (CR 114.5 / 611.2a / 702.26b / 800.4a,c). -/
 def coDepartingIds (g : Game) (seedIds : Array ObjectId)
     (endingCtrlEids : Array EffectId := #[])
-    (departingPlayer? : Option PlayerId := none) : Array ObjectId := Id.run do
+    (departingPlayer? : Option PlayerId := none)
+    (includePhasedOut : Bool := true) : Array ObjectId := Id.run do
   let pushUnique (arr : Array ObjectId) (oid : ObjectId) : Array ObjectId :=
     if arr.contains oid then arr else arr.push oid
   let expandEmblemSources (effs : Array (EffectId × ContinuousEffectSpec))
@@ -128,7 +129,8 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
   let initSeeds := seedIds.foldl pushUnique #[]
   let cmdInitSeeds :=
     expandEmblemSources g.activeEffects
-      (initSeeds.filter (fun sid => (g.findObject? sid).any (·.zone == .command)))
+      (initSeeds.filter (fun sid =>
+        (g.findObject? sid).any (fun o => o.isBattlefieldObject || o.zone == .command)))
   let simultaneousEndCtrlEids : Array EffectId :=
     g.activeEffects.filterMap fun (eid, e) =>
       if endingCtrlEids.contains eid then some eid
@@ -141,8 +143,9 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
           if cmdInitSeeds.contains src then some eid else none
         | _ => none
   let phasedOutExpiringSimultaneously (o : GameObject) : Bool :=
-    let applied := g.appliedControlEffectIds o
-    !applied.isEmpty && applied.all simultaneousEndCtrlEids.contains
+    includePhasedOut &&
+      let applied := g.appliedControlEffectIds o
+      !applied.isEmpty && applied.all simultaneousEndCtrlEids.contains
   let (cur0, expanded0) := filterAfterSources g initSeeds endingCtrlEids
   let mut cur := cur0
   let mut result := expanded0.foldl pushUnique initSeeds
@@ -169,6 +172,10 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
       result := pushUnique result oid
     cur := nextCur
   return result
+
+@[export mtg_game_co_departing_ids]
+def coDepartingIdsExport (g : Game) (seedIds : Array ObjectId) : Array ObjectId :=
+  g.coDepartingIds seedIds (includePhasedOut := false)
 
 private def prePhaseOutLkiCtrl? (pre : Game) (preObj : GameObject)
     (fallback : PlayerId) : Option PlayerId :=

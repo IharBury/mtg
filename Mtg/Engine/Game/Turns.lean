@@ -16,57 +16,97 @@ private def effectDuration : ContinuousEffect → EffectDuration
   | .layered _ _ d | .playerRule _ _ d | .gameRule _ d
   | .replacement _ d | .prevention _ d | .permission _ _ d => d
 
-/-- Expire a `.playFromExile oid perm` continuous effect `eid` as part of a
-turn/step transition starting at `pre`, logging `"{name} can no longer be played
-from exile"` at most once for `oid` when `oid` had a playable permission in
-`pre` and now has none (CR 611.2). -/
-private def expirePlayFromExileEffect (pre g : Game) (eid : EffectId) (oid : ObjectId)
-    (cause : Option EventCause) (reconcileControl : Bool := true) : Game :=
-  let hadPlayable :=
-    (pre.findObject? oid).any fun o =>
-      o.zone == .exile &&
-        (!(pre.activePlayPermissions o).isEmpty ||
-          pre.livingPlayers.any (fun pl => pre.mayCastExiledBySource pl.id o))
-  let slice := g.events.extract pre.events.size g.events.size
-  let alreadyLogged := Id.run do
-    for j in [0:slice.size] do
-      match slice[j]! with
+/-- Emit deferred `"{name} can no longer be played from exile"` logs once all
+simultaneously expiring continuous effects in a transition starting at `pre`
+have ended, checking `hadPlayable` on `pre` and post-expiry permissions /
+`mayCastExiledBySource` on `g` (CR 611.2). -/
+private def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
+  let prevSlice := g.events.extract pre.events.size fromEventIdx
+  let alreadyLoggedBefore (oid : ObjectId) : Bool := Id.run do
+    for j in [0:prevSlice.size] do
+      match prevSlice[j]! with
       | .rules _ (.continuousEffect (.expired _ (some (.permission _ (.playFromExile oid' _) _)))) _ _ =>
         if oid' == oid then
-          match slice[j + 1]? with
+          match prevSlice[j + 1]? with
           | some (.engine _ (.logMsg m) _) =>
             if m.endsWith " can no longer be played from exile" then
               return true
           | _ => pure ()
       | _ => pure ()
     return false
-  let g := g.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)
-    (preState? := some pre)
-  match g.findObject? oid with
-  | some o =>
-    if o.zone == .exile && hadPlayable && !alreadyLogged &&
-        (g.activePlayPermissions o).isEmpty &&
-        !g.livingPlayers.any (fun pl => g.mayCastExiledBySource pl.id o) then
-      g.logMsg s!"{g.name o} can no longer be played from exile"
-    else g
-  | none => g
+  let slice := g.events.extract fromEventIdx g.events.size
+  let expiredOids : Array ObjectId :=
+    slice.foldl (fun acc ev =>
+      match ev with
+      | .rules _ (.continuousEffect (.expired _ (some (.permission _ (.playFromExile oid perm) _)))) _ _ =>
+        if perm.fromAdventure || perm.whileExiled || acc.contains oid || alreadyLoggedBefore oid then acc
+        else acc.push oid
+      | _ => acc) #[]
+  expiredOids.foldl (fun acc oid =>
+    let hadPlayable :=
+      (pre.findObject? oid).any fun o =>
+        o.zone == .exile &&
+          (!(pre.activePlayPermissions o).isEmpty ||
+            pre.livingPlayers.any (fun pl => pre.mayCastExiledBySource pl.id o))
+    match acc.findObject? oid with
+    | some o =>
+      if o.zone == .exile && hadPlayable &&
+          (acc.activePlayPermissions o).isEmpty &&
+          !acc.livingPlayers.any (fun pl => acc.mayCastExiledBySource pl.id o) then
+        acc.logMsg s!"{acc.name o} can no longer be played from exile"
+      else acc
+    | none => acc) g
+
+/-- Expire a `.playFromExile oid perm` continuous effect `eid` as part of a
+turn/step transition starting at `pre`, logging `"{name} can no longer be played
+from exile"` at most once for `oid` when `oid` had a playable permission in
+`pre` and now has none (CR 611.2). -/
+private def expirePlayFromExileEffect (pre g : Game) (eid : EffectId) (_oid : ObjectId)
+    (cause : Option EventCause) (reconcileControl : Bool := true)
+    (deferLogs : Bool := false) : Game :=
+  if deferLogs then
+    g.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)
+      (preState? := some pre)
+  else
+    let fromIdx := g.events.size
+    let g := g.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)
+      (preState? := some pre)
+    emitExpiredPlayFromExileLogs pre g fromIdx
 
 /-- Expire every active continuous effect whose duration satisfies `pred`,
 handling `.control` via `endControlEffectById` and `.copy` log messages (CR 611.2a). -/
 def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → Bool)
     (cause : Option EventCause) : Game :=
   let pre := g
+  let fromIdx := pre.events.size
   let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
     match e with
     | .layered _ (.control _) d => if pred eid d then some eid else none
     | _ => none
-  let copyEntries := g.activeEffects.filterMap fun (eid, e) =>
+  let expCopyEids := g.activeEffects.filterMap fun (eid, e) =>
     match e with
-    | .layered (.objects ids) (.copy printed) d =>
-      if pred eid d then some (eid, ids.map (fun id => (id, printed.name))) else none
-    | .layered _ (.copy _) d =>
-      if pred eid d then some (eid, #[]) else none
+    | .layered _ (.copy _) d => if pred eid d then some eid else none
     | _ => none
+  let copyCandLogs : Array (ObjectId × CardDef) :=
+    let candIds : Array ObjectId :=
+      g.activeEffects.foldl (fun idsAcc (eid, e) =>
+        if !expCopyEids.contains eid then idsAcc
+        else
+          match e with
+          | .layered (.objects ids) (.copy _) _ =>
+            ids.foldl (fun a id =>
+              if a.contains id then a
+              else if (g.findObject? id).any (fun o => o.zone == .battlefield) then a.push id
+              else a) idsAcc
+          | _ => idsAcc) #[]
+    candIds.filterMap fun oid =>
+      match pre.findObject? oid with
+      | none => none
+      | some preObj =>
+        match (pre.activeLayer1CopyChain preObj (ignoreDurationFor := expCopyEids)).back? with
+        | some (topEid, topCard) =>
+          if expCopyEids.contains topEid then some (oid, topCard) else none
+        | none => none
   let endingEmbIds0 : Array ObjectId :=
     g.activeEffects.foldl (fun acc (eid, e) =>
       match e with
@@ -77,33 +117,36 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
   let hasEmblem := !endingEmbIds.isEmpty
   let skipIds := g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
   let g :=
-    if ctrlEids.isEmpty && copyEntries.isEmpty && !hasEmblem then g
+    if ctrlEids.isEmpty && expCopyEids.isEmpty && !hasEmblem then g
     else
       g.endControlEffectsSimultaneously ctrlEids (cause := cause)
         (preState? := some pre) (extraSkipIds := skipIds)
         (preExpire := fun g0 =>
           let g1 :=
-            copyEntries.foldl (fun acc (eid, logInfos) =>
-              let acc := acc.expireEffectById eid (cause := cause) (reconcileControl := false)
-                (preState? := some pre)
-              logInfos.foldl (fun acc2 (id, pName) =>
-                match acc2.findObject? id with
-                | some o =>
-                  if o.zone == .battlefield && !skipIds.contains id then
-                    acc2.logMsg s!"{acc2.name o} is no longer a copy of {pName}"
-                  else acc2
-                | none => acc2) acc) g0
+            expCopyEids.foldl (fun acc eid =>
+              acc.expireEffectById eid (cause := cause) (reconcileControl := false)
+                (preState? := some pre) (skipLogIds := skipIds)) g0
+          let g1 :=
+            copyCandLogs.foldl (fun acc2 (id, topCard) =>
+              match acc2.findObject? id with
+              | some o =>
+                if o.zone == .battlefield && !skipIds.contains id then
+                  acc2.logMsg s!"{acc2.name o} is no longer a copy of {topCard.name}"
+                else acc2
+              | none => acc2) g1
           g1.ceaseEndingFraEmblemsWhere pred (cause := cause) (reconcileControl := false)
             (preState? := some pre) (skipLogIds := skipIds))
-  g.activeEffects.foldl (fun acc (eid, e) =>
-    if !pred eid (effectDuration e) then acc
-    else
-      match e with
-      | .permission _ (.playFromExile oid perm) _ =>
-        if perm.fromAdventure || perm.whileExiled then acc
-        else expirePlayFromExileEffect pre acc eid oid cause
-      | _ =>
-        acc.expireEffectById eid (cause := cause) (preState? := some pre)) g
+  let g :=
+    g.activeEffects.foldl (fun acc (eid, e) =>
+      if !pred eid (effectDuration e) then acc
+      else
+        match e with
+        | .permission _ (.playFromExile oid perm) _ =>
+          if perm.fromAdventure || perm.whileExiled then acc
+          else expirePlayFromExileEffect pre acc eid oid cause (deferLogs := true)
+        | _ =>
+          acc.expireEffectById eid (cause := cause) (preState? := some pre)) g
+  emitExpiredPlayFromExileLogs pre g fromIdx
 
 /-- Expire effects lasting until the end of `st` (CR 500.5). -/
 def expireAtStepEnd (g : Game) (st : Step) : Game :=
@@ -160,32 +203,36 @@ def recordStepBegan (g : Game) (st : Step) : Game :=
 800.4i / 805.4 / 810.2). -/
 def expirePlayPermissions (g : Game) (endingPlayer : PlayerId)
     (cause : Option EventCause := some (.turnBased .cleanupClear))
-    (preState? : Option Game := none) : Game :=
+    (preState? : Option Game := none)
+    (deferLogs : Bool := false) : Game :=
   let pre := preState?.getD g
+  let fromIdx := g.events.size
   let departed := cause == some (.turnBased .expireAtStepBegin)
-  g.activeEffects.foldl (fun g (eid, e) =>
-    match e with
-    | .permission p (.playFromExile oid perm) d =>
-      if perm.fromAdventure || perm.whileExiled then g
-      else
-        let grantee := p.getD perm.player
-        let expires :=
-          match d with
-          | .untilEndOfTurn =>
-            (departed && grantee == endingPlayer) ||
-              (!departed && g.isSharedTurnFinalSeat &&
-                (grantee == endingPlayer || g.areTeammates grantee endingPlayer))
-          | .untilEndOfNextTurnOf q =>
-            if departed then
-              !(g.teamMembers endingPlayer).any g.stillInGame &&
-                (q == endingPlayer || g.areTeammates q endingPlayer)
-            else
-              (q == endingPlayer || g.areTeammates q endingPlayer) &&
-                g.isSharedTurnFinalSeat && g.hasTurnBegunSince eid q
-          | _ => false
-        if expires then expirePlayFromExileEffect pre g eid oid cause
-        else g
-    | _ => g) g
+  let g :=
+    g.activeEffects.foldl (fun g (eid, e) =>
+      match e with
+      | .permission p (.playFromExile oid perm) d =>
+        if perm.fromAdventure || perm.whileExiled then g
+        else
+          let grantee := p.getD perm.player
+          let expires :=
+            match d with
+            | .untilEndOfTurn =>
+              (departed && grantee == endingPlayer) ||
+                (!departed && g.isSharedTurnFinalSeat &&
+                  (grantee == endingPlayer || g.areTeammates grantee endingPlayer))
+            | .untilEndOfNextTurnOf q =>
+              if departed then
+                !(g.teamMembers endingPlayer).any g.stillInGame &&
+                  (q == endingPlayer || g.areTeammates q endingPlayer)
+              else
+                (q == endingPlayer || g.areTeammates q endingPlayer) &&
+                  g.isSharedTurnFinalSeat && g.hasTurnBegunSince eid q
+            | _ => false
+          if expires then expirePlayFromExileEffect pre g eid oid cause (deferLogs := true)
+          else g
+      | _ => g) g
+  if deferLogs then g else emitExpiredPlayFromExileLogs pre g fromIdx
 
 /-- Clear “once each turn” activation counts and `"this turn"` / `"until end of turn"`
 player rules, permissions, and delayed triggers as a turn ends (CR 514.2 / 805.4 / 810.2). -/
@@ -271,6 +318,7 @@ def clearEOT (g : Game) : Game :=
             | _ => acc) #[]
         let endingEmbIds := g.expandTransitiveCommandEmblems endingEmbIds0
         let pre := g
+        let fromIdx := pre.events.size
         let skipIds := g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
         g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds)
@@ -290,13 +338,14 @@ def clearEOT (g : Game) : Game :=
               (skipLogIds := skipIds))
           (preState? := some pre)
         g := g.expirePlayPermissions g.activePlayer (cause := cause) (preState? := some pre)
+          (deferLogs := true)
         for pl in g.players do
           if pl.id != g.activePlayer && g.stillInGame pl.id then
             g := g.activeEffects.foldl (fun g (eid, e) =>
               match e with
               | .permission p (.playFromExile oid perm) .untilEndOfTurn =>
                 if perm.fromAdventure || perm.whileExiled || p.getD perm.player != pl.id then g
-                else expirePlayFromExileEffect pre g eid oid cause
+                else expirePlayFromExileEffect pre g eid oid cause (deferLogs := true)
               | _ => g) g
         g := g.clearTurnActivations
         for o in g.battlefield do
@@ -321,6 +370,7 @@ def clearEOT (g : Game) : Game :=
           | .layered _ (.copy ..) _ | .layered _ (.control _) _ => false
           | .layered _ _ .untilEndOfTurn | .gameRule _ .untilEndOfTurn => true
           | _ => false) (cause := cause)
+        g := emitExpiredPlayFromExileLogs pre g fromIdx
         -- CR 514.2 / 702.26d: remove marked damage from all permanents, including phased-out ones.
         let damagedIds :=
           (g.objects.filter (fun o => o.zone == .battlefield && o.status.damage != 0)).map (·.id)
@@ -383,8 +433,10 @@ Veiled Butcher's toughness and power reduction and the command-zone effects of J
 and Garruk, Curse Breaker (CR 611.2a / 805.4 / 810.2). -/
 def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
     (skipControl : Bool := false) (skipLogIds : Array ObjectId := #[])
-    (preState? : Option Game := none) : Game :=
+    (preState? : Option Game := none)
+    (deferLogs : Bool := false) : Game :=
   let pre := preState?.getD g
+  let fromIdx := g.events.size
   let matchesTurnOf (q : PlayerId) : Bool :=
     q == p || (includeTeammates && g.areTeammates q p)
   let cause := some (EventCause.turnBased .expireAtStepBegin)
@@ -422,6 +474,7 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool
       | .permission _ (.playFromExile oid perm) (.untilNextTurnOf q) =>
         if perm.fromAdventure || perm.whileExiled || !matchesTurnOf q then acc
         else expirePlayFromExileEffect pre acc eid oid cause (reconcileControl := false)
+          (deferLogs := true)
       | e =>
         match effectDuration e with
         | .untilNextTurnOf q =>
@@ -430,12 +483,14 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool
               (preState? := some pre)
           else acc
         | _ => acc) g0
-  if skipControl then
-    expireNonControl g
-  else
-    g.endControlEffectsSimultaneously ctrlEids (cause := cause)
-      (extraSkipIds := effSkipIds)
-      (preExpire := expireNonControl) (preState? := some pre)
+  let g :=
+    if skipControl then
+      expireNonControl g
+    else
+      g.endControlEffectsSimultaneously ctrlEids (cause := cause)
+        (extraSkipIds := effSkipIds)
+        (preExpire := expireNonControl) (preState? := some pre)
+  if deferLogs then g else emitExpiredPlayFromExileLogs pre g fromIdx
 
 /-- Expire effects that last until `p`'s next turn (CR 800.4m) and clear
 that player's last-turn information (CR 800.4i). -/
@@ -453,6 +508,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
       if teamHasLiving then g
       else targets.foldl (fun acc t => acc.expireGoadedFor t) g
     let pre := g
+    let fromIdx := pre.events.size
     let g :=
       if teamHasLiving then g
       else
@@ -476,7 +532,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
             (skipLogIds := skipIds)
           let g0 := g0.expireFraUntilTurnEffects p
             (includeTeammates := !teamHasLiving) (skipControl := true)
-            (skipLogIds := skipIds) (preState? := some pre)
+            (skipLogIds := skipIds) (preState? := some pre) (deferLogs := true)
           let g0 :=
             g0.ceaseEndingFraEmblemsWhere
               (fun _ d => match d with | .untilEndOfNextTurnOf q => matchesDeparted q | _ => false)
@@ -502,7 +558,8 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
         g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds)
           (preExpire := expireNonControl) (preState? := some pre)
-    let g := targets.foldl (fun acc t => acc.expirePlayPermissions t (cause := cause) (preState? := some pre)) g
+    let g := targets.foldl (fun acc t =>
+      acc.expirePlayPermissions t (cause := cause) (preState? := some pre) (deferLogs := true)) g
     let g := g.expireMatching (fun
       | .playerRule q (.additionalLands _) .untilEndOfTurn
       | .playerRule q .jaceLoyaltyAtInstantSpeed .untilEndOfTurn
@@ -519,6 +576,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
       | .playerRule q (.controlsPlayer them true) _ =>
         matchesDeparted q || ((them == p || g.areTeammates them p) && !teamHasLiving)
       | _ => false) (cause := cause)
+    let g := emitExpiredPlayFromExileLogs pre g fromIdx
     let expiredDt := g.delayedTriggers.filter (fun dt =>
       (match dt.kind with
        | .attackPumpPerPlains
@@ -806,17 +864,20 @@ partial def startNextTurnCore (g : Game) (runBeginTurn : Bool) : Game :=
       g.withBatch none fun g =>
         let cause := some (EventCause.turnBased .cleanupClear)
         let pre := g
+        let fromIdx := pre.events.size
         let g := g.expirePlayPermissions ending (cause := cause) (preState? := some pre)
+          (deferLogs := true)
         let g := g.players.foldl (fun g pl =>
           if pl.id != ending && g.stillInGame pl.id then
             g.activeEffects.foldl (fun g (eid, e) =>
               match e with
               | .permission p (.playFromExile oid perm) .untilEndOfTurn =>
                 if perm.fromAdventure || perm.whileExiled || p.getD perm.player != pl.id then g
-                else expirePlayFromExileEffect pre g eid oid cause
+                else expirePlayFromExileEffect pre g eid oid cause (deferLogs := true)
               | _ => g) g
           else g) g
-        g.clearTurnActivations
+        let g := g.clearTurnActivations
+        emitExpiredPlayFromExileLogs pre g fromIdx
     else g
   let g := g.record (GameEvent.turnEnded g.turnNumber ending)
   let lastReg := g.lastRegularTurnSeat
@@ -944,8 +1005,9 @@ partial def beginStepBody (g : Game) (st : Step) : Game :=
   match st with
   | .untap =>
     let ap := g.activePlayer
-    -- CR 502.1: phased-out permanents phase in before the player untaps.
-    let g := g.phaseInControlled ap
+    -- CR 502.1 / 805.4a–b / 810.2: phased-out permanents controlled by the active
+    -- player (or their team on the shared turn's first seat) phase in before untapping.
+    let g := if g.isSharedTurnFirstSeat then g.phaseInControlled ap (includeTeammates := true) else g
     match g.pending with
     | .chooseReplacement .. | .chooseLegend .. =>
       g.chainPendingReplacement (.finishPostStep .untapStepAfterPhaseIn)
@@ -1149,13 +1211,16 @@ partial def beginTurn (g : Game) : Game :=
               | _ => acc) #[]
           let endingEmbIds := g.expandTransitiveCommandEmblems endingEmbIds0
           let skipIds := g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
+          let preTurnExp := g
+          let fromIdx := preTurnExp.events.size
           let g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
-            (extraSkipIds := skipIds)
+            (extraSkipIds := skipIds) (preState? := some preTurnExp)
             (preExpire := fun g0 =>
               (g0.restoreCopiesUntilNextTurn p (reconcileControl := false)
                 (skipLogIds := skipIds))
                 |>.expireFraUntilTurnEffects p (includeTeammates := true) (skipControl := true)
-                  (skipLogIds := skipIds) (preState? := some g0))
+                  (skipLogIds := skipIds) (preState? := some preTurnExp) (deferLogs := true))
+          let g := emitExpiredPlayFromExileLogs preTurnExp g fromIdx
           let paused :=
             match g.pending with
             | .chooseReplacement .. | .chooseLegend .. => true

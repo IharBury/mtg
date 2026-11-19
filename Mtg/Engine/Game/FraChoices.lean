@@ -2249,33 +2249,61 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     else
       match eligible.find? (fun id =>
         (g.findObject? id).any (fun o =>
-          let face := { g.baseCard o with keywords := g.currentKeywords o }
-          let tcs := g.evalLayer3 o
-          let origPerm : Option PlayPermission :=
-            some ((g.paidResolutionOrigPerm? p o (face? := some face)).getD
-              { player := p, ignoreTiming := true })
-          let hasTargets :=
-            !g.isLand o && !g.spellNameForbidden face.name &&
-              g.graveyardCastThresholdMet p o.id face &&
-              (g.mandatorySacrificeError? p o.id face).isNone &&
-              if isModalSpellFace face then
-                (effectiveSpellModes face).any (fun e =>
-                  let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
-                  g.spellModeIsChoosable p m (some o.id)) ||
-                  isReturnUpToTwoGyModal face || face.allowsZeroTargets
-              else if face.requiresTarget || face.isAura then
-                g.castFaceHasLegalTarget p face tcs (some o.id) || face.allowsZeroTargets
-              else true
-          hasTargets &&
-            (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
-            g.canPaySpellCostFromSources p o
-              (g.playManaCost { o with controller := some p } face
-                (origPerm := origPerm) (flashback := some false) (explicitAltCost := false)
-                (useImplicitPermissions := false))
-              (fromHand := o.zone == .hand p) &&
-            g.canPayAnnouncedAdditionalFromSources p o (origPerm := origPerm)
-              (flashback := some false) (useImplicitPermissions := false)
-              (fromHand := o.zone == .hand p))) with
+          o.zone == .graveyard o.owner &&
+            (g.isArtifact o || g.isInstantOrSorcery o) &&
+            (let face := { g.baseCard o with keywords := g.currentKeywords o }
+             let tcs := g.evalLayer3 o
+             let rawPerm := g.paidResolutionOrigPerm? p o (face? := some face)
+             let origPerm : Option PlayPermission :=
+               some (rawPerm.getD { player := p, ignoreTiming := true })
+             let forcedPerm :=
+               rawPerm.any (fun pm =>
+                 pm.withoutManaCost || pm.payLifeEqualManaValue || pm.prepareSource.isSome)
+             let hasTargets :=
+               !g.isLand o && !g.spellNameForbidden face.name &&
+                 g.graveyardCastThresholdMet p o.id face &&
+                 (g.mandatorySacrificeError? p o.id face).isNone &&
+                 if isModalSpellFace face then
+                   (effectiveSpellModes face).any (fun e =>
+                     let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+                     g.spellModeIsChoosable p m (some o.id)) ||
+                     isReturnUpToTwoGyModal face || face.allowsZeroTargets
+                 else if face.requiresTarget || face.isAura then
+                   g.castFaceHasLegalTarget p face tcs (some o.id) || face.allowsZeroTargets
+                 else true
+             let frontOk :=
+               hasTargets &&
+                 (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
+                 g.canPaySpellCostFromSources p o
+                   (g.playManaCost { o with controller := some p } face
+                     (origPerm := origPerm) (flashback := some false) (explicitAltCost := false)
+                     (useImplicitPermissions := false))
+                   (fromHand := o.zone == .hand p) &&
+                 g.canPayAnnouncedAdditionalFromSources p o (origPerm := origPerm)
+                   (flashback := some false) (useImplicitPermissions := false)
+                   (fromHand := o.zone == .hand p)
+             let impendingOk :=
+               !forcedPerm &&
+                 match face.morph, face.impending, face.kicker with
+                 | none, some (_, alt), none =>
+                   hasTargets &&
+                     (let impFace := { face with manaCost := alt }
+                      let impPerm : Option PlayPermission :=
+                        some ((g.paidResolutionOrigPerm? p o (face? := some impFace))
+                          |>.filter (fun pm =>
+                            !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone)
+                          |>.getD { player := p, ignoreTiming := true })
+                      let impCost :=
+                        g.playManaCost { o with controller := some p } impFace
+                          (origPerm := impPerm) (flashback := some false)
+                          (explicitAltCost := true) (useImplicitPermissions := false)
+                      g.canPaySpellCostFromSources p o impCost (fromHand := o.zone == .hand p) &&
+                        g.canPayAnnouncedAdditionalFromSources p o (origPerm := impPerm)
+                          (explicitAltCost := true) (flashback := some false)
+                          (useImplicitPermissions := false)
+                          (fromHand := o.zone == .hand p) (faceOverride? := some impFace))
+                 | _, _, _ => false
+             frontOk || impendingOk))) with
       | some id => .cast id
       | none => .decline
   | .maySearchLibrary eligible .. =>
