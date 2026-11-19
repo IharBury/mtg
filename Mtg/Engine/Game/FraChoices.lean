@@ -1611,15 +1611,20 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .exploreMayGraveyard cardId, .accept =>
     let pl := g.player p
     if pl.library.back? == some cardId then
-      let cName := (g.findObject? cardId).map g.name |>.getD "the revealed card"
-      let (g, _) := g.move cardId (.graveyard p) none
+      let card? := g.findObject? cardId
+      let cName := card?.map g.name |>.getD "the revealed card"
+      let destOwner := card?.map (·.owner) |>.getD p
+      let (g, _) := g.move cardId (.graveyard destOwner) none
       if let .chooseReplacement .. := g.pending then
         return (g.chainPendingReplacement
-          (.finishFrcPostStep (.logExploreToGraveyard p cardId cName))).finishFraChoice
+          (.finishFrcPostStep (.logExploreToGraveyard p cardId destOwner cName))).finishFraChoice
       else
         let g :=
-          if (g.followMovedToZone? cardId (· == .graveyard p)).isSome then
-            g.logMsg s!"{pl.name} puts {cName} into their graveyard"
+          if (g.followMovedToZone? cardId (· == .graveyard destOwner)).isSome then
+            let destDesc :=
+              if destOwner == p then "their graveyard"
+              else s!"{(g.player destOwner).name}'s graveyard"
+            g.logMsg s!"{pl.name} puts {cName} into {destDesc}"
           else g
         return g.finishFraChoice
     else

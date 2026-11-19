@@ -1063,9 +1063,11 @@ inductive FrcPostStep where
       (cardName : String)
   | logHandDiscardToBottom (p : PlayerId) (cardId : ObjectId) (destOwner : PlayerId)
       (cardName : String)
-  | logExploreLandToHand (controller : PlayerId) (cardId : ObjectId) (cardName : String)
+  | logExploreLandToHand (controller : PlayerId) (cardId : ObjectId) (destOwner : PlayerId)
+      (cardName : String)
   | offerExploreMayGraveyard (controller : PlayerId) (cardId : ObjectId)
-  | logExploreToGraveyard (controller : PlayerId) (cardId : ObjectId) (cardName : String)
+  | logExploreToGraveyard (controller : PlayerId) (cardId : ObjectId) (destOwner : PlayerId)
+      (cardName : String)
   | teferiExileSpell
 deriving DecidableEq, Repr, Inhabited, BEq
 

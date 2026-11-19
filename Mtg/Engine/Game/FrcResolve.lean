@@ -1022,12 +1022,16 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
         let g := g.record (GameEvent.revealed g.turnNumber explorerCtrl #[top]
           (cause := some (g.resolvingOrRuleCause controller sourceId)))
         if g.isLand card then
-          let (g, _) := g.move top (.hand explorerCtrl) none
+          let destOwner := card.owner
+          let (g, _) := g.move top (.hand destOwner) none
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement
-              (.finishFrcPostStep (.logExploreLandToHand explorerCtrl top cName))
-          else if (g.followMovedToZone? top (· == .hand explorerCtrl)).isSome then
-            g.logMsg s!"{explorerPl.name} explores and puts {cName} into their hand"
+              (.finishFrcPostStep (.logExploreLandToHand explorerCtrl top destOwner cName))
+          else if (g.followMovedToZone? top (· == .hand destOwner)).isSome then
+            let destDesc :=
+              if destOwner == explorerCtrl then "their hand"
+              else s!"{(g.player destOwner).name}'s hand"
+            g.logMsg s!"{explorerPl.name} explores and puts {cName} into {destDesc}"
           else g
         else
           -- CR 701.44a: nonland revealed — put a +1/+1 counter on the exploring
@@ -1143,15 +1147,21 @@ partial def runFrcPostStep (g : Game) (step : FrcPostStep) : Game :=
     if (g.followMovedToZone? cardId (· == .library destOwner)).isSome then
       g.logMsg s!"{(g.player p).name} puts {cardName} on the bottom of their library"
     else g
-  | .logExploreLandToHand controller cardId cardName =>
-    if (g.followMovedToZone? cardId (· == .hand controller)).isSome then
-      g.logMsg s!"{(g.player controller).name} explores and puts {cardName} into their hand"
+  | .logExploreLandToHand controller cardId destOwner cardName =>
+    if (g.followMovedToZone? cardId (· == .hand destOwner)).isSome then
+      let destDesc :=
+        if destOwner == controller then "their hand"
+        else s!"{(g.player destOwner).name}'s hand"
+      g.logMsg s!"{(g.player controller).name} explores and puts {cardName} into {destDesc}"
     else g
   | .offerExploreMayGraveyard controller cardId =>
     g.offerExploreMayGraveyard controller cardId
-  | .logExploreToGraveyard controller cardId cardName =>
-    if (g.followMovedToZone? cardId (· == .graveyard controller)).isSome then
-      g.logMsg s!"{(g.player controller).name} puts {cardName} into their graveyard"
+  | .logExploreToGraveyard controller cardId destOwner cardName =>
+    if (g.followMovedToZone? cardId (· == .graveyard destOwner)).isSome then
+      let destDesc :=
+        if destOwner == controller then "their graveyard"
+        else s!"{(g.player destOwner).name}'s graveyard"
+      g.logMsg s!"{(g.player controller).name} puts {cardName} into {destDesc}"
     else g
   | .offerMaySearchBasics owner => g.offerMaySearchBasics owner
   | .makeHumanToken owner => g.makeFrc owner .human11white

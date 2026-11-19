@@ -2298,9 +2298,9 @@ private def frcPostStepAnyObjId (st : FrcPostStep) (pred : ObjectId → Bool)
   | .swordsGainLife tid _ _
   | .logHandDiscard _ tid _ _
   | .logHandDiscardToBottom _ tid _ _
-  | .logExploreLandToHand _ tid _
+  | .logExploreLandToHand _ tid _ _
   | .offerExploreMayGraveyard _ tid
-  | .logExploreToGraveyard _ tid _ => checkValidObjId pred tid
+  | .logExploreToGraveyard _ tid _ _ => checkValidObjId pred tid
   | _ => false
 
 private def postStepAnyObjId (st : PostStep) (pred : ObjectId → Bool)

@@ -1050,19 +1050,24 @@ Returns `none` for `.copyOf`, which requires game state via `Game.resolveTokenPr
 def tokenPrinted? (spec : TokenSpec) (x : Nat := 0) : Option CardDef :=
   match spec with
   | .predefined p => some (predefinedTokenPrinted p)
-  | .custom s => some (customTokenPrinted s x)
+  | .custom s =>
+    let printed := customTokenPrinted s x
+    if printed.isInstantOrSorcery then none else some printed
   | .copyOf _ _ => none
 
 /-- Resolve any `TokenSpec` into its printed `CardDef` in game state `g`
-(CR 111 / 111.5 / 707.2 / 707.9 / 111.12). For `.copyOf`, copies the referenced
-object's copiable values plus `mods`, returning `none` when the referenced
-object does not exist (CR 111.12) or when the resulting token would be an
-instant or sorcery with no permanent type (CR 111.5). -/
+(CR 111 / 111.5 / 304.4 / 307.4 / 707.2 / 707.9 / 111.12). For `.copyOf`, copies
+the referenced object's copiable values plus `mods`, returning `none` when the
+referenced object does not exist (CR 111.12), when the copied object is an
+instant or sorcery (CR 111.5), or when the resulting token's characteristics
+include instant or sorcery (CR 111.5 / 304.4 / 307.4). -/
 def resolveTokenPrinted? (g : Game) (spec : TokenSpec) (x : Nat := 0)
     (copyCtx : CopyTokenContext := {}) : Option CardDef :=
   match spec with
   | .predefined p => some (predefinedTokenPrinted p)
-  | .custom s => some (customTokenPrinted s x)
+  | .custom s =>
+    let printed := customTokenPrinted s x
+    if printed.isInstantOrSorcery then none else some printed
   | .copyOf ref mods =>
     let oid? :=
       match ref with
@@ -1085,10 +1090,15 @@ def resolveTokenPrinted? (g : Game) (spec : TokenSpec) (x : Nat := 0)
       | none =>
         (oid?.bind g.lastKnownBefore?).map (fun eo => eo.copiable.getD eo.toCardDef)
     base?.bind fun cv =>
-      let copied : CardDef := { cv with isToken := true }
-      let modified := mods.foldl applyCopyModification copied
-      if modified.isInstantOrSorcery && !modified.isPermanentCard then none
-      else some modified
+      -- CR 111.5: no token is created if the effect would create a token that is a
+      -- copy of an instant or sorcery card, or a token with instant/sorcery types
+      -- (CR 304.4 / 307.4).
+      if cv.isInstantOrSorcery then none
+      else
+        let copied : CardDef := { cv with isToken := true }
+        let modified := mods.foldl applyCopyModification copied
+        if modified.isInstantOrSorcery then none
+        else some modified
 
 /-- Reverse lookup of a `TokenSpec` matching `c` (ignoring `isToken`), if any. -/
 def tokenSpecOfCardDef? (c : CardDef) : Option TokenSpec :=

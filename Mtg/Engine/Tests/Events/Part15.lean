@@ -1080,6 +1080,24 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
     (g.move topId (.library p1) none (libraryPosition := some .top)).1
   let p1HandBefore := (gDepLand0.player p1).hand.size
   let gDepLand := gDepLand0.applyFrc p0 default .explore #[] (some stolenObj.id)
+  -- CR 400.3: top card of p0's library owned by p1 goes to p1's hand (land) or p1's graveyard (nonland)
+  let gOwnBase := addPermanent g0 bear p0 p0
+  let ownExplorer := (gOwnBase.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let gOwnLand0 :=
+    let g := addPermanent gOwnBase forest p1 p1
+    let topId := g.battlefield.back!.id
+    (g.move topId (.library p0) none (libraryPosition := some .top)).1
+  let p0HandBeforeOwn := (gOwnLand0.player p0).hand.size
+  let p1HandBeforeOwn := (gOwnLand0.player p1).hand.size
+  let gOwnLand := gOwnLand0.applyFrc p0 default .explore #[] (some ownExplorer.id)
+  let gOwnNonland0 :=
+    let g := addPermanent gOwnBase bear p1 p1
+    let topId := g.battlefield.back!.id
+    (g.move topId (.library p0) none (libraryPosition := some .top)).1
+  let p0GyBeforeOwn := (gOwnNonland0.player p0).graveyard.size
+  let p1GyBeforeOwn := (gOwnNonland0.player p1).graveyard.size
+  let gOwnNonland := gOwnNonland0.applyFrc p0 default .explore #[] (some ownExplorer.id)
+  let gOwnNonlandAccept := mustApply gOwnNonland p0 .accept
   let exploreCr70144Ok :=
     !gRelic0.isCreature relicObj &&
     (gRelicExp.object! relicObj.id).status.plusOnePlusOne == 1 &&
@@ -1092,7 +1110,13 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
     (gDepNonlandAccept.player p1).graveyard.size == p1GyBefore + 1 &&
     (gDepNonlandAccept.player p0).library.size == p0LibSizeBefore &&
     (gDepLand.player p1).hand.size == p1HandBefore + 1 &&
-    gDepLand.pending == .none
+    gDepLand.pending == .none &&
+    (gOwnLand.player p1).hand.size == p1HandBeforeOwn + 1 &&
+    (gOwnLand.player p0).hand.size == p0HandBeforeOwn &&
+    gOwnLand.log.any (·.contains "'s hand") &&
+    (gOwnNonlandAccept.player p1).graveyard.size == p1GyBeforeOwn + 1 &&
+    (gOwnNonlandAccept.player p0).graveyard.size == p0GyBeforeOwn &&
+    gOwnNonlandAccept.log.any (·.contains "'s graveyard")
 
   -- 3. Junk (CR 111.10t), Lander (CR 111.10u), Mutagen (CR 111.10v)
   let junkDef := Game.predefinedTokenPrinted .junk
@@ -1210,7 +1234,8 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
     gCopyBadId.battlefield.size == bfCountBeforeMissing &&
     gCopyBadId.recentTokenIds.isEmpty
 
-  -- 5b. CR 111.5: token copy of instant or sorcery creates no token unless a permanent type is added
+  -- 5b. CR 111.5 / 304.4 / 307.4: no token is created for a copy of an instant/sorcery
+  --     (even with CopyModification.addTypes #[.creature]) or any token with instant/sorcery type
   let testInstDef : CardDef := {
     name := "Test Bolt"
     manaCost := ManaCost.ofColors [.red]
@@ -1227,20 +1252,38 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let bfBeforeInst := gInst0.battlefield.size
   let gInstNone := gInst0.createKindTokens p0 (.copyOf .target #[]) 1 (copyCtx := { targetId := some instId })
   let gSorcNone := gInst0.createKindTokens p0 (.copyOf .target #[]) 1 (copyCtx := { targetId := some sorcId })
-  let gInstCreature :=
+  let gInstWithCreatureNone :=
     gInst0.createKindTokens p0 (.copyOf .target #[.addTypes #[.creature], .setBasePT 2 2]) 1
       (copyCtx := { targetId := some instId })
-  let instTok? := (gInstCreature.permanentsOf p0).find? (·.name == "Test Bolt")
+  let gCreatureAddInstNone :=
+    gCopy0.createKindTokens p0 (.copyOf .target #[.addTypes #[.instant]]) 1
+      (copyCtx := { targetId := some origObj.id })
+  let gCreatureAddSorcNone :=
+    gCopy0.createKindTokens p0 (.copyOf .target #[.addTypes #[.sorcery]]) 1
+      (copyCtx := { targetId := some origObj.id })
+  let customInstSpec : TokenSpec := .custom {
+    name? := some "Illegal Instant Token"
+    types := #[.instant, .creature]
+    power? := some (.fixed 1)
+    toughness? := some (.fixed 1)
+  }
+  let gCustomInstNone := g0.createKindTokens p0 customInstSpec 1
   let copyInstantSorceryOk :=
     (gInst0.resolveTokenPrinted? (.copyOf .target #[]) 0 { targetId := some instId }).isNone &&
     (gInst0.resolveTokenPrinted? (.copyOf .target #[]) 0 { targetId := some sorcId }).isNone &&
+    (gInst0.resolveTokenPrinted? (.copyOf .target #[.addTypes #[.creature], .setBasePT 2 2]) 0
+      { targetId := some instId }).isNone &&
+    (gCopy0.resolveTokenPrinted? (.copyOf .target #[.addTypes #[.instant]]) 0
+      { targetId := some origObj.id }).isNone &&
+    (gCopy0.resolveTokenPrinted? (.copyOf .target #[.addTypes #[.sorcery]]) 0
+      { targetId := some origObj.id }).isNone &&
+    (g0.resolveTokenPrinted? customInstSpec 0 {}).isNone &&
     gInstNone.battlefield.size == bfBeforeInst && gInstNone.recentTokenIds.isEmpty &&
     gSorcNone.battlefield.size == bfBeforeInst && gSorcNone.recentTokenIds.isEmpty &&
-    match instTok? with
-    | none => false
-    | some tok =>
-      tok.printed.isToken && gInstCreature.isCreature tok &&
-      gInstCreature.power tok == 2 && gInstCreature.toughness tok == 2
+    gInstWithCreatureNone.battlefield.size == bfBeforeInst && gInstWithCreatureNone.recentTokenIds.isEmpty &&
+    gCreatureAddInstNone.battlefield.size == bfCountBeforeMissing && gCreatureAddInstNone.recentTokenIds.isEmpty &&
+    gCreatureAddSorcNone.battlefield.size == bfCountBeforeMissing && gCreatureAddSorcNone.recentTokenIds.isEmpty &&
+    gCustomInstNone.battlefield.size == g0.battlefield.size && gCustomInstNone.recentTokenIds.isEmpty
 
   -- 6. ManaSpendRestriction.notFromZone across graveyard, exile, hand, and live proposedManaSpend
   let gyRestrPool :=
@@ -1347,7 +1390,8 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
       gMapNonland, gMapNonlandAccept, gMapNonlandDecline, gMapLand,
       gRelicExp, gRelicExpAccept, gEmptyExp,
       gDepNonland, gDepNonlandAccept, gDepLand,
-      gInstNone, gInstCreature,
+      gOwnLand, gOwnNonland, gOwnNonlandAccept,
+      gInstNone, gInstWithCreatureNone, gCreatureAddInstNone, gCustomInstNone,
       atkCopyNoHolds, atkCopyHolds, atkCopySubj, gPause1, gPauseDone, gSeqRes, gLifeGainTok,
       gMayTok0, gMayTokAccept
     ]
