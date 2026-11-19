@@ -115,7 +115,8 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
       | _ => acc) #[]
   let endingEmbIds := g.expandTransitiveCommandEmblems endingEmbIds0
   let hasEmblem := !endingEmbIds.isEmpty
-  let skipIds := g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
+  let skipIds :=
+    g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids) (includePhasedOut := true)
   let g :=
     if ctrlEids.isEmpty && expCopyEids.isEmpty && !hasEmblem then g
     else
@@ -319,7 +320,8 @@ def clearEOT (g : Game) : Game :=
         let endingEmbIds := g.expandTransitiveCommandEmblems endingEmbIds0
         let pre := g
         let fromIdx := pre.events.size
-        let skipIds := g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
+        let skipIds :=
+          g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids) (includePhasedOut := true)
         g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds)
           (preExpire := fun g0 =>
@@ -458,7 +460,7 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool
   let effSkipIds :=
     let base :=
       if skipControl then #[]
-      else g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
+      else g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids) (includePhasedOut := true)
     skipLogIds.foldl (fun acc id => if acc.contains id then acc else acc.push id) base
   let expireNonControl (g0 : Game) : Game :=
     let g0 :=
@@ -526,7 +528,8 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
               if matchesDeparted q && !acc.contains id then acc.push id else acc
             | _ => acc) #[]
         let endingEmbIds := g.expandTransitiveCommandEmblems endingEmbIds0
-        let skipIds := g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
+        let skipIds :=
+          g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids) (includePhasedOut := true)
         let expireNonControl (g0 : Game) : Game :=
           let g0 := g0.restoreCopiesUntilNextTurn p (departed := true) (reconcileControl := false)
             (skipLogIds := skipIds)
@@ -1210,16 +1213,17 @@ partial def beginTurn (g : Game) : Game :=
                 if (q == p || g.areTeammates q p) && !acc.contains id then acc.push id else acc
               | _ => acc) #[]
           let endingEmbIds := g.expandTransitiveCommandEmblems endingEmbIds0
-          let skipIds := g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
+          let skipIds :=
+            g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids) (includePhasedOut := true)
           let preTurnExp := g
           let fromIdx := preTurnExp.events.size
           let g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
             (extraSkipIds := skipIds) (preState? := some preTurnExp)
             (preExpire := fun g0 =>
-              (g0.restoreCopiesUntilNextTurn p (reconcileControl := false)
-                (skipLogIds := skipIds))
-                |>.expireFraUntilTurnEffects p (includeTeammates := true) (skipControl := true)
-                  (skipLogIds := skipIds) (preState? := some preTurnExp) (deferLogs := true))
+              let g0 := g0.restoreCopiesUntilNextTurn p (reconcileControl := false)
+                (skipLogIds := skipIds)
+              g0.expireFraUntilTurnEffects p (includeTeammates := true) (skipControl := true)
+                (skipLogIds := skipIds) (preState? := some g0) (deferLogs := true))
           let g := emitExpiredPlayFromExileLogs preTurnExp g fromIdx
           let paused :=
             match g.pending with

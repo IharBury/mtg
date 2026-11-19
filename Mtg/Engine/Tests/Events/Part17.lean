@@ -253,9 +253,24 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     | .ok g' => g'
     | .error e => panic! e
 
+  let gUnlessPaysBase :=
+    g4.changes #[.pushContinuationFrame {}, .unlessPaysDue true]
+  let gUnlessPaysAllGone :=
+    #[p0, p1, p2, p3].foldl
+      (fun acc p => acc.record (GameEvent.playerLeftGame acc.turnNumber p))
+      gUnlessPaysBase
+  let unlessPaysSettlesOk :=
+    !gUnlessPaysAllGone.over &&
+    gUnlessPaysAllGone.livingPlayers.isEmpty &&
+    gUnlessPaysBase.continuationSettlesControlFlow false (.restorePending .none false) &&
+    gUnlessPaysAllGone.continuationSettlesControlFlow false (.restorePending .none false) &&
+    gUnlessPaysAllGone.continuationSettlesControlFlow false
+      (.restorePending (.discardForAdditionalCost p0) false)
+
   let item1bOk :=
     mustHold51i1 "1b_anyContinuationSettlesControlFlowGuards"
       (settlesWithoutGrant &&
+       unlessPaysSettlesOk &&
        gAfterFagp.pendingReplacement == gSettlingPaused.pendingReplacement &&
        gAfterFfc.pendingReplacement == gSettlingPaused.pendingReplacement &&
        gAfterChooseMode.pending == .declareAttackers &&
@@ -270,7 +285,7 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     (replayOk51i1 #[
       gRecvAfterSba, gRecvTgtAfterSba, gRecvOrderAfterSba,
       gCleanupAfterKeep, gTwoStack1, gTopLoseViaPass, gFcGrantsNoneProbe,
-      gAfterFagp, gAfterFfc, gAfterChooseMode, gAfterManaAct ])
+      gAfterFagp, gAfterFfc, gAfterChooseMode, gAfterManaAct, gUnlessPaysAllGone ])
 
 end Phase51Item1EventAlignment
 
@@ -464,6 +479,81 @@ private def replayOk51i2 (gs : Array Game) : Bool :=
   let gTeamBHalfPhased := gTeamBBegan.phaseOut (gTeamBBegan.object! b0PermId) (cause := some testCause)
   let gTeamBSecondSeat := gTeamBHalfPhased.startNextTurnAndBegin
 
+  -- `beginTurn` post-copy-restore `preState? := some g0` in `expireFraUntilTurnEffects`:
+  -- `copyTargetId` has older `.copy copy1Def` tied to `.command` emblem `embBT` (`.untilNextTurnOf p0`)
+  -- and newer `.copy copy2Def` (`.untilNextTurnOf p0`). `restoreCopiesUntilNextTurn p0` removes `copy2Def`
+  -- first, so `expireFraUntilTurnEffects` (`preState? := some g0`) sees `copy1Def` as top remaining copy
+  -- when `embBT` ceases and emits `"{bear.name} is no longer a copy of {copy1Def.name}"`:
+  let embBTDef : CardDef := { name := "P51i2 TurnEmb", types := #[.enchantment] }
+  let gBtCopy0 := insertObject gStackCopy0 embBTDef p1 .command (some p1)
+  let embBTId := (gBtCopy0.objects.filter (·.zone == .command)).back!.id
+  let gBtCopy1 :=
+    (((gBtCopy0.createEffect (.gameRule (.fraEmblem embBTId) (.untilNextTurnOf p0))
+        (cause := some testCause)).createEffect
+      (.layered (.objects #[copyTargetId]) (.copy copy1Def) (.whileInZone embBTId .command))
+      (cause := some testCause)).createEffect
+      (.layered (.objects #[copyTargetId]) (.copy copy2Def) (.untilNextTurnOf p0))
+      (cause := some testCause))
+  let preBtCopyLog := gBtCopy1.log.size
+  let gBtCopyDone := gBtCopy1.beginTurn
+  let btCopyLogs := gBtCopyDone.log.extract preBtCopyLog gBtCopyDone.log.size
+
+  -- Co-departing permanents via `coDepartingIdsExport` (`coDepartingIdsFwd`) in `Movement.move`
+  -- and `Attachments.ceaseToExist` (phased-in CR 800.4c exile vs phased-out CR 702.26b preservation),
+  -- plus phased-out battlefield-seed CR 800.4c exile in `playerLeavesGameCore` (`includePhasedOut := true`):
+  let anchorMoveDef : CardDef := { name := "P51i2 MoveAnchor", types := #[.artifact] }
+  let gPhSkip0 :=
+    insertObject (addPermanent (addPermanent g4 bear p0 p3) anchorMoveDef p2 p2) embBTDef p2 .command (some p2)
+  let phDepId := (gPhSkip0.permanentsOf p3)[0]!.id
+  let moveAnchorId := (gPhSkip0.permanentsOf p2)[0]!.id
+  let ceaseEmbId := (gPhSkip0.objects.filter (·.zone == .command)).back!.id
+  let gLiveMoveSetup :=
+    mustApply
+      ((gPhSkip0.createEffect
+          (.layered (.objects #[phDepId]) (.control p2) (.whileSourceOnBattlefield moveAnchorId))
+          (cause := some testCause)).createEffect
+        (.layered (.objects #[phDepId]) (.copy copy1Def) (.whileSourceOnBattlefield moveAnchorId))
+        (cause := some testCause))
+      p3 .concede
+  let preLiveMoveLog := gLiveMoveSetup.log.size
+  let (gLiveAfterMove, _) := gLiveMoveSetup.move moveAnchorId .exile none (cause := some testCause)
+  let liveMoveLogs := gLiveAfterMove.log.extract preLiveMoveLog gLiveAfterMove.log.size
+
+  let gLiveCeaseSetup :=
+    mustApply
+      (((gPhSkip0.createEffect (.gameRule (.fraEmblem ceaseEmbId) .indefinite)
+          (cause := some testCause)).createEffect
+          (.layered (.objects #[phDepId]) (.control p2) (.whileInZone ceaseEmbId .command))
+          (cause := some testCause)).createEffect
+        (.layered (.objects #[phDepId]) (.copy copy1Def) (.whileInZone ceaseEmbId .command))
+        (cause := some testCause))
+      p3 .concede
+  let preLiveCeaseLog := gLiveCeaseSetup.log.size
+  let gLiveAfterCease := gLiveCeaseSetup.ceaseToExist ceaseEmbId (cause := some testCause)
+  let liveCeaseLogs := gLiveAfterCease.log.extract preLiveCeaseLog gLiveAfterCease.log.size
+
+  let gPhMoveSetup := gLiveMoveSetup.phaseOut (gLiveMoveSetup.object! phDepId) (cause := some testCause)
+  let prePhMoveLog := gPhMoveSetup.log.size
+  let (gPhAfterMove, _) := gPhMoveSetup.move moveAnchorId .exile none (cause := some testCause)
+  let phMoveLogs := gPhAfterMove.log.extract prePhMoveLog gPhAfterMove.log.size
+
+  -- Battlefield seed in `cmdInitSeeds` with `includePhasedOut := true` (`playerLeavesGameCore` ->
+  -- `endControlEffectsSimultaneously`): `p2` owns `moveAnchorId`, which grants living `p1` control +
+  -- `copy1Def` on phased-out `phDepId` (`fallback = departed p3 != p2`):
+  let gPhLeaveSetup :=
+    let gC :=
+      mustApply
+        ((gPhSkip0.createEffect
+            (.layered (.objects #[phDepId]) (.control p1) (.whileSourceOnBattlefield moveAnchorId))
+            (cause := some testCause)).createEffect
+          (.layered (.objects #[phDepId]) (.copy copy1Def) (.whileSourceOnBattlefield moveAnchorId))
+          (cause := some testCause))
+        p3 .concede
+    gC.phaseOut (gC.object! phDepId) (cause := some testCause)
+  let prePhLeaveLog := gPhLeaveSetup.log.size
+  let gPhAfterP2Leave := mustApply gPhLeaveSetup p2 .concede
+  let phLeaveLogs := gPhAfterP2Leave.log.extract prePhLeaveLog gPhAfterP2Leave.log.size
+
   let item2aOk :=
     mustHold51i2 "2a_simultaneousCtrlAndPlayFromExileLogs"
       ((gSimulLostAfter.findObject? exSimulLostId).isSome &&
@@ -479,11 +569,27 @@ private def replayOk51i2 (gs : Array Game) : Bool :=
        (topOnlyLogs.filter (· == s!"{copy1Def.name} is no longer a copy of {copy2Def.name}")).size == 1 &&
        !survivingTopLogs.any (·.contains "is no longer a copy of") &&
        (rwLogs.filter (· == s!"{bear.name} is no longer a copy of {copy2Def.name}")).size == 1 &&
-       !rwLogs.any (·.contains copy1Def.name)) &&
+       !rwLogs.any (·.contains copy1Def.name) &&
+       btCopyLogs.any (· == s!"{copy1Def.name} is no longer a copy of {copy2Def.name}") &&
+       btCopyLogs.any (· == s!"{bear.name} is no longer a copy of {copy1Def.name}")) &&
     mustHold51i2 "2a_commanderCoDepartingIdsAndLogSuppression"
       (coDepsForP2.contains cmdBfId &&
        coDepsForP2.contains depHostId &&
        coDepsForP2.contains tokEq.id &&
+       (gLiveMoveSetup.coDepartingIdsExport #[moveAnchorId]).contains phDepId &&
+       (gLiveCeaseSetup.coDepartingIdsExport #[ceaseEmbId]).contains phDepId &&
+       (gLiveAfterMove.followMovedToZone? phDepId (· == .exile)).isSome &&
+       (gLiveAfterCease.followMovedToZone? phDepId (· == .exile)).isSome &&
+       !liveMoveLogs.any (·.contains "is no longer a copy of") &&
+       !liveCeaseLogs.any (·.contains "is no longer a copy of") &&
+       !liveCeaseLogs.any (·.contains "returns to") &&
+       gPhMoveSetup.coDepartingIdsExport #[moveAnchorId] == gPhMoveSetup.coDepartingIds #[moveAnchorId] &&
+       !(gPhMoveSetup.coDepartingIdsExport #[moveAnchorId]).contains phDepId &&
+       (gPhAfterMove.object! phDepId).status.phasedOut &&
+       phMoveLogs.any (· == s!"{bear.name} is no longer a copy of {copy1Def.name}") &&
+       (gPhLeaveSetup.coDepartingIds #[moveAnchorId] (departingPlayer? := some p2) (includePhasedOut := true)).contains phDepId &&
+       (gPhAfterP2Leave.followMovedToZone? phDepId (· == .exile)).isSome &&
+       !phLeaveLogs.any (·.contains "is no longer a copy of") &&
        (gCmdAfterP2Leave.followMovedToZone? depHostId (· == .exile)).isSome &&
        (gCmdAfterP2Leave.findObject? tokEq.id).isNone &&
        !p2LeaveLogs.any (·.contains "becomes unattached") &&
@@ -503,6 +609,7 @@ private def replayOk51i2 (gs : Array Game) : Bool :=
     (replayOk51i2 #[
       gSimulLostAfter, gSimulNextLostAfter, gSimulRegainAfter,
       gBothEotCleared, gBothStepCleared, gTopOnlyCleared, gSurvivingTopCleared, gRestoreWhereDone,
+      gBtCopyDone, gLiveAfterMove, gLiveAfterCease, gPhAfterMove, gPhAfterP2Leave,
       gCmdBf4, gCmdAfterP2Leave, gTeamBBegan, gTeamBSecondSeat ])
 
 end Phase51Item2EventAlignment

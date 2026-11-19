@@ -1002,7 +1002,7 @@ private partial def probeRestorePendingCore (g : Game) (hasQueuedPending : Bool)
         .delegate gClean queued toRun
       | none =>
         if gNext.unlessPaysDue && !gNext.sbaPaused && gNext.pending == .none then
-          .paused gNext false (gNext.over || !gNext.livingPlayers.isEmpty)
+          .paused gNext false true
         else
           let settles :=
             gNext.over || isSelfSettlingPending gNext.pending || gNext.afterRandom != .none ||
@@ -1078,7 +1078,7 @@ private partial def probeRestorePendingCore (g : Game) (hasQueuedPending : Bool)
     match curP with
     | .none =>
       if curPopped?.isNone && gCur.unlessPaysDue && !gCur.sbaPaused && gCur.pending == .none then
-        .paused gCur false (gCur.over || !gCur.livingPlayers.isEmpty)
+        .paused gCur false true
       else
         resumePopped gCur hasQueuedPending
     | .fraChoice caster (.costPicks ..)

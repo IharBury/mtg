@@ -78,11 +78,16 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId)
 /-- Compute the transitive closure of `seedIds` under CR 800.4a / 800.4c control-loss
 exile (including `.gameRule (.fraEmblem embId)` -> `.whileInZone embId .command` emblem
 chains), so co-departing permanents suppress spurious copy/control-reversion and
-unattach logs before they are exiled (CR 114.5 / 611.2a / 702.26b / 800.4a,c). -/
+unattach logs before they are exiled (CR 114.5 / 611.2a / 702.26b,d / 800.4a,c).
+`includePhasedOut` defaults to `false` to match `reconcileControlAfterTransition`
+(`!cur.isOnBattlefield`, CR 702.26b), which keeps phased-out permanents phased out
+across `Movement.move`, `Attachments.ceaseToExist`, and `runEndControlExileLoop`;
+callers that feed `endControlEffectsSimultaneously` (`isBattlefieldObject`,
+CR 702.26d / 800.4c) pass `includePhasedOut := true`. -/
 def coDepartingIds (g : Game) (seedIds : Array ObjectId)
     (endingCtrlEids : Array EffectId := #[])
     (departingPlayer? : Option PlayerId := none)
-    (includePhasedOut : Bool := true) : Array ObjectId := Id.run do
+    (includePhasedOut : Bool := false) : Array ObjectId := Id.run do
   let pushUnique (arr : Array ObjectId) (oid : ObjectId) : Array ObjectId :=
     if arr.contains oid then arr else arr.push oid
   let expandEmblemSources (effs : Array (EffectId × ContinuousEffectSpec))
@@ -175,7 +180,7 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
 
 @[export mtg_game_co_departing_ids]
 def coDepartingIdsExport (g : Game) (seedIds : Array ObjectId) : Array ObjectId :=
-  g.coDepartingIds seedIds (includePhasedOut := false)
+  g.coDepartingIds seedIds
 
 private def prePhaseOutLkiCtrl? (pre : Game) (preObj : GameObject)
     (fallback : PlayerId) : Option PlayerId :=
@@ -602,7 +607,8 @@ def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := fals
           else acc
         | _ => acc) g0
     let pre := g
-    let skipPreIds := g.coDepartingIds stackCmdCeaseIds (endingCtrlEids := ctrlEids)
+    let skipPreIds :=
+      g.coDepartingIds stackCmdCeaseIds (endingCtrlEids := ctrlEids) (includePhasedOut := true)
     let ceaseDepartedStackAndCommand (g0 : Game) : Game :=
       let g1 :=
         g0.objects.foldl (fun acc o =>
@@ -706,7 +712,8 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
             if src == id && zeroedKinds.contains k && !acc.contains embId then acc.push embId
             else acc
           | _ => acc) #[]
-      let skipIds := g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
+      let skipIds :=
+        g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids) (includePhasedOut := true)
       let preExpire (g0 : Game) : Game :=
         let g1 :=
           g0.restoreCopiesWhere
@@ -3451,6 +3458,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
       let coDepartingIds : Array ObjectId :=
         g.coDepartingIds (ownedIds ++ stackCmdCeaseIds)
           (endingCtrlEids := ctrlEids) (departingPlayer? := some p)
+          (includePhasedOut := true)
       let preExpireLeave (g0 : Game) : Game :=
         let g1 :=
           owned.foldl (fun acc o =>
