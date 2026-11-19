@@ -20827,7 +20827,7 @@ soundness).
          control-return / CR 800.4c reconciliation before `expireEffectsOnLeavingObject`.
 
 3. **`isLkiSnapshot` face-down / stack `{X}` / Layer-6 ability fidelity, `.phasedIn` & `!before.phasedOut` LKI boundaries, trigger-queue source snapshots, and phased-out attachment / combat LKI**
-   (`Core.lean:3827–3852, 7230–7251, 8215–8341, 8985–8986, 9958–9963, 10282–10298, 11123–11180, 11349, 12013–12028, 12662–12670, 12709–12716, 13251–13265, 13756–13758, 13782–13784`,
+   (`Core.lean:3827–3852, 7230–7251, 8215–8341, 8985–8986, 9958–9963, 10282–10298, 11123–11180, 11349, 12013–12028, 12662–12670, 12709–12716, 13756–13758, 13782–13784`,
    `Event.lean:3950–3980, 4402–4411`,
    `ManaAbilities.lean:404–410`,
    `Object.lean:53–111, 447–517`,
@@ -20836,9 +20836,9 @@ soundness).
    `TriggerArgs.lean:452–463`,
    `TriggeredAbilities.lean:528–548, 2469–2479, 3691–3711, 3752–3782`,
    `Triggers.lean:162–173, 594–596`;
-   **CR 107.3a / 113.7a / 202.3,3e / 506.4 / 603.3,6c,10 / 608.2h / 613.1a,f / 702.16b,e / 702.21a / 702.26b,g / 702.34a / 702.85a / 702.108a / 707.2 / 708.2,2a / 714.2b**):
+   **CR 107.3a / 113.7a / 202.3,3e / 506.4 / 603.3,6c,10 / 608.2h / 613.1a,f / 702.16b,e / 702.21a / 702.26b,g / 702.34a / 702.108a / 707.2 / 708.2,2a / 714.2b**):
    - **`isLkiSnapshot` stack `{X}` mana value, `eo.faceDown` masking, and Layer-6 ability-loss / granted-ability fidelity**
-     (`Core.lean:3827–3852, 7230–7251, 8215–8341, 9958–9963, 10282–10298, 11123–11175, 11349, 12013–12028, 12662–12670, 12709–12716, 13251–13265`,
+     (`Core.lean:3827–3852, 7230–7251, 8215–8341, 9958–9963, 10282–10298, 11123–11175, 11349, 12013–12028, 12662–12670, 12709–12716`,
      `Object.lean:53–111, 447–517`):
      - Three `isLkiSnapshot` characteristic and Layer-6 ability bugs remain after Phase 51:
        (i) `Core.snapshot` (`Core.lean:11349`) already folds stack `chosenX` into `eo.manaValue` via `g.objectManaValue o`,
@@ -20846,12 +20846,12 @@ soundness).
        `ManaCost.ofGeneric eo.manaValue` whenever `basePrinted.manaValue != eo.manaValue` (also erasing colored mana symbols)
        while keeping `zone := eo.zone` (`.stack`) and `chosenX := eo.chosenX`, so `objectManaValue` (`9961–9963`) adds
        `chosenX` a second time (violating CR 107.3a / 202.3e);
-       (ii) when `eo.faceDown == true`, `damageSourceObjectFromLki` (`11124–11144`) populates `printed` from hidden front-face
+       (ii) when `eo.faceDown == true`, `damageSourceObjectFromLki` (`11124–11144`) populates `printed` from unmasked
        `eo.toCardDef` (`Object.lean:500–502`), while `copiableValuesWithTs` (`3828`), `copiableValues` (`3838`), `baseCard`
-       (`3851`), and `currentKeywords` (`7248–7251`, which also re-injects `prowess := true` from `bc.prowessInstances > 0`
-       even when `eo.faceDown` or Layer-6 ability loss cleared `eo.keywords.prowess`) short-circuit `o.isLkiSnapshot` before
-       `o.status.faceDown`, leaking hidden front-face `cascade` / `spellEffect` (`13255, 13263`), `prowess`,
-       `protectionFromColors`, and abilities on face-down LKI snapshots (violating CR 707.2 / 708.2a); and
+       (`3851`), and `currentKeywords` (`7248–7251`) short-circuit `o.isLkiSnapshot` before `o.status.faceDown` — exposing
+       hidden front-face `CardDef` fields on `copiableValues` / `baseCard` and re-injecting `prowess := true` from
+       `bc.prowessInstances > 0` in `currentKeywords` (`7250`, both when `eo.faceDown` and when Layer-6 ability loss cleared
+       `eo.keywords.prowess`) (violating CR 707.2 / 708.2a); and
        (iii) on face-up `o.isLkiSnapshot` (`!o.status.faceDown`), `retainsPrintedAbilities` (`7230–7231`, `if o.isLkiSnapshot
        then !o.status.faceDown`) ignores Layer-6 ability removal and returns `true` (firing stripped `.sagaChapter` at `12014`
        and preserving stripped printed protection in `frcProtectedFrom` at `10287, 10291`), and `triggeredAbilities`
@@ -20910,17 +20910,17 @@ soundness).
          `Phasing.phaseOut` (`76–124`) while matching `!before.phasedOut` `PermanentEvent.phasedOut` in
          `TriggeredAbilities` `.enrageGrantsCombat` (`537–547`).
 
-4. **`Demo.hasUniqueManaPayment` rider/provenance/combination/multi-source soundness, `Casting` cost-preserving tap subsets, `Decisions.castAsPartOfResolution` clean-permission Morph timing, and `Agent` / `PriorityActions` / `Casting` additional-cost parity**
-   (`Agent.lean:202–228, 281–306, 582–612`,
+4. **`Demo.hasUniqueManaPayment` rider/provenance/combination/multi-source soundness, `Casting` cost-preserving tap subsets, `Decisions.castAsPartOfResolution` clean-permission `canMorph` gate, and `Agent` / `PriorityActions` / `Casting` additional-cost parity**
+   (`Agent.lean:202–228, 281–314, 582–612`,
    `CastExtras.lean:156–167`,
-   `Casting.lean:94–108, 528–539, 579–621, 791–866, 872–934, 1564–1567`,
-   `CastSpell.lean:81–91, 168, 182`,
+   `Casting.lean:34–37, 87–108, 528–539, 579–621, 791–866, 872–934, 1564–1567`,
+   `CastSpell.lean:81–91, 168, 182, 432–436`,
    `Core.lean:8672–8677, 8775–8797, 13409–13411, 15835–15848`,
-   `Decisions.lean:5205–5237, 5329–5344, 5424–5465`,
+   `Decisions.lean:5102–5120, 5205–5237, 5329–5344, 5424–5465`,
    `Demo.lean:2150–2165, 2202–2218, 2242–2305, 2381–2435`,
    `ManaAbilities.lean:507–509, 578–590, 864–871, 1465–1470, 1492–1493`,
    `PriorityActions.lean:123, 190–191`;
-   **CR 106.4,6,12 / 107.3a / 118.8 / 118.9a,d / 601.2b,f–h / 601.3b / 602.2b / 608.2g / 702.37a / 702.176a / 733.1**):
+   **CR 106.4,6,12 / 107.3a / 118.8 / 118.9a,d / 601.2b,f–h / 601.3,3b / 602.2b / 608.2g / 702.37a / 702.176a / 733.1**):
    - **`Demo.hasUniqueManaPayment` Treasure / *Path of Ancestry* riders, `addRestrictedMana` provenance, `ManaOutput.combination` color order, multi-source rider flips, and `Casting` cost-preserving tap subsets**
      (`Casting.lean:791–866, 872–934, 1564–1567`, `Core.lean:8672–8677, 8775–8797, 13409–13411, 15835–15848`,
      `Demo.lean:2150–2165, 2202–2218, 2242–2305, 2381–2435`,
@@ -20953,19 +20953,26 @@ soundness).
          `plainFlips` (`2295–2304, 2414–2422`); and enforce `!prop.tapSource || prop.tapPaid || !tappedIds.contains
          prop.sourceId` + `teamworkCreatures` membership in `Casting.tapPreservesPostManaCosts` (`857–866`) and
          `Casting.hasCostPreservingPaymentSubset` (`886, 902–911`).
-   - **`Decisions.castAsPartOfResolution` clean-permission Morph timing, `Agent.choose` `.chooseX` / `.chooseKicker` resolution-cast & `preSpell` affordability, and Sneak mandatory-sacrifice exclusion across `Casting` / `PriorityActions` / `Agent`**
-     (`Agent.lean:202–228, 281–314, 582–612`, `CastExtras.lean:156–167`, `Casting.lean:94–108, 528–539, 579–621`,
-     `CastSpell.lean:81–91, 168, 182`, `Decisions.lean:5205–5237, 5329–5344, 5424–5465`, `PriorityActions.lean:123, 190–191`):
-     - Four resolution-cast timing, `Agent` affordability, and Sneak additional-cost bugs remain after Phase 51:
-       (i) `Decisions.castAsPartOfResolution` (`Decisions.lean:5428–5446, 5460–5465`) omits the resolving effect's own clean
-       `!withoutManaCost` permission (`{ player := p, ignoreTiming := ignoreTiming }`, cf. `Casting.proposalAltCleanPerm?`'s
-       `resClean` at `Casting.lean:528–531`) from `cleanPerms`, rejecting sorcery-speed Morph resolution casts when
-       `!ignoreTiming && hasZonePerms` holds via an existing `withoutManaCost := true` permission (CR 608.2g / 702.37a);
+   - **`Decisions.castAsPartOfResolution` clean-permission `canMorph` gate, `Agent.choose` `.chooseX` / `.chooseKicker` resolution-cast & `preSpell` affordability, and Sneak mandatory-sacrifice exclusion across `Casting` / `PriorityActions` / `Agent`**
+     (`Agent.lean:202–228, 281–314, 582–612`, `CastExtras.lean:156–167`, `Casting.lean:34–37, 87–108, 528–539, 579–621`,
+     `CastSpell.lean:81–91, 168, 182, 432–436`, `Decisions.lean:5102–5120, 5205–5237, 5329–5344, 5424–5465`,
+     `PriorityActions.lean:123, 190–191`):
+     - Four resolution-cast `canMorph`, `Agent` affordability, and Sneak additional-cost bugs remain after Phase 51:
+       (i) `Decisions.castAsPartOfResolution` (`Decisions.lean:5428–5446, 5450–5451, 5460–5465`) omits the resolving effect's
+       own clean `!withoutManaCost` permission (`{ player := p, ignoreTiming := ignoreTiming }`, cf.
+       `Casting.proposalAltCleanPerm?`'s `resClean` at `Casting.lean:528–531`) from `cleanPerms`, forcing `morphTimingOk` and
+       `canMorph` to `false` when `!withoutManaCost && !ignoreTiming && hasZonePerms` holds only via non-clean permissions
+       (`withoutManaCost` / `payLifeEqualManaValue` / `prepareSource.isSome`) — rejecting Morph resolution casts that
+       `proposalCanChooseMorph` would allow whenever the front face is blocked by `g.spellNameForbidden face.name` (`5460`),
+       `!g.graveyardCastThresholdMet p o.id face` (`5462`, `Casting.lean:87–90`, `!frontLegalExceptTiming` at `5464`), or
+       non-creature `face` lacking `firstCreatureHasFlash` (`Casting.lean:34–37`, `!frontTimingOk` at `5464`) (CR 601.3 /
+       608.2g / 702.37a);
        (ii) `Agent.choose` `.chooseX` (`Agent.lean:214–218, 283`, and `312–313` where `allPicks.isEmpty` returns `upperX`
        immediately) zeroes `upcomingAddGen` via a leading `prop.resolutionCast ||` disjunct (`214`) and gates `unchosenAdd` on
        `!prop.resolutionCast &&` (`283`) even though `Decisions.beginResolutionCastTargets` (`5329–5344`) prompts `.chooseX`
-       (`5330`) before `.chooseAdditionalCost` (`5343`), looping infinitely on paid `{X}` resolution casts with generic,
-       sacrifice, or discard additional costs;
+       (`5330`) before `CastSpell.announceX` (`432–436`) substitutes `x` and advances into `.chooseAdditionalCost` (`5343`),
+       over-sizing `X` without reserving generic mana or sacrifice/discard sources for the unannounced additional cost so total
+       payment fails and reverses the resolution cast via `reverseProposedSpell?` / `finishFraChoice` (`Decisions.lean:5102–5120`);
        (iii) `Agent.choose` `.chooseKicker` (`Agent.lean:582, 599–604, 609–610`) passes stack `spell` (`zone == .stack`)
        instead of `preSpell` (`id := prop.original.id`, `zone := prop.original.zone`, `exiledBy := prop.original.exiledBy`,
        `controller := some p`) to `canPayAnnouncedAdditionalFromSources` and `canPaySpellCostFromSources`; and
@@ -20997,7 +21004,7 @@ ability-loss / granted-ability fidelity, `.phasedIn` & `!before.phasedOut` `Even
 boundaries, `findLiveSourceObject?` trigger-queue snapshots, and phased-out attachment & pre-`removeFromCombat`
 `Phasing.phaseOut` / `.enrageGrantsCombat` LKI; and `Demo.hasUniqueManaPayment` Treasure / *Path of Ancestry* /
 `addRestrictedMana` provenance / `ManaOutput.combination` color order / multi-source rider flips, `Casting` `tapSource` &
-`teamworkCreatures` cost-preserving tap subsets, `Decisions.castAsPartOfResolution` clean-permission Morph timing,
+`teamworkCreatures` cost-preserving tap subsets, `Decisions.castAsPartOfResolution` clean-permission `canMorph` gate,
 `Agent.choose` `.chooseX` / `.chooseKicker` resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker`
 mandatory-sacrifice exclusion).
 
