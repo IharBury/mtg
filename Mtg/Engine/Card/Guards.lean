@@ -1755,6 +1755,14 @@ end CardDef
 #guard !ManaSpendRestriction.creatureSource.allows { spell := true, types := #[.creature] }
 #guard ManaSpendRestriction.notSpellsFromHand.allows { spell := true, fromHand := false }
 #guard !ManaSpendRestriction.notSpellsFromHand.allows { spell := true, fromHand := true }
+#guard !ManaSpendRestriction.notSpellsFromHand.allows { spell := true, castFromZone := some .hand }
+#guard ManaSpendRestriction.notSpellsFromHand.allows { spell := true, castFromZone := some .graveyard }
+#guard !(ManaSpendRestriction.notFromZone .graveyard).allows { spell := true, castFromZone := some .graveyard }
+#guard (ManaSpendRestriction.notFromZone .graveyard).allows { spell := true, castFromZone := some .exile }
+#guard (ManaSpendRestriction.notFromZone .graveyard).allows { spell := true, fromHand := true, castFromZone := some .hand }
+#guard (ManaSpendRestriction.notFromZone .graveyard).allows { spell := false, castFromZone := some .graveyard }
+#guard !(ManaSpendRestriction.notFromZone .exile).allows { spell := true, castFromZone := some .exile }
+#guard (ManaSpendRestriction.notFromZone .exile).allows { spell := true, castFromZone := some .graveyard }
 
 -- `HasTextChange` identity, composition, and token/mana/ability traversal (CR 612.2 / 613.1c).
 #guard

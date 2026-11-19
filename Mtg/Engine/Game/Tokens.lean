@@ -651,9 +651,14 @@ def doombotToken : CardDef :=
 def insect11greenToken : CardDef :=
   creatureToken "Insect" #[.insect] 1 1 (some .green)
 
-/-- A 1/1 green Minion creature token named Moloid. -/
+/-- A 1/1 green Minion creature token named Moloid with
+"Whenever this token attacks, you may mill a card." -/
 def moloidToken : CardDef :=
-  creatureToken "Moloid" #[.minion] 1 1 (some .green)
+  { creatureToken "Moloid" #[.minion] 1 1 (some .green) with
+    triggeredAbilities := #[.triggered .attack {
+      resolution := .may (.mill (.fixed 1) .you .none) (.sequence []) .ifYouDo
+      phrase := "you may mill a card"
+    }] }
 
 /-- A 1/1 red Alien creature token with haste that attacks each combat if able. -/
 def alien11redHasteToken : CardDef := {
@@ -838,7 +843,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
       subtypes := #["Incubator"]
       isToken := true
       otherFace := some {
-        name := "Phyrexian"
+        name := "Phyrexian Token"
         types := #[.artifact, .creature]
         subtypes := #["Phyrexian"]
         power := some 0
@@ -853,11 +858,46 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
       subtypes := #["Map"]
       isToken := true
       activatedAbilities := #[
-        { effect := { resolution := .frc .explore, phrase := "You explore." }
-          cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } } ] }
-  | .junk => { name := "Junk", types := #[.artifact], subtypes := #["Junk"], isToken := true }
-  | .lander => { name := "Lander", types := #[.artifact], subtypes := #["Lander"], isToken := true }
-  | .mutagen => { name := "Mutagen", types := #[.artifact], subtypes := #["Mutagen"], isToken := true }
+        { effect := {
+            targeting := .of .creatureYouControl
+            resolution := .frc .explore
+            phrase := "Target creature you control explores."
+          }
+          cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true }
+          onlyAsSorcery := true } ] }
+  | .junk => {
+      name := "Junk"
+      types := #[.artifact]
+      subtypes := #["Junk"]
+      isToken := true
+      activatedAbilities := #[
+        { effect := {
+            resolution := .exileTopPlayUntilNext 1
+            phrase := "Exile the top card of your library. You may play that card this turn."
+          }
+          cost := { tap := true, sacrificeSource := true }
+          onlyAsSorcery := true } ] }
+  | .lander => {
+      name := "Lander"
+      types := #[.artifact]
+      subtypes := #["Lander"]
+      isToken := true
+      activatedAbilities := #[
+        { effect := Effect.searchBasicLandTapped
+          cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true } } ] }
+  | .mutagen => {
+      name := "Mutagen"
+      types := #[.artifact]
+      subtypes := #["Mutagen"]
+      isToken := true
+      activatedAbilities := #[
+        { effect := {
+            targeting := .of .creature
+            resolution := .onPermanent (.plusOne 1)
+            phrase := "Put a +1/+1 counter on target creature."
+          }
+          cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true }
+          onlyAsSorcery := true } ] }
   | .vibranium => vibraniumToken
   | .heartwood => heartwoodToken
 
@@ -913,7 +953,12 @@ def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
           phrase := if n == 1 then "Draw a card" else s!"Draw {n} cards"
         }
       } }
-  | .onAttackMayMill _ => c
+  | .onAttackMayMill n =>
+    let eff : Effect := {
+      resolution := .may (.mill (.fixed n) .you .none) (.sequence []) .ifYouDo
+      phrase := if n == 1 then "you may mill a card" else s!"you may mill {n} cards"
+    }
+    { c with triggeredAbilities := c.triggeredAbilities.push (.triggered .attack eff) }
   | .onAttackScry n =>
     { c with triggeredAbilities := c.triggeredAbilities.push (.onAttackScry n) }
   | .onAttackDestroyTargetLand =>
@@ -948,12 +993,99 @@ def customTokenPrinted (s : CustomTokenSpec) (x : Nat := 0) : CardDef :=
   }
   s.abilities.foldl applyTokenAbility base
 
-/-- Printed characteristics for any `TokenSpec` (CR 111 / 707.9). -/
-def tokenPrinted (spec : TokenSpec) (x : Nat := 0) : CardDef :=
+/-- True when `ab` is a CR 604.3 / 707.9d P/T-defining CDA omitted when a copy
+exception sets explicit base power and toughness. -/
+private def isPTDefiningCDA (ab : StaticAbility) : Bool :=
+  ab.isLandsYouControlPT ||
+  ab.isCardsInHandPower ||
+  ab.isCreaturesYouControlPower ||
+  match ab with
+  | .fra .powerEqualsBasicLandTypes
+  | .ptEqualGraveyardCardTypes
+  | .powerEqualSubtypeYouControl _
+  | .powerEqualLegendaryCreaturesYouControl => true
+  | _ => false
+
+/-- Apply a CR 707.9 copy exception to a copied `CardDef`. -/
+def applyCopyModification (c : CardDef) (m : CopyModification) : CardDef :=
+  match m with
+  | .setName name => { c with name }
+  | .setBasePT power toughness =>
+    { c with
+      power := some power
+      toughness := some toughness
+      staticAbilities := c.staticAbilities.filter (!isPTDefiningCDA ·) }
+  | .addTypes types =>
+    let merged := types.foldl (fun acc t => if acc.contains t then acc else acc.push t) c.types
+    { c with types := merged }
+  | .addSubtypes subtypes =>
+    let merged := subtypes.foldl (fun acc s =>
+      let nm := s.englishName
+      if acc.contains nm then acc else acc.push nm) c.subtypes
+    { c with subtypes := merged }
+  | .addColors colors =>
+    if colors.isColorless then c
+    else { c with colorIndicator := some (c.colors.union colors) }
+  | .removeSupertype sup =>
+    { c with supertypes := c.supertypes.filter (· != sup) }
+  | .addKeywords kw =>
+    { c with keywords := Keywords.merge c.keywords kw }
+  | .addAbilities abs =>
+    abs.foldl applyTokenAbility c
+
+/-- Build a `CopyTokenContext` from effect resolution references. -/
+def copyTokenContextOf (g : Game) (sourceId : Option ObjectId := none)
+    (targets : Array Target := #[]) (triggerSubjectId : Option ObjectId := none) :
+    CopyTokenContext :=
+  let targetId := targets.findSome? fun
+    | Target.permanent id => some id
+    | Target.card id => some id
+    | Target.player _ => none
+  let subjId := triggerSubjectId.orElse (fun _ =>
+    (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId))
+  { sourceId, targetId, triggerSubjectId := subjId }
+
+/-- Printed characteristics for a context-independent `TokenSpec` (CR 111).
+Returns `none` for `.copyOf`, which requires game state via `Game.resolveTokenPrinted?`. -/
+def tokenPrinted? (spec : TokenSpec) (x : Nat := 0) : Option CardDef :=
   match spec with
-  | .predefined p => predefinedTokenPrinted p
-  | .custom s => customTokenPrinted s x
-  | .copyOf _ _ => { name := "Token", types := #[], isToken := true }
+  | .predefined p => some (predefinedTokenPrinted p)
+  | .custom s => some (customTokenPrinted s x)
+  | .copyOf _ _ => none
+
+/-- Resolve any `TokenSpec` into its printed `CardDef` in game state `g`
+(CR 111 / 707.2 / 707.9 / 111.12). For `.copyOf`, copies the referenced object's
+copiable values plus `mods`, or returns `none` when the referenced object does
+not exist (CR 111.12: no token is created). -/
+def resolveTokenPrinted? (g : Game) (spec : TokenSpec) (x : Nat := 0)
+    (copyCtx : CopyTokenContext := {}) : Option CardDef :=
+  match spec with
+  | .predefined p => some (predefinedTokenPrinted p)
+  | .custom s => some (customTokenPrinted s x)
+  | .copyOf ref mods =>
+    let oid? :=
+      match ref with
+      | .source => copyCtx.sourceId
+      | .target => copyCtx.targetId
+      | .triggerSubject =>
+        copyCtx.triggerSubjectId.orElse (fun _ =>
+          (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId))
+    let base? : Option CardDef :=
+      match oid?.bind g.findObject? with
+      | some src =>
+        if src.isOnBattlefield || src.zone == .stack then
+          some (g.copiableValues src)
+        else
+          match ref with
+          | .target => some (g.copiableValues src)
+          | .source | .triggerSubject =>
+            (oid?.bind g.lastKnownBefore?).map (fun eo => eo.copiable.getD eo.toCardDef)
+              |>.orElse (fun _ => some (g.copiableValues src))
+      | none =>
+        (oid?.bind g.lastKnownBefore?).map (fun eo => eo.copiable.getD eo.toCardDef)
+    base?.map fun cv =>
+      let copied : CardDef := { cv with isToken := true }
+      mods.foldl applyCopyModification copied
 
 /-- Reverse lookup of a `TokenSpec` matching `c` (ignoring `isToken`), if any. -/
 def tokenSpecOfCardDef? (c : CardDef) : Option TokenSpec :=
@@ -972,10 +1104,11 @@ def tokenSpecOfCardDef? (c : CardDef) : Option TokenSpec :=
     .angel44white, .human11white, .goblin11red, .rogue22black
   ]
   known.find? (fun k =>
-    let tk := tokenPrinted k
-    { c with isToken := tk.isToken } == tk)
+    match tokenPrinted? k with
+    | some tk => { c with isToken := tk.isToken } == tk
+    | none => false)
     |>.orElse (fun _ =>
-      known.find? (fun k => (tokenPrinted k).name == c.name))
+      known.find? (fun k => (tokenPrinted? k).any (·.name == c.name)))
 
 /-- Token `ObjectId`s created on the battlefield since `startEventIdx` in `g.events`. -/
 def tokensCreatedSince (g : Game) (startEventIdx : Nat) : Array ObjectId :=
@@ -1045,17 +1178,18 @@ def logCreatedTokensSummary (g : Game) (controller : PlayerId) (startEventIdx : 
         s!"{String.intercalate ", " pre}, and {phrases[k - 1]!}"
     g.logMsg s!"{(g.player controller).name} creates {joined}"
 
-/-- Create `n` tokens specified by `kind` (CR 111). -/
+/-- Create `n` tokens specified by `kind` (CR 111 / 707.9 / 111.12). -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenSpec)
     (n : Nat) (tapped := false) (attacking := false)
     (attackingTarget : Option AttackTarget := none)
     (resetRecent : Bool := true)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (copyCtx : CopyTokenContext := {}) : Game :=
   if let .chooseReplacement .. := g.pending then
     if n == 0 then g
     else
       g.chainPendingReplacement
-        (.createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause)
+        (.createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause copyCtx)
   else if !g.stillInGame controller then
     let g := if resetRecent then g.change (.recentTokenIds #[]) else g
     if n == 0 then g
@@ -1064,13 +1198,15 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenSpec)
     let g := if resetRecent then g.change (.recentTokenIds #[]) else g
     if n == 0 then g
     else
-      let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
-      let isAttacking := resolvedTarget.isSome
-      let printed := tokenPrinted kind
-      (g.createToken controller printed (tapped := tapped)
-        (attacking := isAttacking)
-        (attackingTarget := resolvedTarget) (recordRecent := true) (cause := cause)
-        (count := n)).1
+      match g.resolveTokenPrinted? kind 0 copyCtx with
+      | none => g.logMsg "no token is created (CR 111.12)"
+      | some printed =>
+        let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
+        let isAttacking := resolvedTarget.isSome
+        (g.createToken controller printed (tapped := tapped)
+          (attacking := isAttacking)
+          (attackingTarget := resolvedTarget) (recordRecent := true) (cause := cause)
+          (count := n)).1
 
 end Game
 end Mtg.Engine

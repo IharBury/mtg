@@ -394,9 +394,9 @@ def returnLinkedExile (g : Game) (source : GameObject) : Game :=
     g.returnLinkedExileLoop (source.leaveTriggerExile ++ source.linkedExile)
 
 /-- Named MSH tokens that carry extra rules text (backed by `TokenSpec`). -/
-def zabuToken : CardDef := tokenPrinted .zabu
-def redwingToken : CardDef := tokenPrinted .redwing
-def theVoidToken : CardDef := tokenPrinted .theVoid
+def zabuToken : CardDef := (tokenPrinted? .zabu).getD default
+def redwingToken : CardDef := (tokenPrinted? .redwing).getD default
+def theVoidToken : CardDef := (tokenPrinted? .theVoid).getD default
 
 def galactusAttackTrigger : Effect := {
   targeting := .of (.filtered { noun := "target land", types := #[.land] })
@@ -404,9 +404,9 @@ def galactusAttackTrigger : Effect := {
   phrase := "Whenever Galactus attacks, destroy target land."
 }
 
-def galactusToken : CardDef := tokenPrinted .galactus
-def tigerGodToken : CardDef := tokenPrinted .tigerGod
-def sturdyShieldToken : CardDef := tokenPrinted .sturdyShield
+def galactusToken : CardDef := (tokenPrinted? .galactus).getD default
+def tigerGodToken : CardDef := (tokenPrinted? .tigerGod).getD default
+def sturdyShieldToken : CardDef := (tokenPrinted? .sturdyShield).getD default
 
 def createNamedToken (g : Game) (controller : PlayerId) (printed : CardDef) : Game :=
   let (g, _) := g.createToken controller printed
@@ -985,9 +985,9 @@ def commitEnteringAttackItems (g : Game)
             let initialBatches : Array ProposedTokenBatch := chosen.filterMap fun (item, atkTgt) =>
               match item with
               | .token ctrl kind tapped _ _ =>
-                some {
+                (g.resolveTokenPrinted? kind).map fun printed => {
                   controller := ctrl
-                  printed := tokenPrinted kind
+                  printed
                   count := 1
                   tapped := tapped
                   attacking := atkTgt.isSome

@@ -2567,9 +2567,12 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
   | .draw _ _ c
   | .copyNontokenCreatures _ _ c
   | .copyPermanentTokens _ _ _ c _ _
-  | .makeFrcLoop _ _ _ _ _ c
   | .setLife _ _ _ c
   | .loseLifeAfterDraw _ _ c => c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
+  | .makeFrcLoop _ _ _ _ _ c copyCtx =>
+    checkValidOptObjId pred copyCtx.sourceId || checkValidOptObjId pred copyCtx.targetId ||
+      checkValidOptObjId pred copyCtx.triggerSubjectId ||
+      c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .addPlusOnePlusOneTo tid _ _ _ c
   | .addCounters tid _ _ _ _ c
   | .recordPutCounters tid _ _ _ c
@@ -2599,9 +2602,12 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
   | .moveSimultaneousToGraveyard ids pb c =>
     checkValidObjIds pred ids || pb.any (·.any (gameObjAnyObjId pred)) ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
-  | .createToken _ _ _ _ atgt _ _ _ c _
-  | .createKindTokens _ _ _ _ _ atgt _ c =>
+  | .createToken _ _ _ _ atgt _ _ _ c _ =>
     atgt.any (attackTargetAnyObjId pred) || c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
+  | .createKindTokens _ _ _ _ _ atgt _ c copyCtx =>
+    checkValidOptObjId pred copyCtx.sourceId || checkValidOptObjId pred copyCtx.targetId ||
+      checkValidOptObjId pred copyCtx.triggerSubjectId ||
+      atgt.any (attackTargetAnyObjId pred) || c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .createTokenBatches batches _ atgt _ _ c =>
     batches.any (fun b =>
       b.attackingTarget.any (attackTargetAnyObjId pred) ||

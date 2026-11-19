@@ -2161,7 +2161,8 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | .chosenX => chosenX.getD 0
         | .perSubtype subtype => g.countSubtype pid subtype
         | _ => 0
-      g.createKindTokens pid kind count (tapped := tapped)
+      let copyCtx := g.copyTokenContextOf sourceId targets
+      g.createKindTokens pid kind count (tapped := tapped) (copyCtx := copyCtx)
   | .returnOneOrTwoNonlands =>
     g.withBatch none fun g =>
       targets.foldl (fun g t =>
@@ -2658,6 +2659,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.resolveSearchBasicLandToHand controller
       | .createTokensX kind =>
         g.createKindTokens controller kind (chosenX.getD 0)
+          (copyCtx := g.copyTokenContextOf sourceId targets)
       | .searchTwoBasicsSplit =>
         g.beginLibrarySearch controller isBasicLandCard "a basic land card"
           .battlefieldTappedThenHand (count := 2)
@@ -2810,6 +2812,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.draw controller (g.loggedDiscards controller)
       | .createTokensEqualRemovedPlusOnes kind =>
         g.createKindTokens controller kind (chosenX.getD 0)
+          (copyCtx := g.copyTokenContextOf sourceId targets)
       | .exileTopXPlayThisTurn =>
         let x := g.sourcePowerNatAtResolution sourceId lastKnownPower
         g.exileTopPlayThisTurn controller x
@@ -2839,6 +2842,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
       | .createTokensEqualSubtype kind subtype =>
         let n := g.countSubtype controller subtype
         g.createKindTokens controller kind n
+          (copyCtx := g.copyTokenContextOf sourceId targets)
       | .proliferateEachKind =>
         g.proliferateTarget controller targets sourceId
       | .equipmentBecomesConstructHero =>

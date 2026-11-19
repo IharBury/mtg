@@ -1794,6 +1794,8 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "copy that spell. You may choose new targets for the copy"
   | .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo =>
     "you may exile that card from your graveyard. If you do, until the end of your next turn, you may play that card"
+  | .may (.mill (.fixed n) .you .none) (.sequence []) .ifYouDo =>
+    if n == 1 then "you may mill a card" else s!"you may mill {n} cards"
   | .may (.createTokens _ (.fixed 1) false _ _) (.sequence []) .ifYouDo =>
     "you may create a 0/4 colorless Wall creature token with defender"
   | .may (.pay (.sacrifice _ _)) _ .ifYouDo =>

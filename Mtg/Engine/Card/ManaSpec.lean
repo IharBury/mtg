@@ -319,6 +319,8 @@ The default is a non-spell payment (such as an activated ability or tax). -/
 structure ManaSpend where
   spell : Bool := false
   fromHand : Bool := false
+  /-- Zone the spell is being cast from, when known (CR 106.6). -/
+  castFromZone : Option ZoneKind := none
   /-- Supertypes of the spell being cast. -/
   supertypes : Array Supertype := #[]
   /-- Card types of the spell being cast. -/
@@ -492,9 +494,11 @@ def allows (r : ManaSpendRestriction) (s : ManaSpend) : Bool :=
   | .cantSpendOnSpells pred =>
     !(s.spell && pred.satisfies s.types s.supertypes s.subtypes)
   | .notFromZone z =>
-    match z with
-    | .hand => !(s.spell && s.fromHand)
-    | _ => true
+    if !s.spell then true
+    else
+      match z with
+      | .hand => !(s.fromHand || s.castFromZone == some .hand)
+      | other => s.castFromZone != some other
 
 /-- Evaluation incorporating legacy boolean allow flags alongside `ManaSpend`
 (preserves default `ManaPool.pay?` behavior where `.cantNonartifact` requires

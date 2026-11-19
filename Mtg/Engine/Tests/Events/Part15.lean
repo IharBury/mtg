@@ -970,4 +970,212 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
 
 end Phase49Item4EventAlignment
 
+section Phase1AbilityAlignmentReview
+
+private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
+  if ok then true else panic! s!"Phase1AbilityAlignmentReview failed: {label}"
+
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let g0 := quiet afterDraw
+
+  -- 1. Incubator back face named "Phyrexian Token" (CR 111.10i)
+  let gInc0 := g0.createKindTokens p0 .incubator 1
+  let incObj := (gInc0.permanentsOf p0).find? (·.name == "Incubator") |>.get!
+  let gIncTr := gInc0.withResolvingContext (some incObj.id) p0 (fun g =>
+    g.applyFrc p0 default .transformIncubator #[] (some incObj.id))
+  let incAfter := gIncTr.object! incObj.id
+  let incubatorOk :=
+    (Game.predefinedTokenPrinted .incubator).otherFace.map (·.name) == some "Phyrexian Token" &&
+    incAfter.status.transformed &&
+    incAfter.name == "Phyrexian Token" &&
+    gIncTr.isArtifact incAfter && gIncTr.isCreature incAfter
+
+  -- 2. Map token (CR 111.10s): sorcery speed, targets creature you control, explores targeted creature
+  let mapDef := Game.predefinedTokenPrinted .map
+  let mapAb := mapDef.activatedAbilities[0]!
+  let gMap0 := addPermanent (g0.createKindTokens p0 .map 1) bear p0 p0
+  let gMap0 := addPermanent gMap0 bear p1 p1
+  let myBear := (gMap0.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let oppBear := (gMap0.permanentsOf p1).find? (·.name == bear.name) |>.get!
+  let mapTok := (gMap0.permanentsOf p0).find? (·.name == "Map") |>.get!
+  -- Nonland on top -> +1/+1 counter on targeted creature
+  let gMapNonland0 :=
+    let g := addPermanent gMap0 bear p0 p0
+    let topId := g.battlefield.back!.id
+    (g.move topId (.library p0) none (libraryPosition := some .top)).1
+  let gMapNonland :=
+    gMapNonland0.applyEffect p0 mapAb.effect #[.permanent myBear.id] (sourceId := some mapTok.id)
+  -- Land on top -> land moved into hand
+  let gMapLand0 :=
+    let g := addPermanent gMap0 forest p0 p0
+    let topId := g.battlefield.back!.id
+    (g.move topId (.library p0) none (libraryPosition := some .top)).1
+  let handBeforeLand := (gMapLand0.player p0).hand.size
+  let gMapLand :=
+    gMapLand0.applyEffect p0 mapAb.effect #[.permanent myBear.id] (sourceId := some mapTok.id)
+  -- Illegal target (opponent's creature) -> no counter added
+  let gMapIllegal :=
+    gMapNonland0.applyEffect p0 mapAb.effect #[.permanent oppBear.id] (sourceId := some mapTok.id)
+  let mapOk :=
+    mapAb.onlyAsSorcery &&
+    mapAb.cost == { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } &&
+    mapAb.effect.targetKind == .creatureYouControl &&
+    (gMapNonland.object! myBear.id).status.plusOnePlusOne == 1 &&
+    (gMapLand.player p0).hand.size == handBeforeLand + 1 &&
+    (gMapIllegal.object! oppBear.id).status.plusOnePlusOne == 0
+
+  -- 3. Junk (CR 111.10t), Lander (CR 111.10u), Mutagen (CR 111.10v)
+  let junkDef := Game.predefinedTokenPrinted .junk
+  let junkAb := junkDef.activatedAbilities[0]!
+  let gJunk0 := g0.createKindTokens p0 .junk 1
+  let topLibId := (gJunk0.player p0).library.back!
+  let gJunk := gJunk0.applyEffect p0 junkAb.effect #[]
+  let junkMoved? := gJunk.followMovedToZone? topLibId (· == .exile)
+  let junkExiled := junkMoved?.isSome
+  let junkPlayableThisTurn :=
+    match junkMoved? with
+    | none => false
+    | some moved =>
+      gJunk.activeEffects.any fun (_, s) =>
+        match s with
+        | .permission _ (.playFromExile oid perm) .untilEndOfTurn => oid == moved.id && perm.player == p0
+        | _ => false
+
+  let landerDef := Game.predefinedTokenPrinted .lander
+  let landerAb := landerDef.activatedAbilities[0]!
+  let gLander := (g0.createKindTokens p0 .lander 1).applyEffect p0 landerAb.effect #[]
+  let landerSearches := match gLander.pending with
+    | .fraChoice q (.searchLibrary _ 1 (.battlefield true) _ _) => q == p0
+    | _ => false
+
+  let mutagenDef := Game.predefinedTokenPrinted .mutagen
+  let mutagenAb := mutagenDef.activatedAbilities[0]!
+  let gMut0 := addPermanent (g0.createKindTokens p0 .mutagen 1) bear p0 p0
+  let mutBear := (gMut0.permanentsOf p0).find? (·.name == bear.name) |>.get!
+  let gMut := gMut0.applyEffect p0 mutagenAb.effect #[.permanent mutBear.id]
+  let junkLanderMutagenOk :=
+    mustHoldP1Rev "3a.junk" (junkAb.onlyAsSorcery &&
+      junkAb.cost == { tap := true, sacrificeSource := true } &&
+      junkExiled && junkPlayableThisTurn) &&
+    mustHoldP1Rev "3b.lander" (!landerAb.onlyAsSorcery &&
+      landerAb.cost == { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true } &&
+      landerSearches) &&
+    mustHoldP1Rev "3c.mutagen" (mutagenAb.onlyAsSorcery &&
+      mutagenAb.cost == { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } &&
+      mutagenAb.effect.targetKind == .creature &&
+      (gMut.object! mutBear.id).status.plusOnePlusOne == 1)
+
+  -- 4. Moloid .onAttackMayMill 1 (and generalized n = 2) wired onto printed CardDef & runtime
+  let gMol0 := g0.createKindTokens p0 .moloid 1
+  let molObj := (gMol0.permanentsOf p0).find? (·.name == "Moloid") |>.get!
+  let molAb := molObj.printed.triggeredAbilities[0]!
+  let gyBeforeMol := (gMol0.player p0).graveyard.size
+  let gMolPrompt := gMol0.applyTriggeredAbility p0 molAb (some molObj.id) #[]
+  let gMolAccept := mustApply gMolPrompt p0 .accept
+  let gMolDecline := mustApply gMolPrompt p0 .decline
+  let mill2Spec : TokenSpec :=
+    TokenSpec.creature #[.minion] 1 1 (ColorSet.singleton .green)
+      (name? := some "Big Moloid") (abilities := #[.onAttackMayMill 2])
+  let gMol20 := g0.createKindTokens p0 mill2Spec 1
+  let mol2Obj := (gMol20.permanentsOf p0).find? (·.name == "Big Moloid") |>.get!
+  let gMol2Accept :=
+    mustApply (gMol20.applyTriggeredAbility p0 mol2Obj.printed.triggeredAbilities[0]! (some mol2Obj.id) #[])
+      p0 .accept
+  let moloidOk :=
+    molObj.printed.triggeredAbilities.size == 1 &&
+    molAb.firesOn .attacking &&
+    gMolPrompt.pending == .mayResolve p0 &&
+    (gMolAccept.player p0).graveyard.size == gyBeforeMol + 1 &&
+    (gMolDecline.player p0).graveyard.size == gyBeforeMol &&
+    (gMol2Accept.player p0).graveyard.size == gyBeforeMol + 2
+
+  -- 5. TokenSpec.copyOf: copies real object's copiable values + CR 707.9 mods (including 707.9d CDA strip);
+  --    nonexistent object creates no tokens (CR 111.12)
+  let cdaLegendDef : CardDef := {
+    name := "Multani Test"
+    manaCost := ManaCost.ofGenericAndColors 2 [.green]
+    supertypes := #[.legendary]
+    types := #[.creature]
+    subtypes := #["Elf"]
+    power := some 0
+    toughness := some 0
+    staticAbilities := #[.powerToughnessEqualLandsYouControl]
+  }
+  let gCopy0 := addPermanent (addPermanent (addPermanent g0 cdaLegendDef p0 p0) forest p0 p0) forest p0 p0
+  let origObj := (gCopy0.permanentsOf p0).find? (·.name == "Multani Test") |>.get!
+  let copySpec : TokenSpec :=
+    .copyOf .target #[
+      .setName "Shadow Copy",
+      .setBasePT 1 1,
+      .removeSupertype .legendary,
+      .addTypes #[.artifact],
+      .addSubtypes #[.zombie],
+      .addColors (ColorSet.singleton .black),
+      .addKeywords Keyword.haste,
+      .addAbilities #[.onAttackMayMill 1]
+    ]
+  let gCopyReal := gCopy0.createKindTokens p0 copySpec 1 (copyCtx := { targetId := some origObj.id })
+  let copyTok? := (gCopyReal.permanentsOf p0).find? (·.name == "Shadow Copy")
+  let copyRealOk :=
+    match copyTok? with
+    | none => false
+    | some tok =>
+      tok.printed.isToken &&
+      !gCopyReal.isLegendary tok &&
+      gCopyReal.isArtifact tok && gCopyReal.isCreature tok &&
+      gCopyReal.hasSubtype tok .elf && gCopyReal.hasSubtype tok .zombie &&
+      (gCopyReal.colors tok).contains .green && (gCopyReal.colors tok).contains .black &&
+      gCopyReal.hasHaste tok &&
+      gCopyReal.power tok == 1 && gCopyReal.toughness tok == 1 &&
+      tok.printed.triggeredAbilities.size == 1
+  let bfCountBeforeMissing := gCopy0.battlefield.size
+  let gCopyMissing := gCopy0.createKindTokens p0 (.copyOf .target #[]) 2
+  let gCopyBadId := gCopy0.createKindTokens p0 (.copyOf .target #[]) 2 (copyCtx := { targetId := some ⟨999999⟩ })
+  let copyMissingOk :=
+    (gCopy0.resolveTokenPrinted? (.copyOf .target #[]) 0 {}).isNone &&
+    (Game.tokenPrinted? (.copyOf .target #[])).isNone &&
+    gCopyMissing.battlefield.size == bfCountBeforeMissing &&
+    gCopyMissing.recentTokenIds.isEmpty &&
+    gCopyBadId.battlefield.size == bfCountBeforeMissing &&
+    gCopyBadId.recentTokenIds.isEmpty
+
+  -- 6. ManaSpendRestriction.notFromZone across graveyard, exile, hand, and live proposedManaSpend
+  let gyRestrPool :=
+    ManaPool.empty.addUnit { mana := .colorless, restriction := some (.notFromZone .graveyard) }
+  let exileRestrPool :=
+    ManaPool.empty.addUnit { mana := .colorless, restriction := some (.notFromZone .exile) }
+  let gCastGy0 := insertObject g0 bear p0 (.graveyard p0)
+  let gyBearId := (gCastGy0.player p0).graveyard.back!
+  let gyBearObj := gCastGy0.object! gyBearId
+  let fakeProp : ProposedSpell := {
+    kind := .spell
+    spellId := gyBearId
+    caster := p0
+    original := gyBearObj
+    cost := ManaCost.ofGeneric 1
+  }
+  let gySpend := gCastGy0.proposedManaSpend fakeProp
+  let notFromZoneOk :=
+    !gyRestrPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, castFromZone := some .graveyard }) &&
+    gyRestrPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, castFromZone := some .exile }) &&
+    gyRestrPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, fromHand := true, castFromZone := some .hand }) &&
+    gyRestrPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := false }) &&
+    !exileRestrPool.canPay (ManaCost.ofGeneric 1) (spend := { spell := true, castFromZone := some .exile }) &&
+    gySpend.castFromZone == some .graveyard &&
+    !gySpend.fromHand &&
+    !gCastGy0.restrictionAllowsProposed (some (.notFromZone .graveyard)) fakeProp &&
+    gCastGy0.restrictionAllowsProposed (some .notSpellsFromHand) fakeProp
+
+  mustHoldP1Rev "1.incubatorName" incubatorOk &&
+  mustHoldP1Rev "2.mapToken" mapOk &&
+  mustHoldP1Rev "3.junkLanderMutagen" junkLanderMutagenOk &&
+  mustHoldP1Rev "4.moloidAttackMayMill" moloidOk &&
+  mustHoldP1Rev "5.copyOfReal" copyRealOk &&
+  mustHoldP1Rev "5.copyOfMissing" copyMissingOk &&
+  mustHoldP1Rev "6.notFromZone" notFromZoneOk
+
+end Phase1AbilityAlignmentReview
+
 end Mtg.Engine.EventTests

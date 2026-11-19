@@ -604,6 +604,7 @@ def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
     match g.findObject? prop.spellId with
     | some o =>
       { spell := true, fromHand := prop.original.zone == .hand prop.caster
+        castFromZone := some prop.original.zone.kind
         supertypes := g.supertypes o
         types := g.types o
         subtypes := g.subtypes o }

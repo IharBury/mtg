@@ -601,6 +601,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                     (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
                     (useImplicitPermissions := false)
                     (fromHand := prop.original.zone == .hand p)
+                    (castFromZone := some prop.original.zone.kind)
                 else
                   spellSacOk && spellDiscardOk && spellBeholdOk
               let frontAffordable :=

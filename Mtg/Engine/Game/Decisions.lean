@@ -2861,9 +2861,10 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       (extraCounters := extraCounters) (recordRecent := recordRecent) (cause := cause)).1
   | .createTreasureTokens controller n tapped cause =>
     g.createTreasureTokens controller n (tapped := tapped) (cause := cause)
-  | .createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause =>
+  | .createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause copyCtx =>
     g.createKindTokens controller kind n (tapped := tapped) (attacking := attacking)
       (attackingTarget := attackingTarget) (resetRecent := resetRecent) (cause := cause)
+      (copyCtx := copyCtx)
   | .createAndMarkTokensAttacking controller kind n tapped holds sourceId cause =>
     g.createAndMarkTokensAttacking controller kind n tapped holds (sourceId := sourceId)
       (cause := cause)
@@ -3596,8 +3597,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
         if !types.isEmpty then (fun _ o => types.any (g.hasType o ·))
         else (fun preId _ => matchedPreIds.contains preId)
       g.finishMillChooseForHand p preIds pred max mustOne (cause := cause)
-  | .makeFrcLoop p kind remaining x extraCounters cause =>
-    g.makeFrcLoop p kind remaining x extraCounters cause
+  | .makeFrcLoop p kind remaining x extraCounters cause copyCtx =>
+    g.makeFrcLoop p kind remaining x extraCounters cause copyCtx
   | .finishFrcRestBottom p rest shuffle cause dackTargets =>
     g.finishFrcRestBottom p rest shuffle (cause := cause) (dackTargets := dackTargets)
   | .finishFrcPostStep step =>

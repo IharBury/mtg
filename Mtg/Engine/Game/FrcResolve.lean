@@ -69,26 +69,30 @@ private def destroyIds (g : Game) (ids : Array ObjectId) (pred : GameObject → 
     g.destroyPermanentsLoop validIds (preBattlefield := some preBf)
 
 def makeFrcLoop (g : Game) (p : PlayerId) (k : TokenSpec) (remaining : Nat) (x : Nat)
-    (extraCounters : CounterBag) (cause : Option EventCause) : Game :=
+    (extraCounters : CounterBag) (cause : Option EventCause)
+    (copyCtx : CopyTokenContext := {}) : Game :=
   if remaining == 0 then g
   else if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.makeFrcLoop p k remaining x extraCounters cause)
+    g.chainPendingReplacement (.makeFrcLoop p k remaining x extraCounters cause copyCtx)
   else
-    let printed := tokenPrinted k x
-    (g.createToken p printed (extraCounters := extraCounters)
-      (recordRecent := true) (cause := cause) (count := remaining)).1
+    match g.resolveTokenPrinted? k x copyCtx with
+    | none => g.logMsg "no token is created (CR 111.12)"
+    | some printed =>
+      (g.createToken p printed (extraCounters := extraCounters)
+        (recordRecent := true) (cause := cause) (count := remaining)).1
 
 private def makeFrc (g : Game) (p : PlayerId) (k : TokenSpec) (n : Nat := 1) (x : Nat := 0)
-    (extraCounters : CounterBag := #[]) (cause : Option EventCause := none) : Game :=
+    (extraCounters : CounterBag := #[]) (cause : Option EventCause := none)
+    (copyCtx : CopyTokenContext := {}) : Game :=
   if let .chooseReplacement .. := g.pending then
     if n == 0 || !g.stillInGame p then g
-    else g.chainPendingReplacement (.makeFrcLoop p k n x extraCounters cause)
+    else g.chainPendingReplacement (.makeFrcLoop p k n x extraCounters cause copyCtx)
   else if n == 0 || !g.stillInGame p then g.change (.recentTokenIds #[])
   else
     let g := g.change (.recentTokenIds #[])
     let batchCause := cause.orElse (fun _ => g.resolvingBatchCause p none)
     g.withBatch batchCause fun g =>
-      g.makeFrcLoop p k n x extraCounters cause
+      g.makeFrcLoop p k n x extraCounters cause copyCtx
 
 private def revealUntil (g : Game) (p : PlayerId) (pred : CardDef → Bool) (limit : Nat)
     (cause : Option EventCause := none) :
@@ -959,30 +963,54 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
   | .warriorsX => g.makeFrc controller .warrior xSpell
   | .citizensX => g.makeFrc controller .citizen xSpell
   | .explore =>
-    let lib := (g.player controller).library
-    if lib.isEmpty then g.logMsg s!"{pl.name} explores (empty library)"
-    else
-      let top := lib.back!
-      let card := g.object! top
-      let cName := g.name card
-      let g := g.record (GameEvent.revealed g.turnNumber controller #[top]
-        (cause := some (g.resolvingOrRuleCause controller sourceId)))
-      if g.isLand card then
-        let (g, _) := g.move top (.hand controller) none
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.finishFrcPostStep (.logExploreLandToHand controller top cName))
-        else if (g.followMovedToZone? top (· == .hand controller)).isSome then
-          g.logMsg s!"{pl.name} explores and puts {cName} into their hand"
-        else g
+    let resolvedTarget? : Except Game (Option GameObject) :=
+      if effect.requiresTarget || !targets.isEmpty then
+        match targets[0]? with
+        | some t@(Target.permanent tid) =>
+          let legal :=
+            if effect.targetKind != .none then
+              g.targetLegalAt controller effect.targetKind 0 t sourceId
+            else
+              (g.findObject? tid).any (fun o => o.isOnBattlefield && g.isCreature o)
+          if !legal then
+            .error (g.illegalAbilityTarget t)
+          else
+            match g.findObject? tid with
+            | some o => .ok (some o)
+            | none => .error (g.illegalAbilityTarget t)
+        | _ => .error (g.logMsg "The target is no longer legal")
       else
-        let g := g.logMsg s!"{pl.name} puts {cName} on top of their library"
-        match g.srcObj? sourceId with
-        | some o =>
-          if g.isCreature o then
-            (g.logMsg s!"{pl.name} explores").addPlusOnePlusOneTo o 1 (byPlayer := some controller)
-          else g.logMsg s!"{pl.name} explores and leaves {cName} on top"
-        | none => g.logMsg s!"{pl.name} explores and leaves {cName} on top"
+        .ok (g.srcObj? sourceId)
+    match resolvedTarget? with
+    | .error gIllegal => gIllegal
+    | .ok explorer? =>
+      let explorerCtrl := (explorer?.bind g.controllerOf).getD controller
+      let explorerPl := g.player explorerCtrl
+      let lib := explorerPl.library
+      if lib.isEmpty then g.logMsg s!"{explorerPl.name} explores (empty library)"
+      else
+        let top := lib.back!
+        let card := g.object! top
+        let cName := g.name card
+        let g := g.record (GameEvent.revealed g.turnNumber explorerCtrl #[top]
+          (cause := some (g.resolvingOrRuleCause controller sourceId)))
+        if g.isLand card then
+          let (g, _) := g.move top (.hand explorerCtrl) none
+          if let .chooseReplacement .. := g.pending then
+            g.chainPendingReplacement
+              (.finishFrcPostStep (.logExploreLandToHand explorerCtrl top cName))
+          else if (g.followMovedToZone? top (· == .hand explorerCtrl)).isSome then
+            g.logMsg s!"{explorerPl.name} explores and puts {cName} into their hand"
+          else g
+        else
+          let g := g.logMsg s!"{explorerPl.name} puts {cName} on top of their library"
+          match explorer? with
+          | some o =>
+            if o.isOnBattlefield && (effect.requiresTarget || g.isCreature o) then
+              (g.logMsg s!"{explorerPl.name} explores").addPlusOnePlusOneTo o 1
+                (byPlayer := some explorerCtrl)
+            else g.logMsg s!"{explorerPl.name} explores and leaves {cName} on top"
+          | none => g.logMsg s!"{explorerPl.name} explores and leaves {cName} on top"
   | .transformIncubator =>
     match g.srcObj? sourceId with
     | some o =>
@@ -997,7 +1025,8 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       let g := g.record
         (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
           (cause := transformCause))
-      let g := g.logMsg s!"{oName} transforms into a 0/0 Phyrexian with {counters} +1/+1 counters"
+      let backName := g.name (g.object! o.id)
+      let g := g.logMsg s!"{oName} transforms into a 0/0 {backName} with {counters} +1/+1 counters"
       reconcileControlAfterTransition pre g (cause := some transformCause)
     | none => g
   | .turnFaceUp =>

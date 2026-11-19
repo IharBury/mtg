@@ -120,8 +120,9 @@ Oracle text writes `with "..."` inline on the token description. -/
 def oracleQuote? : TokenAbilitySpec → Option String
   | .tapSacrificeAddAnyOneColor 1 =>
     some "{T}, Sacrifice this token: Add one mana of any color."
-  | .onAttackMayMill 1 =>
-    some "Whenever this token attacks, you may mill a card."
+  | .onAttackMayMill n =>
+    some (if n == 1 then "Whenever this token attacks, you may mill a card."
+      else s!"Whenever this token attacks, you may mill {n} cards.")
   | .onGainLifePutPlusOne 1 =>
     some "Whenever you gain life, put a +1/+1 counter on this token."
   | _ => none

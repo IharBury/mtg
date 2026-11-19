@@ -1648,11 +1648,13 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
     else
       g.finishCreatedTokenNote controller .remember startEventIdx
   else if kind == .zabu || kind == .theVoid || kind == .redwing || kind == .galactus then
-    (g.spawnFace (recipients kind who) (tokenPrinted kind) (counted.getD 0)
-      (tapped := tapped)).1
+    match tokenPrinted? kind with
+    | some printed => (g.spawnFace (recipients kind who) printed (counted.getD 0) (tapped := tapped)).1
+    | none => g
   else if kind == .merfolk && amount == .blueManaSymbols then
     g.createMerfolkForBlueSymbols controller lastKnownPower
   else
+    let copyCtx := g.copyTokenContextOf sourceId targets
     match who, amount, note with
     | .you, .oppArtifacts, _ =>
       let n := g.countOpponentArtifacts controller
@@ -1683,7 +1685,8 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         let n := (lastKnownPower.getD 0).toNat
         g.createTreasureTokens controller n
     | .you, .perSubtype subtype, _ =>
-      g.createKindTokens controller kind (g.countSubtype controller subtype) (tapped := tapped)
+      g.createKindTokens controller kind (g.countSubtype controller subtype)
+        (tapped := tapped) (copyCtx := copyCtx)
     | _, .chosenCreatureType, _ =>
       let types := (g.creaturesControlledBy controller).foldl (fun acc o =>
         (g.subtypes o).foldl (fun acc t =>
@@ -1694,7 +1697,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         g.beginFraChoice controller (.chooseCreatureType types)
           s!"{(g.player controller).name} chooses a creature type"
     | .you, .fixed n, .none =>
-      g.createKindTokens controller kind n.toNat (tapped := tapped)
+      g.createKindTokens controller kind n.toNat (tapped := tapped) (copyCtx := copyCtx)
     | .controller .target, _, .none =>
       -- Destroy may already have moved the permanent. The controller who
       -- creates the token is the one it had on the battlefield.
@@ -1702,7 +1705,7 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
       match (g.collectPlayers ctx (.controller .target)).bind (·[0]?) with
       | some pid =>
         if kind == .treasure && !tapped then g.createTreasureTokens pid n
-        else g.createKindTokens pid kind n (tapped := tapped)
+        else g.createKindTokens pid kind n (tapped := tapped) (copyCtx := copyCtx)
       | none => g
     | who, _, note =>
       let n := counted.getD 0
@@ -1717,7 +1720,8 @@ def applyCreateTokens (g : Game) (controller : PlayerId)
         let g := g.change (.recentTokenIds #[])
         let g : Game := g.withBatch none fun g =>
           pids.foldl (fun (g : Game) (pid : PlayerId) =>
-            g.createKindTokens pid kind n (tapped := tapped) (resetRecent := false)) g
+            g.createKindTokens pid kind n (tapped := tapped) (resetRecent := false)
+              (copyCtx := copyCtx)) g
         let followup? : Option CreatedTokenFollowup :=
           match note with
           | .attachReflexive => some .attachReflexive
@@ -4501,12 +4505,17 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
         (.createAndMarkTokensAttacking controller kind n tapped holds sourceId cause)
   else if !holds then
     g.createKindTokens controller kind n (tapped := tapped) (attacking := false) (cause := cause)
+      (copyCtx := { sourceId })
   else if !g.stillInGame controller then
     let g := g.change (.recentTokenIds #[])
     if n == 0 then g
     else g.logMsg "no token is created (CR 800.4b)"
   else
-    let rawPrinted := tokenPrinted kind
+    match g.resolveTokenPrinted? kind 0 { sourceId } with
+    | none =>
+      let g := g.change (.recentTokenIds #[])
+      if n == 0 then g else g.logMsg "no token is created (CR 111.12)"
+    | some rawPrinted =>
     let (batches, applied, choice?) := g.replaceTokenCreationChoice {
       controller := controller
       printed := rawPrinted
@@ -5354,6 +5363,26 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       .mayOnDecline none,
       .mayContext (some ctx)]
       |>.logMsg s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution := action }}"
+  | .may (.mill (.fixed n) .you .none) (.sequence []) .ifYouDo =>
+    let action : TriggeredAbility.TriggerResolution := .mill (.fixed n) .you .none
+    let ctx : TriggerSequenceRest := {
+      controller
+      ability := ab
+      sourceId
+      targets
+      dividedDamage
+      lastKnownPower
+      lastKnownToughness
+      sourceName
+      cardPower := sequencedCardPower
+      steps := [] }
+    let millText := if n == 1 then "mill a card" else s!"mill {n} cards"
+    g.changes #[
+      .pending (.mayResolve controller),
+      .mayOnAccept (some action),
+      .mayOnDecline none,
+      .mayContext (some ctx)]
+      |>.logMsg s!"{(g.player controller).name} may {millText}"
   | .may (.dealDamage .lastKnownPower .target .none) (.sequence []) .ifYouDo =>
     if g.loggedSheHulkDealtDamage then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
@@ -5666,11 +5695,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
   | .createTokens kind (.fixed n) tapped .you .none =>
     g.createKindTokens controller kind n.toNat (tapped := tapped)
+      (copyCtx := g.copyTokenContextOf sourceId targets)
   | .addMana types amount =>
     let chosenX := g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?
     g.applyAddMana controller sourceId types amount targets lastKnownPower lastKnownToughness
       (chosenX := chosenX)
   | .discard (.cards n) => g.beginDiscardCards #[controller] n
+  | r@(.may (.mill (.fixed _) .you .none) (.sequence []) .ifYouDo) =>
+    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+      lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
   | r =>
     let chosenX := g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?
     match Resolution.toSpell r with

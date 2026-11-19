@@ -1532,6 +1532,13 @@ inductive StackEntryChange where
   | clearChosenModes
 deriving Repr, Inhabited, BEq
 
+/-- Object references available to resolve `TokenSpec.copyOf` (CR 707.2 / 707.9 / 111.12). -/
+structure CopyTokenContext where
+  sourceId : Option ObjectId := none
+  targetId : Option ObjectId := none
+  triggerSubjectId : Option ObjectId := none
+deriving DecidableEq, Repr, Inhabited, BEq
+
 mutual
 
 /-- Continuation stored while waiting for a player to answer `Pending.chooseReplacement`
@@ -1604,6 +1611,7 @@ inductive PendingReplacement where
   | createKindTokens (controller : PlayerId) (kind : TokenSpec) (n : Nat)
       (tapped : Bool) (attacking : Bool) (attackingTarget : Option AttackTarget)
       (resetRecent : Bool) (cause : Option EventCause)
+      (copyCtx : CopyTokenContext := {})
   | createAndMarkTokensAttacking (controller : PlayerId) (kind : TokenSpec)
       (n : Nat) (tapped holds : Bool) (sourceId : Option ObjectId)
       (cause : Option EventCause := none)
@@ -1835,6 +1843,7 @@ inductive PendingReplacement where
       (maxPut : Option Nat := none) (cause : Option EventCause := none)
   | makeFrcLoop (p : PlayerId) (kind : TokenSpec) (remaining : Nat) (x : Nat)
       (extraCounters : CounterBag) (cause : Option EventCause)
+      (copyCtx : CopyTokenContext := {})
   | finishFrcRestBottom (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool := false)
       (cause : Option EventCause := none)
       (dackTargets : Array ObjectId := #[])
