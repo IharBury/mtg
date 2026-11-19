@@ -130,6 +130,16 @@ def intrinsicLandMana (g : Game) (o : GameObject) : Array ManaType :=
 def landsCouldProduce (g : Game) (lands : Array GameObject) : Array ManaType :=
   uniqMana (lands.foldl (fun acc o => acc ++ g.intrinsicLandMana o) #[])
 
+/-- Evaluate a symbolic `ManaPoolPalette` in `(g, env)` with full CR 106.7
+`landsCouldProduce` resolution. -/
+def evalManaPalette (g : Game) (env : EvalEnv) (palette : ManaPoolPalette) : Array ManaType :=
+  EvalExpr.evalManaPalette g env Game.landsCouldProduce palette
+
+/-- Evaluate a symbolic `ManaSpec` in `(g, env)` into a concrete `ManaOutput`
+(CR 106.1 / 106.7 / 605). -/
+def evalManaSpec (g : Game) (env : EvalEnv) (spec : ManaSpec) : ManaOutput :=
+  EvalExpr.evalManaSpec g env Game.landsCouldProduce spec
+
 /-- Mana abilities from a card's printed `{T}: Add` lines, for `o`. -/
 def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbilityDef :=
   let p := (g.controllerOf o).getD o.owner

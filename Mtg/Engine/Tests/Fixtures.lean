@@ -64,6 +64,7 @@ import Mtg.Engine.Tests.PutCounters
 import Mtg.Engine.Tests.BecomeArtifact
 import Mtg.Engine.Tests.BecomePrepared
 import Mtg.Engine.Tests.Exile
+import Mtg.Engine.Tests.EvalExpr
 
 /-!
 # Engine Test Fixtures

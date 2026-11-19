@@ -1,4 +1,6 @@
 import Mtg.Engine.Card.CardDef
+import Mtg.Engine.Card.ManaSpec
+import Mtg.Engine.Card.Parser.SubGrammars
 
 /-!
 # Compile-time guards
@@ -1783,4 +1785,64 @@ end CardDef
     (StaticAbility.otherCreaturesGet #[.elf] 1 1) ==
     StaticAbility.otherCreaturesGet #[.goblin] 1 1
 
+-- Phase 2: Pure Expression Algebra (`Expr`), generalized `ManaSpec` & `TokenSpec`,
+-- `ToOracle`, and Stage-4 Sub-Grammar Parsers (CR 106, 107, 111, 611, 612).
+#guard ValueExpr.evalConst? 5 (.binary .add (.const 2) .chosenX) == some 7
+#guard ValueExpr.evalConst? 0 (.binary .max (.const (-3)) (.const 0)) == some 0
+#guard ValueExpr.evalConst? 0 (.binary .divFloor (.const 7) (.const 2)) == some 3
+#guard ValueExpr.evalConst? 0 (.binary .min (.const 7) (.const 2)) == some 2
+#guard ValueExpr.evalConst? 0 (.playerMetric .life .you) == none
+#guard CmpOp.ge.eval 4 4 && !CmpOp.gt.eval 4 4 && CmpOp.le.eval 3 4 && CmpOp.ne.eval 3 4
+#guard
+  let tcs : Array TextChange := #[.replaceCreatureType .elf .goblin, .replaceColorWord .green .red]
+  let objs : ObjectExpr :=
+    .inZones .battlefield
+      (.all #[.hasSubtype (.literal .elf), .hasColor (.literal .green), .controlledBy .you])
+  let spec : ManaSpec := .sequence #[(ManaType.colored .green, .count objs)]
+  HasTextChange.applyTextChanges tcs spec ==
+    .sequence #[(ManaType.colored .green,
+      .count (.inZones .battlefield
+        (.all #[.hasSubtype (.literal .goblin), .hasColor (.literal .red), .controlledBy .you])))]
+#guard
+  let tcs : Array TextChange := #[.replaceCreatureType .elf .goblin]
+  let tok : TokenSpec := .custom {
+    subtypes := #[.elf]
+    power? := some (.count (.inZones .battlefield (.hasSubtype (.literal .elf))))
+    toughness? := some (.const 1)
+  }
+  HasTextChange.applyTextChanges tcs tok == .custom {
+    subtypes := #[.goblin]
+    power? := some (.count (.inZones .battlefield (.hasSubtype (.literal .goblin))))
+    toughness? := some (.const 1)
+  }
+#guard
+  let s : ManaSpec := .oneOf (.commanderColorIdentity .you) (.const 1)
+  toOracleStr s == "one mana of any one color in your commander's color identity"
+#guard
+  let s : ManaSpec := .sequence #[(ManaType.colored .green,
+    .count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))]
+  toOracleStr s == "{G} for each Elf you control"
+#guard
+  (Parser.parseNounPhrase "target untapped red Elf creature you control").map (·.isTarget) ==
+    some true
+#guard
+  Parser.parseValueExpr "the number of Elves you control" ==
+    some (.aggregate .count .one
+      (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))
+#guard
+  Parser.parseCondition "you control three or more artifacts" ==
+    some (.cmp .ge
+      (.aggregate .count .one
+        (.inZones .battlefield (.all #[.hasType .artifact, .controlledBy .you])))
+      (.const 3))
+#guard
+  Parser.parseDuration "until end of turn" == some .untilEndOfTurn
+#guard
+  Parser.parseDuration "until this enchantment leaves the battlefield" ==
+    some (.untilLeavesBattlefield .this)
+#guard
+  Parser.parseDuration "for as long as it remains exiled" ==
+    some (.whileInZone .this .exile)
+
 end Mtg.Engine
+

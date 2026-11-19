@@ -1,6 +1,7 @@
 import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.Text
 import Mtg.Engine.Card.Primitives
+import Mtg.Engine.Card.Expr
 
 /-!
 # Token specifications (CR 111, 707.9)
@@ -8,8 +9,8 @@ import Mtg.Engine.Card.Primitives
 Unified, parameterized `TokenSpec` anchored to the 25 September 2026
 Comprehensive Rules:
 - `PredefinedToken` (CR 111.10a–x)
-- `CustomTokenSpec` (CR 111.3 / 111.4 / 111.11)
-- `CopyTargetRef` / `CopyModification` (CR 707.9)
+- `CustomTokenSpec` (CR 111.3 / 111.4 / 111.11, with `ValueExpr` P/T)
+- `TokenSpec.copyOf` / `CopyModification` (CR 707.9, with `ObjectExpr` source ref)
 -/
 
 namespace Mtg.Engine
@@ -56,25 +57,6 @@ def oracleNoun (p : PredefinedToken) : String :=
   s!"{p.name} token"
 
 end PredefinedToken
-
-/-- Power or toughness component of a custom token (CR 111.3 / 107.3; generalized
-to `ValueExpr` in Phase 2). -/
-inductive TokenStat where
-  | fixed (n : Int)
-  | chosenX
-deriving DecidableEq, Repr, Inhabited, BEq
-
-namespace TokenStat
-
-def toOracle : TokenStat → String
-  | .fixed n => toString n
-  | .chosenX => "X"
-
-def eval (x : Nat := 0) : TokenStat → Int
-  | .fixed n => n
-  | .chosenX => Int.ofNat x
-
-end TokenStat
 
 /-- Parameterized abilities carried by custom tokens (CR 111.3; generalized to
 the full mutual `Ability` AST in Phase 8). -/
@@ -138,15 +120,15 @@ structure CustomTokenSpec where
   types : Array CardType := #[.creature]
   subtypes : Array CardSubtype := #[]
   colors : ColorSet := ColorSet.empty
-  power? : Option TokenStat := none
-  toughness? : Option TokenStat := none
+  power? : Option ValueExpr := none
+  toughness? : Option ValueExpr := none
   loyalty? : Option Int := none
   keywords : Keywords := Keywords.none
   abilities : Array TokenAbilitySpec := #[]
   /-- True for CR 111.11 Oracle-card-named shorthand tokens printed as
   `"<Name> token"` (e.g. `"Lotus token"`, `"Gingerbrute token"`). -/
   useCardNameShorthand : Bool := false
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 instance : HasTextChange CustomTokenSpec where
   applyTextChanges tcs s :=
@@ -154,15 +136,9 @@ instance : HasTextChange CustomTokenSpec where
     else
       { s with
         subtypes := HasTextChange.applyTextChanges tcs s.subtypes
-        colors := HasTextChange.applyTextChanges tcs s.colors }
-
-/-- Reference to the object being copied by `TokenSpec.copyOf` (CR 707.9;
-generalized to `ObjectExpr` in Phase 2). -/
-inductive CopyTargetRef where
-  | source
-  | target
-  | triggerSubject
-deriving DecidableEq, Repr, Inhabited, BEq
+        colors := HasTextChange.applyTextChanges tcs s.colors
+        power? := HasTextChange.applyTextChanges tcs s.power?
+        toughness? := HasTextChange.applyTextChanges tcs s.toughness? }
 
 /-- Modification applied while creating a token copy (CR 707.9). -/
 inductive CopyModification where
@@ -192,8 +168,8 @@ inductive TokenSpec where
   /-- A custom token with explicit characteristics, including CR 111.11 card-named tokens. -/
   | custom (spec : CustomTokenSpec)
   /-- A token copy of a referenced object with optional CR 707.9 exceptions. -/
-  | copyOf (ref : CopyTargetRef) (mods : Array CopyModification := #[])
-deriving DecidableEq, Repr, Inhabited, BEq
+  | copyOf (ref : ObjectExpr) (mods : Array CopyModification := #[])
+deriving Repr, Inhabited, BEq
 
 instance : HasTextChange TokenSpec where
   applyTextChanges tcs t :=
@@ -202,7 +178,8 @@ instance : HasTextChange TokenSpec where
       match t with
       | .predefined k => .predefined k
       | .custom s => .custom (HasTextChange.applyTextChanges tcs s)
-      | .copyOf tgt mods => .copyOf tgt (HasTextChange.applyTextChanges tcs mods)
+      | .copyOf tgt mods =>
+        .copyOf (HasTextChange.applyTextChanges tcs tgt) (HasTextChange.applyTextChanges tcs mods)
 
 namespace TokenSpec
 
@@ -228,8 +205,8 @@ def creature (subtypes : Array CardSubtype) (power toughness : Int)
     (abilities : Array TokenAbilitySpec := #[]) : TokenSpec :=
   .custom {
     name?, supertypes, types, subtypes, colors
-    power? := some (.fixed power)
-    toughness? := some (.fixed toughness)
+    power? := some (.const power)
+    toughness? := some (.const toughness)
     keywords, abilities
   }
 
@@ -438,8 +415,8 @@ def gingerbrute : TokenSpec :=
     name? := some "Gingerbrute"
     types := #[.artifact, .creature]
     subtypes := #[.food, .golem]
-    power? := some (.fixed 1)
-    toughness? := some (.fixed 1)
+    power? := some (.const 1)
+    toughness? := some (.const 1)
     keywords := Keyword.haste
     abilities := #[.payGenericCantBeBlockedExceptHaste 1, .tapSacrificeGainLife 2 3]
     useCardNameShorthand := true
@@ -491,7 +468,7 @@ def customOracleNoun (s : CustomTokenSpec) : String :=
     let supParts := s.supertypes.toList.map supertypeLower
     let ptParts :=
       match s.power?, s.toughness? with
-      | some p, some t => [s!"{p.toOracle}/{t.toOracle}"]
+      | some p, some t => [s!"{toOracleStr p}/{toOracleStr t}"]
       | _, _ => []
     let colorParts :=
       if s.colors.isColorless then ["colorless"]
@@ -520,6 +497,11 @@ def oracleNoun : TokenSpec → String
   | .predefined p => p.oracleNoun
   | .custom s => customOracleNoun s
   | .copyOf _ _ => "token that's a copy"
+
+instance : ToOracle TokenSpec where
+  toOracle ctx t :=
+    let s := if ctx.plural then t.oracleNoun.replace "token" "tokens" else t.oracleNoun
+    if ctx.capitalize then capitalizeAscii s else s
 
 /-- Plural Oracle noun: the singular form with `token` → `tokens`. -/
 def pluralNoun (t : TokenSpec) : String :=

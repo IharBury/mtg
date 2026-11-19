@@ -1,9 +1,12 @@
 import Mtg.Engine.Card.Primitives
-import Mtg.Engine.Card.ManaSpec
+import Mtg.Engine.Card.ManaTypes
 import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.Text
 import Mtg.Engine.Card.Counter
+import Mtg.Engine.Card.Expr
+import Mtg.Engine.Card.ManaSpec
 import Mtg.Engine.Card.Token
+import Mtg.Engine.Card.Parser.SubGrammars
 import Mtg.Engine.Card.Targeting
 import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.SpellResolution
@@ -35,12 +38,20 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 
 - `Primitives`: shared zone, designation, cost, replacement-tier, type/color
   modification, and Layer 3 `TextChange`/`HasTextChange` primitives.
-- `ManaSpec`: mana types, `ManaOutput`, `ManaSpec`, and compositional
-  `ManaSpendRestriction` (CR 106).
+- `ManaTypes`: Layer-0 evaluated mana types (`ManaType`, `ManaOutput`) and
+  compositional `ManaSpendRestriction` (CR 106), below `Mtg.Engine.Mana`.
 - `Keywords`: keyword abilities (CR 702).
 - `Text`: shared Oracle-text phrase helpers.
 - `Counter`: counter kinds a permanent can carry (CR 122).
-- `Token`: unified parameterized `TokenSpec` (CR 111 / 707.9).
+- `Expr`: Layer-1 pure expression algebra (`VarId`, `LibraryPosSpec`,
+  `PlayerFilter`/`PlayerExpr`, `ObjectPred`/`ObjectFilter`/`ObjectExpr`,
+  `ValueExpr`, `Condition`, `DurationExpr`), `HasTextChange`, and `ToOracle`.
+- `ManaSpec`: symbolic `ManaPoolPalette` and `ManaSpec` generalized over
+  `ValueExpr`, `ObjectExpr`, and `PlayerExpr` (CR 106 / 605).
+- `Token`: unified parameterized `TokenSpec` (CR 111 / 707.9) over `ValueExpr`
+  and `ObjectExpr`.
+- `Parser.SubGrammars`: Stage-4 compositional expression parsers
+  (`parseNounPhrase`, `parseValueExpr`, `parseCondition`, `parseDuration`).
 - `Targeting`: targeting shapes and `HasTargeting` (CR 115.1).
 - `PermanentAction`: shared actions on permanents (CR 608.2b).
 - `SpellResolution` / `AbilityCastKind` / `Chapter`: how spells resolve,

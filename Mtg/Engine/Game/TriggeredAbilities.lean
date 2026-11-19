@@ -4514,7 +4514,7 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
     if n == 0 then g
     else g.logMsg "no token is created (CR 800.4b)"
   else
-    match g.resolveTokenPrinted? kind 0 effectiveCopyCtx with
+    match g.resolveTokenPrinted? kind 0 effectiveCopyCtx (controller := controller) with
     | none =>
       let g := g.change (.recentTokenIds #[])
       if n == 0 then g else g.logMsg "no token is created (CR 111.5 / 111.12)"

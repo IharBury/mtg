@@ -112,6 +112,20 @@ inductive Phase where
   | ending
 deriving DecidableEq, Repr, Inhabited, BEq
 
+namespace Phase
+
+def englishName : Phase → String
+  | .beginning => "beginning phase"
+  | .precombatMain => "precombat main phase"
+  | .combat => "combat phase"
+  | .postcombatMain => "postcombat main phase"
+  | .ending => "ending phase"
+
+instance : ToString Phase where
+  toString := englishName
+
+end Phase
+
 /-- The phase to which a step belongs (CR 500.1). -/
 def Step.phase : Step → Phase
   | .untap | .upkeep | .draw => .beginning
@@ -120,6 +134,24 @@ def Step.phase : Step → Phase
   | .combatDamage | .endOfCombat => .combat
   | .postcombatMain => .postcombatMain
   | .end | .cleanup => .ending
+
+/-- Step or phase anchor for continuous-effect durations (`DurationExpr`, `EffectDuration`)
+(CR 500.4 / 500.5). -/
+inductive StepOrPhase where
+  | step (s : Step)
+  | phase (p : Phase)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace StepOrPhase
+
+def englishName : StepOrPhase → String
+  | .step s => s.englishName
+  | .phase p => p.englishName
+
+instance : ToString StepOrPhase where
+  toString := englishName
+
+end StepOrPhase
 
 /-- Reference to a turn for extra-turn insertion (CR 500.7). -/
 inductive TurnRef where

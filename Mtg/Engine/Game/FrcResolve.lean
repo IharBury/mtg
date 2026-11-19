@@ -75,7 +75,7 @@ def makeFrcLoop (g : Game) (p : PlayerId) (k : TokenSpec) (remaining : Nat) (x :
   else if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.makeFrcLoop p k remaining x extraCounters cause copyCtx)
   else
-    match g.resolveTokenPrinted? k x copyCtx with
+    match g.resolveTokenPrinted? k x copyCtx (controller := p) with
     | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
     | some printed =>
       (g.createToken p printed (extraCounters := extraCounters)

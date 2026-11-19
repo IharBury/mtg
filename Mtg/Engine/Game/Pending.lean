@@ -257,7 +257,7 @@ inductive EnteringAttackItem where
       (extraEntersWith : CounterBag)
       (mods : List TriggeredAbility.TriggerEnterWith)
       (logKind : EnteringAttackLog) (options : Array AttackTarget)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 namespace EnteringAttackItem
 
@@ -571,7 +571,7 @@ inductive FraChoice where
       (remaining : Array EnteringAttackItem)
       (chosen : Array (EnteringAttackItem × Option AttackTarget))
       (cause : Option EventCause := none)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 /-- Choice that must be made before priority proceeds. -/
 inductive Pending where
@@ -689,7 +689,7 @@ inductive Pending where
   | chooseReplacement (player : PlayerId) (choices : Array ReplacementId)
   /-- A random event must be resolved by supplying its result (`--norandom`). -/
   | resolveRandom (req : RandomRequest)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 /-- The prompt player stored directly on `p` (`none` when `p` does not store a
 player id directly, such as `.none`, `.declareAttackers`, `.declareBlockers`, or

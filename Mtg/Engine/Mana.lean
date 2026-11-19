@@ -1,13 +1,15 @@
-import Mtg.Engine.Card.ManaSpec
+import Mtg.Engine.Card.ManaTypes
 
 /-!
 # Mana (CR 106, 107.4, 202)
 
 Mana is the primary resource in the game. There are six types of mana: the
 five colors and colorless (CR 106.1b). Players spend mana to pay costs.
-`ManaType`, `ManaOutput`, `ManaSpec`, and `ManaSpendRestriction` live in
-`Mtg.Engine.Card.ManaSpec` and are re-exported here alongside `ManaCost` and
-`ManaPool`.
+Layer-0 runtime mana types (`ManaType`, `ManaOutput`, `ManaObjectPred`,
+`ManaAbilityPred`, `SpellRiderSpec`, `ManaSpend`, `ManaSpendRestriction`)
+live in `Mtg.Engine.Card.ManaTypes` and are re-exported here alongside
+`ManaCost` and `ManaPool`; symbolic `ManaSpec` / `ManaPoolPalette` live in
+`Mtg.Engine.Card.ManaSpec` above `Mtg.Engine.Card.Expr`.
 -/
 
 namespace Mtg.Engine
