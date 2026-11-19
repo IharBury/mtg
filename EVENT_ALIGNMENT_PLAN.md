@@ -20641,7 +20641,374 @@ Morph/Impending fallback & `.mayCastFromLooked` tax/additional-cost affordabilit
 `teamworkCreatures` / `needsBehold` / `sneakAttacker`-sacrifice exclusion / tap-less `costPicksPayable` / `zemoBoast`
 soundness).
 
-Final check (after Phase 51): `lake build`, `lake exe mtg-demo`,
+### Phase 52 — `Entering.receivePriority` `.chooseReplacement` settlement guards & `Decisions` concession / cleanup / resolution-cast continuation probes, simultaneous expiry `preState?` / pre-removal & `.copy`-aware `coDepartingIds` / 2HG `Phasing.phaseInControlled` / `.playFromExile` & `.whileInZone` logs, `isLkiSnapshot` face-down / `{X}` / Layer-6 fidelity & `.phasedIn` / trigger-queue / attachment / combat LKI, and `Demo.hasUniqueManaPayment` / `Casting` / `castAsPartOfResolution` / `Agent` cost & timing parity
+
+1. **`Entering.receivePriority` `.chooseReplacement` settlement guards, `Decisions` concession / cleanup / turn-transition probe parity, and resolution-cast / `.finishFraChoice` / `sneakAttacker` continuation probes**
+   (`Core.lean:4012, 8894, 14147–14155`,
+   `Decisions.lean:208–256, 262–284, 286–432, 518–560, 635–643, 685–720, 1260–1266, 1370–1377, 1431–1460, 1662–1701, 1718–1733, 1774–1776, 1790–1798, 1810–1845, 1881–1914, 1934–1949, 1989–2011, 2123–2132, 2167–2169, 2235–2294, 2414–2426, 5155–5311, 5383–5388, 5483–5490, 5746–5751, 7489–7491`,
+   `Entering.lean:451–539`,
+   `ManaAbilities.lean:906–925`,
+   `PriorityActions.lean:72`,
+   `StateBasedActions.lean:740, 1188`,
+   `Turns.lean:713–986, 1186–1244`;
+   **CR 117.3a–c / 117.4 / 500.2–4 / 503.1 / 514.3,3a / 601.2f–i / 603.3b / 605.3b / 608.2g / 616.1 / 704.3 / 704.5j / 800.4a,c,i,j**):
+   - **`Entering.receivePriority` `.chooseReplacement` settlement guards and `Decisions` `classifyFinishConcedePriority` / `finishCleanupAfterClearEotRecipient?` / turn-transition probe parity**
+     (`Core.lean:4012, 8894, 14147–14155`,
+     `Decisions.lean:208–256, 262–284, 286–432, 518–560, 635–643, 1260–1266, 1431–1460, 1718–1733, 1790–1798, 1934–1949, 2123–2132, 2167–2169, 2414–2426`,
+     `Entering.lean:451–539`, `StateBasedActions.lean:740, 1188`, `Turns.lean:713–986, 1186–1244`):
+     - Three priority-continuation guard and concession/turn-transition probe mismatches remain after Phase 51:
+       (i) `Entering.receivePriority` (`Entering.lean:463–464, 481–482, 492–493`) chains `.receivePriority p` whenever
+       `g.pending` is `.chooseReplacement ..` without checking `g.anyContinuationSettlesControlFlowFwd` (`Core.lean:14151`),
+       unlike `Decisions.finishAndGrantPriority` (`2123–2132, 2167–2169`) and `Decisions.finishConcedePriority` (`2420–2421`)
+       — appending an orphaned or duplicate `.receivePriority p` behind an already-queued prompt-opening or priority-granting
+       continuation in `g.pendingReplacement` / `g.outerPendingReplacements`;
+       (ii) in `Decisions.classifyFinishConcedePriority`'s `!g0.stack.isEmpty` (`resolveTop`) arm (`1434–1456`), on `1445`
+       (`g1.pending == .chooseReplacement ..`, where `g1.sbaPaused == true` so `g1.checkSBA` is a no-op via `checkSBACounted`
+       at `StateBasedActions.lean:740` / `checkSBACountedWithLeavesCore` at `1188`, whereas `1452` already has `g1.pending ==
+       .none`), `1445` evaluates `g1.checkSBA` before draining `g1`'s non-priority `.chooseReplacement` continuation
+       (`drainProbePausedStep` at `Decisions.lean:234–255`, whose `drainProbeNonPriorityCont` at `209–232` does not run
+       `.receivePriority`), and both `1445–1448` and `1452–1455` omit `Entering.receivePriority`'s non-priority
+       prompt-settling paths (`2421, 2423`, `Entering.lean:457–539`: `reopenDeferredExileCasts` opening a
+       non-`.chooseReplacement` prompt at `457–466`, `checkSBA` opening `Pending.chooseLegend` / another
+       non-`.chooseReplacement` prompt at `486–494`, or `waitingTriggers` opening `Pending.chooseTriggerToStack` at `537` /
+       `putTriggerBatch` opening `Pending.chooseTargets` at `511, 533`), returning `.grants (some q)` instead of
+       `.settlesPromptOrOver`; and
+       (iii) `Decisions.finishCleanupAfterClearEotRecipient?` (`418–425`) does not drain a non-priority `.chooseReplacement`
+       pause from `checkSBACountedWithLeaves` (`418`), explicitly matches `g1.pending == .chooseLegend ..` (`420–422`) to
+       return `livingPriorityInstead? g1 g1.activePlayer` (making `.finishCleanupAfterClearEot`'s grant probe `true` at
+       `1730–1731` even though runtime `Turns.finishCleanupAfterClearEot` at `Turns.lean:975–976` pauses on the open
+       `Pending.chooseLegend` prompt and only chains `.finishPostStep (.postSbaCleanup true)` behind it), and — together with
+       `.finishPostStep (.postSbaCleanup sba)` (`1725–1728, 1941–1944`) — assumes `sba || hasWaitingTriggers` always grants
+       priority without probing `Entering.receivePriority` (`Turns.lean:957`), while `continueStartNextTurnRecipient?`
+       (`286–413`, invoked when classifying `.continueStartNextTurn` at `1260, 1718, 1934`, including mid-loop pauses queued at
+       `Turns.lean:737–739` before seat selection and `turnBegan`, whereas `Turns.startNextTurnCore` `937` calls runtime
+       `Turns.continueStartNextTurn`) expires `remainingDeparted` (`292–304`), re-picks the seat (`305–392`), and records
+       `turnBegan` (`399` / `407`, setting `activePlayer` at `Core.lean:4012`), then returns raw `some gNext.activePlayer` at
+       `410–413` without simulating what `Turns.continueStartNextTurn` (`Turns.lean:830–858`) runs after `turnBegan` —
+       `expireFinishedNextTurnPlayerControl` + `cleanupGivesPriority false` + conditional `.powerUpsForbiddenThisTurn` on the
+       extra-turn arm (`837–843`), `expireFinishedNextTurnPlayerControl` + `cleanupGivesPriority false` on the regular-turn arm
+       (`852–853`), and `gNext.beginTurn` (`856–857`), whose shared turn-start expiry prefix (`1186–1235`) runs before
+       chaining/calling `beginTurnAfterStartExpiry` at `1236–1243` — and `nextTurnSeatOf` (`262–284`, called by the callers
+       that actually start the next turn: `finishCleanupAfterClearEotRecipient?` `424`, `advanceStepRecipient?` `642`, and
+       `.finishPostStep .startNextTurnAndBegin` / `.endTurnAfterCleanupStepEnded` / non-SBA `.postSbaCleanup` at
+       `1722–1729, 1938–1945`) returns raw `some q` without simulating `Turns.startNextTurnCore`'s pre-`continueStartNextTurn`
+       setup (`860–936`) -> `continueStartNextTurnRecipient?` (`286–413`, where turn-start expiry / `.untap` / `.upkeep`
+       `checkSBA` or triggers can end the game, open a non-priority prompt, or redirect priority via `priorityInstead` under CR
+       800.4j):
+       - Guard `.receivePriority p` chaining in `Entering.receivePriority` (`463–464, 481–482, 492–493`) on
+         `!g.anyContinuationSettlesControlFlowFwd` (preserving `savePendingP g p` when `g.anyContinuationGrantsPriorityFwd &&
+         g.hasImplicitPriorityContinuationFwd && (!hadEntryPending || g.pendingPriority.isNone)`); classify
+         `Entering.receivePriority` (`Entering.lean:451–539`) through a shared `receivePriorityOutcome` probe (`recheckSba :
+         Bool`), evaluating `receivePriorityOutcome (drainProbePausedStep g1) ... (recheckSba := true)` at `1445`,
+         `receivePriorityOutcome g1 ... (recheckSba := true)` at `1452`, and `receivePriorityOutcome ... (recheckSba :=
+         false)` on the `sba || hasWaitingTriggers` cleanup paths in `finishCleanupAfterClearEotRecipient?` (`415–425`, after
+         draining non-priority `.chooseReplacement` pauses and returning `none` when `g1.pending` is `.chooseLegend ..`) and
+         `.finishPostStep (.postSbaCleanup sba)` (`1725–1728, 1941–1944`); and in `continueStartNextTurnRecipient?` (`286–413`),
+         apply the post-`turnBegan` updates on both arms (`expireFinishedNextTurnPlayerControl`, `cleanupGivesPriority false`,
+         and extra-turn conditional `.powerUpsForbiddenThisTurn` matching `Turns.lean:837–843, 852–853`), simulate only
+         `Turns.beginTurn`'s shared start-expiry prefix (`1186–1235`, stopping at `1234–1235` before `1236–1243`'s
+         `beginTurnAfterStartExpiry` chain/call because `drainProbeNonPriorityCont` at `209–232` does not resume
+         `.beginTurnAfterStartExpiry` and `beginTurnAfterStartExpiryRecipient?` at `518–560` already simulates deferred
+         protection/life expiry, phase-in, untap, and upkeep), drain via `drainProbePausedStep`, return `none` if `over` or
+         `pending != .none`, and hand that state to `beginTurnAfterStartExpiryRecipient?` (`518–560`), while routing the
+         turn-starting `nextTurnSeatOf` callers (`424, 642, 1722–1729, 1938–1945`) through `Turns.startNextTurnCore`'s
+         pre-`continueStartNextTurn` setup (`860–936`) -> `continueStartNextTurnRecipient?` (`286–413`) (plus companion
+         settlement checks in `continuationSettlesControlFlow` at `1790–1798`).
+   - **Resolution-cast `.finishProposedSpellCosts` (`grantPriority == false`), pre-`.finalize` stage & unpaid `sneakAttacker` exclusion, and `.finishFraChoice` prompt-vs-priority probes**
+     (`Decisions.lean:685–720, 1370–1377, 1662–1701, 1774–1776, 1810–1845, 1881–1914, 1989–2011, 2123–2132, 2235–2294, 5155–5311, 5383–5388, 5483–5490, 5746–5751, 7489–7491`,
+     `ManaAbilities.lean:906–925`, `PriorityActions.lean:72`):
+     - Three continuation-probe gaps remain across `.finishProposedSpellCosts` and `.finishFraChoice`:
+       (i) resolution casts introduce `grantPriority := false` on `.finishProposedSpellCosts` at `Decisions.afterTargetsChosen`
+       (`Decisions.lean:5748`, `!isResCast`), `PriorityActions.finishProposedSpell` (`PriorityActions.lean:72`,
+       `!prop.resolutionCast`), and `Decisions.beginResolutionCastTargets` (`5385`, literal `false` starting at `.behold`
+       after `tapTeamworkCreaturesForProposed` pauses on `Pending.chooseReplacement`), forwarding `grantPriority` across
+       `.teamwork` / `.behold` / `.sneak` (`5160, 5185, 5211`) into `.finalize`, where `becomeCast` (`5282–5309`) chains
+       `.finishFraChoice` if `becomeCast` pauses (`5292–5293`) and otherwise enters `g.finishFraChoice` when
+       `!hadOuterReplacement && isResCast` (`5308`). On a pre-`becomeCast` `.finishProposedSpellCosts stage false false
+       openCont` leaf, `continuationGrantsPriority` (`1675`) returns `false` because `!grantPriority`,
+       `priorityRecipientOfContinuation?` (`1881`, leaving `1898`'s `prop.resolutionCast` guard unreachable for
+       `grantPriority == false`) and `firstPriorityGrantLeaf?` (`1993`) match only `.finishProposedSpellCosts _ true false _`,
+       and in `continuationSettlesControlFlow` (`1837–1841`), while an off-stack or departed-caster proposal falls through to
+       `g.proposalCheckpoint.isSome` (`1841`, `true` from `castAsPartOfResolution` `5483`), an in-flight resolution cast whose
+       `prop.spellId` is already on `.stack` (`5489`) with `g.stillInGame prop.caster` takes `1837–1840`
+       (`spellOpensAncestryScry || simulateFinishPostCastBody` at `685–720`) instead of `1841` and misses `.finishFraChoice`
+       settling via priority grant or outer continuation (misclassifying pre-`becomeCast` pauses in `finishAndGrantPriority`
+       `2123–2132`, `ManaAbilities` `906–918`, `chooseReplacement` `7490–7491`, and `classifyFinishConcedePriority`
+       `1371–1377` whenever `1838–1840` is `false`);
+       (ii) `.finishProposedSpellCosts` (`1680–1683, 1830–1833, 1887`) ignores pre-`.finalize` `stage` failures
+       (`tapTeamworkCreaturesForProposed` / `payBeholdForProposed` / `paySneak` reversing via `reverseProposedSpell?
+       (resumeContinuation := true)` at `5172, 5197, 5223`) and checks `sacrificeCreatureOrArtifactChoices prop.caster
+       excludeId` without excluding an unpaid `prop.sneakAttacker` (`!g.sneakPaid prop.spellId` when `stage` is `.teamwork` /
+       `.behold` / `.sneak`, returned to hand by `paySneak` at `5207` before `5233`); and
+       (iii) `continuationGrantsPriority` `.finishFraChoice` (`1662–1665`) returns `true` even when `finishFraChoice`
+       (`2273–2290`) settles on a non-priority prompt without granting priority (`g.proposedSpell.isNone &&
+       (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)` opening a non-`.chooseReplacement` prompt in
+       `reopenDeferredExileCasts` at `2274–2278`, or `g.triggerNeedingTargets.isSome` opening `Pending.chooseTargets` at
+       `2282–2283, 2288–2289` when no queued continuation/sequence intervenes):
+       - Widen `.finishProposedSpellCosts` across `continuationGrantsPriority` (`1674–1690`), `continuationSettlesControlFlow`
+         (`1824–1841`), `priorityRecipientOfContinuation?` (`1881–1905`, matching `grantPriority` so `!hadOuter &&
+         prop.resolutionCast` reaches the resolution-cast arm and returns `none` for an implicit `.finishFraChoice` grant while
+         keeping non-resolution `grantPriority == false` at `none`), and `firstPriorityGrantLeaf?` (`1993`, matching
+         `.finishProposedSpellCosts _ grantPriority false _` when `grantPriority || g.proposedSpell.any (·.resolutionCast)`)
+         so `!hadOuter && prop.resolutionCast` delegates its post-`becomeCast` outcome to `.finishFraChoice`; simulate
+         pre-`.finalize` `stage` preconditions (`.teamwork` / `.behold` / `.sneak`) and exclude unpaid `prop.sneakAttacker`
+         from `sacrificeCreatureOrArtifactChoices` in `.finishProposedSpellCosts` probes (`1676–1700, 1825–1842, 1887`); and
+         split `.finishFraChoice` priority-grant vs prompt-settlement checks (`1662–1665, 1774–1776, 1990`) so
+         `continuationGrantsPriority` is `false` (while `continuationSettlesControlFlow` remains `true`) when
+         `finishFraChoice` opens a non-priority deferred-cast or trigger-target prompt.
+
+2. **Simultaneous expiry `preState?` in `Turns.beginTurn`, pre-removal & `.copy`-aware `Leaving.coDepartingIds`, multi-step `Core.restoreCopiesWhere`, 2HG `Phasing.phaseInControlled`, and `.playFromExile` / `.whileInZone` expiry logs**
+   (`Attachments.lean:55–126, 142–173`,
+   `Core.lean:367–368, 3891–3903, 16133–16145, 16327–16354, 16477–16487, 16599, 16708–16792`,
+   `Leaving.lean:87–180, 242–252, 672–746, 3458–3489`,
+   `Movement.lean:497–505, 586–603`,
+   `Phasing.lean:774, 787, 793–796, 823–865`,
+   `Turns.lean:23–151, 323–376, 436–496, 504–516, 531–583, 871–883, 1216–1233`;
+   **CR 400.7 / 500.4–5 / 502.1 / 514.2 / 611.2a–c / 613.1a–b,7 / 702.26a–b,g–h,n / 704.5f–h / 707.2 / 800.4a,c,m / 805.4a–b / 810.2**):
+   - **Simultaneous `preState?` in `Turns.beginTurn`, pre-removal & `.copy`-aware `Leaving.coDepartingIds`, and multi-step `Core.restoreCopiesWhere` copy-chain restoration**
+     (`Attachments.lean:55–66, 87–95, 142–173`, `Core.lean:367–368, 3891–3903, 16327–16354, 16708–16792`,
+     `Leaving.lean:87–180, 672–746, 3458–3489`, `Movement.lean:497–505, 586–603`,
+     `Turns.lean:86–140, 323–341, 436–496, 531–563, 1216–1226`):
+     - Four simultaneous continuous-effect expiry and CR 800.4c `coDepartingIds` bugs remain after Phase 51:
+       (i) `Turns.beginTurn` (`Turns.lean:1218, 1222–1226`) shadows `let g0 := g0.restoreCopiesUntilNextTurn p ...` (`1223`)
+       and passes `(preState? := some g0)` (`1226`) instead of `(preState? := some preTurnExp)` into
+       `expireFraUntilTurnEffects` (`436–495`), stripping Layer-1 `.copy` characteristics from `ceaseEndingFraEmblemsWhere`'s
+       `embName` (`Attachments.lean:159, 172`) and `GameEvent.ceasedToExist` `snap` (`Attachments.lean:62–66`) on
+       simultaneously-ceasing `.fraEmblem` objects;
+       (ii) `Leaving.recordRemoveCountersMulti` (`Leaving.lean:672, 683–684, 715–716`) evaluates `g.coDepartingIds endingEmbIds
+       (endingCtrlEids := ctrlEids) (includePhasedOut := true)` on post-removal `g` instead of `pre`, where
+       `g.durationActive (.whileSourceHasCounter id k)` (`Core.lean:367–368`) is already `false`, so
+       `phasedOutExpiringSimultaneously` (`Leaving.lean:150–153`) evaluates to `false` and `restoreCopiesWhere` (`719–724`)
+       emits `"is no longer a copy of"` on a phased-out permanent right before `endControlEffectsSimultaneously` (`743`)
+       exiles it under CR 800.4c;
+       (iii) multi-step `Core.restoreCopiesWhere` callers sharing an outer `preState? = some preRef`
+       (`Core.expireWhileSourceEffects` at `16721–16722` followed by `16772–16778` for `emblemIds`, and
+       `Leaving.playerLeavesGameCore` `owned.foldl` at `3464–3470`) expire a newer top copy `eid2` in the earlier call
+       (logging the surviving intermediate copy) and then evaluate `preRef.activeLayer1CopyChain preObj (ignoreDurationFor :=
+       expEids)` (`Core.lean:16332–16336`) in the later call where already-expired `eid2` is still at `chain.back?` on
+       `preRef`, dropping the final base-card restoration log; and
+       (iv) `Leaving.coDepartingIds` (`Leaving.lean:87–180`) omits simultaneously-expiring `.copy` effects (`endingCopyEids`
+       and source-bound `.copy` effects on `allSrcs`) from `filterAfterSources` (`112–133`) and
+       `phasedOutExpiringSimultaneously` (`150–153`), missing permanents that lose scoped Layer-2 `.control`
+       (`.creaturesControlledBy`, `.creaturesWithout`, `.permanentsOfSubtype` at `Core.lean:3891–3903`) when their Layer-1
+       `.copy` effect expires in `Turns` (`118–137, 323–328, 531–535, 1216–1224`), `Leaving.recordRemoveCountersMulti`
+       (`715–724`), `Movement.move` (`498–504, 601`), or `Attachments.ceaseToExist` (`58–61, 88–95`):
+       - Pass `(preState? := some preTurnExp)` at `Turns.lean:1226`; compute `skipIds` on pre-removal `pre` in
+         `Leaving.recordRemoveCountersMulti` (`715–716`); combine direct + `emblemIds` copy restoration in
+         `Core.expireWhileSourceEffects` (`16721–16778`) and `Leaving.playerLeavesGameCore` (`3464–3470`) while filtering
+         `preRef`'s copy chain in `Core.restoreCopiesWhere` (`16332–16336`) to `.copy` effects still present in
+         `g.activeEffects`; and thread `endingCopyEids` (plus source-bound `.copy` effects on `allSrcs`) through
+         `Leaving.coDepartingIds` (`87–180`) and its `Turns` / `Leaving` / `Movement` / `Attachments` callers.
+   - **2HG departed-team `Phasing.phaseInControlled` indirect phase-in, paused CR 800.4c & non-`Turns` `.playFromExile` expiry logs, and `.whileInZone` `.copy` / `.control` expiry logs**
+     (`Attachments.lean:69–126`, `Core.lean:16133–16145, 16477–16487, 16599, 16780–16790`,
+     `Leaving.lean:242–252, 726–746`, `Movement.lean:597–603`, `Phasing.lean:774, 787, 793–796, 823–865`,
+     `Turns.lean:23–75, 123–151, 325–376, 488–496, 504–516, 561–583, 871–883, 1220–1233`):
+     - Three 2HG phase-in and continuous-effect expiry-log gaps remain after Phase 51:
+       (i) `Phasing.phaseInControlled` (`Phasing.lean:861–863`) checks `!g.stillInGame dep &&
+       departedNextTurnWouldHaveBegunSince g dep sinceIdx?` instead of `!(g.teamMembers dep).any g.stillInGame` (unlike
+       `Phasing.lean:774, 787`, `Turns.lean:504–516`, and `Core.lean:16599`), phasing in `dep`'s formerly indirectly-attached
+       permanent on an **opponent team's** untap step after `dep`'s living teammate's shared turn set `depSharedTurnBegan`
+       (`793–796`, violating CR 502.1 / 702.26g–h,n / 805.4b / 810.2);
+       (ii) `Turns` (`123–151, 325–375, 492–495, 561–582, 871–883, 1220–1227`) runs `emitExpiredPlayFromExileLogs`
+       synchronously even when `endControlEffectsSimultaneously` paused on `Pending.chooseReplacement` (`Leaving.lean:242–252`)
+       before completing a CR 800.4c exile move that ends `.control` on a *Null Summoner*, suppressing `"can no longer be
+       played from exile"`, while non-`Turns` `.playFromExile` expirations (`Attachments.ceaseToExist` `96`,
+       `Core.expireWhileSourceEffects` `16780, 16788`, `Leaving.recordRemoveCountersMulti` `726, 733`) never call
+       `emitExpiredPlayFromExileLogs`; and
+       (iii) `Movement.move` (`597–598`) and non-`.command` `Attachments.ceaseToExist` (`70, 87, 96`) call
+       `Core.expireEffectsOnLeavingObject` (`16483`), expiring `.whileInZone old.id old.zone` (and multi-target `.objects ids`
+       effects at `16136–16144`) `.copy` and `.control` effects without `restoreCopiesWhere` or `"returns to ...'s control"`
+       logs:
+       - Gate `Phasing.lean:862` on `!(g.teamMembers dep).any g.stillInGame && departedNextTurnWouldHaveBegunSince g dep
+         sinceIdx?`; emit `"can no longer be played from exile"` logs after paused `endControlEffectsSimultaneously` loops
+         finish and across `Attachments.ceaseToExist` (`96`), `Core.expireWhileSourceEffects` (`16780, 16788`), and
+         `Leaving.recordRemoveCountersMulti` (`726–746`); and route `.whileInZone old.id old.zone` `.copy` and `.control`
+         expiry in `Movement.move` (`597–603`) and `Attachments.ceaseToExist` (`87–96`) through `restoreCopiesWhere` and
+         control-return / CR 800.4c reconciliation before `expireEffectsOnLeavingObject`.
+
+3. **`isLkiSnapshot` face-down / stack `{X}` / Layer-6 ability fidelity, `.phasedIn` & `!before.phasedOut` LKI boundaries, trigger-queue source snapshots, and phased-out attachment / combat LKI**
+   (`Core.lean:3827–3852, 7230–7251, 8215–8341, 8985–8986, 9958–9963, 10282–10298, 11123–11180, 11349, 12013–12028, 12662–12670, 12709–12716, 13756–13758, 13782–13784`,
+   `Event.lean:3950–3980, 4402–4411`,
+   `ManaAbilities.lean:404–410`,
+   `Object.lean:53–111, 447–517`,
+   `Phasing.lean:76–124, 296, 310`,
+   `ResolutionEffects.lean:488–512`,
+   `TriggerArgs.lean:452–463`,
+   `TriggeredAbilities.lean:528–548, 2469–2479, 3691–3711, 3752–3782`,
+   `Triggers.lean:162–173, 594–596`;
+   **CR 107.3a / 113.7a / 202.3,3e / 506.4 / 603.3,6c,10 / 608.2h / 613.1a,f / 702.16b,e / 702.21a / 702.26b,g / 702.34a / 702.108a / 707.2 / 708.2,2a / 714.2b**):
+   - **`isLkiSnapshot` stack `{X}` mana value, `eo.faceDown` masking, and Layer-6 ability-loss / granted-ability fidelity**
+     (`Core.lean:3827–3852, 7230–7251, 8215–8341, 9958–9963, 10282–10298, 11123–11175, 11349, 12013–12028, 12662–12670, 12709–12716`,
+     `Object.lean:53–111, 447–517`):
+     - Three `isLkiSnapshot` characteristic and Layer-6 ability bugs remain after Phase 51:
+       (i) `Core.snapshot` (`Core.lean:11349`) already folds stack `chosenX` into `eo.manaValue` via `g.objectManaValue o`,
+       yet `damageSourceObjectFromLki` (`11131–11133, 11151, 11172`) overwrites `printed.manaCost` with
+       `ManaCost.ofGeneric eo.manaValue` whenever `basePrinted.manaValue != eo.manaValue` (also erasing colored mana symbols)
+       while keeping `zone := eo.zone` (`.stack`) and `chosenX := eo.chosenX`, so `objectManaValue` (`9961–9963`) adds
+       `chosenX` a second time (violating CR 107.3a / 202.3e);
+       (ii) when `eo.faceDown == true`, `damageSourceObjectFromLki` (`11124–11144`) populates `printed` from unmasked
+       `eo.toCardDef` (`Object.lean:500–502`), while `copiableValuesWithTs` (`3828`), `copiableValues` (`3838`), `baseCard`
+       (`3851`), and `currentKeywords` (`7248–7251`) short-circuit `o.isLkiSnapshot` before `o.status.faceDown` — exposing
+       hidden front-face `CardDef` fields on `copiableValues` / `baseCard` and re-injecting `prowess := true` from
+       `bc.prowessInstances > 0` in `currentKeywords` (`7250`, both when `eo.faceDown` and when Layer-6 ability loss cleared
+       `eo.keywords.prowess`) (violating CR 707.2 / 708.2a); and
+       (iii) on face-up `o.isLkiSnapshot` (`!o.status.faceDown`), `retainsPrintedAbilities` (`7230–7231`, `if o.isLkiSnapshot
+       then !o.status.faceDown`) ignores Layer-6 ability removal and returns `true` (firing stripped `.sagaChapter` at `12014`
+       and preserving stripped printed protection in `frcProtectedFrom` at `10287, 10291`), and `triggeredAbilities`
+       (`8216–8231`, which already returns `#[]` when `o.status.faceDown` at `8217` and otherwise returns `rawPrintedTrigs ++
+       impTrig` at `8218–8231`) both fires Layer-6-stripped printed triggers and drops Layer-6 granted triggers such as
+       Equipment `.equippedGetsTrampleAndCombatTreasures` (`12662–12669, 12710–12715`), while `prowessTriggers` (`8271–8280`),
+       `ironFistTapGrants` (`8282–8289`), `wardCostsOn` (`8291–8292`), and `activatedAbilitiesOf` (`8311–8340`) lack
+       `o.isLkiSnapshot` snapshot fidelity:
+       - Stop overwriting `basePrinted.manaCost` with `ManaCost.ofGeneric eo.manaValue` in `damageSourceObjectFromLki`
+         (`11131–11133`) when `!eo.faceDown && (eo.copiable.isSome || eo.printed.isSome)` (and subtract stack
+         `eo.chosenX.getD 0` on the synthetic `eo.copiable.isNone && eo.printed.isNone` fallback) while keeping
+         `Core.objectManaValue`'s (`9958–9963`) existing stack / `includeLkiX` `chosenX` addition unchanged; mask hidden
+         front-face characteristics when `eo.faceDown` in `damageSourceObjectFromLki` (`11124–11144`, `faceDownCreatureCardDef`
+         on `.battlefield` / `.stack` per CR 708.2a) and stop re-injecting `bc.prowessInstances > 0` into `currentKeywords` on
+         `o.isLkiSnapshot` (`7248–7251`); and capture evaluated Layer-6 ability-retention and effective Layer-6
+         abilities/counts on `EventObject` (`Object.lean:447–495`, `Core.snapshot` at `11339–11400`) so face-up
+         `retainsPrintedAbilities` and `triggeredAbilities` (keeping `!o.status.faceDown` / `#[]` for face-down LKI) together
+         with `prowessTriggers`, `ironFistTapGrants`, `wardCostsOn`, and `activatedAbilitiesOf` return exact snapshot Layer-6
+         values on `o.isLkiSnapshot`.
+   - **`.phasedIn` & `!before.phasedOut` LKI boundaries, trigger-queue source snapshots, and phased-out attachment / combat LKI**
+     (`Core.lean:8985–8986, 11179–11180, 13756–13758, 13782–13784`, `Event.lean:3950–3980, 4402–4411`,
+     `ManaAbilities.lean:404–410`, `Phasing.lean:76–124, 296, 310`, `ResolutionEffects.lean:488–512`,
+     `TriggerArgs.lean:452–463`, `TriggeredAbilities.lean:528–548, 2469–2479, 3691–3711, 3752–3782`,
+     `Triggers.lean:162–173, 594–596`):
+     - Four phased-out LKI, trigger-snapshot, attachment, and combat-status bugs remain after Phase 51:
+       (i) `Event.lastKnownBefore?` (`Event.lean:4402–4411`) neither terminates at `.rules (.permanent (.phasedIn eo _))`
+       (`Phasing.lean:296, 310`, returning stale pre-phase-out LKI after `id` phased back in — compounded by
+       `ManaAbilities.lean:405–410` and `TriggerArgs.lean:454–462` `.perChargeCounter` falling back to
+       `lastKnownCounterStatus?` even when `o.isOnBattlefield` is `true` with `0` counters) nor prefers an earlier
+       `!before.phasedOut` `.phasedOut` snapshot over a phased-out `.moved` / `.ceasedToExist` `before` (`before.zone ==
+       .battlefield && before.phasedOut`), and `Event.isTreasureSourceInLog` (`3955–3978`) likewise neither resets at
+       `.phasedIn` nor skips `phasedOut == true` snapshots;
+       (ii) `Core.closeBatch` (`Core.lean:13756–13758`), `Core.recordReflexiveTrigger` (`13782–13784`), `Triggers.stackTrigger`
+       (`Triggers.lean:163–167`), and `Triggers.putWaitingTrigger` (`594–596`) use `g.findObject?` instead of
+       `g.findLiveSourceObject?` (`Core.lean:11179`), snapshotting phased-out `cur` instead of pre-phase-out
+       `lastKnownBefore?`;
+       (iii) `TriggeredAbilities.applyAttach` `.eachEquipment, .enchantedCreature` (`2471–2475`), `applyTap` `.enchanted`
+       (`3702–3711`), and `applyRemoveCounters` `.all, .enchanted` (`3773–3782`) treat phased-out `src` / `host` as live on
+       the battlefield (`findObject?` without `isOnBattlefield`), while `ResolutionEffects.attachedEquipmentAtResolution`
+       (`488–512`) tests `o.zone == .battlefield` (`509`) instead of `o.isOnBattlefield` and `departedCount?` (`490–504`)
+       omits co-phased Equipment in a `PermanentEvent.phasedOut` batch (CR 702.26b,g); and
+       (iv) `Phasing.phaseOut` (`Phasing.lean:76–91, 105–124`) runs `g.removeFromCombat live` (`105`) and `acc.removeFromCombat
+       att` (`120`) *before* snapshotting `GameEvent.phasedOut` (`108, 123`), wiping `attacking` / `attackingTarget` /
+       `blocking` / `blockingIds` (and `.attackingTokensHave` keywords when `preSnaps` is empty) from the `.phasedOut`
+       snapshot, while `TriggeredAbilities` `.enrageGrantsCombat` (`537–547`) scans only `ZoneEvent.moved` and omits
+       `PermanentEvent.phasedOut`:
+       - Stop at `.phasedIn` (returning `none`) and skip `before.zone == .battlefield && before.phasedOut` `.moved` /
+         `.ceasedToExist` snapshots when a prior `!before.phasedOut` `.phasedOut` exists in `Event.lastKnownBefore?`
+         (`4402–4411`) and `Event.isTreasureSourceInLog` (`3955–3978`), and guard `.perChargeCounter` LKI fallback in
+         `ManaAbilities.lean:405–410` and `TriggerArgs.lean:454–462` on `!(g.findObject? sid).any (·.isOnBattlefield)`; use
+         `g.findLiveSourceObject?` across `Core.closeBatch` (`13756–13758`), `Core.recordReflexiveTrigger` (`13782–13784`),
+         `Triggers.stackTrigger` (`163–167`), and `Triggers.putWaitingTrigger` (`594–596`); require `isOnBattlefield` on both
+         `src` (falling back to `lastKnownBefore?`) and `host` in `TriggeredAbilities` (`2471–2475, 3702–3711, 3773–3782`)
+         and require `o.isOnBattlefield` + `PermanentEvent.phasedOut` batch scanning in
+         `ResolutionEffects.attachedEquipmentAtResolution` (`488–512`); and capture pre-`removeFromCombat` combat LKI in
+         `Phasing.phaseOut` (`76–124`) while matching `!before.phasedOut` `PermanentEvent.phasedOut` in
+         `TriggeredAbilities` `.enrageGrantsCombat` (`537–547`).
+
+4. **`Demo.hasUniqueManaPayment` rider/provenance/combination/multi-source soundness, `Casting` cost-preserving tap subsets, `Decisions.castAsPartOfResolution` clean-permission `canMorph` gate, and `Agent` / `PriorityActions` / `Casting` additional-cost parity**
+   (`Agent.lean:202–228, 281–314, 582–612`,
+   `CastExtras.lean:156–167`,
+   `Casting.lean:34–37, 87–108, 133–135, 528–561, 579–621, 791–866, 872–934, 1564–1567`,
+   `CastSpell.lean:81–91, 168, 182, 432–436`,
+   `Core.lean:8672–8677, 8775–8797, 13409–13411, 15835–15848`,
+   `Decisions.lean:5102–5120, 5205–5237, 5329–5344, 5424–5465`,
+   `Demo.lean:2150–2165, 2202–2218, 2242–2305, 2381–2435`,
+   `ManaAbilities.lean:507–509, 578–590, 864–871, 1465–1470, 1492–1493`,
+   `PriorityActions.lean:123, 190–191`;
+   **CR 106.4,6,12 / 107.3a / 118.8 / 118.9a,d / 601.2b,f–h / 601.3,3b / 602.2b / 608.2g / 702.37a / 702.176a / 733.1**):
+   - **`Demo.hasUniqueManaPayment` Treasure / *Path of Ancestry* riders, `addRestrictedMana` provenance, `ManaOutput.combination` color order, multi-source rider flips, and `Casting` cost-preserving tap subsets**
+     (`Casting.lean:791–866, 872–934, 1564–1567`, `Core.lean:8672–8677, 8775–8797, 13409–13411, 15835–15848`,
+     `Demo.lean:2150–2165, 2202–2218, 2242–2305, 2381–2435`,
+     `ManaAbilities.lean:507–509, 578–590, 864–871, 1465–1470, 1492–1493`):
+     - Four mana-payment uniqueness, provenance, and post-mana reservation gaps remain after Phase 51:
+       (i) `Demo.hasUniqueManaPayment` / `uniqueSubsetHasUniqueOutcome` (`Demo.lean:2150–2157, 2248, 2275–2276, 2292–2304,
+       2411–2430`) tracks only `FraManaUse.legendarySpell`, omitting Treasure-spent spell riders (`.youCastWithTreasure` at
+       `Core.lean:8672–8677, 13409–13411`, including sacrifice-Treasure non-plain mana abilities skipped when
+       `pool.payUnits?` succeeds at `Demo.lean:2408–2411`) and *Path of Ancestry* (`ancestryManaSpentOn` scry 1 at
+       `Core.lean:8775–8797`, `Casting.lean:1564–1567`), while `addTapManaToPool` (`ManaAbilities.lean:1465–1470`) and
+       `TapManaChoice.applyToPool` (`1492–1493`) call `addRestrictedMana` (`578–590`) without source `ObjectId` or
+       `fromTreasure` provenance (`864–871`);
+       (ii) `plainTapChoicesForUniqueness` (`Demo.lean:2202–2218, 2254`) caps zero-req colors at `maxZeroReps := 2`, dropping
+       colors ordered after floating pool colors in `ManaPool.payUnits?`'s `W < U < B < R < G` generic spend order
+       (`tapAddTwoAmong := #[W, U, R]` on `{2}` with floating `{B}` keeps `[W, U]` -> leftover `[{B}]`, missing `[R, R]` ->
+       leftover `[{R}]`);
+       (iii) single-source `plainFlips` (`Demo.lean:2414–2422, 2295–2304`) misses multi-source non-rider/rider flips (e.g.
+       tapping two `.fra .artifactSpell` `{C}` sources to replace floating `[{R}, {G, .legendarySpell}]` on a `{2}` legendary
+       artifact spell, flipping `riderSpent` from `true` to `false`); and
+       (iv) `Casting.tapPreservesPostManaCosts` (`Casting.lean:791–866`) omits unpaid `prop.tapSource` (`!prop.tapPaid`) when
+       `allPicks.isEmpty && crewN?.isNone` (`857`, and in `863–866`), while `Casting.hasCostPreservingPaymentSubset` (`886,
+       902–911`) puts non-creature/non-artifact `{T}`-cost `prop.sourceId` into `freeOthers` and omits
+       `prop.teamworkCreatures.contains o.id` from `equivKey`:
+       - Thread `(source : Option ObjectId := none) (fromTreasure : Bool := false)` through `addRestrictedMana`
+         (`ManaAbilities.lean:578–590, 1465–1470, 1492–1493`) and track `fromTreasure` + *Path of Ancestry* subtype-sharing
+         source mana alongside `.legendarySpell` across `Demo.hasUniqueManaPayment` (`2150–2435`, including non-plain
+         Treasure / creature-type-sharing mana sources when `pool.payUnits?` succeeds at `2408–2430`); retain all colors in
+         `plainTapChoicesForUniqueness` whenever `pool.units` is non-empty or `.combination` can leave distinct post-spend
+         floating units (`2202–2218`); test multi-source rider-free / rider-spending reachability instead of single-source
+         `plainFlips` (`2295–2304, 2414–2422`); and enforce `!prop.tapSource || prop.tapPaid || !tappedIds.contains
+         prop.sourceId` + `teamworkCreatures` membership in `Casting.tapPreservesPostManaCosts` (`857–866`) and
+         `Casting.hasCostPreservingPaymentSubset` (`886, 902–911`).
+   - **`Decisions.castAsPartOfResolution` clean-permission `canMorph` gate, `Agent.choose` `.chooseX` / `.chooseKicker` resolution-cast & `preSpell` affordability, and Sneak mandatory-sacrifice exclusion across `Casting` / `PriorityActions` / `Agent`**
+     (`Agent.lean:202–228, 281–314, 582–612`, `CastExtras.lean:156–167`, `Casting.lean:34–37, 87–108, 133–135, 528–561, 579–621`,
+     `CastSpell.lean:81–91, 168, 182, 432–436`, `Decisions.lean:5102–5120, 5205–5237, 5329–5344, 5424–5465`,
+     `PriorityActions.lean:123, 190–191`):
+     - Four resolution-cast `canMorph`, `Agent` affordability, and Sneak additional-cost bugs remain after Phase 51:
+       (i) `Decisions.castAsPartOfResolution` (`Decisions.lean:5428–5449, 5460–5465`) omits the resolving effect's own clean
+       `!withoutManaCost` permission (`{ player := p, ignoreTiming := ignoreTiming }`, cf. `Casting.proposalAltCleanPerm?`'s
+       `resClean` at `Casting.lean:528–531`) from `cleanPerms`, forcing `morphTimingOk` and `canMorph` to `false` when
+       `!withoutManaCost && !ignoreTiming && hasZonePerms` holds only via non-clean permissions (`withoutManaCost` /
+       `payLifeEqualManaValue` / `prepareSource.isSome`) — rejecting Morph resolution casts that `proposalCanChooseMorph`
+       (`Casting.lean:553–561`) would allow when the front name is forbidden (`5460`), a non-graveyard card (`o.zone !=
+       .graveyard o.owner`, `5444`) fails the graveyard-size threshold (`5462`, `Casting.lean:87–90`), or a non-creature front
+       is not timing-legal (`!frontTimingOk`) while creature `morphSpellFace` (`Casting.lean:133–135`) is timing-legal via
+       Radagast flash (`Casting.lean:34–37`, `5464`) (CR 601.3 / 608.2g / 702.37a);
+       (ii) `Agent.choose` `.chooseX` (`Agent.lean:214–218, 283`, and `312–313` where `allPicks.isEmpty` returns `upperX`
+       immediately) zeroes `upcomingAddGen` via a leading `prop.resolutionCast ||` disjunct (`214`) and gates `unchosenAdd` on
+       `!prop.resolutionCast &&` (`283`) even though `Decisions.beginResolutionCastTargets` (`5329–5344`) prompts `.chooseX`
+       (`5330`) before `CastSpell.announceX` (`432–436`) substitutes `x` and advances into `.chooseAdditionalCost` (`5343`),
+       over-sizing `X` without reserving generic mana or sacrifice/discard sources for the unannounced additional cost so total
+       payment fails and reverses the resolution cast via `reverseProposedSpell?` / `finishFraChoice` (`Decisions.lean:5102–5120`);
+       (iii) `Agent.choose` `.chooseKicker` (`Agent.lean:582, 599–604, 609–610`) passes stack `spell` (`zone == .stack`)
+       instead of `preSpell` (`id := prop.original.id`, `zone := prop.original.zone`, `exiledBy := prop.original.exiledBy`,
+       `controller := some p`) to `canPayAnnouncedAdditionalFromSources` and `canPaySpellCostFromSources`; and
+       (iv) `Agent.choose` `.chooseKicker` (`586–587`), `PriorityActions.additionalCostChoosesGeneric` (`123`), and
+       `PriorityActions.announceAdditionalCost` (`190`) omit unpaid `prop.sneakAttacker` exclusion on
+       `sacrificeCreatureOrArtifactChoices`, while `Casting.mandatorySacrificeError?` (`94–108`) / `validateFrontFaceCast`
+       (`579–620`, called at `CastSpell.lean:168, 182` with `sneakCost` rather than `sneakAttacker`) excludes only `checkId`,
+       allowing an unpayable Sneak + mandatory-sacrifice proposal onto the stack when `sneakAttacker` is `p`'s sole
+       creature/artifact:
+       - Include `{ player := p, ignoreTiming := ignoreTiming }` in `cleanPerms` when `!withoutManaCost` in
+         `Decisions.castAsPartOfResolution` (`5428–5446`); delete the `prop.resolutionCast ||` disjunct in `upcomingAddGen`
+         (`214`) and drop the `!prop.resolutionCast &&` guard in `unchosenAdd` (`283`) in `Agent.choose` `.chooseX`; construct
+         `preSpell` from `prop.original` in `Agent.choose` `.chooseKicker` (`599–610`); and exclude unpaid `sneakAttacker`
+         from `sacrificeCreatureOrArtifactChoices` across `Casting.mandatorySacrificeError?` / `validateFrontFaceCast`
+         (`94–108, 579–620`, threading `sneakAttacker` from `CastSpell.lean:168, 182`), `PriorityActions` (`123, 190`), and
+         `Agent.choose` `.chooseKicker` (`586–587`).
+
+Tests: `Events.lean` / `Tests/Events/` (unit + replay-determinism `#guard`s for `Entering.receivePriority`
+`!anyContinuationSettlesControlFlowFwd` `.chooseReplacement` guards, `Decisions` post-`resolveTop` / post-cleanup
+`receivePriorityOutcome` & `continueStartNextTurnRecipient?` (`beginTurn` start-expiry prefix ->
+`beginTurnAfterStartExpiryRecipient?`) + turn-starting `startNextTurnCore` probes, resolution-cast `.finishProposedSpellCosts`
+(`grantPriority == false` across `continuationGrantsPriority` / `continuationSettlesControlFlow` /
+`priorityRecipientOfContinuation?` / `firstPriorityGrantLeaf?`) / pre-`.finalize` stage & unpaid `sneakAttacker` /
+`.finishFraChoice` prompt-vs-priority probes; `Turns.beginTurn` `preTurnExp` `expireFraUntilTurnEffects` `.copy` emblem LKI,
+pre-removal & `.copy`-aware `Leaving.coDepartingIds`, multi-step `Core.restoreCopiesWhere`, 2HG departed-team
+`Phasing.phaseInControlled`, and paused/non-`Turns` `.playFromExile` + `.whileInZone` `.copy`/`.control` expiry logs;
+`isLkiSnapshot` `damageSourceObjectFromLki` stack `{X}` mana-cost preservation, `eo.faceDown` masking, and face-up Layer-6
+ability-loss / granted-ability fidelity, `.phasedIn` & `!before.phasedOut` `Event.lastKnownBefore?` / `isTreasureSourceInLog`
+boundaries, `findLiveSourceObject?` trigger-queue snapshots, and phased-out attachment & pre-`removeFromCombat`
+`Phasing.phaseOut` / `.enrageGrantsCombat` LKI; and `Demo.hasUniqueManaPayment` Treasure / *Path of Ancestry* /
+`addRestrictedMana` provenance / `ManaOutput.combination` color order / multi-source rider flips, `Casting` `tapSource` &
+`teamworkCreatures` cost-preserving tap subsets, `Decisions.castAsPartOfResolution` clean-permission `canMorph` gate,
+`Agent.choose` `.chooseX` / `.chooseKicker` resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker`
+mandatory-sacrifice exclusion).
+
+Final check (after Phase 52): `lake build`, `lake exe mtg-demo`,
 `lake exe oracle-roundtrip`, no `EventCause.unclassified` constructor, no
 `ObjectId ⟨0⟩` or `BatchId ⟨0⟩` wildcard/sentinel defaults (unbatched/proposed
 events and unstamped `.engine` changes carry `batch := none` via
