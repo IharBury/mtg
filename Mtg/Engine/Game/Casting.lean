@@ -769,31 +769,83 @@ def betterManaTap (g : Game) (src : GameObject) (t : ManaType)
     (penalize src == penalize bestSrc && g.isCreature src == g.isCreature bestSrc &&
       t == .colorless && bestT != .colorless)
 
+/-- Permanents `p` may sacrifice to pay “sacrifice another creature or artifact”. -/
+def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : ObjectId) :
+    Array GameObject :=
+  let src := g.findObject? sourceId
+  let isSpellSource (s : GameObject) : Bool :=
+    s.zone == .stack && g.proposedSpell.all (fun pr => pr.spellId != sourceId || pr.kind == .spell)
+  let creatureOrPlaneswalker :=
+    src.any (fun s => isSpellSource s && (g.baseCard s).additionalCostSacrificeCreatureOrPlaneswalker)
+  let creatureOnly :=
+    src.any (fun s => isSpellSource s && (g.baseCard s).additionalCostSacrificeCreature)
+  g.permanentsOf p |>.filter (fun o =>
+    o.id != sourceId &&
+      if creatureOrPlaneswalker then g.isCreature o || g.isPlaneswalker o
+      else if creatureOnly then g.isCreature o
+      else g.isCreature o || g.isArtifact o)
+
 /-- Whether tapping `preTappedIds` for mana leaves `prop`'s unpaid post-mana
-`.crew` and tap `CostPick` costs payable (CR 601.2g–h). -/
+costs payable (teamwork, behold, sneak-excluded sacrifice, discard, `.crew`,
+`.zemoBoast`, and `CostPick`s; CR 601.2g–h / 602.2b). -/
 def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
     (preTappedIds : Array ObjectId) : Bool :=
-  if prop.kind != .activatedAbility then true
+  let teamworkOk :=
+    !prop.teamworkPaid || prop.teamworkCreatures.isEmpty ||
+      prop.teamworkCreatures.all fun id =>
+        !preTappedIds.contains id &&
+          (g.findObject? id).any fun o =>
+            o.isOnBattlefield && g.isCreature o && g.controlledBy o p && !o.status.tapped
+  let beholdOk :=
+    match prop.needsBehold with
+    | none => true
+    | some quality =>
+      (g.permanentsOf p).any (fun o => g.hasSubtype o quality) ||
+        (g.player p).hand.any (fun id =>
+          id != prop.spellId &&
+            (g.findObject? id).any (fun card => g.hasSubtype card quality))
+  if !teamworkOk || !beholdOk then false
+  else if prop.kind != .activatedAbility then
+    let excludeId := prop.sourceId.getD prop.spellId
+    let sneakPendingId? : Option ObjectId :=
+      match prop.sneakAttacker with
+      | some aid => if !g.sneakPaid prop.spellId then some aid else none
+      | none => none
+    let sacOk :=
+      !prop.needsSacrificeOther ||
+        (g.sacrificeCreatureOrArtifactChoices p excludeId).any (fun o =>
+          some o.id != sneakPendingId?)
+    let discardOk :=
+      !prop.needsDiscardCard || (g.player p).hand.any (· != prop.spellId)
+    sacOk && discardOk
   else
     match prop.sourceId, prop.activation with
     | some sid, some ab =>
       let basePicks := costPicksOf ab
       let allPicks := costPicksWithSacrificeOther basePicks
         (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
-      let hasTapPick :=
-        allPicks.any (fun pk => pk == .tapUntappedCreature || pk == .tapTwoUntappedArtifacts)
-      let crewN? : Option Nat :=
-        if !prop.fraCostPaid then
-          match ab.cost.fra with
-          | .crew n => some n
-          | _ => none
-        else none
-      if !hasTapPick && crewN?.isNone then true
+      let sacSrc :=
+        prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.fra == .exileSource
+      let discSrc :=
+        prop.discardSource || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+      let zemoOk : Bool :=
+        if !prop.fraCostPaid && ab.cost.fra == .zemoBoast then
+          let col :=
+            match g.findObject? sid <|> some prop.original with
+            | some src => TextChange.applyColor (g.evalLayer3 src) .black
+            | none => .black
+          let allCands := (g.player p).graveyard.filter (fun id =>
+            (g.findObject? id).any (fun card => (g.colors card).contains col))
+          g.canPayZemoBoast p allCands col
+        else true
+      if !zemoOk then false
       else
-        let sacSrc :=
-          prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.fra == .exileSource
-        let discSrc :=
-          prop.discardSource || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+        let crewN? : Option Nat :=
+          if !prop.fraCostPaid then
+            match ab.cost.fra with
+            | .crew n => some n
+            | _ => none
+          else none
         match crewN? with
         | some n =>
           (g.firstPayableCrewSelection? p sid n allPicks
@@ -802,12 +854,16 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
             (discardOrExileHandSource := discSrc)
             (preTappedIds := preTappedIds)).isSome
         | none =>
-          g.costPicksPayable p (some sid) allPicks
-            (tapSource := prop.tapSource)
-            (sacrificeOrExileSource := sacSrc)
-            (discardOrExileHandSource := discSrc)
-            (preTappedIds := preTappedIds)
-    | _, _ => true
+          allPicks.isEmpty ||
+            g.costPicksPayable p (some sid) allPicks
+              (tapSource := prop.tapSource)
+              (sacrificeOrExileSource := sacSrc)
+              (discardOrExileHandSource := discSrc)
+              (preTappedIds := preTappedIds)
+    | _, _ =>
+      let excludeId := prop.sourceId.getD prop.spellId
+      (!prop.needsSacrificeOther || !(g.sacrificeCreatureOrArtifactChoices p excludeId).isEmpty) &&
+        (!prop.needsDiscardCard || !(g.player p).hand.isEmpty)
 
 /-- Whether some subset of `sources` (combined with `preTappedIds` and `pool`)
 pays `cost` while preserving `prop?`'s unpaid post-mana `.crew` and tap
@@ -1833,22 +1889,6 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
           srcObj? hadOuter openCont
           (followedByFinishFra := followedByFinishFra)
           (followedByExplicitPriority? := followedByExplicitPriority?)
-
-/-- Permanents `p` may sacrifice to pay “sacrifice another creature or artifact”. -/
-def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : ObjectId) :
-    Array GameObject :=
-  let src := g.findObject? sourceId
-  let isSpellSource (s : GameObject) : Bool :=
-    s.zone == .stack && g.proposedSpell.all (fun pr => pr.spellId != sourceId || pr.kind == .spell)
-  let creatureOrPlaneswalker :=
-    src.any (fun s => isSpellSource s && (g.baseCard s).additionalCostSacrificeCreatureOrPlaneswalker)
-  let creatureOnly :=
-    src.any (fun s => isSpellSource s && (g.baseCard s).additionalCostSacrificeCreature)
-  g.permanentsOf p |>.filter (fun o =>
-    o.id != sourceId &&
-      if creatureOrPlaneswalker then g.isCreature o || g.isPlaneswalker o
-      else if creatureOnly then g.isCreature o
-      else g.isCreature o || g.isArtifact o)
 
 /-- Finish paying the proposed activation once its mana is paid and every
 chosen cost is paid: tap, life, and the source's own costs, then put it on

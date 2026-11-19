@@ -100,8 +100,8 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
        gCplNoGrant.firstContinuationPriorityGrant? == none) &&
     mustHold47i1 "1a_someNoneSeparation"
       (gAllPassedStack.continuationGrantsPriority false fcAllPassed &&
-       gAllPassedStack.priorityRecipientOfContinuation? false fcAllPassed == none &&
-       gAllPassedStack.firstPriorityGrantRecipient? false fcAllPassed == none &&
+       gAllPassedStack.priorityRecipientOfContinuation? false fcAllPassed == some p0 &&
+       gAllPassedStack.firstPriorityGrantRecipient? false fcAllPassed == some (some p0) &&
        !gAllPassedQueued.hasImplicitPriorityContinuation &&
        noAllPassedOverwrite &&
        gFcImplicit0.hasImplicitPriorityContinuation &&

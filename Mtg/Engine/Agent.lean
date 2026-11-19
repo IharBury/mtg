@@ -581,8 +581,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
           | some prop =>
             let spell := (g.findObject? prop.spellId).getD prop.original
             let face := { g.baseCard spell with keywords := g.currentKeywords spell }
-            if !prop.alternativeCost &&
-                (face.morph.isSome || face.impending.isSome) && face.kicker.isNone then
+            if (face.morph.isSome || face.impending.isSome) && face.kicker.isNone then
               let spellSacOk :=
                 !prop.needsSacrificeOther ||
                   !(g.sacrificeCreatureOrArtifactChoices p (prop.sourceId.getD prop.spellId)).isEmpty
@@ -652,8 +651,18 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       | some o => some (.sacrifice o.id)
       | none => some .decline
     | .mayCastFromLooked _ ids maxMv =>
+      let origPerm : Option PlayPermission := some { player := p, withoutManaCost := true }
       match ids.reverse.find? (fun id =>
-        (g.mayCastFromLookedError p ids maxMv id).isNone) with
+        (g.mayCastFromLookedError p ids maxMv id).isNone &&
+          (g.findObject? id).any (fun o =>
+            let face := { g.baseCard o with keywords := g.currentKeywords o }
+            g.canPaySpellCostFromSources p o
+              (g.playManaCost { o with controller := some p } face
+                (origPerm := origPerm) (flashback := some false) (useImplicitPermissions := false))
+              (fromHand := false) &&
+              g.canPayAnnouncedAdditionalFromSources p o
+                (origPerm := origPerm) (flashback := some false)
+                (useImplicitPermissions := false) (fromHand := false))) with
       | some id => some (.cast id)
       | none => some .decline
     | .mayPutLandFromHand _ =>

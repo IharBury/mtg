@@ -40,14 +40,14 @@ def resolvingDamageSource? (g : Game) : Option GameObject :=
 /-- Snapshot a damage source by `id`: live `g.snapshot` if still at `id`,
 otherwise `g.lastKnownBefore? sid` (CR 113.7a / 608.2h). -/
 def damageSourceEventById? (g : Game) (sid : ObjectId) : Option EventObject :=
-  match g.findObject? sid with
+  match g.findLiveSourceObject? sid with
   | some s => some (g.snapshot s)
   | none => g.lastKnownBefore? sid
 
 /-- Snapshot a `GameObject` damage source: live `g.snapshot` if still at `src.id`,
 otherwise its frozen `lastKnownBefore?` LKI snapshot (CR 113.7a / 608.2h). -/
 def snapshotDamageSource (g : Game) (src : GameObject) : EventObject :=
-  if (g.findObject? src.id).isSome then g.snapshot src
+  if (g.findLiveSourceObject? src.id).isSome then g.snapshot src
   else (g.lastKnownBefore? src.id).getD (g.snapshot src)
 
 /-- Resolve a stored damage-source `EventObject` snapshot to a `GameObject`:
@@ -56,7 +56,7 @@ LKI `GameObject` via `damageSourceObjectFromLki` without calling `followMoved`
 (which would pick up the post-move object and drop battlefield LKI, CR 113.7a /
 608.2h). -/
 def damageSourceFromSnapshot (g : Game) (eo : EventObject) : GameObject :=
-  match eo.id.bind g.findObject? with
+  match eo.id.bind g.findLiveSourceObject? with
   | some live => live
   | none => damageSourceObjectFromLki eo
 
@@ -67,7 +67,7 @@ def damageSourceObjFromSnapshot? (g : Game) (source : Option EventObject) : Opti
 /-- Refresh a stored `EventObject` snapshot if its `id` is still live in `g`,
 or keep the frozen LKI snapshot when the original `id` has departed. -/
 def refreshOrKeepDamageSnapshot (g : Game) (eo : EventObject) : EventObject :=
-  match eo.id.bind g.findObject? with
+  match eo.id.bind g.findLiveSourceObject? with
   | some live => g.snapshot live
   | none => eo
 
@@ -638,7 +638,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
       if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
         let g :=
           if rep.preventedAmount > 0 then
-            let isLive := (g.findObject? src.id).isSome
+            let isLive := (g.findLiveSourceObject? src.id).isSome
             let srcEvent := if isLive then g.snapshot src else srcSnap
             let prevCause :=
               g.resolveOptionalCause rep.cause (fallbackSrc := srcEvent.id)
@@ -650,7 +650,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
       else
         let dealtAmt := rep.amount
         let prevented := rep.prevented || g.preventsAllDamageTo o || o.status.shield > 0
-        let isLive := (g.findObject? src.id).isSome
+        let isLive := (g.findLiveSourceObject? src.id).isSome
         let srcCtrl? := if isLive then g.controllerOf src else srcSnap.controller
         let defaultCause :=
           cause.orElse (fun _ =>
@@ -755,7 +755,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
       let prevCause :=
         g.resolveOptionalCause rep.cause (fallbackSrc := srcEvent.id)
           (fallbackCtrl := (source.bind (fun src =>
-            if (g.findObject? src.id).isSome then g.controllerOf src else srcEvent.controller)).orElse
+            if (g.findLiveSourceObject? src.id).isSome then g.controllerOf src else srcEvent.controller)).orElse
             (fun _ => srcEvent.controller.orElse (fun _ => some pid)))
       g.record (GameEvent.damagePrevented g.turnNumber srcEvent (.player pid)
         rep.preventedAmount prevCause)
@@ -791,7 +791,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
     let dmgCause :=
       g.resolveOptionalCause rep.cause (fallbackSrc := srcEvent.id)
         (fallbackCtrl := (source.bind (fun src =>
-          if (g.findObject? src.id).isSome then g.controllerOf src else srcEvent.controller)).orElse
+          if (g.findLiveSourceObject? src.id).isSome then g.controllerOf src else srcEvent.controller)).orElse
           (fun _ => srcEvent.controller))
     let happened := GameEvent.damagedPlayer g.turnNumber srcEvent pid n.toNat false (cause := dmgCause)
     let g := if n > 0 then g.record happened else g

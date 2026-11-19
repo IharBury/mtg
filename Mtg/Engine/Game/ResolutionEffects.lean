@@ -644,7 +644,7 @@ def extortDrain (g : Game) (controller : PlayerId) : Game :=
 def abilitySourceFor (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : GameObject :=
   match sourceId with
   | some sid =>
-    match g.findObject? sid with
+    match g.findLiveSourceObject? sid with
     | some o => o
     | none =>
       match g.lastKnownBefore? sid with

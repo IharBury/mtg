@@ -230,8 +230,9 @@ def pass (g : Game) (p : PlayerId) : Except String Game := do
     if !g.stack.isEmpty then
       let g := g.resolveTop
       if let .chooseReplacement .. := g.pending then
-        return g.chainPendingReplacement (.receivePriority g.activePlayer)
-      if g.pending != .none then
+        return if g.anyContinuationSettlesControlFlowFwd then g
+          else g.chainPendingReplacement (.receivePriority g.activePlayer)
+      if g.pending != .none || g.afterRandom != .none then
         return g
       return g.receivePriority g.activePlayer
     else

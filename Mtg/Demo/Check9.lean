@@ -791,3 +791,240 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
   mustHoldCheck9 "p50_demoUniqueManaSacOk" demoUniqueManaSacOk
 
 
+/- Phase 51 Item 4b: `Demo.hasUniqueManaPayment` / `uniquePayingSourceSet` /
+`uniquePayingSourceSetLarge` soundness for `FraManaUse.legendarySpell` riders,
+`ManaOutput.combination` leftover mana (CR 106.4), and post-mana preconditions
+(`teamworkCreatures`, `needsBehold`, `sneakAttacker` exclusion, tap-less
+`costPicksPayable`, and `zemoBoast`). -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let gMain := emptyHand afterDraw p0
+
+  -- 1. `FraManaUse.legendarySpell` (*Delighted Halfling*):
+  let legGreen2Def : CardDef := {
+    grizzlyBears with
+    name := "P51 LegendBear"
+    supertypes := #[.legendary]
+    manaCost := ManaCost.ofGenericAndColor 1 .green
+  }
+  let uncounterableLegDef : CardDef := {
+    legGreen2Def with
+    name := "P51 UncounterableLegend"
+    cantBeCountered := true
+  }
+  let legGeneric1Def : CardDef := {
+    grizzlyBears with
+    name := "P51 LegendConstruct"
+    supertypes := #[.legendary]
+    manaCost := ManaCost.ofGeneric 1
+  }
+  let legGreen1Def : CardDef := {
+    grizzlyBears with
+    name := "P51 LegendElf"
+    supertypes := #[.legendary]
+    manaCost := { symbols := #[.colored .green] }
+  }
+  let legGeneric2Def : CardDef := {
+    grizzlyBears with
+    name := "P51 LegendGolem"
+    supertypes := #[.legendary]
+    manaCost := ManaCost.ofGeneric 2
+  }
+  let hasteHalflingDef : CardDef := {
+    Catalog.delightedHalfling with
+    name := "P51 HasteHalfling"
+    keywords := { haste := true }
+  }
+  let solRingDef : CardDef := {
+    name := "P51 SolRing"
+    types := #[.artifact]
+    tapAddTogether := #[.colorless, .colorless]
+  }
+
+  -- (a) Floating unrestricted `{1}{G}` in `pool` (`pool.canPay == true`) + untapped `hasteHalflingDef`:
+  --     `false` on counterable legendary spell (tapping Halfling grants `.uncounterableThisCast`),
+  --     `true` when already `.uncounterableThisCast` or non-legendary!
+  let gFloat0 :=
+    ((insertObject (addPermanent gMain hasteHalflingDef p0 p0) legGreen2Def p0 (.hand p0)).addMana
+      p0 .colorless 1).addMana p0 (.colored .green) 1
+  let gFloatProp := mustApply gFloat0 p0 (.cast (gFloat0.player p0).hand.back!)
+  let gFloatUnc0 :=
+    ((insertObject (addPermanent gMain hasteHalflingDef p0 p0) uncounterableLegDef p0 (.hand p0)).addMana
+      p0 .colorless 1).addMana p0 (.colored .green) 1
+  let gFloatUncProp0 := mustApply gFloatUnc0 p0 (.cast (gFloatUnc0.player p0).hand.back!)
+  let gFloatUncProp :=
+    gFloatUncProp0.createEffect (.uncounterableThisCast gFloatUncProp0.proposedSpell.get!.spellId)
+  let gFloatNonLeg0 :=
+    ((insertObject (addPermanent gMain hasteHalflingDef p0 p0) grizzlyBears p0 (.hand p0)).addMana
+      p0 .colorless 1).addMana p0 (.colored .green) 1
+  let gFloatNonLegProp := mustApply gFloatNonLeg0 p0 (.cast (gFloatNonLeg0.player p0).hand.back!)
+
+  -- (b) Single `hasteHalflingDef` (`0` floating): `{1}` legendary spell -> `false` (`{C}` vs `.legendarySpell`),
+  --     whereas `{G}` legendary spell -> `true` (only `.legendarySpell` ability produces `{G}`)!
+  let gSingleGen0 := insertObject (addPermanent gMain hasteHalflingDef p0 p0) legGeneric1Def p0 (.hand p0)
+  let gSingleGenProp := mustApply gSingleGen0 p0 (.cast (gSingleGen0.player p0).hand.back!)
+  let gSingleGreen0 := insertObject (addPermanent gMain hasteHalflingDef p0 p0) legGreen1Def p0 (.hand p0)
+  let gSingleGreenProp := mustApply gSingleGreen0 p0 (.cast (gSingleGreen0.player p0).hand.back!)
+
+  -- (c) Superset rider flip (`solRing` `{C}{C}` + `hasteHalflingDef` on `{2}` legendary spell, both small and >20 sources):
+  let gSup0 :=
+    insertObject (addPermanent (addPermanent gMain solRingDef p0 p0) hasteHalflingDef p0 p0)
+      legGeneric2Def p0 (.hand p0)
+  let gSupProp := mustApply gSup0 p0 (.cast (gSup0.player p0).hand.back!)
+  let restrictedElfManaDef : CardDef := {
+    name := "P51 ElfOnlyRock"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { tap := true }
+      effect := { resolution := .addAnyColorSpendOnlySubtype .elf, phrase := "Add one mana for Elf." }
+    }]
+  }
+  let gSupLarge0 := Id.run do
+    let mut g := gSup0
+    for _ in [0:20] do
+      g := addPermanent g restrictedElfManaDef p0 p0
+    return g
+  let gSupLargeProp := mustApply gSupLarge0 p0 (.cast (gSupLarge0.player p0).hand.back!)
+  let supLargeP := gSupLargeProp.proposedSpell.get!
+  let supLargeAllSrcs :=
+    (gSupLargeProp.permanentsOf p0).filterMap fun o =>
+      if o.name == restrictedElfManaDef.name then some (o, #[ManaType.colored .green])
+      else (gSupLargeProp.manaSourcesForProposed p0 supLargeP).find? (·.1.id == o.id)
+
+  let demoRiderOk :=
+    !hasUniqueManaPayment gFloatProp &&
+    hasUniqueManaPayment gFloatUncProp &&
+    hasUniqueManaPayment gFloatNonLegProp &&
+    !hasUniqueManaPayment gSingleGenProp &&
+    hasUniqueManaPayment gSingleGreenProp &&
+    !hasUniqueManaPayment gSupProp &&
+    supLargeAllSrcs.size == 22 &&
+    (uniquePayingSourceSetLarge gSupLargeProp ManaPool.empty supLargeP.cost false false
+      supLargeAllSrcs (gSupLargeProp.proposedAllowances supLargeP) (some (p0, supLargeP))).isNone
+
+  -- 2. `ManaOutput.combination` (`tapAddTwoAmong := #[{R}, {G}]`) leftover mana (`CR 106.4`):
+  --    Paying `{1}` leaves `{R}` or `{G}` (`!hasUniqueManaPayment`), while paying `{R}{G}` leaves `0` (`hasUniqueManaPayment`):
+  let rgComboDef : CardDef := {
+    name := "P51 FirelitGrove"
+    types := #[.land]
+    tapAddTwoAmong := #[.colored .red, .colored .green]
+  }
+  let gen1SorcDef : CardDef := {
+    name := "P51 Spark1"
+    manaCost := ManaCost.ofGeneric 1
+    types := #[.sorcery]
+    spellEffect := some (Effect.gainLife 1)
+  }
+  let rgSorcDef : CardDef := {
+    name := "P51 RgPulse"
+    manaCost := { symbols := #[.colored .red, .colored .green] }
+    types := #[.sorcery]
+    spellEffect := some (Effect.gainLife 2)
+  }
+  let gCombo1 := insertObject (addPermanent gMain rgComboDef p0 p0) gen1SorcDef p0 (.hand p0)
+  let gCombo1Prop := mustApply gCombo1 p0 (.cast (gCombo1.player p0).hand.back!)
+  let gComboRg := insertObject (addPermanent gMain rgComboDef p0 p0) rgSorcDef p0 (.hand p0)
+  let gComboRgProp := mustApply gComboRg p0 (.cast (gComboRg.player p0).hand.back!)
+  let demoComboLeftoverOk :=
+    !hasUniqueManaPayment gCombo1Prop &&
+    hasUniqueManaPayment gComboRgProp
+
+  -- 3. Post-mana preconditions in `hasUniqueManaPayment`:
+  --    (a) `teamworkCreatures`, (b) `needsBehold`, (c) `sneakAttacker` as sole sacrificeable creature,
+  --    (d) tap-less `costPicksPayable`, and (e) `zemoBoast`:
+  let gBaseForest := addPermanent gMain forest p0 p0
+  let gTw0 := insertObject (addPermanent gBaseForest grizzlyBears p0 p0) gen1SorcDef p0 (.hand p0)
+  let twBearId := (gTw0.permanentsOf p0).find? (·.name == grizzlyBears.name) |>.get!.id
+  let gTwProp0 := mustApply gTw0 p0 (.cast (gTw0.player p0).hand.back!)
+  let gTwUntapped :=
+    gTwProp0.change (.proposedSpell (some { gTwProp0.proposedSpell.get! with
+      teamworkPaid := true, teamworkCreatures := #[twBearId] }))
+  let gTwTapped := setTapped gTwUntapped twBearId true
+
+  let gBeholdMissing :=
+    gTwProp0.change (.proposedSpell (some { gTwProp0.proposedSpell.get! with needsBehold := some .dragon }))
+  let dragonDef : CardDef := creature "P51 Whelp" ManaCost.empty #["Dragon"] 2 2
+  let gBeholdPresent := addPermanent gBeholdMissing dragonDef p0 p0
+
+  let sacCreatureSpellDef : CardDef := {
+    name := "P51 SneakSac"
+    manaCost := ManaCost.ofGeneric 1
+    types := #[.instant]
+    additionalCostSacrificeCreature := true
+    spellEffect := some (Effect.gainLife 1)
+  }
+  let gSneak0 :=
+    ((insertObject (addPermanent gBaseForest grizzlyBears p0 p0) sacCreatureSpellDef p0 (.hand p0)).record
+      (GameEvent.phaseBegan afterDraw.turnNumber .combat)).record
+      (GameEvent.stepBegan afterDraw.turnNumber .declareBlockers p0)
+  let snkBearId := (gSneak0.permanentsOf p0).find? (·.name == grizzlyBears.name) |>.get!.id
+  let gSneak1 :=
+    gSneak0.record (GameEvent.becameAttacking gSneak0.turnNumber
+      (gSneak0.snapshot (gSneak0.object! snkBearId)) (.player p1) (.turnBased .declareAttackers))
+  let gSneakProp0 := mustApply gSneak1 p0 (.cast (gSneak1.player p0).hand.back!)
+  let gSneakSole :=
+    gSneakProp0.change (.proposedSpell (some { gSneakProp0.proposedSpell.get! with
+      needsSacrificeOther := true, sneakAttacker := some snkBearId }))
+  let gSneakWithExtra := addPermanent gSneakSole grizzlyBears p0 p0
+
+  let taplessAltarDef : CardDef := {
+    name := "P51 SacAltar"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 1, sacrificeAnotherCreatureOrArtifact := true }
+      effect := Effect.gainLife 1
+    }]
+  }
+  let gAltar0 := addPermanent gBaseForest taplessAltarDef p0 p0
+  let altarId := (gAltar0.permanentsOf p0).find? (·.name == taplessAltarDef.name) |>.get!.id
+  let gAltarWithBear := addPermanent gAltar0 grizzlyBears p0 p0
+  let bearOnAltarId := (gAltarWithBear.permanentsOf p0).find? (·.name == grizzlyBears.name) |>.get!.id
+  let gAltarPropOk := mustApply gAltarWithBear p0 (.activate altarId 0)
+  let (gAltarPropMissing, _) := gAltarPropOk.move bearOnAltarId .exile none
+
+  let zemoPaidDef : CardDef := {
+    Catalog.baronHelmutZemo with
+    name := "P51 BaronZemo"
+    activatedAbilities := #[{
+      cost := { mana := ManaCost.ofGeneric 1, fra := .zemoBoast }
+      effect := Effect.gainLife 1
+    }]
+  }
+  let bbbCardDef : CardDef := {
+    name := "P51 DarkRitualists"
+    manaCost := { symbols := #[.colored .black, .colored .black, .colored .black] }
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+  }
+  let gZemo0 := Id.run do
+    let mut g := addPermanent gBaseForest zemoPaidDef p0 p0
+    for _ in [0:5] do
+      g := insertObject g bbbCardDef p0 (.graveyard p0)
+    return g
+  let zemoId := (gZemo0.permanentsOf p0).find? (·.name == zemoPaidDef.name) |>.get!.id
+  let gZemoAtk :=
+    gZemo0.record (GameEvent.attacked gZemo0.turnNumber p0 (gZemo0.snapshot (gZemo0.object! zemoId)) p1)
+  let gZemoPropOk := mustApply gZemoAtk p0 (.activate zemoId 0)
+  let oneGyId := (gZemoPropOk.player p0).graveyard.back!
+  let (gZemoPropShort, _) := gZemoPropOk.move oneGyId .exile none
+
+  let demoPostManaOk :=
+    hasUniqueManaPayment gTwUntapped &&
+    !hasUniqueManaPayment gTwTapped &&
+    !hasUniqueManaPayment gBeholdMissing &&
+    hasUniqueManaPayment gBeholdPresent &&
+    !hasUniqueManaPayment gSneakSole &&
+    hasUniqueManaPayment gSneakWithExtra &&
+    hasUniqueManaPayment gAltarPropOk &&
+    !hasUniqueManaPayment gAltarPropMissing &&
+    hasUniqueManaPayment gZemoPropOk &&
+    !hasUniqueManaPayment gZemoPropShort
+
+  mustHoldCheck9 "p51_demoRiderOk" demoRiderOk &&
+  mustHoldCheck9 "p51_demoComboLeftoverOk" demoComboLeftoverOk &&
+  mustHoldCheck9 "p51_demoPostManaOk" demoPostManaOk
+
+
+

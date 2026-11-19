@@ -812,11 +812,12 @@ private def abortDepartedManaAbilityContCore (g : Game) (p : PlayerId) (prevPend
           g := g.finishAndGrantPriorityFwd prio
         else if g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
             g.triggerSequenceRest.isSome || g.mayThenResume then
-          if !g.anyContinuationGrantsPriorityFwd then
+          if !g.anyContinuationSettlesControlFlowFwd then
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishFraChoice
-          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
+          else if g.anyContinuationGrantsPriorityFwd &&
+              g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
           g := g.drainPendingContinuationsFwd
     return (g, false)
@@ -885,7 +886,7 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
       | none => g
   g := g.change (.consecutivePasses 0)
   if damageYou > 0 then
-    let dmgSrc := (g.findObject? id).orElse (fun _ => some (damageSourceObjectFromLki srcSnap))
+    let dmgSrc := (g.findLiveSourceObject? id).orElse (fun _ => some (damageSourceObjectFromLki srcSnap))
     g := g.dealDamageToPlayer p damageYou (source := dmgSrc)
       (cause := some (.gameRule .abilityActivated))
   let allDeparted := departedSinceOptionalCkpt g g.proposalCheckpoint
@@ -902,21 +903,24 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
           if g.outerPendingReplacements.isEmpty &&
               g.triggerSequenceRest.isNone && !g.mayThenResume then
             g := g.chainPendingReplacement (.receivePriority prio)
-          else if !g.anyContinuationGrantsPriorityFwd then
+          else if !g.anyContinuationSettlesControlFlowFwd then
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishFraChoice
-          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
+          else if g.anyContinuationGrantsPriorityFwd &&
+              g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
         else if !g.outerPendingReplacements.isEmpty ||
             g.triggerSequenceRest.isSome || g.mayThenResume then
-          if !g.anyContinuationGrantsPriorityFwd then
+          if !g.anyContinuationSettlesControlFlowFwd then
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishFraChoice
-          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
+          else if g.anyContinuationGrantsPriorityFwd &&
+              g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
-        else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
+        else if g.anyContinuationGrantsPriorityFwd &&
+            g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
           g := g.change (.pendingPriority (some prio))
     else
       g := g.chainPendingReplacement (.restorePending prevPending false none allDeparted none)
@@ -937,11 +941,12 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
           g := g.finishAndGrantPriorityFwd prio
         else if g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
             g.triggerSequenceRest.isSome || g.mayThenResume then
-          if !g.anyContinuationGrantsPriorityFwd then
+          if !g.anyContinuationSettlesControlFlowFwd then
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishFraChoice
-          else if g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
+          else if g.anyContinuationGrantsPriorityFwd &&
+              g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
           g := g.drainPendingContinuationsFwd
     else if wasPaused then

@@ -2145,6 +2145,165 @@ def canPayTappingAll (g : Game) (pool : ManaPool) (cost : ManaCost)
     (a : ManaAllowances := {}) (prop? : Option ProposedSpell := none) : Bool :=
   g.canPayFromSources pool cost allowElf allowInst sources a (prop? := prop?)
 
+/-- Whether spending `FraManaUse.legendarySpell` mana changes the outcome of
+paying for `prop?` by granting `.uncounterableThisCast` (CR 106.6). -/
+def legendaryRiderMatters (g : Game) (a : ManaAllowances)
+    (prop? : Option ProposedSpell := none) : Bool :=
+  a.spend.spell && a.spend.legendary &&
+    match prop? with
+    | none => true
+    | some prop =>
+      prop.kind == .spell && !(g.findObject? prop.spellId).any g.uncounterableThisCast
+
+/-- Compare two post-payment leftover `ManaPool`s as multisets of normalized
+`ManaUnit`s (CR 106.4 / 106.6). -/
+private def sameLeftoverPool (a b : ManaPool) : Bool :=
+  let ua := a.units.map fun u => { u with restriction := ManaRestriction.normalize? u.restriction }
+  let ub := b.units.map fun u => { u with restriction := ManaRestriction.normalize? u.restriction }
+  ua.size == ub.size &&
+    ua.all (fun x => (ua.filter (· == x)).size == (ub.filter (· == x)).size)
+
+/-- Enumerate plain `{T}` mana choices across all usable plain `{T}` abilities
+on `o`, keeping up to `maxZeroReps` zero-requirement colored representatives per
+ability so `ManaOutput.combination` / multi-mana leftover differences and
+coexisting `{C}` vs `.legendarySpell` abilities on one permanent are preserved
+without exponential branching. -/
+private def plainTapChoicesForUniqueness (g : Game) (o : GameObject) (types : Array ManaType)
+    (cost : ManaCost) (maxZeroReps : Nat) (prop? : Option ProposedSpell := none) :
+    Array TapManaChoice :=
+  let p := (g.controllerOf o).getD o.owner
+  let defs := g.manaAbilityDefs o
+  let activeProp? := prop? <|> g.proposedSpell
+  let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
+  let tapPrereqOk : Bool :=
+    !o.status.tapped &&
+      !(g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p)) &&
+      (match activeProp? with
+       | none => true
+       | some prop =>
+         !((prop.tapSource && prop.sourceId == some o.id &&
+             !g.sourceTappedForCost o.id (some prop.spellId) sinceIdx) ||
+           prop.teamworkCreatures.contains o.id))
+  if !tapPrereqOk then
+    g.tapChoicesForSource o types cost (prop? := prop?)
+  else Id.run do
+    let mut out : Array TapManaChoice := #[]
+    for i in [0 : defs.size] do
+      let d := defs[i]!
+      if g.isPlainTapManaAbilityDef p o d && g.manaAbilityDefUsable p o d then
+        let extraSample := g.extraMountainRedFromTap o #[.colorless]
+        let spendOk :=
+          match activeProp? with
+          | none => true
+          | some prop =>
+            g.restrictionAllowsProposed d.restriction prop ||
+              (!extraSample.isEmpty && g.restrictionAllowsProposed .none prop)
+        if spendOk then
+          let dedupTs (ts : Array ManaType) : Array ManaType := Id.run do
+            let allowed := ts.filter types.contains
+            if maxZeroReps == 0 then return allowed
+            let mut acc : Array ManaType := #[]
+            let mut zeroCnt : Nat := 0
+            for t in allowed do
+              match t with
+              | .colored c =>
+                if cost.symbolsIncludingColor c == 0 then
+                  if zeroCnt < maxZeroReps then
+                    zeroCnt := zeroCnt + 1
+                    acc := acc.push t
+                else
+                  acc := acc.push t
+              | .colorless =>
+                acc := acc.push t
+            return acc
+          let tuples : Array (Array ManaType) :=
+            match d.output with
+            | .fixed m =>
+              if !m.isEmpty && m.any types.contains then #[m] else #[]
+            | other => other.allChoices dedupTs
+          for tup in tuples do
+            if !tup.isEmpty then
+              let extra := g.extraMountainRedFromTap o tup
+              let dup :=
+                out.any (fun ch =>
+                  ch.baseAdded == tup && ch.extraRed == extra && ch.restriction == d.restriction)
+              if !dup then
+                out := out.push {
+                  abilityIdx := i
+                  baseAdded := tup
+                  extraRed := extra
+                  restriction := d.restriction
+                }
+    return out
+
+/-- Whether tapping `minSub` yields a single `(leftoverPool, riderSpent)`
+outcome and no additional cost-preserving source in `allSources` can flip
+`FraManaUse.legendarySpell` on `cost` (CR 106.4 / 106.6). -/
+private def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : ManaCost)
+    (allowElf allowInst : Bool)
+    (allSources minSub : Array (GameObject × Array ManaType))
+    (a : ManaAllowances := {})
+    (prop? : Option (PlayerId × ProposedSpell) := none) : Bool :=
+  let activeProp? := prop?.map (·.2)
+  let riderMatters := legendaryRiderMatters g a activeProp?
+  let minUnits := Game.minManaUnitsForCost cost
+  let roughMaxAdded : Nat :=
+    minSub.foldl (fun acc (src, types) =>
+      let cs := plainTapChoicesForUniqueness g src types cost 1 activeProp?
+      acc + cs.foldl (fun m (ch : TapManaChoice) => max m ch.totalSize) 0) 0
+  let maxZeroReps : Nat := if pool.total + roughMaxAdded > minUnits then 2 else 1
+  let srcArr : Array (GameObject × Array TapManaChoice × Nat) := minSub.map fun (src, types) =>
+    let cs := plainTapChoicesForUniqueness g src types cost maxZeroReps activeProp?
+    let maxOut := cs.foldl (fun m (ch : TapManaChoice) => max m ch.totalSize) 0
+    (src, cs, maxOut)
+  let sufMax : Array Nat := Id.run do
+    let mut out := Array.replicate (srcArr.size + 1) 0
+    let mut i := srcArr.size
+    while i > 0 do
+      i := i - 1
+      out := out.set! i (srcArr[i]!.2.2 + out[i + 1]!)
+    return out
+  let rec collect (curPool : ManaPool) (idx : Nat)
+      (outcomes : Array (ManaPool × Bool)) (repPool? : Option ManaPool) :
+      Array (ManaPool × Bool) × Option ManaPool :=
+    if outcomes.size ≥ 2 then (outcomes, repPool?)
+    else if idx ≥ srcArr.size then
+      match curPool.payUnits? cost allowElf allowInst a.hero a.villain
+          a.cantNonartifact a.creature a.spend with
+      | none => (outcomes, repPool?)
+      | some (leftPool, spentUnits) =>
+        let rSpent :=
+          riderMatters && spentUnits.any (·.restriction == some (.fra .legendarySpell))
+        let repPool? := repPool? <|> some curPool
+        if outcomes.any (fun (lp, rs) => rs == rSpent && sameLeftoverPool lp leftPool) then
+          (outcomes, repPool?)
+        else
+          (outcomes.push (leftPool, rSpent), repPool?)
+    else if curPool.total + sufMax[idx]! < minUnits then
+      (outcomes, repPool?)
+    else
+      let (_, cs, _) := srcArr[idx]!
+      cs.foldl (fun (acc, rep?) (ch : TapManaChoice) =>
+        if acc.size ≥ 2 then (acc, rep?)
+        else collect (ch.applyToPool curPool) (idx + 1) acc rep?) (outcomes, repPool?)
+  let (outcomes, repPool?) := collect pool 0 #[] none
+  match outcomes, repPool? with
+  | #[(_, riderSpent0)], some basePool =>
+    if !riderMatters then true
+    else
+      let minSubIds := minSub.map (·.1.id)
+      !allSources.any fun (extraSrc, extraTypes) =>
+        !minSubIds.contains extraSrc.id &&
+          prop?.all (fun (p, prop) =>
+            g.tapPreservesPostManaCosts p prop (minSubIds.push extraSrc.id)) &&
+          (plainTapChoicesForUniqueness g extraSrc extraTypes cost 1 activeProp?).any fun (ch : TapManaChoice) =>
+            match (ch.applyToPool basePool).payUnits? cost allowElf allowInst
+                a.hero a.villain a.cantNonartifact a.creature a.spend with
+            | some (_, units) =>
+              units.any (·.restriction == some (.fra .legendarySpell)) != riderSpent0
+            | none => false
+  | _, _ => false
+
 /-- Unique source set that can pay when there are too many sources to
 enumerate every subset. Recognizes a single sufficient source, or that
 every source is required. -/
@@ -2163,6 +2322,9 @@ def uniquePayingSourceSetLarge (g : Game) (pool : ManaPool) (cost : ManaCost)
         (some (p, prop))
     | none =>
       canPayTappingAll g pool cost allowElf allowInst sub.toList a
+  let checkOutcome (cand? : Option (Array (GameObject × Array ManaType))) :=
+    cand?.filter (fun minSub =>
+      uniqueSubsetHasUniqueOutcome g pool cost allowElf allowInst sources minSub a prop?)
   Id.run do
     let mut singles : Array (Nat × (GameObject × Array ManaType)) := #[]
     for i in [0:sources.size] do
@@ -2173,7 +2335,7 @@ def uniquePayingSourceSetLarge (g : Game) (pool : ManaPool) (cost : ManaCost)
       let (idx, src) := singles[0]!
       let rest := sources.extract 0 idx ++ sources.extract (idx + 1) sources.size
       if !anySubsetOk rest then
-        return some #[src]
+        return checkOutcome (some #[src])
       else
         return none
     if singles.size > 1 then
@@ -2184,7 +2346,7 @@ def uniquePayingSourceSetLarge (g : Game) (pool : ManaPool) (cost : ManaCost)
       let rest := sources.extract 0 i ++ sources.extract (i + 1) sources.size
       if anySubsetOk rest then
         return none
-    return some sources
+    return checkOutcome (some sources)
 
 /-- The unique inclusion-minimal set of sources that can pay `cost`, if any. -/
 def uniquePayingSourceSet (g : Game) (pool : ManaPool) (cost : ManaCost)
@@ -2212,7 +2374,8 @@ def uniquePayingSourceSet (g : Game) (pool : ManaPool) (cost : ManaCost)
               pure ()
             else
               return none
-      return best
+      return best.filter (fun minSub =>
+        uniqueSubsetHasUniqueOutcome g pool cost allowElf allowInst sources minSub a prop?)
 
 /-- True when the locked-in mana cost has exactly one legal payment. -/
 def hasUniqueManaPayment (g : Game) : Bool :=
@@ -2220,12 +2383,7 @@ def hasUniqueManaPayment (g : Game) : Bool :=
   | .activateManaAbilities p, some prop =>
     if !g.canPayLife p prop.payLife then false
     else if !g.sourceStillPayable prop then false
-    else if prop.needsSacrificeOther &&
-        (g.sacrificeCreatureOrArtifactChoices p
-          (prop.sourceId.getD prop.spellId)).isEmpty then
-      false
-    else if prop.needsDiscardCard && (g.player p).hand.isEmpty then
-      false
+    else if !g.tapPreservesPostManaCosts p prop #[] then false
     else
       let canConvokeOrImprovise : Bool :=
         prop.kind == .spell && prop.cost.includesManaPayment &&
@@ -2246,11 +2404,34 @@ def hasUniqueManaPayment (g : Game) : Bool :=
         let allowElf := g.proposedAllowsElfRestricted prop
         let allowInst := g.proposedAllowsInstRestricted prop
         let a := g.proposedAllowances prop
-        (pool.canPay prop.cost allowElf allowInst a.hero a.villain a.cantNonartifact a.creature a.spend &&
-          g.tapPreservesPostManaCosts p prop #[]) ||
-          (!g.hasUsableNonPlainManaAbility p (some prop) &&
+        let sources := g.manaSourcesForProposed p prop
+        match pool.payUnits? prop.cost allowElf allowInst a.hero a.villain
+            a.cantNonartifact a.creature a.spend with
+        | some (_, spent0) =>
+          if !legendaryRiderMatters g a (some prop) then true
+          else
+            let rider0 := spent0.any (·.restriction == some (.fra .legendarySpell))
+            let plainFlips :=
+              sources.any fun (src, types) =>
+                g.tapPreservesPostManaCosts p prop #[src.id] &&
+                  (plainTapChoicesForUniqueness g src types prop.cost 1 (some prop)).any fun ch =>
+                    match (ch.applyToPool pool).payUnits? prop.cost allowElf allowInst
+                        a.hero a.villain a.cantNonartifact a.creature a.spend with
+                    | some (_, units) =>
+                      units.any (·.restriction == some (.fra .legendarySpell)) != rider0
+                    | none => false
+            let nonPlainRider :=
+              !rider0 && g.hasUsableNonPlainManaAbility p (some prop) &&
+                (g.permanentsOf p).any (fun o =>
+                  (g.manaAbilityDefs o).any (fun d =>
+                    d.restriction == .fra .legendarySpell &&
+                      !g.isPlainTapManaAbilityDef p o d &&
+                      g.manaAbilityDefUsable p o d))
+            !plainFlips && !nonPlainRider
+        | none =>
+          !g.hasUsableNonPlainManaAbility p (some prop) &&
             (uniquePayingSourceSet g pool prop.cost allowElf allowInst
-              (g.manaSourcesForProposed p prop) a (some (p, prop))).isSome)
+              sources a (some (p, prop))).isSome
   | _, _ => false
 
 /-- `sacrifice <id>` when exactly one permanent can pay that cost. -/

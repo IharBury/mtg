@@ -779,7 +779,8 @@ private def replayOk45i3 (gs : Array Game) : Bool :=
     ((gDeadTokPostTrig.mkHistoricalGameAt deadBoundIdx).findObject? deadTok.id).isNone &&
     stolenSnap.controller == some p1 &&
     stolenSnap.defaultController == some p0 &&
-    gDefCtrlAfterEot.controllerOf lkiAfterEotObj == some p0 &&
+    lkiAfterEotObj.defaultController == some p0 &&
+    gDefCtrlAfterEot.controllerOf lkiAfterEotObj == some p1 &&
     (histAtPreCtrl.findObject? dcBear.id).any (fun o => histAtPreCtrl.controllerOf o == some p0) &&
     (replayedTokCard.object! tokFromBear.id).printed.isToken &&
     (gTokCard0.mkHistoricalGameAt gTokCard0.events.size |>.object! tokFromBear.id).printed.isToken &&

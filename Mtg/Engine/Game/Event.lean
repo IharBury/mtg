@@ -1978,7 +1978,7 @@ inductive PendingReplacement where
       (preSnaps : Array (ObjectId × EventObject) := #[])
       (startEventIdx : Option Nat := none)
       (reconcile : Bool := true)
-  | phaseInControlled (p : PlayerId)
+  | phaseInControlled (p : PlayerId) (includeTeammates : Bool := false)
   | phaseInControlledLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
       (startEventIdx : Option Nat := none)
@@ -3256,13 +3256,14 @@ def delayedTriggerExpired (turn : Nat) (dt : DelayedTrigger)
 /-- A creature moved from the battlefield to a graveyard (CR 700.4). -/
 def isCreatureToGraveyard (e : GameEvent) : Bool :=
   match e.change with
-  | .rules (.zone (.moved before _ .battlefield (.graveyard _) _ _ _ _)) => before.creature
+  | .rules (.zone (.moved before _ .battlefield (.graveyard _) _ _ _ _)) =>
+    !before.phasedOut && before.creature
   | _ => false
 
 /-- A permanent moved from the battlefield to a graveyard. -/
 def isPermanentToGraveyard (e : GameEvent) : Bool :=
   match e.change with
-  | .rules (.zone (.moved _ _ .battlefield (.graveyard _) _ _ _ _)) => true
+  | .rules (.zone (.moved before _ .battlefield (.graveyard _) _ _ _ _)) => !before.phasedOut
   | _ => false
 
 /-- An object left the stack for another zone. -/
@@ -3281,8 +3282,9 @@ def entersOwnGraveyardFromStack (e : GameEvent) : Bool :=
 /-- A permanent entered the battlefield. -/
 def enteredBattlefield (e : GameEvent) : Bool :=
   match e.change with
-  | .rules (.zone (.moved _ _ fromZone .battlefield _ _ _ _)) => fromZone != .battlefield
-  | .rules (.zone (.created obj _)) => obj.zone == .battlefield
+  | .rules (.zone (.moved _ after fromZone .battlefield _ _ _ _)) =>
+    fromZone != .battlefield && !after.phasedOut
+  | .rules (.zone (.created obj _)) => obj.zone == .battlefield && !obj.phasedOut
   | _ => false
 
 /-- The kind of event a replacement effect watches (CR 614.1). -/
@@ -3333,15 +3335,18 @@ def watches (e : GameEvent) (watch : ReplacementWatch) : Bool :=
   | .wouldEnterBattlefield => e.enteredBattlefield
   | .wouldCreateToken =>
     match e.change with
-    | .rules (.zone (.created object _)) => object.zone == .battlefield && object.token
+    | .rules (.zone (.created object _)) =>
+      object.zone == .battlefield && !object.phasedOut && object.token
     | _ => false
   | .wouldPutCounter =>
     match e.change with
-    | .rules (.permanent (.counters _ _ (.put n) _)) => n > 0
-    | .rules (.zone (.moved _ _ _ .battlefield _ _ entersWith _)) =>
-      entersWith.any (fun (_, n) => n > 0)
+    | .rules (.permanent (.counters (.object object) _ (.put n) _)) =>
+      !object.phasedOut && n > 0
+    | .rules (.permanent (.counters (.player _) _ (.put n) _)) => n > 0
+    | .rules (.zone (.moved _ after _ .battlefield _ _ entersWith _)) =>
+      !after.phasedOut && entersWith.any (fun (_, n) => n > 0)
     | .rules (.zone (.created object _)) =>
-      object.zone == .battlefield && !object.counters.isEmpty &&
+      object.zone == .battlefield && !object.phasedOut && !object.counters.isEmpty &&
         object.counters.any (fun (_, n) => n > 0)
     | _ => false
   | .wouldUntap =>
@@ -3851,10 +3856,10 @@ def artifactEntered (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Boo
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .rules (.zone (.moved _ after _ .battlefield _ _ _ _)) =>
-        after.controller == some p && after.artifact
+      | .rules (.zone (.moved _ after fromZone .battlefield _ _ _ _)) =>
+        fromZone != .battlefield && !after.phasedOut && after.controller == some p && after.artifact
       | .rules (.zone (.created object q)) =>
-        object.zone == .battlefield && (object.controller.getD q) == p && object.artifact
+        object.zone == .battlefield && !object.phasedOut && (object.controller.getD q) == p && object.artifact
       | _ => false
 
 /-- `p` attacked with a permanent of `subtype` on `turn`. -/
@@ -3873,10 +3878,10 @@ def subtypeEntered (events : Array GameEvent) (turn : Nat) (p : PlayerId)
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .rules (.zone (.moved _ after _ .battlefield _ _ _ _)) =>
-        after.controller == some p && after.hasSubtype subtype
+      | .rules (.zone (.moved _ after fromZone .battlefield _ _ _ _)) =>
+        fromZone != .battlefield && !after.phasedOut && after.controller == some p && after.hasSubtype subtype
       | .rules (.zone (.created object q)) =>
-        object.zone == .battlefield && (object.controller.getD q) == p && object.hasSubtype subtype
+        object.zone == .battlefield && !object.phasedOut && (object.controller.getD q) == p && object.hasSubtype subtype
       | _ => false
 
 /-- `p` activated a loyalty ability on `turn`. -/
@@ -4142,7 +4147,7 @@ def creaturesToGraveyard (events : Array GameEvent) (turn : Nat) : Array ObjectI
     else
       match e.change with
       | .rules (.zone (.moved before after .battlefield (.graveyard _) _ _ _ _)) =>
-        if before.creature then
+        if !before.phasedOut && before.creature then
           match after.id with
           | some id => acc.push id
           | none => acc
@@ -4154,14 +4159,15 @@ def lastDiedAttacker (events : Array GameEvent) : Option ObjectId :=
   events.foldl (fun acc e =>
     match e.change with
     | .rules (.zone (.moved before after .battlefield (.graveyard _) _ _ _ _)) =>
-      if before.creature && before.attacking then after.id <|> acc else acc
+      if !before.phasedOut && before.creature && before.attacking then after.id <|> acc else acc
     | _ => acc) none
 
 /-- Id of the permanent that most recently became tapped. -/
 def lastBecameTapped (events : Array GameEvent) : Option ObjectId :=
   events.foldl (fun acc e =>
     match e.change with
-    | .rules (.permanent (.tapped object _)) => object.id <|> acc
+    | .rules (.permanent (.tapped object _)) =>
+      if !object.phasedOut then object.id <|> acc else acc
     | _ => acc) none
 
 /-- Player most recently dealt combat damage. -/
@@ -4188,8 +4194,10 @@ def objectEntered (events : Array GameEvent) (turn : Nat) (id : ObjectId) : Bool
   events.any fun e =>
     e.turn == turn &&
       match e.change with
-      | .rules (.zone (.moved _ after _ .battlefield _ _ _ _)) => after.id == some id
-      | .rules (.zone (.created object _)) => object.zone == .battlefield && object.id == some id
+      | .rules (.zone (.moved _ after fromZone .battlefield _ _ _ _)) =>
+        fromZone != .battlefield && !after.phasedOut && after.id == some id
+      | .rules (.zone (.created object _)) =>
+        object.zone == .battlefield && !object.phasedOut && object.id == some id
       | _ => false
 
 /-- If `id` is a permanent that entered the battlefield from the stack (or later
@@ -4387,16 +4395,18 @@ def boastExiledOf (events : Array GameEvent) (abilityId : ObjectId) : Array Obje
       else acc
     | _, _ => acc) #[]
 
-/-- Last-known `before` snapshot for `id` from `ZoneEvent.moved` or
-`ZoneEvent.ceasedToExist` (CR 113.7a / 608.2h). Matches `before.id == some id`
-only so post-departure moves under a new `ObjectId` never overwrite an earlier
-life's departure snapshot (CR 400.7). -/
+/-- Last-known `before` snapshot for `id` from `ZoneEvent.moved`,
+`ZoneEvent.ceasedToExist`, or `PermanentEvent.phasedOut` (CR 113.7a / 608.2h /
+702.26b). Matches `before.id == some id` only so post-departure moves under a
+new `ObjectId` never overwrite an earlier life's departure snapshot (CR 400.7). -/
 def lastKnownBefore? (events : Array GameEvent) (id : ObjectId) : Option EventObject :=
   events.findSomeRev? fun e =>
     match e.change with
     | .rules (.zone (.moved before _ ..)) =>
       if before.id == some id then some before else none
     | .rules (.zone (.ceasedToExist before)) =>
+      if before.id == some id then some before else none
+    | .rules (.permanent (.phasedOut before _)) =>
       if before.id == some id then some before else none
     | _ => none
 
