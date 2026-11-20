@@ -30,11 +30,8 @@ namespace Mtg.Engine
   a.lifeModifier == b.lifeModifier &&
   a.colorIndicator == b.colorIndicator &&
   a.keywords == b.keywords &&
+  a.additionalCosts == b.additionalCosts &&
   a.spellEffect == b.spellEffect &&
-  a.additionalCostSacrificeArtifactOrCreature == b.additionalCostSacrificeArtifactOrCreature &&
-  a.additionalCostSacrificeCreatureOrPlaneswalker == b.additionalCostSacrificeCreatureOrPlaneswalker &&
-  a.additionalCostOrPayGeneric == b.additionalCostOrPayGeneric &&
-  a.additionalCostDiscardOrPayGeneric == b.additionalCostDiscardOrPayGeneric &&
   a.costReductionIfCreatureDied == b.costReductionIfCreatureDied &&
   a.costReductionIfTargetDamaged == b.costReductionIfTargetDamaged &&
   a.costReductionIfTargetTapped == b.costReductionIfTargetTapped &&
@@ -60,9 +57,6 @@ namespace Mtg.Engine
   a.isToken == b.isToken &&
   a.cantBeCountered == b.cantBeCountered &&
   a.flashIfYouControlSubtype == b.flashIfYouControlSubtype &&
-  a.ward == b.ward &&
-  a.flashback == b.flashback &&
-  a.flashbackDiscard == b.flashbackDiscard &&
   a.castExiledWithSevenInGraveyard == b.castExiledWithSevenInGraveyard &&
   a.entersTappedUnlessLegendary == b.entersTappedUnlessLegendary &&
   a.entersTappedUnlessEquipment == b.entersTappedUnlessEquipment &&
@@ -79,7 +73,6 @@ namespace Mtg.Engine
   a.costReductionEqualFlyingPower == b.costReductionEqualFlyingPower &&
   a.costReductionGreatestPower == b.costReductionGreatestPower &&
   a.costReductionGreatestToughness == b.costReductionGreatestToughness &&
-  a.crew == b.crew &&
   a.tapAddTwoAmong == b.tapAddTwoAmong &&
   a.chooseOneOrBoth == b.chooseOneOrBoth &&
   a.chooseTwoIfYouControlSubtype == b.chooseTwoIfYouControlSubtype &&
@@ -89,28 +82,22 @@ namespace Mtg.Engine
   a.entersTappedUnlessPayLife == b.entersTappedUnlessPayLife &&
   a.entersTappedUnlessBehold == b.entersTappedUnlessBehold &&
   a.tapAddCommanderIdentity == b.tapAddCommanderIdentity &&
-  a.additionalCostSacrificeCreature == b.additionalCostSacrificeCreature &&
   a.asEntersChooseCreatureType == b.asEntersChooseCreatureType &&
   a.saga == b.saga &&
-  a.affinityForSubtype == b.affinityForSubtype &&
   a.costReductionEqualOppArtifacts == b.costReductionEqualOppArtifacts
 
 @[noinline] private def cardDefBeq4 (a b : CardDef) : Bool :=
-  a.giftTreasure == b.giftTreasure &&
   a.foodAlsoCreatesTreasure == b.foodAlsoCreatesTreasure &&
   a.othersEnterWithPlusOneEqualToughness == b.othersEnterWithPlusOneEqualToughness &&
   a.powerPerMountain == b.powerPerMountain &&
   a.extraLandIfOtherSubtype == b.extraLandIfOtherSubtype &&
   a.tapAddColorlessPerSubtype == b.tapAddColorlessPerSubtype &&
-  a.cascade == b.cascade &&
-  a.kicker == b.kicker &&
   a.tokenDoubling == b.tokenDoubling &&
   a.drawTwoExceptFirstDrawStep == b.drawTwoExceptFirstDrawStep &&
   a.activatedAbilities == b.activatedAbilities &&
   a.staticAbilities == b.staticAbilities &&
   a.triggeredAbilities == b.triggeredAbilities &&
   a.exileOppCreaturesInstead == b.exileOppCreaturesInstead &&
-  a.prowessInstances == b.prowessInstances &&
   a.mayLookAtTopAnytime == b.mayLookAtTopAnytime &&
   a.mayCastCreaturesFromTop == b.mayCastCreaturesFromTop &&
   a.mayPlayLandsFromTop == b.mayPlayLandsFromTop &&
@@ -124,14 +111,11 @@ namespace Mtg.Engine
 
 @[noinline] private def cardDefBeq5 (a b : CardDef) : Bool :=
   a.adventure == b.adventure &&
-  a.teamwork == b.teamwork &&
   a.chooseBothIfTeamwork == b.chooseBothIfTeamwork &&
   a.entersWithShield == b.entersWithShield &&
-  a.daybound == b.daybound &&
   a.empowerJace == b.empowerJace &&
   a.entersPrepared == b.entersPrepared &&
   a.prepareFace == b.prepareFace &&
-  a.additionalCostBeholdOrPay == b.additionalCostBeholdOrPay &&
   a.tapAddTogether == b.tapAddTogether &&
   a.tapAddOneOfDealsDamage == b.tapAddOneOfDealsDamage &&
   a.tapAddOppCouldProduce == b.tapAddOppCouldProduce &&
@@ -142,10 +126,6 @@ namespace Mtg.Engine
   a.entersTappedUnlessNBasics == b.entersTappedUnlessNBasics &&
   a.entersTappedUnlessOppLands == b.entersTappedUnlessOppLands &&
   a.commanderIdentityScryCreature == b.commanderIdentityScryCreature &&
-  a.morph == b.morph &&
-  a.impending == b.impending &&
-  a.protectionFromColors == b.protectionFromColors &&
-  a.cycling == b.cycling &&
   a.freeCastIfControlCommander == b.freeCastIfControlCommander
 
 @[noinline] private def cardDefBeq6 (a b : CardDef) : Bool :=
@@ -162,7 +142,6 @@ namespace Mtg.Engine
   a.corruptedToxicLifelink == b.corruptedToxicLifelink &&
   a.asEntersChooseMarduOrJeskai == b.asEntersChooseMarduOrJeskai &&
   a.asEntersMayCopyCreatureHasteUntilEot == b.asEntersMayCopyCreatureHasteUntilEot &&
-  a.toxic == b.toxic &&
   a.cantBlock == b.cantBlock &&
   a.grantTeamPlusTwoFlying == b.grantTeamPlusTwoFlying
 
@@ -594,7 +573,7 @@ structure EventObject where
   power           : Option Int           := none
   toughness       : Option Int           := none
   loyalty         : Option Nat           := none
-  keywords        : Keywords             := {}
+  keywords        : Array KeywordAbility := #[]
   toxic           : Nat                  := 0
   commanderIdentityScryCreature : Bool   := false
   staticAbilities : Array StaticAbility  := #[]
@@ -636,6 +615,10 @@ def toCardDef (e : EventObject) : CardDef :=
   match e.printed with
   | some p => p
   | none =>
+    let kws := if e.changeling then KeywordAbility.merge e.keywords #[Keyword.changeling] else e.keywords
+    let kws :=
+      if e.toxic > 0 && KeywordAbility.toxicTotal kws == 0 then kws.push (.toxic e.toxic)
+      else kws
     { name := e.name
       colorIndicator := if e.colors.isColorless then none else some e.colors
       supertypes := e.supertypes
@@ -644,11 +627,19 @@ def toCardDef (e : EventObject) : CardDef :=
       power := e.power
       toughness := e.toughness
       loyalty := e.loyalty.map Int.ofNat
-      keywords := { e.keywords with changeling := e.keywords.changeling || e.changeling }
-      toxic := e.toxic
+      keywords := kws
       commanderIdentityScryCreature := e.commanderIdentityScryCreature
       staticAbilities := e.staticAbilities
       isToken := e.token }
+
+def hasSimpleKeyword (o : EventObject) (sk : SimpleKeyword) : Bool :=
+  KeywordAbility.hasSimple o.keywords sk
+
+def hasDeathtouch (o : EventObject) : Bool := o.hasSimpleKeyword .deathtouch
+def hasLifelink (o : EventObject) : Bool := o.hasSimpleKeyword .lifelink
+def hasFlying (o : EventObject) : Bool := o.hasSimpleKeyword .flying
+def hasTrample (o : EventObject) : Bool := o.hasSimpleKeyword .trample
+def hasHexproof (o : EventObject) : Bool := KeywordAbility.hasHexproof o.keywords
 
 /-- `s` is one of this object's supertypes. -/
 def hasSupertype (o : EventObject) (s : Supertype) : Bool :=

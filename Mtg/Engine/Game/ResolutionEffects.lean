@@ -248,7 +248,7 @@ def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
             (.finishPostStep (.grantLifelinkUntilEot o.id (g.currentBatch.bind (·.2))))
         else if let some cur := g.findObject? o.id then
           if cur.isOnBattlefield then
-            let g := g.createEffect (.keywordsUntilEot cur.id Keyword.lifelink) (cause := cause)
+            let g := g.createEffect (.keywordsUntilEot cur.id #[Keyword.lifelink]) (cause := cause)
             g.logMsg s!"{g.name cur} gains lifelink until end of turn"
           else g
         else g
@@ -836,7 +836,7 @@ def losesAbilitiesAndHaste (mods : List TriggeredAbility.TriggerEnterWith) : Boo
   mods.any (· == .loseAllAbilities) &&
     mods.any (fun m =>
       match m with
-      | .keywords k => k.haste
+      | .keywords k => KeywordAbility.hasHaste k
       | _ => false)
 
 /-- Extra enters-with counters specified by `mods`. -/
@@ -1164,7 +1164,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
   match kind with
   | .grantIndestructible =>
     g.withLegalSpecPermanent controller tspec targets
-      (fun g o => g.grantUntilEotLogged o Keyword.indestructible) sourceId illegal
+      (fun g o => g.grantUntilEotLogged o #[Keyword.indestructible]) sourceId illegal
   | .dealTwoDamage =>
     g.withLegalSpecTarget controller tspec targets
       (fun g tgt => g.dealDamageToTarget tgt 2 (source := sourceId.bind g.damageSourceById?)) sourceId illegal
@@ -1273,7 +1273,7 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
         | some (_, t) => some t
         | none => printed0.toughness
       keywords :=
-        if addVigilance then Keywords.merge printed0.keywords Keyword.vigilance
+        if addVigilance then KeywordAbility.add printed0.keywords Keyword.vigilance
         else printed0.keywords }
   let turnPlayer :=
     nextTurnOf.orElse (fun _ =>

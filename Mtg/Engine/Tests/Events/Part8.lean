@@ -269,7 +269,7 @@ private def replayOk39i2 (gs : Array Game) : Bool :=
       (.addPlayer { id := p3, name := "Jace" })
   let auraDef : CardDef := { name := "P39i2 Aura", types := #[.enchantment] }
   let morphDef : CardDef := {
-    creature "P39i2 Morph" ManaCost.empty #["Human"] 2 2 with morph := some (ManaCost.ofGeneric 1)
+    creature "P39i2 Morph" ManaCost.empty #["Human"] 2 2 with keywords := #[.morph (CostSpec.ofGeneric 1)]
   }
 
   -- 2a. Unstamped-`.engine` `ckptPendingReplacementUntouchedBeforeLeave`:
@@ -510,11 +510,11 @@ private def replayOk39i3 (gs : Array Game) : Bool :=
   let gLore := (prepCounterSteal cntSaga.id .lore).addLoreCounters cntSaga 1 (cause := some testCause)
   let stoleAndRemoved (g : Game) : Bool :=
     g.controllerOf (g.object! cntAtk.id) == some p0 && !(g.object! cntAtk.id).status.attacking
-  let flyerCopyEarly : CardDef := { bear with name := "P39i3 FraFlyer", keywords := { flying := true } }
+  let flyerCopyEarly : CardDef := { bear with name := "P39i3 FraFlyer", keywords := #[Keyword.flying] }
   let gFra0 := addPermanent g4 bear p3 p1
   let fraSrc := (gFra0.permanentsOf p1)[0]!
   let gFra1 :=
-    (((gFra0.createEffect (.layered (.creaturesWithout { flying := true }) (.control p0) .indefinite)
+    (((gFra0.createEffect (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) .indefinite)
       (cause := some testCause)).concede p1).createEffect
       (.layered (.objects #[fraSrc.id]) (.copy flyerCopyEarly) (.whileSourceHasCounter fraSrc.id .charge))
       (cause := some testCause))
@@ -575,9 +575,9 @@ private def replayOk39i3 (gs : Array Game) : Bool :=
       let g := g.record (GameEvent.playerLeftGame g.turnNumber p1 (cause := some (.gameRule .playerLeftGame)))
       g.objectLeavesTheGame (g.object! lkCage.id) p1
   -- (iii) Single-spec `Core.createEffects #[spec]` (`else applyAll g`) flushes `queuedLinkedExile`:
-  let flyerCopy : CardDef := { bear with name := "P39i3 FlyCage", keywords := { flying := true } }
+  let flyerCopy : CardDef := { bear with name := "P39i3 FlyCage", keywords := #[Keyword.flying] }
   let gSingleEff0 :=
-    ((gLinked.createEffect (.layered (.creaturesWithout { flying := true }) (.control p0) .indefinite)
+    ((gLinked.createEffect (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) .indefinite)
       (cause := some testCause)).createEffect
       (.layered (.objects #[lkCage.id]) (.types .add #[.creature] #[] #[]) .indefinite)
       (cause := some testCause)).concede p1
@@ -664,7 +664,7 @@ private def replayOk39i3 (gs : Array Game) : Bool :=
   let uRidB : ReplacementId := { kind := .entersWithExtraCounters, object := some uLeyB, counterKind := some .plusOnePlusOne }
   let gUntap0 :=
     ((((((((addPermanent gUntapBase hostDef p0 p0).exileUntilSourceLeaves (some uJail.id) uVic (cause := some testCause)).createEffect
-      (.layered (.creaturesWithout { flying := true }) (.control p0) .indefinite)
+      (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) .indefinite)
       (cause := some testCause)).concede p1).phaseOut uPhHost (cause := some testCause)).createEffect
       (.layered (.objects #[uJail.id]) (.copy flyerCopy) (.whileSourceOnBattlefield uPhHost.id))
       (cause := some testCause)).createEffect
@@ -725,9 +725,9 @@ private def replayOk39i4 (gs : Array Game) : Bool :=
     name := "P39i4 PlusXWalker", types := #[.planeswalker], supertypes := #[.legendary]
     loyalty := some 2
     activatedAbilities := #[
-      { cost := { loyalty := some .plusX }, effect := Effect.gainLife 2 },
-      { cost := { mana := { symbols := #[.x] }, loyalty := some .plusX }, effect := Effect.gainLife 2 },
-      { cost := { loyalty := some .minusX }, effect := Effect.gainLife 2 }
+      { cost := CostSpec.ofItems #[.loyalty .plusX], effect := Effect.gainLife 2 },
+      { cost := CostSpec.ofItems #[.mana { symbols := #[.x] }, .loyalty .plusX], effect := Effect.gainLife 2 },
+      { cost := CostSpec.ofItems #[.loyalty .minusX], effect := Effect.gainLife 2 }
     ]
   }
   let gPw00 := addPermanent g3 plusXPwDef p0 p0
@@ -761,7 +761,7 @@ private def replayOk39i4 (gs : Array Game) : Bool :=
     name := "P39i4 StunWalker", types := #[.artifact, .planeswalker], supertypes := #[.legendary]
     loyalty := some 3
     activatedAbilities := #[{
-      cost := { loyalty := some (.plus 1), putStunCounterOnSource := true, sacrificeArtifact := true }
+      cost := CostSpec.ofItems #[.loyalty (.plus 1), .putCounters (.const 1) .stun .self, .sacrifice (.exact 1) (.filter (.hasType .artifact))]
       effect := Effect.gainLife 1
     }]
   }
@@ -819,7 +819,7 @@ private def replayOk39i4 (gs : Array Game) : Bool :=
   let sacManaAltarDef : CardDef := {
     name := "P39i4 SacManaAltar", types := #[.artifact]
     activatedAbilities := #[{
-      cost := { sacrificeArtifact := true, tapAnUntappedCreatureYouControl := true }
+      cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.hasType .artifact)), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
       effect := { resolution := .addMana #[.colored .green] }
     }]
   }
@@ -908,8 +908,7 @@ private def replayOk39i4 (gs : Array Game) : Bool :=
   --     post-reconcile `flushQueuedLinkedExile` + `.chooseReplacement` pause ordering, and `.finishTurnFaceUp` `callerShouldResume`:
   let flyerMorphDef : CardDef := {
     creature "P39i4 SkyMorph" ManaCost.empty #["Bird"] 2 2 with
-    keywords := { flying := true }
-    morph := some (ManaCost.ofGeneric 1)
+    keywords := #[Keyword.flying, .morph (CostSpec.ofGeneric 1)]
   }
   let gTfBase :=
     addPermanent
@@ -935,7 +934,7 @@ private def replayOk39i4 (gs : Array Game) : Bool :=
   let (gTfLegendAfter, tfLegendRes) := gTfLegend0.completeTurnFaceUp p0 tfMorphId
   -- (iii) Post-reconcile `flushQueuedLinkedExile` + `.chooseReplacement` pause ordering:
   --       `depMorphId` (owned by `p0`, defaultControlled by departed `p1`, printed with `flying := true`) is face down
-  --       (so Layer 1 `baseCard` lacks `flying`) and controlled by `p0` via `.creaturesWithout { flying := true }`,
+  --       (so Layer 1 `baseCard` lacks `flying`) and controlled by `p0` via `.creaturesWithout #[Keyword.flying]`,
   --       holding `tfBears[0]!` in `linkedExile`. Turning `depMorphId` face up gives its Layer 1 `baseCard` `flying`,
   --       ending `p0`'s control and exiling `depMorphId` via CR 800.4c so `tfBears[0]!`'s CR 610.3 return pauses on `.chooseReplacement`!
   let gTfPause0 := addPermanent gTfBase flyerMorphDef p0 p1
@@ -945,7 +944,7 @@ private def replayOk39i4 (gs : Array Game) : Bool :=
   let gTfPause1 :=
     ((((((setFaceDown gTfPause0 depMorphId true).exileUntilSourceLeaves (some depMorphId) tfBears[0]!
       (cause := some testCause)).createEffect
-      (.layered (.creaturesWithout { flying := true }) (.control p0) .indefinite)
+      (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) .indefinite)
       (cause := some testCause)).concede p1).createEffect
       (.replacement {
         id := tfRidA, source := some tfLeyA, controller := some p0, affectedPlayer := p0,
@@ -1013,7 +1012,7 @@ private def replayOk40i1 (gs : Array Game) : Bool :=
   let leyADef : CardDef := { name := "P40i1 LeyA", types := #[.enchantment] }
   let leyBDef : CardDef := { name := "P40i1 LeyB", types := #[.enchantment] }
   let morphDef : CardDef := {
-    creature "P40i1 Morph" ManaCost.empty #["Human"] 2 2 with morph := some (ManaCost.ofGeneric 1)
+    creature "P40i1 Morph" ManaCost.empty #["Human"] 2 2 with keywords := #[.morph (CostSpec.ofGeneric 1)]
   }
 
   -- 1a. Quiet `reconcilePostReplayDepartures` (`continueCheckpointReplay ... true`), `wasSuppressed` preservation in
@@ -1569,7 +1568,7 @@ private def replayOk40i3 (gs : Array Game) : Bool :=
   let srcDef : CardDef := creature "P40i3 Src" ManaCost.empty #["Construct"] 3 3
   let leyADef : CardDef := { name := "P40i3 LeyA", types := #[.enchantment] }
   let leyBDef : CardDef := { name := "P40i3 LeyB", types := #[.enchantment] }
-  let noTrampleScope : ObjectScope := .creaturesWithout { trample := true }
+  let noTrampleScope : ObjectScope := .creaturesWithout #[Keyword.trample]
 
   -- 3a. CR 611.2b–c resolving-effect (`oneShotEffect` & `isTimedResolvingDuration`) Layers 1–7 phase-out scope lock-in
   --     across phase-in vs CR 611.3a `.staticAbility` dynamic scopes & inactive-at-phase-out `.whileSourceHasCounter` exclusion:
@@ -1586,10 +1585,10 @@ private def replayOk40i3 (gs : Array Game) : Bool :=
       (cause := testCause))).createEffect
       (.layered noTrampleScope (.types .add #[.artifact] #[] #[]) .untilEndOfTurn) (cause := some testCause)).createEffect
       (.layered noTrampleScope (.colors .add { red := true }) .untilEndOfTurn) (cause := some testCause)).createEffect
-      (.layered noTrampleScope (.abilities { keywords := { flying := true } } .none) .untilEndOfTurn) (cause := some testCause)).createEffect
+      (.layered noTrampleScope (.abilities { keywords := #[Keyword.flying] } .none) .untilEndOfTurn) (cause := some testCause)).createEffect
       (.layered noTrampleScope (.ptModify 3 3) .untilEndOfTurn) (cause := some testCause)).createEffect
       (.layered noTrampleScope (.control p1) .untilEndOfTurn) (cause := some testCause)).createEffect
-      (.layered noTrampleScope (.abilities { keywords := { vigilance := true } } .none) .indefinite)
+      (.layered noTrampleScope (.abilities { keywords := #[Keyword.vigilance] } .none) .indefinite)
       (cause := some (.gameRule .staticAbility))).createEffect
       (.layered noTrampleScope (.ptModify 1 1) .indefinite)
       (cause := some (.gameRule .staticAbility)))
@@ -1603,8 +1602,8 @@ private def replayOk40i3 (gs : Array Game) : Bool :=
     gPhIn.controllerOf phBearIn == some p2 &&
     !gPhIn.hasType phBearIn .artifact &&
     !(gPhIn.colors phBearIn).red &&
-    !(gPhIn.effectiveKeywords phBearIn).flying &&
-    (gPhIn.effectiveKeywords phBearIn).vigilance &&
+    !KeywordAbility.hasFlying (gPhIn.effectiveKeywords phBearIn) &&
+    KeywordAbility.hasVigilance (gPhIn.effectiveKeywords phBearIn) &&
     gPhIn.power phBearIn == 5 &&
     gPhIn.toughness phBearIn == 5
 
@@ -1769,7 +1768,7 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
   --     and mid-cost `findObject?` + single `outer?` synchronous reversal in `ActivationCosts` / `Casting`:
   let artDefA : CardDef := { name := "P40i4 ArtA", types := #[.artifact] }
   let storyAb : ActivatedAbility := {
-    cost := { tap := true, removeStoryCounter := true }
+    cost := CostSpec.ofItems #[.tapSelf, .removeCounters (.exact 1) (some .story) .self]
     effect := { resolution := .gainLife 2 }
   }
   let storyRelicDef : CardDef := {
@@ -1852,7 +1851,7 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
   -- 4b. `ManaAbilities`: synchronous unpayable second pick returns `.error`, and `abortDepartedManaAbilityCont`
   --     respects `hasFollowingSeq` & dead-player priority fallback:
   let comboManaAb : ActivatedAbility := {
-    cost := { sacrificeArtifact := true, tapAnUntappedCreatureYouControl := true }
+    cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.hasType .artifact)), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
     effect := { resolution := .addMana #[.colorless] }
   }
   let comboManaDef : CardDef := {
@@ -1897,7 +1896,7 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
   -- 4c. Zero-mana `.turnFaceUp`, `sacrificeForActivation` `needsDiscardCard`,
   --     and CR 116.2b `caster` priority across post-turn-face-up `linkedExile` `.chooseReplacement` pause:
   let morphZero : CardDef :=
-    { creature "P40i4 ZeroMorph" ManaCost.empty #["Human"] 3 3 with morph := some ManaCost.empty }
+    { creature "P40i4 ZeroMorph" ManaCost.empty #["Human"] 3 3 with keywords := #[.morph CostSpec.empty] }
   let leyADef4 : CardDef := { name := "P40i4 LeyA", types := #[.enchantment] }
   let leyBDef4 : CardDef := { name := "P40i4 LeyB", types := #[.enchantment] }
   let gMfZero0 := (addPermanent g3 morphZero p1 p1).change (.priority p1)
@@ -1992,7 +1991,7 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
 
   -- 4d. Combined `loyaltyX` + `removePlusOneX` in `CastSpell.announceX` and `Agent.choose` / `Agent.maxAffordableX` `exclude`:
   let pwXAb : ActivatedAbility := {
-    cost := { loyalty := some .minusX, removeAnyNumberPlusOne := true }
+    cost := CostSpec.ofItems #[.loyalty .minusX, .removeCounters .anyNumber (some .plusOnePlusOne) .self]
     effect := { resolution := .gainLife 1 }
   }
   let pwXDef : CardDef := {
@@ -2023,16 +2022,16 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
 
   -- `Agent.maxAffordableX` `exclude` excludes a `{T}` mana dork when tapping that dork for its own `{X}, {T}` ability:
   let tapXAb : ActivatedAbility := {
-    cost := { mana := { symbols := #[.x] }, tap := true }
+    cost := CostSpec.ofItems #[.mana { symbols := #[.x] }, .tapSelf]
     effect := Effect.plusOneX
   }
   let manaAb : ActivatedAbility := {
-    cost := { tap := true }
+    cost := CostSpec.ofItems #[.tapSelf]
     effect := { resolution := .addMana #[.colored .green] }
   }
   let dorkXDef : CardDef := {
     creature "P40i4 DorkX" ManaCost.empty #["Elf", "Druid"] 1 1 with
-    keywords := { haste := true }
+    keywords := #[Keyword.haste]
     activatedAbilities := #[manaAb, tapXAb]
   }
   let gDorkOnly := addPermanent g3 dorkXDef p0 p0

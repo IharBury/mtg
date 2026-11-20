@@ -129,13 +129,12 @@ def paidPassage : Game := mustApply targetedPassage ⟨0⟩ .pay
 #guard paidPassage.hasPriority ⟨0⟩
 #guard paidPassage.stack.size == 1
 #guard (namedPermanent paidPassage "Rogue's Passage").status.tapped
-#guard !(paidPassage.currentKeywords (namedPermanent paidPassage "Gray Ogre")).cantBeBlocked
+#guard !paidPassage.hasCantBeBlocked (namedPermanent paidPassage "Gray Ogre")
 #guard paidPassage.log.any (fun s => mentions s "activates Rogue's Passage")
 
 def passageResolved : Game := passBoth paidPassage
 
 #guard passageResolved.stack.isEmpty
-#guard (passageResolved.currentKeywords (namedPermanent passageResolved "Gray Ogre")).cantBeBlocked
 #guard passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Gray Ogre")
 #guard !passageResolved.hasCantBeBlocked (namedPermanent passageResolved "Grizzly Bears")
 #guard passageResolved.log.any (fun s => mentions s "Gray Ogre can't be blocked this turn")
@@ -150,7 +149,7 @@ def passageResolved : Game := passBoth paidPassage
 -- Hexproof makes an opposing creature an illegal target (CR 702.11b).
 #guard
   let bears := namedPermanent proposedPassage "Grizzly Bears"
-  let g := proposedPassage.createEffect (.keywordsUntilEot bears.id Keyword.hexproof)
+  let g := proposedPassage.createEffect (.keywordsUntilEot bears.id #[Keyword.hexproof])
   match g.apply ⟨0⟩
       (.target (Target.permanent (namedPermanent g "Grizzly Bears").id)) with
   | .error msg => mentions msg "Illegal target"
@@ -169,7 +168,6 @@ def passageTargetGone : Game :=
 def afterPassageCleanup : Game :=
   passBoth (skipTo passageResolved .end 80)
 
-#guard !(afterPassageCleanup.currentKeywords (namedPermanent afterPassageCleanup "Gray Ogre")).cantBeBlocked
 #guard !afterPassageCleanup.hasCantBeBlocked
   (namedPermanent afterPassageCleanup "Gray Ogre")
 
@@ -266,15 +264,15 @@ would die this turn (CR 702.12 / 614.1 / 700.4). -/
 
 def indestructibleBeast : CardDef :=
   creature "Indestructible Beast" ManaCost.empty #[] 2 2
-    (keywords := Keyword.indestructible)
+    (keywords := #[Keyword.indestructible])
 
 def indestructibleFlyer : CardDef :=
   creature "Indestructible Flyer" ManaCost.empty #[] 4 4
-    (keywords := Keyword.flying.merge Keyword.indestructible)
+    (keywords := #[Keyword.flying, Keyword.indestructible])
 
 def indestructibleZero : CardDef :=
   creature "Indestructible Zero" ManaCost.empty #[] 0 0
-    (keywords := Keyword.indestructible)
+    (keywords := #[Keyword.indestructible])
 
 def smiteOn (card : CardDef) : Game :=
   let g := addPermanent afterDraw card ⟨1⟩ ⟨1⟩
@@ -476,10 +474,10 @@ def resolvedSmiteOnIndestructibleFlyer : Game :=
   (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer")
 #guard (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer").status.damage
   == 3
-#guard (resolvedSmiteOnIndestructibleFlyer.effectiveKeywords
-  (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer")).flying
-#guard !(resolvedSmiteOnIndestructibleFlyer.effectiveKeywords
-  (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer")).indestructible
+#guard KeywordAbility.hasFlying (resolvedSmiteOnIndestructibleFlyer.effectiveKeywords
+  (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer"))
+#guard !KeywordAbility.hasIndestructible (resolvedSmiteOnIndestructibleFlyer.effectiveKeywords
+  (namedPermanent resolvedSmiteOnIndestructibleFlyer "Indestructible Flyer"))
 
 def smiteFlyerThenDestroy : Game :=
   resolvedSmiteOnIndestructibleFlyer.applyEffect ⟨0⟩ (Effect.destroyCreatureWithFlying)
@@ -643,12 +641,12 @@ def agentSmite : Game :=
 
 /- Ravening Warg: deathtouch (CR 702.2 / 704.5h) and Ferocious attack-gain-life. -/
 
-#guard raveningWarg.keywords.deathtouch
+#guard KeywordAbility.hasDeathtouch raveningWarg.keywords
 #guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
 #guard raveningWarg.power == some 2
 #guard raveningWarg.toughness == some 2
 #guard withWarg.hasDeathtouch (namedPermanent withWarg "Ravening Warg")
-#guard (withWarg.effectiveKeywords (namedPermanent withWarg "Ravening Warg")).deathtouch
+#guard KeywordAbility.hasDeathtouch (withWarg.effectiveKeywords (namedPermanent withWarg "Ravening Warg"))
 #guard withWarg.power (namedPermanent withWarg "Ravening Warg") == 2
 
 /-- Alone, Ravening Warg is 2/2, so Ferocious does not trigger. -/
@@ -836,7 +834,7 @@ def wargVsIndestructibleAfterDamage : Game :=
 /-- Deathtouch plus trample: 1 damage is lethal, so leftover tramples (CR 702.2c). -/
 def deathtouchTrampler : CardDef :=
   creature "Deathtouch Trampler" ManaCost.empty #[] 2 2
-    (keywords := Keyword.deathtouch.merge Keyword.trample)
+    (keywords := #[Keyword.deathtouch, Keyword.trample])
 
 def tramplerVsBalothAfterDamage : Game :=
   let g := addPermanent started deathtouchTrampler ⟨0⟩ ⟨0⟩

@@ -92,5 +92,6 @@ keep working.
 - `BecomePrepared`: who becomes prepared, as an `ObjectSelector`
 - `Exile`: which cards are exiled, as an `ObjectSelector`
 - `EvalExpr`: Phase 2 pure expression algebra (`Expr`), Stage-4 sub-grammars, live + LKI `EvalExpr`, generalized `TokenSpec`, and `ManaSpec`
+- `CostKeywords`: Phase 4 compositional `CostSpec`, parameterized `KeywordAbility`, CR 122.1b keyword counters, Layer 3 text changes, CR 606.5–6 net loyalty, `StaticAbility.cantBeBlocked`, and compositional `Ward`
 - `Events`: the game event log, conditions read from it, and trigger and replacement matching
 -/

@@ -864,7 +864,7 @@ inductive SharedTrigger where
   +1/+1 counter if it's a creature, a loyalty counter if it's a planeswalker.
   Resolves as
   `.sequence [.grant (.keywords k) .target, .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent), .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]`. -/
-  | grantThenCounterByType (k : Keywords)
+  | grantThenCounterByType (k : Array KeywordAbility)
   /-- If you control six or more lands, destroy target permanent an opponent
   controls; its controller creates a Treasure. Resolves as
   `.«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [.destroy .target, .createTokens .treasure (.fixed 1) false (who := .controller .target)])`. -/
@@ -988,7 +988,7 @@ inductive SharedTrigger where
   +1/+0 and lifelink until end of turn is
   `.sequence [.pump (.fixed 1) (.fixed 0) .source, .grant (.keywords Keyword.lifelink) .source]`.
   First strike and menace on the creature attacking alone is
-  `.grant (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone`.
+  `.grant (.keywords #[Keyword.firstStrike, Keyword.menace]) .attackingAlone`.
   The opponent loses 1 life and you gain 1 life is
   `.sequence [.loseLife (.fixed 1) (.target .opponent), .gainLife (.fixed 1)]`.
   1 damage to the announced opponent is `.dealDamage (.fixed 1) (.player (.target .opponent))`.

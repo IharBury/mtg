@@ -104,7 +104,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
       p0 (.target (.player p1))
 
   -- `afterWardResolved` (`Pending.payWard` declined) reopens `pendingMayCastFromExile`:
-  let wardPermDef : CardDef := { bear with name := "P48i1 WardBear", ward := some 2 }
+  let wardPermDef : CardDef := { bear with name := "P48i1 WardBear", keywords := #[.ward (CostSpec.ofGeneric 2)] }
   let tgtBoltDef : CardDef := {
     name := "P48i1 Bolt"
     manaCost := ManaCost.zero
@@ -535,7 +535,7 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
     bear with
     name := "P48i2 MorphStalker"
     manaCost := { symbols := #[.colored .blue, .colored .blue] }
-    morph := some (ManaCost.ofGeneric 2)
+    keywords := #[.morph (CostSpec.ofGeneric 2)]
   }
   let gMorphSplice0 := insertObject (toOffTurnP1 g4) morphCreatureDef p0 .exile
   let morphSpliceExId := (gMorphSplice0.objects.filter (fun (o : GameObject) => o.zone == Zone.exile)).back!.id
@@ -607,13 +607,13 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
     name := "P48i2 ModalImpTitan"
     manaCost := ManaCost.ofGeneric 4
     spellModes := #[Effect.gainLife 1, Effect.gainLife 2]
-    impending := some (2, ManaCost.ofGeneric 1)
+    keywords := #[.impending 2 (CostSpec.ofGeneric 1)]
   }
   let xImpDef : CardDef := {
     bear with
     name := "P48i2 XImpTitan"
     manaCost := { symbols := #[.x, .generic 2] }
-    impending := some (2, ManaCost.ofGeneric 1)
+    keywords := #[.impending 2 (CostSpec.ofGeneric 1)]
   }
   let gModImp0 :=
     (insertObject (insertObject g4 modalImpDef p0 .exile) xImpDef p0 .exile).loseLife p0 19
@@ -638,8 +638,7 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
     bear with
     name := "P48i2 FlashMorpher"
     manaCost := ManaCost.zero
-    keywords := { flash := true }
-    morph := some (ManaCost.ofGeneric 2)
+    keywords := #[Keyword.flash, .morph (CostSpec.ofGeneric 2)]
   }
   let gFlashMorphOff0 := insertObject (toOffTurnP1 g4) flashMorphDef p0 (.hand p0)
   let flashMorphHandId := (gFlashMorphOff0.player p0).hand.back!
@@ -1115,14 +1114,14 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
   let solGolemDef : CardDef := {
     creature "P48i4 SolGolem" ManaCost.empty #["Golem"] 2 2 with
     types := #[.artifact, .creature]
-    keywords := { haste := true }
+    keywords := #[Keyword.haste]
     tapAddTogether := #[.colorless, .colorless]
   }
   let xTapAltarDef : CardDef := {
     name := "P48i4 XTapAltar"
     types := #[.enchantment]
     activatedAbilities := #[{
-      cost := { mana := { symbols := #[.x] }, tapAnUntappedCreatureYouControl := true }
+      cost := CostSpec.ofItems #[.mana { symbols := #[.x] }, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
       effect := Effect.gainLife 3
     }]
   }

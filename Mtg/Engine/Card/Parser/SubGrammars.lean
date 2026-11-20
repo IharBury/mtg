@@ -1,13 +1,17 @@
+import Mtg.Engine.Card.Cost
 import Mtg.Engine.Card.Expr
+import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.ManaSpec
 import Mtg.Engine.Card.OracleNorm
 import Mtg.Engine.Card.Targeting
 
 /-!
-# Stage-4 Compositional Expression & Targeting Sub-Grammars (CR 107, 109.3, 113, 115, 603.4, 611.2)
+# Stage-4 Compositional Expression, Targeting, Cost & Keyword Sub-Grammars
+(CR 107, 109.3, 113, 115, 118, 601.2b/f/h, 602.2b, 603.4, 606.2–6, 611.2, 702)
 
 Compositional Oracle parsers for the Layer-1 expression algebra (`Mtg.Engine.Card.Expr`)
-and Layer-2 unified targeting specifications (`Mtg.Engine.Card.Targeting`):
+and Layer-2 unified targeting, cost, and keyword specifications (`Mtg.Engine.Card.Targeting`,
+`Mtg.Engine.Card.Cost`, `Mtg.Engine.Card.Keywords`):
 
 - `parseNounPhrase` — quantifiers, `target`, status/color/supertype/subtype/type
   modifiers, controller/zone suffixes, `with`/`without` clauses, and `that`
@@ -23,6 +27,14 @@ and Layer-2 unified targeting specifications (`Mtg.Engine.Card.Targeting`):
   and step/phase/turn/night checks into `Condition`.
 - `parseDuration` — timed, turn-anchored, battlefield-anchored, counter-anchored,
   zone-anchored, and indefinite durations into `DurationExpr`.
+- `parseCostItem` / `parseCostSpec` / `parseAdditionalCostSpec` — compositional
+  lowering of mana, tap/untap, loyalty, life, sacrifice, discard, exile,
+  counter, return, tap-objects, behold, waterbend, and `or` choice costs into
+  `CostItem` / `CostSpec` / `AdditionalCostSpec`.
+- `parseKeywordAbility` / `parseKeywordLine` — compositional lowering of all 29
+  `SimpleKeyword`s and 16 parameterized `KeywordAbility` forms (preserving
+  multiplicity for cumulative keywords and keeping `"can't be blocked"` out of
+  `KeywordAbility`).
 
 These sub-grammars operate on normalized token slices (`Array String`) with
 convenient `String` entry points, and round-trip cleanly against `ToOracle`.
@@ -1920,5 +1932,719 @@ def parseTargetSpecPrefix (toks : List String) : Option (TargetSpec × Nat) := I
       return some (ts, len)
     len := len - 1
   return none
+
+/-! ### Stage-4 Compositional Cost & Keyword Sub-Grammars (CR 118, 606.2–6, 702) -/
+
+/-- Strip balanced parenthetical reminder text `(...)` from an Oracle string. -/
+def stripReminderText (s : String) : String := Id.run do
+  let mut out : List Char := []
+  let mut depth : Nat := 0
+  for c in s.toList do
+    if c == '(' then
+      depth := depth + 1
+    else if c == ')' then
+      if depth > 0 then depth := depth - 1
+    else if depth == 0 then
+      out := c :: out
+  -- Collapse redundant spaces introduced around stripped parentheses.
+  let raw := (String.ofList out.reverse).trimAscii.copy
+  let mut prevSpace := false
+  let mut collapsed : List Char := []
+  for c in raw.toList do
+    if c == ' ' then
+      if !prevSpace then
+        collapsed := c :: collapsed
+        prevSpace := true
+    else
+      collapsed := c :: collapsed
+      prevSpace := false
+  (String.ofList collapsed.reverse).trimAscii.copy
+
+/-- Parse one mana symbol `{W}`, `{2}`, `{G/U}`, `{2/W}`, `{X}`, `{C}` from the
+front of `s`, returning the symbol and remaining trimmed text. -/
+def parseManaSymbol? (s : String) : Option (ManaSymbol × String) :=
+  let s := s.trimAscii.copy
+  if !s.startsWith "{" then none
+  else
+    match (s.drop 1).copy.splitOn "}" with
+    | [] => none
+    | head :: rest =>
+      let sym := head.trimAscii.copy.map Char.toUpper
+      let after := (String.intercalate "}" rest).trimAscii.copy
+      let color? : String → Option Color
+        | "W" => some .white
+        | "U" => some .blue
+        | "B" => some .black
+        | "R" => some .red
+        | "G" => some .green
+        | _ => none
+      if sym == "X" then some (.x, after)
+      else if sym == "C" then some (.colorless, after)
+      else
+        match sym.splitOn "/" with
+        | [a, b] =>
+          match color? a, color? b with
+          | some ca, some cb => some (.hybrid ca cb, after)
+          | none, some cb =>
+            if a.all Char.isDigit && !a.isEmpty then some (.twobrid cb, after)
+            else none
+          | _, _ => none
+        | _ =>
+          match color? sym with
+          | some c => some (.colored c, after)
+          | none =>
+            if sym.all Char.isDigit && !sym.isEmpty then
+              some (.generic sym.toNat!, after)
+            else none
+
+/-- Parse a string consisting solely of mana symbols (`{1}{G}`, `{0}`, `{X}{R}`). -/
+def parseManaCost? (s : String) : Option ManaCost :=
+  let s := s.trimAscii.copy
+  if s.isEmpty || !s.startsWith "{" then none
+  else
+    let rec go (left : String) (acc : Array ManaSymbol) : Option ManaCost :=
+      if left.isEmpty then some { symbols := acc }
+      else
+        match parseManaSymbol? left with
+        | none => none
+        | some (sym, rest) =>
+          if rest.length < left.length then go rest (acc.push sym) else none
+    termination_by left.length
+    go s #[]
+
+/-- Parse a planeswalker loyalty symbol (`[+1]`, `[-2]`, `[−2]`, `[0]`, `[+X]`, `[-X]`). -/
+def parseLoyaltySymbol? (raw : String) : Option LoyaltySymbol :=
+  let s := raw.trimAscii.copy.replace "\u2212" "-"
+  let inner? :=
+    if s.startsWith "[" && s.endsWith "]" && s.length ≥ 3 then
+      some (((s.drop 1).copy.dropEnd 1).copy.trimAscii.copy)
+    else none
+  match inner? with
+  | none => none
+  | some core =>
+    let up := core.map Char.toUpper
+    if up == "0" then some .zero
+    else if up == "+X" then some .plusX
+    else if up == "-X" then some .minusX
+    else if up.startsWith "+" then
+      let digits := (up.drop 1).copy
+      if !digits.isEmpty && digits.all Char.isDigit then some (.plus digits.toNat!) else none
+    else if up.startsWith "-" then
+      let digits := (up.drop 1).copy
+      if !digits.isEmpty && digits.all Char.isDigit then some (.minus digits.toNat!) else none
+    else none
+
+private def isSelfObjectPhrase (raw : String) : Bool :=
+  match lower (cleanClause raw) with
+  | "~" | "this" | "it" | "this permanent" | "this creature" | "this artifact"
+  | "this enchantment" | "this land" | "this planeswalker" | "this equipment"
+  | "this vehicle" | "this aura" | "this card" | "this spell" | "this saga" => true
+  | _ => false
+
+private def stripTrailingPeriod (s : String) : String :=
+  let t := s.trimAscii.copy
+  if t.endsWith "." then (t.dropEnd 1).copy.trimAscii.copy else t
+
+private def splitAllCI (haystack needle : String) : Array (String × String) := Id.run do
+  let hLow := lower haystack
+  let nLow := lower needle
+  if nLow.isEmpty || hLow.length < nLow.length then return #[]
+  let hChars := haystack.toList.toArray
+  let hLowChars := hLow.toList.toArray
+  let nChars := nLow.toList.toArray
+  let mut out : Array (String × String) := #[]
+  for i in [0 : hChars.size - nChars.size + 1] do
+    let mut ok := true
+    for j in [0 : nChars.size] do
+      if hLowChars[i + j]! != nChars[j]! then
+        ok := false
+        break
+    if ok then
+      let lhs := (String.ofList (hChars.extract 0 i).toList).trimAscii.copy
+      let rhs := (String.ofList (hChars.extract (i + nChars.size) hChars.size).toList).trimAscii.copy
+      out := out.push (lhs, rhs)
+  return out
+
+private def parseCounterPhrase? (raw : String) : Option (CostCountSpec × Option CounterKind) := Id.run do
+  let s := lower (cleanClause raw)
+  if let some rest := dropPrefixCI? s "any number of " then
+    let ws := (splitWords rest).toList
+    if let some (k, consumed) := CounterKind.ofPrefix ws then
+      let tail := ws.drop consumed
+      if tail == ["counter"] || tail == ["counters"] || tail.isEmpty then
+        return some (.anyNumber, some k)
+    if rest == "counters" || rest == "counter" then
+      return some (.anyNumber, none)
+  let ws := (splitWords s).toList
+  if let some (n, k, consumed) := CounterKind.matchPhrase ws then
+    if consumed == ws.length then
+      return some (.exact n, some k)
+  -- `"X <kind> counters"` / `"a/N counter(s)"`
+  match ws with
+  | ["a", "counter"] | ["one", "counter"] | ["1", "counter"] =>
+    return some (.exact 1, none)
+  | [nWord, "counters"] =>
+    if nWord == "x" then return some (.count .chosenX, none)
+    if let some n := parseNatWord? nWord then return some (.exact n, none)
+  | nWord :: rest =>
+    if nWord == "x" then
+      if let some (k, consumed) := CounterKind.ofPrefix rest then
+        let tail := rest.drop consumed
+        if tail == ["counter"] || tail == ["counters"] then
+          return some (.count .chosenX, some k)
+  | _ => pure ()
+  return none
+
+private def nounQuantToCostCount : NounQuantifier → Option CostCountSpec
+  | .singular => some (.exact 1)
+  | .exact n => some (.exact n)
+  | .anyNumber => some .anyNumber
+  | _ => none
+
+private def parseSacrificePhrase? (raw : String) : Option (CostCountSpec × SelfOrFilter) := Id.run do
+  let s := stripTrailingPeriod (cleanClause raw)
+  if isSelfObjectPhrase s then
+    return some (.exact 1, .self)
+  let lowS := lower s
+  -- Canonical multi-type / special sacrifice patterns first so AST matches `CostSpec` builders.
+  if lowS == "a creature" then
+    return some (.exact 1, .filter (.hasType .creature))
+  if lowS == "another creature" then
+    return some (.exact 1, .filter (.all #[.otherThan .this, .hasType .creature]))
+  if lowS == "an artifact" then
+    return some (.exact 1, .filter (.hasType .artifact))
+  if lowS == "another artifact" then
+    return some (.exact 1, .filter (.all #[.otherThan .this, .hasType .artifact]))
+  if lowS == "a legendary artifact" then
+    return some (.exact 1, .filter (.all #[.hasSupertype .legendary, .hasType .artifact]))
+  if lowS == "a legendary artifact or legendary creature" || lowS == "a legendary creature or legendary artifact" then
+    return some (.exact 1, .filter (.all #[.hasSupertype .legendary, .any #[.hasType .artifact, .hasType .creature]]))
+  if lowS == "an artifact or creature" || lowS == "an artifact or a creature" then
+    return some (.exact 1, .filter (.any #[.hasType .artifact, .hasType .creature]))
+  if lowS == "a creature or artifact" || lowS == "a creature or an artifact" then
+    return some (.exact 1, .filter (.any #[.hasType .creature, .hasType .artifact]))
+  if lowS == "another creature or artifact" || lowS == "another artifact or creature" then
+    return some (.exact 1, .filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))
+  if lowS == "a creature or planeswalker" || lowS == "a creature or a planeswalker" then
+    return some (.exact 1, .filter (.any #[.hasType .creature, .hasType .planeswalker]))
+  if lowS == "another creature or planeswalker" then
+    return some (.exact 1, .filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .planeswalker]]))
+  if lowS == "an artifact or land" || lowS == "an artifact or a land" then
+    return some (.exact 1, .filter (.any #[.hasType .artifact, .hasType .land]))
+  if lowS == "an equipment attached to this creature" || lowS == "an equipment attached to ~" then
+    return some (.exact 1, .filter (.all #[.hasSubtype (.literal .equipment), .attachedTo .this]))
+  -- `"another <Subtype>"`
+  if let some rest := dropPrefixCI? s "another " then
+    if let some sub := CardSubtype.ofOracle? rest then
+      return some (.exact 1, .filter (.all #[.otherThan .this, .hasSubtype (.literal sub)]))
+  -- `"N permanents"` / `"a permanent"`
+  if lowS == "a permanent" then
+    return some (.exact 1, .filter .anyObject)
+  if let some nWord := dropSuffixCI? lowS " permanents" then
+    if let some n := parseNatWord? nWord then
+      return some (.exact n, .filter .anyObject)
+  -- General compositional fallback via `parseNounPhrase`.
+  if let some np := parseNounPhrase s then
+    if !np.isTarget then
+      if let some cnt := nounQuantToCostCount np.quantifier then
+        return some (cnt, .filter np.filter.pred)
+  return none
+
+private def parseDiscardPhrase? (raw : String) : Option (CostCountSpec × DiscardCostTarget) := Id.run do
+  let s := stripTrailingPeriod (cleanClause raw)
+  let lowS := lower s
+  if isSelfObjectPhrase s then
+    return some (.exact 1, .self)
+  if let some core := dropSuffixCI? lowS " at random" then
+    if core == "a card" || core == "one card" || core == "1 card" then
+      return some (.exact 1, .random)
+    if let some nWord := dropSuffixCI? core " cards" then
+      if let some n := parseNatWord? nWord then
+        return some (.exact n, .random)
+  if lowS == "a card" || lowS == "one card" || lowS == "1 card" then
+    return some (.exact 1, .hand)
+  if let some nWord := dropSuffixCI? lowS " cards" then
+    if let some n := parseNatWord? nWord then
+      return some (.exact n, .hand)
+  if lowS == "a nonland card" then
+    return some (.exact 1, .matching (.not (.hasType .land)))
+  if lowS == "a legendary card" then
+    return some (.exact 1, .matching (.hasSupertype .legendary))
+  if lowS == "an enchantment, instant, or sorcery card" then
+    return some (.exact 1, .matching (.any #[.hasType .enchantment, .hasType .instant, .hasType .sorcery]))
+  if lowS == "a legendary card that has the same name as a legendary permanent you control" ||
+     lowS == "a legendary card with the same name as a legendary permanent you control" then
+    return some (.exact 1, .matching (.all #[
+      .hasSupertype .legendary,
+      .shares .name (.inZones .battlefield (.all #[.hasSupertype .legendary, .controlledBy .you]))
+    ]))
+  -- General compositional fallback via `parseNounPhrase`.
+  if let some np := parseNounPhrase s then
+    if !np.isTarget then
+      if let some cnt := nounQuantToCostCount np.quantifier then
+        return some (cnt, .matching np.filter.pred)
+  return none
+
+mutual
+
+/-- Parse one atomic or choice-combinator `CostItem` from normalized Oracle text
+(CR 118, 606.2–6, 701.4, 701.9, 701.21, 701.26, 701.59, 701.67, 702.122, 702.190, 702.194). -/
+partial def parseCostItem (raw : String) : Option CostItem := Id.run do
+  let s := stripTrailingPeriod (stripReminderText raw)
+  if s.isEmpty then return none
+  let lowS := lower s
+
+  -- 1. `{T}` / `{Q}` / loyalty symbol / pure mana cost / `"pay {mana}"`
+  if lowS == "{t}" then return some .tapSelf
+  if lowS == "{q}" then return some .untapSelf
+  if let some sym := parseLoyaltySymbol? s then return some (.loyalty sym)
+  if let some mc := parseManaCost? s then return some (.mana mc)
+  if let some rest := dropPrefixCI? s "pay " then
+    if let some mc := parseManaCost? rest then
+      return some (.mana mc)
+    if let some amtStr := dropSuffixCI? rest " life" then
+      if let some v := parseValueExpr amtStr then
+        return some (.payLife v)
+
+  -- 2. Waterbend (CR 701.67)
+  if let some rest := dropPrefixCI? s "waterbend " then
+    let cleanRest := rest.trimAscii.copy
+    if cleanRest.startsWith "{" && cleanRest.endsWith "}" then
+      let inner := ((cleanRest.drop 1).copy.dropEnd 1).copy
+      if let some v := parseValueExpr inner then
+        return some (.waterbend v)
+    if let some v := parseValueExpr cleanRest then
+      return some (.waterbend v)
+
+  -- 3. Behold a/an <Subtype> (CR 701.4)
+  if let some rest := dropPrefixCI? s "behold " then
+    let subStr :=
+      if let some r := dropPrefixCI? rest "an " then r
+      else if let some r := dropPrefixCI? rest "a " then r
+      else rest
+    if let some sub := CardSubtype.ofOracle? subStr then
+      return some (.behold sub)
+
+  -- 4. Poison counters paid by the payer (`"Get N poison counters"`)
+  if let some rest := dropPrefixCI? lowS "get " then
+    if rest == "a poison counter" || rest == "one poison counter" || rest == "1 poison counter" then
+      return some (.putCounters (.const 1) .poison .payer)
+    if let some nWord := dropSuffixCI? rest " poison counters" then
+      if let some n := parseNatWord? nWord then
+        return some (.putCounters (.const n) .poison .payer)
+
+  -- 5. Put counters on self / permanent / payer
+  if let some rest := dropPrefixCI? s "put " then
+    if let some (cntStr, tgtStr) := splitLastCI? rest " on " then
+      if let some (cntSpec, some kind) := parseCounterPhrase? cntStr then
+        let amt? : Option ValueExpr :=
+          match cntSpec with
+          | .count v => some v
+          | _ => none
+        if let some amt := amt? then
+          if isSelfObjectPhrase tgtStr then
+            return some (.putCounters amt kind .self)
+          else if let some np := parseNounPhrase tgtStr then
+            return some (.putCounters amt kind (.filter np.filter.pred))
+
+  -- 6. Remove counters from self / permanent
+  if let some rest := dropPrefixCI? s "remove " then
+    if let some (cntStr, fromStr) := splitLastCI? rest " from " then
+      if let some (cntSpec, kind?) := parseCounterPhrase? cntStr then
+        if isSelfObjectPhrase fromStr then
+          return some (.removeCounters cntSpec kind? .self)
+        else if let some np := parseNounPhrase fromStr then
+          return some (.removeCounters cntSpec kind? (.filter np.filter.pred))
+
+  -- 7. Collect evidence N (CR 701.59)
+  if let some rest := dropPrefixCI? lowS "collect evidence " then
+    if let some n := parseNatWord? rest then
+      return some (.exile (.totalManaValueAtLeast (.const n)) .yourGraveyard (.filter (.isKind .card)) true)
+
+  -- 8. Sacrifice
+  if let some rest := dropPrefixCI? s "sacrifice " then
+    if let some (cnt, what) := parseSacrificePhrase? rest then
+      return some (.sacrifice cnt what)
+
+  -- 9. Discard
+  if let some rest := dropPrefixCI? s "discard " then
+    if let some (cnt, what) := parseDiscardPhrase? rest then
+      return some (.discard cnt what)
+
+  -- 10. Exile
+  if let some rest := dropPrefixCI? s "exile " then
+    let lowRest := lower rest
+    -- `"exile this card from your graveyard"` / `"exile ~ from your graveyard"`
+    if let some obj := dropSuffixCI? lowRest " from your graveyard" then
+      if isSelfObjectPhrase obj then
+        return some (.exile (.exact 1) .yourGraveyard .self false)
+      if obj == "another creature card" then
+        return some (.exile (.exact 1) .yourGraveyard
+          (.filter (.all #[.otherThan .this, .hasType .creature, .isKind .card])) false)
+    -- `"exile this card from your hand"` / `"exile ~ from your hand"`
+    if let some obj := dropSuffixCI? lowRest " from your hand" then
+      if isSelfObjectPhrase obj then
+        return some (.exile (.exact 1) .yourHand .self false)
+    -- `"exile any number of <color> cards from your graveyard with N or more <color> mana symbols among their mana costs"`
+    if let some (lhs, rhs) := splitFirstCI? rest " with " then
+      if let some symPart := dropSuffixCI? rhs " mana symbols among their mana costs" then
+        if let some (nStr, colStr) := splitFirstCI? symPart " or more " then
+          if let some n := parseNatWord? nStr then
+            let col? := parseColorWord? colStr
+            let pred :=
+              match col? with
+              | some col => ObjectPred.all #[.hasColor (.literal col), .isKind .card]
+              | none => .isKind .card
+            let zones : ZoneSetSpec :=
+              if (lower lhs).contains "graveyard" then .yourGraveyard
+              else if (lower lhs).contains "hand" then .yourHand
+              else .battlefield
+            return some (.exile (.totalManaSymbolsAtLeast col? (.const n)) zones (.filter pred) false)
+    if isSelfObjectPhrase rest then
+      return some (.exile (.exact 1) .battlefield .self false)
+    if let some np := parseNounPhrase rest then
+      if !np.isTarget then
+        if let some cnt := nounQuantToCostCount np.quantifier then
+          return some (.exile cnt np.filter.zones (.filter np.filter.pred) false)
+
+  -- 11. Tap objects (including Crew / Teamwork total power)
+  if let some rest := dropPrefixCI? s "tap " then
+    let lowRest := lower rest
+    if let some (objStr, powStr) := splitFirstCI? lowRest " with total power " then
+      if let some nStr := dropSuffixCI? powStr " or more" then
+        if let some n := parseNatWord? nStr then
+          let isOther := objStr.contains "other "
+          let basePred : ObjectPred :=
+            if isOther then
+              .all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you]
+            else
+              .all #[.hasType .creature, .tapped false, .controlledBy .you]
+          return some (.tapObjects (.totalPowerAtLeast (.const n)) basePred)
+    if lowRest == "an untapped creature you control" then
+      return some (.tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you]))
+    if lowRest == "two untapped artifacts you control" then
+      return some (.tapObjects (.exact 2) (.all #[.hasType .artifact, .tapped false, .controlledBy .you]))
+    if let some np := parseNounPhrase rest then
+      if !np.isTarget then
+        if let some cnt := nounQuantToCostCount np.quantifier then
+          return some (.tapObjects cnt np.filter.pred)
+
+  -- 12. Return to hand (e.g., Sneak CR 702.190a)
+  if let some rest := dropPrefixCI? s "return " then
+    let objStr? :=
+      (dropSuffixCI? rest " to its owner's hand").orElse fun _ =>
+      (dropSuffixCI? rest " to their owners' hands").orElse fun _ =>
+      (dropSuffixCI? rest " to your hand")
+    if let some objStr := objStr? then
+      if isSelfObjectPhrase objStr then
+        return some (.returnToHand (.exact 1) .self)
+      if lower objStr == "an unblocked attacking creature you control" then
+        return some (.returnToHand (.exact 1) (.filter (.all #[
+          .hasType .creature, .combatRole .unblocked, .controlledBy .you
+        ])))
+      if let some np := parseNounPhrase objStr then
+        if !np.isTarget then
+          if let some cnt := nounQuantToCostCount np.quantifier then
+            return some (.returnToHand cnt (.filter np.filter.pred))
+
+  return none
+
+/-- Parse a compositional `CostSpec` (comma-separated items, `"sacrifice this and ..."`,
+and top-level `"<costA> or <costB>"` choice combinators; CR 118). -/
+partial def parseCostSpec (raw : String) : Option CostSpec := Id.run do
+  let s := stripTrailingPeriod (stripReminderText raw)
+  if s.isEmpty then return none
+
+  -- 1. Single atomic item first (keeps `"discard an enchantment, instant, or sorcery card"`
+  --    and `"sacrifice an artifact or creature"` intact before splitting on `, ` / ` or `).
+  if let some item := parseCostItem s then
+    return some (CostSpec.ofItem item)
+
+  -- 2. Top-level `" or "` combinator, trying split points right-to-left so
+  --    `"sacrifice an artifact or creature or pay {4}"` splits as
+  --    `("sacrifice an artifact or creature", "pay {4}")`.
+  let orSplits := splitAllCI s " or "
+  for idx in [0 : orSplits.size] do
+    let (lhs, rhs) := orSplits[orSplits.size - 1 - idx]!
+    if let some c1 := parseCostSpec lhs then
+      if let some c2 := parseCostSpec rhs then
+        let choices :=
+          match c1.items.toList with
+          | [.or xs] => xs.push c2
+          | _ => #[c1, c2]
+        return some (CostSpec.ofItem (.or choices))
+
+  -- 3. Merged `"sacrifice <self> and <other>"` (e.g. `"sacrifice ~ and a legendary artifact"`).
+  if let some rest := dropPrefixCI? s "sacrifice " then
+    if let some (lhs, rhs) := splitFirstCI? rest " and " then
+      if let some (cnt1, w1) := parseSacrificePhrase? lhs then
+        if let some (cnt2, w2) := parseSacrificePhrase? rhs then
+          return some (CostSpec.ofItems #[.sacrifice cnt1 w1, .sacrifice cnt2 w2])
+
+  -- 4. Comma-separated cost items (`"{1}{B}, {T}, Sacrifice a creature"`).
+  let parts := (s.splitOn ",").map (fun p => p.trimAscii.copy) |>.filter (!·.isEmpty)
+  if parts.length ≥ 2 then
+    let mut items : Array CostItem := #[]
+    let mut ok := true
+    for part in parts do
+      match parseCostSpec part with
+      | some sub => items := items ++ sub.items
+      | none =>
+        ok := false
+        break
+    if ok && !items.isEmpty then
+      return some { items }
+
+  return none
+
+end
+
+/-- Parse an Oracle `"As an additional cost to cast this spell, [you may] <cost>."`
+line into an `AdditionalCostSpec` (CR 118.8 / 601.2b,f,h). -/
+def parseAdditionalCostSpec (raw : String) : Option AdditionalCostSpec := Id.run do
+  let s := stripTrailingPeriod (stripReminderText raw)
+  let some body := dropPrefixCI? s "as an additional cost to cast this spell, " | return none
+  if let some optBody := dropPrefixCI? body "you may " then
+    if let some cost := parseCostSpec optBody then
+      return some (AdditionalCostSpec.opt cost)
+  if let some cost := parseCostSpec body then
+    return some (AdditionalCostSpec.mandatory cost)
+  return none
+
+/-- Parse `"hexproof from <quality>"` quality filter (CR 702.11d). -/
+def parseQualityFilter? (raw : String) : Option QualityFilter := Id.run do
+  let s := stripTrailingPeriod (cleanClause raw)
+  let lowS := lower s
+  if lowS == "multicolored" then return some .multicolored
+  if lowS == "the chosen color" then return some (.color .chosenOnSource)
+  if let some col := parseColorWord? lowS then return some (.color (.literal col))
+  if let some ct := CardType.ofOracle? lowS then return some (.cardType ct)
+  if let some sub := CardSubtype.ofOracle? s then return some (.subtype (.literal sub))
+  if let some np := parseNounPhrase s then
+    return some (.objectPred np.filter.pred)
+  return none
+
+/-- Parse one `"protection from <quality>"` quality (CR 702.16). -/
+def parseProtectionQuality? (raw : String) : Option ProtectionQuality := Id.run do
+  let s := stripTrailingPeriod (cleanClause raw)
+  let lowS := lower s
+  if lowS == "everything" then return some .everything
+  if lowS == "all colors" then return some .allColors
+  if lowS == "colorless" then return some .colorless
+  if lowS == "the chosen card type" then return some .chosenCardType
+  if lowS == "the chosen color" then return some (.color .chosenOnSource)
+  if lowS == "the chosen type" then return some (.subtype .chosenOnSource)
+  if let some col := parseColorWord? lowS then return some (.color (.literal col))
+  if let some ct := CardType.ofOracle? lowS then return some (.cardType ct)
+  if let some sub := CardSubtype.ofOracle? s then return some (.subtype (.literal sub))
+  if let some np := parseNounPhrase s then
+    return some (.quality np.filter.pred)
+  return none
+
+/-- Parse a single keyword ability phrase into `KeywordAbility` (CR 702).
+Never accepts `"can't be blocked"` (CR 509.1b — a static ability, not a keyword). -/
+def parseKeywordAbility (raw : String) : Option KeywordAbility := Id.run do
+  let s := stripTrailingPeriod (stripReminderText raw)
+  if s.isEmpty then return none
+  let lowS := lower s
+
+  -- 1. All 29 parameter-free `SimpleKeyword`s, bare `hexproof`, and all inline
+  -- landwalk variants (`<land-subtype>walk`, `nonbasic/legendary/snow landwalk`,
+  -- CR 702.11 / 702.14). Delegating directly to `KeywordAbility.ofSimpleName?`
+  -- keeps both entry points identical (canonical predicate order and `sub.kind == .land`).
+  if let some kw := KeywordAbility.ofSimpleName? s then
+    return some kw
+
+  -- 2. Hexproof from [quality] (CR 702.11d).
+  if let some qStr := dropPrefixCI? s "hexproof from " then
+    if let some q := parseQualityFilter? qStr then
+      return some (.hexproof (some q))
+
+  -- 3. Ward [cost] / Ward—[cost] (CR 702.21).
+  if let some rest := (dropPrefixCI? s "ward—").orElse (fun _ =>
+      (dropPrefixCI? s "ward - ").orElse (fun _ => dropPrefixCI? s "ward ")) then
+    if let some cost := parseCostSpec rest then
+      return some (.ward cost)
+
+  -- 4. Protection from [quality] (CR 702.16).
+  if let some qStr := dropPrefixCI? s "protection from " then
+    if !((lower qStr).contains " and ") then
+      if let some q := parseProtectionQuality? qStr then
+        return some (.protection q)
+
+  -- 5. Toxic N (CR 702.164).
+  if let some nStr := dropPrefixCI? lowS "toxic " then
+    if let some n := parseNatWord? nStr then
+      return some (.toxic n)
+
+  -- 6. Crew N (CR 702.122).
+  if let some nStr := dropPrefixCI? lowS "crew " then
+    if let some n := parseNatWord? nStr then
+      return some (.crew n)
+
+  -- 7. Teamwork N (CR 702.194).
+  if let some nStr := dropPrefixCI? lowS "teamwork " then
+    if let some n := parseNatWord? nStr then
+      return some (.teamwork n)
+
+  -- 8. Affinity for [filter] (CR 702.41).
+  if let some forStr := dropPrefixCI? s "affinity for " then
+    let cleanFor := stripTrailingPeriod forStr
+    let lowFor := lower cleanFor
+    if let some ct := CardType.ofOracle? lowFor then
+      return some (.affinity {
+        zones := .battlefield
+        pred := .all #[.hasType ct, .controlledBy .you]
+      })
+    if let some sub := CardSubtype.ofOracle? cleanFor then
+      return some (.affinity {
+        zones := .battlefield
+        pred := .all #[.hasSubtype (.literal sub), .controlledBy .you]
+      })
+    if let some np := parseNounPhrase cleanFor then
+      let pred :=
+        match np.filter.pred with
+        | .all ps =>
+          if ps.any (fun | .controlledBy _ => true | _ => false) then np.filter.pred
+          else .all (ps.push (.controlledBy .you))
+        | other => .all #[other, .controlledBy .you]
+      return some (.affinity { zones := .battlefield, pred })
+
+  -- 9. Gift [kind] (CR 702.174).
+  if let some giftStr := dropPrefixCI? s "gift " then
+    if let some kind := GiftKind.ofOracle? giftStr then
+      return some (.gift kind)
+
+  -- 10. Kicker [cost] / Kicker—[cost] (CR 702.33).
+  if let some rest := (dropPrefixCI? s "kicker—").orElse (fun _ =>
+      (dropPrefixCI? s "kicker - ").orElse (fun _ => dropPrefixCI? s "kicker ")) then
+    if let some cost := parseCostSpec rest then
+      return some (.kicker cost)
+
+  -- 11. Flashback [cost] / Flashback—[cost] (CR 702.34).
+  if let some rest := (dropPrefixCI? s "flashback—").orElse (fun _ =>
+      (dropPrefixCI? s "flashback - ").orElse (fun _ => dropPrefixCI? s "flashback ")) then
+    if let some cost := parseCostSpec rest then
+      return some (.flashback cost)
+
+  -- 12. Morph [cost] / Morph—[cost] (CR 702.37).
+  if let some rest := (dropPrefixCI? s "morph—").orElse (fun _ =>
+      (dropPrefixCI? s "morph - ").orElse (fun _ => dropPrefixCI? s "morph ")) then
+    if let some cost := parseCostSpec rest then
+      return some (.morph cost)
+
+  -- 13. Impending N—[cost] (CR 702.176).
+  if let some rest := dropPrefixCI? s "impending " then
+    let split? := (splitFirstCI? rest "—").orElse fun _ => splitFirstCI? rest " - "
+    if let some (nStr, costStr) := split? then
+      if let some n := parseNatWord? nStr then
+        if let some cost := parseCostSpec costStr then
+          return some (.impending n cost)
+
+  -- 14. Sneak [cost] / Sneak—[cost] (CR 702.190).
+  if let some rest := (dropPrefixCI? s "sneak—").orElse (fun _ =>
+      (dropPrefixCI? s "sneak - ").orElse (fun _ => dropPrefixCI? s "sneak ")) then
+    if let some cost := parseCostSpec rest then
+      return some (.sneak cost)
+
+  -- 15. Cycling / [Type]cycling [cost] (CR 702.29).
+  if let some rest := (dropPrefixCI? s "cycling—").orElse (fun _ =>
+      (dropPrefixCI? s "cycling - ").orElse (fun _ => dropPrefixCI? s "cycling ")) then
+    if let some cost := parseCostSpec rest then
+      return some (.cycling none cost)
+  if let some (lhs, rhs) := splitFirstCI? s "cycling " then
+    let qual := lhs.trimAscii.copy
+    if !qual.isEmpty then
+      if let some cost := parseCostSpec rhs then
+        let filter? : Option ObjectPred :=
+          if lower qual == "basic land" then
+            some (.all #[.hasSupertype .basic, .hasType .land])
+          else if let some sub := CardSubtype.ofOracle? qual then
+            some (.hasSubtype (.literal sub))
+          else if let some ct := CardType.ofOracle? (lower qual) then
+            some (.hasType ct)
+          else none
+        if let some f := filter? then
+          return some (.cycling (some f) cost)
+
+  -- 16. Equip [quality] [cost] (CR 702.6).
+  if let some rest := (dropPrefixCI? s "equip—").orElse (fun _ => dropPrefixCI? s "equip - ") then
+    if let some cost := parseCostSpec rest then
+      return some (.equip (.all #[.hasType .creature, .controlledBy .you]) cost)
+  if let some rest := dropPrefixCI? s "equip " then
+    if let some cost := parseCostSpec rest then
+      return some (.equip (.all #[.hasType .creature, .controlledBy .you]) cost)
+    -- `"equip <subtype/quality> <cost>"` or `"equip <subtype/quality>—<cost>"`
+    -- (e.g. `"Equip Soldier {1}"`, `"Equip legendary creature {2}"`, `"Equip Soldier—Pay 2 life."`)
+    let qualAndCost? : Option (String × String) :=
+      match (splitFirstCI? rest "—").orElse (fun _ => splitFirstCI? rest " - ") with
+      | some (q, c) => some (q, c)
+      | none =>
+        let ws := splitWords rest
+        if ws.size ≥ 2 then Id.run do
+          let mut splitAt? : Option Nat := none
+          for i in [1 : ws.size] do
+            if ws[i]!.startsWith "{" then
+              splitAt? := some i
+              break
+          match splitAt? with
+          | some idx =>
+            let q := String.intercalate " " (ws.extract 0 idx).toList
+            let c := String.intercalate " " (ws.extract idx ws.size).toList
+            return some (q, c)
+          | none => return none
+        else none
+    if let some (qualStr, costStr) := qualAndCost? then
+      if let some cost := parseCostSpec costStr then
+        if let some sub := CardSubtype.ofOracle? qualStr then
+          return some (.equip (.all #[.hasType .creature, .hasSubtype (.literal sub), .controlledBy .you]) cost)
+        if let some np := parseNounPhrase qualStr then
+          let pred :=
+            match np.filter.pred with
+            | .all ps =>
+              if ps.any (fun | .controlledBy _ => true | _ => false) then np.filter.pred
+              else .all (ps.push (.controlledBy .you))
+            | other => .all #[other, .controlledBy .you]
+          return some (.equip pred cost)
+
+  return none
+
+/-- Parse a single keyword line (e.g., `"Flying, vigilance"`, `"Prowess, prowess"`,
+`"Flying, protection from white and from black"`, `"Ward—Discard a card or pay {2}."`)
+into an array of `KeywordAbility`s, retaining multiplicity for cumulative keywords.
+Returns `none` if any clause on the line is not a keyword ability. -/
+def parseKeywordLine (raw : String) : Option (Array KeywordAbility) := Id.run do
+  let s := stripTrailingPeriod (stripReminderText raw)
+  if s.isEmpty then return none
+
+  -- Single keyword first (handles commas inside `"Ward—Discard an enchantment, instant, or sorcery card."`
+  -- or `"Flashback—{1}{B}, Discard a card."`).
+  if let some kw := parseKeywordAbility s then
+    return some #[kw]
+
+  -- Split top-level on `";"` then `","`, supporting `"protection from X and from Y"` per segment.
+  let semiParts := (s.splitOn ";").map (fun p => p.trimAscii.copy) |>.filter (!·.isEmpty)
+  let mut out : Array KeywordAbility := #[]
+  for semi in semiParts do
+    if let some kw := parseKeywordAbility semi then
+      out := out.push kw
+    else
+      let commaParts := (semi.splitOn ",").map (fun p => p.trimAscii.copy) |>.filter (!·.isEmpty)
+      for part in commaParts do
+        if let some kw := parseKeywordAbility part then
+          out := out.push kw
+        else if let some qRest := dropPrefixCI? part "protection from " then
+          let pieces := (qRest.replace " and from " " and ").splitOn " and "
+          let mut parsedAny := false
+          for piece in pieces do
+            match parseProtectionQuality? piece with
+            | some q =>
+              out := out.push (.protection q)
+              parsedAny := true
+            | none => return none
+          if !parsedAny then return none
+        else
+          return none
+  if out.isEmpty then return none else return some out
 
 end Mtg.Engine.Parser

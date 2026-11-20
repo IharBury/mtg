@@ -199,7 +199,7 @@ opposing creatures are not counted. None gains nothing. -/
 into a single `LifeEvent.gained` event across multiple recipients. -/
 #guard
   let llSrc : CardDef :=
-    creature "Divided Lifelinker" ManaCost.empty #[] 3 3 (keywords := Keyword.lifelink)
+    creature "Divided Lifelinker" ManaCost.empty #[] 3 3 (keywords := #[Keyword.lifelink])
   let g0 := addPermanent (addPermanent afterDraw llSrc caster caster) bear opp opp
   let src := g0.battlefield.find? (·.name == "Divided Lifelinker") |>.get!
   let oppBear := g0.battlefield.find? (·.name == "Cave Bear") |>.get!

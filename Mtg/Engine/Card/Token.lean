@@ -123,7 +123,7 @@ structure CustomTokenSpec where
   power? : Option ValueExpr := none
   toughness? : Option ValueExpr := none
   loyalty? : Option Int := none
-  keywords : Keywords := Keywords.none
+  keywords : Array KeywordAbility := #[]
   abilities : Array TokenAbilitySpec := #[]
   /-- True for CR 111.11 Oracle-card-named shorthand tokens printed as
   `"<Name> token"` (e.g. `"Lotus token"`, `"Gingerbrute token"`). -/
@@ -138,7 +138,8 @@ instance : HasTextChange CustomTokenSpec where
         subtypes := HasTextChange.applyTextChanges tcs s.subtypes
         colors := HasTextChange.applyTextChanges tcs s.colors
         power? := HasTextChange.applyTextChanges tcs s.power?
-        toughness? := HasTextChange.applyTextChanges tcs s.toughness? }
+        toughness? := HasTextChange.applyTextChanges tcs s.toughness?
+        keywords := HasTextChange.applyTextChanges tcs s.keywords }
 
 /-- Modification applied while creating a token copy (CR 707.9). -/
 inductive CopyModification where
@@ -148,9 +149,9 @@ inductive CopyModification where
   | addSubtypes (subtypes : Array CardSubtype)
   | addColors (colors : ColorSet)
   | removeSupertype (supertype : Supertype)
-  | addKeywords (keywords : Keywords)
+  | addKeywords (keywords : Array KeywordAbility)
   | addAbilities (abilities : Array TokenAbilitySpec)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 instance : HasTextChange CopyModification where
   applyTextChanges tcs m :=
@@ -159,6 +160,7 @@ instance : HasTextChange CopyModification where
       match m with
       | .addSubtypes subs => .addSubtypes (HasTextChange.applyTextChanges tcs subs)
       | .addColors cols => .addColors (HasTextChange.applyTextChanges tcs cols)
+      | .addKeywords kws => .addKeywords (HasTextChange.applyTextChanges tcs kws)
       | other => other
 
 /-- Unified, parameterized token specification (CR 111, 707.9). -/
@@ -198,7 +200,7 @@ def heartwood : TokenSpec := .predefined .heartwood
 /-- Helper for standard fixed-P/T custom creature tokens. -/
 def creature (subtypes : Array CardSubtype) (power toughness : Int)
     (colors : ColorSet := ColorSet.empty)
-    (keywords : Keywords := Keywords.none)
+    (keywords : Array KeywordAbility := #[])
     (types : Array CardType := #[.creature])
     (supertypes : Array Supertype := #[])
     (name? : Option String := none)
@@ -227,30 +229,30 @@ def elf : TokenSpec :=
   creature #[.elf] 1 1 (ColorSet.singleton .green)
 
 def spirit : TokenSpec :=
-  creature #[.spirit] 1 1 (ColorSet.singleton .white) Keyword.flying
+  creature #[.spirit] 1 1 (ColorSet.singleton .white) #[Keyword.flying]
 
 def birdSoldier : TokenSpec :=
-  creature #[.bird, .soldier] 4 4 (ColorSet.singleton .white) Keyword.flying
+  creature #[.bird, .soldier] 4 4 (ColorSet.singleton .white) #[Keyword.flying]
 
 def wall : TokenSpec :=
-  creature #[.wall] 3 1 ColorSet.empty Keyword.defender
+  creature #[.wall] 3 1 ColorSet.empty #[Keyword.defender]
     (types := #[.artifact, .creature]) (name? := some "Stone Boulder")
 
 def dragon : TokenSpec :=
-  creature #[.dragon] 6 6 (ColorSet.singleton .red) Keyword.flying
+  creature #[.dragon] 6 6 (ColorSet.singleton .red) #[Keyword.flying]
 
 def hero32vigilance : TokenSpec :=
-  creature #[.hero] 3 2 (ColorSet.singleton .white) Keyword.vigilance
+  creature #[.hero] 3 2 (ColorSet.singleton .white) #[Keyword.vigilance]
 
 def villain21menace : TokenSpec :=
-  creature #[.villain] 2 1 (ColorSet.singleton .black) Keyword.menace
+  creature #[.villain] 2 1 (ColorSet.singleton .black) #[Keyword.menace]
 
 def robotVillain22 : TokenSpec :=
   creature #[.robot, .villain] 2 2 ColorSet.empty
     (types := #[.artifact, .creature])
 
 def leviathan65hexproof : TokenSpec :=
-  creature #[.leviathan] 6 5 (ColorSet.singleton .blue) Keyword.hexproof
+  creature #[.leviathan] 6 5 (ColorSet.singleton .blue) #[Keyword.hexproof]
 
 def soldier11white : TokenSpec :=
   creature #[.soldier] 1 1 (ColorSet.singleton .white)
@@ -259,7 +261,7 @@ def squirrel11green : TokenSpec :=
   creature #[.squirrel] 1 1 (ColorSet.singleton .green)
 
 def wall04defender : TokenSpec :=
-  creature #[.wall] 0 4 ColorSet.empty Keyword.defender
+  creature #[.wall] 0 4 ColorSet.empty #[Keyword.defender]
 
 def doombot : TokenSpec :=
   creature #[.robot, .villain] 3 3 ColorSet.empty
@@ -306,27 +308,27 @@ def pridemate : TokenSpec :=
     (name? := some "Ajani's Pridemate") (abilities := #[.onGainLifePutPlusOne 1])
 
 def beast44trample : TokenSpec :=
-  creature #[.beast] 4 4 (ColorSet.singleton .green) Keyword.trample
+  creature #[.beast] 4 4 (ColorSet.singleton .green) #[Keyword.trample]
 
 def dragon55flying : TokenSpec :=
-  creature #[.dragon] 5 5 (ColorSet.singleton .red) Keyword.flying
+  creature #[.dragon] 5 5 (ColorSet.singleton .red) #[Keyword.flying]
 
 def forestTentacle : TokenSpec :=
   creature #[.forest, .tentacle] 3 3 (ColorSet.singleton .green)
     (types := #[.land, .creature])
 
 def thopter : TokenSpec :=
-  creature #[.thopter] 1 1 ColorSet.empty Keyword.flying
+  creature #[.thopter] 1 1 ColorSet.empty #[Keyword.flying]
     (types := #[.artifact, .creature])
 
 def angel33blue : TokenSpec :=
-  creature #[.angel] 3 3 (ColorSet.singleton .blue) Keyword.flying
+  creature #[.angel] 3 3 (ColorSet.singleton .blue) #[Keyword.flying]
 
 def illusion11blue : TokenSpec :=
   creature #[.illusion] 1 1 (ColorSet.singleton .blue)
 
 def leviathan88hexproof : TokenSpec :=
-  creature #[.leviathan] 8 8 (ColorSet.singleton .blue) Keyword.hexproof
+  creature #[.leviathan] 8 8 (ColorSet.singleton .blue) #[Keyword.hexproof]
 
 -- Named and specialized custom tokens.
 def axe : TokenSpec :=
@@ -344,17 +346,17 @@ def zabu : TokenSpec :=
 
 def theVoid : TokenSpec :=
   creature #[.horror, .villain] 5 5 (ColorSet.singleton .black)
-    (Keyword.flying.merge Keyword.indestructible)
+    #[Keyword.flying, Keyword.indestructible]
     (supertypes := #[.legendary]) (name? := some "The Void")
     (abilities := #[.attacksEachCombatIfAble])
 
 def redwing : TokenSpec :=
-  creature #[.bird, .scout] 1 1 (ColorSet.singleton .blue) Keyword.flying
+  creature #[.bird, .scout] 1 1 (ColorSet.singleton .blue) #[Keyword.flying]
     (supertypes := #[.legendary]) (name? := some "Redwing")
     (abilities := #[.onAttackScry 1])
 
 def alien : TokenSpec :=
-  creature #[.alien] 1 1 (ColorSet.singleton .red) Keyword.haste
+  creature #[.alien] 1 1 (ColorSet.singleton .red) #[Keyword.haste]
     (abilities := #[.attacksEachCombatIfAble])
 
 def sturdyShield : TokenSpec :=
@@ -367,7 +369,7 @@ def sturdyShield : TokenSpec :=
 
 def galactus : TokenSpec :=
   creature #[.elder, .alien] 16 16 (ColorSet.singleton .black)
-    (Keyword.flying.merge Keyword.trample)
+    #[Keyword.flying, Keyword.trample]
     (supertypes := #[.legendary]) (name? := some "Galactus")
     (abilities := #[.onAttackDestroyTargetLand])
 
@@ -387,7 +389,7 @@ def warrior : TokenSpec :=
   creature #[.warrior] 1 1 (ColorSet.singleton .white)
 
 def insect21flying : TokenSpec :=
-  creature #[.insect] 2 1 (ColorSet.singleton .white) Keyword.flying
+  creature #[.insect] 2 1 (ColorSet.singleton .white) #[Keyword.flying]
 
 def myr : TokenSpec :=
   creature #[.myr] 1 1 ColorSet.empty (types := #[.artifact, .creature])
@@ -407,7 +409,7 @@ def sharkX : TokenSpec :=
     colors := ColorSet.singleton .blue
     power? := some .chosenX
     toughness? := some .chosenX
-    keywords := Keyword.flying
+    keywords := #[Keyword.flying]
   }
 
 def gingerbrute : TokenSpec :=
@@ -417,13 +419,13 @@ def gingerbrute : TokenSpec :=
     subtypes := #[.food, .golem]
     power? := some (.const 1)
     toughness? := some (.const 1)
-    keywords := Keyword.haste
+    keywords := #[Keyword.haste]
     abilities := #[.payGenericCantBeBlockedExceptHaste 1, .tapSacrificeGainLife 2 3]
     useCardNameShorthand := true
   }
 
 def angel44white : TokenSpec :=
-  creature #[.angel] 4 4 (ColorSet.singleton .white) Keyword.flying
+  creature #[.angel] 4 4 (ColorSet.singleton .white) #[Keyword.flying]
 
 def human11white : TokenSpec :=
   creature #[.human] 1 1 (ColorSet.singleton .white)
@@ -475,7 +477,7 @@ def customOracleNoun (s : CustomTokenSpec) : String :=
       else [String.intercalate " and " (s.colors.toList.map Color.englishName)]
     let subtypeParts := s.subtypes.toList.map CardSubtype.englishName
     let typeParts := s.types.toList.map cardTypeLower
-    let kwList := s.keywords.toList
+    let kwList := KeywordAbility.toOracleList s.keywords
     let kwSuffix :=
       if kwList.isEmpty then []
       else ["with " ++ String.intercalate " and " kwList]

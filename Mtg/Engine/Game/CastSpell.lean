@@ -184,9 +184,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
   -- cast as its Adventure.
-  let needsSacrifice :=
-    face.additionalCostSacrificeCreature ||
-      (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
+  let needsSacrifice := face.mandatorySacrificeFilter?.isSome
   let original := card
   let origSnap := g.snapshot original
   let fromTop :=
@@ -258,7 +256,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     | _, _ => false
   let needsKicker :=
     face.kicker.isSome || hasMorphChoice || impPermOk
-  let needsGift := face.giftTreasure
+  let needsGift := face.hasGift
   let needsTeamwork := face.teamwork.isSome
   -- CR 702.34a: a flashback cost that includes discarding a card.
   let needsFlashbackDiscard := isFlashbackCast && face.flashbackDiscard
@@ -378,9 +376,9 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
     if prop.loyaltyX then
       let some src := prop.sourceId.bind g.findObject?
         | throw "The planeswalker left the battlefield"
-      if prop.activation.bind (·.cost.loyalty) == some .minusX &&
-          src.status.loyaltyCounters < x then
-        throw s!"{g.name src} doesn't have {x} loyalty counters to remove (CR 606.4)"
+      if let some k := prop.activation.bind (·.cost.netLoyaltyDelta x) then
+        if k < 0 && (src.status.loyaltyCounters : Int) < -k then
+          throw s!"{g.name src} doesn't have {-k} loyalty counters to remove (CR 606.4)"
     if prop.removePlusOneX then
       let some src := prop.sourceId.bind g.findObject?
         | throw "The source left the battlefield"
@@ -446,7 +444,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
           (needsAdditionalCost := face.announcesAdditionalCost)
           (needsKicker := !prop.kickerAnnounced &&
             (face.kicker.isSome || g.proposalCanChooseMorph prop || g.proposalCanChooseImpending prop))
-          (needsGift := face.giftTreasure)
+          (needsGift := face.hasGift)
           (needsTeamwork := face.teamwork.isSome)
     | .turnFaceUp =>
       throw "Not time to choose X (CR 601.2b)"

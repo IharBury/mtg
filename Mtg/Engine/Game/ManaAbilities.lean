@@ -332,7 +332,7 @@ def activatedManaAbilities (g : Game) (o : GameObject) : Array ManaAbilityDef :=
       let base : ManaAbilityDef := {
         output := .fixed #[], tap := ab.cost.tap, cost := ab.cost.mana
         payLife := ab.cost.payLife, sacrificeSelf := ab.cost.sacrificeSource
-        exileSelf := ab.cost.fra == .exileSource
+        exileSelf := ab.cost.exileSourceFromBattlefield
         removeStoryCounter := ab.cost.removeStoryCounter
         removeIndestructibleCounter := ab.cost.removeIndestructibleCounter
         putStunCounterOnSource := ab.cost.putStunCounterOnSource
@@ -506,11 +506,12 @@ def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
       g.activePlayer == p &&
         (g.livingOpponents p).any (fun opp => g.attackTaxPerCreature opp.id > 0)
     | .payOrLetCounter q _ _ => q == p
-    | .payWard q _ cost =>
+    | .payWard q _ cost _ =>
       q == p &&
-        (match cost with
-         | .genericMana _ | .discardOrPay _ => true
-         | _ => false)
+        (cost.mana.includesManaPayment ||
+          cost.items.any fun
+            | .or choices => choices.any (fun ch => ch.mana.includesManaPayment)
+            | _ => false)
     | _ => false
 
 /-- Molten Tide: a triggered mana ability that resolves immediately, attributing

@@ -88,15 +88,29 @@ def pay (g : Game) (p : PlayerId) : Except String Game := do
     throw "Choose a target first (CR 601.2c)"
   | .chooseAdditionalCost _ =>
     throw "Choose an additional cost first (CR 601.2b)"
-  | .payWard q spellId .fivePoison =>
+  | .payWard q spellId cost _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay ward"
-    let outerCont? := g.pendingReplacement
-    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g := g.record
-      (GameEvent.poisoned g.turnNumber p 5 (cause := .costPayment .ward p (some spellId)))
-    let g := g.logMsg s!"{(g.player p).name} gets five poison counters (ward)"
-    return g.finishWardAndDrain outerCont?
+    match cost.solePoisonCounters? with
+    | some n =>
+      let outerCont? := g.pendingReplacement
+      let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+      let g := g.record
+        (GameEvent.poisoned g.turnNumber p n (cause := .costPayment .ward p (some spellId)))
+      let phrase :=
+        if n == 1 then "a poison counter" else s!"{englishNumber n} poison counters"
+      let g := g.logMsg s!"{(g.player p).name} gets {phrase} (ward)"
+      return g.finishWardAndDrain outerCont?
+    | none =>
+      match cost.items.toList with
+      | [.payLife (.const n)] =>
+        if n < 0 then throw "Invalid ward life cost"
+        let outerCont? := g.pendingReplacement
+        let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+        let g ← g.payLifeCost p n.toNat (forObject := some spellId)
+          (cause := some (.costPayment .ward p (some spellId)))
+        return g.finishWardAndDrain outerCont?
+      | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
   | _ => throw "No spell or ability is waiting to be paid for (CR 601.2h)"
 
 /-- Prefer paying extra generic mana when the non-mana additional-cost
@@ -107,21 +121,23 @@ def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell
   | none => true
   | some spell =>
     let face := g.baseCard spell
-    if face.additionalCostBeholdOrPay.isSome then
-      match face.additionalCostBeholdOrPay with
-      | some (quality, _) =>
+    match face.additionalChoiceCost? with
+    | none => (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
+    | some branches =>
+      let behold? := branches.findSome? fun cs =>
+        cs.items.findSome? fun | .behold q => some q | _ => none
+      let hasDiscard := branches.any fun cs =>
+        cs.items.any fun | .discard .. => true | _ => false
+      match behold? with
+      | some quality =>
         let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
         let hasHand :=
           (g.player p).hand.any (fun id =>
-            match g.findObject? id with
-            | some card => g.hasSubtype card quality
-            | none => false)
+            (g.findObject? id).any (fun card => g.hasSubtype card quality))
         !(hasPerm || hasHand)
-      | none => true
-    else if face.additionalCostDiscardOrPayGeneric.isSome then
-      (g.player p).hand.isEmpty
-    else
-      (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
+      | none =>
+        if hasDiscard then (g.player p).hand.isEmpty
+        else (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
 
 /-- Announce whether to pay extra generic mana or the non-mana option
 (sacrifice an artifact or creature, or discard a card) as an additional
@@ -162,11 +178,21 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
         .needsDiscardCard false ]
         |>.logMsg
           s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
-    match baseFace.additionalCostBeholdOrPay with
-    | some (quality, n) =>
-      if payGeneric then
-        return (announceExtraGeneric g n).afterAdditionalCostAnnounced
-      else
+    let some branches := baseFace.additionalChoiceCost?
+      | throw "That spell has no alternative additional cost"
+    let genericN : Nat :=
+      (branches.findSome? CostSpec.soleGenericMana?).getD 0
+    let behold? := branches.findSome? fun cs =>
+      cs.items.findSome? fun | .behold quality => some quality | _ => none
+    let hasSac := branches.any fun cs =>
+      cs.items.any fun | .sacrifice .. => true | _ => false
+    let hasDisc := branches.any fun cs =>
+      cs.items.any fun | .discard .. => true | _ => false
+    if payGeneric then
+      return (announceExtraGeneric g genericN).afterAdditionalCostAnnounced
+    else
+      match behold? with
+      | some quality =>
         let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
         let hasHand :=
           (g.player p).hand.any (fun id =>
@@ -181,38 +207,31 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
         let g := g.logMsg
           s!"{(g.player p).name} chooses to behold a {quality} as an additional cost (CR 601.2b)"
         return g.afterAdditionalCostAnnounced
-    | none =>
-    match baseFace.additionalCostOrPayGeneric,
-          baseFace.additionalCostDiscardOrPayGeneric with
-    | some n, _ =>
-      if payGeneric then
-        return (announceExtraGeneric g n).afterAdditionalCostAnnounced
-      else
-        if (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
-          throw s!"{g.name spell} requires sacrificing an artifact or creature"
-        let g := g.changeProposals #[
-          .additionalGeneric 0,
-          .needsBehold none,
-          .needsSacrificeOther true,
-          .needsDiscardCard false ]
-        let g := g.logMsg
-          s!"{(g.player p).name} chooses to sacrifice an artifact or creature (CR 601.2b)"
-        return g.afterAdditionalCostAnnounced
-    | none, some n =>
-      if payGeneric then
-        return (announceExtraGeneric g n).afterAdditionalCostAnnounced
-      else
-        if (g.player p).hand.isEmpty then
-          throw s!"{g.name spell} requires discarding a card"
-        let g := g.changeProposals #[
-          .additionalGeneric 0,
-          .needsBehold none,
-          .needsSacrificeOther false,
-          .needsDiscardCard true ]
-        let g := g.logMsg
-          s!"{(g.player p).name} chooses to discard a card as an additional cost (CR 601.2b)"
-        return g.afterAdditionalCostAnnounced
-    | none, none => throw "That spell has no alternative additional cost"
+      | none =>
+        if hasSac then
+          if (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
+            throw s!"{g.name spell} requires sacrificing an artifact or creature"
+          let g := g.changeProposals #[
+            .additionalGeneric 0,
+            .needsBehold none,
+            .needsSacrificeOther true,
+            .needsDiscardCard false ]
+          let g := g.logMsg
+            s!"{(g.player p).name} chooses to sacrifice an artifact or creature (CR 601.2b)"
+          return g.afterAdditionalCostAnnounced
+        else if hasDisc then
+          if (g.player p).hand.isEmpty then
+            throw s!"{g.name spell} requires discarding a card"
+          let g := g.changeProposals #[
+            .additionalGeneric 0,
+            .needsBehold none,
+            .needsSacrificeOther false,
+            .needsDiscardCard true ]
+          let g := g.logMsg
+            s!"{(g.player p).name} chooses to discard a card as an additional cost (CR 601.2b)"
+          return g.afterAdditionalCostAnnounced
+        else
+          throw "That spell has no alternative additional cost"
   | _ => throw "Not time to choose an additional cost (CR 601.2b)"
 
 def pass (g : Game) (p : PlayerId) : Except String Game := do

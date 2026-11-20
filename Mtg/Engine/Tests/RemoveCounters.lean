@@ -80,13 +80,13 @@ def handSize (g : Game) : Nat :=
 def stillLoaded (g : Game) (o : GameObject) : Bool :=
   let s := o.status
   s.plusOnePlusOne == 2 && s.hope == 1 && s.charge == 2 && s.stun == 1 &&
-    s.shield == 1 && s.lore == 3 && s.keywordCounters.flying == 1 &&
+    s.shield == 1 && s.lore == 3 && s.counters.count .flying == 1 &&
     s.damage == 4 && g.pumpOf o == (1, 2)
 
 def stripped (g : Game) (o : GameObject) : Bool :=
   let s := o.status
   !Status.hasCounters s && s.damage == 4 && g.pumpOf o == (1, 2) &&
-    s.plusOnePlusOne == 0 && s.hope == 0 && s.keywordCounters.flying == 0
+    s.plusOnePlusOne == 0 && s.hope == 0 && s.counters.count .flying == 0
 
 /- One hope counter leaves the source, and a later step can see that.
 None to remove changes nothing except clearing that note. A missing

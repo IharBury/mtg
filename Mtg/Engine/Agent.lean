@@ -52,9 +52,8 @@ def discardBackOrDecline (g : Game) (p : PlayerId) : Option Action :=
   | some id => some (.discard id)
   | none => some .decline
 
-/-- Pay `{n}` from the pool if possible; otherwise tap the first mana source. -/
-def payGenericOrTapFirstSource (g : Game) (p : PlayerId) (n : Nat) : Option Action :=
-  let cost := ManaCost.ofGeneric n
+/-- Pay `cost` from the pool if possible; otherwise tap the first usable mana source. -/
+def payManaOrTapFirstSource (g : Game) (p : PlayerId) (cost : ManaCost) : Option Action :=
   if (g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
     some .payGeneric
   else
@@ -87,6 +86,10 @@ def payGenericOrTapFirstSource (g : Game) (p : PlayerId) (n : Nat) : Option Acti
       match usableSources[0]? with
       | some (src, t) => some (.tapForMana src.id t)
       | none => some .decline
+
+/-- Pay `{n}` from the pool if possible; otherwise tap the first mana source. -/
+def payGenericOrTapFirstSource (g : Game) (p : PlayerId) (n : Nat) : Option Action :=
+  payManaOrTapFirstSource g p (ManaCost.ofGeneric n)
 
 /-- Choose a single legal action for `actor`, or `none` if that player is not to act. -/
 def choose (g : Game) (actor : PlayerId) : Option Action :=
@@ -216,14 +219,9 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                     !g.additionalCostChoosesGeneric p prop then
                   0
                 else
-                  match baseFace.additionalCostBeholdOrPay with
-                  | some (_, n) => n
-                  | none =>
-                    match baseFace.additionalCostOrPayGeneric,
-                          baseFace.additionalCostDiscardOrPayGeneric with
-                    | some n, _ => n
-                    | none, some n => n
-                    | none, none => 0
+                  match baseFace.additionalChoiceCost? with
+                  | some branches => (branches.findSome? CostSpec.soleGenericMana?).getD 0
+                  | none => 0
               let extraCost :=
                 let baseExtra := ManaCost.ofGeneric (prop.additionalGeneric + upcomingAddGen)
                 match if prop.kicked then baseFace.kicker else none with
@@ -264,17 +262,16 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                     if prop.needsSacrificeOther then #[.sacrificeAnotherCreatureOrArtifact] else #[]
                 let sSrc :=
                   prop.sacrificeSource ||
-                    prop.activation.any (fun ab => ab.cost.sacrificeSource || ab.cost.fra == .exileSource)
+                    prop.activation.any (fun ab =>
+                      ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield)
                 let dSrc :=
                   prop.discardSource ||
-                    prop.activation.any (fun ab => ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand)
+                    prop.activation.any (fun ab =>
+                      ab.cost.discardSource || ab.cost.exileSourceFromHand)
                 let cr? : Option Nat :=
                   if prop.fraCostPaid then none
                   else
-                    prop.activation.bind fun ab =>
-                      match ab.cost.fra with
-                      | .crew n => some n
-                      | _ => none
+                    prop.activation.bind (fun ab => ab.cost.crewPower?)
                 (prop.sourceId, picks, sSrc, dSrc, #[], cr?)
               | .spell =>
                 let spellFace := g.baseCard ((g.findObject? prop.spellId).getD prop.original)
@@ -283,23 +280,32 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                     prop.additionalGeneric == 0 && prop.needsBehold.isNone &&
                     !prop.needsSacrificeOther && !prop.needsDiscardCard &&
                     !g.additionalCostChoosesGeneric p prop
+                let choiceBranches := spellFace.additionalChoiceCost?.getD #[]
+                let choiceHasBehold := choiceBranches.any fun cs =>
+                  cs.items.any fun | .behold _ => true | _ => false
+                let choiceHasSac := choiceBranches.any fun cs =>
+                  cs.items.any fun | .sacrifice .. => true | _ => false
+                let choiceHasDisc := choiceBranches.any fun cs =>
+                  cs.items.any fun | .discard .. => true | _ => false
                 let willSacOther :=
                   prop.needsSacrificeOther ||
-                    (unchosenAdd && spellFace.additionalCostBeholdOrPay.isNone &&
-                      spellFace.additionalCostOrPayGeneric.isSome)
+                    (unchosenAdd && !choiceHasBehold && choiceHasSac)
                 let willDiscCard :=
                   prop.needsDiscardCard ||
-                    (unchosenAdd && spellFace.additionalCostBeholdOrPay.isNone &&
-                      spellFace.additionalCostOrPayGeneric.isNone &&
-                      spellFace.additionalCostDiscardOrPayGeneric.isSome)
+                    (unchosenAdd && !choiceHasBehold && !choiceHasSac && choiceHasDisc)
                 let sacPick : Array CostPick :=
                   if !willSacOther then #[]
-                  else if spellFace.additionalCostSacrificeCreatureOrPlaneswalker then
-                    #[.sacrificeAnotherCreatureOrPlaneswalker]
-                  else if spellFace.additionalCostSacrificeCreature then
-                    #[.sacrificeAnotherCreature]
                   else
-                    #[.sacrificeAnotherCreatureOrArtifact]
+                    match Game.spellSacrificeCostPred? spellFace with
+                    | some (.hasType .creature) => #[.sacrificeAnotherCreature]
+                    | some (.any #[.hasType .creature, .hasType .planeswalker])
+                    | some (.any #[.hasType .planeswalker, .hasType .creature]) =>
+                      #[.sacrificeAnotherCreatureOrPlaneswalker]
+                    | some (.any #[.hasType .artifact, .hasType .creature])
+                    | some (.any #[.hasType .creature, .hasType .artifact]) =>
+                      #[.sacrificeAnotherCreatureOrArtifact]
+                    | some pred => #[.custom (.sacrifice (.exact 1) (.filter pred))]
+                    | none => #[.sacrificeAnotherCreatureOrArtifact]
                 let discPick : Array CostPick :=
                   if willDiscCard then #[.discardACard] else #[]
                 (some prop.spellId, sacPick ++ discPick, false, false, prop.sneakAttacker.toArray, none)
@@ -539,37 +545,49 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       else some (.choosePermanents (humans.map (·.id)))
     | .payOrLetCounter _ n _ =>
       payGenericOrTapFirstSource g p n
-    | .payWard _ _ cost =>
-      match cost with
-      | .genericMana n => payGenericOrTapFirstSource g p n
-      | .discardOrPay n =>
-        match (g.player p).hand.back? with
-        | some id => some (.discard id)
-        | none => payGenericOrTapFirstSource g p n
-      | .discardEnchantmentInstantOrSorcery =>
-        match (g.player p).hand.find? (fun id =>
-          match g.findObject? id with
-          | some o =>
-            g.isEnchantment o || g.isInstantOrSorcery o
-          | none => false) with
-        | some id => some (.discard id)
-        | none => some .decline
-      | .sacrificeLegendary =>
-        match (g.legendaryWardSacrificeChoices p)[0]? with
-        | some o => some (.sacrifice o.id)
-        | none => some .decline
-      | .fivePoison => some .pay
-      | .discardCard =>
-        match (g.player p).hand.back? with
-        | some id => some (.discard id)
-        | none => some .decline
-      | .sacrificePermanents left paid chosen =>
-        let perms := (g.permanentsOf p).filter (fun o => !chosen.contains o.id)
-        if paid == 0 && perms.size < left then some .decline
+    | .payWard _ _ cost chosen =>
+      let env : EvalEnv := { controller := p }
+      let pickDiscard? (zone : DiscardCostTarget) : Option Action :=
+        match zone with
+        | .hand => (g.player p).hand.back?.map .discard
+        | .matching pred =>
+          ((g.player p).hand.find? fun id =>
+            (g.findObject? id).any fun o => EvalExpr.evalObjectPred g env (.live o) pred).map .discard
+        | _ => none
+      let pickSingle (c : CostSpec) : Option Action :=
+        if c.isManaOnly && c.mana.includesManaPayment then
+          payManaOrTapFirstSource g p c.mana
         else
-          match perms[0]? with
-          | some o => some (.sacrifice o.id)
-          | none => some .decline
+          match c.items.toList with
+          | [.discard _ zone] => pickDiscard? zone
+          | [.sacrifice (.count (.const n)) (.filter pred)] =>
+            let need := if n > 0 then n.toNat else 1
+            let perms := (g.permanentsOf p).filter fun o =>
+              !chosen.contains o.id && EvalExpr.evalObjectPred g env (.live o) pred
+            if chosen.isEmpty && perms.size < need then some .decline
+            else
+              match perms[0]? with
+              | some o => some (.sacrifice o.id)
+              | none => some .decline
+          | [.putCounters _ .poison .payer] => some .pay
+          | [.payLife (.const n)] =>
+            if (g.player p).life >= n && !g.lifeLocked p && !g.lifeCantChange p then
+              some .pay
+            else some .decline
+          | _ => none
+      match cost.items.toList with
+      | [.or choices] =>
+        let discardAct? := choices.findSome? fun ch =>
+          match ch.items.toList with
+          | [.discard _ zone] => pickDiscard? zone
+          | _ => none
+        let manaAct? := choices.findSome? fun ch =>
+          if ch.isManaOnly && ch.mana.includesManaPayment then
+            payManaOrTapFirstSource g p ch.mana
+          else none
+        (discardAct? <|> manaAct? <|> choices.findSome? pickSingle).orElse (fun _ => some .decline)
+      | _ =>
+        (pickSingle cost).orElse (fun _ => some .decline)
     | .recruitDiscard _ =>
       discardBackOrDecline g p
     | .chooseKicker _ =>
@@ -888,8 +906,8 @@ where
         if !isTurnFaceUp && ab.cost.tap then #[o.id] else #[]
       let allPicks :=
         costPicksWithSacrificeOther (costPicksOf ab) ab.cost.sacrificeAnotherCreatureOrArtifact
-      let sacSrc := ab.cost.sacrificeSource || ab.cost.fra == .exileSource
-      let discSrc := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+      let sacSrc := ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield
+      let discSrc := ab.cost.discardSource || ab.cost.exileSourceFromHand
       let manaCost := if isTurnFaceUp then ab.cost.mana else g.activationManaCost p ab (some o)
       let allowElf := !isTurnFaceUp && g.hasSubtype o .elf
       let allowHero := !isTurnFaceUp && g.hasSubtype o .hero
@@ -989,8 +1007,8 @@ where
              | some tapExcl => manaOkForExcl (selfExcl ++ crewExcl ++ tapExcl)
              | none => false) ||
               searchPicksForCrew allPicks.toList #[] #[] crewExcl
-          match ab.cost.fra with
-          | .crew n =>
+          match ab.cost.crewPower? with
+          | some n =>
             let manaSrcs := g.manaSources p
             let cands :=
               ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).qsort
@@ -1026,7 +1044,7 @@ where
                     (cPow > 0 && searchCrew rest (accPow + cPow) (picked.push c.id)) ||
                       searchCrew rest accPow picked
               searchCrew candsWithSuf 0 #[]
-          | _ => checkWithCrew #[]
+          | none => checkWithCrew #[]
       g.canActivate p o ab (idx? := some idx) &&
       -- Don't pay life that would reduce the player to 0 or less.
       (ab.cost.payLife == 0 || (g.player p).life > (ab.cost.payLife : Int)) &&

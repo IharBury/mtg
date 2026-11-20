@@ -999,7 +999,9 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
   | [] =>
     match g.pending, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
     | .chooseAdditionalCost _, some spell =>
-      if (g.baseCard spell).additionalCostOrPayGeneric.isSome then
+      let hasSac := ((g.baseCard spell).additionalChoiceCost?.getD #[]).any fun cs =>
+        cs.items.any fun | .sacrifice .. => true | _ => false
+      if hasSac then
         g.apply p (.chooseAdditionalCost false)
       else throw sacrificeUsage
     | _, _ => throw sacrificeUsage
@@ -1234,7 +1236,9 @@ def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
   | [] =>
     match g.pending, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
     | .chooseAdditionalCost _, some spell =>
-      if (g.baseCard spell).additionalCostDiscardOrPayGeneric.isSome then
+      let hasDisc := ((g.baseCard spell).additionalChoiceCost?.getD #[]).any fun cs =>
+        cs.items.any fun | .discard .. => true | _ => false
+      if hasDisc then
         g.apply p (.chooseAdditionalCost false)
       else throw discardUsage
     | _, _ => throw discardUsage
@@ -1751,9 +1755,15 @@ def applyInteractiveAction (g : Game) (p : PlayerId) (cmd : String) (args : List
   | "ignore" => applyIgnore g p args |>.map (·.game)
   | "pay" =>
     match g.pending with
-    | .payOrLetCounter _ _ _ | .payWard _ _ (.genericMana _)
-    | .payWard _ _ (.discardOrPay _) =>
+    | .payOrLetCounter _ _ _ =>
       g.apply p .payGeneric
+    | .payWard _ _ cost _ =>
+      let hasManaOption :=
+        (cost.isManaOnly && cost.mana.includesManaPayment) ||
+          cost.items.any fun
+            | .or choices => choices.any fun ch => ch.isManaOnly && ch.mana.includesManaPayment
+            | _ => false
+      if hasManaOption then g.apply p .payGeneric else g.apply p .pay
     | _ => g.apply p .pay
   | "autopay" => applyAutopay g p args |>.map (·.game)
   | "pay-extra" => applyPayExtra g p args
@@ -2390,7 +2400,7 @@ def hasUniqueManaPayment (g : Game) : Bool :=
           match g.findObject? prop.spellId with
           | none => false
           | some spell =>
-            let hasConvoke := (g.currentKeywords spell).convoke
+            let hasConvoke := KeywordAbility.hasConvoke (g.currentKeywords spell)
             let hasImprovise := g.spellHasImprovise (g.baseCard spell) p
             (hasConvoke || hasImprovise) &&
               (g.permanentsOf p).any (fun o =>

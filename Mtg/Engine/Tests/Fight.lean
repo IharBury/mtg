@@ -69,7 +69,7 @@ def fireOfOrthancSetup : Game :=
 #guard
   let g := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
   let forest := namedPermanent g "Forest"
-  let g := g.createEffect (.keywordsUntilEot forest.id Keyword.hexproof)
+  let g := g.createEffect (.keywordsUntilEot forest.id #[Keyword.hexproof])
   let g := withRedMana (addToHand g fireOfOrthanc ⟨0⟩) ⟨0⟩ 4
   !g.canCast ⟨0⟩ (handCardNamed g ⟨0⟩ "Fire of Orthanc")
 
@@ -401,7 +401,7 @@ def quarrelSourceGone : Game :=
 /-- Hexproof gained after targeting makes the dest illegal (CR 608.2b / 702.11b). -/
 def quarrelDestHexproof : Game :=
   let dest := namedPermanent paidQuarrel "Grizzly Bears"
-  let g := paidQuarrel.createEffect (.keywordsUntilEot dest.id Keyword.hexproof)
+  let g := paidQuarrel.createEffect (.keywordsUntilEot dest.id #[Keyword.hexproof])
   passBoth g
 
 #guard quarrelDestHexproof.log.any (fun s => mentions s "The target is no longer legal")
@@ -422,8 +422,8 @@ def agentQuarrel : Game :=
 
 /- Attercop: reach, deathtouch, and landfall +1/+1 until end of turn. -/
 
-#guard attercop.keywords.reach
-#guard attercop.keywords.deathtouch
+#guard KeywordAbility.hasReach attercop.keywords
+#guard KeywordAbility.hasDeathtouch attercop.keywords
 #guard attercop.triggeredAbilities == #[(.onLandYouControlEntersGets 1 1)]
 #guard attercop.power == some 2
 #guard attercop.toughness == some 1

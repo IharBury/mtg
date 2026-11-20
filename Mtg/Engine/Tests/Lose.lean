@@ -47,10 +47,10 @@ def attach (g : Game) (aura host : String) : Game :=
   g.record (GameEvent.attached g.turnNumber (g.snapshot a) (pid g host) (cause := .gameRule .staticAbility))
 
 def titan : CardDef :=
-  creature "Titan" ManaCost.empty #[] 4 4 (keywords := Keyword.indestructible)
+  creature "Titan" ManaCost.empty #[] 4 4 (keywords := #[Keyword.indestructible])
 def bear : CardDef := creature "Bear" ManaCost.empty #[] 2 2
 def hawk : CardDef :=
-  creature "Hawk" ManaCost.empty #[] 1 1 (keywords := Keyword.flying)
+  creature "Hawk" ManaCost.empty #[] 1 1 (keywords := #[Keyword.flying])
 def land : CardDef := { name := "Field", types := #[.land] }
 def grasp : CardDef := enchantment "Grasp" ManaCost.empty ""
 def wasp : CardDef := creature "Wasp" ManaCost.empty #[] 1 1

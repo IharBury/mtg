@@ -31,7 +31,7 @@ inductive PermanentAction where
   /-- The permanent can't be blocked this turn. -/
   | cantBeBlocked
   /-- Grant these keywords until end of turn. -/
-  | grantKeywords (k : Keywords)
+  | grantKeywords (k : Array KeywordAbility)
   /-- Put an indestructible counter on the permanent. -/
   | indestructibleCounter
   /-- Put a double strike counter on the permanent. -/
@@ -62,6 +62,14 @@ inductive PermanentAction where
   | doublePowerAndToughness
 deriving Repr, Inhabited, BEq
 
+instance : HasTextChange PermanentAction where
+  applyTextChanges tcs act :=
+    if tcs.isEmpty then act
+    else
+      match act with
+      | .grantKeywords k => .grantKeywords (HasTextChange.applyTextChanges tcs k)
+      | other => other
+
 namespace PermanentAction
 
 /-- Oracle-style text for this action on `noun` (e.g. `target creature`).
@@ -81,7 +89,7 @@ def toNotation (action : PermanentAction) (noun : String) (sentence := false) : 
       s!"{noun} loses indestructible until end of turn"
     | .cantBeBlocked => s!"{noun} can't be blocked this turn"
     | .grantKeywords k =>
-      s!"{noun} gains {k.joinedAnd} until end of turn"
+      s!"{noun} gains {KeywordAbility.joinedAnd k} until end of turn"
     | .indestructibleCounter =>
       s!"put an indestructible counter on {noun}"
     | .doubleStrikeCounter =>

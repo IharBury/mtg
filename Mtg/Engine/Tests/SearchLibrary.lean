@@ -446,7 +446,7 @@ def changelingCard : CardDef := {
   name := "Search Changeling"
   types := #[.creature]
   subtypes := #["Shapeshifter"]
-  keywords := { changeling := true }
+  keywords := #[Keyword.changeling]
   power := some 2
   toughness := some 2
 }

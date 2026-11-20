@@ -1,5 +1,4 @@
 import Mtg.Engine.Mana
-import Mtg.Engine.Card.Keywords
 
 /-!
 # Shared Oracle-text helpers
@@ -41,11 +40,6 @@ def orJoin (xs : List String) : String :=
 #guard orJoin ["Elf"] == "Elf"
 #guard orJoin ["Goblin", "Orc"] == "Goblin or Orc"
 #guard orJoin ["Bear", "Spider", "Wolf"] == "Bear, Spider, or Wolf"
-#guard Keywords.joinedAnd Keyword.trample == "trample"
-#guard Keywords.joinedAnd (Keyword.trample.merge Keyword.haste) == "haste and trample"
-#guard Keywords.joinedAnd
-  ((Keyword.haste.merge Keyword.trample).merge Keyword.flying) ==
-  "haste, flying, trample"
 
 /-- English indefinite article for a noun (`an Elf`, `a Hero`). -/
 def indefinite (noun : String) : String :=

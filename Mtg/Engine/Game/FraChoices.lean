@@ -79,9 +79,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let cost := g.playManaCost { card with controller := some p } face
     (origPerm := origPerm) (flashback := some false)
     (explicitAltCost := false) (useImplicitPermissions := false)
-  let needsSacrifice :=
-    face.additionalCostSacrificeCreature ||
-      (face.additionalCostSacrificeArtifactOrCreature && face.additionalCostOrPayGeneric.isNone)
+  let needsSacrifice := face.mandatorySacrificeFilter?.isSome
   let prop : ProposedSpell := {
     caster := p, cost, spellId := newId, original := card
     originalSnapshot := origSnap, origPerm
@@ -654,7 +652,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let paused := match g.pending with | .chooseReplacement .. => true | _ => false
     let g :=
       if paused then
-        g.chainPendingReplacement (.finishPostStep .markFraCostPaid)
+        g.chainPendingReplacement (.finishPostStep .markNonManaCostPaid)
       else if g.proposedSpell.isSome then
         g.changeProposal (.fraCostPaid true)
       else g
@@ -732,10 +730,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let tapSrc := prop.tapSource
     let sacSrc :=
       prop.sacrificeSource ||
-        prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource)
+        prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
     let discSrc :=
       prop.discardSource ||
-        prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+        prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)
     if !(gPre.sourceStillPayable prop && gPre.canPayLife prop.caster prop.payLife) ||
         !gPre.costPicksPayable p (some sourceId)
           (costPicksWithSacrificeOther picks prop.needsSacrificeOther)
@@ -816,11 +814,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let sacSrc :=
       gPre.proposedSpell.any fun prop =>
         prop.sacrificeSource ||
-          prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource)
+          prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
     let discSrc :=
       gPre.proposedSpell.any fun prop =>
         prop.discardSource ||
-          prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+          prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)
     let allPicks :=
       costPicksWithSacrificeOther picks (gPre.proposedSpell.any (·.needsSacrificeOther))
     if !gPre.proposalCostPromptStillPayable p gPre.pending ||
@@ -2045,11 +2043,11 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     let sacSrc :=
       g.proposedSpell.any fun prop =>
         prop.sacrificeSource ||
-          prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource)
+          prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
     let discSrc :=
       g.proposedSpell.any fun prop =>
         prop.discardSource ||
-          prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+          prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)
     let allPicks :=
       costPicksWithSacrificeOther
         ((g.proposedSpell.bind (·.activation)).map costPicksOf |>.getD #[])
@@ -2070,11 +2068,11 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     let sacSrc :=
       g.proposedSpell.any fun prop =>
         prop.sacrificeSource ||
-          prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource)
+          prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
     let discSrc :=
       g.proposedSpell.any fun prop =>
         prop.discardSource ||
-          prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+          prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)
     if picks.isEmpty then .decline
     else
       let allPicks :=

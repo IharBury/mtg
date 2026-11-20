@@ -238,7 +238,7 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
       | .enters => g := g.logMsg s!"{g.name enteredObj} enters the battlefield"
       | .entersTapped => g := g.logMsg s!"{g.name enteredObj} enters tapped"
       if haste then
-        g := g.createEffect (.keywordsUntilEot enteredObj.id { haste := true }) (cause := cause)
+        g := g.createEffect (.keywordsUntilEot enteredObj.id #[Keyword.haste]) (cause := cause)
       if onlyFoodArtifact then
         if let some cur := g.findObject? enteredObj.id then
           g := g.logMsg s!"{g.name cur} returns as a Food artifact"
@@ -580,7 +580,7 @@ partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (templa
             g := g.afterPermanentEntersInBatch tok
             if let some tok := g.findObject? tid then
               if tok.isOnBattlefield then
-                g := g.createEffect (.keywordsUntilEot tok.id Keyword.haste) (cause := batchCause)
+                g := g.createEffect (.keywordsUntilEot tok.id #[Keyword.haste]) (cause := batchCause)
                 g := g.registerDelayedTrigger {
                   controller
                   source := some tok
@@ -608,7 +608,7 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
             a.isOnBattlefield && g.isCreature a && g.controlledBy a prop.caster &&
               a.status.attacking && !a.status.blocked))
   | some sid =>
-    let exileSource := prop.activation.any (·.cost.fra == .exileSource)
+    let exileSource := prop.activation.any (·.cost.exileSourceFromBattlefield)
     let sacrificeOrExileSource :=
       prop.sacrificeSource || exileSource || prop.activation.any (·.cost.sacrificeSource)
     let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD 0
@@ -633,7 +633,7 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
         !sacrificeOrExileSource && !prop.discardSource &&
         !fromGyAb && !needsBfSource &&
         prop.activation.any (·.activateFromHand) &&
-        !prop.activation.any (·.cost.fra == .exileSourceFromHand) &&
+        !prop.activation.any (·.cost.exileSourceFromHand) &&
         g.sourceDiscardedFromHandForCost sid forObj sinceIdx
     match g.findObject? sid with
     | none => alreadySacrificedForCost || alreadyDiscardedFromHandForCost
@@ -645,20 +645,16 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
           (src.zone != .hand src.owner && alreadyDiscardedFromHandForCost) then
         true
       else
+      let chosenX := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
       let loyaltyPayable :=
-        match prop.activation.bind (·.cost.loyalty) with
+        match prop.activation.bind (·.cost.netLoyaltyDelta chosenX) with
         | none => true
-        | some sym =>
+        | some k =>
           prop.loyaltyPaid ||
             g.sourceCounterCostPaidFor sid forObj .loyalty (some .loyalty) sinceIdx ||
             (src.isOnBattlefield && g.controlledBy src prop.caster &&
               !g.loyaltyActivatedThisTurn src.id &&
-              match sym.counters with
-              | some k => k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k
-              | none =>
-                let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
-                sym == LoyaltySymbol.plusX ||
-                  (sym == LoyaltySymbol.minusX && src.status.loyaltyCounters ≥ x))
+              (k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k))
       let removePlusOneXPayable :=
         !prop.removePlusOneX ||
           g.sourceCounterCostPaidFor sid forObj .removeCounters (some .plusOnePlusOne) sinceIdx ||

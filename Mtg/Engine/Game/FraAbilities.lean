@@ -765,7 +765,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
           | some o =>
             if o.isOnBattlefield && g.isCreature o then
               let g := g.pumpPermanent o 2 2
-              g.grantKeywordsUntilEot (g.object! aid) Keyword.trample
+              g.grantKeywordsUntilEot (g.object! aid) #[Keyword.trample]
             else g
           | none => g) g
     else
@@ -774,7 +774,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         g.withBatch none fun g =>
           (g.creaturesAttackingPlayer defender).foldl (fun g o =>
             let g := g.pumpPermanent (g.object! o.id) 2 2
-            g.grantKeywordsUntilEot (g.object! o.id) Keyword.trample) g
+            g.grantKeywordsUntilEot (g.object! o.id) #[Keyword.trample]) g
       | none => g
   | _ => g
 

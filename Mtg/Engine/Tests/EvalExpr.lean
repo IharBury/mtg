@@ -290,7 +290,7 @@ private def elf22 : CardDef := {
   subtypes := #["Elf", "Warrior"]
   power := some 2
   toughness := some 2
-  keywords := Keyword.vigilance
+  keywords := #[Keyword.vigilance]
 }
 
 private def legendDragon : CardDef := {
@@ -301,7 +301,7 @@ private def legendDragon : CardDef := {
   subtypes := #["Dragon"]
   power := some 5
   toughness := some 4
-  keywords := Keyword.flying
+  keywords := #[Keyword.flying]
 }
 
 private def testArtifact : CardDef := {

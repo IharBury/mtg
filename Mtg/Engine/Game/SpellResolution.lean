@@ -447,7 +447,7 @@ def resolveTop (g : Game) : Game :=
           let empowerJaceN := bc.empowerJace
           -- CR 702.131a: Ascend on a resolving instant or sorcery spell is a spell ability.
           let g :=
-            if g.isInstantOrSorcery obj && g.hasKeyword obj (·.ascend) then
+            if g.isInstantOrSorcery obj && g.hasAscend obj then
               g.grantDesignationIfNeeded entry.controller (·.citysBlessing)
                 (fun g p => g.permanentCount p ≥ 10) .citysBlessing "has the city's blessing"
             else g

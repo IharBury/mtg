@@ -53,7 +53,7 @@ def bear : CardDef := creature "Bear" ManaCost.empty #[] 2 2
 def foe : CardDef := creature "Foe" ManaCost.empty #["Human"] 2 2
 def grasp : CardDef := enchantment "Grasp" ManaCost.empty ""
 def hawk : CardDef :=
-  creature "Hawk" ManaCost.empty #[] 1 1 (keywords := Keyword.flying)
+  creature "Hawk" ManaCost.empty #[] 1 1 (keywords := #[Keyword.flying])
 def wasp : CardDef := creature "Wasp" ManaCost.empty #[] 1 1
 
 def humansDraw : TriggeredAbility.TriggerResolution :=

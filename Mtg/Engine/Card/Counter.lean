@@ -9,8 +9,11 @@ puts any one of them; `Status` stores each kind in its own field.
 
 namespace Mtg.Engine
 
-/-- A kind of counter a permanent can have (CR 122.1). Keyword counters other
-than trample, lifelink, and indestructible share `KeywordCounters`. -/
+/-- A kind of counter a permanent or player can have (CR 122.1 / 122.1b).
+Includes all 15 CR 122.1b keyword counters (`flying`, `firstStrike`,
+`doubleStrike`, `deathtouch`, `decayed`, `exalted`, `haste`, `hexproof`,
+`indestructible`, `lifelink`, `menace`, `reach`, `shadow`, `trample`,
+`vigilance`), mapped to `KeywordAbility` by `CounterKind.grantedKeyword?`. -/
 inductive CounterKind where
   | plusOnePlusOne
   | minusOneMinusOne
@@ -41,6 +44,9 @@ inductive CounterKind where
   | deathtouch
   | firstStrike
   | doubleStrike
+  | decayed
+  | exalted
+  | hexproof
   | poison
 deriving Repr, Inhabited, BEq, DecidableEq
 
@@ -78,6 +84,9 @@ def oracleName : CounterKind → String
   | .deathtouch => "deathtouch"
   | .firstStrike => "first strike"
   | .doubleStrike => "double strike"
+  | .decayed => "decayed"
+  | .exalted => "exalted"
+  | .hexproof => "hexproof"
   | .poison => "poison"
 
 /-- Every counter kind, in constructor order. -/
@@ -86,7 +95,7 @@ def all : List CounterKind := [
   .finality, .plan, .burden, .quest, .invasion, .influence, .trample,
   .indestructible, .lifelink, .hone, .shadow, .lore, .story, .time, .haste,
   .vigilance, .flying, .menace, .reach, .deathtouch, .firstStrike, .doubleStrike,
-  .poison
+  .decayed, .exalted, .hexproof, .poison
 ]
 
 private def words (s : String) : List String :=

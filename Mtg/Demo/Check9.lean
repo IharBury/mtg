@@ -121,14 +121,14 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "Sac Or Pay Copy"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    additionalCostOrPayGeneric := some 2
+    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)]
     spellEffect := some (Effect.gainLife 1)
   }
   let discOrPayDef : CardDef := {
     name := "Disc Or Pay Copy"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    additionalCostDiscardOrPayGeneric := some 2
+    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.discardCardOrPayGeneric 2)]
     spellEffect := some (Effect.gainLife 1)
   }
   let plainSorcery : CardDef := {
@@ -216,7 +216,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let copiedStackDef : CardDef := {
     plainSorcery with
     name := "Copied Stack Spell"
-    keywords := { flying := true }
+    keywords := #[Keyword.flying]
   }
   let gStackCopied := gChooseAddPrompt.createEffect (ContinuousEffectSpec.copy stackSpellId copiedStackDef)
   let gUnlistedStack := gStackCopied.change (.removeStackEntry stackSpellId)
@@ -300,14 +300,14 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P46 GobShrine"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { tap := true }
+      cost := CostSpec.ofItems #[.tapSelf]
       effect := { resolution := .addAnyColorSpendOnlySubtype .goblin, phrase := "Add one mana for Goblin." }
     }]
   }
   let gobAbDef : CardDef := {
     ragingGoblin with
     name := "P46 GobMage"
-    activatedAbilities := #[{ cost := { mana := ManaCost.ofGeneric 1 }, effect := Effect.gainLife 1 }]
+    activatedAbilities := #[{ cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1)], effect := Effect.gainLife 1 }]
   }
   let gGobDemo0 := addPermanent (addPermanent gMain gobShrineDef p0 p0) gobAbDef p0 p0
   let shrineObj := (gGobDemo0.permanentsOf p0).find? (·.name == "P46 GobShrine") |>.get!
@@ -327,7 +327,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     subtypes := #["Vehicle"]
     power := some 4
     toughness := some 4
-    activatedAbilities := #[{ cost := { mana := ManaCost.ofGeneric 1, fra := .crew 2 }, effect := Effect.gainLife 1 }]
+    activatedAbilities := #[{ cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 1 }]
   }
   let gUniqueCrew0 := addPermanent (addPermanent (addPermanent gMain crewVeh p0 p0) dork22 p0 p0) forest p0 p0
   let skiffId := (gUniqueCrew0.permanentsOf p0).find? (·.name == "P46 Skiff") |>.get!.id
@@ -398,7 +398,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
 
   -- 2. `hasGameStatePriorityAction` `canActivate` (`(idx? := some idx)` & `activationManaCost`):
   let onceAb : ActivatedAbility := {
-    cost := {}
+    cost := CostSpec.empty
     onceEachTurn := true
     effect := Effect.gainLife 1
   }
@@ -420,7 +420,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P47 LegendRelic"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 2 }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)]
       costReductionIfYouControlLegendary := 2
       effect := Effect.gainLife 1
     }]
@@ -462,7 +462,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P47 ConvokeChant"
     manaCost := ManaCost.ofGenericAndColor 1 .green
     types := #[.sorcery]
-    keywords := { convoke := true }
+    keywords := #[Keyword.convoke]
     spellEffect := some (Effect.gainLife 2)
   }
   let improviseSpellDef : CardDef := {
@@ -570,13 +570,13 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let hasteElfDef : CardDef := {
     llanowarElves with
     name := "P48 HasteElf"
-    keywords := { haste := true }
+    keywords := #[Keyword.haste]
   }
   let tapCreature2Def : CardDef := {
     name := "P48 TapShrine"
     types := #[.enchantment]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 2, tapAnUntappedCreatureYouControl := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
       effect := Effect.gainLife 2
     }]
   }
@@ -649,13 +649,13 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P49 ThresholdMorph"
     manaCost := ManaCost.ofGeneric 2
     castOnlyIfGraveyardAtLeast := some 3
-    morph := some (ManaCost.ofGeneric 2)
+    keywords := #[.morph (CostSpec.ofGeneric 2)]
   }
   let bigMorphDef : CardDef := {
     grizzlyBears with
     name := "P49 ColossusMorph"
     manaCost := ManaCost.ofGeneric 6
-    morph := some (ManaCost.ofGeneric 2)
+    keywords := #[.morph (CostSpec.ofGeneric 2)]
   }
   let gForbidFront2 := (insertObject gMain gyThresholdMorphDef p0 (.hand p0)).addMana p0 .colorless 2
   let gForbidFront3 := gForbidFront2.addMana p0 .colorless 1
@@ -696,7 +696,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P49 SteamShrine"
     types := #[.enchantment]
     activatedAbilities := #[{
-      cost := { mana := { symbols := #[.colored .blue, .colored .red] } }
+      cost := CostSpec.ofItems #[.mana { symbols := #[.colored .blue, .colored .red] }]
       effect := Effect.gainLife 1
     }]
   }
@@ -723,7 +723,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P49 Signet1GG"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, tap := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf]
       effect := { resolution := .addMana #[.colored .green] (.fixed 2), phrase := "Add {G}{G}." }
     }]
   }
@@ -731,7 +731,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P49 SignetURGG"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := { symbols := #[.colored .blue, .colored .red] }, tap := true }
+      cost := CostSpec.ofItems #[.mana { symbols := #[.colored .blue, .colored .red] }, .tapSelf]
       effect := { resolution := .addMana #[.colored .green] (.fixed 2), phrase := "Add {G}{G}." }
     }]
   }
@@ -759,7 +759,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     name := "P50 DemoOverlord"
     types := #[.enchantment, .creature]
     manaCost := ManaCost.ofGeneric 6
-    impending := some (4, ManaCost.ofGeneric 2)
+    keywords := #[.impending 4 (CostSpec.ofGeneric 2)]
   }
   let gImp1 := (insertObject gMain impCardDef p0 (.hand p0)).addMana p0 .colorless 1
   let gImp2 := (insertObject gMain impCardDef p0 (.hand p0)).addMana p0 .colorless 2
@@ -771,7 +771,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     name := "P50 DemoSacBolt"
     manaCost := { symbols := #[.colored .green] }
     types := #[.instant]
-    additionalCostSacrificeArtifactOrCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]
     spellEffect := some (Effect.gainLife 2)
   }
   let (gTrOnly0, _) :=
@@ -834,7 +834,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
   let hasteHalflingDef : CardDef := {
     Catalog.delightedHalfling with
     name := "P51 HasteHalfling"
-    keywords := { haste := true }
+    keywords := #[Keyword.haste]
   }
   let solRingDef : CardDef := {
     name := "P51 SolRing"
@@ -876,7 +876,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     name := "P51 ElfOnlyRock"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { tap := true }
+      cost := CostSpec.ofItems #[.tapSelf]
       effect := { resolution := .addAnyColorSpendOnlySubtype .elf, phrase := "Add one mana for Elf." }
     }]
   }
@@ -951,7 +951,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     name := "P51 SneakSac"
     manaCost := ManaCost.ofGeneric 1
     types := #[.instant]
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
     spellEffect := some (Effect.gainLife 1)
   }
   let gSneak0 :=
@@ -972,7 +972,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     name := "P51 SacAltar"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, sacrificeAnotherCreatureOrArtifact := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
       effect := Effect.gainLife 1
     }]
   }
@@ -987,7 +987,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     Catalog.baronHelmutZemo with
     name := "P51 BaronZemo"
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, fra := .zemoBoast }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .exile (.totalManaSymbolsAtLeast (some .black) (.const 15)) .yourGraveyard (.filter (.all #[.hasColor (.literal .black), .isKind .card]))]
       effect := Effect.gainLife 1
     }]
   }

@@ -466,7 +466,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.finishFrcPostStep (.grantControlledCreaturesIndestructible controller))
     else
-      g.grantUntilEotToControlledCreatures controller Keyword.indestructible "indestructible"
+      g.grantUntilEotToControlledCreatures controller #[Keyword.indestructible] "indestructible"
   | .martialCoup =>
     let x := xSpell
     let g := g.createKindTokens controller .soldier11white x
@@ -597,9 +597,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
     match g.srcObj? sourceId with
     | none => g
     | some o =>
-      let kws :=
-        Keywords.merge (if flying then Keyword.flying else Keywords.none)
-          (if first then Keywords.none else Keywords.none)
+      let kws : Array KeywordAbility := if flying then #[Keyword.flying] else #[]
       let g := g.setUntilEotForm o (Int.ofNat p, Int.ofNat t) kws
         s!"{g.name o} becomes a {p}/{t} until end of turn"
         (additionalCreature := true)
@@ -879,7 +877,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
             match g.findObject? tid with
             | some tok =>
               if tok.isOnBattlefield then
-                g.createEffect (.keywordsUntilEot tok.id (Keywords.merge Keyword.lifelink Keyword.haste))
+                g.createEffect (.keywordsUntilEot tok.id #[Keyword.lifelink, Keyword.haste])
                   |>.logMsg s!"{g.name tok} gains lifelink and haste until end of turn"
               else g
             | none => g) g
@@ -942,7 +940,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
   | .dreadLink =>
     match g.frcCause? with
     | some o =>
-      if o.isOnBattlefield then g.grantUntilEotLogged o Keyword.lifelink else g
+      if o.isOnBattlefield then g.grantUntilEotLogged o #[Keyword.lifelink] else g
     | none => g
   | .myr n => g.makeFrc controller .myr n
   | .drawPerArtifact =>
@@ -1115,22 +1113,19 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
       | some o =>
         if o.zone == .stack then
           let who := (g.player payer).name
-          let msg :=
-            match cost with
-            | .genericMana n =>
-              s!"{who} may pay \{{n}} or the spell is countered (ward)"
-            | .discardEnchantmentInstantOrSorcery =>
-              s!"{who} may discard an enchantment, instant, or sorcery card or the spell is countered (ward)"
-            | .sacrificeLegendary =>
-              s!"{who} may sacrifice a legendary artifact or creature or the spell is countered (ward)"
-            | .discardOrPay n =>
-              s!"{who} may discard a card or pay \{{n}} or the spell is countered (ward)"
-            | .fivePoison =>
-              s!"{who} may get five poison counters or the spell is countered (ward)"
-            | .discardCard =>
-              s!"{who} may discard a card or the spell is countered (ward)"
-            | .sacrificePermanents n _ _ =>
-              s!"{who} may sacrifice {n} permanents or the spell is countered (ward)"
+          let costPhrase :=
+            match cost.soleGenericMana? with
+            | some n => s!"pay \{{n}}"
+            | none =>
+              if cost == CostSpec.sacrificeLegendaryArtifactOrCreature then
+                "sacrifice a legendary artifact or creature"
+              else
+                match cost.items.toList with
+                | [.sacrifice (.count (.const n)) (.filter .anyObject)] =>
+                  if n == 1 then "sacrifice a permanent" else s!"sacrifice {n} permanents"
+                | [.mana m] => s!"pay {m}"
+                | _ => cost.toInlinePhrase
+          let msg := s!"{who} may {costPhrase} or the spell is countered (ward)"
           (g.change (.pending (.payWard payer spellId cost))).logMsg msg
         else g
       | none => g
@@ -1184,7 +1179,7 @@ partial def runFrcPostStep (g : Game) (step : FrcPostStep) : Game :=
   | .offerMaySearchBasics owner => g.offerMaySearchBasics owner
   | .makeHumanToken owner => g.makeFrc owner .human11white
   | .grantControlledCreaturesIndestructible controller =>
-    g.grantUntilEotToControlledCreatures controller Keyword.indestructible "indestructible"
+    g.grantUntilEotToControlledCreatures controller #[Keyword.indestructible] "indestructible"
   | .destroyNonRecentCreaturesAtFive x =>
     if x >= 5 then
       g.destroyIds (g.battlefield.filter (g.isCreature ·) |>.map (·.id))
@@ -1297,7 +1292,7 @@ partial def runFrcPostStep (g : Game) (step : FrcPostStep) : Game :=
         match g.findObject? tid with
         | some tok =>
           if tok.isOnBattlefield then
-            g.createEffect (.keywordsUntilEot tok.id (Keywords.merge Keyword.lifelink Keyword.haste))
+            g.createEffect (.keywordsUntilEot tok.id #[Keyword.lifelink, Keyword.haste])
               |>.logMsg s!"{g.name tok} gains lifelink and haste until end of turn"
           else g
         | none => g) g

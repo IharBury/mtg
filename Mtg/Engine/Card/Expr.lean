@@ -1,7 +1,6 @@
 import Mtg.Engine.Card.Primitives
 import Mtg.Engine.Card.ManaTypes
 import Mtg.Engine.Mana
-import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.Text
 import Mtg.Engine.Card.Counter
 
@@ -441,12 +440,13 @@ inductive ObjectRef where
   | stepVar (v : VarId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Shared characteristic queried by `ObjectPred.shares` (CR 105.2c / 205). -/
+/-- Shared characteristic queried by `ObjectPred.shares` (CR 105.2c / 201.2a / 205). -/
 inductive SharedCharacteristic where
   | color
   | cardType
   | creatureType
   | subtype
+  | name
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Direction for `ObjectExpr.extremum`. -/
@@ -1487,13 +1487,18 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
       thatClauses := thatClauses ++
         [s!"that targets {printObjectExpr { ctx with capitalize := false } o} or {printPlayerExpr { ctx with capitalize := false } p}"]
     | .shares ch o =>
-      let chS :=
-        match ch with
-        | .color => "a color"
-        | .cardType => "a card type"
-        | .creatureType => "a creature type"
-        | .subtype => "a subtype"
-      thatClauses := thatClauses ++ [s!"that shares {chS} with {printObjectExpr { ctx with capitalize := false } o}"]
+      match ch with
+      | .name =>
+        thatClauses := thatClauses ++ [s!"with the same name as {printObjectExpr { ctx with capitalize := false } o}"]
+      | _ =>
+        let chS :=
+          match ch with
+          | .color => "a color"
+          | .cardType => "a card type"
+          | .creatureType => "a creature type"
+          | .subtype => "a subtype"
+          | .name => "a name"
+        thatClauses := thatClauses ++ [s!"that shares {chS} with {printObjectExpr { ctx with capitalize := false } o}"]
     | .wasCast => thatClauses := thatClauses ++ ["that was cast"]
     | .castFrom z => thatClauses := thatClauses ++ [s!"that was cast from {renderZonePhrase z}"]
     | .enteredThisTurn => thatClauses := thatClauses ++ ["that entered this turn"]

@@ -25,7 +25,7 @@ def smaugSetup : Game :=
   withRedMana (addToHand g smaugTheGreatCalamity ⟨0⟩) ⟨0⟩ 7
 
 #guard smaugTheGreatCalamity.hasAdventure
-#guard smaugTheGreatCalamity.keywords.flying
+#guard KeywordAbility.hasFlying smaugTheGreatCalamity.keywords
 #guard smaugSetup.canCast ⟨0⟩ (handCardNamed smaugSetup ⟨0⟩ "Smaug, the Great Calamity")
 #guard smaugSetup.canCastAdventure ⟨0⟩ (handCardNamed smaugSetup ⟨0⟩ "Smaug, the Great Calamity")
 #guard smaugSetup.asSorcery? ⟨0⟩
@@ -146,7 +146,7 @@ def resolvedExiledSmaug : Game :=
 
 #guard resolvedExiledSmaug.stack.isEmpty
 #guard resolvedExiledSmaug.battlefield.any (fun o => o.name == "Smaug, the Great Calamity")
-#guard (namedPermanent resolvedExiledSmaug "Smaug, the Great Calamity").printed.keywords.flying
+#guard KeywordAbility.hasFlying (namedPermanent resolvedExiledSmaug "Smaug, the Great Calamity").printed.keywords
 #guard resolvedExiledSmaug.power
   (namedPermanent resolvedExiledSmaug "Smaug, the Great Calamity") == 5
 #guard resolvedExiledSmaug.toughness
@@ -168,7 +168,7 @@ def proposedSmaugCreature : Game :=
 def resolvedSmaugCreature : Game :=
   passBoth (mustApply proposedSmaugCreature ⟨0⟩ .pay)
 
-#guard (namedPermanent resolvedSmaugCreature "Smaug, the Great Calamity").printed.keywords.flying
+#guard KeywordAbility.hasFlying (namedPermanent resolvedSmaugCreature "Smaug, the Great Calamity").printed.keywords
 #guard resolvedSmaugCreature.battlefield.any (fun o => o.name == "Grizzly Bears")
 
 /-- Spew Flame is sorcery speed. -/
@@ -225,7 +225,7 @@ def beornSetup : Game :=
   withGreenMana (addToHand afterDraw beornReluctantHost ⟨0⟩) ⟨0⟩ 2
 
 #guard beornReluctantHost.hasAdventure
-#guard beornReluctantHost.keywords.trample
+#guard KeywordAbility.hasTrample beornReluctantHost.keywords
 #guard beornSetup.canCast ⟨0⟩ (handCardNamed beornSetup ⟨0⟩ "Beorn, Reluctant Host")
 #guard beornSetup.canCastAdventure ⟨0⟩ (handCardNamed beornSetup ⟨0⟩ "Beorn, Reluctant Host")
 #guard beornSetup.asSorcery? ⟨0⟩
@@ -366,7 +366,7 @@ def resolvedExiledBeorn : Game :=
 
 #guard resolvedExiledBeorn.stack.isEmpty
 #guard resolvedExiledBeorn.battlefield.any (fun o => o.name == "Beorn, Reluctant Host")
-#guard (namedPermanent resolvedExiledBeorn "Beorn, Reluctant Host").printed.keywords.trample
+#guard KeywordAbility.hasTrample (namedPermanent resolvedExiledBeorn "Beorn, Reluctant Host").printed.keywords
 #guard resolvedExiledBeorn.power
   (namedPermanent resolvedExiledBeorn "Beorn, Reluctant Host") == 5
 #guard resolvedExiledBeorn.toughness
@@ -389,7 +389,7 @@ def proposedBeornCreature : Game :=
 def resolvedBeornCreature : Game :=
   passBoth (mustApply proposedBeornCreature ⟨0⟩ .pay)
 
-#guard (namedPermanent resolvedBeornCreature "Beorn, Reluctant Host").printed.keywords.trample
+#guard KeywordAbility.hasTrample (namedPermanent resolvedBeornCreature "Beorn, Reluctant Host").printed.keywords
 #guard resolvedBeornCreature.power
   (namedPermanent resolvedBeornCreature "Beorn, Reluctant Host") == 5
 

@@ -213,8 +213,8 @@ def meagerMealNoCreatureAfterSkip : Game :=
     (g.player ⟨0⟩).life == 22 &&
     g.log.any (fun s => mentions s "Chandra gains 2 life")
 
-#guard Keyword.firstStrike.firstStrike
-#guard Keyword.islandwalk.islandwalk
+#guard KeywordAbility.hasFirstStrike #[Keyword.firstStrike]
+#guard KeywordAbility.hasIslandwalk #[Keyword.islandwalk]
 #guard largeBear.manaCost.manaValue == 5
 #guard
   let p := ManaPool.empty.add (.colored .black) 2 |>.add .colorless 3
@@ -451,8 +451,8 @@ def meagerMealNoCreatureAfterSkip : Game :=
   let echoDef : CardDef := {
     creature "Echo Test" { symbols := #[.generic 2] } #["Human"] 2 2 with
     activatedAbilities := #[
-      { cost := {}, effect := Effect.copyControlledAbility .creature },
-      { cost := {}, effect := Effect.mkAbility (.of .anotherCreature) (.onPermanent .tap) }
+      { cost := CostSpec.empty, effect := Effect.copyControlledAbility .creature },
+      { cost := CostSpec.empty, effect := Effect.mkAbility (.of .anotherCreature) (.onPermanent .tap) }
     ]
   }
   let otherCreature : CardDef :=

@@ -60,7 +60,7 @@ def gandalfEntered : Game := passBoth paidGandalf
 #guard (namedPermanent gandalfEntered "Gandalf, Spark Starter").printed.power == some 4
 #guard gandalfEntered.power (namedPermanent gandalfEntered "Gandalf, Spark Starter") == 4
 #guard gandalfEntered.toughness (namedPermanent gandalfEntered "Gandalf, Spark Starter") == 3
-#guard (namedPermanent gandalfEntered "Gandalf, Spark Starter").printed.keywords.reach
+#guard KeywordAbility.hasReach (namedPermanent gandalfEntered "Gandalf, Spark Starter").printed.keywords
 #guard gandalfEntered.stack.size == 1
 #guard (gandalfEntered.object! gandalfEntered.stack.back!.objectId).triggeredAbility ==
   some (.onEnterDealDividedDamage 3 3)
@@ -242,7 +242,7 @@ def gandalfLeftBeforeTrigger : Game :=
 #guard
   let g := addPermanent gandalfEntered velvetwingButterflies ⟨1⟩ ⟨1⟩
   let o := namedPermanent g "Velvetwing Butterflies"
-  let g := g.createEffect (.keywordsUntilEot o.id Keyword.hexproof)
+  let g := g.createEffect (.keywordsUntilEot o.id #[Keyword.hexproof])
   match g.apply ⟨0⟩
       (.divideDamage #[(Target.permanent (namedPermanent g "Velvetwing Butterflies").id, 3)]) with
   | .error msg => mentions msg "Illegal target"
@@ -503,7 +503,7 @@ def fireleaperDied : Game :=
 -- Hexproof on an opponent's creature is not a legal target (CR 702.11b).
 #guard
   let bears := namedPermanent fireleaperDied "Grizzly Bears"
-  let g := fireleaperDied.createEffect (.keywordsUntilEot bears.id Keyword.hexproof)
+  let g := fireleaperDied.createEffect (.keywordsUntilEot bears.id #[Keyword.hexproof])
   match g.apply ⟨0⟩ (.target (Target.permanent bears.id)) with
   | .error msg => mentions msg "Illegal target"
   | .ok _ => false
@@ -646,7 +646,7 @@ def hunterSacrificesFireleaper : Game :=
 gains life in the same batch as the damage while creating Smite's continuous effects. -/
 #guard
   let llSrc : CardDef :=
-    creature "Lifelink Smiter" ManaCost.empty #[] 2 2 (keywords := Keyword.lifelink)
+    creature "Lifelink Smiter" ManaCost.empty #[] 2 2 (keywords := #[Keyword.lifelink])
   let g0 := addPermanent (addPermanent afterDraw llSrc ⟨0⟩ ⟨0⟩) grizzlyBears ⟨1⟩ ⟨1⟩
   let src := namedPermanent g0 "Lifelink Smiter"
   let tgt := namedPermanent g0 "Grizzly Bears"

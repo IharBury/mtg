@@ -155,8 +155,8 @@ def proposedNeedsBattlefieldSource (g : Game) (prop : ProposedSpell)
       (prop.tapSource && !g.sourceTappedForCost sid forObj sinceIdx) ||
         ((prop.sacrificeSource || prop.activation.any (·.cost.sacrificeSource)) &&
           !g.sourceSacrificedForCost sid forObj sinceIdx) ||
-        prop.activation.any (·.cost.fra == .exileSource) ||
-        (prop.activation.any (·.cost.loyalty.isSome) && !prop.loyaltyPaid &&
+        prop.activation.any (·.cost.exileSourceFromBattlefield) ||
+        (prop.activation.any (·.cost.isLoyalty) && !prop.loyaltyPaid &&
           !g.sourceCounterCostPaidFor sid forObj .loyalty (some .loyalty) sinceIdx) ||
         (prop.removePlusOneX &&
           !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .plusOnePlusOne) sinceIdx) ||
@@ -183,6 +183,36 @@ def propHasRemainingExtraCosts (g : Game) (prop : ProposedSpell)
     g.proposedNeedsBattlefieldSource prop sinceIdx ||
     prop.activation.any (fun a =>
       a.isFromGraveyard || a.isFromHand || a.cost.removeAnyNumberPlusOne)
+
+private partial def costItemAllowsObject (g : Game) (p : PlayerId) (sourceId : Option ObjectId)
+    (item : CostItem) (o : GameObject)
+    (tapSource sacrificeOrExileSource discardOrExileHandSource : Bool) : Bool :=
+  let perm := o.isOnBattlefield && g.controlledBy o p
+  let inHand := o.owner == p && o.zone == .hand p
+  let other := sourceId.all (o.id != ·)
+  let env : EvalEnv := { controller := p, sourceId }
+  match item with
+  | .sacrifice _ (.filter pred) =>
+    perm && (!sacrificeOrExileSource || other) && EvalExpr.evalObjectPred g env (.live o) pred
+  | .discard _ .hand =>
+    inHand && (!discardOrExileHandSource || other)
+  | .discard _ (.matching pred) =>
+    inHand && (!discardOrExileHandSource || other) && EvalExpr.evalObjectPred g env (.live o) pred
+  | .exile _ zones (.filter pred) _ =>
+    let inZone :=
+      (zones.zones.contains .graveyard && o.owner == p && o.zone == .graveyard p) ||
+      (zones.zones.contains .hand && inHand && (!discardOrExileHandSource || other)) ||
+      (zones.zones.contains .battlefield && perm && (!sacrificeOrExileSource || other))
+    inZone && EvalExpr.evalObjectPred g env (.live o) pred
+  | .tapObjects _ pred =>
+    perm && (!tapSource || other) && !o.status.tapped && EvalExpr.evalObjectPred g env (.live o) pred
+  | .returnToHand _ (.filter pred) =>
+    perm && (!sacrificeOrExileSource || other) && EvalExpr.evalObjectPred g env (.live o) pred
+  | .or choices =>
+    choices.any fun c =>
+      c.items.any fun sub =>
+        costItemAllowsObject g p sourceId sub o tapSource sacrificeOrExileSource discardOrExileHandSource
+  | _ => false
 
 /-- Whether `o` can pay `pick` for `p`'s ability of `sourceId`. -/
 def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick : CostPick)
@@ -226,6 +256,8 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick 
     other && o.owner == p && o.zone == .graveyard p && g.isCreature o
   | .tapUntappedCreature => perm && (!tapSource || other) && g.isCreature o && !o.status.tapped
   | .tapTwoUntappedArtifacts => perm && (!tapSource || other) && artifact && !o.status.tapped
+  | .custom item =>
+    costItemAllowsObject g p sourceId item o tapSource sacrificeOrExileSource discardOrExileHandSource
 
 /-- Objects that can pay `pick`, in a default order (tokens and cheaper
 permanents first, preferring non-mana permanents for tap picks). -/
@@ -241,8 +273,12 @@ def costPickCandidates (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (p
     (tapSource := tapSource)
     (sacrificeOrExileSource := sacrificeOrExileSource)
     (discardOrExileHandSource := discardOrExileHandSource))
+  let isTapPick : Bool :=
+    match pick with
+    | .tapUntappedCreature | .tapTwoUntappedArtifacts | .custom (.tapObjects ..) => true
+    | _ => false
   let ordered :=
-    if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
+    if isTapPick then
       let (nonMana, manaSrcs) := allowed.partition (fun o => !canTapForPlainManaFwd g p o)
       nonMana ++ manaSrcs
     else allowed
@@ -257,12 +293,16 @@ private partial def assignDisjointPicks (g : Game) (p : PlayerId) (sourceId : Op
   else
     let pick := picks[idx]!
     let isTapPick : Bool :=
-      pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts
+      match pick with
+      | .tapUntappedCreature | .tapTwoUntappedArtifacts | .custom (.tapObjects ..) => true
+      | _ => false
     let isBfSacPick : Bool :=
       match pick with
       | .tapUntappedCreature | .tapTwoUntappedArtifacts
       | .discardACard | .discardNonland | .discardLegendaryCard | .discardLegendarySameName
-      | .exileAnotherCreatureCardFromGraveyard => false
+      | .exileAnotherCreatureCardFromGraveyard
+      | .custom (.tapObjects ..) | .custom (.discard ..) => false
+      | .custom (.exile _ zones _ _) => zones.zones.contains .battlefield
       | _ => true
     let laterSacAttachedEquip :=
       isBfSacPick && (picks.extract (idx + 1) picks.size).contains .sacrificeEquipmentAttachedToSource
@@ -424,17 +464,23 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
             if !g.costPickAllows p sourceId pick o then
               return (if g.currentBatch.isNone then abortOrNoop g else g, false)
             match pick with
-            | .tapUntappedCreature | .tapTwoUntappedArtifacts =>
+            | .tapUntappedCreature | .tapTwoUntappedArtifacts | .custom (.tapObjects ..) =>
               let oName := g.name o
               g := (g.becomeTapped o (cause := some (.costPayment .tap p forObj))).logMsg
                 s!"{name} taps {oName} to pay a cost"
-            | .exileAnotherCreatureCardFromGraveyard =>
-              let msg := s!"{name} exiles {g.name o} from their graveyard"
+            | .exileAnotherCreatureCardFromGraveyard | .custom (.exile ..) =>
+              let msg :=
+                if o.zone == .graveyard o.owner then s!"{name} exiles {g.name o} from their graveyard"
+                else s!"{name} exiles {g.name o}"
               g := (g.move id .exile none (cause := some (.costPayment .exile p forObj))).1
               if let .chooseReplacement .. := g.pending then
                 g := g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id msg))
               else if (g.followMovedToZone? id (· == .exile)).isSome then
                 g := g.logMsg msg
+            | .custom (.returnToHand ..) =>
+              let oName := g.name o
+              g := (g.move id (.hand o.owner) none (cause := some (.costPayment .returnToHand p forObj))).1
+              g := g.logMsg s!"{name} returns {oName} to its owner's hand"
             | _ =>
               if o.isOnBattlefield then
                 let records :=
@@ -472,7 +518,7 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
               return (g, true)
         return (g, true)
       match pick with
-      | .tapTwoUntappedArtifacts =>
+      | .tapTwoUntappedArtifacts | .custom (.tapObjects ..) =>
         if g.currentBatch.isSome || ids.size ≤ 1 then run g
         else
           let (gAfter, ok) := g.withBatchReturn (some (.costPayment .tap p forObj)) run
@@ -493,15 +539,9 @@ def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : Option Obje
     (followedByFinishFra := followedByFinishFra)
     (followedByExplicitPriority? := followedByExplicitPriority?)).1
 
-/-- Pay a loyalty cost: put or remove loyalty counters on the source (CR 606.3 / 606.4 / 118.11). -/
-def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymbol)
+/-- Pay a combined net loyalty delta `k` on `o` (CR 606.3 / 606.4 / 606.5 / 606.6 / 118.11). -/
+def payLoyaltyDelta (g : Game) (p : PlayerId) (o : GameObject) (k : Int)
     (forObject : Option ObjectId := none) : Game :=
-  let chosenX := ((forObject.bind g.findObject?).bind (·.chosenX)).getD 0
-  let k : Int :=
-    match sym with
-    | .minusX => -(chosenX : Int)
-    | .plusX => (chosenX : Int)
-    | _ => (sym.counters).getD 0
   let oName := g.name o
   let markPaid (g : Game) : Game :=
     if g.proposedSpell.isSome then g.changeProposal (.loyaltyPaid true) else g
@@ -519,6 +559,12 @@ def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymb
   else
     g.withProposalAction .costAction fun g =>
       markPaid g
+
+/-- Pay a single loyalty cost symbol on `o` (CR 606.3 / 606.4 / 118.11). -/
+def payLoyaltyCost (g : Game) (p : PlayerId) (o : GameObject) (sym : LoyaltySymbol)
+    (forObject : Option ObjectId := none) : Game :=
+  let chosenX := ((forObject.bind g.findObject?).bind (·.chosenX)).getD 0
+  g.payLoyaltyDelta p o (sym.netDelta chosenX) (forObject := forObject)
 
 /-- Pay `pick` with `ids` for the ability `abilityId` of `sourceId`
 (CR 601.2h). The power of a creature sacrificed for an ability that refers
@@ -610,15 +656,10 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
                   !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .plusOnePlusOne) sinceIdx &&
                   src.status.plusOnePlusOne < effRemovePlusOnes then
                 throw s!"{g.name src} doesn't have {effRemovePlusOnes} +1/+1 counters"
-              if let some sym := a.cost.loyalty then
+              if let some k := a.cost.netLoyaltyDelta effX then
                 let loyaltyAlreadyPaid :=
                   g.proposedSpell.any (·.loyaltyPaid) ||
                     g.sourceCounterCostPaidFor sid forObj .loyalty (some .loyalty) sinceIdx
-                let k : Int :=
-                  match sym with
-                  | .minusX => -(effX : Int)
-                  | .plusX => (effX : Int)
-                  | _ => sym.counters.getD 0
                 if !loyaltyAlreadyPaid then
                   if g.loyaltyActivatedThisTurn src.id then
                     throw s!"{g.name src}'s loyalty ability was already activated this turn (CR 606.3)"
@@ -654,22 +695,16 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
                   else g
                 g := g'.logMsg
                   s!"{(g.player p).name} removes {effRemovePlusOnes} +1/+1 counters from {srcName}"
-              if let some sym := a.cost.loyalty then
+              if let some k := a.cost.netLoyaltyDelta effX then
                 let loyaltyAlreadyPaid :=
                   g.proposedSpell.any (·.loyaltyPaid) ||
                     g.sourceCounterCostPaidFor sid forObj .loyalty (some .loyalty) sinceIdx
                 if !loyaltyAlreadyPaid then
                   let some curSrc := requireLiveSource g sid | return abortMissingSource g
-                  let actualSym :=
-                    match sym with
-                    | .minusX => LoyaltySymbol.minus effX
-                    | .plusX => LoyaltySymbol.plus effX
-                    | _ => sym
                   if g.loyaltyActivatedThisTurn curSrc.id then return abortMissingSource g
-                  if let some k := actualSym.counters then
-                    if k < 0 && (curSrc.status.loyaltyCounters : Int) < -k then
-                      return abortMissingSource g
-                  g := g.payLoyaltyCost p curSrc actualSym (forObject := forObj)
+                  if k < 0 && (curSrc.status.loyaltyCounters : Int) < -k then
+                    return abortMissingSource g
+                  g := g.payLoyaltyDelta p curSrc k (forObject := forObj)
                   if let .chooseReplacement .. := g.pending then
                     if a.cost.putStunCounterOnSource &&
                         !g.sourceCounterCostPaidFor sid forObj .putCounters (some .stun) sinceIdx then
@@ -793,7 +828,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   let hadProp := g.proposedSpell.isSome
   let forObject := forObject? <|> g.proposedSpell.map (·.spellId) <|> some sourceId
-  let exileSource := ab.any (·.cost.fra == .exileSource)
+  let exileSource := ab.any (·.cost.exileSourceFromBattlefield)
   let sacrificeOrExileSource :=
     sacrificeSource || exileSource || ab.any (·.cost.sacrificeSource)
   let rawFromGy := ab.any (·.isFromGraveyard)
@@ -806,7 +841,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (tapSource && !g.sourceTappedForCost sourceId forObject sinceIdx) ||
       (sacrificeOrExileSource && !g.sourceSacrificedForCost sourceId forObject sinceIdx) ||
       exileSource ||
-      (ab.any (·.cost.loyalty.isSome) &&
+      (ab.any (·.cost.isLoyalty) &&
         !(g.proposedSpell.any (·.loyaltyPaid) ||
           g.sourceCounterCostPaidFor sourceId forObject .loyalty (some .loyalty) sinceIdx)) ||
       ((removePlusOnes > 0 || ab.any (·.cost.removeAnyNumberPlusOne)) &&
@@ -825,7 +860,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   let alreadyDiscardedFromHandForCost :=
     !sacrificeOrExileSource && !discardSource && !rawFromGy && !needsBfSource &&
       ab.any (·.activateFromHand) &&
-      !ab.any (·.cost.fra == .exileSourceFromHand) &&
+      !ab.any (·.cost.exileSourceFromHand) &&
       g.sourceDiscardedFromHandForCost sourceId forObject sinceIdx
   let some src := g.findObject? sourceId | do
     if alreadySacrificedForCost || alreadyDiscardedFromHandForCost then
@@ -833,7 +868,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         throw s!"{(g.player p).name} cannot pay {payLife} life"
       return (← g.payLifeCost p payLife (forObject := forObject))
     throw "The source is no longer in play"
-  if ab.any (·.cost.fra == .exileSourceFromHand) then
+  if ab.any (·.cost.exileSourceFromHand) then
     if !(src.zone == .hand src.owner && src.owner == p) then
       throw s!"{g.name src} is not in your hand"
     let g ← g.payLifeCost p payLife (forObject := forObject)
@@ -895,7 +930,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       return match outer? with | some outer => g.chainPendingReplacement outer | none => g
     return g
   let fromHandAb :=
-    !discardSource && !ab.any (·.cost.fra == .exileSourceFromHand) &&
+    !discardSource && !ab.any (·.cost.exileSourceFromHand) &&
       ab.any (·.activateFromHand) && !rawFromGy && !needsBfSource
   if fromHandAb && !alreadyDiscardedFromHandForCost then
     if !(src.zone == .hand src.owner && src.owner == p) then
@@ -930,21 +965,15 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .plusOnePlusOne) sinceIdx &&
         src.status.plusOnePlusOne < removePlusOnes then
       throw s!"{g.name src} doesn't have {removePlusOnes} +1/+1 counters"
-    if let some sym := a.cost.loyalty then
+    if let some k := a.cost.netLoyaltyDelta chosenX then
       let loyaltyAlreadyPaid :=
         g.proposedSpell.any (·.loyaltyPaid) ||
           g.sourceCounterCostPaidFor sourceId forObject .loyalty (some .loyalty) sinceIdx
       if !loyaltyAlreadyPaid then
         if g.loyaltyActivatedThisTurn src.id then
           throw s!"{g.name src}'s loyalty ability was already activated this turn (CR 606.3)"
-        let actualSym :=
-          match sym with
-          | .minusX => LoyaltySymbol.minus chosenX
-          | .plusX => LoyaltySymbol.plus chosenX
-          | _ => sym
-        if let some k := actualSym.counters then
-          if k < 0 && (src.status.loyaltyCounters : Int) < -k then
-            throw s!"{g.name src} doesn't have {-k} loyalty counters to remove (CR 606.4)"
+        if k < 0 && (src.status.loyaltyCounters : Int) < -k then
+          throw s!"{g.name src} doesn't have {-k} loyalty counters to remove (CR 606.4)"
   let outer? := g.pendingReplacement
   let outerForAbort? := outer?.orElse (fun _ => callerOuter?)
   let abortMissingSource (g0 : Game) : Game :=
@@ -997,22 +1026,16 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         else g
       g := g'.logMsg
         s!"{(g.player p).name} removes {removePlusOnes} +1/+1 counters from {srcName}"
-    if let some sym := a.cost.loyalty then
+    if let some k := a.cost.netLoyaltyDelta chosenX then
       let loyaltyAlreadyPaid :=
         g.proposedSpell.any (·.loyaltyPaid) ||
           g.sourceCounterCostPaidFor sourceId forObject .loyalty (some .loyalty) sinceIdx
       if !loyaltyAlreadyPaid then
         let some curSrc := requireLiveSource g | return abortMissingSource g
-        let actualSym :=
-          match sym with
-          | .minusX => LoyaltySymbol.minus chosenX
-          | .plusX => LoyaltySymbol.plus chosenX
-          | _ => sym
         if g.loyaltyActivatedThisTurn curSrc.id then return abortMissingSource g
-        if let some k := actualSym.counters then
-          if k < 0 && (curSrc.status.loyaltyCounters : Int) < -k then
-            return abortMissingSource g
-        g := g.payLoyaltyCost p curSrc actualSym (forObject := forObject)
+        if k < 0 && (curSrc.status.loyaltyCounters : Int) < -k then
+          return abortMissingSource g
+        g := g.payLoyaltyDelta p curSrc k (forObject := forObject)
         if let .chooseReplacement .. := g.pending then
           let needsStun :=
             a.cost.putStunCounterOnSource &&

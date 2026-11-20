@@ -572,7 +572,7 @@ private def replayOk41i3 (gs : Array Game) : Bool :=
   let cageDef : CardDef := { name := "P41i3 Cage", types := #[.artifact] }
   let leyADef : CardDef := { name := "P41i3 LeyA", types := #[.enchantment] }
   let leyBDef : CardDef := { name := "P41i3 LeyB", types := #[.enchantment] }
-  let noTrampleScope : ObjectScope := .creaturesWithout { trample := true }
+  let noTrampleScope : ObjectScope := .creaturesWithout #[Keyword.trample]
 
   -- 3a. `Core.effectPhasingAllows` enforces `durationActiveAt` for `EventCause.oneShotEffect` dynamic durations
   --     (`.whileSourceOnBattlefield`, `.whileSourceHasCounter`) while preserving `.untilSourceLeaves`/clock durations & `lockOk`:
@@ -864,11 +864,11 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
   -- 4a. Proposal/activation `sinceIdx` + `CounterKind`-accurate `ActivationCosts.source*ForCost`
   --     and `resolvingForObj <|> sourceId` in `FraChoices.mayPayPickThen`:
   let multiCntAb : ActivatedAbility := {
-    cost := {
-      removeStoryCounter := true
-      removeIndestructibleCounter := true
-      removeAnyNumberPlusOne := true
-    }
+    cost := CostSpec.ofItems #[
+      .removeCounters (.exact 1) (some .story) .self,
+      .removeCounters (.exact 1) (some .indestructible) .self,
+      .removeCounters .anyNumber (some .plusOnePlusOne) .self
+    ]
     effect := Effect.plusOneX
   }
   let multiCntDef : CardDef := {
@@ -910,13 +910,12 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
   -- Prior-turn `{T}` mana ability / cost payment on `sid` (`sinceIdx` bound across standalone `payActivationExtraCosts`,
   -- standalone `payCostPick`, `.turnFaceUp`, and `FraChoices.mayPayPickThen` `resolvingForObj <|> sourceId`):
   let dorkManaAb : ActivatedAbility := {
-    cost := { tap := true }
+    cost := CostSpec.ofItems #[.tapSelf]
     effect := { resolution := .addMana #[.colored .green] }
   }
   let morphDorkDef : CardDef := {
     creature "P41i4 MorphDork" ManaCost.empty #["Elf", "Druid"] 2 2 with
-    keywords := { haste := true }
-    morph := some ManaCost.empty
+    keywords := #[Keyword.haste, .morph CostSpec.empty]
     activatedAbilities := #[dorkManaAb]
   }
   let gPrior0 := addPermanent g3 morphDorkDef p0 p0

@@ -101,16 +101,6 @@ namespace Status
 @[inline] def time (s : Status) : Nat := s.counters.count .time
 @[inline] def poison (s : Status) : Nat := s.counters.count .poison
 
-@[inline] def keywordCounters (s : Status) : KeywordCounters :=
-  { haste := s.counters.count .haste
-    vigilance := s.counters.count .vigilance
-    flying := s.counters.count .flying
-    menace := s.counters.count .menace
-    reach := s.counters.count .reach
-    deathtouch := s.counters.count .deathtouch
-    firstStrike := s.counters.count .firstStrike
-    doubleStrike := s.counters.count .doubleStrike }
-
 /-- True when this permanent has a counter (CR 122.1). -/
 def hasCounters (s : Status) : Bool :=
   s.counters.any (fun (_, n) => n > 0)

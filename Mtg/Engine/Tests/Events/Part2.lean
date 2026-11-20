@@ -102,7 +102,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     subtypes := #["Vehicle"]
     power := some 4
     toughness := some 4
-    crew := some 2
+    keywords := #[.crew 2]
   }
   let gCrew0 := addPermanent (addPermanent afterDraw boatDef me me) grizzlyBears me me
   let boatId := (gCrew0.battlefield.filter (·.name == "Phase12 Boat"))[0]!.id
@@ -388,7 +388,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
   -- 4. Second combat-damage step `TurnEvent`s (CR 510.4 / 702.7b / 500.9) and derived helpers
   let fsAttackerDef : CardDef :=
     { (creature "Phase12 First Striker" ManaCost.empty #["Knight"] 2 2) with
-      keywords := Keyword.firstStrike }
+      keywords := #[Keyword.firstStrike] }
   let gCbt0 :=
     let g := addPermanent (addPermanent afterDraw fsAttackerDef me me) bear me me
     let fk := (g.battlefield.filter (·.name == "Phase12 First Striker"))[0]!
@@ -597,7 +597,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     types := #[.creature]
     power := some 2
     toughness := some 2
-    cascade := 1
+    keywords := #[Keyword.cascade]
   }
   let gCasc0 :=
     let g := addPermanent afterDraw doublerDef me me
@@ -643,7 +643,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     name := "Phase12 Pinger"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { tap := true }
+      cost := CostSpec.ofItems #[.tapSelf]
       effect := { targeting := .of .creature, resolution := .tapTargets, phrase := "Tap target creature" }
     }]
   }
@@ -658,7 +658,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     (gTgtAct1.object! se.objectId).triggeredAbility == some youTargetTrig)
   -- Ward triggers: activated ability, triggered ability, retarget, fizzle when spell gone,
   -- decline counter cause, and uncounterable spell still prompting `.payWard`.
-  let wardTwoBear : CardDef := { bear with name := "Phase12 Ward Bear", ward := some 2 }
+  let wardTwoBear : CardDef := { bear with name := "Phase12 Ward Bear", keywords := #[.ward (CostSpec.ofGeneric 2)] }
   let gWardBase := addPermanent (addPermanent afterDraw pingerDef me me) wardTwoBear opp opp
   let wardBearId := (gWardBase.battlefield.filter (·.name == "Phase12 Ward Bear"))[0]!.id
   let wardPingerId := (gWardBase.battlefield.filter (·.name == "Phase12 Pinger"))[0]!.id
@@ -667,7 +667,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     let g := mustApply gWardBase me (.activate wardPingerId 0)
     mustApply g me (.target (.permanent wardBearId))
   let wardActOnStack := gWardAct.stack.any (fun se =>
-    (gWardAct.object! se.objectId).triggeredAbility == some (.onWard (.genericMana 2)))
+    (gWardAct.object! se.objectId).triggeredAbility == some (.onWard (CostSpec.ofGeneric 2)))
   -- (b) Triggered ability choosing opponent's Ward creature as target queues Ward
   let etbTapTrigger : TriggeredAbility :=
     .triggered .enter { targeting := .of .creature, resolution := .tapTargets, phrase := "Tap target creature" } {}
@@ -676,8 +676,8 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     let g := g.promptTriggerTargetsIfNeeded
     mustApply g me (.target (.permanent wardBearId))
   let wardTrigQueued :=
-    gWardTrig.stack.any (fun se => (gWardTrig.object! se.objectId).triggeredAbility == some (.onWard (.genericMana 2))) ||
-      gWardTrig.waitingTriggers.any (·.ability == .onWard (.genericMana 2))
+    gWardTrig.stack.any (fun se => (gWardTrig.object! se.objectId).triggeredAbility == some (.onWard (CostSpec.ofGeneric 2))) ||
+      gWardTrig.waitingTriggers.any (·.ability == .onWard (CostSpec.ofGeneric 2))
   -- (c) Retargeting a spell onto opponent's Ward creature queues Ward
   let gWardRetarget0 :=
     let g := addPermanent gWardBase hero opp opp
@@ -689,7 +689,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     mustApply g me .pay
   let retargetSpellId := gWardRetarget0.stack.back!.objectId
   let gWardRetarget1 := gWardRetarget0.retargetStackSpell retargetSpellId #[.permanent wardBearId]
-  let wardRetargetQueued := gWardRetarget1.waitingTriggers.any (·.ability == .onWard (.genericMana 2))
+  let wardRetargetQueued := gWardRetarget1.waitingTriggers.any (·.ability == .onWard (CostSpec.ofGeneric 2))
   -- (c2) Retargeting one slot of a copied two-target spell does not re-ward a
   --      permanent that was already targeted on the copy (CR 702.21a / 603.2).
   let twoTargetTap : CardDef := {
@@ -702,7 +702,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
       phrase := "Tap two target creatures"
     }
   }
-  let wardBear2Def : CardDef := { bear with name := "Phase12 Ward Bear Two", ward := some 3 }
+  let wardBear2Def : CardDef := { bear with name := "Phase12 Ward Bear Two", keywords := #[.ward (CostSpec.ofGeneric 3)] }
   let gCopyDelta :=
     let g := addPermanent (addPermanent (addPermanent gWardBase hero opp opp) bear opp opp) wardBear2Def opp opp
     let oppHeroId := (g.battlefield.filter (·.name == hero.name))[0]!.id
@@ -724,7 +724,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
   let copyRetargetDeltaOk :=
     gCopyDelta.1.isEmpty &&
     gCopyDelta.2.size == 1 &&
-    gCopyDelta.2[0]!.ability == .onWard (.genericMana 3)
+    gCopyDelta.2[0]!.ability == .onWard (CostSpec.ofGeneric 3)
   -- (d) Spell leaves stack before Ward resolves -> Ward resolves as no-op;
   --     Declining Ward counters with `.oneShotEffect` cause;
   --     Uncounterable spell still prompts `.payWard` and survives decline.
@@ -756,7 +756,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     mustApply (mustApply g me .pass) opp .pass
   let wardUncPrompted :=
     match gWardUnc.pending with
-    | .payWard p _ (.genericMana 2) => p == me
+    | .payWard p _ cost _ => (p == me) && cost.soleGenericMana? == some 2
     | _ => false
   let gWardUncDeclined := mustApply gWardUnc me .decline
   let wardUncSurvived := gWardUncDeclined.stack.any (fun se =>
@@ -1031,7 +1031,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     name := "Phase13 Modal Kicker"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    kicker := some (ManaCost.ofGeneric 5)
+    keywords := #[.kicker (CostSpec.ofGeneric 5)]
     spellModes := #[
       { resolution := .draw 1, phrase := "Draw a card" },
       { resolution := .gainLife 1, phrase := "Gain 1 life" }
@@ -1502,7 +1502,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   --     filter-scoped Layer 2 control expiration).
   let lethalLifelinker : CardDef := {
     (creature "Phase13 Lifelinker" ManaCost.empty #["Vampire"] 1 1) with
-    keywords := Keywords.merge Keyword.lifelink Keyword.deathtouch
+    keywords := #[Keyword.lifelink, Keyword.deathtouch]
   }
   let toughBlocker : CardDef := creature "Phase13 Wall" ManaCost.empty #["Wall"] 0 5
   let gLki0 := addPermanent (addPermanent afterDraw lethalLifelinker me me) toughBlocker opp opp
@@ -1519,7 +1519,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     let g := addPermanent (addPermanent afterDraw bear me me) toughBlocker opp opp
     let bid := (g.battlefield.filter (·.name == bear.name))[0]!.id
     let g := g.createEffect
-      (.keywordsUntilEot bid (Keywords.merge Keyword.lifelink Keyword.deathtouch))
+      (.keywordsUntilEot bid (#[Keyword.lifelink, Keyword.deathtouch]))
       (cause := some testCause)
     let (g, _) := g.move bid (.graveyard me) none (cause := some testCause)
     let g := g.createEffect
@@ -1553,7 +1553,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     let g := addPermanent gThree0 bear ⟨0⟩ ⟨0⟩
     let bid := (g.battlefield.filter (·.name == bear.name))[0]!.id
     let g := g.createEffect
-      (.keywordsUntilEot bid Keyword.lifelink) (cause := some testCause)
+      (.keywordsUntilEot bid #[Keyword.lifelink]) (cause := some testCause)
     let (g, _) := g.move bid (.graveyard ⟨0⟩) none (cause := some testCause)
     let g := g.createEffect
       (.replacement { id := { kind := .noncombatDamagePlusOne, grantor := some ⟨8993⟩ },
@@ -1645,7 +1645,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     name := "Phase13 Sac Artifact Engine"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, fra := .sacrificeAnotherArtifact }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .hasType .artifact]))]
       effect := { resolution := .draw 1, phrase := "Draw a card" }
     }]
   }
@@ -1671,7 +1671,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     power := some 2
     toughness := some 2
     activatedAbilities := #[{
-      cost := { fra := .tapTwoUntappedArtifacts }
+      cost := CostSpec.ofItems #[.tapObjects (.exact 2) (.all #[.hasType .artifact, .tapped false, .controlledBy .you])]
       effect := {
         targeting := .of .player
         resolution := .gainLife 1
@@ -1743,7 +1743,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     name := "Phase13 Free Engine"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := {}
+      cost := CostSpec.empty
       effect := { resolution := .draw 1, phrase := "Draw a card" }
     }]
   }
@@ -1751,7 +1751,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     name := "Phase13 Mana Engine"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1 }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1)]
       effect := { resolution := .draw 1, phrase := "Draw a card" }
     }]
   }
@@ -1759,7 +1759,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     name := "Phase13 Sac Other Engine"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { sacrificeAnotherCreatureOrArtifact := true }
+      cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
       effect := { resolution := .draw 1, phrase := "Draw a card" }
     }]
   }
@@ -1769,7 +1769,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     subtypes := #["Vehicle"]
     power := some 3
     toughness := some 3
-    crew := some 2
+    keywords := #[.crew 2]
   }
   let gFreeActPaid :=
     let g := addPermanent afterDraw freeActDef me me
@@ -1839,7 +1839,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     name := "Phase13 Altar Bolt"
     manaCost := ManaCost.empty
     types := #[.instant]
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
     spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
   }
   -- (a) Non-active player `opp` activates `sacOtherActDef` sacrificing a creature
@@ -1989,7 +1989,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase13 Altar Bolt"
     manaCost := ManaCost.empty
     types := #[.instant]
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
     spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
   }
   let freeDrawDef : CardDef := {
@@ -2007,7 +2007,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     bear with
     name := "Phase13 Mount Doom Engine"
     activatedAbilities := #[{
-      cost := { tap := true, sacrificeSource := true, sacrificeLegendaryArtifact := true }
+      cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self, .sacrifice (.exact 1) (.filter (.all #[.hasSupertype .legendary, .hasType .artifact]))]
       effect := { resolution := .draw 1, phrase := "Draw a card" }
     }]
   }
@@ -2057,7 +2057,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     bear with
     name := "Phase13 Dual Sac Engine"
     activatedAbilities := #[{
-      cost := { sacrificeSource := true, sacrificeAnotherCreatureOrArtifact := true }
+      cost := CostSpec.ofItems #[.sacrifice (.exact 1) .self, .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
       effect := { resolution := .draw 1, phrase := "Draw a card" }
     }]
   }
@@ -2065,7 +2065,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     bear with
     name := "Phase13 Two Pick Engine"
     activatedAbilities := #[{
-      cost := { sacrificeLegendaryArtifact := true, sacrificeAnotherCreature := true }
+      cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.all #[.hasSupertype .legendary, .hasType .artifact])), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .hasType .creature]))]
       effect := { resolution := .draw 1, phrase := "Draw a card" }
     }]
   }
@@ -2129,10 +2129,10 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     manaCost := ⟨#[.colored .green]⟩
     types := #[.creature]
     subtypes := #["Elf"]
-    keywords := { flash := true }
+    keywords := #[Keyword.flash]
     power := some 1
     toughness := some 1
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
   }
   let (gAncPaused, gAncScry, gAncDone) :=
     let g0 : Game :=
@@ -2299,7 +2299,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     subtypes := #["Chandra"]
     loyalty := some 4
     activatedAbilities := #[{
-      cost := { loyalty := some (.plus 1) }
+      cost := CostSpec.ofItems #[.loyalty (.plus 1)]
       effect := { resolution := .draw 1, phrase := "Draw a card" }
     }]
   }
@@ -2434,7 +2434,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
   -- 4. Face-down morph `turnFaceUp` & mid-resolution `{X}` `castExiledAsAbilityResolves`.
   let morphZeroDef : CardDef := {
     creature "Phase14 Fragile Morph" { symbols := #[.colored .blue] } #["Illusion"] 0 0 with
-    morph := some ⟨#[.colored .blue]⟩
+    keywords := #[.morph (CostSpec.ofMana ⟨#[.colored .blue]⟩)]
   }
   let islandDef : CardDef := {
     name := "Phase14 Island"
@@ -2965,7 +2965,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
       (spec := { sourceId := some srcId }))
     let g0 := g0.change (.pushContinuationFrame { resolvingAbility := some abObjId })
     let gP1 := g0.applyTriggeredAbility me (.onEnterDraw 1) (some srcId) #[] #[] none none "Hero"
-      (some (.may (.pay (.sacrifice (.fixed 1) .another)) (.draw (.fixed 1)) .ifYouDo))
+      (some (.may (.pay CostSpec.sacrificeAnotherCreature) (.draw (.fixed 1)) .ifYouDo))
     let gP2 := mustApply gP1 me (.choosePermanents #[vicId])
     let pickFinV : ReplacementId := { kind := .finalityCounterExile, object := some vicId }
     let gDone := mustApply gP2 me (.chooseReplacement pickFinV)
@@ -3041,7 +3041,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     lightningBolt with
     name := "Phase15 Teamwork Strike"
     manaCost := ⟨#[.colored .white]⟩
-    teamwork := some 2
+    keywords := #[.teamwork 2]
   }
   let (gTwTarget, gTwReverted, gPaidCardsDone, gPaidGyDone, teamworkAndPaidCastOk) :=
     let g0 := addPermanent afterDraw whiteDorkDef me me
@@ -3151,7 +3151,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
   let wardBearDef : CardDef := {
     bear with
     name := "Phase15 Ward Bear"
-    ward := some 2
+    keywords := #[.ward (CostSpec.ofGeneric 2)]
   }
   let pingAnyDef : CardDef := {
     lightningBolt with
@@ -3189,7 +3189,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let gNOuterCleared := (gNInnerRev.change .clearProposalCheckpoint).change .popContinuationFrame
     let ok :=
       gRetPrio.stack.size == 2 &&
-      (match gRetWardPrompt.pending with | .payWard p _ (.genericMana 2) => p == me | _ => false) &&
+      (match gRetWardPrompt.pending with | .payWard p _ cost _ => (p == me) && cost.soleGenericMana? == some 2 | _ => false) &&
       gNPaused.pending == .activateManaAbilities me &&
       gNPaused.outerProposalCheckpoints.size == 1 &&
       gNInnerRev.outerProposalCheckpoints.isEmpty &&
@@ -3258,18 +3258,18 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
       Game.replayEvents g.events == g && allRulesEventsClassified g)
 
   -- 7. CR 510.4 / 122.1c / 702.19b–f / 802.5 / 506.4 combat alignment.
-  let fsBearDef : CardDef := { bear with name := "Phase15 FS Bear", keywords := Keyword.firstStrike }
+  let fsBearDef : CardDef := { bear with name := "Phase15 FS Bear", keywords := #[Keyword.firstStrike] }
   let dtLifeDef : CardDef := {
     bear with
     name := "Phase15 DT Lifelinker"
-    keywords := { deathtouch := true, lifelink := true }
+    keywords := #[Keyword.deathtouch, Keyword.lifelink]
   }
   let trampler4Def : CardDef := {
     bear with
     name := "Phase15 Trampler"
     power := some 4
     toughness := some 4
-    keywords := Keyword.trample
+    keywords := #[Keyword.trample]
   }
   let pwVictimDef : CardDef := {
     name := "Phase15 Target PW"
@@ -3299,8 +3299,8 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let gFs := mustApply (mustApply g1 me .pass) opp .pass
     -- After FS step (`opp` at 18): grant `fsId` double strike and `brId` first strike, then advance to regular combat damage:
     -- `fsId` (now double strike) deals 2 AND `brId` (didn't have FS at FS step) deals 2 => `opp` at 14!
-    let gGrant := (gFs.createEffect (.keywordsUntilEot fsId Keyword.doubleStrike) (cause := some testCause)).createEffect
-      (.keywordsUntilEot brId Keyword.firstStrike) (cause := some testCause)
+    let gGrant := (gFs.createEffect (.keywordsUntilEot fsId #[Keyword.doubleStrike]) (cause := some testCause)).createEffect
+      (.keywordsUntilEot brId #[Keyword.firstStrike]) (cause := some testCause)
     let gReg := mustApply (mustApply gGrant me .pass) opp .pass
     (gReg, (gFs.player opp).life == 18 && (gReg.player opp).life == 14)
   -- 7b. CR 122.1c simultaneous shield counter in combat vs. TWO deathtouch+lifelink blockers +
@@ -3486,7 +3486,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let g1 := (g1.createEffect
       (.layered (.objects #[abId]) (.abilities { triggeredAbilities := #[.onEnterDraw 1] } .none) .untilEndOfTurn)
       (cause := some testCause)).createEffect
-      (.layered (.objects #[abId]) (.abilities { keywords := Keyword.flying } .all) .untilEndOfTurn)
+      (.layered (.objects #[abId]) (.abilities { keywords := #[Keyword.flying] } .all) .untilEndOfTurn)
       (cause := some testCause)
     let hadFlyPre := g1.hasFlying (g1.object! abId)
     let g2 := g1.clearEOT
@@ -3554,7 +3554,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
         match e.change with
         | .rules (.combat (.remainedUnblocked eo)) => eo.id == some atk2
         | _ => false) &&
-      (match gWPrompt.pending with | .payWard p _ (.genericMana 2) => p == ⟨1⟩ | _ => false) &&
+      (match gWPrompt.pending with | .payWard p _ cost _ => (p == ⟨1⟩) && cost.soleGenericMana? == some 2 | _ => false) &&
       gWConcede.pending == .none &&
       gWConcede.stack.isEmpty
     (gA2, gBBlk2, gWConcede, ok)
@@ -3677,7 +3677,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
       | .error e => panic! e
     let indRelicDef : CardDef :=
       { name := "Phase15 Indestructible Relic", manaCost := ManaCost.empty,
-        types := #[.artifact], keywords := { indestructible := true } }
+        types := #[.artifact], keywords := #[Keyword.indestructible] }
     let shdRelicDef : CardDef :=
       { name := "Phase15 Shield Relic", manaCost := ManaCost.empty, types := #[.artifact] }
     let finRelicDef : CardDef :=

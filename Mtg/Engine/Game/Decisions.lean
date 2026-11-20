@@ -97,10 +97,10 @@ def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) 
         | .fraChoice q (.costPicks sid picks _) =>
           let sacSrc :=
             prop.sacrificeSource ||
-              prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource)
+              prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
           let discSrc :=
             prop.discardSource ||
-              prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+              prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)
           let allPicks := costPicksWithSacrificeOther picks prop.needsSacrificeOther
           q == caster && g.sourceStillPayable prop && g.canPayLife caster prop.payLife &&
             (allPicks.isEmpty ||
@@ -111,10 +111,10 @@ def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) 
         | .fraChoice q (.crew _ vehicleId n) =>
           let sacSrc :=
             prop.sacrificeSource ||
-              prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource)
+              prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
           let discSrc :=
             prop.discardSource ||
-              prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+              prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)
           let allPicks :=
             costPicksWithSacrificeOther ((prop.activation.map costPicksOf).getD #[])
               prop.needsSacrificeOther
@@ -141,21 +141,17 @@ def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) 
           let loyaltyOk :=
             if prop.kind != .activatedAbility then true
             else
-              match prop.activation.bind (·.cost.loyalty) with
+              let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
+              match prop.activation.bind (·.cost.netLoyaltyDelta x) with
               | none => true
-              | some sym =>
+              | some k =>
                 prop.loyaltyPaid ||
                   g.sourceCounterCostPaidFor excludeId (some prop.spellId) .loyalty
                     (some .loyalty) ((g.targetProposalCheckpoint?.map (·.eventsSize)).getD 0) ||
                   (g.findObject? excludeId).any (fun src =>
                     src.isOnBattlefield && g.controlledBy src caster &&
                       !g.loyaltyActivatedThisTurn src.id &&
-                      match sym.counters with
-                      | some k => k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k
-                      | none =>
-                        let x := ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0
-                        sym == LoyaltySymbol.plusX ||
-                          (sym == LoyaltySymbol.minusX && src.status.loyaltyCounters ≥ x))
+                      (k ≥ 0 || (src.status.loyaltyCounters : Int) ≥ -k))
           q == caster && loyaltyOk && !(g.sacrificeCreatureOrArtifactChoices caster excludeId).isEmpty
         | .discardForAdditionalCost q =>
           q == caster && !(g.player caster).hand.isEmpty
@@ -3814,7 +3810,7 @@ partial def runPostStep (g : Game) (step : PostStep)
       | some entered =>
         let name := g.name entered
         let g := g.afterPermanentEnters entered
-        let g := if x >= 4 then g.grantUntilEotLogged (g.object! entered.id) Keyword.haste else g
+        let g := if x >= 4 then g.grantUntilEotLogged (g.object! entered.id) #[Keyword.haste] else g
         g.logMsg s!"{name} is put onto the battlefield"
       | none => g
     if shuffle then g.shuffleThen p .none else g
@@ -4411,7 +4407,7 @@ partial def runPostStep (g : Game) (step : PostStep)
     match g.findObject? cardId with
     | some cur =>
       if cur.isOnBattlefield then
-        let g := g.createEffect (.keywordsUntilEot cur.id Keyword.lifelink) (cause := cause)
+        let g := g.createEffect (.keywordsUntilEot cur.id #[Keyword.lifelink]) (cause := cause)
         g.logMsg s!"{g.name cur} gains lifelink until end of turn"
       else g
     | none => g
@@ -4419,7 +4415,7 @@ partial def runPostStep (g : Game) (step : PostStep)
     match g.findObject? cardId with
     | some cur =>
       if cur.isOnBattlefield then
-        g.createEffect (.keywordsUntilEot cur.id Keyword.haste) (cause := cause)
+        g.createEffect (.keywordsUntilEot cur.id #[Keyword.haste]) (cause := cause)
       else g
     | none => g
   | .endTurnAfterCleanupStepEnded =>
@@ -4577,7 +4573,7 @@ partial def runPostStep (g : Game) (step : PostStep)
     | none => g
   | .evilsThrallGrantHaste targetId =>
     match g.findObject? targetId with
-    | some o => if o.isOnBattlefield then g.grantUntilEotLogged o Keyword.haste else g
+    | some o => if o.isOnBattlefield then g.grantUntilEotLogged o #[Keyword.haste] else g
     | none => g
   | .noteReturnedPermanentIfInHand fromIds =>
     if fromIds.any (fun fid => (g.followMovedToZone? fid (fun | .hand _ => true | _ => false)).isSome) then
@@ -4629,7 +4625,7 @@ partial def runPostStep (g : Game) (step : PostStep)
       match g.findObject? sourceId with
       | some src => g.logMsg s!"{g.name src}'s boast ability is activated"
       | none => g
-  | .markFraCostPaid =>
+  | .markNonManaCostPaid =>
     if g.proposedSpell.isSome then g.changeProposal (.fraCostPaid true) else g
   | .plusOneOnCreatedTokensLoop controller remainingIds amount =>
     g.plusOneOnCreatedTokensLoop controller remainingIds amount
@@ -4786,10 +4782,10 @@ partial def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array C
           (tapSource := prop.tapSource)
           (sacrificeOrExileSource :=
             prop.sacrificeSource ||
-              prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource))
+              prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield))
           (discardOrExileHandSource :=
             prop.discardSource ||
-              prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)) then
+              prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)) then
       g.reverseProposedSpell? (resumeContinuation := true)
     else
       let g := g.changes #[.pending (.fraChoice prop.caster (.costPicks sid picks paid)), .consecutivePasses 0]
@@ -5075,7 +5071,7 @@ partial def tapTeamworkCreaturesForProposed (g : Game) (prop : ProposedSpell) :
       return (g, ())
     return g.logMsg s!"{(g.player prop.caster).name} pays a teamwork cost"
 
-/-- Pay a deferred additional-cost behold (`additionalCostBeholdOrPay`) at CR
+/-- Pay a deferred additional-cost behold (`CostItem.behold`) at CR
 601.2h (CR 701.4 / 601.2h). Fails with `.error` (triggering CR 733.1 proposal
 reversal at the caller) if `prop.caster` no longer controls or holds a card of
 the required subtype. -/
@@ -5347,7 +5343,7 @@ partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : Propose
   else if needsKicker then
     g.change (.pending (.chooseKicker p))
       |>.logMsg s!"{(g.player p).name} may kick the spell (CR 702.33 / 601.2b)"
-  else if face.giftTreasure && !prop.giftAnnounced then
+  else if face.hasGift && !prop.giftAnnounced then
     g.change (.pending (.chooseGift p))
       |>.logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
   else if face.teamwork.isSome && !prop.teamworkAnnounced then
@@ -5518,9 +5514,7 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
         if !withoutManaCost && origPerm.any (·.payLifeEqualManaValue) then
           g.objectManaValue spellObj
         else 0
-      let needsSacrifice :=
-        stackFace.additionalCostSacrificeCreature ||
-          (stackFace.additionalCostSacrificeArtifactOrCreature && stackFace.additionalCostOrPayGeneric.isNone)
+      let needsSacrifice := stackFace.mandatorySacrificeFilter?.isSome
       g.beginResolutionCastTargets p {
         caster := p
         cost
@@ -5664,10 +5658,10 @@ partial def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except St
   let allPicks := costPicksWithSacrificeOther picks prop.needsSacrificeOther
   let sacSrc :=
     prop.sacrificeSource ||
-      prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.fra == .exileSource)
+      prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
   let discSrc :=
     prop.discardSource ||
-      prop.activation.any (fun a => a.cost.discardSource || a.cost.fra == .exileSourceFromHand)
+      prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)
   let payable :=
     match prop.sourceId with
     | some sid =>
@@ -5678,48 +5672,49 @@ partial def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except St
           (discardOrExileHandSource := discSrc)
     | none => true
   if !prop.fraCostPaid then
-    match prop.sourceId, prop.activation.map (·.cost.fra) with
-    | some sid, some FraCost.zemoBoast =>
-      let col :=
-        match g.findObject? sid <|> some prop.original with
-        | some src => TextChange.applyColor (g.evalLayer3 src) .black
-        | none => .black
-      let allCands := (g.player prop.caster).graveyard.filter (fun id =>
-        (g.findObject? id).any (fun card => (g.colors card).contains col))
-      if !payable || !g.canPayZemoBoast prop.caster allCands col then
-        return (← g.reverseProposedSpell? (resumeContinuation := true))
-      let prompt := s!"{(g.player prop.caster).name} chooses black cards to exile from their graveyard"
-      if let .chooseReplacement .. := g.pending then
-        return (g.change (.consecutivePasses 0)).chainPendingReplacement
-          (.restorePending (.fraChoice prop.caster (.zemoBoastExile prop.spellId sid))
-            (promptLog := some prompt))
-      let g := g.changes #[
-        .pending (.fraChoice prop.caster (.zemoBoastExile prop.spellId sid)),
-        .consecutivePasses 0]
-      return g.logMsg prompt
-    | some sid, some (FraCost.crew n) =>
-      let crewOk :=
-        (g.firstPayableCrewSelection? prop.caster sid n allPicks
-          (tapSource := prop.tapSource)
-          (sacrificeOrExileSource := sacSrc)
-          (discardOrExileHandSource := discSrc)).isSome
-      if !payable || !crewOk then
-        return (← g.reverseProposedSpell? (resumeContinuation := true))
-      let fallbackName :=
-        if prop.originalSnapshot.name.isEmpty then g.name prop.original
-        else prop.originalSnapshot.name
-      let vName := ((g.findObject? sid).map g.name).getD fallbackName
-      let prompt :=
-        s!"{(g.player prop.caster).name} chooses untapped creatures with total power {n} or more to crew {vName}"
-      if let .chooseReplacement .. := g.pending then
-        return (g.change (.consecutivePasses 0)).chainPendingReplacement
-          (.restorePending (.fraChoice prop.caster (.crew prop.spellId sid n))
-            (promptLog := some prompt))
-      let g := g.changes #[
-        .pending (.fraChoice prop.caster (.crew prop.spellId sid n)),
-        .consecutivePasses 0]
-      return g.logMsg prompt
-    | _, _ => pure ()
+    match prop.sourceId with
+    | some sid =>
+      if prop.activation.any (·.cost.exileManaSymbols?.isSome) then
+        let col :=
+          match g.findObject? sid <|> some prop.original with
+          | some src => TextChange.applyColor (g.evalLayer3 src) .black
+          | none => .black
+        let allCands := (g.player prop.caster).graveyard.filter (fun id =>
+          (g.findObject? id).any (fun card => (g.colors card).contains col))
+        if !payable || !g.canPayZemoBoast prop.caster allCands col then
+          return (← g.reverseProposedSpell? (resumeContinuation := true))
+        let prompt := s!"{(g.player prop.caster).name} chooses black cards to exile from their graveyard"
+        if let .chooseReplacement .. := g.pending then
+          return (g.change (.consecutivePasses 0)).chainPendingReplacement
+            (.restorePending (.fraChoice prop.caster (.zemoBoastExile prop.spellId sid))
+              (promptLog := some prompt))
+        let g := g.changes #[
+          .pending (.fraChoice prop.caster (.zemoBoastExile prop.spellId sid)),
+          .consecutivePasses 0]
+        return g.logMsg prompt
+      else if let some n := prop.activation.bind (·.cost.crewPower?) then
+        let crewOk :=
+          (g.firstPayableCrewSelection? prop.caster sid n allPicks
+            (tapSource := prop.tapSource)
+            (sacrificeOrExileSource := sacSrc)
+            (discardOrExileHandSource := discSrc)).isSome
+        if !payable || !crewOk then
+          return (← g.reverseProposedSpell? (resumeContinuation := true))
+        let fallbackName :=
+          if prop.originalSnapshot.name.isEmpty then g.name prop.original
+          else prop.originalSnapshot.name
+        let vName := ((g.findObject? sid).map g.name).getD fallbackName
+        let prompt :=
+          s!"{(g.player prop.caster).name} chooses untapped creatures with total power {n} or more to crew {vName}"
+        if let .chooseReplacement .. := g.pending then
+          return (g.change (.consecutivePasses 0)).chainPendingReplacement
+            (.restorePending (.fraChoice prop.caster (.crew prop.spellId sid n))
+              (promptLog := some prompt))
+        let g := g.changes #[
+          .pending (.fraChoice prop.caster (.crew prop.spellId sid n)),
+          .consecutivePasses 0]
+        return g.logMsg prompt
+    | none => pure ()
   if !payable then return (← g.reverseProposedSpell? (resumeContinuation := true))
   let g ← g.continueCostPicks prop picks (prop.cost.includesManaPayment || prop.fraCostPaid)
   if g.proposedSpell.isNone && !(g.findObject? prop.spellId).any (fun o => o.zone == .stack) then
@@ -5764,7 +5759,7 @@ partial def afterAdditionalCostAnnounced (g : Game) : Game :=
     if needsKicker then
       (g.change (.pending (.chooseKicker p))).logMsg
         s!"{(g.player p).name} may kick the spell (CR 702.33 / 601.2b)"
-    else if face.giftTreasure && !prop.giftAnnounced then
+    else if face.hasGift && !prop.giftAnnounced then
       (g.change (.pending (.chooseGift p))).logMsg
         s!"{(g.player p).name} may promise a gift (CR 702.174)"
     else if face.teamwork.isSome && !prop.teamworkAnnounced then
@@ -5817,7 +5812,7 @@ partial def afterModesChosen (g : Game) (p : PlayerId) : Game :=
     else if needsKicker then
       (g.change (.pending (.chooseKicker p))).logMsg
         s!"{(g.player p).name} may kick the spell (CR 702.33 / 601.2b)"
-    else if face.giftTreasure && !prop.giftAnnounced then
+    else if face.hasGift && !prop.giftAnnounced then
       (g.change (.pending (.chooseGift p))).logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
     else if face.teamwork.isSome && !prop.teamworkAnnounced then
       (g.change (.pending (.chooseTeamwork p))).logMsg
@@ -5915,7 +5910,7 @@ def afterOptionalAdditionalCost (g : Game) (p : PlayerId) : Game :=
   match g.proposedSpell, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
   | some prop, some spell =>
     let face := g.baseCard spell
-    if face.giftTreasure && !prop.giftAnnounced then
+    if face.hasGift && !prop.giftAnnounced then
       let g := g.change (.pending (.chooseGift p))
       g.logMsg s!"{(g.player p).name} may promise a gift (CR 702.174)"
     else if face.teamwork.isSome && !prop.teamworkAnnounced then
@@ -6168,7 +6163,7 @@ def convoke (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except String Gam
     if p != q then
       throw s!"Only {(g.player q).name} may pay"
     let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-    let hasConvoke := prop.kind == .spell && (g.currentKeywords spell).convoke
+    let hasConvoke := prop.kind == .spell && KeywordAbility.hasConvoke (g.currentKeywords spell)
     let hasImprovise := prop.kind == .spell && g.spellHasImprovise (g.baseCard spell) p
     if !hasConvoke && !hasImprovise then
       throw s!"{g.name spell} doesn't have convoke or improvise (CR 702.51 / 702.126)"
@@ -6405,19 +6400,19 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
         return g.finishFraChoice
     else
       return g.resumeAfterBecomeCast
-  | .payWard q spellId cost =>
+  | .payWard q spellId cost _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may discard for ward"
-    let legal :=
-      match cost with
-      | .discardEnchantmentInstantOrSorcery =>
-        match g.findObject? id with
-        | some o =>
-          g.isEnchantment o || g.isInstantOrSorcery o
-        | none => false
-      | .discardOrPay _ => true
-      | .discardCard => true
+    let env : EvalEnv := { controller := p }
+    let itemAllowsDiscard : CostItem → Bool
+      | .discard _ .hand => true
+      | .discard _ (.matching pred) =>
+        (g.findObject? id).any fun o => EvalExpr.evalObjectPred g env (.live o) pred
       | _ => false
+    let legal :=
+      cost.items.any fun
+        | .or choices => choices.any fun ch => ch.items.any itemAllowsDiscard
+        | item => itemAllowsDiscard item
     if !legal then
       throw "That card cannot pay this ward"
     let outerCont? := g.pendingReplacement
@@ -6472,17 +6467,26 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
       | some outer => g.chainPendingReplacement outer
       | none => g
     return g.finishAndGrantPriority
-  | .payWard q _ (.genericMana n) | .payWard q _ (.discardOrPay n) =>
+  | .payWard q _ cost _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay ward"
-    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) (allowCantNonartifact := true) then
-      throw s!"{(g.player p).name} cannot pay \{{n}}"
+    let manaToPay? : Option ManaCost :=
+      if cost.isManaOnly && cost.mana.includesManaPayment then some cost.mana
+      else
+        cost.items.findSome? fun
+          | .or choices =>
+            choices.findSome? fun ch =>
+              if ch.isManaOnly && ch.mana.includesManaPayment then some ch.mana else none
+          | _ => none
+    let some mc := manaToPay? | throw "Not time to pay generic mana"
+    if !(g.player p).manaPool.canPay mc (allowCantNonartifact := true) then
+      throw s!"{(g.player p).name} cannot pay {mc}"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let forObj :=
       g.resolvingAbility <|> g.resolvingSpell <|> (g.currentResolvingContext?.bind Prod.fst)
-    let g ← g.payCost p (ManaCost.ofGeneric n) (allowCantNonartifact := true) (forObject := forObj)
-    let g := g.logMsg s!"{(g.player p).name} pays \{{n}} (ward)"
+    let g ← g.payCost p mc (allowCantNonartifact := true) (forObject := forObj)
+    let g := g.logMsg s!"{(g.player p).name} pays {mc} (ward)"
     return g.finishWardAndDrain outerCont?
   | _ => throw "Not time to pay generic mana"
 
@@ -6786,9 +6790,7 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
       (useImplicitPermissions := false)
     let lifeInstead :=
       if origPerm.any (·.payLifeEqualManaValue) then g.objectManaValue spellObj else 0
-    let needsSacrifice :=
-      stackFace.additionalCostSacrificeCreature ||
-        (stackFace.additionalCostSacrificeArtifactOrCreature && stackFace.additionalCostOrPayGeneric.isNone)
+    let needsSacrifice := stackFace.mandatorySacrificeFilter?.isSome
     let prop : ProposedSpell := {
       caster := p
       cost
@@ -6957,9 +6959,9 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       | some outer => g.chainPendingReplacement outer
       | none => g
     return g.finishAndGrantPriority
-  | .payWard _ _ (.sacrificePermanents _ (_ + 1) _) =>
-    throw s!"{(g.player p).name} already began sacrificing permanents for ward and must finish"
-  | .payWard q spellId _ =>
+  | .payWard q spellId _ chosen =>
+    if !chosen.isEmpty then
+      throw s!"{(g.player p).name} already began sacrificing permanents for ward and must finish"
     if p != q then
       throw s!"Only {(g.player q).name} may decline to pay ward"
     let outerCont? := g.pendingReplacement

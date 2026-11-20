@@ -40,7 +40,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchAttacksAloneDrain) ==
   .sequence [.loseLife (.fixed 1) (.target .opponent), .gainLife (.fixed 1)]
 #guard TriggeredAbility.resolution (onWatch Effect.watchAttacksAloneFirstStrikeMenace) ==
-  .grant (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone
+  .grant (.keywords (#[Keyword.firstStrike, Keyword.menace])) .attackingAlone
 #guard TriggeredAbility.resolution (onWatch Effect.watchFirstTapUntap) ==
   .untap .firstThisTurn
 #guard TriggeredAbility.resolution (onWatch Effect.watchSheHulkRedirectOnce) ==
@@ -60,7 +60,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainAttachEquipment) ==
   .attach .announcedEquipment .announcedCreature
 #guard TriggeredAbility.resolution (onWatch Effect.watchVillainPlusOneLifelink) ==
-  .sequence [.pump (.fixed 1) (.fixed 0) .source, .grant (.keywords Keyword.lifelink) .source]
+  .sequence [.pump (.fixed 1) (.fixed 0) .source, .grant (.keywords #[Keyword.lifelink]) .source]
 #guard TriggeredAbility.resolution (onWatch Effect.watchHulklingCompare) ==
   .«if» (.or [.causeGreaterPower, .causeGreaterToughness])
     (.putCounters (.ofKind .plusOnePlusOne) .source)
@@ -71,7 +71,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
     [.createTokens .soldier11white (.fixed 1) false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl]
     .fromLastKnown
 #guard TriggeredAbility.resolution (onWatch Effect.watchUltronCopy) ==
-  .may (.pay (.mana #[.generic 2])) (.becomeCopy .cause) .ifYouDo
+  .may (.pay (CostSpec.ofGeneric 2)) (.becomeCopy .cause) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchEnchantedAttachEquipment) ==
   .attach (.target .eachEquipment) .enchantedCreature
 #guard TriggeredAbility.resolution (onWatch Effect.watchEquippedAttacksAloneUntapScry) ==
@@ -85,7 +85,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (onWatch Effect.watchTokensEnterMayDraw) ==
   .may (.draw (.fixed 1)) (.sequence []) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchHawkeyeModes) ==
-  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo
+  .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo
 #guard TriggeredAbility.resolution (onWatch Effect.watchRedHulk) ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,

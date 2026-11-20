@@ -294,14 +294,17 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g actor .decline
   | .payOrLetCounter _ _ _, some actor =>
     mustApply g actor .decline
-  | .payWard _ _ (.sacrificePermanents _ paid chosen), some actor =>
-    if paid > 0 then
-      match ((g.permanentsOf p).filter (fun o => !chosen.contains o.id))[0]? with
-      | some o => mustApply g actor (.sacrifice o.id)
-      | none => mustApply g actor .decline
+  | .payWard _ _ cost chosen, some actor =>
+    if !chosen.isEmpty then
+      match cost.items.toList with
+      | [.sacrifice _ (.filter pred)] =>
+        let env : EvalEnv := { controller := p }
+        match ((g.permanentsOf p).filter (fun o =>
+            !chosen.contains o.id && EvalExpr.evalObjectPred g env (.live o) pred))[0]? with
+        | some o => mustApply g actor (.sacrifice o.id)
+        | none => mustApply g actor .decline
+      | _ => mustApply g actor .decline
     else mustApply g actor .decline
-  | .payWard _ _ _, some actor =>
-    mustApply g actor .decline
   | .recruitDiscard _, some actor =>
     match (g.player p).hand.back? with
     | none => panic! "no card to discard for recruit"

@@ -148,17 +148,17 @@ reverts state in isolation. -/
   let g0 := addPermanent (quiet afterDraw) bear me me
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
   let pump := ContinuousEffectSpec.pump b.id 3 3
-  let kw := ContinuousEffectSpec.keywordsUntilEot b.id Keyword.trample
+  let kw := ContinuousEffectSpec.keywordsUntilEot b.id #[Keyword.trample]
   let g1 := (g0.applyChange (.rules (.continuousEffect (.created ⟨100⟩ pump)))).applyChange
     (.rules (.continuousEffect (.created ⟨101⟩ kw)))
   let applied :=
     g1.pumpOf (g1.object! b.id) == (3, 3) &&
-      g1.currentKeywords (g1.object! b.id) == Keyword.trample
+      g1.currentKeywords (g1.object! b.id) == #[Keyword.trample]
   let g2 := (g1.applyChange (.rules (.continuousEffect (.expired ⟨100⟩)))).applyChange
     (.rules (.continuousEffect (.expired ⟨101⟩)))
   let reverted :=
     g2.pumpOf (g2.object! b.id) == (0, 0) &&
-      g2.currentKeywords (g2.object! b.id) == Keywords.none
+      g2.currentKeywords (g2.object! b.id) == (#[] : Array KeywordAbility)
   applied && reverted
 
 /- Rule 611.2a / 514.2: resolution-generated until-end-of-turn continuous
@@ -171,16 +171,16 @@ effects record `ContinuousEffectEvent.created` when created and
   let created := GameEvent.createdEffects g1.events
   let hasCreated :=
     created.contains (.pump b.id 2 2) &&
-      created.contains (.keywordsUntilEot b.id Keyword.trample) &&
+      created.contains (.keywordsUntilEot b.id #[Keyword.trample]) &&
       created.contains (.cantBlockUntilEot b.id)
   let g2 := g1.clearEOT
   let expired := GameEvent.expiredEffects g2.events
   let hasExpired :=
     expired.contains (.pump b.id 2 2) &&
-      expired.contains (.keywordsUntilEot b.id Keyword.trample) &&
+      expired.contains (.keywordsUntilEot b.id #[Keyword.trample]) &&
       expired.contains (.cantBlockUntilEot b.id) &&
       g2.pumpOf (g2.object! b.id) == (0, 0) &&
-      g2.currentKeywords (g2.object! b.id) == Keywords.none &&
+      g2.currentKeywords (g2.object! b.id) == (#[] : Array KeywordAbility) &&
       !g2.cantBlockUntilEot (g2.object! b.id)
   hasCreated && hasExpired
 
@@ -401,11 +401,11 @@ keywords; another grant on the same creature keeps applying. -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
-  let g1 := (g0.createEffect (.keywordsUntilEot b.id Keyword.flying)).createEffect
-    (.keywordsUntilEot b.id Keyword.haste)
-  let g2 := g1.expireEffect (.keywordsUntilEot b.id Keyword.flying)
-  g1.currentKeywords (g1.object! b.id) == Keywords.merge Keyword.flying Keyword.haste &&
-    g2.currentKeywords (g2.object! b.id) == Keyword.haste
+  let g1 := (g0.createEffect (.keywordsUntilEot b.id #[Keyword.flying])).createEffect
+    (.keywordsUntilEot b.id #[Keyword.haste])
+  let g2 := g1.expireEffect (.keywordsUntilEot b.id #[Keyword.flying])
+  g1.currentKeywords (g1.object! b.id) == #[Keyword.flying, Keyword.haste] &&
+    g2.currentKeywords (g2.object! b.id) == #[Keyword.haste]
 
 /- A flag set by two continuous effects stays set until both have ended. A
 second "loses all abilities" keeps the printed static abilities off. -/
@@ -437,7 +437,7 @@ turn", and an amassed subtype. -/
   let created := GameEvent.createdEffects g1.events
   created.contains (.loseIndestructibleUntilEot b.id) &&
     created.contains (.exileIfDiesUntilEot b.id) &&
-    created.contains (.keywordsUntilEot b.id Keyword.cantBeBlocked)
+    created.contains (.cantBeBlockedUntilEot b.id)
 
 /- Rule 613.7: Mind Control (until the source leaves) then Act of Treason
 (until end of turn). Cleanup ends only Treason; Mind Control keeps control
@@ -618,7 +618,7 @@ step (CR 702.176, ruling 970). -/
   let impDef : CardDef :=
     { bear with
       name := "Impending Bear"
-      impending := some (1, ManaCost.empty) }
+      keywords := #[.impending 1 CostSpec.empty] }
   let g0 := addPermanent afterDraw impDef me me
   let copyId := (g0.battlefield.filter (·.name == "Impending Bear"))[0]!.id
   let g0 := insertObject g0 impDef me (.hand me)
@@ -716,7 +716,7 @@ marked damage does not end the CR 704.5h window). -/
 #guard
   let g0 := quiet (addPermanent afterDraw bear me me)
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
-  let dtSource : EventObject := { keywords := { deathtouch := true } }
+  let dtSource : EventObject := { keywords := #[Keyword.deathtouch] }
   let gDealtOnly := g0.record (GameEvent.damaged g0.turnNumber dtSource (g0.snapshot b) 1 false (cause := testCause))
   let g1 := gDealtOnly.applyChange (.rules (.damage (.marked b.id 1)))
   let g2 := g1.applyChange (.rules (.damage (.markedCleared #[b.id])))
@@ -767,7 +767,7 @@ in isolation (CR 701.3 / 110.2 / 613.1b / 701.15b). -/
      (gPerm.object! b.id).status.goaded &&
        (gPerm.object! b.id).status.goadedBy == #[me] &&
        (gPerm.object! b.id).status.goadedUntilNextTurnOf.isEmpty) &&
-    (let dtCreature : CardDef := { bear with name := "Deathtouch Bear", keywords := Keyword.deathtouch }
+    (let dtCreature : CardDef := { bear with name := "Deathtouch Bear", keywords := #[Keyword.deathtouch] }
      let gDt := quiet (addPermanent afterDraw dtCreature me me)
      let c := (gDt.battlefield.filter (·.name == "Deathtouch Bear"))[0]!
      let gNoDt := gDt.markDamageOn c 1 "1 damage"
@@ -861,7 +861,7 @@ both `PermanentEvent.counters` and `ZoneEvent.moved.entersWith` (CR 122.6 /
   let testImpending : CardDef :=
     { bear with
       name := "Impending Bear"
-      impending := some (3, ManaCost.ofGeneric 1) }
+      keywords := #[.impending 3 (CostSpec.ofGeneric 1)] }
   let g0 := insertObject (quiet afterDraw) tapPlusCreature me (.hand me)
   let g0 := insertObject g0 testPlaneswalker me (.hand me)
   let g0 := insertObject g0 testSaga me (.hand me)
@@ -1191,7 +1191,7 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
       subtypes := #["Vehicle"]
       power := some 4
       toughness := some 4
-      crew := some 2
+      keywords := #[.crew 2]
       activatedAbilities := #[ActivatedAbility.crewAbility 2] }
   let gCrew0 := quiet (addPermanent g0 vehicleDef me me)
   let v := (gCrew0.battlefield.filter (·.name == "Test Vehicle"))[0]!
@@ -1275,7 +1275,7 @@ printed static abilities (CR 702.26b / 702.26f). -/
     { name := "Test Planeswalker"
       types := #[.planeswalker]
       activatedAbilities :=
-        #[{ cost := { mana := ManaCost.ofGeneric 2, loyalty := some (.plus 1) }
+        #[{ cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .loyalty (.plus 1)]
             effect := {} }] }
   let myWatcher : CardDef :=
     { name := "Loyalty Watcher"
@@ -1315,7 +1315,7 @@ printed static abilities (CR 702.26b / 702.26f). -/
     { name := "Test Bauble"
       types := #[.artifact]
       activatedAbilities :=
-        #[{ cost := { mana := ManaCost.ofGeneric 2, sacrificeSource := true }
+        #[{ cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .sacrifice (.exact 1) .self]
             effect := {} }] }
   let gWb0 :=
     let g := addPermanent afterDraw baubleDef me me
@@ -2183,7 +2183,7 @@ across all constituent moves, transforms, and continuous-effect creations
       | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let lifelinkHero : CardDef :=
-    { hero with name := "Lifelink Hero", keywords := Keyword.lifelink }
+    { hero with name := "Lifelink Hero", keywords := #[Keyword.lifelink] }
   let gDmgSetup0 := addPermanent (addPermanent g0 lifelinkHero me me) bear opp opp
   let lh := (gDmgSetup0.battlefield.filter (·.name == "Lifelink Hero"))[0]!
   let oppBear := (gDmgSetup0.battlefield.filter (fun o => o.name == bear.name && gDmgSetup0.controlledBy o opp))[0]!
@@ -2463,7 +2463,7 @@ state-based actions under one `BatchId` per pass (CR 704.3). -/
 #guard
   let fsKnight : CardDef :=
     { (creature "First Striker" ManaCost.empty #["Knight"] 2 2) with
-      keywords := Keyword.firstStrike }
+      keywords := #[Keyword.firstStrike] }
   let gCombat0 :=
     addPermanent (addPermanent afterDraw fsKnight me me) bear me me
   let fk := (gCombat0.battlefield.filter (·.name == "First Striker"))[0]!

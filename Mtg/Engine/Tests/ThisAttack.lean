@@ -35,9 +35,9 @@ def hand (g : Game) : Nat :=
 /- The shared attack effects resolve as constructors that do not carry
 `ThisAttackLeftover`. The printed sentence stays the Oracle line. -/
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackMayPayPlusOne) ==
-  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo
+  .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackPayReturnAttacking) ==
-  .may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo
+  .may (.pay (CostSpec.ofMana { symbols := #[.generic 3, .colored .black] })) (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackIfArtifactEnteredDraw) ==
   .«if» .artifactEnteredThisTurn (.draw (.fixed 1))
 #guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackBlinkNontoken) ==
@@ -50,7 +50,7 @@ def hand (g : Game) : Nat :=
   .«if» (.atLeast .equalSourcePower (.fixed 4)) (.draw (.fixed 1))
 #guard TriggeredAbility.resolution
     (TriggeredAbility.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible) ==
-  .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]
+  .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords #[Keyword.indestructible]) .source]
 
 #guard toString (TriggeredAbility.onThisAttack Effect.thisAttackMayPayPlusOne) ==
   TriggeredAbility.thisAttackSentence .mayPayPlusOne
@@ -207,6 +207,6 @@ def luke : Game :=
     (some (named g "Luke Cage, Power Man").id)
 
 #guard luke.pumpOf (named luke "Luke Cage, Power Man") == (2, 0) &&
-  (luke.currentKeywords (named luke "Luke Cage, Power Man")).indestructible
+  KeywordAbility.hasIndestructible (luke.currentKeywords (named luke "Luke Cage, Power Man"))
 
 end Mtg.Engine.ThisAttackTests

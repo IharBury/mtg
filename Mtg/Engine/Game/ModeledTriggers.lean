@@ -231,9 +231,9 @@ def applyVisionMode (g : Game) (controller : PlayerId) (sourceId : ObjectId) (mo
     | some src =>
       let g := g.record (GameEvent.triggerModeChosen g.turnNumber src.id mode)
       if mode == 0 then
-        g.createEffect (.keywordsUntilEot src.id Keyword.doubleStrike)
+        g.createEffect (.keywordsUntilEot src.id #[Keyword.doubleStrike])
       else if mode == 1 then
-        g.createEffect (.keywordsUntilEot src.id Keyword.indestructible)
+        g.createEffect (.keywordsUntilEot src.id #[Keyword.indestructible])
       else
         g.draw controller 1
 
@@ -659,7 +659,7 @@ def grantHandSizePower (g : Game) (sourceId : Option ObjectId) : Game :=
     "The source is no longer in play"
 
 /-- Grant `k` until end of turn to each creature the causing spell targets. -/
-def grantKeywordsToSpellCreatureTargets (g : Game) (k : Keywords) : Game :=
+def grantKeywordsToSpellCreatureTargets (g : Game) (k : Array KeywordAbility) : Game :=
   let ids :=
     match g.castTriggerSpell? with
     | none => #[]
@@ -798,7 +798,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.resource .secondDrawBecome66) =>
     g.withSourceOnBattlefield sourceId (fun g o =>
       g.createEffects
-        #[.setBasePTUntilEot o.id (6, 6), .keywordsUntilEot o.id Keyword.trample]
+        #[.setBasePTUntilEot o.id (6, 6), .keywordsUntilEot o.id #[Keyword.trample]]
         |>.logMsg s!"{g.name o}'s base power and toughness become 6/6")
       "The source is no longer in play"
   | (.casting .visionModes) =>
@@ -838,7 +838,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     g.drawForEnchantedController sourceId
   | (.death .hellcatReturn) =>
     g.returnSourceUnderOwner controller sourceId
-      [.loseAllAbilities, .keywords Keyword.haste, .counter .plusOnePlusOne (asEnters := true)]
+      [.loseAllAbilities, .keywords #[Keyword.haste], .counter .plusOnePlusOne (asEnters := true)]
   | (.death .deathtouchOppSac) =>
     g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
   | (.casting .exileFlicker) =>
@@ -874,7 +874,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     else
       g.beginScry controller 1
   | (.casting .targetsGainFlying) =>
-    g.grantKeywordsToSpellCreatureTargets Keyword.flying
+    g.grantKeywordsToSpellCreatureTargets #[Keyword.flying]
   | (.casting .copyIfArtifactOrLand) =>
     let g := g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
       "The source is no longer in play"

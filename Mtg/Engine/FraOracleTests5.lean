@@ -102,7 +102,7 @@ but other cards are still limited to four. -/
 /-- Ruling 852: casting Proft from a graveyard needs seven other cards there.
 A flashback cost stands in for the permission to cast it from the graveyard. -/
 def proftFromGraveyard (others : Nat) : Game :=
-  let proft := { proftSinisterMastermind with flashback := some (ManaCost.ofColor .black) }
+  let proft := { proftSinisterMastermind with keywords := #[.flashback (CostSpec.ofMana (ManaCost.ofColor .black))] }
   let g := (List.range others).foldl (fun g _ => addToGraveyard g grizzlyBears ⟨0⟩) afterDraw
   withBlackMana (addToGraveyard g proft ⟨0⟩) ⟨0⟩ 1
 
@@ -196,7 +196,7 @@ def vraskaEnters (lands : Nat) : Game :=
 /- Indestructible stays, and its controller still creates a Treasure. -/
 #guard
   let g := vraskaEnters 6
-  let g := g.grantUntilEotLogged (namedPermanent g "Grizzly Bears") Keyword.indestructible
+  let g := g.grantUntilEotLogged (namedPermanent g "Grizzly Bears") #[Keyword.indestructible]
   let g := resolveStack g 20
   g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
     g.battlefield.any (fun o => o.name == "Treasure" && g.controlledBy o ⟨1⟩)

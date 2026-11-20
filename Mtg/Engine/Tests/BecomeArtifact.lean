@@ -60,7 +60,7 @@ def artifacted : TriggeredAbility.TriggerResolution :=
   .becomeArtifact
 
 def both : TriggeredAbility.TriggerResolution :=
-  .sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]
+  .sequence [.becomeArtifact, .grant (.keywords #[Keyword.indestructible]) .target]
 
 def flagged (g : Game) (name : String) : Bool :=
   g.additionalArtifactUntilEot (obj g name)
@@ -230,12 +230,12 @@ become artifacts. -/
 #guard TriggeredAbility.TriggerResolution.ofPermanent .becomeArtifactIndestructible ==
   both
 #guard TriggeredAbility.TriggerResolution.ofSource .becomeArtifactIndestructible ==
-  .sequence [.becomeArtifact .source, .grant (.keywords Keyword.indestructible) .source]
+  .sequence [.becomeArtifact .source, .grant (.keywords #[Keyword.indestructible]) .source]
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .becomeArtifactIndestructible ==
-  .sequence [.becomeArtifact .enchanted, .grant (.keywords Keyword.indestructible) .enchanted]
+  .sequence [.becomeArtifact .enchanted, .grant (.keywords #[Keyword.indestructible]) .enchanted]
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .becomeArtifactIndestructible ==
   .sequence [.becomeArtifact (.target .whileSource),
-    .grant (.keywords Keyword.indestructible) (.target .whileSource)]
+    .grant (.keywords #[Keyword.indestructible]) (.target .whileSource)]
 
 #guard TriggeredAbility.resolutionPhrase
     { targeting := .of .creature, resolution := artifacted } ==

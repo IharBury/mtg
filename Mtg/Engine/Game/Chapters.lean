@@ -27,7 +27,7 @@ def elvesGetVigilance (g : Game) (controller : PlayerId) (power : Int) : Game :=
   g.forEachControlledCreature controller fun g o =>
     if g.hasSubtype o .elf then
       let g := g.pumpPermanent o power 0
-      g.createEffect (.keywordsUntilEot o.id Keyword.vigilance)
+      g.createEffect (.keywordsUntilEot o.id #[Keyword.vigilance])
         |>.logMsg s!"{g.name o} gets {signedStat power}/+0 and gains vigilance until end of turn"
     else g
 

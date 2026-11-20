@@ -84,8 +84,7 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
     name := "P46i1 CopyBolt"
     manaCost := ManaCost.ofGeneric 2
     types := #[.sorcery]
-    additionalCostSacrificeArtifactOrCreature := true
-    additionalCostOrPayGeneric := some 2
+    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)]
     spellEffect := some { resolution := .gainLife 2, phrase := "Gain 2 life." }
   }
   let bigCopyDef : CardDef := {
@@ -856,7 +855,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     power := some 4
     toughness := some 4
     activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGenericAndColor 1 .green, fra := .crew 2 }, effect := Effect.gainLife 2 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGenericAndColor 1 .green), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 2 }
     ]
   }
   let gMultiCrew0 :=
@@ -887,7 +886,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     name := "P46i4 ArtFoundry"
     types := #[.enchantment]
     activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGeneric 2, fra := .tapTwoUntappedArtifacts }, effect := Effect.gainLife 3 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapObjects (.exact 2) (.all #[.hasType .artifact, .tapped false, .controlledBy .you])], effect := Effect.gainLife 3 }
     ]
   }
   let gTwoArt0 :=
@@ -920,7 +919,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     power := some 4
     toughness := some 4
     activatedAbilities := #[
-      { cost := { mana := { symbols := #[.x] }, fra := .crew 2 }, effect := Effect.gainLife 1 }
+      { cost := CostSpec.ofItems #[.mana { symbols := #[.x] }, .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 1 }
     ]
   }
   let gXCrew0 :=
@@ -961,9 +960,9 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     subtypes := #["Demon"]
     power := some 3
     toughness := some 3
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
     activatedAbilities := #[
-      { cost := { sacrificeAnotherCreatureOrArtifact := true }, effect := Effect.gainLife 2 }
+      { cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))], effect := Effect.gainLife 2 }
     ]
   }
   let gDualSacBf0 := addPermanent (addPermanent g3 dualSacPermanentDef p0 p0) spareArtDef p0 p0
@@ -988,7 +987,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     types := #[.artifact]
     subtypes := #["Treasure"]
     activatedAbilities := #[{
-      cost := { tap := true, sacrificeSource := true }
+      cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
       effect := {
         targeting := .of .player
         resolution := .addMana #[.colored .red] (.fixed 2)
@@ -1028,7 +1027,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     name := "P46i4 ChargeDynamo"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { tap := true }
+      cost := CostSpec.ofItems #[.tapSelf]
       effect := { resolution := .addMana #[.colored .red] .perChargeCounter, phrase := "Add {R} for each charge counter." }
     }]
   }
@@ -1056,7 +1055,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     name := "P46i4 GoblinShrine"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { tap := true }
+      cost := CostSpec.ofItems #[.tapSelf]
       effect := {
         resolution := .addAnyColorSpendOnlySubtype .goblin
         phrase := "Add one mana of any color. Spend this mana only to cast a Goblin spell or to activate an ability of a Goblin source."
@@ -1071,14 +1070,14 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     power := some 1
     toughness := some 1
     activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGeneric 1 }, effect := Effect.gainLife 2 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1)], effect := Effect.gainLife 2 }
     ]
   }
   let nonGobArtDef : CardDef := {
     name := "P46i4 PlainRelic"
     types := #[.artifact]
     activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGeneric 1 }, effect := Effect.gainLife 1 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1)], effect := Effect.gainLife 1 }
     ]
   }
   let gGob0 :=

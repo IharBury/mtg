@@ -238,6 +238,16 @@ def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
       choices.any (fun (ch : TapManaChoice) => go (ch.applyToPool curPool) (idx + 1))
   go pool 0
 
+/-- Object predicate for a spell's additional-cost sacrifice (mandatory or chosen
+from an `"or pay {N}"` additional cost; CR 118.8 / 601.2b,h). -/
+def spellSacrificeCostPred? (c : CardDef) : Option ObjectPred :=
+  c.mandatorySacrificeFilter?.orElse fun _ =>
+    c.additionalChoiceCost?.bind fun branches =>
+      branches.findSome? fun cs =>
+        cs.items.findSome? fun
+          | .sacrifice _ (.filter pred) => some pred
+          | _ => none
+
 /-- Whether `p` currently controls a usable non-plain CR 605 mana ability
 (`!isPlainTapManaAbilityDef`, such as Treasures, life/mana filter lands, or
 counter-removal mana abilities). When `prop? = some prop`, also requires that
@@ -282,7 +292,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
           if prop.kind == .activatedAbility &&
               (prop.discardSource ||
                 prop.activation.any (fun a =>
-                  a.cost.discardSource || a.cost.fra == .exileSourceFromHand || a.isFromGraveyard)) then
+                  a.cost.discardSource || a.cost.exileSourceFromHand || a.isFromGraveyard)) then
             #[sid]
           else #[]
         | none => #[]
@@ -306,18 +316,22 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         let src := g.findObject? excludeId
         let isSpellSrc (s : GameObject) : Bool :=
           s.zone == .stack && (prop.spellId != excludeId || prop.kind == .spell)
-        let creatureOrPw :=
-          src.any (fun s => isSpellSrc s && (g.baseCard s).additionalCostSacrificeCreatureOrPlaneswalker)
-        let creatureOnly :=
-          src.any (fun s => isSpellSrc s && (g.baseCard s).additionalCostSacrificeCreature)
+        let pred? := src.bind fun s =>
+          if isSpellSrc s then spellSacrificeCostPred? (g.baseCard s) else none
         let sacOk :=
           !prop.needsSacrificeOther ||
-            perms.any (fun perm =>
-              perm.id != excludeId && !removedIds.contains perm.id &&
-                !propBfSacReservedIds.contains perm.id &&
-                if creatureOrPw then g.isCreature perm || g.isPlaneswalker perm
-                else if creatureOnly then g.isCreature perm
-                else g.isCreature perm || g.isArtifact perm)
+            match pred? with
+            | some pred =>
+              let env : EvalEnv := { controller := p, sourceId := some excludeId }
+              perms.any fun perm =>
+                perm.id != excludeId && !removedIds.contains perm.id &&
+                  !propBfSacReservedIds.contains perm.id &&
+                  EvalExpr.evalObjectPred g env (.live perm) pred
+            | none =>
+              perms.any fun perm =>
+                perm.id != excludeId && !removedIds.contains perm.id &&
+                  !propBfSacReservedIds.contains perm.id &&
+                  (g.isCreature perm || g.isArtifact perm)
         let discardOk :=
           !prop.needsDiscardCard ||
             (g.player p).hand.any (fun id =>
@@ -327,9 +341,9 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         match prop.sourceId, prop.activation with
         | some sid, some ab =>
           let sacSrc :=
-            prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.fra == .exileSource
+            prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield
           let discSrc :=
-            prop.discardSource || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+            prop.discardSource || ab.cost.discardSource || ab.cost.exileSourceFromHand
           let gySrc := ab.isFromGraveyard
           let srcZoneOk :=
             (!discSrc || !removedIds.contains sid) &&
@@ -338,7 +352,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
             costPicksWithSacrificeOther (costPicksOf ab)
               (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
           let zemoOk :=
-            prop.fraCostPaid || ab.cost.fra != .zemoBoast ||
+            prop.fraCostPaid || ab.cost.exileManaSymbols?.isNone ||
               (let col :=
                  match (g.findObject? sid).map g.evalLayer3 with
                  | some tcs => TextChange.applyColor tcs .black
@@ -350,8 +364,8 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                g.canPayZemoBoast p remGy col)
           let crewOrPicksOk :=
             if !prop.fraCostPaid then
-              match ab.cost.fra with
-              | .crew n =>
+              match ab.cost.crewPower? with
+              | some n =>
                 (g.firstPayableCrewSelection? p sid n allPicks
                   (tapSource := prop.tapSource)
                   (sacrificeOrExileSource := sacSrc)
@@ -359,7 +373,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                   (preTappedIds := propTapReservedIds ++ tappedIds)
                   (used := removedIds)
                   (sacReservedIds := propBfSacReservedIds)).isSome
-              | _ =>
+              | none =>
                 allPicks.isEmpty ||
                   g.costPicksPayable p (some sid) allPicks
                     (tapSource := prop.tapSource)
@@ -399,7 +413,9 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
       propPostManaPayableAfter totTapped totRemoved
     | pick :: restPicks, usedD, dTap, dRem, extraEffTapped =>
       let isTapPick : Bool :=
-        pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts
+        match pick with
+        | .tapUntappedCreature | .tapTwoUntappedArtifacts | .custom (.tapObjects ..) => true
+        | _ => false
       let laterSacAttachedEquip :=
         !isTapPick && restPicks.contains .sacrificeEquipmentAttachedToSource
       let cands :=

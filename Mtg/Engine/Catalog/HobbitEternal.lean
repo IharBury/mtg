@@ -1261,14 +1261,14 @@ that also appear in other sets. -/
 #guard elvishMystic.tapAddMana == #[.colored .green]
 #guard (wayfarersBauble.summary.splitOn "Search your library").length > 1
 #guard (roguesPassage.summary.splitOn "can't be blocked").length > 1
-#guard orcishSiegemaster.keywords.trample
+#guard orcishSiegemaster.hasSimpleKeyword .trample
 #guard orcishSiegemaster.staticAbilities == #[.otherCreaturesHaveTrample #[.orc, .goblin]]
 #guard orcishSiegemaster.triggeredAbilities == #[.onAttackPumpByGreatestPower]
 #guard (orcishSiegemaster.summary.splitOn "Other Orcs and Goblins").length > 1
 #guard battleScarredGoblin.triggeredAbilities == #[.onBecomesBlockedDeal1ToBlockers]
 #guard (battleScarredGoblin.summary.splitOn "becomes blocked").length > 1
 #guard giftOfStrands.isAura
-#guard giftOfStrands.keywords.flash
+#guard giftOfStrands.hasSimpleKeyword .flash
 #guard !giftOfStrands.hasSorcerySpeed
 #guard giftOfStrands.hasInstantSpeed
 #guard giftOfStrands.requiresTarget
@@ -1290,7 +1290,7 @@ that also appear in other sets. -/
 #guard elvishArchdruid.manaAbilities == #[.colored .green]
 #guard (elvishArchdruid.summary.splitOn "Other Elf creatures").length > 1
 #guard (elvishArchdruid.summary.splitOn "for each Elf").length > 1
-#guard mirkwoodElk.keywords.trample
+#guard mirkwoodElk.hasSimpleKeyword .trample
 #guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
 #guard mirkwoodElk.power == some 6
 #guard mirkwoodElk.toughness == some 6
@@ -1324,11 +1324,11 @@ that also appear in other sets. -/
 #guard (Effect.dealDamageLoseIndestructibleExile 3).targetCount == 1
 #guard (smiteTheDeathless.summary.splitOn "loses indestructible").length > 1
 #guard (smiteTheDeathless.summary.splitOn "exile it instead").length > 1
-#guard ologHaiCrusher.keywords.trample
+#guard ologHaiCrusher.hasSimpleKeyword .trample
 #guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #[.goblin, .orc]]
 #guard (ologHaiCrusher.summary.splitOn "trample").length > 1
 #guard (ologHaiCrusher.summary.splitOn "can't block unless").length > 1
-#guard oliphaunt.keywords.trample
+#guard oliphaunt.hasSimpleKeyword .trample
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
 #guard oliphaunt.activatedAbilities.size == 1
 #guard oliphaunt.activatedAbilities[0]!.activateFromHand
@@ -1379,7 +1379,7 @@ that also appear in other sets. -/
 #guard bitterDownfall.costReductionIfTargetDamaged == 3
 #guard improvisedClub.isInstant
 #guard improvisedClub.spellEffect == some (Effect.dealDamage 4)
-#guard improvisedClub.additionalCostSacrificeArtifactOrCreature
+#guard improvisedClub.additionalCosts == #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]
 #guard improvisedClub.requiresTarget
 #guard (improvisedClub.summary.splitOn "additional cost").length > 1
 #guard (improvisedClub.summary.splitOn "4 damage").length > 1
@@ -1398,7 +1398,7 @@ that also appear in other sets. -/
 #guard theOneRing.triggeredAbilities ==
   #[.onEnterIfCastProtectionEverything, .onYourUpkeepLoseLifePerBurden]
 #guard palantirOfOrthanc.triggeredAbilities == #[.onYourEndStepPalantir]
-#guard grimaSarumanSFootman.keywords.cantBeBlocked
+#guard grimaSarumanSFootman.staticAbilities.contains .cantBeBlocked
 #guard grimaSarumanSFootman.triggeredAbilities == #[.onCombatDamageImpulseInstantSorcery]
 #guard arwenMortalQueen.entersWithIndestructibleCounter
 #guard arwenMortalQueen.activatedAbilities[0]!.effect == Effect.arwenShare

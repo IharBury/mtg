@@ -266,7 +266,7 @@ private def mustStepAgent49i2 (g : Game) (p : PlayerId) : Game :=
   let offTurnNoFlashPerm := gPaidAnySorc.paidResolutionOrigPerm? p0 (gPaidAnySorc.object! paidExId)
   let gPaidWithFlash :=
     gPaidAnySorc.createEffect
-      (.layered (.objects #[paidExId]) (.abilities { keywords := { flash := true } } .none) .untilEndOfTurn)
+      (.layered (.objects #[paidExId]) (.abilities { keywords := #[Keyword.flash] } .none) .untilEndOfTurn)
       (cause := some testCause)
   let offTurnFlashCreaturePerm := gPaidWithFlash.paidResolutionOrigPerm? p0 (gPaidWithFlash.object! paidExId)
   let offTurnFromAdvRejected :=
@@ -291,14 +291,14 @@ private def mustStepAgent49i2 (g : Game) (p : PlayerId) : Game :=
     bear with
     name := "P49i2 MorphLegalFront"
     manaCost := ManaCost.ofGeneric 2
-    morph := some (ManaCost.ofGeneric 2)
+    keywords := #[.morph (CostSpec.ofGeneric 2)]
   }
   let morphBlockedFrontDef : CardDef := {
     bear with
     name := "P49i2 MorphBlockedFront"
     manaCost := ManaCost.ofGeneric 2
     castOnlyIfGraveyardAtLeast := some 3
-    morph := some (ManaCost.ofGeneric 2)
+    keywords := #[.morph (CostSpec.ofGeneric 2)]
   }
   let gPrepBase0 := addPermanent g3 prepHostDef p0 p0
   let prepSrc := (gPrepBase0.permanentsOf p0).back!
@@ -413,7 +413,7 @@ private def mustStepAgent49i2 (g : Game) (p : PlayerId) : Game :=
     name := "P49i2 ForbidFrontMorph"
     manaCost := ManaCost.ofGeneric 2
     castOnlyIfGraveyardAtLeast := some 3
-    morph := some (ManaCost.ofGeneric 2)
+    keywords := #[.morph (CostSpec.ofGeneric 2)]
   }
   let gAgMorph2 :=
     insertObject (addPermanent (addPermanent (emptyHand g3 p0) forest p0 p0) forest p0 p0)
@@ -738,7 +738,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     name := "P49i4 SpringleafDrum"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { tap := true, tapAnUntappedCreatureYouControl := true }
+      cost := CostSpec.ofItems #[.tapSelf, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
       effect := { resolution := .addMana #[.colored .blue] (.fixed 1), phrase := "Add {U}." }
     }]
   }
@@ -759,10 +759,10 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let animVehicleManaDef : CardDef := {
     creature "P49i4 ManaSkiff" ManaCost.empty #["Vehicle"] 3 3 with
     types := #[.artifact, .creature]
-    keywords := { haste := true }
+    keywords := #[Keyword.haste]
     tapAddTogether := #[.colorless]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 20, fra := .crew 3 }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 20), .tapObjects (.totalPowerAtLeast (.const 3)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])]
       effect := Effect.gainLife 2
     }]
   }
@@ -771,7 +771,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     name := "P49i4 QuickElf"
     power := some 1
     toughness := some 1
-    keywords := { haste := true }
+    keywords := #[Keyword.haste]
   }
   let gSkiff0 :=
     Id.run do
@@ -869,7 +869,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     name := "P49i4 StunWand"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := { symbols := #[.x] } }
+      cost := CostSpec.ofItems #[.mana { symbols := #[.x] }]
       effect := { targeting := .of .creature, resolution := .tapAndStunX, phrase := "Tap target creature and put X stun counters on it." }
     }]
   }
@@ -1029,7 +1029,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
     gMapNonland0.applyEffect p0 mapAb.effect #[.permanent oppBear.id] (sourceId := some mapTok.id)
   let mapOk :=
     mapAb.onlyAsSorcery &&
-    mapAb.cost == { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } &&
+    mapAb.cost == CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self] &&
     mapAb.effect.targetSpec == .creatureYouControl &&
     (gMapNonland.object! myBear.id).status.plusOnePlusOne == 1 &&
     gMapNonland.pending == .fraChoice p0 (.exploreMayGraveyard topNonlandId) &&
@@ -1149,13 +1149,13 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let gMut := gMut0.applyEffect p0 mutagenAb.effect #[.permanent mutBear.id]
   let junkLanderMutagenOk :=
     mustHoldP1Rev "3a.junk" (junkAb.onlyAsSorcery &&
-      junkAb.cost == { tap := true, sacrificeSource := true } &&
+      junkAb.cost == CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self] &&
       junkExiled && junkPlayableThisTurn) &&
     mustHoldP1Rev "3b.lander" (!landerAb.onlyAsSorcery &&
-      landerAb.cost == { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true } &&
+      landerAb.cost == CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapSelf, .sacrifice (.exact 1) .self] &&
       landerSearches) &&
     mustHoldP1Rev "3c.mutagen" (mutagenAb.onlyAsSorcery &&
-      mutagenAb.cost == { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } &&
+      mutagenAb.cost == CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self] &&
       mutagenAb.effect.targetSpec == .creature &&
       (gMut.object! mutBear.id).status.plusOnePlusOne == 1)
 
@@ -1206,7 +1206,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
       .addTypes #[.artifact],
       .addSubtypes #[.zombie],
       .addColors (ColorSet.singleton .black),
-      .addKeywords Keyword.haste,
+      .addKeywords #[Keyword.haste],
       .addAbilities #[.onAttackMayMill 1]
     ]
   let gCopyReal := gCopy0.createKindTokens p0 copySpec 1 (copyCtx := { targetId := some origObj.id })

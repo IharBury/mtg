@@ -90,7 +90,7 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n1+*/1+*\nVigilance").toOption.map
     (fun c => c.power == some 1 && c.toughness == some 1 && c.powerStar && c.toughnessStar &&
       c.power.getD 0 == 1 && c.toughness.getD 0 == 1 && c.ptString == "1+*/1+*" &&
-      c.keywords.vigilance && c.hasSubtype .human && c.hasSubtype .knight) == some true
+      KeywordAbility.hasVigilance c.keywords && c.hasSubtype .human && c.hasSubtype .knight) == some true
 #guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n*+1/*+1").toOption.map
     (fun c => c.power == some 1 && c.toughness == some 1 && c.powerStar && c.toughnessStar &&
       c.ptString == "1+*/1+*") == some true
@@ -101,7 +101,7 @@ def normLineAgrees (cardName line : String) : Bool :=
   | .ok c =>
     match parseOracleCard (renderFullOracle c) with
     | .ok d => d.power == some 1 && d.toughness == some 1 && d.powerStar && d.toughnessStar &&
-        d.ptString == "1+*/1+*" && d.keywords.vigilance
+        d.ptString == "1+*/1+*" && KeywordAbility.hasVigilance d.keywords
     | .error _ => false
   | .error _ => false
 #guard (parseOracleCard "Tarmogoyf\n{1}{G}\nCreature — Lhurgoyf\n*/1+*").toOption.map
@@ -115,7 +115,7 @@ def normLineAgrees (cardName line : String) : Bool :=
       c.power.getD 0 == 0 && c.toughness.getD 0 == 0 && c.ptString == "*/*") == some true
 #guard (parseOracleCard "Namor the Sub-Mariner\n{1}{U}{U}\nLegendary Creature — Mutant Merfolk Villain\n*/4\nFlying").toOption.map
     (fun c => c.power.isNone && c.powerStar && c.toughness == some 4 && !c.toughnessStar &&
-      c.ptString == "*/4" && c.keywords.flying) == some true
+      c.ptString == "*/4" && KeywordAbility.hasFlying c.keywords) == some true
 #guard (parseOracleCard "Mountain\nBasic Land — Mountain\n({T}: Add {R}.)").toOption.map
     (fun c => c.isLand && c.hasSupertype .basic && c.hasSubtype .mountain &&
       c.tapAddMana.isEmpty) == some true
@@ -278,17 +278,17 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\ndefense: 4").toOption.map
     (·.defense) == some (some 4)
 #guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\nDefense: 4").toOption.map
-    (fun c => c.defense == some 4 && c.keywords.flying) == some true
+    (fun c => c.defense == some 4 && KeywordAbility.hasFlying c.keywords) == some true
 #guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\n4\nFlying").toOption.map
-    (fun c => c.defense == some 4 && c.keywords.flying) == some true
+    (fun c => c.defense == some 4 && KeywordAbility.hasFlying c.keywords) == some true
 #guard (parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\n4").toOption.map
     (·.defense) == some (some 4)
 #guard
   match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\n4" with
   | .ok c =>
-    c.defense == some 4 && c.keywords.flying &&
+    c.defense == some 4 && KeywordAbility.hasFlying c.keywords &&
     match parseOracleCard (renderFullOracle c) with
-    | .ok d => d.defense == c.defense && d.keywords.flying
+    | .ok d => d.defense == c.defense && KeywordAbility.hasFlying d.keywords
     | .error _ => false
   | .error _ => false
 #guard
@@ -314,7 +314,7 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard
   match parseOracleCard "Invasion of Zendikar\n{2}{G}\nBattle — Siege\nFlying\n4\n//\nAwakened Skyclave\nCreature — Elemental\n4/4" with
   | .ok c =>
-    c.defense == some 4 && c.keywords.flying &&
+    c.defense == some 4 && KeywordAbility.hasFlying c.keywords &&
     match c.otherFace with
     | some back => back.isCreature && back.power == some 4 && back.toughness == some 4 &&
         back.defense.isNone && back.loyalty.isNone
@@ -360,37 +360,37 @@ def normLineAgrees (cardName line : String) : Bool :=
     (fun c => c.handModifier == some 0 && c.lifeModifier == some 0) == some true
 #guard (parseOracleCard "Urza\nVanguard\nFlying\n+1\n-2").toOption.map
     (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
-      c.keywords.flying) == some true
+      KeywordAbility.hasFlying c.keywords) == some true
 #guard (parseOracleCard "Urza\nVanguard\n+1\n-2\nFlying").toOption.map
     (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
-      c.keywords.flying) == some true
+      KeywordAbility.hasFlying c.keywords) == some true
 #guard (parseOracleCard "Urza\nVanguard\nFlying\nHand: +1\nLife: 0").toOption.map
     (fun c => c.handModifier == some 1 && c.lifeModifier == some 0 &&
-      c.keywords.flying) == some true
+      KeywordAbility.hasFlying c.keywords) == some true
 #guard (parseOracleCard "Urza\nVanguard\n+1\nFlying\n-2").toOption.map
     (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
-      c.keywords.flying) == some true
+      KeywordAbility.hasFlying c.keywords) == some true
 #guard (parseOracleCard "Urza\nVanguard\nHand: +1\nFlying\n-2").toOption.map
     (fun c => c.handModifier == some 1 && c.lifeModifier == some (-2) &&
-      c.keywords.flying) == some true
+      KeywordAbility.hasFlying c.keywords) == some true
 #guard (parseOracleCard "Urza\nVanguard\n+1\nFlying\nLife: +10").toOption.map
     (fun c => c.handModifier == some 1 && c.lifeModifier == some 10 &&
-      c.keywords.flying) == some true
+      KeywordAbility.hasFlying c.keywords) == some true
 #guard (parseOracleCard "Urza\nVanguard\n+1: Draw a card.\n+2\n-3").toOption.map
     (fun c => c.handModifier == some 2 && c.lifeModifier == some (-3) &&
       c.activatedAbilities.size == 1 &&
       c.activatedAbilities[0]!.cost.loyalty == some (.plus 1) &&
       c.activatedAbilities[0]!.effect == Effect.draw 1) == some true
 #guard (parseOracleCard "Urza\nVanguard\nFlying").toOption.map
-    (fun c => c.handModifier.isNone && c.lifeModifier.isNone && c.keywords.flying) ==
+    (fun c => c.handModifier.isNone && c.lifeModifier.isNone && KeywordAbility.hasFlying c.keywords) ==
     some true
 #guard
   match parseOracleCard "Urza\nVanguard\nFlying\n+1\n-2" with
   | .ok c =>
-    c.handModifier == some 1 && c.lifeModifier == some (-2) && c.keywords.flying &&
+    c.handModifier == some 1 && c.lifeModifier == some (-2) && KeywordAbility.hasFlying c.keywords &&
     match parseOracleCard (renderFullOracle c) with
     | .ok d => d.handModifier == c.handModifier && d.lifeModifier == c.lifeModifier &&
-        d.keywords.flying && d.isVanguard
+        KeywordAbility.hasFlying d.keywords && d.isVanguard
     | .error _ => false
   | .error _ => false
 #guard
@@ -547,9 +547,9 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Cloud\n{4}{B}\nSorcery\nThis spell costs {3} less to cast if a creature died this turn.").toOption.map
     (·.costReductionIfCreatureDied) == some 3
 #guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nWill of the Council — Menace").toOption.map
-    (·.keywords.menace) == some true
+    (fun c => KeywordAbility.hasMenace c.keywords) == some true
 #guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nFathomless Descent — Flying (This creature can't be blocked except by creatures with flying or reach.)").toOption.map
-    (fun c => c.keywords.flying && !c.keywords.reach && c.staticAbilities.isEmpty) ==
+    (fun c => KeywordAbility.hasFlying c.keywords && !KeywordAbility.hasReach c.keywords && c.staticAbilities.isEmpty) ==
     some true
 #guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nI — Spell Mastery — Draw seven cards.").toOption.map
     (fun c => match c.saga with
@@ -575,10 +575,10 @@ private def towashiChaosAbility : String :=
   | .error a, .error b => a == b
   | _, _ => false
 #guard (parseOracleCard "Towashi\nPlane — Kamigawa\n{CHAOS} Menace").toOption.map
-    (fun c => c.hasType .plane && c.subtypes == #["Kamigawa"] && c.keywords.menace) ==
+    (fun c => c.hasType .plane && c.subtypes == #["Kamigawa"] && KeywordAbility.hasMenace c.keywords) ==
     some true
 #guard (parseOracleCard "Towashi\nPlane — Kamigawa\n{chaos}\nMenace").toOption.map
-    (·.keywords.menace) == some true
+    (fun c => KeywordAbility.hasMenace c.keywords) == some true
 #guard (parseOracleCard "Towashi\nPlane — Kamigawa\n{CHAOS} Draw seven cards.").toOption.bind
     (·.spellEffect) ==
   (parseOracleCard "Towashi\nPlane — Kamigawa\nDraw seven cards.").toOption.bind
@@ -593,13 +593,13 @@ private def towashiChaosAbility : String :=
 
 -- CR 207.2a: reminder text is not rules text, on the ability's line or its own line.
 #guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nMenace (This creature can't be blocked except by two or more creatures.)").toOption.map
-    (fun c => c.keywords.menace && c.staticAbilities.isEmpty && !c.keywords.cantBeBlocked) ==
+    (fun c => KeywordAbility.hasMenace c.keywords && c.staticAbilities.isEmpty && !c.staticAbilities.contains .cantBeBlocked) ==
     some true
 #guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nMenace\n(This creature can't be blocked except by two or more creatures.)").toOption.map
-    (fun c => c.keywords.menace && c.staticAbilities.isEmpty && c.triggeredAbilities.isEmpty) ==
+    (fun c => KeywordAbility.hasMenace c.keywords && c.staticAbilities.isEmpty && c.triggeredAbilities.isEmpty) ==
     some true
 #guard (parseOracleCard "Mage\n{U}\nCreature — Human Wizard\n1/1\nProwess\n(Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)").toOption.map
-    (fun c => c.keywords.prowess && c.triggeredAbilities.isEmpty && c.staticAbilities.isEmpty) ==
+    (fun c => KeywordAbility.hasProwess c.keywords && c.triggeredAbilities.isEmpty && c.staticAbilities.isEmpty) ==
     some true
 #guard (parseOracleCard "Elf\n{G}\nCreature — Elf Druid\n1/1\n({T}: Add {G}.)").toOption.map
     (fun c => c.tapAddMana.isEmpty && c.tapAddOneOf.isEmpty && c.activatedAbilities.isEmpty) ==
@@ -616,5 +616,20 @@ private def towashiChaosAbility : String :=
       | some s => s.chapters.size == 3 && s.finalChapterNumber == 3 &&
           s.sacrificeAfter == "III" && c.triggeredAbilities.isEmpty
       | none => false) == some true
+
+-- CR 702.14: `keywordLineAbilities` delegates to `Parser.parseKeywordLine`, so
+-- nonbasic, legendary, and snow landwalk parse and round-trip identically on the
+-- catalog path, while non-land `*walk` stems are rejected.
+#guard ["Nonbasic landwalk", "Legendary landwalk", "Snow landwalk", "Flying, legendary landwalk"].all fun line =>
+  match parseOracleCard s!"Walker\n\{2}\{G}\nCreature — Elf\n2/2\n{line}" with
+  | .ok c =>
+    match parseOracleCard (renderFullOracle c) with
+    | .ok d => d.keywords == c.keywords && Parser.parseKeywordLine line == some c.keywords
+    | .error _ => false
+  | .error _ => false
+#guard
+  match parseOracleCard "Walker\n{2}{U}\nCreature — Wizard\n2/2\nWizardwalk" with
+  | .error _ => true
+  | .ok _ => false
 
 end Mtg.Engine.Tests

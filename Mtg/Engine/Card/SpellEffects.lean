@@ -102,7 +102,7 @@ def plusOnePlusOneTrampleHexproof : Effect :=
   mkSpell (.of .creatureYouControl)
     (.sequence [
       .onPermanent (.plusOne 1),
-      .onPermanent (.grantKeywords (Keyword.trample.merge Keyword.hexproof))])
+      .onPermanent (.grantKeywords #[Keyword.trample, Keyword.hexproof])])
     (castKind := .pump)
     (phraseOverride := some
       "put a +1/+1 counter on target creature you control. It gains trample and hexproof until end of turn")
@@ -162,7 +162,7 @@ def pumpAndLifelink (power toughness : Int) : Effect :=
     spellCastKind := .pump
     resolution := .sequence
       [.onPermanent (.pump power toughness),
-       .onPermanent (.grantKeywords Keyword.lifelink)]
+       .onPermanent (.grantKeywords #[Keyword.lifelink])]
     phrase :=
       s!"target creature gets {signedStat power}/{signedStat toughness} and gains lifelink until end of turn" }
 
@@ -211,7 +211,7 @@ def tapOneOrTwoCreatures : Effect :=
     (maxTargets := 2)
 
 def grantHexproofIndestructible : Effect :=
-  mkSpell (.of .artifactOrCreatureYouControl) (.onPermanent (.grantKeywords (Keyword.hexproof.merge Keyword.indestructible)))
+  mkSpell (.of .artifactOrCreatureYouControl) (.onPermanent (.grantKeywords #[Keyword.hexproof, Keyword.indestructible]))
     (castKind := .pump)
 
 /-- Put `counters` of `kind` on up to one target creature, then the targeted
@@ -277,13 +277,13 @@ def becomeArtifactGainIndestructible : Effect :=
   mkSpell (.of .creature) (.onPermanent .becomeArtifactIndestructible)
     (castKind := .pump)
 
-def pumpAndGrantKeywords (power toughness : Int) (k : Keywords) : Effect :=
+def pumpAndGrantKeywords (power toughness : Int) (k : Array KeywordAbility) : Effect :=
   { targeting := .of .creature .own
     spellCastKind := .pump
     resolution := .sequence
       [.onPermanent (.pump power toughness), .onPermanent (.grantKeywords k)]
     phrase :=
-      s!"target creature gets {signedStat power}/{signedStat toughness} and gains {k.joinedAnd} until end of turn" }
+      s!"target creature gets {signedStat power}/{signedStat toughness} and gains {KeywordAbility.joinedAnd k} until end of turn" }
 
 def amassGoblins (n : Nat) : Effect :=
   mkSpell (.of .none) (.amass n)
@@ -460,8 +460,8 @@ def dealDamageThenControllerIfTeamwork (n extra : Nat) : Effect :=
 def grantDoubleStrikeTeamworkTrample : Effect :=
   mkSpell (.of .creature)
     (.sequence [
-      .onPermanent (.grantKeywords Keyword.doubleStrike),
-      .«if» .teamwork (.onPermanent (.grantKeywords Keyword.trample))])
+      .onPermanent (.grantKeywords #[Keyword.doubleStrike]),
+      .«if» .teamwork (.onPermanent (.grantKeywords #[Keyword.trample]))])
     (castKind := .pump)
 
 def counterUnlessPaysTeamwork (n teamworkN : Nat) : Effect :=
@@ -499,7 +499,7 @@ def returnOneOrTwoNonlands : Effect :=
     (maxTargets := 2)
 
 def grantDeathtouch : Effect :=
-  mkSpell (.of .creature) (.onPermanent (.grantKeywords Keyword.deathtouch))
+  mkSpell (.of .creature) (.onPermanent (.grantKeywords #[Keyword.deathtouch]))
     (castKind := .pump)
 
 def destroyNoncreatureArtifact : Effect :=
@@ -521,14 +521,14 @@ def investigatePumpFlyingUntap : Effect :=
   mkSpell (.of .playerThenCreature)
     (.sequence [
       .targetPlayerInvestigates,
-      .onCreatureAmongTargets (.grantKeywords Keyword.flying),
+      .onCreatureAmongTargets (.grantKeywords #[Keyword.flying]),
       .onCreatureAmongTargets .untap,
       .onCreatureAmongTargets (.pump 1 0)])
     (castKind := .pump)
 
 def plusOneLifelinkIndestructible : Effect :=
   mkSpell (.of .creature) (.sequence [.onPermanent (.plusOne 1),
-    .onPermanent (.grantKeywords (Keyword.lifelink.merge Keyword.indestructible))])
+    .onPermanent (.grantKeywords #[Keyword.lifelink, Keyword.indestructible])])
     (castKind := .pump)
 
 def dealDamageToEachCreature (n : Nat) : Effect :=
@@ -552,7 +552,8 @@ def returnGySubtypeToHand (subtype : String) : Effect :=
 
 def grantVigilanceUnblockable : Effect :=
   mkSpell (.of .creature) (.sequence [
-    .onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.cantBeBlocked)),
+    .onPermanent (.grantKeywords #[Keyword.vigilance]),
+    .onPermanent .cantBeBlocked,
     .draw 1])
     (castKind := .pump)
 
@@ -606,7 +607,7 @@ def createTokensPerSubtype (kind : TokenSpec) (subtype : String) : Effect :=
   mkSpell (.of .none) (.createTokens kind (.perSubtype (CardSubtype.ofOracleD subtype)))
     (castKind := .extraLand)
 
-def creaturesYouControlGetAndGrant (power toughness : Int) (k : Keywords) : Effect :=
+def creaturesYouControlGetAndGrant (power toughness : Int) (k : Array KeywordAbility) : Effect :=
   mkSpell (.of .none) (.sequence [.creaturesPump power toughness, .teamGain k])
     (castKind := .massPump)
 
@@ -675,7 +676,7 @@ def chooseTargetDoubleAndTrample : Effect :=
   mkSpell (.of .creatureYouControl)
     (.sequence [
       .onPermanent .doublePowerAndToughness,
-      .onPermanent (.grantKeywords Keyword.trample)])
+      .onPermanent (.grantKeywords #[Keyword.trample])])
     (castKind := .pump)
 
 def returnUpToTwoGyModal : Effect :=
@@ -844,15 +845,15 @@ def burdenThenDraw : Effect :=
     (phraseOverride := some
       "Put a burden counter on The One Ring, then draw a card for each burden counter on The One Ring")
 
-def teamGain (k : Keywords) : Effect :=
+def teamGain (k : Array KeywordAbility) : Effect :=
   mkAbility ({}) (.teamGain k)
 
 def teamGainDoubleStrike : Effect :=
-  teamGain Keyword.doubleStrike
+  teamGain #[Keyword.doubleStrike]
 
 def sourceGainsIndestructibleTap : Effect :=
   mkAbility ({})
-    (.sequence [.onSource (.grantKeywords Keyword.indestructible), .onSource .tap])
+    (.sequence [.onSource (.grantKeywords #[Keyword.indestructible]), .onSource .tap])
     (phraseOverride := some
       "Witch-king of Angmar gains indestructible until end of turn. Tap him")
 
@@ -986,11 +987,11 @@ def plusOneThenFightUpToOne : Effect :=
     (phraseOverride := some
       "Put a +1/+1 counter on this. This fights up to one target creature an opponent controls")
 
-def plusOneAndGrant (k : Keywords) : Effect :=
+def plusOneAndGrant (k : Array KeywordAbility) : Effect :=
   let joined :=
-    if k.vigilance && k.indestructible && k.haste then
+    if KeywordAbility.hasVigilance k && KeywordAbility.hasIndestructible k && KeywordAbility.hasHaste k then
       "vigilance, indestructible, and haste"
-    else k.joinedAnd
+    else KeywordAbility.joinedAnd k
   { resolution := .sequence [.onSource (.plusOne 1), .onSource (.grantKeywords k)]
     phrase := s!"Put a +1/+1 counter on this. He gains {joined} until end of turn" }
 
@@ -1031,10 +1032,10 @@ def pumpAttackingAloneGainLife : Effect :=
   mkAbility (.of .attackingAloneCreatureYouControl)
     (.sequence [.onPermanent (.pump 1 0), .gainLife 1])
 
-def becomeTypes (types : Array String) (power toughness : Int) (k : Keywords) : Effect :=
+def becomeTypes (types : Array String) (power toughness : Int) (k : Array KeywordAbility) : Effect :=
   mkAbility ({}) (.becomeTypes (CardSubtype.ofSubtypes types) power toughness k)
 
-def becomeDinosaurHero (power toughness : Int) (k : Keywords) : Effect :=
+def becomeDinosaurHero (power toughness : Int) (k : Array KeywordAbility) : Effect :=
   becomeTypes #["Dinosaur", "Hero"] power toughness k
 
 def nextInstantSorceryCopyIfMvAtMostSourcePower : Effect :=
@@ -1049,11 +1050,11 @@ def destroyTargetNoncreatureArtOrEnch : Effect :=
 def targetSubtypeConnives (subtype : String) : Effect :=
   mkAbility (.of (.creatureYouControlSubtype (CardSubtype.ofOracleD subtype))) (.targetSubtypeConnives (CardSubtype.ofOracleD subtype))
 
-def anotherYouControlGetsAndGrant (p t : Int) (k : Keywords) : Effect :=
+def anotherYouControlGetsAndGrant (p t : Int) (k : Array KeywordAbility) : Effect :=
   mkAbility (.of .anotherCreatureYouControl)
     (.sequence [.onPermanent (.pump p t), .onPermanent (.grantKeywords k)])
     (phraseOverride := some
-      s!"Another target creature you control gets {signedStat p}/{signedStat t} and gains {k.joinedAnd} until end of turn")
+      s!"Another target creature you control gets {signedStat p}/{signedStat t} and gains {KeywordAbility.joinedAnd k} until end of turn")
 
 def tapTargetCreature : Effect :=
   mkAbility (.of .creature) (.onPermanent .tap)
@@ -1389,7 +1390,7 @@ def vraskasMercyEmpower : Effect :=
 /-! ## Red -/
 
 def artifistAcumen : Effect :=
-  fraUntargeted (.sequence [.teamGain Keyword.firstStrike, .draw 1])
+  fraUntargeted (.sequence [.teamGain #[Keyword.firstStrike], .draw 1])
     "Creatures you control gain first strike until end of turn.\nDraw a card"
     (castKind := .pump)
 
@@ -1458,7 +1459,7 @@ def somethingWorthSaving : Effect :=
 
 def tethermagesAdvantage : Effect :=
   fraSpell .creature
-    (.sequence [.onPermanent (.pump 2 2), .onPermanent (.grantKeywords Keyword.reach),
+    (.sequence [.onPermanent (.pump 2 2), .onPermanent (.grantKeywords #[Keyword.reach]),
       .onPermanent .untap])
     "Target creature gets +2/+2 and gains reach until end of turn. Untap it"
     (castKind := .pump)
@@ -1472,7 +1473,7 @@ def creaturesYouControlGetUntilEot (p t : Int) : Effect :=
 
 def chargeTheSanctumPump : Effect :=
   fraSpell .creature
-    (.sequence [.onPermanent (.pump 2 0), .onPermanent (.grantKeywords Keyword.firstStrike),
+    (.sequence [.onPermanent (.pump 2 0), .onPermanent (.grantKeywords #[Keyword.firstStrike]),
       .onPermanent (.plusOne 1)])
     "Target creature gets +2/+0 and gains first strike until end of turn. Put a +1/+1 counter on it"
     (castKind := .pump)
@@ -1503,12 +1504,12 @@ def damageToCreatureWithFlying (n : Nat) : Effect :=
     s!"This spell deals {n} damage to target creature with flying"
     (castKind := .destroyFlying)
 
-def plusOneThenGrant (n : Nat) (k : Keywords) (upToOne := false) : Effect :=
+def plusOneThenGrant (n : Nat) (k : Array KeywordAbility) (upToOne := false) : Effect :=
   let spec : TargetSpec :=
     if upToOne then .single { domain := .creature, count := .upTo 1 } else .creature
   fraSpell spec
     (.sequence [.onPermanent (.plusOne n), .onPermanent (.grantKeywords k)])
-    s!"Put {plusOnePlusOneCountersPhrase n} on {spec.noun}. It gains {k.joinedAnd} until end of turn"
+    s!"Put {plusOnePlusOneCountersPhrase n} on {spec.noun}. It gains {KeywordAbility.joinedAnd k} until end of turn"
     (castKind := .pump) (allowsZeroTargets := upToOne)
 
 def addColorless (n : Nat) : Effect :=
@@ -1522,7 +1523,7 @@ def recursiveRecruitment : Effect :=
     "Create two 2/2 colorless Wizard Soldier creature tokens named Cadet. If this spell was cast from a graveyard, put a +1/+1 counter on each of them for every three cards in your graveyard"
     (castKind := .draw)
 
-def targetCreatureGains (k : Keywords) (words : String := k.joinedAnd) : Effect :=
+def targetCreatureGains (k : Array KeywordAbility) (words : String := KeywordAbility.joinedAnd k) : Effect :=
   fraSpell .creature (.onPermanent (.grantKeywords k))
     s!"Target creature gains {words} until end of turn"
     (castKind := .pump)
@@ -1560,10 +1561,10 @@ def twistedFates : Effect :=
     "Destroy target nonland permanent. Put a +1/+1 counter on each creature target player controls"
     (castKind := .destroyCreature)
 
-def permanentYouControlGains (k : Keywords) : Effect :=
+def permanentYouControlGains (k : Array KeywordAbility) : Effect :=
   fraSpell .permanentYouControl
     (.onPermanent (.grantKeywords k))
-    s!"Target permanent you control gains {k.joinedAnd} until end of turn"
+    s!"Target permanent you control gains {KeywordAbility.joinedAnd k} until end of turn"
     (castKind := .pump)
 
 def vindictiveTriumph : Effect :=
@@ -1571,7 +1572,7 @@ def vindictiveTriumph : Effect :=
     "Exile target creature or planeswalker. If that permanent's mana value was 3 or less, return it to the battlefield tapped under your control. Exile it at the beginning of the next end step"
     (castKind := .destroyCreature)
 
-def tamsResistance : Effect := plusOneThenGrant 1 Keyword.vigilance (upToOne := true)
+def tamsResistance : Effect := plusOneThenGrant 1 #[Keyword.vigilance] (upToOne := true)
 
 
 /-! ## Modes of modal triggered abilities -/
@@ -1583,7 +1584,7 @@ def returnLegendaryCardToHand : Effect :=
 def plusOneVigilanceIndestructible : Effect :=
   fraSpell .creature
     (.sequence [.onPermanent (.plusOne 1),
-      .onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.indestructible))])
+      .onPermanent (.grantKeywords #[Keyword.vigilance, Keyword.indestructible])])
     "Put a +1/+1 counter on target creature. It gains vigilance and indestructible until end of turn"
     (castKind := .pump)
 
@@ -1625,7 +1626,7 @@ end Effect
 namespace ActivatedAbility
 
 /-- An activated ability with its printed line. -/
-def fra (printed : String) (effect : Effect) (cost : ActivationCost)
+def fra (printed : String) (effect : Effect) (cost : CostSpec)
     (onlyAsSorcery := false) (onlyDuringYourTurn := false)
     (activateFromGraveyard := false) (activateFromHand := false) (exhaust := false)
     (cond : FraActivationCondition := .none) : ActivatedAbility :=

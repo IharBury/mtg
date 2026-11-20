@@ -3138,6 +3138,6 @@ def realityFractureForest : CardDef :=
   c.name == "Blossom-Blessed Angel" && c.entersPrepared &&
     c.prepareFace.any (fun a => a.name == "Seed Suture"))
 #guard realityFractureCards.any (fun c =>
-  c.name == "Countersculpt" && c.additionalCostBeholdOrPay == some (.jace, 1))
+  c.name == "Countersculpt" && c.additionalCosts == #[AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric .jace 1)])
 
 end Mtg.Engine.Catalog

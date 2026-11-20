@@ -61,7 +61,7 @@ private def replayOk50i1 (gs : Array Game) : Bool :=
     name := "P50i1 Shrine"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1 }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1)]
       effect := Effect.gainLife 1
     }]
   }
@@ -395,20 +395,20 @@ private def isAnnounceKicker (a : Option Action) (want : Bool) : Bool :=
   let impendingOverlordDef : CardDef := {
     creature "P50i2 MistOverlord" (ManaCost.ofGeneric 6) #["Avatar"] 5 5 with
     types := #[.enchantment, .creature]
-    impending := some (4, ManaCost.ofGeneric 2)
+    keywords := #[.impending 4 (CostSpec.ofGeneric 2)]
   }
   let impendingCyclerDef : CardDef := {
     impendingOverlordDef with
     name := "P50i2 CyclingOverlord"
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, discardSource := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .discard (.exact 1) .self]
       activateFromHand := true
       effect := Effect.draw 1
     }]
   }
   let morphBehemothDef : CardDef := {
     creature "P50i2 MorphBehemoth" (ManaCost.ofGeneric 7) #["Beast"] 6 6 with
-    morph := some (ManaCost.ofGeneric 3)
+    keywords := #[.morph (CostSpec.ofGeneric 3)]
   }
 
   let gImpBase := emptyHand g3 p0
@@ -723,7 +723,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     name := "P50i4 ShrapnelBlast"
     manaCost := { symbols := #[.colored .green] }
     types := #[.instant]
-    additionalCostSacrificeArtifactOrCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]
     spellEffect := some (Effect.gainLife 3)
   }
   let gBase := emptyHand g3 p0
@@ -745,7 +745,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     name := "P50i4 Drum"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { tap := true, tapAnUntappedCreatureYouControl := true }
+      cost := CostSpec.ofItems #[.tapSelf, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
       effect := { resolution := .addMana #[.colored .blue] (.fixed 1), phrase := "Add {U}." }
     }]
   }
@@ -754,7 +754,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     types := #[.artifact]
     subtypes := #["Vehicle"]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, fra := .crew 1 }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapObjects (.totalPowerAtLeast (.const 1)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])]
       effect := Effect.gainLife 2
     }]
   }
@@ -775,7 +775,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     name := "P50i4 Signet"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, tap := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf]
       effect := { resolution := .addMana #[.colored .blue] (.fixed 2), phrase := "Add {U}{U}." }
     }]
   }
@@ -784,7 +784,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     name := "P50i4 HasteElf"
     power := some 1
     toughness := some 1
-    keywords := { haste := true }
+    keywords := #[Keyword.haste]
   }
   let gEffCrew1 :=
     addPermanent (addPermanent (addPermanent gBase filterSignetDef p0 p0) crewSkiffDef p0 p0) hasteElfDef p0 p0
@@ -833,7 +833,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
       (cause := some testCause)
   let gFlashGranted :=
     gFlash0.createEffect
-      (.layered (.objects #[flashExId]) (.abilities { keywords := Keyword.flash } .none) .untilEndOfTurn)
+      (.layered (.objects #[flashExId]) (.abilities { keywords := #[Keyword.flash] } .none) .untilEndOfTurn)
       (cause := some testCause)
   let flashNoKwAct := gFlash0.defaultFraAction p1 (.mayCastCards #[flashExId] false false)
   let flashGrantedAct := gFlashGranted.defaultFraAction p1 (.mayCastCards #[flashExId] false false)
@@ -847,7 +847,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     name := "P50i4 SteamCascade"
     manaCost := { symbols := #[.generic 2] }
     types := #[.sorcery]
-    additionalCostDiscardOrPayGeneric := some 2
+    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.discardCardOrPayGeneric 2)]
     spellEffect := some (Effect.gainLife 2)
   }
   let gCascPay0 := insertObject gBase discardOrPay2CascDef p0 .exile

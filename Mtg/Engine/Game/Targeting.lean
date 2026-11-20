@@ -331,6 +331,13 @@ def satisfiesGroupConstraint (g : Game) (caster : PlayerId) (sourceId : Option O
           match objs[0]? with
           | none => true
           | some o0 => (g.subtypes o0).any fun s => objs.all fun o => (g.subtypes o).contains s
+        | .name =>
+          -- CR 201.2a: nameless face-down permanents have no name and never share a name.
+          match objs[0]? with
+          | none => true
+          | some o0 =>
+            let nm := g.name o0
+            !nm.isEmpty && objs.all fun o => g.name o == nm
     | .distinctControllers =>
       let ctrls : Array PlayerId := targets.filterMap fun t =>
         match t with

@@ -48,7 +48,7 @@ def ruling (id : Nat) : OracleRuling :=
 /-- A 0/0 legendary Storied creature used only to test judge ruling 26. -/
 def zeroStoried : CardDef :=
   legendaryCreature "Zero Story" ManaCost.empty #["Dwarf"] 0 0
-    (keywords := Keyword.storied)
+    (keywords := #[Keyword.storied])
 
 /-- Attach `equipName` to `hostName` and put `n` hone counters on the Equipment. -/
 def honeOn (g : Game) (equipName hostName : String) (n : Nat) : Game :=
@@ -411,14 +411,14 @@ def storyThenLostPermanents : Game :=
 def oriAlone : Game := addPermanent started oriKeeperOfSongs ⟨0⟩ ⟨0⟩
 
 #guard oriAlone.power (namedPermanent oriAlone "Ori, Keeper of Songs") == 3
-#guard !(oriAlone.currentKeywords (namedPermanent oriAlone "Ori, Keeper of Songs")).vigilance
+#guard !KeywordAbility.hasVigilance (oriAlone.currentKeywords (namedPermanent oriAlone "Ori, Keeper of Songs"))
 
 def oriWithStory : Game :=
   oriAlone.record (GameEvent.gainedDesignation oriAlone.turnNumber ⟨0⟩ .enduringStory
     (cause := some (.gameRule .staticAbility)))
 
 #guard oriWithStory.power (namedPermanent oriWithStory "Ori, Keeper of Songs") == 4
-#guard (oriWithStory.currentKeywords (namedPermanent oriWithStory "Ori, Keeper of Songs")).vigilance
+#guard KeywordAbility.hasVigilance (oriWithStory.currentKeywords (namedPermanent oriWithStory "Ori, Keeper of Songs"))
 
 /-- Fíli's team pump applies to other creatures while you have a story. -/
 def filiAndBears : Game :=
@@ -855,7 +855,7 @@ def kickerCopied : Game :=
 ## 65, 83, 124, 152, 210, 333 — gift
 -/
 
-#guard bilboSGambit.giftTreasure
+#guard bilboSGambit.hasGift
 
 /-- Ruling 83 / 333: gift is promised as an additional cost, not given yet,
 and cannot be promised twice. -/
@@ -916,7 +916,7 @@ def giftCopied : Game :=
 
 def shadowCreature : CardDef :=
   creature "Shadow Scout" (ManaCost.ofGeneric 1) #["Wraith"] 1 1
-    (keywords := Keyword.shadow)
+    (keywords := #[Keyword.shadow])
 
 /-- Ruling 67: a shadow counter grants shadow. -/
 def shadowFromCounter : Game :=
@@ -955,7 +955,7 @@ def shadowCannotBlock : Bool :=
 def shadowCanBlockShadow : Game :=
   let g := addPermanent shadowBlockSetup
     (creature "Wraith Guard" (ManaCost.ofGeneric 1) #["Wraith"] 1 1
-      (keywords := Keyword.shadow)) ⟨1⟩ ⟨1⟩
+      (keywords := #[Keyword.shadow])) ⟨1⟩ ⟨1⟩
   g
 
 def shadowCanBlockShadowOk : Bool :=
@@ -1060,7 +1060,7 @@ def phaseIgnoresHone : Game :=
 ## 68, 101, 110, 113–114, 157, 238, 323 — cascade
 -/
 
-#guard callForthTheTempest.cascade == 2
+#guard KeywordAbility.cascadeCount callForthTheTempest.keywords == 2
 #guard callForthTheTempest.manaValue == 8
 
 /-- Ruling 68: mana value ignores alternative and additional costs. -/
@@ -1163,7 +1163,7 @@ def cascadeLooksAtEight : Bool :=
 ## 84, 207, 223, 251 — ascend / city's blessing
 -/
 
-#guard andurilNarsilReforged.keywords.ascend
+#guard KeywordAbility.hasAscend andurilNarsilReforged.keywords
 
 /-- Ruling 207: ten permanents without ascend grant nothing. -/
 def tenTreasures : Game := started.createTreasureTokens ⟨0⟩ 10
@@ -1200,7 +1200,7 @@ def tenWithAscendOk : Bool :=
 /-- Ruling 223: a 0/0 tenth permanent that then dies still leaves the blessing. -/
 def zeroAscend : CardDef :=
   legendaryCreature "Zero Blessing" ManaCost.empty #["Spirit"] 0 0
-    (keywords := Keyword.ascend)
+    (keywords := #[Keyword.ascend])
 
 def blessingFromZero : Game :=
   let g := started.createTreasureTokens ⟨0⟩ 9
@@ -2201,7 +2201,7 @@ def withoutPayingStillPaysKickerOk : Bool :=
     player := ⟨0⟩, withoutManaCost := true } 1)
   let cost := g.playManaCost (g.object! card.id) insideInformation (ManaCost.ofGeneric 2)
   cost.manaValue == 2 && cost.colors.isColorless &&
-    improvisedClub.additionalCostSacrificeArtifactOrCreature &&
+    improvisedClub.additionalCosts == #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature] &&
     (ruling 195).comment.contains "mandatory additional costs" &&
     (ruling 198).comment.contains "must be paid"
 
@@ -2269,7 +2269,7 @@ def whaleLinkedOk : Bool :=
 
 /-- Ruling 114: each cascade instance is a separate trigger. -/
 def twoCascadesOk : Bool :=
-  callForthTheTempest.cascade == 2 &&
+  KeywordAbility.cascadeCount callForthTheTempest.keywords == 2 &&
     (ruling 114).comment.contains "Each instance of cascade triggers"
 
 #guard twoCascadesOk
@@ -4241,7 +4241,7 @@ def gollumAbandonedOptionalTargetOk : Bool :=
 -/
 
 def cascadeFaceUpOk : Bool :=
-  callForthTheTempest.cascade == 2 &&
+  KeywordAbility.cascadeCount callForthTheTempest.keywords == 2 &&
     (ruling 347).comment.contains "exile the cards face up"
 
 #guard cascadeFaceUpOk
@@ -4409,7 +4409,7 @@ def banishingLightAuraHexproofOk : Bool :=
   let g := addPermanent g fogOnTheBarrowDowns ⟨1⟩ ⟨1⟩
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let bear := namedPermanent g "Grizzly Bears"
-  let g := g.createEffect (.keywordsUntilEot bear.id Keyword.hexproof)
+  let g := g.createEffect (.keywordsUntilEot bear.id #[Keyword.hexproof])
   let light := namedPermanent g "Banishing Light"
   let g := g.exileUntilSourceLeaves (some light.id) (namedPermanent g "Fog on the Barrow-Downs")
   let light := namedPermanent g "Banishing Light"
@@ -4769,8 +4769,7 @@ def oneRingBurdenDraw : Game :=
 #guard (namedPermanent oneRingBurdenDraw "The One Ring").status.burden == 1
 #guard (oneRingBurdenDraw.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1
 #guard oneRingBurdenDraw.log.any (fun s => mentions s "burden")
-#guard grimaSarumanSFootman.keywords.cantBeBlocked
-#guard grimaSarumanSFootman.staticAbilities.isEmpty
+#guard grimaSarumanSFootman.staticAbilities == #[.cantBeBlocked]
 
 /-!
 ## 339 — Minas Tirith Garrison tap-then-draw is atomic

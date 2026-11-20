@@ -23,7 +23,7 @@ def treasureToken : CardDef := {
 /-- A creature token. `color` is the color indicator (CR 202.2e). -/
 def creatureToken (name : String) (subtypes : Array CardSubtype)
     (power toughness : Int) (color : Option Color := none)
-    (keywords : Keywords := Keywords.none)
+    (keywords : Array KeywordAbility := #[])
     (types : Array CardType := #[.creature]) : CardDef := {
   name
   types
@@ -37,7 +37,7 @@ def creatureToken (name : String) (subtypes : Array CardSubtype)
 
 /-- A 5/5 red Dragon creature token with flying. -/
 def dragon55flyingToken : CardDef :=
-  creatureToken "Dragon" #[.dragon] 5 5 (some .red) (keywords := Keyword.flying)
+  creatureToken "Dragon" #[.dragon] 5 5 (some .red) (keywords := #[Keyword.flying])
 
 /-- A 1/1 white Human Soldier creature token. -/
 def humanSoldierToken : CardDef :=
@@ -243,7 +243,7 @@ private def tokenBatchWatchesCreation (g : Game) (controller : PlayerId) (printe
     controller := some controller, owner := controller, zone := .battlefield, token := true
     types := g.types probe
     subtypes := g.subtypes probe
-    changeling := (g.currentKeywords probe).changeling }
+    changeling := KeywordAbility.hasChangeling (g.currentKeywords probe) }
     (cause := .oneShotEffect none none (some controller))
   proposed.watches .wouldCreateToken
 
@@ -553,7 +553,7 @@ def foodToken : CardDef := {
   types := #[.artifact]
   subtypes := #["Food"]
   activatedAbilities := #[{
-    cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
+    cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapSelf, .sacrifice (.exact 1) .self]
     effect := Effect.gainLife 3
   }]
   isToken := true
@@ -573,19 +573,19 @@ def elfToken : CardDef :=
 
 /-- A 1/1 white Spirit creature token with flying. -/
 def spiritToken : CardDef :=
-  creatureToken "Spirit" #[.spirit] 1 1 (some .white) Keyword.flying
+  creatureToken "Spirit" #[.spirit] 1 1 (some .white) #[Keyword.flying]
 
 /-- A 4/4 white Bird Soldier creature token with flying. -/
 def birdSoldierToken : CardDef :=
-  creatureToken "Bird Soldier" #[.bird, .soldier] 4 4 (some .white) Keyword.flying
+  creatureToken "Bird Soldier" #[.bird, .soldier] 4 4 (some .white) #[Keyword.flying]
 
 /-- A 6/6 red Dragon creature token with flying. -/
 def dragonToken : CardDef :=
-  creatureToken "Dragon" #[.dragon] 6 6 (some .red) Keyword.flying
+  creatureToken "Dragon" #[.dragon] 6 6 (some .red) #[Keyword.flying]
 
 /-- A 3/1 colorless Wall artifact creature token with defender. -/
 def wallToken : CardDef :=
-  creatureToken "Stone Boulder" #[.wall] 3 1 none Keyword.defender
+  creatureToken "Stone Boulder" #[.wall] 3 1 none #[Keyword.defender]
     (types := #[.artifact, .creature])
 
 /-- A colorless Equipment artifact token named Axe. -/
@@ -595,7 +595,7 @@ def axeToken : CardDef := {
   subtypes := #["Equipment"]
   staticAbilities := #[.equippedCreatureGets 1 0]
   activatedAbilities := #[
-    { cost := { mana := ManaCost.ofGeneric 2 }
+    { cost := CostSpec.ofGeneric 2
       effect := Effect.attachToTargetCreatureYouControl
       onlyAsSorcery := true }
   ]
@@ -608,7 +608,7 @@ def clueToken : CardDef := {
   types := #[.artifact]
   subtypes := #["Clue"]
   activatedAbilities := #[{
-    cost := { mana := ManaCost.ofGeneric 2, sacrificeSource := true }
+    cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .sacrifice (.exact 1) .self]
     effect := Effect.abilityDraw 1
   }]
   isToken := true
@@ -616,11 +616,11 @@ def clueToken : CardDef := {
 
 /-- A 3/2 white Hero creature token with vigilance. -/
 def hero32vigilanceToken : CardDef :=
-  creatureToken "Hero" #[.hero] 3 2 (some .white) Keyword.vigilance
+  creatureToken "Hero" #[.hero] 3 2 (some .white) #[Keyword.vigilance]
 
 /-- A 2/1 black Villain creature token with menace. -/
 def villain21menaceToken : CardDef :=
-  creatureToken "Villain" #[.villain] 2 1 (some .black) Keyword.menace
+  creatureToken "Villain" #[.villain] 2 1 (some .black) #[Keyword.menace]
 
 /-- A 2/2 colorless Robot Villain artifact creature token. -/
 def robotVillain22Token : CardDef :=
@@ -629,7 +629,7 @@ def robotVillain22Token : CardDef :=
 
 /-- A 6/5 blue Leviathan creature token with hexproof. -/
 def leviathan65hexproofToken : CardDef :=
-  creatureToken "Leviathan" #[.leviathan] 6 5 (some .blue) Keyword.hexproof
+  creatureToken "Leviathan" #[.leviathan] 6 5 (some .blue) #[Keyword.hexproof]
 
 /-- A 1/1 white Soldier creature token. -/
 def soldier11whiteToken : CardDef :=
@@ -641,7 +641,7 @@ def squirrel11greenToken : CardDef :=
 
 /-- A 0/4 colorless Wall creature token with defender. -/
 def wall04defenderToken : CardDef :=
-  creatureToken "Wall" #[.wall] 0 4 none Keyword.defender
+  creatureToken "Wall" #[.wall] 0 4 none #[Keyword.defender]
 
 /-- A 3/3 colorless Robot Villain artifact creature token named Doombot. -/
 def doombotToken : CardDef :=
@@ -669,7 +669,7 @@ def alien11redHasteToken : CardDef := {
   power := some 1
   toughness := some 1
   colorIndicator := some (ColorSet.singleton .red)
-  keywords := Keyword.haste
+  keywords := #[Keyword.haste]
   staticAbilities := #[.attacksEachCombatIfAble]
   isToken := true
 }
@@ -680,7 +680,7 @@ def vibraniumToken : CardDef := {
   name := "Vibranium"
   types := #[.artifact]
   subtypes := #["Vibranium"]
-  keywords := Keyword.indestructible
+  keywords := #[Keyword.indestructible]
   tapAddMana := #[.colorless]
   isToken := true
 }
@@ -718,9 +718,9 @@ def jacePlaneswalkerToken : CardDef := {
   loyalty := some 0
   isToken := true
   activatedAbilities := #[
-    { cost := { loyalty := some (.minus 1) }
+    { cost := CostSpec.ofLoyalty (.minus 1)
       effect := { resolution := .surveil 1, phrase := "Surveil 1" } },
-    { cost := { loyalty := some (.minus 3) }
+    { cost := CostSpec.ofLoyalty (.minus 3)
       effect := { resolution := .draw 1, phrase := "Draw a card" } }]
 }
 
@@ -755,7 +755,7 @@ def forestTentacleToken : CardDef :=
 
 /-- A 4/4 green Beast creature token with trample. -/
 def beast44trampleToken : CardDef :=
-  creatureToken "Beast" #[.beast] 4 4 (some .green) (keywords := Keyword.trample)
+  creatureToken "Beast" #[.beast] 4 4 (some .green) (keywords := #[Keyword.trample])
 
 /-- Jace planeswalker tokens `controller` controls. Nontoken Jace
 planeswalkers don't count, but a token copy of one does (ruling 733). -/
@@ -852,7 +852,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
         isToken := true }
       activatedAbilities := #[
         { effect := { resolution := .frc .transformIncubator, phrase := "Transform this token." }
-          cost := { mana := ManaCost.ofGeneric 2 } } ] }
+          cost := CostSpec.ofGeneric 2 } ] }
   | .map => {
       name := "Map"
       types := #[.artifact]
@@ -864,7 +864,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
             resolution := .frc .explore
             phrase := "Target creature you control explores."
           }
-          cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true }
+          cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self]
           onlyAsSorcery := true } ] }
   | .junk => {
       name := "Junk"
@@ -876,7 +876,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
             resolution := .exileTopPlayUntilNext 1
             phrase := "Exile the top card of your library. You may play that card this turn."
           }
-          cost := { tap := true, sacrificeSource := true }
+          cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
           onlyAsSorcery := true } ] }
   | .lander => {
       name := "Lander"
@@ -885,7 +885,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
       isToken := true
       activatedAbilities := #[
         { effect := Effect.searchBasicLandTapped
-          cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true } } ] }
+          cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapSelf, .sacrifice (.exact 1) .self] } ] }
   | .mutagen => {
       name := "Mutagen"
       types := #[.artifact]
@@ -897,7 +897,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
             resolution := .onPermanent (.plusOne 1)
             phrase := "Put a +1/+1 counter on target creature."
           }
-          cost := { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true }
+          cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self]
           onlyAsSorcery := true } ] }
   | .vibranium => vibraniumToken
   | .heartwood => heartwoodToken
@@ -905,7 +905,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
 /-- Apply a parameterized `TokenAbilitySpec` onto a custom token's printed `CardDef` (CR 111.3). -/
 def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
   match ab with
-  | .toxic n => { c with toxic := c.toxic + n }
+  | .toxic n => { c with keywords := KeywordAbility.add c.keywords (.toxic n) }
   | .cantBlock => { c with cantBlock := true }
   | .attacksEachCombatIfAble =>
     { c with staticAbilities := c.staticAbilities.push .attacksEachCombatIfAble }
@@ -916,7 +916,7 @@ def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
   | .equipGeneric generic =>
     { c with
       activatedAbilities := c.activatedAbilities.push {
-        cost := { mana := ManaCost.ofGeneric generic }
+        cost := CostSpec.ofGeneric generic
         effect := Effect.attachToTargetCreatureYouControl
         onlyAsSorcery := true
       } }
@@ -928,7 +928,7 @@ def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
     { c with
       activatedAbilities := c.activatedAbilities.push {
         effect := Effect.gainLife life
-        cost := { mana := ManaCost.ofGeneric generic, tap := true, sacrificeSource := true }
+        cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric generic), .tapSelf, .sacrifice (.exact 1) .self]
       } }
   | .payGenericCantBeBlockedExceptHaste generic =>
     { c with
@@ -937,18 +937,18 @@ def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
           resolution := .frc .gingerDash
           phrase := "This token can't be blocked this turn except by creatures with haste."
         }
-        cost := { mana := ManaCost.ofGeneric generic }
+        cost := CostSpec.ofGeneric generic
       } }
   | .loyaltyMinusSurveil cost n =>
     { c with
       activatedAbilities := c.activatedAbilities.push {
-        cost := { loyalty := some (.minus cost) }
+        cost := CostSpec.ofLoyalty (.minus cost)
         effect := { resolution := .surveil n, phrase := s!"Surveil {n}" }
       } }
   | .loyaltyMinusDraw cost n =>
     { c with
       activatedAbilities := c.activatedAbilities.push {
-        cost := { loyalty := some (.minus cost) }
+        cost := CostSpec.ofLoyalty (.minus cost)
         effect := {
           resolution := .draw n
           phrase := if n == 1 then "Draw a card" else s!"Draw {n} cards"
@@ -1058,7 +1058,7 @@ def applyCopyModification (c : CardDef) (m : CopyModification) : CardDef :=
   | .removeSupertype sup =>
     { c with supertypes := c.supertypes.filter (· != sup) }
   | .addKeywords kw =>
-    { c with keywords := Keywords.merge c.keywords kw }
+    { c with keywords := KeywordAbility.merge c.keywords kw }
   | .addAbilities abs =>
     abs.foldl applyTokenAbility c
 

@@ -144,11 +144,11 @@ def trollCycled : Game :=
 
 /- Gollum, Silent Slinker: menace (CR 702.111 / 509.1b). -/
 
-#guard gollumSilentSlinker.keywords.menace
+#guard KeywordAbility.hasMenace gollumSilentSlinker.keywords
 #guard gollumSilentSlinker.power == some 4
 #guard gollumSilentSlinker.toughness == some 3
 #guard withGollum.hasMenace (namedPermanent withGollum "Gollum, Silent Slinker")
-#guard (withGollum.effectiveKeywords (namedPermanent withGollum "Gollum, Silent Slinker")).menace
+#guard KeywordAbility.hasMenace (withGollum.effectiveKeywords (namedPermanent withGollum "Gollum, Silent Slinker"))
 #guard withGollum.legalBlockerCount
   (namedPermanent withGollum "Gollum, Silent Slinker") 0
 #guard !withGollum.legalBlockerCount
@@ -248,7 +248,7 @@ def gollumAndOgreVsOneBearReadyToBlock : Game :=
 def ogreGrantedMenaceReadyToBlock : Game :=
   let g := readyToDeclareBlockers
   let ogre := namedPermanent g "Gray Ogre"
-  g.createEffect (.keywordsUntilEot ogre.id Keyword.menace)
+  g.createEffect (.keywordsUntilEot ogre.id #[Keyword.menace])
 
 #guard ogreGrantedMenaceReadyToBlock.hasMenace
   (namedPermanent ogreGrantedMenaceReadyToBlock "Gray Ogre")

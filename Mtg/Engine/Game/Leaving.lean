@@ -1698,7 +1698,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
             ((clearPending g).clearUnlessPays, .none)
           else (g, pending)
         | none => (g, pending)
-  | .payWard q spellId cost =>
+  | .payWard q spellId cost chosen =>
     if q == p then
       let g := clearPending g
       let g := g.logMsg s!"{(g.player p).name} does not pay (CR 800.4f)"
@@ -1715,9 +1715,14 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
     else if !(g.findObject? spellId).any (·.zone == .stack) then
       (clearPending g, .none)
     else
-      match cost with
-      | .sacrificePermanents left paid chosen =>
-        if paid > 0 && ((g.permanentsOf q).filter (fun o => !chosen.contains o.id)).size < left then
+      match cost.items.toList with
+      | [.sacrifice (.count (.const n)) (.filter pred)] =>
+        let need := if n > 0 then n.toNat else 1
+        let left := need - chosen.size
+        let env : EvalEnv := { controller := q }
+        let rem := (g.permanentsOf q).filter fun o =>
+          !chosen.contains o.id && EvalExpr.evalObjectPred g env (.live o) pred
+        if !chosen.isEmpty && rem.size < left then
           let g := (clearPending g).logMsg s!"{(g.player q).name} cannot finish paying ward"
           let wardCtrl := ((g.resolvingAbility.bind g.findObject?).bind (·.controller)).getD (g.opponent q)
           let g :=

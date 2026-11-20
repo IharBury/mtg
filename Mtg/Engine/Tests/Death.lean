@@ -39,7 +39,7 @@ def inZone (g : Game) (z : Zone) (name : String) : Bool :=
 `DeathLeftover`. The printed sentence stays the Oracle line. -/
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathHellcatReturn) ==
   .put .source .underOwner (.entering [
-    .loseAllAbilities, .keywords Keyword.haste,
+    .loseAllAbilities, .keywords #[Keyword.haste],
     .counter .plusOnePlusOne (asEnters := true)])
 #guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathVillainReturnAsHero) ==
   .put (.cause (some .villain)) .underOwner (.entering [
@@ -70,7 +70,7 @@ def hellcatReturns : Game :=
   let cat := named hellcatReturns "Hellcat, Undying Vigilante"
   onBoard hellcatReturns "Hellcat, Undying Vigilante" &&
     cat.status.plusOnePlusOne == 1 && hellcatReturns.hasHaste cat &&
-    (hellcatReturns.currentKeywords cat).haste &&
+    KeywordAbility.hasHaste (hellcatReturns.currentKeywords cat) &&
     (hellcatReturns.triggeredAbilities cat).isEmpty &&
     (hellcatReturns.activatedAbilitiesOf cat).isEmpty &&
     (hellcatReturns.staticAbilities cat).isEmpty &&

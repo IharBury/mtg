@@ -41,44 +41,66 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (onlyIfYouControlCreatureToughnessAtLeast : Nat := 0)
     (onlyIfGyCreaturesAtLeast : Nat := 0)
     (costReductionIfTargetPowerAtMost : Option (Nat × Int) := none)
-    (loyalty : Option LoyaltySymbol := none) :
-    ActivatedAbility := {
-  cost := {
-    mana := mana
-    tap := tap
-    loyalty := loyalty
-    sacrificeSource := sacrificeSource
-    sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact
-    payLife := payLife
-    discardSource := discardSource
-    exileSourceFromGraveyard := exileSourceFromGraveyard
-    sacrificeAnotherSubtype := sacrificeAnotherSubtype
-    sacrificeAnotherCreature := sacrificeAnotherCreature
-    discardACard := discardACard
-    tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl
-    removeIndestructibleCounter := removeIndestructibleCounter
-    sacrificeLegendaryArtifact := sacrificeLegendaryArtifact
-    discardLegendarySameName := discardLegendarySameName
-    sacrificeArtifact := sacrificeArtifact
-    sacrificeArtifactOrCreature := sacrificeArtifactOrCreature
-    sacrificeArtifactOrDiscardNonland := sacrificeArtifactOrDiscardNonland
-    removeAnyNumberPlusOne := removeAnyNumberPlusOne
-    putStunCounterOnSource := putStunCounterOnSource
-    sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource
+    (loyalty : Option LoyaltySymbol := none)
+    (removeStoryCounter : Bool := false)
+    (extraCost : CostSpec := {}) :
+    ActivatedAbility :=
+  let items : Array CostItem := Id.run do
+    let mut out : Array CostItem := #[]
+    if let some sym := loyalty then out := out.push (.loyalty sym)
+    if !mana.symbols.isEmpty then out := out.push (.mana mana)
+    if tap then out := out.push .tapSelf
+    if payLife != 0 then out := out.push (.payLife (.const payLife))
+    if discardSource then out := out.push (.discard (.exact 1) .self)
+    if exileSourceFromGraveyard then
+      out := out.push (.exile (.exact 1) .yourGraveyard .self false)
+    if sacrificeSource then out := out.push (.sacrifice (.exact 1) .self)
+    if sacrificeAnotherCreatureOrArtifact then
+      out := out ++ CostSpec.sacrificeAnotherCreatureOrArtifactSpec.items
+    if sacrificeArtifact && !(sacrificeSource && sacrificeLegendaryArtifact) then
+      out := out ++ CostSpec.sacrificeArtifact.items
+    if let some t := sacrificeAnotherSubtype then
+      out := out ++ (CostSpec.sacrificeAnotherSubtype t).items
+    if sacrificeAnotherCreature then
+      out := out ++ CostSpec.sacrificeAnotherCreature.items
+    if discardACard then out := out ++ CostSpec.discardCard.items
+    if sacrificeArtifactOrCreature then
+      out := out ++ CostSpec.sacrificeArtifactOrCreature.items
+    if sacrificeArtifactOrDiscardNonland then
+      out := out ++ CostSpec.sacrificeArtifactOrDiscardNonland.items
+    if removeAnyNumberPlusOne then
+      out := out.push (.removeCounters .anyNumber (some .plusOnePlusOne) .self)
+    if putStunCounterOnSource then
+      out := out.push (.putCounters (.const 1) .stun .self)
+    if sacrificeEquipmentAttachedToSource then
+      out := out ++ CostSpec.sacrificeEquipmentAttached.items
+    if tapAnUntappedCreatureYouControl then
+      out := out ++ CostSpec.tapUntappedCreature.items
+    if removeIndestructibleCounter then
+      out := out.push (.removeCounters (.exact 1) (some .indestructible) .self)
+    if sacrificeLegendaryArtifact then
+      out := out ++ CostSpec.sacrificeLegendaryArtifactSpec.items
+    if discardLegendarySameName then
+      out := out ++ CostSpec.discardLegendarySameName.items
+    if removeStoryCounter then
+      out := out.push (.removeCounters (.exact 1) (some .story) .self)
+    out := out ++ extraCost.items
+    return out
+  {
+    cost := { items, bindVar? := extraCost.bindVar? }
+    effect :=
+      if effect == Effect.attachToTargetCreatureYouControl && (equipSubtype.isSome || equipWorthy) then
+        Effect.equipEffect equipSubtype equipWorthy
+      else
+        effect
+    otherModes := otherModes
+    onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
+    activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
+    costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
+    onlyIfYouAttackedWithTwoOrMore, onlyIfOpponentDealtNoncombatDamage, powerUp, equipWorthy
+    onlyIfYouControlCreatureToughnessAtLeast, onlyIfGyCreaturesAtLeast
+    costReductionIfTargetPowerAtMost
   }
-  effect :=
-    if effect == Effect.attachToTargetCreatureYouControl && (equipSubtype.isSome || equipWorthy) then
-      Effect.equipEffect equipSubtype equipWorthy
-    else
-      effect
-  otherModes := otherModes
-  onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
-  activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
-  costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
-  onlyIfYouAttackedWithTwoOrMore, onlyIfOpponentDealtNoncombatDamage, powerUp, equipWorthy
-  onlyIfYouControlCreatureToughnessAtLeast, onlyIfGyCreaturesAtLeast
-  costReductionIfTargetPowerAtMost
-}
 
 /-- Equip `mana`, only as a sorcery. -/
 def equipAbility (mana : ManaCost) (subtype : Option CardSubtype := none) : ActivatedAbility :=

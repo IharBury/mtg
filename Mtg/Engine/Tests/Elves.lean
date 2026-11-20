@@ -157,7 +157,7 @@ def agentArchdruidMana : Game :=
 (CR 603.6a / 508.3a / 119.3). -/
 
 #guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
-#guard mirkwoodElk.keywords.trample
+#guard KeywordAbility.hasTrample mirkwoodElk.keywords
 #guard mirkwoodElk.power == some 6
 #guard mirkwoodElk.toughness == some 6
 
@@ -191,7 +191,7 @@ def elkEntered : Game := passBoth paidElk
 #guard (namedPermanent elkEntered "Mirkwood Elk").printed.power == some 6
 #guard elkEntered.power (namedPermanent elkEntered "Mirkwood Elk") == 6
 #guard elkEntered.toughness (namedPermanent elkEntered "Mirkwood Elk") == 6
-#guard (namedPermanent elkEntered "Mirkwood Elk").printed.keywords.trample
+#guard KeywordAbility.hasTrample (namedPermanent elkEntered "Mirkwood Elk").printed.keywords
 #guard elkEntered.stack.size == 1
 #guard (elkEntered.object! elkEntered.stack.back!.objectId).triggeredAbility ==
   some .onEnterOrAttackReturnElfGainLife
@@ -615,7 +615,7 @@ def afterCelebornCleanup : Game := passBoth (skipTo celebornPumped .end 80)
 /- Woodland Weavemaster: vigilance, another-Elf-enters +1/+1, and restricted
 any-color mana equal to power. -/
 
-#guard woodlandWeavemaster.keywords.vigilance
+#guard KeywordAbility.hasVigilance woodlandWeavemaster.keywords
 #guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
 #guard woodlandWeavemaster.tapAddAnyColorEqualToPower
 #guard woodlandWeavemaster.manaAbilities.contains (.colored .green)
@@ -625,8 +625,8 @@ any-color mana equal to power. -/
 def weavemasterReady : Game :=
   addPermanent afterDraw woodlandWeavemaster ⟨0⟩ ⟨0⟩
 
-#guard (weavemasterReady.effectiveKeywords
-  (namedPermanent weavemasterReady "Woodland Weavemaster")).vigilance
+#guard KeywordAbility.hasVigilance (weavemasterReady.effectiveKeywords
+  (namedPermanent weavemasterReady "Woodland Weavemaster"))
 #guard weavemasterReady.hasVigilance
   (namedPermanent weavemasterReady "Woodland Weavemaster")
 #guard weavemasterReady.power (namedPermanent weavemasterReady "Woodland Weavemaster") == 1

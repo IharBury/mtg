@@ -30,8 +30,8 @@ open Mtg.Engine.Catalog
 #guard mentions attercop.summary "reach"
 #guard mentions attercop.summary "deathtouch"
 #guard mentions attercop.summary "a land you control enters"
-#guard attercop.keywords.reach
-#guard attercop.keywords.deathtouch
+#guard KeywordAbility.hasReach attercop.keywords
+#guard KeywordAbility.hasDeathtouch attercop.keywords
 #guard attercop.triggeredAbilities.size == 1
 #guard attercop.triggeredAbilities == #[(.onLandYouControlEntersGets 1 1)]
 #guard mentions landrovalHorizonWitness.summary "flying"
@@ -59,7 +59,7 @@ open Mtg.Engine.Catalog
 #guard mentions raggedShortSpear.summary "Equip"
 #guard raggedShortSpear.isEquipment
 #guard hawkeyeSBow.isEquipment
-#guard hawkeyeSBow.staticAbilities == #[.equippedCreatureGetsAndHas 1 0 Keyword.reach]
+#guard hawkeyeSBow.staticAbilities == #[.equippedCreatureGetsAndHas 1 0 #[Keyword.reach]]
 #guard hawkeyeSBow.triggeredAbilities == #[.onWatch Effect.watchEquippedTappedDamage]
 #guard hawkeyeSBow.activatedAbilities.size == 1
 #guard hawkeyeSBow.activatedAbilities[0]!.onlyAsSorcery
@@ -104,7 +104,7 @@ open Mtg.Engine.Catalog
 #guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := .elf }]
 #guard mentions mirkwoodElk.summary "trample"
 #guard mentions mirkwoodElk.summary "Elf card"
-#guard mirkwoodElk.keywords.trample
+#guard KeywordAbility.hasTrample mirkwoodElk.keywords
 #guard mirkwoodElk.triggeredAbilities.size == 1
 #guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
 #guard mentions celebornTheWise.summary "one or more Elves"
@@ -121,14 +121,14 @@ open Mtg.Engine.Catalog
 #guard mentions woodlandWeavemaster.summary "vigilance"
 #guard mentions woodlandWeavemaster.summary "another Elf"
 #guard mentions woodlandWeavemaster.summary "any one color"
-#guard woodlandWeavemaster.keywords.vigilance
+#guard KeywordAbility.hasVigilance woodlandWeavemaster.keywords
 #guard woodlandWeavemaster.triggeredAbilities.size == 1
 #guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
 #guard woodlandWeavemaster.tapAddAnyColorEqualToPower
 #guard mentions oliphaunt.summary "trample"
 #guard mentions oliphaunt.summary "+2/+0"
 #guard mentions oliphaunt.summary "Mountaincycling"
-#guard oliphaunt.keywords.trample
+#guard KeywordAbility.hasTrample oliphaunt.keywords
 #guard oliphaunt.triggeredAbilities.size == 1
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
 #guard oliphaunt.activatedAbilities.size == 1
@@ -151,12 +151,12 @@ open Mtg.Engine.Catalog
 #guard mirkwoodPathmaker.toughness.isNone
 #guard mentions ologHaiCrusher.summary "trample"
 #guard mentions ologHaiCrusher.summary "can't block unless"
-#guard ologHaiCrusher.keywords.trample
+#guard KeywordAbility.hasTrample ologHaiCrusher.keywords
 #guard ologHaiCrusher.staticAbilities.size == 1
 #guard ologHaiCrusher.staticAbilities == #[.cantBlockUnlessYouControl #[.goblin, .orc]]
 #guard mentions gandalfSparkStarter.summary "reach"
 #guard mentions gandalfSparkStarter.summary "divided as you choose"
-#guard gandalfSparkStarter.keywords.reach
+#guard KeywordAbility.hasReach gandalfSparkStarter.keywords
 #guard gandalfSparkStarter.triggeredAbilities.size == 1
 #guard gandalfSparkStarter.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
 #guard mentions goblinFireleaper.summary "+1/+0"
@@ -173,12 +173,12 @@ open Mtg.Engine.Catalog
 #guard mentions raveningWarg.summary "deathtouch"
 #guard mentions raveningWarg.summary "while you control a creature with power 4 or greater"
 #guard mentions raveningWarg.summary "power 4 or greater"
-#guard raveningWarg.keywords.deathtouch
+#guard KeywordAbility.hasDeathtouch raveningWarg.keywords
 #guard raveningWarg.triggeredAbilities.size == 1
 #guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
 #guard mentions gollumSilentSlinker.summary "menace"
 #guard !mentions gollumSilentSlinker.summary "can't be blocked except"
-#guard gollumSilentSlinker.keywords.menace
+#guard KeywordAbility.hasMenace gollumSilentSlinker.keywords
 #guard gollumSilentSlinker.power == some 4
 #guard gollumSilentSlinker.toughness == some 3
 #guard mentions bilbosDeadlySlice.summary "destroy target creature"
@@ -197,7 +197,7 @@ open Mtg.Engine.Catalog
 #guard guttersnipe.triggeredAbilities == #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
 #guard mentions guardianOfTheHalls.summary "trample"
 #guard mentions guardianOfTheHalls.summary "+1/+1"
-#guard guardianOfTheHalls.keywords.trample
+#guard KeywordAbility.hasTrample guardianOfTheHalls.keywords
 #guard guardianOfTheHalls.activatedAbilities.size == 1
 #guard guardianOfTheHalls.activatedAbilities[0]!.effect == Effect.putPlusOnePlusOneOnSource 3
 #guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
@@ -206,7 +206,7 @@ open Mtg.Engine.Catalog
 #guard mentions improvisedClub.summary "4 damage"
 #guard improvisedClub.isInstant
 #guard improvisedClub.spellEffect == some (Effect.dealDamage 4)
-#guard improvisedClub.additionalCostSacrificeArtifactOrCreature
+#guard improvisedClub.additionalCosts == #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]
 #guard improvisedClub.requiresTarget
 #guard mentions fireOfOrthanc.summary "artifact or land"
 #guard mentions fireOfOrthanc.summary "can't block this turn"
@@ -215,12 +215,12 @@ open Mtg.Engine.Catalog
 #guard fireOfOrthanc.requiresTarget
 #guard mentions smaugTheGreatCalamity.summary "flying"
 #guard mentions smaugTheGreatCalamity.summary "Spew Flame"
-#guard smaugTheGreatCalamity.keywords.flying
+#guard KeywordAbility.hasFlying smaugTheGreatCalamity.keywords
 #guard smaugTheGreatCalamity.hasAdventure
 #guard mentions beornReluctantHost.summary "trample"
 #guard mentions beornReluctantHost.summary "Till and Tend"
 #guard mentions beornReluctantHost.summary "additional land"
-#guard beornReluctantHost.keywords.trample
+#guard KeywordAbility.hasTrample beornReluctantHost.keywords
 #guard beornReluctantHost.hasAdventure
 
 /- Structured abilities still print when Oracle text is absent. -/
@@ -237,7 +237,7 @@ open Mtg.Engine.Catalog
 
 #guard
   let c := creature "Silent Siege" ManaCost.empty #[] 0 5
-    (keywords := Keyword.trample)
+    (keywords := #[Keyword.trample])
     (staticAbilities := #[.otherCreaturesHaveTrample #[.orc, .goblin]])
     (triggeredAbilities := #[.onAttackPumpByGreatestPower])
   mentions c.abilitiesText "Other Orcs and Goblins" &&
@@ -252,7 +252,7 @@ open Mtg.Engine.Catalog
 
 #guard
   let c := aura "Silent Strands" ManaCost.empty ""
-    (keywords := Keyword.flash)
+    (keywords := #[Keyword.flash])
     (staticAbilities := #[.enchantedCreatureGets 3 3])
     (triggeredAbilities := #[.onEnterScry 2])
   mentions c.abilitiesText "Enchanted creature gets +3/+3" &&
@@ -281,7 +281,7 @@ open Mtg.Engine.Catalog
 
 #guard
   let c := creature "Silent Weavemaster" ManaCost.empty #["Elf", "Druid"] 1 2
-    (keywords := Keyword.vigilance)
+    (keywords := #[Keyword.vigilance])
     (triggeredAbilities := #[.onAnotherElfYouControlEntersGets1])
     (tapAddAnyColorEqualToPower := true)
   mentions c.summary "vigilance" &&
@@ -325,7 +325,7 @@ open Mtg.Engine.Catalog
 
 #guard
   let c := creature "Silent Attercop" ManaCost.empty #["Spider"] 2 1
-    (keywords := Keyword.reach.merge Keyword.deathtouch)
+    (keywords := #[Keyword.reach, Keyword.deathtouch])
     (triggeredAbilities := #[(.onLandYouControlEntersGets 1 1)])
   mentions c.summary "reach" &&
     mentions c.summary "deathtouch" &&
@@ -340,14 +340,14 @@ open Mtg.Engine.Catalog
 
 #guard
   let c := card "Silent Crusher" #[.creature]
-    (keywords := Keyword.trample)
+    (keywords := #[Keyword.trample])
     (staticAbilities := #[.cantBlockUnlessYouControl #[.goblin, .orc]])
   mentions c.abilitiesText "can't block unless you control a Goblin or Orc" &&
     mentions c.summary "trample"
 
 #guard
   let c := card "Silent Spark" #[.creature]
-    (keywords := Keyword.reach)
+    (keywords := #[Keyword.reach])
     (triggeredAbilities := #[.onEnterDealDividedDamage 3 3])
   mentions c.abilitiesText "divided as you choose" &&
     mentions c.abilitiesText "one, two, or three" &&
@@ -383,7 +383,7 @@ open Mtg.Engine.Catalog
 
 #guard
   let c := creature "Silent Elk" ManaCost.empty #[] 6 6
-    (keywords := Keyword.trample)
+    (keywords := #[Keyword.trample])
     (triggeredAbilities := #[.onEnterOrAttackReturnElfGainLife])
   mentions c.abilitiesText "Elf card" &&
     mentions c.abilitiesText "graveyard" &&
@@ -405,7 +405,7 @@ open Mtg.Engine.Catalog
 
 #guard
   let c := creature "Silent Guardian" ManaCost.empty #[] 2 2
-    (keywords := Keyword.trample)
+    (keywords := #[Keyword.trample])
     (activatedAbilities := #[
       activated (Effect.putPlusOnePlusOneOnSource 3)
         (ManaCost.ofGenericAndColors 5 [.green, .green])])
@@ -427,7 +427,7 @@ open Mtg.Engine.Catalog
 
 #guard
   let c := creature "Silent Warg" ManaCost.empty #["Wolf"] 2 2
-    (keywords := Keyword.deathtouch)
+    (keywords := #[Keyword.deathtouch])
     (triggeredAbilities := #[.onAttackFerociousGainLife 2])
   mentions c.summary "deathtouch" &&
     mentions c.abilitiesText "power 4 or greater" &&
@@ -436,7 +436,7 @@ open Mtg.Engine.Catalog
 #guard
   let c := creature "Silent Slinker" ManaCost.empty #[] 4 3
     (oracleText := "Menace (This creature can't be blocked except by two or more creatures.)")
-    (keywords := Keyword.menace)
+    (keywords := #[Keyword.menace])
   mentions c.summary "menace" &&
     !mentions c.summary "can't be blocked except" &&
     CardDef.isKeywordRestatement c.keywords
@@ -444,7 +444,7 @@ open Mtg.Engine.Catalog
 
 #guard
   let c := creature "Silent Oliphaunt" ManaCost.empty #[] 6 4
-    (keywords := Keyword.trample)
+    (keywords := #[Keyword.trample])
     (triggeredAbilities := #[.onAttackOtherGets2AndTrample])
   mentions c.abilitiesText "+2/+0" &&
     mentions c.abilitiesText "gains trample" &&

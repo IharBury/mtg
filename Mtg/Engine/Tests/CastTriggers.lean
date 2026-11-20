@@ -659,7 +659,7 @@ def guardianAbility : ActivatedAbility :=
 #guard guardianAbility.effect == Effect.putPlusOnePlusOneOnSource 3
 #guard guardianAbility.cost.mana == ManaCost.ofGenericAndColors 5 [.green, .green]
 #guard !guardianAbility.effect.requiresTarget
-#guard guardianOfTheHalls.keywords.trample
+#guard KeywordAbility.hasTrample guardianOfTheHalls.keywords
 
 /-- Guardian in play with {5}{G}{G} in the pool; a land drop is already used. -/
 def guardianReady : Game :=

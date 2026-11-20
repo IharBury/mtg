@@ -234,7 +234,7 @@ def gollumMenaceField : Game :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   addPermanent g llanowarElves ⟨1⟩ ⟨1⟩
 
-#guard (namedPermanent gollumMenaceField "Gollum, Silent Slinker").printed.keywords.menace
+#guard KeywordAbility.hasMenace (namedPermanent gollumMenaceField "Gollum, Silent Slinker").printed.keywords
 #guard gollumMenaceField.minBlockersRequired
   (namedPermanent gollumMenaceField "Gollum, Silent Slinker") == 2
 
@@ -802,8 +802,8 @@ def superSpeedFirstStrikeOk : Bool :=
   let aura := namedPermanent g "Super Speed"
   let g := g.attachSourceTo aura host
   let g := g.applyTriggeredAbility ⟨0⟩
-    (.onEnterEnchanted (.grantKeywords Keyword.firstStrike)) (some aura.id)
-  (g.currentKeywords (g.object! host.id)).firstStrike
+    (.onEnterEnchanted (.grantKeywords #[Keyword.firstStrike])) (some aura.id)
+  KeywordAbility.hasFirstStrike (g.currentKeywords (g.object! host.id))
 
 #guard superSpeedFirstStrikeOk
 
@@ -840,9 +840,9 @@ def stolenStarkIndestructibleOk : Bool :=
   let host := namedPermanent g "Grizzly Bears"
   let eq := namedPermanent g "Stolen Stark Tech"
   let g := g.applyTriggeredAbility ⟨0⟩
-    (.onEnterAttachThen (.grantKeywords Keyword.indestructible))
+    (.onEnterAttachThen (.grantKeywords #[Keyword.indestructible]))
     (some eq.id) #[Target.permanent host.id]
-  (g.currentKeywords (g.object! host.id)).indestructible &&
+  KeywordAbility.hasIndestructible (g.currentKeywords (g.object! host.id)) &&
     (g.object! eq.id).attachedTo == some host.id
 
 #guard stolenStarkIndestructibleOk

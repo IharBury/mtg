@@ -35,7 +35,7 @@ def main : IO UInt32 := do
     (fun c =>
       match c.adventure with
       | some a => a.name == "Allure of Power" && a.spellEffect == some (Effect.draw 2) &&
-          a.additionalCostSacrificeCreature
+          a.additionalCosts == #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
       | none => false))
   fails := fails + (← expect "Treasure"
     "Treasure\nArtifact — Treasure\nToken\n{T}, Sacrifice this token: Add one mana of any color."
@@ -61,7 +61,7 @@ def main : IO UInt32 := do
   fails := fails + (← expect "Thanos"
     "Thanos, the Mad Titan\n{R}{W}{B}\nLegendary Creature — Eternal Villain\n4/4\nDeathtouch, lifelink\nPower-up — {C}{W}{U}{B}{R}{G}: Put two +1/+1 counters on Thanos. Choose odd or even. Destroy each other creature with mana value of the chosen quality."
     (fun c => c.activatedAbilities.size == 1 && c.activatedAbilities[0]!.powerUp &&
-      c.keywords.deathtouch && c.keywords.lifelink))
+      KeywordAbility.hasDeathtouch c.keywords && KeywordAbility.hasLifelink c.keywords))
   let t1 ← IO.monoMsNow
   IO.println s!"fails {fails} ms {t1 - t0}"
   return if fails == 0 then 0 else 1

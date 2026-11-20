@@ -269,8 +269,7 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
       manaCost := { symbols := #[.x, .colored .red] }
       types := #[.instant]
       chooseOneOrBoth := true
-      kicker := some (ManaCost.ofGeneric 1)
-      giftTreasure := true
+      keywords := #[.kicker (CostSpec.ofGeneric 1), .gift .treasure]
       spellModes := #[.dealDamage 2, .gainLife 2] }
   let gCast0 := insertObject (quiet afterDraw) testModalSpell me .stack (some me)
     (adventurerCard := some bear)
@@ -1162,7 +1161,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
     entAtkFraBatches.size == 2 && entAtkFraBatches[0]! == entAtkFraBatches[1]!
   -- `dealAssignedCombatDamage` consumes `replacementOrder` per damage packet rather than leaking across blockers (CR 616.1).
   let cbtLifelinkDef : CardDef :=
-    { bear with name := "Lifelink Striker", keywords := { lifelink := true } }
+    { bear with name := "Lifelink Striker", keywords := #[Keyword.lifelink] }
   let idCbtMul : ReplacementId := { kind := .multiplyDamage }
   let idCbtLifeAdd : ReplacementId := { kind := .addLifeGain, player := some me }
   let idCbtLifeMul : ReplacementId := { kind := .multiplyLifeGain, player := some me }
@@ -1279,7 +1278,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
         (.layered (.objects #[b.id]) (.text (.replaceCreatureType .bear .elf)) .untilEndOfTurn) (cause := some cause8)).createEffect
         (.layered (.creaturesControlledBy me) (.types .add #[.artifact] #[.construct] #[.legendary]) .untilEndOfTurn) (cause := some cause8)).createEffect
         (.layered (.objects #[b.id]) (.colors .set { blue := true }) .untilEndOfTurn) (cause := some cause8)).createEffect
-        (.layered (.objects #[b.id]) (.abilities { keywords := Keyword.flying } .none) .untilEndOfTurn) (cause := some cause8)
+        (.layered (.objects #[b.id]) (.abilities { keywords := #[Keyword.flying] } .none) .untilEndOfTurn) (cause := some cause8)
   let bAfter := gLayers.object! b.id
   let layersOk :=
     gLayers.power bAfter == 5 &&
@@ -1379,7 +1378,7 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   let gInit :=
     (((g1.changeControl (g1.object! b.id) me (turnEndsLeft := 2)).createEffect
         (.playPermission exId { player := me } (turnEnds := 2)) (cause := some causeNext)).createEffect
-        (.keywordsUntilEot b.id Keyword.haste) (cause := some causeNext)).record
+        (.keywordsUntilEot b.id #[Keyword.haste]) (cause := some causeNext)).record
         (GameEvent.damageMarked g1.turnNumber b.id 1 (cause := causeNext))
   let hasPlayPerm (g : Game) : Bool :=
     g.activeEffects.any fun (_, s) =>
@@ -1491,7 +1490,7 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
    counter kind's timestamp (CR 613.7c) and restores only that keyword. -/
 #guard
   let wingedDef : CardDef :=
-    creature "WingedGuard" ManaCost.empty #["Bird"] 2 2 (keywords := Keyword.vigilance)
+    creature "WingedGuard" ManaCost.empty #["Bird"] 2 2 (keywords := #[Keyword.vigilance])
   let freezeAura : CardDef :=
     { (enchantment "FreezeAura" ManaCost.empty "") with
       subtypes := #["Aura"]
@@ -1520,7 +1519,7 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     !gCountersFirst.hasLifelink wLost &&
     !gCountersFirst.hasTrample wLost &&
     !gCountersFirst.hasIndestructible wLost &&
-    gCountersFirst.effectiveKeywords wLost == Keywords.none
+    gCountersFirst.effectiveKeywords wLost == (#[] : Array KeywordAbility)
   -- Refresh `.flying` counter timestamp (CR 613.7c) and add new `.haste` counter after ability loss
   let gRefreshed :=
     (gCountersFirst.recordPutCounters w.id .flying 1 (some me) (cause := some c3)).recordPutCounters
@@ -1535,7 +1534,8 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     !gRefreshed.hasLifelink wRef &&
     !gRefreshed.hasTrample wRef &&
     !gRefreshed.hasIndestructible wRef &&
-    gRefreshed.effectiveKeywords wRef == { flying := true, haste := true }
+    (let ek := gRefreshed.effectiveKeywords wRef
+     KeywordAbility.hasFlying ek && KeywordAbility.hasHaste ek && ek.size == 2)
   -- Attached loses-abilities Aura ordering (CR 613.7e vs 613.7c):
   -- Counter before attachment is stripped; counter after attachment applies.
   let gBeforeAura :=
@@ -1547,7 +1547,7 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     !gBeforeAura.hasVigilance wAura &&
     !gBeforeAura.hasDeathtouch wAura &&
     gBeforeAura.hasLifelink wAura &&
-    gBeforeAura.effectiveKeywords wAura == Keyword.lifelink
+    gBeforeAura.effectiveKeywords wAura == #[Keyword.lifelink]
   strippedOk && refreshedOk && auraOk &&
     allRulesEventsClassified gRefreshed &&
     allRulesEventsClassified gBeforeAura
@@ -1643,7 +1643,7 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     { name := "Test Precious"
       types := #[.artifact]
       subtypes := #["Equipment"]
-      staticAbilities := #[.equippedCreatureHasKeywordsAndCantBeBlocked Keyword.hexproof] }
+      staticAbilities := #[.equippedCreatureHasKeywordsAndCantBeBlocked #[Keyword.hexproof]] }
   let gEq0 :=
     addPermanent
       (addPermanent
@@ -1680,13 +1680,13 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     gPrecRe.hasHexproof (gPrecRe.object! host.id)
   -- 3. `prowessTriggers` with printed prowess and Wizard's Staff
   let mageDef : CardDef :=
-    { (creature "ProwessMage" ManaCost.empty #["Wizard"] 1 2 (keywords := Keyword.prowess)) with
-      prowessInstances := 1 }
+    { (creature "ProwessMage" ManaCost.empty #["Wizard"] 1 2 (keywords := #[Keyword.prowess])) with
+      keywords := #[Keyword.prowess] }
   let staffDef : CardDef :=
     { name := "Test Staff"
       types := #[.artifact]
       subtypes := #["Equipment"]
-      staticAbilities := #[.equippedCreatureHasKeywords Keyword.prowess] }
+      staticAbilities := #[.equippedCreatureHasKeywords #[Keyword.prowess]] }
   let gPw0 :=
     addPermanent (addPermanent (quiet afterDraw) mageDef me me) staffDef me me
   let mage := (gPw0.battlefield.filter (·.name == "ProwessMage"))[0]!
@@ -1700,9 +1700,9 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   let prowessOk :=
     (gPwPre.prowessTriggers (gPwPre.object! mage.id)).size == 2 &&
     (gPwLost.prowessTriggers (gPwLost.object! mage.id)).isEmpty &&
-    !(gPwLost.effectiveKeywords (gPwLost.object! mage.id)).prowess &&
+    !KeywordAbility.hasProwess (gPwLost.effectiveKeywords (gPwLost.object! mage.id)) &&
     (gPwRe.prowessTriggers (gPwRe.object! mage.id)).size == 1 &&
-    (gPwRe.effectiveKeywords (gPwRe.object! mage.id)).prowess
+    KeywordAbility.hasProwess (gPwRe.effectiveKeywords (gPwRe.object! mage.id))
   triggersOk && unblockableOk && prowessOk &&
     allRulesEventsClassified gAtkPost &&
     allRulesEventsClassified gRingRe &&
@@ -1802,8 +1802,7 @@ order (CR 613.1f / 613.7 / 702.21). -/
   let wardHeroDef : CardDef :=
     { (creature "Ward Hero" ManaCost.empty #["Hero"] 3 3) with
       supertypes := #[.legendary]
-      ward := some 2
-      staticAbilities := #[.wardDiscardOrPay 1] }
+      keywords := #[.ward (CostSpec.ofGeneric 2), .ward (CostSpec.discardCardOrPayGeneric 1)] }
   let wardEqDef : CardDef :=
     { name := "Ward Cloak"
       types := #[.artifact]
@@ -1837,14 +1836,14 @@ order (CR 613.1f / 613.7 / 702.21). -/
   let lordLostWards := gWdLordLost.wardCostsOn (gWdLordLost.object! wHero.id)
   let wardOk :=
     preWards.size == 4 &&
-    preWards.contains (.genericMana 2) &&
-    preWards.contains (.discardOrPay 1) &&
-    preWards.contains (.genericMana 3) &&
-    preWards.contains (.genericMana 4) &&
+    preWards.contains (CostSpec.ofGeneric 2) &&
+    preWards.contains (CostSpec.discardCardOrPayGeneric 1) &&
+    preWards.contains (CostSpec.ofGeneric 3) &&
+    preWards.contains (CostSpec.ofGeneric 4) &&
     lostWards.isEmpty &&
-    reWards == #[.genericMana 3, .genericMana 4] &&
+    reWards == #[CostSpec.ofGeneric 3, CostSpec.ofGeneric 4] &&
     lordLostWards.size == 3 &&
-    !lordLostWards.contains (.genericMana 4)
+    !lordLostWards.contains (CostSpec.ofGeneric 4)
   treasureOk && ironFistOk && canBlockOk && wardOk &&
     allRulesEventsClassified gTrReCombat &&
     allRulesEventsClassified gFistAuraLost &&
@@ -1901,7 +1900,7 @@ land ability removal) all obey Layer 6 (CR 104.2a / 106.7 / 605.1a / 613.1f / 61
     (gManaLost.player me).manaPool.isEmpty
   -- 3. `planeswalkersYouControlHave` (Layer 6 timestamp order + Layer 4 `isPlaneswalker`)
   let loyaltyGrantAb : ActivatedAbility :=
-    { cost := { loyalty := some (.plus 1) }
+    { cost := CostSpec.ofItems #[.loyalty (.plus 1)]
       effect := {} }
   let pwDef : CardDef :=
     { name := "Test Planeswalker"
@@ -2024,7 +2023,7 @@ all creature subtypes, and losing `.creature` in Layer 4 strips creature subtype
 #guard
   let changelingDef : CardDef :=
     { creature "Phase9 Changeling" ManaCost.empty #["Shapeshifter"] 2 2 with
-      keywords := { changeling := true } }
+      keywords := #[Keyword.changeling] }
   let g0 := addPermanent (quiet afterDraw) changelingDef me me
   let ch := (g0.battlefield.filter (·.name == "Phase9 Changeling"))[0]!
   let cdaOk :=
@@ -2056,7 +2055,7 @@ all creature subtypes, and losing `.creature` in Layer 4 strips creature subtype
     { name := "Phase9 Kitesail"
       types := #[.artifact]
       subtypes := #["Equipment"]
-      staticAbilities := #[.equippedCreatureHasKeywords { flying := true }] }
+      staticAbilities := #[.equippedCreatureHasKeywords #[Keyword.flying]] }
   let g0 :=
     addPermanent
       (addPermanent
@@ -2096,7 +2095,7 @@ changes), Layer 5 (subtype-scoped color grant vs text change), and Layer 6
   let opp : PlayerId := ⟨1⟩
   let flyerDef : CardDef :=
     { creature "Phase9 Flyer" ManaCost.empty #["Bird"] 2 2 with
-      keywords := { flying := true } }
+      keywords := #[Keyword.flying] }
   let g0 :=
     addPermanent
       (addPermanent (quiet afterDraw) bear opp opp)
@@ -2117,8 +2116,8 @@ changes), Layer 5 (subtype-scoped color grant vs text change), and Layer 6
   -- Layer 6: earlier `.creaturesWithout flying -> vigilance` waits for later `losesAbilitiesUntilEot`
   let gL6 :=
     (g0.createEffect
-      (.layered (.creaturesWithout { flying := true })
-        (.abilities { keywords := { vigilance := true } } .none) .untilEndOfTurn)).createEffect
+      (.layered (.creaturesWithout #[Keyword.flying])
+        (.abilities { keywords := #[Keyword.vigilance] } .none) .untilEndOfTurn)).createEffect
       (.losesAbilitiesUntilEot fl.id)
   let flAfter := gL6.object! fl.id
   let l6DepOk := !gL6.hasFlying flAfter && gL6.hasVigilance flAfter
@@ -2187,7 +2186,7 @@ a creature whose controller changes mid-turn without haste becomes summoning-sic
     gAnim.isCreature animLand &&
     gAnim.hasSummoningSickness animLand &&
     !(gAnim.manaSources me).any (fun (s, _) => s.id == land.id)
-  let gHaste := gAnim.createEffect (.keywordsUntilEot land.id Keyword.haste)
+  let gHaste := gAnim.createEffect (.keywordsUntilEot land.id #[Keyword.haste])
   let hasteLand := gHaste.object! land.id
   let hasteOk :=
     !gHaste.hasSummoningSickness hasteLand &&
@@ -2214,8 +2213,7 @@ a creature whose controller changes mid-turn without haste becomes summoning-sic
   let opp : PlayerId := ⟨1⟩
   let morphDef : CardDef :=
     { creature "Phase9 Morph Angel" { symbols := #[.colored .white, .colored .white] } #["Angel"] 5 5 with
-      keywords := { flying := true }
-      morph := some (ManaCost.ofGeneric 3) }
+      keywords := #[Keyword.flying, .morph (CostSpec.ofGeneric 3)] }
   let cloneDef : CardDef := creature "Phase9 Copy" ManaCost.empty #["Shapeshifter"] 0 0
   let g0 :=
     addPermanent
@@ -2373,7 +2371,7 @@ Layer 2 control effects):
     g0.createEffect (.layered (.creaturesControlledBy me) (.control opp) .untilEndOfTurn)
   let gScopedClean := gScopedEot.clearEOT
   let gWithoutEot :=
-    g0.createEffect (.layered (.creaturesWithout Keyword.flying) (.control opp) .untilEndOfTurn)
+    g0.createEffect (.layered (.creaturesWithout #[Keyword.flying]) (.control opp) .untilEndOfTurn)
   let gWithoutClean := gWithoutEot.clearEOT
   let gMultiEot :=
     g0.createEffect (.layered (.objects #[b.id, h.id]) (.control opp) .untilEndOfTurn)
@@ -2400,7 +2398,7 @@ Layer 2 control effects):
   let gBribe := addPermanent g3p bear p2 p0
   let bb := (gBribe.battlefield.filter (·.name == "Event Bear"))[0]!
   let gScopedSteal :=
-    gBribe.createEffect (.layered (.creaturesWithout Keyword.flying) (.control p1) .indefinite)
+    gBribe.createEffect (.layered (.creaturesWithout #[Keyword.flying]) (.control p1) .indefinite)
   let gP0Left := gScopedSteal.playerLeavesGame p0
   let gP1Left := gP0Left.playerLeavesGame p1
   let scopedLeaveExileOk :=
@@ -2410,7 +2408,7 @@ Layer 2 control effects):
   -- 2b. Singleton control effect ending while a scoped control effect still gives living `p2` control keeps permanent
   let gBoth :=
     (gBribe.createEffect
-      (.layered (.creaturesWithout Keyword.flying) (.control p2) .indefinite)).changeControl bb p1
+      (.layered (.creaturesWithout #[Keyword.flying]) (.control p2) .indefinite)).changeControl bb p1
   let gBothP0Left := gBoth.playerLeavesGame p0
   let gBothP1Left := gBothP0Left.playerLeavesGame p1
   let bbSurv := (gBothP1Left.battlefield.filter (·.name == "Event Bear"))[0]?
@@ -2460,14 +2458,14 @@ substitutions vs mana-derived colors):
   let peerBear := (gPeer0.battlefield.filter (·.name == "Event Bear"))[0]!
   let gCw :=
     gPeer0.createEffect
-      (.layered (.creaturesWithout Keyword.flying)
+      (.layered (.creaturesWithout #[Keyword.flying])
         (.abilities { staticAbilities := #[.noMaximumHandSize] } .none) .untilEndOfTurn)
   let gCwPhased := gCw.phaseOut (gCw.object! lord.id)
   let gGrantPeer :=
     ((addPermanent (addPermanent (quiet afterDraw) hero me me) bear me me).createEffect
       (.layered (.objects #[(addPermanent (addPermanent (quiet afterDraw) hero me me) bear me me |>.battlefield.filter (·.name == "Event Hero"))[0]!.id])
         (.abilities { staticAbilities := #[.fra .creaturesYouControlHaveTrample] } .none) .untilEndOfTurn)).createEffect
-      (.layered (.creaturesWithout Keyword.flying)
+      (.layered (.creaturesWithout #[Keyword.flying])
         (.abilities { staticAbilities := #[.noMaximumHandSize] } .none) .untilEndOfTurn)
   let grantBear := (gGrantPeer.battlefield.filter (·.name == "Event Bear"))[0]!
   let peerStaticsOk :=
@@ -2512,7 +2510,7 @@ substitutions vs mana-derived colors):
     { bear with
       name := "Phase9 Blue Mage"
       manaCost := { symbols := #[.colored .blue] }
-      protectionFromColors := #[.blue]
+      keywords := #[.protection (.color (.literal .blue))]
       triggeredAbilities := #[.onCastColorScry .blue 2] }
   let redGoblin : CardDef :=
     { bear with name := "Phase9 Red Goblin", manaCost := { symbols := #[.colored .red] } }
@@ -2702,7 +2700,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     { name := "Phase10 Storied Relic"
       manaCost := ManaCost.empty
       types := #[.artifact]
-      keywords := Keyword.storied }
+      keywords := #[Keyword.storied] }
   let (gStoryH1, sCard1) := afterDraw.allocObject storiedDef me (.hand me) none
   let (gStoryH2, sCard2) := gStoryH1.allocObject storiedDef me (.hand me) none
   let (gStoryH3, sCard3) := gStoryH2.allocObject storiedDef me (.hand me) none
@@ -3118,7 +3116,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let gEmb := (quiet afterDraw).createCommandObject me { name := "Phase11 Emblem", types := #[] }
   let actBearDef : CardDef := {
     bear with
-    activatedAbilities := #[{ cost := {}, effect := {} }]
+    activatedAbilities := #[{ cost := CostSpec.empty, effect := {} }]
   }
   let gAb0 := quiet (addPermanent afterDraw actBearDef me me)
   let baseBear := (gAb0.battlefield.filter (·.name == "Event Bear"))[0]!
@@ -3257,7 +3255,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     name := "Phase11 Changeling"
     types := #[.creature]
     subtypes := #["Shapeshifter"]
-    keywords := { changeling := true }
+    keywords := #[Keyword.changeling]
     power := some 2
     toughness := some 2
   }

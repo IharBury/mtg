@@ -219,7 +219,7 @@ def onEnterEachOpponentDiscards : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .opponentDiscards)
 def onEnterExileTop : TriggeredAbility :=
   .triggered .enter (Effect.ofTrigger .exileTop)
-def onAttackTargetGainsKeywords (k : Keywords) : TriggeredAbility :=
+def onAttackTargetGainsKeywords (k : Array KeywordAbility) : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger (.onPermanent .attackingCreature (.grantKeywords k)))
 def onDrawSecondMillPlayer (n : Nat) : TriggeredAbility :=
   .triggered .youDrawSecond (Effect.ofTrigger (.millPlayer n))
@@ -284,7 +284,7 @@ def onAttackPumpForEachOtherCreature : TriggeredAbility :=
   .triggered .attack (Effect.ofTrigger .pumpForEachOtherCreature)
 def onAttackWithTwoOrMoreGrantFlying : TriggeredAbility :=
   .triggered .youAttackWithTwoOrMore
-    (Effect.ofTrigger (.onPermanent .attackingCreatureWithoutFlying (.grantKeywords Keyword.flying)))
+    (Effect.ofTrigger (.onPermanent .attackingCreatureWithoutFlying (.grantKeywords #[Keyword.flying])))
 def onLeaveReturnExiled : TriggeredAbility :=
   .triggered .leaving (Effect.ofTrigger .returnLinkedExile)
 def onEnterCreateThenAttach (kind : TokenSpec) : TriggeredAbility :=
@@ -406,7 +406,7 @@ def onCombatMayPutArtifactAttachEquipment : TriggeredAbility :=
   .triggered .yourBeginCombat (Effect.ofTrigger .mayPutArtifactAttachEquipment)
 def onCastCascade : TriggeredAbility :=
   .triggered .cascade (Effect.ofTrigger .cascade)
-def onWard (cost : WardCost) : TriggeredAbility :=
+def onWard (cost : CostSpec) : TriggeredAbility :=
   .triggered .becomesTarget { resolution := .frc (.ward cost), phrase := "Ward" } {}
 def onTokenYouControlEntersBelladonna : TriggeredAbility :=
   .triggered .tokenYouControlEnters (Effect.ofTrigger .belladonnaTokenReward)
@@ -676,7 +676,7 @@ def attachedFollowupPhrase (r : TriggerResolution) : Option String :=
   | .putCounters (.ofKind .stun n) (.target .whileSource) =>
     some s!"put {(.stun : CounterKind).countersPhrase n} on that creature"
   | .grant (.keywords k) (.target .whileSource) =>
-    some s!"that creature gains {k.joinedAnd} until end of turn"
+    some s!"that creature gains {KeywordAbility.joinedAnd k} until end of turn"
   | .tap (.target .whileSource) => some "tap that creature"
   | .untap (.target .whileSource) => some "untap that creature"
   | .lose .indestructible (.target .whileSource) =>
@@ -916,11 +916,11 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "if you don't control a planeswalker, sacrifice this creature"
   | .«if» ((.atLeast (.count .forestsExceptCause) (.fixed 5))) (.pump (.fixed 3) (.fixed 3) .target) =>
     s!"if you control at least five other Forests, {noun} gets +3/+3 until end of turn"
-  | .may (.pay (.mana symbols)) (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)]) .ifYouDo =>
-    match symbols.toList with
-    | [.generic n] =>
+  | .may (.pay cost) (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)]) .ifYouDo =>
+    match cost.soleGenericMana? with
+    | some n =>
       s!"you may pay \{{n}}. If you do, put a +1/+1 counter on this creature and draw a card"
-    | _ =>
+    | none =>
       "you may pay. If you do, put a +1/+1 counter on this creature and draw a card"
   | .dealDamage amount who note =>
     match who, amount, note with
@@ -1017,19 +1017,29 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     "you may have this deal that much damage"
   | .may .retargetCause (.sequence []) .ifYouDo =>
     "you may choose new targets for that spell"
-  | .may (.pay (.mana symbols)) (.queueReflexive follow) .ifYouDo =>
-    let times :=
-      match TriggerResolution.queuedReflexive follow with
-      | .modeled _ times => times
-      | _ => 1
-    match symbols.toList with
-    | [.generic n] =>
-      if times > 1 then s!"you may pay \{{n}} up to {times} times"
-      else s!"you may pay \{{n}}"
-    | _ => "you may pay that cost"
-  | .may (.pay (.mana symbols)) (.becomeCopy (.cause none)) .ifYouDo =>
-    match symbols.toList with
-    | [.generic 2] => "you may pay {2} to copy it"
+  | .may (.pay cost) (.queueReflexive follow) .ifYouDo =>
+    if cost == CostSpec.sacrificeAnotherCreature && follow == .destroy .target then
+      "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
+    else if cost == CostSpec.sacrificeArtifactOrDiscardNonland && follow == .dealDamage (.fixed 2) .target then
+      "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
+    else if cost.isManaOnly && !cost.isEmpty then
+      let times :=
+        match TriggerResolution.queuedReflexive follow with
+        | .modeled _ times => times
+        | _ => 1
+      match cost.soleGenericMana? with
+      | some n =>
+        if times > 1 then s!"you may pay \{{n}} up to {times} times"
+        else s!"you may pay \{{n}}"
+      | none => "you may pay that cost"
+    else if cost.items.any (fun | .sacrifice _ _ => true | _ => false) then
+      "you may sacrifice that. If you do, do that"
+    else if cost.items.any (fun | .discard _ _ => true | _ => false) then
+      "you may discard that. If you do, do that"
+    else "you may pay that cost"
+  | .may (.pay cost) (.becomeCopy (.cause none)) .ifYouDo =>
+    match cost.soleGenericMana? with
+    | some 2 => "you may pay {2} to copy it"
     | _ => "you may pay to copy it"
   | .may (.loseLife (.fixed 2) .you)
       (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo =>
@@ -1220,20 +1230,20 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .sequence [.grant (.keywords k) .target,
       .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
       .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)] =>
-    s!"{noun} gains {k.joinedAnd} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
+    s!"{noun} gains {KeywordAbility.joinedAnd k} until end of turn. Put a +1/+1 counter on it if it's a creature. Put a loyalty counter on it if it's a planeswalker"
   | .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource] =>
     "draw two cards. If your library has no cards in it, you win the game. Fblthp's owner shuffles him into their library"
   | .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)] =>
     "if you gained life this turn, surveil 1. If you put a card with mana value less than or equal to the amount of life you gained this turn into your graveyard this way, put that card into your hand"
   | .sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target] =>
-    s!"{noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
+    s!"{noun} gets +3/+0 and gains {KeywordAbility.joinedAnd k} until end of turn"
   | .sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords k) .target] =>
-    if k == Keyword.trample then
+    if k == #[Keyword.trample] then
       s!"{noun} gets {signedStat p}/{signedStat t} and gains trample until end of turn"
     else
       "resolve each step"
   | .sequence [.becomeArtifact .target, .grant (.keywords k) .target] =>
-    if k == Keyword.indestructible then
+    if k == #[Keyword.indestructible] then
       s!"until end of turn, {noun} becomes an artifact in addition to its other types and gains indestructible"
     else
       "resolve each step"
@@ -1248,7 +1258,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     s!"target opponent loses {n} life and you gain {m} life"
   | .sequence [.pump (.fixed p) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)]),
       .grant (.keywords k) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)])] =>
-    if k == Keyword.vigilance then
+    if k == #[Keyword.vigilance] then
       s!"Elves you control get {signedStat p}/+0 and gain vigilance until end of turn"
     else
       "resolve each step"
@@ -1280,10 +1290,18 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "you gain X life, where X is the number of Equipment attached to it"
     | _ =>
       "you gain life"
-  | .may (.pay (.mana symbols)) (.draw (.fixed 1)) .ifYouDo =>
-    match symbols.toList with
-    | [.generic n] => s!"you may pay \{{n}}. If you do, draw a card"
-    | _ => "you may pay. If you do, draw a card"
+  | .may (.pay cost) (.draw (.fixed 1)) .ifYouDo =>
+    if cost == CostSpec.sacrificeArtifactOrDiscardCard then
+      "you may sacrifice an artifact or discard a card. If you do, draw a card"
+    else
+      match cost.soleGenericMana? with
+      | some n => s!"you may pay \{{n}}. If you do, draw a card"
+      | none =>
+        if cost.items.any (fun | .sacrifice _ _ => true | _ => false) then
+          "you may sacrifice that. If you do, do that"
+        else if cost.items.any (fun | .discard _ _ => true | _ => false) then
+          "you may discard that. If you do, do that"
+        else "you may pay. If you do, draw a card"
   | .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand) =>
     "if you don't control a legendary creature, put a card from your hand on the bottom of your library"
   | .exile what how note =>
@@ -1563,17 +1581,17 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .protectionEverything, .youIfCast =>
       "if you cast it, you gain protection from everything until your next turn"
     | .keywords k, .target =>
-      s!"{noun} gains {k.joinedAnd} until end of turn"
+      s!"{noun} gains {KeywordAbility.joinedAnd k} until end of turn"
     | .keywords k, .source =>
-      s!"this creature gains {k.joinedAnd} until end of turn"
+      s!"this creature gains {KeywordAbility.joinedAnd k} until end of turn"
     | .keywords k, .enchanted =>
-      s!"enchanted creature gains {k.joinedAnd} until end of turn"
+      s!"enchanted creature gains {KeywordAbility.joinedAnd k} until end of turn"
     | .keywords k, (.target .whileSource) =>
-      s!"that creature gains {k.joinedAnd} until end of turn"
+      s!"that creature gains {KeywordAbility.joinedAnd k} until end of turn"
     | .keywords k, .creaturesYouControl =>
-      s!"creatures you control gain {k.joinedAnd} until end of turn"
+      s!"creatures you control gain {KeywordAbility.joinedAnd k} until end of turn"
     | .keywords k, .intersection [.creaturesYouControl, .youControl (.subtype subtype)] =>
-      s!"{subtype}s you control gain {k.joinedAnd} until end of turn"
+      s!"{subtype}s you control gain {KeywordAbility.joinedAnd k} until end of turn"
     | .hexproofWhileSource, .target =>
       s!"{noun} gains hexproof for as long as this Saga remains on the battlefield"
     | .preventDamageWhileSource, _ =>
@@ -1613,7 +1631,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | _, _, _ =>
       "reveal cards from a library"
   | .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [.pump (.fixed 3) (.fixed 0) .target, .grant (.keywords k) .target]) =>
-    s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {k.joinedAnd} until end of turn"
+    s!"if you've drawn two or more cards this turn, {noun} gets +3/+0 and gains {KeywordAbility.joinedAnd k} until end of turn"
   | .mill amount who note =>
     match amount, who, note with
     | .fixed n, .you, .none | .fixed n, .you, .milledCards =>
@@ -1626,15 +1644,22 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       s!"each opponent mills {n} cards"
     | _, _, _ =>
       "mill"
-  | .may (.pay (.sacrifice (.fixed 1) .another)) (.putCounters .plusOneSacrificedPower .source) .ifYouDo =>
-    "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
-  | .may (.pay (.mana symbols)) (.returnToHand .source) .ifYouDo =>
-    s!"you may pay {String.join (symbols.toList.map ManaSymbol.toNotation)}. If you do, return this card from your graveyard to your hand"
+  | .may (.pay cost) (.putCounters .plusOneSacrificedPower .source) .ifYouDo =>
+    if cost == CostSpec.sacrificeAnotherCreature then
+      "you may sacrifice another creature. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
+    else "you may pay that cost. If you do, put a number of +1/+1 counters on this creature equal to the sacrificed creature's power"
+  | .may (.pay cost) (.returnToHand .source) .ifYouDo =>
+    if cost.isManaOnly && !cost.isEmpty then
+      s!"you may pay {cost.manaCost}. If you do, return this card from your graveyard to your hand"
+    else
+      s!"you may {cost.toInlinePhrase}. If you do, return this card from your graveyard to your hand"
   | .copySelfNonlegendary =>
     "if they're not a token, create two tokens that are copies of them, except the tokens aren't legendary"
-  | .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
+  | .may (.pay cost)
       (.sequence [.draw (.fixed 1), .createTokens _ (.fixed 1) false _ _]) .ifYouDo =>
-    "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
+    if cost == CostSpec.sacrificeAnotherCreatureOrArtifactSpec then
+      "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
+    else "you may pay that cost. If you do, draw a card and create a Treasure token"
   | .ringTempts =>
     "the Ring tempts you"
   | .may (.discard .hand) (.draw (.fixed n)) .ifYouDo =>
@@ -1665,8 +1690,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
       (.putCounters (.ofKind .plusOnePlusOne) .permanent) =>
     "put a +1/+1 counter on target creature. If that creature is another Hero, put two +1/+1 counters on it instead"
-  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed 1)) .ifYouDo =>
-    "you may sacrifice an artifact or discard a card. If you do, draw a card"
   | .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost) =>
     "if it's an Equipment, attach it to this creature"
   | .fight who how =>
@@ -1681,10 +1704,6 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "that creature deals damage equal to its power to up to one target creature"
     | _, _ =>
       "fight"
-  | .may (.pay (.sacrifice (.fixed 1) .another)) (.queueReflexive (.destroy .target)) .ifYouDo =>
-    "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
-  | .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland])) (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo =>
-    "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
   | .revealFromHand count thenDo =>
     match count, thenDo with
     | .hand, .exile .target .untilSourceLeaves .none =>
@@ -1696,7 +1715,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
   | .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard] =>
     "choose one — • Put a +1/+1 counter on each of up to two target creatures. • Return target artifact or enchantment card from your graveyard to your hand"
   | .may (.tap .source) (.queueReflexive (.grant (.keywords k) .target)) .ifYouDo =>
-    if k == Keyword.indestructible then
+    if k == #[Keyword.indestructible] then
       "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
     else
       "you may tap this creature. When you do, that ability triggers"
@@ -1798,16 +1817,20 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     if n == 1 then "you may mill a card" else s!"you may mill {n} cards"
   | .may (.createTokens _ (.fixed 1) false _ _) (.sequence []) .ifYouDo =>
     "you may create a 0/4 colorless Wall creature token with defender"
-  | .may (.pay (.sacrifice _ _)) _ .ifYouDo =>
-    "you may sacrifice that. If you do, do that"
-  | .may (.pay (.discard _ _)) _ .ifYouDo =>
-    "you may discard that. If you do, do that"
+  | .may (.pay cost) _ .ifYouDo =>
+    if cost.items.any (fun | .sacrifice _ _ => true | _ => false) then
+      "you may sacrifice that. If you do, do that"
+    else if cost.items.any (fun | .discard _ _ => true | _ => false) then
+      "you may discard that. If you do, do that"
+    else
+      "you may do it. If you do, do that"
   | .may _ _ .ifYouDo =>
     "you may do it. If you do, do that"
-  | .pay (.mana symbols) =>
-    s!"pay {String.join (symbols.toList.map ManaSymbol.toNotation)}"
-  | .pay _ =>
-    "pay that cost"
+  | .pay cost =>
+    if cost.isManaOnly && !cost.isEmpty then
+      s!"pay {cost.manaCost}"
+    else
+      "pay that cost"
   | .queueReflexive _ =>
     "when you do, that ability triggers"
   | .«if» .manaSpent (.discard (.cards n)) =>
@@ -1850,13 +1873,13 @@ def sequenceClause (e : Effect) : Option String :=
   | .sequence [.draw (.fixed n), .discard (.cards 1)] =>
     some s!"draw {cardPhrase n.toNat}, then discard a card"
   | .sequence [.onSource (.pump p 0), .teamGain k] =>
-    if k == Keyword.trample then
+    if k == #[Keyword.trample] then
       some s!"until end of turn, this creature gets {signedStat p}/+0 and creatures you control gain trample"
     else none
   | .sequence [.onPermanent (.plusOne n), .onPermanent (.grantKeywords k)] =>
-    if k == Keyword.lifelink && n == 1 then
+    if k == #[Keyword.lifelink] && n == 1 then
       some s!"put a +1/+1 counter on {noun}. It gains lifelink until end of turn"
-    else if k == Keyword.vigilance then
+    else if k == #[Keyword.vigilance] then
       some s!"put {plusOnePlusOneCountersPhrase n} on {noun}. It gains vigilance until end of turn"
     else none
   | .sequence [.onSource (.pump 1 0), .onSource .cantBeBlocked] =>
@@ -1864,7 +1887,7 @@ def sequenceClause (e : Effect) : Option String :=
   | .sequence [.draw 1, .onSource (.plusOne 1)] =>
     some "draw a card and put a +1/+1 counter on this"
   | .sequence [.creaturesYouControlPump p 0, .teamGain k] =>
-    if k == Keyword.firstStrike then
+    if k == #[Keyword.firstStrike] then
       some s!"creatures you control get {signedStat p}/+0 and gain first strike until end of turn"
     else none
   | .sequence [.onSource (.plusOne 1), .draw 1] =>

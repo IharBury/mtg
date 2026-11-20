@@ -337,7 +337,7 @@ def mindStoneAuraReturnOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let aura := namedPermanent g "Super-Soldier Serum"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.createEffect (.keywordsUntilEot bears.id Keyword.hexproof)
+  let g := g.createEffect (.keywordsUntilEot bears.id #[Keyword.hexproof])
   let (g, _) := g.move aura.id .exile none
   let ex :=
     (g.objects.find? (fun o => o.name == "Super-Soldier Serum" && o.zone == .exile)).getD aura
