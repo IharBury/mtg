@@ -3454,14 +3454,17 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       (followedByFinishFra := followedByFinishFra)
       (followedByExplicitPriority? := followedByExplicitPriority?)
     if hadOuter then g else resumeAfterBecomeCast g
-  | .finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending exileSelf powerUp exhaust riders =>
+  | .finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending exileSelf powerUp exhaust riders exileFromZone? discardSelf exileSymIds extraEffect? =>
     g.finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending
       (exileSelf := exileSelf) (powerUp := powerUp) (exhaust := exhaust) (riders := riders)
-      (hasFollowingSeq := hasFollowingSeq)
-  | .finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx restriction damageYou isMountain prevPending powerUp exhaust riders =>
+      (exileFromZone? := exileFromZone?) (discardSelf := discardSelf) (exileSymIds := exileSymIds)
+      (extraEffect? := extraEffect?) (hasFollowingSeq := hasFollowingSeq)
+  | .finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx restriction damageYou isMountain prevPending powerUp exhaust riders extraEffect? =>
     g.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx restriction damageYou isMountain prevPending
       (powerUp := powerUp) (exhaust := exhaust) (riders := riders)
-      (hasFollowingSeq := hasFollowingSeq)
+      (extraEffect? := extraEffect?) (hasFollowingSeq := hasFollowingSeq)
+  | .runModalManaEffect p sourceId eff =>
+    g.applyUnifiedAbility p eff #[] (some sourceId)
   | .finishBeginRecruit p =>
     g.finishBeginRecruit p
   | .finishDrawThenBeginDiscard p discardRounds =>

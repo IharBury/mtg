@@ -2675,12 +2675,14 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
     checkValidOptObjId pred aid || checkValidOptObjId pred sid || checkValidObjIds pred rem
   | .finishActivationExtraCosts _ sid fo _ _ _ _ =>
     checkValidObjId pred sid || checkValidOptObjId pred fo
-  | .finishActivateManaAbilityPicks _ id _ _ _ rem _ _ _ _ _ _ prevP _ _ _ =>
-    checkValidObjId pred id || checkValidObjIds pred rem ||
+  | .finishActivateManaAbilityPicks _ id _ _ _ rem _ _ _ _ _ _ prevP _ _ _ _ _ _ exileSymIds _ =>
+    checkValidObjId pred id || checkValidObjIds pred rem || checkValidObjIds pred exileSymIds ||
       pendingAnyObjId prevP pred prospectivePred etbCostProspective?
-  | .finishActivateManaAbilityPostSac _ id _ snap _ _ _ _ _ _ prevP _ _ =>
+  | .finishActivateManaAbilityPostSac _ id _ snap _ _ _ _ _ _ prevP _ _ _ _ =>
     checkValidObjId pred id || eventObjAnyObjId pred snap ||
       pendingAnyObjId prevP pred prospectivePred etbCostProspective?
+  | .runModalManaEffect _ sid _ =>
+    checkValidObjId pred sid
   | .finishConniveDraws _ ed c _ =>
     ed.any (fun (_, r) => repIdAnyObjId pred r prospectivePred) ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
@@ -5370,13 +5372,14 @@ structure Layer4Result where
   strippedRulesTextByBasicLandSet : Bool := false
 deriving Inhabited
 
-/-- Whether any active Layer 4 continuous effect sets a basic land subtype
-(CR 305.7, e.g. Blood Moon / Harbinger of the Seas). -/
+/-- Whether any active Layer 4 continuous effect sets a land's subtype exclusively
+to one or more basic land types (CR 305.7, e.g. Blood Moon / Harbinger of the Seas). -/
 def hasActiveBasicLandSetEffect (g : Game) : Bool :=
   g.activeEffects.any fun (_, s) =>
     match s with
-    | .layered _ (.types .set _ subs _ _ _ _) d =>
-      g.durationActive d && subs.any CardSubtype.isBasicLandType
+    | .layered _ (.types .set _ subs _ _ remSubs _) d =>
+      let landSubs := subs.filter (fun sub => sub.kind == .land && !remSubs.contains sub)
+      g.durationActive d && !landSubs.isEmpty && landSubs.all CardSubtype.isBasicLandType
     | _ => false
 
 /-- Unified Layer 4 evaluation of `(types, subtypes, supertypes)` plus CR 305.7
@@ -5524,11 +5527,21 @@ def evalLayer4Full (g : Game) (o : GameObject) : Layer4Result :=
         let chosen :=
           (applicable.find? (fun a => !applicable.any (fun b => dependsOn a b))).getD applicable[0]!
         let next := applyStep cur chosen
-        -- CR 305.7: Setting a land's subtype to one or more basic land types
-        -- without preserving existing types/abilities strips printed rules text.
-        if chosen.mod.mode == .set && next.1.contains .land &&
-            chosen.mod.subtypes.any CardSubtype.isBasicLandType then
-          stripped := true
+        -- CR 305.7 / 613.7: Setting a land's subtype exclusively to one or more
+        -- basic land types without preserving existing types/abilities strips
+        -- printed rules text. Derive this from the latest Layer 4 effect
+        -- determining the land subtypes, clearing it if a later effect removes
+        -- the land type, overwrites land subtypes with non-basic/mixed subtypes,
+        -- or removes all basic land types.
+        if !next.1.contains .land then
+          stripped := false
+        else if chosen.mod.mode == .set && !chosen.mod.subtypes.isEmpty then
+          let setLandSubs :=
+            chosen.mod.subtypes.filter (fun s =>
+              s.kind == .land && !chosen.mod.removeSubtypes.contains s)
+          stripped := !setLandSubs.isEmpty && setLandSubs.all CardSubtype.isBasicLandType
+        else if stripped && !next.2.1.any CardSubtype.isBasicLandType then
+          stripped := false
         cur := next
         rem := rem.filter (fun e => e.idx != chosen.idx)
       return {

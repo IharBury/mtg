@@ -226,10 +226,10 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if let some i := (List.range defs.size).find? (fun i => defs[i]!.activatedIdx == some abilityIdx) then
     -- A mana ability doesn't use the stack (CR 605.3b).
     let d := defs[i]!
-    match d.output, d.picks.isEmpty with
-    | .fixed m, true => return (← g.activateManaAbility p id i m)
-    | _, _ =>
-      throw s!"{g.name o}'s ability is a mana ability: choose the mana it adds and what pays its cost (CR 605.3)"
+    if d.picks.isEmpty && !d.hasExtraInteractiveCost && d.modeChoices.isEmpty then
+      if let .fixed m := d.output then
+        return (← g.activateManaAbility p id i m)
+    throw s!"{g.name o}'s ability is a mana ability: choose the mana it adds and what pays its cost (CR 605.3)"
   if !g.hasPriority p then
     throw "You don't have priority"
   g.validateActivation p o ab (idx? := some abilityIdx)

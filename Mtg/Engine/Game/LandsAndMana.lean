@@ -238,6 +238,15 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
     (prop? : Option ProposedSpell := none) : Bool :=
   let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   let perms := g.permanentsOf p
+  let handManaObjs :=
+    (g.player p).hand.filterMap fun id =>
+      (g.findObject? id).bind fun o =>
+        if !(g.baseCard o).activatedAbilities.isEmpty then some o else none
+  let gyManaObjs :=
+    (g.player p).graveyard.filterMap fun id =>
+      (g.findObject? id).bind fun o =>
+        if !(g.baseCard o).activatedAbilities.isEmpty then some o else none
+  let manaObjs := perms ++ handManaObjs ++ gyManaObjs
   let plainManaSrcs := g.manaSources p
   let propTapReservedIds : Array ObjectId :=
     match prop? with
@@ -390,7 +399,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
       : List CostPick → Array ObjectId → Array ObjectId → Array ObjectId → Array ObjectId → Bool
     | [], _, dTap, dRem, extraEffTapped =>
       let totTapped := (if d.tap then #[o.id] else #[]) ++ dTap ++ extraEffTapped
-      let totRemoved := (if d.sacrificeSelf || d.exileSelf then #[o.id] else #[]) ++ dRem
+      let totRemoved := (if d.removesSource then #[o.id] else #[]) ++ dRem
       propPostManaPayableAfter totTapped totRemoved
     | pick :: restPicks, usedD, dTap, dRem, extraEffTapped =>
       let isTapPick : Bool :=
@@ -402,7 +411,8 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
       let cands :=
         (g.costPickCandidates p (some o.id) pick
           (tapSource := d.tap)
-          (sacrificeOrExileSource := d.sacrificeSelf || d.exileSelf || laterSacAttachedEquip)).filter fun cid =>
+          (sacrificeOrExileSource := d.sacrificeSelf || d.exileSelf || laterSacAttachedEquip)
+          (discardOrExileHandSource := d.discardSelf || d.exileSelfFromHand)).filter fun cid =>
             !usedD.contains cid &&
               !(isTapPick && (propTapReservedIds.contains cid || extraEffTapped.contains cid)) &&
               !(!isTapPick && propRemoveReservedIds.contains cid)
@@ -421,6 +431,8 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
       (d.payLife == 0 || g.canPayLife p (prop.payLife + d.payLife)) &&
       (!d.tap || !propTapReservedIds.contains o.id) &&
       (!(d.sacrificeSelf || d.exileSelf) || !propBfSacReservedIds.contains o.id) &&
+      (!(d.exileSelfFromHand || d.discardSelf || d.exileSelfFromGraveyard) ||
+        !propRemoveReservedIds.contains o.id) &&
       (!d.removeStoryCounter ||
         !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeStoryCounter) &&
           !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .story) sinceIdx &&
@@ -429,6 +441,16 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeIndestructibleCounter) &&
           !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .indestructible) sinceIdx &&
           o.status.indestructibleCounters ≤ 1)) &&
+      d.crewPower?.all (fun n =>
+        o.isOnBattlefield &&
+          (g.firstPayableCrewSelection? p o.id n d.picks
+            (tapSource := d.tap)
+            (sacrificeOrExileSource := d.sacrificeSelf || d.exileSelf)
+            (discardOrExileHandSource := d.discardSelf || d.exileSelfFromHand)
+            (preTappedIds := propTapReservedIds)).isSome) &&
+      d.exileManaSymbols?.all (fun (col?, minSyms, pred) =>
+        g.canPayExileManaSymbols p o.id col? minSyms pred
+          (excludedIds := propRemoveReservedIds ++ (if d.exileSelfFromGraveyard then #[o.id] else #[]))) &&
       existsValidDPicks o d d.picks.toList #[] #[] #[] #[]
   let canPayEffCost (o : GameObject) (d : ManaAbilityDef) (effCost : ManaCost) : Bool :=
     if !effCost.includesManaPayment then true
@@ -466,10 +488,13 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                   searchEff rest (ch.applyToPool curPool) (tappedIds.push s.id) || tryChoices chs
               tryChoices choices.toList || searchEff rest curPool tappedIds
         searchEff critRem (g.player p).manaPool #[]
+  let hasProducibleChoice (d : ManaAbilityDef) : Bool :=
+    !(d.allChoicesFor (fun ts => if ts.size > 1 then #[ts[0]!] else ts)).isEmpty ||
+      d.extraEffect?.isSome
   let usableAbilityOn (o : GameObject) (d : ManaAbilityDef) (requireNonPlain : Bool) : Bool :=
     (!requireNonPlain || !g.isPlainTapManaAbilityDef p o d) &&
       g.manaAbilityDefUsable p o d &&
-      !(d.output.allChoices (fun ts => if ts.size > 1 then #[ts[0]!] else ts)).isEmpty &&
+      hasProducibleChoice d &&
       (!d.tap ||
         (!o.status.tapped &&
           !(g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p)))) &&
@@ -477,54 +502,55 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
       canPayEffCost o d (g.manaAbilityEffectiveCost p o d)
   match prop? with
   | none =>
-    perms.any (fun o => (g.manaAbilityDefs o).any (fun d => usableAbilityOn o d true))
+    manaObjs.any (fun o => (g.manaAbilityDefs o).any (fun d => usableAbilityOn o d true))
   | some prop =>
     if !prop.cost.includesManaPayment then false
     else
       let spend := g.proposedManaSpend prop
       let otherManaCosts : Array (GameObject × ManaCost) :=
-        perms.foldl (fun acc o2 =>
+        manaObjs.foldl (fun acc o2 =>
           (g.manaAbilityDefs o2).foldl (fun acc d2 =>
             let eff2 := g.manaAbilityEffectiveCost p o2 d2
             if eff2.includesManaPayment && g.manaAbilityDefUsable p o2 d2 &&
-                !(d2.output.allChoices (fun ts => if ts.size > 1 then #[ts[0]!] else ts)).isEmpty &&
+                hasProducibleChoice d2 &&
                 (!d2.tap ||
                   (!o2.status.tapped &&
                     !(g.hasSummoningSickness o2 && !(g.isCreature o2 && g.activatesAsThoughHaste p)))) &&
                 respectsPropReservations o2 d2 then
               acc.push (o2, eff2)
             else acc) acc) #[]
-      perms.any fun o =>
+      manaObjs.any fun o =>
         (g.manaAbilityDefs o).any fun d =>
           usableAbilityOn o d true &&
-            let dedupForProp (ts : Array ManaType) : Array ManaType :=
-              if ts.size ≤ 1 then ts
-              else Id.run do
-                let mut acc : Array ManaType := #[]
-                let mut seenZero := false
-                for t in ts do
-                  match t with
-                  | .colored c =>
-                    let req :=
-                      prop.cost.symbolsIncludingColor c > 0 ||
-                        otherManaCosts.any (fun (o2, c2) => o2.id != o.id && c2.symbolsIncludingColor c > 0)
-                    if !req then
-                      if !seenZero then
-                        seenZero := true
+            (d.extraEffect?.isSome ||
+              let dedupForProp (ts : Array ManaType) : Array ManaType :=
+                if ts.size ≤ 1 then ts
+                else Id.run do
+                  let mut acc : Array ManaType := #[]
+                  let mut seenZero := false
+                  for t in ts do
+                    match t with
+                    | .colored c =>
+                      let req :=
+                        prop.cost.symbolsIncludingColor c > 0 ||
+                          otherManaCosts.any (fun (o2, c2) => o2.id != o.id && c2.symbolsIncludingColor c > 0)
+                      if !req then
+                        if !seenZero then
+                          seenZero := true
+                          acc := acc.push t
+                      else
                         acc := acc.push t
-                    else
-                      acc := acc.push t
-                  | .colorless => acc := acc.push t
-                return acc
-            let extra := if d.tap then g.extraMountainRedFromTap o #[.colorless] else #[]
-            (d.output.allChoices dedupForProp).any fun added =>
-              let simPool :=
-                addRestrictedMana (addRestrictedMana ManaPool.empty added d.restriction d.riders) extra .none
-              simPool.coveredMana prop.cost spend > 0 ||
-                otherManaCosts.any (fun (o2, eff2) =>
-                  o2.id != o.id &&
-                    simPool.coveredMana eff2
-                      (ManaSpend.forAbility (g.types o2) (g.supertypes o2) (g.subtypes o2)) > 0)
+                    | .colorless => acc := acc.push t
+                  return acc
+              let extra := if o.isOnBattlefield && d.tap then g.extraMountainRedFromTap o #[.colorless] else #[]
+              (d.allChoicesFor dedupForProp).any fun (added, restr, riders) =>
+                let simPool :=
+                  addRestrictedMana (addRestrictedMana ManaPool.empty added restr riders) extra .none
+                simPool.coveredMana prop.cost spend > 0 ||
+                  otherManaCosts.any (fun (o2, eff2) =>
+                    o2.id != o.id &&
+                      simPool.coveredMana eff2
+                        (ManaSpend.forAbility (g.types o2) (g.supertypes o2) (g.subtypes o2)) > 0))
 
 end Game
 end Mtg.Engine

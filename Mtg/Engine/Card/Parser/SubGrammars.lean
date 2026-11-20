@@ -2934,6 +2934,19 @@ def parseManaProductionSpec (sentences : Array String) (cardName : String := "")
         spec? := some (.oneOf .anyColor (.aggregate .countDistinct (.stat .power) .creaturesYouControl))
         chooseColorPrefix := true
         idx := 2
+      else if let some subStr := dropSuffixCI? rest " you control" then
+        match CardSubtype.ofOracle? subStr with
+        | some sub =>
+          spec? := some (.oneOf .anyColor (ValueExpr.count (.controlledOfSubtype sub)))
+          chooseColorPrefix := true
+          idx := 2
+        | none =>
+          match parseValueExpr s!"the number of {rest}" with
+          | some v =>
+            spec? := some (.oneOf .anyColor v)
+            chooseColorPrefix := true
+            idx := 2
+          | none => return none
       else if let some v := parseValueExpr s!"the number of {rest}" then
         spec? := some (.oneOf .anyColor v)
         chooseColorPrefix := true

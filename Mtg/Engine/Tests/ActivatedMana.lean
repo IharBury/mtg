@@ -660,4 +660,256 @@ private def passBothPlayers (g : Game) : Game :=
   let withLegRed := (gWithLeg.manaAbilityDefs m2)[0]!.output.producibleTypes == #[.colored .red]
   emptyOk && nonLegStillEmpty && withLegRed
 
+/-! ### 8. CR 305.7 Layer-4 Overwrites & Full CR 605.1a Modal / Zone / Extra-Cost Mana Abilities -/
+
+-- CR 305.7 / 613.7: Later `.set` to a non-basic land subtype (`Locus`) clears
+-- `strippedRulesTextByBasicLandSet` and restores printed abilities; mixed
+-- `.set #[.mountain, .locus]` does NOT strip printed abilities; Blood Moon
+-- followed by Yavimaya `.addDedup #[.forest]` preserves stripping and grants
+-- both `{R}` and `{G}`; removing `.land` clears stripping.
+#guard
+  let utilityLand : CardDef := {
+    name := "P5 Overwrite Land"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaSimple .colorless,
+      { cost := CostSpec.ofGeneric 1, effect := Effect.gainLife 1 }
+    ]
+    staticAbilities := #[.otherCreaturesGet #[.elf] 1 1]
+  }
+  let g0 := addPermanent afterDraw utilityLand p0 p0
+  let lid := (namedPerm g0 utilityLand.name).id
+  -- Blood Moon (ts 1) then Locus-setter (ts 2): final subtype is Locus, printed abilities intact.
+  let gMoon := g0.createEffect
+    (.layered (.objects #[lid]) (.types .set #[] #[.mountain] #[]) .indefinite)
+    (cause := some testCause)
+  let gLocus := gMoon.createEffect
+    (.layered (.objects #[lid]) (.types .set #[] #[.locus] #[]) .indefinite)
+    (cause := some testCause)
+  let oLocus := gLocus.object! lid
+  let l4Locus := gLocus.evalLayer4Full oLocus
+  let locusRestoresPrinted :=
+    !l4Locus.strippedRulesTextByBasicLandSet &&
+      l4Locus.subtypes == #[.locus] &&
+      !(gLocus.staticAbilities oLocus).isEmpty &&
+      gLocus.manaAbilitiesOf oLocus == #[.colorless]
+  -- Mixed basic + non-basic `.set #[.mountain, .locus]` does NOT strip printed abilities.
+  let gMixed := g0.createEffect
+    (.layered (.objects #[lid]) (.types .set #[] #[.mountain, .locus] #[]) .indefinite)
+    (cause := some testCause)
+  let oMixed := gMixed.object! lid
+  let l4Mixed := gMixed.evalLayer4Full oMixed
+  let mixedKeepsPrinted :=
+    !l4Mixed.strippedRulesTextByBasicLandSet &&
+      !(gMixed.staticAbilities oMixed).isEmpty &&
+      (gMixed.manaAbilitiesOf oMixed).contains .colorless &&
+      (gMixed.manaAbilitiesOf oMixed).contains (.colored .red)
+  -- Blood Moon (ts 1) + Yavimaya `.addDedup #[.forest]` (ts 2): stays stripped, adds `{R}` + `{G}`.
+  let gMoonYav := gMoon.createEffect
+    (.layered (.objects #[lid]) (.types .addDedup #[] #[.forest] #[]) .indefinite)
+    (cause := some testCause)
+  let oMoonYav := gMoonYav.object! lid
+  let l4MoonYav := gMoonYav.evalLayer4Full oMoonYav
+  let moonYavStripped :=
+    l4MoonYav.strippedRulesTextByBasicLandSet &&
+      (gMoonYav.staticAbilities oMoonYav).isEmpty &&
+      !(gMoonYav.manaAbilitiesOf oMoonYav).contains .colorless &&
+      (gMoonYav.manaAbilitiesOf oMoonYav).contains (.colored .red) &&
+      (gMoonYav.manaAbilitiesOf oMoonYav).contains (.colored .green)
+  -- Blood Moon (ts 1) + turn into non-land Artifact (ts 2): clears stripping, restores printed abilities.
+  let gArt := gMoon.createEffect
+    (.layered (.objects #[lid]) (.types .set #[.artifact] #[] #[]) .indefinite)
+    (cause := some testCause)
+  let oArt := gArt.object! lid
+  let artClearsStripped :=
+    !(gArt.evalLayer4Full oArt).strippedRulesTextByBasicLandSet &&
+      !(gArt.staticAbilities oArt).isEmpty &&
+      gArt.manaAbilitiesOf oArt == #[.colorless]
+  locusRestoresPrinted && mixedKeepsPrinted && moonYavStripped && artClearsStripped
+
+-- CR 605.1a modal mana abilities resolve immediately without using the stack
+-- (both mana-producing modes and non-mana modes), whereas modal abilities with
+-- a targeted or library-moving mode in `otherModes` use the stack.
+#guard
+  let dualModalMana : CardDef := {
+    name := "P5 Dual Modal Rock"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := CostSpec.tapOnly
+      effect := Effect.addMana #[.colored .red]
+      otherModes := #[Effect.addMana #[.colored .green]]
+    }]
+  }
+  let hybridModalMana : CardDef := {
+    name := "P5 Hybrid Modal Rock"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := CostSpec.tapOnly
+      effect := Effect.gainLife 2
+      otherModes := #[Effect.addMana #[.colored .green]]
+    }]
+  }
+  let badModalTarget : ActivatedAbility := {
+    cost := CostSpec.tapOnly
+    effect := Effect.addMana #[.colored .green]
+    otherModes := #[{ targeting := .of TargetSpec.creature, resolution := .gainLife 1 }]
+  }
+  let badModalDraw : ActivatedAbility := {
+    cost := CostSpec.tapOnly
+    effect := Effect.addMana #[.colored .green]
+    otherModes := #[Effect.draw 1]
+  }
+  let gDual := addPermanent afterDraw dualModalMana p0 p0
+  let dualId := (namedPerm gDual dualModalMana.name).id
+  let gDualRed := mustOk (gDual.apply p0 (.activateManaAbility dualId 0 #[.colored .red] #[]))
+  let gDualGreen := mustOk (gDual.apply p0 (.activateManaAbility dualId 0 #[.colored .green] #[]))
+  let dualRejectsBlue := !(gDual.apply p0 (.activateManaAbility dualId 0 #[.colored .blue] #[])).isOk
+  let gHyb := addPermanent afterDraw hybridModalMana p0 p0
+  let hybId := (namedPerm gHyb hybridModalMana.name).id
+  let gHybMana := mustOk (gHyb.apply p0 (.activateManaAbility hybId 0 #[.colored .green] #[]))
+  let gHybLife := mustOk (gHyb.apply p0 (.activateManaAbility hybId 0 #[] #[]))
+  gDualRed.stack.isEmpty && (gDualRed.player p0).manaPool.red == 1 &&
+    gDualGreen.stack.isEmpty && (gDualGreen.player p0).manaPool.green == 1 &&
+    dualRejectsBlue &&
+    gHybMana.stack.isEmpty && (gHybMana.player p0).manaPool.green == 1 &&
+    gHybLife.stack.isEmpty && (gHybLife.player p0).life == 22 &&
+    !Game.isManaActivation badModalTarget &&
+    !Game.isManaActivation badModalDraw
+
+-- CR 605.1a / 605.3a hand exile (`Elvish Spirit Guide` style), hand discard,
+-- and graveyard exile mana abilities resolve immediately without the stack
+-- and work during CR 601.2g spell payment!
+#guard
+  let spiritGuide : CardDef := {
+    name := "P5 Spirit Guide"
+    manaCost := ManaCost.ofGenericAndColor 2 .green
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.exile (.exact 1) .yourHand .self]
+      activeZones := #[.hand]
+      mana? := some { spec := .fixedOne (.colored .green) }
+    }]
+  }
+  let cheapGreenSpell : CardDef := {
+    name := "P5 Tiny Elf"
+    manaCost := ManaCost.ofColor .green
+    types := #[.creature]
+    power := some 1
+    toughness := some 1
+  }
+  let discardMana : CardDef := {
+    name := "P5 Red Simian"
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.discard (.exact 1) .self]
+      activeZones := #[.hand]
+      mana? := some { spec := .fixedOne (.colored .red) }
+    }]
+  }
+  let gyMana : CardDef := {
+    name := "P5 Crypt Spirit"
+    types := #[.creature]
+    power := some 1
+    toughness := some 1
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.exile (.exact 1) .yourGraveyard .self]
+      activeZones := #[.graveyard]
+      effect := Effect.addMana #[.colorless]
+    }]
+  }
+  -- Hand exile during CR 601.2g spell casting (0 lands on battlefield!):
+  let g0 := insertObject (insertObject afterDraw spiritGuide p0 (.hand p0)) cheapGreenSpell p0 (.hand p0)
+  let guideId := (g0.player p0).hand.find? (fun id => (g0.object! id).name == spiritGuide.name) |>.get!
+  let elfId := (g0.player p0).hand.find? (fun id => (g0.object! id).name == cheapGreenSpell.name) |>.get!
+  let gCastStart := mustOk (g0.apply p0 (.cast elfId))
+  let gExiledGuide := mustOk (gCastStart.apply p0 (.activateManaAbility guideId 0 #[.colored .green] #[]))
+  let gPaid := mustOk (gExiledGuide.apply p0 .pay)
+  let guideInExile := (gPaid.followMovedToZone? guideId (· == .exile)).isSome
+  -- Hand discard mana ability (direct without stack):
+  let gDisc0 := insertObject afterDraw discardMana p0 (.hand p0)
+  let discId := (gDisc0.player p0).hand.back!
+  let gDisc1 := mustOk (gDisc0.apply p0 (.activate discId 0))
+  let discInGy := (gDisc1.followMovedToZone? discId (· == .graveyard p0)).isSome
+  -- Graveyard exile mana ability (direct without stack):
+  let gGy0 := insertObject afterDraw gyMana p0 (.graveyard p0)
+  let gyId := (gGy0.player p0).graveyard.back!
+  let gGy1 := mustOk (gGy0.apply p0 (.activateManaAbility gyId 0 #[.colorless] #[]))
+  let gyInExile := (gGy1.followMovedToZone? gyId (· == .exile)).isSome
+  g0.hasUsableNonPlainManaAbility p0 &&
+    gCastStart.pending == .activateManaAbilities p0 &&
+    gExiledGuide.pending == .activateManaAbilities p0 &&
+    (gExiledGuide.player p0).manaPool.green == 1 &&
+    gPaid.stack.size == 1 &&
+    guideInExile &&
+    gDisc1.stack.isEmpty && (gDisc1.player p0).manaPool.red == 1 && discInGy &&
+    gGy1.stack.isEmpty && (gGy1.player p0).manaPool.colorless == 1 && gyInExile
+
+-- CR 605.1a extra-cost mana abilities (`removeAnyNumberPlusOne`, `crewPower?`,
+-- and `exileManaSymbols?`) all pay their costs and add mana without the stack.
+#guard
+  let counterManaCreature : CardDef := {
+    name := "P5 Crystalline Crawler"
+    types := #[.artifact, .creature]
+    power := some 1
+    toughness := some 1
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.tapSelf, .removeCounters .anyNumber (some .plusOnePlusOne) .self]
+      mana? := some { spec := .sequence #[(.colored .green, .chosenX)] }
+    }]
+  }
+  let crewManaVehicle : CardDef := {
+    name := "P5 Solar Barge"
+    types := #[.artifact]
+    subtypes := #["Vehicle"]
+    activatedAbilities := #[{
+      cost := CostSpec.crewCost 2
+      mana? := some { spec := .fixed #[.colored .red, .colored .red] }
+    }]
+  }
+  let exileSymMana : CardDef := {
+    name := "P5 Shadow Altar"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.exile (.totalManaSymbolsAtLeast (some .black) (.const 2)) .yourGraveyard (.filter (.all #[.hasColor (.literal .black), .isKind .card]))]
+      mana? := some { spec := .fixed #[.colored .black, .colored .black, .colored .black] }
+    }]
+  }
+  let bbCard : CardDef := {
+    name := "P5 Dark Ritualist"
+    manaCost := { symbols := #[.colored .black, .colored .black] }
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+  }
+  -- `removeAnyNumberPlusOne`: 3 counters -> remove 2 for `{G}{G}` (leaves 1), reject 4.
+  let gCnt0 := addPermanent afterDraw counterManaCreature p0 p0
+  let cntId := (namedPerm gCnt0 counterManaCreature.name).id
+  let gCnt3 := gCnt0.recordPutCounters cntId .plusOnePlusOne 3 (some p0) (cause := some testCause)
+  let cntTooMany := !(gCnt3.apply p0 (.activateManaAbility cntId 0 #[.colored .green, .colored .green, .colored .green, .colored .green] #[])).isOk
+  let gCnt2 := mustOk (gCnt3.apply p0 (.activateManaAbility cntId 0 #[.colored .green, .colored .green] #[]))
+  -- `crewPower?`: tap 2/2 Grizzly Bears -> adds `{R}{R}` without stack; empty costIds fails.
+  let gCrew0 := addPermanent (addPermanent afterDraw crewManaVehicle p0 p0) grizzlyBears p0 p0
+  let bargeId := (namedPerm gCrew0 crewManaVehicle.name).id
+  let bearId := (namedPerm gCrew0 "Grizzly Bears").id
+  let crewNoIdsFails := !(gCrew0.apply p0 (.activateManaAbility bargeId 0 #[.colored .red, .colored .red] #[])).isOk
+  let gCrew1 := mustOk (gCrew0.apply p0 (.activateManaAbility bargeId 0 #[.colored .red, .colored .red] #[bearId]))
+  -- `exileManaSymbols?`: exile `{B}{B}` card from graveyard -> adds `{B}{B}{B}` without stack; empty fails.
+  let gSym0 := insertObject (addPermanent afterDraw exileSymMana p0 p0) bbCard p0 (.graveyard p0)
+  let altarId := (namedPerm gSym0 exileSymMana.name).id
+  let bbId := (gSym0.player p0).graveyard.back!
+  let symNoIdsFails := !(gSym0.apply p0 (.activateManaAbility altarId 0 #[.colored .black, .colored .black, .colored .black] #[])).isOk
+  let gSym1 := mustOk (gSym0.apply p0 (.activateManaAbility altarId 0 #[.colored .black, .colored .black, .colored .black] #[bbId]))
+  cntTooMany &&
+    gCnt2.stack.isEmpty && (gCnt2.player p0).manaPool.green == 2 &&
+    (gCnt2.object! cntId).status.plusOnePlusOne == 1 && (gCnt2.object! cntId).status.tapped &&
+    crewNoIdsFails &&
+    gCrew1.stack.isEmpty && (gCrew1.player p0).manaPool.red == 2 && (gCrew1.object! bearId).status.tapped &&
+    symNoIdsFails &&
+    gSym1.stack.isEmpty && (gSym1.player p0).manaPool.black == 3 &&
+    (gSym1.followMovedToZone? bbId (· == .exile)).isSome
+
 end Mtg.Engine.Tests.ActivatedManaSuite

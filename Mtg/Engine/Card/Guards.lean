@@ -2164,9 +2164,28 @@ end CardDef
 -- Fails criterion 4 (cost exiles from library).
 #guard !({ cost := CostSpec.ofItems #[.tapSelf, .exile (.exact 1) { zones := #[.library], owner := .ofPlayer .you } (.filter .isCard)],
            mana? := some { spec := .fixedOne (.colored .green) } } : ActivatedAbility).isManaAbility
--- Modal activated abilities are not mana abilities.
+-- Fails criterion 4 (sibling library-moving `Resolution` and `FrcEffect` ctors),
+-- while `.scry` only reorders cards inside a library and remains a mana ability.
+#guard [Resolution.clashOfElements, .entrustTheSpark, .sphinxsApproach,
+        .jiangYangguAlone, .exileOpponentLibrariesButBottom,
+        .riddlesInTheDark 4, .identityEcho, .eyeOfJace, .frc .explore].all fun r =>
+  !({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
+      effect := { resolution := r } } : ActivatedAbility).isManaAbility
+#guard ({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
+          effect := { resolution := .scry (.fixed 1) } } : ActivatedAbility).isManaAbility
+-- Modal activated abilities follow the exact four CR 605.1a criteria across every mode:
+-- untargeted non-library modal abilities that could add mana ARE mana abilities,
+-- while a targeted or library-moving mode in `otherModes` disqualifies them.
+#guard ({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
+          otherModes := #[Effect.gainLife 1] } : ActivatedAbility).isManaAbility
+#guard ({ cost := CostSpec.tapOnly, effect := Effect.addMana #[.colored .red],
+          otherModes := #[Effect.addMana #[.colored .green]] } : ActivatedAbility).isManaAbility
+#guard ({ cost := CostSpec.tapOnly, effect := Effect.gainLife 1,
+          otherModes := #[Effect.addMana #[.colored .red]] } : ActivatedAbility).isManaAbility
 #guard !({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
-           otherModes := #[Effect.gainLife 1] } : ActivatedAbility).isManaAbility
+           otherModes := #[{ targeting := .of TargetSpec.creature, resolution := .gainLife 1 }] } : ActivatedAbility).isManaAbility
+#guard !({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
+           otherModes := #[Effect.draw 1] } : ActivatedAbility).isManaAbility
 
 -- Functorial `HasTextChange` on `ManaSpec`, `ManaProductionSpec`, `ActivationCostReduction`,
 -- `ActivationMechanicTag`, and `ActivatedAbility` (CR 612.2 / 613.1c).
@@ -2189,7 +2208,8 @@ end CardDef
   let red' := HasTextChange.applyTextChanges tcs (ActivationCostReduction.perEquipment 1)
   red' == { amount := ValueExpr.count (.inZones .battlefield (.all #[.hasSubtype (.literal .aura), .controlledBy .you])) }
 
--- Canonical `ToOracle` round-trips through `Parser.parseManaAbilityLine`.
+-- Canonical `ToOracle` round-trips through `Parser.parseManaAbilityLine`
+-- (including `chooseColorPrefix` across both distinct-power and general `ValueExpr` counts).
 #guard [
   ActivatedAbility.manaSimple (.colored .green),
   ActivatedAbility.manaTapSacrificeAnyColor,
@@ -2199,6 +2219,10 @@ end CardDef
   ActivatedAbility.manaAbility (.fixedOne .colorless) (riders := #[.entersWithPlusOneCounters 2]),
   ActivatedAbility.manaAbility (.oneOf (.explicit #[.colored .red, .colored .white]) (.const 1)) (damageYou := 1),
   ActivatedAbility.manaAbility (.oneOf .anyColor (.const 1)) (restriction := some .legendarySpell) (riders := #[.cantBeCountered]),
+  ActivatedAbility.manaAbility (.oneOf .anyColor (.aggregate .countDistinct (.stat .power) .creaturesYouControl)) (chooseColorPrefix := true),
+  ActivatedAbility.manaAbility (.oneOf .anyColor (ValueExpr.count (.controlledOfSubtype .elf))) (chooseColorPrefix := true),
+  ActivatedAbility.manaAbility (.oneOf .anyColor (.basicLandTypeCount .landsYouControl)) (chooseColorPrefix := true),
+  ActivatedAbility.manaAbility (.oneOf .anyColor (.counterCount (some .charge) .this)) (chooseColorPrefix := true),
   ActivatedAbility.manaAbility (.colorAmong (.commanderColorIdentity .you) false),
   ActivatedAbility.manaAbility (.colorAmong (.colorsAmong .legendaryCreaturesAndPlaneswalkersYouControl) false),
   ActivatedAbility.manaAbility (.colorAmong (.typesLandsCouldProduce .otherLandsYouControl) true),

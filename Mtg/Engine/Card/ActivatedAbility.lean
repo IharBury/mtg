@@ -276,22 +276,24 @@ def isOnceEachTurn (ab : ActivatedAbility) : Bool :=
 
 /-! ### CR 605.1a Mana Ability Classification (25 September 2026) -/
 
-/-- True when resolving this ability could add mana to a player's mana pool. -/
+/-- True when resolving any mode of this ability could add mana to a player's
+mana pool (CR 605.1a). -/
 def couldAddMana (ab : ActivatedAbility) : Bool :=
-  ab.mana?.isSome || ab.effect.resolution.couldAddMana
+  ab.mana?.isSome || (#[ab.effect] ++ ab.otherModes).any (fun m => m.resolution.couldAddMana)
 
 /-- CR 605.1a (25 September 2026): an activated ability is a mana ability iff:
 1. it does not require a target;
 2. it could add mana to a player's mana pool when it resolves;
 3. it is not a loyalty ability; AND
-4. its instructions do not include moving a card to or from a library. -/
+4. its instructions do not include moving a card to or from a library.
+All modes of a modal ability are inspected uniformly. -/
 def isManaAbility (ab : ActivatedAbility) : Bool :=
+  let modes := #[ab.effect] ++ ab.otherModes
   !ab.isLoyaltyAbility &&
-    ab.otherModes.isEmpty &&
-    ab.effect.targetSpec.isEmpty &&
+    !modes.any (fun m => !m.targetSpec.isEmpty) &&
     ab.couldAddMana &&
     !ab.cost.movesToOrFromLibrary &&
-    !ab.effect.resolution.movesToOrFromLibrary
+    !modes.any (fun m => m.resolution.movesToOrFromLibrary)
 
 /-! ### Canonical Ability Constructors -/
 

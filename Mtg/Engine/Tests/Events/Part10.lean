@@ -1962,8 +1962,8 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     (gAltarTapProp.activateManaAbility p0 altarId 1 #[.colored .white, .colored .white, .colored .white]).toOption.isNone
 
   let item4cOk :=
-    !Game.isManaActivation modalAddManaAb &&
-    !Game.isManaActivation gyAddManaAb &&
+    Game.isManaActivation modalAddManaAb &&
+    Game.isManaActivation gyAddManaAb &&
     noStoryFails &&
     (gExhaust1.object! dynObj.id).status.story == 1 &&
     gExhaust1.exhaustUsed dynObj.id &&

@@ -254,7 +254,15 @@ def toOracleSentence (m : ManaProductionSpec) (ctx : PrintCtx := {}) : String :=
       match m.spec with
       | .oneOf .anyColor (.aggregate .countDistinct (.stat .power) objs) =>
         s!"Choose a color. Add one mana of that color for each different power among {toOracleStr objs { ctx with plural := true, capitalize := false }}."
-      | other => s!"Add {toOracleStr other { ctx with capitalize := false }}."
+      | .oneOf .anyColor (.aggregate .count _ objs) =>
+        s!"Choose a color. Add one mana of that color for each {toOracleStr objs { ctx with plural := false, capitalize := false }}."
+      | .oneOf .anyColor amt =>
+        let rawAmt := toOracleStr amt { ctx with capitalize := false }
+        let forEachRest :=
+          if rawAmt.startsWith "the number of " then (rawAmt.drop 14).copy
+          else rawAmt
+        s!"Choose a color. Add one mana of that color for each {forEachRest}."
+      | other => s!"Choose a color. Add {toOracleStr other { ctx with capitalize := false }}."
     else if m.filterPairFormat then
       match m.spec with
       | .combination (.explicit ts) (.const 2) =>

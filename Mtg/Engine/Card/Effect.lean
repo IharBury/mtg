@@ -450,7 +450,7 @@ private def couldAddManaAtom : Resolution → Bool
   | .addBlueCantNonartifact | .addAnyColorEqualToSourcePower
   | .addFourAnyCombination | .addTwoAnyColorEquipment
   | .addRedPerOppArtifacts _ | .addFourManaDragonSpells _ _
-  | .addBlueNoncreatureOnly => true
+  | .addBlueNoncreatureOnly | .kothGeomancer | .frc .omnathCc => true
   | _ => false
 
 /-- True when resolving `r` could add mana to a player's mana pool (CR 605.1a). -/
@@ -463,10 +463,12 @@ partial def couldAddMana : Resolution → Bool
   | .chooseModes ms _ => ms.any couldAddMana
   | .unlessPays r _ => couldAddMana r
   | .queueReflexive r => couldAddMana r
+  | .revealFromHand _ d => couldAddMana d
   | r => couldAddManaAtom r
 
 /-- Non-recursive check for atomic `Resolution` steps whose instructions include
-moving a card to or from a library (CR 605.1a, 25 September 2026). -/
+moving a card to or from a library (CR 605.1a, 25 September 2026). `.scry` only
+reorders cards within a library and returns `false`. -/
 private def movesToOrFromLibraryAtom : Resolution → Bool
   | .draw (.fixed 0) _ => false
   | .draw _ _ | .searchLibrary _ | .putOnLibrary _ _ | .mill _ _ | .surveil _
@@ -474,7 +476,7 @@ private def movesToOrFromLibraryAtom : Resolution → Bool
   | .lookAtTopRevealTypes _ _ | .searchCard _ _ _
   | .drawEqualToughnessThenPutCreatures | .millThenPut _ _
   | .exileAttackersSearchBasics | .exileTopPlayIfYouControlSubtype _ _
-  | .exileTopXOppPlayForLife | .lookAtTopLandsGainLife _ _
+  | .exileTopXOppPlayForLife | .riddlesInTheDark _ | .lookAtTopLandsGainLife _ _
   | .revealTopPutCreatures _ | .exileTopPlayUntilNext _
   | .exileHandDrawPlayUntilNext | .millThenPutPermanentGainLife _ _
   | .searchLibraryOrGyArtifactCreatureX | .gainLifeSearchBasicPlusOne _
@@ -494,18 +496,27 @@ private def movesToOrFromLibraryAtom : Resolution → Bool
   | .millThenReturnLandTapped _ | .searchLandsTapped _
   | .destroyDrawIfNotAttacking | .searchPlaneswalkerToTop
   | .drawMilledThisTurn | .drawGreatestPowerLoseLife
-  | .drawPerCreatureYouControl | .drawOneOrTwoIfNotFromHand
+  | .drawPerCreatureYouControl | .sphinxsApproach | .clashOfElements
+  | .entrustTheSpark | .drawOneOrTwoIfNotFromHand
   | .searchLandToGraveyard | .ownerPutsOnTopOrBottom | .drawTwoDiscardTwoStun
   | .searchCardThenDiscardRandom | .maySearchLandsEqualDamage
-  | .maySearchBasicLandTapped | .fblthpSearch | .mayDiscardThenSearchEnchantment
-  | .drawPerColorAmongOtherArtifacts | .destroyDrawIfLegendaryEnchantment
+  | .maySearchBasicLandTapped | .eyeOfJace | .jiangYangguAlone
+  | .fblthpSearch | .mayDiscardThenSearchEnchantment
+  | .drawPerColorAmongOtherArtifacts | .identityEcho
+  | .destroyDrawIfLegendaryEnchantment
   | .graveyardCardToLibraryBottom | .ownerShufflesIntoLibrary
-  | .surveilReturnNoncreatureNonland | .eachOpponentDiscardsTwoDrawPerShort
+  | .surveilReturnNoncreatureNonland | .exileOpponentLibrariesButBottom
+  | .eachOpponentDiscardsTwoDrawPerShort
   | .searchBasicLandTapped | .searchEnchantmentToHand
   | .drawThenCountersPerDiscard
   | .onPermanent .putOnTopOfLibrary | .onPermanent .putOnBottomOfLibrary
-  | .onSource .putOnTopOfLibrary | .onSource .putOnBottomOfLibrary => true
+  | .onSource .putOnTopOfLibrary | .onSource .putOnBottomOfLibrary
+  | .onCreatureAmongTargets .putOnTopOfLibrary
+  | .onCreatureAmongTargets .putOnBottomOfLibrary => true
   | .exile (.opponentTop _) _ _ | .exile .top _ _ | .exile (.basicUpTo _ _) _ _ => true
+  | .put .top _ | .put (.opponentTop _) _ | .put (.basicUpTo _ _) _
+  | .put .forest _ | .put .basicLandOnTop _ | .put .dragon _ | .put .randomCreature _ => true
+  | .frc e => e.movesToOrFromLibrary
   | _ => false
 
 /-- True when resolving `r` includes instructions to move a card to or from a

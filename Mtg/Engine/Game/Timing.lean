@@ -91,20 +91,10 @@ def _root_.Mtg.Engine.ActivatedAbility.needsBattlefieldSource (ab : ActivatedAbi
     ab.cost.exileSourceFromBattlefield || ab.cost.crewPower?.isSome ||
     ab.cost.exileManaSymbols?.isSome
 
-/-- Whether `ab`'s non-mana extra costs can be paid by `ManaAbilityDef`
-(CR 605.1a / 605.3). -/
-def _root_.Mtg.Engine.ActivatedAbility.hasSupportedManaActivationCost (ab : ActivatedAbility) : Bool :=
-  !ab.cost.removeAnyNumberPlusOne &&
-    !ab.cost.exileSourceFromHand &&
-    ab.cost.crewPower?.isNone &&
-    ab.cost.exileManaSymbols?.isNone
-
-/-- Mana abilities (CR 605.1a, 25 September 2026): battlefield activated ability
-satisfying all four CR 605.1a criteria (`ab.isManaAbility`) with supported
-mana-ability costs. -/
+/-- Mana abilities (CR 605.1a, 25 September 2026): an activated ability is a
+mana ability iff it satisfies all four CR 605.1a criteria (`ab.isManaAbility`). -/
 def isManaActivation (ab : ActivatedAbility) : Bool :=
-  ab.isManaAbility && !ab.isFromGraveyard && !ab.isFromHand &&
-    ab.hasSupportedManaActivationCost
+  ab.isManaAbility
 
 def hasPriority (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.priority == p && g.playersReceivePriority
