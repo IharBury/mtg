@@ -824,7 +824,7 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
   | .venserSpell =>
     match targets[0]? with
     | some t@(Target.card id) =>
-      if !g.targetLegalAt controller effect.targetKind 0 t sourceId then
+      if !g.targetLegalAt controller effect.targetSpec 0 t sourceId then
         g.illegalAbilityTarget t
       else
         match g.findObject? id with
@@ -847,8 +847,8 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
     match targets[0]? with
     | some t@(Target.permanent id) =>
       let legal :=
-        if effect.targetKind != .none then
-          g.targetLegalAt controller effect.targetKind 0 t sourceId
+        if !effect.targetSpec.isEmpty then
+          g.targetLegalAt controller effect.targetSpec 0 t sourceId
         else
           (g.findObject? id).any (fun o =>
             o.isOnBattlefield && g.canBeTargetedBy controller o sourceId)
@@ -996,8 +996,8 @@ def applyFrc (g : Game) (controller : PlayerId) (effect : Effect) (e : FrcEffect
         match targets[0]? with
         | some t@(Target.permanent tid) =>
           let legal :=
-            if effect.targetKind != .none then
-              g.targetLegalAt controller effect.targetKind 0 t sourceId
+            if !effect.targetSpec.isEmpty then
+              g.targetLegalAt controller effect.targetSpec 0 t sourceId
             else
               (g.findObject? tid).any (fun o => o.isOnBattlefield && g.isCreature o)
           if !legal then

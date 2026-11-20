@@ -332,7 +332,7 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
   -- 4. TriggerQueueEvent.putOnStack and StackObjectEvent.removedOnResolution (CR 608.2b)
   let gTrig0 := addPermanent (quiet afterDraw) bear opp opp
   let oppBear := (gTrig0.battlefield.filter (fun o => o.name == bear.name && gTrig0.controlledBy o opp))[0]!
-  let trigAb := TriggeredAbility.fra .enter "When this enters, destroy target creature an opponent controls." (.destroy (.target .creature)) (kind := .oppCreature)
+  let trigAb := TriggeredAbility.fra .enter "When this enters, destroy target creature an opponent controls." (.destroy (.target .creature)) (spec := .oppCreature)
   let gTrigPut := gTrig0.putTriggeredAbilityOnStack me (gTrig0.object! oppBear.id) trigAb "enters"
   let gTrig1 := gTrigPut.setStackEntryTargets gTrigPut.stack.back!.objectId #[Target.permanent oppBear.id]
   let hasTrigPutOnStack := gTrig1.events.any (fun e =>
@@ -3250,8 +3250,8 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     gCda2.snapshotToughness cdaSpell == 3 &&
     (gCda2.snapshot cdaSpell).power == some 3 &&
     (gCda2.snapshot cdaSpell).toughness == some 3 &&
-    (gCda2.legalTargetsForAtomicKind opp (.creatureSpellPTAtMost 3) none).contains (.card cdaSpell.id) &&
-    !(gCda2.legalTargetsForAtomicKind opp (.creatureSpellPTAtMost 2) none).contains (.card cdaSpell.id)
+    (gCda2.legalTargetsForSpec opp (.creatureSpellPTAtMost 3) none).contains (.card cdaSpell.id) &&
+    !(gCda2.legalTargetsForSpec opp (.creatureSpellPTAtMost 2) none).contains (.card cdaSpell.id)
   -- 5. CR 702.73a off-battlefield changeling behold & subtype queries
   let changelingDef : CardDef := {
     name := "Phase11 Changeling"

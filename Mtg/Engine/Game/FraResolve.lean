@@ -15,7 +15,7 @@ namespace Game
 /-- Tap and put a stun counter on each still-legal target in `remaining`,
 pausing and chaining `.finishPostStep .tapAndStunTargetsLoop` across CR 616.1
 counter-replacement choices inside the caller's batch. -/
-def tapAndStunTargetsLoop (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+def tapAndStunTargetsLoop (g : Game) (controller : PlayerId) (spec : TargetSpec)
     (remaining : Array (Nat × Target)) (sourceId : Option ObjectId)
     (cause : Option EventCause) : Game := Id.run do
   let mut g := g
@@ -23,7 +23,7 @@ def tapAndStunTargetsLoop (g : Game) (controller : PlayerId) (kind : EffectTarge
     let (slotIdx, t) := remaining[i]!
     match t with
     | Target.permanent id =>
-      if g.targetLegalAt controller kind slotIdx t sourceId then
+      if g.targetLegalAt controller spec slotIdx t sourceId then
         if let some o := g.findObject? id then
           let g' := if o.status.tapped then g else g.becomeTapped o (cause := cause)
           let cur := g'.object! o.id
@@ -43,7 +43,7 @@ def tapAndStunTargetsLoop (g : Game) (controller : PlayerId) (kind : EffectTarge
 index `i`, pausing across `Pending.chooseReplacement` so subsequent target
 legality checks do not run before an earlier replacement resolves. -/
 partial def plusOneOnEachTargetLoop (g : Game) (controller : PlayerId)
-    (kind : EffectTargetKind) (remaining : Array (Nat × Target)) (n : Nat)
+    (spec : TargetSpec) (remaining : Array (Nat × Target)) (n : Nat)
     (sourceId : Option ObjectId) : Game :=
   match remaining[0]? with
   | none => g
@@ -52,7 +52,7 @@ partial def plusOneOnEachTargetLoop (g : Game) (controller : PlayerId)
     let g :=
       match t with
       | Target.permanent id =>
-        if g.targetLegalAt controller kind i t sourceId then
+        if g.targetLegalAt controller spec i t sourceId then
           match g.findObject? id with
           | some o => g.addPlusOnePlusOneTo o n
           | none => g
@@ -61,15 +61,15 @@ partial def plusOneOnEachTargetLoop (g : Game) (controller : PlayerId)
     if rest.isEmpty then g
     else if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep (.plusOneOnEachTargetLoop controller kind rest n sourceId))
+        (.finishPostStep (.plusOneOnEachTargetLoop controller spec rest n sourceId))
     else
-      g.plusOneOnEachTargetLoop controller kind rest n sourceId
+      g.plusOneOnEachTargetLoop controller spec rest n sourceId
 
 /-- Put `x` `.minusOneMinusOne` counters on each `remaining` target permanent using its slot
 index `i`, pausing across `Pending.chooseReplacement` before checking subsequent
 targets. -/
 partial def minusOnesPerOpponentLoop (g : Game) (controller : PlayerId)
-    (kind : EffectTargetKind) (remaining : Array (Nat × Target)) (x : Nat)
+    (spec : TargetSpec) (remaining : Array (Nat × Target)) (x : Nat)
     (sourceId : Option ObjectId) : Game :=
   match remaining[0]? with
   | none => g
@@ -78,7 +78,7 @@ partial def minusOnesPerOpponentLoop (g : Game) (controller : PlayerId)
     let g :=
       match t with
       | Target.permanent id =>
-        if !g.targetLegalAt controller kind i t sourceId then
+        if !g.targetLegalAt controller spec i t sourceId then
           g.illegalAbilityTarget t
         else
           match g.findObject? id with
@@ -97,9 +97,9 @@ partial def minusOnesPerOpponentLoop (g : Game) (controller : PlayerId)
     if rest.isEmpty then g
     else if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep (.minusOnesPerOpponentLoop controller kind rest x sourceId))
+        (.finishPostStep (.minusOnesPerOpponentLoop controller spec rest x sourceId))
     else
-      g.minusOnesPerOpponentLoop controller kind rest x sourceId
+      g.minusOnesPerOpponentLoop controller spec rest x sourceId
 
 /-- Log token-copy creation and run post-entry hooks for tokens created since
 `startEventIdx` once `.copyTokenOfSourceIfNotToken`'s `createToken` completes. -/
@@ -374,7 +374,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     (lastKnownToughness : Option Int := none) : Game :=
   g.withContinuationFrame fun g =>
   let _ := lastKnownToughness
-  let kind := effect.targetKind
+  let kind := effect.targetSpec
   let illegal := some "The target is no longer legal"
   let srcName := g.fraSourceName sourceId
   let src? := (g.resolvingSpell.bind g.damageSourceById?).orElse (fun _ => sourceId.bind g.damageSourceById?)
@@ -387,7 +387,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       (lastKnownPower := lastKnownPower) (chosenX := chosenX)
       (lastKnownToughness := lastKnownToughness)
   | .bounce =>
-    g.withLegalKindTarget controller kind targets (fun g t =>
+    g.withLegalSpecTarget controller kind targets (fun g t =>
       match t with
       | Target.permanent id =>
         match g.findObject? id with
@@ -405,7 +405,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | none => g
       | Target.player _ => g) sourceId illegal
   | .exileTarget =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
+    g.withLegalSpecPermanent controller kind targets (fun g o =>
       let oName := g.name o
       let (g, _) := g.move o.id .exile none
       if let .chooseReplacement .. := g.pending then
@@ -414,7 +414,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         g.logMsg s!"{oName} is exiled"
       else g) sourceId illegal
   | .destroyDrawIfNotAttacking =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
+    g.withLegalSpecPermanent controller kind targets (fun g o =>
       let wasAttacking := o.status.attacking
       let ctrl := (g.controllerOf o).getD o.owner
       let g := g.destroyPermanent o
@@ -433,7 +433,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | some o => g.addPlusOnePlusOneTo o n
     | none => g
   | .returnFromGyToBattlefield plusOnes =>
-    g.withLegalKindTarget controller kind targets (fun g t =>
+    g.withLegalSpecTarget controller kind targets (fun g t =>
       match t with
       | Target.card id =>
         let (g, newId) := g.returnCardToBattlefield controller id plusOnes
@@ -446,7 +446,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .returnFromGyToHand =>
     -- `none` so an “up to one” sequence with no target still continues.
     -- An announced illegal target is reported by `withLegalTarget`.
-    g.withLegalKindTarget controller kind targets (fun g t =>
+    g.withLegalSpecTarget controller kind targets (fun g t =>
       match t with
       | Target.card id =>
         match g.findObject? id with
@@ -473,7 +473,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.withBatch none fun g =>
       g.putToBattlefieldLoop controller ids
   | .drawMilledThisTurn =>
-    g.withLegalKindPlayer controller kind targets (fun g pid =>
+    g.withLegalSpecPlayer controller kind targets (fun g pid =>
       g.draw controller (g.loggedMilled pid)) sourceId illegal
   | .exileAllCreaturesEmpower =>
     let startIdx := g.events.size
@@ -497,7 +497,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       let drawn := g.loggedDraws controller - before
       g.loseLife controller drawn
   | .revealHandDiscardNonland permanentOnly =>
-    g.withLegalKindPlayer controller kind targets (fun g pid =>
+    g.withLegalSpecPlayer controller kind targets (fun g pid =>
       g.beginRevealDiscard controller pid permanentOnly) sourceId illegal
   | .discardHand =>
     g.withBatch none fun g =>
@@ -562,7 +562,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       | none => g.logMsg "The target is no longer legal. No damage is dealt"
   | .clashOfElements =>
     let sid := sourceId.orElse (fun _ => g.resolvingSpell)
-    g.withLegalKindPermanent controller kind targets (fun g o =>
+    g.withLegalSpecPermanent controller kind targets (fun g o =>
       g.beginFraChoice o.owner (.topOrBottomDamage o.id 2 sid)
         s!"{(g.player o.owner).name} may put {g.name o} on top of their library") sourceId illegal
   | .entrustTheSpark =>
@@ -602,7 +602,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       else g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
   | .exileReturnBrieflyIfMvAtMost n =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
+    g.withLegalSpecPermanent controller kind targets (fun g o =>
       -- Ruling: the mana value is that of the permanent as it last existed
       -- on the battlefield.
       let mv := g.objectManaValue o
@@ -627,18 +627,18 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .searchLandToGraveyard =>
     g.beginLibrarySearch controller (·.isLand) "a land card" .graveyard
   | .counterTarget =>
-    g.withLegalKindTarget controller kind targets (fun g t =>
+    g.withLegalSpecTarget controller kind targets (fun g t =>
       match t with
       | Target.card id => g.counterStackSpell id
       | _ => g) sourceId illegal
   | .counterUnlessPays n =>
-    g.withLegalKindTarget controller kind targets (fun g _ =>
+    g.withLegalSpecTarget controller kind targets (fun g _ =>
       g.beginPayOrLetCounter targets n) sourceId illegal
   | .destroyTarget =>
-    g.withLegalKindPermanent controller kind targets (fun g o => g.destroyPermanent o)
+    g.withLegalSpecPermanent controller kind targets (fun g o => g.destroyPermanent o)
       sourceId illegal
   | .damageExileIfDies n =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
+    g.withLegalSpecPermanent controller kind targets (fun g o =>
       let g := g.createEffect (.exileIfDiesUntilEot o.id)
       g.dealDamageFrom srcName (g.object! o.id) n (source := src?)) sourceId illegal
   | .millMayPutPermanentGainLife n life =>
@@ -666,7 +666,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .blink =>
     if targets.isEmpty then g
     else
-      g.withLegalKindPermanent controller kind targets (fun g o =>
+      g.withLegalSpecPermanent controller kind targets (fun g o =>
         g.flickerPermanents #[o.id] (logText := "is exiled and returns to the battlefield")) sourceId illegal
   | .mayMovePlusOneToEachOther =>
     match sourceId.bind g.findObject? with
@@ -693,7 +693,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .ownerPutsOnTopOrBottom =>
     if targets.isEmpty then g
     else
-      g.withLegalKindPermanent controller kind targets (fun g o =>
+      g.withLegalSpecPermanent controller kind targets (fun g o =>
         g.beginFraChoice o.owner (.topOrBottomDamage o.id 0)
           s!"{(g.player o.owner).name} puts {g.name o} on the top or bottom of their library")
         sourceId illegal
@@ -751,7 +751,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       s!"{(g.player controller).name} may pay \{{n}}"
   | .damageX =>
     let x := xVal
-    g.withLegalKindTarget controller kind targets (fun g t =>
+    g.withLegalSpecTarget controller kind targets (fun g t =>
       match t with
       | Target.player pid => g.dealDamageToPlayer pid x (source := src?)
       | Target.permanent id => g.dealDamageFrom srcName (g.object! id) x (source := src?)
@@ -773,7 +773,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .searchCardThenDiscardRandom =>
     g.beginLibrarySearch controller (fun _ => true) "card" .handThenDiscardRandom
   | .grantFlashbackUntilEot =>
-    g.withLegalKindTarget controller kind targets (fun g t =>
+    g.withLegalSpecTarget controller kind targets (fun g t =>
       match t with
       | Target.card id =>
         match g.findObject? id with
@@ -831,7 +831,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         g.withBatch batchCause fun g =>
           g.causeDealsDamageToOpponentsLoop opps n name causeSnap batchCause
   | .exileFromHandUntilLeaves =>
-    g.withLegalKindPlayer controller kind targets (fun g pid =>
+    g.withLegalSpecPlayer controller kind targets (fun g pid =>
       let g := g.revealHand pid
       if (g.revealedHandChoices pid false).isEmpty then
         g.logMsg s!"{(g.player pid).name} has no nonland card"
@@ -881,7 +881,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
   | .exileCardFromGraveyard =>
     if targets.isEmpty then g
     else
-      g.withLegalKindTarget controller kind targets (fun g t =>
+      g.withLegalSpecTarget controller kind targets (fun g t =>
         match t with
         | Target.card id =>
           let name := g.name (g.object! id)
@@ -953,7 +953,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | some pid => g.dealDamageToPlayer pid n (source := src?)
     | none => g
   | .removeUpToCounters n =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
+    g.withLegalSpecPermanent controller kind targets (fun g o =>
       g.removeUpToCountersFrom controller o n) sourceId illegal
   | .maySacrificeThenEdict =>
     if (g.permanentsOf controller).any (fun o => g.isCreature o || g.isPlaneswalker o) then
@@ -1062,7 +1062,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
       else acc) ColorSet.empty
     g.draw controller ((Color.all.filter colors.contains).length)
   | .untapUnblockable =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
+    g.withLegalSpecPermanent controller kind targets (fun g o =>
       let oid := o.id
       let g := g.applyPermanentAction o .untap
       if let .chooseReplacement .. := g.pending then
@@ -1073,7 +1073,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
         | none => g) sourceId illegal
   | .minusPowerPerGraveyard =>
     let n : Int := Int.ofNat (g.player controller).graveyard.size
-    g.withLegalKindPermanent controller kind targets (fun g o => g.pumpPermanent o (-n) 0)
+    g.withLegalSpecPermanent controller kind targets (fun g o => g.pumpPermanent o (-n) 0)
       sourceId illegal
   | .plusOneOnEachCreatureYouControl => g.plusOneOnEachCreatureOf controller
   | .plusOneOnSource n =>
@@ -1085,7 +1085,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     else
       match sourceId.bind g.findObject? with
       | some src =>
-        g.withLegalKindPermanent controller kind targets (fun g o =>
+        g.withLegalSpecPermanent controller kind targets (fun g o =>
           if src.isOnBattlefield then g.fightCreatures (g.object! src.id) o else g) sourceId illegal
       | none => g
   | .exileUntilSourceLeaves =>
@@ -1093,7 +1093,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     | some src =>
       if !src.isOnBattlefield then g.logMsg s!"{g.name src} has left the battlefield"
       else
-        g.withLegalKindPermanent controller kind targets (fun g o =>
+        g.withLegalSpecPermanent controller kind targets (fun g o =>
           let (g, linkCause) := g.allocDelayedCause (some controller) sourceId
           let (g, _) := g.move o.id .exile none (cause := some linkCause)
           if let .chooseReplacement .. := g.pending then
@@ -1115,13 +1115,13 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.withBatch none fun g =>
       g.destroyPermanentsLoop validIds (preBattlefield := some preBf)
   | .damageAny n =>
-    g.withLegalKindTarget controller kind targets (fun g t =>
+    g.withLegalSpecTarget controller kind targets (fun g t =>
       match t with
       | Target.player pid => g.dealDamageToPlayer pid n (source := src?)
       | Target.permanent id => g.dealDamageFrom srcName (g.object! id) n (source := src?)
       | Target.card _ => g) sourceId illegal
   | .returnFromGyToBattlefieldTapped =>
-    g.withLegalKindTarget controller kind targets (fun g t =>
+    g.withLegalSpecTarget controller kind targets (fun g t =>
       match t with
       | Target.card id =>
         let (g, newId) := g.returnCardToBattlefield controller id 0 (tapped := true)
@@ -1141,20 +1141,17 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.beginSacrificeCreatures ((g.livingOpponents controller).map (·.id)) #[]
   | .reflexiveDamageAnyTarget n =>
     g.putReflexiveTrigger controller sourceId
-      { targeting := .of .playerOrCreature, resolution := .damageAny n
+      { targeting := .of .anyTarget, resolution := .damageAny n
         phrase := s!"This deals {n} damage to any target" }
   | .reflexiveDestroyPerOpponent =>
     g.putReflexiveTrigger controller sourceId
-      { targeting := .of (g.perOpponentKind controller
-          { noun := "up to one target creature or planeswalker that player controls"
-            types := #[.creature, .planeswalker] })
+      { targeting := .of (g.perOpponentSpec controller .oppCreatureOrPlaneswalker)
         allowsZeroTargets := true
         resolution := .destroyEachTarget
         phrase := "For each opponent, destroy up to one target creature or planeswalker that player controls" }
   | .reflexiveReturnLandTapped =>
     g.putReflexiveTrigger controller sourceId
-      { targeting := .of (.filtered { noun := "target land card from your graveyard"
-                                      zone := .yourGraveyard, types := #[.land] })
+      { targeting := .of (.ofDomain (.object .yourGraveyard (ObjectPred.andAll #[.isKind .card, .hasType .land])))
         resolution := .returnFromGyToBattlefieldTapped
         phrase := "Return target land card from your graveyard to the battlefield tapped" }
 

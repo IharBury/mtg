@@ -13,19 +13,20 @@ namespace Game
 
 def legalTargets (g : Game) (caster : PlayerId) (effect : Effect)
     (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalTargetsForKind caster effect.targetKind sourceId
+  g.legalTargetsForSpec caster effect.effectiveTargetSpec sourceId
 
 /-- Legal targets for a unified `Effect` (stored spell modes and faces). -/
 def legalEffectTargets (g : Game) (caster : PlayerId) (effect : Effect)
     (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalTargetsForKind caster effect.targetKind sourceId
+  g.legalTargetsForSpec caster effect.effectiveTargetSpec sourceId
 
 /-- What an Aura spell targets (CR 303.4a): a creature, a creature you control
 (Secret Invasion), or an artifact or non-Aura enchantment (Puppet Crafting). -/
-def auraTargetKind (aura : CardDef) : EffectTargetKind :=
+def auraTargetSpec (aura : CardDef) : TargetSpec :=
   if aura.staticAbilities.any (· == .fra .enchantArtifactOrNonAuraEnchantment) then
-    .filtered { noun := "target artifact or non-Aura enchantment"
-                types := #[.artifact, .enchantment], nonAura := true }
+    .ofDomain (.object .battlefield (ObjectPred.andAll #[
+      .any #[.hasType .artifact, .hasType .enchantment],
+      .not (.hasSubtype (.literal .aura))]))
   else if aura.staticAbilities.any (· == .fra .enchantCreatureYouControl) then
     .creatureYouControl
   else .creature
@@ -33,7 +34,7 @@ def auraTargetKind (aura : CardDef) : EffectTargetKind :=
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
 def legalAuraTargets (g : Game) (caster : PlayerId) (aura : CardDef)
     (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalTargetsForKind caster (auraTargetKind aura) sourceId
+  g.legalTargetsForSpec caster (auraTargetSpec aura) sourceId
 
 /-- Chosen mode of `o` if it is a modal spell on the stack (CR 700.2). -/
 def chosenModeOf (g : Game) (o : GameObject) : Option Nat :=
@@ -47,14 +48,11 @@ def chosenModesOf (g : Game) (o : GameObject) : Array Nat :=
   | some e => ((e.chosenMode.toArray ++ e.extraModes).qsort (· < ·))
   | none => #[]
 
-/-- Wrap a mode's `EffectTargetKind` in `.instanceSlots` when its single
-`"target"` instance allows zero or variable targets (`allowsZeroTargets` or
-`maxTargetCount > 1`), so combining modes preserves optionality and upper
+/-- Effective `TargetSpec` of a single mode incorporating its `allowsZeroTargets`
+and `maxTargets` bounds, so combining modes preserves optionality and upper
 bounds (CR 115.1c / 601.2c / 700.2). -/
-def modeTargetKind (m : Effect) : EffectTargetKind :=
-  if m.targetKind.spec.slots.isEmpty && (m.allowsZeroTargets || m.maxTargetCount > 1) then
-    .instanceSlots m.targetKind (if m.allowsZeroTargets then 0 else m.targetCount) m.maxTargetCount
-  else m.targetKind
+def modeTargetSpec (m : Effect) : TargetSpec :=
+  m.effectiveTargetSpec
 
 /-- One effect standing for several chosen modes while targets are
 announced: the instances of “target” of each mode, in printed order. -/
@@ -68,10 +66,10 @@ def combinedModesEffect (modes : Array Effect) : Option Effect :=
     | [] =>
       some { e with targeting := .of .none, allowsZeroTargets := false, maxTargets := 0 }
     | t0 :: tRest =>
-      let kind := tRest.foldl (fun k m => EffectTargetKind.pair k (modeTargetKind m)) (modeTargetKind t0)
+      let spec := tRest.foldl (fun s m => s.append (modeTargetSpec m)) (modeTargetSpec t0)
       some { e with
-        targeting := .of kind
-        allowsZeroTargets := targeted.all (·.allowsZeroTargets)
+        targeting := .of spec
+        allowsZeroTargets := targeted.all (fun m => m.allowsZeroTargets || m.effectiveTargetSpec.allowsZero)
         maxTargets := targeted.foldl (fun acc m => acc + m.maxTargetCount) 0 }
 
 /-- Combine the chosen modes of a modal triggered ability into one effect,
@@ -87,13 +85,14 @@ def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Eff
       match targeted.toList with
       | [] => .of .none
       | [t0] =>
-        if es.length == 1 then t0.targeting else .of (modeTargetKind t0)
+        if es.length == 1 then t0.targeting else .of (modeTargetSpec t0)
       | t0 :: tRest =>
-        let kind := tRest.foldl (fun k m => EffectTargetKind.pair k (modeTargetKind m)) (modeTargetKind t0)
-        .of kind
+        let spec := tRest.foldl (fun s m => s.append (modeTargetSpec m)) (modeTargetSpec t0)
+        .of spec
     some { es.head! with
       targeting
-      allowsZeroTargets := !targeted.isEmpty && targeted.all (·.allowsZeroTargets)
+      allowsZeroTargets := !targeted.isEmpty &&
+        targeted.all (fun m => m.allowsZeroTargets || m.effectiveTargetSpec.allowsZero)
       maxTargets := targeted.foldl (fun acc m => acc + m.maxTargetCount) 0
       resolution := .sequence (es.map (·.resolution))
       phrase := String.intercalate ". " (es.map (·.phrase)) }
@@ -105,8 +104,9 @@ def kickedSpellEffect (e : Effect) : Effect :=
   match e.resolution with
   | .eaglesAreComing =>
     { e with
-      targeting := .of (.filtered
-        { noun := "any number of target creatures you own", types := #[.creature], ownedByYou := true })
+      targeting := .of (.ofDomain
+        (.object .battlefield (ObjectPred.andAll #[.hasType .creature, .ownedBy .you]))
+        .anyNumber)
       allowsZeroTargets := true, maxTargets := 100 }
   | .phaseOutKicker => { e with targeting := .of .player }
   | _ => e
@@ -124,11 +124,7 @@ def returnUpToTwoGyModes : Array Effect :=
   #[(.artifact, "artifact"), (.creature, "creature"),
     (.enchantment, "enchantment"), (.land, "land")].map fun (ty, label) =>
     Effect.mkSpell
-      (.of (.filtered {
-        noun := s!"target {label} card in your graveyard"
-        zone := .yourGraveyard
-        types := #[ty]
-        controller := .you }))
+      (.of (.ofDomain (.object .yourGraveyard (ObjectPred.andAll #[.isKind .card, .hasType ty]))))
       .returnUpToTwoGyModal
       (castKind := .draw)
       (phraseOverride := s!"Target {label} card")
@@ -220,7 +216,7 @@ def kickedFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef)
     else
       let k := kickedSpellEffect e
       let k' := g.expandEachOpponentEffect p (if tcs.isEmpty then k else TextChange.applyEffect tcs k)
-      !k'.requiresTarget || k'.allowsZeroTargets ||
+      !k'.requiresTarget || k'.allowsZeroTargets || k'.effectiveTargetSpec.allowsZero ||
         g.effectHasEnoughTargets p k' sourceId
   | _, _ => false
 
@@ -229,7 +225,8 @@ ones exist (CR 700.2a / 601.2c / 115.3). -/
 def spellModeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
     (sourceId : Option ObjectId := none) : Bool :=
   let e := g.expandEachOpponentEffect p e
-  !e.requiresTarget || e.allowsZeroTargets || g.effectHasEnoughTargets p e sourceId
+  !e.requiresTarget || e.allowsZeroTargets || e.effectiveTargetSpec.allowsZero ||
+    g.effectHasEnoughTargets p e sourceId
 
 /-- Legal mode indices for a modal spell (CR 700.2a). Untargeted modes stay
 choosable even when another mode has no legal target. -/
@@ -247,8 +244,8 @@ def legalModes (g : Game) (p : PlayerId) (o : GameObject) : Array Nat :=
 
 /-- True when `e` targets a stack spell an opponent of `p` controls. -/
 def effectHasOppSpellTarget (g : Game) (p : PlayerId) (e : Effect) : Bool :=
-  e.targetKind.targetsStackSpell &&
-    (g.legalTargetsForKind p e.targetKind).any (g.isOppStackSpellTarget p)
+  e.targetSpec.targetsStackSpell &&
+    (g.legalTargetsForSpec p e.effectiveTargetSpec).any (g.isOppStackSpellTarget p)
 
 /-- Default mode: a preferred mode if that mode is legal, else the first legal
 mode. Spell-counter modes are skipped unless an opponent's spell is a legal
@@ -259,7 +256,7 @@ def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
   let modeAt? (i : Nat) : Option Effect := modes[i]?
   let avoidOwnCounter (i : Nat) : Bool :=
     match modeAt? i with
-    | some e => e.targetKind.targetsStackSpell && !g.effectHasOppSpellTarget p e
+    | some e => e.targetSpec.targetsStackSpell && !g.effectHasOppSpellTarget p e
     | none => false
   let usable := legal.filter (fun i => !avoidOwnCounter i)
   let pool := if usable.isEmpty then legal else usable
@@ -289,26 +286,29 @@ def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
   let tcs := g.evalLayer3 obj
   let fromObj : EffectTargeting :=
     match obj.abilityEffect with
-    | some e => (if tcs.isEmpty then e else TextChange.applyEffect tcs e).targeting
+    | some e =>
+      let e' := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+      { e'.targeting with spec := e'.effectiveTargetSpec }
     | none =>
       match obj.triggeredAbility with
-      | some ab => (if tcs.isEmpty then ab else TextChange.applyTriggeredAbility tcs ab).targeting
+      | some ab =>
+        let ab' := if tcs.isEmpty then ab else TextChange.applyTriggeredAbility tcs ab
+        { ab'.targeting with
+          spec := ab'.targetSpec.withSlotBounds ab'.allowsZeroTargets ab'.effect.maxTargets }
       | none =>
         match g.currentSpellEffect obj with
-        | some e => e.targeting
+        | some e => { e.targeting with spec := e.effectiveTargetSpec }
         | none =>
           if g.isAura obj then
-            match auraTargetKind (g.baseCard obj) with
-            | .creature => EffectTargeting.of .creature .own
-            | .creatureYouControl => EffectTargeting.of .creatureYouControl .own
-            | k => EffectTargeting.of k
-
+            let s := auraTargetSpec (g.baseCard obj)
+            if s == .creature || s == .creatureYouControl then EffectTargeting.of s .own
+            else EffectTargeting.of s
           else EffectTargeting.of .none
   match g.proposedSpell with
   | some prop =>
     if prop.spellId == obj.id then
-      match prop.targetKindOverride with
-      | some k => EffectTargeting.of k
+      match prop.targetSpecOverride with
+      | some ts => EffectTargeting.of ts
       | none => fromObj
     else fromObj
   | none => fromObj
@@ -344,93 +344,69 @@ def markTargetsAnnounced (g : Game) (objectId : ObjectId) (done : Bool) : Game :
 
 /-- True when the current instance of “target” is optional (“up to one”). -/
 def canSkipCurrentOptionalSlot (g : Game) (obj : GameObject) : Bool :=
-  let kind := (g.targetingOf obj).kind
+  let spec := (g.targetingOf obj).spec
   let i := g.currentTargetSlot obj
-  !kind.spec.slots.isEmpty && i < kind.spec.slots.size && kind.isOptionalSlot i
+  spec.isMultiSlot && i < spec.totalPositions && spec.isOptionalPos i
 
 /-- Legal targets for the object currently being announced (spell or ability).
 Already-chosen targets are excluded (CR 115.3). Multiple instances of the
-word “target” offer the next unset slot from `EffectTargetKind.slotKind`.
+word “target” offer the next unset slot from `TargetSpec.slotAtPos`.
 Multiple targets of one instance are announced together. -/
 def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
   let (already, skipped) :=
     match g.stackEntry? o.id with
     | some e => (e.targets, e.skippedOptionalSlots)
     | none => (#[], #[])
-  let kind := (g.targetingOf o).kind
-  let curSlot := g.currentTargetSlot o
-  let slot := kind.slotKind curSlot
+  let spec := (g.targetingOf o).spec
+  let curPos := g.currentTargetSlot o
+  let slot := spec.slotAtPos curPos
   let selfSource := o.sourceId.orElse (fun _ => if o.zone == .stack then some o.id else none)
-  let priorSlots : Array Nat :=
+  let priorPos : Array Nat :=
     if skipped.isEmpty then (List.range already.size).toArray
-    else ((List.range curSlot).filter (fun s => !skipped.contains s)).toArray
+    else ((List.range curPos).filter (fun s => !skipped.contains s)).toArray
   let forbidden : Array Target :=
-    if kind.spec.slots.isEmpty then already
+    if spec.isSingleSlot then already
     else
       Id.run do
         let mut out : Array Target := #[]
-        for grp in kind.distinctSlots do
-          if grp.contains curSlot then
+        for grp in spec.distinctPosGroups do
+          if grp.contains curPos then
             for idx in [0:already.size] do
-              if grp.contains (priorSlots[idx]?.getD idx) then
+              if grp.contains (priorPos[idx]?.getD idx) then
                 out := out.push already[idx]!
         return out
-  let legal := (g.legalTargetsForKind p slot selfSource).filter (fun t => !forbidden.contains t)
+  let legal := (g.legalTargetsForSlot p slot selfSource).filter (fun t => !forbidden.contains t)
   let priorChosen : Array (Nat × Target) :=
-    (List.range already.size).toArray.map (fun idx => (priorSlots[idx]?.getD idx, already[idx]!))
-  let shareGroups := kind.sharesTypeGroups
-  let mvGroups := kind.totalMvCapGroups
+    (List.range already.size).toArray.map (fun idx => (priorPos[idx]?.getD idx, already[idx]!))
+  let constraintGrps := spec.constraintPosGroups
   let legal :=
-    if shareGroups.any (·.contains curSlot) then
-      legal.filter (fun t =>
-        match t with
-        | Target.permanent oid =>
-          match g.findObject? oid with
-          | some cand =>
-            shareGroups.all (fun grp =>
-              !grp.contains curSlot ||
-                priorChosen.all (fun (j, u) =>
-                  !grp.contains j ||
-                    match u with
-                    | Target.permanent pid =>
-                      (g.findObject? pid).any (g.sharesCardType · cand)
-                    | _ => false))
-          | none => false
-        | _ => priorChosen.isEmpty)
+    if constraintGrps.any (fun (_, grp) => grp.contains curPos) then
+      legal.filter fun t =>
+        constraintGrps.all fun (gc, grp) =>
+          if !grp.contains curPos then true
+          else
+            let inGrp :=
+              if spec.isSingleSlot then already
+              else (priorChosen.filter fun (j, _) => grp.contains j).map (·.2)
+            g.satisfiesGroupConstraint p selfSource gc (inGrp.push t)
     else legal
-  let legal :=
-    if mvGroups.any (fun (_, grp) => grp.contains curSlot) then
-      legal.filter (fun t =>
-        let tMv :=
-          match t with
-          | Target.permanent oid => ((g.findObject? oid).map g.objectManaValue).getD 0
-          | _ => 0
-        mvGroups.all (fun (cap, grp) =>
-          !grp.contains curSlot ||
-            let priorMv :=
-              if kind.spec.slots.isEmpty then
-                already.foldl (fun acc u =>
-                  match u with
-                  | Target.permanent pid => acc + ((g.findObject? pid).map g.objectManaValue).getD 0
-                  | _ => acc) 0
-              else
-                priorChosen.foldl (fun acc (j, u) =>
-                  if grp.contains j then
-                    match u with
-                    | Target.permanent pid => acc + ((g.findObject? pid).map g.objectManaValue).getD 0
-                    | _ => acc
-                  else acc) 0
-            priorMv + tMv ≤ cap))
+  if spec.isSingleSlot then
+    if slot.minCount > 1 && slot.groupConstraint?.isSome && already.isEmpty then
+      let remaining : List (Nat × Array Target) :=
+        ((List.range slot.minCount).drop 1).map fun s => (s, legal)
+      legal.filter fun t =>
+        g.slotAssignmentExists p selfSource spec remaining #[(0, t)]
     else legal
-  if kind.spec.slots.isEmpty || curSlot >= kind.spec.slots.size then legal
+  else if curPos >= spec.totalPositions then legal
   else
-    let remainingSlots : List (Nat × Array Target) :=
-      ((List.range kind.spec.slots.size).drop (curSlot + 1)).map (fun s =>
-        (s, g.legalTargetsForAtomicKind p (kind.slotKind s) selfSource))
-    if remainingSlots.isEmpty then legal
+    let totalPos := spec.totalPositions
+    let remainingPos : List (Nat × Array Target) :=
+      ((List.range totalPos).drop (curPos + 1)).map fun s =>
+        (s, g.legalTargetsForSlot p (spec.slotAtPos s) selfSource)
+    if remainingPos.isEmpty then legal
     else
-      legal.filter (fun t =>
-        g.slotAssignmentExists kind remainingSlots (priorChosen.push (curSlot, t)))
+      legal.filter fun t =>
+        g.slotAssignmentExists p selfSource spec remainingPos (priorChosen.push (curPos, t))
 
 /-- Required and maximum announced targets for `obj` (CR 601.2c). Spells
 such as Gaze in Wonder require one target and allow a second; every target
@@ -438,27 +414,32 @@ of that one instance of the word “target” is announced together. -/
 def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
   match g.currentSpellEffect obj with
   | some e =>
-    let maxN := e.maxTargetCount
-    if e.allowsZeroTargets then (0, maxN) else (e.targetCount, maxN)
+    let spec := e.effectiveTargetSpec
+    let minN := if e.allowsZeroTargets then 0 else spec.minTargetCount
+    let maxN := max spec.maxTargetCount e.maxTargets
+    (minN, maxN)
   | none =>
     match obj.abilityEffect with
     | some e =>
-      let maxN := e.maxTargetCount
-      if e.allowsZeroTargets then (0, maxN) else (e.targetCount, maxN)
+      let spec := e.effectiveTargetSpec
+      let minN := if e.allowsZeroTargets then 0 else spec.minTargetCount
+      let maxN := max spec.maxTargetCount e.maxTargets
+      (minN, maxN)
     | none =>
       match obj.triggeredAbility with
       | some ab =>
-        let n := ab.targeting.targetCount
+        let spec := ab.targetSpec.withSlotBounds ab.allowsZeroTargets ab.effect.maxTargets
         let lifeTargets :=
           match ab.shared with
           | .resource .gainLifePlusOnes => true
           | _ => false
+        let minN := if lifeTargets || ab.allowsZeroTargets then 0 else spec.minTargetCount
         let maxN :=
           if lifeTargets then ((g.lastKnownPowerOf? obj.id).getD 0).toNat
-          else Nat.max n ab.effect.maxTargetCount
+          else max spec.maxTargetCount ab.effect.maxTargets
         -- “Up to one” is min 0, max the printed count (usually 1).
         -- Heroic Feast’s maximum is the life gained in that event.
-        if lifeTargets || ab.allowsZeroTargets then (0, maxN) else (n, maxN)
+        (minN, maxN)
       | none => (1, 1)
 
 /-- True when at least the required targets are announced and another
@@ -468,25 +449,26 @@ def canFinishOptionalTargets (g : Game) (obj : GameObject) : Bool :=
   match g.stackEntry? obj.id with
   | none => false
   | some e =>
-    let kind := (g.targetingOf obj).kind
-    if kind.spec.slots.isEmpty then false
+    let spec := (g.targetingOf obj).spec
+    if !spec.isMultiSlot then false
     else
       let (minN, maxN) := g.announcedTargetBounds obj
       let cur := g.currentTargetSlot obj
+      let total := spec.totalPositions
       e.targets.size >= minN && e.targets.size < maxN &&
-        cur < kind.spec.slots.size &&
-        ((List.range kind.spec.slots.size).drop cur).all kind.isOptionalSlot
+        cur < total &&
+        ((List.range total).drop cur).all spec.isOptionalPos
 
 /-- True while announcing several targets of one instance of the word “target”
 that is not a damage division (e.g. “one or two target creatures”). -/
 def announcingSameWordMultiTargets (g : Game) : Bool :=
   match g.objectAwaitingTargets with
   | some o =>
-    let kind := (g.targetingOf o).kind
-    if kind.spec.slots.isEmpty then
+    let spec := (g.targetingOf o).spec
+    if !spec.isMultiSlot then
       (g.announcedTargetBounds o).2 > 1 && !g.announcingDividedDamage
     else
-      let (s, e) := kind.instanceGroupBounds (g.currentTargetSlot o)
+      let (s, e) := spec.instanceGroupBounds (g.currentTargetSlot o)
       e - s > 1 && !g.announcingDividedDamage
   | none => false
 
@@ -495,20 +477,21 @@ def announcingSameWordMultiTargets (g : Game) : Bool :=
 def modeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
     (sourceId : Option ObjectId := none) : Bool :=
   let e := g.expandEachOpponentEffect p e
-  !e.requiresTarget || e.allowsZeroTargets || g.effectHasEnoughTargets p e sourceId
+  !e.requiresTarget || e.allowsZeroTargets || e.effectiveTargetSpec.allowsZero ||
+    g.effectHasEnoughTargets p e sourceId
 
 /-- Whether this activated ability currently has a legal target, or does not
 require one (CR 702.6 / 601.2c / 702.16b). Subtype- and worthy-restricted Equip
-targets are encoded directly in `ab.effect.targeting.kind`. -/
+targets are encoded directly in `ab.effect.targeting.spec`. -/
 def abilityCanChooseTarget (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     (sourceId : Option ObjectId := none) : Bool :=
-  if ab.equipWorthy && ab.effect.targetKind == .creatureYouControl then
-    !(g.legalTargetsForKind p .worthyCreatureYouControl sourceId).isEmpty
+  if ab.equipWorthy && ab.effect.targetSpec == .creatureYouControl then
+    !(g.legalTargetsForSpec p .worthyCreatureYouControl sourceId).isEmpty
   else
     match ab.equipSubtype with
     | some t =>
-      if ab.effect.targetKind == .creatureYouControl then
-        !(g.legalTargetsForKind p (.creatureYouControlSubtype t) sourceId).isEmpty
+      if ab.effect.targetSpec == .creatureYouControl then
+        !(g.legalTargetsForSpec p (.creatureYouControlSubtype t) sourceId).isEmpty
       else
         ab.allModes.any (fun m => g.modeIsChoosable p m sourceId)
     | none => ab.allModes.any (fun m => g.modeIsChoosable p m sourceId)
@@ -603,61 +586,47 @@ def targetLogName (g : Game) : Target → String
     | none => toString oid
 
 /-- Whether `candidate` is a legal complete target array for stack entry `e` /
-`obj` with targeting shape `kind` (CR 115.3 / 115.7a,d / 707.10c): preserves
-target count, satisfies each non-skipped slot's `slotKind`, enforces CR 115.3
-distinctness within shared `"target"` groups (`distinctSlots` or single-slot
-multi-target arrays), and checks multi-target relational constraints. -/
+`obj` with targeting shape `spec` (CR 115.3 / 115.7a,d / 707.10c): preserves
+target count, satisfies each non-skipped slot's `slotAtPos`, enforces CR 115.3
+distinctness within shared `"target"` groups (`distinctPosGroups` or single-slot
+multi-target arrays), and checks all `GroupTargetConstraint`s. -/
 def validTargetArrayForEntry (g : Game) (e : StackEntry) (obj : GameObject)
-    (kind : EffectTargetKind) (candidate : Array Target)
+    (spec : TargetSpec) (candidate : Array Target)
     (allowUnchangedIllegal : Bool := false) : Bool :=
   if candidate.size != e.targets.size then false
   else
     let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
-    let totalSlots := candidate.size + e.skippedOptionalSlots.size
-    let slotIndices : Array Nat :=
+    let totalPos := candidate.size + e.skippedOptionalSlots.size
+    let posIndices : Array Nat :=
       if e.skippedOptionalSlots.isEmpty then (List.range candidate.size).toArray
-      else ((List.range totalSlots).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
+      else ((List.range totalPos).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
     let slotsOk :=
-      slotIndices.size == candidate.size &&
+      posIndices.size == candidate.size &&
         (List.range candidate.size).all fun idx =>
-          let slotIdx := slotIndices[idx]!
+          let pos := posIndices[idx]!
           (allowUnchangedIllegal && candidate[idx]! == e.targets[idx]!) ||
-            (g.legalTargetsForKind e.controller (kind.slotKind slotIdx) selfSource).contains candidate[idx]!
+            (g.legalTargetsForSlot e.controller (spec.slotAtPos pos) selfSource).contains candidate[idx]!
     let distinctOk :=
-      if kind.spec.slots.isEmpty then
+      if spec.isSingleSlot then
         candidate.toList.eraseDups.length == candidate.size
       else
-        kind.distinctSlots.all fun grp =>
+        spec.distinctPosGroups.all fun grp =>
           let picked := (List.range candidate.size).filterMap fun idx =>
-            if grp.contains slotIndices[idx]! then some candidate[idx]! else none
+            if grp.contains posIndices[idx]! then some candidate[idx]! else none
           picked.eraseDups.length == picked.length
-    let slotTargetAt (arr : Array Target) (s : Nat) : Option Target :=
-      if kind.spec.slots.isEmpty then arr[s]?
-      else (slotIndices.findIdx? (· == s)).bind (fun idx => arr[idx]?)
+    let posTargetAt (arr : Array Target) (s : Nat) : Option Target :=
+      if spec.isSingleSlot then arr[s]?
+      else (posIndices.findIdx? (· == s)).bind (fun idx => arr[idx]?)
     let relationOk :=
       (allowUnchangedIllegal && candidate == e.targets) ||
-        (kind.sharesTypeGroups.all (fun grp =>
-          (allowUnchangedIllegal && grp.all (fun s => slotTargetAt candidate s == slotTargetAt e.targets s)) ||
-            let picked := (List.range candidate.size).filterMap fun idx =>
-              if grp.contains slotIndices[idx]! then some candidate[idx]! else none
-            match picked[0]?, picked[1]? with
-            | some (Target.permanent a), some (Target.permanent b) =>
-              match g.findObject? a, g.findObject? b with
-              | some oa, some ob => g.sharesCardType oa ob
-              | _, _ => false
-            | _, _ => picked.length < 2) &&
-         kind.totalMvCapGroups.all (fun (cap, grp) =>
-          (allowUnchangedIllegal && grp.all (fun s => slotTargetAt candidate s == slotTargetAt e.targets s)) ||
-            let picked :=
-              if kind.spec.slots.isEmpty then candidate
+        spec.constraintPosGroups.all fun (gc, grp) =>
+          (allowUnchangedIllegal &&
+            grp.all fun s => posTargetAt candidate s == posTargetAt e.targets s) ||
+            let picked : Array Target :=
+              if spec.isSingleSlot then candidate
               else ((List.range candidate.size).filterMap fun idx =>
-                if grp.contains slotIndices[idx]! then some candidate[idx]! else none).toArray
-            let totalMv := picked.foldl (fun acc t =>
-              match t with
-              | Target.permanent oid =>
-                acc + ((g.findObject? oid).map g.objectManaValue |>.getD 0)
-              | _ => acc) 0
-            totalMv ≤ cap))
+                if grp.contains posIndices[idx]! then some candidate[idx]! else none).toArray
+            g.satisfiesGroupConstraint e.controller selfSource gc picked
     slotsOk && distinctOk && relationOk
 
 end Game

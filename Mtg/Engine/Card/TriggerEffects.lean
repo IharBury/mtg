@@ -24,7 +24,7 @@ def ofTrigger (e : SharedTrigger) : Effect :=
     phrase := "" }
 
 /-- Leftover trigger constructors as unified `Effect` factories. -/
-def enterDestroy (kind : EffectTargetKind) : Effect :=
+def enterDestroy (kind : TargetSpec) : Effect :=
   ofTrigger (.enter (.destroy kind))
 
 def enterDealDamageUpToOne (n : Nat) : Effect :=
@@ -227,7 +227,7 @@ def seqSourceGetsAndTeamTrample (power : Int) : Effect :=
   { resolution := .sequence [.onSource (.pump power 0), .teamGain Keyword.trample] }
 
 /-- Put a +1/+1 counter on a target of this kind. It gains lifelink until end of turn. -/
-def seqPlusOneAndLifelink (kind : EffectTargetKind) : Effect :=
+def seqPlusOneAndLifelink (kind : TargetSpec) : Effect :=
   { targeting := .of kind
     resolution := .sequence
       [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords Keyword.lifelink)] }

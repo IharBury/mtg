@@ -322,7 +322,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
   let exBear := (gExBase.battlefield.filter (·.name == bear.name))[0]!
   let exHero := (gExBase.battlefield.filter (·.name == hero.name))[0]!
   let exEffect : Effect := {
-    targeting := .of (.pair .creature .creature)
+    targeting := .of (TargetSpec.creature.append .creature)
     resolution := .exchangeControl
     phrase := "Exchange control of two target creatures"
   }
@@ -697,7 +697,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     manaCost := ManaCost.empty
     types := #[.instant]
     spellEffect := some {
-      targeting := .of (.pair .creature .creature)
+      targeting := .of (TargetSpec.creature.append .creature)
       resolution := .tapTargets
       phrase := "Tap two target creatures"
     }

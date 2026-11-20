@@ -512,7 +512,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
       | _ => false)
   let gSlt4 : Game := gSlt3.resolveTop
   let swappedSlotsIllegal : Bool :=
-    gSlt4.targetsAllIllegalForKind me .upToOneCreatureThenPlayer
+    gSlt4.targetsAllIllegalForSpec me .upToOneCreatureThenPlayer
       #[Target.player opp, Target.permanent sltBear] (skippedOptionalSlots := #[])
   let skipSlotOk : Bool :=
     skippedRecordedOk &&
@@ -533,7 +533,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
   let gPr0 : Game := addPermanent (addPermanent afterDraw redPingerDef me me) protRedDef opp opp
   let rPingId := (gPr0.battlefield.filter (·.name == "Phase16 Red Pinger"))[0]!.id
   let protId := (gPr0.battlefield.filter (·.name == "Phase16 Red-Proof Hero"))[0]!.id
-  let legalsFromRed := gPr0.legalTargetsForKind me .creature (some rPingId)
+  let legalsFromRed := gPr0.legalTargetsForSpec me .creature (some rPingId)
   let protSourceOk : Bool :=
     !legalsFromRed.contains (Target.permanent protId) &&
     legalsFromRed.contains (Target.permanent rPingId)
@@ -1397,7 +1397,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let cB := (gMT0.battlefield.filter (·.name == hero.name))[0]!.id
   let cC := (gMT0.battlefield.filter (·.name == "Phase17 Doc Samson"))[0]!.id
   let dtHand := (gMT0.player me).hand.back!
-  let gMTCast : Game := mustApply (mustApply (mustApply gMT0 me (.cast dtHand)) me (.target (.permanent cA))) me (.target (.permanent cB))
+  let gMTCast : Game := mustApply (mustApply gMT0 me (.cast dtHand)) me (.targets #[.permanent cA, .permanent cB])
   let spId := gMTCast.stack.back!.objectId
   let gMTDupRejected : Game := gMTCast.setSpellTargetAt spId 1 (.permanent cA)
   let gMTChanged : Game := gMTCast.setSpellTargetAt spId 1 (.permanent cC)
@@ -2221,19 +2221,15 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     (gModDone.player me).hand.size == handPreMod + 1
 
   -- 4b. Mandatory `"choose two —"` (`chooseTriggerModes 2`) removed (`noLegalMode`) when only 1 mode is choosable!
-  let oppEnchFilter : TargetFilter := {
-    noun := "target enchantment an opponent controls"
-    zone := .battlefield
-    types := #[.enchantment]
-    controller := .opponent
-  }
+  let oppEnchSpec : TargetSpec :=
+    .ofDomain (.object .battlefield (ObjectPred.andAll #[.hasType .enchantment, .controlledBy .opponent]))
   let choose2Def : CardDef := {
     bear with
     name := "Phase18 Choose Two"
     fraTriggerModes := #[
       { resolution := .gainLife (.fixed 2), phrase := "You gain 2 life" },
       { targeting := .of .oppArtifact, resolution := .destroy .target, phrase := "Destroy target artifact an opponent controls" },
-      { targeting := .of (.filtered oppEnchFilter), resolution := .destroy .target, phrase := "Destroy target enchantment an opponent controls" }
+      { targeting := .of oppEnchSpec, resolution := .destroy .target, phrase := "Destroy target enchantment an opponent controls" }
     ]
     triggeredAbilities := #[
       .triggered .enter { resolution := .chooseTriggerModes 2, phrase := "Choose two —" } {}
@@ -2388,7 +2384,8 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
 
   -- 6a. `.venserSpell` copies opponent's targeted spell twice and prompts `.newTargetsForCopies #[c1, c2]`!
   let venserEff : Effect := {
-    targeting := .of (.filtered { noun := "target instant or sorcery spell an opponent controls", zone := .stack, types := #[.instant, .sorcery], controller := .opponent })
+    targeting := .of (.ofDomain (.object .stack (ObjectPred.andAll #[
+      .any #[.hasType .instant, .hasType .sorcery], .controlledBy .opponent])))
     resolution := .frc .venserSpell
     phrase := "Copy target instant or sorcery spell an opponent controls twice. You may choose new targets for the copies."
   }
@@ -2437,7 +2434,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let swRel2 := (gSw0.battlefield.filter (·.name == "Phase18 Pure Relic 2"))[0]!.id
   let swCard := (gSw0.player me).hand.back!
   let gSwCast : Game :=
-    mustApply (mustApply (mustApply gSw0 me (.cast swCard)) me (.target (.permanent swBear))) me (.target (.permanent swHero))
+    mustApply (mustApply gSw0 me (.cast swCard)) me (.targets #[.permanent swBear, .permanent swHero])
   let swSpellId := gSwCast.stack.back!.objectId
   -- Swap `[swBear, swHero]` -> `[swHero, swBear]` via `.newTargetsForCopies`:
   let gSwPrompt : Game := gSwCast.beginFraChoice me (.newTargetsForCopies #[swSpellId]) "retarget"
@@ -2460,7 +2457,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
 
   -- 6c. CR 608.2b multi-target per-slot legality: `.destroyEachTarget` skips target that gained hexproof while destroying remaining legal target!
   let destroyTwoEff : Effect := {
-    targeting := .of (.multi #[TargetFilter.oppCreatureOrPlaneswalker, TargetFilter.oppCreatureOrPlaneswalker] #[])
+    targeting := .of (.ofDomain .oppCreatureOrPlaneswalker (.exact 2))
     resolution := .destroyEachTarget
     phrase := "Destroy two target creatures or planeswalkers an opponent controls"
   }
@@ -2508,7 +2505,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let (gTk0, tokCopyObj) := afterDraw.createToken me bear (cause := some testCause)
   let gTkFlicker : Game :=
     gTk0.applyUnified me
-      { targeting := .of (.filtered TargetFilter.creatureYouControl)
+      { targeting := .of .creatureYouControl
         resolution := .exileThenReturnYouControl
         phrase := "Exile target creature you control, then return it to the battlefield" }
       #[Target.permanent tokCopyObj.id]
@@ -3339,7 +3336,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     gCpTDeclined.pending == Pending.none &&
     gCpLost.pending == Pending.none
 
-  -- 6b. CR 608.2b shared-constraint legality (`targetsAllIllegalForKind` on `.twoNonlandsSharingType` &
+  -- 6b. CR 608.2b shared-constraint legality (`targetsAllIllegalForSpec` on `.twoNonlandsSharingType` &
   --     `.upToTwoCreaturesTotalMvAtMost 3`) + `putPalantirInfluence` player legality!
   let enchDef19 : CardDef := { name := "Phase19 Enchantment", manaCost := ManaCost.empty, types := #[.enchantment] }
   let gSh0 : Game := addPermanent (addPermanent (addPermanent afterDraw bear me me) hero me me) enchDef19 me me
@@ -3357,11 +3354,11 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
   let palId := (gPal0.battlefield.filter (·.name == "Phase19 Palantir"))[0]!.id
   let (gPalRefused, palRes) := gPal0.putPalantirInfluence palId (some opp19)
   let sharedLegalityOk : Bool :=
-    !gSh0.targetsAllIllegalForKind me .twoNonlandsSharingType #[Target.permanent shBear, Target.permanent shHero] &&
-    gSh0.targetsAllIllegalForKind me .twoNonlandsSharingType #[Target.permanent shBear, Target.permanent shEnch] &&
-    !gShOneLeft.targetsAllIllegalForKind me .twoNonlandsSharingType #[Target.permanent shBear, Target.permanent shHero] &&
-    gMv0.targetsAllIllegalForKind me (.upToTwoCreaturesTotalMvAtMost 3) #[Target.permanent mvAId, Target.permanent mvBId] &&
-    !gMv0.targetsAllIllegalForKind me (.upToTwoCreaturesTotalMvAtMost 4) #[Target.permanent mvAId, Target.permanent mvBId] &&
+    !gSh0.targetsAllIllegalForSpec me .twoNonlandsSharingType #[Target.permanent shBear, Target.permanent shHero] &&
+    gSh0.targetsAllIllegalForSpec me .twoNonlandsSharingType #[Target.permanent shBear, Target.permanent shEnch] &&
+    !gShOneLeft.targetsAllIllegalForSpec me .twoNonlandsSharingType #[Target.permanent shBear, Target.permanent shHero] &&
+    gMv0.targetsAllIllegalForSpec me (.upToTwoCreaturesTotalMvAtMost 3) #[Target.permanent mvAId, Target.permanent mvBId] &&
+    !gMv0.targetsAllIllegalForSpec me (.upToTwoCreaturesTotalMvAtMost 4) #[Target.permanent mvAId, Target.permanent mvBId] &&
     palRes.isNone
 
   mustHold19 "6a.copyGuardsOk" copyGuardsOk &&
@@ -4069,10 +4066,10 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let upToOneAndPlEff : Effect :=
     FraCandidates.ab (.damageUpToOneAndPlayer 2)
       "Deal 2 damage to up to one target creature or planeswalker and 2 damage to target player"
-      (.multi #[
-        { TargetFilter.creatureOrPlaneswalker with noun := "up to one target creature or planeswalker" },
-        { noun := "target player", zone := .player }
-      ] #[0])
+      (.ofSlots #[
+        { domain := .creatureOrPlaneswalker, count := .upTo 1 },
+        .of .anyPlayer
+      ])
   let gSkip0 : Game := addPermanent afterDraw bear me me
   let skipSrcId := (gSkip0.battlefield.filter (·.name == bear.name))[0]!.id
   let oppPreLife := (gSkip0.player opp20).life

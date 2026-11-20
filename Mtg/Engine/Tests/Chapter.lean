@@ -135,7 +135,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
   })).resolution ==
   .sequence [.pump .double .double .target, .grant (.keywords Keyword.trample) .target]
 
-#guard (timing (.dealDamageToOppCreature 6)).targeting.kind == .oppCreature
+#guard (timing (.dealDamageToOppCreature 6)).targeting.spec == .oppCreature
 #guard (timing .plusOneUpToOne).allowsZeroTargets
 #guard (timing .blinkUntilEndStep).allowsZeroTargets
 #guard !(timing .destroyOppArtifact).allowsZeroTargets

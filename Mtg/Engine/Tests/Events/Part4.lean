@@ -459,7 +459,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
   let stackSpellDidNotTrigger : Bool := gYtStack.stack.size == 3
   let gYtPing : Game := mustApply (mustApply gYtStack me (.activate targeterId 2)) me (.target (.player opp21))
   let playerDidTrigger : Bool := gYtPing.stack.size == 5
-  let youTargetFilterOk : Bool := gyDidNotTrigger && stackSpellDidNotTrigger && playerDidTrigger
+  let youTargetCheckOk : Bool := gyDidNotTrigger && stackSpellDidNotTrigger && playerDidTrigger
 
   -- 5c. CR 707.10 stack copies (`wasCast == false`, Impending & face-down Morph stack copies) vs CR 707.12 `createPreparedCopy` (`isCopy == true`, cast)!
   let impCopyDef21 : CardDef := { bear with name := "Phase21 Impending Copy", impending := some (2, ManaCost.empty) }
@@ -506,7 +506,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     gPrepCast.events.any (fun e => match e.change with | .rules (.cast (.spellCast ..)) => true | _ => false)
 
   mustHold21 "5a.teamworkModalOk" teamworkModalOk &&
-  mustHold21 "5b.youTargetFilterOk" youTargetFilterOk &&
+  mustHold21 "5b.youTargetCheckOk" youTargetCheckOk &&
   mustHold21 "5c.copySemanticsOk" copySemanticsOk &&
   mustHold21 "5.replay" ([gTwOne1, gTwBoth1, gYtGy, gYtStack, gYtPing, gImpCopied, gImpCopyRes, gMphCopied, gMphCopyRes, gPrep1, gPrepCast].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
@@ -860,7 +860,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     let bId := (g.player opp22).graveyard.back!
     let g := (g.change (.pushContinuationFrame {})).change
       (.continuation (.pendingReplacement (some (.restorePending (.scry me 1) false))))
-    g.applyFraAbility me { targeting := .of (.filtered { noun := "card", zone := .anyGraveyard }), resolution := .sarumanExileCopyMayCast }
+    g.applyFraAbility me { targeting := .of (.ofDomain (.object .anyGraveyard (.isKind .card))), resolution := .sarumanExileCopyMayCast }
       .sarumanExileCopyMayCast #[Target.card bId] none
   let gSarDeclined : Game := mustApply gSar0 me .decline
   let gSarAccepted : Game := mustApply gSar0 me .accept
@@ -2595,21 +2595,21 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   let gArt1 : Game := addPermanent afterDraw trinket me me
   let gArt2 : Game := addPermanent gArt1 trinket me me
   let twoArtifactsOk :=
-    (gArt1.legalTargetsForKind me .twoArtifactsYouControl).isEmpty &&
-    (gArt2.legalTargetsForKind me .twoArtifactsYouControl).size == 4 &&
-    (afterDraw.legalTargetsForKind me .twoPlayers).size == 4
+    (gArt1.legalTargetsForSpec me .twoArtifactsYouControl).isEmpty &&
+    (gArt2.legalTargetsForSpec me .twoArtifactsYouControl).size == 4 &&
+    (afterDraw.legalTargetsForSpec me .twoPlayers).size == 2
 
   -- 4b. "Two target nonland permanents that share a card type" needs such a pair (CR 205.2a):
   let gSh1 : Game := addPermanent (addPermanent afterDraw bear me me) trinket opp24i2 opp24i2
   let gSh2 : Game := addPermanent gSh1 hero opp24i2 opp24i2
   let sharingTypeOk :=
-    (gSh1.legalTargetsForKind me .twoNonlandsSharingType).isEmpty &&
-    !(gSh2.legalTargetsForKind me .twoNonlandsSharingType).isEmpty
+    (gSh1.legalTargetsForSpec me .twoNonlandsSharingType).isEmpty &&
+    !(gSh2.legalTargetsForSpec me .twoNonlandsSharingType).isEmpty
 
   -- 4c. A single "target" announcing two targets needs two distinct legal targets unless it
   --     allows zero (spell modes and triggers alike):
   let twoEff : Effect := {
-    targeting := .of (.upToTwoCreaturesTotalMvAtMost 10)
+    targeting := .of (.ofDomain .creature (.exact 2))
     resolution := .destroyTarget
     phrase := "Destroy two target creatures" }
   let twoTrig : TriggeredAbility := .triggered .enter twoEff
@@ -2632,8 +2632,8 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   let gSt1 : Game := addPermanent gSt0 blade me me
   let stalwartOk :=
     !stalwartAb.allowsZeroTargets &&
-    !EffectTargetKind.isOptionalSlot .equipmentYouControlThenCreatureYouControl 0 &&
-    EffectTargetKind.isOptionalSlot .equipmentYouControlThenCreatureYouControl 1 &&
+    !TargetSpec.isOptionalSlot .equipmentYouControlThenCreatureYouControl 0 &&
+    TargetSpec.isOptionalSlot .equipmentYouControlThenCreatureYouControl 1 &&
     gSt0.triggerHasNoLegalTarget me stalwartAb stId &&
     !gSt1.triggerHasNoLegalTarget me stalwartAb stId
   mustHold24i2 "4a.twoArtifactsOk" twoArtifactsOk &&

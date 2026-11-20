@@ -322,10 +322,10 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       let g := g.record (GameEvent.announced g.turnNumber prop.spellId (modes := #[mode]))
       let g := g.changeObject prop.spellId (.abilityEffect (some chosen))
       let nextOverride :=
-        if chosen.targetKind != rawChosen.targetKind then some chosen.targetKind else none
+        if chosen.targetSpec != rawChosen.targetSpec then some chosen.targetSpec else none
       let g :=
-        if prop.targetKindOverride != nextOverride then
-          g.change (.proposedSpell (some { prop with targetKindOverride := nextOverride }))
+        if prop.targetSpecOverride != nextOverride then
+          g.change (.proposedSpell (some { prop with targetSpecOverride := nextOverride }))
         else g
       let g := g.logMsg
         s!"{(g.player p).name} chooses a mode: {rawChosen.toNotation} (CR 601.2b)"
@@ -509,9 +509,10 @@ def announceTargetChoices (g : Game) (p : PlayerId)
       if choices.any (fun c => c.2.isSome) then
         throw "That spell or ability does not divide damage (CR 601.2d)"
       let some e := g.stackEntry? obj.id | throw "The ability left the stack"
-      let kind := (g.targetingOf obj).kind
+      let spec := (g.targetingOf obj).spec
       let (minN, maxN) := g.announcedTargetBounds obj
-      if kind.spec.slots.isEmpty then
+      let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
+      if !spec.isMultiSlot then
         if !e.targets.isEmpty then
           throw "Those targets must be chosen at the same time (CR 601.2c)"
         if choices.size < minN then
@@ -526,14 +527,10 @@ def announceTargetChoices (g : Game) (p : PlayerId)
           if targets.contains t then
             throw "Illegal target (CR 601.2c)"
           targets := targets.push t
-        if let .upToTwoCreaturesTotalMvAtMost n := kind then
-          let totalMv :=
-            targets.foldl (fun acc t =>
-              match t with
-              | .permanent oid => acc + ((g.findObject? oid).map g.objectManaValue).getD 0
-              | _ => acc) 0
-          if totalMv > n then
-            throw "Illegal target (CR 601.2c)"
+        if let some slot := spec.slots[0]? then
+          if let some gc := slot.groupConstraint? then
+            if !g.satisfiesGroupConstraint p selfSource gc targets then
+              throw "Illegal target (CR 601.2c)"
         let mut g := g.setStackEntryTargets obj.id targets
         for t in targets do
           g := g.logMsg
@@ -541,13 +538,13 @@ def announceTargetChoices (g : Game) (p : PlayerId)
         if g.proposedSpell.any (·.spellId == obj.id) then
           return g.afterTargetsChosen
         return g.afterTriggerTargetsChosen
-      let curSlot := g.currentTargetSlot obj
-      let (grpStart, grpEnd) := kind.instanceGroupBounds curSlot
-      if curSlot != grpStart || choices.size > grpEnd - grpStart then
+      let curPos := g.currentTargetSlot obj
+      let (grpStart, grpEnd) := spec.instanceGroupBounds curPos
+      if curPos != grpStart || choices.size > grpEnd - grpStart then
         throw "Choose each instance of the word \"target\" separately (CR 601.2c)"
-      let trailingSlots := (List.range grpEnd).drop (curSlot + choices.size)
-      if !trailingSlots.all kind.isOptionalSlot then
-        let reqCount := ((List.range grpEnd).drop grpStart).filter (!kind.isOptionalSlot ·) |>.length
+      let trailingPos := (List.range grpEnd).drop (curPos + choices.size)
+      if !trailingPos.all spec.isOptionalPos then
+        let reqCount := ((List.range grpEnd).drop grpStart).filter (!spec.isOptionalPos ·) |>.length
         throw s!"Choose at least {reqCount} target(s) (CR 601.2c)"
       let mut gCheck := g
       let mut curTargets := e.targets
@@ -559,13 +556,13 @@ def announceTargetChoices (g : Game) (p : PlayerId)
         curTargets := curTargets.push t
         gCheck := gCheck.setStackEntryTargets obj.id curTargets
       let mut g := g
-      for slotIdx in trailingSlots do
-        g := g.change (.stackEntry obj.id (.skipOptionalSlot slotIdx))
+      for posIdx in trailingPos do
+        g := g.change (.stackEntry obj.id (.skipOptionalSlot posIdx))
       g := g.setStackEntryTargets obj.id curTargets
       for (t, _) in choices do
         g := g.logMsg
           s!"{(g.player p).name} chooses {g.targetLogName t} as a target (CR 601.2c)"
-      if g.currentTargetSlot obj < kind.spec.slots.size then
+      if g.currentTargetSlot obj < spec.totalPositions then
         return (g.markTargetsAnnounced obj.id false).change (.pending (.chooseTargets p))
       if g.proposedSpell.any (·.spellId == obj.id) then
         return g.afterTargetsChosen

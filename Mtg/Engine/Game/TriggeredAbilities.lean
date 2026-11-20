@@ -259,7 +259,7 @@ def resolveRandomCreatureReveal (g : Game) (p : PlayerId) (revealed : Array Obje
 logs as `withLegalTriggerPermanent`. -/
 def legalTriggerPermanent? (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target) : Game × Option GameObject :=
-  let legal := g.legalTargetsForKind controller ab.targetKind sourceId
+  let legal := g.legalTargetsForSpec controller ab.targetSpec sourceId
   match targets[0]? with
   | none => (g.logMsg "The target is no longer legal", none)
   | some t =>
@@ -472,7 +472,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (g, gy ≥ n.toNat)
   | (.atLeast (.count (.anotherSubtype subtype)) (.fixed 1))
   | (.atLeast (.count (.target (.anotherSubtype subtype))) (.fixed 1)) =>
-    let legal := g.legalTargetsForKind controller ab.targetKind sourceId
+    let legal := g.legalTargetsForSpec controller ab.targetSpec sourceId
     let holds :=
       match targets[0]? with
       | some (Target.permanent oid) =>
@@ -583,7 +583,7 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           | none => 0
         (g, some n)
       | .anotherSubtype subtype | .target (.anotherSubtype subtype) =>
-        let legal := g.legalTargetsForKind controller ab.targetKind sourceId
+        let legal := g.legalTargetsForSpec controller ab.targetSpec sourceId
         let n :=
           match targets[0]? with
           | some (Target.permanent oid) =>
@@ -852,7 +852,7 @@ def withAffected (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some src =>
       if !src.isOnBattlefield then g
       else
-        g.withLegalKindPermanent controller ab.targetKind targets
+        g.withLegalSpecPermanent controller ab.targetSpec targets
           (fun g host => f g (g.object! host.id))
           sourceId (some "The target is no longer legal")
     | none => g
@@ -949,7 +949,7 @@ life gain once after all shares have been dealt. -/
 def triggerDividedDamageLoop (g : Game) (remaining : Array (Target × Nat))
     (srcName : String) (source : Option EventObject)
     (cause : Option EventCause) (startEventIdx : Option Nat := none)
-    (targetCheck : Option (PlayerId × EffectTargetKind × Option ObjectId) := none) : Game := Id.run do
+    (targetCheck : Option (PlayerId × TargetSpec × Option ObjectId) := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.finishPostStep (.triggerDividedDamageLoop remaining srcName source cause startEventIdx targetCheck))
@@ -961,7 +961,7 @@ def triggerDividedDamageLoop (g : Game) (remaining : Array (Target × Nat))
     if share > 0 then
       let targetLegal : Bool :=
         match targetCheck with
-        | some (ctrl, tkind, sid) => (g.legalTargetsForKind ctrl tkind sid).contains tgt
+        | some (ctrl, tspec, sid) => (g.legalTargetsForSpec ctrl tspec sid).contains tgt
         | none => true
       if !targetLegal then
         g := g.illegalAbilityTarget tgt
@@ -1060,7 +1060,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
   | .target, .fixed n, .markedPermanent =>
     let n := n.toNat
     let g := g.change (.permanentDealtDamageThisWay none)
-    g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
+    g.withLegalSpecTarget controller ab.targetSpec targets (fun g tgt =>
       match tgt with
       | Target.player _ =>
         g.applyEffect controller (Effect.dealDamage n) #[tgt] (sourceId := sourceId)
@@ -1091,11 +1091,11 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
       g.dealDamageToPlayer pid n (source := sourceId.bind g.damageSourceById?))
   | .target, .fixed n, .none =>
     let n := n.toNat
-    g.applyDamageToKindTarget controller ab.targetKind targets n sourceId
+    g.applyDamageToSpecTarget controller ab.targetSpec targets n sourceId
       (some "The target is no longer legal")
   | .target, .spellManaValue, _ =>
     let n := g.castSpellManaValue controller lastKnownPower
-    g.applyDamageToKindTarget controller ab.targetKind targets n sourceId none
+    g.applyDamageToSpecTarget controller ab.targetSpec targets n sourceId none
   | .source, .fixed n, _ =>
     let n := n.toNat
     g.withAffected controller ab sourceId targets .source fun g o =>
@@ -1189,9 +1189,9 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
       | .target =>
         match note with
         | .none =>
-          g.applyDamageToKindTarget controller ab.targetKind targets n sourceId none
+          g.applyDamageToSpecTarget controller ab.targetSpec targets n sourceId none
         | .fromEquipped =>
-          g.withLegalKindTarget controller ab.targetKind targets
+          g.withLegalSpecTarget controller ab.targetSpec targets
             (fun g t => g.dealDamageToTarget t n (source := src)) sourceId none
         | _ =>
           match g.permanentsNamed ctx .target with
@@ -1321,7 +1321,7 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         if some o.id != sourceId then acc.addPlusOnePlusOneTo o 1 else acc) g
   | .plusOneLastKnownMv, .permanent _ =>
     let n := (lastKnownPower.getD 0).toNat
-    g.applyOnPermanent controller ab.targetKind targets (.plusOne n) sourceId
+    g.applyOnPermanent controller ab.targetSpec targets (.plusOne n) sourceId
       (some "The target is no longer legal")
   | .ofKind .loyalty _, .source =>
     g.withSourceOnBattlefield sourceId (fun g o =>
@@ -1484,8 +1484,8 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match targets[0]? with
       | some t@(Target.permanent id) =>
         let legal :=
-          if ab.targetKind != .none then
-            g.targetLegalAt controller ab.targetKind 0 t sourceId
+          if !ab.targetSpec.isEmpty then
+            g.targetLegalAt controller ab.targetSpec 0 t sourceId
           else
             (g.findObject? id).any (fun other =>
               other.isOnBattlefield && g.isCreature other && other.id != src.id &&
@@ -1547,8 +1547,8 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match targets[0]? with
       | some t@(Target.permanent id) =>
         let legal :=
-          if ab.targetKind != .none then
-            g.targetLegalAt controller ab.targetKind 0 t sourceId
+          if !ab.targetSpec.isEmpty then
+            g.targetLegalAt controller ab.targetSpec 0 t sourceId
           else
             (g.findObject? id).any (fun other =>
               other.isOnBattlefield && g.isCreature other &&
@@ -1916,7 +1916,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (note : TriggeredAbility.TriggerExileNote) : Game :=
   match what, how, note with
   | .target, .leaveTrigger, .none =>
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+    g.withLegalSpecPermanent controller ab.targetSpec targets (fun g o =>
       g.exileForLeaveTrigger sourceId o) sourceId (some "The target is no longer legal")
   | .target, .untilSourceLeaves, .copyAndHost =>
     let g := g.changes #[.notedCopyObject none, .notedHostId none]
@@ -1924,8 +1924,8 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match targets[0]? with
       | some t@(Target.permanent id) =>
         let legal :=
-          if ab.targetKind != .none then
-            g.targetLegalAt controller ab.targetKind 0 t sourceId
+          if !ab.targetSpec.isEmpty then
+            g.targetLegalAt controller ab.targetSpec 0 t sourceId
           else
             (g.findObject? id).any (fun o =>
               o.isOnBattlefield && g.canBeTargetedBy controller o sourceId)
@@ -1941,14 +1941,14 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | _ => g
   | .target, .untilSourceLeaves, .none =>
     g.withSourceStillOnBattlefield sourceId fun g _ =>
-      g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+      g.withLegalSpecPermanent controller ab.targetSpec targets (fun g o =>
         g.exileUntilSourceLeaves sourceId o) sourceId (some "The target is no longer legal")
   | .top, .playUntilNextTurn, .none =>
     g.resolveExileTopPlayUntilEndOfNextTurn controller
   | .eachPermanent, .untilSourceLeaves, .none
   | .target .eachPermanent, .untilSourceLeaves, .none =>
     g.withSourceStillOnBattlefield sourceId fun g _ =>
-      let legal := g.legalTargetsForKind controller ab.targetKind sourceId
+      let legal := g.legalTargetsForSpec controller ab.targetSpec sourceId
       let (g, validIds) := targets.foldl (fun (acc : Game × Array ObjectId) t =>
         let (g, xs) := acc
         match t with
@@ -1980,11 +1980,11 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         let exiled := eligible.filterMap (fun id => (g.followMovedToZone? id (· == .exile)).map (·.id))
         g.change (.exiledIdsThisWay exiled)
   | .target, .nextEndStep, .none =>
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+    g.withLegalSpecPermanent controller ab.targetSpec targets (fun g o =>
       g.exileUntilNextEndStep o) sourceId none
   | .graveyardCard, .forLater, .playCard =>
     let g := g.change (.playExiledThisWay none)
-    g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
+    g.withLegalSpecTarget controller ab.targetSpec targets (fun g tgt =>
       match tgt with
       | Target.card id | Target.permanent id =>
         match g.findObject? id with
@@ -1999,7 +1999,7 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         | none => g.logMsg "The target is no longer in the graveyard"
       | _ => g) sourceId (some "The target is no longer legal")
   | .target, .forLater, .none =>
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+    g.withLegalSpecPermanent controller ab.targetSpec targets (fun g o =>
       (g.move o.id .exile none).1) sourceId (some "The target is no longer legal")
   | .source, .forLater, .none =>
     g.withAffected controller ab sourceId targets .source fun g o =>
@@ -2276,7 +2276,7 @@ def applySacrifice (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 pausing across `Pending.chooseReplacement` so subsequent target legality checks
 do not run before an earlier replacement resolves. -/
 partial def attachEquipmentToHostLoop (g : Game) (controller : PlayerId)
-    (kind : EffectTargetKind) (hostId : ObjectId)
+    (spec : TargetSpec) (hostId : ObjectId)
     (remaining : Array (Nat × Target)) (sourceId : Option ObjectId) : Game :=
   match remaining[0]? with
   | none => g
@@ -2288,8 +2288,8 @@ partial def attachEquipmentToHostLoop (g : Game) (controller : PlayerId)
         if !host.isOnBattlefield then g
         else
           let ok :=
-            if kind != .none then
-              g.targetLegalAt controller kind i t sourceId
+            if !spec.isEmpty then
+              g.targetLegalAt controller spec i t sourceId
             else
               (g.findObject? id).any (fun eq =>
                 eq.isOnBattlefield && g.isEquipment eq && g.canBeTargetedBy controller eq sourceId)
@@ -2302,9 +2302,9 @@ partial def attachEquipmentToHostLoop (g : Game) (controller : PlayerId)
     if rest.isEmpty then g
     else if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep (.attachEquipmentToHostLoop controller kind hostId rest sourceId))
+        (.finishPostStep (.attachEquipmentToHostLoop controller spec hostId rest sourceId))
     else
-      g.attachEquipmentToHostLoop controller kind hostId rest sourceId
+      g.attachEquipmentToHostLoop controller spec hostId rest sourceId
 
 /-- Resolve `TriggerResolution.attach`. Each printed combination keeps
 the behavior of the constructor it replaced. -/
@@ -2319,7 +2319,7 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         "The Equipment is no longer in play"
     | none => g
   | .source, .target =>
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g host =>
+    g.withLegalSpecPermanent controller ab.targetSpec targets (fun g host =>
       g.withSourceOnBattlefield sourceId (fun g src => g.attachSourceTo src host)
         "The Equipment is no longer in play")
       sourceId (some "The target is no longer legal")
@@ -2327,13 +2327,13 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match targets[0]?, targets[1]? with
     | some t0@(Target.permanent eqId), some t1@(Target.permanent hostId) =>
       let eqOk :=
-        if ab.targetKind.spec.slots.size >= 1 then
-          g.targetLegalAt controller ab.targetKind 0 t0 sourceId
+        if ab.targetSpec.totalPositions >= 1 then
+          g.targetLegalAt controller ab.targetSpec 0 t0 sourceId
         else
           (g.findObject? eqId).any (fun eq => eq.isOnBattlefield && g.isEquipment eq && g.canBeTargetedBy controller eq sourceId)
       let hostOk :=
-        if ab.targetKind.spec.slots.size >= 2 then
-          g.targetLegalAt controller ab.targetKind 1 t1 sourceId
+        if ab.targetSpec.totalPositions >= 2 then
+          g.targetLegalAt controller ab.targetSpec 1 t1 sourceId
         else
           (g.findObject? hostId).any (fun host => host.isOnBattlefield && g.isCreature host && g.canBeTargetedBy controller host sourceId)
       if eqOk && hostOk then
@@ -2343,8 +2343,8 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         if !hostOk then g.illegalAbilityTarget t1 else g
     | some t0@(Target.permanent eqId), none =>
       let eqOk :=
-        if ab.targetKind.spec.slots.size >= 1 then
-          g.targetLegalAt controller ab.targetKind 0 t0 sourceId
+        if ab.targetSpec.totalPositions >= 1 then
+          g.targetLegalAt controller ab.targetSpec 0 t0 sourceId
         else
           (g.findObject? eqId).any (fun eq => eq.isOnBattlefield && g.canBeTargetedBy controller eq sourceId)
       if eqOk then g.logMsg "No creature was chosen"
@@ -2415,15 +2415,15 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match targets.toList with
     | [t0@(Target.permanent eqId), t1@(Target.permanent crId)] =>
       let eqOk :=
-        if ab.targetKind.spec.slots.size >= 1 then
-          g.targetLegalAt controller ab.targetKind 0 t0 sourceId
+        if ab.targetSpec.totalPositions >= 1 then
+          g.targetLegalAt controller ab.targetSpec 0 t0 sourceId
         else
           (g.findObject? eqId).any (fun eq =>
             eq.isOnBattlefield && g.isEquipment eq && g.controlledBy eq controller &&
               g.canBeTargetedBy controller eq sourceId)
       let crOk :=
-        if ab.targetKind.spec.slots.size >= 2 then
-          g.targetLegalAt controller ab.targetKind 1 t1 sourceId
+        if ab.targetSpec.totalPositions >= 2 then
+          g.targetLegalAt controller ab.targetSpec 1 t1 sourceId
         else
           (g.findObject? crId).any (fun cr =>
             cr.isOnBattlefield && g.isCreature cr && g.controlledBy cr controller &&
@@ -2459,7 +2459,7 @@ def applyAttach (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     | some host =>
       let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
       g.withBatch none fun g =>
-        g.attachEquipmentToHostLoop controller ab.targetKind host.id indexed sourceId
+        g.attachEquipmentToHostLoop controller ab.targetSpec host.id indexed sourceId
   | what, hostSel =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx what, g.permanentsNamed ctx hostSel with
@@ -2665,11 +2665,11 @@ def applyDiscard (g : Game) (controller : PlayerId)
   | .cards n .eachOpponent =>
     g.beginDiscardCards (g.apnapOrder.filter (g.isLivingOpponentOf controller ·)) n
   | .chosenNonland =>
-    g.withLegalKindPlayer controller .opponent targets
+    g.withLegalSpecPlayer controller .opponent targets
       (fun g pid => g.discardNonlandFrom controller pid)
       sourceId (some "The target is no longer legal")
   | .cards n (.target .opponent) =>
-    g.withLegalKindTarget controller .opponent targets (fun g tgt =>
+    g.withLegalSpecTarget controller .opponent targets (fun g tgt =>
       match tgt with
       | Target.player pid => g.beginDiscardCards #[pid] n
       | _ => g) sourceId none
@@ -2730,8 +2730,8 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         "No target was chosen. Its controller is undefined and no player amasses Goblins."
     | some t@(Target.permanent oid) =>
       let legal :=
-        if ab.targetKind != .none then
-          g.targetLegalAt controller ab.targetKind 0 t sourceId
+        if !ab.targetSpec.isEmpty then
+          g.targetLegalAt controller ab.targetSpec 0 t sourceId
         else
           (g.findObject? oid).any (fun o =>
             o.isOnBattlefield && g.canBeTargetedBy controller o sourceId)
@@ -2755,7 +2755,7 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .target, .none =>
     if targets.isEmpty && ab.allowsZeroTargets then g
     else
-      g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+      g.withLegalSpecPermanent controller ab.targetSpec targets (fun g o =>
         g.destroyPermanent o) sourceId (some "The target is no longer legal")
   | .target, .chosenToken =>
     g.destroyChosenToken controller sourceId targets
@@ -2906,7 +2906,7 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | _ => g.logMsg "The target is no longer legal"
   | .permanent, .returnedPermanent =>
     let g := g.change (.returnedPermanentThisWay false)
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+    g.withLegalSpecPermanent controller ab.targetSpec targets (fun g o =>
       let oid := o.id
       let owner := o.owner
       let g := g.returnToHand oid owner
@@ -2916,7 +2916,7 @@ def applyReturnToHand (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         g.change (.returnedPermanentThisWay true)
       else g) sourceId none
   | .graveyardPermanent, .none =>
-    g.withLegalKindTarget controller ab.targetKind targets (fun g tgt =>
+    g.withLegalSpecTarget controller ab.targetSpec targets (fun g tgt =>
       match tgt with
       | Target.card id | Target.permanent id =>
         g.returnToHand id controller
@@ -3058,7 +3058,7 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         if ids.isEmpty then g
         else g.withBatch none fun g => g.returnLinkedExileLoop ids
   | .creatureMvAtMost _, _, _ =>
-    g.withLegalKindTarget controller ab.targetKind targets
+    g.withLegalSpecTarget controller ab.targetSpec targets
       (fun g t =>
         match t with
         | Target.card oid =>
@@ -3229,8 +3229,8 @@ def applyPut (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       match what with
       | .graveyardCard | .graveyardPermanent | .creatureCard =>
         let legalSet? : Option (Array Target) :=
-          if ab.targetKind == .none then none
-          else some (g.legalTargetsForKind controller ab.targetKind sourceId)
+          if ab.targetSpec.isEmpty then none
+          else some (g.legalTargetsForSpec controller ab.targetSpec sourceId)
         targets.filterMap fun t =>
           match t with
           | Target.card id | Target.permanent id =>
@@ -3333,9 +3333,9 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
   | .landfallCreateElf, .source =>
     g.gainLandfallCreateElf sourceId
   | .hexproofWhileSource, .target =>
-    g.grantHexproofWhileSource controller sourceId targets ab.targetKind
+    g.grantHexproofWhileSource controller sourceId targets ab.targetSpec
   | .preventDamageWhileSource, .target =>
-    g.preventDamageWhileSource controller sourceId targets ab.targetKind
+    g.preventDamageWhileSource controller sourceId targets ab.targetSpec
   | .assignCombatDamageEqualToughness, .creaturesYouControl =>
     g.createEffect (.assignCombatDamageEqualToughnessUntilEot controller)
       |>.logMsg "Creatures you control assign combat damage equal to their toughness"
@@ -3698,7 +3698,7 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => g
     | _ => g
   | .target =>
-    g.withLegalKindPermanent controller ab.targetKind targets (fun g o =>
+    g.withLegalSpecPermanent controller ab.targetSpec targets (fun g o =>
       g.applyPermanentAction o .tap) sourceId (some "The target is no longer legal")
   | .source =>
     if g.mayThenDrop > 0 then
@@ -4334,7 +4334,7 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
               |>.logMsg s!"{g.name o} can't be blocked this turn except by creatures with haste") g
       | none => g
   | .untapWhileYouControl .target =>
-    g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
+    g.withLegalSpecPermanent controller .oppCreature targets (fun g o =>
       if let some sid := sourceId then
         g.createEffect (.cantUntapWhileSource o.id sid)
       else g)
@@ -4709,17 +4709,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         | none =>
           (g, g.resolvingBatchCause controller sourceId)
       let srcSnap := sourceId.bind g.damageSourceEventById?
-      let tkind : EffectTargetKind :=
-        match ab.targetKind with
-        | .none => .playerOrCreature
-        | k => k
+      let tspec : TargetSpec :=
+        if ab.targetSpec.isEmpty then .anyTarget else ab.targetSpec
       if let .chooseReplacement .. := g.pending then
         g.triggerDividedDamageLoop shares sourceName srcSnap cause?
-          (targetCheck := some (controller, tkind, sourceId))
+          (targetCheck := some (controller, tspec, sourceId))
       else
         g.withBatch cause? fun g =>
           g.triggerDividedDamageLoop shares sourceName srcSnap cause?
-            (targetCheck := some (controller, tkind, sourceId))
+            (targetCheck := some (controller, tspec, sourceId))
   | .sequence rs =>
     -- One legality check for the whole sequence (CR 608.2b). Power is read
     -- before any step moves the card, then each step runs in order. A step
@@ -4903,13 +4901,10 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           else
             g.createEffect (.keywordsUntilEot o.id Keyword.haste) (cause := g.currentBatch.bind (·.2)))
     | .whileSourceRemains =>
-      let maxTotalMv :=
-        match ab.targetKind with
-        | .upToTwoCreaturesTotalMvAtMost n => some n
-        | _ => none
+      let maxTotalMv := ab.targetSpec.totalMvCap?
       g.gainControlWhileSource controller sourceId targets (maxTotalMv := maxTotalMv)
     | .duringNextTurn =>
-      g.withLegalKindPlayer controller .opponent targets (fun g pid =>
+      g.withLegalSpecPlayer controller .opponent targets (fun g pid =>
         g.setPlayerControl controller pid (onNextTurn := true))
         sourceId (some "The target is no longer legal")
   | .honeEachEquipment =>
@@ -5006,7 +5001,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           match targets[0]? with
           | some (Target.permanent _) => true
           | _ => false
-        if ab.targetKind == .nonland && !hasPermanent then
+        if ab.targetSpec == .nonland && !hasPermanent then
           g.logMsg "The target is no longer legal"
         else
           g.changes #[
@@ -5407,7 +5402,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
     if g.loggedSheHulkDealtDamage then
       g.logMsg "The Sensational She-Hulk already dealt damage this turn. The ability has no effect."
     else
-      let legal := g.legalTargetsForKind controller .playerOrCreature sourceId
+      let legal := g.legalTargetsForSpec controller .anyTarget sourceId
       match targets.find? (legal.contains ·) with
       | none => g.logMsg "The target is no longer legal"
       | some t =>
@@ -5623,7 +5618,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
     | .damage n =>
       g.putReflexiveTrigger controller sourceId
-        { targeting := .of .playerOrCreature, resolution := .damageAny n
+        { targeting := .of .anyTarget, resolution := .damageAny n
           phrase := s!"This deals {n} damage to any target" }
     | .copy =>
       let rawCauseId := (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)
@@ -5638,17 +5633,15 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             | none => 0
         | none => 0
       g.putReflexiveTrigger controller sourceId {
-        targeting := .of (.filtered {
-          noun := s!"target enchantment, instant, or sorcery card with mana value {mv} or less from an opponent's graveyard"
-          zone := .anyGraveyard
-          types := #[.enchantment, .instant, .sorcery]
-          controller := .opponent
-          mvAtMost := some mv })
+        targeting := .of (.ofDomain (.object .opponentGraveyard (ObjectPred.andAll #[
+          .isKind .card,
+          .any #[.hasType .enchantment, .hasType .instant, .hasType .sorcery],
+          .stat .manaValue .le (.const mv)])))
         resolution := .sarumanExileCopyMayCast
         phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost" }
     | .divided amount =>
       g.putReflexiveTrigger controller sourceId {
-        targeting := .of .playerOrCreature
+        targeting := .of .anyTarget
         dividedDamage := some (amount, 2)
         resolution := .mshReflexive .divideSevenDamage 0
         phrase := s!"It deals {amount} damage divided as you choose among one or two targets" }
@@ -5706,7 +5699,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .draw (.fixed n) .you => g.draw controller n.toNat
   | .scry (.fixed n) => g.beginScry controller n.toNat
   | .onPermanent a =>
-    g.applyOnPermanent controller ab.targetKind targets a sourceId
+    g.applyOnPermanent controller ab.targetSpec targets a sourceId
       (some "The target is no longer legal")
   | .onSource a => g.applyOnTriggerSource sourceId a
   | .removeCounters what who =>

@@ -806,8 +806,23 @@ partial def evalPlayerPred (g : Game) (env : EvalEnv) (p : PlayerId) (pred : Pla
     | .isMonarch => pl.isMonarch
     | .isActivePlayer => st.activePlayer == p
     | .isDefendingPlayer =>
-      let defs := st.defendingPlayers
-      if defs.isEmpty then st.defendingPlayer == p else defs.contains p
+      let attackerDef? : Option PlayerId :=
+        env.sourceId.bind fun sid =>
+          match st.findObject? sid with
+          | some src =>
+            let fromHost :=
+              src.attachedTo.bind fun hid =>
+                match st.findObject? hid with
+                | some host => if host.status.attacking then some (st.defendingPlayerOf host) else none
+                | none => none
+            let fromSelf := if src.status.attacking then some (st.defendingPlayerOf src) else none
+            fromHost.orElse fun _ => fromSelf
+          | none => none
+      match attackerDef? with
+      | some dp => dp == p
+      | none =>
+        let defs := st.defendingPlayers
+        if defs.isEmpty then st.defendingPlayer == p else defs.contains p
     | .metric m op rhs =>
       op.eval (evalPlayerMetricSingle g env m p) (evalValue g env rhs)
     | .controls filter minCount =>
@@ -816,6 +831,14 @@ partial def evalPlayerPred (g : Game) (env : EvalEnv) (p : PlayerId) (pred : Pla
       let controlled := (evalObjects g subEnv filter.toExpr).filter fun v =>
         viewController? st v == some p
       Int.ofNat controlled.size ≥ need
+    | .isSeat idx => p.idx == idx
+
+/-- Whether living player `p` satisfies `pf` under `env`. -/
+partial def matchesPlayerFilter (g : Game) (env : EvalEnv) (pf : PlayerFilter) (p : PlayerId) : Bool :=
+  let st := boardState g env
+  st.stillInGame p &&
+    matchesPlayerRelation st env pf.relation p &&
+    evalPlayerPred g env p pf.pred
 
 /-- Evaluate a `PlayerFilter` to living players in APNAP turn order (CR 101.4 / 800.4). -/
 partial def evalPlayerFilter (g : Game) (env : EvalEnv) (pf : PlayerFilter) : Array PlayerId :=
@@ -1268,10 +1291,25 @@ def evalCastPred (g : Game) (env : EvalEnv) (pred : CastContextPred) : Bool :=
   let evalObj (ref : ObjectRef) (f : ObjectId → Bool) : Bool :=
     (resolveRefIds g env ref).any f
   match pred with
-  | .wasKicked ref => evalObj ref (GameEvent.wasKicked g.events)
-  | .giftPromised ref => evalObj ref (GameEvent.giftPromised g.events)
+  | .wasKicked ref =>
+    evalObj ref fun oid =>
+      GameEvent.wasKicked g.events oid ||
+        (match g.proposedSpell with
+         | some prop => prop.spellId == oid && prop.kicked
+         | none => false)
+  | .giftPromised ref =>
+    evalObj ref fun oid =>
+      GameEvent.giftPromised g.events oid ||
+        (match g.proposedSpell with
+         | some prop => prop.spellId == oid && prop.giftTo.isSome
+         | none => false)
   | .impendingPaid ref => evalObj ref (GameEvent.castForImpending g.events)
-  | .teamworkPaid ref => evalObj ref (GameEvent.teamwork g.events)
+  | .teamworkPaid ref =>
+    evalObj ref fun oid =>
+      GameEvent.teamwork g.events oid ||
+        (match g.proposedSpell with
+         | some prop => prop.spellId == oid && prop.teamworkPaid
+         | none => false)
   | .sneakPaid ref => evalObj ref fun oid => (GameEvent.sneakAttackTarget? g.events oid).isSome
   | .castFrom zk ref =>
     (resolveRefViews g env ref).any fun v =>

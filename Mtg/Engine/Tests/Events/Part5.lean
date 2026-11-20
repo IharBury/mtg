@@ -911,13 +911,20 @@ def replayOk25i2 (gs : Array Game) : Bool :=
   let enchId := (gSh.battlefield.filter (·.name == "P25i2 Ench"))[0]!.id
   let gShProp := mustApply gSh p0 (.cast shareObj.id)
   let slot0 := gShProp.legalProposedTargets p0 (gShProp.object! gShProp.stack.back!.objectId)
-  let gShSlot1 := mustApply gShProp p0 (.target (.permanent artAId))
-  let slot1 := gShSlot1.legalProposedTargets p0 (gShSlot1.object! gShSlot1.stack.back!.objectId)
+  let (validPairOk, gShOk) :=
+    match gShProp.announceTargets p0 #[.permanent artAId, .permanent artBId] with
+    | .ok g' => (true, g')
+    | .error _ => (false, gShProp)
+  let invalidPairRejected :=
+    match gShProp.announceTargets p0 #[.permanent artAId, .permanent enchId] with
+    | .error _ => true
+    | .ok _ => false
   let lookaheadOk :=
     slot0.contains (.permanent artAId) &&
     slot0.contains (.permanent artBId) &&
     !slot0.contains (.permanent enchId) &&
-    slot1 == #[.permanent artBId]
+    validPairOk &&
+    invalidPairRejected
 
   -- Trigger mode and resolution-cast `effectHasEnoughTargets`:
   let twoArtEff : Effect := { targeting := .of .twoArtifactsYouControl, phrase := "Tap two target artifacts you control" }
@@ -937,7 +944,7 @@ def replayOk25i2 (gs : Array Game) : Bool :=
   mustHold25i2 "1.mvCap" (mvOverRejected && gMvOk.stack.back!.targets.size == 2) &&
   mustHold25i2 "1.lookahead" lookaheadOk &&
   mustHold25i2 "1.enoughTargets" (trigNotChoosable && resCastReversedOk) &&
-  mustHold25i2 "1.replay" (replayOk25i2 #[gMvProp, gMvOk, gShProp, gShSlot1, gResReversed])
+  mustHold25i2 "1.replay" (replayOk25i2 #[gMvProp, gMvOk, gShProp, gShOk, gResReversed])
 
 -- 2. CR 118.9a,c alternative-cost exclusivity, `actualCastManaValue`, and `payLifeEqualManaValue`
 --    resolution casts (including `{X}` updating `payLife` via `ProposalChange.payLife`) without
@@ -1468,10 +1475,10 @@ private def replayOk25i3 (gs : Array Game) : Bool :=
   let upToOneAndPlEff : Effect :=
     FraCandidates.ab (.damageUpToOneAndPlayer 1)
       "Deal 1 damage to up to one target creature or planeswalker and 1 damage to target player"
-      (.multi #[
-        { TargetFilter.creatureOrPlaneswalker with noun := "up to one target creature or planeswalker" },
-        { noun := "target player", zone := .player }
-      ] #[0])
+      (.ofSlots #[
+        { domain := .creatureOrPlaneswalker, count := .upTo 1 },
+        .of .anyPlayer
+      ])
   let gUpTo0 := addTwoDmgReps gBase
   let sUpTo := gUpTo0.events.size
   let gUpToPaused :=
@@ -2306,7 +2313,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     allowsZeroTargets := true
   }
   let reqElfMode : Effect := {
-    targeting := .of (.filtered { noun := "target Elf", types := #[.creature], subtypes := #[.elf] })
+    targeting := .of (.ofDomain (.object .battlefield (ObjectPred.andAll #[.hasSubtype (.literal .elf), .hasType .creature])))
     resolution := .onPermanent (.plusOne 1)
     phrase := "Put a +1/+1 counter on target Elf"
   }
@@ -2566,10 +2573,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     activatedAbilities := #[{
       cost := { mana := ManaCost.empty }
       effect := {
-        targeting := .of (.filtered {
-          noun := "target creature that player controls"
-          types := #[.creature]
-          controller := .eachOpponent })
+        targeting := .of (.forEachOpponentControlled (.hasType .creature) (.exact 1))
         resolution := .tapAndStunPerOpponent
         phrase := "For each opponent, tap target creature that player controls and put a stun counter on it" }
       otherModes := #[
@@ -2903,7 +2907,7 @@ private def replayOk26i3 (gs : Array Game) : Bool :=
   let tightGains := countLifeGainsSince gTightDone sTight
   -- Also test `divideSevenDamageLoop` queued behind `gStep1Paused`:
   let gDiv7Queued :=
-    gStep1Paused.divideSevenDamageLoop p0 .playerOrCreature #[(0, Target.player p2)] #[1] (some src.id)
+    gStep1Paused.divideSevenDamageLoop p0 .anyTarget #[(0, Target.player p2)] #[1] (some src.id)
   let gDiv7Done := resolveAllRepChoices gDiv7Queued
   let div7Gains := countLifeGainsSince gDiv7Done sTight
   let tightWindowOk :=
@@ -4121,10 +4125,7 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
   --     and modal triggered ability with a single optional-target mode (`obj.triggeredAbility.isSome &&
   --     obj.abilityEffect.any (·.allowsZeroTargets)`) allows `.decline` and `Agent.choose`:
   let eachOppOptAb : TriggeredAbility := .triggered .enter {
-    targeting := .of (.filtered {
-      noun := "up to one target artifact that player controls"
-      types := #[.artifact]
-      controller := .eachOpponent })
+    targeting := .of (.forEachOpponentControlled (.hasType .artifact) (.upTo 1))
     allowsZeroTargets := true
     resolution := .gainLife 1
     phrase := "For each opponent, up to one target artifact that player controls"
@@ -4146,11 +4147,11 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     gEoDecl.pending == .none &&
     gEoDecl.stack.size == 1 &&
     gEoDecl.stack[0]!.targetsAnnounced &&
-    gEoDecl.stack[0]!.skippedOptionalSlots == #[0]
+    gEoDecl.stack[0]!.targets.isEmpty
 
   -- Modal triggered ability with `fraTriggerModes` where mode 0 has `allowsZeroTargets := true`:
   let modalOptMode0 : Effect := {
-    targeting := .of (.filtered { noun := "up to one target Elf", types := #[.creature], subtypes := #[.elf] })
+    targeting := .of (.ofDomain (.object .battlefield (ObjectPred.andAll #[.hasSubtype (.literal .elf), .hasType .creature])) (.upTo 1))
     allowsZeroTargets := true
     resolution := .onPermanent (.plusOne 1)
     phrase := "Put a +1/+1 counter on up to one target Elf"
@@ -4168,7 +4169,8 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
   let gMt0 := insertObject afterDraw modalTrigPermDef p0 (.hand p0)
   let mtHandId := (gMt0.player p0).hand.back!
   let (gMtPut, mtPermId) := gMt0.putOntoBattlefield mtHandId p0 (cause := some testCause)
-  -- Layer-3 text change on `mtPermId` (`Elf` -> `Bear`) is seen by `g.triggerModesOf`:
+  -- Layer-3 text change on `mtPermId` (`Elf` -> `Bear`) is seen by `g.triggerModesOf`
+  -- AND updates canonical `ToOracle` rendering (Phase 3 retires stale `noun : String`):
   let gMtL3 :=
     gMtPut.createEffect
       (.layered (.objects #[mtPermId]) (.text (.replaceCreatureType .elf .bear)) .indefinite)
@@ -4177,7 +4179,9 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
   let trigStackObj := gMtTrig.object! gMtTrig.stack[0]!.objectId
   let modesL3 := gMtTrig.triggerModesOf trigStackObj
   let triggerModesL3Ok :=
-    modesL3[0]!.targetKind == .filtered { noun := "up to one target Elf", types := #[.creature], subtypes := #[.bear] }
+    modesL3[0]!.targetSpec ==
+      .ofDomain (.object .battlefield (ObjectPred.andAll #[.hasSubtype (.literal .bear), .hasType .creature])) (.upTo 1) &&
+    modesL3[0]!.targetSpec.noun == "up to one target Bear creature"
   -- Choose mode 1 (untargeted): `.triggerModes` marks `targetsAnnounced == true` immediately!
   let gMtMode1 := mustApply gMtTrig p0 (.chooseMode 1)
   let untargetedModeMarksAnnouncedOk :=
@@ -4196,10 +4200,10 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     gMtMode0Decl.stack[0]!.targetsAnnounced
 
   -- 2b. CR 115.7d relational-group retargeting exemption in `validTargetArrayForEntry`:
-  --     if group 0 (`#[0, 1]` in `sharesTypeGroups`) no longer shares a card type on the board,
+  --     if group 0 (`#[0, 1]` in `constraintPosGroups`) no longer shares a card type on the board,
   --     keeping slots 0 and 1 unchanged while changing slot 2 (`#[2]`) is STILL legal under
   --     `allowUnchangedIllegal := true`!
-  let relKind : EffectTargetKind := .pair .twoNonlandsSharingType .creature
+  let relSpec : TargetSpec := TargetSpec.twoNonlandsSharingType.append .creature
   let gRel0 := addPermanent (addPermanent (addPermanent (addPermanent afterDraw bear p0 p0) artDef p0 p0) bear p1 p1) bear p1 p1
   let c0 := (gRel0.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
   let a0 := (gRel0.permanentsOf p0).find? (·.name == artDef.name) |>.get!.id
@@ -4216,8 +4220,8 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
   -- `c0` (creature) and `a0` (artifact) do not currently share a card type, yet slots 0 and 1
   -- are unchanged while slot 2 changes from `c1` to `c2`:
   let relRetargetOk :=
-    !gRel0.validTargetArrayForEntry relEntry (gRel0.object! c0) relKind candidateChangedSlot2 (allowUnchangedIllegal := false) &&
-    gRel0.validTargetArrayForEntry relEntry (gRel0.object! c0) relKind candidateChangedSlot2 (allowUnchangedIllegal := true)
+    !gRel0.validTargetArrayForEntry relEntry (gRel0.object! c0) relSpec candidateChangedSlot2 (allowUnchangedIllegal := false) &&
+    gRel0.validTargetArrayForEntry relEntry (gRel0.object! c0) relSpec candidateChangedSlot2 (allowUnchangedIllegal := true)
 
   -- 2c. `canPayAnnouncedAdditional` `flashback := some false` forwarding and
   --     `enterProposalWindow` non-mana activated ability skipping `.activateManaAbilities`:

@@ -36,8 +36,13 @@ deriving Repr, Inhabited, BEq
 namespace Effect
 
 /-- Whom this effect may target (CR 115.1 / 601.2c). -/
-def targetKind (e : Effect) : EffectTargetKind :=
-  e.targeting.kind
+def targetSpec (e : Effect) : TargetSpec :=
+  e.targeting.spec
+
+/-- Effective targeting specification incorporating `allowsZeroTargets` /
+`maxTargets` bounds for single-slot effects (CR 115.1c / 601.2c). -/
+def effectiveTargetSpec (e : Effect) : TargetSpec :=
+  e.targeting.spec.withSlotBounds e.allowsZeroTargets e.maxTargets
 
 /-- How many targets must be announced (CR 601.2c). -/
 def targetCount (e : Effect) : Nat :=
@@ -444,7 +449,7 @@ instance : HasTextChange Effect where
     if tcs.isEmpty then e
     else
       { e with
-        targeting := { e.targeting with kind := HasTextChange.applyTextChanges tcs e.targeting.kind }
+        targeting := HasTextChange.applyTextChanges tcs e.targeting
         resolution := HasTextChange.applyTextChanges tcs e.resolution }
 
 end Mtg.Engine

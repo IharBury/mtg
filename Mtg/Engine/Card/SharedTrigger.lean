@@ -17,7 +17,7 @@ specific `TriggeredAbility` constructor. One `onEnter` constructor keeps the
 C runtime tag under the limit. -/
 inductive EnterLeftover where
   /-- Destroy the targeted permanent. -/
-  | destroy (kind : EffectTargetKind)
+  | destroy (kind : TargetSpec)
   /-- Deal `n` damage to up to one target creature. -/
   | dealDamageUpToOne (n : Nat)
   /-- This fights up to one other target creature. Resolves as `.fight`. -/
@@ -479,7 +479,7 @@ inductive ConniveSubject where
   /-- The trigger's source. -/
   | source
   /-- The announced target of this kind. -/
-  | target (kind : EffectTargetKind)
+  | target (kind : TargetSpec)
   /-- The Villain that caused this trigger. You may have it connive.
   Already chosen this turn does nothing. A Villain that will not connive
   is reported. -/
@@ -520,15 +520,15 @@ inductive SharedTrigger where
   `.connive (.target kind)`. That target resolves as `.connive .target`. -/
   | connive (who : ConniveSubject := .source)
   /-- Exile a target of this kind until the source leaves. -/
-  | exileUntilLeaves (kind : EffectTargetKind)
+  | exileUntilLeaves (kind : TargetSpec)
   /-- Deal `n` damage to each opponent (optionally after targeting one). -/
   | damageEachOpponent (n : Nat)
   /-- Attach this Equipment to a target of this kind. -/
-  | attachTo (kind : EffectTargetKind)
+  | attachTo (kind : TargetSpec)
   /-- Target opponent sacrifices a creature of their choice. -/
   | opponentSacrificesCreature
   /-- Affect a still-legal permanent target. -/
-  | onPermanent (kind : EffectTargetKind) (action : PermanentAction)
+  | onPermanent (kind : TargetSpec) (action : PermanentAction)
   /-- Affect the trigger's source if it is still on the battlefield.
   Resolves as `TriggerResolution.ofSource`. -/
   | onSource (action : PermanentAction)
@@ -564,7 +564,7 @@ inductive SharedTrigger where
   /-- Each player sacrifices a creature of their choice. -/
   | eachPlayerSacrificesCreature
   /-- Exile a target of this kind. -/
-  | exileTarget (kind : EffectTargetKind)
+  | exileTarget (kind : TargetSpec)
   /-- Return a creature card from your graveyard to your hand. -/
   | returnCreatureFromGyToHand
   /-- Put a +1/+1 counter on permanents you control.

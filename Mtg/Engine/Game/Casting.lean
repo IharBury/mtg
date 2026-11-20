@@ -1999,32 +1999,32 @@ def retargetStackSpell (g : Game) (spellId : ObjectId) (newTargets : Array Targe
     match g.findObject? spellId with
     | none => g.logMsg "The spell is no longer on the stack"
     | some spell =>
-      let kind := (g.targetingOf spell).kind
+      let spec := (g.targetingOf spell).spec
       let merged :=
         if newTargets.size == e.targets.size &&
-            g.validTargetArrayForEntry e spell kind newTargets (allowUnchangedIllegal := true) then
+            g.validTargetArrayForEntry e spell spec newTargets (allowUnchangedIllegal := true) then
           newTargets
         else
           Id.run do
             let selfSource := spell.sourceId.orElse (fun _ => if spell.zone == .stack then some spell.id else none)
-            let totalSlots := e.targets.size + e.skippedOptionalSlots.size
-            let slotIndices : Array Nat :=
+            let totalPos := e.targets.size + e.skippedOptionalSlots.size
+            let posIndices : Array Nat :=
               if e.skippedOptionalSlots.isEmpty then (List.range e.targets.size).toArray
-              else ((List.range totalSlots).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
+              else ((List.range totalPos).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
             let mut staged := e.targets
             for j in [0:Nat.min staged.size newTargets.size] do
               let candT := newTargets[j]!
-              let actualSlot := slotIndices[j]?.getD j
+              let actualPos := posIndices[j]?.getD j
               if candT == e.targets[j]! ||
-                  (g.legalTargetsForAtomicKind e.controller (kind.slotKind actualSlot) selfSource).contains candT then
+                  (g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource).contains candT then
                 staged := staged.set! j candT
             if staged != e.targets &&
-                g.validTargetArrayForEntry e spell kind staged (allowUnchangedIllegal := true) then
+                g.validTargetArrayForEntry e spell spec staged (allowUnchangedIllegal := true) then
               return staged
             let mut out := e.targets
             for j in [0:Nat.min out.size newTargets.size] do
               let cand := out.set! j newTargets[j]!
-              if g.validTargetArrayForEntry e spell kind cand (allowUnchangedIllegal := true) then
+              if g.validTargetArrayForEntry e spell spec cand (allowUnchangedIllegal := true) then
                 out := cand
             return out
       (g.record (GameEvent.targeted g.turnNumber spellId merged (division := e.dividedDamage)

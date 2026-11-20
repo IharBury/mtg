@@ -21,7 +21,7 @@ open Mtg.Engine.Catalog
 /- Meager Meal (Gollum adventure): up to one target creature, then target
 player, in that card-text order (CR 601.2c / 115.1c). -/
 
-#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetKind ==
+#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetSpec ==
   .upToOneCreatureThenPlayer
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetCount == 2
 #guard
@@ -228,7 +228,7 @@ def meagerMealNoCreatureAfterSkip : Game :=
 
 -- Phase 11: `*/*` CR 604.3 / 613.4a CDA creature spells on the stack evaluate
 -- their actual CDA power/toughness for `.creatureSpellPTAtMost`, and Layer 4
--- type-changing effects feed `TargetFilter` / `objectHasCardType`.
+-- type-changing effects feed `TargetSpec` / `objectHasCardType`.
 #guard
   let cdaCreatureSpell : CardDef := {
     name := "Lands Avatar"
@@ -250,12 +250,12 @@ def meagerMealNoCreatureAfterSkip : Game :=
     (.layered (.objects #[rockObj.id]) (.types .add #[.creature] #[.golem] #[]) .untilEndOfTurn)
   gTwoStack.snapshotPower spellTwo == 2 &&
     gTwoStack.snapshotToughness spellTwo == 2 &&
-    (gTwoStack.legalTargetsForAtomicKind ⟨0⟩ .creatureSpell none).contains (.card spellTwo.id) &&
-    (gTwoStack.legalTargetsForAtomicKind ⟨0⟩ (.creatureSpellPTAtMost 2) none).contains (.card spellTwo.id) &&
+    (gTwoStack.legalTargetsForSpec ⟨0⟩ .creatureSpell none).contains (.card spellTwo.id) &&
+    (gTwoStack.legalTargetsForSpec ⟨0⟩ (.creatureSpellPTAtMost 2) none).contains (.card spellTwo.id) &&
     gFourStack.snapshotPower spellFour == 4 &&
     gFourStack.snapshotToughness spellFour == 4 &&
-    !(gFourStack.legalTargetsForAtomicKind ⟨0⟩ (.creatureSpellPTAtMost 2) none).contains (.card spellFour.id) &&
-    (gAnim.legalTargetsForAtomicKind ⟨0⟩ (.creatureYouControlSubtype .golem) none).contains (.permanent rockObj.id)
+    !(gFourStack.legalTargetsForSpec ⟨0⟩ (.creatureSpellPTAtMost 2) none).contains (.card spellFour.id) &&
+    (gAnim.legalTargetsForSpec ⟨0⟩ (.creatureYouControlSubtype .golem) none).contains (.permanent rockObj.id)
 
 -- Phase 25 Item 2:
 -- 1. `.upToTwoCreaturesTotalMvAtMost n` simultaneous announcement enforces `totalMv ≤ n`
@@ -329,5 +329,119 @@ def meagerMealNoCreatureAfterSkip : Game :=
     gTwoArt.canCastFrontFace p0 twoArtCard &&
     gMvHand.canCastFrontFace p0 (handCardNamed gMvHand p0 "Mv Cap Grab")
   overCapRejected && withinCapAccepted && lookaheadOk && enoughTargetsOk
+
+-- Phase 3 (Unified TargetSpec):
+-- 1. All 5 `GroupTargetConstraint` variants in `satisfiesGroupConstraint` / `legalTargetsForSpec`:
+--    - `shareCharacteristic .color` enforces CR 105.2c (two colorless objects never share a color);
+--    - `shareCharacteristic .creatureType` / `.subtype`;
+--    - `distinctControllers`;
+--    - `distinctNames` (CR 201.2a: nameless face-down permanents have no name and never collide);
+--    - `distinctCardTypes` (bipartite matching on multi-type Artifact Creature + Creature).
+-- 2. CR 112.1 stack-ability vs spell separation (`TargetSpec.spell` vs `TargetDomain.stackAbility`).
+-- 3. CR 108.2 / 111.6 graveyard token exclusion (`.isKind .card` rejects tokens in graveyard).
+-- 4. CR 115.4 `anyTarget` vs `anyOtherTarget` (excludes `sourceId`).
+-- 5. Layer-3 `HasTextChange TargetSpec` updates both legal targets and `ToOracle` rendering.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let redGoblin : CardDef :=
+    creature "Red Goblin" { symbols := #[.colored .red] } #["Goblin"] 1 1
+  let redElf : CardDef :=
+    creature "Red Elf" { symbols := #[.colored .red] } #["Elf"] 1 1
+  let colorlessRockA : CardDef := { name := "Colorless Rock A", types := #[.artifact] }
+  let colorlessRockB : CardDef := { name := "Colorless Rock B", types := #[.artifact] }
+  let artCreature : CardDef := {
+    name := "Artifact Construct"
+    types := #[.artifact, .creature]
+    subtypes := #["Construct"]
+    power := some 2
+    toughness := some 2
+  }
+  let g0 := readyMain (emptyHand afterDraw p0)
+  let g1 :=
+    addPermanent (addPermanent (addPermanent (addPermanent (addPermanent (addPermanent g0
+      redGoblin p0 p0) redElf p1 p1) colorlessRockA p0 p0) colorlessRockB p1 p1) artCreature p0 p0) grizzlyBears p0 p0
+  let gobId := (namedPermanent g1 "Red Goblin").id
+  let elfId := (namedPermanent g1 "Red Elf").id
+  let rAId := (namedPermanent g1 "Colorless Rock A").id
+  let rBId := (namedPermanent g1 "Colorless Rock B").id
+  let acId := (namedPermanent g1 "Artifact Construct").id
+  let bearId := (namedPermanent g1 "Grizzly Bears").id
+  -- 1a. `shareCharacteristic .color` (CR 105.2c: colorless never shares a color)
+  let shareColorOk :=
+    g1.satisfiesGroupConstraint p0 none (.shareCharacteristic .color) #[.permanent gobId, .permanent elfId] &&
+    !g1.satisfiesGroupConstraint p0 none (.shareCharacteristic .color) #[.permanent rAId, .permanent rBId] &&
+    !g1.satisfiesGroupConstraint p0 none (.shareCharacteristic .color) #[.permanent gobId, .permanent rAId]
+  -- 1b. `shareCharacteristic .creatureType` & `.subtype`
+  let redGoblin2 : CardDef :=
+    creature "Red Goblin 2" { symbols := #[.colored .red] } #["Goblin"] 1 1
+  let gSub := addPermanent g1 redGoblin2 p0 p0
+  let gob2Id := (namedPermanent gSub "Red Goblin 2").id
+  let shareSubtypeOk :=
+    gSub.satisfiesGroupConstraint p0 none (.shareCharacteristic .creatureType) #[.permanent gobId, .permanent gob2Id] &&
+    !gSub.satisfiesGroupConstraint p0 none (.shareCharacteristic .creatureType) #[.permanent gobId, .permanent elfId] &&
+    gSub.satisfiesGroupConstraint p0 none (.shareCharacteristic .subtype) #[.permanent gobId, .permanent gob2Id]
+  -- 1c. `distinctControllers`
+  let distinctCtrlOk :=
+    g1.satisfiesGroupConstraint p0 none .distinctControllers #[.permanent gobId, .permanent elfId] &&
+    !g1.satisfiesGroupConstraint p0 none .distinctControllers #[.permanent gobId, .permanent bearId]
+  -- 1d. `distinctNames` (including CR 201.2a nameless face-down permanents)
+  let gName := addPermanent g1 grizzlyBears p1 p1
+  let allBears := gName.battlefield.filter (·.name == "Grizzly Bears")
+  let gFd :=
+    insertObject (insertObject g0 grizzlyBears p0 .battlefield (some p0) { faceDown := true })
+      grizzlyBears p1 .battlefield (some p1) { faceDown := true }
+  let fdBears := gFd.battlefield.filter (·.status.faceDown)
+  let distinctNameOk :=
+    gName.satisfiesGroupConstraint p0 none .distinctNames #[.permanent gobId, .permanent bearId] &&
+    !gName.satisfiesGroupConstraint p0 none .distinctNames #[.permanent allBears[0]!.id, .permanent allBears[1]!.id] &&
+    gFd.satisfiesGroupConstraint p0 none .distinctNames #[.permanent fdBears[0]!.id, .permanent fdBears[1]!.id]
+  -- 1e. `distinctCardTypes` (bipartite matching: Artifact Creature + Creature -> Artifact/Creature)
+  let distinctTypesOk :=
+    g1.satisfiesGroupConstraint p0 none .distinctCardTypes #[.permanent acId, .permanent bearId] &&
+    g1.satisfiesGroupConstraint p0 none .distinctCardTypes #[.permanent acId, .permanent rAId] &&
+    !g1.satisfiesGroupConstraint p0 none .distinctCardTypes #[.permanent rAId, .permanent rBId] &&
+    !g1.satisfiesGroupConstraint p0 none .distinctCardTypes #[.permanent gobId, .permanent bearId]
+  -- 2. CR 112.1 stack ability vs spell
+  let (gSt1, spellObj) := g1.allocObject lightningBolt p1 .stack (some p1)
+  let gSt1 := gSt1.change (.pushStack { objectId := spellObj.id, controller := p1, targets := #[] })
+  let (gSt2, abObj) := gSt1.putStackAbility (gSt1.object! gobId) p0 (abilityEffect := some (Effect.abilityDraw 1))
+  let stackSpells := gSt2.legalTargetsForSpec p0 .spell none
+  let stackAbs := gSt2.legalTargetsForSpec p0 (.stackAbilityFromSource .creature) none
+  let stackSepOk :=
+    stackSpells.contains (.card spellObj.id) &&
+    !stackSpells.contains (.card abObj.id) &&
+    stackAbs.contains (.card abObj.id) &&
+    !stackAbs.contains (.card spellObj.id)
+  -- 3. CR 108.2 / 111.6 graveyard token exclusion
+  let tokDef : CardDef := { grizzlyBears with name := "Bear Token", isToken := true }
+  let gGy := insertObject (insertObject g0 grizzlyBears p0 (.graveyard p0)) tokDef p0 (.graveyard p0)
+  let gyCardId := (gGy.objects.find? (fun o => o.zone == .graveyard p0 && o.name == "Grizzly Bears")).get!.id
+  let gyTokId := (gGy.objects.find? (fun o => o.zone == .graveyard p0 && o.name == "Bear Token")).get!.id
+  let gyLegal := gGy.legalTargetsForSpec p0 .creatureCardInYourGraveyard none
+  let gyTokenExcludedOk :=
+    gyLegal.contains (.card gyCardId) && !gyLegal.contains (.card gyTokId)
+  -- 4. CR 115.4 `anyTarget` vs `anyOtherTarget`
+  let anyLegal := g1.legalTargetsForSpec p0 .anyTarget (some gobId)
+  let anyOtherLegal := g1.legalTargetsForSpec p0 .anyOtherTarget (some gobId)
+  let anyTargetOk :=
+    anyLegal.contains (.permanent gobId) &&
+    anyLegal.contains (.player p1) &&
+    !anyOtherLegal.contains (.permanent gobId) &&
+    anyOtherLegal.contains (.permanent bearId) &&
+    anyOtherLegal.contains (.player p1)
+  -- 5. Layer-3 `HasTextChange TargetSpec` updates both legal targets and `ToOracle`
+  let elfSpec : TargetSpec := .creatureYouControlSubtype .elf
+  let tcSpec : TargetSpec := HasTextChange.applyTextChanges #[.replaceCreatureType .elf .goblin] elfSpec
+  let gL3 := addPermanent (addPermanent g0 redElf p0 p0) redGoblin p0 p0
+  let l3ElfId := (namedPermanent gL3 "Red Elf").id
+  let l3GobId := (namedPermanent gL3 "Red Goblin").id
+  let l3Legal := gL3.legalTargetsForSpec p0 tcSpec none
+  let layer3Ok :=
+    tcSpec.noun == "target Goblin you control" &&
+    l3Legal.contains (.permanent l3GobId) &&
+    !l3Legal.contains (.permanent l3ElfId)
+  shareColorOk && shareSubtypeOk && distinctCtrlOk && distinctNameOk &&
+    distinctTypesOk && stackSepOk && gyTokenExcludedOk && anyTargetOk && layer3Ok
 
 end Mtg.Engine.Tests

@@ -3,9 +3,11 @@ import Mtg.Engine.Game.Timing
 /-!
 # Legal targets (CR 115)
 
-Hexproof- and protection-aware target legality: legal permanent,
-graveyard-card, and stack-spell targets, targets per `EffectTargetKind`,
-and which triggered abilities still need targets.
+Hexproof- and protection-aware target legality driven by unified `TargetSpec` /
+`TargetSlot` / `TargetDomain` evaluated through `EvalExpr`: legal permanent,
+graveyard-card, stack-spell, stack-ability, player, and multi-slot targets,
+group constraints (`GroupTargetConstraint`), and `"for each opponent"` slot
+expansion (CR 115.1, 115.3–5, 601.2c, 603.3d, 702.11, 702.16).
 -/
 
 namespace Mtg.Engine
@@ -117,70 +119,6 @@ permanents. -/
 def objectHasCardType (g : Game) (o : GameObject) (t : CardType) : Bool :=
   g.hasType o t
 
-/-- Whether object `o` has every characteristic `f` asks for (CR 115.1).
-Zone and hexproof are checked by the caller. -/
-def matchesTargetFilter (g : Game) (caster : PlayerId) (f : TargetFilter)
-    (sourceId : Option ObjectId) (o : GameObject) : Bool :=
-  let typeOk :=
-    (f.types.isEmpty && f.orSupertypes.isEmpty) ||
-      f.types.any (g.objectHasCardType o) || f.orSupertypes.any (g.hasSupertype o)
-  let supertypeOk := f.supertypes.isEmpty || f.supertypes.any (g.hasSupertype o)
-  let colorOk := f.colors.isEmpty || f.colors.any ((g.colors o).contains ·)
-  let who := (g.controllerOf o).getD o.owner
-  let controllerOk :=
-    match f.controller with
-    | .any => true
-    | .you => who == caster
-    | .opponent | .eachOpponent => (g.livingOpponents caster).any (·.id == who)
-    | .specific idx => who.idx == idx
-  let mv := g.objectManaValue o
-  let subtypeOk := f.subtypes.isEmpty || f.subtypes.any (fun s => g.hasSubtype o s)
-  typeOk && supertypeOk && colorOk && controllerOk && subtypeOk &&
-    f.nonSupertypes.all (fun s => !g.hasSupertype o s) &&
-    f.nonTypes.all (fun t => !g.objectHasCardType o t) &&
-    (!f.nonAura || !g.isAura o) &&
-    (!f.nontoken || !o.printed.isToken) &&
-    (!f.tokenOnly || o.printed.isToken) &&
-    (!f.permanentCard || g.isPermanentCard o) &&
-    (f.mvAtLeast.all (mv ≥ ·)) && (f.mvAtMost.all (mv ≤ ·)) &&
-    (f.toughnessAtLeast.all (g.toughness o ≥ ·)) &&
-    (!f.another || some o.id != sourceId) &&
-    (!f.withFlying || g.hasFlying o) &&
-    (!f.withPlusOneCounter || o.status.plusOnePlusOne > 0) &&
-    (!f.attacking || o.status.attacking) &&
-    (!f.attackingOrBlocking || o.status.attacking || !o.status.blocking.isEmpty) &&
-    (!f.attackedThisTurn || g.declaredAsAttackerThisTurn o.id) &&
-    (!f.enteredThisTurn || g.loggedEntered o.id) &&
-    (!f.untapped || !o.status.tapped) &&
-    (!f.nonattacking || !o.status.attacking) &&
-    (!f.withHaste || g.hasHaste o) &&
-    (!f.ownedByYou || o.owner == caster)
-
-/-- Legal targets described by a `TargetFilter` (CR 115.1). -/
-def legalFilteredTargets (g : Game) (caster : PlayerId) (f : TargetFilter)
-    (sourceId : Option ObjectId) : Array Target :=
-  let ok := g.matchesTargetFilter caster f sourceId
-  match f.zone with
-  | .battlefield => g.legalPermanentTargets caster (fun o => o.isOnBattlefield && ok o) sourceId
-  | .yourGraveyard => g.legalGraveyardCardTargets caster ok
-  | .anyGraveyard =>
-    g.livingPlayers.foldl (fun acc pl => acc ++ g.legalGraveyardCardTargets pl.id ok) #[]
-  | .stack => g.legalStackSpellTargets ok sourceId
-  | .spellOrCreature =>
-    g.legalStackSpellTargets ok sourceId ++
-      g.legalPermanentTargets caster (fun o => o.isOnBattlefield && g.isCreature o && ok o) sourceId
-  | .anyTarget =>
-    g.legalPlayerTargets caster g.livingPlayers sourceId ++
-      g.legalPermanentTargets caster (fun o =>
-        o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o || g.isBattle o) && ok o) sourceId
-  | .player =>
-    g.legalPlayerTargets caster (g.livingPlayers.filter (fun pl =>
-      match f.controller with
-      | .any => true
-      | .you => pl.id == caster
-      | .opponent | .eachOpponent => g.isLivingOpponentOf caster pl.id
-      | .specific idx => pl.id.idx == idx)) sourceId
-
 /-- Whether the spell being cast or resolved paid its teamwork cost (CR 601.2 / 608.2 / 707.10).
 Checks an active `proposedSpell` first (including mid-resolution casts), then an
 active spell-copy retargeting prompt (`.newTargetsForCopies` / `.newTargetsForCopySlot`,
@@ -198,322 +136,369 @@ def spellPaidTeamwork (g : Game) : Bool :=
     | some id => g.teamworkPaid id
     | none => false
 
-/-- Legal targets for an atomic targeting shape (no sequential slots). -/
-def legalTargetsForAtomicKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
-    (sourceId : Option ObjectId) : Array Target :=
-  match kind with
-  | .none => #[]
-  | .creatureYouControl =>
-    g.legalCreatureYouControlTargets caster sourceId
-  | .anotherCreatureYouControl =>
-    g.legalCreatureTargets caster (fun o => g.controlledBy o caster && some o.id != sourceId) sourceId
-  | .anotherCreature =>
-    g.legalCreatureTargets caster (fun o => some o.id != sourceId) sourceId
-  | .playerOrCreature =>
-    -- CR 115.4: “any target” is a creature, player, planeswalker, or battle.
-    g.legalPlayerTargets caster g.livingPlayers sourceId ++
-      g.legalPermanentTargets caster (fun o =>
-        o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o || g.isBattle o)) sourceId
-  | .elfInYourGraveyard =>
-    g.legalGraveyardCardTargets caster (fun o => g.hasSubtype o .elf)
-  | .oppCreature =>
-    g.legalOppCreatureTargets caster sourceId
-  | .oppTappedCreature =>
-    g.legalCreatureTargets caster (fun o =>
-      o.status.tapped &&
-        (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id)) sourceId
-  | .creature =>
-    g.legalCreatureTargets caster (fun _ => true) sourceId
-  | .creatureOrGyCreatureCard =>
-    g.legalCreatureTargets caster (fun _ => true) sourceId ++
-      g.livingPlayers.foldl (fun acc pl =>
-        acc ++ g.legalGraveyardCardTargets pl.id (g.isCreature ·)) #[]
-  | .creatureWithFlying =>
-    g.legalCreatureTargets caster (fun o => g.hasFlying o) sourceId
-  | .artifactOrLand =>
-    g.legalPermanentTargets caster (fun o => o.isOnBattlefield && (g.isArtifact o || g.isLand o)) sourceId
-  | .colorlessNonland =>
-    g.legalPermanentTargets caster (fun o => o.isOnBattlefield && !g.isLand o && (g.colors o).isColorless) sourceId
-  | .creatureYouControlThenOppCreature => #[]
-  | .playerThenCreature => #[]
-  | .oppCreatureThenUpToOneCreatureYouControl => #[]
-  | .player =>
-    g.legalPlayerTargets caster g.livingPlayers sourceId
-  | .opponent =>
-    g.legalPlayerTargets caster (g.livingOpponents caster) sourceId
-  | .oppGraveyardCard =>
-    g.livingOpponents caster
-      |>.foldl (fun acc pl => acc ++ g.legalGraveyardCardTargets pl.id (fun _ => true)) #[]
-  | .artifactOrEnchantment =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && (g.isArtifact o || g.isEnchantment o)) sourceId
-  | .artifactOrCreatureYouControl =>
-    g.legalPermanentTargets caster (fun o =>
-      g.controlledBy o caster && (g.isCreature o || g.isArtifact o)) sourceId
-  | .nonland =>
-    g.legalPermanentTargets caster (fun o => o.isOnBattlefield && !g.isLand o) sourceId
-  | .oppNonland =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && !g.isLand o &&
-        (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id)) sourceId
-  | .attackingCreatureWithoutFlying =>
-    g.legalCreatureTargets caster (fun o => o.status.attacking && !g.hasFlying o) sourceId
-  | .creatureYouControlSubtype subtype =>
-    g.legalCreatureTargets caster (fun o => g.controlledBy o caster && g.hasSubtype o subtype) sourceId
-  | .worthyCreatureYouControl =>
-    g.legalCreatureTargets caster (fun o => g.controlledBy o caster && g.isWorthyPermanent o) sourceId
-  | .spell =>
-    g.legalStackSpellTargets (fun _ => true) sourceId
-  | .creatureSpell =>
-    g.legalStackSpellTargets (g.isCreature ·) sourceId
-  | .creatureSpellPTAtMost n =>
-    g.legalStackSpellTargets (fun o =>
-      g.isCreature o &&
-        (g.snapshotPower o <= (n : Int) ||
-          g.snapshotToughness o <= (n : Int))) sourceId
-  | .defendingPlayerCreature =>
-    let defender :=
-      match sourceId.bind g.findObject? with
-      | some src =>
-        let fromHost :=
-          match src.attachedTo.bind g.findObject? with
-          | some host => if host.status.attacking then some (g.defendingPlayerOf host) else none
-          | none => none
-        let fromSelf := if src.status.attacking then some (g.defendingPlayerOf src) else none
-        (fromHost.orElse (fun _ => fromSelf)).getD g.defendingPlayer
-      | none => g.defendingPlayer
-    g.legalCreatureTargets caster (fun o => g.controlledBy o defender) sourceId
-  | .twoNonlandsSharingType => #[]
-  | .creaturePowerAtLeast n =>
-    g.legalCreatureTargets caster (fun o => g.power o >= n) sourceId
-  | .creaturePowerAtMost n =>
-    g.legalCreatureTargets caster (fun o => g.power o <= n) sourceId
-  | .creatureYouControlAnySubtype subtypes =>
-    g.legalCreatureTargets caster (fun o =>
-      g.controlledBy o caster && subtypes.any (fun s => g.hasSubtype o s)) sourceId
-  | .permanent =>
-    g.legalPermanentTargets caster (·.isOnBattlefield) sourceId
-  | .creatureCardInYourGraveyard =>
-    g.legalGraveyardCardTargets caster (g.isCreature ·)
-  | .legendaryCreatureYouControl =>
-    g.legalCreatureTargets caster (fun o =>
-      g.controlledBy o caster && g.isLegendary o) sourceId
-  | .creatureYouControlPowerAtMost n =>
-    g.legalCreatureTargets caster (fun o =>
-      g.controlledBy o caster && g.power o <= n) sourceId
-  | .artifact =>
-    g.legalPermanentTargets caster (fun o => o.isOnBattlefield && g.isArtifact o) sourceId
-  | .oppArtifact =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && g.isArtifact o &&
-        (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id)) sourceId
-  | .creatureCardInYourGraveyardMvAtMost n =>
-    let anyCreature := g.spellPaidTeamwork
-    g.legalGraveyardCardTargets caster (fun o =>
-      g.isCreature o && (anyCreature || g.objectManaValue o ≤ n))
-  | .artifactToken =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && g.isArtifact o && o.printed.isToken) sourceId
-  | .attackingCreature =>
-    g.legalCreatureTargets caster (fun o => o.status.attacking) sourceId
-  | .equipmentYouControl =>
-    g.legalPermanentTargets caster (fun o =>
-      g.controlledBy o caster && g.isEquipment o) sourceId
-  | .creatureOrLandYouControl =>
-    g.legalPermanentTargets caster (fun o =>
-      g.controlledBy o caster && (g.isCreature o || g.isLand o)) sourceId
-  | .twoCreaturesOrLandsYouControl => #[]
-  | .equipmentYouControlThenCreatureYouControl => #[]
-  | .upToOneEquipmentThenCreatureYouControl => #[]
-  | .twoPlayers => #[]
-  | .upToOneCreatureThenPlayer => #[]
-  | .attackingOrBlockingCreature =>
-    g.legalCreatureTargets caster (fun o =>
-      o.status.attacking || !o.status.blocking.isEmpty) sourceId
-  | .creatureMvAtMost n =>
-    let anyCreature := g.spellPaidTeamwork
-    g.legalCreatureTargets caster (fun o => anyCreature || g.objectManaValue o ≤ n) sourceId
-  | .creatureToughnessAtLeast n =>
-    g.legalCreatureTargets caster (fun o => g.toughness o >= n) sourceId
-  | .enchantmentMvAtLeast n =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && g.isEnchantment o && g.objectManaValue o ≥ n) sourceId
-  | .noncreatureArtifact =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && g.isArtifact o && !g.isCreature o) sourceId
-  | .stackAbilityFromSource ty =>
-    g.legalStackAbilityTargets caster (fun src => g.hasType src ty) sourceId
-  | .oppCreaturePowerAtMost n =>
-    g.legalCreatureTargets caster (fun o =>
-      g.power o <= n &&
-        (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id)) sourceId
-  | .oppCreatureDealtDamageThisTurn =>
-    g.legalCreatureTargets caster (fun o =>
-      g.dealtDamageThisTurn o.id &&
-        (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id)) sourceId
-  | .nonlandNontoken =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && !g.isLand o && !o.printed.isToken) sourceId
-  | .permanentCardInYourGraveyard =>
-    g.legalGraveyardCardTargets caster (g.isPermanentCard ·)
-  | .equipmentInstantOrSorceryInYourGraveyard =>
-    g.legalGraveyardCardTargets caster (fun o =>
-      g.isEquipment o || g.isInstantOrSorcery o)
-  | .artEnchCardInYourGraveyard =>
-    g.legalGraveyardCardTargets caster (fun o =>
-      g.isArtifact o || g.isEnchantment o)
-  | .artifactYouControl =>
-    g.legalPermanentTargets caster (fun o =>
-      g.controlledBy o caster && o.isOnBattlefield && g.isArtifact o) sourceId
-  | .twoArtifactsYouControl => #[]
-  | .creatureOrPlaneswalker =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o)) sourceId
-  | .permanentYouControl =>
-    g.legalPermanentTargets caster (fun o => o.isOnBattlefield && g.controlledBy o caster) sourceId
-  | .oppPermanent =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && (g.controllerOf o).any (g.isLivingOpponentOf caster ·)) sourceId
-  | .planeswalkerYouControl =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && g.isPlaneswalker o && g.controlledBy o caster) sourceId
-  | .oppCreatureOrPlaneswalker =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o) &&
-        (g.controllerOf o).any (g.isLivingOpponentOf caster ·)) sourceId
-  | .creatureYouControlThenOppCreatureOrPlaneswalker => #[]
-  | .planeswalkerYouControlThenOppCreatureOrPlaneswalker => #[]
-  | .anotherCreatureYouControlPowerAtMost n =>
-    g.legalCreatureTargets caster (fun o =>
-      g.controlledBy o caster && some o.id != sourceId && g.snapshotPower o <= n) sourceId
-  | .attackingAloneCreatureYouControl =>
-    let allAttackers := g.battlefield.filter (fun o => g.isCreature o && o.status.attacking)
-    if allAttackers.size == 1 then
-      let lone := allAttackers[0]!
-      if g.controlledBy lone caster && g.canBeTargetedBy caster lone sourceId then
-        #[Target.permanent lone.id]
-      else #[]
-    else #[]
-  | .noncreatureArtifactOrEnchantment =>
-    g.legalPermanentTargets caster (fun o =>
-      o.isOnBattlefield && !g.isCreature o &&
-        (g.isArtifact o || g.isEnchantment o)) sourceId
-  | .permanentOrPlayer =>
-    g.legalPlayerTargets caster g.livingPlayers sourceId ++
-      g.legalPermanentTargets caster (·.isOnBattlefield) sourceId
-  | .upToTwoCreaturesTotalMvAtMost n =>
-    g.legalCreatureTargets caster (fun o => g.objectManaValue o ≤ n) sourceId
-  | .filtered f => g.legalFilteredTargets caster f sourceId
-  | .multi .. | .pair .. | .instanceSlots .. => #[]
+/-! ### Unified `TargetDomain` / `TargetSlot` / `TargetSpec` Evaluation (CR 115) -/
 
-/-- Whether required slots `rest` of `kind` can each be given a target from their
-candidate list, extending the partial assignment `chosen` (slot index × target), such
-that targets within each `kind.distinctSlots` group are pairwise different (CR 115.3)
-and `.twoNonlandsSharingType` targets share a card type (CR 205.2a). Optional (“up to
-one”) slots may stay empty (CR 115.1c). -/
-def slotAssignmentExists (g : Game) (kind : EffectTargetKind) :
-    List (Nat × Array Target) → Array (Nat × Target) → Bool
+private def pushUniqueTarget (acc : Array Target) (t : Target) : Array Target :=
+  if acc.contains t then acc else acc.push t
+
+/-- Resolve conditional domain relaxation (`altDomainIf?`, e.g. Teamwork
+relaxation during CR 601.2b–c, copy retargeting, or resolution). -/
+def effectiveSlotDomain (g : Game) (caster : PlayerId) (slot : TargetSlot)
+    (sourceId : Option ObjectId := none) : TargetDomain :=
+  match slot.altDomainIf? with
+  | none => slot.domain
+  | some (cond, altDomain) =>
+    let copyTargetId? : Option ObjectId :=
+      match g.pending with
+      | .fraChoice _ (.newTargetsForCopies copies)
+      | .fraChoice _ (.newTargetsForCopySlot copies ..) => copies[0]?
+      | _ => none
+    let effSource :=
+      sourceId.orElse fun _ =>
+        (g.proposedSpell.map (·.spellId)).orElse fun _ =>
+          copyTargetId?.orElse fun _ => g.resolvingSpell
+    let env : EvalEnv := { controller := caster, sourceId := effSource }
+    if EvalExpr.evalCondition g env cond then altDomain else slot.domain
+
+/-- Legal targets matching a `TargetDomain` (CR 115.1 / 115.4 / 115.5 / 702.11 / 702.16). -/
+partial def legalTargetsForDomain (g : Game) (caster : PlayerId) (domain : TargetDomain)
+    (sourceId : Option ObjectId := none) : Array Target :=
+  let env : EvalEnv := { controller := caster, sourceId }
+  let selfStackId := sourceId.orElse (fun _ => g.proposedSpell.map (·.spellId))
+  match domain with
+  | .player pf =>
+    let ps := g.livingPlayers.filter fun pl =>
+      EvalExpr.matchesPlayerFilter g env pf pl.id
+    g.legalPlayerTargets caster ps sourceId
+  | .anyTarget rp =>
+    -- CR 115.4: "any target" is a creature, planeswalker, battle, or player.
+    match rp with
+    | .any =>
+      g.legalPlayerTargets caster g.livingPlayers sourceId ++
+        g.legalPermanentTargets caster (fun o =>
+          o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o || g.isBattle o)) sourceId
+    | .otherThan ref =>
+      let excludeIds := EvalExpr.resolveRefIds g env ref
+      g.legalPlayerTargets caster g.livingPlayers sourceId ++
+        g.legalPermanentTargets caster (fun o =>
+          o.isOnBattlefield && !excludeIds.contains o.id &&
+            (g.isCreature o || g.isPlaneswalker o || g.isBattle o)) sourceId
+    | .filtered objPred pf =>
+      let ps := g.livingPlayers.filter fun pl =>
+        EvalExpr.matchesPlayerFilter g env pf pl.id
+      g.legalPlayerTargets caster ps sourceId ++
+        g.legalPermanentTargets caster (fun o =>
+          o.isOnBattlefield && (g.isCreature o || g.isPlaneswalker o || g.isBattle o) &&
+            EvalExpr.evalObjectPred g env (.live o) objPred) sourceId
+  | .stackAbility ctrl srcPred =>
+    g.stack.filterMap fun e =>
+      match g.findObject? e.objectId with
+      | none => none
+      | some o =>
+        if o.zone == .stack && some o.id != selfStackId &&
+            (o.abilityEffect.isSome || o.triggeredAbility.isSome) &&
+            (g.controllerOf o).any (EvalExpr.matchesPlayerFilter g env ctrl) then
+          match o.sourceId.bind g.damageSourceById? with
+          | some src =>
+            if EvalExpr.evalObjectPred g env (.live src) srcPred then some (Target.card o.id)
+            else none
+          | none => none
+        else none
+  | .object zs pred =>
+    let ownerOk (o : GameObject) : Bool :=
+      match zs.owner with
+      | .any => true
+      | .matching pf => EvalExpr.matchesPlayerFilter g env pf o.owner
+      | .ofPlayer pe => (EvalExpr.evalPlayer g env pe).contains o.owner
+    let matchingOwners : Array PlayerId :=
+      match zs.owner with
+      | .any => g.livingPlayers.map (·.id)
+      | .matching pf =>
+        (g.livingPlayers.filter fun pl => EvalExpr.matchesPlayerFilter g env pf pl.id).map (·.id)
+      | .ofPlayer pe => EvalExpr.evalPlayer g env pe
+    let collectZone (zk : ZoneKind) : Array Target :=
+      match zk with
+      | .battlefield =>
+        g.legalPermanentTargets caster (fun o =>
+          o.isOnBattlefield && ownerOk o && EvalExpr.evalObjectPred g env (.live o) pred) sourceId
+      | .stack =>
+        g.stack.filterMap fun e =>
+          match g.findObject? e.objectId with
+          | some o =>
+            if o.zone == .stack && some o.id != selfStackId && ownerOk o &&
+                EvalExpr.evalObjectPred g env (.live o) pred then
+              some (Target.card o.id)
+            else none
+          | none => none
+      | .graveyard =>
+        matchingOwners.foldl (fun acc pid =>
+          acc ++ g.legalGraveyardCardTargets pid (fun o =>
+            EvalExpr.evalObjectPred g env (.live o) pred)) #[]
+      | .hand =>
+        matchingOwners.foldl (fun acc pid =>
+          acc ++ (g.player pid).hand.filterMap fun id =>
+            match g.findObject? id with
+            | some o => if EvalExpr.evalObjectPred g env (.live o) pred then some (Target.card o.id) else none
+            | none => none) #[]
+      | .library =>
+        matchingOwners.foldl (fun acc pid =>
+          acc ++ (g.player pid).library.filterMap fun id =>
+            match g.findObject? id with
+            | some o => if EvalExpr.evalObjectPred g env (.live o) pred then some (Target.card o.id) else none
+            | none => none) #[]
+      | .exile =>
+        g.objects.filterMap fun o =>
+          if o.zone == .exile && ownerOk o && EvalExpr.evalObjectPred g env (.live o) pred then
+            some (Target.card o.id)
+          else none
+      | .command =>
+        g.objects.filterMap fun o =>
+          if o.zone == .command && ownerOk o && EvalExpr.evalObjectPred g env (.live o) pred then
+            some (Target.card o.id)
+          else none
+      | .ante | .outside => #[]
+    zs.zones.foldl (fun acc zk =>
+      (collectZone zk).foldl pushUniqueTarget acc) #[]
+  | .anyOf ds =>
+    ds.foldl (fun acc d =>
+      (g.legalTargetsForDomain caster d sourceId).foldl pushUniqueTarget acc) #[]
+
+/-- Legal single-target candidates for one `TargetSlot`, accounting for
+conditional domain overrides (`altDomainIf?`). -/
+def legalTargetsForSlot (g : Game) (caster : PlayerId) (slot : TargetSlot)
+    (sourceId : Option ObjectId := none) : Array Target :=
+  g.legalTargetsForDomain caster (g.effectiveSlotDomain caster slot sourceId) sourceId
+
+private def targetObject? (g : Game) : Target → Option GameObject
+  | .permanent oid | .card oid => g.findObject? oid
+  | .player _ => none
+
+private def targetManaValue (g : Game) (t : Target) : Nat :=
+  ((g.targetObject? t).map g.objectManaValue).getD 0
+
+private def canAssignDistinctCardTypes : List (Array CardType) → Array CardType → Bool
   | [], _ => true
-  | (i, part) :: rest, chosen =>
-    let groups := kind.distinctSlots
-    let shareGroups := kind.sharesTypeGroups
-    let mvGroups := kind.totalMvCapGroups
-    let sharesType (a b : Target) : Bool :=
-      match a, b with
-      | .permanent x, .permanent y =>
-        match g.findObject? x, g.findObject? y with
-        | some ox, some oy => (g.types ox).any (fun ty => (g.types oy).contains ty)
-        | _, _ => false
-      | _, _ => false
-    let mvOf : Target → Nat
-      | .permanent oid => ((g.findObject? oid).map g.objectManaValue).getD 0
-      | _ => 0
+  | ts :: rest, used =>
+    ts.any fun ty => !used.contains ty && canAssignDistinctCardTypes rest (used.push ty)
+
+/-- Whether a tuple of chosen targets jointly satisfies `gc` (CR 115.3 / 205.2 / 601.2c).
+Monotone under adding targets to a partial tuple, so it can be used both for
+complete-tuple validation and for backtracking pruning. -/
+def satisfiesGroupConstraint (g : Game) (caster : PlayerId) (sourceId : Option ObjectId)
+    (gc : GroupTargetConstraint) (targets : Array Target) : Bool :=
+  if targets.isEmpty then true
+  else
+    match gc with
+    | .totalManaValueAtMost capExpr =>
+      let env : EvalEnv := { controller := caster, sourceId }
+      let capVal := EvalExpr.evalValue g env capExpr
+      let cap : Nat := if capVal < 0 then 0 else capVal.toNat
+      let total := targets.foldl (fun acc t => acc + g.targetManaValue t) 0
+      total ≤ cap
+    | .shareCharacteristic char =>
+      let objs := targets.filterMap g.targetObject?
+      if objs.size != targets.size then false
+      else
+        match char with
+        | .color =>
+          Color.all.any fun c => objs.all fun o => (g.colors o).contains c
+        | .cardType =>
+          match objs[0]? with
+          | none => true
+          | some o0 => (g.types o0).any fun ty => objs.all fun o => (g.types o).contains ty
+        | .creatureType =>
+          match objs[0]? with
+          | none => true
+          | some o0 =>
+            ((g.subtypes o0).filter CardSubtype.isCreatureType).any fun s =>
+              objs.all fun o => (g.subtypes o).contains s
+        | .subtype =>
+          match objs[0]? with
+          | none => true
+          | some o0 => (g.subtypes o0).any fun s => objs.all fun o => (g.subtypes o).contains s
+    | .distinctControllers =>
+      let ctrls : Array PlayerId := targets.filterMap fun t =>
+        match t with
+        | .player p => some p
+        | .permanent oid | .card oid =>
+          (g.findObject? oid).map fun o => (g.controllerOf o).getD o.owner
+      ctrls.size == targets.size && ctrls.toList.eraseDups.length == ctrls.size
+    | .distinctNames =>
+      -- CR 201.2a: nameless face-down permanents have no name and never share a name.
+      let named := targets.filterMap fun t =>
+        match g.targetObject? t with
+        | some o =>
+          let nm := g.name o
+          if nm.isEmpty then none else some nm
+        | none => none
+      named.toList.eraseDups.length == named.size
+    | .distinctCardTypes =>
+      let typeSets : Array (Array CardType) := targets.map fun t =>
+        match g.targetObject? t with
+        | some o => g.types o
+        | none => #[]
+      canAssignDistinctCardTypes typeSets.toList #[]
+
+/-- Backtracking solver for a partial or complete flat-position assignment over
+`spec` honoring CR 115.3 pairwise distinctness (`spec.distinctPosGroups`) and all
+intra- and cross-slot `GroupTargetConstraint`s (`spec.constraintPosGroups`).
+Optional positions (`spec.isOptionalPos pos`) may remain unassigned (CR 115.1c). -/
+def findValidAssignment (g : Game) (caster : PlayerId) (sourceId : Option ObjectId)
+    (spec : TargetSpec) :
+    List (Nat × Array Target) → Array (Nat × Target) → Option (Array (Nat × Target))
+  | [], chosen => some chosen
+  | (pos, part) :: rest, chosen =>
+    let distinctGrps := spec.distinctPosGroups
+    let constraintGrps := spec.constraintPosGroups
     let compatible (t : Target) : Bool :=
       chosen.all (fun (j, u) =>
-        !(u == t && groups.any (fun grp => grp.contains i && grp.contains j))) &&
-      shareGroups.all (fun grp =>
-        !grp.contains i ||
-          chosen.all (fun (j, u) => !grp.contains j || sharesType t u)) &&
-      mvGroups.all (fun (cap, grp) =>
-        !grp.contains i ||
-          let subtotal := chosen.foldl (fun acc (j, u) =>
-            if grp.contains j then acc + mvOf u else acc) (mvOf t)
-          subtotal ≤ cap)
-    (kind.isOptionalSlot i && g.slotAssignmentExists kind rest chosen) ||
-      part.any (fun t => compatible t && g.slotAssignmentExists kind rest (chosen.push (i, t)))
+        !(u == t && distinctGrps.any (fun grp => grp.contains pos && grp.contains j))) &&
+      constraintGrps.all (fun (gc, grp) =>
+        if !grp.contains pos then true
+        else
+          let inGrp := (chosen.filter fun (j, _) => grp.contains j).map (·.2)
+          g.satisfiesGroupConstraint caster sourceId gc (inGrp.push t))
+    let fromPick :=
+      part.findSome? fun t =>
+        if compatible t then
+          g.findValidAssignment caster sourceId spec rest (chosen.push (pos, t))
+        else none
+    match fromPick with
+    | some ans => some ans
+    | none =>
+      if spec.isOptionalPos pos then
+        g.findValidAssignment caster sourceId spec rest chosen
+      else none
 
-/-- Legal targets for a targeting shape (CR 115.1 / 601.2c / 603.3d).
-`sourceId` excludes the source of an “another” creature. Shapes with
-multiple instances of the word “target” read `spec.slots` instead of
-restating each slot; such a shape has legal targets only when every required
-slot can be filled at once with targets that respect `kind.distinctSlots` and
-`.twoNonlandsSharingType` (CR 115.1a–d / 115.3 / 700.2a–b). -/
-@[export mtg_game_legal_targets_for_kind]
-def legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
+/-- Whether required flat positions `rest` of `spec` can each be given a target
+from their candidate list, extending `chosen`, while satisfying CR 115.3
+distinctness and every `GroupTargetConstraint` (CR 115.1c / 601.2c). -/
+def slotAssignmentExists (g : Game) (caster : PlayerId) (sourceId : Option ObjectId)
+    (spec : TargetSpec) (rest : List (Nat × Array Target))
+    (chosen : Array (Nat × Target)) : Bool :=
+  (g.findValidAssignment caster sourceId spec rest chosen).isSome
+
+/-- Find `count` distinct legal targets in `candidates` satisfying an optional
+`GroupTargetConstraint` (used by the demonstration agent for constrained
+multi-target `"target"` words like `twoNonlandsSharingType`). -/
+def findValidTargetsForCount (g : Game) (caster : PlayerId) (sourceId : Option ObjectId)
+    (candidates : Array Target) (count : Nat)
+    (gc? : Option GroupTargetConstraint) : Option (Array Target) :=
+  let rec go (need : Nat) (startIdx : Nat) (picked : Array Target) : Option (Array Target) :=
+    match need with
+    | 0 => some picked
+    | k + 1 =>
+      Id.run do
+        for idx in [startIdx:candidates.size] do
+          let t := candidates[idx]!
+          if !picked.contains t then
+            let next := picked.push t
+            let ok :=
+              match gc? with
+              | some gc => g.satisfiesGroupConstraint caster sourceId gc next
+              | none => true
+            if ok then
+              if let some ans := go k (idx + 1) next then
+                return some ans
+        return none
+  go count 0 #[]
+
+/-- Legal targets for a unified `TargetSpec` (CR 115.1 / 115.3 / 601.2c / 603.3d).
+Returns `#[]` when required slots cannot all be filled simultaneously while
+respecting CR 115.3 distinctness and `GroupTargetConstraint`s. -/
+@[export mtg_game_legal_targets_for_spec]
+def legalTargetsForSpec (g : Game) (caster : PlayerId) (spec : TargetSpec)
     (sourceId : Option ObjectId := none) : Array Target :=
-  if kind.spec.slots.isEmpty then
-    g.legalTargetsForAtomicKind caster kind sourceId
-  else
-    let parts : Array (Array Target) :=
-      kind.spec.slots.map (fun s => g.legalTargetsForAtomicKind caster s sourceId)
-    let indexed := (List.range parts.size).map (fun i => (i, parts[i]!))
-    if g.slotAssignmentExists kind indexed #[] then
-      parts.foldl (· ++ ·) #[]
+  match spec.slots.toList with
+  | [] => #[]
+  | [slot] =>
+    let raw := g.legalTargetsForSlot caster slot sourceId
+    let cands :=
+      match slot.groupConstraint? with
+      | some gc => raw.filter fun t => g.satisfiesGroupConstraint caster sourceId gc #[t]
+      | none => raw
+    let minReq := slot.minCount
+    if minReq <= 1 then
+      if minReq == 0 || !cands.isEmpty then cands else #[]
+    else
+      let indexed := (List.range minReq).map fun pos => (pos, cands)
+      if g.slotAssignmentExists caster sourceId spec indexed #[] then cands else #[]
+  | _ =>
+    let slotCands : Array (Array Target) :=
+      spec.slots.map fun s =>
+        let raw := g.legalTargetsForSlot caster s sourceId
+        match s.groupConstraint? with
+        | some gc => raw.filter fun t => g.satisfiesGroupConstraint caster sourceId gc #[t]
+        | none => raw
+    let totalPos := spec.totalPositions
+    let indexed := (List.range totalPos).map fun pos =>
+      (pos, slotCands[spec.slotIndexOfPos pos]!)
+    if g.slotAssignmentExists caster sourceId spec indexed #[] then
+      slotCands.foldl (· ++ ·) #[]
     else #[]
 
-/-- “For each opponent, (up to one) target … that player controls” as one
-target slot per opponent (CR 601.2c / 602.2b). When `stackObjId` has a recorded
-`CastEvent.proposed`, preserves opponents who were in the game when that spell
-was proposed so mid-stack player departures do not shift slot indices. -/
+/-- “For each opponent, (up to one) target … that player controls” expanded into
+one concrete per-seat `TargetSlot` per opponent (CR 601.2c / 602.2b). When
+`stackObjId` has a recorded `CastEvent.proposed` / `TriggerQueueEvent.putOnStack`,
+preserves opponents who were in the game at announcement so mid-stack player
+departures do not shift slot indices. -/
 def expandEachOpponentEffect (g : Game) (p : PlayerId) (e : Effect)
     (stackObjId : Option ObjectId := none) : Effect :=
-  match e.targetKind with
-  | .filtered f =>
-    if f.controller == .eachOpponent then
-      let propIdx? :=
-        stackObjId.bind fun oid =>
-          let rootId := GameEvent.rootCopiedSpellId g.events oid
-          g.events.findIdx? fun ev =>
-            match ev.change with
-            | .rules (.cast (.proposed sid ..))
-            | .rules (.triggerQueue (.putOnStack sid ..)) => sid == rootId
-            | _ => false
-      let opps : Array Player :=
-        match propIdx? with
-        | some idx =>
-          let later := g.events.extract (idx + 1) g.events.size
-          g.players.filter fun (pl : Player) =>
-            pl.id != p && !g.areTeammates p pl.id &&
-              (g.stillInGame pl.id || later.any fun ev =>
-                match ev.change with
-                | .rules (.player (.lost q _)) | .rules (.player (.leftGame q)) => q == pl.id
-                | _ => false)
-        | none => g.livingOpponents p
-      let fs := opps.map (fun (pl : Player) => { f with controller := .specific pl.id.idx })
-      let optional := if e.allowsZeroTargets then (List.range fs.size).toArray else #[]
-      { e with targeting := .of (.multi fs optional), maxTargets := fs.size }
-    else e
+  match e.targeting.spec.slots.toList with
+  | [slot] =>
+    match slot.forEach? with
+    | some pf =>
+      if pf == PlayerFilter.opponent then
+        let propIdx? :=
+          stackObjId.bind fun oid =>
+            let rootId := GameEvent.rootCopiedSpellId g.events oid
+            g.events.findIdx? fun ev =>
+              match ev.change with
+              | .rules (.cast (.proposed sid ..))
+              | .rules (.triggerQueue (.putOnStack sid ..)) => sid == rootId
+              | _ => false
+        let opps : Array Player :=
+          match propIdx? with
+          | some idx =>
+            let later := g.events.extract (idx + 1) g.events.size
+            g.players.filter fun (pl : Player) =>
+              pl.id != p && !g.areTeammates p pl.id &&
+                (g.stillInGame pl.id || later.any fun ev =>
+                  match ev.change with
+                  | .rules (.player (.lost q _)) | .rules (.player (.leftGame q)) => q == pl.id
+                  | _ => false)
+          | none => g.livingOpponents p
+        let count :=
+          if e.allowsZeroTargets then CountRange.ofBounds 0 (max 1 slot.count.maxCount)
+          else slot.count
+        let expandedSlots : Array TargetSlot :=
+          opps.map fun (pl : Player) =>
+            { slot with
+              domain := slot.domain.substituteOpponent (.seat pl.id.idx)
+              count
+              forEach? := none }
+        { e with
+          targeting := .of (.ofSlots expandedSlots)
+          maxTargets := expandedSlots.size }
+      else e
+    | none => e
   | _ => e
 
-/-- Whether enough distinct legal targets exist for `e` (CR 115.3 / 601.2c): a
-single-instance shape announcing `e.targetCount > 1` targets of one word “target”
-(`kind.spec.slots.isEmpty`) needs that many distinct legal targets unless it allows
-zero; multi-slot shapes are checked slot by slot in `legalTargetsForKind`. -/
+/-- Whether enough distinct legal targets exist for `e` (CR 115.3 / 601.2c):
+delegates directly to `legalTargetsForSpec` over `e.effectiveTargetSpec` after
+expanding `"for each opponent"` slots. -/
 def effectHasEnoughTargets (g : Game) (p : PlayerId) (e : Effect)
     (sourceId : Option ObjectId := none) : Bool :=
   let e := g.expandEachOpponentEffect p e
-  if e.allowsZeroTargets then true
-  else
-    let legal := g.legalTargetsForKind p e.targetKind sourceId
-    if e.targetKind.spec.slots.isEmpty then
-      legal.size >= max 1 e.targetCount
-    else !legal.isEmpty
+  let spec := e.effectiveTargetSpec
+  if spec.isEmpty || e.allowsZeroTargets || spec.allowsZero then true
+  else !(g.legalTargetsForSpec p spec sourceId).isEmpty
 
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/
 def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalTargetsForKind p ab.targetKind sourceId
+  g.legalTargetsForSpec p ab.targetSpec sourceId
 
 end Game
 end Mtg.Engine

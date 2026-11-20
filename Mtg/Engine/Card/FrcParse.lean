@@ -73,14 +73,14 @@ private def manaTypesOf (s : String) : Array ManaType :=
     | .colorless => some .colorless
     | _ => none
 
-private def frc (e : FrcEffect) (phrase : String) (kind : EffectTargetKind := .none) : Effect :=
-  { targeting := .of kind, resolution := .frc e, phrase }
+private def frc (e : FrcEffect) (phrase : String) (spec : TargetSpec := .none) : Effect :=
+  { targeting := .of spec, resolution := .frc e, phrase }
 
-private def creature (noun : String := "target creature") : EffectTargetKind :=
-  .filtered { noun, types := #[.creature] }
+private def creature : TargetSpec :=
+  .creature
 
-private def oppPlayer (noun : String := "target opponent") : EffectTargetKind :=
-  .filtered { noun, zone := .player, controller := .opponent }
+private def oppPlayer : TargetSpec :=
+  .opponent
 
 private def cap (w : String) : String :=
   if w.isEmpty then w else String.singleton w.front.toUpper ++ (w.drop 1).copy
@@ -102,10 +102,10 @@ private def colorsFrom (text : String) : Array Color :=
     else none).toArray
 
 private def pushTrig (c : CardDef) (w : SharedTriggerWhen) (e : Effect) (phrase : String)
-    (kind : EffectTargetKind := .none) : CardDef :=
+    (spec : TargetSpec := .none) : CardDef :=
   { c with
     triggeredAbilities :=
-      c.triggeredAbilities.push (TriggeredAbility.fra w phrase e.resolution kind) }
+      c.triggeredAbilities.push (TriggeredAbility.fra w phrase e.resolution spec) }
 
 private def pushAct (c : CardDef) (e : Effect) (phrase : String) (costText : String)
     (sorcery := false) (loyalty : Option LoyaltySymbol := none) : CardDef :=
@@ -135,9 +135,11 @@ def parseFrcLoyaltyEffect (text : String) : Option Effect :=
   else if l.contains "draw two cards, then put a card from your hand on the bottom" then
     some (frc .jacePlus text)
   else if l.contains "exile another target planeswalker or creature" then
-    some (frc .jaceMinus text (.filtered {
-      noun := "another target planeswalker or creature you control"
-      controller := .you, another := true }))
+    some (frc .jaceMinus text (.ofDomain (.object .battlefield (.all #[
+      .otherThan .this,
+      .any #[.hasType .planeswalker, .hasType .creature],
+      .controlledBy .you
+    ]))))
   else none
 
 private def effectText (raw : String) : Option Effect :=
@@ -148,14 +150,13 @@ private def effectText (raw : String) : Option Effect :=
     if l.contains "draw three cards, then put two cards" then some (frc (.drawPutOnTop 3 2) raw)
     else if l.contains "draw four cards, then put two cards" then some (frc (.drawPutOnTop 4 2) raw)
     else if l.contains "exile target permanent with mana value 4" then
-      some (frc .exileTarget raw (.filtered {
-        noun := "target permanent with mana value 4 or greater", mvAtLeast := some 4 }))
+      some (frc .exileTarget raw (.ofDomain (.object .battlefield (.stat .manaValue .ge (.const 4)))))
     else if l.contains "exile target creature. its controller may search" then
-      some (frc .pathToExile raw (creature "target creature"))
+      some (frc .pathToExile raw creature)
     else if l.contains "exile target creature. its controller gains life" then
-      some (frc .swords raw (creature "target creature"))
+      some (frc .swords raw creature)
     else if l.contains "destroy target nonland" then
-      some (frc .stroke raw (.filtered { noun := "target nonland permanent", nonTypes := #[.land] }))
+      some (frc .stroke raw .nonland)
     else if l.contains "create x 1/1 green and white citizen" then
       some (frc .grandCrescendo raw)
     else if l.contains "create x 1/1 white soldier" && l.contains "if x is 5" then
@@ -191,7 +192,7 @@ private def effectText (raw : String) : Option Effect :=
     else if l.contains "put a card exiled with this artifact" then
       some (frc .currencyReturn raw)
     else if l.contains "put target creature on the bottom" then
-      some (frc .proteus raw (creature "target creature"))
+      some (frc .proteus raw creature)
     else if l.contains "becomes a 2/3" then
       some (frc (.animate 2 3 true false) raw)
     else if l.contains "becomes a 2/1" then
@@ -209,17 +210,16 @@ private def effectText (raw : String) : Option Effect :=
     else if l.contains "add {c}{c}" || l.contains "add {C}{C}" then
       some (Effect.addMana #[.colorless, .colorless])
     else if l.contains "copy target instant or sorcery" then
-      some (frc .venserSpell raw (.filtered {
-        noun := "target instant or sorcery spell an opponent controls"
-        zone := .stack, controller := .opponent, types := #[.instant, .sorcery] }))
+      some (frc .venserSpell raw (.ofDomain (.object .stack (.all #[
+        .any #[.hasType .instant, .hasType .sorcery], .isKind .spell, .controlledBy .opponent
+      ]))))
     else if l.contains "create two tokens that are copies" then
-      some (frc .venserPerm raw (.filtered {
-        noun := "target permanent an opponent controls", controller := .opponent }))
+      some (frc .venserPerm raw .oppPermanent)
     else none
 
 private def addBoth (c : CardDef) (w1 w2 : SharedTriggerWhen) (e : Effect) (phrase : String)
-    (kind : EffectTargetKind := .none) : CardDef :=
-  pushTrig (pushTrig c w1 e phrase kind) w2 e phrase kind
+    (spec : TargetSpec := .none) : CardDef :=
+  pushTrig (pushTrig c w1 e phrase spec) w2 e phrase spec
 
 /-- One unrecognized Oracle line on an FRC card, if this module models it. -/
 def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
@@ -373,7 +373,7 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
       else if l.contains "as this artifact enters, you may have it become a copy" then
         some { c with asEntersMayCopyCreatureHasteUntilEot := true }
       else if l.contains "choose target opponent. until that player's next turn" then
-        some (pushSpell c (frc .teferi line (oppPlayer "target opponent")))
+        some (pushSpell c (frc .teferi line oppPlayer))
       else if l.contains "when venser enters, choose one" ||
           (l.contains "choose one" && l.contains "copy target instant") then
         match effectText "Copy target instant or sorcery spell an opponent controls twice.",

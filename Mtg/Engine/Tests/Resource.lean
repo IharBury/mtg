@@ -69,11 +69,11 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard (SharedTrigger.timing (.resource .plusOneCreateInsectOnce)).onceEachTurn
 #guard (SharedTrigger.timing (.resource .plusOneOnThisOnce)).onceEachTurn
 #guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).allowsZeroTargets
-#guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).targeting.kind ==
+#guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).targeting.spec ==
   .opponent
-#guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).targeting.kind ==
+#guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).targeting.spec ==
   .creature
-#guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).targeting.kind ==
+#guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).targeting.spec ==
   .creatureYouControl
 
 #guard toString (resource Effect.resourceDiscardExilePlay) ==

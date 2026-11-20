@@ -67,7 +67,7 @@ def describeStackTarget (g : Game) (e : StackEntry) (i : Nat) : String :=
 word “target” (chosen together) rather than successive instances. -/
 def targetsShareOneTargetWord (g : Game) (e : StackEntry) : Bool :=
   match g.findObject? e.objectId with
-  | some o => (g.targetingOf o).kind.spec.slots.isEmpty
+  | some o => !(g.targetingOf o).spec.isMultiSlot
   | none => true
 
 /-- Join same-instance targets with `and`; successive “target” words with
@@ -639,15 +639,15 @@ def chooseTargetsPending (g : Game) (p : PlayerId) : String :=
   match g.objectAwaitingTargets with
   | none => s!" [choose targets (CR 601.2c, {name})]"
   | some o =>
-    let kind := (g.targetingOf o).kind
+    let spec := (g.targetingOf o).spec
     let maxN := (g.announcedTargetBounds o).2
     if (o.triggeredAbility.bind TriggeredAbility.dividedDamage?).isSome ||
-        (kind.spec.slots.isEmpty && maxN > 1) then
+        (!spec.isMultiSlot && maxN > 1) then
       s!" [choose targets of this \"target\" word together (CR 601.2c, {name})]"
-    else if !kind.spec.slots.isEmpty then
-      let slotIdx := g.currentTargetSlot o
-      let slotNoun := kind.announcedNoun slotIdx
-      if slotIdx == 0 then
+    else if spec.isMultiSlot then
+      let curPos := g.currentTargetSlot o
+      let slotNoun := spec.announcedPosNoun curPos
+      if curPos == 0 then
         s!" [choose the first \"target\" word ({slotNoun}, CR 601.2c, {name})]"
       else
         s!" [choose the next \"target\" word ({slotNoun}, CR 601.2c, {name})]"

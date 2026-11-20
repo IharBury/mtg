@@ -1030,7 +1030,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let mapOk :=
     mapAb.onlyAsSorcery &&
     mapAb.cost == { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } &&
-    mapAb.effect.targetKind == .creatureYouControl &&
+    mapAb.effect.targetSpec == .creatureYouControl &&
     (gMapNonland.object! myBear.id).status.plusOnePlusOne == 1 &&
     gMapNonland.pending == .fraChoice p0 (.exploreMayGraveyard topNonlandId) &&
     gMapNonlandAccept.pending == .none &&
@@ -1156,7 +1156,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
       landerSearches) &&
     mustHoldP1Rev "3c.mutagen" (mutagenAb.onlyAsSorcery &&
       mutagenAb.cost == { mana := ManaCost.ofGeneric 1, tap := true, sacrificeSource := true } &&
-      mutagenAb.effect.targetKind == .creature &&
+      mutagenAb.effect.targetSpec == .creature &&
       (gMut.object! mutBear.id).status.plusOnePlusOne == 1)
 
   -- 4. Moloid .onAttackMayMill 1 (and generalized n = 2) wired onto printed CardDef & runtime

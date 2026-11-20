@@ -251,8 +251,8 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     payLife := ab.cost.payLife
     discardSource := ab.cost.discardSource
     abilityModes := ab.allModes
-    targetKindOverride :=
-      if effect.targetKind != ab.effect.targetKind then some effect.targetKind else none
+    targetSpecOverride :=
+      if effect.targetSpec != ab.effect.targetSpec then some effect.targetSpec else none
     activation := some ab
     abilityIdx := some abilityIdx
     loyaltyX

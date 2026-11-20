@@ -34,11 +34,11 @@ def elvesGetVigilance (g : Game) (controller : PlayerId) (power : Int) : Game :=
 /-- The announced creature gains hexproof while the source remains. -/
 def grantHexproofWhileSource (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (kind : EffectTargetKind) : Game :=
+    (spec : TargetSpec) : Game :=
   match sourceId with
   | none => g
   | some sid =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
+    g.withLegalSpecPermanent controller spec targets (fun g o =>
       let g := g.createEffect (.hexproofWhileSource o.id sid)
       g.logMsg s!"{g.name o} gains hexproof for as long as the Saga remains")
       sourceId (some "The target is no longer legal")
@@ -46,11 +46,11 @@ def grantHexproofWhileSource (g : Game) (controller : PlayerId)
 /-- Damage the announced creature would deal is prevented while the source remains. -/
 def preventDamageWhileSource (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) (targets : Array Target)
-    (kind : EffectTargetKind) : Game :=
+    (spec : TargetSpec) : Game :=
   match sourceId with
   | none => g
   | some sid =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
+    g.withLegalSpecPermanent controller spec targets (fun g o =>
       let g := g.createEffect (.preventDamageWhileSource o.id sid)
       g.logMsg s!"damage that would be dealt by {g.name o} is prevented while the Saga remains")
       sourceId none
@@ -203,11 +203,11 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
     g.withContinuationFrame fun g =>
       match ch with
       | .dealDamageToOppCreature n =>
-        g.withLegalKindPermanent controller .oppCreature targets (fun g o =>
+        g.withLegalSpecPermanent controller .oppCreature targets (fun g o =>
           g.dealDamageToPermanent o n (source := sourceId.bind g.damageSourceEventById?))
           sourceId (some "The target is no longer legal")
       | .destroyOppArtifact =>
-        g.withLegalKindPermanent controller .oppArtifact targets (fun g o =>
+        g.withLegalSpecPermanent controller .oppArtifact targets (fun g o =>
           g.destroyPermanent o) sourceId (some "The target is no longer legal")
       | .addMana mana =>
         g.addMana controller mana 1 (source := sourceId)
@@ -219,13 +219,13 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
       | .elvesGetVigilance p =>
         g.elvesGetVigilance controller p
       | .opponentDiscardsNonland =>
-        g.withLegalKindPlayer controller .opponent targets
+        g.withLegalSpecPlayer controller .opponent targets
           (fun g pid => g.discardNonlandFrom controller pid)
           sourceId (some "The target is no longer legal")
       | .amass n =>
         g.amassGoblins controller n
       | .opponentLosesYouGain n =>
-        g.withLegalKindPlayer controller .opponent targets
+        g.withLegalSpecPlayer controller .opponent targets
           (fun g pid =>
             let (g, cause?) : Game × Option EventCause :=
               if n == 0 then (g, none)
@@ -250,14 +250,14 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
       | .grantAttackPumpPerPlainsThisTurn =>
         g.attackPumpPerPlains controller
       | .blinkUntilEndStep =>
-        g.withLegalKindPermanent controller .creatureOrLandYouControl targets
+        g.withLegalSpecPermanent controller .creatureOrLandYouControl targets
           (fun g o => g.exileUntilNextEndStep o) sourceId none
       | .treasureThenDragonIfFour =>
         g.treasureThenDragon controller sourceId
       | .recruit =>
         g.beginRecruit controller
       | .returnCreatureFromGyMvAtMost n =>
-        g.withLegalKindTarget controller (.creatureCardInYourGraveyardMvAtMost n) targets
+        g.withLegalSpecTarget controller (.creatureCardInYourGraveyardMvAtMost n) targets
           (fun g t =>
             match t with
             | Target.card oid =>
@@ -275,7 +275,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
             | _ => g.logMsg "The target is no longer legal")
           sourceId (some "The target is no longer legal")
       | .plusOneUpToOne =>
-        g.withLegalKindPermanent controller .creature targets (fun g o =>
+        g.withLegalSpecPermanent controller .creature targets (fun g o =>
           g.addPlusOnePlusOneTo o 1) sourceId none
       | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
         g.gainControlWhileSource controller sourceId targets (maxTotalMv := some n)
@@ -283,7 +283,7 @@ def applyChapterEffect (g : Game) (controller : PlayerId) (e : Effect)
         g.dealDamageToEachNonSubtypeAndOpponents controller n subtype sourceId
       | .dealXDamageToTargetOpponentGreatestArtifactMv =>
         let x := g.greatestManaValueAmong controller (g.isArtifact ·)
-        g.withLegalKindPlayer controller .opponent targets
+        g.withLegalSpecPlayer controller .opponent targets
           (fun g pid => g.dealDamageToPlayer pid x (source := sourceId.bind g.damageSourceById?))
           sourceId (some "The target is no longer legal")
       | .spell s =>

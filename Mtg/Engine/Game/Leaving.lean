@@ -1265,8 +1265,8 @@ private opaque finishAmassOn (g : Game) (controller : PlayerId) (armyId : Object
     (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId := none)
     (stage : AmassStage := .putCounters) (cause : Option EventCause := none) : Game := g
 
-@[extern "mtg_game_legal_targets_for_kind"]
-private opaque legalTargetsForKind (g : Game) (caster : PlayerId) (kind : EffectTargetKind)
+@[extern "mtg_game_legal_targets_for_spec"]
+private opaque legalTargetsForSpec (g : Game) (caster : PlayerId) (spec : TargetSpec)
     (sourceId : Option ObjectId := none) : Array Target := #[]
 
 @[extern "mtg_game_finish_choose_cards"]
@@ -2514,7 +2514,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         let g := g.changes (#[.chooseModesRest none] ++ clearProp)
         let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
         (g, .none)
-      else if !(g.legalTargetsForKind q .playerOrCreature sourceId).contains target then
+      else if !(g.legalTargetsForSpec q .anyTarget sourceId).contains target then
         let g := (g.change (.chooseModesRest none)).logMsg "The target is no longer legal"
         let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
         (g, .none)
@@ -2763,7 +2763,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g
       (g, .none)
     else if !(g.findObject? hostId).any (fun o => o.isOnBattlefield && g.isCreature o) ||
-        (sourceId.isSome && !(g.legalTargetsForKind q .permanent sourceId).contains (Target.permanent hostId)) ||
+        (sourceId.isSome && !(g.legalTargetsForSpec q .permanent sourceId).contains (Target.permanent hostId)) ||
         !(g.permanentsOf q).any g.isEquipment then
       let g := g.change (.chooseModesRest none)
       let g := if g.mayThenDrop > 0 then g.declineMayThenCore else clearPending g

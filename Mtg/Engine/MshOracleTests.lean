@@ -1124,9 +1124,9 @@ def creatureAndArtifactSourceOk : Bool :=
   let (g, stoneAb) := g.putStackAbility stone ⟨0⟩
     (abilityEffect := some (Effect.abilityDraw 1))
   let creatureLegal :=
-    g.legalTargetsForKind ⟨0⟩ (.stackAbilityFromSource .creature)
+    g.legalTargetsForSpec ⟨0⟩ (.stackAbilityFromSource .creature)
   let artifactLegal :=
-    g.legalTargetsForKind ⟨0⟩ (.stackAbilityFromSource .artifact)
+    g.legalTargetsForSpec ⟨0⟩ (.stackAbilityFromSource .artifact)
   let gMana :=
     g.applyAbilityEffect ⟨0⟩ (Effect.addTwoAnyColorCreatureSources) #[] (some shang.id)
   let pool := (gMana.player ⟨0⟩).manaPool
@@ -1134,7 +1134,7 @@ def creatureAndArtifactSourceOk : Bool :=
     !creatureLegal.contains (Target.card stoneAb.id) &&
     artifactLegal.contains (Target.card stoneAb.id) &&
     !artifactLegal.contains (Target.card bearAb.id) &&
-    echoPerceptiveProdigy.activatedAbilities[0]!.effect.targetKind ==
+    echoPerceptiveProdigy.activatedAbilities[0]!.effect.targetSpec ==
       .stackAbilityFromSource .creature &&
     pool.creatureGreen == 2 &&
     !pool.canPay (ManaCost.ofGeneric 2) &&
@@ -2505,13 +2505,13 @@ def mightyThorBlinkOk : Bool :=
   let gTok := addPermanent (addPermanent afterDraw theMightyThorJaneFoster ⟨0⟩ ⟨0⟩)
     { grizzlyBears with isToken := true } ⟨1⟩ ⟨1⟩
   let tok := namedPermanent gTok "Grizzly Bears"
-  let kind := (SharedTrigger.timing (.thisAttack .blinkNontoken)).targeting.kind
-  let legal := g.legalTargetsForKind ⟨0⟩ kind (some thor.id)
+  let kind := (SharedTrigger.timing (.thisAttack .blinkNontoken)).targeting.spec
+  let legal := g.legalTargetsForSpec ⟨0⟩ kind (some thor.id)
   legal.contains (Target.permanent bears.id) &&
     legal.contains (Target.permanent stone.id) &&
     legal.contains (Target.permanent thor.id) &&
     !legal.contains (Target.permanent land.id) &&
-    !(gTok.legalTargetsForKind ⟨0⟩ kind
+    !(gTok.legalTargetsForSpec ⟨0⟩ kind
       (some (namedPermanent gTok "The Mighty Thor, Jane Foster").id)).contains (Target.permanent tok.id) &&
     (let g0 := g.applyTriggeredAbility ⟨0⟩ (.onThisAttack Effect.thisAttackBlinkNontoken)
         (some thor.id) #[]
@@ -2546,8 +2546,8 @@ def superAdaptoidKeywordCountersOk : Bool :=
     Keyword.vigilance, Keyword.indestructible, Keyword.lifelink, Keyword.trample]
   let g := g.createEffect (.keywordsUntilEot bears.id kw)
   let bears := namedPermanent g "Grizzly Bears"
-  let kind := (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.kind
-  let legal := g.legalTargetsForKind ⟨0⟩ kind (some adaptoid.id)
+  let kind := (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.spec
+  let legal := g.legalTargetsForSpec ⟨0⟩ kind (some adaptoid.id)
   kind == .anotherCreature &&
     legal.contains (Target.permanent bears.id) &&
     !legal.contains (Target.permanent adaptoid.id) &&
@@ -2722,11 +2722,11 @@ def swordsmanAttachTargetsOk : Bool :=
   let sw := namedPermanent g "Swordsman, Sharp Scoundrel"
   let bow := namedPermanent g "Hawkeye's Bow"
   let bears := namedPermanent g "Grizzly Bears"
-  let kind := (SharedTrigger.timing (.watch .villainAttachEquipment)).targeting.kind
-  let equip := g.legalTargetsForKind ⟨0⟩ (kind.slotKind 0) (some sw.id)
-  let creatures := g.legalTargetsForKind ⟨0⟩ (kind.slotKind 1) (some sw.id)
-  kind == .upToOneEquipmentThenCreatureYouControl &&
-    kind.isOptionalSlot 0 && !kind.isOptionalSlot 1 &&
+  let spec := (SharedTrigger.timing (.watch .villainAttachEquipment)).targeting.spec
+  let equip := g.legalTargetsForSlot ⟨0⟩ (spec.slotAtPos 0) (some sw.id)
+  let creatures := g.legalTargetsForSlot ⟨0⟩ (spec.slotAtPos 1) (some sw.id)
+  spec == .upToOneEquipmentThenCreatureYouControl &&
+    spec.isOptionalSlot 0 && !spec.isOptionalSlot 1 &&
     equip.contains (Target.permanent bow.id) &&
     !equip.contains (Target.permanent bears.id) &&
     creatures.contains (Target.permanent bears.id) &&
@@ -2814,8 +2814,8 @@ def shieldTapsDefendingPlayerOk : Bool :=
   let shield := namedPermanent g "Captain America's Shield"
   let giant := namedPermanent g "Hill Giant"
   let ogre := namedPermanent g "Gray Ogre"
-  let kind := (SharedTrigger.timing (.watch .equippedAttacksTap)).targeting.kind
-  let legal := g.legalTargetsForKind ⟨0⟩ kind (some shield.id)
+  let kind := (SharedTrigger.timing (.watch .equippedAttacksTap)).targeting.spec
+  let legal := g.legalTargetsForSpec ⟨0⟩ kind (some shield.id)
   kind == .defendingPlayerCreature &&
     legal.contains (Target.permanent ogre.id) &&
     !legal.contains (Target.permanent giant.id) &&
@@ -2994,8 +2994,8 @@ def wiccanAnotherNonlandNontokenOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
   let giant := namedPermanent g "Hill Giant"
-  let kind := (SharedTrigger.timing (.casting .exileFlicker)).targeting.kind
-  let legal := g.legalTargetsForKind ⟨0⟩ kind (some wiccan.id)
+  let kind := (SharedTrigger.timing (.casting .exileFlicker)).targeting.spec
+  let legal := g.legalTargetsForSpec ⟨0⟩ kind (some wiccan.id)
   legal.contains (Target.permanent bears.id) &&
     !legal.contains (Target.permanent wiccan.id) &&
     !legal.contains (Target.permanent land.id) &&
@@ -3021,8 +3021,8 @@ def quakeTapsCreatureOrLandOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
   let feast := namedPermanent g "Heroic Feast"
-  let kind := (SharedTrigger.timing (.casting .tapCreatureOrLand)).targeting.kind
-  let legal := g.legalTargetsForKind ⟨0⟩ kind (some quake.id)
+  let kind := (SharedTrigger.timing (.casting .tapCreatureOrLand)).targeting.spec
+  let legal := g.legalTargetsForSpec ⟨0⟩ kind (some quake.id)
   legal.contains (Target.permanent bears.id) &&
     legal.contains (Target.permanent land.id) &&
     !legal.contains (Target.permanent feast.id) &&
@@ -3674,8 +3674,8 @@ def cruelAllianceTeamworkOk : Bool :=
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let giant := namedPermanent g "Hill Giant"
-  let kind := (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3).targetKind
-  let legal := g.legalTargetsForKind ⟨0⟩ kind
+  let kind := (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3).targetSpec
+  let legal := g.legalTargetsForSpec ⟨0⟩ kind
   legal.contains (Target.permanent bears.id) &&
     !legal.contains (Target.permanent giant.id) &&
     (let gExile := g.applyEffect ⟨0⟩ (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)
@@ -3687,7 +3687,7 @@ def cruelAllianceTeamworkOk : Bool :=
      gMiss.battlefield.any (fun o => o.name == "Hill Giant")) &&
     (let paid := g.record (GameEvent.announced g.turnNumber bears.id (costs := #[.teamwork #[]]))
      let paid := paid.change (.pushContinuationFrame { resolvingSpell := some bears.id })
-     let wide := paid.legalTargetsForKind ⟨0⟩ kind
+     let wide := paid.legalTargetsForSpec ⟨0⟩ kind
      wide.contains (Target.permanent giant.id) &&
        (let paid := paid.applyEffect ⟨0⟩ (Effect.exileCreatureMvAtMostOrAnyIfTeamwork 3 3)
            #[Target.permanent giant.id]
@@ -3880,7 +3880,7 @@ def galactusAttacksDestroyLandOk : Bool :=
          let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
          let land := namedPermanent g "Mountain"
          let bears := namedPermanent g "Grizzly Bears"
-         let legal := g.legalTargetsForKind ⟨0⟩ e.targetKind (some gal.id)
+         let legal := g.legalTargetsForSpec ⟨0⟩ e.targetSpec (some gal.id)
          legal.contains (Target.permanent land.id) &&
            !legal.contains (Target.permanent bears.id) &&
            (let g2 := g.applyAbilityEffect ⟨0⟩ e #[Target.permanent land.id] (some gal.id)
@@ -4269,7 +4269,7 @@ def mountDoomChoosesKeepersOk : Bool :=
   let g := g.applyAbilityEffect ⟨0⟩ Effect.chooseTwoDestroyRest #[]
   match g.pending with
   | .fraChoice ⟨0⟩ (.chooseCards _ 2 .keepDestroyRest) =>
-    Effect.chooseTwoDestroyRest.targetKind == .none &&
+    Effect.chooseTwoDestroyRest.targetSpec == .none &&
       (let gKeep := mustApply g ⟨0⟩ (.choosePermanents #[bears.id])
        gKeep.battlefield.any (fun o => o.name == "Grizzly Bears") &&
          !gKeep.battlefield.any (fun o => o.name == "Gray Ogre"))
@@ -4592,10 +4592,10 @@ def capShieldHexproofOk : Bool :=
     g.hasHexproof hero &&
     !g.hasHexproof ogre &&
     g.playerHasHexproof ⟨0⟩ &&
-    !(g.legalTargetsForKind ⟨1⟩ .player).contains (Target.player ⟨0⟩) &&
-    (g.legalTargetsForKind ⟨1⟩ .player).contains (Target.player ⟨1⟩) &&
-    (g.legalTargetsForKind ⟨1⟩ .creature).contains (Target.permanent cap.id) &&
-    !(g.legalTargetsForKind ⟨1⟩ .creature).contains (Target.permanent hero.id)
+    !(g.legalTargetsForSpec ⟨1⟩ .player).contains (Target.player ⟨0⟩) &&
+    (g.legalTargetsForSpec ⟨1⟩ .player).contains (Target.player ⟨1⟩) &&
+    (g.legalTargetsForSpec ⟨1⟩ .creature).contains (Target.permanent cap.id) &&
+    !(g.legalTargetsForSpec ⟨1⟩ .creature).contains (Target.permanent hero.id)
 
 #guard capShieldHexproofOk
 

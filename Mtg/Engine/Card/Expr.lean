@@ -520,6 +520,7 @@ inductive PlayerPred where
   | isDefendingPlayer
   | metric (m : PlayerMetric) (op : CmpOp) (rhs : ValueExpr)
   | controls (filter : ObjectFilter) (minCount : ValueExpr)
+  | isSeat (idx : Nat)
 
 /-- Pure expression evaluating to zero, one, or more players (11 constructors). -/
 inductive PlayerExpr where
@@ -767,6 +768,8 @@ def you : PlayerFilter := { relation := .you, pred := .any }
 def opponent : PlayerFilter := { relation := .opponent, pred := .any }
 def teammate : PlayerFilter := { relation := .teammate, pred := .any }
 def any : PlayerFilter := { relation := .anyPlayer, pred := .any }
+def defendingPlayer : PlayerFilter := { relation := .anyPlayer, pred := .isDefendingPlayer }
+def seat (idx : Nat) : PlayerFilter := { relation := .anyPlayer, pred := .isSeat idx }
 
 end PlayerFilter
 
@@ -804,6 +807,15 @@ def historic : ObjectPred :=
 
 /-- Storied permanent filter (HOB): artifact, legendary, or Saga. -/
 def storied : ObjectPred := historic
+
+/-- Worthy creature (MSH Equip worthy, CR 702.6c): legendary non-Villain red or white creature. -/
+def worthy : ObjectPred :=
+  .all #[
+    .hasSupertype .legendary,
+    .not (.hasSubtype (.literal .villain)),
+    .any #[.hasColor (.literal .red), .hasColor (.literal .white)],
+    .hasType .creature
+  ]
 
 /-- Flatten nested `.all` conjunctions into a single canonical `ObjectPred`. -/
 def andAll (ps : Array ObjectPred) : ObjectPred :=
@@ -911,6 +923,7 @@ private partial def applyTcPlayerPred (tcs : Array TextChange) : PlayerPred → 
   | .isDefendingPlayer => .isDefendingPlayer
   | .metric m op rhs => .metric m op (applyTcValueExpr tcs rhs)
   | .controls f minC => .controls (applyTcObjectFilter tcs f) (applyTcValueExpr tcs minC)
+  | .isSeat idx => .isSeat idx
 
 private partial def applyTcPlayerExpr (tcs : Array TextChange) : PlayerExpr → PlayerExpr
   | .you => .you
@@ -1195,9 +1208,11 @@ mutual
 
 private partial def printPlayerFilter (ctx : PrintCtx) (pf : PlayerFilter) : String :=
   let base := renderPlayerRel pf.relation ctx.plural
-  match pf.pred with
-  | .any => base
-  | p => s!"{base} who {printPlayerPred { ctx with capitalize := false } p}"
+  match pf.relation, pf.pred with
+  | _, .any => base
+  | .anyPlayer, .isDefendingPlayer => "defending player"
+  | .anyPlayer, .isSeat _ => "that player"
+  | _, p => s!"{base} who {printPlayerPred { ctx with capitalize := false } p}"
 
 private partial def printPlayerPred (ctx : PrintCtx) : PlayerPred → String
   | .any => "is a player"
@@ -1234,6 +1249,7 @@ private partial def printPlayerPred (ctx : PrintCtx) : PlayerPred → String
     | _ =>
       let noun := printObjectFilter { ctx with plural := true, capitalize := false } f
       s!"controls {printValueExpr { ctx with capitalize := false } minC} or more {noun}"
+  | .isSeat _ => "is that player"
 
 private partial def printPlayerExpr (ctx : PrintCtx) : PlayerExpr → String
   | .you => "you"
@@ -1287,18 +1303,29 @@ private partial def printZoneSetSuffix (ctx : PrintCtx) (zs : ZoneSetSpec) : Opt
 
 private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
     (zones : ZoneSetSpec) : String := Id.run do
-  let atoms : List ObjectPred :=
+  let rawAtoms : List ObjectPred :=
     match pred with
     | .all ps => ps.toList
     | single => [single]
+  let worthyAtoms : List ObjectPred :=
+    [.hasSupertype .legendary,
+     .not (.hasSubtype (.literal .villain)),
+     .any #[.hasColor (.literal .red), .hasColor (.literal .white)],
+     .hasType .creature]
+  let isWorthy := worthyAtoms.all (fun w => rawAtoms.contains w)
+  let atoms : List ObjectPred :=
+    if isWorthy then rawAtoms.filter (fun a => !worthyAtoms.contains a)
+    else rawAtoms
   let isBf := zones.zones == #[.battlefield]
   let isStack := zones.zones == #[.stack]
   let hasCard := atoms.any (· == .isKind .card)
   let hasPermCard := atoms.any (· == .isKind .permanentCard)
   let hasSpell := atoms.any (· == .isKind .spell)
-  let typeIsHead := !hasCard && !hasPermCard && !hasSpell && isBf
+  let hasToken := atoms.any (· == .isToken true)
+  let typeIsHead := !hasCard && !hasPermCard && !hasSpell && !hasToken && isBf
   let mut preMods : List String := []
   let mut colorMods : List String := []
+  let mut nonTypeMods : List String := []
   let mut superMods : List String := []
   let mut subtypeMods : List String := []
   let mut typeWords : List String := []
@@ -1306,6 +1333,9 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
   let mut withClauses : List String := []
   let mut withoutClauses : List String := []
   let mut thatClauses : List String := []
+  if isWorthy then
+    preMods := preMods ++ ["worthy"]
+    typeWords := typeWords ++ [if ctx.plural && typeIsHead then "creatures" else "creature"]
   for a in atoms do
     match a with
     | .otherThan .this =>
@@ -1318,14 +1348,14 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
     | .combatRole .blocking => preMods := preMods ++ ["blocking"]
     | .combatRole .blocked => preMods := preMods ++ ["blocked"]
     | .combatRole .unblocked => preMods := preMods ++ ["unblocked"]
-    | .combatRole .attackingAlone => thatClauses := thatClauses ++ ["attacking alone"]
+    | .combatRole .attackingAlone => thatClauses := thatClauses ++ ["that's attacking alone"]
     | .combatRole (.attackingPlayer who) =>
       thatClauses := thatClauses ++ [s!"attacking {printPlayerExpr { ctx with capitalize := false } who}"]
     | .combatRole (.blockingObject o) =>
       thatClauses := thatClauses ++ [s!"blocking {printObjectExpr { ctx with capitalize := false } o}"]
     | .isFaceDown true => preMods := preMods ++ ["face-down"]
     | .isFaceDown false => preMods := preMods ++ ["face-up"]
-    | .isToken true => preMods := preMods ++ ["token"]
+    | .isToken true => pure ()
     | .isToken false => preMods := preMods ++ ["nontoken"]
     | .isCommander => preMods := preMods ++ ["commander"]
     | .isCopy true => thatClauses := thatClauses ++ ["that's a copy"]
@@ -1348,11 +1378,22 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
     | .not (.hasSubtype (.literal s)) => subtypeMods := subtypeMods ++ [s!"non-{s.englishName}"]
     | .hasType t =>
       typeWords := typeWords ++ [if ctx.plural && typeIsHead then t.pluralName else t.oracleWord]
-    | .not (.hasType t) => preMods := preMods ++ [s!"non{t.oracleWord}"]
+    | .not (.hasType t) => nonTypeMods := nonTypeMods ++ [s!"non{t.oracleWord}"]
     | .isKind _ => pure ()
     | .any ps =>
       if a == ObjectPred.historic then
         superMods := superMods ++ ["historic"]
+      else if ps == #[.combatRole .attacking, .combatRole .blocking] then
+        preMods := preMods ++ ["attacking or blocking"]
+      else if ps.size == 2 &&
+          (match ps[0]!, ps[1]! with
+           | .stat .power op1 rhs1, .stat .toughness op2 rhs2 => op1 == op2 && rhs1 == rhs2
+           | _, _ => false) then
+        match ps[0]! with
+        | .stat .power op rhs =>
+          withClauses := withClauses ++
+            [s!"power or toughness {renderCmpBound op (printValueExpr { ctx with capitalize := false } rhs)}"]
+        | _ => pure ()
       else if ps.all (fun | .hasType _ => true | _ => false) then
         let ws := ps.toList.filterMap (fun
           | .hasType t => some (if ctx.plural && typeIsHead then t.pluralName else t.oracleWord)
@@ -1369,8 +1410,23 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
           | _ => none)
         subtypeMods := subtypeMods ++ [orJoin ss]
       else
-        thatClauses := thatClauses ++
-          [String.intercalate " or " (ps.toList.map (printObjectPredParts ctx · zones))]
+        let mixedWord? : ObjectPred → Option String
+          | .hasType t => some (if ctx.plural && typeIsHead then t.pluralName else t.oracleWord)
+          | .hasSubtype (.literal s) => some (if ctx.plural && typeIsHead then s.pluralName else s.englishName)
+          | .hasSupertype s => some s.oracleWord
+          | .all #[.not (.hasType neg), .hasType t]
+          | .all #[.hasType t, .not (.hasType neg)] =>
+            some s!"non{neg.oracleWord} {if ctx.plural && typeIsHead then t.pluralName else t.oracleWord}"
+          | .all #[.not (.hasSubtype (.literal s)), .hasType t]
+          | .all #[.hasType t, .not (.hasSubtype (.literal s))] =>
+            some s!"non-{s.englishName} {if ctx.plural && typeIsHead then t.pluralName else t.oracleWord}"
+          | _ => none
+        let mixedWords := ps.toList.filterMap mixedWord?
+        if mixedWords.length == ps.size && !mixedWords.isEmpty then
+          typeWords := typeWords ++ [orJoin mixedWords]
+        else
+          thatClauses := thatClauses ++
+            [String.intercalate " or " (ps.toList.map (printObjectPredParts ctx · zones))]
     | .controlledBy { relation := .you, pred := .any } =>
       ctrlSuffix := ctrlSuffix ++ ["you control"]
     | .controlledBy { relation := .opponent, pred := .any } =>
@@ -1457,6 +1513,8 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
       typeWords ++ [if ctx.plural then "permanent cards" else "permanent card"]
     else if hasCard then
       typeWords ++ [if ctx.plural then "cards" else "card"]
+    else if hasToken then
+      typeWords ++ [if ctx.plural then "tokens" else "token"]
     else if !typeWords.isEmpty then
       if isStack then typeWords ++ [if ctx.plural then "spells" else "spell"]
       else if !isBf then typeWords ++ [if ctx.plural then "cards" else "card"]
@@ -1482,7 +1540,7 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
     if withoutClauses.isEmpty then []
     else ["without " ++ String.intercalate " and " withoutClauses]
   let parts :=
-    preMods ++ colorMods ++ superMods ++ subtypeMods ++ headNoun ++
+    preMods ++ colorMods ++ nonTypeMods ++ superMods ++ subtypeMods ++ headNoun ++
       ctrlSuffix ++ zoneSuffix ++ withSuffix ++ withoutSuffix ++ thatClauses
   return String.intercalate " " (parts.filter (!·.isEmpty))
 

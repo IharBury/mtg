@@ -51,7 +51,7 @@ def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
       { targeting := .of .opponent
         resolution := .targetPlayerLoseLife 2
         phrase := "Target opponent loses 2 life" },
-      { targeting := .of (.filtered { noun := "target token", tokenOnly := true })
+      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
         resolution := .onPermanent .destroy
         phrase := "Destroy target token" },
       { resolution := .sacrifice .eachPlayersCreature
@@ -86,15 +86,11 @@ def hawkeyeModeEffects : Array Effect :=
 /-- Hawkeye's Trick Arrows with the chosen modes, in printed order. -/
 def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
   let sorted := modes.qsort (· < ·)
-  let kinds := sorted.filterMap (fun m =>
-    if m == 0 then some EffectTargetKind.creature
-    else if m == 1 then some EffectTargetKind.player
-    else none)
-  let targeting : EffectTargeting :=
-    match kinds.toList with
-    | [k] => .of k
-    | [a, b] => .of (.pair a b)
-    | _ => .of .none
+  let spec := sorted.foldl (fun acc m =>
+    if m == 0 then acc.append TargetSpec.creature
+    else if m == 1 then acc.append TargetSpec.player
+    else acc) TargetSpec.none
+  let targeting : EffectTargeting := .of spec
   let names := sorted.toList.map (fun m =>
     if m == 0 then "Net — Target creature can't block this turn"
     else if m == 1 then "Explosive — Hawkeye deals 2 damage to target player"
@@ -105,12 +101,13 @@ def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
 /-- Whether `p` may choose this mode of a triggered ability (CR 603.3c / 700.2b). -/
 def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
   let e := g.expandEachOpponentEffect p e (some obj.id)
+  let spec := e.effectiveTargetSpec
   let divOk :=
     e.dividedDamage.all (fun (n, _) =>
-      e.allowsZeroTargets ||
-        let legal := g.legalTargetsForKind p e.targetKind obj.sourceId
+      e.allowsZeroTargets || spec.allowsZero ||
+        let legal := g.legalTargetsForSpec p spec obj.sourceId
         !legal.isEmpty && e.targetCount ≤ n)
-  divOk && (!e.requiresTarget || e.allowsZeroTargets ||
+  divOk && (!e.requiresTarget || e.allowsZeroTargets || spec.allowsZero ||
     g.effectHasEnoughTargets p e obj.sourceId)
 
 /-- Ask for the modes of a modal triggered ability just put on the stack. -/
@@ -147,13 +144,10 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     -- optional instance per opponent (CR 601.2c).
     let abilityEffect :=
       abilityEffectOverride.orElse fun _ =>
-        match ab.effect.targetKind with
-        | .filtered f =>
-          if f.controller == .eachOpponent then
-            let fs := (g.livingOpponents controller).map (fun pl =>
-              { f with controller := .specific pl.id.idx })
-            some { ab.effect with
-              targeting := .of (.multi fs ((List.range fs.size).toArray)) }
+        match ab.effect.targeting.spec.slots.toList with
+        | [slot] =>
+          if slot.forEach? == some PlayerFilter.opponent then
+            some (g.expandEachOpponentEffect controller ab.effect)
           else none
         | _ => none
     let srcIdOpt : Option ObjectId :=
@@ -276,17 +270,13 @@ def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAb
   let srcIdOpt :=
     if sourceId == noSourceSentinelId then none
     else some sourceId
-  -- A single-instance shape announcing several targets (`kind.spec.slots.isEmpty`) needs
-  -- `targetCount` distinct legal targets (CR 115.3 / 603.3c–d); multi-slot shapes need a
-  -- valid cross-slot assignment, checked in `legalTargetsForKind`.
-  let lacking (kind : EffectTargetKind) (count : Nat) : Bool :=
-    let legal := g.legalTargetsForKind controller kind srcIdOpt
-    if kind.spec.slots.isEmpty then legal.size < max 1 count else legal.isEmpty
   match abilityEffectOverride with
   | some eff =>
-    eff.requiresTarget && !eff.allowsZeroTargets && lacking eff.targetKind eff.targetCount
+    eff.requiresTarget && !eff.allowsZeroTargets && !eff.effectiveTargetSpec.allowsZero &&
+      !g.effectHasEnoughTargets controller eff srcIdOpt
   | none =>
-    ab.requiresTarget && !ab.allowsZeroTargets && lacking ab.targetKind ab.targeting.targetCount
+    ab.requiresTarget && !ab.allowsZeroTargets && !ab.targetSpec.allowsZero &&
+      (g.legalTargetsForSpec controller ab.targetSpec srcIdOpt).isEmpty
 
 /-- Put `ab` on the stack, or log that it is removed for lack of a target (CR 603.3d). -/
 def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)

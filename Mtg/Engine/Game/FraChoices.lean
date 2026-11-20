@@ -136,8 +136,8 @@ private def advanceCopyRetarget (g : Game) (p : PlayerId) (copies : Array Object
         | some e, some obj =>
           if staged.isEmpty || staged == e.targets then g
           else
-            let kind := (g.targetingOf obj).kind
-            if g.validTargetArrayForEntry e obj kind staged (allowUnchangedIllegal := true) then
+            let spec := (g.targetingOf obj).spec
+            if g.validTargetArrayForEntry e obj spec staged (allowUnchangedIllegal := true) then
               g.setStackEntryTargets c staged (dividedDamage := e.dividedDamage)
             else
               g.logMsg "Those targets stay unchanged"
@@ -167,8 +167,8 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
         match g.findObject? id with
         | some o => if o.isOnBattlefield then Target.permanent id else Target.card id
         | none => Target.permanent id
-      let kind := (g.targetingOf obj).kind
-      if !g.validTargetArrayForEntry e obj kind cand (allowUnchangedIllegal := true) then
+      let spec := (g.targetingOf obj).spec
+      if !g.validTargetArrayForEntry e obj spec cand (allowUnchangedIllegal := true) then
         throw "Illegal target (CR 601.2c)"
       let g := g.setStackEntryTargets c cand (dividedDamage := e.dividedDamage)
       let g := g.logMsg s!"{(g.player p).name} chooses new targets for the copy"
@@ -182,18 +182,18 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
       let some e := g.stackEntry? c | throw "The copy left the stack"
       if slotIdx >= e.targets.size then
         return advanceCopyRetarget g p copies slotIdx e.targets.size baseStaged
-      let kind := (g.targetingOf obj).kind
+      let spec := (g.targetingOf obj).spec
       let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
-      let totalSlots := e.targets.size + e.skippedOptionalSlots.size
-      let slotIndices : Array Nat :=
+      let totalPos := e.targets.size + e.skippedOptionalSlots.size
+      let posIndices : Array Nat :=
         if e.skippedOptionalSlots.isEmpty then (List.range e.targets.size).toArray
-        else ((List.range totalSlots).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
-      let actualSlot := slotIndices[slotIdx]?.getD slotIdx
-      if !(g.legalTargetsForAtomicKind e.controller (kind.slotKind actualSlot) selfSource).contains t then
+        else ((List.range totalPos).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
+      let actualPos := posIndices[slotIdx]?.getD slotIdx
+      if !(g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource).contains t then
         throw "Illegal target (CR 601.2c)"
       let nextStaged := baseStaged.set! slotIdx t
       if slotIdx + 1 >= e.targets.size &&
-          !g.validTargetArrayForEntry e obj kind nextStaged (allowUnchangedIllegal := true) then
+          !g.validTargetArrayForEntry e obj spec nextStaged (allowUnchangedIllegal := true) then
         throw "Illegal target (CR 601.2c)"
       let g := g.logMsg s!"{(g.player p).name} chooses {g.targetLogName t} as the copy's new target"
       return advanceCopyRetarget g p copies slotIdx e.targets.size nextStaged
@@ -203,18 +203,18 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
     let some e := g.stackEntry? c | throw "The copy left the stack"
     if slotIdx >= e.targets.size then
       return advanceCopyRetarget g p copies slotIdx e.targets.size baseStaged
-    let kind := (g.targetingOf obj).kind
+    let spec := (g.targetingOf obj).spec
     let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
-    let totalSlots := e.targets.size + e.skippedOptionalSlots.size
-    let slotIndices : Array Nat :=
+    let totalPos := e.targets.size + e.skippedOptionalSlots.size
+    let posIndices : Array Nat :=
       if e.skippedOptionalSlots.isEmpty then (List.range e.targets.size).toArray
-      else ((List.range totalSlots).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
-    let actualSlot := slotIndices[slotIdx]?.getD slotIdx
-    if !(g.legalTargetsForAtomicKind e.controller (kind.slotKind actualSlot) selfSource).contains t then
+      else ((List.range totalPos).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
+    let actualPos := posIndices[slotIdx]?.getD slotIdx
+    if !(g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource).contains t then
       throw "Illegal target (CR 601.2c)"
     let nextStaged := baseStaged.set! slotIdx t
     if slotIdx + 1 >= e.targets.size &&
-        !g.validTargetArrayForEntry e obj kind nextStaged (allowUnchangedIllegal := true) then
+        !g.validTargetArrayForEntry e obj spec nextStaged (allowUnchangedIllegal := true) then
       throw "Illegal target (CR 601.2c)"
     let g := g.logMsg s!"{(g.player p).name} chooses {g.targetLogName t} as the copy's new target"
     return advanceCopyRetarget g p copies slotIdx e.targets.size nextStaged
@@ -1650,7 +1650,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .sheHulkMayDamage amount target sourceId, .accept =>
     let startIdx := g.events.size
     let g :=
-      g.withLegalKindTarget p .playerOrCreature #[target]
+      g.withLegalSpecTarget p .anyTarget #[target]
         (fun g tgt => g.dealDamageToTarget tgt amount (source := sourceId.bind g.damageSourceById?))
         sourceId none
     if let .chooseReplacement .. := g.pending then
@@ -2142,7 +2142,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
       !chosen.contains m &&
         match obj?, hawkeyeModeEffects[m]? with
         | some obj, some e => g.triggerModeChoosable p obj e
-        | _, _ => m != 0 || !(g.legalTargetsForKind p .creature none).isEmpty
+        | _, _ => m != 0 || !(g.legalTargetsForSpec p .creature none).isEmpty
     match [1, 0, 2].find? ok with
     | some m => .chooseMode m
     | none => .decline

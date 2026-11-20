@@ -479,10 +479,8 @@ def printedActivated (ab : ActivatedAbility) : String :=
     let pay := if ab.cost.payLife != 0 then s!", Pay {ab.cost.payLife} life" else ""
     let subtype? :=
       ab.equipSubtype.orElse fun _ =>
-        match ab.effect.targetKind with
-        | .creatureYouControlSubtype t => some t
-        | _ => none
-    let worthy := ab.equipWorthy || ab.effect.targetKind == .worthyCreatureYouControl
+        ab.effect.targetSpec.creatureYouControlSubtype?
+    let worthy := ab.equipWorthy || ab.effect.targetSpec.isWorthyCreatureYouControl
     match subtype? with
     | some t => s!"Equip {t} {ab.cost.mana}{pay}"
     | none =>

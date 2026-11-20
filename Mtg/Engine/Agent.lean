@@ -791,22 +791,27 @@ where
     match g.objectAwaitingTargets with
     | none => some .pass
     | some spell =>
-      let kind := (g.targetingOf spell).kind
+      let spec := (g.targetingOf spell).spec
+      let curPos := g.currentTargetSlot spell
       let reqCount : Nat :=
-        if kind.spec.slots.isEmpty then (g.announcedTargetBounds spell).1
+        if !spec.isMultiSlot then (g.announcedTargetBounds spell).1
         else
-          let curSlot := g.currentTargetSlot spell
-          let (grpStart, grpEnd) := kind.instanceGroupBounds curSlot
-          ((List.range grpEnd).drop grpStart).filter (!kind.isOptionalSlot ·) |>.length
+          let (grpStart, grpEnd) := spec.instanceGroupBounds curPos
+          ((List.range grpEnd).drop grpStart).filter (!spec.isOptionalPos ·) |>.length
       let legal := g.legalProposedTargets p spell
       if reqCount > 1 && legal.size >= reqCount then
-        some (.targets (legal.extract 0 reqCount))
+        let selfSource := spell.sourceId.orElse (fun _ => if spell.zone == .stack then some spell.id else none)
+        let gc? := (spec.slotAtPos curPos).groupConstraint?
+        let picked :=
+          (g.findValidTargetsForCount p selfSource legal reqCount gc?).getD (legal.extract 0 reqCount)
+        some (.targets picked)
       else
         match g.defaultTarget p spell with
         | some t => some (.target t)
         | none =>
           if g.canSkipCurrentOptionalSlot spell then some .decline
           else if g.canFinishOptionalTargets spell then some .decline
+          else if spec.allowsZero then some .decline
           else
             match spell.triggeredAbility with
             | some ab =>
@@ -1121,8 +1126,8 @@ where
       (g.baseCard o).adventure.any (fun a => a.hasCastKind k)
     let modeKind (o : GameObject) (k : SpellCastKind) : Bool :=
       (g.baseCard o).hasModeCastKind k
-    let hasLegalKind (k : EffectTargetKind) : Bool :=
-      !(g.legalTargetsForKind p k).isEmpty
+    let hasLegalSpec (ts : TargetSpec) : Bool :=
+      !(g.legalTargetsForSpec p ts).isEmpty
     let adventureRemoval :=
       if oppHasCreature then
         adventurePlayable.find? (fun o =>
@@ -1146,11 +1151,11 @@ where
         | none => true)
     let removal := playable.find? (fun o =>
       (oppHasCreature && (spellKind o .destroyCreature || modeKind o .destroyCreature)) ||
-      (hasLegalKind .creatureWithFlying &&
+      (hasLegalSpec .creatureWithFlying &&
         (spellKind o .destroyFlying || modeKind o .destroyFlying)) ||
-      (hasLegalKind .creature &&
+      (hasLegalSpec .creature &&
         (spellKind o .destroyCreature || modeKind o .destroyCreature)) ||
-      (hasLegalKind .artifactOrLand && spellKind o .destroyArtifactOrLand))
+      (hasLegalSpec .artifactOrLand && spellKind o .destroyArtifactOrLand))
     let massPump := playable.find? (fun o =>
       spellKind o .massPump || modeKind o .massPump)
     let creature := (playable.filter g.isCreature ++ morphOnlyPlayable)[0]?
@@ -1162,7 +1167,7 @@ where
         playable.find? (fun o =>
           spellKind o .pump ||
             (g.baseCard o).spellModes.any (fun e =>
-              e.castKind == .pump && !(g.legalTargetsForKind p e.targetKind).isEmpty))
+              e.castKind == .pump && !(g.legalTargetsForSpec p e.effectiveTargetSpec).isEmpty))
       else none
     let aura :=
       if ownCreature.isSome then
@@ -1171,8 +1176,8 @@ where
     let extraLandAdventure :=
       adventurePlayable.find? (fun o => adventureKind o .extraLand)
     let isSpellCounter (o : GameObject) : Bool :=
-      (g.baseCard o).spellEffect.any (fun e => e.targetKind.targetsStackSpell) ||
-        (g.baseCard o).spellModes.any (fun e => e.targetKind.targetsStackSpell)
+      (g.baseCard o).spellEffect.any (fun e => e.targetSpec.targetsStackSpell) ||
+        (g.baseCard o).spellModes.any (fun e => e.targetSpec.targetsStackSpell)
     let hasOppSpellTarget (o : GameObject) : Bool :=
       match (g.baseCard o).spellEffect with
       | some e => g.effectHasOppSpellTarget p e

@@ -1,16 +1,20 @@
 import Mtg.Engine.Card.Expr
 import Mtg.Engine.Card.ManaSpec
 import Mtg.Engine.Card.OracleNorm
+import Mtg.Engine.Card.Targeting
 
 /-!
-# Stage-4 Compositional Expression Sub-Grammars (CR 107, 109.3, 113, 603.4, 611.2)
+# Stage-4 Compositional Expression & Targeting Sub-Grammars (CR 107, 109.3, 113, 115, 603.4, 611.2)
 
-Compositional Oracle parsers for the Layer-1 expression algebra in
-`Mtg.Engine.Card.Expr`:
+Compositional Oracle parsers for the Layer-1 expression algebra (`Mtg.Engine.Card.Expr`)
+and Layer-2 unified targeting specifications (`Mtg.Engine.Card.Targeting`):
 
 - `parseNounPhrase` — quantifiers, `target`, status/color/supertype/subtype/type
   modifiers, controller/zone suffixes, `with`/`without` clauses, and `that`
   history/relation clauses into `(NounQuantifier, isTarget, ObjectFilter)`.
+- `parseTargetSlot` / `parseTargetSpec` / `parseTargetSpecPrefix` — compositional
+  lowering of object, player, CR 115.4 `"any target"`, stack-ability, multi-domain,
+  and multi-slot target phrases into `TargetSlot` / `TargetSpec`.
 - `parseValueExpr` — constants, `X`, arithmetic combinators, object stats,
   counters, aggregates, Domain/Delirium/subtype counts, devotion/mana symbols,
   and player metrics into `ValueExpr`.
@@ -35,6 +39,7 @@ inductive NounQuantifier where
   | each
   | exact (n : Nat)
   | upTo (n : Nat)
+  | between (lo hi : Nat)
   | anyNumber
 deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -439,7 +444,10 @@ private partial def parseWithClauseAtom? (raw : String) : Option ObjectPred :=
   -- Chosen name ("with the chosen name")
   else if low == "the chosen name" then
     some (.named .chosenOnSource)
-  -- Stat bounds ("power 4 or greater", "mana value 3 or less", "toughness 2", ...)
+  -- Stat bounds ("power or toughness 2 or less", "power 4 or greater", "mana value 3 or less", ...)
+  else if let some rest := dropPrefixCI? s "power or toughness " then
+    (parseCmpBound? rest).map fun (op, v) =>
+      .any #[.stat .power op v, .stat .toughness op v]
   else if let some rest := dropPrefixCI? s "mana value " then
     (parseCmpBound? rest).map fun (op, v) => .stat .manaValue op v
   else if let some rest := dropPrefixCI? s "power " then
@@ -512,6 +520,8 @@ private partial def parseThatClause? (raw : String) : Option ObjectPred :=
     some .enteredThisTurn
   else if low == "attacked this turn" then
     some .attackedThisTurn
+  else if low == "'s attacking alone" || low == "is attacking alone" then
+    some (.combatRole .attackingAlone)
   else if low == "dealt damage this turn" then
     some (.dealtDamageThisTurn false none)
   else if low == "dealt combat damage this turn" then
@@ -531,11 +541,18 @@ private partial def parseThatClause? (raw : String) : Option ObjectPred :=
         (parseNounPhrase recCore).map fun np => .dealtDamageThisTurn false (some (.object np.filter))
     else none
   else if low == "'s a copy" || low == "is a copy" || low == "are copies" then some (.isCopy true)
-  else if low == "isn't a copy" || low == "is not a copy" || low == "aren't copies" then some (.isCopy false)
+  else if low == "isn't a copy" || low == "is not a copy" || low == "aren't copies" || low == "isnt a copy" then some (.isCopy false)
   else if low == "'s a ring-bearer" || low == "is a ring-bearer" then
     some (.hasDesignation .ringBearer)
   else if low == "'s phased out" || low == "is phased out" || low == "are phased out" then
     some (.phasedOut true)
+  else if let some colStr := (dropPrefixCI? s "'s ").orElse (fun _ => dropPrefixCI? s "is ") then
+    -- e.g. `"that's green or blue"` / `"that's red or white"`
+    let parts := colStr.splitOn " or " |>.map cleanClause |>.filter (!·.isEmpty)
+    let cols := parts.filterMap parseColorWord?
+    if !cols.isEmpty && cols.length == parts.length then
+      some (ObjectPred.orAny (cols.toArray.map fun c => .hasColor (.literal c)))
+    else none
   else if let some objStr := (dropPrefixCI? s "shares a color with ").orElse (fun _ => dropPrefixCI? s "share a color with ") then
     (parseObjectExpr? objStr).map (.shares .color)
   else if let some objStr := (dropPrefixCI? s "shares a card type with ").orElse (fun _ => dropPrefixCI? s "share a card type with ") then
@@ -550,7 +567,7 @@ private partial def parseThatClause? (raw : String) : Option ObjectPred :=
     | none => (parseObjectExpr? tgtStr).map fun o => .targets (.object o)
   else if let some hostStr := (dropPrefixCI? s "is attached to ").orElse (fun _ => dropPrefixCI? s "are attached to ") then
     (parseObjectExpr? hostStr).map ObjectPred.attachedTo
-  else if let some innerStr := (dropPrefixCI? s "isn't ").orElse (fun _ => dropPrefixCI? s "is not ") then
+  else if let some innerStr := (dropPrefixCI? s "isn't ").orElse (fun _ => (dropPrefixCI? s "is not ").orElse (fun _ => dropPrefixCI? s "isnt ")) then
     (parseNounPhrase innerStr).map fun np => .not np.filter.pred
   else none
 
@@ -581,167 +598,177 @@ private partial def parseObjectExpr? (raw : String) : Option ObjectExpr :=
     (parseNounPhrase s).map fun np => np.filter.toExpr
 
 /-- Stage-4 compositional Oracle noun-phrase parser:
-`[quantifier] [target] [modifiers] <type/subtype/noun> [controller] [zone] [with/without ...] [that ...]`. -/
+`[quantifier] [another/other] [target] [modifiers] <type/subtype/noun> [controller] [zone] [with/without ...] [that ...]`. -/
 partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run do
   let mut s := cleanClause raw
   if s.isEmpty then return none
 
-  -- 1. Extract trailing `that ...` / `named ...` / `of the chosen ...` / `attached to ...` /
-  --    `attacking ...` / `blocking ...` clauses from right to left.
+  -- 1. Extract trailing clauses from right to left in any valid MTG Oracle order
+  --    (`that ...`, `without ...`, `with ...`, zone suffixes `in/from ...`,
+  --    and controller/owner suffixes `you control`, `an opponent controls`, etc.).
   let mut extraPreds : Array ObjectPred := #[]
+  let mut ctrlPreds : Array ObjectPred := #[]
+  let mut zones : ZoneSetSpec := .battlefield
+  let mut explicitZone := false
   let mut progress := true
   while progress do
     progress := false
+    -- `that's` / `thats` / `that` clauses
     if let some (lhs, rhs) := splitLastCI? s " that's " then
       if let some p := parseThatClause? s!"'s {rhs}" then
-        extraPreds := #[p] ++ extraPreds
-        s := lhs
-        progress := true
+        extraPreds := #[p] ++ extraPreds; s := lhs; progress := true
+    if !progress then
+      if let some (lhs, rhs) := splitLastCI? s " thats " then
+        if let some p := parseThatClause? s!"'s {rhs}" then
+          extraPreds := #[p] ++ extraPreds; s := lhs; progress := true
     if !progress then
       if let some (lhs, rhs) := splitLastCI? s " that " then
         if let some p := parseThatClause? rhs then
-          extraPreds := #[p] ++ extraPreds
-          s := lhs
-          progress := true
+          extraPreds := #[p] ++ extraPreds; s := lhs; progress := true
     if !progress then
       if let some (lhs, rhs) := splitLastCI? s " attached to " then
         if let some host := parseObjectExpr? rhs then
-          extraPreds := #[.attachedTo host] ++ extraPreds
-          s := lhs
-          progress := true
+          extraPreds := #[.attachedTo host] ++ extraPreds; s := lhs; progress := true
     if !progress then
       if let some (lhs, rhs) := splitLastCI? s " named " then
         if !rhs.isEmpty then
-          extraPreds := #[.named (.literal rhs)] ++ extraPreds
-          s := lhs
-          progress := true
+          extraPreds := #[.named (.literal rhs)] ++ extraPreds; s := lhs; progress := true
     if !progress then
       if let some pre := dropSuffixCI? s " of the chosen type" then
-        extraPreds := #[.hasSubtype .chosenOnSource] ++ extraPreds
-        s := pre
-        progress := true
+        extraPreds := #[.hasSubtype .chosenOnSource] ++ extraPreds; s := pre; progress := true
     if !progress then
       if let some pre := dropSuffixCI? s " of the chosen color" then
-        extraPreds := #[.hasColor .chosenOnSource] ++ extraPreds
-        s := pre
-        progress := true
+        extraPreds := #[.hasColor .chosenOnSource] ++ extraPreds; s := pre; progress := true
     if !progress then
-      if let some pre := dropSuffixCI? s " in your commander's color identity" then
-        extraPreds := #[.hasColor .commanderIdentity] ++ extraPreds
-        s := pre
-        progress := true
+      if let some pre := (dropSuffixCI? s " in your commander's color identity").orElse
+          (fun _ => dropSuffixCI? s " in your commanders color identity") then
+        extraPreds := #[.hasColor .commanderIdentity] ++ extraPreds; s := pre; progress := true
     if !progress then
       if let some pre := dropSuffixCI? s " attacking alone" then
-        extraPreds := #[.combatRole .attackingAlone] ++ extraPreds
-        s := pre
-        progress := true
+        extraPreds := #[.combatRole .attackingAlone] ++ extraPreds; s := pre; progress := true
     if !progress then
       if let some (lhs, rhs) := splitLastCI? s " attacking " then
-        if let some who := parsePlayerExpr? rhs then
-          extraPreds := #[.combatRole (.attackingPlayer who)] ++ extraPreds
-          s := lhs
-          progress := true
+        let ll := lower lhs
+        if !ll.endsWith " or" && !ll.endsWith "target" && ll != "a" && ll != "an" && ll != "each" then
+          if let some who := parsePlayerExpr? rhs then
+            extraPreds := #[.combatRole (.attackingPlayer who)] ++ extraPreds; s := lhs; progress := true
     if !progress then
       if let some (lhs, rhs) := splitLastCI? s " blocking " then
-        if let some atk := parseObjectExpr? rhs then
-          extraPreds := #[.combatRole (.blockingObject atk)] ++ extraPreds
-          s := lhs
-          progress := true
+        let ll := lower lhs
+        if !ll.endsWith " or" && !ll.endsWith "target" && ll != "a" && ll != "an" && ll != "each" then
+          if let some atk := parseObjectExpr? rhs then
+            extraPreds := #[.combatRole (.blockingObject atk)] ++ extraPreds; s := lhs; progress := true
+    -- `without ...` and `with ...` clauses
+    if !progress then
+      if let some (lhs, rhs) := splitLastCI? s " without " then
+        let items := rhs.splitOn " and " |>.map cleanClause |>.filter (!·.isEmpty)
+        let mut parsed : Array ObjectPred := #[]
+        let mut ok := !items.isEmpty
+        for item in items do
+          match parseWithClauseAtom? item with
+          | some p => parsed := parsed.push (.not p)
+          | none => ok := false
+        if ok then
+          extraPreds := parsed ++ extraPreds; s := lhs; progress := true
+    if !progress then
+      if let some (lhs, rhs) := splitLastCI? s " with " then
+        match parseWithClauseAtom? rhs with
+        | some p =>
+          extraPreds := #[p] ++ extraPreds; s := lhs; progress := true
+        | none =>
+          let items := rhs.splitOn " and " |>.map cleanClause |>.filter (!·.isEmpty)
+          let mut parsed : Array ObjectPred := #[]
+          let mut ok := !items.isEmpty
+          for item in items do
+            match parseWithClauseAtom? item with
+            | some p => parsed := parsed.push p
+            | none => ok := false
+          if ok then
+            extraPreds := parsed ++ extraPreds; s := lhs; progress := true
+    -- Zone suffixes (`on the battlefield`, `in/from ... graveyard`, `on the stack`, etc.)
+    if !progress && !explicitZone then
+      if let some pre := dropSuffixCI? s " on the battlefield" then
+        zones := .battlefield; explicitZone := true; s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " on the stack" then
+        zones := .stack; explicitZone := true; s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " in exile" then
+        zones := .exile; explicitZone := true; s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " in the command zone" then
+        zones := .command; explicitZone := true; s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " in your hand or graveyard").orElse
+          (fun _ => dropSuffixCI? s " from your hand or graveyard") then
+        zones := { zones := #[.hand, .graveyard], owner := .matching .you }
+        explicitZone := true; s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " in your graveyard").orElse
+          (fun _ => dropSuffixCI? s " from your graveyard") then
+        zones := .yourGraveyard; explicitZone := true; s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " in an opponent's graveyard").orElse
+          (fun _ => (dropSuffixCI? s " from an opponent's graveyard").orElse
+            (fun _ => (dropSuffixCI? s " in an opponents graveyard").orElse
+              (fun _ => dropSuffixCI? s " from an opponents graveyard"))) then
+        zones := .opponentGraveyard; explicitZone := true; s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " in opponents' graveyards").orElse
+          (fun _ => (dropSuffixCI? s " from opponents' graveyards").orElse
+            (fun _ => (dropSuffixCI? s " in opponents graveyards").orElse
+              (fun _ => dropSuffixCI? s " from opponents graveyards"))) then
+        zones := .opponentGraveyard; explicitZone := true; s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " in a graveyard").orElse
+          (fun _ => (dropSuffixCI? s " from a graveyard").orElse
+            (fun _ => (dropSuffixCI? s " in any graveyard").orElse
+              (fun _ => (dropSuffixCI? s " from any graveyard").orElse
+                (fun _ => (dropSuffixCI? s " in graveyards").orElse
+                  (fun _ => dropSuffixCI? s " from graveyards"))))) then
+        zones := .anyGraveyard; explicitZone := true; s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " in your hand").orElse
+          (fun _ => dropSuffixCI? s " from your hand") then
+        zones := .yourHand; explicitZone := true; s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " in an opponent's hand").orElse
+          (fun _ => dropSuffixCI? s " from an opponent's hand") then
+        zones := { zones := #[.hand], owner := .matching .opponent }
+        explicitZone := true; s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " in your library").orElse
+          (fun _ => dropSuffixCI? s " from your library") then
+        zones := .yourLibrary; explicitZone := true; s := pre; progress := true
+      else if let some (lhs, rhs) := (splitLastCI? s " in ").orElse (fun _ => splitLastCI? s " from ") then
+        if let some (ownerStr, zoneStr) := splitFirstCI? rhs "'s " then
+          if let some zk := parseZoneKind? zoneStr then
+            if let some pf := parsePlayerFilter? ownerStr then
+              zones := { zones := #[zk], owner := .matching pf }
+              explicitZone := true; s := lhs; progress := true
+            else if let some pe := parsePlayerExpr? ownerStr then
+              zones := { zones := #[zk], owner := .ofPlayer pe }
+              explicitZone := true; s := lhs; progress := true
+    -- Controller / owner suffixes (`you control`, `an opponent controls`, `defending player controls`, ...)
+    if !progress && ctrlPreds.isEmpty then
+      if let some pre := dropSuffixCI? s " you own and control" then
+        ctrlPreds := ctrlPreds.push (.ownedBy .you) |>.push (.controlledBy .you); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " you control" then
+        ctrlPreds := ctrlPreds.push (.controlledBy .you); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " an opponent controls" then
+        ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " opponents control" then
+        ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " your opponents control" then
+        ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " defending player controls").orElse
+          (fun _ => dropSuffixCI? s " the defending player controls") then
+        ctrlPreds := ctrlPreds.push (.controlledBy .defendingPlayer); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " that player controls" then
+        ctrlPreds := ctrlPreds.push (.controlledBy (.seat 0)); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " a teammate controls" then
+        ctrlPreds := ctrlPreds.push (.controlledBy .teammate); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " a player controls" then
+        ctrlPreds := ctrlPreds.push (.controlledBy .any); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " you own" then
+        ctrlPreds := ctrlPreds.push (.ownedBy .you); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " an opponent owns" then
+        ctrlPreds := ctrlPreds.push (.ownedBy .opponent); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " opponents own" then
+        ctrlPreds := ctrlPreds.push (.ownedBy .opponent); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " that player owns" then
+        ctrlPreds := ctrlPreds.push (.ownedBy (.seat 0)); s := pre; progress := true
 
-  -- 2. Extract trailing `without ...` and `with ...` clauses.
-  if let some (lhs, rhs) := splitLastCI? s " without " then
-    let items := rhs.splitOn " and " |>.map cleanClause |>.filter (!·.isEmpty)
-    let mut parsed : Array ObjectPred := #[]
-    let mut ok := !items.isEmpty
-    for item in items do
-      match parseWithClauseAtom? item with
-      | some p => parsed := parsed.push (.not p)
-      | none => ok := false
-    if ok then
-      extraPreds := parsed ++ extraPreds
-      s := lhs
-  if let some (lhs, rhs) := splitLastCI? s " with " then
-    -- Try whole `rhs` first (e.g. "power 4 or greater"), else split on " and ".
-    match parseWithClauseAtom? rhs with
-    | some p =>
-      extraPreds := #[p] ++ extraPreds
-      s := lhs
-    | none =>
-      let items := rhs.splitOn " and " |>.map cleanClause |>.filter (!·.isEmpty)
-      let mut parsed : Array ObjectPred := #[]
-      let mut ok := !items.isEmpty
-      for item in items do
-        match parseWithClauseAtom? item with
-        | some p => parsed := parsed.push p
-        | none => ok := false
-      if ok then
-        extraPreds := parsed ++ extraPreds
-        s := lhs
-
-  -- 3. Extract trailing zone suffix (`on the battlefield`, `in your graveyard`, etc.).
-  let mut zones : ZoneSetSpec := .battlefield
-  let mut explicitZone := false
-  if let some pre := dropSuffixCI? s " on the battlefield" then
-    zones := .battlefield; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " on the stack" then
-    zones := .stack; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in exile" then
-    zones := .exile; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in the command zone" then
-    zones := .command; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in your hand or graveyard" then
-    zones := { zones := #[.hand, .graveyard], owner := .matching .you }; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in your graveyard" then
-    zones := .yourGraveyard; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in an opponent's graveyard" then
-    zones := .opponentGraveyard; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in opponents' graveyards" then
-    zones := .opponentGraveyard; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in a graveyard" then
-    zones := .anyGraveyard; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in any graveyard" then
-    zones := .anyGraveyard; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in graveyards" then
-    zones := .anyGraveyard; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in your hand" then
-    zones := .yourHand; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in an opponent's hand" then
-    zones := { zones := #[.hand], owner := .matching .opponent }; explicitZone := true; s := pre
-  else if let some pre := dropSuffixCI? s " in your library" then
-    zones := .yourLibrary; explicitZone := true; s := pre
-  else if let some (lhs, rhs) := splitLastCI? s " in " then
-    -- Generic `"in <player>'s <zone>"`
-    if let some (ownerStr, zoneStr) := splitFirstCI? rhs "'s " then
-      if let some zk := parseZoneKind? zoneStr then
-        if let some pf := parsePlayerFilter? ownerStr then
-          zones := { zones := #[zk], owner := .matching pf }; explicitZone := true; s := lhs
-        else if let some pe := parsePlayerExpr? ownerStr then
-          zones := { zones := #[zk], owner := .ofPlayer pe }; explicitZone := true; s := lhs
-
-  -- 4. Extract trailing controller / owner suffix (`you control`, `an opponent controls`, etc.).
-  let mut ctrlPreds : Array ObjectPred := #[]
-  if let some pre := dropSuffixCI? s " you own and control" then
-    ctrlPreds := ctrlPreds.push (.ownedBy .you) |>.push (.controlledBy .you); s := pre
-  else if let some pre := dropSuffixCI? s " you control" then
-    ctrlPreds := ctrlPreds.push (.controlledBy .you); s := pre
-  else if let some pre := dropSuffixCI? s " an opponent controls" then
-    ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre
-  else if let some pre := dropSuffixCI? s " opponents control" then
-    ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre
-  else if let some pre := dropSuffixCI? s " your opponents control" then
-    ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre
-  else if let some pre := dropSuffixCI? s " a teammate controls" then
-    ctrlPreds := ctrlPreds.push (.controlledBy .teammate); s := pre
-  else if let some pre := dropSuffixCI? s " a player controls" then
-    ctrlPreds := ctrlPreds.push (.controlledBy .any); s := pre
-  else if let some pre := dropSuffixCI? s " you own" then
-    ctrlPreds := ctrlPreds.push (.ownedBy .you); s := pre
-  else if let some pre := dropSuffixCI? s " an opponent owns" then
-    ctrlPreds := ctrlPreds.push (.ownedBy .opponent); s := pre
-  else if let some pre := dropSuffixCI? s " opponents own" then
-    ctrlPreds := ctrlPreds.push (.ownedBy .opponent); s := pre
-
-  -- 5. Parse leading quantifier and optional `target`.
+  -- 2. Parse leading quantifier, optional `another`/`other`, and optional `target`.
   let mut toks := splitWords s
   if toks.isEmpty then return none
   let mut idx : Nat := 0
@@ -754,8 +781,14 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
     match parseNatWord? toks[2]! with
     | some n => quant := .upTo n; hasExplicitQuant := true; idx := 3
     | none => pure ()
-  else if w0 == "one" && toks.size ≥ 3 && lower toks[1]! == "or" && lower toks[2]! == "more" then
+  else if (w0 == "one" || w0 == "1") && toks.size ≥ 3 && lower toks[1]! == "or" && lower toks[2]! == "more" then
     quant := .plural; hasExplicitQuant := true; idx := 3
+  else if toks.size ≥ 3 && (lower toks[1]! == "or" || lower toks[1]! == "to") &&
+      (parseNatWord? toks[0]!).isSome && (parseNatWord? toks[2]!).isSome then
+    let lo := (parseNatWord? toks[0]!).get!
+    let hi := (parseNatWord? toks[2]!).get!
+    if lo ≥ 1 && hi > lo then
+      quant := .between lo hi; hasExplicitQuant := true; idx := 3
   else if w0 == "each" then
     quant := .each; hasExplicitQuant := true; idx := 1
   else if w0 == "all" then
@@ -766,31 +799,88 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
     if n ≥ 1 then
       quant := .exact n; hasExplicitQuant := true; idx := 1
 
+  let mut otherBeforeTarget := false
+  let mut sawPluralHead := false
+  if idx < toks.size && (lower toks[idx]! == "another" || lower toks[idx]! == "other") then
+    if idx + 1 < toks.size && lower toks[idx + 1]! == "target" then
+      otherBeforeTarget := true
+      if lower toks[idx]! == "other" && !hasExplicitQuant then sawPluralHead := true
+      idx := idx + 1
+
   let mut isTarget := false
   if idx < toks.size && lower toks[idx]! == "target" then
     isTarget := true
     idx := idx + 1
 
-  -- 6. Parse modifiers and head noun(s) over `toks[idx..]`.
+  -- 3. Parse modifiers and head noun(s) over `toks[idx..]`.
   let mut preds : Array ObjectPred := #[]
+  if otherBeforeTarget then
+    preds := preds.push (.otherThan .this)
   let mut colorChoices : Array Color := #[]
-  let mut typeChoices : Array CardType := #[]
-  let mut subtypeChoices : Array CardSubtype := #[]
+  let mut headChoices : Array ObjectPred := #[]
   let mut inOrChain := false
-  let mut sawAnyNounOrMod := false
-  let mut sawPluralHead := false
+  let mut sawAnyNounOrMod := otherBeforeTarget
   let mut sawSpellHead := false
   let mut sawCardHead := false
 
   let flushColors (preds : Array ObjectPred) (cs : Array Color) : Array ObjectPred × Array Color :=
     if cs.isEmpty then (preds, cs)
     else (preds.push (ObjectPred.orAny (cs.map fun c => .hasColor (.literal c))), #[])
-  let flushSubtypes (preds : Array ObjectPred) (ss : Array CardSubtype) : Array ObjectPred × Array CardSubtype :=
-    if ss.isEmpty then (preds, ss)
-    else (preds.push (ObjectPred.orAny (ss.map fun s => .hasSubtype (.literal s))), #[])
-  let flushTypes (preds : Array ObjectPred) (ts : Array CardType) : Array ObjectPred × Array CardType :=
-    if ts.isEmpty then (preds, ts)
-    else (preds.push (ObjectPred.orAny (ts.map ObjectPred.hasType)), #[])
+  let flushHeads (preds : Array ObjectPred) (hs : Array ObjectPred) : Array ObjectPred × Array ObjectPred :=
+    if hs.isEmpty then (preds, hs)
+    else (preds.push (ObjectPred.orAny hs), #[])
+
+  let nextIsOr (toks : Array String) (i : Nat) : Bool :=
+    i < toks.size &&
+      (toks[i]!.endsWith "," ||
+        (i + 1 < toks.size && (lower toks[i + 1]! == "or" || lower toks[i + 1]! == "and/or")))
+
+  -- Look ahead across comma-stripped Oxford `or`-lists (e.g. normalized `"bear spider or wolf"`,
+  -- `"equipment instant or sorcery"`, `"white blue or black"`).
+  let colorContinuesOr (toks : Array String) (i : Nat) : Bool := Id.run do
+    if nextIsOr toks i then return true
+    let mut k := i + 1
+    while k < toks.size do
+      let w := stripTrailingComma toks[k]!
+      let wl := lower w
+      if wl == "or" || wl == "and/or" then
+        return k + 1 < toks.size && (parseColorWord? (stripTrailingComma toks[k + 1]!)).isSome
+      else if (parseColorWord? w).isSome then
+        k := k + 1
+      else
+        return false
+    return false
+
+  let isHeadListWord (toks : Array String) (k : Nat) : Nat :=
+    if k >= toks.size then 0
+    else
+      let w := stripTrailingComma toks[k]!
+      if (CardType.ofOracle? w).isSome then 1
+      else if k + 1 < toks.size &&
+          (CardSubtype.ofOracle? s!"{w} {stripTrailingComma toks[k + 1]!}").isSome then 2
+      else if (CardSubtype.ofOracle? w).isSome then 1
+      else if (Supertype.ofOracle? w).isSome then 1
+      else 0
+
+  let headContinuesOr (toks : Array String) (i : Nat) : Bool := Id.run do
+    if nextIsOr toks i then return true
+    let mut k := i + 1
+    while k < toks.size do
+      let w := stripTrailingComma toks[k]!
+      let wl := lower w
+      if wl == "or" || wl == "and/or" then
+        if k + 1 >= toks.size then return false
+        let nxt := stripTrailingComma toks[k + 1]!
+        return isHeadListWord toks (k + 1) > 0 ||
+          ((parseNonSubtype? nxt).isSome && k + 2 < toks.size &&
+            (CardType.ofOracle? (stripTrailingComma toks[k + 2]!)).isSome) ||
+          ((parseNonCardType? nxt).isSome && k + 2 < toks.size &&
+            (CardType.ofOracle? (stripTrailingComma toks[k + 2]!)).isSome)
+      else
+        let step := isHeadListWord toks k
+        if step > 0 then k := k + step
+        else return false
+    return false
 
   while idx < toks.size do
     let rawTok := stripTrailingComma toks[idx]!
@@ -799,57 +889,83 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
       inOrChain := true
       idx := idx + 1
     else if let some c := parseColorWord? rawTok then
-      (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
-      (preds, typeChoices) := flushTypes preds typeChoices
-      let continues :=
-        inOrChain || toks[idx]!.endsWith "," || !colorChoices.isEmpty ||
-          (idx + 1 < toks.size && (lower toks[idx + 1]! == "or" || lower toks[idx + 1]! == "and/or"))
+      (preds, headChoices) := flushHeads preds headChoices
+      let continues := inOrChain || !colorChoices.isEmpty || colorContinuesOr toks idx
       if continues then
         colorChoices := colorChoices.push c
-        if !toks[idx]!.endsWith "," &&
-            !(idx + 1 < toks.size && (lower toks[idx + 1]! == "or" || lower toks[idx + 1]! == "and/or")) then
+        if !colorContinuesOr toks idx then
           (preds, colorChoices) := flushColors preds colorChoices
       else
         preds := preds.push (.hasColor (.literal c))
       inOrChain := false
       sawAnyNounOrMod := true
       idx := idx + 1
+    -- `"attacking or blocking"` combat role disjunction
+    else if tok == "attacking" && idx + 2 < toks.size &&
+        lower toks[idx + 1]! == "or" && lower (stripTrailingComma toks[idx + 2]!) == "blocking" then
+      (preds, colorChoices) := flushColors preds colorChoices
+      (preds, headChoices) := flushHeads preds headChoices
+      preds := preds.push (.any #[.combatRole .attacking, .combatRole .blocking])
+      inOrChain := false; sawAnyNounOrMod := true; idx := idx + 3
+    -- `"non-Aura enchantment"` inside an `or` chain (`artifact or non-Aura enchantment`)
+    else if (inOrChain || !headChoices.isEmpty) && (parseNonSubtype? rawTok).isSome &&
+        idx + 1 < toks.size && (CardType.ofOracle? (stripTrailingComma toks[idx + 1]!)).isSome then
+      (preds, colorChoices) := flushColors preds colorChoices
+      let sub := (parseNonSubtype? rawTok).get!
+      let ty := (CardType.ofOracle? (stripTrailingComma toks[idx + 1]!)).get!
+      if lower (stripTrailingComma toks[idx + 1]!) == lower ty.pluralName then sawPluralHead := true
+      headChoices := headChoices.push (.all #[.not (.hasSubtype (.literal sub)), .hasType ty])
+      if !headContinuesOr toks (idx + 1) then
+        (preds, headChoices) := flushHeads preds headChoices
+      inOrChain := false; sawAnyNounOrMod := true; idx := idx + 2
+    -- `"non<type> <type>"` inside an `or` chain (`noncreature artifact or noncreature enchantment`)
+    else if (parseNonCardType? rawTok).isSome &&
+        idx + 1 < toks.size && (CardType.ofOracle? (stripTrailingComma toks[idx + 1]!)).isSome &&
+        (inOrChain || !headChoices.isEmpty ||
+          (idx + 3 < toks.size &&
+            (lower toks[idx + 2]! == "or" || lower toks[idx + 2]! == "and/or") &&
+            (parseNonCardType? (stripTrailingComma toks[idx + 3]!)).isSome)) then
+      (preds, colorChoices) := flushColors preds colorChoices
+      let neg := (parseNonCardType? rawTok).get!
+      let ty := (CardType.ofOracle? (stripTrailingComma toks[idx + 1]!)).get!
+      if lower (stripTrailingComma toks[idx + 1]!) == lower ty.pluralName then sawPluralHead := true
+      headChoices := headChoices.push (.all #[.not (.hasType neg), .hasType ty])
+      if !headContinuesOr toks (idx + 1) then
+        (preds, headChoices) := flushHeads preds headChoices
+      inOrChain := false; sawAnyNounOrMod := true; idx := idx + 2
     else if let some ty := CardType.ofOracle? rawTok then
       (preds, colorChoices) := flushColors preds colorChoices
-      (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
       if tok == lower ty.pluralName then sawPluralHead := true
-      let continues :=
-        inOrChain || toks[idx]!.endsWith "," || !typeChoices.isEmpty ||
-          (idx + 1 < toks.size && (lower toks[idx + 1]! == "or" || lower toks[idx + 1]! == "and/or"))
+      let continues := inOrChain || !headChoices.isEmpty || headContinuesOr toks idx
       if continues then
-        typeChoices := typeChoices.push ty
-        if !toks[idx]!.endsWith "," &&
-            !(idx + 1 < toks.size && (lower toks[idx + 1]! == "or" || lower toks[idx + 1]! == "and/or")) then
-          (preds, typeChoices) := flushTypes preds typeChoices
+        headChoices := headChoices.push (.hasType ty)
+        if !headContinuesOr toks idx then
+          (preds, headChoices) := flushHeads preds headChoices
       else
         preds := preds.push (.hasType ty)
       inOrChain := false
       sawAnyNounOrMod := true
       idx := idx + 1
+    -- Supertype inside an `or` chain (`creature or legendary spell`)
+    else if (inOrChain || !headChoices.isEmpty) && (Supertype.ofOracle? rawTok).isSome then
+      (preds, colorChoices) := flushColors preds colorChoices
+      let sup := (Supertype.ofOracle? rawTok).get!
+      headChoices := headChoices.push (.hasSupertype sup)
+      if !headContinuesOr toks idx then
+        (preds, headChoices) := flushHeads preds headChoices
+      inOrChain := false; sawAnyNounOrMod := true; idx := idx + 1
     else
       (preds, colorChoices) := flushColors preds colorChoices
-      (preds, typeChoices) := flushTypes preds typeChoices
-      let flushSubsNow : Bool :=
-        !(tok.startsWith "non-") &&
-        (CardSubtype.ofOracle? rawTok).isNone &&
-        !(idx + 1 < toks.size &&
+      let isSubtypeHere : Bool :=
+        (CardSubtype.ofOracle? rawTok).isSome ||
+        (idx + 1 < toks.size &&
           (CardSubtype.ofOracle? s!"{rawTok} {stripTrailingComma toks[idx + 1]!}").isSome)
-      if flushSubsNow then
-        (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
+      if !isSubtypeHere then
+        (preds, headChoices) := flushHeads preds headChoices
       if tok == "another" then
-        preds := preds.push (.otherThan .this)
-        sawAnyNounOrMod := true
-        idx := idx + 1
+        preds := preds.push (.otherThan .this); sawAnyNounOrMod := true; idx := idx + 1
       else if tok == "other" then
-        preds := preds.push (.otherThan .this)
-        sawPluralHead := true
-        sawAnyNounOrMod := true
-        idx := idx + 1
+        preds := preds.push (.otherThan .this); sawPluralHead := true; sawAnyNounOrMod := true; idx := idx + 1
       else if tok == "tapped" then
         preds := preds.push (.tapped true); sawAnyNounOrMod := true; idx := idx + 1
       else if tok == "untapped" then
@@ -866,7 +982,8 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
         preds := preds.push (.isFaceDown true); sawAnyNounOrMod := true; idx := idx + 1
       else if tok == "face-up" then
         preds := preds.push (.isFaceDown false); sawAnyNounOrMod := true; idx := idx + 1
-      else if tok == "token" then
+      else if tok == "token" || tok == "tokens" then
+        if tok == "tokens" then sawPluralHead := true
         preds := preds.push (.isToken true); sawAnyNounOrMod := true; idx := idx + 1
       else if tok == "nontoken" then
         preds := preds.push (.isToken false); sawAnyNounOrMod := true; idx := idx + 1
@@ -888,57 +1005,48 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
         preds := preds.push ObjectPred.historic; sawAnyNounOrMod := true; idx := idx + 1
       else if tok == "storied" then
         preds := preds.push ObjectPred.storied; sawAnyNounOrMod := true; idx := idx + 1
+      else if tok == "worthy" then
+        preds := preds.push ObjectPred.worthy; sawAnyNounOrMod := true
+        if idx + 1 < toks.size &&
+            (lower (stripTrailingComma toks[idx + 1]!) == "creature" ||
+             lower (stripTrailingComma toks[idx + 1]!) == "creatures") then
+          if lower (stripTrailingComma toks[idx + 1]!) == "creatures" then sawPluralHead := true
+          idx := idx + 2
+        else
+          idx := idx + 1
       else if tok == "permanent" && idx + 1 < toks.size &&
           (lower (stripTrailingComma toks[idx + 1]!) == "card" ||
            lower (stripTrailingComma toks[idx + 1]!) == "cards") then
         let nextW := lower (stripTrailingComma toks[idx + 1]!)
         if nextW == "cards" then sawPluralHead := true
         preds := preds.push (.isKind .permanentCard)
-        sawCardHead := true
-        sawAnyNounOrMod := true
-        idx := idx + 2
+        sawCardHead := true; sawAnyNounOrMod := true; idx := idx + 2
       else if tok == "permanent" || tok == "permanents" then
         if tok == "permanents" then sawPluralHead := true
-        sawAnyNounOrMod := true
-        idx := idx + 1
+        sawAnyNounOrMod := true; idx := idx + 1
       else if tok == "spell" || tok == "spells" then
         if tok == "spells" then sawPluralHead := true
         preds := preds.push (.isKind .spell)
-        sawSpellHead := true
-        sawAnyNounOrMod := true
-        idx := idx + 1
+        sawSpellHead := true; sawAnyNounOrMod := true; idx := idx + 1
       else if tok == "card" || tok == "cards" then
         if tok == "cards" then sawPluralHead := true
         preds := preds.push (.isKind .card)
-        sawCardHead := true
-        sawAnyNounOrMod := true
-        idx := idx + 1
+        sawCardHead := true; sawAnyNounOrMod := true; idx := idx + 1
       else if let some c := parseNonColorWord? rawTok then
-        (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
-        preds := preds.push (.not (.hasColor (.literal c)))
-        sawAnyNounOrMod := true
-        idx := idx + 1
+        preds := preds.push (.not (.hasColor (.literal c))); sawAnyNounOrMod := true; idx := idx + 1
       else if let some sup := Supertype.ofOracle? rawTok then
-        (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
         preds := preds.push (.hasSupertype sup); sawAnyNounOrMod := true; idx := idx + 1
       else if let some sup := parseNonSupertype? rawTok then
-        (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
         preds := preds.push (.not (.hasSupertype sup)); sawAnyNounOrMod := true; idx := idx + 1
       else if let some ty := parseNonCardType? rawTok then
-        (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
         preds := preds.push (.not (.hasType ty)); sawAnyNounOrMod := true; idx := idx + 1
       else if tok.startsWith "non-" && idx + 1 < toks.size &&
           (CardSubtype.ofOracle? s!"{(rawTok.drop 4).copy} {stripTrailingComma toks[idx + 1]!}").isSome then
-        (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
         let sub := (CardSubtype.ofOracle? s!"{(rawTok.drop 4).copy} {stripTrailingComma toks[idx + 1]!}").get!
-        preds := preds.push (.not (.hasSubtype (.literal sub)))
-        sawAnyNounOrMod := true
-        idx := idx + 2
+        preds := preds.push (.not (.hasSubtype (.literal sub))); sawAnyNounOrMod := true; idx := idx + 2
       else if let some sub := parseNonSubtype? rawTok then
-        (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
         preds := preds.push (.not (.hasSubtype (.literal sub))); sawAnyNounOrMod := true; idx := idx + 1
       else
-        -- Try two-word subtype first (e.g. "Time Lord" / "Time Lords"), then single-word subtype.
         let twoWord? : Option CardSubtype :=
           if idx + 1 < toks.size then
             CardSubtype.ofOracle? s!"{rawTok} {stripTrailingComma toks[idx + 1]!}"
@@ -948,44 +1056,34 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
           let twoRaw := lower s!"{rawTok} {stripTrailingComma toks[idx + 1]!}"
           if twoRaw == lower sub.pluralName && twoRaw != lower sub.englishName then
             sawPluralHead := true
-          let hasMore :=
-            toks[idx + 1]!.endsWith "," ||
-              (idx + 2 < toks.size && (lower toks[idx + 2]! == "or" || lower toks[idx + 2]! == "and/or"))
-          if inOrChain || hasMore || !subtypeChoices.isEmpty then
-            subtypeChoices := subtypeChoices.push sub
+          let hasMore := headContinuesOr toks (idx + 1)
+          if inOrChain || hasMore || !headChoices.isEmpty then
+            headChoices := headChoices.push (.hasSubtype (.literal sub))
             if !hasMore then
-              (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
+              (preds, headChoices) := flushHeads preds headChoices
           else
             preds := preds.push (.hasSubtype (.literal sub))
-          inOrChain := false
-          sawAnyNounOrMod := true
-          idx := idx + 2
+          inOrChain := false; sawAnyNounOrMod := true; idx := idx + 2
         | none =>
           match CardSubtype.ofOracle? rawTok with
           | some sub =>
             if tok == lower sub.pluralName && tok != lower sub.englishName then
               sawPluralHead := true
-            let hasMore :=
-              toks[idx]!.endsWith "," ||
-                (idx + 1 < toks.size && (lower toks[idx + 1]! == "or" || lower toks[idx + 1]! == "and/or"))
-            if inOrChain || hasMore || !subtypeChoices.isEmpty then
-              subtypeChoices := subtypeChoices.push sub
+            let hasMore := headContinuesOr toks idx
+            if inOrChain || hasMore || !headChoices.isEmpty then
+              headChoices := headChoices.push (.hasSubtype (.literal sub))
               if !hasMore then
-                (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
+                (preds, headChoices) := flushHeads preds headChoices
             else
               preds := preds.push (.hasSubtype (.literal sub))
-            inOrChain := false
-            sawAnyNounOrMod := true
-            idx := idx + 1
+            inOrChain := false; sawAnyNounOrMod := true; idx := idx + 1
           | none =>
-            -- Unrecognized token inside noun phrase: reject cleanly instead of dropping it.
             return none
 
   if !sawAnyNounOrMod then return none
 
   (preds, colorChoices) := flushColors preds colorChoices
-  (preds, subtypeChoices) := flushSubtypes preds subtypeChoices
-  (preds, typeChoices) := flushTypes preds typeChoices
+  (preds, headChoices) := flushHeads preds headChoices
 
   if !explicitZone && sawSpellHead then
     zones := .stack
@@ -1520,5 +1618,319 @@ partial def parseDuration (raw : String) : Option DurationExpr := Id.run do
   return none
 
 end
+
+/-! ### Phase-3 Compositional Target Parsers (`TargetSlot`, `TargetSpec`) -/
+
+/-- Replace `.seat 0` controller/owner placeholders with `replacement` inside an `ObjectPred`. -/
+private partial def substSeat0Pred (replacement : PlayerFilter) : ObjectPred → ObjectPred
+  | .all ps => .all (ps.map (substSeat0Pred replacement))
+  | .any ps => .any (ps.map (substSeat0Pred replacement))
+  | .not p => .not (substSeat0Pred replacement p)
+  | .controlledBy pf =>
+    if pf == .seat 0 then .controlledBy replacement else .controlledBy pf
+  | .ownedBy pf =>
+    if pf == .seat 0 then .ownedBy replacement else .ownedBy pf
+  | other => other
+
+/-- Add `.hasType .creature` after bare battlefield creature-subtype predicates
+(e.g. `"target Elf you control"`, `"target Goblin or Orc you control"`), while
+leaving non-creature subtypes (`Equipment`, `Aura`, `Forest`, ...) and non-battlefield
+cards untouched. -/
+private def normalizeTargetObjectPred (zones : ZoneSetSpec) (pred : ObjectPred) : ObjectPred :=
+  if zones != .battlefield then pred
+  else
+    let atoms := match pred with | .all ps => ps | p => #[p]
+    let hasExplicitTypeOrKind := atoms.any fun
+      | .hasType _ | .not (.hasType _) | .isKind _ => true
+      | .any ps =>
+        ps.any (fun
+          | .hasType _ | .hasSupertype _ => true
+          | .all inner => inner.any (fun | .hasType _ => true | _ => false)
+          | _ => false)
+      | _ => false
+    if hasExplicitTypeOrKind || pred == ObjectPred.worthy then pred
+    else
+      let isCreatureSubAtom : ObjectPred → Bool
+        | .hasSubtype (.literal s) => s.isCreatureType
+        | .any ps =>
+          !ps.isEmpty && ps.all (fun
+            | .hasSubtype (.literal s) => s.isCreatureType
+            | _ => false)
+        | _ => false
+      let rec insertAfterSub : List ObjectPred → Bool → List ObjectPred
+        | [], _ => []
+        | a :: rest, false =>
+          if isCreatureSubAtom a then a :: .hasType .creature :: rest
+          else a :: insertAfterSub rest false
+        | xs, true => xs
+      let updated := insertAfterSub atoms.toList false
+      if updated.length == atoms.size then pred
+      else ObjectPred.andAll updated.toArray
+
+/-- Strip a leading target quantifier (`"up to N "`, `"any number of "`, `"lo or hi "`, `"N "`).
+Returns `(count, rest, hasExplicitQuant)`. -/
+private def stripTargetQuantPrefix (s : String) : CountRange × String × Bool := Id.run do
+  let toks := splitWords s
+  if toks.isEmpty then return (.exact 1, s, false)
+  let w0 := lower toks[0]!
+  if w0 == "any" && toks.size >= 3 && lower toks[1]! == "number" && lower toks[2]! == "of" then
+    let rest := String.intercalate " " (toks.toList.drop 3)
+    return (.anyNumber, rest, true)
+  if w0 == "up" && toks.size >= 3 && lower toks[1]! == "to" then
+    if let some n := parseNatWord? toks[2]! then
+      let rest := String.intercalate " " (toks.toList.drop 3)
+      return (.upTo n, rest, true)
+  if toks.size >= 3 && (lower toks[1]! == "or" || lower toks[1]! == "to") then
+    match parseNatWord? toks[0]!, parseNatWord? toks[2]! with
+    | some lo, some hi =>
+      if lo >= 1 && hi > lo then
+        let rest := String.intercalate " " (toks.toList.drop 3)
+        return (.between lo hi, rest, true)
+    | _, _ => pure ()
+  if let some n := parseNatWord? toks[0]! then
+    if n >= 1 then
+      let rest := String.intercalate " " (toks.toList.drop 1)
+      return (.exact n, rest, true)
+  return (.exact 1, s, false)
+
+/-- Parse a `PlayerPred` after `"player who "` / `"opponent who "` (matching `printPlayerPred`). -/
+private def parsePlayerPredClause? (raw : String) : Option PlayerPred := Id.run do
+  let s := cleanClause raw
+  let low := lower s
+  if low == "is the monarch" then return some .isMonarch
+  if low == "is the active player" then return some .isActivePlayer
+  if low == "is the defending player" then return some .isDefendingPlayer
+  if low == "has the city's blessing" || low == "has the citys blessing" then
+    return some (.hasDesignation .citysBlessing)
+  if low == "has an enduring story" then
+    return some (.hasDesignation .enduringStory)
+  if let some rest := (dropPrefixCI? s "controls ").orElse (fun _ => dropPrefixCI? s "control ") then
+    if let some (cntStr, npStr) := splitFirstCI? rest " or more " then
+      match parseValueExpr cntStr, parseNounPhrase npStr with
+      | some v, some np => return some (.controls np.filter v)
+      | _, _ => pure ()
+    if let some np := parseNounPhrase rest then
+      return some (.controls np.filter (.const 1))
+  if let some rest := (dropPrefixCI? s "has ").orElse (fun _ => dropPrefixCI? s "have ") then
+    if let some b := dropSuffixCI? rest " life" then
+      if let some (op, v) := parseCmpBound? b then return some (.metric .life op v)
+    if let some b := (dropSuffixCI? rest " cards in hand").orElse (fun _ => dropSuffixCI? rest " cards in their hand") then
+      if let some (op, v) := parseCmpBound? b then return some (.metric .handSize op v)
+    if let some b := (dropSuffixCI? rest " cards in their graveyard").orElse (fun _ => dropSuffixCI? rest " cards in graveyard") then
+      if let some (op, v) := parseCmpBound? b then return some (.metric .graveyardSize op v)
+    if let some b := dropSuffixCI? rest " poison counters" then
+      if let some (op, v) := parseCmpBound? b then return some (.metric .poisonCounters op v)
+  return none
+
+/-- Parse a player-target phrase after stripping `"target "` (e.g. `"player"`,
+`"opponent"`, `"players"`, `"player who controls an artifact"`). -/
+private def parseTargetPlayerDomain? (raw : String) : Option TargetDomain := Id.run do
+  let s := cleanClause raw
+  let low := lower s
+  if low == "player" || low == "players" then return some (.player .any)
+  if low == "opponent" || low == "opponents" then return some (.player .opponent)
+  if low == "teammate" || low == "teammates" then return some (.player .teammate)
+  if low == "defending player" then return some (.player .defendingPlayer)
+  if let some (head, predStr) := splitFirstCI? s " who " then
+    let rel? : Option PlayerRelation :=
+      match lower head with
+      | "player" | "players" => some .anyPlayer
+      | "opponent" | "opponents" => some .opponent
+      | "teammate" | "teammates" => some .teammate
+      | _ => none
+    match rel? with
+    | some rel =>
+      if let some p := parsePlayerPredClause? predStr then
+        return some (.player { relation := rel, pred := p })
+    | none => pure ()
+  return none
+
+/-- Parse a stack-ability target domain after stripping `"target "` (e.g.
+`"activated or triggered ability you control from an artifact source"`). -/
+private def parseStackAbilityDomain? (raw : String) : Option TargetDomain := Id.run do
+  let s := cleanClause raw
+  let rest? :=
+    (dropPrefixCI? s "activated or triggered abilities").orElse fun _ =>
+      dropPrefixCI? s "activated or triggered ability"
+  let some rest := rest? | return none
+  let mut r := rest.trimAscii.copy
+  let mut srcPred : ObjectPred := .anyObject
+  if let some (beforeFrom, fromStr) := splitFirstCI? r " from " then
+    let inner := (dropSuffixCI? fromStr " source").getD fromStr
+    let inner := (dropPrefixCI? inner "an ").getD ((dropPrefixCI? inner "a ").getD inner)
+    if let some ty := CardType.ofOracle? inner then
+      srcPred := .hasType ty
+      r := beforeFrom.trimAscii.copy
+    else if let some np := parseNounPhrase inner then
+      srcPred := np.filter.pred
+      r := beforeFrom.trimAscii.copy
+    else
+      return none
+  let rl := lower r
+  let ctrl : PlayerFilter ←
+    if rl.isEmpty then .any
+    else if rl == "you control" then .you
+    else if rl == "an opponent controls" || rl == "opponents control" then .opponent
+    else if rl == "that player controls" then .seat 0
+    else return none
+  return some (.stackAbility ctrl srcPred)
+
+/-- Parse one Oracle target phrase corresponding to a single `"target"` word
+(CR 115.1 / 115.4 / 601.2c). -/
+partial def parseTargetSlot (raw : String) : Option TargetSlot := Id.run do
+  let mut s := cleanClause raw
+  if s.isEmpty then return none
+
+  -- 1. Optional `"for each opponent, ..."` / `"for each player, ..."` prefix.
+  let mut forEach? : Option PlayerFilter := none
+  if let some rest := (dropPrefixCI? s "for each opponent, ").orElse
+      (fun _ => dropPrefixCI? s "for each opponent ") then
+    forEach? := some .opponent; s := rest
+  else if let some rest := (dropPrefixCI? s "for each player, ").orElse
+      (fun _ => dropPrefixCI? s "for each player ") then
+    forEach? := some .any; s := rest
+
+  -- 2. Optional trailing `GroupTargetConstraint` suffix.
+  let mut gc? : Option GroupTargetConstraint := none
+  if let some (lhs, rhs) := splitLastCI? s " with total mana value " then
+    if let some vStr := dropSuffixCI? rhs " or less" then
+      if let some v := parseValueExpr vStr then
+        gc? := some (.totalManaValueAtMost v); s := lhs
+  else if let some pre := dropSuffixCI? s " that share a color" then
+    gc? := some (.shareCharacteristic .color); s := pre
+  else if let some pre := dropSuffixCI? s " that share a card type" then
+    gc? := some (.shareCharacteristic .cardType); s := pre
+  else if let some pre := dropSuffixCI? s " that share a creature type" then
+    gc? := some (.shareCharacteristic .creatureType); s := pre
+  else if let some pre := dropSuffixCI? s " that share a subtype" then
+    gc? := some (.shareCharacteristic .subtype); s := pre
+  else if let some pre := dropSuffixCI? s " with different controllers" then
+    gc? := some .distinctControllers; s := pre
+  else if let some pre := dropSuffixCI? s " with different names" then
+    gc? := some .distinctNames; s := pre
+  else if let some pre := dropSuffixCI? s " of each card type" then
+    gc? := some .distinctCardTypes; s := pre
+
+  let mkSlot (domain : TargetDomain) (count : CountRange) : TargetSlot :=
+    let domain :=
+      match forEach? with
+      | some pf =>
+        if pf == .opponent then
+          match domain with
+          | .object zs pred => .object zs (substSeat0Pred .opponent pred)
+          | .stackAbility ctrl src =>
+            .stackAbility (if ctrl == .seat 0 then .opponent else ctrl) src
+          | other => other
+        else domain
+      | none => domain
+    { domain, count, groupConstraint? := gc?, forEach? }
+
+  let low := lower s
+  -- 3. CR 115.4 `"any target"` / `"any other target"` and bare quantified targets.
+  if low == "any target" then
+    return some (mkSlot (.anyTarget .any) (.exact 1))
+  if low == "any other target" then
+    return some (mkSlot (.anyTarget (.otherThan .this)) (.exact 1))
+
+  let (qCount, afterQuant, hasExplicitQuant) := stripTargetQuantPrefix s
+  let aqLow := lower afterQuant
+  if hasExplicitQuant then
+    if aqLow == "target" || aqLow == "targets" then
+      return some (mkSlot (.anyTarget .any) qCount)
+    if aqLow == "other target" || aqLow == "other targets" then
+      return some (mkSlot (.anyTarget (.otherThan .this)) qCount)
+
+  -- 4. Special non-single-object domains after `"target "`.
+  if let some afterTarget := dropPrefixCI? afterQuant "target " then
+    let atLow := lower afterTarget
+    -- 4a. Player targets (`target player`, `two target players`, `target opponent`, ...).
+    if let some pd := parseTargetPlayerDomain? afterTarget then
+      return some (mkSlot pd qCount)
+    -- 4b. Stack abilities (`target activated or triggered ability you control from an artifact source`).
+    if let some sd := parseStackAbilityDomain? afterTarget then
+      return some (mkSlot sd qCount)
+    -- 4c. Multi-domain unions (`spell or creature`, `permanent or player`,
+    --     `creature or creature card in a graveyard`, `<obj> or player/opponent`).
+    if atLow == "spell or creature" || atLow == "spells or creatures" then
+      return some (mkSlot TargetDomain.spellOrCreature qCount)
+    if atLow == "permanent or player" || atLow == "permanents or players" then
+      return some (mkSlot TargetDomain.permanentOrPlayer qCount)
+    if atLow == "creature or creature card in a graveyard" ||
+        atLow == "creature or creature card from a graveyard" then
+      return some (mkSlot TargetDomain.creatureOrGyCreatureCard qCount)
+    if let some (lhs, rhs) := splitLastCI? afterTarget " or " then
+      if let some pd := parseTargetPlayerDomain? rhs then
+        if let some np := parseNounPhrase lhs then
+          let pred := normalizeTargetObjectPred np.filter.zones np.filter.pred
+          return some (mkSlot (.anyOf #[.object np.filter.zones pred, pd]) qCount)
+
+  -- 5. General object target via `parseNounPhrase`.
+  let some np := parseNounPhrase s | return none
+  if !np.isTarget then return none
+  let count : CountRange ←
+    match np.quantifier with
+    | .singular => .exact 1
+    | .exact n => .exact n
+    | .upTo n => .upTo n
+    | .between lo hi => .between lo hi
+    | .anyNumber => .anyNumber
+    | .each | .plural => return none
+  let pred := normalizeTargetObjectPred np.filter.zones np.filter.pred
+  return some (mkSlot (.object np.filter.zones pred) count)
+
+/-- Parse a single-slot or multi-slot Oracle target specification (CR 115.1 / 115.3). -/
+partial def parseTargetSpec (raw : String) : Option TargetSpec := Id.run do
+  let s := cleanClause raw
+  if s.isEmpty then return none
+
+  -- 1. Distinct repeated slot: `"<slot0> and a second <slot1>"`.
+  if let some (lhs, rhs) := splitFirstCI? s " and a second " then
+    match parseTargetSlot lhs, parseTargetSlot rhs with
+    | some s0, some s1 =>
+      return some (TargetSpec.ofSlots #[s0, s1] #[{ slots := #[0, 1], relation := .distinct }])
+    | _, _ => pure ()
+
+  -- 2. Explicit multi-slot `"<slot0> and <rest>"` where `<rest>` contains `"target"`.
+  if let some (lhs, rhs) := splitFirstCI? s " and " then
+    if (lower rhs).contains "target" then
+      match parseTargetSlot lhs, parseTargetSpec rhs with
+      | some s0, some tsRest =>
+        return some (TargetSpec.append (TargetSpec.single s0) tsRest)
+      | _, _ => pure ()
+
+  -- 3. Single-slot target specification.
+  if let some slot := parseTargetSlot s then
+    return some (TargetSpec.single slot)
+
+  -- 4. Shorthand second slot omitting `"target"` (`"target creature you control and a creature an opponent controls"`).
+  if let some (lhs, rhs) := splitFirstCI? s " and " then
+    let rhsBody? := (dropPrefixCI? rhs "an ").orElse (fun _ => dropPrefixCI? rhs "a ")
+    if let some rhsBody := rhsBody? then
+      match parseTargetSlot lhs, parseTargetSlot s!"target {rhsBody}" with
+      | some s0, some s1 => return some (TargetSpec.ofSlots #[s0, s1])
+      | _, _ => pure ()
+
+  return none
+
+/-- Longest prefix of normalized Oracle tokens that parses as a `TargetSpec`.
+Replaces `OracleArgs.fromNounPrefix`'s hardcoded tables with the compositional
+Stage-4 target grammar. -/
+def parseTargetSpecPrefix (toks : List String) : Option (TargetSpec × Nat) := Id.run do
+  let t0 :: _ := toks | return none
+  let w0 := lower t0
+  let plausibleStart :=
+    w0 == "target" || w0 == "another" || w0 == "other" ||
+    w0 == "any" || w0 == "up" || w0 == "for" ||
+    (parseNatWord? t0).isSome
+  if !plausibleStart then return none
+  let arr := toks.toArray
+  let maxLen := min arr.size 24
+  let mut len := maxLen
+  while len > 0 do
+    let phrase := String.intercalate " " (arr.extract 0 len).toList
+    if let some ts := parseTargetSpec phrase then
+      return some (ts, len)
+    len := len - 1
+  return none
 
 end Mtg.Engine.Parser

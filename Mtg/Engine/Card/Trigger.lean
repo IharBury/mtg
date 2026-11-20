@@ -30,12 +30,6 @@ def dividedAmong (maxTargets : Nat) : String :=
   else if maxTargets == 1 then "one target"
   else s!"up to {maxTargets} targets"
 
-/-- How a triggered ability selects targets when it is put on the stack
-(CR 603.3d / 601.2c). Spell and activated-ability targeting use the same
-`EffectTargetKind` constructors. -/
-abbrev TriggerTargetKind := EffectTargetKind
-
-
 
 /-- When a triggered ability fires, how it targets, optional divided-damage
 parameters, and how it resolves (CR 603 / 601.2d / 608). Adding a constructor
@@ -273,7 +267,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .amass resolved subtype attachSource }
   | .recruit who => { resolution := .recruit who }
   | .dividedDamage amount maxTargets =>
-    { targeting := .of .playerOrCreature,
+    { targeting := .of .anyTarget,
       dividedDamage := some (amount, maxTargets), resolution := .dividedDamage }
   | .gainLife n => { resolution := .gainLife (.fixed n) }
   | .connive who =>
@@ -301,10 +295,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     let left := timing can
     let right := timing thenDo
     { targeting :=
-        if left.targeting.kind == .none then right.targeting else left.targeting
+        if left.targeting.spec.isEmpty then right.targeting else left.targeting
       allowsZeroTargets := left.allowsZeroTargets || right.allowsZeroTargets
       maxTargets :=
-        if left.targeting.kind == .none then right.maxTargets else left.maxTargets
+        if left.targeting.spec.isEmpty then right.maxTargets else left.maxTargets
       dividedDamage :=
         match left.dividedDamage with
         | some d => some d
@@ -405,24 +399,25 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .damageEqualSubtypeToEachOpponent subtype =>
     { resolution := .dealDamage (.subtypeCount subtype) (.player .eachOpponent) }
   | .damageEqualTreasures =>
-    { targeting := .of .playerOrCreature,
+    { targeting := .of .anyTarget,
       resolution := .dealDamage (.subtypeCount .treasure) .target }
   | .dealDamageDestroyIfSubtype n subtype =>
-    { targeting := .of .playerOrCreature,
+    { targeting := .of .anyTarget,
       resolution := .sequence
         [.dealDamage (.fixed n) .target .markedPermanent,
          .«if» (.dealtDamageToSubtype subtype) (.destroy .permanentDealtDamage)] }
   | .attachEquipmentToCreature =>
     -- *Iron Hills Stalwart*: the Equipment target is mandatory (slot 0); only the creature
-    -- slot is optional (`optionalSlots := #[1]`), so the trigger is removed when you control
+    -- slot is optional (`count := .upTo 1`), so the trigger is removed when you control
     -- no Equipment (CR 115.1c / 603.3d).
     { targeting := .of .equipmentYouControlThenCreatureYouControl,
       allowsZeroTargets := false, resolution := .attach .target .optionalCreature }
   | .defenderSacsLeastPower =>
     { resolution := .sacrifice .leastPower }
   | .returnOtherPlusOne =>
-    { targeting := .of (.filtered { noun := "up to one other target permanent you control"
-                                    controller := .you, another := true })
+    { targeting := .of (.single {
+        domain := .object .battlefield (.all #[.otherThan .this, .controlledBy .you])
+        count := .upTo 1 })
       allowsZeroTargets := true
       resolution := .sequence
         [.returnToHand .permanent .returnedPermanent,
@@ -432,9 +427,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .createTappedTreasuresEqualOppArtifacts =>
     { resolution := .createTokens .treasure .oppArtifacts true }
   | .putNonlandMvAtMostFromGy mv =>
-    { targeting := .of (.filtered
-        { noun := s!"up to one target nonland permanent card with mana value {mv} or less from a graveyard"
-          zone := .anyGraveyard, permanentCard := true, nonTypes := #[.land], mvAtMost := some mv })
+    { targeting := .of (.single {
+        domain := .object .anyGraveyard (.all #[
+          .not (.hasType .land), .isKind .permanentCard, .stat .manaValue .le (.const mv)])
+        count := .upTo 1 })
       allowsZeroTargets := true, resolution := .put (.nonlandMvAtMost mv) }
   | .othersGetAndOppsGet subtypes p t oppP oppT =>
     { resolution := .sequence
@@ -452,9 +448,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .sequence
         [.mill (.fixed n) (note := .milledCards), .returnToHand (.milledSubtype subtype)] }
   | .exileOppNonlandEachUntilLeaves =>
-    { targeting := .of (.filtered
-        { noun := "for each opponent, up to one target nonland permanent that player controls"
-          nonTypes := #[.land], controller := .eachOpponent })
+    { targeting := .of (.forEachOpponentControlled (.not (.hasType .land)) (.upTo 1))
       allowsZeroTargets := true
       resolution := .exile (.target .eachPermanent) .untilSourceLeaves }
   | .plusOneEqualLastKnownMv =>
@@ -520,7 +514,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution :=
         .createTokens .treasure .damagedPlayerArtifacts false }
   | .deal1ThenAmassOrcs =>
-    { targeting := .of .playerOrCreature,
+    { targeting := .of .anyTarget,
       resolution := .sequence
         [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) .orc] }
   | .untapAttackersExtraCombat _n =>
@@ -557,10 +551,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .pump (.fixed 3) (.fixed 0) .target,
         .grant (.keywords Keyword.firstStrike) .target]) }
   | .honePerOppAttach =>
-    { targeting := .of (.multi #[
-        { noun := "target opponent", zone := .player, controller := .opponent },
-        { noun := "target creature you control", controller := .you, types := #[.creature] }
-      ] #[1])
+    { targeting := .of (.ofSlots #[.of .opponent, { domain := .creatureYouControl, count := .upTo 1 }])
       resolution := .sequence
         [.putCounters .honePerOpponent .source, .attach .source (.target .laterCreature)] }
   | .damageTargetOpponent n =>
@@ -572,9 +563,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .«if» .equipmentAttached (.fight .equipmentHost .reflexive)] }
   | .returnAsArtifact => { resolution := .put .source (how := .asArtifact) }
   | .exileLandsThenReturnTapped =>
-    { targeting := .of (.filtered {
-        noun := "up to three target lands you control"
-        types := #[.land], controller := .you })
+    { targeting := .of (.single {
+        domain := .object .battlefield (.all #[.hasType .land, .controlledBy .you])
+        count := .upTo 3 })
       allowsZeroTargets := true, maxTargets := 3
       resolution := .sequence
         [.exile .landsYouControl .forLater .lands,
@@ -807,10 +798,12 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.yourEndStep], resolution := .draw (.upToHandSize 10) }
   | .step .copyAbsorbingMan =>
     { events := #[.yourFirstMain]
-      targeting := .of (.filtered {
-        noun := "up to one target artifact, non-Aura enchantment, or land"
-        types := #[.artifact, .enchantment, .land]
-        nonAura := true })
+      targeting := .of (.single {
+        domain := .object .battlefield (.any #[
+          .hasType .artifact,
+          .all #[.not (.hasSubtype (.literal .aura)), .hasType .enchantment],
+          .hasType .land])
+        count := .upTo 1 })
       allowsZeroTargets := true, maxTargets := 1
       resolution := .becomeCopy .artifactEnchantmentOrLand }
   | .step .hydeChoose =>
@@ -823,9 +816,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .becomeCopy .creatureOrGraveyardCard }
   | .step .harnessedFlicker =>
     { events := #[.yourEndStep]
-      targeting := .of (.filtered {
-        noun := "up to one other target nonland permanent you control"
-        nonTypes := #[.land], controller := .you, another := true })
+      targeting := .of (.single {
+        domain := .object .battlefield (.all #[.otherThan .this, .not (.hasType .land), .controlledBy .you])
+        count := .upTo 1 })
       allowsZeroTargets := true, maxTargets := 1
       resolution := .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately) }
   | .death .hellcatReturn =>
@@ -855,9 +848,9 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .«if» .artifactEnteredThisTurn (.draw (.fixed 1)) }
   | .thisAttack .blinkNontoken =>
     { events := #[.attacking]
-      targeting := .of (.filtered {
-        noun := "up to one target nontoken artifact or creature"
-        types := #[.artifact, .creature], nontoken := true })
+      targeting := .of (.single {
+        domain := .object .battlefield (.all #[.isToken false, .any #[.hasType .artifact, .hasType .creature]])
+        count := .upTo 1 })
       allowsZeroTargets := true, maxTargets := 1
       resolution := .exile .target .returnTapped }
   | .thisAttack .equippedDrain =>
@@ -895,7 +888,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .watch .firstTapUntap =>
     { events := #[.creatureYouControlTapped], resolution := .untap .firstThisTurn }
   | .watch .sheHulkRedirectOnce =>
-    { events := #[.creatureYouControlDealtDamage], targeting := .of .playerOrCreature,
+    { events := #[.creatureYouControlDealtDamage], targeting := .of .anyTarget,
       resolution := .may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo }
   | .watch .speedballTargeted =>
     { events := #[.spellTargetsSource],
@@ -1000,15 +993,14 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .putCounters (.ofKind .plusOnePlusOne) .eachOther }
   | .casting .exileFlicker =>
     { events := #[.youCastNoncreature]
-      targeting := .of (.filtered {
-        noun := "another target nonland, nontoken permanent"
-        nonTypes := #[.land], nontoken := true, another := true })
+      targeting := .of (.ofDomain (.object .battlefield (.all #[
+        .otherThan .this, .not (.hasType .land), .isToken false])))
       resolution := .exile .target .nextEndStep }
   | .casting .visionModes =>
     { events := #[.youCastNoncreature],
       resolution := .chooseModes TriggeredAbility.TriggerResolution.visionModes .vision }
   | .casting .damageEqualMv =>
-    { events := #[.youCastNoncreature], targeting := .of .playerOrCreature,
+    { events := #[.youCastNoncreature], targeting := .of .anyTarget,
       resolution := .dealDamage .spellManaValue .target }
   | .casting .drawPowerEqualHand =>
     { events := #[.youCastTargetingCreatureYouControl],
@@ -1031,9 +1023,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause] }
   | .casting .tapCreatureOrLand =>
     { events := #[.youCastNoncreature],
-      targeting := .of (.filtered {
-        noun := "target creature or land",
-        types := #[.creature, .land] }),
+      targeting := .of (.ofDomain (.object .battlefield (.any #[.hasType .creature, .hasType .land]))),
       resolution := .tap .target }
   | .resource .discardExilePlay =>
     { events := #[.youDiscard],
@@ -1068,8 +1058,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
 end SharedTrigger
 
 #guard !(SharedTrigger.timing (.watch .sheHulkRedirectOnce)).onceEachTurn
-#guard (SharedTrigger.timing (.watch .sheHulkRedirectOnce)).targeting.kind ==
-  .playerOrCreature
+#guard (SharedTrigger.timing (.watch .sheHulkRedirectOnce)).targeting.spec ==
+  .anyTarget
 #guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).allowsZeroTargets &&
   (SharedTrigger.timing (.thisAttack .blinkNontoken)).maxTargets == 1
 #guard (SharedTrigger.timing (.thisAttack .mayPayPlusOne)).resolution ==
@@ -1088,7 +1078,7 @@ end SharedTrigger
   .«if» (.atLeast .equalSourcePower (.fixed 4)) (.draw (.fixed 1))
 #guard (SharedTrigger.timing (.thisAttack .attacksAlonePlus2Indestructible)).resolution ==
   .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]
-#guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.kind ==
+#guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.spec ==
   .anotherCreature
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).resolution ==
   .putCounters .missingKeywordsFromTarget .source

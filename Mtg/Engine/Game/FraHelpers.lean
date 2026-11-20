@@ -11,16 +11,17 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Whether `t` is still a legal target for the `i`th instance of “target”
-of `kind` (CR 608.2b), accounting for `g.resolvingSkippedSlots` when optional
+of `spec` (CR 608.2b), accounting for `g.resolvingSkippedSlots` when optional
 slots were skipped at announcement. -/
-def targetLegalAt (g : Game) (controller : PlayerId) (kind : EffectTargetKind) (i : Nat)
+def targetLegalAt (g : Game) (controller : PlayerId) (spec : TargetSpec) (i : Nat)
     (t : Target) (sourceId : Option ObjectId) : Bool :=
-  let slot :=
-    if g.resolvingSkippedSlots.isEmpty || kind.spec.slots.isEmpty then i
+  let pos :=
+    if g.resolvingSkippedSlots.isEmpty || !spec.isMultiSlot then i
     else Id.run do
       let mut s := 0
       let mut rem := i
-      while s < kind.spec.slots.size do
+      let total := spec.totalPositions
+      while s < total do
         if g.resolvingSkippedSlots.contains s then
           s := s + 1
         else if rem == 0 then
@@ -29,14 +30,14 @@ def targetLegalAt (g : Game) (controller : PlayerId) (kind : EffectTargetKind) (
           rem := rem - 1
           s := s + 1
       return s
-  (g.legalTargetsForAtomicKind controller (kind.slotKind slot) sourceId).contains t
+  (g.legalTargetsForSlot controller (spec.slotAtPos pos) sourceId).contains t
 
 /-- The permanent announced as the `i`th target, if it is still legal. -/
-def legalPermanentAt? (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+def legalPermanentAt? (g : Game) (controller : PlayerId) (spec : TargetSpec)
     (targets : Array Target) (i : Nat) (sourceId : Option ObjectId) : Option GameObject :=
   match targets[i]? with
   | some (Target.permanent id) =>
-    if g.targetLegalAt controller kind i (Target.permanent id) sourceId then g.findObject? id
+    if g.targetLegalAt controller spec i (Target.permanent id) sourceId then g.findObject? id
     else none
   | _ => none
 
@@ -179,9 +180,10 @@ def fraCauseController? (g : Game) : Option PlayerId :=
 
 /-- “For each opponent, up to one target creature or planeswalker that
 player controls”: one optional instance per opponent. -/
-def perOpponentKind (g : Game) (controller : PlayerId) (f : TargetFilter) : EffectTargetKind :=
-  let fs := (g.livingOpponents controller).map (fun pl => { f with controller := .specific pl.id.idx })
-  .multi fs ((List.range fs.size).toArray)
+def perOpponentSpec (g : Game) (controller : PlayerId) (domain : TargetDomain) : TargetSpec :=
+  let slots : Array TargetSlot := (g.livingOpponents controller).map fun pl =>
+    { domain := domain.substituteOpponent (.seat pl.id.idx), count := .upTo 1 }
+  TargetSpec.ofSlots slots
 
 /-- Put `n` +1/+1 counters on each creature `p` controls. -/
 def plusOneOnEachCreatureOf (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=

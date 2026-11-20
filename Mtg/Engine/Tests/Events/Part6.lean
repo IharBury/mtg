@@ -640,7 +640,7 @@ private def replayOk29i3 (gs : Array Game) : Bool :=
 
   -- 1a. `Targeting.expandEachOpponentEffect` skips `p1` (`!g.stillInGame p1`) and includes only `p2`:
   let effOpp : Effect := {
-    targeting := .of (.filtered { controller := .eachOpponent, types := #[.creature], noun := "creature" })
+    targeting := .of (.forEachOpponentControlled (.hasType .creature) (.exact 1))
     resolution := .dealDamage 2 .target
   }
   let expandedEff := gLeft.expandEachOpponentEffect p0 effOpp (some p0BearId)
@@ -1534,7 +1534,7 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
     bear with
     name := "P32 UpTo Token Modal"
     fraTriggerModes := #[
-      { targeting := .of (.filtered { noun := "target token", tokenOnly := true })
+      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
         resolution := .onPermanent .destroy
         phrase := "Destroy target token" }
     ]
@@ -1557,7 +1557,7 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
     name := "P32 UpTo Two Modal"
     fraTriggerModes := #[
       { resolution := .gainLife (.fixed 2), phrase := "Gain 2 life" },
-      { targeting := .of (.filtered { noun := "target token", tokenOnly := true })
+      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
         resolution := .onPermanent .destroy
         phrase := "Destroy target token" }
     ]
@@ -2099,7 +2099,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   -- (3) No-legal-target trigger (`ceaseToExist` CR 603.3d) alongside own vs other vanished `proposedSpell`:
   let tokOnlyTrig : TriggeredAbility :=
     .triggered .youGainLife
-      { targeting := .of (.filtered { noun := "target token", tokenOnly := true })
+      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
         resolution := .onPermanent .tap
         phrase := "Tap target token" } {}
   let gNoLegalTrig0 :=
@@ -2259,7 +2259,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     types := #[.sorcery]
     chooseOneOrBoth := true
     spellModes := #[
-      { targeting := .of (.filtered { noun := "target token", tokenOnly := true })
+      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
         resolution := .onPermanent .destroy
         phrase := "Destroy target token" },
       { resolution := .gainLife (.fixed 2), phrase := "Gain 2 life" }
@@ -2285,7 +2285,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     bear with
     name := "P33 Three Modes"
     fraTriggerModes := #[
-      { targeting := .of (.filtered { noun := "target token", tokenOnly := true })
+      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
         resolution := .onPermanent .destroy
         phrase := "Destroy target token" },
       { resolution := .gainLife (.fixed 2), phrase := "Gain 2 life" },

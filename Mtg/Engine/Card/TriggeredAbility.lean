@@ -571,8 +571,8 @@ def firesOn (ab : TriggeredAbility) (e : TriggerEvent) : Bool :=
   ab.timing.events.contains e
 
 /-- Whom this trigger may target when announced (CR 603.3d / 601.2c). -/
-def targetKind (ab : TriggeredAbility) : TriggerTargetKind :=
-  HasTargeting.targetKind ab
+def targetSpec (ab : TriggeredAbility) : TargetSpec :=
+  HasTargeting.targetSpec ab
 
 /-- True when putting this trigger on the stack requires announcing a target
 (CR 603.3d / 601.2c). “Up to one” still announces, including choosing zero. -/
@@ -707,7 +707,7 @@ private def othersOfSubtypeParts (parts : List ObjectSelector) : Option (Array C
 
 /-- Effect clause from resolution, targeting, and divided-damage parameters. -/
 def resolutionPhrase (t : TriggerTiming) : String :=
-  let noun := t.targeting.kind.noun
+  let noun := t.targeting.spec.noun
   match t.resolution with
   | .pump power toughness who =>
     match power, toughness, who with
@@ -1294,7 +1294,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       "exile up to one target creature other than enchanted creature until this Aura leaves the battlefield"
     | .target, .untilSourceLeaves, .none =>
       if t.allowsZeroTargets then
-        if t.targeting.kind == .defendingPlayerCreature then
+        if t.targeting.spec == TargetSpec.defendingPlayerCreature then
           s!"you may exile {noun} until this leaves the battlefield"
         else
           s!"you may exile {noun}"
@@ -1471,7 +1471,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .fixed 1 => s!"add {manaSymbolsText types}"
     | _ => "add mana"
   | .or [.tap .target, .untap .target] =>
-    if t.targeting.kind == .nonland then
+    if t.targeting.spec == TargetSpec.nonland then
       "choose one — • Tap target nonland permanent. • Untap target nonland permanent"
     else
       "choose one — tap target creature an opponent controls; untap target creature you control"
@@ -1523,7 +1523,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .permanent, .returnedPermanent =>
       s!"return up to one {noun} to its owner's hand"
     | .graveyardPermanent, .none =>
-      s!"choose {noun} that was put there from anywhere this turn. Return it to your hand"
+      s!"choose {noun.replace " from your graveyard" " in your graveyard"} that was put there from anywhere this turn. Return it to your hand"
     | .milledSubtype subtype, .none =>
       s!"put all {subtype} cards milled this way into your hand"
     | .source, .none =>
@@ -1843,7 +1843,7 @@ def leadInSentence (ab : TriggeredAbility) (lead : String) : String :=
 Numbers and the target noun come from the effect, so Oracle refill stays
 in step with the printed line. -/
 def sequenceClause (e : Effect) : Option String :=
-  let noun := e.targetKind.noun
+  let noun := e.targetSpec.noun
   match e.resolution with
   | .sequence [.draw 1, .loseLife 1] =>
     some "you draw a card and lose 1 life"
@@ -2212,9 +2212,9 @@ namespace TriggeredAbility
 
 /-- An FRA triggered ability with its printed sentence. -/
 def fra (w : SharedTriggerWhen) (printed : String) (r : Resolution)
-    (kind : EffectTargetKind := .none) (allowsZeroTargets := false) (maxTargets := 0)
+    (spec : TargetSpec := .none) (allowsZeroTargets := false) (maxTargets := 0)
     (once := false) (cond : FraCondition := .none) : TriggeredAbility :=
-  .triggered w { targeting := .of kind, resolution := r, phrase := printed
+  .triggered w { targeting := .of spec, resolution := r, phrase := printed
                  allowsZeroTargets, maxTargets }
     { printed, onceEachTurn := once, fraCondition := cond, allowsZeroTargets }
 
