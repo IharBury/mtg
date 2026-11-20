@@ -416,8 +416,8 @@ def siegeAndOppGoblin : Game :=
 
 #guard siegeAndGoblin.hasTrample (namedPermanent siegeAndGoblin "Orcish Siegemaster")
 #guard siegeAndGoblin.hasTrample (namedPermanent siegeAndGoblin "Raging Goblin")
-#guard (siegeAndGoblin.effectiveKeywords (namedPermanent siegeAndGoblin "Raging Goblin")).trample
-#guard (siegeAndGoblin.effectiveKeywords (namedPermanent siegeAndGoblin "Raging Goblin")).haste
+#guard KeywordAbility.hasTrample (siegeAndGoblin.effectiveKeywords (namedPermanent siegeAndGoblin "Raging Goblin"))
+#guard KeywordAbility.hasHaste (siegeAndGoblin.effectiveKeywords (namedPermanent siegeAndGoblin "Raging Goblin"))
 #guard !withGoblin.hasTrample (lastPermanent withGoblin)
 #guard !siegeAndOgre.hasTrample (namedPermanent siegeAndOgre "Gray Ogre")
 #guard !siegeAndOppGoblin.hasTrample (namedPermanent siegeAndOppGoblin "Raging Goblin")

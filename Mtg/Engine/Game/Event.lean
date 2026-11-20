@@ -298,14 +298,14 @@ inductive ObjectScope where
   /-- Creatures controlled by `p` (CR 611.3). -/
   | creaturesControlledBy (p : PlayerId)
   /-- Creatures without keywords `k` (CR 611.3). -/
-  | creaturesWithout (k : Keywords)
+  | creaturesWithout (k : Array KeywordAbility)
   /-- Permanents of subtype `s` controlled by `p` (CR 611.3). -/
   | permanentsOfSubtype (p : PlayerId) (s : CardSubtype)
-deriving DecidableEq, Repr, Inhabited, BEq
+deriving Repr, Inhabited, BEq
 
 /-- Abilities added by a Layer 6 effect (CR 613.1f). -/
 structure AbilitySet where
-  keywords : Keywords := {}
+  keywords : Array KeywordAbility := #[]
   firstStrikeOnYourTurn : Bool := false
   staticAbilities : Array StaticAbility := #[]
   triggeredAbilities : Array TriggeredAbility := #[]
@@ -409,8 +409,12 @@ namespace ContinuousEffectSpec
   .layered (.objects #[object]) (.ptCda .pumpPerArtifact) .untilEndOfTurn
 
 /-- `object` gains `keywords` until end of turn (CR 611.2 / 613.1f). -/
-@[inline] def keywordsUntilEot (object : ObjectId) (keywords : Keywords) : ContinuousEffectSpec :=
+@[inline] def keywordsUntilEot (object : ObjectId) (keywords : Array KeywordAbility) : ContinuousEffectSpec :=
   .layered (.objects #[object]) (.abilities { keywords := keywords } .none) .untilEndOfTurn
+
+/-- `object` can't be blocked this turn (CR 509.1b / 611.2 / 613.1f). -/
+@[inline] def cantBeBlockedUntilEot (object : ObjectId) : ContinuousEffectSpec :=
+  .layered (.objects #[object]) (.abilities { staticAbilities := #[.cantBeBlocked] } .none) .untilEndOfTurn
 
 /-- `object` has first strike as long as it's its controller's turn (CR 611.2 / 613.1f). -/
 @[inline] def firstStrikeOnYourTurn (object : ObjectId) : ContinuousEffectSpec :=
@@ -493,7 +497,7 @@ namespace ContinuousEffectSpec
 
 /-- `object` has hexproof for as long as `source` remains on the battlefield (CR 611.2b / 613.1f). -/
 @[inline] def hexproofWhileSource (object : ObjectId) (source : ObjectId) : ContinuousEffectSpec :=
-  .layered (.objects #[object]) (.abilities { keywords := { hexproof := true } } .none) (.whileSourceOnBattlefield source)
+  .layered (.objects #[object]) (.abilities { keywords := #[Keyword.hexproof] } .none) (.whileSourceOnBattlefield source)
 
 /-- Prevent all damage that would be dealt by `object` for as long as `source` remains on the battlefield (CR 611.2b / 615). -/
 @[inline] def preventDamageWhileSource (object : ObjectId) (source : ObjectId) : ContinuousEffectSpec :=
@@ -1348,7 +1352,7 @@ inductive PostStep where
       (top : Bool) (msgOverride : Option String := none)
   | logDealDamageEachOpposingCreature (amount : Nat)
   | finishZemoBoastExileLogs (p : PlayerId) (sourceId : ObjectId) (preIds : Array ObjectId)
-  | markFraCostPaid
+  | markNonManaCostPaid
   | plusOneOnCreatedTokensLoop (controller : PlayerId) (remainingIds : Array ObjectId)
       (amount : Nat)
   | moveIdsInOrderLoop (ids : Array ObjectId) (dest : Zone) (log : String)

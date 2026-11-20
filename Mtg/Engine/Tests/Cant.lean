@@ -63,7 +63,7 @@ def tapThenFrozen : TriggeredAbility.TriggerResolution :=
   .sequence [.tap .target, frozen]
 
 def blocked (g : Game) (name : String) : Bool :=
-  (g.currentKeywords (obj g name)).cantBeBlocked
+  g.hasCantBeBlocked (obj g name)
 
 def grantedBy (g : Game) (name : String) : Array ObjectId :=
   g.cantUntapGrantedBy (obj g name)
@@ -91,7 +91,7 @@ has left are not affected. -/
 #guard
   let g0 := addPermanent board land caster caster
   let g := step g0 unblockable (targets := #[Target.permanent (pid g0 "Field")])
-  !blocked g "Titan" && !(g.currentKeywords (obj g "Field")).cantBeBlocked &&
+  !blocked g "Titan" && !g.hasCantBeBlocked (obj g "Field") &&
     logContains g "The target is no longer legal"
 
 #guard
@@ -102,7 +102,7 @@ has left are not affected. -/
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 unblockable (targets := #[Target.permanent newId])
-  !(g.currentKeywords (anyObj g "Titan")).cantBeBlocked &&
+  !g.hasCantBeBlocked (anyObj g "Titan") &&
     logContains g "The target is no longer in play"
 
 #guard (.cant .beBlocked : TriggeredAbility.TriggerResolution) ==
@@ -124,7 +124,7 @@ left, are not affected. -/
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 (.cant (.beBlocked .source)) (some newId)
-  !(g.currentKeywords (anyObj g "Titan")).cantBeBlocked &&
+  !g.hasCantBeBlocked (anyObj g "Titan") &&
     logContains g "Titan is no longer on the battlefield"
 
 /- The enchanted creature can't be blocked. Nothing enchanted is silent.

@@ -318,8 +318,8 @@ def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
   | .or rs => return .or (← rs.mapM takeSpell)
   | .may r _ _ => return .may (← takeSpell r) (.sequence [])
   | .«if» .teamwork (.onPermanent (.grantKeywords kw)) =>
-    let name ← takeStr kw.joinedAnd
-    let kw := (Keywords.ofName? name).getD kw
+    let name ← takeStr (KeywordAbility.joinedAnd kw)
+    let kw := ((KeywordAbility.ofSimpleName? name).map (#[·])).getD kw
     return .«if» .teamwork (.onPermanent (.grantKeywords kw))
   | .«if» cond r =>
     let r ← takeSpell r
@@ -661,8 +661,6 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
     return .typeSpellsCostLess (← takeCardType ty) (← takeNat n)
   | .supertypeSpellsCostLess s n =>
     return .supertypeSpellsCostLess (← takeSupertype s) (← takeNat n)
-  | .wardDiscardOrPay n => return .wardDiscardOrPay (← takeNat n)
-  | .wardPoisonCounters n => return .wardPoisonCounters (← takeNat n)
   | .otherPowerUpCostsLess n => return .otherPowerUpCostsLess (← takeNat n)
   | .enchantedCreatureHasWard n => return .enchantedCreatureHasWard (← takeNat n)
   | .equippedCreatureGetsHasAndWard p t k w =>
@@ -681,14 +679,28 @@ def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   | .sneak c => return .sneak (← takeCost c)
   | ab => return ab
 
-def takeCostFields (c : ActivationCost) : ArgM ActivationCost := do
-  let mana ← takeCost c.mana
-  let payLife ← if c.payLife == 0 then pure c.payLife else takeNat c.payLife
-  let sacrificeAnotherSubtype ← takeOptSubtype c.sacrificeAnotherSubtype
-  return { c with mana, payLife, sacrificeAnotherSubtype }
+mutual
+
+partial def takeCostItem (item : CostItem) : ArgM CostItem := do
+  match item with
+  | .mana m => return .mana (← takeCost m)
+  | .payLife (.const n) =>
+    if n ≤ 0 then return item
+    else return .payLife (.const (← takeNat n.toNat))
+  | .sacrifice cnt (.filter (.all #[.otherThan .this, .hasSubtype (.literal sub)])) =>
+    return .sacrifice cnt (.filter (.all #[.otherThan .this, .hasSubtype (.literal (← takeSubtype sub))]))
+  | .behold sub => return .behold (← takeSubtype sub)
+  | .or choices => return .or (← choices.mapM takeCostSpec)
+  | other => return other
+
+partial def takeCostSpec (c : CostSpec) : ArgM CostSpec := do
+  let items ← c.items.mapM takeCostItem
+  return { c with items }
+
+end
 
 def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
-  let cost ← takeCostFields ab.cost
+  let cost ← takeCostSpec ab.cost
   let effect ← takeEffect ab.effect
   let otherModes ← ab.otherModes.mapM takeEffect
   let costReductionIfYouControlLegendary ←

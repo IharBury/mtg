@@ -174,7 +174,7 @@ X as 0, so Guiding Hydra returns tapped even if a value was chosen for X. -/
 /-- Grant lifelink until end of turn so the creature's combat damage gains life. -/
 def withLifelink (g : Game) (name : String) : Game :=
   let o := namedPermanent g name
-  g.createEffect (.keywordsUntilEot o.id Keyword.lifelink)
+  g.createEffect (.keywordsUntilEot o.id #[Keyword.lifelink])
 
 /-- Attack with every creature named in `names` and let combat damage happen,
 optionally blocked by `blockers` (blocker name, attacker name). -/
@@ -282,7 +282,7 @@ def breakHexproofWurm : Game :=
   let g := proposeTargeted g ⟨0⟩ (handCardNamed g ⟨0⟩ "Break Under Pressure").id (.player ⟨1⟩)
   let g := mustApply g ⟨0⟩ .pay
   let g := addPermanent g crawWurm ⟨1⟩ ⟨1⟩
-  let g := g.createEffect (.keywordsUntilEot (namedPermanent g "Craw Wurm").id Keyword.hexproof)
+  let g := g.createEffect (.keywordsUntilEot (namedPermanent g "Craw Wurm").id #[Keyword.hexproof])
   passBoth g
 
 #guard !breakHexproofWurm.battlefield.any (fun o => o.name == "Craw Wurm")

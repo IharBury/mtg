@@ -78,62 +78,64 @@ def emptyHand (g : Game) : Game :=
   Mtg.Engine.Tests.emptyHand g caster
 
 def payDraw : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.mana #[.generic 1])) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (CostSpec.ofGeneric 1)) (.draw (.fixed 1)) .ifYouDo
 
 def payPlusOne : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.mana #[.generic 2]))
+  .may (.pay (CostSpec.ofGeneric 2))
     (.sequence [.putCounters (.ofKind .plusOnePlusOne 1) .source, .draw (.fixed 1)])
     .ifYouDo
 
 def payReturn : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.mana #[.generic 1, .colored .green, .colored .blue]))
+  .may (.pay (CostSpec.ofMana { symbols := #[.generic 1, .colored .green, .colored .blue] }))
     (.returnToHand .source) .ifYouDo
 
 def sacPower : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.sacrifice (.fixed 1) .another)) (.putCounters .plusOneSacrificedPower .source) .ifYouDo
+  .may (.pay CostSpec.sacrificeAnotherCreature) (.putCounters .plusOneSacrificedPower .source) .ifYouDo
 
 def sacTreasure : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
+  .may (.pay CostSpec.sacrificeAnotherCreatureOrArtifactSpec)
     (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo
 
 def sacOrDiscard : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]))
+  .may (.pay CostSpec.sacrificeArtifactOrDiscardCard)
     (.draw (.fixed 1)) .ifYouDo
 
 def sacDestroy : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.sacrifice (.fixed 1) .another)) (.queueReflexive (.destroy .target)) .ifYouDo
+  .may (.pay CostSpec.sacrificeAnotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo
 
 def sacDamage : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland]))
+  .may (.pay CostSpec.sacrificeArtifactOrDiscardNonland)
     (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo
 
 def sacOrDiscardReversed : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.or [.discard (.fixed 1) .card, .sacrifice (.fixed 1) .artifact]))
+  .may (.pay (CostSpec.ofItem (.or #[CostSpec.discardCard, CostSpec.sacrificeArtifact])))
     (.draw (.fixed 1)) .ifYouDo
 
 def payArtifact : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.sacrifice (.fixed 1) .artifact)) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay CostSpec.sacrificeArtifact) (.draw (.fixed 1)) .ifYouDo
 
 def payNonland : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.discard (.fixed 1) .nonland)) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay CostSpec.discardNonland) (.draw (.fixed 1)) .ifYouDo
 
 def sacOrMana : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .mana #[.generic 1]])) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (CostSpec.ofItem (.or #[CostSpec.sacrificeArtifact, CostSpec.ofGeneric 1]))) (.draw (.fixed 1)) .ifYouDo
 
 def relicTwo : CardDef := artifact "Relic Two" ManaCost.empty ""
 def wolf : CardDef := creature "Wolf" ManaCost.empty #[] 1 1
 
 def sacTwoArtifacts : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.sacrifice (.fixed 2) .artifact)) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (CostSpec.ofItem (.sacrifice (.exact 2) (.filter (.hasType .artifact))))) (.draw (.fixed 1)) .ifYouDo
 
 def sacPerOther : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.sacrifice .perOtherCreature .artifact)) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (CostSpec.ofItem (.sacrifice
+    (.count (.aggregate .count .one (.inZones .battlefield (.all #[.otherThan .this, .hasType .creature, .controlledBy .you]))))
+    (.filter (.hasType .artifact))))) (.draw (.fixed 1)) .ifYouDo
 
 def sacHand : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.sacrifice (.fixed 1) .hand)) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (CostSpec.ofItem (.sacrifice (.exact 1) (.filter (.not .anyObject))))) (.draw (.fixed 1)) .ifYouDo
 
 def sacZero : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.sacrifice (.fixed 0) .artifact)) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (CostSpec.ofItem (.sacrifice (.exact 0) (.filter (.hasType .artifact))))) (.draw (.fixed 1)) .ifYouDo
 
 def field : CardDef := land "Field" ""
 
@@ -153,8 +155,8 @@ def field : CardDef := land "Field" ""
   "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
 #guard phrase sacDamage ==
   "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
-#guard phrase (.pay (.mana #[.generic 1])) == "pay {1}"
-#guard phrase (.pay (.sacrifice (.fixed 1) .another)) == "pay that cost"
+#guard phrase (.pay (CostSpec.ofGeneric 1)) == "pay {1}"
+#guard phrase (.pay CostSpec.sacrificeAnotherCreature) == "pay that cost"
 
 /- `{1}` offers a generic payment. Declining skips the draw. Paying draws. -/
 #guard
@@ -495,19 +497,21 @@ a permanent, and zero pays nothing. -/
     logContains g "Nothing to sacrifice"
 
 def payDiscard : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.discard (.fixed 1) .card)) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay CostSpec.discardCard) (.draw (.fixed 1)) .ifYouDo
 
 def discardTwo : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.discard (.fixed 2) .card)) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (CostSpec.ofItem (.discard (.exact 2) .hand))) (.draw (.fixed 1)) .ifYouDo
 
 def discardPerPlains : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.discard .perPlains .nonland)) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (CostSpec.ofItem (.discard
+    (.count (.aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal .plains), .controlledBy .you]))))
+    (.matching (.not (.hasType .land)))))) (.draw (.fixed 1)) .ifYouDo
 
 def discardArtifact : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.discard (.fixed 1) .artifact)) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (CostSpec.ofItem (.discard (.exact 1) (.matching (.hasType .artifact))))) (.draw (.fixed 1)) .ifYouDo
 
 def discardZero : TriggeredAbility.TriggerResolution :=
-  .may (.pay (.discard (.fixed 0) .card)) (.draw (.fixed 1)) .ifYouDo
+  .may (.pay (CostSpec.ofItem (.discard (.exact 0) .hand))) (.draw (.fixed 1)) .ifYouDo
 
 def plains : CardDef := land "Plains" "" (subtypes := #["Plains"])
 

@@ -283,8 +283,8 @@ def oliphauntResolved : Game := passBoth oliphauntTargeted
 #guard oliphauntResolved.power (namedPermanent oliphauntResolved "Gray Ogre") == 4
 #guard oliphauntResolved.toughness (namedPermanent oliphauntResolved "Gray Ogre") == 2
 #guard oliphauntResolved.hasTrample (namedPermanent oliphauntResolved "Gray Ogre")
-#guard (oliphauntResolved.effectiveKeywords
-  (namedPermanent oliphauntResolved "Gray Ogre")).trample
+#guard KeywordAbility.hasTrample (oliphauntResolved.effectiveKeywords
+  (namedPermanent oliphauntResolved "Gray Ogre"))
 #guard oliphauntResolved.log.any (fun s =>
   mentions s "gets +2/+0 until end of turn")
 #guard oliphauntResolved.log.any (fun s =>

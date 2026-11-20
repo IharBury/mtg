@@ -86,7 +86,7 @@ def chapterTiming (e : ChapterResolution) : TriggerTiming :=
   | .elvesGetVigilance p =>
     { resolution := .sequence [
         .pump (.fixed p) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)]),
-        .grant (.keywords Keyword.vigilance) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)])] }
+        .grant (.keywords #[Keyword.vigilance]) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)])] }
   | .opponentDiscardsNonland =>
     { targeting := .of .opponent
       resolution := .discard .chosenNonland }
@@ -359,7 +359,8 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .oppCreature, resolution := .gainControl .untilEndOfTurn }
   | .payReturnFromGy =>
     { resolution := .may
-        (.pay (.mana #[.generic 1, .colored .green, .colored .blue])) (.returnToHand .source) .ifYouDo }
+        (.pay (CostSpec.ofMana { symbols := #[.generic 1, .colored .green, .colored .blue] }))
+        (.returnToHand .source) .ifYouDo }
   | .targetOpponentLosesLife n =>
     { targeting := .of .opponent, resolution := .loseLife (.fixed n) (.target .opponent) }
   | .drawXDiscard n =>
@@ -379,10 +380,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .mayPayGenericDraw n plusOne =>
     { resolution :=
         if plusOne then
-          .may (.pay (.mana #[.generic n]))
+          .may (.pay (CostSpec.ofGeneric n))
             (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw (.fixed 1)]) .ifYouDo
         else
-          .may (.pay (.mana #[.generic n])) (.draw (.fixed 1)) .ifYouDo }
+          .may (.pay (CostSpec.ofGeneric n)) (.draw (.fixed 1)) .ifYouDo }
   | .drawThenBottomIfNoLegendary =>
     { resolution := .sequence
         [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)] }
@@ -462,7 +463,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { resolution := .revealLibrary .untilCreature
         (.ifElse .revealedManaValueAtMostLands (.put .revealed) (.returnToHand .revealed)) }
   | .attackSacPlusOneEqualPower =>
-    { resolution := .may (.pay (.sacrifice (.fixed 1) .another))
+    { resolution := .may (.pay CostSpec.sacrificeAnotherCreature)
         (.putCounters .plusOneSacrificedPower .source) .ifYouDo }
   | .lootLandEntersTapped =>
     { resolution := .sequence
@@ -472,7 +473,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .drawPerFatGraveyard =>
     { resolution := .draw .perFatGraveyard }
   | .maySacDrawTreasure =>
-    { resolution := .may (.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact))
+    { resolution := .may (.pay CostSpec.sacrificeAnotherCreatureOrArtifactSpec)
         (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo }
   | .castInstantSorceryFromHand =>
     { resolution := .mayCast .hand .twiceLegendaryWizards .withoutPaying }
@@ -549,7 +550,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { targeting := .of .anotherCreatureYouControl,
       resolution := .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [
         .pump (.fixed 3) (.fixed 0) .target,
-        .grant (.keywords Keyword.firstStrike) .target]) }
+        .grant (.keywords #[Keyword.firstStrike]) .target]) }
   | .honePerOppAttach =>
     { targeting := .of (.ofSlots #[.of .opponent, { domain := .creatureYouControl, count := .upTo 1 }])
       resolution := .sequence
@@ -727,7 +728,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
         (.putCounters (.ofKind .plusOnePlusOne) .permanent) }
   | .maySacArtifactOrDiscardDraw =>
-    { resolution := .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])) (.draw (.fixed 1)) .ifYouDo }
+    { resolution := .may (.pay CostSpec.sacrificeArtifactOrDiscardCard) (.draw (.fixed 1)) .ifYouDo }
   | .enter (.destroy kind) =>
     { events := #[.entering], targeting := .of kind, resolution := .destroy .target }
   | .enter (.dealDamageUpToOne n) =>
@@ -761,10 +762,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sequence [.tap .target, .cant .untapWhileYouControl] }
   | .enter .maySacAnotherThenDestroyOppNonland =>
     { events := #[.entering],
-      resolution := .may (.pay (.sacrifice (.fixed 1) .another)) (.queueReflexive (.destroy .target)) .ifYouDo }
+      resolution := .may (.pay CostSpec.sacrificeAnotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo }
   | .enter .maySacOrDiscardNonlandThenDamage =>
     { events := #[.entering],
-      resolution := .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland]))
+      resolution := .may (.pay CostSpec.sacrificeArtifactOrDiscardNonland)
         (.queueReflexive (.dealDamage (.fixed 2) .target)) .ifYouDo }
   | .enter .revealHandExileUntilLeaves =>
     { events := #[.entering], targeting := .of .opponent, allowsZeroTargets := true,
@@ -780,7 +781,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .alreadyChosen }
   | .enter .mayTapThenGrantIndestructible =>
     { events := #[.entering],
-      resolution := .may (.tap .source) (.queueReflexive (.grant (.keywords Keyword.indestructible) .target)) .ifYouDo }
+      resolution := .may (.tap .source) (.queueReflexive (.grant (.keywords #[Keyword.indestructible]) .target)) .ifYouDo }
   | .enter .tapLoseAbilitiesWhileSource =>
     { events := #[.entering], targeting := .of .creature, allowsZeroTargets := true,
       resolution := .sequence
@@ -824,7 +825,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .death .hellcatReturn =>
     { events := #[.dying]
       resolution := .put .source .underOwner (.entering [
-        .loseAllAbilities, .keywords Keyword.haste,
+        .loseAllAbilities, .keywords #[Keyword.haste],
         .counter .plusOnePlusOne (asEnters := true)]) }
   | .death .villainReturnAsHero =>
     { events := #[.villainYouControlDies]
@@ -838,10 +839,10 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .sacrifice .chosenNontokenCreature }
   | .thisAttack .mayPayPlusOne =>
     { events := #[.attacking]
-      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo }
+      resolution := .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo }
   | .thisAttack .payReturnAttacking =>
     { events := #[.attacking]
-      resolution := .may (.pay (.mana #[.generic 3, .colored .black]))
+      resolution := .may (.pay (CostSpec.ofMana { symbols := #[.generic 3, .colored .black] }))
         (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo }
   | .thisAttack .ifArtifactEnteredDraw =>
     { events := #[.attacking]
@@ -865,7 +866,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
     { events := #[.attacking]
       resolution := .sequence [
         .pump (.fixed 2) (.fixed 0) .source,
-        .grant (.keywords Keyword.indestructible) .source] }
+        .grant (.keywords #[Keyword.indestructible]) .source] }
   | .enterOrAttack .copyKeywords =>
     { events := #[.entering, .attacking], targeting := .of .anotherCreature,
       resolution := .putCounters .missingKeywordsFromTarget .source }
@@ -884,7 +885,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .watch .attacksAloneFirstStrikeMenace =>
     { events := #[.creatureYouControlAttacksAlone],
       resolution := .grant
-        (.keywords (Keywords.merge Keyword.firstStrike Keyword.menace)) .attackingAlone }
+        (.keywords #[Keyword.firstStrike, Keyword.menace]) .attackingAlone }
   | .watch .firstTapUntap =>
     { events := #[.creatureYouControlTapped], resolution := .untap .firstThisTurn }
   | .watch .sheHulkRedirectOnce =>
@@ -916,7 +917,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .watch .villainPlusOneLifelink =>
     { events := #[.anotherVillainEnters],
       resolution := .sequence [
-        .pump (.fixed 1) (.fixed 0) .source, .grant (.keywords Keyword.lifelink) .source] }
+        .pump (.fixed 1) (.fixed 0) .source, .grant (.keywords #[Keyword.lifelink]) .source] }
   | .watch .hulklingCompare =>
     { events := #[.anotherCreatureYouControlEnters],
       resolution := .«if» (.or [.causeGreaterPower, .causeGreaterToughness])
@@ -932,7 +933,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
         .fromLastKnown }
   | .watch .ultronCopy =>
     { events := #[.anotherNontokenArtifactEnters],
-      resolution := .may (.pay (.mana #[.generic 2])) (.becomeCopy .cause) .ifYouDo }
+      resolution := .may (.pay (CostSpec.ofGeneric 2)) (.becomeCopy .cause) .ifYouDo }
   | .watch .enchantedAttachEquipment =>
     { events := #[.enchantedAttacksOrBlocks], targeting := .of .equipmentYouControl
       allowsZeroTargets := true, maxTargets := 1000,
@@ -956,7 +957,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .may (.draw (.fixed 1)) (.sequence []) .ifYouDo }
   | .watch .hawkeyeModes =>
     { events := #[.sourceBecomesTapped], allowsZeroTargets := true,
-      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo }
+      resolution := .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo }
   | .watch .redHulk =>
     { events := #[.sourceDealtDamage],
       resolution := .sequence [
@@ -987,7 +988,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .createTokens .merfolk .blueManaSymbols false }
   | .casting .mayPayHasteUnblockable =>
     { events := #[.youCastNoncreature],
-      resolution := .may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo }
+      resolution := .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo }
   | .casting .plusOneEachOther =>
     { events := #[.youCastNoncreature],
       resolution := .putCounters (.ofKind .plusOnePlusOne) .eachOther }
@@ -1016,7 +1017,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
       resolution := .grant .ironFistTap .source }
   | .casting .targetsGainFlying =>
     { events := #[.youCastTargetingCreature],
-      resolution := .grant (.keywords Keyword.flying) .spellTargets }
+      resolution := .grant (.keywords #[Keyword.flying]) .spellTargets }
   | .casting .copyIfArtifactOrLand =>
     { events := #[.youCastInstantSorceryTargetingArtifactOrLand],
       resolution := .sequence [
@@ -1034,7 +1035,7 @@ def timing : SharedTrigger → TriggeredAbility.TriggerTiming
   | .resource .secondDrawBecome66 =>
     { events := #[.youDrawSecondCard],
       resolution := .sequence [
-        .setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source] }
+        .setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords #[Keyword.trample]) .source] }
   | .resource .secondDrawPlusOneTarget =>
     { events := #[.youDrawSecondCard], targeting := .of .creature,
       resolution := .putCounters (.ofKind .plusOnePlusOne) .permanent }
@@ -1063,9 +1064,9 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).allowsZeroTargets &&
   (SharedTrigger.timing (.thisAttack .blinkNontoken)).maxTargets == 1
 #guard (SharedTrigger.timing (.thisAttack .mayPayPlusOne)).resolution ==
-  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo
+  .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo
 #guard (SharedTrigger.timing (.thisAttack .payReturnAttacking)).resolution ==
-  .may (.pay (.mana #[.generic 3, .colored .black])) (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo
+  .may (.pay (CostSpec.ofMana { symbols := #[.generic 3, .colored .black] })) (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo
 #guard (SharedTrigger.timing (.thisAttack .ifArtifactEnteredDraw)).resolution ==
   .«if» .artifactEnteredThisTurn (.draw (.fixed 1))
 #guard (SharedTrigger.timing (.thisAttack .blinkNontoken)).resolution ==
@@ -1077,7 +1078,7 @@ end SharedTrigger
 #guard (SharedTrigger.timing (.thisAttack .drawIfPower4)).resolution ==
   .«if» (.atLeast .equalSourcePower (.fixed 4)) (.draw (.fixed 1))
 #guard (SharedTrigger.timing (.thisAttack .attacksAlonePlus2Indestructible)).resolution ==
-  .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords Keyword.indestructible) .source]
+  .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords #[Keyword.indestructible]) .source]
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.spec ==
   .anotherCreature
 #guard (SharedTrigger.timing (.enterOrAttack .copyKeywords)).resolution ==
@@ -1091,7 +1092,7 @@ end SharedTrigger
       (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
     .announced
 #guard (SharedTrigger.timing (.watch .hawkeyeModes)).resolution ==
-  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo
+  .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo
 #guard (SharedTrigger.timing (.watch .hulk)).resolution ==
   .sequence [
     .putCounters (.ofKind .plusOnePlusOne) .source,
@@ -1101,7 +1102,7 @@ end SharedTrigger
   #[TriggerEvent.entering, TriggerEvent.attacking]
 #guard (SharedTrigger.timing (.death .hellcatReturn)).resolution ==
   .put .source .underOwner (.entering [
-    .loseAllAbilities, .keywords Keyword.haste,
+    .loseAllAbilities, .keywords #[Keyword.haste],
     .counter .plusOnePlusOne (asEnters := true)])
 #guard (SharedTrigger.timing (.death .villainReturnAsHero)).resolution ==
   .put (.cause (some .villain)) .underOwner (.entering [
@@ -1127,7 +1128,7 @@ end SharedTrigger
 #guard TriggeredAbility.TriggerResolution.ofPermanent .burdenCounter ==
   .putCounters (.ofKind .burden) .permanent
 #guard TriggeredAbility.TriggerResolution.ofPermanent .becomeArtifactIndestructible ==
-  .sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]
+  .sequence [.becomeArtifact, .grant (.keywords #[Keyword.indestructible]) .target]
 #guard TriggeredAbility.TriggerResolution.ofPermanent .becomePrepared == .becomePrepared
 #guard TriggeredAbility.TriggerResolution.ofPermanent (.setBasePT 2 2) ==
   .setBasePT (.fixed 2) (.fixed 2)
@@ -1158,26 +1159,26 @@ end SharedTrigger
 #guard TriggeredAbility.TriggerResolution.ofPermanent .doublePowerAndToughness ==
   .pump .double .double .target
 #guard TriggeredAbility.TriggerResolution.ofPermanent (.pumpAndTrample 2 0) ==
-  .sequence [.pump (.fixed 2) (.fixed 0) .target, .grant (.keywords Keyword.trample) .target]
+  .sequence [.pump (.fixed 2) (.fixed 0) .target, .grant (.keywords #[Keyword.trample]) .target]
 #guard TriggeredAbility.TriggerResolution.ofSource (.plusOne 1) ==
   .putCounters (.ofKind .plusOnePlusOne) .source
 #guard TriggeredAbility.TriggerResolution.ofSource (.pump 1 1) ==
   .pump (.fixed 1) (.fixed 1) .source
 #guard TriggeredAbility.TriggerResolution.ofSource .tap == .tap .source
 #guard TriggeredAbility.TriggerResolution.ofEnchanted .tap == .tap .enchantedWhileSource
-#guard TriggeredAbility.TriggerResolution.ofEnchanted (.grantKeywords Keyword.firstStrike) ==
-  .grant (.keywords Keyword.firstStrike) .enchanted
+#guard TriggeredAbility.TriggerResolution.ofEnchanted (.grantKeywords #[Keyword.firstStrike]) ==
+  .grant (.keywords #[Keyword.firstStrike]) .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .untap ==
   .untap (.target .whileSource)
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource
-    (.grantKeywords Keyword.indestructible) ==
-  .grant (.keywords Keyword.indestructible) (.target .whileSource)
+    (.grantKeywords #[Keyword.indestructible]) ==
+  .grant (.keywords #[Keyword.indestructible]) (.target .whileSource)
 #guard (SharedTrigger.timing (.resource .discardExilePlay)).resolution ==
   .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo
 #guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).resolution ==
   .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent)))
 #guard (SharedTrigger.timing (.resource .secondDrawBecome66)).resolution ==
-  .sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source]
+  .sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords #[Keyword.trample]) .source]
 #guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).resolution ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard (SharedTrigger.timing (.resource .secondDrawDrain)).resolution ==

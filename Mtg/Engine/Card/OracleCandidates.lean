@@ -97,8 +97,8 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.watchVillainAttachEquipment,
   Effect.stepHydeChoose,
   Effect.resourceDrawIfAnotherHeroDamage,
-  Effect.becomeDinosaurHero 3 5 (Keyword.reach.merge Keyword.vigilance),
-  Effect.becomeDinosaurHero 6 6 Keyword.trample,
+  Effect.becomeDinosaurHero 3 5 #[Keyword.reach, Keyword.vigilance],
+  Effect.becomeDinosaurHero 6 6 #[Keyword.trample],
   Effect.enterChooseUpToXModes,
   Effect.resourceSecondDrawBecome66,
   Effect.createTappedTokens .villain21menace 1,
@@ -134,7 +134,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.plusOneAndCreateTokens 2 .robotVillain22,
   Effect.subtypesGainMenace #["Goblin", "Orc"],
   Effect.subtypesGainMenace #["Elf"],
-  Effect.teamGain Keyword.menace,
+  Effect.teamGain #[Keyword.menace],
   Effect.amassGoblinsOrFromGy 1 3,
   Effect.exileTopPlayUntilEndOfNextTurn,
   Effect.tapOneOrTwoCreatures,
@@ -150,7 +150,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.creaturesTargetPlayerGet (-1) (-1),
   Effect.targetPlayerDrawLoseLife 2 2,
   Effect.pumpAndLifelink 2 2,
-  Effect.pumpAndGrantKeywords 3 0 (Keyword.reach.merge Keyword.firstStrike),
+  Effect.pumpAndGrantKeywords 3 0 #[Keyword.reach, Keyword.firstStrike],
   Effect.creaturesYouControlGet 2 1,
   Effect.destroyArtifactOrEnchantmentGainLife 2,
   Effect.becomeArtifactGainIndestructible,
@@ -227,7 +227,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.chooseTwoDestroyRest,
   Effect.blackGateUnblockable,
   Effect.burdenThenDraw,
-  Effect.teamGain Keyword.doubleStrike,
+  Effect.teamGain #[Keyword.doubleStrike],
   Effect.sourceGainsIndestructibleTap,
   Effect.castingPlusOneEachOther,
   Effect.watchHulk,
@@ -244,7 +244,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.mayPutHeroMvOrDraw 3,
   Effect.plusOneOnEachYouControl,
   Effect.investigatePumpFlyingUntap,
-  Effect.anotherYouControlGetsAndGrant 2 0 Keyword.hexproof,
+  Effect.anotherYouControlGetsAndGrant 2 0 #[Keyword.hexproof],
   Effect.castingTapCreatureOrLand,
   Effect.tapTargetCreature,
   Effect.enterOppCreatesTheVoid,
@@ -306,7 +306,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.revealTopPutCreatures 8,
   Effect.fight,
   Effect.plusOneOnCreature,
-  Effect.plusOneAndGrant ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste),
+  Effect.plusOneAndGrant #[Keyword.vigilance, Keyword.indestructible, Keyword.haste],
   Effect.resourceGainLifePlusOnes,
   Effect.enterCreateZabu,
   Effect.resourcePlusOneOnThisOnce,
@@ -343,7 +343,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.copyControlledAbility .artifact,
   Effect.deathDeathtouchOppSac,
   Effect.castingTargetsGainFlying,
-  Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance,
+  Effect.creaturesYouControlGetAndGrant 1 1 #[Keyword.vigilance],
   Effect.fightUpToOne,
   Effect.plusTwoThenOddEvenDestroy,
   Effect.enterCreateSturdyShieldAttach,
@@ -448,7 +448,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.ofTrigger .plusOneEachOtherGainLife,
   Effect.ofTrigger .pumpTargetPerPlains,
   Effect.ofTrigger .pumpForEachOtherCreature,
-  Effect.ofTrigger (.onPermanent .attackingCreatureWithoutFlying (.grantKeywords Keyword.flying)),
+  Effect.ofTrigger (.onPermanent .attackingCreatureWithoutFlying (.grantKeywords #[Keyword.flying])),
   Effect.ofTrigger .returnLinkedExile,
   Effect.ofTrigger .createAxe,
   Effect.ofTrigger .tapOppOrUntapYours,
@@ -503,7 +503,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.ofTrigger .drawGainLifeIfAnotherHero,
   Effect.ofTrigger .plusOneOrTwoIfAnotherHero,
   Effect.ofTrigger .maySacArtifactOrDiscardDraw,
-  Effect.pumpAndGrantKeywords 2 2 Keyword.flying,
+  Effect.pumpAndGrantKeywords 2 2 #[Keyword.flying],
   Effect.plusOneThenGainLife 1 1,
   Effect.damageTargetOpponent 1,
   Effect.millSelf 3,
@@ -516,7 +516,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.oppSacrificesGreatestMvGainLife 2,
   Effect.damageThenEmpowerExcess 6,
   Effect.jaceLoyaltyAtInstantSpeed,
-  Effect.creaturesYouControlGetAndGrant 1 0 Keyword.haste,
+  Effect.creaturesYouControlGetAndGrant 1 0 #[Keyword.haste],
   Effect.createTokens .pridemate 1,
   Effect.copyEachCreatureOfTargetPlayer,
   Effect.copyNextInstantSorceryThisTurn,
@@ -577,10 +577,10 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.drawThenEmpower 1 2,
   Effect.bounceSpellOrCreature,
   Effect.damageToCreatureWithFlying 6,
-  Effect.plusOneThenGrant 2 Keyword.trample,
+  Effect.plusOneThenGrant 2 #[Keyword.trample],
   Effect.addColorless 3,
   Effect.recursiveRecruitment,
-  Effect.targetCreatureGains (Keyword.firstStrike.merge Keyword.deathtouch)
+  Effect.targetCreatureGains #[Keyword.firstStrike, Keyword.deathtouch]
     "first strike and deathtouch",
   Effect.cadetWithHaste,
   Effect.stingingVitriol,
@@ -588,7 +588,7 @@ def spellEffects : Thunk (Array Effect) := Thunk.mk fun _ => #[
   Effect.millThenDraw 3 1,
   Effect.twinnedVision,
   Effect.twistedFates,
-  Effect.permanentYouControlGains (Keyword.hexproof.merge Keyword.indestructible),
+  Effect.permanentYouControlGains #[Keyword.hexproof, Keyword.indestructible],
   Effect.drawAndGainLife 1 3,
   Effect.vindictiveTriumph,
   Effect.tamsResistance,
@@ -657,15 +657,15 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .powerEqualCreaturesYouControl,
   .otherCreaturesGet #[] 1 1,
   .cantAttackUnlessYouControlNOther 2 .wolf,
-  .equippedCreatureGetsAndHas 1 0 Keyword.menace,
-  .enchantedCreatureGetsAndHas 2 2 Keyword.flying,
+  .equippedCreatureGetsAndHas 1 0 #[Keyword.menace],
+  .enchantedCreatureGetsAndHas 2 2 #[Keyword.flying],
   .equippedCreatureGetsAndWard 2 2 1,
   .creaturesYouControlWithPlusOneHaveMenace,
   .creaturesYouControlGet 1 1,
   .hasteIfYouControlOtherSubtype .goblin,
-  .equippedCreatureGetsAndHas 1 1 Keyword.reach,
-  .getsAndHasIfEnduringStory 1 0 Keyword.vigilance,
-  .getsAndHasIfEnduringStory 1 0 Keyword.haste,
+  .equippedCreatureGetsAndHas 1 1 #[Keyword.reach],
+  .getsAndHasIfEnduringStory 1 0 #[Keyword.vigilance],
+  .getsAndHasIfEnduringStory 1 0 #[Keyword.haste],
   .doesntUntapUnlessEnduringStory,
   .creaturesYouControlGetIfEnduringStory 1 1,
   .artifactsAndCreaturesHaveWardIfEnduringStory 1,
@@ -673,7 +673,7 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .thresholdGets 1 1,
   .cantBeBlockedByPowerAtMost 2,
   .equipAbilitiesTargetingThisCostLess 2,
-  .equippedCreatureHasKeywordsAndCantBeBlocked Keyword.hexproof,
+  .equippedCreatureHasKeywordsAndCantBeBlocked #[Keyword.hexproof],
   .firstEquipFreeIfEnduringStory,
   .lifelinkIfYouControlOtherSubtype .dwarf,
   .instantSorceryCostReductionEqualEquippedPower,
@@ -682,37 +682,35 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .enchantedLosesAbilitiesDoesntUntap,
   .exileOppDeathCreateWolf,
   .powerPerFatGraveyard 2,
-  .equippedCreatureGetsAndHas 2 2 Keyword.trample,
+  .equippedCreatureGetsAndHas 2 2 #[Keyword.trample],
   .copyActivatedFromGySubtype .elf,
   .equippedTriggersAgain,
-  .equippedCreatureHasKeywords Keyword.prowess,
+  .equippedCreatureHasKeywords #[Keyword.prowess],
   .enchantedIsOnlySubtypeCantAttackOrBlock .spirit,
   .powerEqualCardsInHand,
   .cantBeBlockedExceptBy 3,
   .armiesYouControlHaveTrample,
   .legendaryCreaturesGetAndWard 2 1 1,
   .nonlegendaryCreaturesGet 1 1,
-  .equippedCreatureHasKeywords Keyword.indestructible,
-  .equippedCreaturesHaveKeywordsDuringYourTurn (Keyword.firstStrike.merge Keyword.vigilance),
+  .equippedCreatureHasKeywords #[Keyword.indestructible],
+  .equippedCreaturesHaveKeywordsDuringYourTurn #[Keyword.firstStrike, Keyword.vigilance],
   .otherSubtypeHaveTapAddOneOf #[.elf] #[.colored .green, .colored .blue],
   .otherSubtypeGetPowerPerArtifactToken .dwarf,
   .cantBeBlockedByPowerAtLeast 3,
   .equippedHexproofUnblockableDuringYourTurn,
   .extraTriggerAnotherYouControl #[.wolf] #[.battle],
   .equippedFirstStrikePlusPerInstantSorcery,
-  .wardDiscardEnchantmentInstantOrSorcery,
-  .wardSacrificeLegendary,
   .equippedGetsTrampleAndCombatTreasures 1 1,
   StaticAbility.opponentsCantCastOnYourTurn,
   StaticAbility.preventAllDamageToThis,
   StaticAbility.creaturesYouControlOfSubtypeGet .hero 2 2,
   StaticAbility.youAndOtherSubtypeHaveHexproofIfShield .hero,
   StaticAbility.flashIfOpponentCastThisTurn,
-  StaticAbility.attackingTokensHave Keyword.firstStrike,
+  StaticAbility.attackingTokensHave #[Keyword.firstStrike],
   StaticAbility.enchantedCreatureGetsHasAndTypes 2 2
-        (Keyword.firstStrike.merge Keyword.vigilance) #[.soldier],
+        #[Keyword.firstStrike, Keyword.vigilance] #[.soldier],
   StaticAbility.otherCreaturesGet #[.merfolk] 1 1,
-  StaticAbility.equippedCreatureGetsHasAndWard 1 1 Keyword.flying 1,
+  StaticAbility.equippedCreatureGetsHasAndWard 1 1 #[Keyword.flying] 1,
   StaticAbility.enchantedLosesAbilitiesCantUntap,
   .improvise,
   .noncreatureSpellsHaveImprovise,
@@ -733,14 +731,14 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   StaticAbility.equippedDealsDoubleDamage,
   StaticAbility.mayBeginOnBattlefield,
   StaticAbility.instantSorceryCostLessEqualPower,
-  StaticAbility.enchantedCreatureGetsAndHas 1 0 Keyword.haste,
+  StaticAbility.enchantedCreatureGetsAndHas 1 0 #[Keyword.haste],
   StaticAbility.extraPowerUpActivation,
   StaticAbility.extraCounterOnPermanents,
   StaticAbility.mayPlayLandsFromGraveyard,
   StaticAbility.activateCreaturesAsThoughHaste,
   StaticAbility.enchantedCreatureGetsHasAndWard 4 4
-        Keyword.trample 1,
-  StaticAbility.creaturesWithPlusOneHave Keyword.trample,
+        #[Keyword.trample] 1,
+  StaticAbility.creaturesWithPlusOneHave #[Keyword.trample],
   StaticAbility.getsAndAllTypesIfGyCreatureCards 2 2 2,
   StaticAbility.attacksEachCombatIfAble,
   StaticAbility.flyingIfPlusOneThisTurn,
@@ -749,13 +747,11 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   StaticAbility.getsIfGyCreatureCards 2 2 1,
   .extort,
   StaticAbility.entersWithXPlusOne,
-  StaticAbility.wardPoisonCounters 5,
   StaticAbility.flyingCantAttackYouOrBlockYours,
-  StaticAbility.wardDiscardOrPay 2,
   StaticAbility.getsPowerPerAttachedEquipment 2,
   StaticAbility.healOtherDamageWhenDealt,
-  StaticAbility.equippedCreatureGetsAndHas 0 8 Keyword.vigilance,
-  StaticAbility.equippedCreatureGetsAndHas 2 1 Keyword.flying,
+  StaticAbility.equippedCreatureGetsAndHas 0 8 #[Keyword.vigilance],
+  StaticAbility.equippedCreatureGetsAndHas 2 1 #[Keyword.flying],
   .powerEqualLegendaryCreaturesYouControl,
   .maximumHandSize 10,
   .planeswalkersSurviveZeroLoyalty,
@@ -794,8 +790,6 @@ def staticAbilities : Thunk (Array StaticAbility) := Thunk.mk fun _ => #[
   .fra .noncreatureSpellsCostLess,
   .fra .costsLessIfCastNoncreature,
   .fra .exileOpponentsDyingCreatures,
-  .fra .wardDiscardCard,
-  .fra .wardSacrificeThreePermanents,
   .fra .powerPerCreatureAndPlaneswalkerCard,
   .fra .otherPlusOneCreaturesHaveHaste,
   .fra .creaturesYouControlHaveHaste,
@@ -867,7 +861,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .onEnterAmassThenAttach 1,
   .onEnterAttachToSubtype "Dwarf",
   .onYourEndStepDraw,
-  .onAttackTargetGainsKeywords Keyword.firstStrike,
+  .onAttackTargetGainsKeywords #[Keyword.firstStrike],
   .onEnterSearchBasicToHand,
   .onEnterDealDamageDestroyIfSubtype 1 "Dragon",
   .onAttackDamageEqualTreasures,
@@ -1063,7 +1057,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .onCreatureCardsToGyDrawLoseLifeAndPlan,
   .onThirdPlanCreateRobots,
   .onResource Effect.resourceSecondDrawPlusOneTarget,
-  .onEnterAttachThen (.grantKeywords Keyword.indestructible),
+  .onEnterAttachThen (.grantKeywords #[Keyword.indestructible]),
   .onWatch Effect.watchVillainAttachEquipment,
   .onEquippedCreatureYouControlAttacksConnive,
   .onDeath Effect.deathVillainReturnAsHero,
@@ -1082,7 +1076,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .onEnter (Effect.enterDealDamageUpToOne 4),
   .onWatch Effect.watchRedHulk,
   .onCasting Effect.castingMayPayHasteUnblockable,
-  .onEnterEnchanted (.grantKeywords Keyword.firstStrike),
+  .onEnterEnchanted (.grantKeywords #[Keyword.firstStrike]),
   .onEnter Effect.enterExileGyPlayUntilNextTurn,
   .onCasting Effect.castingDamageEqualMv,
   .onEnterCreateFoodOrTreasure,
@@ -1156,8 +1150,8 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
   .triggered .landYouControlEnters (Effect.ofTrigger (.gainLife 1)),
   .triggered (.subtypeYouControlEnters .plains) (Effect.ofTrigger (.onPermanent .creature (.plusOne 1))),
   .triggered .youGainLife (Effect.ofTrigger .loyaltyOnSource),
-  .triggered .enter (Effect.ofTrigger (.grantThenCounterByType Keyword.hexproof)),
-  .triggered .enter (Effect.ofTrigger (.grantThenCounterByType Keyword.deathtouch)),
+  .triggered .enter (Effect.ofTrigger (.grantThenCounterByType #[Keyword.hexproof])),
+  .triggered .enter (Effect.ofTrigger (.grantThenCounterByType #[Keyword.deathtouch])),
   .triggered .enter (Effect.ofTrigger .destroyOppPermanentIfSixLands),
   .onStep (Effect.ofTrigger .pumpOrCounterIfScried),
   .triggered .eachUpkeep (Effect.ofTrigger (.createTokens .forestTentacle 1)),
@@ -1210,7 +1204,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     "When this Equipment enters, you may pay {2}. When you do, for each opponent, destroy up to one target creature or planeswalker that player controls."
     (.mayPayThenDestroyPerOpponent 2),
   TriggeredAbility.fra .enter "When this creature enters, target creature gets +2/+2 and gains deathtouch until end of turn."
-    (.sequence [.onPermanent (.pump 2 2), .onPermanent (.grantKeywords Keyword.deathtouch)])
+    (.sequence [.onPermanent (.pump 2 2), .onPermanent (.grantKeywords #[Keyword.deathtouch])])
     .creature,
   TriggeredAbility.fra .attack "Whenever this creature attacks, it deals 1 damage to each opponent and you gain 1 life."
     (.sequence [.damageEachOpponent 1, .gainLife 1]),
@@ -1222,7 +1216,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.returnSourceFromGy true false 0) (cond := .opponentDealtNoncombatDamageLastTurn),
   TriggeredAbility.fra .enter
     "When this creature enters, creatures you control gain trample and get +X/+0 until end of turn, where X is the number of artifacts you control."
-    (.sequence [.creaturesGetPowerPerArtifact, .teamGain Keyword.trample]),
+    (.sequence [.creaturesGetPowerPerArtifact, .teamGain #[Keyword.trample]]),
   TriggeredAbility.fra .enter
     "When this creature enters, search your library for a card, put it into your hand, shuffle, then discard a card at random."
     (.searchCardThenDiscardRandom),
@@ -1325,7 +1319,7 @@ def triggeredAbilities : Thunk (Array TriggeredAbility) := Thunk.mk fun _ => #[
     (.loyaltyOnEachPlaneswalkerYouControl),
   TriggeredAbility.fra (.fra .creatureYouControlAttacksPlayerAlone)
     "Whenever a creature you control attacks a player alone, it gains double strike until end of turn."
-    (.causeGains Keyword.doubleStrike),
+    (.causeGains #[Keyword.doubleStrike]),
   TriggeredAbility.fra (.fra .anotherNontokenCreatureYouControlEnters)
     "Whenever another nontoken creature you control enters, untap this creature." (.untapSource),
   TriggeredAbility.fra .enter
@@ -1437,7 +1431,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   activated (Effect.sourceGets 1 1) (ManaCost.ofGeneric 2)
           (costReductionIfYouControlLegendary := 2),
   {
-        cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true },
+        cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapSelf, .sacrifice (.exact 1) .self],
         effect := Effect.gainLife 3
       },
   equipAbility (ManaCost.ofGeneric 3),
@@ -1524,7 +1518,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
           (onlyAsSorcery := true),
   activated (Effect.blackGateUnblockable) (ManaCost.ofGenericAndColor 1 .black) (tap := true),
   activated (Effect.burdenThenDraw) (tap := true),
-  activated (Effect.teamGain Keyword.doubleStrike) (ManaCost.ofGeneric 10),
+  activated (Effect.teamGain #[Keyword.doubleStrike]) (ManaCost.ofGeneric 10),
   activated (Effect.sourceGainsIndestructibleTap) (discardACard := true),
   activated (Effect.plusOneOnEachOtherSubtype "Hero" 1) (ManaCost.empty) (tap := true),
   typecyclingAbility "Basic land" (ManaCost.ofGeneric 2),
@@ -1535,7 +1529,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   activated (Effect.harnessInfinityStone) (ManaCost.ofGenericAndColor 5 .white) (tap := true),
   activated (Effect.transform) (ManaCost.ofGenericAndColors 2 [.red, .white, .white]) (onlyAsSorcery := true),
   activated (Effect.lookAtTopPutTypes 7 #["Hero", "Equipment", "Vehicle"]) (ManaCost.ofColors [.white, .blue, .black, .red, .green]) (powerUp := true),
-  activated (Effect.anotherYouControlGetsAndGrant 2 0 Keyword.hexproof) (ManaCost.ofGeneric 2) (tap := true),
+  activated (Effect.anotherYouControlGetsAndGrant 2 0 #[Keyword.hexproof]) (ManaCost.ofGeneric 2) (tap := true),
   activated (Effect.tapTargetCreature) (ManaCost.ofGeneric 2) (tap := true)
         (costReductionIfTargetPowerAtMost := some (1, 3)),
   powerUpAbility (Effect.putPlusOnePlusOneOnSource 3) (ManaCost.ofGenericAndColor 5 .blue),
@@ -1585,11 +1579,11 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
   activated (Effect.addAnyColorEqualToSourcePower) (ManaCost.empty) (tap := true),
   activated (Effect.destroyTargetNoncreatureArtOrEnch)
         (sacrificeSource := true) (onlyAsSorcery := true),
-  activated (Effect.plusOneAndGrant ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste)) (ManaCost.ofGenericAndColor 4 .green) (powerUp := true),
+  activated (Effect.plusOneAndGrant #[Keyword.vigilance, Keyword.indestructible, Keyword.haste]) (ManaCost.ofGenericAndColor 4 .green) (powerUp := true),
   activated (Effect.plusOneAndCreateTokens 1 .hero32vigilance) (ManaCost.ofGenericAndColor 6 .green) (powerUp := true),
   activated (Effect.proliferateEachKind) (ManaCost.empty) (tap := true) (onlyAsSorcery := true),
-  activated (Effect.becomeTypes #["Dinosaur", "Hero"] 3 5 (Keyword.reach.merge Keyword.vigilance)) (ManaCost.ofGeneric 3),
-  activated (Effect.becomeTypes #["Dinosaur", "Hero"] 6 6 Keyword.trample) (ManaCost.ofGeneric 6),
+  activated (Effect.becomeTypes #["Dinosaur", "Hero"] 3 5 #[Keyword.reach, Keyword.vigilance]) (ManaCost.ofGeneric 3),
+  activated (Effect.becomeTypes #["Dinosaur", "Hero"] 6 6 #[Keyword.trample]) (ManaCost.ofGeneric 6),
   activated (Effect.millThenPutSubtypeOrEnchantment 4 "Hero") (ManaCost.ofGeneric 3) (tap := true),
   powerUpAbility (Effect.putPlusOnePlusOneOnSource 2) (ManaCost.ofGenericAndColor 3 .green),
   activated (Effect.addTwoAnyColorCreatureSources) (ManaCost.empty) (tap := true),
@@ -1623,7 +1617,7 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
           (sacrificeArtifact := true) (onlyAsSorcery := true),
   activated (Effect.targetSubtypeConnives "Villain") (ManaCost.ofGeneric 3) (tap := true) (onlyAsSorcery := true),
   {
-      cost := { mana := ManaCost.ofGeneric 2, sacrificeSource := true },
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .sacrifice (.exact 1) .self],
       effect := Effect.abilityDraw 1
     },
   activated (Effect.abilityEmpowerJace 2) (ManaCost.ofGeneric 6),
@@ -1646,144 +1640,144 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
     "{3}, Exile this card from your hand: Target land gains \"{T}: Add {C}{C}\" until this card is cast from exile. You may cast this card for as long as it remains exiled."
     (FraCandidates.ab (.emrakulGrantMana) "Target land gains \"{T}: Add {C}{C}\" until this card is cast from exile. You may cast this card for as long as it remains exiled"
       .land)
-    { mana := ManaCost.ofGeneric 3, fra := .exileSourceFromHand } (activateFromHand := true),
+    (CostSpec.ofItems #[.mana (ManaCost.ofGeneric 3), .exile (.exact 1) .yourHand .self false]) (activateFromHand := true),
   ActivatedAbility.fra "{4}{W}: Creatures you control get +1/+1 until end of turn."
     (FraCandidates.ab (.creaturesYouControlPump 1 1) "Creatures you control get +1/+1 until end of turn")
-    { mana := ⟨#[.generic 4, .colored .white]⟩ },
+    (CostSpec.ofMana ⟨#[.generic 4, .colored .white]⟩),
   ActivatedAbility.fra "{3}{U}{U}, Exile this card from your graveyard: Draw two cards."
     (FraCandidates.ab (.draw 2) "Draw two cards")
-    { mana := ⟨#[.generic 3, .colored .blue, .colored .blue]⟩, exileSourceFromGraveyard := true }
+    (CostSpec.ofItems #[.mana ⟨#[.generic 3, .colored .blue, .colored .blue]⟩, .exile (.exact 1) .yourGraveyard .self false])
     (activateFromGraveyard := true),
   ActivatedAbility.fra "{3}{U}: Surveil 1." (FraCandidates.ab (.surveil 1) "Surveil 1")
-    { mana := ⟨#[.generic 3, .colored .blue]⟩ },
+    (CostSpec.ofMana ⟨#[.generic 3, .colored .blue]⟩),
   ActivatedAbility.fra "{U}, Sacrifice this creature: The next spell you cast this turn can't be countered."
     (FraCandidates.ab (.nextSpellCantBeCountered) "The next spell you cast this turn can't be countered")
-    { mana := ⟨#[.colored .blue]⟩, sacrificeSource := true },
+    (CostSpec.ofItems #[.mana ⟨#[.colored .blue]⟩, .sacrifice (.exact 1) .self]),
   ActivatedAbility.fra "{2}: This creature gets +1/-1 until end of turn."
     (FraCandidates.ab (.onSource (.pump 1 (-1))) "This creature gets +1/-1 until end of turn")
-    { mana := ManaCost.ofGeneric 2 },
+    (CostSpec.ofGeneric 2),
   ActivatedAbility.fra "{3}{B}, Exile this card from your graveyard: Return another target creature card from your graveyard to your hand."
     (FraCandidates.ab (.returnFromGyToHand) "Return another target creature card from your graveyard to your hand"
       (.ofDomain (.object .yourGraveyard (.all #[.otherThan .this, .hasType .creature, .isKind .card]))))
-    { mana := ⟨#[.generic 3, .colored .black]⟩, exileSourceFromGraveyard := true }
+    (CostSpec.ofItems #[.mana ⟨#[.generic 3, .colored .black]⟩, .exile (.exact 1) .yourGraveyard .self false])
     (activateFromGraveyard := true),
   ActivatedAbility.fra "{T}, Discard a card: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
-    { tap := true, discardACard := true },
+    (CostSpec.tapOnly.append CostSpec.discardCard),
   ActivatedAbility.fra
     "{3}{R}: Exile target creature or planeswalker you control. Reveal cards from the top of your library until you reveal a creature or planeswalker card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. Activate only as a sorcery."
     (FraCandidates.ab (.identityEcho) "Exile target creature or planeswalker you control"
       (.ofDomain (.object .battlefield (.all #[.any #[.hasType .creature, .hasType .planeswalker], .controlledBy .you]))))
-    { mana := ⟨#[.generic 3, .colored .red]⟩ } (onlyAsSorcery := true),
+    (CostSpec.ofMana ⟨#[.generic 3, .colored .red]⟩) (onlyAsSorcery := true),
   ActivatedAbility.fra
     "Sacrifice this creature: Destroy target artifact or enchantment. If that permanent was a legendary enchantment, draw a card. Activate only as a sorcery."
     (FraCandidates.ab (.destroyDrawIfLegendaryEnchantment) "Destroy target artifact or enchantment"
       .artifactOrEnchantment)
-    { sacrificeSource := true } (onlyAsSorcery := true),
+    CostSpec.sacSelf (onlyAsSorcery := true),
   ActivatedAbility.fra
     "{1}, Sacrifice another artifact: Put a +1/+1 counter on this creature. It gains your choice of trample, hexproof, or haste until end of turn."
     (FraCandidates.ab (.sequence [.plusOneOnSource 1, .chooseKeyword [.trample, .hexproof, .haste]]) "Put a +1/+1 counter on this creature")
-    { mana := ManaCost.ofGeneric 1, fra := .sacrificeAnotherArtifact },
+    ((CostSpec.ofGeneric 1).append CostSpec.sacrificeAnotherArtifact),
   ActivatedAbility.fra "{4}{G}: Return this card from your graveyard to your hand."
     (FraCandidates.ab .returnFromGraveyardToHand "Return this card from your graveyard to your hand")
-    { mana := ⟨#[.generic 4, .colored .green]⟩ } (activateFromGraveyard := true),
+    (CostSpec.ofMana ⟨#[.generic 4, .colored .green]⟩) (activateFromGraveyard := true),
   ActivatedAbility.fra "{3}{G}, Discard this card: Destroy target creature with flying."
     (FraCandidates.ab (.destroyTarget) "Destroy target creature with flying"
       .creatureWithFlying)
-    { mana := ⟨#[.generic 3, .colored .green]⟩, discardSource := true } (activateFromHand := true),
+    (CostSpec.ofItems #[.mana ⟨#[.generic 3, .colored .green]⟩, .discard (.exact 1) .self]) (activateFromHand := true),
   ActivatedAbility.fra "{6}{G}{G}: This creature gets +4/+4 and gains trample until end of turn."
     (FraCandidates.ab (.onSource (.pumpAndTrample 4 4)) "This creature gets +4/+4 and gains trample until end of turn")
-    { mana := ⟨#[.generic 6, .colored .green, .colored .green]⟩ },
+    (CostSpec.ofMana ⟨#[.generic 6, .colored .green, .colored .green]⟩),
   ActivatedAbility.fra
     "{6}: Create a Heartwood token. Then this creature gets +X/+0 until end of turn, where X is the number of artifacts you control."
     (FraCandidates.ab (.sequence [.createTokens .heartwood 1, .sourceGetsPowerPerArtifact])
       "Create a Heartwood token")
-    { mana := ManaCost.ofGeneric 6 },
+    (CostSpec.ofGeneric 6),
   ActivatedAbility.fra "{2}{W/B}: Return this card from your graveyard to your hand."
     (FraCandidates.ab .returnFromGraveyardToHand "Return this card from your graveyard to your hand")
-    { mana := ⟨#[.generic 2, .hybrid .white .black]⟩ } (activateFromGraveyard := true),
+    (CostSpec.ofMana ⟨#[.generic 2, .hybrid .white .black]⟩) (activateFromGraveyard := true),
   ActivatedAbility.fra "{4}{G}{W}: Target creature gains trample and lifelink until end of turn."
-    (FraCandidates.ab (.onPermanent (.grantKeywords (Keyword.trample.merge Keyword.lifelink)))
+    (FraCandidates.ab (.onPermanent (.grantKeywords #[Keyword.trample, Keyword.lifelink]))
       "Target creature gains trample and lifelink until end of turn" .creature)
-    { mana := ⟨#[.generic 4, .colored .green, .colored .white]⟩ },
+    (CostSpec.ofMana ⟨#[.generic 4, .colored .green, .colored .white]⟩),
   ActivatedAbility.fra
     "{4}: Create a 2/2 colorless Wizard Soldier creature token named Cadet. Then creatures you control gain haste until end of turn."
-    (FraCandidates.ab (.sequence [.createTokens .cadet 1, .teamGain Keyword.haste]) "Create a Cadet")
-    { mana := ManaCost.ofGeneric 4 },
+    (FraCandidates.ab (.sequence [.createTokens .cadet 1, .teamGain #[Keyword.haste]]) "Create a Cadet")
+    (CostSpec.ofGeneric 4),
   ActivatedAbility.fra "{2}: Put target card from your graveyard on the bottom of your library."
     (FraCandidates.ab (.graveyardCardToLibraryBottom) "Put target card from your graveyard on the bottom of your library"
       (.ofDomain (.object .yourGraveyard .isCard)))
-    { mana := ManaCost.ofGeneric 2 },
+    (CostSpec.ofGeneric 2),
   ActivatedAbility.fra
     "{W}{U}: Return this card from your graveyard to the battlefield with a finality counter on it. Activate only if you've scried or surveilled this turn."
     (FraCandidates.ab .returnFromGyWithFinality "Return this card from your graveyard to the battlefield with a finality counter on it")
-    { mana := ⟨#[.colored .white, .colored .blue]⟩ } (activateFromGraveyard := true)
+    (CostSpec.ofMana ⟨#[.colored .white, .colored .blue]⟩) (activateFromGraveyard := true)
     (cond := .scriedOrSurveilledThisTurn),
   ActivatedAbility.fra "{1}, {T}, Discard a legendary card: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
-    { mana := ManaCost.ofGeneric 1, tap := true, fra := .discardLegendaryCard },
+    ((CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf]).append CostSpec.discardLegendaryCard),
   ActivatedAbility.fra "Tap two untapped artifacts you control: Put two +1/+1 counters on this creature."
     (FraCandidates.ab (.onSource (.plusOne 2)) "Put two +1/+1 counters on this creature")
-    { fra := .tapTwoUntappedArtifacts },
+    CostSpec.tapTwoUntappedArtifacts,
   { ActivatedAbility.fra
       "Equip {3}. This ability costs {1} less to activate for each +1/+1 counter on the creature it targets."
-      Effect.attachToTargetCreatureYouControl { mana := ManaCost.ofGeneric 3 } (onlyAsSorcery := true)
+      Effect.attachToTargetCreatureYouControl (CostSpec.ofGeneric 3) (onlyAsSorcery := true)
     with costLessPerPlusOneOnTarget := true },
   ActivatedAbility.fra "{2}: This creature gains flying until end of turn."
-    (FraCandidates.ab (.onSource (.grantKeywords Keyword.flying)) "This creature gains flying until end of turn")
-    { mana := ManaCost.ofGeneric 2 },
+    (FraCandidates.ab (.onSource (.grantKeywords #[Keyword.flying])) "This creature gains flying until end of turn")
+    (CostSpec.ofGeneric 2),
   ActivatedAbility.fra "{5}, {T}, Exile this artifact: Destroy all creatures. Activate only as a sorcery."
     (FraCandidates.ab (.destroyAllCreatures) "Destroy all creatures")
-    { mana := ManaCost.ofGeneric 5, tap := true, fra := .exileSource } (onlyAsSorcery := true),
+    (CostSpec.ofItems #[.mana (ManaCost.ofGeneric 5), .tapSelf, .exile (.exact 1) .battlefield .self false]) (onlyAsSorcery := true),
   ActivatedAbility.fra
     "{6}, Sacrifice this creature: Choose target creature or planeswalker an opponent controls. Its owner shuffles it into their library."
     (FraCandidates.ab (.ownerShufflesIntoLibrary) "Its owner shuffles it into their library"
       .oppCreatureOrPlaneswalker)
-    { mana := ManaCost.ofGeneric 6, sacrificeSource := true },
+    ((CostSpec.ofGeneric 6).append CostSpec.sacSelf),
   ActivatedAbility.fra "{2}, {T}, Discard a card: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
-    { mana := ManaCost.ofGeneric 2, tap := true, discardACard := true },
+    ((CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapSelf]).append CostSpec.discardCard),
   ActivatedAbility.fra
     "{2}, {T}: Target creature that attacked this turn becomes prepared. Activate only as a sorcery."
     (FraCandidates.ab (.onPermanent .becomePrepared) "Target creature that attacked this turn becomes prepared"
       (.ofDomain (.object .battlefield (.all #[.hasType .creature, .attackedThisTurn]))))
-    { mana := ManaCost.ofGeneric 2, tap := true } (onlyAsSorcery := true),
+    (CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapSelf]) (onlyAsSorcery := true),
   ActivatedAbility.fra "{1}{W}, Discard this card: It deals 4 damage to target attacking or blocking creature."
     (FraCandidates.ab (.onPermanent (.dealDamage 4)) "It deals 4 damage to target attacking or blocking creature"
       .attackingOrBlockingCreature)
-    { mana := ⟨#[.generic 1, .colored .white]⟩, discardSource := true } (activateFromHand := true),
+    (CostSpec.ofItems #[.mana ⟨#[.generic 1, .colored .white]⟩, .discard (.exact 1) .self]) (activateFromHand := true),
   ActivatedAbility.fra
     "{1}, {T}, Discard a card: Another target creature or planeswalker you control gains hexproof until end of turn."
-    (FraCandidates.ab (.onPermanent (.grantKeywords Keyword.hexproof)) "Another target creature or planeswalker you control gains hexproof until end of turn"
+    (FraCandidates.ab (.onPermanent (.grantKeywords #[Keyword.hexproof])) "Another target creature or planeswalker you control gains hexproof until end of turn"
       (.ofDomain (.object .battlefield (.all #[
         .otherThan .this, .any #[.hasType .creature, .hasType .planeswalker], .controlledBy .you]))))
-    { mana := ManaCost.ofGeneric 1, tap := true, discardACard := true },
+    ((CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf]).append CostSpec.discardCard),
   ActivatedAbility.fra "{T}: Return another target permanent you control to its owner's hand. Activate only during your turn."
     (FraCandidates.ab (.bounce) "Return another target permanent you control to its owner's hand"
       (.ofDomain (.object .battlefield (.all #[.otherThan .this, .controlledBy .you]))))
-    { tap := true } (onlyDuringYourTurn := true),
+    CostSpec.tapOnly (onlyDuringYourTurn := true),
   ActivatedAbility.fra "{T}: Target creature with a +1/+1 counter on it gains flying until end of turn."
-    (FraCandidates.ab (.onPermanent (.grantKeywords Keyword.flying)) "Target creature with a +1/+1 counter on it gains flying until end of turn"
+    (FraCandidates.ab (.onPermanent (.grantKeywords #[Keyword.flying])) "Target creature with a +1/+1 counter on it gains flying until end of turn"
       (.ofDomain (.object .battlefield (.all #[.hasType .creature, .counterCount (some .plusOnePlusOne) .ge (.const 1)]))))
-    { tap := true },
+    CostSpec.tapOnly,
   ActivatedAbility.fra "{6}: Put a +1/+1 counter on target legendary creature."
     (FraCandidates.ab (.onPermanent (.plusOne 1)) "Put a +1/+1 counter on target legendary creature"
       (.ofDomain (.object .battlefield (.all #[.hasSupertype .legendary, .hasType .creature]))))
-    { mana := ManaCost.ofGeneric 6 },
+    (CostSpec.ofGeneric 6),
   ActivatedAbility.fra "{6}: Put a +1/+1 counter on target nonlegendary creature."
     (FraCandidates.ab (.onPermanent (.plusOne 1)) "Put a +1/+1 counter on target nonlegendary creature"
       (.ofDomain (.object .battlefield (.all #[.not (.hasSupertype .legendary), .hasType .creature]))))
-    { mana := ManaCost.ofGeneric 6 },
+    (CostSpec.ofGeneric 6),
   ActivatedAbility.fra "{T}: Draw a card, then discard a card."
-    (FraCandidates.ab (.sequence [.draw 1, .discard (.cards 1)]) "Draw a card, then discard a card") { tap := true },
+    (FraCandidates.ab (.sequence [.draw 1, .discard (.cards 1)]) "Draw a card, then discard a card") CostSpec.tapOnly,
   ActivatedAbility.fra "{2}{U}: Untap target creature."
     (FraCandidates.ab (.onPermanent .untap) "Untap target creature" .creature)
-    { mana := ⟨#[.generic 2, .colored .blue]⟩ },
+    (CostSpec.ofMana ⟨#[.generic 2, .colored .blue]⟩),
   ActivatedAbility.fra
     "{3}{U}{U}: Until end of turn, whenever this creature deals combat damage to a player, draw two cards."
     (FraCandidates.ab (.grantCombatDamageDrawTwo) "Until end of turn, whenever this creature deals combat damage to a player, draw two cards")
-    { mana := ⟨#[.generic 3, .colored .blue, .colored .blue]⟩ },
+    (CostSpec.ofMana ⟨#[.generic 3, .colored .blue, .colored .blue]⟩),
   ActivatedAbility.fra
     "{4}{B}, Exile another creature card from your graveyard: Return this card from your graveyard to the battlefield tapped with a +1/+1 counter on her."
     (FraCandidates.ab (.returnSourceFromGy false true 1) "Return this card from your graveyard to the battlefield tapped")
-    { mana := ⟨#[.generic 4, .colored .black]⟩, fra := .exileAnotherCreatureCardFromGraveyard }
+    ((CostSpec.ofMana ⟨#[.generic 4, .colored .black]⟩).append CostSpec.exileAnotherCreatureCardFromGraveyard)
     (activateFromGraveyard := true),
   ActivatedAbility.fra
     "{5}{B}: Return target creature or planeswalker card from your graveyard to the battlefield. Put a +1/+1 counter on this creature. Activate only as a sorcery."
@@ -1791,38 +1785,38 @@ def activatedAbilities : Thunk (Array ActivatedAbility) := Thunk.mk fun _ => #[
       (.sequence [.returnFromGyToBattlefield 0, .onSource (.plusOne 1)])
       "Return target creature or planeswalker card from your graveyard to the battlefield"
       (.ofDomain (.object .yourGraveyard (.all #[.any #[.hasType .creature, .hasType .planeswalker], .isKind .card]))))
-    { mana := ⟨#[.generic 5, .colored .black]⟩ } (onlyAsSorcery := true) (exhaust := true),
+    (CostSpec.ofMana ⟨#[.generic 5, .colored .black]⟩) (onlyAsSorcery := true) (exhaust := true),
   ActivatedAbility.fra
     "Sacrifice another creature or planeswalker: This creature gets -2/-0 until end of turn. Activate only if there are seven or more cards in your graveyard."
     (FraCandidates.ab (.onSource (.pump (-2) 0)) "This creature gets -2/-0 until end of turn")
-    { fra := .sacrificeAnotherCreatureOrPlaneswalker } (cond := .graveyardAtLeast 7),
+    CostSpec.sacrificeAnotherCreatureOrPlaneswalker (cond := .graveyardAtLeast 7),
   ActivatedAbility.fra "{B}, Discard this card: Target creature gets -3/-1 until end of turn."
     (FraCandidates.ab (.onPermanent (.pump (-3) (-1))) "Target creature gets -3/-1 until end of turn" .creature)
-    { mana := ⟨#[.colored .black]⟩, discardSource := true } (activateFromHand := true),
+    (CostSpec.ofItems #[.mana ⟨#[.colored .black]⟩, .discard (.exact 1) .self]) (activateFromHand := true),
   ActivatedAbility.fra "{1}{R}, {T}: Put a +1/+1 counter on target creature that entered this turn."
     (FraCandidates.ab (.onPermanent (.plusOne 1)) "Put a +1/+1 counter on target creature that entered this turn"
       (.ofDomain (.object .battlefield (.all #[.hasType .creature, .enteredThisTurn]))))
-    { mana := ⟨#[.generic 1, .colored .red]⟩, tap := true },
+    (CostSpec.ofItems #[.mana ⟨#[.generic 1, .colored .red]⟩, .tapSelf]),
   ActivatedAbility.fra "{8}: Create a 5/5 red Dragon creature token with flying."
     (FraCandidates.ab (.createTokens .dragon55flying 1) "Create a 5/5 red Dragon creature token with flying")
-    { mana := ManaCost.ofGeneric 8 },
+    (CostSpec.ofGeneric 8),
   ActivatedAbility.fra "{2}, {T}, Sacrifice an artifact or land: Draw a card." (FraCandidates.ab (.draw 1) "Draw a card")
-    { mana := ManaCost.ofGeneric 2, tap := true, fra := .sacrificeArtifactOrLand },
+    ((CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapSelf]).append CostSpec.sacrificeArtifactOrLand),
   ActivatedAbility.fra
     "{5}{R}: Target creature gets +X/+0 until end of turn, where X is the number of artifacts you control."
     (FraCandidates.ab (.pumpPerArtifact) "Target creature gets +X/+0 until end of turn" .creature)
-    { mana := ⟨#[.generic 5, .colored .red]⟩ },
+    (CostSpec.ofMana ⟨#[.generic 5, .colored .red]⟩),
   ActivatedAbility.fra "{4}{G}: Put a +1/+1 counter on each creature you control with a +1/+1 counter on it."
     (FraCandidates.ab (.plusOneOnEachWithPlusOne) "Put a +1/+1 counter on each creature you control with a +1/+1 counter on it")
-    { mana := ⟨#[.generic 4, .colored .green]⟩ },
+    (CostSpec.ofMana ⟨#[.generic 4, .colored .green]⟩),
   ActivatedAbility.fra "{2}: Return target land card from your graveyard to your hand."
     (FraCandidates.ab (.returnFromGyToHand) "Return target land card from your graveyard to your hand"
       (.ofDomain (.object .yourGraveyard (.all #[.hasType .land, .isKind .card]))))
-    { mana := ManaCost.ofGeneric 2 },
+    (CostSpec.ofGeneric 2),
   ActivatedAbility.fra
     "{2}, Sacrifice another creature or planeswalker: Put a +1/+1 counter on this creature. He gains menace until end of turn."
-    (FraCandidates.ab (.sequence [.onSource (.plusOne 1), .onSource (.grantKeywords Keyword.menace)]) "Put a +1/+1 counter on this creature")
-    { mana := ManaCost.ofGeneric 2, fra := .sacrificeAnotherCreatureOrPlaneswalker },
+    (FraCandidates.ab (.sequence [.onSource (.plusOne 1), .onSource (.grantKeywords #[Keyword.menace])]) "Put a +1/+1 counter on this creature")
+    ((CostSpec.ofGeneric 2).append CostSpec.sacrificeAnotherCreatureOrPlaneswalker),
 ]
 
 def chapterEffects : Thunk (Array (String × Effect)) := Thunk.mk fun _ => #[
@@ -1862,7 +1856,7 @@ def chapterEffects : Thunk (Array (String × Effect)) := Thunk.mk fun _ => #[
   ("Each opponent loses 2 life.", Effect.eachOpponentLosesLife 2),
   ("Create Galactus, a legendary 16/16 black Elder Alien creature token with flying, trample, and \"Whenever Galactus attacks, destroy target land.\".", Effect.createGalactus),
   ("Gain control of up to two target creatures with total mana value 6 or less for as long as this Saga remains on the battlefield.", Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6),
-  ("Creatures you control get +1/+1 and gain vigilance until end of turn.", Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance),
+  ("Creatures you control get +1/+1 and gain vigilance until end of turn.", Effect.creaturesYouControlGetAndGrant 1 1 #[Keyword.vigilance]),
   ("Target creature you control fights up to one other target creature.", Effect.fightUpToOne),
 ]
 

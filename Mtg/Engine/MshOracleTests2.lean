@@ -177,7 +177,7 @@ def speedYoungAvengerReflexiveOk : Bool :=
         let bears := namedPermanent g "Grizzly Bears"
         g.cantBeBlockedExceptByHasteUntilEot speed &&
           !g.canBlock bears speed &&
-          (let g := g.createEffect (.keywordsUntilEot bears.id Keyword.haste)
+          (let g := g.createEffect (.keywordsUntilEot bears.id #[Keyword.haste])
            g.canBlock (namedPermanent g "Grizzly Bears")
              (namedPermanent g "Speed, Young Avenger")))) &&
     (mshRuling 718).comment.contains "reflexive"
@@ -807,7 +807,7 @@ def okoyeFirstStrikeLossOk : Bool :=
 
 /-- Rulings 191 / 192: Nick Fury puts a DFC onto the battlefield front-face-up
 unless it is night and the front has daybound. -/
-def nickFuryDayDfc : CardDef := { bruceBanner with daybound := true }
+def nickFuryDayDfc : CardDef := { bruceBanner with keywords := #[Keyword.daybound] }
 
 def nickFuryDayEnter : Game :=
   let g := addToLibraryTop afterDraw nickFuryDayDfc ⟨0⟩
@@ -1030,26 +1030,26 @@ is checked only on the first SBA pass after the damage. -/
 def doctorDoomDamageTrackedOk : Bool :=
   let g := addPermanent afterDraw doctorDoom ⟨0⟩ ⟨0⟩
   let doom := namedPermanent g "Doctor Doom"
-  let g := g.createEffect (.keywordsUntilEot doom.id Keyword.indestructible)
+  let g := g.createEffect (.keywordsUntilEot doom.id #[Keyword.indestructible])
   let doom := namedPermanent g "Doctor Doom"
   let g := g.markDamageOn doom 3 "Doctor Doom is dealt 3" (source := some (g.snapshot doom))
   let g := g.checkSBA
   onBattlefield g "Doctor Doom" &&
     (namedPermanent g "Doctor Doom").status.damage == 3 &&
     (let doom := namedPermanent g "Doctor Doom"
-     let g := g.expireAll (.keywordsUntilEot doom.id Keyword.indestructible)
+     let g := g.expireAll (.keywordsUntilEot doom.id #[Keyword.indestructible])
      let g := g.checkSBA
      !onBattlefield g "Doctor Doom") &&
     (let g := addPermanent afterDraw doctorDoom ⟨0⟩ ⟨0⟩
      let doom := namedPermanent g "Doctor Doom"
-     let g := g.createEffect (.keywordsUntilEot doom.id Keyword.indestructible)
+     let g := g.createEffect (.keywordsUntilEot doom.id #[Keyword.indestructible])
      let doom := namedPermanent g "Doctor Doom"
      let g := g.markDamageOn doom 1 "deathtouch" (deathtouch := true) (source := some (g.snapshot doom))
      let g := g.checkSBA
      onBattlefield g "Doctor Doom" &&
        !(g.deathtouchDealtSinceLastSba (namedPermanent g "Doctor Doom").id) &&
        (let doom := namedPermanent g "Doctor Doom"
-        let g := g.expireAll (.keywordsUntilEot doom.id Keyword.indestructible)
+        let g := g.expireAll (.keywordsUntilEot doom.id #[Keyword.indestructible])
         let g := g.checkSBA
         onBattlefield g "Doctor Doom")) &&
     (mshRuling 465).comment.contains "tracked even if he has indestructible" &&
@@ -1078,7 +1078,7 @@ def wondrousWaspLoseAbilitiesOk : Bool :=
      let storm := namedPermanent g "Storm, Windrider"
      storm.status.tapped &&
        !g.hasFlying storm &&
-       (let g := g.createEffect (.keywordsUntilEot storm.id Keyword.flying)
+       (let g := g.createEffect (.keywordsUntilEot storm.id #[Keyword.flying])
         g.hasFlying (namedPermanent g "Storm, Windrider"))) &&
     (mshRuling 498).comment.contains "won't lose its abilities" &&
     (mshRuling 542).comment.contains "will keep that ability"
@@ -1155,7 +1155,7 @@ def blockedStaysBlockedOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.markBlocking ogre.id #[bears.id]
   let g := g.createEffect (.keywordsUntilEot (namedPermanent g "Grizzly Bears").id
-    Keyword.flying)
+    #[Keyword.flying])
   (namedPermanent g "Grizzly Bears").status.blocked &&
     g.hasFlying (namedPermanent g "Grizzly Bears") &&
     (mshRuling 614).comment.contains "won't cause him to become unblocked" &&
@@ -1186,7 +1186,7 @@ def statureBlockedThenShrunkOk : Bool :=
 def yellowjacketLifelinkRedundantOk : Bool :=
   let g := addPermanent afterDraw yellowjacketHeartlessMarauder ⟨0⟩ ⟨0⟩
   let yj := namedPermanent g "Yellowjacket, Heartless Marauder"
-  let g := g.createEffect (.keywordsUntilEot yj.id Keyword.lifelink)
+  let g := g.createEffect (.keywordsUntilEot yj.id #[Keyword.lifelink])
   g.hasLifelink (namedPermanent g "Yellowjacket, Heartless Marauder") &&
     (mshRuling 610).comment.contains "Multiple instances of lifelink"
 

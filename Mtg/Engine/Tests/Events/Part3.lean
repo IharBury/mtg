@@ -166,7 +166,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
     -- runs BEFORE the outer sequence step (gain 3 life) and BEFORE frame pop in BOTH sync and paused cases!
     let seqRes : TriggeredAbility.TriggerResolution :=
       .sequence [
-        .may (.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]))
+        .may (.pay CostSpec.sacrificeArtifactOrDiscardCard)
           (.draw (.fixed 1)) .ifYouDo,
         .gainLife (.fixed 3) ]
     let gS0 := addPermanent (addPermanent afterDraw bear me me) relicDef me me
@@ -227,7 +227,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
     -- 2d. `SacrificeDiscard.sacrificeForActivation` `.turnFaceUp` deferring `GameEvent.turnedFaceUp`
     --     across `Pending.chooseReplacement` when sacrificing a creature to turn face up:
     let morphFaceDef : CardDef :=
-      { creature "Phase16 MorphSpy" ManaCost.empty #["Human"] 3 3 with morph := some ManaCost.empty }
+      { creature "Phase16 MorphSpy" ManaCost.empty #["Human"] 3 3 with keywords := #[.morph CostSpec.empty] }
     let gMf0 := addPermanent (addPermanent afterDraw morphFaceDef me me) bear me me
     let mId := (gMf0.battlefield.filter (·.name == "Phase16 MorphSpy"))[0]!.id
     let fodderId := (gMf0.battlefield.filter (·.name == bear.name))[0]!.id
@@ -330,7 +330,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
       (s.splitOn "Phase16 Odd Aura enters the battlefield attached to Event Bear").length > 1)
   -- 3d. `Pumps` counter `putter` attribution (`opp` resolving context -> `putter == some opp`),
   --     `n' == 0` early-exit (`mult := 0`), and `addCounters .time` `syncImpendingNotACreature`:
-  let impBearDef16 : CardDef := { bear with name := "Phase16 Impending Bear", impending := some (1, ManaCost.empty) }
+  let impBearDef16 : CardDef := { bear with name := "Phase16 Impending Bear", keywords := #[.impending 1 CostSpec.empty] }
   let gPP0 : Game := insertObject gE0 impBearDef16 me (.hand me)
   let impH := (gPP0.player me).hand.back!
   let gPP1 : Game := mustApply (mustApply gPP0 me (.cast impH)) me (.announceKicker true)
@@ -413,7 +413,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
       | .rules (.stackObject (.resolved eo ..)) => eo.id == some harnStObj.id
       | _ => false)
 
-  let impDef4 : CardDef := { bear with name := "Phase16 Impending Elemental", impending := some (2, ManaCost.empty) }
+  let impDef4 : CardDef := { bear with name := "Phase16 Impending Elemental", keywords := #[.impending 2 CostSpec.empty] }
   let gI0 : Game := insertObject afterDraw impDef4 me (.hand me)
   let impCard := (gI0.player me).hand.back!
   let gI1 : Game := (mustApply (mustApply gI0 me (.cast impCard)) me (.announceKicker true)).resolveTop
@@ -453,7 +453,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
     bear with
     name := "Phase16 Prodigal Bear"
     activatedAbilities := #[{
-      cost := {}
+      cost := CostSpec.empty
       effect := Effect.dealDamageToTargetCreature 1
     }]
   }
@@ -528,7 +528,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
   let protRedDef : CardDef := {
     hero with
     name := "Phase16 Red-Proof Hero"
-    protectionFromColors := #[.red]
+    keywords := #[.protection (.color (.literal .red))]
   }
   let gPr0 : Game := addPermanent (addPermanent afterDraw redPingerDef me me) protRedDef opp opp
   let rPingId := (gPr0.battlefield.filter (·.name == "Phase16 Red Pinger"))[0]!.id
@@ -807,8 +807,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
     let ascendMorphDef : CardDef := {
       bear with
       name := "Phase16 Ascend Morph"
-      keywords := { ascend := true }
-      morph := some ManaCost.empty
+      keywords := #[Keyword.ascend, .morph CostSpec.empty]
     }
     let gAs0 := (List.range 9).foldl (fun g _ => addPermanent g bear me me) afterDraw
     let gAs0 := addPermanent gAs0 ascendMorphDef me me
@@ -823,7 +822,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
       name := "Phase16 Ascend Insight"
       manaCost := ManaCost.empty
       types := #[.sorcery]
-      keywords := { ascend := true }
+      keywords := #[Keyword.ascend]
       spellEffect := some (Effect.draw 1)
     }
     let gSp0 := (List.range 10).foldl (fun g _ => addPermanent g bear me me) afterDraw
@@ -1059,13 +1058,13 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let gUUPaused : Game := gUU1.applyFra me uuEff .untapUnblockable #[Target.permanent uuBear] (some uuHero)
   let uuPausedOk : Bool :=
     (match gUUPaused.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
-    !gUUPaused.hasKeyword (gUUPaused.object! uuBear) (·.cantBeBlocked)
+    !gUUPaused.hasCantBeBlocked (gUUPaused.object! uuBear)
   let gUUDone : Game := mustApply gUUPaused me (.chooseReplacement idStunSelf)
   let uuDoneOk : Bool :=
     gUUDone.pending == .none &&
     (gUUDone.object! uuBear).status.tapped &&
     (gUUDone.object! uuBear).status.stun == 0 &&
-    gUUDone.hasKeyword (gUUDone.object! uuBear) (·.cantBeBlocked)
+    gUUDone.hasCantBeBlocked (gUUDone.object! uuBear)
 
   -- 3d. `factOrFictionGyLoop` across competing graveyard-exile replacements.
   let gFoF0 : Game := insertObject (insertObject afterDraw bear me (.library me)) hero me (.library me)
@@ -1359,7 +1358,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let auHandId := (gAu0.player me).hand.back!
   let gAuCast : Game := mustApply (mustApply gAu0 me (.cast auHandId)) me (.target (.permanent oppBearId))
   let gAuHex : Game := gAuCast.createEffect
-    (.layered (.objects #[oppBearId]) (.abilities { keywords := { hexproof := true } } .none) .untilEndOfTurn)
+    (.layered (.objects #[oppBearId]) (.abilities { keywords := #[Keyword.hexproof] } .none) .untilEndOfTurn)
     (cause := some testCause)
   let preAuRes := gAuHex.events.size
   let gAuFizzled : Game := gAuHex.resolveTop
@@ -1604,7 +1603,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   --      declines `"If you do"` (so `p1` does NOT lose 5 life)!
   let maySeq : TriggeredAbility.TriggerResolution :=
     .sequence [
-      .may (.pay (.mana #[.generic 1])) (.loseLife (.fixed 5) .eachOpponent) .ifYouDo,
+      .may (.pay (CostSpec.ofGeneric 1)) (.loseLife (.fixed 5) .eachOpponent) .ifYouDo,
       .gainLife (.fixed 2) ]
   let gMay0 : Game := (addPermanent gPreB2 bear p1 p1).addMana p2 .colorless 1 (cause := some testCause)
   let bP1 := (gMay0.battlefield.filter (fun o => o.name == bear.name && o.controller == some p1))[0]!.id
@@ -2082,7 +2081,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     subtypes := #["Vehicle"]
     power := some 4
     toughness := some 4
-    crew := some 2
+    keywords := #[.crew 2]
   }
   let gCr0 : Game := addPermanent (addPermanent afterDraw boat18 me me) bear me me
   let skiffId := (gCr0.battlefield.filter (·.name == "Phase18 Skiff"))[0]!.id
@@ -2464,7 +2463,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let gMt0 : Game := addPermanent (addPermanent afterDraw bear opp18 opp18) hero opp18 opp18
   let mtBear := (gMt0.battlefield.filter (·.name == bear.name))[0]!.id
   let mtHero := (gMt0.battlefield.filter (·.name == hero.name))[0]!.id
-  let gMtHex : Game := gMt0.createEffect (.keywordsUntilEot mtBear Keyword.hexproof) (cause := some testCause)
+  let gMtHex : Game := gMt0.createEffect (.keywordsUntilEot mtBear #[Keyword.hexproof]) (cause := some testCause)
   let gMtRes : Game := gMtHex.applyFra me destroyTwoEff .destroyEachTarget #[Target.permanent mtBear, Target.permanent mtHero] none
   let multiTargetPerSlotOk : Bool :=
     (gMtRes.findObject? mtBear).any (·.isOnBattlefield) &&
@@ -2603,7 +2602,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     name := "Phase18 Gift Card"
     manaCost := ManaCost.empty
     types := #[.instant]
-    giftTreasure := true
+    keywords := #[.gift .treasure]
     spellEffect := some { resolution := .draw (.fixed 1), phrase := "Draw a card" }
   }
   let gGf0 : Game := (insertObject g3Base giftSpellDef ⟨0⟩ (.hand ⟨0⟩)).concede ⟨1⟩
@@ -3028,7 +3027,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
   let gWd2 : Game :=
     gWd1.changes #[
       .priority opp19,
-      .pending (.payWard me boltStackId (.genericMana 2)),
+      .pending (.payWard me boltStackId (CostSpec.ofGeneric 2)),
       .pendingReplacement (some (.receivePriority me))]
   let gWdDeclined : Game := mustApply gWd2 me .decline
   let wardDeclineOk : Bool :=
@@ -3060,7 +3059,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
   let gPw0 : Game := gPw0.recordPutCounters pwId .loyalty 5 (some me) (cause := some testCause)
   let gPwDmg : Game := gPw0.markDamageOn (gPw0.object! pwId) 2 "2 dmg to walker" (cause := some testCause)
   let gPwAnim : Game :=
-    (gPwDmg.setUntilEotForm (gPwDmg.object! pwId) (2, 2) Keywords.none "becomes 2/2 creature"
+    (gPwDmg.setUntilEotForm (gPwDmg.object! pwId) (2, 2) (#[] : Array KeywordAbility) "becomes 2/2 creature"
       (additionalCreature := true)).checkSBA
   -- 3b. Clamped loyalty removal: 2 loyalty dealt 5 damage removes 2 (not 5); 0 loyalty dealt 3 damage emits 0 counter events!
   let gPwClamp0 : Game := addPermanent afterDraw pwDef19 me me
@@ -3086,7 +3085,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     zeroLoyEvents.isEmpty
 
   -- 3c. Lifelink noncombat damage under `.multiplyDamage` passes `rep.cause` (`EventCause.replaced`) into `gainLife`!
-  let llDef19 : CardDef := { bear with name := "Phase19 Lifelinker", keywords := Keyword.lifelink }
+  let llDef19 : CardDef := { bear with name := "Phase19 Lifelinker", keywords := #[Keyword.lifelink] }
   let gLl0 : Game := addPermanent afterDraw llDef19 me me
   let llId := (gLl0.battlefield.filter (·.name == "Phase19 Lifelinker"))[0]!.id
   let idMulDmg : ReplacementId := { kind := .multiplyDamage, object := some llId }
@@ -3273,7 +3272,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
   let g3Nc1 : Game := g3Nc0.dealDamageToPlayer ⟨1⟩ 2 (cause := some testCause)
   let g3Nc2 : Game := (g3Nc1.concede ⟨1⟩).startNextTurnAndBegin
   let depOppHeld := g3Nc2.fraConditionHolds ⟨0⟩ .opponentDealtNoncombatDamageLastTurn none
-  let proWhiteBear : CardDef := { bear with name := "Phase19 ProWhite Bear", protectionFromColors := #[.white] }
+  let proWhiteBear : CardDef := { bear with name := "Phase19 ProWhite Bear", keywords := #[.protection (.color (.literal .white))] }
   let whiteWatcher : CardDef := {
     bear with
     name := "Phase19 White Watcher"
@@ -3320,7 +3319,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
   let (gCpT1, bStackId) := gCpT0.move bHand .stack (some me) (verb := some .cast) (actor := some me) (cause := some testCause)
   let gCpT1 : Game :=
     gCpT1.change (.pushStack { objectId := bStackId, controller := me, targets := #[Target.permanent oppBear], targetsAnnounced := true })
-  let gCpT1 : Game := gCpT1.createEffect (.keywordsUntilEot oppBear Keyword.hexproof) (cause := some testCause)
+  let gCpT1 : Game := gCpT1.createEffect (.keywordsUntilEot oppBear #[Keyword.hexproof]) (cause := some testCause)
   let gCpT2 : Game := gCpT1.putTriggeredAbilityOnStack me cpTSrc (.onEnterDraw 1) "cast"
     (cause := some (gCpT1.object! bStackId)) (eventCause := some testCause)
   let gCpT2 : Game := gCpT2.changes #[.pushContinuationFrame {}, .resolvingAbility (some gCpT2.stack.back!.objectId)]
@@ -3394,7 +3393,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
   -- 7b. CR 303.4f–g single-card non-cast Aura `putOntoBattlefield`:
   --     0 hosts -> stays in graveyard; 1 hexproof opponent host -> attaches without targeting; 2 hosts -> prompts `.asEntersAttachAura`!
   let testAura19 : CardDef := aura "Phase19 Aura" (ManaCost.ofColor .green) "Enchant creature"
-  let hexBear19 : CardDef := { bear with name := "Phase19 Hex Host", keywords := Keyword.hexproof }
+  let hexBear19 : CardDef := { bear with name := "Phase19 Hex Host", keywords := #[Keyword.hexproof] }
   let gAuZero0 : Game := insertObject afterDraw testAura19 me (.graveyard me)
   let auZeroId := (gAuZero0.player me).graveyard.back!
   let (gAuZeroDone, _) := gAuZero0.putOntoBattlefield auZeroId me (cause := some testCause)
@@ -3459,7 +3458,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     subtypes := #["Jace"]
     loyalty := some 3
   }
-  let gGd0 : Game := addPermanent (addPermanent (mkThreePlayer19 45) { bear with keywords := Keyword.haste } ⟨0⟩ ⟨0⟩) pwGoadDef ⟨1⟩ ⟨1⟩
+  let gGd0 : Game := addPermanent (addPermanent (mkThreePlayer19 45) { bear with keywords := #[Keyword.haste] } ⟨0⟩ ⟨0⟩) pwGoadDef ⟨1⟩ ⟨1⟩
   let gdAtk := (gGd0.battlefield.filter (·.name == bear.name))[0]!.id
   let gdPw := (gGd0.battlefield.filter (·.name == "Phase19 Goader PW"))[0]!.id
   let gGd0 : Game :=
@@ -3481,7 +3480,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
   let mustFlyerDef : CardDef := {
     bear with
     name := "Phase19 Must Flyer"
-    keywords := { flying := true, haste := true }
+    keywords := #[Keyword.flying, Keyword.haste]
     staticAbilities := #[.attacksEachCombatIfAble]
   }
   let gFl0 : Game := addPermanent (addPermanent afterDraw mustFlyerDef me me) moatLikeDef opp19 opp19
@@ -3496,7 +3495,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
   --     0 attackers declared skips to `.endOfCombat`, whereas 1 attacker declared then exiled during `.declareAttackers`
   --     priority still enters `.declareBlockers` and `.combatDamage` (with NO empty `CombatEvent.damageAssigned`)!
   let gSkZero : Game := mustApply (mustApply gFlNoAtk me .pass) opp19 .pass
-  let gSk0 : Game := addPermanent afterDraw { bear with keywords := Keyword.haste } me me
+  let gSk0 : Game := addPermanent afterDraw { bear with keywords := #[Keyword.haste] } me me
   let skAtk := (gSk0.battlefield.filter (·.name == bear.name))[0]!.id
   let gSk1 : Game := mustApply (mustApply (gSk0.beginStep .beginningOfCombat) me .pass) opp19 .pass
   let gSk2 : Game := mustApply gSk1 me (.declareAttackers #[skAtk] none #[] #[])
@@ -3517,8 +3516,8 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     !hadEmptyDmgAssigned
 
   -- 8c. CR 810 Two-Headed Giant Hexproof / Ward teammate vs opponent checks!
-  let wardBear19 : CardDef := { bear with name := "Phase19 Ward Bear", ward := some 2 }
-  let hexBear2hg : CardDef := { bear with name := "Phase19 2HG Hex", keywords := Keyword.hexproof }
+  let wardBear19 : CardDef := { bear with name := "Phase19 Ward Bear", keywords := #[.ward (CostSpec.ofGeneric 2)] }
+  let hexBear2hg : CardDef := { bear with name := "Phase19 2HG Hex", keywords := #[Keyword.hexproof] }
   let freePing19 : CardDef := { lightningBolt with name := "Phase19 Free Ping", manaCost := ManaCost.empty }
   let g2h0 : Game := addPermanent (addPermanent mkTwoHeadedGiant19 wardBear19 ⟨1⟩ ⟨1⟩) hexBear2hg ⟨2⟩ ⟨2⟩
   let wbId := (g2h0.battlefield.filter (·.name == "Phase19 Ward Bear"))[0]!.id
@@ -3804,7 +3803,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     g3pTrigConceded.stack.size == 1
 
   -- 3b. `afterWardResolved` / `finishWardAndDrain`: declining `.payWard` drains an outer `pendingReplacement` continuation!
-  let wardTargetDef : CardDef := { bear with name := "Phase20 Ward Host", ward := some 2 }
+  let wardTargetDef : CardDef := { bear with name := "Phase20 Ward Host", keywords := #[.ward (CostSpec.ofGeneric 2)] }
   let gWd0 : Game := addPermanent (insertObject afterDraw { lightningBolt with manaCost := ManaCost.empty } me (.hand me)) wardTargetDef opp20 opp20
   let wdHostId := (gWd0.battlefield.filter (·.name == "Phase20 Ward Host"))[0]!.id
   let wdBoltId := (gWd0.player me).hand.back!
@@ -3957,7 +3956,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     manaCost := ManaCost.ofColor .red
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := {}
+      cost := CostSpec.empty
       effect := {
         targeting := .of .creature
         resolution := .ofSpell (.onPermanent .tap)
@@ -3972,7 +3971,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let protRedBear : CardDef := {
     bear with
     name := "Phase20 ProtRed Bear"
-    protectionFromColors := #[.red]
+    keywords := #[.protection (.color (.literal .red))]
   }
   -- Only creature on battlefield has protection from red, so Mode 0 is unchoosable for `modalActDef` (`sourceId`), while Mode 1 is choosable!
   let gModAct0 : Game := addPermanent (addPermanent afterDraw modalActDef me me) protRedBear opp20 opp20
@@ -4010,8 +4009,8 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
 
   -- 5c. Double prowess (`prowessInstances := 2`) emits 2 `TriggerQueueEvent.triggered` events!
   let dblProwessDef : CardDef := {
-    (creature "Phase20 Twin Monk" ManaCost.empty #["Monk"] 1 2 (keywords := Keyword.prowess)) with
-    prowessInstances := 2
+    (creature "Phase20 Twin Monk" ManaCost.empty #["Monk"] 1 2 (keywords := #[Keyword.prowess])) with
+    keywords := #[Keyword.prowess, Keyword.prowess]
   }
   let gProw0 : Game := addPermanent (insertObject afterDraw modalSorcery20 me (.hand me)) dblProwessDef me me
   let monkId := (gProw0.battlefield.filter (·.name == "Phase20 Twin Monk"))[0]!.id
@@ -4092,7 +4091,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
 
   -- 6d. CR 701.14b fight legality: non-creature artifact or hexproof opponent creature cannot fight!
   let nonCreatureArt : CardDef := { name := "Phase20 Relic", manaCost := ManaCost.empty, types := #[.artifact] }
-  let hexOppDef : CardDef := { bear with name := "Phase20 Hex Fighter", keywords := Keyword.hexproof }
+  let hexOppDef : CardDef := { bear with name := "Phase20 Hex Fighter", keywords := #[Keyword.hexproof] }
   let gFg0 : Game := addPermanent (addPermanent (addPermanent afterDraw bear me me) nonCreatureArt opp20 opp20) hexOppDef opp20 opp20
   let myFighterId := (gFg0.battlefield.filter (fun o => o.name == bear.name && gFg0.controlledBy o me))[0]!.id
   let relicId := (gFg0.battlefield.filter (·.name == "Phase20 Relic"))[0]!.id
@@ -4124,7 +4123,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let gBocZeroDecl : Game := mustApply gBocDecl me (.declareAttackers #[] none #[] #[])
   let gBocAfterDecl : Game := mustApply (mustApply gBocZeroDecl me .pass) opp20 .pass
   -- Extra combat phase after a combat where `skBear` attacked (and was exiled before extra combat):
-  let gExCb0 : Game := addPermanent afterDraw { bear with keywords := Keyword.haste } me me
+  let gExCb0 : Game := addPermanent afterDraw { bear with keywords := #[Keyword.haste] } me me
   let exCbAtk := (gExCb0.battlefield.filter (·.name == bear.name))[0]!.id
   let gExCb1 : Game := mustApply (mustApply (gExCb0.beginStep .beginningOfCombat) me .pass) opp20 .pass
   let gExCb2 : Game := mustApply gExCb1 me (.declareAttackers #[exCbAtk] none #[] #[])
@@ -4145,7 +4144,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     gExCb2After.step == .endOfCombat
 
   -- 7b. First-strike attacker (with no regular-damage assigners) deals damage in FS step and regular `.combatDamage` step grants priority without prompting!
-  let fsHeroDef : CardDef := { bear with name := "Phase20 FS Hero", keywords := { firstStrike := true, haste := true } }
+  let fsHeroDef : CardDef := { bear with name := "Phase20 FS Hero", keywords := #[Keyword.firstStrike, Keyword.haste] }
   let gFs0 : Game := addPermanent afterDraw fsHeroDef me me
   let fsId := (gFs0.battlefield.filter (·.name == "Phase20 FS Hero"))[0]!.id
   let gFs1 : Game := mustApply (mustApply (gFs0.beginStep .beginningOfCombat) me .pass) opp20 .pass
@@ -4176,11 +4175,11 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let mustBearDef : CardDef := {
     bear with
     name := "Phase20 Must Bear"
-    keywords := Keyword.haste
+    keywords := #[Keyword.haste]
     staticAbilities := #[.attacksEachCombatIfAble]
   }
   let gTax0 : Game :=
-    (addPermanent (addPermanent (addPermanent (addPermanent afterDraw { bear with keywords := Keyword.haste } me me) mustBearDef me me) taxEnchDef opp20 opp20) pwDef20 opp20 opp20).record
+    (addPermanent (addPermanent (addPermanent (addPermanent afterDraw { bear with keywords := #[Keyword.haste] } me me) mustBearDef me me) taxEnchDef opp20 opp20) pwDef20 opp20 opp20).record
       (GameEvent.gainedDesignation afterDraw.turnNumber opp20 .enduringStory (cause := some testCause))
   let optAtkId := (gTax0.battlefield.filter (fun o => o.name == bear.name && gTax0.controlledBy o me))[0]!.id
   let mustAtkId := (gTax0.battlefield.filter (·.name == "Phase20 Must Bear"))[0]!.id
@@ -4208,7 +4207,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     agentPickedMust
 
   -- 7d. CR 506.5 `attackingAlone?`: in 2HG, when both `⟨0⟩` and teammate `⟨1⟩` control 1 attacking creature, neither attacks alone!
-  let gAlone0 : Game := addPermanent (addPermanent mkTwoHeadedGiant20 { bear with keywords := Keyword.haste } ⟨0⟩ ⟨0⟩) { hero with keywords := Keyword.haste } ⟨1⟩ ⟨1⟩
+  let gAlone0 : Game := addPermanent (addPermanent mkTwoHeadedGiant20 { bear with keywords := #[Keyword.haste] } ⟨0⟩ ⟨0⟩) { hero with keywords := #[Keyword.haste] } ⟨1⟩ ⟨1⟩
   let a0 := (gAlone0.battlefield.filter (·.name == bear.name))[0]!.id
   let a1 := (gAlone0.battlefield.filter (·.name == hero.name))[0]!.id
   let gAloneOne : Game := gAlone0.markAttacking a0 (cause := some testCause)
@@ -4235,7 +4234,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   --     - Departed opponent's `loggedNoncombatDamage` still grants `.flyingHasteIfOpponentDealtNoncombat` (CR 800.4i)!
   let cantWinDef : CardDef := { bear with name := "Phase20 NoWin Angel", cantLoseGame := true, opponentsCantWin := true }
   let abolisherDef : CardDef := { bear with name := "Phase20 Teammate Abolisher", staticAbilities := #[.opponentsCantCastOnYourTurn] }
-  let corruptedDef : CardDef := { bear with name := "Phase20 Corrupted Bear", toxic := 1, corruptedToxicLifelink := true }
+  let corruptedDef : CardDef := { bear with name := "Phase20 Corrupted Bear", keywords := #[.toxic 1], corruptedToxicLifelink := true }
   let freeInstant20 : CardDef := { name := "Phase20 Free Opt", manaCost := ManaCost.empty, types := #[.instant], spellEffect := some { resolution := .ofSpell (.gainLife 1), phrase := "Gain 1 life" } }
   let g2hWin0 : Game := addPermanent (addPermanent (addPermanent mkTwoHeadedGiant20 cantWinDef ⟨2⟩ ⟨2⟩) abolisherDef ⟨0⟩ ⟨0⟩) corruptedDef ⟨0⟩ ⟨0⟩
   let corId := (g2hWin0.battlefield.filter (·.name == "Phase20 Corrupted Bear"))[0]!.id
@@ -4322,7 +4321,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let preBeIdx := gBatchEff0.events.size
   let gBatchEff1 : Game := gBatchEff0.createEffects #[
     .pump beId 1 1,
-    .keywordsUntilEot beId Keyword.flying
+    .keywordsUntilEot beId #[Keyword.flying]
   ] (cause := some testCause)
   let beBatches := (gBatchEff1.events.extract preBeIdx gBatchEff1.events.size).filterMap fun e =>
     match e.change with

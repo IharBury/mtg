@@ -86,10 +86,6 @@ inductive FraStatic where
   | costsLessIfCastNoncreature
   /-- If a creature an opponent controls would die, exile it instead. -/
   | exileOpponentsDyingCreatures
-  /-- Ward—Discard a card. -/
-  | wardDiscardCard
-  /-- Ward—Sacrifice three permanents. -/
-  | wardSacrificeThreePermanents
   /-- This gets +1/+0 for each creature and planeswalker card in your
   graveyard. -/
   | powerPerCreatureAndPlaneswalkerCard
@@ -172,8 +168,6 @@ def text : FraStatic → String
   | .costsLessIfCastNoncreature =>
     "This spell costs {2} less to cast if you've cast a noncreature spell this turn."
   | .exileOpponentsDyingCreatures => "If a creature an opponent controls would die, exile it instead."
-  | .wardDiscardCard => "Ward—Discard a card."
-  | .wardSacrificeThreePermanents => "Ward—Sacrifice three permanents."
   | .powerPerCreatureAndPlaneswalkerCard =>
     "This creature gets +1/+0 for each creature and planeswalker card in your graveyard."
   | .otherPlusOneCreaturesHaveHaste =>
@@ -223,6 +217,8 @@ inductive StaticAbility where
   any of these subtypes (e.g. Olog-hai Crusher). An empty list means it can't
   block at all. The restriction is checked when declaring blockers (CR 509.1b). -/
   | cantBlockUnlessYouControl (subtypes : Array CardSubtype)
+  /-- This creature can't be blocked (CR 509.1b). -/
+  | cantBeBlocked
   /-- This creature can't be blocked except by `n` or more creatures
   (e.g. Troll of Khazad-dûm with 3). Menace is the keyword for `n = 2`. -/
   | cantBeBlockedExceptBy (n : Nat)
@@ -236,9 +232,9 @@ inductive StaticAbility where
   (e.g. Minas Tirith Garrison). -/
   | powerEqualCardsInHand
   /-- Equipped creature has these keywords. -/
-  | equippedCreatureHasKeywords (k : Keywords)
+  | equippedCreatureHasKeywords (k : Array KeywordAbility)
   /-- Enchanted creature gets +P/+T and has these keywords. -/
-  | enchantedCreatureGetsAndHas (power toughness : Int) (k : Keywords)
+  | enchantedCreatureGetsAndHas (power toughness : Int) (k : Array KeywordAbility)
   /-- This creature can't be blocked by tokens. -/
   | cantBeBlockedByTokens
   /-- This creature's power is equal to the number of creatures you control. -/
@@ -257,7 +253,7 @@ inductive StaticAbility where
   /-- Nonlegendary creatures you control get +P/+T. -/
   | nonlegendaryCreaturesGet (power toughness : Int)
   /-- Equipped creature gets +P/+T and has these keywords. -/
-  | equippedCreatureGetsAndHas (power toughness : Int) (k : Keywords)
+  | equippedCreatureGetsAndHas (power toughness : Int) (k : Array KeywordAbility)
   /-- Equipped creature gets +P/+T and has ward `{w}`. -/
   | equippedCreatureGetsAndWard (power toughness : Int) (ward : Nat)
   /-- Each creature you control with a +1/+1 counter has menace. -/
@@ -270,10 +266,10 @@ inductive StaticAbility where
   /-- This can't be blocked by creatures with power `n` or less. -/
   | cantBeBlockedByPowerAtMost (n : Int)
   /-- During your turn, equipped creatures you control have these keywords. -/
-  | equippedCreaturesHaveKeywordsDuringYourTurn (k : Keywords)
+  | equippedCreaturesHaveKeywordsDuringYourTurn (k : Array KeywordAbility)
   /-- As long as you have an enduring story, this gets +P/+T and has these
   keywords. -/
-  | getsAndHasIfEnduringStory (power toughness : Int) (k : Keywords)
+  | getsAndHasIfEnduringStory (power toughness : Int) (k : Array KeywordAbility)
   /-- As long as you have an enduring story, creatures you control get +P/+T. -/
   | creaturesYouControlGetIfEnduringStory (power toughness : Int)
   /-- This doesn't untap during your untap step unless you have an enduring
@@ -290,7 +286,7 @@ inductive StaticAbility where
   /-- This can't be blocked by creatures with power `n` or greater. -/
   | cantBeBlockedByPowerAtLeast (n : Int)
   /-- Equipped creature has these keywords and can't be blocked. -/
-  | equippedCreatureHasKeywordsAndCantBeBlocked (k : Keywords)
+  | equippedCreatureHasKeywordsAndCantBeBlocked (k : Array KeywordAbility)
   /-- Equip abilities that target this cost `{n}` less. -/
   | equipAbilitiesTargetingThisCostLess (n : Nat)
   /-- As long as you have an enduring story, the first equip each turn is `{0}`. -/
@@ -325,10 +321,6 @@ inductive StaticAbility where
   /-- Equipped creature gets +P/+T and has trample and a combat Treasure
   trigger. -/
   | equippedGetsTrampleAndCombatTreasures (power toughness : Int)
-  /-- Ward — discard an enchantment, instant, or sorcery card. -/
-  | wardDiscardEnchantmentInstantOrSorcery
-  /-- Ward — sacrifice a legendary artifact or legendary creature. -/
-  | wardSacrificeLegendary
   /-- Creatures you control of this subtype get +P/+T (includes the source). -/
   | creaturesYouControlOfSubtypeGet (subtype : CardSubtype) (power toughness : Int)
   /-- You and other permanents of this subtype have hexproof while this has
@@ -363,7 +355,7 @@ inductive StaticAbility where
   /-- Extort (CR 702.101). -/
   | extort
   /-- Attacking creature tokens you control have these keywords. -/
-  | attackingTokensHave (k : Keywords)
+  | attackingTokensHave (k : Array KeywordAbility)
   /-- Each creature you put a +1/+1 counter on this turn has hexproof. -/
   | hexproofIfPlusOneThisTurn
   /-- You may play lands from your graveyard. -/
@@ -371,10 +363,6 @@ inductive StaticAbility where
   /-- As long as an opponent has cast a spell this turn, you may cast spells
   as though they had flash. -/
   | flashIfOpponentCastThisTurn
-  /-- Ward — discard a card or pay `{n}`. -/
-  | wardDiscardOrPay (n : Nat)
-  /-- Ward — get `n` poison counters. -/
-  | wardPoisonCounters (n : Nat)
   /-- This creature attacks each combat if able. -/
   | attacksEachCombatIfAble
   /-- Instant and sorcery spells you cast with mana value 4 or greater cost
@@ -423,9 +411,9 @@ inductive StaticAbility where
   /-- Enchanted creature has ward `{w}`. -/
   | enchantedCreatureHasWard (w : Nat)
   /-- Equipped creature gets +P/+T and has these keywords and ward `{w}`. -/
-  | equippedCreatureGetsHasAndWard (power toughness : Int) (k : Keywords) (w : Nat)
+  | equippedCreatureGetsHasAndWard (power toughness : Int) (k : Array KeywordAbility) (w : Nat)
   /-- Creatures you control with +1/+1 counters on them have these keywords. -/
-  | creaturesWithPlusOneHave (k : Keywords)
+  | creaturesWithPlusOneHave (k : Array KeywordAbility)
   /-- Creatures your opponents control get +P/+T. -/
   | opponentsCreaturesGet (power toughness : Int)
   /-- This gets +P/+0 for each other artifact you control. -/
@@ -455,12 +443,12 @@ inductive StaticAbility where
   | entersWithXPlusOne
   /-- Enchanted creature gets +P/+T and has these keywords, and may gain
   additional types. -/
-  | enchantedCreatureGetsHasAndTypes (power toughness : Int) (k : Keywords)
+  | enchantedCreatureGetsHasAndTypes (power toughness : Int) (k : Array KeywordAbility)
     (types : Array CardSubtype)
   /-- Enchanted creature loses all abilities and can't become untapped. -/
   | enchantedLosesAbilitiesCantUntap
   /-- Enchanted creature gets +P/+T and has these keywords and ward `{w}`. -/
-  | enchantedCreatureGetsHasAndWard (power toughness : Int) (k : Keywords)
+  | enchantedCreatureGetsHasAndWard (power toughness : Int) (k : Array KeywordAbility)
     (w : Nat)
   /-- As long as there are at least `min` creature cards in your graveyard,
   this gets +P/+T and is all creature types. -/
@@ -510,6 +498,8 @@ inductive StaticShape where
   | landsYouControlPT
   /-- This creature can't block unless you control a listed subtype. -/
   | cantBlockUnless (subtypes : Array CardSubtype)
+  /-- This creature can't be blocked (CR 509.1b). -/
+  | cantBeBlocked
   /-- This creature can't be blocked except by `n` or more creatures. -/
   | cantBeBlockedExcept (n : Nat)
   /-- This creature can't be blocked by more than `n` creatures. -/
@@ -519,7 +509,7 @@ inductive StaticShape where
   /-- Characteristic-defining power equal to cards in your hand. -/
   | cardsInHandPower
   /-- Equipped or enchanted host has these keywords, and optionally +P/+T. -/
-  | hostKeywords (host : String) (k : Keywords) (power toughness : Int)
+  | hostKeywords (host : String) (k : Array KeywordAbility) (power toughness : Int)
   /-- This creature can't be blocked by tokens. -/
   | cantBeBlockedByTokens
   /-- Characteristic-defining power equal to creatures you control. -/
@@ -545,9 +535,9 @@ inductive StaticShape where
   /-- Can't be blocked by creatures with power `n` or less. -/
   | cantBeBlockedByPowerAtMost (n : Int)
   /-- During your turn, equipped creatures you control have these keywords. -/
-  | equippedTeamKeywordsDuringYourTurn (k : Keywords)
+  | equippedTeamKeywordsDuringYourTurn (k : Array KeywordAbility)
   /-- Enduring-story self pump and keywords. -/
-  | selfIfEnduringStory (power toughness : Int) (k : Keywords)
+  | selfIfEnduringStory (power toughness : Int) (k : Array KeywordAbility)
   /-- Enduring-story team pump. -/
   | teamIfEnduringStory (power toughness : Int)
   /-- Doesn't untap unless enduring story. -/
@@ -561,7 +551,7 @@ inductive StaticShape where
   /-- Can't be blocked by creatures with power `n` or greater. -/
   | cantBeBlockedByPowerAtLeast (n : Int)
   /-- Equipped creature has keywords and can't be blocked. -/
-  | equippedKeywordsAndUnblockable (k : Keywords)
+  | equippedKeywordsAndUnblockable (k : Array KeywordAbility)
   /-- Equip abilities targeting this cost less. -/
   | equipTargetingThisCostLess (n : Nat)
   /-- First equip each turn is free if enduring story. -/
@@ -582,8 +572,6 @@ inductive StaticShape where
   | exileOppDeathCreateWolf
   | copyActivatedFromGySubtype (subtype : CardSubtype)
   | equippedGetsTrampleAndCombatTreasures (power toughness : Int)
-  | wardDiscardEnchantmentInstantOrSorcery
-  | wardSacrificeLegendary
   | teamPumpSubtype (subtype : CardSubtype) (power toughness : Int)
   | youAndOtherSubtypeHexproofIfShield (subtype : CardSubtype)
   | opponentsCantCastOnYourTurn
@@ -599,12 +587,10 @@ inductive StaticShape where
   | improvise
   | noncreatureSpellsHaveImprovise
   | extort
-  | attackingTokensHave (k : Keywords)
+  | attackingTokensHave (k : Array KeywordAbility)
   | hexproofIfPlusOneThisTurn
   | mayPlayLandsFromGraveyard
   | flashIfOpponentCastThisTurn
-  | wardDiscardOrPay (n : Nat)
-  | wardPoisonCounters (n : Nat)
   | attacksEachCombatIfAble
   | instantSorceryCostLessEqualPower
   | extraPowerUpActivation
@@ -622,8 +608,8 @@ inductive StaticShape where
   | extraCounterOnPermanents
   | mayBeginOnBattlefield
   | enchantedHasWard (w : Nat)
-  | equippedGetsHasAndWard (power toughness : Int) (k : Keywords) (w : Nat)
-  | creaturesWithPlusOneHave (k : Keywords)
+  | equippedGetsHasAndWard (power toughness : Int) (k : Array KeywordAbility) (w : Nat)
+  | creaturesWithPlusOneHave (k : Array KeywordAbility)
   | opponentsCreaturesGet (power toughness : Int)
   | getsPowerPerOtherArtifact (power : Int)
   | getsPowerPerAttachedEquipment (power : Int)
@@ -636,10 +622,10 @@ inductive StaticShape where
   | equippedDealsDoubleDamage
   | healOtherDamageWhenDealt
   | entersWithXPlusOne
-  | enchantedGetsHasAndTypes (power toughness : Int) (k : Keywords)
+  | enchantedGetsHasAndTypes (power toughness : Int) (k : Array KeywordAbility)
     (types : Array CardSubtype)
   | enchantedLosesAbilitiesCantUntap
-  | enchantedGetsHasAndWard (power toughness : Int) (k : Keywords) (w : Nat)
+  | enchantedGetsHasAndWard (power toughness : Int) (k : Array KeywordAbility) (w : Nat)
   | getsAndAllTypesIfGyCreatureCards (min : Nat) (power toughness : Int)
   | sneak (cost : ManaCost)
   | boast
@@ -657,12 +643,13 @@ structure StaticMeta where
   hostBonus : Int × Int := (0, 0)
   landsYouControlPT : Bool := false
   cantBlockUnless : Option (Array CardSubtype) := none
+  cantBeBlocked : Bool := false
   cantBeBlockedExcept : Option Nat := none
   /-- Maximum number of creatures that may block this creature. -/
   cantBeBlockedByMoreThan : Option Nat := none
   enchantedOnlySubtype : Option CardSubtype := none
   cardsInHandPower : Bool := false
-  hostKeywords : Keywords := Keywords.none
+  hostKeywords : Array KeywordAbility := #[]
   cantBeBlockedByTokens : Bool := false
   creaturesYouControlPower : Bool := false
   /-- Lord pump includes the source (not only other creatures). -/
@@ -688,9 +675,9 @@ structure StaticMeta where
   /-- This creature can't be blocked if its own power is at most this. -/
   cantBeBlockedIfPowerAtMost : Option Int := none
   /-- During your turn, equipped creatures you control have these keywords. -/
-  equippedTeamKeywordsDuringYourTurn : Keywords := Keywords.none
+  equippedTeamKeywordsDuringYourTurn : Array KeywordAbility := #[]
   /-- Enduring-story self pump. -/
-  selfIfEnduringStory : Option (Int × Int × Keywords) := none
+  selfIfEnduringStory : Option (Int × Int × Array KeywordAbility) := none
   /-- Enduring-story team pump. -/
   teamIfEnduringStory : Option (Int × Int) := none
   /-- Doesn't untap unless enduring story. -/
@@ -724,6 +711,7 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .hostGets _ p t => { hostBonus := (p, t) }
   | .landsYouControlPT => { landsYouControlPT := true }
   | .cantBlockUnless subtypes => { cantBlockUnless := some subtypes }
+  | .cantBeBlocked => { cantBeBlocked := true }
   | .cantBeBlockedExcept n => { cantBeBlockedExcept := some n }
   | .cantBeBlockedByMoreThan n => { cantBeBlockedByMoreThan := some n }
   | .enchantedOnlySubtypeCantAttackOrBlock subtype =>
@@ -781,14 +769,12 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .equippedHexproofUnblockableDuringYourTurn => {}
   | .equippedTriggersAgain => {}
   | .equippedFirstStrikePlusPerInstantSorcery =>
-    { hostKeywords := Keyword.firstStrike }
+    { hostKeywords := #[Keyword.firstStrike] }
   | .powerPerFatGraveyard _ => {}
   | .exileOppDeathCreateWolf => {}
   | .copyActivatedFromGySubtype _ => {}
   | .equippedGetsTrampleAndCombatTreasures p t =>
-    { hostBonus := (p, t), hostKeywords := Keyword.trample }
-  | .wardDiscardEnchantmentInstantOrSorcery => {}
-  | .wardSacrificeLegendary => {}
+    { hostBonus := (p, t), hostKeywords := #[Keyword.trample] }
   | .teamPumpSubtype subtype p t =>
     { lordPump := some (#[subtype], p, t), lordIncludesSelf := true }
   | .youAndOtherSubtypeHexproofIfShield _ => {}
@@ -810,8 +796,6 @@ def StaticShape.spec : StaticShape → StaticMeta
   | .hexproofIfPlusOneThisTurn => {}
   | .mayPlayLandsFromGraveyard => {}
   | .flashIfOpponentCastThisTurn => {}
-  | .wardDiscardOrPay _ => {}
-  | .wardPoisonCounters _ => {}
   | .attacksEachCombatIfAble => {}
   | .instantSorceryCostLessEqualPower => {}
   | .extraPowerUpActivation => {}
@@ -864,6 +848,7 @@ def shape : StaticAbility → StaticShape
   | .equippedCreatureGets p t => .hostGets "Equipped creature" p t
   | .powerToughnessEqualLandsYouControl => .landsYouControlPT
   | .cantBlockUnlessYouControl subtypes => .cantBlockUnless subtypes
+  | .cantBeBlocked => .cantBeBlocked
   | .cantBeBlockedExceptBy n => .cantBeBlockedExcept n
   | .cantBeBlockedByMoreThan n => .cantBeBlockedByMoreThan n
   | .enchantedIsOnlySubtypeCantAttackOrBlock subtype =>
@@ -919,9 +904,6 @@ def shape : StaticAbility → StaticShape
   | .copyActivatedFromGySubtype subtype => .copyActivatedFromGySubtype subtype
   | .equippedGetsTrampleAndCombatTreasures p t =>
     .equippedGetsTrampleAndCombatTreasures p t
-  | .wardDiscardEnchantmentInstantOrSorcery =>
-    .wardDiscardEnchantmentInstantOrSorcery
-  | .wardSacrificeLegendary => .wardSacrificeLegendary
   | .creaturesYouControlOfSubtypeGet subtype p t =>
     .teamPumpSubtype subtype p t
   | .youAndOtherSubtypeHaveHexproofIfShield subtype =>
@@ -943,8 +925,6 @@ def shape : StaticAbility → StaticShape
   | .hexproofIfPlusOneThisTurn => .hexproofIfPlusOneThisTurn
   | .mayPlayLandsFromGraveyard => .mayPlayLandsFromGraveyard
   | .flashIfOpponentCastThisTurn => .flashIfOpponentCastThisTurn
-  | .wardDiscardOrPay n => .wardDiscardOrPay n
-  | .wardPoisonCounters n => .wardPoisonCounters n
   | .attacksEachCombatIfAble => .attacksEachCombatIfAble
   | .instantSorceryCostLessEqualPower => .instantSorceryCostLessEqualPower
   | .extraPowerUpActivation => .extraPowerUpActivation
@@ -1008,6 +988,8 @@ def toNotation (ab : StaticAbility) : String :=
     | [] => "This creature can't block."
     | xs =>
       s!"This creature can't block unless you control a {String.intercalate " or " xs}."
+  | .cantBeBlocked =>
+    "This creature can't be blocked."
   | .cantBeBlockedExcept n =>
     s!"This creature can't be blocked except by {englishNumber n} or more creatures."
   | .cantBeBlockedByMoreThan n =>
@@ -1017,7 +999,7 @@ def toNotation (ab : StaticAbility) : String :=
   | .cardsInHandPower =>
     "This power is equal to the number of cards in your hand."
   | .hostKeywords host k p t =>
-    let kw := k.joinedAnd
+    let kw := KeywordAbility.joinedAnd k
     if p == 0 && t == 0 then
       s!"{host} has {kw}."
     else
@@ -1053,14 +1035,14 @@ def toNotation (ab : StaticAbility) : String :=
     s!"This creature can't be blocked by creatures with power {n} or less."
   | .equippedTeamKeywordsDuringYourTurn k =>
     let kw :=
-      if k.firstStrike && k.vigilance then "first strike and vigilance"
-      else k.joinedAnd
+      if KeywordAbility.hasFirstStrike k && KeywordAbility.hasVigilance k then "first strike and vigilance"
+      else KeywordAbility.joinedAnd k
     s!"During your turn, creatures you control that are equipped have {kw}."
   | .selfIfEnduringStory p t k =>
-    let kw := k.joinedAnd
+    let kw := KeywordAbility.joinedAnd k
     if p == 0 && t == 0 then
       s!"As long as you have an enduring story, this has {kw}."
-    else if k.toList.isEmpty then
+    else if k.isEmpty then
       s!"As long as you have an enduring story, this gets {signedStat p}/{signedStat t}."
     else
       s!"As long as you have an enduring story, this gets {signedStat p}/{signedStat t} and has {kw}."
@@ -1078,7 +1060,7 @@ def toNotation (ab : StaticAbility) : String :=
   | .cantBeBlockedByPowerAtLeast n =>
     s!"This creature can't be blocked by creatures with power {n} or greater."
   | .equippedKeywordsAndUnblockable k =>
-    s!"Equipped creature has {k.joinedAnd} and can't be blocked."
+    s!"Equipped creature has {KeywordAbility.joinedAnd k} and can't be blocked."
   | .equipTargetingThisCostLess n =>
     s!"Equip abilities you activate that target this creature cost \{{n}} less to activate."
   | .firstEquipFreeIfEnduringStory =>
@@ -1116,10 +1098,6 @@ def toNotation (ab : StaticAbility) : String :=
     s!"This has all activated abilities of all {subtype} cards in your graveyard."
   | .equippedGetsTrampleAndCombatTreasures p t =>
     s!"Equipped creature gets {signedStat p}/{signedStat t} and has trample and \"Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens.\""
-  | .wardDiscardEnchantmentInstantOrSorcery =>
-    "Ward—Discard an enchantment, instant, or sorcery card."
-  | .wardSacrificeLegendary =>
-    "Ward—Sacrifice a legendary artifact or legendary creature."
   | .teamPumpSubtype subtype p t =>
     s!"{subtype.pluralName} you control get {signedStat p}/{signedStat t}."
   | .youAndOtherSubtypeHexproofIfShield subtype =>
@@ -1151,17 +1129,13 @@ def toNotation (ab : StaticAbility) : String :=
   | .extort =>
     "Extort"
   | .attackingTokensHave k =>
-    s!"Attacking creature tokens you control have {k}."
+    s!"Attacking creature tokens you control have {KeywordAbility.renderSummary k}."
   | .hexproofIfPlusOneThisTurn =>
     "Each creature you control that you've put one or more +1/+1 counters on this turn has hexproof."
   | .mayPlayLandsFromGraveyard =>
     "You may play lands from your graveyard."
   | .flashIfOpponentCastThisTurn =>
     "As long as an opponent has cast a spell this turn, you may cast spells as though they had flash."
-  | .wardDiscardOrPay n =>
-    s!"Ward—Discard a card or pay \{{n}}."
-  | .wardPoisonCounters n =>
-    s!"Ward—Get {englishNumber n} poison counters."
   | .attacksEachCombatIfAble =>
     "This creature attacks each combat if able."
   | .instantSorceryCostLessEqualPower =>
@@ -1197,9 +1171,9 @@ def toNotation (ab : StaticAbility) : String :=
   | .enchantedHasWard w =>
     s!"Enchanted creature has ward \{{w}}."
   | .equippedGetsHasAndWard p t k w =>
-    s!"Equipped creature gets {signedStat p}/{signedStat t} and has {k} and ward \{{w}}."
+    s!"Equipped creature gets {signedStat p}/{signedStat t} and has {KeywordAbility.renderSummary k} and ward \{{w}}."
   | .creaturesWithPlusOneHave k =>
-    s!"Creatures you control with +1/+1 counters on them have {k}."
+    s!"Creatures you control with +1/+1 counters on them have {KeywordAbility.renderSummary k}."
   | .opponentsCreaturesGet p t =>
     s!"Creatures your opponents control get {signedStat p}/{signedStat t}."
   | .getsPowerPerOtherArtifact p =>
@@ -1226,8 +1200,8 @@ def toNotation (ab : StaticAbility) : String :=
     "This enters with X +1/+1 counters on it."
   | .enchantedGetsHasAndTypes p t k types =>
     let kw :=
-      if k.firstStrike && k.vigilance then "first strike and vigilance"
-      else k.joinedAnd
+      if KeywordAbility.hasFirstStrike k && KeywordAbility.hasVigilance k then "first strike and vigilance"
+      else KeywordAbility.joinedAnd k
     let extra :=
       if types.isEmpty then ""
       else s!", and is a legendary {String.intercalate " " (types.toList.map CardSubtype.englishName)} in addition to its other types"
@@ -1235,7 +1209,7 @@ def toNotation (ab : StaticAbility) : String :=
   | .enchantedLosesAbilitiesCantUntap =>
     "Enchanted creature loses all abilities and can't become untapped."
   | .enchantedGetsHasAndWard p t k w =>
-    s!"Enchanted creature gets {signedStat p}/{signedStat t} and has {k} and ward \{{w}}."
+    s!"Enchanted creature gets {signedStat p}/{signedStat t} and has {KeywordAbility.renderSummary k} and ward \{{w}}."
   | .getsAndAllTypesIfGyCreatureCards min p t =>
     s!"As long as there are {min} or more creature cards in your graveyard, this creature gets {signedStat p}/{signedStat t} and is all creature types."
   | .sneak cost =>
@@ -1269,6 +1243,10 @@ def isLandsYouControlPT (ab : StaticAbility) : Bool :=
 def cantBlockUnless? (ab : StaticAbility) : Option (Array CardSubtype) :=
   ab.shape.spec.cantBlockUnless
 
+/-- True when this static ability is unconditional `"can't be blocked"` (CR 509.1b). -/
+def isCantBeBlocked (ab : StaticAbility) : Bool :=
+  ab.shape.spec.cantBeBlocked
+
 /-- Minimum number of blockers required, if this ability restricts blocking. -/
 def cantBeBlockedExcept? (ab : StaticAbility) : Option Nat :=
   ab.shape.spec.cantBeBlockedExcept
@@ -1286,7 +1264,7 @@ def isCardsInHandPower (ab : StaticAbility) : Bool :=
   ab.shape.spec.cardsInHandPower
 
 /-- Keywords this ability grants its enchanted or equipped host. -/
-def hostKeywords (ab : StaticAbility) : Keywords :=
+def hostKeywords (ab : StaticAbility) : Array KeywordAbility :=
   ab.shape.spec.hostKeywords
 
 /-- True when this creature can't be blocked by tokens. -/
@@ -1353,10 +1331,10 @@ def cantBeBlockedIfPowerAtMost? (ab : StaticAbility) : Option Int :=
 def equippedCantBeBlocked (ab : StaticAbility) : Bool :=
   ab.shape.spec.equippedCantBeBlocked
 
-def equippedTeamKeywordsDuringYourTurn (ab : StaticAbility) : Keywords :=
+def equippedTeamKeywordsDuringYourTurn (ab : StaticAbility) : Array KeywordAbility :=
   ab.shape.spec.equippedTeamKeywordsDuringYourTurn
 
-def selfIfEnduringStory? (ab : StaticAbility) : Option (Int × Int × Keywords) :=
+def selfIfEnduringStory? (ab : StaticAbility) : Option (Int × Int × Array KeywordAbility) :=
   ab.shape.spec.selfIfEnduringStory
 
 def teamIfEnduringStory? (ab : StaticAbility) : Option (Int × Int) :=
@@ -1378,11 +1356,24 @@ instance : HasTextChange StaticAbility where
     if tcs.isEmpty then ab
     else
       let ms := HasTextChange.applyTextChanges tcs
+      let mk := HasTextChange.applyTextChanges tcs
       match ab with
       | .otherCreaturesHaveTrample subs => .otherCreaturesHaveTrample (subs.map ms)
       | .otherCreaturesGet subs p t => .otherCreaturesGet (subs.map ms) p t
       | .cantBlockUnlessYouControl subs => .cantBlockUnlessYouControl (subs.map ms)
       | .enchantedIsOnlySubtypeCantAttackOrBlock s => .enchantedIsOnlySubtypeCantAttackOrBlock (ms s)
+      | .equippedCreatureHasKeywords k => .equippedCreatureHasKeywords (mk k)
+      | .enchantedCreatureGetsAndHas p t k => .enchantedCreatureGetsAndHas p t (mk k)
+      | .equippedCreatureGetsAndHas p t k => .equippedCreatureGetsAndHas p t (mk k)
+      | .equippedCreaturesHaveKeywordsDuringYourTurn k =>
+        .equippedCreaturesHaveKeywordsDuringYourTurn (mk k)
+      | .getsAndHasIfEnduringStory p t k => .getsAndHasIfEnduringStory p t (mk k)
+      | .equippedCreatureHasKeywordsAndCantBeBlocked k =>
+        .equippedCreatureHasKeywordsAndCantBeBlocked (mk k)
+      | .attackingTokensHave k => .attackingTokensHave (mk k)
+      | .equippedCreatureGetsHasAndWard p t k w => .equippedCreatureGetsHasAndWard p t (mk k) w
+      | .creaturesWithPlusOneHave k => .creaturesWithPlusOneHave (mk k)
+      | .enchantedCreatureGetsHasAndWard p t k w => .enchantedCreatureGetsHasAndWard p t (mk k) w
       | .hasteIfYouControlOtherSubtype s => .hasteIfYouControlOtherSubtype (ms s)
       | .cantAttackUnlessYouControlNOther n s => .cantAttackUnlessYouControlNOther n (ms s)
       | .lifelinkIfYouControlOtherSubtype s => .lifelinkIfYouControlOtherSubtype (ms s)
@@ -1396,7 +1387,7 @@ instance : HasTextChange StaticAbility where
       | .subtypeSpellsCostLess s n => .subtypeSpellsCostLess (ms s) n
       | .powerEqualSubtypeYouControl s => .powerEqualSubtypeYouControl (ms s)
       | .enchantedCreatureGetsHasAndTypes p t k subs =>
-        .enchantedCreatureGetsHasAndTypes p t k (subs.map ms)
+        .enchantedCreatureGetsHasAndTypes p t (mk k) (subs.map ms)
       | other => other
 
 end Mtg.Engine

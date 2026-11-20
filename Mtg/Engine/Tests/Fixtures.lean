@@ -65,6 +65,7 @@ import Mtg.Engine.Tests.BecomeArtifact
 import Mtg.Engine.Tests.BecomePrepared
 import Mtg.Engine.Tests.Exile
 import Mtg.Engine.Tests.EvalExpr
+import Mtg.Engine.Tests.CostKeywords
 
 /-!
 # Engine Test Fixtures

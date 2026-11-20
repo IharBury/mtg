@@ -150,9 +150,15 @@ def stackObjectLine (g : Game) (e : StackEntry) (withId : Bool := true) : String
     let id := if withId then s!"{o.id} " else ""
     s!"{id}{g.nameWithToken o}{stackCreatureStats g o}{stackFaceExtras g o}{targetClause g e}{sourceClause g o} (controlled by {g.player e.controller |>.name})"
 
-/-- Like `faceExtras`, but includes keywords granted by other permanents. -/
+/-- Like `faceExtras`, but includes keywords and evasion granted by other permanents
+or continuous effects. -/
 def objectFaceExtras (g : Game) (o : GameObject) : String :=
-  spacedSuffix ((g.baseCard o).keywordsAndAbilitiesOf (g.effectiveKeywords o))
+  let base := (g.baseCard o).keywordsAndAbilitiesOf (g.effectiveKeywords o)
+  let extra :=
+    if g.hasCantBeBlocked o && (base.splitOn "can't be blocked").length == 1 then
+      if base.isEmpty then "can't be blocked" else s!"{base} can't be blocked"
+    else base
+  spacedSuffix extra
 
 /-- Player who would activate `o`'s abilities (controller, else owner). -/
 def abilityActivator (g : Game) (o : GameObject) : PlayerId :=
@@ -727,26 +733,28 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
         s!" [pay \{{n}} or let the effect happen ({g.player p |>.name})]"
       else
         s!" [pay \{{n}} or let the spell be countered ({g.player p |>.name})]"
-    | .payWard p _ cost =>
+    | .payWard p _ cost chosen =>
       let who := g.player p |>.name
-      match cost with
-      | .genericMana n =>
+      match cost.soleGenericMana? with
+      | some n =>
         s!" [pay \{{n}} or let the spell be countered (ward, {who})]"
-      | .discardEnchantmentInstantOrSorcery =>
-        s!" [discard an enchantment, instant, or sorcery or let the spell be countered (ward, {who})]"
-      | .sacrificeLegendary =>
-        s!" [sacrifice a legendary artifact or creature or let the spell be countered (ward, {who})]"
-      | .discardOrPay n =>
-        s!" [discard a card or pay \{{n}} or let the spell be countered (ward, {who})]"
-      | .fivePoison =>
-        s!" [get five poison counters or let the spell be countered (ward, {who})]"
-      | .discardCard =>
-        s!" [discard a card or let the spell be countered (ward, {who})]"
-      | .sacrificePermanents left paid _ =>
-        if paid == 0 then
-          s!" [sacrifice {left} permanents or let the spell be countered (ward, {who})]"
+      | none =>
+        if cost == CostSpec.sacrificeLegendaryArtifactOrCreature then
+          s!" [sacrifice a legendary artifact or creature or let the spell be countered (ward, {who})]"
         else
-          s!" [sacrifice {left} more permanent(s) (ward, {who})]"
+          match cost.items.toList with
+          | [.sacrifice (.count (.const n)) (.filter .anyObject)] =>
+            let need := if n > 0 then n.toNat else 1
+            let paid := chosen.size
+            let left := need - paid
+            if paid == 0 then
+              s!" [sacrifice {left} permanents or let the spell be countered (ward, {who})]"
+            else
+              s!" [sacrifice {left} more permanent(s) (ward, {who})]"
+          | [.mana m] =>
+            s!" [pay {m} or let the spell be countered (ward, {who})]"
+          | _ =>
+            s!" [{cost.toInlinePhrase} or let the spell be countered (ward, {who})]"
     | .recruitDiscard p =>
       s!" [recruit: discard a card ({g.player p |>.name})]"
     | .chooseKicker p =>

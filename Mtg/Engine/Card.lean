@@ -1,9 +1,10 @@
 import Mtg.Engine.Card.Primitives
 import Mtg.Engine.Card.ManaTypes
-import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.Text
 import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.Expr
+import Mtg.Engine.Card.Cost
+import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.ManaSpec
 import Mtg.Engine.Card.Token
 import Mtg.Engine.Card.Targeting
@@ -22,6 +23,7 @@ import Mtg.Engine.Card.ChapterEffects
 import Mtg.Engine.Card.TriggerEffects
 import Mtg.Engine.Card.SpellEffects
 import Mtg.Engine.Card.TriggeredAbility
+import Mtg.Engine.Card.KeywordExpand
 import Mtg.Engine.Card.Saga
 import Mtg.Engine.Card.CardDef
 import Mtg.Engine.Card.ParseOracle
@@ -40,21 +42,27 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
   modification, and Layer 3 `TextChange`/`HasTextChange` primitives.
 - `ManaTypes`: Layer-0 evaluated mana types (`ManaType`, `ManaOutput`) and
   compositional `ManaSpendRestriction` (CR 106), below `Mtg.Engine.Mana`.
-- `Keywords`: keyword abilities (CR 702).
 - `Text`: shared Oracle-text phrase helpers.
-- `Counter`: counter kinds a permanent can carry (CR 122).
+- `Counter`: counter kinds a permanent can carry (CR 122, incl. all 15 CR 122.1b
+  keyword counters).
 - `Expr`: Layer-1 pure expression algebra (`VarId`, `LibraryPosSpec`,
   `PlayerFilter`/`PlayerExpr`, `ObjectPred`/`ObjectFilter`/`ObjectExpr`,
   `ValueExpr`, `Condition`, `DurationExpr`), `HasTextChange`, and `ToOracle`.
+- `Cost`: Layer-2 compositional `CostSpec`/`CostItem`, `LoyaltySymbol`,
+  `AdditionalCostSpec`, and `AlternativeCostSpec` (CR 118, 606.2–6).
+- `Keywords`: Layer-2 parameterized `KeywordAbility` / `SimpleKeyword` and
+  `CounterKind.grantedKeyword?` (CR 702, 122.1b).
 - `ManaSpec`: symbolic `ManaPoolPalette` and `ManaSpec` generalized over
   `ValueExpr`, `ObjectExpr`, and `PlayerExpr` (CR 106 / 605).
 - `Token`: unified parameterized `TokenSpec` (CR 111 / 707.9) over `ValueExpr`
   and `ObjectExpr`.
 - `Targeting`: unified `TargetSpec` / `TargetSlot` / `TargetDomain` and
   `HasTargeting` (CR 115.1).
-- `Parser.SubGrammars`: Stage-4 compositional expression and target parsers
-  (`parseNounPhrase`, `parseValueExpr`, `parseCondition`, `parseDuration`,
-  `parseTargetSlot`, `parseTargetSpec`, `parseTargetSpecPrefix`).
+- `Parser.SubGrammars`: Stage-4 compositional expression, target, cost, and
+  keyword parsers (`parseNounPhrase`, `parseValueExpr`, `parseCondition`,
+  `parseDuration`, `parseTargetSlot`, `parseTargetSpec`, `parseTargetSpecPrefix`,
+  `parseCostItem`, `parseCostSpec`, `parseAdditionalCostSpec`,
+  `parseKeywordAbility`, `parseKeywordLine`).
 - `PermanentAction`: shared actions on permanents (CR 608.2b).
 - `SpellResolution` / `AbilityCastKind` / `Chapter`: how spells resolve,
   how the demo agent classifies activated abilities, and Saga chapters
@@ -67,6 +75,8 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `ChapterEffects` / `TriggerEffects` / `SpellEffects`: named `Effect`
   constructors per family.
 - `TriggeredAbility`: printed triggered abilities (CR 603).
+- `KeywordExpand`: pure CR 702.1 `KeywordAbility.expand` lowering keywords into
+  static/triggered/activated/additional/alternative/special-action/spell rules.
 - `Saga`: printed Sagas (CR 714).
 - `CardDef`: the printed card definition and `AdventureFace`.
 - `Guards`: cross-abstraction `#guard` regression tests.

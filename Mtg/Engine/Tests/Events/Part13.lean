@@ -402,7 +402,7 @@ private def replayOk47i2 (gs : Array Game) : Bool :=
     bear with
     name := "P47i2 ImpendingTitan"
     manaCost := ManaCost.ofGeneric 4
-    impending := some (2, ManaCost.ofGeneric 1)
+    keywords := #[.impending 2 (CostSpec.ofGeneric 1)]
   }
   let gImpEx0 := (insertObject g4 impExDef p0 .exile).addMana p0 .colorless 1
   let impExId := (gImpEx0.objects.filter (fun (o : GameObject) => o.zone == Zone.exile)).back!.id
@@ -838,7 +838,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     power := some 4
     toughness := some 4
     activatedAbilities := #[{
-      cost := { mana := { symbols := #[.x] }, fra := .crew 2, sacrificeAnotherCreature := true }
+      cost := CostSpec.ofItems #[.mana { symbols := #[.x] }, .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you]), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .hasType .creature]))]
       effect := Effect.gainLife 2
     }]
   }
@@ -859,11 +859,11 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     name := "P47i4 RiteAltar"
     types := #[.enchantment]
     activatedAbilities := #[{
-      cost := { mana := { symbols := #[.colored .green] }, tapAnUntappedCreatureYouControl := true }
+      cost := CostSpec.ofItems #[.mana { symbols := #[.colored .green] }, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
       effect := Effect.gainLife 2
     }]
   }
-  let hasteElfDef : CardDef := { llanowarElves with name := "P47i4 HasteElf", keywords := { haste := true } }
+  let hasteElfDef : CardDef := { llanowarElves with name := "P47i4 HasteElf", keywords := #[Keyword.haste] }
   let gTapGOnlyElf := addPermanent (addPermanent g3 tapCreatureGDef p0 p0) hasteElfDef p0 p0
   let gTapGWithBear := addPermanent gTapGOnlyElf bear p0 p0
   let altarId := (gTapGWithBear.permanentsOf p0).find? (·.name == tapCreatureGDef.name) |>.get!.id
@@ -894,7 +894,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   -- 4b(i). `ManaAbilities` mana-cost `spend := { abilitySourceSubtypes := g.subtypes o }`:
   let gobFilterDef : CardDef := {
     creature "P47i4 GobAlchemist" ManaCost.empty #["Goblin"] 1 1 with
-    keywords := { haste := true }
+    keywords := #[Keyword.haste]
     filterMana := some (ManaCost.ofGeneric 1, #[.colored .blue])
   }
   let rockFilterDef : CardDef := {
@@ -937,7 +937,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     types := #[.artifact]
     subtypes := #["Treasure"]
     activatedAbilities := #[{
-      cost := { tap := true, sacrificeSource := true }
+      cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
       effect := { resolution := .addAnyColorSpendOnlyArtifactSpell, phrase := "Add one mana of any color for artifact spell." }
     }]
   }
@@ -982,7 +982,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     name := "P47i4 XGenerator"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := { symbols := #[.x] } }
+      cost := CostSpec.ofItems #[.mana { symbols := #[.x] }]
       effect := {
         targeting := .of .player
         resolution := .addMana #[.colored .red] .chosenX

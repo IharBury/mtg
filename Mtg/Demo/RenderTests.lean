@@ -503,7 +503,7 @@ def mountainLine (g : Game) : String :=
 #guard
   let g := giantReadyToAssign
   let giant := namedPermanent g "Hill Giant"
-  let g := g.createEffect (.keywordsUntilEot giant.id Keyword.trample)
+  let g := g.createEffect (.keywordsUntilEot giant.id #[Keyword.trample])
   let giant := namedPermanent g "Hill Giant"
   let elves := g.battlefield.filter (fun o => o.name == "Llanowar Elves")
   combatDamageSourceLine g giant true ==
@@ -598,7 +598,7 @@ def mountainLine (g : Game) : String :=
 #guard
   let c := card "Silent Siege" #[.creature]
     (oracleText := "Trample\nOther Orcs and Goblins you control have trample.\nWhenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control.")
-    (keywords := Keyword.trample)
+    (keywords := #[Keyword.trample])
     (staticAbilities := #[.otherCreaturesHaveTrample #[.orc, .goblin]])
     (triggeredAbilities := #[.onAttackPumpByGreatestPower])
   let t := TriggeredAbility.toNotation .onAttackPumpByGreatestPower

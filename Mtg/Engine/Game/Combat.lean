@@ -482,7 +482,7 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0) : Game :=
           let lifelinkCtrl? : Option PlayerId :=
             match (g.findObject? srcId).filter (·.isOnBattlefield) with
             | some src => if g.hasLifelink src then g.controllerOf src else none
-            | none => lkiSnap?.bind (fun s => if s.keywords.lifelink then s.controller else none)
+            | none => lkiSnap?.bind (fun s => if s.hasLifelink then s.controller else none)
           match lifelinkCtrl? with
           | some pid =>
             if g.stillInGame pid then

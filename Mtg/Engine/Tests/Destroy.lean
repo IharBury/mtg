@@ -74,7 +74,7 @@ not count. A permanent exiled instead of dying still counts. -/
   let g0 := addPermanent g0 (artifactCreature "Opp Construct" ManaCost.empty #[] 1 1) opp opp
   let g0 := addPermanent g0 (artifact "My Sword" ManaCost.empty "") caster caster
   let g0 := addPermanent g0
-    (artifact "Hardy Relic" ManaCost.empty "" (keywords := Keyword.indestructible)) opp opp
+    (artifact "Hardy Relic" ManaCost.empty "" (keywords := #[Keyword.indestructible])) opp opp
   let g0 := addPermanent g0 (artifact "Shielded Relic" ManaCost.empty "") opp opp
   let shielded := obj g0 "Shielded Relic"
   let g0 := g0.recordPutCounters shielded.id .shield 1
@@ -137,7 +137,7 @@ counter each leave the permanent in play. -/
 #guard
   let g0 := addPermanent afterDraw
     (creature "Adamant Wyrm" ManaCost.empty #["Dragon"] 4 4
-      (keywords := Keyword.indestructible)) opp opp
+      (keywords := #[Keyword.indestructible])) opp opp
   let id := pid g0 "Adamant Wyrm"
   let g := step (g0.change (.permanentDealtDamageThisWay (some id))) markedDestroy
   onBoard g "Adamant Wyrm" && g.permanentDealtDamageThisWay.isNone &&
@@ -245,7 +245,7 @@ controller still amasses when the creature is indestructible. -/
 
 #guard
   let g0 := addPermanent afterDraw
-    (creature "Hardy" ManaCost.empty #[] 2 2 (keywords := Keyword.indestructible)) caster caster
+    (creature "Hardy" ManaCost.empty #[] 2 2 (keywords := #[Keyword.indestructible])) caster caster
   let id := pid g0 "Hardy"
   let before := (g0.player caster).hand.size
   let g := step g0 amassSeq (targets := #[Target.permanent id])

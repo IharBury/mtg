@@ -10,27 +10,6 @@ When a triggered ability fires, with per-event clause wording and metadata.
 
 namespace Mtg.Engine
 
-/-- Payment a player may make to stop ward from countering their spell or
-ability (CR 702.21). -/
-inductive WardCost where
-  /-- Ward `{n}`. -/
-  | genericMana (n : Nat)
-  /-- Ward — discard an enchantment, instant, or sorcery card. -/
-  | discardEnchantmentInstantOrSorcery
-  /-- Ward — sacrifice a legendary artifact or legendary creature. -/
-  | sacrificeLegendary
-  /-- Ward — discard a card or pay `{n}`. -/
-  | discardOrPay (n : Nat)
-  /-- Ward — get five poison counters. -/
-  | fivePoison
-  /-- Ward — discard a card. -/
-  | discardCard
-  /-- Ward — sacrifice `left` more permanents; `paid` were already chosen to
-  sacrifice simultaneously once all `left` are selected, so the cost can no
-  longer be declined. -/
-  | sacrificePermanents (left paid : Nat) (chosen : Array ObjectId := #[])
-deriving DecidableEq, Repr, Inhabited, BEq
-
 /-- Trigger events first printed in Reality Fracture (FRA). -/
 inductive FraEvent where
   /-- When you cast this spell. -/

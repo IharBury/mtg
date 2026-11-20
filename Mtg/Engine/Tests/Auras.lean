@@ -189,7 +189,7 @@ def giftSetup : Game :=
 
 #guard giftSetup.canCast ⟨0⟩ (handCardNamed giftSetup ⟨0⟩ "Gift of Strands")
 #guard giftSetup.asSorcery? ⟨0⟩
-#guard giftOfStrands.keywords.flash
+#guard KeywordAbility.hasFlash giftOfStrands.keywords
 #guard !giftOfStrands.hasSorcerySpeed
 
 -- An Aura cannot be cast with no creature on the battlefield.
@@ -392,7 +392,7 @@ def keptOneOfThree : Game :=
 /-- Indestructible does not save a legend from CR 704.5j. -/
 def legendaryIndestructible : CardDef :=
   legendaryCreature "Unyielding Legend" ManaCost.empty #[] 2 2
-    (keywords := Keyword.indestructible)
+    (keywords := #[Keyword.indestructible])
 
 def twoIndestructibleLegends : Game :=
   let g :=
@@ -402,7 +402,7 @@ def twoIndestructibleLegends : Game :=
 
 #guard (twoIndestructibleLegends.battlefield.filter
   (·.name == "Unyielding Legend")).size == 1
-#guard (namedPermanent twoIndestructibleLegends "Unyielding Legend").printed.keywords.indestructible
+#guard KeywordAbility.hasIndestructible (namedPermanent twoIndestructibleLegends "Unyielding Legend").printed.keywords
 #guard ((twoIndestructibleLegends.player ⟨0⟩).graveyard.filter (fun id =>
   (twoIndestructibleLegends.object! id).name == "Unyielding Legend")).size == 1
 
@@ -637,7 +637,7 @@ def guideSetup : Game :=
 
 #guard guideSetup.canCast ⟨0⟩ (handCardNamed guideSetup ⟨0⟩ "Galadhrim Guide")
 #guard guideSetup.asSorcery? ⟨0⟩
-#guard !galadhrimGuide.keywords.flash
+#guard !KeywordAbility.hasFlash galadhrimGuide.keywords
 #guard galadhrimGuide.hasSorcerySpeed
 
 -- A creature without flash cannot be cast when it is not a main phase.
@@ -740,7 +740,7 @@ def visionarySetup : Game :=
 
 #guard visionarySetup.canCast ⟨0⟩ (handCardNamed visionarySetup ⟨0⟩ "Elvish Visionary")
 #guard visionarySetup.asSorcery? ⟨0⟩
-#guard !elvishVisionary.keywords.flash
+#guard !KeywordAbility.hasFlash elvishVisionary.keywords
 #guard elvishVisionary.hasSorcerySpeed
 
 def proposedVisionary : Game :=
@@ -851,7 +851,7 @@ def woodElvesSetup : Game :=
 
 #guard woodElvesSetup.canCast ⟨0⟩ (handCardNamed woodElvesSetup ⟨0⟩ "Wood Elves")
 #guard woodElvesSetup.asSorcery? ⟨0⟩
-#guard !woodElves.keywords.flash
+#guard !KeywordAbility.hasFlash woodElves.keywords
 #guard woodElves.hasSorcerySpeed
 #guard woodElves.power == some 1
 #guard woodElves.toughness == some 1

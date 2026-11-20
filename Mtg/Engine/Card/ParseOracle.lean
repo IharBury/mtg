@@ -6,6 +6,7 @@ import Mtg.Engine.Card.OracleArgs
 import Mtg.Engine.Card.FrcParse
 import Mtg.Engine.Card.OracleCandidates
 import Mtg.Engine.Card.OracleNorm
+import Mtg.Engine.Card.Parser.SubGrammars
 
 /-!
 # Parsing a full Oracle card
@@ -312,21 +313,27 @@ def parseColorIndicator (line : String) : Option ColorSet :=
     if colors.isEmpty || colors.length != words.length then none
     else some (colors.foldl (fun acc c => acc.insert c) ColorSet.empty)
 
-/-- Keyword names on one line, such as `Flying, haste`. -/
-def keywordTokens (cardName line : String) : Option (List String) :=
+/-- True when `line` is the non-keyword CR 509.1b static ability `"~ can't be blocked."` -/
+def isCantBeBlockedLine (cardName line : String) : Bool :=
+  let prepared := prepareLine cardName line
+  let cleaned := dropLeadingThis ((prepared.replace "." "").trimAscii.copy)
+  cleaned == "can't be blocked"
+
+/-- Evergreen/simple keyword names on one line, such as `Flying, haste` or `Prowess, prowess`.
+Retains multiplicity for cumulative keywords (CR 702.83b / 702.85 / 702.108b).
+Excludes `improvise` and `extort` (routed through `staticCandidates` until Phase 6)
+and never matches `"can't be blocked"` (CR 509.1b static ability). -/
+def keywordLineAbilities (cardName line : String) : Option (Array KeywordAbility) :=
   let prepared := prepareLine cardName line
   let cleaned := dropLeadingThis ((prepared.replace "." "").trimAscii.copy)
   let parts := cleaned.splitOn "," |>.map (·.trimAscii.copy) |>.filter (· != "")
-  let names := Keywords.fields.map (·.name)
   if parts.isEmpty then none
-  else if parts.all (fun p => names.any (· == p)) then some parts
-  else none
-
-def keywordsFromTokens (toks : List String) : Keywords :=
-  toks.foldl (fun acc name =>
-    match Keywords.fields.find? (fun f => f.name == name) with
-    | some f => f.set acc true
-    | none => acc) Keywords.none
+  else
+    let parsed := parts.filterMap fun p =>
+      if p == "improvise" || p == "extort" then none
+      else KeywordAbility.ofSimpleName? p
+    if parsed.length == parts.length then some parsed.toArray
+    else none
 
 def nonEmptyLines (text : String) : List String :=
   text.splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
@@ -552,8 +559,8 @@ def effectLines (cardName : String) (e : Effect) : List String :=
   | .sequence [.dealDamageToEachCreature n (.nonSubtype sub) .fixed, .addFourManaDragonSpells m sub2] =>
     [s!"{cardName} deals {n} damage to each non-{sub} creature.",
       s!"Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells."]
-  | .sequence [.onPermanent (.grantKeywords k), .draw (.fixed 1)] =>
-    if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
+  | .sequence [.onPermanent (.grantKeywords k), .onPermanent .cantBeBlocked, .draw (.fixed 1)] =>
+    if k == #[Keyword.vigilance] then
       ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
         "Draw a card."]
     else fallback
@@ -710,52 +717,34 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
           | none => 1
       some { c with costReductionIfGyCreaturesAtLeast := some (min, k) }
   else if low.startsWith "affinity for " then
-    let t :=
-      ((stripParentheticals ((raw.drop "Affinity for ".length).trimAscii.copy)).trimAscii.copy).replace "." ""
-    CardSubtype.ofOracle? t |>.map fun sub => { c with affinityForSubtype := some sub }
+    Parser.parseKeywordAbility raw |>.map c.withKeyword
   else if low.contains "cascade" &&
       (((low.replace "," "").splitOn " ").filter (fun w => w != "")).all (fun w => w == "cascade") then
     let n := (low.splitOn "cascade").length - 1
-    some { c with cascade := n }
-  else if low.startsWith "kicker " then
-    let costText :=
-      ((stripParentheticals ((raw.drop "Kicker ".length).trimAscii.copy)).trimAscii.copy).replace "." ""
-    parseManaCost costText |>.map fun cost => { c with kicker := some cost }
-  else if low == "gift a treasure" || low == "gift a treasure." then
-    some { c with giftTreasure := true }
+    some (c.withKeywords (Array.replicate n Keyword.cascade))
+  else if low.startsWith "kicker " || low.startsWith "kicker—" then
+    Parser.parseKeywordAbility raw |>.map c.withKeyword
+  else if low.startsWith "gift " then
+    Parser.parseKeywordAbility raw |>.map c.withKeyword
   else if low.startsWith "teamwork " then
-    let num := (low.drop "teamwork ".length).takeWhile Char.isDigit
-    if num.isEmpty then none else some { c with teamwork := some num.toNat! }
-  else if low.startsWith "as an additional cost to cast this spell, sacrifice a creature or planeswalker or pay" then
-    n.map fun k => { c with additionalCostSacrificeArtifactOrCreature := true
-                            additionalCostSacrificeCreatureOrPlaneswalker := true
-                            additionalCostOrPayGeneric := some k }
-  else if low.startsWith "as an additional cost to cast this spell, sacrifice an artifact or creature or pay" then
-    n.map fun k => { c with additionalCostSacrificeArtifactOrCreature := true, additionalCostOrPayGeneric := some k }
-  else if low.startsWith "as an additional cost to cast this spell, sacrifice an artifact or creature" then
-    some { c with additionalCostSacrificeArtifactOrCreature := true }
-  else if low.startsWith "as an additional cost to cast this spell, discard a card or pay" then
-    n.map fun k => { c with additionalCostDiscardOrPayGeneric := some k }
-  else if low.startsWith "as an additional cost to cast this spell, sacrifice a creature" then
-    some { c with additionalCostSacrificeCreature := true }
+    Parser.parseKeywordAbility raw |>.map c.withKeyword
+  else if low.startsWith "as an additional cost to cast this spell," then
+    Parser.parseAdditionalCostSpec raw |>.map fun spec =>
+      { c with additionalCosts := c.additionalCosts.push spec }
   else if low == "this spell can't be countered" || low == "this spell can't be countered." then
     some { c with cantBeCountered := true }
   else if low.startsWith "you may cast this spell as though it had flash if you control a " then
     let t := (raw.splitOn "if you control a ").getLastD "" |>.replace "." "" |>.trimAscii.copy
     CardSubtype.ofOracle? t |>.map fun sub => { c with flashIfYouControlSubtype := some sub }
-  else if low.startsWith "ward " || low.startsWith "ward{" then
-    n.map fun k => { c with ward := some k }
-  else if low.startsWith "flashback—" && low.contains ", discard a card" then
-    let costText := (((raw.drop "Flashback—".length).copy).splitOn ",").headD "" |>.trimAscii.copy
-    parseManaCost costText |>.map fun cost =>
-      { c with flashback := some cost, flashbackDiscard := true }
-  else if low.startsWith "flashback " then
-    let costText :=
-      ((stripParentheticals ((raw.drop "Flashback ".length).trimAscii.copy)).trimAscii.copy).replace "." ""
-    parseManaCost costText |>.map fun cost => { c with flashback := some cost }
+  else if low.startsWith "ward " || low.startsWith "ward—" || low.startsWith "ward{" then
+    let normWard := if low.startsWith "ward{" then "Ward " ++ (raw.drop 4).copy else raw
+    Parser.parseKeywordAbility normWard |>.map c.withKeyword
+  else if low.startsWith "flashback—" || low.startsWith "flashback " then
+    Parser.parseKeywordAbility raw |>.map c.withKeyword
   else if low.startsWith "crew " then
-    let num := (low.drop "crew ".length).takeWhile Char.isDigit
-    if num.isEmpty then none else some { c with crew := some num.toNat! }
+    Parser.parseKeywordAbility raw |>.map c.withKeyword
+  else if low.startsWith "toxic " then
+    Parser.parseKeywordAbility raw |>.map c.withKeyword
   else if low.contains "enters tapped unless you control a legendary" then
     some { c with entersTappedUnlessLegendary := true }
   else if low.contains "enters tapped unless you control an equipment" then
@@ -1915,9 +1904,10 @@ partial def parseRules (c : CardDef) (lines : List String)
       if skipLine c line then go c rest
       else
         match beholdOrPay line with
-        | some cost => go { c with additionalCostBeholdOrPay := some cost } rest
+        | some (sub, n) =>
+          go { c with additionalCosts := c.additionalCosts.push (AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric sub n)) } rest
         | none =>
-        -- CR 209.2: a loyalty symbol in the cost makes this a loyalty ability.
+        -- CR 606.2: a loyalty symbol in the cost makes this a loyalty ability.
         -- “Planeswalkers you control have "[−N]: …"”: a granted loyalty ability.
         let grantedPrefix := "planeswalkers you control have \""
         let granted? : Option ActivatedAbility :=
@@ -1970,11 +1960,12 @@ partial def parseRules (c : CardDef) (lines : List String)
                   c.activatedAbilities.push { ab with fraCondition := cond } } rest
               | none => unrecognized c line rest
         | none =>
-        match keywordTokens c.name line with
-        | some toks =>
-          go { c with
-            keywords := c.keywords.merge (keywordsFromTokens toks)
-            prowessInstances := c.prowessInstances + toks.count "prowess" } rest
+        if isCantBeBlockedLine c.name line then
+          go { c with staticAbilities := c.staticAbilities.push .cantBeBlocked } rest
+        else
+        match keywordLineAbilities c.name line with
+        | some kws =>
+          go (c.withKeywords kws) rest
         | none =>
           match parseChapterHeader line with
           | some (roman, text) =>
@@ -2063,7 +2054,7 @@ def parseAdventure (lines : List String) (keepUnrecognized : Bool := false) :
             types := c.types
             subtypes := if c.subtypes.any (· == "Adventure") then c.subtypes else c.subtypes.push "Adventure"
             spellEffect := c.spellEffect
-            additionalCostSacrificeCreature := c.additionalCostSacrificeCreature
+            additionalCosts := c.additionalCosts
             extraLines := c.staticAbilities.filterMap fun
               | .printed t => some t
               | _ => none
@@ -2103,7 +2094,7 @@ def parseFace (lines : List String) (keepUnrecognized : Bool := false) :
           | [] => (c, [])
           | line :: rest =>
             if line == "Token" then takeExtras { c with isToken := true } rest
-            else if lowerAscii line == "daybound" then takeExtras { c with daybound := true } rest
+            else if lowerAscii line == "daybound" then takeExtras (c.withKeyword Keyword.daybound) rest
             else
               match parseColorIndicator line with
               | some cs => takeExtras { c with colorIndicator := some cs } rest
@@ -2158,7 +2149,7 @@ The text is a name line (mana cost may sit on that line or on the next), a
 type line, an optional `power/toughness` line, then rules text. A planeswalker's
 loyalty number is `Loyalty: N` or the bare corner number, before or after the
 rules text (CR 209.1). A loyalty symbol in an activation cost (`[+N]:`,
-`+N:`, `[-N]:`, `[0]:`, and the `X` forms) is a loyalty ability (CR 209.2).
+`+N:`, `[-N]:`, `[0]:`, and the `X` forms) is a loyalty ability (CR 606.2).
 A battle's defense number is `Defense: N` or the bare corner number, before
 or after the rules text (CR 210.1). A vanguard's hand modifier (lower left)
 and life modifier (lower right) are `+N`, `-N`, or `0`, labeled or bare,
@@ -2225,12 +2216,10 @@ is parsed and every effect is modelled. -/
   | .error _ => false
 
 /-- Keyword line used when a card has no stored rules text. -/
-def renderKeywordLine (k : Keywords) : Option String :=
-  let names := k.toList.map fun n =>
-    match n.toList with
-    | [] => n
-    | c :: rest => String.ofList (c.toUpper :: rest)
-  if names.isEmpty then none else some (String.intercalate ", " names)
+def renderKeywordLine (k : Array KeywordAbility) : Option String :=
+  match KeywordAbility.renderOracleLines k with
+  | [] => none
+  | lines => some (String.intercalate "\n" lines)
 
 def renderColors (cs : ColorSet) : String :=
   String.intercalate ", " (Color.all.filter cs.contains |>.map Color.englishName)
@@ -2259,10 +2248,14 @@ def formatPrintedCard (name : String) (manaCost : ManaCost)
 
 /-- Full printed text reconstructed from modeled fields. -/
 partial def renderFullOracle (c : CardDef) : String :=
-  let kw := match renderKeywordLine c.keywords with
-    | some k => [k]
-    | none => []
-  let rules := String.intercalate "\n" (kw ++ c.structuredAbilityLines)
+  let kwLines := KeywordAbility.renderOracleLines c.keywords
+  let hasCyclingKw := c.keywords.any fun | .cycling none _ => true | _ => false
+  let cForAbilities :=
+    if hasCyclingKw then
+      { c with activatedAbilities := c.activatedAbilities.filter fun ab =>
+          !(ab.isCycling && ab.effect.resolution == .draw 1) }
+    else c
+  let rules := String.intercalate "\n" (kwLines ++ cForAbilities.structuredAbilityLines)
   let face :=
     formatPrintedCard c.name c.manaCost c.supertypes c.types c.subtypes
       c.power c.toughness c.colorIndicator c.isToken rules
@@ -2283,7 +2276,6 @@ partial def renderFullOracle (c : CardDef) : String :=
     match c.lifeModifier with
     | some n => face ++ s!"\nLife: {renderModifier n}"
     | none => face
-  let face := if c.daybound then face ++ "\nDaybound" else face
   match c.otherFace with
   | none => face
   | some back => face ++ "\n//\n" ++ renderFullOracle back

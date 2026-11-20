@@ -332,8 +332,8 @@ creatures and lose that much life, or all creatures get minus three. -/
 
 /- Silence the Echo: the additional cost is sacrificing a creature or
 planeswalker or paying {3}. -/
-#guard silenceTheEcho.additionalCostSacrificeCreatureOrPlaneswalker &&
-  silenceTheEcho.additionalCostOrPayGeneric == some 3
+#guard silenceTheEcho.additionalCosts ==
+  #[AdditionalCostSpec.mandatory (CostSpec.sacrificeCreatureOrPlaneswalkerOrPayGeneric 3)]
 #guard
   let g := (withBears.empowerJace me 2)
   let g := castFra g silenceTheEcho [.chooseAdditionalCost false, tgt g "Grizzly Bears"]
@@ -469,7 +469,7 @@ to it. -/
   let g := setTapped g (namedPermanent g "Grizzly Bears").id true
   let g := resolved (castFra g tethermagesAdvantage [tgt g "Grizzly Bears"])
   let o := namedPermanent g "Grizzly Bears"
-  g.power o == 4 && g.toughness o == 4 && !o.status.tapped && (g.currentKeywords o).reach
+  g.power o == 4 && g.toughness o == 4 && !o.status.tapped && KeywordAbility.hasReach (g.currentKeywords o)
 
 /-! ## Multicolor -/
 

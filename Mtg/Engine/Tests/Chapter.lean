@@ -60,7 +60,7 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.elvesGetVigilance 1)).resolution ==
   .sequence [
     .pump (.fixed 1) (.fixed 0) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)]),
-    .grant (.keywords Keyword.vigilance) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)])]
+    .grant (.keywords #[Keyword.vigilance]) (.intersection [.creaturesYouControl, .youControl (.subtype .elf)])]
 #guard (timing .opponentDiscardsNonland).resolution ==
   .discard .chosenNonland
 #guard (timing (.amass 1)).resolution == .amass (.fixed 1)
@@ -125,15 +125,15 @@ def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
 #guard (timing (.spell { resolution := .spellsCostLessThisTurn (.cardType .artifact) 1 })).resolution ==
   .spellsCostLess (.cardType .artifact) (.fixed 1)
 #guard (timing (.spell {
-    resolution := .sequence [.creaturesPump 1 1, .teamGain Keyword.vigilance]
+    resolution := .sequence [.creaturesPump 1 1, .teamGain #[Keyword.vigilance]]
   })).resolution ==
-  .sequence [.pump (.fixed 1) (.fixed 1) .creaturesYouControl, .grant (.keywords Keyword.vigilance) .creaturesYouControl]
+  .sequence [.pump (.fixed 1) (.fixed 1) .creaturesYouControl, .grant (.keywords #[Keyword.vigilance]) .creaturesYouControl]
 #guard (timing (.spell {
     resolution := .sequence [
       .onPermanent .doublePowerAndToughness,
-      .onPermanent (.grantKeywords Keyword.trample)]
+      .onPermanent (.grantKeywords #[Keyword.trample])]
   })).resolution ==
-  .sequence [.pump .double .double .target, .grant (.keywords Keyword.trample) .target]
+  .sequence [.pump .double .double .target, .grant (.keywords #[Keyword.trample]) .target]
 
 #guard (timing (.dealDamageToOppCreature 6)).targeting.spec == .oppCreature
 #guard (timing .plusOneUpToOne).allowsZeroTargets

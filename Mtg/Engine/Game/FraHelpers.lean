@@ -71,8 +71,8 @@ def drainOpponents (g : Game) (controller : PlayerId) (n : Nat)
     g.gainLife controller n (cause := cause)
 
 /-- Grant `k` to `o` until end of turn, logged. -/
-def grantKeywordsUntilEot (g : Game) (o : GameObject) (k : Keywords) : Game :=
-  if k == Keywords.none then g else g.grantUntilEotLogged o k
+def grantKeywordsUntilEot (g : Game) (o : GameObject) (k : Array KeywordAbility) : Game :=
+  if k.isEmpty then g else g.grantUntilEotLogged o k
 
 /-- The creature type `p` chooses for “choose a creature type”: the type most
 common among creatures they control. -/

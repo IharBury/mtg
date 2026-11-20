@@ -18,17 +18,17 @@ namespace CardDef
 #guard toString Keyword.vigilance == "vigilance"
 #guard toString Keyword.lifelink == "lifelink"
 #guard toString Keyword.menace == "menace"
-#guard CardDef.isKeywordRestatement Keyword.haste "Haste"
-#guard !CardDef.isKeywordRestatement Keywords.none "({T}: Add {R}.)"
-#guard CardDef.isKeywordRestatement Keyword.flash "Flash"
-#guard CardDef.isKeywordRestatement Keyword.vigilance "Vigilance"
-#guard CardDef.isKeywordRestatement (Keyword.reach.merge Keyword.deathtouch)
+#guard CardDef.isKeywordRestatement #[Keyword.haste] "Haste"
+#guard !CardDef.isKeywordRestatement #[] "({T}: Add {R}.)"
+#guard CardDef.isKeywordRestatement #[Keyword.flash] "Flash"
+#guard CardDef.isKeywordRestatement #[Keyword.vigilance] "Vigilance"
+#guard CardDef.isKeywordRestatement #[Keyword.reach, Keyword.deathtouch]
   "Reach, deathtouch"
-#guard !CardDef.isKeywordRestatement Keyword.flying "Flash"
+#guard !CardDef.isKeywordRestatement #[Keyword.flying] "Flash"
 #guard toString Keyword.hexproof == "hexproof"
-#guard CardDef.isKeywordRestatement Keyword.hexproof "Hexproof"
+#guard CardDef.isKeywordRestatement #[Keyword.hexproof] "Hexproof"
 #guard toString Keyword.indestructible == "indestructible"
-#guard CardDef.isKeywordRestatement Keyword.indestructible "Indestructible"
+#guard CardDef.isKeywordRestatement #[Keyword.indestructible] "Indestructible"
 #guard CardDef.isAdventureDelimiter "//ADV//"
 #guard CardDef.isAdventureDelimiter "//ADV// Spew Flame {4}{R}"
 #guard !CardDef.isAdventureDelimiter "Spew Flame {4}{R}"
@@ -107,25 +107,27 @@ namespace CardDef
   .sequence [.onPermanent (.pump (-4) 0), .draw 1]
 #guard Effect.plusOneLifelinkIndestructible.resolution ==
   Resolution.sequence [.onPermanent (.plusOne 1),
-    .onPermanent (.grantKeywords (Keyword.lifelink.merge Keyword.indestructible))]
+    .onPermanent (.grantKeywords #[Keyword.lifelink, Keyword.indestructible])]
 #guard Effect.plusOneLifelinkIndestructible.spellResolution ==
   .sequence [.onPermanent (.plusOne 1),
-    .onPermanent (.grantKeywords (Keyword.lifelink.merge Keyword.indestructible))]
+    .onPermanent (.grantKeywords #[Keyword.lifelink, Keyword.indestructible])]
 #guard Effect.grantVigilanceUnblockable.resolution ==
   Resolution.sequence
-    [.onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.cantBeBlocked)),
+    [.onPermanent (.grantKeywords #[Keyword.vigilance]),
+     .onPermanent .cantBeBlocked,
      .draw 1]
 #guard Effect.grantVigilanceUnblockable.spellResolution ==
   .sequence
-    [.onPermanent (.grantKeywords (Keyword.vigilance.merge Keyword.cantBeBlocked)),
+    [.onPermanent (.grantKeywords #[Keyword.vigilance]),
+     .onPermanent .cantBeBlocked,
      .draw 1]
-#guard (Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance).resolution ==
-  Resolution.sequence [.creaturesYouControlPump 1 1, .teamGain Keyword.vigilance]
-#guard (Effect.creaturesYouControlGetAndGrant 1 1 Keyword.vigilance).spellResolution ==
-  .sequence [.creaturesPump 1 1, .teamGain Keyword.vigilance]
+#guard (Effect.creaturesYouControlGetAndGrant 1 1 #[Keyword.vigilance]).resolution ==
+  Resolution.sequence [.creaturesYouControlPump 1 1, .teamGain #[Keyword.vigilance]]
+#guard (Effect.creaturesYouControlGetAndGrant 1 1 #[Keyword.vigilance]).spellResolution ==
+  .sequence [.creaturesPump 1 1, .teamGain #[Keyword.vigilance]]
 #guard Effect.sourceGainsIndestructibleTap.resolution ==
   Resolution.sequence
-    [.onSource (.grantKeywords Keyword.indestructible), .onSource .tap]
+    [.onSource (.grantKeywords #[Keyword.indestructible]), .onSource .tap]
 #guard Effect.sourceGainsIndestructibleTap.phrase ==
   "Witch-king of Angmar gains indestructible until end of turn. Tap him"
 #guard (Effect.drawThenDiscard 2).resolution ==
@@ -150,14 +152,11 @@ namespace CardDef
   Resolution.sequence [.onSource (.plusOne 2), .createTokens .robotVillain22 1]
 #guard (Effect.plusOneAndCreateTokens 2 .robotVillain22).phrase ==
   "Put 2 +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token"
-#guard (Effect.plusOneAndGrant
-    ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste)).resolution ==
+#guard (Effect.plusOneAndGrant #[Keyword.vigilance, Keyword.indestructible, Keyword.haste]).resolution ==
   Resolution.sequence
     [.onSource (.plusOne 1),
-     .onSource (.grantKeywords
-       ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste))]
-#guard (Effect.plusOneAndGrant
-    ((Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste)).phrase ==
+     .onSource (.grantKeywords #[Keyword.vigilance, Keyword.indestructible, Keyword.haste])]
+#guard (Effect.plusOneAndGrant #[Keyword.vigilance, Keyword.indestructible, Keyword.haste]).phrase ==
   "Put a +1/+1 counter on this. He gains vigilance, indestructible, and haste until end of turn"
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).resolution ==
   Resolution.sequence
@@ -560,7 +559,7 @@ namespace CardDef
     name := "Silent Club"
     types := #[.instant]
     spellEffect := some (Effect.dealDamage 4)
-    additionalCostSacrificeArtifactOrCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]
   }
   (c.abilitiesText.splitOn "sacrifice an artifact or creature").length > 1 &&
     (c.abilitiesText.splitOn "deals 4 damage").length > 1
@@ -654,10 +653,10 @@ namespace CardDef
   .addAnyColorSpendOnlySubtype .hero
 #guard Effect.addAnyColorSpendOnlyVillain.resolution ==
   .addAnyColorSpendOnlySubtype .villain
-#guard (Effect.teamGain Keyword.doubleStrike).phrase ==
+#guard (Effect.teamGain #[Keyword.doubleStrike]).phrase ==
   "Creatures you control gain double strike until end of turn"
 #guard (Effect.becomeTypes #["Dinosaur", "Hero"] 3 5
-    (Keyword.reach.merge Keyword.vigilance)).phrase ==
+    #[Keyword.reach, Keyword.vigilance]).phrase ==
   "Until end of turn, this becomes a Dinosaur Hero with base power and toughness 3/5 and gains reach and vigilance"
 #guard (Effect.millThenPutSubtypeOrEnchantment 4 "Hero").phrase ==
   "Mill 4 cards. You may put a Hero or enchantment card from among those cards into your hand"
@@ -962,15 +961,15 @@ namespace CardDef
 #guard TriggeredAbility.onceEachTurn .onArtifactYouControlEntersDrawOnce
 #guard !(Effect.sourceGets 1 0).requiresTarget
 #guard !(Effect.putPlusOnePlusOneOnSource 3).requiresTarget
-#guard toString Keyword.cantBeBlocked == "can't be blocked"
+#guard StaticAbility.toNotation .cantBeBlocked == "This creature can't be blocked."
 #guard toString Keyword.menace == "menace"
-#guard CardDef.isKeywordRestatement Keyword.menace "Menace"
-#guard CardDef.isKeywordRestatement Keyword.menace
+#guard CardDef.isKeywordRestatement #[Keyword.menace] "Menace"
+#guard CardDef.isKeywordRestatement #[Keyword.menace]
   "Menace (This creature can't be blocked except by two or more creatures.)"
-#guard !CardDef.isKeywordRestatement Keyword.menace "Flying"
+#guard !CardDef.isKeywordRestatement #[Keyword.menace] "Flying"
 #guard
   let ab : ActivatedAbility := {
-    cost := { mana := ManaCost.ofGeneric 1, discardSource := true }
+    cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .discard (.exact 1) .self]
     effect := Effect.searchLandTypeToHand "Mountain"
     activateFromHand := true
   }
@@ -978,13 +977,13 @@ namespace CardDef
     "{1}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle (activate only from your hand)"
 #guard
   let ab : ActivatedAbility := {
-    cost := { mana := ManaCost.ofGeneric 2, tap := true, sacrificeSource := true }
+    cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapSelf, .sacrifice (.exact 1) .self]
     effect := Effect.searchBasicLandTapped
   }
-  (toString ab).startsWith "{2}, {T}, Sacrifice:"
+  (toString ab).startsWith "{2}, {T}, Sacrifice this:"
 #guard
   let ab : ActivatedAbility := {
-    cost := { payLife := 2 }
+    cost := CostSpec.ofItem (.payLife (.const 2))
     effect := Effect.sourceGets 2 2
     onceEachTurn := true
   }
@@ -992,12 +991,12 @@ namespace CardDef
     "Pay 2 life: This creature gets +2/+2 until end of turn (activate only once each turn)"
 #guard
   let ab : ActivatedAbility := {
-    cost := { mana := ManaCost.ofGeneric 1, sacrificeSource := true }
+    cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) .self]
     effect := Effect.dealDamageToTargetCreature 2
     otherModes := #[Effect.destroyTargetColorlessNonland]
   }
   ab.isModal &&
-    (toString ab).startsWith "{1}, Sacrifice: Choose one —" &&
+    (toString ab).startsWith "{1}, Sacrifice this: Choose one —" &&
     ((toString ab).splitOn "target creature").length > 1 &&
     ((toString ab).splitOn "colorless nonland").length > 1
 #guard StaticAbility.toNotation (.otherCreaturesHaveTrample #[.orc, .goblin]) ==
@@ -1211,7 +1210,7 @@ namespace CardDef
 #guard !TriggeredAbility.firesOn (.onEnterScry 2) .youCastInstantOrSorcery
 #guard
   let ab : ActivatedAbility := {
-    cost := { mana := ManaCost.ofGeneric 3 }
+    cost := CostSpec.ofGeneric 3
     effect := Effect.attachToTargetCreatureYouControl
     onlyAsSorcery := true
   }
@@ -1289,7 +1288,7 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onAttackSetOtherBasePT ==
   .setBasePT .equalSourcePower .equalSourceToughness
 #guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
-  .sequence [.pump (.fixed 2) (.fixed 0) .target, .grant (.keywords Keyword.trample) .target]
+  .sequence [.pump (.fixed 2) (.fixed 0) .target, .grant (.keywords #[Keyword.trample]) .target]
 #guard TriggeredAbility.resolution (.onEnterScry 2) == .scry (.fixed 2)
 #guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil (.fixed 2)
 #guard TriggeredAbility.resolutionPhrase { resolution := .surveil .perOtherCreature } ==
@@ -1317,12 +1316,12 @@ namespace CardDef
   "look at the top cards of your library"
 #guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
   "When this permanent enters, surveil 1."
-#guard TriggeredAbility.toNotation (.onEnterEnchanted (.grantKeywords Keyword.firstStrike)) ==
+#guard TriggeredAbility.toNotation (.onEnterEnchanted (.grantKeywords #[Keyword.firstStrike])) ==
   "When this Aura enters, enchanted creature gains first strike until end of turn."
 #guard TriggeredAbility.toNotation (.onEnterEnchanted .tap) ==
   "When this Aura enters, tap enchanted creature."
 #guard TriggeredAbility.resolution (.onEnterEnchanted .tap) == .tap .enchantedWhileSource
-#guard TriggeredAbility.toNotation (.onEnterAttachThen (.grantKeywords Keyword.indestructible)) ==
+#guard TriggeredAbility.toNotation (.onEnterAttachThen (.grantKeywords #[Keyword.indestructible])) ==
   "When this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn."
 #guard TriggeredAbility.toNotation (.onEnterAttachThen .untap) ==
   "When this Equipment enters, attach it to target creature you control. Untap that creature."
@@ -1401,7 +1400,7 @@ namespace CardDef
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapOppCantUntapWhileControl) ==
   .sequence [.tap .target, .cant .untapWhileYouControl]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterMaySacAnotherThenDestroyOppNonland) ==
-  .may (.pay (.sacrifice (.fixed 1) .another)) (.queueReflexive (.destroy .target)) .ifYouDo
+  .may (.pay CostSpec.sacrificeAnotherCreature) (.queueReflexive (.destroy .target)) .ifYouDo
 #guard TriggeredAbility.resolution (.onEnterExileTop) == .exile .top .playUntilNextTurn
 #guard StaticAbility.toNotation .noMaximumHandSize ==
   "You have no maximum hand size."
@@ -1417,11 +1416,11 @@ namespace CardDef
 #guard StaticAbility.toNotation (.supertypeSpellsCostLess .snow 2) ==
   "Snow spells you cast cost {2} less to cast."
 #guard StaticAbility.toNotation (.enchantedCreatureGetsHasAndTypes 2 2
-    (Keyword.firstStrike.merge Keyword.vigilance) #[.soldier]) ==
+    #[Keyword.firstStrike, Keyword.vigilance] #[.soldier]) ==
   "Enchanted creature gets +2/+2, has first strike and vigilance, and is a legendary Soldier in addition to its other types."
 #guard StaticAbility.toNotation .enchantedLosesAbilitiesCantUntap ==
   "Enchanted creature loses all abilities and can't become untapped."
-#guard StaticAbility.toNotation (.enchantedCreatureGetsHasAndWard 4 4 Keyword.trample 1) ==
+#guard StaticAbility.toNotation (.enchantedCreatureGetsHasAndWard 4 4 #[Keyword.trample] 1) ==
   "Enchanted creature gets +4/+4 and has trample and ward {1}."
 #guard StaticAbility.toNotation (.getsAndAllTypesIfGyCreatureCards 2 2 2) ==
   "As long as there are 2 or more creature cards in your graveyard, this creature gets +2/+2 and is all creature types."
@@ -1469,7 +1468,7 @@ namespace CardDef
   .prepareSource .ifThreeCreaturesDied
 #guard (TriggeredAbility.triggered .youScryOrSurveil
     (Effect.ofTrigger (.mayPayGenericDraw 2 (plusOneOnSource := true)))).resolution ==
-  .may (.pay (.mana #[.generic 2])) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw (.fixed 1)]) .ifYouDo
+  .may (.pay (CostSpec.ofGeneric 2)) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw (.fixed 1)]) .ifYouDo
 #guard TriggeredAbility.toNotation .onEnterCreateAxe ==
   "When this permanent enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}."
 #guard TriggeredAbility.toNotation .onEnterCreateAxeAttach ==
@@ -1488,7 +1487,7 @@ namespace CardDef
     (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1) ==
   "Whenever another creature you control with power 2 or less enters, you may pay {1}. If you do, draw a card."
 #guard TriggeredAbility.resolution .onAttackWithTwoOrMoreGrantFlying ==
-  .grant (.keywords Keyword.flying) .target
+  .grant (.keywords #[Keyword.flying]) .target
 #guard TriggeredAbility.toNotation (.onOpponentCastsAmassOrcs 1) ==
   "Whenever an opponent casts a spell, amass Orcs 1."
 #guard TriggeredAbility.toNotation .onDiesAmassGoblinsEqualPower ==
@@ -1631,14 +1630,14 @@ end CardDef
   .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource]
 #guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
   .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)]
-#guard (SharedTrigger.timing (.grantThenCounterByType Keyword.hexproof)).resolution ==
-  .sequence [.grant (.keywords Keyword.hexproof) .target,
+#guard (SharedTrigger.timing (.grantThenCounterByType #[Keyword.hexproof])).resolution ==
+  .sequence [.grant (.keywords #[Keyword.hexproof]) .target,
     .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
     .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]
 #guard (SharedTrigger.timing .beginCombatIfDrawnTwoPump).resolution ==
   .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [
     .pump (.fixed 3) (.fixed 0) .target,
-    .grant (.keywords Keyword.firstStrike) .target])
+    .grant (.keywords #[Keyword.firstStrike]) .target])
 #guard (SharedTrigger.timing .destroyOppPermanentIfSixLands).resolution ==
   .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
     .destroy .target,
@@ -1939,6 +1938,65 @@ end CardDef
       ts.slots[0]!.domain == .creature &&
       ts.noun == "for each player, target creature"
   | none => false
+
+-- Phase 4 Stage-4 Cost & Keyword Sub-Grammar guards (CR 118, 122.1b, 509.1b, 606.2–6, 702)
+#guard Parser.parseCostSpec "{1}{B}, {T}, Sacrifice a creature" ==
+  some (CostSpec.ofItems #[.mana (ManaCost.ofGenericAndColor 1 .black), .tapSelf, .sacrifice (.exact 1) (.filter (.hasType .creature))])
+#guard Parser.parseCostSpec "Discard a card or pay {2}." ==
+  some (CostSpec.discardCardOrPayGeneric 2)
+#guard Parser.parseCostSpec "Sacrifice an artifact or creature or pay {4}." ==
+  some (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 4)
+#guard Parser.parseCostSpec "Sacrifice a creature or planeswalker or pay {3}." ==
+  some (CostSpec.sacrificeCreatureOrPlaneswalkerOrPayGeneric 3)
+#guard Parser.parseCostSpec "Behold a Jace or pay {1}." ==
+  some (CostSpec.beholdOrPayGeneric .jace 1)
+#guard Parser.parseCostSpec "Get five poison counters." ==
+  some (CostSpec.getPoisonCounters 5)
+#guard Parser.parseCostSpec "Sacrifice three permanents." ==
+  some (CostSpec.sacrificePermanents 3)
+#guard Parser.parseCostSpec "Discard an enchantment, instant, or sorcery card." ==
+  some CostSpec.discardEnchantmentInstantOrSorcery
+#guard Parser.parseCostSpec "Sacrifice a legendary artifact or legendary creature." ==
+  some CostSpec.sacrificeLegendaryArtifactOrCreature
+#guard Parser.parseAdditionalCostSpec "As an additional cost to cast this spell, sacrifice an artifact or creature or pay {4}." ==
+  some (AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 4))
+#guard Parser.parseAdditionalCostSpec "As an additional cost to cast this spell, you may discard a card." ==
+  some (AdditionalCostSpec.opt CostSpec.discardCard)
+#guard Parser.parseKeywordAbility "Flying" == some Keyword.flying
+#guard Parser.parseKeywordAbility "Decayed" == some Keyword.decayed
+#guard Parser.parseKeywordAbility "Exalted" == some Keyword.exalted
+#guard Parser.parseKeywordAbility "Storied" == some Keyword.storied
+#guard Parser.parseKeywordAbility "Hexproof" == some Keyword.hexproof
+#guard Parser.parseKeywordAbility "Hexproof from black" == some (.hexproof (some (.color (.literal .black))))
+#guard Parser.parseKeywordAbility "Islandwalk" == some Keyword.islandwalk
+#guard Parser.parseKeywordAbility "Swampwalk" == some (.landwalk (.hasSubtype (.literal .swamp)))
+#guard Parser.parseKeywordAbility "Nonbasic landwalk" ==
+  some (.landwalk (.all #[.not (.hasSupertype .basic), .hasType .land]))
+#guard Parser.parseKeywordAbility "Ward {2}" == some (.ward (CostSpec.ofGeneric 2))
+#guard Parser.parseKeywordAbility "Ward—Discard a card or pay {2}." ==
+  some (.ward (CostSpec.discardCardOrPayGeneric 2))
+#guard Parser.parseKeywordAbility "Ward—Get five poison counters." ==
+  some (.ward (CostSpec.getPoisonCounters 5))
+#guard Parser.parseKeywordAbility "Gift a Treasure" == some (.gift .treasure)
+#guard Parser.parseKeywordAbility "Flashback—{1}{B}, Discard a card." ==
+  some (.flashback (CostSpec.ofItems #[.mana (ManaCost.ofGenericAndColor 1 .black), .discard (.exact 1) .hand]))
+#guard Parser.parseKeywordAbility "Impending 4—{1}{W}{W}" ==
+  some (.impending 4 (CostSpec.ofMana (ManaCost.ofGenericAndColors 1 [.white, .white])))
+#guard Parser.parseKeywordAbility "Morph {3}{U}" ==
+  some (.morph (CostSpec.ofMana (ManaCost.ofGenericAndColor 3 .blue)))
+#guard Parser.parseKeywordAbility "Toxic 2" == some (.toxic 2)
+#guard Parser.parseKeywordAbility "Can't be blocked" == none
+#guard Parser.parseKeywordLine "Prowess, prowess" == some #[Keyword.prowess, Keyword.prowess]
+#guard Parser.parseKeywordLine "Flying, protection from white and from black" ==
+  some #[Keyword.flying, .protection (.color (.literal .white)), .protection (.color (.literal .black))]
+#guard HasTextChange.applyTextChanges #[TextChange.replaceCreatureType .island .swamp] Keyword.islandwalk ==
+  KeywordAbility.subtypeLandwalk .swamp
+#guard HasTextChange.applyTextChanges #[TextChange.replaceColorWord .red .blue]
+    (KeywordAbility.protection (.color (.literal .red))) ==
+  KeywordAbility.protection (.color (.literal .blue))
+#guard CounterKind.grantedKeyword? .decayed == some Keyword.decayed
+#guard CounterKind.grantedKeyword? .exalted == some Keyword.exalted
+#guard CounterKind.grantedKeyword? .hexproof == some Keyword.hexproof
 
 end Mtg.Engine
 

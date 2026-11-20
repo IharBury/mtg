@@ -1,3 +1,4 @@
+import Mtg.Engine.Card.Cost
 import Mtg.Engine.Card.TriggerEvent
 import Mtg.Engine.TypeLine
 
@@ -159,7 +160,16 @@ inductive FrcEffect where
   | gingerDash
   /-- Ward: counter the spell or ability that targeted the source unless its
   controller pays `cost` (CR 702.21a). -/
-  | ward (cost : WardCost)
+  | ward (cost : CostSpec)
 deriving Repr, Inhabited, BEq
+
+instance : HasTextChange FrcEffect where
+  applyTextChanges tcs e :=
+    if tcs.isEmpty then e
+    else
+      match e with
+      | .searchBasics kinds untapAt => .searchBasics (HasTextChange.applyTextChanges tcs kinds) untapAt
+      | .ward cost => .ward (HasTextChange.applyTextChanges tcs cost)
+      | other => other
 
 end Mtg.Engine

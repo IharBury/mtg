@@ -429,51 +429,52 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     return match outerCont? with
       | some outer => g.chainPendingReplacement outer
       | none => g
-  | .payWard q spellId (.sacrificePermanents left paid chosen) =>
+  | .payWard q spellId cost chosen =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice for ward"
     let some sac := g.findObject? id | throw "no such object"
-    if !sac.isOnBattlefield || !g.controlledBy sac p || chosen.contains id then
-      throw s!"Can't sacrifice {g.name sac} to pay ward"
-    if paid == 0 && (g.permanentsOf p).size < left then
-      throw s!"{(g.player p).name} can't sacrifice {left} permanents"
-    let chosen' := chosen.push id
-    if left > 1 then
-      let nextP := Pending.payWard q spellId (.sacrificePermanents (left - 1) (paid + 1) chosen')
-      return g.change (.pending nextP)
-    else
-      let preBf := g.battlefield
-      let wardCause := EventCause.costPayment .ward p (some spellId)
-      let outerCont? := g.pendingReplacement
-      let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-      let g := g.change (.pending .none)
-      let g := g.withBatch (some wardCause) fun g =>
-        g.sacrificePermanentsLoop (chosen'.map ((p, ·)))
-          (preBattlefield := some preBf)
-          (cause := some wardCause)
-      let g :=
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer
-        | none => g
-      let g := g.afterWardResolved
-      return g
-  | .payWard q spellId .sacrificeLegendary =>
-    if p != q then
-      throw s!"Only {(g.player q).name} may sacrifice for ward"
-    let some sac := g.findObject? id | throw "no such object"
-    if !(g.legendaryWardSacrificeChoices p).any (fun o => o.id == id) then
-      throw s!"Can't sacrifice {g.name sac} to pay ward"
-    let outerCont? := g.pendingReplacement
-    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g := (g.change (.pending .none)).sacrificeToGraveyard sac
-      s!"{(g.player p).name} sacrifices {g.name sac} (ward)"
-      (cause := some (.costPayment .ward p (some spellId)))
-    let g :=
-      match outerCont? with
-      | some outer => g.chainPendingReplacement outer
-      | none => g
-    let g := g.afterWardResolved
-    return g
+    match cost.items.toList with
+    | [.sacrifice (.count (.const n)) (.filter pred)] =>
+      let need := if n > 0 then n.toNat else 1
+      let env : EvalEnv := { controller := p }
+      let legal := g.battlefield.filter fun o =>
+        g.controlledBy o p && EvalExpr.evalObjectPred g env (.live o) pred
+      if !sac.isOnBattlefield || !g.controlledBy sac p || chosen.contains id ||
+          !legal.any (·.id == id) then
+        throw s!"Can't sacrifice {g.name sac} to pay ward"
+      if chosen.isEmpty && legal.size < need then
+        throw s!"{(g.player p).name} can't sacrifice {need} permanents"
+      let chosen' := chosen.push id
+      if chosen'.size < need then
+        return g.change (.pending (.payWard q spellId cost chosen'))
+      else if need == 1 then
+        let outerCont? := g.pendingReplacement
+        let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+        let g := (g.change (.pending .none)).sacrificeToGraveyard sac
+          s!"{(g.player p).name} sacrifices {g.name sac} (ward)"
+          (cause := some (.costPayment .ward p (some spellId)))
+        let g :=
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
+        return g.afterWardResolved
+      else
+        let preBf := g.battlefield
+        let wardCause := EventCause.costPayment .ward p (some spellId)
+        let outerCont? := g.pendingReplacement
+        let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+        let g := g.change (.pending .none)
+        let g := g.withBatch (some wardCause) fun g =>
+          g.sacrificePermanentsLoop (chosen'.map ((p, ·)))
+            (preBattlefield := some preBf)
+            (cause := some wardCause)
+        let g :=
+          match outerCont? with
+          | some outer => g.chainPendingReplacement outer
+          | none => g
+        return g.afterWardResolved
+    | _ =>
+      throw "Not time to sacrifice a permanent"
   | .maySacArtifactOrDiscard q n =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"

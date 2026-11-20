@@ -164,11 +164,21 @@ inductive CostPick where
   | exileAnotherCreatureCardFromGraveyard
   | tapUntappedCreature
   | tapTwoUntappedArtifacts
-deriving DecidableEq, Repr, Inhabited, BEq
+  /-- General object-choosing cost item evaluated via `EvalExpr` (CR 118 / 601.2h). -/
+  | custom (item : CostItem)
+deriving Repr, Inhabited, BEq
 
 /-- How many objects `pick` takes. -/
 def CostPick.count : CostPick → Nat
   | .tapTwoUntappedArtifacts => 2
+  | .custom item =>
+    match item with
+    | .sacrifice (.count (.const n)) _
+    | .discard (.count (.const n)) _
+    | .exile (.count (.const n)) _ _ _
+    | .tapObjects (.count (.const n)) _
+    | .returnToHand (.count (.const n)) _ => if n > 0 then n.toNat else 1
+    | _ => 1
   | _ => 1
 
 /-- The cost phrase of `pick`, for prompts and logs. -/
@@ -192,33 +202,65 @@ def CostPick.phrase : CostPick → String
   | .exileAnotherCreatureCardFromGraveyard => "exile another creature card from your graveyard"
   | .tapUntappedCreature => "tap an untapped creature you control"
   | .tapTwoUntappedArtifacts => "tap two untapped artifacts you control"
+  | .custom item => ToOracle.toOracle { capitalize := false } item
+
+/-- Map one `CostItem` to a `CostPick` when paying it requires choosing objects
+(CR 601.2h / 602.2b). `sacrificeAnotherCreatureOrArtifact` is appended separately
+by `costPicksWithSacrificeOther`. -/
+def costPickOfItem? : CostItem → Option CostPick
+  | .discard (.count (.const 1)) .hand => some .discardACard
+  | .discard (.count (.const 1)) (.matching (.not (.hasType .land))) => some .discardNonland
+  | .discard (.count (.const 1)) (.matching (.hasSupertype .legendary)) => some .discardLegendaryCard
+  | .discard (.count (.const 1)) (.matching (.all #[.hasSupertype .legendary, .shares .name _])) =>
+    some .discardLegendarySameName
+  | .sacrifice (.count (.const 1)) (.filter (.all #[.hasSupertype .legendary, .hasType .artifact])) =>
+    some .sacrificeLegendaryArtifact
+  | .sacrifice (.count (.const 1)) (.filter (.hasType .artifact)) => some .sacrificeArtifact
+  | .sacrifice (.count (.const 1)) (.filter (.any #[.hasType .artifact, .hasType .creature]))
+  | .sacrifice (.count (.const 1)) (.filter (.any #[.hasType .creature, .hasType .artifact])) =>
+    some .sacrificeArtifactOrCreature
+  | .sacrifice (.count (.const 1)) (.filter (.all #[.hasSubtype (.literal .equipment), .attachedTo .this])) =>
+    some .sacrificeEquipmentAttachedToSource
+  | .tapObjects (.count (.const 1)) (.all #[.hasType .creature, .tapped false, .controlledBy .you]) =>
+    some .tapUntappedCreature
+  | .tapObjects (.count (.const 2)) (.all #[.hasType .artifact, .tapped false, .controlledBy .you]) =>
+    some .tapTwoUntappedArtifacts
+  | .sacrifice (.count (.const 1)) (.filter (.all #[.otherThan .this, .hasType .creature])) =>
+    some .sacrificeAnotherCreature
+  | .sacrifice (.count (.const 1)) (.filter (.all #[.otherThan .this, .hasSubtype (.literal sub)])) =>
+    some (.sacrificeAnotherSubtype sub)
+  | .sacrifice (.count (.const 1)) (.filter (.all #[.otherThan .this, .hasType .artifact])) =>
+    some .sacrificeAnotherArtifact
+  | .sacrifice (.count (.const 1)) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .planeswalker]])) =>
+    some .sacrificeAnotherCreatureOrPlaneswalker
+  | .sacrifice (.count (.const 1)) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))
+  | .sacrifice (.count (.const 1)) (.filter (.all #[.otherThan .this, .any #[.hasType .artifact, .hasType .creature]])) =>
+    none -- handled by `costPicksWithSacrificeOther`
+  | .sacrifice (.count (.const 1)) (.filter (.any #[.hasType .artifact, .hasType .land])) =>
+    some .sacrificeArtifactOrLand
+  | .exile (.count (.const 1)) _ (.filter (.all #[.otherThan .this, .hasType .creature, .isKind .card])) false =>
+    some .exileAnotherCreatureCardFromGraveyard
+  | .or #[c1, c2] =>
+    if c1 == CostSpec.sacrificeArtifact && c2 == CostSpec.discardNonland then
+      some .sacrificeArtifactOrDiscardNonland
+    else
+      some (.custom (.or #[c1, c2]))
+  | item@(.sacrifice _ (.filter _))
+  | item@(.discard _ .hand)
+  | item@(.discard _ (.matching _))
+  | item@(.exile _ _ (.filter _) false)
+  | item@(.tapObjects (.count _) _)
+  | item@(.returnToHand _ (.filter _))
+  | item@(.or _) =>
+    -- Skip `totalManaSymbolsAtLeast` (Zemo boast handled separately) and self-items.
+    match item with
+    | .exile (.totalManaSymbolsAtLeast _ _) _ _ _ => none
+    | _ => some (.custom item)
+  | _ => none
 
 /-- Parts of `ab`'s cost the player chooses what to pay with (CR 601.2h). -/
 def costPicksOf (ab : ActivatedAbility) : Array CostPick :=
-  let c := ab.cost
-  let fra : Array CostPick :=
-    match c.fra with
-    | .exileAnotherCreatureCardFromGraveyard => #[.exileAnotherCreatureCardFromGraveyard]
-    | .sacrificeAnotherArtifact => #[.sacrificeAnotherArtifact]
-    | .sacrificeAnotherCreatureOrPlaneswalker => #[.sacrificeAnotherCreatureOrPlaneswalker]
-    | .sacrificeArtifactOrLand => #[.sacrificeArtifactOrLand]
-    | .discardLegendaryCard => #[.discardLegendaryCard]
-    | .tapTwoUntappedArtifacts => #[.tapTwoUntappedArtifacts]
-    | _ => #[]
-  (if c.discardACard then #[CostPick.discardACard] else #[]) ++
-  (if c.discardLegendarySameName then #[CostPick.discardLegendarySameName] else #[]) ++
-  (if c.sacrificeLegendaryArtifact then #[CostPick.sacrificeLegendaryArtifact] else #[]) ++
-  (if c.sacrificeArtifact then #[CostPick.sacrificeArtifact] else #[]) ++
-  (if c.sacrificeArtifactOrCreature then #[CostPick.sacrificeArtifactOrCreature] else #[]) ++
-  (if c.sacrificeArtifactOrDiscardNonland then
-    #[CostPick.sacrificeArtifactOrDiscardNonland] else #[]) ++
-  (if c.sacrificeEquipmentAttachedToSource then
-    #[CostPick.sacrificeEquipmentAttachedToSource] else #[]) ++
-  (if c.tapAnUntappedCreatureYouControl then #[CostPick.tapUntappedCreature] else #[]) ++
-  (if c.sacrificeAnotherCreature then #[CostPick.sacrificeAnotherCreature] else #[]) ++
-  (match c.sacrificeAnotherSubtype with
-   | some t => #[CostPick.sacrificeAnotherSubtype t]
-   | none => #[]) ++ fra
+  ab.cost.items.filterMap costPickOfItem?
 
 /-- What to do with cards chosen from a looked-at, milled, or battlefield set. -/
 inductive CardChoice where
@@ -236,9 +278,6 @@ inductive CardChoice where
   attach afterward (Goblin Plate Mail). -/
   | amassArmy (subtype : CardSubtype) (n : Nat) (attach : Option ObjectId)
 deriving DecidableEq, Repr, Inhabited, BEq
-
-deriving instance DecidableEq for Keywords
-deriving instance DecidableEq for TriggeredAbility.TriggerEnterWith
 
 /-- How to log a permanent after it enters the battlefield via `EnteringAttackItem.card`. -/
 inductive EnteringAttackLog where
@@ -656,8 +695,10 @@ inductive Pending where
   `spellId` is `none`, `unlessPaysInstead` resolves on decline instead. -/
   | payOrLetCounter (player : PlayerId) (n : Nat) (spellId : Option ObjectId)
   /-- Pay this ward cost or let the targeting spell or ability be countered
-  (CR 702.21). -/
-  | payWard (player : PlayerId) (spellId : ObjectId) (cost : WardCost)
+  (CR 702.21). `chosen` holds objects already selected for multi-object ward
+  costs (e.g., Ward—Sacrifice three permanents). -/
+  | payWard (player : PlayerId) (spellId : ObjectId) (cost : CostSpec)
+      (chosen : Array ObjectId := #[])
   /-- Discard a card for recruit; if it is not a land, create a Human Soldier. -/
   | recruitDiscard (player : PlayerId)
   /-- Announce whether to pay the optional kicker cost (CR 702.33 / 601.2b). -/

@@ -59,7 +59,7 @@ def casting (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (casting Effect.castingMerfolkFromBlue) ==
   .createTokens .merfolk .blueManaSymbols false
 #guard TriggeredAbility.resolution (casting Effect.castingMayPayHasteUnblockable) ==
-  .may (.pay (.mana #[.generic 1])) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo
+  .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo
 #guard TriggeredAbility.resolution (casting Effect.castingPlusOneEachOther) ==
   .putCounters (.ofKind .plusOnePlusOne) .eachOther
 #guard TriggeredAbility.resolution (casting Effect.castingExileFlicker) ==
@@ -77,7 +77,7 @@ def casting (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (casting Effect.castingIronFistTap) ==
   .grant .ironFistTap .source
 #guard TriggeredAbility.resolution (casting Effect.castingTargetsGainFlying) ==
-  .grant (.keywords Keyword.flying) .spellTargets
+  .grant (.keywords #[Keyword.flying]) .spellTargets
 #guard TriggeredAbility.resolution (casting Effect.castingCopyIfArtifactOrLand) ==
   .sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause]
 #guard TriggeredAbility.resolution (casting Effect.castingTapCreatureOrLand) ==
@@ -435,7 +435,7 @@ def quakeMisses : Game :=
     types := #[.creature]
     power := some 2
     toughness := some 2
-    morph := some (ManaCost.ofGeneric 3)
+    keywords := #[.morph (CostSpec.ofGeneric 3)]
     staticAbilities := #[.sneak { symbols := #[.colored .red] }]
   }
   let flawless : CardDef := {

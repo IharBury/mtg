@@ -93,19 +93,17 @@ def graveyardCastThresholdMet (g : Game) (p : PlayerId) (cardId : ObjectId) (fac
 (CR 601.2b / 601.2h / 601.3). -/
 def mandatorySacrificeError? (g : Game) (p : PlayerId) (checkId : ObjectId)
     (face : CardDef) (displayName : String := face.name) : Option String :=
-  if face.additionalCostSacrificeArtifactOrCreature &&
-      face.additionalCostOrPayGeneric.isNone &&
-      !(g.permanentsOf p).any (fun perm =>
-        perm.id != checkId &&
-          if face.additionalCostSacrificeCreatureOrPlaneswalker then
-            g.isCreature perm || g.isPlaneswalker perm
-          else if face.additionalCostSacrificeCreature then g.isCreature perm
-          else g.isCreature perm || g.isArtifact perm) then
-    some s!"{displayName} requires sacrificing an artifact or creature"
-  else if face.additionalCostSacrificeCreature &&
-      !(g.creaturesControlledBy p).any (·.id != checkId) then
-    some s!"{displayName} requires sacrificing a creature"
-  else none
+  match face.mandatorySacrificeFilter? with
+  | none => none
+  | some pred =>
+    let env : EvalEnv := { controller := p, sourceId := some checkId }
+    if (g.permanentsOf p).any (fun perm =>
+        perm.id != checkId && EvalExpr.evalObjectPred g env (.live perm) pred) then
+      none
+    else
+      let phrase := (CostSpec.ofItem (.sacrifice (.exact 1) (.filter pred))).toInlinePhrase
+      let target := if phrase.startsWith "sacrifice " then (phrase.drop 10).copy else phrase
+      some s!"{displayName} requires sacrificing {target}"
 
 /-- Whether card face `c` has a legal target to begin casting it: enough unkicked
 targets (or an Aura target when `c.spellEffect = none`), or — when `c` has a
@@ -220,30 +218,30 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
       (allowHeroRestricted := allowHero) (allowVillainRestricted := allowVillain)
       (allowCantNonartifact := allowCantNonartifact) (allowCreatureRestricted := false)
       (spend := spend)
-  let payExtra (n : Nat) : Bool :=
-    canPay (g.playManaCost { o with controller := some p } bc (ManaCost.ofGeneric n)
-      (origPerm := origPerm) (flashback := flashback) (explicitAltCost := explicitAltCost)
-      (useImplicitPermissions := useImplicitPermissions))
-  match bc.additionalCostBeholdOrPay with
-  | some (quality, n) =>
-    let hasPerm := (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality)
-    let hasHand :=
-      (g.player p).hand.any (fun id =>
-        match g.findObject? id with
-        | some card => g.hasSubtype card quality
-        | none => false)
-    hasPerm || hasHand || payExtra n
-  | none =>
-  match bc.additionalCostOrPayGeneric, bc.additionalCostDiscardOrPayGeneric with
-  | some n, _ =>
-    (g.permanentsOf p).any (fun perm =>
-      perm.id != o.id &&
-        if bc.additionalCostSacrificeCreatureOrPlaneswalker then
-          g.isCreature perm || g.isPlaneswalker perm
-        else g.isCreature perm || g.isArtifact perm) || payExtra n
-  | none, some n =>
-    (g.player p).hand.any (fun id => id != o.id) || payExtra n
-  | none, none => true
+  match bc.additionalChoiceCost? with
+  | none => true
+  | some branches =>
+    let env : EvalEnv := { controller := p, sourceId := some o.id }
+    branches.any fun branch =>
+      branch.items.all fun item =>
+        match item with
+        | .mana m =>
+          canPay (g.playManaCost { o with controller := some p } bc m
+            (origPerm := origPerm) (flashback := flashback) (explicitAltCost := explicitAltCost)
+            (useImplicitPermissions := useImplicitPermissions))
+        | .behold quality =>
+          (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality) ||
+            (g.player p).hand.any (fun id =>
+              (g.findObject? id).any (fun card => g.hasSubtype card quality))
+        | .sacrifice _ (.filter pred) =>
+          (g.permanentsOf p).any (fun perm =>
+            perm.id != o.id && EvalExpr.evalObjectPred g env (.live perm) pred)
+        | .discard _ .hand =>
+          (g.player p).hand.any (fun id => id != o.id)
+        | .discard _ (.matching pred) =>
+          (g.player p).hand.any (fun id =>
+            id != o.id && (g.findObject? id).any (fun c => EvalExpr.evalObjectPred g env (.live c) pred))
+        | _ => true
 
 /-- Whether `p` can pay `cost` for spell `spellObj` from their current mana pool
 plus plain tap mana sources (including multi-color `ManaOutput.combination`
@@ -289,33 +287,33 @@ def canPayAnnouncedAdditionalFromSources (g : Game) (p : PlayerId) (o : GameObje
     faceOverride?.getD
       (if o.printed.adventure.any (fun adv => adv.name == rawBc.name) then rawBc
        else { rawBc with keywords := g.currentKeywords o })
-  let payExtra (n : Nat) : Bool :=
-    g.canPaySpellCostFromSources p o
-      (g.playManaCost { o with controller := some p } bc (ManaCost.ofGeneric n)
-        (origPerm := origPerm) (flashback := flashback)
-        (explicitAltCost := explicitAltCost)
-        (useImplicitPermissions := useImplicitPermissions))
-      (fromHand := fromHand) (excludeIds := excludeIds) (castFromZone := castFromZone)
-  match bc.additionalCostBeholdOrPay with
-  | some (quality, n) =>
-    let hasPerm := (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality)
-    let hasHand :=
-      (g.player p).hand.any (fun id =>
-        match g.findObject? id with
-        | some card => g.hasSubtype card quality
-        | none => false)
-    hasPerm || hasHand || payExtra n
-  | none =>
-  match bc.additionalCostOrPayGeneric, bc.additionalCostDiscardOrPayGeneric with
-  | some n, _ =>
-    (g.permanentsOf p).any (fun perm =>
-      perm.id != o.id &&
-        if bc.additionalCostSacrificeCreatureOrPlaneswalker then
-          g.isCreature perm || g.isPlaneswalker perm
-        else g.isCreature perm || g.isArtifact perm) || payExtra n
-  | none, some n =>
-    (g.player p).hand.any (fun id => id != o.id) || payExtra n
-  | none, none => true
+  match bc.additionalChoiceCost? with
+  | none => true
+  | some branches =>
+    let env : EvalEnv := { controller := p, sourceId := some o.id }
+    branches.any fun branch =>
+      branch.items.all fun item =>
+        match item with
+        | .mana m =>
+          g.canPaySpellCostFromSources p o
+            (g.playManaCost { o with controller := some p } bc m
+              (origPerm := origPerm) (flashback := flashback)
+              (explicitAltCost := explicitAltCost)
+              (useImplicitPermissions := useImplicitPermissions))
+            (fromHand := fromHand) (excludeIds := excludeIds) (castFromZone := castFromZone)
+        | .behold quality =>
+          (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality) ||
+            (g.player p).hand.any (fun id =>
+              (g.findObject? id).any (fun card => g.hasSubtype card quality))
+        | .sacrifice _ (.filter pred) =>
+          (g.permanentsOf p).any (fun perm =>
+            perm.id != o.id && EvalExpr.evalObjectPred g env (.live perm) pred)
+        | .discard _ .hand =>
+          (g.player p).hand.any (fun id => id != o.id)
+        | .discard _ (.matching pred) =>
+          (g.player p).hand.any (fun id =>
+            id != o.id && (g.findObject? id).any (fun c => EvalExpr.evalObjectPred g env (.live c) pred))
+        | _ => true
 
 /-- Whether `p` can pay `cost` for activated ability `ab` on `o` from their
 current mana pool plus plain tap mana sources, excluding `excludeIds`
@@ -781,15 +779,16 @@ def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : Obj
   let src := g.findObject? sourceId
   let isSpellSource (s : GameObject) : Bool :=
     s.zone == .stack && g.proposedSpell.all (fun pr => pr.spellId != sourceId || pr.kind == .spell)
-  let creatureOrPlaneswalker :=
-    src.any (fun s => isSpellSource s && (g.baseCard s).additionalCostSacrificeCreatureOrPlaneswalker)
-  let creatureOnly :=
-    src.any (fun s => isSpellSource s && (g.baseCard s).additionalCostSacrificeCreature)
-  g.permanentsOf p |>.filter (fun o =>
-    o.id != sourceId &&
-      if creatureOrPlaneswalker then g.isCreature o || g.isPlaneswalker o
-      else if creatureOnly then g.isCreature o
-      else g.isCreature o || g.isArtifact o)
+  let pred? := src.bind fun s =>
+    if isSpellSource s then spellSacrificeCostPred? (g.baseCard s) else none
+  match pred? with
+  | some pred =>
+    let env : EvalEnv := { controller := p, sourceId := some sourceId }
+    g.permanentsOf p |>.filter fun o =>
+      o.id != sourceId && EvalExpr.evalObjectPred g env (.live o) pred
+  | none =>
+    g.permanentsOf p |>.filter fun o =>
+      o.id != sourceId && (g.isCreature o || g.isArtifact o)
 
 /-- Whether tapping `preTappedIds` for mana leaves `prop`'s unpaid post-mana
 costs payable (teamwork, behold, sneak-excluded sacrifice, discard, `.crew`,
@@ -831,11 +830,11 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
       let allPicks := costPicksWithSacrificeOther basePicks
         (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
       let sacSrc :=
-        prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.fra == .exileSource
+        prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield
       let discSrc :=
-        prop.discardSource || ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+        prop.discardSource || ab.cost.discardSource || ab.cost.exileSourceFromHand
       let zemoOk : Bool :=
-        if !prop.fraCostPaid && ab.cost.fra == .zemoBoast then
+        if !prop.fraCostPaid && ab.cost.exileManaSymbols?.isSome then
           let col :=
             match g.findObject? sid <|> some prop.original with
             | some src => TextChange.applyColor (g.evalLayer3 src) .black
@@ -847,11 +846,7 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
       if !zemoOk then false
       else
         let crewN? : Option Nat :=
-          if !prop.fraCostPaid then
-            match ab.cost.fra with
-            | .crew n => some n
-            | _ => none
-          else none
+          if !prop.fraCostPaid then ab.cost.crewPower? else none
         match crewN? with
         | some n =>
           (g.firstPayableCrewSelection? p sid n allPicks
@@ -901,10 +896,10 @@ def hasCostPreservingPaymentSubset (g : Game) (pool : ManaPool) (cost : ManaCost
           | none => #[]
       let sacSrc :=
         prop.sacrificeSource ||
-          prop.activation.any (fun ab => ab.cost.sacrificeSource || ab.cost.fra == .exileSource)
+          prop.activation.any (fun ab => ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield)
       let discSrc :=
         prop.discardSource ||
-          prop.activation.any (fun ab => ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand)
+          prop.activation.any (fun ab => ab.cost.discardSource || ab.cost.exileSourceFromHand)
       let equivKey (o : GameObject) (choices : Array TapManaChoice) :=
         let pickMask :=
           allPicks.map fun pk =>
@@ -1684,19 +1679,13 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
           { id := sourceId, name := sourceName, controller := some p, owner := p }
     let abilityObjId := abilityId.getD ⟨g.nextObjectId⟩
     let loyaltyDelta : Option Int :=
-      match activation.bind (·.cost.loyalty) with
-      | some (.plus n) => some (n : Int)
-      | some .plusX => some (chosenX : Int)
-      | some (.minus n) => some (-(n : Int))
-      | some .zero => some 0
-      | some .minusX => some (-(chosenX : Int))
-      | none => none
+      activation.bind (·.cost.netLoyaltyDelta chosenX)
     let isPowerUp : Bool :=
       match activation with
       | some ab => ab.powerUp
       | none => srcObj?.any (fun src => (g.baseCard src).activatedAbilities.any (·.powerUp))
     let isBoast :=
-      activation.any (fun ab => ab == ActivatedAbility.zemoBoastAbility || ab.cost.fra == .zemoBoast)
+      activation.any (fun ab => ab == ActivatedAbility.zemoBoastAbility || ab.cost.exileManaSymbols?.isSome)
     let abilityIdx : Option Nat :=
       (g.proposedSpell.bind (·.abilityIdx)).orElse fun _ =>
         match srcObj?, activation with
@@ -1826,27 +1815,20 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
       ((abilityId.bind g.findObject?).bind (·.chosenX)).getD 0
     let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD 0
     let unpaidLoyaltyUnpayable : Bool :=
-      match activation.bind (·.cost.loyalty) with
+      match activation.bind (·.cost.netLoyaltyDelta chosenX) with
       | none => false
-      | some sym =>
+      | some k =>
         if g.proposedSpell.any ProposedSpell.loyaltyPaid ||
             sourceId.any (fun sid =>
               g.sourceCounterCostPaidFor sid abilityId .loyalty (some .loyalty) sinceIdx) then
           false
         else
-          let actualSym :=
-            match sym with
-            | .minusX => LoyaltySymbol.minus chosenX
-            | .plusX => LoyaltySymbol.plus chosenX
-            | _ => sym
           match sourceId.bind g.findObject? with
           | none => true
           | some src =>
             !src.isOnBattlefield || !g.controlledBy src p ||
               g.loyaltyActivatedThisTurn src.id ||
-              match actualSym.counters with
-              | some k => k < 0 && (src.status.loyaltyCounters : Int) < -k
-              | none => false
+              (k < 0 && (src.status.loyaltyCounters : Int) < -k)
     if unpaidLoyaltyUnpayable then
       if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
         g.reverseProposedSpell (resumeContinuation := true)
@@ -1865,18 +1847,13 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
       let hadOuter := hadOuterReplacement || localOuter?.isSome
       let g := if localOuter?.isSome then g.change (.pendingReplacement none) else g
       let g :=
-        match activation.bind (·.cost.loyalty) with
-        | some sym =>
-          let actualSym :=
-            match sym with
-            | .minusX => LoyaltySymbol.minus chosenX
-            | .plusX => LoyaltySymbol.plus chosenX
-            | _ => sym
+        match activation.bind (·.cost.netLoyaltyDelta chosenX) with
+        | some k =>
           match sourceId.bind g.findObject? with
           | some src =>
             if !(g.proposedSpell.any ProposedSpell.loyaltyPaid) &&
                 !g.sourceCounterCostPaidFor src.id abilityId .loyalty (some .loyalty) sinceIdx then
-              g.payLoyaltyCost p src actualSym (forObject := abilityId)
+              g.payLoyaltyDelta p src k (forObject := abilityId)
             else g
           | none => g
         | none => g

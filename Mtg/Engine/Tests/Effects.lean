@@ -412,8 +412,8 @@ def plusOneAndDrawResolved : Game :=
       (afterDraw.player ⟨0⟩).hand.size + 2
 
 /-- `plusOneAndGrant` applies as +1/+1, then grant keywords. -/
-def plusOneAndGrantK : Keywords :=
-  (Keyword.vigilance.merge Keyword.indestructible).merge Keyword.haste
+def plusOneAndGrantK : Array KeywordAbility :=
+  #[Keyword.vigilance, Keyword.indestructible, Keyword.haste]
 
 def plusOneAndGrantResolved : Game :=
   let g := addPermanent afterDraw grayOgre ⟨0⟩ ⟨0⟩
@@ -422,9 +422,9 @@ def plusOneAndGrantResolved : Game :=
 
 #guard
   (namedPermanent plusOneAndGrantResolved "Gray Ogre").status.plusOnePlusOne == 1 &&
-    (plusOneAndGrantResolved.currentKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).vigilance &&
-    (plusOneAndGrantResolved.currentKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).indestructible &&
-    (plusOneAndGrantResolved.currentKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")).haste
+    KeywordAbility.hasVigilance (plusOneAndGrantResolved.currentKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")) &&
+    KeywordAbility.hasIndestructible (plusOneAndGrantResolved.currentKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre")) &&
+    KeywordAbility.hasHaste (plusOneAndGrantResolved.currentKeywords (namedPermanent plusOneAndGrantResolved "Gray Ogre"))
 
 /-- `destroyUpToOneThenPlusOne` still plus-ones with no target. -/
 def destroyUpToOneThenPlusOneNoTarget : Game :=
@@ -473,9 +473,9 @@ def subtypesGainMenaceResolved : Game :=
     (Effect.subtypesGainMenace #["Goblin", "Orc"]) #[]
 
 #guard
-  (subtypesGainMenaceResolved.currentKeywords (namedPermanent subtypesGainMenaceResolved "Raging Goblin")).menace &&
-    (subtypesGainMenaceResolved.currentKeywords (namedPermanent subtypesGainMenaceResolved "Orcish Siegemaster")).menace &&
-    !(subtypesGainMenaceResolved.currentKeywords (namedPermanent subtypesGainMenaceResolved "Gray Ogre")).menace &&
+  KeywordAbility.hasMenace (subtypesGainMenaceResolved.currentKeywords (namedPermanent subtypesGainMenaceResolved "Raging Goblin")) &&
+    KeywordAbility.hasMenace (subtypesGainMenaceResolved.currentKeywords (namedPermanent subtypesGainMenaceResolved "Orcish Siegemaster")) &&
+    !KeywordAbility.hasMenace (subtypesGainMenaceResolved.currentKeywords (namedPermanent subtypesGainMenaceResolved "Gray Ogre")) &&
     subtypesGainMenaceResolved.log.any (fun s => mentions s "Raging Goblin gains menace") &&
     subtypesGainMenaceResolved.log.any (fun s => mentions s "Orcish Siegemaster gains menace") &&
     !subtypesGainMenaceResolved.log.any (fun s => mentions s "Gray Ogre gains menace")
@@ -486,17 +486,17 @@ def elvesGainMenaceResolved : Game :=
     |>.applyAbilityEffect ⟨0⟩ (Effect.subtypesGainMenace #["Elf"]) #[]
 
 #guard
-  (elvesGainMenaceResolved.currentKeywords (namedPermanent elvesGainMenaceResolved "Llanowar Elves")).menace &&
-    !(elvesGainMenaceResolved.currentKeywords (namedPermanent elvesGainMenaceResolved "Raging Goblin")).menace
+  KeywordAbility.hasMenace (elvesGainMenaceResolved.currentKeywords (namedPermanent elvesGainMenaceResolved "Llanowar Elves")) &&
+    !KeywordAbility.hasMenace (elvesGainMenaceResolved.currentKeywords (namedPermanent elvesGainMenaceResolved "Raging Goblin"))
 
 /-- `teamGain` grants the given keyword to every creature you control. -/
 def teamGainMenaceResolved : Game :=
   (addPermanent (addPermanent afterDraw ragingGoblin ⟨0⟩ ⟨0⟩) grayOgre ⟨0⟩ ⟨0⟩)
-    |>.applyAbilityEffect ⟨0⟩ (Effect.teamGain Keyword.menace) #[]
+    |>.applyAbilityEffect ⟨0⟩ (Effect.teamGain #[Keyword.menace]) #[]
 
 #guard
-  (teamGainMenaceResolved.currentKeywords (namedPermanent teamGainMenaceResolved "Raging Goblin")).menace &&
-    (teamGainMenaceResolved.currentKeywords (namedPermanent teamGainMenaceResolved "Gray Ogre")).menace
+  KeywordAbility.hasMenace (teamGainMenaceResolved.currentKeywords (namedPermanent teamGainMenaceResolved "Raging Goblin")) &&
+    KeywordAbility.hasMenace (teamGainMenaceResolved.currentKeywords (namedPermanent teamGainMenaceResolved "Gray Ogre"))
 
 /-- `becomeSubtypeWithLandsPT` grants the given type, not only Bear. -/
 def becomeWolfWithLandsPT : Game :=
@@ -583,7 +583,7 @@ def oriClears : Game :=
   let g := addPermanent g (enchantment "Opp Aura" ManaCost.empty "") ⟨1⟩ ⟨1⟩
   let g := addPermanent g (artifact "My Sword" ManaCost.empty "") ⟨0⟩ ⟨0⟩
   let g := addPermanent g
-    (artifact "Hardy Relic" ManaCost.empty "" (keywords := Keyword.indestructible)) ⟨1⟩ ⟨1⟩
+    (artifact "Hardy Relic" ManaCost.empty "" (keywords := #[Keyword.indestructible])) ⟨1⟩ ⟨1⟩
   let g := addPermanent g (artifact "Shielded Relic" ManaCost.empty "") ⟨1⟩ ⟨1⟩
   let shielded := namedPermanent g "Shielded Relic"
   let g := g.recordPutCounters shielded.id .shield 1
@@ -702,7 +702,7 @@ def arrowAdamant : Game :=
   let g := addPermanent started theBlackArrow ⟨0⟩ ⟨0⟩
   let g := addPermanent g
     (creature "Adamant Wyrm" ManaCost.empty #["Dragon"] 4 4
-      (keywords := Keyword.indestructible)) ⟨1⟩ ⟨1⟩
+      (keywords := #[Keyword.indestructible])) ⟨1⟩ ⟨1⟩
   let arrow := namedPermanent g "The Black Arrow"
   let wyrm := namedPermanent g "Adamant Wyrm"
   g.applyTriggeredAbility ⟨0⟩ (.onEnterDealDamageDestroyIfSubtype 1 "Dragon")
@@ -1597,12 +1597,12 @@ def countersOnTargets (kind : CounterKind) (n : Nat) : Game :=
 
 #guard
   let g := countersOnTargets .flying 1
-  (namedPermanent g "Grizzly Bears").status.keywordCounters.flying == 1 &&
-    (namedPermanent g "Rumbling Baloth").status.keywordCounters.flying == 1
+  (namedPermanent g "Grizzly Bears").status.counters.count .flying == 1 &&
+    (namedPermanent g "Rumbling Baloth").status.counters.count .flying == 1
 
 #guard
   let g := countersOnTargets .firstStrike 1
-  (namedPermanent g "Grizzly Bears").status.keywordCounters.firstStrike == 1
+  (namedPermanent g "Grizzly Bears").status.counters.count .firstStrike == 1
 
 #guard
   let g := countersOnTargets .shield 3
@@ -1696,7 +1696,7 @@ The counters still land. The same check is `Effect.fight`. -/
   let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let baloth := namedPermanent g "Rumbling Baloth"
-  let g := g.createEffect (.keywordsUntilEot baloth.id Keyword.hexproof)
+  let g := g.createEffect (.keywordsUntilEot baloth.id #[Keyword.hexproof])
   let fought := g.applyEffect ⟨0⟩ (Effect.plusOneThenFight 2)
     #[Target.permanent bears.id, Target.permanent baloth.id]
   let alone := g.applyEffect ⟨0⟩ Effect.fight

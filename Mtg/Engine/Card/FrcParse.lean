@@ -87,8 +87,8 @@ private def cap (w : String) : String :=
 
 private def addKw (c : CardDef) (text : String) : CardDef :=
   (text.splitOn ",").foldl (fun c part =>
-    match Keywords.ofName? part.trimAscii.copy with
-    | some k => { c with keywords := c.keywords.merge k }
+    match KeywordAbility.ofSimpleName? part.trimAscii.copy with
+    | some k => c.withKeyword k
     | none => c) c
 
 private def colorsFrom (text : String) : Array Color :=
@@ -115,9 +115,8 @@ private def pushAct (c : CardDef) (e : Effect) (phrase : String) (costText : Str
     (sacrificeSource := costLow.contains "sacrifice")
     (onlyAsSorcery := sorcery || (low phrase).contains "only as a sorcery")
     (loyalty := loyalty)
-  let ab := { ab with
-    cost := { ab.cost with removeStoryCounter := costLow.contains "story counter" }
-    printed := phrase }
+    (removeStoryCounter := costLow.contains "story counter")
+  let ab := { ab with printed := phrase }
   { c with activatedAbilities := c.activatedAbilities.push ab }
 
 private def pushSpell (c : CardDef) (e : Effect) : CardDef :=
@@ -178,7 +177,7 @@ private def effectText (raw : String) : Option Effect :=
     else if l.contains "create two 1/1 white spirit" then
       some (Effect.createTokens .spirit 2)
     else if l.contains "creatures you control gain indestructible" then
-      some (Effect.teamGain Keyword.indestructible)
+      some (Effect.teamGain #[Keyword.indestructible])
     else if l.contains "you gain 6 life" then
       some (Effect.gainLife 6)
     else if l == "scry 1." || l == "scry 1" || l.contains "whenever this land attacks, scry 1" then
@@ -228,22 +227,23 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
     if l.contains "protection from" && (l.contains "flying" || l.contains "trample" || l.startsWith "protection") then
       let before := (line.splitOn "protection from").headD ""
       let cols := colorsFrom ((line.splitOn "protection from").getLastD "")
-      some { addKw c before with protectionFromColors := cols }
+      let prots := cols.map (fun col => KeywordAbility.protection (.color (.literal col)))
+      some ((addKw c before).withKeywords prots)
     else if l.startsWith "morph " then
-      some { c with morph := some (costOf line) }
+      some (c.withKeyword (.morph (CostSpec.ofMana (costOf line))))
     else if l.startsWith "impending " then
       let n :=
         match (l.drop "impending ".length).takeWhile Char.isDigit with
         | "" => 0
         | d => d.toNat!
-      some { c with impending := some (n, costOf line) }
+      some (c.withKeyword (.impending n (CostSpec.ofMana (costOf line))))
     else if l.startsWith "cycling " then
       let cost := costOf ((line.splitOn "(").headD line)
       let ab := activated (Effect.draw 1) (mana := cost) (activateFromHand := true)
         (discardSource := true)
       let ab := { ab with printed := line }
-      some { c with cycling := some cost
-                    activatedAbilities := c.activatedAbilities.push ab }
+      let c' := c.withKeyword (.cycling none (CostSpec.ofMana cost))
+      some { c' with activatedAbilities := c'.activatedAbilities.push ab }
     else if l.contains "your opponents can't gain life" then
       some { c with opponentsCantGainLife := true }
     else if l.contains "can't lose the game" then

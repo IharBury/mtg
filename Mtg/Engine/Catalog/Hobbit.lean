@@ -2128,8 +2128,8 @@ that are also in the core catalog. -/
 #guard bofurReliableGuardian.colors.isMonocolored
 #guard (attercop.summary.splitOn "a land you control enters").length > 1
 #guard (attercop.summary.splitOn "reach").length > 1
-#guard attercop.keywords.reach
-#guard attercop.keywords.deathtouch
+#guard attercop.hasSimpleKeyword .reach
+#guard attercop.hasSimpleKeyword .deathtouch
 #guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets 1 1]
 #guard raggedShortSpear.isEquipment
 #guard !raggedShortSpear.isAura
@@ -2158,7 +2158,7 @@ that are also in the core catalog. -/
 #guard (galionElvenkingsButler.summary.splitOn "base power and toughness").length > 1
 #guard galionElvenkingsButler.power == some 4
 #guard galionElvenkingsButler.toughness == some 4
-#guard woodlandWeavemaster.keywords.vigilance
+#guard woodlandWeavemaster.hasSimpleKeyword .vigilance
 #guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
 #guard woodlandWeavemaster.tapAddAnyColorEqualToPower
 #guard woodlandWeavemaster.manaAbilities == #[
@@ -2198,11 +2198,11 @@ that are also in the core catalog. -/
 #guard mirkwoodPathmaker.toughness.isNone
 #guard (mirkwoodPathmaker.summary.splitOn "*/*").length > 1
 #guard (mirkwoodPathmaker.summary.splitOn "lands you control").length > 1
-#guard gandalfSparkStarter.keywords.reach
+#guard gandalfSparkStarter.hasSimpleKeyword .reach
 #guard gandalfSparkStarter.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
 #guard (gandalfSparkStarter.summary.splitOn "divided as you choose").length > 1
 #guard (gandalfSparkStarter.summary.splitOn "reach").length > 1
-#guard guardianOfTheHalls.keywords.trample
+#guard guardianOfTheHalls.hasSimpleKeyword .trample
 #guard guardianOfTheHalls.activatedAbilities.size == 1
 #guard guardianOfTheHalls.activatedAbilities[0]!.effect == Effect.putPlusOnePlusOneOnSource 3
 #guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
@@ -2218,7 +2218,7 @@ that are also in the core catalog. -/
 #guard desolationProwler.power == some 2
 #guard desolationProwler.toughness == some 2
 #guard (desolationProwler.summary.splitOn "Pay 2 life").length > 1
-#guard raveningWarg.keywords.deathtouch
+#guard raveningWarg.hasSimpleKeyword .deathtouch
 #guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
 #guard raveningWarg.power == some 2
 #guard raveningWarg.toughness == some 2
@@ -2228,19 +2228,18 @@ that are also in the core catalog. -/
 #guard (raveningWarg.summary.splitOn "gain 2 life").length > 1
 #guard frontPorchSentries.triggeredAbilities == #[.onDiesOppCreatureGets (-1) (-1)]
 #guard (frontPorchSentries.summary.splitOn "-1/-1").length > 1
-#guard greatFierceBee.keywords.flying
+#guard greatFierceBee.hasSimpleKeyword .flying
 #guard greatFierceBee.triggeredAbilities == #[.onOneOrMoreOtherCreaturesDieScry 1]
 #guard (greatFierceBee.summary.splitOn "other creatures die").length > 1
 #guard stirUpTrouble.spellEffect == some (Effect.destroyCreature)
-#guard stirUpTrouble.additionalCostSacrificeArtifactOrCreature
-#guard stirUpTrouble.additionalCostOrPayGeneric == some 4
-#guard gollumSilentSlinker.keywords.menace
+#guard stirUpTrouble.additionalCosts == #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 4)]
+#guard gollumSilentSlinker.hasSimpleKeyword .menace
 #guard (gollumSilentSlinker.summary.splitOn "menace").length > 1
 #guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
 #guard bilbosDeadlySlice.requiresTarget
 #guard dreadedBatCloud.costReductionIfCreatureDied == 3
-#guard dreadedBatCloud.keywords.flying
-#guard dreadedBatCloud.keywords.deathtouch
+#guard dreadedBatCloud.hasSimpleKeyword .flying
+#guard dreadedBatCloud.hasSimpleKeyword .deathtouch
 #guard crudeBentBlade.isEquipment
 #guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
 #guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
@@ -2268,7 +2267,7 @@ that are also in the core catalog. -/
 #guard bilbosDeadlySlice.isInstant
 #guard bilbosDeadlySlice.hasCastKind .destroyCreature
 #guard (bilbosDeadlySlice.summary.splitOn "destroy target creature").length > 1
-#guard smaugTheGreatCalamity.keywords.flying
+#guard smaugTheGreatCalamity.hasSimpleKeyword .flying
 #guard smaugTheGreatCalamity.hasAdventure
 #guard smaugTheGreatCalamity.supertypes.any (· == .legendary)
 #guard smaugTheGreatCalamity.power == some 5
@@ -2287,7 +2286,7 @@ that are also in the core catalog. -/
 #guard (smaugTheGreatCalamity.summary.splitOn "//ADV//").length == 1
 #guard (smaugTheGreatCalamity.summary.splitOn "Spew Flame {4}{R}").length > 1
 #guard (smaugTheGreatCalamity.summary.splitOn "flying").length > 1
-#guard beornReluctantHost.keywords.trample
+#guard beornReluctantHost.hasSimpleKeyword .trample
 #guard beornReluctantHost.hasAdventure
 #guard beornReluctantHost.supertypes.any (· == .legendary)
 #guard beornReluctantHost.power == some 5

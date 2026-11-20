@@ -59,7 +59,7 @@ private def replayOk28i2 (gs : Array Game) : Bool :=
     name := "P28i2 Free Sac Bolt"
     manaCost := ⟨#[.colored .red]⟩
     types := #[.instant]
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
     spellEffect := some { resolution := .gainLife 1, phrase := "You gain 1 life" }
   }
   let stashedPr : PendingReplacement := .finishPostStep (.beginScryOne p0)
@@ -1912,14 +1912,14 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let wardAbId1 := gWardStack1.stack.back!.objectId
   let gWardSetup :=
     ((gWardStack1.change (.pushContinuationFrame {})).changes #[
-      .pending (.payWard p0 wardAbId1 (.genericMana 1)),
+      .pending (.payWard p0 wardAbId1 (CostSpec.ofGeneric 1)),
       .pendingReplacement (some (.restorePending (.mayDiscardDraw p0 1))) ])
   let gWardPaidMana := mustApply33i1 gWardSetup p0 .payGeneric
   let gWardStack2 := gBase.putTriggeredAbilityOnStack p0 p0Bear simpleAb "triggers" (eventCause := some testCause)
   let wardAbId2 := gWardStack2.stack.back!.objectId
   let gWardSacSetup :=
     ((gWardStack2.change (.pushContinuationFrame {})).changes #[
-      .pending (.payWard p0 wardAbId2 (.sacrificePermanents 1 0 #[])),
+      .pending (.payWard p0 wardAbId2 (CostSpec.sacrificePermanents 1) #[]),
       .pendingReplacement (some (.restorePending (.mayDiscardDraw p0 1))) ])
   let gWardPaidSac := mustApply33i1 gWardSacSetup p0 (.sacrifice p0Bear.id)
   let wardOuterOrderOk :=
@@ -2447,7 +2447,7 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     subtypes := #["Vehicle"]
     power := some 3
     toughness := some 3
-    crew := some 2
+    keywords := #[.crew 2]
   }
   let gStolenVeh0 := addPermanent gBase vehicleDef p1 p0
   let stolenVehId := (gStolenVeh0.permanentsOf p0).find? (·.name == "P33 Skiff") |>.get!.id
@@ -2512,13 +2512,13 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let p1AbId := gP1AbStack.stack.back!.objectId
   let gWardSpellGone :=
     ((gP1AbStack.change (.pushContinuationFrame {})).change
-      (.pending (.payWard p0 p1AbId (.genericMana 1)))).concede p1
+      (.pending (.payWard p0 p1AbId (CostSpec.ofGeneric 1)))).concede p1
 
   let gP0AbStack := (addPermanent gBase bear p1 p0).putTriggeredAbilityOnStack p0 p0Bear simpleAb "triggers" (eventCause := some testCause)
   let p0AbId := gP0AbStack.stack.back!.objectId
   let gWardPartialUnpayable :=
     ((gP0AbStack.change (.pushContinuationFrame {})).change
-      (.pending (.payWard p0 p0AbId (.sacrificePermanents 1 1 #[p0Bear.id])))).concede p1
+      (.pending (.payWard p0 p0AbId (CostSpec.sacrificePermanents 2) #[p0Bear.id]))).concede p1
 
   -- (iii) Multi-slot staged target reversion on `.mayChangeSpellTarget` and `.newTargetsForCopySlot`:
   let twoTargetSpell : CardDef := {
@@ -4201,8 +4201,8 @@ private def replayOk35i4 (gs : Array Game) : Bool :=
 
   -- 4a. `Choices.sourceStillPayable`: `removeStoryCounter` and `removeIndestructibleCounter`:
   let (gAb0, ab0) := gBase.putStackAbility p0Bear p0 (abilityEffect := some (Effect.gainLife 1))
-  let storyAb : ActivatedAbility := { cost := { removeStoryCounter := true }, effect := Effect.gainLife 1 }
-  let indestAb : ActivatedAbility := { cost := { removeIndestructibleCounter := true }, effect := Effect.gainLife 1 }
+  let storyAb : ActivatedAbility := { cost := CostSpec.ofItems #[.removeCounters (.exact 1) (some .story) .self], effect := Effect.gainLife 1 }
+  let indestAb : ActivatedAbility := { cost := CostSpec.ofItems #[.removeCounters (.exact 1) (some .indestructible) .self], effect := Effect.gainLife 1 }
   let storyProp : ProposedSpell := {
     caster := p0, cost := ManaCost.empty, spellId := ab0.id, original := ab0
     originalSnapshot := gAb0.snapshot ab0, kind := .activatedAbility
@@ -4321,7 +4321,7 @@ private def replayOk35i4 (gs : Array Game) : Bool :=
   let gZemoOk := gAb0.change (.proposedSpell (some { storyProp with activation := none }))
   let gZemoStolen := gZemoOk.createEffect (.control p0Bear.id p2) (cause := some testCause)
 
-  let morphDef : CardDef := { creature "P35i4 Morph" ManaCost.empty #["Human"] 3 3 with morph := some ManaCost.empty }
+  let morphDef : CardDef := { creature "P35i4 Morph" ManaCost.empty #["Human"] 3 3 with keywords := #[.morph CostSpec.empty] }
   let gMorphAdded := addPermanent gBase morphDef p0 p0
   let gMorph0 := setFaceDown gMorphAdded
     (gMorphAdded.permanentsOf p0 |>.find? (·.name == morphDef.name) |>.get!.id) true
@@ -4343,13 +4343,13 @@ private def replayOk35i4 (gs : Array Game) : Bool :=
   let sacNonLoyaltyPrompt : Pending := .sacrificePermanent p0 p0Bear.id
   let (gPw0, pwAbObj) := gBase.putStackAbility p0Pw p0 (abilityEffect := some (Effect.gainLife 1))
   let pwMinus3Ab : ActivatedAbility := {
-    cost := { loyalty := some (.minus 3) }, effect := Effect.gainLife 1
+    cost := CostSpec.ofItems #[.loyalty (.minus 3)], effect := Effect.gainLife 1
   }
   let pwMinus4Ab : ActivatedAbility := {
-    cost := { loyalty := some (.minus 4) }, effect := Effect.gainLife 1
+    cost := CostSpec.ofItems #[.loyalty (.minus 4)], effect := Effect.gainLife 1
   }
   let pwMinusXAb : ActivatedAbility := {
-    cost := { loyalty := some .minusX }, effect := Effect.gainLife 1
+    cost := CostSpec.ofItems #[.loyalty .minusX], effect := Effect.gainLife 1
   }
   let mkPwProp (ab : ActivatedAbility) : ProposedSpell := {
     caster := p0, cost := ManaCost.empty, spellId := pwAbObj.id, original := pwAbObj

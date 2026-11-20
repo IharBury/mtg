@@ -58,7 +58,7 @@ def dummyProposal (_g : Game) (kind : ProposalKind) (src : GameObject) (cost : M
     sourceId := if kind == .spell then none else some src.id
     activation :=
       if kind == .activatedAbility && src.zone == .graveyard ⟨0⟩ then
-        some { cost := {}, activateFromGraveyard := true, effect := default }
+        some { cost := CostSpec.empty, activateFromGraveyard := true, effect := default }
       else none
     discardSource }
 
@@ -608,7 +608,7 @@ def heroSourceOk : Bool :=
   let capPay := dummyProposal g .activatedAbility cap (ManaCost.ofColor .white)
   let bearPay := dummyProposal g .activatedAbility bears (ManaCost.ofColor .white)
   let gCh := addPermanent (addPermanent afterDraw avengersTower ⟨0⟩ ⟨0⟩)
-    { grizzlyBears with keywords := Keyword.changeling } ⟨0⟩ ⟨0⟩
+    { grizzlyBears with keywords := #[Keyword.changeling] } ⟨0⟩ ⟨0⟩
   let chameleon := namedPermanent gCh "Grizzly Bears"
   let gCh :=
     gCh.applyAbilityEffect ⟨0⟩ (Effect.addAnyColorSpendOnlyHero) #[]
@@ -650,7 +650,7 @@ def villainSourceOk : Bool :=
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.addAnyColorSpendOnlyVillain) #[] (some hideout.id)
   let pool := (g.player ⟨0⟩).manaPool
   let gCh := addPermanent (addPermanent afterDraw villainousHideout ⟨0⟩ ⟨0⟩)
-    { grizzlyBears with keywords := Keyword.changeling } ⟨0⟩ ⟨0⟩
+    { grizzlyBears with keywords := #[Keyword.changeling] } ⟨0⟩ ⟨0⟩
   let chameleon := namedPermanent gCh "Grizzly Bears"
   let gCh :=
     gCh.applyAbilityEffect ⟨0⟩ (Effect.addAnyColorSpendOnlyVillain) #[]
@@ -922,7 +922,7 @@ def vibraniumTokenOk : Bool :=
   let g := afterDraw.createKindTokens ⟨0⟩ .vibranium 1
   let o := namedPermanent g "Vibranium"
   o.printed.isToken && o.printed.hasSubtype .vibranium &&
-    o.printed.keywords.indestructible &&
+    KeywordAbility.hasIndestructible o.printed.keywords &&
     g.hasIndestructible o &&
     (mshRuling 672).comment.contains "predefined token" &&
     (mshRuling 699).comment.contains "isn't a nonartifact spell"
@@ -2266,7 +2266,7 @@ def alienInvasionCombatTokenOk : Bool :=
   let tok := namedPermanent g "Alien"
   let firstOk :=
     tok.printed.isToken && tok.status.plusOnePlusOne == 0 &&
-      tok.printed.keywords.haste &&
+      KeywordAbility.hasHaste tok.printed.keywords &&
       (g.staticAbilities tok).contains .attacksEachCombatIfAble &&
       (namedPermanent g "Alien Invasion").status.invasion == 1
   let src := namedPermanent g "Alien Invasion"
@@ -2425,7 +2425,7 @@ def mshReflexiveNoTargetFirstOk : Bool :=
        g.hasModeledReflexiveOnStack &&
        (let bears := namedPermanent g "Grizzly Bears"
         let g := passBoth (mustApply g ⟨0⟩ (.target (Target.permanent bears.id)))
-        (g.currentKeywords (namedPermanent g "Grizzly Bears")).indestructible)) &&
+        KeywordAbility.hasIndestructible (g.currentKeywords (namedPermanent g "Grizzly Bears")))) &&
     (mshRuling 711).comment.contains "reflexive" &&
     (mshRuling 719).comment.contains "reflexive"
 
@@ -2541,7 +2541,7 @@ def superAdaptoidKeywordCountersOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let adaptoid := namedPermanent g "Super-Adaptoid"
   let bears := namedPermanent g "Grizzly Bears"
-  let kw := Keywords.mergeAll #[Keyword.haste, Keyword.flying, Keyword.firstStrike,
+  let kw : Array KeywordAbility := #[Keyword.haste, Keyword.flying, Keyword.firstStrike,
     Keyword.doubleStrike, Keyword.deathtouch, Keyword.menace, Keyword.reach,
     Keyword.vigilance, Keyword.indestructible, Keyword.lifelink, Keyword.trample]
   let g := g.createEffect (.keywordsUntilEot bears.id kw)
@@ -2553,29 +2553,29 @@ def superAdaptoidKeywordCountersOk : Bool :=
     !legal.contains (Target.permanent adaptoid.id) &&
     (let gSelf := g.applyTriggeredAbility ⟨0⟩ (.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
         (some adaptoid.id) #[Target.permanent adaptoid.id]
-     (namedPermanent gSelf "Super-Adaptoid").status.keywordCounters.haste == 0 &&
+     (namedPermanent gSelf "Super-Adaptoid").status.counters.count .haste == 0 &&
        logContains gSelf "no longer legal") &&
     (let gCopy := g.applyTriggeredAbility ⟨0⟩ (.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
         (some adaptoid.id) #[Target.permanent bears.id]
      let o := namedPermanent gCopy "Super-Adaptoid"
-     o.status.keywordCounters.haste == 1 &&
-       o.status.keywordCounters.flying == 1 &&
-       o.status.keywordCounters.firstStrike == 1 &&
-       o.status.keywordCounters.doubleStrike == 1 &&
-       o.status.keywordCounters.deathtouch == 1 &&
-       o.status.keywordCounters.menace == 1 &&
-       o.status.keywordCounters.reach == 1 &&
-       o.status.keywordCounters.vigilance == 1 &&
+     o.status.counters.count .haste == 1 &&
+       o.status.counters.count .flying == 1 &&
+       o.status.counters.count .firstStrike == 1 &&
+       o.status.counters.count .doubleStrike == 1 &&
+       o.status.counters.count .deathtouch == 1 &&
+       o.status.counters.count .menace == 1 &&
+       o.status.counters.count .reach == 1 &&
+       o.status.counters.count .vigilance == 1 &&
        o.status.trampleCounters == 1 &&
        o.status.lifelinkCounters == 1 &&
        o.status.indestructibleCounters == 1 &&
-       !o.printed.keywords.haste &&
+       !KeywordAbility.hasHaste o.printed.keywords &&
        gCopy.hasHaste o && gCopy.hasFlying o && gCopy.hasTrample o &&
        gCopy.hasLifelink o && gCopy.hasIndestructible o &&
        (let gAgain := gCopy.applyTriggeredAbility ⟨0⟩
           (.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
           (some o.id) #[Target.permanent bears.id]
-        (namedPermanent gAgain "Super-Adaptoid").status.keywordCounters.haste == 1))
+        (namedPermanent gAgain "Super-Adaptoid").status.counters.count .haste == 1))
 
 #guard superAdaptoidKeywordCountersOk
 
@@ -3871,7 +3871,7 @@ def earthsMightiestChoosesOk : Bool :=
 def galactusAttacksDestroyLandOk : Bool :=
   let g := afterDraw.applyEffect ⟨0⟩ Effect.createGalactus #[]
   let gal := namedPermanent g "Galactus"
-  gal.printed.keywords.flying && gal.printed.keywords.trample &&
+  KeywordAbility.hasFlying gal.printed.keywords && KeywordAbility.hasTrample gal.printed.keywords &&
     match gal.printed.triggeredAbilities[0]? with
     | some ab =>
       ab.firesOn .attacking &&
@@ -4614,10 +4614,10 @@ def quicksilverMayStayInHandOk : Bool :=
 
 /-- Printed prowess and prowess from Wizard's Staff are separate triggers. -/
 def prowessPrintedPlusGrantedOk : Bool :=
-  let g1 := addPermanent afterDraw { grizzlyBears with prowessInstances := 2 } ⟨0⟩ ⟨0⟩
+  let g1 := addPermanent afterDraw { grizzlyBears with keywords := #[Keyword.prowess, Keyword.prowess] } ⟨0⟩ ⟨0⟩
   let host := namedPermanent g1 "Grizzly Bears"
-  let g2 := g1.createEffect (.keywordsUntilEot host.id Keyword.prowess)
-  let gStaff := addPermanent afterDraw { grizzlyBears with prowessInstances := 1 } ⟨0⟩ ⟨0⟩
+  let g2 := g1.createEffect (.keywordsUntilEot host.id #[Keyword.prowess])
+  let gStaff := addPermanent afterDraw { grizzlyBears with keywords := #[Keyword.prowess] } ⟨0⟩ ⟨0⟩
   let gStaff := addPermanent gStaff wizardSStaff ⟨0⟩ ⟨0⟩
   let gStaff := gStaff.attachSourceTo (namedPermanent gStaff "Wizard's Staff")
     (namedPermanent gStaff "Grizzly Bears")

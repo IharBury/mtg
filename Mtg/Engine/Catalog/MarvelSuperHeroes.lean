@@ -2409,7 +2409,8 @@ def titaniaRuggedRumbler : CardDef :=
     "Ward—Discard a card or pay {2}. (Whenever this creature becomes the target of a spell or ability an opponent controls, counter it unless that player discards a card or pays {2}.)",
   ]
 
-#guard titaniaRuggedRumbler.additionalCostDiscardOrPayGeneric == some 2
+#guard titaniaRuggedRumbler.additionalCosts == #[AdditionalCostSpec.mandatory (CostSpec.discardCardOrPayGeneric 2)]
+#guard titaniaRuggedRumbler.wardCosts == #[CostSpec.discardCardOrPayGeneric 2]
 #guard titaniaRuggedRumbler.announcesAdditionalCost
 
 def uSAgentJohnWalker : CardDef :=

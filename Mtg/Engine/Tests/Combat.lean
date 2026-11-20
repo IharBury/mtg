@@ -295,7 +295,7 @@ def giantReadyToAssign : Game := passBoth giantBlockedByTwoElves
 #guard
   let g := giantReadyToAssign
   let giant := namedPermanent g "Hill Giant"
-  let g := g.createEffect (.keywordsUntilEot giant.id Keyword.trample)
+  let g := g.createEffect (.keywordsUntilEot giant.id #[Keyword.trample])
   let giant := namedPermanent g "Hill Giant"
   g.hasTrample giant && g.canAssignCombatDamageToDefendingPlayer giant true &&
     g.combatDamageToAssign giant true == 3
@@ -458,7 +458,7 @@ def proposeModal (g : Game) (p : PlayerId) (id : ObjectId) (mode : Nat) (t : Tar
 
 def hexproofFlyer : CardDef :=
   creature "Hexproof Flyer" ManaCost.empty #[] 1 1
-    (keywords := Keyword.flying.merge Keyword.hexproof)
+    (keywords := #[Keyword.flying, Keyword.hexproof])
 
 /-- Warg Tactics in hand, Grizzly Bears you control, an opposing flyer, enough mana. -/
 def wargSetup : Game :=
@@ -642,8 +642,8 @@ def resolvedWargPump : Game := passBoth paidWargPump
 #guard resolvedWargPump.toughness (namedPermanent resolvedWargPump "Grizzly Bears") == 3
 #guard resolvedWargPump.hasTrample (namedPermanent resolvedWargPump "Grizzly Bears")
 #guard resolvedWargPump.hasHexproof (namedPermanent resolvedWargPump "Grizzly Bears")
-#guard (resolvedWargPump.effectiveKeywords
-  (namedPermanent resolvedWargPump "Grizzly Bears")).hexproof
+#guard KeywordAbility.hasHexproof (resolvedWargPump.effectiveKeywords
+  (namedPermanent resolvedWargPump "Grizzly Bears"))
 #guard resolvedWargPump.log.any (fun s => mentions s "gets a +1/+1 counter")
 #guard resolvedWargPump.log.any (fun s =>
   mentions s "gains" && mentions s "trample" && mentions s "hexproof")

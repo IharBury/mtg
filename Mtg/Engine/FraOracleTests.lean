@@ -176,7 +176,7 @@ def machinationsActivated : Game :=
 ability (CR 605.1a), so it uses the stack and follows loyalty timing. -/
 #guard
   let ab : ActivatedAbility :=
-    { cost := { loyalty := some (.plus 1) }
+    { cost := CostSpec.ofItems #[.loyalty (.plus 1)]
       effect := { resolution := .addMana #[.colored .red], phrase := "Add {R}" } }
   !Game.isManaActivation ab
 #guard (fraRuling 856).comment.contains "Loyalty abilities can't be mana abilities"

@@ -183,12 +183,16 @@ inductive KeywordChoice where
   | deathtouch
 deriving Repr, Inhabited, BEq, DecidableEq
 
-/-- `Keywords` bitmask granted by a `KeywordChoice`. -/
-def KeywordChoice.toKeywords : KeywordChoice → Keywords
+/-- Keyword granted by a `KeywordChoice`. -/
+def KeywordChoice.toKeyword : KeywordChoice → KeywordAbility
   | .trample => Keyword.trample
   | .hexproof => Keyword.hexproof
   | .haste => Keyword.haste
   | .deathtouch => Keyword.deathtouch
+
+/-- Singleton `Array KeywordAbility` granted by a `KeywordChoice`. -/
+def KeywordChoice.toKeywords (c : KeywordChoice) : Array KeywordAbility :=
+  #[c.toKeyword]
 
 /-- Lowercase rules text name of a `KeywordChoice`. -/
 def KeywordChoice.name : KeywordChoice → String
@@ -371,8 +375,8 @@ Putting a card on a library names which card.
 Exiling names which cards.
 Putting cards onto the battlefield names which cards.
 Which objects `NumberSelector.count` counts are these selectors.
-Which permanents `CostSelector.sacrifice` sacrifices are these selectors.
-Which cards `CostSelector.discard` discards are these selectors.
+Which permanents `CostItem.sacrifice` sacrifices are modeled via `CostSpec`.
+Which cards `CostItem.discard` discards are modeled via `CostSpec`.
 An announced target is `.target`, and `which` is the `ObjectSelector`
 restricting it. The announced permanent is `.target` (`.any`).
 Objects every selector names are `.intersection`. Objects any selector
@@ -940,8 +944,8 @@ life `TriggerResolution.loseLife` loses, how many cards
 `TriggerResolution.spellsCostLess` makes a spell cost, how many cards
 `TriggerResolution.lookAtTopRevealTypes` looks at, and the base power
 and toughness `TriggerResolution.becomePT` sets, how many permanents
-`CostSelector.sacrifice` sacrifices, how many cards
-`CostSelector.discard` discards, and each number
+`CostItem.sacrifice` sacrifices, how many cards
+`CostItem.discard` discards, and each number
 `ConditionSelector.atLeast` compares.
 `.greatestPower` is first so a default resolution uses it.
 `.count` is how many objects an `ObjectSelector` names.
@@ -1103,55 +1107,6 @@ instance : Coe Int NumberSelector where
 
 instance (n : Nat) : OfNat NumberSelector n where
   ofNat := .fixed (Int.ofNat n)
-
-/-- What `TriggerResolution.pay` pays.
-`sacrifice` pays by sacrificing permanents.
-`discard` pays by discarding cards.
-`or` pays any one of its costs. -/
-inductive CostSelector where
-  /-- Pay these mana symbols.
-  `{n}` is `.mana #[.generic n]`. `{1}{G}{U}` is
-  `.mana #[.generic 1, .colored .green, .colored .blue]`. -/
-  | mana (symbols : Array ManaSymbol)
-  /-- Sacrifice `n` permanents `what` names.
-  Sacrificing another creature is `.sacrifice (.fixed 1) .another`.
-  Its power is noted for
-  `TriggerResolution.putCounters .plusOneSacrificedPower`.
-  Sacrificing another creature or artifact is
-  `.sacrifice (.fixed 1) .anotherCreatureOrArtifact`.
-  Sacrificing an artifact is `.sacrifice (.fixed 1) .artifact`.
-  Sacrificing an artifact, or discarding a card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]`.
-  Sacrificing an artifact, or discarding a nonland card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland]`.
-  Any other positive count offers that many permanents `what` names.
-  A count that is not a positive number pays nothing.
-  Fewer permanents than that count pays nothing.
-  A selector that does not name permanents pays nothing.
-  A card or a hand is not sacrificed. -/
-  | sacrifice (n : NumberSelector) (what : ObjectSelector)
-  /-- Discard `n` cards `what` names.
-  Discarding a card is `.discard (.fixed 1) .card`.
-  Discarding a nonland card is `.discard (.fixed 1) .nonland`.
-  Sacrificing an artifact, or discarding a card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]`.
-  Sacrificing an artifact, or discarding a nonland card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland]`.
-  Any other positive count offers that many cards `what` names.
-  A count that is not a positive number pays nothing.
-  Fewer cards than that count pays nothing.
-  A selector that does not name cards in hand pays nothing.
-  A permanent is not discarded. -/
-  | discard (n : NumberSelector) (what : ObjectSelector)
-  /-- Pay any one of `costs`.
-  Sacrificing an artifact, or discarding a card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card]`.
-  Sacrificing an artifact, or discarding a nonland card, is
-  `.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland]`.
-  Any other list offers each cost that can be paid. One payable cost
-  is that cost. Several are a choice of which to pay. None pays nothing. -/
-  | or (costs : List CostSelector)
-deriving Repr, Inhabited, BEq
 
 /-- When `TriggerResolution.if` and `TriggerResolution.ifElse` choose a branch.
 `not` negates another condition. `or` holds when any of its conditions hold.
@@ -1537,7 +1492,7 @@ inductive TriggerEnterWith where
   /-- The permanent loses every ability and keyword. -/
   | loseAllAbilities
   /-- The permanent gains these keywords. -/
-  | keywords (k : Keywords)
+  | keywords (k : Array KeywordAbility)
   /-- The permanent gains `subtype` in addition to its other types. -/
   | additionalSubtype (subtype : CardSubtype)
   /-- Put `n` counters of `kind` on it. `asEnters` reports that it enters
@@ -1645,7 +1600,7 @@ inductive TriggerGrantWhat where
   /-- Protection from everything until that player's next turn. -/
   | protectionEverything
   /-- These keywords until end of turn. -/
-  | keywords (k : Keywords)
+  | keywords (k : Array KeywordAbility)
   /-- Hexproof for as long as the source remains on the battlefield. -/
   | hexproofWhileSource
   /-- Prevent all damage this permanent would deal for as long as the
@@ -1939,21 +1894,8 @@ inductive Resolution where
   `.cards n` for any other player discards that many cards. A selector that
   does not name cards discards nothing. -/
   | discard (what : ObjectSelector := .cards)
-  /-- Pay `what`. Inside `.may _ _ .ifYouDo`, declining skips the follow-up.
-  `{n}` is `.pay (.mana #[.generic n])`. `{1}{G}{U}` is
-  `.pay (.mana #[.generic 1, .colored .green, .colored .blue])`.
-  Sacrificing another creature is `.pay (.sacrifice (.fixed 1) .another)`.
-  Its power is noted.
-  Sacrificing another creature or artifact is
-  `.pay (.sacrifice (.fixed 1) .anotherCreatureOrArtifact)`.
-  Sacrificing an artifact is `.pay (.sacrifice (.fixed 1) .artifact)`.
-  Discarding a card is `.pay (.discard (.fixed 1) .card)`.
-  Discarding a nonland card is `.pay (.discard (.fixed 1) .nonland)`.
-  Sacrificing an artifact, or discarding a card, is
-  `.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .card])`.
-  Sacrificing an artifact, or discarding a nonland card, is
-  `.pay (.or [.sacrifice (.fixed 1) .artifact, .discard (.fixed 1) .nonland])`. -/
-  | pay (what : CostSelector)
+  /-- Pay `what` (CR 118.12). Inside `.may _ _ .ifYouDo`, declining skips the follow-up. -/
+  | pay (what : CostSpec)
   /-- Put counters.
   Each creature you control is `.putCounters (.ofKind .plusOnePlusOne) .youControl`.
   Each permanent of a subtype is
@@ -2916,7 +2858,7 @@ inductive Resolution where
   A graveyard card is `.returnTargetToHand .graveyard`: up to one, to your hand. -/
   | returnTargetToHand (card : ReturnedCard := .spell)
   /-- Creatures you control gain these keywords until end of turn. -/
-  | teamGain (k : Keywords)
+  | teamGain (k : Array KeywordAbility)
   /-- Search a library for a `s` `ty` card, as `how` says.
   The controller, into their hand, is `.searchCard` (`.youToHand`).
   The targeted permanent's owner, who may put it onto the battlefield tapped,
@@ -3160,7 +3102,7 @@ inductive Resolution where
   /-- Target artifact you control becomes a copy of a second until EOT, except it isn't legendary. -/
   | copyArtifactYouControlNotLegendary
   /-- Until end of turn, this becomes these types with base P/T and these keywords. -/
-  | becomeTypes (types : Array CardSubtype) (power toughness : Int) (k : Keywords)
+  | becomeTypes (types : Array CardSubtype) (power toughness : Int) (k : Array KeywordAbility)
   /-- When you next cast an instant or sorcery with MV ≤ this's power this turn, copy it. -/
   | nextInstantSorceryCopyIfMvAtMostSourcePower
   /-- Harness this Infinity Stone. -/
@@ -3252,7 +3194,7 @@ inductive Resolution where
   graveyard to the battlefield tapped. -/
   | millThenReturnLandTapped (n : Nat)
   /-- The creature that triggered this gains `k` until end of turn. -/
-  | causeGains (k : Keywords)
+  | causeGains (k : Array KeywordAbility)
   /-- This deals `n` damage to the controller of the object that triggered it. -/
   | damageCauseController (n : Nat)
   /-- Remove up to `n` counters from the target. -/
@@ -3734,7 +3676,7 @@ def trickArrowModes : List TriggerResolution :=
 resolution is `.none`; the caller still puts that follow-up on the stack. -/
 def queuedReflexive : TriggerResolution → QueuedReflexive
   | .grant (.keywords k) .target =>
-    if k == Keyword.indestructible then
+    if k == #[Keyword.indestructible] then
       .modeled .grantIndestructible 1
     else .none
   | .chooseModes modes .alreadyChosen =>
@@ -3810,8 +3752,8 @@ def hydeModes : List TriggerResolution :=
 indestructible until end of turn. Draw a card. `.vision` asks for one that
 has not been chosen this turn. -/
 def visionModes : List TriggerResolution :=
-  [.grant (.keywords Keyword.doubleStrike) .source,
-   .grant (.keywords Keyword.indestructible) .source,
+  [.grant (.keywords #[Keyword.doubleStrike]) .source,
+   .grant (.keywords #[Keyword.indestructible]) .source,
    .draw (.fixed 1)]
 
 /-- What `action` does to the announced permanent. -/
@@ -3819,7 +3761,7 @@ def ofPermanent : PermanentAction → TriggerResolution
   | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) .permanent
   | .pump p t => .pump (.fixed p) (.fixed t) .target
   | .pumpAndTrample p t =>
-    .sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords Keyword.trample) .target]
+    .sequence [.pump (.fixed p) (.fixed t) .target, .grant (.keywords #[Keyword.trample]) .target]
   | .destroy => .destroy .target
   | .dealDamage n => .dealDamage (.fixed n) .target
   | .grantKeywords k => .grant (.keywords k) .target
@@ -3831,7 +3773,7 @@ def ofPermanent : PermanentAction → TriggerResolution
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) .permanent
   | .burdenCounter => .putCounters (.ofKind .burden) .permanent
   | .becomeArtifactIndestructible =>
-    .sequence [.becomeArtifact, .grant (.keywords Keyword.indestructible) .target]
+    .sequence [.becomeArtifact, .grant (.keywords #[Keyword.indestructible]) .target]
   | .becomePrepared => .becomePrepared
   | .setBasePT p t => .setBasePT (.fixed p) (.fixed t)
   | .tapAndStun =>
@@ -3846,7 +3788,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .plusOne n => .putCounters (.ofKind .plusOnePlusOne n) (counterWho who)
   | .pump p t => .pump (.fixed p) (.fixed t) (affectedWho who)
   | .pumpAndTrample p t =>
-    .sequence [.pump (.fixed p) (.fixed t) (affectedWho who), .grant (.keywords Keyword.trample) (affectedWho who)]
+    .sequence [.pump (.fixed p) (.fixed t) (affectedWho who), .grant (.keywords #[Keyword.trample]) (affectedWho who)]
   | .destroy => .destroy (affectedWho who)
   | .dealDamage n => .dealDamage (.fixed n) (affectedWho who)
   | .grantKeywords k => .grant (.keywords k) (affectedWho who)
@@ -3858,7 +3800,7 @@ def ofAffected (who : TriggerAffected) : PermanentAction → TriggerResolution
   | .doubleStrikeCounter => .putCounters (.ofKind .doubleStrike) (counterWho who)
   | .burdenCounter => .putCounters (.ofKind .burden) (counterWho who)
   | .becomeArtifactIndestructible =>
-    .sequence [.becomeArtifact (affectedWho who), .grant (.keywords Keyword.indestructible) (affectedWho who)]
+    .sequence [.becomeArtifact (affectedWho who), .grant (.keywords #[Keyword.indestructible]) (affectedWho who)]
   | .becomePrepared => .becomePrepared (affectedWho who)
   | .setBasePT p t => .setBasePT (.fixed p) (.fixed t) (affectedWho who)
   | .tapAndStun =>
@@ -4122,7 +4064,7 @@ private def phraseOne (r : SpellResolution) (noun : String) : String :=
   | .gainLife (.fixed n) => s!"you gain {n} life"
   | .targetPlayersGainLife n => s!"Target player gains {n} life"
   | .surveil (.fixed n) => s!"surveil {n}"
-  | .teamGain k => s!"creatures you control gain {k.joinedAnd} until end of turn"
+  | .teamGain k => s!"creatures you control gain {KeywordAbility.joinedAnd k} until end of turn"
   | .returnTargetToHand .spell => s!"return {noun} to its owner's hand"
   | .returnTargetToHand .graveyard => s!"return up to one {noun} to your hand"
   | .onPermanent action => PermanentAction.toNotation action noun
@@ -4346,17 +4288,18 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
     let tStr := if t == 0 && p < 0 then "-0" else signedStat t
     s!"Target creature gets {signedStat p}/{tStr} until end of turn.\nDraw a card."
   | [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords k)] =>
-    if k == Keyword.lifelink.merge Keyword.indestructible then
+    if k == #[Keyword.lifelink, Keyword.indestructible] ||
+        k == #[Keyword.indestructible, Keyword.lifelink] then
       "put a +1/+1 counter on target creature. It gains lifelink and indestructible until end of turn"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
-  | [.onPermanent (.grantKeywords k), .draw (.fixed 1)] =>
-    if k == Keyword.vigilance.merge Keyword.cantBeBlocked then
+  | [.onPermanent (.grantKeywords k), .onPermanent .cantBeBlocked, .draw (.fixed 1)] =>
+    if k == #[Keyword.vigilance] then
       s!"{noun} gains vigilance until end of turn and can't be blocked this turn"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
   | [.creaturesPump p t .youControl, .teamGain k] =>
-    s!"Creatures you control get {signedStat p}/{signedStat t} and gain {k.joinedAnd} until end of turn"
+    s!"Creatures you control get {signedStat p}/{signedStat t} and gain {KeywordAbility.joinedAnd k} until end of turn"
   | [.onPermanent .untap, .onPermanent (.pump p t), .«if» (.subtype subtype) (.may .attachEquipment (.sequence []))] =>
     s!"untap {noun}. It gets {signedStat p}/{signedStat t} until end of turn. If it's {indefinite subtype} {subtype}, you may attach an Equipment you control to it"
   | [.countersOnCreatureTargets kind k .firstYouControl, .mutualFight .both] =>
@@ -4371,15 +4314,15 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
   | [.onPermanent (.dealDamage n), .«if» .teamwork (.dealDamageToControllerOfTarget extra)] =>
     s!"deals {n} damage to target creature. If this spell was cast using teamwork, it also deals {extra} damage to that creature's controller"
   | [.onPermanent (.grantKeywords k), .«if» .teamwork (.onPermanent (.grantKeywords kw))] =>
-    if k == Keyword.doubleStrike then
-      s!"target creature gains double strike until end of turn. If this spell was cast using teamwork, that creature also gains {kw.joinedAnd} until end of turn"
+    if k == #[Keyword.doubleStrike] then
+      s!"target creature gains double strike until end of turn. If this spell was cast using teamwork, that creature also gains {KeywordAbility.joinedAnd kw} until end of turn"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
   | [.targetPlayerInvestigates,
      .onCreatureAmongTargets (.grantKeywords k),
      .onCreatureAmongTargets .untap,
      .onCreatureAmongTargets (.pump 1 0)] =>
-    if k == Keyword.flying then
+    if k == #[Keyword.flying] then
       "target player investigates. Target creature gets +1/+0 and gains flying until end of turn. Untap it"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
@@ -4398,7 +4341,7 @@ private def phraseSequence (rs : List SpellResolution) (noun : String) : String 
   | [.onPermanent (.pump p t), .exileTopPlayUntilNext 1] =>
     s!"Target creature gets {signedStat p}/{signedStat t} until end of turn.\nExile the top card of your library. {playThatCardUntilNextTurnPhrase}."
   | [.onPermanent .doublePowerAndToughness, .onPermanent (.grantKeywords k)] =>
-    if k == Keyword.trample then
+    if k == #[Keyword.trample] then
       "Choose target creature you control. Until end of turn, double its power and toughness and it gains trample"
     else
       String.intercalate ". " (rs.map (phraseOne · noun))
@@ -4474,7 +4417,52 @@ instance : HasTextChange TriggeredAbility.NumberSelector where
       | .count w => .count (HasTextChange.applyTextChanges tcs w)
       | n => n
 
+instance : HasTextChange TriggeredAbility.TriggerEnterWith where
+  applyTextChanges tcs m :=
+    if tcs.isEmpty then m
+    else
+      match m with
+      | .keywords ks => .keywords (HasTextChange.applyTextChanges tcs ks)
+      | .additionalSubtype s => .additionalSubtype (HasTextChange.applyTextChanges tcs s)
+      | other => other
+
+instance : HasTextChange TriggeredAbility.TriggerPutNote where
+  applyTextChanges tcs n :=
+    if tcs.isEmpty then n
+    else
+      match n with
+      | .entering mods => .entering (mods.map (HasTextChange.applyTextChanges tcs))
+      | other => other
+
+instance : HasTextChange TriggeredAbility.TriggerGrantWhat where
+  applyTextChanges tcs w :=
+    if tcs.isEmpty then w
+    else
+      match w with
+      | .keywords ks => .keywords (HasTextChange.applyTextChanges tcs ks)
+      | other => other
+
 private partial def Resolution.applyTextChangesAux (tcs : Array TextChange) : Resolution → Resolution
+  | .pay cost =>
+    .pay (HasTextChange.applyTextChanges tcs cost)
+  | .frc eff =>
+    .frc (HasTextChange.applyTextChanges tcs eff)
+  | .onPermanent act =>
+    .onPermanent (HasTextChange.applyTextChanges tcs act)
+  | .onSource act =>
+    .onSource (HasTextChange.applyTextChanges tcs act)
+  | .onCreatureAmongTargets act =>
+    .onCreatureAmongTargets (HasTextChange.applyTextChanges tcs act)
+  | .teamGain ks =>
+    .teamGain (HasTextChange.applyTextChanges tcs ks)
+  | .becomeTypes types p t ks =>
+    .becomeTypes (HasTextChange.applyTextChanges tcs types) p t (HasTextChange.applyTextChanges tcs ks)
+  | .causeGains ks =>
+    .causeGains (HasTextChange.applyTextChanges tcs ks)
+  | .grant what who =>
+    .grant (HasTextChange.applyTextChanges tcs what) (HasTextChange.applyTextChanges tcs who)
+  | .put what how note =>
+    .put (HasTextChange.applyTextChanges tcs what) how (HasTextChange.applyTextChanges tcs note)
   | .addAnyColorSpendOnlySubtype s =>
     .addAnyColorSpendOnlySubtype (HasTextChange.applyTextChanges tcs s)
   | .addFourManaDragonSpells n s =>

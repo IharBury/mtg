@@ -1,7 +1,5 @@
-import Mtg.Engine.Card.ActivatedAbility
+import Mtg.Engine.Card.KeywordExpand
 import Mtg.Engine.Card.Saga
-import Mtg.Engine.Card.StaticAbility
-import Mtg.Engine.Card.TriggeredAbility
 
 /-!
 # Card definitions (CR 108, 109.3, section 2)
@@ -36,8 +34,8 @@ structure AdventureFace where
   types : Array CardType := #[.sorcery]
   subtypes : Array Subtype := #["Adventure"]
   spellEffect : Option Effect := none
-  /-- Additional cost: sacrifice a creature. -/
-  additionalCostSacrificeCreature : Bool := false
+  /-- Additional casting costs on this Adventure face (CR 118.8 / 601.2b,h). -/
+  additionalCosts : Array AdditionalCostSpec := #[]
   /-- Rules lines of this face that are not a modeled spell effect. -/
   extraLines : Array String := #[]
   /-- Empower Jace N on this alternate face. -/
@@ -80,21 +78,12 @@ structure CardDef where
   lifeModifier : Option Int := none
   /-- Explicit color indicator, if any (CR 107.13 / 202.2). -/
   colorIndicator : Option ColorSet := none
-  keywords : Keywords := Keywords.none
+  /-- Parameterized CR 702 keyword abilities, retaining multiplicity for
+  cumulative keywords (Prowess, Cascade, Ward, Toxic, Affinity, Exalted). -/
+  keywords : Array KeywordAbility := #[]
   spellEffect : Option Effect := none
-  /-- Additional cost: sacrifice an artifact or creature (CR 601.2b / 601.2h), e.g.
-  Improvised Club. When `additionalCostOrPayGeneric` is set, that sacrifice
-  may be replaced by paying that much generic mana (e.g. Stir Up Trouble).
-  The choice is announced at CR 601.2b, before targets. -/
-  additionalCostSacrificeArtifactOrCreature : Bool := false
-  /-- The sacrifice alternative of the additional cost is a creature or
-  planeswalker rather than an artifact or creature (Silence the Echo). -/
-  additionalCostSacrificeCreatureOrPlaneswalker : Bool := false
-  /-- Alternative additional cost: pay this much generic mana instead of
-  sacrificing an artifact or creature (CR 601.2b). -/
-  additionalCostOrPayGeneric : Option Nat := none
-  /-- Additional cost: discard a card or pay `{n}` (e.g. Titania). -/
-  additionalCostDiscardOrPayGeneric : Option Nat := none
+  /-- Additional casting costs on this card (CR 118.8 / 601.2b,f,h). -/
+  additionalCosts : Array AdditionalCostSpec := #[]
   /-- This spell costs this much generic mana less if a creature died this
   turn (e.g. Dreaded Bat-Cloud). -/
   costReductionIfCreatureDied : Nat := 0
@@ -157,12 +146,6 @@ structure CardDef where
   cantBeCountered : Bool := false
   /-- You may cast this as though it had flash if you control this subtype. -/
   flashIfYouControlSubtype : Option CardSubtype := none
-  /-- Printed ward cost (CR 702.21), e.g. `Ward {3}`. -/
-  ward : Option Nat := none
-  /-- Flashback cost (CR 702.34). -/
-  flashback : Option ManaCost := none
-  /-- Casting with flashback also requires discarding a card (CR 702.34a). -/
-  flashbackDiscard : Bool := false
   /-- “As long as there are seven or more cards in your graveyard, you may
   cast the exiled card, and mana of any type can be spent to cast that
   spell” (Null Summoner). -/
@@ -200,8 +183,6 @@ structure CardDef where
   /-- This spell costs {X} less to cast, where X is the greatest toughness
   among creatures you control. -/
   costReductionGreatestToughness : Bool := false
-  /-- Crew `n` (CR 702.122). -/
-  crew : Option Nat := none
   /-- `{T}: Add two mana in any combination of these types`. -/
   tapAddTwoAmong : Array ManaType := #[]
   /-- Modal spell is “Choose one or both” rather than “Choose one”. -/
@@ -221,19 +202,13 @@ structure CardDef where
   entersTappedUnlessBehold : Option CardSubtype := none
   /-- `{T}: Add one mana of any color in your commander's color identity`. -/
   tapAddCommanderIdentity : Bool := false
-  /-- Additional cost: sacrifice a creature. -/
-  additionalCostSacrificeCreature : Bool := false
   /-- As this enchantment enters, choose a creature type. -/
   asEntersChooseCreatureType : Bool := false
   /-- Printed Saga chapters (CR 714). -/
   saga : Option SagaDef := none
-  /-- Affinity for this subtype (CR 702.41). -/
-  affinityForSubtype : Option CardSubtype := none
   /-- This spell costs {X} less, where X is the greatest number of artifacts
   an opponent controls. -/
   costReductionEqualOppArtifacts : Bool := false
-  /-- Gift a Treasure (you may promise an opponent a Treasure). -/
-  giftTreasure : Bool := false
   /-- If you would create a Food token, also create a Treasure. -/
   foodAlsoCreatesTreasure : Bool := false
   /-- Other creatures enter with +1/+1 counters equal to this creature's toughness. -/
@@ -244,10 +219,6 @@ structure CardDef where
   extraLandIfOtherSubtype : Option CardSubtype := none
   /-- `{T}: Add {C} for each permanent you control of this subtype`. -/
   tapAddColorlessPerSubtype : Option CardSubtype := none
-  /-- Cascade printed `n` times (`Cascade, cascade` when `n = 2`). -/
-  cascade : Nat := 0
-  /-- Optional kicker cost (CR 702.33). Paid at most once as an additional cost. -/
-  kicker : Option ManaCost := none
   /-- If one or more tokens would be created under your control, twice that
   many of those tokens are created instead (e.g. Bard, King of Dale). -/
   tokenDoubling : Bool := false
@@ -264,8 +235,6 @@ structure CardDef where
   /-- If a creature an opponent controls would die, exile it instead
   (e.g. Head of the Hunt). The original die event never happens (CR 614.6). -/
   exileOppCreaturesInstead : Bool := false
-  /-- Printed instances of prowess; each triggers separately (CR 702.108b). -/
-  prowessInstances : Nat := 0
   /-- You may look at the top card of your library any time
   (e.g. Elven Chorus). -/
   mayLookAtTopAnytime : Bool := false
@@ -296,15 +265,10 @@ structure CardDef where
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none
-  /-- Teamwork N (CR 702.194): optional additional cost to tap creatures with
-  total power N or more. -/
-  teamwork : Option Nat := none
   /-- “Choose one. If this spell was cast using teamwork, choose both instead.” -/
   chooseBothIfTeamwork : Bool := false
   /-- This permanent enters with this many shield counters. -/
   entersWithShield : Nat := 0
-  /-- Daybound on the front face (CR 702.145). Nick Fury; MSH 191. -/
-  daybound : Bool := false
   /-- Back face of a modal double-faced card that can transform. -/
   otherFace : Option CardDef := none
   /-- Empower Jace N on this spell (Reality Fracture). When the spell
@@ -315,8 +279,6 @@ structure CardDef where
   entersPrepared : Bool := false
   /-- Sorcery or instant copied while this permanent is prepared. -/
   prepareFace : Option AdventureFace := none
-  /-- Additional cost: behold this quality, or pay this much generic mana. -/
-  additionalCostBeholdOrPay : Option (CardSubtype × Nat) := none
   /-- `{T}: Add` these mana as one ability (Sol Ring adds {C}{C}). -/
   tapAddTogether : Array ManaType := #[]
   /-- `{T}: Add one of these types. This permanent deals `n` damage to you.` -/
@@ -338,15 +300,6 @@ structure CardDef where
   /-- Spending commander-identity mana from this land to cast a creature spell
   that shares a creature type with your commander scries 1 (Path of Ancestry). -/
   commanderIdentityScryCreature : Bool := false
-  /-- Morph cost (CR 702.37). Face-down cast is a 2/2 for {3}. -/
-  morph : Option ManaCost := none
-  /-- Impending `n`—`cost`. Enters with `n` time counters and isn't a creature
-  until the last is removed. -/
-  impending : Option (Nat × ManaCost) := none
-  /-- Protection from each of these colors. -/
-  protectionFromColors : Array Color := #[]
-  /-- Cycling cost (CR 702.29). -/
-  cycling : Option ManaCost := none
   /-- If you control a commander, you may cast this spell without paying its mana cost. -/
   freeCastIfControlCommander : Bool := false
   /-- This planeswalker can be your commander. -/
@@ -379,8 +332,6 @@ structure CardDef where
   the battlefield until end of turn, except it has haste (Cursed Mirror, CR
   614.1c / 614.12). -/
   asEntersMayCopyCreatureHasteUntilEot : Bool := false
-  /-- Toxic `n` (CR 702.164). -/
-  toxic : Nat := 0
   /-- This creature can't block. -/
   cantBlock : Bool := false
   /-- Emblem: creatures you control get +2/+2 and have flying. -/
@@ -388,6 +339,151 @@ structure CardDef where
 deriving Repr, Inhabited
 
 namespace CardDef
+
+/-- Append one `KeywordAbility` onto `c.keywords`, preserving cumulative multiplicity. -/
+def withKeyword (c : CardDef) (k : KeywordAbility) : CardDef :=
+  { c with keywords := KeywordAbility.add c.keywords k }
+
+/-- Merge `ks` onto `c.keywords`, preserving cumulative multiplicity. -/
+def withKeywords (c : CardDef) (ks : Array KeywordAbility) : CardDef :=
+  { c with keywords := KeywordAbility.merge c.keywords ks }
+
+/-- Pure CR 702.1 expansion of all printed keywords on `c`. -/
+def expandedKeywords (c : CardDef) : ExpandedKeyword :=
+  KeywordAbility.expandAll c.keywords
+
+/-- True when `c.keywords` contains `.simple s`. -/
+@[inline] def hasSimpleKeyword (c : CardDef) (s : SimpleKeyword) : Bool :=
+  KeywordAbility.hasSimple c.keywords s
+
+/-- Printed prowess count on `c` (CR 702.108b). -/
+def prowessCount (c : CardDef) : Nat :=
+  KeywordAbility.prowessCount c.keywords
+
+/-- Printed cascade count on `c` (CR 702.85). -/
+def cascadeCount (c : CardDef) : Nat :=
+  KeywordAbility.cascadeCount c.keywords
+
+/-- Printed ward `CostSpec`s on `c`, preserving multiplicity (CR 702.21b). -/
+def wardCosts (c : CardDef) : Array CostSpec :=
+  KeywordAbility.wardCosts c.keywords
+
+/-- Printed Gift variant on `c`, if any (CR 702.174d–i). -/
+def giftKind? (c : CardDef) : Option GiftKind :=
+  c.keywords.findSome? fun | .gift kind => some kind | _ => none
+
+/-- True when `c` has a Gift keyword ability (CR 702.174). -/
+def hasGift (c : CardDef) : Bool :=
+  c.giftKind?.isSome
+
+/-- Printed Kicker `CostSpec`, if any (CR 702.33). -/
+def kickerCost? (c : CardDef) : Option CostSpec :=
+  c.keywords.findSome? fun | .kicker cost => some cost | _ => none
+
+/-- Printed Kicker mana cost, if any (CR 702.33). -/
+def kicker (c : CardDef) : Option ManaCost :=
+  c.kickerCost?.map CostSpec.manaCost
+
+/-- Printed Teamwork power threshold, if any (CR 702.194). -/
+def teamwork (c : CardDef) : Option Nat :=
+  c.keywords.findSome? fun | .teamwork n => some n | _ => none
+
+/-- Printed Flashback `CostSpec`, if any (CR 702.34). -/
+def flashbackCost? (c : CardDef) : Option CostSpec :=
+  c.keywords.findSome? fun | .flashback cost => some cost | _ => none
+
+/-- Printed Flashback mana cost, if any (CR 702.34). -/
+def flashback (c : CardDef) : Option ManaCost :=
+  c.flashbackCost?.map CostSpec.manaCost
+
+/-- True when Flashback on `c` also requires discarding a card (CR 702.34a). -/
+def flashbackDiscard (c : CardDef) : Bool :=
+  match c.flashbackCost? with
+  | some cs => cs.items.any fun | .discard _ _ => true | _ => false
+  | none => false
+
+/-- Printed Crew power threshold, if any (CR 702.122). -/
+def crew (c : CardDef) : Option Nat :=
+  c.keywords.findSome? fun | .crew n => some n | _ => none
+
+/-- Printed Affinity filters on `c` (CR 702.41). -/
+def affinityFilters (c : CardDef) : Array ObjectFilter :=
+  c.keywords.filterMap fun | .affinity f => some f | _ => none
+
+/-- Printed Affinity subtype (for subtype-based Affinity, CR 702.41). -/
+def affinityForSubtype (c : CardDef) : Option CardSubtype :=
+  c.keywords.findSome? fun
+    | .affinity f =>
+      match f.pred with
+      | .hasSubtype (.literal sub) => some sub
+      | .all ps =>
+        ps.findSome? fun
+          | .hasSubtype (.literal sub) => some sub
+          | _ => none
+      | _ => none
+    | _ => none
+
+/-- True when `c` has Daybound (CR 702.145). -/
+def daybound (c : CardDef) : Bool :=
+  KeywordAbility.hasDaybound c.keywords
+
+/-- Printed Morph turn-face-up `CostSpec`, if any (CR 702.37e). -/
+def morphCost? (c : CardDef) : Option CostSpec :=
+  c.keywords.findSome? fun | .morph cost => some cost | _ => none
+
+/-- Printed Morph turn-face-up mana cost, if any (CR 702.37e). -/
+def morph (c : CardDef) : Option ManaCost :=
+  c.morphCost?.map CostSpec.manaCost
+
+/-- Printed Impending `(counters, CostSpec)`, if any (CR 702.176). -/
+def impendingSpec? (c : CardDef) : Option (Nat × CostSpec) :=
+  c.keywords.findSome? fun | .impending n cost => some (n, cost) | _ => none
+
+/-- Printed Impending `(counters, ManaCost)`, if any (CR 702.176). -/
+def impending (c : CardDef) : Option (Nat × ManaCost) :=
+  c.impendingSpec?.map fun (n, cs) => (n, cs.manaCost)
+
+/-- Printed Protection qualities on `c` (CR 702.16). -/
+def protectionQualities (c : CardDef) : Array ProtectionQuality :=
+  c.keywords.filterMap fun | .protection q => some q | _ => none
+
+/-- Colors `c` has printed protection from (CR 702.16). -/
+def protectionFromColors (c : CardDef) : Array Color :=
+  c.keywords.filterMap fun
+    | .protection (.color (.literal col)) => some col
+    | _ => none
+
+/-- Printed bare Cycling `CostSpec`, if any (CR 702.29a). -/
+def cyclingCost? (c : CardDef) : Option CostSpec :=
+  c.keywords.findSome? fun | .cycling none cost => some cost | _ => none
+
+/-- Printed bare Cycling mana cost, if any (CR 702.29a). -/
+def cycling (c : CardDef) : Option ManaCost :=
+  c.cyclingCost?.map CostSpec.manaCost
+
+/-- Printed Toxic total on `c` (CR 702.164b). -/
+def toxic (c : CardDef) : Nat :=
+  KeywordAbility.toxicTotal c.keywords
+
+/-- Mandatory additional costs on `c` (CR 118.8 / 601.2b,h). -/
+def mandatoryAdditionalCosts (c : CardDef) : Array CostSpec :=
+  c.additionalCosts.filterMap fun a => if a.optional then none else some a.cost
+
+/-- If `c` has a mandatory non-choice single-object sacrifice additional cost,
+return the predicate matching legal permanents to sacrifice. -/
+def mandatorySacrificeFilter? (c : CardDef) : Option ObjectPred :=
+  c.mandatoryAdditionalCosts.findSome? fun cs =>
+    cs.items.findSome? fun
+      | .sacrifice _ (.filter pred) => some pred
+      | _ => none
+
+/-- If `c` has a mandatory choice additional cost (`"A or B"` announced at CR 601.2b),
+return its branches. -/
+def additionalChoiceCost? (c : CardDef) : Option (Array CostSpec) :=
+  c.mandatoryAdditionalCosts.findSome? fun cs =>
+    cs.items.findSome? fun
+      | .or choices => some choices
+      | _ => none
 
 /-- Color from color indicator, otherwise from mana cost (CR 202.2). -/
 def colors (c : CardDef) : ColorSet :=
@@ -420,7 +516,7 @@ def hasType (c : CardDef) (t : CardType) : Bool := c.types.any (· == t)
 expansion for creature and kindred cards. -/
 def hasSubtype (c : CardDef) (s : CardSubtype) : Bool :=
   c.subtypes.any (· == s.englishName) ||
-    (c.keywords.changeling && (c.hasType .creature || c.hasType .kindred) && !s.isNoncreature)
+    (KeywordAbility.hasChangeling c.keywords && (c.hasType .creature || c.hasType .kindred) && !s.isNoncreature)
 
 /-- True when `s` is among this card's supertypes. -/
 def hasSupertype (c : CardDef) (s : Supertype) : Bool := c.supertypes.any (· == s)
@@ -452,10 +548,10 @@ def choosableNames (c : CardDef) : Array String :=
 
 /-- Timing of a sorcery: also the default for permanent spells without flash (CR 302.1, 307.1). -/
 def hasSorcerySpeed (c : CardDef) : Bool :=
-  !c.isInstant && !c.isLand && !c.keywords.flash
+  !c.isInstant && !c.isLand && !KeywordAbility.hasFlash c.keywords
 
 def hasInstantSpeed (c : CardDef) : Bool :=
-  c.isInstant || c.keywords.flash
+  c.isInstant || KeywordAbility.hasFlash c.keywords
 
 /-- Modal spell with “Choose one” (CR 700.2). -/
 def isModal (c : CardDef) : Bool :=
@@ -541,7 +637,7 @@ def manaAbilities (c : CardDef) : Array ManaType :=
       (Color.all.map ManaType.colored).toArray
      else #[])
 
-/-- Lowercase ASCII for comparing Oracle keyword lines to `Keywords.toList`. -/
+/-- Lowercase ASCII for comparing Oracle keyword lines to `KeywordAbility.toOracleList`. -/
 def lowerAscii (s : String) : String :=
   s.map Char.toLower
 
@@ -554,8 +650,8 @@ def stripReminderParenthetical (s : String) : String :=
 /-- True when `line` restates modeled keywords, e.g. `Haste` or `Reach, deathtouch`.
 A line that is only a parenthetical (e.g. basic-land `{T}: Add` reminder text)
 is not a keyword restatement. -/
-def isKeywordRestatement (k : Keywords) (line : String) : Bool :=
-  let kw := k.toList
+def isKeywordRestatement (k : Array KeywordAbility) (line : String) : Bool :=
+  let kw := KeywordAbility.toOracleList k
   let cleaned := stripReminderParenthetical ((line.replace "." "").trimAscii.copy)
   if cleaned.isEmpty then false
   else
@@ -593,9 +689,7 @@ def adventureLines (c : CardDef) : List String :=
     let header :=
       if a.manaCost.symbols.isEmpty then a.name else s!"{a.name} {a.manaCost}"
     let extra :=
-      (if a.additionalCostSacrificeCreature then
-        ["As an additional cost to cast this spell, sacrifice a creature."]
-       else []) ++
+      a.additionalCosts.toList.map AdditionalCostSpec.toOracleLine ++
       match a.spellEffect with
       | some e => [e.phrase]
       | none => []
@@ -662,29 +756,14 @@ def tapAddAnyColorForInstantOrSorceryLine (c : CardDef) : List String :=
     ["{T}: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell."]
   else []
 
-/-- True when CR 601.2b must announce a sacrifice-or-pay or discard-or-pay
-additional cost. -/
+/-- True when CR 601.2b must announce a choice additional cost (e.g. sacrifice-or-pay,
+discard-or-pay, behold-or-pay). -/
 def announcesAdditionalCost (c : CardDef) : Bool :=
-  c.additionalCostOrPayGeneric.isSome || c.additionalCostDiscardOrPayGeneric.isSome ||
-    c.additionalCostBeholdOrPay.isSome
+  c.additionalChoiceCost?.isSome
 
-/-- Additional cost that sacrifices an artifact or creature (optionally or pay `{n}`). -/
-def additionalCostSacrificeArtifactOrCreatureLine (c : CardDef) : List String :=
-  if c.additionalCostSacrificeArtifactOrCreature then
-    match c.additionalCostOrPayGeneric with
-    | some n =>
-      [s!"As an additional cost to cast this spell, sacrifice an artifact or creature or pay \{{n}}"]
-    | none =>
-      ["As an additional cost to cast this spell, sacrifice an artifact or creature"]
-  else
-    match c.additionalCostDiscardOrPayGeneric with
-    | some n =>
-      [s!"As an additional cost to cast this spell, discard a card or pay \{{n}}."]
-    | none =>
-      match c.additionalCostBeholdOrPay with
-      | some (quality, n) =>
-        [s!"As an additional cost to cast this spell, behold a {quality} or pay \{{n}}."]
-      | none => []
+/-- Additional cost lines printed on `c`. -/
+def additionalCostLines (c : CardDef) : List String :=
+  c.additionalCosts.toList.map AdditionalCostSpec.toOracleLine
 
 /-- `{T}cycling` and other typecycling, printed as `Mountaincycling {1}`. -/
 def activatedNotation (ab : ActivatedAbility) : String :=
@@ -714,7 +793,7 @@ def structuredAbilityLines (c : CardDef) : List String :=
   c.tapAddForEachLines ++
   c.tapAddAnyColorEqualToPowerLine ++
   c.tapAddAnyColorForInstantOrSorceryLine ++
-  c.additionalCostSacrificeArtifactOrCreatureLine ++
+  c.additionalCostLines ++
   c.asEntersSpecialLines ++
   c.activatedAbilities.toList.map activatedNotation ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
@@ -725,7 +804,7 @@ def structuredAbilityLines (c : CardDef) : List String :=
   c.spellLines
 
 /-- Modeled ability lines. Keyword-only lines are omitted; those print with
-`Keywords`. -/
+`KeywordAbility`. -/
 def leftoverOracleLines (c : CardDef) : List String :=
   c.structuredAbilityLines.filter fun line => !isKeywordRestatement c.keywords line
 
@@ -734,9 +813,9 @@ def abilitiesText (c : CardDef) : String :=
   String.intercalate "; " (structuredAbilityLines c)
 
 /-- Keywords `k` plus leftover Oracle / structured abilities. -/
-def keywordsAndAbilitiesOf (c : CardDef) (k : Keywords) : String :=
+def keywordsAndAbilitiesOf (c : CardDef) (k : Array KeywordAbility) : String :=
   String.intercalate " "
-    ([toString k, c.abilitiesText].filter (fun s => !s.isEmpty))
+    ([KeywordAbility.renderSummary k, c.abilitiesText].filter (fun s => !s.isEmpty))
 
 /-- Keywords and abilities shown next to a card in the demo. -/
 def keywordsAndAbilities (c : CardDef) : String :=
@@ -782,8 +861,9 @@ def summary (c : CardDef) : String :=
 instance : ToString CardDef where
   toString := summary
 
-/-- True when this card itself has improvise (MSH). -/
+/-- True when this card itself has improvise (CR 702.126). -/
 def hasImprovise (c : CardDef) : Bool :=
+  KeywordAbility.hasImprovise c.keywords ||
   c.staticAbilities.any (fun
     | .improvise => true
     | _ => false)
@@ -800,8 +880,9 @@ def hasBoast (c : CardDef) : Bool :=
     | .boast => true
     | _ => false)
 
-/-- Sneak alternative cost, if any (MSH). -/
+/-- Sneak alternative cost, if any (CR 702.190). -/
 def sneakCost (c : CardDef) : Option ManaCost :=
+  (c.keywords.findSome? fun | .sneak cost => some cost.manaCost | _ => none) <|>
   c.staticAbilities.foldl (fun acc ab =>
     match acc, ab with
     | none, .sneak cost => some cost
@@ -889,7 +970,7 @@ def toCardDef (a : AdventureFace) : CardDef := {
   spellEffect := a.spellEffect
   staticAbilities := a.extraLines.map StaticAbility.printed
   empowerJace := a.empowerJace
-  additionalCostSacrificeCreature := a.additionalCostSacrificeCreature
+  additionalCosts := a.additionalCosts
 }
 
 /-- True when this Adventure's effect is classified as `k`. -/

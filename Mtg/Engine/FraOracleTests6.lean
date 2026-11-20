@@ -159,7 +159,7 @@ def testRedGreenBear : CardDef :=
 /- Ruling 864: convoke works with an alternative cost. A Bestial Incursion
 with convoke cast with flashback has its {5}{G} paid by convoke. -/
 #guard
-  let card := { bestialIncursion with keywords := Keyword.convoke }
+  let card := { bestialIncursion with keywords := KeywordAbility.add bestialIncursion.keywords Keyword.convoke }
   let g := addToGraveyard ((emptyHand afterDraw ⟨0⟩).createKindTokens ⟨0⟩ .cadet 5) card ⟨0⟩
   let g := withGreenMana g ⟨0⟩ 1
   let g := mustApply g ⟨0⟩ (.cast (graveyardCard g ⟨0⟩ "Bestial Incursion").id)
@@ -172,7 +172,7 @@ with convoke cast with flashback has its {5}{G} paid by convoke. -/
 /- Ruling 866: an attacking creature tapped to convoke stays attacking.
 Blossom-Blessed Angel has vigilance, so it is untapped while attacking. -/
 #guard
-  let shockConvoke := { shock with manaCost := ManaCost.ofGeneric 1, keywords := Keyword.convoke }
+  let shockConvoke := { shock with manaCost := ManaCost.ofGeneric 1, keywords := #[Keyword.convoke] }
   let g := addPermanent (emptyHand afterDraw ⟨0⟩) blossomBlessedAngel ⟨0⟩ ⟨0⟩
   let g := addToHand g shockConvoke ⟨0⟩
   let g := passBoth (skipTo g .beginningOfCombat 80)
@@ -257,7 +257,7 @@ def testPeerReview : CardDef :=
 /- Ruling 843: no costs are paid for the copy, but a paid kicker still
 counts for it. -/
 #guard
-  let kicked := { shock with kicker := some (ManaCost.ofGeneric 1) }
+  let kicked := { shock with keywords := #[.kicker (CostSpec.ofGeneric 1)] }
   let g := withRedMana (addToHand (emptyHand cryomancerReady ⟨0⟩) kicked ⟨0⟩) ⟨0⟩ 2
   let g := mustApply g ⟨0⟩ (.cast (handCardNamed g ⟨0⟩ "Shock").id)
   let g := mustApply g ⟨0⟩ (.announceKicker true)

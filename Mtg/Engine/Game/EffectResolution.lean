@@ -290,7 +290,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       let snapshots := (g.creaturesControlledBy pid).map fun c =>
         let cv := g.copiableValues c
         { cv with
-          keywords := cv.keywords.merge Keyword.haste
+          keywords := KeywordAbility.add cv.keywords Keyword.haste
           triggeredAbilities := cv.triggeredAbilities.push sacrifice
           isToken := true }
       let g := if g.continuations.isEmpty && !snapshots.isEmpty then g.change (.pushContinuationFrame {}) else g
@@ -322,7 +322,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
   | .damageEachOpponent n =>
     let src? := (g.resolvingSpell.bind g.damageSourceById?).orElse (fun _ => sourceId.bind g.damageSourceById?)
     some (g.dealDamageToEachOpponent controller n (source := src?))
-  | .teamGain k => some (g.grantUntilEotToControlledCreatures controller k k.joinedAnd)
+  | .teamGain k => some (g.grantUntilEotToControlledCreatures controller k (KeywordAbility.joinedAnd k))
   | .jaceLoyaltyAtInstantSpeed =>
     let g := g.createEffect (.jaceLoyaltyAtInstantSpeedThisTurn controller)
     some (g.logMsg s!"Until end of turn, {(g.player controller).name} may activate loyalty abilities of Jace planeswalkers they control any time they could cast an instant")
@@ -454,7 +454,7 @@ def applyEvilsThrall (g : Game) (controller : PlayerId) (targets : Array Target)
       else
         match g.findObject? o.id with
         | none => g
-        | some o => g.grantUntilEotLogged o Keyword.haste) sourceId
+        | some o => g.grantUntilEotLogged o #[Keyword.haste]) sourceId
     (some "The target is no longer legal")
 
 /-- Finish `millMayPutPermanentGainLife` once `mill` completes (CR 701.17c). -/
@@ -883,7 +883,7 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
               let name := g.name entered
               let g := g.afterPermanentEnters entered
               let g :=
-                if x ≥ 4 then g.grantUntilEotLogged (g.object! newId) Keyword.haste else g
+                if x ≥ 4 then g.grantUntilEotLogged (g.object! newId) #[Keyword.haste] else g
               g.logMsg s!"{name} is put onto the battlefield"
             else g
           if shuffle then g.shuffleThen p .none else g
@@ -1590,7 +1590,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     g.shuffleSourceIntoLibrary none
   | .gainLife (.fixed n) => g.gainLife controller n.toNat
   | .teamGain k =>
-    g.grantUntilEotToControlledCreatures controller k k.joinedAnd
+    g.grantUntilEotToControlledCreatures controller k (KeywordAbility.joinedAnd k)
   | .recruit _ => g.beginRecruit controller
   | .addMana types amount =>
     g.applyAddMana controller sourceId types amount targets lastKnownPower lastKnownToughness
@@ -2213,7 +2213,7 @@ partial def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | _ => g.logMsg "The target is no longer legal"
   | .becomeArtifactCreature44Flying p t kw =>
     g.withLegalSpecPermanent controller effect.targetSpec targets (fun g o =>
-      g.setUntilEotForm o (p, t) ((Keywords.ofName? kw).getD Keywords.none)
+      g.setUntilEotForm o (p, t) (((KeywordAbility.ofSimpleName? kw).map (#[·])).getD #[])
         s!"{g.name o} becomes a {p}/{t} artifact creature with {kw} until end of turn"
         (additionalCreature := true) (additionalArtifact := true)) sourceId
   | .discardTwoUnlessArtifact n ty =>
@@ -2438,7 +2438,7 @@ def resolveArwenShare (g : Game) (arwenId : ObjectId) (targetId : Option ObjectI
         | some x =>
           let g := g.addPlusOnePlusOneTo x 1
           g.addLifelinkCounter (g.object! x.id)
-      let g := g.createEffect (.keywordsUntilEot o.id Keyword.indestructible)
+      let g := g.createEffect (.keywordsUntilEot o.id #[Keyword.indestructible])
       let g := g.logMsg s!"{g.name o} gains indestructible until end of turn"
       g.withBatch none fun g =>
         let g := putCounters g o.id
@@ -2666,7 +2666,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
         g.beginLibrarySearch controller isBasicLandCard "a basic land card"
           .battlefieldTappedThenHand (count := 2)
       | .subtypesGainMenace subtypes =>
-        g.grantUntilEotToControlledCreatures controller Keyword.menace "menace"
+        g.grantUntilEotToControlledCreatures controller #[Keyword.menace] "menace"
           (fun g o => subtypes.any (fun s => g.hasSubtype o s))
       | .exileThenReturnNextEnd =>
         let (g, validIds) := targets.foldl (fun (acc : Game × Array ObjectId) t =>
@@ -2864,7 +2864,7 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
                   |>.logMsg s!"{g.name o} becomes unattached"
               | none => g
             let o := g.object! o.id
-            g.setUntilEotForm o (0, 0) Keyword.flying
+            g.setUntilEotForm o (0, 0) #[Keyword.flying]
               s!"{g.name o} becomes a 0/0 Construct Hero artifact creature"
               (types := some #[.construct, .hero])
               (additionalCreature := true) (additionalArtifact := true)

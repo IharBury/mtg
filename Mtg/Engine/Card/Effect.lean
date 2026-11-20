@@ -183,7 +183,7 @@ private def phraseWith (r : Resolution) (noun : String)
   | .drawEqualToBurdenCounters =>
     "Draw a card for each burden counter on this"
   | .teamGain k =>
-    s!"Creatures you control gain {k.joinedAnd} until end of turn"
+    s!"Creatures you control gain {KeywordAbility.joinedAnd k} until end of turn"
   | .plusOneOnEachOtherSubtype subtype n =>
     s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
   | .extraTurn =>
@@ -254,8 +254,8 @@ private def phraseWith (r : Resolution) (noun : String)
     "Target artifact you control becomes a copy of a second target artifact you control until end of turn, except it isn't legendary"
   | .becomeTypes types p t k =>
     let joined :=
-      if k.reach && k.vigilance then "reach and vigilance"
-      else k.joinedAnd
+      if KeywordAbility.hasReach k && KeywordAbility.hasVigilance k then "reach and vigilance"
+      else KeywordAbility.joinedAnd k
     let names := (types.map CardSubtype.englishName).toList
     let typeWords := String.intercalate " " names
     let art := indefinite (names[0]?.getD "")

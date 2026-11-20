@@ -15,33 +15,34 @@ planeswalkers they control any time they could cast an instant. -/
 def mayActivateLoyaltyAtInstantSpeed (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   g.jaceLoyaltyAtInstantSpeed p && g.isPlaneswalker o && g.hasSubtype o .jace
 
-/-- Whether `p` can pay the Reality Fracture part of `o`'s activation cost. -/
-def canPayFraCost (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=
-  let sacOrExileSrc := ab.cost.sacrificeSource || ab.cost.fra == .exileSource
-  let discOrExileHandSrc := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand
+/-- Whether `p` can pay the non-mana zone/crew/boast/pick part of `o`'s activation cost. -/
+def canPayActivationNonManaCost (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility) : Bool :=
+  let sacOrExileSrc := ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield
+  let discOrExileHandSrc := ab.cost.discardSource || ab.cost.exileSourceFromHand
   let allPicks := costPicksWithSacrificeOther (costPicksOf ab) ab.cost.sacrificeAnotherCreatureOrArtifact
-  match ab.cost.fra with
-  | .none => true
-  | .exileAnotherCreatureCardFromGraveyard | .sacrificeAnotherArtifact
-  | .sacrificeAnotherCreatureOrPlaneswalker | .sacrificeArtifactOrLand
-  | .discardLegendaryCard | .tapTwoUntappedArtifacts =>
-    g.costPicksPayable p (some o.id) allPicks
-      (tapSource := ab.cost.tap)
-      (sacrificeOrExileSource := sacOrExileSrc)
-      (discardOrExileHandSource := discOrExileHandSrc)
-  | .exileSourceFromHand => o.zone == .hand o.owner
-  | .exileSource => o.isOnBattlefield
-  | .zemoBoast =>
-    o.isOnBattlefield &&
-      let col := TextChange.applyColor (g.evalLayer3 o) .black
-      g.canPayZemoBoast p ((g.player p).graveyard.filter (fun id =>
-        (g.findObject? id).any (fun card => (g.colors card).contains col))) col
-  | .crew n =>
-    o.isOnBattlefield &&
-      (g.firstPayableCrewSelection? p o.id n allPicks
-        (tapSource := ab.cost.tap)
-        (sacrificeOrExileSource := sacOrExileSrc)
-        (discardOrExileHandSource := discOrExileHandSrc)).isSome
+  let handOk := !ab.cost.exileSourceFromHand || o.zone == .hand o.owner
+  let bfOk := !ab.cost.exileSourceFromBattlefield || o.isOnBattlefield
+  let zemoOk :=
+    ab.cost.exileManaSymbols?.isNone ||
+      (o.isOnBattlefield &&
+        let col := TextChange.applyColor (g.evalLayer3 o) .black
+        g.canPayZemoBoast p ((g.player p).graveyard.filter (fun id =>
+          (g.findObject? id).any (fun card => (g.colors card).contains col))) col)
+  let crewOrPicksOk :=
+    match ab.cost.crewPower? with
+    | some n =>
+      o.isOnBattlefield &&
+        (g.firstPayableCrewSelection? p o.id n allPicks
+          (tapSource := ab.cost.tap)
+          (sacrificeOrExileSource := sacOrExileSrc)
+          (discardOrExileHandSource := discOrExileHandSrc)).isSome
+    | none =>
+      allPicks.isEmpty ||
+        g.costPicksPayable p (some o.id) allPicks
+          (tapSource := ab.cost.tap)
+          (sacrificeOrExileSource := sacOrExileSrc)
+          (discardOrExileHandSource := discOrExileHandSrc)
+  handOk && bfOk && zemoOk && crewOrPicksOk
 
 /-- Shared activation legality (CR 602.5a / 602.5d). `canActivate` is this check as a
 `Bool`; `activateAbility` reports the first failing reason. -/
@@ -86,28 +87,26 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{g.name o}'s exhaust ability can be activated only once (CR 702.177)"
   if !g.fraActivationConditionHolds p ab.fraCondition then
     throw s!"{g.name o}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
-  if ab.cost.fra == .zemoBoast && !g.canActivateBoast o then
+  if ab.cost.exileManaSymbols?.isSome && !g.canActivateBoast o then
     throw s!"{g.name o}'s boast ability can be activated only if it attacked this turn and only once each turn"
-  if !g.canPayFraCost p o ab then
+  if !g.canPayActivationNonManaCost p o ab then
     throw s!"{g.name o}'s ability has a cost that can't be paid"
   if g.combatLocksNonManaAbilities && !isManaActivation ab then
     throw "During combat, players can't activate abilities that aren't mana abilities (Yuriko)"
-  match ab.cost.loyalty with
-  | none => pure ()
-  | some sym =>
-    -- CR 606.3: once per turn per permanent, and only as a sorcery unless an
-    -- effect such as Jace's Machinations allows otherwise.
+  if ab.cost.isLoyalty then
+    -- CR 606.3 / 606.5 / 606.6: once per turn per permanent, and only as a sorcery
+    -- unless an effect such as Jace's Machinations allows otherwise.
     if g.loyaltyActivatedThisTurn o.id then
       throw s!"A loyalty ability of {g.name o} has already been activated this turn (CR 606.3)"
     if !g.asSorcery? p && !g.mayActivateLoyaltyAtInstantSpeed p o then
       throw s!"{g.name o}'s loyalty abilities can be activated only as a sorcery (CR 606.3)"
-    match sym.counters with
-    | some k =>
-      if k < 0 && (o.status.loyaltyCounters : Int) < -k then
-        throw s!"{g.name o} doesn't have {-k} loyalty counters to remove (CR 606.4)"
-    | none =>
-      if sym != .minusX && sym != .plusX then
-        throw s!"{g.name o}'s X loyalty cost is not supported"
+    let hasLoyaltyX := ab.cost.loyaltySymbols.any fun
+      | .minusX | .plusX => true
+      | _ => false
+    if !hasLoyaltyX then
+      if let some k := ab.cost.netLoyaltyDelta 0 then
+        if k < 0 && (o.status.loyaltyCounters : Int) < -k then
+          throw s!"{g.name o} doesn't have {-k} loyalty counters to remove (CR 606.4)"
   if ab.onlyDuringYourTurn && !g.isOnActiveTeam p then
     throw s!"{g.name o}'s ability can be activated only during your turn"
   if ab.onceEachTurn &&
@@ -131,8 +130,8 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   let allPicks := costPicksWithSacrificeOther (costPicksOf ab) ab.cost.sacrificeAnotherCreatureOrArtifact
   if !g.costPicksPayable p (some o.id) allPicks
       (tapSource := ab.cost.tap)
-      (sacrificeOrExileSource := ab.cost.sacrificeSource || ab.cost.fra == .exileSource)
-      (discardOrExileHandSource := ab.cost.discardSource || ab.cost.fra == .exileSourceFromHand) then
+      (sacrificeOrExileSource := ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield)
+      (discardOrExileHandSource := ab.cost.discardSource || ab.cost.exileSourceFromHand) then
     throw s!"{g.name o}'s ability has a cost that can't be paid"
   if ab.cost.removeStoryCounter && o.status.story == 0 then
     throw s!"{g.name o} doesn't have a story counter to remove"
@@ -226,7 +225,9 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
   if !g.hasPriority p then
     throw "You don't have priority"
   g.validateActivation p o ab (idx? := some abilityIdx)
-  let loyaltyX := ab.cost.loyalty == some .minusX || ab.cost.loyalty == some .plusX
+  let loyaltyX := ab.cost.loyaltySymbols.any fun
+    | .minusX | .plusX => true
+    | _ => false
   let o := g.object! id
   let origSnap := g.snapshot o
   let pl := g.player p

@@ -19,7 +19,7 @@ def pumpPermanent (g : Game) (o : GameObject) (p t : Int) (trample := false) : G
     if trample then
       g.withBatch none fun g =>
         let g := g.createEffect (.pump o.id p t)
-        g.createEffect (.keywordsUntilEot o.id Keyword.trample)
+        g.createEffect (.keywordsUntilEot o.id #[Keyword.trample])
     else
       g.createEffect (.pump o.id p t)
   let gain := if trample then " and gains trample" else ""
@@ -30,7 +30,7 @@ def pumpControlledCreatures (g : Game) (p : PlayerId) (pw tw : Int) : Game :=
   g.forEachControlledCreature p (fun g o => g.pumpPermanent o pw tw)
 
 /-- Grant `kw` until end of turn to each creature `p` controls that matches `pred`. -/
-def grantUntilEotToControlledCreatures (g : Game) (p : PlayerId) (kw : Keywords)
+def grantUntilEotToControlledCreatures (g : Game) (p : PlayerId) (kw : Array KeywordAbility)
     (label : String) (pred : Game → GameObject → Bool := fun _ _ => true) : Game :=
   g.forEachControlledCreature p fun g o =>
     if pred g o then
@@ -39,20 +39,20 @@ def grantUntilEotToControlledCreatures (g : Game) (p : PlayerId) (kw : Keywords)
     else g
 
 /-- Grant each keyword in `kws` until end of turn, re-reading `o` after each. -/
-def grantUntilEotKeywords (g : Game) (o : GameObject) (kws : List Keywords) : Game :=
+def grantUntilEotKeywords (g : Game) (o : GameObject) (kws : List KeywordAbility) : Game :=
   g.withBatch none fun g =>
     kws.foldl (fun g kw =>
-      if (g.findObject? o.id).isSome then g.createEffect (.keywordsUntilEot o.id kw)
+      if (g.findObject? o.id).isSome then g.createEffect (.keywordsUntilEot o.id #[kw])
       else g) g
 
 /-- Grant `k` until end of turn and log the standard “gains … until end of turn”. -/
-def grantUntilEotLogged (g : Game) (o : GameObject) (k : Keywords) : Game :=
+def grantUntilEotLogged (g : Game) (o : GameObject) (k : Array KeywordAbility) : Game :=
   (g.createEffect (.keywordsUntilEot o.id k))
-    |>.logMsg s!"{g.name o} gains {k} until end of turn"
+    |>.logMsg s!"{g.name o} gains {KeywordAbility.joinedAnd k} until end of turn"
 
 /-- Set base P/T, optional creature types, and keywords until end of turn. -/
 def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
-    (kws : Keywords) (msg : String)
+    (kws : Array KeywordAbility) (msg : String)
     (types : Option (Array CardSubtype) := none)
     (additionalCreature := false) (additionalArtifact := false)
     (pumpPerArtifact := false) : Game :=
@@ -62,7 +62,7 @@ def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
       match types with
       | some subs => g.createEffect (.replacedCreatureTypesUntilEot o.id subs)
       | none => g
-    let g := if kws != Keywords.none then g.createEffect (.keywordsUntilEot o.id kws) else g
+    let g := if !kws.isEmpty then g.createEffect (.keywordsUntilEot o.id kws) else g
     let g := if additionalCreature then g.createEffect (.additionalCreature o.id true) else g
     let g := if additionalArtifact then g.createEffect (.additionalArtifactUntilEot o.id) else g
     let g := if pumpPerArtifact then g.createEffect (.pumpPerArtifactUntilEot o.id) else g
@@ -605,7 +605,7 @@ def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat)
 
 /-- Until-end-of-turn “can't be blocked” (CR 509.1b / 611.2a). -/
 def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
-  let g := g.createEffect (.keywordsUntilEot o.id Keyword.cantBeBlocked)
+  let g := g.createEffect (.cantBeBlockedUntilEot o.id)
   g.logMsg s!"{g.name o} can't be blocked this turn"
 
 /-- Until-end-of-turn +P/+T and trample (e.g. Oliphaunt). -/

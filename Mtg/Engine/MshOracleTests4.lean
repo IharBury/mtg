@@ -344,11 +344,11 @@ def humanTorchInterveningOk : Bool :=
 def reptilLastResolvesOk : Bool :=
   let g := addPermanent afterDraw reptilDinomorpher ⟨0⟩ ⟨0⟩
   let r := namedPermanent g "Reptil, Dinomorpher"
-  let g := g.applyAbilityEffect ⟨0⟩ (Effect.becomeDinosaurHero 3 5 (Keyword.reach.merge Keyword.vigilance)) #[] (some r.id)
+  let g := g.applyAbilityEffect ⟨0⟩ (Effect.becomeDinosaurHero 3 5 (#[Keyword.reach, Keyword.vigilance])) #[] (some r.id)
   let r := namedPermanent g "Reptil, Dinomorpher"
   g.power r == 3 && g.toughness r == 5 &&
     g.hasSubtype r .dinosaur && !g.hasSubtype r .human &&
-    (let g := g.applyAbilityEffect ⟨0⟩ (Effect.becomeDinosaurHero 6 6 Keyword.trample) #[] (some r.id)
+    (let g := g.applyAbilityEffect ⟨0⟩ (Effect.becomeDinosaurHero 6 6 #[Keyword.trample]) #[] (some r.id)
      let r := namedPermanent g "Reptil, Dinomorpher"
      g.power r == 6 && g.toughness r == 6 &&
        g.hasSubtype r .dinosaur && !g.hasSubtype r .human) &&

@@ -489,8 +489,8 @@ def riverGraspOnGoblin : Game :=
   let g := addPermanent g ragingGoblin ⟨1⟩ ⟨1⟩
   attachNamed g "Enchanted River's Grasp" "Raging Goblin"
 
-#guard !riverGraspOnGoblin.hasKeyword
-  (namedPermanent riverGraspOnGoblin "Raging Goblin") (·.haste)
+#guard !riverGraspOnGoblin.hasHaste
+  (namedPermanent riverGraspOnGoblin "Raging Goblin")
 #guard riverGraspOnGoblin.hostSkipsUntapStep
   (namedPermanent riverGraspOnGoblin "Raging Goblin")
 #guard !riverGraspOnGoblin.hostCantBecomeUntapped
@@ -583,7 +583,7 @@ def sarumanWardPending : Game :=
 
 #guard
   match sarumanWardPending.pending with
-  | .payWard p _ .discardEnchantmentInstantOrSorcery => p == ⟨0⟩
+  | .payWard p _ cost _ => (p == ⟨0⟩) && cost == CostSpec.discardEnchantmentInstantOrSorcery
   | _ => false
 
 def sarumanWardDeclined : Game :=
@@ -608,7 +608,7 @@ def sauronWardPending : Game :=
 
 #guard
   match sauronWardPending.pending with
-  | .payWard p _ .sacrificeLegendary => p == ⟨0⟩
+  | .payWard p _ cost _ => (p == ⟨0⟩) && cost == CostSpec.sacrificeLegendaryArtifactOrCreature
   | _ => false
 
 def sauronWardPaid : Game :=
@@ -626,7 +626,7 @@ def gandalfWardPending : Game :=
 
 #guard
   match gandalfWardPending.pending with
-  | .payWard p _ (.genericMana 3) => p == ⟨0⟩
+  | .payWard p _ cost _ => (p == ⟨0⟩) && cost.soleGenericMana? == some 3
   | _ => false
 
 def gandalfWardPaid : Game :=
@@ -646,7 +646,7 @@ def mattockWardPending : Game :=
 
 #guard
   match mattockWardPending.pending with
-  | .payWard p _ (.genericMana 1) => p == ⟨0⟩
+  | .payWard p _ cost _ => (p == ⟨0⟩) && cost.soleGenericMana? == some 1
   | _ => false
 
 /-- Titania: ward — discard a card or pay {2}. -/
@@ -656,7 +656,7 @@ def titaniaWardPending : Game :=
 
 #guard
   match titaniaWardPending.pending with
-  | .payWard p _ (.discardOrPay 2) => p == ⟨0⟩
+  | .payWard p _ cost _ => (p == ⟨0⟩) && cost == CostSpec.discardCardOrPayGeneric 2
   | _ => false
 
 def titaniaWardDiscarded : Game :=
@@ -673,7 +673,7 @@ def titaniaReady : Game :=
 
 #guard titaniaReady.canCast ⟨0⟩ (handCardNamed titaniaReady ⟨0⟩ "Titania, Rugged Rumbler")
 #guard titaniaRuggedRumbler.announcesAdditionalCost
-#guard titaniaRuggedRumbler.additionalCostDiscardOrPayGeneric == some 2
+#guard titaniaRuggedRumbler.additionalCosts == #[AdditionalCostSpec.mandatory (CostSpec.discardCardOrPayGeneric 2)]
 
 def proposedTitania : Game :=
   mustApply titaniaReady ⟨0⟩
@@ -802,7 +802,7 @@ def serpentWardPending : Game :=
 
 #guard
   match serpentWardPending.pending with
-  | .payWard p _ .fivePoison => p == ⟨0⟩
+  | .payWard p _ cost _ => (p == ⟨0⟩) && cost.solePoisonCounters? == some 5
   | _ => false
 
 def serpentWardPaid : Game :=
@@ -864,7 +864,7 @@ def lukeCageAttacksAlone : Game :=
     (some src.id)
 
 #guard lukeCageAttacksAlone.pumpOf (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man") == (2, 0)
-#guard (lukeCageAttacksAlone.currentKeywords (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man")).indestructible
+#guard KeywordAbility.hasIndestructible (lukeCageAttacksAlone.currentKeywords (namedPermanent lukeCageAttacksAlone "Luke Cage, Power Man"))
 
 /-- Mockingbird's leftover constructor puts a +1/+1 on the source. -/
 def mockingbirdPlusOneThis : Game :=
@@ -917,8 +917,8 @@ def hawkeyeBowEquipped : Game :=
 
 #guard hawkeyeBowEquipped.power (namedPermanent hawkeyeBowEquipped "Grizzly Bears") == 3
 #guard hawkeyeBowEquipped.toughness (namedPermanent hawkeyeBowEquipped "Grizzly Bears") == 2
-#guard hawkeyeBowEquipped.hasKeyword
-  (namedPermanent hawkeyeBowEquipped "Grizzly Bears") (·.reach)
+#guard hawkeyeBowEquipped.hasReach
+  (namedPermanent hawkeyeBowEquipped "Grizzly Bears")
 #guard (namedPermanent hawkeyeBowEquipped "Hawkeye's Bow").attachedTo ==
   some (namedPermanent hawkeyeBowEquipped "Grizzly Bears").id
 
@@ -1050,8 +1050,8 @@ def hawkeyeBowEquippedViaEquip : Game :=
   some (namedPermanent hawkeyeBowEquippedViaEquip "Grizzly Bears").id
 #guard hawkeyeBowEquippedViaEquip.power
   (namedPermanent hawkeyeBowEquippedViaEquip "Grizzly Bears") == 3
-#guard hawkeyeBowEquippedViaEquip.hasKeyword
-  (namedPermanent hawkeyeBowEquippedViaEquip "Grizzly Bears") (·.reach)
+#guard hawkeyeBowEquippedViaEquip.hasReach
+  (namedPermanent hawkeyeBowEquippedViaEquip "Grizzly Bears")
 #guard hawkeyeBowReadyToEquip.canActivate ⟨0⟩
   (namedPermanent hawkeyeBowReadyToEquip "Hawkeye's Bow")
   hawkeyeSBow.activatedAbilities[0]!

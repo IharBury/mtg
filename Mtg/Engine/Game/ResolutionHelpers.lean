@@ -226,7 +226,7 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
   | .becomeArtifactIndestructible =>
     let g := g.createEffects #[
       .additionalArtifactUntilEot o.id,
-      .keywordsUntilEot o.id Keyword.indestructible]
+      .keywordsUntilEot o.id #[Keyword.indestructible]]
     g.logMsg
       s!"{g.name o} becomes an artifact and gains indestructible until end of turn"
   | .becomePrepared => g.becomePrepared o

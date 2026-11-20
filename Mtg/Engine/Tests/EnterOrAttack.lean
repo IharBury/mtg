@@ -57,14 +57,14 @@ def plainBears : Game :=
 
 #guard
   let o := named plainBears "Super-Adaptoid"
-  o.status.keywordCounters.haste == 0 && o.status.keywordCounters.flying == 0 &&
-    o.status.keywordCounters.doubleStrike == 0 && o.status.keywordCounters.firstStrike == 0
+  o.status.counters.count .haste == 0 && o.status.counters.count .flying == 0 &&
+    o.status.counters.count .doubleStrike == 0 && o.status.counters.count .firstStrike == 0
 
 def doubleStrikeOnly : Game :=
   let g := addPermanent afterDraw superAdaptoid me me
   let g := addPermanent g grizzlyBears me me
   let bears := named g "Grizzly Bears"
-  let g := g.createEffect (.keywordsUntilEot bears.id Keyword.doubleStrike)
+  let g := g.createEffect (.keywordsUntilEot bears.id #[Keyword.doubleStrike])
   let adaptoid := named g "Super-Adaptoid"
   let bears := named g "Grizzly Bears"
   resolve g (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
@@ -72,10 +72,10 @@ def doubleStrikeOnly : Game :=
 
 #guard
   let o := named doubleStrikeOnly "Super-Adaptoid"
-  o.status.keywordCounters.doubleStrike == 1 &&
-    o.status.keywordCounters.firstStrike == 0 &&
+  o.status.counters.count .doubleStrike == 1 &&
+    o.status.counters.count .firstStrike == 0 &&
     doubleStrikeOnly.hasDoubleStrike o &&
-    !o.printed.keywords.doubleStrike
+    !KeywordAbility.hasDoubleStrike o.printed.keywords
 
 def selfTarget : Game :=
   let g := addPermanent afterDraw superAdaptoid me me
@@ -83,7 +83,7 @@ def selfTarget : Game :=
   resolve g (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
     (some adaptoid.id) #[Target.permanent adaptoid.id]
 
-#guard (named selfTarget "Super-Adaptoid").status.keywordCounters.haste == 0 &&
+#guard (named selfTarget "Super-Adaptoid").status.counters.count .haste == 0 &&
   logContains selfTarget "no longer legal"
 
 def sourceLeft : Game :=
@@ -91,14 +91,14 @@ def sourceLeft : Game :=
   let g := addPermanent g grizzlyBears me me
   let adaptoid := named g "Super-Adaptoid"
   let bears := named g "Grizzly Bears"
-  let g := g.createEffect (.keywordsUntilEot bears.id Keyword.haste)
+  let g := g.createEffect (.keywordsUntilEot bears.id #[Keyword.haste])
   let (g, _) := g.move adaptoid.id (.graveyard me) none
   resolve g (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords)
     (some adaptoid.id) #[Target.permanent bears.id]
 
 #guard logContains sourceLeft "no longer" &&
   !(sourceLeft.objects.any (fun o =>
-    o.name == "Super-Adaptoid" && o.status.keywordCounters.haste > 0))
+    o.name == "Super-Adaptoid" && o.status.counters.count .haste > 0))
 
 /- Squirrel Girl creates one 1/1 green Squirrel. The token is still created
 when the source has left the battlefield. -/

@@ -684,7 +684,7 @@ private def replayOk36i3 (gs : Array Game) : Bool :=
       l2Id .loyalty 3 (some p0) (cause := some testCause)).changeControl
       (gPw0.object! l2Id) p1 (untilEot := true) (cause := some testCause)).change
       .saveProposalCheckpoint
-  let minusXAb : ActivatedAbility := { cost := { loyalty := some .minusX }, effect := Effect.gainLife 1 }
+  let minusXAb : ActivatedAbility := { cost := CostSpec.ofItems #[.loyalty .minusX], effect := Effect.gainLife 1 }
   let (gPw2, l1AbObj) := gPw1.putStackAbility (gPw1.object! l1Id) p0 (abilityEffect := some (Effect.gainLife 1))
   let l1Prop : ProposedSpell := {
     caster := p0, cost := ManaCost.empty, spellId := l1AbObj.id, original := l1AbObj
@@ -857,7 +857,7 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   let auraDef4 : CardDef := { name := "P36i4 Aura", types := #[.enchantment] }
   let gSnkSetup :=
     insertObject
-      (addPermanent (addPermanent g3 { bear with keywords := Keyword.haste } p0 p0) auraDef4 p1 p1)
+      (addPermanent (addPermanent g3 { bear with keywords := #[Keyword.haste] } p0 p0) auraDef4 p1 p1)
       sneakSpellDef p0 (.hand p0)
   let atkInitId := (gSnkSetup.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
   let p1SnkAuraId := (gSnkSetup.permanentsOf p1)[0]!.id
@@ -910,7 +910,7 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   let plainDef : CardDef := creature "P36i4 Plain" ManaCost.empty #["Bear"] 2 2
   let morphGrantFace : CardDef := {
     creature "P36i4 Morph Copy" ManaCost.empty #["Shapeshifter"] 3 3 with
-    morph := some ManaCost.empty
+    keywords := #[.morph CostSpec.empty]
   }
   let granterArtDef : CardDef := { name := "P36i4 Morph Lens", types := #[.artifact] }
   let gMorphBase0 :=
@@ -944,9 +944,9 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
     gFdSacGranterAsCost.proposedSpell.isNone
 
   -- 4a(iii). `.activatedAbility` zone guards (`activateFromGraveyard` / `activateFromHand`):
-  let bfOnlyAb : ActivatedAbility := { cost := {}, effect := Effect.gainLife 1 }
-  let gyOnlyAb : ActivatedAbility := { cost := {}, activateFromGraveyard := true, effect := Effect.gainLife 1 }
-  let handOnlyAb : ActivatedAbility := { cost := {}, activateFromHand := true, effect := Effect.gainLife 1 }
+  let bfOnlyAb : ActivatedAbility := { cost := CostSpec.empty, effect := Effect.gainLife 1 }
+  let gyOnlyAb : ActivatedAbility := { cost := CostSpec.empty, activateFromGraveyard := true, effect := Effect.gainLife 1 }
+  let handOnlyAb : ActivatedAbility := { cost := CostSpec.empty, activateFromHand := true, effect := Effect.gainLife 1 }
   let gZone0 :=
     insertObject (insertObject (addPermanent g3 bear p0 p0) bear p0 (.graveyard p0)) bear p0 (.hand p0)
   let zBfObj := (gZone0.permanentsOf p0)[0]!
@@ -973,7 +973,7 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   -- 4b(i). `CostPick` self-use exclusion (`tapSource`, `sacrificeOrExileSource`, `discardOrExileHandSource`):
   let legArtCreatureDef : CardDef := {
     name := "P36i4 Golem", supertypes := #[.legendary], types := #[.artifact, .creature]
-    power := some 2, toughness := some 2, keywords := Keyword.haste
+    power := some 2, toughness := some 2, keywords := #[Keyword.haste]
   }
   let gSelf0 :=
     insertObject
@@ -983,33 +983,33 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   let selfPerm := (gSelf0.permanentsOf p0)[0]!
   let selfHand := gSelf0.object! (gSelf0.player p0).hand[0]!
   let tapOtherCrAb : ActivatedAbility := {
-    cost := { tap := true, tapAnUntappedCreatureYouControl := true }, effect := Effect.gainLife 1
+    cost := CostSpec.ofItems #[.tapSelf, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 1
   }
   let tapTwoArtFraAb : ActivatedAbility := {
-    cost := { tap := true, fra := .tapTwoUntappedArtifacts }, effect := Effect.gainLife 1
+    cost := CostSpec.ofItems #[.tapSelf, .tapObjects (.exact 2) (.all #[.hasType .artifact, .tapped false, .controlledBy .you])], effect := Effect.gainLife 1
   }
   let sacSelfAndLegArtAb : ActivatedAbility := {
-    cost := { sacrificeSource := true, sacrificeLegendaryArtifact := true }, effect := Effect.gainLife 1
+    cost := CostSpec.ofItems #[.sacrifice (.exact 1) .self, .sacrifice (.exact 1) (.filter (.all #[.hasSupertype .legendary, .hasType .artifact]))], effect := Effect.gainLife 1
   }
   let sacSelfAndArtOrLandFraAb : ActivatedAbility := {
-    cost := { sacrificeSource := true, fra := .sacrificeArtifactOrLand }, effect := Effect.gainLife 1
+    cost := CostSpec.ofItems #[.sacrifice (.exact 1) .self, .sacrifice (.exact 1) (.filter (.any #[.hasType .artifact, .hasType .land]))], effect := Effect.gainLife 1
   }
   let discSelfAndLegHandFraAb : ActivatedAbility := {
     activateFromHand := true
-    cost := { discardSource := true, fra := .discardLegendaryCard }, effect := Effect.gainLife 1
+    cost := CostSpec.ofItems #[.discard (.exact 1) .self, .discard (.exact 1) (.matching (.hasSupertype .legendary))], effect := Effect.gainLife 1
   }
   let selfExclusionOk :=
     gSelf0.costPickAllows p0 (some selfPerm.id) .tapUntappedCreature selfPerm (tapSource := false) &&
     !gSelf0.costPickAllows p0 (some selfPerm.id) .tapUntappedCreature selfPerm (tapSource := true) &&
     !gSelf0.costPickAllows p0 (some selfPerm.id) .tapTwoUntappedArtifacts selfPerm (tapSource := true) &&
-    !gSelf0.canPayFraCost p0 selfPerm tapTwoArtFraAb &&
+    !gSelf0.canPayActivationNonManaCost p0 selfPerm tapTwoArtFraAb &&
     (gSelf0.validateActivation p0 selfPerm tapOtherCrAb).toOption.isNone &&
     gSelf0.costPickAllows p0 (some selfPerm.id) .sacrificeArtifact selfPerm (sacrificeOrExileSource := false) &&
     !gSelf0.costPickAllows p0 (some selfPerm.id) .sacrificeArtifact selfPerm (sacrificeOrExileSource := true) &&
     !gSelf0.costPickAllows p0 (some selfPerm.id) .sacrificeLegendaryArtifact selfPerm (sacrificeOrExileSource := true) &&
     !gSelf0.costPickAllows p0 (some selfPerm.id) .sacrificeArtifactOrCreature selfPerm (sacrificeOrExileSource := true) &&
     !gSelf0.costPickAllows p0 (some selfPerm.id) .sacrificeArtifactOrLand selfPerm (sacrificeOrExileSource := true) &&
-    !gSelf0.canPayFraCost p0 selfPerm sacSelfAndArtOrLandFraAb &&
+    !gSelf0.canPayActivationNonManaCost p0 selfPerm sacSelfAndArtOrLandFraAb &&
     (gSelf0.validateActivation p0 selfPerm sacSelfAndLegArtAb).toOption.isNone &&
     gSelf0.costPickAllows p0 (some selfHand.id) .discardACard selfHand (discardOrExileHandSource := false) &&
     !gSelf0.costPickAllows p0 (some selfHand.id) .discardACard selfHand (discardOrExileHandSource := true) &&
@@ -1017,12 +1017,12 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
     !gSelf0.costPickAllows p0 (some selfHand.id) .discardLegendaryCard selfHand (discardOrExileHandSource := true) &&
     !gSelf0.costPickAllows p0 (some selfHand.id) .discardLegendarySameName selfHand (discardOrExileHandSource := true) &&
     !gSelf0.costPickAllows p0 (some selfHand.id) .sacrificeArtifactOrDiscardNonland selfHand (discardOrExileHandSource := true) &&
-    !gSelf0.canPayFraCost p0 selfHand discSelfAndLegHandFraAb
+    !gSelf0.canPayActivationNonManaCost p0 selfHand discSelfAndLegHandFraAb
 
   -- 4b(ii). `{T}`-before-self-sacrifice payment when `!sacrificeOrExileSource` (both non-mana ability
   --         with `payLife` + 2nd pick AND mana ability):
   let selfSacAb : ActivatedAbility := {
-    cost := { tap := true, payLife := 2, sacrificeArtifact := true, tapAnUntappedCreatureYouControl := true }
+    cost := CostSpec.ofItems #[.tapSelf, .payLife (.const 2), .sacrifice (.exact 1) (.filter (.hasType .artifact)), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
     effect := Effect.gainLife 1
   }
   let selfSacArtDef : CardDef := {
@@ -1030,7 +1030,7 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   }
   let manaSelfSacArtDef : CardDef := {
     name := "P36i4 Mana Censer", types := #[.artifact]
-    activatedAbilities := #[{ cost := { tap := true, sacrificeArtifact := true }, effect := { resolution := .addMana #[.colorless] } }]
+    activatedAbilities := #[{ cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) (.filter (.hasType .artifact))], effect := { resolution := .addMana #[.colorless] } }]
   }
   let gTapSac0 := addPermanent (addPermanent g3 selfSacArtDef p0 p0) bear p0 p0
   let censer := (gTapSac0.permanentsOf p0).find? (·.name == selfSacArtDef.name) |>.get!
@@ -1082,11 +1082,11 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   -- 4b(iii). Multi-pick disjointness (`costPicksPayable`, `firstPayableCostPickSlice?`, `answerFraChoice`)
   --          and pre-`completeActivation` `canPayLife` on `.costPicks`, `.crew`, `.zemoBoastExile`:
   let disjointAb : ActivatedAbility := {
-    cost := { sacrificeArtifactOrCreature := true, tapAnUntappedCreatureYouControl := true }
+    cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.any #[.hasType .artifact, .hasType .creature])), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
     effect := Effect.gainLife 1
   }
   let disjointFraAb : ActivatedAbility := {
-    cost := { sacrificeArtifact := true, fra := .tapTwoUntappedArtifacts }
+    cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.hasType .artifact)), .tapObjects (.exact 2) (.all #[.hasType .artifact, .tapped false, .controlledBy .you])]
     effect := Effect.gainLife 1
   }
   let crTokDef : CardDef := { bear with name := "P36i4 Cr Token", isToken := true }
@@ -1155,8 +1155,8 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   let disjointAndCanPayLifeOk :=
     !gDisjOne.costPicksPayable p0 (some altarOne.id) picks2 &&
     (gDisjOne.validateActivation p0 altarOne disjointAb).toOption.isNone &&
-    !gDisjFraTwo.canPayFraCost p0 altarTwo disjointFraAb &&
-    gDisjFraThree.canPayFraCost p0 altarTwo disjointFraAb &&
+    !gDisjFraTwo.canPayActivationNonManaCost p0 altarTwo disjointFraAb &&
+    gDisjFraThree.canPayActivationNonManaCost p0 altarTwo disjointFraAb &&
     gDisjTwo.costPicksPayable p0 (some altarTwo.id) picks2 &&
     (gDisjTwo.costPickCandidates p0 (some altarTwo.id) .sacrificeArtifactOrCreature)[0]? == some crTokObj.id &&
     gDisjTwo.firstPayableCostPickSlice? p0 (some altarTwo.id) picks2 == some #[plainArtObj.id] &&
@@ -1272,7 +1272,7 @@ private def lifeGainsSince37i1 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   -- 1b. Per-batch CR 610.3 `queuedLinkedExile` chronology (`[B1, return(L), B2]`),
   --     `.continueCheckpointReplay` pause chaining, and `dropCkptTarget` stripping tail `origCont` once:
   let sacArtAb : ActivatedAbility := {
-    cost := { sacrificeArtifact := true }, effect := Effect.gainLife 1
+    cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.hasType .artifact))], effect := Effect.gainLife 1
   }
   let altarDef : CardDef := {
     name := "P37i1 Altar", types := #[.enchantment], activatedAbilities := #[sacArtAb]
@@ -1289,7 +1289,7 @@ private def lifeGainsSince37i1 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   let p1Cage := (gChr0.permanentsOf p1)[0]!
   let p2Linked := (gChr0.permanentsOf p2).find? (·.name == bear.name) |>.get!
   let twoPickAb : ActivatedAbility := {
-    cost := { sacrificeArtifact := true, tapAnUntappedCreatureYouControl := true }, effect := Effect.gainLife 1
+    cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.hasType .artifact)), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 1
   }
   let altar2Def : CardDef := {
     name := "P37i1 Altar2", types := #[.enchantment], activatedAbilities := #[twoPickAb]
@@ -1526,7 +1526,7 @@ private def lifeGainsSince37i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   let leyADef : CardDef := { name := "P37i2 LeyA", types := #[.enchantment] }
   let leyBDef : CardDef := { name := "P37i2 LeyB", types := #[.enchantment] }
   let morphDef2 : CardDef := {
-    creature "P37i2 Morph" ManaCost.empty #["Human"] 2 2 with morph := some ManaCost.empty
+    creature "P37i2 Morph" ManaCost.empty #["Human"] 2 2 with keywords := #[.morph CostSpec.empty]
   }
 
   -- 2a(i). `reverseOrResumePopped` (`| some popped =>`): preserves `extraDepartureOuters (+3)`,
@@ -1986,7 +1986,7 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
   --         `completeTurnFaceUp`, and `transformPermanent`:
   let flyerDef : CardDef := {
     creature "P37i3 Flyer" ManaCost.empty #["Bird"] 2 2 with
-    keywords := { flying := true }, morph := some ManaCost.empty
+    keywords := #[Keyword.flying, .morph CostSpec.empty]
   }
   let dfcDef : CardDef := {
     creature "P37i3 WalkerFront" ManaCost.empty #["Human"] 2 2 with
@@ -1995,21 +1995,21 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
   let gL10 := addPermanent (addPermanent g4 flyerDef p3 p1) auraDef p0 p0
   let p1Flyer := (gL10.permanentsOf p1)[0]!
   let p0L1Src := (gL10.permanentsOf p0)[0]!
-  -- Face-down `p1Flyer` has NO flying in Layer 1, so `.creaturesWithout { flying := true }` gives `p0` control!
+  -- Face-down `p1Flyer` has NO flying in Layer 1, so `.creaturesWithout #[Keyword.flying]` gives `p0` control!
   let gL1Fd :=
     (setFaceDown gL10 p1Flyer.id true).createEffect
-      (.layered (.creaturesWithout { flying := true }) (.control p0) (.whileSourceOnBattlefield p0L1Src.id))
+      (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) (.whileSourceOnBattlefield p0L1Src.id))
       (cause := some testCause)
   let gL1Left := gL1Fd.concede p1
   -- Turning `p1Flyer` face up via `completeTurnFaceUp` restores `flying := true` in Layer 1, ending the scoped
   -- Layer 2 `.control p0` effect onto departed `p1` -> exiled under CR 800.4c AND priority granted to `p0`!
   let gL1TurnedUp := (gL1Left.completeTurnFaceUp p0 p1Flyer.id).1
-  -- `transformPermanent` into back face `flyerDef` (`flying := true`) also ends `.creaturesWithout { flying := true }` control!
+  -- `transformPermanent` into back face `flyerDef` (`flying := true`) also ends `.creaturesWithout #[Keyword.flying]` control!
   let gTr0 := addPermanent (addPermanent g4 dfcDef p3 p1) auraDef p0 p0
   let trDfcId := (gTr0.permanentsOf p1)[0]!.id
   let trSrcId := (gTr0.permanentsOf p0)[0]!.id
   let gTrLeft :=
-    (gTr0.createEffect (.layered (.creaturesWithout { flying := true }) (.control p0) (.whileSourceOnBattlefield trSrcId))
+    (gTr0.createEffect (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) (.whileSourceOnBattlefield trSrcId))
       (cause := some testCause)).concede p1
   let gTrDone := gTrLeft.transformPermanent p0 (some trDfcId) (cause := some testCause)
   -- Layer 1 `.copy` granting flying to `p3`-owned, `p1`-defaultControlled non-flying `bear`:
@@ -2018,7 +2018,7 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
   let cpSrcId := (gCpSetup.permanentsOf p0)[0]!.id
   let gCp0 :=
     (gCpSetup.createEffect
-      (.layered (.creaturesWithout { flying := true }) (.control p0) (.whileSourceOnBattlefield cpSrcId))
+      (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) (.whileSourceOnBattlefield cpSrcId))
       (cause := some testCause)).concede p1
   let gCpCopied := gCp0.createEffect (.copy cpBearId flyerDef (untilEot := true)) (cause := some testCause)
   -- Layer 1 `.copy` EXPIRY restoring `flying` on `p3`-owned, `p1`-defaultControlled flyer:
@@ -2027,7 +2027,7 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
   let expSrcId := (gCpExp0.permanentsOf p0)[0]!.id
   let gCpExp1 :=
     ((gCpExp0.createEffect (.copy expFlyerId bear (untilEot := true)) (cause := some testCause)).createEffect
-      (.layered (.creaturesWithout { flying := true }) (.control p0) (.whileSourceOnBattlefield expSrcId))
+      (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) (.whileSourceOnBattlefield expSrcId))
       (cause := some testCause)).concede p1
   let copyEffId := (gCpExp1.activeEffects.find? (fun (_, s) =>
     match s with | .layered _ (.copy _) _ => true | _ => false)).get!.1
@@ -2051,7 +2051,7 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
   let nsBear := (gNs0.permanentsOf p2)[0]!
   let nsSrc := (gNs0.permanentsOf p0)[0]!
   let gNs1 :=
-    (gNs0.createEffect (.layered (.creaturesWithout { flying := true }) (.control p0) (.whileSourceOnBattlefield nsSrc.id))
+    (gNs0.createEffect (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) (.whileSourceOnBattlefield nsSrc.id))
       (cause := some testCause)).record
       (GameEvent.ringTempted gNs0.turnNumber p0 (some nsBear.id) 1 (cause := some testCause))
   let gNsRestored := gNs1.restoreControlUntilSourceLeaves nsSrc.id (cause := some testCause)
@@ -2099,11 +2099,11 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
   -- 4a. `payActivationExtraCosts` + `sourceStillPayable` `activateFromHand` (source stays in hand AND
   --     `sourceDiscardedFromHandForCost` across multi-pick `CostPick`):
   let keepInHandAb : ActivatedAbility := {
-    activateFromHand := true, cost := { payLife := 2 }, effect := Effect.gainLife 5
+    activateFromHand := true, cost := CostSpec.ofItems #[.payLife (.const 2)], effect := Effect.gainLife 5
   }
   let selfDiscMultiAb : ActivatedAbility := {
     activateFromHand := true
-    cost := { payLife := 2, discardACard := true, tapAnUntappedCreatureYouControl := true }
+    cost := CostSpec.ofItems #[.payLife (.const 2), .discard (.exact 1) .hand, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
     effect := Effect.gainLife 5
   }
   let handKeepDef : CardDef := {
@@ -2145,7 +2145,7 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
   let painPetalDef : CardDef := {
     name := "P37i4 PainPetal", types := #[.artifact]
     activatedAbilities := #[{
-      cost := { tap := true, sacrificeSource := true }
+      cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
       effect := { resolution := .addMana #[.colored .red] }
     }]
   }
@@ -2177,7 +2177,7 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
   --         and chooses `maRidA`, `maPet` leaves `.battlefield`, `maMorph` returns to `p2`, and `finishActivateManaAbilityPostSac`
   --         routes `prevPending` through `.restorePending`, which sees `!sourceStillPayable` and reverses cleanly!
   let maMorphDef : CardDef := {
-    creature "P37i4 ManaMorph" ManaCost.empty #["Human"] 3 3 with morph := some (ManaCost.ofGeneric 1)
+    creature "P37i4 ManaMorph" ManaCost.empty #["Human"] 3 3 with keywords := #[.morph (CostSpec.ofGeneric 1)]
   }
   let gMaVal0 := addPermanent gMa1 maMorphDef p2 p2
   let maMorphId := (gMaVal0.permanentsOf p2)[0]!.id
@@ -2217,7 +2217,7 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
   let modalAbDef : CardDef := {
     name := "P37i4 ModalRod", types := #[.artifact]
     activatedAbilities := #[{
-      cost := { tap := true }
+      cost := CostSpec.ofItems #[.tapSelf]
       effect := Effect.gainLife 1
       otherModes := #[Effect.gainLife 2]
     }]
@@ -2235,7 +2235,7 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
   -- (ii) Multi-pick `CostPick` reverses on lost `canPayLife` before pick 1, AND `FraAnswer.decline` on `paid := true`
   --      reverses when `!proposalCostPromptStillPayable`:
   let lifeMultiAb : ActivatedAbility := {
-    cost := { payLife := 5, tapAnUntappedCreatureYouControl := true, sacrificeArtifact := true }
+    cost := CostSpec.ofItems #[.payLife (.const 5), .sacrifice (.exact 1) (.filter (.hasType .artifact)), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
     effect := Effect.gainLife 1
   }
   let lifeMultiArtDef : CardDef := {
@@ -2270,7 +2270,7 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
   -- Shared `.turnFaceUp` setup for (iii) and (iv): `p0` controls `p2`'s face-down morph creature `p2MorphId`
   -- via `.whileSourceOnBattlefield p0HelmId`:
   let morphCrDef : CardDef := {
-    creature "P37i4 MorphSpy" ManaCost.empty #["Human"] 3 3 with morph := some ManaCost.empty
+    creature "P37i4 MorphSpy" ManaCost.empty #["Human"] 3 3 with keywords := #[.morph CostSpec.empty]
   }
   let ctrlRelicDef : CardDef := { name := "P37i4 Helm", types := #[.artifact] }
   let gTf0 := addPermanent (addPermanent g3 morphCrDef p2 p2) ctrlRelicDef p0 p0
@@ -2326,7 +2326,7 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
   -- (v) Post-sacrifice loyalty `becomeActivated`: sacrificing the permanent granting control of planeswalker `src`
   --     reverses via `becomeActivated` instead of activating an opponent's planeswalker!
   let pwSacAb : ActivatedAbility := {
-    cost := { loyalty := some (.minus 2), sacrificeArtifact := false }
+    cost := CostSpec.ofItems #[.loyalty (.minus 2)]
     effect := Effect.gainLife 3
   }
   let pwDef : CardDef := {
@@ -2704,7 +2704,7 @@ private def lifeGainsSince38i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
       (.addPlayer { id := p3, name := "Jace" })
   let auraDef : CardDef := { name := "P38i2 Aura", types := #[.enchantment] }
   let morphDef : CardDef := {
-    creature "P38i2 Morph" ManaCost.empty #["Human"] 2 2 with morph := some ManaCost.empty
+    creature "P38i2 Morph" ManaCost.empty #["Human"] 2 2 with keywords := #[.morph CostSpec.empty]
   }
 
   -- 2a. `playersDepartedSinceCheckpoint` + outer `ckptPending` BEFORE `ckptOrigCont?` ordering across:
@@ -2908,7 +2908,7 @@ private def replayOk38i3 (gs : Array Game) : Bool :=
   let leyADef : CardDef := { name := "P38i3 LeyA", types := #[.enchantment] }
   let leyBDef : CardDef := { name := "P38i3 LeyB", types := #[.enchantment] }
   let flyerDef : CardDef := {
-    creature "P38i3 Flyer" ManaCost.empty #["Bird"] 2 2 with keywords := { flying := true }
+    creature "P38i3 Flyer" ManaCost.empty #["Bird"] 2 2 with keywords := #[Keyword.flying]
   }
 
   -- 3a. Pre-mutation `pre` snapshots on:
@@ -2980,11 +2980,11 @@ private def replayOk38i3 (gs : Array Game) : Bool :=
     (gMvDone.followMovedToZone? p1Orph.id (· == .exile)).isSome &&
     (gOlgDone.followMovedToZone? p1Orph.id (· == .exile)).isSome
 
-  -- 3b. Phased-out Layer 1/2 scope preservation (`scopeMatchesL1`/`scopeMatchesL2` keep `.creaturesWithout { flying := true }`
+  -- 3b. Phased-out Layer 1/2 scope preservation (`scopeMatchesL1`/`scopeMatchesL2` keep `.creaturesWithout #[Keyword.flying]`
   --     `.control p0` active on phased-out `p1Orph` so it isn't exiled!), CR 502.1 `phaseInControlled` phase-out controller lookup,
   --     and pause-safe `phaseInControlledLoop`:
   let gPhScope0 :=
-    (gPre0.createEffect (.layered (.creaturesWithout { flying := true }) (.control p0) .indefinite)
+    (gPre0.createEffect (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) .indefinite)
       (cause := some testCause)).concede p1
   let gPhScopedOut := gPhScope0.phaseOut (gPhScope0.object! p1Orph.id) (cause := some testCause)
   -- CR 502.1: `p2Atk` is stolen by `p0` `.untilEndOfTurn`, phases out under `p0`'s control, then `.untilEndOfTurn` expires:
@@ -2997,7 +2997,7 @@ private def replayOk38i3 (gs : Array Game) : Bool :=
   let gAfterP2PhaseIn := gCr5020.phaseInControlled p2
   let gAfterP0PhaseIn := gAfterP2PhaseIn.phaseInControlled p0
   -- Pause-safe `phaseInControlledLoop`: `ph1` and `ph2` both phase in for `p0`; `ph1` phasing in activates
-  -- `.whileSourceOnBattlefield ph1.id` granting flying to `p1Jail`, ending `.creaturesWithout { flying := true }`
+  -- `.whileSourceOnBattlefield ph1.id` granting flying to `p1Jail`, ending `.creaturesWithout #[Keyword.flying]`
   -- `.control p0` on `p1Jail` (exiled under CR 800.4c), whose `linkedExile` returns `p0`'s bear into `leyA`/`leyB`
   -- (`Pending.chooseReplacement`), deferring `ph2`'s phase-in via `.phaseInControlledLoop` until chosen!
   let gLoopBase :=
@@ -3019,7 +3019,7 @@ private def replayOk38i3 (gs : Array Game) : Bool :=
   let lpRidB : ReplacementId := { kind := .entersWithExtraCounters, object := some lpLeyB, counterKind := some .plusOnePlusOne }
   let gLoop0 :=
     (((((((gLoopBase.exileUntilSourceLeaves (some lpJail.id) lpVic (cause := some testCause)).createEffect
-      (.layered (.creaturesWithout { flying := true }) (.control p0) .indefinite)
+      (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) .indefinite)
       (cause := some testCause)).concede p1).phaseOut ph1 (cause := some testCause)).phaseOut
       ph2 (cause := some testCause)).createEffect
       (.layered (.objects #[lpJail.id]) (.copy flyerDef) (.whileSourceOnBattlefield ph1.id))
@@ -3081,7 +3081,7 @@ private def replayOk38i3 (gs : Array Game) : Bool :=
       (cause := some testCause)).concede p1).phaseOut (gFlBase.object! flAnchorId) (cause := some testCause)
   -- (ii) `Core.createEffects` (`effs.size > 1`):
   let gFlCe0 :=
-    (gFlBase.createEffect (.layered (.creaturesWithout { flying := true }) (.control p0) .indefinite)
+    (gFlBase.createEffect (.layered (.creaturesWithout #[Keyword.flying]) (.control p0) .indefinite)
       (cause := some testCause)).concede p1
   let gFlCeDone :=
     gFlCe0.createEffects #[
@@ -3187,19 +3187,19 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
   -- 4a. Upstream `payLoyaltyCost` pre-sacrifice loyalty payment (including `.stunAndSacrifice` replacement pause),
   --     `ProposedSpell.loyaltyPaid` `[0]`/`[-0]` tracking + `[+X]` payability, and `!exileSource` graveyard/hand guards:
   let pwPlusStunSacAb : ActivatedAbility := {
-    cost := { loyalty := some (.plus 2), putStunCounterOnSource := true, sacrificeSource := true }
+    cost := CostSpec.ofItems #[.loyalty (.plus 2), .putCounters (.const 1) .stun .self, .sacrifice (.exact 1) .self]
     effect := Effect.gainLife 4
   }
   let pwZeroMultiPickAb : ActivatedAbility := {
-    cost := { loyalty := some .zero, sacrificeArtifact := true, fra := .sacrificeAnotherArtifact }
+    cost := CostSpec.ofItems #[.loyalty .zero, .sacrifice (.exact 1) (.filter (.hasType .artifact)), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .hasType .artifact]))]
     effect := Effect.gainLife 2
   }
   let pwMinusZeroSacAb : ActivatedAbility := {
-    cost := { loyalty := some (.minus 0), sacrificeSource := true }
+    cost := CostSpec.ofItems #[.loyalty (.minus 0), .sacrifice (.exact 1) .self]
     effect := Effect.gainLife 1
   }
   let pwPlusXAb : ActivatedAbility := {
-    cost := { loyalty := some .plusX, sacrificeAnotherCreatureOrArtifact := true }
+    cost := CostSpec.ofItems #[.loyalty .plusX, .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
     effect := Effect.gainLife 1
   }
   let pwDef : CardDef := {
@@ -3261,10 +3261,10 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
     gPxSet.proposalCostPromptStillPayable p0 (.sacrificePermanent p0 pwId)
   -- `!exileSource` graveyard/hand guards:
   let badGyExileAb : ActivatedAbility := {
-    activateFromGraveyard := true, cost := { fra := .exileSource }, effect := Effect.gainLife 1
+    activateFromGraveyard := true, cost := CostSpec.ofItems #[.exile (.exact 1) .battlefield .self], effect := Effect.gainLife 1
   }
   let badHandExileAb : ActivatedAbility := {
-    activateFromHand := true, cost := { fra := .exileSource }, effect := Effect.gainLife 1
+    activateFromHand := true, cost := CostSpec.ofItems #[.exile (.exact 1) .battlefield .self], effect := Effect.gainLife 1
   }
   let gExGuard0 := insertObject (insertObject g3 bear p0 (.graveyard p0)) bear p0 (.hand p0)
   let badGyCard := gExGuard0.object! (gExGuard0.player p0).graveyard.back!
@@ -3305,13 +3305,13 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
   --     replacement pause aborts and rewinds the proposal cleanly without emitting `spellCast` / `abilityActivated`!):
   let sacBoltDef : CardDef := {
     name := "P38i4 SacBolt", manaCost := ManaCost.empty, types := #[.sorcery]
-    additionalCostSacrificeArtifactOrCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]
     spellEffect := some (Effect.dealDamage 3)
   }
   let sacPingArtDef : CardDef := {
     name := "P38i4 SacCannon", types := #[.artifact]
     activatedAbilities := #[{
-      cost := { sacrificeSource := true }
+      cost := CostSpec.ofItems #[.sacrifice (.exact 1) .self]
       effect := Effect.dealDamage 2
     }]
   }
@@ -3446,7 +3446,7 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
   --     and `.chooseMode` `decline`:
   let vehDef : CardDef := {
     name := "P38i4 Skiff", types := #[.artifact], subtypes := #["Vehicle"]
-    power := some 4, toughness := some 4, crew := some 2
+    power := some 4, toughness := some 4, keywords := #[.crew 2]
   }
   let blackFuelDef : CardDef := {
     bear with name := "P38i4 BlackFuel", manaCost := { symbols := Array.replicate 15 (.colored .black) }
@@ -3457,12 +3457,12 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
   }
   let twLifeSpellDef : CardDef := {
     name := "P38i4 TeamStrike", manaCost := ManaCost.empty, types := #[.sorcery]
-    teamwork := some 2, spellEffect := some (Effect.gainLife 3)
+    keywords := #[.teamwork 2], spellEffect := some (Effect.gainLife 3)
   }
   let modalRodDef : CardDef := {
     name := "P38i4 ModalRod", types := #[.artifact]
     activatedAbilities := #[{
-      cost := { tap := true }, effect := Effect.gainLife 1, otherModes := #[Effect.gainLife 2]
+      cost := CostSpec.ofItems #[.tapSelf], effect := Effect.gainLife 1, otherModes := #[Effect.gainLife 2]
     }]
   }
   let gMidRev0 :=

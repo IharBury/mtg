@@ -611,7 +611,7 @@ private def replayOk42i3 (gs : Array Game) : Bool :=
       (.addPlayer { id := p3, name := "Jace" })
   let srcDefA : CardDef := creature "P42i3 SrcA" ManaCost.empty #["Construct"] 3 3
   let srcDefB : CardDef := creature "P42i3 SrcB" ManaCost.empty #["Construct"] 3 3
-  let noTrampleScope : ObjectScope := .creaturesWithout { trample := true }
+  let noTrampleScope : ObjectScope := .creaturesWithout #[Keyword.trample]
 
   -- 3a. `durationActiveContinuouslySince`, `ZoneEvent.created` `eo.zone`, in-place `.materializeObject` guard,
   --     and pre-`events[0]` phasing helpers in `Core.lean`:
@@ -758,7 +758,7 @@ private def replayOk42i3 (gs : Array Game) : Bool :=
 
   -- (iv) DFC `PermanentEvent.transformed` in `hasSummoningSickness`:
   --      Front face has `trample := false` (stolen by `noTrampleScope` `.control p0`), back face has `trample := true` (reverts to `p1`!):
-  let dfcBackTrample : CardDef := { bear with name := "P42i3 TrampleBack", keywords := { trample := true } }
+  let dfcBackTrample : CardDef := { bear with name := "P42i3 TrampleBack", keywords := #[Keyword.trample] }
   let dfcFrontNoTrample : CardDef := { bear with name := "P42i3 PlainFront", otherFace := some dfcBackTrample }
   let gDfc0 :=
     readyControlledForTurn
@@ -928,14 +928,14 @@ private def replayOk42i4 (gs : Array Game) : Bool :=
     name := "P42i4 StorySaga"
     types := #[.enchantment]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, removeStoryCounter := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .removeCounters (.exact 1) (some .story) .self]
       effect := Effect.gainLife 1
     }]
   }
   let indCardDef : CardDef := {
     creature "P42i4 ArwenLike" ManaCost.empty #["Elf", "Noble"] 2 2 with
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, removeIndestructibleCounter := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .removeCounters (.exact 1) (some .indestructible) .self]
       effect := Effect.gainLife 1
     }]
   }
@@ -943,7 +943,7 @@ private def replayOk42i4 (gs : Array Game) : Bool :=
     name := "P42i4 GyRelic"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, exileSourceFromGraveyard := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .exile (.exact 1) .yourGraveyard .self]
       activateFromGraveyard := false
       effect := Effect.gainLife 2
     }]
@@ -951,7 +951,7 @@ private def replayOk42i4 (gs : Array Game) : Bool :=
   let handDiscCardDef : CardDef := {
     creature "P42i4 Channeler" ManaCost.empty #["Spirit"] 2 2 with
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, discardSource := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .discard (.exact 1) .self]
       activateFromHand := false
       effect := Effect.gainLife 2
     }]
@@ -959,7 +959,7 @@ private def replayOk42i4 (gs : Array Game) : Bool :=
   let handExileCardDef : CardDef := {
     creature "P42i4 HandExiler" ManaCost.empty #["Elemental"] 2 2 with
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, fra := .exileSourceFromHand }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .exile (.exact 1) .yourHand .self]
       activateFromHand := false
       effect := Effect.gainLife 2
     }]
@@ -1575,14 +1575,14 @@ private def replayOk43i3 (gs : Array Game) : Bool :=
   let g4 :=
     (afterDraw.change (.addPlayer { id := p2, name := "Liliana" })).change
       (.addPlayer { id := p3, name := "Jace" })
-  let noTrampleScope : ObjectScope := .creaturesWithout { trample := true }
+  let noTrampleScope : ObjectScope := .creaturesWithout #[Keyword.trample]
   let constructScope : ObjectScope := .permanentsOfSubtype p0 .construct
   let constructDef : CardDef := creature "P43i3 Construct" ManaCost.empty #["Construct"] 2 2
 
   -- 3a. Historical-slice `Core.controlChanged`:
   --     (i) Pre-`events[0]` (`quiet`) filter `.control p1` (`noTrampleScope`) on `p0`'s `bear` that expires at `events[0]` (`clearEOT`):
   --         `g.controllerOf` is `some p0` now, yet `controlChanged` is `true` (while a `hero` with printed `trample := true` has `controlChanged == false`!)
-  let trampleHeroDef : CardDef := { hero with keywords := { trample := true } }
+  let trampleHeroDef : CardDef := { hero with keywords := #[Keyword.trample] }
   let gCtrlPre0 :=
     quiet
       ((addPermanent (addPermanent g4 bear p0 p0) trampleHeroDef p0 p0).createEffect
@@ -1747,7 +1747,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     subtypes := #["Treasure"]
     activatedAbilities := #[{
-      cost := { tap := true, sacrificeSource := true }
+      cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
       effect := { resolution := .addMana #[.colorless], phrase := "Add {C}." }
     }]
   }
@@ -1807,7 +1807,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     power := some 3
     toughness := some 3
     activatedAbilities := #[{
-      cost := { fra := .crew 1 }
+      cost := CostSpec.ofItems #[.tapObjects (.totalPowerAtLeast (.const 1)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])]
       activateFromGraveyard := true
       effect := Effect.gainLife 1
     }]
@@ -1815,7 +1815,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
   let mixedGyHandDef : CardDef := {
     creature "P43i4 MixedGyHand" ManaCost.empty #["Spirit"] 2 2 with
     activatedAbilities := #[{
-      cost := { exileSourceFromGraveyard := true, discardSource := true }
+      cost := CostSpec.ofItems #[.exile (.exact 1) .yourGraveyard .self, .discard (.exact 1) .self]
       activateFromGraveyard := true
       activateFromHand := true
       effect := Effect.gainLife 1
@@ -1824,7 +1824,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
   let mixedGyTapDef : CardDef := {
     creature "P43i4 MixedGyTap" ManaCost.empty #["Zombie"] 2 2 with
     activatedAbilities := #[{
-      cost := { tap := true, mana := ManaCost.ofGeneric 1 }
+      cost := CostSpec.ofItems #[.tapSelf, .mana (ManaCost.ofGeneric 1)]
       activateFromGraveyard := true
       effect := Effect.gainLife 1
     }]
@@ -1832,7 +1832,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
   let gySacOtherDef : CardDef := {
     creature "P43i4 GyAltars" ManaCost.empty #["Cleric"] 2 2 with
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, sacrificeAnotherCreatureOrArtifact := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
       activateFromGraveyard := true
       effect := Effect.gainLife 2
     }]
@@ -1872,12 +1872,12 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
   --     AND CR 601.2g self-sacrificing mana abilities (`isPlainTap == false`, `manaSourcesForProposed` source reservation,
   --     and `sourceStillPayable` + `Action.pay` succeeding after sacrificing `src` to a CR 601.2g mana ability):
   let modalAddManaAb : ActivatedAbility := {
-    cost := { tap := true }
+    cost := CostSpec.ofItems #[.tapSelf]
     effect := { resolution := .addMana #[.colorless], phrase := "Add {C}." }
     otherModes := #[Effect.gainLife 1]
   }
   let gyAddManaAb : ActivatedAbility := {
-    cost := { exileSourceFromGraveyard := true }
+    cost := CostSpec.ofItems #[.exile (.exact 1) .yourGraveyard .self]
     activateFromGraveyard := true
     effect := { resolution := .addMana #[.colorless], phrase := "Add {C}." }
   }
@@ -1885,11 +1885,11 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     creature "P43i4 Dynamo" ManaCost.empty #["Construct"] 2 2 with
     activatedAbilities := #[
       -- idx 0: `removeStoryCounter` + `exhaust` mana ability
-      { cost := { removeStoryCounter := true }
+      { cost := CostSpec.ofItems #[.removeCounters (.exact 1) (some .story) .self]
         exhaust := true
         effect := { resolution := .addMana #[.colored .blue], phrase := "Add {U}." } },
       -- idx 1: `powerUp` + `onlyAsSorcery` mana ability costing `{2}`
-      { cost := { mana := ManaCost.ofGeneric 2 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)]
         powerUp := true
         onlyAsSorcery := true
         effect := { resolution := .addMana #[.colored .red, .colored .red, .colored .red], phrase := "Add {R}{R}{R}." } }
@@ -1902,10 +1902,10 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     staticAbilities := #[.fra .tapSacrificeAddThreeOfOneColor, .otherPowerUpCostsLess 1]
     activatedAbilities := #[
       -- idx 0: mana-only activated ability `{2}: Gain 3 life.` (does NOT need battlefield source at CR 601.2h!)
-      { cost := { mana := ManaCost.ofGeneric 2 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)]
         effect := Effect.gainLife 3 },
       -- idx 1: `{2}, {T}: Gain 3 life.` (DOES need battlefield source `{T}`!)
-      { cost := { mana := ManaCost.ofGeneric 2, tap := true }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapSelf]
         effect := Effect.gainLife 3 }
     ]
   }
@@ -1991,9 +1991,9 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     name := "P43i4 DualWell"
     types := #[.artifact]
     activatedAbilities := #[
-      { cost := { tap := true }, exhaust := true
+      { cost := CostSpec.ofItems #[.tapSelf], exhaust := true
         effect := { resolution := .addMana #[.colored .blue], phrase := "Add {U}." } },
-      { cost := { tap := true, payLife := 1 }
+      { cost := CostSpec.ofItems #[.tapSelf, .payLife (.const 1)]
         effect := { resolution := .addMana #[.colored .blue], phrase := "Add {U}." } }
     ]
   }
@@ -2012,10 +2012,10 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     tapAddMana := #[.colorless]
     staticAbilities := #[.fra .tapSacrificeAddThreeOfOneColor]
     activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGeneric 1, fra := .crew 2 }, effect := Effect.gainLife 3 },
-      { cost := { mana := ManaCost.ofGeneric 2, fra := .crew 2 }, effect := Effect.gainLife 5 },
-      { cost := { mana := ManaCost.ofGeneric 1, fra := .crew 0 }, effect := Effect.gainLife 1 },
-      { cost := { mana := ManaCost.ofGeneric 1, tap := true, fra := .crew 2 }, effect := Effect.gainLife 7 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 3 },
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 5 },
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapObjects (.totalPowerAtLeast (.const 0)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 1 },
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 7 }
     ]
   }
   let gCrBase := addPermanent (addPermanent g2 crewManaChariotDef p0 p0) bear p0 p0
@@ -2063,7 +2063,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     creature "P43i4 ManaZemo" ManaCost.empty #["Human", "Villain"] 3 3 with
     staticAbilities := #[.boast, .fra .tapSacrificeAddThreeOfOneColor]
     activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGeneric 2, fra := .zemoBoast }, effect := Effect.gainLife 4 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .exile (.totalManaSymbolsAtLeast (some .black) (.const 15)) .yourGraveyard (.filter (.all #[.hasColor (.literal .black), .isKind .card]))], effect := Effect.gainLife 4 }
     ]
   }
   let gZm0 := insertObject (addPermanent g2 boastManaZemoDef p0 p0) black15Def p0 (.graveyard p0)
@@ -2249,7 +2249,7 @@ private def replayOk44i1 (gs : Array Game) : Bool :=
       (cause := some testCause)).createEffect
       (.layered (.objects legBears) (.colors .set { blue := true }) (.whileSourceOnBattlefield p2Src.id))
       (cause := some testCause)).createEffect
-      (.layered (.creaturesControlledBy p0) (.abilities { keywords := { flying := true } } .none) (.whileSourceOnBattlefield p2Src.id))
+      (.layered (.creaturesControlledBy p0) (.abilities { keywords := #[Keyword.flying] } .none) (.whileSourceOnBattlefield p2Src.id))
       (cause := some testCause)).createEffect
       (.layered (.creaturesControlledBy p1) (.types .add #[] #[] #[.legendary]) (.whileSourceOnBattlefield p2Src.id))
       (cause := some testCause)).checkSBA)
@@ -2544,7 +2544,7 @@ private def replayOk44i3 (gs : Array Game) : Bool :=
   let p1 : PlayerId := ⟨1⟩
   let p2 : PlayerId := ⟨2⟩
   let g3 := afterDraw.change (.addPlayer { id := p2, name := "Liliana" })
-  let backFlyerDef : CardDef := { hero with name := "P44i3 BackFlyer", keywords := { flying := true } }
+  let backFlyerDef : CardDef := { hero with name := "P44i3 BackFlyer", keywords := #[Keyword.flying] }
   let frontDfcDef : CardDef := { bear with name := "P44i3 FrontWalker", otherFace := some backFlyerDef }
 
   -- 3a. `Core.controlChanged`: off-battlefield `false`, inactive `.objects` `.control` `false`,
@@ -2590,7 +2590,7 @@ private def replayOk44i3 (gs : Array Game) : Bool :=
   let gDfc0 :=
     quiet
       ((addPermanent g3 frontDfcDef p0 p0).createEffect
-        (.layered (.creaturesWithout { flying := true }) (.control p1) .indefinite)
+        (.layered (.creaturesWithout #[Keyword.flying]) (.control p1) .indefinite)
         (cause := some testCause))
   let dfcId := (gDfc0.permanentsOf p1)[0]!.id
   let gDfcTransformed := gDfc0.transformPermanent p0 (some dfcId) (cause := some testCause)
@@ -2741,8 +2741,8 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     power := some 3
     toughness := some 3
     activatedAbilities := #[
-      { cost := { fra := .crew 2 }, effect := Effect.pump 1 1 },
-      { cost := { sacrificeSource := true, fra := .crew 2 }, effect := Effect.gainLife 2 }
+      { cost := CostSpec.ofItems #[.tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.pump 1 1 },
+      { cost := CostSpec.ofItems #[.sacrifice (.exact 1) .self, .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 2 }
     ]
   }
   let gTc0 := addPermanent (addPermanent g2 targetedCrewDef p0 p0) bear p0 p0
@@ -2763,7 +2763,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
 
   -- Duplicate `onceEachTurn` abilities (`abDup` at idx 0 AND idx 1): activating idx 1 marks idx 1 ONLY:
   let abDup : ActivatedAbility := {
-    cost := {}
+    cost := CostSpec.empty
     effect := Effect.gainLife 1
     onceEachTurn := true
   }
@@ -2793,7 +2793,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     tapAddMana := #[.colorless]
     activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGeneric 1, sacrificeSource := true }, effect := Effect.abilityDraw 1 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) .self], effect := Effect.abilityDraw 1 }
     ]
   }
   let gBauble0 := addPermanent g2 selfTapSacRelicDef p0 p0
@@ -2818,7 +2818,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     power := some 4
     toughness := some 4
     activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGeneric 1, fra := .crew 2 }, effect := Effect.gainLife 2 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 2 }
     ]
   }
   -- With ONLY `dork22Def` (`{T}: Add {G}`, summoned prior turn via `addPermanent`) and NO other creature or land,
@@ -2855,11 +2855,11 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     subtypes := #["Treasure"]
     isToken := true
     activatedAbilities := #[{
-      cost := { tap := true, sacrificeSource := true }
+      cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
       effect := { resolution := .addMana #[.colorless], phrase := "Add {C}." }
     }]
   }
-  let morphDef : CardDef := { bear with name := "P44i4 MorphBear", morph := some (ManaCost.ofGeneric 1) }
+  let morphDef : CardDef := { bear with name := "P44i4 MorphBear", keywords := #[.morph (CostSpec.ofGeneric 1)] }
   let gTrCast0 :=
     addPermanent (addPermanent (addPermanent g2 morphDef p0 p0) treasureTokDef p0 p0) selfTapSacRelicDef p0 p0
   let morphId := (gTrCast0.permanentsOf p0).find? (·.name == morphDef.name) |>.get!.id
@@ -2903,7 +2903,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     types := #[.land]
     tapAddOneOfIfEnteredOrBasic := #[.colored .blue]
     activatedAbilities := #[
-      { cost := { tap := true }, effect := { resolution := .addAnyColor, phrase := "Add one mana of any color." } }
+      { cost := CostSpec.ofItems #[.tapSelf], effect := { resolution := .addAnyColor, phrase := "Add one mana of any color." } }
     ]
   }
   let condLandOnlyDef : CardDef := {
@@ -2932,9 +2932,9 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     name := "P44i4 StunElfRelic"
     types := #[.artifact]
     activatedAbilities := #[
-      { cost := { tap := true, putStunCounterOnSource := true }
+      { cost := CostSpec.ofItems #[.tapSelf, .putCounters (.const 1) .stun .self]
         effect := { resolution := .addAnyColorSpendOnlySubtype .elf, phrase := "Add one mana of any color. Spend this mana only to cast an Elf spell." } },
-      { cost := { sacrificeAnotherCreatureOrArtifact := true }
+      { cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
         effect := { resolution := .addMana #[.colored .black, .colored .black], phrase := "Add {B}{B}." } }
     ]
   }
@@ -2960,16 +2960,16 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     power := some 3
     toughness := some 3
     activatedAbilities := #[
-      { cost := { discardACard := true, fra := .crew 2 }, effect := Effect.gainLife 2 }
+      { cost := CostSpec.ofItems #[.discard (.exact 1) .hand, .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 2 }
     ]
   }
   let filterManaRelicDef : CardDef := {
     name := "P44i4 FilterRelic"
     types := #[.artifact]
     activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGeneric 2 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)]
         effect := { resolution := .addAnyColor, phrase := "Add one mana of any color." } },
-      { cost := { tap := true }, effect := Effect.gainLife 1 }
+      { cost := CostSpec.ofItems #[.tapSelf], effect := Effect.gainLife 1 }
     ]
   }
   let gCrewDisc0 := addPermanent (addPermanent g2 crewDiscSkiffDef p0 p0) bear p0 p0
@@ -2995,7 +2995,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
       types := #[.artifact]
       tapAddMana := #[.colorless]
       activatedAbilities := #[
-        { cost := { mana := ManaCost.ofGeneric 1, tap := true }, effect := Effect.gainLife 1 }
+        { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf], effect := Effect.gainLife 1 }
       ]
     }
     let g0 := addPermanent g2 tapRelicDef p0 p0
@@ -3005,7 +3005,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     name := "P44i4 BorrowedRelic"
     types := #[.artifact]
     activatedAbilities := #[
-      { cost := { mana := ManaCost.ofGeneric 1 }, effect := Effect.gainLife 1 }
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1)], effect := Effect.gainLife 1 }
     ]
   }
   let p2 : PlayerId := ⟨2⟩

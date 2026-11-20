@@ -80,7 +80,7 @@ def power (g : Game) (name : String) : Int := g.power (namedPermanent g name)
 
 def toughness (g : Game) (name : String) : Int := g.toughness (namedPermanent g name)
 
-def kw (g : Game) (name : String) : Keywords := g.currentKeywords (namedPermanent g name)
+def kw (g : Game) (name : String) : Array KeywordAbility := g.currentKeywords (namedPermanent g name)
 
 def millN (g : Game) (p : PlayerId) (n : Nat) : Game :=
   (List.range n).foldl (fun g _ => addToGraveyard g island p) g
@@ -140,7 +140,7 @@ they sacrifice three permanents. -/
   let g := castFra g shock [tgt g "Emrakul, the Exigent Doom"] opp
   let g := mustApply (mustApply g opp .pass) me .pass
   match g.pending with
-  | .payWard q _ (.sacrificePermanents 3 0 _) => q == opp
+  | .payWard q _ cost chosen => q == opp && cost == CostSpec.sacrificePermanents 3 && chosen.isEmpty
   | _ => false
 #guard
   let g := addPermanent afterDraw emrakulTheExigentDoom me me
@@ -167,7 +167,7 @@ only cast planeswalker spells. -/
   let g := addPermanent afterDraw gideonsMemorial me me
   let g := resolved (castFra g hexhavenBattalion)
   let cadet := namedPermanent g "Cadet"
-  g.power cadet == 3 && (g.currentKeywords cadet).vigilance
+  g.power cadet == 3 && KeywordAbility.hasVigilance (g.currentKeywords cadet)
 #guard
   let g := addPermanent afterDraw gideonsMemorial me me
   let g := mustApply g me (.tapForMana (namedPermanent g "Gideon's Memorial").id (.colored .red))
@@ -191,7 +191,7 @@ only cast planeswalker spells. -/
   let g := addPermanent (addPermanent afterDraw lilianaTheFaultless me me) grizzlyBears me me
   let before := (g.player me).graveyard.size
   let g := resolved (activateNamed g "Liliana the Faultless" "hexproof" [tgt g "Grizzly Bears"])
-  (kw g "Grizzly Bears").hexproof && (g.player me).graveyard.size == before + 1
+  KeywordAbility.hasHexproof (kw g "Grizzly Bears") && (g.player me).graveyard.size == before + 1
 
 /- Rescue Girl returns another permanent you control, only during your turn. -/
 #guard
@@ -210,7 +210,7 @@ only cast planeswalker spells. -/
   let g := addPermanent (addPermanent afterDraw tomikOrzhovLawmage me me) grizzlyBears me me
   let g := plusOnes g "Grizzly Bears" 1
   let g := resolved (activateNamed g "Tomik, Orzhov Lawmage" "flying" [tgt g "Grizzly Bears"])
-  (kw g "Grizzly Bears").flying
+  KeywordAbility.hasFlying (kw g "Grizzly Bears")
 
 /- Yoshimaru, Beloved Companion: one more +1/+1 counter is put on your
 creatures; {6} puts a counter on a legendary creature. -/
@@ -493,7 +493,7 @@ putting the rest on the bottom. -/
 #guard
   let g := addPermanent afterDraw ingrisStingerquill me me
   let g := resolved (activateNamed g "Ingris Stingerquill" "Cadet")
-  (kw g "Cadet").haste && (kw g "Ingris Stingerquill").haste
+  KeywordAbility.hasHaste (kw g "Cadet") && KeywordAbility.hasHaste (kw g "Ingris Stingerquill")
 
 /- Pia, Determined Rebuilder pumps by the number of artifacts you control. -/
 #guard
@@ -520,16 +520,16 @@ putting the rest on the bottom. -/
 /- Skilled Battlecarver has first strike only during your turn. -/
 #guard
   let g := addPermanent afterDraw skilledBattlecarver me me
-  (kw g "Skilled Battlecarver").firstStrike &&
-    !(kw (addPermanent afterDraw skilledBattlecarver opp opp) "Skilled Battlecarver").firstStrike
+  KeywordAbility.hasFirstStrike (kw g "Skilled Battlecarver") &&
+    !KeywordAbility.hasFirstStrike (kw (addPermanent afterDraw skilledBattlecarver opp opp) "Skilled Battlecarver")
 
 /- Ajani's Anguish gives your creatures trample. -/
-#guard (kw (addPermanent (addPermanent afterDraw ajanisAnguish me me) grizzlyBears me me) "Grizzly Bears").trample
+#guard KeywordAbility.hasTrample (kw (addPermanent (addPermanent afterDraw ajanisAnguish me me) grizzlyBears me me) "Grizzly Bears")
 
 /- Gallia, the Merrymaker gives other creatures with +1/+1 counters haste. -/
 #guard
   let g := addPermanent (addPermanent afterDraw galliaTheMerrymaker me me) grizzlyBears me me
-  !(kw g "Grizzly Bears").haste && (kw (plusOnes g "Grizzly Bears" 1) "Grizzly Bears").haste
+  !KeywordAbility.hasHaste (kw g "Grizzly Bears") && KeywordAbility.hasHaste (kw (plusOnes g "Grizzly Bears" 1) "Grizzly Bears")
 
 /- Samut, Hazoret's Champion gives your creatures haste, so a summoning-sick
 creature can attack. -/
@@ -550,15 +550,15 @@ permanent is increased by 1. -/
 #guard
   let g := addPermanent afterDraw saheeliJewelOfAvishkar me me
   let g := resolved (castFra g shock [.target (.player opp)])
-  (kw g "Thopter").haste
+  KeywordAbility.hasHaste (kw g "Thopter")
 
 /- Whiplash Wordsmith has flying and haste once an opponent was dealt
 noncombat damage this turn. -/
 #guard
   let g := addPermanent afterDraw whiplashWordsmith me me
-  let before := (kw g "Whiplash Wordsmith").flying
+  let before := KeywordAbility.hasFlying (kw g "Whiplash Wordsmith")
   let g := resolved (castFra g shock [.target (.player opp)])
-  !before && (kw g "Whiplash Wordsmith").flying && (kw g "Whiplash Wordsmith").haste
+  !before && KeywordAbility.hasFlying (kw g "Whiplash Wordsmith") && KeywordAbility.hasHaste (kw g "Whiplash Wordsmith")
 
 /- Ajani Unrelenting: −2 discards your hand and draws per creature; −3 deals
 4 damage to each creature except your tokens. -/
@@ -594,7 +594,7 @@ choice of trample, hexproof, or haste. -/
   let g := activateNamed g "Hungering Puppetbeast" "+1/+1 counter"
   let g := resolveTop (mustApply g me (.choosePermanents #[vol]))
   let g := mustApply g me (.chooseMode 2)
-  counters g "Hungering Puppetbeast" == 1 && (kw g "Hungering Puppetbeast").haste &&
+  counters g "Hungering Puppetbeast" == 1 && KeywordAbility.hasHaste (kw g "Hungering Puppetbeast") &&
     !onBattlefield g "Murmuring Volume"
 
 /- Puppet Crafting enchants an artifact and makes it a 5/5 Construct
@@ -622,7 +622,7 @@ creature; it can't enchant a creature that isn't an artifact. -/
 #guard
   let g := addPermanent afterDraw wreckingGecko me me
   let g := resolved (activateNamed g "Wrecking Gecko" "+4/+4")
-  power g "Wrecking Gecko" == 9 && (kw g "Wrecking Gecko").trample
+  power g "Wrecking Gecko" == 9 && KeywordAbility.hasTrample (kw g "Wrecking Gecko")
 
 /- Edgar, Moonlit Sovereign adds a counter to each creature that has one. -/
 #guard
@@ -635,7 +635,7 @@ creature; it can't enchant a creature that isn't an artifact. -/
 card from your graveyard. -/
 #guard
   let g := addPermanent (addPermanent afterDraw marwynThePreserver me me) forest me me
-  (kw g "Forest").hexproof && !g.canBeTargetedBy opp (namedPermanent g "Forest")
+  KeywordAbility.hasHexproof (kw g "Forest") && !g.canBeTargetedBy opp (namedPermanent g "Forest")
 #guard
   let g := addToGraveyard (addPermanent afterDraw marwynThePreserver me me) forest me
   inHand (resolved (activateNamed g "Marwyn, the Preserver" "land card" [gyTarget g me "Forest"])) me "Forest"
@@ -662,21 +662,21 @@ graveyard. -/
 graveyard. -/
 #guard
   let g := addPermanent (millN afterDraw me 7) theorixMetamage me me
-  power g "Theorix Metamage" == 3 && (kw g "Theorix Metamage").flying
+  power g "Theorix Metamage" == 3 && KeywordAbility.hasFlying (kw g "Theorix Metamage")
 
 /- Mind Meanderer has vigilance while you control a Jace planeswalker. -/
 #guard
   let g := addPermanent afterDraw mindMeanderer me me
-  !(kw g "Mind Meanderer").vigilance && (kw (pw jaceRealitySculptor 5 g) "Mind Meanderer").vigilance
+  !KeywordAbility.hasVigilance (kw g "Mind Meanderer") && KeywordAbility.hasVigilance (kw (pw jaceRealitySculptor 5 g) "Mind Meanderer")
 
 /- Vigorbloom Vanguard: creatures you control with +1/+1 counters have
 vigilance. -/
 #guard
   let g := addPermanent (addPermanent afterDraw vigorbloomVanguard me me) grizzlyBears me me
-  (kw (plusOnes g "Grizzly Bears" 1) "Grizzly Bears").vigilance && !(kw g "Grizzly Bears").vigilance
+  KeywordAbility.hasVigilance (kw (plusOnes g "Grizzly Bears" 1) "Grizzly Bears") && !KeywordAbility.hasVigilance (kw g "Grizzly Bears")
 
 /- Ghalta the Unstoppable gives other creatures you control trample. -/
-#guard (kw (addPermanent (addPermanent afterDraw ghaltaTheUnstoppable me me) grizzlyBears me me) "Grizzly Bears").trample
+#guard KeywordAbility.hasTrample (kw (addPermanent (addPermanent afterDraw ghaltaTheUnstoppable me me) grizzlyBears me me) "Grizzly Bears")
 
 /- Fblthp, Knows the Way: power equal to basic land types among your lands. -/
 #guard
@@ -687,9 +687,9 @@ vigilance. -/
 /- Ruric Thar, Magecrusher has hexproof until they deal combat damage. -/
 #guard
   let g := addPermanent afterDraw ruricTharMagecrusher me me
-  let before := (kw g "Ruric Thar, Magecrusher").hexproof
+  let before := KeywordAbility.hasHexproof (kw g "Ruric Thar, Magecrusher")
   let g := attackThen g #["Ruric Thar, Magecrusher"]
-  before && !(kw g "Ruric Thar, Magecrusher").hexproof && life g opp == 13
+  before && !KeywordAbility.hasHexproof (kw g "Ruric Thar, Magecrusher") && life g opp == 13
 
 /-! ## Multicolor and colorless -/
 
@@ -697,7 +697,7 @@ vigilance. -/
 #guard
   let g := addPermanent (addPermanent afterDraw bloombrute me me) grizzlyBears me me
   let g := resolved (activateNamed g "Bloombrute" "trample and lifelink" [tgt g "Grizzly Bears"])
-  (kw g "Grizzly Bears").trample && (kw g "Grizzly Bears").lifelink
+  KeywordAbility.hasTrample (kw g "Grizzly Bears") && KeywordAbility.hasLifelink (kw g "Grizzly Bears")
 
 /- Aerid Konstrari makes a Heartwood, then gets +X/+0 per artifact. -/
 #guard
@@ -750,7 +750,7 @@ target. -/
 /- Afterthought Sentry gains flying. -/
 #guard
   let g := addPermanent afterDraw afterthoughtSentry me me
-  (kw (resolved (activateNamed g "Afterthought Sentry" "flying")) "Afterthought Sentry").flying
+  KeywordAbility.hasFlying (kw (resolved (activateNamed g "Afterthought Sentry" "flying")) "Afterthought Sentry")
 
 /- The Echoverse Fulcrum exiles itself to destroy all creatures. -/
 #guard
@@ -795,7 +795,7 @@ Academy Guardian costs {2} less after you cast a noncreature spell. -/
   before == 4 && after == 2
 
 /- Vraska, Soul of Stone gives artifact creatures vigilance. -/
-#guard (kw (addPermanent (addPermanent afterDraw vraskaSoulOfStone me me) livingLibrary me me) "Living Library").vigilance
+#guard KeywordAbility.hasVigilance (kw (addPermanent (addPermanent afterDraw vraskaSoulOfStone me me) livingLibrary me me) "Living Library")
 
 /- Traxos, Scourge Eternal doesn't untap during your untap step. -/
 #guard
@@ -845,10 +845,10 @@ def equip (g : Game) (gear host : String) : Game :=
   let g := mustApply g me (.declareAttackers #[(namedPermanent g "Grizzly Bears").id])
   let g := resolveTop (stackTriggers g)
   let g := mustApply g me (.chooseMode 1)
-  (kw g "Grizzly Bears").deathtouch && power g "Grizzly Bears" == 4
+  KeywordAbility.hasDeathtouch (kw g "Grizzly Bears") && power g "Grizzly Bears" == 4
 #guard
   let g := equip (addPermanent (addPermanent afterDraw medicsKitesail me me) grizzlyBears me me) "Medic's Kitesail" "Grizzly Bears"
-  let flying := (kw g "Grizzly Bears").flying
+  let flying := KeywordAbility.hasFlying (kw g "Grizzly Bears")
   let g := attackThen g #["Grizzly Bears"]
   flying && life g opp == 17 && life g me == 21
 #guard
@@ -896,7 +896,7 @@ hexproof.” -/
 #guard
   let g := addPermanent (pw jaceRealitySculptor 8) kioraOfSaltAndSand me me
   let g := resolved (loyaltyAbility g "Jace, Reality Sculptor" (.minus 8))
-  (kw g "Leviathan").hexproof && power g "Leviathan" == 8
+  KeywordAbility.hasHexproof (kw g "Leviathan") && power g "Leviathan" == 8
 
 /-! ## Attacking planeswalkers and Tomik, Orzhov Lawmage (ruling 834) -/
 
@@ -933,7 +933,7 @@ def attackingPlaneswalkerSetup (withTomik : Bool) : Game :=
   let g := castFra g shock [tgt g "Gideon the Oathless"] opp
   let g := mustApply (mustApply g opp .pass) me .pass
   match g.pending with
-  | .payWard q _ .discardCard => q == opp
+  | .payWard q _ cost _ => q == opp && cost == CostSpec.discardCard
   | _ => false
 
 /-! ## Prowess and Lotus tokens -/

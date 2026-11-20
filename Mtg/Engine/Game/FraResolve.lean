@@ -584,7 +584,7 @@ partial def applyFra (g : Game) (controller : PlayerId) (effect : Effect) (r : R
     g.withBatch none fun g =>
       g.recentTokenIds.foldl (fun g id =>
         match g.findObject? id with
-        | some o => g.grantKeywordsUntilEot o Keyword.haste
+        | some o => g.grantKeywordsUntilEot o #[Keyword.haste]
         | none => g) g
   | .drawOneOrTwoIfNotFromHand =>
     let fromHand := g.resolvingSpell.any g.castFromHand

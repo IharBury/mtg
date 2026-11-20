@@ -224,13 +224,13 @@ def seqDrawThenDiscard (n : Nat) : Effect :=
 
 /-- The source gets +P/+0 and creatures you control gain trample. -/
 def seqSourceGetsAndTeamTrample (power : Int) : Effect :=
-  { resolution := .sequence [.onSource (.pump power 0), .teamGain Keyword.trample] }
+  { resolution := .sequence [.onSource (.pump power 0), .teamGain #[Keyword.trample]] }
 
 /-- Put a +1/+1 counter on a target of this kind. It gains lifelink until end of turn. -/
 def seqPlusOneAndLifelink (kind : TargetSpec) : Effect :=
   { targeting := .of kind
     resolution := .sequence
-      [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords Keyword.lifelink)] }
+      [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords #[Keyword.lifelink])] }
 
 /-- The source gets +1/+0 and can't be blocked this turn. -/
 def seqPumpAndUnblockable : Effect :=
@@ -240,7 +240,7 @@ def seqPumpAndUnblockable : Effect :=
 def seqPlusOneVigilance (n : Nat) : Effect :=
   { targeting := .of .creatureYouControl
     resolution := .sequence
-      [.onPermanent (.plusOne n), .onPermanent (.grantKeywords Keyword.vigilance)] }
+      [.onPermanent (.plusOne n), .onPermanent (.grantKeywords #[Keyword.vigilance])] }
 
 /-- Draw a card and put a +1/+1 counter on the source. -/
 def seqDrawPlusOneSource : Effect :=
@@ -249,7 +249,7 @@ def seqDrawPlusOneSource : Effect :=
 /-- Creatures you control get +P/+0 and gain first strike until end of turn. -/
 def seqCreaturesPumpAndFirstStrike (power : Int) : Effect :=
   { resolution := .sequence
-      [.creaturesYouControlPump power 0, .teamGain Keyword.firstStrike] }
+      [.creaturesYouControlPump power 0, .teamGain #[Keyword.firstStrike]] }
 
 /-- Put a +1/+1 counter on the source and draw a card. -/
 def seqPlusOneOnSourceAndDraw : Effect :=

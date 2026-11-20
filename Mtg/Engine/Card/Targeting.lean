@@ -453,6 +453,7 @@ private def renderGroupConstraintSuffix (ctx : PrintCtx) : GroupTargetConstraint
   | .shareCharacteristic .cardType => " that share a card type"
   | .shareCharacteristic .creatureType => " that share a creature type"
   | .shareCharacteristic .subtype => " that share a subtype"
+  | .shareCharacteristic .name => " that share a name"
   | .distinctControllers => " with different controllers"
   | .distinctNames => " with different names"
   | .distinctCardTypes => " of each card type"

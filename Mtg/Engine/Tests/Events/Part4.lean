@@ -156,7 +156,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
   let proWhiteBear21 : CardDef := {
     bear with
     name := "Phase21 ProWhite Bear"
-    protectionFromColors := #[.white]
+    keywords := #[.protection (.color (.literal .white))]
   }
   let relic21 : CardDef := { name := "Phase21 Noncreature Relic", types := #[.artifact] }
   let gPh0 : Game :=
@@ -211,7 +211,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
   -- 3a. Target revalidation: `opp21`'s creature targeted by `.venserPerm` and `.forAmass` gains hexproof before resolution -> fizzles!
   let gVal0 : Game := addPermanent afterDraw bear opp21 opp21
   let oppBearId := (gVal0.battlefield.filter (·.name == bear.name))[0]!.id
-  let gHex : Game := gVal0.createEffect (.keywordsUntilEot oppBearId Keyword.hexproof) (cause := some testCause)
+  let gHex : Game := gVal0.createEffect (.keywordsUntilEot oppBearId #[Keyword.hexproof]) (cause := some testCause)
   let gVenserFizzle : Game := gHex.applyFrc me default .venserPerm #[Target.permanent oppBearId] none
   let gAmassFizzle : Game := gHex.applyUnified me { resolution := .destroy .target .forAmass, targeting := .of .creature } #[Target.permanent oppBearId]
   let targetRevalOk : Bool :=
@@ -297,7 +297,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     name := "Phase21 Behold Instant"
     manaCost := { symbols := #[.colored .blue, .colored .blue] }
     types := #[.instant]
-    additionalCostBeholdOrPay := some (.jace, 1)
+    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric .jace 1)]
   }
   let jaceCard21 : CardDef := {
     name := "Phase21 Hand Jace"
@@ -343,12 +343,12 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     name := "Phase21 Morph Enchantment"
     manaCost := { symbols := #[.colored .blue] }
     types := #[.enchantment]
-    morph := some (ManaCost.ofGeneric 2)
+    keywords := #[.morph (CostSpec.ofGeneric 2)]
   }
   let impColoredDef21 : CardDef := {
     bear with
     name := "Phase21 Colored Impending"
-    impending := some (2, { symbols := #[.colored .blue, .colored .blue] })
+    keywords := #[.impending 2 (CostSpec.ofMana { symbols := #[.colored .blue, .colored .blue] })]
   }
   let gMorphThalia0 : Game :=
     let g := addPermanent (insertObject (insertObject afterDraw morphNoncrDef21 me .exile) impColoredDef21 me .exile) thalia21 opp21 opp21
@@ -370,7 +370,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     name := "Phase21 Altar"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, sacrificeAnotherCreature := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .hasType .creature]))]
       effect := Effect.draw 1
     }]
   }
@@ -403,7 +403,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     name := "Phase21 Teamwork Command"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    teamwork := some 2
+    keywords := #[.teamwork 2]
     chooseBothIfTeamwork := true
     spellModes := #[
       Effect.canonicalDestroy .creature,
@@ -435,9 +435,9 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     name := "Phase21 Targeter"
     types := #[.artifact]
     activatedAbilities := #[
-      { cost := {}, effect := Effect.returnCreatureFromGyThenAmass 0 },
-      { cost := {}, effect := Effect.counterSpell },
-      { cost := {}, effect := shock.spellEffect.get! }
+      { cost := CostSpec.empty, effect := Effect.returnCreatureFromGyThenAmass 0 },
+      { cost := CostSpec.empty, effect := Effect.counterSpell },
+      { cost := CostSpec.empty, effect := shock.spellEffect.get! }
     ]
   }
   let dummySorc21 : CardDef := {
@@ -462,7 +462,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
   let youTargetCheckOk : Bool := gyDidNotTrigger && stackSpellDidNotTrigger && playerDidTrigger
 
   -- 5c. CR 707.10 stack copies (`wasCast == false`, Impending & face-down Morph stack copies) vs CR 707.12 `createPreparedCopy` (`isCopy == true`, cast)!
-  let impCopyDef21 : CardDef := { bear with name := "Phase21 Impending Copy", impending := some (2, ManaCost.empty) }
+  let impCopyDef21 : CardDef := { bear with name := "Phase21 Impending Copy", keywords := #[.impending 2 CostSpec.empty] }
   let gImp0 : Game := insertObject afterDraw impCopyDef21 me (.hand me)
   let impCardId := (gImp0.player me).hand.back!
   let gImpStack : Game := mustApply (mustApply gImp0 me (.cast impCardId)) me (.announceKicker true)
@@ -471,7 +471,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
   let copyImpStackId := gImpCopied.stack.back!.objectId
   let gImpCopyRes : Game := gImpCopied.resolveTop
   let copyImpPerm := (gImpCopyRes.battlefield.filter (·.name == "Phase21 Impending Copy"))[0]!
-  let morphCopyDef21 : CardDef := { bear with name := "Phase21 Morph Copy", power := some 5, toughness := some 5, morph := some (ManaCost.ofGeneric 2) }
+  let morphCopyDef21 : CardDef := { bear with name := "Phase21 Morph Copy", power := some 5, toughness := some 5, keywords := #[.morph (CostSpec.ofGeneric 2)] }
   let gMph0 : Game := (insertObject afterDraw morphCopyDef21 me (.hand me)).addMana me .colorless 3
   let mphCardId := (gMph0.player me).hand.back!
   let gMphStack : Game := mustApply (mustApply (mustApply gMph0 me (.cast mphCardId)) me (.announceKicker true)) me .pay
@@ -531,7 +531,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     (gPsn15.player ⟨1⟩).lost
 
   -- 6b. CR 805.10d–e / 810.7: menace attacker blocked jointly by `⟨2⟩`'s creature + teammate `⟨3⟩`'s creature!
-  let menaceAtk21 : CardDef := { bear with name := "Phase21 Menace", keywords := { menace := true, haste := true } }
+  let menaceAtk21 : CardDef := { bear with name := "Phase21 Menace", keywords := #[Keyword.menace, Keyword.haste] }
   let gBlk2h0 : Game :=
     let g := addPermanent (addPermanent (addPermanent mkTwoHeadedGiant21 bear ⟨2⟩ ⟨2⟩) hero ⟨3⟩ ⟨3⟩) menaceAtk21 ⟨0⟩ ⟨0⟩
     g.beginStep .declareAttackers
@@ -660,8 +660,8 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   let typedKindKwOk : Bool :=
     bAfterRef2.status.damage == 2 &&
     gKw1.pending == .none &&
-    (gKw1.effectiveKeywords kwBear).trample &&
-    !(gKw1.effectiveKeywords kwBear).hexproof &&
+    KeywordAbility.hasTrample (gKw1.effectiveKeywords kwBear) &&
+    !KeywordAbility.hasHexproof (gKw1.effectiveKeywords kwBear) &&
     TriggerExileMode.playUntilNextTurn != TriggerExileMode.playThisTurn
 
   -- 1b. Non-smuggled `fraCauseController`, `fraCauseId` (`.forestsExceptCause`, `villainConniveTarget?`),
@@ -1038,7 +1038,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     bear with
     name := "Phase22 Sneak Sac"
     manaCost := ManaCost.ofGeneric 4
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
     staticAbilities := #[.sneak ManaCost.empty]
   }
   let gSneak0 : Game :=
@@ -1278,13 +1278,13 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
         resolvingContext := some (none, opp23)
         pendingReplacement := some (.restorePending (.scry me 1))
       },
-      .pending (.payWard me spId .discardCard)
+      .pending (.payWard me spId CostSpec.discardCard)
     ])
   let handCardId := (gWard0.player me).hand.back!
   let gWardDisc : Game := mustApply gWard0 me (.discard handCardId)
   let gWardPsn0 : Game :=
     let spId := gWard0.stack[0]!.objectId
-    gWard0.change (.pending (.payWard me spId .fivePoison))
+    gWard0.change (.pending (.payWard me spId (CostSpec.getPoisonCounters 5)))
   let gWardPsn : Game := mustApply gWardPsn0 me .pay
   let wardOrderOk : Bool :=
     gWardDisc.pending == .scry me 1 &&
@@ -1525,7 +1525,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     staticAbilities := #[.sneak ManaCost.empty]
   }
   let gSnk0 : Game :=
-    let g := insertObject (addPermanent afterDraw { bear with keywords := Keyword.haste } me me) zeroSneakDef me (.hand me)
+    let g := insertObject (addPermanent afterDraw { bear with keywords := #[Keyword.haste] } me me) zeroSneakDef me (.hand me)
     let atkId := (g.battlefield.filter (·.name == bear.name))[0]!.id
     let g := mustApply (mustApply (g.beginStep .beginningOfCombat) me .pass) opp23 .pass
     let g := mustApply g me (.declareAttackers #[atkId] none #[] #[])
@@ -1550,7 +1550,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     types := #[.artifact]
     subtypes := #["Equipment"]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1 }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1)]
       costReductionPerEquipment := 1
       effect := Effect.draw 1
     }]
@@ -1570,7 +1570,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     name := "Phase23 Sac Sorcery"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
     spellEffect := some (Effect.draw 1)
   }
   let gSacSp0 : Game := insertObject (addPermanent afterDraw bear me me) sacSpellDef23 me (.hand me)
@@ -1609,7 +1609,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
       (cause := testCause)
     wardPermG.changes #[
       .pushContinuationFrame { resolvingContext := some (some wardPermId, opp23) },
-      .pending (.payWard me targetSpId (.genericMana 1))
+      .pending (.payWard me targetSpId (CostSpec.ofGeneric 1))
     ]
   let targetSpId23 := gWardMana0.stack[0]!.objectId
   let gWardMana1 : Game := mustApply gWardMana0 me .payGeneric
@@ -1665,14 +1665,14 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     name := "Phase23 Morph Sorcery"
     manaCost := ManaCost.ofColor .blue
     types := #[.sorcery]
-    morph := some ManaCost.empty
+    keywords := #[.morph CostSpec.empty]
     spellEffect := some (Effect.canonicalDestroy .creature) -- no creatures in play!
   }
   let elfLooterDef : CardDef := {
     bear with
     name := "Phase23 Gy Elf"
     subtypes := #["Elf"]
-    activatedAbilities := #[{ cost := {}, effect := Effect.draw 1 }]
+    activatedAbilities := #[{ cost := CostSpec.empty, effect := Effect.draw 1 }]
   }
   let splitEnablerDef : CardDef := {
     bear with
@@ -2164,7 +2164,7 @@ def replayOk24i1 (gs : Array Game) : Bool :=
       paused24i1 g1 && g2.pending == .scry me 1 &&
         (g2.followMovedToZone? movedId (· == .exile)).isSome)
   let (gC1, gC2, counterOk) := run (.payOrLetCounter opp24i1 2 (some spId)) spId
-  let (gW1, gW2, wardOk) := run (.payWard opp24i1 spId .discardCard) spId
+  let (gW1, gW2, wardOk) := run (.payWard opp24i1 spId CostSpec.discardCard) spId
   let (gS1, gS2, chooseSacOk) := run (.chooseSacrificeCreature opp24i1 #[bearId] #[]) bearId
   let (gE1, gE2, eachOk) := run (.fraChoice opp24i1 (.sacrificeCreatureEach me #[] #[bearId])) bearId
   let (gN1, gN2, nontokenOk) := run (.fraChoice opp24i1 (.sacrificeNontokenEach #[] #[bearId])) bearId
@@ -2350,7 +2350,7 @@ def fbDraw24i2 : CardDef := {
   name := "P24i2 Flashback Draw"
   manaCost := ManaCost.ofGeneric 1
   types := #[.sorcery]
-  flashback := some (ManaCost.ofGeneric 3)
+  keywords := #[.flashback (CostSpec.ofGeneric 3)]
   spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
 }
 
@@ -2378,7 +2378,7 @@ def dismissal24i2 : CardDef := {
   name := "Galadriel's Dismissal"
   manaCost := ManaCost.ofColor .white
   types := #[.instant]
-  kicker := some (ManaCost.ofGenericAndColor 2 .white)
+  keywords := #[.kicker (CostSpec.ofMana (ManaCost.ofGenericAndColor 2 .white))]
   spellEffect := some Effect.phaseOutKicker
 }
 
@@ -2457,7 +2457,7 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   -- 1d. `canPayAnnouncedAdditional` honours every CR 106.6 restriction flag for the spell:
   let addl (nm : String) (tys : Array CardType) (subs : Array Subtype) : CardDef :=
     { name := nm, manaCost := ManaCost.ofGeneric 1, types := tys, subtypes := subs
-      additionalCostOrPayGeneric := some 2 }
+      additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)] }
   let instDef := addl "P24i2 Addl Instant" #[.instant] #[]
   let heroDef := addl "P24i2 Addl Hero" #[.creature] #["Hero"]
   let villDef := addl "P24i2 Addl Villain" #[.creature] #["Villain"]
@@ -2543,7 +2543,7 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   let remDef : CardDef := {
     name := "P24i2 Removal", manaCost := ManaCost.empty, types := #[.sorcery]
     spellEffect := some { targeting := .of .creature, resolution := .destroyTarget, phrase := "Destroy target creature" } }
-  let sacDef : CardDef := { freeDraw24i2 with name := "P24i2 Sac Draw", additionalCostSacrificeCreature := true }
+  let sacDef : CardDef := { freeDraw24i2 with name := "P24i2 Sac Draw", additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
   let gCc0 : Game :=
     insertObject (insertObject (insertObject afterDraw freeDraw24i2 me (.library me)) sacDef me (.library me))
       remDef me (.library me)
@@ -2880,7 +2880,7 @@ def startThreePlayer24i3 : Game :=
     name := "P24i3 Flashback Sorcery"
     manaCost := ManaCost.ofGeneric 1
     types := #[.sorcery]
-    flashback := some (ManaCost.ofGeneric 1)
+    keywords := #[.flashback (CostSpec.ofGeneric 1)]
     spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
   }
   let gFb0 :=
@@ -3245,7 +3245,7 @@ def startThreePlayer24i3 : Game :=
   let lifelinkerDef : CardDef := {
     bear with
     name := "P24i3 Lifelinker"
-    keywords := Keyword.lifelink
+    keywords := #[Keyword.lifelink]
     triggeredAbilities := #[.triggered .youGainLife (Effect.ofTrigger (.onSource (.plusOne 1)))]
   }
   let cLife : EventCause := .oneShotEffect (some ⟨24310⟩) none (some me)
@@ -3322,7 +3322,7 @@ def startThreePlayer24i3 : Game :=
     name := "P24i3 Lifelink Saga"
     types := #[.enchantment]
     subtypes := #["Saga"]
-    keywords := Keyword.lifelink
+    keywords := #[Keyword.lifelink]
   }
   let toughBearDef : CardDef := { bear with name := "P24i3 Non-Dragon", toughness := some 5 }
   let gCh0 := addPermanent (addPermanent afterDraw lifelinkSagaDef me me) toughBearDef opp24i3 opp24i3

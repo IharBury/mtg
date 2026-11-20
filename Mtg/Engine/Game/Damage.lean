@@ -392,7 +392,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   let g := if consumeOrder then g.consumeReplacementOrder rep.applied else g
   let srcEvent : EventObject :=
     let base := srcSnap.getD default
-    { base with keywords := { base.keywords with deathtouch := base.keywords.deathtouch || deathtouch } }
+    { base with keywords := if deathtouch then KeywordAbility.add base.keywords Keyword.deathtouch else base.keywords }
   if n > 0 && !unpreventable && rep.prevented && !rep.shieldRemoved then
     let g :=
       if rep.preventedAmount > 0 then
@@ -599,7 +599,7 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
         | some liveSrc =>
           if g.hasLifelink liveSrc then g.controllerOf liveSrc else none
         | none =>
-          srcEvent?.bind (fun src => if src.keywords.lifelink then src.controller else none)
+          srcEvent?.bind (fun src => if src.hasLifelink then src.controller else none)
       match lifelinkCtrl? with
       | some c =>
         if dealtAmt > 0 && !prevented then g.gainLife c dealtAmt.toNat (cause := some dmgCause) else g
@@ -668,11 +668,11 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
         let hasDt :=
           match liveSrc? with
           | some liveSrc => g.hasDeathtouch liveSrc
-          | none => srcEvent.keywords.deathtouch
+          | none => srcEvent.hasDeathtouch
         let hasLl :=
           match liveSrc? with
           | some liveSrc => g.hasLifelink liveSrc
-          | none => srcEvent.keywords.lifelink
+          | none => srcEvent.hasLifelink
         let ctrl? :=
           match liveSrc? with
           | some liveSrc => g.controllerOf liveSrc
@@ -811,7 +811,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
         | some liveSrc =>
           if g.hasLifelink liveSrc then g.controllerOf liveSrc else none
         | none =>
-          if srcEvent.keywords.lifelink then srcEvent.controller else none
+          if srcEvent.hasLifelink then srcEvent.controller else none
       match lifelinkCtrl? with
       | some c => if n > 0 then g.gainLife c n.toNat (cause := some dmgCause) else g
       | none => g
@@ -833,7 +833,7 @@ def applyAggregatedLifelinkSince (g : Game) (startIdx : Nat)
             | some liveSrc =>
               if g.hasLifelink liveSrc then g.controllerOf liveSrc else none
             | none =>
-              if pkt.source.keywords.lifelink then pkt.source.controller else none
+              if pkt.source.hasLifelink then pkt.source.controller else none
           if let some ctrl := lifelinkCtrl? then
             match gains.findIdx? (fun (p, _, _, _) => p == ctrl) with
             | some idx =>

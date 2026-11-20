@@ -364,121 +364,40 @@ def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
   match v with
   | .live o =>
     let curKw := st.currentKeywords o
-    let bc := st.baseCard o
-    let retains := st.retainsPrintedAbilities o
-    let sas := st.staticAbilities o
-    match kw with
-    | .flying => st.hasFlying o
-    | .firstStrike => st.hasFirstStrike o
-    | .doubleStrike => st.hasDoubleStrike o
-    | .deathtouch => st.hasDeathtouch o
-    | .decayed => false
-    | .defender => curKw.defender
-    | .exalted => false
-    | .flash => curKw.flash
-    | .haste => st.hasHaste o
-    | .hexproof => st.hasHexproof o
-    | .indestructible => st.hasIndestructible o
-    | .lifelink => st.hasLifelink o
-    | .menace => st.hasMenace o
-    | .reach => curKw.reach
-    | .shadow => st.hasShadow o
-    | .trample => st.hasTrample o
-    | .vigilance => st.hasVigilance o
-    | .changeling => curKw.changeling
-    | .splitSecond => sas.any (fun | .instantSorcerySplitSecond => true | _ => false)
-    | .convoke => curKw.convoke
-    | .improvise => sas.any (fun | .improvise => true | _ => false)
-    | .ascend => curKw.ascend
-    | .storied => curKw.storied
-    | .daybound => retains && bc.daybound
-    | .nightbound => false
-    | .prowess => curKw.prowess || (retains && bc.prowessInstances > 0)
-    | .cascade => retains && bc.cascade > 0
-    | .myriad => false
-    | .undying => false
-    | .extort => sas.any (fun | .extort => true | _ => false)
-    | .ward => !(st.wardCostsOn o).isEmpty
-    | .toxic => retains && bc.toxic > 0
-    | .protection =>
-      (retains && (!bc.protectionFromColors.isEmpty || bc.protectionFromChosenCardType)) ||
-        (st.controllerOf o).any fun p =>
-          (st.permanentsOf p).any fun em =>
-            (st.baseCard em).protectionFromChosenCardType &&
-              st.retainsPrintedAbilities em && em.status.chosenCardType.isSome
-    | .landwalk none => curKw.islandwalk
-    | .landwalk (some .island) => curKw.islandwalk
-    | .landwalk (some _) => false
-    | .param .affinity => retains && bc.affinityForSubtype.isSome
-    | .param .equip => retains && bc.activatedAbilities.any (·.isEquip)
-    | .param .cycling => retains && bc.cycling.isSome
-    | .param .kicker => retains && bc.kicker.isSome
-    | .param .gift => retains && bc.giftTreasure
-    | .param .flashback => retains && bc.flashback.isSome
-    | .param .morph => retains && bc.morph.isSome
-    | .param .impending => retains && bc.impending.isSome
-    | .param .sneak => sas.any (fun | .sneak _ => true | _ => false)
-    | .param .crew => retains && bc.crew.isSome
-    | .param .teamwork => retains && bc.teamwork.isSome
+    if KeywordAbility.hasTag curKw kw then true
+    else
+      let bc := st.baseCard o
+      let retains := st.retainsPrintedAbilities o
+      let sas := st.staticAbilities o
+      match kw with
+      | .splitSecond => sas.any (fun | .instantSorcerySplitSecond => true | _ => false)
+      | .improvise => sas.any (fun | .improvise => true | _ => false)
+      | .extort => sas.any (fun | .extort => true | _ => false)
+      | .ward => !(st.wardCostsOn o).isEmpty
+      | .protection =>
+        (retains && bc.protectionFromChosenCardType) ||
+          (st.controllerOf o).any fun p =>
+            (st.permanentsOf p).any fun em =>
+              (st.baseCard em).protectionFromChosenCardType &&
+                st.retainsPrintedAbilities em && em.status.chosenCardType.isSome
+      | .param .equip => retains && bc.activatedAbilities.any (·.isEquip)
+      | .param .sneak => sas.any (fun | .sneak _ => true | _ => false)
+      | _ => false
   | .lki eo =>
-    let k := eo.keywords
-    let bc? := if eo.faceDown then none else eo.copiable.orElse (fun _ => eo.printed)
-    let sas := eo.staticAbilities
-    match kw with
-    | .flying => k.flying
-    | .firstStrike => k.firstStrike
-    | .doubleStrike => k.doubleStrike
-    | .deathtouch => k.deathtouch
-    | .decayed => false
-    | .defender => k.defender
-    | .exalted => false
-    | .flash => k.flash
-    | .haste => k.haste
-    | .hexproof => k.hexproof
-    | .indestructible => k.indestructible
-    | .lifelink => k.lifelink
-    | .menace => k.menace
-    | .reach => k.reach
-    | .shadow => k.shadow
-    | .trample => k.trample
-    | .vigilance => k.vigilance
-    | .changeling => k.changeling || eo.changeling
-    | .splitSecond => sas.any (fun | .instantSorcerySplitSecond => true | _ => false)
-    | .convoke => k.convoke
-    | .improvise => sas.any (fun | .improvise => true | _ => false)
-    | .ascend => k.ascend
-    | .storied => k.storied
-    | .daybound => bc?.any (·.daybound)
-    | .nightbound => false
-    | .prowess => k.prowess || bc?.any (·.prowessInstances > 0)
-    | .cascade => bc?.any (·.cascade > 0)
-    | .myriad => false
-    | .undying => false
-    | .extort => sas.any (fun | .extort => true | _ => false)
-    | .ward =>
-      bc?.any (·.ward.isSome) ||
-        sas.any (fun
-          | .wardDiscardEnchantmentInstantOrSorcery | .wardSacrificeLegendary
-          | .wardDiscardOrPay _ | .wardPoisonCounters _
-          | .fra .wardDiscardCard | .fra .wardSacrificeThreePermanents => true
-          | _ => false)
-    | .toxic => eo.toxic > 0
-    | .protection =>
-      bc?.any (fun c => !c.protectionFromColors.isEmpty || c.protectionFromChosenCardType)
-    | .landwalk none => k.islandwalk
-    | .landwalk (some .island) => k.islandwalk
-    | .landwalk (some _) => false
-    | .param .affinity => bc?.any (·.affinityForSubtype.isSome)
-    | .param .equip => bc?.any (fun c => c.activatedAbilities.any (·.isEquip))
-    | .param .cycling => bc?.any (·.cycling.isSome)
-    | .param .kicker => bc?.any (·.kicker.isSome)
-    | .param .gift => bc?.any (·.giftTreasure)
-    | .param .flashback => bc?.any (·.flashback.isSome)
-    | .param .morph => bc?.any (·.morph.isSome)
-    | .param .impending => bc?.any (·.impending.isSome)
-    | .param .sneak => sas.any (fun | .sneak _ => true | _ => false)
-    | .param .crew => bc?.any (·.crew.isSome)
-    | .param .teamwork => bc?.any (·.teamwork.isSome)
+    if KeywordAbility.hasTag eo.keywords kw then true
+    else
+      let bc? := if eo.faceDown then none else eo.copiable.orElse (fun _ => eo.printed)
+      let sas := eo.staticAbilities
+      match kw with
+      | .changeling => eo.changeling
+      | .splitSecond => sas.any (fun | .instantSorcerySplitSecond => true | _ => false)
+      | .improvise => sas.any (fun | .improvise => true | _ => false)
+      | .extort => sas.any (fun | .extort => true | _ => false)
+      | .toxic => eo.toxic > 0
+      | .protection => bc?.any (·.protectionFromChosenCardType)
+      | .param .equip => bc?.any (fun c => c.activatedAbilities.any (·.isEquip))
+      | .param .sneak => sas.any (fun | .sneak _ => true | _ => false)
+      | _ => false
 
 def viewHasDesignation (st : Game) (v : ObjectView) (tag : PermanentDesignationTag) : Bool :=
   match v, tag with
@@ -1062,6 +981,11 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
       | .subtype =>
         let oSubs := viewSubtypes st other
         mySubs.any oSubs.contains
+      | .name =>
+        -- CR 201.2a: nameless face-down permanents have no name and never share a name.
+        let myName := viewName st v
+        let oName := viewName st other
+        !myName.isEmpty && myName == oName
   | .wasCast =>
     match v.id? with
     | some oid => GameEvent.wasCast g.events oid (viewIsCopy st v)

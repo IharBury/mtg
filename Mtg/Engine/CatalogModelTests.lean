@@ -652,7 +652,7 @@ targets another nonattacking creature you control. -/
     | .ok _ => false
   let g := passBoth (mustApply g me (tgt g "Grizzly Bears"))
   selfRejected && (namedPermanent g "Spider-Man, To the Rescue").status.tapped &&
-    (kw g "Grizzly Bears").indestructible
+    KeywordAbility.hasIndestructible (kw g "Grizzly Bears")
 #guard
   let g := addPermanent afterDraw grizzlyBears me me
   let g := resolveTop (stackTriggers (enterPermanent g spiderManToTheRescue me))
@@ -754,7 +754,7 @@ it. -/
   let g := addPermanent afterDraw lakeTownMariners opp opp
   let g := resolveTop (killmongerTargets g "Lake-town Mariners")
   let warded := match g.pending with
-    | .payWard q _ (.genericMana 2) => q == me
+    | .payWard q _ cost _ => (q == me) && cost.soleGenericMana? == some 2
     | _ => false
   let g := settle (mustApply g me .decline)
   warded && onBattlefield g "Lake-town Mariners"
@@ -920,7 +920,7 @@ is optional. -/
   let g := addPermanent (addPermanent afterDraw stormWindrider me me) grizzlyBears opp opp
   let g := castFra g giantGrowth [.target (.permanent (theirs g "Grizzly Bears").id)]
   let g := passBoth (stackTriggers g)
-  (kw g "Grizzly Bears").flying || (g.currentKeywords (theirs g "Grizzly Bears")).flying
+  KeywordAbility.hasFlying (kw g "Grizzly Bears") || KeywordAbility.hasFlying (g.currentKeywords (theirs g "Grizzly Bears"))
 
 /- Fin Fang Foom copies an instant or sorcery that targets an artifact or land;
 the copy may get a new target. -/
@@ -1117,7 +1117,7 @@ counter on a planeswalker. -/
 #guard
   let g := addPermanent (addPermanent afterDraw teyoLightshieldExpert me me) grizzlyBears me me
   let ab : TriggeredAbility :=
-    .triggered .enter (Effect.ofTrigger (.grantThenCounterByType Keyword.hexproof))
+    .triggered .enter (Effect.ofTrigger (.grantThenCounterByType #[Keyword.hexproof]))
   let g := g.applyTriggeredAbility me ab (some (idOf g "Teyo, Lightshield Expert"))
     #[.permanent (idOf g "Grizzly Bears")]
   let bears := namedPermanent g "Grizzly Bears"
@@ -1127,7 +1127,7 @@ counter on a planeswalker. -/
   let g := addPermanent (addPermanent afterDraw teyoLightshieldExpert me me) ajaniResolute me me
   let before := loyaltyOf g "Ajani Resolute"
   let ab : TriggeredAbility :=
-    .triggered .enter (Effect.ofTrigger (.grantThenCounterByType Keyword.hexproof))
+    .triggered .enter (Effect.ofTrigger (.grantThenCounterByType #[Keyword.hexproof]))
   let g := g.applyTriggeredAbility me ab (some (idOf g "Teyo, Lightshield Expert"))
     #[.permanent (idOf g "Ajani Resolute")]
   let ajani := namedPermanent g "Ajani Resolute"

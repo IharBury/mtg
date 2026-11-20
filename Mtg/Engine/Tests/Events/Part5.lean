@@ -63,7 +63,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
     types := #[.planeswalker]
     loyalty := some 4
     activatedAbilities := #[
-      { cost := { loyalty := some (.plus 1) }, effect := Effect.gainLife 1 }
+      { cost := CostSpec.ofItems #[.loyalty (.plus 1)], effect := Effect.gainLife 1 }
     ]
   }
   let g0 : Game :=
@@ -143,7 +143,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
   let eqLordDef : CardDef := {
     bear with
     name := "P24i4 Equipped Team Lord"
-    staticAbilities := #[.equippedCreaturesHaveKeywordsDuringYourTurn Keyword.vigilance]
+    staticAbilities := #[.equippedCreaturesHaveKeywordsDuringYourTurn #[Keyword.vigilance]]
   }
   let eqHexUnblockDef : CardDef := {
     name := "P24i4 Cloak Equipment"
@@ -233,9 +233,9 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
     gKw.hasVigilance mateHost &&
     !gKw.hasVigilance oppHost &&
     gKw.hasHexproof mateHost &&
-    gKw.hasKeyword mateHost (·.cantBeBlocked) &&
+    gKw.hasCantBeBlocked mateHost &&
     !gKw.hasHexproof oppHost &&
-    !gKw.hasKeyword oppHost (·.cantBeBlocked) &&
+    !gKw.hasCantBeBlocked oppHost &&
     gKw.hasFirstStrike mateHost &&
     !gKw.hasFirstStrike oppHost &&
     gTrig1.waitingTriggers.size == 1 &&
@@ -1040,7 +1040,7 @@ def replayOk25i2 (gs : Array Game) : Bool :=
     name := "P25i2 Sac Creature Spell"
     manaCost := { symbols := #[.colored .black] }
     types := #[.sorcery]
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
     spellEffect := some { resolution := .draw 1 }
   }
   let drawSpell : CardDef := {
@@ -1378,7 +1378,7 @@ private def replayOk25i3 (gs : Array Game) : Bool :=
   let llSourceDef : CardDef := {
     bear with
     name := "P25i3 Lifelink Source"
-    keywords := Keyword.lifelink
+    keywords := #[Keyword.lifelink]
   }
   let toughVictimDef : CardDef := {
     bear with
@@ -2145,7 +2145,7 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
   let gOnStack := mustApply gP1Prio p1 (.cast p0FreeExId)
   let stackCardId := gOnStack.stack.back!.objectId
   let gDirectLeave := mustApply gOnStack p1 .concede
-  let gWardLeave := mustApply (gOnStack.change (.pending (.payWard p1 stackCardId (.genericMana 2)))) p1 .concede
+  let gWardLeave := mustApply (gOnStack.change (.pending (.payWard p1 stackCardId (CostSpec.ofGeneric 2)))) p1 .concede
   let gCounterLeave := mustApply (gOnStack.change (.pending (.payOrLetCounter p1 2 (some stackCardId)))) p1 .concede
   let exiledNotGrave (g : Game) : Bool :=
     let finalObj := g.object! (g.followMoved stackCardId)
@@ -2396,10 +2396,10 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     power := some 2
     toughness := some 2
     staticAbilities := #[.sneak ManaCost.empty]
-    flashback := some ManaCost.empty
+    keywords := #[.flashback CostSpec.empty]
   }
   let gSnkSetup : Game :=
-    let g := addPermanent afterDraw { bear with keywords := Keyword.haste } p0 p0
+    let g := addPermanent afterDraw { bear with keywords := #[Keyword.haste] } p0 p0
     let atkId := (g.battlefield.filter (·.name == bear.name))[0]!.id
     let g := mustApply (mustApply (g.beginStep .beginningOfCombat) p0 .pass) p1 .pass
     let g := mustApply g p0 (.declareAttackers #[atkId] none #[] #[])
@@ -2447,7 +2447,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     spellEffect := some { resolution := .gainLife 2, phrase := "You gain 2 life" }
   }
   let gUr0 : Game :=
-    let g := addPermanent afterDraw { urSphinxDef with keywords := Keywords.merge Keyword.flying Keyword.haste } p0 p0
+    let g := addPermanent afterDraw { urSphinxDef with keywords := #[Keyword.flying, Keyword.haste] } p0 p0
     let g := insertObject g sorcGain3Def p0 (.library p0)
     let g := insertObject g sorcXDrawDef p1 (.library p1)
     mustApply (mustApply (g.beginStep .beginningOfCombat) p0 .pass) p1 .pass
@@ -2571,7 +2571,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     name := "P26i2 Modal EachOpp Rod"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.empty }
+      cost := CostSpec.empty
       effect := {
         targeting := .of (.forEachOpponentControlled (.hasType .creature) (.exact 1))
         resolution := .tapAndStunPerOpponent
@@ -2622,7 +2622,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     subtypes := #["Elf"]
     power := some 2
     toughness := some 2
-    morph := some (ManaCost.ofGeneric 1)
+    keywords := #[.morph (CostSpec.ofGeneric 1)]
   }
   let gMorphBase : Game :=
     let g := emptyHand (addPermanent afterDraw morphDef p0 p0) p0
@@ -2705,7 +2705,7 @@ private def replayOk26i3 (gs : Array Game) : Bool :=
     bear with
     name := "P26i3 Impending Overlord"
     types := #[.enchantment, .creature]
-    impending := some (2, ManaCost.empty)
+    keywords := #[.impending 2 CostSpec.empty]
   }
   let samsonDef : CardDef := {
     bear with
@@ -2816,7 +2816,7 @@ private def replayOk26i3 (gs : Array Game) : Bool :=
   let divLifelinkDef : CardDef := {
     bear with
     name := "P26i3 Lifelink Titan"
-    keywords := { lifelink := true }
+    keywords := #[Keyword.lifelink]
     triggeredAbilities := #[.onEnterDealDividedDamage 3 3]
   }
   let toughDef : CardDef := {
@@ -2882,7 +2882,7 @@ private def replayOk26i3 (gs : Array Game) : Bool :=
   let divGains := countLifeGainsSince gDivDone sDiv
   -- Also verify mid-pause hexproof on target 2 causes target 2 to be skipped when resumed:
   let gDivHexMid :=
-    gDivPaused.createEffect (.keywordsUntilEot v2.id { hexproof := true }) (cause := some testCause)
+    gDivPaused.createEffect (.keywordsUntilEot v2.id #[Keyword.hexproof]) (cause := some testCause)
   let gDivHexDone := resolveAllRepChoices gDivHexMid
   let divHexGains := countLifeGainsSince gDivHexDone sDiv
   let divTrigOk :=
@@ -2966,7 +2966,7 @@ private def replayOk26i3 (gs : Array Game) : Bool :=
       "Whenever equipped creature becomes tapped, it deals 1 damage to each opponent.",
       "Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
     ]
-  let llBearDef : CardDef := { bear with name := "P26i3 Lifelink Archer", keywords := { lifelink := true } }
+  let llBearDef : CardDef := { bear with name := "P26i3 Lifelink Archer", keywords := #[Keyword.lifelink] }
   let gBow0 :=
     addPermanent (addPermanent (emptyHand afterDraw p0) bowDef p0 p0) bear p1 p1
   let bowId0 := (gBow0.permanentsOf p0).find? (·.name == "Hawkeye's Bow") |>.get!.id
@@ -3019,7 +3019,7 @@ private def replayOk26i3 (gs : Array Game) : Bool :=
     ]
   let balinLlDef : CardDef := {
     balinBase with
-    keywords := { balinBase.keywords with lifelink := true }
+    keywords := KeywordAbility.add balinBase.keywords Keyword.lifelink
   }
   let gBalin0 :=
     (insertObject (insertObject (emptyHand afterDraw p0) forest p0 (.hand p0)) forest p0 (.hand p0)).record
@@ -3049,7 +3049,7 @@ private def replayOk26i3 (gs : Array Game) : Bool :=
     ]
   let eyeLlDef : CardDef := {
     eyeBase with
-    keywords := { lifelink := true }
+    keywords := #[Keyword.lifelink]
   }
   let gEyeBase : Game := Id.run do
     let mut g := addPermanent (emptyHand afterDraw p0) eyeLlDef p0 p0
@@ -3196,7 +3196,7 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
   -- 1d. `ActivationCosts.payActivationExtraCosts` `removeStoryCounter`:
   let (gStory0, storyId) := setupCounterControl bear .story 1
   let storyAb : ActivatedAbility := {
-    cost := { removeStoryCounter := true }
+    cost := CostSpec.ofItems #[.removeCounters (.exact 1) (some .story) .self]
     effect := {}
   }
   let gStory1 :=
@@ -3207,7 +3207,7 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
 
   -- 1e. `ActivationCosts.payActivationExtraCosts` `removePlusOnes > 0` (and `0` no-op):
   let (gPlus0, plusId) := setupCounterControl bear .plusOnePlusOne 2
-  let plusAb : ActivatedAbility := { cost := { removeAnyNumberPlusOne := true }, effect := {} }
+  let plusAb : ActivatedAbility := { cost := CostSpec.ofItems #[.removeCounters .anyNumber (some .plusOnePlusOne) .self], effect := {} }
   let gPlusNoop :=
     match gPlus0.payActivationExtraCosts p0 plusId false false (ab := some plusAb) (removePlusOnes := 0) with
     | Except.ok g' => g'
@@ -3757,7 +3757,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
     name := "P27i1 Ping Relic"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 2 }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)]
       effect := { resolution := .gainLife 2, phrase := "You gain 2 life" }
     }]
   }
@@ -3961,7 +3961,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
     name := "P27i1 Red Inst"
     manaCost := ⟨#[.colored .red]⟩
     types := #[.instant]
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
     spellEffect := some { resolution := .gainLife 1, phrase := "You gain 1 life" }
   }
   let stashedCont : PendingReplacement := .finishPostStep (.beginScryOne p0)
@@ -4026,14 +4026,14 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     name := "P27i2 Two Mode Spell"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    teamwork := some 2
+    keywords := #[.teamwork 2]
     chooseBothIfTeamwork := true
     spellModes := #[optArtMode, reqCreatureMode]
   }
   let wardBearDef : CardDef := {
     bear with
     name := "P27i2 Ward Bear"
-    ward := some 1
+    keywords := #[.ward (CostSpec.ofGeneric 1)]
     triggeredAbilities := #[.triggered .becomesTarget { resolution := .gainLife 1 }]
   }
   let youTargetWatcherDef : CardDef := {
@@ -4071,7 +4071,7 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     name := "P27i2 Req Then Opt"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    teamwork := some 2
+    keywords := #[.teamwork 2]
     chooseBothIfTeamwork := true
     spellModes := #[reqCreatureMode, optArtMode]
   }
@@ -4097,7 +4097,7 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
 
   -- Also verify `beginResolutionCastTargets` allows entering `.chooseTargets` when slot 0 is optional
   -- and has 0 legal targets:
-  let gExTwo := (insertObject gWithHelper { twoModeSpellDef with teamwork := none, chooseBothIfTeamwork := false } p0 .exile).change (.pushContinuationFrame {})
+  let gExTwo := (insertObject gWithHelper { twoModeSpellDef with keywords := #[], chooseBothIfTeamwork := false } p0 .exile).change (.pushContinuationFrame {})
   let exTwoId := gExTwo.objects.back!.id
   let gAskCasc := gExTwo.change (.pending (.fraChoice p0 (.mayCastCascade exTwoId #[])))
   let gResCast := mustApply (mustApply gAskCasc p0 .accept) p0 (.chooseMode 0)
@@ -4229,8 +4229,8 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     name := "P27i2 Behold Flashback"
     manaCost := ManaCost.ofGeneric 5
     types := #[.sorcery]
-    additionalCostBeholdOrPay := some (.dragon, 2)
-    flashback := some ManaCost.empty
+    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric .dragon 2)]
+    keywords := #[.flashback CostSpec.empty]
     spellEffect := some { resolution := .gainLife 1, phrase := "You gain 1 life" }
   }
   let gBf0 := insertObject (emptyHand afterDraw p0) beholdFlashCard p0 (.graveyard p0)
@@ -4248,7 +4248,7 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     name := "P27i2 Modal Tap Relic"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { tap := true }
+      cost := CostSpec.ofItems #[.tapSelf]
       effect := { resolution := .gainLife 1, phrase := "You gain 1 life" }
       otherModes := #[{ resolution := .gainLife 2, phrase := "You gain 2 life" }]
     }]
@@ -4497,7 +4497,7 @@ private def replayOk27i3 (gs : Array Game) : Bool :=
     name := "P27i3 Lifelink Saga"
     types := #[.enchantment]
     subtypes := #["Saga"]
-    keywords := { lifelink := true }
+    keywords := #[Keyword.lifelink]
   }
   let gSaga0 := addPermanent gBase llSagaDef p0 p0
   let sagaId := (gSaga0.permanentsOf p0).find? (·.name == llSagaDef.name) |>.get!.id

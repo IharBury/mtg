@@ -640,7 +640,7 @@ private def replayOk51i3 (gs : Array Game) : Bool :=
   let gLki1 :=
     (((gLki0.addCounters (gLki0.object! lkiBearId) .plusOnePlusOne 2 (byPlayer := some p0)
         (cause := some testCause)).createEffect
-      (.layered (.objects #[lkiBearId]) (.abilities { keywords := Keyword.lifelink } .none) .untilEndOfTurn)
+      (.layered (.objects #[lkiBearId]) (.abilities { keywords := #[Keyword.lifelink] } .none) .untilEndOfTurn)
       (cause := some testCause)).createEffect
       (.layered (.objects #[lkiBearId]) (.types .add #[] #[.goblin] #[]) .untilEndOfTurn)
       (cause := some testCause))
@@ -694,18 +694,18 @@ private def replayOk51i3 (gs : Array Game) : Bool :=
       (livePtBefore == (5, 5) &&
        lkiReconstructed.isLkiSnapshot &&
        (gLkiPost.power lkiReconstructed, gLkiPost.toughness lkiReconstructed) == (5, 5) &&
-       (gLkiPost.currentKeywords lkiReconstructed).lifelink &&
+       KeywordAbility.hasLifelink (gLkiPost.currentKeywords lkiReconstructed) &&
        gLkiPost.hasSubtype lkiReconstructed .goblin &&
        gLkiPost.controllerOf lkiReconstructed == some p0) &&
     mustHold51i3 "3a_phasedOutLastKnownBeforeAndDamageLki"
-      (phLastKnown?.any (fun s => s.power == some 5 && s.keywords.lifelink) &&
+      (phLastKnown?.any (fun s => s.power == some 5 && KeywordAbility.hasLifelink s.keywords) &&
        phLastPower? == some 5 &&
        phDmgSrc?.any (fun o =>
          o.isLkiSnapshot &&
          (gPhLki.power o, gPhLki.toughness o) == (5, 5) &&
-         (gPhLki.currentKeywords o).lifelink) &&
+         KeywordAbility.hasLifelink (gPhLki.currentKeywords o)) &&
        phAbSrc.isLkiSnapshot &&
-       (gPhLki.currentKeywords phAbSrc).lifelink &&
+       KeywordAbility.hasLifelink (gPhLki.currentKeywords phAbSrc) &&
        (gPhDealt.player p1).life == 17 &&
        (gPhDealt.player p0).life == 23) &&
     mustHold51i3 "3a_intraBatchSagaAndPlanPhasedOutLki"
@@ -864,7 +864,7 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
     gResFlash0.castAsPartOfResolution p1 resExBearId (withoutManaCost := true) (ignoreTiming := false)
   let gResFlashGranted :=
     gResFlash0.createEffect
-      (.layered (.objects #[resExBearId]) (.abilities { keywords := Keyword.flash } .none) .untilEndOfTurn)
+      (.layered (.objects #[resExBearId]) (.abilities { keywords := #[Keyword.flash] } .none) .untilEndOfTurn)
       (cause := some testCause)
   let resWithFlash : Game :=
     gResFlashGranted.castAsPartOfResolution p1 resExBearId (withoutManaCost := true) (ignoreTiming := false)
@@ -876,7 +876,7 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
   let artOverlordDef : CardDef := {
     creature "P51i4 GearOverlord" (ManaCost.ofGeneric 6) #["Construct"] 5 5 with
     types := #[.artifact, .creature]
-    impending := some (4, ManaCost.ofGeneric 2)
+    keywords := #[.impending 4 (CostSpec.ofGeneric 2)]
   }
   let gGy0 := insertObject gBase zeroArtDef p0 (.graveyard p0)
   let gyArtId := (gGy0.player p0).graveyard.back!
@@ -896,7 +896,7 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
   --              (e.g. unpayable `payLifeEqualManaValue := true` alongside a clean `.playFromExile` permission):
   let morph5Def : CardDef := {
     creature "P51i4 ExMorph" (ManaCost.ofGeneric 5) #["Beast"] 4 4 with
-    morph := some (ManaCost.ofGeneric 2)
+    keywords := #[.morph (CostSpec.ofGeneric 2)]
   }
   let gAltMorph0 := ((insertObject gBase morph5Def p0 .exile).loseLife p0 14 (cause := some testCause)).addMana p0 .colorless 3
   let altMorphExId := (gAltMorph0.objects.filter (·.zone == .exile)).back!.id
@@ -927,7 +927,7 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
   let sacLookedSorcDef : CardDef := {
     lookedSorcDef with
     name := "P51i4 LookedSacSorc"
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
   }
   let gLooked0 := addPermanent (insertObject gBase lookedSorcDef p0 (.library p0)) taxPermDef p1 p1
   let lookedCardId := (gLooked0.player p0).library.back!
@@ -955,7 +955,7 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
     name := "P51i4 SneakSac"
     manaCost := ManaCost.ofGeneric 1
     types := #[.sorcery]
-    additionalCostSacrificeCreature := true
+    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
     spellEffect := some (Effect.gainLife 2)
   }
   let gSnk0 := addPermanent (insertObject gBase sacCreatureSpellDef p0 (.hand p0)) bear p0 p0
@@ -972,7 +972,7 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
     name := "P51i4 SacAltar"
     types := #[.artifact]
     activatedAbilities := #[{
-      cost := { mana := ManaCost.ofGeneric 1, sacrificeAnotherCreatureOrArtifact := true }
+      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
       effect := Effect.gainLife 1
     }]
   }

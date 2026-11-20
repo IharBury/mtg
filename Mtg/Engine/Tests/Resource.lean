@@ -52,7 +52,7 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (resource Effect.resourceDrawIfAnotherHeroDamage) ==
   .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent)))
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawBecome66) ==
-  .sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords Keyword.trample) .source]
+  .sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords #[Keyword.trample]) .source]
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawPlusOneTarget) ==
   .putCounters (.ofKind .plusOnePlusOne) .permanent
 #guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawDrain) ==
@@ -318,6 +318,6 @@ def sueWall : Game :=
   let tok := named sueWall "Wall"
   tokensNamed sueWall "Wall" == 1 &&
     sueWall.power tok == 0 && sueWall.toughness tok == 4 &&
-    sueWall.hasKeyword tok (·.defender)
+    sueWall.hasDefender tok
 
 end Mtg.Engine.ResourceTests
