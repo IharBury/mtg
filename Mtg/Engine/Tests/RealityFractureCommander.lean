@@ -44,17 +44,19 @@ def entered (card : CardDef) : Game × ObjectId :=
 #guard glacialFortress.entersTappedUnlessAnySubtype == #[.plains, .island]
 #guard drownedCatacomb.entersTappedUnlessAnySubtype == #[.island, .swamp]
 #guard sulfurFalls.entersTappedUnlessAnySubtype == #[.island, .mountain]
-#guard fetidHeath.filterMana.isSome
-#guard reflectingPool.tapAddYouCouldProduce
-#guard fellwarStone.tapAddOppCouldProduce
+#guard fetidHeath.activatedAbilities.any fun ab => ab.isManaAbility && !ab.cost.mana.symbols.isEmpty
+#guard reflectingPool.activatedAbilities.any fun ab =>
+  ab.mana?.any fun mp => match mp.spec with | .colorAmong (.typesLandsCouldProduce _) true => true | _ => false
+#guard fellwarStone.activatedAbilities.any fun ab =>
+  ab.mana?.any fun mp => match mp.spec with | .colorAmong (.typesLandsCouldProduce _) false => true | _ => false
 #guard akromaAngelOfFury.morph.isSome
 #guard overlordOfTheMistmoors.impending.isSome
 #guard izzetSignet.activatedAbilities.size == 1
 
 #guard
-  match izzetSignet.activatedAbilities[0]!.effect.resolution with
-  | .addMana ts => ts == #[.colored .blue, .colored .red]
-  | _ => false
+  match izzetSignet.activatedAbilities[0]!.mana? with
+  | some mp => mp.spec == .fixed #[.colored .blue, .colored .red]
+  | none => false
 
 def solRingCast : Game :=
   let g := addPermanent afterDraw solRing ⟨0⟩ ⟨0⟩

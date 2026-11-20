@@ -98,13 +98,13 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let p0 : PlayerId := ⟨0⟩
   let p1 : PlayerId := ⟨1⟩
   let gMain := emptyHand afterDraw p0
-  -- 1. `defaultTapMana`: printed `tapAddAnyColorEqualToPower` lost via Layer 6 `.abilities {} .all`
+  -- 1. `defaultTapMana`: printed power-scaled any-color mana lost via Layer 6 `.abilities {} .all`
   --    with a granted `{T}: Add {C}{C}` mana ability returns `.colorless` (not `.green`),
-  --    while a `grizzlyBears` copied in Layer 1 to `tapAnyPowerDef` uses the `tapAddAnyColorEqualToPower` branch:
+  --    while a `grizzlyBears` copied in Layer 1 to `tapAnyPowerDef` uses the power-scaled branch:
   let tapAnyPowerDef : CardDef := {
     grizzlyBears with
     name := "Power Channeler"
-    tapAddAnyColorEqualToPower := true
+    activatedAbilities := #[ActivatedAbility.manaAbility (.oneOf .anyColor (.objectStat .power .this))]
   }
   let gTap0 := addPermanent (addPermanent gMain tapAnyPowerDef p0 p0) grizzlyBears p0 p0
   let chanId := (gTap0.permanentsOf p0).find? (·.name == "Power Channeler") |>.get!.id
@@ -255,7 +255,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
 
 
 /- Phase 46 Items 2 & 4: `Demo.Render` multi-grantee / `prepareSource` exile permissions and
-`Demo` full `proposedAllowances` + `tapPreservesPostManaCosts` on `uniquePayingSourceSet`. -/
+`Demo` full `proposedManaSpend` + `tapPreservesPostManaCosts` on `uniquePayingSourceSet`. -/
 #guard
   let p0 : PlayerId := ⟨0⟩
   let p1 : PlayerId := ⟨1⟩
@@ -320,7 +320,11 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let gGobProp := mustApply gGobDemo0 p0 (.activate gobMageId 0)
   -- Post-mana `.crew 2` preservation in `hasUniqueManaPayment`: `[dork22 ({G}, 2/2), forest ({G})]` for `{1}` + `Crew 2`
   -- has a UNIQUE cost-preserving paying source (`#[forest]`, since `#[dork22]` breaks `Crew 2`!):
-  let dork22 : CardDef := { grizzlyBears with name := "P46 CrewDork", tapAddMana := #[.colored .green] }
+  let dork22 : CardDef := {
+    grizzlyBears with
+    name := "P46 CrewDork"
+    activatedAbilities := #[ActivatedAbility.manaAbility (.oneOf (.explicit #[.colored .green]) (.const 1))]
+  }
   let crewVeh : CardDef := {
     name := "P46 Skiff"
     types := #[.artifact]
@@ -339,9 +343,9 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     defaultTapMana gGobProp p0 (gGobProp.object! shrineObj.id) == some (.colored .white) &&
     hasUniqueManaPayment gUniqueCrewProp &&
     (let prop := gUniqueCrewProp.proposedSpell.get!
-     let a := gUniqueCrewProp.proposedAllowances prop
+     let spend := gUniqueCrewProp.proposedManaSpend prop
      match uniquePayingSourceSet gUniqueCrewProp (gUniqueCrewProp.player p0).manaPool prop.cost
-       false false (gUniqueCrewProp.manaSourcesForProposed p0 prop) a (some (p0, prop)) with
+       (gUniqueCrewProp.manaSourcesForProposed p0 prop) spend (some (p0, prop)) with
      | some #[src] => src.1.id == forestId
      | _ => false)
   mustHoldCheck9 "p46_multiRenderOk" multiRenderOk &&
@@ -399,7 +403,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   -- 2. `hasGameStatePriorityAction` `canActivate` (`(idx? := some idx)` & `activationManaCost`):
   let onceAb : ActivatedAbility := {
     cost := CostSpec.empty
-    onceEachTurn := true
+    turnLimit? := some 1
     effect := Effect.gainLife 1
   }
   let twinOnceDef : CardDef := {
@@ -421,7 +425,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)]
-      costReductionIfYouControlLegendary := 2
+      costReductions := #[ActivationCostReduction.ifControlLegendary 2]
       effect := Effect.gainLife 1
     }]
   }
@@ -438,7 +442,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let urBoilerDef : CardDef := {
     name := "P47 Boilerworks"
     types := #[.land]
-    tapAddTogether := #[.colored .blue, .colored .red]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .blue, .const 1), (.colored .red, .const 1)])]
   }
   let gLarge0 :=
     Id.run do
@@ -451,9 +455,9 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let urCost : ManaCost := { symbols := #[.colored .blue, .colored .red] }
   let largeGenericNotUnique :=
     largeSrcs.size == 21 &&
-    (uniquePayingSourceSetLarge gLarge0 ManaPool.empty (ManaCost.ofGeneric 2) false false largeSrcs).isNone
+    (uniquePayingSourceSetLarge gLarge0 ManaPool.empty (ManaCost.ofGeneric 2) largeSrcs).isNone
   let largeUrUnique :=
-    match uniquePayingSourceSetLarge gLarge0 ManaPool.empty urCost false false largeSrcs with
+    match uniquePayingSourceSetLarge gLarge0 ManaPool.empty urCost largeSrcs with
     | some #[src] => src.1.id == boilerId
     | _ => false
 
@@ -565,7 +569,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let solRingDef : CardDef := {
     name := "P48 SolRing"
     types := #[.artifact]
-    tapAddTogether := #[.colorless, .colorless]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 2)])]
   }
   let hasteElfDef : CardDef := {
     llanowarElves with
@@ -594,11 +598,11 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let ccCost : ManaCost := { symbols := #[.colorless, .colorless] }
   let largePostManaSubsetOk :=
     largeTapSrcs.size == 21 &&
-    (uniquePayingSourceSetLarge gLargeTapProp ManaPool.empty (ManaCost.ofGeneric 2) false false
-      largeTapSrcs (gLargeTapProp.proposedAllowances largeTapProp) (some (p0, largeTapProp))).isNone &&
+    (uniquePayingSourceSetLarge gLargeTapProp ManaPool.empty (ManaCost.ofGeneric 2)
+      largeTapSrcs (gLargeTapProp.proposedManaSpend largeTapProp) (some (p0, largeTapProp))).isNone &&
     !hasUniqueManaPayment gLargeTapProp &&
-    (match uniquePayingSourceSetLarge gLargeTapProp ManaPool.empty ccCost false false
-        largeTapSrcs (gLargeTapProp.proposedAllowances largeTapProp) (some (p0, largeTapProp)) with
+    (match uniquePayingSourceSetLarge gLargeTapProp ManaPool.empty ccCost
+        largeTapSrcs (gLargeTapProp.proposedManaSpend largeTapProp) (some (p0, largeTapProp)) with
      | some #[src] => src.1.id == solRingId
      | _ => false)
 
@@ -606,7 +610,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let comboFilterDef : CardDef := {
     name := "P48 CascadeConduit"
     types := #[.land]
-    tapAddTwoAmong := #[.colored .blue, .colored .red]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.combination (.explicit #[.colored .blue, .colored .red]) (.const 2))]
   }
   let urSpellDef : CardDef := {
     name := "P48 SteamSurge"
@@ -668,12 +672,12 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     hasGameStatePriorityAction gBigMorph3 p0
 
   -- 2. `canPaySpellCostFromSources` (spell + Adventure) & `canPayAbilityCostFromSources`
-  --    succeed on a mixed-color `.combination` source (`tapAddTwoAmong := #[{U}, {R}]`)
+  --    succeed on a mixed-color `.combination` source (`{U}`/`{R}` combination of 2)
   --    where single-color `availableMana` collapses to `{U}{U}`:
   let comboFilterDef : CardDef := {
     name := "P49 SteamConduit"
     types := #[.land]
-    tapAddTwoAmong := #[.colored .blue, .colored .red]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.combination (.explicit #[.colored .blue, .colored .red]) (.const 2))]
   }
   let urSpellDef : CardDef := {
     name := "P49 SteamBolt"
@@ -839,7 +843,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
   let solRingDef : CardDef := {
     name := "P51 SolRing"
     types := #[.artifact]
-    tapAddTogether := #[.colorless, .colorless]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 2)])]
   }
 
   -- (a) Floating unrestricted `{1}{G}` in `pool` (`pool.canPay == true`) + untapped `hasteHalflingDef`:
@@ -900,15 +904,15 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     hasUniqueManaPayment gSingleGreenProp &&
     !hasUniqueManaPayment gSupProp &&
     supLargeAllSrcs.size == 22 &&
-    (uniquePayingSourceSetLarge gSupLargeProp ManaPool.empty supLargeP.cost false false
-      supLargeAllSrcs (gSupLargeProp.proposedAllowances supLargeP) (some (p0, supLargeP))).isNone
+    (uniquePayingSourceSetLarge gSupLargeProp ManaPool.empty supLargeP.cost
+      supLargeAllSrcs (gSupLargeProp.proposedManaSpend supLargeP) (some (p0, supLargeP))).isNone
 
-  -- 2. `ManaOutput.combination` (`tapAddTwoAmong := #[{R}, {G}]`) leftover mana (`CR 106.4`):
+  -- 2. `ManaOutput.combination` (`{R}`/`{G}` combination of 2) leftover mana (`CR 106.4`):
   --    Paying `{1}` leaves `{R}` or `{G}` (`!hasUniqueManaPayment`), while paying `{R}{G}` leaves `0` (`hasUniqueManaPayment`):
   let rgComboDef : CardDef := {
     name := "P51 FirelitGrove"
     types := #[.land]
-    tapAddTwoAmong := #[.colored .red, .colored .green]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.combination (.explicit #[.colored .red, .colored .green]) (.const 2))]
   }
   let gen1SorcDef : CardDef := {
     name := "P51 Spark1"
@@ -1025,6 +1029,72 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
   mustHoldCheck9 "p51_demoRiderOk" demoRiderOk &&
   mustHoldCheck9 "p51_demoComboLeftoverOk" demoComboLeftoverOk &&
   mustHoldCheck9 "p51_demoPostManaOk" demoPostManaOk
+
+/- Phase 5: Extended `SpellRiderSpec` (`.gainsHaste` & `.entersWithPlusOneCounters n`)
+in `Demo.hasUniqueManaPayment` — tapping a rider land vs. floating/plain mana changes
+the creature spell's material rider outcome, whereas for a noncreature spell it does not! -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := afterDraw
+  let hasteLandDef : CardDef := {
+    name := "P5 Check9 HasteLand"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.fixedOne (.colored .green)) (riders := #[.gainsHaste])
+    ]
+  }
+  let counterLandDef : CardDef := {
+    name := "P5 Check9 CounterLand"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.fixedOne (.colored .green))
+        (riders := #[.entersWithPlusOneCounters 2])
+    ]
+  }
+  let gInstantDef : CardDef := {
+    name := "P5 Check9 GreenInstant"
+    manaCost := ManaCost.ofColor .green
+    types := #[.instant]
+    spellEffect := some (Effect.gainLife 1)
+  }
+  let gCreatureDef : CardDef := {
+    name := "P5 Check9 GreenCreature"
+    manaCost := ManaCost.ofColor .green
+    types := #[.creature]
+    power := some 2
+    toughness := some 2
+  }
+  -- Floating `{G}` + untapped `hasteLand`:
+  -- * On a creature spell -> NOT unique (tapping hasteLand grants `.gainsHaste`)!
+  -- * On a noncreature instant -> UNIQUE (`.gainsHaste` does not matter for noncreature spells)!
+  let gHasteCre0 :=
+    (insertObject (addPermanent gMain hasteLandDef p0 p0) gCreatureDef p0 (.hand p0)).addMana
+      p0 (.colored .green) 1
+  let gHasteCreProp := mustApply gHasteCre0 p0 (.cast (gHasteCre0.player p0).hand.back!)
+  let gHasteInst0 :=
+    (insertObject (addPermanent gMain hasteLandDef p0 p0) gInstantDef p0 (.hand p0)).addMana
+      p0 (.colored .green) 1
+  let gHasteInstProp := mustApply gHasteInst0 p0 (.cast (gHasteInst0.player p0).hand.back!)
+  -- Untapped `forest` + untapped `counterLand` (`entersWithPlusOneCounters 2`) for `{G}`:
+  -- * On a creature spell -> NOT unique (counterLand vs forest yields different counter bonus)!
+  -- * With ONLY `counterLand` (no floating, no forest) for `{G}` creature -> UNIQUE!
+  let gCtrBoth0 :=
+    insertObject (addPermanent (addPermanent gMain forest p0 p0) counterLandDef p0 p0)
+      gCreatureDef p0 (.hand p0)
+  let gCtrBothProp := mustApply gCtrBoth0 p0 (.cast (gCtrBoth0.player p0).hand.back!)
+  let gCtrOnly0 :=
+    insertObject (addPermanent gMain counterLandDef p0 p0) gCreatureDef p0 (.hand p0)
+  let gCtrOnlyProp := mustApply gCtrOnly0 p0 (.cast (gCtrOnly0.player p0).hand.back!)
+  -- Floating `{G}` + untapped `counterLand` on a noncreature instant -> UNIQUE!
+  let gCtrInst0 :=
+    (insertObject (addPermanent gMain counterLandDef p0 p0) gInstantDef p0 (.hand p0)).addMana
+      p0 (.colored .green) 1
+  let gCtrInstProp := mustApply gCtrInst0 p0 (.cast (gCtrInst0.player p0).hand.back!)
+  mustHoldCheck9 "p5_hasteCreNotUnique" (!hasUniqueManaPayment gHasteCreProp) &&
+  mustHoldCheck9 "p5_hasteInstUnique" (hasUniqueManaPayment gHasteInstProp) &&
+  mustHoldCheck9 "p5_ctrBothNotUnique" (!hasUniqueManaPayment gCtrBothProp) &&
+  mustHoldCheck9 "p5_ctrOnlyUnique" (hasUniqueManaPayment gCtrOnlyProp) &&
+  mustHoldCheck9 "p5_ctrInstUnique" (hasUniqueManaPayment gCtrInstProp)
 
 
 

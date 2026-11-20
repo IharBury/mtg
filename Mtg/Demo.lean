@@ -903,13 +903,17 @@ def defaultTapMana (g : Game) (p : PlayerId) (o : GameObject) : Option ManaType 
   match (g.manaAbilitiesOf o)[0]? with
   | none => none
   | some first =>
-    if (g.baseCard o).tapAddAnyColorEqualToPower && g.retainsPrintedAbilities o then
+    let hasPowerScaledAnyColor :=
+      (g.activatedAbilitiesOf o).any fun ab =>
+        ab.mana?.any fun mp =>
+          match mp.spec with
+          | .oneOf .anyColor (.objectStat .power .this) => true
+          | _ => false
+    if hasPowerScaledAnyColor then
       match g.proposedSpell with
       | some prop =>
         some ((g.preferredManaType p o (g.manaAbilitiesOf o) prop.cost
-          (g.proposedAllowsElfRestricted prop)
-          (g.proposedAllowsInstRestricted prop)
-          (a := g.proposedAllowances prop)).getD (.colored .green))
+          (spend := g.proposedManaSpend prop)).getD (.colored .green))
       | none => some (.colored .green)
     else some first
 
@@ -970,15 +974,17 @@ def activateUsage : String := "usage: activate <id> [n]"
 
 /-- Activate a non-mana activated ability of the named object (a permanent,
 a card in hand, or a card in a graveyard). `n` is the 1-based index of the
-printed activated ability; omit it to activate the first. -/
+printed activated ability; omit it to activate the first non-mana ability. -/
 def applyActivate (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match commandTokens tokens with
   | [arg] =>
     match parseObjectId? arg with
     | none => throw activateUsage
     | some id =>
-      let _ ← requireObject g id
-      g.apply p (.activate id 0)
+      let o ← requireObject g id
+      let abs := g.activatedAbilitiesOf o
+      let idx := ((List.range abs.size).find? (fun i => !Game.isManaActivation abs[i]!)).getD 0
+      g.apply p (.activate id idx)
   | [arg, ntok] =>
     match parseObjectId? arg, ntok.toNat? with
     | none, _ => throw activateUsage
@@ -1309,11 +1315,7 @@ def autopayUsage : String := "usage: autopay"
 
 /-- Whether the locked-in cost is payable from the current pool. -/
 def canPayProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) : Bool :=
-  let a := g.proposedAllowances prop
-  (g.player p).manaPool.canPay prop.cost
-    (g.proposedAllowsElfRestricted prop)
-    (g.proposedAllowsInstRestricted prop)
-    a.hero a.villain a.cantNonartifact a.creature a.spend
+  (g.player p).manaPool.canPay prop.cost (spend := g.proposedManaSpend prop)
 
 /-- Activate mana abilities chosen by the heuristic, then pay (CR 601.2g–h).
 Taps noncreatures before creatures when both help, and prefers colorless
@@ -2151,19 +2153,65 @@ def payingSourceSubset (a b : Array (GameObject × Array ManaType)) : Bool :=
 /-- Whether tapping every source in `sources` can pay `cost` for some
 type assignment. -/
 def canPayTappingAll (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf allowInst : Bool) (sources : List (GameObject × Array ManaType))
-    (a : ManaAllowances := {}) (prop? : Option ProposedSpell := none) : Bool :=
-  g.canPayFromSources pool cost allowElf allowInst sources a (prop? := prop?)
+    (sources : List (GameObject × Array ManaType))
+    (spend : ManaSpend := {}) (prop? : Option ProposedSpell := none) : Bool :=
+  g.canPayFromSources pool cost sources spend (prop? := prop?)
 
-/-- Whether spending `ManaSpendRestriction.legendarySpell` mana changes the outcome of
+/-- Whether spending mana with a `.cantBeCountered` rider changes the outcome of
 paying for `prop?` by granting `.uncounterableThisCast` (CR 106.6). -/
-def legendaryRiderMatters (g : Game) (a : ManaAllowances)
+def cantBeCounteredRiderMatters (g : Game) (spend : ManaSpend)
     (prop? : Option ProposedSpell := none) : Bool :=
-  a.spend.spell && a.spend.legendary &&
+  spend.spell &&
     match prop? with
     | none => true
     | some prop =>
       prop.kind == .spell && !(g.findObject? prop.spellId).any g.uncounterableThisCast
+
+/-- Whether spending mana with a creature-spell rider (`.gainsHaste` or
+`.entersWithPlusOneCounters`) changes the outcome of paying for `prop?`
+(CR 106.6 / 614.1c). -/
+def creatureSpellRiderMatters (g : Game) (spend : ManaSpend)
+    (prop? : Option ProposedSpell := none) : Bool :=
+  spend.spell && spend.hasType .creature &&
+    match prop? with
+    | none => true
+    | some prop =>
+      prop.kind == .spell && (g.findObject? prop.spellId).any g.isCreature
+
+/-- Material spell-rider outcome `(cantBeCountered, gainsHaste, extraPlusOneCounters)`
+produced by spending `spentUnits` on `prop?` (CR 106.6 / 614.1c). -/
+def spellRiderOutcome (g : Game) (spend : ManaSpend)
+    (prop? : Option ProposedSpell) (spentUnits : Array ManaUnit) :
+    Bool × Bool × Nat :=
+  let cbcMatters := cantBeCounteredRiderMatters g spend prop?
+  let crMatters := creatureSpellRiderMatters g spend prop?
+  let cbc := cbcMatters && spentUnits.any (·.hasRider .cantBeCountered)
+  let haste := crMatters && spentUnits.any (·.hasRider .gainsHaste)
+  let counters :=
+    if !crMatters then 0
+    else
+      spentUnits.foldl (fun acc u =>
+        acc + u.allRiders.foldl (fun s r =>
+          match r with
+          | .entersWithPlusOneCounters n => s + n
+          | _ => s) 0) 0
+  (cbc, haste, counters)
+
+/-- Whether any rider on `d` can change the material rider outcome relative to
+`outcome0` for `prop` (CR 106.6 / 614.1c). -/
+def manaAbilityDefCanChangeRiderOutcome (g : Game) (spend : ManaSpend)
+    (prop : ProposedSpell) (d : ManaAbilityDef)
+    (outcome0 : Bool × Bool × Nat) : Bool :=
+  g.restrictionAllowsProposed d.restriction prop &&
+    let allRiders : Array SpellRiderSpec :=
+      let fromRestr := match d.restriction with | some r => r.riders | none => #[]
+      d.riders.foldl (fun acc r => if acc.contains r then acc else acc.push r) fromRestr
+    let (cbc0, haste0, _) := outcome0
+    allRiders.any fun r =>
+      match r with
+      | .cantBeCountered => !cbc0 && cantBeCounteredRiderMatters g spend (some prop)
+      | .gainsHaste => !haste0 && creatureSpellRiderMatters g spend (some prop)
+      | .entersWithPlusOneCounters n => n > 0 && creatureSpellRiderMatters g spend (some prop)
 
 /-- Compare two post-payment leftover `ManaPool`s as multisets of `ManaUnit`s
 (CR 106.4 / 106.6). -/
@@ -2176,7 +2224,7 @@ private def sameLeftoverPool (a b : ManaPool) : Bool :=
 /-- Enumerate plain `{T}` mana choices across all usable plain `{T}` abilities
 on `o`, keeping up to `maxZeroReps` zero-requirement colored representatives per
 ability so `ManaOutput.combination` / multi-mana leftover differences and
-coexisting `{C}` vs `.legendarySpell` abilities on one permanent are preserved
+coexisting plain vs rider/restricted abilities on one permanent are preserved
 without exponential branching. -/
 private def plainTapChoicesForUniqueness (g : Game) (o : GameObject) (types : Array ManaType)
     (cost : ManaCost) (maxZeroReps : Nat) (prop? : Option ProposedSpell := none) :
@@ -2236,26 +2284,29 @@ private def plainTapChoicesForUniqueness (g : Game) (o : GameObject) (types : Ar
               let extra := g.extraMountainRedFromTap o tup
               let dup :=
                 out.any (fun ch =>
-                  ch.baseAdded == tup && ch.extraRed == extra && ch.restriction == d.restriction)
+                  ch.baseAdded == tup && ch.extraRed == extra &&
+                    ch.restriction == d.restriction && ch.riders == d.riders)
               if !dup then
                 out := out.push {
                   abilityIdx := i
                   baseAdded := tup
                   extraRed := extra
                   restriction := d.restriction
+                  riders := d.riders
                 }
     return out
 
-/-- Whether tapping `minSub` yields a single `(leftoverPool, riderSpent)`
-outcome and no additional cost-preserving source in `allSources` can flip
-`ManaSpendRestriction.legendarySpell` on `cost` (CR 106.4 / 106.6). -/
+/-- Whether tapping `minSub` yields a single `(leftoverPool, riderOutcome)`
+outcome and no additional cost-preserving source in `allSources` can change any
+material `SpellRiderSpec` outcome on `cost` (CR 106.4 / 106.6 / 614.1c). -/
 private def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf allowInst : Bool)
     (allSources minSub : Array (GameObject × Array ManaType))
-    (a : ManaAllowances := {})
+    (spend : ManaSpend := {})
     (prop? : Option (PlayerId × ProposedSpell) := none) : Bool :=
   let activeProp? := prop?.map (·.2)
-  let riderMatters := legendaryRiderMatters g a activeProp?
+  let anyRiderMatters :=
+    cantBeCounteredRiderMatters g spend activeProp? ||
+      creatureSpellRiderMatters g spend activeProp?
   let minUnits := Game.minManaUnitsForCost cost
   let roughMaxAdded : Nat :=
     minSub.foldl (fun acc (src, types) =>
@@ -2274,21 +2325,19 @@ private def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : Ma
       out := out.set! i (srcArr[i]!.2.2 + out[i + 1]!)
     return out
   let rec collect (curPool : ManaPool) (idx : Nat)
-      (outcomes : Array (ManaPool × Bool)) (repPool? : Option ManaPool) :
-      Array (ManaPool × Bool) × Option ManaPool :=
+      (outcomes : Array (ManaPool × Bool × Bool × Nat)) (repPool? : Option ManaPool) :
+      Array (ManaPool × Bool × Bool × Nat) × Option ManaPool :=
     if outcomes.size ≥ 2 then (outcomes, repPool?)
     else if idx ≥ srcArr.size then
-      match curPool.payUnits? cost allowElf allowInst a.hero a.villain
-          a.cantNonartifact a.creature a.spend with
+      match curPool.payUnits? cost spend with
       | none => (outcomes, repPool?)
       | some (leftPool, spentUnits) =>
-        let rSpent :=
-          riderMatters && spentUnits.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered))
+        let rOut := spellRiderOutcome g spend activeProp? spentUnits
         let repPool? := repPool? <|> some curPool
-        if outcomes.any (fun (lp, rs) => rs == rSpent && sameLeftoverPool lp leftPool) then
+        if outcomes.any (fun (lp, ro) => ro == rOut && sameLeftoverPool lp leftPool) then
           (outcomes, repPool?)
         else
-          (outcomes.push (leftPool, rSpent), repPool?)
+          (outcomes.push (leftPool, rOut), repPool?)
     else if curPool.total + sufMax[idx]! < minUnits then
       (outcomes, repPool?)
     else
@@ -2298,8 +2347,8 @@ private def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : Ma
         else collect (ch.applyToPool curPool) (idx + 1) acc rep?) (outcomes, repPool?)
   let (outcomes, repPool?) := collect pool 0 #[] none
   match outcomes, repPool? with
-  | #[(_, riderSpent0)], some basePool =>
-    if !riderMatters then true
+  | #[(_, outcome0)], some basePool =>
+    if !anyRiderMatters then true
     else
       let minSubIds := minSub.map (·.1.id)
       !allSources.any fun (extraSrc, extraTypes) =>
@@ -2307,10 +2356,9 @@ private def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : Ma
           prop?.all (fun (p, prop) =>
             g.tapPreservesPostManaCosts p prop (minSubIds.push extraSrc.id)) &&
           (plainTapChoicesForUniqueness g extraSrc extraTypes cost 1 activeProp?).any fun (ch : TapManaChoice) =>
-            match (ch.applyToPool basePool).payUnits? cost allowElf allowInst
-                a.hero a.villain a.cantNonartifact a.creature a.spend with
+            match (ch.applyToPool basePool).payUnits? cost spend with
             | some (_, units) =>
-              units.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered)) != riderSpent0
+              spellRiderOutcome g spend activeProp? units != outcome0
             | none => false
   | _, _ => false
 
@@ -2318,23 +2366,22 @@ private def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : Ma
 enumerate every subset. Recognizes a single sufficient source, or that
 every source is required. -/
 def uniquePayingSourceSetLarge (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf allowInst : Bool) (sources : Array (GameObject × Array ManaType))
-    (a : ManaAllowances := {})
+    (sources : Array (GameObject × Array ManaType))
+    (spend : ManaSpend := {})
     (prop? : Option (PlayerId × ProposedSpell) := none) :
     Option (Array (GameObject × Array ManaType)) :=
   let subOk (sub : Array (GameObject × Array ManaType)) : Bool :=
-    canPayTappingAll g pool cost allowElf allowInst sub.toList a (prop? := prop?.map (·.2)) &&
+    canPayTappingAll g pool cost sub.toList spend (prop? := prop?.map (·.2)) &&
       prop?.all (fun (p, prop) => g.tapPreservesPostManaCosts p prop (sub.map (·.1.id)))
   let anySubsetOk (sub : Array (GameObject × Array ManaType)) : Bool :=
     match prop? with
     | some (p, prop) =>
-      g.hasCostPreservingPaymentSubset pool cost allowElf allowInst sub a
-        (some (p, prop))
+      g.hasCostPreservingPaymentSubset pool cost sub spend (some (p, prop))
     | none =>
-      canPayTappingAll g pool cost allowElf allowInst sub.toList a
+      canPayTappingAll g pool cost sub.toList spend
   let checkOutcome (cand? : Option (Array (GameObject × Array ManaType))) :=
     cand?.filter (fun minSub =>
-      uniqueSubsetHasUniqueOutcome g pool cost allowElf allowInst sources minSub a prop?)
+      uniqueSubsetHasUniqueOutcome g pool cost sources minSub spend prop?)
   Id.run do
     let mut singles : Array (Nat × (GameObject × Array ManaType)) := #[]
     for i in [0:sources.size] do
@@ -2360,20 +2407,20 @@ def uniquePayingSourceSetLarge (g : Game) (pool : ManaPool) (cost : ManaCost)
 
 /-- The unique inclusion-minimal set of sources that can pay `cost`, if any. -/
 def uniquePayingSourceSet (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf allowInst : Bool) (sources : Array (GameObject × Array ManaType))
-    (a : ManaAllowances := {})
+    (sources : Array (GameObject × Array ManaType))
+    (spend : ManaSpend := {})
     (prop? : Option (PlayerId × ProposedSpell) := none) :
     Option (Array (GameObject × Array ManaType)) :=
   let n := sources.size
   if n > 20 then
-    uniquePayingSourceSetLarge g pool cost allowElf allowInst sources a prop?
+    uniquePayingSourceSetLarge g pool cost sources spend prop?
   else
     let limit := 1 <<< n
     Id.run do
       let mut best : Option (Array (GameObject × Array ManaType)) := none
       for mask in [1:limit] do
         let sub := subsetFromMask sources mask
-        if canPayTappingAll g pool cost allowElf allowInst sub.toList a (prop? := prop?.map (·.2)) &&
+        if canPayTappingAll g pool cost sub.toList spend (prop? := prop?.map (·.2)) &&
             prop?.all (fun (p, prop) => g.tapPreservesPostManaCosts p prop (sub.map (·.1.id))) then
           match best with
           | none => best := some sub
@@ -2385,7 +2432,7 @@ def uniquePayingSourceSet (g : Game) (pool : ManaPool) (cost : ManaCost)
             else
               return none
       return best.filter (fun minSub =>
-        uniqueSubsetHasUniqueOutcome g pool cost allowElf allowInst sources minSub a prop?)
+        uniqueSubsetHasUniqueOutcome g pool cost sources minSub spend prop?)
 
 /-- True when the locked-in mana cost has exactly one legal payment. -/
 def hasUniqueManaPayment (g : Game) : Bool :=
@@ -2411,37 +2458,35 @@ def hasUniqueManaPayment (g : Game) : Bool :=
       if canConvokeOrImprovise then false
       else
         let pool := (g.player p).manaPool
-        let allowElf := g.proposedAllowsElfRestricted prop
-        let allowInst := g.proposedAllowsInstRestricted prop
-        let a := g.proposedAllowances prop
+        let spend := g.proposedManaSpend prop
         let sources := g.manaSourcesForProposed p prop
-        match pool.payUnits? prop.cost allowElf allowInst a.hero a.villain
-            a.cantNonartifact a.creature a.spend with
+        match pool.payUnits? prop.cost spend with
         | some (_, spent0) =>
-          if !legendaryRiderMatters g a (some prop) then true
+          let anyRiderMatters :=
+            cantBeCounteredRiderMatters g spend (some prop) ||
+              creatureSpellRiderMatters g spend (some prop)
+          if !anyRiderMatters then true
           else
-            let rider0 := spent0.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered))
+            let outcome0 := spellRiderOutcome g spend (some prop) spent0
             let plainFlips :=
               sources.any fun (src, types) =>
                 g.tapPreservesPostManaCosts p prop #[src.id] &&
                   (plainTapChoicesForUniqueness g src types prop.cost 1 (some prop)).any fun ch =>
-                    match (ch.applyToPool pool).payUnits? prop.cost allowElf allowInst
-                        a.hero a.villain a.cantNonartifact a.creature a.spend with
+                    match (ch.applyToPool pool).payUnits? prop.cost spend with
                     | some (_, units) =>
-                      units.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered)) != rider0
+                      spellRiderOutcome g spend (some prop) units != outcome0
                     | none => false
             let nonPlainRider :=
-              !rider0 && g.hasUsableNonPlainManaAbility p (some prop) &&
+              g.hasUsableNonPlainManaAbility p (some prop) &&
                 (g.permanentsOf p).any (fun o =>
                   (g.manaAbilityDefs o).any (fun d =>
-                    d.restriction.any (·.grantsRider .cantBeCountered) &&
-                      !g.isPlainTapManaAbilityDef p o d &&
-                      g.manaAbilityDefUsable p o d))
+                    !g.isPlainTapManaAbilityDef p o d &&
+                      g.manaAbilityDefUsable p o d &&
+                      manaAbilityDefCanChangeRiderOutcome g spend prop d outcome0))
             !plainFlips && !nonPlainRider
         | none =>
           !g.hasUsableNonPlainManaAbility p (some prop) &&
-            (uniquePayingSourceSet g pool prop.cost allowElf allowInst
-              sources a (some (p, prop))).isSome
+            (uniquePayingSourceSet g pool prop.cost sources spend (some (p, prop))).isSome
   | _, _ => false
 
 /-- `sacrifice <id>` when exactly one permanent can pay that cost. -/

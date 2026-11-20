@@ -21,7 +21,9 @@ def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFram
 def caster : PlayerId := ⟨0⟩
 def owner : PlayerId := ⟨1⟩
 
-def isle : CardDef := land "Test Isle" "({T}: Add {C}.)" (tapAddMana := #[.colorless])
+def isle : CardDef :=
+  land "Test Isle" "({T}: Add {C}.)"
+    (activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 1)])])
 
 def bear : CardDef :=
   creature "Test Bear" (ManaCost.ofGeneric 2) #["Bear"] 2 2

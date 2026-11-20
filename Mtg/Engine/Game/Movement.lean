@@ -411,12 +411,20 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
                 g' := { g' with activeEffects := g'.activeEffects.push (⟨g'.nextEffectId⟩, .additionalSubtype newId subtype (dedup := true)), nextEffectId := g'.nextEffectId + 1 }
               | _ => pure ()
             return g'
+          let manaRiderPlusOnes : Nat :=
+            if old.zone == .stack && g.isCreature old then
+              GameEvent.plusOneCounterManaRidersSpentOn g.events old.id
+            else 0
+          let effectiveExtraCounters : CounterBag :=
+            if manaRiderPlusOnes > 0 then
+              extraEntersWith.add .plusOnePlusOne manaRiderPlusOnes
+            else extraEntersWith
           let etb :=
             gForArrival.applyEtbReplacements candidate
               (fromStackTime := fromStackTime)
               (applyHope := applyHope)
               (asOf := asOf)
-              (extraCounters := extraEntersWith)
+              (extraCounters := effectiveExtraCounters)
               (leavingPlay := leavingPlay)
               (forceBackFace := nightBack)
               (applied := applied)
@@ -626,6 +634,13 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           let g : Game :=
             if dest == Zone.battlefield && onlyFoodArtifact then
               g.createEffect (.onlyFoodArtifact newId) (cause := some baseHappenedCause)
+            else g
+          let g : Game :=
+            if dest == Zone.battlefield && old.zone == .stack && preMove.isCreature old &&
+                GameEvent.riderManaSpentOn g.events old.id .gainsHaste then
+              g.createEffect
+                (.layered (.objects #[newId]) (.abilities { keywords := #[Keyword.haste] } .none) .indefinite)
+                (cause := some baseHappenedCause)
             else g
           if dest == Zone.battlefield then
             enterMods.foldl (fun acc m =>

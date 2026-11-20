@@ -120,9 +120,9 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     | some (.player d) => acc + g.attackTaxPerCreature d
     | _ => acc) 0
   if tax > 0 then
-    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric tax) (allowCantNonartifact := true) then
+    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric tax) then
       throw s!"{(g.player p).name} must pay {tax} to attack"
-    g ← g.payCost p (ManaCost.ofGeneric tax) (allowCantNonartifact := true)
+    g ← g.payCost p (ManaCost.ofGeneric tax)
     g := g.logMsg s!"{(g.player p).name} pays {tax} to attack"
   if ids.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not attack"

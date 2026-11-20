@@ -699,34 +699,62 @@ partial def takeCostSpec (c : CostSpec) : ArgM CostSpec := do
 
 end
 
+def takeCostReduction (r : ActivationCostReduction) : ArgM ActivationCostReduction := do
+  match r.amount, r.condition? with
+  | .const n, some (.exists (.inZones .battlefield (.all #[.hasSupertype .legendary, .hasType .creature, .controlledBy .you]))) =>
+    if n > 0 then
+      let k ← takeNat n.toNat
+      return ActivationCostReduction.ifControlLegendary k
+    else return r
+  | .aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .controlledBy .you])), none =>
+    let k ← takeNat 1
+    return ActivationCostReduction.perEquipment k
+  | .binary .mul (.const n) (.aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .controlledBy .you]))), none =>
+    if n > 0 then
+      let k ← takeNat n.toNat
+      return ActivationCostReduction.perEquipment k
+    else return r
+  | .const n, some (.all #[.exists (.target 0), .forAll (.target 0) (.all #[.hasType .creature, .stat .power .le (.const maxP)])]) =>
+    if n > 0 then
+      let k ← takeNat n.toNat
+      let p ← takeInt maxP
+      return ActivationCostReduction.ifTargetPowerAtMost k p
+    else return r
+  | _, _ => return r
+
+def takeActivationCondition? : Option Condition → ArgM (Option Condition)
+  | some (.exists (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you, .stat .toughness .ge (.const n)]))) => do
+    if n > 0 then
+      let k ← takeNat n.toNat
+      return some (ActivatedAbility.condControlsCreatureToughnessAtLeast k)
+    else return some (ActivatedAbility.condControlsCreatureToughnessAtLeast 0)
+  | some (.cmp .ge (.aggregate .count .one (.inZones .yourGraveyard (.all #[.isCard, .hasType .creature]))) (.const n)) => do
+    if n > 0 then
+      let k ← takeNat n.toNat
+      return some (ActivatedAbility.condGraveyardCreatureCardsAtLeast k)
+    else return some (ActivatedAbility.condGraveyardCreatureCardsAtLeast 0)
+  | other => return other
+
 def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
   let cost ← takeCostSpec ab.cost
   let effect ← takeEffect ab.effect
   let otherModes ← ab.otherModes.mapM takeEffect
-  let costReductionIfYouControlLegendary ←
-    if ab.costReductionIfYouControlLegendary == 0 then pure 0
-    else takeNat ab.costReductionIfYouControlLegendary
-  let equipSubtype ←
-    match effect.targeting.spec.creatureYouControlSubtype? with
-    | some s =>
-      pure (if ab.equipSubtype.isSome then some s else none)
-    | none => takeOptSubtype ab.equipSubtype
-  let costReductionPerEquipment ←
-    if ab.costReductionPerEquipment == 0 then pure 0 else takeNat ab.costReductionPerEquipment
-  let onlyIfYouControlCreatureToughnessAtLeast ←
-    if ab.onlyIfYouControlCreatureToughnessAtLeast == 0 then pure 0
-    else takeNat ab.onlyIfYouControlCreatureToughnessAtLeast
-  let onlyIfGyCreaturesAtLeast ←
-    if ab.onlyIfGyCreaturesAtLeast == 0 then pure 0
-    else takeNat ab.onlyIfGyCreaturesAtLeast
-  let costReductionIfTargetPowerAtMost ←
-    match ab.costReductionIfTargetPowerAtMost with
-    | none => pure none
-    | some (n, p) => pure (some (← takeNat n, ← takeInt p))
-  return { ab with
-    cost, effect, otherModes, costReductionIfYouControlLegendary, equipSubtype
-    costReductionPerEquipment, onlyIfYouControlCreatureToughnessAtLeast
-    onlyIfGyCreaturesAtLeast, costReductionIfTargetPowerAtMost }
+  let costReductions ← ab.costReductions.mapM takeCostReduction
+  let condition? ← takeActivationCondition? ab.condition?
+  let tag? ←
+    match ab.tag? with
+    | some (.equip (some (.hasSubtype (.literal sub)))) =>
+      match effect.targeting.spec.creatureYouControlSubtype? with
+      | some s => pure (some (.equip (some (.hasSubtype (.literal s)))))
+      | none => do
+        let s ← takeSubtype sub
+        pure (some (.equip (some (.hasSubtype (.literal s)))))
+    | some (.cycling (some _)) =>
+      match effect.resolution with
+      | .searchLandTypeToHand t => pure (some (.cycling (some t)))
+      | _ => pure ab.tag?
+    | other => pure other
+  return { ab with cost, effect, otherModes, costReductions, condition?, tag? }
 
 def takeOpts (o : SharedTriggerOpts) : ArgM SharedTriggerOpts := do
   return { o with

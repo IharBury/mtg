@@ -493,12 +493,13 @@ def hobbitDualLand (name : String) (a b : Color) (creatureTypes : Array String) 
       s!"Put two +1/+1 counters on target {orJoin creatureTypes.toList} you control. " ++
       "Activate only as a sorcery.")
     (entersTapped := true)
-    (tapAddOneOf := #[.colored a, .colored b])
     (activatedAbilities := #[
+      ActivatedAbility.manaAbility
+        (.oneOf (.explicit #[.colored a, .colored b]) (.const 1)),
       activated
         (Effect.plusOneOnTarget 2 creatureTypes)
         (ManaCost.ofGenericAndColors 2 [a, b])
-        (tap := true) (sacrificeSource := true) (onlyAsSorcery := true)])
+        (tap := true) (sacrificeSource := true) (timing := .sorcery)])
 
 def elvenkingsHalls : CardDef :=
   fromOracle [
@@ -2137,7 +2138,7 @@ that are also in the core catalog. -/
 #guard raggedShortSpear.staticAbilities == #[.equippedCreatureGets 2 0]
 #guard raggedShortSpear.triggeredAbilities == #[.onEnterMayDiscardDraw 2]
 #guard raggedShortSpear.activatedAbilities.size == 1
-#guard raggedShortSpear.activatedAbilities[0]!.onlyAsSorcery
+#guard raggedShortSpear.activatedAbilities[0]!.isSorcerySpeed
 #guard raggedShortSpear.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
 #guard raggedShortSpear.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 3)
 #guard (raggedShortSpear.summary.splitOn "Equipped creature").length > 1
@@ -2147,7 +2148,7 @@ that are also in the core catalog. -/
 #guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
 #guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
 #guard crudeBentBlade.activatedAbilities.size == 1
-#guard crudeBentBlade.activatedAbilities[0]!.onlyAsSorcery
+#guard crudeBentBlade.activatedAbilities[0]!.isSorcerySpeed
 #guard crudeBentBlade.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
 #guard crudeBentBlade.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 2)
 #guard (crudeBentBlade.summary.splitOn "Equipped creature").length > 1
@@ -2160,7 +2161,9 @@ that are also in the core catalog. -/
 #guard galionElvenkingsButler.toughness == some 4
 #guard woodlandWeavemaster.hasSimpleKeyword .vigilance
 #guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
-#guard woodlandWeavemaster.tapAddAnyColorEqualToPower
+#guard woodlandWeavemaster.activatedAbilities[0]?.bind (·.mana?) ==
+  some { spec := .oneOf .anyColor (.objectStat .power .this)
+         restriction := some (.subtypeSpellOrSource .elf) }
 #guard woodlandWeavemaster.manaAbilities == #[
   .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
 #guard woodlandWeavemaster.power == some 1
@@ -2214,7 +2217,7 @@ that are also in the core catalog. -/
 #guard desolationProwler.activatedAbilities.size == 1
 #guard desolationProwler.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
 #guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
-#guard desolationProwler.activatedAbilities[0]!.onceEachTurn
+#guard desolationProwler.activatedAbilities[0]!.isOnceEachTurn
 #guard desolationProwler.power == some 2
 #guard desolationProwler.toughness == some 2
 #guard (desolationProwler.summary.splitOn "Pay 2 life").length > 1
@@ -2248,8 +2251,8 @@ that are also in the core catalog. -/
 #guard gollumTheAbandoned.triggeredAbilities == #[.onEnterExileOppGyCardOppsLoseLife 2]
 #guard littleBear.triggeredAbilities == #[.onEnterUntapOtherPlusOneIfSubtype "Bear"]
 #guard gandalfGoblinsBane.triggeredAbilities == #[.onCastNoncreaturePumpAndDamageOpponents 1]
-#guard gollumTheAbandoned.activatedAbilities[0]!.activateFromGraveyard
-#guard gollumTheAbandoned.activatedAbilities[0]!.onlyAsSorcery
+#guard gollumTheAbandoned.activatedAbilities[0]!.isFromGraveyard
+#guard gollumTheAbandoned.activatedAbilities[0]!.isSorcerySpeed
 #guard gollumTheAbandoned.activatedAbilities[0]!.effect == Effect.returnFromGraveyardToHand
 #guard gnashingOfTeeth.isModal
 #guard gnashingOfTeeth.spellModes ==

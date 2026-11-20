@@ -1608,7 +1608,7 @@ def freeKnight : CardDef :=
       "{2}: This creature gets +1/+1 until end of turn. This ability costs {2} less to activate if you control a legendary creature.")
     (activatedAbilities := #[
       activated (Effect.sourceGets 1 1) (ManaCost.ofGeneric 2)
-        (costReductionIfYouControlLegendary := 2)])
+        (costReductions := #[ActivationCostReduction.ifControlLegendary 2])])
 
 def testLegend : CardDef :=
   legendaryCreature "Test Legend" (ManaCost.ofColor .white) #["Human"] 1 1
@@ -1648,7 +1648,7 @@ def freeSacKnight : CardDef :=
     activatedAbilities := #[
       activated (Effect.sourceGets 1 1) (ManaCost.ofGeneric 2)
         (sacrificeAnotherCreatureOrArtifact := true)
-        (costReductionIfYouControlLegendary := 2)] }
+        (costReductions := #[ActivationCostReduction.ifControlLegendary 2])] }
 
 def freeSacKnightWithLegend : Game :=
   addPermanent (addPermanent afterDraw freeSacKnight ⟨0⟩ ⟨0⟩) testLegend ⟨0⟩ ⟨0⟩

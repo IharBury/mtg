@@ -398,7 +398,7 @@ private def triggerWardPrompt (wardKws : Array KeywordAbility) : Game × ObjectI
     expFlashback.alternativeCosts.size == 1 && expFlashback.alternativeCosts[0]!.fromZones == #[.graveyard] &&
     expMorph.alternativeCosts.size == 1 && expMorph.alternativeCosts[0]!.faceDown &&
     expImpending.alternativeCosts.size == 1 && expImpending.alternativeCosts[0]!.keywordTag? == some .impending &&
-    expCycling.activatedAbilities.size == 1 && expCycling.activatedAbilities[0]!.activateFromHand &&
+    expCycling.activatedAbilities.size == 1 && expCycling.activatedAbilities[0]!.isFromHand &&
     expTeamwork.additionalCosts.size == 1 && expTeamwork.additionalCosts[0]!.keywordTag? == some .teamwork
 
 end Mtg.Engine.Tests.CostKeywordsSuite

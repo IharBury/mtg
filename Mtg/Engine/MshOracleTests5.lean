@@ -110,7 +110,7 @@ def baxterActivationLockOk : Bool :=
   let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
   let g := g.addPlusOnePlusOneTo (namedPermanent g "Hill Giant") 1
   let bax := namedPermanent g "Baxter Building"
-  let ab := bax.printed.activatedAbilities[1]!
+  let ab := bax.printed.activatedAbilities[2]!
   g.canActivate ⟨0⟩ bax ab &&
     (let (g, _) := g.move (namedPermanent g "Hill Giant").id (.graveyard ⟨0⟩) none
      let bax := namedPermanent g "Baxter Building"

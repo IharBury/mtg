@@ -269,8 +269,8 @@ open Mtg.Demo.Render
   | none => false
   | some land =>
     match applyActivate g ⟨0⟩ [toString land.id] with
-    | .error msg => Tests.mentions msg "has no activated ability"
-    | .ok _ => false
+    | .ok g' => g'.stack.isEmpty && (g'.object! land.id).status.tapped
+    | .error _ => false
 
 
 #guard
@@ -673,7 +673,7 @@ open Mtg.Demo.Render
   | .ok g' =>
     (Tests.namedPermanent g' "Woodland Weavemaster").status.tapped &&
       (g'.player ⟨0⟩).manaPool.elfGreen == 1 &&
-      (g'.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .green) true
+      (g'.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .green) (ManaSpend.forSpell (subtypes := #[.elf]))
   | .error _ => false
 
 

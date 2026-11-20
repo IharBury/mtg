@@ -44,7 +44,9 @@ def questCard : CardDef := {
 def sword : CardDef :=
   equipment "Count Sword" (ManaCost.ofGeneric 1) "" (ManaCost.ofGeneric 2)
 
-def isle : CardDef := land "Count Isle" "({T}: Add {C}.)" (tapAddMana := #[.colorless])
+def isle : CardDef :=
+  land "Count Isle" "({T}: Add {C}.)"
+    (activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 1)])])
 
 def holds (g : Game) (cond : TriggeredAbility.ConditionSelector)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])

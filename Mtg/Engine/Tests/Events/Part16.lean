@@ -402,7 +402,7 @@ private def isAnnounceKicker (a : Option Action) (want : Bool) : Bool :=
     name := "P50i2 CyclingOverlord"
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .discard (.exact 1) .self]
-      activateFromHand := true
+      activeZones := #[.hand]
       effect := Effect.draw 1
     }]
   }
@@ -802,7 +802,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   let urComboLandDef : CardDef := {
     name := "P50i4 SteamConduit"
     types := #[.land]
-    tapAddTwoAmong := #[.colored .blue, .colored .red]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.combination (.explicit #[.colored .blue, .colored .red]) (.const 2))]
   }
   let urSpellDef : CardDef := {
     name := "P50i4 SteamBolt"

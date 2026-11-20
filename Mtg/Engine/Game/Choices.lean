@@ -632,7 +632,7 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
       prop.kind == .activatedAbility &&
         !sacrificeOrExileSource && !prop.discardSource &&
         !fromGyAb && !needsBfSource &&
-        prop.activation.any (·.activateFromHand) &&
+        prop.activation.any (·.isFromHand) &&
         !prop.activation.any (·.cost.exileSourceFromHand) &&
         g.sourceDiscardedFromHandForCost sid forObj sinceIdx
     match g.findObject? sid with

@@ -2675,12 +2675,14 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
     checkValidOptObjId pred aid || checkValidOptObjId pred sid || checkValidObjIds pred rem
   | .finishActivationExtraCosts _ sid fo _ _ _ _ =>
     checkValidObjId pred sid || checkValidOptObjId pred fo
-  | .finishActivateManaAbilityPicks _ id _ _ _ rem _ _ _ _ _ _ prevP _ _ _ =>
-    checkValidObjId pred id || checkValidObjIds pred rem ||
+  | .finishActivateManaAbilityPicks _ id _ _ _ rem _ _ _ _ _ _ prevP _ _ _ _ _ _ exileSymIds _ =>
+    checkValidObjId pred id || checkValidObjIds pred rem || checkValidObjIds pred exileSymIds ||
       pendingAnyObjId prevP pred prospectivePred etbCostProspective?
-  | .finishActivateManaAbilityPostSac _ id _ snap _ _ _ _ _ _ prevP _ _ =>
+  | .finishActivateManaAbilityPostSac _ id _ snap _ _ _ _ _ _ prevP _ _ _ _ =>
     checkValidObjId pred id || eventObjAnyObjId pred snap ||
       pendingAnyObjId prevP pred prospectivePred etbCostProspective?
+  | .runModalManaEffect _ sid _ =>
+    checkValidObjId pred sid
   | .finishConniveDraws _ ed c _ =>
     ed.any (fun (_, r) => repIdAnyObjId pred r prospectivePred) ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
@@ -5360,10 +5362,31 @@ private structure Layer4Entry where
   mod : TypeSetMod
 deriving Inhabited
 
-/-- Unified Layer 4 evaluation of `(types, subtypes, supertypes)` on `o` in
-CR 613.7 timestamp order with CR 613.8 dependency ordering, applying changeling
-first per CR 613.3 / 702.73a and enforcing CR 205.3d subtype correlation. -/
-def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype × Array Supertype :=
+/-- Extended Layer 4 evaluation result: `(types, subtypes, supertypes)` plus
+whether a CR 305.7 subtype-setting effect set a basic land type on this land
+(which strips printed rules text before Layer 6). -/
+structure Layer4Result where
+  types : Array CardType
+  subtypes : Array CardSubtype
+  supertypes : Array Supertype
+  strippedRulesTextByBasicLandSet : Bool := false
+deriving Inhabited
+
+/-- Whether any active Layer 4 continuous effect sets a land's subtype exclusively
+to one or more basic land types (CR 305.7, e.g. Blood Moon / Harbinger of the Seas). -/
+def hasActiveBasicLandSetEffect (g : Game) : Bool :=
+  g.activeEffects.any fun (_, s) =>
+    match s with
+    | .layered _ (.types .set _ subs _ _ remSubs _) d =>
+      let landSubs := subs.filter (fun sub => sub.kind == .land && !remSubs.contains sub)
+      g.durationActive d && !landSubs.isEmpty && landSubs.all CardSubtype.isBasicLandType
+    | _ => false
+
+/-- Unified Layer 4 evaluation of `(types, subtypes, supertypes)` plus CR 305.7
+basic-land-type stripping on `o` in CR 613.7 timestamp order with CR 613.8
+dependency ordering, applying changeling first per CR 613.3 / 702.73a and
+enforcing CR 205.3d subtype correlation. -/
+def evalLayer4Full (g : Game) (o : GameObject) : Layer4Result :=
   let pushDedup {α : Type} [BEq α] (acc elems : Array α) : Array α :=
     elems.foldl (fun a x => if a.contains x then a else a.push x) acc
   if o.isLkiSnapshot then
@@ -5373,7 +5396,7 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
       if bc.hasSimpleKeyword .changeling && (bc.types.contains .creature || bc.types.contains .kindred) then
         pushDedup baseSubs CardSubtype.allCreatureSubtypes
       else baseSubs
-    (bc.types, subs, bc.supertypes)
+    { types := bc.types, subtypes := subs, supertypes := bc.supertypes }
   else if !o.isOnBattlefield then
     let bc := g.baseCard o
     let tcs := g.evalLayer3 o
@@ -5383,7 +5406,7 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
       if bc.hasSimpleKeyword .changeling && (bc.types.contains .creature || bc.types.contains .kindred) then
         pushDedup baseSubs CardSubtype.allCreatureSubtypes
       else baseSubs
-    (bc.types, subs, bc.supertypes)
+    { types := bc.types, subtypes := subs, supertypes := bc.supertypes }
   else
     let bc := g.baseCard o
     let oTcs := g.evalLayer3 o
@@ -5463,7 +5486,7 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
             })
         | _ => pure ()
       if pending.isEmpty then
-        return (initTypes, effectiveSubs initTypes initSubs, initSups)
+        return { types := initTypes, subtypes := effectiveSubs initTypes initSubs, supertypes := initSups }
       let scopeMatchesL4 (cur : Array CardType × Array CardSubtype × Array Supertype)
           (sc : ObjectScope) : Bool :=
         match sc with
@@ -5494,6 +5517,7 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
             else a.idx < b.idx
       let mut rem := sorted
       let mut cur := (initTypes, initSubs, initSups)
+      let mut stripped := false
       for _ in [0:sorted.size] do
         let applicable := rem.filter (fun e => scopeMatchesL4 cur e.scope)
         if applicable.isEmpty then break
@@ -5502,9 +5526,37 @@ def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype
             scopeMatchesL4 cur a.scope != scopeMatchesL4 (applyStep cur b) a.scope
         let chosen :=
           (applicable.find? (fun a => !applicable.any (fun b => dependsOn a b))).getD applicable[0]!
-        cur := applyStep cur chosen
+        let next := applyStep cur chosen
+        -- CR 305.7 / 613.7: Setting a land's subtype exclusively to one or more
+        -- basic land types without preserving existing types/abilities strips
+        -- printed rules text. Derive this from the latest Layer 4 effect
+        -- determining the land subtypes, clearing it if a later effect removes
+        -- the land type, overwrites land subtypes with non-basic/mixed subtypes,
+        -- or removes all basic land types.
+        if !next.1.contains .land then
+          stripped := false
+        else if chosen.mod.mode == .set && !chosen.mod.subtypes.isEmpty then
+          let setLandSubs :=
+            chosen.mod.subtypes.filter (fun s =>
+              s.kind == .land && !chosen.mod.removeSubtypes.contains s)
+          stripped := !setLandSubs.isEmpty && setLandSubs.all CardSubtype.isBasicLandType
+        else if stripped && !next.2.1.any CardSubtype.isBasicLandType then
+          stripped := false
+        cur := next
         rem := rem.filter (fun e => e.idx != chosen.idx)
-      return (cur.1, effectiveSubs cur.1 cur.2.1, cur.2.2)
+      return {
+        types := cur.1
+        subtypes := effectiveSubs cur.1 cur.2.1
+        supertypes := cur.2.2
+        strippedRulesTextByBasicLandSet := stripped
+      }
+
+/-- Unified Layer 4 evaluation of `(types, subtypes, supertypes)` on `o` in
+CR 613.7 timestamp order with CR 613.8 dependency ordering, applying changeling
+first per CR 613.3 / 702.73a and enforcing CR 205.3d subtype correlation. -/
+def evalLayer4 (g : Game) (o : GameObject) : Array CardType × Array CardSubtype × Array Supertype :=
+  let r := g.evalLayer4Full o
+  (r.types, r.subtypes, r.supertypes)
 
 /-- Evaluated card types of `o` after Layer 4 type-changing effects (CR 613.1d). -/
 def types (g : Game) (o : GameObject) : Array CardType :=
@@ -5974,6 +6026,51 @@ def abilitiesActivatedThisTurn (g : Game) (id : ObjectId) : Array Nat :=
         if src.id == some id then acc.push idx else acc
       | _ => acc) #[]
 
+/-- How many times ability `idx` of `id` was activated this turn (CR 602.5b / 702.142a).
+When `isBoast` is true, also counts legacy boast events that did not record `abilityIdx`. -/
+def abilityActivationsThisTurn (g : Game) (id : ObjectId) (idx : Nat)
+    (isBoast : Bool := false) : Nat :=
+  g.events.foldl (fun n e =>
+    if e.turn != g.turnNumber then n
+    else
+      match e.change with
+      | .rules (.cast (.abilityActivated _ src _ kind)) =>
+        if src.id != some id then n
+        else
+          match kind.abilityIdx? with
+          | some k => if k == idx then n + 1 else n
+          | none =>
+            if isBoast then
+              match kind with
+              | .nonMana _ _ _ true _ _ => n + 1
+              | _ => n
+            else n
+      | _ => n) 0
+
+/-- How many times ability `idx` of `id` has been activated since `id` entered
+the battlefield (CR 702.177a Exhaust / CR 702.193a Power-up).
+When `isPowerUp` / `isExhaust` is true, also counts legacy events without `abilityIdx`. -/
+def abilityActivationsSinceEntered (g : Game) (id : ObjectId) (idx : Nat)
+    (isPowerUp : Bool := false) (isExhaust : Bool := false) : Nat :=
+  g.events.foldl (fun n e =>
+    match e.change with
+    | .rules (.zone (.moved _ after _ .battlefield ..)) =>
+      if after.id == some id then 0 else n
+    | .rules (.zone (.created obj _)) =>
+      if obj.zone == .battlefield && obj.id == some id then 0 else n
+    | .rules (.cast (.abilityActivated _ src _ kind)) =>
+      if src.id != some id then n
+      else
+        match kind.abilityIdx? with
+        | some k => if k == idx then n + 1 else n
+        | none =>
+          match kind with
+          | .nonMana _ _ pu _ _ ex =>
+            if (isPowerUp && pu) || (isExhaust && ex) then n + 1 else n
+          | .mana _ pu ex =>
+            if (isPowerUp && pu) || (isExhaust && ex) then n + 1 else n
+    | _ => n) 0
+
 /-- True when a loyalty ability of `id` was activated this turn (CR 606.3). -/
 def loyaltyActivatedThisTurn (g : Game) (id : ObjectId) : Bool :=
   g.events.any fun e =>
@@ -6368,20 +6465,23 @@ private def evalStaticsFast (g : Game) (needTs : Bool) :
   | 0, _ => (#[], false)
   | attFuel + 1, x =>
     let hasEff := g.hasAnyStaticLayer6Effect
+    let strippedByL4 :=
+      x.isOnBattlefield && g.hasActiveBasicLandSetEffect &&
+        (g.evalLayer4Full x).strippedRulesTextByBasicLandSet
     let hasRelevantAtt :=
       x.isOnBattlefield &&
         g.objects.any fun att =>
           att.isOnBattlefield && att.attachedTo == some x.id && att.id != x.id &&
             (hasEff || (!att.status.faceDown && (g.baseCard att).staticAbilities.any attGrantsOrStripsStatic))
     if !hasEff && !hasRelevantAtt then
-      if x.status.faceDown then (#[], false)
+      if x.status.faceDown || strippedByL4 then (#[], false)
       else
         let (xBc, xBaseTs) := if needTs then g.baseCardWithTs x else (g.baseCard x, (0, 0))
         if xBc.staticAbilities.isEmpty then (#[], true)
         else
           let xTcs := g.evalLayer3 x
           (xBc.staticAbilities.map (fun ab => (TextChange.applyStaticAbility xTcs ab, xBaseTs)), true)
-    else if x.status.faceDown then
+    else if x.status.faceDown || strippedByL4 then
       let xObjTs := g.objectEntryTimestamp x
       let xBc := g.baseCard x
       let scopeOk (sc : ObjectScope) : Bool :=
@@ -6553,13 +6653,32 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
       xs.foldl (fun a t => if a.contains t then a else a.push t) acc
     let anyColorMana : Array ManaType :=
       #[.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
+    let grantedAnyColorAct : ActivatedAbility :=
+      ActivatedAbility.manaAbility (.oneOf .anyColor (.const 1))
+    let grantedColorlessTwoAct : ActivatedAbility :=
+      ActivatedAbility.manaAbility (.fixed #[.colorless, .colorless])
+    let grantedManaActs (ts : Array ManaType) : Array ActivatedAbility :=
+      if ts.isEmpty then #[]
+      else if ts.size == 1 then #[ActivatedAbility.manaSimple ts[0]!]
+      else #[ActivatedAbility.manaAbility (.oneOf (.explicit ts) (.const 1))]
     let (bc, initBaseTs) :=
       if needStaticsTs then g.baseCardWithTs o else (g.baseCard o, (0, 0))
     let oTcs := g.evalLayer3 o
     let ctrl? := g.controllerOf o
-    let oIsCreature := o.isOnBattlefield && g.isCreature o
-    let oIsLand := !kwOnly && o.isOnBattlefield && g.isLand o
-    let oIsPw := !kwOnly && o.isOnBattlefield && g.isPlaneswalker o
+    let l4 := if o.isOnBattlefield then g.evalLayer4Full o else
+      let (ts, subs, sups) := g.evalLayer4 o
+      { types := ts, subtypes := subs, supertypes := sups }
+    let oIsCreature := o.isOnBattlefield && l4.types.contains .creature
+    let oIsLand := !kwOnly && o.isOnBattlefield && l4.types.contains .land
+    let oIsPw := !kwOnly && o.isOnBattlefield && l4.types.contains .planeswalker
+    let strippedByL4 := o.isOnBattlefield && l4.strippedRulesTextByBasicLandSet
+    -- CR 305.6: A land on the battlefield with a basic land type has the intrinsic
+    -- mana ability `{T}: Add {color}` for each of its basic land types.
+    let intrinsicLandMana : Array ActivatedAbility :=
+      if oIsLand then
+        l4.subtypes.filterMap fun sub =>
+          sub.basicLandManaColor?.map ActivatedAbility.intrinsicBasicLandMana
+      else #[]
     let copiedFromStatics (sas : Array StaticAbility) : Array ActivatedAbility :=
       if kwOnly || !o.isOnBattlefield then #[]
       else
@@ -6582,7 +6701,9 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
             let (k, pr, _, _) := g.evalTeamStaticOn o p false o oTcs ab
             (KeywordAbility.merge ak k, ap + pr)) (#[], 0)
     let initState : Layer6State :=
-      if o.status.faceDown then {}
+      if o.status.faceDown || strippedByL4 then
+        if kwOnly then {}
+        else { activated := intrinsicLandMana }
       else
         let mappedOwnStatics :=
           if oTcs.isEmpty then bc.staticAbilities
@@ -6616,6 +6737,11 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
             if oIsCreature && ctrl?.isSome && bc.grantCreaturesTapAddAnyColor then anyColorMana else #[]
           let ownLantern : Bool :=
             oIsLand && ctrl?.isSome && bc.grantLandsTapAnyColor
+          let ownManaGrantActs : Array ActivatedAbility :=
+            (if !ownManaGrants.isEmpty then #[grantedAnyColorAct] else #[]) ++
+              (if ownLantern then #[grantedAnyColorAct] else #[])
+          let dedupIntrinsicLandMana : Array ActivatedAbility :=
+            intrinsicLandMana.filter fun ab => !ownAct.contains ab
           let impTrig : Array TriggeredAbility :=
             if bc.impending.isSome then
               #[TriggeredAbility.fra .yourEndStep
@@ -6638,7 +6764,9 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                 copiedFromStatics mappedOwnStatics ++
                 expandedCrew ++
                 (if bc.hasBoast then #[ActivatedAbility.zemoBoastAbility] else #[]) ++
-                ownPwGrants
+                ownPwGrants ++
+                dedupIntrinsicLandMana ++
+                ownManaGrantActs
             wards :=
               KeywordAbility.wardCosts printedKw ++
                 (if mappedOwnStatics.isEmpty then #[] else g.selfWardCosts o mappedOwnStatics)
@@ -6647,6 +6775,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                 KeywordAbility.prowessCount selfKw + ownTeamProw
             manaGrants := ownManaGrants
             lanternGrant := ownLantern }
+    let hasBasicLandSet := g.hasActiveBasicLandSetEffect
     let hasCwStaticEff := g.hasCwStaticLayer6Effect
     let hasStaticEff := g.hasAnyStaticLayer6Effect
     let peerStaticsWithTs (x : GameObject) : Array (StaticAbility × (Nat × Nat)) × Bool :=
@@ -6718,7 +6847,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
           for att in g.objects do
             if att.isOnBattlefield && att.attachedTo == some o.id && att.id != o.id then
               let attSimple :=
-                !hasStaticEff && !att.status.faceDown &&
+                !hasStaticEff && !hasBasicLandSet && !att.status.faceDown &&
                   !(g.objects.any fun a2 =>
                     a2.isOnBattlefield && a2.attachedTo == some att.id && a2.id != att.id)
               if attSimple then
@@ -6853,7 +6982,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
           for src in g.objects do
             if src.isOnBattlefield && src.id != o.id && g.controlledBy src p then
               let srcSimple :=
-                !hasStaticEff && !src.status.faceDown &&
+                !hasStaticEff && !hasBasicLandSet && !src.status.faceDown &&
                   !(anyAttached && g.objects.any fun a2 =>
                     a2.isOnBattlefield && a2.attachedTo == some src.id && a2.id != src.id)
               if srcSimple then
@@ -6871,6 +7000,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                         idx := pending.size
                         scope := .objects #[o.id]
                         addKw := kw
+                        addActivated := grantedManaActs mana
                         addWards := wards
                         addProwess := prow
                         addMana := mana
@@ -6894,12 +7024,14 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                   pending := pending.push (.peerBase src, {
                     idx := pending.size
                     scope := .objects #[o.id]
+                    addActivated := #[grantedAnyColorAct]
                     addMana := anyColorMana
                   })
                 if oIsLand && srcBc.grantLandsTapAnyColor then
                   pending := pending.push (.peerBase src, {
                     idx := pending.size
                     scope := .objects #[o.id]
+                    addActivated := #[grantedAnyColorAct]
                     addLantern := true
                   })
               else
@@ -6921,6 +7053,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                         idx := pending.size
                         scope := .objects #[o.id]
                         addKw := kw
+                        addActivated := grantedManaActs mana
                         addWards := wards
                         addProwess := prow
                         addMana := mana
@@ -6945,12 +7078,14 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                       pending := pending.push (.peerBase src, {
                         idx := pending.size
                         scope := .objects #[o.id]
+                        addActivated := #[grantedAnyColorAct]
                         addMana := anyColorMana
                       })
                     if oIsLand && srcBc.grantLandsTapAnyColor then
                       pending := pending.push (.peerBase src, {
                         idx := pending.size
                         scope := .objects #[o.id]
+                        addActivated := #[grantedAnyColorAct]
                         addLantern := true
                       })
             else if oIsCreature && src.zone == .command && g.controlledBy src p &&
@@ -7016,6 +7151,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
             pending := pending.push (.eff eid pos, {
               idx := pending.size
               scope := .objects #[o.id]
+              addActivated := #[grantedColorlessTwoAct]
               addColorlessGrant := true
             })
         | _ => pure ()
@@ -7080,7 +7216,7 @@ def staticAbilities (g : Game) (o : GameObject) : Array StaticAbility :=
       g.objects.any fun att =>
         att.isOnBattlefield && att.attachedTo == some o.id && att.id != o.id &&
           (hasEff || (!att.status.faceDown && (g.baseCard att).staticAbilities.any attGrantsOrStripsStatic))
-  if !hasEff && !hasRelevantAtt then
+  if !hasEff && !hasRelevantAtt && !(o.isOnBattlefield && g.hasActiveBasicLandSetEffect) then
     if o.status.faceDown then #[]
     else
       let bc := g.baseCard o
@@ -7106,7 +7242,8 @@ def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
         att.isOnBattlefield && att.attachedTo == some o.id && att.id != o.id &&
           (hasEff || (!att.status.faceDown && (g.baseCard att).staticAbilities.any fun ab =>
             ab == .enchantedLosesAbilitiesDoesntUntap || ab == .enchantedLosesAbilitiesCantUntap))
-  if !hasEff && !hasStripAtt then !o.status.faceDown
+  if !hasEff && !hasStripAtt && !(o.isOnBattlefield && g.hasActiveBasicLandSetEffect) then
+    !o.status.faceDown
   else if g.hasCwStaticLayer6Effect then
     (g.evalLayer6 o).retainsBase
   else
@@ -8554,20 +8691,39 @@ def copiedFromGy {α : Type} (g : Game) (o : GameObject) (sel : CardDef → Arra
             (fun acc card => acc ++ sel (g.baseCard card)) acc
         | _ => acc) #[]
 
+private def hasAnyManaGrantSource (g : Game) : Bool :=
+  g.objects.any (fun src =>
+    src.isOnBattlefield &&
+      let sbc := g.baseCard src
+      sbc.grantCreaturesTapAddAnyColor || sbc.grantLandsTapAnyColor ||
+        sbc.staticAbilities.any fun
+          | .otherSubtypeHaveTapAddOneOf _ _ => true
+          | _ => false) ||
+  g.activeEffects.any fun (_, s) =>
+    match s with
+    | .permission _ (.colorlessGrant _ _) d => g.durationActive d
+    | _ => false
+
 /-- Activated abilities of `o` evaluated in Layer 6 (plus special-action morph
-turn-face-up when `o.status.faceDown`, CR 613.1f / 702.37e). -/
+turn-face-up when `o.status.faceDown`, CR 613.1f / 702.37e). Includes CR 305.6
+intrinsic basic-land mana abilities and Layer-6 granted mana abilities. -/
 def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
   let normalizeEquip (ab : ActivatedAbility) : ActivatedAbility :=
-    if ab.effect == Effect.attachToTargetCreatureYouControl && (ab.equipSubtype.isSome || ab.equipWorthy) then
-      { ab with effect := Effect.equipEffect ab.equipSubtype ab.equipWorthy }
+    if ab.effect == Effect.attachToTargetCreatureYouControl &&
+        (ab.equipSubtype?.isSome || ab.isEquipWorthy) then
+      { ab with effect := Effect.equipEffect ab.equipSubtype? ab.isEquipWorthy }
     else ab
   let raw :=
     if !o.status.faceDown then
       let bc := g.baseCard o
-      if bc.staticAbilities.isEmpty && bc.crew.isNone && !bc.hasBoast && !g.isPlaneswalker o &&
-          !g.hasAnyStaticLayer6Effect &&
-          !(o.isOnBattlefield &&
-            g.objects.any fun att => att.isOnBattlefield && att.attachedTo == some o.id && att.id != o.id) then
+      let canUseFastPath :=
+        bc.staticAbilities.isEmpty && bc.crew.isNone && !bc.hasBoast &&
+          !g.isPlaneswalker o && !g.hasAnyStaticLayer6Effect &&
+          (!o.isOnBattlefield ||
+            (!g.isLand o && !g.hasActiveBasicLandSetEffect && !g.hasAnyManaGrantSource &&
+              !g.objects.any fun att =>
+                att.isOnBattlefield && att.attachedTo == some o.id && att.id != o.id))
+      if canUseFastPath then
         if bc.activatedAbilities.isEmpty then #[]
         else
           let tcs := g.evalLayer3 o
@@ -8583,7 +8739,8 @@ def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
               cost := cost }]
         | none => #[]
       morphAb ++ (g.evalLayer6Fast o).activated
-  if raw.any (fun ab => ab.effect == Effect.attachToTargetCreatureYouControl && (ab.equipSubtype.isSome || ab.equipWorthy)) then
+  if raw.any (fun ab => ab.effect == Effect.attachToTargetCreatureYouControl &&
+      (ab.equipSubtype?.isSome || ab.isEquipWorthy)) then
     raw.map normalizeEquip
   else raw
 
@@ -16098,11 +16255,12 @@ def addManaUnits (g : Game) (p : PlayerId) (units : Array ManaUnit)
 def addMana (g : Game) (p : PlayerId) (t : ManaType) (n : Nat := 1)
     (source : Option ObjectId := none)
     (restriction : Option ManaSpendRestriction := none)
+    (riders : Array SpellRiderSpec := #[])
     (cause : Option EventCause := none)
     (fromTreasure : Bool := false) : Game :=
   if n == 0 then g
   else
-    let units := Array.replicate n { mana := t, source, restriction, fromTreasure }
+    let units := Array.replicate n { mana := t, source, restriction, riders, fromTreasure }
     g.addManaUnits p units (cause := cause.orElse (fun _ => g.resolvingOneShotCause p source))
 
 /-- Resolving one-shot cause for a batch when a spell or ability is actively

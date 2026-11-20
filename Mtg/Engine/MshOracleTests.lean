@@ -58,7 +58,7 @@ def dummyProposal (_g : Game) (kind : ProposalKind) (src : GameObject) (cost : M
     sourceId := if kind == .spell then none else some src.id
     activation :=
       if kind == .activatedAbility && src.zone == .graveyard ⟨0⟩ then
-        some { cost := CostSpec.empty, activateFromGraveyard := true, effect := default }
+        some { cost := CostSpec.empty, activeZones := #[.graveyard], effect := default }
       else none
     discardSource }
 
@@ -93,7 +93,7 @@ def aerialPowerUpEntered : Game := mshEnter afterDraw aerialDoombot
 def powerUpReductionOk : Bool :=
   let o := namedPermanent aerialPowerUpEntered "Aerial Doombot"
   let ab := o.printed.activatedAbilities[0]!
-  ab.powerUp && aerialPowerUpEntered.loggedEntered o.id &&
+  ab.isPowerUp && aerialPowerUpEntered.loggedEntered o.id &&
     aerialPowerUpEntered.activationManaCost ⟨0⟩ ab (some o) ==
       ({ symbols := #[.generic 5] } : ManaCost) &&
     (mshRuling 360).comment.contains "Activate only once" &&
@@ -626,7 +626,7 @@ def heroSourceOk : Bool :=
     gSp.applyAbilityEffect ⟨0⟩ (Effect.addAnyColorSpendOnlyHero) #[] (some tower.id)
   pool.heroWhite == 1 &&
     !pool.canPay (ManaCost.ofColor .white) &&
-    pool.canPay (ManaCost.ofColor .white) false false true &&
+    pool.canPay (ManaCost.ofColor .white) (ManaSpend.forSpell (subtypes := #[.hero])) &&
     paidOk g capPay &&
     reversedPay g bearPay &&
     gCh.hasSubtype chameleon .hero &&
@@ -661,7 +661,7 @@ def villainSourceOk : Bool :=
     gGy.applyAbilityEffect ⟨0⟩ (Effect.addAnyColorSpendOnlyVillain) #[] (some hideout.id)
   pool.villainBlack == 1 &&
     !pool.canPay (ManaCost.ofColor .black) &&
-    pool.canPay (ManaCost.ofColor .black) false false false true &&
+    pool.canPay (ManaCost.ofColor .black) (ManaSpend.forSpell (subtypes := #[.villain])) &&
     paidOk g (dummyProposal g .activatedAbility elektra (ManaCost.ofColor .black)) &&
     reversedPay g (dummyProposal g .activatedAbility bears (ManaCost.ofColor .black)) &&
     gCh.hasSubtype chameleon .villain &&
@@ -867,7 +867,7 @@ def sneakWrongStepOk : Bool :=
 
 def equipWorthyOk : Bool :=
   mjLnirHammerOfThor.hasEquipWorthy &&
-    mjLnirHammerOfThor.activatedAbilities[0]!.equipWorthy &&
+    mjLnirHammerOfThor.activatedAbilities[0]!.isEquipWorthy &&
     captainAmericaSuperSoldier.isWorthy &&
     !elektraDaughterOfTheHand.isWorthy &&
     !lokiGodOfMischief.isWorthy &&
@@ -937,8 +937,9 @@ def vibraniumManaOk : Bool :=
   | .ok g =>
     let pool := (g.player ⟨0⟩).manaPool
     pool.cantNonartifact == 1 &&
-      !pool.canPay (ManaCost.ofGeneric 1) &&
-      pool.canPay (ManaCost.ofGeneric 1) false false false false true
+      !pool.canPay (ManaCost.ofGeneric 1) (ManaSpend.forSpell (types := #[.creature])) &&
+      pool.canPay (ManaCost.ofGeneric 1) (ManaSpend.forSpell (types := #[.artifact])) &&
+      pool.canPay (ManaCost.ofGeneric 1)
 
 #guard vibraniumManaOk
 
@@ -1056,7 +1057,7 @@ def mdfcPlayFaceOk : Bool :=
 #guard mdfcPlayFaceOk
 
 def activatedVsTriggeredWordingOk : Bool :=
-  aerialDoombot.activatedAbilities.any (·.powerUp) &&
+  aerialDoombot.activatedAbilities.any (·.isPowerUp) &&
     claimTheKingdom.triggeredAbilities.size > 0 &&
     (mshRuling 390).comment.contains "colon" &&
     (mshRuling 417).comment.contains "when"
@@ -1138,7 +1139,7 @@ def creatureAndArtifactSourceOk : Bool :=
       .stackAbilityFromSource .creature &&
     pool.creatureGreen == 2 &&
     !pool.canPay (ManaCost.ofGeneric 2) &&
-    pool.canPay (ManaCost.ofGeneric 2) false false false false false true &&
+    pool.canPay (ManaCost.ofGeneric 2) (ManaSpend.forAbility (sourceTypes := #[.creature])) &&
     paidOk gMana (dummyProposal gMana .activatedAbility bears (ManaCost.ofGeneric 2)) &&
     reversedPay gMana (dummyProposal gMana .activatedAbility stone (ManaCost.ofGeneric 2)) &&
     (let gGy := addToGraveyard gMana grizzlyBears ⟨0⟩
@@ -1493,8 +1494,9 @@ def vibraniumSpendNotOnNonartifactOk : Bool :=
     let (gArt, artSpell) := g.allocObject theMindStone ⟨0⟩ .stack (some ⟨0⟩)
     let (gBolt, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
     p.cantNonartifact == 1 &&
-      !p.canPay (ManaCost.ofGeneric 1) &&
-      p.canPay (ManaCost.ofGeneric 1) false false false false true &&
+      !p.canPay (ManaCost.ofGeneric 1) (ManaSpend.forSpell (types := #[.creature])) &&
+      p.canPay (ManaCost.ofGeneric 1) (ManaSpend.forSpell (types := #[.artifact])) &&
+      p.canPay (ManaCost.ofGeneric 1) &&
       paidOk g (dummyProposal g .activatedAbility bears (ManaCost.ofGeneric 1)) &&
       paidOk g (dummyProposal g .activatedAbility stone (ManaCost.ofGeneric 1)) &&
       paidOk gArt (dummyProposal gArt .spell artSpell (ManaCost.ofGeneric 1)) &&
@@ -1817,8 +1819,9 @@ def hydraulicHelperRestrictedBlueOk : Bool :=
   let (gArt, artSpell) := g.allocObject theMindStone ⟨0⟩ .stack (some ⟨0⟩)
   let (gBolt, bolt) := g.allocObject lightningBolt ⟨0⟩ .stack (some ⟨0⟩)
   p.cantNonartifactBlue == 1 &&
-    !p.canPay (ManaCost.ofColor .blue) &&
-    p.canPay (ManaCost.ofColor .blue) false false false false true &&
+    !p.canPay (ManaCost.ofColor .blue) (ManaSpend.forSpell (types := #[.instant])) &&
+    p.canPay (ManaCost.ofColor .blue) (ManaSpend.forSpell (types := #[.artifact])) &&
+    p.canPay (ManaCost.ofColor .blue) &&
     paidOk g (dummyProposal g .activatedAbility bears (ManaCost.ofColor .blue)) &&
     paidOk gArt (dummyProposal gArt .spell artSpell (ManaCost.ofColor .blue)) &&
     reversedPay gBolt (dummyProposal gBolt .spell bolt (ManaCost.ofColor .blue)) &&

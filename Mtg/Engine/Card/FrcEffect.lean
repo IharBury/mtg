@@ -172,4 +172,13 @@ instance : HasTextChange FrcEffect where
       | .ward cost => .ward (HasTextChange.applyTextChanges tcs cost)
       | other => other
 
+/-- True when resolving this `FrcEffect` includes instructions to move a card to
+or from a library (CR 605.1a criterion 4, 25 September 2026). -/
+def FrcEffect.movesToOrFromLibrary : FrcEffect → Bool
+  | .drawPutOnTop _ _ | .pathToExile | .occult | .massPolymorph
+  | .searchBasics _ _ | .proteus | .archon | .dack | .jhoira | .nissa
+  | .nivPay | .jacePlus | .jaceMinus | .urSphinx | .currencyLoot
+  | .drawPerArtifact | .factOrFiction | .explore => true
+  | _ => false
+
 end Mtg.Engine

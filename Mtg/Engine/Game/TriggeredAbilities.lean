@@ -764,7 +764,7 @@ partial def costPayable (g : Game) (controller : PlayerId) (sourceId : Option Ob
   cost.items.all fun item =>
     match item with
     | .mana m =>
-      (g.player controller).manaPool.canPay m (allowCantNonartifact := true)
+      (g.player controller).manaPool.canPay m
     | .payLife nExpr =>
       g.canPayLife controller (EvalExpr.evalValue g env nExpr).toNat
     | .sacrifice _ .self =>

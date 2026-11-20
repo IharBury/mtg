@@ -47,18 +47,33 @@ inductive ManaOutput where
   | oneOf (types : Array ManaType) (amount : Nat)
   /-- `amount` mana in any combination of `types`. -/
   | combination (types : Array ManaType) (amount : Nat)
-  /-- One mana of a color among `allowed`; naming another color adds no mana
-  (CR 106.1, e.g. Mox Amber, Arcane Signet). -/
-  | colorAmong (allowed : Array ManaType)
+  /-- One mana of a color (or type when `includeColorless` is true, e.g.
+  Reflecting Pool, CR 106.7) among `allowed`; naming an absent type adds no
+  mana (CR 106.1, e.g. Mox Amber, Arcane Signet, Exotic Orchard). -/
+  | colorAmong (allowed : Array ManaType) (includeColorless : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace ManaOutput
+
+private def filterAmong (allowed : Array ManaType) (includeColorless : Bool) : Array ManaType :=
+  if includeColorless then allowed
+  else allowed.filter (fun | .colored _ => true | .colorless => false)
 
 /-- Mana types this output can include. -/
 def types : ManaOutput → Array ManaType
   | .fixed m => m.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
   | .oneOf ts n | .combination ts n => if n == 0 then #[] else ts
-  | .colorAmong _ => anyColorMana
+  | .colorAmong _ includeColorless =>
+    if includeColorless then anyColorMana.push .colorless else anyColorMana
+
+/-- Mana types this output can actually produce a positive amount of (CR 106.7).
+Unlike `types`, `.colorAmong allowed` only includes types present in `allowed`. -/
+def producibleTypes : ManaOutput → Array ManaType
+  | .fixed m => m.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
+  | .oneOf ts n | .combination ts n => if n == 0 then #[] else ts
+  | .colorAmong allowed includeColorless =>
+    (filterAmong allowed includeColorless).foldl
+      (fun acc t => if acc.contains t then acc else acc.push t) #[]
 
 /-- The mana added when the player names `t`: all of it `t` where the
 ability allows a choice. -/
@@ -67,10 +82,12 @@ def withType (out : ManaOutput) (t : ManaType) : Option (Array ManaType) :=
   | .fixed m => if m.contains t then some m else none
   | .oneOf ts n | .combination ts n =>
     if ts.contains t then some (Array.replicate n t) else none
-  | .colorAmong allowed =>
+  | .colorAmong allowed includeColorless =>
     match t with
     | .colored _ => some (if allowed.contains t then #[t] else #[])
-    | .colorless => none
+    | .colorless =>
+      if includeColorless then some (if allowed.contains .colorless then #[.colorless] else #[])
+      else none
 
 /-- Distinct multisets of `n` mana types chosen from `ts` in `ts` index order. -/
 def multisetChoices (ts : Array ManaType) (n : Nat) : Array (Array ManaType) :=
@@ -98,9 +115,8 @@ def allChoices (out : ManaOutput)
   | .combination ts n =>
     if n == 0 then #[]
     else multisetChoices (dedupTypes ts) n
-  | .colorAmong allowed =>
-    let coloredAllowed := allowed.filter (fun | .colored _ => true | .colorless => false)
-    (dedupTypes coloredAllowed).map (fun t => #[t])
+  | .colorAmong allowed includeColorless =>
+    (dedupTypes (filterAmong allowed includeColorless)).map (fun t => #[t])
 
 /-- Whether the ability can add exactly `mana`. -/
 def allows (out : ManaOutput) (mana : Array ManaType) : Bool :=
@@ -113,13 +129,16 @@ def allows (out : ManaOutput) (mana : Array ManaType) : Bool :=
        | some t => ts.contains t && mana.all (· == t)
        | none => true)
   | .combination ts n => mana.size == n && mana.all ts.contains
-  | .colorAmong allowed => mana.isEmpty || (mana.size == 1 && mana.all allowed.contains)
+  | .colorAmong allowed includeColorless =>
+    let ok := filterAmong allowed includeColorless
+    mana.isEmpty || (mana.size == 1 && mana.all ok.contains)
 
 /-- How much mana this output adds. -/
 def amount : ManaOutput → Nat
   | .fixed m => m.size
-  | .oneOf _ n | .combination _ n => n
-  | .colorAmong allowed => if allowed.isEmpty then 0 else 1
+  | .oneOf ts n | .combination ts n => if ts.isEmpty then 0 else n
+  | .colorAmong allowed includeColorless =>
+    if (filterAmong allowed includeColorless).isEmpty then 0 else 1
 
 end ManaOutput
 
@@ -129,11 +148,37 @@ instance : HasTextChange ManaOutput where
   applyTextChanges _ out := out
 
 /-- Bonus effect rider granted to a spell cast using mana carrying this restriction
-(CR 106.6 / 106.12). -/
+or rider (CR 106.6 / 106.12). -/
 inductive SpellRiderSpec where
   /-- "and that spell can't be countered" (CR 106.6 / 101.2). -/
   | cantBeCountered
+  /-- "if that mana is spent on a creature spell, it gains haste" (CR 106.6). -/
+  | gainsHaste
+  /-- "that creature enters with `n` additional +1/+1 counter(s) on it" (CR 106.6 / 614.1c). -/
+  | entersWithPlusOneCounters (n : Nat := 1)
 deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace SpellRiderSpec
+
+/-- Trailing clause appended inside a `Spend this mana only to cast ...` sentence. -/
+def toClause : SpellRiderSpec → String
+  | .cantBeCountered => ", and that spell can't be countered"
+  | .gainsHaste => ", and that creature gains haste"
+  | .entersWithPlusOneCounters 1 =>
+    ", and that creature enters with an additional +1/+1 counter on it"
+  | .entersWithPlusOneCounters n =>
+    s!", and that creature enters with {n} additional +1/+1 counters on it"
+
+/-- Standalone sentence for an unrestricted mana rider (CR 106.6). -/
+def toStandaloneSentence : SpellRiderSpec → String
+  | .cantBeCountered => "If that mana is spent on a spell, that spell can't be countered."
+  | .gainsHaste => "If that mana is spent on a creature spell, it gains haste."
+  | .entersWithPlusOneCounters 1 =>
+    "If that mana is spent to cast a creature spell, that creature enters with an additional +1/+1 counter on it."
+  | .entersWithPlusOneCounters n =>
+    s!"If that mana is spent to cast a creature spell, that creature enters with {n} additional +1/+1 counters on it."
+
+end SpellRiderSpec
 
 /-- Boolean predicate over an object's types, supertypes, and subtypes for
 compositional mana spending restrictions (CR 106.6). -/
@@ -252,6 +297,28 @@ structure ManaSpend where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace ManaSpend
+
+/-- Default non-spell, non-ability mana payment (e.g. ward, attack tax, resolution pay). -/
+def nonSpell : ManaSpend := {}
+
+/-- Mana payment context for casting a spell (CR 106.6). -/
+def forSpell (types : Array CardType := #[]) (supertypes : Array Supertype := #[])
+    (subtypes : Array CardSubtype := #[]) (fromHand : Bool := false)
+    (castFromZone : Option ZoneKind := none) : ManaSpend :=
+  { spell := true
+    fromHand := fromHand || castFromZone == some .hand
+    castFromZone := castFromZone.orElse (fun _ => if fromHand then some .hand else none)
+    supertypes, types, subtypes }
+
+/-- Mana payment context for activating an ability (CR 106.6). -/
+def forAbility (sourceTypes : Array CardType := #[])
+    (sourceSupertypes : Array Supertype := #[])
+    (sourceSubtypes : Array CardSubtype := #[])
+    (equip : Bool := false) : ManaSpend :=
+  { abilitySourceTypes := sourceTypes
+    abilitySourceSupertypes := sourceSupertypes
+    abilitySourceSubtypes := sourceSubtypes
+    equip }
 
 def hasSupertype (s : ManaSpend) (sup : Supertype) : Bool :=
   s.supertypes.any (· == sup)
@@ -384,11 +451,14 @@ def artifactSpell : ManaSpendRestriction :=
 def dragonSpell : ManaSpendRestriction :=
   subtypeSpell .dragon
 
+/-- Spell riders carried by this spending restriction (CR 106.6 / 106.12). -/
+def riders : ManaSpendRestriction → Array SpellRiderSpec
+  | .onlyForSpells _ rs | .onlyForSpellsOrAbilities _ _ rs => rs
+  | .onlyForAbilities _ | .cantSpendOnSpells _ | .notFromZone _ => #[]
+
 /-- Whether this restriction grants `rider` to spells cast with this mana (CR 106.6). -/
 def grantsRider (r : ManaSpendRestriction) (rider : SpellRiderSpec) : Bool :=
-  match r with
-  | .onlyForSpells _ riders | .onlyForSpellsOrAbilities _ _ riders => riders.contains rider
-  | .onlyForAbilities _ | .cantSpendOnSpells _ | .notFromZone _ => false
+  r.riders.contains rider
 
 /-- Whether `r` is a narrow positive restriction (spent before broad negative
 restrictions and unrestricted mana, CR 106.6). -/
@@ -414,32 +484,6 @@ def allows (r : ManaSpendRestriction) (s : ManaSpend) : Bool :=
       | .hand => !(s.fromHand || s.castFromZone == some .hand)
       | other => s.castFromZone != some other
 
-/-- Evaluation incorporating legacy boolean allow flags alongside `ManaSpend`
-(preserves default `ManaPool.pay?` behavior where `.cantNonartifact` requires
-either `allowCantNonartifact = true` or an artifact spell in `spend`). -/
-def allowsWithFlags (r : ManaSpendRestriction)
-    (allowElfRestricted : Bool := false)
-    (allowInstRestricted : Bool := false)
-    (allowHeroRestricted : Bool := false)
-    (allowVillainRestricted : Bool := false)
-    (allowCantNonartifact : Bool := false)
-    (allowCreatureRestricted : Bool := false)
-    (spend : ManaSpend := {}) : Bool :=
-  if r == .cantNonartifact then
-    allowCantNonartifact || (spend.spell && spend.artifact)
-  else if r == .elf then
-    allowElfRestricted || r.allows spend
-  else if r == .instantOrSorcery then
-    allowInstRestricted || r.allows spend
-  else if r == .hero then
-    allowHeroRestricted || r.allows spend
-  else if r == .villain then
-    allowVillainRestricted || r.allows spend
-  else if r == .creatureSource then
-    allowCreatureRestricted || r.allows spend
-  else
-    r.allows spend
-
 /-- Short human-readable label for a spending restriction (used in logs and pool notation). -/
 def label : ManaSpendRestriction → String
   | .onlyForSpells pred _ => s!"{pred.label} spells"
@@ -460,12 +504,54 @@ def note : Option ManaSpendRestriction → String
   | none => ""
   | some r => s!" ({r.label})"
 
+private def indefArticle (s : String) : String :=
+  match s.toList with
+  | c :: _ =>
+    let lc := c.toLower
+    if lc == 'a' || lc == 'e' || lc == 'i' || lc == 'o' || lc == 'u' then "an" else "a"
+  | [] => "a"
+
+/-- Canonical Oracle sentence for `r` (round-trips with `parseOracle?`, CR 106.6). -/
+def toOracleSentence (r : ManaSpendRestriction) : String :=
+  let riderText (rs : Array SpellRiderSpec) : String :=
+    String.join (rs.toList.map SpellRiderSpec.toClause)
+  match r with
+  | .onlyForSpells pred rs =>
+    let objPhrase :=
+      match pred with
+      | .or _ (.or _ _) => s!"{pred.label} spells"
+      | .hasSubtype _ =>
+        if rs.isEmpty then s!"{pred.label} spells"
+        else s!"{indefArticle pred.label} {pred.label} spell"
+      | _ =>
+        if rs.isEmpty then s!"{indefArticle pred.label} {pred.label} spell"
+        else s!"{indefArticle pred.label} {pred.label} spell"
+    s!"Spend this mana only to cast {objPhrase}{riderText rs}."
+  | .onlyForAbilities pred =>
+    s!"Spend this mana only to activate {pred.label}."
+  | .onlyForSpellsOrAbilities sp ab rs =>
+    let abClause :=
+      match ab with
+      | .equip => "or activate equip abilities"
+      | .sourceMatches ap => s!"and activate abilities of {ap.label} sources"
+    s!"Spend this mana only to cast {sp.label} spells {abClause}{riderText rs}."
+  | .cantSpendOnSpells (.not (.hasType .artifact)) =>
+    "This mana can't be spent to cast a nonartifact spell."
+  | .cantSpendOnSpells pred =>
+    s!"This mana can't be spent to cast {indefArticle pred.label} {pred.label} spell."
+  | .notFromZone .hand =>
+    "This mana can't be spent to cast spells from your hand."
+  | .notFromZone z =>
+    s!"This mana can't be spent to cast spells from your {z}."
+
 private def parsePredAtom? (raw : String) : Option ManaObjectPred :=
   let s := raw.trimAscii.copy
   let low := s.map Char.toLower
   match low with
   | "noncreature" => some (.not (.hasType .creature))
   | "nonartifact" => some (.not (.hasType .artifact))
+  | "nonland" => some (.not (.hasType .land))
+  | "nonlegendary" => some (.not (.hasSupertype .legendary))
   | "legendary" => some (.hasSupertype .legendary)
   | "basic" => some (.hasSupertype .basic)
   | "snow" => some (.hasSupertype .snow)
@@ -510,53 +596,199 @@ private def parseSpellPredList? (raw : String) : Option ManaObjectPred :=
   else
     let rec go : List String → Option ManaObjectPred
       | [] => none
-      | [x] => parsePredAtom? x
+      | [x] =>
+        match parsePredAtom? x with
+        | some p => some p
+        | none =>
+          -- Support multi-word conjunctions like `"legendary creature"` or `"artifact creature"`.
+          let words := (x.splitOn " ").filter (!·.isEmpty)
+          if words.length ≥ 2 then
+            (words.mapM parsePredAtom?).map (fun ps => ManaObjectPred.allOf ps.toArray)
+          else none
       | x :: rest =>
         match parsePredAtom? x, go rest with
         | some a, some b => some (.or a b)
         | _, _ => none
     go parts
 
-/-- Parse an Oracle spending-restriction clause into a structured
-`ManaSpendRestriction` at card parse time (CR 106.6). Accepts phrases such as
-`"Dwarf, Equipment, and Saga spells"`, `"Dragon spells"`, `"a legendary spell,
-and that spell can't be countered"`, `"an instant or sorcery spell"`,
-`"Equipment spells or activate equip abilities"`, `"not spells from hand"`,
-and `"not a nonartifact spell"`. -/
-def parseOracle? (raw : String) : Option ManaSpendRestriction :=
+private def parseSmallCount (s : String) : Option Nat :=
+  let low := s.trimAscii.copy.map Char.toLower
+  match low with
+  | "a" | "an" | "one" => some 1
+  | "two" => some 2
+  | "three" => some 3
+  | "four" => some 4
+  | "five" => some 5
+  | _ => if !low.isEmpty && low.all Char.isDigit then low.toNat? else none
+
+/-- Parse a trailing rider clause such as `", and that spell can't be countered"`,
+`", and that creature gains haste"`, or
+`", and that creature enters with an additional +1/+1 counter on it"`. -/
+private def stripRiders (s : String) : String × Array SpellRiderSpec := Id.run do
+  let mut cur := s.trimAscii.copy
+  let mut rs : Array SpellRiderSpec := #[]
+  let mut progress := true
+  while progress do
+    progress := false
+    let low := cur.map Char.toLower
+    if low.endsWith ", and that spell can't be countered" then
+      cur := (cur.take (cur.length - ", and that spell can't be countered".length)).trimAscii.copy
+      rs := #[.cantBeCountered] ++ rs
+      progress := true
+    else if low.endsWith ", and that creature gains haste" then
+      cur := (cur.take (cur.length - ", and that creature gains haste".length)).trimAscii.copy
+      rs := #[.gainsHaste] ++ rs
+      progress := true
+    else if low.endsWith ", and it gains haste" then
+      cur := (cur.take (cur.length - ", and it gains haste".length)).trimAscii.copy
+      rs := #[.gainsHaste] ++ rs
+      progress := true
+    else
+      let marker := ", and that creature enters with "
+      match low.splitOn marker with
+      | [lhs, rhs] =>
+        if rhs.contains "additional +1/+1 counter" then
+          let countTok := ((rhs.splitOn " additional +1/+1 counter").headD "").trimAscii.copy
+          if let some n := parseSmallCount countTok then
+            cur := (cur.take lhs.length).trimAscii.copy
+            rs := #[.entersWithPlusOneCounters n] ++ rs
+            progress := true
+      | _ => pure ()
+  return (cur, rs)
+
+private def parseAbilityClause? (raw : String) : Option ManaAbilityPred :=
+  let s := raw.trimAscii.copy
+  let low := s.map Char.toLower
+  let s :=
+    if low.startsWith "to activate " then (s.drop "to activate ".length).trimAscii.copy
+    else if low.startsWith "activate " then (s.drop "activate ".length).trimAscii.copy
+    else s
+  let low := s.map Char.toLower
+  if low == "equip abilities" || low == "an equip ability" then
+    some .equip
+  else
+    let afterOf? : Option String :=
+      if low.startsWith "abilities of " then some (s.drop "abilities of ".length).trimAscii.copy
+      else if low.startsWith "an ability of " then some (s.drop "an ability of ".length).trimAscii.copy
+      else if low.startsWith "activated abilities of " then
+        some (s.drop "activated abilities of ".length).trimAscii.copy
+      else none
+    afterOf?.bind fun tail =>
+      let tailLow := tail.map Char.toLower
+      let stem? :=
+        if tailLow.endsWith " sources" then
+          some (tail.take (tail.length - " sources".length)).trimAscii.copy
+        else if tailLow.endsWith " source" then
+          some (tail.take (tail.length - " source".length)).trimAscii.copy
+        else none
+      stem?.bind fun stem =>
+        (parseSpellPredList? stem).map ManaAbilityPred.sourceMatches
+
+private def parseSpellClause? (raw : String) : Option ManaObjectPred :=
+  let s := raw.trimAscii.copy
+  let low := s.map Char.toLower
+  let s :=
+    if low.startsWith "to cast " then (s.drop "to cast ".length).trimAscii.copy
+    else if low.startsWith "cast " then (s.drop "cast ".length).trimAscii.copy
+    else s
+  let low := s.map Char.toLower
+  let stem? : Option String :=
+    if low.endsWith " spells" then
+      some (s.take (s.length - " spells".length)).trimAscii.copy
+    else if low.endsWith " spell" then
+      some (s.take (s.length - " spell".length)).trimAscii.copy
+    else none
+  stem?.bind parseSpellPredList?
+
+private def parseZoneWord? (raw : String) : Option ZoneKind :=
+  match raw.trimAscii.copy.map Char.toLower with
+  | "hand" | "your hand" => some .hand
+  | "graveyard" | "your graveyard" => some .graveyard
+  | "exile" => some .exile
+  | "library" | "your library" => some .library
+  | "command zone" => some .command
+  | _ => none
+
+/-- Parse an Oracle spending-restriction sentence or clause into a structured
+`ManaSpendRestriction` at card parse time (CR 106.6). Accepts both full
+sentences (`"Spend this mana only to cast ..."`, `"This mana can't be spent to
+cast ..."`) and clause fragments (`"Dwarf, Equipment, and Saga spells"`,
+`"a legendary spell, and that spell can't be countered"`,
+`"Equipment spells or activate equip abilities"`, `"not spells from hand"`). -/
+def parseOracle? (raw : String) : Option ManaSpendRestriction := Id.run do
   let s := (raw.replace "." "").trimAscii.copy
   let low := s.map Char.toLower
-  if s.isEmpty then none
-  else if low == "not spells from hand" ||
-      (low.contains "from your hand" && (low.contains "not" || low.contains "can't")) ||
-      (low.contains "from hand" && (low.contains "not" || low.contains "can't")) then
-    some .notSpellsFromHand
-  else if low == "not a nonartifact spell" || low == "not nonartifact spell" ||
-      low == "not to cast a nonartifact spell" then
-    some .cantNonartifact
-  else if low == "abilities of creature sources" ||
-      low == "activate abilities of creature sources" then
-    some .creatureSource
-  else if low == "equipment spells and equip abilities" ||
-      low == "equipment spells or activate equip abilities" then
-    some .equipmentOrEquip
-  else if low.endsWith " spells and abilities" then
-    let stem := (s.take (s.length - " spells and abilities".length)).trimAscii.copy
-    (CardSubtype.ofOracle? stem).map subtypeSpellOrSource
-  else
-    let (core, riders) :=
-      match s.splitOn ", and that spell can't be countered" with
-      | [lhs, _] => (lhs.trimAscii.copy, #[SpellRiderSpec.cantBeCountered])
-      | _ => (s, #[])
-    let coreLow := core.map Char.toLower
-    let stem? : Option String :=
-      if coreLow.endsWith " spells" then
-        some (core.take (core.length - " spells".length)).trimAscii.copy
-      else if coreLow.endsWith " spell" then
-        some (core.take (core.length - " spell".length)).trimAscii.copy
-      else none
-    stem?.bind fun stem =>
-      (parseSpellPredList? stem).map fun pred => .onlyForSpells pred riders
+  if s.isEmpty then return none
+
+  -- 1. Negative `"This mana can't be spent to cast ..."` / `"not ..."` clauses.
+  if let some rest :=
+      if low.startsWith "this mana can't be spent to cast " then
+        some (s.drop "this mana can't be spent to cast ".length).trimAscii.copy
+      else if low.startsWith "not to cast " then
+        some (s.drop "not to cast ".length).trimAscii.copy
+      else if low.startsWith "not " then
+        some (s.drop "not ".length).trimAscii.copy
+      else none then
+    let rLow := rest.map Char.toLower
+    if rLow.startsWith "spells from " then
+      let zStr := (rest.drop "spells from ".length).trimAscii.copy
+      if let some z := parseZoneWord? zStr then
+        return some (.notFromZone z)
+    if let some pred := parseSpellClause? rest then
+      return some (.cantSpendOnSpells pred)
+    if rLow == "nonartifact spell" || rLow == "a nonartifact spell" then
+      return some .cantNonartifact
+    return none
+
+  if (low.contains "from your hand" || low.contains "from hand") &&
+      (low.contains "not" || low.contains "can't") then
+    return some .notSpellsFromHand
+
+  -- 2. Strip optional `"Spend this mana only "` / `"Spend this mana only to "` prefix.
+  let body :=
+    if low.startsWith "spend this mana only to " then
+      (s.drop "spend this mana only to ".length).trimAscii.copy
+    else if low.startsWith "spend this mana only " then
+      (s.drop "spend this mana only ".length).trimAscii.copy
+    else s
+  let (core, riders) := stripRiders body
+  let coreLow := core.map Char.toLower
+
+  -- 3. Short-hand `"<Subtype> spells and abilities"`.
+  if coreLow.endsWith " spells and abilities" then
+    let stem := (core.take (core.length - " spells and abilities".length)).trimAscii.copy
+    if let some sub := CardSubtype.ofOracle? stem then
+      return some (.onlyForSpellsOrAbilities (.hasSubtype sub) (.sourceMatches (.hasSubtype sub)) riders)
+
+  -- 4. Combined `"cast <spell> [or/and] [to] activate <ability>"`.
+  let splitAct? : Option (String × String) :=
+    let markers := [
+      " or to activate ", " and to activate ",
+      " or activate ", " and activate "
+    ]
+    markers.findSome? fun m =>
+      match coreLow.splitOn m with
+      | [lhs, _] =>
+        let rhs := (core.drop (lhs.length + m.length)).trimAscii.copy
+        some ((core.take lhs.length).trimAscii.copy, "activate " ++ rhs)
+      | _ => none
+  if let some (spStr, abStr) := splitAct? then
+    if let some sp := parseSpellClause? spStr then
+      if let some ab := parseAbilityClause? abStr then
+        return some (.onlyForSpellsOrAbilities sp ab riders)
+
+  if coreLow == "equipment spells and equip abilities" then
+    return some (.onlyForSpellsOrAbilities (.hasSubtype .equipment) .equip riders)
+
+  -- 5. Pure ability restriction (`"activate abilities of creature sources"`, `"equip abilities"`).
+  if let some ab := parseAbilityClause? core then
+    return some (.onlyForAbilities ab)
+
+  -- 6. Pure spell restriction (`"cast ... spell(s)"`, `"Dragon spells"`, `"Dwarf, Equipment, and Saga spells"`).
+  if let some sp := parseSpellClause? core then
+    return some (.onlyForSpells sp riders)
+
+  return none
 
 end ManaSpendRestriction
 

@@ -881,7 +881,7 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
   -- 4a. CR 601.2h `Casting.preferredManaTap` tap-cost reservation & CR 302.6 live tap-mana partitioning:
   let dork22Def : CardDef := {
     creature "P45i4 ElfDork" ManaCost.empty #["Elf", "Druid"] 2 2 with
-    tapAddMana := #[.colored .green]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .green, .const 1)])]
   }
   let crew1ManaVehDef : CardDef := {
     name := "P45i4 ManaSkiff"
@@ -1109,12 +1109,13 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
     types := #[.artifact, .creature]
     power := some 2
     toughness := some 2
-    staticAbilities := #[.fra .tapSacrificeAddThreeOfOneColor]
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) (.filter (.all #[.hasSubtype (.literal .equipment), .attachedTo .this]))]
         effect := Effect.gainLife 2 },
       { cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.hasType .artifact)), .sacrifice (.exact 1) (.filter (.all #[.hasSubtype (.literal .equipment), .attachedTo .this]))]
-        effect := Effect.gainLife 3 }
+        effect := Effect.gainLife 3 },
+      ActivatedAbility.manaAbility (.oneOf .anyColor (.const 3))
+        (cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self])
     ]
   }
   let gArmed00 := addPermanent (addPermanent g3 armedArtHeroDef p0 p0) eqDef4 p0 p0

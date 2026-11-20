@@ -1551,7 +1551,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     subtypes := #["Equipment"]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1)]
-      costReductionPerEquipment := 1
+      costReductions := #[ActivationCostReduction.perEquipment 1]
       effect := Effect.draw 1
     }]
   }
@@ -1592,13 +1592,14 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
       { mana := .colored .red, fromTreasure := true },
       { mana := .colored .green, restriction := some .elf }
     ])
-  let afterElfGeneric := poolTreasureAndElf.pay? (ManaCost.ofGeneric 1) (allowElfRestricted := true)
+  let elfSpend : ManaSpend := ManaSpend.forSpell #[.creature] #[] #[.elf]
+  let afterElfGeneric := poolTreasureAndElf.pay? (ManaCost.ofGeneric 1) (spend := elfSpend)
   let poolCantNonart : ManaPool :=
     ({} : ManaPool).addUnits #[{ mana := .colored .blue, restriction := some .cantNonartifact }]
   let manaPriorityAndRestrOk : Bool :=
     afterElfGeneric.any (fun p => p.units.size == 1 && p.units[0]!.fromTreasure && p.units[0]!.restriction.isNone) &&
-    !poolCantNonart.canPay (ManaCost.ofGeneric 1) &&
-    poolCantNonart.canPay (ManaCost.ofGeneric 1) (allowCantNonartifact := true)
+    !poolCantNonart.canPay (ManaCost.ofGeneric 1) (spend := ManaSpend.forSpell #[.creature]) &&
+    poolCantNonart.canPay (ManaCost.ofGeneric 1)
 
   let gWardMana0 : Game :=
     let g := insertObject afterDraw bear me .stack (some me)
@@ -2466,11 +2467,11 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   let payWith (d : CardDef) (pool : ManaPool) : Bool :=
     let g := insertObject afterDraw d me (.hand me)
     g.canPayAnnouncedAdditional me (g.object! (g.player me).hand.back!) pool
-  let pInst := ManaPool.empty.add .colorless 3 (instRestricted := true)
-  let pHero := ManaPool.empty.add .colorless 3 (heroRestricted := true)
-  let pVill := ManaPool.empty.add .colorless 3 (villainRestricted := true)
-  let pCant := ManaPool.empty.add .colorless 3 (cantNonartifact := true)
-  let pCreat := ManaPool.empty.add .colorless 3 (creatureRestricted := true)
+  let pInst := ManaPool.empty.add .colorless 3 (restriction := some .instantOrSorcery)
+  let pHero := ManaPool.empty.add .colorless 3 (restriction := some .hero)
+  let pVill := ManaPool.empty.add .colorless 3 (restriction := some .villain)
+  let pCant := ManaPool.empty.add .colorless 3 (restriction := some .cantNonartifact)
+  let pCreat := ManaPool.empty.add .colorless 3 (restriction := some .creatureSource)
   let pFree := ManaPool.empty.add .colorless 3
   let restrictionFlagsOk :=
     payWith instDef pInst && !payWith plainDef pInst &&

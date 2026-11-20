@@ -407,7 +407,7 @@ Jace, Reality Sculptor has 5, so 1 is excess. -/
   let o := namedPermanent g "Heartwood"
   o.printed.isToken && o.printed.isArtifact && g.hasSubtype o .heartwood &&
     o.printed.colors == (ColorSet.singleton .red).insert .green &&
-    o.printed.tapAddOneOf == #[.colored .red, .colored .green]
+    o.printed.manaAbilities == #[.colored .red, .colored .green]
 #guard (heartwoodCrafter.prepareFace.bind (·.spellEffect)).map (·.resolution) ==
   some (.createTokens .heartwood 1)
 #guard (fraRuling 793).comment.contains "artifact subtype Heartwood"

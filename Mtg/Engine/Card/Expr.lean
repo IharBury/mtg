@@ -706,7 +706,7 @@ inductive EventPattern where
   | permanentEntered (pred : ObjectPred)
   | permanentDied (pred : ObjectPred)
   | permanentLeftBattlefield (pred : ObjectPred)
-  | attackedWith (pred : ObjectPred)
+  | attackedWith (pred : ObjectPred) (minCount : Nat := 1)
   | castSpell (pred : ObjectPred)
   | drewCard (minCount : Nat := 1)
   | discardedCard (pred : ObjectPred := .all #[])
@@ -907,6 +907,114 @@ def evalConst? (x : Nat := 0) : ValueExpr → Option Int
 
 end ValueExpr
 
+namespace Condition
+
+/-- Combine an array of conditions into a canonical `Option Condition`, flattening
+nested `.all` conjunctions. -/
+def andAll (cs : Array Condition) : Option Condition :=
+  let flat := cs.foldl (fun acc c =>
+    match c with
+    | .all inner => acc ++ inner
+    | other => acc.push other) #[]
+  match flat.toList with
+  | [] => none
+  | [c] => some c
+  | _ => some (.all flat)
+
+/-- Conjoin two optional conditions. -/
+def andOpt (a b : Option Condition) : Option Condition :=
+  match a, b with
+  | none, x | x, none => x
+  | some c1, some c2 => andAll #[c1, c2]
+
+end Condition
+
+mutual
+
+private partial def playerFilterMentionsTarget (pf : PlayerFilter) : Bool :=
+  playerPredMentionsTarget pf.pred
+
+private partial def playerPredMentionsTarget : PlayerPred → Bool
+  | .all ps | .anyOf ps => ps.any playerPredMentionsTarget
+  | .not p => playerPredMentionsTarget p
+  | .metric _ _ rhs => valueExprMentionsTarget rhs
+  | .controls f minC => objectFilterMentionsTarget f || valueExprMentionsTarget minC
+  | _ => false
+
+private partial def playerExprMentionsTarget : PlayerExpr → Bool
+  | .target _ => true
+  | .controllerOf o | .ownerOf o => objectExprMentionsTarget o
+  | .matching _ p => playerPredMentionsTarget p
+  | .chosenBy ch _ f => playerExprMentionsTarget ch || playerFilterMentionsTarget f
+  | _ => false
+
+private partial def objectPredMentionsTarget : ObjectPred → Bool
+  | .all ps | .any ps => ps.any objectPredMentionsTarget
+  | .not p => objectPredMentionsTarget p
+  | .stat _ _ rhs | .counterCount _ _ rhs => valueExprMentionsTarget rhs
+  | .combatRole (.attackingPlayer w) => playerExprMentionsTarget w
+  | .combatRole (.blockingObject o) => objectExprMentionsTarget o
+  | .sameAs (.target _) | .otherThan (.target _) => true
+  | .controlledBy pf | .ownedBy pf => playerFilterMentionsTarget pf
+  | .attachedTo o | .shares _ o => objectExprMentionsTarget o
+  | .hasAttachment f => objectFilterMentionsTarget f
+  | .targets (.object o) => objectExprMentionsTarget o
+  | .targets (.player p) => playerExprMentionsTarget p
+  | .targets (.either o p) => objectExprMentionsTarget o || playerExprMentionsTarget p
+  | .dealtDamageThisTurn _ (some (.player pf)) => playerFilterMentionsTarget pf
+  | .dealtDamageThisTurn _ (some (.object f)) => objectFilterMentionsTarget f
+  | _ => false
+
+private partial def objectFilterMentionsTarget (f : ObjectFilter) : Bool :=
+  (match f.zones.owner with
+   | .matching pf => playerFilterMentionsTarget pf
+   | .ofPlayer p => playerExprMentionsTarget p
+   | .any => false) || objectPredMentionsTarget f.pred
+
+private partial def objectExprMentionsTarget : ObjectExpr → Bool
+  | .target _ => true
+  | .inZones zs pred =>
+    (match zs.owner with
+     | .matching pf => playerFilterMentionsTarget pf
+     | .ofPlayer p => playerExprMentionsTarget p
+     | .any => false) || objectPredMentionsTarget pred
+  | .topOfLibrary owner cnt => playerExprMentionsTarget owner || valueExprMentionsTarget cnt
+  | .extremum _ _ among => objectExprMentionsTarget among
+  | .union es => es.any objectExprMentionsTarget
+  | .diff a b => objectExprMentionsTarget a || objectExprMentionsTarget b
+  | _ => false
+
+private partial def valueExprMentionsTarget : ValueExpr → Bool
+  | .objectStat _ o | .counterCount _ o | .aggregate _ _ o | .basicLandTypeCount o
+  | .cardTypeCount o | .subtypeCount _ o | .manaSymbols _ o => objectExprMentionsTarget o
+  | .playerMetric _ w => playerExprMentionsTarget w
+  | .binary _ a b => valueExprMentionsTarget a || valueExprMentionsTarget b
+  | _ => false
+
+end
+
+/-- Whether `v` references a chosen target (`ObjectExpr.target` / `PlayerExpr.target`),
+so cost computation must evaluate it after CR 601.2c target selection. -/
+def ValueExpr.mentionsTarget (v : ValueExpr) : Bool :=
+  valueExprMentionsTarget v
+
+/-- Whether `c` references a chosen target (`ObjectExpr.target` / `PlayerExpr.target`),
+so cost computation must evaluate it after CR 601.2c target selection. -/
+def Condition.mentionsTarget : Condition → Bool
+  | .cmp _ a b => valueExprMentionsTarget a || valueExprMentionsTarget b
+  | .exists o => objectExprMentionsTarget o
+  | .forAll o p => objectExprMentionsTarget o || objectPredMentionsTarget p
+  | .playerPred w p => playerExprMentionsTarget w || playerPredMentionsTarget p
+  | .castPred cp =>
+    match cp with
+    | .wasKicked (.target _) | .giftPromised (.target _) | .impendingPaid (.target _)
+    | .teamworkPaid (.target _) | .sneakPaid (.target _) | .castFrom _ (.target _)
+    | .manaSpentMatches _ (.target _) => true
+    | _ => false
+  | .all cs | .any cs => cs.attach.any fun ⟨c, _⟩ => Condition.mentionsTarget c
+  | .not c => Condition.mentionsTarget c
+  | _ => false
+
 /-! ### Functorial Layer 3 `HasTextChange` Instances (CR 612.2 / 613.1c) -/
 
 mutual
@@ -1090,7 +1198,7 @@ instance : HasTextChange EventPattern where
       | .permanentDied op => .permanentDied (HasTextChange.applyTextChanges tcs op)
       | .permanentLeftBattlefield op =>
         .permanentLeftBattlefield (HasTextChange.applyTextChanges tcs op)
-      | .attackedWith op => .attackedWith (HasTextChange.applyTextChanges tcs op)
+      | .attackedWith op n => .attackedWith (HasTextChange.applyTextChanges tcs op) n
       | .castSpell op => .castSpell (HasTextChange.applyTextChanges tcs op)
       | .discardedCard op => .discardedCard (HasTextChange.applyTextChanges tcs op)
       | .beheld sub => .beheld (HasTextChange.applyTextChanges tcs sub)
@@ -1718,10 +1826,13 @@ where
     | .permanentLeftBattlefield pred =>
       let noun := printObjectPredParts { ctx with plural := false, capitalize := false } pred .battlefield
       s!"{indefinite noun} {noun} left the battlefield {whenS}"
-    | .attackedWith (.all #[]) => s!"{whoS} attacked {whenS}"
-    | .attackedWith pred =>
+    | .attackedWith (.all #[]) 1 => s!"{whoS} attacked {whenS}"
+    | .attackedWith pred 1 =>
       let noun := printObjectPredParts { ctx with plural := false, capitalize := false } pred .battlefield
       s!"{whoS} attacked with {indefinite noun} {noun} {whenS}"
+    | .attackedWith pred n =>
+      let noun := printObjectPredParts { ctx with plural := true, capitalize := false } pred .battlefield
+      s!"{whoS} attacked with {englishNumber n} or more {noun} {whenS}"
     | .castSpell pred =>
       let noun := printObjectPredParts { ctx with plural := false, capitalize := false } pred .stack
       s!"{whoS} cast {indefinite noun} {noun} {whenS}"
@@ -1760,6 +1871,10 @@ private def printCastPred : CastContextPred → String
     s!"{renderCmpBound op (toString n)} colors of mana were spent to cast this spell"
   | .manaSpentMatches (.withRider .cantBeCountered) _ =>
     "uncounterable mana was spent to cast this spell"
+  | .manaSpentMatches (.withRider .gainsHaste) _ =>
+    "haste-granting mana was spent to cast this spell"
+  | .manaSpentMatches (.withRider (.entersWithPlusOneCounters n)) _ =>
+    s!"+{n}/+{n}-counter mana was spent to cast this spell"
 
 private partial def printCondition (ctx : PrintCtx) : Condition → String
   | .cmp op a b =>

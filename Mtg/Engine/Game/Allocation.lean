@@ -124,10 +124,14 @@ def enterWithLoyalty (g : Game) (o : GameObject) : Game :=
 /-- “This creature enters with N +1/+1 counters on it” (placed in `entersWith`
 during the zone change). -/
 def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
-  if o.status.faceDown || !g.retainsPrintedAbilities o then g
+  if o.status.faceDown || o.status.plusOnePlusOne == 0 then g
   else
-    let base := (g.baseCard o).entersWithPlusOneCounters
-    if base == 0 || o.status.plusOnePlusOne == 0 then g
+    let base := if g.retainsPrintedAbilities o then (g.baseCard o).entersWithPlusOneCounters else 0
+    let riderBonus :=
+      if g.wasCast o.id then
+        GameEvent.plusOneCounterManaRidersSpentOn g.events (GameEvent.stackSpellIdOf g.events o.id)
+      else 0
+    if base == 0 && riderBonus == 0 then g
     else
       let n := o.status.plusOnePlusOne
       g.logMsg s!"{g.name o} enters with {n} +1/+1 counter(s)"

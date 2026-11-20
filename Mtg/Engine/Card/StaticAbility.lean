@@ -57,17 +57,10 @@ inductive FraStatic where
   | equippedMedicsKitesail
   /-- This land enters tapped. As it enters, choose a color. -/
   | entersTappedChooseColor
-  /-- `{T}`: Add one mana of the chosen color. -/
-  | tapAddChosenColor
   /-- Creatures you control can attack as though they didn't have defender. -/
   | creaturesAttackDespiteDefender
   /-- Creature tokens you control get +1/+0 and have vigilance. -/
   | creatureTokensGetOneAndVigilance
-  /-- `{T}`: Add `{C}`. This mana can't be spent to cast spells from your hand. -/
-  | tapAddColorlessNotFromHand
-  /-- `{T}`: Add one mana of any color. Spend this mana only to cast a
-  planeswalker spell. -/
-  | tapAddAnyColorPlaneswalkerOnly
   /-- Noncreature spells your opponents cast cost `{1}` more to cast. -/
   | opponentsNoncreatureSpellsCostMore
   /-- Planeswalkers you control have “No more than one creature can attack
@@ -113,8 +106,6 @@ inductive FraStatic where
   | doesntUntap
   /-- Creatures you control get +2/+2 (Ajani emblem). -/
   | emblemCreaturesGetTwoTwo
-  /-- `{T}`, Sacrifice this token: Add three mana of any one color (Lotus). -/
-  | tapSacrificeAddThreeOfOneColor
   /-- As this creature enters, choose a nonland card name. -/
   | entersChooseNonlandCardName
   /-- Spells with the chosen name can't be cast. -/
@@ -148,14 +139,9 @@ def text : FraStatic → String
   | .equippedMedicsKitesail =>
     "Equipped creature gets +1/+0 and has flying and \"Whenever this creature attacks, you gain 1 life.\""
   | .entersTappedChooseColor => "This land enters tapped. As it enters, choose a color."
-  | .tapAddChosenColor => "{T}: Add one mana of the chosen color."
   | .creaturesAttackDespiteDefender =>
     "Creatures you control can attack as though they didn't have defender."
   | .creatureTokensGetOneAndVigilance => "Creature tokens you control get +1/+0 and have vigilance."
-  | .tapAddColorlessNotFromHand =>
-    "{T}: Add {C}. This mana can't be spent to cast spells from your hand."
-  | .tapAddAnyColorPlaneswalkerOnly =>
-    "{T}: Add one mana of any color. Spend this mana only to cast a planeswalker spell."
   | .opponentsNoncreatureSpellsCostMore =>
     "Noncreature spells your opponents cast cost {1} more to cast."
   | .planeswalkersAttackedByOneAtMost =>
@@ -185,15 +171,8 @@ def text : FraStatic → String
   | .artifactCreaturesHaveVigilance => "Artifact creatures you control have vigilance."
   | .doesntUntap => "This creature doesn't untap during your untap step."
   | .emblemCreaturesGetTwoTwo => "Creatures you control get +2/+2."
-  | .tapSacrificeAddThreeOfOneColor => "{T}, Sacrifice this token: Add three mana of any one color."
   | .entersChooseNonlandCardName => "As this creature enters, choose a nonland card name."
   | .chosenNameSpellsCantBeCast => "Spells with the chosen name can't be cast."
-
-/-- The restricted mana this ability adds, if it is a mana ability. -/
-def manaRestriction? : FraStatic → Option ManaSpendRestriction
-  | .tapAddColorlessNotFromHand => some .notSpellsFromHand
-  | .tapAddAnyColorPlaneswalkerOnly => some .planeswalkerSpell
-  | _ => none
 
 end FraStatic
 

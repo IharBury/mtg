@@ -1186,6 +1186,7 @@ private def isProposalBoundaryStep (caster : PlayerId) : PendingReplacement → 
   | .finishActivationExtraCosts ..
   | .finishActivateManaAbilityPicks ..
   | .finishActivateManaAbilityPostSac ..
+  | .runModalManaEffect ..
   | .finishManaAbilityMountainTrigger .. => true
   | .finishPostStep (.resumeProposalCostAfterLeave q _)
   | .finishPostStep (.resumeChooseModeAfterLeave q)

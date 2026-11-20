@@ -20,7 +20,7 @@ open Mtg.Engine.Catalog
 /- Rogue's Passage: {T}: Add {C} and {4}, {T}: target creature can't be blocked. -/
 
 def passageAbility : ActivatedAbility :=
-  roguesPassage.activatedAbilities[0]!
+  roguesPassage.activatedAbilities[1]!
 
 /-- Passage, Gray Ogre, and opposing Bears; {4} in the pool; land drop used. -/
 def passageReady : Game :=
@@ -36,7 +36,7 @@ def passageSource (g : Game) : GameObject :=
 #guard passageAbility.cost.tap
 #guard passageAbility.cost.mana == ManaCost.ofGeneric 4
 #guard passageAbility.effect.requiresTarget
-#guard !passageAbility.onlyAsSorcery
+#guard passageAbility.timing == .instant
 #guard passageReady.canActivate ⟨0⟩ (passageSource passageReady) passageAbility
 #guard !(passageReady.canActivate ⟨1⟩ (passageSource passageReady) passageAbility)
 #guard (passageReady.player ⟨0⟩).manaPool.canPay passageAbility.cost.mana
@@ -70,11 +70,11 @@ def passageSource (g : Game) : GameObject :=
 -- The heuristic does not dump {4} in the main phase.
 #guard
   match Agent.choose passageReady ⟨0⟩ with
-  | some (.activate id 0) => (passageReady.object! id).name != "Rogue's Passage"
+  | some (.activate id 1) => (passageReady.object! id).name != "Rogue's Passage"
   | _ => true
 
 def proposedPassage : Game :=
-  mustApply passageReady ⟨0⟩ (.activate (passageSource passageReady).id 0)
+  mustApply passageReady ⟨0⟩ (.activate (passageSource passageReady).id 1)
 
 #guard
   match proposedPassage.pending with
@@ -208,7 +208,7 @@ def passageAfterAttack : Game :=
 #guard (namedPermanent passageAfterAttack "Gray Ogre").status.attacking
 #guard
   match Agent.choose passageAfterAttack ⟨0⟩ with
-  | some (.activate id 0) => id == (passageSource passageAfterAttack).id
+  | some (.activate id 1) => id == (passageSource passageAfterAttack).id
   | _ => false
 
 /-- Three Mountains plus Passage is not enough {4} once Passage must stay untapped. -/
@@ -230,7 +230,7 @@ def passageThreeMountainsAttacking : Game :=
     (some (passageSource passageThreeMountainsAttacking).id)).canPay (ManaCost.ofGeneric 4)
 #guard
   match Agent.choose passageThreeMountainsAttacking ⟨0⟩ with
-  | some (.activate id 0) => (passageThreeMountainsAttacking.object! id).name != "Rogue's Passage"
+  | some (.activate id 1) => (passageThreeMountainsAttacking.object! id).name != "Rogue's Passage"
   | _ => true
 
 /-- Four Mountains plus Passage: the heuristic activates and taps Mountains, not Passage. -/
@@ -243,12 +243,12 @@ def passageFourMountainsAttacking : Game :=
     (some (passageSource passageFourMountainsAttacking).id)).canPay (ManaCost.ofGeneric 4)
 #guard
   match Agent.choose passageFourMountainsAttacking ⟨0⟩ with
-  | some (.activate id 0) => id == (passageSource passageFourMountainsAttacking).id
+  | some (.activate id 1) => id == (passageSource passageFourMountainsAttacking).id
   | _ => false
 
 def targetedPassageFromLands : Game :=
   let g := mustApply passageFourMountainsAttacking ⟨0⟩
-    (.activate (passageSource passageFourMountainsAttacking).id 0)
+    (.activate (passageSource passageFourMountainsAttacking).id 1)
   mustApply g ⟨0⟩
     (.target (Target.permanent (namedPermanent g "Gray Ogre").id))
 

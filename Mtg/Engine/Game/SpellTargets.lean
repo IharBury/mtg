@@ -487,10 +487,10 @@ require one (CR 702.6 / 601.2c / 702.16b). Subtype- and worthy-restricted Equip
 targets are encoded directly in `ab.effect.targeting.spec`. -/
 def abilityCanChooseTarget (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     (sourceId : Option ObjectId := none) : Bool :=
-  if ab.equipWorthy && ab.effect.targetSpec == .creatureYouControl then
+  if ab.isEquipWorthy && ab.effect.targetSpec == .creatureYouControl then
     !(g.legalTargetsForSpec p .worthyCreatureYouControl sourceId).isEmpty
   else
-    match ab.equipSubtype with
+    match ab.equipSubtype? with
     | some t =>
       if ab.effect.targetSpec == .creatureYouControl then
         !(g.legalTargetsForSpec p (.creatureYouControlSubtype t) sourceId).isEmpty

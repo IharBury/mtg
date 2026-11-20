@@ -859,7 +859,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         (!hasUnpaidBfSourceCost && g.sourceRemovedByCostSince p sourceId sinceIdx))
   let alreadyDiscardedFromHandForCost :=
     !sacrificeOrExileSource && !discardSource && !rawFromGy && !needsBfSource &&
-      ab.any (·.activateFromHand) &&
+      ab.any (·.isFromHand) &&
       !ab.any (·.cost.exileSourceFromHand) &&
       g.sourceDiscardedFromHandForCost sourceId forObject sinceIdx
   let some src := g.findObject? sourceId | do
@@ -931,7 +931,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     return g
   let fromHandAb :=
     !discardSource && !ab.any (·.cost.exileSourceFromHand) &&
-      ab.any (·.activateFromHand) && !rawFromGy && !needsBfSource
+      ab.any (·.isFromHand) && !rawFromGy && !needsBfSource
   if fromHandAb && !alreadyDiscardedFromHandForCost then
     if !(src.zone == .hand src.owner && src.owner == p) then
       throw s!"{g.name src} is not in your hand"

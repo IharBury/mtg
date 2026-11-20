@@ -189,40 +189,37 @@ namespace KeywordAbility
 
 /-- Construct the CR 702.6a sorcery-speed Equip activated ability. -/
 def equipActivatedAbility (filter : ObjectPred) (cost : CostSpec) : ActivatedAbility :=
-  let equipSubtype? : Option CardSubtype :=
-    match filter with
-    | .hasSubtype (.literal sub) => some sub
-    | .all ps =>
-      ps.findSome? fun
-        | .hasSubtype (.literal sub) => some sub
-        | _ => none
-    | _ => none
+  let extraPred? : Option ObjectPred :=
+    if filter == .anyObject then none else some filter
   let targetDomain : TargetDomain :=
     .object .battlefield (.all #[.hasType .creature, .controlledBy .you, filter])
   { cost
     effect := { targeting := .of (.ofDomain targetDomain)
                 resolution := .attach .source .target
                 phrase := "Attach to target creature you control" }
-    onlyAsSorcery := true
-    equipSubtype := equipSubtype? }
+    timing := .sorcery
+    tag? := some (.equip extraPred?) }
 
 /-- Construct the CR 702.29a / 702.29e hand-zone Cycling / Typecycling activated ability. -/
 def cyclingActivatedAbility (typeFilter? : Option ObjectPred) (cost : CostSpec) : ActivatedAbility :=
   let fullCost := cost.append (CostSpec.ofItem (.discard (.exact 1) .self))
-  let eff : Effect :=
+  let (eff, subLabel?) : Effect × Option String :=
     match typeFilter? with
-    | none => { resolution := .draw 1, phrase := "Draw a card" }
+    | none => ({ resolution := .draw 1, phrase := "Draw a card" }, none)
     | some (.hasSubtype (.literal sub)) =>
-      { resolution := .searchLandTypeToHand sub.englishName
-        phrase := s!"Search your library for a {sub} card, reveal it, put it into your hand, then shuffle" }
+      ({ resolution := .searchLandTypeToHand sub.englishName
+         phrase := s!"Search your library for a {sub} card, reveal it, put it into your hand, then shuffle" },
+       some sub.englishName)
     | some (.all #[.hasSupertype .basic, .hasType .land]) =>
-      { resolution := .searchLandTypeToHand "Basic land"
-        phrase := "Search your library for a basic land card, reveal it, put it into your hand, then shuffle" }
+      ({ resolution := .searchLandTypeToHand "Basic land"
+         phrase := "Search your library for a basic land card, reveal it, put it into your hand, then shuffle" },
+       some "Basic land")
     | some _ =>
-      { resolution := .draw 1, phrase := "Draw a card" }
+      ({ resolution := .draw 1, phrase := "Draw a card" }, none)
   { cost := fullCost
     effect := eff
-    activateFromHand := true }
+    activeZones := #[.hand]
+    tag? := some (.cycling subLabel?) }
 
 /-- Pure CR 702.1 expansion of one `KeywordAbility` into its exact intrinsic
 activated abilities, triggered abilities, static/replacement rules, special

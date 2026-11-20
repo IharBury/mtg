@@ -27,7 +27,7 @@ def hallsPlayed : Game :=
   mustApply hallsReady ⟨0⟩ (.playLand (handCardNamed hallsReady ⟨0⟩ "Elvenking's Halls").id)
 
 #guard (namedPermanent hallsPlayed "Elvenking's Halls").status.tapped
-#guard (namedPermanent hallsPlayed "Elvenking's Halls").printed.tapAddOneOf ==
+#guard (namedPermanent hallsPlayed "Elvenking's Halls").printed.manaAbilities ==
   #[.colored .green, .colored .blue]
 
 /-- Recruit draws, then a nonland discard creates a Human Soldier token. -/

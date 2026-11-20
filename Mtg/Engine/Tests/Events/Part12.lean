@@ -845,9 +845,9 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
   -- (i) `{1}{G}, Crew 2` with sources `[c22 ({C}, 2/2), c11a ({C}, 1/1), c11b ({G}, 1/1)]`:
   --     Single-tap `#[c22]` leaves `c11a + c11b` (power 2 >= 2), yet NO completion containing `c22` preserves
   --     `Crew 2` because `{G}` also requires `c11b`! `preferredManaTap` MUST pick from `{c11a, c11b}`!
-  let dork22C : CardDef := { creature "P46i4 Pilot22C" ManaCost.empty #["Pilot"] 2 2 with tapAddMana := #[.colorless] }
-  let dork11C : CardDef := { creature "P46i4 Dork11C" ManaCost.empty #["Scout"] 1 1 with tapAddMana := #[.colorless] }
-  let dork11G : CardDef := { creature "P46i4 Dork11G" ManaCost.empty #["Elf"] 1 1 with tapAddMana := #[.colored .green] }
+  let dork22C : CardDef := { creature "P46i4 Pilot22C" ManaCost.empty #["Pilot"] 2 2 with activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 1)])] }
+  let dork11C : CardDef := { creature "P46i4 Dork11C" ManaCost.empty #["Scout"] 1 1 with activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 1)])] }
+  let dork11G : CardDef := { creature "P46i4 Dork11G" ManaCost.empty #["Elf"] 1 1 with activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .green, .const 1)])] }
   let crew1GVehDef : CardDef := {
     name := "P46i4 EmeraldSkiff"
     types := #[.artifact]
@@ -880,7 +880,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
   -- `.tapTwoUntappedArtifacts` with `[artMana1, artMana2, spareArt, forest]` for `{2}`:
   -- Tapping both `artMana1` and `artMana2` would leave only 1 untapped artifact (`spareArt`), violating `.tapTwoUntappedArtifacts`;
   -- `betterManaTap` (`avoidArtifacts`) prefers `forest` first, then 1 mana artifact, leaving 2 untapped artifacts!
-  let manaRockDef : CardDef := { name := "P46i4 ManaRock", types := #[.artifact], tapAddMana := #[.colorless] }
+  let manaRockDef : CardDef := { name := "P46i4 ManaRock", types := #[.artifact], activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 1)])] }
   let spareArtDef : CardDef := { name := "P46i4 SpareCog", types := #[.artifact] }
   let tapTwoArt2ManaDef : CardDef := {
     name := "P46i4 ArtFoundry"
@@ -1111,11 +1111,14 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
   -- (4) `.addFourManaDragonSpells 4 .dragon` (`.dragon` -> `.goblin`):
   let archdruidDef : CardDef := {
     creature "P46i4 Archdruid" ManaCost.empty #["Druid"] 2 2 with
-    tapAddManaForEach := #[{ mana := .colored .green, subtype := .elf }]
+    activatedAbilities := #[ActivatedAbility.manaAbility
+      (.sequence #[(.colored .green, .count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))])]
   }
   let powerChanDef : CardDef := {
     creature "P46i4 PowerChan" ManaCost.empty #["Druid"] 2 2 with
-    tapAddAnyColorEqualToPower := true
+    activatedAbilities := #[ActivatedAbility.manaAbility
+      (.oneOf .anyColor (.objectStat .power .this))
+      (restriction := some .elf)]
   }
   let dragonHoardSpellDef : CardDef := {
     name := "P46i4 DragonRitual"

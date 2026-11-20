@@ -40,10 +40,11 @@ open Mtg.Engine.Catalog
 #guard mentions soldierOfTheGreyHost.summary "flying"
 #guard mentions roguesPassage.summary "{T}: Add {C}"
 #guard mentions roguesPassage.summary "can't be blocked"
-#guard roguesPassage.activatedAbilities.size == 1
-#guard roguesPassage.activatedAbilities[0]!.effect == Effect.targetCantBeBlockedThisTurn
-#guard roguesPassage.activatedAbilities[0]!.cost.tap
-#guard roguesPassage.activatedAbilities[0]!.cost.mana == ManaCost.ofGeneric 4
+#guard roguesPassage.activatedAbilities.size == 2
+#guard roguesPassage.activatedAbilities[0]!.isManaAbility
+#guard roguesPassage.activatedAbilities[1]!.effect == Effect.targetCantBeBlockedThisTurn
+#guard roguesPassage.activatedAbilities[1]!.cost.tap
+#guard roguesPassage.activatedAbilities[1]!.cost.mana == ManaCost.ofGeneric 4
 #guard mentions orcishSiegemaster.summary "trample"
 #guard mentions orcishSiegemaster.summary "Other Orcs and Goblins"
 #guard mentions orcishSiegemaster.summary "greatest power"
@@ -62,7 +63,7 @@ open Mtg.Engine.Catalog
 #guard hawkeyeSBow.staticAbilities == #[.equippedCreatureGetsAndHas 1 0 #[Keyword.reach]]
 #guard hawkeyeSBow.triggeredAbilities == #[.onWatch Effect.watchEquippedTappedDamage]
 #guard hawkeyeSBow.activatedAbilities.size == 1
-#guard hawkeyeSBow.activatedAbilities[0]!.onlyAsSorcery
+#guard hawkeyeSBow.activatedAbilities[0]!.timing == .sorcery
 #guard hawkeyeSBow.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
 #guard hawkeyeSBow.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard mentions hawkeyeSBow.summary "Equipped creature"
@@ -101,7 +102,9 @@ open Mtg.Engine.Catalog
 #guard mentions elvishArchdruid.summary "for each Elf"
 #guard elvishArchdruid.staticAbilities.size == 1
 #guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #[.elf] 1 1]
-#guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := .elf }]
+#guard elvishArchdruid.activatedAbilities.any fun ab =>
+  ab.mana?.any fun mp =>
+    mp.spec == .sequence #[(.colored .green, .count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))]
 #guard mentions mirkwoodElk.summary "trample"
 #guard mentions mirkwoodElk.summary "Elf card"
 #guard KeywordAbility.hasTrample mirkwoodElk.keywords
@@ -124,7 +127,8 @@ open Mtg.Engine.Catalog
 #guard KeywordAbility.hasVigilance woodlandWeavemaster.keywords
 #guard woodlandWeavemaster.triggeredAbilities.size == 1
 #guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
-#guard woodlandWeavemaster.tapAddAnyColorEqualToPower
+#guard woodlandWeavemaster.activatedAbilities.any fun ab =>
+  ab.mana?.any fun mp => mp.spec == .oneOf .anyColor (.objectStat .power .this)
 #guard mentions oliphaunt.summary "trample"
 #guard mentions oliphaunt.summary "+2/+0"
 #guard mentions oliphaunt.summary "Mountaincycling"
@@ -169,7 +173,7 @@ open Mtg.Engine.Catalog
 #guard desolationProwler.activatedAbilities.size == 1
 #guard desolationProwler.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
 #guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
-#guard desolationProwler.activatedAbilities[0]!.onceEachTurn
+#guard desolationProwler.activatedAbilities[0]!.turnLimit? == some 1
 #guard mentions raveningWarg.summary "deathtouch"
 #guard mentions raveningWarg.summary "while you control a creature with power 4 or greater"
 #guard mentions raveningWarg.summary "power 4 or greater"
@@ -226,7 +230,7 @@ open Mtg.Engine.Catalog
 /- Structured abilities still print when Oracle text is absent. -/
 #guard
   let c := creature "Silent Elves" ManaCost.empty #[] 1 1
-    (tapAddMana := #[.colored .green])
+    (activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .green, .const 1)])])
   mentions c.abilitiesText "{T}: Add {G}" &&
     mentions c.summary "{T}: Add {G}" &&
     !mentions c.summary "{0}"
@@ -273,7 +277,8 @@ open Mtg.Engine.Catalog
 #guard
   let c := creature "Silent Archdruid" ManaCost.empty #["Elf", "Druid"] 2 2
     (staticAbilities := #[.otherCreaturesGet #[.elf] 1 1])
-    (tapAddManaForEach := #[{ mana := .colored .green, subtype := .elf }])
+    (activatedAbilities := #[ActivatedAbility.manaAbility
+      (.sequence #[(.colored .green, .count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))])])
   mentions c.abilitiesText "Other Elf creatures you control get +1/+1" &&
     mentions c.abilitiesText "{T}: Add {G} for each Elf you control" &&
     !mentions c.abilitiesText "{T}: Add {G};" &&
@@ -283,12 +288,13 @@ open Mtg.Engine.Catalog
   let c := creature "Silent Weavemaster" ManaCost.empty #["Elf", "Druid"] 1 2
     (keywords := #[Keyword.vigilance])
     (triggeredAbilities := #[.onAnotherElfYouControlEntersGets1])
-    (tapAddAnyColorEqualToPower := true)
+    (activatedAbilities := #[ActivatedAbility.manaAbility
+      (.oneOf .anyColor (.objectStat .power .this))
+      (restriction := some .elf)])
   mentions c.summary "vigilance" &&
     mentions c.abilitiesText "another Elf you control enters" &&
     mentions c.abilitiesText "any one color" &&
     mentions c.abilitiesText "Elf spells" &&
-    c.tapAddAnyColorEqualToPower &&
     c.manaAbilities.size == 5
 
 #guard
@@ -364,8 +370,8 @@ open Mtg.Engine.Catalog
 
 #guard
   let c := land "Silent Passage" ""
-    (tapAddMana := #[.colorless])
     (activatedAbilities := #[
+      ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 1)]),
       activated (Effect.targetCantBeBlockedThisTurn) (ManaCost.ofGeneric 4) (tap := true)])
   mentions c.abilitiesText "{T}: Add {C}" &&
     mentions c.abilitiesText "can't be blocked this turn" &&

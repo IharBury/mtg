@@ -15,15 +15,8 @@ need an artifact or creature sacrificed, or a card discarded, wait for
 that action. -/
 def finishProposedSpell (g : Game) : Except String Game := do
   let some prop := g.proposedSpell | throw "No spell or ability is waiting to be paid for"
-  let allowElf := g.proposedAllowsElfRestricted prop
-  let allowInst := g.proposedAllowsInstRestricted prop
-  let allowHero := g.proposedAllowsHeroRestricted prop
-  let allowVillain := g.proposedAllowsVillainRestricted prop
-  let allowCant := g.proposedAllowsCantNonartifact prop
-  let allowCreature := g.proposedAllowsCreatureRestricted prop
   let spend := g.proposedManaSpend prop
-  if !(g.player prop.caster).manaPool.canPay prop.cost allowElf allowInst
-        allowHero allowVillain allowCant allowCreature spend ||
+  if !(g.player prop.caster).manaPool.canPay prop.cost spend ||
       !g.sourceStillPayable prop ||
       !g.canPayLife prop.caster prop.payLife then
     return (← g.reverseProposedSpell? (resumeContinuation := true))
@@ -47,11 +40,9 @@ def finishProposedSpell (g : Game) : Except String Game := do
     if !(hasPerm || hasHand) then
       return (← g.reverseProposedSpell? (resumeContinuation := true))
   let countCantBeCountered (g : Game) :=
-    ((g.player prop.caster).manaPool.restrictedEntries.filter (fun (_, r) =>
-      r.grantsRider .cantBeCountered)).size
+    ((g.player prop.caster).manaPool.units.filter (·.hasRider .cantBeCountered)).size
   let g ← g.withProposalActionM .costAction fun g0 => do
-    let paid ← g0.payCost prop.caster prop.cost allowElf allowInst
-      allowHero allowVillain allowCant allowCreature spend (forObject := some prop.spellId)
+    let paid ← g0.payCost prop.caster prop.cost spend (forObject := some prop.spellId)
     let paid ←
       if prop.kind == .activatedAbility then pure paid
       else paid.payLifeCost prop.caster prop.payLife (forObject := some prop.spellId)

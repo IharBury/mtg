@@ -29,7 +29,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     subtypes := #["Elf"]
     power := some 1
     toughness := some 1
-    tapAddMana := #[.colored .green]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .green, .const 1)])]
   }
   let twoGenericSorcery : CardDef := {
     name := "Phase12 Two-Mana Divination"
@@ -458,7 +458,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     name := "Phase12 Path of Ancestry"
     types := #[.land]
     entersTapped := true
-    tapAddCommanderIdentity := true
+    activatedAbilities := #[ActivatedAbility.manaAbility (.colorAmong (.commanderColorIdentity .you) false)]
     commanderIdentityScryCreature := true
   }
   let elfCmdrDef : CardDef := {
@@ -781,7 +781,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     types := #[.land]
     subtypes := #["Gate"]
     entersTappedUnlessPayLife := some 3
-    tapAddMana := #[.colored .black]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .black, .const 1)])]
   }
   let gBg0 := insertObject afterDraw blackGateDef me (.hand me)
   let bgHandId := ((gBg0.player me).hand.filter (fun id => (gBg0.object! id).name == "Phase12 Black Gate"))[0]!
@@ -857,12 +857,14 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     subtypes := #["Elf"]
     power := some 1
     toughness := some 1
-    tapAddMana := #[.colored .green]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .green, .const 1)])]
   }
   let filterLandDef : CardDef := {
     name := "Phase13 Filter Land"
     types := #[.land]
-    filterMana := some (ManaCost.ofGeneric 1, #[.colored .red, .colored .white])
+    activatedAbilities := #[ActivatedAbility.manaAbility
+      (.combination (.explicit #[.colored .red, .colored .white]) (.const 2))
+      (cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf])]
   }
   let bigSorceryDef : CardDef := {
     name := "Phase13 Five-Mana Sorcery"
@@ -917,8 +919,10 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let painLandDef : CardDef := {
     name := "Phase13 Pain Land"
     types := #[.land]
-    tapAddMana := #[.colorless]
-    tapAddOneOfDealsDamage := some (#[.colored .red, .colored .white], 1)
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 1)]),
+      ActivatedAbility.manaAbility (.oneOf (.explicit #[.colored .red, .colored .white]) (.const 1)) (damageYou := 1)
+    ]
   }
   let gPainCkpt0 :=
     let g := addPermanent afterDraw painLandDef me me
@@ -1080,7 +1084,8 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let roomDef : CardDef := {
     name := "Phase13 Room of Refuge"
     types := #[.land]
-    staticAbilities := #[.fra .entersTappedChooseColor, .fra .tapAddChosenColor]
+    staticAbilities := #[.fra .entersTappedChooseColor]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.oneOf .chosenColorOnSource (.const 1))]
   }
   let partyDef : CardDef := {
     name := "Phase13 Unexpected Party"
@@ -2112,7 +2117,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase13 Path of Ancestry"
     types := #[.land]
     entersTapped := true
-    tapAddCommanderIdentity := true
+    activatedAbilities := #[ActivatedAbility.manaAbility (.colorAmong (.commanderColorIdentity .you) false)]
     commanderIdentityScryCreature := true
   }
   let elfCmdrDef5 : CardDef := {
@@ -2324,7 +2329,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
   let painLandDef : CardDef := {
     name := "Phase14 Pain Land"
     types := #[.land]
-    tapAddOneOfDealsDamage := some (#[.colored .red], 1)
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .red, .const 1)]) (damageYou := 1)]
   }
   let (gPainPaused, gPainResumed, gPainRev, painSpellId, painLandId) :=
     let g := addPermanent (addPermanent afterDraw bear opp opp) painLandDef me me
@@ -2440,13 +2445,11 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase14 Island"
     types := #[.land]
     subtypes := #["Island"]
-    tapAddOneOf := #[.colored .blue]
   }
   let redLandDef : CardDef := {
     name := "Phase14 Mountain"
     types := #[.land]
     subtypes := #["Mountain"]
-    tapAddOneOf := #[.colored .red]
   }
   let (morphGatesOk, gMorphRev, gMorphTurned, morphId0, morphLandId) :=
     let g := addPermanent (addPermanent afterDraw morphZeroDef me me) redLandDef me me
@@ -3029,7 +3032,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     subtypes := #["Human", "Druid"]
     power := some 2
     toughness := some 2
-    tapAddMana := #[ManaType.colored .white]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .white, .const 1)])]
   }
   let wDrawDef : CardDef := {
     name := "Phase15 Paid Draw"
@@ -3161,7 +3164,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
   let painManaLandDef : CardDef := {
     name := "Phase15 Pain Land"
     types := #[.land]
-    tapAddOneOfDealsDamage := some (#[ManaType.colored .white], 1)
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .white, .const 1)]) (damageYou := 1)]
   }
   let (gWardRetarget, gNestedInnerRev, gNestedOuterRev, batchStackAndNestedCpOk) :=
     -- Retarget a stack spell onto a Ward permanent inside an enclosing `withBatch`:

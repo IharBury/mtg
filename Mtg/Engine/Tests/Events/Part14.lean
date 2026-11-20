@@ -1073,7 +1073,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
       (cause := some (.oneShotEffect none (some flareId) (some p0)))
   let mtnAvailPaysRR := (gMtn1.availableMana p0).canPay rrSpellDef.manaCost
   let mtnSourcesPayRR :=
-    gMtn1.canPayFromSources ManaPool.empty rrSpellDef.manaCost false false (gMtn1.manaSources p0).toList
+    gMtn1.canPayFromSources ManaPool.empty rrSpellDef.manaCost (gMtn1.manaSources p0).toList
   let gMtnTapped := mustApply gMtn1 p0 (.tapForMana peakObj.id (.colored .red))
   let tappedUnits := (gMtnTapped.player p0).manaPool.units
 
@@ -1082,7 +1082,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
   let dragonCavernDef : CardDef := {
     name := "P48i4 DragonCavern"
     types := #[.land]
-    tapAddRestricted := some (#[.colored .red], .dragonSpell)
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .red, .const 1)]) (restriction := some .dragonSpell)]
   }
   let lanternDef : CardDef := {
     name := "P48i4 ChromaticLantern"
@@ -1096,13 +1096,13 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
   let urComboLandDef : CardDef := {
     name := "P48i4 CascadeBluffs"
     types := #[.land]
-    tapAddTwoAmong := #[.colored .blue, .colored .red]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.combination (.explicit #[.colored .blue, .colored .red]) (.const 2))]
   }
   let urSpellDef : CardDef :=
     creature "P48i4 IzzetMage" { symbols := #[.colored .blue, .colored .red] } #["Wizard"] 2 2
   let gCombo0 := insertObject (addPermanent g3 urComboLandDef p0 p0) urSpellDef p0 (.hand p0)
   let comboSourcesPayUR :=
-    gCombo0.canPayFromSources ManaPool.empty urSpellDef.manaCost false false (gCombo0.manaSources p0).toList
+    gCombo0.canPayFromSources ManaPool.empty urSpellDef.manaCost (gCombo0.manaSources p0).toList
   let gComboProp := mustApply gCombo0 p0 (.cast (gCombo0.player p0).hand.back!)
   let gComboDone := mustStepAgent48 (mustStepAgent48 gComboProp p0) p0
 
@@ -1115,7 +1115,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
     creature "P48i4 SolGolem" ManaCost.empty #["Golem"] 2 2 with
     types := #[.artifact, .creature]
     keywords := #[Keyword.haste]
-    tapAddTogether := #[.colorless, .colorless]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 2)])]
   }
   let xTapAltarDef : CardDef := {
     name := "P48i4 XTapAltar"
@@ -1159,7 +1159,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
     name := "P48i4 ShiftingChest"
     types := #[.artifact]
     subtypes := #["Treasure"]
-    tapAddAnyColor := true
+    activatedAbilities := #[ActivatedAbility.manaAbility (.oneOf .anyColor (.const 1))]
   }
   let gShift0 := addPermanent g3 relicTrDef p0 p0
   let chestId := (gShift0.permanentsOf p0)[0]!.id
