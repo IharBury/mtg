@@ -319,21 +319,28 @@ def isCantBeBlockedLine (cardName line : String) : Bool :=
   let cleaned := dropLeadingThis ((prepared.replace "." "").trimAscii.copy)
   cleaned == "can't be blocked"
 
-/-- Evergreen/simple keyword names on one line, such as `Flying, haste` or `Prowess, prowess`.
-Retains multiplicity for cumulative keywords (CR 702.83b / 702.85 / 702.108b).
-Excludes `improvise` and `extort` (routed through `staticCandidates` until Phase 6)
-and never matches `"can't be blocked"` (CR 509.1b static ability). -/
-def keywordLineAbilities (cardName line : String) : Option (Array KeywordAbility) :=
-  let prepared := prepareLine cardName line
-  let cleaned := dropLeadingThis ((prepared.replace "." "").trimAscii.copy)
-  let parts := cleaned.splitOn "," |>.map (·.trimAscii.copy) |>.filter (· != "")
-  if parts.isEmpty then none
-  else
-    let parsed := parts.filterMap fun p =>
-      if p == "improvise" || p == "extort" then none
-      else KeywordAbility.ofSimpleName? p
-    if parsed.length == parts.length then some parsed.toArray
-    else none
+/-- Keywords routed through Phase-6 transitional `StaticAbility` / `ActivatedAbility`
+handlers (`improvise`, `extort`, `sneak`, `equip`, `cycling`) stay out of
+`keywordLineAbilities` until Phase 6/7 migrates their catalog consumers. -/
+private def isKeywordLineEligible : KeywordAbility → Bool
+  | .simple .improvise | .simple .extort => false
+  | .sneak _ | .equip _ _ | .cycling _ _ => false
+  | _ => true
+
+/-- Keyword lines (such as `Flying, haste`, `Prowess, prowess`, `Nonbasic landwalk`,
+`Legendary landwalk`, `Snow landwalk`, or `Flying, protection from white and from black`),
+delegated to `Parser.parseKeywordLine` so the catalog parser and compositional
+keyword sub-grammar cannot drift. Retains multiplicity for cumulative keywords
+(CR 702.83b / 702.85 / 702.108b) and never matches `"can't be blocked"`
+(CR 509.1b static ability). -/
+def keywordLineAbilities (_cardName line : String) : Option (Array KeywordAbility) :=
+  -- CR 207.4 / 207.2c: strip leading `{CHAOS}` and CR 207.2c ability words
+  -- without stripping keyword em-dashes (`Ward—`, `Flashback—`, `Impending N—`).
+  let cleaned := stripAbilityWords (stripChaosSymbol line)
+  match Parser.parseKeywordLine cleaned with
+  | some kws =>
+    if kws.all isKeywordLineEligible then some kws else none
+  | none => none
 
 def nonEmptyLines (text : String) : List String :=
   text.splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")

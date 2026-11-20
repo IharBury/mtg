@@ -424,6 +424,18 @@ def islandwalk : KeywordAbility :=
 def subtypeLandwalk (sub : CardSubtype) : KeywordAbility :=
   .landwalk (.hasSubtype (.literal sub))
 
+/-- Canonical `nonbasic landwalk` keyword ability (CR 702.14). -/
+def nonbasicLandwalk : KeywordAbility :=
+  .landwalk (.all #[.hasType .land, .not (.hasSupertype .basic)])
+
+/-- Canonical `legendary landwalk` keyword ability (CR 702.14). -/
+def legendaryLandwalk : KeywordAbility :=
+  .landwalk (.all #[.hasType .land, .hasSupertype .legendary])
+
+/-- Canonical `snow landwalk` keyword ability (CR 702.14). -/
+def snowLandwalk : KeywordAbility :=
+  .landwalk (.all #[.hasType .land, .hasSupertype .snow])
+
 /-- True when multiple instances of `kw` are cumulative and must retain
 multiplicity (CR 702.21b / 702.41b / 702.83b / 702.85 / 702.101b / 702.108b /
 702.116b / 702.164b). -/
@@ -438,6 +450,9 @@ def isInlineKeyword : KeywordAbility → Bool
   | .simple _ => true
   | .hexproof none => true
   | .landwalk (.hasSubtype (.literal _)) => true
+  | .landwalk (.all #[.hasType .land, .not (.hasSupertype .basic)]) => true
+  | .landwalk (.all #[.hasType .land, .hasSupertype .legendary]) => true
+  | .landwalk (.all #[.hasType .land, .hasSupertype .snow]) => true
   | _ => false
 
 /-- Render `kw` in canonical Oracle wording. -/
@@ -453,6 +468,8 @@ def toOracleStr (ctx : PrintCtx) (kw : KeywordAbility) : String :=
     | .protection q => s!"protection from {ProtectionQuality.toOraclePhrase ctx q}"
     | .landwalk (.hasSubtype (.literal sub)) => s!"{sub.englishName.toLower}walk"
     | .landwalk (.all #[.hasType .land, .not (.hasSupertype .basic)]) => "nonbasic landwalk"
+    | .landwalk (.all #[.hasType .land, .hasSupertype .legendary]) => "legendary landwalk"
+    | .landwalk (.all #[.hasType .land, .hasSupertype .snow]) => "snow landwalk"
     | .landwalk pred => s!"{ToOracle.toOracle { ctx with capitalize := false } pred}walk"
     | .toxic n => s!"toxic {n}"
     | .affinity f =>
@@ -471,6 +488,10 @@ def toOracleStr (ctx : PrintCtx) (kw : KeywordAbility) : String :=
           match pred with
           | .all #[.hasType .creature, .hasSubtype (.literal sub), .controlledBy .you]
           | .hasSubtype (.literal sub) => s!" {sub.englishName}"
+          | .all ps =>
+            -- CR 702.6a: `"you control"` is implicit in the Equip keyword quality wording.
+            let displayPred := ObjectPred.andAll (ps.filter (· != .controlledBy .you))
+            s!" {ToOracle.toOracle { ctx with capitalize := false } displayPred}"
           | _ => s!" {ToOracle.toOracle { ctx with capitalize := false } pred}"
       if cost.isManaOnly && !cost.isEmpty then s!"equip{qual} {cost.manaCost}"
       else s!"equip{qual}—{cost.toNotation}."
@@ -506,15 +527,17 @@ instance : ToOracle KeywordAbility := ⟨toOracleStr⟩
 instance : ToString KeywordAbility := ⟨toOracleStr { capitalize := false }⟩
 
 /-- Parse a single lowercase/mixed-case inline keyword name (all 29 `SimpleKeyword`s,
-bare `hexproof`, or `<land-subtype>walk` / `nonbasic landwalk`). -/
+bare `hexproof`, or `<land-subtype>walk` / `nonbasic landwalk` / `legendary landwalk` /
+`snow landwalk`). -/
 def ofSimpleName? (s : String) : Option KeywordAbility :=
   let low := s.trimAscii.copy.map Char.toLower
   match SimpleKeyword.ofName? low with
   | some sk => some (.simple sk)
   | none =>
     if low == "hexproof" then some (.hexproof none)
-    else if low == "nonbasic landwalk" then
-      some (.landwalk (.all #[.hasType .land, .not (.hasSupertype .basic)]))
+    else if low == "nonbasic landwalk" then some nonbasicLandwalk
+    else if low == "legendary landwalk" then some legendaryLandwalk
+    else if low == "snow landwalk" then some snowLandwalk
     else if low.endsWith "walk" && low.length > 4 then
       let stem := (low.dropEnd 4).copy
       match CardSubtype.ofOracle? stem with
@@ -774,6 +797,13 @@ end Keyword
 #guard KeywordAbility.ofSimpleName? "Flying" == some Keyword.flying
 #guard KeywordAbility.ofSimpleName? "islandwalk" == some Keyword.islandwalk
 #guard KeywordAbility.ofSimpleName? "swampwalk" == some (KeywordAbility.subtypeLandwalk .swamp)
+#guard KeywordAbility.ofSimpleName? "nonbasic landwalk" == some KeywordAbility.nonbasicLandwalk
+#guard KeywordAbility.ofSimpleName? "legendary landwalk" == some KeywordAbility.legendaryLandwalk
+#guard KeywordAbility.ofSimpleName? "snow landwalk" == some KeywordAbility.snowLandwalk
+#guard (KeywordAbility.ofSimpleName? "wizardwalk").isNone
+#guard KeywordAbility.toOracleStr { capitalize := true } KeywordAbility.nonbasicLandwalk == "Nonbasic landwalk"
+#guard KeywordAbility.toOracleStr { capitalize := true } KeywordAbility.legendaryLandwalk == "Legendary landwalk"
+#guard KeywordAbility.toOracleStr { capitalize := true } KeywordAbility.snowLandwalk == "Snow landwalk"
 #guard KeywordAbility.ofSimpleName? "decayed" == some Keyword.decayed
 #guard KeywordAbility.ofSimpleName? "exalted" == some Keyword.exalted
 #guard (KeywordAbility.ofSimpleName? "can't be blocked").isNone

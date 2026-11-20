@@ -2448,13 +2448,14 @@ def parseKeywordAbility (raw : String) : Option KeywordAbility := Id.run do
   if s.isEmpty then return none
   let lowS := lower s
 
-  -- 1. All 29 parameter-free `SimpleKeyword`s.
-  if let some sk := SimpleKeyword.ofName? lowS then
-    return some (.simple sk)
+  -- 1. All 29 parameter-free `SimpleKeyword`s, bare `hexproof`, and all inline
+  -- landwalk variants (`<land-subtype>walk`, `nonbasic/legendary/snow landwalk`,
+  -- CR 702.11 / 702.14). Delegating directly to `KeywordAbility.ofSimpleName?`
+  -- keeps both entry points identical (canonical predicate order and `sub.kind == .land`).
+  if let some kw := KeywordAbility.ofSimpleName? s then
+    return some kw
 
-  -- 2. Hexproof / Hexproof from [quality] (CR 702.11 / 702.11d).
-  if lowS == "hexproof" then
-    return some (.hexproof none)
+  -- 2. Hexproof from [quality] (CR 702.11d).
   if let some qStr := dropPrefixCI? s "hexproof from " then
     if let some q := parseQualityFilter? qStr then
       return some (.hexproof (some q))
@@ -2471,34 +2472,22 @@ def parseKeywordAbility (raw : String) : Option KeywordAbility := Id.run do
       if let some q := parseProtectionQuality? qStr then
         return some (.protection q)
 
-  -- 5. Landwalk variants (CR 702.14).
-  if lowS == "nonbasic landwalk" then
-    return some (.landwalk (.all #[.not (.hasSupertype .basic), .hasType .land]))
-  if lowS == "legendary landwalk" then
-    return some (.landwalk (.all #[.hasSupertype .legendary, .hasType .land]))
-  if lowS == "snow landwalk" then
-    return some (.landwalk (.all #[.hasSupertype .snow, .hasType .land]))
-  if lowS.endsWith "walk" && lowS.length > 4 then
-    let stem := (s.dropEnd 4).copy.trimAscii.copy
-    if let some sub := CardSubtype.ofOracle? stem then
-      return some (.landwalk (.hasSubtype (.literal sub)))
-
-  -- 6. Toxic N (CR 702.164).
+  -- 5. Toxic N (CR 702.164).
   if let some nStr := dropPrefixCI? lowS "toxic " then
     if let some n := parseNatWord? nStr then
       return some (.toxic n)
 
-  -- 7. Crew N (CR 702.122).
+  -- 6. Crew N (CR 702.122).
   if let some nStr := dropPrefixCI? lowS "crew " then
     if let some n := parseNatWord? nStr then
       return some (.crew n)
 
-  -- 8. Teamwork N (CR 702.194).
+  -- 7. Teamwork N (CR 702.194).
   if let some nStr := dropPrefixCI? lowS "teamwork " then
     if let some n := parseNatWord? nStr then
       return some (.teamwork n)
 
-  -- 9. Affinity for [filter] (CR 702.41).
+  -- 8. Affinity for [filter] (CR 702.41).
   if let some forStr := dropPrefixCI? s "affinity for " then
     let cleanFor := stripTrailingPeriod forStr
     let lowFor := lower cleanFor
@@ -2521,30 +2510,30 @@ def parseKeywordAbility (raw : String) : Option KeywordAbility := Id.run do
         | other => .all #[other, .controlledBy .you]
       return some (.affinity { zones := .battlefield, pred })
 
-  -- 10. Gift [kind] (CR 702.174).
+  -- 9. Gift [kind] (CR 702.174).
   if let some giftStr := dropPrefixCI? s "gift " then
     if let some kind := GiftKind.ofOracle? giftStr then
       return some (.gift kind)
 
-  -- 11. Kicker [cost] / Kicker—[cost] (CR 702.33).
+  -- 10. Kicker [cost] / Kicker—[cost] (CR 702.33).
   if let some rest := (dropPrefixCI? s "kicker—").orElse (fun _ =>
       (dropPrefixCI? s "kicker - ").orElse (fun _ => dropPrefixCI? s "kicker ")) then
     if let some cost := parseCostSpec rest then
       return some (.kicker cost)
 
-  -- 12. Flashback [cost] / Flashback—[cost] (CR 702.34).
+  -- 11. Flashback [cost] / Flashback—[cost] (CR 702.34).
   if let some rest := (dropPrefixCI? s "flashback—").orElse (fun _ =>
       (dropPrefixCI? s "flashback - ").orElse (fun _ => dropPrefixCI? s "flashback ")) then
     if let some cost := parseCostSpec rest then
       return some (.flashback cost)
 
-  -- 13. Morph [cost] / Morph—[cost] (CR 702.37).
+  -- 12. Morph [cost] / Morph—[cost] (CR 702.37).
   if let some rest := (dropPrefixCI? s "morph—").orElse (fun _ =>
       (dropPrefixCI? s "morph - ").orElse (fun _ => dropPrefixCI? s "morph ")) then
     if let some cost := parseCostSpec rest then
       return some (.morph cost)
 
-  -- 14. Impending N—[cost] (CR 702.176).
+  -- 13. Impending N—[cost] (CR 702.176).
   if let some rest := dropPrefixCI? s "impending " then
     let split? := (splitFirstCI? rest "—").orElse fun _ => splitFirstCI? rest " - "
     if let some (nStr, costStr) := split? then
@@ -2552,13 +2541,13 @@ def parseKeywordAbility (raw : String) : Option KeywordAbility := Id.run do
         if let some cost := parseCostSpec costStr then
           return some (.impending n cost)
 
-  -- 15. Sneak [cost] / Sneak—[cost] (CR 702.190).
+  -- 14. Sneak [cost] / Sneak—[cost] (CR 702.190).
   if let some rest := (dropPrefixCI? s "sneak—").orElse (fun _ =>
       (dropPrefixCI? s "sneak - ").orElse (fun _ => dropPrefixCI? s "sneak ")) then
     if let some cost := parseCostSpec rest then
       return some (.sneak cost)
 
-  -- 16. Cycling / [Type]cycling [cost] (CR 702.29).
+  -- 15. Cycling / [Type]cycling [cost] (CR 702.29).
   if let some rest := (dropPrefixCI? s "cycling—").orElse (fun _ =>
       (dropPrefixCI? s "cycling - ").orElse (fun _ => dropPrefixCI? s "cycling ")) then
     if let some cost := parseCostSpec rest then
@@ -2578,30 +2567,45 @@ def parseKeywordAbility (raw : String) : Option KeywordAbility := Id.run do
         if let some f := filter? then
           return some (.cycling (some f) cost)
 
-  -- 17. Equip [quality] [cost] (CR 702.6).
+  -- 16. Equip [quality] [cost] (CR 702.6).
   if let some rest := (dropPrefixCI? s "equip—").orElse (fun _ => dropPrefixCI? s "equip - ") then
     if let some cost := parseCostSpec rest then
       return some (.equip (.all #[.hasType .creature, .controlledBy .you]) cost)
   if let some rest := dropPrefixCI? s "equip " then
     if let some cost := parseCostSpec rest then
       return some (.equip (.all #[.hasType .creature, .controlledBy .you]) cost)
-    -- `"equip <subtype/quality> <cost>"` (e.g. `"Equip Soldier {1}"`, `"Equip legendary creature {2}"`)
-    let ws := splitWords rest
-    if ws.size ≥ 2 then
-      -- Find rightmost suffix starting with `{` or em-dash.
-      let mut splitAt? : Option Nat := none
-      for i in [1 : ws.size] do
-        if ws[i]!.startsWith "{" then
-          splitAt? := some i
-          break
-      if let some idx := splitAt? then
-        let qualStr := String.intercalate " " (ws.extract 0 idx).toList
-        let costStr := String.intercalate " " (ws.extract idx ws.size).toList
-        if let some cost := parseCostSpec costStr then
-          if let some sub := CardSubtype.ofOracle? qualStr then
-            return some (.equip (.all #[.hasSubtype (.literal sub), .hasType .creature, .controlledBy .you]) cost)
-          if let some np := parseNounPhrase qualStr then
-            return some (.equip (.all #[np.filter.pred, .controlledBy .you]) cost)
+    -- `"equip <subtype/quality> <cost>"` or `"equip <subtype/quality>—<cost>"`
+    -- (e.g. `"Equip Soldier {1}"`, `"Equip legendary creature {2}"`, `"Equip Soldier—Pay 2 life."`)
+    let qualAndCost? : Option (String × String) :=
+      match (splitFirstCI? rest "—").orElse (fun _ => splitFirstCI? rest " - ") with
+      | some (q, c) => some (q, c)
+      | none =>
+        let ws := splitWords rest
+        if ws.size ≥ 2 then Id.run do
+          let mut splitAt? : Option Nat := none
+          for i in [1 : ws.size] do
+            if ws[i]!.startsWith "{" then
+              splitAt? := some i
+              break
+          match splitAt? with
+          | some idx =>
+            let q := String.intercalate " " (ws.extract 0 idx).toList
+            let c := String.intercalate " " (ws.extract idx ws.size).toList
+            return some (q, c)
+          | none => return none
+        else none
+    if let some (qualStr, costStr) := qualAndCost? then
+      if let some cost := parseCostSpec costStr then
+        if let some sub := CardSubtype.ofOracle? qualStr then
+          return some (.equip (.all #[.hasType .creature, .hasSubtype (.literal sub), .controlledBy .you]) cost)
+        if let some np := parseNounPhrase qualStr then
+          let pred :=
+            match np.filter.pred with
+            | .all ps =>
+              if ps.any (fun | .controlledBy _ => true | _ => false) then np.filter.pred
+              else .all (ps.push (.controlledBy .you))
+            | other => .all #[other, .controlledBy .you]
+          return some (.equip pred cost)
 
   return none
 

@@ -1971,7 +1971,46 @@ end CardDef
 #guard Parser.parseKeywordAbility "Islandwalk" == some Keyword.islandwalk
 #guard Parser.parseKeywordAbility "Swampwalk" == some (.landwalk (.hasSubtype (.literal .swamp)))
 #guard Parser.parseKeywordAbility "Nonbasic landwalk" ==
-  some (.landwalk (.all #[.not (.hasSupertype .basic), .hasType .land]))
+  some (.landwalk (.all #[.hasType .land, .not (.hasSupertype .basic)]))
+#guard Parser.parseKeywordAbility "Legendary landwalk" ==
+  some (.landwalk (.all #[.hasType .land, .hasSupertype .legendary]))
+#guard Parser.parseKeywordAbility "Snow landwalk" ==
+  some (.landwalk (.all #[.hasType .land, .hasSupertype .snow]))
+#guard Parser.parseKeywordAbility "Wizardwalk" == none
+#guard ["Nonbasic landwalk", "Legendary landwalk", "Snow landwalk", "Islandwalk", "Swampwalk", "Wizardwalk"].all fun s =>
+  Parser.parseKeywordAbility s == KeywordAbility.ofSimpleName? s
+#guard [Keyword.islandwalk, KeywordAbility.subtypeLandwalk .swamp,
+        KeywordAbility.nonbasicLandwalk, KeywordAbility.legendaryLandwalk,
+        KeywordAbility.snowLandwalk].all fun kw =>
+  Parser.parseKeywordAbility (ToOracle.toOracle {} kw) == some kw &&
+  Parser.parseKeywordAbility (ToOracle.toOracle { capitalize := true } kw) == some kw
+#guard ToOracle.toOracle { capitalize := true } KeywordAbility.nonbasicLandwalk == "Nonbasic landwalk"
+#guard ToOracle.toOracle { capitalize := true } KeywordAbility.legendaryLandwalk == "Legendary landwalk"
+#guard ToOracle.toOracle { capitalize := true } KeywordAbility.snowLandwalk == "Snow landwalk"
+-- Qualified Equip parsing and ToOracle round-trip (CR 702.6a).
+#guard Parser.parseKeywordAbility "Equip {2}" ==
+  some (.equip (.all #[.hasType .creature, .controlledBy .you]) (CostSpec.ofGeneric 2))
+#guard Parser.parseKeywordAbility "Equip Soldier {1}" ==
+  some (.equip (.all #[.hasType .creature, .hasSubtype (.literal .soldier), .controlledBy .you]) (CostSpec.ofGeneric 1))
+#guard Parser.parseKeywordAbility "Equip legendary creature {2}" ==
+  some (.equip (.all #[.hasSupertype .legendary, .hasType .creature, .controlledBy .you]) (CostSpec.ofGeneric 2))
+#guard (Parser.parseKeywordAbility "Equip {2}").map (ToOracle.toOracle { capitalize := true }) == some "Equip {2}"
+#guard (Parser.parseKeywordAbility "Equip Soldier {1}").map (ToOracle.toOracle { capitalize := true }) == some "Equip Soldier {1}"
+#guard (Parser.parseKeywordAbility "Equip Soldier—Pay 2 life.").map (ToOracle.toOracle { capitalize := true }) == some "Equip Soldier—Pay 2 life."
+#guard (Parser.parseKeywordAbility "Equip legendary creature {2}").map (ToOracle.toOracle { capitalize := true }) ==
+  some "Equip legendary creature {2}"
+#guard (Parser.parseKeywordAbility "Equip worthy creature {2}").map (ToOracle.toOracle { capitalize := true }) ==
+  some "Equip worthy creature {2}"
+#guard (Parser.parseKeywordAbility "Equip legendary creature—{2}, Pay 2 life.").map (ToOracle.toOracle { capitalize := true }) ==
+  some "Equip legendary creature—{2}, Pay 2 life."
+#guard ["Equip {2}", "Equip—{2}, Pay 2 life.", "Equip Soldier {1}", "Equip Soldier—Pay 2 life.",
+        "Equip legendary creature {2}", "Equip worthy creature {2}",
+        "Equip legendary creature—{2}, Pay 2 life."].all fun s =>
+  match Parser.parseKeywordAbility s with
+  | some kw =>
+    Parser.parseKeywordAbility (ToOracle.toOracle {} kw) == some kw &&
+    Parser.parseKeywordAbility (ToOracle.toOracle { capitalize := true } kw) == some kw
+  | none => false
 #guard Parser.parseKeywordAbility "Ward {2}" == some (.ward (CostSpec.ofGeneric 2))
 #guard Parser.parseKeywordAbility "Ward—Discard a card or pay {2}." ==
   some (.ward (CostSpec.discardCardOrPayGeneric 2))

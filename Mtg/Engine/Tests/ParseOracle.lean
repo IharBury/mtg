@@ -617,4 +617,19 @@ private def towashiChaosAbility : String :=
           s.sacrificeAfter == "III" && c.triggeredAbilities.isEmpty
       | none => false) == some true
 
+-- CR 702.14: `keywordLineAbilities` delegates to `Parser.parseKeywordLine`, so
+-- nonbasic, legendary, and snow landwalk parse and round-trip identically on the
+-- catalog path, while non-land `*walk` stems are rejected.
+#guard ["Nonbasic landwalk", "Legendary landwalk", "Snow landwalk", "Flying, legendary landwalk"].all fun line =>
+  match parseOracleCard s!"Walker\n\{2}\{G}\nCreature — Elf\n2/2\n{line}" with
+  | .ok c =>
+    match parseOracleCard (renderFullOracle c) with
+    | .ok d => d.keywords == c.keywords && Parser.parseKeywordLine line == some c.keywords
+    | .error _ => false
+  | .error _ => false
+#guard
+  match parseOracleCard "Walker\n{2}{U}\nCreature — Wizard\n2/2\nWizardwalk" with
+  | .error _ => true
+  | .ok _ => false
+
 end Mtg.Engine.Tests
