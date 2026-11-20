@@ -316,8 +316,8 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       let some _obj := g.findObject? prop.spellId | throw "The ability left the stack"
       if !g.sourceStillPayable prop then
         return (← g.reverseProposedSpell? (resumeContinuation := true))
-      let chosen := g.expandEachOpponentEffect p rawChosen
-      if !g.modeIsChoosable p chosen prop.sourceId then
+      let chosen := g.expandEachOpponentEffect p rawChosen (some prop.spellId)
+      if !g.modeIsChoosable p chosen prop.sourceId (stackSelfId := some prop.spellId) then
         throw "That mode requires a target (CR 700.2a)"
       let g := g.record (GameEvent.announced g.turnNumber prop.spellId (modes := #[mode]))
       let g := g.changeObject prop.spellId (.abilityEffect (some chosen))

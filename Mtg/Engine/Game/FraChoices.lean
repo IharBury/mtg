@@ -184,12 +184,13 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
         return advanceCopyRetarget g p copies slotIdx e.targets.size baseStaged
       let spec := (g.targetingOf obj).spec
       let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
+      let selfStackId := if obj.zone == .stack then some obj.id else none
       let totalPos := e.targets.size + e.skippedOptionalSlots.size
       let posIndices : Array Nat :=
         if e.skippedOptionalSlots.isEmpty then (List.range e.targets.size).toArray
         else ((List.range totalPos).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
       let actualPos := posIndices[slotIdx]?.getD slotIdx
-      if !(g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource).contains t then
+      if !(g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource selfStackId).contains t then
         throw "Illegal target (CR 601.2c)"
       let nextStaged := baseStaged.set! slotIdx t
       if slotIdx + 1 >= e.targets.size &&
@@ -205,12 +206,13 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
       return advanceCopyRetarget g p copies slotIdx e.targets.size baseStaged
     let spec := (g.targetingOf obj).spec
     let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
+    let selfStackId := if obj.zone == .stack then some obj.id else none
     let totalPos := e.targets.size + e.skippedOptionalSlots.size
     let posIndices : Array Nat :=
       if e.skippedOptionalSlots.isEmpty then (List.range e.targets.size).toArray
       else ((List.range totalPos).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
     let actualPos := posIndices[slotIdx]?.getD slotIdx
-    if !(g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource).contains t then
+    if !(g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource selfStackId).contains t then
       throw "Illegal target (CR 601.2c)"
     let nextStaged := baseStaged.set! slotIdx t
     if slotIdx + 1 >= e.targets.size &&

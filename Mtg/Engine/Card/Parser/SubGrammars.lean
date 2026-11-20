@@ -712,6 +712,10 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
             (fun _ => (dropSuffixCI? s " in opponents graveyards").orElse
               (fun _ => dropSuffixCI? s " from opponents graveyards"))) then
         zones := .opponentGraveyard; explicitZone := true; s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " in that player's graveyard").orElse
+          (fun _ => dropSuffixCI? s " from that player's graveyard") then
+        zones := { zones := #[.graveyard], owner := .matching .thatPlayer }
+        explicitZone := true; s := pre; progress := true
       else if let some pre := (dropSuffixCI? s " in a graveyard").orElse
           (fun _ => (dropSuffixCI? s " from a graveyard").orElse
             (fun _ => (dropSuffixCI? s " in any graveyard").orElse
@@ -754,7 +758,7 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
           (fun _ => dropSuffixCI? s " the defending player controls") then
         ctrlPreds := ctrlPreds.push (.controlledBy .defendingPlayer); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " that player controls" then
-        ctrlPreds := ctrlPreds.push (.controlledBy (.seat 0)); s := pre; progress := true
+        ctrlPreds := ctrlPreds.push (.controlledBy .thatPlayer); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " a teammate controls" then
         ctrlPreds := ctrlPreds.push (.controlledBy .teammate); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " a player controls" then
@@ -766,7 +770,7 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
       else if let some pre := dropSuffixCI? s " opponents own" then
         ctrlPreds := ctrlPreds.push (.ownedBy .opponent); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " that player owns" then
-        ctrlPreds := ctrlPreds.push (.ownedBy (.seat 0)); s := pre; progress := true
+        ctrlPreds := ctrlPreds.push (.ownedBy .thatPlayer); s := pre; progress := true
 
   -- 2. Parse leading quantifier, optional `another`/`other`, and optional `target`.
   let mut toks := splitWords s
@@ -1621,17 +1625,6 @@ end
 
 /-! ### Phase-3 Compositional Target Parsers (`TargetSlot`, `TargetSpec`) -/
 
-/-- Replace `.seat 0` controller/owner placeholders with `replacement` inside an `ObjectPred`. -/
-private partial def substSeat0Pred (replacement : PlayerFilter) : ObjectPred → ObjectPred
-  | .all ps => .all (ps.map (substSeat0Pred replacement))
-  | .any ps => .any (ps.map (substSeat0Pred replacement))
-  | .not p => .not (substSeat0Pred replacement p)
-  | .controlledBy pf =>
-    if pf == .seat 0 then .controlledBy replacement else .controlledBy pf
-  | .ownedBy pf =>
-    if pf == .seat 0 then .ownedBy replacement else .ownedBy pf
-  | other => other
-
 /-- Add `.hasType .creature` after bare battlefield creature-subtype predicates
 (e.g. `"target Elf you control"`, `"target Goblin or Orc you control"`), while
 leaving non-creature subtypes (`Equipment`, `Aura`, `Forest`, ...) and non-battlefield
@@ -1771,7 +1764,7 @@ private def parseStackAbilityDomain? (raw : String) : Option TargetDomain := Id.
     if rl.isEmpty then .any
     else if rl == "you control" then .you
     else if rl == "an opponent controls" || rl == "opponents control" then .opponent
-    else if rl == "that player controls" then .seat 0
+    else if rl == "that player controls" then .thatPlayer
     else return none
   return some (.stackAbility ctrl srcPred)
 
@@ -1815,12 +1808,7 @@ partial def parseTargetSlot (raw : String) : Option TargetSlot := Id.run do
     let domain :=
       match forEach? with
       | some pf =>
-        if pf == .opponent then
-          match domain with
-          | .object zs pred => .object zs (substSeat0Pred .opponent pred)
-          | .stackAbility ctrl src =>
-            .stackAbility (if ctrl == .seat 0 then .opponent else ctrl) src
-          | other => other
+        if pf == .opponent then domain.substitutePlayerFilter .thatPlayer .opponent
         else domain
       | none => domain
     { domain, count, groupConstraint? := gc?, forEach? }

@@ -30,7 +30,8 @@ def targetLegalAt (g : Game) (controller : PlayerId) (spec : TargetSpec) (i : Na
           rem := rem - 1
           s := s + 1
       return s
-  (g.legalTargetsForSlot controller (spec.slotAtPos pos) sourceId).contains t
+  let stackSelf := g.resolvingAbility.orElse (fun _ => g.resolvingSpell)
+  (g.legalTargetsForSlot controller (spec.slotAtPos pos) sourceId stackSelf).contains t
 
 /-- The permanent announced as the `i`th target, if it is still legal. -/
 def legalPermanentAt? (g : Game) (controller : PlayerId) (spec : TargetSpec)

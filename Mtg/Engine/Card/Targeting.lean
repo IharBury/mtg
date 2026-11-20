@@ -253,32 +253,48 @@ private def isControlledBy (pf : PlayerFilter) : ObjectPred → Bool
   | .controlledBy f => f == pf
   | _ => false
 
-/-- Replace `controlledBy .opponent` with `controlledBy replacement` inside an `ObjectPred`
-(used when expanding `"for each opponent, ... that player controls"` into per-seat slots). -/
-private partial def substOppControllerPred (replacement : PlayerFilter) : ObjectPred → ObjectPred
-  | .all ps => .all (ps.map (substOppControllerPred replacement))
-  | .any ps => .any (ps.map (substOppControllerPred replacement))
-  | .not p => .not (substOppControllerPred replacement p)
+/-- Replace occurrences of `matchPf` in controller/owner predicates with `replacement`
+(used when rewriting or expanding `"for each opponent/player, ... that player controls"`). -/
+private partial def substPlayerFilterPred (matchPf replacement : PlayerFilter) :
+    ObjectPred → ObjectPred
+  | .all ps => .all (ps.map (substPlayerFilterPred matchPf replacement))
+  | .any ps => .any (ps.map (substPlayerFilterPred matchPf replacement))
+  | .not p => .not (substPlayerFilterPred matchPf replacement p)
   | .controlledBy pf =>
-    if pf == .opponent then .controlledBy replacement else .controlledBy pf
+    if pf == matchPf then .controlledBy replacement else .controlledBy pf
+  | .ownedBy pf =>
+    if pf == matchPf then .ownedBy replacement else .ownedBy pf
   | other => other
 
-/-- Replace opponent controller/player filter with `replacement` inside a `TargetDomain`. -/
-def TargetDomain.substituteOpponent (replacement : PlayerFilter) : TargetDomain → TargetDomain
+/-- Replace occurrences of `matchPf` with `replacement` inside a `TargetDomain`. -/
+def TargetDomain.substitutePlayerFilter (matchPf replacement : PlayerFilter) :
+    TargetDomain → TargetDomain
   | .object zs pred =>
     let zs' :=
       match zs.owner with
-      | .matching pf => if pf == .opponent then { zs with owner := .matching replacement } else zs
+      | .matching pf => if pf == matchPf then { zs with owner := .matching replacement } else zs
       | _ => zs
-    .object zs' (substOppControllerPred replacement pred)
-  | .player pf => if pf == .opponent then .player replacement else .player pf
+    .object zs' (substPlayerFilterPred matchPf replacement pred)
+  | .player pf => if pf == matchPf then .player replacement else .player pf
   | .anyTarget (.filtered op pf) =>
-    .anyTarget (.filtered (substOppControllerPred replacement op)
-      (if pf == .opponent then replacement else pf))
+    .anyTarget (.filtered (substPlayerFilterPred matchPf replacement op)
+      (if pf == matchPf then replacement else pf))
   | .anyTarget rp => .anyTarget rp
   | .stackAbility ctrl src =>
-    .stackAbility (if ctrl == .opponent then replacement else ctrl) src
-  | .anyOf ds => .anyOf (ds.attach.map fun ⟨d, _⟩ => d.substituteOpponent replacement)
+    .stackAbility (if ctrl == matchPf then replacement else ctrl) src
+  | .anyOf ds => .anyOf (ds.attach.map fun ⟨d, _⟩ => d.substitutePlayerFilter matchPf replacement)
+
+/-- Replace opponent controller/player filter with `replacement` inside a `TargetDomain`. -/
+def TargetDomain.substituteOpponent (replacement : PlayerFilter) (d : TargetDomain) : TargetDomain :=
+  d.substitutePlayerFilter .opponent replacement
+
+/-- Substitute the bound `"that player"` placeholder (and `.opponent` when
+expanding a `forEach? := some .opponent` slot) with concrete `replacement`. -/
+def TargetDomain.substituteForEach (forEachFilter replacement : PlayerFilter)
+    (d : TargetDomain) : TargetDomain :=
+  let d' := d.substitutePlayerFilter .thatPlayer replacement
+  if forEachFilter == .opponent then d'.substitutePlayerFilter .opponent replacement
+  else d'
 
 /-- Whether `d` targets any stack object (spell or stack ability). -/
 def TargetDomain.targetsStackSpell : TargetDomain → Bool
@@ -389,7 +405,7 @@ private def renderPlayerTargetBody (ctx : PrintCtx) (pf : PlayerFilter) : String
   | .teammate, .any => if ctx.plural then "teammates" else "teammate"
   | .you, .any => "you"
   | .anyPlayer, .isDefendingPlayer => "defending player"
-  | .anyPlayer, .isSeat _ => "that player"
+  | .anyPlayer, .isSeat _ | .anyPlayer, .thatPlayer => "that player"
   | rel, p =>
     let head :=
       match rel with
@@ -448,7 +464,7 @@ def TargetSlot.renderOracle (ctx : PrintCtx) (slot : TargetSlot) : String :=
   let domain :=
     match slot.forEach? with
     | some pf =>
-      if pf == PlayerFilter.opponent then slot.domain.substituteOpponent (.seat 0)
+      if pf == PlayerFilter.opponent then slot.domain.substituteOpponent .thatPlayer
       else slot.domain
     | none => slot.domain
   let qPfx := slot.count.quantifierPrefix
@@ -1168,6 +1184,14 @@ def forEachOpponentControlled (pred : ObjectPred) (count : CountRange := .upTo 1
     domain := .object .battlefield (ObjectPred.andAll #[pred, .controlledBy .opponent])
     count
     forEach? := some .opponent
+  }
+
+/-- `"for each player, up to one target <pred> that player controls"` (CR 601.2c). -/
+def forEachPlayerControlled (pred : ObjectPred) (count : CountRange := .upTo 1) : TargetSpec :=
+  single {
+    domain := .object .battlefield (ObjectPred.andAll #[pred, .controlledBy .thatPlayer])
+    count
+    forEach? := some .any
   }
 
 end TargetSpec

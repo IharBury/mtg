@@ -1872,7 +1872,8 @@ end CardDef
     .upToOneEquipmentThenCreatureYouControl, .upToOneCreatureThenPlayer,
     .creatureYouControlThenOppCreatureOrPlaneswalker,
     .planeswalkerYouControlThenOppCreatureOrPlaneswalker,
-    .forEachOpponentControlled (.not (.hasType .land)) (.upTo 1)
+    .forEachOpponentControlled (.not (.hasType .land)) (.upTo 1),
+    .forEachPlayerControlled (.hasType .creature) (.upTo 1)
   ]
   specs.all fun ts => Parser.parseTargetSpec ts.noun == some ts
 
@@ -1911,6 +1912,32 @@ end CardDef
       ts.slots[0]!.domain == .anyTarget (.otherThan .this) &&
       ts.slots[0]!.count == .between 1 2 &&
       ts.noun == "one or two other targets"
+  | none => false
+-- Phase 3: `"for each player"` uses `PlayerFilter.thatPlayer` (never concrete `.seat 0`) and round-trips cleanly.
+#guard
+  match Parser.parseTargetSpec "for each player, up to one target creature that player controls" with
+  | some ts =>
+    ts == TargetSpec.forEachPlayerControlled (.hasType .creature) (.upTo 1) &&
+      ts.slots[0]!.forEach? == some .any &&
+      ts.slots[0]!.domain == .object .battlefield (.all #[.hasType .creature, .controlledBy .thatPlayer]) &&
+      ts.noun == "for each player, up to one target creature that player controls"
+  | none => false
+#guard
+  match Parser.parseTargetSpec "for each player, target creature card from that player's graveyard" with
+  | some ts =>
+    ts.slots.size == 1 &&
+      ts.slots[0]!.forEach? == some .any &&
+      ts.slots[0]!.domain == .object { zones := #[.graveyard], owner := .matching .thatPlayer }
+        (.all #[.hasType .creature, .isKind .card]) &&
+      Parser.parseTargetSpec ts.noun == some ts
+  | none => false
+#guard
+  match Parser.parseTargetSpec "for each player, target creature" with
+  | some ts =>
+    ts.slots.size == 1 &&
+      ts.slots[0]!.forEach? == some .any &&
+      ts.slots[0]!.domain == .creature &&
+      ts.noun == "for each player, target creature"
   | none => false
 
 end Mtg.Engine

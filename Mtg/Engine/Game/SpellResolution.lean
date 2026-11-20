@@ -17,7 +17,8 @@ every remaining target group fails its `GroupTargetConstraint`. -/
 def targetsAllIllegalForSpec (g : Game) (controller : PlayerId)
     (spec : TargetSpec) (targets : Array Target)
     (skippedOptionalSlots : Array Nat := #[])
-    (sourceId : Option ObjectId := none) : Bool :=
+    (sourceId : Option ObjectId := none)
+    (stackSelfId : Option ObjectId := none) : Bool :=
   if spec.isEmpty || targets.isEmpty then false
   else
     let chosenPositions : Array Nat :=
@@ -27,7 +28,7 @@ def targetsAllIllegalForSpec (g : Game) (controller : PlayerId)
       (List.range targets.size).toArray.filterMap fun i =>
         let t := targets[i]!
         let pos := chosenPositions[i]?.getD i
-        let legal := g.legalTargetsForSlot controller (spec.slotAtPos pos) sourceId
+        let legal := g.legalTargetsForSlot controller (spec.slotAtPos pos) sourceId stackSelfId
         if legal.contains t then some (pos, t) else none
     if survivingPairs.isEmpty then true
     else
@@ -60,6 +61,7 @@ def abilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameObjec
   g.targetsAllIllegalForSpec controller spec targets
     (skippedOptionalSlots := skippedOptionalSlots)
     (sourceId := obj.sourceId)
+    (stackSelfId := if obj.zone == .stack then some obj.id else none)
 
 /-- Resolve a CR 603.7 delayed triggered ability on the stack. -/
 def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTriggerKind)
@@ -387,6 +389,7 @@ def resolveTop (g : Game) : Game :=
                 g.targetsAllIllegalForSpec entry.controller e.effectiveTargetSpec entry.targets
                   (skippedOptionalSlots := entry.skippedOptionalSlots)
                   (sourceId := some obj.id)
+                  (stackSelfId := some obj.id)
               | none => false)
         if allTargetsIllegal then
           let finishCause :=

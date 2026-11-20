@@ -98,17 +98,18 @@ def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
   { targeting, resolution := .hawkeyeArrows sorted.toList
     phrase := String.intercalate ". " names }
 
-/-- Whether `p` may choose this mode of a triggered ability (CR 603.3c / 700.2b). -/
+/-- Whether `p` may choose this mode of a triggered ability (CR 603.3c / 700.2b / 115.5). -/
 def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
   let e := g.expandEachOpponentEffect p e (some obj.id)
   let spec := e.effectiveTargetSpec
+  let stackSelf := if obj.zone == .stack then some obj.id else none
   let divOk :=
     e.dividedDamage.all (fun (n, _) =>
       e.allowsZeroTargets || spec.allowsZero ||
-        let legal := g.legalTargetsForSpec p spec obj.sourceId
+        let legal := g.legalTargetsForSpec p spec obj.sourceId stackSelf
         !legal.isEmpty && e.targetCount ≤ n)
   divOk && (!e.requiresTarget || e.allowsZeroTargets || spec.allowsZero ||
-    g.effectHasEnoughTargets p e obj.sourceId)
+    g.effectHasEnoughTargets p e obj.sourceId stackSelf)
 
 /-- Ask for the modes of a modal triggered ability just put on the stack. -/
 def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count : Nat) : Game :=
@@ -140,16 +141,12 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
   if !g.stillInGame controller then g
   else
-    -- “For each opponent, up to one target … that player controls”: one
-    -- optional instance per opponent (CR 601.2c).
+    -- “For each opponent / player, ...”: expand `forEach?` into one slot per matching player (CR 601.2c).
     let abilityEffect :=
       abilityEffectOverride.orElse fun _ =>
-        match ab.effect.targeting.spec.slots.toList with
-        | [slot] =>
-          if slot.forEach? == some PlayerFilter.opponent then
-            some (g.expandEachOpponentEffect controller ab.effect)
-          else none
-        | _ => none
+        if ab.effect.targeting.spec.slots.any (·.forEach?.isSome) then
+          some (g.expandEachOpponentEffect controller ab.effect)
+        else none
     let srcIdOpt : Option ObjectId :=
       if source.id == noSourceSentinelId then none
       else some source.id

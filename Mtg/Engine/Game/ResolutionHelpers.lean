@@ -52,17 +52,19 @@ def withLegalPermanentTarget (g : Game) (legal : Array Target) (targets : Array 
     | Target.player _ | Target.card _ => g.logMsg "The target is no longer legal")
     missing
 
-/-- Apply `f` when the announced target is still legal for `spec` (CR 608.2b). -/
+/-- Apply `f` when the announced target is still legal for `spec` (CR 608.2b / 115.5). -/
 def withLegalSpecTarget (g : Game) (controller : PlayerId) (spec : TargetSpec)
     (targets : Array Target) (f : Game → Target → Game)
     (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
-  g.withLegalTarget (g.legalTargetsForSpec controller spec sourceId) targets f missing
+  let stackSelf := g.resolvingAbility.orElse (fun _ => g.resolvingSpell)
+  g.withLegalTarget (g.legalTargetsForSpec controller spec sourceId stackSelf) targets f missing
 
 /-- Apply `f` to a still-legal permanent target of `spec`. -/
 def withLegalSpecPermanent (g : Game) (controller : PlayerId) (spec : TargetSpec)
     (targets : Array Target) (f : Game → GameObject → Game)
     (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
-  g.withLegalPermanentTarget (g.legalTargetsForSpec controller spec sourceId) targets f
+  let stackSelf := g.resolvingAbility.orElse (fun _ => g.resolvingSpell)
+  g.withLegalPermanentTarget (g.legalTargetsForSpec controller spec sourceId stackSelf) targets f
     missing
 
 /-- Apply `f` to a still-legal player target of `spec`. -/

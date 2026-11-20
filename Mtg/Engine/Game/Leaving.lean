@@ -1267,7 +1267,7 @@ private opaque finishAmassOn (g : Game) (controller : PlayerId) (armyId : Object
 
 @[extern "mtg_game_legal_targets_for_spec"]
 private opaque legalTargetsForSpec (g : Game) (caster : PlayerId) (spec : TargetSpec)
-    (sourceId : Option ObjectId := none) : Array Target := #[]
+    (sourceId : Option ObjectId := none) (stackSelfId : Option ObjectId := none) : Array Target := #[]
 
 @[extern "mtg_game_finish_choose_cards"]
 private opaque finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)

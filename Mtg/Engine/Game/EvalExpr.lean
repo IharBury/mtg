@@ -832,6 +832,10 @@ partial def evalPlayerPred (g : Game) (env : EvalEnv) (p : PlayerId) (pred : Pla
         viewController? st v == some p
       Int.ofNat controlled.size ≥ need
     | .isSeat idx => p.idx == idx
+    | .thatPlayer =>
+      match env.triggerPlayers.find? (·.1 == .actor) with
+      | some (_, tp) => p == tp
+      | none => true
 
 /-- Whether living player `p` satisfies `pf` under `env`. -/
 partial def matchesPlayerFilter (g : Game) (env : EvalEnv) (pf : PlayerFilter) (p : PlayerId) : Bool :=

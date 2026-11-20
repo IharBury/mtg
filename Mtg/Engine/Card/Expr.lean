@@ -521,6 +521,7 @@ inductive PlayerPred where
   | metric (m : PlayerMetric) (op : CmpOp) (rhs : ValueExpr)
   | controls (filter : ObjectFilter) (minCount : ValueExpr)
   | isSeat (idx : Nat)
+  | thatPlayer
 
 /-- Pure expression evaluating to zero, one, or more players (11 constructors). -/
 inductive PlayerExpr where
@@ -770,6 +771,7 @@ def teammate : PlayerFilter := { relation := .teammate, pred := .any }
 def any : PlayerFilter := { relation := .anyPlayer, pred := .any }
 def defendingPlayer : PlayerFilter := { relation := .anyPlayer, pred := .isDefendingPlayer }
 def seat (idx : Nat) : PlayerFilter := { relation := .anyPlayer, pred := .isSeat idx }
+def thatPlayer : PlayerFilter := { relation := .anyPlayer, pred := .thatPlayer }
 
 end PlayerFilter
 
@@ -924,6 +926,7 @@ private partial def applyTcPlayerPred (tcs : Array TextChange) : PlayerPred → 
   | .metric m op rhs => .metric m op (applyTcValueExpr tcs rhs)
   | .controls f minC => .controls (applyTcObjectFilter tcs f) (applyTcValueExpr tcs minC)
   | .isSeat idx => .isSeat idx
+  | .thatPlayer => .thatPlayer
 
 private partial def applyTcPlayerExpr (tcs : Array TextChange) : PlayerExpr → PlayerExpr
   | .you => .you
@@ -1211,7 +1214,7 @@ private partial def printPlayerFilter (ctx : PrintCtx) (pf : PlayerFilter) : Str
   match pf.relation, pf.pred with
   | _, .any => base
   | .anyPlayer, .isDefendingPlayer => "defending player"
-  | .anyPlayer, .isSeat _ => "that player"
+  | .anyPlayer, .isSeat _ | .anyPlayer, .thatPlayer => "that player"
   | _, p => s!"{base} who {printPlayerPred { ctx with capitalize := false } p}"
 
 private partial def printPlayerPred (ctx : PrintCtx) : PlayerPred → String
@@ -1249,7 +1252,7 @@ private partial def printPlayerPred (ctx : PrintCtx) : PlayerPred → String
     | _ =>
       let noun := printObjectFilter { ctx with plural := true, capitalize := false } f
       s!"controls {printValueExpr { ctx with capitalize := false } minC} or more {noun}"
-  | .isSeat _ => "is that player"
+  | .isSeat _ | .thatPlayer => "is that player"
 
 private partial def printPlayerExpr (ctx : PrintCtx) : PlayerExpr → String
   | .you => "you"

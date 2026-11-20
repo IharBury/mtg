@@ -227,9 +227,10 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     -- Ruling 791: the power or loyalty is checked as the spell resolves; if
     -- that permanent is gone, no damage is dealt.
     let slots := effect.targetSpec.slots
+    let stackSelf := g.resolvingAbility.orElse (fun _ => g.resolvingSpell)
     let legalAt (i : Nat) (t : Target) : Bool :=
       match slots[i]? with
-      | some slot => (g.legalTargetsForSlot controller slot sourceId).contains t
+      | some slot => (g.legalTargetsForSlot controller slot sourceId stackSelf).contains t
       | none => false
     match targets[0]?, targets[1]? with
     | some (Target.permanent srcId), some (Target.permanent dstId) =>
@@ -1171,12 +1172,13 @@ def sequenceAllTargetsIllegal (g : Game) (controller : PlayerId) (effect : Effec
   -- A skipped “up to” slot is absent from `targets`, so a later target is not
   -- at the same index as its slot. A target keeps the sequence when it is
   -- legal for any slot of the effect.
+  let stackSelf := g.resolvingAbility.orElse (fun _ => g.resolvingSpell)
   effect.requiresTarget &&
     !((effect.allowsZeroTargets || spec.allowsZero) && targets.isEmpty) &&
     (targets.isEmpty ||
       targets.all fun t =>
         spec.slots.all fun slot =>
-          !(g.legalTargetsForSlot controller slot sourceId).contains t)
+          !(g.legalTargetsForSlot controller slot sourceId stackSelf).contains t)
 
 /-- Log why a sequence with a required target did not resolve. -/
 def logIllegalSequenceTargets (g : Game) (targets : Array Target) : Game :=
@@ -2825,7 +2827,8 @@ partial def applyUnifiedAbility (g : Game) (controller : PlayerId) (effect : Eff
           match g.findObject? id with
           | some o =>
             let kindOk :=
-              if effect.targetSpec.isEmpty then g.controlledBy o controller
+              if effect.targetSpec.isEmpty then
+                some o.id != g.resolvingAbility && g.controlledBy o controller
               else g.targetLegalAt controller effect.targetSpec 0 (Target.card id) sourceId
             if o.zone == .stack && (o.abilityEffect.isSome || o.triggeredAbility.isSome) && kindOk then
               let (g, copyId?) := g.copyStackAbilityWithId o controller

@@ -160,11 +160,25 @@ def effectiveSlotDomain (g : Game) (caster : PlayerId) (slot : TargetSlot)
     let env : EvalEnv := { controller := caster, sourceId := effSource }
     if EvalExpr.evalCondition g env cond then altDomain else slot.domain
 
-/-- Legal targets matching a `TargetDomain` (CR 115.1 / 115.4 / 115.5 / 702.11 / 702.16). -/
+/-- Legal targets matching a `TargetDomain` (CR 115.1 / 115.4 / 115.5 / 702.11 / 702.16).
+`sourceId` identifies the source object for `"another"` and protection (CR 702.16b);
+`stackSelfId` identifies the stack spell, ability, or copy whose targets are being
+checked so it cannot target itself under CR 115.5. -/
 partial def legalTargetsForDomain (g : Game) (caster : PlayerId) (domain : TargetDomain)
-    (sourceId : Option ObjectId := none) : Array Target :=
+    (sourceId : Option ObjectId := none)
+    (stackSelfId : Option ObjectId := none) : Array Target :=
   let env : EvalEnv := { controller := caster, sourceId }
-  let selfStackId := sourceId.orElse (fun _ => g.proposedSpell.map (·.spellId))
+  let selfStackId : Option ObjectId :=
+    stackSelfId.orElse fun _ =>
+      let stackSource? := sourceId.bind fun sid =>
+        match g.findObject? sid with
+        | some o => if o.zone == .stack then some o.id else none
+        | none => none
+      stackSource?.orElse fun _ =>
+        match g.proposedSpell with
+        | some prop =>
+          if sourceId.isNone || prop.sourceId == sourceId then some prop.spellId else none
+        | none => none
   match domain with
   | .player pf =>
     let ps := g.livingPlayers.filter fun pl =>
@@ -261,13 +275,14 @@ partial def legalTargetsForDomain (g : Game) (caster : PlayerId) (domain : Targe
       (collectZone zk).foldl pushUniqueTarget acc) #[]
   | .anyOf ds =>
     ds.foldl (fun acc d =>
-      (g.legalTargetsForDomain caster d sourceId).foldl pushUniqueTarget acc) #[]
+      (g.legalTargetsForDomain caster d sourceId stackSelfId).foldl pushUniqueTarget acc) #[]
 
 /-- Legal single-target candidates for one `TargetSlot`, accounting for
 conditional domain overrides (`altDomainIf?`). -/
 def legalTargetsForSlot (g : Game) (caster : PlayerId) (slot : TargetSlot)
-    (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalTargetsForDomain caster (g.effectiveSlotDomain caster slot sourceId) sourceId
+    (sourceId : Option ObjectId := none)
+    (stackSelfId : Option ObjectId := none) : Array Target :=
+  g.legalTargetsForDomain caster (g.effectiveSlotDomain caster slot sourceId) sourceId stackSelfId
 
 private def targetObject? (g : Game) : Target → Option GameObject
   | .permanent oid | .card oid => g.findObject? oid
@@ -403,16 +418,77 @@ def findValidTargetsForCount (g : Game) (caster : PlayerId) (sourceId : Option O
         return none
   go count 0 #[]
 
-/-- Legal targets for a unified `TargetSpec` (CR 115.1 / 115.3 / 601.2c / 603.3d).
+/-- Expand any `forEach?` slot (`"for each opponent, ..."` / `"for each player, ..."`)
+into one concrete per-seat `TargetSlot` per matching player (CR 601.2c / 602.2b).
+When `stackObjId` has a recorded `CastEvent.proposed` / `TriggerQueueEvent.putOnStack`,
+preserves players who were in the game at announcement so mid-stack departures do
+not shift slot indices. -/
+def expandForEachSpec (g : Game) (p : PlayerId) (spec : TargetSpec)
+    (allowsZero : Bool := false) (stackObjId : Option ObjectId := none) : TargetSpec :=
+  if !spec.slots.any (·.forEach?.isSome) then spec
+  else
+    let propIdx? :=
+      stackObjId.bind fun oid =>
+        let rootId := GameEvent.rootCopiedSpellId g.events oid
+        g.events.findIdx? fun ev =>
+          match ev.change with
+          | .rules (.cast (.proposed sid ..))
+          | .rules (.triggerQueue (.putOnStack sid ..)) => sid == rootId
+          | _ => false
+    let inGameAtAnnouncement (pl : Player) : Bool :=
+      match propIdx? with
+      | some idx =>
+        let later := g.events.extract (idx + 1) g.events.size
+        g.stillInGame pl.id || later.any fun ev =>
+          match ev.change with
+          | .rules (.player (.lost q _)) | .rules (.player (.leftGame q)) => q == pl.id
+          | _ => false
+      | none => g.stillInGame pl.id
+    Id.run do
+      let mut outSlots : Array TargetSlot := #[]
+      let mut slotMap : Array (Array Nat) := #[]
+      for slot in spec.slots do
+        let startIdx := outSlots.size
+        match slot.forEach? with
+        | some pf =>
+          let matchesForEach (pl : Player) : Bool :=
+            inGameAtAnnouncement pl &&
+              (match pf.relation with
+               | .anyPlayer => true
+               | .you => pl.id == p
+               | .opponent => pl.id != p && !g.areTeammates p pl.id
+               | .teammate => pl.id != p && g.areTeammates p pl.id) &&
+              (pf.pred == .any || EvalExpr.evalPlayerPred g { controller := p } pl.id pf.pred)
+          let matched := g.players.filter matchesForEach
+          let count :=
+            if allowsZero then CountRange.ofBounds 0 (max 1 slot.count.maxCount)
+            else slot.count
+          for pl in matched do
+            outSlots := outSlots.push { slot with
+              domain := slot.domain.substituteForEach pf (.seat pl.id.idx)
+              count
+              forEach? := none }
+        | none =>
+          outSlots := outSlots.push slot
+        let endIdx := outSlots.size
+        slotMap := slotMap.push ((List.range (endIdx - startIdx)).toArray.map (· + startIdx))
+      let outCross := spec.crossSlotConstraints.filterMap fun c =>
+        let mapped := c.slots.foldl (fun acc si => acc ++ (slotMap[si]?.getD #[])) #[]
+        if mapped.size > 1 then some { c with slots := mapped } else none
+      return { slots := outSlots, crossSlotConstraints := outCross }
+
+/-- Legal targets for a unified `TargetSpec` (CR 115.1 / 115.3 / 115.5 / 601.2c / 603.3d).
 Returns `#[]` when required slots cannot all be filled simultaneously while
 respecting CR 115.3 distinctness and `GroupTargetConstraint`s. -/
 @[export mtg_game_legal_targets_for_spec]
 def legalTargetsForSpec (g : Game) (caster : PlayerId) (spec : TargetSpec)
-    (sourceId : Option ObjectId := none) : Array Target :=
+    (sourceId : Option ObjectId := none)
+    (stackSelfId : Option ObjectId := none) : Array Target :=
+  let spec := g.expandForEachSpec caster spec (stackObjId := stackSelfId)
   match spec.slots.toList with
   | [] => #[]
   | [slot] =>
-    let raw := g.legalTargetsForSlot caster slot sourceId
+    let raw := g.legalTargetsForSlot caster slot sourceId stackSelfId
     let cands :=
       match slot.groupConstraint? with
       | some gc => raw.filter fun t => g.satisfiesGroupConstraint caster sourceId gc #[t]
@@ -426,7 +502,7 @@ def legalTargetsForSpec (g : Game) (caster : PlayerId) (spec : TargetSpec)
   | _ =>
     let slotCands : Array (Array Target) :=
       spec.slots.map fun s =>
-        let raw := g.legalTargetsForSlot caster s sourceId
+        let raw := g.legalTargetsForSlot caster s sourceId stackSelfId
         match s.groupConstraint? with
         | some gc => raw.filter fun t => g.satisfiesGroupConstraint caster sourceId gc #[t]
         | none => raw
@@ -437,68 +513,35 @@ def legalTargetsForSpec (g : Game) (caster : PlayerId) (spec : TargetSpec)
       slotCands.foldl (· ++ ·) #[]
     else #[]
 
-/-- “For each opponent, (up to one) target … that player controls” expanded into
-one concrete per-seat `TargetSlot` per opponent (CR 601.2c / 602.2b). When
-`stackObjId` has a recorded `CastEvent.proposed` / `TriggerQueueEvent.putOnStack`,
-preserves opponents who were in the game at announcement so mid-stack player
-departures do not shift slot indices. -/
+/-- Expand `"for each opponent, ..."` and `"for each player, ..."` (`forEach?`)
+slots on `e` into one concrete per-seat `TargetSlot` per matching player
+(CR 601.2c / 602.2b). -/
 def expandEachOpponentEffect (g : Game) (p : PlayerId) (e : Effect)
     (stackObjId : Option ObjectId := none) : Effect :=
-  match e.targeting.spec.slots.toList with
-  | [slot] =>
-    match slot.forEach? with
-    | some pf =>
-      if pf == PlayerFilter.opponent then
-        let propIdx? :=
-          stackObjId.bind fun oid =>
-            let rootId := GameEvent.rootCopiedSpellId g.events oid
-            g.events.findIdx? fun ev =>
-              match ev.change with
-              | .rules (.cast (.proposed sid ..))
-              | .rules (.triggerQueue (.putOnStack sid ..)) => sid == rootId
-              | _ => false
-        let opps : Array Player :=
-          match propIdx? with
-          | some idx =>
-            let later := g.events.extract (idx + 1) g.events.size
-            g.players.filter fun (pl : Player) =>
-              pl.id != p && !g.areTeammates p pl.id &&
-                (g.stillInGame pl.id || later.any fun ev =>
-                  match ev.change with
-                  | .rules (.player (.lost q _)) | .rules (.player (.leftGame q)) => q == pl.id
-                  | _ => false)
-          | none => g.livingOpponents p
-        let count :=
-          if e.allowsZeroTargets then CountRange.ofBounds 0 (max 1 slot.count.maxCount)
-          else slot.count
-        let expandedSlots : Array TargetSlot :=
-          opps.map fun (pl : Player) =>
-            { slot with
-              domain := slot.domain.substituteOpponent (.seat pl.id.idx)
-              count
-              forEach? := none }
-        { e with
-          targeting := .of (.ofSlots expandedSlots)
-          maxTargets := expandedSlots.size }
-      else e
-    | none => e
-  | _ => e
+  if !e.targeting.spec.slots.any (·.forEach?.isSome) then e
+  else
+    let expandedSpec := g.expandForEachSpec p e.targeting.spec e.allowsZeroTargets stackObjId
+    { e with
+      targeting := .of expandedSpec
+      maxTargets := expandedSpec.totalPositions }
 
-/-- Whether enough distinct legal targets exist for `e` (CR 115.3 / 601.2c):
+/-- Whether enough distinct legal targets exist for `e` (CR 115.3 / 115.5 / 601.2c):
 delegates directly to `legalTargetsForSpec` over `e.effectiveTargetSpec` after
-expanding `"for each opponent"` slots. -/
+expanding `forEach?` slots. -/
 def effectHasEnoughTargets (g : Game) (p : PlayerId) (e : Effect)
-    (sourceId : Option ObjectId := none) : Bool :=
-  let e := g.expandEachOpponentEffect p e
+    (sourceId : Option ObjectId := none)
+    (stackSelfId : Option ObjectId := none) : Bool :=
+  let e := g.expandEachOpponentEffect p e stackSelfId
   let spec := e.effectiveTargetSpec
   if spec.isEmpty || e.allowsZeroTargets || spec.allowsZero then true
-  else !(g.legalTargetsForSpec p spec sourceId).isEmpty
+  else !(g.legalTargetsForSpec p spec sourceId stackSelfId).isEmpty
 
 /-- Legal targets for a triggered ability (CR 603.3d / 601.2c). `sourceId` is
 the object that generated the ability, used to exclude “another” creature. -/
 def legalTriggerTargets (g : Game) (p : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalTargetsForSpec p ab.targetSpec sourceId
+    (sourceId : Option ObjectId := none)
+    (stackSelfId : Option ObjectId := none) : Array Target :=
+  g.legalTargetsForSpec p ab.targetSpec sourceId stackSelfId
 
 end Game
 end Mtg.Engine

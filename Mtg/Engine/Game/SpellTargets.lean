@@ -361,6 +361,7 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
   let curPos := g.currentTargetSlot o
   let slot := spec.slotAtPos curPos
   let selfSource := o.sourceId.orElse (fun _ => if o.zone == .stack then some o.id else none)
+  let selfStackId := if o.zone == .stack then some o.id else none
   let priorPos : Array Nat :=
     if skipped.isEmpty then (List.range already.size).toArray
     else ((List.range curPos).filter (fun s => !skipped.contains s)).toArray
@@ -375,7 +376,7 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
               if grp.contains (priorPos[idx]?.getD idx) then
                 out := out.push already[idx]!
         return out
-  let legal := (g.legalTargetsForSlot p slot selfSource).filter (fun t => !forbidden.contains t)
+  let legal := (g.legalTargetsForSlot p slot selfSource selfStackId).filter (fun t => !forbidden.contains t)
   let priorChosen : Array (Nat × Target) :=
     (List.range already.size).toArray.map (fun idx => (priorPos[idx]?.getD idx, already[idx]!))
   let constraintGrps := spec.constraintPosGroups
@@ -402,7 +403,7 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
     let totalPos := spec.totalPositions
     let remainingPos : List (Nat × Array Target) :=
       ((List.range totalPos).drop (curPos + 1)).map fun s =>
-        (s, g.legalTargetsForSlot p (spec.slotAtPos s) selfSource)
+        (s, g.legalTargetsForSlot p (spec.slotAtPos s) selfSource selfStackId)
     if remainingPos.isEmpty then legal
     else
       legal.filter fun t =>
@@ -473,12 +474,13 @@ def announcingSameWordMultiTargets (g : Game) : Bool :=
   | none => false
 
 /-- Whether `e` currently has enough legal targets, or does not require one
-(CR 601.2c / 602.2b / 115.3). -/
+(CR 601.2c / 602.2b / 115.3 / 115.5). -/
 def modeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
-    (sourceId : Option ObjectId := none) : Bool :=
-  let e := g.expandEachOpponentEffect p e
+    (sourceId : Option ObjectId := none)
+    (stackSelfId : Option ObjectId := none) : Bool :=
+  let e := g.expandEachOpponentEffect p e stackSelfId
   !e.requiresTarget || e.allowsZeroTargets || e.effectiveTargetSpec.allowsZero ||
-    g.effectHasEnoughTargets p e sourceId
+    g.effectHasEnoughTargets p e sourceId stackSelfId
 
 /-- Whether this activated ability currently has a legal target, or does not
 require one (CR 702.6 / 601.2c / 702.16b). Subtype- and worthy-restricted Equip
@@ -596,6 +598,7 @@ def validTargetArrayForEntry (g : Game) (e : StackEntry) (obj : GameObject)
   if candidate.size != e.targets.size then false
   else
     let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
+    let selfStackId := if obj.zone == .stack then some obj.id else none
     let totalPos := candidate.size + e.skippedOptionalSlots.size
     let posIndices : Array Nat :=
       if e.skippedOptionalSlots.isEmpty then (List.range candidate.size).toArray
@@ -605,7 +608,7 @@ def validTargetArrayForEntry (g : Game) (e : StackEntry) (obj : GameObject)
         (List.range candidate.size).all fun idx =>
           let pos := posIndices[idx]!
           (allowUnchangedIllegal && candidate[idx]! == e.targets[idx]!) ||
-            (g.legalTargetsForSlot e.controller (spec.slotAtPos pos) selfSource).contains candidate[idx]!
+            (g.legalTargetsForSlot e.controller (spec.slotAtPos pos) selfSource selfStackId).contains candidate[idx]!
     let distinctOk :=
       if spec.isSingleSlot then
         candidate.toList.eraseDups.length == candidate.size

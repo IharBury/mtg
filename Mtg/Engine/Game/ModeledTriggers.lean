@@ -283,12 +283,13 @@ def stageSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat)
     else
       let spec := (g.targetingOf spell).spec
       let selfSource := spell.sourceId.orElse (fun _ => if spell.zone == .stack then some spell.id else none)
+      let selfStackId := if spell.zone == .stack then some spell.id else none
       let totalPos := e.targets.size + e.skippedOptionalSlots.size
       let posIndices : Array Nat :=
         if e.skippedOptionalSlots.isEmpty then (List.range e.targets.size).toArray
         else ((List.range totalPos).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
       let actualPos := posIndices[index]?.getD index
-      if !(g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource).contains neu then
+      if !(g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource selfStackId).contains neu then
         (g.logMsg "That target stays unchanged", base)
       else
         let cand := base.set! index neu

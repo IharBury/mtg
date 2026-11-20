@@ -444,4 +444,118 @@ def meagerMealNoCreatureAfterSkip : Game :=
   shareColorOk && shareSubtypeOk && distinctCtrlOk && distinctNameOk &&
     distinctTypesOk && stackSepOk && gyTokenExcludedOk && anyTargetOk && layer3Ok
 
+-- Phase 3 review regression: CR 115.5 stack abilities and copies cannot target themselves,
+-- while still keeping `sourceId` for `"another"` permanent exclusions.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let echoDef : CardDef := {
+    creature "Echo Test" { symbols := #[.generic 2] } #["Human"] 2 2 with
+    activatedAbilities := #[
+      { cost := {}, effect := Effect.copyControlledAbility .creature },
+      { cost := {}, effect := Effect.mkAbility (.of .anotherCreature) (.onPermanent .tap) }
+    ]
+  }
+  let otherCreature : CardDef :=
+    creature "Bear Source" { symbols := #[.generic 2] } #["Bear"] 2 2
+  let g0 := readyMain (emptyHand afterDraw p0)
+  let g1 := addPermanent (addPermanent g0 echoDef p0 p0) otherCreature p0 p0
+  let echoId := (namedPermanent g1 "Echo Test").id
+  let bearId := (namedPermanent g1 "Bear Source").id
+  let (g2, ab0) := g1.putStackAbility (g1.object! bearId) p0 (abilityEffect := some (Effect.abilityDraw 1))
+  -- 1. Activating Echo's copy ability puts `ab1` on the stack with `sourceId = some echoId`.
+  --    CR 115.5: `ab1` cannot be offered or accepted as a target of itself.
+  let gAct :=
+    match g2.activateAbility p0 echoId 0 with
+    | .ok g' => g'
+    | .error e => panic! e
+  let ab1Id := gAct.proposedSpell.get!.spellId
+  let ab1Obj := gAct.object! ab1Id
+  let proposedLegal := gAct.legalProposedTargets p0 ab1Obj
+  let selfExcludedAtAnnounce :=
+    proposedLegal.contains (.card ab0.id) &&
+    !proposedLegal.contains (.card ab1Id) &&
+    !(gAct.announceTarget p0 (.card ab1Id)).isOk
+  let gAnnounced :=
+    match gAct.announceTarget p0 (.card ab0.id) with
+    | .ok g' => g'
+    | .error e => panic! e
+  -- 2. Copying `ab1` on the stack (CR 707.10c) keeps `sourceId = some echoId`,
+  --    yet the copy (`copyId`) cannot target itself via `validTargetArrayForEntry`
+  --    or `answerFraChoice (.newTargetsForCopies #[copyId])`, while `ab0`/`ab1` are legal.
+  let (gCopied, copyId?) := gAnnounced.copyStackAbilityWithId (gAnnounced.object! ab1Id) p0
+  let copyId := copyId?.get!
+  let copyObj := gCopied.object! copyId
+  let copyEntry := (gCopied.stackEntry? copyId).get!
+  let copySpec := (gCopied.targetingOf copyObj).spec
+  let copySelfExcluded :=
+    !gCopied.validTargetArrayForEntry copyEntry copyObj copySpec #[.card copyId] (allowUnchangedIllegal := true) &&
+    gCopied.validTargetArrayForEntry copyEntry copyObj copySpec #[.card ab0.id] (allowUnchangedIllegal := true) &&
+    gCopied.validTargetArrayForEntry copyEntry copyObj copySpec #[.card ab1Id] (allowUnchangedIllegal := true)
+  let gPrompt := gCopied.beginFraChoice p0 (.newTargetsForCopies #[copyId]) "Choose new target"
+  let copyRetargetChoiceOk :=
+    !(gPrompt.answerFraChoice p0 (.objects #[copyId])).isOk &&
+    (gPrompt.answerFraChoice p0 (.objects #[ab1Id])).isOk
+  -- 3. `sourceId` is still preserved for `"another"` when activating ability 1 (`anotherCreature`).
+  let gAnother :=
+    match g2.activateAbility p0 echoId 1 with
+    | .ok g' => g'
+    | .error e => panic! e
+  let abAnother := gAnother.object! gAnother.proposedSpell.get!.spellId
+  let anotherLegal := gAnother.legalProposedTargets p0 abAnother
+  let anotherPreserved :=
+    anotherLegal.contains (.permanent bearId) &&
+    !anotherLegal.contains (.permanent echoId)
+  selfExcludedAtAnnounce && copySelfExcluded && copyRetargetChoiceOk && anotherPreserved
+
+-- Phase 3 review regression: `"for each player, ... that player controls"` parses with
+-- `PlayerFilter.thatPlayer` (never `.seat 0`) and expands into one concrete slot per player
+-- (including the caster), checking each player's seat independently.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  match Parser.parseTargetSpec "for each player, up to one target creature that player controls",
+        Parser.parseTargetSpec "for each player, target creature that player controls" with
+  | some optSpec, some reqSpec =>
+    let optEff : Effect := { targeting := .of optSpec, allowsZeroTargets := true, resolution := .onPermanent .tap }
+    let reqEff : Effect := { targeting := .of reqSpec, resolution := .onPermanent .tap }
+    let g0 := readyMain (emptyHand afterDraw p0)
+    let gOnlyP0 := addPermanent g0 grizzlyBears p0 p0
+    let gBoth := addPermanent gOnlyP0 grizzlyBears p1 p1
+    let p0Bear := (gBoth.permanentsOf p0)[0]!.id
+    let p1Bear := (gBoth.permanentsOf p1)[0]!.id
+    let expOpt := gBoth.expandEachOpponentEffect p0 optEff
+    let expReq := gBoth.expandEachOpponentEffect p0 reqEff
+    let slotsOk :=
+      expOpt.targetSpec.slots.size == 2 &&
+      expReq.targetSpec.slots.size == 2 &&
+      expOpt.targetSpec.slots.all (·.forEach?.isNone) &&
+      gBoth.legalTargetsForSlot p0 expReq.targetSpec.slots[0]! none == #[.permanent p0Bear] &&
+      gBoth.legalTargetsForSlot p0 expReq.targetSpec.slots[1]! none == #[.permanent p1Bear]
+    -- Mandatory `"for each player"` requires a legal target for BOTH `p0` and `p1`.
+    let enoughTargetsOk :=
+      !gOnlyP0.effectHasEnoughTargets p0 reqEff none &&
+      gBoth.effectHasEnoughTargets p0 reqEff none &&
+      gOnlyP0.effectHasEnoughTargets p0 optEff none
+    -- Casting a spell with `reqEff` prompts slot 0 (`p0`'s creature), then slot 1 (`p1`'s creature).
+    let spellCard : CardDef := {
+      name := "Each Player Tap", types := #[.sorcery], spellEffect := some reqEff }
+    let (gHand, spellObj) := gBoth.allocObject spellCard p0 (.hand p0)
+    let gCast :=
+      match gHand.castSpell p0 spellObj.id with
+      | .ok g' => g'
+      | .error e => panic! e
+    let stackSpell := gCast.object! gCast.proposedSpell.get!.spellId
+    let slot0Legal := gCast.legalProposedTargets p0 stackSpell
+    let gAfterSlot0 :=
+      match gCast.announceTarget p0 (.permanent p0Bear) with
+      | .ok g' => g'
+      | .error e => panic! e
+    let slot1Legal := gAfterSlot0.legalProposedTargets p0 (gAfterSlot0.object! stackSpell.id)
+    let announceFlowOk :=
+      slot0Legal == #[.permanent p0Bear] &&
+      slot1Legal == #[.permanent p1Bear] &&
+      (gAfterSlot0.announceTarget p0 (.permanent p1Bear)).isOk
+    slotsOk && enoughTargetsOk && announceFlowOk
+  | _, _ => false
+
 end Mtg.Engine.Tests

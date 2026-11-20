@@ -2007,6 +2007,7 @@ def retargetStackSpell (g : Game) (spellId : ObjectId) (newTargets : Array Targe
         else
           Id.run do
             let selfSource := spell.sourceId.orElse (fun _ => if spell.zone == .stack then some spell.id else none)
+            let selfStackId := if spell.zone == .stack then some spell.id else none
             let totalPos := e.targets.size + e.skippedOptionalSlots.size
             let posIndices : Array Nat :=
               if e.skippedOptionalSlots.isEmpty then (List.range e.targets.size).toArray
@@ -2016,7 +2017,7 @@ def retargetStackSpell (g : Game) (spellId : ObjectId) (newTargets : Array Targe
               let candT := newTargets[j]!
               let actualPos := posIndices[j]?.getD j
               if candT == e.targets[j]! ||
-                  (g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource).contains candT then
+                  (g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource selfStackId).contains candT then
                 staged := staged.set! j candT
             if staged != e.targets &&
                 g.validTargetArrayForEntry e spell spec staged (allowUnchangedIllegal := true) then
