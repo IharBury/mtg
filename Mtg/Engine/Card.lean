@@ -6,8 +6,8 @@ import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.Expr
 import Mtg.Engine.Card.ManaSpec
 import Mtg.Engine.Card.Token
-import Mtg.Engine.Card.Parser.SubGrammars
 import Mtg.Engine.Card.Targeting
+import Mtg.Engine.Card.Parser.SubGrammars
 import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.SpellResolution
 import Mtg.Engine.Card.AbilityResolution
@@ -50,9 +50,11 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
   `ValueExpr`, `ObjectExpr`, and `PlayerExpr` (CR 106 / 605).
 - `Token`: unified parameterized `TokenSpec` (CR 111 / 707.9) over `ValueExpr`
   and `ObjectExpr`.
-- `Parser.SubGrammars`: Stage-4 compositional expression parsers
-  (`parseNounPhrase`, `parseValueExpr`, `parseCondition`, `parseDuration`).
-- `Targeting`: targeting shapes and `HasTargeting` (CR 115.1).
+- `Targeting`: unified `TargetSpec` / `TargetSlot` / `TargetDomain` and
+  `HasTargeting` (CR 115.1).
+- `Parser.SubGrammars`: Stage-4 compositional expression and target parsers
+  (`parseNounPhrase`, `parseValueExpr`, `parseCondition`, `parseDuration`,
+  `parseTargetSlot`, `parseTargetSpec`, `parseTargetSpecPrefix`).
 - `PermanentAction`: shared actions on permanents (CR 608.2b).
 - `SpellResolution` / `AbilityCastKind` / `Chapter`: how spells resolve,
   how the demo agent classifies activated abilities, and Saga chapters

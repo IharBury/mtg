@@ -23,7 +23,7 @@ def caster : PlayerId := ⟨0⟩
 #guard (SharedTrigger.timing (.connive (.target .creatureYouControl))).resolution ==
   .connive .target
 
-#guard (SharedTrigger.timing (.connive (.target .creatureYouControl))).targeting.kind ==
+#guard (SharedTrigger.timing (.connive (.target .creatureYouControl))).targeting.spec ==
   .creatureYouControl
 
 #guard (SharedTrigger.timing .connive).resolution == .connive .source

@@ -1,272 +1,222 @@
-import Mtg.Engine.Card.Primitives
-import Mtg.Engine.Card.Text
-import Mtg.Engine.TypeLine
+import Mtg.Engine.Card.Expr
 
 /-!
-# Targeting (CR 115.1 / 601.2c / 603.3d)
+# Unified Targeting Specifications (CR 115.1 / 115.3–5 / 601.2c–d / 603.3d / 700.2)
 
-Targeting shapes shared by spells, activated abilities, and triggered
-abilities, plus the `HasTargeting` interface.
+Compositional `TargetSpec` / `TargetSlot` / `TargetDomain` AST backed directly
+by Layer-1 `ObjectPred`, `PlayerFilter`, `ZoneSetSpec`, `CountRange`,
+`ValueExpr`, and `Condition` (`Mtg.Engine.Card.Expr`).
+
+Every `"target"` word in Oracle text corresponds to one `TargetSlot` (CR 115.1).
+No raw `noun : String` is stored on any targeting type; Oracle wording is
+rendered canonically via `ToOracle`, and Layer-3 text changes (CR 612.2 /
+613.1c) transform every targeting node functorially via `HasTextChange`.
+
+Every `inductive` in this module has ≤ 5 constructors.
 -/
 
 namespace Mtg.Engine
 
-/-- Where a filtered target is found (CR 115.1). -/
-inductive TargetZone where
-  | battlefield
-  | yourGraveyard
-  | anyGraveyard
-  | stack
-  /-- A player rather than an object. `controller` narrows it to you or an
-  opponent. -/
-  | player
-  /-- A spell on the stack or a creature on the battlefield. -/
-  | spellOrCreature
-  /-- “Any target”: a player, or a creature, planeswalker, or battle
-  (CR 115.4). -/
-  | anyTarget
-deriving Repr, Inhabited, BEq, DecidableEq
+/-! ### `CountRange` Bounds Helpers (CR 115.1 / 601.2c) -/
 
-/-- Who controls (or, for a card in a graveyard, owns) a filtered target. -/
-inductive TargetController where
+namespace CountRange
+
+/-- Minimum number of targets required for this `"target"` word (CR 601.2c). -/
+def minCount : CountRange → Nat
+  | .exact n => n
+  | .upTo _ => 0
+  | .between lo _ => lo
+  | .anyNumber => 0
+
+/-- Upper bound on targets for this `"target"` word (`none` for `"any number of"`). -/
+def maxCount? : CountRange → Option Nat
+  | .exact n => some n
+  | .upTo n => some n
+  | .between _ hi => some hi
+  | .anyNumber => none
+
+/-- Upper bound with `fallback` (default `100`) for `"any number of"`. -/
+def maxCount (cr : CountRange) (fallback : Nat := 100) : Nat :=
+  (cr.maxCount?).getD fallback
+
+/-- True when choosing zero targets is legal for this slot (CR 115.1c). -/
+def allowsZero (cr : CountRange) : Bool :=
+  cr.minCount == 0
+
+/-- Construct a `CountRange` from `(minCount, maxCount)` bounds. -/
+def ofBounds (minN maxN : Nat) : CountRange :=
+  let hi := max minN maxN
+  if minN == 0 then .upTo hi
+  else if minN == hi then .exact minN
+  else .between minN hi
+
+/-- Whether this count renders its noun phrase in plural form. -/
+def isPlural : CountRange → Bool
+  | .exact n => n != 1
+  | .upTo n => n != 1
+  | .between _ hi => hi != 1
+  | .anyNumber => true
+
+private def countWord (n : Nat) : String :=
+  if n == 1 then "one" else englishNumber n
+
+/-- Leading Oracle quantifier phrase before `"target"` / `"other target"`. Empty for `.exact 1`. -/
+def quantifierPrefix : CountRange → String
+  | .exact 1 => ""
+  | .exact n => countWord n
+  | .upTo n => s!"up to {countWord n}"
+  | .between lo hi =>
+    if hi == lo + 1 then s!"{countWord lo} or {countWord hi}"
+    else s!"{countWord lo} to {countWord hi}"
+  | .anyNumber => "any number of"
+
+end CountRange
+
+/-! ### Core Targeting AST Types -/
+
+/-- What quantity is divided among a slot's targets at announcement (CR 601.2d). -/
+inductive DivisionKind where
+  | damage
+  | counters (kind : CounterKind)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Multi-target relational constraint across targets chosen for a single
+`TargetSlot` or cross-slot group (CR 115.3 / 601.2c / 608.2b). -/
+inductive GroupTargetConstraint where
+  | totalManaValueAtMost (cap : ValueExpr)
+  | shareCharacteristic (char : SharedCharacteristic)
+  | distinctControllers
+  | distinctNames
+  | distinctCardTypes
+deriving Repr, Inhabited, BEq
+
+instance : HasTextChange GroupTargetConstraint where
+  applyTextChanges tcs gc :=
+    if tcs.isEmpty then gc
+    else
+      match gc with
+      | .totalManaValueAtMost cap =>
+        .totalManaValueAtMost (HasTextChange.applyTextChanges tcs cap)
+      | other => other
+
+/-- Restriction on CR 115.4 `"any target"` (creature, planeswalker, battle, or player). -/
+inductive RecipientPred where
+  /-- Any creature, planeswalker, battle, or player (CR 115.4). -/
   | any
-  | you
-  | opponent
-  /-- One particular player, by seat index. -/
-  | specific (idx : Nat)
-  /-- “For each opponent, up to one target … that player controls”: one
-  optional instance per opponent, expanded as the ability is put on the
-  stack. -/
-  | eachOpponent
-deriving Repr, Inhabited, BEq, DecidableEq
+  /-- Any target other than `ref` (`"any other target"`, CR 115.4). -/
+  | otherThan (ref : ObjectRef)
+  /-- Filtered CR 115.4 recipient (creature/planeswalker/battle matching `objPred`
+  or player matching `playerFilter`). -/
+  | filtered (objPred : ObjectPred) (playerFilter : PlayerFilter)
+deriving Repr, Inhabited, BEq
 
-/-- A target described by characteristics, with the Oracle noun phrase that
-names it. Every listed restriction must hold. -/
-structure TargetFilter where
-  noun : String
-  zone : TargetZone := .battlefield
-  /-- The target has at least one of these supertypes. Empty means any supertype. -/
-  supertypes : Array Supertype := #[]
-  /-- The target has at least one of these card types. Empty means any
-  permanent, card, or spell. -/
-  types : Array CardType := #[]
-  /-- The target has at least one of these subtypes. Empty means any subtype. -/
-  subtypes : Array CardSubtype := #[]
-  /-- An object with one of these supertypes also qualifies alongside `types`
-  (“creature or legendary spell”). -/
-  orSupertypes : Array Supertype := #[]
-  /-- The target has none of these supertypes (“nonlegendary”). -/
-  nonSupertypes : Array Supertype := #[]
-  /-- The target has none of these card types (“nonland”, “noncreature”). -/
-  nonTypes : Array CardType := #[]
-  /-- Not an Aura (“non-Aura enchantment”). -/
-  nonAura : Bool := false
-  /-- A permanent card (CR 110.4a). -/
-  permanentCard : Bool := false
-  nontoken : Bool := false
-  tokenOnly : Bool := false
-  controller : TargetController := .any
-  /-- The target is at least one of these colors. Empty means any color. -/
-  colors : Array Color := #[]
-  mvAtLeast : Option Nat := none
-  mvAtMost : Option Nat := none
-  toughnessAtLeast : Option Int := none
-  /-- Not the source of the spell or ability. -/
-  another : Bool := false
-  withFlying : Bool := false
-  withPlusOneCounter : Bool := false
-  attacking : Bool := false
-  attackingOrBlocking : Bool := false
-  attackedThisTurn : Bool := false
-  enteredThisTurn : Bool := false
-  /-- Only a creature that is still untapped (“tap target untapped creature”). -/
-  untapped : Bool := false
-  nonattacking : Bool := false
-  withHaste : Bool := false
-  /-- Owned (not necessarily controlled) by the caster. -/
-  ownedByYou : Bool := false
-deriving Repr, Inhabited, BEq, DecidableEq
+instance : HasTextChange RecipientPred where
+  applyTextChanges tcs rp :=
+    if tcs.isEmpty then rp
+    else
+      match rp with
+      | .any => .any
+      | .otherThan ref => .otherThan ref
+      | .filtered op pf =>
+        .filtered (HasTextChange.applyTextChanges tcs op)
+          (HasTextChange.applyTextChanges tcs pf)
 
-/-- Whom a spell, activated ability, or triggered ability may target
-(CR 115.1 / 601.2c / 603.3d). Adding a targeting shape here is a compile error
-in `EffectTargetKind.spec` and `Game.legalTargetsForAtomicKind` rather than
-silently offering no targets. Multiple instances of the word “target” list
-each slot in `spec` and are announced sequentially. Multiple targets of one
-instance are chosen together. -/
-inductive EffectTargetKind where
-  /-- No target. -/
-  | none
-  /-- Target creature you control. -/
-  | creatureYouControl
-  /-- Another target creature you control (not the source). -/
-  | anotherCreatureYouControl
-  /-- Another target creature (any controller, not the source). -/
-  | anotherCreature
-  /-- A player or a creature (e.g. damage to any target). -/
-  | playerOrCreature
-  /-- Target player, then target creature (Panther Pounce). -/
-  | playerThenCreature
-  /-- Target Elf card in your graveyard. -/
-  | elfInYourGraveyard
-  /-- Target creature an opponent controls. -/
-  | oppCreature
-  /-- Target creature an opponent controls, then up to one creature you
-  control (Trickster's Stratagem). -/
-  | oppCreatureThenUpToOneCreatureYouControl
-  /-- Target tapped creature an opponent controls. -/
-  | oppTappedCreature
-  /-- Target creature (any controller). -/
-  | creature
-  /-- A creature on the battlefield, or a creature card in a graveyard. -/
-  | creatureOrGyCreatureCard
-  /-- Target creature with flying. -/
-  | creatureWithFlying
-  /-- Target artifact or land. -/
-  | artifactOrLand
-  /-- Target colorless nonland permanent. -/
-  | colorlessNonland
-  /-- First a creature you control, then a creature an opponent controls. -/
-  | creatureYouControlThenOppCreature
-  /-- Target player (any player). -/
-  | player
-  /-- Target opponent. -/
-  | opponent
-  /-- Target card in an opponent's graveyard. -/
-  | oppGraveyardCard
-  /-- Target artifact or enchantment. -/
-  | artifactOrEnchantment
-  /-- Target artifact or creature you control. -/
-  | artifactOrCreatureYouControl
-  /-- Target nonland permanent. -/
-  | nonland
-  /-- Target nonland permanent an opponent controls. -/
-  | oppNonland
-  /-- Target attacking creature without flying. -/
-  | attackingCreatureWithoutFlying
-  /-- Target creature you control with this subtype (e.g. Equip Human). -/
-  | creatureYouControlSubtype (subtype : CardSubtype)
-  /-- A spell on the stack. -/
-  | spell
-  /-- A creature spell on the stack. -/
-  | creatureSpell
-  /-- A creature spell with power or toughness at most `n`. -/
-  | creatureSpellPTAtMost (n : Nat)
-  /-- Target creature defending player controls. -/
-  | defendingPlayerCreature
-  /-- Two target nonland permanents that share a card type. -/
-  | twoNonlandsSharingType
-  /-- Target creature with power `n` or greater. -/
-  | creaturePowerAtLeast (n : Int)
-  /-- Target creature with power `n` or less. -/
-  | creaturePowerAtMost (n : Int)
-  /-- Target creature you control with any of these subtypes. -/
-  | creatureYouControlAnySubtype (subtypes : Array CardSubtype)
-  /-- Target permanent. -/
-  | permanent
-  /-- Target creature card in your graveyard. -/
-  | creatureCardInYourGraveyard
-  /-- Target creature card with mana value `n` or less in your graveyard. -/
-  | creatureCardInYourGraveyardMvAtMost (n : Nat)
-  /-- Target legendary creature you control. -/
-  | legendaryCreatureYouControl
-  /-- Target creature you control with power `n` or less. -/
-  | creatureYouControlPowerAtMost (n : Int)
-  /-- Target artifact. -/
-  | artifact
-  /-- Target artifact an opponent controls. -/
-  | oppArtifact
-  /-- Target artifact token. -/
-  | artifactToken
-  /-- Target attacking creature. -/
-  | attackingCreature
-  /-- Target Equipment you control. -/
-  | equipmentYouControl
-  /-- Target creature or land you control. -/
-  | creatureOrLandYouControl
-  /-- Two target creatures and/or lands you control. -/
-  | twoCreaturesOrLandsYouControl
-  /-- Target Equipment you control, then up to one target creature you control. -/
-  | equipmentYouControlThenCreatureYouControl
-  /-- Up to one target Equipment you control, then target creature you control
-  (Swordsman). -/
-  | upToOneEquipmentThenCreatureYouControl
-  /-- Two target players (Gleaming Splendor). -/
-  | twoPlayers
-  /-- Up to one target creature, then target player (e.g. Meager Meal). -/
-  | upToOneCreatureThenPlayer
-  /-- Target attacking or blocking creature. -/
-  | attackingOrBlockingCreature
-  /-- Target creature with mana value `n` or less. -/
-  | creatureMvAtMost (n : Nat)
-  /-- Target creature with toughness `n` or greater. -/
-  | creatureToughnessAtLeast (n : Int)
-  /-- Target enchantment with mana value `n` or greater. -/
-  | enchantmentMvAtLeast (n : Nat)
-  /-- Target noncreature artifact. -/
-  | noncreatureArtifact
-  /-- An activated or triggered ability you control from a source of this card type
-  (Echo, MSH 74; Scientist Supreme of A.I.M., MSH 87). -/
-  | stackAbilityFromSource (ty : CardType)
-  /-- Target creature an opponent controls with power `n` or less. -/
-  | oppCreaturePowerAtMost (n : Int)
-  /-- Target creature an opponent controls that dealt damage this turn. -/
-  | oppCreatureDealtDamageThisTurn
-  /-- Target nonland, nontoken permanent. -/
-  | nonlandNontoken
-  /-- Target permanent card in your graveyard. -/
-  | permanentCardInYourGraveyard
-  /-- Target Equipment, instant, or sorcery card in your graveyard. -/
-  | equipmentInstantOrSorceryInYourGraveyard
-  /-- Target artifact or enchantment card in your graveyard. -/
-  | artEnchCardInYourGraveyard
-  /-- Target artifact you control. -/
-  | artifactYouControl
-  /-- Two target artifacts you control. -/
-  | twoArtifactsYouControl
-  /-- Target creature or planeswalker. -/
-  | creatureOrPlaneswalker
-  /-- Target permanent you control. -/
-  | permanentYouControl
-  /-- Target permanent an opponent controls. -/
-  | oppPermanent
-  /-- Another target creature you control with power `n` or less. -/
-  | anotherCreatureYouControlPowerAtMost (n : Int)
-  /-- Target planeswalker you control. -/
-  | planeswalkerYouControl
-  /-- Target creature or planeswalker an opponent controls. -/
-  | oppCreatureOrPlaneswalker
-  /-- Target creature you control, then a creature or planeswalker an
-  opponent controls. -/
-  | creatureYouControlThenOppCreatureOrPlaneswalker
-  /-- Target planeswalker you control, then a creature or planeswalker an
-  opponent controls. -/
-  | planeswalkerYouControlThenOppCreatureOrPlaneswalker
-  /-- Target creature you control that's attacking alone. -/
-  | attackingAloneCreatureYouControl
-  /-- Target worthy creature you control (MSH Equip worthy, CR 702.6c). -/
-  | worthyCreatureYouControl
-  /-- Target noncreature artifact or noncreature enchantment. -/
-  | noncreatureArtifactOrEnchantment
-  /-- Target permanent or player. -/
-  | permanentOrPlayer
-  /-- Up to two target creatures whose total mana value is `n` or less. -/
-  | upToTwoCreaturesTotalMvAtMost (n : Nat)
-  /-- One instance of the word “target” described by a `TargetFilter`. -/
-  | filtered (f : TargetFilter)
-  /-- One instance of “target” per filter, announced in order. Indices in
-  `optional` are “up to one” instances. -/
-  | multi (fs : Array TargetFilter) (optional : Array Nat)
-  /-- The instances of “target” of `a`, then those of `b`: two modes of one
-  modal spell chosen together (CR 700.2). -/
-  | pair (a b : EffectTargetKind)
-  /-- One instance of “target” choosing between `minCount` and `maxCount`
-  targets of `inner` together (CR 115.1c / 601.2c), used when combining modes. -/
-  | instanceSlots (inner : EffectTargetKind) (minCount maxCount : Nat)
-deriving Repr, Inhabited, BEq, DecidableEq
+/-- Domain of legal objects, players, or stack abilities for one `TargetSlot`
+(CR 115.1 / 115.4 / 115.5). -/
+inductive TargetDomain where
+  | object (zones : ZoneSetSpec) (pred : ObjectPred)
+  | player (filter : PlayerFilter)
+  | anyTarget (pred : RecipientPred := .any)
+  | stackAbility (controller : PlayerFilter := .you) (sourcePred : ObjectPred := .anyObject)
+  | anyOf (domains : Array TargetDomain)
+deriving Repr, Inhabited, BEq
 
-/-- Default demonstration-agent choice among legal targets (CR 601.2c).
-Adding a targeting shape is a compile error here rather than silently
-picking the first legal target in `Game.preferredTarget`. -/
+private def applyTcTargetDomain (tcs : Array TextChange) : TargetDomain → TargetDomain
+  | .object zs pred =>
+    .object (HasTextChange.applyTextChanges tcs zs) (HasTextChange.applyTextChanges tcs pred)
+  | .player pf => .player (HasTextChange.applyTextChanges tcs pf)
+  | .anyTarget rp => .anyTarget (HasTextChange.applyTextChanges tcs rp)
+  | .stackAbility ctrl src =>
+    .stackAbility (HasTextChange.applyTextChanges tcs ctrl) (HasTextChange.applyTextChanges tcs src)
+  | .anyOf ds => .anyOf (ds.attach.map fun ⟨d, _⟩ => applyTcTargetDomain tcs d)
+
+instance : HasTextChange TargetDomain where
+  applyTextChanges tcs d := if tcs.isEmpty then d else applyTcTargetDomain tcs d
+
+/-- One instance of the word `"target"` in Oracle text (CR 115.1 / 601.2c–d). -/
+structure TargetSlot where
+  domain : TargetDomain
+  count : CountRange := .exact 1
+  division? : Option (DivisionKind × ValueExpr) := none
+  groupConstraint? : Option GroupTargetConstraint := none
+  /-- When set, repeats this slot once per player matching the filter at
+  announcement (`"for each opponent, ... that player controls"`, CR 601.2c).
+  Expanded into concrete per-seat slots on the stack. -/
+  forEach? : Option PlayerFilter := none
+  /-- Optional conditional domain override (e.g. Teamwork target relaxation,
+  CR 601.2b–c / 702.194). -/
+  altDomainIf? : Option (Condition × TargetDomain) := none
+deriving Repr, Inhabited, BEq
+
+instance : HasTextChange TargetSlot where
+  applyTextChanges tcs s :=
+    if tcs.isEmpty then s
+    else
+      { domain := HasTextChange.applyTextChanges tcs s.domain
+        count := s.count
+        division? := s.division?.map fun (dk, v) => (dk, HasTextChange.applyTextChanges tcs v)
+        groupConstraint? := s.groupConstraint?.map (HasTextChange.applyTextChanges tcs)
+        forEach? := s.forEach?.map (HasTextChange.applyTextChanges tcs)
+        altDomainIf? := s.altDomainIf?.map fun (c, d) =>
+          (HasTextChange.applyTextChanges tcs c, HasTextChange.applyTextChanges tcs d) }
+
+/-- Cross-slot relational requirement linking distinct `"target"` slots in one
+`TargetSpec` (CR 115.3). -/
+inductive CrossSlotRelation where
+  /-- Targets across the listed slots must be pairwise distinct
+  (e.g. `"target artifact you control and a second target artifact you control"`). -/
+  | distinct
+  /-- Targets across the listed slots must jointly satisfy `constraint`. -/
+  | group (constraint : GroupTargetConstraint)
+deriving Repr, Inhabited, BEq
+
+instance : HasTextChange CrossSlotRelation where
+  applyTextChanges tcs r :=
+    if tcs.isEmpty then r
+    else
+      match r with
+      | .distinct => .distinct
+      | .group gc => .group (HasTextChange.applyTextChanges tcs gc)
+
+/-- Cross-slot constraint applied across the 0-based `TargetSpec.slots` indices
+listed in `slots`. -/
+structure CrossSlotConstraint where
+  slots : Array Nat
+  relation : CrossSlotRelation
+deriving Repr, Inhabited, BEq
+
+instance : HasTextChange CrossSlotConstraint where
+  applyTextChanges tcs c :=
+    if tcs.isEmpty then c
+    else { c with relation := HasTextChange.applyTextChanges tcs c.relation }
+
+/-- Unified targeting specification for a spell, activated ability, or triggered
+ability (CR 115.1 / 601.2c–d / 603.3d / 700.2). Each `TargetSlot` corresponds
+to one instance of the word `"target"` in Oracle text; empty `slots` means no
+targets. -/
+structure TargetSpec where
+  slots : Array TargetSlot := #[]
+  crossSlotConstraints : Array CrossSlotConstraint := #[]
+deriving Repr, Inhabited, BEq
+
+instance : HasTextChange TargetSpec where
+  applyTextChanges tcs ts :=
+    if tcs.isEmpty then ts
+    else
+      { slots := HasTextChange.applyTextChanges tcs ts.slots
+        crossSlotConstraints := HasTextChange.applyTextChanges tcs ts.crossSlotConstraints }
+
+/-- Default demonstration-agent choice among legal targets (CR 601.2c). -/
 inductive TargetPreference where
   /-- A permanent the caster controls. -/
   | own
@@ -282,489 +232,1001 @@ inductive TargetPreference where
   | selfPlayer
 deriving Repr, Inhabited, BEq, DecidableEq
 
-namespace EffectTargetKind
+/-! ### Structural Predicate Helpers -/
 
-/-- Count, Oracle noun, demonstration-agent preference, and per-instance
-slots for a targeting shape. Exhaustive so a new constructor is a compile
-error here rather than silently using `targetCount` 1, an empty noun, or
-`.opponent`. Multiple instances of the word “target” list each slot so Game
-does not restate them; those slots are announced sequentially. -/
-structure Spec where
-  count : Nat := 1
-  noun : String := ""
-  prefer : TargetPreference := .opponent
-  /-- Kind of each instance of the word “target”. Empty means this kind is
-  itself the (one) instance. -/
-  slots : Array EffectTargetKind := #[]
-  /-- 0-based slot indices that are optional (“up to one”). Announcing no
-  target for such a slot advances to the next instance (CR 115.1c / 601.2c). -/
-  optionalSlots : Array Nat := #[]
-  /-- True when this shape targets a spell on the stack. -/
-  stackSpell : Bool := false
-deriving Repr, Inhabited, BEq
+private def objPredAtoms : ObjectPred → List ObjectPred
+  | .all ps => ps.toList
+  | p => [p]
 
-/-- Classification of this targeting shape. `targetCount`, `noun`, and
-`defaultPreference` read this table. -/
-def spec : EffectTargetKind → Spec
-  | .none =>
-    { count := 0, prefer := .own }
-  | .creatureYouControl =>
-    { noun := "target creature you control", prefer := .own }
-  | .anotherCreatureYouControl =>
-    { noun := "another target creature you control", prefer := .own }
-  | .anotherCreature =>
-    { noun := "another target creature" }
-  | .playerOrCreature =>
-    { noun := "any target", prefer := .opponentPlayer }
-  | .playerThenCreature =>
-    { count := 2
-      noun := "target player and target creature"
-      prefer := .opponentPlayer
-      slots := #[.player, .creature] }
-  | .elfInYourGraveyard =>
-    { noun := "target Elf card from your graveyard", prefer := .last }
-  | .oppCreature =>
-    { noun := "target creature an opponent controls" }
-  | .oppCreatureThenUpToOneCreatureYouControl =>
-    { count := 2
-      noun := "target creature an opponent controls and up to one target creature you control"
-      prefer := .opponent
-      slots := #[.oppCreature, .creatureYouControl]
-      optionalSlots := #[1] }
-  | .oppTappedCreature =>
-    { noun := "target tapped creature an opponent controls" }
-  | .creature =>
-    { noun := "target creature" }
-  | .creatureOrGyCreatureCard =>
-    { noun := "up to one target creature or creature card in a graveyard",
-      prefer := .last }
-  | .creatureWithFlying =>
-    { noun := "target creature with flying" }
-  | .artifactOrLand =>
-    { noun := "target artifact or land" }
-  | .colorlessNonland =>
-    { noun := "target colorless nonland permanent" }
-  | .creatureYouControlThenOppCreature =>
-    { count := 2
-      noun := "target creature you control and a creature an opponent controls"
-      prefer := .ownThenOpponent
-      slots := #[.creatureYouControl, .oppCreature] }
-  | .player =>
-    { noun := "target player", prefer := .opponentPlayer }
-  | .opponent =>
-    { noun := "target opponent", prefer := .opponentPlayer }
-  | .oppGraveyardCard =>
-    { noun := "target card from an opponent's graveyard", prefer := .last }
-  | .artifactOrEnchantment =>
-    { noun := "target artifact or enchantment" }
-  | .artifactOrCreatureYouControl =>
-    { noun := "target artifact or creature you control", prefer := .own }
-  | .nonland =>
-    { noun := "target nonland permanent", prefer := .ownThenOpponent }
-  | .oppNonland =>
-    { noun := "target nonland permanent an opponent controls" }
-  | .attackingCreatureWithoutFlying =>
-    { noun := "target attacking creature without flying", prefer := .own }
-  | .creatureYouControlSubtype subtype =>
-    { noun := s!"target {subtype} you control", prefer := .own }
-  | .spell =>
-    { noun := "target spell", stackSpell := true }
-  | .creatureSpell =>
-    { noun := "target creature spell", stackSpell := true }
-  | .creatureSpellPTAtMost n =>
-    { noun := s!"target creature spell with power or toughness {n} or less",
-      stackSpell := true }
-  | .defendingPlayerCreature =>
-    { noun := "target creature defending player controls" }
-  | .twoNonlandsSharingType =>
-    { count := 2
-      noun := "two target nonland permanents that share a card type"
-      prefer := .ownThenOpponent
-      slots := #[.nonland, .nonland] }
-  | .creaturePowerAtLeast n =>
-    { noun := s!"target creature with power {n} or greater" }
-  | .creaturePowerAtMost n =>
-    { noun := s!"target creature with power {n} or less", prefer := .own }
-  | .creatureYouControlAnySubtype subtypes =>
-    { noun :=
-        if subtypes.isEmpty then "target creature you control"
-        else s!"target {orJoin (subtypes.toList.map CardSubtype.englishName)} you control"
-      prefer := .own }
-  | .permanent =>
-    { noun := "target permanent", prefer := .ownThenOpponent }
-  | .creatureCardInYourGraveyard =>
-    { noun := "target creature card from your graveyard", prefer := .last }
-  | .creatureCardInYourGraveyardMvAtMost n =>
-    { noun := s!"target creature card with mana value {n} or less from your graveyard",
-      prefer := .last }
-  | .legendaryCreatureYouControl =>
-    { noun := "target legendary creature you control", prefer := .own }
-  | .creatureYouControlPowerAtMost n =>
-    { noun := s!"target creature you control with power {n} or less", prefer := .own }
-  | .artifact =>
-    { noun := "target artifact" }
-  | .oppArtifact =>
-    { noun := "target artifact an opponent controls" }
-  | .artifactToken =>
-    { noun := "target artifact token" }
-  | .attackingCreature =>
-    { noun := "target attacking creature", prefer := .own }
-  | .equipmentYouControl =>
-    { noun := "target Equipment you control", prefer := .own }
-  | .creatureOrLandYouControl =>
-    { noun := "target creature or land you control", prefer := .own }
-  | .twoCreaturesOrLandsYouControl =>
-    { count := 2
-      noun := "two target creatures and/or lands you control"
-      prefer := .own
-      slots := #[.creatureOrLandYouControl, .creatureOrLandYouControl] }
-  | .equipmentYouControlThenCreatureYouControl =>
-    { count := 2
-      noun := "target Equipment you control and up to one target creature you control"
-      prefer := .own
-      slots := #[.equipmentYouControl, .creatureYouControl]
-      -- Only the creature is “up to one”; the Equipment is required (CR 115.1c / 603.3d).
-      optionalSlots := #[1] }
-  | .upToOneEquipmentThenCreatureYouControl =>
-    { count := 2
-      noun := "up to one target Equipment you control and target creature you control"
-      prefer := .own
-      slots := #[.equipmentYouControl, .creatureYouControl]
-      optionalSlots := #[0] }
-  | .twoPlayers =>
-    { count := 2
-      noun := "two target players"
-      prefer := .ownThenOpponent
-      slots := #[.player, .player] }
-  | .upToOneCreatureThenPlayer =>
-    { count := 2
-      noun := "up to one target creature and target player"
-      prefer := .own
-      slots := #[.creature, .player]
-      optionalSlots := #[0] }
-  | .attackingOrBlockingCreature =>
-    { noun := "target attacking or blocking creature" }
-  | .creatureMvAtMost n =>
-    { noun := s!"target creature with mana value {n} or less" }
-  | .creatureToughnessAtLeast n =>
-    { noun := s!"target creature with toughness {n} or greater" }
-  | .enchantmentMvAtLeast n =>
-    { noun := s!"target enchantment with mana value {n} or greater" }
-  | .noncreatureArtifact =>
-    { noun := "target noncreature artifact" }
-  | .stackAbilityFromSource ty =>
-    let w := ty.oracleWord
-    { noun := s!"target activated or triggered ability you control from {indefinite w} {w} source",
-      stackSpell := true }
-  | .oppCreaturePowerAtMost n =>
-    { noun := s!"target creature an opponent controls with power {n} or less" }
-  | .oppCreatureDealtDamageThisTurn =>
-    { noun := "target creature an opponent controls that dealt damage this turn" }
-  | .nonlandNontoken =>
-    { noun := "target nonland, nontoken permanent", prefer := .ownThenOpponent }
-  | .permanentCardInYourGraveyard =>
-    { noun := "target permanent card in your graveyard", prefer := .last }
-  | .equipmentInstantOrSorceryInYourGraveyard =>
-    { noun := "target Equipment, instant, or sorcery card from your graveyard",
-      prefer := .last }
-  | .artEnchCardInYourGraveyard =>
-    { noun := "target artifact or enchantment card from your graveyard",
-      prefer := .last }
-  | .artifactYouControl =>
-    { noun := "target artifact you control", prefer := .own }
-  | .twoArtifactsYouControl =>
-    { count := 2
-      noun := "target artifact you control and a second target artifact you control"
-      prefer := .own
-      slots := #[.artifactYouControl, .artifactYouControl] }
-  | .attackingAloneCreatureYouControl =>
-    { noun := "target creature you control that's attacking alone", prefer := .own }
-  | .worthyCreatureYouControl =>
-    { noun := "target worthy creature you control", prefer := .own }
-  | .noncreatureArtifactOrEnchantment =>
-    { noun := "target noncreature artifact or noncreature enchantment" }
-  | .permanentOrPlayer =>
-    { noun := "target permanent or player", prefer := .ownThenOpponent }
-  | .upToTwoCreaturesTotalMvAtMost n =>
-    { count := 2
-      noun := s!"up to two target creatures with total mana value {n} or less" }
-  | .creatureOrPlaneswalker =>
-    { noun := "target creature or planeswalker" }
-  | .permanentYouControl =>
-    { noun := "target permanent you control", prefer := .own }
-  | .oppPermanent =>
-    { noun := "target permanent an opponent controls", prefer := .opponent }
-  | .anotherCreatureYouControlPowerAtMost n =>
-    { noun := s!"another target creature you control with power {n} or less", prefer := .own }
-  | .planeswalkerYouControl =>
-    { noun := "target planeswalker you control", prefer := .own }
-  | .oppCreatureOrPlaneswalker =>
-    { noun := "target creature or planeswalker an opponent controls", prefer := .opponent }
-  | .creatureYouControlThenOppCreatureOrPlaneswalker =>
-    { count := 2
-      noun := "target creature you control"
-      prefer := .ownThenOpponent
-      slots := #[.creatureYouControl, .oppCreatureOrPlaneswalker] }
-  | .planeswalkerYouControlThenOppCreatureOrPlaneswalker =>
-    { count := 2
-      noun := "target planeswalker you control"
-      prefer := .ownThenOpponent
-      slots := #[.planeswalkerYouControl, .oppCreatureOrPlaneswalker] }
-  | .filtered f =>
-    { noun := f.noun
-      prefer :=
-        match f.zone, f.controller with
-        | .yourGraveyard, _ | .anyGraveyard, _ => .last
-        | .player, .you => .selfPlayer
-        | _, .specific _ => .opponent
-        | _, .eachOpponent => .opponent
-        | .player, _ => .opponentPlayer
-        | _, .you => .own
-        | _, .opponent => .opponent
-        | _, .any => .opponent
-      stackSpell := f.zone == .stack || f.zone == .spellOrCreature }
-  | .multi fs optional =>
-    { count := fs.size
-      noun := (fs[0]?.map (·.noun)).getD ""
-      prefer := .ownThenOpponent
-      slots := fs.map EffectTargetKind.filtered
-      optionalSlots := optional }
-  | .pair a b =>
-    let sa := spec a
-    let sb := spec b
-    let la := if sa.slots.isEmpty then Array.replicate sa.count a else sa.slots
-    let lb := if sb.slots.isEmpty then Array.replicate sb.count b else sb.slots
-    { count := sa.count + sb.count
-      noun := if sa.noun.isEmpty then sb.noun else sa.noun
-      prefer := sa.prefer
-      slots := la ++ lb
-      optionalSlots := sa.optionalSlots ++ sb.optionalSlots.map (· + la.size)
-      stackSpell := sa.stackSpell || sb.stackSpell }
-  | .instanceSlots inner minCount maxCount =>
-    let si := spec inner
-    { count := maxCount
-      noun := si.noun
-      prefer := si.prefer
-      slots := Array.replicate maxCount inner
-      optionalSlots := ((List.range maxCount).drop minCount).toArray
-      stackSpell := si.stackSpell }
+private def objPredHasAtom (pred : ObjectPred) (p : ObjectPred → Bool) : Bool :=
+  (objPredAtoms pred).any p
 
-/-- How many targets must be announced for this shape (CR 601.2c). -/
-def targetCount (k : EffectTargetKind) : Nat :=
-  k.spec.count
+private def splitOtherThan (pred : ObjectPred) : Bool × ObjectPred :=
+  let atoms := objPredAtoms pred
+  let hasOther := atoms.any (fun | .otherThan _ => true | _ => false)
+  if !hasOther then (false, pred)
+  else
+    let rest := atoms.filter (fun | .otherThan _ => false | _ => true)
+    (true, ObjectPred.andAll rest.toArray)
 
-/-- Oracle-style noun phrase for this targeting shape. -/
-def noun (k : EffectTargetKind) : String :=
-  k.spec.noun
+private def isControlledBy (pf : PlayerFilter) : ObjectPred → Bool
+  | .controlledBy f => f == pf
+  | _ => false
 
-/-- Parameter-free targeting shapes, so a noun can be parsed back to a kind.
-A new parameter-free constructor belongs in this list; parameterized
-constructors are parsed from their noun template instead. -/
-def closedKinds : List EffectTargetKind := [
-  .none,
-  .creatureYouControl,
-  .anotherCreatureYouControl,
-  .anotherCreature,
-  .playerOrCreature,
-  .playerThenCreature,
-  .elfInYourGraveyard,
-  .oppCreature,
-  .oppCreatureThenUpToOneCreatureYouControl,
-  .oppTappedCreature,
-  .creature,
-  .creatureOrGyCreatureCard,
-  .creatureWithFlying,
-  .artifactOrLand,
-  .colorlessNonland,
-  .creatureYouControlThenOppCreature,
-  .player,
-  .opponent,
-  .oppGraveyardCard,
-  .artifactOrEnchantment,
-  .artifactOrCreatureYouControl,
-  .nonland,
-  .oppNonland,
-  .attackingCreatureWithoutFlying,
-  .spell,
-  .creatureSpell,
-  .defendingPlayerCreature,
-  .twoNonlandsSharingType,
-  .permanent,
-  .creatureCardInYourGraveyard,
-  .legendaryCreatureYouControl,
-  .artifact,
-  .oppArtifact,
-  .artifactToken,
-  .attackingCreature,
-  .equipmentYouControl,
-  .creatureOrLandYouControl,
-  .twoCreaturesOrLandsYouControl,
-  .equipmentYouControlThenCreatureYouControl,
-  .upToOneEquipmentThenCreatureYouControl,
-  .twoPlayers,
-  .upToOneCreatureThenPlayer,
-  .attackingOrBlockingCreature,
-  .noncreatureArtifact,
-  .stackAbilityFromSource .creature,
-  .stackAbilityFromSource .artifact,
-  .oppCreatureDealtDamageThisTurn,
-  .nonlandNontoken,
-  .permanentCardInYourGraveyard,
-  .equipmentInstantOrSorceryInYourGraveyard,
-  .artEnchCardInYourGraveyard,
-  .artifactYouControl,
-  .twoArtifactsYouControl,
-  .creatureOrPlaneswalker,
-  .permanentYouControl,
-  .oppPermanent,
-  .planeswalkerYouControl,
-  .oppCreatureOrPlaneswalker,
-  .creatureYouControlThenOppCreatureOrPlaneswalker,
-  .planeswalkerYouControlThenOppCreatureOrPlaneswalker,
-  .attackingAloneCreatureYouControl,
-  .worthyCreatureYouControl,
-  .noncreatureArtifactOrEnchantment,
-  .permanentOrPlayer,
-]
+/-- Replace occurrences of `matchPf` in controller/owner predicates with `replacement`
+(used when rewriting or expanding `"for each opponent/player, ... that player controls"`). -/
+private partial def substPlayerFilterPred (matchPf replacement : PlayerFilter) :
+    ObjectPred → ObjectPred
+  | .all ps => .all (ps.map (substPlayerFilterPred matchPf replacement))
+  | .any ps => .any (ps.map (substPlayerFilterPred matchPf replacement))
+  | .not p => .not (substPlayerFilterPred matchPf replacement p)
+  | .controlledBy pf =>
+    if pf == matchPf then .controlledBy replacement else .controlledBy pf
+  | .ownedBy pf =>
+    if pf == matchPf then .ownedBy replacement else .ownedBy pf
+  | other => other
 
-/-- Default demonstration-agent preference for this targeting shape. -/
-def defaultPreference (k : EffectTargetKind) : TargetPreference :=
-  k.spec.prefer
+/-- Replace occurrences of `matchPf` with `replacement` inside a `TargetDomain`. -/
+def TargetDomain.substitutePlayerFilter (matchPf replacement : PlayerFilter) :
+    TargetDomain → TargetDomain
+  | .object zs pred =>
+    let zs' :=
+      match zs.owner with
+      | .matching pf => if pf == matchPf then { zs with owner := .matching replacement } else zs
+      | _ => zs
+    .object zs' (substPlayerFilterPred matchPf replacement pred)
+  | .player pf => if pf == matchPf then .player replacement else .player pf
+  | .anyTarget (.filtered op pf) =>
+    .anyTarget (.filtered (substPlayerFilterPred matchPf replacement op)
+      (if pf == matchPf then replacement else pf))
+  | .anyTarget rp => .anyTarget rp
+  | .stackAbility ctrl src =>
+    .stackAbility (if ctrl == matchPf then replacement else ctrl) src
+  | .anyOf ds => .anyOf (ds.attach.map fun ⟨d, _⟩ => d.substitutePlayerFilter matchPf replacement)
 
-/-- True when this shape targets a spell on the stack. -/
-def targetsStackSpell (k : EffectTargetKind) : Bool :=
-  k.spec.stackSpell
+/-- Replace opponent controller/player filter with `replacement` inside a `TargetDomain`. -/
+def TargetDomain.substituteOpponent (replacement : PlayerFilter) (d : TargetDomain) : TargetDomain :=
+  d.substitutePlayerFilter .opponent replacement
 
-/-- Kind of the `i`th instance of the word “target” (0-based). Atomic shapes
-return themselves for every slot. -/
-def slotKind (k : EffectTargetKind) (i : Nat) : EffectTargetKind :=
-  k.spec.slots[i]?.getD k
+/-- Substitute the bound `"that player"` placeholder (and `.opponent` when
+expanding a `forEach? := some .opponent` slot) with concrete `replacement`. -/
+def TargetDomain.substituteForEach (forEachFilter replacement : PlayerFilter)
+    (d : TargetDomain) : TargetDomain :=
+  let d' := d.substitutePlayerFilter .thatPlayer replacement
+  if forEachFilter == .opponent then d'.substitutePlayerFilter .opponent replacement
+  else d'
 
-/-- True when the `i`th instance of the word “target” is optional (“up to one”). -/
-def isOptionalSlot (k : EffectTargetKind) (i : Nat) : Bool :=
-  k.spec.optionalSlots.contains i
+/-- Whether `d` targets any stack object (spell or stack ability). -/
+def TargetDomain.targetsStackSpell : TargetDomain → Bool
+  | .object zs _ => zs.zones.contains .stack
+  | .stackAbility .. => true
+  | .anyOf ds => ds.attach.any fun ⟨d, _⟩ => d.targetsStackSpell
+  | .player _ | .anyTarget _ => false
 
-/-- 0-based slot-index groups whose chosen targets must be pairwise distinct
-under CR 115.3 (slots sharing a single instance of the word “target” or
-explicitly requiring “a second target”). Single-slot shapes (`slots.isEmpty`)
-with multiple targets (`e.targets.size > 1`) always share one instance of
-“target” and are checked directly when `slots.isEmpty`. -/
-def distinctSlots : EffectTargetKind → Array (Array Nat)
-  | .twoNonlandsSharingType
-  | .twoCreaturesOrLandsYouControl
-  | .twoPlayers
-  | .twoArtifactsYouControl => #[#[0, 1]]
-  | .instanceSlots _ _ maxCount =>
-    if maxCount > 1 then #[(List.range maxCount).toArray] else #[]
-  | .pair a b =>
-    let sa := a.spec
-    let sb := b.spec
-    let na := if sa.slots.isEmpty then sa.count else sa.slots.size
-    let nb := if sb.slots.isEmpty then sb.count else sb.slots.size
-    let ga :=
-      if sa.slots.isEmpty then
-        if na > 1 then #[(List.range na).toArray] else #[]
-      else a.distinctSlots
-    let gb :=
-      (if sb.slots.isEmpty then
-        if nb > 1 then #[(List.range nb).toArray] else #[]
-      else b.distinctSlots).map (fun grp => grp.map (· + na))
-    ga ++ gb
-  | _ => #[]
+/-- Whether `d` targets any graveyard zone. -/
+private def TargetDomain.targetsGraveyard : TargetDomain → Bool
+  | .object zs _ => zs.zones.contains .graveyard
+  | .anyOf ds => ds.attach.any fun ⟨d, _⟩ => d.targetsGraveyard
+  | .player _ | .anyTarget _ | .stackAbility .. => false
 
-/-- Half-open `[start, stop)` slot range sharing one instance of the word
-“target” around `slot` (CR 601.2c). Separate instances have width `1`;
-`.instanceSlots` groups all of its `maxCount` slots into one announcement. -/
-def instanceGroupBounds : EffectTargetKind → Nat → Nat × Nat
-  | .instanceSlots _ _ maxCount, _ => (0, maxCount)
-  | .pair a b, slot =>
-    let sa := a.spec
-    let na := if sa.slots.isEmpty then sa.count else sa.slots.size
-    if slot < na then
-      if sa.slots.isEmpty then (0, na) else a.instanceGroupBounds slot
+/-- Structural default AI preference for a `TargetDomain` (CR 601.2c). -/
+def TargetDomain.defaultPreference : TargetDomain → TargetPreference
+  | .anyTarget _ => .opponentPlayer
+  | .player { relation := .you, .. } => .selfPlayer
+  | .player _ => .opponentPlayer
+  | .stackAbility .. => .opponent
+  | .anyOf ds =>
+    if ds.attach.any fun ⟨d, _⟩ => d.targetsGraveyard then .last
+    else if ds.any (fun | .player _ => true | _ => false) then .ownThenOpponent
+    else match ds[0]? with
+      | some d =>
+        -- Avoid recursive call on non-structurally-smaller `ds[0]?` by matching directly.
+        match d with
+        | .anyTarget _ => .opponentPlayer
+        | .player { relation := .you, .. } => .selfPlayer
+        | .player _ => .opponentPlayer
+        | .object zs _ => if zs.zones.contains .graveyard then .last else .opponent
+        | _ => .opponent
+      | none => .opponent
+  | .object zs pred =>
+    if zs.zones.contains .graveyard then .last
+    else if objPredHasAtom pred (isControlledBy .you) then .own
+    else if objPredHasAtom pred (isControlledBy .opponent) then .opponent
+    else if pred == .anyObject ||
+        pred == .not (.hasType .land) ||
+        pred == .all #[.not (.hasType .land), .isToken false] then
+      .ownThenOpponent
+    else if objPredHasAtom pred (fun | .combatRole .attacking => true | _ => false) then
+      .own
+    else if objPredHasAtom pred (fun | .stat .power .le _ => true | _ => false) then
+      .own
+    else .opponent
+
+/-! ### Canonical `ToOracle` Rendering (`TargetDomain`, `TargetSlot`, `TargetSpec`) -/
+
+private def renderObjectFilterForTarget (ctx : PrintCtx) (zones : ZoneSetSpec) (pred : ObjectPred) : String :=
+  -- Special concise Oracle phrasing for bare creature-subtype permanent targets:
+  -- e.g. `"Elf you control"`, `"Goblin or Orc you control"`.
+  let atoms := objPredAtoms pred
+  let bareCreatureSubtype? : Option String :=
+    if zones != .battlefield then none
     else
-      let sb := b.spec
-      let nb := if sb.slots.isEmpty then sb.count else sb.slots.size
-      if sb.slots.isEmpty then (na, na + nb)
+      match atoms with
+      | [.hasSubtype (.literal s), .hasType .creature, .controlledBy { relation := .you, pred := .any }] =>
+        if s.isCreatureType then
+          some s!"{if ctx.plural then s.pluralName else s.englishName} you control"
+        else none
+      | [.any ss, .hasType .creature, .controlledBy { relation := .you, pred := .any }] =>
+        let subs := ss.toList.filterMap fun
+          | .hasSubtype (.literal s) => if s.isCreatureType then some s else none
+          | _ => none
+        if subs.length == ss.size && !subs.isEmpty then
+          let names := subs.map fun s => if ctx.plural then s.pluralName else s.englishName
+          some s!"{orJoin names} you control"
+        else none
+      | _ => none
+  match bareCreatureSubtype? with
+  | some s => s
+  | none =>
+    let raw :=
+      if zones.zones == #[.graveyard] then
+        -- Render graveyard targets using `"from ... graveyard"` after any `with` clauses
+        -- (matching standard MTG Oracle wording: `"target creature card with mana value 3 or less from your graveyard"`).
+        let base := toOracleStr (ObjectFilter.mk .battlefield pred) { ctx with capitalize := false }
+        let base :=
+          if !atoms.any (fun | .isKind .card | .isKind .permanentCard => true | _ => false) &&
+             !base.endsWith " card" && !base.endsWith " cards" then
+            -- Ensure `"card"` head appears when no explicit `.isKind` atom was supplied.
+            toOracleStr (ObjectFilter.mk .battlefield (ObjectPred.andAll (atoms.toArray.push .isCard)))
+              { ctx with capitalize := false }
+          else base
+        let gyLoc :=
+          match zones.owner with
+          | .any => "from a graveyard"
+          | .matching { relation := .you, pred := .any } => "from your graveyard"
+          | .matching { relation := .opponent, pred := .any } => "from an opponent's graveyard"
+          | .matching pf => s!"from {toOracleStr pf { ctx with capitalize := false }}'s graveyard"
+          | .ofPlayer .you => "from your graveyard"
+          | .ofPlayer pe => s!"from {toOracleStr pe { ctx with capitalize := false }}'s graveyard"
+        s!"{base} {gyLoc}"
       else
-        let (s, e) := b.instanceGroupBounds (slot - na)
-        (s + na, e + na)
-  | _, slot => (slot, slot + 1)
+        let rendered := toOracleStr (ObjectFilter.mk zones pred) { ctx with capitalize := false }
+        -- Omit redundant `" on the stack"` when `"spell"` / `"spells"` already implies the stack.
+        if zones == .stack && atoms.any (· == .isKind .spell) then
+          rendered.replace " on the stack" ""
+        else rendered
+    -- Idiomatic MTG comma between `"nonland"` and `"nontoken"`.
+    (raw.replace "nontoken nonland" "nonland, nontoken").replace "nonland nontoken" "nonland, nontoken"
 
-/-- 0-based slot-index groups whose chosen permanent targets must share a card
-type (`.twoNonlandsSharingType`). -/
-def sharesTypeGroups : EffectTargetKind → Array (Array Nat)
-  | .twoNonlandsSharingType => #[#[0, 1]]
-  | .pair a b =>
-    let sa := a.spec
-    let na := if sa.slots.isEmpty then sa.count else sa.slots.size
-    a.sharesTypeGroups ++ b.sharesTypeGroups.map (fun grp => grp.map (· + na))
-  | _ => #[]
+private def renderPlayerTargetBody (ctx : PrintCtx) (pf : PlayerFilter) : String :=
+  match pf.relation, pf.pred with
+  | .anyPlayer, .any => if ctx.plural then "players" else "player"
+  | .opponent, .any => if ctx.plural then "opponents" else "opponent"
+  | .teammate, .any => if ctx.plural then "teammates" else "teammate"
+  | .you, .any => "you"
+  | .anyPlayer, .isDefendingPlayer => "defending player"
+  | .anyPlayer, .isSeat _ | .anyPlayer, .thatPlayer => "that player"
+  | rel, p =>
+    let head :=
+      match rel with
+      | .anyPlayer => if ctx.plural then "players" else "player"
+      | .opponent => if ctx.plural then "opponents" else "opponent"
+      | .teammate => if ctx.plural then "teammates" else "teammate"
+      | .you => "you"
+    s!"{head} who {toOracleStr p { ctx with capitalize := false }}"
 
-/-- `(cap, slots)` groups whose chosen permanent targets must have combined mana
-value at most `cap` (`.upToTwoCreaturesTotalMvAtMost`). -/
-def totalMvCapGroups : EffectTargetKind → Array (Nat × Array Nat)
-  | .upToTwoCreaturesTotalMvAtMost n => #[(n, #[0, 1])]
-  | .instanceSlots (.upToTwoCreaturesTotalMvAtMost n) _ maxCount =>
-    #[(n, (List.range maxCount).toArray)]
-  | .pair a b =>
-    let sa := a.spec
-    let na := if sa.slots.isEmpty then sa.count else sa.slots.size
-    a.totalMvCapGroups ++ b.totalMvCapGroups.map (fun (n, grp) => (n, grp.map (· + na)))
-  | _ => #[]
+private partial def renderDomainBody (ctx : PrintCtx) : TargetDomain → String
+  | .object zones pred => renderObjectFilterForTarget ctx zones pred
+  | .player pf => renderPlayerTargetBody ctx pf
+  | .anyTarget .any => if ctx.plural then "targets" else "any target"
+  | .anyTarget (.otherThan _) => if ctx.plural then "other targets" else "any other target"
+  | .anyTarget (.filtered op pf) =>
+    s!"{renderObjectFilterForTarget ctx .battlefield op} or {renderPlayerTargetBody ctx pf}"
+  | .stackAbility ctrl src =>
+    let ctrlS :=
+      if ctrl == PlayerFilter.you then "you control"
+      else if ctrl == PlayerFilter.opponent then "an opponent controls"
+      else if ctrl == PlayerFilter.any then ""
+      else s!"{toOracleStr ctrl { ctx with capitalize := false }} controls"
+    let abWord := if ctx.plural then "activated or triggered abilities" else "activated or triggered ability"
+    let srcPart :=
+      match src with
+      | .all #[] => ""
+      | .hasType ty =>
+        let w := ty.oracleWord
+        s!" from {indefinite w} {w} source"
+      | other =>
+        let w := toOracleStr (ObjectFilter.mk .battlefield other) { ctx with plural := false, capitalize := false }
+        s!" from {indefinite w} {w} source"
+    let mid := if ctrlS.isEmpty then abWord else s!"{abWord} {ctrlS}"
+    s!"{mid}{srcPart}"
+  | .anyOf ds =>
+    let parts := ds.map (renderDomainBody ctx)
+    -- Special `"creature card in a graveyard"` phrasing for multi-zone union.
+    let parts := parts.map fun p => p.replace " from a graveyard" " in a graveyard"
+    orJoin parts.toList
 
-/-- Oracle-style noun for the `i`th instance, with “up to one” when optional. -/
-def announcedNoun (k : EffectTargetKind) (i : Nat) : String :=
-  let n := (k.slotKind i).noun
-  if k.isOptionalSlot i && !n.startsWith "up to " then
-    s!"up to one {n}"
-  else n
+private def renderGroupConstraintSuffix (ctx : PrintCtx) : GroupTargetConstraint → String
+  | .totalManaValueAtMost cap =>
+    s!" with total mana value {toOracleStr cap { ctx with capitalize := false }} or less"
+  | .shareCharacteristic .color => " that share a color"
+  | .shareCharacteristic .cardType => " that share a card type"
+  | .shareCharacteristic .creatureType => " that share a creature type"
+  | .shareCharacteristic .subtype => " that share a subtype"
+  | .distinctControllers => " with different controllers"
+  | .distinctNames => " with different names"
+  | .distinctCardTypes => " of each card type"
 
-end EffectTargetKind
+/-- Render one `TargetSlot` to canonical Oracle text (CR 115.1 / 207). -/
+def TargetSlot.renderOracle (ctx : PrintCtx) (slot : TargetSlot) : String :=
+  let plural := slot.count.isPlural
+  let subCtx := { ctx with plural, capitalize := false }
+  let domain :=
+    match slot.forEach? with
+    | some pf =>
+      if pf == PlayerFilter.opponent then slot.domain.substituteOpponent .thatPlayer
+      else slot.domain
+    | none => slot.domain
+  let qPfx := slot.count.quantifierPrefix
+  let core : String :=
+    match domain with
+    | .anyTarget .any =>
+      if slot.count == CountRange.exact 1 then "any target"
+      else if qPfx.isEmpty then "any target"
+      else s!"{qPfx} {if plural then "targets" else "target"}"
+    | .anyTarget (.otherThan _) =>
+      if slot.count == CountRange.exact 1 then "any other target"
+      else if qPfx.isEmpty then "any other target"
+      else s!"{qPfx} other {if plural then "targets" else "target"}"
+    | .object zones pred =>
+      let (hasOther, restPred) := splitOtherThan pred
+      let body := renderObjectFilterForTarget subCtx zones restPred
+      if hasOther then
+        if slot.count == CountRange.exact 1 then s!"another target {body}"
+        else s!"{qPfx} other target {body}"
+      else
+        if qPfx.isEmpty then s!"target {body}"
+        else s!"{qPfx} target {body}"
+    | other =>
+      let body := renderDomainBody subCtx other
+      if qPfx.isEmpty then s!"target {body}"
+      else s!"{qPfx} target {body}"
+  let gcSfx :=
+    match slot.groupConstraint? with
+    | some gc => renderGroupConstraintSuffix subCtx gc
+    | none => ""
+  let full :=
+    match slot.forEach? with
+    | some pf =>
+      let who :=
+        if pf == PlayerFilter.opponent then "each opponent"
+        else if pf == PlayerFilter.any then "each player"
+        else s!"each {toOracleStr pf { ctx with capitalize := false }}"
+      s!"for {who}, {core}{gcSfx}"
+    | none => s!"{core}{gcSfx}"
+  if ctx.capitalize then capitalizeAscii full else full
 
-namespace TargetFilter
+instance : ToOracle TargetDomain where
+  toOracle ctx d :=
+    let s := renderDomainBody { ctx with capitalize := false } d
+    if ctx.capitalize then capitalizeAscii s else s
 
-def creatureOrPlaneswalker : TargetFilter :=
-  { noun := "target creature or planeswalker", types := #[.creature, .planeswalker] }
+instance : ToOracle TargetSlot where
+  toOracle ctx slot := slot.renderOracle ctx
 
-def creature : TargetFilter :=
-  { noun := "target creature", types := #[.creature] }
+instance : ToOracle TargetSpec where
+  toOracle ctx ts :=
+    let raw :=
+      match ts.slots.toList with
+      | [] => ""
+      | [s] => s.renderOracle { ctx with capitalize := false }
+      | [s0, s1] =>
+        let isSecondDistinct :=
+          s0 == s1 &&
+            ts.crossSlotConstraints.any fun c =>
+              c.relation == .distinct && c.slots == #[0, 1]
+        if isSecondDistinct then
+          s!"{s0.renderOracle { ctx with capitalize := false }} and a second {s1.renderOracle { ctx with capitalize := false }}"
+        else
+          s!"{s0.renderOracle { ctx with capitalize := false }} and {s1.renderOracle { ctx with capitalize := false }}"
+      | ss =>
+        String.intercalate " and " (ss.map fun s => s.renderOracle { ctx with capitalize := false })
+    if ctx.capitalize then capitalizeAscii raw else raw
 
-def creatureYouControl : TargetFilter :=
-  { noun := "target creature you control", types := #[.creature], controller := .you }
+/-! ### `TargetSlot` and `TargetSpec` Operations -/
 
-def oppCreatureOrPlaneswalker : TargetFilter :=
-  { noun := "target creature or planeswalker an opponent controls", types := #[.creature, .planeswalker], controller := .opponent }
+namespace TargetSlot
 
-def spell : TargetFilter :=
-  { noun := "target spell", zone := .stack }
+/-- Construct a single-target slot for `domain`. -/
+def of (domain : TargetDomain) (count : CountRange := .exact 1) : TargetSlot :=
+  { domain, count }
 
-end TargetFilter
+/-- Canonical Oracle noun phrase for this slot. -/
+def noun (s : TargetSlot) : String :=
+  s.renderOracle {}
 
-/-- Targeting shape plus a default-choice hint used by the demonstration agent. -/
+/-- Number of flat target positions occupied by this slot when announcing. -/
+def width (s : TargetSlot) : Nat :=
+  max 1 (s.count.maxCount 100)
+
+/-- Minimum targets required for this slot. -/
+def minCount (s : TargetSlot) : Nat :=
+  s.count.minCount
+
+/-- Maximum targets allowed for this slot. -/
+def maxCount (s : TargetSlot) (fallback : Nat := 100) : Nat :=
+  s.count.maxCount fallback
+
+/-- True when zero targets may be chosen for this slot. -/
+def allowsZero (s : TargetSlot) : Bool :=
+  s.count.allowsZero
+
+/-- True when this slot targets any stack spell or ability. -/
+def targetsStackSpell (s : TargetSlot) : Bool :=
+  s.domain.targetsStackSpell
+
+/-- Structural default AI preference for this slot. -/
+def defaultPreference (s : TargetSlot) : TargetPreference :=
+  s.domain.defaultPreference
+
+/-- Apply legacy `(allowsZero, maxTargets)` bounds when refining a single slot. -/
+def withBounds (s : TargetSlot) (allowsZero : Bool) (maxTargets : Nat) : TargetSlot :=
+  if s.count == .anyNumber then s
+  else
+    let curMax := s.count.maxCount
+    let nextMax := if maxTargets == 0 then curMax else max maxTargets 1
+    let curMin := s.count.minCount
+    let nextMin := if allowsZero then 0 else min curMin nextMax
+    { s with count := CountRange.ofBounds nextMin nextMax }
+
+end TargetSlot
+
+namespace TargetSpec
+
+/-- No target (`slots := #[]`). -/
+def none : TargetSpec := {}
+
+/-- Single `"target"` word specification. -/
+def single (slot : TargetSlot) : TargetSpec :=
+  { slots := #[slot] }
+
+/-- Single `"target"` word specification for `domain` with count `count`. -/
+def ofDomain (domain : TargetDomain) (count : CountRange := .exact 1) : TargetSpec :=
+  single { domain, count }
+
+/-- Multi-slot targeting specification (one `TargetSlot` per `"target"` word). -/
+def ofSlots (slots : Array TargetSlot) (cross : Array CrossSlotConstraint := #[]) : TargetSpec :=
+  { slots, crossSlotConstraints := cross }
+
+/-- Concatenate two targeting specifications in printed order (e.g. combining
+chosen modes of a modal spell or ability, CR 700.2). -/
+def append (a b : TargetSpec) : TargetSpec :=
+  let off := a.slots.size
+  { slots := a.slots ++ b.slots
+    crossSlotConstraints :=
+      a.crossSlotConstraints ++
+        b.crossSlotConstraints.map fun c => { c with slots := c.slots.map (· + off) } }
+
+/-- True when this specification has no `"target"` slots. -/
+def isEmpty (ts : TargetSpec) : Bool :=
+  ts.slots.isEmpty
+
+/-- True when this specification has exactly one `"target"` word. -/
+def isSingleSlot (ts : TargetSpec) : Bool :=
+  ts.slots.size == 1
+
+/-- True when this specification has multiple sequential `"target"` words. -/
+def isMultiSlot (ts : TargetSpec) : Bool :=
+  ts.slots.size > 1
+
+/-- Total flat target positions across all slots. -/
+def totalPositions (ts : TargetSpec) : Nat :=
+  ts.slots.foldl (fun acc s => acc + s.width) 0
+
+/-- Minimum total targets across all slots. -/
+def minTargetCount (ts : TargetSpec) : Nat :=
+  ts.slots.foldl (fun acc s => acc + s.minCount) 0
+
+/-- Maximum total targets across all slots. -/
+def maxTargetCount (ts : TargetSpec) (fallback : Nat := 100) : Nat :=
+  ts.slots.foldl (fun acc s => acc + s.maxCount fallback) 0
+
+/-- Canonical target count of this specification (0 when untargeted; for a
+single `.between lo hi` slot returns `lo`; for `.exact n` / `.upTo n` returns
+`n`; for multi-slot returns `totalPositions`). -/
+def targetCount (ts : TargetSpec) : Nat :=
+  match ts.slots.toList with
+  | [] => 0
+  | [s] =>
+    match s.count with
+    | .exact n => n
+    | .upTo n => n
+    | .between lo _ => lo
+    | .anyNumber => 1
+  | _ => ts.totalPositions
+
+/-- True when every slot allows choosing zero targets (CR 115.1c). -/
+def allowsZero (ts : TargetSpec) : Bool :=
+  !ts.slots.isEmpty && ts.slots.all TargetSlot.allowsZero
+
+/-- Canonical Oracle noun phrase for this targeting specification. -/
+def noun (ts : TargetSpec) : String :=
+  toOracleStr ts
+
+/-- Map a flat target position `pos` to `(slotIdx, slot, offsetWithinSlot)`. -/
+def slotAtPos? (ts : TargetSpec) (pos : Nat) : Option (Nat × TargetSlot × Nat) := Id.run do
+  let mut cursor : Nat := 0
+  for i in [0:ts.slots.size] do
+    let s := ts.slots[i]!
+    let w := s.width
+    if pos < cursor + w then
+      return some (i, s, pos - cursor)
+    cursor := cursor + w
+  return Option.none
+
+/-- `TargetSlot` owning flat target position `pos` (defaults to slot 0). -/
+def slotAtPos (ts : TargetSpec) (pos : Nat) : TargetSlot :=
+  match ts.slotAtPos? pos with
+  | some (_, s, _) => s
+  | Option.none => ts.slots[0]?.getD default
+
+/-- 0-based `TargetSlot` index owning flat target position `pos`. -/
+def slotIndexOfPos (ts : TargetSpec) (pos : Nat) : Nat :=
+  match ts.slotAtPos? pos with
+  | some (i, _, _) => i
+  | Option.none => 0
+
+/-- Half-open flat position range `[start, stop)` occupied by `slotIdx`. -/
+def posRangeOfSlot (ts : TargetSpec) (slotIdx : Nat) : Nat × Nat := Id.run do
+  let mut cursor : Nat := 0
+  for i in [0:ts.slots.size] do
+    let w := ts.slots[i]!.width
+    if i == slotIdx then
+      return (cursor, cursor + w)
+    cursor := cursor + w
+  return (cursor, cursor)
+
+/-- Half-open flat position range `[start, stop)` sharing one instance of the
+word `"target"` containing flat position `pos` (CR 601.2c). -/
+def instanceGroupBounds (ts : TargetSpec) (pos : Nat) : Nat × Nat :=
+  match ts.slotAtPos? pos with
+  | some (slotIdx, _, _) => ts.posRangeOfSlot slotIdx
+  | Option.none => (pos, pos + 1)
+
+/-- True when flat target position `pos` is optional (`offset >= slot.minCount`,
+CR 115.1c / 601.2c). -/
+def isOptionalPos (ts : TargetSpec) (pos : Nat) : Bool :=
+  match ts.slotAtPos? pos with
+  | some (_, s, off) => off >= s.minCount
+  | Option.none => false
+
+/-- True when slot `slotIdx` allows choosing zero targets (`minCount == 0`). -/
+def isOptionalSlot (ts : TargetSpec) (slotIdx : Nat) : Bool :=
+  (ts.slots[slotIdx]?.map TargetSlot.allowsZero).getD false
+
+/-- 0-based flat-position groups whose chosen targets must be pairwise distinct
+under CR 115.3 (every slot with width > 1 plus every cross-slot `.distinct`
+constraint). -/
+def distinctPosGroups (ts : TargetSpec) : Array (Array Nat) := Id.run do
+  let mut groups : Array (Array Nat) := #[]
+  let mut cursor : Nat := 0
+  for i in [0:ts.slots.size] do
+    let w := ts.slots[i]!.width
+    if w > 1 then
+      groups := groups.push ((List.range w).toArray.map (· + cursor))
+    cursor := cursor + w
+  for c in ts.crossSlotConstraints do
+    if c.relation == .distinct then
+      let mut grp : Array Nat := #[]
+      for si in c.slots do
+        let (lo, hi) := ts.posRangeOfSlot si
+        for p in [lo:hi] do
+          if !grp.contains p then grp := grp.push p
+      if grp.size > 1 then
+        groups := groups.push grp
+  return groups
+
+/-- `(constraint, flatPositions)` pairs for all intra-slot `groupConstraint?`s
+and cross-slot `.group` constraints. -/
+def constraintPosGroups (ts : TargetSpec) : Array (GroupTargetConstraint × Array Nat) := Id.run do
+  let mut out : Array (GroupTargetConstraint × Array Nat) := #[]
+  let mut cursor : Nat := 0
+  for i in [0:ts.slots.size] do
+    let s := ts.slots[i]!
+    let w := s.width
+    if let some gc := s.groupConstraint? then
+      out := out.push (gc, (List.range w).toArray.map (· + cursor))
+    cursor := cursor + w
+  for c in ts.crossSlotConstraints do
+    if let .group gc := c.relation then
+      let mut grp : Array Nat := #[]
+      for si in c.slots do
+        let (lo, hi) := ts.posRangeOfSlot si
+        for p in [lo:hi] do
+          if !grp.contains p then grp := grp.push p
+      if !grp.isEmpty then
+        out := out.push (gc, grp)
+  return out
+
+/-- Constant total-mana-value cap if any slot constrains combined MV ≤ `n`. -/
+def totalMvCap? (ts : TargetSpec) : Option Nat :=
+  ts.slots.findSome? fun s =>
+    match s.groupConstraint? with
+    | some (.totalManaValueAtMost (.const n)) => if n >= 0 then some n.toNat else Option.none
+    | _ => Option.none
+
+/-- True when any slot targets a spell or ability on the stack. -/
+def targetsStackSpell (ts : TargetSpec) : Bool :=
+  ts.slots.any TargetSlot.targetsStackSpell
+
+/-- Structural default AI preference for this targeting specification. -/
+def defaultPreference (ts : TargetSpec) : TargetPreference :=
+  match ts.slots.toList with
+  | [] => .own
+  | [s] =>
+    if s.count == .exact 2 && s.domain == .player .any then .ownThenOpponent
+    else s.defaultPreference
+  | [s0, s1] =>
+    if s0.allowsZero && s1.domain == .player .any then .own
+    else
+      match s0.defaultPreference, s1.defaultPreference with
+      | .own, .opponent => .ownThenOpponent
+      | p0, _ => p0
+  | s0 :: _ => s0.defaultPreference
+
+/-- Canonical Oracle noun for slot `slotIdx` (with its exact `CountRange`
+quantifier, e.g. `"up to one target creature"`, `"target player"`). -/
+def announcedSlotNoun (ts : TargetSpec) (slotIdx : Nat) : String :=
+  match ts.slots[slotIdx]? with
+  | some s => s.noun
+  | Option.none => ""
+
+/-- Canonical Oracle noun for the `"target"` word containing flat position `pos`. -/
+def announcedPosNoun (ts : TargetSpec) (pos : Nat) : String :=
+  ts.announcedSlotNoun (ts.slotIndexOfPos pos)
+
+/-- Apply legacy `(allowsZero, maxTargets)` bounds when `ts` is a single slot. -/
+def withSlotBounds (ts : TargetSpec) (allowsZero : Bool) (maxTargets : Nat) : TargetSpec :=
+  if ts.slots.size == 1 then
+    { ts with slots := #[ts.slots[0]!.withBounds allowsZero maxTargets] }
+  else ts
+
+/-- If `ts` is a single slot targeting a creature you control with one literal
+subtype (`Equip <Subtype>`, etc.), return that subtype. -/
+def creatureYouControlSubtype? (ts : TargetSpec) : Option CardSubtype :=
+  match ts.slots.toList with
+  | [{ domain := .object zs pred, count := .exact 1, groupConstraint? := Option.none, .. }] =>
+    if zs != .battlefield then Option.none
+    else
+      match objPredAtoms pred with
+      | [.hasSubtype (.literal s), .hasType .creature, .controlledBy pf]
+      | [.hasSubtype (.literal s), .controlledBy pf] =>
+        if pf == .you then some s else Option.none
+      | _ => Option.none
+  | _ => Option.none
+
+/-- If `ts` is a single slot targeting a creature you control with one or more
+literal subtypes (`target Elf you control`, `target Goblin or Orc you control`),
+return those subtypes. -/
+def creatureYouControlAnySubtype? (ts : TargetSpec) : Option (Array CardSubtype) :=
+  match ts.slots.toList with
+  | [{ domain := .object zs pred, count := .exact 1, groupConstraint? := Option.none, .. }] =>
+    if zs != .battlefield then Option.none
+    else
+      match objPredAtoms pred with
+      | [.hasSubtype (.literal s), .hasType .creature, .controlledBy pf]
+      | [.hasSubtype (.literal s), .controlledBy pf] =>
+        if pf == .you then some #[s] else Option.none
+      | [.any ss, .hasType .creature, .controlledBy pf]
+      | [.any ss, .controlledBy pf] =>
+        if pf == .you then
+          let subs := ss.filterMap fun
+            | .hasSubtype (.literal s) => some s
+            | _ => Option.none
+          if subs.size == ss.size && !subs.isEmpty then some subs else Option.none
+        else Option.none
+      | _ => Option.none
+  | _ => Option.none
+
+/-- True when `ts` is the MSH Equip worthy target (`worthyCreatureYouControl`). -/
+def isWorthyCreatureYouControl (ts : TargetSpec) : Bool :=
+  match ts.slots.toList with
+  | [{ domain := .object zs pred, count := .exact 1, .. }] =>
+    zs == .battlefield &&
+      pred == ObjectPred.andAll #[ObjectPred.worthy, .controlledBy .you]
+  | _ => false
+
+end TargetSpec
+
+/-! ### Compositional `TargetDomain` and `TargetSpec` Smart Constructors -/
+
+namespace TargetDomain
+
+def creature : TargetDomain :=
+  .object .battlefield (.hasType .creature)
+
+def creatureYouControl : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .controlledBy .you])
+
+def anotherCreatureYouControl : TargetDomain :=
+  .object .battlefield (.all #[.otherThan .this, .hasType .creature, .controlledBy .you])
+
+def anotherCreature : TargetDomain :=
+  .object .battlefield (.all #[.otherThan .this, .hasType .creature])
+
+def oppCreature : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .controlledBy .opponent])
+
+def oppTappedCreature : TargetDomain :=
+  .object .battlefield (.all #[.tapped true, .hasType .creature, .controlledBy .opponent])
+
+def creatureWithFlying : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .hasKeyword .flying])
+
+def artifactOrLand : TargetDomain :=
+  .object .battlefield (.any #[.hasType .artifact, .hasType .land])
+
+def colorlessNonland : TargetDomain :=
+  .object .battlefield (.all #[.colorCount .eq 0, .not (.hasType .land)])
+
+def artifactOrEnchantment : TargetDomain :=
+  .object .battlefield (.any #[.hasType .artifact, .hasType .enchantment])
+
+def artifactOrCreatureYouControl : TargetDomain :=
+  .object .battlefield (.all #[.any #[.hasType .artifact, .hasType .creature], .controlledBy .you])
+
+def nonland : TargetDomain :=
+  .object .battlefield (.not (.hasType .land))
+
+def oppNonland : TargetDomain :=
+  .object .battlefield (.all #[.not (.hasType .land), .controlledBy .opponent])
+
+def attackingCreatureWithoutFlying : TargetDomain :=
+  .object .battlefield (.all #[.combatRole .attacking, .hasType .creature, .not (.hasKeyword .flying)])
+
+def creatureYouControlSubtype (s : CardSubtype) : TargetDomain :=
+  if s.isCreatureType then
+    .object .battlefield (.all #[.hasSubtype (.literal s), .hasType .creature, .controlledBy .you])
+  else
+    .object .battlefield (.all #[.hasSubtype (.literal s), .controlledBy .you])
+
+def creatureYouControlAnySubtype (ss : Array CardSubtype) : TargetDomain :=
+  if ss.isEmpty then creatureYouControl
+  else
+    let subPred := ObjectPred.orAny (ss.map fun s => .hasSubtype (.literal s))
+    if ss.all CardSubtype.isCreatureType then
+      .object .battlefield (.all #[subPred, .hasType .creature, .controlledBy .you])
+    else
+      .object .battlefield (.all #[subPred, .controlledBy .you])
+
+def spell : TargetDomain :=
+  .object .stack .isSpell
+
+def creatureSpell : TargetDomain :=
+  .object .stack (.all #[.hasType .creature, .isKind .spell])
+
+def creatureSpellPTAtMost (n : Nat) : TargetDomain :=
+  .object .stack (.all #[
+    .hasType .creature,
+    .isKind .spell,
+    .any #[.stat .power .le (.const n), .stat .toughness .le (.const n)]
+  ])
+
+def defendingPlayerCreature : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .controlledBy .defendingPlayer])
+
+def creaturePowerAtLeast (n : Int) : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .stat .power .ge (.const n)])
+
+def creaturePowerAtMost (n : Int) : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .stat .power .le (.const n)])
+
+def creatureYouControlPowerAtMost (n : Int) : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .controlledBy .you, .stat .power .le (.const n)])
+
+def anotherCreatureYouControlPowerAtMost (n : Int) : TargetDomain :=
+  .object .battlefield (.all #[.otherThan .this, .hasType .creature, .controlledBy .you, .stat .power .le (.const n)])
+
+def oppCreaturePowerAtMost (n : Int) : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .controlledBy .opponent, .stat .power .le (.const n)])
+
+def permanent : TargetDomain :=
+  .object .battlefield .anyObject
+
+def permanentYouControl : TargetDomain :=
+  .object .battlefield (.controlledBy .you)
+
+def oppPermanent : TargetDomain :=
+  .object .battlefield (.controlledBy .opponent)
+
+def legendaryCreatureYouControl : TargetDomain :=
+  .object .battlefield (.all #[.hasSupertype .legendary, .hasType .creature, .controlledBy .you])
+
+def artifact : TargetDomain :=
+  .object .battlefield (.hasType .artifact)
+
+def oppArtifact : TargetDomain :=
+  .object .battlefield (.all #[.hasType .artifact, .controlledBy .opponent])
+
+def artifactYouControl : TargetDomain :=
+  .object .battlefield (.all #[.hasType .artifact, .controlledBy .you])
+
+def artifactToken : TargetDomain :=
+  .object .battlefield (.all #[.hasType .artifact, .isToken true])
+
+def land : TargetDomain :=
+  .object .battlefield (.hasType .land)
+
+def attackingCreature : TargetDomain :=
+  .object .battlefield (.all #[.combatRole .attacking, .hasType .creature])
+
+def attackingOrBlockingCreature : TargetDomain :=
+  .object .battlefield (.all #[.any #[.combatRole .attacking, .combatRole .blocking], .hasType .creature])
+
+def attackingAloneCreatureYouControl : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .controlledBy .you, .combatRole .attackingAlone])
+
+def equipmentYouControl : TargetDomain :=
+  .object .battlefield (.all #[.hasSubtype (.literal .equipment), .controlledBy .you])
+
+def creatureOrLandYouControl : TargetDomain :=
+  .object .battlefield (.all #[.any #[.hasType .creature, .hasType .land], .controlledBy .you])
+
+def creatureMvAtMost (n : Nat) : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .stat .manaValue .le (.const n)])
+
+def creatureToughnessAtLeast (n : Int) : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .stat .toughness .ge (.const n)])
+
+def enchantmentMvAtLeast (n : Nat) : TargetDomain :=
+  .object .battlefield (.all #[.hasType .enchantment, .stat .manaValue .ge (.const n)])
+
+def noncreatureArtifact : TargetDomain :=
+  .object .battlefield (.all #[.not (.hasType .creature), .hasType .artifact])
+
+def noncreatureArtifactOrEnchantment : TargetDomain :=
+  .object .battlefield (.any #[
+    .all #[.not (.hasType .creature), .hasType .artifact],
+    .all #[.not (.hasType .creature), .hasType .enchantment]
+  ])
+
+def oppCreatureDealtDamageThisTurn : TargetDomain :=
+  .object .battlefield (.all #[.hasType .creature, .controlledBy .opponent, .dealtDamageThisTurn false Option.none])
+
+def nonlandNontoken : TargetDomain :=
+  .object .battlefield (.all #[.not (.hasType .land), .isToken false])
+
+def creatureOrPlaneswalker : TargetDomain :=
+  .object .battlefield (.any #[.hasType .creature, .hasType .planeswalker])
+
+def planeswalkerYouControl : TargetDomain :=
+  .object .battlefield (.all #[.hasType .planeswalker, .controlledBy .you])
+
+def oppCreatureOrPlaneswalker : TargetDomain :=
+  .object .battlefield (.all #[.any #[.hasType .creature, .hasType .planeswalker], .controlledBy .opponent])
+
+def worthyCreatureYouControl : TargetDomain :=
+  .object .battlefield (ObjectPred.andAll #[ObjectPred.worthy, .controlledBy .you])
+
+def elfInYourGraveyard : TargetDomain :=
+  .object .yourGraveyard (.all #[.hasSubtype (.literal .elf), .isKind .card])
+
+def oppGraveyardCard : TargetDomain :=
+  .object .opponentGraveyard .isCard
+
+def creatureCardInYourGraveyard : TargetDomain :=
+  .object .yourGraveyard (.all #[.hasType .creature, .isKind .card])
+
+def creatureCardInYourGraveyardMvAtMost (n : Nat) : TargetDomain :=
+  .object .yourGraveyard (.all #[.hasType .creature, .isKind .card, .stat .manaValue .le (.const n)])
+
+def permanentCardInYourGraveyard : TargetDomain :=
+  .object .yourGraveyard .isPermanentCard
+
+def equipmentInstantOrSorceryInYourGraveyard : TargetDomain :=
+  .object .yourGraveyard (.all #[
+    .any #[.hasSubtype (.literal .equipment), .hasType .instant, .hasType .sorcery],
+    .isKind .card
+  ])
+
+def artEnchCardInYourGraveyard : TargetDomain :=
+  .object .yourGraveyard (.all #[.any #[.hasType .artifact, .hasType .enchantment], .isKind .card])
+
+def creatureOrGyCreatureCard : TargetDomain :=
+  .anyOf #[
+    .object .battlefield (.hasType .creature),
+    .object .anyGraveyard (.all #[.hasType .creature, .isKind .card])
+  ]
+
+def spellOrCreature : TargetDomain :=
+  .anyOf #[.object .stack .isSpell, .object .battlefield (.hasType .creature)]
+
+def permanentOrPlayer : TargetDomain :=
+  .anyOf #[.object .battlefield .anyObject, .player .any]
+
+def anyPlayer : TargetDomain :=
+  .player .any
+
+def opponent : TargetDomain :=
+  .player .opponent
+
+end TargetDomain
+
+namespace TargetSpec
+
+def creature : TargetSpec := ofDomain .creature
+def creatureYouControl : TargetSpec := ofDomain .creatureYouControl
+def anotherCreatureYouControl : TargetSpec := ofDomain .anotherCreatureYouControl
+def anotherCreature : TargetSpec := ofDomain .anotherCreature
+def anyTarget : TargetSpec := ofDomain (.anyTarget .any)
+def anyOtherTarget : TargetSpec := ofDomain (.anyTarget (.otherThan .this))
+def player : TargetSpec := ofDomain .anyPlayer
+def opponent : TargetSpec := ofDomain .opponent
+def oppCreature : TargetSpec := ofDomain .oppCreature
+def oppTappedCreature : TargetSpec := ofDomain .oppTappedCreature
+def creatureWithFlying : TargetSpec := ofDomain .creatureWithFlying
+def artifactOrLand : TargetSpec := ofDomain .artifactOrLand
+def colorlessNonland : TargetSpec := ofDomain .colorlessNonland
+def artifactOrEnchantment : TargetSpec := ofDomain .artifactOrEnchantment
+def artifactOrCreatureYouControl : TargetSpec := ofDomain .artifactOrCreatureYouControl
+def nonland : TargetSpec := ofDomain .nonland
+def oppNonland : TargetSpec := ofDomain .oppNonland
+def attackingCreatureWithoutFlying : TargetSpec := ofDomain .attackingCreatureWithoutFlying
+def creatureYouControlSubtype (s : CardSubtype) : TargetSpec := ofDomain (.creatureYouControlSubtype s)
+def creatureYouControlAnySubtype (ss : Array CardSubtype) : TargetSpec := ofDomain (.creatureYouControlAnySubtype ss)
+def spell : TargetSpec := ofDomain .spell
+def creatureSpell : TargetSpec := ofDomain .creatureSpell
+def creatureSpellPTAtMost (n : Nat) : TargetSpec := ofDomain (.creatureSpellPTAtMost n)
+def defendingPlayerCreature : TargetSpec := ofDomain .defendingPlayerCreature
+def creaturePowerAtLeast (n : Int) : TargetSpec := ofDomain (.creaturePowerAtLeast n)
+def creaturePowerAtMost (n : Int) : TargetSpec := ofDomain (.creaturePowerAtMost n)
+def creatureYouControlPowerAtMost (n : Int) : TargetSpec := ofDomain (.creatureYouControlPowerAtMost n)
+def anotherCreatureYouControlPowerAtMost (n : Int) : TargetSpec := ofDomain (.anotherCreatureYouControlPowerAtMost n)
+def oppCreaturePowerAtMost (n : Int) : TargetSpec := ofDomain (.oppCreaturePowerAtMost n)
+def permanent : TargetSpec := ofDomain .permanent
+def permanentYouControl : TargetSpec := ofDomain .permanentYouControl
+def oppPermanent : TargetSpec := ofDomain .oppPermanent
+def legendaryCreatureYouControl : TargetSpec := ofDomain .legendaryCreatureYouControl
+def artifact : TargetSpec := ofDomain .artifact
+def oppArtifact : TargetSpec := ofDomain .oppArtifact
+def artifactYouControl : TargetSpec := ofDomain .artifactYouControl
+def artifactToken : TargetSpec := ofDomain .artifactToken
+def land : TargetSpec := ofDomain .land
+def attackingCreature : TargetSpec := ofDomain .attackingCreature
+def attackingOrBlockingCreature : TargetSpec := ofDomain .attackingOrBlockingCreature
+def attackingAloneCreatureYouControl : TargetSpec := ofDomain .attackingAloneCreatureYouControl
+def equipmentYouControl : TargetSpec := ofDomain .equipmentYouControl
+def creatureOrLandYouControl : TargetSpec := ofDomain .creatureOrLandYouControl
+def creatureMvAtMost (n : Nat) : TargetSpec := ofDomain (.creatureMvAtMost n)
+def creatureMvAtMostOrAnyIfTeamwork (n : Nat) : TargetSpec :=
+  single {
+    domain := .creatureMvAtMost n
+    altDomainIf? := some (.castPred (.teamworkPaid .this), .creature)
+  }
+def creatureToughnessAtLeast (n : Int) : TargetSpec := ofDomain (.creatureToughnessAtLeast n)
+def enchantmentMvAtLeast (n : Nat) : TargetSpec := ofDomain (.enchantmentMvAtLeast n)
+def noncreatureArtifact : TargetSpec := ofDomain .noncreatureArtifact
+def noncreatureArtifactOrEnchantment : TargetSpec := ofDomain .noncreatureArtifactOrEnchantment
+def oppCreatureDealtDamageThisTurn : TargetSpec := ofDomain .oppCreatureDealtDamageThisTurn
+def nonlandNontoken : TargetSpec := ofDomain .nonlandNontoken
+def creatureOrPlaneswalker : TargetSpec := ofDomain .creatureOrPlaneswalker
+def planeswalkerYouControl : TargetSpec := ofDomain .planeswalkerYouControl
+def oppCreatureOrPlaneswalker : TargetSpec := ofDomain .oppCreatureOrPlaneswalker
+def worthyCreatureYouControl : TargetSpec := ofDomain .worthyCreatureYouControl
+def elfInYourGraveyard : TargetSpec := ofDomain .elfInYourGraveyard
+def oppGraveyardCard : TargetSpec := ofDomain .oppGraveyardCard
+def creatureCardInYourGraveyard : TargetSpec := ofDomain .creatureCardInYourGraveyard
+def creatureCardInYourGraveyardMvAtMost (n : Nat) : TargetSpec := ofDomain (.creatureCardInYourGraveyardMvAtMost n)
+def creatureCardInYourGraveyardMvAtMostOrAnyIfTeamwork (n : Nat) : TargetSpec :=
+  single {
+    domain := .creatureCardInYourGraveyardMvAtMost n
+    altDomainIf? := some (.castPred (.teamworkPaid .this), .creatureCardInYourGraveyard)
+  }
+def permanentCardInYourGraveyard : TargetSpec := ofDomain .permanentCardInYourGraveyard
+def equipmentInstantOrSorceryInYourGraveyard : TargetSpec := ofDomain .equipmentInstantOrSorceryInYourGraveyard
+def artEnchCardInYourGraveyard : TargetSpec := ofDomain .artEnchCardInYourGraveyard
+def creatureOrGyCreatureCard : TargetSpec := single { domain := .creatureOrGyCreatureCard, count := .upTo 1 }
+def spellOrCreature : TargetSpec := ofDomain .spellOrCreature
+def permanentOrPlayer : TargetSpec := ofDomain .permanentOrPlayer
+def stackAbilityFromSource (ty : CardType) : TargetSpec := ofDomain (.stackAbility .you (.hasType ty))
+
+def twoNonlandsSharingType : TargetSpec :=
+  single {
+    domain := .nonland
+    count := .exact 2
+    groupConstraint? := some (.shareCharacteristic .cardType)
+  }
+
+def twoCreaturesOrLandsYouControl : TargetSpec :=
+  single { domain := .creatureOrLandYouControl, count := .exact 2 }
+
+def twoPlayers : TargetSpec :=
+  single { domain := .anyPlayer, count := .exact 2 }
+
+def twoArtifactsYouControl : TargetSpec :=
+  ofSlots #[.of .artifactYouControl, .of .artifactYouControl]
+    #[{ slots := #[0, 1], relation := .distinct }]
+
+def upToTwoCreaturesTotalMvAtMost (n : Nat) : TargetSpec :=
+  single {
+    domain := .creature
+    count := .upTo 2
+    groupConstraint? := some (.totalManaValueAtMost (.const n))
+  }
+
+def playerThenCreature : TargetSpec :=
+  ofSlots #[.of .anyPlayer, .of .creature]
+
+def creatureYouControlThenOppCreature : TargetSpec :=
+  ofSlots #[.of .creatureYouControl, .of .oppCreature]
+
+def oppCreatureThenUpToOneCreatureYouControl : TargetSpec :=
+  ofSlots #[.of .oppCreature, { domain := .creatureYouControl, count := .upTo 1 }]
+
+def equipmentYouControlThenCreatureYouControl : TargetSpec :=
+  ofSlots #[.of .equipmentYouControl, { domain := .creatureYouControl, count := .upTo 1 }]
+
+def upToOneEquipmentThenCreatureYouControl : TargetSpec :=
+  ofSlots #[{ domain := .equipmentYouControl, count := .upTo 1 }, .of .creatureYouControl]
+
+def upToOneCreatureThenPlayer : TargetSpec :=
+  ofSlots #[{ domain := .creature, count := .upTo 1 }, .of .anyPlayer]
+
+def creatureYouControlThenOppCreatureOrPlaneswalker : TargetSpec :=
+  ofSlots #[.of .creatureYouControl, .of .oppCreatureOrPlaneswalker]
+
+def planeswalkerYouControlThenOppCreatureOrPlaneswalker : TargetSpec :=
+  ofSlots #[.of .planeswalkerYouControl, .of .oppCreatureOrPlaneswalker]
+
+/-- `"for each opponent, up to one target <pred> that player controls"` (CR 601.2c). -/
+def forEachOpponentControlled (pred : ObjectPred) (count : CountRange := .upTo 1) : TargetSpec :=
+  single {
+    domain := .object .battlefield (ObjectPred.andAll #[pred, .controlledBy .opponent])
+    count
+    forEach? := some .opponent
+  }
+
+/-- `"for each player, up to one target <pred> that player controls"` (CR 601.2c). -/
+def forEachPlayerControlled (pred : ObjectPred) (count : CountRange := .upTo 1) : TargetSpec :=
+  single {
+    domain := .object .battlefield (ObjectPred.andAll #[pred, .controlledBy .thatPlayer])
+    count
+    forEach? := some .any
+  }
+
+end TargetSpec
+
+/-! ### `EffectTargeting` and `HasTargeting` -/
+
+/-- Targeting specification plus a default-choice hint used by the demonstration agent. -/
 structure EffectTargeting where
-  kind : EffectTargetKind := .none
+  spec : TargetSpec := .none
   prefer : TargetPreference := .own
 deriving Repr, Inhabited, BEq
 
 namespace EffectTargeting
 
-/-- Targeting shape; `prefer` defaults from `kind` unless overridden. -/
-def of (kind : EffectTargetKind)
-    (prefer : TargetPreference := kind.defaultPreference) : EffectTargeting :=
-  { kind, prefer }
+/-- Targeting specification; `prefer` defaults structurally from `spec` unless overridden. -/
+def of (spec : TargetSpec)
+    (prefer : TargetPreference := spec.defaultPreference) : EffectTargeting :=
+  { spec, prefer }
 
 /-- How many targets must be announced (CR 601.2c). -/
 def targetCount (t : EffectTargeting) : Nat :=
-  t.kind.targetCount
+  t.spec.targetCount
 
 /-- True when announcing this shape requires choosing a target (CR 115.1). -/
 def requiresTarget (t : EffectTargeting) : Bool :=
-  t.targetCount != 0
+  !t.spec.isEmpty
 
 end EffectTargeting
 
-/-- Types that classify targeting through `EffectTargeting`. `targetKind`,
+instance : HasTextChange EffectTargeting where
+  applyTextChanges tcs t :=
+    if tcs.isEmpty then t
+    else { t with spec := HasTextChange.applyTextChanges tcs t.spec }
+
+/-- Types that classify targeting through `EffectTargeting`. `targetSpec`,
 `targetCount`, and `requiresTarget` are derived here so spell, ability, and
 trigger wrappers do not restate them. -/
 class HasTargeting (α : Type) where
@@ -773,31 +1235,10 @@ class HasTargeting (α : Type) where
 namespace HasTargeting
 variable {α : Type} [HasTargeting α]
 
-def targetKind (e : α) : EffectTargetKind := targeting e |>.kind
+def targetSpec (e : α) : TargetSpec := targeting e |>.spec
 def targetCount (e : α) : Nat := targeting e |>.targetCount
 def requiresTarget (e : α) : Bool := targeting e |>.requiresTarget
 
 end HasTargeting
-
-instance : HasTextChange TargetFilter where
-  applyTextChanges tcs f :=
-    if tcs.isEmpty then f
-    else
-      { f with
-        subtypes := HasTextChange.applyTextChanges tcs f.subtypes
-        colors := HasTextChange.applyTextChanges tcs f.colors }
-
-def EffectTargetKind.applyTextChangesAux (tcs : Array TextChange) : EffectTargetKind → EffectTargetKind
-  | .creatureYouControlSubtype s => .creatureYouControlSubtype (HasTextChange.applyTextChanges tcs s)
-  | .creatureYouControlAnySubtype ss => .creatureYouControlAnySubtype (HasTextChange.applyTextChanges tcs ss)
-  | .filtered f => .filtered (HasTextChange.applyTextChanges tcs f)
-  | .multi fs opt => .multi (HasTextChange.applyTextChanges tcs fs) opt
-  | .pair a b => .pair (EffectTargetKind.applyTextChangesAux tcs a) (EffectTargetKind.applyTextChangesAux tcs b)
-  | .instanceSlots inner minC maxC => .instanceSlots (EffectTargetKind.applyTextChangesAux tcs inner) minC maxC
-  | k => k
-
-instance : HasTextChange EffectTargetKind where
-  applyTextChanges tcs k :=
-    if tcs.isEmpty then k else EffectTargetKind.applyTextChangesAux tcs k
 
 end Mtg.Engine

@@ -83,8 +83,8 @@ structure ProposedSpell where
   discardSource : Bool := false
   /-- Modes of a modal activated ability, announced at CR 601.2b. -/
   abilityModes : Array Effect := #[]
-  /-- Override the announced targeting shape (e.g. Equip Human). -/
-  targetKindOverride : Option EffectTargetKind := none
+  /-- Override the announced targeting specification (e.g. Equip Human). -/
+  targetSpecOverride : Option TargetSpec := none
   /-- The proposed spell will be kicked if this is true. -/
   kicked : Bool := false
   /-- Kicker has been announced (paid or declined). -/

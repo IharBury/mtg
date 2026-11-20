@@ -1916,7 +1916,7 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
   let teferiDef : CardDef := {
     name := "P37i3 Protection", manaCost := ManaCost.empty, types := #[.instant]
     spellEffect := some {
-      targeting := { kind := .player, prefer := .opponent }, maxTargets := 1
+      targeting := { spec := .player, prefer := .opponent }, maxTargets := 1
       resolution := .frc .teferi
     }
   }

@@ -2,12 +2,13 @@ import Mtg.Engine.Card.ActivatedAbility
 import Mtg.Engine.Card.ChapterEffects
 import Mtg.Engine.Card.Counter
 import Mtg.Engine.Card.OracleNorm
+import Mtg.Engine.Card.Parser.SubGrammars
 import Mtg.Engine.Card.TriggeredAbility
 
 /-!
 Argument values in modeled Oracle text.
 
-A candidate ability is a shape. `Nat`, `Int`, `String`, and target-kind
+A candidate ability is a shape. `Nat`, `Int`, `String`, and `TargetSpec`
 arguments are read back out of the printed line, so a prototype such as
 `Effect.draw 1` also matches “Draw seven cards,” and `Effect.destroyCreature`
 also matches “Destroy target artifact.”
@@ -24,8 +25,8 @@ inductive SlotVal where
   | str (s : String)
   | ty (t : CardType)
   | sup (s : Supertype)
-  /-- The whole target noun (`target creature`, `target artifact token`, …). -/
-  | kind (k : EffectTargetKind)
+  /-- The whole target specification (`target creature`, `target artifact token`, …). -/
+  | targets (ts : TargetSpec)
   /-- A counter kind (`+1/+1`, `stun`, `first strike`). -/
   | ctr (k : CounterKind)
   deriving BEq, Repr, Inhabited
@@ -212,42 +213,85 @@ def takeSymbol (s : ManaSymbol) : ArgM ManaSymbol :=
 def takeCost (c : ManaCost) : ArgM ManaCost := do
   return { symbols := ← c.symbols.mapM takeSymbol }
 
-/-- One slot for the whole target kind, noun included.
-Nested numbers stay inside the kind instead of becoming their own holes. -/
-def takeWholeKind (k : EffectTargetKind) : ArgM EffectTargetKind := do
+/-- One slot for the whole target specification, noun included.
+Nested numbers stay inside the `TargetSpec` instead of becoming their own holes. -/
+def takeWholeTargetSpec (ts : TargetSpec) : ArgM TargetSpec := do
   let s ← get
   match s.mode with
   | .collect =>
-    set { s with vals := .kind k :: s.vals }
-    return k
+    set { s with vals := .targets ts :: s.vals }
+    return ts
   | .fill =>
     match s.vals with
-    | .kind v :: rest =>
+    | .targets v :: rest =>
       set { s with vals := rest }
       return v
-    | _ => return k
+    | _ => return ts
 
-def takeKind (k : EffectTargetKind) : ArgM EffectTargetKind := do
-  match k with
-  | .creatureYouControlSubtype s => return .creatureYouControlSubtype (← takeSubtype s)
-  | .creatureSpellPTAtMost n => return .creatureSpellPTAtMost (← takeNat n)
-  | .creaturePowerAtLeast n => return .creaturePowerAtLeast (← takeInt n)
-  | .creaturePowerAtMost n => return .creaturePowerAtMost (← takeInt n)
-  | .creatureYouControlAnySubtype ss => return .creatureYouControlAnySubtype (← takeSubtypes ss)
-  | .creatureCardInYourGraveyardMvAtMost n =>
-    return .creatureCardInYourGraveyardMvAtMost (← takeNat n)
-  | .creatureYouControlPowerAtMost n => return .creatureYouControlPowerAtMost (← takeInt n)
-  | .creatureMvAtMost n => return .creatureMvAtMost (← takeNat n)
-  | .creatureToughnessAtLeast n => return .creatureToughnessAtLeast (← takeInt n)
-  | .enchantmentMvAtLeast n => return .enchantmentMvAtLeast (← takeNat n)
-  | .oppCreaturePowerAtMost n => return .oppCreaturePowerAtMost (← takeInt n)
-  | .upToTwoCreaturesTotalMvAtMost n => return .upToTwoCreaturesTotalMvAtMost (← takeNat n)
-  | .anotherCreatureYouControlPowerAtMost n =>
-    return .anotherCreatureYouControlPowerAtMost (← takeInt n)
-  | k => return k
+private partial def takeTargetObjectPred (pred : ObjectPred) : ArgM ObjectPred := do
+  if pred == ObjectPred.worthy then return pred
+  match pred with
+  | .all ps => return .all (← ps.mapM takeTargetObjectPred)
+  | .any ps =>
+    -- Paired `"power or toughness N or less"` takes a single `Nat` slot.
+    if ps.size == 2 then
+      match ps[0]!, ps[1]! with
+      | .stat .power op1 (.const v1), .stat .toughness op2 (.const v2) =>
+        if op1 == op2 && v1 == v2 && v1 >= 0 then
+          let n ← takeNat v1.toNat
+          return .any #[.stat .power op1 (.const (Int.ofNat n)), .stat .toughness op2 (.const (Int.ofNat n))]
+        else
+          return .any (← ps.mapM takeTargetObjectPred)
+      | _, _ => return .any (← ps.mapM takeTargetObjectPred)
+    else
+      return .any (← ps.mapM takeTargetObjectPred)
+  | .not p => return .not (← takeTargetObjectPred p)
+  | .stat .manaValue op (.const v) =>
+    if v >= 0 then
+      let n ← takeNat v.toNat
+      return .stat .manaValue op (.const (Int.ofNat n))
+    else
+      return .stat .manaValue op (.const v)
+  | .stat k op (.const v) =>
+    return .stat k op (.const (← takeInt v))
+  | other => return other
+
+private partial def takeTargetDomain (d : TargetDomain) : ArgM TargetDomain := do
+  match d with
+  | .object zs pred => return .object zs (← takeTargetObjectPred pred)
+  | .anyOf ds => return .anyOf (← ds.mapM takeTargetDomain)
+  | other => return other
+
+private def takeGroupConstraint (gc : GroupTargetConstraint) : ArgM GroupTargetConstraint := do
+  match gc with
+  | .totalManaValueAtMost (.const v) =>
+    if v >= 0 then
+      let n ← takeNat v.toNat
+      return .totalManaValueAtMost (.const (Int.ofNat n))
+    else
+      return gc
+  | other => return other
+
+private def takeTargetSlot (slot : TargetSlot) : ArgM TargetSlot := do
+  let domain ← takeTargetDomain slot.domain
+  let groupConstraint? ←
+    match slot.groupConstraint? with
+    | some gc => pure (some (← takeGroupConstraint gc))
+    | none => pure none
+  return { slot with domain, groupConstraint? }
+
+/-- Compositional argument walker over `TargetSpec` (subtypes on bare creature-you-control
+slots plus numeric thresholds inside `ObjectPred` and `GroupTargetConstraint`). -/
+def takeTargetSpec (ts : TargetSpec) : ArgM TargetSpec := do
+  if let some s := ts.creatureYouControlSubtype? then
+    return .creatureYouControlSubtype (← takeSubtype s)
+  else if let some ss := ts.creatureYouControlAnySubtype? then
+    return .creatureYouControlAnySubtype (← takeSubtypes ss)
+  else
+    return { ts with slots := ← ts.slots.mapM takeTargetSlot }
 
 def takeTargeting (t : EffectTargeting) : ArgM EffectTargeting := do
-  return { t with kind := ← takeKind t.kind }
+  return { t with spec := ← takeTargetSpec t.spec }
 
 def takeAction (a : PermanentAction) : ArgM PermanentAction := do
   match a with
@@ -400,7 +444,7 @@ def takeChapter (c : ChapterResolution) : ArgM ChapterResolution := do
 
 def takeEnter (e : EnterLeftover) : ArgM EnterLeftover := do
   match e with
-  | .destroy k => return .destroy (← takeWholeKind k)
+  | .destroy k => return .destroy (← takeWholeTargetSpec k)
   | .dealDamageUpToOne n => return .dealDamageUpToOne (← takeNat n)
   | e => return e
 
@@ -428,12 +472,12 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .connive who =>
     match who with
     | .source => return .connive who
-    | .target k => return .connive (.target (← takeKind k))
+    | .target k => return .connive (.target (← takeTargetSpec k))
     | .enteringVillain => return .connive .enteringVillain
-  | .exileUntilLeaves k => return .exileUntilLeaves (← takeKind k)
+  | .exileUntilLeaves k => return .exileUntilLeaves (← takeTargetSpec k)
   | .damageEachOpponent n => return .damageEachOpponent (← takeNat n)
-  | .attachTo k => return .attachTo (← takeKind k)
-  | .onPermanent k a => return .onPermanent (← takeKind k) (← takeAction a)
+  | .attachTo k => return .attachTo (← takeTargetSpec k)
+  | .onPermanent k a => return .onPermanent (← takeTargetSpec k) (← takeAction a)
   | .onSource a => return .onSource (← takeAction a)
   | .discard n => return .discard (← takeNat n)
   | .mayTo (.discard _) (.draw n) =>
@@ -447,7 +491,7 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
     | .target => return .opponentDiscards (← takeNat n) who
   | .millPlayer n => return .millPlayer (← takeNat n)
   | .pumpCause p t => return .pumpCause (← takeInt p) (← takeInt t)
-  | .exileTarget k => return .exileTarget (← takeKind k)
+  | .exileTarget k => return .exileTarget (← takeTargetSpec k)
   | .becomePT p t => return .becomePT (← takeInt p) (← takeInt t)
   | .mayDiscardHandDraw n => return .mayDiscardHandDraw (← takeNat n)
   | .damageBlockers n => return .damageBlockers (← takeNat n)
@@ -534,17 +578,17 @@ def takeEffect (e : Effect) : ArgM Effect := do
   | none =>
   match e.resolution with
   | .onPermanent .destroy =>
-    let kind ← takeWholeKind e.targeting.kind
-    return { e with targeting := { e.targeting with kind } }
+    let spec ← takeWholeTargetSpec e.targeting.spec
+    return { e with targeting := { e.targeting with spec } }
   | .onPermanent (.plusOne n) =>
-    match e.targeting.kind with
-    | .creatureYouControl | .creatureYouControlAnySubtype _ =>
-      let kind ← takeWholeKind e.targeting.kind
+    if e.targeting.spec == .creatureYouControl ||
+        e.targeting.spec.creatureYouControlAnySubtype?.isSome then
+      let spec ← takeWholeTargetSpec e.targeting.spec
       let n ← takeNat n
       return { e with
-        targeting := { e.targeting with kind }
+        targeting := { e.targeting with spec }
         resolution := .onPermanent (.plusOne n) }
-    | _ => takeEffectRest e
+    else takeEffectRest e
   | _ => takeEffectRest e
 where
   takeEffectRest (e : Effect) : ArgM Effect := do
@@ -651,10 +695,10 @@ def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
     if ab.costReductionIfYouControlLegendary == 0 then pure 0
     else takeNat ab.costReductionIfYouControlLegendary
   let equipSubtype ←
-    match effect.targeting.kind with
-    | .creatureYouControlSubtype s =>
+    match effect.targeting.spec.creatureYouControlSubtype? with
+    | some s =>
       pure (if ab.equipSubtype.isSome then some s else none)
-    | _ => takeOptSubtype ab.equipSubtype
+    | none => takeOptSubtype ab.equipSubtype
   let costReductionPerEquipment ←
     if ab.costReductionPerEquipment == 0 then pure 0 else takeNat ab.costReductionPerEquipment
   let onlyIfYouControlCreatureToughnessAtLeast ←
@@ -734,9 +778,9 @@ def slotSup (vals : Array SlotVal) (i : Nat) : Supertype :=
   | some (.sup s) => s
   | _ => default
 
-def slotTarget (vals : Array SlotVal) (i : Nat) : EffectTargetKind :=
+def slotTarget (vals : Array SlotVal) (i : Nat) : TargetSpec :=
   match vals[i]? with
-  | some (.kind k) => k
+  | some (.targets ts) => ts
   | _ => .none
 
 def slotCounter (vals : Array SlotVal) (i : Nat) : CounterKind :=
@@ -761,102 +805,10 @@ def parseIntTok (t : String) : Option Int :=
   else
     parseNatTok t |>.map fun n => (n : Int)
 
-/-- Drop a literal token prefix. -/
-def afterLits (toks lits : List String) : Option (List String) :=
-  match lits with
-  | [] => some toks
-  | l :: ls =>
-    match toks with
-    | t :: ts => if t == l then afterLits ts ls else none
-    | [] => none
-
-/-- `prefix`, one integer, then `suffix`, as one target noun. -/
-def withInt (toks : List String) (lead suffix : List String)
-    (build : Int → Option EffectTargetKind) : Option (EffectTargetKind × Nat) :=
-  match afterLits toks lead with
-  | none => none
-  | some rest =>
-    match rest with
-    | n :: after =>
-      match parseIntTok n with
-      | none => none
-      | some i =>
-        match build i, afterLits after suffix with
-        | some k, some _ => some (k, lead.length + 1 + suffix.length)
-        | _, _ => none
-    | [] => none
-
-def natKind (n : Int) (build : Nat → EffectTargetKind) : Option EffectTargetKind :=
-  if n >= 0 then some (build n.toNat) else none
-
-/-- `target Elf you control`, `target Goblin or Orc you control`, and
-`target Bear, Spider, or Wolf you control` (commas already dropped). -/
-def anySubtypeYouControl (toks : List String) : Option (EffectTargetKind × Nat) :=
-  match afterLits toks ["target"] with
-  | none => none
-  | some rest =>
-    let rec go (fuel : Nat) (acc : Array String) (ts : List String) (afterOr : Bool) :
-        Option (Array String × List String) :=
-      match fuel with
-      | 0 => if acc.isEmpty || afterOr then none else some (acc, ts)
-      | fuel + 1 =>
-        match matchSubtypeForm false ts with
-        | none => if acc.isEmpty || afterOr then none else some (acc, ts)
-        | some (name, n) =>
-          let rest := ts.drop n
-          match rest with
-          | "or" :: more =>
-            if afterOr then none else go fuel (acc.push name) more true
-          | _ =>
-            if afterOr then some (acc.push name, rest)
-            else
-              match matchSubtypeForm false rest with
-              | some _ => go fuel (acc.push name) rest false
-              | none => some (acc.push name, rest)
-    match go 4 #[] rest false with
-    | some (ss, after) =>
-      match afterLits after ["you", "control"] with
-      | some left =>
-        some (.creatureYouControlAnySubtype (CardSubtype.ofSubtypes ss), toks.length - left.length)
-      | none => none
-    | none => none
-
-/-- Longest target noun at the front of `toks` (already normalized). -/
-def fromNounPrefix (toks : List String) : Option (EffectTargetKind × Nat) :=
-  let closed := EffectTargetKind.closedKinds.filterMap fun k =>
-    let n := tokenize (lowerAscii (EffectTargetKind.noun k))
-    if n.isEmpty then none
-    else if n.isPrefixOf toks then some (k, n.length) else none
-  let numeric := [
-    withInt toks ["target", "creature", "with", "power"] ["or", "greater"]
-      fun n => some (.creaturePowerAtLeast n),
-    withInt toks ["target", "creature", "with", "power"] ["or", "less"]
-      fun n => some (.creaturePowerAtMost n),
-    withInt toks ["target", "creature", "you", "control", "with", "power"] ["or", "less"]
-      fun n => some (.creatureYouControlPowerAtMost n),
-    withInt toks ["target", "creature", "an", "opponent", "controls", "with", "power"]
-      ["or", "less"] fun n => some (.oppCreaturePowerAtMost n),
-    withInt toks ["another", "target", "creature", "you", "control", "with", "power"]
-      ["or", "less"] fun n => some (.anotherCreatureYouControlPowerAtMost n),
-    withInt toks ["target", "creature", "with", "toughness"] ["or", "greater"]
-      fun n => some (.creatureToughnessAtLeast n),
-    withInt toks ["target", "creature", "with", "mana", "value"] ["or", "less"]
-      fun n => natKind n .creatureMvAtMost,
-    withInt toks ["target", "enchantment", "with", "mana", "value"] ["or", "greater"]
-      fun n => natKind n .enchantmentMvAtLeast,
-    withInt toks ["target", "creature", "spell", "with", "power", "or", "toughness"]
-      ["or", "less"] fun n => natKind n .creatureSpellPTAtMost,
-    withInt toks ["target", "creature", "card", "with", "mana", "value"]
-      ["or", "less", "from", "your", "graveyard"]
-      fun n => natKind n .creatureCardInYourGraveyardMvAtMost,
-    withInt toks ["up", "to", "two", "target", "creatures", "with", "total", "mana", "value"]
-      ["or", "less"] fun n => natKind n .upToTwoCreaturesTotalMvAtMost,
-  ].filterMap id
-  let subtype := anySubtypeYouControl toks
-  (closed ++ numeric ++ subtype.toList).foldl (fun best c =>
-    match best with
-    | none => some c
-    | some b => if c.2 > b.2 then some c else some b) none
+/-- Longest target specification at the front of `toks` (already normalized),
+parsed compositionally via `Parser.parseTargetSpecPrefix`. -/
+def fromNounPrefix (toks : List String) : Option (TargetSpec × Nat) :=
+  Parser.parseTargetSpecPrefix toks
 
 def renderNat (fmt : NatFmt) (n : Nat) : String :=
   match fmt with
@@ -992,15 +944,15 @@ def tyHit (i : Nat) (t : CardType) (toks : List String) (fresh : Bool) : Option 
     repl := t.englishName
   }
 
-def kindHit (i : Nat) (k : EffectTargetKind) (toks : List String) (fresh : Bool) : Option Hit :=
-  let needle := tokenize (lowerAscii (EffectTargetKind.noun k))
+def kindHit (i : Nat) (ts : TargetSpec) (toks : List String) (fresh : Bool) : Option Hit :=
+  let needle := tokenize (collapseWs (keepSignificant (replaceNumberWords (lowerAscii ts.noun))))
   if needle.isEmpty || !needle.isPrefixOf toks then none
   else some {
     width := needle.length
     used := if fresh then [i] else []
     pat := .kind i
     needle := String.intercalate " " needle
-    repl := EffectTargetKind.noun k
+    repl := ts.noun
   }
 
 def supHit (i : Nat) (s : Supertype) (toks : List String) (fresh : Bool) : Option Hit :=
@@ -1089,8 +1041,8 @@ def hitsAt (args : Array SlotVal) (toks : List String) (used : List Nat) : List 
         hs := consider hs (tyHit i t toks fresh)
       | .sup s =>
         hs := consider hs (supHit i s toks fresh)
-      | .kind k =>
-        hs := consider hs (kindHit i k toks fresh)
+      | .targets ts =>
+        hs := consider hs (kindHit i ts toks fresh)
       | .ctr _ => pure ()
     return hs
 
@@ -1327,8 +1279,8 @@ def matchPatsSeen (pats : List Pat) (toks : List String) (vals : Array SlotVal) 
       | [] => none
     | .kind i :: ps =>
       match fromNounPrefix toks with
-      | some (k, n) =>
-        match setSlot vals i (.kind k) seen with
+      | some (ts, n) =>
+        match setSlot vals i (.targets ts) seen with
         | some (vals, seen) => go ps (toks.drop n) vals seen
         | none => none
       | none => none
@@ -1424,7 +1376,7 @@ def renderHit (h : Hit) (vals : Array SlotVal) : String :=
   | .str i fmt => renderStr fmt (slotStr vals i)
   | .ty i => (slotTy vals i).englishName
   | .sup i => (slotSup vals i).englishName
-  | .kind i => EffectTargetKind.noun (slotTarget vals i)
+  | .kind i => TargetSpec.noun (slotTarget vals i)
   | .pt i j signed => renderPt signed (slotInt vals i) (slotInt vals j)
   | .counterPhrase ni ki => (slotCounter vals ki).countersPhrase (slotNat vals ni)
   | .lit s => s
@@ -1484,12 +1436,12 @@ def allNeedles (args : Array SlotVal) : List Hit :=
       | .sup s =>
         let needle := lowerAscii s.englishName
         hs := { width := needle.length, used := [i], pat := .sup i, needle, repl := s.englishName } :: hs
-      | .kind k =>
-        let needle := lowerAscii (EffectTargetKind.noun k)
+      | .targets ts =>
+        let needle := lowerAscii ts.noun
         if !needle.isEmpty then
           hs := {
             width := needle.length, used := [i], pat := .kind i, needle,
-            repl := EffectTargetKind.noun k
+            repl := ts.noun
           } :: hs
       | .ctr _ => pure ()
     return hs
@@ -1581,9 +1533,9 @@ def finishEffect (old new : Effect) : Effect :=
   | none =>
   match new.resolution with
   | .onPermanent .destroy =>
-    Effect.canonicalDestroy new.targeting.kind
+    Effect.canonicalDestroy new.targeting.spec
   | .onPermanent (.plusOne n) =>
-    match Effect.canonicalPlusOne n new.targeting.kind with
+    match Effect.canonicalPlusOne n new.targeting.spec with
     | some e => e
     | none => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
   | _ => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
@@ -1837,7 +1789,7 @@ private def matchesDestroy (target : Effect) : Bool :=
   | some vals => refillEffect proto vals == target
   | none => false
 
-#guard collectEffect Effect.destroyCreature == #[.kind .creature]
+#guard collectEffect Effect.destroyCreature == #[.targets .creature]
 #guard matchesDestroy Effect.destroyCreature
 #guard matchesDestroy Effect.destroyCreatureWithFlying
 #guard matchesDestroy (Effect.destroyCreaturePowerAtLeast 4)
@@ -1893,13 +1845,13 @@ private def matchesEnterDestroy (target : TriggeredAbility) : Bool :=
   (TriggeredAbility.onEnter (Effect.enterDestroy .oppCreature))
 
 #guard
-  let noun := tokenize (lowerAscii (EffectTargetKind.noun .creatureYouControl))
+  let noun := tokenize (lowerAscii (TargetSpec.noun .creatureYouControl))
   fromNounPrefix noun == some (.creatureYouControl, noun.length)
 #guard
-  let noun := tokenize (lowerAscii (EffectTargetKind.noun .legendaryCreatureYouControl))
+  let noun := tokenize (lowerAscii (TargetSpec.noun .legendaryCreatureYouControl))
   fromNounPrefix noun == some (.legendaryCreatureYouControl, noun.length)
 #guard
-  let noun := tokenize (lowerAscii (EffectTargetKind.noun .equipmentYouControl))
+  let noun := tokenize (lowerAscii (TargetSpec.noun .equipmentYouControl))
   fromNounPrefix noun == some (.equipmentYouControl, noun.length)
 
 end Mtg.Engine.OracleArgs

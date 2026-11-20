@@ -3789,7 +3789,7 @@ partial def runPostStep (g : Game) (step : PostStep)
   | .searchBasicLandTapped p =>
     g.beginLibrarySearch p isBasicLandCard "a basic land card" (.battlefield true)
   | .fightTargetOpponentCreature controller sourceId targets =>
-    g.withLegalKindPermanent controller .oppCreature targets (fun g tgt =>
+    g.withLegalSpecPermanent controller .oppCreature targets (fun g tgt =>
       match sourceId.bind g.findObject? with
       | some src =>
         if src.isOnBattlefield && tgt.isOnBattlefield && g.isCreature src && g.isCreature tgt then
@@ -3938,7 +3938,7 @@ partial def runPostStep (g : Game) (step : PostStep)
     if nonlandCount == 0 then g
     else
       g.putReflexiveTrigger p sourceId
-        { targeting := .of (.filtered TargetFilter.creature), maxTargets := nonlandCount
+        { targeting := .of .creature, maxTargets := nonlandCount
           allowsZeroTargets := true, resolution := .tapAndStunPerOpponent
           phrase := "Tap up to that many target creatures and put a stun counter on each of them" }
         (deferToPriority := true)
@@ -4278,6 +4278,7 @@ partial def runPostStep (g : Game) (step : PostStep)
         else
           let hasLegal := !(g.legalProposedTargets caster obj).isEmpty
           let allowZero :=
+            (g.targetingOf obj).spec.allowsZero ||
             match obj.triggeredAbility with
             | some ab => ab.allowsZeroTargets || obj.abilityEffect.any (·.allowsZeroTargets)
             | none =>
@@ -4450,13 +4451,13 @@ partial def runPostStep (g : Game) (step : PostStep)
   | .beginStepBody st =>
     g.beginStepBody st
   | .tapAndStunTargetsLoop controller remaining sourceId cause =>
-    let kind :=
-      (g.resolvingSpell.bind g.findObject? |>.bind g.currentSpellEffect |>.map (·.targetKind)).orElse
+    let spec :=
+      (g.resolvingSpell.bind g.findObject? |>.bind g.currentSpellEffect |>.map (·.targetSpec)).orElse
         (fun _ =>
           g.resolvingAbility.bind g.findObject? |>.bind fun o =>
-            (o.abilityEffect.map (·.targetKind)).orElse (fun _ => o.triggeredAbility.map (·.targetKind)))
+            (o.abilityEffect.map (·.targetSpec)).orElse (fun _ => o.triggeredAbility.map (·.targetSpec)))
         |>.getD .creature
-    g.tapAndStunTargetsLoop controller kind remaining sourceId cause
+    g.tapAndStunTargetsLoop controller spec remaining sourceId cause
   | .exileZemoBoastCards p abilityId remainingIds =>
     g.exileZemoBoastCards p abilityId remainingIds
   | .grantAdventureExilePermission controller cardId cause =>
@@ -6855,17 +6856,17 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player caster).name} may choose targets (CR 601.2c)"
     let some obj := g.objectAwaitingTargets | throw "No spell is waiting for a target (CR 601.2c)"
     if g.canSkipCurrentOptionalSlot obj then
-      let kind := (g.targetingOf obj).kind
-      let curSlot := g.currentTargetSlot obj
-      let (_, grpEnd) := kind.instanceGroupBounds curSlot
-      let span := ((List.range grpEnd).drop curSlot)
-      if !span.all kind.isOptionalSlot then
-        let reqCount := span.filter (!kind.isOptionalSlot ·) |>.length
+      let spec := (g.targetingOf obj).spec
+      let curPos := g.currentTargetSlot obj
+      let (_, grpEnd) := spec.instanceGroupBounds curPos
+      let span := ((List.range grpEnd).drop curPos)
+      if !span.all spec.isOptionalPos then
+        let reqCount := span.filter (!spec.isOptionalPos ·) |>.length
         throw s!"Choose at least {reqCount} target(s) (CR 601.2c)"
       let g := span.foldl (fun acc _ => acc.skipOptionalTargetSlot obj.id) g
       let g := g.logMsg
         s!"{(g.player p).name} chooses no target (CR 603.3d / 601.2c)"
-      if g.currentTargetSlot obj < kind.spec.slots.size then
+      if g.currentTargetSlot obj < spec.totalPositions then
         return g.change (.pending (.chooseTargets p))
       let g :=
         match g.stackEntry? obj.id with
@@ -6875,9 +6876,9 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
         return g.afterTargetsChosen
       return g.afterTriggerTargetsChosen
     else if g.canFinishOptionalTargets obj then
-      let startSlot := g.currentTargetSlot obj
-      let totalSlots := (g.targetingOf obj).kind.spec.slots.size
-      let g := (List.range (totalSlots - startSlot)).foldl
+      let startPos := g.currentTargetSlot obj
+      let totalPos := (g.targetingOf obj).spec.totalPositions
+      let g := (List.range (totalPos - startPos)).foldl
         (fun acc _ => acc.skipOptionalTargetSlot obj.id) g
       let g := g.logMsg
         s!"{(g.player p).name} finishes choosing targets (CR 601.2c)"
@@ -6891,7 +6892,8 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     else
       match obj.triggeredAbility with
       | some ab =>
-        if !(ab.allowsZeroTargets || obj.abilityEffect.any (·.allowsZeroTargets)) then
+        if !(ab.allowsZeroTargets || ab.targetSpec.allowsZero ||
+            obj.abilityEffect.any (fun e => e.allowsZeroTargets || e.effectiveTargetSpec.allowsZero)) then
           throw "That ability requires a target (CR 601.2c)"
         let g := g.setStackEntryTargets obj.id #[]
         let g := g.logMsg
@@ -6899,6 +6901,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
         return g.afterTriggerTargetsChosen
       | none =>
         let allowZero :=
+          (g.targetingOf obj).spec.allowsZero ||
           match g.currentSpellEffect obj with
           | some e => e.allowsZeroTargets
           | none =>

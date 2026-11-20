@@ -193,8 +193,8 @@ def speedReflexiveHasteOnlyOk : Bool :=
   let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable)
     (some speed.id)
   let g := mustApply g ⟨0⟩ .accept
-  let kind := (Game.modeledReflexiveEffect .hasteUnblockable 1).targetKind
-  let legal := g.legalTargetsForKind ⟨0⟩ kind (some speed.id)
+  let spec := (Game.modeledReflexiveEffect .hasteUnblockable 1).targetSpec
+  let legal := g.legalTargetsForSpec ⟨0⟩ spec (some speed.id)
   let bears := namedPermanent g "Grizzly Bears"
   legal.contains (Target.permanent speed.id) &&
     !legal.contains (Target.permanent bears.id) &&

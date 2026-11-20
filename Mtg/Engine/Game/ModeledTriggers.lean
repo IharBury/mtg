@@ -247,8 +247,8 @@ def commitStagedSpellTargets (g : Game) (spellId : ObjectId) (staged : Array Tar
       let e := g.stack[i]!
       if staged == e.targets then g
       else
-        let kind := (g.targetingOf spell).kind
-        if g.validTargetArrayForEntry e spell kind staged (allowUnchangedIllegal := true) then
+        let spec := (g.targetingOf spell).spec
+        if g.validTargetArrayForEntry e spell spec staged (allowUnchangedIllegal := true) then
           g.setStackEntryTargets spellId staged (dividedDamage := e.dividedDamage)
             |>.logMsg "A new target is chosen for the spell"
         else
@@ -281,20 +281,21 @@ def stageSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat)
     if index >= e.targets.size then
       (g.logMsg "That target stays unchanged", base)
     else
-      let kind := (g.targetingOf spell).kind
+      let spec := (g.targetingOf spell).spec
       let selfSource := spell.sourceId.orElse (fun _ => if spell.zone == .stack then some spell.id else none)
-      let totalSlots := e.targets.size + e.skippedOptionalSlots.size
-      let slotIndices : Array Nat :=
+      let selfStackId := if spell.zone == .stack then some spell.id else none
+      let totalPos := e.targets.size + e.skippedOptionalSlots.size
+      let posIndices : Array Nat :=
         if e.skippedOptionalSlots.isEmpty then (List.range e.targets.size).toArray
-        else ((List.range totalSlots).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
-      let actualSlot := slotIndices[index]?.getD index
-      if !(g.legalTargetsForAtomicKind e.controller (kind.slotKind actualSlot) selfSource).contains neu then
+        else ((List.range totalPos).filter (fun s => !e.skippedOptionalSlots.contains s)).toArray
+      let actualPos := posIndices[index]?.getD index
+      if !(g.legalTargetsForSlot e.controller (spec.slotAtPos actualPos) selfSource selfStackId).contains neu then
         (g.logMsg "That target stays unchanged", base)
       else
         let cand := base.set! index neu
         if index + 1 < e.targets.size then
           (g, cand)
-        else if g.validTargetArrayForEntry e spell kind cand (allowUnchangedIllegal := true) then
+        else if g.validTargetArrayForEntry e spell spec cand (allowUnchangedIllegal := true) then
           (g, cand)
         else
           (g.logMsg "That target stays unchanged", base)
@@ -311,9 +312,9 @@ def setSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat) (neu : Target
     | none => g.logMsg "The spell is no longer on the stack"
     | some spell =>
       if index < e.targets.size then
-        let kind := (g.targetingOf spell).kind
+        let spec := (g.targetingOf spell).spec
         let cand := e.targets.set! index neu
-        if cand != e.targets && g.validTargetArrayForEntry e spell kind cand (allowUnchangedIllegal := true) then
+        if cand != e.targets && g.validTargetArrayForEntry e spell spec cand (allowUnchangedIllegal := true) then
           g.setStackEntryTargets spellId cand (dividedDamage := e.dividedDamage)
             |>.logMsg "A new target is chosen for the spell"
         else
@@ -821,7 +822,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.resource .drawIfAnotherHeroDamage) =>
     if (g.permanentsOf controller).any (fun o =>
         g.hasSubtype o .hero && some o.id != sourceId) then
-      g.withLegalKindTarget controller .opponent targets (fun g tgt =>
+      g.withLegalSpecTarget controller .opponent targets (fun g tgt =>
         match tgt with
         | Target.player pid => g.dealDamageToPlayer pid 1 (source := sourceId.bind g.damageSourceById?)
         | _ => g) sourceId none
@@ -841,10 +842,9 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.death .deathtouchOppSac) =>
     g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
   | (.casting .exileFlicker) =>
-    let kind := EffectTargetKind.filtered {
-      noun := "another target nonland, nontoken permanent"
-      nonTypes := #[.land], nontoken := true, another := true }
-    g.withLegalKindPermanent controller kind targets (fun g o =>
+    let spec := TargetSpec.ofDomain (.object .battlefield (ObjectPred.andAll #[
+      .otherThan .this, .not (.hasType .land), .isToken false]))
+    g.withLegalSpecPermanent controller spec targets (fun g o =>
       let name := g.name o
       let (g, cause) := g.allocDelayedCause (some controller) sourceId
       let (g, _) := g.move o.id .exile none (cause := some cause)
@@ -856,7 +856,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
       sourceId (some "The target is no longer legal")
   | (.casting .damageEqualMv) =>
     let n := g.castSpellManaValue controller lastKnownPower
-    g.applyDamageToKindTarget controller .playerOrCreature targets n sourceId none
+    g.applyDamageToSpecTarget controller .anyTarget targets n sourceId none
   | (.casting .merfolkFromBlue) =>
     g.createMerfolkForBlueSymbols controller lastKnownPower
   | (.casting .plusOneEachOther) =>
@@ -883,16 +883,14 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
     else
       g.copyCastTriggerSpell controller
   | (.casting .tapCreatureOrLand) =>
-    let kind := EffectTargetKind.filtered {
-      noun := "target creature or land",
-      types := #[.creature, .land] }
-    g.withLegalKindPermanent controller kind targets
+    let spec := TargetSpec.ofDomain (.object .battlefield (.any #[.hasType .creature, .hasType .land]))
+    g.withLegalSpecPermanent controller spec targets
       (fun g o => g.applyPermanentAction o .tap) sourceId
       (some "The target is no longer legal")
   | (.resource .discardExilePlay) =>
     g.offerMayExileDiscarded controller
   | (.resource .secondDrawPlusOneTarget) =>
-    g.withLegalKindPermanent controller .creature targets
+    g.withLegalSpecPermanent controller .creature targets
       (fun g o => g.addPlusOnePlusOneTo o 1) sourceId
       (some "The target is no longer legal")
   | (.resource .secondDrawDrain) =>
@@ -1037,7 +1035,7 @@ def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
           .unlessPaysSource sourceId,
           .unlessPaysDue false,
           .unlessPaysResCtx resCtx]).logMsg
-          s!"{(g.player payer).name} may pay \{{n}} or {SpellResolution.toPhrase r effect.targeting.kind.noun}"
+          s!"{(g.player payer).name} may pay \{{n}} or {SpellResolution.toPhrase r effect.targeting.spec.noun}"
 
 /-- Exile `o`, then immediately return it to the battlefield under its
 owner's control. `clearExileFields` drops a play permission or linked exile

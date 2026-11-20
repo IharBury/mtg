@@ -965,7 +965,7 @@ def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
   | .onAttackDestroyTargetLand =>
     let trigName := if c.name.isEmpty then "this token" else c.name
     let eff : Effect := {
-      targeting := .of (.filtered { noun := "target land", types := #[.land] })
+      targeting := .of .land
       resolution := .onPermanent .destroy
       phrase := s!"Whenever {trigName} attacks, destroy target land."
     }

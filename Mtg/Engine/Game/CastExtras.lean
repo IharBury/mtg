@@ -76,12 +76,12 @@ def temptWithTheRing (g : Game) (p : PlayerId) (chosen : Option ObjectId := none
         (cause := some (g.resolvingOrRuleCause p)))
 
 /-- A targeted spell or ability that would tempt only does so if it resolves. -/
-def resolveTargetedTempt (g : Game) (p : PlayerId) (kind : EffectTargetKind)
+def resolveTargetedTempt (g : Game) (p : PlayerId) (spec : TargetSpec)
     (targets : Array Target) : Game :=
-  if kind != .none && targets.isEmpty then
+  if !spec.isEmpty && targets.isEmpty then
     g.logMsg "The spell doesn't resolve. The Ring won't tempt you."
   else
-    g.withLegalKindTarget p kind targets (fun g _ => g.temptWithTheRing p)
+    g.withLegalSpecTarget p spec targets (fun g _ => g.temptWithTheRing p)
       (missing := some "The spell doesn't resolve. The Ring won't tempt you.")
 
 /-- Give the promised gift (a Treasure) to `to` before other effects. -/

@@ -5250,13 +5250,9 @@ deriving Inhabited
 @[inline] def TextChange.applyTriggerWhen (tcs : Array TextChange) (w : SharedTriggerWhen) : SharedTriggerWhen :=
   HasTextChange.applyTextChanges tcs w
 
-/-- Apply Layer 3 text changes to a `TargetFilter` (CR 612.2 / 613.1c). -/
-@[inline] def TextChange.applyTargetFilter (tcs : Array TextChange) (f : TargetFilter) : TargetFilter :=
-  HasTextChange.applyTextChanges tcs f
-
-/-- Apply Layer 3 text changes to an `EffectTargetKind` (CR 612.2 / 613.1c). -/
-@[inline] def TextChange.applyTargetKind (tcs : Array TextChange) (k : EffectTargetKind) : EffectTargetKind :=
-  HasTextChange.applyTextChanges tcs k
+/-- Apply Layer 3 text changes to a `TargetSpec` (CR 612.2 / 613.1c). -/
+@[inline] def TextChange.applyTargetSpec (tcs : Array TextChange) (ts : TargetSpec) : TargetSpec :=
+  HasTextChange.applyTextChanges tcs ts
 
 /-- Apply Layer 3 text changes to an `ObjectSelector` (CR 612.2 / 613.1c). -/
 @[inline] def TextChange.applyObjectSelector (tcs : Array TextChange)
@@ -11393,7 +11389,8 @@ def triggerStillNeedsTargets (e : StackEntry) (ab : TriggeredAbility) : Bool :=
   match ab.dividedDamage? with
   | some (amount, _) => assignedDividedDamage e < amount
   | none =>
-    if ab.allowsZeroTargets || !ab.targeting.kind.spec.slots.isEmpty then !e.targetsAnnounced
+    if ab.allowsZeroTargets || ab.targetSpec.allowsZero || ab.targetSpec.totalPositions > 1 then
+      !e.targetsAnnounced
     else ab.requiresTarget && e.targets.isEmpty
 
 /-- Stack entry for a triggered ability that still needs targets announced
@@ -11409,7 +11406,9 @@ def triggerNeedingTargets (g : Game) : Option StackEntry :=
         match eff.dividedDamage with
         | some (amount, _) => assignedDividedDamage e < amount
         | none =>
-          if eff.allowsZeroTargets || !eff.targetKind.spec.slots.isEmpty then !e.targetsAnnounced
+          let spec := eff.effectiveTargetSpec
+          if eff.allowsZeroTargets || spec.allowsZero || spec.totalPositions > 1 then
+            !e.targetsAnnounced
           else eff.requiresTarget && e.targets.isEmpty
       | some ab, none =>
         match ab.effect.resolution with
@@ -13775,7 +13774,8 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 let targeting :=
                   ((obj.abilityEffect.map (·.targeting)).orElse (fun _ =>
                     obj.triggeredAbility.map (·.targeting))).getD (EffectTargeting.of .none)
-                let totalSlots := targeting.kind.spec.slots.size
+                let totalSlots :=
+                  if targeting.spec.isMultiSlot then targeting.spec.totalPositions else 0
                 let prevDone :=
                   prevEntry?.any (fun pe =>
                     pe.targetsAnnounced && !pe.targets.isEmpty &&

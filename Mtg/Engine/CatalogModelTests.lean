@@ -1292,7 +1292,7 @@ is optional. -/
     | some obj =>
       match obj.abilityEffect with
       | some eff =>
-        let legal := sarumanMilled.legalTargetsForKind me eff.targetKind
+        let legal := sarumanMilled.legalTargetsForSpec me eff.targetSpec
         legal.contains (Target.card boltId) && !legal.contains (Target.card lightId) &&
           (match sarumanMilled.pending with | .chooseTargets _ => true | _ => false)
       | none => false
@@ -1454,8 +1454,8 @@ def aragornDamagesLiliana : Game :=
 #guard
   let g := addPermanent (addPermanent afterDraw gandalfShadowSFoe me me) forest me me
   let g := addPermanent g grizzlyBears me me
-  let legal := g.legalTargetsForKind me
-    TriggeredAbility.onEnterExileLandsThenReturnTapped.effect.targetKind
+  let legal := g.legalTargetsForSpec me
+    TriggeredAbility.onEnterExileLandsThenReturnTapped.effect.targetSpec
   let forestOk := legal.contains (Target.permanent (idOf g "Forest"))
   let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
   let g := g.applyTriggeredAbility me .onEnterExileLandsThenReturnTapped
@@ -1557,8 +1557,8 @@ copy nothing. -/
 #guard
   let g := addPermanent (addPermanent afterDraw absorbingMan me me) forest me me
   let g := addPermanent g grizzlyBears me me
-  let legal := g.legalTargetsForKind me
-    (SharedTrigger.timing (.step .copyAbsorbingMan)).targeting.kind (some (idOf g "Absorbing Man"))
+  let legal := g.legalTargetsForSpec me
+    (SharedTrigger.timing (.step .copyAbsorbingMan)).targeting.spec (some (idOf g "Absorbing Man"))
   let forestOk := legal.contains (Target.permanent (idOf g "Forest"))
   let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
   let g := g.applyModeledTrigger me (.onStep Effect.stepCopyAbsorbingMan)
@@ -1610,8 +1610,8 @@ line is Human Mercenary Villain. -/
   let g := g.record (GameEvent.designation g.turnNumber (g.snapshot stone) .harnessed true
     (cause := .oneShotEffect none (some stone.id) (some me)))
   let g := addPermanent (addPermanent g forest me me) grizzlyBears me me
-  let legal := g.legalTargetsForKind me
-    (SharedTrigger.timing (.step .harnessedFlicker)).targeting.kind
+  let legal := g.legalTargetsForSpec me
+    (SharedTrigger.timing (.step .harnessedFlicker)).targeting.spec
     (some (idOf g "The Mind Stone"))
   let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
   let landOk := legal.contains (Target.permanent (idOf g "Forest"))

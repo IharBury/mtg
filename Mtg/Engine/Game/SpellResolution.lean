@@ -10,64 +10,40 @@ to exile (CR 715.3d), and `resolveTop` for the top of the stack.
 namespace Mtg.Engine
 namespace Game
 
-/-- CR 608.2b / 115.1c: true when `targets` is non-empty, `kind` has targets,
+/-- CR 608.2b / 115.1c: true when `targets` is non-empty, `spec` has targets,
 and every announced target is illegal for its own non-skipped instance of
-“target” (checking `sourceId` for CR 702.16b protection and “another” rules). -/
-def targetsAllIllegalForKind (g : Game) (controller : PlayerId)
-    (kind : EffectTargetKind) (targets : Array Target)
+“target” (checking `sourceId` for CR 702.16b protection and “another” rules) or
+every remaining target group fails its `GroupTargetConstraint`. -/
+def targetsAllIllegalForSpec (g : Game) (controller : PlayerId)
+    (spec : TargetSpec) (targets : Array Target)
     (skippedOptionalSlots : Array Nat := #[])
-    (sourceId : Option ObjectId := none) : Bool :=
-  if kind == .none || targets.isEmpty then false
+    (sourceId : Option ObjectId := none)
+    (stackSelfId : Option ObjectId := none) : Bool :=
+  if spec.isEmpty || targets.isEmpty then false
   else
-    let chosenSlots : Array Nat :=
-      if kind.spec.slots.isEmpty then #[]
-      else (List.range kind.spec.slots.size).toArray.filter (fun s => !skippedOptionalSlots.contains s)
+    let chosenPositions : Array Nat :=
+      if !spec.isMultiSlot then #[]
+      else (List.range spec.totalPositions).toArray.filter (fun s => !skippedOptionalSlots.contains s)
     let survivingPairs : Array (Nat × Target) :=
       (List.range targets.size).toArray.filterMap fun i =>
         let t := targets[i]!
-        let slotIdx := chosenSlots[i]?.getD i
-        let legal :=
-          if kind.spec.slots.isEmpty then
-            g.legalTargetsForKind controller kind sourceId
-          else
-            let slotKind := kind.slotKind slotIdx
-            if slotKind.spec.slots.isEmpty then
-              g.legalTargetsForAtomicKind controller slotKind sourceId
-            else
-              g.legalTargetsForKind controller slotKind sourceId
-        if legal.contains t then some (slotIdx, t) else none
+        let pos := chosenPositions[i]?.getD i
+        let legal := g.legalTargetsForSlot controller (spec.slotAtPos pos) sourceId stackSelfId
+        if legal.contains t then some (pos, t) else none
     if survivingPairs.isEmpty then true
     else
-      let badShareSlots : Array Nat :=
-        kind.sharesTypeGroups.foldl (fun acc grp =>
+      let badConstraintPositions : Array Nat :=
+        spec.constraintPosGroups.foldl (fun acc (gc, grp) =>
           let picked :=
-            if kind.spec.slots.isEmpty then survivingPairs.map Prod.snd
+            if !spec.isMultiSlot then survivingPairs.map Prod.snd
             else survivingPairs.filterMap fun (s, t) => if grp.contains s then some t else none
-          let invalid : Bool :=
-            match picked[0]?, picked[1]? with
-            | some (Target.permanent a), some (Target.permanent b) =>
-              a == b ||
-                match g.findObject? a, g.findObject? b with
-                | some oa, some ob => !g.sharesCardType oa ob
-                | _, _ => true
-            | _, _ => decide (picked.size >= 2)
-          if invalid == true then acc ++ grp else acc) #[]
-      let badMvSlots : Array Nat :=
-        kind.totalMvCapGroups.foldl (fun acc (cap, grp) =>
-          let picked :=
-            if kind.spec.slots.isEmpty then survivingPairs.map Prod.snd
-            else survivingPairs.filterMap fun (s, t) => if grp.contains s then some t else none
-          let totalMv := picked.foldl (fun sum t =>
-            match t with
-            | Target.permanent id =>
-              sum + ((g.findObject? id).map g.objectManaValue |>.getD 0)
-            | _ => sum) 0
-          if totalMv > cap then acc ++ grp else acc) #[]
-      if kind.spec.slots.isEmpty then
-        !badShareSlots.isEmpty || !badMvSlots.isEmpty
+          if picked.isEmpty then acc
+          else if g.satisfiesGroupConstraint controller sourceId gc picked then acc
+          else acc ++ grp) #[]
+      if !spec.isMultiSlot then
+        !badConstraintPositions.isEmpty
       else
-        (survivingPairs.filter fun (s, _) =>
-          !badShareSlots.contains s && !badMvSlots.contains s).isEmpty
+        (survivingPairs.filter fun (s, _) => !badConstraintPositions.contains s).isEmpty
 
 /-- CR 608.2b: an activated or triggered ability with targets whose targets are
 all illegal doesn't resolve. Each announced target is checked against its own
@@ -75,16 +51,17 @@ non-skipped instance of “target”. -/
 def abilityTargetsAllIllegal (g : Game) (controller : PlayerId) (obj : GameObject)
     (e : Option Effect) (t : Option TriggeredAbility)
     (targets : Array Target) (skippedOptionalSlots : Array Nat := #[]) : Bool :=
-  let kind :=
+  let spec :=
     match e with
-    | some eff => eff.targetKind
+    | some eff => eff.effectiveTargetSpec
     | none =>
       match t with
-      | some ab => (g.expandEachOpponentEffect controller ab.effect (some obj.id)).targetKind
+      | some ab => (g.expandEachOpponentEffect controller ab.effect (some obj.id)).effectiveTargetSpec
       | none => .none
-  g.targetsAllIllegalForKind controller kind targets
+  g.targetsAllIllegalForSpec controller spec targets
     (skippedOptionalSlots := skippedOptionalSlots)
     (sourceId := obj.sourceId)
+    (stackSelfId := if obj.zone == .stack then some obj.id else none)
 
 /-- Resolve a CR 603.7 delayed triggered ability on the stack. -/
 def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTriggerKind)
@@ -103,7 +80,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     else g
   | .attackPumpPerPlains =>
     let n : Int := g.countSubtype controller .plains
-    g.withLegalKindPermanent controller .creatureYouControl targets
+    g.withLegalSpecPermanent controller .creatureYouControl targets
       (fun g o => g.pumpPermanent o n n)
       sourceId (some "No target was chosen")
   | .endStepReturn id =>
@@ -209,9 +186,7 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     let restModes := modeEffects.extract 1 modeEffects.size
     let modeSlots :=
       if !e.requiresTarget then 0
-      else
-        let ek := modeTargetKind e
-        if ek.spec.slots.isEmpty then ek.targetCount else ek.spec.slots.size
+      else (modeTargetSpec e).totalPositions
     let curSkipped := skippedOptionalSlots.filter (· < modeSlots)
     let skippedHere := curSkipped.size
     let restSkipped :=
@@ -267,7 +242,7 @@ def resolveTop (g : Game) : Game :=
         if ms.isEmpty then none else some ms
       if let some (dtKind, dtCause) := entry.delayedTrigger then
         if dtKind == .attackPumpPerPlains && !entry.targets.isEmpty &&
-            !(g.legalTargetsForKind entry.controller .creatureYouControl obj.sourceId).contains entry.targets[0]! then
+            !(g.legalTargetsForSpec entry.controller .creatureYouControl obj.sourceId).contains entry.targets[0]! then
           let g := g.withResolvingContext ctxSrc entry.controller fun g =>
             let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
             let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
@@ -411,9 +386,10 @@ def resolveTop (g : Game) : Game :=
             (g.isInstantOrSorcery obj && !entry.targets.isEmpty &&
               match g.spellEffectOf obj entry.chosenMode entry.extraModes (kicked := kicked) with
               | some e =>
-                g.targetsAllIllegalForKind entry.controller e.targetKind entry.targets
+                g.targetsAllIllegalForSpec entry.controller e.effectiveTargetSpec entry.targets
                   (skippedOptionalSlots := entry.skippedOptionalSlots)
                   (sourceId := some obj.id)
+                  (stackSelfId := some obj.id)
               | none => false)
         if allTargetsIllegal then
           let finishCause :=

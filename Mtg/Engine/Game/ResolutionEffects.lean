@@ -399,7 +399,7 @@ def redwingToken : CardDef := (tokenPrinted? .redwing).getD default
 def theVoidToken : CardDef := (tokenPrinted? .theVoid).getD default
 
 def galactusAttackTrigger : Effect := {
-  targeting := .of (.filtered { noun := "target land", types := #[.land] })
+  targeting := .of .land
   resolution := .onPermanent .destroy
   phrase := "Whenever Galactus attacks, destroy target land."
 }
@@ -683,16 +683,14 @@ def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option Ob
 (MSH 359–369). -/
 def modeledReflexiveEffect (kind : TriggeredAbility.TriggerReflexiveKind) (paid : Nat) : Effect :=
   let base : Effect := { resolution := .mshReflexive kind paid }
-  let creature (f : TargetFilter) : TargetFilter := { f with types := #[.creature] }
   match kind with
   | .grantIndestructible =>
     { base with
-      targeting := .of (.filtered (creature
-        { noun := "another target nonattacking creature you control", controller := .you
-          another := true, nonattacking := true }))
+      targeting := .of (.ofDomain (.object .battlefield (ObjectPred.andAll #[
+        .otherThan .this, .not (.combatRole .attacking), .hasType .creature, .controlledBy .you])))
       phrase := "Another target nonattacking creature you control gains indestructible until end of turn" }
   | .dealTwoDamage =>
-    { base with targeting := .of .playerOrCreature, phrase := "This deals 2 damage to any target" }
+    { base with targeting := .of .anyTarget, phrase := "This deals 2 damage to any target" }
   | .trickArrows => base
   | .indestructibleCounter =>
     { base with targeting := .of .creatureYouControl
@@ -711,20 +709,20 @@ def modeledReflexiveEffect (kind : TriggeredAbility.TriggerReflexiveKind) (paid 
                 phrase := "Destroy target nonland permanent an opponent controls" }
   | .countersDamage =>
     { base with
-      targeting := .of (.filtered { noun := "any other target", zone := .anyTarget, another := true })
+      targeting := .of .anyOtherTarget
       phrase := "This deals damage equal to the number of +1/+1 counters on it to any other target" }
   | .hasteUnblockable =>
     { base with
-      targeting := .of (.filtered (creature { noun := "target creature with haste", withHaste := true }))
+      targeting := .of (.ofDomain (.object .battlefield (ObjectPred.andAll #[
+        .hasType .creature, .hasKeyword .haste])))
       phrase := "Target creature with haste can't be blocked this turn except by creatures with haste" }
   | .divideSevenDamage =>
-    { base with targeting := .of .playerOrCreature, dividedDamage := some (7, 2)
+    { base with targeting := .of .anyTarget, dividedDamage := some (7, 2)
                 phrase := "It deals 7 damage divided as you choose among one or two targets" }
   | .returnInstants =>
     { base with
-      targeting := .of (.filtered
-        { noun := "up to two target instant and/or sorcery cards from your graveyard"
-          zone := .yourGraveyard, types := #[.instant, .sorcery] })
+      targeting := .of (.ofDomain (.object .yourGraveyard (ObjectPred.andAll #[
+        .isKind .card, .any #[.hasType .instant, .hasType .sorcery]])) (.upTo 2))
       maxTargets := 2, allowsZeroTargets := true
       phrase := "Return up to two target instant and/or sorcery cards from your graveyard to your hand" }
   | .plusOne =>
@@ -1102,16 +1100,16 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
 `Pending.chooseReplacement` so subsequent target legality checks do not run early,
 and aggregating CR 702.15b lifelink life gain once after all targets' damage has
 been dealt. -/
-partial def divideSevenDamageLoop (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+partial def divideSevenDamageLoop (g : Game) (controller : PlayerId) (spec : TargetSpec)
     (remaining : Array (Nat × Target)) (division : Array Nat)
     (sourceId : Option ObjectId) (startEventIdx : Option Nat := none) : Game :=
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.finishPostStep (.divideSevenDamageLoop controller kind remaining division sourceId startEventIdx))
+      (.finishPostStep (.divideSevenDamageLoop controller spec remaining division sourceId startEventIdx))
   else if startEventIdx.isNone && g.currentBatch.isNone && !remaining.isEmpty then
     let sIdx := g.events.size
     g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
-      g.divideSevenDamageLoop controller kind remaining division sourceId (some sIdx)
+      g.divideSevenDamageLoop controller spec remaining division sourceId (some sIdx)
   else
     let sIdx := startEventIdx.getD g.events.size
     let batchCause :=
@@ -1121,7 +1119,7 @@ partial def divideSevenDamageLoop (g : Game) (controller : PlayerId) (kind : Eff
       g.applyAggregatedLifelinkSince sIdx (cause := batchCause)
     | some (i, tgt) =>
       let rest := remaining.extract 1 remaining.size
-      let legal := g.legalTargetsForKind controller kind sourceId
+      let legal := g.legalTargetsForSpec controller spec sourceId
       let g :=
         if legal.contains tgt then
           g.dealDamageToTarget tgt (Int.ofNat (division[i]?.getD 0))
@@ -1131,19 +1129,19 @@ partial def divideSevenDamageLoop (g : Game) (controller : PlayerId) (kind : Eff
           g.illegalAbilityTarget tgt
       if let .chooseReplacement .. := g.pending then
         g.chainPendingReplacement
-          (.finishPostStep (.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)))
+          (.finishPostStep (.divideSevenDamageLoop controller spec rest division sourceId (some sIdx)))
       else
-        g.divideSevenDamageLoop controller kind rest division sourceId (some sIdx)
+        g.divideSevenDamageLoop controller spec rest division sourceId (some sIdx)
 
 /-- Return targeted graveyard instant cards to `controller`'s hand one at a time,
 pausing across `Pending.chooseReplacement` before checking subsequent targets. -/
-partial def returnInstantsLoop (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+partial def returnInstantsLoop (g : Game) (controller : PlayerId) (spec : TargetSpec)
     (remaining : Array Target) (sourceId : Option ObjectId) : Game :=
   match remaining[0]? with
   | none => g
   | some tgt =>
     let rest := remaining.extract 1 remaining.size
-    let legal := g.legalTargetsForKind controller kind sourceId
+    let legal := g.legalTargetsForSpec controller spec sourceId
     let g :=
       match tgt with
       | Target.card id =>
@@ -1152,42 +1150,42 @@ partial def returnInstantsLoop (g : Game) (controller : PlayerId) (kind : Effect
     if rest.isEmpty then g
     else if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement
-        (.finishPostStep (.returnInstantsLoop controller kind rest sourceId))
+        (.finishPostStep (.returnInstantsLoop controller spec rest sourceId))
     else
-      g.returnInstantsLoop controller kind rest sourceId
+      g.returnInstantsLoop controller spec rest sourceId
 
 /-- Resolve MSH reflexive ability `kind` with its announced targets. A target
 that is no longer legal is skipped (MSH 125). -/
 def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (kind : TriggeredAbility.TriggerReflexiveKind) (paid : Nat)
     (targets : Array Target) (division : Array Nat := #[]) : Game :=
-  let tkind := (modeledReflexiveEffect kind paid).targetKind
+  let tspec := (modeledReflexiveEffect kind paid).targetSpec
   let illegal := some "The target is no longer legal"
   match kind with
   | .grantIndestructible =>
-    g.withLegalKindPermanent controller tkind targets
+    g.withLegalSpecPermanent controller tspec targets
       (fun g o => g.grantUntilEotLogged o Keyword.indestructible) sourceId illegal
   | .dealTwoDamage =>
-    g.withLegalKindTarget controller tkind targets
+    g.withLegalSpecTarget controller tspec targets
       (fun g tgt => g.dealDamageToTarget tgt 2 (source := sourceId.bind g.damageSourceById?)) sourceId illegal
   | .trickArrows => g
   | .indestructibleCounter =>
-    g.withLegalKindPermanent controller tkind targets
+    g.withLegalSpecPermanent controller tspec targets
       (fun g o => g.addIndestructibleCounter o) sourceId illegal
   | .controlOpponent =>
-    g.withLegalKindPlayer controller tkind targets (fun g pid =>
+    g.withLegalSpecPlayer controller tspec targets (fun g pid =>
       g.setPlayerControl controller pid (onNextTurn := true))
       sourceId illegal
   | .exileTopFive =>
-    g.withLegalKindPlayer controller tkind targets
+    g.withLegalSpecPlayer controller tspec targets
       (fun g pid => g.exileTopMayCastUpTo pid controller 5 2) sourceId illegal
   | .returnAttacking =>
-    g.withLegalKindTarget controller tkind targets (fun g tgt =>
+    g.withLegalSpecTarget controller tspec targets (fun g tgt =>
       match tgt with
       | Target.card id | Target.permanent id => g.returnFromGyTappedAttackingFinality controller id
       | _ => g) sourceId illegal
   | .destroyOppNonland =>
-    g.withLegalKindPermanent controller tkind targets
+    g.withLegalSpecPermanent controller tspec targets
       (fun g o => g.destroyPermanent o) sourceId illegal
   | .countersDamage =>
     let counters :=
@@ -1197,11 +1195,11 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
         else (sourceId.bind g.lastKnownCounterStatus?).map (·.plusOnePlusOne) |>.getD paid
       | none =>
         (sourceId.bind g.lastKnownCounterStatus?).map (·.plusOnePlusOne) |>.getD paid
-    g.withLegalKindTarget controller tkind targets
+    g.withLegalSpecTarget controller tspec targets
       (fun g tgt => g.dealDamageToTarget tgt (Int.ofNat counters) (source := sourceId.bind g.damageSourceById?))
       sourceId illegal
   | .hasteUnblockable =>
-    g.withLegalKindPermanent controller tkind targets
+    g.withLegalSpecPermanent controller tspec targets
       (fun g o =>
         g.createEffect (.cantBeBlockedExceptByHasteUntilEot o.id)
           |>.logMsg s!"{g.name o} can't be blocked this turn except by creatures with haste")
@@ -1211,12 +1209,12 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
     else
       let indexed := (List.range targets.size).toArray.map fun i => (i, targets[i]!)
       g.withBatch (g.resolvingBatchCause controller sourceId) fun g =>
-        g.divideSevenDamageLoop controller tkind indexed division sourceId
+        g.divideSevenDamageLoop controller tspec indexed division sourceId
   | .returnInstants =>
     g.withBatch none fun g =>
-      g.returnInstantsLoop controller tkind targets sourceId
+      g.returnInstantsLoop controller tspec targets sourceId
   | .plusOne =>
-    g.withLegalKindPermanent controller tkind targets
+    g.withLegalSpecPermanent controller tspec targets
       (fun g o => g.addPlusOnePlusOneTo o 1) sourceId illegal
 
 /-- Whether an MSH reflexive ability is on the stack. -/

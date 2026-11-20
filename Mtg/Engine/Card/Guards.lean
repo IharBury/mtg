@@ -35,7 +35,7 @@ namespace CardDef
 #guard CardDef.stripAdventureDelimiter "//ADV//" == none
 #guard CardDef.stripAdventureDelimiter "//ADV// Spew Flame {4}{R}" ==
   some "Spew Flame {4}{R}"
-#guard (Effect.dealDamage 3).targetKind == .playerOrCreature
+#guard (Effect.dealDamage 3).targetSpec == .anyTarget
 #guard (Effect.dealDamage 3).resolution == Resolution.onPermanent (.dealDamage 3)
 #guard (Effect.dealDamage 3).phrase == "deals 3 damage to any target"
 #guard (Effect.dealDamage 3).spellResolution == .onPermanent (.dealDamage 3)
@@ -237,53 +237,50 @@ namespace CardDef
   .sequence [.onPermanent (.pump (-5) (-5)), .replace .diesThisTurn .exile]
 #guard (Effect.exileGraveyardCreaturesGrantCast.phrase).startsWith
   "exile all creature cards"
-#guard EffectTargetKind.noun .playerOrCreature == "any target"
-#guard EffectTargetKind.noun .creatureWithFlying == "target creature with flying"
-#guard EffectTargetKind.noun .opponent == "target opponent"
-#guard EffectTargetKind.noun .colorlessNonland ==
+#guard TargetSpec.noun .anyTarget == "any target"
+#guard TargetSpec.noun .creatureWithFlying == "target creature with flying"
+#guard TargetSpec.noun .opponent == "target opponent"
+#guard TargetSpec.noun .colorlessNonland ==
   "target colorless nonland permanent"
-#guard EffectTargetKind.noun .player == "target player"
-#guard EffectTargetKind.noun .opponent == "target opponent"
-#guard EffectTargetKind.noun .oppGraveyardCard ==
+#guard TargetSpec.noun .player == "target player"
+#guard TargetSpec.noun .opponent == "target opponent"
+#guard TargetSpec.noun .oppGraveyardCard ==
   "target card from an opponent's graveyard"
-#guard EffectTargetKind.spec .none == { count := 0, noun := "", prefer := .own }
-#guard EffectTargetKind.spec .playerOrCreature ==
-  { count := 1, noun := "any target", prefer := .opponentPlayer }
-#guard EffectTargetKind.spec .opponent ==
-  { count := 1, noun := "target opponent", prefer := .opponentPlayer }
-#guard EffectTargetKind.spec .creatureYouControlThenOppCreature ==
-  { count := 2
-    noun := "target creature you control and a creature an opponent controls"
-    prefer := .ownThenOpponent
-    slots := #[.creatureYouControl, .oppCreature] }
-#guard EffectTargetKind.slotKind .creatureYouControlThenOppCreature 0 ==
-  .creatureYouControl
-#guard EffectTargetKind.slotKind .creatureYouControlThenOppCreature 1 ==
-  .oppCreature
-#guard EffectTargetKind.slotKind .creature 0 == .creature
-#guard EffectTargetKind.spec .upToOneCreatureThenPlayer ==
-  { count := 2
-    noun := "up to one target creature and target player"
-    prefer := .own
-    slots := #[.creature, .player]
-    optionalSlots := #[0] }
-#guard EffectTargetKind.slotKind .upToOneCreatureThenPlayer 0 == .creature
-#guard EffectTargetKind.slotKind .upToOneCreatureThenPlayer 1 == .player
-#guard EffectTargetKind.isOptionalSlot .upToOneCreatureThenPlayer 0
-#guard !EffectTargetKind.isOptionalSlot .upToOneCreatureThenPlayer 1
-#guard EffectTargetKind.announcedNoun .upToOneCreatureThenPlayer 0 ==
+#guard TargetSpec.none.isEmpty && TargetSpec.none.targetCount == 0 && TargetSpec.none.noun == "" &&
+  TargetSpec.none.defaultPreference == .own
+#guard TargetSpec.anyTarget.targetCount == 1 && TargetSpec.anyTarget.noun == "any target" &&
+  TargetSpec.anyTarget.defaultPreference == .opponentPlayer
+#guard TargetSpec.opponent.targetCount == 1 && TargetSpec.opponent.noun == "target opponent" &&
+  TargetSpec.opponent.defaultPreference == .opponentPlayer
+#guard TargetSpec.creatureYouControlThenOppCreature.targetCount == 2 &&
+  TargetSpec.creatureYouControlThenOppCreature.noun ==
+    "target creature you control and target creature an opponent controls" &&
+  TargetSpec.creatureYouControlThenOppCreature.defaultPreference == .ownThenOpponent
+#guard (TargetSpec.creatureYouControlThenOppCreature.slotAtPos 0).domain ==
+  TargetDomain.creatureYouControl
+#guard (TargetSpec.creatureYouControlThenOppCreature.slotAtPos 1).domain ==
+  TargetDomain.oppCreature
+#guard (TargetSpec.creature.slotAtPos 0).domain == TargetDomain.creature
+#guard TargetSpec.upToOneCreatureThenPlayer.targetCount == 2 &&
+  TargetSpec.upToOneCreatureThenPlayer.noun ==
+    "up to one target creature and target player" &&
+  TargetSpec.upToOneCreatureThenPlayer.defaultPreference == .own
+#guard (TargetSpec.upToOneCreatureThenPlayer.slotAtPos 0).domain == TargetDomain.creature
+#guard (TargetSpec.upToOneCreatureThenPlayer.slotAtPos 1).domain == TargetDomain.anyPlayer
+#guard TargetSpec.isOptionalSlot .upToOneCreatureThenPlayer 0
+#guard !TargetSpec.isOptionalSlot .upToOneCreatureThenPlayer 1
+#guard TargetSpec.announcedSlotNoun .upToOneCreatureThenPlayer 0 ==
   "up to one target creature"
-#guard EffectTargetKind.announcedNoun .upToOneCreatureThenPlayer 1 ==
+#guard TargetSpec.announcedSlotNoun .upToOneCreatureThenPlayer 1 ==
   "target player"
-#guard EffectTargetKind.noun (.upToTwoCreaturesTotalMvAtMost 6) ==
+#guard TargetSpec.noun (.upToTwoCreaturesTotalMvAtMost 6) ==
   "up to two target creatures with total mana value 6 or less"
-#guard EffectTargetKind.spec (.upToTwoCreaturesTotalMvAtMost 6) ==
-  { count := 2
-    noun := "up to two target creatures with total mana value 6 or less" }
+#guard (TargetSpec.upToTwoCreaturesTotalMvAtMost 6).targetCount == 2 &&
+  (TargetSpec.upToTwoCreaturesTotalMvAtMost 6).totalMvCap? == some 6
 #guard (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6).allowsZeroTargets
 #guard (Effect.chapterDealDamageToEachNonSubtypeAndOpponents 2 "Villain").phrase ==
   "This Saga deals 2 damage to each non-Villain creature and each opponent"
-#guard Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv.targetKind ==
+#guard Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv.targetSpec ==
   .opponent
 #guard TriggerEvent.spec .entering ==
   { clause := "this permanent enters", isWhenever := false, label := "enters trigger" }
@@ -314,25 +311,25 @@ namespace CardDef
 #guard Effect.destroyArtifactOrLandNonflyersCantBlock.targetCount == 1
 #guard Effect.destroyCreature.targetCount == 1
 #guard (Effect.drawAndLoseLife 2 2).targetCount == 0
-#guard (Effect.dealDamage 3).targetKind == .playerOrCreature
-#guard (Effect.pump 3 3).targetKind == .creature
+#guard (Effect.dealDamage 3).targetSpec == .anyTarget
+#guard (Effect.pump 3 3).targetSpec == .creature
 #guard (Effect.pump 3 3).targeting == EffectTargeting.of .creature .own
-#guard EffectTargetKind.defaultPreference .playerOrCreature == .opponentPlayer
-#guard EffectTargetKind.defaultPreference .opponent == .opponentPlayer
-#guard EffectTargetKind.defaultPreference .creatureYouControl == .own
-#guard EffectTargetKind.defaultPreference .creature == .opponent
-#guard EffectTargetKind.targetsStackSpell .spell
-#guard EffectTargetKind.targetsStackSpell .creatureSpell
-#guard EffectTargetKind.targetsStackSpell (.creatureSpellPTAtMost 2)
-#guard !EffectTargetKind.targetsStackSpell .creature
-#guard Effect.destroyCreatureWithFlying.targetKind == .creatureWithFlying
-#guard Effect.destroyCreature.targetKind == .creature
-#guard Effect.plusOnePlusOneTrampleHexproof.targetKind == .creatureYouControl
-#guard (Effect.dealDamageToCreature 5).targetKind == .creature
-#guard (Effect.dealDamageLoseIndestructibleExile 3).targetKind == .creature
-#guard Effect.creatureYouControlDealsPowerToOppCreature.targetKind ==
+#guard TargetSpec.defaultPreference .anyTarget == .opponentPlayer
+#guard TargetSpec.defaultPreference .opponent == .opponentPlayer
+#guard TargetSpec.defaultPreference .creatureYouControl == .own
+#guard TargetSpec.defaultPreference .creature == .opponent
+#guard TargetSpec.targetsStackSpell .spell
+#guard TargetSpec.targetsStackSpell .creatureSpell
+#guard TargetSpec.targetsStackSpell (.creatureSpellPTAtMost 2)
+#guard !TargetSpec.targetsStackSpell .creature
+#guard Effect.destroyCreatureWithFlying.targetSpec == .creatureWithFlying
+#guard Effect.destroyCreature.targetSpec == .creature
+#guard Effect.plusOnePlusOneTrampleHexproof.targetSpec == .creatureYouControl
+#guard (Effect.dealDamageToCreature 5).targetSpec == .creature
+#guard (Effect.dealDamageLoseIndestructibleExile 3).targetSpec == .creature
+#guard Effect.creatureYouControlDealsPowerToOppCreature.targetSpec ==
   .creatureYouControlThenOppCreature
-#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetKind ==
+#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetSpec ==
   .upToOneCreatureThenPlayer
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetCount == 2
 #guard !(Effect.plusOneUpToOneAndPlayerGainsLife 2).allowsZeroTargets
@@ -416,14 +413,14 @@ namespace CardDef
   "all creatures get -4/-4 until end of turn"
 #guard SpellResolution.toPhrase (.creaturesPump (-1) (-1) .ofTargetPlayer) "target player" ==
   "creatures target player controls get -1/-1 until end of turn"
-#guard Effect.destroyArtifactOrLandNonflyersCantBlock.targetKind == .artifactOrLand
-#guard Effect.playAdditionalLandThisTurn.targetKind == .none
-#guard (Effect.destroyTargetCreatureControllerLosesLife 2).targetKind == .creature
-#guard (Effect.allCreaturesGet (-4) (-4)).targetKind == .none
-#guard (Effect.drawAndLoseLife 2 2).targetKind == .none
-#guard (Effect.targetPlayerDrawLoseLife 2 2).targetKind == .player
-#guard (Effect.creaturesTargetPlayerGet (-1) (-1)).targetKind == .player
-#guard Effect.exileGraveyardCreaturesGrantCast.targetKind == .player
+#guard Effect.destroyArtifactOrLandNonflyersCantBlock.targetSpec == .artifactOrLand
+#guard Effect.playAdditionalLandThisTurn.targetSpec == .none
+#guard (Effect.destroyTargetCreatureControllerLosesLife 2).targetSpec == .creature
+#guard (Effect.allCreaturesGet (-4) (-4)).targetSpec == .none
+#guard (Effect.drawAndLoseLife 2 2).targetSpec == .none
+#guard (Effect.targetPlayerDrawLoseLife 2 2).targetSpec == .player
+#guard (Effect.creaturesTargetPlayerGet (-1) (-1)).targetSpec == .player
+#guard Effect.exileGraveyardCreaturesGrantCast.targetSpec == .player
 #guard !(Effect.allCreaturesGet (-4) (-4)).requiresTarget
 #guard !(Effect.drawAndLoseLife 2 2).requiresTarget
 #guard (Effect.destroyTargetCreatureControllerLosesLife 2).requiresTarget
@@ -611,12 +608,12 @@ namespace CardDef
 #guard Effect.destroyTargetColorlessNonland.requiresTarget
 #guard Effect.attachToTargetCreatureYouControl.requiresTarget
 #guard Effect.targetCantBeBlockedThisTurn.requiresTarget
-#guard (Effect.dealDamageToTargetCreature 2).targetKind == .creature
-#guard Effect.destroyTargetColorlessNonland.targetKind == .colorlessNonland
-#guard Effect.attachToTargetCreatureYouControl.targetKind == .creatureYouControl
+#guard (Effect.dealDamageToTargetCreature 2).targetSpec == .creature
+#guard Effect.destroyTargetColorlessNonland.targetSpec == .colorlessNonland
+#guard Effect.attachToTargetCreatureYouControl.targetSpec == .creatureYouControl
 #guard Effect.targetCantBeBlockedThisTurn.targeting ==
   EffectTargeting.of .creature .own
-#guard Effect.searchBasicLandTapped.targetKind == .none
+#guard Effect.searchBasicLandTapped.targetSpec == .none
 #guard (Effect.dealDamageToTargetCreature 2).targetCount == 1
 #guard Effect.searchBasicLandTapped.targetCount == 0
 #guard (Effect.dealDamageToTargetCreature 2).abilityKind == .creatureDamage
@@ -681,8 +678,8 @@ namespace CardDef
   "Put 2 +1/+1 counters on target Elf you control"
 #guard (Effect.plusOneOnTarget 2 #["Goblin", "Orc"]).phrase ==
   "Put 2 +1/+1 counters on target Goblin or Orc you control"
-#guard (Effect.plusOneOnTarget 2).targetKind == .creatureYouControl
-#guard (Effect.plusOneOnTarget 2 #["Elf"]).targetKind ==
+#guard (Effect.plusOneOnTarget 2).targetSpec == .creatureYouControl
+#guard (Effect.plusOneOnTarget 2 #["Elf"]).targetSpec ==
   .creatureYouControlAnySubtype #[.elf]
 #guard TriggeredAbility.toNotation (.onEnterCreateTokens .treasure 1) ==
   "When this permanent enters, create a Treasure token."
@@ -734,10 +731,10 @@ namespace CardDef
     (Effect.ofTrigger (.mayTo (.scry 1) (.gainLife 2)))).resolution ==
   .may (.scry (.fixed 1)) (.gainLife (.fixed 2)) .ifYouDo
 #guard (TriggeredAbility.triggered .enter
-    (Effect.ofTrigger (.mayTo (.onPermanent .creature .tap) (.draw 1)))).targetKind ==
+    (Effect.ofTrigger (.mayTo (.onPermanent .creature .tap) (.draw 1)))).targetSpec ==
   .creature
 #guard (TriggeredAbility.triggered .enter
-    (Effect.ofTrigger (.mayTo (.discard 1) (.millPlayer 3)))).targetKind ==
+    (Effect.ofTrigger (.mayTo (.discard 1) (.millPlayer 3)))).targetSpec ==
   .player
 #guard TriggeredAbility.onCastNoncreatureMayDrawXDiscard2 ==
   .triggered .youCastNoncreature (Effect.ofTrigger (.may (.drawXDiscard 2)))
@@ -1096,11 +1093,11 @@ namespace CardDef
   "At the beginning of combat on your turn, you may put an artifact card from your hand onto the battlefield. If it's an Equipment, attach it to this creature."
 #guard TriggeredAbility.resolution .onCombatTargetYouControlConnives ==
   .connive .target
-#guard TriggeredAbility.targetKind .onCombatTargetYouControlConnives ==
+#guard TriggeredAbility.targetSpec .onCombatTargetYouControlConnives ==
   .creatureYouControl
 #guard TriggeredAbility.resolutionPhrase { resolution := .connive .hand } ==
   "connive"
-#guard TriggeredAbility.targetKind .onCombatAnotherGetsSourcePower ==
+#guard TriggeredAbility.targetSpec .onCombatAnotherGetsSourcePower ==
   .anotherCreatureYouControl
 #guard TriggeredAbility.firesOn .onCombatCreateAlienPerInvasion .yourBeginCombat
 #guard !TriggeredAbility.requiresTarget .onCombatMayPutArtifactAttachEquipment
@@ -1139,7 +1136,7 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onPlayerCastsSecondSpellLoseLifeCreateTreasure ==
   "Whenever a player casts their second spell each turn, you lose 1 life and create a Treasure token."
 #guard TriggeredAbility.requiresTarget (.onEnterUntapOtherPlusOneIfSubtype "Bear")
-#guard TriggeredAbility.targetKind (.onEnterUntapOtherPlusOneIfSubtype "Bear") ==
+#guard TriggeredAbility.targetSpec (.onEnterUntapOtherPlusOneIfSubtype "Bear") ==
   .anotherCreatureYouControl
 #guard !TriggeredAbility.requiresTarget (.onCastNoncreaturePumpAndDamageOpponents 1)
 #guard !TriggeredAbility.requiresTarget .onPlayerCastsSecondSpellLoseLifeCreateTreasure
@@ -1153,9 +1150,9 @@ namespace CardDef
 #guard TriggeredAbility.allowsZeroTargets (.onEnterExileOppGyCardOppsLoseLife 2)
 #guard !TriggeredAbility.requiresTarget .onEnterEachPlayerSacrificesCreature
 #guard !TriggeredAbility.requiresTarget .onEnterEachOpponentDiscards
-#guard TriggeredAbility.targetKind (.onDiesOppCreatureGets (-1) (-1)) == .oppCreature
-#guard TriggeredAbility.targetKind .onEnterTargetOpponentSacrifices == .opponent
-#guard TriggeredAbility.targetKind (.onEnterExileOppGyCardOppsLoseLife 2) ==
+#guard TriggeredAbility.targetSpec (.onDiesOppCreatureGets (-1) (-1)) == .oppCreature
+#guard TriggeredAbility.targetSpec .onEnterTargetOpponentSacrifices == .opponent
+#guard TriggeredAbility.targetSpec (.onEnterExileOppGyCardOppsLoseLife 2) ==
   .oppGraveyardCard
 #guard TriggerEvent.label .oneOrMoreOtherCreaturesDie == "other-creatures-die trigger"
 #guard TriggerEvent.clause .oneOrMoreOtherCreaturesDie ==
@@ -1225,19 +1222,19 @@ namespace CardDef
 #guard !TriggeredAbility.firesOn (.onEnterScry 2) .landYouControlEnters
 #guard TriggeredAbility.requiresTarget .onLandYouControlEntersPlusOnePlusOne
 #guard !TriggeredAbility.requiresTarget (.onLandYouControlEntersGets 1 1)
-#guard TriggeredAbility.targetKind .onLandYouControlEntersPlusOnePlusOne ==
+#guard TriggeredAbility.targetSpec .onLandYouControlEntersPlusOnePlusOne ==
   .creatureYouControl
-#guard TriggeredAbility.targetKind .onAttackSetOtherBasePT ==
+#guard TriggeredAbility.targetSpec .onAttackSetOtherBasePT ==
   .anotherCreatureYouControl
-#guard TriggeredAbility.targetKind (.onEnterDealDividedDamage 3 3) ==
-  .playerOrCreature
-#guard TriggeredAbility.targetKind .onEnterOrAttackReturnElfGainLife ==
+#guard TriggeredAbility.targetSpec (.onEnterDealDividedDamage 3 3) ==
+  .anyTarget
+#guard TriggeredAbility.targetSpec .onEnterOrAttackReturnElfGainLife ==
   .elfInYourGraveyard
-#guard TriggeredAbility.targetKind .onDiesDealDamageEqualToPowerToOppCreature ==
+#guard TriggeredAbility.targetSpec .onDiesDealDamageEqualToPowerToOppCreature ==
   .oppCreature
-#guard TriggeredAbility.targetKind .onEnterTargetOpponentSacrificesCreature ==
+#guard TriggeredAbility.targetSpec .onEnterTargetOpponentSacrificesCreature ==
   .opponent
-#guard TriggeredAbility.targetKind (.onEnterDraw 1) == .none
+#guard TriggeredAbility.targetSpec (.onEnterDraw 1) == .none
 #guard StaticAbility.hostStatBonus (.enchantedCreatureGets 3 3) == (3, 3)
 #guard StaticAbility.hostStatBonus (.equippedCreatureGets 2 0) == (2, 0)
 #guard StaticAbility.shape (.enchantedCreatureGets 3 3) ==
@@ -1329,7 +1326,7 @@ namespace CardDef
   "When this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn."
 #guard TriggeredAbility.toNotation (.onEnterAttachThen .untap) ==
   "When this Equipment enters, attach it to target creature you control. Untap that creature."
-#guard TriggeredAbility.targetKind (.onEnterAttachThen .untap) == .creatureYouControl
+#guard TriggeredAbility.targetSpec (.onEnterAttachThen .untap) == .creatureYouControl
 #guard TriggeredAbility.toNotation .onEnterExileOtherCopyEnchanted ==
   "When this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield."
 #guard TriggeredAbility.allowsZeroTargets .onEnterExileOtherCopyEnchanted
@@ -1338,7 +1335,7 @@ namespace CardDef
 #guard TriggeredAbility.allowsZeroTargets .onEnterExileCreatureReturnEndStep
 #guard TriggeredAbility.toNotation .onEnterTapOrUntapNonland ==
   "When this creature enters, choose one — • Tap target nonland permanent. • Untap target nonland permanent."
-#guard TriggeredAbility.targetKind .onEnterTapOrUntapNonland == .nonland
+#guard TriggeredAbility.targetSpec .onEnterTapOrUntapNonland == .nonland
 #guard TriggeredAbility.resolution .onEnterTapOrUntapNonland ==
   .or [.tap .target, .untap]
 #guard TriggeredAbility.toNotation .onEnterCreateFoodOrTreasure ==
@@ -1364,7 +1361,7 @@ namespace CardDef
   .ifElse ((.atLeast (.count (.target (.anotherSubtype .hero))) (.fixed 1)))
     (.putCounters (.ofKind .plusOnePlusOne 2) .permanent)
     (.putCounters (.ofKind .plusOnePlusOne) .permanent)
-#guard TriggeredAbility.targetKind .onEnterPlusOneOrTwoIfAnotherHero == .creature
+#guard TriggeredAbility.targetSpec .onEnterPlusOneOrTwoIfAnotherHero == .creature
 #guard TriggeredAbility.toNotation
     (.triggered .yourBeginCombat (Effect.ofTrigger .pumpOrCounterIfScried)) ==
   "At the beginning of combat on your turn, another target creature you control gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead."
@@ -1375,31 +1372,31 @@ namespace CardDef
   "When this creature enters, you may sacrifice an artifact or discard a card. If you do, draw a card."
 #guard TriggeredAbility.toNotation .onEnterExileOppTappedUntilLeaves ==
   "When this enchantment enters, exile target tapped creature an opponent controls until this enchantment leaves the battlefield."
-#guard TriggeredAbility.targetKind .onEnterExileOppTappedUntilLeaves == .oppTappedCreature
+#guard TriggeredAbility.targetSpec .onEnterExileOppTappedUntilLeaves == .oppTappedCreature
 #guard TriggeredAbility.resolution .onEnterExileOppTappedUntilLeaves ==
   .exile .target .untilSourceLeaves
 #guard TriggeredAbility.toNotation (.onEnterTargetOpponentDiscards 2) ==
   "When this enchantment enters, target opponent discards two cards."
-#guard TriggeredAbility.targetKind (.onEnterTargetOpponentDiscards 2) == .opponent
+#guard TriggeredAbility.targetSpec (.onEnterTargetOpponentDiscards 2) == .opponent
 #guard TriggeredAbility.toNotation (.onEnter (Effect.enterDestroy (.oppCreaturePowerAtMost 3))) ==
   "When this permanent enters, destroy target creature an opponent controls with power 3 or less."
-#guard TriggeredAbility.targetKind (.onEnter (Effect.enterDestroy (.oppCreaturePowerAtMost 3))) ==
+#guard TriggeredAbility.targetSpec (.onEnter (Effect.enterDestroy (.oppCreaturePowerAtMost 3))) ==
   .oppCreaturePowerAtMost 3
 #guard TriggeredAbility.toNotation (.onEnter (Effect.enterDealDamageUpToOne 4)) ==
   "When this permanent enters, it deals 4 damage to up to one target creature."
 #guard TriggeredAbility.allowsZeroTargets (.onEnter (Effect.enterDealDamageUpToOne 4))
 #guard TriggeredAbility.toNotation (.onEnter Effect.enterFightUpToOne) ==
   "When this permanent enters, this fights up to one other target creature."
-#guard TriggeredAbility.targetKind (.onEnter Effect.enterFightUpToOne) == .anotherCreature
+#guard TriggeredAbility.targetSpec (.onEnter Effect.enterFightUpToOne) == .anotherCreature
 #guard TriggeredAbility.toNotation (.onEnter Effect.enterCreateZabu) ==
   "When this permanent enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\"."
-#guard TriggeredAbility.targetKind (.onEnter Effect.enterOppCreatesTheVoid) == .opponent
+#guard TriggeredAbility.targetSpec (.onEnter Effect.enterOppCreatesTheVoid) == .opponent
 #guard TriggeredAbility.resolution (.onEnter Effect.enterCreateSturdyShieldAttach) ==
   .sequence [.createTokens .sturdyShield (.fixed 1) false (note := .remember),
     .attach .createdToken .source]
-#guard TriggeredAbility.targetKind (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
+#guard TriggeredAbility.targetSpec (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
   .equipmentInstantOrSorceryInYourGraveyard
-#guard TriggeredAbility.targetKind (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
+#guard TriggeredAbility.targetSpec (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
   .permanentCardInYourGraveyard
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapOppCantUntapWhileControl) ==
   .sequence [.tap .target, .cant .untapWhileYouControl]
@@ -1843,6 +1840,105 @@ end CardDef
 #guard
   Parser.parseDuration "for as long as it remains exiled" ==
     some (.whileInZone .this .exile)
+
+-- Phase 3: Unified `TargetSpec`, `ToOracle`, `HasTextChange`, and compositional `parseTargetSpec`.
+#guard
+  let specs : Array TargetSpec := #[
+    .creature, .creatureYouControl, .anotherCreatureYouControl, .anotherCreature,
+    .anyTarget, .anyOtherTarget, .player, .opponent, .oppCreature, .oppTappedCreature,
+    .creatureWithFlying, .artifactOrLand, .colorlessNonland, .artifactOrEnchantment,
+    .artifactOrCreatureYouControl, .nonland, .oppNonland, .attackingCreatureWithoutFlying,
+    .creatureYouControlSubtype .elf, .creatureYouControlAnySubtype #[.goblin, .orc],
+    .creatureYouControlAnySubtype #[.bear, .spider, .wolf],
+    .spell, .creatureSpell, .creatureSpellPTAtMost 3, .defendingPlayerCreature,
+    .creaturePowerAtLeast 4, .creaturePowerAtMost 2, .creatureYouControlPowerAtMost 3,
+    .anotherCreatureYouControlPowerAtMost 2, .oppCreaturePowerAtMost 3,
+    .permanent, .permanentYouControl, .oppPermanent, .legendaryCreatureYouControl,
+    .artifact, .oppArtifact, .artifactYouControl, .artifactToken, .land,
+    .attackingCreature, .attackingOrBlockingCreature, .attackingAloneCreatureYouControl,
+    .equipmentYouControl, .creatureOrLandYouControl, .creatureMvAtMost 3,
+    .creatureToughnessAtLeast 4, .enchantmentMvAtLeast 3, .noncreatureArtifact,
+    .noncreatureArtifactOrEnchantment, .oppCreatureDealtDamageThisTurn,
+    .nonlandNontoken, .creatureOrPlaneswalker, .planeswalkerYouControl,
+    .oppCreatureOrPlaneswalker, .worthyCreatureYouControl, .elfInYourGraveyard,
+    .oppGraveyardCard, .creatureCardInYourGraveyard, .creatureCardInYourGraveyardMvAtMost 3,
+    .permanentCardInYourGraveyard, .equipmentInstantOrSorceryInYourGraveyard,
+    .artEnchCardInYourGraveyard, .creatureOrGyCreatureCard, .spellOrCreature,
+    .permanentOrPlayer, .stackAbilityFromSource .artifact,
+    .twoNonlandsSharingType, .twoCreaturesOrLandsYouControl, .twoPlayers,
+    .twoArtifactsYouControl, .upToTwoCreaturesTotalMvAtMost 4,
+    .playerThenCreature, .creatureYouControlThenOppCreature,
+    .oppCreatureThenUpToOneCreatureYouControl, .equipmentYouControlThenCreatureYouControl,
+    .upToOneEquipmentThenCreatureYouControl, .upToOneCreatureThenPlayer,
+    .creatureYouControlThenOppCreatureOrPlaneswalker,
+    .planeswalkerYouControlThenOppCreatureOrPlaneswalker,
+    .forEachOpponentControlled (.not (.hasType .land)) (.upTo 1),
+    .forEachPlayerControlled (.hasType .creature) (.upTo 1)
+  ]
+  specs.all fun ts => Parser.parseTargetSpec ts.noun == some ts
+
+-- Phase 3: Layer-3 `HasTextChange` transforms `TargetSpec` and updates rendered `ToOracle` wording.
+#guard
+  let ts := TargetSpec.creatureYouControlSubtype .elf
+  let changed := HasTextChange.applyTextChanges #[.replaceCreatureType .elf .bear] ts
+  changed == TargetSpec.creatureYouControlSubtype .bear &&
+    changed.noun == "target Bear you control"
+#guard
+  let ts : TargetSpec := .single {
+    domain := .object .battlefield (.all #[.hasColor (.literal .green), .hasSubtype (.literal .elf), .hasType .creature])
+    count := .upTo 1 }
+  let changed := HasTextChange.applyTextChanges
+    #[.replaceColorWord .green .red, .replaceCreatureType .elf .goblin] ts
+  changed.noun == "up to one target red Goblin creature"
+
+-- Phase 3: Novel compositional target specs parsed without any new constructors.
+#guard
+  match Parser.parseTargetSpec "up to two target untapped multicolored creatures an opponent controls with different names" with
+  | some ts =>
+    ts.slots.size == 1 &&
+      ts.slots[0]!.count == .upTo 2 &&
+      ts.slots[0]!.groupConstraint? == some .distinctNames &&
+      Parser.parseTargetSpec ts.noun == some ts
+  | none => false
+#guard
+  match Parser.parseTargetSpec "two target creatures with different controllers" with
+  | some ts =>
+    ts.slots.size == 1 && ts.slots[0]!.groupConstraint? == some .distinctControllers
+  | none => false
+#guard
+  match Parser.parseTargetSpec "one or two other targets" with
+  | some ts =>
+    ts.slots.size == 1 &&
+      ts.slots[0]!.domain == .anyTarget (.otherThan .this) &&
+      ts.slots[0]!.count == .between 1 2 &&
+      ts.noun == "one or two other targets"
+  | none => false
+-- Phase 3: `"for each player"` uses `PlayerFilter.thatPlayer` (never concrete `.seat 0`) and round-trips cleanly.
+#guard
+  match Parser.parseTargetSpec "for each player, up to one target creature that player controls" with
+  | some ts =>
+    ts == TargetSpec.forEachPlayerControlled (.hasType .creature) (.upTo 1) &&
+      ts.slots[0]!.forEach? == some .any &&
+      ts.slots[0]!.domain == .object .battlefield (.all #[.hasType .creature, .controlledBy .thatPlayer]) &&
+      ts.noun == "for each player, up to one target creature that player controls"
+  | none => false
+#guard
+  match Parser.parseTargetSpec "for each player, target creature card from that player's graveyard" with
+  | some ts =>
+    ts.slots.size == 1 &&
+      ts.slots[0]!.forEach? == some .any &&
+      ts.slots[0]!.domain == .object { zones := #[.graveyard], owner := .matching .thatPlayer }
+        (.all #[.hasType .creature, .isKind .card]) &&
+      Parser.parseTargetSpec ts.noun == some ts
+  | none => false
+#guard
+  match Parser.parseTargetSpec "for each player, target creature" with
+  | some ts =>
+    ts.slots.size == 1 &&
+      ts.slots[0]!.forEach? == some .any &&
+      ts.slots[0]!.domain == .creature &&
+      ts.noun == "for each player, target creature"
+  | none => false
 
 end Mtg.Engine
 

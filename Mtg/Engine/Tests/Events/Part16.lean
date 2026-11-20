@@ -911,7 +911,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
       .phaseOutKicker
     ]
   let unlessEff : Effect := {
-    targeting := .of (.filtered { noun := "target creature", types := #[.creature] })
+    targeting := .of .creature
     resolution := .ofSpell (.unlessPays innerAllCtx 2)
     phrase := "Target creature's controller pays {2} or loses life and creatures phase out."
   }

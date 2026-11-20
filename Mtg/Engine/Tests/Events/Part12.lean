@@ -274,7 +274,7 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
     manaCost := ManaCost.empty
     types := #[.sorcery]
     spellEffect := some {
-      targeting := .of (.filtered { types := #[.creature], controller := .opponent, noun := "creature an opponent controls" })
+      targeting := .of .oppCreature
       resolution := .gainLife 1
       phrase := "Target creature an opponent controls; gain 1 life."
     }

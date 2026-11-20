@@ -52,24 +52,26 @@ def withLegalPermanentTarget (g : Game) (legal : Array Target) (targets : Array 
     | Target.player _ | Target.card _ => g.logMsg "The target is no longer legal")
     missing
 
-/-- Apply `f` when the announced target is still legal for `kind` (CR 608.2b). -/
-def withLegalKindTarget (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+/-- Apply `f` when the announced target is still legal for `spec` (CR 608.2b / 115.5). -/
+def withLegalSpecTarget (g : Game) (controller : PlayerId) (spec : TargetSpec)
     (targets : Array Target) (f : Game → Target → Game)
     (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
-  g.withLegalTarget (g.legalTargetsForKind controller kind sourceId) targets f missing
+  let stackSelf := g.resolvingAbility.orElse (fun _ => g.resolvingSpell)
+  g.withLegalTarget (g.legalTargetsForSpec controller spec sourceId stackSelf) targets f missing
 
-/-- Apply `f` to a still-legal permanent target of `kind`. -/
-def withLegalKindPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+/-- Apply `f` to a still-legal permanent target of `spec`. -/
+def withLegalSpecPermanent (g : Game) (controller : PlayerId) (spec : TargetSpec)
     (targets : Array Target) (f : Game → GameObject → Game)
     (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
-  g.withLegalPermanentTarget (g.legalTargetsForKind controller kind sourceId) targets f
+  let stackSelf := g.resolvingAbility.orElse (fun _ => g.resolvingSpell)
+  g.withLegalPermanentTarget (g.legalTargetsForSpec controller spec sourceId stackSelf) targets f
     missing
 
-/-- Apply `f` to a still-legal player target of `kind`. -/
-def withLegalKindPlayer (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+/-- Apply `f` to a still-legal player target of `spec`. -/
+def withLegalSpecPlayer (g : Game) (controller : PlayerId) (spec : TargetSpec)
     (targets : Array Target) (f : Game → PlayerId → Game)
     (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
-  g.withLegalKindTarget controller kind targets (fun g tgt =>
+  g.withLegalSpecTarget controller spec targets (fun g tgt =>
     match tgt with
     | Target.player pid => f g pid
     | Target.permanent _ | Target.card _ => g.logMsg "The target is no longer legal")
@@ -79,13 +81,13 @@ def withLegalKindPlayer (g : Game) (controller : PlayerId) (kind : EffectTargetK
 def withLegalTriggerTarget (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (f : Game → Target → Game) (noneMsg : String := "The target is no longer legal") : Game :=
-  g.withLegalKindTarget controller ab.targetKind targets f sourceId (some noneMsg)
+  g.withLegalSpecTarget controller ab.targetSpec targets f sourceId (some noneMsg)
 
 /-- Apply `f` to a still-legal permanent target of a triggered ability. -/
 def withLegalTriggerPermanent (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (f : Game → GameObject → Game) (noneMsg : String := "The target is no longer legal") : Game :=
-  g.withLegalKindPermanent controller ab.targetKind targets f sourceId (some noneMsg)
+  g.withLegalSpecPermanent controller ab.targetSpec targets f sourceId (some noneMsg)
 
 /-- Apply `f` to a still-legal player target of a triggered ability. -/
 def withLegalTriggerPlayer (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -96,12 +98,12 @@ def withLegalTriggerPlayer (g : Game) (controller : PlayerId) (ab : TriggeredAbi
     | Target.player pid => f g pid
     | _ => g.logMsg "The target is no longer legal")
 
-/-- Deal `n` damage to a still-legal target of `kind`. -/
-def applyDamageToKindTarget (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+/-- Deal `n` damage to a still-legal target of `spec`. -/
+def applyDamageToSpecTarget (g : Game) (controller : PlayerId) (spec : TargetSpec)
     (targets : Array Target) (n : Nat) (sourceId : Option ObjectId := none)
     (missing : Option String := none)
     (cause : Option EventCause := none) : Game :=
-  g.withLegalKindTarget controller kind targets
+  g.withLegalSpecTarget controller spec targets
     (fun g t => g.dealDamageToTarget t n (source := sourceId.bind g.damageSourceById?) (cause := cause))
     sourceId missing
 
@@ -244,14 +246,14 @@ def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
   | .doublePowerAndToughness =>
     g.pumpPermanent o (g.power o) (g.toughness o)
 
-def applyOnPermanent (g : Game) (controller : PlayerId) (kind : EffectTargetKind)
+def applyOnPermanent (g : Game) (controller : PlayerId) (spec : TargetSpec)
     (targets : Array Target) (action : PermanentAction)
     (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
   match action with
   | .dealDamage n =>
-    g.applyDamageToKindTarget controller kind targets n sourceId missing
+    g.applyDamageToSpecTarget controller spec targets n sourceId missing
   | _ =>
-    g.withLegalKindPermanent controller kind targets (fun g o =>
+    g.withLegalSpecPermanent controller spec targets (fun g o =>
       g.applyPermanentAction o action (sourceId := sourceId)) sourceId missing
 
 /-- Start surveilling `n` during resolution (CR 701.25): look at the top

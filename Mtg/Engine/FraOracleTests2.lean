@@ -113,8 +113,8 @@ mana value 1, so Guiding Hydra is not a legal target and Hill Giant is. -/
     let hydra := (namedPermanent g "Guiding Hydra").id
     let giant := (namedPermanent g "Hill Giant").id
     g.objectManaValue (g.object! hydra) == 1 &&
-      !(g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.permanent hydra) &&
-      (g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.permanent giant) &&
+      !(g.legalTargetsForSpec ⟨0⟩ e.targetSpec).contains (Target.permanent hydra) &&
+      (g.legalTargetsForSpec ⟨0⟩ e.targetSpec).contains (Target.permanent giant) &&
       (fraRuling 763).comment.contains "creature or planeswalker" &&
       (fraRuling 763).comment.contains "X is 0"
   | none => false
@@ -128,8 +128,8 @@ because its mana value is 1, and cannot target Hill Giant. -/
     let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
     let hydra := (namedPermanent g "Guiding Hydra").id
     let giant := (namedPermanent g "Hill Giant").id
-    (g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.permanent hydra) &&
-      !(g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.permanent giant) &&
+    (g.legalTargetsForSpec ⟨0⟩ e.targetSpec).contains (Target.permanent hydra) &&
+      !(g.legalTargetsForSpec ⟨0⟩ e.targetSpec).contains (Target.permanent giant) &&
       (fraRuling 765).comment.contains "battlefield" &&
       (fraRuling 765).comment.contains "X is 0"
   | none => false
@@ -144,7 +144,7 @@ because X there is 0. On the stack the chosen X is included. -/
     let (gStack, spell) := g.allocObject guidingHydra ⟨0⟩ .stack (some ⟨0⟩)
     let gStack := gStack.record (GameEvent.announced gStack.turnNumber spell.id (x := some 5))
     g.objectManaValue card == 1 &&
-      (g.legalTargetsForKind ⟨0⟩ e.targetKind).contains (Target.card card.id) &&
+      (g.legalTargetsForSpec ⟨0⟩ e.targetSpec).contains (Target.card card.id) &&
       gStack.objectManaValue (gStack.object! spell.id) == 6 &&
       (fraRuling 777).comment.contains "graveyard" &&
       (fraRuling 777).comment.contains "X is 0"

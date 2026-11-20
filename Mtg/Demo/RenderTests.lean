@@ -1703,4 +1703,33 @@ def freeCloudAfterDeath : Game :=
      | none => false) &&
     !g.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .stack)
 
+-- Phase 3 (`TargetSpec`): `chooseTargetsPending` renders canonical `announcedPosNoun`
+-- for multi-slot specs (Meager Meal: slot 0 -> slot 1) and the together-prompt for
+-- single-slot multi-target specs (`twoNonlandsSharingType`).
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let g0 := readyMain (emptyHand afterDraw p0)
+  let mealDef : CardDef := {
+    name := "Render Meal"
+    manaCost := ManaCost.empty
+    types := #[.sorcery]
+    spellEffect := some (Effect.plusOneUpToOneAndPlayerGainsLife 2)
+  }
+  let g1 := addToHand (addPermanent g0 grizzlyBears p0 p0) mealDef p0
+  let mealId := (handCardNamed g1 p0 "Render Meal").id
+  let bearId := (namedPermanent g1 "Grizzly Bears").id
+  let gSlot0 := mustApply g1 p0 (.cast mealId)
+  let gSlot1 := mustApply gSlot0 p0 (.target (.permanent bearId))
+  let shareDef : CardDef := {
+    name := "Render Twin Share"
+    manaCost := ManaCost.empty
+    types := #[.sorcery]
+    spellEffect := some { targeting := .of .twoNonlandsSharingType, resolution := .exchangeControl }
+  }
+  let gSh0 := addToHand (addPermanent (addPermanent g0 grizzlyBears p0 p0) grayOgre ⟨1⟩ ⟨1⟩) shareDef p0
+  let gShProp := mustApply gSh0 p0 (.cast (handCardNamed gSh0 p0 "Render Twin Share").id)
+  mentions (chooseTargetsPending gSlot0 p0) "choose the first \"target\" word (up to one target creature" &&
+    mentions (chooseTargetsPending gSlot1 p0) "choose the next \"target\" word (target player" &&
+    mentions (chooseTargetsPending gShProp p0) "choose targets of this \"target\" word together"
+
 end Mtg.Demo.RenderTests
