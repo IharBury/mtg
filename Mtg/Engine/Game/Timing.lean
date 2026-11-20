@@ -80,22 +80,6 @@ def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
     if g.isPlaneswalker o && g.hasSubtype o .jace then acc + o.status.loyaltyCounters
     else acc) 0
 
-/-- Whether a Reality Fracture “Activate only if …” condition holds. -/
-def fraActivationConditionHolds (g : Game) (p : PlayerId) : FraActivationCondition → Bool
-  | .none => true
-  | .scriedOrSurveilledThisTurn =>
-    g.loggedScried p || g.loggedSurveilled p
-  | .graveyardAtLeast n => (g.player p).graveyard.size ≥ n
-  | .jaceLoyaltyAtLeast n => g.jaceLoyaltyAmong p ≥ n
-
-/-- Whether `ab` is activated from its owner's graveyard (CR 113.6 / 404). -/
-def _root_.Mtg.Engine.ActivatedAbility.isFromGraveyard (ab : ActivatedAbility) : Bool :=
-  ab.activateFromGraveyard || ab.cost.exileSourceFromGraveyard
-
-/-- Whether `ab` is activated from its owner's hand (CR 113.6 / 702.29). -/
-def _root_.Mtg.Engine.ActivatedAbility.isFromHand (ab : ActivatedAbility) : Bool :=
-  ab.activateFromHand || ab.cost.discardSource || ab.cost.exileSourceFromHand
-
 /-- Whether `ab`'s cost requires its source to be a permanent on the battlefield
 (CR 113.6 / 602.2b). -/
 def _root_.Mtg.Engine.ActivatedAbility.needsBattlefieldSource (ab : ActivatedAbility) : Bool :=
@@ -115,17 +99,12 @@ def _root_.Mtg.Engine.ActivatedAbility.hasSupportedManaActivationCost (ab : Acti
     ab.cost.crewPower?.isNone &&
     ab.cost.exileManaSymbols?.isNone
 
-/-- Mana abilities (CR 605.1a): non-modal battlefield ability with no target,
-not a loyalty ability, supported mana-ability costs, and an effect that adds mana. -/
+/-- Mana abilities (CR 605.1a, 25 September 2026): battlefield activated ability
+satisfying all four CR 605.1a criteria (`ab.isManaAbility`) with supported
+mana-ability costs. -/
 def isManaActivation (ab : ActivatedAbility) : Bool :=
-  ab.otherModes.isEmpty && !ab.effect.requiresTarget && ab.cost.loyalty.isNone &&
-    !ab.isFromGraveyard && !ab.isFromHand && ab.hasSupportedManaActivationCost &&
-    match ab.effect.resolution with
-    | .addMana _ _ | .addAnyColor | .addAnyColorSpendOnlySubtype _
-    | .addAnyColorSpendOnlyArtifactSpell | .addTwoAnyColorCreatureSources
-    | .addBlueCantNonartifact | .addAnyColorEqualToSourcePower
-    | .addFourAnyCombination | .addTwoAnyColorEquipment => true
-    | _ => false
+  ab.isManaAbility && !ab.isFromGraveyard && !ab.isFromHand &&
+    ab.hasSupportedManaActivationCost
 
 def hasPriority (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.priority == p && g.playersReceivePriority

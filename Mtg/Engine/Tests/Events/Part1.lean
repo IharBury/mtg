@@ -2855,7 +2855,8 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let painLandDef : CardDef :=
     { name := "Phase10 Painland"
       types := #[.land]
-      tapAddOneOfDealsDamage := some (#[.colored .red, .colored .white], 1) }
+      activatedAbilities := #[ActivatedAbility.manaAbility
+        (.oneOf (.explicit #[.colored .red, .colored .white]) (.const 1)) (damageYou := 1)] }
   let gPain0 := quiet (addPermanent afterDraw painLandDef me me)
   let painObj := (gPain0.battlefield.filter (·.name == "Phase10 Painland"))[0]!
   let gPainQuiet :=

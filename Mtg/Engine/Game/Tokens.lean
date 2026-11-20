@@ -16,7 +16,7 @@ def treasureToken : CardDef := {
   name := "Treasure"
   types := #[.artifact]
   subtypes := #["Treasure"]
-  tapSacrificeAddAnyColor := true
+  activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor]
   isToken := true
 }
 
@@ -597,7 +597,8 @@ def axeToken : CardDef := {
   activatedAbilities := #[
     { cost := CostSpec.ofGeneric 2
       effect := Effect.attachToTargetCreatureYouControl
-      onlyAsSorcery := true }
+      timing := .sorcery
+      tag? := some (.equip none) }
   ]
   isToken := true
 }
@@ -681,7 +682,7 @@ def vibraniumToken : CardDef := {
   types := #[.artifact]
   subtypes := #["Vibranium"]
   keywords := #[Keyword.indestructible]
-  tapAddMana := #[.colorless]
+  activatedAbilities := #[ActivatedAbility.manaSimple .colorless (some .cantNonartifact)]
   isToken := true
 }
 
@@ -695,7 +696,8 @@ def heartwoodToken : CardDef := {
   types := #[.artifact]
   subtypes := #["Heartwood"]
   colorIndicator := some ((ColorSet.singleton .red).insert .green)
-  tapAddOneOf := #[ManaType.colored .red, ManaType.colored .green]
+  activatedAbilities := #[ActivatedAbility.manaAbility
+    (.oneOf (.explicit #[.colored .red, .colored .green]) (.const 1))]
   isToken := true
 }
 
@@ -705,7 +707,7 @@ def lotusToken : CardDef := {
   name := "Lotus"
   types := #[.artifact]
   isToken := true
-  staticAbilities := #[.fra .tapSacrificeAddThreeOfOneColor]
+  activatedAbilities := #[ActivatedAbility.manaTapSacrificeThreeOfOneColor]
 }
 
 /-- A blue Jace planeswalker token with loyalty 0, `[-1]: Surveil 1`, and
@@ -728,7 +730,7 @@ def jacePlaneswalkerToken : CardDef := {
 def sculptureToken : CardDef :=
   { creatureToken "Sculpture" #[.sculpture, .treasure] 1 1 none
       (types := #[.artifact, .creature]) with
-    tapSacrificeAddAnyColor := true }
+    activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor] }
 
 /-- A legendary 3/3 green Dog creature token named Mowu. -/
 def mowuToken : CardDef := {
@@ -865,7 +867,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
             phrase := "Target creature you control explores."
           }
           cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self]
-          onlyAsSorcery := true } ] }
+          timing := .sorcery } ] }
   | .junk => {
       name := "Junk"
       types := #[.artifact]
@@ -877,7 +879,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
             phrase := "Exile the top card of your library. You may play that card this turn."
           }
           cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
-          onlyAsSorcery := true } ] }
+          timing := .sorcery } ] }
   | .lander => {
       name := "Lander"
       types := #[.artifact]
@@ -898,7 +900,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
             phrase := "Put a +1/+1 counter on target creature."
           }
           cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self]
-          onlyAsSorcery := true } ] }
+          timing := .sorcery } ] }
   | .vibranium => vibraniumToken
   | .heartwood => heartwoodToken
 
@@ -918,12 +920,16 @@ def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
       activatedAbilities := c.activatedAbilities.push {
         cost := CostSpec.ofGeneric generic
         effect := Effect.attachToTargetCreatureYouControl
-        onlyAsSorcery := true
+        timing := .sorcery
+        tag? := some (.equip none)
       } }
-  | .tapSacrificeAddAnyOneColor 3 =>
-    { c with staticAbilities := c.staticAbilities.push (.fra .tapSacrificeAddThreeOfOneColor) }
-  | .tapSacrificeAddAnyOneColor _ =>
-    { c with tapSacrificeAddAnyColor := true }
+  | .tapSacrificeAddAnyOneColor n =>
+    { c with
+      activatedAbilities := c.activatedAbilities.push
+        (if n == 1 then ActivatedAbility.manaTapSacrificeAnyColor
+         else if n == 3 then ActivatedAbility.manaTapSacrificeThreeOfOneColor
+         else ActivatedAbility.manaAbility (.oneOf .anyColor (.const (Int.ofNat n)))
+           (CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self])) }
   | .tapSacrificeGainLife generic life =>
     { c with
       activatedAbilities := c.activatedAbilities.push {

@@ -55,7 +55,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
     bear with
     name := "P24i4 Once-Per-Turn Bear"
     activatedAbilities := #[
-      activated (Effect.gainLife 1) (ManaCost.empty) (onceEachTurn := true)
+      activated (Effect.gainLife 1) (ManaCost.empty) (turnLimit? := some 1)
     ]
   }
   let pwDef : CardDef := {
@@ -132,7 +132,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
     bear with
     name := "P24i4 During-Your-Turn Bear"
     activatedAbilities := #[
-      activated (Effect.gainLife 1) (ManaCost.empty) (onlyDuringYourTurn := true)
+      activated (Effect.gainLife 1) (ManaCost.empty) (condition? := some .isYourTurn)
     ]
   }
   let fsSelfDef : CardDef := {
@@ -1989,12 +1989,12 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
   let painLandDef : CardDef := {
     name := "P26i1 Pain Land"
     types := #[.land]
-    tapAddOneOfDealsDamage := some (#[.colored .red], 1)
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .red, .const 1)]) (damageYou := 1)]
   }
   let treasureCardDef : CardDef := {
     name := "P26i1 Lotus Petal"
     types := #[.artifact]
-    tapSacrificeAddAnyColor := true
+    activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor]
   }
   let gBase := mkThreePlayer26i1 2612
   -- `p1` owns `treasureCardDef` controlled by `p0`; `p2` owns `bear` controlled by `p1`:
@@ -2670,7 +2670,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
   let instOnlyManaLand : CardDef := {
     name := "P26i2 Spell Haven"
     types := #[.land]
-    tapAddAnyColorForInstantOrSorcery := true
+    activatedAbilities := #[ActivatedAbility.manaAbility (.oneOf .anyColor (.const 1)) (restriction := some .instantOrSorcery)]
   }
   let gRestrictedLand := addPermanent afterDraw instOnlyManaLand p0 p0
   let gOneForest := addPermanent afterDraw forest p0 p0
@@ -3624,7 +3624,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
   let treasureCardDef : CardDef := {
     name := "P27i1 Lotus Petal"
     types := #[.artifact]
-    tapSacrificeAddAnyColor := true
+    activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor]
     prepareFace := some {
       name := "P27i1 Prepared Bolt"
       manaCost := ManaCost.empty

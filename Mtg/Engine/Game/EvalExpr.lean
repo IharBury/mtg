@@ -1257,7 +1257,7 @@ def evalCastPred (g : Game) (env : EvalEnv) (pred : CastContextPred) : Bool :=
           | .colored c => pushUnique acc c
           | .colorless => acc) #[]
         op.eval (Int.ofNat cols.size) (Int.ofNat n)
-      | .withRider r => units.any (fun u => u.restriction.any (·.grantsRider r))
+      | .withRider r => units.any (·.hasRider r)
 
 /-- Evaluate an `EventPattern` for players `who` on a specific `targetTurn`. -/
 def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
@@ -1305,14 +1305,20 @@ def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
             matchesOwnerOrCtrl before.controller &&
             evalObjectPred g { env with eventIdx? := some i } (.lki before) pred
         | _ => false
-    | .attackedWith pred =>
-      anyEventOnTurn fun i e =>
-        match e.change with
-        | .rules (.combat (.attackersDeclared q decls)) =>
-          pids.contains q &&
-            decls.any (fun (eo, _) =>
-              evalObjectPred g { env with eventIdx? := some i } (.lki eo) pred)
-        | _ => false
+    | .attackedWith pred minCount =>
+      pids.any fun p => Id.run do
+        let mut count : Nat := 0
+        for i in [0:g.events.size] do
+          let e := g.events[i]!
+          if e.turn == targetTurn then
+            match e.change with
+            | .rules (.combat (.attackersDeclared q decls)) =>
+              if q == p then
+                for (eo, _) in decls do
+                  if evalObjectPred g { env with eventIdx? := some i } (.lki eo) pred then
+                    count := count + 1
+            | _ => pure ()
+        return count ≥ minCount
     | .castSpell pred =>
       anyEventOnTurn fun i e =>
         match e.change with
@@ -1393,7 +1399,7 @@ partial def evalCondition (g : Game) (env : EvalEnv) (cond : Condition) : Bool :
   | .stepSucceeded v => (env.stepOutcome? v).map (·.succeeded) |>.getD false
   | .duringStep s => st.step == s
   | .duringPhase ph => st.step.phase == ph
-  | .isYourTurn => st.activePlayer == env.controller
+  | .isYourTurn => st.isOnActiveTeam env.controller
   | .isNight => st.isNight
   | .all cs => cs.all (evalCondition g env)
   | .any cs => cs.any (evalCondition g env)
@@ -1473,8 +1479,35 @@ def evalManaSpec (g : Game) (env : EvalEnv)
     .oneOf (evalManaPalette g env landsCouldProduce pal) (evalValue g env amtExpr).toNat
   | .combination pal amtExpr =>
     .combination (evalManaPalette g env landsCouldProduce pal) (evalValue g env amtExpr).toNat
-  | .colorAmong pal =>
-    .colorAmong (evalManaPalette g env landsCouldProduce pal)
+  | .colorAmong pal incC =>
+    .colorAmong (evalManaPalette g env landsCouldProduce pal) incC
+
+/-- Evaluate an `ActivatedAbility`'s optional `Condition` (CR 602.5b / 605.3b). -/
+def evalActivationCondition (g : Game) (p : PlayerId) (sourceId : ObjectId)
+    (cond? : Option Condition) : Bool :=
+  match cond? with
+  | none => true
+  | some cond =>
+    let env : EvalEnv := { controller := p, sourceId := some sourceId }
+    evalCondition g env cond
+
+/-- Total generic-mana cost reduction across an `ActivatedAbility`'s
+`costReductions` (CR 602.2b / 601.2f). Target-dependent entries evaluate against
+`targets` when non-empty and contribute 0 before targets are chosen. -/
+def evalActivationCostReductions (g : Game) (p : PlayerId) (sourceId : Option ObjectId)
+    (reductions : Array ActivationCostReduction) (targets : Array Target := #[]) : Nat :=
+  let env : EvalEnv :=
+    { controller := p
+      sourceId := sourceId
+      targetSlots := targets.map fun t => #[t] }
+  reductions.foldl (fun acc red =>
+    if targets.isEmpty && red.mentionsTarget then acc
+    else
+      let ok := match red.condition? with
+        | none => true
+        | some cond => evalCondition g env cond
+      if ok then acc + (evalValue g env red.amount).toNat
+      else acc) 0
 
 end EvalExpr
 

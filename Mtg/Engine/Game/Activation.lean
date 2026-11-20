@@ -74,26 +74,59 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       throw s!"{g.name o} is not on the battlefield"
     if !g.controlledBy o p then
       throw "You don't control that permanent"
-  if ab.onlyIfYouControlLegendary && !g.controlsLegendaryCreature p then
-    throw s!"{g.name o}'s ability can be activated only if you control a legendary creature"
-  if ab.onlyIfYouAttackedWithTwoOrMore && g.loggedAttacks p < 2 then
-    throw s!"{g.name o}'s ability can be activated only if you attacked with two or more creatures this turn"
-  if ab.onlyIfOpponentDealtNoncombatDamage &&
-      !g.players.any (fun q => q.id != p && !g.areTeammates p q.id && g.loggedNoncombatDamage q.id) then
-    throw s!"{g.name o}'s ability can be activated only if an opponent has been dealt noncombat damage this turn"
-  if ab.onlyAsSorcery && !g.asSorcery? p then
-    throw s!"{g.name o}'s ability can be activated only as a sorcery"
-  if ab.exhaust && g.exhaustUsed o.id then
-    throw s!"{g.name o}'s exhaust ability can be activated only once (CR 702.177)"
-  if !g.fraActivationConditionHolds p ab.fraCondition then
-    throw s!"{g.name o}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
-  if ab.cost.exileManaSymbols?.isSome && !g.canActivateBoast o then
-    throw s!"{g.name o}'s boast ability can be activated only if it attacked this turn and only once each turn"
+  match ab.timing with
+  | .sorcery =>
+    if !g.asSorcery? p then
+      throw s!"{g.name o}'s ability can be activated only as a sorcery"
+  | .loyalty | .instant => pure ()
+  if ab.isBoast || ab.cost.exileManaSymbols?.isSome then
+    let boastUsed :=
+      match resolvedIdx? with
+      | some i => g.abilityActivationsThisTurn o.id i (isBoast := true) > 0
+      | none => g.boastUsedThisTurn o.id
+    if !g.declaredAsAttackerThisTurn o.id || boastUsed then
+      throw s!"{g.name o}'s boast ability can be activated only if it attacked this turn and only once each turn"
+  if let some cond := ab.condition? then
+    if !EvalExpr.evalActivationCondition g p o.id (some cond) then
+      if cond == .isYourTurn then
+        throw s!"{g.name o}'s ability can be activated only during your turn"
+      else
+        throw s!"{g.name o}'s ability can be activated only if {ToOracle.toOracle { capitalize := false } cond}"
+  if let some lim := ab.turnLimit? then
+    let used :=
+      match resolvedIdx? with
+      | some i => g.abilityActivationsThisTurn o.id i (isBoast := ab.isBoast)
+      | none => g.activationsThisTurn o.id
+    if used ≥ lim then
+      if ab.isBoast then
+        throw s!"{g.name o}'s boast ability can be activated only if it attacked this turn and only once each turn"
+      else if lim == 1 then
+        throw s!"{g.name o}'s ability can be activated only once each turn"
+      else
+        throw s!"{g.name o}'s ability can be activated no more than {lim} times each turn"
+  if ab.isPowerUp && g.powerUpsForbidden then
+    throw "Power-up abilities can't be activated during this extra turn"
+  if let some lim := ab.lifetimeLimit? then
+    let effLim := if ab.isPowerUp then g.powerUpActivationLimit p else lim
+    let used :=
+      match resolvedIdx? with
+      | some i => g.abilityActivationsSinceEntered o.id i (isPowerUp := ab.isPowerUp) (isExhaust := ab.isExhaust)
+      | none =>
+        if ab.isPowerUp then Nat.max (g.powerUpActivations o.id) (if g.powerUpUsed o.id then 1 else 0)
+        else if ab.isExhaust && g.exhaustUsed o.id then 1
+        else 0
+    if used ≥ effLim then
+      if ab.isExhaust then
+        throw s!"{g.name o}'s exhaust ability can be activated only once (CR 702.177)"
+      else if ab.isPowerUp then
+        throw s!"{g.name o}'s power-up ability can be activated only once"
+      else
+        throw s!"{g.name o}'s ability can be activated only once"
   if !g.canPayActivationNonManaCost p o ab then
     throw s!"{g.name o}'s ability has a cost that can't be paid"
   if g.combatLocksNonManaAbilities && !isManaActivation ab then
     throw "During combat, players can't activate abilities that aren't mana abilities (Yuriko)"
-  if ab.cost.isLoyalty then
+  if ab.isLoyaltyAbility then
     -- CR 606.3 / 606.5 / 606.6: once per turn per permanent, and only as a sorcery
     -- unless an effect such as Jace's Machinations allows otherwise.
     if g.loyaltyActivatedThisTurn o.id then
@@ -107,19 +140,6 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
       if let some k := ab.cost.netLoyaltyDelta 0 then
         if k < 0 && (o.status.loyaltyCounters : Int) < -k then
           throw s!"{g.name o} doesn't have {-k} loyalty counters to remove (CR 606.4)"
-  if ab.onlyDuringYourTurn && !g.isOnActiveTeam p then
-    throw s!"{g.name o}'s ability can be activated only during your turn"
-  if ab.onceEachTurn &&
-      (match resolvedIdx? with
-       | some i => (g.abilitiesActivatedThisTurn o.id).contains i
-       | none => g.activationsThisTurn o.id != 0) then
-    throw s!"{g.name o}'s ability can be activated only once each turn"
-  if ab.powerUp && g.powerUpsForbidden then
-    throw s!"Power-up abilities can't be activated during this extra turn"
-  if ab.powerUp &&
-      (Nat.max (g.powerUpActivations o.id) (if g.powerUpUsed o.id then 1 else 0)) ≥
-        g.powerUpActivationLimit p then
-    throw s!"{g.name o}'s power-up ability can be activated only once"
   if ab.cost.tap && o.status.tapped then
     throw s!"{g.name o} is already tapped"
   if ab.cost.tap && g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p) then
@@ -141,24 +161,12 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
     throw s!"{g.name o} is already tapped"
   if !g.canPayLife p ab.cost.payLife then
     throw s!"{(g.player p).name} cannot pay {ab.cost.payLife} life"
-  if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 &&
-      !(g.permanentsOf p).any (fun x =>
-        g.isCreature x && g.toughness x >= (ab.onlyIfYouControlCreatureToughnessAtLeast : Int)) then
-    throw s!"{g.name o}'s ability can be activated only if you control a creature with toughness {ab.onlyIfYouControlCreatureToughnessAtLeast} or greater"
-  if ab.onlyIfGyCreaturesAtLeast != 0 then
-    let gy :=
-      (g.player p).graveyard.filter (fun id =>
-        match g.findObject? id with
-        | some c => g.isCreature c
-        | none => false) |>.size
-    if gy < ab.onlyIfGyCreaturesAtLeast then
-      throw s!"{g.name o}'s ability can be activated only if there are {ab.onlyIfGyCreaturesAtLeast} or more creature cards in your graveyard"
   if !g.abilityCanChooseTarget p ab (sourceId := some o.id) then
     throw s!"{g.name o}'s ability requires a target"
 
 /-- Whether `p` may begin activating `ab` of `o` (CR 602.5). Having
 enough mana in the pool is not required; mana abilities are activated at
-CR 601.2g. Cycling and other hand abilities use `activateFromHand` (CR 702.29).
+CR 601.2g. Cycling and other hand abilities use `activeZones := #[.hand]` (CR 702.29).
 Turning a face-down Morph permanent face up is a CR 116.2b / 702.37e special
 action rather than an activated ability (so Split Second does not forbid it,
 CR 702.61b). -/

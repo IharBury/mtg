@@ -141,7 +141,7 @@ def spearEquipAbility : ActivatedAbility :=
   (namedPermanent spearReadyToEquip "Ragged Short Spear") spearEquipAbility
 #guard !(spearReadyToEquip.canActivate ⟨1⟩
   (namedPermanent spearReadyToEquip "Ragged Short Spear") spearEquipAbility)
-#guard spearEquipAbility.onlyAsSorcery
+#guard spearEquipAbility.timing == .sorcery
 #guard spearEquipAbility.effect.requiresTarget
 
 -- Cannot Equip with no creature you control.
@@ -528,7 +528,7 @@ def bladeEquipAbility : ActivatedAbility :=
   (namedPermanent bladeReadyToEquip "Crude Bent Blade") bladeEquipAbility
 #guard !(bladeReadyToEquip.canActivate ⟨1⟩
   (namedPermanent bladeReadyToEquip "Crude Bent Blade") bladeEquipAbility)
-#guard bladeEquipAbility.onlyAsSorcery
+#guard bladeEquipAbility.timing == .sorcery
 #guard bladeEquipAbility.effect.requiresTarget
 #guard bladeEquipAbility.cost.mana == ManaCost.ofGeneric 2
 

@@ -23,7 +23,7 @@ open Mtg.Engine.Catalog
 
 #guard statureSizeShifter.staticAbilities == #[StaticAbility.cantBeBlockedIfPowerAtMost 1]
 #guard statureSizeShifter.activatedAbilities[0]!.effect == Effect.plusOneX
-#guard statureSizeShifter.activatedAbilities[0]!.powerUp
+#guard statureSizeShifter.activatedAbilities[0]!.isPowerUp
 #guard statureSizeShifter.activatedAbilities[0]!.cost.mana ==
   ({ symbols := #[.x, .colored .blue, .colored .blue] } : ManaCost)
 
@@ -35,7 +35,7 @@ def brawlerEntered : Game := mshEnter afterDraw braveBrawler
 #guard
   let o := namedPermanent brawlerEntered "Brave Brawler"
   let ab := o.printed.activatedAbilities[0]!
-  ab.powerUp &&
+  ab.isPowerUp &&
     brawlerEntered.activationManaCost ⟨0⟩ ab (some o) ==
       ({ symbols := #[.generic 3] } : ManaCost)
 
@@ -279,7 +279,7 @@ def hiddenLairScientistWithIsland : Game :=
     let lair := namedPermanent hiddenLairScientistWithIsland "Hidden Lair"
     let isl := namedPermanent hiddenLairScientistWithIsland "Island"
     hiddenLairScientistWithIsland.preferredManaType ⟨0⟩ lair
-      (hiddenLairScientistWithIsland.manaAbilitiesOf lair) prop.cost false false
+      (hiddenLairScientistWithIsland.manaAbilitiesOf lair) prop.cost
       [(isl, hiddenLairScientistWithIsland.manaAbilitiesOf isl)] ==
         some (.colored .black)
   | none => false

@@ -22,21 +22,8 @@ def chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
   match g.proposedSpell with
   | none => some .pay
   | some prop =>
-    let allowElf := g.proposedAllowsElfRestricted prop
-    let allowInst := g.proposedAllowsInstRestricted prop
-    let allowHero := g.proposedAllowsHeroRestricted prop
-    let allowVillain := g.proposedAllowsVillainRestricted prop
-    let allowCantNonartifact := g.proposedAllowsCantNonartifact prop
-    let allowCreature := g.proposedAllowsCreatureRestricted prop
     let spend := g.proposedManaSpend prop
-    if (g.player p).manaPool.canPay prop.cost
-        (allowElfRestricted := allowElf)
-        (allowInstRestricted := allowInst)
-        (allowHeroRestricted := allowHero)
-        (allowVillainRestricted := allowVillain)
-        (allowCantNonartifact := allowCantNonartifact)
-        (allowCreatureRestricted := allowCreature)
-        (spend := spend) then
+    if (g.player p).manaPool.canPay prop.cost (spend := spend) then
       some .pay
     else
       match g.preferredManaTapChoice p prop with
@@ -54,7 +41,7 @@ def discardBackOrDecline (g : Game) (p : PlayerId) : Option Action :=
 
 /-- Pay `cost` from the pool if possible; otherwise tap the first usable mana source. -/
 def payManaOrTapFirstSource (g : Game) (p : PlayerId) (cost : ManaCost) : Option Action :=
-  if (g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
+  if (g.player p).manaPool.canPay cost then
     some .payGeneric
   else
     let usable (r : Option ManaSpendRestriction) : Bool :=
@@ -80,7 +67,7 @@ def payManaOrTapFirstSource (g : Game) (p : PlayerId) (cost : ManaCost) : Option
       usableSources.foldl
         (fun pool (src, t) => g.addTapManaToPool pool src t)
         (g.player p).manaPool
-    if !totalPool.canPay cost (allowCantNonartifact := true) then
+    if !totalPool.canPay cost then
       some .decline
     else
       match usableSources[0]? with
@@ -151,7 +138,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
           | some (d, pw?) =>
             let addTax := if pw?.isSome then 0 else g.attackTaxPerCreature d
             let nextTax := usedTax + addTax
-            if nextTax == 0 || (g.player p).manaPool.canPay (ManaCost.ofGeneric nextTax) (allowCantNonartifact := true) then
+            if nextTax == 0 || (g.player p).manaPool.canPay (ManaCost.ofGeneric nextTax) then
               let nextTomik :=
                 match pw?.bind g.findObject? with
                 | some pw =>
@@ -235,12 +222,6 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
           | _, _, _ => prop.cost.substituteX x
         let xForExtraExcl (extraExcl : Array ObjectId) : Nat :=
           maxAffordableX g p prop.cost
-            (allowElfRestricted := g.proposedAllowsElfRestricted prop)
-            (allowInstRestricted := g.proposedAllowsInstRestricted prop)
-            (allowHeroRestricted := g.proposedAllowsHeroRestricted prop)
-            (allowVillainRestricted := g.proposedAllowsVillainRestricted prop)
-            (allowCantNonartifact := g.proposedAllowsCantNonartifact prop)
-            (allowCreatureRestricted := g.proposedAllowsCreatureRestricted prop)
             (spend := g.proposedManaSpend prop)
             (excludeIds := baseExcl ++ extraExcl)
             (costForX? := some costForX)
@@ -851,9 +832,6 @@ where
       | none => some .pass
   /-- Largest `{X}` `p` can currently pay for `cost` (CR 107.3a / 106.6). -/
   maxAffordableX (g : Game) (p : PlayerId) (cost : ManaCost)
-      (allowElfRestricted := false) (allowInstRestricted := false)
-      (allowHeroRestricted := false) (allowVillainRestricted := false)
-      (allowCantNonartifact := false) (allowCreatureRestricted := false)
       (spend : ManaSpend := {}) (exclude : Option ObjectId := none)
       (excludeIds : Array ObjectId := #[])
       (costForX? : Option (Nat → ManaCost) := none)
@@ -878,12 +856,6 @@ where
       match costForX? with
       | some f => f x
       | none => cost.substituteX x
-    let allowances : ManaAllowances :=
-      { hero := allowHeroRestricted
-        villain := allowVillainRestricted
-        cantNonartifact := allowCantNonartifact
-        creature := allowCreatureRestricted
-        spend := spend }
     let probeCap := maxPossibleMana + 4096
     if (costForX?.isNone && !cost.containsX) ||
         minManaUnitsForCost (costAt probeCap) ≤ minManaUnitsForCost (costAt 0) then
@@ -894,8 +866,7 @@ where
         let c := costAt x
         if minManaUnitsForCost c > maxPossibleMana then
           break
-        if g.canPayFromSources pool c allowElfRestricted allowInstRestricted sources allowances
-            (prop? := prop?) then
+        if g.canPayFromSources pool c sources spend (prop? := prop?) then
           best := x
       return best
   /-- Activate a non-mana ability if the available mana covers its cost. -/
@@ -909,13 +880,9 @@ where
       let sacSrc := ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield
       let discSrc := ab.cost.discardSource || ab.cost.exileSourceFromHand
       let manaCost := if isTurnFaceUp then ab.cost.mana else g.activationManaCost p ab (some o)
-      let allowElf := !isTurnFaceUp && g.hasSubtype o .elf
-      let allowHero := !isTurnFaceUp && g.hasSubtype o .hero
-      let allowVillain := !isTurnFaceUp && g.hasSubtype o .villain
-      let allowCreature := !isTurnFaceUp && g.isCreature o
       let actSpend : ManaSpend :=
         if isTurnFaceUp then {}
-        else { equip := ab.isEquip, abilitySourceSubtypes := g.subtypes o }
+        else ManaSpend.forAbility (g.types o) (g.supertypes o) (g.subtypes o) (equip := ab.isEquip)
       let costForX (x : Nat) : ManaCost :=
         if isTurnFaceUp then ab.cost.mana.substituteX x
         else g.activationManaCost p ab (some o) (chosenX := some x)
@@ -924,12 +891,6 @@ where
           (isTurnFaceUp := isTurnFaceUp) (excludeIds := excludeIds) &&
         !(ab.effect == Effect.plusOneX &&
           maxAffordableX g p manaCost
-            (allowElfRestricted := allowElf)
-            (allowInstRestricted := false)
-            (allowHeroRestricted := allowHero)
-            (allowVillainRestricted := allowVillain)
-            (allowCantNonartifact := true)
-            (allowCreatureRestricted := allowCreature)
             (spend := actSpend)
             (excludeIds := excludeIds)
             (costForX? := some costForX) == 0)
@@ -1054,7 +1015,7 @@ where
       !(ab.effect == Effect.targetCantBeBlockedThisTurn &&
         !(g.permanentsOf p).any (fun c => g.isCreature c && c.status.attacking)) &&
       -- Don't typecycle a card you can currently afford to cast.
-      !(ab.activateFromHand &&
+      !(ab.isFromHand &&
         ((g.canCastFrontFace p o &&
           let face := { g.baseCard o with keywords := g.currentKeywords o }
           let perm? := g.playPermissionFor? p o (face? := some face)

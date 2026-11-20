@@ -366,9 +366,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayThen .., .decline => return g.finishFraChoice
   | .mayThen .., _ => throw "Answer accept or decline"
   | .mayPayThen n next sourceId, .accept =>
-    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) (allowCantNonartifact := true) then
+    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
       throw s!"{(g.player p).name} cannot pay \{{n}}; add mana first"
-    let g ← g.payCost p (ManaCost.ofGeneric n) (allowCantNonartifact := true)
+    let g ← g.payCost p (ManaCost.ofGeneric n)
       (forObject := resolvingForObj <|> sourceId)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
@@ -917,9 +917,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayDiscardThese n _, _ => throw s!"Choose {n} to discard, or decline"
   | .mayPaySymbolsThen symbols next sourceId, .accept =>
     let cost : ManaCost := { symbols := symbols }
-    if !(g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
+    if !(g.player p).manaPool.canPay cost then
       throw s!"{(g.player p).name} cannot pay that cost; add mana first"
-    let g ← g.payCost p cost (allowCantNonartifact := true)
+    let g ← g.payCost p cost
       (forObject := resolvingForObj <|> some sourceId)
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
@@ -979,9 +979,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .addManaColors .., _ => throw "Choose a color for the mana"
   | .mayPayExtort sourceId, .accept =>
     let cost : ManaCost := { symbols := #[.hybrid .white .black] }
-    if !(g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
+    if !(g.player p).manaPool.canPay cost then
       throw s!"{(g.player p).name} cannot pay \{W/B}; add mana first"
-    let g ← g.payCost p cost (allowCantNonartifact := true)
+    let g ← g.payCost p cost
       (forObject := resolvingForObj <|> sourceId)
     return (g.extortDrain p).finishFraChoice
   | .mayPayExtort _, .decline => return (g.logMsg "Extort is not paid").finishFraChoice
@@ -1073,9 +1073,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if times == 0 then return g.finishFraChoice
     if times > maxTimes then throw s!"Pay at most {maxTimes} times"
     let total : ManaCost := { symbols := (List.replicate times cost.toList).flatten.toArray }
-    if !(g.player p).manaPool.canPay total (allowCantNonartifact := true) then
+    if !(g.player p).manaPool.canPay total then
       throw s!"{(g.player p).name} cannot pay {total}; add mana first"
-    let g ← g.payCost p total (allowCantNonartifact := true)
+    let g ← g.payCost p total
       (forObject := resolvingForObj <|> sourceId)
     let g := g.logMsg s!"{(g.player p).name} pays {total}"
     if g.mayThenDrop > 0 then
@@ -1479,9 +1479,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     throw "Put a +1/+1 counter on Black Widow (accept), or decline"
   | .ultronMayPay _, .accept =>
     let cost := ManaCost.ofGeneric 2
-    if !(g.player p).manaPool.canPay cost (allowCantNonartifact := true) then
+    if !(g.player p).manaPool.canPay cost then
       throw s!"{(g.player p).name} cannot pay {2}; add mana first, or decline"
-    let g ← g.payCost p cost (allowCantNonartifact := true) (forObject := resolvingForObj)
+    let g ← g.payCost p cost (forObject := resolvingForObj)
     return g.acceptMayThen
   | .ultronMayPay _, .decline =>
     return (g.logMsg s!"{(g.player p).name} doesn't pay {2}").declineMayThen
@@ -1993,7 +1993,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .mayPutMilledPermanent ids _ => .choosePermanents (ids.extract 0 1)
   | .mayThen .. => .accept
   | .mayPayThen n .. =>
-    if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) (allowCantNonartifact := true) then .accept else .decline
+    if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then .accept else .decline
   | .mayDiscardThen .. => .decline
   | .discardThen .. => .choosePermanents ((g.player p).hand.extract 0 1)
   | .discardThenStun n _ => .choosePermanents ((g.player p).hand.extract 0 n)
@@ -2089,7 +2089,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .maySacrificeThese _ _ => .decline
   | .mayDiscardThese _ _ => .decline
   | .mayPaySymbolsThen symbols .. =>
-    if (g.player p).manaPool.canPay { symbols := symbols } (allowCantNonartifact := true) then .accept else .decline
+    if (g.player p).manaPool.canPay { symbols := symbols } then .accept else .decline
   | .attachAnyEquipment hostId eligible =>
     .choosePermanents (eligible.filter fun id =>
       match g.findObject? id, g.findObject? hostId with
@@ -2098,7 +2098,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .sacrificeLeastPower ids => .choosePermanents (ids.extract 0 1)
   | .addManaColors .. => .chooseMode 0
   | .mayPayExtort _ =>
-    if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } (allowCantNonartifact := true) then .accept else .decline
+    if (g.player p).manaPool.canPay { symbols := #[.hybrid .white .black] } then .accept else .decline
   | .mayDrawThenDiscard .. => .accept
   | .mayCreateTokens .. => .accept
   | .mayBecomeBasePT .. => .accept
@@ -2134,7 +2134,7 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .sacrificeNontokenEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
   | .mayPayManaForReflexive cost _ _ _ =>
-    if (g.player p).manaPool.canPay { symbols := cost } (allowCantNonartifact := true) then .accept else .decline
+    if (g.player p).manaPool.canPay { symbols := cost } then .accept else .decline
   | .mayTapSourceThen .. => .accept
   | .hawkeyeModes _ chosen objId? =>
     let obj? := objId?.bind g.findObject?

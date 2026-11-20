@@ -34,7 +34,8 @@ def hulkPowerUpGenericReduction (g : Game) (p : PlayerId) (sourceId : ObjectId) 
         | _ => acc) acc) 0
 
 def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
-    (source : Option GameObject := none) (chosenX : Option Nat := none) : ManaCost :=
+    (source : Option GameObject := none) (chosenX : Option Nat := none)
+    (targets : Array Target := #[]) : ManaCost :=
   let withX (cost : ManaCost) : ManaCost :=
     match chosenX with
     | some x => cost.substituteX x
@@ -43,22 +44,22 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     ab.isEquip && g.hasEnduringStory p && g.loggedEquipActivations p == 0 &&
       (g.permanentsOf p).any (fun o =>
         (g.staticAbilities o).any (· == .firstEquipFreeIfEnduringStory))
+  let declRed : Nat :=
+    if ab.costReductions.isEmpty then 0
+    else EvalExpr.evalActivationCostReductions g p (source.map (·.id)) ab.costReductions targets
   let cost :=
     if firstEquipFree then ManaCost.empty
-    else if ab.powerUp then
+    else if ab.isPowerUp then
       match source with
       | some o =>
         let afterEnter :=
           if g.loggedEntered o.id then
             ab.cost.mana.reduceByCost (g.copiableValues o).manaCost
           else ab.cost.mana
-        (withX afterEnter).reduceGeneric (g.hulkPowerUpGenericReduction p o.id)
-      | none => withX ab.cost.mana
-    else if ab.costReductionIfYouControlLegendary > 0 && g.controlsLegendaryCreature p then
-      (withX ab.cost.mana).reduceGeneric ab.costReductionIfYouControlLegendary
-    else if ab.costReductionPerEquipment > 0 then
-      let n := (g.permanentsOf p).filter (fun o => g.isEquipment o) |>.size
-      (withX ab.cost.mana).reduceGeneric (ab.costReductionPerEquipment * n)
+        (withX afterEnter).reduceGeneric (g.hulkPowerUpGenericReduction p o.id + declRed)
+      | none => (withX ab.cost.mana).reduceGeneric declRed
+    else if declRed > 0 then
+      (withX ab.cost.mana).reduceGeneric declRed
     else withX ab.cost.mana
   ManaCost.afterReduction ab.cost.mana cost
 
@@ -81,138 +82,22 @@ structure ManaAbilityDef where
   /-- Costs paid with objects the player chooses (Bolg's Company). -/
   picks : Array CostPick := #[]
   restriction : Option ManaSpendRestriction := none
-  /-- Index among `activatedAbilitiesOf` when this is an activated ability
-  printed with a full cost. -/
+  /-- Spell riders carried by mana produced by this ability (CR 106.6 / 106.12). -/
+  riders : Array SpellRiderSpec := #[]
+  /-- Index among `activatedAbilitiesOf` (CR 613.1f). -/
   activatedIdx : Option Nat := none
-  onceEachTurn : Bool := false
-  powerUp : Bool := false
-  exhaust : Bool := false
+  turnLimit? : Option Nat := none
+  lifetimeLimit? : Option Nat := none
+  isPowerUp : Bool := false
+  isExhaust : Bool := false
+  isBoast : Bool := false
   sourceAbility : Option ActivatedAbility := none
-  /-- Damage this ability deals to its controller as it resolves. -/
+  /-- Damage this ability deals to its controller as it resolves (CR 605.3b). -/
   damageYou : Nat := 0
 deriving Inhabited
 
 private def uniqMana (ts : Array ManaType) : Array ManaType :=
   ts.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
-
-/-- Mana a land can produce from its own and granted mana abilities (CR 106.7 /
-605.1a / 613.1f). “Could produce” abilities are not included, so two such lands
-do not look at each other. -/
-def intrinsicLandMana (g : Game) (o : GameObject) : Array ManaType :=
-  let c := g.baseCard o
-  if !g.isLand o && !(c.grantLandsTapAnyColor && g.retainsPrintedAbilities o) then #[]
-  else
-    let own :=
-      if !g.retainsPrintedAbilities o then #[]
-      else
-        let p := (g.controllerOf o).getD o.owner
-        let identity :=
-          if c.tapAddCommanderIdentity && (g.player p).hasCommander then
-            ((g.player p).commanderColorIdentity.toList.map ManaType.colored).toArray
-          else #[]
-        let pain :=
-          match c.tapAddOneOfDealsDamage with
-          | some (ts, _) => ts
-          | none => #[]
-        let filter :=
-          match c.filterMana with
-          | some (_, ts) => ts
-          | none => #[]
-        let any :=
-          if c.tapAddAnyColor || c.tapSacrificeAddAnyColor then anyColorMana else #[]
-        c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddTogether ++
-          pain ++ filter ++ identity ++ any ++ c.tapAddTwoAmong
-    let lantern :=
-      if g.landHasLanternGrant o then anyColorMana else #[]
-    uniqMana (own ++ lantern ++ g.grantedManaAbilities o ++ g.fraManaAbilities o)
-
-/-- Mana any of `lands` could produce from intrinsic abilities. -/
-def landsCouldProduce (g : Game) (lands : Array GameObject) : Array ManaType :=
-  uniqMana (lands.foldl (fun acc o => acc ++ g.intrinsicLandMana o) #[])
-
-/-- Evaluate a symbolic `ManaPoolPalette` in `(g, env)` with full CR 106.7
-`landsCouldProduce` resolution. -/
-def evalManaPalette (g : Game) (env : EvalEnv) (palette : ManaPoolPalette) : Array ManaType :=
-  EvalExpr.evalManaPalette g env Game.landsCouldProduce palette
-
-/-- Evaluate a symbolic `ManaSpec` in `(g, env)` into a concrete `ManaOutput`
-(CR 106.1 / 106.7 / 605). -/
-def evalManaSpec (g : Game) (env : EvalEnv) (spec : ManaSpec) : ManaOutput :=
-  EvalExpr.evalManaSpec g env Game.landsCouldProduce spec
-
-/-- Mana abilities from a card's printed `{T}: Add` lines, for `o`. -/
-def cardManaAbilities (g : Game) (o : GameObject) (c : CardDef) : Array ManaAbilityDef :=
-  let p := (g.controllerOf o).getD o.owner
-  let tcs := g.evalLayer3 o
-  let sub (s : CardSubtype) : CardSubtype :=
-    if tcs.isEmpty then s else TextChange.applySubtype tcs s
-  let count (subtype : CardSubtype) := ((g.permanentsOf p).filter (g.hasSubtype · subtype)).size
-  let power := (g.power o).toNat
-  let one (out : ManaOutput) (r : Option ManaSpendRestriction := none) : Array ManaAbilityDef :=
-    #[{ output := out, restriction := r }]
-  let simple := c.simpleTapAddMana.map (fun t =>
-    ({ output := .fixed #[t]
-       restriction := if t == .colorless && g.hasSubtype o .vibranium then some .cantNonartifact else none }
-      : ManaAbilityDef))
-  let legendaryColors :=
-    (g.permanentsOf p).foldl (fun acc x =>
-      if g.isLegendary x && (g.isCreature x || g.isPlaneswalker x) then
-        ColorSet.union acc (g.colors x)
-      else acc) ColorSet.empty
-  let pl := g.player p
-  let identity := if pl.hasCommander then pl.commanderColorIdentity.toList else []
-  simple ++
-  (if c.tapAddOneOf.isEmpty then #[] else one (.oneOf c.tapAddOneOf 1)) ++
-  c.tapAddManaForEach.map (fun a =>
-    ({ output := .fixed (Array.replicate (count (sub a.subtype)) a.mana) } : ManaAbilityDef)) ++
-  (match c.tapAddColorlessPerSubtype with
-   | some st => #[({ output := .fixed (Array.replicate (count (sub st)) .colorless) } : ManaAbilityDef)]
-   | none => #[]) ++
-  (if c.tapAddOneOfIfEnteredOrBasic.isEmpty || !g.canUseEnteredOrBasicAdd o then #[]
-   else one (.oneOf c.tapAddOneOfIfEnteredOrBasic 1)) ++
-  (if c.tapAddAnyColorEqualToPower then
-    one (.oneOf anyColorMana power) (some (.subtypeSpellOrSource (sub .elf))) else #[]) ++
-  (if c.tapAddAnyColorForInstantOrSorcery then
-    one (.oneOf anyColorMana 1) (some .instantOrSorcery) else #[]) ++
-  (if c.tapAddAnyColor then one (.oneOf anyColorMana 1) else #[]) ++
-  (if c.tapSacrificeAddAnyColor then
-    #[{ output := .oneOf anyColorMana 1, sacrificeSelf := true }] else #[]) ++
-  (if c.tapAddAnyColorForLegendary then
-    one (.oneOf anyColorMana 1) (some .legendarySpell) else #[]) ++
-  (if c.tapAddTwoAmong.size ≥ 2 then one (.combination c.tapAddTwoAmong 2) else #[]) ++
-  (if c.tapAddAnyColorAmongLegendaries then
-    one (.colorAmong (legendaryColors.toList.map ManaType.colored).toArray) else #[]) ++
-  (if c.tapAddCommanderIdentity then
-    one (.colorAmong (identity.map ManaType.colored).toArray) else #[]) ++
-  (match c.tapAddRestricted with
-   | some (ts, restr) =>
-     let effRestr := HasTextChange.applyTextChanges tcs restr
-     one (.fixed ts) (some effRestr)
-   | none => #[]) ++
-  (match c.tapPayLifeAddOneOf with
-   | some (n, ts) => #[{ output := .oneOf ts 1, payLife := n }]
-   | none => #[]) ++
-  (if c.tapAddChosenColorPerDifferentPower then
-    one (.oneOf anyColorMana ((g.creaturesControlledBy p).map (g.power ·)).toList.eraseDups.length)
-   else #[]) ++
-  (if c.tapAddTogether.isEmpty then #[] else #[{ output := .fixed c.tapAddTogether }]) ++
-  (match c.tapAddOneOfDealsDamage with
-   | some (ts, n) => #[{ output := .oneOf ts 1, damageYou := n }]
-   | none => #[]) ++
-  (match c.filterMana with
-   | some (cost, ts) =>
-     let types := ts.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
-     #[{ output := .combination types 2, cost, tap := true }]
-   | none => #[]) ++
-  (if c.tapAddOppCouldProduce then
-    let lands := g.livingOpponents p |>.foldl (fun acc pl =>
-      acc ++ (g.permanentsOf pl.id).filter (g.isLand ·)) #[]
-    #[{ output := .colorAmong (g.landsCouldProduce lands) }]
-   else #[]) ++
-  (if c.tapAddYouCouldProduce then
-    let lands := (g.permanentsOf p).filter (fun land => g.isLand land && land.id != o.id)
-    #[{ output := .colorAmong (g.landsCouldProduce lands) }]
-   else #[])
 
 private partial def manaNamedPermanents (g : Game) (o : GameObject) (controller : PlayerId) :
     TriggeredAbility.ObjectSelector → Option (Array GameObject)
@@ -319,85 +204,117 @@ def manaSelectorCount (g : Game) (o : GameObject) (amount : TriggeredAbility.Num
     | .harnessedSource => if o.status.harnessed then 1 else 0
     | _ => (manaNamedPermanents g o controller what).map (·.size) |>.getD 0
 
-/-- Mana abilities `o` has as printed activated abilities (CR 605.1a). Loyalty
-abilities, modal abilities, non-battlefield abilities, and targeted abilities
-are not mana abilities. -/
-def activatedManaAbilities (g : Game) (o : GameObject) : Array ManaAbilityDef :=
-  let abs := g.activatedAbilitiesOf o
+/-- Legacy fallback mana output for activated abilities whose effect is encoded
+as a `Resolution.add*` variant rather than `ActivatedAbility.mana?`. -/
+private def legacyResolutionManaOutput (g : Game) (o : GameObject) (r : Resolution) :
+    Option (ManaOutput × Option ManaSpendRestriction) :=
   let power := (g.power o).toNat
-  (List.range abs.size).toArray.filterMap (fun i =>
-    let ab := abs[i]!
-    if !isManaActivation ab then none
-    else
-      let base : ManaAbilityDef := {
-        output := .fixed #[], tap := ab.cost.tap, cost := ab.cost.mana
-        payLife := ab.cost.payLife, sacrificeSelf := ab.cost.sacrificeSource
-        exileSelf := ab.cost.exileSourceFromBattlefield
-        removeStoryCounter := ab.cost.removeStoryCounter
-        removeIndestructibleCounter := ab.cost.removeIndestructibleCounter
-        putStunCounterOnSource := ab.cost.putStunCounterOnSource
-        picks :=
-          costPicksOf ab ++
-            (if ab.cost.sacrificeAnotherCreatureOrArtifact then
-              #[CostPick.sacrificeAnotherCreatureOrArtifact]
-             else #[])
-        activatedIdx := some i, onceEachTurn := ab.onceEachTurn
-        powerUp := ab.powerUp, exhaust := ab.exhaust, sourceAbility := some ab }
-      let with_ (out : ManaOutput) (r : Option ManaSpendRestriction := none) :=
-        some { base with output := out, restriction := r }
-      match ab.effect.resolution with
-      | .addMana types amount =>
-        let n := g.manaSelectorCount o amount
-        with_ (.fixed (types.foldl (fun acc t => acc ++ Array.replicate n t) #[]))
-      | .addAnyColor => with_ (.oneOf anyColorMana 1)
-      | .addAnyColorSpendOnlySubtype s =>
-        with_ (.oneOf anyColorMana 1) (some (.subtypeSpellOrSource s))
-      | .addAnyColorSpendOnlyArtifactSpell => with_ (.oneOf anyColorMana 1) (some .artifactSpell)
-      | .addTwoAnyColorCreatureSources => with_ (.oneOf anyColorMana 2) (some .creatureSource)
-      | .addBlueCantNonartifact => with_ (.fixed #[.colored .blue]) (some .cantNonartifact)
-      | .addAnyColorEqualToSourcePower => with_ (.oneOf anyColorMana power)
-      | .addFourAnyCombination => with_ (.combination anyColorMana 4)
-      | .addTwoAnyColorEquipment => with_ (.oneOf anyColorMana 2) (some .equipmentOrEquip)
-      | _ => none)
+  match r with
+  | .addMana types amount =>
+    let n := g.manaSelectorCount o amount
+    some (.fixed (types.foldl (fun acc t => acc ++ Array.replicate n t) #[]), none)
+  | .addAnyColor => some (.oneOf anyColorMana 1, none)
+  | .addAnyColorSpendOnlySubtype s => some (.oneOf anyColorMana 1, some (.subtypeSpellOrSource s))
+  | .addAnyColorSpendOnlyArtifactSpell => some (.oneOf anyColorMana 1, some .artifactSpell)
+  | .addTwoAnyColorCreatureSources => some (.oneOf anyColorMana 2, some .creatureSource)
+  | .addBlueCantNonartifact => some (.fixed #[.colored .blue], some .cantNonartifact)
+  | .addAnyColorEqualToSourcePower => some (.oneOf anyColorMana power, none)
+  | .addFourAnyCombination => some (.combination anyColorMana 4, none)
+  | .addTwoAnyColorEquipment => some (.oneOf anyColorMana 2, some .equipmentOrEquip)
+  | _ => none
 
-/-- Mana abilities other permanents grant `o`, and Reality Fracture mana
-abilities. -/
-def grantedManaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
-  let lords := g.grantedManaAbilities o
-  let anyColor := anyColorMana.all lords.contains
-  let granted : Array ManaAbilityDef :=
-    if lords.isEmpty then #[]
-    else if anyColor then #[{ output := .oneOf anyColorMana 1 }]
-    else #[{ output := .oneOf lords 1 }]
-  let fra := (g.staticAbilities o).foldl (fun acc ab =>
-    match ab with
-    | .fra .tapAddColorlessNotFromHand =>
-      acc.push { output := .fixed #[.colorless], restriction := some .notSpellsFromHand }
-    | .fra .tapAddAnyColorPlaneswalkerOnly =>
-      acc.push { output := .oneOf anyColorMana 1, restriction := some .planeswalkerSpell }
-    | .fra .tapSacrificeAddThreeOfOneColor =>
-      acc.push { output := .oneOf anyColorMana 3, sacrificeSelf := true }
-    | .fra .tapAddChosenColor =>
-      match o.status.chosenColor with
-      | some c => acc.push { output := .fixed #[.colored c] }
-      | none => acc
-    | _ => acc) (#[] : Array ManaAbilityDef)
-  let emrakul : Array ManaAbilityDef :=
-    if g.hasActiveColorlessGrant o then
-      #[{ output := .fixed #[.colorless, .colorless] }]
-    else #[]
-  let lantern : Array ManaAbilityDef :=
-    if g.landHasLanternGrant o then
-      #[{ output := .oneOf anyColorMana 1 }]
-    else #[]
-  granted ++ fra ++ emrakul ++ lantern
+/-- Mana a land can produce from its evaluated Layer-6 mana abilities
+(CR 106.7 / 305.6 / 305.7 / 605.1a / 613.1f). Abilities that themselves query
+"could produce" (`ManaSpec.usesLandsCouldProduce`) are skipped so two such
+lands do not look at each other. -/
+def intrinsicLandMana (g : Game) (o : GameObject) : Array ManaType :=
+  if !o.isOnBattlefield || !g.isLand o then #[]
+  else
+    let p := (g.controllerOf o).getD o.owner
+    let env : EvalEnv := { controller := p, sourceId := some o.id }
+    let produced := (g.activatedAbilitiesOf o).foldl (fun acc ab =>
+      if !isManaActivation ab || !EvalExpr.evalActivationCondition g p o.id ab.condition? then acc
+      else
+        match ab.mana? with
+        | some mp =>
+          if mp.spec.usesLandsCouldProduce then acc
+          else
+            let out := EvalExpr.evalManaSpec g env (fun _ _ => #[]) mp.spec
+            acc ++ out.producibleTypes
+        | none =>
+          match legacyResolutionManaOutput g o ab.effect.resolution with
+          | some (out, _) => acc ++ out.producibleTypes
+          | none => acc) #[]
+    uniqMana produced
 
-/-- Every mana ability `o` has (CR 605.1a). -/
+/-- Mana any of `lands` could produce from intrinsic abilities (CR 106.7). -/
+def landsCouldProduce (g : Game) (lands : Array GameObject) : Array ManaType :=
+  uniqMana (lands.foldl (fun acc o => acc ++ g.intrinsicLandMana o) #[])
+
+/-- Evaluate a symbolic `ManaPoolPalette` in `(g, env)` with full CR 106.7
+`landsCouldProduce` resolution. -/
+def evalManaPalette (g : Game) (env : EvalEnv) (palette : ManaPoolPalette) : Array ManaType :=
+  EvalExpr.evalManaPalette g env Game.landsCouldProduce palette
+
+/-- Evaluate a symbolic `ManaSpec` in `(g, env)` into a concrete `ManaOutput`
+(CR 106.1 / 106.7 / 605). -/
+def evalManaSpec (g : Game) (env : EvalEnv) (spec : ManaSpec) : ManaOutput :=
+  EvalExpr.evalManaSpec g env Game.landsCouldProduce spec
+
+/-- Build a `ManaAbilityDef` from an evaluated Layer-6 `ActivatedAbility`
+satisfying CR 605.1a (`isManaActivation`). -/
+def manaAbilityDefOfActivated (g : Game) (o : GameObject) (i : Nat)
+    (ab : ActivatedAbility) : Option ManaAbilityDef :=
+  if !isManaActivation ab then none
+  else
+    let p := (g.controllerOf o).getD o.owner
+    let env : EvalEnv := { controller := p, sourceId := some o.id }
+    let base : ManaAbilityDef := {
+      output := .fixed #[]
+      tap := ab.cost.tap
+      cost := ab.cost.mana
+      payLife := ab.cost.payLife
+      sacrificeSelf := ab.cost.sacrificeSource
+      exileSelf := ab.cost.exileSourceFromBattlefield
+      removeStoryCounter := ab.cost.removeStoryCounter
+      removeIndestructibleCounter := ab.cost.removeIndestructibleCounter
+      putStunCounterOnSource := ab.cost.putStunCounterOnSource
+      picks :=
+        costPicksOf ab ++
+          (if ab.cost.sacrificeAnotherCreatureOrArtifact then
+            #[CostPick.sacrificeAnotherCreatureOrArtifact]
+           else #[])
+      activatedIdx := some i
+      turnLimit? := ab.turnLimit?
+      lifetimeLimit? := ab.lifetimeLimit?
+      isPowerUp := ab.isPowerUp
+      isExhaust := ab.isExhaust
+      isBoast := ab.isBoast
+      sourceAbility := some ab
+    }
+    match ab.mana? with
+    | some mp =>
+      let out := g.evalManaSpec env mp.spec
+      some { base with
+        output := out
+        restriction := mp.restriction
+        riders := mp.allRiders
+        damageYou := mp.damageYou }
+    | none =>
+      match legacyResolutionManaOutput g o ab.effect.resolution with
+      | some (out, r) =>
+        some { base with
+          output := out
+          restriction := r
+          riders := match r with | some rr => rr.riders | none => #[] }
+      | none => none
+
+/-- Every mana ability `o` has, read exclusively from its evaluated Layer-6
+`activatedAbilitiesOf` (CR 305.6 / 305.7 / 605.1a / 613.1f). -/
 def manaAbilityDefs (g : Game) (o : GameObject) : Array ManaAbilityDef :=
-  let gyCopied := (g.copiedFromGy o (fun c => #[c])).foldl (fun acc c => acc ++ g.cardManaAbilities o c) #[]
-  let own :=
-    (if !g.retainsPrintedAbilities o then #[] else g.cardManaAbilities o (g.baseCard o)) ++ gyCopied
-  own ++ g.activatedManaAbilities o ++ g.grantedManaAbilityDefs o
+  let abs := g.activatedAbilitiesOf o
+  (List.range abs.size).toArray.filterMap fun i =>
+    g.manaAbilityDefOfActivated o i abs[i]!
 
 /-- Effective mana cost of mana ability `d` on `o` for `p`, applying
 `activationManaCost` reductions when backed by an `ActivatedAbility`. -/
@@ -425,16 +342,26 @@ def isPlainTapManaAbilityDef (g : Game) (p : PlayerId) (o : GameObject) (d : Man
 frequency, condition, life, counter, and choice-cost prerequisites for `p`
 (CR 605.3 / 602.5a / 702.177 / 702.193). -/
 def manaAbilityDefUsable (g : Game) (p : PlayerId) (o : GameObject) (d : ManaAbilityDef) : Bool :=
+  let turnLimitHit : Bool :=
+    match d.turnLimit?, d.activatedIdx with
+    | some lim, some i => g.abilityActivationsThisTurn o.id i (isBoast := d.isBoast) ≥ lim
+    | some lim, none => g.activationsThisTurn o.id ≥ lim
+    | none, _ => false
+  let lifetimeLimitHit : Bool :=
+    match d.lifetimeLimit?, d.activatedIdx with
+    | some lim, some i =>
+      let effLim := if d.isPowerUp then g.powerUpActivationLimit p else lim
+      g.abilityActivationsSinceEntered o.id i (isPowerUp := d.isPowerUp) (isExhaust := d.isExhaust) ≥ effLim
+    | some _, none =>
+      (d.isExhaust && g.exhaustUsed o.id) ||
+        (d.isPowerUp &&
+          Nat.max (g.powerUpActivations o.id) (if g.powerUpUsed o.id then 1 else 0) ≥
+            g.powerUpActivationLimit p)
+    | none, _ => false
   o.isOnBattlefield && g.controlledBy o p &&
-    !(d.onceEachTurn &&
-      match d.activatedIdx with
-      | some i => (g.abilitiesActivatedThisTurn o.id).contains i
-      | none => g.activationsThisTurn o.id != 0) &&
-    !(d.exhaust && g.exhaustUsed o.id) &&
-    !(d.powerUp &&
-      (g.powerUpsForbidden ||
-        Nat.max (g.powerUpActivations o.id) (if g.powerUpUsed o.id then 1 else 0) ≥
-          g.powerUpActivationLimit p)) &&
+    !turnLimitHit &&
+    !lifetimeLimitHit &&
+    !(d.isPowerUp && g.powerUpsForbidden) &&
     !(d.removeStoryCounter && o.status.story == 0) &&
     !(d.removeIndestructibleCounter && o.status.indestructibleCounters == 0) &&
     g.canPayLife p d.payLife &&
@@ -442,19 +369,10 @@ def manaAbilityDefUsable (g : Game) (p : PlayerId) (o : GameObject) (d : ManaAbi
       g.costPicksPayable p (some o.id) d.picks
         (tapSource := d.tap) (sacrificeOrExileSource := d.sacrificeSelf || d.exileSelf)) &&
     d.sourceAbility.all (fun ab =>
-      (!ab.onlyAsSorcery || g.asSorcery? p) &&
-      (!ab.onlyDuringYourTurn || g.isOnActiveTeam p) &&
-      g.fraActivationConditionHolds p ab.fraCondition &&
-      (!ab.onlyIfYouControlLegendary || g.controlsLegendaryCreature p) &&
-      (!ab.onlyIfYouAttackedWithTwoOrMore || g.loggedAttacks p ≥ 2) &&
-      (!ab.onlyIfOpponentDealtNoncombatDamage ||
-        g.players.any (fun q => q.id != p && !g.areTeammates p q.id && g.loggedNoncombatDamage q.id)) &&
-      (ab.onlyIfYouControlCreatureToughnessAtLeast == 0 ||
-        (g.permanentsOf p).any (fun x =>
-          g.isCreature x && g.toughness x ≥ (ab.onlyIfYouControlCreatureToughnessAtLeast : Int))) &&
-      (ab.onlyIfGyCreaturesAtLeast == 0 ||
-        ((g.player p).graveyard.filter (fun cid =>
-          (g.findObject? cid).any g.isCreature)).size ≥ ab.onlyIfGyCreaturesAtLeast))
+      (match ab.timing with
+       | .instant => true
+       | .sorcery | .loyalty => g.asSorcery? p) &&
+      EvalExpr.evalActivationCondition g p o.id ab.condition?)
 
 /-- Mana types `o` can currently add with plain `{T}` mana abilities. -/
 @[export mtg_game_mana_abilities_of]
@@ -465,10 +383,10 @@ def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
       d.output.types.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc
     else acc) #[]
 
-/-- Add `mana` to `p`'s pool with `r` (CR 106.4 / 106.6). -/
-def addRestrictedMana (pool : ManaPool) (mana : Array ManaType) (r : Option ManaSpendRestriction) :
-    ManaPool :=
-  mana.foldl (fun pool t => pool.add t (restriction := r)) pool
+/-- Add `mana` to `p`'s pool with `r` and `riders` (CR 106.4 / 106.6 / 106.12). -/
+def addRestrictedMana (pool : ManaPool) (mana : Array ManaType)
+    (r : Option ManaSpendRestriction) (riders : Array SpellRiderSpec := #[]) : ManaPool :=
+  mana.foldl (fun pool t => pool.add t (restriction := r) (riders := riders)) pool
 
 /-- `p` may activate abilities of creatures they control as though those
 creatures had haste (Shang-Chi, Master of Kung Fu; MSH 280). -/
@@ -529,30 +447,7 @@ def finishManaAbilityMountainTrigger (g : Game) (p : PlayerId) (_id : ObjectId) 
         (s!"{(g.player p).name} adds an additional " ++ String.join (List.replicate extraRed "{R}"))
     else g
 
-/-- Whether paying this proposed spell or ability may spend Elf-restricted mana
-(CR 106.6): Elf spells, and activated abilities of Elf sources. -/
-def proposedAllowsElfRestricted (g : Game) (prop : ProposedSpell) : Bool :=
-  match prop.kind with
-  | .spell =>
-    match g.findObject? prop.spellId with
-    | some o => g.hasSubtype o .elf
-    | none => false
-  | .activatedAbility =>
-    match prop.sourceId.bind g.findObject? with
-    | some src => g.hasSubtype src .elf
-    | none => g.hasSubtype prop.original .elf
-  | .turnFaceUp => false
-
-/-- Whether paying this proposed spell may spend instant/sorcery-restricted mana. -/
-def proposedAllowsInstRestricted (g : Game) (prop : ProposedSpell) : Bool :=
-  match prop.kind with
-  | .spell =>
-    match g.findObject? prop.spellId with
-    | some o => g.isInstantOrSorcery o
-    | none => false
-  | .activatedAbility | .turnFaceUp => false
-
-/-- Object whose types decide Hero / Villain / creature-source restrictions. -/
+/-- Object whose types decide ability-source mana spending restrictions. -/
 def proposedRestrictionSource (g : Game) (prop : ProposedSpell) : Option GameObject :=
   match prop.kind with
   | .spell => g.findObject? prop.spellId
@@ -561,42 +456,6 @@ def proposedRestrictionSource (g : Game) (prop : ProposedSpell) : Option GameObj
     | some src => some src
     | none => some prop.original
   | .turnFaceUp => none
-
-/-- Whether paying this proposed spell or ability may spend Hero-restricted
-mana (MSH 72): Hero spells, and activated abilities of Hero sources
-(including changeling and cards in any zone). -/
-def proposedAllowsHeroRestricted (g : Game) (prop : ProposedSpell) : Bool :=
-  match g.proposedRestrictionSource prop with
-  | some o => g.hasSubtype o .hero
-  | none => false
-
-/-- Whether paying this proposed spell or ability may spend Villain-restricted
-mana (MSH 73): Villain spells, and activated abilities of Villain sources. -/
-def proposedAllowsVillainRestricted (g : Game) (prop : ProposedSpell) : Bool :=
-  match g.proposedRestrictionSource prop with
-  | some o => g.hasSubtype o .villain
-  | none => false
-
-/-- Whether paying this proposed activation may spend creature-restricted mana
-(MSH 75). Casting a creature spell does not qualify. -/
-def proposedAllowsCreatureRestricted (g : Game) (prop : ProposedSpell) : Bool :=
-  match prop.kind with
-  | .spell | .turnFaceUp => false
-  | .activatedAbility =>
-    match g.proposedRestrictionSource prop with
-    | some o => g.isCreature o
-    | none => false
-
-/-- Whether paying this proposal may spend “can't be spent to cast a
-nonartifact spell” mana (MSH 345 / 347): artifact spells, and any
-activated ability. -/
-def proposedAllowsCantNonartifact (g : Game) (prop : ProposedSpell) : Bool :=
-  match prop.kind with
-  | .activatedAbility | .turnFaceUp => true
-  | .spell =>
-    match g.findObject? prop.spellId with
-    | some o => g.isArtifact o
-    | none => false
 
 /-- What paying `prop` is for, as `ManaSpendRestriction` checks see it (CR 106.6). -/
 def proposedManaSpend (g : Game) (prop : ProposedSpell) : ManaSpend :=
@@ -731,6 +590,7 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
     (activatedIdx : Option Nat) (restriction : Option ManaSpendRestriction)
     (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
     (powerUp : Bool := false) (exhaust : Bool := false)
+    (riders : Array SpellRiderSpec := #[])
     (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game := Id.run do
   let mut g := g
   if prevPending == .none && !hasFollowingSeq then
@@ -744,7 +604,7 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
   g := g.record (GameEvent.abilityActivated g.turnNumber id srcSnap p (.mana activatedIdx powerUp exhaust))
   let isTreasure := srcSnap.subtypes.contains .treasure
   let addedUnits := mana.map (fun t =>
-    ({ mana := t, source := some id, restriction := restriction, fromTreasure := isTreasure } : ManaUnit))
+    ({ mana := t, source := some id, restriction := restriction, riders := riders, fromTreasure := isTreasure } : ManaUnit))
   g := g.record (GameEvent.manaAdded g.turnNumber p addedUnits)
   let produced :=
     match mana[0]? with
@@ -836,6 +696,7 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
     (tap sacrificeSelf : Bool) (activatedIdx : Option Nat) (restriction : Option ManaSpendRestriction)
     (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
     (exileSelf : Bool := false) (powerUp : Bool := false) (exhaust : Bool := false)
+    (riders : Array SpellRiderSpec := #[])
     (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game × Bool := Id.run do
   let abortNow (g0 : Game) : Game × Bool :=
     abortDepartedManaAbilityContCore g0 p prevPending
@@ -904,7 +765,7 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
       g := g.chainPendingReplacement
         (.finishActivateManaAbilityPicks p id oname mana remPicks rest tap sacrificeSelf
           activatedIdx restriction damageYou isMountain prevPending
-          exileSelf powerUp exhaust)
+          exileSelf powerUp exhaust riders)
       return (g, false)
     if !pickPaid then
       return abortNow g
@@ -933,7 +794,7 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
       if let .chooseReplacement .. := g.pending then
         g := g.chainPendingReplacement
           (.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx
-            restriction damageYou isMountain prevPending powerUp exhaust)
+            restriction damageYou isMountain prevPending powerUp exhaust riders)
         return (g, false)
     | none =>
       return abortNow g
@@ -948,14 +809,14 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
         g := g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id msg))
         g := g.chainPendingReplacement
           (.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx
-            restriction damageYou isMountain prevPending powerUp exhaust)
+            restriction damageYou isMountain prevPending powerUp exhaust riders)
         return (g, false)
       if (g.followMovedToZone? id (· == .exile)).isSome then
         g := g.logMsg msg
     | none =>
       return abortNow g
   return (g.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx
-    restriction damageYou isMountain prevPending powerUp exhaust
+    restriction damageYou isMountain prevPending powerUp exhaust riders
     (wasPaused := wasPaused) (hasFollowingSeq := hasFollowingSeq), false)
 
 /-- Execute the remaining `picks`, `{T}`, and `sacrificeSelf` / `exileSelf` steps of a mana
@@ -966,10 +827,11 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
     (tap sacrificeSelf : Bool) (activatedIdx : Option Nat) (restriction : Option ManaSpendRestriction)
     (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
     (exileSelf : Bool := false) (powerUp : Bool := false) (exhaust : Bool := false)
+    (riders : Array SpellRiderSpec := #[])
     (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game :=
   (finishActivateManaAbilityPicksCore g p id oname mana picks costIds tap sacrificeSelf
     activatedIdx restriction damageYou isMountain prevPending
-    (exileSelf := exileSelf) (powerUp := powerUp) (exhaust := exhaust)
+    (exileSelf := exileSelf) (powerUp := powerUp) (exhaust := exhaust) (riders := riders)
     (wasPaused := wasPaused) (hasFollowingSeq := hasFollowingSeq)).1
 
 /-- Activate mana ability `idx` of `id` (CR 605.3), adding `mana`, paying
@@ -1009,43 +871,48 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
           prop.teamworkCreatures.contains id ||
           (prop.sneakAttacker == some id && !g.sneakPaid prop.spellId) then
         throw s!"{oname} is needed on the battlefield for the proposed spell or ability"
-  if d.onceEachTurn &&
-      (match d.activatedIdx with
-       | some i => (g.abilitiesActivatedThisTurn o.id).contains i
-       | none => g.activationsThisTurn o.id != 0) then
-    throw s!"{oname}'s ability can be activated only once each turn"
-  if d.exhaust && g.exhaustUsed o.id then
-    throw s!"{oname}'s exhaust ability can be activated only once (CR 702.177)"
-  if d.powerUp && g.powerUpsForbidden then
+  if let some lim := d.turnLimit? then
+    let used :=
+      match d.activatedIdx with
+      | some i => g.abilityActivationsThisTurn o.id i (isBoast := d.isBoast)
+      | none => g.activationsThisTurn o.id
+    if used ≥ lim then
+      if lim == 1 then
+        throw s!"{oname}'s ability can be activated only once each turn"
+      else
+        throw s!"{oname}'s ability can be activated no more than {lim} times each turn"
+  if d.isPowerUp && g.powerUpsForbidden then
     throw "Power-up abilities can't be activated during this extra turn"
-  if d.powerUp &&
-      Nat.max (g.powerUpActivations o.id) (if g.powerUpUsed o.id then 1 else 0) ≥
-        g.powerUpActivationLimit p then
-    throw s!"{oname}'s power-up ability can be activated only once"
+  if let some lim := d.lifetimeLimit? then
+    let effLim := if d.isPowerUp then g.powerUpActivationLimit p else lim
+    let used :=
+      match d.activatedIdx with
+      | some i => g.abilityActivationsSinceEntered o.id i (isPowerUp := d.isPowerUp) (isExhaust := d.isExhaust)
+      | none =>
+        if d.isPowerUp then Nat.max (g.powerUpActivations o.id) (if g.powerUpUsed o.id then 1 else 0)
+        else if d.isExhaust && g.exhaustUsed o.id then 1
+        else 0
+    if used ≥ effLim then
+      if d.isExhaust then
+        throw s!"{oname}'s exhaust ability can be activated only once (CR 702.177)"
+      else if d.isPowerUp then
+        throw s!"{oname}'s power-up ability can be activated only once"
+      else
+        throw s!"{oname}'s ability can be activated only once"
   if let some ab := d.sourceAbility then
-    if ab.onlyIfYouControlLegendary && !g.controlsLegendaryCreature p then
-      throw s!"{oname}'s ability can be activated only if you control a legendary creature"
-    if ab.onlyIfYouAttackedWithTwoOrMore && g.loggedAttacks p < 2 then
-      throw s!"{oname}'s ability can be activated only if you attacked with two or more creatures this turn"
-    if ab.onlyIfOpponentDealtNoncombatDamage &&
-        !g.players.any (fun q => q.id != p && !g.areTeammates p q.id && g.loggedNoncombatDamage q.id) then
-      throw s!"{oname}'s ability can be activated only if an opponent has been dealt noncombat damage this turn"
-    if ab.onlyAsSorcery && !g.asSorcery? p then
-      throw s!"{oname}'s ability can be activated only as a sorcery"
-    if ab.onlyDuringYourTurn && !g.isOnActiveTeam p then
-      throw s!"{oname}'s ability can be activated only during your turn"
-    if !g.fraActivationConditionHolds p ab.fraCondition then
-      throw s!"{oname}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
-    if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 &&
-        !(g.permanentsOf p).any (fun x =>
-          g.isCreature x && g.toughness x ≥ (ab.onlyIfYouControlCreatureToughnessAtLeast : Int)) then
-      throw s!"{oname}'s ability can be activated only if you control a creature with toughness {ab.onlyIfYouControlCreatureToughnessAtLeast} or greater"
-    if ab.onlyIfGyCreaturesAtLeast != 0 then
-      let gy :=
-        (g.player p).graveyard.filter (fun cid =>
-          (g.findObject? cid).any g.isCreature) |>.size
-      if gy < ab.onlyIfGyCreaturesAtLeast then
-        throw s!"{oname}'s ability can be activated only if there are {ab.onlyIfGyCreaturesAtLeast} or more creature cards in your graveyard"
+    match ab.timing with
+    | .sorcery | .loyalty =>
+      if !g.asSorcery? p then
+        throw s!"{oname}'s ability can be activated only as a sorcery"
+    | .instant => pure ()
+    if let some cond := ab.condition? then
+      if !EvalExpr.evalActivationCondition g p o.id (some cond) then
+        if cond == .isYourTurn then
+          throw s!"{oname}'s ability can be activated only during your turn"
+        else if cond == ActivatedAbility.condEnteredThisTurnOrControlBasicLand then
+          throw s!"{oname}'s colored mana ability can be activated only if this land entered this turn or if you control a basic land"
+        else
+          throw s!"{oname}'s ability can't be activated now (its \"Activate only if\" condition isn't met)"
   if d.removeStoryCounter then
     if o.status.story == 0 then
       throw s!"{oname} doesn't have a story counter to remove"
@@ -1092,11 +959,10 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     checkRest := checkRest.extract pick.count checkRest.size
   let pl := g.player p
   let effCost := g.manaAbilityEffectiveCost p o d
+  let abSpend := ManaSpend.forAbility (g.types o) (g.supertypes o) (g.subtypes o)
   let spentUnits? ←
     if effCost.includesManaPayment then
-      match pl.manaPool.payUnits? effCost (g.hasSubtype o .elf) false (g.hasSubtype o .hero)
-          (g.hasSubtype o .villain) true (g.isCreature o)
-          (spend := { abilitySourceTypes := g.types o, abilitySourceSupertypes := g.supertypes o, abilitySourceSubtypes := g.subtypes o }) with
+      match pl.manaPool.payUnits? effCost abSpend with
       | some (_, spentUnits) => pure (some spentUnits)
       | none => throw s!"{pl.name} cannot pay {effCost}"
     else pure none
@@ -1149,14 +1015,14 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
       g := g.chainPendingReplacement
         (.finishActivateManaAbilityPicks p id oname mana d.picks costIds d.tap d.sacrificeSelf
           d.activatedIdx d.restriction d.damageYou isMountain prevPending
-          d.exileSelf d.powerUp d.exhaust)
+          d.exileSelf d.isPowerUp d.isExhaust d.riders)
       if let some outer := outerCont? then
         g := g.chainPendingReplacement outer
       return g
   let (gAfter, cleanSyncAbort) :=
     finishActivateManaAbilityPicksCore g p id oname mana d.picks costIds d.tap d.sacrificeSelf
       d.activatedIdx d.restriction d.damageYou isMountain prevPending
-      (exileSelf := d.exileSelf) (powerUp := d.powerUp) (exhaust := d.exhaust)
+      (exileSelf := d.exileSelf) (powerUp := d.isPowerUp) (exhaust := d.isExhaust) (riders := d.riders)
       (wasPaused := false) (hasFollowingSeq := outerCont?.isSome)
   if cleanSyncAbort then
     throw s!"{oname}'s ability has a cost that can't be paid"
@@ -1176,6 +1042,7 @@ def manaAbilityIndexFor (g : Game) (o : GameObject) (mana : ManaType) (plainOnly
   let defs := g.manaAbilityDefs o
   let activeProp? := prop? <|> g.proposedSpell
   let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
+  let abSpend := ManaSpend.forAbility (g.types o) (g.supertypes o) (g.subtypes o)
   let rankBetter
       (a b : Bool × Bool × Nat × Bool × Nat × Bool) : Bool :=
     let (neA, spA, y1A, unA, y2A, plA) := a
@@ -1202,9 +1069,7 @@ def manaAbilityIndexFor (g : Game) (o : GameObject) (mana : ManaType) (plainOnly
             plainOnly ||
               let effCost := g.manaAbilityEffectiveCost p o d
               !effCost.includesManaPayment ||
-                ((g.player p).manaPool.payUnits? effCost (g.hasSubtype o .elf) false
-                  (g.hasSubtype o .hero) (g.hasSubtype o .villain) true (g.isCreature o)
-                  (spend := { abilitySourceTypes := g.types o, abilitySourceSupertypes := g.supertypes o, abilitySourceSubtypes := g.subtypes o })).isSome
+                ((g.player p).manaPool.payUnits? effCost abSpend).isSome
           let propOk :=
             match activeProp? with
             | none => true
@@ -1288,9 +1153,9 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
         let effCost := g.manaAbilityEffectiveCost p o d
         if effCost.includesManaPayment then
           throw s!"{(g.player p).name} cannot pay {effCost}"
-      if g.retainsPrintedAbilities o &&
-          (g.baseCard o).tapAddOneOfIfEnteredOrBasic.contains mana &&
-          !g.canUseEnteredOrBasicAdd o then
+      if defs.any (fun d =>
+          d.sourceAbility.any (·.condition? == some ActivatedAbility.condEnteredThisTurnOrControlBasicLand) &&
+          (d.output.withType mana).isSome) && !g.canUseEnteredOrBasicAdd o then
         throw s!"{g.nameWithToken o}'s colored mana ability can be activated only if this land entered this turn or if you control a basic land"
       throw s!"{g.nameWithToken o} cannot produce {mana}"
   let some d := defs[i]? | throw s!"{g.nameWithToken o} cannot produce {mana}"
@@ -1337,15 +1202,24 @@ def tapRestrictionOf (g : Game) (o : GameObject) (mana : ManaType)
   | some i => (g.manaAbilityDefs o)[i]?.bind (·.restriction)
   | none => none
 
+/-- Spell riders on the base mana `o` adds when tapped for `mana` with a plain
+`{T}` ability (CR 106.6 / 106.12). -/
+def tapRidersOf (g : Game) (o : GameObject) (mana : ManaType)
+    (prop? : Option ProposedSpell := none) : Array SpellRiderSpec :=
+  match g.manaAbilityIndexFor o mana (plainOnly := true) (prop? := prop?) with
+  | some i => ((g.manaAbilityDefs o)[i]?.map (·.riders)).getD #[]
+  | none => #[]
+
 /-- Add the mana produced by tapping `o` for `mana` to `pool`, applying `o`'s
-ability restriction only to `baseManaTypesFromTap` and leaving
+ability restriction and riders only to `baseManaTypesFromTap` and leaving
 `extraMountainRedFromTap` unrestricted (CR 106.1 / 106.6 / 605.4a). -/
 def addTapManaToPool (g : Game) (pool : ManaPool) (o : GameObject) (mana : ManaType)
     (prop? : Option ProposedSpell := none) : ManaPool :=
   let base := g.baseManaTypesFromTap o mana (prop? := prop?)
   let r := g.tapRestrictionOf o mana (prop? := prop?)
+  let riders := g.tapRidersOf o mana (prop? := prop?)
   let extra := g.extraMountainRedFromTap o base
-  addRestrictedMana (addRestrictedMana pool base r) extra none
+  addRestrictedMana (addRestrictedMana pool base r riders) extra none
 
 /-- Concrete plain `{T}` mana activation choice on a permanent, supporting both
 single-type `.tapForMana` choices and mixed-color `.combination` tuples via
@@ -1355,6 +1229,7 @@ structure TapManaChoice where
   baseAdded : Array ManaType
   extraRed : Array ManaType := #[]
   restriction : Option ManaSpendRestriction := none
+  riders : Array SpellRiderSpec := #[]
   /-- `some t` when `.tapForMana o.id t` executes this exact choice; `none` when
   `.activateManaAbility o.id abilityIdx baseAdded #[]` is required (e.g. a
   mixed-color `.combination` tuple). -/
@@ -1368,7 +1243,7 @@ def TapManaChoice.primaryType (ch : TapManaChoice) : ManaType :=
   ch.singleTapType?.getD (ch.baseAdded[0]?.getD .colorless)
 
 def TapManaChoice.applyToPool (ch : TapManaChoice) (pool : ManaPool) : ManaPool :=
-  addRestrictedMana (addRestrictedMana pool ch.baseAdded ch.restriction) ch.extraRed none
+  addRestrictedMana (addRestrictedMana pool ch.baseAdded ch.restriction ch.riders) ch.extraRed none
 
 /-- Distinct plain `{T}` mana activation choices for `(o, types)` toward `cost`,
 including mixed-color `.combination ts n` tuples (with zero-requirement colors
@@ -1397,6 +1272,7 @@ def tapChoicesForSource (g : Game) (o : GameObject) (types : Array ManaType)
               baseAdded := base
               extraRed := g.extraMountainRedFromTap o base
               restriction := d.restriction
+              riders := d.riders
               singleTapType? := some t
             }
   let tapPrereqOk : Bool :=
@@ -1443,13 +1319,14 @@ def tapChoicesForSource (g : Game) (o : GameObject) (types : Array ManaType)
               for tup in ManaOutput.multisetChoices collapsedTs n do
                 if !tup.isEmpty then
                   let alreadySingle :=
-                    out.any (fun ch => ch.baseAdded == tup && ch.restriction == d.restriction)
+                    out.any (fun ch => ch.baseAdded == tup && ch.restriction == d.restriction && ch.riders == d.riders)
                   if !alreadySingle then
                     out := out.push {
                       abilityIdx := i
                       baseAdded := tup
                       extraRed := g.extraMountainRedFromTap o tup
                       restriction := d.restriction
+                      riders := d.riders
                       singleTapType? := none
                     }
     return out

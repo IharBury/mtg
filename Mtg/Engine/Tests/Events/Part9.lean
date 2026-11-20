@@ -966,7 +966,8 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
   let painLandDef : CardDef := {
     name := "P41i4 PainForge"
     types := #[.land]
-    tapAddOneOfDealsDamage := some (#[.colored .red, .colored .green], 1)
+    activatedAbilities := #[ActivatedAbility.manaAbility
+      (.oneOf (.explicit #[.colored .red, .colored .green]) (.const 1)) (damageYou := 1)]
   }
   let leyADef : CardDef := { name := "P41i4 LeyA", types := #[.enchantment] }
   let leyBDef : CardDef := { name := "P41i4 LeyB", types := #[.enchantment] }

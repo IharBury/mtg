@@ -226,6 +226,19 @@ def CardSubtype.isCorrelatedWith (ts : Array CardType) (sub : CardSubtype) : Boo
   | .dungeon => ts.contains .dungeon
   | .battle => ts.contains .battle
 
+/-- Basic land subtype to the color of mana its CR 305.6 intrinsic mana ability produces. -/
+def CardSubtype.basicLandManaColor? : CardSubtype → Option Color
+  | .plains => some .white
+  | .island => some .blue
+  | .swamp => some .black
+  | .mountain => some .red
+  | .forest => some .green
+  | _ => none
+
+/-- True when `sub` is one of the five basic land types (CR 305.6). -/
+def CardSubtype.isBasicLandType (sub : CardSubtype) : Bool :=
+  sub.basicLandManaColor?.isSome
+
 /-- Compositional Layer 4 type/subtype/supertype modification (CR 205.1a–b / 205.3d / 613.1d). -/
 structure TypeSetMod where
   mode : SetOrAdd := .add
@@ -243,14 +256,21 @@ private def pushDedup {α : Type} [BEq α] (acc elems : Array α) : Array α :=
   elems.foldl (fun a x => if a.contains x then a else a.push x) acc
 
 /-- Apply a compositional Layer 4 type/subtype/supertype modification, enforcing
-CR 205.3d subtype correlation whenever card types are replaced or removed. -/
+CR 205.3d subtype correlation whenever card types are replaced or removed and
+CR 305.7 / 205.3m land-only subtype replacement when setting land subtypes
+without replacing card types. -/
 def apply (m : TypeSetMod) (ts : Array CardType) (subs : Array CardSubtype)
     (sups : Array Supertype) : Array CardType × Array CardSubtype × Array Supertype :=
   match m.mode with
   | .set =>
     let ts1 := if m.types.isEmpty then ts else m.types
     let ts' := if m.removeTypes.isEmpty then ts1 else ts1.filter (!m.removeTypes.contains ·)
-    let subs1 := if !m.subtypes.isEmpty then m.subtypes else subs.filter (CardSubtype.isCorrelatedWith ts')
+    let subs1 :=
+      if !m.subtypes.isEmpty then
+        if m.types.isEmpty && m.subtypes.all (·.kind == .land) then
+          subs.filter (fun s => s.kind != .land && CardSubtype.isCorrelatedWith ts' s) ++ m.subtypes
+        else m.subtypes
+      else subs.filter (CardSubtype.isCorrelatedWith ts')
     let subs' := if m.removeSubtypes.isEmpty then subs1 else subs1.filter (!m.removeSubtypes.contains ·)
     let sups1 := if m.supertypes.isEmpty then sups else m.supertypes
     let sups' := if m.removeSupertypes.isEmpty then sups1 else sups1.filter (!m.removeSupertypes.contains ·)

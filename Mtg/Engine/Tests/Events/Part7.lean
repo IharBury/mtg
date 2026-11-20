@@ -127,7 +127,7 @@ private def replayOk36i1 (gs : Array Game) : Bool :=
 
   --     (ii) Live mana batch (`finishActivateManaAbilityPostSac`) is NOT closed prematurely on
   --          ordinary `.restorePending (.activateManaAbilities p0)`:
-  let petalDef : CardDef := { name := "P36i1 Petal", types := #[.artifact], tapSacrificeAddAnyColor := true }
+  let petalDef : CardDef := { name := "P36i1 Petal", types := #[.artifact], activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor] }
   let greenSpellDef : CardDef := {
     name := "P36i1 Green Instant", manaCost := ManaCost.ofColor .green, types := #[.instant]
     spellEffect := some (Effect.gainLife 1)
@@ -537,7 +537,7 @@ private def lifeGainsSince36i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
 
   -- 2c(i). `Core.reverseToProposalCheckpointCore?` `preDepBatches`: mana-ability sacrifice batch paused on
   --        `.chooseReplacement` before unrelated `p3` departs STILL reverses its sacrifice & wipes `.manaAdded`:
-  let petal2Def : CardDef := { name := "P36i2 Petal", types := #[.artifact], tapSacrificeAddAnyColor := true }
+  let petal2Def : CardDef := { name := "P36i2 Petal", types := #[.artifact], activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor] }
   let rgSpellDef : CardDef := {
     name := "P36i2 RG Instant", manaCost := ⟨#[.colored .red, .colored .green]⟩, types := #[.instant]
     spellEffect := some (Effect.gainLife 1)
@@ -943,10 +943,10 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
     !(gFdSacGranterAsCost.object! fdObj.id).status.faceDown &&
     gFdSacGranterAsCost.proposedSpell.isNone
 
-  -- 4a(iii). `.activatedAbility` zone guards (`activateFromGraveyard` / `activateFromHand`):
+  -- 4a(iii). `.activatedAbility` zone guards (`activeZones` graveyard / hand):
   let bfOnlyAb : ActivatedAbility := { cost := CostSpec.empty, effect := Effect.gainLife 1 }
-  let gyOnlyAb : ActivatedAbility := { cost := CostSpec.empty, activateFromGraveyard := true, effect := Effect.gainLife 1 }
-  let handOnlyAb : ActivatedAbility := { cost := CostSpec.empty, activateFromHand := true, effect := Effect.gainLife 1 }
+  let gyOnlyAb : ActivatedAbility := { cost := CostSpec.empty, activeZones := #[.graveyard], effect := Effect.gainLife 1 }
+  let handOnlyAb : ActivatedAbility := { cost := CostSpec.empty, activeZones := #[.hand], effect := Effect.gainLife 1 }
   let gZone0 :=
     insertObject (insertObject (addPermanent g3 bear p0 p0) bear p0 (.graveyard p0)) bear p0 (.hand p0)
   let zBfObj := (gZone0.permanentsOf p0)[0]!
@@ -995,7 +995,7 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
     cost := CostSpec.ofItems #[.sacrifice (.exact 1) .self, .sacrifice (.exact 1) (.filter (.any #[.hasType .artifact, .hasType .land]))], effect := Effect.gainLife 1
   }
   let discSelfAndLegHandFraAb : ActivatedAbility := {
-    activateFromHand := true
+    activeZones := #[.hand]
     cost := CostSpec.ofItems #[.discard (.exact 1) .self, .discard (.exact 1) (.matching (.hasSupertype .legendary))], effect := Effect.gainLife 1
   }
   let selfExclusionOk :=
@@ -1445,7 +1445,7 @@ private def lifeGainsSince37i1 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
 
   -- 1d. Inter-departure `nonDepBatches`: `p1` departs -> `p0` opens reversible mana batch pausing on
   --     `.chooseReplacement` -> `p2` departs -> `p0` finishes `.chooseReplacement` -> `p3` departs (aborting):
-  let petalDef : CardDef := { name := "P37i1 Petal", types := #[.artifact], tapSacrificeAddAnyColor := true }
+  let petalDef : CardDef := { name := "P37i1 Petal", types := #[.artifact], activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor] }
   let rgInstDef : CardDef := {
     name := "P37i1 RG Instant", manaCost := ⟨#[.colored .red, .colored .green]⟩, types := #[.instant]
     spellEffect := some (Effect.gainLife 1)
@@ -2099,10 +2099,10 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
   -- 4a. `payActivationExtraCosts` + `sourceStillPayable` `activateFromHand` (source stays in hand AND
   --     `sourceDiscardedFromHandForCost` across multi-pick `CostPick`):
   let keepInHandAb : ActivatedAbility := {
-    activateFromHand := true, cost := CostSpec.ofItems #[.payLife (.const 2)], effect := Effect.gainLife 5
+    activeZones := #[.hand], cost := CostSpec.ofItems #[.payLife (.const 2)], effect := Effect.gainLife 5
   }
   let selfDiscMultiAb : ActivatedAbility := {
-    activateFromHand := true
+    activeZones := #[.hand]
     cost := CostSpec.ofItems #[.payLife (.const 2), .discard (.exact 1) .hand, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
     effect := Effect.gainLife 5
   }
@@ -3261,10 +3261,10 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
     gPxSet.proposalCostPromptStillPayable p0 (.sacrificePermanent p0 pwId)
   -- `!exileSource` graveyard/hand guards:
   let badGyExileAb : ActivatedAbility := {
-    activateFromGraveyard := true, cost := CostSpec.ofItems #[.exile (.exact 1) .battlefield .self], effect := Effect.gainLife 1
+    activeZones := #[.graveyard], cost := CostSpec.ofItems #[.exile (.exact 1) .battlefield .self], effect := Effect.gainLife 1
   }
   let badHandExileAb : ActivatedAbility := {
-    activateFromHand := true, cost := CostSpec.ofItems #[.exile (.exact 1) .battlefield .self], effect := Effect.gainLife 1
+    activeZones := #[.hand], cost := CostSpec.ofItems #[.exile (.exact 1) .battlefield .self], effect := Effect.gainLife 1
   }
   let gExGuard0 := insertObject (insertObject g3 bear p0 (.graveyard p0)) bear p0 (.hand p0)
   let badGyCard := gExGuard0.object! (gExGuard0.player p0).graveyard.back!
@@ -3385,7 +3385,8 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
   -- 4c. Departed-player `finishManaAbilityMountainTrigger` & `abortDepartedManaAbilityCont` priority handoff:
   let painMtnDef : CardDef := {
     name := "P38i4 PainPeak", types := #[.land], subtypes := #["Mountain"]
-    tapAddOneOfDealsDamage := some (#[.colored .red, .colored .green], 1)
+    activatedAbilities := #[ActivatedAbility.manaAbility
+      (.oneOf (.explicit #[.colored .red, .colored .green]) (.const 1)) (damageYou := 1)]
   }
   let gPm0 :=
     (addPermanent (addPermanent (addPermanent g3 painMtnDef p0 p0) leyADef p0 p0) leyBDef p0 p0).createEffect
@@ -3412,7 +3413,7 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
   -- `abortDepartedManaAbilityCont`: `prevPending = .mayPayGeneric p0 1` belongs to `p0`; when `p0` sacrifices
   -- a mana artifact (`sRidA`/`sRidB` pause) and concedes, `.restorePending` clears `.mayPayGeneric p0 1` to `.none`
   -- and the fall-through `g.receivePriority p0` grants priority to `p1`!
-  let sacManaDef : CardDef := { name := "P38i4 ManaLotus", types := #[.artifact], tapSacrificeAddAnyColor := true }
+  let sacManaDef : CardDef := { name := "P38i4 ManaLotus", types := #[.artifact], activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor] }
   let gAbMaBase := addPermanent (addPermanent (addPermanent g3 sacManaDef p0 p0) leyADef p0 p0) leyBDef p0 p0
   let abMaLeyA := (gAbMaBase.permanentsOf p0).find? (·.name == leyADef.name) |>.get!.id
   let abMaLeyB := (gAbMaBase.permanentsOf p0).find? (·.name == leyBDef.name) |>.get!.id

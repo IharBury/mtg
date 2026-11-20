@@ -29,7 +29,7 @@ def main : IO UInt32 := do
     (fun c => c.spellEffect == some (Effect.dealDamage 2) && c.isInstant))
   fails := fails + (← expect "Mountain"
     "Mountain\nBasic Land — Mountain\n({T}: Add {R}.)"
-    (fun c => c.isLand && c.hasSupertype .basic && c.tapAddMana.isEmpty))
+    (fun c => c.isLand && c.hasSupertype .basic && c.activatedAbilities.isEmpty))
   fails := fails + (← expect "Allure of Power"
     "My Precious\n{3}\nLegendary Artifact — Equipment\nEquipped creature has hexproof and can't be blocked.\nEquip—{2}, Pay 2 life.\n//ADV//\nAllure of Power\n{1}{B}\nInstant — Adventure\nAs an additional cost to cast this spell, sacrifice a creature.\nDraw two cards."
     (fun c =>
@@ -39,7 +39,7 @@ def main : IO UInt32 := do
       | none => false))
   fails := fails + (← expect "Treasure"
     "Treasure\nArtifact — Treasure\nToken\n{T}, Sacrifice this token: Add one mana of any color."
-    (fun c => c.tapSacrificeAddAnyColor && c.isArtifact))
+    (fun c => c.activatedAbilities == #[ActivatedAbility.manaTapSacrificeAnyColor] && c.isArtifact))
   fails := fails + (← expect "Shock five"
     "Shock\n{R}\nInstant\nShock deals 5 damage to any target."
     (fun c => c.spellEffect == some (Effect.dealDamage 5) && c.isInstant))
@@ -60,7 +60,7 @@ def main : IO UInt32 := do
       some (StaticAbility.otherCreaturesGet #[.goblin] 2 2)))
   fails := fails + (← expect "Thanos"
     "Thanos, the Mad Titan\n{R}{W}{B}\nLegendary Creature — Eternal Villain\n4/4\nDeathtouch, lifelink\nPower-up — {C}{W}{U}{B}{R}{G}: Put two +1/+1 counters on Thanos. Choose odd or even. Destroy each other creature with mana value of the chosen quality."
-    (fun c => c.activatedAbilities.size == 1 && c.activatedAbilities[0]!.powerUp &&
+    (fun c => c.activatedAbilities.size == 1 && c.activatedAbilities[0]!.isPowerUp &&
       KeywordAbility.hasDeathtouch c.keywords && KeywordAbility.hasLifelink c.keywords))
   let t1 ← IO.monoMsNow
   IO.println s!"fails {fails} ms {t1 - t0}"

@@ -64,14 +64,16 @@ def proposedBauble : Game :=
   | .error _ => true
   | .ok _ => false
 
--- A land has no non-mana activated ability.
+-- A basic land has only its CR 305.6 intrinsic mana ability (no non-mana
+-- activated ability); activating it resolves without using the stack (CR 605.3b).
 #guard
   match (baubleReady.permanentsOf ⟨0⟩).find? (·.printed.isLand) with
   | none => false
   | some land =>
-    match baubleReady.activateAbility ⟨0⟩ land.id 0 with
-    | .error msg => mentions msg "has no activated ability"
-    | .ok _ => false
+    !(baubleReady.activatedAbilitiesOf land).any (!Game.isManaActivation ·) &&
+      match baubleReady.activateAbility ⟨0⟩ land.id 0 with
+      | .ok g' => g'.stack.isEmpty && (g'.object! land.id).status.tapped
+      | .error _ => false
 
 def tapNextMana (g : Game) (p : PlayerId) : Game :=
   match (g.manaSources p)[0]? with
@@ -153,9 +155,9 @@ def hunterAbility : ActivatedAbility :=
 #guard snowslopeHunter.activatedAbilities.size == 1
 #guard hunterAbility.cost.sacrificeAnotherCreatureOrArtifact
 #guard hunterAbility.effect == Effect.exileTopPlayUntilEndOfNextTurn
-#guard hunterAbility.onlyDuringYourTurn
-#guard hunterAbility.onceEachTurn
-#guard !hunterAbility.onlyAsSorcery
+#guard hunterAbility.condition? == some .isYourTurn
+#guard hunterAbility.turnLimit? == some 1
+#guard hunterAbility.timing == .instant
 #guard hunterReady.canActivate ⟨0⟩ (hunterSource hunterReady) hunterAbility
 #guard !(hunterReady.canActivate ⟨1⟩ (hunterSource hunterReady) hunterAbility)
 #guard (hunterReady.sacrificeCreatureOrArtifactChoices ⟨0⟩

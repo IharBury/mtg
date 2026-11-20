@@ -7,40 +7,33 @@ Helpers for building the activated abilities the Oracle parser recognizes.
 namespace Mtg.Engine.OracleActivate
 
 /-- An activated ability (CR 602.1). -/
-def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
+def activated (effect : Effect := {}) (mana : ManaCost := ManaCost.empty)
     (tap : Bool := false) (sacrificeSource : Bool := false)
     (sacrificeAnotherCreatureOrArtifact : Bool := false)
-    (onlyAsSorcery : Bool := false) (onlyDuringYourTurn : Bool := false)
-    (onceEachTurn : Bool := false)
+    (timing : ActivationTiming := .instant)
+    (activeZones : Array ZoneKind := #[.battlefield])
+    (turnLimit? : Option Nat := none)
+    (lifetimeLimit? : Option Nat := none)
+    (condition? : Option Condition := none)
+    (costReductions : Array ActivationCostReduction := #[])
+    (tag? : Option ActivationMechanicTag := none)
+    (mana? : Option ManaProductionSpec := none)
     (otherModes : Array Effect := #[]) (payLife : Nat := 0)
-    (activateFromGraveyard : Bool := false)
-    (activateFromHand : Bool := false)
-    (onlyIfYouControlLegendary : Bool := false)
     (discardSource : Bool := false)
-    (costReductionIfYouControlLegendary : Nat := 0)
-    (equipSubtype : Option CardSubtype := none)
     (sacrificeAnotherSubtype : Option CardSubtype := none)
     (sacrificeAnotherCreature : Bool := false)
     (discardACard : Bool := false)
-    (costReductionPerEquipment : Nat := 0)
     (tapAnUntappedCreatureYouControl : Bool := false)
-    (onlyIfYouAttackedWithTwoOrMore : Bool := false)
-    (onlyIfOpponentDealtNoncombatDamage : Bool := false)
     (exileSourceFromGraveyard : Bool := false)
     (removeIndestructibleCounter : Bool := false)
     (sacrificeLegendaryArtifact : Bool := false)
     (discardLegendarySameName : Bool := false)
     (sacrificeArtifact : Bool := false)
-    (powerUp : Bool := false)
-    (equipWorthy : Bool := false)
     (sacrificeArtifactOrCreature : Bool := false)
     (sacrificeArtifactOrDiscardNonland : Bool := false)
     (removeAnyNumberPlusOne : Bool := false)
     (putStunCounterOnSource : Bool := false)
     (sacrificeEquipmentAttachedToSource : Bool := false)
-    (onlyIfYouControlCreatureToughnessAtLeast : Nat := 0)
-    (onlyIfGyCreaturesAtLeast : Nat := 0)
-    (costReductionIfTargetPowerAtMost : Option (Nat × Int) := none)
     (loyalty : Option LoyaltySymbol := none)
     (removeStoryCounter : Bool := false)
     (extraCost : CostSpec := {}) :
@@ -86,41 +79,71 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
       out := out.push (.removeCounters (.exact 1) (some .story) .self)
     out := out ++ extraCost.items
     return out
+  let equipSub? : Option CardSubtype :=
+    match tag? with
+    | some (.equip (some (.hasSubtype (.literal sub)))) => some sub
+    | _ => none
+  let isWorthyEquip : Bool :=
+    match tag? with
+    | some (.equip (some pred)) => pred == ObjectPred.worthy
+    | _ => false
+  let effTiming :=
+    if loyalty.isSome then .loyalty else timing
+  let effLifetime :=
+    match lifetimeLimit?, tag? with
+    | some n, _ => some n
+    | none, some .powerUp | none, some .exhaust => some 1
+    | none, _ => none
+  let effTurnLimit :=
+    match turnLimit?, tag? with
+    | some n, _ => some n
+    | none, some .boast => some 1
+    | none, _ => none
+  let effCond :=
+    if tag? == some .boast then
+      Condition.andOpt condition? (some ActivatedAbility.condSourceAttackedThisTurn)
+    else condition?
   {
     cost := { items, bindVar? := extraCost.bindVar? }
     effect :=
-      if effect == Effect.attachToTargetCreatureYouControl && (equipSubtype.isSome || equipWorthy) then
-        Effect.equipEffect equipSubtype equipWorthy
+      if effect == Effect.attachToTargetCreatureYouControl && (equipSub?.isSome || isWorthyEquip) then
+        Effect.equipEffect equipSub? isWorthyEquip
       else
         effect
     otherModes := otherModes
-    onlyAsSorcery, onlyDuringYourTurn, onceEachTurn
-    activateFromGraveyard, activateFromHand, onlyIfYouControlLegendary
-    costReductionIfYouControlLegendary, equipSubtype, costReductionPerEquipment
-    onlyIfYouAttackedWithTwoOrMore, onlyIfOpponentDealtNoncombatDamage, powerUp, equipWorthy
-    onlyIfYouControlCreatureToughnessAtLeast, onlyIfGyCreaturesAtLeast
-    costReductionIfTargetPowerAtMost
+    mana?
+    timing := effTiming
+    activeZones
+    turnLimit? := effTurnLimit
+    lifetimeLimit? := effLifetime
+    condition? := effCond
+    costReductions
+    tag?
   }
 
-/-- Equip `mana`, only as a sorcery. -/
+/-- Equip `mana`, only as a sorcery (CR 702.6). -/
 def equipAbility (mana : ManaCost) (subtype : Option CardSubtype := none) : ActivatedAbility :=
-  activated (Effect.equipEffect subtype false) mana (onlyAsSorcery := true)
-    (equipSubtype := subtype)
+  activated (Effect.equipEffect subtype false) mana
+    (timing := .sorcery)
+    (tag? := some (.equip (subtype.map fun s => .hasSubtype (.literal s))))
 
-/-- Equip worthy `mana`. -/
+/-- Equip worthy `mana` (CR 702.6c). -/
 def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
-  activated (Effect.equipEffect none true) mana (onlyAsSorcery := true)
-    (equipWorthy := true)
+  activated (Effect.equipEffect none true) mana
+    (timing := .sorcery)
+    (tag? := some (.equip (some ObjectPred.worthy)))
 
-/-- Typecycling `{cost}`. -/
+/-- Typecycling `{cost}` (CR 702.29e). -/
 def typecyclingAbility (landType : String) (mana : ManaCost := ManaCost.ofGeneric 1) :
     ActivatedAbility :=
   activated (Effect.searchLandTypeToHand landType) mana
-    (discardSource := true) (activateFromHand := true)
+    (activeZones := #[.hand])
+    (tag? := some (.cycling (some landType)))
+    (discardSource := true)
 
-/-- Activated ability that is a power-up. -/
+/-- Activated ability that is a power-up (CR 702.193). -/
 def powerUpAbility (effect : Effect) (mana : ManaCost)
     (tap : Bool := false) : ActivatedAbility :=
-  activated effect mana (tap := tap) (powerUp := true)
+  activated effect mana (tap := tap) (lifetimeLimit? := some 1) (tag? := some .powerUp)
 
 end Mtg.Engine.OracleActivate

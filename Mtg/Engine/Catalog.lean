@@ -41,32 +41,18 @@ rules text. -/
     (costReductionIfTargetAttacking : Nat := 0)
     (costReductionIfYouControl : Option (Nat × CardSubtype) := none)
     (costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none)
-    (tapAddMana : Array ManaType := #[])
-    (tapAddManaForEach : Array TapAddForEach := #[])
-    (tapAddAnyColorEqualToPower : Bool := false)
-    (tapAddAnyColorForInstantOrSorcery : Bool := false)
     (entersWithHopePerCreature : Bool := false)
     (entersTapped : Bool := false)
-    (tapAddOneOf : Array ManaType := #[])
-    (tapAddOneOfIfEnteredOrBasic : Array ManaType := #[])
-    (tapAddAnyColor : Bool := false)
-    (tapSacrificeAddAnyColor : Bool := false)
     (isToken : Bool := false)
     (cantBeCountered : Bool := false)
     (flashIfYouControlSubtype : Option CardSubtype := none)
     (colorIndicator : Option ColorSet := none)
     (entersTappedUnlessLegendary : Bool := false)
     (entersTappedUnlessEquipment : Bool := false)
-    (tapAddAnyColorForLegendary : Bool := false)
     (costReductionEqualFlyingPower : Bool := false)
-    (tapAddTwoAmong : Array ManaType := #[])
     (chooseOneOrBoth : Bool := false)
     (chooseTwoIfYouControlSubtype : Option CardSubtype := none)
-    (tapAddAnyColorAmongLegendaries : Bool := false)
-    (tapAddRestricted : Option (Array ManaType × ManaSpendRestriction) := none)
-    (tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none)
     (entersTappedUnlessPayLife : Option Nat := none)
-    (tapAddCommanderIdentity : Bool := false)
     (asEntersChooseCreatureType : Bool := false)
     (saga : Option SagaDef := none)
     (costReductionEqualOppArtifacts : Bool := false)
@@ -74,7 +60,6 @@ rules text. -/
     (othersEnterWithPlusOneEqualToughness : Bool := false)
     (powerPerMountain : Nat := 0)
     (extraLandIfOtherSubtype : Option CardSubtype := none)
-    (tapAddColorlessPerSubtype : Option CardSubtype := none)
     (tokenDoubling : Bool := false)
     (drawTwoExceptFirstDrawStep : Bool := false)
     (staticAbilities : Array StaticAbility := #[])
@@ -103,30 +88,16 @@ rules text. -/
       costReductionIfTargetAttacking
       costReductionIfYouControl
       costReductionIfGyCreaturesAtLeast
-      tapAddMana
-      tapAddManaForEach
-      tapAddAnyColorEqualToPower
-      tapAddAnyColorForInstantOrSorcery
       entersWithHopePerCreature
       entersTapped
-      tapAddOneOf
-      tapAddOneOfIfEnteredOrBasic
-      tapAddAnyColor
-      tapSacrificeAddAnyColor
       cantBeCountered
       flashIfYouControlSubtype
       entersTappedUnlessLegendary
       entersTappedUnlessEquipment
-      tapAddAnyColorForLegendary
       costReductionEqualFlyingPower
-      tapAddTwoAmong
       chooseOneOrBoth
       chooseTwoIfYouControlSubtype
-      tapAddAnyColorAmongLegendaries
-      tapAddRestricted
-      tapPayLifeAddOneOf
       entersTappedUnlessPayLife
-      tapAddCommanderIdentity
       asEntersChooseCreatureType
       saga
       costReductionEqualOppArtifacts
@@ -134,7 +105,6 @@ rules text. -/
       othersEnterWithPlusOneEqualToughness
       powerPerMountain
       extraLandIfOtherSubtype
-      tapAddColorlessPerSubtype
       tokenDoubling
       drawTwoExceptFirstDrawStep
       staticAbilities
@@ -201,29 +171,21 @@ def forest : CardDef :=
 @[irreducible, noinline] def creature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (power toughness : Int) (oracleText : String := "")
     (keywords : Array KeywordAbility := #[])
-    (tapAddMana : Array ManaType := #[])
     (supertypes : Array Supertype := #[])
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (tapAddManaForEach : Array TapAddForEach := #[])
-    (tapAddAnyColorEqualToPower : Bool := false)
-    (tapAddAnyColorForInstantOrSorcery : Bool := false)
-    (tapAddAnyColor : Bool := false)
     (adventure : Option AdventureFace := none)
     (costReductionIfCreatureDied : Nat := 0)
     (colorIndicator : Option ColorSet := none)
     (isToken : Bool := false)
     (cantBeCountered : Bool := false)
     (flashIfYouControlSubtype : Option CardSubtype := none)
-    (tapAddAnyColorForLegendary : Bool := false)
     (costReductionEqualFlyingPower : Bool := false)
-    (tapAddRestricted : Option (Array ManaType × ManaSpendRestriction) := none)
     (foodAlsoCreatesTreasure : Bool := false)
     (othersEnterWithPlusOneEqualToughness : Bool := false)
     (powerPerMountain : Nat := 0)
     (extraLandIfOtherSubtype : Option CardSubtype := none)
-    (tapAddColorlessPerSubtype : Option CardSubtype := none)
     (costReductionEqualOppArtifacts : Bool := false)
     (tokenDoubling : Bool := false)
     (drawTwoExceptFirstDrawStep : Bool := false)
@@ -231,25 +193,17 @@ def forest : CardDef :=
     (otherFace : Option CardDef := none) : CardDef :=
   card name #[.creature] manaCost subtypes oracleText (some power) (some toughness)
     keywords supertypes
-    (tapAddMana := tapAddMana)
-    (tapAddManaForEach := tapAddManaForEach)
-    (tapAddAnyColorEqualToPower := tapAddAnyColorEqualToPower)
-    (tapAddAnyColorForInstantOrSorcery := tapAddAnyColorForInstantOrSorcery)
-    (tapAddAnyColor := tapAddAnyColor)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities) (adventure := adventure)
     (costReductionIfCreatureDied := costReductionIfCreatureDied)
     (colorIndicator := colorIndicator) (isToken := isToken)
     (cantBeCountered := cantBeCountered)
     (flashIfYouControlSubtype := flashIfYouControlSubtype)
-    (tapAddAnyColorForLegendary := tapAddAnyColorForLegendary)
     (costReductionEqualFlyingPower := costReductionEqualFlyingPower)
-    (tapAddRestricted := tapAddRestricted)
     (foodAlsoCreatesTreasure := foodAlsoCreatesTreasure)
     (othersEnterWithPlusOneEqualToughness := othersEnterWithPlusOneEqualToughness)
     (powerPerMountain := powerPerMountain)
     (extraLandIfOtherSubtype := extraLandIfOtherSubtype)
-    (tapAddColorlessPerSubtype := tapAddColorlessPerSubtype)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
     (tokenDoubling := tokenDoubling)
     (drawTwoExceptFirstDrawStep := drawTwoExceptFirstDrawStep)
@@ -260,45 +214,34 @@ def forest : CardDef :=
 @[irreducible, noinline] def legendaryCreature (name : String) (manaCost : ManaCost) (subtypes : Array Subtype)
     (power toughness : Int) (oracleText : String := "")
     (keywords : Array KeywordAbility := #[])
-    (tapAddMana : Array ManaType := #[])
     (supertypes : Array Supertype := #[])
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (tapAddManaForEach : Array TapAddForEach := #[])
-    (tapAddAnyColorEqualToPower : Bool := false)
-    (tapAddAnyColorForInstantOrSorcery : Bool := false)
     (adventure : Option AdventureFace := none)
     (costReductionIfCreatureDied : Nat := 0)
     (costReductionEqualFlyingPower : Bool := false)
-    (tapAddRestricted : Option (Array ManaType × ManaSpendRestriction) := none)
     (foodAlsoCreatesTreasure : Bool := false)
     (othersEnterWithPlusOneEqualToughness : Bool := false)
     (powerPerMountain : Nat := 0)
     (extraLandIfOtherSubtype : Option CardSubtype := none)
-    (tapAddColorlessPerSubtype : Option CardSubtype := none)
     (costReductionEqualOppArtifacts : Bool := false)
     (tokenDoubling : Bool := false)
     (drawTwoExceptFirstDrawStep : Bool := false)
     (entersWithShield : Nat := 0)
     (otherFace : Option CardDef := none) : CardDef :=
   creature name manaCost subtypes power toughness oracleText
-    (keywords := keywords) (tapAddMana := tapAddMana)
+    (keywords := keywords)
     (supertypes := #[.legendary] ++ supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities)
-    (tapAddManaForEach := tapAddManaForEach)
-    (tapAddAnyColorEqualToPower := tapAddAnyColorEqualToPower)
-    (tapAddAnyColorForInstantOrSorcery := tapAddAnyColorForInstantOrSorcery)
     (adventure := adventure)
     (costReductionIfCreatureDied := costReductionIfCreatureDied)
     (costReductionEqualFlyingPower := costReductionEqualFlyingPower)
-    (tapAddRestricted := tapAddRestricted)
     (foodAlsoCreatesTreasure := foodAlsoCreatesTreasure)
     (othersEnterWithPlusOneEqualToughness := othersEnterWithPlusOneEqualToughness)
     (powerPerMountain := powerPerMountain)
     (extraLandIfOtherSubtype := extraLandIfOtherSubtype)
-    (tapAddColorlessPerSubtype := tapAddColorlessPerSubtype)
     (costReductionEqualOppArtifacts := costReductionEqualOppArtifacts)
     (tokenDoubling := tokenDoubling)
     (drawTwoExceptFirstDrawStep := drawTwoExceptFirstDrawStep)
@@ -448,18 +391,11 @@ def chapter (roman effect : String) (e : Effect) : SagaChapter :=
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (tapAddMana : Array ManaType := #[])
-    (tapAddManaForEach : Array TapAddForEach := #[])
-    (tapAddAnyColor : Bool := false)
-    (tapSacrificeAddAnyColor : Bool := false)
     (isToken : Bool := false)
     (keywords : Array KeywordAbility := #[])
     (supertypes : Array Supertype := #[])
-    (tapAddTwoAmong : Array ManaType := #[])
     (power : Option Int := none)
     (toughness : Option Int := none)
-    (tapAddAnyColorAmongLegendaries : Bool := false)
-    (tapAddCommanderIdentity : Bool := false)
     (adventure : Option AdventureFace := none)
     (entersTapped := false) : CardDef :=
   card name #[.artifact] manaCost subtypes oracleText
@@ -467,14 +403,8 @@ def chapter (roman effect : String) (e : Effect) : SagaChapter :=
     (keywords := keywords)
     (supertypes := supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
-    (activatedAbilities := activatedAbilities) (tapAddMana := tapAddMana)
-    (tapAddManaForEach := tapAddManaForEach)
-    (tapAddAnyColor := tapAddAnyColor)
-    (tapSacrificeAddAnyColor := tapSacrificeAddAnyColor)
+    (activatedAbilities := activatedAbilities)
     (isToken := isToken)
-    (tapAddTwoAmong := tapAddTwoAmong)
-    (tapAddAnyColorAmongLegendaries := tapAddAnyColorAmongLegendaries)
-    (tapAddCommanderIdentity := tapAddCommanderIdentity)
     (adventure := adventure)
     (entersTapped := entersTapped)
 
@@ -499,9 +429,6 @@ def chapter (roman effect : String) (e : Effect) : SagaChapter :=
 
 /-- A nonbasic land. -/
 @[irreducible, noinline] def land (name : String) (oracleText : String)
-    (tapAddMana : Array ManaType := #[])
-    (tapAddOneOf : Array ManaType := #[])
-    (tapAddOneOfIfEnteredOrBasic : Array ManaType := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
     (subtypes : Array Subtype := #[])
     (supertypes : Array Supertype := #[])
@@ -510,38 +437,28 @@ def chapter (roman effect : String) (e : Effect) : SagaChapter :=
     (staticAbilities : Array StaticAbility := #[])
     (entersTappedUnlessLegendary : Bool := false)
     (entersTappedUnlessEquipment : Bool := false)
-    (tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none)
     (entersTappedUnlessPayLife : Option Nat := none) : CardDef :=
   card name #[.land] (subtypes := subtypes) (oracleText := oracleText)
     (supertypes := supertypes)
-    (tapAddMana := tapAddMana)
-    (tapAddOneOf := tapAddOneOf)
-    (tapAddOneOfIfEnteredOrBasic := tapAddOneOfIfEnteredOrBasic)
     (activatedAbilities := activatedAbilities)
     (entersTapped := entersTapped) (triggeredAbilities := triggeredAbilities)
     (staticAbilities := staticAbilities)
     (entersTappedUnlessLegendary := entersTappedUnlessLegendary)
     (entersTappedUnlessEquipment := entersTappedUnlessEquipment)
-    (tapPayLifeAddOneOf := tapPayLifeAddOneOf)
     (entersTappedUnlessPayLife := entersTappedUnlessPayLife)
 
 /-- A legendary land. -/
 @[irreducible, noinline] def legendaryLand (name : String) (oracleText : String)
-    (tapAddMana : Array ManaType := #[])
-    (tapAddOneOf : Array ManaType := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
     (subtypes : Array Subtype := #[])
     (entersTapped : Bool := false)
     (entersTappedUnlessLegendary : Bool := false)
-    (tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none)
     (entersTappedUnlessPayLife : Option Nat := none)
     (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   land name oracleText (supertypes := #[.legendary])
-    (tapAddMana := tapAddMana) (tapAddOneOf := tapAddOneOf)
     (activatedAbilities := activatedAbilities) (subtypes := subtypes)
     (entersTapped := entersTapped)
     (entersTappedUnlessLegendary := entersTappedUnlessLegendary)
-    (tapPayLifeAddOneOf := tapPayLifeAddOneOf)
     (entersTappedUnlessPayLife := entersTappedUnlessPayLife)
     (staticAbilities := staticAbilities)
 
@@ -622,78 +539,59 @@ def elfToken : CardDef :=
 def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (tap : Bool := false) (sacrificeSource : Bool := false)
     (sacrificeAnotherCreatureOrArtifact : Bool := false)
-    (onlyAsSorcery : Bool := false) (onlyDuringYourTurn : Bool := false)
-    (onceEachTurn : Bool := false)
+    (timing : ActivationTiming := .instant)
+    (activeZones : Array ZoneKind := #[.battlefield])
+    (turnLimit? : Option Nat := none)
+    (lifetimeLimit? : Option Nat := none)
+    (condition? : Option Condition := none)
+    (costReductions : Array ActivationCostReduction := #[])
+    (tag? : Option ActivationMechanicTag := none)
     (otherModes : Array Effect := #[]) (payLife : Nat := 0)
-    (activateFromGraveyard : Bool := false)
-    (activateFromHand : Bool := false)
-    (onlyIfYouControlLegendary : Bool := false)
     (discardSource : Bool := false)
-    (costReductionIfYouControlLegendary : Nat := 0)
-    (equipSubtype : Option CardSubtype := none)
     (sacrificeAnotherSubtype : Option CardSubtype := none)
     (sacrificeAnotherCreature : Bool := false)
     (discardACard : Bool := false)
-    (costReductionPerEquipment : Nat := 0)
     (tapAnUntappedCreatureYouControl : Bool := false)
-    (onlyIfYouAttackedWithTwoOrMore : Bool := false)
     (removeIndestructibleCounter : Bool := false)
     (sacrificeLegendaryArtifact : Bool := false)
     (discardLegendarySameName : Bool := false)
     (sacrificeArtifact : Bool := false)
-    (powerUp : Bool := false)
-    (equipWorthy : Bool := false)
     (sacrificeArtifactOrCreature : Bool := false)
     (sacrificeArtifactOrDiscardNonland : Bool := false)
     (removeAnyNumberPlusOne : Bool := false)
     (putStunCounterOnSource : Bool := false)
-    (sacrificeEquipmentAttachedToSource : Bool := false)
-    (onlyIfYouControlCreatureToughnessAtLeast : Nat := 0)
-    (onlyIfGyCreaturesAtLeast : Nat := 0)
-    (costReductionIfTargetPowerAtMost : Option (Nat × Int) := none) :
+    (sacrificeEquipmentAttachedToSource : Bool := false) :
     ActivatedAbility :=
   OracleActivate.activated effect mana
     (tap := tap) (sacrificeSource := sacrificeSource)
     (sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact)
-    (onlyAsSorcery := onlyAsSorcery) (onlyDuringYourTurn := onlyDuringYourTurn)
-    (onceEachTurn := onceEachTurn)
+    (timing := timing) (activeZones := activeZones)
+    (turnLimit? := turnLimit?) (lifetimeLimit? := lifetimeLimit?)
+    (condition? := condition?) (costReductions := costReductions) (tag? := tag?)
     (otherModes := otherModes) (payLife := payLife)
-    (activateFromGraveyard := activateFromGraveyard)
-    (activateFromHand := activateFromHand)
-    (onlyIfYouControlLegendary := onlyIfYouControlLegendary)
     (discardSource := discardSource)
-    (costReductionIfYouControlLegendary := costReductionIfYouControlLegendary)
-    (equipSubtype := equipSubtype)
     (sacrificeAnotherSubtype := sacrificeAnotherSubtype)
     (sacrificeAnotherCreature := sacrificeAnotherCreature)
     (discardACard := discardACard)
-    (costReductionPerEquipment := costReductionPerEquipment)
     (tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl)
-    (onlyIfYouAttackedWithTwoOrMore := onlyIfYouAttackedWithTwoOrMore)
     (removeIndestructibleCounter := removeIndestructibleCounter)
     (sacrificeLegendaryArtifact := sacrificeLegendaryArtifact)
     (discardLegendarySameName := discardLegendarySameName)
     (sacrificeArtifact := sacrificeArtifact)
-    (powerUp := powerUp) (equipWorthy := equipWorthy)
     (sacrificeArtifactOrCreature := sacrificeArtifactOrCreature)
     (sacrificeArtifactOrDiscardNonland := sacrificeArtifactOrDiscardNonland)
     (removeAnyNumberPlusOne := removeAnyNumberPlusOne)
     (putStunCounterOnSource := putStunCounterOnSource)
     (sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource)
-    (onlyIfYouControlCreatureToughnessAtLeast := onlyIfYouControlCreatureToughnessAtLeast)
-    (onlyIfGyCreaturesAtLeast := onlyIfGyCreaturesAtLeast)
-    (costReductionIfTargetPowerAtMost := costReductionIfTargetPowerAtMost)
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
 `subtype` restricts Equip to that creature type (e.g. Equip Human). -/
 def equipAbility (mana : ManaCost) (subtype : Option CardSubtype := none) : ActivatedAbility :=
-  activated (Effect.equipEffect subtype false) mana (onlyAsSorcery := true)
-    (equipSubtype := subtype)
+  OracleActivate.equipAbility mana (subtype := subtype)
 
 /-- Equip worthy `mana` (MSH): attach only to a worthy creature. -/
 def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
-  activated (Effect.equipEffect none true) mana (onlyAsSorcery := true)
-    (equipWorthy := true)
+  OracleActivate.equipWorthyAbility mana
 
 /-- Equipment with a standard Equip cost (CR 301.5 / 702.6). -/
 @[irreducible, noinline] def equipment (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -702,7 +600,7 @@ def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
     (triggeredAbilities : Array TriggeredAbility := #[])
     (keywords : Array KeywordAbility := #[])
     (supertypes : Array Supertype := #[])
-    (equipSubtype : Option CardSubtype := none)
+    (subtype : Option CardSubtype := none)
     (moreEquips : Array ActivatedAbility := #[])
     (adventure : Option AdventureFace := none) : CardDef :=
   artifact name manaCost oracleText
@@ -712,15 +610,14 @@ def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
     (staticAbilities := staticAbilities)
     (triggeredAbilities := triggeredAbilities)
     (activatedAbilities :=
-      #[equipAbility equip (subtype := equipSubtype)] ++ moreEquips)
+      #[equipAbility equip (subtype := subtype)] ++ moreEquips)
     (adventure := adventure)
 
 /-- Typecycling `{cost}`: discard this card from hand, search for a `landType`
 card, put it into your hand, then shuffle (CR 702.29). -/
 def typecyclingAbility (landType : String) (mana : ManaCost := ManaCost.ofGeneric 1) :
     ActivatedAbility :=
-  activated (Effect.searchLandTypeToHand landType) mana
-    (discardSource := true) (activateFromHand := true)
+  OracleActivate.typecyclingAbility landType mana
 
 /-- Adventure characteristics used while the card is a spell (CR 715.2). -/
 def adventure (name : String) (manaCost : ManaCost) (_oracleText : String)
@@ -852,7 +749,7 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
 the source entered this turn). -/
 def powerUpAbility (effect : Effect) (mana : ManaCost)
     (tap : Bool := false) : ActivatedAbility :=
-  activated effect mana (tap := tap) (powerUp := true)
+  OracleActivate.powerUpAbility effect mana (tap := tap)
 
 /-- `{T}: Add {A} or {B}.` for a dual land's two colors. -/
 def dualAddClause (a b : Color) : String :=
@@ -865,7 +762,8 @@ The Oracle text is reconstructed from the colors. -/
     s!"This land enters tapped.\nWhen this land enters, you gain 1 life.\n{dualAddClause a b}"
     (entersTapped := true)
     (triggeredAbilities := #[.onEnterGainLife 1])
-    (tapAddOneOf := #[.colored a, .colored b])
+    (activatedAbilities := #[
+      ActivatedAbility.manaAbility (.oneOf (.explicit #[.colored a, .colored b]) (.const 1))])
 
 /-- Dual land: `{T}: Add {C}` plus a two-color tap that requires this land
 entered this turn or a basic land you control. The Oracle text is
@@ -873,16 +771,18 @@ reconstructed from the colors. -/
 @[irreducible, noinline] def conditionalDualLand (name : String) (a b : Color) : CardDef :=
   land name
     s!"\{T}: Add \{C}.\n{dualAddClause a b} Activate only if this land entered this turn or if you control a basic land."
-    (tapAddMana := #[.colorless])
-    (tapAddOneOfIfEnteredOrBasic := #[.colored a, .colored b])
+    (activatedAbilities := #[
+      ActivatedAbility.manaSimple .colorless,
+      ActivatedAbility.manaAbility (.oneOf (.explicit #[.colored a, .colored b]) (.const 1))
+        (condition? := some ActivatedAbility.condEnteredThisTurnOrControlBasicLand)])
 
-#guard (gainLifeDualLand "Silent Plaza" .blue .black).tapAddOneOf ==
+#guard (gainLifeDualLand "Silent Plaza" .blue .black).manaAbilities ==
   #[.colored .blue, .colored .black]
 #guard (gainLifeDualLand "Silent Plaza" .blue .black).triggeredAbilities ==
   #[.onEnterGainLife 1]
 #guard ((gainLifeDualLand "Silent Plaza" .blue .black).summary.splitOn "you gain 1 life").length > 1
 #guard ((gainLifeDualLand "Silent Plaza" .blue .black).summary.splitOn "{T}: Add {U} or {B}").length > 1
-#guard (conditionalDualLand "Silent Lair" .blue .black).tapAddOneOfIfEnteredOrBasic ==
+#guard (conditionalDualLand "Silent Lair" .blue .black).enteredOrBasicAddMana ==
   #[.colored .blue, .colored .black]
 #guard (conditionalDualLand "Silent Lair" .blue .black).requiresEnteredOrBasicAdd
 #guard ((conditionalDualLand "Silent Lair" .blue .black).summary.splitOn "{T}: Add {C}").length > 1
@@ -913,11 +813,11 @@ reconstructed from the colors. -/
 #guard (giantSpider.summary.splitOn "reach").length > 1
 #guard giantGrowth.spellEffect == some (Effect.pump 3 3)
 #guard giantGrowth.isInstant
-#guard (equipAbility (ManaCost.ofGeneric 3)).onlyAsSorcery
+#guard (equipAbility (ManaCost.ofGeneric 3)).isSorcerySpeed
 #guard (equipAbility (ManaCost.ofGeneric 3)).effect ==
   Effect.attachToTargetCreatureYouControl
-#guard (activated (Effect.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).cost.payLife == 2
-#guard (activated (Effect.sourceGets 2 2) (payLife := 2) (onceEachTurn := true)).onceEachTurn
+#guard (activated (Effect.sourceGets 2 2) (payLife := 2) (turnLimit? := some 1)).cost.payLife == 2
+#guard (activated (Effect.sourceGets 2 2) (payLife := 2) (turnLimit? := some 1)).isOnceEachTurn
 #guard (adventure "Spew Flame" (ManaCost.ofGenericAndColor 4 .red) ""
   (Effect.dealDamageToCreature 5)).subtypes.any (· == "Adventure")
 #guard lightningBolt.hasType .instant
@@ -927,7 +827,7 @@ reconstructed from the colors. -/
 #guard !lightningBolt.hasCastKind .pump
 #guard (lightningBolt.spellEffect.map Effect.castKind) == some .burn
 #guard (giantGrowth.spellEffect.map Effect.castKind) == some .pump
-#guard (land "Silent Passage" "{T}: Add {C}." (tapAddMana := #[.colorless])).isLand
+#guard (land "Silent Passage" "{T}: Add {C}.").isLand
 #guard (artifact "Silent Spear" (ManaCost.ofGeneric 1) ""
   (subtypes := #["Equipment"])).isEquipment
 #guard (equipment "Silent Blade" (ManaCost.ofGeneric 1) ""
@@ -942,8 +842,9 @@ reconstructed from the colors. -/
 #guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
   (supertypes := #[.legendary])).hasType .creature
 #guard (gainLifeDualLand "Silent Plaza" .blue .black).entersTapped
-#guard (conditionalDualLand "Silent Keep" .blue .black).tapAddMana == #[.colorless]
-#guard (powerUpAbility (Effect.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).powerUp
+#guard (conditionalDualLand "Silent Keep" .blue .black).activatedAbilities[0]?.bind (·.mana?) ==
+  some { spec := .fixedOne .colorless }
+#guard (powerUpAbility (Effect.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).isPowerUp
 #guard (KeywordAbility.mergeAll #[#[Keyword.flying], #[Keyword.trample], #[Keyword.haste]]) ==
   #[Keyword.flying, Keyword.trample, Keyword.haste]
 #guard (aura "Silent Strands" (ManaCost.ofGenericAndColor 3 .green) "").isAura

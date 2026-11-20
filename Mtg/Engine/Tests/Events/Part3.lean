@@ -3153,7 +3153,9 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     name := "Phase19 Pain Land"
     manaCost := ManaCost.empty
     types := #[.land]
-    tapPayLifeAddOneOf := some (1, #[.colored .red, .colored .green])
+    activatedAbilities := #[ActivatedAbility.manaAbility
+      (.oneOf (.explicit #[.colored .red, .colored .green]) (.const 1))
+      (CostSpec.ofItems #[.tapSelf, .payLife (.const 1)])]
   }
   let gMp0 : Game := addPermanent afterDraw painLand19 me me
   let landId := (gMp0.battlefield.filter (·.name == "Phase19 Pain Land"))[0]!.id

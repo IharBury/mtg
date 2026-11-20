@@ -159,7 +159,7 @@ def mountainThenPassageBauble : Game :=
 remaining cost is generic. -/
 def greenThenColorlessLand : CardDef :=
   land "Silent Caves" "{T}: Add {G} or {C}."
-    (tapAddOneOf := #[.colored .green, .colorless])
+    (activatedAbilities := #[ActivatedAbility.manaAbility (.oneOf (.explicit #[.colored .green, .colorless]) (.const 1))])
 
 def silentCavesReady : Game :=
   addPermanent afterDraw greenThenColorlessLand ⟨0⟩ ⟨0⟩
@@ -168,10 +168,8 @@ def silentCavesReady : Game :=
   let src := namedPermanent silentCavesReady "Silent Caves"
   let types := silentCavesReady.manaAbilitiesOf src
   types[0]? == some (.colored .green) &&
-    silentCavesReady.preferredManaType ⟨0⟩ src types (ManaCost.ofGeneric 1)
-      false false == some .colorless &&
-    silentCavesReady.preferredManaType ⟨0⟩ src types (ManaCost.ofColor .green)
-      false false == some (.colored .green)
+    silentCavesReady.preferredManaType ⟨0⟩ src types (ManaCost.ofGeneric 1) == some .colorless &&
+    silentCavesReady.preferredManaType ⟨0⟩ src types (ManaCost.ofColor .green) == some (.colored .green)
 
 /-- Island `{U}` plus Mountain `{R}` pays `{1}{U}` (generic after colored). -/
 def islandMountainApothecary : Game :=

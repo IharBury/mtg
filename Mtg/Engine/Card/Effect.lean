@@ -442,6 +442,87 @@ partial def doesNothingAsActivated (r : Resolution) : Bool :=
   | .sequence rs => rs.any doesNothingAsActivated
   | _ => false
 
+/-- Non-recursive check for atomic `Resolution` steps that could add mana
+(CR 605.1a). -/
+private def couldAddManaAtom : Resolution → Bool
+  | .addMana _ _ | .addAnyColor | .addAnyColorSpendOnlySubtype _
+  | .addAnyColorSpendOnlyArtifactSpell | .addTwoAnyColorCreatureSources
+  | .addBlueCantNonartifact | .addAnyColorEqualToSourcePower
+  | .addFourAnyCombination | .addTwoAnyColorEquipment
+  | .addRedPerOppArtifacts _ | .addFourManaDragonSpells _ _
+  | .addBlueNoncreatureOnly => true
+  | _ => false
+
+/-- True when resolving `r` could add mana to a player's mana pool (CR 605.1a). -/
+partial def couldAddMana : Resolution → Bool
+  | .sequence rs => rs.any couldAddMana
+  | .«if» _ d => couldAddMana d
+  | .ifElse _ a b => couldAddMana a || couldAddMana b
+  | .may a b _ => couldAddMana a || couldAddMana b
+  | .or rs => rs.any couldAddMana
+  | .chooseModes ms _ => ms.any couldAddMana
+  | .unlessPays r _ => couldAddMana r
+  | .queueReflexive r => couldAddMana r
+  | r => couldAddManaAtom r
+
+/-- Non-recursive check for atomic `Resolution` steps whose instructions include
+moving a card to or from a library (CR 605.1a, 25 September 2026). -/
+private def movesToOrFromLibraryAtom : Resolution → Bool
+  | .draw (.fixed 0) _ => false
+  | .draw _ _ | .searchLibrary _ | .putOnLibrary _ _ | .mill _ _ | .surveil _
+  | .cascade | .shuffleSource | .connive _ | .revealLibrary _ _
+  | .lookAtTopRevealTypes _ _ | .searchCard _ _ _
+  | .drawEqualToughnessThenPutCreatures | .millThenPut _ _
+  | .exileAttackersSearchBasics | .exileTopPlayIfYouControlSubtype _ _
+  | .exileTopXOppPlayForLife | .lookAtTopLandsGainLife _ _
+  | .revealTopPutCreatures _ | .exileTopPlayUntilNext _
+  | .exileHandDrawPlayUntilNext | .millThenPutPermanentGainLife _ _
+  | .searchLibraryOrGyArtifactCreatureX | .gainLifeSearchBasicPlusOne _
+  | .ownerPutsLibraryThenConnive | .mayDrawPerArtifactOppsDraw _
+  | .mayPutHeroMvOrDraw _ _ | .maySacArtifactOrDiscardDraw _
+  | .searchBasicLand | .searchLandTypeToHand _ | .exileTop
+  | .searchBasicLandToHand | .searchTwoBasicsSplit
+  | .searchBasicBeholdSubtypeUntap _ | .twoPlayersDraw
+  | .discardLegendarySameNameDraw | .drawEqualToLastKnownPower
+  | .drawEqualToBurdenCounters | .lookAtTopPutTypes _ _ | .drawX
+  | .lookAtTopRevealArtifact _ | .drawPerDiscardedThisTurn
+  | .exileTopXPlayThisTurn | .targetPlayerDraw _
+  | .lookAtTopRevealSubtype _ _ | .millThenPutSubtypeOrEnchantment _ _
+  | .revealTopDrawIfArtifact | .targetSubtypeConnives _
+  | .millSelf _ | .mayDiscardDraw _ | .exileTopMayCastElseDamageOpponents _
+  | .eachPlayerMayWheel _ | .millMayPutPermanentGainLife _ _
+  | .millThenReturnLandTapped _ | .searchLandsTapped _
+  | .destroyDrawIfNotAttacking | .searchPlaneswalkerToTop
+  | .drawMilledThisTurn | .drawGreatestPowerLoseLife
+  | .drawPerCreatureYouControl | .drawOneOrTwoIfNotFromHand
+  | .searchLandToGraveyard | .ownerPutsOnTopOrBottom | .drawTwoDiscardTwoStun
+  | .searchCardThenDiscardRandom | .maySearchLandsEqualDamage
+  | .maySearchBasicLandTapped | .fblthpSearch | .mayDiscardThenSearchEnchantment
+  | .drawPerColorAmongOtherArtifacts | .destroyDrawIfLegendaryEnchantment
+  | .graveyardCardToLibraryBottom | .ownerShufflesIntoLibrary
+  | .surveilReturnNoncreatureNonland | .eachOpponentDiscardsTwoDrawPerShort
+  | .searchBasicLandTapped | .searchEnchantmentToHand
+  | .drawThenCountersPerDiscard
+  | .onPermanent .putOnTopOfLibrary | .onPermanent .putOnBottomOfLibrary
+  | .onSource .putOnTopOfLibrary | .onSource .putOnBottomOfLibrary => true
+  | .exile (.opponentTop _) _ _ | .exile .top _ _ | .exile (.basicUpTo _ _) _ _ => true
+  | _ => false
+
+/-- True when resolving `r` includes instructions to move a card to or from a
+library, which disqualifies an ability from being a mana ability under the
+25 September 2026 update to CR 605.1a. -/
+partial def movesToOrFromLibrary : Resolution → Bool
+  | .sequence rs => rs.any movesToOrFromLibrary
+  | .«if» _ d => movesToOrFromLibrary d
+  | .ifElse _ a b => movesToOrFromLibrary a || movesToOrFromLibrary b
+  | .may a b _ => movesToOrFromLibrary a || movesToOrFromLibrary b
+  | .or rs => rs.any movesToOrFromLibrary
+  | .chooseModes ms _ => ms.any movesToOrFromLibrary
+  | .unlessPays r _ => movesToOrFromLibrary r
+  | .queueReflexive r => movesToOrFromLibrary r
+  | .revealFromHand _ d => movesToOrFromLibrary d
+  | r => movesToOrFromLibraryAtom r
+
 end Resolution
 
 instance : HasTextChange Effect where

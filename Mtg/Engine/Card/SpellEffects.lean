@@ -1627,11 +1627,15 @@ namespace ActivatedAbility
 
 /-- An activated ability with its printed line. -/
 def fra (printed : String) (effect : Effect) (cost : CostSpec)
-    (onlyAsSorcery := false) (onlyDuringYourTurn := false)
-    (activateFromGraveyard := false) (activateFromHand := false) (exhaust := false)
-    (cond : FraActivationCondition := .none) : ActivatedAbility :=
-  { cost, effect, printed, onlyAsSorcery, onlyDuringYourTurn, activateFromGraveyard,
-    activateFromHand, exhaust, fraCondition := cond }
+    (timing : ActivationTiming := .instant)
+    (activeZones : Array ZoneKind := #[.battlefield])
+    (condition? : Option Condition := none)
+    (lifetimeLimit? : Option Nat := none)
+    (tag? : Option ActivationMechanicTag := none)
+    (costReductions : Array ActivationCostReduction := #[]) : ActivatedAbility :=
+  { cost, effect, printed, timing, activeZones, condition?,
+    lifetimeLimit? := lifetimeLimit?.orElse fun _ => if tag? == some .exhaust then some 1 else none,
+    tag?, costReductions }
 
 end ActivatedAbility
 

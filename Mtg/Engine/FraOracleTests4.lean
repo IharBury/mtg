@@ -87,7 +87,7 @@ def visitorTreasure : Game := withVisitor.createTreasureTokens ⟨0⟩ 1 (tapped
   let d := namedPermanent visitorTreasure "Dragon"
   d.printed.isToken && d.status.tapped && visitorTreasure.power d == 5 &&
     visitorTreasure.hasFlying d && d.printed.colors == ColorSet.singleton .red &&
-    !d.printed.tapSacrificeAddAnyColor && !d.printed.isArtifact
+    !d.printed.activatedAbilities.contains ActivatedAbility.manaTapSacrificeAnyColor && !d.printed.isArtifact
 #guard (fraRuling 780).comment.contains "entirely replaced by 5/5 red Dragon"
 
 /- Ruling 781: only tokens created under your control are replaced. -/
@@ -140,7 +140,7 @@ def vraskaShock : Game := castShockAtNissa (addPermanent afterDraw vraskaSoulOfS
   let g := passBoth vraskaShock
   topOfStack g == "Shock" &&
     (let s := namedPermanent g "Sculpture"
-     s.printed.isArtifact && g.isCreature s && s.printed.tapSacrificeAddAnyColor &&
+     s.printed.isArtifact && g.isCreature s && s.printed.activatedAbilities.contains ActivatedAbility.manaTapSacrificeAnyColor &&
        g.hasSubtype s .treasure)
 #guard (fraRuling 887).comment.contains "resolves before the spell that caused it to trigger"
 
@@ -251,7 +251,7 @@ orders them. -/
 def hallCopies (g : Game) (target : String) : Game :=
   let g := addPermanent g hallOfEchoes ⟨0⟩ ⟨0⟩
   let g := withMana g ⟨0⟩ .green 5
-  let g := mustApply g ⟨0⟩ (.activate (namedPermanent g "Hall of Echoes").id 0)
+  let g := mustApply g ⟨0⟩ (.activate (namedPermanent g "Hall of Echoes").id 1)
   let g := mustApply g ⟨0⟩ (.target (.permanent (namedPermanent g target).id))
   resolveStack (mustApply g ⟨0⟩ .pay) 20
 

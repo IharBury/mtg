@@ -480,21 +480,71 @@ def isEquipAbility (ab : ActivatedAbility) : Bool :=
   ab.isEquip
 
 def typecyclingLand? (ab : ActivatedAbility) : Option String :=
-  if ab.activateFromHand && ab.cost.discardSource then
+  if ab.isFromHand && ab.cost.discardSource then
     match ab.effect.resolution with
     | .searchLandTypeToHand t => if t == "Plan" then none else some t
     | _ => none
   else none
 
+private def renderActivatedCostReduction (r : ActivationCostReduction) : String :=
+  match r.amount, r.condition? with
+  | .const n, some (.exists (.inZones .battlefield (.all #[.hasSupertype .legendary, .hasType .creature, .controlledBy .you]))) =>
+    if n > 0 then
+      s!" This ability costs \{{n.toNat}} less to activate if you control a legendary creature."
+    else ""
+  | .aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .controlledBy .you])), none =>
+    " This ability costs {1} less to activate for each Equipment you control."
+  | .binary .mul (.const n) (.aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .controlledBy .you]))), none =>
+    if n > 0 then
+      s!" This ability costs \{{n.toNat}} less to activate for each Equipment you control."
+    else ""
+  | .const n, some (.all #[.exists (.target 0), .forAll (.target 0) (.all #[.hasType .creature, .stat .power .le (.const maxP)])]) =>
+    if n > 0 then
+      s!" This ability costs \{{n.toNat}} less to activate if it targets a creature with power {maxP} or less."
+    else ""
+  | _, _ => ""
+
+private def renderActivatedCondition (cond? : Option Condition) (onceEachTurn : Bool) : String :=
+  match cond? with
+  | some .isYourTurn =>
+    if onceEachTurn then " Activate only during your turn and only once each turn."
+    else " Activate only during your turn."
+  | some cond =>
+    let condStr :=
+      if cond == ActivatedAbility.condControlsLegendaryCreature then
+        " Activate only if you control a legendary creature."
+      else if cond == ActivatedAbility.condAttackedWithCreaturesAtLeast 2 then
+        " Activate only if you attacked with two or more creatures this turn."
+      else if cond == ActivatedAbility.condOpponentDealtNoncombatDamageThisTurn then
+        " Activate only if an opponent has been dealt noncombat damage this turn."
+      else
+        match cond with
+        | .exists (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you, .stat .toughness .ge (.const n)])) =>
+          if n > 0 then
+            s!" Activate only if you control a creature with toughness {n.toNat} or greater."
+          else ""
+        | .cmp .ge (.aggregate .count .one (.inZones .yourGraveyard (.all #[.isCard, .hasType .creature]))) (.const n) =>
+          if n > 0 then
+            let cards :=
+              if n == 1 then "a creature card"
+              else s!"{n.toNat} or more creature cards"
+            s!" Activate only if there are {cards} in your graveyard."
+          else ""
+        | _ => s!" Activate only if {toOracleStr cond}."
+    condStr ++ (if onceEachTurn then " Activate only once each turn." else "")
+  | none =>
+    if onceEachTurn then " Activate only once each turn." else ""
+
 /-- Oracle line for one activated ability, matching the wording catalogs store. -/
 def printedActivated (ab : ActivatedAbility) : String :=
   if !ab.printed.isEmpty then ab.printed
+  else if ab.mana?.isSome then ab.toOracle {}
   else if isEquipAbility ab then
     let pay := if ab.cost.payLife != 0 then s!", Pay {ab.cost.payLife} life" else ""
     let subtype? :=
-      ab.equipSubtype.orElse fun _ =>
+      ab.equipSubtype?.orElse fun _ =>
         ab.effect.targetSpec.creatureYouControlSubtype?
-    let worthy := ab.equipWorthy || ab.effect.targetSpec.isWorthyCreatureYouControl
+    let worthy := ab.isEquipWorthy || ab.effect.targetSpec.isWorthyCreatureYouControl
     match subtype? with
     | some t => s!"Equip {t} {ab.cost.mana}{pay}"
     | none =>
@@ -505,38 +555,11 @@ def printedActivated (ab : ActivatedAbility) : String :=
     match typecyclingLand? ab with
     | some t => s!"{t}cycling {ab.cost.mana}"
     | none =>
+      let redStr := String.join (ab.costReductions.toList.map renderActivatedCostReduction)
       let timing :=
-        (if ab.costReductionIfYouControlLegendary != 0 then
-          s!" This ability costs \{{ab.costReductionIfYouControlLegendary}} less to activate if you control a legendary creature."
-         else "") ++
-        (if ab.costReductionPerEquipment != 0 then
-          s!" This ability costs \{{ab.costReductionPerEquipment}} less to activate for each Equipment you control."
-         else "") ++
-        (match ab.costReductionIfTargetPowerAtMost with
-         | some (n, p) =>
-           s!" This ability costs \{{n}} less to activate if it targets a creature with power {p} or less."
-         | none => "") ++
-        (if ab.onlyAsSorcery then " Activate only as a sorcery." else "") ++
-        (if ab.onlyDuringYourTurn && ab.onceEachTurn then
-          " Activate only during your turn and only once each turn."
-         else
-          (if ab.onlyDuringYourTurn then " Activate only during your turn." else "") ++
-          (if ab.onceEachTurn then " Activate only once each turn." else "")) ++
-        (if ab.onlyIfYouControlLegendary then
-          " Activate only if you control a legendary creature." else "") ++
-        (if ab.onlyIfYouAttackedWithTwoOrMore then
-          " Activate only if you attacked with two or more creatures this turn." else "") ++
-        (if ab.onlyIfOpponentDealtNoncombatDamage then
-          " Activate only if an opponent has been dealt noncombat damage this turn." else "") ++
-        (if ab.onlyIfYouControlCreatureToughnessAtLeast != 0 then
-          s!" Activate only if you control a creature with toughness {ab.onlyIfYouControlCreatureToughnessAtLeast} or greater."
-         else "") ++
-        (if ab.onlyIfGyCreaturesAtLeast != 0 then
-          let cards :=
-            if ab.onlyIfGyCreaturesAtLeast == 1 then "a creature card"
-            else s!"{ab.onlyIfGyCreaturesAtLeast} or more creature cards"
-          s!" Activate only if there are {cards} in your graveyard."
-         else "")
+        redStr ++
+        (if ab.timing == .sorcery then " Activate only as a sorcery." else "") ++
+        renderActivatedCondition ab.condition? (ab.turnLimit? == some 1 && !ab.isBoast)
       let body :=
         if ab.isModal then
           let modes := ab.allModes.toList.map Effect.toNotation
@@ -597,9 +620,6 @@ def applyParsed (c : CardDef) (ab : ParsedAbility) : CardDef :=
       chooseBothIfTeamwork := teamwork
       chooseTwoIfYouControlSubtype := twoIf.bind CardSubtype.ofOracle? }
 
-def pushMana (c : CardDef) (t : ManaType) : CardDef :=
-  { c with tapAddMana := c.tapAddMana.push t }
-
 def splitCreatureTypes (s : String) : Array String :=
   let s := s.replace ", or " ", " |>.replace " or " ", "
   (s.splitOn "," |>.map (·.trimAscii.copy) |>.filter (· != "")).toArray
@@ -624,7 +644,7 @@ def parseSacrificeCounters (line : String) : Option ActivatedAbility :=
         some (activated (Effect.plusOneOnTarget n types) cost
           (tap := low.contains "{t}")
           (sacrificeSource := true)
-          (onlyAsSorcery := low.contains "only as a sorcery"))
+          (timing := if low.contains "only as a sorcery" then .sorcery else .instant))
 
 /-- `Equip {2}`, `Equip Wizard {1}`, `Equip worthy {1}`, `Equip—{2}, Pay 2 life`. -/
 def parseEquipLine (line : String) : Option ActivatedAbility :=
@@ -658,9 +678,11 @@ def parseEquipLine (line : String) : Option ActivatedAbility :=
     match cost? with
     | none => none
     | some cost =>
+      let equipPred? : Option ObjectPred :=
+        if worthy then some ObjectPred.worthy
+        else subtype.map fun s => .hasSubtype (.literal s)
       some (activated (Effect.equipEffect subtype worthy) cost
-        (onlyAsSorcery := true) (payLife := payLife)
-        (equipSubtype := subtype) (equipWorthy := worthy))
+        (timing := .sorcery) (tag? := some (.equip equipPred?)) (payLife := payLife))
 
 /-- Structural rules that are card fields rather than an ability value. -/
 def parseStructural (c : CardDef) (line : String) : Option CardDef :=
@@ -758,8 +780,6 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     some { c with entersTappedUnlessEquipment := true }
   else if low == "this creature enters with a +1/+1 counter on it." then
     some { c with entersWithPlusOneCounters := 1 }
-  else if low.startsWith "{t}: choose a color. add one mana of that color for each different power among creatures you control" then
-    some { c with tapAddChosenColorPerDifferentPower := true }
   else if low.startsWith "as long as there are seven or more cards in your graveyard, you may cast the exiled card" then
     some { c with castExiledWithSevenInGraveyard := true }
   else if low.startsWith "a deck can have any number of cards named" then
@@ -856,97 +876,28 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     match parseEquipLine raw with
     | some ab => some { c with activatedAbilities := c.activatedAbilities.push ab }
     | none =>
-      if low.startsWith "{t}: add" || low.startsWith "{t}, sacrifice" || low.startsWith "{t}, pay" then
-        parseTap c raw low
-      else none
-where
-  parseTap (c : CardDef) (raw low : String) : Option CardDef :=
-    if low.contains "where x is this creature's power" then
-      some { c with tapAddAnyColorEqualToPower := true }
-    else if low.contains "spend this mana only to cast" &&
-        !low.contains "legendary spell" && !low.contains "instant or sorcery" then
-      let add := (raw.splitOn "Add ").getLastD "" |>.splitOn "." |>.headD ""
-      let restriction :=
-        ((raw.splitOn "to cast ").getLastD "").replace "." "" |>.trimAscii.copy
-      match manaLetters add, ManaSpendRestriction.parseOracle? restriction with
-      | some ts, some r => some { c with tapAddRestricted := some (ts.toArray, r) }
-      | _, _ => none
-    else if low.contains "for each" && low.contains "you control" then
-      if low.contains "where x is this creature's power" || low.contains "x mana of any" then
-        some { c with tapAddAnyColorEqualToPower := true }
-      else
-        match (low.splitOn "add ").getLastD "" |>.splitOn " for each" with
-        | [sym, _] =>
-          match manaLetters sym.trimAscii.copy with
-          | some [m] =>
-            let subtype := (raw.splitOn "for each ").getLastD "" |>.splitOn " you control" |>.headD "" |>.trimAscii.copy
-            CardSubtype.ofOracle? subtype |>.map fun sub =>
-              { c with tapAddManaForEach := c.tapAddManaForEach.push { mana := m, subtype := sub } }
-          | _ => none
-        | _ => none
-    else if low.contains "activate only if this land entered this turn" then
-      let add := (raw.splitOn "Add ").getLastD "" |>.splitOn "." |>.headD ""
-      manaLetters add |>.map fun ts =>
-        { c with tapAddOneOfIfEnteredOrBasic := ts.toArray }
-    else if low.contains "spend this mana only to cast a legendary spell" then
-      some { c with tapAddAnyColorForLegendary := true }
-    else if low.contains "spend this mana only to cast an instant or sorcery" then
-      some { c with tapAddAnyColorForInstantOrSorcery := true }
-    else if low.contains "among legendary creatures and planeswalkers" then
-      some { c with tapAddAnyColorAmongLegendaries := true }
-    else if low.contains "in your commander's color identity" then
-      some { c with tapAddCommanderIdentity := true
-                    commanderIdentityScryCreature := low.contains "scry" }
-    else if low.contains "sacrifice this artifact: add one mana of any color" ||
-        low.contains "sacrifice this token: add one mana of any color" then
-      some { c with tapSacrificeAddAnyColor := true }
-    else if low.contains "two mana in any combination" then
-      let rest := (raw.splitOn "combination of ").getLastD "" |>.replace "." ""
-      let parts := rest.splitOn "and/or" |>.flatMap (·.splitOn ",") |>.map (·.trimAscii.copy) |>.filter (· != "")
-      let types := parts.filterMap fun p =>
-        match manaLetters p with
-        | some [t] => some t
-        | _ => none
-      if types.length >= 2 then some { c with tapAddTwoAmong := types.toArray } else none
-    else if low.contains "pay" && low.contains "life: add" then
-      let life :=
-        match (low.splitOn "pay ").getLastD "" |>.takeWhile Char.isDigit with
-        | "" => none
-        | d => some d.toNat!
-      let add := (raw.splitOn "Add ").getLastD "" |>.replace "." ""
-      match life, manaLetters add with
-      | some n, some ts => some { c with tapPayLifeAddOneOf := some (n, ts.toArray) }
-      | _, _ => none
-    else if low.contains "deals" && low.contains "damage to you" then
-      let n :=
-        match (low.splitOn "deals ").getLastD "" |>.takeWhile Char.isDigit with
-        | "" => 1
-        | d => d.toNat!
-      let add := (raw.splitOn "Add ").getLastD "" |>.splitOn "." |>.headD ""
-      match manaLetters add with
-      | some ts => some { c with tapAddOneOfDealsDamage := some (ts.toArray, n) }
-      | none => none
-    else if low.contains "land an opponent controls could produce" then
-      some { c with tapAddOppCouldProduce := true }
-    else if low.contains "land you control could produce" then
-      some { c with tapAddYouCouldProduce := true }
-    else if low.contains "one mana of any color" && !low.contains "spend this mana" then
-      some { c with tapAddAnyColor := true }
-    else if low.contains " or " then
-      let add := (raw.splitOn "Add ").getLastD "" |>.splitOn "." |>.headD ""
-      manaLetters add |>.map fun ts => { c with tapAddOneOf := ts.toArray }
-    else
-      let add := (raw.splitOn "Add ").getLastD "" |>.replace "." "" |>.trimAscii.copy
-      match manaLetters add with
-      | some [t] =>
-        if c.basicLandMana.any (fun col => ManaType.colored col == t) && c.isLand then none
-        else some (pushMana c t)
-      | some ts =>
-        -- `{T}: Add {C}{C}` is one ability. A sacrifice or other cost before
-        -- the mana stays with the activated-ability parser.
-        if ts.length ≥ 2 && low.startsWith "{t}: add" && !low.contains "sacrifice" then
-          some { c with tapAddTogether := ts.toArray }
-        else none
+      match Parser.parseManaAbilityLine raw c.name with
+      | some ab =>
+        -- CR 305.6: basic land types intrinsically grant `{T}: Add {M}`; do not
+        -- duplicate that ability in `activatedAbilities`.
+        let isIntrinsicBasic :=
+          c.isLand && ab.cost == CostSpec.tapOnly && ab.condition?.isNone &&
+            ab.turnLimit?.isNone && ab.lifetimeLimit?.isNone &&
+            match ab.mana? with
+            | some mp =>
+              mp.restriction.isNone && mp.riders.isEmpty && mp.damageYou == 0 &&
+                match mp.spec with
+                | .sequence #[(.colored col, .const 1)] => c.basicLandMana.contains col
+                | _ => false
+            | none => false
+        if isIntrinsicBasic then some c
+        else
+          let scryCommander :=
+            c.commanderIdentityScryCreature ||
+              (low.contains "in your commander's color identity" && low.contains "scry")
+          some { c with
+            activatedAbilities := c.activatedAbilities.push ab
+            commanderIdentityScryCreature := scryCommander }
       | none => none
 
 def skipLine (c : CardDef) (line : String) : Bool :=
@@ -1880,7 +1831,13 @@ partial def parseRules (c : CardDef) (lines : List String)
   let units :=
     mergeBulletLines
       (lines.map (fun line =>
-          stripAbilityWords (stripChaosSymbol (dropReminderText line))) |>.filter (· != ""))
+          let base := stripChaosSymbol (dropReminderText line)
+          let lowBase := lowerAscii base
+          let keepMechanicPrefix :=
+            (lowBase.startsWith "exhaust —" || lowBase.startsWith "exhaust—" ||
+             lowBase.startsWith "boast —" || lowBase.startsWith "boast—") &&
+              (Parser.parseManaAbilityLine base c.name).isSome
+          if keepMechanicPrefix then base else stripAbilityWords base) |>.filter (· != ""))
       |>.flatMap splitKeywordWardLine
   let rec go (c : CardDef) (units : List String) : Except String CardDef :=
     let unrecognized (c : CardDef) (line : String) (rest : List String) : Except String CardDef :=
@@ -1939,32 +1896,30 @@ partial def parseRules (c : CardDef) (lines : List String)
         | some (sym, effectText) =>
           let jaceSuffix :=
             " Activate only if there are twenty-five or more loyalty counters among Jaces you control."
-          let (effectText, cond) :=
+          let (effectText, cond?) : String × Option Condition :=
             if effectText.endsWith jaceSuffix then
-              ((effectText.dropEnd jaceSuffix.length).copy, FraActivationCondition.jaceLoyaltyAtLeast 25)
-            else (effectText, .none)
+              ((effectText.dropEnd jaceSuffix.length).copy,
+               some (ActivatedAbility.condJaceLoyaltyAtLeast 25))
+            else (effectText, none)
           match matchModeled c.name (effectText :: rest) with
           | some (.spell e, n) =>
             let more := (effectText :: rest).drop n
             if n > 0 && more.length < (effectText :: rest).length then
               let (e, more) :=
                 if n == 1 then extendSpellSequence c.name e more else (e, more)
-              let ab : ActivatedAbility := activated e (loyalty := some sym)
-              go { c with activatedAbilities :=
-                c.activatedAbilities.push { ab with fraCondition := cond } } more
+              let ab : ActivatedAbility := activated e (loyalty := some sym) (condition? := cond?)
+              go { c with activatedAbilities := c.activatedAbilities.push ab } more
             else unrecognized c line rest
           | _ =>
             match spellSentenceSequence c.name effectText with
             | some e =>
-              let ab : ActivatedAbility := activated e (loyalty := some sym)
-              go { c with activatedAbilities :=
-                c.activatedAbilities.push { ab with fraCondition := cond } } rest
+              let ab : ActivatedAbility := activated e (loyalty := some sym) (condition? := cond?)
+              go { c with activatedAbilities := c.activatedAbilities.push ab } rest
             | none =>
               match parseFrcLoyaltyEffect effectText with
               | some e =>
-                let ab : ActivatedAbility := activated e (loyalty := some sym)
-                go { c with activatedAbilities :=
-                  c.activatedAbilities.push { ab with fraCondition := cond } } rest
+                let ab : ActivatedAbility := activated e (loyalty := some sym) (condition? := cond?)
+                go { c with activatedAbilities := c.activatedAbilities.push ab } rest
               | none => unrecognized c line rest
         | none =>
         if isCantBeBlockedLine c.name line then

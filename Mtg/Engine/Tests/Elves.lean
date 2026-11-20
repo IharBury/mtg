@@ -617,7 +617,8 @@ any-color mana equal to power. -/
 
 #guard KeywordAbility.hasVigilance woodlandWeavemaster.keywords
 #guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
-#guard woodlandWeavemaster.tapAddAnyColorEqualToPower
+#guard woodlandWeavemaster.activatedAbilities.any fun ab =>
+  ab.mana?.any fun mp => mp.spec == .oneOf .anyColor (.objectStat .power .this)
 #guard woodlandWeavemaster.manaAbilities.contains (.colored .green)
 #guard woodlandWeavemaster.manaAbilities.contains (.colored .white)
 #guard !woodlandWeavemaster.manaAbilities.contains .colorless
@@ -634,7 +635,7 @@ def weavemasterReady : Game :=
   (namedPermanent weavemasterReady "Woodland Weavemaster") (.colored .green) == 1
 #guard (weavemasterReady.availableMana ⟨0⟩).green == 1
 #guard (weavemasterReady.availableMana ⟨0⟩).elfGreen == 1
-#guard (weavemasterReady.availableMana ⟨0⟩).canPay (ManaCost.ofColor .green) true
+#guard (weavemasterReady.availableMana ⟨0⟩).canPay (ManaCost.ofColor .green) (ManaSpend.forSpell (subtypes := #[.elf]))
 #guard !(weavemasterReady.availableMana ⟨0⟩).canPay (ManaCost.ofColor .green)
 
 /-- Casting another Elf you control pumps Weavemaster (CR 603.6a). -/
@@ -750,9 +751,9 @@ def tappedWeavemasterGreen : Game :=
 #guard (namedPermanent tappedWeavemasterGreen "Woodland Weavemaster").status.tapped
 #guard (tappedWeavemasterGreen.player ⟨0⟩).manaPool.green == 1
 #guard (tappedWeavemasterGreen.player ⟨0⟩).manaPool.elfGreen == 1
-#guard (tappedWeavemasterGreen.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .green) true
+#guard (tappedWeavemasterGreen.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .green) (ManaSpend.forSpell (subtypes := #[.elf]))
 #guard !(tappedWeavemasterGreen.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .green)
-#guard !(tappedWeavemasterGreen.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .red) true
+#guard !(tappedWeavemasterGreen.player ⟨0⟩).manaPool.canPay (ManaCost.ofColor .red) (ManaSpend.forSpell (subtypes := #[.elf]))
 #guard tappedWeavemasterGreen.log.any (fun s =>
   mentions s "taps Woodland Weavemaster for green (Elf spells and abilities)")
 

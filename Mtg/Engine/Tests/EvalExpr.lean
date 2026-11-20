@@ -324,7 +324,6 @@ private def testIsland : CardDef := {
   supertypes := #[.basic]
   types := #[.land]
   subtypes := #["Island"]
-  tapAddMana := #[.colored .blue]
 }
 
 private def testSwamp : CardDef := {
@@ -332,7 +331,6 @@ private def testSwamp : CardDef := {
   supertypes := #[.basic]
   types := #[.land]
   subtypes := #["Swamp"]
-  tapAddMana := #[.colored .black]
 }
 
 #guard

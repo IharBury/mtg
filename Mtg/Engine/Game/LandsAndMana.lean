@@ -186,27 +186,11 @@ def dedupZeroReqManaTypes (g : Game) (src : GameObject) (types : Array ManaType)
         out := out.push t
     return out
 
-/-- Restricted mana beyond Elf and instant/sorcery mana that may pay a
-cost (CR 106.6). -/
-structure ManaAllowances where
-  hero : Bool := false
-  villain : Bool := false
-  cantNonartifact : Bool := false
-  creature : Bool := false
-  spend : ManaSpend := {}
-deriving Inhabited
-
-/-- What restricted mana may pay for `prop`. -/
-def proposedAllowances (g : Game) (prop : ProposedSpell) : ManaAllowances :=
-  { hero := g.proposedAllowsHeroRestricted prop, villain := g.proposedAllowsVillainRestricted prop
-    cantNonartifact := g.proposedAllowsCantNonartifact prop
-    creature := g.proposedAllowsCreatureRestricted prop, spend := g.proposedManaSpend prop }
-
 /-- Whether some assignment of tap choices (including mixed-color
 `ManaOutput.combination` tuples) from `sources` pays `cost`. -/
 def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
-    (allowElf allowInst : Bool) (sources : List (GameObject × Array ManaType))
-    (a : ManaAllowances := {}) (prop? : Option ProposedSpell := none) : Bool :=
+    (sources : List (GameObject × Array ManaType))
+    (spend : ManaSpend := {}) (prop? : Option ProposedSpell := none) : Bool :=
   let minUnits := minManaUnitsForCost cost
   let srcArr := sources.toArray.map fun (src, types) =>
     let choices :=
@@ -224,13 +208,10 @@ def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
       out := out.set! i (srcArr[i]!.2.2 + out[i + 1]!)
     return out
   let rec go (curPool : ManaPool) (idx : Nat) : Bool :=
-    if allNonEmpty &&
-        curPool.canPay cost allowElf allowInst a.hero a.villain a.cantNonartifact
-          a.creature a.spend then
+    if allNonEmpty && curPool.canPay cost spend then
       true
     else if idx ≥ srcArr.size then
-      curPool.canPay cost allowElf allowInst a.hero a.villain a.cantNonartifact
-        a.creature a.spend
+      curPool.canPay cost spend
     else if curPool.total + sufMax[idx]! < minUnits then
       false
     else
@@ -452,21 +433,14 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
   let canPayEffCost (o : GameObject) (d : ManaAbilityDef) (effCost : ManaCost) : Bool :=
     if !effCost.includesManaPayment then true
     else
-      let allowElf := g.hasSubtype o .elf
-      let aEff : ManaAllowances := {
-        hero := g.hasSubtype o .hero
-        villain := g.hasSubtype o .villain
-        cantNonartifact := true
-        creature := g.isCreature o
-        spend := { abilitySourceSubtypes := g.subtypes o }
-      }
+      let spendEff := ManaSpend.forAbility (g.types o) (g.supertypes o) (g.subtypes o)
       let effSrcs :=
         plainManaSrcs.filter fun (src, _) =>
           !(d.tap && src.id == o.id) && !propTapReservedIds.contains src.id
       let picksOkWith (extraTapped : Array ObjectId) : Bool :=
         existsValidDPicks o d d.picks.toList #[] #[] #[] extraTapped
       if picksOkWith (effSrcs.map (·.1.id)) then
-        g.canPayFromSources (g.player p).manaPool effCost allowElf false effSrcs.toList aEff none
+        g.canPayFromSources (g.player p).manaPool effCost effSrcs.toList spendEff none
       else
         let freeOthers :=
           (effSrcs.filter (fun (s, _) => !g.isCreature s && !g.isArtifact s)).toList
@@ -476,11 +450,11 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
             List (GameObject × Array ManaType) → ManaPool → Array ObjectId → Bool
           | [], curPool, tappedIds =>
             picksOkWith tappedIds &&
-              g.canPayFromSources curPool effCost allowElf false freeOthers aEff none
+              g.canPayFromSources curPool effCost freeOthers spendEff none
           | (s, ts) :: rest, curPool, tappedIds =>
             if !picksOkWith tappedIds then false
-            else if g.canPayFromSources curPool effCost allowElf false freeOthers aEff none then true
-            else if !g.canPayFromSources curPool effCost allowElf false (((s, ts) :: rest) ++ freeOthers) aEff none then false
+            else if g.canPayFromSources curPool effCost freeOthers spendEff none then true
+            else if !g.canPayFromSources curPool effCost (((s, ts) :: rest) ++ freeOthers) spendEff none then false
             else
               let choices :=
                 g.tapChoicesForSource s ts effCost
@@ -507,12 +481,6 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
   | some prop =>
     if !prop.cost.includesManaPayment then false
     else
-      let allowElf := g.proposedAllowsElfRestricted prop
-      let allowInst := g.proposedAllowsInstRestricted prop
-      let allowHero := g.proposedAllowsHeroRestricted prop
-      let allowVillain := g.proposedAllowsVillainRestricted prop
-      let allowCantNonart := g.proposedAllowsCantNonartifact prop
-      let allowCreat := g.proposedAllowsCreatureRestricted prop
       let spend := g.proposedManaSpend prop
       let otherManaCosts : Array (GameObject × ManaCost) :=
         perms.foldl (fun acc o2 =>
@@ -551,14 +519,12 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
             let extra := if d.tap then g.extraMountainRedFromTap o #[.colorless] else #[]
             (d.output.allChoices dedupForProp).any fun added =>
               let simPool :=
-                addRestrictedMana (addRestrictedMana ManaPool.empty added d.restriction) extra .none
-              simPool.coveredMana prop.cost allowElf allowInst allowHero allowVillain
-                  allowCantNonart allowCreat spend > 0 ||
+                addRestrictedMana (addRestrictedMana ManaPool.empty added d.restriction d.riders) extra .none
+              simPool.coveredMana prop.cost spend > 0 ||
                 otherManaCosts.any (fun (o2, eff2) =>
                   o2.id != o.id &&
-                    simPool.coveredMana eff2 (g.hasSubtype o2 .elf) false
-                      (g.hasSubtype o2 .hero) (g.hasSubtype o2 .villain) true
-                      (g.isCreature o2) { abilitySourceSubtypes := g.subtypes o2 } > 0)
+                    simPool.coveredMana eff2
+                      (ManaSpend.forAbility (g.types o2) (g.supertypes o2) (g.subtypes o2)) > 0)
 
 end Game
 end Mtg.Engine

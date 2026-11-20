@@ -724,7 +724,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let dragonRockDef : CardDef := {
     name := "P49i4 DragonLantern"
     types := #[.land]
-    tapAddRestricted := some (#[.colored .red], .dragonSpell)
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .red, .const 1)]) (restriction := some .dragonSpell)]
   }
   let lanternGrantDef : CardDef := {
     name := "P49i4 ChromaticOrb"
@@ -760,11 +760,11 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     creature "P49i4 ManaSkiff" ManaCost.empty #["Vehicle"] 3 3 with
     types := #[.artifact, .creature]
     keywords := #[Keyword.haste]
-    tapAddTogether := #[.colorless]
-    activatedAbilities := #[{
-      cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 20), .tapObjects (.totalPowerAtLeast (.const 3)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])]
-      effect := Effect.gainLife 2
-    }]
+    activatedAbilities := #[
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 20), .tapObjects (.totalPowerAtLeast (.const 3)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])]
+        effect := Effect.gainLife 2 },
+      ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 1)])
+    ]
   }
   let onePowManaElfDef : CardDef := {
     llanowarElves with
@@ -783,15 +783,15 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let gSkiffProp := mustApply gSkiff0 p0 (.activate skiffId 0)
   let skiffProp := gSkiffProp.proposedSpell.get!
   let skiffSubsetPreserves3Elves :=
-    gSkiffProp.hasCostPreservingPaymentSubset ManaPool.empty (ManaCost.ofGeneric 20) false false
-      (gSkiffProp.manaSourcesForProposed p0 skiffProp) (gSkiffProp.proposedAllowances skiffProp)
+    gSkiffProp.hasCostPreservingPaymentSubset ManaPool.empty (ManaCost.ofGeneric 20)
+      (gSkiffProp.manaSourcesForProposed p0 skiffProp) (gSkiffProp.proposedManaSpend skiffProp)
       (prop? := some (p0, skiffProp))
 
   -- 4a(iii). `Agent.payGenericOrTapFirstSource` `.mountainExtraRed` on restricted-base Mountain permanent:
   let restrictedMtnOrbDef : CardDef := {
     name := "P49i4 SpellMountainOrb"
     types := #[.artifact]
-    tapAddAnyColorForInstantOrSorcery := true
+    activatedAbilities := #[ActivatedAbility.manaAbility (.oneOf .anyColor (.const 1)) (restriction := some .instantOrSorcery)]
   }
   let gMtnOrb0 := addPermanent g3 restrictedMtnOrbDef p0 p0
   let mtnOrbId := (gMtnOrb0.permanentsOf p0)[0]!.id
@@ -811,7 +811,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
      | _ => false)
 
   -- 4a(iv). `Agent` `.chooseX` (`maxAffordableX`) with `{1}` cost reduction at `0` mana (`chooseX 1`)
-  --         AND mixed-color `.combination` source (`{X}{U}{R}` with `tapAddTwoAmong := #[{U}, {R}]` + `Forest` -> `chooseX 1`):
+  --         AND mixed-color `.combination` source (`{X}{U}{R}` with `{U}`/`{R}` combination of 2 + `Forest` -> `chooseX 1`):
   let xSorcDef : CardDef := {
     name := "P49i4 MindBlaze"
     manaCost := { symbols := #[.x] }
@@ -827,7 +827,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let urComboLandDef : CardDef := {
     name := "P49i4 SteamFalls"
     types := #[.land]
-    tapAddTwoAmong := #[.colored .blue, .colored .red]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.combination (.explicit #[.colored .blue, .colored .red]) (.const 2))]
   }
   let xUrSorcDef : CardDef := {
     name := "P49i4 SteamX"
@@ -1028,7 +1028,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let gMapIllegal :=
     gMapNonland0.applyEffect p0 mapAb.effect #[.permanent oppBear.id] (sourceId := some mapTok.id)
   let mapOk :=
-    mapAb.onlyAsSorcery &&
+    mapAb.timing == .sorcery &&
     mapAb.cost == CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self] &&
     mapAb.effect.targetSpec == .creatureYouControl &&
     (gMapNonland.object! myBear.id).status.plusOnePlusOne == 1 &&
@@ -1148,13 +1148,13 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let mutBear := (gMut0.permanentsOf p0).find? (·.name == bear.name) |>.get!
   let gMut := gMut0.applyEffect p0 mutagenAb.effect #[.permanent mutBear.id]
   let junkLanderMutagenOk :=
-    mustHoldP1Rev "3a.junk" (junkAb.onlyAsSorcery &&
+    mustHoldP1Rev "3a.junk" (junkAb.timing == .sorcery &&
       junkAb.cost == CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self] &&
       junkExiled && junkPlayableThisTurn) &&
-    mustHoldP1Rev "3b.lander" (!landerAb.onlyAsSorcery &&
+    mustHoldP1Rev "3b.lander" (landerAb.timing == .instant &&
       landerAb.cost == CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapSelf, .sacrifice (.exact 1) .self] &&
       landerSearches) &&
-    mustHoldP1Rev "3c.mutagen" (mutagenAb.onlyAsSorcery &&
+    mustHoldP1Rev "3c.mutagen" (mutagenAb.timing == .sorcery &&
       mutagenAb.cost == CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self] &&
       mutagenAb.effect.targetSpec == .creature &&
       (gMut.object! mutBear.id).status.plusOnePlusOne == 1)

@@ -118,7 +118,7 @@ def normLineAgrees (cardName line : String) : Bool :=
       c.ptString == "*/4" && KeywordAbility.hasFlying c.keywords) == some true
 #guard (parseOracleCard "Mountain\nBasic Land — Mountain\n({T}: Add {R}.)").toOption.map
     (fun c => c.isLand && c.hasSupertype .basic && c.hasSubtype .mountain &&
-      c.tapAddMana.isEmpty) == some true
+      c.activatedAbilities.isEmpty) == some true
 #guard (parseOracleCard "Shock\n{R}\nInstant\nShock deals 5 damage to any target.").toOption.bind
     (·.spellEffect) == some (Effect.dealDamage 5)
 #guard (parseOracleCard
@@ -447,7 +447,7 @@ def normLineAgrees (cardName line : String) : Bool :=
     (fun c => c.hasType .scheme && c.hasSupertype .ongoing) == some true
 #guard (parseOracleCard "Snow-Covered Island\nBasic Snow Land — Island\n({T}: Add {U}.)").toOption.map
     (fun c => c.isLand && c.hasSupertype .basic && c.hasSupertype .snow &&
-      c.hasSubtype .island && c.tapAddMana.isEmpty &&
+      c.hasSubtype .island && c.activatedAbilities.isEmpty &&
       c.typeLine == "Basic Snow Land — Island") == some true
 #guard (parseOracleCard "Glacier\n{1}{U}\nSnow Creature — Elemental\n1/1").toOption.map
     (fun c => c.hasSupertype .snow && c.hasSubtype .elemental &&
@@ -602,12 +602,12 @@ private def towashiChaosAbility : String :=
     (fun c => KeywordAbility.hasProwess c.keywords && c.triggeredAbilities.isEmpty && c.staticAbilities.isEmpty) ==
     some true
 #guard (parseOracleCard "Elf\n{G}\nCreature — Elf Druid\n1/1\n({T}: Add {G}.)").toOption.map
-    (fun c => c.tapAddMana.isEmpty && c.tapAddOneOf.isEmpty && c.activatedAbilities.isEmpty) ==
+    (fun c => c.activatedAbilities.isEmpty) ==
     some true
 #guard (parseOracleCard "Elf\n{G}\nCreature — Elf Druid\n1/1\n{T}: Add {G}.").toOption.map
-    (fun c => c.tapAddMana == #[.colored .green]) == some true
+    (fun c => c.manaAbilities == #[.colored .green] && c.activatedAbilities.size == 1) == some true
 #guard (parseOracleCard "Steam\nLand — Island Mountain\n({T}: Add {U} or {R}.)").toOption.map
-    (fun c => c.tapAddOneOf.isEmpty && c.tapAddMana.isEmpty &&
+    (fun c => c.activatedAbilities.isEmpty &&
       c.basicLandMana == #[.blue, .red]) == some true
 #guard (parseOracleCard "Kick\n{1}{R}\nSorcery\nKicker {1}{R} (You may pay an additional {2}{G} as you cast this spell.)").toOption.map
     (fun c => c.kicker == some (ManaCost.ofGenericAndColor 1 .red)) == some true
@@ -631,5 +631,67 @@ private def towashiChaosAbility : String :=
   match parseOracleCard "Walker\n{2}{U}\nCreature — Wizard\n2/2\nWizardwalk" with
   | .error _ => true
   | .ok _ => false
+
+-- Phase 5: Compositional `parseManaSpec` / `parseManaProductionSpec` /
+-- `parseManaAbilityLine` and unified `ActivatedAbility` Oracle round-trips
+-- (CR 106.6 / 106.7 / 201.5c / 305.6 / 602 / 605.1a).
+private def roundTripsOracleCard (raw : String) : Bool :=
+  match parseOracleCard raw with
+  | .ok c =>
+    match parseOracleCard (renderFullOracle c) with
+    | .ok d => reprStr d == reprStr c
+    | .error _ => false
+  | .error _ => false
+
+#guard [
+  "Llanowar Elves\n{G}\nCreature — Elf Druid\n1/1\n{T}: Add {G}.",
+  "Birds of Paradise\n{G}\nCreature — Bird\n0/1\nFlying\n{T}: Add one mana of any color.",
+  "Delighted Halfling\n{G}\nCreature — Halfling Citizen\n1/2\n{T}: Add {C}.\n{T}: Add one mana of any color. Spend this mana only to cast a legendary spell, and that spell can't be countered.",
+  "Reflecting Pool\nLand\n{T}: Add one mana of any type that a land you control could produce.",
+  "Exotic Orchard\nLand\n{T}: Add one mana of any color that a land an opponent controls could produce.",
+  "Command Tower\nLand\n{T}: Add one mana of any color in your commander's color identity.",
+  "Mox Amber\n{0}\nLegendary Artifact\n{T}: Add one mana of any color among legendary creatures and planeswalkers you control.",
+  "Fetid Heath\nLand\n{T}: Add {C}.\n{W/B}, {T}: Add {W}{W}, {W}{B}, or {B}{B}.",
+  "Battlefield Forge\nLand\n{T}: Add {C}.\n{T}: Add {R} or {W}. Battlefield Forge deals 1 damage to you.",
+  "Sol Ring\n{1}\nArtifact\n{T}: Add {C}{C}.",
+  "Elvish Archdruid\n{1}{G}{G}\nCreature — Elf Druid\n2/2\nOther Elf creatures you control get +1/+1.\n{T}: Add {G} for each Elf you control.",
+  "Doc Samson, Super Psychiatrist\n{2}{G}\nLegendary Creature — Human Scientist\n2/4\n{T}: Add X mana of any one color, where X is Doc Samson's power.",
+  -- Novel compositional cards never printed in the catalog:
+  "Hall of Velocity\nLand\n{T}: Add {G}. If that mana is spent on a creature spell, it gains haste.",
+  "Anvil of Growth\nLand\n{T}: Add {C}. If that mana is spent on a creature spell, that creature enters with two additional +1/+1 counters on it.",
+  "Twice-Clock Conduit\n{2}\nArtifact\n{T}: Add {U}. Activate no more than two times each turn.",
+  "Exhausted Sprout\n{G}\nCreature — Plant\n0/2\nExhaust — {T}: Add {G}{G}."
+].all roundTripsOracleCard
+
+-- Verify AST structure of novel Phase 5 cards parsed via `parseOracleCard`.
+#guard
+  match parseOracleCard "Hall of Velocity\nLand\n{T}: Add {G}. If that mana is spent on a creature spell, it gains haste." with
+  | .ok c =>
+    c.activatedAbilities.size == 1 &&
+      c.activatedAbilities[0]!.isManaAbility &&
+      (c.activatedAbilities[0]!.mana?.map (·.riders)) == some #[.gainsHaste]
+  | .error _ => false
+#guard
+  match parseOracleCard "Anvil of Growth\nLand\n{T}: Add {C}. If that mana is spent on a creature spell, that creature enters with two additional +1/+1 counters on it." with
+  | .ok c =>
+    c.activatedAbilities.size == 1 &&
+      c.activatedAbilities[0]!.isManaAbility &&
+      (c.activatedAbilities[0]!.mana?.map (·.riders)) == some #[.entersWithPlusOneCounters 2]
+  | .error _ => false
+#guard
+  match parseOracleCard "Twice-Clock Conduit\n{2}\nArtifact\n{T}: Add {U}. Activate no more than two times each turn." with
+  | .ok c =>
+    c.activatedAbilities.size == 1 &&
+      c.activatedAbilities[0]!.isManaAbility &&
+      c.activatedAbilities[0]!.turnLimit? == some 2
+  | .error _ => false
+#guard
+  match parseOracleCard "Exhausted Sprout\n{G}\nCreature — Plant\n0/2\nExhaust — {T}: Add {G}{G}." with
+  | .ok c =>
+    c.activatedAbilities.size == 1 &&
+      c.activatedAbilities[0]!.isManaAbility &&
+      c.activatedAbilities[0]!.isExhaust &&
+      c.activatedAbilities[0]!.lifetimeLimit? == some 1
+  | .error _ => false
 
 end Mtg.Engine.Tests

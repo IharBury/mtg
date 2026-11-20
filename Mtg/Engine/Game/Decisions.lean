@@ -3454,13 +3454,13 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       (followedByFinishFra := followedByFinishFra)
       (followedByExplicitPriority? := followedByExplicitPriority?)
     if hadOuter then g else resumeAfterBecomeCast g
-  | .finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending exileSelf powerUp exhaust =>
+  | .finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending exileSelf powerUp exhaust riders =>
     g.finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending
-      (exileSelf := exileSelf) (powerUp := powerUp) (exhaust := exhaust)
+      (exileSelf := exileSelf) (powerUp := powerUp) (exhaust := exhaust) (riders := riders)
       (hasFollowingSeq := hasFollowingSeq)
-  | .finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx restriction damageYou isMountain prevPending powerUp exhaust =>
+  | .finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx restriction damageYou isMountain prevPending powerUp exhaust riders =>
     g.finishActivateManaAbilityPostSac p id oname srcSnap mana tap activatedIdx restriction damageYou isMountain prevPending
-      (powerUp := powerUp) (exhaust := exhaust)
+      (powerUp := powerUp) (exhaust := exhaust) (riders := riders)
       (hasFollowingSeq := hasFollowingSeq)
   | .finishBeginRecruit p =>
     g.finishBeginRecruit p
@@ -6428,13 +6428,13 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
   | .mayPayGeneric q n =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay \{{n}}"
-    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) (allowCantNonartifact := true) then
+    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
       throw s!"{(g.player p).name} cannot pay \{{n}}"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let forObj :=
       g.resolvingAbility <|> g.resolvingSpell <|> (g.currentResolvingContext?.bind Prod.fst)
-    let g ← g.payCost p (ManaCost.ofGeneric n) (allowCantNonartifact := true) (forObject := forObj)
+    let g ← g.payCost p (ManaCost.ofGeneric n) (forObject := forObj)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     if g.mayThenDrop > 0 then
       let g := g.acceptMayThenCore
@@ -6453,13 +6453,13 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
   | .payOrLetCounter q n _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay \{{n}}"
-    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) (allowCantNonartifact := true) then
+    if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
       throw s!"{(g.player p).name} cannot pay \{{n}}"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let forObj :=
       g.resolvingAbility <|> g.resolvingSpell <|> g.unlessPaysSource <|> (g.currentResolvingContext?.bind Prod.fst)
-    let g ← g.payCost p (ManaCost.ofGeneric n) (allowCantNonartifact := true) (forObject := forObj)
+    let g ← g.payCost p (ManaCost.ofGeneric n) (forObject := forObj)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
     let g := (g.change (.pending .none)).clearUnlessPays
     let g :=
@@ -6479,13 +6479,13 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
               if ch.isManaOnly && ch.mana.includesManaPayment then some ch.mana else none
           | _ => none
     let some mc := manaToPay? | throw "Not time to pay generic mana"
-    if !(g.player p).manaPool.canPay mc (allowCantNonartifact := true) then
+    if !(g.player p).manaPool.canPay mc then
       throw s!"{(g.player p).name} cannot pay {mc}"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let forObj :=
       g.resolvingAbility <|> g.resolvingSpell <|> (g.currentResolvingContext?.bind Prod.fst)
-    let g ← g.payCost p mc (allowCantNonartifact := true) (forObject := forObj)
+    let g ← g.payCost p mc (forObject := forObj)
     let g := g.logMsg s!"{(g.player p).name} pays {mc} (ward)"
     return g.finishWardAndDrain outerCont?
   | _ => throw "Not time to pay generic mana"

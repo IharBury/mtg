@@ -488,7 +488,7 @@ this card from hand, search). The same activation is legal at instant speed
 and illegal from the battlefield. -/
 def oliphauntCycleShape : Bool :=
   oliphauntCycleAbility.cost.discardSource &&
-    oliphauntCycleAbility.activateFromHand &&
+    oliphauntCycleAbility.isFromHand &&
     oliphauntCycleAbility.effect == Effect.searchLandTypeToHand "Mountain"
 
 #guard oliphauntCycleShape
@@ -4220,7 +4220,9 @@ def dainCountsOnResolveOk : Bool :=
 -/
 
 def weavemasterManaAbilityOk : Bool :=
-  woodlandWeavemaster.tapAddAnyColorEqualToPower &&
+  woodlandWeavemaster.activatedAbilities.any (fun ab =>
+      ab.isManaAbility &&
+        ab.mana?.any fun mp => mp.spec == .oneOf .anyColor (.objectStat .power .this)) &&
     (ruling 329).comment.contains "mana ability"
 
 #guard weavemasterManaAbilityOk

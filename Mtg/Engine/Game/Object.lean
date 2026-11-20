@@ -44,16 +44,8 @@ namespace Mtg.Engine
   a.costReductionIfGyCreaturesAtLeast == b.costReductionIfGyCreaturesAtLeast &&
   a.spellModes == b.spellModes &&
   a.fraTriggerModes == b.fraTriggerModes &&
-  a.tapAddMana == b.tapAddMana &&
-  a.tapAddManaForEach == b.tapAddManaForEach &&
-  a.tapAddAnyColorEqualToPower == b.tapAddAnyColorEqualToPower &&
-  a.tapAddAnyColorForInstantOrSorcery == b.tapAddAnyColorForInstantOrSorcery &&
   a.entersWithHopePerCreature == b.entersWithHopePerCreature &&
   a.entersTapped == b.entersTapped &&
-  a.tapAddOneOf == b.tapAddOneOf &&
-  a.tapAddOneOfIfEnteredOrBasic == b.tapAddOneOfIfEnteredOrBasic &&
-  a.tapAddAnyColor == b.tapAddAnyColor &&
-  a.tapSacrificeAddAnyColor == b.tapSacrificeAddAnyColor &&
   a.isToken == b.isToken &&
   a.cantBeCountered == b.cantBeCountered &&
   a.flashIfYouControlSubtype == b.flashIfYouControlSubtype &&
@@ -64,24 +56,17 @@ namespace Mtg.Engine
 
 @[noinline] private def cardDefBeq3 (a b : CardDef) : Bool :=
   a.entersWithPlusOneCounters == b.entersWithPlusOneCounters &&
-  a.tapAddChosenColorPerDifferentPower == b.tapAddChosenColorPerDifferentPower &&
   a.anyNumberInDeck == b.anyNumberInDeck &&
   a.castOnlyIfGraveyardAtLeast == b.castOnlyIfGraveyardAtLeast &&
   a.entersTappedUnlessPlaneswalker == b.entersTappedUnlessPlaneswalker &&
   a.entersTappedUnlessTwoOtherLands == b.entersTappedUnlessTwoOtherLands &&
-  a.tapAddAnyColorForLegendary == b.tapAddAnyColorForLegendary &&
   a.costReductionEqualFlyingPower == b.costReductionEqualFlyingPower &&
   a.costReductionGreatestPower == b.costReductionGreatestPower &&
   a.costReductionGreatestToughness == b.costReductionGreatestToughness &&
-  a.tapAddTwoAmong == b.tapAddTwoAmong &&
   a.chooseOneOrBoth == b.chooseOneOrBoth &&
   a.chooseTwoIfYouControlSubtype == b.chooseTwoIfYouControlSubtype &&
-  a.tapAddAnyColorAmongLegendaries == b.tapAddAnyColorAmongLegendaries &&
-  a.tapAddRestricted == b.tapAddRestricted &&
-  a.tapPayLifeAddOneOf == b.tapPayLifeAddOneOf &&
   a.entersTappedUnlessPayLife == b.entersTappedUnlessPayLife &&
   a.entersTappedUnlessBehold == b.entersTappedUnlessBehold &&
-  a.tapAddCommanderIdentity == b.tapAddCommanderIdentity &&
   a.asEntersChooseCreatureType == b.asEntersChooseCreatureType &&
   a.saga == b.saga &&
   a.costReductionEqualOppArtifacts == b.costReductionEqualOppArtifacts
@@ -91,7 +76,6 @@ namespace Mtg.Engine
   a.othersEnterWithPlusOneEqualToughness == b.othersEnterWithPlusOneEqualToughness &&
   a.powerPerMountain == b.powerPerMountain &&
   a.extraLandIfOtherSubtype == b.extraLandIfOtherSubtype &&
-  a.tapAddColorlessPerSubtype == b.tapAddColorlessPerSubtype &&
   a.tokenDoubling == b.tokenDoubling &&
   a.drawTwoExceptFirstDrawStep == b.drawTwoExceptFirstDrawStep &&
   a.activatedAbilities == b.activatedAbilities &&
@@ -116,12 +100,7 @@ namespace Mtg.Engine
   a.empowerJace == b.empowerJace &&
   a.entersPrepared == b.entersPrepared &&
   a.prepareFace == b.prepareFace &&
-  a.tapAddTogether == b.tapAddTogether &&
-  a.tapAddOneOfDealsDamage == b.tapAddOneOfDealsDamage &&
-  a.tapAddOppCouldProduce == b.tapAddOppCouldProduce &&
-  a.tapAddYouCouldProduce == b.tapAddYouCouldProduce &&
   a.grantLandsTapAnyColor == b.grantLandsTapAnyColor &&
-  a.filterMana == b.filterMana &&
   a.entersTappedUnlessAnySubtype == b.entersTappedUnlessAnySubtype &&
   a.entersTappedUnlessNBasics == b.entersTappedUnlessNBasics &&
   a.entersTappedUnlessOppLands == b.entersTappedUnlessOppLands &&

@@ -795,7 +795,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   let urLandDef : CardDef := {
     name := "P47i4 SteamBoiler"
     types := #[.land]
-    tapAddTogether := #[.colored .blue, .colored .red]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .blue, .const 1), (.colored .red, .const 1)])]
   }
   let urBoltDef : CardDef := {
     bear with
@@ -810,7 +810,11 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   let gUrStep3 := mustStepAgent47 gUrStep2 p0 -- pays `{U}{R}`!
 
   -- 4a(ii). `canPayFromSources` & `preferredManaTap` pruning on 12 any-color sources:
-  let anyRockDef : CardDef := { name := "P47i4 RainbowOrb", types := #[.artifact], tapAddAnyColor := true }
+  let anyRockDef : CardDef := {
+    name := "P47i4 RainbowOrb"
+    types := #[.artifact]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.oneOf .anyColor (.const 1))]
+  }
   let gManyAny0 :=
     Id.run do
       let mut g := g3
@@ -876,12 +880,12 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     mustHold47i4 "4a_mixedFixedTap"
       (gUr0.manaTypesFromTap urLandObj (.colored .blue) == #[.colored .blue, .colored .red] &&
        (gUr0.availableManaExcept p0 none).canPay urCost &&
-       gUr0.canPayFromSources ManaPool.empty urCost false false (gUr0.manaSources p0).toList &&
+       gUr0.canPayFromSources ManaPool.empty urCost (gUr0.manaSources p0).toList &&
        gUrStep3.stack.size == 1) &&
     mustHold47i4 "4a_anyColorPruning"
       (manySources.length == 12 &&
-       gManyAny0.canPayFromSources ManaPool.empty (ManaCost.ofGeneric 10) false false manySources &&
-       !gManyAny0.canPayFromSources ManaPool.empty (ManaCost.ofGeneric 13) false false manySources &&
+       gManyAny0.canPayFromSources ManaPool.empty (ManaCost.ofGeneric 10) manySources &&
+       !gManyAny0.canPayFromSources ManaPool.empty (ManaCost.ofGeneric 13) manySources &&
        manyPref?.any (fun (_, t) => t == .colored .blue)) &&
     mustHold47i4 "4a_agentSharedCrewSacAndTapColor"
       (xcsActOk &&
@@ -891,16 +895,20 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
        tapGWithBearActOk &&
        gTapGDone.stack.size == 1)
 
-  -- 4b(i). `ManaAbilities` mana-cost `spend := { abilitySourceSubtypes := g.subtypes o }`:
+  -- 4b(i). `ManaAbilities` mana-cost `spend := ManaSpend.forAbility ...`:
   let gobFilterDef : CardDef := {
     creature "P47i4 GobAlchemist" ManaCost.empty #["Goblin"] 1 1 with
     keywords := #[Keyword.haste]
-    filterMana := some (ManaCost.ofGeneric 1, #[.colored .blue])
+    activatedAbilities := #[ActivatedAbility.manaAbility
+      (.combination (.explicit #[.colored .blue]) (.const 2))
+      (cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf])]
   }
   let rockFilterDef : CardDef := {
     name := "P47i4 PlainFilter"
     types := #[.artifact]
-    filterMana := some (ManaCost.ofGeneric 1, #[.colored .blue])
+    activatedAbilities := #[ActivatedAbility.manaAbility
+      (.combination (.explicit #[.colored .blue]) (.const 2))
+      (cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf])]
   }
   let gGobFilt0 :=
     (addPermanent (addPermanent g3 gobFilterDef p0 p0) rockFilterDef p0 p0).addMana
@@ -1007,8 +1015,8 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   let gToughDestroyed := (gTough0.destroyPermanent (gTough0.object! wallId) (cause := some testCause)).receivePriority p0
   let gToughRes := mustApply (mustApply (mustApply gToughDestroyed p0 .pass) p1 .pass) p2 .pass
 
-  -- 4c(ii). Layer 3 `TextChange` `Resolution.addMana` `NumberSelector` / `tapAddRestricted` (`ManaSpendRestriction.subtypeEquipmentSagaSpell`)
-  --         & `CardDef.tapAddColorlessPerSubtype` parity:
+  -- 4c(ii). Layer 3 `TextChange` `Resolution.addMana` `NumberSelector` / unified mana restriction (`ManaSpendRestriction.dwarfEquipmentSagaSpell`)
+  --         & unified per-subtype colorless mana parity:
   let countElfRitualDef : CardDef := {
     name := "P47i4 ElfRite"
     manaCost := ManaCost.zero
@@ -1018,12 +1026,13 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   let dwarfForgeDef : CardDef := {
     name := "P47i4 DwarfForge"
     types := #[.land]
-    tapAddRestricted := some (#[.colored .red], .dwarfEquipmentSagaSpell)
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .red, .const 1)]) (restriction := some .dwarfEquipmentSagaSpell)]
   }
   let elfTowerDef : CardDef := {
     name := "P47i4 ElfTower"
     types := #[.land]
-    tapAddColorlessPerSubtype := some .elf
+    activatedAbilities := #[ActivatedAbility.manaAbility
+      (.sequence #[(.colorless, .count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))])]
   }
   let gL3Base0 :=
     insertObject

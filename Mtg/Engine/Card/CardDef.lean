@@ -10,22 +10,6 @@ adventurer cards, and per-card mana-ability storage.
 
 namespace Mtg.Engine
 
-/-- A `{T}: Add {M} for each [subtype] you control` mana ability (CR 106.4 / 605). -/
-structure TapAddForEach where
-  mana : ManaType
-  subtype : CardSubtype
-deriving Repr, Inhabited, BEq
-
-namespace TapAddForEach
-
-def toNotation (a : TapAddForEach) : String :=
-  s!"\{T}: Add \{{a.mana.letter}} for each {a.subtype} you control"
-
-instance : ToString TapAddForEach where
-  toString := toNotation
-
-end TapAddForEach
-
 /-- Alternative characteristics of an adventurer card while it is a spell
 cast as an Adventure (CR 715.2). -/
 structure AdventureFace where
@@ -113,33 +97,11 @@ structure CardDef where
   /-- Modes of this card's modal triggered ability (“When this creature
   enters, choose one —”), chosen as it is put on the stack (CR 603.3c). -/
   fraTriggerModes : Array Effect := #[]
-  /-- Additional `{T}: Add _` abilities that are not implied by basic land types. -/
-  tapAddMana : Array ManaType := #[]
-  /-- `{T}: Add {M} for each permanent you control with this subtype
-  (e.g. Elvish Archdruid). -/
-  tapAddManaForEach : Array TapAddForEach := #[]
-  /-- `{T}: Add X mana of any one color, where X is this creature's power.
-  That mana may be spent only to cast Elf spells and activate abilities of
-  Elf sources (e.g. Woodland Weavemaster). -/
-  tapAddAnyColorEqualToPower : Bool := false
-  /-- `{T}: Add one mana of any color. Spend this mana only to cast an instant
-  or sorcery spell (e.g. Pelargir Survivor). -/
-  tapAddAnyColorForInstantOrSorcery : Bool := false
   /-- This enchantment enters with a hope counter for each creature you control
   (e.g. Dawn of a New Age). -/
   entersWithHopePerCreature : Bool := false
   /-- This permanent enters tapped (CR 110.5b exception). -/
   entersTapped : Bool := false
-  /-- `{T}: Add one of these mana types` as a single choice ability
-  (e.g. `{T}: Add {G} or {U}`). -/
-  tapAddOneOf : Array ManaType := #[]
-  /-- `{T}: Add one of these types. Activate only if this land entered this
-  turn or if you control a basic land.` -/
-  tapAddOneOfIfEnteredOrBasic : Array ManaType := #[]
-  /-- `{T}: Add one mana of any color` with no spending restriction. -/
-  tapAddAnyColor : Bool := false
-  /-- `{T}, Sacrifice this permanent: Add one mana of any color` (Treasure). -/
-  tapSacrificeAddAnyColor : Bool := false
   /-- This object is a token (CR 111). -/
   isToken : Bool := false
   /-- This spell can't be countered. -/
@@ -159,9 +121,6 @@ structure CardDef where
   planeswalkersYouControlHave : Array ActivatedAbility := #[]
   /-- This permanent enters with this many +1/+1 counters (CR 614.1c). -/
   entersWithPlusOneCounters : Nat := 0
-  /-- `{T}: Choose a color. Add one mana of that color for each different
-  power among creatures you control.` (Loot, the Nexus) -/
-  tapAddChosenColorPerDifferentPower : Bool := false
   /-- A deck can have any number of cards with this name (CR 100.2a). -/
   anyNumberInDeck : Bool := false
   /-- You can't cast this spell unless there are at least this many other
@@ -171,9 +130,6 @@ structure CardDef where
   entersTappedUnlessPlaneswalker : Bool := false
   /-- This permanent enters tapped unless you control two or more other lands. -/
   entersTappedUnlessTwoOtherLands : Bool := false
-  /-- `{T}: Add one mana of any color. Spend this mana only to cast a
-  legendary spell, and that spell can't be countered.` -/
-  tapAddAnyColorForLegendary : Bool := false
   /-- This spell costs {X} less to cast, where X is the total power of
   creatures you control with flying. -/
   costReductionEqualFlyingPower : Bool := false
@@ -183,25 +139,14 @@ structure CardDef where
   /-- This spell costs {X} less to cast, where X is the greatest toughness
   among creatures you control. -/
   costReductionGreatestToughness : Bool := false
-  /-- `{T}: Add two mana in any combination of these types`. -/
-  tapAddTwoAmong : Array ManaType := #[]
   /-- Modal spell is “Choose one or both” rather than “Choose one”. -/
   chooseOneOrBoth : Bool := false
   /-- “Choose one. If you control a {subtype}, you may choose two instead.” -/
   chooseTwoIfYouControlSubtype : Option CardSubtype := none
-  /-- `{T}: Add one mana of any color among legendary creatures and
-  planeswalkers you control`. -/
-  tapAddAnyColorAmongLegendaries : Bool := false
-  /-- `{T}: Add these mana types. Spend this mana only to cast …`. -/
-  tapAddRestricted : Option (Array ManaType × ManaSpendRestriction) := none
-  /-- `{T}, Pay n life: Add one of these types`. -/
-  tapPayLifeAddOneOf : Option (Nat × Array ManaType) := none
   /-- As this land enters, you may pay `n` life. If you don't, it enters tapped. -/
   entersTappedUnlessPayLife : Option Nat := none
   /-- As this land enters, you may behold a `subtype`. If you don't, this land enters tapped. -/
   entersTappedUnlessBehold : Option CardSubtype := none
-  /-- `{T}: Add one mana of any color in your commander's color identity`. -/
-  tapAddCommanderIdentity : Bool := false
   /-- As this enchantment enters, choose a creature type. -/
   asEntersChooseCreatureType : Bool := false
   /-- Printed Saga chapters (CR 714). -/
@@ -217,16 +162,15 @@ structure CardDef where
   powerPerMountain : Nat := 0
   /-- You may play an additional land if you control another of this subtype. -/
   extraLandIfOtherSubtype : Option CardSubtype := none
-  /-- `{T}: Add {C} for each permanent you control of this subtype`. -/
-  tapAddColorlessPerSubtype : Option CardSubtype := none
   /-- If one or more tokens would be created under your control, twice that
   many of those tokens are created instead (e.g. Bard, King of Dale). -/
   tokenDoubling : Bool := false
   /-- If you would draw a card except the first one you draw in each of your
   draw steps, draw two cards instead. -/
   drawTwoExceptFirstDrawStep : Bool := false
-  /-- Non-mana activated abilities (CR 602). `{T}: Add` mana abilities are
-  `tapAddMana` / `tapAddManaForEach` / basic land types instead. -/
+  /-- Printed activated abilities (CR 602), including mana abilities (CR 605.1a)
+  and loyalty abilities (CR 606.2). Basic-land intrinsic mana abilities are
+  synthesized from Layer 4 basic land types per CR 305.6. -/
   activatedAbilities : Array ActivatedAbility := #[]
   /-- Static abilities other than printed keywords (CR 604). -/
   staticAbilities : Array StaticAbility := #[]
@@ -279,18 +223,8 @@ structure CardDef where
   entersPrepared : Bool := false
   /-- Sorcery or instant copied while this permanent is prepared. -/
   prepareFace : Option AdventureFace := none
-  /-- `{T}: Add` these mana as one ability (Sol Ring adds {C}{C}). -/
-  tapAddTogether : Array ManaType := #[]
-  /-- `{T}: Add one of these types. This permanent deals `n` damage to you.` -/
-  tapAddOneOfDealsDamage : Option (Array ManaType × Nat) := none
-  /-- `{T}: Add one mana of any color that a land an opponent controls could produce.` -/
-  tapAddOppCouldProduce : Bool := false
-  /-- `{T}: Add one mana of any type that a land you control could produce.` -/
-  tapAddYouCouldProduce : Bool := false
   /-- Lands you control have `{T}: Add one mana of any color.` -/
   grantLandsTapAnyColor : Bool := false
-  /-- Pay `cost`, `{T}`: add two mana in any combination of these colors. -/
-  filterMana : Option (ManaCost × Array ManaType) := none
   /-- Enters tapped unless you control a land of one of these subtypes. -/
   entersTappedUnlessAnySubtype : Array CardSubtype := #[]
   /-- Enters tapped unless you control at least this many basic lands. -/
@@ -592,50 +526,43 @@ def manaValue (c : CardDef) : Nat := c.manaCost.manaValue
 def basicLandMana (c : CardDef) : Array Color :=
   c.subtypes.filterMap manaForBasicLandType
 
-/-- `{T}: Add {M}` abilities that produce one mana, from basic land types or
-an explicit `tapAddMana` list. -/
-def simpleTapAddMana (c : CardDef) : Array ManaType :=
-  c.basicLandMana.map ManaType.colored ++ c.tapAddMana
-
-/-- `{T}: Add` types from modeled activated mana abilities. -/
-def mshTapAddMana (c : CardDef) : Array ManaType :=
-  c.activatedAbilities.foldl (fun acc ab =>
-    match ab.effect.resolution with
-    | .addMana types amount => if amount == .fixed 0 then acc else acc ++ types
-    | .addBlueCantNonartifact => acc ++ #[.colored .blue]
-    | _ => acc) #[]
-
-/-- `{T}: Add` types gated on this land entering this turn or a basic land. -/
+/-- Mana types produced by activated abilities gated on this land entering this
+turn or controlling a basic land (MSH conditional dual lands). -/
 def enteredOrBasicAddMana (c : CardDef) : Array ManaType :=
-  c.tapAddOneOfIfEnteredOrBasic ++ c.mshTapAddMana
+  c.activatedAbilities.foldl (fun acc ab =>
+    if ab.condition? == some ActivatedAbility.condEnteredThisTurnOrControlBasicLand then
+      match ab.mana? with
+      | some mp => acc ++ mp.spec.staticPossibleTypes
+      | none => acc
+    else
+      match ab.effect.resolution with
+      | .addMana types amount => if amount == .fixed 0 then acc else acc ++ types
+      | .addBlueCantNonartifact => acc.push (.colored .blue)
+      | _ => acc) #[]
 
 /-- True when a `{T}: Add` ability requires this land entered this turn or
 a basic land you control. -/
 def requiresEnteredOrBasicAdd (c : CardDef) : Bool :=
-  !c.tapAddOneOfIfEnteredOrBasic.isEmpty
-
-/-- True when an activated ability adds any color of mana. -/
-def hasAnyColorActivatedAdd (c : CardDef) : Bool :=
   c.activatedAbilities.any (fun ab =>
-    match ab.effect.resolution with
-    | .addAnyColor | .addAnyColorSpendOnlySubtype _
-    | .addAnyColorSpendOnlyArtifactSpell | .addAnyColorEqualToSourcePower
-    | .addTwoAnyColorCreatureSources | .addFourAnyCombination
-    | .addTwoAnyColorEquipment => true
-    | _ => false)
+    ab.condition? == some ActivatedAbility.condEnteredThisTurnOrControlBasicLand)
 
-/-- All `{T}: Add` mana types this card can produce. -/
+/-- All mana types this card's intrinsic basic-land types and printed activated
+mana abilities can statically produce (CR 305.6 / 605.1a). -/
 def manaAbilities (c : CardDef) : Array ManaType :=
-  c.simpleTapAddMana ++ c.tapAddOneOf ++ c.tapAddManaForEach.map (·.mana) ++
-    (match c.tapAddColorlessPerSubtype with | some _ => #[.colorless] | none => #[]) ++
-    c.enteredOrBasicAddMana ++
-    (if c.tapAddAnyColorEqualToPower || c.tapAddAnyColorForInstantOrSorcery ||
-        c.tapAddAnyColor || c.tapSacrificeAddAnyColor ||
-        c.tapAddAnyColorForLegendary || c.tapAddTwoAmong.size >= 2 ||
-        c.tapAddAnyColorAmongLegendaries || c.tapAddCommanderIdentity ||
-        c.hasAnyColorActivatedAdd || c.tapAddChosenColorPerDifferentPower then
-      (Color.all.map ManaType.colored).toArray
-     else #[])
+  let basic := if c.isLand then c.basicLandMana.map ManaType.colored else #[]
+  let fromActivated := c.activatedAbilities.foldl (fun acc ab =>
+    match ab.mana? with
+    | some mp => acc ++ mp.spec.staticPossibleTypes
+    | none =>
+      match ab.effect.resolution with
+      | .addMana types amount => if amount == .fixed 0 then acc else acc ++ types
+      | .addBlueCantNonartifact => acc.push (.colored .blue)
+      | .addAnyColor | .addAnyColorSpendOnlySubtype _
+      | .addAnyColorSpendOnlyArtifactSpell | .addAnyColorEqualToSourcePower
+      | .addTwoAnyColorCreatureSources | .addFourAnyCombination
+      | .addTwoAnyColorEquipment => acc ++ anyColorMana
+      | _ => acc) #[]
+  (basic ++ fromActivated).foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
 
 /-- Lowercase ASCII for comparing Oracle keyword lines to `KeywordAbility.toOracleList`. -/
 def lowerAscii (s : String) : String :=
@@ -671,14 +598,9 @@ def stripAdventureDelimiter (line : String) : Option String :=
     if rest.isEmpty then none else some rest
   else some line
 
-/-- `{T}: Add {C}` lines from an explicit `tapAddMana` list. Basic land types
-print the parenthetical reminder instead. -/
-def explicitTapAddLines (c : CardDef) : List String :=
-  c.tapAddMana.toList.map (fun t => s!"\{T}: Add \{{t.letter}}")
-
-/-- `({T}: Add {R}.)` for each basic land type, when no other tap-add list is set. -/
+/-- `({T}: Add {R}.)` for each basic land type on a land (CR 305.6). -/
 def basicLandReminderLines (c : CardDef) : List String :=
-  if !c.tapAddMana.isEmpty then []
+  if !c.isLand then []
   else c.basicLandMana.toList.map fun col => s!"(\{T}: Add \{{col.letter}}.)"
 
 /-- Adventure name, cost, and spell, without the Gatherer `//ADV//` marker. -/
@@ -726,36 +648,6 @@ def asEntersSpecialLines (c : CardDef) : List String :=
      ["As this artifact enters, you may have it become a copy of any creature on the battlefield until end of turn, except it has haste."]
    else [])
 
-/-- `{T}: Add {U} or {B}.` -/
-def tapAddOneOfLines (c : CardDef) : List String :=
-  if c.tapAddOneOf.isEmpty then []
-  else [s!"\{T}: Add {manaSymbolsText c.tapAddOneOf " or "}."]
-
-/-- `{T}: Add {U} or {B}` gated on entering this turn or a basic land. -/
-def tapAddOneOfIfEnteredLines (c : CardDef) : List String :=
-  if c.tapAddOneOfIfEnteredOrBasic.isEmpty then []
-  else
-    [s!"\{T}: Add {manaSymbolsText c.tapAddOneOfIfEnteredOrBasic " or "}. Activate only if this land entered this turn or if you control a basic land."]
-
-/-- `{T}: Add` for each permanent of a listed type. -/
-def tapAddForEachLines (c : CardDef) : List String :=
-  c.tapAddManaForEach.toList.map TapAddForEach.toNotation ++
-    match c.tapAddColorlessPerSubtype with
-    | some sub => [TapAddForEach.toNotation { mana := .colorless, subtype := sub }]
-    | none => []
-
-/-- Elf-restricted `{T}: Add` X mana of any color equal to power. -/
-def tapAddAnyColorEqualToPowerLine (c : CardDef) : List String :=
-  if c.tapAddAnyColorEqualToPower then
-    ["{T}: Add X mana of any one color, where X is this creature's power. Spend this mana only to cast Elf spells and activate abilities of Elf sources."]
-  else []
-
-/-- Instant/sorcery-restricted `{T}: Add` one mana of any color. -/
-def tapAddAnyColorForInstantOrSorceryLine (c : CardDef) : List String :=
-  if c.tapAddAnyColorForInstantOrSorcery then
-    ["{T}: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell."]
-  else []
-
 /-- True when CR 601.2b must announce a choice additional cost (e.g. sacrifice-or-pay,
 discard-or-pay, behold-or-pay). -/
 def announcesAdditionalCost (c : CardDef) : Bool :=
@@ -767,7 +659,7 @@ def additionalCostLines (c : CardDef) : List String :=
 
 /-- `{T}cycling` and other typecycling, printed as `Mountaincycling {1}`. -/
 def activatedNotation (ab : ActivatedAbility) : String :=
-  if ab.activateFromHand && ab.cost.discardSource then
+  if ab.isFromHand && ab.cost.discardSource then
     match ab.effect.resolution with
     | .searchLandTypeToHand t =>
       if t == "Plan" then ab.toNotation else s!"{t}cycling {ab.cost.mana}"
@@ -784,15 +676,10 @@ def spellLines (c : CardDef) : List String :=
     | some e => [Effect.toNotation e]
     | none => []
 
-/-- `{T}: Add` mana abilities, additional costs, activated, static, triggered, and spell abilities. -/
+/-- Basic-land reminders, additional costs, activated (including mana), static,
+triggered, and spell abilities. -/
 def structuredAbilityLines (c : CardDef) : List String :=
-  c.explicitTapAddLines ++
   c.basicLandReminderLines ++
-  c.tapAddOneOfLines ++
-  c.tapAddOneOfIfEnteredLines ++
-  c.tapAddForEachLines ++
-  c.tapAddAnyColorEqualToPowerLine ++
-  c.tapAddAnyColorForInstantOrSorceryLine ++
   c.additionalCostLines ++
   c.asEntersSpecialLines ++
   c.activatedAbilities.toList.map activatedNotation ++
@@ -896,7 +783,7 @@ def isWorthy (c : CardDef) : Bool :=
 
 /-- Equip worthy keyword on this Equipment (MSH). -/
 def hasEquipWorthy (c : CardDef) : Bool :=
-  c.activatedAbilities.any (·.equipWorthy)
+  c.activatedAbilities.any (·.isEquipWorthy)
 
 /-- Spell, modal, adventure, prepare, and Saga-chapter effects on this face. -/
 def spellLikeEffects (c : CardDef) : Array Effect :=
@@ -946,7 +833,7 @@ def faceModellingError? (c : CardDef) : Option String :=
       match acc with
       | some err => some err
       | none =>
-        if ab.effect.resolution.doesNothingAsActivated then
+        if ab.mana?.isNone && ab.effect.resolution.doesNothingAsActivated then
           some s!"{c.name} activated ability is not fully modelled: {ab.effect.toNotation}"
         else none) none
   unparsed <|> spell <|> activated

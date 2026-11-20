@@ -1253,12 +1253,12 @@ that also appear in other sets. -/
 ]
 
 #guard roguesPassage.isLand
-#guard roguesPassage.activatedAbilities.size == 1
-#guard roguesPassage.activatedAbilities[0]!.effect == Effect.targetCantBeBlockedThisTurn
-#guard roguesPassage.activatedAbilities[0]!.cost.tap
-#guard roguesPassage.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 4)
-#guard roguesPassage.tapAddMana == #[.colorless]
-#guard elvishMystic.tapAddMana == #[.colored .green]
+#guard roguesPassage.activatedAbilities.size == 2
+#guard roguesPassage.activatedAbilities[0]!.mana? == some { spec := .fixedOne .colorless }
+#guard roguesPassage.activatedAbilities[1]!.effect == Effect.targetCantBeBlockedThisTurn
+#guard roguesPassage.activatedAbilities[1]!.cost.tap
+#guard roguesPassage.activatedAbilities[1]!.cost.mana == (ManaCost.ofGeneric 4)
+#guard elvishMystic.activatedAbilities[0]?.bind (·.mana?) == some { spec := .fixedOne (.colored .green) }
 #guard (wayfarersBauble.summary.splitOn "Search your library").length > 1
 #guard (roguesPassage.summary.splitOn "can't be blocked").length > 1
 #guard orcishSiegemaster.hasSimpleKeyword .trample
@@ -1275,8 +1275,8 @@ that also appear in other sets. -/
 #guard giftOfStrands.staticAbilities == #[.enchantedCreatureGets 3 3]
 #guard giftOfStrands.triggeredAbilities == #[.onEnterScry 2]
 #guard dunedainBlade.activatedAbilities.size == 2
-#guard dunedainBlade.activatedAbilities[0]!.equipSubtype == some .human
-#guard dunedainBlade.activatedAbilities[1]!.equipSubtype == none
+#guard dunedainBlade.activatedAbilities[0]!.equipSubtype? == some .human
+#guard dunedainBlade.activatedAbilities[1]!.equipSubtype? == none
 #guard dunedainBlade.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard dunedainBlade.activatedAbilities[1]!.cost.mana == (ManaCost.ofGeneric 3)
 #guard (giftOfStrands.summary.splitOn "flash").length > 1
@@ -1286,7 +1286,9 @@ that also appear in other sets. -/
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
 #guard (elvishVisionary.summary.splitOn "draw a card").length > 1
 #guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #[.elf] 1 1]
-#guard elvishArchdruid.tapAddManaForEach == #[{ mana := .colored .green, subtype := .elf }]
+#guard elvishArchdruid.activatedAbilities[0]?.bind (·.mana?) ==
+  some { spec := .sequence #[(ManaType.colored .green,
+    ValueExpr.count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))] }
 #guard elvishArchdruid.manaAbilities == #[.colored .green]
 #guard (elvishArchdruid.summary.splitOn "Other Elf creatures").length > 1
 #guard (elvishArchdruid.summary.splitOn "for each Elf").length > 1
@@ -1331,7 +1333,7 @@ that also appear in other sets. -/
 #guard oliphaunt.hasSimpleKeyword .trample
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
 #guard oliphaunt.activatedAbilities.size == 1
-#guard oliphaunt.activatedAbilities[0]!.activateFromHand
+#guard oliphaunt.activatedAbilities[0]!.isFromHand
 #guard oliphaunt.activatedAbilities[0]!.cost.discardSource
 #guard oliphaunt.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Mountain"
 #guard oliphaunt.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
@@ -1360,8 +1362,8 @@ that also appear in other sets. -/
 #guard (guttersnipe.summary.splitOn "instant or sorcery").length > 1
 #guard hauntOfTheDeadMarshes.triggeredAbilities == #[.onEnterScry 1]
 #guard hauntOfTheDeadMarshes.activatedAbilities.size == 1
-#guard hauntOfTheDeadMarshes.activatedAbilities[0]!.activateFromGraveyard
-#guard hauntOfTheDeadMarshes.activatedAbilities[0]!.onlyIfYouControlLegendary
+#guard hauntOfTheDeadMarshes.activatedAbilities[0]!.isFromGraveyard
+#guard hauntOfTheDeadMarshes.activatedAbilities[0]!.condition? == some ActivatedAbility.condControlsLegendaryCreature
 #guard hauntOfTheDeadMarshes.activatedAbilities[0]!.effect == Effect.returnFromGraveyardTapped
 #guard languish.spellEffect == some (Effect.allCreaturesGet (-4) (-4))
 #guard !languish.requiresTarget
@@ -1370,7 +1372,7 @@ that also appear in other sets. -/
 #guard trollOfKhazadDum.staticAbilities == #[.cantBeBlockedExceptBy 3]
 #guard (trollOfKhazadDum.summary.splitOn "three or more").length > 1
 #guard trollOfKhazadDum.activatedAbilities.size == 1
-#guard trollOfKhazadDum.activatedAbilities[0]!.activateFromHand
+#guard trollOfKhazadDum.activatedAbilities[0]!.isFromHand
 #guard trollOfKhazadDum.activatedAbilities[0]!.cost.discardSource
 #guard trollOfKhazadDum.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Swamp"
 #guard trollOfKhazadDum.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
@@ -1405,8 +1407,8 @@ that also appear in other sets. -/
 #guard callForthTheTempest.spellEffect == some (Effect.damageOppCreaturesEqualOtherSpellsMv)
 #guard galadrielSDismissal.spellEffect == some (Effect.phaseOutKicker)
 #guard theReaverCleaver.staticAbilities == #[.equippedGetsTrampleAndCombatTreasures 1 1]
-#guard mountDoom.activatedAbilities.size == 2
-#guard mountDoom.activatedAbilities[1]!.cost.sacrificeLegendaryArtifact
+#guard mountDoom.activatedAbilities.size == 3
+#guard mountDoom.activatedAbilities[2]!.cost.sacrificeLegendaryArtifact
 #guard lothoCorruptShirriff.triggeredAbilities ==
   #[.onPlayerCastsSecondSpellLoseLifeCreateTreasure]
 

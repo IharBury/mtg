@@ -113,7 +113,7 @@ private def pushAct (c : CardDef) (e : Effect) (phrase : String) (costText : Str
   let ab := activated e (mana := costOf costText)
     (tap := costLow.contains "{t}")
     (sacrificeSource := costLow.contains "sacrifice")
-    (onlyAsSorcery := sorcery || (low phrase).contains "only as a sorcery")
+    (timing := if sorcery || (low phrase).contains "only as a sorcery" then .sorcery else .instant)
     (loyalty := loyalty)
     (removeStoryCounter := costLow.contains "story counter")
   let ab := { ab with printed := phrase }
@@ -239,8 +239,8 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
       some (c.withKeyword (.impending n (CostSpec.ofMana (costOf line))))
     else if l.startsWith "cycling " then
       let cost := costOf ((line.splitOn "(").headD line)
-      let ab := activated (Effect.draw 1) (mana := cost) (activateFromHand := true)
-        (discardSource := true)
+      let ab := activated (Effect.draw 1) (mana := cost) (activeZones := #[.hand])
+        (tag? := some (.cycling none)) (discardSource := true)
       let ab := { ab with printed := line }
       let c' := c.withKeyword (.cycling none (CostSpec.ofMana cost))
       some { c' with activatedAbilities := c'.activatedAbilities.push ab }
@@ -294,20 +294,9 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
       match line.splitOn ":" with
       | cost :: rest =>
         let effectRaw := (String.intercalate ":" rest).trimAscii.copy
-        let colors := manaTypesOf effectRaw
-        let costLow := low cost
-        if (low effectRaw).contains "add " && colors.size ≥ 2 && costLow.contains "{t}" &&
-            ((low effectRaw).contains " or " || (low effectRaw).contains ",") then
-          some { c with filterMana := some (costOf cost, colors) }
-        else if (low effectRaw).startsWith "add " && colors.size ≥ 2 && costLow.contains "{t}" then
-          some (pushAct c (Effect.addMana colors) line cost)
-        else
-          match effectText effectRaw with
-          | some e => some (pushAct c e line cost)
-          | none =>
-            if (low effectRaw).contains "add " && colors.size == 2 && !costLow.contains "{t}" then
-              none
-            else none
+        match effectText effectRaw with
+        | some e => some (pushAct c e line cost)
+        | none => none
       | _ => none
     else
       if l.contains "whenever this creature enters or attacks" ||

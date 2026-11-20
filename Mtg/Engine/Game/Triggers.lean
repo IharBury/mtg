@@ -474,25 +474,6 @@ def forEachControlledCreature (g : Game) (p : PlayerId)
     g.foldControlledPermanents p excludeId fun g o =>
       if g.isCreature o then f g o else g
 
-/-- Mana types Reality Fracture mana abilities of `o` produce, including the
-`{T}: Add {C}{C}` Emrakul, the Exigent Doom grants a land. -/
-def fraManaAbilities (g : Game) (o : GameObject) : Array ManaType :=
-  let anyColor : Array ManaType :=
-    #[.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
-  let own := (g.staticAbilities o).foldl (fun acc ab =>
-    match ab with
-    | .fra .tapAddColorlessNotFromHand => acc.push .colorless
-    | .fra .tapAddAnyColorPlaneswalkerOnly => acc ++ anyColor
-    | .fra .tapSacrificeAddThreeOfOneColor => acc ++ anyColor
-    | .fra .tapAddChosenColor =>
-      match o.status.chosenColor with
-      | some c => acc.push (.colored c)
-      | none => acc
-    | _ => acc) #[]
-  if g.hasActiveColorlessGrant o && !own.contains .colorless then
-    own.push .colorless
-  else own
-
 /-- If a stacked triggered ability still needs targets, prompt its controller
 (CR 603.3d / 601.2c). -/
 def promptTriggerTargetsIfNeeded (g : Game) : Game :=

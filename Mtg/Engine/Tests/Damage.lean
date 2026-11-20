@@ -366,7 +366,7 @@ def prowlerAbility : ActivatedAbility :=
 #guard prowlerAbility.cost.payLife == 2
 #guard prowlerAbility.cost.mana == ManaCost.empty
 #guard !prowlerAbility.cost.tap
-#guard prowlerAbility.onceEachTurn
+#guard prowlerAbility.turnLimit? == some 1
 #guard !prowlerAbility.effect.requiresTarget
 
 /-- Prowler in play; a land drop is already used so the heuristic can activate. -/

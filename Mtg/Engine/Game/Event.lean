@@ -879,6 +879,10 @@ inductive ActivationKind where
   | mana (abilityIdx : Option Nat := none) (powerUp : Bool := false) (exhaust : Bool := false)
 deriving DecidableEq, Repr, Inhabited, BEq
 
+def ActivationKind.abilityIdx? : ActivationKind → Option Nat
+  | .nonMana _ _ _ _ idx _ => idx
+  | .mana idx _ _ => idx
+
 /-- Casting and activation lifecycle events (CR 601.2 / 602.2 / 605.3b). -/
 inductive CastEvent where
   | proposed (obj : ObjectId) (player : PlayerId) (fromZone : Zone) (way : CastWay)  -- 601.2a
@@ -1695,11 +1699,13 @@ inductive PendingReplacement where
       (activatedIdx : Option Nat) (restriction : Option ManaSpendRestriction)
       (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
       (exileSelf : Bool := false) (powerUp : Bool := false) (exhaust : Bool := false)
+      (riders : Array SpellRiderSpec := #[])
   | finishActivateManaAbilityPostSac (p : PlayerId) (id : ObjectId) (oname : String)
       (srcSnap : EventObject) (mana : Array ManaType) (tap : Bool)
       (activatedIdx : Option Nat) (restriction : Option ManaSpendRestriction)
       (damageYou : Nat) (isMountain : Bool) (prevPending : Pending)
       (powerUp : Bool := false) (exhaust : Bool := false)
+      (riders : Array SpellRiderSpec := #[])
   | finishBeginRecruit (p : PlayerId)
   | finishDrawThenBeginDiscard (p : PlayerId) (discardRounds : Nat)
   | finishConniveDraws (controller : PlayerId)
@@ -4057,18 +4063,44 @@ def treasureManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
       forObj == some spell && units.any isTreasureManaUnit
     | _, _ => false
 
-/-- Whether mana carrying a `.cantBeCountered` spell rider (e.g. Delighted Halfling)
-was spent to cast `spell` (CR 106.6 / 106.12). -/
-def legendaryManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
+/-- Whether mana carrying spell rider `rider` was spent to cast `spell`
+(CR 106.6 / 106.12). -/
+def riderManaSpentOn (events : Array GameEvent) (spell : ObjectId) (rider : SpellRiderSpec) : Bool :=
   let preCast := events.extract 0 (castEventBound events spell)
   preCast.any fun e =>
     match e.change, e.cause? with
     | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
       (forObj == some spell || oid? == some spell) &&
-        units.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered))
+        units.any (·.hasRider rider)
     | .rules (.player (.manaSpent _ units forObj)), _ =>
-      forObj == some spell && units.any (fun u => u.restriction.any (·.grantsRider .cantBeCountered))
+      forObj == some spell && units.any (·.hasRider rider)
     | _, _ => false
+
+/-- Total number of additional +1/+1 counters granted by mana carrying
+`.entersWithPlusOneCounters n` riders spent to cast `spell` (CR 106.6 / 614.1c). -/
+def plusOneCounterManaRidersSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
+  let preCast := events.extract 0 (castEventBound events spell)
+  let countUnit (u : ManaUnit) : Nat :=
+    u.allRiders.foldl (fun acc r =>
+      match r with
+      | .entersWithPlusOneCounters n => acc + n
+      | _ => acc) 0
+  preCast.foldl (fun acc e =>
+    match e.change, e.cause? with
+    | .rules (.player (.manaSpent _ units forObj)), some (.costPayment .mana _ oid?) =>
+      if forObj == some spell || oid? == some spell then
+        acc + units.foldl (fun s u => s + countUnit u) 0
+      else acc
+    | .rules (.player (.manaSpent _ units forObj)), _ =>
+      if forObj == some spell then
+        acc + units.foldl (fun s u => s + countUnit u) 0
+      else acc
+    | _, _ => acc) 0
+
+/-- Whether mana carrying a `.cantBeCountered` spell rider (e.g. Delighted Halfling)
+was spent to cast `spell` (CR 106.6 / 106.12). -/
+def legendaryManaSpentOn (events : Array GameEvent) (spell : ObjectId) : Bool :=
+  riderManaSpentOn events spell .cantBeCountered
 
 /-- Creature spells `p` cast on `turn`. -/
 def creatureSpells (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=

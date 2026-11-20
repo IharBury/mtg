@@ -971,7 +971,7 @@ namespace CardDef
   let ab : ActivatedAbility := {
     cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .discard (.exact 1) .self]
     effect := Effect.searchLandTypeToHand "Mountain"
-    activateFromHand := true
+    activeZones := #[.hand]
   }
   toString ab ==
     "{1}, Discard this card: Search your library for a Mountain card, reveal it, put it into your hand, then shuffle (activate only from your hand)"
@@ -985,7 +985,7 @@ namespace CardDef
   let ab : ActivatedAbility := {
     cost := CostSpec.ofItem (.payLife (.const 2))
     effect := Effect.sourceGets 2 2
-    onceEachTurn := true
+    turnLimit? := some 1
   }
   toString ab ==
     "Pay 2 life: This creature gets +2/+2 until end of turn (activate only once each turn)"
@@ -1007,8 +1007,10 @@ namespace CardDef
   "If a triggered ability of another Wolf or battle you control triggers, that ability triggers an additional time."
 #guard StaticAbility.toNotation (.extraTriggerIfEnduringStorySubtype .dwarf) ==
   "As long as you have an enduring story, if a triggered ability of a Dwarf you control triggers, that ability triggers an additional time."
-#guard TapAddForEach.toNotation { mana := .colored .green, subtype := .elf } ==
-  "{T}: Add {G} for each Elf you control"
+#guard
+  let ab := ActivatedAbility.manaAbility
+    (.sequence #[(.colored .green, ValueExpr.count (.controlledOfSubtype .elf))])
+  toString ab == "{T}: Add {G} for each Elf you control."
 #guard StaticAbility.toNotation (.enchantedCreatureGets 3 3) ==
   "Enchanted creature gets +3/+3."
 #guard StaticAbility.toNotation (.equippedCreatureGets 2 0) ==
@@ -1212,7 +1214,7 @@ namespace CardDef
   let ab : ActivatedAbility := {
     cost := CostSpec.ofGeneric 3
     effect := Effect.attachToTargetCreatureYouControl
-    onlyAsSorcery := true
+    timing := .sorcery
   }
   (toString ab).startsWith "{3}: Attach this Equipment" &&
     (toString ab).endsWith "(activate only as a sorcery)"
@@ -1813,7 +1815,7 @@ end CardDef
   }
 #guard
   let s : ManaSpec := .oneOf (.commanderColorIdentity .you) (.const 1)
-  toOracleStr s == "one mana of any one color in your commander's color identity"
+  toOracleStr s == "one mana of any color in your commander's color identity"
 #guard
   let s : ManaSpec := .sequence #[(ManaType.colored .green,
     .count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))]
@@ -2036,6 +2038,177 @@ end CardDef
 #guard CounterKind.grantedKeyword? .decayed == some Keyword.decayed
 #guard CounterKind.grantedKeyword? .exalted == some Keyword.exalted
 #guard CounterKind.grantedKeyword? .hexproof == some Keyword.hexproof
+
+-- Phase 5: Compositional `parseManaSpec` / `parseManaProductionSpec` /
+-- `parseManaAbilityLine`, CR 605.1a all 4 criteria, `HasTextChange`, and
+-- `ToOracle` round-trips (anchored to 25 September 2026 CR).
+
+-- All 4 `ManaSpec` ctors & all 6 `ManaPoolPalette` ctors, including novel combinations.
+#guard Parser.parseManaSpec "{G}" == some (.fixed #[.colored .green])
+#guard Parser.parseManaSpec "{C}{C}" == some (.fixed #[.colorless, .colorless])
+#guard Parser.parseManaSpec "{W}{U}{B}" == some (.fixed #[.colored .white, .colored .blue, .colored .black])
+#guard Parser.parseManaSpec "{G} for each Elf you control" ==
+  some (.sequence #[(.colored .green, ValueExpr.count (.controlledOfSubtype .elf))])
+#guard Parser.parseManaSpec "{R} for each Goblin you control" ==
+  some (.sequence #[(.colored .red, ValueExpr.count (.controlledOfSubtype .goblin))])
+#guard Parser.parseManaSpec "{U} or {B}" ==
+  some (.oneOf (.explicit #[.colored .blue, .colored .black]) (.const 1))
+#guard Parser.parseManaSpec "{W}, {U}, or {B}" ==
+  some (.oneOf (.explicit #[.colored .white, .colored .blue, .colored .black]) (.const 1))
+#guard Parser.parseManaSpec "one mana of any color" == some (.oneOf .anyColor (.const 1))
+#guard Parser.parseManaSpec "three mana of any one color" == some (.oneOf .anyColor (.const 3))
+#guard Parser.parseManaSpec "X mana of any one color, where X is this creature's power" ==
+  some (.oneOf .anyColor (.objectStat .power .this))
+-- CR 201.5c comma-shortened legendary self-reference normalization.
+#guard Parser.parseManaSpec "X mana of any one color, where X is Doc Samson's power"
+    "Doc Samson, Super Psychiatrist" ==
+  some (.oneOf .anyColor (.objectStat .power .this))
+#guard Parser.parseManaSpec "one mana of the chosen color" ==
+  some (.oneOf .chosenColorOnSource (.const 1))
+#guard Parser.parseManaSpec "two mana of the chosen color" ==
+  some (.oneOf .chosenColorOnSource (.const 2))
+#guard Parser.parseManaSpec "four mana in any combination of colors" ==
+  some (.combination .anyColor (.const 4))
+#guard Parser.parseManaSpec "two mana in any combination of {U}, {B}, and/or {R}" ==
+  some (.combination (.explicit #[.colored .blue, .colored .black, .colored .red]) (.const 2))
+#guard Parser.parseManaSpecWithFormat "{W}{W}, {W}{B}, or {B}{B}" ==
+  some (.combination (.explicit #[.colored .white, .colored .black]) (.const 2), true)
+#guard Parser.parseManaSpec "one mana of any color in your commander's color identity" ==
+  some (.colorAmong (.commanderColorIdentity .you) false)
+#guard Parser.parseManaSpec "one mana of any color among legendary creatures and planeswalkers you control" ==
+  some (.colorAmong (.colorsAmong .legendaryCreaturesAndPlaneswalkersYouControl) false)
+#guard Parser.parseManaSpec "one mana of any color that a land an opponent controls could produce" ==
+  some (.colorAmong (.typesLandsCouldProduce .landsOpponentsControl) false)
+#guard Parser.parseManaSpec "one mana of any type that a land you control could produce" ==
+  some (.colorAmong (.typesLandsCouldProduce .otherLandsYouControl) true)
+
+-- `parseManaProductionSpec`: self-damage, restrictions, riders, "Choose a color.", & rejection.
+#guard Parser.parseManaProductionSpec #["Add {R} or {W}", "This land deals 1 damage to you"] ==
+  some { spec := .oneOf (.explicit #[.colored .red, .colored .white]) (.const 1), damageYou := 1 }
+#guard
+  match Parser.parseManaProductionSpec #[
+    "Add one mana of any color",
+    "Spend this mana only to cast a legendary spell, and that spell can't be countered"
+  ] with
+  | some mp => mp.restriction == some .legendarySpell && mp.allRiders == #[.cantBeCountered]
+  | none => false
+#guard Parser.parseManaProductionSpec #[
+    "Add {G}", "If that mana is spent on a creature spell, it gains haste"
+  ] == some { spec := .fixedOne (.colored .green), riders := #[.gainsHaste] }
+#guard Parser.parseManaProductionSpec #[
+    "Add {C}", "If that mana is spent on a creature spell, that creature enters with a +1/+1 counter on it"
+  ] == some { spec := .fixedOne .colorless, riders := #[.entersWithPlusOneCounters 1] }
+#guard Parser.parseManaProductionSpec #[
+    "Add {C}", "If that mana is spent on a creature spell, that creature enters with two additional +1/+1 counters on it"
+  ] == some { spec := .fixedOne .colorless, riders := #[.entersWithPlusOneCounters 2] }
+#guard
+  match Parser.parseManaProductionSpec #[
+    "Choose a color",
+    "Add one mana of that color for each different power among creatures you control"
+  ] with
+  | some mp => mp.chooseColorPrefix &&
+      mp.spec == .oneOf .anyColor (.aggregate .countDistinct (.stat .power) .creaturesYouControl)
+  | none => false
+#guard Parser.parseManaProductionSpec #["Add {G}", "Draw a card"] == none
+
+-- `parseManaAbilityLine`: Exhaust, Boast, timing, turn limits, zones, conditions, & rejections.
+#guard
+  match Parser.parseManaAbilityLine "Exhaust — {T}: Add {G}{G}{G}." with
+  | some ab => ab.isManaAbility && ab.isExhaust && ab.lifetimeLimit? == some 1 &&
+      ab.cost == CostSpec.tapOnly &&
+      (ab.mana?.map (·.spec)) == some (.fixed #[.colored .green, .colored .green, .colored .green])
+  | none => false
+#guard
+  match Parser.parseManaAbilityLine "Boast — {1}: Add {R}{R}." with
+  | some ab => ab.isManaAbility && ab.isBoast && ab.turnLimit? == some 1 &&
+      ab.condition? == some ActivatedAbility.condSourceAttackedThisTurn
+  | none => false
+#guard
+  match Parser.parseManaAbilityLine "{T}: Add {U}. Activate only as a sorcery." with
+  | some ab => ab.isManaAbility && ab.timing == .sorcery
+  | none => false
+#guard
+  match Parser.parseManaAbilityLine "{T}: Add {B}. Activate no more than two times each turn." with
+  | some ab => ab.isManaAbility && ab.turnLimit? == some 2
+  | none => false
+#guard
+  match Parser.parseManaAbilityLine "{T}: Add {C}. Activate only from your graveyard." with
+  | some ab => ab.isManaAbility && ab.activeZones == #[.graveyard]
+  | none => false
+#guard
+  match Parser.parseManaAbilityLine
+      "{T}: Add {U} or {R}. Activate only if this land entered this turn or if you control a basic land." with
+  | some ab => ab.isManaAbility &&
+      ab.condition? == some ActivatedAbility.condEnteredThisTurnOrControlBasicLand
+  | none => false
+-- Rejects loyalty abilities, triggered abilities, and library-moving / non-mana abilities.
+#guard Parser.parseManaAbilityLine "[+1]: Add {R}." == none
+#guard Parser.parseManaAbilityLine "Whenever a land enters, add {G}." == none
+#guard Parser.parseManaAbilityLine "{T}: Add {G}. Draw a card." == none
+
+-- CR 605.1a (25 September 2026) all 4 criteria on `ActivatedAbility.isManaAbility`:
+-- default `Effect := {}` (resolution `.draw (.fixed 0) .you`) does NOT trip criterion 4.
+#guard (ActivatedAbility.manaSimple (.colored .green)).isManaAbility
+#guard (ActivatedAbility.intrinsicBasicLandMana .red).isManaAbility
+-- Fails criterion 1 (requires target).
+#guard !({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
+           effect := { targeting := .of TargetSpec.creature } } : ActivatedAbility).isManaAbility
+-- Fails criterion 2 (does not add mana).
+#guard !({ cost := CostSpec.tapOnly, effect := Effect.gainLife 1 } : ActivatedAbility).isManaAbility
+-- Fails criterion 3 (loyalty ability, CR 606.2).
+#guard !({ cost := CostSpec.ofLoyalty (.plus 1), timing := .loyalty,
+           mana? := some { spec := .fixedOne (.colored .red) } } : ActivatedAbility).isManaAbility
+-- Fails criterion 4 (effect moves cards from library).
+#guard !({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
+           effect := Effect.draw 1 } : ActivatedAbility).isManaAbility
+-- Fails criterion 4 (cost exiles from library).
+#guard !({ cost := CostSpec.ofItems #[.tapSelf, .exile (.exact 1) { zones := #[.library], owner := .ofPlayer .you } (.filter .isCard)],
+           mana? := some { spec := .fixedOne (.colored .green) } } : ActivatedAbility).isManaAbility
+-- Modal activated abilities are not mana abilities.
+#guard !({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
+           otherModes := #[Effect.gainLife 1] } : ActivatedAbility).isManaAbility
+
+-- Functorial `HasTextChange` on `ManaSpec`, `ManaProductionSpec`, `ActivationCostReduction`,
+-- `ActivationMechanicTag`, and `ActivatedAbility` (CR 612.2 / 613.1c).
+#guard
+  let tcs := #[TextChange.replaceCreatureType .elf .goblin]
+  let ab := ActivatedAbility.manaAbility
+    (.sequence #[(.colored .green, ValueExpr.count (.controlledOfSubtype .elf))])
+    (restriction := some (.subtypeSpellOrSource .elf))
+  let ab' := HasTextChange.applyTextChanges tcs ab
+  ab'.mana? == some {
+    spec := .sequence #[(.colored .green, ValueExpr.count (.controlledOfSubtype .goblin))]
+    restriction := some (.subtypeSpellOrSource .goblin)
+  }
+#guard
+  let tcs := #[TextChange.replaceCreatureType .human .soldier]
+  HasTextChange.applyTextChanges tcs (ActivationMechanicTag.equip (some (.hasSubtype (.literal .human)))) ==
+    ActivationMechanicTag.equip (some (.hasSubtype (.literal .soldier)))
+#guard
+  let tcs := #[TextChange.replaceCreatureType .equipment .aura]
+  let red' := HasTextChange.applyTextChanges tcs (ActivationCostReduction.perEquipment 1)
+  red' == { amount := ValueExpr.count (.inZones .battlefield (.all #[.hasSubtype (.literal .aura), .controlledBy .you])) }
+
+-- Canonical `ToOracle` round-trips through `Parser.parseManaAbilityLine`.
+#guard [
+  ActivatedAbility.manaSimple (.colored .green),
+  ActivatedAbility.manaTapSacrificeAnyColor,
+  ActivatedAbility.manaTapSacrificeThreeOfOneColor,
+  ActivatedAbility.manaTapChosenColor,
+  ActivatedAbility.manaAbility (.fixedOne (.colored .green)) (riders := #[.gainsHaste]),
+  ActivatedAbility.manaAbility (.fixedOne .colorless) (riders := #[.entersWithPlusOneCounters 2]),
+  ActivatedAbility.manaAbility (.oneOf (.explicit #[.colored .red, .colored .white]) (.const 1)) (damageYou := 1),
+  ActivatedAbility.manaAbility (.oneOf .anyColor (.const 1)) (restriction := some .legendarySpell) (riders := #[.cantBeCountered]),
+  ActivatedAbility.manaAbility (.colorAmong (.commanderColorIdentity .you) false),
+  ActivatedAbility.manaAbility (.colorAmong (.colorsAmong .legendaryCreaturesAndPlaneswalkersYouControl) false),
+  ActivatedAbility.manaAbility (.colorAmong (.typesLandsCouldProduce .otherLandsYouControl) true),
+  ActivatedAbility.manaAbility (.colorAmong (.typesLandsCouldProduce .landsOpponentsControl) false),
+  ActivatedAbility.manaAbility (.combination (.explicit #[.colored .white, .colored .black]) (.const 2))
+    (cost := CostSpec.ofItems #[.mana (ManaCost.ofHybrid .white .black), .tapSelf]) (filterPairFormat := true),
+  ActivatedAbility.manaAbility (.fixedOne (.colored .blue)) (turnLimit? := some 2),
+  ActivatedAbility.manaAbility (.fixedOne (.colored .black)) (timing := .sorcery)
+].all fun ab =>
+  Parser.parseManaAbilityLine (ab.toOracle {}) == some ab
 
 end Mtg.Engine
 

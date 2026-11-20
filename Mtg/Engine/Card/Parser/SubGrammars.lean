@@ -1,3 +1,4 @@
+import Mtg.Engine.Card.ActivatedAbility
 import Mtg.Engine.Card.Cost
 import Mtg.Engine.Card.Expr
 import Mtg.Engine.Card.Keywords
@@ -1345,12 +1346,16 @@ private partial def parseTurnHistory? (raw : String) : Option EventHistoryPred :
     return (parseNounPhrase npStr).map fun np => wrap .any (.permanentEntered np.filter.pred)
 
   if let some (whoStr, npStr) := splitFirstCI? body " attacked with " then
-    match parsePlayerFilter? whoStr, parseNounPhrase npStr with
-    | some pf, some np => return some (wrap pf (.attackedWith np.filter.pred))
-    | _, _ => pure ()
+    if let some pf := parsePlayerFilter? whoStr then
+      if let some (cntStr, restNp) := splitFirstCI? npStr " or more " then
+        match parseNatWord? cntStr, parseNounPhrase restNp with
+        | some n, some np => return some (wrap pf (.attackedWith np.filter.pred n))
+        | _, _ => pure ()
+      if let some np := parseNounPhrase npStr then
+        return some (wrap pf (.attackedWith np.filter.pred 1))
   if let some whoStr := dropSuffixCI? body " attacked" then
     if let some pf := parsePlayerFilter? whoStr then
-      return some (wrap pf (.attackedWith .anyObject))
+      return some (wrap pf (.attackedWith .anyObject 1))
 
   if let some (whoStr, npStr) := splitFirstCI? body " cast " then
     match parsePlayerFilter? whoStr, parseNounPhrase npStr with
@@ -1389,24 +1394,22 @@ private partial def parseTurnHistory? (raw : String) : Option EventHistoryPred :
       if let some cntStr := dropSuffixCI? rest " or more life" then
         if let some n := parseNatWord? cntStr then return some (wrap pf (.lostLife n))
 
-  if let some whoStr := dropSuffixCI? body " were dealt combat damage" then
-    if let some pf := parsePlayerFilter? whoStr then
-      return some (wrap pf (.dealtDamage true false))
-  if let some whoStr := dropSuffixCI? body " was dealt combat damage" then
-    if let some pf := parsePlayerFilter? whoStr then
-      return some (wrap pf (.dealtDamage true false))
-  if let some whoStr := dropSuffixCI? body " were dealt noncombat damage" then
-    if let some pf := parsePlayerFilter? whoStr then
-      return some (wrap pf (.dealtDamage false true))
-  if let some whoStr := dropSuffixCI? body " was dealt noncombat damage" then
-    if let some pf := parsePlayerFilter? whoStr then
-      return some (wrap pf (.dealtDamage false true))
-  if let some whoStr := dropSuffixCI? body " were dealt damage" then
-    if let some pf := parsePlayerFilter? whoStr then
-      return some (wrap pf (.dealtDamage false false))
-  if let some whoStr := dropSuffixCI? body " was dealt damage" then
-    if let some pf := parsePlayerFilter? whoStr then
-      return some (wrap pf (.dealtDamage false false))
+  for (sfx, combatOnly, noncombatOnly) in
+      [(" were dealt combat damage", true, false),
+       (" was dealt combat damage", true, false),
+       (" has been dealt combat damage", true, false),
+       (" have been dealt combat damage", true, false),
+       (" were dealt noncombat damage", false, true),
+       (" was dealt noncombat damage", false, true),
+       (" has been dealt noncombat damage", false, true),
+       (" have been dealt noncombat damage", false, true),
+       (" were dealt damage", false, false),
+       (" was dealt damage", false, false),
+       (" has been dealt damage", false, false),
+       (" have been dealt damage", false, false)] do
+    if let some whoStr := dropSuffixCI? body sfx then
+      if let some pf := parsePlayerFilter? whoStr then
+        return some (wrap pf (.dealtDamage combatOnly noncombatOnly))
 
   if let some whoStr := dropSuffixCI? body " activated a loyalty ability" then
     if let some pf := parsePlayerFilter? whoStr then
@@ -1439,6 +1442,12 @@ partial def parseCondition (raw : String) : Option Condition := Id.run do
       let inner := (rest.take (rest.length - 1)).trimAscii.copy
       return (parseCondition inner).map Condition.not
 
+  let low0 := lower s
+  -- Combined scry/surveil idiom before generic `" or "` splitting.
+  if low0 == "you've scried or surveilled this turn" ||
+      low0 == "you have scried or surveilled this turn" then
+    return some ActivatedAbility.condScriedOrSurveilledThisTurn
+
   -- Try top-level `" and "` / `" or "` splitting only when both sides parse cleanly as conditions.
   if let some (lhs, rhs) := splitTopLevelCI? s " and " then
     match parseCondition lhs, parseCondition rhs with
@@ -1464,6 +1473,15 @@ partial def parseCondition (raw : String) : Option Condition := Id.run do
     | _, _ => pure ()
 
   let low := lower s
+
+  -- Self entered this turn / attacked this turn.
+  if low == "this land entered this turn" || low == "this permanent entered this turn" ||
+      low == "this creature entered this turn" || low == "this entered this turn" ||
+      low == "~ entered this turn" then
+    return some (.all #[.exists .this, .forAll .this .enteredThisTurn])
+  if low == "this creature attacked this turn" || low == "it attacked this turn" ||
+      low == "~ attacked this turn" then
+    return some ActivatedAbility.condSourceAttackedThisTurn
 
   -- Turn / step / phase / day-night.
   if low == "it's your turn" || low == "it is your turn" then return some .isYourTurn
@@ -1544,8 +1562,16 @@ partial def parseCondition (raw : String) : Option Condition := Id.run do
     if let some np := parseNounPhrase rest then
       return some (.not (.exists np.filter.toExpr))
   if let some rest := dropPrefixCI? s "there are " then
-    if let some (cntStr, npStr) := splitFirstCI? rest " or more " then
-      match parseValueExpr cntStr, parseNounPhrase npStr with
+    if let some (cntStr, tail) := splitFirstCI? rest " or more " then
+      -- `"there are N or more <counter> counters among <objs>"`
+      if let some (ctrStr, objsStr) := splitFirstCI? tail " counters among " then
+        let ctrWords := (splitWords ctrStr).toList.map lower
+        match parseValueExpr cntStr, CounterKind.ofPrefix ctrWords, parseObjectExpr? objsStr with
+        | some v, some (k, consumed), some objs =>
+          if consumed == ctrWords.length then
+            return some (.cmp .ge (.aggregate .sum (.counterCount (some k)) objs) v)
+        | _, _, _ => pure ()
+      match parseValueExpr cntStr, parseNounPhrase tail with
       | some v, some np => return some (.cmp .ge (.aggregate .count .one np.filter.toExpr) v)
       | _, _ => pure ()
     if let some np := parseNounPhrase rest then
@@ -2038,7 +2064,8 @@ private def isSelfObjectPhrase (raw : String) : Bool :=
   match lower (cleanClause raw) with
   | "~" | "this" | "it" | "this permanent" | "this creature" | "this artifact"
   | "this enchantment" | "this land" | "this planeswalker" | "this equipment"
-  | "this vehicle" | "this aura" | "this card" | "this spell" | "this saga" => true
+  | "this vehicle" | "this aura" | "this card" | "this spell" | "this saga"
+  | "this token" => true
   | _ => false
 
 private def stripTrailingPeriod (s : String) : String :=
@@ -2646,5 +2673,393 @@ def parseKeywordLine (raw : String) : Option (Array KeywordAbility) := Id.run do
         else
           return none
   if out.isEmpty then return none else return some out
+
+/-! ### Phase-5 Compositional Mana-Production & Mana-Ability Sub-Grammar (CR 106, 605) -/
+
+/-- Parse a single mana-type symbol `{W}`, `{U}`, `{B}`, `{R}`, `{G}`, `{C}` from
+the front of `s`. Rejects generic, hybrid, or `{X}` symbols. -/
+def parseManaTypeSymbol? (s : String) : Option (ManaType × String) :=
+  match parseManaSymbol? s with
+  | some (.colored c, rest) => some (.colored c, rest)
+  | some (.colorless, rest) => some (.colorless, rest)
+  | _ => none
+
+/-- Parse a contiguous sequence of one or more concrete mana symbols (`{G}`,
+`{C}{C}`, `{W}{U}`, `{C}{C}{C}`). -/
+def parseManaTypeSeq? (raw : String) : Option (Array ManaType) :=
+  let s := raw.trimAscii.copy
+  if s.isEmpty || !s.startsWith "{" then none
+  else
+    let rec go (left : String) (acc : Array ManaType) : Option (Array ManaType) :=
+      if left.isEmpty then if acc.isEmpty then none else some acc
+      else
+        match parseManaTypeSymbol? left with
+        | none => none
+        | some (t, rest) =>
+          if rest.length < left.length then go rest (acc.push t) else none
+    termination_by left.length
+    go s #[]
+
+/-- Parse a list of single mana symbols joined by `" or "`, `", or "`, `","`,
+or `" and/or "` (e.g. `"{U} or {B}"`, `"{U}, {B}, and/or {R}"`). -/
+private def parseManaTypeList? (raw : String) : Option (Array ManaType) := Id.run do
+  let norm := (((cleanClause raw).replace ", and/or " "|").replace " and/or " "|")
+    |>.replace ", or " "|" |>.replace " or " "|" |>.replace "," "|"
+  let parts := norm.splitOn "|" |>.map (fun p => p.trimAscii.copy) |>.filter (!·.isEmpty)
+  if parts.isEmpty then return none
+  let mut out : Array ManaType := #[]
+  for p in parts do
+    match parseManaTypeSeq? p with
+    | some ts =>
+      if ts.size == 1 then out := out.push ts[0]!
+      else return none
+    | none => return none
+  return some out
+
+/-- Detect filter-land pair alternatives like `"{W}{W}, {W}{B}, or {B}{B}"` and
+return the pair `#[a, b]`. -/
+private def parseFilterPairList? (raw : String) : Option (Array ManaType) := Id.run do
+  let norm := ((cleanClause raw).replace ", or " "|").replace " or " "|" |>.replace "," "|"
+  let parts := norm.splitOn "|" |>.map (fun p => p.trimAscii.copy) |>.filter (!·.isEmpty)
+  if parts.length != 3 then return none
+  let mut uniq : Array ManaType := #[]
+  for p in parts do
+    match parseManaTypeSeq? p with
+    | some ts =>
+      if ts.size != 2 then return none
+      for t in ts do
+        if !uniq.contains t then uniq := uniq.push t
+    | none => return none
+  if uniq.size == 2 then return some uniq else return none
+
+/-- Normalize full and legendary-shortened self-references (`"Doc Samson, Super Psychiatrist"`
+or `"Doc Samson"`) to `replacement` (CR 201.5c). -/
+private def replaceSelfName (raw cardName replacement : String) : String :=
+  if cardName.isEmpty then raw
+  else
+    let s1 := raw.replace cardName replacement
+    match cardName.splitOn "," with
+    | short :: _ :: _ =>
+      let short := short.trimAscii.copy
+      if short.isEmpty then s1 else s1.replace short replacement
+    | _ => s1
+
+/-- Parse the object phrase following `"Add "` into a declarative `ManaSpec`
+(CR 106.1 / 106.7 / 605). Returns `(spec, filterPairFormat)`. -/
+def parseManaSpecWithFormat (raw : String) (cardName : String := "") : Option (ManaSpec × Bool) := Id.run do
+  let raw := replaceSelfName raw cardName "this creature"
+  let s := stripTrailingPeriod (cleanClause raw)
+  if s.isEmpty then return none
+  let lowS := lower s
+
+  -- 1. Filter-land pair format: `"{W}{W}, {W}{B}, or {B}{B}"`.
+  if let some pair := parseFilterPairList? s then
+    return some (.combination (.explicit pair) (.const 2), true)
+
+  -- 2. Scaled fixed mana: `"{G} for each Elf you control"`, `"{C} for each Food you control"`, etc.
+  if let some (symStr, objsStr) := splitFirstCI? s " for each " then
+    if let some ts := parseManaTypeSeq? symStr then
+      let objs? : Option ObjectExpr :=
+        if let some subStr := dropSuffixCI? objsStr " you control" then
+          match CardSubtype.ofOracle? subStr with
+          | some sub => some (.controlledOfSubtype sub)
+          | none => parseObjectExpr? objsStr
+        else parseObjectExpr? objsStr
+      if let some objs := objs? then
+        return some (.sequence (ts.map fun t => (t, ValueExpr.count objs)), false)
+
+  -- 3. CR 106.7 `"could produce"` palettes (Exotic Orchard / Reflecting Pool / general).
+  if let some tail := dropPrefixCI? s "one mana of any color that " then
+    if let some landsStr := dropSuffixCI? tail " could produce" then
+      let landsLow := lower landsStr
+      if landsLow == "a land an opponent controls" || landsLow == "lands an opponent controls" ||
+          landsLow == "lands opponents control" then
+        return some (.colorAmong (.typesLandsCouldProduce .landsOpponentsControl) false, false)
+      if landsLow == "a land you control" || landsLow == "other lands you control" ||
+          landsLow == "lands you control" then
+        return some (.colorAmong (.typesLandsCouldProduce .otherLandsYouControl) false, false)
+      if let some objs := parseObjectExpr? landsStr then
+        return some (.colorAmong (.typesLandsCouldProduce objs) false, false)
+  if let some tail := dropPrefixCI? s "one mana of any type that " then
+    if let some landsStr := dropSuffixCI? tail " could produce" then
+      let landsLow := lower landsStr
+      if landsLow == "a land you control" || landsLow == "other lands you control" ||
+          landsLow == "lands you control" then
+        return some (.colorAmong (.typesLandsCouldProduce .otherLandsYouControl) true, false)
+      if landsLow == "a land an opponent controls" || landsLow == "lands an opponent controls" ||
+          landsLow == "lands opponents control" then
+        return some (.colorAmong (.typesLandsCouldProduce .landsOpponentsControl) true, false)
+      if let some objs := parseObjectExpr? landsStr then
+        return some (.colorAmong (.typesLandsCouldProduce objs) true, false)
+
+  -- 4. Commander color identity (Command Tower / Arcane Signet / Path of Ancestry).
+  if lowS == "one mana of any color in your commander's color identity" ||
+      lowS == "one mana of any one color in your commander's color identity" then
+    return some (.colorAmong (.commanderColorIdentity .you) false, false)
+  if let some tail := (dropPrefixCI? s "one mana of any color in ").orElse
+      (fun _ => dropPrefixCI? s "one mana of any one color in ") then
+    if let some whoStr := dropSuffixCI? tail "'s commander's color identity" then
+      if let some who := parsePlayerExpr? whoStr then
+        return some (.colorAmong (.commanderColorIdentity who) false, false)
+
+  -- 5. Colors among permanents (Mox Amber / general).
+  if let some objsStr := dropPrefixCI? s "one mana of any color among " then
+    let ol := lower objsStr
+    if ol == "legendary creatures and planeswalkers you control" then
+      return some (.colorAmong (.colorsAmong .legendaryCreaturesAndPlaneswalkersYouControl) false, false)
+    if let some objs := parseObjectExpr? objsStr then
+      return some (.colorAmong (.colorsAmong objs) false, false)
+
+  -- 6. Chosen color on source (`"one mana of the chosen color"`, `"N mana of the chosen color"`).
+  if lowS == "one mana of the chosen color" then
+    return some (.oneOf .chosenColorOnSource (.const 1), false)
+  if let some cntStr := dropSuffixCI? s " mana of the chosen color" then
+    if let some n := parseNatWord? cntStr then
+      return some (.oneOf .chosenColorOnSource (.const (Int.ofNat n)), false)
+
+  -- 7. Combination of mana (`"four mana in any combination of colors"`,
+  --    `"two mana in any combination of {U}, {B}, and/or {R}"`, `"X mana in any combination of colors, where X is ..."`).
+  if let some (cntStr, palStr) := splitFirstCI? s " mana in any combination of " then
+    let (palPart, whereVal?) : String × Option ValueExpr :=
+      match splitFirstCI? palStr ", where x is " with
+      | some (p, vStr) => (p, parseValueExpr vStr)
+      | none => (palStr, none)
+    let amt? : Option ValueExpr :=
+      if lower cntStr == "x" then whereVal?
+      else (parseNatWord? cntStr).map fun n => .const (Int.ofNat n)
+    if let some amt := amt? then
+      let palLow := lower (cleanClause palPart)
+      if palLow == "colors" || palLow == "any color" then
+        return some (.combination .anyColor amt, false)
+      if let some ts := parseManaTypeList? palPart then
+        if ts.size ≥ 2 then
+          return some (.combination (.explicit ts) amt, false)
+
+  -- 8. Any color / any one color (constant or X-scaled).
+  if lowS == "one mana of any color" || lowS == "one mana of any one color" then
+    return some (.oneOf .anyColor (.const 1), false)
+  if let some (head, valStr) := splitFirstCI? s ", where x is " then
+    let hl := lower head
+    if hl == "x mana of any one color" || hl == "x mana of any color" then
+      if let some v := parseValueExpr valStr then
+        return some (.oneOf .anyColor v, false)
+  if let some cntStr := (dropSuffixCI? s " mana of any one color").orElse
+      (fun _ => dropSuffixCI? s " mana of any color") then
+    if let some n := parseNatWord? cntStr then
+      return some (.oneOf .anyColor (.const (Int.ofNat n)), false)
+
+  -- 9. Choice of explicit mana symbols (`"{U} or {B}"`, `"{W}, {U}, or {B}"`).
+  if lowS.contains " or " then
+    if let some ts := parseManaTypeList? s then
+      if ts.size ≥ 2 then
+        return some (.oneOf (.explicit ts) (.const 1), false)
+
+  -- 10. Fixed sequence of concrete mana symbols (`"{G}"`, `"{C}{C}"`, `"{W}{U}"`, `"{C}{C}{C}"`).
+  if let some ts := parseManaTypeSeq? s then
+    return some (.fixed ts, false)
+
+  return none
+
+/-- Parse the object phrase following `"Add "` into a declarative `ManaSpec` (CR 106.1 / 605). -/
+def parseManaSpec (raw : String) (cardName : String := "") : Option ManaSpec :=
+  (parseManaSpecWithFormat raw cardName).map Prod.fst
+
+/-- Split an Oracle effect body into non-empty trimmed sentences on `"."`. -/
+private def splitSentences (raw : String) : Array String :=
+  ((stripReminderText raw).splitOn ".").map (fun p => p.trimAscii.copy)
+    |>.filter (!·.isEmpty) |>.toArray
+
+/-- Parse a self-damage sentence (`"This land deals 1 damage to you"`,
+`"This artifact deals 1 damage to you"`, `"~ deals 2 damage to you"`). -/
+private def parseSelfDamageSentence? (raw : String) (cardName : String := "") : Option Nat := Id.run do
+  let raw := replaceSelfName raw cardName "this permanent"
+  let s := cleanClause raw
+  let some (subj, rest) := splitFirstCI? s " deals " | return none
+  if !isSelfObjectPhrase subj then return none
+  let some amtStr := dropSuffixCI? rest " damage to you" | return none
+  parseNatWord? amtStr
+
+/-- Parse a standalone spell-rider sentence attached to a mana ability (CR 106.6). -/
+private def parseStandaloneRiderSentence? (raw : String) : Option SpellRiderSpec := Id.run do
+  let low := lower (cleanClause raw)
+  if low == "that spell can't be countered" ||
+      low == "if that mana is spent on a spell, that spell can't be countered" ||
+      low == "if that mana is spent on a creature spell, it can't be countered" ||
+      low == "if that mana is spent to cast a creature spell, that spell can't be countered" then
+    return some .cantBeCountered
+  if low == "that creature gains haste" ||
+      low == "that creature gains haste until end of turn" ||
+      low == "if that mana is spent on a creature spell, it gains haste" ||
+      low == "if that mana is spent on a creature spell, it gains haste until end of turn" ||
+      low == "if that mana is spent to cast a creature spell, that creature gains haste" ||
+      low == "if that mana is spent to cast a creature spell, that creature gains haste until end of turn" then
+    return some .gainsHaste
+  if low == "that creature enters with an additional +1/+1 counter on it" ||
+      low == "that creature enters with a +1/+1 counter on it" ||
+      low == "if that mana is spent on a creature spell, that creature enters with a +1/+1 counter on it" ||
+      low == "if that mana is spent on a creature spell, that creature enters with an additional +1/+1 counter on it" ||
+      low == "if that mana is spent to cast a creature spell, that creature enters with a +1/+1 counter on it" ||
+      low == "if that mana is spent to cast a creature spell, that creature enters with an additional +1/+1 counter on it" then
+    return some (.entersWithPlusOneCounters 1)
+  if let some rest := (dropPrefixCI? low "that creature enters with ").orElse
+      (fun _ => (dropPrefixCI? low "if that mana is spent on a creature spell, that creature enters with ").orElse
+        (fun _ => dropPrefixCI? low "if that mana is spent to cast a creature spell, that creature enters with ")) then
+    let rest := (dropPrefixCI? rest "an additional ").getD rest
+    let rest := (dropSuffixCI? rest " on it").getD rest
+    if let some nStr0 := (dropSuffixCI? rest " +1/+1 counters").orElse
+        (fun _ => dropSuffixCI? rest " +1/+1 counter") then
+      let nStr := (dropSuffixCI? nStr0 " additional").getD nStr0
+      if let some n := parseNatWord? nStr then
+        return some (.entersWithPlusOneCounters n)
+  return none
+
+/-- Parse the effect sentences of a mana ability (everything after `":"` with any
+`"Activate ..."` restriction sentences already stripped) into a `ManaProductionSpec`.
+Returns `none` if any sentence is unrecognized (preventing non-mana multi-step
+abilities from being misclassified). -/
+def parseManaProductionSpec (sentences : Array String) (cardName : String := "") :
+    Option ManaProductionSpec := Id.run do
+  if sentences.isEmpty then return none
+  let mut idx : Nat := 0
+  let mut spec? : Option ManaSpec := none
+  let mut chooseColorPrefix : Bool := false
+  let mut filterPairFormat : Bool := false
+
+  -- Case A: `"Choose a color."` followed by `"Add one mana of that color for each ..."`
+  if lower sentences[0]! == "choose a color" && sentences.size ≥ 2 then
+    let s1 := sentences[1]!
+    if let some rest := dropPrefixCI? s1 "add one mana of that color for each " then
+      let rLow := lower rest
+      if rLow == "different power among creatures you control" then
+        spec? := some (.oneOf .anyColor (.aggregate .countDistinct (.stat .power) .creaturesYouControl))
+        chooseColorPrefix := true
+        idx := 2
+      else if let some v := parseValueExpr s!"the number of {rest}" then
+        spec? := some (.oneOf .anyColor v)
+        chooseColorPrefix := true
+        idx := 2
+      else return none
+    else return none
+  else
+    -- Case B: `"Add <manaSpec>"`
+    let some rest := dropPrefixCI? sentences[0]! "add " | return none
+    let some (sp, isFilterPair) := parseManaSpecWithFormat rest cardName | return none
+    spec? := some sp
+    filterPairFormat := isFilterPair
+    idx := 1
+
+  let some spec := spec? | return none
+  let mut restriction : Option ManaSpendRestriction := none
+  let mut riders : Array SpellRiderSpec := #[]
+  let mut damageYou : Nat := 0
+
+  while idx < sentences.size do
+    let sent := sentences[idx]!
+    let sLow := lower sent
+    if let some dmg := parseSelfDamageSentence? sent cardName then
+      damageYou := damageYou + dmg
+    else if sLow.startsWith "spend this mana " || sLow.startsWith "this mana can't be spent " ||
+        sLow.startsWith "this mana cannot be spent " then
+      match ManaSpendRestriction.parseOracle? sent with
+      | some r =>
+        restriction := some r
+        for rd in r.riders do
+          if !riders.contains rd then riders := riders.push rd
+      | none => return none
+    else if let some rd := parseStandaloneRiderSentence? sent then
+      if !riders.contains rd then riders := riders.push rd
+    else if sLow.startsWith "when that mana is spent to cast a creature spell that shares a creature type with your commander, scry " then
+      -- Path of Ancestry delayed scry trigger (tracked on `CardDef.commanderIdentityScryCreature`).
+      pure ()
+    else
+      return none
+    idx := idx + 1
+
+  return some { spec, restriction, riders, damageYou, chooseColorPrefix, filterPairFormat }
+
+/-- Parse a complete Oracle mana-producing activated ability line
+(`"<cost>: Add ... [self-damage.] [Spend this mana ...] [Activate only ...]"`)
+into a unified `ActivatedAbility` with `mana? := some ...` (CR 605.1a).
+Rejects triggered abilities and loyalty abilities (`[+1]: ...`), and returns
+`none` if the effect contains non-mana instructions. -/
+def parseManaAbilityLine (raw : String) (cardName : String := "") : Option ActivatedAbility := Id.run do
+  let cleaned := stripReminderText raw
+  let lowClean := lower cleaned
+  if lowClean.startsWith "whenever " || lowClean.startsWith "when " ||
+      lowClean.startsWith "at the beginning" then
+    return none
+  let some (costRaw, bodyRaw) := splitFirstCI? cleaned ":" | return none
+  if !(lower bodyRaw).contains "add " then return none
+
+  let mut costStr := costRaw.trimAscii.copy
+  let mut tag? : Option ActivationMechanicTag := none
+  let mut lifetimeLimit? : Option Nat := none
+  let mut turnLimit? : Option Nat := none
+  let mut condition? : Option Condition := none
+
+  if let some rest := (dropPrefixCI? costStr "exhaust — ").orElse
+      (fun _ => dropPrefixCI? costStr "exhaust—") then
+    costStr := rest
+    tag? := some .exhaust
+    lifetimeLimit? := some 1
+  else if let some rest := (dropPrefixCI? costStr "boast — ").orElse
+      (fun _ => dropPrefixCI? costStr "boast—") then
+    costStr := rest
+    tag? := some .boast
+    turnLimit? := some 1
+    condition? := some ActivatedAbility.condSourceAttackedThisTurn
+
+  let costStrNorm := replaceSelfName costStr cardName "this permanent"
+  let some cost := parseCostSpec costStrNorm | return none
+  if cost.isLoyalty then return none
+
+  let allSents := splitSentences bodyRaw
+  if allSents.isEmpty then return none
+
+  let mut manaSents : Array String := #[]
+  let mut timing : ActivationTiming := .instant
+  let mut activeZones : Array ZoneKind := #[.battlefield]
+
+  for sent in allSents do
+    let sLow := lower sent
+    if sLow == "activate only as a sorcery" then
+      timing := .sorcery
+    else if sLow == "activate only during your turn" then
+      condition? := Condition.andOpt condition? (some .isYourTurn)
+    else if sLow == "activate only once each turn" then
+      turnLimit? := some 1
+    else if sLow == "activate only once" then
+      lifetimeLimit? := some 1
+    else if sLow == "activate only from your graveyard" then
+      activeZones := #[.graveyard]
+    else if sLow == "activate only from your hand" then
+      activeZones := #[.hand]
+    else if let some rest := dropPrefixCI? sent "activate no more than " then
+      if let some nStr := dropSuffixCI? rest " times each turn" then
+        if let some n := parseNatWord? nStr then turnLimit? := some n
+        else return none
+      else if let some nStr := dropSuffixCI? rest " times" then
+        if let some n := parseNatWord? nStr then lifetimeLimit? := some n
+        else return none
+      else return none
+    else if let some condStr := dropPrefixCI? sent "activate only if " then
+      let condStrNorm := replaceSelfName condStr cardName "this permanent"
+      match parseCondition condStrNorm with
+      | some c => condition? := Condition.andOpt condition? (some c)
+      | none => return none
+    else
+      manaSents := manaSents.push sent
+
+  let some mp := parseManaProductionSpec manaSents cardName | return none
+  return some {
+    cost
+    mana? := some mp
+    timing
+    activeZones
+    turnLimit?
+    lifetimeLimit?
+    condition?
+    tag?
+  }
 
 end Mtg.Engine.Parser
