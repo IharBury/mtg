@@ -745,7 +745,10 @@ private def roundTripsOracleCard (raw : String) : Bool :=
   "Total Power Avatar\n{3}{G}\nCreature — Avatar\n*/2\nTotal Power Avatar's power is equal to the total power of creatures you control.",
   "Greatest Power Avatar\n{3}{G}\nCreature — Avatar\n*/2\nGreatest Power Avatar's power is equal to the greatest power among creatures you control.",
   "Mourning Banner\n{2}{B}\nEnchantment\nAs long as a creature died last turn, creatures you control get +1/+1.",
-  "Soul Chorus\n{2}{W}\nEnchantment\nAs long as you gained life this turn, creatures you control get +1/+1."
+  "Soul Chorus\n{2}{W}\nEnchantment\nAs long as you gained life this turn, creatures you control get +1/+1.",
+  "Sky Power Avatar\n{3}{U}\nCreature — Avatar\n*/2\nSky Power Avatar's power is equal to the total power of creatures you control with flying.",
+  "Grounded Sanctuary\n{2}{G}\nEnchantment\nCreatures you control without flying get +1/+1 and have hexproof.",
+  "Skywatch Banner\n{2}{W}\nEnchantment\nAs long as you control a creature with flying, creatures you control get +1/+1 and have vigilance."
 ].all roundTripsOracleCard
 
 -- Verify exact AST structure of migrated keywords, Zemo Boast, and novel Phase 6 cards.

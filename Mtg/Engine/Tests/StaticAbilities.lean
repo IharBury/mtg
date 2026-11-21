@@ -665,4 +665,130 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     gKick0.power (gKick0.object! kickId) == 2 && !(gKick0.hasSimpleKeyword (gKick0.object! kickId) .vigilance) &&
     gKick1.power (gKick1.object! kickId) == 4 && gKick1.hasSimpleKeyword (gKick1.object! kickId) .vigilance
 
+-- Keyword predicates (`.hasKeyword`, `.not (.hasKeyword ...)`) in CDAs, Layer 6/7c scopes,
+-- and static conditions, including CR 613.8 dependency on flying counters and Equipment.
+#guard
+  let skyAvatar := mustParse
+    "Sky Power Avatar\n{3}{U}\nCreature — Avatar\n*/2\nSky Power Avatar's power is equal to the total power of creatures you control with flying."
+  let grounded := mustParse
+    "Grounded Sanctuary\n{2}{G}\nEnchantment\nCreatures you control without flying get +1/+1 and have hexproof."
+  let skywatch := mustParse
+    "Skywatch Banner\n{2}{W}\nEnchantment\nAs long as you control a creature with flying, creatures you control get +1/+1 and have vigilance."
+  let flyBoots : CardDef := {
+    name := "P6 Winged Boots"
+    types := #[.artifact]
+    subtypes := #["Equipment"]
+    staticAbilities := #[.continuous none StaticAbility.scopeEquippedCreature (.grantKeywords #[Keyword.flying])]
+  }
+  let bear := mkCreature "P6 Ground Bear" #["Bear"] (p := 2) (t := 2)
+  let hawk := mkCreature "P6 Sky Hawk" #["Bird"] (p := 3) (t := 2) (kws := #[Keyword.flying])
+  -- 1. CDA "total power of creatures you control with flying": Bear (2, no flying) excluded, Hawk (3, flying) included -> 3.
+  let gAv0 := addPermanent (addPermanent (addPermanent afterDraw bear p0 p0) hawk p0 p0) skyAvatar p0 p0
+  let bearAvId := (namedPerm gAv0 bear.name).id
+  let (gAvEq, _) := gAv0.allocObject flyBoots p0 .battlefield (some p0) (attachedTo := some bearAvId)
+  -- After equipping Bear with Winged Boots, Bear has flying -> total flying power = 3 + 2 = 5.
+  -- 2. "Creatures you control without flying get +1/+1 and have hexproof":
+  let gGr0 := addPermanent (addPermanent (addPermanent afterDraw grounded p0 p0) bear p0 p0) hawk p0 p0
+  let grBearId := (namedPerm gGr0 bear.name).id
+  let grHawkId := (namedPerm gGr0 hawk.name).id
+  -- Put a flying counter on Bear -> CR 613.8 dependency removes both hexproof and +1/+1.
+  let gGrFly := gGr0.record (GameEvent.rules gGr0.turnNumber
+    (.permanent (.counters (.object (gGr0.snapshot (gGr0.object! grBearId))) .flying (.put 1) none))
+    (.gameRule .staticAbility))
+  -- 3. "As long as you control a creature with flying, creatures you control get +1/+1 and have vigilance":
+  let gSw0 := addPermanent (addPermanent afterDraw skywatch p0 p0) bear p0 p0
+  let swBearId := (namedPerm gSw0 bear.name).id
+  let gSwFly := gSw0.record (GameEvent.rules gSw0.turnNumber
+    (.permanent (.counters (.object (gSw0.snapshot (gSw0.object! swBearId))) .flying (.put 1) none))
+    (.gameRule .staticAbility))
+  let gSwHawk := addPermanent gSw0 hawk p0 p0
+  gAv0.power (namedPerm gAv0 skyAvatar.name) == 3 &&
+    gAvEq.power (namedPerm gAvEq skyAvatar.name) == 5 &&
+    gGr0.power (gGr0.object! grBearId) == 3 && gGr0.hasKeyword (gGr0.object! grBearId) (· == Keyword.hexproof) &&
+    gGr0.power (gGr0.object! grHawkId) == 3 && !(gGr0.hasKeyword (gGr0.object! grHawkId) (· == Keyword.hexproof)) &&
+    gGrFly.power (gGrFly.object! grBearId) == 2 && !(gGrFly.hasKeyword (gGrFly.object! grBearId) (· == Keyword.hexproof)) &&
+    gSw0.power (gSw0.object! swBearId) == 2 && !(gSw0.hasSimpleKeyword (gSw0.object! swBearId) .vigilance) &&
+    gSwFly.power (gSwFly.object! swBearId) == 3 && gSwFly.hasSimpleKeyword (gSwFly.object! swBearId) .vigilance &&
+    gSwHawk.power (gSwHawk.object! swBearId) == 3 && gSwHawk.hasSimpleKeyword (gSwHawk.object! swBearId) .vigilance
+
+-- Layer 7c cycle breaking preserves +1/+1 counters and non-dependent static pumps (CR 613.7 / 613.8).
+#guard
+  let equipHostPower : StaticAbility :=
+    .continuous none StaticAbility.scopeEquippedCreature
+      (.modifyPT (.objectStat .power .attachedHost) (.const 0))
+  let powerSword : CardDef := {
+    name := "P6 Counter-Aware Power Sword"
+    types := #[.artifact]
+    subtypes := #["Equipment"]
+    staticAbilities := #[equipHostPower]
+  }
+  let anthem := mustParse
+    "P6 Honor Banner\n{1}{W}\nEnchantment\nCreatures you control get +1/+1."
+  let bear := mkCreature "P6 Counter Bear" #["Bear"] (p := 2) (t := 2)
+  let g0 := addPermanent afterDraw bear p0 p0
+  let bearId := (namedPerm g0 bear.name).id
+  -- Put a +1/+1 counter on Bear (power 3 before Equipment).
+  let g1 := g0.record (GameEvent.rules g0.turnNumber
+    (.permanent (.counters (.object (g0.snapshot (g0.object! bearId))) .plusOnePlusOne (.put 1) none))
+    (.gameRule .staticAbility))
+  let (gEq, _) := g1.allocObject powerSword p0 .battlefield (some p0) (attachedTo := some bearId)
+  -- 2/2 + 1/1 counter = 3/3 -> Sword adds +3/+0 -> 6/3 (not 5/3!).
+  let gEqAnthem := addPermanent gEq anthem p0 p0
+  -- With Anthem (+1/+1) applying first: 2/2 + 1/1 counter + 1/1 anthem = 4/4 -> Sword adds +4/+0 -> 8/4!
+  -- Also test `min` self-pump with a +1/+1 counter on `minCreature` (1/1 + counter = 2/2).
+  let creaturesYouCtrl : ObjectExpr :=
+    .inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])
+  let minCreature := mkCreature "P6 Counter Min Pump" #["Elf"] (p := 1) (t := 1)
+    (statics := #[.continuous none StaticAbility.scopeSelf
+      (.modifyPT (.aggregate .min (.stat .power) creaturesYouCtrl) (.const 0))])
+  let giant := mkCreature "P6 Giant D" #["Giant"] (p := 5) (t := 5)
+  let gMin0 := addPermanent (addPermanent (addPermanent afterDraw bear p0 p0) giant p0 p0) minCreature p0 p0
+  let minId := (namedPerm gMin0 minCreature.name).id
+  let gMin1 := gMin0.record (GameEvent.rules gMin0.turnNumber
+    (.permanent (.counters (.object (gMin0.snapshot (gMin0.object! minId))) .plusOnePlusOne (.put 1) none))
+    (.gameRule .staticAbility))
+  -- Pre-static powers: Bear=2, Giant=5, minCreature=2 -> min=2 -> 2 + 2 = 4.
+  gEq.power (gEq.object! bearId) == 6 && gEq.toughness (gEq.object! bearId) == 3 &&
+    gEqAnthem.power (gEqAnthem.object! bearId) == 8 && gEqAnthem.toughness (gEqAnthem.object! bearId) == 4 &&
+    gMin1.power (gMin1.object! minId) == 4
+
+-- Post-Layer-7 callers (`entersWithCounters` and combat-rule conditions) evaluate full P/T
+-- including counters, pumps, and CDAs rather than printed box values.
+#guard
+  let creaturesYouCtrl : ObjectExpr :=
+    .inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])
+  let powerHydra := mkCreature "P6 Power Hydra" #["Hydra"] (p := 0) (t := 0)
+    (statics := #[
+      StaticAbility.entersWithCounters .plusOnePlusOne
+        (.aggregate .sum (.stat .power) creaturesYouCtrl)
+    ])
+  let landCda := mkCreature "P6 Land Avatar" #["Elemental"] (p := 0) (t := 2)
+    (statics := #[StaticAbility.powerToughnessEqualLandsYouControl])
+  let bear := mkCreature "P6 Buffed Bear" #["Bear"] (p := 2) (t := 2)
+  let forest : CardDef := { name := "P6 Forest", types := #[.land], subtypes := #["Forest"] }
+  let g0 := addPermanent (addPermanent (addPermanent (addPermanent (addPermanent afterDraw bear p0 p0)
+    landCda p0 p0) forest p0 p0) forest p0 p0) forest p0 p0
+  let bearId := (namedPerm g0 bear.name).id
+  -- Put two +1/+1 counters on Bear -> Bear power = 4; Land Avatar power = 3 -> total = 7.
+  let g1 := g0.record (GameEvent.rules g0.turnNumber
+    (.permanent (.counters (.object (g0.snapshot (g0.object! bearId))) .plusOnePlusOne (.put 2) none))
+    (.gameRule .staticAbility))
+  let (g2, hydraObj) := g1.allocObject powerHydra p0 (.hand p0)
+  let etb := g2.applyEtbReplacements { hydraObj with controller := some p0 }
+  -- Combat-rule condition checking evaluated power >= 4 on another creature:
+  let stalker := mkCreature "P6 Ferocious Stalker" #["Rogue"] (p := 1) (t := 1)
+    (statics := #[
+      .ruleModifying
+        (some (.exists (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you, .stat .power .ge (.const 4)]))))
+        (.combat (.cantBeBlocked .self))
+    ])
+  let gSt0 := addPermanent (addPermanent afterDraw bear p0 p0) stalker p0 p0
+  let stBearId := (namedPerm gSt0 bear.name).id
+  let gSt1 := gSt0.record (GameEvent.rules gSt0.turnNumber
+    (.permanent (.counters (.object (gSt0.snapshot (gSt0.object! stBearId))) .plusOnePlusOne (.put 2) none))
+    (.gameRule .staticAbility))
+  etb.entersWith.count .plusOnePlusOne == 7 &&
+    !(gSt0.hasCantBeBlocked (namedPerm gSt0 stalker.name)) &&
+    gSt1.hasCantBeBlocked (namedPerm gSt1 stalker.name)
+
 end Mtg.Engine.Tests.StaticAbilitiesSuite
