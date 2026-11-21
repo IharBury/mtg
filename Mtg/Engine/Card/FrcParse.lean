@@ -307,8 +307,7 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
         | none => none
       | _ => none
     else
-      if l.contains "whenever this creature enters or attacks" ||
-          (l.contains "enters or attacks" && l.contains "target opponent sacrifices") then
+      if l.contains "enters or attacks" && l.contains "target opponent sacrifices" then
         some (pushTrig c .enterOrAttack (frc .archon line oppPlayer) line oppPlayer)
       else if l.contains "enters or attacks" && l.contains "historic" then
         some (pushTrig c .enterOrAttack (frc .jhoira line oppPlayer) line oppPlayer)

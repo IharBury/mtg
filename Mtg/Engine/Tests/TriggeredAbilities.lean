@@ -585,4 +585,180 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     validCard.modellingError?.isNone &&
     validSaga.modellingError?.isNone
 
+/-! ### 10. Distributed `.whenCond` over `.or`, Cross-Pass `BatchGrouping`, Self-Countered Stack Triggers, `.controlLost` Dedup, & `matchesTriggerPattern` Constraints -/
+
+-- (a) `.whenCond (.or .thisEnters .thisAttacks) cond` parsed from Oracle triggers on
+-- both enters and attacks when `cond` holds, and does not trigger when `cond` fails;
+-- mixed-lookback `.whenCond (.or .thisEnters .thisDies) cond` evaluates `cond` on `pre`
+-- for the dies disjunct even if the Wizard dies in the same batch.
+#guard
+  let raider := mustParse
+    "Arcane Raider\n{2}{U}\nCreature — Human\n2/2\nWhenever this creature enters or attacks while you control a Wizard, draw a card."
+  let wizard := mkCreature "Partner Wizard" #["Wizard"]
+  -- Enters WITHOUT a Wizard: 0 triggers.
+  let (g0, hNoWiz) := addToZone (quietGame afterDraw) raider p0 (.hand p0) (some p0)
+  let (gNoWiz, _) := g0.putOntoBattlefield hNoWiz.id p0
+  let noWizOk := gNoWiz.waitingTriggers.isEmpty
+  -- Enters WITH a Wizard: 1 trigger.
+  let gWiz0 := addPermanent (quietGame afterDraw) wizard p0 p0
+  let (gWiz1, hWithWiz) := addToZone gWiz0 raider p0 (.hand p0) (some p0)
+  let (gEntWiz, raiderBfId) := gWiz1.putOntoBattlefield hWithWiz.id p0
+  let entWizOk := gEntWiz.waitingTriggers.size == 1
+  -- Attacks WITH a Wizard: 1 trigger.
+  let preAtk := quietGame gEntWiz
+  let atkSnap := preAtk.snapshot (preAtk.object! raiderBfId)
+  let gAtk := preAtk.record (GameEvent.attackersDeclared preAtk.turnNumber p0 #[(atkSnap, .player p1)])
+  let atkWizOk := gAtk.waitingTriggers.size == 1 && gAtk.waitingTriggers[0]!.source.name == "Arcane Raider"
+  -- Mixed-lookback `.whenCond (.or .thisEnters .thisDies) (youControlWizard)`:
+  -- Both the creature and the Wizard die in the same batch -> dies branch consults `pre`!
+  let wizCond : Condition := .exists (.inZones .battlefield (.all #[.hasSubtype (.literal .wizard), .controlledBy .you]))
+  let mixedCard := mkCreature "Mixed Raider" #["Human"] (triggers := #[
+    TriggeredAbility.mkTrigger (.whenCond (.or .thisEnters .thisDies) wizCond) (Effect.gainLife 1)
+  ])
+  let gMix0 := quietGame (addPermanent (addPermanent afterDraw wizard p0 p0) mixedCard p0 p0)
+  let mixObj := namedPerm gMix0 "Mixed Raider"
+  let wizObj := namedPerm gMix0 "Partner Wizard"
+  let gMixBatch := gMix0.withBatch (some testCause) fun g =>
+    let g := g.moveToOwnerGraveyard (g.object! mixObj.id) "dies" (verb := some .destroy) (cause := some testCause)
+    g.moveToOwnerGraveyard (g.object! wizObj.id) "dies" (verb := some .destroy) (cause := some testCause)
+  let mixedLookBackOk :=
+    gMixBatch.waitingTriggers.size == 1 &&
+    gMixBatch.waitingTriggers[0]!.source.name == "Mixed Raider"
+  noWizOk && entWizOk && atkWizOk && mixedLookBackOk
+
+-- (b) Mixed-lookback `.or` with `oncePerBatch`, `perPlayerInBatch`, and `perSourceInBatch`
+-- shares batch-grouping dedup across Pass A (`pre`) and Pass B (`post`).
+#guard
+  let onceWatcher := mustParse
+    "Cycle Watcher\n{2}{G}\nEnchantment\nWhenever one or more creatures enter or die, you gain 1 life."
+  let bearA := mkCreature "Dying Bear" #["Bear"]
+  let bearB := mkCreature "Entering Bear" #["Bear"]
+  let g0 := quietGame (addPermanent (addPermanent afterDraw onceWatcher p0 p0) bearA p0 p0)
+  let (g1, handB) := addToZone g0 bearB p0 (.hand p0) (some p0)
+  let bearAObj := namedPerm g1 "Dying Bear"
+  let gOnce := g1.withBatch (some testCause) fun g =>
+    let g := g.moveToOwnerGraveyard (g.object! bearAObj.id) "dies" (verb := some .destroy) (cause := some testCause)
+    (g.putOntoBattlefield handB.id p0).1
+  let onceOk := gOnce.waitingTriggers.size == 1 && gOnce.waitingTriggers[0]!.source.name == "Cycle Watcher"
+  -- `perPlayerInBatch` across mixed-lookback `.or`: p0 has both a death and an enter,
+  -- p1 has an enter -> fires once for p0 and once for p1 (total 2, not 3).
+  let perPlayerWatcher := mkEnchantment "Per Player Mixed" #[
+    TriggeredAbility.mkTrigger
+      (.or (.permanentDies (.hasType .creature)) (.permanentEnters (.hasType .creature)))
+      (Effect.gainLife 1)
+      (grouping := .perPlayerInBatch)
+  ]
+  let bearC := mkCreature "P1 Entering Bear" #["Bear"]
+  let gp0 := quietGame (addPermanent (addPermanent afterDraw perPlayerWatcher p0 p0) bearA p0 p0)
+  let (gp1, handB2) := addToZone gp0 bearB p0 (.hand p0) (some p0)
+  let (gp2, handC) := addToZone gp1 bearC p1 (.hand p1) (some p1)
+  let bearA2 := namedPerm gp2 "Dying Bear"
+  let gPerPlayer := gp2.withBatch (some testCause) fun g =>
+    let g := g.moveToOwnerGraveyard (g.object! bearA2.id) "dies" (verb := some .destroy) (cause := some testCause)
+    let g := (g.putOntoBattlefield handB2.id p0).1
+    (g.putOntoBattlefield handC.id p1).1
+  let perPlayerOk := gPerPlayer.waitingTriggers.size == 2
+  -- `perSourceInBatch` across mixed-lookback `.or`: same creature loses control (`pre`)
+  -- and becomes tapped (`post`) in one batch -> fires once (not twice).
+  let perSrcWatcher := mkEnchantment "Per Source Mixed" #[
+    TriggeredAbility.mkTrigger
+      (.or (.controlLost (.hasType .creature) .you) (.becomesTapped (.hasType .creature)))
+      (Effect.gainLife 1)
+      (grouping := .perSourceInBatch)
+  ]
+  let gs0 := quietGame (addPermanent (addPermanent afterDraw perSrcWatcher p0 p0) bearA p0 p0)
+  let sBear := namedPerm gs0 "Dying Bear"
+  let gPerSrc := gs0.withBatch (some testCause) fun g =>
+    let g := g.createEffect (.layered (.objects #[sBear.id]) (.control p1) .indefinite) (cause := some testCause)
+    g.becomeTapped (g.object! sBear.id) (cause := some testCause)
+  let perSrcOk := gPerSrc.waitingTriggers.size == 1
+  onceOk && perPlayerOk && perSrcOk
+
+-- (c) Self-spell `"When this spell is countered, draw a card."` parses with
+-- `activeZones := #[.stack]` and fires on the CR 603.10e look-back pass when countered.
+#guard
+  let selfCounterSpell := mustParse
+    "Unstoppable Insight\n{2}{U}\nSorcery\nDraw two cards.\nWhen this spell is countered, draw a card."
+  let (g0, spObj) := addToZone (quietGame afterDraw) selfCounterSpell p0 .stack (some p0)
+  let g1 := g0.putStackEntry p0 spObj.id
+  let (gCountered, _) := g1.move spObj.id (.graveyard p0) none (verb := some .counter) (actor := some p1) (cause := some testCause)
+  gCountered.waitingTriggers.size == 1 &&
+    gCountered.waitingTriggers[0]!.source.name == "Unstoppable Insight" &&
+    gCountered.waitingTriggers[0]!.pattern == .spellCountered (.sameAs .this)
+
+-- (d) `.controlLost` uses a non-colliding per-object synthetic `eventIdx`, so a death
+-- at batch index 0 never suppresses a simultaneous control loss (and vice versa), while
+-- two `.controlLost` disjuncts matching the same permanent still deduplicate (CR 603.2c).
+#guard
+  let dieOrStealWatcher := mkEnchantment "Die Or Steal" #[
+    TriggeredAbility.mkTrigger
+      (.or (.permanentDies (.hasType .creature)) (.controlLost (.hasType .creature) .you))
+      (Effect.gainLife 1)
+  ]
+  let victimA := mkCreature "Victim A" #["Bear"]
+  let stolenB := mkCreature "Stolen B" #["Bear"]
+  let g0 := quietGame (addPermanent (addPermanent (addPermanent afterDraw dieOrStealWatcher p0 p0) victimA p0 p0) stolenB p0 p0)
+  let objA := namedPerm g0 "Victim A"
+  let objB := namedPerm g0 "Stolen B"
+  let gBoth := g0.withBatch (some testCause) fun g =>
+    let g := g.moveToOwnerGraveyard (g.object! objA.id) "dies" (verb := some .destroy) (cause := some testCause)
+    g.createEffect (.layered (.objects #[objB.id]) (.control p1) .indefinite) (cause := some testCause)
+  let noCollisionOk := gBoth.waitingTriggers.size == 2
+  -- Two `.controlLost` disjuncts matching one artifact creature -> 1 trigger (CR 603.2c);
+  -- two separate creatures stolen -> 2 triggers.
+  let artOrCreaSteal := mkEnchantment "Steal Watcher" #[
+    TriggeredAbility.mkTrigger
+      (.or (.controlLost (.hasType .creature) .you) (.controlLost (.hasType .artifact) .you))
+      (Effect.gainLife 1)
+  ]
+  let artCrea : CardDef := {
+    name := "Clockwork Bear", types := #[.artifact, .creature], power := some 2, toughness := some 2
+  }
+  let gs0 := quietGame (addPermanent (addPermanent (addPermanent afterDraw artOrCreaSteal p0 p0) artCrea p0 p0) stolenB p0 p0)
+  let objArt := namedPerm gs0 "Clockwork Bear"
+  let objB2 := namedPerm gs0 "Stolen B"
+  let gOne := gs0.createEffect (.layered (.objects #[objArt.id]) (.control p1) .indefinite) (cause := some testCause)
+  let oneDedupOk := gOne.waitingTriggers.size == 1
+  let gTwo := gs0.withBatch (some testCause) fun g =>
+    let g := g.createEffect (.layered (.objects #[objArt.id]) (.control p1) .indefinite) (cause := some testCause)
+    g.createEffect (.layered (.objects #[objB2.id]) (.control p1) .indefinite) (cause := some testCause)
+  let twoDistinctOk := gTwo.waitingTriggers.size == 2
+  noCollisionOk && oneDedupOk && twoDistinctOk
+
+-- (e) `GameEvent.matchesTriggerPattern` enforces `castSpell` stateful constraints and
+-- `.activateAbility` loyalty `minRemoved` instead of silently ignoring them.
+#guard
+  let spSnap : EventObject := {
+    id := some ⟨42⟩, owner := p0, controller := some p0, zone := .stack
+    name := "Test Bolt", types := #[.instant]
+  }
+  let castEv := GameEvent.spellCast 1 p0 spSnap (.hand p0) (cause := testCause)
+  let secondSpellOk :=
+    !castEv.matchesTriggerPattern p0 none .youCastSecondSpell &&
+    !castEv.matchesTriggerPattern p0 none .youCastSecondSpell (castOrdinal? := some 1) &&
+    castEv.matchesTriggerPattern p0 none .youCastSecondSpell (castOrdinal? := some 2)
+  let treasurePat := TriggerPattern.castSpell .you .anyObject (manaSpent? := some .fromTreasure)
+  let manaSpentOk :=
+    !castEv.matchesTriggerPattern p0 none treasurePat &&
+    castEv.matchesTriggerPattern p0 none treasurePat (manaSpentOk? := some true)
+  let targetPat := TriggerPattern.castSpell .you .anyObject (targets? := some (.player .opponent))
+  let targetsOk :=
+    !castEv.matchesTriggerPattern p0 none targetPat &&
+    castEv.matchesTriggerPattern p0 none targetPat (targetsOk? := some true)
+  let pwSnap : EventObject := {
+    id := some ⟨99⟩, owner := p0, controller := some p0, zone := .battlefield
+    name := "Test Walker", types := #[.planeswalker]
+  }
+  let plusOneEv := GameEvent.abilityActivated 1 ⟨100⟩ pwSnap p0 (.nonMana (some 1) false false false) (cause := testCause)
+  let minusTwoEv := GameEvent.abilityActivated 1 ⟨101⟩ pwSnap p0 (.nonMana (some (-2)) false false false) (cause := testCause)
+  let minusThreeEv := GameEvent.abilityActivated 1 ⟨102⟩ pwSnap p0 (.nonMana (some (-3)) false false false) (cause := testCause)
+  let rem3Pat := TriggerPattern.activateAbility .you .anyObject (.loyalty 3)
+  let rem0Pat := TriggerPattern.activateAbility .you .anyObject (.loyalty 0)
+  let loyaltyOk :=
+    !plusOneEv.matchesTriggerPattern p0 none rem3Pat &&
+    !minusTwoEv.matchesTriggerPattern p0 none rem3Pat &&
+    minusThreeEv.matchesTriggerPattern p0 none rem3Pat &&
+    plusOneEv.matchesTriggerPattern p0 none rem0Pat
+  secondSpellOk && manaSpentOk && targetsOk && loyaltyOk
+
 end Mtg.Engine.Tests.TriggeredAbilitiesSuite

@@ -3675,9 +3675,11 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
   -- `"<A> and whenever <B>"` / `"<A> and when <B>"` disjunctions
   if let some (lhs, rhs) := (splitFirstCI? s " and whenever ").orElse
       (fun _ => splitFirstCI? s " and when ") then
-    if let (some (p1, g1, l1, z1), some (p2, _, _, _)) :=
+    if let (some (p1, g1, l1, z1), some (p2, g2, _, z2)) :=
         (parseAtomicTriggerEvent? lhs cardName, parseAtomicTriggerEvent? rhs cardName) then
-      return some (.or p1 p2, g1, l1, z1)
+      let grp := if g1 != .perOccurrence then g1 else g2
+      let zones := z1 ++ z2.filter (!z1.contains ·)
+      return some (.or p1 p2, grp, l1, zones)
 
   -- Self/subject compound verbs: `"<subj> enters or attacks"` / `"enters or dies"` / `"attacks or blocks"`
   for (sfx, mkPat) in [
@@ -3904,10 +3906,16 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
         let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
         return some (mkPat pred, grp, .unlimited, #[.battlefield])
 
-  -- Countered spell (CR 603.10e)
+  -- Countered spell (CR 603.10e / 113.6)
   if let some spellStr := dropSuffixCI? s " is countered" then
     if let some (pred, _) := parseTriggerSubjectPred? spellStr cardName then
-      return some (.spellCountered pred, .perOccurrence, .unlimited, #[.battlefield])
+      let isSelf : Bool :=
+        pred == .sameAs .this ||
+          match pred with
+          | .all ps => ps.contains (.sameAs .this)
+          | _ => false
+      let zones : Array ZoneKind := if isSelf then #[.stack] else #[.battlefield]
+      return some (.spellCountered pred, .perOccurrence, .unlimited, zones)
 
   let _ := l
   return none

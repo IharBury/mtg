@@ -3464,59 +3464,80 @@ private def matchesZoneEndpoint (listener : PlayerId) (isTeammate : PlayerId →
 
 @[noinline] private def matchesPatternDamage (de : DamageEvent)
     (listener : PlayerId) (sourceId : Option ObjectId) (pat : TriggerPattern)
-    (isTeammate : PlayerId → Bool) (attachedHostId? : Option ObjectId) : Bool :=
+    (isTeammate : PlayerId → Bool) (attachedHostId? : Option ObjectId)
+    (isYourTurn? : Option Bool := none) : Bool :=
   let objMatches (o : EventObject) (pred : ObjectPred) : Bool :=
     evalEventObjPred listener sourceId isTeammate attachedHostId? o pred
   let playerMatches (pf : PlayerFilter) (p : PlayerId) : Bool :=
     matchesEventPlayer listener isTeammate pf p
   match de, pat with
-  | .dealt pkts, .damageDealt srcPred recipFilter combatOnly noncombatOnly _ =>
-    pkts.any fun pkt =>
-      pkt.amount > 0 &&
-        (!combatOnly || pkt.combat) &&
-        (!noncombatOnly || !pkt.combat) &&
-        (srcPred == .anyObject ||
-          (sourceId.isNone && srcPred == .sameAs .this) ||
-          (pkt.source.id.isNone && srcPred == .sameAs .this) ||
-          objMatches pkt.source srcPred) &&
-        match recipFilter, pkt.recipient with
-        | .any, _ => true
-        | .player pf, .player p => playerMatches pf p
-        | .object f, .permanent o | .object f, .battle o => objMatches o f.pred
-        | .playerOrObject pf _, .player p => playerMatches pf p
-        | .playerOrObject _ f, .permanent o | .playerOrObject _ f, .battle o => objMatches o f.pred
-        | _, _ => false
+  | .dealt pkts, .damageDealt srcPred recipFilter combatOnly noncombatOnly onlyYourTurn =>
+    (!onlyYourTurn || isYourTurn? == some true) &&
+      pkts.any fun pkt =>
+        pkt.amount > 0 &&
+          (!combatOnly || pkt.combat) &&
+          (!noncombatOnly || !pkt.combat) &&
+          (srcPred == .anyObject ||
+            (sourceId.isNone && srcPred == .sameAs .this) ||
+            (pkt.source.id.isNone && srcPred == .sameAs .this) ||
+            objMatches pkt.source srcPred) &&
+          match recipFilter, pkt.recipient with
+          | .any, _ => true
+          | .player pf, .player p => playerMatches pf p
+          | .object f, .permanent o | .object f, .battle o => objMatches o f.pred
+          | .playerOrObject pf _, .player p => playerMatches pf p
+          | .playerOrObject _ f, .permanent o | .playerOrObject _ f, .battle o => objMatches o f.pred
+          | _, _ => false
   | _, _ => false
 
 @[noinline] private def matchesPatternCast (ce : CastEvent) (cause? : Option EventCause)
     (listener : PlayerId) (sourceId : Option ObjectId) (pat : TriggerPattern)
-    (isTeammate : PlayerId → Bool) (attachedHostId? : Option ObjectId) : Bool :=
+    (limit : TriggerLimit) (isTeammate : PlayerId → Bool)
+    (attachedHostId? : Option ObjectId)
+    (castOrdinal? : Option Nat := none)
+    (manaSpentOk? : Option Bool := none)
+    (targetsOk? : Option Bool := none)
+    (targetingSourceIsAbility? : Option Bool := none) : Bool :=
   let objMatches (o : EventObject) (pred : ObjectPred) : Bool :=
     evalEventObjPred listener sourceId isTeammate attachedHostId? o pred
   let playerMatches (pf : PlayerFilter) (p : PlayerId) : Bool :=
     matchesEventPlayer listener isTeammate pf p
   match ce, pat with
-  | .spellCast spell p fromZone, .castSpell caster spellPred fromZ? _ mustBePrepared _ _ =>
+  | .spellCast spell p fromZone,
+      .castSpell caster spellPred fromZ? manaSpent? mustBePrepared nthFilter? targets? =>
     let fzOk := fromZ?.all (fun zk => matchesZoneEndpoint listener isTeammate (.inZones { zones := #[zk], owner := .any }) fromZone)
+    let manaOk := manaSpent?.all (fun _ => manaSpentOk? == some true)
     let prepOk := !mustBePrepared || (spell.isCopy && fromZone == .exile)
+    let effNth? :=
+      nthFilter?.orElse fun _ =>
+        match limit with | .nthEachTurn n => some n | _ => none
+    let nthOk := effNth?.all (fun n => castOrdinal? == some n)
+    let tgtOk := targets?.all (fun _ => targetsOk? == some true)
     let spOk :=
       (sourceId.isNone && spellPred == .sameAs .this) || objMatches spell spellPred
-    playerMatches caster p && fzOk && prepOk && spOk
+    playerMatches caster p && fzOk && manaOk && prepOk && nthOk && tgtOk && spOk
   | .abilityActivated _ src p kind, .activateAbility activator srcPred actKind =>
     let kindOk :=
       match actKind, kind with
       | .any, _ => true
-      | .loyalty _, .nonMana (some _) .. => true
+      | .loyalty minRem, .nonMana (some k) .. =>
+        let removed := if k < 0 then (-k).toNat else 0
+        removed ≥ minRem
       | .manaAbility, .mana .. => true
       | .nonMana, .nonMana .. => true
       | _, _ => false
     playerMatches activator p && kindOk && objMatches src srcPred
-  | .targeted _ targets _ _, .becomesTarget subj byCtrl _ =>
+  | .targeted _ targets _ _, .becomesTarget subj byCtrl srcKind =>
+    let kindOk :=
+      match srcKind with
+      | .spellOrAbility => true
+      | .spell => targetingSourceIsAbility? == some false
+      | .ability => targetingSourceIsAbility? == some true
     let causeOk :=
       match cause? with
       | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => playerMatches byCtrl p
       | _ => true
-    causeOk &&
+    kindOk && causeOk &&
       match subj with
       | .playerOrPermanent =>
         targets.any fun | .permanent _ | .player _ => true | _ => false
@@ -3607,18 +3628,31 @@ private def matchesZoneEndpoint (listener : PlayerId) (isTeammate : PlayerId →
       objMatches object subj
   | _, _ => false
 
-/-- Pure `GameEvent` matcher against a `TriggerPattern` (CR 603.2). -/
+/-- Pure single-`GameEvent` matcher against a `TriggerPattern` (CR 603.2).
+Constraints that depend on full-game history or stack state (`manaSpent?`,
+`nthOfFilter?` / `TriggerLimit.nthEachTurn` on casts, `targets?`,
+`becomesTarget` source kind, `onlyYourTurn` damage) require the corresponding
+optional context arguments and return `false` when unsatisfied or omitted;
+full game-state trigger matching runs through `Game.matchTriggers`. -/
 partial def matchesTriggerPattern (e : GameEvent) (listener : PlayerId)
     (sourceId : Option ObjectId := none) (pat : TriggerPattern)
     (limit : TriggerLimit := .unlimited)
     (isTeammate : PlayerId → Bool := fun _ => false)
-    (attachedHostId? : Option ObjectId := none) : Bool :=
+    (attachedHostId? : Option ObjectId := none)
+    (castOrdinal? : Option Nat := none)
+    (manaSpentOk? : Option Bool := none)
+    (targetsOk? : Option Bool := none)
+    (targetingSourceIsAbility? : Option Bool := none)
+    (isYourTurn? : Option Bool := none) : Bool :=
   match pat with
   | .whenCond inner _ =>
     matchesTriggerPattern e listener sourceId inner limit isTeammate attachedHostId?
+      castOrdinal? manaSpentOk? targetsOk? targetingSourceIsAbility? isYourTurn?
   | .or l r =>
-    matchesTriggerPattern e listener sourceId l limit isTeammate attachedHostId? ||
+    matchesTriggerPattern e listener sourceId l limit isTeammate attachedHostId?
+      castOrdinal? manaSpentOk? targetsOk? targetingSourceIsAbility? isYourTurn? ||
       matchesTriggerPattern e listener sourceId r limit isTeammate attachedHostId?
+        castOrdinal? manaSpentOk? targetsOk? targetingSourceIsAbility? isYourTurn?
   | _ =>
     let playerMatches (pf : PlayerFilter) (p : PlayerId) : Bool :=
       matchesEventPlayer listener isTeammate pf p
@@ -3631,9 +3665,10 @@ partial def matchesTriggerPattern (e : GameEvent) (listener : PlayerId)
       | .zone ze =>
         matchesPatternZone ze e.cause? listener sourceId pat limit isTeammate attachedHostId?
       | .damage de =>
-        matchesPatternDamage de listener sourceId pat isTeammate attachedHostId?
+        matchesPatternDamage de listener sourceId pat isTeammate attachedHostId? isYourTurn?
       | .cast ce =>
-        matchesPatternCast ce e.cause? listener sourceId pat isTeammate attachedHostId?
+        matchesPatternCast ce e.cause? listener sourceId pat limit isTeammate attachedHostId?
+          castOrdinal? manaSpentOk? targetsOk? targetingSourceIsAbility?
       | .combat ce =>
         matchesPatternCombat ce listener sourceId pat isTeammate attachedHostId?
       | .permanent pe =>

@@ -384,18 +384,32 @@ def isAttackTrigger : TriggerPattern → Bool
   | .or a b => a.isAttackTrigger || b.isAttackTrigger
   | _ => false
 
-/-- Flatten top-level `.or` disjunctions into individual branch patterns so each
-branch can independently check `usesLookBack` (`pre` vs `post`). -/
+/-- Collect all outermost CR 603.2 `.whenCond` conditions wrapping a pattern. -/
+def outerWhenConds : TriggerPattern → Array Condition
+  | .whenCond inner c => inner.outerWhenConds.push c
+  | _ => #[]
+
+/-- Flatten `.or` disjunctions into atomic `(pattern, whenConds)` branches,
+recursively distributing any enclosing `.whenCond` over `.or` so each atomic
+branch can independently check `usesLookBack` (`pre` vs `post`) and evaluate
+every attached CR 603.2 condition. -/
+def flattenDisjuncts : TriggerPattern → Array (TriggerPattern × Array Condition)
+  | .or a b => a.flattenDisjuncts ++ b.flattenDisjuncts
+  | .whenCond inner c =>
+    inner.flattenDisjuncts.map fun (atom, conds) => (atom, conds.push c)
+  | other => #[(other, #[])]
+
+/-- Flatten `.or` disjunctions into individual branch patterns, distributing
+any enclosing `.whenCond` over `.or` so each branch can independently check
+`usesLookBack` (`pre` vs `post`). -/
 def flattenOr : TriggerPattern → Array TriggerPattern
   | .or a b => a.flattenOr ++ b.flattenOr
+  | .whenCond inner c => inner.flattenOr.map (TriggerPattern.whenCond · c)
   | other => #[other]
 
 /-- Check whether `p` structurally contains a pattern satisfying `pred`. -/
 def anyBranch (p : TriggerPattern) (pred : TriggerPattern → Bool) : Bool :=
-  p.flattenOr.any fun b =>
-    match b with
-    | .whenCond inner _ => pred b || pred inner
-    | _ => pred b
+  p.flattenOr.any pred || p.flattenDisjuncts.any (fun (atom, _) => pred atom)
 
 /-- Default leading trigger word for canonical Oracle rendering (CR 603.1). -/
 def defaultWord : TriggerPattern → TriggerWord
@@ -404,6 +418,7 @@ def defaultWord : TriggerPattern → TriggerWord
   | .zoneChange (.all #[.sameAs .this, .hasType .creature]) _ _ _ _
   | .zoneChange (.sameAs .attachedHost) _ (.inZones { zones := #[.graveyard], .. }) _ _
   | .castSpell _ (.sameAs .this) _ _ _ _ _
+  | .spellCountered (.sameAs .this)
   | .discard _ (.sameAs .this) _
   | .putCounters none (some .lore) (.sameAs .this)
   | .putCounters none (some .plan) (.sameAs .this) => .when
@@ -1137,6 +1152,7 @@ def renderClause (ctx : PrintCtx) (grouping : BatchGrouping := .perOccurrence)
     | .object p => s!"{subjPhrase ctx p} becomes the target of {what}{ctrlS}"
   | .spellCountered sp =>
     if sp == .anyObject then "a spell is countered"
+    else if sp == .sameAs .this then "this spell is countered"
     else s!"{subjPhrase ctx sp (zone := .stack)} is countered"
   | .playerAction who act =>
     let w := playerClause ctx who

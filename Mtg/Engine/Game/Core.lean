@@ -12893,9 +12893,7 @@ def triggerConditionHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     | .watch .sheHulkRedirectOnce => !g.loggedSheHulkDealtDamage
     | _ => true
   let whenOk :=
-    match ab.pattern with
-    | .whenCond _ c => g.evalTriggerCond controller source cause c
-    | _ => true
+    ab.pattern.outerWhenConds.all (g.evalTriggerCond controller source cause ·)
   sheHulkOk && whenOk &&
     ab.interveningIf?.all (g.evalTriggerCond controller source cause ·)
 
@@ -13329,7 +13327,10 @@ control-lost, and counter placement including Saga chapters and plan thresholds
       if pre.matchTriggerPlayerFilter src srcCtrl formerCtrl oldCtrl &&
           pre.evalTriggerPred src srcCtrl o subj then
         hits := hits.push {
-          eventIdx := 0, cause := some o, causeController := some oldCtrl,
+          -- Non-colliding synthetic occurrence id above all real batch indices `[0..batch.size-1]`
+          -- so `.or` disjuncts never collide with batch event 0 while two `.controlLost`
+          -- disjuncts matching the same permanent still deduplicate under CR 603.2c.
+          eventIdx := batch.size + o.id.raw, cause := some o, causeController := some oldCtrl,
           groupPlayer? := some oldCtrl, groupSourceId? := some o.id }
     return hits
   | _ => pure ()
@@ -13917,14 +13918,14 @@ CR 603.2 `whenCond?`, CR 603.4 `interveningIf?`, CR 603.2h per-turn caps,
 CR 603.2d `extraTriggerCopies`, and Windcrag Siege Mardu attack doubling. -/
 @[noinline] private def queueTriggerAb (post : Game) (board : Game) (controller : PlayerId)
     (source : GameObject) (ab : TriggeredAbility) (matchedPat : TriggerPattern)
-    (whenCond? : Option Condition := none)
+    (whenConds : Array Condition := #[])
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (cause : Option GameObject := none) (causeController : Option PlayerId := none)
     (eventCause : Option EventCause := none) (causeIds : Array ObjectId := #[])
     (w : Array WaitingTrigger) (fs : Array (ObjectId × TriggeredAbility)) :
     Array WaitingTrigger × Array (ObjectId × TriggeredAbility) :=
   if !post.stillInGame controller then (w, fs)
-  else if !whenCond?.all (board.evalTriggerCond controller (some source) cause ·) then (w, fs)
+  else if !whenConds.all (board.evalTriggerCond controller (some source) cause ·) then (w, fs)
   else if !board.triggerConditionHolds controller ab cause (some source) then (w, fs)
   else if ab.onceEachTurn &&
       (post.loggedTriggeredThisTurn source.id ab ||
@@ -14248,9 +14249,9 @@ for one pass (`lookBackPass = true` on `pre`, `false` on `post`). -/
         let (o', s') := addCand o o.owner board false out seen
         out := o'; seen := s'
     | .stack =>
-      if !lookBackPass && mask.hasCast then
+      if (!lookBackPass && mask.hasCast) || (lookBackPass && mask.hasCountered) then
         let ctrl := ((board.stackEntry? o.id).map (·.controller)).orElse (fun _ => o.controller) |>.getD o.owner
-        if !(board.triggeredAbilities o).isEmpty then
+        if (board.triggeredAbilities o).any (·.activeZones.contains .stack) then
           let (o', s') := addCand o ctrl board false out seen
           out := o'; seen := s'
     | .graveyard p =>
@@ -14277,6 +14278,16 @@ for one pass (`lookBackPass = true` on `pre`, `false` on `post`). -/
           let ctrl := (before.controller.orElse (fun _ => pre.controllerOf bObj)).getD before.owner
           let (o', s') := addCand bObj ctrl pre false out seen
           out := o'; seen := s'
+      | .rules (.zone (.moved before _ .stack toZ .counter _ _ _)) =>
+        if toZ != .stack then
+          let bObj := findTriggerEventObj pre before
+          let ctrl :=
+            (before.controller.orElse (fun _ =>
+              (pre.stackEntry? bObj.id).map (·.controller))).orElse
+              (fun _ => pre.controllerOf bObj) |>.getD before.owner
+          if (pre.triggeredAbilities bObj).any (·.activeZones.contains .stack) then
+            let (o', s') := addCand bObj ctrl pre false out seen
+            out := o'; seen := s'
       | .rules (.zone (.ceasedToExist snap)) =>
         if snap.zone == .battlefield && !snap.phasedOut then
           let bObj := findTriggerEventObj pre snap
@@ -14367,6 +14378,18 @@ for one pass (`lookBackPass = true` on `pre`, `false` on `post`). -/
       | _ => pure ()
   return out
 
+/-- Per-`(source, occurrenceIndex, ability)` deduplication state shared across
+both the CR 603.10a–f look-back pass (`pre`) and the non-look-back pass (`post`)
+so `.or` disjunctions whose branches disagree on `usesLookBack` still honor
+CR 603.2c single-event deduplication and CR 700.1 `BatchGrouping` (`oncePerBatch`,
+`perPlayerInBatch`, `perSourceInBatch`). -/
+private structure TriggerDedupState where
+  matchedEventIdxs : Array Nat := #[]
+  firedOnce : Bool := false
+  firedPlayers : Array PlayerId := #[]
+  firedSources : Array ObjectId := #[]
+deriving Inhabited
+
 /-- Match all triggered abilities over a committed batch of simultaneous rules
 events (CR 603.2 / 603.2c / 603.10 / 603.10a–f / 700.1 / 714.2b). Look-back
 disjuncts (`TriggerPattern.usesLookBack`) consult `pre`; all other disjuncts
@@ -14390,11 +14413,16 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
     let mask := BatchEventMask.ofBatch batch (!controlLostList.isEmpty)
     let mut waiting : Array WaitingTrigger := #[]
     let mut firedSources : Array (ObjectId × TriggeredAbility) := #[]
+    let mut dedupStates : Array ((ObjectId × Nat × TriggeredAbility) × TriggerDedupState) := #[]
     let runPass (lookBackPass : Bool)
-        (w0 : Array WaitingTrigger) (fs0 : Array (ObjectId × TriggeredAbility)) :
-        Array WaitingTrigger × Array (ObjectId × TriggeredAbility) := Id.run do
+        (w0 : Array WaitingTrigger)
+        (fs0 : Array (ObjectId × TriggeredAbility))
+        (ds0 : Array ((ObjectId × Nat × TriggeredAbility) × TriggerDedupState)) :
+        Array WaitingTrigger × Array (ObjectId × TriggeredAbility) ×
+          Array ((ObjectId × Nat × TriggeredAbility) × TriggerDedupState) := Id.run do
       let mut w := w0
       let mut fs := fs0
+      let mut ds := ds0
       let cands := collectTriggerCandidates pre post batch mask lookBackPass
       for (src, ctrl, srcBoard, fromDisc) in cands do
         let baseAbs := srcBoard.triggeredAbilities src
@@ -14405,7 +14433,16 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
         if !abs.isEmpty then
           let isEmblem := src.zone == .command && (srcBoard.baseCard src).types.isEmpty
           let srcZoneKind : ZoneKind := if isEmblem then .battlefield else src.zone.kind
+          let mut seenAbCounts : Array (TriggeredAbility × Nat) := #[]
           for ab in abs do
+            let mut occIdx : Nat := 0
+            match seenAbCounts.findIdx? (fun (a, _) => a == ab) with
+            | some idx =>
+              let (_, c) := seenAbCounts[idx]!
+              seenAbCounts := seenAbCounts.set! idx (ab, c + 1)
+              occIdx := c
+            | none =>
+              seenAbCounts := seenAbCounts.push (ab, 1)
             -- Path of Ancestry's mana-spent cast trigger is evaluated by `Casting.lean`
             -- via `ancestryManaSpentOn` (CR 106.6 / 608.2h).
             if !ab.isManaSpentCastScry then
@@ -14413,27 +14450,45 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                 if fromDisc then ab.activeZones.contains .hand
                 else ab.activeZones.contains srcZoneKind
               if zoneOk then
-                let mut matchedEventIdxs : Array Nat := #[]
-                let mut firedBatchDisjunct := false
-                for rawDisj in ab.pattern.flattenOr do
-                  if rawDisj.usesLookBack == lookBackPass && patternCouldMatchMask mask rawDisj then
-                    let (atomicPat, whenCond?) : TriggerPattern × Option Condition :=
-                      match rawDisj with
-                      | .whenCond inner c => (inner, some c)
-                      | p => (p, none)
+                let disjuncts := ab.pattern.flattenDisjuncts
+                let isMultiDisj := disjuncts.size > 1
+                let key : ObjectId × Nat × TriggeredAbility := (src.id, occIdx, ab)
+                let mut st : TriggerDedupState :=
+                  if !isMultiDisj then {}
+                  else
+                    match ds.find? (fun (k, _) => k == key) with
+                    | some (_, s) => s
+                    | none => {}
+                let mut stDirty := false
+                for (atomicPat, whenConds) in disjuncts do
+                  if atomicPat.usesLookBack == lookBackPass && patternCouldMatchMask mask atomicPat then
                     let hits :=
                       matchAtomicPattern pre post batch srcBoard src ctrl ab atomicPat controlLostList
                     let mut disjMatchedIdxs : Array Nat := #[]
+                    let mut disjPlayers : Array PlayerId := #[]
+                    let mut disjSources : Array ObjectId := #[]
                     let mut disjFired := false
                     for h in hits do
+                      let hitPlayer? := h.groupPlayer?.orElse (fun _ => h.causeController)
+                      let hitSource? := h.groupSourceId?.orElse (fun _ => h.cause.map (·.id))
                       let dupForOr :=
-                        if ab.grouping == .oncePerBatch then firedBatchDisjunct
-                        else matchedEventIdxs.contains h.eventIdx && h.overrideAbility.isNone
+                        if !isMultiDisj then false
+                        else
+                          match ab.grouping with
+                          | .oncePerBatch => st.firedOnce
+                          | .perPlayerInBatch =>
+                            (hitPlayer?.any st.firedPlayers.contains) ||
+                              (st.matchedEventIdxs.contains h.eventIdx && h.overrideAbility.isNone)
+                          | .perSourceInBatch =>
+                            (hitSource?.any st.firedSources.contains) ||
+                              (st.matchedEventIdxs.contains h.eventIdx && h.overrideAbility.isNone)
+                          | .perOccurrence | .counterThreshold .. =>
+                            st.matchedEventIdxs.contains h.eventIdx && h.overrideAbility.isNone
                       if !dupForOr then
                         let abToQueue := h.overrideAbility.getD ab
                         let prevLen := w.size
                         let (w', fs') :=
-                          queueTriggerAb post srcBoard ctrl src abToQueue atomicPat whenCond?
+                          queueTriggerAb post srcBoard ctrl src abToQueue atomicPat whenConds
                             (lastKnownPower := h.lastKnownPower)
                             (lastKnownToughness := h.lastKnownToughness)
                             (cause := h.cause)
@@ -14445,18 +14500,40 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                         if w.size > prevLen then
                           if !disjMatchedIdxs.contains h.eventIdx then
                             disjMatchedIdxs := disjMatchedIdxs.push h.eventIdx
+                          if let some pid := hitPlayer? then
+                            if !disjPlayers.contains pid then
+                              disjPlayers := disjPlayers.push pid
+                          if let some sid := hitSource? then
+                            if !disjSources.contains sid then
+                              disjSources := disjSources.push sid
                           disjFired := true
-                    for idx in disjMatchedIdxs do
-                      if !matchedEventIdxs.contains idx then
-                        matchedEventIdxs := matchedEventIdxs.push idx
-                    if disjFired then
-                      firedBatchDisjunct := true
-      return (w, fs)
+                    if disjFired && isMultiDisj then
+                      let mut idxs := st.matchedEventIdxs
+                      for idx in disjMatchedIdxs do
+                        if !idxs.contains idx then idxs := idxs.push idx
+                      let mut pls := st.firedPlayers
+                      for pid in disjPlayers do
+                        if !pls.contains pid then pls := pls.push pid
+                      let mut srcs := st.firedSources
+                      for sid in disjSources do
+                        if !srcs.contains sid then srcs := srcs.push sid
+                      st := {
+                        matchedEventIdxs := idxs
+                        firedOnce := true
+                        firedPlayers := pls
+                        firedSources := srcs
+                      }
+                      stDirty := true
+                if stDirty && isMultiDisj then
+                  match ds.findIdx? (fun (k, _) => k == key) with
+                  | some idx => ds := ds.set! idx (key, st)
+                  | none => ds := ds.push (key, st)
+      return (w, fs, ds)
     -- Pass A: CR 603.10a–f look-back disjuncts evaluated against `pre`.
-    let (wA, fsA) := runPass true waiting firedSources
-    waiting := wA; firedSources := fsA
+    let (wA, fsA, dsA) := runPass true waiting firedSources dedupStates
+    waiting := wA; firedSources := fsA; dedupStates := dsA
     -- Pass B: Non-look-back disjuncts evaluated against `post`.
-    let (wB, fsB) := runPass false waiting firedSources
+    let (wB, fsB, _) := runPass false waiting firedSources dedupStates
     waiting := wB; firedSources := fsB
     -- Built-in keyword, rule, reflexive, and delayed triggers.
     let (wC, _) := matchBuiltinAndDelayedTriggers pre post batch mask waiting firedSources

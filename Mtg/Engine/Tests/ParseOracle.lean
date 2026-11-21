@@ -919,4 +919,32 @@ private def roundTripsOracleCard (raw : String) : Bool :=
       hIf.interveningIf? == some TriggeredAbility.condYouAreMonarch
   | _, _ => false
 
+-- Self-spell countered triggers activate from the stack (CR 603.10e / 113.6) and round-trip.
+#guard
+  match parseOracleCard "Unstoppable Insight\n{2}{U}\nSorcery\nDraw two cards.\nWhen this spell is countered, draw a card." with
+  | .ok c =>
+    match c.triggeredAbilities with
+    | #[ab] =>
+      ab.pattern == .spellCountered (.sameAs .this) &&
+        ab.activeZones == #[.stack] &&
+        ab.effect.resolution == .draw (.fixed 1) &&
+        match parseOracleCard (renderFullOracle c) with
+        | .ok c2 => reprStr c2.triggeredAbilities == reprStr c.triggeredAbilities
+        | .error _ => false
+    | _ => false
+  | .error _ => false
+
+-- `while <cond>` over compound `"enters or attacks"` distributes `.whenCond` over `.or`.
+#guard
+  match parseOracleCard "Arcane Raider\n{2}{U}\nCreature — Human\n2/2\nWhenever this creature enters or attacks while you control a Wizard, draw a card." with
+  | .ok c =>
+    match c.triggeredAbilities with
+    | #[ab] =>
+      let disjs := ab.pattern.flattenDisjuncts
+      disjs.size == 2 &&
+        disjs[0]!.1 == .thisEnters && disjs[0]!.2.size == 1 &&
+        disjs[1]!.1 == .thisAttacks && disjs[1]!.2.size == 1
+    | _ => false
+  | .error _ => false
+
 end Mtg.Engine.Tests
