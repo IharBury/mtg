@@ -561,4 +561,108 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
   !(g2.playerCanBeTargetedBy p1 p0 (some redSrc.id)) &&
     g2.playerCanBeTargetedBy p1 p0 (some greenSrc.id)
 
+-- Catalog Null Summoner `renderFullOracle` round-trip preserves `castExiledWithSevenInGraveyard`.
+#guard
+  match parseOracleCard (renderFullOracle nullSummoner) with
+  | .ok d => d.staticAbilities == nullSummoner.staticAbilities &&
+      d.staticAbilities.contains .castExiledWithSevenInGraveyard
+  | .error _ => false
+
+-- Novel Layer 7a CDAs with `.aggregate .sum (.stat .power)` and `.aggregate .max (.stat .power)`
+-- evaluate cycle-safely (including counters on other creatures!) instead of returning 0 or count.
+#guard
+  let sumAvatar := mustParse
+    "Total Power Avatar\n{3}{G}\nCreature — Avatar\n*/2\nTotal Power Avatar's power is equal to the total power of creatures you control."
+  let maxAvatar := mustParse
+    "Greatest Power Avatar\n{3}{G}\nCreature — Avatar\n*/2\nGreatest Power Avatar's power is equal to the greatest power among creatures you control."
+  let bear := mkCreature "P6 Stat Bear" #["Bear"] (p := 2) (t := 2)
+  let giant := mkCreature "P6 Stat Giant" #["Giant"] (p := 3) (t := 3)
+  let g0 := addPermanent (addPermanent afterDraw bear p0 p0) giant p0 p0
+  let giantId := (namedPerm g0 giant.name).id
+  -- Put a +1/+1 counter on Giant so its power is 4 (Bear = 2, Giant = 4).
+  let g1 := g0.record (GameEvent.rules g0.turnNumber
+    (.permanent (.counters (.object (g0.snapshot (g0.object! giantId))) .plusOnePlusOne (.put 1) none))
+    (.gameRule .staticAbility))
+  let gSum := addPermanent g1 sumAvatar p0 p0
+  let gMax := addPermanent g1 maxAvatar p0 p0
+  let sumObj := namedPerm gSum sumAvatar.name
+  let maxObj := namedPerm gMax maxAvatar.name
+  -- Bear (2) + Giant (4) + self (0 while undetermined) = 6; max(2, 4, 0) = 4.
+  gSum.power sumObj == 6 && gSum.toughness sumObj == 2 &&
+    gMax.power maxObj == 4 && gMax.toughness maxObj == 2
+
+-- Layer 7c `.objectStat`, `.aggregate .min`, and `.aggregate .countDistinct` over `.stat .power`.
+#guard
+  let creaturesYouCtrl : ObjectExpr :=
+    .inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])
+  let minPump : StaticAbility :=
+    .continuous none StaticAbility.scopeSelf
+      (.modifyPT (.aggregate .min (.stat .power) creaturesYouCtrl) (.const 0))
+  let distinctPump : StaticAbility :=
+    .continuous none StaticAbility.scopeSelf
+      (.modifyPT (.aggregate .countDistinct (.stat .power) creaturesYouCtrl) (.const 0))
+  let equipHostPower : StaticAbility :=
+    .continuous none StaticAbility.scopeEquippedCreature
+      (.modifyPT (.objectStat .power .attachedHost) (.const 0))
+  let minCreature := mkCreature "P6 Min Pump" #["Elf"] (p := 1) (t := 1) (statics := #[minPump])
+  let distCreature := mkCreature "P6 Distinct Pump" #["Elf"] (p := 1) (t := 1) (statics := #[distinctPump])
+  let powerSword : CardDef := {
+    name := "P6 Power Doubler Sword"
+    types := #[.artifact]
+    subtypes := #["Equipment"]
+    staticAbilities := #[equipHostPower]
+  }
+  let bear1 := mkCreature "P6 Bear A" #["Bear"] (p := 2) (t := 2)
+  let bear2 := mkCreature "P6 Bear B" #["Bear"] (p := 2) (t := 2)
+  let giant := mkCreature "P6 Giant C" #["Giant"] (p := 5) (t := 5)
+  let g0 := addPermanent (addPermanent (addPermanent afterDraw bear1 p0 p0) bear2 p0 p0) giant p0 p0
+  let gMin := addPermanent g0 minCreature p0 p0
+  let gDist := addPermanent g0 distCreature p0 p0
+  -- For gMin: powers among creatures are 2, 2, 5, and self base 1 -> min = 1, so 1 + 1 = 2.
+  -- For gDist: distinct powers are {2, 5, 1} -> countDistinct = 3, so 1 + 3 = 4.
+  let bear1Id := (namedPerm g0 bear1.name).id
+  let (gEq, _) := g0.allocObject powerSword p0 .battlefield (some p0) (attachedTo := some bear1Id)
+  -- Attached to 2/2 Bear A: `.objectStat .power .attachedHost` sees Bear A's base 2 -> 2 + 2 = 4.
+  gMin.power (namedPerm gMin minCreature.name) == 2 &&
+    gDist.power (namedPerm gDist distCreature.name) == 4 &&
+    gEq.power (gEq.object! bear1Id) == 4
+
+-- Layer 6/7c conditions: `.eventOccurredLastTurn`, this-turn `.gainedLife`, and `.castPred (.wasKicked .this)`.
+#guard
+  let mourning := mustParse
+    "Mourning Banner\n{2}{B}\nEnchantment\nAs long as a creature died last turn, creatures you control get +1/+1."
+  let chorus := mustParse
+    "Soul Chorus\n{2}{W}\nEnchantment\nAs long as you gained life this turn, creatures you control get +1/+1."
+  let kickedLord := mkCreature "P6 Kicked Champion" #["Knight"] (p := 2) (t := 2)
+    (statics := #[
+      .continuous (some (.castPred (.wasKicked .this))) StaticAbility.scopeSelf
+        (.all #[.modifyPT (.const 2) (.const 2), .grantKeywords #[Keyword.vigilance]])
+    ])
+  let bear := mkCreature "P6 Cond Bear" #["Bear"] (p := 2) (t := 2)
+  let fodder := mkCreature "P6 Dying Fodder" #["Goblin"] (p := 1) (t := 1)
+  -- 1. Last-turn creature death: off on turn 1 when fodder dies, ON on turn 2, OFF on turn 3.
+  let g0 := addPermanent (addPermanent (addPermanent afterDraw mourning p0 p0) bear p0 p0) fodder p0 p0
+  let fodderId := (namedPerm g0 fodder.name).id
+  let (gDiedT1, _) := g0.move fodderId (.graveyard p0) none (verb := some .destroy) (cause := some testCause)
+  let gTurn2 := gDiedT1.record (GameEvent.turnBegan (gDiedT1.turnNumber + 1) p1 false)
+  let gTurn3 := gTurn2.record (GameEvent.turnBegan (gTurn2.turnNumber + 1) p0 false)
+  let b1 := namedPerm gDiedT1 bear.name
+  let b2 := namedPerm gTurn2 bear.name
+  let b3 := namedPerm gTurn3 bear.name
+  -- 2. This-turn life gain: off before `gainLife`, ON after `gainLife`.
+  let gLife0 := addPermanent (addPermanent afterDraw chorus p0 p0) bear p0 p0
+  let gLife1 := gLife0.gainLife p0 2
+  -- 3. `.castPred (.wasKicked .this)`: off when un-kicked, ON when cast kicked.
+  let gKick0 := addPermanent afterDraw kickedLord p0 p0
+  let kickId := (namedPerm gKick0 kickedLord.name).id
+  let gKick1 := gKick0.record (GameEvent.rules gKick0.turnNumber
+    (.cast (.announced kickId #[] none #[.kicker])) testCause)
+  gDiedT1.power b1 == 2 &&
+    gTurn2.power b2 == 3 && gTurn2.toughness b2 == 3 &&
+    gTurn3.power b3 == 2 &&
+    gLife0.power (namedPerm gLife0 bear.name) == 2 &&
+    gLife1.power (namedPerm gLife1 bear.name) == 3 &&
+    gKick0.power (gKick0.object! kickId) == 2 && !(gKick0.hasSimpleKeyword (gKick0.object! kickId) .vigilance) &&
+    gKick1.power (gKick1.object! kickId) == 4 && gKick1.hasSimpleKeyword (gKick1.object! kickId) .vigilance
+
 end Mtg.Engine.Tests.StaticAbilitiesSuite

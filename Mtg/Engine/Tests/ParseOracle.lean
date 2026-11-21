@@ -731,6 +731,9 @@ private def roundTripsOracleCard (raw : String) : Bool :=
   "Syndicate Tithe\n{1}{W}\nCreature — Human Cleric\n2/2\nExtort",
   "Shadow Infiltrator\n{3}{U}\nCreature — Ninja\n3/2\nSneak {1}{U}",
   "Baron Helmut Zemo\n{2}{B}\nLegendary Creature — Human Villain\n3/3\nBoast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs. (Activate only if this creature attacked this turn and only once each turn.)",
+  -- Null Summoner graveyard-threshold exile-casting static (both "seven" and rendered "7"):
+  "Null Summoner\n{1}{B}\nCreature — Human Wizard\n2/2\nAs long as there are seven or more cards in your graveyard, you may cast the exiled card, and mana of any type can be spent to cast that spell.",
+  "Null Summoner Digit\n{1}{B}\nCreature — Human Wizard\n2/2\nAs long as there are 7 or more cards in your graveyard, you may cast the exiled card, and mana of any type can be spent to cast that spell.",
   -- Novel compositional static cards never printed in the catalog:
   "Archmage Tutor\n{2}{U}\nCreature — Human Wizard\n2/2\nOther Wizard creatures you control get +2/+1 and have vigilance and lifelink.",
   "Menacing Aura\n{1}{B}\nEnchantment — Aura\nEnchant creature\nEnchanted creature gets +3/+2 and has menace.",
@@ -738,7 +741,11 @@ private def roundTripsOracleCard (raw : String) : Bool :=
   "Dampening Arbiter\n{2}{W}\nCreature — Human Advisor\n2/3\nNoncreature spells your opponents cast cost {2} more to cast.",
   "Dragonkin Warden\n{2}{R}\nCreature — Human Warrior\n2/2\nAs long as you control a Dragon, this creature gets +3/+3 and has flying and trample.",
   "Tripling Procession\n{4}{W}\nEnchantment\nIf one or more tokens would be created under your control, three times that many of those tokens are created instead.",
-  "Ward of Permanence\n{1}{W}\nEnchantment — Aura\nEnchant nonland permanent\nEnchanted permanent has hexproof."
+  "Ward of Permanence\n{1}{W}\nEnchantment — Aura\nEnchant nonland permanent\nEnchanted permanent has hexproof.",
+  "Total Power Avatar\n{3}{G}\nCreature — Avatar\n*/2\nTotal Power Avatar's power is equal to the total power of creatures you control.",
+  "Greatest Power Avatar\n{3}{G}\nCreature — Avatar\n*/2\nGreatest Power Avatar's power is equal to the greatest power among creatures you control.",
+  "Mourning Banner\n{2}{B}\nEnchantment\nAs long as a creature died last turn, creatures you control get +1/+1.",
+  "Soul Chorus\n{2}{W}\nEnchantment\nAs long as you gained life this turn, creatures you control get +1/+1."
 ].all roundTripsOracleCard
 
 -- Verify exact AST structure of migrated keywords, Zemo Boast, and novel Phase 6 cards.

@@ -3323,8 +3323,16 @@ def parseStaticAbilityLine (raw : String) (cardName : String := "") : Option (Ar
   if let some (_, condStr) := splitFirstCI? cleaned "you may cast this spell as though it had flash if " then
     if let some cond := parseStaticCondition? condStr cardName then
       return some #[.ruleModifying (some cond) (.play (.castAsThoughFlash .you .anyObject true none))]
-  if selfLow.startsWith "as long as there are seven or more cards in your graveyard, you may cast the exiled card" then
-    return some #[StaticAbility.castExiledWithSevenInGraveyard]
+  if let some rest := dropPrefixCI? selfLow "as long as there are " then
+    if let some (numStr, tail) :=
+        splitFirstCI? rest " or more cards in your graveyard, you may cast the exiled card" then
+      if let some n := parseNatWord? numStr then
+        if n == 7 then
+          return some #[StaticAbility.castExiledWithSevenInGraveyard]
+        else
+          return some #[.ruleModifying (some (StaticAbility.condGraveyardAtLeast n))
+            (.play (.mayPlayFrom .you .exile .anyObject (linkedExile := true)
+              (castAnyColorMana := tail.contains "mana of any type")))]
   if let some condStr := dropPrefixCI? selfLow "you can't cast this spell unless " then
     if let some cond := parseStaticCondition? condStr cardName then
       -- Normalize `there are N or more cards in your graveyard` to `other cards` for cast restriction
