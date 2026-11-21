@@ -6283,6 +6283,90 @@ def grantorStillInPlay (g : Game) (id : ObjectId) : Bool :=
   | some o => o.isOnBattlefield
   | none => false
 
+/-- True when `q` is a living opponent of `p` (CR 102.2 / 810). -/
+def isLivingOpponentOf (g : Game) (p q : PlayerId) : Bool :=
+  (g.livingOpponents p).any (fun pl => pl.id == q)
+
+/-- First living opponent of `p` in turn order after `p`, or `none` when no
+living opponent remains (CR 102.2 / 810). -/
+def firstLivingOpponent? (g : Game) (p : PlayerId) : Option PlayerId :=
+  let opps := g.livingOpponents p
+  let n := g.players.size
+  if n == 0 || opps.isEmpty then none
+  else
+    Id.run do
+      for k in [1:n+1] do
+        let q : PlayerId := ⟨(p.idx + k) % n⟩
+        if opps.any (fun pl => pl.id == q) then
+          return some q
+      return none
+
+def opponent (g : Game) (p : PlayerId) : PlayerId :=
+  match g.firstLivingOpponent? p with
+  | some q => q
+  | none =>
+    if g.stillInGame p then p
+    else
+      let n := g.players.size
+      if n == 0 then p
+      else
+        Id.run do
+          for k in [1:n+1] do
+            let q : PlayerId := ⟨(p.idx + k) % n⟩
+            if g.stillInGame q then
+              return q
+          return p
+
+/-- Defending player of an attacking status `s`: the player directly attacked,
+or the controller of the planeswalker/battle being attacked (CR 506.2 / 506.4c). -/
+def defendingPlayerOfStatus (g : Game) (s : Status) : Option PlayerId :=
+  match s.attackingTarget with
+  | some (.player p) => some p
+  | some (.planeswalker pw) | some (.battle pw) =>
+    match g.findObject? pw with
+    | some o => some ((g.controllerOf o).getD o.owner)
+    | none =>
+      match GameEvent.lastKnownBefore? g.events pw with
+      | some o => some (o.controller.getD o.owner)
+      | none => none
+  | none => none
+
+/-- Player being attacked this combat (CR 508.1). Taken from an attacking
+creature's `attackingTarget`, or the next opponent if none is recorded. -/
+def defendingPlayer (g : Game) : PlayerId :=
+  match g.blockersQueue[0]? with
+  | some p => p
+  | none =>
+    match g.objects.findSome? (fun o =>
+      if o.isOnBattlefield && o.status.attacking then
+        let ctrl := (g.controllerOf o).getD g.activePlayer
+        (g.defendingPlayerOfStatus o.status).filter (g.isLivingOpponentOf ctrl ·)
+      else none) with
+    | some p => p
+    | none => g.opponent g.activePlayer
+
+/-- Defending player of an attacking object `o` (CR 506.2 / 506.4c), falling
+back to `g.defendingPlayer`. -/
+def defendingPlayerOf (g : Game) (o : GameObject) : PlayerId :=
+  (g.defendingPlayerOfStatus o.status).getD g.defendingPlayer
+
+/-- Distinct players being attacked, in APNAP order (CR 508.1 / 101.4 / 810.7). -/
+def defendingPlayers (g : Game) : Array PlayerId :=
+  let attacked :=
+    g.objects.filterMap (fun o =>
+      if o.isOnBattlefield && o.status.attacking then
+        let ctrl := (g.controllerOf o).getD g.activePlayer
+        (g.defendingPlayerOfStatus o.status).filter (g.isLivingOpponentOf ctrl ·)
+      else none)
+  let n := g.players.size
+  Id.run do
+    let mut acc : Array PlayerId := #[]
+    for k in [0:n] do
+      let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
+      if q != g.activePlayer && g.stillInGame q && attacked.contains q then
+        acc := acc.push q
+    return acc
+
 /-! ### Layer-1–5 Recursion-Safe Static Expression Helpers (CR 604 / 613) -/
 
 /-- Printed keywords (after Layer 3 text changes) plus CR 122.1b keyword counters on `o`.
@@ -6301,6 +6385,12 @@ private def baseKeywordsWithCounters (g : Game) (o : GameObject) : Array Keyword
       CounterKind.keywordCounters.foldl (fun acc (k, kw) =>
         if o.status.counterCount k > 0 then KeywordAbility.merge acc #[kw] else acc) printedKw
 
+private partial def staticPredMentionsPhasedOut : ObjectPred → Bool
+  | .phasedOut _ => true
+  | .all ps | .any ps => ps.any staticPredMentionsPhasedOut
+  | .not inner => staticPredMentionsPhasedOut inner
+  | _ => false
+
 mutual
 
 private partial def predMentionsKeyword : ObjectPred → Bool
@@ -6310,11 +6400,31 @@ private partial def predMentionsKeyword : ObjectPred → Bool
   | .hasAttachment af => predMentionsKeyword af.pred
   | .stat _ _ rhs | .counterCount _ _ rhs => valExprMentionsKeyword rhs
   | .controlledBy pf | .ownedBy pf => playerPredMentionsKeyword pf.pred
+  | .combatRole (.attackingPlayer pe) => playerExprMentionsKeyword pe
+  | .combatRole (.blockingObject oe) => objExprMentionsKeyword oe
+  | .attachedTo oe | .shares _ oe => objExprMentionsKeyword oe
+  | .targets (.object oe) => objExprMentionsKeyword oe
+  | .targets (.player pe) => playerExprMentionsKeyword pe
+  | .targets (.either oe pe) => objExprMentionsKeyword oe || playerExprMentionsKeyword pe
+  | .dealtDamageThisTurn _ (some (.player pf)) _ => playerPredMentionsKeyword pf.pred
+  | .dealtDamageThisTurn _ (some (.object f)) _ => predMentionsKeyword f.pred
+  | .dealtDamageThisTurn _ (some (.playerOrObject pf f)) _ =>
+    playerPredMentionsKeyword pf.pred || predMentionsKeyword f.pred
+  | .receivedCounterThisTurn _ (some pf) => playerPredMentionsKeyword pf.pred
   | _ => false
 
 private partial def objExprMentionsKeyword : ObjectExpr → Bool
-  | .inZones _ p => predMentionsKeyword p
+  | .inZones zs p =>
+    let ownerKw :=
+      match zs.owner with
+      | .any => false
+      | .matching pf => playerPredMentionsKeyword pf.pred
+      | .ofPlayer pe => playerExprMentionsKeyword pe
+    ownerKw || predMentionsKeyword p
+  | .topOfLibrary pe ve => playerExprMentionsKeyword pe || valExprMentionsKeyword ve
+  | .extremum _ _ oe => objExprMentionsKeyword oe
   | .union es => es.any objExprMentionsKeyword
+  | .diff lhs rhs => objExprMentionsKeyword lhs || objExprMentionsKeyword rhs
   | _ => false
 
 private partial def valExprMentionsKeyword : ValueExpr → Bool
@@ -6336,6 +6446,7 @@ private partial def playerPredMentionsKeyword : PlayerPred → Bool
 private partial def playerExprMentionsKeyword : PlayerExpr → Bool
   | .matching _ p => playerPredMentionsKeyword p
   | .controllerOf oe | .ownerOf oe => objExprMentionsKeyword oe
+  | .chosenBy _ _ pf => playerPredMentionsKeyword pf.pred
   | _ => false
 
 private partial def condMentionsKeyword : Condition → Bool
@@ -6353,16 +6464,37 @@ mutual
 
 private partial def predReadsPT : ObjectPred → Bool
   | .stat .power _ _ | .stat .toughness _ _ => true
+  | .statParity .power _ | .statParity .toughness _ => true
   | .stat _ _ rhs | .counterCount _ _ rhs => valExprReadsPT rhs
   | .all ps | .any ps => ps.any predReadsPT
   | .not inner => predReadsPT inner
   | .hasAttachment af => predReadsPT af.pred
   | .controlledBy pf | .ownedBy pf => playerPredReadsPT pf.pred
+  | .combatRole (.attackingPlayer pe) => playerExprReadsPT pe
+  | .combatRole (.blockingObject oe) => objExprReadsPT oe
+  | .attachedTo oe | .shares _ oe => objExprReadsPT oe
+  | .targets (.object oe) => objExprReadsPT oe
+  | .targets (.player pe) => playerExprReadsPT pe
+  | .targets (.either oe pe) => objExprReadsPT oe || playerExprReadsPT pe
+  | .dealtDamageThisTurn _ (some (.player pf)) _ => playerPredReadsPT pf.pred
+  | .dealtDamageThisTurn _ (some (.object f)) _ => predReadsPT f.pred
+  | .dealtDamageThisTurn _ (some (.playerOrObject pf f)) _ =>
+    playerPredReadsPT pf.pred || predReadsPT f.pred
+  | .receivedCounterThisTurn _ (some pf) => playerPredReadsPT pf.pred
   | _ => false
 
 private partial def objExprReadsPT : ObjectExpr → Bool
-  | .inZones _ p => predReadsPT p
+  | .inZones zs p =>
+    let ownerPT :=
+      match zs.owner with
+      | .any => false
+      | .matching pf => playerPredReadsPT pf.pred
+      | .ofPlayer pe => playerExprReadsPT pe
+    ownerPT || predReadsPT p
+  | .topOfLibrary pe ve => playerExprReadsPT pe || valExprReadsPT ve
+  | .extremum _ metric oe => metric == .power || metric == .toughness || objExprReadsPT oe
   | .union es => es.any objExprReadsPT
+  | .diff lhs rhs => objExprReadsPT lhs || objExprReadsPT rhs
   | _ => false
 
 private partial def valExprReadsPT : ValueExpr → Bool
@@ -6386,6 +6518,7 @@ private partial def playerPredReadsPT : PlayerPred → Bool
 private partial def playerExprReadsPT : PlayerExpr → Bool
   | .matching _ p => playerPredReadsPT p
   | .controllerOf oe | .ownerOf oe => objExprReadsPT oe
+  | .chosenBy _ _ pf => playerPredReadsPT pf.pred
   | _ => false
 
 private partial def condReadsPT : Condition → Bool
@@ -6619,6 +6752,20 @@ private partial def evalStaticPlayerPredL5 (g : Game) (src : GameObject) (srcCtr
     | .hasDesignation .enduringStory => pl.enduringStory
     | .isMonarch => pl.isMonarch
     | .isActivePlayer => g.activePlayer == p
+    | .isDefendingPlayer =>
+      let attackerDef? : Option PlayerId :=
+        let fromHost :=
+          src.attachedTo.bind fun hid =>
+            match g.findObject? hid with
+            | some host => if host.status.attacking then some (g.defendingPlayerOf host) else none
+            | none => none
+        let fromSelf := if src.status.attacking then some (g.defendingPlayerOf src) else none
+        fromHost.orElse fun _ => fromSelf
+      match attackerDef? with
+      | some dp => dp == p
+      | none =>
+        let defs := g.defendingPlayers
+        if defs.isEmpty then g.defendingPlayer == p else defs.contains p
     | .metric m op rhs =>
       op.eval (g.evalStaticPlayerMetricSingle m p) (g.evalStaticValL5 src srcCtrl rhs ok ptOf? kwOf?)
     | .controls filter minCount =>
@@ -6627,7 +6774,7 @@ private partial def evalStaticPlayerPredL5 (g : Game) (src : GameObject) (srcCtr
       let controlled := objs.filter (fun x => g.controllerOf x == some p)
       Int.ofNat controlled.size ≥ need
     | .isSeat idx => p.idx == idx
-    | _ => false
+    | .thatPlayer => true
 
 /-- Evaluate `PlayerFilter` on a candidate player `p`. -/
 private partial def matchStaticPlayerFilterL5 (g : Game) (src : GameObject) (srcCtrl : PlayerId)
@@ -6642,30 +6789,56 @@ private partial def evalStaticPlayerExprL5 (g : Game) (src : GameObject) (srcCtr
     (pe : PlayerExpr) (ok : GameObject → Bool)
     (ptOf? : Option (GameObject → Int × Int) := none)
     (kwOf? : Option (GameObject → Array KeywordAbility) := none) : Array PlayerId :=
+  let pushUniqPl (acc : Array PlayerId) (p : PlayerId) : Array PlayerId :=
+    if acc.contains p then acc else acc.push p
   match pe with
   | .you => if g.stillInGame srcCtrl then #[srcCtrl] else #[]
   | .activePlayer => if g.stillInGame g.activePlayer then #[g.activePlayer] else #[]
+  | .defendingPlayer =>
+    let attackerDef? : Option PlayerId :=
+      let fromHost :=
+        src.attachedTo.bind fun hid =>
+          match g.findObject? hid with
+          | some host => if host.status.attacking then some (g.defendingPlayerOf host) else none
+          | none => none
+      let fromSelf := if src.status.attacking then some (g.defendingPlayerOf src) else none
+      fromHost.orElse fun _ => fromSelf
+    match attackerDef? with
+    | some dp => if g.stillInGame dp then #[dp] else #[]
+    | none =>
+      let defs := g.defendingPlayers
+      if !defs.isEmpty then defs
+      else if g.stillInGame g.defendingPlayer then #[g.defendingPlayer] else #[]
   | .monarch => g.players.filterMap fun pl =>
       if g.stillInGame pl.id && pl.isMonarch then some pl.id else none
   | .matching rel pred =>
     (g.staticPlayersMatchingRel srcCtrl rel).filter fun p =>
       g.evalStaticPlayerPredL5 src srcCtrl p pred ok ptOf? kwOf?
   | .controllerOf obj =>
-    (g.evalStaticObjsL5 src srcCtrl obj ok ptOf? kwOf?).filterMap g.controllerOf
+    (g.evalStaticObjsL5 src srcCtrl obj ok ptOf? kwOf?).foldl (fun acc o =>
+      match g.controllerOf o with
+      | some p => pushUniqPl acc p
+      | none => acc) #[]
   | .ownerOf obj =>
-    (g.evalStaticObjsL5 src srcCtrl obj ok ptOf? kwOf?).map (·.owner)
-  | _ => #[]
+    (g.evalStaticObjsL5 src srcCtrl obj ok ptOf? kwOf?).foldl (fun acc o => pushUniqPl acc o.owner) #[]
+  | .target _ | .triggerPlayer _ | .stepPlayers _ | .chosenBy _ _ _ => #[]
 
 /-- Evaluate `ObjectPred` on `target` using Layer 1–5 characteristics (CR 613.1a–e),
-plus optional P/T callback `ptOf?` for `.stat` queries and optional Layer 6 keyword
-callback `kwOf?` for `.hasKeyword` queries (falling back to `baseKeywordsWithCounters`
+plus optional P/T callback `ptOf?` for `.stat`/`.statParity` queries and optional Layer 6
+keyword callback `kwOf?` for `.hasKeyword` queries (falling back to `baseKeywordsWithCounters`
 on live objects and `target.printed.keywords` on `isLkiSnapshot` objects). -/
 private partial def evalStaticPredL5 (g : Game) (src : GameObject) (srcCtrl : PlayerId)
     (target : GameObject) (pred : ObjectPred) (ok : GameObject → Bool)
     (ptOf? : Option (GameObject → Int × Int) := none)
     (kwOf? : Option (GameObject → Array KeywordAbility) := none) : Bool :=
+  let resolveRefIds : ObjectRef → Array ObjectId
+    | .this => #[src.id]
+    | .attachedHost =>
+      match src.attachedTo with
+      | some hid => #[hid]
+      | none => #[]
+    | .target _ | .triggerSubject | .stepVar _ => #[]
   match pred with
-  | .anyObject => true
   | .all ps => ps.all (fun q => g.evalStaticPredL5 src srcCtrl target q ok ptOf? kwOf?)
   | .any ps => ps.any (fun q => g.evalStaticPredL5 src srcCtrl target q ok ptOf? kwOf?)
   | .not inner => !(g.evalStaticPredL5 src srcCtrl target inner ok ptOf? kwOf?)
@@ -6681,6 +6854,12 @@ private partial def evalStaticPredL5 (g : Game) (src : GameObject) (srcCtrl : Pl
     match src.status.chosenColor with
     | some c => (g.colors target).contains c
     | none => false
+  | .hasColor .commanderIdentity =>
+    let pl := g.player srcCtrl
+    if !pl.hasCommander then false
+    else
+      let cols := g.colors target
+      Color.all.any fun c => pl.commanderColorIdentity.contains c && cols.contains c
   | .colorCount op n => op.eval (Int.ofNat (g.colors target).count) (Int.ofNat n)
   | .named (.literal nm) => g.name target == nm
   | .named .chosenOnSource => src.status.chosenName == some (g.name target)
@@ -6692,6 +6871,22 @@ private partial def evalStaticPredL5 (g : Game) (src : GameObject) (srcCtrl : Pl
         | some f => f target
         | none => g.baseKeywordsWithCounters target
       KeywordAbility.hasTag kws kw
+  | .stat kind op rhs =>
+    match g.evalStaticStat? ptOf? target kind with
+    | some n => op.eval n (g.evalStaticValL5 src srcCtrl rhs ok ptOf? kwOf?)
+    | none => false
+  | .statParity kind parity =>
+    match g.evalStaticStat? ptOf? target kind with
+    | none => false
+    | some val =>
+      let isOdd := val.natAbs % 2 == 1
+      match parity with
+      | .odd => isOdd
+      | .even => !isOdd
+      | .chosenOnSource =>
+        match src.status.chosenOdd with
+        | some wantOdd => isOdd == wantOdd
+        | none => false
   | .isToken want => target.printed.isToken == want
   | .isFaceDown want => target.status.faceDown == want
   | .isCopy want => (target.isCopy || g.hasActiveCopy target) == want
@@ -6710,52 +6905,140 @@ private partial def evalStaticPredL5 (g : Game) (src : GameObject) (srcCtrl : Pl
   | .combatRole role =>
     match role with
     | .attacking => target.status.attacking
+    | .attackingPlayer who =>
+      if !target.status.attacking then false
+      else
+        let ps := g.evalStaticPlayerExprL5 src srcCtrl who ok ptOf? kwOf?
+        match target.status.attackingTarget with
+        | some (.player p) => ps.contains p
+        | _ => false
+    | .attackingAlone =>
+      target.status.attacking &&
+        (g.battlefield.filter (fun x =>
+          x.status.attacking && g.controllerOf x == g.controllerOf target)).size == 1
     | .blocking => !target.status.blocking.isEmpty
+    | .blockingObject atkExpr =>
+      let atkIds := (g.evalStaticObjsL5 src srcCtrl atkExpr ok ptOf? kwOf?).map (·.id)
+      target.status.blocking.any atkIds.contains
     | .blocked => target.status.attacking && target.status.blocked
     | .unblocked => target.status.attacking && !target.status.blocked
-    | _ => false
   | .hasDesignation .prepared => target.status.prepared
   | .hasDesignation .harnessed => target.status.harnessed
   | .hasDesignation .goaded => target.status.goaded || !target.status.goadedBy.isEmpty
   | .hasDesignation .ringBearer =>
     target.isOnBattlefield && !target.status.phasedOut &&
       g.players.any (fun pl => pl.ringBearerId == some target.id && g.controllerOf target == some pl.id)
-  | .stat kind op rhs =>
-    match g.evalStaticStat? ptOf? target kind with
-    | some n => op.eval n (g.evalStaticValL5 src srcCtrl rhs ok ptOf? kwOf?)
-    | none => false
   | .counterCount k? op rhs =>
     let cnt : Nat :=
       match k? with
       | some k => target.status.counterCount k
       | none => target.status.toCounterBag.foldl (fun a (_, n) => a + n) 0
     op.eval (Int.ofNat cnt) (g.evalStaticValL5 src srcCtrl rhs ok ptOf? kwOf?)
-  | .sameAs .this => target.id == src.id
-  | .otherThan .this => target.id != src.id
+  | .sameAs ref => (resolveRefIds ref).contains target.id
+  | .otherThan ref => !(resolveRefIds ref).contains target.id
   | .controlledBy pf =>
     match g.controllerOf target with
     | some c => g.matchStaticPlayerFilterL5 src srcCtrl pf c ok ptOf? kwOf?
     | none => false
   | .ownedBy pf => g.matchStaticPlayerFilterL5 src srcCtrl pf target.owner ok ptOf? kwOf?
-  | .attachedTo .this => target.attachedTo == some src.id
+  | .attachedTo hostExpr =>
+    match target.attachedTo with
+    | some hid =>
+      match hostExpr with
+      | .this => hid == src.id
+      | _ => (g.evalStaticObjsL5 src srcCtrl hostExpr ok ptOf? kwOf?).any (·.id == hid)
+    | none => false
   | .hasAttachment attFilter =>
-    g.objects.any fun a =>
-      a.isOnBattlefield && a.attachedTo == some target.id && ok a &&
-        g.evalStaticPredL5 src srcCtrl a attFilter.pred ok ptOf? kwOf?
+    (g.evalStaticObjsL5 src srcCtrl attFilter.toExpr ok ptOf? kwOf?).any
+      (fun att => att.attachedTo == some target.id)
+  | .targets tgtExpr =>
+    match g.stack.find? (·.objectId == target.id) with
+    | none => false
+    | some entry =>
+      let matchObj (oe : ObjectExpr) : Bool :=
+        let ids := (g.evalStaticObjsL5 src srcCtrl oe ok ptOf? kwOf?).map (·.id)
+        entry.targets.any fun
+          | .permanent id | .card id => ids.contains id
+          | .player _ => false
+      let matchPl (pe : PlayerExpr) : Bool :=
+        let pids := g.evalStaticPlayerExprL5 src srcCtrl pe ok ptOf? kwOf?
+        entry.targets.any fun
+          | .player p => pids.contains p
+          | .permanent _ | .card _ => false
+      match tgtExpr with
+      | .object oe => matchObj oe
+      | .player pe => matchPl pe
+      | .either oe pe => matchObj oe || matchPl pe
+  | .shares ch withExpr =>
+    let others := g.evalStaticObjsL5 src srcCtrl withExpr ok ptOf? kwOf?
+    let myCols := g.colors target
+    let myTypes := g.types target
+    let mySubs := g.subtypes target
+    others.any fun other =>
+      match ch with
+      | .color =>
+        let oCols := g.colors other
+        Color.all.any fun c => myCols.contains c && oCols.contains c
+      | .cardType =>
+        let oTypes := g.types other
+        myTypes.any oTypes.contains
+      | .creatureType =>
+        let oSubs := g.subtypes other
+        mySubs.any fun s => s.isCreatureType && oSubs.contains s
+      | .subtype =>
+        let oSubs := g.subtypes other
+        mySubs.any oSubs.contains
+      | .name =>
+        let myName := g.name target
+        let oName := g.name other
+        !myName.isEmpty && myName == oName
+  | .wasCast =>
+    GameEvent.wasCast g.events target.id (target.isCopy || g.hasActiveCopy target)
+  | .castFrom zk =>
+    staticObjectCastFrom g.events target.id zk (target.isCopy || g.hasActiveCopy target)
   | .enteredThisTurn => g.loggedEntered target.id
-  | .dealtDamageThisTurn combatOnly _ thisTurnOnly =>
+  | .attackedThisTurn => g.declaredAsAttackerThisTurn target.id
+  | .dealtDamageThisTurn combatOnly rec? thisTurnOnly =>
+    let recMatches (r : DamageRecipient) : Bool :=
+      match rec? with
+      | none | some .any => true
+      | some (.player pf) =>
+        match r with
+        | .player p => g.matchStaticPlayerFilterL5 src srcCtrl pf p ok ptOf? kwOf?
+        | _ => false
+      | some (.object f) =>
+        match r with
+        | .permanent eo | .battle eo =>
+          g.evalStaticPredL5 src srcCtrl (lkiEventObjectAsGameObject eo) f.pred ok ptOf? kwOf?
+        | .player _ => false
+      | some (.playerOrObject pf f) =>
+        match r with
+        | .player p => g.matchStaticPlayerFilterL5 src srcCtrl pf p ok ptOf? kwOf?
+        | .permanent eo | .battle eo =>
+          g.evalStaticPredL5 src srcCtrl (lkiEventObjectAsGameObject eo) f.pred ok ptOf? kwOf?
     if thisTurnOnly then
-      if combatOnly then
-        g.events.any fun e =>
-          e.turn == g.turnNumber &&
-            match e.change with
-            | .rules (.damage (.dealt pkts)) =>
-              pkts.any fun pkt => pkt.combat && pkt.amount > 0 && pkt.source.id == some target.id
-            | _ => false
-      else g.dealtDamageThisTurn target.id
-    else g.dealtCombatDamage target.id
+      g.events.any fun e =>
+        e.turn == g.turnNumber &&
+          match e.change with
+          | .rules (.damage (.dealt pkts)) =>
+            pkts.any fun pkt =>
+              pkt.amount > 0 && pkt.source.id == some target.id &&
+                (!combatOnly || pkt.combat) && recMatches pkt.recipient
+          | _ => false
+    else
+      g.events.foldl (fun dealt e =>
+        match e.change with
+        | .rules (.zone (.moved _ after _ .battlefield ..)) =>
+          if after.id == some target.id then false else dealt
+        | .rules (.zone (.created obj _)) =>
+          if obj.zone == .battlefield && obj.id == some target.id then false else dealt
+        | .rules (.damage (.dealt pkts)) =>
+          dealt || pkts.any fun pkt =>
+            pkt.amount > 0 && pkt.source.id == some target.id &&
+              (!combatOnly || pkt.combat) && recMatches pkt.recipient
+        | _ => dealt) false
   | .wasDealtDamageThisTurn =>
-    target.status.damage > 0 ||
+    (!target.isLkiSnapshot && target.status.damage > 0) ||
       g.events.any fun e =>
         e.turn == g.turnNumber &&
           match e.change with
@@ -6781,13 +7064,14 @@ private partial def evalStaticPredL5 (g : Game) (src : GameObject) (srcCtrl : Pl
                  match eo.controller with
                  | some c => g.matchStaticPlayerFilterL5 src srcCtrl pf c ok ptOf? kwOf?
                  | none => true)
-  | _ => false
 
 /-- Evaluate `ObjectExpr` to matching live `GameObject`s. -/
 private partial def evalStaticObjsL5 (g : Game) (src : GameObject) (srcCtrl : PlayerId)
     (expr : ObjectExpr) (ok : GameObject → Bool)
     (ptOf? : Option (GameObject → Int × Int) := none)
     (kwOf? : Option (GameObject → Array KeywordAbility) := none) : Array GameObject :=
+  let dedupObjs (xs : Array GameObject) : Array GameObject :=
+    xs.foldl (fun acc o => if acc.any (·.id == o.id) then acc else acc.push o) #[]
   match expr with
   | .this => #[src]
   | .attachedHost =>
@@ -6795,6 +7079,7 @@ private partial def evalStaticObjsL5 (g : Game) (src : GameObject) (srcCtrl : Pl
     | some h => #[h]
     | none => #[]
   | .inZones zs pred =>
+    let allowPhased := staticPredMentionsPhasedOut pred
     let owners : Array PlayerId :=
       match zs.owner with
       | .any => g.players.map (·.id)
@@ -6804,13 +7089,13 @@ private partial def evalStaticObjsL5 (g : Game) (src : GameObject) (srcCtrl : Pl
       | .ofPlayer pe => g.evalStaticPlayerExprL5 src srcCtrl pe ok ptOf? kwOf?
     let restrictOwner := zs.owner != .any
     let ownerOk (o : GameObject) : Bool := !restrictOwner || owners.contains o.owner
-    Id.run do
+    let raw : Array GameObject := Id.run do
       let mut out : Array GameObject := #[]
       for zk in zs.zones do
         match zk with
         | .battlefield =>
           for o in g.objects do
-            if o.isOnBattlefield && ok o && ownerOk o &&
+            if o.zone == .battlefield && (allowPhased || !o.status.phasedOut) && ok o && ownerOk o &&
                 g.evalStaticPredL5 src srcCtrl o pred ok ptOf? kwOf? then
               out := out.push o
         | .graveyard =>
@@ -6822,6 +7107,12 @@ private partial def evalStaticObjsL5 (g : Game) (src : GameObject) (srcCtrl : Pl
         | .hand =>
           for p in owners do
             for oid in (g.player p).hand do
+              if let some o := g.findObject? oid then
+                if g.evalStaticPredL5 src srcCtrl o pred ok ptOf? kwOf? then
+                  out := out.push o
+        | .library =>
+          for p in owners do
+            for oid in (g.player p).library do
               if let some o := g.findObject? oid then
                 if g.evalStaticPredL5 src srcCtrl o pred ok ptOf? kwOf? then
                   out := out.push o
@@ -6837,10 +7128,49 @@ private partial def evalStaticObjsL5 (g : Game) (src : GameObject) (srcCtrl : Pl
           for o in g.objects do
             if o.zone == .command && ownerOk o && g.evalStaticPredL5 src srcCtrl o pred ok ptOf? kwOf? then
               out := out.push o
-        | _ => pure ()
+        | .ante =>
+          for o in g.objects do
+            if o.zone == .ante && ownerOk o && g.evalStaticPredL5 src srcCtrl o pred ok ptOf? kwOf? then
+              out := out.push o
+        | .outside =>
+          for p in owners do
+            for o in g.objects do
+              if o.zone == .outside p && g.evalStaticPredL5 src srcCtrl o pred ok ptOf? kwOf? then
+                out := out.push o
       return out
-  | .union es => es.foldl (fun acc e => acc ++ g.evalStaticObjsL5 src srcCtrl e ok ptOf? kwOf?) #[]
-  | _ => #[]
+    dedupObjs raw
+  | .topOfLibrary ownerExpr countExpr =>
+    let n := (g.evalStaticValL5 src srcCtrl countExpr ok ptOf? kwOf?).toNat
+    if n == 0 then #[]
+    else
+      let owners := g.evalStaticPlayerExprL5 src srcCtrl ownerExpr ok ptOf? kwOf?
+      Id.run do
+        let mut out : Array GameObject := #[]
+        for p in owners do
+          let lib := (g.player p).library
+          let takeN := min n lib.size
+          for k in [0:takeN] do
+            let idx := lib.size - 1 - k
+            if let some o := g.findObject? lib[idx]! then
+              out := out.push o
+        return out
+  | .extremum dir metric amongExpr =>
+    let pairs := (g.evalStaticObjsL5 src srcCtrl amongExpr ok ptOf? kwOf?).filterMap fun o =>
+      (g.evalStaticStat? ptOf? o metric).map (o, ·)
+    match pairs[0]? with
+    | none => #[]
+    | some (_, firstVal) =>
+      let best := pairs.foldl (fun acc (_, x) =>
+        match dir with
+        | .max => Max.max acc x
+        | .min => Min.min acc x) firstVal
+      (pairs.filter (·.2 == best)).map Prod.fst
+  | .union es =>
+    dedupObjs (es.foldl (fun acc e => acc ++ g.evalStaticObjsL5 src srcCtrl e ok ptOf? kwOf?) #[])
+  | .diff lhs rhs =>
+    let rIds := (g.evalStaticObjsL5 src srcCtrl rhs ok ptOf? kwOf?).map (·.id)
+    (g.evalStaticObjsL5 src srcCtrl lhs ok ptOf? kwOf?).filter (fun o => !rIds.contains o.id)
+  | .target _ | .triggerSubject | .stepObjects _ => #[]
 
 /-- Evaluate `ValueExpr` (CR 107.1–2 / 604 / 613), mirroring `EvalExpr.evalValue`
 with optional P/T callback `ptOf?` and Layer 6 keyword callback `kwOf?`. -/
@@ -7094,8 +7424,16 @@ private def matchesStaticScopeL5 (g : Game) (src : GameObject) (srcCtrl : Player
   else if StaticAbility.isScopeEnchantedPermanent sc then
     target.isOnBattlefield && src.attachedTo == some target.id
   else
-    sc.zones.zones.contains target.zone.kind &&
-      (target.zone != .battlefield || !target.status.phasedOut) &&
+    let phaseOk :=
+      target.zone != .battlefield || !target.status.phasedOut || staticPredMentionsPhasedOut sc.pred
+    let ownerOk :=
+      match sc.zones.owner with
+      | .any => true
+      | .matching pf =>
+        g.matchStaticPlayerFilterL5 src srcCtrl pf target.owner (fun _ => true) ptOf? kwOf?
+      | .ofPlayer pe =>
+        (g.evalStaticPlayerExprL5 src srcCtrl pe (fun _ => true) ptOf? kwOf?).contains target.owner
+    sc.zones.zones.contains target.zone.kind && phaseOk && ownerOk &&
       g.evalStaticPredL5 src srcCtrl target sc.pred (fun _ => true) ptOf? kwOf?
 
 /-- Three-valued pre-filter for Layer 6 scope predicates: returns `some true` when
@@ -7167,12 +7505,29 @@ private def extractContinuousL6 (g : Game) (src : GameObject) (srcCtrl : PlayerI
       if isFastScope then
         some (g.matchesStaticScopeL5 src srcCtrl target sc none peerKwOf?)
       else if !(sc.zones.zones.contains target.zone.kind &&
-          (target.zone != .battlefield || !target.status.phasedOut)) then
+          (target.zone != .battlefield || !target.status.phasedOut || staticPredMentionsPhasedOut sc.pred)) then
         some false
-      else if predMentionsKeyword sc.pred then
-        g.evalStaticPredMaybeTargetKw src srcCtrl target sc.pred (fun _ => true) none peerKwOf?
       else
-        some (g.evalStaticPredL5 src srcCtrl target sc.pred (fun _ => true) none peerKwOf?)
+        let ownerMayMatch : Option Bool :=
+          match sc.zones.owner with
+          | .any => some true
+          | .matching pf =>
+            if playerPredMentionsKeyword pf.pred then none
+            else some (g.matchStaticPlayerFilterL5 src srcCtrl pf target.owner (fun _ => true) none peerKwOf?)
+          | .ofPlayer pe =>
+            if playerExprMentionsKeyword pe then none
+            else some ((g.evalStaticPlayerExprL5 src srcCtrl pe (fun _ => true) none peerKwOf?).contains target.owner)
+        match ownerMayMatch with
+        | some false => some false
+        | some true =>
+          if predMentionsKeyword sc.pred then
+            g.evalStaticPredMaybeTargetKw src srcCtrl target sc.pred (fun _ => true) none peerKwOf?
+          else
+            some (g.evalStaticPredL5 src srcCtrl target sc.pred (fun _ => true) none peerKwOf?)
+        | none =>
+          match g.evalStaticPredMaybeTargetKw src srcCtrl target sc.pred (fun _ => true) none peerKwOf? with
+          | some false => some false
+          | _ => none
     match scopeMayMatch with
     | some false => none
     | _ =>
@@ -9604,40 +9959,6 @@ def playersInOrderFrom (g : Game) (start : PlayerId) (eligible : Player → Bool
         acc := acc.push q
     return acc
 
-/-- True when `q` is a living opponent of `p` (CR 102.2 / 810). -/
-def isLivingOpponentOf (g : Game) (p q : PlayerId) : Bool :=
-  (g.livingOpponents p).any (fun pl => pl.id == q)
-
-/-- First living opponent of `p` in turn order after `p`, or `none` when no
-living opponent remains (CR 102.2 / 810). -/
-def firstLivingOpponent? (g : Game) (p : PlayerId) : Option PlayerId :=
-  let opps := g.livingOpponents p
-  let n := g.players.size
-  if n == 0 || opps.isEmpty then none
-  else
-    Id.run do
-      for k in [1:n+1] do
-        let q : PlayerId := ⟨(p.idx + k) % n⟩
-        if opps.any (fun pl => pl.id == q) then
-          return some q
-      return none
-
-def opponent (g : Game) (p : PlayerId) : PlayerId :=
-  match g.firstLivingOpponent? p with
-  | some q => q
-  | none =>
-    if g.stillInGame p then p
-    else
-      let n := g.players.size
-      if n == 0 then p
-      else
-        Id.run do
-          for k in [1:n+1] do
-            let q : PlayerId := ⟨(p.idx + k) % n⟩
-            if g.stillInGame q then
-              return q
-          return p
-
 /-- Whether `id` (or the spell it resolved from, CR 400.7d) was cast and is not an uncast stack copy (CR 707.10 / 707.12). -/
 def wasCast (g : Game) (id : ObjectId) : Bool :=
   GameEvent.wasCast g.events id
@@ -9822,55 +10143,6 @@ def lastControllerOf? (g : Game) (o : GameObject) : Option PlayerId :=
   if o.zone == .battlefield then g.controllerOf o
   else ((g.lastKnownBefore? o.id).bind (·.controller)).orElse (fun _ => o.controller)
 
-/-- Defending player of an attacking status `s`: the player directly attacked,
-or the controller of the planeswalker/battle being attacked (CR 506.2 / 506.4c). -/
-def defendingPlayerOfStatus (g : Game) (s : Status) : Option PlayerId :=
-  match s.attackingTarget with
-  | some (.player p) => some p
-  | some (.planeswalker pw) | some (.battle pw) =>
-    match g.findObject? pw with
-    | some o => some ((g.controllerOf o).getD o.owner)
-    | none =>
-      match g.lastKnownBefore? pw with
-      | some o => some (o.controller.getD o.owner)
-      | none => none
-  | none => none
-
-/-- Player being attacked this combat (CR 508.1). Taken from an attacking
-creature's `attackingTarget`, or the next opponent if none is recorded. -/
-def defendingPlayer (g : Game) : PlayerId :=
-  match g.blockersQueue[0]? with
-  | some p => p
-  | none =>
-    match g.objects.findSome? (fun o =>
-      if o.isOnBattlefield && o.status.attacking then
-        let ctrl := (g.controllerOf o).getD g.activePlayer
-        (g.defendingPlayerOfStatus o.status).filter (g.isLivingOpponentOf ctrl ·)
-      else none) with
-    | some p => p
-    | none => g.opponent g.activePlayer
-
-/-- Defending player of an attacking object `o` (CR 506.2 / 506.4c), falling
-back to `g.defendingPlayer`. -/
-def defendingPlayerOf (g : Game) (o : GameObject) : PlayerId :=
-  (g.defendingPlayerOfStatus o.status).getD g.defendingPlayer
-
-/-- Distinct players being attacked, in APNAP order (CR 508.1 / 101.4 / 810.7). -/
-def defendingPlayers (g : Game) : Array PlayerId :=
-  let attacked :=
-    g.objects.filterMap (fun o =>
-      if o.isOnBattlefield && o.status.attacking then
-        let ctrl := (g.controllerOf o).getD g.activePlayer
-        (g.defendingPlayerOfStatus o.status).filter (g.isLivingOpponentOf ctrl ·)
-      else none)
-  let n := g.players.size
-  Id.run do
-    let mut acc : Array PlayerId := #[]
-    for k in [0:n] do
-      let q : PlayerId := ⟨(g.activePlayer.idx + k) % n⟩
-      if q != g.activePlayer && g.stillInGame q && attacked.contains q then
-        acc := acc.push q
-    return acc
 
 /-- Player who must declare blockers now. -/
 def currentBlockersPlayer (g : Game) : PlayerId :=

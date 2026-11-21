@@ -764,12 +764,12 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
         ctrlPreds := ctrlPreds.push (.controlledBy .you); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " an opponent controls" then
         ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre; progress := true
-      else if let some pre := dropSuffixCI? s " opponents control" then
-        ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " your opponents control" then
         ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre; progress := true
-      else if let some pre := (dropSuffixCI? s " defending player controls").orElse
-          (fun _ => dropSuffixCI? s " the defending player controls") then
+      else if let some pre := dropSuffixCI? s " opponents control" then
+        ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " the defending player controls").orElse
+          (fun _ => dropSuffixCI? s " defending player controls") then
         ctrlPreds := ctrlPreds.push (.controlledBy .defendingPlayer); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " that player controls" then
         ctrlPreds := ctrlPreds.push (.controlledBy .thatPlayer); s := pre; progress := true

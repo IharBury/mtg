@@ -791,4 +791,203 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     !(gSt0.hasCantBeBlocked (namedPerm gSt0 stalker.name)) &&
     gSt1.hasCantBeBlocked (namedPerm gSt1 stalker.name)
 
+-- Defending player predicates (`PlayerPred.isDefendingPlayer` and `PlayerExpr.defendingPlayer`).
+#guard
+  let defAnthem := mustParse
+    "Defender's Anthem\n{2}{W}\nEnchantment\nCreatures the defending player controls get +1/+1."
+  let defAvatar := mustParse
+    "Defending Life Avatar\n{4}{B}\nCreature — Avatar\n*/2\nDefending Life Avatar's power is equal to the defending player's life total."
+  let myBear := mkCreature "P6 Active Bear" #["Bear"] (p := 2) (t := 2)
+  let oppBear := mkCreature "P6 Defending Bear" #["Bear"] (p := 2) (t := 2)
+  let g0 := addPermanent (addPermanent (addPermanent (addPermanent afterDraw defAnthem p0 p0)
+    defAvatar p0 p0) myBear p0 p0) oppBear p1 p1
+  -- Set defending player (p1) life to 17 while active player (p0) has 20.
+  let g1 := g0.loseLife p1 3
+  -- Active player's bear is 2/2, defending player's bear gets +1/+1 (3/3), avatar power = 17.
+  g1.power (namedPerm g1 myBear.name) == 2 &&
+    g1.power (namedPerm g1 oppBear.name) == 3 &&
+    g1.power (namedPerm g1 defAvatar.name) == 17
+
+-- Exhaustive `ObjectPred` atoms: `.statParity` (with counter-aware Layer 7c `predReadsPT`),
+-- `.attackedThisTurn`, `.wasCast`/`.castFrom`, `.combatRole` (`attackingAlone`/`attackingPlayer`/
+-- `blockingObject`), `.shares`, general `.attachedTo`, and `.hasColor .commanderIdentity`.
+#guard
+  let evenPump : CardDef := {
+    name := "P6 Even Power Anthem"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none (.onBattlefield (.all #[.hasType .creature, .controlledBy .you, .statParity .power .even]))
+        (.modifyPT (.const 2) (.const 0))
+    ]
+  }
+  let bear := mkCreature "P6 Parity Bear" #["Bear"] (p := 2) (t := 2)
+  let gPar0 := addPermanent (addPermanent afterDraw evenPump p0 p0) bear p0 p0
+  let parBearId := (namedPerm gPar0 bear.name).id
+  -- 2/2 Bear has even power (2) -> gets +2/+0 -> 4/2.
+  -- With a +1/+1 counter, pre-static power is 3 (odd!) -> loses +2/+0 -> 3/3!
+  let gPar1 := gPar0.record (GameEvent.rules gPar0.turnNumber
+    (.permanent (.counters (.object (gPar0.snapshot (gPar0.object! parBearId))) .plusOnePlusOne (.put 1) none))
+    (.gameRule .staticAbility))
+  -- `.attackedThisTurn` and `.combatRole .attackingAlone` / `.attackingPlayer` / `.blockingObject`:
+  let atkBuff : CardDef := {
+    name := "P6 Attack Tracker"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none (.onBattlefield (.all #[.hasType .creature, .controlledBy .you, .attackedThisTurn]))
+        (.modifyPT (.const 1) (.const 0)),
+      .continuous none (.onBattlefield (.all #[.hasType .creature, .controlledBy .you, .combatRole .attackingAlone]))
+        (.modifyPT (.const 2) (.const 0)),
+      .continuous none (.onBattlefield (.all #[.hasType .creature, .combatRole (.attackingPlayer .defendingPlayer)]))
+        (.modifyPT (.const 1) (.const 0))
+    ]
+  }
+  let bear2 := mkCreature "P6 Second Attacker" #["Bear"] (p := 2) (t := 2)
+  let gAtk0 := addPermanent (addPermanent (addPermanent afterDraw atkBuff p0 p0) bear p0 p0) bear2 p0 p0
+  let a1Id := (namedPerm gAtk0 bear.name).id
+  let a2Id := (namedPerm gAtk0 bear2.name).id
+  let a1Snap := gAtk0.snapshot (gAtk0.object! a1Id)
+  let gAtk1 := { gAtk0.record (GameEvent.rules gAtk0.turnNumber
+    (.combat (.attackersDeclared p0 #[(a1Snap, .player p1)])) testCause) with
+    objects := gAtk0.objects.map fun (o : GameObject) =>
+      if o.id == a1Id then { o with status := { o.status with attacking := true, attackingTarget := some (.player p1) } }
+      else o }
+  -- a1 attacked alone targeting p1: +1 (attackedThisTurn) +2 (attackingAlone) +1 (attackingPlayer) = 2 + 4 = 6.
+  let gAtk2 : Game := { gAtk1 with
+    objects := gAtk1.objects.map fun (o : GameObject) =>
+      if o.id == a2Id then { o with status := { o.status with attacking := true, attackingTarget := some (.player p1) } }
+      else o }
+  -- With a2 also attacking, a1 is no longer attacking alone: 2 + 1 + 1 = 4.
+  -- `.combatRole (.blockingObject ...)`:
+  let blkBuff : CardDef := {
+    name := "P6 Blocker Tracker"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none (.onBattlefield (.all #[.hasType .creature, .combatRole (.blockingObject (.inZones .battlefield (.hasType .creature)))]))
+        (.modifyPT (.const 3) (.const 0))
+    ]
+  }
+  let oppBlk := mkCreature "P6 Opp Blocker" #["Soldier"] (p := 1) (t := 3)
+  let gBlk0 := addPermanent (addPermanent gAtk1 blkBuff p0 p0) oppBlk p1 p1
+  let blkId := (namedPerm gBlk0 oppBlk.name).id
+  let gBlk1 : Game := { gBlk0 with
+    objects := gBlk0.objects.map fun (o : GameObject) =>
+      if o.id == blkId then { o with status := { o.status with blocking := #[a1Id] } }
+      else o }
+  -- `.shares .creatureType .this`, general `.attachedTo`, `.castFrom .exile` / `.wasCast`, and `.hasColor .commanderIdentity`:
+  let tribalElf := mkCreature "P6 Tribal Elf" #["Elf"] (p := 1) (t := 1)
+    (statics := #[
+      .continuous none (.onBattlefield (.all #[.hasType .creature, .controlledBy .you, .otherThan .this, .shares .creatureType .this]))
+        (.modifyPT (.const 1) (.const 1))
+    ])
+  let peerElf := mkCreature "P6 Peer Elf" #["Elf"] (p := 2) (t := 2)
+  let gTri := addPermanent (addPermanent (addPermanent afterDraw tribalElf p0 p0) peerElf p0 p0) bear p0 p0
+  let castExileAnthem : CardDef := {
+    name := "P6 Exile Cast Anthem"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none (.onBattlefield (.all #[.hasType .creature, .controlledBy .you, .wasCast, .castFrom .exile]))
+        (.modifyPT (.const 2) (.const 2))
+    ]
+  }
+  let gEx0 := addPermanent (addPermanent afterDraw castExileAnthem p0 p0) bear p0 p0
+  let exBear := namedPerm gEx0 bear.name
+  let exSnap := gEx0.snapshot exBear
+  let gEx1 := gEx0.record (GameEvent.rules gEx0.turnNumber
+    (.cast (.spellCast exSnap p0 .exile)) testCause)
+  let attCheck : CardDef := {
+    name := "P6 Attached Aura Watcher"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .continuous (some (.exists (.inZones .battlefield (.all #[.hasSubtype (.literal .aura),
+          .attachedTo (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you]))]))))
+        (.onBattlefield (.all #[.hasType .creature, .controlledBy .you]))
+        (.modifyPT (.const 1) (.const 1))
+    ]
+  }
+  let dummyAura : CardDef := { name := "P6 Dummy Aura", types := #[.enchantment], subtypes := #["Aura"] }
+  let gAtt0 := addPermanent (addPermanent afterDraw attCheck p0 p0) bear p0 p0
+  let attBearId := (namedPerm gAtt0 bear.name).id
+  let (gAtt1, _) := gAtt0.allocObject dummyAura p0 .battlefield (some p0) (attachedTo := some attBearId)
+  let cmdAnthem : CardDef := {
+    name := "P6 Identity Anthem"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none (.onBattlefield (.all #[.hasType .creature, .controlledBy .you, .hasColor .commanderIdentity]))
+        (.modifyPT (.const 2) (.const 0))
+    ]
+  }
+  let redGob : CardDef := { name := "P6 Red Gob", manaCost := ManaCost.ofColor .red, types := #[.creature], subtypes := #["Goblin"], power := some 1, toughness := some 1 }
+  let blueFish : CardDef := { name := "P6 Blue Fish", manaCost := ManaCost.ofColor .blue, types := #[.creature], subtypes := #["Fish"], power := some 1, toughness := some 1 }
+  let gCmd0 := addPermanent (addPermanent (addPermanent afterDraw cmdAnthem p0 p0) redGob p0 p0) blueFish p0 p0
+  let gCmd1 : Game := { gCmd0 with
+    players := gCmd0.players.map fun (pl : Player) =>
+      if pl.id == p0 then { pl with hasCommander := true, commanderColorIdentity := ColorSet.singleton .red } else pl }
+  gPar0.power (gPar0.object! parBearId) == 4 &&
+    gPar1.power (gPar1.object! parBearId) == 3 &&
+    gAtk0.power (gAtk0.object! a1Id) == 2 &&
+    gAtk1.power (gAtk1.object! a1Id) == 6 &&
+    gAtk2.power (gAtk2.object! a1Id) == 4 &&
+    gBlk0.power (gBlk0.object! blkId) == 1 &&
+    gBlk1.power (gBlk1.object! blkId) == 4 &&
+    gTri.power (namedPerm gTri peerElf.name) == 3 &&
+    gTri.power (namedPerm gTri bear.name) == 2 &&
+    gEx0.power exBear == 2 &&
+    gEx1.power (gEx1.object! exBear.id) == 4 &&
+    gAtt0.power (gAtt0.object! attBearId) == 2 &&
+    gAtt1.power (gAtt1.object! attBearId) == 3 &&
+    gCmd1.power (namedPerm gCmd1 redGob.name) == 3 &&
+    gCmd1.power (namedPerm gCmd1 blueFish.name) == 1
+
+-- `.dealtDamageThisTurn` recipient filtering (opponent vs. creature vs. self) and
+-- non-combat across-turns tracking (`thisTurnOnly = false`).
+#guard
+  let oppDmgBuff : CardDef := {
+    name := "P6 Opp Combat Damage Anthem"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none (.onBattlefield (.all #[.hasType .creature, .controlledBy .you,
+          .dealtDamageThisTurn true (some (.player .opponent)) true]))
+        (.modifyPT (.const 2) (.const 2))
+    ]
+  }
+  let anyEverDmgBuff : CardDef := {
+    name := "P6 Ever Dealt Damage Anthem"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none (.onBattlefield (.all #[.hasType .creature, .controlledBy .you,
+          .dealtDamageThisTurn false none false]))
+        (.modifyPT (.const 1) (.const 1))
+    ]
+  }
+  let bear := mkCreature "P6 Damage Bear" #["Bear"] (p := 2) (t := 2)
+  let targetCreature := mkCreature "P6 Dummy Target" #["Wall"] (p := 0) (t := 5)
+  let g0 := addPermanent (addPermanent (addPermanent afterDraw oppDmgBuff p0 p0) bear p0 p0) targetCreature p1 p1
+  let bearObj := namedPerm g0 bear.name
+  let bearSnap := g0.snapshot bearObj
+  let wallSnap := g0.snapshot (namedPerm g0 targetCreature.name)
+  -- Combat damage dealt to a creature (not an opponent) -> must NOT match!
+  let gToWall := g0.record (GameEvent.rules g0.turnNumber
+    (.damage (.dealt #[{ source := bearSnap, recipient := .permanent wallSnap, amount := 2, combat := true }]))
+    testCause)
+  -- Combat damage dealt to yourself (not an opponent) -> must NOT match!
+  let gToYou := g0.record (GameEvent.rules g0.turnNumber
+    (.damage (.dealt #[{ source := bearSnap, recipient := .player p0, amount := 2, combat := true }]))
+    testCause)
+  -- Combat damage dealt to opponent p1 -> MUST match!
+  let gToOpp := g0.record (GameEvent.rules g0.turnNumber
+    (.damage (.dealt #[{ source := bearSnap, recipient := .player p1, amount := 2, combat := true }]))
+    testCause)
+  -- Non-combat damage dealt on turn 1 stays matched on turn 2 when `thisTurnOnly = false`:
+  let gEver0 := addPermanent (addPermanent afterDraw anyEverDmgBuff p0 p0) bear p0 p0
+  let everBear := namedPerm gEver0 bear.name
+  let gEver1 := gEver0.record (GameEvent.rules gEver0.turnNumber
+    (.damage (.dealt #[{ source := gEver0.snapshot everBear, recipient := .player p1, amount := 1, combat := false }]))
+    testCause)
+  let gEverT2 := gEver1.record (GameEvent.turnBegan (gEver1.turnNumber + 1) p1 false)
+  gToWall.power (gToWall.object! bearObj.id) == 2 &&
+    gToYou.power (gToYou.object! bearObj.id) == 2 &&
+    gToOpp.power (gToOpp.object! bearObj.id) == 4 &&
+    gEver0.power everBear == 2 &&
+    gEverT2.power (gEverT2.object! everBear.id) == 3
+
 end Mtg.Engine.Tests.StaticAbilitiesSuite
