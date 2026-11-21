@@ -18,7 +18,7 @@ def mkChapter (payload : ChapterResolution) (targeting : EffectTargeting := {})
     (allowsZeroTargets := false) (phrase : String) : Effect :=
   { targeting
     allowsZeroTargets
-    resolution := (TriggeredAbility.chapterTiming payload).resolution
+    resolution := (TriggeredAbility.chapterEffect payload).resolution
     sharedTrigger := some (.chapter 0 payload)
     phrase }
 

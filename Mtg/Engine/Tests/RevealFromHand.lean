@@ -232,7 +232,7 @@ exiles the chosen creature. -/
   let src := obj g0 "Cloak Source"
   let victim := obj g0 "Reveal Bear"
   let ab : TriggeredAbility :=
-    .triggered .enter (Effect.ofTrigger (.onPermanent .creature .exile))
+    TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .exile))
   let swapped := step g0
     (.revealFromHand .onePlusCreatureCards (.exile .target .untilSourceLeaves))
     (some src.id) #[Target.permanent victim.id] ab
@@ -260,7 +260,7 @@ exiles the chosen creature. -/
 
 #guard TriggeredAbility.resolutionPhrase { resolution := exileUntil } ==
   "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
-#guard TriggeredAbility.resolutionPhrase (SharedTrigger.timing (.enter .revealDiscardFromHand)) ==
+#guard TriggeredAbility.resolutionPhrase (SharedTrigger.toEffect (.enter .revealDiscardFromHand)) ==
   "target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .revealFromHand .hand (.discard (.cards 1 (.target .opponent))) } ==
@@ -275,11 +275,11 @@ exiles the chosen creature. -/
 #guard TriggeredAbility.toNotation klawAbility ==
   "When this permanent enters, target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card."
 
-#guard (SharedTrigger.timing (.enter .revealHandExileUntilLeaves)).resolution ==
+#guard (SharedTrigger.toEffect (.enter .revealHandExileUntilLeaves)).resolution ==
   exileUntil
-#guard (SharedTrigger.timing (.enter .revealDiscardFromHand)).resolution ==
+#guard (SharedTrigger.toEffect (.enter .revealDiscardFromHand)).resolution ==
   countedDiscard
-#guard (SharedTrigger.timing (.enter .revealHandExileUntilLeaves)).allowsZeroTargets
-#guard !(SharedTrigger.timing (.enter .revealDiscardFromHand)).allowsZeroTargets
+#guard (SharedTrigger.toEffect (.enter .revealHandExileUntilLeaves)).allowsZeroTargets
+#guard !(SharedTrigger.toEffect (.enter .revealDiscardFromHand)).allowsZeroTargets
 
 end Mtg.Engine.RevealFromHandTests

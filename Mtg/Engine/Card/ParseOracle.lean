@@ -724,10 +724,12 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if low.startsWith "a deck can have any number of cards named" then
     some { c with anyNumberInDeck := true }
   else if low.contains "sacrifice after" && low.contains "lore counter" then
-    let after := (raw.splitOn "Sacrifice after ").getLastD raw
-    let roman := (after.takeWhile (fun c => c != '.' && c != ')')).trimAscii.copy
-    let s := c.saga.getD { sacrificeAfter := roman, chapters := #[] }
-    some { c with saga := some { s with sacrificeAfter := roman } }
+    -- CR 207.2a / 714.2d: Saga reminder text is ignored; final chapter is computed from chapter triggers.
+    some c
+  else if low.startsWith "when that mana is spent to cast a creature spell that shares a creature type with your commander, scry " then
+    let nStr := ((low.drop "when that mana is spent to cast a creature spell that shares a creature type with your commander, scry ".length).takeWhile Char.isDigit).copy
+    let n := if nStr.isEmpty then 1 else nStr.toNat!
+    some { c with triggeredAbilities := c.triggeredAbilities.push (TriggeredAbility.onManaSpentCastCommanderTypeScry n) }
   else
     let staticRaw :=
       if low.startsWith "eminence —" || low.startsWith "eminence—" then raw
@@ -757,12 +759,14 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
             | none => false
         if isIntrinsicBasic then some c
         else
-          let scryCommander :=
-            c.commanderIdentityScryCreature ||
-              (low.contains "in your commander's color identity" && low.contains "scry")
+          let trigAbs :=
+            if low.contains "in your commander's color identity" && low.contains "scry" &&
+                !c.triggeredAbilities.any (·.isManaSpentCastScry) then
+              c.triggeredAbilities.push (TriggeredAbility.onManaSpentCastCommanderTypeScry 1)
+            else c.triggeredAbilities
           some { c with
             activatedAbilities := c.activatedAbilities.push ab
-            commanderIdentityScryCreature := scryCommander }
+            triggeredAbilities := trigAbs }
       | none => none
 
 def skipLine (c : CardDef) (line : String) : Bool :=
@@ -938,10 +942,10 @@ def matchChapter (cardName text : String) : Option Effect :=
   match chapterProtos.get.find? (·.sameText q) with
   | some p => some p.effect
   | none =>
-    match firstSpellProto cardName fun p => if p.sameText q then some p.effect else none with
+    match chapterProtos.get.findSome? (·.matchText q) with
     | some e => some e
     | none =>
-      match chapterProtos.get.findSome? (·.matchText q) with
+      match firstSpellProto cardName fun p => if p.sameText q then some p.effect else none with
       | some e => some e
       | none =>
         match firstSpellProto cardName (·.matchText q) with
@@ -964,9 +968,9 @@ def matchTriggerMode (cardName text : String) : Option Effect :=
     | some e => some e
     | none => matchChapter cardName text
 
-/-- A modal “When this enters, choose one —” (or “choose two —”) triggered
-ability: the trigger and its modes. -/
-def parseTriggerModes (cardName line : String) : Option (TriggeredAbility × Array Effect) :=
+/-- A modal triggered ability (“When/Whenever/At …, choose one/two — • …”),
+storing its modes directly on `TriggeredAbility.modes` (CR 603.3c / 700.2). -/
+def parseTriggerModes (cardName line : String) : Option TriggeredAbility :=
   let raw := line.trimAscii.copy
   let low := lowerAscii raw
   let header := ((raw.splitOn "•").headD "").trimAscii.copy
@@ -976,19 +980,37 @@ def parseTriggerModes (cardName line : String) : Option (TriggeredAbility × Arr
     if lowHeader.endsWith "choose one —" then some 1
     else if lowHeader.endsWith "choose two —" then some 2
     else none
-  if !(low.startsWith "when ") || !(named.startsWith "when this enters, choose") then none
-  else
-    match count with
-    | none => none
-    | some n =>
-      let modes := (raw.splitOn "•").drop 1 |>.map (·.trimAscii.copy) |>.filter (· != "")
-      let effects := modes.filterMap fun m => matchTriggerMode cardName (stripAbilityWord m)
-      if modes.isEmpty || effects.length != modes.length then none
+  match count with
+  | none => none
+  | some n =>
+    let modes := (raw.splitOn "•").drop 1 |>.map (·.trimAscii.copy) |>.filter (· != "")
+    let effects := modes.filterMap fun m => matchTriggerMode cardName (stripAbilityWord m)
+    if modes.isEmpty || effects.length != modes.length then none
+    else
+      let eff : Effect :=
+        { resolution := .chooseTriggerModes n
+          phrase := if n == 2 then "choose two" else "choose one" }
+      if low.startsWith "when " && named.startsWith "when this enters, choose" then
+        some {
+          word := .when
+          pattern := .thisEnters
+          effect := eff
+          modes := effects.toArray
+        }
       else
-        let eff : Effect :=
-          { resolution := .chooseTriggerModes n
-            phrase := if n == 2 then "choose two" else "choose one" }
-        some (.triggered .enter eff, effects.toArray)
+        match Parser.parseTriggerClause header cardName with
+        | some hdr =>
+          some {
+            word := hdr.word
+            pattern := hdr.pattern
+            grouping := hdr.grouping
+            interveningIf? := hdr.interveningIf?
+            activeZones := hdr.activeZones
+            limit := hdr.limit
+            effect := eff
+            modes := effects.toArray
+          }
+        | none => none
 
 def parseModes (cardName line : String) : Option ParsedAbility :=
   let raw := line.trimAscii.copy
@@ -1790,13 +1812,8 @@ partial def parseRules (c : CardDef) (lines : List String)
             let printed := (chapterStoredText c.name text).getD text
             match matchChapter c.name text with
             | some e =>
-              let ch := SagaChapter.of roman printed e
-              let s := c.saga.getD { sacrificeAfter := "", chapters := #[] }
-              let s := { s with chapters := s.chapters.push ch }
-              -- CR 714.2d: the final chapter is the greatest chapter number,
-              -- not the Roman numeral printed in the Saga reminder.
-              let s := { s with sacrificeAfter := romanNumeral s.finalChapterNumber }
-              go { c with saga := some s } rest
+              let ab := TriggeredAbility.sagaChapters (parseChapterNumbers roman) { e with phrase := printed }
+              go { c with triggeredAbilities := c.triggeredAbilities.push ab } rest
             | none =>
               .error s!"unrecognized chapter on {c.name}: {line}"
           | none =>
@@ -1804,9 +1821,8 @@ partial def parseRules (c : CardDef) (lines : List String)
             | some c => go c rest
             | none =>
               match parseTriggerModes c.name line with
-              | some (ab, modes) =>
-                go { c with triggeredAbilities := c.triggeredAbilities.push ab
-                            fraTriggerModes := modes } rest
+              | some ab =>
+                go { c with triggeredAbilities := c.triggeredAbilities.push ab } rest
               | none =>
               match parseModes c.name line with
               | some ab => go (applyParsed c ab) rest
@@ -1835,7 +1851,11 @@ partial def parseRules (c : CardDef) (lines : List String)
                     | none =>
                       match Parser.parseNovelStaticAbilityLine line c.name with
                       | some abs => go { c with staticAbilities := c.staticAbilities ++ abs } rest
-                      | none => unrecognized c line
+                      | none =>
+                        match Parser.parseNovelTriggeredAbilityLines line c.name
+                            (fun effText => matchTriggerMode c.name effText <|> spellSentenceSequence c.name effText) with
+                        | some abs => go { c with triggeredAbilities := c.triggeredAbilities ++ abs } rest
+                        | none => unrecognized c line
   go c units
 
 def parseAdventure (lines : List String) (keepUnrecognized : Bool := false) :

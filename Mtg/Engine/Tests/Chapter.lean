@@ -46,8 +46,8 @@ def bolt : CardDef := { name := "Bolt", types := #[.instant] }
 
 def withSaga : Game := addPermanent afterDraw saga caster caster
 
-def timing (e : ChapterResolution) : TriggeredAbility.TriggerTiming :=
-  TriggeredAbility.chapterTiming e
+def timing (e : ChapterResolution) : Effect :=
+  TriggeredAbility.chapterEffect e
 
 /- Each printed chapter resolves as a constructor that does not store
 `ChapterResolution`. -/

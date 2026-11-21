@@ -65,13 +65,12 @@ def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
     match src? with
     | some src => g.evalLayer3 src
     | none => g.evalLayer3 obj
-  let fra :=
-    match src? with
-    | some src => (g.baseCard src).fraTriggerModes
-    | none => (g.baseCard obj).fraTriggerModes
   let raw :=
-    if !fra.isEmpty then fra
-    else (obj.triggeredAbility.map sharedTriggerModes).getD #[]
+    match obj.triggeredAbility with
+    | some ab =>
+      if !ab.modes.isEmpty then ab.modes
+      else sharedTriggerModes ab
+    | none => #[]
   if tcs.isEmpty then raw else raw.map (TextChange.applyEffect tcs)
 
 /-- Individual mode effects for Hawkeye's Trick Arrows reflexive trigger (CR 603.3c / 700.2b). -/
@@ -304,10 +303,9 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
       (abilityEffectOverride := abilityEffectOverride)
       (reflexiveResolution := reflexiveResolution)
 
-/-- Put `ab` on the stack for `event`, using that event's spec for the log label
-and CR 603.3d check so a new event is not restated at every queue site. -/
+/-- Put `ab` on the stack for `pattern`, using that pattern's label and CR 603.3d check. -/
 def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
-    (ab : TriggeredAbility) (event : TriggerEvent)
+    (ab : TriggeredAbility) (pattern : TriggerPattern)
     (lastKnownPower : Option Int := none) (lastKnownToughness : Option Int := none)
     (cause : Option GameObject := none) (causeId : Option ObjectId := none)
     (causeController : Option PlayerId := none)
@@ -320,9 +318,8 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
   else
     let label :=
       if abilityEffectOverride.isSome || reflexiveResolution.isSome then "reflexive ability"
-      else event.label
-    if event.checkTargets || abilityEffectOverride.isSome ||
-        (ab.requiresTarget && !ab.allowsZeroTargets) then
+      else pattern.label
+    if abilityEffectOverride.isSome || (ab.requiresTarget && !ab.allowsZeroTargets) then
       g.putTriggerOrFizzle controller source ab label lastKnownPower lastKnownToughness
         (cause := cause) (causeId := causeId) (causeController := causeController) (causeIds := causeIds)
         (eventCause := eventCause)
@@ -348,8 +345,10 @@ def addLoreCounters (g : Game) (saga : GameObject) (n : Nat)
     let baseCause := cause.getD (.turnBased .sagaLoreOnMain)
     g.chainPendingReplacement (.addLoreCounters saga.id n (some baseCause))
   else
-  match g.controllerOf saga, (g.baseCard saga).saga with
-  | some p, some _ =>
+  match g.controllerOf saga with
+  | some p =>
+    if !g.hasSubtype saga .saga then g
+    else
     match g.findObject? saga.id with
     | none => g
     | some saga =>
@@ -398,7 +397,7 @@ def addLoreCounters (g : Game) (saga : GameObject) (n : Nat)
                   g.logMsg s!"{sagaName} gets a lore counter ({lore})"
                 else
                   g.logMsg s!"{sagaName} gets {n'} lore counters ({lore})"
-  | _, _ => g
+  | none => g
 
 /-- Put one lore counter on `saga` and queue the matching chapter abilities
 (CR 714.2). -/
@@ -416,8 +415,7 @@ def addLoreAfterDrawStepIds (g : Game) (sagaIds : Array ObjectId) : Game :=
       idx := idx + 1
       match g.findObject? sid with
       | some o =>
-        if o.isOnBattlefield && g.hasSubtype o .saga &&
-            g.retainsPrintedAbilities o && (g.baseCard o).saga.isSome then
+        if o.isOnBattlefield && g.hasSubtype o .saga && g.finalChapterNumber o > 0 then
           g := g.addOneLoreCounter o
           if let .chooseReplacement .. := g.pending then
             let rest := sagaIds.extract idx sagaIds.size
@@ -431,7 +429,7 @@ def addLoreAfterDrawStepIds (g : Game) (sagaIds : Array ObjectId) : Game :=
 Saga the active player controls simultaneously in one batch (CR 613.1d,f / 703.4f / 714.3c). -/
 def addLoreAfterDrawStep (g : Game) : Game :=
   let sagaIds := ((g.permanentsOf g.activePlayer).filter (fun o =>
-    g.hasSubtype o .saga && g.retainsPrintedAbilities o && (g.baseCard o).saga.isSome)).map (·.id)
+    g.hasSubtype o .saga && g.finalChapterNumber o > 0)).map (·.id)
   if sagaIds.isEmpty then g
   else
     (g.withBatchCore (some (.turnBased .sagaLoreOnMain)) fun g =>
@@ -495,7 +493,7 @@ def promptTriggerTargetsIfNeeded (g : Game) : Game :=
 /-- CR 603.3b: part 1 is every waiting trigger whose condition is not another
 ability triggering; part 2 is the remainder. -/
 def waitingTriggersPart (g : Game) (part2 : Bool) : Array WaitingTrigger :=
-  g.waitingTriggers.filter (fun wt => wt.event.isAnotherAbilityTriggering == part2)
+  g.waitingTriggers.filter (fun wt => wt.pattern.isAnotherAbilityTriggering == part2)
 
 /-- The current CR 603.3b batch: part 1 if any remain, otherwise part 2. -/
 def currentTriggerBatch (g : Game) : Array WaitingTrigger :=
@@ -520,7 +518,7 @@ def nextTriggerStackingPlayer? (g : Game) : Option PlayerId :=
 def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
   match g.waitingTriggers.findIdx? (fun w =>
     w.controller == wt.controller && w.source.id == wt.source.id &&
-      w.ability == wt.ability && w.event == wt.event &&
+      w.ability == wt.ability && w.pattern == wt.pattern &&
       w.causeId == wt.causeId && w.causeIds == wt.causeIds &&
       w.causeController == wt.causeController &&
       w.delayedTrigger == wt.delayedTrigger &&
@@ -532,11 +530,11 @@ def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
 /-- Put one waiting trigger on the stack. A trigger queued without
 `checked := true` is checked here for “only once each turn” (CR 603.2h) and
 gets its extra copies (Chief of the Wilds, Bifur). -/
-def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : Game :=
+def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (pattern : TriggerPattern) : Game :=
   if !g.stillInGame wt.controller then g
   else
   let put (g : Game) :=
-    g.putQueuedTrigger wt.controller wt.source wt.ability event
+    g.putQueuedTrigger wt.controller wt.source wt.ability pattern
       wt.lastKnownPower wt.lastKnownToughness
       (cause := wt.cause) (causeId := wt.causeId) (causeController := wt.causeController)
       (causeIds := wt.causeIds)
@@ -572,7 +570,7 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (event : TriggerEvent) : 
           if g.pending != .none then
             let remCount := copies - (i + 1)
             if remCount > 0 then
-              let remCopy := { wt with event := event, checked := true, ordered := true }
+              let remCopy := { wt with pattern := pattern, checked := true, ordered := true }
               let rem := Array.replicate remCount remCopy
               g := g.change (.waitingTriggers (rem ++ g.waitingTriggers))
             return g
@@ -591,7 +589,7 @@ def putTriggerBatch (g : Game) (wts : Array WaitingTrigger) : Game :=
         let wt := wts[i]!
         g := g.removeWaitingTrigger wt
         let beforeSize := g.waitingTriggers.size
-        g := g.putWaitingTrigger wt wt.event
+        g := g.putWaitingTrigger wt wt.pattern
         if g.pending != .none then
           let rem := wts.extract (i + 1) wts.size
           if !rem.isEmpty then

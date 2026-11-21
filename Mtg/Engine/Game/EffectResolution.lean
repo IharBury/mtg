@@ -219,7 +219,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
       -- Ruling 858: the emblem is colorless.
       let emblem : CardDef := {
         name := "Chandra Emblem", types := #[]
-        triggeredAbilities := #[.triggered .youCastSpell
+        triggeredAbilities := #[TriggeredAbility.mkTrigger .youCastSpell
           (Effect.ofTrigger (.onPermanent .anyTarget (.dealDamage n)))] }
       let (g, _) := g.allocObject emblem controller .command (some controller)
       some (g.logMsg s!"{(g.player controller).name} gets an emblem")
@@ -286,7 +286,7 @@ def applyFraResolution? (g : Game) (controller : PlayerId) (effect : Effect)
     -- treated as entering, so they see each other enter.
     some (g.withLegalSpecPlayer controller effect.targetSpec targets (fun g pid =>
       let sacrifice : TriggeredAbility :=
-        .triggered .fromEffect (Effect.ofTrigger .sacrificeSourceIfNoPlaneswalker)
+        SharedTrigger.sacrificeSourceIfNoPlaneswalker.toTriggeredAbility
       let snapshots := (g.creaturesControlledBy pid).map fun c =>
         let cv := g.copiableValues c
         { cv with

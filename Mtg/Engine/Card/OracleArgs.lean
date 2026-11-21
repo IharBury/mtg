@@ -448,12 +448,49 @@ def takeEnter (e : EnterLeftover) : ArgM EnterLeftover := do
   | .dealDamageUpToOne n => return .dealDamageUpToOne (← takeNat n)
   | e => return e
 
-def takeWhen (w : SharedTriggerWhen) : ArgM SharedTriggerWhen := do
-  match w with
-  | .subtypeYouControlEnters s => return .subtypeYouControlEnters (← takeSubtype s)
-  | .nthPlanCounter n => return .nthPlanCounter (← takeNat n)
-  | .or a b => return .or (← takeWhen a) (← takeWhen b)
-  | w => return w
+private partial def takeTriggerCond (c : Condition) : ArgM Condition := do
+  match c with
+  | .exists (.inZones zs (.all #[.hasType .creature, .controlledBy pf, .stat .power .ge (.const n)])) =>
+    return .exists (.inZones zs (.all #[.hasType .creature, .controlledBy pf, .stat .power .ge (.const (← takeInt n))]))
+  | .cmp .ge (.playerMetric .lifeGainedThisTurn pf) (.const n) =>
+    let k ← takeNat n.toNat
+    return .cmp .ge (.playerMetric .lifeGainedThisTurn pf) (.const (Int.ofNat k))
+  | other => return other
+
+private partial def takeTriggerPattern (p : TriggerPattern) : ArgM TriggerPattern := do
+  match p with
+  | .or a b => return .or (← takeTriggerPattern a) (← takeTriggerPattern b)
+  | .whenCond inner c => return .whenCond (← takeTriggerPattern inner) (← takeTriggerCond c)
+  | .zoneChange subj fromZ toZ mby? cc? =>
+    let subj' ←
+      match subj with
+      | .any #[.sameAs .this, .all #[.hasSubtype (.literal s), .controlledBy pf]] =>
+        pure (.any #[.sameAs .this, .all #[.hasSubtype (.literal (← takeSubtype s)), .controlledBy pf]])
+      | .any #[.sameAs .this, .all #[.isToken false, .hasSubtype (.literal s), .controlledBy pf]] =>
+        pure (.any #[.sameAs .this, .all #[.isToken false, .hasSubtype (.literal (← takeSubtype s)), .controlledBy pf]])
+      | .all #[.otherThan .this, .controlledBy pf,
+          .any #[.hasSubtype (.literal s), .all #[.hasType .artifact, .hasSubtype (.literal .equipment)]]] =>
+        pure (.all #[.otherThan .this, .controlledBy pf,
+          .any #[.hasSubtype (.literal (← takeSubtype s)), .all #[.hasType .artifact, .hasSubtype (.literal .equipment)]]])
+      | .all #[.otherThan .this, .hasType .creature, .controlledBy pf, .stat .power .le (.const n)] =>
+        pure (.all #[.otherThan .this, .hasType .creature, .controlledBy pf, .stat .power .le (.const (← takeInt n))])
+      | .all #[.otherThan .this, .hasSupertype .legendary, .hasSubtype (.literal s), .controlledBy pf] =>
+        pure (.all #[.otherThan .this, .hasSupertype .legendary, .hasSubtype (.literal (← takeSubtype s)), .controlledBy pf])
+      | .all #[.otherThan .this, .hasSubtype (.literal s), .controlledBy pf] =>
+        pure (.all #[.otherThan .this, .hasSubtype (.literal (← takeSubtype s)), .controlledBy pf])
+      | .all #[.hasSubtype (.literal s), .controlledBy pf] =>
+        if s == .forest || s == .mountain then pure subj
+        else pure (.all #[.hasSubtype (.literal (← takeSubtype s)), .controlledBy pf])
+      | other => pure other
+    return .zoneChange subj' fromZ toZ mby? cc?
+  | .damageDealt (.all #[.hasSubtype (.literal s), .controlledBy pf]) recip combat noncombat =>
+    return .damageDealt (.all #[.hasSubtype (.literal (← takeSubtype s)), .controlledBy pf]) recip combat noncombat
+  | other => return other
+
+private def takeTriggerGrouping (g : BatchGrouping) : ArgM BatchGrouping := do
+  match g with
+  | .counterThreshold .plan #[n] => return .counterThreshold .plan #[← takeNat n]
+  | other => return other
 
 mutual
 def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
@@ -574,7 +611,7 @@ def takeEffect (e : Effect) : ArgM Effect := do
     let te ← takeTrigger te
     return { e with
       sharedTrigger := some te
-      resolution := te.timing.resolution }
+      resolution := te.toEffect.resolution }
   | none =>
   match e.resolution with
   | .onPermanent .destroy =>
@@ -834,20 +871,16 @@ def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
     | other => pure other
   return { ab with cost, effect, otherModes, costReductions, condition?, tag? }
 
-def takeOpts (o : SharedTriggerOpts) : ArgM SharedTriggerOpts := do
-  return { o with
-    youControlCreatureWithPower := ← takeOptInt o.youControlCreatureWithPower
-    thisOrNontokenSubtype := ← takeOptSubtype o.thisOrNontokenSubtype
-    thisOrAnotherSubtype := ← takeOptSubtype o.thisOrAnotherSubtype
-    anotherSubtypeOrEquipment := ← takeOptSubtype o.anotherSubtypeOrEquipment
-    gainedLifeAtLeast := ← takeOptNat o.gainedLifeAtLeast
-    anotherCreaturePowerAtMost := ← takeOptInt o.anotherCreaturePowerAtMost
-    watchedSubtype := ← takeOptSubtype o.watchedSubtype }
-
 def takeTriggered (ab : TriggeredAbility) : ArgM TriggeredAbility := do
-  match ab with
-  | .triggered w e o =>
-    return .triggered (← takeWhen w) (← takeEffect e) (← takeOpts o)
+  let pattern ← takeTriggerPattern ab.pattern
+  let grouping ← takeTriggerGrouping ab.grouping
+  let effect ← takeEffect ab.effect
+  let interveningIf? ←
+    match ab.interveningIf? with
+    | some c => pure (some (← takeTriggerCond c))
+    | none => pure none
+  let modes ← ab.modes.mapM takeEffect
+  return { ab with pattern, grouping, interveningIf?, effect, modes }
 
 def runCollect {α} (m : ArgM α) : Array SlotVal :=
   let (_, s) := m.run { mode := .collect, vals := [] }
@@ -1641,7 +1674,7 @@ def finishEffect (old new : Effect) : Effect :=
     let rebuilt := Effect.ofChapter ce
     { rebuilt with sharedTrigger := some (.chapter k ce) }
   | some te =>
-    let t := te.timing
+    let t := te.toEffect
     { new with
       targeting := t.targeting
       allowsZeroTargets := t.allowsZeroTargets
@@ -1673,9 +1706,10 @@ def refillActivated (ab : ActivatedAbility) (vals : Array SlotVal) : ActivatedAb
 
 def refillTriggered (ab : TriggeredAbility) (vals : Array SlotVal) : TriggeredAbility :=
   let walked := runFill (takeTriggered ab) vals
-  match ab, walked with
-  | .triggered _ e _, .triggered w e' o =>
-    .triggered w (finishEffect e e') o
+  let modes := (walked.modes.zip ab.modes).map fun (m, old) => finishEffect old m
+  { walked with
+    effect := finishEffect ab.effect walked.effect
+    modes }
 
 #guard
   let ab := TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2

@@ -3234,7 +3234,7 @@ inductive Resolution where
   /-- Put a reflexive “deal `n` damage to any target” ability on the stack. -/
   | reflexiveDamageAnyTarget (n : Nat)
   /-- Choose `count` modes of this triggered ability as it is put on the
-  stack; the modes are `CardDef.fraTriggerModes`. -/
+  stack; the modes are stored on `TriggeredAbility.modes` (CR 603.3c). -/
   | chooseTriggerModes (count : Nat)
   /-- A Reality Fracture Commander resolution. -/
   | frc (e : FrcEffect)

@@ -475,7 +475,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
         g.shuffleThen owner .none) sourceId illegal
   | .grantCombatDamageDrawTwo =>
     onSource (fun g o =>
-      let ab := TriggeredAbility.fra .combatDamageToPlayer
+      let ab := TriggeredAbility.ofPattern .thisDealsCombatDamageToPlayer
         "Whenever this creature deals combat damage to a player, draw two cards." (.draw 2)
       (g.createEffect (.grantedTriggered o.id ab true)).logMsg
         s!"Until end of turn, whenever {g.name o} deals combat damage to a player, {(g.player controller).name} draws two cards")
@@ -520,7 +520,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .emblemDrawOnCast =>
     let emblem : CardDef := {
       name := "Chandra, Chill of Compliance Emblem", types := #[]
-      triggeredAbilities := #[TriggeredAbility.fra .youCastSpell
+      triggeredAbilities := #[TriggeredAbility.ofPattern .youCastSpell
         "Whenever you cast a spell, draw a card." (.draw 1)] }
     (g.createCommandObject controller emblem).logMsg
       s!"{(g.player controller).name} gets an emblem with \"Whenever you cast a spell, draw a card.\""
@@ -530,7 +530,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .attackersGetMinusFiveUntilYourTurn =>
     let effectCard : CardDef := {
       name := s!"{srcName} effect", types := #[]
-      triggeredAbilities := #[TriggeredAbility.fra (.fra .creatureAttacksYouOrYourPlaneswalker)
+      triggeredAbilities := #[TriggeredAbility.ofPattern .creatureAttacksYouOrYourPlaneswalker
         "Whenever a creature attacks you or a planeswalker you control, it gets -5/-0 until end of turn."
         (.causeGetsPump (-5) 0)] }
     (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg
@@ -583,9 +583,9 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .attackersGetTwoTwoTrampleUntilYourTurn =>
     let effectCard : CardDef := {
       name := s!"{srcName} effect", types := #[]
-      triggeredAbilities := #[TriggeredAbility.fra (.fra .creaturesAttackYourOpponent)
+      triggeredAbilities := #[TriggeredAbility.ofPattern .creaturesAttackYourOpponent
         "Whenever one or more creatures attack one of your opponents, those creatures get +2/+2 and gain trample until end of turn."
-        (.attackersOfPlayerGetTwoTwoTrample)] }
+        .attackersOfPlayerGetTwoTwoTrample (grouping := .perPlayerInBatch)] }
     (g.createCommandObject controller effectCard (untilTurnOf := some controller)).logMsg
       s!"Until {(g.player controller).name}'s next turn, creatures attacking their opponents get +2/+2 and gain trample"
   | .plusOnePerLand =>

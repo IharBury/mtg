@@ -21,7 +21,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.onPermanent .creature .becomePrepared))
+  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .becomePrepared))
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -290,7 +290,7 @@ become prepared. -/
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature becomes prepared."
 #guard TriggeredAbility.toNotation
-    (.triggered .enter (Effect.ofTrigger (.onSource .becomePrepared))) ==
+    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .becomePrepared))) ==
   "When this permanent enters, this creature becomes prepared."
 
 end Mtg.Engine.BecomePreparedTests

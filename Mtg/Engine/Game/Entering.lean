@@ -212,11 +212,12 @@ def finishAbilityResolutionTail (g : Game) (snap : EventObject) (controller : Pl
   let finalSagaPlayer? :=
     match sagaChapter, sourceId.bind g.findObject? with
     | some n, some src =>
-      if src.isOnBattlefield && g.hasSubtype src .saga && g.retainsPrintedAbilities src then
-        match (g.baseCard src).saga, g.controllerOf src with
-        | some s, some p =>
-          if s.finalChapterNumber > 0 && n == s.finalChapterNumber then some p else none
-        | _, _ => none
+      if src.isOnBattlefield && g.hasSubtype src .saga then
+        let finalCh := g.finalChapterNumber src
+        match g.controllerOf src with
+        | some p =>
+          if finalCh > 0 && n == finalCh then some p else none
+        | none => none
       else none
     | _, _ => none
   match finalSagaPlayer? with
@@ -520,7 +521,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
               mine.all (fun w =>
                 w.source.id == mine[0]!.source.id &&
                   w.ability == mine[0]!.ability &&
-                  w.event == mine[0]!.event &&
+                  w.pattern == mine[0]!.pattern &&
                   w.causeId == mine[0]!.causeId &&
                   w.causeIds == mine[0]!.causeIds &&
                   w.causeController == mine[0]!.causeController &&

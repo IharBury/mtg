@@ -21,7 +21,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.onPermanent .creature .putOnTopOfLibrary))
+  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .putOnTopOfLibrary))
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -324,10 +324,10 @@ go on the bottom. The announced permanent goes on top. -/
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature's owner puts it on top of their library."
 #guard TriggeredAbility.toNotation
-    (.triggered .enter (Effect.ofTrigger (.onPermanent .creature .putOnBottomOfLibrary))) ==
+    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .putOnBottomOfLibrary))) ==
   "When this permanent enters, target creature's owner puts it on the bottom of their library."
 #guard TriggeredAbility.toNotation
-    (.triggered .enter (Effect.ofTrigger (.onSource .putOnTopOfLibrary))) ==
+    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .putOnTopOfLibrary))) ==
   "When this permanent enters, this creature's owner puts it on top of their library."
 #guard TriggeredAbility.toNotation (.onEnterEnchanted .putOnBottomOfLibrary) ==
   "When this Aura enters, enchanted creature's owner puts it on the bottom of their library."

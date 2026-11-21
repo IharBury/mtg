@@ -729,14 +729,14 @@ def antManAnyCounterOk : Bool :=
   let g := g.addPlusOnePlusOneTo bears 1
   let insect :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
-      t.event == TriggerEvent.youPutPlusOne)).size
+      t.pattern == TriggerPattern.youPutPlusOneOnCreature)).size
   insect == 1 &&
     (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
     (let ant := namedPermanent g "Ant-Man, Colony Commander"
      g.loggedSourceTriggeredThisTurn ant.id &&
        (let g := g.addPlusOnePlusOneTo (namedPermanent g "Grizzly Bears") 1
         (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
-          t.event == TriggerEvent.youPutPlusOne)).size == 1)) &&
+          t.pattern == TriggerPattern.youPutPlusOneOnCreature)).size == 1)) &&
     (mshRuling 443).comment.contains "for any reason"
 
 #guard antManAnyCounterOk
@@ -1315,7 +1315,7 @@ choosing it does, and already-stacked instances then do nothing. -/
 def onceEachTurnConniveWordingOk : Bool :=
   let villainWait (g : Game) : Nat :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
-      t.event == TriggerEvent.anotherVillainEnters)).size
+      t.pattern == TriggerPattern.anotherSubtypeYouControlEnters .villain)).size
   let enterVillain (g : Game) (c : CardDef) : Game :=
     let (g, obj) := g.allocObject c ⟨0⟩ (.outside ⟨0⟩) none
     let (g, newId) := g.putOntoBattlefield obj.id ⟨0⟩ (summoningSick := false)
@@ -2508,7 +2508,7 @@ def mightyThorBlinkOk : Bool :=
   let gTok := addPermanent (addPermanent afterDraw theMightyThorJaneFoster ⟨0⟩ ⟨0⟩)
     { grizzlyBears with isToken := true } ⟨1⟩ ⟨1⟩
   let tok := namedPermanent gTok "Grizzly Bears"
-  let kind := (SharedTrigger.timing (.thisAttack .blinkNontoken)).targeting.spec
+  let kind := (SharedTrigger.toEffect (.thisAttack .blinkNontoken)).targeting.spec
   let legal := g.legalTargetsForSpec ⟨0⟩ kind (some thor.id)
   legal.contains (Target.permanent bears.id) &&
     legal.contains (Target.permanent stone.id) &&
@@ -2549,7 +2549,7 @@ def superAdaptoidKeywordCountersOk : Bool :=
     Keyword.vigilance, Keyword.indestructible, Keyword.lifelink, Keyword.trample]
   let g := g.createEffect (.keywordsUntilEot bears.id kw)
   let bears := namedPermanent g "Grizzly Bears"
-  let kind := (SharedTrigger.timing (.enterOrAttack .copyKeywords)).targeting.spec
+  let kind := (SharedTrigger.toEffect (.enterOrAttack .copyKeywords)).targeting.spec
   let legal := g.legalTargetsForSpec ⟨0⟩ kind (some adaptoid.id)
   kind == .anotherCreature &&
     legal.contains (Target.permanent bears.id) &&
@@ -2725,7 +2725,7 @@ def swordsmanAttachTargetsOk : Bool :=
   let sw := namedPermanent g "Swordsman, Sharp Scoundrel"
   let bow := namedPermanent g "Hawkeye's Bow"
   let bears := namedPermanent g "Grizzly Bears"
-  let spec := (SharedTrigger.timing (.watch .villainAttachEquipment)).targeting.spec
+  let spec := (SharedTrigger.toEffect (.watch .villainAttachEquipment)).targeting.spec
   let equip := g.legalTargetsForSlot ⟨0⟩ (spec.slotAtPos 0) (some sw.id)
   let creatures := g.legalTargetsForSlot ⟨0⟩ (spec.slotAtPos 1) (some sw.id)
   spec == .upToOneEquipmentThenCreatureYouControl &&
@@ -2817,7 +2817,7 @@ def shieldTapsDefendingPlayerOk : Bool :=
   let shield := namedPermanent g "Captain America's Shield"
   let giant := namedPermanent g "Hill Giant"
   let ogre := namedPermanent g "Gray Ogre"
-  let kind := (SharedTrigger.timing (.watch .equippedAttacksTap)).targeting.spec
+  let kind := (SharedTrigger.toEffect (.watch .equippedAttacksTap)).targeting.spec
   let legal := g.legalTargetsForSpec ⟨0⟩ kind (some shield.id)
   kind == .defendingPlayerCreature &&
     legal.contains (Target.permanent ogre.id) &&
@@ -2997,7 +2997,7 @@ def wiccanAnotherNonlandNontokenOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
   let giant := namedPermanent g "Hill Giant"
-  let kind := (SharedTrigger.timing (.casting .exileFlicker)).targeting.spec
+  let kind := (SharedTrigger.toEffect (.casting .exileFlicker)).targeting.spec
   let legal := g.legalTargetsForSpec ⟨0⟩ kind (some wiccan.id)
   legal.contains (Target.permanent bears.id) &&
     !legal.contains (Target.permanent wiccan.id) &&
@@ -3024,7 +3024,7 @@ def quakeTapsCreatureOrLandOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
   let feast := namedPermanent g "Heroic Feast"
-  let kind := (SharedTrigger.timing (.casting .tapCreatureOrLand)).targeting.spec
+  let kind := (SharedTrigger.toEffect (.casting .tapCreatureOrLand)).targeting.spec
   let legal := g.legalTargetsForSpec ⟨0⟩ kind (some quake.id)
   legal.contains (Target.permanent bears.id) &&
     legal.contains (Target.permanent land.id) &&
@@ -3709,7 +3709,7 @@ def meagerMealGainLifeOk : Bool :=
     #[Target.permanent bears.id, Target.player ⟨0⟩]
   (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
     g.loggedLifeGained ⟨0⟩ == 2 &&
-    g.waitingTriggers.any (fun w => w.event == .youGainLife)
+    g.waitingTriggers.any (fun w => w.pattern == .gainLife .you)
 
 #guard meagerMealGainLifeOk
 
@@ -3877,7 +3877,7 @@ def galactusAttacksDestroyLandOk : Bool :=
   KeywordAbility.hasFlying gal.printed.keywords && KeywordAbility.hasTrample gal.printed.keywords &&
     match gal.printed.triggeredAbilities[0]? with
     | some ab =>
-      ab.firesOn .attacking &&
+      ab.firesOn .thisAttacks &&
         (let e := ab.effect
          let g := addPermanent g mountain ⟨1⟩ ⟨1⟩
          let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
@@ -3914,11 +3914,11 @@ def lakeTownLandfallOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let gLand := g.applyEffect ⟨0⟩ Effect.exileThenReturnYouControl #[Target.permanent land.id]
   gLand.battlefield.any (fun o => o.name == "Mountain") &&
-    gLand.waitingTriggers.any (fun w => w.event == .landYouControlEnters) &&
+    gLand.waitingTriggers.any (fun w => w.pattern == .landYouControlEnters) &&
     (let gCreature := g.applyEffect ⟨0⟩ Effect.exileThenReturnYouControl
         #[Target.permanent bears.id]
      gCreature.battlefield.any (fun o => o.name == "Grizzly Bears") &&
-       !gCreature.waitingTriggers.any (fun w => w.event == .landYouControlEnters))
+       !gCreature.waitingTriggers.any (fun w => w.pattern == .landYouControlEnters))
 
 #guard lakeTownLandfallOk
 
@@ -4152,7 +4152,7 @@ def directPlusOneCountersOk : Bool :=
   let shielded := namedPermanent gShield "Grizzly Bears"
   shielded.status.plusOnePlusOne == 1 &&
     gShield.hasLifelink shielded && gShield.hasIndestructible shielded &&
-    gShield.waitingTriggers.any (fun w => w.event == .youPutPlusOne) &&
+    gShield.waitingTriggers.any (fun w => w.pattern == .youPutPlusOneOnCreature) &&
     (let gHero := addPermanent afterDraw agentPhilCoulson ⟨0⟩ ⟨0⟩
      let gHero := addPermanent gHero antManColonyCommander ⟨0⟩ ⟨0⟩
      let gHero := addPermanent gHero whiteTigerAvaAyala ⟨0⟩ ⟨0⟩
@@ -4161,7 +4161,7 @@ def directPlusOneCountersOk : Bool :=
        (Effect.plusOneOnEachOtherSubtype "Hero" 1) #[] (some coulson.id)
      (namedPermanent gHero "White Tiger, Ava Ayala").status.plusOnePlusOne == 1 &&
        (namedPermanent gHero "Agent Phil Coulson").status.plusOnePlusOne == 0 &&
-       gHero.waitingTriggers.any (fun w => w.event == .youPutPlusOne)) &&
+       gHero.waitingTriggers.any (fun w => w.pattern == .youPutPlusOneOnCreature)) &&
     (let gCap := addPermanent afterDraw captainMarvelEarthSProtector ⟨0⟩ ⟨0⟩
      let gCap := addPermanent gCap antManColonyCommander ⟨0⟩ ⟨0⟩
      let cap := namedPermanent gCap "Captain Marvel, Earth's Protector"
@@ -4169,7 +4169,7 @@ def directPlusOneCountersOk : Bool :=
        #[] (some cap.id)
      let cap := namedPermanent gCap "Captain Marvel, Earth's Protector"
      cap.status.plusOnePlusOne == 1 && cap.status.indestructibleCounters == 1 &&
-       gCap.waitingTriggers.any (fun w => w.event == .youPutPlusOne))
+       gCap.waitingTriggers.any (fun w => w.pattern == .youPutPlusOneOnCreature))
 
 #guard directPlusOneCountersOk
 

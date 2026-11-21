@@ -1326,7 +1326,11 @@ private partial def parseTurnHistory? (raw : String) : Option EventHistoryPred :
     if isLastTurn then .eventOccurredLastTurn who pat else .eventOccurredThisTurn who pat
 
   if let some npStr := dropSuffixCI? body " died" then
-    return (parseNounPhrase npStr).map fun np => wrap .any (.permanentDied np.filter.pred)
+    if let some (cntStr, restNp) := splitFirstCI? npStr " or more " then
+      match parseNatWord? cntStr, parseNounPhrase restNp with
+      | some n, some np => return some (wrap .any (.permanentDied np.filter.pred n))
+      | _, _ => pure ()
+    return (parseNounPhrase npStr).map fun np => wrap .any (.permanentDied np.filter.pred 1)
   if let some npStr := dropSuffixCI? body " left the battlefield" then
     return (parseNounPhrase npStr).map fun np => wrap .any (.permanentLeftBattlefield np.filter.pred)
   if let some (npStr, underStr) := splitFirstCI? body " entered under " then
@@ -2983,7 +2987,7 @@ def parseManaProductionSpec (sentences : Array String) (cardName : String := "")
     else if let some rd := parseStandaloneRiderSentence? sent then
       if !riders.contains rd then riders := riders.push rd
     else if sLow.startsWith "when that mana is spent to cast a creature spell that shares a creature type with your commander, scry " then
-      -- Path of Ancestry delayed scry trigger (tracked on `CardDef.commanderIdentityScryCreature`).
+      -- Path of Ancestry delayed scry trigger (attached as a `TriggeredAbility` by `ParseOracle`).
       pure ()
     else
       return none
@@ -3602,5 +3606,465 @@ def parseNovelStaticAbilityLine (raw : String) (cardName : String := "") :
         return some #[.continuous cond? sc (.grantKeywords kws)]
 
   return none
+
+/-! ## Stage-4 Compositional Trigger Clause Parser (`parseTriggerClause`) -/
+
+/-- Structured header of a triggered ability parsed by `parseTriggerClause` (CR 603.1 / 603.4). -/
+structure ParsedTriggerHeader where
+  word : TriggerWord
+  pattern : TriggerPattern
+  grouping : BatchGrouping := .perOccurrence
+  interveningIf? : Option Condition := none
+  activeZones : Array ZoneKind := #[.battlefield]
+  limit : TriggerLimit := .unlimited
+  effectText : String
+deriving Repr, Inhabited, BEq
+
+private def parseTriggerSubjectPred? (raw : String) (cardName : String) :
+    Option (ObjectPred × Bool) := Id.run do
+  let s := cleanClause (replaceSelfName raw cardName "this permanent")
+  let (rest, isBatch) : String × Bool :=
+    match dropPrefixCI? s "one or more " with
+    | some r => (r, true)
+    | none => (s, false)
+  let rLow := lower rest
+  if isSelfObjectPhrase rLow then
+    return some (.sameAs .this, isBatch)
+  if rLow == "enchanted creature" || rLow == "enchanted permanent" || rLow == "equipped creature" then
+    return some (.sameAs .attachedHost, isBatch)
+  -- Strip leading `"a "` / `"an "` / `"another "` cleanly via `parseNounPhrase`.
+  if let some np := parseNounPhrase rest then
+    return some (np.filter.pred, isBatch)
+  return none
+
+private def parseStepClause? (clause : String) : Option TriggerPattern := Id.run do
+  let l := lower (cleanClause clause)
+  let some rest := dropPrefixCI? l "the beginning of " | return none
+  if rest == "your upkeep" then return some .stepYourUpkeep
+  if rest == "each upkeep" || rest == "each player's upkeep" then return some .stepEachUpkeep
+  if rest == "each opponent's upkeep" || rest == "an opponent's upkeep" then
+    return some (.stepBegins .upkeep (.player .opponent))
+  if rest == "the upkeep of enchanted creature's controller" then
+    return some .stepEnchantedControllerUpkeep
+  if rest == "your draw step" then return some (.stepBegins .draw (.player .you))
+  if rest == "each opponent's draw step" then return some .stepEachOpponentDrawStep
+  if rest == "each player's draw step" || rest == "each draw step" then
+    return some (.stepBegins .draw (.player .any))
+  if rest == "your first main phase" || rest == "your precombat main phase" then
+    return some .stepYourFirstMain
+  if rest == "combat on your turn" || rest == "your combat phase" then
+    return some .stepYourBeginCombat
+  if rest == "combat on each opponent's turn" then return some .stepOpponentBeginCombat
+  if rest == "each combat" then return some .stepEachBeginCombat
+  if rest == "your end step" then return some .stepYourEndStep
+  if rest == "each end step" || rest == "the end step" || rest == "the next end step" then
+    return some .stepEachEndStep
+  if rest == "each opponent's end step" then
+    return some (.stepBegins .end (.player .opponent))
+  return none
+
+private partial def parseAtomicTriggerEvent? (clause : String) (cardName : String) :
+    Option (TriggerPattern × BatchGrouping × TriggerLimit × Array ZoneKind) := Id.run do
+  let s := cleanClause (replaceSelfName clause cardName "this permanent")
+  let l := lower s
+
+  -- Step triggers (`"At the beginning of ..."`)
+  if let some sp := parseStepClause? s then
+    return some (sp, .perOccurrence, .unlimited, #[.battlefield])
+
+  -- `"<A> and whenever <B>"` / `"<A> and when <B>"` disjunctions:
+  -- only merge into one `TriggeredAbility` when both clauses share identical
+  -- `BatchGrouping`, `TriggerLimit`, and `activeZones`; heterogeneous clauses
+  -- are split into independent abilities by `parseTriggerClauses`.
+  if let some (lhs, rhs) := (splitFirstCI? s " and whenever ").orElse
+      (fun _ => splitFirstCI? s " and when ") then
+    if let (some (p1, g1, l1, z1), some (p2, g2, l2, z2)) :=
+        (parseAtomicTriggerEvent? lhs cardName, parseAtomicTriggerEvent? rhs cardName) then
+      if g1 == g2 && l1 == l2 && z1 == z2 then
+        return some (.or p1 p2, g1, l1, z1)
+
+  -- Self/subject compound verbs: `"<subj> enters or attacks"` / `"enters or dies"` / `"attacks or blocks"`
+  for (sfx, mkPat) in [
+      (" enters or attacks", fun p => TriggerPattern.or (.permanentEnters p) (.attacks p)),
+      (" enter or attack", fun p => TriggerPattern.or (.permanentEnters p) (.attacks p)),
+      (" enters or dies", fun p => TriggerPattern.or (.permanentEnters p) (.permanentDies p)),
+      (" enter or die", fun p => TriggerPattern.or (.permanentEnters p) (.permanentDies p)),
+      (" attacks or blocks", fun p => TriggerPattern.or (.attacks p) (.blocks p)),
+      (" attack or block", fun p => TriggerPattern.or (.attacks p) (.blocks p))
+    ] do
+    if let some subjStr := dropSuffixCI? s sfx then
+      if let some (pred, isBatch) := parseTriggerSubjectPred? subjStr cardName then
+        let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
+        return some (mkPat pred, grp, .unlimited, #[.battlefield])
+
+  -- Player-led events (`"you ..."`, `"an opponent ..."`, `"a player ..."`)
+  let playerPrefixes : List (String × PlayerFilter) := [
+    ("you ", .you),
+    ("an opponent ", .opponent),
+    ("any opponent ", .opponent),
+    ("a player ", .any),
+    ("any player ", .any)
+  ]
+  for (pfx, who) in playerPrefixes do
+    if let some rest := dropPrefixCI? s pfx then
+      let rLow := lower rest
+      -- Cast spell
+      if let some castBody := (dropPrefixCI? rest "cast ").orElse (fun _ => dropPrefixCI? rest "casts ") then
+        let cLow := lower castBody
+        if cLow == "this spell" || cLow == "this card" || cLow == "this permanent" then
+          return some (.castSpell who (.sameAs .this), .perOccurrence, .unlimited, #[.stack])
+        if cLow == "your second spell each turn" || cLow == "their second spell each turn" then
+          return some (.castSpell who .anyObject (nthOfFilter? := some 2), .perOccurrence, .unlimited, #[.battlefield])
+        if cLow == "a spell" then
+          return some (.castSpell who .anyObject, .perOccurrence, .unlimited, #[.battlefield])
+        let (spellCore, fromZ?) : String × Option ZoneKind :=
+          match dropSuffixCI? castBody " from your hand" with
+          | some pre => (pre, some .hand)
+          | none =>
+            match dropSuffixCI? castBody " from a graveyard" with
+            | some pre => (pre, some .graveyard)
+            | none => (castBody, none)
+        let spellCore := (dropSuffixCI? spellCore " spell").getD spellCore
+        if lower spellCore == "a noncreature" then
+          return some (.castSpell who (.not (.hasType .creature)) (fromZone? := fromZ?),
+            .perOccurrence, .unlimited, #[.battlefield])
+        if let some np := parseNounPhrase spellCore then
+          return some (.castSpell who np.filter.pred (fromZone? := fromZ?),
+            .perOccurrence, .unlimited, #[.battlefield])
+      -- Draw card
+      if rLow == "draw a card" || rLow == "draws a card" then
+        return some (.drawCard who, .perOccurrence, .unlimited, #[.battlefield])
+      if rLow == "draw your second card each turn" || rLow == "draws their second card each turn" then
+        return some (.drawCard who, .perOccurrence, .nthEachTurn 2, #[.battlefield])
+      -- Gain / lose life
+      if rLow == "gain life" || rLow == "gains life" then
+        return some (.gainLife who, .perOccurrence, .unlimited, #[.battlefield])
+      if rLow == "lose life" || rLow == "loses life" then
+        return some (.loseLife who, .perOccurrence, .unlimited, #[.battlefield])
+      -- Discard / cycle
+      if rLow == "discard this card" || rLow == "discard this permanent" then
+        return some (.discard who (.sameAs .this), .perOccurrence, .unlimited, #[.hand])
+      if rLow == "cycle this card" || rLow == "cycle this permanent" then
+        return some (.discard who (.sameAs .this) (mustBeCycle := true), .perOccurrence, .unlimited, #[.hand])
+      if rLow == "discard a card" || rLow == "discards a card" then
+        return some (.discard who .anyObject, .perOccurrence, .unlimited, #[.battlefield])
+      if rLow == "discard one or more cards" || rLow == "discards one or more cards" then
+        return some (.discard who .anyObject, .oncePerBatch, .unlimited, #[.battlefield])
+      -- Player actions
+      if rLow == "scry" || rLow == "scries" then
+        return some (.playerAction who .scry, .perOccurrence, .unlimited, #[.battlefield])
+      if rLow == "surveil" || rLow == "surveils" then
+        return some (.playerAction who .surveil, .perOccurrence, .unlimited, #[.battlefield])
+      if rLow == "scry or surveil" || rLow == "scries or surveils" then
+        return some (.or (.playerAction who .scry) (.playerAction who .surveil),
+          .perOccurrence, .unlimited, #[.battlefield])
+      if rLow == "proliferate" || rLow == "proliferates" then
+        return some (.playerAction who .proliferate, .perOccurrence, .unlimited, #[.battlefield])
+      if rLow == "lose the game" || rLow == "loses the game" then
+        return some (.playerAction who .losesGame, .perOccurrence, .unlimited, #[.battlefield])
+      -- Sacrifice
+      if let some sacStr := (dropPrefixCI? rest "sacrifice ").orElse (fun _ => dropPrefixCI? rest "sacrifices ") then
+        if let some (pred, isBatch) := parseTriggerSubjectPred? sacStr cardName then
+          let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
+          return some (.sacrifice who pred, grp, .unlimited, #[.battlefield])
+      -- Create tokens
+      if let some tokStr := (dropPrefixCI? rest "create ").orElse (fun _ => dropPrefixCI? rest "creates ") then
+        if let some (pred, isBatch) := parseTriggerSubjectPred? tokStr cardName then
+          let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
+          return some (.createTokens who pred, grp, .unlimited, #[.battlefield])
+      -- Activate loyalty / mana ability
+      if rLow == "activate a loyalty ability" || rLow == "activates a loyalty ability" then
+        return some (.activateAbility who .anyObject (.loyalty 0), .perOccurrence, .unlimited, #[.battlefield])
+      if rLow == "tap a permanent for mana" || rLow == "taps a permanent for mana" then
+        return some (.activateAbility who .anyObject .manaAbility, .perOccurrence, .unlimited, #[.battlefield])
+      -- Attack (player-level `"Whenever you attack"`)
+      if rLow == "attack" || rLow == "attacks" then
+        return some (.attacks (.all #[.hasType .creature, .controlledBy who]),
+          .oncePerBatch, .unlimited, #[.battlefield])
+      -- Put counters (`"you put one or more +1/+1 counters on <subj>"`)
+      if let some putRest := (dropPrefixCI? rest "put ").orElse (fun _ => dropPrefixCI? rest "puts ") then
+        if let some (ctrPart, subjPart) := splitFirstCI? putRest " on " then
+          let ctrLow := lower ctrPart
+          let isBatch := ctrLow.startsWith "one or more "
+          let ctrWords := (splitWords ctrLow).toList
+          let strippedWords :=
+            match ctrWords with
+            | "one" :: "or" :: "more" :: ws => ws
+            | "a" :: ws | "an" :: ws => ws
+            | ws => ws
+          let kind? : Option CounterKind := (CounterKind.ofPrefix strippedWords).map (·.1)
+          if let some (pred, subjBatch) := parseTriggerSubjectPred? subjPart cardName then
+            let grp := if isBatch || subjBatch then BatchGrouping.oncePerBatch else .perOccurrence
+            return some (.putCounters (some who) kind? pred, grp, .unlimited, #[.battlefield])
+
+  -- Player dealt damage (`"you are dealt ..."`, `"an opponent is dealt ..."`, `"one or more opponents are dealt ..."`)
+  for (dmgSfx, combatOnly, noncombatOnly) in [
+      (" is dealt combat damage", true, false),
+      (" are dealt combat damage", true, false),
+      (" is dealt noncombat damage", false, true),
+      (" are dealt noncombat damage", false, true),
+      (" is dealt damage", false, false),
+      (" are dealt damage", false, false)
+    ] do
+    if let some whoStr := dropSuffixCI? s dmgSfx then
+      let wLow := lower whoStr
+      if wLow == "one or more opponents" then
+        return some (.damageDealt .anyObject (.player .opponent) combatOnly noncombatOnly,
+          .oncePerBatch, .unlimited, #[.battlefield])
+      if let some pf := parsePlayerFilter? whoStr then
+        return some (.damageDealt .anyObject (.player pf) combatOnly noncombatOnly,
+          .perOccurrence, .unlimited, #[.battlefield])
+      if let some (pred, isBatch) := parseTriggerSubjectPred? whoStr cardName then
+        let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
+        return some (.damageDealt .anyObject (.object { zones := .battlefield, pred }) combatOnly noncombatOnly,
+          grp, .unlimited, #[.battlefield])
+
+  -- Subject deals damage (`"<subj> deals combat damage to a player [or planeswalker/battle]"`)
+  for (sfx, recip, combatOnly) in [
+      (" deals combat damage to a player or planeswalker",
+        RecipientFilter.playerOrObject .any { zones := .battlefield, pred := .hasType .planeswalker }, true),
+      (" deal combat damage to a player or planeswalker",
+        RecipientFilter.playerOrObject .any { zones := .battlefield, pred := .hasType .planeswalker }, true),
+      (" deals combat damage to a player or battle",
+        RecipientFilter.playerOrObject .any { zones := .battlefield, pred := .hasType .battle }, true),
+      (" deal combat damage to a player or battle",
+        RecipientFilter.playerOrObject .any { zones := .battlefield, pred := .hasType .battle }, true),
+      (" deals combat damage to a player", RecipientFilter.player .any, true),
+      (" deal combat damage to a player", RecipientFilter.player .any, true),
+      (" deals damage to a player", RecipientFilter.player .any, false),
+      (" deal damage to a player", RecipientFilter.player .any, false)
+    ] do
+    if let some subjStr := dropSuffixCI? s sfx then
+      if let some (pred, isBatch) := parseTriggerSubjectPred? subjStr cardName then
+        let grp := if isBatch then BatchGrouping.perPlayerInBatch else .perOccurrence
+        return some (.damageDealt pred recip combatOnly, grp, .unlimited, #[.battlefield])
+
+  -- Combat declarations (`attacks alone`, `attacks a player`, `attacks`, `blocks`, `becomes blocked`)
+  for (sfx, mkPat) in [
+      (" attacks a player alone", fun p => TriggerPattern.attacks p (.player .any) (alone := true)),
+      (" attacks alone", fun p => TriggerPattern.attacks p .any (alone := true)),
+      (" attacks a player", fun p => TriggerPattern.attacks p (.player .any)),
+      (" attack a player", fun p => TriggerPattern.attacks p (.player .any)),
+      (" attacks", fun p => TriggerPattern.attacks p),
+      (" attack", fun p => TriggerPattern.attacks p),
+      (" blocks", fun p => TriggerPattern.blocks p),
+      (" block", fun p => TriggerPattern.blocks p),
+      (" becomes blocked", fun p => TriggerPattern.becomesBlocked p)
+    ] do
+    if let some subjStr := dropSuffixCI? s sfx then
+      if let some (pred, isBatch) := parseTriggerSubjectPred? subjStr cardName then
+        let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
+        return some (mkPat pred, grp, .unlimited, #[.battlefield])
+
+  -- Targeting (`"<subj> becomes the target of ..."`)
+  for (sfx, byCtrl, srcKind) in [
+      (" becomes the target of a spell or ability an opponent controls", PlayerFilter.opponent, TargetingSourceKind.spellOrAbility),
+      (" becomes the target of an ability you control", PlayerFilter.you, TargetingSourceKind.ability),
+      (" becomes the target of a spell you control", PlayerFilter.you, TargetingSourceKind.spell),
+      (" becomes the target of a spell or ability", PlayerFilter.any, TargetingSourceKind.spellOrAbility)
+    ] do
+    if let some subjStr := dropSuffixCI? s sfx then
+      if lower subjStr == "a player or permanent" then
+        return some (.becomesTarget .playerOrPermanent byCtrl srcKind, .perOccurrence, .unlimited, #[.battlefield])
+      if let some (pred, _) := parseTriggerSubjectPred? subjStr cardName then
+        return some (.becomesTarget (.object pred) byCtrl srcKind, .perOccurrence, .unlimited, #[.battlefield])
+
+  -- Tap / untap / phase out / unattach (CR 603.2e / 603.10b–c)
+  for (sfx, mkPat) in [
+      (" becomes tapped", fun p => TriggerPattern.becomesTapped p),
+      (" become tapped", fun p => TriggerPattern.becomesTapped p),
+      (" becomes untapped", fun p => TriggerPattern.becomesUntapped p),
+      (" become untapped", fun p => TriggerPattern.becomesUntapped p),
+      (" phases out", fun p => TriggerPattern.phasesOut p),
+      (" phase out", fun p => TriggerPattern.phasesOut p),
+      (" becomes unattached", fun p => TriggerPattern.becomesUnattached p)
+    ] do
+    if let some subjStr := dropSuffixCI? s sfx then
+      if let some (pred, isBatch) := parseTriggerSubjectPred? subjStr cardName then
+        let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
+        return some (mkPat pred, grp, .unlimited, #[.battlefield])
+
+  -- Zone changes (CR 603.6a, 603.6c, 603.10a, 700.4)
+  for (sfx, mkPat) in [
+      (" enters the battlefield", fun p => TriggerPattern.permanentEnters p),
+      (" enter the battlefield", fun p => TriggerPattern.permanentEnters p),
+      (" enters", fun p => TriggerPattern.permanentEnters p),
+      (" enter", fun p => TriggerPattern.permanentEnters p),
+      (" dies", fun p => TriggerPattern.permanentDies p),
+      (" die", fun p => TriggerPattern.permanentDies p),
+      (" leaves the battlefield", fun p => TriggerPattern.permanentLeaves p),
+      (" leave the battlefield", fun p => TriggerPattern.permanentLeaves p),
+      (" is put into a graveyard from the battlefield", fun p => TriggerPattern.permanentDies p),
+      (" is put into your graveyard from anywhere",
+        fun p => TriggerPattern.zoneChange p .any (.inZones .yourGraveyard)),
+      (" is put into a graveyard from anywhere",
+        fun p => TriggerPattern.zoneChange p .any (.inZones .anyGraveyard)),
+      (" is returned to its owner's hand",
+        fun p => TriggerPattern.zoneChange p (.inZones .battlefield)
+          (.inZones { zones := #[.hand], owner := .any }))
+    ] do
+    if let some subjStr := dropSuffixCI? s sfx then
+      if let some (pred, isBatch) := parseTriggerSubjectPred? subjStr cardName then
+        let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
+        return some (mkPat pred, grp, .unlimited, #[.battlefield])
+
+  -- Countered spell (CR 603.10e / 113.6)
+  if let some spellStr := dropSuffixCI? s " is countered" then
+    if let some (pred, _) := parseTriggerSubjectPred? spellStr cardName then
+      let isSelf : Bool :=
+        pred == .sameAs .this ||
+          match pred with
+          | .all ps => ps.contains (.sameAs .this)
+          | _ => false
+      let zones : Array ZoneKind := if isSelf then #[.stack] else #[.battlefield]
+      return some (.spellCountered pred, .perOccurrence, .unlimited, zones)
+
+  let _ := l
+  return none
+
+private partial def splitTriggerDisjunctClauses (word : TriggerWord) (s : String) :
+    Array (TriggerWord × String) :=
+  match splitFirstCI? s " and whenever " with
+  | some (lhs, rhs) =>
+    #[(word, lhs)] ++ splitTriggerDisjunctClauses .whenever rhs
+  | none =>
+    match splitFirstCI? s " and when " with
+    | some (lhs, rhs) =>
+      #[(word, lhs)] ++ splitTriggerDisjunctClauses .when rhs
+    | none => #[(word, s)]
+
+/-- Stage-4 compositional trigger-clause parser (CR 603.1 / 603.2 / 603.4).
+Splits `"When/Whenever/At <event> [while <cond>], [if <intervening-if>,] <effect> [limit]"`
+into one or more `ParsedTriggerHeader`s. Homogeneous `"<A> and when/whenever <B>"`
+clauses (matching `grouping`, `limit`, and `activeZones`) merge into a single `.or`
+header; heterogeneous clauses split into separate headers when `trailingLimit` is
+`.unlimited` so each clause preserves its own `BatchGrouping`, `TriggerLimit`,
+and `activeZones`. -/
+def parseTriggerClauses (raw : String) (cardName : String := "") : Array ParsedTriggerHeader := Id.run do
+  let cleaned := cleanClause (stripReminderText raw)
+  if cleaned.isEmpty then return #[]
+
+  -- Peel trailing turn-limit sentences
+  let (withoutLimit, trailingLimit) : String × TriggerLimit :=
+    if let some pre := dropSuffixCI? cleaned " This ability triggers only once each turn." then
+      (cleanClause pre, .onceEachTurn)
+    else if let some pre := dropSuffixCI? cleaned " This ability triggers only once each turn" then
+      (cleanClause pre, .onceEachTurn)
+    else if let some pre := dropSuffixCI? cleaned " Do this only once each turn." then
+      (cleanClause pre, .optionalOnceEachTurn)
+    else if let some pre := dropSuffixCI? cleaned " Do this only once each turn" then
+      (cleanClause pre, .optionalOnceEachTurn)
+    else
+      (cleaned, .unlimited)
+
+  -- Detect leading CR 603.1 trigger word
+  let (word, afterWord) : TriggerWord × String ←
+    if let some r := dropPrefixCI? withoutLimit "when " then
+      (.when, r)
+    else if let some r := dropPrefixCI? withoutLimit "whenever " then
+      (.whenever, r)
+    else if let some r := dropPrefixCI? withoutLimit "at " then
+      (.at, r)
+    else
+      return #[]
+
+  -- Split event clause from effect/intervening-if at the first `", "`
+  let some (eventRaw, afterComma) := splitFirstCI? afterWord ", " | return #[]
+
+  -- Peel CR 603.4 intervening `"if <cond>, <effect>"` at the start of `afterComma`
+  let (interveningIf?, effectText) : Option Condition × String :=
+    if let some ifRest := dropPrefixCI? afterComma "if " then
+      match splitFirstCI? ifRest ", " with
+      | some (condStr, restEff) =>
+        let cond? := (parseStaticCondition? condStr cardName).orElse (fun _ => parseCondition condStr)
+        match cond? with
+        | some c => (some c, restEff.trimAscii.copy)
+        | none => (none, afterComma.trimAscii.copy)
+      | none => (none, afterComma.trimAscii.copy)
+    else (none, afterComma.trimAscii.copy)
+
+  if effectText.isEmpty then return #[]
+
+  let effLow := lower effectText
+  let inferZones (baseZones : Array ZoneKind) : Array ZoneKind :=
+    -- Infer graveyard active zone when the effect returns this card from your graveyard (CR 113.6m)
+    if baseZones == #[.battlefield] && effLow.contains "from your graveyard" &&
+        (effLow.contains "return this card" || effLow.contains s!"return {lower cardName}") then
+      #[.graveyard]
+    else baseZones
+
+  let peelWhile (ev : String) : String × Option Condition :=
+    match splitFirstCI? ev " while " with
+    | some (evPart, condStr) =>
+      let cond? := (parseStaticCondition? condStr cardName).orElse (fun _ => parseCondition condStr)
+      match cond? with
+      | some c => (evPart, some c)
+      | none => (ev, none)
+    | none => (ev, none)
+
+  -- Fast path: single atomic event or homogeneous `"and when/whenever"` `.or`
+  let (eventCore, whileCond?) := peelWhile eventRaw
+  if let some (basePat, grouping, patLimit, baseZones) := parseAtomicTriggerEvent? eventCore cardName then
+    let pattern := match whileCond? with | some c => .whenCond basePat c | none => basePat
+    let limit := if trailingLimit != .unlimited then trailingLimit else patLimit
+    return #[{ word, pattern, grouping, interveningIf?, activeZones := inferZones baseZones, limit, effectText }]
+
+  -- Heterogeneous `"<A> and when/whenever <B>"`: split into independent headers
+  -- when no shared trailing once-per-turn cap couples them.
+  if trailingLimit != .unlimited then return #[]
+  let parts := splitTriggerDisjunctClauses word eventCore
+  if parts.size < 2 then return #[]
+  let mut out : Array ParsedTriggerHeader := #[]
+  for (wPart, rawPart) in parts do
+    let (corePart, partWhile?) := peelWhile rawPart
+    let some (basePat, grouping, patLimit, baseZones) := parseAtomicTriggerEvent? corePart cardName
+      | return #[]
+    let pat1 := match partWhile? with | some c => .whenCond basePat c | none => basePat
+    let pattern := match whileCond? with | some c => .whenCond pat1 c | none => pat1
+    out := out.push {
+      word := wPart
+      pattern
+      grouping
+      interveningIf?
+      activeZones := inferZones baseZones
+      limit := patLimit
+      effectText
+    }
+  return out
+
+/-- Single-header convenience wrapper around `parseTriggerClauses`. Returns `none`
+when the line splits into multiple heterogeneous triggers. -/
+def parseTriggerClause (raw : String) (cardName : String := "") : Option ParsedTriggerHeader :=
+  match parseTriggerClauses raw cardName with
+  | #[hdr] => some hdr
+  | _ => none
+
+/-- Compositional fallback parser for novel triggered abilities not present in the
+catalog prototype table. Composes `parseTriggerClauses` with an effect parser
+`parseEffect` and rejects any effect whose resolution does nothing as a trigger. -/
+def parseNovelTriggeredAbilityLines (raw : String) (cardName : String := "")
+    (parseEffect : String → Option Effect) : Option (Array TriggeredAbility) := do
+  let hdrs := parseTriggerClauses raw cardName
+  if hdrs.isEmpty then none
+  else
+    let eff ← parseEffect hdrs[0]!.effectText
+    if eff.resolution.doesNothingAsTrigger then none
+    else
+      some (hdrs.map fun hdr => {
+        word := hdr.word
+        pattern := hdr.pattern
+        grouping := hdr.grouping
+        interveningIf? := hdr.interveningIf?
+        activeZones := hdr.activeZones
+        limit := hdr.limit
+        effect := { eff with phrase := "" }
+      })
+
+/-- Single-ability convenience wrapper around `parseNovelTriggeredAbilityLines`. -/
+def parseNovelTriggeredAbilityLine (raw : String) (cardName : String := "")
+    (parseEffect : String → Option Effect) : Option TriggeredAbility :=
+  match parseNovelTriggeredAbilityLines raw cardName parseEffect with
+  | some #[ab] => some ab
+  | _ => none
 
 end Mtg.Engine.Parser

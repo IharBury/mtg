@@ -14,14 +14,7 @@ namespace Effect
 
 /-- Convert a shared trigger effect to the unified `Effect`. -/
 def ofTrigger (e : SharedTrigger) : Effect :=
-  let t := e.timing
-  { targeting := t.targeting
-    allowsZeroTargets := t.allowsZeroTargets
-    maxTargets := t.maxTargets
-    dividedDamage := t.dividedDamage
-    resolution := t.resolution
-    sharedTrigger := some e
-    phrase := "" }
+  e.toEffect
 
 /-- Leftover trigger constructors as unified `Effect` factories. -/
 def enterDestroy (kind : TargetSpec) : Effect :=

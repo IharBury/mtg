@@ -95,5 +95,6 @@ keep working.
 - `CostKeywords`: Phase 4 compositional `CostSpec`, parameterized `KeywordAbility`, CR 122.1b keyword counters, Layer 3 text changes, CR 606.5–6 net loyalty, `StaticAbility.cantBeBlocked`, and compositional `Ward`
 - `ActivatedMana`: Phase 5 unified `ActivatedAbility`, CR 305.6–7 intrinsic basic-land mana & subtype-setting removal, CR 605.1a 4-criteria mana abilities, per-ability Boast/Exhaust/Power-up limits, extended `SpellRiderSpec`, declarative cost reductions, and CR 106.7 Reflecting Pool / Exotic Orchard
 - `StaticAbilities`: Phase 6 stratified 6-constructor `StaticAbility`, Layer 3 text changes, Layer 6 Humility & CR 613.8 dependency, CR 707.9d copy CDA stripping, Layer 7a/7b ordering, command-zone statics, CR 303.4a Aura `enchantRestriction`, migrated keywords/Boast/split-second, and novel parsed static abilities
+- `TriggeredAbilities`: Phase 7 unified `TriggerPattern` & pattern-driven `matchTriggers`, CR 603.10a–f look-back & `.or` two-pass deduplication, CR 603.4 `interveningIf?` vs. CR 603.2 `.whenCond`, CR 605.1b triggered mana abilities, CR 700.1 `BatchGrouping`, CR 714.2b/d dynamic Layer-6 Saga chapters, per-trigger `TriggeredAbility.modes`, Path of Ancestry via `triggeredAbilities`, and `CardDef.modellingError?` trigger validation
 - `Events`: the game event log, conditions read from it, and trigger and replacement matching
 -/

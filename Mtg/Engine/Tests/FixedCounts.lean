@@ -54,7 +54,7 @@ the token and puts no loyalty. -/
   | #[o] => o.status.loyaltyCounters == 1
   | _ => false
 
-#guard (SharedTrigger.timing (.empowerJace 2)).resolution == .empowerJace (.fixed 2)
+#guard (SharedTrigger.toEffect (.empowerJace 2)).resolution == .empowerJace (.fixed 2)
 
 /- Artifact spells cost {1} less. Another count is read the same way. -/
 #guard
@@ -94,7 +94,7 @@ the token and puts no loyalty. -/
   | .fraChoice p _ => p == caster && logContains g "looks at the top 1"
   | _ => false
 
-#guard (SharedTrigger.timing (.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"])).resolution ==
+#guard (SharedTrigger.toEffect (.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"])).resolution ==
   .lookAtTopRevealTypes (.fixed 4) #["Dwarf", "Equipment"]
 
 /- The source may become 3/3. Another count is the base that is offered. -/
@@ -123,7 +123,7 @@ the token and puts no loyalty. -/
   | .fraChoice _ (.mayBecomeBasePT _ 1 3) => true
   | _ => false
 
-#guard (SharedTrigger.timing (.becomePT 1 1)).resolution ==
+#guard (SharedTrigger.toEffect (.becomePT 1 1)).resolution ==
   .becomePT (.fixed 1) (.fixed 1)
 
 end Mtg.Engine.FixedCountTests

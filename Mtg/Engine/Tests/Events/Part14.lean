@@ -68,7 +68,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   let gAnchorBase := addPermanent gEx0 ({ name := "P48i1 Anchor", types := #[.artifact] }) p0 p0
   let tgtAnchor := (gAnchorBase.permanentsOf p0).back!
   let tgtTrigAb : TriggeredAbility :=
-    .triggered .youGainLife
+    TriggeredAbility.mkTrigger (.gainLife .you)
       { targeting := .of .player, resolution := .gainLife (.fixed 1), phrase := "Target player gains 1 life." }
   let gExAndTrig :=
     gAnchorBase.putTriggeredAbilityOnStack p0 tgtAnchor tgtTrigAb "triggers" (eventCause := some testCause)
@@ -143,7 +143,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   --         `afterTriggerTargetsChosen` consumes only `.chooseTargets _` and defers reopen while `pending != .none || afterRandom != .none`:
   let trigSeqP0 : TriggerSequenceRest := {
     controller := p0
-    ability := .triggered .dies { resolution := .gainLife (.fixed 4), phrase := "You gain 4 life." } {}
+    ability := TriggeredAbility.mkTrigger .thisDies { resolution := .gainLife (.fixed 4), phrase := "You gain 4 life." }
     sourceId := some tgtAnchor.id
     sourceName := tgtAnchor.name
     steps := [.gainLife (.fixed 4)]
@@ -853,7 +853,7 @@ private def replayOk48i3 (gs : Array Game) : Bool :=
   let ltbRelicDef : CardDef := {
     name := "P48i3 LtbRelic"
     types := #[.artifact]
-    triggeredAbilities := #[.triggered .leaving (Effect.gainLife 5)]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .thisLeaves (Effect.gainLife 5)]
   }
   let gP2Gone := mustApply g4 p2 .concede
   let (gLkiFb0, lkiFbObj) := gP2Gone.allocObject ltbRelicDef p0 .battlefield (some p2) { phasedOut := true }
@@ -1193,12 +1193,13 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
   let gLibSeeded := insertObject g3 forest p0 (.library p0)
   let modalToughTrigDef : CardDef := {
     creature "P48i4 ElderOak" ManaCost.empty #["Treefolk"] 1 5 with
-    fraTriggerModes := #[
-      Effect.scry 1,
-      { resolution := .addMana #[.colored .green] .equalSourceToughness, phrase := "Add {G} equal to toughness." }
-    ]
     triggeredAbilities := #[
-      .triggered .dies { resolution := .gainLife (.fixed 0), phrase := "Choose two." }
+      TriggeredAbility.mkTrigger .thisDies
+        { resolution := .gainLife (.fixed 0), phrase := "Choose two." }
+        (modes := #[
+          Effect.scry 1,
+          { resolution := .addMana #[.colored .green] .equalSourceToughness, phrase := "Add {G} equal to toughness." }
+        ])
     ]
   }
   let gOak0 := addPermanent gLibSeeded modalToughTrigDef p0 p0
@@ -1208,7 +1209,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
   let gOakStacked0 :=
     gOakGone.putTriggeredAbilityOnStack p0 oakObj oakAb "triggers"
       (lastKnownPower := some 1) (lastKnownToughness := some 5) (eventCause := some testCause)
-      (abilityEffectOverride := some modalToughTrigDef.fraTriggerModes[0]!)
+      (abilityEffectOverride := some oakAb.modes[0]!)
   let oakTopEntry := gOakStacked0.stack.back!
   let gOakStacked :=
     gOakStacked0.changes #[
@@ -1217,13 +1218,13 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
   let gOakResPaused := gOakStacked.resolveTop -- mode 0 opens `.scry p0 1`, chaining `.continueSpellModes` with `lastKnownToughness == some 5`!
   let gOakFinished := mustApply gOakResPaused p0 (.scry #[(gOakResPaused.player p0).library.back!] #[])
 
-  -- Permanent-spell `chosenX` on triggered abilities (`{X}` artifact with `.triggered .enter` `.addMana #[.colored .red] .chosenX`):
+  -- Permanent-spell `chosenX` on triggered abilities (`{X}` artifact with `TriggerPattern.thisEnters` `.addMana #[.colored .red] .chosenX`):
   let xPermManaDef : CardDef := {
     name := "P48i4 DynamoCore"
     manaCost := { symbols := #[.x] }
     types := #[.artifact]
     triggeredAbilities := #[
-      .triggered .enter { resolution := .addMana #[.colored .red] .chosenX, phrase := "When this enters, add X {R}." }
+      TriggeredAbility.mkTrigger .thisEnters { resolution := .addMana #[.colored .red] .chosenX, phrase := "When this enters, add X {R}." }
     ]
   }
   let gXPerm0 := (insertObject g3 xPermManaDef p0 (.hand p0)).addMana p0 .colorless 3

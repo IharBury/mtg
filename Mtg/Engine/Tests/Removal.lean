@@ -517,7 +517,8 @@ def wolfCount (g : Game) : Nat :=
 
 /-- Resolve Head of the Hunt's reflexive Wolf trigger, if it is waiting. -/
 def wolvesAfterReflexive (g : Game) : Nat :=
-  let waiting := g.waitingTriggers.any (fun w => w.event == .bolgSacrificedForReflexive)
+  let waiting := g.waitingTriggers.any (fun w =>
+    w.ability.effect.phrase == "When you do, create a 2/2 green Wolf creature token.")
   let g := if waiting then passBoth (g.receivePriority ⟨0⟩) else g
   wolfCount g
 

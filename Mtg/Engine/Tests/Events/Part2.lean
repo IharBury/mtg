@@ -20,8 +20,8 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     name := "Phase12 Tap Watcher"
     types := #[.enchantment]
     triggeredAbilities := #[
-      TriggeredAbility.fra .creaturesYouControlBecomeTapped "" (.draw 1),
-      TriggeredAbility.fra .youCastNoncreature "" (.draw 1)]
+      TriggeredAbility.ofPattern .creaturesYouControlBecomeTapped "" (.draw 1) (grouping := .oncePerBatch),
+      TriggeredAbility.ofPattern .youCastNoncreature "" (.draw 1)]
   }
   let manaDorkDef : CardDef := {
     name := "Phase12 Mana Dork"
@@ -459,7 +459,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     types := #[.land]
     staticAbilities := #[.entersTapped]
     activatedAbilities := #[ActivatedAbility.manaAbility (.colorAmong (.commanderColorIdentity .you) false)]
-    commanderIdentityScryCreature := true
+    triggeredAbilities := #[TriggeredAbility.onManaSpentCastCommanderTypeScry]
   }
   let elfCmdrDef : CardDef := {
     name := "Phase12 Elf Commander"
@@ -633,7 +633,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     ((gPbbCast.object! se.objectId).triggeredAbility.map (·.effect.resolution)) == some .copySourceSpellXTimes)
   -- `.youTargetSomething` on targeted `.abilityActivated`
   let youTargetTrig : TriggeredAbility :=
-    .triggered .fromEffect (Effect.ofTrigger (.watch .youTargetDrawOnce))
+    SharedTrigger.watch .youTargetDrawOnce |>.toTriggeredAbility
   let targetWatcherDef : CardDef := {
     name := "Phase12 Target Watcher"
     types := #[.enchantment]
@@ -670,7 +670,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     (gWardAct.object! se.objectId).triggeredAbility == some (.onWard (CostSpec.ofGeneric 2)))
   -- (b) Triggered ability choosing opponent's Ward creature as target queues Ward
   let etbTapTrigger : TriggeredAbility :=
-    .triggered .enter { targeting := .of .creature, resolution := .tapTargets, phrase := "Tap target creature" } {}
+    TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution := .tapTargets, phrase := "Tap target creature" }
   let gWardTrig :=
     let g := gWardBase.putTriggeredAbilityOnStack me (gWardBase.object! wardPingerId) etbTapTrigger "enters"
     let g := g.promptTriggerTargetsIfNeeded
@@ -1046,7 +1046,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     let rid := ((g.player me).hand.filter (fun id => (g.object! id).name == "Phase13 Modal Kicker"))[0]!
     let g := (g.change (.pushContinuationFrame {})).change (.triggerSequenceRest (some {
       controller := me
-      ability := TriggeredAbility.fra .youCastNoncreature "" (.draw 1)
+      ability := TriggeredAbility.ofPattern .youCastNoncreature "" (.draw 1)
       sourceId := none
       targets := #[]
       steps := [.gainLife (.fixed 1)]
@@ -1261,16 +1261,13 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     name := "Phase13 Saga"
     types := #[.enchantment]
     subtypes := #["Saga"]
-    saga := some {
-      sacrificeAfter := "V"
-      chapters := #[
-        SagaChapter.of "I" "Gain 1 life." (.gainLife 1),
-        SagaChapter.of "II" "Gain 1 life." (.gainLife 1),
-        SagaChapter.of "III" "Gain 1 life." (.gainLife 1),
-        SagaChapter.of "IV" "Gain 1 life." (.gainLife 1),
-        SagaChapter.of "V" "Gain 1 life." (.gainLife 1)
-      ]
-    }
+    triggeredAbilities := #[
+      TriggeredAbility.sagaChapter 1 (Effect.gainLife 1),
+      TriggeredAbility.sagaChapter 2 (Effect.gainLife 1),
+      TriggeredAbility.sagaChapter 3 (Effect.gainLife 1),
+      TriggeredAbility.sagaChapter 4 (Effect.gainLife 1),
+      TriggeredAbility.sagaChapter 5 (Effect.gainLife 1)
+    ]
   }
   let gSaga0 :=
     let g := addPermanent afterDraw sagaDef me me
@@ -1641,7 +1638,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let mkSeqFrame (g : Game) (gain : Nat) : Game :=
     (g.change (.pushContinuationFrame {})).change (.triggerSequenceRest (some {
       controller := me
-      ability := TriggeredAbility.fra .youCastNoncreature "" (.draw 1)
+      ability := TriggeredAbility.ofPattern .youCastNoncreature "" (.draw 1)
       sourceId := none
       targets := #[]
       steps := [.gainLife (.fixed gain)]
@@ -2118,7 +2115,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     types := #[.land]
     staticAbilities := #[.entersTapped]
     activatedAbilities := #[ActivatedAbility.manaAbility (.colorAmong (.commanderColorIdentity .you) false)]
-    commanderIdentityScryCreature := true
+    triggeredAbilities := #[TriggeredAbility.onManaSpentCastCommanderTypeScry]
   }
   let elfCmdrDef5 : CardDef := {
     name := "Phase13 Elf Commander"
@@ -2672,7 +2669,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     bear with
     name := "Phase14 Dies Watcher"
     triggeredAbilities := #[
-      TriggeredAbility.fra (.fra .anotherCreatureOrPlaneswalkerYouControlDies)
+      TriggeredAbility.ofPattern .anotherCreatureOrPlaneswalkerYouControlDies
         "Whenever another creature or planeswalker you control dies, you gain 1 life."
         (.gainLife 1)
     ]
@@ -2815,7 +2812,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     bear with
     name := "Phase14 Prolif Watcher"
     triggeredAbilities := #[
-      TriggeredAbility.fra (.fra .youProliferate)
+      TriggeredAbility.ofPattern (.playerAction .you .proliferate)
         "Whenever you proliferate, you gain 1 life."
         (.gainLife 1)
     ]
@@ -3285,7 +3282,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase15 Batch Damage Watcher"
     manaCost := ManaCost.empty
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered .fromEffect Effect.watchSheHulkRedirectOnce {}]
+    triggeredAbilities := #[SharedTrigger.watch .sheHulkRedirectOnce |>.toTriggeredAbility]
   }
   -- 7a. CR 510.4: first-strike attacker deals 2 in FS step; granting `Event Bear` first strike AFTER FS step does NOT
   --     exclude `Event Bear` from regular combat damage, while granting `FS Bear` double strike AFTER FS step lets `FS Bear`
@@ -3624,10 +3621,10 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
       { id := some ⟨7⟩, controller := some me, owner := me, types := #[.creature] } .battlefield (.graveyard me)
       (cause := testCause)
     let triggerZeroOk :=
-      zeroMoveEv.matchesTrigger me (some zeroId) .dying &&
-      !zeroMoveEv.matchesTrigger me none .dying &&
-      !otherMoveEv.matchesTrigger me (some zeroId) .dying &&
-      !otherMoveEv.matchesTrigger me none .dying
+      zeroMoveEv.matchesTriggerPattern me (some zeroId) .thisDies &&
+      !zeroMoveEv.matchesTriggerPattern me none .thisDies &&
+      !otherMoveEv.matchesTriggerPattern me (some zeroId) .thisDies &&
+      !otherMoveEv.matchesTriggerPattern me none .thisDies
     let c0 := g0.object! zeroId
     let otherLibId := ((g0.player me).library.filter (· != zeroId))[0]!
     let gZ1 := g0.createEffect

@@ -20,7 +20,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.onPermanent .creature .cantBeBlocked))
+  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .cantBeBlocked))
 
 def spider : TriggeredAbility :=
   .onEnter Effect.enterTapOppCantUntapWhileControl
@@ -270,7 +270,7 @@ enchanted by that source, is left alone. -/
   .cant (.beBlocked .enchanted)
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .cantBeBlocked ==
   .cant (.beBlocked (.target .whileSource))
-#guard (SharedTrigger.timing (.enter .tapOppCantUntapWhileControl)).resolution ==
+#guard (SharedTrigger.toEffect (.enter .tapOppCantUntapWhileControl)).resolution ==
   tapThenFrozen
 #guard TriggeredAbility.resolution spider == tapThenFrozen
 
@@ -302,7 +302,7 @@ enchanted by that source, is left alone. -/
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature can't be blocked this turn."
 #guard TriggeredAbility.toNotation
-    (.triggered .enter (Effect.ofTrigger (.onSource .cantBeBlocked))) ==
+    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .cantBeBlocked))) ==
   "When this permanent enters, this creature can't be blocked this turn."
 #guard TriggeredAbility.toNotation (.onEnterAttachThen .cantBeBlocked) ==
   "When this Equipment enters, attach it to target creature you control. That creature can't be blocked this turn."

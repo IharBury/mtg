@@ -20,7 +20,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.onPermanent .creature .untap))
+  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .untap))
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -291,7 +291,7 @@ already untapped attacker is unchanged. No attackers changes nothing. -/
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, untap target creature."
 #guard TriggeredAbility.toNotation
-    (.triggered .enter (Effect.ofTrigger (.onSource .untap))) ==
+    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .untap))) ==
   "When this permanent enters, untap this creature."
 #guard TriggeredAbility.toNotation (.onEnterEnchanted .untap) ==
   "When this Aura enters, untap enchanted creature."

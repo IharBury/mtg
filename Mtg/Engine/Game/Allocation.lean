@@ -221,18 +221,15 @@ def applyEntersWith (g : Game) (o : GameObject) : Game :=
 are placed in `entersWith` during the zone change, so we log the lore
 counter(s) on `o`. -/
 def addLoreAsSagaEnters (g : Game) (o : GameObject) : Game :=
-  match g.controllerOf o, (g.baseCard o).saga with
-  | some _, some _ =>
-    if o.status.faceDown || o.status.lore == 0 then g
-    else
-      let oName := g.name o
-      Id.run do
-        let mut g := g
-        for i in [0:o.status.lore] do
-          let lore := i + 1
-          g := g.logMsg s!"{oName} gets a lore counter ({lore})"
-        return g
-  | _, _ => g
+  if (g.controllerOf o).isSome && g.hasSubtype o .saga && !o.status.faceDown && o.status.lore > 0 then
+    let oName := g.name o
+    Id.run do
+      let mut g := g
+      for i in [0:o.status.lore] do
+        let lore := i + 1
+        g := g.logMsg s!"{oName} gets a lore counter ({lore})"
+      return g
+  else g
 
 /-- Batch-scoped post-entry effects (`applyEntersWith`, `addLoreAsSagaEnters`,
 and Karn's trigger-suppression log) without prompting stack-placement trigger

@@ -441,6 +441,38 @@ partial def doesNothingAsActivated (r : Resolution) : Bool :=
   | .sequence rs => rs.any doesNothingAsActivated
   | _ => false
 
+/-- True when resolving `r` as a triggered ability would do nothing (unrecognized
+or empty top-level no-op). Used by `CardDef.faceModellingError?` to reject
+unmodelled triggers (CR 603). -/
+partial def doesNothingAsTrigger : Resolution → Bool
+  | .unrecognized => true
+  | .sequence rs => rs.isEmpty || rs.any doesNothingAsTriggerStep
+  | .«if» _ d => doesNothingAsTriggerStep d
+  | .ifElse _ a b => doesNothingAsTriggerStep a || doesNothingAsTriggerStep b
+  | .may a b _ => doesNothingAsTriggerStep a || doesNothingAsTriggerSubStep b
+  | .or rs => rs.isEmpty || rs.any doesNothingAsTriggerStep
+  | .chooseModes ms _ => ms.isEmpty || ms.any doesNothingAsTriggerStep
+  | .unlessPays r _ => doesNothingAsTriggerStep r
+  | .queueReflexive r => doesNothingAsTriggerStep r
+  | .revealFromHand _ d => doesNothingAsTriggerStep d
+  | _ => false
+where
+  doesNothingAsTriggerStep : Resolution → Bool
+    | .unrecognized => true
+    | .sequence rs => rs.any doesNothingAsTriggerStep
+    | .«if» _ d => doesNothingAsTriggerStep d
+    | .ifElse _ a b => doesNothingAsTriggerStep a || doesNothingAsTriggerStep b
+    | .may a b _ => doesNothingAsTriggerStep a || doesNothingAsTriggerSubStep b
+    | .or rs => rs.any doesNothingAsTriggerStep
+    | .chooseModes ms _ => ms.any doesNothingAsTriggerStep
+    | .unlessPays r _ => doesNothingAsTriggerStep r
+    | .queueReflexive r => doesNothingAsTriggerStep r
+    | .revealFromHand _ d => doesNothingAsTriggerStep d
+    | _ => false
+  doesNothingAsTriggerSubStep : Resolution → Bool
+    | .sequence [] => false
+    | r => doesNothingAsTriggerStep r
+
 /-- Non-recursive check for atomic `Resolution` steps that could add mana
 (CR 605.1a). -/
 private def couldAddManaAtom : Resolution → Bool

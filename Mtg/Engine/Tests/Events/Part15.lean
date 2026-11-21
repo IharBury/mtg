@@ -53,7 +53,7 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
   let wtGain1 : WaitingTrigger := {
     controller := p0
     source := anchorObj
-    ability := .triggered .youGainLife { resolution := .gainLife (.fixed 1), phrase := "Gain 1 life." }
+    ability := TriggeredAbility.mkTrigger (.gainLife .you) { resolution := .gainLife (.fixed 1), phrase := "Gain 1 life." }
     eventCause := some testCause
   }
   let gRepEmpty0 := insertObject gCopyAnchor oddEvenDef p0 (.hand p0)
@@ -591,14 +591,15 @@ private def replayOk49i3 (gs : Array Game) : Bool :=
     bear with
     name := "P49i3 LeaveWatcher"
     triggeredAbilities := #[
-      TriggeredAbility.fra (.fra .creatureYouControlLeaves) "Whenever a creature you control leaves, gain 2 life." (.gainLife 2)
+      TriggeredAbility.ofPattern (.permanentLeaves (.all #[.hasType .creature, .controlledBy .you]))
+        "Whenever a creature you control leaves, gain 2 life." (.gainLife 2)
     ]
   }
   let dyingPoDef : CardDef := {
     bear with
     name := "P49i3 PhasedVictim"
     triggeredAbilities := #[
-      .triggered .leaving { resolution := .gainLife (.fixed 3), phrase := "When this leaves, gain 3 life." }
+      TriggeredAbility.mkTrigger .thisLeaves { resolution := .gainLife (.fixed 3), phrase := "When this leaves, gain 3 life." }
     ]
   }
   let gTrigPo0 := addPermanent (addPermanent g4 ltbWatcherDef p0 p0) dyingPoDef p0 p0
@@ -856,7 +857,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let xEtbLifeDef : CardDef := {
     creature "P49i4 XHydraLifegiver" { symbols := #[.x] } #["Hydra"] 2 2 with
     triggeredAbilities := #[
-      .triggered .enter { resolution := .gainLife .chosenX, phrase := "When this enters, gain X life." }
+      TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife .chosenX, phrase := "When this enters, gain X life." }
     ]
   }
   let gXEtb0 := (insertObject g3 xEtbLifeDef p0 (.hand p0)).addMana p0 .colorless 4
@@ -914,7 +915,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
 
   let gVis0 := addPermanent g3 bear p0 p0
   let visId := (gVis0.permanentsOf p0)[0]!.id
-  let visAb : TriggeredAbility := .triggered .youCastSpell Effect.castingVisionModes
+  let visAb : TriggeredAbility := TriggeredAbility.mkTrigger .youCastSpell Effect.castingVisionModes
   let gVisOffered :=
     gVis0.applyModeledTrigger p0 visAb (some visId) #[] "Vision"
       (lastKnownPower := some 4) (lastKnownToughness := some 6)
@@ -1177,7 +1178,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
       p0 .accept
   let moloidOk :=
     molObj.printed.triggeredAbilities.size == 1 &&
-    molAb.firesOn .attacking &&
+    molAb.firesOn .thisAttacks &&
     gMolPrompt.pending == .mayResolve p0 &&
     (gMolAccept.player p0).graveyard.size == gyBeforeMol + 1 &&
     (gMolDecline.player p0).graveyard.size == gyBeforeMol &&
@@ -1353,7 +1354,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let gPauseDone := mustApply gPauseChained p0 (.chooseReplacement idPauseExtra)
   -- Triggered sequence caller (`applyTriggeredAbility`) forwards targets into createAndMarkTokensAttacking:
   let atkSeqAb : TriggeredAbility :=
-    TriggeredAbility.triggered .attack {
+    TriggeredAbility.mkTrigger .thisAttacks {
       targeting := .of .creature
       resolution := .sequence [
         .createTokens copySpec (.fixed 1) true .you .none,

@@ -226,7 +226,7 @@ private def replayOk28i4 (gs : Array Game) : Bool :=
     name := "P28i4 Test Aura"
     types := #[.enchantment]
     subtypes := #["Aura"]
-    triggeredAbilities := #[.triggered .enter { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }]
   }
   let equipDef : CardDef := { name := "P28i4 Test Equip", types := #[.artifact], subtypes := #["Equipment"] }
   let gAura0 :=
@@ -350,7 +350,7 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
   let (gStack2, p1SpellId) := gStack1.move p1HandBolt .stack (some p1) (cause := some testCause)
   let dummyModesRest : ChooseModesRest := {
     controller := p0
-    ability := .triggered .enter { resolution := .gainLife 1 }
+    ability := TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }
     sourceId := none, targets := #[], lastKnownPower := none
     sourceName := "Test", modes := [], how := .vision
   }
@@ -564,7 +564,7 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
   let (gStack0, spellId) := gWithStackAndHand.move handBolt .stack (some p0) (cause := some testCause)
   let gStack :=
     gStack0.change (.pushStack { objectId := spellId, controller := p0, targets := #[Target.player p1], targetsAnnounced := true })
-  let dummyTrig : TriggeredAbility := .triggered .enter { resolution := .gainLife 1 }
+  let dummyTrig : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }
 
   let gLibSearch := gBase.beginLibrarySearch p0 (fun _ => true) "a card" .hand
   let gLibMaySearch := gBase.beginLibrarySearch p0 (fun _ => true) "a card" .hand (optional := true)
@@ -650,7 +650,7 @@ private def replayOk29i3 (gs : Array Game) : Bool :=
   --     `putReflexiveTrigger`, `beginMayCastFromLooked`) are no-ops when `!g.stillInGame p1`:
   let gTrigStack :=
     gLeft.putTriggeredAbilityOnStack p1 (gLeft.object! p0BearId)
-      (.triggered .enter { resolution := .gainLife 1 }) "enters"
+      (TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }) "enters"
   let gQueueRefl := gLeft.queueFollowupReflexive p1 (some p0BearId) (.gainLife 1)
   let gPutRefl := gLeft.putReflexiveTrigger p1 (some p0BearId) { resolution := .gainLife 1 }
   let gLookCast := gLeft.beginMayCastFromLooked p1 6 5
@@ -1446,7 +1446,7 @@ private def replayOk32i1 (gs : Array Game) : Bool :=
 
   -- 1b. `finishFraChoice` and `finishAndGrantPriority` tear down active resolving stack entries
   --     and pop all `ContinuationFrame`s when `g.over` becomes true during `drainPendingContinuations`:
-  let simpleAb : TriggeredAbility := .triggered .youGainLife (Effect.gainLife 1) {}
+  let simpleAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.gainLife 1)
   let gWithAbOnStack := gBase.putTriggeredAbilityOnStack p0 p0Bear simpleAb "triggers" (eventCause := some testCause)
   let abObjId := gWithAbOnStack.stack.back!.objectId
   let abSnap := gWithAbOnStack.snapshot (gWithAbOnStack.object! abObjId)
@@ -1523,26 +1523,29 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
   --          when no choosable mode remains after `p1` leaves;
   --     (iii) Finalizes non-empty `chosen == #[0]` when no further mode is choosable after `p1` leaves;
   --     (iv) Clears pending when `q == p` (`p0` concedes).
-  let upToAb : TriggeredAbility := .triggered .enter Effect.enterChooseUpToXModes {}
+  let upToAb : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters Effect.enterChooseUpToXModes
   let xTwoSrc : GameObject := { p0Bear with chosenX := some 2 }
   let gUpToReopen0 := gBase.putTriggeredAbilityOnStack p0 xTwoSrc upToAb "enters" (eventCause := some testCause)
   let upToObjId1 := gUpToReopen0.stack.back!.objectId
   let gUpToReopen1 := gUpToReopen0.concede p1
   let gUpToLeaverConcede := gUpToReopen0.concede p0
 
+  let tokenOnlyUpToAb : TriggeredAbility :=
+    { upToAb with
+      modes := #[
+        { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
+          resolution := .onPermanent .destroy
+          phrase := "Destroy target token" }
+      ] }
   let tokenOnlyModesDef : CardDef := {
     bear with
     name := "P32 UpTo Token Modal"
-    fraTriggerModes := #[
-      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-        resolution := .onPermanent .destroy
-        phrase := "Destroy target token" }
-    ]
+    triggeredAbilities := #[tokenOnlyUpToAb]
   }
   let (gWithP1Tok0, _) := (addPermanent g3 tokenOnlyModesDef p0 p0).createOneToken p1
     { bear with name := "P32 Token", isToken := true } (cause := some testCause)
   let tokModalSrc := { (gWithP1Tok0.permanentsOf p0).find? (·.name == "P32 UpTo Token Modal") |>.get! with chosenX := some 1 }
-  let gUpToEmpty0 := gWithP1Tok0.putTriggeredAbilityOnStack p0 tokModalSrc upToAb "enters" (eventCause := some testCause)
+  let gUpToEmpty0 := gWithP1Tok0.putTriggeredAbilityOnStack p0 tokModalSrc tokenOnlyUpToAb "enters" (eventCause := some testCause)
   let upToEmptyId := gUpToEmpty0.stack.back!.objectId
   let preEmptyLeaveIdx := gUpToEmpty0.events.size
   let gUpToEmptyAfterLeave := gUpToEmpty0.concede p1
@@ -1552,20 +1555,23 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
       | .rules (.cast (.announced oid #[] _ _)) => oid == upToEmptyId
       | _ => false
 
+  let twoModesUpToAb : TriggeredAbility :=
+    { upToAb with
+      modes := #[
+        { resolution := .gainLife (.fixed 2), phrase := "Gain 2 life" },
+        { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
+          resolution := .onPermanent .destroy
+          phrase := "Destroy target token" }
+      ] }
   let twoModesDef : CardDef := {
     bear with
     name := "P32 UpTo Two Modal"
-    fraTriggerModes := #[
-      { resolution := .gainLife (.fixed 2), phrase := "Gain 2 life" },
-      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-        resolution := .onPermanent .destroy
-        phrase := "Destroy target token" }
-    ]
+    triggeredAbilities := #[twoModesUpToAb]
   }
   let (gWithTwoModal0, _) := (addPermanent g3 twoModesDef p0 p0).createOneToken p1
     { bear with name := "P32 Token 2", isToken := true } (cause := some testCause)
   let twoModalSrc := { (gWithTwoModal0.permanentsOf p0).find? (·.name == "P32 UpTo Two Modal") |>.get! with chosenX := some 2 }
-  let gUpToChosen0 := gWithTwoModal0.putTriggeredAbilityOnStack p0 twoModalSrc upToAb "enters" (eventCause := some testCause)
+  let gUpToChosen0 := gWithTwoModal0.putTriggeredAbilityOnStack p0 twoModalSrc twoModesUpToAb "enters" (eventCause := some testCause)
   let upToChosenId := gUpToChosen0.stack.back!.objectId
   let gUpToPicked0 := mustApply gUpToChosen0 p0 (.chooseMode 0)
   let preChosenLeaveIdx := gUpToPicked0.events.size
@@ -1623,7 +1629,7 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
     gHkNoneObj.pending == .none
 
   -- 2c. `.stackHydeMode` and `.stackTriggerUnusedMode` on `q != p` (on-stack vs off-stack) and `q == p`:
-  let unusedAb : TriggeredAbility := .triggered .youGainLife (Effect.ofTrigger .gollumMode) {}
+  let unusedAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.ofTrigger .gollumMode)
   let gUnused0 := gBase.putTriggeredAbilityOnStack p0 p0Bear unusedAb "triggers" (eventCause := some testCause)
   let unusedObjId := gUnused0.stack.back!.objectId
   let gUnusedKeep := gUnused0.concede p1
@@ -1656,7 +1662,7 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
   -- runs `redirectPendingAfterLeave p1` -> `.resumeChooseTargetsAfterLeave p0`, removing `p0`'s targetless
   -- stack trigger (CR 603.3d) rather than short-circuiting to `openPrompt`:
   let oppCreatureTrig : TriggeredAbility :=
-    .triggered .youGainLife { targeting := .of .oppCreature, resolution := .onPermanent .tap, phrase := "Tap target opponent creature" } {}
+    TriggeredAbility.mkTrigger (.gainLife .you) { targeting := .of .oppCreature, resolution := .onPermanent .tap, phrase := "Tap target opponent creature" }
   let gTrigOnP1 := gBase.putTriggeredAbilityOnStack p0 p0Bear oppCreatureTrig "triggers" (eventCause := some testCause)
   let trigTargetId := gTrigOnP1.stack.back!.objectId
   let gP1Gone := gTrigOnP1.playerLeavesGame p1
@@ -1834,7 +1840,7 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
   -- 1a. Game-over active-resolution & transient prompt/proposal/continuation teardown across
   --     `completeActiveResolutions`, `concede`, `receivePriority`, `finishConcedePriority`,
   --     `concedePlayersLoop`, and `finishHostRandom`:
-  let simpleAb : TriggeredAbility := .triggered .youGainLife (Effect.gainLife 1) {}
+  let simpleAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.gainLife 1)
   let gAbStack := gBase.putTriggeredAbilityOnStack p0 p0Bear simpleAb "triggers" (eventCause := some testCause)
   let abObjId := gAbStack.stack.back!.objectId
   let abSnap := gAbStack.snapshot (gAbStack.object! abObjId)
@@ -2047,7 +2053,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   -- 2a. Departed-seat `!g.stillInGame p` and controller/caster guards in `Decisions.runPostStep`:
   let gLeftP1 := gBase.playerLeavesGame p1
   let oppTrig : TriggeredAbility :=
-    .triggered .youGainLife { targeting := .of .creature, resolution := .onPermanent .tap, phrase := "Tap target creature" } {}
+    TriggeredAbility.mkTrigger (.gainLife .you) { targeting := .of .creature, resolution := .onPermanent .tap, phrase := "Tap target creature" }
   let gP0TrigAwaiting := gLeftP1.putTriggeredAbilityOnStack p0 p0Bear oppTrig "triggers" (eventCause := some testCause)
   let p0TrigId := gP0TrigAwaiting.stack.back!.objectId
   -- Calling `.resumeChooseTargetsAfterLeave p1` (departed) or `.resumeChooseTargetsAfterLeave p2`
@@ -2074,8 +2080,8 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let probeWt : WaitingTrigger := {
     controller := p0
     source := p0Bear
-    ability := .triggered .youGainLife (Effect.gainLife 1) {}
-    event := .entering
+    ability := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.gainLife 1)
+    pattern := .thisEnters
     checked := true
     eventCause := some testCause
   }
@@ -2098,10 +2104,10 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gTargetOtherAnnouncedB := mustApply33i2 gTargetOtherCasterSameSeat p0 (.target (.permanent p0Bear.id))
   -- (3) No-legal-target trigger (`ceaseToExist` CR 603.3d) alongside own vs other vanished `proposedSpell`:
   let tokOnlyTrig : TriggeredAbility :=
-    .triggered .youGainLife
+    TriggeredAbility.mkTrigger (.gainLife .you)
       { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
         resolution := .onPermanent .tap
-        phrase := "Tap target token" } {}
+        phrase := "Tap target token" }
   let gNoLegalTrig0 :=
     ((gLeftP1.putTriggeredAbilityOnStack p0 p0Bear tokOnlyTrig "triggers" (eventCause := some testCause)).change
       (.pending .none)).change (.waitingTriggers #[probeWt])
@@ -2125,7 +2131,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   --     stacked trigger still needs targets (`triggerNeedingTargets.isSome`): both `alwaysGrantPriority`
   --     (`.resumeChooseTargetsAfterLeave` and `afterTriggerTargetsChosen`) and plain `reverseProposedSpell`
   --     tear down continuation frames / resolving entries via `receivePriority` without opening `.chooseTargets`:
-  let simpleResAb : TriggeredAbility := .triggered .youGainLife (Effect.gainLife 1) {}
+  let simpleResAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.gainLife 1)
   let gResAbStack := gLeftP1.putTriggeredAbilityOnStack p0 p0Bear simpleResAb "triggers" (eventCause := some testCause)
   let resAbId := gResAbStack.stack.back!.objectId
   let resAbSnap := gResAbStack.snapshot (gResAbStack.object! resAbId)
@@ -2281,22 +2287,23 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   --      mode 2 draw 1), choosing 2 modes: `p0` picks mode 0 (`remaining == 1, chosen == #[0]`), then
   --      `p1` leaves removing the token -> `validChosen == #[]` and `needed == 2`!
   --      Also verify `needed == 0` finalizes `validChosen == #[1]` when `remaining == 0`:
+  let chooseTwoTrigAb : TriggeredAbility :=
+    TriggeredAbility.mkTrigger .thisEnters { resolution := .chooseTriggerModes 2, phrase := "Choose two" }
+      (modes := #[
+        { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
+          resolution := .onPermanent .destroy
+          phrase := "Destroy target token" },
+        { resolution := .gainLife (.fixed 2), phrase := "Gain 2 life" },
+        { resolution := .draw (.fixed 1) .you, phrase := "Draw a card" }
+      ])
   let threeModesDef : CardDef := {
     bear with
     name := "P33 Three Modes"
-    fraTriggerModes := #[
-      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-        resolution := .onPermanent .destroy
-        phrase := "Destroy target token" },
-      { resolution := .gainLife (.fixed 2), phrase := "Gain 2 life" },
-      { resolution := .draw (.fixed 1) .you, phrase := "Draw a card" }
-    ]
+    triggeredAbilities := #[chooseTwoTrigAb]
   }
   let (gTrigModes0, _) := (addPermanent g3 threeModesDef p0 p0).createOneToken p1
     { bear with name := "P33 Tok2", isToken := true } (cause := some testCause)
   let threeSrc := (gTrigModes0.permanentsOf p0).find? (·.name == "P33 Three Modes") |>.get!
-  let chooseTwoTrigAb : TriggeredAbility :=
-    .triggered .enter { resolution := .chooseTriggerModes 2, phrase := "Choose two" } {}
   let gTrigModesStack := gTrigModes0.putTriggeredAbilityOnStack p0 threeSrc chooseTwoTrigAb "enters" (eventCause := some testCause)
   let trigModesObjId := gTrigModesStack.stack.back!.objectId
   let gTrigModesPicked0 := mustApply33i2 gTrigModesStack p0 (.chooseMode 0)
@@ -2507,7 +2514,7 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
   --      - when `spellId` left the stack with `p1`, `.payWard p0 spellId ...` clears to `.none`;
   --      - when `cost == .sacrificePermanents 1 1 #[p0Bear.id]` (`paid > 0`) and `p0`'s only other permanent
   --        was stolen from `p1`, `p1` leaving logs `"cannot finish paying ward"` and counters `spellId`!
-  let simpleAb : TriggeredAbility := .triggered .youGainLife (Effect.gainLife 1) {}
+  let simpleAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.gainLife 1)
   let gP1AbStack := gBase.putTriggeredAbilityOnStack p1 p1Hero simpleAb "triggers" (eventCause := some testCause)
   let p1AbId := gP1AbStack.stack.back!.objectId
   let gWardSpellGone :=
@@ -2820,7 +2827,7 @@ private def replayOk34i1 (gs : Array Game) : Bool :=
   -- 1a. `Core.reverseToProposalCheckpointCore?` preserves:
   --     - non-proposal modal trigger `.abilityEffect` and `TriggerQueueEvent.modeChosen` on stack, and
   --     - non-proposal modal trigger `.noLegalMode` stack removal (`ZoneEvent.moved _ .stack .command`).
-  let simpleTrigAb : TriggeredAbility := .triggered .youGainLife (Effect.gainLife 1) {}
+  let simpleTrigAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.gainLife 1)
   let gWithTrigs0 :=
     (gBase.putTriggeredAbilityOnStack p0 p0Bear simpleTrigAb "triggers" (eventCause := some testCause)).putTriggeredAbilityOnStack
       p0 p0Bear simpleTrigAb "triggers" (eventCause := some testCause)
@@ -2890,11 +2897,11 @@ private def replayOk34i1 (gs : Array Game) : Bool :=
   let gFinishGrantOver := gOverWithProp.finishAndGrantPriority p0
   -- (ii) `triggerNeedingTargets` is prompted before `waitingTriggers`:
   let targTrigAb : TriggeredAbility :=
-    .triggered .youGainLife {
+    TriggeredAbility.mkTrigger (.gainLife .you) {
       targeting := .of .creature
       resolution := .onPermanent .tap
       phrase := "Tap target creature"
-    } {}
+    }
   let gUnannouncedTrig :=
     (gBase.putTriggeredAbilityOnStack p0 p0Bear targTrigAb "triggers" (eventCause := some testCause)).changes #[
       .waitingTriggers #[{ controller := p0, source := p0Bear, ability := simpleTrigAb },
@@ -3078,7 +3085,7 @@ private def replayOk34i2 (gs : Array Game) : Bool :=
   let gOverHkModePost := gOverProp.runPostStep (.resumeHawkeyeModesAfterLeave p0 stackBoltId 1 #[])
   let gOverCostPost := gOverProp.runPostStep (.resumeProposalCostAfterLeave p0 (.discardForAdditionalCost p0))
 
-  let simpleTrigAb : TriggeredAbility := .triggered .youGainLife (Effect.gainLife 1) {}
+  let simpleTrigAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.gainLife 1)
   let gP1TrigStack :=
     gBase.putTriggeredAbilityOnStack p1 (gBase.permanentsOf p1)[0]! simpleTrigAb "triggers" (eventCause := some testCause)
   let p1TrigId := gP1TrigStack.stack.back!.objectId
@@ -3427,14 +3434,14 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
   -- (ii) `.castCopiesFree`, `.mayCastCopy`, and `.mayCastCascade`:
   let dummyModesRest : ChooseModesRest := {
     controller := p0
-    ability := .triggered .enter { resolution := .gainLife 1 } {}
+    ability := TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }
     sourceName := "Test"
     how := .vision
   }
   let dummyTrigOr : TriggerOrRest := {
     controller := p1
     alternatives := #[.gainLife (.fixed 2)]
-    ability := .triggered .enter { resolution := .gainLife 1 } {}
+    ability := TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }
     sourceId := some p0Bear.id
     targets := #[]
     dividedDamage := #[]
@@ -3626,10 +3633,10 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
   let pauseRes : TriggeredAbility.TriggerResolution :=
     .may (.draw (.fixed 1) .you) (.sequence []) .ifYouDont
   let pauseTrigAb : TriggeredAbility :=
-    .triggered .youGainLife {
+    TriggeredAbility.mkTrigger (.gainLife .you) {
       resolution := pauseRes
       phrase := "You may draw a card"
-    } {}
+    }
   let gTrigStack0 :=
     gBase.putTriggeredAbilityOnStack p0 p0Bear pauseTrigAb "triggers"
       (eventCause := some testCause) (reflexiveResolution := some pauseRes)

@@ -1025,18 +1025,17 @@ def catalogSagasImplemented : Bool :=
   #[burnBurnTreeAndFern, downInTheValley, downDownToGoblinTown,
     oldFatSpiderCanTSeeMe, roadsGoEverEverOn, rollRollRollRoll,
     theMistyMountainsCold, theMountainKingSReturn].all (fun c =>
-      match c.saga with
-      | none => false
-      | some s =>
-        !s.chapters.isEmpty &&
-          s.chapters.all (fun ch =>
-            ch.chapterEffect.isSome && !ch.chapterNumbers.isEmpty))
+      let chs := c.sagaChapters
+      !chs.isEmpty &&
+        chs.all (fun ch =>
+          !ch.effect.resolution.doesNothingAsTrigger &&
+            (ch.chapterNumbers?.map (!·.isEmpty)).getD false))
 
 #guard catalogSagasImplemented
-#guard burnBurnTreeAndFern.saga.get!.finalChapterNumber == 4
-#guard theMountainKingSReturn.saga.get!.finalChapterNumber == 3
-#guard (burnBurnTreeAndFern.saga.get!.chaptersForLore 3).size == 1
-#guard (burnBurnTreeAndFern.saga.get!.chaptersForLore 4).size == 1
+#guard burnBurnTreeAndFern.finalChapterNumber == 4
+#guard theMountainKingSReturn.finalChapterNumber == 3
+#guard (burnBurnTreeAndFern.sagaChapters.filter (fun ch => (ch.chapterNumbers?.map (·.contains 3)).getD false)).size == 1
+#guard (burnBurnTreeAndFern.sagaChapters.filter (fun ch => (ch.chapterNumbers?.map (·.contains 4)).getD false)).size == 1
 
 /-- Put `card` onto the battlefield and run its enters/chapter triggers. -/
 def enterSaga (g : Game) (card : CardDef) : Game :=
@@ -1922,17 +1921,18 @@ def targetPlayerCreatesLeviathan : Game :=
     !targetPlayerCreatesLeviathan.controlledBy (leviathans[0]!) ⟨0⟩
 
 /- CR 111.2 / 603.6a / 701.7a: when player 0 creates a creature token that enters
-under player 1's control, `.fra .youCreateCreatureTokens` matches player 0 while
-`.creatureYouControlEnters` matches player 1. -/
+under player 1's control, `TriggerPattern.createTokens .you (.hasType .creature)` matches player 0 while
+`TriggerPattern.creatureYouControlEnters` matches player 1. -/
 #guard
   let creatorWatcher : CardDef := {
     name := "Creator Watcher", types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.fra (.fra .youCreateCreatureTokens)
-      "Whenever you create one or more creature tokens, draw a card." (.draw 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern (.createTokens .you (.hasType .creature))
+      "Whenever you create one or more creature tokens, draw a card." (.draw 1)
+      (grouping := .oncePerBatch)]
   }
   let enterWatcher : CardDef := {
     name := "Enter Watcher", types := #[.enchantment]
-    triggeredAbilities := #[.triggered .creatureYouControlEnters (Effect.ofTrigger (.gainLife 1)) {}]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .creatureYouControlEnters (Effect.ofTrigger (.gainLife 1))]
   }
   let g0 :=
     addPermanent

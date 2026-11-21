@@ -1,13 +1,11 @@
 import Mtg.Engine.Card.PermanentAction
-import Mtg.Engine.Card.TriggerEvent
 import Mtg.Engine.Card.Chapter
 
 /-!
 # Shared triggers (CR 603)
 
-Reusable trigger payloads (`SharedTriggerWhen` x `SharedTrigger`) used by
-triggered abilities and Saga chapters, including the leftover printed
-wordings grouped per trigger family.
+Reusable trigger payloads (`SharedTrigger`) used by triggered abilities and
+Saga chapters, including the leftover printed wordings grouped per trigger family.
 -/
 
 namespace Mtg.Engine
@@ -274,193 +272,6 @@ inductive ResourceLeftover where
   | plusOneOnHeroesCreateWall
 deriving Repr, Inhabited, BEq
 
-/-- When a reusable triggered ability fires. Constructors that only differ by
-this event (scry on enter vs attack, draw on die vs enter, …) share one
-`TriggeredAbility.triggered` constructor. -/
-inductive SharedTriggerWhen where
-  /-- When this permanent enters. -/
-  | enter
-  /-- Whenever this creature attacks. -/
-  | attack
-  /-- When this creature dies. -/
-  | dies
-  /-- Whenever you attack. -/
-  | youAttack
-  /-- Whenever you attack with one or more Elves. -/
-  | youAttackWithElves
-  /-- Whenever you cast a spell of this color. -/
-  | youCastColor (c : Color)
-  /-- Whenever you cast a noncreature spell. -/
-  | youCastNoncreature
-  /-- Landfall — whenever a land you control enters. -/
-  | landYouControlEnters
-  /-- At the beginning of your upkeep. -/
-  | yourUpkeep
-  /-- At the beginning of your end step. -/
-  | yourEndStep
-  /-- At the beginning of combat on your turn. -/
-  | yourBeginCombat
-  /-- Whenever you draw your second card each turn. -/
-  | youDrawSecond
-  /-- Whenever the Ring tempts you. -/
-  | theRingTemptsYou
-  /-- Whenever you choose a creature as your Ring-bearer. -/
-  | youChooseRingBearer
-  /-- Whenever this becomes the target of a spell or ability an opponent controls. -/
-  | becomesTarget
-  /-- Whenever an artifact you control enters. -/
-  | artifactYouControlEnters
-  /-- Whenever this deals combat damage to a player. -/
-  | combatDamageToPlayer
-  /-- Whenever one or more other creatures die. -/
-  | oneOrMoreOtherCreaturesDie
-  /-- Whenever a creature card leaves your graveyard. -/
-  | creatureCardLeavesYourGy
-  /-- Whenever you draw a card. -/
-  | youDraw
-  /-- Whenever you gain life. -/
-  | youGainLife
-  /-- Whenever another artifact you control enters. -/
-  | anotherArtifactEnters
-  /-- Whenever this is dealt damage. -/
-  | sourceDealtDamage
-  /-- Whenever equipped creature attacks alone. -/
-  | equippedAttacksAlone
-  /-- Whenever you cast a spell that had Treasure mana spent. -/
-  | youCastWithTreasure
-  /-- Whenever you cast a spell of this color from your hand. -/
-  | youCastColorFromHand (c : Color)
-  /-- Whenever an equipped creature you control attacks. -/
-  | equippedCreatureYouControlAttacks
-  /-- Whenever another Elf you control enters. -/
-  | anotherElfYouControlEnters
-  /-- Whenever you activate an ability of a creature. -/
-  | youActivateCreatureAbility
-  /-- Whenever an opponent draws their second card each turn. -/
-  | opponentDrawsSecond
-  /-- Whenever an opponent casts their first noncreature spell each turn. -/
-  | opponentCastsFirstNoncreature
-  /-- Whenever you cast your first noncreature spell each turn. -/
-  | youCastFirstNoncreature
-  /-- Whenever you cast a spell. -/
-  | youCastSpell
-  /-- Whenever you cast a spell that targets an opponent or a creature an
-  opponent controls. -/
-  | youCastTargetingOpponentOrTheirCreature
-  /-- Whenever you activate a loyalty ability. -/
-  | youActivateLoyaltyAbility
-  /-- At the beginning of each player's upkeep. -/
-  | eachUpkeep
-  /-- Whenever you scry or surveil. -/
-  | youScryOrSurveil
-  /-- When one or more of your opponents are dealt combat damage during your turn. -/
-  | opponentsDealtCombatDamageYourTurn
-  /-- Whenever a creature you control dies. -/
-  | creatureYouControlDies
-  /-- At the beginning of each opponent's draw step. -/
-  | eachOpponentDrawStep
-  /-- At the beginning of each end step. -/
-  | eachEndStep
-  /-- Whenever this or another nontoken permanent of a listed subtype enters. -/
-  | thisOrNontokenSubtypeEnters
-  /-- Whenever this or another permanent of a listed subtype enters. -/
-  | thisOrAnotherSubtypeEnters
-  /-- Whenever another permanent of a listed subtype or an Equipment enters. -/
-  | anotherSubtypeOrEquipmentEnters
-  /-- Whenever this deals combat damage to a player or battle. -/
-  | combatDamageToPlayerOrBattle
-  /-- Whenever you cast a green spell. -/
-  | youCastGreen
-  /-- Whenever a Forest you control enters. -/
-  | forestYouControlEnters
-  /-- Whenever you cast an instant or sorcery spell. -/
-  | youCastInstantOrSorcery
-  /-- Whenever an Equipment you control enters. -/
-  | equipmentYouControlEnters
-  /-- Whenever another creature you control enters. -/
-  | anotherCreatureYouControlEnters
-  /-- Whenever another Goblin, Orc, or Army you control dies. -/
-  | anotherGoblinOrcArmyDies
-  /-- Whenever a creature you control attacks alone. -/
-  | creatureYouControlAttacksAlone
-  /-- Whenever an opponent casts a spell. -/
-  | opponentCastsSpell
-  /-- Whenever you scry. -/
-  | youScry
-  /-- Whenever this creature becomes blocked. -/
-  | becomesBlocked
-  /-- When this permanent leaves the battlefield. -/
-  | leaving
-  /-- Whenever two or more creatures you control attack a player. -/
-  | youAttackWithTwoOrMore
-  /-- Whenever you sacrifice a token. -/
-  | youSacrificeToken
-  /-- Whenever an Army you control deals combat damage to a player. -/
-  | armyYouControlCombatDamage
-  /-- At the beginning of your first main phase. -/
-  | yourFirstMain
-  /-- Whenever a player casts their second spell each turn. -/
-  | anyPlayerCastsSecondSpell
-  /-- At the beginning of each combat. -/
-  | eachBeginCombat
-  /-- Whenever you cast a creature spell. -/
-  | youCastCreature
-  /-- Whenever a Mountain you control enters. -/
-  | mountainYouControlEnters
-  /-- Whenever equipped creature deals combat damage to a player. -/
-  | equippedDealsCombatDamageToPlayer
-  /-- Whenever a nontoken creature you control dies. -/
-  | nontokenYouControlDies
-  /-- Whenever a player loses life. -/
-  | playerLosesLife
-  /-- Whenever you cast your second spell each turn. -/
-  | youCastSecondSpell
-  /-- Whenever equipped creature attacks. -/
-  | equippedAttacks
-  /-- Cascade on the spell being cast (no `TriggerEvent`; queued from cast). -/
-  | cascade
-  /-- Whenever a token you control enters. -/
-  | tokenYouControlEnters
-  /-- Reflexive trigger after Bolg's sacrifice. -/
-  | bolgSacrificedForReflexive
-  /-- Whenever an opponent draws except their first draw-step card. -/
-  | opponentDrawsExceptFirst
-  /-- Whenever you attack with creatures with total power at least a listed amount. -/
-  | youAttackWithTotalPower
-  /-- Delayed Eagles Bird Soldier trigger. -/
-  | eaglesCreateBirds
-  /-- Whenever an opponent casts a spell of the chosen parity. -/
-  | opponentCastsMatchingParity
-  /-- Whenever you put counters on a Goblin, Orc, or Army. -/
-  | youPutCountersOnGoblinOrcArmy
-  /-- Whenever this is dealt noncombat damage. -/
-  | sourceDealtNoncombatDamage
-  /-- Whenever the final chapter of a Saga you control resolves. -/
-  | finalSagaChapterResolves
-  /-- Whenever one or more creatures deal combat damage to you. -/
-  | combatDamageToYou
-  /-- A Saga chapter ability. -/
-  | sagaChapter
-  /-- Whenever this becomes tapped to pay a teamwork cost. -/
-  | tappedForTeamwork
-  /-- Whenever a creature you control enters. -/
-  | creatureYouControlEnters
-  /-- Whenever one or more creatures you control become tapped. -/
-  | creaturesYouControlBecomeTapped
-  /-- Whenever a permanent of this subtype you control enters. -/
-  | subtypeYouControlEnters (subtype : CardSubtype)
-  /-- Whenever one or more creature cards are put into your graveyard. -/
-  | creatureCardsPutIntoYourGy
-  /-- When the `n`th plan counter is put on this. -/
-  | nthPlanCounter (n : Nat)
-  /-- Triggers when at least one of the two given conditions triggers. -/
-  | or (a b : SharedTriggerWhen)
-  /-- Use the events stored on the shared effect (leftover family wrappers). -/
-  | fromEffect
-  /-- A Reality Fracture event. -/
-  | fra (e : FraEvent)
-deriving Repr, Inhabited, BEq
-
 /-- How many counters `amass` puts on the Army. `.fixed` uses `n`. -/
 inductive AmassAmount where
   /-- The `n` argument. -/
@@ -495,7 +306,7 @@ inductive OpponentDiscard where
 deriving Repr, Inhabited, BEq, DecidableEq
 
 /-- Shared resolution for reusable triggered abilities that only differ by
-when they fire. `TriggeredAbility.triggered` pairs this with `SharedTriggerWhen`. -/
+when they fire. `TriggeredAbility` pairs this payload with `TriggerPattern`. -/
 inductive SharedTrigger where
   /-- Scry `n`. -/
   | scry (n : Nat)
@@ -807,7 +618,7 @@ inductive SharedTrigger where
   /-- Opponents sac damagers; the Ring tempts you. Resolves as
   `.sequence [.sacrifice .combatDamager, .ringTempts]`. -/
   | sacDamagersRingTempts
-  /-- A Saga chapter. Resolves as `TriggeredAbility.chapterTiming`. -/
+  /-- A Saga chapter. Resolves as `TriggeredAbility.chapterEffect`. -/
   | chapter (n : Nat) (e : ChapterResolution)
   /-- Draw if you attacked with this subtype or one entered under your control.
   Resolves as
@@ -1082,87 +893,5 @@ inductive SharedTrigger where
   `.may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo`. -/
   | resource (e : ResourceLeftover)
 deriving Repr, Inhabited, BEq
-
-/-- A Reality Fracture intervening “if” clause (CR 603.4), checked when the
-ability triggers and again as it resolves. -/
-inductive FraCondition where
-  | none
-  /-- “if it isn't a token” (the source, as it last existed). -/
-  | sourceNotToken
-  /-- “if two or more creatures died this turn”. -/
-  | twoCreaturesDiedThisTurn
-  /-- “if an opponent was dealt noncombat damage last turn”. -/
-  | opponentDealtNoncombatDamageLastTurn
-  /-- “if you've drawn three or more cards this turn”. -/
-  | drewThreeThisTurn
-  /-- “if you didn't cast a spell this turn”. -/
-  | castNoSpellThisTurn
-  /-- “if you've activated a loyalty ability this turn”. -/
-  | activatedLoyaltyThisTurn
-  /-- “if you cast it”. -/
-  | sourceWasCast
-  /-- “if it had counters on it” (the object that caused the trigger). -/
-  | causeHadCounters
-  /-- “if this has counters on it”. -/
-  | sourceHasCounters
-  /-- “if this permanent's impending cost was paid and it has a time counter on it” (CR 702.176a). -/
-  | impendingCostPaidWithTimeCounter
-deriving Repr, Inhabited, BEq, DecidableEq
-
-/-- Optional intervening conditions and wording filters for `triggered`. -/
-structure SharedTriggerOpts where
-  onceEachTurn : Bool := false
-  youControlCreatureWithPower : Option Int := none
-  thisOrNontokenSubtype : Option CardSubtype := none
-  thisOrAnotherSubtype : Option CardSubtype := none
-  anotherSubtypeOrEquipment : Option CardSubtype := none
-  gainedLifeAtLeast : Option Nat := none
-  /-- Intervening “another creature you control with power ≤ n”. -/
-  anotherCreaturePowerAtMost : Option Int := none
-  allowsZeroTargets : Bool := false
-  /-- Subtype watched by “whenever a {subtype} you control deals combat damage”. -/
-  watchedSubtype : Option CardSubtype := none
-  /-- Drop targeting from the shared effect (e.g. Guttersnipe). -/
-  untargeted : Bool := false
-  /-- The ability's printed sentence, when its wording isn't built from the
-  event and resolution (Reality Fracture). -/
-  printed : String := ""
-  /-- Reality Fracture intervening “if” clause. -/
-  fraCondition : FraCondition := .none
-  /-- The other permanent must have this supertype (“another legendary Elf”). -/
-  anotherSupertype : Option Supertype := none
-deriving Repr, Inhabited, BEq
-
-/-- Ferocious intervening condition (power 4 or greater). -/
-def SharedTriggerOpts.ferocious : SharedTriggerOpts :=
-  { youControlCreatureWithPower := some 4 }
-
-/-- “This ability triggers only once each turn.” -/
-def SharedTriggerOpts.once : SharedTriggerOpts :=
-  { onceEachTurn := true }
-
-/-- Shared effect has targeting; this printed ability does not. -/
-def SharedTriggerOpts.noTarget : SharedTriggerOpts :=
-  { untargeted := true }
-
-def SharedTriggerWhen.applyTextChangesAux (tcs : Array TextChange) : SharedTriggerWhen → SharedTriggerWhen
-  | .youCastColor c => .youCastColor (HasTextChange.applyTextChanges tcs c)
-  | .youCastColorFromHand c => .youCastColorFromHand (HasTextChange.applyTextChanges tcs c)
-  | .youCastGreen =>
-    let c := HasTextChange.applyTextChanges tcs Color.green
-    if c == .green then .youCastGreen else .youCastColor c
-  | .subtypeYouControlEnters s => .subtypeYouControlEnters (HasTextChange.applyTextChanges tcs s)
-  | .forestYouControlEnters =>
-    let s := HasTextChange.applyTextChanges tcs CardSubtype.forest
-    if s == .forest then .forestYouControlEnters else .subtypeYouControlEnters s
-  | .mountainYouControlEnters =>
-    let s := HasTextChange.applyTextChanges tcs CardSubtype.mountain
-    if s == .mountain then .mountainYouControlEnters else .subtypeYouControlEnters s
-  | .or a b => .or (SharedTriggerWhen.applyTextChangesAux tcs a) (SharedTriggerWhen.applyTextChangesAux tcs b)
-  | w => w
-
-instance : HasTextChange SharedTriggerWhen where
-  applyTextChanges tcs w :=
-    if tcs.isEmpty then w else SharedTriggerWhen.applyTextChangesAux tcs w
 
 end Mtg.Engine

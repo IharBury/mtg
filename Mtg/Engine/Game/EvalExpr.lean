@@ -984,7 +984,25 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
     match v.id? with
     | none => false
     | some oid =>
-      (evalObjects g env attFilter.toExpr).any (fun att => viewAttachedTo? att == some oid)
+      if (evalObjects g env attFilter.toExpr).any (fun att => viewAttachedTo? att == some oid) then
+        true
+      else if (g.findObject? oid).any (·.zone == .battlefield) then
+        false
+      else
+        let depBatch? := g.events.reverse.findSome? fun ev =>
+          match ev.change with
+          | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
+            if toZ != .battlefield && before.id == some oid then ev.batch else none
+          | _ => none
+        match depBatch? with
+        | none => false
+        | some bid =>
+          g.events.any fun ev =>
+            ev.batch == some bid &&
+              match ev.change, ev.cause? with
+              | .rules (.permanent (.unattached att fromHost)), some (.gameRule .unattachOnHostLeave) =>
+                fromHost == oid && evalObjectPred g env (.lki att) attFilter.pred
+              | _, _ => false
   | .targets tgtExpr =>
     match v.id? with
     | none => false
@@ -1357,6 +1375,10 @@ def evalCastPred (g : Game) (env : EvalEnv) (pred : CastContextPred) : Bool :=
       let units := manaUnitsSpentOn g.events oid
       match mp with
       | .fromTreasure => g.wasCast oid && GameEvent.treasureManaSpentOn g.events (GameEvent.stackSpellIdOf g.events oid)
+      | .fromSource =>
+        match env.sourceId with
+        | some sid => units.any (·.source == some sid)
+        | none => false
       | .ofColor c => units.any (·.mana == .colored c)
       | .amount op n => op.eval (Int.ofNat units.size) (Int.ofNat n)
       | .colorCount op n =>
@@ -1410,13 +1432,20 @@ def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
             pids.contains (obj.controller.getD ctrl) &&
             evalObjectPred g eEnv (.lki obj) pred
         | _ => false
-    | .permanentDied pred =>
-      anyEventOnTurn fun i e =>
-        match e.change with
-        | .rules (.zone (.moved before _ .battlefield (.graveyard _) _ _ _ _)) =>
-          !before.phasedOut && matchesOwnerOrCtrl before.controller &&
-            evalObjectPred g { env with eventIdx? := some i } (.lki before) pred
-        | _ => false
+    | .permanentDied pred minCount =>
+      let count : Nat := Id.run do
+        let mut n := 0
+        for i in [0:g.events.size] do
+          let e := g.events[i]!
+          if e.turn == targetTurn then
+            match e.change with
+            | .rules (.zone (.moved before _ .battlefield (.graveyard _) _ _ _ _)) =>
+              if !before.phasedOut && matchesOwnerOrCtrl before.controller &&
+                  evalObjectPred g { env with eventIdx? := some i } (.lki before) pred then
+                n := n + 1
+            | _ => pure ()
+        return n
+      count >= minCount
     | .permanentLeftBattlefield pred =>
       anyEventOnTurn fun i e =>
         match e.change with

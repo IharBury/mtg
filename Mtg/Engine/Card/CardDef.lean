@@ -1,5 +1,4 @@
 import Mtg.Engine.Card.KeywordExpand
-import Mtg.Engine.Card.Saga
 
 /-!
 # Card definitions (CR 108, 109.3, section 2)
@@ -70,9 +69,6 @@ structure CardDef where
   additionalCosts : Array AdditionalCostSpec := #[]
   /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
   spellModes : Array Effect := #[]
-  /-- Modes of this card's modal triggered ability (“When this creature
-  enters, choose one —”), chosen as it is put on the stack (CR 603.3c). -/
-  fraTriggerModes : Array Effect := #[]
   /-- This object is a token (CR 111). -/
   isToken : Bool := false
   /-- A deck can have any number of cards with this name (CR 100.2a). -/
@@ -81,15 +77,14 @@ structure CardDef where
   chooseOneOrBoth : Bool := false
   /-- “Choose one. If you control a {subtype}, you may choose two instead.” -/
   chooseTwoIfYouControlSubtype : Option CardSubtype := none
-  /-- Printed Saga chapters (CR 714). -/
-  saga : Option SagaDef := none
   /-- Printed activated abilities (CR 602), including mana abilities (CR 605.1a)
   and loyalty abilities (CR 606.2). Basic-land intrinsic mana abilities are
   synthesized from Layer 4 basic land types per CR 305.6. -/
   activatedAbilities : Array ActivatedAbility := #[]
   /-- Printed stratified static abilities (CR 604 / 613 / 614–616 / 303.4a). -/
   staticAbilities : Array StaticAbility := #[]
-  /-- Triggered abilities (CR 603). -/
+  /-- Triggered abilities (CR 603), including Saga chapter abilities (CR 714.2)
+  and modal triggered abilities (carrying their modes on `TriggeredAbility.modes`). -/
   triggeredAbilities : Array TriggeredAbility := #[]
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
@@ -104,9 +99,6 @@ structure CardDef where
   empowerJace : Option Nat := none
   /-- Sorcery or instant copied while this permanent is prepared. -/
   prepareFace : Option AdventureFace := none
-  /-- Spending commander-identity mana from this land to cast a creature spell
-  that shares a creature type with your commander scries 1 (Path of Ancestry). -/
-  commanderIdentityScryCreature : Bool := false
 deriving Repr, Inhabited
 
 namespace CardDef
@@ -502,6 +494,17 @@ def spellLines (c : CardDef) : List String :=
     | some e => [Effect.toNotation e]
     | none => []
 
+/-- Oracle line for a triggered ability; Saga chapter triggers render with
+their printed Roman numeral chapter header so `renderFullOracle` round-trips
+through `parseChapterHeader`. -/
+def triggeredNotation (ab : TriggeredAbility) : String :=
+  match ab.chapterNumbers? with
+  | some ns =>
+    let body := ab.effect.phrase.trimAscii.copy
+    let body := if body.endsWith "." then body else s!"{body}."
+    s!"{formatChapterRoman ns} — {capitalizeAscii body}"
+  | none => ab.toNotation
+
 /-- Basic-land reminders, additional costs, activated (including mana), static,
 triggered, and spell abilities. -/
 def structuredAbilityLines (c : CardDef) : List String :=
@@ -509,7 +512,7 @@ def structuredAbilityLines (c : CardDef) : List String :=
   c.additionalCostLines ++
   c.activatedAbilities.toList.map activatedNotation ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
-  c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
+  c.triggeredAbilities.toList.map triggeredNotation ++
   c.adventureLines ++
   c.prepareLines ++
   c.empowerLines ++
@@ -678,7 +681,21 @@ def isWorthy (c : CardDef) : Bool :=
 def hasEquipWorthy (c : CardDef) : Bool :=
   c.activatedAbilities.any (·.isEquipWorthy)
 
-/-- Spell, modal, adventure, prepare, and Saga-chapter effects on this face. -/
+/-- True when this face has any printed Saga chapter triggered abilities (CR 714.2). -/
+def hasSagaChapters (c : CardDef) : Bool :=
+  c.triggeredAbilities.any (·.isSagaChapter)
+
+/-- Printed Saga chapter triggered abilities on this face (CR 714.2). -/
+def sagaChapters (c : CardDef) : Array TriggeredAbility :=
+  c.triggeredAbilities.filter (·.isSagaChapter)
+
+/-- Printed final chapter number across this face's chapter abilities (CR 714.2d). -/
+def finalChapterNumber (c : CardDef) : Nat :=
+  TriggeredAbility.finalChapterNumberOf c.triggeredAbilities
+
+/-- Spell, modal, adventure, and prepare effects on this face.
+Saga chapters live in `triggeredAbilities` and are validated there via
+`Resolution.doesNothingAsTrigger`. -/
 def spellLikeEffects (c : CardDef) : Array Effect :=
   let modes := if c.spellModes.isEmpty then
       match c.spellEffect with
@@ -695,10 +712,7 @@ def spellLikeEffects (c : CardDef) : Array Effect :=
       | some e => #[e]
       | none => #[]
     | none => #[]
-  let chapters := match c.saga with
-    | some s => s.chapters.filterMap (·.chapterEffect)
-    | none => #[]
-  modes ++ adv ++ prep ++ chapters
+  modes ++ adv ++ prep
 
 /-- Why this face is not fully parsed or its effects are not fully modelled.
 Does not look at `otherFace`. -/
@@ -724,11 +738,41 @@ def faceModellingError? (c : CardDef) : Option String :=
         if ab.mana?.isNone && ab.effect.resolution.doesNothingAsActivated then
           some s!"{c.name} activated ability is not fully modelled: {ab.effect.toNotation}"
         else none) none
-  unparsed <|> spell <|> activated
+  let triggered : Option String :=
+    c.triggeredAbilities.foldl (fun acc ab =>
+      match acc with
+      | some err => some err
+      | none =>
+        if ab.activeZones.isEmpty then
+          some s!"{c.name} triggered ability has empty activeZones: {ab.toNotation}"
+        else
+          let modeCountErr : Option String :=
+            match ab.effect.resolution with
+            | .chooseTriggerModes n =>
+              if ab.modes.size < n then
+                some s!"{c.name} modal triggered ability requires {n} modes but has {ab.modes.size}: {ab.toNotation}"
+              else none
+            | _ => none
+          match modeCountErr with
+          | some err => some err
+          | none =>
+            if !ab.modes.isEmpty then
+              ab.modes.foldl (fun mAcc m =>
+                match mAcc with
+                | some err => some err
+                | none =>
+                  if m.resolution.doesNothingAsTrigger then
+                    some s!"{c.name} modal triggered ability mode is not fully modelled: {m.toNotation}"
+                  else none) none
+            else if ab.effect.resolution.doesNothingAsTrigger then
+              some s!"{c.name} triggered ability is not fully modelled: {ab.toNotation}"
+            else none) none
+  unparsed <|> spell <|> activated <|> triggered
 
 /-- Why `c` or its back face is not fully parsed or fully modelled.
 `none` when every rules line was recognized and every spell, mode,
-adventure, prepare face, Saga chapter, and activated ability resolves. -/
+adventure, prepare face, Saga chapter, activated ability, and triggered ability
+resolves. -/
 def modellingError? (c : CardDef) : Option String :=
   c.faceModellingError? <|> (c.otherFace.bind faceModellingError?)
 

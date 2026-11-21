@@ -1117,7 +1117,7 @@ counter on a planeswalker. -/
 #guard
   let g := addPermanent (addPermanent afterDraw teyoLightshieldExpert me me) grizzlyBears me me
   let ab : TriggeredAbility :=
-    .triggered .enter (Effect.ofTrigger (.grantThenCounterByType #[Keyword.hexproof]))
+    TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.grantThenCounterByType #[Keyword.hexproof]))
   let g := g.applyTriggeredAbility me ab (some (idOf g "Teyo, Lightshield Expert"))
     #[.permanent (idOf g "Grizzly Bears")]
   let bears := namedPermanent g "Grizzly Bears"
@@ -1127,7 +1127,7 @@ counter on a planeswalker. -/
   let g := addPermanent (addPermanent afterDraw teyoLightshieldExpert me me) ajaniResolute me me
   let before := loyaltyOf g "Ajani Resolute"
   let ab : TriggeredAbility :=
-    .triggered .enter (Effect.ofTrigger (.grantThenCounterByType #[Keyword.hexproof]))
+    TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.grantThenCounterByType #[Keyword.hexproof]))
   let g := g.applyTriggeredAbility me ab (some (idOf g "Teyo, Lightshield Expert"))
     #[.permanent (idOf g "Ajani Resolute")]
   let ajani := namedPermanent g "Ajani Resolute"
@@ -1558,7 +1558,7 @@ copy nothing. -/
   let g := addPermanent (addPermanent afterDraw absorbingMan me me) forest me me
   let g := addPermanent g grizzlyBears me me
   let legal := g.legalTargetsForSpec me
-    (SharedTrigger.timing (.step .copyAbsorbingMan)).targeting.spec (some (idOf g "Absorbing Man"))
+    (SharedTrigger.toEffect (.step .copyAbsorbingMan)).targeting.spec (some (idOf g "Absorbing Man"))
   let forestOk := legal.contains (Target.permanent (idOf g "Forest"))
   let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
   let g := g.applyModeledTrigger me (.onStep Effect.stepCopyAbsorbingMan)
@@ -1611,7 +1611,7 @@ line is Human Mercenary Villain. -/
     (cause := .oneShotEffect none (some stone.id) (some me)))
   let g := addPermanent (addPermanent g forest me me) grizzlyBears me me
   let legal := g.legalTargetsForSpec me
-    (SharedTrigger.timing (.step .harnessedFlicker)).targeting.spec
+    (SharedTrigger.toEffect (.step .harnessedFlicker)).targeting.spec
     (some (idOf g "The Mind Stone"))
   let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
   let landOk := legal.contains (Target.permanent (idOf g "Forest"))

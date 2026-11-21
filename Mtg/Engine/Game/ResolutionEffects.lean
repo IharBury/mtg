@@ -639,13 +639,13 @@ def queueFollowupReflexive (g : Game) (controller : PlayerId) (sourceId : Option
     let effect : Effect := {
       resolution := .draw 0
       phrase := "when you do, that ability triggers" }
-    let marker : TriggeredAbility := .triggered .enter effect {}
+    let marker : TriggeredAbility := { word := .when, pattern := .thisEnters, effect }
     let eventCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
     let wt : WaitingTrigger := {
       controller
       source := src
       ability := marker
-      event := .leaving
+      pattern := .thisLeaves
       checked := true
       eventCause := eventCause
       reflexiveResolution := some followup
@@ -663,13 +663,13 @@ def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option Ob
   if !g.stillInGame controller then g
   else
     let src := g.abilitySourceFor controller sourceId
-    let marker : TriggeredAbility := .triggered .enter effect {}
+    let marker : TriggeredAbility := { word := .when, pattern := .thisEnters, effect }
     let eventCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
     let wt : WaitingTrigger := {
       controller
       source := src
       ability := marker
-      event := .entering
+      pattern := .thisEnters
       causeIds := causeIds
       checked := true
       eventCause := eventCause

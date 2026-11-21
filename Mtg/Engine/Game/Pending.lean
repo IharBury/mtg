@@ -370,7 +370,7 @@ inductive FraChoice where
   2 draw). -/
   | gollumMode (sourceId : ObjectId) (available : Array Nat)
   /-- Choose `remaining` more modes for the triggered ability `objectId`
-  from `CardDef.fraTriggerModes` of its source. -/
+  from `TriggeredAbility.modes` on the stack object. -/
   | triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)
   /-- Choose up to `remaining` more modes for the triggered ability `objectId`;
   declining finishes mode selection with `chosen` (CR 603.3c / 700.2). -/
