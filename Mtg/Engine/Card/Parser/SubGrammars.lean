@@ -3672,14 +3672,16 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
   if let some sp := parseStepClause? s then
     return some (sp, .perOccurrence, .unlimited, #[.battlefield])
 
-  -- `"<A> and whenever <B>"` / `"<A> and when <B>"` disjunctions
+  -- `"<A> and whenever <B>"` / `"<A> and when <B>"` disjunctions:
+  -- only merge into one `TriggeredAbility` when both clauses share identical
+  -- `BatchGrouping`, `TriggerLimit`, and `activeZones`; heterogeneous clauses
+  -- are split into independent abilities by `parseTriggerClauses`.
   if let some (lhs, rhs) := (splitFirstCI? s " and whenever ").orElse
       (fun _ => splitFirstCI? s " and when ") then
-    if let (some (p1, g1, l1, z1), some (p2, g2, _, z2)) :=
+    if let (some (p1, g1, l1, z1), some (p2, g2, l2, z2)) :=
         (parseAtomicTriggerEvent? lhs cardName, parseAtomicTriggerEvent? rhs cardName) then
-      let grp := if g1 != .perOccurrence then g1 else g2
-      let zones := z1 ++ z2.filter (!z1.contains ·)
-      return some (.or p1 p2, grp, l1, zones)
+      if g1 == g2 && l1 == l2 && z1 == z2 then
+        return some (.or p1 p2, g1, l1, z1)
 
   -- Self/subject compound verbs: `"<subj> enters or attacks"` / `"enters or dies"` / `"attacks or blocks"`
   for (sfx, mkPat) in [
@@ -3920,13 +3922,27 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
   let _ := l
   return none
 
+private partial def splitTriggerDisjunctClauses (word : TriggerWord) (s : String) :
+    Array (TriggerWord × String) :=
+  match splitFirstCI? s " and whenever " with
+  | some (lhs, rhs) =>
+    #[(word, lhs)] ++ splitTriggerDisjunctClauses .whenever rhs
+  | none =>
+    match splitFirstCI? s " and when " with
+    | some (lhs, rhs) =>
+      #[(word, lhs)] ++ splitTriggerDisjunctClauses .when rhs
+    | none => #[(word, s)]
+
 /-- Stage-4 compositional trigger-clause parser (CR 603.1 / 603.2 / 603.4).
 Splits `"When/Whenever/At <event> [while <cond>], [if <intervening-if>,] <effect> [limit]"`
-into a `ParsedTriggerHeader` with `word`, `pattern`, `grouping`, `interveningIf?`,
-`activeZones`, `limit`, and residual `effectText`. -/
-def parseTriggerClause (raw : String) (cardName : String := "") : Option ParsedTriggerHeader := Id.run do
+into one or more `ParsedTriggerHeader`s. Homogeneous `"<A> and when/whenever <B>"`
+clauses (matching `grouping`, `limit`, and `activeZones`) merge into a single `.or`
+header; heterogeneous clauses split into separate headers when `trailingLimit` is
+`.unlimited` so each clause preserves its own `BatchGrouping`, `TriggerLimit`,
+and `activeZones`. -/
+def parseTriggerClauses (raw : String) (cardName : String := "") : Array ParsedTriggerHeader := Id.run do
   let cleaned := cleanClause (stripReminderText raw)
-  if cleaned.isEmpty then return none
+  if cleaned.isEmpty then return #[]
 
   -- Peel trailing turn-limit sentences
   let (withoutLimit, trailingLimit) : String × TriggerLimit :=
@@ -3950,25 +3966,10 @@ def parseTriggerClause (raw : String) (cardName : String := "") : Option ParsedT
     else if let some r := dropPrefixCI? withoutLimit "at " then
       (.at, r)
     else
-      return none
+      return #[]
 
   -- Split event clause from effect/intervening-if at the first `", "`
-  let some (eventRaw, afterComma) := splitFirstCI? afterWord ", " | return none
-
-  -- Peel CR 603.2 non-intervening `" while <cond>"` from the event clause
-  let (eventCore, whileCond?) : String × Option Condition :=
-    match splitFirstCI? eventRaw " while " with
-    | some (evPart, condStr) =>
-      let cond? := (parseStaticCondition? condStr cardName).orElse (fun _ => parseCondition condStr)
-      match cond? with
-      | some c => (evPart, some c)
-      | none => (eventRaw, none)
-    | none => (eventRaw, none)
-
-  let some (basePat, grouping, patLimit, baseZones) := parseAtomicTriggerEvent? eventCore cardName
-    | return none
-  let pattern := match whileCond? with | some c => .whenCond basePat c | none => basePat
-  let limit := if trailingLimit != .unlimited then trailingLimit else patLimit
+  let some (eventRaw, afterComma) := splitFirstCI? afterWord ", " | return #[]
 
   -- Peel CR 603.4 intervening `"if <cond>, <effect>"` at the start of `afterComma`
   let (interveningIf?, effectText) : Option Condition × String :=
@@ -3982,35 +3983,88 @@ def parseTriggerClause (raw : String) (cardName : String := "") : Option ParsedT
       | none => (none, afterComma.trimAscii.copy)
     else (none, afterComma.trimAscii.copy)
 
-  if effectText.isEmpty then return none
+  if effectText.isEmpty then return #[]
 
-  -- Infer graveyard active zone when the effect returns this card from your graveyard (CR 113.6m)
   let effLow := lower effectText
-  let activeZones :=
+  let inferZones (baseZones : Array ZoneKind) : Array ZoneKind :=
+    -- Infer graveyard active zone when the effect returns this card from your graveyard (CR 113.6m)
     if baseZones == #[.battlefield] && effLow.contains "from your graveyard" &&
         (effLow.contains "return this card" || effLow.contains s!"return {lower cardName}") then
       #[.graveyard]
     else baseZones
 
-  return some { word, pattern, grouping, interveningIf?, activeZones, limit, effectText }
+  let peelWhile (ev : String) : String × Option Condition :=
+    match splitFirstCI? ev " while " with
+    | some (evPart, condStr) =>
+      let cond? := (parseStaticCondition? condStr cardName).orElse (fun _ => parseCondition condStr)
+      match cond? with
+      | some c => (evPart, some c)
+      | none => (ev, none)
+    | none => (ev, none)
+
+  -- Fast path: single atomic event or homogeneous `"and when/whenever"` `.or`
+  let (eventCore, whileCond?) := peelWhile eventRaw
+  if let some (basePat, grouping, patLimit, baseZones) := parseAtomicTriggerEvent? eventCore cardName then
+    let pattern := match whileCond? with | some c => .whenCond basePat c | none => basePat
+    let limit := if trailingLimit != .unlimited then trailingLimit else patLimit
+    return #[{ word, pattern, grouping, interveningIf?, activeZones := inferZones baseZones, limit, effectText }]
+
+  -- Heterogeneous `"<A> and when/whenever <B>"`: split into independent headers
+  -- when no shared trailing once-per-turn cap couples them.
+  if trailingLimit != .unlimited then return #[]
+  let parts := splitTriggerDisjunctClauses word eventCore
+  if parts.size < 2 then return #[]
+  let mut out : Array ParsedTriggerHeader := #[]
+  for (wPart, rawPart) in parts do
+    let (corePart, partWhile?) := peelWhile rawPart
+    let some (basePat, grouping, patLimit, baseZones) := parseAtomicTriggerEvent? corePart cardName
+      | return #[]
+    let pat1 := match partWhile? with | some c => .whenCond basePat c | none => basePat
+    let pattern := match whileCond? with | some c => .whenCond pat1 c | none => pat1
+    out := out.push {
+      word := wPart
+      pattern
+      grouping
+      interveningIf?
+      activeZones := inferZones baseZones
+      limit := patLimit
+      effectText
+    }
+  return out
+
+/-- Single-header convenience wrapper around `parseTriggerClauses`. Returns `none`
+when the line splits into multiple heterogeneous triggers. -/
+def parseTriggerClause (raw : String) (cardName : String := "") : Option ParsedTriggerHeader :=
+  match parseTriggerClauses raw cardName with
+  | #[hdr] => some hdr
+  | _ => none
 
 /-- Compositional fallback parser for novel triggered abilities not present in the
-catalog prototype table. Composes `parseTriggerClause` with an effect parser `parseEffect`
-and rejects any effect whose resolution does nothing as a trigger. -/
-def parseNovelTriggeredAbilityLine (raw : String) (cardName : String := "")
-    (parseEffect : String → Option Effect) : Option TriggeredAbility := do
-  let hdr ← parseTriggerClause raw cardName
-  let eff ← parseEffect hdr.effectText
-  if eff.resolution.doesNothingAsTrigger then none
+catalog prototype table. Composes `parseTriggerClauses` with an effect parser
+`parseEffect` and rejects any effect whose resolution does nothing as a trigger. -/
+def parseNovelTriggeredAbilityLines (raw : String) (cardName : String := "")
+    (parseEffect : String → Option Effect) : Option (Array TriggeredAbility) := do
+  let hdrs := parseTriggerClauses raw cardName
+  if hdrs.isEmpty then none
   else
-    some {
-      word := hdr.word
-      pattern := hdr.pattern
-      grouping := hdr.grouping
-      interveningIf? := hdr.interveningIf?
-      activeZones := hdr.activeZones
-      limit := hdr.limit
-      effect := { eff with phrase := "" }
-    }
+    let eff ← parseEffect hdrs[0]!.effectText
+    if eff.resolution.doesNothingAsTrigger then none
+    else
+      some (hdrs.map fun hdr => {
+        word := hdr.word
+        pattern := hdr.pattern
+        grouping := hdr.grouping
+        interveningIf? := hdr.interveningIf?
+        activeZones := hdr.activeZones
+        limit := hdr.limit
+        effect := { eff with phrase := "" }
+      })
+
+/-- Single-ability convenience wrapper around `parseNovelTriggeredAbilityLines`. -/
+def parseNovelTriggeredAbilityLine (raw : String) (cardName : String := "")
+    (parseEffect : String → Option Effect) : Option TriggeredAbility :=
+  match parseNovelTriggeredAbilityLines raw cardName parseEffect with
+  | some #[ab] => some ab
+  | _ => none
 
 end Mtg.Engine.Parser

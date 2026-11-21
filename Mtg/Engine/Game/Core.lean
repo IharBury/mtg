@@ -14222,7 +14222,7 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
 /-- Collect candidate `(source, controller, boardForSrc, wasDiscardedFromHand)` tuples
 for one pass (`lookBackPass = true` on `pre`, `false` on `post`). -/
 @[noinline] private def collectTriggerCandidates (pre : GameSnapshot) (post : Game)
-    (batch : Array GameEvent) (mask : BatchEventMask) (lookBackPass : Bool) :
+    (batch : Array GameEvent) (lookBackPass : Bool) :
     Array (GameObject × PlayerId × Game × Bool) := Id.run do
   let board : Game := if lookBackPass then pre else post
   let mut out : Array (GameObject × PlayerId × Game × Bool) := #[]
@@ -14249,11 +14249,10 @@ for one pass (`lookBackPass = true` on `pre`, `false` on `post`). -/
         let (o', s') := addCand o o.owner board false out seen
         out := o'; seen := s'
     | .stack =>
-      if (!lookBackPass && mask.hasCast) || (lookBackPass && mask.hasCountered) then
+      if (board.triggeredAbilities o).any (·.activeZones.contains .stack) then
         let ctrl := ((board.stackEntry? o.id).map (·.controller)).orElse (fun _ => o.controller) |>.getD o.owner
-        if (board.triggeredAbilities o).any (·.activeZones.contains .stack) then
-          let (o', s') := addCand o ctrl board false out seen
-          out := o'; seen := s'
+        let (o', s') := addCand o ctrl board false out seen
+        out := o'; seen := s'
     | .graveyard p =>
       if (board.triggeredAbilities o).any (·.activeZones.contains .graveyard) then
         let (o', s') := addCand o p board false out seen
@@ -14423,7 +14422,7 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
       let mut w := w0
       let mut fs := fs0
       let mut ds := ds0
-      let cands := collectTriggerCandidates pre post batch mask lookBackPass
+      let cands := collectTriggerCandidates pre post batch lookBackPass
       for (src, ctrl, srcBoard, fromDisc) in cands do
         let baseAbs := srcBoard.triggeredAbilities src
         let abs :=
@@ -14477,11 +14476,13 @@ def matchTriggers (pre : GameSnapshot) (post : Game)
                           match ab.grouping with
                           | .oncePerBatch => st.firedOnce
                           | .perPlayerInBatch =>
-                            (hitPlayer?.any st.firedPlayers.contains) ||
-                              (st.matchedEventIdxs.contains h.eventIdx && h.overrideAbility.isNone)
+                            match hitPlayer? with
+                            | some pid => st.firedPlayers.contains pid
+                            | none => st.matchedEventIdxs.contains h.eventIdx && h.overrideAbility.isNone
                           | .perSourceInBatch =>
-                            (hitSource?.any st.firedSources.contains) ||
-                              (st.matchedEventIdxs.contains h.eventIdx && h.overrideAbility.isNone)
+                            match hitSource? with
+                            | some sid => st.firedSources.contains sid
+                            | none => st.matchedEventIdxs.contains h.eventIdx && h.overrideAbility.isNone
                           | .perOccurrence | .counterThreshold .. =>
                             st.matchedEventIdxs.contains h.eventIdx && h.overrideAbility.isNone
                       if !dupForOr then

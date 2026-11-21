@@ -1852,9 +1852,9 @@ partial def parseRules (c : CardDef) (lines : List String)
                       match Parser.parseNovelStaticAbilityLine line c.name with
                       | some abs => go { c with staticAbilities := c.staticAbilities ++ abs } rest
                       | none =>
-                        match Parser.parseNovelTriggeredAbilityLine line c.name
+                        match Parser.parseNovelTriggeredAbilityLines line c.name
                             (fun effText => matchTriggerMode c.name effText <|> spellSentenceSequence c.name effText) with
-                        | some ab => go { c with triggeredAbilities := c.triggeredAbilities.push ab } rest
+                        | some abs => go { c with triggeredAbilities := c.triggeredAbilities ++ abs } rest
                         | none => unrecognized c line
   go c units
 

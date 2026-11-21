@@ -761,4 +761,98 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     plusOneEv.matchesTriggerPattern p0 none rem0Pat
   secondSpellOk && manaSpentOk && targetsOk && loyaltyOk
 
+-- (f) Shared-event `.perPlayerInBatch` and `.perSourceInBatch` `.or` dedup:
+-- one `DamageEvent.dealt` with packets for two different players (or two different sources)
+-- across two `.or` disjuncts queues BOTH groups, while a duplicate packet for the same
+-- player/source across disjuncts still deduplicates.
+#guard
+  let combatMirror := mustParse
+    "Combat Mirror\n{2}{R}\nEnchantment\nWhenever one or more creatures you control deal combat damage to a player and whenever one or more creatures an opponent controls deal combat damage to a player, you gain 1 life."
+  let myAtt := mkCreature "My Attacker" #["Human"]
+  let oppAtt := mkCreature "Opp Attacker" #["Goblin"]
+  let g0 := quietGame (addPermanent (addPermanent (addPermanent afterDraw combatMirror p0 p0) myAtt p0 p0) oppAtt p1 p1)
+  let myObj := namedPerm g0 "My Attacker"
+  let oppObj := namedPerm g0 "Opp Attacker"
+  -- Single `.dealt` event: my creature hits p1, opp creature hits p0 (2 distinct players)
+  -- AND opp creature also hits p1 (same player p1 across second disjunct -> deduped):
+  let pkts : Array DamagePacket := #[
+    { source := g0.snapshot myObj, recipient := .player p1, amount := 2, combat := true },
+    { source := g0.snapshot oppObj, recipient := .player p0, amount := 2, combat := true },
+    { source := g0.snapshot oppObj, recipient := .player p1, amount := 1, combat := true }
+  ]
+  let gDmg := g0.record (GameEvent.rules g0.turnNumber (.damage (.dealt pkts)) testCause)
+  let perPlayerSharedEvOk := gDmg.waitingTriggers.size == 2
+  -- `.perSourceInBatch` on one `.dealt` event hitting a Goblin and an Elf (2 distinct
+  -- recipients across two disjuncts) vs. a Goblin Elf matching both disjuncts (1 trigger):
+  let srcOrWatcher := mkEnchantment "Goblin Or Elf Hurt" #[
+    TriggeredAbility.mkTrigger
+      (.or
+        (.damageDealt .anyObject (.object { zones := .battlefield, pred := .hasSubtype (.literal .goblin) }))
+        (.damageDealt .anyObject (.object { zones := .battlefield, pred := .hasSubtype (.literal .elf) })))
+      (Effect.gainLife 1)
+      (grouping := .perSourceInBatch)
+  ]
+  let gob := mkCreature "Test Gob" #["Goblin"]
+  let elf := mkCreature "Test Elf" #["Elf"]
+  let gobElf := mkCreature "Hybrid GobElf" #["Goblin", "Elf"]
+  let gs0 := quietGame (addPermanent (addPermanent (addPermanent (addPermanent afterDraw srcOrWatcher p0 p0) gob p0 p0) elf p0 p0) gobElf p0 p0)
+  let gobObj := namedPerm gs0 "Test Gob"
+  let elfObj := namedPerm gs0 "Test Elf"
+  let hybObj := namedPerm gs0 "Hybrid GobElf"
+  let pktsTwo : Array DamagePacket := #[
+    { source := gs0.snapshot gobObj, recipient := .permanent (gs0.snapshot gobObj), amount := 1, combat := false },
+    { source := gs0.snapshot gobObj, recipient := .permanent (gs0.snapshot elfObj), amount := 1, combat := false }
+  ]
+  let gTwoRecip := gs0.record (GameEvent.rules gs0.turnNumber (.damage (.dealt pktsTwo)) testCause)
+  let pktsHyb : Array DamagePacket := #[
+    { source := gs0.snapshot gobObj, recipient := .permanent (gs0.snapshot hybObj), amount := 1, combat := false }
+  ]
+  let gHyb := gs0.record (GameEvent.rules gs0.turnNumber (.damage (.dealt pktsHyb)) testCause)
+  perPlayerSharedEvOk && gTwoRecip.waitingTriggers.size == 2 && gHyb.waitingTriggers.size == 1
+
+-- (g) Runtime behavior of split heterogeneous `"and whenever"` triggers and uniform `.stack`
+-- candidate collection for stack-active triggers.
+#guard
+  let hetGroup := mustParse
+    "Split Group\n{2}{G}\nEnchantment\nWhenever a creature enters and whenever one or more creatures die, you gain 1 life."
+  let bear1 := mkCreature "Bear One" #["Bear"]
+  let bear2 := mkCreature "Bear Two" #["Bear"]
+  let g0 := quietGame (addPermanent afterDraw hetGroup p0 p0)
+  let (g1, h1) := addToZone g0 bear1 p0 (.hand p0) (some p0)
+  let (g2, h2) := addToZone g1 bear2 p0 (.hand p0) (some p0)
+  -- Two creatures enter in one batch -> `perOccurrence` triggers TWICE:
+  let gTwoEnter := g2.withBatch (some testCause) fun g =>
+    let (g, _) := g.putOntoBattlefield h1.id p0
+    (g.putOntoBattlefield h2.id p0).1
+  let twoEnterOk := gTwoEnter.waitingTriggers.size == 2
+  -- Two creatures die in one batch -> `oncePerBatch` triggers ONCE:
+  let gTwoDie := (quietGame gTwoEnter).withBatch (some testCause) fun g =>
+    let o1 := namedPerm g "Bear One"
+    let o2 := namedPerm g "Bear Two"
+    let g := g.moveToOwnerGraveyard o1 "dies" (verb := some .destroy) (cause := some testCause)
+    g.moveToOwnerGraveyard o2 "dies" (verb := some .destroy) (cause := some testCause)
+  let twoDieOk := gTwoDie.waitingTriggers.size == 1
+  -- Heterogeneous limit: `"Whenever a creature dies and whenever you draw your second card each turn, ..."`
+  let hetLimit := mustParse
+    "Split Limit\n{2}{U}\nEnchantment\nWhenever a creature dies and whenever you draw your second card each turn, you gain 1 life."
+  let gl0 := quietGame (addPermanent afterDraw hetLimit p0 p0)
+  let cardSnap : EventObject := { owner := p0, zone := .hand p0, name := "Drawn" }
+  let draw1Ev := GameEvent.moved gl0.turnNumber cardSnap (.library p0) (.hand p0)
+    (verb := some (.draw 1 true)) (actor := some p0) (cause := testCause)
+  let draw2Ev := GameEvent.moved gl0.turnNumber cardSnap (.library p0) (.hand p0)
+    (verb := some (.draw 2 false)) (actor := some p0) (cause := testCause)
+  let draw1Ok := (gl0.record draw1Ev).waitingTriggers.isEmpty
+  let draw2Ok := (gl0.record draw2Ev).waitingTriggers.size == 1
+  -- Stack-active trigger (not cast/countered) on a spell on the stack fires on draw:
+  let stackWatcher : CardDef := {
+    name := "Stack Draw Watcher", types := #[.instant], manaCost := ManaCost.ofColor .blue
+    triggeredAbilities := #[
+      { TriggeredAbility.mkTrigger (.drawCard .you) (Effect.gainLife 1) with activeZones := #[.stack] }
+    ]
+  }
+  let (gs0, spObj) := addToZone (quietGame afterDraw) stackWatcher p0 .stack (some p0)
+  let gs1 := gs0.putStackEntry p0 spObj.id
+  let stackDrawOk := (gs1.record draw1Ev).waitingTriggers.size == 1
+  twoEnterOk && twoDieOk && draw1Ok && draw2Ok && stackDrawOk
+
 end Mtg.Engine.Tests.TriggeredAbilitiesSuite

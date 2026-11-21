@@ -947,4 +947,46 @@ private def roundTripsOracleCard (raw : String) : Bool :=
     | _ => false
   | .error _ => false
 
+-- Heterogeneous `"and when/whenever"` clauses split into independent abilities preserving
+-- each clause's own `BatchGrouping`, `TriggerLimit`, and `activeZones`; homogeneous clauses
+-- merge into one `.or` ability; heterogeneous clauses with a shared `onceEachTurn` cap are rejected.
+#guard
+  let hetGroupOk :=
+    match parseOracleCard "Split Group\n{2}{G}\nEnchantment\nWhenever a creature enters and whenever one or more creatures die, draw a card." with
+    | .ok c =>
+      match c.triggeredAbilities with
+      | #[a, b] => a.grouping == .perOccurrence && b.grouping == .oncePerBatch
+      | _ => false
+    | .error _ => false
+  let hetLimitOk :=
+    match parseOracleCard "Split Limit\n{2}{U}\nEnchantment\nWhenever a creature dies and whenever you draw your second card each turn, you gain 1 life." with
+    | .ok c =>
+      match c.triggeredAbilities with
+      | #[a, b] => a.limit == .unlimited && b.limit == .nthEachTurn 2
+      | _ => false
+    | .error _ => false
+  let hetZonesOk :=
+    match parseOracleCard "Split Zones\n{2}{U}\nEnchantment\nWhen this spell is countered and whenever you draw a card, you gain 1 life." with
+    | .ok c =>
+      match c.triggeredAbilities with
+      | #[a, b] =>
+        a.word == .when && a.activeZones == #[.stack] &&
+          b.word == .whenever && b.activeZones == #[.battlefield]
+      | _ => false
+    | .error _ => false
+  let hetOnceRejected :=
+    match parseOracleCard "Bad Shared Cap\n{2}{G}\nEnchantment\nWhenever a creature enters and whenever one or more creatures die, draw a card. This ability triggers only once each turn." with
+    | .error _ => true
+    | .ok _ => false
+  let homMergedOk :=
+    match parseOracleCard "Combat Mirror\n{2}{R}\nEnchantment\nWhenever one or more creatures you control deal combat damage to a player and whenever one or more creatures an opponent controls deal combat damage to a player, you gain 1 life." with
+    | .ok c =>
+      match c.triggeredAbilities with
+      | #[ab] =>
+        ab.grouping == .perPlayerInBatch &&
+          (match ab.pattern with | .or _ _ => true | _ => false)
+      | _ => false
+    | .error _ => false
+  hetGroupOk && hetLimitOk && hetZonesOk && hetOnceRejected && homMergedOk
+
 end Mtg.Engine.Tests
