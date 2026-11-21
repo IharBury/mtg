@@ -186,13 +186,13 @@ opposing creatures are not counted. None gains nothing. -/
 #guard TriggeredAbility.resolutionPhrase { resolution := perOther } ==
   "you gain 1 life for each other creature you control"
 
-#guard (SharedTrigger.timing .returnElfGainLife).resolution ==
+#guard (SharedTrigger.toEffect .returnElfGainLife).resolution ==
   .sequence [.returnToHand .graveyardCard, equalPower]
 
-#guard (SharedTrigger.timing .destroyOppArtifactsEnchantmentsGainLife).resolution ==
+#guard (SharedTrigger.toEffect .destroyOppArtifactsEnchantmentsGainLife).resolution ==
   .sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), perDestroyed]
 
-#guard (SharedTrigger.timing .plusOneEachOtherGainLife).resolution ==
+#guard (SharedTrigger.toEffect .plusOneEachOtherGainLife).resolution ==
   .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, perOther]
 
 /- CR 702.15b: divided trigger damage from a lifelink source aggregates life gain

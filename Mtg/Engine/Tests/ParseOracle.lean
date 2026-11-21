@@ -143,8 +143,8 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Warren Chief\n{1}{R}\nCreature — Goblin\n2/2\nOther Goblin creatures you control get +2/+2.").toOption.bind
     (fun c => c.staticAbilities[0]?) == some (.otherCreaturesGet #[.goblin] 2 2)
 #guard (parseOracleCard "Test Saga\n{2}{R}\nEnchantment — Saga\nI — Draw seven cards.").toOption.bind
-    (fun c => c.saga.bind fun s => (s.chapters[0]?).bind (·.chapterEffect)) ==
-    some (Effect.chapterDraw 7)
+    (fun c => (c.sagaChapters[0]?).bind (·.effect.asChapter?)) ==
+    some (.draw 7)
 #guard (indexedAbilities.get).any fun item =>
   match item.ability with
   | .spell e => e == Effect.draw 1
@@ -532,8 +532,8 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Walk\n{G}\nSorcery\nSearch your library for a Bolas's Meditation Realm card, reveal it, put it into your hand, then shuffle.").toOption.bind
     (fun c => c.spellEffect) == some (Effect.searchLandTypeToHand "Bolas's Meditation Realm")
 #guard (parseOracleCard "Saga\n{2}\nEnchantment — Saga\nI — This Saga deals 3 damage to each non-Time Lord creature and each opponent.").toOption.bind
-    (fun c => c.saga.bind fun s => (s.chapters[0]?).bind (·.chapterEffect)) ==
-    some (Effect.chapterDealDamageToEachNonSubtypeAndOpponents 3 "Time Lord")
+    (fun c => (c.sagaChapters[0]?).bind (·.effect.asChapter?)) ==
+    some (.dealDamageToEachNonSubtypeAndOpponents 3 .timeLord)
 
 -- CR 207.2c: ability words are not rules text. The ability parses as if the
 -- word were absent, including multi-word words and words inside a quote.
@@ -552,16 +552,15 @@ def normLineAgrees (cardName line : String) : Bool :=
     (fun c => KeywordAbility.hasFlying c.keywords && !KeywordAbility.hasReach c.keywords && c.staticAbilities.isEmpty) ==
     some true
 #guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nI — Spell Mastery — Draw seven cards.").toOption.map
-    (fun c => match c.saga with
-      | some s => s.chapters.size == 1 &&
-          (s.chapters[0]?).any (fun ch => ch.roman == "I" && ch.chapterEffect.isSome)
-      | none => false) == some true
+    (fun c =>
+      c.sagaChapters.size == 1 &&
+        (c.sagaChapters[0]?).any (fun ch => ch.chapterNumbers? == some #[1] && !ch.effect.resolution.doesNothingAsTrigger)) == some true
 #guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
-    (fun c => c.saga.bind fun s => s.chapters[0]?.bind (·.chapterEffect)) ==
-    some (Effect.chapterGainLandfallCreateElf)
+    (fun c => (c.sagaChapters[0]?).bind (·.effect.asChapter?)) ==
+    some .gainLandfallCreateElf
 #guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — Council's Dilemma — This Saga gains \"Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
-    (fun c => c.saga.bind fun s => s.chapters[0]?.bind (·.chapterEffect)) ==
-    some (Effect.chapterGainLandfallCreateElf)
+    (fun c => (c.sagaChapters[0]?).bind (·.effect.asChapter?)) ==
+    some .gainLandfallCreateElf
 
 -- CR 207.4: the chaos symbol is not rules text. Towashi's chaos ability is the
 -- text after the symbol, and a `{CHAOS}` that names a planar-die face stays.
@@ -588,8 +587,8 @@ private def towashiChaosAbility : String :=
   | .error e => e == "unrecognized Oracle line on Roll: Whenever you roll {CHAOS}, draw a card."
   | .ok _ => false
 #guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — This Saga gains \"{CHAOS} Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
-    (fun c => c.saga.bind fun s => s.chapters[0]?.bind (·.chapterEffect)) ==
-    some (Effect.chapterGainLandfallCreateElf)
+    (fun c => (c.sagaChapters[0]?).bind (·.effect.asChapter?)) ==
+    some .gainLandfallCreateElf
 
 -- CR 207.2a: reminder text is not rules text, on the ability's line or its own line.
 #guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nMenace (This creature can't be blocked except by two or more creatures.)").toOption.map
@@ -612,10 +611,9 @@ private def towashiChaosAbility : String :=
 #guard (parseOracleCard "Kick\n{1}{R}\nSorcery\nKicker {1}{R} (You may pay an additional {2}{G} as you cast this spell.)").toOption.map
     (fun c => c.kicker == some (ManaCost.ofGenericAndColor 1 .red)) == some true
 #guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\n(As this Saga enters and after your draw step, add a lore counter. Sacrifice after I.)\nI — Draw seven cards.\nII — Draw seven cards.\nIII — Draw seven cards.").toOption.map
-    (fun c => match c.saga with
-      | some s => s.chapters.size == 3 && s.finalChapterNumber == 3 &&
-          s.sacrificeAfter == "III" && c.triggeredAbilities.isEmpty
-      | none => false) == some true
+    (fun c =>
+      c.sagaChapters.size == 3 && c.finalChapterNumber == 3 &&
+        (c.triggeredAbilities.filter (!·.isSagaChapter)).isEmpty) == some true
 
 -- CR 702.14: `keywordLineAbilities` delegates to `Parser.parseKeywordLine`, so
 -- nonbasic, legendary, and snow landwalk parse and round-trip identically on the
@@ -828,5 +826,97 @@ private def roundTripsOracleCard (raw : String) : Bool :=
       StaticAbility.armiesYouControlHaveTrample ==
     .continuous none (StaticAbility.scopeCreaturesOfSubtypeYouControl .goblin)
       (.grantKeywords #[Keyword.trample])
+
+-- Phase 7: Unified `TriggerPattern`, Saga chapters in `triggeredAbilities`,
+-- per-trigger `TriggeredAbility.modes`, Path of Ancestry `isManaSpentCastScry`,
+-- and novel compositional triggered abilities parsed by `Parser.parseNovelTriggeredAbilityLine`.
+#guard [
+  -- Novel compositional triggers never printed in the catalog:
+  "Tap Scribe\n{1}{U}\nEnchantment\nWhenever a Wizard creature you control becomes tapped, you gain 2 life.",
+  "Arcane Rebuke\n{2}{U}\nEnchantment\nWhenever a spell you control is countered, draw a card.",
+  "Monarch's Goblin Shrine\n{2}{R}\nEnchantment\nWhenever a Goblin creature you control dies, if you're the monarch, you gain 3 life.",
+  "Elven Watchtower\n{1}{G}\nEnchantment\nWhenever an Elf creature you control enters, scry 1. This ability triggers only once each turn.",
+  -- Multi-chapter Saga round-trip (`I, II — ...` + `III — ...`):
+  "Song of the Shire\n{2}{G}\nEnchantment — Saga\nI, II — Scry 1.\nIII — Draw two cards.",
+  -- Path of Ancestry round-trip via `triggeredAbilities`:
+  "Ancestral Path\nLand\nThis land enters tapped.\n{T}: Add one mana of any color in your commander's color identity. When that mana is spent to cast a creature spell that shares a creature type with your commander, scry 1."
+].all roundTripsOracleCard
+
+-- Saga chapters live directly in `triggeredAbilities` with `BatchGrouping.counterThreshold .lore`.
+#guard
+  match parseOracleCard "Song of the Shire\n{2}{G}\nEnchantment — Saga\nI, II — Scry 1.\nIII — Draw two cards." with
+  | .ok c =>
+    c.sagaChapters.size == 2 &&
+      c.finalChapterNumber == 3 &&
+      c.sagaChapters[0]!.chapterNumbers? == some #[1, 2] &&
+      c.sagaChapters[1]!.chapterNumbers? == some #[3]
+  | .error _ => false
+
+-- Path of Ancestry parses onto `triggeredAbilities` (`isManaSpentCastScry == true`).
+#guard
+  match parseOracleCard "Ancestral Path\nLand\nThis land enters tapped.\n{T}: Add one mana of any color in your commander's color identity. When that mana is spent to cast a creature spell that shares a creature type with your commander, scry 1." with
+  | .ok c =>
+    c.triggeredAbilities.any (·.isManaSpentCastScry)
+  | .error _ => false
+
+-- Two distinct modal triggers on one card parse into independent `TriggeredAbility.modes` arrays.
+#guard
+  match parseOracleCard
+      ("Dual Modal Oracle\n{3}{U}\nCreature — Sphinx\n3/3\n" ++
+        "When this creature enters, choose one —\n" ++
+        "• You gain 2 life.\n" ++
+        "• Draw a card.\n" ++
+        "When this creature dies, choose one —\n" ++
+        "• Scry 2.\n" ++
+        "• Each opponent loses 2 life.") with
+  | .ok c =>
+    c.triggeredAbilities.size == 2 &&
+      c.triggeredAbilities[0]!.pattern == .thisEnters &&
+      c.triggeredAbilities[0]!.modes.size == 2 &&
+      c.triggeredAbilities[1]!.pattern == .thisDies &&
+      c.triggeredAbilities[1]!.modes.size == 2 &&
+      c.triggeredAbilities[0]!.modes != c.triggeredAbilities[1]!.modes
+  | .error _ => false
+
+-- Novel compositional trigger ASTs: CR 603.10e look-back, CR 603.4 `interveningIf?`,
+-- CR 603.2 `.whenCond`, `TriggerLimit.onceEachTurn`, and Layer 3 `HasTextChange`.
+#guard
+  match parseOracleCard "Arcane Rebuke\n{2}{U}\nEnchantment\nWhenever a spell you control is countered, draw a card." with
+  | .ok c =>
+    match c.triggeredAbilities with
+    | #[ab] => ab.pattern.usesLookBack && ab.effect.resolution == .draw (.fixed 1)
+    | _ => false
+  | .error _ => false
+#guard
+  match parseOracleCard "Monarch's Goblin Shrine\n{2}{R}\nEnchantment\nWhenever a Goblin creature you control dies, if you're the monarch, you gain 3 life." with
+  | .ok c =>
+    match c.triggeredAbilities with
+    | #[ab] =>
+      ab.pattern.usesLookBack &&
+        ab.interveningIf? == some TriggeredAbility.condYouAreMonarch &&
+        ab.effect.resolution == .gainLife (.fixed 3)
+    | _ => false
+  | .error _ => false
+#guard
+  match parseOracleCard "Elven Watchtower\n{1}{G}\nEnchantment\nWhenever an Elf creature you control enters, scry 1. This ability triggers only once each turn." with
+  | .ok c =>
+    match c.triggeredAbilities with
+    | #[ab] =>
+      !ab.pattern.usesLookBack &&
+        ab.limit == .onceEachTurn &&
+        ab.effect.resolution == .scry (.fixed 1) &&
+        HasTextChange.applyTextChanges #[.replaceCreatureType .elf .goblin] ab.pattern ==
+          TriggerPattern.permanentEnters (.all #[.hasSubtype (.literal .goblin), .hasType .creature, .controlledBy .you])
+    | _ => false
+  | .error _ => false
+#guard
+  match Parser.parseTriggerClause "Whenever this creature attacks while you're the monarch, you gain 2 life." "Test",
+        Parser.parseTriggerClause "Whenever this creature attacks, if you're the monarch, you gain 2 life." "Test" with
+  | some hWhile, some hIf =>
+    (match hWhile.pattern with | .whenCond .thisAttacks _ => true | _ => false) &&
+      hWhile.interveningIf?.isNone &&
+      hIf.pattern == .thisAttacks &&
+      hIf.interveningIf? == some TriggeredAbility.condYouAreMonarch
+  | _, _ => false
 
 end Mtg.Engine.Tests

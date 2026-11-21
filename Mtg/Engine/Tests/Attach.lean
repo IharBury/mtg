@@ -19,7 +19,7 @@ def caster : PlayerId := ⟨0⟩
     (resolutionOverride := some (.attach .source .source))
   g.pending == afterDraw.pending && g.log.size == afterDraw.log.size
 
-#guard (SharedTrigger.timing (.createThenAttach .dwarf)).resolution ==
+#guard (SharedTrigger.toEffect (.createThenAttach .dwarf)).resolution ==
   .sequence [.createTokens .dwarf (.fixed 1) false, .attach .source .createdToken]
 
 /- Phase 11: Attaching and re-attaching Equipment records `PermanentEvent.attached`

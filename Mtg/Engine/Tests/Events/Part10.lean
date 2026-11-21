@@ -269,7 +269,7 @@ private def replayOk42i1 (gs : Array Game) : Bool :=
       (gManaOuterPrio0.snapshot p2Forest) #[.colorless] true (some 0) .none 0 false .none (wasPaused := false)
   -- (iii) Unpaused mana ability with `triggerSequenceRest` (`steps := [.gainLife (.fixed 5)]` for `p1`) and `mayThenResume`:
   let dummyTrig42 : TriggeredAbility :=
-    .triggered .dies { resolution := .gainLife (.fixed 5), phrase := "You gain 5 life." } {}
+    TriggeredAbility.mkTrigger .thisDies { resolution := .gainLife (.fixed 5), phrase := "You gain 5 life." }
   let trigSeqP1 : TriggerSequenceRest := {
     controller := p1
     ability := dummyTrig42
@@ -385,8 +385,8 @@ private def replayOk42i2 (gs : Array Game) : Bool :=
   let ltbWatcherDef : CardDef := {
     creature "P42i2 LTBWatcher" ManaCost.empty #["Cleric"] 2 2 with
     triggeredAbilities := #[
-      .triggered (.fra .creatureYouControlLeaves)
-        { resolution := .gainLife (.fixed 3), phrase := "You gain 3 life." } {}
+      TriggeredAbility.mkTrigger (.permanentLeaves (.all #[.hasType .creature, .controlledBy .you]))
+        { resolution := .gainLife (.fixed 3), phrase := "You gain 3 life." }
     ]
   }
 
@@ -1343,8 +1343,8 @@ private def replayOk43i2 (gs : Array Game) : Bool :=
   let ltbWatcherDef : CardDef := {
     creature "P43i2 LTBWatcher" ManaCost.empty #["Cleric"] 2 2 with
     triggeredAbilities := #[
-      .triggered (.fra .creatureYouControlLeaves)
-        { resolution := .gainLife (.fixed 3), phrase := "You gain 3 life." } {}
+      TriggeredAbility.mkTrigger (.permanentLeaves (.all #[.hasType .creature, .controlledBy .you]))
+        { resolution := .gainLife (.fixed 3), phrase := "You gain 3 life." }
     ]
   }
 
@@ -1732,7 +1732,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
   let ancestryLandDef : CardDef := {
     name := "P43i4 PathOfAncestry"
     types := #[.land]
-    commanderIdentityScryCreature := true
+    triggeredAbilities := #[TriggeredAbility.onManaSpentCastCommanderTypeScry]
     activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 1)])]
   }
   let legManaArtifactDef : CardDef := {

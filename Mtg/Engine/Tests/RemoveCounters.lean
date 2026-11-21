@@ -269,10 +269,10 @@ not announced clears the note and removes nothing. -/
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .removeCounters .hope .target } == "remove counters"
 #guard TriggeredAbility.resolutionPhrase
-    (SharedTrigger.timing .removeHopeDrawSac) ==
+    (SharedTrigger.toEffect .removeHopeDrawSac) ==
   "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
 #guard TriggeredAbility.resolutionPhrase
-    (SharedTrigger.timing .tapEnchantedRemoveCounters) ==
+    (SharedTrigger.toEffect .tapEnchantedRemoveCounters) ==
   "tap enchanted creature and remove all counters from it"
 
 #guard TriggeredAbility.toNotation .onYourEndStepRemoveHopeDrawSac ==
@@ -280,10 +280,10 @@ not announced clears the note and removes nothing. -/
 #guard TriggeredAbility.toNotation .onEnterTapEnchantedRemoveCounters ==
   "When this Aura enters, tap enchanted creature and remove all counters from it."
 
-#guard (SharedTrigger.timing .removeHopeDrawSac).resolution ==
+#guard (SharedTrigger.toEffect .removeHopeDrawSac).resolution ==
   .sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1)),
     .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]
-#guard (SharedTrigger.timing .tapEnchantedRemoveCounters).resolution ==
+#guard (SharedTrigger.toEffect .tapEnchantedRemoveCounters).resolution ==
   .sequence [.tap .enchanted, allFromEnchanted]
 
 end Mtg.Engine.RemoveCountersTests

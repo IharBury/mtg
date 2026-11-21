@@ -1,5 +1,4 @@
 import Mtg.Engine.Card.Cost
-import Mtg.Engine.Card.TriggerEvent
 import Mtg.Engine.TypeLine
 
 /-!

@@ -184,7 +184,7 @@ def ultronAfterEnterOk : Bool :=
   let stone := namedPermanent g "The Mind Stone"
   let before :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
-      t.event == TriggerEvent.creatureYouControlEnters)).size
+      t.pattern == TriggerPattern.creatureYouControlEnters)).size
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchUltronCopy)
     (some (namedPermanent g "Ultron, Artificial Malevolence").id)
     #[Target.permanent stone.id]
@@ -195,7 +195,7 @@ def ultronAfterEnterOk : Bool :=
   g.isCreature tok &&
     g.power tok == 2 &&
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
-      t.event == TriggerEvent.creatureYouControlEnters)).size == before &&
+      t.pattern == TriggerPattern.creatureYouControlEnters)).size == before &&
     g.log.any (fun s => mentions s "after it enters") &&
     (mshRuling 574).comment.contains "doesn't become a 2/2"
 

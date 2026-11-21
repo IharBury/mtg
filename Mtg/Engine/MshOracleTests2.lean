@@ -356,7 +356,7 @@ def attumaMerfolkOncePerPlayerOk : Bool :=
       #[(g.snapshot attuma, .player ⟨1⟩), (g.snapshot bears, .player ⟨1⟩)])
   let merfolkWaits (g : Game) : Nat :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
-      t.event == TriggerEvent.merfolkAttackPlayer)).size
+      t.pattern == TriggerPattern.merfolkYouControlAttackPlayer)).size
   merfolkWaits one == 1 &&
     (let gimli : Player := { id := ⟨2⟩, name := "Gimli" }
      let g := afterDraw.change (.addPlayer gimli)
@@ -515,7 +515,7 @@ creature card. -/
 def robotDominationSimultaneousOk : Bool :=
   let gyWait (g : Game) : Bool :=
     g.waitingTriggers.any (fun (t : WaitingTrigger) =>
-      t.event == TriggerEvent.creatureCardsPutIntoYourGy)
+      t.pattern == TriggerPattern.creatureCardPutIntoYourGy)
   let g := addPermanent afterDraw robotDomination ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let (g, _) := g.move (namedPermanent g "Grizzly Bears").id (.graveyard ⟨0⟩) none
@@ -542,7 +542,7 @@ different players. -/
 def attacksAloneDestinationsOk : Bool :=
   let alone (g : Game) : Bool :=
     g.waitingTriggers.any (fun (t : WaitingTrigger) =>
-      t.event == TriggerEvent.creatureYouControlAttacksAlone)
+      t.pattern == TriggerPattern.creatureYouControlAttacksAlone)
   let g := addPermanent afterDraw agent13SharonCarter ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g grayOgre ⟨0⟩ ⟨0⟩
@@ -699,7 +699,7 @@ but the ability triggers only once each turn. -/
 def crossbonesVillainOnceOk : Bool :=
   let villainWait (g : Game) : Nat :=
     (g.waitingTriggers.filter (fun (t : WaitingTrigger) =>
-      t.event == TriggerEvent.anotherVillainEnters)).size
+      t.pattern == TriggerPattern.anotherSubtypeYouControlEnters .villain)).size
   let enterVillain (g : Game) (c : CardDef) : Game :=
     let (g, obj) := g.allocObject c ⟨0⟩ (.outside ⟨0⟩) none
     let (g, newId) := g.putOntoBattlefield obj.id ⟨0⟩ (summoningSick := false)
@@ -1126,7 +1126,7 @@ def robotDominationTokenOk : Bool :=
   let (g, tok) := g.createToken ⟨0⟩ Game.soldier11whiteToken
   let (g, _) := g.move tok.id (.graveyard ⟨0⟩) none
   !g.waitingTriggers.any (fun (t : WaitingTrigger) =>
-    t.event == TriggerEvent.creatureCardsPutIntoYourGy) &&
+    t.pattern == TriggerPattern.creatureCardPutIntoYourGy) &&
     (mshRuling 669).comment.contains "Token creatures"
 
 #guard robotDominationTokenOk

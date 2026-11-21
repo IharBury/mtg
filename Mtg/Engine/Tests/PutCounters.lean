@@ -248,12 +248,12 @@ A hand is not a permanent, so it receives nothing. -/
 
 /- Phase 11: Putting loyalty counters on an artifact that gained `.planeswalker`
 in Layer 4 snapshots `.planeswalker` on `PermanentEvent.counters` and triggers
-`.fra .youPutLoyaltyCounters`. -/
+`TriggerPattern.youPutLoyaltyCounters`. -/
 #guard
   let loyaltyWatcher : CardDef := {
     name := "Loyalty Watcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.fra (.fra .youPutLoyaltyCounters) "" (.draw 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (.draw 1)]
   }
   let g0 := addPermanent board loyaltyWatcher caster caster
   let rockId := pid g0 "Counter Rock"
@@ -267,7 +267,7 @@ in Layer 4 snapshots `.planeswalker` on `PermanentEvent.counters` and triggers
       eo.id == some rockId && p == caster && eo.types.contains .planeswalker
     | _ => false
   snapHasPw &&
-    g2.waitingTriggers.any (·.event == .fra .youPutLoyaltyCounters)
+    g2.waitingTriggers.any (·.pattern == .youPutLoyaltyCounters)
 
 /- Phase 25: Removing the last shield counter via `destroyPermanent` routes through
 `recordRemoveCounters` and immediately expires `.whileSourceHasCounter` effects (CR 122.1c / 611.2a). -/

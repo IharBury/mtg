@@ -682,7 +682,7 @@ private def replayOk46i3 (gs : Array Game) : Bool :=
   let tokWatcherDef : CardDef := {
     name := "P46i3 TokWatcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.fra .tokenYouControlEnters "Draw a card." (.draw 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .tokenYouControlEnters "Draw a card." (.draw 1)]
   }
   let gCreatedStepBase := addPermanent g4 tokWatcherDef p1 p1
   let noCtrlTokId : ObjectId := ⟨gCreatedStepBase.nextObjectId + 15⟩
@@ -724,7 +724,7 @@ private def replayOk46i3 (gs : Array Game) : Bool :=
     mustHold46i3 "3b_stepHistoricalCreatedController"
       ((histAfterStepCreate.findObject? noCtrlTokId).any (fun o =>
          histAfterStepCreate.controllerOf o == some p1 && o.printed.isToken) &&
-       (gBatchedTransientTok.waitingTriggers.filter (·.event == .tokenYouControlEnters)).size == 1)
+       (gBatchedTransientTok.waitingTriggers.filter (·.pattern == .tokenYouControlEnters)).size == 1)
 
   -- 3c. Simultaneous `Phasing.phaseInControlledLoop`, newly phased-in `hadPriorCtrl` CR 800.4c exile
   --     + `Movement.preBatchBoardFor` `phasedOut == false`, `.ringBearer` & `reconcilePostReplayDepartures`
@@ -1002,7 +1002,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
   let gTrStackAb := mustApply (mustApply gTr0 p0 (.activate trId 0)) p0 (.target (.player p0))
   let gTrStackRes := mustApply (mustApply (mustApply gTrStackAb p0 .pass) p1 .pass) p2 .pass
   -- Triggered ability from `stackTreasureDef` put on `.stack`, then `trId` leaves before resolution:
-  let trTrigAb := TriggeredAbility.fra .youGainLife "Add {U}{U}." (.addMana #[.colored .blue] (.fixed 2))
+  let trTrigAb := TriggeredAbility.ofPattern (.gainLife .you) "Add {U}{U}." (.addMana #[.colored .blue] (.fixed 2))
   let gTrTrigOnStack := gTr0.putTriggeredAbilityOnStack p0 (gTr0.object! trId) trTrigAb "triggers" (eventCause := some testCause)
   let (gTrTrigGone, _) := gTrTrigOnStack.move trId (.graveyard p0) none (cause := some testCause)
   let gTrTrigRes := mustApply (mustApply (mustApply gTrTrigGone p0 .pass) p1 .pass) p2 .pass

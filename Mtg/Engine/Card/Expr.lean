@@ -459,6 +459,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 /-- Predicate over mana spent to cast a spell (`CastContextPred.manaSpentMatches`, CR 106.6 / 400.7d). -/
 inductive ManaSpentPred where
   | fromTreasure
+  | fromSource
   | ofColor (color : Color)
   | amount (op : CmpOp) (n : Nat)
   | colorCount (op : CmpOp) (n : Nat)
@@ -711,7 +712,7 @@ deriving Repr, Inhabited, BEq
 (14 constructors). -/
 inductive EventPattern where
   | permanentEntered (pred : ObjectPred)
-  | permanentDied (pred : ObjectPred)
+  | permanentDied (pred : ObjectPred) (minCount : Nat := 1)
   | permanentLeftBattlefield (pred : ObjectPred)
   | attackedWith (pred : ObjectPred) (minCount : Nat := 1)
   | castSpell (pred : ObjectPred)
@@ -933,6 +934,14 @@ def andOpt (a b : Option Condition) : Option Condition :=
   match a, b with
   | none, x | x, none => x
   | some c1, some c2 => andAll #[c1, c2]
+
+/-- True iff the source object (`ObjectExpr.this`) exists and satisfies `pred`. -/
+def thisMatches (pred : ObjectPred) : Condition :=
+  .all #[.exists .this, .forAll .this pred]
+
+/-- True iff the triggering subject (`ObjectExpr.triggerSubject`) exists and satisfies `pred`. -/
+def triggerSubjectMatches (pred : ObjectPred) : Condition :=
+  .all #[.exists .triggerSubject, .forAll .triggerSubject pred]
 
 end Condition
 
@@ -1211,7 +1220,7 @@ instance : HasTextChange EventPattern where
     else
       match p with
       | .permanentEntered op => .permanentEntered (HasTextChange.applyTextChanges tcs op)
-      | .permanentDied op => .permanentDied (HasTextChange.applyTextChanges tcs op)
+      | .permanentDied op n => .permanentDied (HasTextChange.applyTextChanges tcs op) n
       | .permanentLeftBattlefield op =>
         .permanentLeftBattlefield (HasTextChange.applyTextChanges tcs op)
       | .attackedWith op n => .attackedWith (HasTextChange.applyTextChanges tcs op) n
@@ -1859,9 +1868,12 @@ where
         | { relation := .you, pred := .any } => " under your control"
         | pf => s!" under {printPlayerFilter { ctx with capitalize := false } pf}'s control"
       s!"{indefinite noun} {noun} entered{under} {whenS}"
-    | .permanentDied pred =>
+    | .permanentDied pred 1 =>
       let noun := printObjectPredParts { ctx with plural := false, capitalize := false } pred .battlefield
       s!"{indefinite noun} {noun} died {whenS}"
+    | .permanentDied pred n =>
+      let noun := printObjectPredParts { ctx with plural := true, capitalize := false } pred .battlefield
+      s!"{englishNumber n} or more {noun} died {whenS}"
     | .permanentLeftBattlefield pred =>
       let noun := printObjectPredParts { ctx with plural := false, capitalize := false } pred .battlefield
       s!"{indefinite noun} {noun} left the battlefield {whenS}"
@@ -1902,6 +1914,7 @@ private def printCastPred : CastContextPred → String
   | .sneakPaid _ => "its sneak cost was paid"
   | .castFrom z _ => s!"this spell was cast from {renderZonePhrase z}"
   | .manaSpentMatches .fromTreasure _ => "mana from a Treasure was spent to cast this spell"
+  | .manaSpentMatches .fromSource _ => "mana produced by this permanent was spent to cast this spell"
   | .manaSpentMatches (.ofColor c) _ =>
     s!"{c.englishName} mana was spent to cast this spell"
   | .manaSpentMatches (.amount op n) _ =>

@@ -94,7 +94,7 @@ def addStep (g : Game) (r : TriggeredAbility.TriggerResolution)
     (.onStep (Effect.ofTrigger .addGreenPerChargeCounter)) ==
   "At the beginning of your first main phase, add {G} for each charge counter on this enchantment."
 
-#guard (SharedTrigger.timing .addGreenPerChargeCounter).resolution ==
+#guard (SharedTrigger.toEffect .addGreenPerChargeCounter).resolution ==
   .addMana #[.colored .green] .perChargeCounter
 
 /- Adding the types twice repeats them. Zero times adds nothing.

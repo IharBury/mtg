@@ -78,9 +78,9 @@ turn counter is cleared. -/
   let g := (g.record attack).record entered
   let (_, yes) := holds g (.attackedWithSubtype .hero)
   let (_, no) := holds g (.attackedWithSubtype .goblin)
-  yes && !no && attack.matchesTrigger me (some ⟨5⟩) .attacking &&
-    entered.matchesTrigger me none (.subtypeYouControlEnters .villain) &&
-    !entered.matchesTrigger me none (.subtypeYouControlEnters .hero) &&
+  yes && !no && attack.matchesTriggerPattern me (some ⟨5⟩) .thisAttacks &&
+    entered.matchesTriggerPattern me none (.subtypeYouControlEnters .villain) &&
+    !entered.matchesTriggerPattern me none (.subtypeYouControlEnters .hero) &&
     GameEvent.subtypeEntered g.events g.turnNumber me .villain &&
     !GameEvent.subtypeEntered g.events g.turnNumber me .goblin
 
@@ -95,15 +95,15 @@ instead. -/
   let exiled := GameEvent.moved 1
     { id := some ⟨7⟩, controller := some me, owner := me, types := #[.creature] } .battlefield .exile
     (cause := testCause)
-  second.matchesTrigger me none .youDraw &&
-    second.matchesTrigger me none .youDrawSecondCard &&
-    second.matchesTrigger ⟨1⟩ none .opponentDrawsSecondCard &&
-    !second.matchesTrigger ⟨1⟩ none .youDraw &&
-    death.matchesTrigger me (some ⟨7⟩) .dying &&
+  second.matchesTriggerPattern me none (.drawCard .you) &&
+    second.matchesTriggerPattern me none (.drawCard .you) (limit := .nthEachTurn 2) &&
+    second.matchesTriggerPattern ⟨1⟩ none (.drawCard .opponent) (limit := .nthEachTurn 2) &&
+    !second.matchesTriggerPattern ⟨1⟩ none (.drawCard .you) &&
+    death.matchesTriggerPattern me (some ⟨7⟩) .thisDies &&
     death.watches .wouldDie &&
     !exiled.isCreatureToGraveyard &&
     !exiled.watches .wouldDie &&
-    (GameEvent.looked 1 me 3).matchesTrigger me none .youScry
+    (GameEvent.looked 1 me 3).matchesTriggerPattern me none (.playerAction .you .scry)
 
 /- The engine records a real draw and a real death, and an exile replacement
 records the exile instead of the death. -/
@@ -778,10 +778,10 @@ in isolation (CR 701.3 / 110.2 / 613.1b / 701.15b). -/
        | _ => false) &&
        !gNoDt.deathtouchDealtSinceLastSba c.id &&
        gWithDt.deathtouchDealtSinceLastSba c.id) &&
-    heroToPlayer.matchesTrigger me h.id .heroesDealDamageToPlayer &&
-    !bearToHero.matchesTrigger me h.id .heroesDealDamageToPlayer &&
+    heroToPlayer.matchesTriggerPattern me (some h.id) .heroesYouControlDealDamageToPlayer &&
+    !bearToHero.matchesTriggerPattern me (some h.id) .heroesYouControlDealDamageToPlayer &&
     !(GameEvent.moved 1 { controller := some me, owner := me, types := #[.creature] }
-      .stack .battlefield (cause := testCause)).matchesTrigger me b.id .anotherCreatureYouControlEnters
+      .stack .battlefield (cause := testCause)).matchesTriggerPattern me (some b.id) .anotherCreatureYouControlEnters
 
 /- Phase 2 isolation: applying `ZoneEvent.moved`, `ZoneEvent.created`, and
 `ZoneEvent.ceasedToExist` via `Game.applyChange` atomically updates `g.objects`,
@@ -855,11 +855,9 @@ both `PermanentEvent.counters` and `ZoneEvent.moved.entersWith` (CR 122.6 /
     { name := "Test Saga"
       types := #[.enchantment]
       subtypes := #["Saga"]
-      saga := some {
-        sacrificeAfter := "II"
-        chapters := #[
-          SagaChapter.of "I" "Gain 1 life." (.gainLife 1),
-          SagaChapter.of "II" "Gain 2 life." (.gainLife 2)] } }
+      triggeredAbilities := #[
+        TriggeredAbility.sagaChapter 1 (Effect.gainLife 1),
+        TriggeredAbility.sagaChapter 2 (Effect.gainLife 2)] }
   let testImpending : CardDef :=
     { bear with
       name := "Impending Bear"
@@ -1283,13 +1281,13 @@ printed static abilities (CR 702.26b / 702.26f). -/
     { name := "Loyalty Watcher"
       types := #[.enchantment]
       triggeredAbilities :=
-        #[TriggeredAbility.fra .youActivateLoyaltyAbility "" (.draw 1),
-          TriggeredAbility.fra (.fra .youPutLoyaltyCounters) "" (.draw 1)] }
+        #[TriggeredAbility.ofPattern (.youActivateLoyaltyAbility 0) "" (.draw 1),
+          TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (.draw 1)] }
   let oppWatcher : CardDef :=
     { name := "Opp Loyalty Watcher"
       types := #[.enchantment]
       triggeredAbilities :=
-        #[TriggeredAbility.fra (.fra .opponentActivatesLoyaltyAbility) "" (.draw 1)] }
+        #[TriggeredAbility.ofPattern .opponentActivatesLoyaltyAbility "" (.draw 1)] }
   let gPw0 :=
     let g := addPermanent afterDraw pwWithMana me me
     let pw := (g.battlefield.filter (·.name == "Test Planeswalker"))[0]!
@@ -1577,7 +1575,7 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
   let srcCard : CardDef :=
     { name := "Source Artifact"
       types := #[.artifact]
-      triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneCreateInsectOnce {}] }
+      triggeredAbilities := #[SharedTrigger.resource .plusOneCreateInsectOnce |>.toTriggeredAbility] }
   let gWithSrc := quiet (addPermanent g0 srcCard me me)
   let s := (gWithSrc.battlefield.filter (·.name == "Source Artifact"))[0]!
   -- 1. createEffect / createEffects inside resolving context: distinct one-shot vs. continuous EffectIds
@@ -2520,11 +2518,11 @@ triggers once, while sequential batches fire them once per batch. -/
     { name := "Death Watcher"
       types := #[.enchantment]
       triggeredAbilities := #[
-        TriggeredAbility.fra .oneOrMoreOtherCreaturesDie "" (.draw 1),
-        TriggeredAbility.fra .nontokenYouControlDies "" (.gainLife (.fixed 1)),
-        TriggeredAbility.fra .creatureCardsPutIntoYourGy "" (.draw 1),
-        TriggeredAbility.fra (.fra .youCreateCreatureTokens) "" (.draw 1),
-        TriggeredAbility.fra .creaturesYouControlBecomeTapped "" (.draw 1)] }
+        TriggeredAbility.ofPattern .otherCreaturesDie "" (.draw 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern .nontokenCreatureYouControlDies "" (.gainLife (.fixed 1)),
+        TriggeredAbility.ofPattern .creatureCardPutIntoYourGy "" (.draw 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern (.createTokens .you (.hasType .creature)) "" (.draw 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern .creaturesYouControlBecomeTapped "" (.draw 1) (grouping := .oncePerBatch)] }
   let gBase :=
     let g := addPermanent (addPermanent (addPermanent afterDraw deathWatcher me me) bear me me) hero me me
     let g := addPermanent g bear me me
@@ -2537,26 +2535,26 @@ triggers once, while sequential batches fire them once per batch. -/
   -- 1. Simultaneous vs. sequential creature deaths
   let gSimulDie := gBase.withBatch none (fun g =>
     (g.destroyPermanent (g.object! b.id)).destroyPermanent (g.object! h.id))
-  let simulOneOrMore := gSimulDie.waitingTriggers.filter (·.event == .oneOrMoreOtherCreaturesDie)
-  let simulEach := gSimulDie.waitingTriggers.filter (·.event == .nontokenYouControlDies)
+  let simulOneOrMore := gSimulDie.waitingTriggers.filter (·.pattern == .otherCreaturesDie)
+  let simulEach := gSimulDie.waitingTriggers.filter (·.pattern == .nontokenCreatureYouControlDies)
   let gSeqDie := (gBase.destroyPermanent (gBase.object! b.id)).destroyPermanent (gBase.object! h.id)
-  let seqOneOrMore := gSeqDie.waitingTriggers.filter (·.event == .oneOrMoreOtherCreaturesDie)
+  let seqOneOrMore := gSeqDie.waitingTriggers.filter (·.pattern == .otherCreaturesDie)
   -- 2. Simultaneous vs. sequential mill of creature cards into your graveyard
   let gSimulMill := gBase.mill me 2
-  let simulMillTrig := gSimulMill.waitingTriggers.filter (·.event == .creatureCardsPutIntoYourGy)
+  let simulMillTrig := gSimulMill.waitingTriggers.filter (·.pattern == .creatureCardPutIntoYourGy)
   let gSeqMill := (gBase.mill me 1).mill me 1
-  let seqMillTrig := gSeqMill.waitingTriggers.filter (·.event == .creatureCardsPutIntoYourGy)
+  let seqMillTrig := gSeqMill.waitingTriggers.filter (·.pattern == .creatureCardPutIntoYourGy)
   -- 3. Simultaneous vs. sequential creature token creation
   let gSimulTok := gBase.createKindTokens me .humanSoldier 2
-  let simulTokTrig := gSimulTok.waitingTriggers.filter (·.event == .fra .youCreateCreatureTokens)
+  let simulTokTrig := gSimulTok.waitingTriggers.filter (·.pattern == .createTokens .you (.hasType .creature))
   let gSeqTok := (gBase.createKindTokens me .humanSoldier 1).createKindTokens me .humanSoldier 1
-  let seqTokTrig := gSeqTok.waitingTriggers.filter (·.event == .fra .youCreateCreatureTokens)
+  let seqTokTrig := gSeqTok.waitingTriggers.filter (·.pattern == .createTokens .you (.hasType .creature))
   -- 4. Simultaneous vs. sequential tapping of creatures you control
   let gSimulTap := gBase.withBatch none (fun g =>
     (g.becomeTapped (g.object! b.id)).becomeTapped (g.object! h.id))
-  let simulTapTrig := gSimulTap.waitingTriggers.filter (·.event == .creaturesYouControlBecomeTapped)
+  let simulTapTrig := gSimulTap.waitingTriggers.filter (·.pattern == .creaturesYouControlBecomeTapped)
   let gSeqTap := (gBase.becomeTapped (gBase.object! b.id)).becomeTapped (gBase.object! h.id)
-  let seqTapTrig := gSeqTap.waitingTriggers.filter (·.event == .creaturesYouControlBecomeTapped)
+  let seqTapTrig := gSeqTap.waitingTriggers.filter (·.pattern == .creaturesYouControlBecomeTapped)
   simulOneOrMore.size == 1 &&
     simulEach.size == 2 &&
     seqOneOrMore.size == 2 &&
@@ -2569,43 +2567,48 @@ triggers once, while sequential batches fire them once per batch. -/
 
 /- Phase 4:
 1. `discardEntireHand` commits one batch per player hand discard (queueing
-   `.fra .playerDiscards` once for a multi-card hand), and a batch in which two
-   players discard queues `.fra .playerDiscards` once per discarding player.
-2. Unified `.youPutPlusOne` evaluation fires both `onceEachTurn` abilities
+   `.discard .any` with `.perPlayerInBatch` once for a multi-card hand), and a batch in which two
+   players discard queues it once per discarding player.
+2. Unified `+1/+1` counter put evaluation fires both `onceEachTurn` abilities
    (`plusOneCreateInsectOnce`, `plusOneOnThisOnce`) and Invisible Woman on
    printed enters-with +1/+1 counters and `.explore` (which also applies
-   `countersYouPut` / Doc Samson), while setting `firedOnceEachTurn` so a second
+   `countersYouPut` / Doc Samson), while recording triggered events so a second
    +1/+1 counter event in the same turn does not re-trigger them.
 3. `eventSuppressedByKarn` suppresses enters triggers (`tokenYouControlEnters`)
    without suppressing counter-put triggers (`youPutCountersOnGoblinOrcArmy`,
-   `.fra .youPutLoyaltyCounters`, `.youPutPlusOne`) on entering permanents
+   `youPutLoyaltyCounters`, `youPutPlusOneOnOtherHeroYouControl`) on entering permanents
    (CR 122.6). -/
 #guard
-  -- 1. discardEntireHand batching and per-player .playerDiscards
+  let isYouPutPlusOne (wt : WaitingTrigger) : Bool :=
+    match wt.pattern with
+    | .putCounters (some .you) (some .plusOnePlusOne) _ => true
+    | _ => false
+  -- 1. discardEntireHand batching and per-player discard
   let discardWatcher : CardDef :=
     { name := "Discard Watcher"
       types := #[.enchantment]
-      triggeredAbilities := #[TriggeredAbility.fra (.fra .playerDiscards) "" (.draw 1)] }
+      triggeredAbilities := #[TriggeredAbility.ofPattern (.discard .any) "" (.draw 1)
+        (grouping := .perPlayerInBatch)] }
   let gDisc0 := quiet (addPermanent afterDraw discardWatcher me me)
   let gDisc1 := gDisc0.discardEntireHand me
   let discEvents1 := gDisc1.events.filter (fun e =>
     match e.change with
     | .rules (.zone (.moved _ _ (.hand _) (.graveyard _) .discard ..)) => true
     | _ => false)
-  let discTrig1 := gDisc1.waitingTriggers.filter (·.event == .fra .playerDiscards)
+  let discTrig1 := gDisc1.waitingTriggers.filter (·.pattern == .discard .any)
   let gDiscBoth := gDisc0.withBatch none (fun g =>
     (g.discardEntireHand me).discardEntireHand opp)
-  let discTrigBoth := gDiscBoth.waitingTriggers.filter (·.event == .fra .playerDiscards)
-  -- 2. Unified .youPutPlusOne on printed entersWithPlusOneCounters and .explore + Doc Samson
+  let discTrigBoth := gDiscBoth.waitingTriggers.filter (·.pattern == .discard .any)
+  -- 2. Unified +1/+1 counter put on printed entersWithPlusOneCounters and .explore + Doc Samson
   let insectWatcher : CardDef :=
     { (creature "Insect Watcher" ManaCost.empty #["Hero"] 1 1) with
-      triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneCreateInsectOnce {}] }
+      triggeredAbilities := #[SharedTrigger.resource .plusOneCreateInsectOnce |>.toTriggeredAbility] }
   let selfOnceWatcher : CardDef :=
     { (creature "Self Once Watcher" ManaCost.empty #["Hero"] 2 2) with
-      triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneOnThisOnce {}] }
+      triggeredAbilities := #[SharedTrigger.resource .plusOneOnThisOnce |>.toTriggeredAbility] }
   let wallWatcher : CardDef :=
     { (creature "Wall Watcher" ManaCost.empty #["Hero"] 1 4) with
-      triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneOnHeroesCreateWall {}] }
+      triggeredAbilities := #[SharedTrigger.resource .plusOneOnHeroesCreateWall |>.toTriggeredAbility] }
   let entersHero : CardDef :=
     { (creature "Enters Hero" ManaCost.empty #["Hero", "Goblin"] 1 1) with
       staticAbilities := #[.entersWithPlusOneCounters 2] }
@@ -2623,9 +2626,9 @@ triggers once, while sequential batches fire them once per batch. -/
   let gPlusArt := gPlus0.addPlusOnePlusOneTo noncreatureArt 1
   let ehHandId := (gPlusArt.player me).hand.back!
   let (gPlusEntered, ehBfId) := gPlusArt.putOntoBattlefield ehHandId me
-  let plusTrigs1 := gPlusEntered.waitingTriggers.filter (·.event == .youPutPlusOne)
+  let plusTrigs1 := gPlusEntered.waitingTriggers.filter isYouPutPlusOne
   let gPlusSecond := gPlusEntered.addPlusOnePlusOneTo (gPlusEntered.object! ehBfId) 1
-  let plusTrigs2 := gPlusSecond.waitingTriggers.filter (·.event == .youPutPlusOne)
+  let plusTrigs2 := gPlusSecond.waitingTriggers.filter isYouPutPlusOne
   -- Explore with Doc Samson and nonland top card
   let gExp0 :=
     let g := addPermanent (addPermanent (addPermanent afterDraw insectWatcher me me) docSamsonDef me me) bear me me
@@ -2636,7 +2639,7 @@ triggers once, while sequential batches fire them once per batch. -/
   let explorer := (gExp0.battlefield.filter (·.name == bear.name))[0]!
   let gExp1 := gExp0.applyFrc me default .explore #[] (some explorer.id)
   let explorerAfter := gExp1.object! explorer.id
-  let expTrigs := gExp1.waitingTriggers.filter (·.event == .youPutPlusOne)
+  let expTrigs := gExp1.waitingTriggers.filter isYouPutPlusOne
   -- 3. Karn suppresses tokenYouControlEnters but not counter-put triggers on entering permanents,
   --    and youPutCountersOnGoblinOrcArmy only triggers on a Goblin/Orc/Army you control
   let karnDef : CardDef :=
@@ -2648,10 +2651,10 @@ triggers once, while sequential batches fire them once per batch. -/
     { name := "Counter And Token Watcher"
       types := #[.enchantment]
       triggeredAbilities := #[
-        .triggered .fromEffect (Effect.ofTrigger (.watch .tokensEnterMayDraw)) {},
-        TriggeredAbility.fra .youPutCountersOnGoblinOrcArmy "" (.draw 1),
-        TriggeredAbility.fra (.fra .youPutLoyaltyCounters) "" (.draw 1),
-        .triggered .fromEffect Effect.resourcePlusOneOnHeroesCreateWall {}] }
+        SharedTrigger.watch .tokensEnterMayDraw |>.toTriggeredAbility,
+        TriggeredAbility.ofPattern .youPutCountersOnGoblinOrcArmy "" (.draw 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (.draw 1),
+        SharedTrigger.resource .plusOneOnHeroesCreateWall |>.toTriggeredAbility] }
   let artifactWalker : CardDef :=
     { name := "Artifact Walker"
       types := #[.artifact, .planeswalker]
@@ -2684,11 +2687,11 @@ triggers once, while sequential batches fire them once per batch. -/
     plusTrigs2.size == 4 &&
     explorerAfter.status.plusOnePlusOne == 2 &&
     expTrigs.size == 1 &&
-    (gKarnOppGob.waitingTriggers.filter (·.event == .youPutCountersOnGoblinOrcArmy)).isEmpty &&
-    (gKarn3.waitingTriggers.filter (·.event == .tokenYouControlEnters)).isEmpty &&
-    (gKarn3.waitingTriggers.filter (·.event == .youPutCountersOnGoblinOrcArmy)).size == 1 &&
-    (gKarn3.waitingTriggers.filter (·.event == .fra .youPutLoyaltyCounters)).size == 1 &&
-    (gKarn3.waitingTriggers.filter (·.event == .youPutPlusOne)).size == 1
+    (gKarnOppGob.waitingTriggers.filter (·.pattern == .youPutCountersOnGoblinOrcArmy)).isEmpty &&
+    (gKarn3.waitingTriggers.filter (·.pattern == .tokenYouControlEnters)).isEmpty &&
+    (gKarn3.waitingTriggers.filter (·.pattern == .youPutCountersOnGoblinOrcArmy)).size == 1 &&
+    (gKarn3.waitingTriggers.filter (·.pattern == .youPutLoyaltyCounters)).size == 1 &&
+    (gKarn3.waitingTriggers.filter isYouPutPlusOne).size == 1
 
 def causeIsStamped : EventCause → Bool
   | .oneShotEffect none _ _ => false

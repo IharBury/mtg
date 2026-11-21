@@ -267,14 +267,14 @@ controller still amasses when the creature is indestructible. -/
   let g := step g0 (.destroy .target) (targets := #[Target.permanent id])
   onBoard g "Ogre" && !g.destroyedForAmassThisWay && g.amassAmountThisWay == 0
 
-#guard (SharedTrigger.timing .destroyOppArtifactsEnchantmentsGainLife).resolution ==
+#guard (SharedTrigger.toEffect .destroyOppArtifactsEnchantmentsGainLife).resolution ==
   .sequence [oppArts, .gainLife .forEachDestroyedThisWay]
 
-#guard (SharedTrigger.timing (.dealDamageDestroyIfSubtype 1 .dragon)).resolution ==
+#guard (SharedTrigger.toEffect (.dealDamageDestroyIfSubtype 1 .dragon)).resolution ==
   .sequence [.dealDamage (.fixed 1) .target .markedPermanent,
     .«if» (.dealtDamageToSubtype .dragon) markedDestroy]
 
-#guard (SharedTrigger.timing .destroyOtherAmassControllerPower).resolution ==
+#guard (SharedTrigger.toEffect .destroyOtherAmassControllerPower).resolution ==
   amassSeq
 
 #guard TriggeredAbility.toNotation .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
@@ -287,7 +287,7 @@ controller still amasses when the creature is indestructible. -/
   "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
 
 #guard TriggeredAbility.resolutionPhrase
-    (SharedTrigger.timing .destroyOtherAmassControllerPower) ==
+    (SharedTrigger.toEffect .destroyOtherAmassControllerPower) ==
   "destroy another target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
 
 #guard TriggeredAbility.resolutionPhrase { resolution := .destroy .target } ==

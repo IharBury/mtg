@@ -1259,7 +1259,7 @@ def equippedGetsAndAttackChooseKeyword : StaticAbility :=
   .continuous none scopeEquippedCreature
     (.all #[
       .modifyPT (.const 2) (.const 0),
-      .grantTriggered #[TriggeredAbility.fra .attack
+      .grantTriggered #[TriggeredAbility.ofPattern .thisAttacks
         "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
         (.chooseKeyword [.trample, .deathtouch])]
     ])
@@ -1270,7 +1270,7 @@ def equippedGetsFlyingAndAttackGainLife : StaticAbility :=
     (.all #[
       .modifyPT (.const 1) (.const 0),
       .grantKeywords #[Keyword.flying],
-      .grantTriggered #[TriggeredAbility.fra .attack
+      .grantTriggered #[TriggeredAbility.ofPattern .thisAttacks
         "Whenever this creature attacks, you gain 1 life." (.gainLife 1)]
     ])
 
@@ -1280,8 +1280,8 @@ def equippedGetsTrampleAndCombatTreasures (power toughness : Int) : StaticAbilit
     (.all #[
       .modifyPT (.const power) (.const toughness),
       .grantKeywords #[Keyword.trample],
-      .grantTriggered #[.triggered (.fra .dealsCombatDamageToPlayerOrPlaneswalker)
-        (Effect.ofTrigger .treasuresEqualLastKnown)]
+      .grantTriggered #[SharedTrigger.treasuresEqualLastKnown.toTriggeredAbility
+        (pattern? := some .thisDealsCombatDamageToPlayerOrPlaneswalker)]
     ])
 
 /-- `Equipped creature has first strike and gets +1/+0 for each instant and sorcery card in your graveyard.` -/

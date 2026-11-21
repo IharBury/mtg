@@ -160,8 +160,9 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
     bear with
     name := "P24i4 Combat Dmg Watcher"
     triggeredAbilities := #[
-      .triggered .opponentsDealtCombatDamageYourTurn
-        { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life." } {}
+      TriggeredAbility.mkTrigger .opponentsDealtCombatDamageYourTurn
+        { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life." }
+        (grouping := .oncePerBatch)
     ]
   }
   -- Active player is `⟨0⟩` (Team A = `⟨0⟩, ⟨1⟩`; Team B = `⟨2⟩, ⟨3⟩`):
@@ -325,18 +326,18 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
   let eLoyaltyOpp := GameEvent.abilityActivated 1 ⟨99003⟩ smallSnap ⟨2⟩
     (.nonMana (some 1) false false false none false) (cause := some testCause)
   let matchesOppArmsOk :=
-    !eAtkYouMate.matchesTrigger ⟨0⟩ none (.fra .creatureAttacksYouOrYourPlaneswalker) isMate &&
-    eAtkYouOpp.matchesTrigger ⟨0⟩ none (.fra .creatureAttacksYouOrYourPlaneswalker) isMate &&
-    !eAtkOppVsMate.matchesTrigger ⟨0⟩ none (.fra .creaturesAttackYourOpponent) isMate &&
-    eAtkOppVsOpp.matchesTrigger ⟨0⟩ none (.fra .creaturesAttackYourOpponent) isMate &&
-    !eBlkMate.matchesTrigger ⟨0⟩ none (.fra .opponentSmallCreatureBlocks) isMate &&
-    eBlkOpp.matchesTrigger ⟨0⟩ none (.fra .opponentSmallCreatureBlocks) isMate &&
-    !eBegCombatMate.matchesTrigger ⟨0⟩ none (.fra .opponentBeginCombat) isMate &&
-    eBegCombatOpp.matchesTrigger ⟨0⟩ none (.fra .opponentBeginCombat) isMate &&
-    !eDrawStepMate.matchesTrigger ⟨0⟩ none .eachOpponentDrawStep isMate &&
-    eDrawStepOpp.matchesTrigger ⟨0⟩ none .eachOpponentDrawStep isMate &&
-    !eLoyaltyMate.matchesTrigger ⟨0⟩ none (.fra .opponentActivatesLoyaltyAbility) isMate &&
-    eLoyaltyOpp.matchesTrigger ⟨0⟩ none (.fra .opponentActivatesLoyaltyAbility) isMate
+    !eAtkYouMate.matchesTriggerPattern ⟨0⟩ none .creatureAttacksYouOrYourPlaneswalker (isTeammate := isMate) &&
+    eAtkYouOpp.matchesTriggerPattern ⟨0⟩ none .creatureAttacksYouOrYourPlaneswalker (isTeammate := isMate) &&
+    !eAtkOppVsMate.matchesTriggerPattern ⟨0⟩ none .creaturesAttackYourOpponent (isTeammate := isMate) &&
+    eAtkOppVsOpp.matchesTriggerPattern ⟨0⟩ none .creaturesAttackYourOpponent (isTeammate := isMate) &&
+    !eBlkMate.matchesTriggerPattern ⟨0⟩ none .opponentSmallCreatureBlocks (isTeammate := isMate) &&
+    eBlkOpp.matchesTriggerPattern ⟨0⟩ none .opponentSmallCreatureBlocks (isTeammate := isMate) &&
+    !eBegCombatMate.matchesTriggerPattern ⟨0⟩ none (.stepBegins .beginningOfCombat (.player .opponent)) (isTeammate := isMate) &&
+    eBegCombatOpp.matchesTriggerPattern ⟨0⟩ none (.stepBegins .beginningOfCombat (.player .opponent)) (isTeammate := isMate) &&
+    !eDrawStepMate.matchesTriggerPattern ⟨0⟩ none .stepEachOpponentDrawStep (isTeammate := isMate) &&
+    eDrawStepOpp.matchesTriggerPattern ⟨0⟩ none .stepEachOpponentDrawStep (isTeammate := isMate) &&
+    !eLoyaltyMate.matchesTriggerPattern ⟨0⟩ none .opponentActivatesLoyaltyAbility (isTeammate := isMate) &&
+    eLoyaltyOpp.matchesTriggerPattern ⟨0⟩ none .opponentActivatesLoyaltyAbility (isTeammate := isMate)
 
   -- 3d. Player-control edge cases:
   --     (i) `.controlsPlayer ⟨2⟩ true` in `expireUntilNextTurnEffects ⟨3⟩` stays while teammate `⟨2⟩` lives,
@@ -374,7 +375,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
     | .error e => panic! e
   let gTriConcede := gTriTeam.concede ⟨3⟩
   let winTrigAb : TriggeredAbility :=
-    .triggered .yourUpkeep (Effect.gainLife 1) {}
+    TriggeredAbility.mkTrigger .stepYourUpkeep (Effect.gainLife 1)
   let gTriTrigWin := gTriTeam.applyTriggeredAbility ⟨0⟩ winTrigAb none (resolutionOverride := some .winTheGame)
   let threeSeatWinLogsOk :=
     gTriConcede.over &&
@@ -397,7 +398,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
   let legDiesWatcherDef : CardDef := {
     legendaryCreature "P24i4 Dying Legend" ManaCost.empty #["Spirit"] 2 2 with
     triggeredAbilities := #[
-      .triggered .dies { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life." } {}
+      TriggeredAbility.mkTrigger .thisDies { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life." }
     ]
   }
   -- 4a. Before `GameEvent.playerLost`: in a 3-player game, `⟨1⟩` at 0 life controls two copies of `⟨0⟩`'s
@@ -727,8 +728,9 @@ def mkThreePlayer25i1 (seed : UInt64 := 251) : Game :=
     bear with
     name := "P25i1 Discard Watcher"
     triggeredAbilities := #[
-      TriggeredAbility.fra (.fra .playerDiscards)
+      TriggeredAbility.ofPattern (.discard .any)
         "Whenever a player discards one or more cards, you gain 1 life." (.gainLife 1)
+        (grouping := .perPlayerInBatch)
     ]
   }
 
@@ -1185,16 +1187,16 @@ private def replayOk25i3 (gs : Array Game) : Bool :=
   --     `Tokens.logCreatedTokensSummary` creator filter, and `.wouldPutCounter` watching:
   let creatorWatcher : CardDef := {
     name := "P25i3 Creator Watcher", types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.fra (.fra .youCreateCreatureTokens)
-      "Whenever you create one or more creature tokens, draw a card." (.draw 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern (.createTokens .you (.hasType .creature))
+      "Whenever you create one or more creature tokens, draw a card." (.draw 1) (grouping := .oncePerBatch)]
   }
   let mrFantasticWatcher : CardDef := {
     name := "P25i3 Tokens Enter Watcher", types := #[.enchantment]
-    triggeredAbilities := #[.triggered .fromEffect (Effect.ofTrigger (.watch .tokensEnterMayDraw)) {}]
+    triggeredAbilities := #[SharedTrigger.watch .tokensEnterMayDraw |>.toTriggeredAbility]
   }
   let plusOneWatcher : CardDef := {
     name := "P25i3 PlusOne Watcher", types := #[.enchantment]
-    triggeredAbilities := #[.triggered .fromEffect (Effect.ofTrigger (.resource .plusOneCreateInsectOnce)) {}]
+    triggeredAbilities := #[SharedTrigger.resource .plusOneCreateInsectOnce |>.toTriggeredAbility]
   }
   let gWatch0 :=
     addPermanent
@@ -1235,14 +1237,14 @@ private def replayOk25i3 (gs : Array Game) : Bool :=
   let createdRaw := GameEvent.created gWatch0.turnNumber p0 armySnap (cause := createCause)
   let watchesCounterOk := createdRaw.watches .wouldPutCounter
   let matchesDirectOk :=
-    createdRaw.matchesTrigger p0 none (.fra .youCreateCreatureTokens) &&
-    !createdRaw.matchesTrigger p1 none (.fra .youCreateCreatureTokens) &&
-    createdRaw.matchesTrigger p1 none .tokenYouControlEnters &&
-    !createdRaw.matchesTrigger p0 none .tokenYouControlEnters &&
-    createdRaw.matchesTrigger p1 none .youPutPlusOne &&
-    !createdRaw.matchesTrigger p0 none .youPutPlusOne &&
-    createdRaw.matchesTrigger p1 none .youPutCountersOnGoblinOrcArmy &&
-    !createdRaw.matchesTrigger p0 none .youPutCountersOnGoblinOrcArmy
+    createdRaw.matchesTriggerPattern p0 none (.createTokens .you (.hasType .creature)) &&
+    !createdRaw.matchesTriggerPattern p1 none (.createTokens .you (.hasType .creature)) &&
+    createdRaw.matchesTriggerPattern p1 none .tokenYouControlEnters &&
+    !createdRaw.matchesTriggerPattern p0 none .tokenYouControlEnters &&
+    createdRaw.matchesTriggerPattern p1 none .youPutPlusOneOnCreature &&
+    !createdRaw.matchesTriggerPattern p0 none .youPutPlusOneOnCreature &&
+    createdRaw.matchesTriggerPattern p1 none .youPutCountersOnGoblinOrcArmy &&
+    !createdRaw.matchesTriggerPattern p0 none .youPutCountersOnGoblinOrcArmy
   let gWatch1 := gWatch0.record createdRaw
   let putInEv := gWatch1.events[preCreateIdx]!.countersPutInEvent
   let enterTriggerRoutingOk :=
@@ -1786,12 +1788,12 @@ def mkSixSeatThreeTeams25i4 (seed : UInt64 := 2540) : Game :=
   let revengeWatcherDef : CardDef := {
     bear with
     name := "P25i4 Revenge Watcher"
-    triggeredAbilities := #[TriggeredAbility.fra (.fra .creatureAttacksYouOrYourPlaneswalker) "" (.gainLife 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .creatureAttacksYouOrYourPlaneswalker "" (.gainLife 1)]
   }
   let garrukWatcherDef : CardDef := {
     bear with
     name := "P25i4 Garruk Watcher"
-    triggeredAbilities := #[TriggeredAbility.fra (.fra .creaturesAttackYourOpponent) "" .attackersOfPlayerGetTwoTwoTrample]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .creaturesAttackYourOpponent "" .attackersOfPlayerGetTwoTwoTrample (grouping := .perPlayerInBatch)]
   }
   let battleDef : CardDef := {
     name := "P25i4 Siege Battle"
@@ -1814,7 +1816,7 @@ def mkSixSeatThreeTeams25i4 (seed : UInt64 := 2540) : Game :=
   let atkPwOk :=
     gAtkPw.waitingTriggers.size == 1 &&
     gAtkPw.waitingTriggers[0]!.controller == ⟨1⟩ &&
-    gAtkPw.waitingTriggers[0]!.event == .fra .creatureAttacksYouOrYourPlaneswalker
+    gAtkPw.waitingTriggers[0]!.pattern == .creatureAttacksYouOrYourPlaneswalker
   -- Attacking a battle: fires NEITHER `.merfolkAttackPlayer` NOR `.creatureAttacksYouOrYourPlaneswalker` NOR Garruk!
   let mfSnapBat := { (gComb0.snapshot (gComb0.object! mfId)) with attacking := true, attackingTarget := some (.battle bat1Id) }
   let gAtkBat := gComb0.record (GameEvent.attackersDeclared gComb0.turnNumber ⟨0⟩ #[(mfSnapBat, .battle bat1Id)] (cause := declCause))
@@ -3309,32 +3311,32 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
   let upkeepWatcher (nm : String) : CardDef := {
     name := nm
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered .yourUpkeep { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .stepYourUpkeep { resolution := .gainLife 1 }]
   }
   let mainWatcher (nm : String) : CardDef := {
     name := nm
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered .yourFirstMain { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .stepYourFirstMain { resolution := .gainLife 1 }]
   }
   let combatWatcher (nm : String) : CardDef := {
     name := nm
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered .yourBeginCombat { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .stepYourBeginCombat { resolution := .gainLife 1 }]
   }
   let endWatcher (nm : String) : CardDef := {
     name := nm
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered .yourEndStep { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .stepYourEndStep { resolution := .gainLife 1 }]
   }
   let eachUpkeepWatcher : CardDef := {
     name := "Each Upkeep 26i4"
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered .eachUpkeep { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .stepEachUpkeep { resolution := .gainLife 1 }]
   }
   let eachEndWatcher : CardDef := {
     name := "Each End 26i4"
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered .eachEndStep { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .stepEachEndStep { resolution := .gainLife 1 }]
   }
   let g2hg :=
     addPermanent (addPermanent (addPermanent (addPermanent
@@ -3408,18 +3410,18 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
   let aloneWatcher : CardDef := {
     name := "Alone Watcher 26i4"
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered (.fra .creatureYouControlAttacksPlayerAlone) { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .creatureYouControlAttacksPlayerAlone { resolution := .gainLife 1 }]
   }
   let twoWatcher : CardDef := {
     name := "Two Watcher 26i4"
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered .youAttackWithTwoOrMore { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .youAttackWithTwoOrMoreToPlayer { resolution := .gainLife 1 } (grouping := .perPlayerInBatch)]
   }
   let eqAloneDef : CardDef := {
     name := "Cross Equipment 26i4"
     types := #[.artifact]
     subtypes := #["Equipment"]
-    triggeredAbilities := #[.triggered .equippedAttacksAlone { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .equippedAttacksAlone { resolution := .gainLife 1 }]
   }
   let gBattle0 :=
     addPermanent (addPermanent (addPermanent (addPermanent (addPermanent g0
@@ -3430,7 +3432,7 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
   let a2 := p0Bears[1]!.id
 
   -- 4a. Two creatures attacking a battle trigger neither `.creatureYouControlAttacksPlayerAlone`
-  --     nor `.youAttackWithTwoOrMore` (CR 506.6 / 508.3d):
+  --     nor `.youAttackWithTwoOrMoreToPlayer` (CR 506.6 / 508.3d):
   let gAtkBattle :=
     ((gBattle0.change (.waitingTriggers #[])).record
       (GameEvent.attackersDeclared gBattle0.turnNumber p0 #[
@@ -3440,7 +3442,7 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
   let battleExcludedOk := gAtkBattle.waitingTriggers.isEmpty
 
   -- One creature attacking `p1` and one creature attacking `battleId` triggers
-  -- `.creatureYouControlAttacksPlayerAlone` for `a1`, and not `.youAttackWithTwoOrMore`:
+  -- `.creatureYouControlAttacksPlayerAlone` for `a1`, and not `.youAttackWithTwoOrMoreToPlayer`:
   let gAtkSplit :=
     ((gBattle0.change (.waitingTriggers #[])).record
       (GameEvent.attackersDeclared gBattle0.turnNumber p0 #[
@@ -3449,10 +3451,10 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
       ]))
   let splitAloneOk :=
     gAtkSplit.waitingTriggers.size == 1 &&
-    gAtkSplit.waitingTriggers[0]!.event == .fra .creatureYouControlAttacksPlayerAlone &&
+    gAtkSplit.waitingTriggers[0]!.pattern == .creatureYouControlAttacksPlayerAlone &&
     gAtkSplit.waitingTriggers[0]!.causeId == some a1
 
-  -- Two creatures attacking `p1` and two creatures attacking `p2` queue `.youAttackWithTwoOrMore`
+  -- Two creatures attacking `p1` and two creatures attacking `p2` queue `.youAttackWithTwoOrMoreToPlayer`
   -- twice (once per attacked player, CR 508.3d / 603.2c):
   let gFourBears := addPermanent (addPermanent gBattle0 bear p0 p0) bear p0 p0
   let fourIds := ((gFourBears.permanentsOf p0).filter (·.name == bear.name)).map (·.id)
@@ -3465,7 +3467,7 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
         (gFourBears.snapshot (gFourBears.object! fourIds[3]!), .player p2)
       ]))
   let twoOrMoreCount :=
-    (gAtkTwoPlayers.waitingTriggers.filter (·.event == .youAttackWithTwoOrMore)).size
+    (gAtkTwoPlayers.waitingTriggers.filter (·.pattern == .youAttackWithTwoOrMoreToPlayer)).size
   let twoPlayersOk := twoOrMoreCount == 2
 
   -- 4b. `.equippedAttacksAlone` fires for `p1`'s Equipment attached to `p0`'s sole attacker (CR 301.5d / 506.5):
@@ -3479,7 +3481,7 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
       ]))
   let eqAloneOk :=
     gEqAlone.waitingTriggers.any (fun w =>
-      w.event == .equippedAttacksAlone && w.controller == p1 && w.source.id == eqId)
+      w.pattern == .equippedAttacksAlone && w.controller == p1 && w.source.id == eqId)
 
   -- 4c. Layer-resolved `g.name` on battlefield permanents (CR 613.1a,c / 707.2):
   let copyCard : CardDef := { bear with name := "Copied Hero" }
@@ -4033,12 +4035,12 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     bear with
     name := "P27i2 Ward Bear"
     keywords := #[.ward (CostSpec.ofGeneric 1)]
-    triggeredAbilities := #[.triggered .becomesTarget { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .thisBecomesTargetByOpponent { resolution := .gainLife 1 }]
   }
   let youTargetWatcherDef : CardDef := {
     name := "P27i2 Target Watcher"
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered .fromEffect (Effect.ofTrigger (.watch .youTargetDrawOnce))]
+    triggeredAbilities := #[SharedTrigger.watch .youTargetDrawOnce |>.toTriggeredAbility]
   }
   let g0 :=
     insertObject
@@ -4123,7 +4125,7 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
   --     when `p0` declines slot 0 (marking `targetsAnnounced == true` instead of re-prompting!),
   --     and modal triggered ability with a single optional-target mode (`obj.triggeredAbility.isSome &&
   --     obj.abilityEffect.any (·.allowsZeroTargets)`) allows `.decline` and `Agent.choose`:
-  let eachOppOptAb : TriggeredAbility := .triggered .enter {
+  let eachOppOptAb : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters {
     targeting := .of (.forEachOpponentControlled (.hasType .artifact) (.upTo 1))
     allowsZeroTargets := true
     resolution := .gainLife 1
@@ -4148,7 +4150,7 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     gEoDecl.stack[0]!.targetsAnnounced &&
     gEoDecl.stack[0]!.targets.isEmpty
 
-  -- Modal triggered ability with `fraTriggerModes` where mode 0 has `allowsZeroTargets := true`:
+  -- Modal triggered ability with `modes` where mode 0 has `allowsZeroTargets := true`:
   let modalOptMode0 : Effect := {
     targeting := .of (.ofDomain (.object .battlefield (ObjectPred.andAll #[.hasSubtype (.literal .elf), .hasType .creature])) (.upTo 1))
     allowsZeroTargets := true
@@ -4162,8 +4164,10 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
   let modalTrigPermDef : CardDef := {
     bear with
     name := "P27i2 Modal Trigger"
-    fraTriggerModes := #[modalOptMode0, modalUntargetedMode1]
-    triggeredAbilities := #[.triggered .enter { resolution := .chooseTriggerModes 1, phrase := "Choose one —" } {}]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger .thisEnters { resolution := .chooseTriggerModes 1, phrase := "Choose one —" }
+        (modes := #[modalOptMode0, modalUntargetedMode1])
+    ]
   }
   let gMt0 := insertObject afterDraw modalTrigPermDef p0 (.hand p0)
   let mtHandId := (gMt0.player p0).hand.back!
@@ -4484,7 +4488,7 @@ private def replayOk27i3 (gs : Array Game) : Bool :=
   let cascSpellId := (gCasc0.objects.filter (·.name == cascadeSpellDef.name))[0]!.id
   let (gCascDeparted, _) := gCasc0.move cascSpellId (.graveyard p0) none (cause := some testCause)
   let gCascResolved :=
-    gCascDeparted.applyTriggeredAbility p0 (.triggered .cascade (Effect.ofTrigger .cascade)) (some cascSpellId)
+    gCascDeparted.applyTriggeredAbility p0 (SharedTrigger.cascade.toTriggeredAbility) (some cascSpellId)
   let cascadeLkiOk :=
     match gCascResolved.pending with
     | .fraChoice q (.mayCastCascade hitId _) =>
@@ -4555,23 +4559,23 @@ private def replayOk27i4 (gs : Array Game) : Bool :=
     name := "P27i4 Elf Watcher"
     types := #[.enchantment]
     triggeredAbilities := #[
-      .triggered .youAttack { resolution := .gainLife 1 },
-      .triggered .youAttackWithElves { resolution := .gainLife 1 },
-      .triggered (.fra .creatureYouControlAttacks) { resolution := .gainLife 1 }
+      TriggeredAbility.mkTrigger .youAttack { resolution := .gainLife 1 } (grouping := .oncePerBatch),
+      TriggeredAbility.mkTrigger (.youAttackWithSubtype .elf) { resolution := .gainLife 1 } (grouping := .oncePerBatch),
+      TriggeredAbility.mkTrigger .creatureYouControlAttacks { resolution := .gainLife 1 }
     ]
   }
   let defWatcherDef (nm : String) : CardDef := {
     name := nm
     types := #[.enchantment]
     triggeredAbilities := #[
-      .triggered (.fra .creatureAttacksYouOrYourPlaneswalker) { resolution := .gainLife 1 }
+      TriggeredAbility.mkTrigger .creatureAttacksYouOrYourPlaneswalker { resolution := .gainLife 1 }
     ]
   }
   let elfCreatureDef : CardDef := {
     bear with
     name := "P27i4 Teammate Elf"
     subtypes := #["Elf"]
-    triggeredAbilities := #[.triggered .attack { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .thisAttacks { resolution := .gainLife 1 }]
   }
   -- Teammate `p1` controls `elfAtkWatcherDef` and `elfCreatureDef`; defending team members `p2`
   -- and `p3` each control a `defWatcherDef`:
@@ -4592,14 +4596,14 @@ private def replayOk27i4 (gs : Array Game) : Bool :=
         (gCombat0.snapshot (gCombat0.object! p1ElfId), .player p2)
       ]))
   let p1AttackTriggersFired :=
-    gAtk.waitingTriggers.any (fun w => w.controller == p1 && w.event == .attacking) &&
-    gAtk.waitingTriggers.any (fun w => w.controller == p1 && w.event == .youAttack) &&
-    gAtk.waitingTriggers.any (fun w => w.controller == p1 && w.event == .youAttackWithElves) &&
-    gAtk.waitingTriggers.any (fun w => w.controller == p1 && w.event == .fra .creatureYouControlAttacks)
+    gAtk.waitingTriggers.any (fun w => w.controller == p1 && w.pattern == .thisAttacks) &&
+    gAtk.waitingTriggers.any (fun w => w.controller == p1 && w.pattern == .youAttack && w.ability.grouping == .oncePerBatch) &&
+    gAtk.waitingTriggers.any (fun w => w.controller == p1 && w.pattern == .youAttackWithSubtype .elf) &&
+    gAtk.waitingTriggers.any (fun w => w.controller == p1 && w.pattern == .creatureYouControlAttacks && w.ability.grouping == .perOccurrence)
   -- `.creatureAttacksYouOrYourPlaneswalker` queues for the attacked player `p2` ONLY, not `p3` (CR 805.10e):
   let singleDefenderTriggerOk :=
-    gAtk.waitingTriggers.any (fun w => w.controller == p2 && w.event == .fra .creatureAttacksYouOrYourPlaneswalker) &&
-    !gAtk.waitingTriggers.any (fun w => w.controller == p3 && w.event == .fra .creatureAttacksYouOrYourPlaneswalker)
+    gAtk.waitingTriggers.any (fun w => w.controller == p2 && w.pattern == .creatureAttacksYouOrYourPlaneswalker) &&
+    !gAtk.waitingTriggers.any (fun w => w.controller == p3 && w.pattern == .creatureAttacksYouOrYourPlaneswalker)
 
   -- `Turns.lean`:
   --  * `.legendRuleOffThisTurn p2` is preserved by `clearTurnActivations` / `clearEOT` when `p2.lost`

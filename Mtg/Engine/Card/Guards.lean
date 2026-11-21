@@ -281,27 +281,24 @@ namespace CardDef
   "This Saga deals 2 damage to each non-Villain creature and each opponent"
 #guard Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv.targetSpec ==
   .opponent
-#guard TriggerEvent.spec .entering ==
-  { clause := "this permanent enters", isWhenever := false, label := "enters trigger" }
-#guard TriggerEvent.spec .attacking ==
-  { clause := "this creature attacks", isWhenever := true, label := "attack trigger" }
-#guard TriggerEvent.clause .youScry == "you scry"
-#guard TriggerEvent.label .dying == "dies trigger"
-#guard TriggerEvent.label .youScry == "scry trigger"
-#guard TriggerEvent.label .landYouControlEnters == "landfall trigger"
-#guard TriggerEvent.label .becomesBlocked == "becomes-blocked trigger"
-#guard TriggerEvent.label .youCastInstantOrSorcery == "cast trigger"
-#guard TriggerEvent.label .anotherElfYouControlEnters == "Elf-enters trigger"
-#guard TriggerEvent.label .attacking == "attack trigger"
-#guard TriggerEvent.label .youAttackWithElves == "attack trigger"
-#guard !TriggerEvent.checkTargets .youCastInstantOrSorcery
-#guard !TriggerEvent.checkTargets .youAttackWithElves
-#guard !TriggerEvent.checkTargets .anotherElfYouControlEnters
-#guard TriggerEvent.checkTargets .entering
-#guard TriggerEvent.checkTargets .landYouControlEnters
-#guard TriggerEvent.checkTargets .attacking
-#guard !TriggerEvent.isWhenever .dying
-#guard TriggerEvent.isWhenever .youAttackWithElves
+#guard TriggerPattern.thisEnters.renderClause { selfRef := "this permanent", capitalize := false } ==
+  "this permanent enters"
+#guard TriggerPattern.thisEnters.defaultWord == .when
+#guard TriggerPattern.thisEnters.label == "enters trigger"
+#guard TriggerPattern.thisAttacks.renderClause { selfRef := "this creature", capitalize := false } ==
+  "this creature attacks"
+#guard TriggerPattern.thisAttacks.defaultWord == .whenever
+#guard TriggerPattern.thisAttacks.label == "attack trigger"
+#guard TriggerPattern.youScry.renderClause { selfRef := "this permanent", capitalize := false } == "you scry"
+#guard TriggerPattern.thisDies.label == "dies trigger"
+#guard TriggerPattern.youScry.label == "scry trigger"
+#guard TriggerPattern.landYouControlEnters.label == "landfall trigger"
+#guard TriggerPattern.thisBecomesBlocked.label == "becomes-blocked trigger"
+#guard TriggerPattern.youCastInstantOrSorcery.label == "cast trigger"
+#guard (TriggerPattern.anotherSubtypeYouControlEnters .elf).label == "Elf-enters trigger"
+#guard (TriggerPattern.youAttackWithSubtype .elf).label == "attack trigger"
+#guard TriggerPattern.thisDies.defaultWord == .when
+#guard (TriggerPattern.youAttackWithSubtype .elf).defaultWord == .whenever
 #guard (Effect.dealDamage 3).targetCount == 1
 #guard Effect.tapOneOrTwoCreatures.targetCount == 1
 #guard Effect.tapOneOrTwoCreatures.maxTargetCount == 2
@@ -688,96 +685,98 @@ namespace CardDef
   .createTokens .treasure (.fixed 1) false
 #guard TriggeredAbility.resolution (.onEnterCreateTokens .treasure 1 true) ==
   .createTokens .treasure (.fixed 1) true
-#guard TriggeredAbility.onEnterScry 2 == .triggered .enter (Effect.ofTrigger (.scry 2))
-#guard TriggeredAbility.onAttackScry 1 == .triggered .attack (Effect.ofTrigger (.scry 1))
-#guard TriggeredAbility.onEnterDraw 1 == .triggered .enter (Effect.ofTrigger (.draw 1))
-#guard TriggeredAbility.onDiesDraw 1 == .triggered .dies (Effect.ofTrigger (.draw 1))
+#guard TriggeredAbility.onEnterScry 2 == (SharedTrigger.scry 2).toTriggeredAbility (pattern? := some .thisEnters)
+#guard TriggeredAbility.onAttackScry 1 == (SharedTrigger.scry 1).toTriggeredAbility (pattern? := some .thisAttacks)
+#guard TriggeredAbility.onEnterDraw 1 == (SharedTrigger.draw 1).toTriggeredAbility (pattern? := some .thisEnters)
+#guard TriggeredAbility.onDiesDraw 1 == (SharedTrigger.draw 1).toTriggeredAbility (pattern? := some .thisDies)
 #guard TriggeredAbility.onEnterCreateTokens .treasure 1 true ==
-  .triggered .enter (Effect.ofTrigger (.createTokens .treasure 1 true))
+  (SharedTrigger.createTokens .treasure 1 true).toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onEnterOrAttackDealDividedDamage 3 3 ==
-  .triggered .enterOrAttack (Effect.ofTrigger (.dividedDamage 3 3))
+  (SharedTrigger.dividedDamage 3 3).toTriggeredAbility (pattern? := some .enterOrAttack)
 #guard TriggeredAbility.onEnterTargetOpponentSacrifices ==
-  .triggered .enter (Effect.ofTrigger .opponentSacrificesCreature)
+  SharedTrigger.opponentSacrificesCreature.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onEnterAttachToLegendary ==
-  .triggered .enter (Effect.ofTrigger (.attachTo .legendaryCreatureYouControl))
+  (SharedTrigger.attachTo .legendaryCreatureYouControl).toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onCombatPlusOneOnCreatureYouControl ==
-  .triggered .yourBeginCombat (Effect.ofTrigger (.onPermanent .creatureYouControl (.plusOne 1)))
+  (SharedTrigger.onPermanent .creatureYouControl (.plusOne 1)).toTriggeredAbility (pattern? := some .stepYourBeginCombat)
 #guard TriggeredAbility.onEnterOrAttackCreateWall ==
-  .triggered .enterOrAttack (Effect.ofTrigger (.createTokens .wall 1))
-#guard TriggeredAbility.onEnterConnive == .triggered .enter (Effect.ofTrigger .connive)
+  (SharedTrigger.createTokens .wall 1).toTriggeredAbility (pattern? := some .enterOrAttack)
+#guard TriggeredAbility.onEnterConnive ==
+  SharedTrigger.connive.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onDrawSecondPlusOne ==
-  .triggered .youDrawSecond (Effect.ofTrigger (.onSource (.plusOne 1)))
+  (SharedTrigger.onSource (.plusOne 1)).toTriggeredAbility (pattern? := some (.drawCard .you)) (limit? := some (.nthEachTurn 2))
 #guard TriggeredAbility.onYourEndStepDrawLoseLife ==
-  .triggered .yourEndStep Effect.seqDrawAndLoseLife
+  TriggeredAbility.mkTrigger .stepYourEndStep Effect.seqDrawAndLoseLife
 #guard TriggeredAbility.onAttackFerociousGainLife 2 ==
-  .triggered .attack (Effect.ofTrigger (.gainLife 2)) .ferocious
+  (SharedTrigger.gainLife 2).toTriggeredAbility
+    (pattern? := some (.whenCond .thisAttacks (TriggeredAbility.condControlCreaturePowerAtLeast 4)))
 #guard TriggeredAbility.onArtifactYouControlEntersDrawOnce ==
-  .triggered .artifactYouControlEnters (Effect.ofTrigger (.draw 1)) .once
+  (SharedTrigger.draw 1).toTriggeredAbility (pattern? := some .artifactYouControlEnters) (limit? := some .onceEachTurn)
 #guard TriggeredAbility.onCastColorPump .green 4 4 ==
-  .triggered (.youCastColor .green) (Effect.ofTrigger (.onPermanent .creature (.pump 4 4)))
+  (SharedTrigger.onPermanent .creature (.pump 4 4)).toTriggeredAbility (pattern? := some (.youCastColor .green))
 #guard TriggeredAbility.onEnterExileOppTappedUntilLeaves ==
-  .triggered .enter (Effect.ofTrigger (.exileUntilLeaves .oppTappedCreature))
+  (SharedTrigger.exileUntilLeaves .oppTappedCreature).toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit ==
-  .triggered .opponentCastsFirstNoncreature (Effect.ofTrigger (.recruit .you))
+  (SharedTrigger.recruit .you).toTriggeredAbility (pattern? := some .opponentCastsFirstNoncreature)
 #guard TriggeredAbility.onCastInstantOrSorceryDealDamageToEachOpponent 2 ==
-  .triggered .youCastInstantOrSorcery (Effect.ofTrigger (.damageEachOpponent 2)) .noTarget
-#guard TriggeredAbility.onEnterExileTop == .triggered .enter (Effect.ofTrigger .exileTop)
+  (SharedTrigger.damageEachOpponent 2).toTriggeredAbility (pattern? := some .youCastInstantOrSorcery) (untargeted := true)
+#guard TriggeredAbility.onEnterExileTop ==
+  SharedTrigger.exileTop.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onEnterMayDiscardDraw 2 ==
-  .triggered .enter (Effect.ofTrigger (.mayTo .discard (.draw 2)))
+  (SharedTrigger.mayTo .discard (.draw 2)).toTriggeredAbility (pattern? := some .thisEnters)
 #guard (TriggeredAbility.onEnterMayDiscardDraw 2).resolution ==
   .may (.discard (.cards 1)) (.draw (.fixed 2)) .ifYouDo
-#guard (TriggeredAbility.triggered .enter
-    (Effect.ofTrigger (.mayTo (.scry 1) (.gainLife 2)))).resolution ==
+#guard ((SharedTrigger.mayTo (.scry 1) (.gainLife 2)).toTriggeredAbility (pattern? := some .thisEnters)).resolution ==
   .may (.scry (.fixed 1)) (.gainLife (.fixed 2)) .ifYouDo
-#guard (TriggeredAbility.triggered .enter
-    (Effect.ofTrigger (.mayTo (.onPermanent .creature .tap) (.draw 1)))).targetSpec ==
+#guard ((SharedTrigger.mayTo (.onPermanent .creature .tap) (.draw 1)).toTriggeredAbility (pattern? := some .thisEnters)).targetSpec ==
   .creature
-#guard (TriggeredAbility.triggered .enter
-    (Effect.ofTrigger (.mayTo (.discard 1) (.millPlayer 3)))).targetSpec ==
+#guard ((SharedTrigger.mayTo (.discard 1) (.millPlayer 3)).toTriggeredAbility (pattern? := some .thisEnters)).targetSpec ==
   .player
 #guard TriggeredAbility.onCastNoncreatureMayDrawXDiscard2 ==
-  .triggered .youCastNoncreature (Effect.ofTrigger (.may (.drawXDiscard 2)))
+  (SharedTrigger.may (.drawXDiscard 2)).toTriggeredAbility (pattern? := some .youCastNoncreature)
 #guard (TriggeredAbility.onCastNoncreatureMayDrawXDiscard2).resolution ==
   .may (.sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard (.cards 2))]) (.sequence [])
 #guard TriggeredAbility.toNotation .onCastNoncreatureMayDrawXDiscard2 ==
   "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
 #guard TriggeredAbility.onEnterEachOpponentDiscards ==
-  .triggered .enter (Effect.ofTrigger .opponentDiscards)
+  SharedTrigger.opponentDiscards.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onAttackOtherGets2AndTrample ==
-  .triggered .attack (Effect.ofTrigger (.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0)))
+  (SharedTrigger.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0)).toTriggeredAbility (pattern? := some .thisAttacks)
 #guard TriggeredAbility.onEquipmentYouControlEntersDraw ==
-  .triggered .equipmentYouControlEnters (Effect.ofTrigger (.draw 1))
+  (SharedTrigger.draw 1).toTriggeredAbility (pattern? := some .equipmentYouControlEnters)
 #guard TriggeredAbility.onCreatureYouControlAttacksAloneInvestigate ==
-  .triggered .creatureYouControlAttacksAlone (Effect.ofTrigger .investigate)
+  SharedTrigger.investigate.toTriggeredAbility (pattern? := some .creatureYouControlAttacksAlone)
 #guard TriggeredAbility.onOpponentCastsAmassOrcs 1 ==
-  .triggered .opponentCastsSpell (Effect.ofTrigger (.amass 1 .orc))
+  (SharedTrigger.amass 1 .orc).toTriggeredAbility (pattern? := some .opponentCastsSpell)
 #guard !TriggeredAbility.requiresTarget
   (.onCastInstantOrSorceryDealDamageToEachOpponent 2)
-#guard TriggeredAbility.onEnterSearchForest == .triggered .enter (Effect.ofTrigger .searchLibrary)
+#guard TriggeredAbility.onEnterSearchForest ==
+  SharedTrigger.searchLibrary.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onEnterEachPlayerSacrificesCreature ==
-  .triggered .enter (Effect.ofTrigger .eachPlayerSacrificesCreature)
+  SharedTrigger.eachPlayerSacrificesCreature.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onCombatDamageToPlayerLoot ==
-  .triggered .combatDamageToPlayer (Effect.seqDrawThenDiscard 1)
+  TriggeredAbility.mkTrigger .thisDealsCombatDamageToPlayer (Effect.seqDrawThenDiscard 1)
 #guard TriggeredAbility.onAttackFerociousPlusOneEach ==
-  .triggered .attack (Effect.ofTrigger .plusOneEachYouControl) .ferocious
+  SharedTrigger.plusOneEachYouControl.toTriggeredAbility
+    (pattern? := some (.whenCond .thisAttacks (TriggeredAbility.condControlCreaturePowerAtLeast 4)))
 #guard TriggeredAbility.onScryPumpSelfForEachLookedAt ==
-  .triggered .youScry (Effect.ofTrigger .pumpByLookedAt)
+  SharedTrigger.pumpByLookedAt.toTriggeredAbility (pattern? := some .youScry)
 #guard TriggeredAbility.onScryPumpAndUnblockableOnce ==
-  .triggered .youScry Effect.seqPumpAndUnblockable .once
+  TriggeredAbility.mkTrigger .youScry Effect.seqPumpAndUnblockable (limit := .onceEachTurn)
 #guard TriggeredAbility.onRingTemptsMayDiscardDraw 4 ==
-  .triggered .theRingTemptsYou (Effect.ofTrigger (.mayDiscardHandDraw 4))
+  (SharedTrigger.mayDiscardHandDraw 4).toTriggeredAbility (pattern? := some .theRingTemptsYou)
 #guard TriggeredAbility.onDrawSecondPlusOneLifelink ==
-  .triggered .youDrawSecond (Effect.seqPlusOneAndLifelink .creature)
+  TriggeredAbility.mkTrigger (.drawCard .you) (Effect.seqPlusOneAndLifelink .creature) (limit := .nthEachTurn 2)
 #guard TriggeredAbility.onceEachTurn .onScryPumpAndUnblockableOnce
-#guard TriggeredAbility.youControlCreatureWithPower? .onAttackFerociousPlusOneEach
-  == some 4
+#guard TriggeredAbility.onAttackFerociousPlusOneEach.pattern ==
+  .whenCond .thisAttacks (TriggeredAbility.condControlCreaturePowerAtLeast 4)
 #guard TriggeredAbility.allowsZeroTargets .onEnterMayExileAnotherCreature
 #guard TriggeredAbility.onAttackPumpByGreatestPower ==
-  .triggered .attack (Effect.ofTrigger .pumpGreatestPower)
+  SharedTrigger.pumpGreatestPower.toTriggeredAbility (pattern? := some .thisAttacks)
 #guard TriggeredAbility.onBecomesBlockedDeal1ToBlockers ==
-  .triggered .becomesBlocked (Effect.ofTrigger (.damageBlockers 1))
+  (SharedTrigger.damageBlockers 1).toTriggeredAbility (pattern? := some .thisBecomesBlocked)
 #guard TriggeredAbility.onEnterCreateThenAttach .treasure ==
-  .triggered .enter (Effect.ofTrigger (.createThenAttach .treasure))
+  (SharedTrigger.createThenAttach .treasure).toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.resolution (.onEnterCreateThenAttach .dwarf) ==
   .sequence [.createTokens .dwarf (.fixed 1) false, .attach .source .createdToken]
 #guard TriggeredAbility.toNotation (.onEnterCreateThenAttach .dwarf) ==
@@ -787,102 +786,103 @@ namespace CardDef
 #guard TriggeredAbility.toNotation (.onEnterGainLifeSearchBasicOnTop 2) ==
   "When this permanent enters, you gain 2 life. You may search your library for a basic land card, reveal it, then shuffle and put that card on top."
 #guard TriggeredAbility.onLandYouControlEntersDrawPlusOneSource ==
-  .triggered .landYouControlEnters Effect.seqDrawPlusOneSource
+  TriggeredAbility.mkTrigger .landYouControlEnters Effect.seqDrawPlusOneSource
 #guard TriggeredAbility.onArmyCombatDamageRingTempts ==
-  .triggered .armyYouControlCombatDamage (Effect.ofTrigger .ringTempts)
+  SharedTrigger.ringTempts.toTriggeredAbility (pattern? := some .armyYouControlCombatDamageToPlayer)
 #guard TriggeredAbility.onAttackSetOtherBasePT ==
-  .triggered .attack (Effect.ofTrigger .setOtherBasePT)
+  SharedTrigger.setOtherBasePT.toTriggeredAbility (pattern? := some .thisAttacks)
 #guard TriggeredAbility.onEnterOrAttackReturnElfGainLife ==
-  .triggered .enterOrAttack (Effect.ofTrigger .returnElfGainLife)
+  SharedTrigger.returnElfGainLife.toTriggeredAbility (pattern? := some .enterOrAttack)
 #guard TriggeredAbility.resolution .onEnterOrAttackReturnElfGainLife ==
   .sequence [.returnToHand .graveyardCard, .gainLife .equalToTargetPower]
 #guard TriggeredAbility.onDiesDealDamageEqualToPowerToOppCreature ==
-  .triggered .dies (Effect.ofTrigger .damageFromLastKnownPower)
+  SharedTrigger.damageFromLastKnownPower.toTriggeredAbility (pattern? := some .thisDies)
 #guard TriggeredAbility.onCastNoncreaturePumpAndDamageOpponents 1 ==
-  .triggered .youCastNoncreature (Effect.seqPumpAndDamageOpponents 1)
+  TriggeredAbility.mkTrigger .youCastNoncreature (Effect.seqPumpAndDamageOpponents 1)
 #guard TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2 ==
-  .triggered .enter (Effect.seqExileOppGyCardOppsLoseLife 2)
+  TriggeredAbility.mkTrigger .thisEnters (Effect.seqExileOppGyCardOppsLoseLife 2)
 #guard TriggeredAbility.onEnterCreaturesYouControlGetAndFirstStrike 1 ==
-  .triggered .enter (Effect.seqCreaturesPumpAndFirstStrike 1)
+  TriggeredAbility.mkTrigger .thisEnters (Effect.seqCreaturesPumpAndFirstStrike 1)
 #guard TriggeredAbility.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1 ==
-  .triggered .anotherCreatureYouControlEnters (Effect.ofTrigger (.mayPayGenericDraw 1))
-    { anotherCreaturePowerAtMost := some 2 }
-#guard TriggeredAbility.anotherCreaturePowerAtMost?
-  (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1) == some 2
+  (SharedTrigger.mayPayGenericDraw 1).toTriggeredAbility (pattern? := some (.permanentEnters (.all #[
+    .otherThan .this, .hasType .creature, .controlledBy .you, .stat .power .le (.const 2)])))
+#guard (TriggeredAbility.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1).pattern ==
+  .permanentEnters (.all #[
+    .otherThan .this, .hasType .creature, .controlledBy .you, .stat .power .le (.const 2)])
 #guard TriggeredAbility.onEnterDrawThenBottomIfNoLegendary ==
-  .triggered .enter (Effect.ofTrigger .drawThenBottomIfNoLegendary)
+  SharedTrigger.drawThenBottomIfNoLegendary.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.resolution .onEnterDrawThenBottomIfNoLegendary ==
   .sequence [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) (.putOnLibrary .bottom .cardFromHand)]
 #guard TriggeredAbility.toNotation .onEnterDrawThenBottomIfNoLegendary ==
   "When this permanent enters, draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library."
 #guard TriggeredAbility.onYourEndStepRemoveHopeDrawSac ==
-  .triggered .yourEndStep (Effect.ofTrigger .removeHopeDrawSac)
+  SharedTrigger.removeHopeDrawSac.toTriggeredAbility (pattern? := some .stepYourEndStep)
 #guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
   .sequence [.removeCounters .hope .source, .«if» .removedHope (.draw (.fixed 1)),
     .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]
 #guard TriggeredAbility.toNotation .onYourEndStepRemoveHopeDrawSac ==
   "At the beginning of your end step, remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life."
 #guard TriggeredAbility.onAttackTapHumansDraw ==
-  .triggered .attack (Effect.ofTrigger .tapHumansDraw)
+  SharedTrigger.tapHumansDraw.toTriggeredAbility (pattern? := some .thisAttacks)
 #guard TriggeredAbility.resolution .onAttackTapHumansDraw ==
   .sequence [.may (.tap .humans) (.sequence []), .draw .forEachTappedHuman]
 #guard TriggeredAbility.toNotation .onAttackTapHumansDraw ==
   "Whenever this creature attacks, you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way."
 #guard TriggeredAbility.onEnterUntapOtherPlusOneIfSubtype "Bear" ==
-  .triggered .enter (Effect.seqUntapPlusOneIfSubtype "Bear")
+  TriggeredAbility.mkTrigger .thisEnters (Effect.seqUntapPlusOneIfSubtype "Bear")
 #guard TriggeredAbility.onEnterDestroyOppArtifactsEnchantmentsGainLife ==
-  .triggered .enter (Effect.ofTrigger .destroyOppArtifactsEnchantmentsGainLife)
+  SharedTrigger.destroyOppArtifactsEnchantmentsGainLife.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.resolution .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   .sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed),
     .gainLife .forEachDestroyedThisWay]
 #guard TriggeredAbility.toNotation .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   "When this permanent enters, destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way."
 #guard TriggeredAbility.onEnterOrAttackPlusOneEachOtherGainLife ==
-  .triggered (.or .enter .attack) (Effect.ofTrigger .plusOneEachOtherGainLife)
+  SharedTrigger.plusOneEachOtherGainLife.toTriggeredAbility (pattern? := some .enterOrAttack)
 #guard TriggeredAbility.resolution .onEnterOrAttackPlusOneEachOtherGainLife ==
   .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, .gainLife .perOtherCreature]
 #guard TriggeredAbility.toNotation .onEnterOrAttackPlusOneEachOtherGainLife ==
   "Whenever this creature enters or attacks, put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control."
 #guard TriggeredAbility.onAttackDamageEqualSubtypeToEachOpponent "Dwarf" ==
-  .triggered .attack (Effect.ofTrigger (.damageEqualSubtypeToEachOpponent .dwarf))
+  (SharedTrigger.damageEqualSubtypeToEachOpponent .dwarf).toTriggeredAbility (pattern? := some .thisAttacks)
 #guard TriggeredAbility.onAttackDamageEqualTreasures ==
-  .triggered .attack (Effect.ofTrigger .damageEqualTreasures)
+  SharedTrigger.damageEqualTreasures.toTriggeredAbility (pattern? := some .thisAttacks)
 #guard TriggeredAbility.onPlayerCastsSecondSpellLoseLifeCreateTreasure ==
-  .triggered .anyPlayerCastsSecondSpell Effect.seqLoseLifeCreateTreasure
+  TriggeredAbility.mkTrigger .anyPlayerCastsSecondSpell Effect.seqLoseLifeCreateTreasure
 #guard TriggeredAbility.onEnterDealDamageDestroyIfSubtype 1 "Dragon" ==
-  .triggered .enter (Effect.ofTrigger (.dealDamageDestroyIfSubtype 1 .dragon))
+  (SharedTrigger.dealDamageDestroyIfSubtype 1 .dragon).toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.resolution (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
   .sequence [.dealDamage (.fixed 1) .target .markedPermanent,
     .«if» (.dealtDamageToSubtype .dragon) (.destroy .permanentDealtDamage)]
 #guard TriggeredAbility.toNotation (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") ==
   "When this permanent enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it."
 #guard TriggeredAbility.onEnterAttachTargetEquipment ==
-  .triggered .enter (Effect.ofTrigger .attachEquipmentToCreature)
+  SharedTrigger.attachEquipmentToCreature.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onAttackDefenderSacsLeastPower ==
-  .triggered .attack (Effect.ofTrigger .defenderSacsLeastPower)
+  SharedTrigger.defenderSacsLeastPower.toTriggeredAbility (pattern? := some .thisAttacks)
 #guard TriggeredAbility.onEnterReturnOtherPlusOne ==
-  .triggered .enter (Effect.ofTrigger .returnOtherPlusOne)
+  SharedTrigger.returnOtherPlusOne.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.resolution .onEnterReturnOtherPlusOne ==
   .sequence [.returnToHand .permanent .returnedPermanent, .«if» .returnedPermanent (.putCounters (.ofKind .plusOnePlusOne) .source)]
 #guard TriggeredAbility.toNotation .onEnterReturnOtherPlusOne ==
   "When this permanent enters, return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature."
 #guard TriggeredAbility.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"] ==
-  .triggered .enter (Effect.ofTrigger (.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"]))
+  (SharedTrigger.lookAtTopRevealTypes 4 #["Dwarf", "Equipment"]).toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onEnterCreateTappedTreasuresEqualOppArtifacts ==
-  .triggered .enter (Effect.ofTrigger .createTappedTreasuresEqualOppArtifacts)
+  SharedTrigger.createTappedTreasuresEqualOppArtifacts.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onCombatDamagePutNonlandMvAtMost 3 ==
-  .triggered .combatDamageToPlayerOrBattle (Effect.ofTrigger (.putNonlandMvAtMostFromGy 3))
-#guard SharedTriggerWhen.anyPlayerCastsSecondSpell.events ==
+  (SharedTrigger.putNonlandMvAtMostFromGy 3).toTriggeredAbility (pattern? := some .thisDealsCombatDamageToPlayerOrBattle)
+#guard TriggerPattern.anyPlayerCastsSecondSpell.flattenOr ==
   #[.anyPlayerCastsSecondSpell]
-#guard SharedTriggerWhen.enterOrAttack == .or .enter .attack
-#guard SharedTriggerWhen.enterOrAttack.events == #[.entering, .attacking]
-#guard SharedTriggerWhen.castGreenOrForestEnters ==
-  .or .youCastGreen .forestYouControlEnters
-#guard SharedTriggerWhen.enterOrOpponentDrawsExceptFirst ==
-  .or .enter .opponentDrawsExceptFirst
-#guard (SharedTriggerWhen.or .enter .attack).events == #[.entering, .attacking]
+#guard TriggerPattern.enterOrAttack == .or .thisEnters .thisAttacks
+#guard TriggerPattern.enterOrAttack.flattenOr == #[.thisEnters, .thisAttacks]
+#guard TriggerPattern.castGreenOrForestEnters ==
+  .or (.youCastColor .green) .forestYouControlEnters
+#guard TriggerPattern.enterOrOpponentDrawsExceptFirst ==
+  .or .thisEnters (.drawCard .opponent (exceptFirstDrawStep := true))
+#guard (TriggerPattern.or .thisEnters .thisAttacks).flattenOr == #[.thisEnters, .thisAttacks]
 #guard TriggeredAbility.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1) ==
-  .triggered .eachBeginCombat (Effect.ofTrigger (.othersGetAndOppsGet #[.goblin, .orc] 2 2 (-1) (-1)))
+  (SharedTrigger.othersGetAndOppsGet #[.goblin, .orc] 2 2 (-1) (-1)).toTriggeredAbility (pattern? := some .stepEachBeginCombat)
 #guard TriggeredAbility.resolution
     (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
   .sequence [.pump (.fixed 2) (.fixed 2) (.intersection [.creaturesYouControl, .union ([.goblin, .orc].map .othersOfSubtype)]),
@@ -891,73 +891,77 @@ namespace CardDef
     (.onEachCombatOthersGetAndOppsGet #["Goblin", "Orc"] 2 2 (-1) (-1)) ==
   "At the beginning of each combat, other Goblins and Orcs you control get +2/+2 until end of turn. Creatures your opponents control get -1/-1 until end of turn."
 #guard TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure ==
-  .triggered .combatDamageToPlayer (Effect.ofTrigger .wolfPlusOneOrTreasure)
+  SharedTrigger.wolfPlusOneOrTreasure.toTriggeredAbility (pattern? := some .thisDealsCombatDamageToPlayer)
 #guard TriggeredAbility.resolution .onCombatDamageWolfPlusOneOrTreasure ==
   .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false]
-#guard (SharedTrigger.timing .tapOppOrUntapYours).resolution ==
+#guard (SharedTrigger.toEffect .tapOppOrUntapYours).resolution ==
   .or [.tap .target, .untap]
 #guard TriggeredAbility.resolution .onLandYouControlEntersTapOrUntap ==
   .or [.tap .target, .untap]
 #guard TriggeredAbility.onYourBeginCombatTrampleCounterBecomeBear ==
-  .triggered .yourBeginCombat (Effect.ofTrigger .trampleCounterBecomeBear)
+  SharedTrigger.trampleCounterBecomeBear.toTriggeredAbility (pattern? := some .stepYourBeginCombat)
 #guard TriggeredAbility.onEnterMillThenSubtypeToHand 4 "Elf" ==
-  .triggered .enter (Effect.ofTrigger (.millThenSubtypeToHand 4 .elf))
+  (SharedTrigger.millThenSubtypeToHand 4 .elf).toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onEnterExileOppNonlandEachUntilLeaves ==
-  .triggered .enter (Effect.ofTrigger .exileOppNonlandEachUntilLeaves)
+  SharedTrigger.exileOppNonlandEachUntilLeaves.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onCastCreaturePlusOneEqualMv ==
-  .triggered .youCastCreature (Effect.ofTrigger .plusOneEqualLastKnownMv)
+  SharedTrigger.plusOneEqualLastKnownMv.toTriggeredAbility (pattern? := some .youCastCreature)
 #guard TriggeredAbility.onMountainEntersQuestThenDragon ==
-  .triggered .mountainYouControlEnters (Effect.ofTrigger .mountainQuestDragon)
+  SharedTrigger.mountainQuestDragon.toTriggeredAbility (pattern? := some .mountainYouControlEnters)
 #guard TriggeredAbility.onEquippedCombatDamageTreasuresPerChosenType ==
-  .triggered .equippedDealsCombatDamageToPlayer (Effect.ofTrigger .treasuresPerChosenType)
+  SharedTrigger.treasuresPerChosenType.toTriggeredAbility (pattern? := some .equippedDealsCombatDamageToPlayer)
 #guard TriggeredAbility.onNontokenYouControlDiesRevealCreature ==
-  .triggered .nontokenYouControlDies (Effect.ofTrigger .revealUntilCreature) .once
+  SharedTrigger.revealUntilCreature.toTriggeredAbility (pattern? := some .nontokenCreatureYouControlDies) (limit? := some .onceEachTurn)
 #guard TriggeredAbility.onceEachTurn .onNontokenYouControlDiesRevealCreature
 #guard TriggeredAbility.onAttackMaySacAnotherPlusOneEqualPower ==
-  .triggered .attack (Effect.ofTrigger .attackSacPlusOneEqualPower)
+  SharedTrigger.attackSacPlusOneEqualPower.toTriggeredAbility (pattern? := some .thisAttacks)
 #guard TriggeredAbility.onEnterLootLandEntersTapped ==
-  .triggered .enter (Effect.ofTrigger .lootLandEntersTapped)
+  SharedTrigger.lootLandEntersTapped.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onPlayerLosesLifeMillThatMany ==
-  .triggered .playerLosesLife (Effect.ofTrigger .millThatManyLost)
+  SharedTrigger.millThatManyLost.toTriggeredAbility (pattern? := some (.loseLife .any))
 #guard TriggeredAbility.onDiesDrawPerFatGraveyard ==
-  .triggered .dies (Effect.ofTrigger .drawPerFatGraveyard)
+  SharedTrigger.drawPerFatGraveyard.toTriggeredAbility (pattern? := some .thisDies)
 #guard TriggeredAbility.onEnterMaySacDrawTreasure ==
-  .triggered .enter (Effect.ofTrigger .maySacDrawTreasure)
+  SharedTrigger.maySacDrawTreasure.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onEquippedAttacksPlusOneEachIfCityBlessing ==
-  .triggered .equippedAttacks (Effect.ofTrigger (.plusOneEachYouControl .citysBlessing))
+  (SharedTrigger.plusOneEachYouControl .citysBlessing).toTriggeredAbility (pattern? := some .equippedAttacks)
 #guard TriggeredAbility.onYourBeginCombatCastInstantSorceryFromHand ==
-  .triggered .yourBeginCombat (Effect.ofTrigger .castInstantSorceryFromHand)
+  SharedTrigger.castInstantSorceryFromHand.toTriggeredAbility (pattern? := some .stepYourBeginCombat)
 #guard TriggeredAbility.onEquippedCombatDamageCastInstantSorcery ==
-  .triggered .equippedDealsCombatDamageToPlayer (Effect.ofTrigger .castInstantSorceryMvAtMost)
+  SharedTrigger.castInstantSorceryMvAtMost.toTriggeredAbility (pattern? := some .equippedDealsCombatDamageToPlayer)
 #guard TriggeredAbility.onCastSecondSpellMillThenCopy ==
-  .triggered .youCastSecondSpell (Effect.ofTrigger .millThenCopy)
+  SharedTrigger.millThenCopy.toTriggeredAbility (pattern? := some .youCastSecondSpell)
 #guard TriggeredAbility.onCombatAnotherGetsSourcePower ==
-  .triggered .yourBeginCombat (Effect.ofTrigger .pumpTargetBySourcePower)
+  SharedTrigger.pumpTargetBySourcePower.toTriggeredAbility (pattern? := some .stepYourBeginCombat)
 #guard TriggeredAbility.onCombatCreateAlienPerInvasion ==
-  .triggered .yourBeginCombat (Effect.ofTrigger .createAlienPerInvasion)
+  SharedTrigger.createAlienPerInvasion.toTriggeredAbility (pattern? := some .stepYourBeginCombat)
 #guard TriggeredAbility.onCombatMayPutArtifactAttachEquipment ==
-  .triggered .yourBeginCombat (Effect.ofTrigger .mayPutArtifactAttachEquipment)
+  SharedTrigger.mayPutArtifactAttachEquipment.toTriggeredAbility (pattern? := some .stepYourBeginCombat)
 #guard TriggeredAbility.resolution .onCombatMayPutArtifactAttachEquipment ==
   .sequence [.may (.put .artifactFromHand (note := .forAttach)) (.sequence []),
     .«if» (.atLeast (.count .putEquipment) (.fixed 1)) (.attach .putArtifact .notedHost)]
-#guard TriggeredAbility.onCastCascade == .triggered .cascade (Effect.ofTrigger .cascade)
+#guard TriggeredAbility.onCastCascade ==
+  SharedTrigger.cascade.toTriggeredAbility (pattern? := some .thisCast) (activeZones? := some #[.stack])
 #guard TriggeredAbility.onEnterBolgMaySacrifice ==
-  .triggered .enter (Effect.ofTrigger .bolgMaySacrifice)
-#guard TriggeredAbility.onEnterSurveil 2 == .triggered .enter (Effect.ofTrigger (.surveil 2))
-#guard TriggeredAbility.onWatch Effect.watchHulk == .triggered .fromEffect Effect.watchHulk
+  SharedTrigger.bolgMaySacrifice.toTriggeredAbility (pattern? := some .thisEnters)
+#guard TriggeredAbility.onEnterSurveil 2 ==
+  (SharedTrigger.surveil 2).toTriggeredAbility (pattern? := some .thisEnters)
+#guard TriggeredAbility.onWatch Effect.watchHulk ==
+  (SharedTrigger.watch .hulk).toTriggeredAbility
 #guard TriggeredAbility.onStep Effect.stepDrawToTen ==
-  .triggered .fromEffect Effect.stepDrawToTen
+  (SharedTrigger.step .drawToTen).toTriggeredAbility
 #guard TriggeredAbility.sagaChapter 1 Effect.chapterRecruit ==
-  .triggered .sagaChapter
-    { Effect.chapterRecruit with
-      sharedTrigger := some (SharedTrigger.chapter 1 .recruit) }
+  { word := .when
+    pattern := TriggerPattern.putCountersOnSelf .lore
+    grouping := .counterThreshold .lore #[1]
+    effect := Effect.chapterRecruit }
 #guard TriggeredAbility.onceEachTurn .onFinalSagaChapterRevealSaga
 #guard TriggeredAbility.onYouSacrificeTokenOppLosesLife ==
-  .triggered .youSacrificeToken (Effect.ofTrigger (.targetOpponentLosesLife 1))
+  (SharedTrigger.targetOpponentLosesLife 1).toTriggeredAbility (pattern? := some .youSacrificeToken)
 #guard TriggeredAbility.onDiesAmassGoblinsEqualPower ==
-  .triggered .dies (Effect.ofTrigger (.amass 0 (amount := .sourcePower)))
-#guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2)
-  == some 4
+  (SharedTrigger.amass 0 (amount := .sourcePower)).toTriggeredAbility (pattern? := some .thisDies)
+#guard (TriggeredAbility.onAttackFerociousGainLife 2).pattern ==
+  .whenCond .thisAttacks (TriggeredAbility.condControlCreaturePowerAtLeast 4)
 #guard TriggeredAbility.onceEachTurn .onArtifactYouControlEntersDrawOnce
 #guard !(Effect.sourceGets 1 0).requiresTarget
 #guard !(Effect.putPlusOnePlusOneOnSource 3).requiresTarget
@@ -1103,7 +1107,7 @@ namespace CardDef
   "connive"
 #guard TriggeredAbility.targetSpec .onCombatAnotherGetsSourcePower ==
   .anotherCreatureYouControl
-#guard TriggeredAbility.firesOn .onCombatCreateAlienPerInvasion .yourBeginCombat
+#guard TriggeredAbility.firesOn .onCombatCreateAlienPerInvasion .stepYourBeginCombat
 #guard !TriggeredAbility.requiresTarget .onCombatMayPutArtifactAttachEquipment
 #guard TriggeredAbility.toNotation (.onEnterDealDividedDamage 3 3) ==
   "When this permanent enters, it deals 3 damage divided as you choose among one, two, or three targets."
@@ -1144,10 +1148,10 @@ namespace CardDef
   .anotherCreatureYouControl
 #guard !TriggeredAbility.requiresTarget (.onCastNoncreaturePumpAndDamageOpponents 1)
 #guard !TriggeredAbility.requiresTarget .onPlayerCastsSecondSpellLoseLifeCreateTreasure
-#guard TriggeredAbility.firesOn (.onDiesOppCreatureGets (-1) (-1)) .dying
-#guard TriggeredAbility.firesOn (.onOneOrMoreOtherCreaturesDieScry 1) .oneOrMoreOtherCreaturesDie
-#guard !TriggeredAbility.firesOn (.onOneOrMoreOtherCreaturesDieScry 1) .dying
-#guard TriggeredAbility.firesOn .onEnterEachPlayerSacrificesCreature .entering
+#guard TriggeredAbility.firesOn (.onDiesOppCreatureGets (-1) (-1)) .thisDies
+#guard TriggeredAbility.firesOn (.onOneOrMoreOtherCreaturesDieScry 1) .otherCreaturesDie
+#guard !TriggeredAbility.firesOn (.onOneOrMoreOtherCreaturesDieScry 1) .thisDies
+#guard TriggeredAbility.firesOn .onEnterEachPlayerSacrificesCreature .thisEnters
 #guard TriggeredAbility.requiresTarget (.onDiesOppCreatureGets (-1) (-1))
 #guard TriggeredAbility.requiresTarget .onEnterTargetOpponentSacrifices
 #guard TriggeredAbility.requiresTarget (.onEnterExileOppGyCardOppsLoseLife 2)
@@ -1158,10 +1162,9 @@ namespace CardDef
 #guard TriggeredAbility.targetSpec .onEnterTargetOpponentSacrifices == .opponent
 #guard TriggeredAbility.targetSpec (.onEnterExileOppGyCardOppsLoseLife 2) ==
   .oppGraveyardCard
-#guard TriggerEvent.label .oneOrMoreOtherCreaturesDie == "other-creatures-die trigger"
-#guard TriggerEvent.clause .oneOrMoreOtherCreaturesDie ==
+#guard TriggerPattern.otherCreaturesDie.usesLookBack
+#guard TriggerPattern.renderClause {} .oncePerBatch .unlimited .otherCreaturesDie ==
   "one or more other creatures die"
-#guard !TriggerEvent.checkTargets .oneOrMoreOtherCreaturesDie
 #guard TriggeredAbility.dividedDamage? (.onEnterDealDividedDamage 3 3) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? (.onEnterOrAttackDealDividedDamage 3 3)) == some (3, 3)
 #guard (TriggeredAbility.dividedDamage? .onEnterOrAttackReturnElfGainLife).isNone
@@ -1176,40 +1179,40 @@ namespace CardDef
 #guard (TriggeredAbility.dividedDamage? (.onAttackScry 1)).isNone
 #guard (TriggeredAbility.dividedDamage? (.onAttackFerociousGainLife 2)).isNone
 #guard (TriggeredAbility.dividedDamage? (.onCastInstantOrSorceryDealDamageToEachOpponent 2)).isNone
-#guard TriggeredAbility.firesOn .onAttackPumpByGreatestPower .attacking
-#guard TriggeredAbility.firesOn .onAttackSetOtherBasePT .attacking
-#guard TriggeredAbility.firesOn .onAttackOtherGets2AndTrample .attacking
-#guard TriggeredAbility.firesOn (.onAttackScry 1) .attacking
-#guard TriggeredAbility.firesOn (.onAttackFerociousGainLife 2) .attacking
-#guard TriggeredAbility.firesOn (.onEnterOrAttackDealDividedDamage 3 3) .attacking
-#guard TriggeredAbility.firesOn .onEnterOrAttackReturnElfGainLife .attacking
-#guard !TriggeredAbility.firesOn (.onEnterDealDividedDamage 3 3) .attacking
-#guard !TriggeredAbility.firesOn (.onEnterScry 2) .attacking
-#guard !TriggeredAbility.firesOn (.onAttackWithElvesScry 1) .attacking
-#guard !TriggeredAbility.firesOn .onScryPumpSelfForEachLookedAt .attacking
-#guard TriggeredAbility.firesOn (.onAttackWithElvesScry 1) .youAttackWithElves
-#guard !TriggeredAbility.firesOn .onAttackPumpByGreatestPower .youAttackWithElves
-#guard !TriggeredAbility.firesOn (.onAttackScry 1) .youAttackWithElves
+#guard TriggeredAbility.firesOn .onAttackPumpByGreatestPower .thisAttacks
+#guard TriggeredAbility.firesOn .onAttackSetOtherBasePT .thisAttacks
+#guard TriggeredAbility.firesOn .onAttackOtherGets2AndTrample .thisAttacks
+#guard TriggeredAbility.firesOn (.onAttackScry 1) .thisAttacks
+#guard TriggeredAbility.firesOn (.onAttackFerociousGainLife 2) .thisAttacks
+#guard TriggeredAbility.firesOn (.onEnterOrAttackDealDividedDamage 3 3) .thisAttacks
+#guard TriggeredAbility.firesOn .onEnterOrAttackReturnElfGainLife .thisAttacks
+#guard !TriggeredAbility.firesOn (.onEnterDealDividedDamage 3 3) .thisAttacks
+#guard !TriggeredAbility.firesOn (.onEnterScry 2) .thisAttacks
+#guard !TriggeredAbility.firesOn (.onAttackWithElvesScry 1) .thisAttacks
+#guard !TriggeredAbility.firesOn .onScryPumpSelfForEachLookedAt .thisAttacks
+#guard TriggeredAbility.firesOn (.onAttackWithElvesScry 1) (.youAttackWithSubtype .elf)
+#guard !TriggeredAbility.firesOn .onAttackPumpByGreatestPower (.youAttackWithSubtype .elf)
+#guard !TriggeredAbility.firesOn (.onAttackScry 1) (.youAttackWithSubtype .elf)
 #guard TriggeredAbility.firesOn .onScryPumpSelfForEachLookedAt .youScry
 #guard !TriggeredAbility.firesOn (.onEnterScry 2) .youScry
 #guard !TriggeredAbility.firesOn (.onAttackWithElvesScry 1) .youScry
 #guard !TriggeredAbility.firesOn (.onAttackScry 1) .youScry
-#guard TriggeredAbility.firesOn .onAnotherElfYouControlEntersGets1 .anotherElfYouControlEnters
-#guard !TriggeredAbility.firesOn (.onEnterDraw 1) .anotherElfYouControlEnters
-#guard !TriggeredAbility.firesOn .onAnotherElfYouControlEntersGets1 .entering
+#guard TriggeredAbility.firesOn .onAnotherElfYouControlEntersGets1 (.anotherSubtypeYouControlEnters .elf)
+#guard !TriggeredAbility.firesOn (.onEnterDraw 1) (.anotherSubtypeYouControlEnters .elf)
+#guard !TriggeredAbility.firesOn .onAnotherElfYouControlEntersGets1 .thisEnters
 #guard !TriggeredAbility.requiresTarget .onAnotherElfYouControlEntersGets1
 #guard (TriggeredAbility.dividedDamage? .onAnotherElfYouControlEntersGets1).isNone
-#guard TriggeredAbility.firesOn .onBecomesBlockedDeal1ToBlockers .becomesBlocked
-#guard TriggeredAbility.firesOn (.onEnterScry 2) .entering
-#guard TriggeredAbility.firesOn (.onEnterDraw 1) .entering
-#guard TriggeredAbility.firesOn .onEnterSearchForest .entering
-#guard TriggeredAbility.firesOn (.onEnterMayDiscardDraw 2) .entering
-#guard TriggeredAbility.firesOn .onEnterTargetOpponentSacrificesCreature .entering
-#guard TriggeredAbility.firesOn (.onEnterDealDividedDamage 3 3) .entering
-#guard TriggeredAbility.firesOn (.onEnterOrAttackDealDividedDamage 3 3) .entering
-#guard TriggeredAbility.firesOn .onEnterOrAttackReturnElfGainLife .entering
-#guard !TriggeredAbility.firesOn .onAttackPumpByGreatestPower .entering
-#guard !TriggeredAbility.firesOn (.onAttackScry 1) .entering
+#guard TriggeredAbility.firesOn .onBecomesBlockedDeal1ToBlockers .thisBecomesBlocked
+#guard TriggeredAbility.firesOn (.onEnterScry 2) .thisEnters
+#guard TriggeredAbility.firesOn (.onEnterDraw 1) .thisEnters
+#guard TriggeredAbility.firesOn .onEnterSearchForest .thisEnters
+#guard TriggeredAbility.firesOn (.onEnterMayDiscardDraw 2) .thisEnters
+#guard TriggeredAbility.firesOn .onEnterTargetOpponentSacrificesCreature .thisEnters
+#guard TriggeredAbility.firesOn (.onEnterDealDividedDamage 3 3) .thisEnters
+#guard TriggeredAbility.firesOn (.onEnterOrAttackDealDividedDamage 3 3) .thisEnters
+#guard TriggeredAbility.firesOn .onEnterOrAttackReturnElfGainLife .thisEnters
+#guard !TriggeredAbility.firesOn .onAttackPumpByGreatestPower .thisEnters
+#guard !TriggeredAbility.firesOn (.onAttackScry 1) .thisEnters
 #guard TriggeredAbility.firesOn
   (.onCastInstantOrSorceryDealDamageToEachOpponent 2) .youCastInstantOrSorcery
 #guard !TriggeredAbility.firesOn (.onEnterScry 2) .youCastInstantOrSorcery
@@ -1272,8 +1275,8 @@ namespace CardDef
 #guard !TriggeredAbility.allowsZeroTargets .onEnterTargetOpponentSacrificesCreature
 #guard !TriggeredAbility.allowsZeroTargets .onLandYouControlEntersPlusOnePlusOne
 #guard !TriggeredAbility.allowsZeroTargets (.onLandYouControlEntersGets 1 1)
-#guard TriggeredAbility.firesOn .onDiesDealDamageEqualToPowerToOppCreature .dying
-#guard !TriggeredAbility.firesOn (.onEnterScry 2) .dying
+#guard TriggeredAbility.firesOn .onDiesDealDamageEqualToPowerToOppCreature .thisDies
+#guard !TriggeredAbility.firesOn (.onEnterScry 2) .thisDies
 #guard !TriggeredAbility.requiresTarget (.onEnterScry 2)
 #guard !TriggeredAbility.requiresTarget (.onAttackScry 1)
 #guard !TriggeredAbility.requiresTarget (.onAttackFerociousGainLife 2)
@@ -1366,9 +1369,9 @@ namespace CardDef
     (.putCounters (.ofKind .plusOnePlusOne) .permanent)
 #guard TriggeredAbility.targetSpec .onEnterPlusOneOrTwoIfAnotherHero == .creature
 #guard TriggeredAbility.toNotation
-    (.triggered .yourBeginCombat (Effect.ofTrigger .pumpOrCounterIfScried)) ==
+    (SharedTrigger.pumpOrCounterIfScried.toTriggeredAbility (pattern? := some .stepYourBeginCombat)) ==
   "At the beginning of combat on your turn, another target creature you control gets +1/+1 until end of turn. If you've scried or surveilled this turn, put a +1/+1 counter on that creature instead."
-#guard (SharedTrigger.timing .pumpOrCounterIfScried).resolution ==
+#guard (SharedTrigger.toEffect .pumpOrCounterIfScried).resolution ==
   .ifElse (.or [.scriedThisTurn, .surveilledThisTurn])
     (.putCounters (.ofKind .plusOnePlusOne) .permanent) (.pump (.fixed 1) (.fixed 1) .target)
 #guard TriggeredAbility.toNotation .onEnterMaySacArtifactOrDiscardDraw ==
@@ -1434,8 +1437,9 @@ namespace CardDef
   "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
 #guard TriggeredAbility.resolution (.onAttackScry 1) == .scry (.fixed 1)
 #guard TriggeredAbility.resolution (.onAttackFerociousGainLife 2) == .gainLife (.fixed 2)
-#guard TriggeredAbility.youControlCreatureWithPower? (.onAttackFerociousGainLife 2) == some 4
-#guard (TriggeredAbility.youControlCreatureWithPower? (.onAttackScry 1)).isNone
+#guard (TriggeredAbility.onAttackFerociousGainLife 2).pattern ==
+  .whenCond .thisAttacks (TriggeredAbility.condControlCreaturePowerAtLeast 4)
+#guard (TriggeredAbility.onAttackScry 1).pattern == .thisAttacks
 #guard TriggeredAbility.resolution (.onAttackWithElvesScry 1) == .scry (.fixed 1)
 #guard TriggeredAbility.resolution (.onEnterDraw 1) == .draw (.fixed 1)
 #guard TriggeredAbility.resolution .onEnterSearchForest ==
@@ -1470,8 +1474,8 @@ namespace CardDef
 #guard TriggeredAbility.resolution
     (.onStep (Effect.ofTrigger (.prepareSource .ifThreeCreaturesDied))) ==
   .prepareSource .ifThreeCreaturesDied
-#guard (TriggeredAbility.triggered .youScryOrSurveil
-    (Effect.ofTrigger (.mayPayGenericDraw 2 (plusOneOnSource := true)))).resolution ==
+#guard ((SharedTrigger.mayPayGenericDraw 2 (plusOneOnSource := true)).toTriggeredAbility
+    (pattern? := some .youScryOrSurveil)).resolution ==
   .may (.pay (CostSpec.ofGeneric 2)) (.sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .draw (.fixed 1)]) .ifYouDo
 #guard TriggeredAbility.toNotation .onEnterCreateAxe ==
   "When this permanent enters, create a colorless Equipment artifact token named Axe with \"Equipped creature gets +1/+0\" and equip {2}."
@@ -1484,8 +1488,9 @@ namespace CardDef
 #guard TriggeredAbility.toNotation
     (.onStep (Effect.ofTrigger (.prepareSource .ifThreeCreaturesDied))) ==
   "At the beginning of each end step, if three or more creatures died this turn, this creature becomes prepared."
-#guard TriggeredAbility.toNotation (TriggeredAbility.triggered .youScryOrSurveil
-    (Effect.ofTrigger (.mayPayGenericDraw 2 (plusOneOnSource := true)))) ==
+#guard TriggeredAbility.toNotation
+    ((SharedTrigger.mayPayGenericDraw 2 (plusOneOnSource := true)).toTriggeredAbility
+      (pattern? := some .youScryOrSurveil)) ==
   "Whenever you scry or surveil, you may pay {2}. If you do, put a +1/+1 counter on this creature and draw a card."
 #guard TriggeredAbility.toNotation
     (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1) ==
@@ -1630,35 +1635,35 @@ end CardDef
   .sequence [.createTokens .alien (.fixed 1) false (note := .invasion),
     .putCounters .plusOneNoted .createdToken,
     .putCounters (.ofKind .invasion) .source]
-#guard (SharedTrigger.timing .drawTwoWinIfEmptyShuffleSource).resolution ==
+#guard (SharedTrigger.toEffect .drawTwoWinIfEmptyShuffleSource).resolution ==
   .sequence [.draw (.fixed 2), .«if» (.not (.atLeast .libraryCards (.fixed 1))) .winTheGame, .«if» (.atLeast .libraryCards (.fixed 1)) .shuffleSource]
-#guard (SharedTrigger.timing .surveilReturnIfGainedLife).resolution ==
+#guard (SharedTrigger.toEffect .surveilReturnIfGainedLife).resolution ==
   .sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)]
-#guard (SharedTrigger.timing (.grantThenCounterByType #[Keyword.hexproof])).resolution ==
+#guard (SharedTrigger.toEffect (.grantThenCounterByType #[Keyword.hexproof])).resolution ==
   .sequence [.grant (.keywords #[Keyword.hexproof]) .target,
     .«if» (.atLeast (.count (.target .creature)) (.fixed 1)) (.putCounters (.ofKind .plusOnePlusOne) .permanent),
     .«if» (.atLeast (.count (.target .planeswalker)) (.fixed 1)) (.putCounters (.ofKind .loyalty) .permanent)]
-#guard (SharedTrigger.timing .beginCombatIfDrawnTwoPump).resolution ==
+#guard (SharedTrigger.toEffect .beginCombatIfDrawnTwoPump).resolution ==
   .«if» (.atLeast .cardsDrawnThisTurn (.fixed 2)) (.sequence [
     .pump (.fixed 3) (.fixed 0) .target,
     .grant (.keywords #[Keyword.firstStrike]) .target])
-#guard (SharedTrigger.timing .destroyOppPermanentIfSixLands).resolution ==
+#guard (SharedTrigger.toEffect .destroyOppPermanentIfSixLands).resolution ==
   .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
     .destroy .target,
     .createTokens .treasure (.fixed 1) false (who := .controller .target)])
 #guard TriggeredAbility.toNotation
-    (.triggered .enter (Effect.ofTrigger .destroyOppPermanentIfSixLands)) ==
+    (SharedTrigger.destroyOppPermanentIfSixLands.toTriggeredAbility (pattern? := some .thisEnters)) ==
   "When this permanent enters, if you control six or more lands, destroy target permanent an opponent controls. They create a Treasure token."
 #guard TriggeredAbility.toNotation .onYourBeginCombatIfDrawnTwoPumpFirstStrike ==
   "At the beginning of combat on your turn, if you've drawn two or more cards this turn, another target creature you control gets +3/+0 and gains first strike until end of turn."
-#guard (SharedTrigger.timing (.drawXDiscard 2)).resolution ==
+#guard (SharedTrigger.toEffect (.drawXDiscard 2)).resolution ==
   .sequence [.draw .equalToManaSpent, .«if» .manaSpent (.discard (.cards 2))]
 #guard TriggeredAbility.resolution .onDiesDrawPerFatGraveyard ==
   .draw .perFatGraveyard
-#guard (SharedTrigger.timing (.enter .createSturdyShieldAttach)).resolution ==
+#guard (SharedTrigger.toEffect (.enter .createSturdyShieldAttach)).resolution ==
   .sequence [.createTokens .sturdyShield (.fixed 1) false (note := .remember),
     .attach .createdToken .source]
-#guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
+#guard (SharedTrigger.toEffect (.enter .tapLoseAbilitiesWhileSource)).resolution ==
   .sequence [.tap (.target .ifPresent), .lose .allAbilities (.target .ifPresent)]
 #guard TriggeredAbility.toNotation .onTokenYouControlEntersBelladonna ==
   "Whenever a token you control enters, you gain 1 life if this is the first time this ability has resolved this turn. If it's the second time, draw a card. If it's the third time, put a +1/+1 counter on each creature you control."
@@ -2315,6 +2320,199 @@ end CardDef
   StaticAbility.enchantArtifactOrNonAuraEnchantment
 ].all fun ab =>
   Parser.parseStaticAbilityLine (ab.toOracle {}) == some #[ab]
+
+-- Phase 7: CR 603.10a–f structural look-back (`TriggerPattern.usesLookBack`).
+#guard TriggerPattern.thisDies.usesLookBack
+#guard TriggerPattern.thisLeaves.usesLookBack
+#guard TriggerPattern.otherCreaturesDie.usesLookBack
+#guard TriggerPattern.creatureCardLeavesYourGy.usesLookBack
+#guard (TriggerPattern.zoneChange (.sameAs .this) .battlefield .hand).usesLookBack
+#guard (TriggerPattern.zoneChange .isCard .graveyard .library).usesLookBack
+#guard (TriggerPattern.zoneChange .isCard .exile .hand).usesLookBack
+#guard (TriggerPattern.sacrifice .you (.hasType .creature)).usesLookBack
+#guard (TriggerPattern.phasesOut (.sameAs .this)).usesLookBack
+#guard (TriggerPattern.becomesUnattached (.sameAs .this)).usesLookBack
+#guard (TriggerPattern.controlLost (.sameAs .this)).usesLookBack
+#guard (TriggerPattern.spellCountered .anyObject).usesLookBack
+#guard (TriggerPattern.playerAction .any .losesGame).usesLookBack
+#guard !TriggerPattern.thisEnters.usesLookBack
+#guard !TriggerPattern.thisAttacks.usesLookBack
+#guard !TriggerPattern.thisBecomesBlocked.usesLookBack
+#guard !TriggerPattern.thisDealsCombatDamageToPlayer.usesLookBack
+#guard !TriggerPattern.creaturesYouControlBecomeTapped.usesLookBack
+#guard !(TriggerPattern.becomesTapped (.sameAs .this)).usesLookBack
+#guard !TriggerPattern.youCastSpell.usesLookBack
+#guard !(TriggerPattern.drawCard .you).usesLookBack
+#guard !TriggerPattern.stepYourUpkeep.usesLookBack
+#guard !TriggerPattern.youScry.usesLookBack
+#guard !(TriggerPattern.zoneChange .isCard .hand .graveyard).usesLookBack
+#guard !(TriggerPattern.zoneChange .isCard .library .graveyard).usesLookBack
+-- `.or` propagates `usesLookBack` if any disjunct looks back, while `flattenOr`
+-- lets `matchTriggers` inspect each disjunct independently.
+#guard (TriggerPattern.or .thisEnters .thisDies).usesLookBack
+#guard (TriggerPattern.or .thisEnters .thisDies).flattenOr.map TriggerPattern.usesLookBack ==
+  #[false, true]
+
+-- Phase 7: CR 605.1b triggered mana ability classification (`TriggeredAbility.isManaAbility`).
+#guard ({
+  pattern := .activateAbility .you .anyObject .manaAbility
+  effect := Effect.addMana #[.colored .green]
+} : TriggeredAbility).isManaAbility
+#guard ({
+  pattern := .playerAction .you .manaAdded
+  effect := Effect.addMana #[.colored .red]
+} : TriggeredAbility).isManaAbility
+-- CR 605.1b has NO library-movement exclusion (unlike CR 605.1a).
+#guard ({
+  pattern := .activateAbility .you .anyObject .manaAbility
+  effect := { resolution := .sequence [.addMana #[.colored .green], .draw (.fixed 1)] }
+} : TriggeredAbility).isManaAbility
+-- Fails criterion 1 (requires target).
+#guard !({
+  pattern := .activateAbility .you .anyObject .manaAbility
+  effect := { targeting := .of .creature, resolution := .addMana #[.colored .green] }
+} : TriggeredAbility).isManaAbility
+-- Fails criterion 2 (triggers on landfall, not activated mana ability / mana added).
+#guard !({
+  pattern := .landYouControlEnters
+  effect := Effect.addMana #[.colored .green]
+} : TriggeredAbility).isManaAbility
+-- Fails criterion 2 (`.or` where one disjunct does not trigger on mana ability / mana added).
+#guard !({
+  pattern := .or (.activateAbility .you .anyObject .manaAbility) .landYouControlEnters
+  effect := Effect.addMana #[.colored .green]
+} : TriggeredAbility).isManaAbility
+-- Fails criterion 3 (cannot add mana).
+#guard !({
+  pattern := .activateAbility .you .anyObject .manaAbility
+  effect := Effect.gainLife 1
+} : TriggeredAbility).isManaAbility
+
+-- Phase 7: Functorial `HasTextChange` on `TriggerPattern` and `TriggeredAbility` (CR 612.2 / 613.1c).
+#guard
+  let tcs := #[TextChange.replaceCreatureType .elf .goblin]
+  HasTextChange.applyTextChanges tcs (TriggerPattern.anotherSubtypeYouControlEnters .elf) ==
+    TriggerPattern.anotherSubtypeYouControlEnters .goblin
+#guard
+  let tcs := #[TextChange.replaceColorWord .green .blue]
+  HasTextChange.applyTextChanges tcs (TriggerPattern.youCastColor .green) ==
+    TriggerPattern.youCastColor .blue
+#guard
+  let tcs := #[TextChange.replaceColorWord .green .blue]
+  HasTextChange.applyTextChanges tcs TriggerPattern.castGreenOrForestEnters ==
+    .or (.youCastColor .blue) .forestYouControlEnters
+#guard
+  let tcs := #[TextChange.replaceCreatureType .elf .goblin]
+  let ab := TriggeredAbility.onAttackWithElvesScry 1
+  (HasTextChange.applyTextChanges tcs ab).pattern == .youAttackWithSubtype .goblin
+
+-- Phase 7: Unified Saga chapters as `TriggeredAbility` with `.counterThreshold .lore` (CR 714.2b/d).
+#guard
+  let sagaCard : CardDef := {
+    name := "Test Saga"
+    types := #[.enchantment]
+    subtypes := #["Saga"]
+    triggeredAbilities := #[
+      TriggeredAbility.sagaChapter 1 (Effect.ofChapter (.draw 1)),
+      TriggeredAbility.sagaChapters #[2, 3] (Effect.ofChapter (.amass 2))
+    ]
+  }
+  sagaCard.hasSagaChapters &&
+    sagaCard.sagaChapters.size == 2 &&
+    sagaCard.finalChapterNumber == 3 &&
+    TriggeredAbility.finalChapterNumberOf #[] == 0
+
+-- Phase 7: `CardDef.modellingError?` trigger validation.
+#guard
+  let badUnrec : CardDef := {
+    name := "Bad Trigger"
+    types := #[.creature]
+    triggeredAbilities := #[{ pattern := .thisEnters, effect := { resolution := .unrecognized } }]
+  }
+  badUnrec.modellingError?.isSome
+#guard
+  let badEmptySeq : CardDef := {
+    name := "Empty Seq Trigger"
+    types := #[.creature]
+    triggeredAbilities := #[{ pattern := .thisEnters, effect := { resolution := .sequence [] } }]
+  }
+  badEmptySeq.modellingError?.isSome
+#guard
+  let badNoZones : CardDef := {
+    name := "No Active Zones"
+    types := #[.creature]
+    triggeredAbilities := #[{ pattern := .thisEnters, activeZones := #[], effect := Effect.draw 1 }]
+  }
+  badNoZones.modellingError?.isSome
+#guard
+  let badModal : CardDef := {
+    name := "Broken Modal Trigger"
+    types := #[.creature]
+    triggeredAbilities := #[{
+      pattern := .thisEnters
+      effect := { resolution := .chooseTriggerModes 2 }
+      modes := #[Effect.draw 1]
+    }]
+  }
+  badModal.modellingError?.isSome
+#guard
+  let goodMayNoElse : CardDef := {
+    name := "Valid May Trigger"
+    types := #[.creature]
+    triggeredAbilities := #[{
+      pattern := .thisEnters
+      effect := { resolution := .may (.draw (.fixed 1)) (.sequence []) }
+    }]
+  }
+  goodMayNoElse.modellingError?.isNone
+
+-- Phase 7: Stage-4 compositional `Parser.parseTriggerClause`.
+#guard
+  match Parser.parseTriggerClause "When this creature enters, draw a card." with
+  | some h => h.word == .when && h.pattern == .thisEnters && h.grouping == .perOccurrence &&
+      h.interveningIf?.isNone && h.activeZones == #[.battlefield] && h.limit == .unlimited &&
+      h.effectText == "draw a card"
+  | none => false
+#guard
+  match Parser.parseTriggerClause "Whenever one or more other creatures die, scry 1." with
+  | some h => h.word == .whenever && h.pattern == .otherCreaturesDie && h.grouping == .oncePerBatch &&
+      h.effectText == "scry 1"
+  | none => false
+#guard
+  match Parser.parseTriggerClause
+      "Whenever this creature attacks while you control a creature with power 4 or greater, you gain 2 life." with
+  | some h =>
+      (match h.pattern with
+      | .whenCond .thisAttacks (.exists (.inZones .battlefield _)) => true
+      | _ => false) &&
+      h.interveningIf?.isNone && h.effectText == "you gain 2 life"
+  | none => false
+#guard
+  match Parser.parseTriggerClause
+      "At the beginning of each end step, if you gained 3 or more life this turn, draw a card." with
+  | some h => h.word == .at && h.pattern == .stepEachEndStep &&
+      h.interveningIf? == some (.turnHistory (.eventOccurredThisTurn .you (.gainedLife 3))) &&
+      h.effectText == "draw a card"
+  | none => false
+#guard
+  match Parser.parseTriggerClause
+      "Whenever an artifact you control enters, draw a card. This ability triggers only once each turn." with
+  | some h => h.pattern == .artifactYouControlEnters && h.limit == .onceEachTurn &&
+      h.effectText == "draw a card"
+  | none => false
+#guard
+  match Parser.parseTriggerClause "When you cast this spell, draw a card." with
+  | some h => h.pattern == .thisCast && h.activeZones == #[.stack]
+  | none => false
+#guard
+  match Parser.parseTriggerClause
+      "Whenever a land you control enters, you may pay {1}{B}. If you do, return this card from your graveyard to the battlefield." with
+  | some h => h.pattern == .landYouControlEnters && h.activeZones == #[.graveyard]
+  | none => false
+#guard
+  match Parser.parseTriggerClause "When you cycle this card, draw a card." with
+  | some h => h.activeZones == #[.hand]
+  | none => false
 
 end Mtg.Engine
 

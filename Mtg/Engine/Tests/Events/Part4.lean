@@ -425,7 +425,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
 
   -- 5b. CR 110.1 / 115.1c / 115.10a `.youTargetSomething` fires on `.player` / `.permanent`, NOT `.card` (graveyard or stack)!
   let youTargetTrig21 : TriggeredAbility :=
-    .triggered .fromEffect (Effect.ofTrigger (.watch .youTargetDrawOnce))
+    SharedTrigger.watch .youTargetDrawOnce |>.toTriggeredAbility
   let watcher21 : CardDef := {
     name := "Phase21 Target Watcher"
     types := #[.enchantment]
@@ -1250,7 +1250,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
 --    `.lootLandEntersTapped` graveyard-only check.
 #guard
   -- 1a. `drainPendingContinuations` drains `triggerSequenceRest` BEFORE `outerPendingReplacements`:
-  let dummyTrig : TriggeredAbility := .triggered .enter (Effect.gainLife 1)
+  let dummyTrig : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters (Effect.gainLife 1)
   let seqRest : TriggerSequenceRest := {
     controller := me
     ability := dummyTrig
@@ -1348,7 +1348,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
       id := { kind := .exileOppDeath }
       source := none, controller := some opp23, affectedPlayer := me
       kind := .exileInsteadOfGraveyard none }) (cause := some testCause)
-  let gLoot1 : Game := gLoot0.applyTriggeredAbility me (.triggered .enter (Effect.ofTrigger .lootLandEntersTapped)) none
+  let gLoot1 : Game := gLoot0.applyTriggeredAbility me (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger .lootLandEntersTapped)) none
   let lootHandLand := ((gLoot1.player me).hand.filter (fun id => (gLoot1.object! id).name == "Phase23 Loot Forest"))[0]!
   let gLoot2 : Game := mustApply gLoot1 me (.discard lootHandLand)
   let lootGyOnlyOk : Bool :=
@@ -1723,7 +1723,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     bear with
     name := "Phase23 Self Dies"
     triggeredAbilities := #[
-      .triggered .creatureYouControlDies { resolution := .gainLife (.fixed 2), phrase := "You gain 2 life." } {}
+      TriggeredAbility.mkTrigger .creatureYouControlDies { resolution := .gainLife (.fixed 2), phrase := "You gain 2 life." }
     ]
   }
   let gSelfDies0 : Game := addPermanent afterDraw selfDiesDef me me
@@ -1929,7 +1929,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     bear with
     name := "Phase23 Watcher"
     triggeredAbilities := #[
-      .triggered .creatureYouControlDies { resolution := .gainLife (.fixed 1), phrase := "Gain 1." } {}
+      TriggeredAbility.mkTrigger .creatureYouControlDies { resolution := .gainLife (.fixed 1), phrase := "Gain 1." }
     ]
   }
   let g3pSba0 : Game :=
@@ -2259,7 +2259,7 @@ def replayOk24i1 (gs : Array Game) : Bool :=
   let (gSt1, stSyncOk) := sacCheck gSync sacToGy "P24 sacrifices" true
   let (gSt2, stPauseOk) := sacCheck gPause sacToGy "P24 sacrifices" true
   let (gSt3, stNormOk) := sacCheck afterDraw sacToGy "P24 sacrifices" false
-  let dummyAb : TriggeredAbility := .triggered .enter (Effect.gainLife 1)
+  let dummyAb : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters (Effect.gainLife 1)
   let movedSac (g : Game) (bid : ObjectId) : Game :=
     g.applySacrifice me dummyAb (some bid) #[] (.sacrificedSource .movedAsSacrificed) .none
   let (gMs1, msSyncOk) := sacCheck gSync movedSac "is sacrificed" true
@@ -2613,7 +2613,7 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
     targeting := .of (.ofDomain .creature (.exact 2))
     resolution := .destroyTarget
     phrase := "Destroy two target creatures" }
-  let twoTrig : TriggeredAbility := .triggered .enter twoEff
+  let twoTrig : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters twoEff
   let gTc1 : Game := addPermanent afterDraw bear me me
   let gTc2 : Game := addPermanent gTc1 hero opp24i2 opp24i2
   let tcSrc := (gTc1.battlefield.filter (·.name == bear.name))[0]!.id
@@ -3244,14 +3244,14 @@ def startThreePlayer24i3 : Game :=
     bear with
     name := "P24i3 Lifelinker"
     keywords := #[Keyword.lifelink]
-    triggeredAbilities := #[.triggered .youGainLife (Effect.ofTrigger (.onSource (.plusOne 1)))]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger (.gainLife .you) (Effect.ofTrigger (.onSource (.plusOne 1)))]
   }
   let cLife : EventCause := .oneShotEffect (some ⟨24310⟩) none (some me)
   let countLifeGainEvents (g0 g1 : Game) : Nat :=
     (g1.events.extract g0.events.size g1.events.size).filter (fun e =>
       match e.change with | .rules (.life (.gained p _)) => p == me | _ => false) |>.size
   let youGainLifeQueued (g : Game) : Nat :=
-    (g.waitingTriggers.filter (·.event == .youGainLife)).size + g.stack.size
+    (g.waitingTriggers.filter (·.pattern == .gainLife .you)).size + g.stack.size
 
   -- 6a. `dealDamageToPlayers #[p1, p2]` with competing damage replacements pauses per player
   --     and emits ONE aggregated `LifeEvent.gained` (and ONE `.youGainLife` trigger) after both players take damage:
@@ -3388,16 +3388,18 @@ def startThreePlayer24i3 : Game :=
     bear with
     name := "P24i3 Player Discard Watcher"
     triggeredAbilities := #[
-      TriggeredAbility.fra (.fra .playerDiscards)
+      TriggeredAbility.ofPattern (.discard .any)
         "Whenever a player discards one or more cards, draw a card." (.draw 1)
+        (grouping := .perPlayerInBatch)
     ]
   }
   let creatureGyWatcherDef : CardDef := {
     bear with
     name := "P24i3 Creature GY Watcher"
     triggeredAbilities := #[
-      TriggeredAbility.fra .creatureCardsPutIntoYourGy
+      TriggeredAbility.ofPattern .creatureCardPutIntoYourGy
         "Whenever one or more creature cards are put into your graveyard from anywhere, draw a card." (.draw 1)
+        (grouping := .oncePerBatch)
     ]
   }
   let mkDiscardSetup (watcher : CardDef) : Game × ObjectId × ObjectId × ObjectId × ObjectId :=

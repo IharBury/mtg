@@ -65,7 +65,7 @@ def tale : CardDef := {
   name := "Reveal Tale"
   types := #[.enchantment]
   subtypes := #["Saga"]
-  saga := some { sacrificeAfter := "I", chapters := #[] }
+  triggeredAbilities := #[TriggeredAbility.sagaChapter 1 (Effect.gainLife 1)]
 }
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=

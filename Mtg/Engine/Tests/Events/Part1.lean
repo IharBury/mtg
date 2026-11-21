@@ -57,7 +57,7 @@ attacks" triggers (CR 508.3a). -/
 #guard
   let attackWatcher : CardDef :=
     { (creature "Attack Watcher" ManaCost.empty #["Hero"] 2 2) with
-      triggeredAbilities := #[TriggeredAbility.fra (.fra .creatureYouControlAttacks) "" (.draw 1)] }
+      triggeredAbilities := #[TriggeredAbility.ofPattern .creatureYouControlAttacks "" (.draw 1)] }
   let oppWalker : CardDef :=
     { name := "Opp Walker"
       types := #[.planeswalker]
@@ -331,7 +331,7 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
   -- 4. TriggerQueueEvent.putOnStack and StackObjectEvent.removedOnResolution (CR 608.2b)
   let gTrig0 := addPermanent (quiet afterDraw) bear opp opp
   let oppBear := (gTrig0.battlefield.filter (fun o => o.name == bear.name && gTrig0.controlledBy o opp))[0]!
-  let trigAb := TriggeredAbility.fra .enter "When this enters, destroy target creature an opponent controls." (.destroy (.target .creature)) (spec := .oppCreature)
+  let trigAb := TriggeredAbility.ofPattern .thisEnters "When this enters, destroy target creature an opponent controls." (.destroy (.target .creature)) (spec := .oppCreature)
   let gTrigPut := gTrig0.putTriggeredAbilityOnStack me (gTrig0.object! oppBear.id) trigAb "enters"
   let gTrig1 := gTrigPut.setStackEntryTargets gTrigPut.stack.back!.objectId #[Target.permanent oppBear.id]
   let hasTrigPutOnStack := gTrig1.events.any (fun e =>
@@ -431,9 +431,8 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   --    creature you control dies" dying in the same batch both see each other
   --    on `pre` and both trigger.
   let deathWatcherAb : TriggeredAbility :=
-    .triggered (.fra .anotherCreatureOrPlaneswalkerYouControlDies)
+    TriggeredAbility.mkTrigger .anotherCreatureOrPlaneswalkerYouControlDies
       { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life" }
-      {}
   let deathWatcherDef : CardDef :=
     { bear with
       name := "Simultaneous Watcher"
@@ -463,13 +462,12 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
       ctrl == me && ab == deathWatcherAb && origin == bid &&
         cause == .gameRule .triggeredAbility)
   -- 3. Phasing out (CR 603.10b / 702.26b / 702.26d): phasing out emits a
-  --    look-back `phasedOut` event, does not fire `.leaving` triggers, and a
+  --    look-back `phasedOut` event, does not fire `.thisLeaves` triggers, and a
   --    watcher that phases out in the same simultaneous batch as a dying
   --    creature still sees the death in `pre`.
   let leaveWatcherAb : TriggeredAbility :=
-    .triggered .leaving
+    TriggeredAbility.mkTrigger .thisLeaves
       { resolution := .gainLife (.fixed 2), phrase := "You gain 2 life" }
-      {}
   let phaserDef : CardDef :=
     { bear with
       name := "Phasing Watcher"
@@ -499,9 +497,9 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   -- 4. Once-each-turn triggers are tracked via `TriggerQueueEvent.triggered`
   --    in `g.events` (`g.loggedTriggeredThisTurn`) rather than `Status`.
   let onceAb : TriggeredAbility :=
-    .triggered .youGainLife
+    TriggeredAbility.mkTrigger (.gainLife .you)
       { resolution := .scry 1, phrase := "Scry 1" }
-      { onceEachTurn := true }
+      (limit := .onceEachTurn)
   let onceDef : CardDef :=
     { bear with
       name := "Once Life Watcher"
@@ -519,11 +517,11 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
     gOnce2.waitingTriggers.size == 1 &&
     gOnceNextTurn.waitingTriggers.size == 2
   -- 5. Simultaneous batch damage to an attacking Hulk increments
-  --    `enrageGrantsAdditionalCombat` once per batch, and `sourceDealtDamage`
-  --    sums damage across packets/events in the batch before replicating
+  --    `enrageGrantsAdditionalCombat` once per batch, and `thisDealtDamage`
+  --    with `.oncePerBatch` sums damage across packets/events in the batch before replicating
   --    `extraTriggerCopies` across distinct abilities.
   let hulkEnrageAb : TriggeredAbility :=
-    .triggered .sourceDealtDamage (Effect.ofTrigger (.watch .hulk)) {}
+    SharedTrigger.watch .hulk |>.toTriggeredAbility
   let hulkDef : CardDef :=
     { bear with
       name := "Test Hulk"
@@ -544,13 +542,13 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
     gHulkBatch.waitingTriggers.size == 1 &&
     gHulkBatch.waitingTriggers[0]!.lastKnownPower == some 3
   let dmgAb1 : TriggeredAbility :=
-    .triggered .sourceDealtDamage
+    TriggeredAbility.mkTrigger .thisDealtDamage
       { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life" }
-      {}
+      (grouping := .oncePerBatch)
   let dmgAb2 : TriggeredAbility :=
-    .triggered .sourceDealtDamage
+    TriggeredAbility.mkTrigger .thisDealtDamage
       { resolution := .scry 1, phrase := "Scry 1" }
-      {}
+      (grouping := .oncePerBatch)
   let dmgWatcherDef : CardDef :=
     { bear with
       name := "Dual Damage Watcher"
@@ -635,9 +633,8 @@ trigger, and the modified event carries `EventCause.replaced`. -/
 #guard
   -- 2a. Death replaced by finality counter exile (CR 122.1h / 614.6).
   let diesWatcherAb : TriggeredAbility :=
-    .triggered .dies
+    TriggeredAbility.mkTrigger .thisDies
       { resolution := .gainLife (.fixed 5), phrase := "You gain 5 life" }
-      {}
   let finalityBearDef : CardDef :=
     { bear with
       name := "Finality Bear"
@@ -1565,9 +1562,9 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   let subEnterAb : TriggeredAbility := .onThisOrAnotherSubtypeEntersCreateTokens "Dwarf" .treasure 1
   let combatTokAb : TriggeredAbility := .onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2
   let preGrantAb : TriggeredAbility :=
-    TriggeredAbility.fra .attack "Whenever this creature attacks, draw a card." (.draw 1)
+    TriggeredAbility.ofPattern .thisAttacks "Whenever this creature attacks, draw a card." (.draw 1)
   let postGrantAb : TriggeredAbility :=
-    TriggeredAbility.fra .attack "Whenever this creature attacks, you gain 2 life." (.gainLife 2)
+    TriggeredAbility.ofPattern .thisAttacks "Whenever this creature attacks, you gain 2 life." (.gainLife 2)
   let captainDef : CardDef :=
     creature "DwarfCaptain" ManaCost.empty #["Dwarf"] 2 2
       (triggeredAbilities := #[.onAttackScry 1, subEnterAb, combatTokAb])
@@ -2589,8 +2586,8 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     gGobStripped.hasSummoningSickness (gGobStripped.object! gobId) &&
     !gPrePhIn.hasSummoningSickness (gPrePhIn.object! preHero.id)
   -- 2. `.creatureYouControlDealtDamage` and `.creatureYouControlTapped` with Layer 2 & Layer 4
-  let dmgWatchAb : TriggeredAbility := .triggered .fromEffect Effect.watchSheHulkRedirectOnce {}
-  let tapWatchAb : TriggeredAbility := .triggered .fromEffect Effect.watchFirstTapUntap {}
+  let dmgWatchAb : TriggeredAbility := SharedTrigger.watch .sheHulkRedirectOnce |>.toTriggeredAbility
+  let tapWatchAb : TriggeredAbility := SharedTrigger.watch .firstTapUntap |>.toTriggeredAbility
   let watcherDef : CardDef :=
     { name := "Phase9 Damage Tap Watcher"
       manaCost := ManaCost.empty
@@ -3142,7 +3139,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let loyaltyWatcherDef : CardDef := {
     name := "Phase11 Loyalty Watcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.fra (.fra .youPutLoyaltyCounters) "" (.draw 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (.draw 1)]
   }
   let gPw0 := addPermanent (addPermanent afterDraw rockDef me me) loyaltyWatcherDef me me
   let pwRock := (gPw0.battlefield.filter (·.name == "Phase11 Rock"))[0]!
@@ -3156,7 +3153,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
       | .rules (.permanent (.counters (.object eo) .loyalty (.put 1) (some p))) =>
         eo.id == some pwRock.id && p == me && eo.types.contains .planeswalker
       | _ => false) &&
-    gPw2.waitingTriggers.any (·.event == .fra .youPutLoyaltyCounters)
+    gPw2.waitingTriggers.any (·.pattern == .youPutLoyaltyCounters)
   let eqDef : CardDef := { name := "Phase11 Blade", types := #[.artifact], subtypes := #["Equipment"] }
   let bear2Def : CardDef := creature "Event Bear 2" ManaCost.empty #["Bear"] 2 2
   let gEq0 := quiet (addPermanent (addPermanent gAb0 bear2Def me me) eqDef me me)
@@ -3177,8 +3174,8 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     eqAttached[1]!.1.subtypes.contains .equipment &&
     eqAttached[1]!.2.1 == host2.id &&
     eqAttached[1]!.2.2 == some host1.id
-  let abA : TriggeredAbility := .triggered .enter (Effect.ofTrigger .belladonnaTokenReward)
-  let abB : TriggeredAbility := .triggered .yourUpkeep (Effect.ofTrigger .belladonnaTokenReward)
+  let abA : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger .belladonnaTokenReward)
+  let abB : TriggeredAbility := TriggeredAbility.mkTrigger .stepYourUpkeep (Effect.ofTrigger .belladonnaTokenReward)
   let gRes0 := quiet gAb0
   let gRes1 := (gRes0.putTriggeredAbilityOnStack me baseBear abA "enters").resolveTop
   let gRes2 := (gRes1.putTriggeredAbilityOnStack me (gRes1.object! baseBear.id) abB "upkeep").resolveTop

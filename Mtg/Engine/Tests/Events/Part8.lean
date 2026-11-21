@@ -483,7 +483,7 @@ private def replayOk39i3 (gs : Array Game) : Bool :=
   let hostDef : CardDef := { name := "P39i3 Host", types := #[.artifact] }
   let sagaDef : CardDef := {
     name := "P39i3 Saga", types := #[.enchantment], subtypes := #["Saga"]
-    saga := some { sacrificeAfter := "II", chapters := #[] }
+    triggeredAbilities := #[TriggeredAbility.sagaChapter 2 (Effect.gainLife 1)]
   }
   let cageDef : CardDef := { name := "P39i3 Cage", types := #[.enchantment] }
   let leyADef : CardDef := { name := "P39i3 LeyA", types := #[.enchantment] }

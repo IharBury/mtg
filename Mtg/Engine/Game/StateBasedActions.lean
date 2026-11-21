@@ -888,10 +888,11 @@ partial def checkSBACounted (g : Game)
           else none)
       let sagaMoves : Array SbaGraveyardMove :=
         preBf.filterMap (fun o =>
-          if g.hasSubtype o .saga && g.retainsPrintedAbilities o then
-            match (g.baseCard o).saga, g.controllerOf o with
-            | some sdef, some ctrl =>
-              if o.status.lore ≥ sdef.finalChapterNumber && sdef.finalChapterNumber > 0 &&
+          if g.hasSubtype o .saga then
+            let finalCh := g.finalChapterNumber o
+            match g.controllerOf o with
+            | some ctrl =>
+              if finalCh > 0 && o.status.lore ≥ finalCh &&
                   !g.sagaChapterPending o.id then
                 some {
                   objectId := o.id
@@ -901,7 +902,7 @@ partial def checkSBACounted (g : Game)
                   sba := .sagaFinalChapter
                 }
               else none
-            | _, _ => none
+            | none => none
           else none)
       let illegalAuras : Array ObjectId :=
         preBf.filterMap (fun o =>

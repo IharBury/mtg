@@ -18,7 +18,7 @@ structure ChapterSpell where
 deriving Repr, Inhabited, BEq
 
 /-- How a printed Saga chapter resolves (CR 714.2). Each supported catalog
-Saga uses these constructors; `effect` on `SagaChapter` remains the Oracle
+Saga uses these constructors; `Effect.phrase` carries the Oracle
 wording. -/
 inductive ChapterResolution where
   /-- This Saga deals `n` damage to target creature an opponent controls. -/

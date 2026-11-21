@@ -66,14 +66,14 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (resource Effect.resourcePlusOneOnHeroesCreateWall) ==
   .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo
 
-#guard (SharedTrigger.timing (.resource .plusOneCreateInsectOnce)).onceEachTurn
-#guard (SharedTrigger.timing (.resource .plusOneOnThisOnce)).onceEachTurn
-#guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).allowsZeroTargets
-#guard (SharedTrigger.timing (.resource .drawIfAnotherHeroDamage)).targeting.spec ==
+#guard (SharedTrigger.toTriggeredAbility (.resource .plusOneCreateInsectOnce)).onceEachTurn
+#guard (SharedTrigger.toTriggeredAbility (.resource .plusOneOnThisOnce)).onceEachTurn
+#guard (SharedTrigger.toEffect (.resource .gainLifePlusOnes)).allowsZeroTargets
+#guard (SharedTrigger.toEffect (.resource .drawIfAnotherHeroDamage)).targeting.spec ==
   .opponent
-#guard (SharedTrigger.timing (.resource .secondDrawPlusOneTarget)).targeting.spec ==
+#guard (SharedTrigger.toEffect (.resource .secondDrawPlusOneTarget)).targeting.spec ==
   .creature
-#guard (SharedTrigger.timing (.resource .gainLifePlusOnes)).targeting.spec ==
+#guard (SharedTrigger.toEffect (.resource .gainLifePlusOnes)).targeting.spec ==
   .creatureYouControl
 
 #guard toString (resource Effect.resourceDiscardExilePlay) ==

@@ -47,7 +47,7 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     zeroToughDef with
     name := "P51i1 TgtDiesGerm"
     triggeredAbilities := #[
-      .triggered .dies
+      TriggeredAbility.mkTrigger .thisDies
         { targeting := .of .player, resolution := .gainLife (.fixed 1), phrase := "Target player gains 1 life." }
     ]
   }
@@ -61,8 +61,8 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     zeroToughDef with
     name := "P51i1 TwoDiesGerm"
     triggeredAbilities := #[
-      .triggered .dies (Effect.gainLife 1),
-      .triggered .dies (Effect.gainLife 2)
+      TriggeredAbility.mkTrigger .thisDies (Effect.gainLife 1),
+      TriggeredAbility.mkTrigger .thisDies (Effect.gainLife 2)
     ]
   }
   let gZeroLifeOrder := addPermanent gZeroLife twoDiesZeroDef p1 p1
@@ -674,7 +674,7 @@ private def replayOk51i3 (gs : Array Game) : Bool :=
   let planPermDef : CardDef := {
     name := "P51i3 MasterPlan"
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered (.nthPlanCounter 1) (Effect.gainLife 2)]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger (.putCountersOnSelf .plan) (Effect.gainLife 2) (word := .when) (grouping := .counterThreshold .plan #[1])]
   }
   let gSagaPlan0 :=
     addPermanent (addPermanent g3 sagaPermDef p0 p0) planPermDef p0 p0

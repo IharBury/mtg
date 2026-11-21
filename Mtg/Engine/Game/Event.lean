@@ -1,5 +1,5 @@
 import Mtg.Engine.Card.Counter
-import Mtg.Engine.Card.TriggerEvent
+import Mtg.Engine.Card.TriggerPattern
 import Mtg.Engine.Game.Player
 import Mtg.Engine.Turn
 import Mtg.Engine.TypeLine
@@ -485,7 +485,8 @@ namespace ContinuousEffectSpec
 /-- `object` gains combat-damage-creates-Treasure trigger until end of turn (CR 611.2 / 613.1f). -/
 @[inline] def combatDamageCreatesTreasureUntilEot (object : ObjectId) : ContinuousEffectSpec :=
   grantedTriggered object
-    (.triggered .combatDamageToPlayer (Effect.ofTrigger (.createTokens .treasure 1))) true
+    ((SharedTrigger.createTokens .treasure 1).toTriggeredAbility
+      (pattern? := some .thisDealsCombatDamageToPlayer)) true
 
 /-- `object` loses all abilities until end of turn (CR 611.2 / 613.1f). -/
 @[inline] def losesAbilitiesUntilEot (object : ObjectId) : ContinuousEffectSpec :=
@@ -3279,577 +3280,401 @@ def watches (e : GameEvent) (watch : ReplacementWatch) : Bool :=
     | .rules (.permanent (.untapped _)) => true
     | _ => false
 
-/-- `listener`'s ability on `sourceId` triggers from this change.
-“This” abilities require `sourceId` to be `some` of the object that changed.
-“You” abilities require `listener` to be the player who did it.
-An event this change does not describe does not match. -/
-@[noinline] private def matchesTriggerZone (ze : ZoneEvent) (cause? : Option EventCause)
-    (listener : PlayerId) (sourceId : Option ObjectId) (te : TriggerEvent)
-    (isTeammate : PlayerId → Bool) : Bool :=
-  let you (p : PlayerId) : Bool := p == listener
-  let opp (p : PlayerId) : Bool := !you p && !isTeammate p
-  let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
-  let yours (o : EventObject) : Bool := o.controller == some listener
-  let other (o : EventObject) : Bool :=
+/-- True when player `p` satisfies `pf` relative to `listener` and `isTeammate`. -/
+@[inline] private def matchesEventPlayer (listener : PlayerId) (isTeammate : PlayerId → Bool)
+    (pf : PlayerFilter) (p : PlayerId) : Bool :=
+  match pf.relation with
+  | .you => p == listener
+  | .opponent => p != listener && !isTeammate p
+  | .teammate => isTeammate p
+  | .anyPlayer => true
+
+/-- True when `z` satisfies `spec` relative to `listener` and `isTeammate`. -/
+private def matchesZoneEndpoint (listener : PlayerId) (isTeammate : PlayerId → Bool)
+    (spec : ZoneEndpointSpec) (z : Zone) : Bool :=
+  let (zk, owner?) : ZoneKind × Option PlayerId :=
+    match z with
+    | .library p => (.library, some p)
+    | .hand p => (.hand, some p)
+    | .battlefield => (.battlefield, none)
+    | .graveyard p => (.graveyard, some p)
+    | .stack => (.stack, none)
+    | .exile => (.exile, none)
+    | .command => (.command, none)
+    | .ante => (.ante, none)
+    | .outside p => (.outside, some p)
+  match spec with
+  | .any => true
+  | .notIn k => zk != k
+  | .inZones zs =>
+    zs.zones.contains zk &&
+      match zs.owner with
+      | .any => true
+      | .matching pf => owner?.any (matchesEventPlayer listener isTeammate pf)
+      | .ofPlayer .you => owner? == some listener
+      | .ofPlayer _ => true
+
+/-- Evaluate a static `ObjectPred` against an `EventObject` snapshot (CR 603.10a). -/
+@[noinline] private partial def evalEventObjPred (listener : PlayerId) (sourceId : Option ObjectId)
+    (isTeammate : PlayerId → Bool) (attachedHostId? : Option ObjectId)
+    (o : EventObject) : ObjectPred → Bool
+  | .all ps => ps.all (evalEventObjPred listener sourceId isTeammate attachedHostId? o)
+  | .any ps => ps.any (evalEventObjPred listener sourceId isTeammate attachedHostId? o)
+  | .not p => !(evalEventObjPred listener sourceId isTeammate attachedHostId? o p)
+  | .sameAs .this => sourceId.isSome && o.id == sourceId
+  | .sameAs .attachedHost =>
+    match attachedHostId? with
+    | some hid => o.id == some hid
+    | none => true
+  | .sameAs _ => true
+  | .otherThan .this =>
     match sourceId with
     | some sid => o.id.any (· != sid)
     | none => true
+  | .otherThan _ => true
+  | .hasType ty => o.types.contains ty
+  | .hasSupertype st => o.supertypes.contains st
+  | .hasSubtype (.literal sub) => o.hasSubtype sub
+  | .hasSubtype _ => !o.subtypes.isEmpty
+  | .hasColor (.literal col) => o.colors.contains col
+  | .hasColor _ => !o.colors.isColorless
+  | .colorCount op n => op.eval (Int.ofNat o.colors.count) (Int.ofNat n)
+  | .named _ => true
+  | .hasKeyword kw => KeywordAbility.hasTag o.keywords kw
+  | .stat .power op (.const n) => o.power.any (op.eval · n)
+  | .stat .toughness op (.const n) => o.toughness.any (op.eval · n)
+  | .stat .manaValue op (.const n) => op.eval (Int.ofNat o.manaValue) n
+  | .stat _ _ _ => true
+  | .statParity _ _ => true
+  | .isToken v => o.token == v
+  | .isFaceDown v => o.faceDown == v
+  | .isCopy v => o.isCopy == v
+  | .isCommander => o.isCommander
+  | .isKind .card => !o.token && !o.isCopy && !o.types.isEmpty
+  | .isKind .permanentCard => !o.token && !o.isCopy && o.types.any CardType.isPermanentType
+  | .isKind .spell => !o.types.isEmpty
+  | .tapped v => o.tapped == v
+  | .phasedOut v => o.phasedOut == v
+  | .combatRole .attacking => o.attacking
+  | .combatRole .blocking => o.blocking
+  | .combatRole _ => true
+  | .hasDesignation _ => true
+  | .counterCount k? op (.const n) =>
+    let cnt := match k? with | some k => o.counters.count k | none => o.counters.foldl (fun a (_, c) => a + c) 0
+    op.eval (Int.ofNat cnt) n
+  | .counterCount _ _ _ => true
+  | .controlledBy pf =>
+    o.controller.any (matchesEventPlayer listener isTeammate pf)
+  | .ownedBy pf => matchesEventPlayer listener isTeammate pf o.owner
+  | .attachedTo _ | .hasAttachment _ | .targets _ | .shares _ _
+  | .wasCast | .castFrom _ | .enteredThisTurn | .attackedThisTurn
+  | .dealtDamageThisTurn .. | .wasDealtDamageThisTurn | .receivedCounterThisTurn .. => true
+
+@[noinline] private def matchesPatternZone (ze : ZoneEvent) (cause? : Option EventCause)
+    (listener : PlayerId) (sourceId : Option ObjectId) (pat : TriggerPattern)
+    (limit : TriggerLimit) (isTeammate : PlayerId → Bool)
+    (attachedHostId? : Option ObjectId) : Bool :=
+  let objMatches (o : EventObject) (pred : ObjectPred) : Bool :=
+    evalEventObjPred listener sourceId isTeammate attachedHostId? o pred
+  let playerMatches (pf : PlayerFilter) (p : PlayerId) : Bool :=
+    matchesEventPlayer listener isTeammate pf p
   match ze with
   | .moved before after fromZone toZone verb actor entersWith _ =>
-    match te with
-    | .youDraw =>
-      match verb, actor with | .draw _ _, some p => you p | _, _ => false
-    | .youDrawSecondCard =>
-      match verb, actor with | .draw nth _, some p => you p && nth == 2 | _, _ => false
-    | .anyPlayerDrawsSecond =>
-      match verb with | .draw nth _ => nth == 2 | _ => false
-    | .opponentDrawsExceptFirstDrawStep =>
-      match verb, actor with | .draw _ first, some p => opp p && !first | _, _ => false
-    | .opponentDrawsSecondCard =>
-      match verb, actor with | .draw nth _, some p => opp p && nth == 2 | _, _ => false
-    | .dying =>
-      match fromZone, toZone with
-      | .battlefield, .graveyard _ => !before.phasedOut && this before
+    match pat with
+    | .drawCard who exceptFirst =>
+      match verb, actor with
+      | .draw nth isFirst, some p =>
+        playerMatches who p &&
+          (!exceptFirst || !isFirst) &&
+          (match limit with | .nthEachTurn k => nth == k | _ => true)
       | _, _ => false
-    | .leaving =>
-      fromZone == .battlefield && toZone != .battlefield && !before.phasedOut && this before
-    | .entering =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        (this after || this before)
-    | .landYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && after.land
-    | .forestYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && after.forest
-    | .mountainYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && after.mountain
-    | .artifactYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && after.artifact
-    | .creatureYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && after.creature
-    | .anotherCreatureYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && other after && after.creature
-    | .anotherElfYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && other after && after.elf
-    | .tokenYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && after.token
-    | .equipmentYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && after.equipment
-    | .anotherArtifactEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && other after && after.artifact
-    | .anotherVillainEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && other after && after.villain
-    | .anotherVillainOrArtifactEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && other after && (after.villain || after.artifact)
-    | .anotherNontokenHeroEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && other after && !after.token && after.hero
-    | .anotherNontokenArtifactEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && other after && !after.token && after.artifact
-    | .creatureYouControlDies =>
-      match fromZone, toZone with
-      | .battlefield, .graveyard _ => !before.phasedOut && yours before && before.creature
-      | _, _ => false
-    | .nontokenYouControlDies =>
-      match fromZone, toZone with
-      | .battlefield, .graveyard _ => !before.phasedOut && yours before && before.creature && !before.token
-      | _, _ => false
-    | .anotherGoblinOrcArmyDies =>
-      match fromZone, toZone with
-      | .battlefield, .graveyard _ => !before.phasedOut && yours before && other before && before.creature && before.goblinOrcArmy
-      | _, _ => false
-    | .villainYouControlDies =>
-      match fromZone, toZone with
-      | .battlefield, .graveyard _ => !before.phasedOut && yours before && before.creature && before.villain
-      | _, _ => false
-    | .attackingCreatureYouControlDies =>
-      match fromZone, toZone with
-      | .battlefield, .graveyard _ => !before.phasedOut && yours before && before.creature && before.attacking
-      | _, _ => false
-    | .oneOrMoreOtherCreaturesDie =>
-      match fromZone, toZone with
-      | .battlefield, .graveyard _ => !before.phasedOut && other before && before.creature
-      | _, _ => false
-    | .anotherNonlandReturned =>
-      match fromZone, toZone with
-      | .battlefield, .hand _ => !before.phasedOut && yours before && other before && !before.land
-      | _, _ => false
-    | .creatureCardLeavesYourGy =>
-      match fromZone with
-      | .graveyard owner => you owner && before.creature
-      | _ => false
-    | .creatureCardsPutIntoYourGy =>
-      match toZone with
-      | .graveyard owner => you owner && after.creature && !after.token
-      | _ => false
-    | .youDiscard =>
+    | .discard who cardPred mustBeCycle =>
       match fromZone, verb with
-      | .hand p, .discard => you p && toZone != .hand p
+      | .hand p, .discard =>
+        playerMatches who p && toZone != .hand p &&
+          (!mustBeCycle || match cause? with | some (.costPayment .cycle _ _) => true | _ => false) &&
+          (objMatches before cardPred || objMatches after cardPred)
       | _, _ => false
-    | .thisOrNontokenSubtypeYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        ((this after || this before) || (yours after && !after.token && !after.subtypes.isEmpty))
-    | .anotherSubtypeOrEquipmentYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && other after && (after.equipment || !after.subtypes.isEmpty)
-    | .thisOrAnotherSubtypeYouControlEnters =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        ((this after || this before) || (yours after && !after.subtypes.isEmpty))
-    | .subtypeYouControlEnters sub =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        yours after && after.hasSubtype sub
-    | .sagaChapter =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        (this after || this before) && entersWith.count .lore > 0
-    | .nthPlanCounter _ =>
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        (this after || this before) && entersWith.count .plan > 0
-    | .youPutPlusOne =>
-      let p := actor.orElse (fun _ => after.controller)
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        p.any you && entersWith.count .plusOnePlusOne > 0 && after.creature
-    | .youPutCountersOnGoblinOrcArmy =>
-      let p := actor.orElse (fun _ => after.controller)
-      toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-        p.any you && yours after && entersWith.any (fun (_, n) => n > 0) && after.goblinOrcArmy
-    | .youSacrificeToken =>
+    | .sacrifice who subj =>
       match fromZone, verb with
       | .battlefield, .sacrifice =>
         let p := actor.getD (before.controller.getD before.owner)
-        !before.phasedOut && you p && before.token && toZone != .battlefield
+        !before.phasedOut && toZone != .battlefield && playerMatches who p && objMatches before subj
       | _, _ => false
-    | .bolgSacrificedForReflexive =>
-      match fromZone, verb with
-      | .battlefield, .sacrifice =>
-        let p := actor.getD (before.controller.getD before.owner)
-        !before.phasedOut && you p && other before && before.creature && toZone != .battlefield
-      | _, _ => false
-    | .fra fe =>
-      match fe with
-      | .youDiscardThis =>
-        match fromZone, verb with
-        | .hand p, .discard => you p && toZone != .hand p && (this before || this after)
-        | _, _ => false
-      | .youCycle =>
-        match fromZone, verb with
-        | .hand p, .discard =>
-          you p && toZone != .hand p && (this before || this after) &&
-            match cause? with | some (.costPayment .cycle _ _) => true | _ => false
-        | _, _ => false
-      | .youDiscardOne =>
-        match fromZone, verb with
-        | .hand p, .discard => you p && toZone != .hand p
-        | _, _ => false
-      | .playerDiscards =>
-        match fromZone, verb with
-        | .hand p, .discard => toZone != .hand p
-        | _, _ => false
-      | .enchantedDies =>
-        match fromZone, toZone with
-        | .battlefield, .graveyard _ => !before.phasedOut && before.creature
-        | _, _ => false
-      | .nontokenCreatureYouControlDies =>
-        match fromZone, toZone with
-        | .battlefield, .graveyard _ => !before.phasedOut && yours before && before.creature && !before.token
-        | _, _ => false
-      | .anotherCreatureOrPlaneswalkerYouControlDies =>
-        match fromZone, toZone with
-        | .battlefield, .graveyard _ => !before.phasedOut && yours before && other before && (before.creature || before.planeswalker)
-        | _, _ => false
-      | .creatureYouControlLeaves =>
-        fromZone == .battlefield && toZone != .battlefield && !before.phasedOut &&
-          yours before && other before && before.creature
-      | .anotherCreatureOrPlaneswalkerYouControlEnters =>
-        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-          yours after && other after && (after.creature || after.planeswalker)
-      | .thisOrAnotherCreatureYouControlEnters =>
-        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-          ((this after || this before) || (yours after && after.creature))
-      | .anotherNontokenCreatureYouControlEnters =>
-        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-          yours after && other after && !after.token && after.creature
-      | .creatureOpponentControlsEnters =>
-        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-          after.controller.any opp && after.creature
-      | .creatureYouControlPowerAtLeastEnters n =>
-        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-          yours after && after.creature && after.power.any (· ≥ n)
-      | .youPutLoyaltyCounters =>
+    | .zoneChange subj fromZ toZ verb? actor? =>
+      let verbOk := verb?.all (· == verb)
+      let actorOk := actor?.all (fun pf => actor.any (playerMatches pf))
+      let zOk :=
+        matchesZoneEndpoint listener isTeammate fromZ fromZone &&
+          matchesZoneEndpoint listener isTeammate toZ toZone
+      if !verbOk || !actorOk || !zOk then false
+      else if toZone == .battlefield && fromZone != .battlefield then
+        !after.phasedOut &&
+          (objMatches after subj ||
+            (subj == .sameAs .this && objMatches before subj))
+      else if pat.usesLookBack then
+        (fromZone != .battlefield || !before.phasedOut) && objMatches before subj
+      else if (match toZone with | .graveyard _ => true | _ => false) then
+        objMatches after subj
+      else
+        objMatches before subj
+    | .putCounters putter? kind? subj =>
+      if toZone != .battlefield || fromZone == .battlefield || after.phasedOut then false
+      else
         let p := actor.orElse (fun _ => after.controller)
-        toZone == .battlefield && fromZone != .battlefield && !after.phasedOut &&
-          p.any you && entersWith.count .loyalty > 0 && after.planeswalker
-      | _ => false
+        let putterOk := putter?.all (fun pf => p.any (playerMatches pf))
+        let ctrOk :=
+          match kind? with
+          | some k => entersWith.count k > 0
+          | none => entersWith.any (fun (_, n) => n > 0)
+        putterOk && ctrOk &&
+          (objMatches after subj || (subj == .sameAs .this && objMatches before subj))
+    | .spellCountered spellPred =>
+      fromZone == .stack && verb == .counter && objMatches before spellPred
     | _ => false
   | .created object controller =>
     if object.zone != .battlefield || object.phasedOut then false
     else
       let enterCtrl := object.controller.getD controller
-      match te with
-      | .entering => this object
-      | .landYouControlEnters => you enterCtrl && object.land
-      | .forestYouControlEnters => you enterCtrl && object.forest
-      | .mountainYouControlEnters => you enterCtrl && object.mountain
-      | .artifactYouControlEnters => you enterCtrl && object.artifact
-      | .creatureYouControlEnters => you enterCtrl && object.creature
-      | .anotherCreatureYouControlEnters => you enterCtrl && other object && object.creature
-      | .anotherElfYouControlEnters => you enterCtrl && other object && object.elf
-      | .tokenYouControlEnters => you enterCtrl && object.token
-      | .equipmentYouControlEnters => you enterCtrl && object.equipment
-      | .anotherArtifactEnters => you enterCtrl && other object && object.artifact
-      | .anotherVillainEnters => you enterCtrl && other object && object.villain
-      | .anotherVillainOrArtifactEnters =>
-        you enterCtrl && other object && (object.villain || object.artifact)
-      | .anotherNontokenHeroEnters =>
-        you enterCtrl && other object && !object.token && object.hero
-      | .anotherNontokenArtifactEnters =>
-        you enterCtrl && other object && !object.token && object.artifact
-      | .thisOrNontokenSubtypeYouControlEnters => this object
-      | .anotherSubtypeOrEquipmentYouControlEnters =>
-        you enterCtrl && other object && (object.equipment || !object.subtypes.isEmpty)
-      | .thisOrAnotherSubtypeYouControlEnters =>
-        this object || (you enterCtrl && !object.subtypes.isEmpty)
-      | .subtypeYouControlEnters sub => you enterCtrl && object.hasSubtype sub
-      | .sagaChapter => this object && object.counters.count .lore > 0
-      | .nthPlanCounter _ => this object && object.counters.count .plan > 0
-      | .youPutPlusOne =>
-        you enterCtrl && object.counters.count .plusOnePlusOne > 0 && object.creature
-      | .youPutCountersOnGoblinOrcArmy =>
-        you enterCtrl && object.counters.any (fun (_, n) => n > 0) && object.goblinOrcArmy
-      | .fra fe =>
-        match fe with
-        | .anotherCreatureOrPlaneswalkerYouControlEnters =>
-          you enterCtrl && other object && (object.creature || object.planeswalker)
-        | .thisOrAnotherCreatureYouControlEnters =>
-          this object || (you enterCtrl && object.creature)
-        | .anotherNontokenCreatureYouControlEnters =>
-          you enterCtrl && other object && !object.token && object.creature
-        | .creatureOpponentControlsEnters => opp enterCtrl && object.creature
-        | .creatureYouControlPowerAtLeastEnters n =>
-          you enterCtrl && object.creature && object.power.any (· ≥ n)
-        | .youPutLoyaltyCounters =>
-          you enterCtrl && object.counters.count .loyalty > 0 && object.planeswalker
-        | .youCreateCreatureTokens =>
-          object.token && you controller && object.creature
-        | _ => false
+      let objWithCtrl := { object with controller := some enterCtrl }
+      match pat with
+      | .createTokens who tokenPred =>
+        object.token && playerMatches who controller && objMatches objWithCtrl tokenPred
+      | .zoneChange subj fromZ toZ none none =>
+        matchesZoneEndpoint listener isTeammate fromZ .stack &&
+          matchesZoneEndpoint listener isTeammate toZ .battlefield &&
+          objMatches objWithCtrl subj
+      | .putCounters putter? kind? subj =>
+        let putterOk := putter?.all (fun pf => playerMatches pf enterCtrl)
+        let ctrOk :=
+          match kind? with
+          | some k => object.counters.count k > 0
+          | none => object.counters.any (fun (_, n) => n > 0)
+        putterOk && ctrOk && objMatches objWithCtrl subj
       | _ => false
   | .ceasedToExist before =>
     if before.zone != .battlefield || before.phasedOut then false
     else
-      match te with
-      | .leaving => this before
-      | .fra .creatureYouControlLeaves => yours before && other before && before.creature
+      match pat with
+      | .zoneChange subj fromZ toZ none none =>
+        matchesZoneEndpoint listener isTeammate fromZ .battlefield &&
+          matchesZoneEndpoint listener isTeammate toZ .exile &&
+          objMatches before subj
       | _ => false
 
-@[noinline] private def matchesTriggerDamage (de : DamageEvent)
-    (listener : PlayerId) (sourceId : Option ObjectId) (te : TriggerEvent)
-    (isTeammate : PlayerId → Bool) : Bool :=
-  let you (p : PlayerId) : Bool := p == listener
-  let opp (p : PlayerId) : Bool := !you p && !isTeammate p
-  let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
-  let yours (o : EventObject) : Bool := o.controller == some listener
-  match de with
-  | .dealt pkts =>
-    match te with
-    | .sourceDealtDamage =>
-      pkts.any (fun pkt => pkt.amount > 0 && match pkt.recipient with | .permanent o | .battle o => this o | .player _ => false)
-    | .sourceDealtNoncombatDamage =>
-      pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .permanent o | .battle o => this o | .player _ => false)
-    | .creatureYouControlDealtDamage =>
-      pkts.any (fun pkt => pkt.amount > 0 && match pkt.recipient with | .permanent o => yours o && o.creature | _ => false)
-    | .dealsCombatDamageToPlayer =>
-      pkts.any (fun pkt =>
-        pkt.combat && pkt.amount > 0 &&
-          (sourceId.isNone || pkt.source.id.isNone || this pkt.source) &&
-          match pkt.recipient with | .player _ => true | _ => false)
-    | .dealsCombatDamageToPlayerOrBattle =>
-      pkts.any (fun pkt =>
-        pkt.combat && pkt.amount > 0 &&
-          (pkt.source.controller.isNone || yours pkt.source || this pkt.source) &&
-          match pkt.recipient with | .player _ | .battle _ => true | _ => false)
-    | .combatDamageToYou =>
-      pkts.any (fun pkt =>
-        pkt.combat && pkt.amount > 0 && (pkt.source.types.isEmpty || pkt.source.creature) &&
-          match pkt.recipient with | .player p => you p | _ => false)
-    | .opponentsDealtCombatDamageYourTurn =>
-      pkts.any (fun pkt => pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => opp p | _ => false)
-    | .armyYouControlCombatDamage =>
-      pkts.any (fun pkt =>
-        pkt.combat && pkt.amount > 0 && yours pkt.source && pkt.source.hasSubtype .army &&
-          match pkt.recipient with | .player _ => true | _ => false)
-    | .equippedDealsCombatDamageToPlayer =>
-      pkts.any (fun pkt =>
-        pkt.combat && pkt.amount > 0 && pkt.source.creature &&
-          match pkt.recipient with | .player _ => true | _ => false)
-    | .heroesDealDamageToPlayer =>
-      pkts.any (fun pkt =>
-        pkt.amount > 0 &&
-          match pkt.recipient with
-          | .player _ => yours pkt.source && pkt.source.hero
-          | _ => false)
-    | .fra fe =>
-      match fe with
-      | .dealsCombatDamageToPlayerOrPlaneswalker =>
-        pkts.any (fun pkt =>
-          pkt.combat && pkt.amount > 0 &&
-            (sourceId.isNone || pkt.source.id.isNone || this pkt.source) &&
-            match pkt.recipient with
-            | .player _ => true
-            | .permanent o => o.planeswalker
-            | .battle _ => false)
-      | .opponentsDealtNoncombatDamage
-      | .opponentDealtNoncombatDamage =>
-        pkts.any (fun pkt => !pkt.combat && pkt.amount > 0 && match pkt.recipient with | .player p => opp p | _ => false)
-      | _ => false
-    | _ => false
-  | _ => false
+@[noinline] private def matchesPatternDamage (de : DamageEvent)
+    (listener : PlayerId) (sourceId : Option ObjectId) (pat : TriggerPattern)
+    (isTeammate : PlayerId → Bool) (attachedHostId? : Option ObjectId) : Bool :=
+  let objMatches (o : EventObject) (pred : ObjectPred) : Bool :=
+    evalEventObjPred listener sourceId isTeammate attachedHostId? o pred
+  let playerMatches (pf : PlayerFilter) (p : PlayerId) : Bool :=
+    matchesEventPlayer listener isTeammate pf p
+  match de, pat with
+  | .dealt pkts, .damageDealt srcPred recipFilter combatOnly noncombatOnly _ =>
+    pkts.any fun pkt =>
+      pkt.amount > 0 &&
+        (!combatOnly || pkt.combat) &&
+        (!noncombatOnly || !pkt.combat) &&
+        (srcPred == .anyObject ||
+          (sourceId.isNone && srcPred == .sameAs .this) ||
+          (pkt.source.id.isNone && srcPred == .sameAs .this) ||
+          objMatches pkt.source srcPred) &&
+        match recipFilter, pkt.recipient with
+        | .any, _ => true
+        | .player pf, .player p => playerMatches pf p
+        | .object f, .permanent o | .object f, .battle o => objMatches o f.pred
+        | .playerOrObject pf _, .player p => playerMatches pf p
+        | .playerOrObject _ f, .permanent o | .playerOrObject _ f, .battle o => objMatches o f.pred
+        | _, _ => false
+  | _, _ => false
 
-@[noinline] private def matchesTriggerCast (ce : CastEvent) (cause? : Option EventCause)
-    (listener : PlayerId) (sourceId : Option ObjectId) (te : TriggerEvent)
-    (isTeammate : PlayerId → Bool) : Bool :=
-  let you (p : PlayerId) : Bool := p == listener
-  let opp (p : PlayerId) : Bool := !you p && !isTeammate p
-  let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
-  match ce with
-  | .spellCast spell p fromZone =>
-    match te with
-    | .youCastInstantOrSorcery => you p && spell.instantOrSorcery
-    | .youCastNoncreature => you p && !spell.creature
-    | .youCastCreature => you p && spell.creature
-    | .youCastSpell => you p
-    | .youCastColor c => you p && spell.colors.contains c
-    | .youCastColorFromHand c =>
-      match fromZone with | .hand _ => you p && spell.colors.contains c | _ => false
-    | .youCastGreen => you p && spell.colors.contains .green
-    | .youCastVillain => you p && spell.villain
-    | .youCastWithTreasure
-    | .youCastTargetingCreatureYouControl
-    | .youCastTargetingCreature
-    | .youCastTargetingOpponentOrTheirCreature
-    | .youCastSecondSpell => you p
-    | .youCastInstantSorceryTargetingArtifactOrLand => you p && spell.instantOrSorcery
-    | .opponentCastsSpell
-    | .opponentCastsMatchingParity
-    | .opponentCastsFirstNoncreature => opp p
-    | .youCastFirstNoncreature => you p && !spell.creature
-    | .anyPlayerCastsSecondSpell => true
-    | .cascade => you p && (sourceId.isNone || this spell)
-    | .becomesTarget | .ward => sourceId.isSome && opp p
-    | .spellTargetsSource => sourceId.isSome
-    | .fra fe =>
-      match fe with
-      | .castThis => you p && this spell
-      | .opponentCastsSpellMvAtMost n => opp p && spell.manaValue ≤ n
-      | .youCastPreparedSpell => you p && spell.isCopy && fromZone == .exile
-      | .youCastArtifactOrCreature => you p && (spell.artifact || spell.creature)
-      | .youCastEquipmentOrTargetingCreatureYouControl => you p
-      | _ => false
-    | _ => false
-  | .abilityActivated _ source p kind =>
-    match te with
-    | .youActivateLoyaltyAbility =>
-      match kind with | .nonMana (some _) .. => you p | _ => false
-    | .youActivateCreatureAbility => you p && source.creature
-    | .fra .opponentActivatesLoyaltyAbility =>
-      match kind with | .nonMana (some _) .. => opp p | _ => false
-    | .youTargetSomething =>
-      match kind with | .nonMana .. => you p | _ => false
-    | .becomesTarget | .ward =>
-      match kind with | .nonMana .. => sourceId.isSome && opp p | _ => false
-    | _ => false
-  | .targeted _ targets .. =>
-    match te with
-    | .becomesTarget | .ward =>
-      let causeOpp :=
-        match cause? with
-        | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => opp p
-        | _ => true
-      sourceId.isSome && causeOpp &&
-        targets.any (fun t => match t with | .permanent oid => some oid == sourceId | _ => false)
-    | .youTargetSomething =>
-      let causeYou :=
-        match cause? with
-        | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => you p
-        | _ => true
-      causeYou &&
-        targets.any (fun t => match t with | .permanent _ | .player _ => true | _ => false)
-    | _ => false
-  | _ => false
+@[noinline] private def matchesPatternCast (ce : CastEvent) (cause? : Option EventCause)
+    (listener : PlayerId) (sourceId : Option ObjectId) (pat : TriggerPattern)
+    (isTeammate : PlayerId → Bool) (attachedHostId? : Option ObjectId) : Bool :=
+  let objMatches (o : EventObject) (pred : ObjectPred) : Bool :=
+    evalEventObjPred listener sourceId isTeammate attachedHostId? o pred
+  let playerMatches (pf : PlayerFilter) (p : PlayerId) : Bool :=
+    matchesEventPlayer listener isTeammate pf p
+  match ce, pat with
+  | .spellCast spell p fromZone, .castSpell caster spellPred fromZ? _ mustBePrepared _ _ =>
+    let fzOk := fromZ?.all (fun zk => matchesZoneEndpoint listener isTeammate (.inZones { zones := #[zk], owner := .any }) fromZone)
+    let prepOk := !mustBePrepared || (spell.isCopy && fromZone == .exile)
+    let spOk :=
+      (sourceId.isNone && spellPred == .sameAs .this) || objMatches spell spellPred
+    playerMatches caster p && fzOk && prepOk && spOk
+  | .abilityActivated _ src p kind, .activateAbility activator srcPred actKind =>
+    let kindOk :=
+      match actKind, kind with
+      | .any, _ => true
+      | .loyalty _, .nonMana (some _) .. => true
+      | .manaAbility, .mana .. => true
+      | .nonMana, .nonMana .. => true
+      | _, _ => false
+    playerMatches activator p && kindOk && objMatches src srcPred
+  | .targeted _ targets _ _, .becomesTarget subj byCtrl _ =>
+    let causeOk :=
+      match cause? with
+      | some (.costPayment _ p _) | some (.oneShotEffect _ _ (some p)) => playerMatches byCtrl p
+      | _ => true
+    causeOk &&
+      match subj with
+      | .playerOrPermanent =>
+        targets.any fun | .permanent _ | .player _ => true | _ => false
+      | .object (.sameAs .this) =>
+        sourceId.isSome && targets.any fun | .permanent oid => some oid == sourceId | _ => false
+      | .object _ =>
+        targets.any fun | .permanent _ => true | _ => false
+  | _, _ => false
 
-@[noinline] private def matchesTriggerCombat (ce : CombatEvent)
-    (listener : PlayerId) (sourceId : Option ObjectId) (te : TriggerEvent)
-    (isTeammate : PlayerId → Bool) : Bool :=
-  let you (p : PlayerId) : Bool := p == listener
-  let opp (p : PlayerId) : Bool := !you p && !isTeammate p
-  let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
-  match ce with
-  | .attackersDeclared p decls =>
-    match te with
-    | .attacking =>
-      (you p || isTeammate p) && decls.any (fun (attacker, _) => this attacker)
-    | .youAttack | .youAttackWithTotalPower | .equippedAttacks =>
-      (you p || isTeammate p) && !decls.isEmpty
-    | .youAttackWithElves =>
-      (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.elf)
-    | .youAttackWithTwoOrMore =>
-      (you p || isTeammate p) && decls.size ≥ 2 &&
-        decls.any (fun (_, tgt) =>
+@[noinline] private def matchesPatternCombat (ce : CombatEvent)
+    (listener : PlayerId) (sourceId : Option ObjectId) (pat : TriggerPattern)
+    (isTeammate : PlayerId → Bool) (attachedHostId? : Option ObjectId) : Bool :=
+  let objMatches (o : EventObject) (pred : ObjectPred) : Bool :=
+    evalEventObjPred listener sourceId isTeammate attachedHostId? o pred
+  let playerMatches (pf : PlayerFilter) (p : PlayerId) : Bool :=
+    matchesEventPlayer listener isTeammate pf p
+  let targetMatches (tf : AttackTargetFilter) (t : AttackTarget) : Bool :=
+    match tf, t with
+    | .any, _ => true
+    | .player pf, .player d => playerMatches pf d
+    | .playerOrPlaneswalker pf, .player d => playerMatches pf d
+    | .playerOrPlaneswalker _, .planeswalker _ => true
+    | _, _ => false
+  match ce, pat with
+  | .attackersDeclared attackingPlayer decls, .attacks attPred tgtFilter alone minAtk minPower? _ =>
+    let attackerTeamOk :=
+      match tgtFilter with
+      | .player pf | .playerOrPlaneswalker pf =>
+        if pf.relation == .you then playerMatches .opponent attackingPlayer else true
+      | .any => true
+    if !attackerTeamOk then false
+    else
+    let matched := decls.filter fun (a, tgt) => objMatches a attPred && targetMatches tgtFilter tgt
+    if matched.size < minAtk then false
+    else if alone then
+      match tgtFilter with
+      | .player _ =>
+        matched.any fun (a, tgt) =>
           match tgt with
-          | .player d => (decls.filter (fun (_, tgt') => tgt' == .player d)).size ≥ 2
-          | _ => false)
-    | .creatureYouControlAttacksAlone =>
-      (you p || isTeammate p) && decls.size == 1 && decls[0]!.1.creature
-    | .equippedAttacksAlone =>
-      decls.size == 1 && decls[0]!.1.creature
-    | .equippedCreatureYouControlAttacks =>
-      (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.creature)
-    | .merfolkAttackPlayer =>
-      (you p || isTeammate p) && decls.any (fun (attacker, tgt) =>
-        attacker.merfolk && match tgt with | .player _ => true | _ => false)
-    | .enchantedAttacksOrBlocks =>
-      decls.any (fun (attacker, _) => attacker.creature)
-    | .fra fe =>
-      match fe with
-      | .creatureYouControlAttacks =>
-        (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.creature)
-      | .creatureYouControlAttacksPlayerAlone =>
-        (you p || isTeammate p) &&
-          decls.any (fun (attacker, tgt) =>
-            attacker.creature &&
-              match tgt with
-              | .player d => !decls.any (fun (a', tgt') => a'.id != attacker.id && tgt' == .player d)
-              | _ => false)
-      | .creatureAttacksYouOrYourPlaneswalker =>
-        opp p &&
-          decls.any (fun (attacker, tgt) =>
-            attacker.creature &&
-              match tgt with
-              | .player d => you d
-              | .planeswalker _ => true
-              | .battle _ => false)
-      | .creaturesAttackYourOpponent =>
-        decls.any (fun (attacker, tgt) =>
-          attacker.creature &&
-            match tgt with
-            | .player d => opp d
-            | _ => false)
-      | .zombieTokenAttacks =>
-        (you p || isTeammate p) && decls.any (fun (attacker, _) =>
-          attacker.token && attacker.hasSubtype .zombie && attacker.power.any (· ≥ 6))
-      | .sphinxesAttack =>
-        (you p || isTeammate p) && decls.any (fun (attacker, _) => attacker.hasSubtype .sphinx)
-      | _ => false
-    | _ => false
-  | .blockersDeclared _ decls =>
-    match te with
-    | .enchantedAttacksOrBlocks =>
-      decls.any (fun (blocker, _) => blocker.creature)
-    | .fra .opponentSmallCreatureBlocks =>
-      decls.any (fun (blocker, _) =>
-        blocker.controller.any opp && blocker.creature &&
-          (blocker.power.any (· ≤ 1) || blocker.toughness.any (· ≤ 1)))
-    | _ => false
-  | .becameBlocked attacker _ =>
-    match te with
-    | .becomesBlocked => this attacker
-    | _ => false
-  | _ => false
-
-@[noinline] private def matchesTriggerPermanent (pe : PermanentEvent) (cause? : Option EventCause)
-    (listener : PlayerId) (sourceId : Option ObjectId) (te : TriggerEvent) : Bool :=
-  let you (p : PlayerId) : Bool := p == listener
-  let this (o : EventObject) : Bool := sourceId.isSome && o.id == sourceId
-  let yours (o : EventObject) : Bool := o.controller == some listener
-  match pe with
-  | .tapped object during =>
-    if object.phasedOut then false
+          | .player d => !decls.any fun (a', tgt') => a'.id != a.id && tgt' == .player d
+          | _ => false
+      | _ => decls.size == 1 && matched.size == 1
     else
-      match te with
-      | .sourceBecomesTapped => this object
-      | .creaturesYouControlBecomeTapped => yours object && object.creature
-      | .equippedBecomesTapped => object.creature
-      | .creatureYouControlTapped => yours object && object.creature && during
-      | .tappedForTeamwork =>
-        this object && match cause? with | some (.costPayment .teamwork _ _) => true | _ => false
-      | _ => false
-  | .counters (.object object) kind (.put n) actor =>
-    if object.zone != .battlefield || object.phasedOut || n == 0 then false
-    else
-      match te with
-      | .youPutPlusOne =>
-        kind == .plusOnePlusOne && actor.any you && object.creature
-      | .youPutCountersOnGoblinOrcArmy =>
-        actor.any you && yours object && object.goblinOrcArmy
-      | .fra .youPutLoyaltyCounters =>
-        kind == .loyalty && actor.any you && object.planeswalker
-      | .nthPlanCounter _ =>
-        kind == .plan && this object
-      | .sagaChapter =>
-        kind == .lore && this object
-      | _ => false
-  | _ => false
+      match minPower? with
+      | some minP =>
+        let tot := matched.foldl (fun acc (a, _) => acc + a.power.getD 0) 0
+        tot ≥ minP
+      | none =>
+        if minAtk ≥ 2 then
+          match tgtFilter with
+          | .player _ =>
+            matched.any fun (_, tgt) =>
+              match tgt with
+              | .player d => (matched.filter fun (_, t') => t' == .player d).size ≥ minAtk
+              | _ => false
+          | _ => true
+        else true
+  | .blockersDeclared _ decls, .blocks blkPred =>
+    decls.any fun (b, _) => objMatches b blkPred
+  | .becameBlocked attacker _, .becomesBlocked attPred =>
+    objMatches attacker attPred
+  | _, _ => false
 
-def matchesTrigger (e : GameEvent) (listener : PlayerId) (sourceId : Option ObjectId := none)
-    (te : TriggerEvent) (isTeammate : PlayerId → Bool := fun _ => false) : Bool :=
-  let you (p : PlayerId) : Bool := p == listener
-  let opp (p : PlayerId) : Bool := !you p && !isTeammate p
-  let yours (o : EventObject) : Bool := o.controller == some listener
-  match e.change with
-  | .engine _ => false
-  | .rules r =>
-    match r with
-    | .zone ze => matchesTriggerZone ze e.cause? listener sourceId te isTeammate
-    | .damage de => matchesTriggerDamage de listener sourceId te isTeammate
-    | .cast ce => matchesTriggerCast ce e.cause? listener sourceId te isTeammate
-    | .combat ce => matchesTriggerCombat ce listener sourceId te isTeammate
-    | .permanent pe => matchesTriggerPermanent pe e.cause? listener sourceId te
-    | .life le =>
-      match le, te with
-      | .gained p amount, .youGainLife => you p && amount > 0
-      | .lost _ amount _ _, .playerLosesLife => amount > 0
-      | _, _ => false
-    | .player pe =>
-      match pe, te with
-      | .scried p _ _ _ asked, .youScry => you p && asked > 0
-      | .scried p _ _ _ asked, .youScryOrSurveil => you p && asked > 0
-      | .surveilled p _ _ _ asked, .youScryOrSurveil => you p && asked > 0
-      | .proliferated p _ _, .fra .youProliferate => you p
-      | .ringTempted p _ _, .theRingTemptsYou => you p
-      | .ringTempted p (some _) _, .youChooseRingBearer => you p
-      | _, _ => false
-    | .stackObject se =>
-      match se, te with
-      | .resolved obj nth _ _, .finalSagaChapterResolves =>
-        nth == 0 && yours obj && obj.types.isEmpty && obj.hasSubtype .saga
-      | _, _ => false
-    | .turn (.stepBegan step active) =>
-      match step, te with
-      | .upkeep, .yourUpkeep => you active || isTeammate active
-      | .upkeep, .eachUpkeep
-      | .upkeep, .fra .eachUpkeepFromGraveyard
-      | .upkeep, .eaglesCreateBirds => true
-      | .upkeep, .enchantedControllerUpkeep => you active
-      | .end, .yourEndStep => you active || isTeammate active
-      | .end, .eachEndStep => true
-      | .beginningOfCombat, .yourBeginCombat
-      | .beginningOfCombat, .fra .yourBeginCombatFromGraveyard => you active || isTeammate active
-      | .beginningOfCombat, .eachBeginCombat => true
-      | .beginningOfCombat, .fra .opponentBeginCombat => opp active
-      | .precombatMain, .yourFirstMain => you active || isTeammate active
-      | .draw, .eachOpponentDrawStep => opp active
-      | _, _ => false
-    | _ => false
+@[noinline] private def matchesPatternPermanent (pe : PermanentEvent) (cause? : Option EventCause)
+    (listener : PlayerId) (sourceId : Option ObjectId) (pat : TriggerPattern)
+    (isTeammate : PlayerId → Bool) (attachedHostId? : Option ObjectId) : Bool :=
+  let objMatches (o : EventObject) (pred : ObjectPred) : Bool :=
+    evalEventObjPred listener sourceId isTeammate attachedHostId? o pred
+  let playerMatches (pf : PlayerFilter) (p : PlayerId) : Bool :=
+    matchesEventPlayer listener isTeammate pf p
+  match pe, pat with
+  | .tapped object during, .becomesTapped subj onlyYourTurn _ costKind? =>
+    !object.phasedOut &&
+      (!onlyYourTurn || during) &&
+      costKind?.all (fun ck =>
+        match cause? with | some (.costPayment k _ _) => k == ck | _ => false) &&
+      objMatches object subj
+  | .untapped object, .becomesUntapped subj =>
+    !object.phasedOut && objMatches object subj
+  | .phasedOut object _, .phasesOut subj =>
+    objMatches object subj
+  | .unattached att _, .becomesUnattached attPred _ =>
+    objMatches att attPred
+  | .counters (.object object) kind (.put n) actor, .putCounters putter? kind? subj =>
+    object.zone == .battlefield && !object.phasedOut && n > 0 &&
+      kind?.all (· == kind) &&
+      putter?.all (fun pf => actor.any (playerMatches pf)) &&
+      objMatches object subj
+  | _, _ => false
+
+/-- Pure `GameEvent` matcher against a `TriggerPattern` (CR 603.2). -/
+partial def matchesTriggerPattern (e : GameEvent) (listener : PlayerId)
+    (sourceId : Option ObjectId := none) (pat : TriggerPattern)
+    (limit : TriggerLimit := .unlimited)
+    (isTeammate : PlayerId → Bool := fun _ => false)
+    (attachedHostId? : Option ObjectId := none) : Bool :=
+  match pat with
+  | .whenCond inner _ =>
+    matchesTriggerPattern e listener sourceId inner limit isTeammate attachedHostId?
+  | .or l r =>
+    matchesTriggerPattern e listener sourceId l limit isTeammate attachedHostId? ||
+      matchesTriggerPattern e listener sourceId r limit isTeammate attachedHostId?
+  | _ =>
+    let playerMatches (pf : PlayerFilter) (p : PlayerId) : Bool :=
+      matchesEventPlayer listener isTeammate pf p
+    let objMatches (o : EventObject) (pred : ObjectPred) : Bool :=
+      evalEventObjPred listener sourceId isTeammate attachedHostId? o pred
+    match e.change with
+    | .engine _ => false
+    | .rules r =>
+      match r with
+      | .zone ze =>
+        matchesPatternZone ze e.cause? listener sourceId pat limit isTeammate attachedHostId?
+      | .damage de =>
+        matchesPatternDamage de listener sourceId pat isTeammate attachedHostId?
+      | .cast ce =>
+        matchesPatternCast ce e.cause? listener sourceId pat isTeammate attachedHostId?
+      | .combat ce =>
+        matchesPatternCombat ce listener sourceId pat isTeammate attachedHostId?
+      | .permanent pe =>
+        matchesPatternPermanent pe e.cause? listener sourceId pat isTeammate attachedHostId?
+      | .life le =>
+        match le, pat with
+        | .gained p amount, .gainLife who => amount > 0 && playerMatches who p
+        | .lost p amount _ _, .loseLife who => amount > 0 && playerMatches who p
+        | _, _ => false
+      | .player pe =>
+        match pe, pat with
+        | .scried p _ _ _ asked, .playerAction who .scry => asked > 0 && playerMatches who p
+        | .surveilled p _ _ _ asked, .playerAction who .surveil => asked > 0 && playerMatches who p
+        | .proliferated p _ _, .playerAction who .proliferate => playerMatches who p
+        | .ringTempted p _ _, .playerAction who .ringTempts => playerMatches who p
+        | .ringTempted p (some _) _, .playerAction who .chooseRingBearer => playerMatches who p
+        | .manaAdded p units, .playerAction who .manaAdded => !units.isEmpty && playerMatches who p
+        | .lost p _, .playerAction who .losesGame => playerMatches who p
+        | _, _ => false
+      | .stackObject se =>
+        match se, pat with
+        | .resolved obj nth _ _, .stackObjectResolves pred finalSagaOnly =>
+          (!finalSagaOnly || (nth == 0 && obj.types.isEmpty && obj.hasSubtype .saga)) &&
+            objMatches obj pred
+        | _, _ => false
+      | .turn (.stepBegan step active) =>
+        match pat with
+        | .stepBegins s ownerSpec =>
+          s == step &&
+            match ownerSpec with
+            | .player pf =>
+              match pf.relation with
+              | .you => active == listener || isTeammate active
+              | _ => playerMatches pf active
+            | .controllerOf _ => active == listener
+        | _ => false
+      | .triggerQueue (.triggered src _ _ _) =>
+        match pat with
+        | .abilityTriggers srcPred => objMatches src srcPred
+        | _ => false
+      | _ => false
 
 /-- Counters put on objects in `e` (CR 122.1 / 122.6), including counters
 placed as an object enters the battlefield via `ZoneEvent.moved.entersWith`

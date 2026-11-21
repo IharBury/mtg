@@ -700,12 +700,12 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         | some p =>
           if quietMove || !g.stillInGame p then g
           else
-            let ab := TriggeredAbility.fra .fromEffect
+            let ab := TriggeredAbility.ofPattern .thisEnters
               "When you do, create a 2/2 green Wolf creature token."
-              (.createTokens .wolf 1)
+              (.createTokens .wolf 1) (word := .when)
             g.recordReflexiveTrigger {
                 controller := p, source := src, ability := ab,
-                event := .bolgSacrificedForReflexive, checked := true }
+                pattern := ab.pattern, checked := true }
               |>.logMsg s!"{(g.player p).name}'s Wolf trigger is waiting to go on the stack"
         | none => g
       else g

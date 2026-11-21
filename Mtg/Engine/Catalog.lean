@@ -38,7 +38,6 @@ rules text. -/
     (colorIndicator : Option ColorSet := none)
     (chooseOneOrBoth : Bool := false)
     (chooseTwoIfYouControlSubtype : Option CardSubtype := none)
-    (saga : Option SagaDef := none)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
@@ -57,7 +56,6 @@ rules text. -/
       additionalCosts
       chooseOneOrBoth
       chooseTwoIfYouControlSubtype
-      saga
       staticAbilities
       triggeredAbilities
       activatedAbilities
@@ -216,25 +214,24 @@ def forest : CardDef :=
     (activatedAbilities : Array ActivatedAbility := #[])
     (subtypes : Array Subtype := #[])
     (supertypes : Array Supertype := #[])
-    (adventure : Option AdventureFace := none)
-    (saga : Option SagaDef := none) : CardDef :=
+    (adventure : Option AdventureFace := none) : CardDef :=
   card name #[.enchantment] manaCost subtypes oracleText (keywords := keywords)
     (supertypes := supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
     (activatedAbilities := activatedAbilities)
     (adventure := adventure)
-    (saga := saga)
 
-/-- A catalog Saga chapter with parsed numerals and a real effect. -/
-def chapter (roman effect : String) (e : Effect) : SagaChapter :=
-  SagaChapter.of roman effect e
+/-- A catalog Saga chapter `TriggeredAbility` with parsed Roman numerals (CR 714.2). -/
+def chapter (roman effect : String) (e : Effect) : TriggeredAbility :=
+  TriggeredAbility.sagaChapters (parseChapterNumbers roman) { e with phrase := effect }
 
-/-- A Saga enchantment (CR 714). -/
+/-- A Saga enchantment (CR 714). Final chapter is the greatest chapter number
+across `chapters` (CR 714.2d). -/
 @[irreducible, noinline] def saga (name : String) (manaCost : ManaCost) (oracleText : String)
-    (sacrificeAfter : String) (chapters : Array SagaChapter) : CardDef :=
+    (_sacrificeAfter : String) (chapters : Array TriggeredAbility) : CardDef :=
   enchantment name manaCost oracleText
     (subtypes := #["Saga"])
-    (saga := some { sacrificeAfter, chapters })
+    (triggeredAbilities := chapters)
 
 /-- An Aura enchantment (CR 303.4). -/
 @[irreducible, noinline] def aura (name : String) (manaCost : ManaCost) (oracleText : String)

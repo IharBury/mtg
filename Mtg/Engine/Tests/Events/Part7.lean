@@ -2479,7 +2479,7 @@ private def replayOk38i1 (gs : Array Game) : Bool :=
       -- (iv) `TriggerQueueEvent.putOnStack`: stack a trigger whose `stackObj` collides!
       let g :=
         g.putQueuedTrigger p0 (g.object! createdTok.id)
-          (.triggered .enter (Effect.gainLife 2)) .entering (some 2) (some 2)
+          (TriggeredAbility.mkTrigger .thisEnters (Effect.gainLife 2)) .thisEnters (some 2) (some 2)
           (eventCause := some testCause)
       -- (v) `CastEvent.abilityActivated`: materialize and record a non-mana ability activation on `createdTok`!
       let (g, keptAbObj) := g.putStackAbility (g.object! createdTok.id) p0 (abilityEffect := some (Effect.gainLife 1))
@@ -3131,7 +3131,7 @@ private def replayOk38i3 (gs : Array Game) : Bool :=
   -- Pause-safe `afterTriggerTargetsChosen` (`PostStep.afterTriggerTargetsChosen`):
   let gAttcPaused :=
     (gFinPaused.putQueuedTrigger p0 (gFinPaused.object! flAnchorId)
-      (.triggered .enter (Effect.dealDamage 1)) .entering (some 1) (some 1)
+      (TriggeredAbility.mkTrigger .thisEnters (Effect.dealDamage 1)) .thisEnters (some 1) (some 1)
       (eventCause := some testCause)).afterTriggerTargetsChosen
   let gAttcResumed := (mustApply gAttcPaused p0 (.chooseReplacement finFirstChoice)).drainPendingContinuations
   -- Game-over `completeActiveResolutions` quiet `ceaseToExist` (`reconcileControl := false` when `g.over`):

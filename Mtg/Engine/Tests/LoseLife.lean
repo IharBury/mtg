@@ -270,7 +270,7 @@ name both controllers. A hand names no player. -/
 
 #guard TriggeredAbility.resolutionPhrase { resolution := .loseLife (.fixed 3) } ==
   "you lose 3 life"
-#guard TriggeredAbility.resolutionPhrase (SharedTrigger.timing (.targetOpponentLosesLife 1)) ==
+#guard TriggeredAbility.resolutionPhrase (SharedTrigger.toEffect (.targetOpponentLosesLife 1)) ==
   "target opponent loses 1 life"
 #guard TriggeredAbility.resolutionPhrase { resolution := eachOpp 2 } ==
   "each opponent loses 2 life"
@@ -285,16 +285,16 @@ name both controllers. A hand names no player. -/
   "Whenever you sacrifice a token, target opponent loses 1 life."
 #guard TriggeredAbility.toNotation .onYourUpkeepLoseLifePerBurden ==
   "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."
-#guard TriggeredAbility.resolutionPhrase (SharedTrigger.timing (.drainAndPlan 2)) ==
+#guard TriggeredAbility.resolutionPhrase (SharedTrigger.toEffect (.drainAndPlan 2)) ==
   "each opponent loses 2 life and you gain 2 life. Put a plan counter on this enchantment"
-#guard TriggeredAbility.resolutionPhrase (SharedTrigger.timing .drawLoseLifeAndPlan) ==
+#guard TriggeredAbility.resolutionPhrase (SharedTrigger.toEffect .drawLoseLifeAndPlan) ==
   "you draw a card, lose 1 life, and put a plan counter on this enchantment"
 
 #guard TriggeredAbility.TriggerResolution.gollumModes[1]! ==
   .sequence [.loseLife (.fixed 2) .eachOpponent, .gainLife (.fixed 2)]
 #guard TriggeredAbility.TriggerResolution.upToXModes[1]! == eachOpp 2
 
-#guard (SharedTrigger.timing (.targetOpponentLosesLife 1)).resolution == targetOpp 1
-#guard (SharedTrigger.timing .loseLifePerBurden).resolution == perBurden
+#guard (SharedTrigger.toEffect (.targetOpponentLosesLife 1)).resolution == targetOpp 1
+#guard (SharedTrigger.toEffect .loseLifePerBurden).resolution == perBurden
 
 end Mtg.Engine.LoseLifeTests

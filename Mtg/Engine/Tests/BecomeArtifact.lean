@@ -20,7 +20,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.onPermanent .creature .becomeArtifactIndestructible))
+  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .becomeArtifactIndestructible))
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -264,7 +264,7 @@ become artifacts. -/
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible."
 #guard TriggeredAbility.toNotation
-    (.triggered .enter (Effect.ofTrigger (.onSource .becomeArtifactIndestructible))) ==
+    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .becomeArtifactIndestructible))) ==
   "When this permanent enters, resolve each step."
 
 end Mtg.Engine.BecomeArtifactTests

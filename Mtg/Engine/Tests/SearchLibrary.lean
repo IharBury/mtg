@@ -407,9 +407,9 @@ what searches. -/
       (.sequence [
         .sacrifice (.sacrificedSource .movedAsSacrificed),
         .searchLibrary (.put .dragon)])]
-#guard (SharedTrigger.timing .searchLibrary).resolution ==
+#guard (SharedTrigger.toEffect .searchLibrary).resolution ==
   .searchLibrary (.put .forest)
-#guard (SharedTrigger.timing .searchBasicLandToHand).resolution ==
+#guard (SharedTrigger.toEffect .searchBasicLandToHand).resolution ==
   .searchLibrary (.returnToHand .basicLand)
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .searchLibrary (.put .forest) } ==

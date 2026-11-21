@@ -34,20 +34,17 @@ namespace Mtg.Engine
 
 @[noinline] private def cardDefBeq2 (a b : CardDef) : Bool :=
   a.spellModes == b.spellModes &&
-  a.fraTriggerModes == b.fraTriggerModes &&
   a.isToken == b.isToken &&
   a.anyNumberInDeck == b.anyNumberInDeck &&
   a.chooseOneOrBoth == b.chooseOneOrBoth &&
   a.chooseTwoIfYouControlSubtype == b.chooseTwoIfYouControlSubtype &&
-  a.saga == b.saga &&
   a.activatedAbilities == b.activatedAbilities &&
   a.staticAbilities == b.staticAbilities &&
   a.triggeredAbilities == b.triggeredAbilities &&
   a.adventure == b.adventure &&
   a.chooseBothIfTeamwork == b.chooseBothIfTeamwork &&
   a.empowerJace == b.empowerJace &&
-  a.prepareFace == b.prepareFace &&
-  a.commanderIdentityScryCreature == b.commanderIdentityScryCreature
+  a.prepareFace == b.prepareFace
 
 private partial def cardDefBeq (a b : CardDef) : Bool :=
   cardDefBeq1 a b && cardDefBeq2 a b &&
@@ -428,8 +425,8 @@ structure WaitingTrigger where
   controller : PlayerId
   source : GameObject
   ability : TriggeredAbility
-  /-- Event this ability is waiting to be put on the stack for. -/
-  event : TriggerEvent := .dying
+  /-- Pattern this ability is waiting to be put on the stack for. -/
+  pattern : TriggerPattern := .thisDies
   lastKnownPower : Option Int := none
   lastKnownToughness : Option Int := none
   /-- Object that caused this trigger, if any (the entering Villain for
@@ -478,8 +475,8 @@ structure EventObject where
   loyalty         : Option Nat           := none
   keywords        : Array KeywordAbility := #[]
   toxic           : Nat                  := 0
-  commanderIdentityScryCreature : Bool   := false
   staticAbilities : Array StaticAbility  := #[]
+  triggeredAbilities : Array TriggeredAbility := #[]
   -- status & designations (CR 110.5 / 110.5a / 903.3)
   zone            : Zone                 := .battlefield
   tapped          : Bool                 := false
@@ -531,8 +528,8 @@ def toCardDef (e : EventObject) : CardDef :=
       toughness := e.toughness
       loyalty := e.loyalty.map Int.ofNat
       keywords := kws
-      commanderIdentityScryCreature := e.commanderIdentityScryCreature
       staticAbilities := e.staticAbilities
+      triggeredAbilities := e.triggeredAbilities
       isToken := e.token }
 
 def hasSimpleKeyword (o : EventObject) (sk : SimpleKeyword) : Bool :=

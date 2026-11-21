@@ -46,7 +46,7 @@ def step (r : TriggeredAbility.TriggerResolution) : Game :=
 
 #guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil (.fixed 2)
 
-#guard (SharedTrigger.timing (.surveil 1)).resolution == .surveil (.fixed 1)
+#guard (SharedTrigger.toEffect (.surveil 1)).resolution == .surveil (.fixed 1)
 
 #guard TriggeredAbility.resolutionPhrase
     { resolution := .surveil (.fixed 2) } == "surveil 2"

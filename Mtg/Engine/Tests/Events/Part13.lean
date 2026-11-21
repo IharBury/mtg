@@ -80,7 +80,7 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
   let gAnchorBase := addPermanent g4 ({ name := "P47i1 Anchor", types := #[.artifact] }) p0 p0
   let tgtTrigAnchor := (gAnchorBase.permanentsOf p0).back!
   let tgtTrigAb : TriggeredAbility :=
-    .triggered .youGainLife
+    TriggeredAbility.mkTrigger (.gainLife .you)
       { targeting := .of .player, resolution := .gainLife (.fixed 1), phrase := "Target player gains 1 life." }
   let gWithUnannTrig :=
     gAnchorBase.putTriggeredAbilityOnStack p0 tgtTrigAnchor tgtTrigAb "triggers" (eventCause := some testCause)
@@ -138,7 +138,7 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
   let ltbBearDef : CardDef := {
     bear with
     name := "P47i1 LtbBear"
-    triggeredAbilities := #[.triggered .leaving (Effect.gainLife 1)]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .thisLeaves (Effect.gainLife 1)]
   }
   let gCleanupDrain0 := addPermanent g4 ltbBearDef p0 p0
   let ltbPerm := (gCleanupDrain0.permanentsOf p0)[0]!
@@ -1007,7 +1007,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   let toughDiesDef : CardDef := {
     creature "P47i4 WallSap" ManaCost.empty #["Plant"] 1 4 with
     triggeredAbilities := #[
-      .triggered .dies { resolution := .addMana #[.colored .green] .equalSourceToughness, phrase := "Add {G} equal to toughness." }
+      TriggeredAbility.mkTrigger .thisDies { resolution := .addMana #[.colored .green] .equalSourceToughness, phrase := "Add {G} equal to toughness." }
     ]
   }
   let gTough0 := addPermanent g3 toughDiesDef p0 p0

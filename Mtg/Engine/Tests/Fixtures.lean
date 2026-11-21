@@ -68,6 +68,7 @@ import Mtg.Engine.Tests.EvalExpr
 import Mtg.Engine.Tests.CostKeywords
 import Mtg.Engine.Tests.ActivatedMana
 import Mtg.Engine.Tests.StaticAbilities
+import Mtg.Engine.Tests.TriggeredAbilities
 
 /-!
 # Engine Test Fixtures

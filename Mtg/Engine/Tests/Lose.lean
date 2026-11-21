@@ -21,7 +21,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.onPermanent .creature .loseIndestructible))
+  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .loseIndestructible))
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -275,7 +275,7 @@ source remains lose what the selector names. -/
   .lose .indestructible .enchanted
 #guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .loseIndestructible ==
   .lose .indestructible (.target .whileSource)
-#guard (SharedTrigger.timing (.enter .tapLoseAbilitiesWhileSource)).resolution ==
+#guard (SharedTrigger.toEffect (.enter .tapLoseAbilitiesWhileSource)).resolution ==
   targetLose
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapLoseAbilitiesWhileSource) ==
   targetLose
@@ -309,7 +309,7 @@ source remains lose what the selector names. -/
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature loses indestructible until end of turn."
 #guard TriggeredAbility.toNotation
-    (.triggered .enter (Effect.ofTrigger (.onSource .loseIndestructible))) ==
+    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .loseIndestructible))) ==
   "When this permanent enters, this creature loses indestructible until end of turn."
 #guard TriggeredAbility.toNotation (.onEnterAttachThen .loseIndestructible) ==
   "When this Equipment enters, attach it to target creature you control. That creature loses indestructible until end of turn."

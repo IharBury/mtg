@@ -344,9 +344,10 @@ def resolveTop (g : Game) : Game :=
           g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
         else
           let sagaChapter :=
-            match t.shared with
-            | .chapter n _ => some n
-            | _ => none
+            t.chapterNumbers?.bind (·[0]?) |>.orElse fun _ =>
+              match t.shared with
+              | .chapter n _ => some n
+              | _ => none
           let snap := g.snapshot obj
           let srcName := (g.name obj).replace "'s ability" ""
           let g := g.change (.pushContinuationFrame {

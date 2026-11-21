@@ -1037,7 +1037,7 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
   | .player .eachOpponent, .fixed n, _ =>
     let n := n.toNat
     let src := sourceId.bind g.damageSourceById?
-    if ab.opts.untargeted || !ab.requiresTarget then
+    if !ab.requiresTarget then
       g.dealDamageToEachOpponent controller n (source := src)
     else
       g.withLegalTriggerPlayer controller ab sourceId targets (fun g pid =>
@@ -5683,15 +5683,16 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
             (copyCtx := g.copyTokenContextOf sourceId targets)
         | steps =>
           let stepAbs := steps.toArray.map fun r =>
-            match ab with
-            | .triggered w _ opts =>
-              TriggeredAbility.triggered w { ab.effect with resolution := r } opts
+            { ab with effect := { ab.effect with resolution := r } }
           g.runTriggeredSequenceSteps controller stepAbs sourceId targets dividedDamage
             lastKnownPower lastKnownToughness sourceName
   | .shuffleSource =>
     g.shuffleSourceIntoLibrary sourceId
   | .draw (.fixed n) .you => g.draw controller n.toNat
   | .scry (.fixed n) => g.beginScry controller n.toNat
+  | .pump power toughness who =>
+    g.applyTriggerPump controller ab sourceId targets lastKnownPower lastKnownToughness
+      power toughness who
   | .onPermanent a =>
     g.applyOnPermanent controller ab.targetSpec targets a sourceId
       (some "The target is no longer legal")

@@ -75,7 +75,7 @@ use `queueReflexive`. -/
   .sequence [
     .mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
     .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]
-#guard (SharedTrigger.timing (.chapter 0 .grantAttackPumpPerPlainsThisTurn)).resolution ==
+#guard (SharedTrigger.toEffect (.chapter 0 .grantAttackPumpPerPlainsThisTurn)).resolution ==
   .queueReflexive (.pump .perPlains .perPlains .target)
 
 #guard TriggeredAbility.TriggerReflexiveKind.grantIndestructible != .dealTwoDamage &&
@@ -97,10 +97,10 @@ use `queueReflexive`. -/
     { resolution := .queueReflexive (.pump .perPlains .perPlains .target) } ==
   "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
 #guard TriggeredAbility.resolutionPhrase
-    (TriggeredAbility.onFourthPlanDividedDamage).timing ==
+    (TriggeredAbility.onFourthPlanDividedDamage).effect ==
   "sacrifice it. When you do, it deals 7 damage divided as you choose among one or two targets"
 #guard TriggeredAbility.resolutionPhrase
-    (TriggeredAbility.onCastSecondSpellMillThenCopy).timing ==
+    (TriggeredAbility.onCastSecondSpellMillThenCopy).effect ==
   "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
 
 /- Sacrificing the Plan queues the reflexive and consumes the note. -/

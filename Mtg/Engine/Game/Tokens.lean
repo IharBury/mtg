@@ -674,7 +674,7 @@ def insect11greenToken : CardDef :=
 "Whenever this token attacks, you may mill a card." -/
 def moloidToken : CardDef :=
   { creatureToken "Moloid" #[.minion] 1 1 (some .green) with
-    triggeredAbilities := #[.triggered .attack {
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .thisAttacks {
       resolution := .may (.mill (.fixed 1) .you .none) (.sequence []) .ifYouDo
       phrase := "you may mill a card"
     }] }
@@ -983,7 +983,7 @@ def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
       resolution := .may (.mill (.fixed n) .you .none) (.sequence []) .ifYouDo
       phrase := if n == 1 then "you may mill a card" else s!"you may mill {n} cards"
     }
-    { c with triggeredAbilities := c.triggeredAbilities.push (.triggered .attack eff) }
+    { c with triggeredAbilities := c.triggeredAbilities.push (TriggeredAbility.mkTrigger .thisAttacks eff) }
   | .onAttackScry n =>
     { c with triggeredAbilities := c.triggeredAbilities.push (.onAttackScry n) }
   | .onAttackDestroyTargetLand =>
@@ -993,7 +993,7 @@ def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
       resolution := .onPermanent .destroy
       phrase := s!"Whenever {trigName} attacks, destroy target land."
     }
-    { c with triggeredAbilities := c.triggeredAbilities.push (.triggered .attack eff) }
+    { c with triggeredAbilities := c.triggeredAbilities.push (TriggeredAbility.mkTrigger .thisAttacks eff) }
   | .onGainLifePutPlusOne _ =>
     { c with triggeredAbilities := c.triggeredAbilities.push .onGainLifePlusOne }
   | .onLandYouControlEntersPutPlusOne _ =>

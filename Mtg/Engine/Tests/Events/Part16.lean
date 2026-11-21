@@ -578,17 +578,18 @@ private def replayOk50i3 (gs : Array Game) : Bool :=
   --        `Event.matchesTrigger`, and `Core.matchTriggers`:
   let plusOneWatcherDef : CardDef := {
     creature "P50i3 PlusOneWatcher" ManaCost.empty #["Hero"] 1 4 with
-    triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneOnHeroesCreateWall {}]
+    triggeredAbilities := #[SharedTrigger.resource .plusOneOnHeroesCreateWall |>.toTriggeredAbility]
   }
   let goblinWatcherDef : CardDef := {
     name := "P50i3 GoblinWatcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.fra .youPutCountersOnGoblinOrcArmy "" (.draw 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutCountersOnGoblinOrcArmy "" (.draw 1)
+      (grouping := .oncePerBatch)]
   }
   let tapWatcherDef : CardDef := {
     name := "P50i3 TapWatcher"
     types := #[.enchantment]
-    triggeredAbilities := #[.triggered .fromEffect Effect.watchFirstTapUntap {}]
+    triggeredAbilities := #[SharedTrigger.watch .firstTapUntap |>.toTriggeredAbility]
   }
   let goblinHeroDef : CardDef :=
     creature "P50i3 GoblinHero" ManaCost.empty #["Goblin", "Hero"] 2 2
@@ -612,10 +613,10 @@ private def replayOk50i3 (gs : Array Game) : Bool :=
   let phasedSuppressedOk :=
     phasedSnap.phasedOut &&
     phasedCtrEv.countersPutInEvent.isEmpty &&
-    !phasedCtrEv.matchesTrigger p0 none .youPutPlusOne &&
-    !phasedCtrEv.matchesTrigger p0 none .youPutCountersOnGoblinOrcArmy &&
-    !phasedTapEv.matchesTrigger p0 (some ghObj0.id) .sourceBecomesTapped &&
-    !phasedTapEv.matchesTrigger p0 (some ghObj0.id) .creatureYouControlTapped &&
+    !phasedCtrEv.matchesTriggerPattern p0 none .youPutPlusOneOnCreature &&
+    !phasedCtrEv.matchesTriggerPattern p0 none .youPutCountersOnGoblinOrcArmy &&
+    !phasedTapEv.matchesTriggerPattern p0 (some ghObj0.id) .thisBecomesTapped &&
+    !phasedTapEv.matchesTriggerPattern p0 (some ghObj0.id) .creaturesYouControlBecomeTapped &&
     gPoBatch.waitingTriggers.isEmpty
 
   -- 3b(ii). Intra-batch LKI fallback in `Core.matchTriggers` for `.youPutPlusOne` and
@@ -668,16 +669,16 @@ private def replayOk50i3 (gs : Array Game) : Bool :=
       phasedSuppressedOk &&
     mustHold50i3 "3b_intraBatchLeaveBattlefieldLki"
       ((gMidLeaveBatch.findObject? midLeaveTargetId).isNone &&
-       (gMidLeaveBatch.waitingTriggers.filter (·.event == .youPutPlusOne)).size == 1 &&
-       (gMidLeaveBatch.waitingTriggers.filter (·.event == .youPutCountersOnGoblinOrcArmy)).size == 1 &&
+       (gMidLeaveBatch.waitingTriggers.filter (·.pattern == .youPutPlusOneOnOtherHeroYouControl)).size == 1 &&
+       (gMidLeaveBatch.waitingTriggers.filter (·.pattern == .youPutCountersOnGoblinOrcArmy)).size == 1 &&
        (gMidAnimLeaveBatch.findObject? relicId).isNone &&
-       (gMidAnimLeaveBatch.waitingTriggers.filter (·.event == .youPutPlusOne)).size == 1 &&
-       (gMidAnimLeaveBatch.waitingTriggers.filter (·.event == .youPutCountersOnGoblinOrcArmy)).size == 1) &&
+       (gMidAnimLeaveBatch.waitingTriggers.filter (·.pattern == .youPutPlusOneOnOtherHeroYouControl)).size == 1 &&
+       (gMidAnimLeaveBatch.waitingTriggers.filter (·.pattern == .youPutCountersOnGoblinOrcArmy)).size == 1) &&
     mustHold50i3 "3b_intraBatchAnimatedPhaseOutLki"
       ((gMidPhaseBatch.object! relicId).status.phasedOut &&
        !gMidPhaseBatch.isCreature (gMidPhaseBatch.object! relicId) &&
-       (gMidPhaseBatch.waitingTriggers.filter (·.event == .youPutPlusOne)).size == 1 &&
-       (gMidPhaseBatch.waitingTriggers.filter (·.event == .youPutCountersOnGoblinOrcArmy)).size == 1)
+       (gMidPhaseBatch.waitingTriggers.filter (·.pattern == .youPutPlusOneOnOtherHeroYouControl)).size == 1 &&
+       (gMidPhaseBatch.waitingTriggers.filter (·.pattern == .youPutCountersOnGoblinOrcArmy)).size == 1)
 
   mustHold50i3 "3a.phasingPostPauseAndAllowDirectSingle" item3aOk &&
   mustHold50i3 "3b.phasedOutGuardsAndIntraBatchCounterLki" item3bOk &&

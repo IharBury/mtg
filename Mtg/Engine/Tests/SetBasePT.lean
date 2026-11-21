@@ -23,7 +23,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  .triggered .enter (Effect.ofTrigger (.onPermanent .creature (.setBasePT 1 1)))
+  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature (.setBasePT 1 1)))
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -316,7 +316,7 @@ player, and doubling set nothing. -/
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature has base power and toughness 1/1 until end of turn."
 #guard TriggeredAbility.toNotation
-    (.triggered .enter (Effect.ofTrigger (.onSource (.setBasePT 5 5)))) ==
+    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource (.setBasePT 5 5)))) ==
   "When this permanent enters, this creature has base power and toughness 5/5 until end of turn."
 #guard TriggeredAbility.toNotation (.onEnterEnchanted (.setBasePT 0 2)) ==
   "When this Aura enters, enchanted creature has base power and toughness 0/2 until end of turn."

@@ -634,7 +634,7 @@ def dwalinHones : Game :=
 def dwalinTriggerWording : Bool :=
   (ruling 63).comment.contains "when" &&
     (TriggeredAbility.eventPrefix
-      dwalinWeaponmaster.triggeredAbilities[0]!.timing).startsWith "Whenever"
+      dwalinWeaponmaster.triggeredAbilities[0]!).startsWith "Whenever"
 
 def oinActivatedWording : Bool :=
   (ruling 69).comment.contains "colon" &&
@@ -2113,7 +2113,7 @@ def celebornScryOnceOk : Bool :=
 
 /-- Ruling 109: Colossal Whale's attack trigger is an attacking-step trigger. -/
 def whaleAttackTimingOk : Bool :=
-  TriggeredAbility.firesOn .onAttackMayExileDefenderUntilLeaves .attacking &&
+  TriggeredAbility.firesOn .onAttackMayExileDefenderUntilLeaves .thisAttacks &&
     (ruling 109).comment.contains "declare attackers step"
 
 #guard whaleAttackTimingOk
@@ -2742,7 +2742,7 @@ def wereWormTenAttacks : Game :=
 
 def wereWormTenAttacksOk : Bool :=
   !wereWormTenAttacks.waitingTriggers.any (fun wt =>
-    wt.event == .youAttackWithTotalPower) &&
+    wt.pattern == .youAttackWithTotalPower 12) &&
     (ruling 112).comment.contains "at the time you attacked"
 
 #guard wereWormTenAttacksOk
@@ -2756,7 +2756,7 @@ def wereWormTwelveAttacksOk : Bool :=
   wereWormTwelveAttacks.power
       (namedPermanent wereWormTwelveAttacks "Desert Were-Worm") == 12 &&
     wereWormTwelveAttacks.waitingTriggers.any (fun wt =>
-      wt.event == .youAttackWithTotalPower) &&
+      wt.pattern == .youAttackWithTotalPower 12) &&
     (ruling 112).comment.contains "will not contribute"
 
 #guard wereWormTwelveAttacksOk
@@ -2818,9 +2818,9 @@ def gleamingFirstDraw : Game :=
 
 def gleamingSecondDrawOk : Bool :=
   gleamingFirstDraw.waitingTriggers.all (fun wt =>
-    wt.event != .opponentDrawsSecondCard) &&
+    !(wt.pattern == .drawCard .opponent && wt.ability.limit == .nthEachTurn 2)) &&
     gleamingSecondDraw.waitingTriggers.any (fun wt =>
-      wt.event == .opponentDrawsSecondCard) &&
+      wt.pattern == .drawCard .opponent && wt.ability.limit == .nthEachTurn 2) &&
     (ruling 129).comment.contains "second card" &&
     (ruling 129).comment.contains "only once each turn"
 
@@ -2928,7 +2928,7 @@ def bowmastersPutInHand : Game :=
 
 def bowmastersPutInHandOk : Bool :=
   !bowmastersPutInHand.waitingTriggers.any (fun wt =>
-    wt.event == .opponentDrawsExceptFirstDrawStep) &&
+    wt.pattern == .drawCard .opponent (exceptFirstDrawStep := true)) &&
     (ruling 155).comment.contains "without specifically using the word"
 
 #guard bowmastersPutInHandOk
@@ -2938,7 +2938,7 @@ def bowmastersAfterDraw : Game :=
 
 def bowmastersAfterDrawOk : Bool :=
   bowmastersAfterDraw.waitingTriggers.any (fun wt =>
-    wt.event == .opponentDrawsExceptFirstDrawStep) &&
+    wt.pattern == .drawCard .opponent (exceptFirstDrawStep := true)) &&
     (ruling 155).comment.contains "not a card drawn"
 
 #guard bowmastersAfterDrawOk
@@ -2951,7 +2951,7 @@ def bowmastersFirstDrawStep : Game :=
 
 def bowmastersFirstDrawStepOk : Bool :=
   !bowmastersFirstDrawStep.waitingTriggers.any (fun wt =>
-    wt.event == .opponentDrawsExceptFirstDrawStep)
+    wt.pattern == .drawCard .opponent (exceptFirstDrawStep := true))
 
 #guard bowmastersFirstDrawStepOk
 
@@ -2970,7 +2970,7 @@ def spiderDoubleTarget : Game :=
 
 def spiderDoubleTargetOk : Bool :=
   (spiderDoubleTarget.waitingTriggers.filter (fun wt =>
-    wt.event == .becomesTarget)).size == 1 &&
+    wt.pattern == .thisBecomesTargetByOpponent)).size == 1 &&
     (ruling 156).comment.contains "targets Old Fat Spider more than once"
 
 #guard spiderDoubleTargetOk
@@ -3452,7 +3452,7 @@ def ferociousBeginCombatRecheckOk : Bool :=
     (let g := addPermanent afterDraw nastyLittleRabbit ⟨0⟩ ⟨0⟩
      let g := addPermanent g rumblingBaloth ⟨0⟩ ⟨0⟩
      let (g, _) := g.move (namedPermanent g "Rumbling Baloth").id (.graveyard ⟨0⟩) none
-     !g.interveningStillHolds ⟨0⟩ .onYourBeginCombatFerociousPlusOne) &&
+     !g.triggerInterveningHolds ⟨0⟩ .onYourBeginCombatFerociousPlusOne none) &&
     (ruling 236).comment.contains "won't resolve"
 
 #guard ferociousBeginCombatRecheckOk
@@ -3462,7 +3462,7 @@ def ferociousAttackNoRecheckOk : Bool :=
   let g := addPermanent g rumblingBaloth ⟨0⟩ ⟨0⟩
   g.triggerConditionHolds ⟨0⟩ (.onAttackFerociousSourceGets 2 2) &&
     (let (g, _) := g.move (namedPermanent g "Rumbling Baloth").id (.graveyard ⟨0⟩) none
-     g.interveningStillHolds ⟨0⟩ (.onAttackFerociousSourceGets 2 2)) &&
+     g.triggerInterveningHolds ⟨0⟩ (.onAttackFerociousSourceGets 2 2) none) &&
     (ruling 237).comment.contains "will not check again" &&
     (ruling 260).comment.contains "will not check again" &&
     (ruling 268).comment.contains "will not check again" &&
@@ -3496,7 +3496,7 @@ def spiderResolvesBeforeSpellOk : Bool :=
   let g := g.changeObject ab.id (.abilityEffect (some (Effect.dealDamageToTargetCreature 1)))
   let g := g.putStackEntry ⟨1⟩ ab.id
   let g := g.setStackEntryTargets ab.id #[Target.permanent sid]
-  g.waitingTriggers.any (fun wt => wt.event == .becomesTarget) &&
+  g.waitingTriggers.any (fun wt => wt.pattern == .thisBecomesTargetByOpponent) &&
     (ruling 240).comment.contains "resolves before the spell or ability"
 
 #guard spiderResolvesBeforeSpellOk
@@ -3640,14 +3640,14 @@ def testSagaFourChapters : CardDef :=
   -- line that is not one of the modeled Oracle effects.
   enchantment "Test Saga" (ManaCost.ofGeneric 1) ""
     (subtypes := #["Saga"])
-    (saga := some {
-      sacrificeAfter := "III"
-      chapters := #[
-        { roman := "I", effect := "Draw a card." },
-        { roman := "II", effect := "Draw a card." },
-        { roman := "III",
-          effect := "Return Tom Bombadil from your graveyard to the battlefield." }]
-    })
+    (triggeredAbilities := #[
+      TriggeredAbility.sagaChapter 1 (Effect.chapterDraw 1),
+      TriggeredAbility.sagaChapter 2 (Effect.chapterDraw 1),
+      TriggeredAbility.sagaChapter 3 {
+        resolution := .draw 0
+        phrase := "Return Tom Bombadil from your graveyard to the battlefield."
+      }
+    ])
 
 def tomWithFourLore : Game :=
   let g := addPermanent afterDraw tomBombadil ⟨0⟩ ⟨0⟩
@@ -3682,10 +3682,8 @@ def tomSeesFinishedChapterOk : Bool :=
   g.waitingTriggers.any (fun wt =>
     wt.source.name == "Tom Bombadil") &&
     (ruling 74).comment.contains "removed from the stack" &&
-    testSagaFourChapters.saga.isSome &&
-    match testSagaFourChapters.saga with
-    | some s => s.chapters.back?.map (·.roman) == some "III"
-    | none => false
+    testSagaFourChapters.hasSagaChapters &&
+    testSagaFourChapters.finalChapterNumber == 3
 
 #guard tomSeesFinishedChapterOk
 
@@ -4011,7 +4009,7 @@ def spellsBeforeLothoCountOk : Bool :=
 -/
 
 def triggerWordingOk : Bool :=
-  (TriggerEvent.clause (.youCastColor .white)).contains "you cast a white spell" &&
+  (TriggerPattern.renderClause {} .perOccurrence .unlimited (.youCastColor .white)).contains "you cast a white spell" &&
     (ruling 314).comment.contains "when,\" \"whenever,\" or \"at"
 
 #guard triggerWordingOk
