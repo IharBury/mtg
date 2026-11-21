@@ -84,11 +84,16 @@ partial def minusOnesPerOpponentLoop (g : Game) (controller : PlayerId)
           match g.findObject? id with
           | some o =>
             let shielded :=
-              match g.controllerOf o with
-              | some c =>
-                (g.permanentsOf c).any (fun src =>
-                  (g.baseCard src).creaturesCantGetMinusCounters && g.retainsPrintedAbilities src)
-              | none => false
+              g.battlefield.any fun src =>
+                let env : EvalEnv := { controller := (g.controllerOf src).getD src.owner, sourceId := some src.id }
+                (g.staticAbilities src).any fun ab =>
+                  ab.anyRule fun cond? r =>
+                    match r with
+                    | .game (.cantHaveCountersPutOn sc kind?) =>
+                      (kind?.isNone || kind? == some .minusOneMinusOne) &&
+                        cond?.all (EvalExpr.evalCondition g env) &&
+                        EvalExpr.evalObjectPred g env (.live o) sc.pred
+                    | _ => false
             if x > 0 && !shielded then
               g.putCountersDeferredLog o.id .minusOneMinusOne x (some controller) .countArePutOn
             else g

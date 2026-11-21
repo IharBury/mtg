@@ -82,6 +82,66 @@ def actualCastManaValue (g : Game) (card : GameObject) (face : CardDef) : Nat :=
   | none => 0
   | some mc => (mc.substituteX (card.chosenX.getD 0)).manaValue
 
+/-- Count spells matching `spellPred` already cast by `caster` this turn (CR 601.2i). -/
+def countMatchingSpellsCastThisTurn (g : Game) (caster : PlayerId) (env : EvalEnv)
+    (spellPred : ObjectPred) : Nat :=
+  if spellPred == .hasType .creature then g.loggedCreatureSpells caster
+  else
+    g.events.foldl (fun acc e =>
+      if e.turn != g.turnNumber then acc
+      else
+        match e.change with
+        | .rules (.cast (.spellCast snap p _)) =>
+          if p == caster && EvalExpr.evalObjectPred g env (.lki snap) spellPred then acc + 1
+          else acc
+        | _ => acc) 0
+
+/-- Evaluate a `StaticAbility.costModifier`'s generic reduction or increase for `(card, face)`
+(CR 601.2f / 118.7). -/
+private def evalSpellCostMods (g : Game) (card : GameObject) (face : CardDef) (caster : PlayerId)
+    (wantIncrease : Bool) : Nat :=
+  let mv := g.actualCastManaValue card face
+  let spellView := EvalExpr.spellFaceView g card face caster mv
+  let selfEnv : EvalEnv :=
+    { controller := caster, sourceId := some card.id, chosenX := card.chosenX.getD 0 }
+  let tcs := g.evalLayer3 card
+  let faceStatics :=
+    if tcs.isEmpty then face.staticAbilities
+    else HasTextChange.applyTextChanges tcs face.staticAbilities
+  let extractAmt (env : EvalEnv) : CostModification → Option Nat
+    | .reduceGeneric amt => if !wantIncrease && !amt.mentionsTarget then some (EvalExpr.evalValue g env amt).toNat else none
+    | .increaseGeneric amt => if wantIncrease && !amt.mentionsTarget then some (EvalExpr.evalValue g env amt).toNat else none
+    | .alternativeFree => none
+  let selfTotal :=
+    faceStatics.foldl (fun acc ab =>
+      match ab with
+      | .costModifier cond? .thisSpell mod =>
+        if !cond?.any Condition.mentionsTarget && cond?.all (EvalExpr.evalCondition g selfEnv) then
+          acc + (extractAmt selfEnv mod).getD 0
+        else acc
+      | _ => acc) 0
+  let peerTotal :=
+    g.objects.foldl (fun acc o =>
+      if !o.isOnBattlefield && o.zone != .command then acc
+      else
+        let srcCtrl := (g.controllerOf o).getD o.owner
+        if !g.stillInGame srcCtrl then acc
+        else
+          let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+          (g.staticAbilities o).foldl (fun acc ab =>
+            match ab with
+            | .costModifier cond? (.spells casterFilter spellPred nth? notFrom? activeZones) mod =>
+              if activeZones.contains o.zone.kind &&
+                  EvalExpr.matchesPlayerFilter g env casterFilter caster &&
+                  notFrom?.all (fun zk => card.zone.kind != zk) &&
+                  nth?.all (fun n => g.countMatchingSpellsCastThisTurn caster env spellPred + 1 == n) &&
+                  cond?.all (EvalExpr.evalCondition g env) &&
+                  EvalExpr.evalObjectPred g env spellView spellPred then
+                acc + (extractAmt env mod).getD 0
+              else acc
+            | _ => acc) acc) 0
+  selfTotal + peerTotal
+
 /-- Apply cost reductions to `start` (CR 118.7 / 601.2f). Increases such as
 kicker must already be included in `start`. -/
 def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
@@ -91,147 +151,22 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     match card.chosenX with
     | none => start
     | some x => start.substituteX x
-  let afterDied :=
-    if face.costReductionIfCreatureDied > 0 && g.loggedCreatureDeaths > 0 then
-      start.reduceGeneric face.costReductionIfCreatureDied
-    else start
-  let afterControl :=
-    match face.costReductionIfYouControl with
-    | some (n, subtype) =>
-      let controls :=
-        if false then
-          (g.permanentsOf caster).any (fun o => g.isCreature o && g.isLegendary o)
-        else g.countSubtype caster subtype > 0
-      if controls then afterDied.reduceGeneric n
-      else afterDied
-    | none => afterDied
-  let afterControl :=
-    if face.costReductionIfYouControlLegendary > 0 &&
-        (g.permanentsOf caster).any (fun o => g.isCreature o && g.isLegendary o) then
-      afterControl.reduceGeneric face.costReductionIfYouControlLegendary
-    else afterControl
-  let afterGy :=
-    match face.costReductionIfGyCreaturesAtLeast with
-    | some (min, n) =>
-      let gy :=
-        (g.player caster).graveyard.filter (fun id =>
-          match g.findObject? id with
-          | some c => g.isCreature c
-          | none => false) |>.size
-      if gy >= min then afterControl.reduceGeneric n else afterControl
-    | none => afterControl
-  let afterFly :=
-    if face.costReductionEqualFlyingPower then
-      let n :=
-        (g.permanentsOf caster).foldl (fun acc o =>
-          if g.isCreature o && g.hasFlying o then acc + (g.power o).toNat else acc) 0
-      afterGy.reduceGeneric n
-    else afterGy
-  -- Ghalta: X is the greatest power or toughness among creatures you
-  -- control, determined after the spell is on the stack (rulings 824 / 874).
-  let afterGreatest :=
-    let creatures := (g.permanentsOf caster).filter (g.isCreature ·)
-    let greatest (f : GameObject → Int) : Nat :=
-      creatures.foldl (fun acc o => Nat.max acc (f o).toNat) 0
-    let n :=
-      (if face.costReductionGreatestPower then greatest g.power else 0) +
-        (if face.costReductionGreatestToughness then greatest g.toughness else 0)
-    afterFly.reduceGeneric n
-  let afterAff :=
+  let statRed := evalSpellCostMods g card face caster false
+  let affRed :=
     match face.affinityForSubtype with
-    | some t =>
-      let n := g.countSubtype caster t
-      afterGreatest.reduceGeneric n
-    | none => afterGreatest
-  let afterOpp :=
-    if face.costReductionEqualOppArtifacts then
-      let n :=
-        g.players.foldl (fun acc pl =>
-          if pl.id == caster || !g.stillInGame pl.id || g.areTeammates caster pl.id then acc
-          else
-            let arts :=
-              (g.permanentsOf pl.id).filter (fun o => g.isArtifact o) |>.size
-            max acc arts) 0
-      afterAff.reduceGeneric n
-    else afterAff
-  let afterSpell :=
-    if face.isInstant || face.isSorcery then
-      let n :=
-        (g.permanentsOf caster).foldl (fun acc o =>
-          let reduces :=
-            (g.staticAbilities o).any (fun ab =>
-              match ab with
-              | .instantSorceryCostReductionEqualEquippedPower => true
-              | _ => false)
-          if !reduces then acc
-          else
-            match o.attachedTo.bind g.findObject? with
-            | some host =>
-              if host.isOnBattlefield then acc + (g.power host).toNat else acc
-            | none => acc) 0
-      afterOpp.reduceGeneric n
-    else afterOpp
-  let afterFirst :=
-    if face.isCreature && g.loggedCreatureSpells caster == 0 then
-      let n :=
-        (g.permanentsOf caster).foldl (fun acc o =>
-          if g.retainsPrintedAbilities o then acc + (g.baseCard o).firstCreatureCostsLess else acc) 0
-      afterSpell.reduceGeneric n
-    else afterSpell
-  let notFromHand :=
-    match card.zone with
-    | .hand _ => 0
-    | _ =>
-      (g.permanentsOf caster).foldl (fun acc o =>
-        if g.retainsPrintedAbilities o then acc + (g.baseCard o).costReductionNotFromHand else acc) 0
-  let afterNotHand := afterFirst.reduceGeneric notFromHand
-  let witchLess :=
-    if face.isInstant || face.isSorcery then
-      if g.actualCastManaValue card face < 4 then 0
-      else
-        (g.permanentsOf caster).foldl (fun acc o =>
-          let reduces :=
-            (g.staticAbilities o).any (fun ab =>
-              match ab with
-              | .instantSorceryCostLessEqualPower => true
-              | _ => false)
-          if reduces then acc + (g.power o).toNat else acc) 0
-    else 0
-  let afterWitch := afterNotHand.reduceGeneric witchLess
-  let subtypeLess :=
-    (g.permanentsOf caster).foldl (fun acc o =>
-      (g.staticAbilities o).foldl (fun acc ab =>
-        match ab with
-        | .subtypeSpellsCostLess subtype n =>
-          if face.hasSubtype subtype then acc + n else acc
-        | .typeSpellsCostLess ty n =>
-          if face.hasType ty then acc + n else acc
-        | .supertypeSpellsCostLess s n =>
-          if face.hasSupertype s then acc + n else acc
-        | .fra .noncreatureSpellsCostLess => if face.isCreature then acc else acc + 1
-        | _ => acc) acc) 0
-  let selfLess :=
-    if face.staticAbilities.any (· == .fra .costsLessIfCastNoncreature) &&
-        g.loggedNoncreatureSpells caster > 0 then 2
-    else 0
+    | some t => g.countSubtype caster t
+    | none => 0
   let thisTurnLess :=
     ((g.typeSpellCostLessThisTurn caster).foldl (fun acc (ty, n) =>
       if face.hasType ty then acc + n else acc) 0) +
     ((g.supertypeSpellCostLessThisTurn caster).foldl (fun acc (s, n) =>
       if face.hasSupertype s then acc + n else acc) 0)
-  let sphinxLess :=
-    if face.hasSubtype .sphinx then
-      let zone (o : GameObject) :=
-        o.id != card.id && g.controlledBy o caster &&
-          (o.zone == .command || (o.isOnBattlefield && g.retainsPrintedAbilities o))
-      (g.objects.filter zone).foldl (fun acc o => acc + (g.baseCard o).eminenceSphinxReduction) 0
-    else 0
-  (afterWitch.reduceGeneric (subtypeLess + selfLess + thisTurnLess)).reduceGeneric sphinxLess
+  start.reduceGeneric (statRed + affRed + thisTurnLess)
 
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
 (CR 118.7 / 118.9a,c / 601.2f). `withoutManaCost` and a reduction that removes
 every mana symbol become `{0}`, not an unpayable empty cost (CR 107.4d / 202.1b).
-Target-based reductions lock in after CR 601.2c. Cost increases (kicker)
+Target-based reductions lock in after CR 601.2c. Cost increases (kicker, Thalia)
 are applied before these reductions. -/
 def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     (increase : ManaCost := ManaCost.empty)
@@ -251,13 +186,8 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     match effPerm with
     | some perm => perm.anyMana
     | none => useImplicitPermissions && card.zone == .exile && g.mayCastExiledBySource caster card
-  -- Thalia, the Survivor: each one an opponent controls adds {1}.
-  let tax :=
-    if face.isCreature then 0
-    else
-      (g.livingOpponents caster).foldl (fun acc pl =>
-        acc + ((g.permanentsOf pl.id).filter (fun o => (g.staticAbilities o).any
-          (· == .fra .opponentsNoncreatureSpellsCostMore))).size) 0
+  -- Cost-increasing static abilities (Thalia, etc., CR 601.2f).
+  let tax := evalSpellCostMods g card face caster true
   let increase := if tax == 0 then increase else increase.addCost (ManaCost.ofGeneric tax)
   let inGy := match card.zone with | .graveyard _ => true | _ => false
   let hasFb := face.flashback.isSome || g.flashbackUntilEot card
@@ -298,32 +228,44 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
         if hasAnyMana then
           afterEquip.asAnyMana
         else afterEquip
-  -- Omnipresence: from hand, a spell with mana value at most the number of
-  -- creatures you control is cast without paying its mana cost. Spells with
-  -- `{X}` are cast normally, so X is never forced to 0. Additional costs are
-  -- still paid (rulings 794 / 795; CR 118.9a,c).
+  let mv := g.actualCastManaValue card face
+  let spellView := EvalExpr.spellFaceView g card face caster mv
+  -- Omnipresence / free-cast-from-hand rule-modifying static abilities (CR 118.9a,c).
   let omnipresent :=
     !usedAltCost && !freeRG &&
       card.zone == .hand caster &&
       printedMc?.any (fun mc => !mc.containsX) &&
-      g.actualCastManaValue card face ≤ (g.creaturesControlledBy caster).size &&
-      (g.permanentsOf caster).any (fun o =>
-        (g.staticAbilities o).any (fun
-          | .castFromHandFreeUpToCreatures => true
-          | _ => false))
+      g.battlefield.any (fun o =>
+        let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+        (g.staticAbilities o).any fun ab =>
+          ab.anyRule fun cond? r =>
+            match r with
+            | .play (.mayPlayFrom who .hand pred _ _ _ true) =>
+              EvalExpr.matchesPlayerFilter g env who caster &&
+                cond?.all (EvalExpr.evalCondition g env) &&
+                EvalExpr.evalObjectPred g env spellView pred
+            | _ => false)
   let cost :=
     if omnipresent then
       let c := g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
       if hasAnyMana then c.asAnyMana else c
     else cost
-  -- Flawless Maneuver: if you control a commander, you may cast this spell
-  -- without paying its mana cost unless another alternative cost was chosen (CR 118.9a).
-  let freeCommander :=
+  -- Self free alternative cost (e.g. Flawless Maneuver: if you control a commander, CR 118.9a).
+  let selfEnv : EvalEnv :=
+    { controller := caster, sourceId := some card.id, chosenX := card.chosenX.getD 0 }
+  let tcs := g.evalLayer3 card
+  let faceStatics :=
+    if tcs.isEmpty then face.staticAbilities
+    else HasTextChange.applyTextChanges tcs face.staticAbilities
+  let freeSelf :=
     !usedAltCost && !freeRG && !omnipresent &&
-      face.freeCastIfControlCommander &&
-      (g.permanentsOf caster).any (·.isCommander)
+      faceStatics.any fun ab =>
+        match ab with
+        | .costModifier cond? .thisSpell .alternativeFree =>
+          !cond?.any Condition.mentionsTarget && cond?.all (EvalExpr.evalCondition g selfEnv)
+        | _ => false
   let cost :=
-    if freeCommander then
+    if freeSelf then
       let c := g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
       if hasAnyMana then c.asAnyMana else c
     else cost

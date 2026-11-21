@@ -331,7 +331,7 @@ private def replayOk47i2 (gs : Array Game) : Bool :=
   let nullSummonerDef : CardDef := {
     bear with
     name := "P47i2 NullSummoner"
-    castExiledWithSevenInGraveyard := true
+    staticAbilities := #[.castExiledWithSevenInGraveyard]
   }
   let prepHostDef : CardDef := {
     bear with

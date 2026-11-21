@@ -1049,11 +1049,14 @@ namespace CardDef
   "This creature can't be blocked except by three or more creatures."
 #guard StaticAbility.toNotation (.cantBeBlockedExceptBy 2) ==
   "This creature can't be blocked except by two or more creatures."
-#guard (StaticAbility.cantBeBlockedExcept? (.cantBeBlockedExceptBy 3)) == some 3
+#guard (match StaticAbility.cantBeBlockedExceptBy 3 with
+  | .ruleModifying none (.combat (.minBlockers .self 3)) => true
+  | _ => false)
 #guard StaticAbility.toNotation (.cantBeBlockedIfPowerAtMost 1) ==
   "This creature can't be blocked if its power is 1 or less."
-#guard (StaticAbility.cantBeBlockedIfPowerAtMost? (.cantBeBlockedIfPowerAtMost 1)) ==
-  some 1
+#guard (match StaticAbility.cantBeBlockedIfPowerAtMost 1 with
+  | .ruleModifying (some (.forAll .this (.stat .power .le (.const 1)))) (.combat (.cantBeBlocked .self)) => true
+  | _ => false)
 #guard TriggeredAbility.toNotation .onAttackPumpByGreatestPower ==
   "Whenever this creature attacks, it gets +X/+0 until end of turn, where X is the greatest power among creatures you control."
 #guard TriggeredAbility.toNotation .onAttackSetOtherBasePT ==
@@ -1236,27 +1239,26 @@ namespace CardDef
 #guard TriggeredAbility.targetSpec .onEnterTargetOpponentSacrificesCreature ==
   .opponent
 #guard TriggeredAbility.targetSpec (.onEnterDraw 1) == .none
-#guard StaticAbility.hostStatBonus (.enchantedCreatureGets 3 3) == (3, 3)
-#guard StaticAbility.hostStatBonus (.equippedCreatureGets 2 0) == (2, 0)
-#guard StaticAbility.shape (.enchantedCreatureGets 3 3) ==
-  .hostGets "Enchanted creature" 3 3
-#guard StaticAbility.shape (.equippedCreatureGets 2 0) ==
-  .hostGets "Equipped creature" 2 0
-#guard (StaticAbility.StaticShape.spec (.hostGets "Enchanted creature" 3 3)).hostBonus ==
-  (3, 3)
-#guard (StaticAbility.StaticShape.spec (.lordPump #[.elf] 1 1)).lordPump ==
-  some (#[.elf], 1, 1)
-#guard (StaticAbility.StaticShape.spec (.lordTrample #[.orc])).trampleSubtypes ==
-  some #[.orc]
-#guard (StaticAbility.StaticShape.spec .landsYouControlPT).landsYouControlPT
-#guard (StaticAbility.StaticShape.spec (.cantBlockUnless #[.goblin])).cantBlockUnless ==
-  some #[.goblin]
-#guard (StaticAbility.lordPump? (.otherCreaturesGet #[.elf] 1 1)) == some (#[.elf], 1, 1)
-#guard (StaticAbility.trampleSubtypes? (.otherCreaturesHaveTrample #[.orc])) == some #[.orc]
-#guard StaticAbility.isLandsYouControlPT .powerToughnessEqualLandsYouControl
-#guard !StaticAbility.isLandsYouControlPT (.enchantedCreatureGets 1 1)
-#guard (StaticAbility.cantBlockUnless? (.cantBlockUnlessYouControl #[.goblin])) ==
-  some #[.goblin]
+#guard (match StaticAbility.enchantedCreatureGets 3 3 with
+  | .continuous none sc (.modifyPT (.const 3) (.const 3)) => StaticAbility.isScopeEnchantedCreature sc
+  | _ => false)
+#guard (match StaticAbility.equippedCreatureGets 2 0 with
+  | .continuous none sc (.modifyPT (.const 2) (.const 0)) => StaticAbility.isScopeEquippedCreature sc
+  | _ => false)
+#guard (match StaticAbility.otherCreaturesGet #[.elf] 1 1 with
+  | .continuous none sc (.modifyPT (.const 1) (.const 1)) =>
+    sc == StaticAbility.scopeOtherCreaturesOfSubtypesYouControl #[.elf]
+  | _ => false)
+#guard (match StaticAbility.otherCreaturesHaveTrample #[.orc] with
+  | .continuous none sc (.grantKeywords ks) =>
+    ks == #[Keyword.trample] && sc == StaticAbility.scopeOtherCreaturesOfSubtypesYouControl #[.orc]
+  | _ => false)
+#guard StaticAbility.isPTDefiningCDA .powerToughnessEqualLandsYouControl
+#guard !StaticAbility.isPTDefiningCDA (.enchantedCreatureGets 1 1)
+#guard StaticAbility.isCantBeBlocked .cantBeBlocked
+#guard !StaticAbility.isCantBeBlocked (.cantBlockUnlessYouControl #[.goblin])
+#guard (StaticAbility.cantBlockUnlessYouControl #[.goblin]).anyRule fun cond? r =>
+  cond?.isNone && r == .combat (.cantBlock .self (some (StaticAbility.condControlAnySubtype #[.goblin])))
 #guard TriggeredAbility.requiresTarget (.onEnterDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget (.onEnterOrAttackDealDividedDamage 3 3)
 #guard TriggeredAbility.requiresTarget .onEnterOrAttackReturnElfGainLife
@@ -1410,7 +1412,7 @@ namespace CardDef
   "Your maximum hand size is 10."
 #guard StaticAbility.toNotation (.powerEqualSubtypeYouControl .merfolk) ==
   "This creature's power is equal to the number of Merfolk you control."
-#guard StaticAbility.toNotation .improvise == "Improvise"
+#guard KeywordAbility.toOracleStr { capitalize := true } (.simple .improvise) == "Improvise"
 #guard StaticAbility.toNotation (.typeSpellsCostLess .artifact 1) ==
   "Artifact spells you cast cost {1} less to cast."
 #guard StaticAbility.toNotation (.supertypeSpellsCostLess .legendary 1) ==
@@ -1426,9 +1428,9 @@ namespace CardDef
   "Enchanted creature gets +4/+4 and has trample and ward {1}."
 #guard StaticAbility.toNotation (.getsAndAllTypesIfGyCreatureCards 2 2 2) ==
   "As long as there are 2 or more creature cards in your graveyard, this creature gets +2/+2 and is all creature types."
-#guard StaticAbility.toNotation (.sneak (ManaCost.ofGenericAndColors 1 [.black, .black])) ==
+#guard KeywordAbility.toOracleStr { capitalize := true } (.sneak (CostSpec.ofMana (ManaCost.ofGenericAndColors 1 [.black, .black]))) ==
   "Sneak {1}{B}{B}"
-#guard StaticAbility.toNotation .boast ==
+#guard ActivatedAbility.zemoBoastAbility.printed ==
   "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
 #guard TriggeredAbility.resolution (.onAttackScry 1) == .scry (.fixed 1)
 #guard TriggeredAbility.resolution (.onAttackFerociousGainLife 2) == .gainLife (.fixed 2)
@@ -2233,6 +2235,86 @@ end CardDef
   ActivatedAbility.manaAbility (.fixedOne (.colored .black)) (timing := .sorcery)
 ].all fun ab =>
   Parser.parseManaAbilityLine (ab.toOracle {}) == some ab
+
+-- Phase 6: Functorial `HasTextChange` on stratified `StaticAbility` (CR 612.2 / 613.1c).
+#guard
+  let tcs := #[TextChange.replaceCreatureType .elf .goblin]
+  HasTextChange.applyTextChanges tcs (StaticAbility.costReductionIfYouControl 2 .elf) ==
+    StaticAbility.costReductionIfYouControl 2 .goblin
+#guard
+  let tcs := #[TextChange.replaceCreatureType .elf .goblin]
+  HasTextChange.applyTextChanges tcs (StaticAbility.flashIfYouControlSubtype .elf) ==
+    StaticAbility.flashIfYouControlSubtype .goblin
+#guard
+  let tcs := #[TextChange.replaceCreatureType .elf .goblin]
+  HasTextChange.applyTextChanges tcs (StaticAbility.extraLandIfOtherSubtype .elf) ==
+    StaticAbility.extraLandIfOtherSubtype .goblin
+#guard
+  let tcs := #[TextChange.replaceCreatureType .dragon .angel]
+  HasTextChange.applyTextChanges tcs (StaticAbility.entersTappedUnlessBehold .dragon) ==
+    StaticAbility.entersTappedUnlessBehold .angel
+#guard
+  let tcs := #[TextChange.replaceCreatureType .sphinx .wizard]
+  HasTextChange.applyTextChanges tcs (StaticAbility.eminenceSubtypeSpellsCostLess .sphinx 1) ==
+    StaticAbility.eminenceSubtypeSpellsCostLess .wizard 1
+#guard
+  let tcs := #[TextChange.replaceCreatureType .army .zombie]
+  HasTextChange.applyTextChanges tcs StaticAbility.armiesYouControlHaveTrample ==
+    StaticAbility.continuous none (StaticAbility.scopeCreaturesOfSubtypeYouControl .zombie) (.grantKeywords #[Keyword.trample])
+
+-- Phase 6: Stage-4 `Parser.parseStaticAbilityLine` & `Parser.parseNovelStaticAbilityLine`.
+#guard Parser.parseStaticAbilityLine "Enchant creature you control" ==
+  some #[StaticAbility.enchantCreatureYouControl]
+#guard Parser.parseStaticAbilityLine "Enchant artifact or non-Aura enchantment" ==
+  some #[StaticAbility.enchantArtifactOrNonAuraEnchantment]
+#guard (Parser.parseStaticAbilityLine "Enchant nonland permanent").isSome
+#guard Parser.parseStaticAbilityLine "This spell can't be countered." ==
+  some #[StaticAbility.spellCantBeCountered]
+#guard Parser.parseStaticAbilityLine "Your opponents can't gain life." ==
+  some #[StaticAbility.opponentsCantGainLife]
+#guard Parser.parseStaticAbilityLine "You can't lose the game and your opponents can't win the game." ==
+  some #[StaticAbility.cantLoseAndOpponentsCantWin]
+#guard Parser.parseStaticAbilityLine "This land enters tapped unless you pay 2 life." ==
+  some #[StaticAbility.entersTappedUnlessPayLife 2]
+#guard Parser.parseStaticAbilityLine "As this creature enters, choose a creature type." ==
+  some #[StaticAbility.asEntersChooseCreatureType]
+#guard Parser.parseStaticAbilityLine
+    "Eminence — As long as this creature is in the command zone or on the battlefield, Sphinx spells you cast cost {1} less to cast." ==
+  some #[StaticAbility.eminenceSubtypeSpellsCostLess .sphinx 1]
+#guard Parser.parseNovelStaticAbilityLine "During your turn, creatures you control get +3/+1." ==
+  some #[.continuous (some .isYourTurn) StaticAbility.scopeCreaturesYouControl (.modifyPT (.const 3) (.const 1))]
+#guard Parser.parseNovelStaticAbilityLine "Other Elves you control have vigilance and lifelink." ==
+  some #[.continuous none (StaticAbility.scopeOtherSubtypeYouControl .elf) (.grantKeywords #[Keyword.vigilance, Keyword.lifelink])]
+
+-- Phase 6: Canonical `ToOracle` round-trip through `Parser.parseStaticAbilityLine`.
+#guard [
+  StaticAbility.spellCantBeCountered,
+  StaticAbility.canBeCommander,
+  StaticAbility.opponentsCantGainLife,
+  StaticAbility.cantLoseAndOpponentsCantWin,
+  StaticAbility.creaturesCantGetMinusCounters,
+  StaticAbility.unspentManaBecomesColorless,
+  StaticAbility.tokenDoubling,
+  StaticAbility.foodAlsoCreatesTreasure,
+  StaticAbility.drawTwoExceptFirstDrawStep,
+  StaticAbility.entersTapped,
+  StaticAbility.entersPrepared,
+  StaticAbility.entersWithShield 1,
+  StaticAbility.entersWithIndestructibleCounter,
+  StaticAbility.entersTappedUnlessPayLife 2,
+  StaticAbility.entersTappedUnlessBehold .dragon,
+  StaticAbility.entersTappedUnlessNBasics 2,
+  StaticAbility.entersTappedUnlessAnySubtype #[.plains, .swamp],
+  StaticAbility.asEntersChooseCreatureType,
+  StaticAbility.asEntersChooseCardType,
+  StaticAbility.asEntersChooseOddEven,
+  StaticAbility.protectionFromChosenCardType,
+  StaticAbility.corruptedToxicLifelink,
+  StaticAbility.eminenceSubtypeSpellsCostLess .sphinx 1,
+  StaticAbility.enchantCreatureYouControl,
+  StaticAbility.enchantArtifactOrNonAuraEnchantment
+].all fun ab =>
+  Parser.parseStaticAbilityLine (ab.toOracle {}) == some #[ab]
 
 end Mtg.Engine
 

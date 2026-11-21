@@ -110,7 +110,10 @@ def finishSagaFinalChapter (g : Game) (controller : PlayerId)
         (sourceId := sourceId) (ability := ability)
         (cause := some (.gameRule .abilityFinishedResolving)))
   match (g.permanentsOf controller).find? (fun o =>
-    (g.baseCard o).hexproofIndestructibleIfLore.isSome && g.retainsPrintedAbilities o) with
+    (g.staticAbilities o).any fun
+      | .continuous (some (.cmp .ge (.aggregate .sum (.counterCount (some .lore)) _) _)) sc _ =>
+        StaticAbility.isScopeSelf sc
+      | _ => false) with
   | none => g
   | some tom => g.logMsg s!"{g.name tom}'s last ability triggers"
 

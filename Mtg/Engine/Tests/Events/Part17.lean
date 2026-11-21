@@ -28,7 +28,7 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
   let oddEvenDef : CardDef := {
     name := "P51i1 OddStatue"
     types := #[.artifact]
-    asEntersChooseOddEven := true
+    staticAbilities := #[.asEntersChooseOddEven]
   }
   let zeroInstDef : CardDef := {
     name := "P51i1 ZeroInst"
@@ -310,7 +310,7 @@ private def replayOk51i2 (gs : Array Game) : Bool :=
   --        `mayCastExiledBySource` across simultaneous `.control` & `.playFromExile` EOT expiry:
   let nullSummonerDef : CardDef := {
     creature "P51i2 NullSummoner" ManaCost.empty #["Wizard"] 2 3 with
-    castExiledWithSevenInGraveyard := true
+    staticAbilities := #[.castExiledWithSevenInGraveyard]
   }
   let exBoltDef : CardDef := {
     name := "P51i2 ExBolt"
@@ -916,7 +916,7 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
   let taxPermDef : CardDef := {
     name := "P51i4 TaxStatue"
     types := #[.artifact]
-    staticAbilities := #[.fra .opponentsNoncreatureSpellsCostMore]
+    staticAbilities := #[.opponentsNoncreatureSpellsCostMore]
   }
   let lookedSorcDef : CardDef := {
     name := "P51i4 LookedSorc"

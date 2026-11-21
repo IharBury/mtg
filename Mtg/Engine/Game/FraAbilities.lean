@@ -573,7 +573,7 @@ def applyFraAbility (g : Game) (controller : PlayerId) (effect : Effect) (r : Re
   | .emblemCreaturesGetTwoTwo =>
     let emblem : CardDef := {
       name := s!"{srcName} Emblem", types := #[]
-      staticAbilities := #[.fra .emblemCreaturesGetTwoTwo] }
+      staticAbilities := #[.creaturesYouControlGet 2 2] }
     (g.createCommandObject controller emblem).logMsg
       s!"{(g.player controller).name} gets an emblem with \"Creatures you control get +2/+2.\""
   | .untapTargets =>

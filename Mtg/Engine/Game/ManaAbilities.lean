@@ -13,25 +13,47 @@ namespace Game
 
 /-- Extra lifetime power-up activations granted by Wonder Man (MSH). -/
 def grantsExtraPowerUp (g : Game) (o : GameObject) : Bool :=
-  (g.staticAbilities o).any (fun ab =>
-    match ab with
-    | .extraPowerUpActivation => true
-    | _ => false)
+  let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+  (g.staticAbilities o).any fun ab =>
+    ab.anyRule fun cond? r =>
+      match r with
+      | .player (.extraAbilityActivation .powerUp _ n) =>
+        n > 0 && cond?.all (EvalExpr.evalCondition g env)
+      | _ => false
 
 /-- Extra lifetime power-up activations granted by Wonder Man (MSH). -/
 def powerUpActivationLimit (g : Game) (p : PlayerId) : Nat :=
-  1 + ((g.permanentsOf p).filter (g.grantsExtraPowerUp ·)).size
+  let extra :=
+    (g.permanentsOf p).foldl (fun acc o =>
+      let env : EvalEnv := { controller := p, sourceId := some o.id }
+      (g.staticAbilities o).foldl (fun acc ab =>
+        match ab with
+        | .ruleModifying cond? rule =>
+          if !cond?.all (EvalExpr.evalCondition g env) then acc
+          else
+            rule.flatten.foldl (fun acc rm =>
+              match rm with
+              | .player (.extraAbilityActivation .powerUp _ n) => acc + n
+              | _ => acc) acc
+        | _ => acc) acc) 0
+  1 + extra
 
 /-- Generic mana subtracted from other creatures' power-up costs by Hulk
 (MSH ruling 127: only generic mana). -/
 def hulkPowerUpGenericReduction (g : Game) (p : PlayerId) (sourceId : ObjectId) : Nat :=
-  (g.permanentsOf p).foldl (fun acc o =>
-    if o.id == sourceId then acc
-    else
-      (g.staticAbilities o).foldl (fun acc ab =>
-        match ab with
-        | .otherPowerUpCostsLess n => acc + n
-        | _ => acc) acc) 0
+  let srcObj? := g.findObject? sourceId
+  g.battlefield.foldl (fun acc o =>
+    let srcCtrl := (g.controllerOf o).getD o.owner
+    let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+    (g.staticAbilities o).foldl (fun acc ab =>
+      match ab with
+      | .costModifier cond? (.abilities act (some .powerUp) sc none none) (.reduceGeneric amt) =>
+        if EvalExpr.matchesPlayerFilter g env act p &&
+            cond?.all (EvalExpr.evalCondition g env) &&
+            srcObj?.any (fun s => EvalExpr.evalObjectPred g env (.live s) sc.pred) then
+          acc + (EvalExpr.evalValue g env amt).toNat
+        else acc
+      | _ => acc) acc) 0
 
 def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     (source : Option GameObject := none) (chosenX : Option Nat := none)
@@ -41,9 +63,35 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     | some x => cost.substituteX x
     | none => cost
   let firstEquipFree :=
-    ab.isEquip && g.hasEnduringStory p && g.loggedEquipActivations p == 0 &&
-      (g.permanentsOf p).any (fun o =>
-        (g.staticAbilities o).any (· == .firstEquipFreeIfEnduringStory))
+    ab.isEquip && g.loggedEquipActivations p == 0 &&
+      g.battlefield.any (fun o =>
+        let srcCtrl := (g.controllerOf o).getD o.owner
+        let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+        (g.staticAbilities o).any fun sab =>
+          match sab with
+          | .costModifier cond? (.abilities act (some (.equip _)) sc none (some 1)) .alternativeFree =>
+            EvalExpr.matchesPlayerFilter g env act p &&
+              cond?.all (EvalExpr.evalCondition g env) &&
+              source.all (fun s => EvalExpr.evalObjectPred g env (.live s) sc.pred)
+          | _ => false)
+  let generalAbRed : Nat :=
+    if ab.isPowerUp then 0
+    else
+      g.battlefield.foldl (fun acc o =>
+        let srcCtrl := (g.controllerOf o).getD o.owner
+        let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+        (g.staticAbilities o).foldl (fun acc sab =>
+          match sab with
+          | .costModifier cond? (.abilities act tag? sc none none) (.reduceGeneric amt) =>
+            let tagOk := match tag? with
+              | none => true
+              | some t => ab.tag? == some t || (match t with | .equip _ => ab.isEquip | _ => false)
+            if tagOk && EvalExpr.matchesPlayerFilter g env act p &&
+                cond?.all (EvalExpr.evalCondition g env) &&
+                source.any (fun s => EvalExpr.evalObjectPred g env (.live s) sc.pred) then
+              acc + (EvalExpr.evalValue g env amt).toNat
+            else acc
+          | _ => acc) acc) 0
   let declRed : Nat :=
     if ab.costReductions.isEmpty then 0
     else EvalExpr.evalActivationCostReductions g p (source.map (·.id)) ab.costReductions targets
@@ -58,8 +106,8 @@ def activationManaCost (g : Game) (p : PlayerId) (ab : ActivatedAbility)
           else ab.cost.mana
         (withX afterEnter).reduceGeneric (g.hulkPowerUpGenericReduction p o.id + declRed)
       | none => (withX ab.cost.mana).reduceGeneric declRed
-    else if declRed > 0 then
-      (withX ab.cost.mana).reduceGeneric declRed
+    else if declRed + generalAbRed > 0 then
+      (withX ab.cost.mana).reduceGeneric (declRed + generalAbRed)
     else withX ab.cost.mana
   ManaCost.afterReduction ab.cost.mana cost
 
@@ -571,10 +619,15 @@ def addRestrictedMana (pool : ManaPool) (mana : Array ManaType)
 /-- `p` may activate abilities of creatures they control as though those
 creatures had haste (Shang-Chi, Master of Kung Fu; MSH 280). -/
 def activatesAsThoughHaste (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o =>
-    (g.staticAbilities o).any (fun
-      | .activateCreaturesAsThoughHaste => true
-      | _ => false))
+  g.battlefield.any fun o =>
+    let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+    (g.staticAbilities o).any fun ab =>
+      ab.anyRule fun cond? r =>
+        match r with
+        | .player (.activateAsThoughHaste who _) =>
+          cond?.all (EvalExpr.evalCondition g env) &&
+            EvalExpr.matchesPlayerFilter g env who p
+        | _ => false
 
 /-- Whether `p` can currently tap `o` for a plain `{T}` mana ability (CR 302.6 / 605.3). -/
 @[export mtg_game_can_tap_for_plain_mana]

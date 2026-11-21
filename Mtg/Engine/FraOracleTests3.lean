@@ -61,14 +61,11 @@ def fraCardNamed? (name : String) : Option CardDef :=
   let base := (name.splitOn " // ").headD name
   realityFractureCards.find? (·.name == base)
 
-/-- True when `c` keeps a rules line as printed text. -/
+/-- True when `c` keeps an unparsed prepare-face rules line. -/
 def keepsPrintedText (c : CardDef) : Bool :=
-  c.staticAbilities.any (fun
-    | .printed _ => true
-    | _ => false) ||
-    (match c.prepareFace with
-     | some face => !face.extraLines.isEmpty || face.spellEffect.isNone
-     | none => false)
+  match c.prepareFace with
+  | some face => !face.extraLines.isEmpty || face.spellEffect.isNone
+  | none => false
 
 /- Every card an FRA-only ruling names is in the FRA catalog, and every
 shared ruling names at least one FRA catalog card. -/

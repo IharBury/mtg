@@ -417,6 +417,8 @@ def toOracle (ctx : PrintCtx) (ab : ActivatedAbility) : String :=
 def toNotation (ab : ActivatedAbility) : String :=
   if ab.mana?.isSome then
     ab.toOracle {}
+  else if ab.isBoast && !ab.printed.isEmpty then
+    ab.printed
   else
     let timing :=
       (if ab.timing == .sorcery then " (activate only as a sorcery)" else "") ++
@@ -438,7 +440,8 @@ def toNotation (ab : ActivatedAbility) : String :=
         s!"Choose one — {String.intercalate "; " modes}"
       else
         ab.effect.toNotation
-    s!"{ab.cost.toNotation}: {body}{timing}"
+    let prefixTag := if ab.isBoast then "Boast — " else ""
+    s!"{prefixTag}{ab.cost.toNotation}: {body}{timing}"
 
 instance : ToOracle ActivatedAbility where
   toOracle := toOracle

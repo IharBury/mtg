@@ -124,23 +124,48 @@ def hostCantBecomeUntapped (g : Game) (o : GameObject) : Bool :=
   let frozen :=
     g.battlefield.any (fun aura =>
       aura.attachedTo == some o.id &&
-        (g.staticAbilities aura).any (fun
-          | .enchantedLosesAbilitiesCantUntap => true
-          | _ => false))
+        let env : EvalEnv := { controller := (g.controllerOf aura).getD aura.owner, sourceId := some aura.id }
+        (g.staticAbilities aura).any fun ab =>
+          ab.anyRule fun cond? r =>
+            match r with
+            | .game (.cantBecomeUntapped .self) => cond?.all (EvalExpr.evalCondition g env)
+            | _ => false)
+  let selfLocked :=
+    let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+    (g.staticAbilities o).any fun ab =>
+      ab.anyRule fun cond? r =>
+        match r with
+        | .game (.cantBecomeUntapped .self) => cond?.all (EvalExpr.evalCondition g env)
+        | _ => false
+  let peerLocked :=
+    g.battlefield.any fun src =>
+      let env : EvalEnv := { controller := (g.controllerOf src).getD src.owner, sourceId := some src.id }
+      (g.staticAbilities src).any fun ab =>
+        ab.anyRule fun cond? r =>
+          match r with
+          | .game (.cantBecomeUntapped (.matching sc)) =>
+            cond?.all (EvalExpr.evalCondition g env) &&
+              EvalExpr.evalObjectPred g env (.live o) sc.pred
+          | _ => false
   let granted :=
     (g.cantUntapGrantedBy o).any (fun sid =>
       match g.findObject? sid with
       | some src => src.isOnBattlefield
       | none => false)
-  frozen || granted
+  frozen || selfLocked || peerLocked || granted
 
 /-- Enchanted River's Grasp: doesn't untap during its controller's untap step. -/
 def hostSkipsUntapStep (g : Game) (o : GameObject) : Bool :=
   g.battlefield.any (fun aura =>
     aura.attachedTo == some o.id &&
-      (g.staticAbilities aura).any (fun
-        | .enchantedLosesAbilitiesDoesntUntap => true
-        | _ => false))
+      let env : EvalEnv := { controller := (g.controllerOf aura).getD aura.owner, sourceId := some aura.id }
+      (g.staticAbilities aura).any fun ab =>
+        ab.anyRule fun cond? r =>
+          match r with
+          | .game (.doesntUntapDuringUntapStep .self unlessCond?) =>
+            cond?.all (EvalExpr.evalCondition g env) &&
+              !(unlessCond?.any (EvalExpr.evalCondition g env))
+          | _ => false)
 
 /-- Run one CR 616.1 replacement step for untapping `o` (CR 122.1d: "If a
 permanent with a stun counter on it would become untapped, instead remove a
@@ -248,11 +273,25 @@ def untapPermanentsLoop (g : Game) (ids : Array ObjectId)
 /-- Timestamp-ordered maximum hand size (CR 613.7a; MSH 184 / 376). `none` is "no maximum". -/
 def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=
   let entries : Array ((Nat × Nat) × Option Nat) :=
-    (g.permanentsOf p).foldl (fun acc o =>
+    g.battlefield.foldl (fun acc o =>
+      let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
       (g.evalLayer6 o).staticsWithTs.foldl (fun acc (ab, ts) =>
+        let pushRules (acc : Array ((Nat × Nat) × Option Nat)) (cond? : Option Condition)
+            (r : RuleModification) : Array ((Nat × Nat) × Option Nat) :=
+          if !cond?.all (EvalExpr.evalCondition g env) then acc
+          else
+            r.flatten.foldl (fun acc rm =>
+              match rm with
+              | .player (.maxHandSize who limit?) =>
+                if EvalExpr.matchesPlayerFilter g env who p then acc.push (ts, limit?) else acc
+              | _ => acc) acc
         match ab with
-        | .noMaximumHandSize => acc.push (ts, none)
-        | .maximumHandSize n => acc.push (ts, some n)
+        | .ruleModifying cond? r => pushRules acc cond? r
+        | .continuous cond? _ mod =>
+          mod.flatten.foldl (fun acc m =>
+            match m with
+            | .applyRule r => pushRules acc cond? r
+            | _ => acc) acc
         | _ => acc) acc) #[]
   let sorted :=
     entries.qsort (fun a b =>
@@ -263,12 +302,24 @@ def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=
 def improviseReduce (cost : ManaCost) (n : Nat) : ManaCost :=
   cost.reduceGeneric n
 
-/-- Whether `face` has improvise, including from a granting permanent. -/
+/-- Whether `face` has improvise, including from a Layer-6 continuous grant
+(CR 702.126 / 613.1f). -/
 def spellHasImprovise (g : Game) (face : CardDef) (caster : PlayerId) : Bool :=
   face.hasImprovise ||
-    (!face.isCreature &&
-      (g.permanentsOf caster).any (fun o =>
-        (g.baseCard o).grantsImproviseToNoncreature && g.retainsPrintedAbilities o))
+    let dummy : GameObject := { id := ⟨0⟩, owner := caster, controller := some caster, zone := .stack, printed := face }
+    let spellView := EvalExpr.spellFaceView g dummy face caster face.manaValue
+    g.battlefield.any (fun o =>
+      let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+      (g.staticAbilities o).any fun ab =>
+        match ab with
+        | .continuous cond? sc mod =>
+          sc.zones.zones.contains .stack &&
+            cond?.all (EvalExpr.evalCondition g env) &&
+            EvalExpr.evalObjectPred g env spellView sc.pred &&
+            mod.flatten.any fun
+              | .grantKeywords ks => KeywordAbility.hasSimple ks .improvise
+              | _ => false
+        | _ => false)
 
 /-- Tap untapped artifacts you control for improvise. Each pays {1}. -/
 def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :

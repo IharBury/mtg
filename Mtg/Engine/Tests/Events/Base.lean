@@ -224,7 +224,7 @@ loses all abilities, regains abilities, or leaves the battlefield. -/
   let lordDef : CardDef :=
     { bear with
       name := "Bear Lord"
-      staticAbilities := #[.fra .creaturesYouControlHaveTrample] }
+      staticAbilities := #[.creaturesYouControlHave #[Keyword.trample]] }
   let g0 := quiet afterDraw
   let g1 := addPermanent g0 lordDef me me
   let lord := (g1.battlefield.filter (·.name == "Bear Lord"))[0]!
@@ -235,7 +235,7 @@ loses all abilities, regains abilities, or leaves the battlefield. -/
   let g2 := g1.createEffect (.losesAbilitiesUntilEot lord.id)
   let suppressedWithoutExpiry :=
     (GameEvent.expiredEffects (g2.events.extract n1 g2.events.size)).isEmpty &&
-    !(g2.staticAbilities (g2.object! lord.id)).contains (.fra .creaturesYouControlHaveTrample) &&
+    !(g2.staticAbilities (g2.object! lord.id)).contains (.creaturesYouControlHave #[Keyword.trample]) &&
     !g2.hasTrample (g2.object! lord.id)
   let n2 := g2.events.size
   let g3 := g2.clearEOT
@@ -413,7 +413,7 @@ second "loses all abilities" keeps the printed static abilities off. -/
   let lordDef : CardDef :=
     { bear with
       name := "Bear Lord"
-      staticAbilities := #[.fra .creaturesYouControlHaveTrample] }
+      staticAbilities := #[.creaturesYouControlHave #[Keyword.trample]] }
   let g0 := quiet (addPermanent afterDraw lordDef me me)
   let lord := (g0.battlefield.filter (·.name == "Bear Lord"))[0]!
   let g1 := (g0.createEffect (.cantBlockUntilEot lord.id)).createEffect (.cantBlockUntilEot lord.id)
@@ -424,7 +424,7 @@ second "loses all abilities" keeps the printed static abilities off. -/
   g2.cantBlockUntilEot (g2.object! lord.id) &&
     !g3.cantBlockUntilEot (g3.object! lord.id) &&
     g4.losesAbilitiesUntilEot (g4.object! lord.id) &&
-    !(g4.staticAbilities (g4.object! lord.id)).contains (.fra .creaturesYouControlHaveTrample) &&
+    !(g4.staticAbilities (g4.object! lord.id)).contains (.creaturesYouControlHave #[Keyword.trample]) &&
     !g4.hasTrample (g4.object! lord.id)
 
 /- Effects that used to be written straight onto the status are created as
@@ -840,10 +840,12 @@ both `PermanentEvent.counters` and `ZoneEvent.moved.entersWith` (CR 122.6 /
   let tapPlusCreature : CardDef :=
     { bear with
       name := "Tapped Plus Bear"
-      entersTapped := true
-      entersWithPlusOneCounters := 2
-      entersWithShield := 1
-      entersWithIndestructibleCounter := true }
+      staticAbilities := #[
+        .entersTapped,
+        .entersWithPlusOneCounters 2,
+        .entersWithShield 1,
+        .entersWithIndestructibleCounter
+      ] }
   let testPlaneswalker : CardDef :=
     { name := "Test Planeswalker"
       types := #[.planeswalker]
@@ -1215,7 +1217,7 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
       subtypes := #["Human", "Villain"]
       power := some 3
       toughness := some 3
-      staticAbilities := #[.boast] }
+      activatedAbilities := #[ActivatedAbility.zemoBoastAbility] }
   let (gZemo0, gyCardId) :=
     let g := addPermanent g0 blackCard me me
     let c := (g.battlefield.filter (·.name == "Dark Ritual15"))[0]!
@@ -1351,7 +1353,7 @@ printed static abilities (CR 702.26b / 702.26f). -/
       types := #[.creature]
       power := some 2
       toughness := some 2
-      staticAbilities := #[.boast] }
+      activatedAbilities := #[ActivatedAbility.zemoBoastAbility] }
   let gPhase0 := quiet (addPermanent (addPermanent afterDraw staticCreature me me) hero me me)
   let sb := (gPhase0.battlefield.filter (·.name == "Static Bear"))[0]!
   let h := (gPhase0.battlefield.filter (·.name == hero.name))[0]!
@@ -2606,7 +2608,7 @@ triggers once, while sequential batches fire them once per batch. -/
       triggeredAbilities := #[.triggered .fromEffect Effect.resourcePlusOneOnHeroesCreateWall {}] }
   let entersHero : CardDef :=
     { (creature "Enters Hero" ManaCost.empty #["Hero", "Goblin"] 1 1) with
-      entersWithPlusOneCounters := 2 }
+      staticAbilities := #[.entersWithPlusOneCounters 2] }
   let docSamsonDef : CardDef :=
     { (creature "Doc Samson Test" ManaCost.empty #["Hero"] 3 3) with
       staticAbilities := #[.extraCounterOnPermanents] }

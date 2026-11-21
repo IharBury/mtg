@@ -142,7 +142,7 @@ def arnimActivationLockOk : Bool :=
 /-- Ruling 650: Ten Rings draws through replacement effects. -/
 def tenRingsReplacementOk : Bool :=
   let g := addPermanent afterDraw theTenRings ⟨0⟩ ⟨0⟩
-  let g := addPermanent g { aerialDoombot with drawTwoExceptFirstDrawStep := true } ⟨0⟩ ⟨0⟩
+  let g := addPermanent g { aerialDoombot with staticAbilities := #[.drawTwoExceptFirstDrawStep] } ⟨0⟩ ⟨0⟩
   let rings := namedPermanent g "The Ten Rings"
   let hand0 := (g.player ⟨0⟩).hand.size
   let g := g.record (GameEvent.stepBegan g.turnNumber .end ⟨0⟩)

@@ -716,7 +716,7 @@ def winterSoldierFinalityOk : Bool :=
 #guard winterSoldierFinalityOk
 
 def daredevilLookOk : Bool :=
-  daredevilManWithoutFear.mayLookAtTopAnytime &&
+  daredevilManWithoutFear.staticAbilities.contains .mayLookAtTopAnytime &&
     (mshRuling 466).comment.contains "look at the top card"
 
 #guard daredevilLookOk
@@ -1466,9 +1466,9 @@ def lookAtTopRestrictionOk : Bool :=
   let g := addPermanent g kaZarOfTheSavageLand ⟨0⟩ ⟨0⟩
   g.canLookAtLibraryTop ⟨0⟩ &&
     !(g.change (.castingFromTop true)).canLookAtLibraryTop ⟨0⟩ &&
-    daredevilManWithoutFear.mayLookAtTopAnytime &&
-    ironLadDivergingDestiny.mayLookAtTopAnytime &&
-    kaZarOfTheSavageLand.mayLookAtTopAnytime &&
+    daredevilManWithoutFear.staticAbilities.contains .mayLookAtTopAnytime &&
+    ironLadDivergingDestiny.staticAbilities.contains .mayLookAtTopAnytime &&
+    kaZarOfTheSavageLand.staticAbilities.contains .mayLookAtTopAnytime &&
     (mshRuling 386).comment.contains "can't look at the n" &&
     (mshRuling 466).comment.contains "look at the top card" &&
     (mshRuling 592).comment.contains "look at the top card" &&
@@ -4450,7 +4450,7 @@ def unexpectedPartyChoosesTypeOk : Bool :=
     g.power (namedPermanent g "Gray Ogre") == 2
   let (g, partyObj) := g.allocObject anUnexpectedParty ⟨0⟩ (.outside ⟨0⟩) none
   let (g, _) := g.putOntoBattlefield partyObj.id ⟨0⟩ (summoningSick := false)
-  anUnexpectedParty.asEntersChooseCreatureType && bare &&
+  anUnexpectedParty.staticAbilities.contains .asEntersChooseCreatureType && bare &&
     match g.pending with
     | .chooseReplacement ⟨0⟩ choices =>
       choices.any (fun c => c.object == some ⟨partyObj.id.raw + 1⟩ && c.kind == .asEntersChooseCreatureTypePrompt) &&
@@ -4466,7 +4466,7 @@ def unexpectedPartyChoosesTypeOk : Bool :=
 def gollumChoosesParityOk : Bool :=
   let (g, gollumObj) := afterDraw.allocObject gollumRiddleMaster ⟨0⟩ (.outside ⟨0⟩) none
   let (g, _) := g.putOntoBattlefield gollumObj.id ⟨0⟩ (summoningSick := false)
-  gollumRiddleMaster.asEntersChooseOddEven &&
+  gollumRiddleMaster.staticAbilities.contains .asEntersChooseOddEven &&
     match g.pending with
     | .chooseReplacement ⟨0⟩ choices =>
       choices.any (fun c => c.object == some ⟨gollumObj.id.raw + 1⟩ && c.kind == .asEntersChooseOdd true) &&

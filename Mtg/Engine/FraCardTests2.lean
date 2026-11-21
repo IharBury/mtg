@@ -79,9 +79,7 @@ def libraryTopName (g : Game) (p : PlayerId) : String :=
     jiangYangguNeverAlone, piaAetherAscetic, wayOfTheParadox, yoshimaruScrappyStray,
     edgarAncientBloodlord, hapatraTheDesertFang, karnGildedGuardian, mabelValleyHero,
     saheeliJewelOfAvishkar].all (fun c =>
-  c.staticAbilities.all (fun
-    | .printed s => !(s.startsWith "When" || s.startsWith "At the")
-    | _ => true))
+  c.modellingError?.isNone && !c.triggeredAbilities.isEmpty)
 
 /-! ## Cast triggers -/
 

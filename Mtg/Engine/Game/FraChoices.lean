@@ -42,9 +42,8 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
     throw "Opponents can't cast spells during that player's turn"
   if g.spellNameForbidden face.name then
     throw s!"Spells named {face.name} can't be cast"
-  if !g.graveyardCastThresholdMet p card.id face then
-    let n := face.castOnlyIfGraveyardAtLeast.getD 0
-    throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+  if let some err := g.castRestrictionError? p card.id face then
+    throw err
   let mv := g.objectManaValue card
   if mv > budget then
     throw s!"{face.name} has mana value {mv}; only {budget} is left"
@@ -1366,9 +1365,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let face := g.baseCard o
     if g.spellNameForbidden face.name then
       throw s!"Spells named {face.name} can't be cast"
-    if !g.graveyardCastThresholdMet p o.id face then
-      let n := face.castOnlyIfGraveyardAtLeast.getD 0
-      throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+    if let some err := g.castRestrictionError? p o.id face then
+      throw err
     let tcs := g.evalLayer3 o
     if isModalSpellFace face &&
         !(effectiveSpellModes face).any (fun e =>
@@ -1410,9 +1408,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let face := g.baseCard o
     if g.spellNameForbidden face.name then
       throw s!"Spells named {face.name} can't be cast"
-    if !g.graveyardCastThresholdMet p o.id face then
-      let n := face.castOnlyIfGraveyardAtLeast.getD 0
-      throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+    if let some err := g.castRestrictionError? p o.id face then
+      throw err
     let tcs := g.evalLayer3 o
     if isModalSpellFace face &&
         !(effectiveSpellModes face).any (fun e =>
@@ -1710,9 +1707,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !canMorph then
       if g.spellNameForbidden face.name then
         throw s!"Spells named {face.name} can't be cast"
-      if !g.graveyardCastThresholdMet p o.id face then
-        let n := face.castOnlyIfGraveyardAtLeast.getD 0
-        throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+      if let some err := g.castRestrictionError? p o.id face then
+        throw err
       let tcs := g.evalLayer3 o
       if isModalSpellFace face &&
           !(effectiveSpellModes face).any (fun e =>
@@ -1757,9 +1753,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let face := g.baseCard o
     if g.spellNameForbidden face.name then
       throw s!"Spells named {face.name} can't be cast"
-    if !g.graveyardCastThresholdMet p o.id face then
-      let n := face.castOnlyIfGraveyardAtLeast.getD 0
-      throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+    if let some err := g.castRestrictionError? p o.id face then
+      throw err
     let tcs := g.evalLayer3 o
     if isModalSpellFace face &&
         !(effectiveSpellModes face).any (fun e =>

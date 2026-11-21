@@ -543,9 +543,9 @@ def normLineAgrees (cardName line : String) : Bool :=
     (parseOracleCard "Walk\n{G}\nSorcery\nDraw seven cards.").toOption.bind
       (·.spellEffect)
 #guard (parseOracleCard "Cloud\n{4}{B}\nSorcery\nSpell Mastery — This spell costs {3} less to cast if a creature died this turn.").toOption.map
-    (·.costReductionIfCreatureDied) == some 3
+    (fun c => c.staticAbilities.contains (.costReductionIfCreatureDied 3)) == some true
 #guard (parseOracleCard "Cloud\n{4}{B}\nSorcery\nThis spell costs {3} less to cast if a creature died this turn.").toOption.map
-    (·.costReductionIfCreatureDied) == some 3
+    (fun c => c.staticAbilities.contains (.costReductionIfCreatureDied 3)) == some true
 #guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nWill of the Council — Menace").toOption.map
     (fun c => KeywordAbility.hasMenace c.keywords) == some true
 #guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nFathomless Descent — Flying (This creature can't be blocked except by creatures with flying or reach.)").toOption.map
@@ -693,5 +693,140 @@ private def roundTripsOracleCard (raw : String) : Bool :=
       c.activatedAbilities[0]!.isExhaust &&
       c.activatedAbilities[0]!.lifetimeLimit? == some 1
   | .error _ => false
+
+-- Phase 6: Stratified 6-constructor `StaticAbility` (CR 113.3d / 303.4a / 601.2f /
+-- 604 / 613 / 614–616), migrated keywords (`Improvise`, `Extort`, `Sneak`, `Boast`),
+-- Stage-4 compositional static parsers, and Layer 3 `HasTextChange` functoriality.
+#guard [
+  -- Characteristic-defining abilities (CR 604.3)
+  "Tarmogoyf\n{1}{G}\nCreature — Lhurgoyf\n*/1+*\nTarmogoyf's power is equal to the number of card types among cards in all graveyards and its toughness is equal to that number plus 1.",
+  "Land Cultivator\n{3}{G}\nCreature — Elemental\n*/*\nLand Cultivator's power and toughness are each equal to the number of lands you control.",
+  -- Continuous abilities (Layers 4–7d) including stack keyword grants
+  "Time Weaver\n{2}{U}\nCreature — Wizard\n2/2\nInstant and sorcery spells you control have split second.",
+  "Gearsmith\n{2}{U}\nCreature — Artificer\n2/3\nNoncreature spells you cast have improvise.",
+  "Ward Guardian\n{3}{W}\nArtifact\nAs Ward Guardian enters, choose a card type.\nYou and creatures you control have protection from the chosen card type.",
+  "Toxic Priest\n{1}{W}\nCreature — Cleric\n2/2\nCorrupted — As long as an opponent has three or more poison counters, creatures you control with toxic have lifelink.",
+  -- Rule-modifying abilities (Player / Play / Combat / Game)
+  "Platinum Guardian\n{7}\nArtifact Creature — Angel\n4/4\nFlying\nYou can't lose the game and your opponents can't win the game.",
+  "Life Blocker\n{2}{R}\nEnchantment\nYour opponents can't gain life.",
+  "Combat Silence\n{2}{U}{B}\nCreature — Ninja\n2/3\nDuring combat, players can't cast spells or activate abilities that aren't mana abilities.",
+  "Elvish Explorer\n{2}{G}\nCreature — Elf Scout\n2/2\nYou may play an additional land on each of your turns as long as you control another Elf.",
+  "Dragon Ambush\n{2}{R}\nCreature — Dragon\n3/2\nYou may cast this spell as though it had flash if you control a Dragon.",
+  "Phantom Striker\n{1}{U}\nCreature — Spirit\n1/1\nThis creature can't be blocked.",
+  -- Cost modifiers (CR 601.2f) including command-zone Eminence and first-creature
+  "Sphinx Sovereign\n{4}{U}{U}\nLegendary Creature — Sphinx\n5/5\nFlying\nEminence — Other Sphinx spells you cast cost {1} less to cast as long as this creature is in the command zone or on the battlefield.",
+  "Wilderness Guide\n{2}{G}\nCreature — Elf\n2/3\nThe first creature spell you cast each turn costs {1} less to cast and can be cast as though it had flash.",
+  "Exile Scholar\n{2}{U}\nCreature — Wizard\n2/2\nSpells you cast from anywhere other than your hand cost {1} less to cast.",
+  "Commander's Grace\n{2}{W}\nInstant\nIf you control a commander, you may cast this spell without paying its mana cost.\nDraw a card.",
+  -- Replacements / ETB / as-enters (CR 614–615)
+  "Shocking Ground\nLand\nThis land enters tapped unless you pay 2 life.\n{T}: Add {R}.",
+  "Dragon Haven\nLand\nAs this land enters, you may behold a Dragon. If you don't, it enters tapped.\n{T}: Add {R}.",
+  "Doubling Shrine\n{3}{W}\nEnchantment\nIf one or more tokens would be created under your control, twice that many of those tokens are created instead.",
+  "Colorless Reservoir\n{2}\nArtifact\nIf you would lose unspent mana, that mana becomes colorless instead.",
+  -- Aura enchant restrictions (CR 303.4a)
+  "Relic Seal\n{1}{W}\nEnchantment — Aura\nEnchant artifact or non-Aura enchantment\nEnchanted permanent is a Construct creature with base power and toughness 5/5 in addition to its other types.",
+  "Loyal Aura\n{1}{G}\nEnchantment — Aura\nEnchant creature you control\nEnchanted creature gets +2/+2.",
+  -- Migrated keywords (Improvise / Extort / Sneak) & Zemo Boast
+  "Clockwork Automaton\n{4}{U}\nArtifact Creature — Construct\n3/3\nImprovise",
+  "Syndicate Tithe\n{1}{W}\nCreature — Human Cleric\n2/2\nExtort",
+  "Shadow Infiltrator\n{3}{U}\nCreature — Ninja\n3/2\nSneak {1}{U}",
+  "Baron Helmut Zemo\n{2}{B}\nLegendary Creature — Human Villain\n3/3\nBoast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs. (Activate only if this creature attacked this turn and only once each turn.)",
+  -- Null Summoner graveyard-threshold exile-casting static (both "seven" and rendered "7"):
+  "Null Summoner\n{1}{B}\nCreature — Human Wizard\n2/2\nAs long as there are seven or more cards in your graveyard, you may cast the exiled card, and mana of any type can be spent to cast that spell.",
+  "Null Summoner Digit\n{1}{B}\nCreature — Human Wizard\n2/2\nAs long as there are 7 or more cards in your graveyard, you may cast the exiled card, and mana of any type can be spent to cast that spell.",
+  -- Novel compositional static cards never printed in the catalog:
+  "Archmage Tutor\n{2}{U}\nCreature — Human Wizard\n2/2\nOther Wizard creatures you control get +2/+1 and have vigilance and lifelink.",
+  "Menacing Aura\n{1}{B}\nEnchantment — Aura\nEnchant creature\nEnchanted creature gets +3/+2 and has menace.",
+  "Goblin Costcutter\n{1}{R}\nCreature — Goblin Shaman\n1/1\nGoblin spells you cast cost {2} less to cast.",
+  "Dampening Arbiter\n{2}{W}\nCreature — Human Advisor\n2/3\nNoncreature spells your opponents cast cost {2} more to cast.",
+  "Dragonkin Warden\n{2}{R}\nCreature — Human Warrior\n2/2\nAs long as you control a Dragon, this creature gets +3/+3 and has flying and trample.",
+  "Tripling Procession\n{4}{W}\nEnchantment\nIf one or more tokens would be created under your control, three times that many of those tokens are created instead.",
+  "Ward of Permanence\n{1}{W}\nEnchantment — Aura\nEnchant nonland permanent\nEnchanted permanent has hexproof.",
+  "Total Power Avatar\n{3}{G}\nCreature — Avatar\n*/2\nTotal Power Avatar's power is equal to the total power of creatures you control.",
+  "Greatest Power Avatar\n{3}{G}\nCreature — Avatar\n*/2\nGreatest Power Avatar's power is equal to the greatest power among creatures you control.",
+  "Mourning Banner\n{2}{B}\nEnchantment\nAs long as a creature died last turn, creatures you control get +1/+1.",
+  "Soul Chorus\n{2}{W}\nEnchantment\nAs long as you gained life this turn, creatures you control get +1/+1.",
+  "Sky Power Avatar\n{3}{U}\nCreature — Avatar\n*/2\nSky Power Avatar's power is equal to the total power of creatures you control with flying.",
+  "Grounded Sanctuary\n{2}{G}\nEnchantment\nCreatures you control without flying get +1/+1 and have hexproof.",
+  "Skywatch Banner\n{2}{W}\nEnchantment\nAs long as you control a creature with flying, creatures you control get +1/+1 and have vigilance.",
+  "Defender's Anthem\n{2}{W}\nEnchantment\nCreatures the defending player controls get +1/+1.",
+  "Defending Life Avatar\n{4}{B}\nCreature — Avatar\n*/2\nDefending Life Avatar's power is equal to the defending player's life total."
+].all roundTripsOracleCard
+
+-- Verify exact AST structure of migrated keywords, Zemo Boast, and novel Phase 6 cards.
+#guard
+  match parseOracleCard "Clockwork Automaton\n{4}{U}\nArtifact Creature — Construct\n3/3\nImprovise" with
+  | .ok c => c.keywords == #[.simple .improvise] && c.staticAbilities.isEmpty
+  | .error _ => false
+#guard
+  match parseOracleCard "Syndicate Tithe\n{1}{W}\nCreature — Human Cleric\n2/2\nExtort" with
+  | .ok c => c.keywords == #[.simple .extort] && c.staticAbilities.isEmpty
+  | .error _ => false
+#guard
+  match parseOracleCard "Shadow Infiltrator\n{3}{U}\nCreature — Ninja\n3/2\nSneak {1}{U}" with
+  | .ok c => c.keywords == #[.sneak (CostSpec.ofMana (ManaCost.ofGenericAndColor 1 .blue))] &&
+      c.staticAbilities.isEmpty
+  | .error _ => false
+#guard
+  match parseOracleCard "Baron Helmut Zemo\n{2}{B}\nLegendary Creature — Human Villain\n3/3\nBoast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs." with
+  | .ok c => c.activatedAbilities == #[ActivatedAbility.zemoBoastAbility] &&
+      c.activatedAbilities[0]!.isBoast && c.staticAbilities.isEmpty
+  | .error _ => false
+#guard
+  match parseOracleCard "Archmage Tutor\n{2}{U}\nCreature — Human Wizard\n2/2\nOther Wizard creatures you control get +2/+1 and have vigilance and lifelink." with
+  | .ok c =>
+    match c.staticAbilities with
+    | #[.continuous none _ (.all #[.modifyPT (.const 2) (.const 1), .grantKeywords kws])] =>
+      kws == #[Keyword.vigilance, Keyword.lifelink]
+    | _ => false
+  | .error _ => false
+#guard
+  match parseOracleCard "Goblin Costcutter\n{1}{R}\nCreature — Goblin Shaman\n1/1\nGoblin spells you cast cost {2} less to cast." with
+  | .ok c =>
+    c.staticAbilities == #[StaticAbility.subtypeSpellsCostLess .goblin 2]
+  | .error _ => false
+#guard
+  match parseOracleCard "Dampening Arbiter\n{2}{W}\nCreature — Human Advisor\n2/3\nNoncreature spells your opponents cast cost {2} more to cast." with
+  | .ok c =>
+    c.staticAbilities == #[StaticAbility.opponentsNoncreatureSpellsCostMore 2]
+  | .error _ => false
+#guard
+  match parseOracleCard "Dragonkin Warden\n{2}{R}\nCreature — Human Warrior\n2/2\nAs long as you control a Dragon, this creature gets +3/+3 and has flying and trample." with
+  | .ok c =>
+    c.staticAbilities == #[
+      .continuous (some (StaticAbility.condControlSubtype .dragon)) StaticAbility.scopeSelf
+        (.all #[.modifyPT (.const 3) (.const 3), .grantKeywords #[Keyword.flying, Keyword.trample]])
+    ]
+  | .error _ => false
+#guard
+  match parseOracleCard "Tripling Procession\n{4}{W}\nEnchantment\nIf one or more tokens would be created under your control, three times that many of those tokens are created instead." with
+  | .ok c =>
+    c.staticAbilities == #[.replacement none (.multiplyTokens .you 3)]
+  | .error _ => false
+#guard
+  match parseOracleCard "Ward of Permanence\n{1}{W}\nEnchantment — Aura\nEnchant nonland permanent\nEnchanted permanent has hexproof." with
+  | .ok c =>
+    c.staticAbilities.size == 2 &&
+      (c.staticAbilities[0]!.enchantRestriction?.isSome) &&
+      c.staticAbilities[1]! ==
+        .continuous none StaticAbility.scopeEnchantedPermanent (.grantKeywords #[Keyword.hexproof])
+  | .error _ => false
+
+-- Functorial Layer 3 `HasTextChange` on parsed stratified `StaticAbility` ASTs:
+-- replacing `.goblin` → `.elf` and `.dragon` → `.sphinx` rewrites scopes, conditions,
+-- cost targets, and replacements structurally.
+#guard
+  let tc : Array TextChange := #[.replaceCreatureType .goblin .elf]
+  HasTextChange.applyTextChanges tc (StaticAbility.subtypeSpellsCostLess .goblin 2) ==
+    StaticAbility.subtypeSpellsCostLess .elf 2 &&
+  HasTextChange.applyTextChanges tc (StaticAbility.eminenceSubtypeSpellsCostLess .goblin 1) ==
+    StaticAbility.eminenceSubtypeSpellsCostLess .elf 1 &&
+  HasTextChange.applyTextChanges #[.replaceCreatureType .dragon .sphinx]
+      (StaticAbility.entersTappedUnlessBehold .dragon) ==
+    StaticAbility.entersTappedUnlessBehold .sphinx &&
+  HasTextChange.applyTextChanges #[.replaceCreatureType .army .goblin]
+      StaticAbility.armiesYouControlHaveTrample ==
+    .continuous none (StaticAbility.scopeCreaturesOfSubtypeYouControl .goblin)
+      (.grantKeywords #[Keyword.trample])
 
 end Mtg.Engine.Tests

@@ -697,7 +697,7 @@ trigger, and the modified event carries `EventCause.replaced`. -/
   let drawReplaceDef : CardDef :=
     { bear with
       name := "Draw Replacer"
-      drawTwoExceptFirstDrawStep := true }
+      staticAbilities := #[.drawTwoExceptFirstDrawStep] }
   let gDrw0 := addPermanent (quiet afterDraw) drawReplaceDef me me
   let drwReplacer := (gDrw0.battlefield.filter (·.name == "Draw Replacer"))[0]!
   let drwCause : EventCause := .oneShotEffect (some ⟨708⟩) none (some me)
@@ -939,7 +939,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let samsonDef : CardDef :=
     { bear with name := "Doc Samson Test", staticAbilities := #[.extraCounterOnPermanents] }
   let arwenDef : CardDef :=
-    { bear with name := "Arwen Test", toughness := some 2, othersEnterWithPlusOneEqualToughness := true }
+    { bear with name := "Arwen Test", toughness := some 2, staticAbilities := #[.othersEnterWithPlusOneEqualToughness] }
   let gArw0 :=
     insertObject
       (addPermanent (addPermanent (quiet afterDraw) samsonDef me me) arwenDef me me)
@@ -1120,8 +1120,8 @@ and Arwen + Doc Samson ETB counter replacement. -/
     gDrwSubDone.pending == .none &&
     (gDrwSubDone.player me).hand.size - handBeforeDrwSub == 7
   -- `commitEnteringAttackItems` pauses on an as-enters `.fraChoice` (`asEntersChooseOddEven`) before putting the second card onto the battlefield, keeping both in one batch.
-  let oddEvenDef1 : CardDef := { bear with name := "Parity Striker 1", asEntersChooseOddEven := true }
-  let oddEvenDef2 : CardDef := { bear with name := "Parity Striker 2", asEntersChooseOddEven := true }
+  let oddEvenDef1 : CardDef := { bear with name := "Parity Striker 1", staticAbilities := #[.asEntersChooseOddEven] }
+  let oddEvenDef2 : CardDef := { bear with name := "Parity Striker 2", staticAbilities := #[.asEntersChooseOddEven] }
   let gFraEnt0 :=
     insertObject
       (insertObject gOrd0 oddEvenDef1 me (.hand me))
@@ -1577,7 +1577,7 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
     { name := "Test Kitesail"
       types := #[.artifact]
       subtypes := #["Equipment"]
-      staticAbilities := #[.fra .equippedMedicsKitesail] }
+      staticAbilities := #[.equippedGetsFlyingAndAttackGainLife] }
   let gT0 :=
     addPermanent
       (addPermanent
@@ -1782,7 +1782,7 @@ order (CR 613.1f / 613.7 / 702.21). -/
   -- 3. `canBlock`: `printed.cantBlock` is removed in Layer 6, `.cantBlockUntilEot` is not
   let cantBlockDef : CardDef :=
     { (creature "Reluctant Blocker" ManaCost.empty #["Human"] 2 2) with
-      cantBlock := true }
+      staticAbilities := #[.cantBlock] }
   let gBlk0 :=
     addPermanent (addPermanent (quiet afterDraw) bear me me) cantBlockDef opp opp
   let attacker := (gBlk0.battlefield.filter (·.name == "Event Bear"))[0]!
@@ -1862,8 +1862,7 @@ land ability removal) all obey Layer 6 (CR 104.2a / 106.7 / 605.1a / 613.1f / 61
   -- 1. `cantLoseGame` & `opponentsCantWin` (battlefield + command zone)
   let angelDef : CardDef :=
     { (creature "Platinum Test" ManaCost.empty #["Angel"] 4 4) with
-      cantLoseGame := true
-      opponentsCantWin := true }
+      staticAbilities := #[.cantLoseAndOpponentsCantWin] }
   let gAngel0 :=
     (addPermanent (quiet afterDraw) angelDef me me).setLifeTotal me 0
   let angel := (gAngel0.battlefield.filter (·.name == "Platinum Test"))[0]!
@@ -1887,7 +1886,7 @@ land ability removal) all obey Layer 6 (CR 104.2a / 106.7 / 605.1a / 613.1f / 61
   -- 2. `unspentManaBecomesColorless`
   let horizonDef : CardDef :=
     { (creature "Horizon Test" ManaCost.empty #["Rogue"] 3 3) with
-      unspentManaBecomesColorless := true }
+      staticAbilities := #[.unspentManaBecomesColorless] }
   let gMana0 :=
     (addPermanent (quiet afterDraw) horizonDef me me).addMana me (.colored .red) 1
   let horizon := (gMana0.battlefield.filter (·.name == "Horizon Test"))[0]!
@@ -1909,7 +1908,7 @@ land ability removal) all obey Layer 6 (CR 104.2a / 106.7 / 605.1a / 613.1f / 61
   let healerDef : CardDef :=
     { name := "Way of Test"
       types := #[.enchantment]
-      planeswalkersYouControlHave := #[loyaltyGrantAb] }
+      staticAbilities := #[.planeswalkersYouControlHave #[loyaltyGrantAb]] }
   let gPw0 := addPermanent (addPermanent (quiet afterDraw) healerDef me me) pwDef me me
   let pw := (gPw0.battlefield.filter (·.name == "Test Planeswalker"))[0]!
   let gPwLost := gPw0.createEffect (.losesAbilitiesUntilEot pw.id) (cause := some c1)
@@ -1928,7 +1927,7 @@ land ability removal) all obey Layer 6 (CR 104.2a / 106.7 / 605.1a / 613.1f / 61
   let chorusDef : CardDef :=
     { name := "Test Chorus"
       types := #[.enchantment]
-      grantCreaturesTapAddAnyColor := true }
+      staticAbilities := #[.grantCreaturesTapAddAnyColor] }
   let gGr0 :=
     addPermanent
       (addPermanent
@@ -1948,7 +1947,7 @@ land ability removal) all obey Layer 6 (CR 104.2a / 106.7 / 605.1a / 613.1f / 61
   let lanternDef : CardDef :=
     { name := "Test Lantern"
       types := #[.artifact]
-      grantLandsTapAnyColor := true }
+      staticAbilities := #[.grantLandsTapAnyColor] }
   let gLd0 := addPermanent (addPermanent (quiet afterDraw) lanternDef me me) mtnDef me me
   let mtn := (gLd0.battlefield.filter (·.name == "Test Mountain"))[0]!
   let lantern := (gLd0.battlefield.filter (·.name == "Test Lantern"))[0]!
@@ -1982,7 +1981,7 @@ reads Layer 1 `copiableValues`. -/
   let opp : PlayerId := ⟨1⟩
   let giantDef : CardDef :=
     { creature "Phase9 Giant" ManaCost.empty #["Giant"] 4 5 with
-      staticAbilities := #[.fra .creaturesYouControlHaveTrample] }
+      staticAbilities := #[.creaturesYouControlHave #[Keyword.trample]] }
   let cloneDef : CardDef :=
     creature "Phase9 Clone" ManaCost.empty #["Shapeshifter"] 0 0
   let g0 :=
@@ -2134,7 +2133,7 @@ changes), Layer 5 (subtype-scoped color grant vs text change), and Layer 6
     name := "Phase9 Construct Aura"
     types := #[.enchantment]
     subtypes := #["Aura"]
-    staticAbilities := #[.fra .enchantedIsConstruct55]
+    staticAbilities := #[.enchantedIsConstruct55]
   }
   let g0 := addPermanent (addPermanent (quiet afterDraw) bear me me) baubleDef me me
   let b := (g0.battlefield.filter (·.name == "Event Bear"))[0]!
@@ -2449,7 +2448,7 @@ substitutions vs mana-derived colors):
   -- 1. Peer static abilities preserved under `hasCwStaticEff && !needStaticsTs`
   let lordCard : CardDef :=
     { creature "Phase9 Trample Lord" ManaCost.empty #["Beast"] 3 3 with
-      staticAbilities := #[.fra .creaturesYouControlHaveTrample] }
+      staticAbilities := #[.creaturesYouControlHave #[Keyword.trample]] }
   let gPeer0 :=
     addPermanent
       (addPermanent (quiet afterDraw) lordCard me me)
@@ -2464,13 +2463,13 @@ substitutions vs mana-derived colors):
   let gGrantPeer :=
     ((addPermanent (addPermanent (quiet afterDraw) hero me me) bear me me).createEffect
       (.layered (.objects #[(addPermanent (addPermanent (quiet afterDraw) hero me me) bear me me |>.battlefield.filter (·.name == "Event Hero"))[0]!.id])
-        (.abilities { staticAbilities := #[.fra .creaturesYouControlHaveTrample] } .none) .untilEndOfTurn)).createEffect
+        (.abilities { staticAbilities := #[.creaturesYouControlHave #[Keyword.trample]] } .none) .untilEndOfTurn)).createEffect
       (.layered (.creaturesWithout #[Keyword.flying])
         (.abilities { staticAbilities := #[.noMaximumHandSize] } .none) .untilEndOfTurn)
   let grantBear := (gGrantPeer.battlefield.filter (·.name == "Event Bear"))[0]!
   let peerStaticsOk :=
     gCw.hasTrample (gCw.object! peerBear.id) &&
-    (gCw.staticAbilities (gCw.object! lord.id)).contains (.fra .creaturesYouControlHaveTrample) &&
+    (gCw.staticAbilities (gCw.object! lord.id)).contains (.creaturesYouControlHave #[Keyword.trample]) &&
     (gCw.staticAbilities (gCw.object! lord.id)).contains .noMaximumHandSize &&
     !gCwPhased.hasTrample (gCwPhased.object! peerBear.id) &&
     gGrantPeer.hasTrample grantBear
@@ -2660,7 +2659,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   -- 1. `ManaUnit` provenance across `manaAdded`, `manaEmptied` (`keptColorless := true`), and `manaSpent`
   let horizonDef : CardDef :=
     { (creature "Phase10 Horizon" ManaCost.empty #["Rogue"] 3 3) with
-      unspentManaBecomesColorless := true }
+      staticAbilities := #[.unspentManaBecomesColorless] }
   let gTr0 := (addPermanent (quiet afterDraw) horizonDef me me).createTreasureTokens me 1 (cause := some p10Cause)
   let trObj := (gTr0.battlefield.filter (·.printed.isToken))[0]!
   let gTrMana :=
@@ -2932,7 +2931,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let roomDef : CardDef :=
     { name := "Phase10 Room"
       types := #[.land]
-      staticAbilities := #[.fra .entersTappedChooseColor] }
+      staticAbilities := #[.entersTappedChooseColor] }
   let gSearchAsEnters0 := quiet (insertObject afterDraw roomDef me (.library me))
   let roomLibId := ((gSearchAsEnters0.player me).library.filter (fun id => (gSearchAsEnters0.object! id).name == "Phase10 Room"))[0]!
   let gSearchAsEntersMid :=
@@ -3200,7 +3199,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     types := #[.planeswalker]
     subtypes := #["Jace"]
     loyalty := some 4
-    entersTapped := true
+    staticAbilities := #[.entersTapped]
   }
   let (gClone0, cloneCand) := afterDraw.allocObject bear me (.outside me) (some me)
   let gClone1 := gClone0.createEffect (.layered (.objects #[cloneCand.id]) (.copy tappedPwDef) .indefinite)
@@ -3210,8 +3209,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     types := #[.creature]
     power := some 1
     toughness := some 1
-    entersTapped := true
-    entersWithPlusOneCounters := 2
+    staticAbilities := #[.entersTapped, .entersWithPlusOneCounters 2]
   }
   let (gHum0, humCand) := afterDraw.allocObject humCreatureDef me (.outside me) (some me)
   let gHum1 := gHum0.createEffect (.layered (.creaturesControlledBy me) (.abilities {} .all) .indefinite)
@@ -3275,7 +3273,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let bilboDef : CardDef := {
     name := "Phase11 Bilbo"
     types := #[.enchantment]
-    foodAlsoCreatesTreasure := true
+    staticAbilities := #[.foodAlsoCreatesTreasure]
   }
   let visitorDef : CardDef := {
     name := "Phase11 Visitor"
@@ -3318,17 +3316,21 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let dfcNontokenTemplate : CardDef := {
     name := "Phase11 Siege Front"
     types := #[.enchantment]
-    asEntersChooseMarduOrJeskai := true
-    asEntersChooseCardType := true
-    entersPrepared := true
+    staticAbilities := #[
+      .asEntersChooseNamedAnchors #["Mardu", "Jeskai"],
+      .asEntersChooseCardType,
+      .entersPrepared
+    ]
     isToken := false
     otherFace := some {
       name := "Phase11 Siege Back"
       types := #[.creature]
       power := some 4
       toughness := some 4
-      asEntersChooseMarduOrJeskai := true
-      entersPrepared := true
+      staticAbilities := #[
+        .asEntersChooseNamedAnchors #["Mardu", "Jeskai"],
+        .entersPrepared
+      ]
       isToken := false
     }
   }

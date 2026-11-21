@@ -104,7 +104,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
         let nonAlt := p1.filter (fun pm => !pm.withoutManaCost && !pm.payLifeEqualManaValue)
         if nonAlt.isEmpty then p1 else nonAlt
       else p1
-    let baseTimingOk := g.timingAllowsCast p face || sneakCost.isSome
+    let baseTimingOk := g.timingAllowsCast p face (card? := some card) || sneakCost.isSome
     let p3 :=
       if !baseTimingOk && p2.any (·.ignoreTiming) then p2.filter (·.ignoreTiming) else p2
     let mv := if asAdventure then face.manaValue else g.objectManaValue card

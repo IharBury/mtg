@@ -269,7 +269,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
   let gyThresholdSorc21 : CardDef := {
     sorc21 with
     name := "Phase21 Threshold Sorc"
-    castOnlyIfGraveyardAtLeast := some 2
+    staticAbilities := #[.castOnlyIfGraveyardAtLeast 2]
   }
   let gOppTurn0 : Game :=
     let g := ((afterDraw.record (GameEvent.turnBegan (afterDraw.turnNumber + 1) opp21)).record
@@ -291,8 +291,8 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     !(gGyThresh0.castSpell me gyThreshId).isOk
 
   -- 4c. Non-owner caster Thalia tax, `announceAdditionalCost` reduction order, and *Countersculpt* behold deferred to 601.2h!
-  let thalia21 : CardDef := { bear with name := "Phase21 Thalia", staticAbilities := #[.fra .opponentsNoncreatureSpellsCostMore] }
-  let bilbo21 : CardDef := { bear with name := "Phase21 Bilbo", costReductionNotFromHand := 1 }
+  let thalia21 : CardDef := { bear with name := "Phase21 Thalia", staticAbilities := #[.opponentsNoncreatureSpellsCostMore] }
+  let bilbo21 : CardDef := { bear with name := "Phase21 Bilbo", staticAbilities := #[.costReductionNotFromHand 1] }
   let beholdInst21 : CardDef := {
     name := "Phase21 Behold Instant"
     manaCost := { symbols := #[.colored .blue, .colored .blue] }
@@ -556,7 +556,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     name := "Phase21 Opp Art Spell"
     manaCost := ManaCost.ofGeneric 3
     types := #[.sorcery]
-    costReductionEqualOppArtifacts := true
+    staticAbilities := #[.costReductionEqualOppArtifacts]
   }
   let art21 : CardDef := { name := "Phase21 Art", types := #[.artifact] }
   let g2hArt0 : Game :=
@@ -1039,7 +1039,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     name := "Phase22 Sneak Sac"
     manaCost := ManaCost.ofGeneric 4
     additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
-    staticAbilities := #[.sneak ManaCost.empty]
+    keywords := #[.sneak CostSpec.empty]
   }
   let gSneak0 : Game :=
     let g := addPermanent (insertObject afterDraw sneakSacCreature22 me (.hand me)) bear me me
@@ -1107,10 +1107,10 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
 --    `Movement.move` sharing one arrival `BatchId` with `.entersUntappedPayLife`.
 #guard
   let leg22 : CardDef := { bear with name := "Phase22 CoLegend", supertypes := #[.legendary] }
-  let checkLand22 : CardDef := { name := "Phase22 CheckLand", types := #[.land], entersTappedUnlessLegendary := true }
-  let hopeCr22 : CardDef := { bear with name := "Phase22 HopeCr", entersWithHopePerCreature := true }
+  let checkLand22 : CardDef := { name := "Phase22 CheckLand", types := #[.land], staticAbilities := #[.entersTappedUnlessLegendary] }
+  let hopeCr22 : CardDef := { bear with name := "Phase22 HopeCr", staticAbilities := #[.entersWithHopePerCreature] }
   let doc22 : CardDef := { bear with name := "Phase22 CoDoc", staticAbilities := #[.extraCounterOnPermanents] }
-  let plusCr22 : CardDef := { bear with name := "Phase22 PlusCr", entersWithPlusOneCounters := 1 }
+  let plusCr22 : CardDef := { bear with name := "Phase22 PlusCr", staticAbilities := #[.entersWithPlusOneCounters 1] }
 
   -- 6a. Simultaneous entry via `putToBattlefieldLoop` (`g.currentBatch == none`, `preBattlefield := some preBf`):
   --     none of the co-entering permanents were on `preBf`, so `CheckLand` enters tapped, `HopeCr` gets 1 hope
@@ -1153,7 +1153,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   -- 6b. Unbatched `putOntoBattlefield` of a shock land (`entersTappedUnlessPayLife := some 2`):
   --     accepting `.entersUntappedPayLife 2` records `.life (.lost ...)` and `.zone (.moved ... .battlefield)`
   --     under the SAME non-`none` arrival `BatchId`!
-  let shockLand22 : CardDef := { name := "Phase22 ShockLand", types := #[.land], entersTappedUnlessPayLife := some 2 }
+  let shockLand22 : CardDef := { name := "Phase22 ShockLand", types := #[.land], staticAbilities := #[.entersTappedUnlessPayLife 2] }
   let gShock0 : Game := insertObject afterDraw shockLand22 me (.hand me)
   let shockId := (gShock0.player me).hand.back!
   let preShockIdx := gShock0.events.size
@@ -1182,7 +1182,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
 --    across multiplied token creation (`.createAlienPerInvasion`), and CR 616.1
 --    `enterWithPlusOnes` preserving unrelated `replacementOrder` entries.
 #guard
-  let doubler22 : CardDef := { bear with name := "Phase22 Doubler", tokenDoubling := true }
+  let doubler22 : CardDef := { bear with name := "Phase22 Doubler", staticAbilities := #[.tokenDoubling] }
   -- 7a. `finishFreshAmass` under `tokenDoubling` prompts `.chooseCards` across the 2 fresh 0/0 Armies:
   let gAmass0 : Game := (addPermanent afterDraw doubler22 me me).amassGoblins me 3
   let amassPromptIds : Array ObjectId :=
@@ -1214,7 +1214,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   -- 7c. CR 616.1 `enterWithPlusOnes` consumes ONLY applied counter-replacement IDs from `replacementOrder`,
   --     preserving unrelated queued `ReplacementId` entries!
   let docOrd22 : CardDef := { bear with name := "Phase22 OrdDoc", staticAbilities := #[.extraCounterOnPermanents] }
-  let plusOne22 : CardDef := { bear with name := "Phase22 OrdPlus", entersWithPlusOneCounters := 1 }
+  let plusOne22 : CardDef := { bear with name := "Phase22 OrdPlus", staticAbilities := #[.entersWithPlusOneCounters 1] }
   let unrelatedRid : ReplacementId := { kind := .exileOppDeath, object := some ⟨970⟩ }
   let gOrdKeep0 : Game :=
     let g := insertObject (addPermanent afterDraw docOrd22 me me) plusOne22 me (.hand me)
@@ -1428,7 +1428,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
   let clashShockDef23 : CardDef := {
     forest with
     name := "Phase23 Clash Linked Shock"
-    entersTappedUnlessPayLife := some 2
+    staticAbilities := #[.entersTappedUnlessPayLife 2]
   }
   let gTopPaused0 : Game :=
     let g := addPermanent (insertObject afterDraw clashShockDef23 me .exile) bear opp23 opp23
@@ -1522,7 +1522,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
   let zeroSneakDef : CardDef := {
     bear with
     name := "Phase23 Zero Sneak"
-    staticAbilities := #[.sneak ManaCost.empty]
+    keywords := #[.sneak CostSpec.empty]
   }
   let gSnk0 : Game :=
     let g := insertObject (addPermanent afterDraw { bear with keywords := #[Keyword.haste] } me me) zeroSneakDef me (.hand me)
@@ -1746,7 +1746,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
 #guard
   -- 5a. Shockland (`entersTappedUnlessPayLife := some 2`) at `life == 3` (`2 ≤ life < 4`) alongside competing ETB effect:
   --     paying 2 life drops `life` to 1, and CR 616.1 loop re-entry does NOT re-offer `entersTappedSelf`!
-  let shockLand23 : CardDef := { forest with name := "Phase23 Shock", entersTappedUnlessPayLife := some 2 }
+  let shockLand23 : CardDef := { forest with name := "Phase23 Shock", staticAbilities := #[.entersTappedUnlessPayLife 2] }
   let gShk0 : Game :=
     let g := insertObject (afterDraw.loseLife me 17 (cause := some testCause)) shockLand23 me (.hand me)
     g.createEffect (.replacement {
@@ -1769,8 +1769,8 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     shkPerm.status.counterCount .charge == 1
 
   -- 5b. CR 616.1c -> 616.1e: untapped card entering as a copy of a tapped-entering creature enters TAPPED!
-  let tappedTargetDef : CardDef := { bear with name := "Phase23 Tapped Template", entersTapped := true }
-  let untappedCloneCard : CardDef := { hero with name := "Phase23 Untapped Clone", entersTapped := false }
+  let tappedTargetDef : CardDef := { bear with name := "Phase23 Tapped Template", staticAbilities := #[.entersTapped] }
+  let untappedCloneCard : CardDef := { hero with name := "Phase23 Untapped Clone" }
   let gCln0 : Game :=
     let g := insertObject afterDraw untappedCloneCard me (.hand me)
     let cid := (g.player me).hand.back!
@@ -1783,7 +1783,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
 
   -- 5c. Unified CR 616.1g ETB counter evaluation (`1` printed + `1` extra under `+1` `modifyCountersPut` => `3`, NOT `4`)
   --     AND CR 614.12 simultaneous batch isolation (`Doc Samson` co-entering with `1`-counter creature => `1`, NOT `2`)!
-  let oneCounterBear : CardDef := { bear with name := "Phase23 Counter Bear", entersWithPlusOneCounters := 1 }
+  let oneCounterBear : CardDef := { bear with name := "Phase23 Counter Bear", staticAbilities := #[.entersWithPlusOneCounters 1] }
   let gUnif0 : Game :=
     let g := insertObject afterDraw oneCounterBear me (.hand me)
     let cid := (g.player me).hand.back!
@@ -2518,7 +2518,7 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
 --    *Cosmic Cube* `Pending.mayCastFromLooked` legality & checkpoint.
 #guard
   -- 3a. A creature-only library-top permission can't cast the (sorcery) Adventure half:
-  let topCasterDef : CardDef := { bear with name := "P24i2 Top Caster", mayCastCreaturesFromTop := true }
+  let topCasterDef : CardDef := { bear with name := "P24i2 Top Caster", staticAbilities := #[.mayCastCreaturesFromTop] }
   let gTop0 : Game := insertObject (addPermanent afterDraw topCasterDef me me) adventurer24i2 me (.library me)
   let topAdvId := (gTop0.player me).library.back!
   let topAdventureOk :=
@@ -2675,13 +2675,12 @@ def startThreePlayer24i3 : Game :=
   let samsonEnteringDef : CardDef := {
     bear with
     name := "P24i3 Doc Samson"
-    entersWithPlusOneCounters := 2
-    staticAbilities := #[.extraCounterOnPermanents]
+    staticAbilities := #[.entersWithPlusOneCounters 2, .extraCounterOnPermanents]
   }
   let followerDef : CardDef := {
     bear with
     name := "P24i3 Follower"
-    entersWithPlusOneCounters := 1
+    staticAbilities := #[.entersWithPlusOneCounters 1]
   }
   let gSam0 :=
     insertObject (insertObject afterDraw samsonEnteringDef me (.hand me)) followerDef me (.hand me)
@@ -2700,8 +2699,7 @@ def startThreePlayer24i3 : Game :=
     bear with
     name := "P24i3 Golden Gear Creature"
     types := #[.artifact, .creature]
-    entersWithPlusOneCounters := 2
-    staticAbilities := #[.fra .extraPlusOneCounter]
+    staticAbilities := #[.entersWithPlusOneCounters 2, .extraPlusOneCounter]
   }
   let gGear0 :=
     insertObject (insertObject afterDraw gearEnteringDef me (.hand me)) followerDef me (.hand me)
@@ -2725,8 +2723,7 @@ def startThreePlayer24i3 : Game :=
   let multiCounterDef : CardDef := {
     bear with
     name := "P24i3 Multi-Counter Bear"
-    entersWithPlusOneCounters := 1
-    entersWithShield := 1
+    staticAbilities := #[.entersWithPlusOneCounters 1, .entersWithShield 1]
   }
   -- 2a. Single wildcard `.modifyCountersPut` (`+1`) modifies both `.plusOnePlusOne` and `.shield`:
   let gW0 := insertObject afterDraw multiCounterDef me (.hand me)
@@ -2825,17 +2822,17 @@ def startThreePlayer24i3 : Game :=
   let colorCreatureDef : CardDef := {
     bear with
     name := "P24i3 Color Bear"
-    staticAbilities := #[.fra .entersTappedChooseColor]
+    staticAbilities := #[.entersTappedChooseColor]
   }
   let mirrorDef : CardDef := {
     name := "P24i3 Cursed Mirror"
     types := #[.artifact]
-    asEntersMayCopyCreatureHasteUntilEot := true
+    staticAbilities := #[.asEntersMayCopyCreatureHasteUntilEot]
   }
   let shockDef : CardDef := {
     name := "P24i3 Shockland"
     types := #[.land]
-    entersTappedUnlessPayLife := some 2
+    staticAbilities := #[.entersTappedUnlessPayLife 2]
   }
   let gMir0 :=
     insertObject (addPermanent afterDraw colorCreatureDef me me) mirrorDef me (.hand me)
@@ -2927,12 +2924,12 @@ def startThreePlayer24i3 : Game :=
   let blackGateDef : CardDef := {
     name := "P24i3 Black Gate"
     types := #[.land]
-    entersTappedUnlessPayLife := some 3
+    staticAbilities := #[.entersTappedUnlessPayLife 3]
   }
   let sanctumDef : CardDef := {
     name := "P24i3 Theorist's Sanctum"
     types := #[.land]
-    entersTappedUnlessBehold := some .villain
+    staticAbilities := #[.entersTappedUnlessBehold .villain]
   }
   let villainDef : CardDef := {
     bear with
@@ -3075,7 +3072,7 @@ def startThreePlayer24i3 : Game :=
     power := some 1
     toughness := some 1
   }
-  let bilboDef : CardDef := { bear with name := "P24i3 Bilbo", foodAlsoCreatesTreasure := true }
+  let bilboDef : CardDef := { bear with name := "P24i3 Bilbo", staticAbilities := #[.foodAlsoCreatesTreasure] }
   let gRiderCreature0 :=
     (afterDraw.createEffect (.replacement specExtraBear) (cause := some cTok)).change
       (.pushContinuationFrame {})
@@ -3119,7 +3116,7 @@ def startThreePlayer24i3 : Game :=
     bear with
     name := "P24i3 Prism Dragon"
     types := #[.artifact, .creature]
-    staticAbilities := #[.fra .entersTappedChooseColor]
+    staticAbilities := #[.entersTappedChooseColor]
     isToken := true
   }
   let specAsPrismDragon : ReplacementSpec := {
@@ -3476,7 +3473,7 @@ def startThreePlayer24i3 : Game :=
   let colorPrisonerDef : CardDef := {
     bear with
     name := "P24i3 Color Prisoner"
-    staticAbilities := #[.fra .entersTappedChooseColor]
+    staticAbilities := #[.entersTappedChooseColor]
   }
   let gLvBase :=
     insertObject

@@ -397,4 +397,19 @@ def TextChange.applySubtype (tcs : Array TextChange) (sub : CardSubtype) : CardS
 def TextChange.applyColor (tcs : Array TextChange) (c : Color) : Color :=
   HasTextChange.applyTextChanges tcs c
 
+/-- English plural used in Oracle-style reminders (`Orc` → `Orcs`).
+Known subtypes use the CR 205.3 spelling, including irregular plurals. -/
+def pluralSubtype (s : String) : String :=
+  pluralizeName s
+
+#guard pluralSubtype "Orc" == "Orcs"
+#guard pluralSubtype "Wolf" == "Wolves"
+#guard pluralSubtype "Army" == "Armies"
+#guard pluralSubtype "Hero" == "Heroes"
+#guard pluralSubtype "Merfolk" == "Merfolk"
+
+/-- Join subtype names for Oracle-style lord reminders (`Orc` and `Goblin`). -/
+def joinedSubtypes (subtypes : Array CardSubtype) (each : CardSubtype → String := CardSubtype.englishName) : String :=
+  String.intercalate " and " (subtypes.toList.map each)
+
 end Mtg.Engine

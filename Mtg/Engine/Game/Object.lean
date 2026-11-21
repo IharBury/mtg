@@ -12,8 +12,7 @@ triggered abilities waiting to go on the stack (CR 603.3).
 
 namespace Mtg.Engine
 
--- Split `BEq CardDef` across small `@[noinline]` field groups so Clang does not
--- have to compile a single 17k-line C function for all 141 fields.
+-- Split `BEq CardDef` across small `@[noinline]` field groups to keep C codegen fast.
 @[noinline] private def cardDefBeq1 (a b : CardDef) : Bool :=
   a.name == b.name &&
   a.manaCost == b.manaCost &&
@@ -31,102 +30,27 @@ namespace Mtg.Engine
   a.colorIndicator == b.colorIndicator &&
   a.keywords == b.keywords &&
   a.additionalCosts == b.additionalCosts &&
-  a.spellEffect == b.spellEffect &&
-  a.costReductionIfCreatureDied == b.costReductionIfCreatureDied &&
-  a.costReductionIfTargetDamaged == b.costReductionIfTargetDamaged &&
-  a.costReductionIfTargetTapped == b.costReductionIfTargetTapped &&
-  a.costReductionIfTargetAttackingNontoken == b.costReductionIfTargetAttackingNontoken &&
-  a.costReductionIfTargetAttacking == b.costReductionIfTargetAttacking
+  a.spellEffect == b.spellEffect
 
 @[noinline] private def cardDefBeq2 (a b : CardDef) : Bool :=
-  a.costReductionIfYouControl == b.costReductionIfYouControl &&
-  a.costReductionIfYouControlLegendary == b.costReductionIfYouControlLegendary &&
-  a.costReductionIfGyCreaturesAtLeast == b.costReductionIfGyCreaturesAtLeast &&
   a.spellModes == b.spellModes &&
   a.fraTriggerModes == b.fraTriggerModes &&
-  a.entersWithHopePerCreature == b.entersWithHopePerCreature &&
-  a.entersTapped == b.entersTapped &&
   a.isToken == b.isToken &&
-  a.cantBeCountered == b.cantBeCountered &&
-  a.flashIfYouControlSubtype == b.flashIfYouControlSubtype &&
-  a.castExiledWithSevenInGraveyard == b.castExiledWithSevenInGraveyard &&
-  a.entersTappedUnlessLegendary == b.entersTappedUnlessLegendary &&
-  a.entersTappedUnlessEquipment == b.entersTappedUnlessEquipment &&
-  a.planeswalkersYouControlHave == b.planeswalkersYouControlHave
-
-@[noinline] private def cardDefBeq3 (a b : CardDef) : Bool :=
-  a.entersWithPlusOneCounters == b.entersWithPlusOneCounters &&
   a.anyNumberInDeck == b.anyNumberInDeck &&
-  a.castOnlyIfGraveyardAtLeast == b.castOnlyIfGraveyardAtLeast &&
-  a.entersTappedUnlessPlaneswalker == b.entersTappedUnlessPlaneswalker &&
-  a.entersTappedUnlessTwoOtherLands == b.entersTappedUnlessTwoOtherLands &&
-  a.costReductionEqualFlyingPower == b.costReductionEqualFlyingPower &&
-  a.costReductionGreatestPower == b.costReductionGreatestPower &&
-  a.costReductionGreatestToughness == b.costReductionGreatestToughness &&
   a.chooseOneOrBoth == b.chooseOneOrBoth &&
   a.chooseTwoIfYouControlSubtype == b.chooseTwoIfYouControlSubtype &&
-  a.entersTappedUnlessPayLife == b.entersTappedUnlessPayLife &&
-  a.entersTappedUnlessBehold == b.entersTappedUnlessBehold &&
-  a.asEntersChooseCreatureType == b.asEntersChooseCreatureType &&
   a.saga == b.saga &&
-  a.costReductionEqualOppArtifacts == b.costReductionEqualOppArtifacts
-
-@[noinline] private def cardDefBeq4 (a b : CardDef) : Bool :=
-  a.foodAlsoCreatesTreasure == b.foodAlsoCreatesTreasure &&
-  a.othersEnterWithPlusOneEqualToughness == b.othersEnterWithPlusOneEqualToughness &&
-  a.powerPerMountain == b.powerPerMountain &&
-  a.extraLandIfOtherSubtype == b.extraLandIfOtherSubtype &&
-  a.tokenDoubling == b.tokenDoubling &&
-  a.drawTwoExceptFirstDrawStep == b.drawTwoExceptFirstDrawStep &&
   a.activatedAbilities == b.activatedAbilities &&
   a.staticAbilities == b.staticAbilities &&
   a.triggeredAbilities == b.triggeredAbilities &&
-  a.exileOppCreaturesInstead == b.exileOppCreaturesInstead &&
-  a.mayLookAtTopAnytime == b.mayLookAtTopAnytime &&
-  a.mayCastCreaturesFromTop == b.mayCastCreaturesFromTop &&
-  a.mayPlayLandsFromTop == b.mayPlayLandsFromTop &&
-  a.grantCreaturesTapAddAnyColor == b.grantCreaturesTapAddAnyColor &&
-  a.firstCreatureCostsLess == b.firstCreatureCostsLess &&
-  a.firstCreatureHasFlash == b.firstCreatureHasFlash &&
-  a.hexproofIndestructibleIfLore == b.hexproofIndestructibleIfLore &&
-  a.entersWithIndestructibleCounter == b.entersWithIndestructibleCounter &&
-  a.asEntersChooseOddEven == b.asEntersChooseOddEven &&
-  a.costReductionNotFromHand == b.costReductionNotFromHand
-
-@[noinline] private def cardDefBeq5 (a b : CardDef) : Bool :=
   a.adventure == b.adventure &&
   a.chooseBothIfTeamwork == b.chooseBothIfTeamwork &&
-  a.entersWithShield == b.entersWithShield &&
   a.empowerJace == b.empowerJace &&
-  a.entersPrepared == b.entersPrepared &&
   a.prepareFace == b.prepareFace &&
-  a.grantLandsTapAnyColor == b.grantLandsTapAnyColor &&
-  a.entersTappedUnlessAnySubtype == b.entersTappedUnlessAnySubtype &&
-  a.entersTappedUnlessNBasics == b.entersTappedUnlessNBasics &&
-  a.entersTappedUnlessOppLands == b.entersTappedUnlessOppLands &&
-  a.commanderIdentityScryCreature == b.commanderIdentityScryCreature &&
-  a.freeCastIfControlCommander == b.freeCastIfControlCommander
-
-@[noinline] private def cardDefBeq6 (a b : CardDef) : Bool :=
-  a.canBeCommander == b.canBeCommander &&
-  a.opponentsCantGainLife == b.opponentsCantGainLife &&
-  a.cantLoseGame == b.cantLoseGame &&
-  a.opponentsCantWin == b.opponentsCantWin &&
-  a.creaturesCantGetMinusCounters == b.creaturesCantGetMinusCounters &&
-  a.powerPerUnspentMana == b.powerPerUnspentMana &&
-  a.unspentManaBecomesColorless == b.unspentManaBecomesColorless &&
-  a.eminenceSphinxReduction == b.eminenceSphinxReduction &&
-  a.asEntersChooseCardType == b.asEntersChooseCardType &&
-  a.protectionFromChosenCardType == b.protectionFromChosenCardType &&
-  a.corruptedToxicLifelink == b.corruptedToxicLifelink &&
-  a.asEntersChooseMarduOrJeskai == b.asEntersChooseMarduOrJeskai &&
-  a.asEntersMayCopyCreatureHasteUntilEot == b.asEntersMayCopyCreatureHasteUntilEot &&
-  a.cantBlock == b.cantBlock &&
-  a.grantTeamPlusTwoFlying == b.grantTeamPlusTwoFlying
+  a.commanderIdentityScryCreature == b.commanderIdentityScryCreature
 
 private partial def cardDefBeq (a b : CardDef) : Bool :=
-  cardDefBeq1 a b && cardDefBeq2 a b && cardDefBeq3 a b &&
-    cardDefBeq4 a b && cardDefBeq5 a b && cardDefBeq6 a b &&
+  cardDefBeq1 a b && cardDefBeq2 a b &&
     match a.otherFace, b.otherFace with
     | none, none => true
     | some x, some y => cardDefBeq x y

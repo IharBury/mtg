@@ -108,7 +108,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
     (gADone.object! eqId).attachedTo == some armiesDone[0]!.id
 
   -- 1b. `resolveRandomCreatureReveal` pausing on `chooseReplacement` before `putRestOnBottomRandom`.
-  let oddCreatureDef : CardDef := { bear with name := "Phase16 Odd Bear", asEntersChooseOddEven := true }
+  let oddCreatureDef : CardDef := { bear with name := "Phase16 Odd Bear", staticAbilities := #[.asEntersChooseOddEven] }
   let gR0 : Game := insertObject afterDraw oddCreatureDef me (.library me)
   let lib := (gR0.player me).library
   let chosenId := lib.back!
@@ -317,7 +317,7 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
   -- 3c. Normal paused Aura spell entry DOES log `"attached to Event Bear"` once the as-enters choice resolves!
   let oddAuraDef : CardDef := {
     aura "Phase16 Odd Aura" ManaCost.empty "Enchant creature" with
-    asEntersChooseOddEven := true
+    staticAbilities := #[.asEntersChooseOddEven]
   }
   let gOA0 : Game := insertObject gE0 oddAuraDef me (.hand me)
   let oddAuraH := (gOA0.player me).hand.back!
@@ -1028,7 +1028,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
     gZero2.log.size == logBeforeZ
 
   -- 3b. `applyPut` (`.source, .asArtifact, .none`) across `Pending.chooseReplacement` & exile redirect.
-  let oddHeroDef : CardDef := { hero with name := "Phase17 Odd Hero", asEntersChooseOddEven := true }
+  let oddHeroDef : CardDef := { hero with name := "Phase17 Odd Hero", staticAbilities := #[.asEntersChooseOddEven] }
   let gArt0 : Game := insertObject afterDraw oddHeroDef me (.graveyard me)
   let gyHero := (gArt0.player me).graveyard.back!
   let logBeforeArt := gArt0.log.size
@@ -1815,7 +1815,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
     enteredRevAura.size == 1 && enteredRevAura[0]!.attachedTo == some preHeroId
 
   -- 9c3. Paused `commitEnteringAttackItems` on empty `preBf`: co-entering `asEntersChooseOddEven` creature pausing first still keeps `preBf` empty for the Aura!
-  let oddCreature9 : CardDef := { bear with name := "Phase17 Odd Striker", asEntersChooseOddEven := true }
+  let oddCreature9 : CardDef := { bear with name := "Phase17 Odd Striker", staticAbilities := #[.asEntersChooseOddEven] }
   let gPauseEnt0 : Game := insertObject (insertObject afterDraw oddCreature9 me (.hand me)) revAuraDef me (.hand me)
   let hPause := (gPauseEnt0.player me).hand
   let pauseAura := hPause.back!
@@ -2110,7 +2110,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     types := #[.creature]
     power := some 3
     toughness := some 3
-    staticAbilities := #[.boast]
+    activatedAbilities := #[ActivatedAbility.zemoBoastAbility]
   }
   let blk8Def : CardDef := {
     name := "Phase18 Eight Black"
@@ -2733,7 +2733,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     (g3PhNext.object! p0Hero).name == hero.name
 
   -- 9d. CR 614.12 Arwen (`othersEnterWithPlusOneEqualToughness`) simultaneous batch vs subsequent entry:
-  let arwen18 : CardDef := { bear with name := "Phase18 Arwen", toughness := some 3, othersEnterWithPlusOneEqualToughness := true }
+  let arwen18 : CardDef := { bear with name := "Phase18 Arwen", toughness := some 3, staticAbilities := #[.othersEnterWithPlusOneEqualToughness] }
   let gArw0 : Game := insertObject (insertObject (insertObject afterDraw arwen18 me (.hand me)) bear me (.hand me))
     { bear with name := "Phase18 Later Bear" } me (.hand me)
   let hIds := (gArw0.player me).hand
@@ -3176,7 +3176,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     | _, _ => false
 
   -- 4d. `CastEvent.spellCast` records actual `.library` `fromZone` when casting from top of library!
-  let topCasterDef : CardDef := { bear with name := "Phase19 Top Caster", mayCastCreaturesFromTop := true }
+  let topCasterDef : CardDef := { bear with name := "Phase19 Top Caster", staticAbilities := #[.mayCastCreaturesFromTop] }
   let gLib0 : Game := insertObject (addPermanent afterDraw topCasterDef me me) bear me (.library me)
   let topBearId := (gLib0.player me).library.back!
   let preLibCastIdx := gLib0.events.size
@@ -3862,7 +3862,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
 #guard
   -- 4a. Casting an `{X}{R}` spell from `.exile` while controlling `costReductionNotFromHand := 2`:
   --     `announceX` with `X = 2` evaluates `applyCastCostReductions` against `prop.original.zone == .exile` so `{2}{R}` reduces to `{R}`!
-  let reducerDef : CardDef := { bear with name := "Phase20 Exile Reducer", costReductionNotFromHand := 2 }
+  let reducerDef : CardDef := { bear with name := "Phase20 Exile Reducer", staticAbilities := #[.costReductionNotFromHand 2] }
   let xBurnDef : CardDef := {
     name := "Phase20 X Burn"
     manaCost := { symbols := #[.x, .colored .red] }
@@ -4193,7 +4193,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let gPwUntaxed : Game := mustApply gTaxDecl me (.declareAttackers #[optAtkId, mustAtkId] (some opp20) #[] #[some oppPwId, some oppPwId])
   -- With Tomik (`planeswalkersAttackedByOneAtMost`) limiting `oppPwId` to 1 attacker and 0 mana in pool,
   -- `Agent.choose` prioritizes `mustAtkId` (which `mustAttackIfAble`) over `optAtkId`!
-  let tomikDef : CardDef := { bear with name := "Phase20 Tomik", staticAbilities := #[.fra .planeswalkersAttackedByOneAtMost] }
+  let tomikDef : CardDef := { bear with name := "Phase20 Tomik", staticAbilities := #[.planeswalkersAttackedByOneAtMost] }
   let gTomikDecl : Game := addPermanent gTaxDecl tomikDef opp20 opp20
   let agentPickedMust : Bool :=
     match Agent.choose gTomikDecl me with
@@ -4234,9 +4234,9 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   --     - Teammate's `.opponentsCantCastOnYourTurn` allows teammate `⟨1⟩` to cast while blocking opponent `⟨2⟩`;
   --     - `corruptedToxicLifelink` ignores teammate poison (`>= 3`) and activates on opponent poison (`>= 3`);
   --     - Departed opponent's `loggedNoncombatDamage` still grants `.flyingHasteIfOpponentDealtNoncombat` (CR 800.4i)!
-  let cantWinDef : CardDef := { bear with name := "Phase20 NoWin Angel", cantLoseGame := true, opponentsCantWin := true }
+  let cantWinDef : CardDef := { bear with name := "Phase20 NoWin Angel", staticAbilities := #[.cantLoseAndOpponentsCantWin] }
   let abolisherDef : CardDef := { bear with name := "Phase20 Teammate Abolisher", staticAbilities := #[.opponentsCantCastOnYourTurn] }
-  let corruptedDef : CardDef := { bear with name := "Phase20 Corrupted Bear", keywords := #[.toxic 1], corruptedToxicLifelink := true }
+  let corruptedDef : CardDef := { bear with name := "Phase20 Corrupted Bear", keywords := #[.toxic 1], staticAbilities := #[.corruptedToxicLifelink] }
   let freeInstant20 : CardDef := { name := "Phase20 Free Opt", manaCost := ManaCost.empty, types := #[.instant], spellEffect := some { resolution := .ofSpell (.gainLife 1), phrase := "Gain 1 life" } }
   let g2hWin0 : Game := addPermanent (addPermanent (addPermanent mkTwoHeadedGiant20 cantWinDef ⟨2⟩ ⟨2⟩) abolisherDef ⟨0⟩ ⟨0⟩) corruptedDef ⟨0⟩ ⟨0⟩
   let corId := (g2hWin0.battlefield.filter (·.name == "Phase20 Corrupted Bear"))[0]!.id
@@ -4255,7 +4255,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let noncombatFlierDef : CardDef := {
     bear with
     name := "Phase20 Noncombat Flier"
-    staticAbilities := #[.fra .flyingHasteIfOpponentDealtNoncombat]
+    staticAbilities := #[.flyingHasteIfOpponentDealtNoncombat]
   }
   let gDepDmg0 : Game := addPermanent (mkThreePlayer20 801) noncombatFlierDef ⟨0⟩ ⟨0⟩
   let flierId := (gDepDmg0.battlefield.filter (·.name == "Phase20 Noncombat Flier"))[0]!.id

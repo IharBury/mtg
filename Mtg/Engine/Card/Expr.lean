@@ -13,14 +13,14 @@ anchored to the 25 September 2026 Comprehensive Rules:
 
 - `VarId`, `CmpOp`, `ArithOp`, `AggOp`, `LibraryPosSpec`
 - `PlayerFilter` / `PlayerPred` / `PlayerExpr` (11 constructors)
-- `ObjectPred` (35 constructors) / `ObjectFilter` / `ObjectExpr` (10 constructors)
-- `ValueExpr` (12 constructors)
+- `ObjectPred` (37 constructors) / `ObjectFilter` / `ObjectExpr` (10 constructors)
+- `ValueExpr` (13 constructors)
 - `Condition` (14 constructors)
 - `DurationExpr` (11 constructors, 1-to-1 with `EffectDuration`)
 - `HasTextChange` functorial Layer 3 instances (CR 612.2 / 613.1c)
 - `PrintCtx` and `ToOracle` canonical Oracle printers
 
-Every `inductive` in this module stays at ≤ 35 constructors (`< 15%` of the
+Every `inductive` in this module stays at < 40 constructors (`< 17%` of the
 Lean 4 C runtime `LeanMaxCtorTag = 243` ceiling).
 -/
 
@@ -158,6 +158,7 @@ end SubtypeCategory
 
 /-- Numeric metric queried on a player (`ValueExpr.playerMetric` / `PlayerPred.metric`). -/
 inductive PlayerMetric where
+  | one
   | life
   | handSize
   | librarySize
@@ -553,10 +554,12 @@ inductive ObjectOrPlayerExpr where
   | player (who : PlayerExpr)
   | either (obj : ObjectExpr) (who : PlayerExpr)
 
-/-- Damage recipient filter for `ObjectPred.dealtDamageThisTurn` (CR 120). -/
+/-- Damage recipient filter for `ObjectPred.dealtDamageThisTurn` and damage replacement
+effects (CR 120). -/
 inductive RecipientFilter where
   | player (filter : PlayerFilter)
   | object (filter : ObjectFilter)
+  | playerOrObject (player : PlayerFilter) (object : ObjectFilter)
   | any
 
 /-- Owner filter for owned zones (`library`, `hand`, `graveyard`, `outside`; CR 400.1). -/
@@ -571,7 +574,7 @@ structure ZoneSetSpec where
   owner : ZoneOwnerSpec
 
 /-- Pure predicate over an object's Layer 1–7d characteristics, status, relations,
-and turn/cast history (35 constructors, ≤ 35 tag budget). -/
+and turn/cast history (37 constructors, < 40 tag budget). -/
 inductive ObjectPred where
   -- Boolean combinators (3)
   | all (preds : Array ObjectPred)
@@ -607,12 +610,15 @@ inductive ObjectPred where
   | hasAttachment (filter : ObjectFilter)
   | targets (target : ObjectOrPlayerExpr)
   | shares (char : SharedCharacteristic) (withObj : ObjectExpr)
-  -- Event & cast history (CR 400.7d) (5)
+  -- Event & cast history (CR 400.7d) (7)
   | wasCast
   | castFrom (zone : ZoneKind)
   | enteredThisTurn
   | attackedThisTurn
   | dealtDamageThisTurn (combatOnly : Bool := false) (recipient? : Option RecipientFilter)
+      (thisTurnOnly : Bool := true)
+  | wasDealtDamageThisTurn
+  | receivedCounterThisTurn (kind? : Option CounterKind) (byPlayer? : Option PlayerFilter)
 
 /-- Zone-scoped object predicate (used by continuous effects, filters, and noun phrases). -/
 structure ObjectFilter where
@@ -632,7 +638,7 @@ inductive ObjectExpr where
   | union (exprs : Array ObjectExpr)
   | diff (lhs rhs : ObjectExpr)
 
-/-- Pure integer-valued expression (CR 107 / 608.2h; 12 constructors). -/
+/-- Pure integer-valued expression (CR 107 / 608.2h; 13 constructors). -/
 inductive ValueExpr where
   | const (n : Int)
   | chosenX
@@ -643,6 +649,7 @@ inductive ValueExpr where
   | cardTypeCount (objs : ObjectExpr)
   | subtypeCount (category : SubtypeCategory) (objs : ObjectExpr)
   | playerMetric (metric : PlayerMetric) (who : PlayerExpr)
+  | maxControlled (who : PlayerFilter) (pred : ObjectPred)
   | manaSymbols (color? : Option Color) (objs : ObjectExpr)
   | stepMetric (metric : StepMetric) (v : VarId)
   | binary (op : ArithOp) (lhs rhs : ValueExpr)
@@ -961,8 +968,11 @@ private partial def objectPredMentionsTarget : ObjectPred → Bool
   | .targets (.object o) => objectExprMentionsTarget o
   | .targets (.player p) => playerExprMentionsTarget p
   | .targets (.either o p) => objectExprMentionsTarget o || playerExprMentionsTarget p
-  | .dealtDamageThisTurn _ (some (.player pf)) => playerFilterMentionsTarget pf
-  | .dealtDamageThisTurn _ (some (.object f)) => objectFilterMentionsTarget f
+  | .dealtDamageThisTurn _ (some (.player pf)) _ => playerFilterMentionsTarget pf
+  | .dealtDamageThisTurn _ (some (.object f)) _ => objectFilterMentionsTarget f
+  | .dealtDamageThisTurn _ (some (.playerOrObject pf f)) _ =>
+    playerFilterMentionsTarget pf || objectFilterMentionsTarget f
+  | .receivedCounterThisTurn _ (some pf) => playerFilterMentionsTarget pf
   | _ => false
 
 private partial def objectFilterMentionsTarget (f : ObjectFilter) : Bool :=
@@ -988,6 +998,7 @@ private partial def valueExprMentionsTarget : ValueExpr → Bool
   | .objectStat _ o | .counterCount _ o | .aggregate _ _ o | .basicLandTypeCount o
   | .cardTypeCount o | .subtypeCount _ o | .manaSymbols _ o => objectExprMentionsTarget o
   | .playerMetric _ w => playerExprMentionsTarget w
+  | .maxControlled pf pred => playerFilterMentionsTarget pf || objectPredMentionsTarget pred
   | .binary _ a b => valueExprMentionsTarget a || valueExprMentionsTarget b
   | _ => false
 
@@ -1067,6 +1078,7 @@ private partial def applyTcObjectOrPlayerExpr (tcs : Array TextChange) : ObjectO
 private partial def applyTcRecipientFilter (tcs : Array TextChange) : RecipientFilter → RecipientFilter
   | .player pf => .player (applyTcPlayerFilter tcs pf)
   | .object of => .object (applyTcObjectFilter tcs of)
+  | .playerOrObject pf of => .playerOrObject (applyTcPlayerFilter tcs pf) (applyTcObjectFilter tcs of)
   | .any => .any
 
 private partial def applyTcZoneOwnerSpec (tcs : Array TextChange) : ZoneOwnerSpec → ZoneOwnerSpec
@@ -1112,8 +1124,11 @@ private partial def applyTcObjectPred (tcs : Array TextChange) : ObjectPred → 
   | .castFrom z => .castFrom z
   | .enteredThisTurn => .enteredThisTurn
   | .attackedThisTurn => .attackedThisTurn
-  | .dealtDamageThisTurn combatOnly rec? =>
-    .dealtDamageThisTurn combatOnly (rec?.map (applyTcRecipientFilter tcs))
+  | .dealtDamageThisTurn combatOnly rec? thisTurnOnly =>
+    .dealtDamageThisTurn combatOnly (rec?.map (applyTcRecipientFilter tcs)) thisTurnOnly
+  | .wasDealtDamageThisTurn => .wasDealtDamageThisTurn
+  | .receivedCounterThisTurn kind? byPlayer? =>
+    .receivedCounterThisTurn kind? (byPlayer?.map (applyTcPlayerFilter tcs))
 
 private partial def applyTcObjectFilter (tcs : Array TextChange) (f : ObjectFilter) : ObjectFilter :=
   { zones := applyTcZoneSetSpec tcs f.zones, pred := applyTcObjectPred tcs f.pred }
@@ -1141,6 +1156,7 @@ private partial def applyTcValueExpr (tcs : Array TextChange) : ValueExpr → Va
   | .cardTypeCount objs => .cardTypeCount (applyTcObjectExpr tcs objs)
   | .subtypeCount cat objs => .subtypeCount cat (applyTcObjectExpr tcs objs)
   | .playerMetric m who => .playerMetric m (applyTcPlayerExpr tcs who)
+  | .maxControlled pf pred => .maxControlled (applyTcPlayerFilter tcs pf) (applyTcObjectPred tcs pred)
   | .manaSymbols col? objs =>
     .manaSymbols (HasTextChange.applyTextChanges tcs col?) (applyTcObjectExpr tcs objs)
   | .stepMetric m v => .stepMetric m v
@@ -1339,6 +1355,7 @@ private partial def printPlayerPred (ctx : PrintCtx) : PlayerPred → String
     let rhsS := printValueExpr { ctx with capitalize := false } rhs
     let mS :=
       match m with
+      | .one => "count"
       | .life => "life total"
       | .handSize => "number of cards in hand"
       | .librarySize => "number of cards in library"
@@ -1611,14 +1628,31 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
     | .castFrom z => thatClauses := thatClauses ++ [s!"that was cast from {renderZonePhrase z}"]
     | .enteredThisTurn => thatClauses := thatClauses ++ ["that entered this turn"]
     | .attackedThisTurn => thatClauses := thatClauses ++ ["that attacked this turn"]
-    | .dealtDamageThisTurn combatOnly rec? =>
+    | .dealtDamageThisTurn combatOnly rec? thisTurnOnly =>
       let dmg := if combatOnly then "combat damage" else "damage"
       let recS :=
         match rec? with
         | none | some .any => ""
         | some (.player pf) => s!" to {printPlayerFilter { ctx with capitalize := false } pf}"
         | some (.object f) => s!" to {printObjectFilter { ctx with capitalize := false } f}"
-      thatClauses := thatClauses ++ [s!"that dealt {dmg}{recS} this turn"]
+        | some (.playerOrObject pf f) =>
+          s!" to {printPlayerFilter { ctx with capitalize := false } pf} or {printObjectFilter { ctx with capitalize := false } f}"
+      let whenS := if thisTurnOnly then " this turn" else ""
+      thatClauses := thatClauses ++ [s!"that dealt {dmg}{recS}{whenS}"]
+    | .wasDealtDamageThisTurn =>
+      thatClauses := thatClauses ++ ["that was dealt damage this turn"]
+    | .receivedCounterThisTurn kind? byPlayer? =>
+      let kS := match kind? with
+        | some k => s!"one or more {k.oracleName} counters"
+        | none => "one or more counters"
+      let whoS := match byPlayer? with
+        | some { relation := .you, pred := .any } => "you've put"
+        | some pf => s!"{printPlayerFilter { ctx with capitalize := false } pf} put"
+        | none => "had"
+      if byPlayer?.isSome then
+        thatClauses := thatClauses ++ [s!"that {whoS} {kS} on this turn"]
+      else
+        thatClauses := thatClauses ++ [s!"that had {kS} put on it this turn"]
     | .not inner =>
       thatClauses := thatClauses ++ [s!"that isn't {printObjectPredParts ctx inner zones}"]
     | .all _ => pure ()
@@ -1726,6 +1760,7 @@ private partial def printValueExpr (ctx : PrintCtx) : ValueExpr → String
     let poss := if isYou then "your" else s!"{printPlayerExpr { ctx with capitalize := false } who}'s"
     let subj := if isYou then "you" else printPlayerExpr { ctx with capitalize := false } who
     match m with
+    | .one => s!"the number of players matching {subj}"
     | .life => s!"{poss} life total"
     | .handSize => s!"the number of cards in {poss} hand"
     | .librarySize => s!"the number of cards in {poss} library"
@@ -1750,6 +1785,10 @@ private partial def printValueExpr (ctx : PrintCtx) : ValueExpr → String
     | .opponentsCount =>
       if isYou then "the number of opponents you have"
       else s!"the number of opponents {subj} has"
+  | .maxControlled who pred =>
+    let whoS := printPlayerFilter { ctx with plural := false, capitalize := false } who
+    let noun := printObjectPredParts { ctx with plural := true, capitalize := false } pred .battlefield
+    s!"the greatest number of {noun} {whoS} controls"
   | .manaSymbols (some c) objs =>
     s!"the number of {c.englishName} mana symbols in the mana costs of {printObjectExpr { ctx with plural := true, capitalize := false } objs}"
   | .manaSymbols none objs =>

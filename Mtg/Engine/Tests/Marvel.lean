@@ -174,8 +174,8 @@ def pantherCombatDraw : Game :=
 #guard (pantherCombatDraw.player ⟨0⟩).hand.size ≥ 8
 #guard pantherCombatDraw.log.any (fun s => mentions s "draws")
 
--- Daredevil looks at the library top; that is a field, not leftover text.
-#guard daredevilManWithoutFear.mayLookAtTopAnytime
+-- Daredevil looks at the library top; modeled as a stratified static ability.
+#guard daredevilManWithoutFear.staticAbilities.contains .mayLookAtTopAnytime
 
 -- Hidden Lair's second ability is {T}: Add {U} or {B} when it entered
 -- this turn or you control a basic land.

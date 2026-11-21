@@ -20,16 +20,12 @@ def legalEffectTargets (g : Game) (caster : PlayerId) (effect : Effect)
     (sourceId : Option ObjectId := none) : Array Target :=
   g.legalTargetsForSpec caster effect.effectiveTargetSpec sourceId
 
-/-- What an Aura spell targets (CR 303.4a): a creature, a creature you control
-(Secret Invasion), or an artifact or non-Aura enchantment (Puppet Crafting). -/
+/-- What an Aura spell targets (CR 303.4a): reads any `StaticAbility.enchantRestriction`
+slot, defaulting to `"Enchant creature"`. -/
 def auraTargetSpec (aura : CardDef) : TargetSpec :=
-  if aura.staticAbilities.any (· == .fra .enchantArtifactOrNonAuraEnchantment) then
-    .ofDomain (.object .battlefield (ObjectPred.andAll #[
-      .any #[.hasType .artifact, .hasType .enchantment],
-      .not (.hasSubtype (.literal .aura))]))
-  else if aura.staticAbilities.any (· == .fra .enchantCreatureYouControl) then
-    .creatureYouControl
-  else .creature
+  match aura.staticAbilities.findSome? StaticAbility.enchantRestriction? with
+  | some slot => { slots := #[slot] }
+  | none => .creature
 
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
 def legalAuraTargets (g : Game) (caster : PlayerId) (aura : CardDef)

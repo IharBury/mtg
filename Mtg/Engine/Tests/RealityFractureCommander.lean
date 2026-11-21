@@ -41,9 +41,9 @@ def entered (card : CardDef) : Game × ObjectId :=
 #guard realityFractureCommanderCards.size == 87
 #guard realityFractureCommanderCards.all (·.modellingError?.isNone)
 
-#guard glacialFortress.entersTappedUnlessAnySubtype == #[.plains, .island]
-#guard drownedCatacomb.entersTappedUnlessAnySubtype == #[.island, .swamp]
-#guard sulfurFalls.entersTappedUnlessAnySubtype == #[.island, .mountain]
+#guard glacialFortress.staticAbilities.contains (.entersTappedUnlessAnySubtype #[.plains, .island])
+#guard drownedCatacomb.staticAbilities.contains (.entersTappedUnlessAnySubtype #[.island, .swamp])
+#guard sulfurFalls.staticAbilities.contains (.entersTappedUnlessAnySubtype #[.island, .mountain])
 #guard fetidHeath.activatedAbilities.any fun ab => ab.isManaAbility && !ab.cost.mana.symbols.isEmpty
 #guard reflectingPool.activatedAbilities.any fun ab =>
   ab.mana?.any fun mp => match mp.spec with | .colorAmong (.typesLandsCouldProduce _) true => true | _ => false

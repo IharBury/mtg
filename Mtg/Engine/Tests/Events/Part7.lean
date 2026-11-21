@@ -852,7 +852,7 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   let sneakSpellDef : CardDef := {
     bear with
     name := "P36i4 Sneak Ninja"
-    staticAbilities := #[.sneak (ManaCost.ofGeneric 1)]
+    keywords := #[.sneak (CostSpec.ofGeneric 1)]
   }
   let auraDef4 : CardDef := { name := "P36i4 Aura", types := #[.enchantment] }
   let gSnkSetup :=

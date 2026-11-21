@@ -49,7 +49,7 @@ private def replayOk42i1 (gs : Array Game) : Bool :=
     name := "P42i1 ConstructAura"
     types := #[.enchantment]
     subtypes := #["Aura"]
-    staticAbilities := #[.fra .enchantedIsConstruct55]
+    staticAbilities := #[.enchantedIsConstruct55]
   }
 
   -- 1a. Cumulative multi-attachment departure invalidation in `Leaving.preBatchLegendSnapshotValid`:
@@ -1068,7 +1068,7 @@ private def replayOk43i1 (gs : Array Game) : Bool :=
   let fragileLordDef : CardDef := creature "P43i1 FragileLord" ManaCost.empty #["Wizard"] 1 0
   let nonAttGrantorDef : CardDef := { name := "P43i1 RelicGrantor", types := #[.artifact] }
   let attGrantorDef : CardDef := { name := "P43i1 EqGrantor", types := #[.artifact], subtypes := #["Equipment"] }
-  let shockBearDef : CardDef := { bear with entersTappedUnlessPayLife := some 2 }
+  let shockBearDef : CardDef := { bear with staticAbilities := #[.entersTappedUnlessPayLife 2] }
   let p2LandDef : CardDef := { name := "P43i1 Forest", types := #[.land], activatedAbilities := #[ActivatedAbility.manaAbility (.fixed #[.colored .green])] }
   let painLandDef : CardDef := {
     name := "P43i1 PainLand"
@@ -2066,9 +2066,8 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     creature "P43i4 Black15" { symbols := Array.replicate 15 (.colored .black) } #["Horror"] 2 2
   let boastManaZemoDef : CardDef := {
     creature "P43i4 ManaZemo" ManaCost.empty #["Human", "Villain"] 3 3 with
-    staticAbilities := #[.boast]
     activatedAbilities := #[
-      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .exile (.totalManaSymbolsAtLeast (some .black) (.const 15)) .yourGraveyard (.filter (.all #[.hasColor (.literal .black), .isKind .card]))], effect := Effect.gainLife 4 },
+      { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .exile (.totalManaSymbolsAtLeast (some .black) (.const 15)) .yourGraveyard (.filter (.all #[.hasColor (.literal .black), .isKind .card]))], effect := Effect.gainLife 4, tag? := some .boast },
       ActivatedAbility.manaAbility (.oneOf .anyColor (.const 3))
         (cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self])
     ]

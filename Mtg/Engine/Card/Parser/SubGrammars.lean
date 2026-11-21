@@ -4,6 +4,7 @@ import Mtg.Engine.Card.Expr
 import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.ManaSpec
 import Mtg.Engine.Card.OracleNorm
+import Mtg.Engine.Card.StaticAbility
 import Mtg.Engine.Card.Targeting
 
 /-!
@@ -763,12 +764,12 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
         ctrlPreds := ctrlPreds.push (.controlledBy .you); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " an opponent controls" then
         ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre; progress := true
-      else if let some pre := dropSuffixCI? s " opponents control" then
-        ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " your opponents control" then
         ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre; progress := true
-      else if let some pre := (dropSuffixCI? s " defending player controls").orElse
-          (fun _ => dropSuffixCI? s " the defending player controls") then
+      else if let some pre := dropSuffixCI? s " opponents control" then
+        ctrlPreds := ctrlPreds.push (.controlledBy .opponent); s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " the defending player controls").orElse
+          (fun _ => dropSuffixCI? s " defending player controls") then
         ctrlPreds := ctrlPreds.push (.controlledBy .defendingPlayer); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " that player controls" then
         ctrlPreds := ctrlPreds.push (.controlledBy .thatPlayer); s := pre; progress := true
@@ -3074,5 +3075,532 @@ def parseManaAbilityLine (raw : String) (cardName : String := "") : Option Activ
     condition?
     tag?
   }
+
+/-! ### Stage-4 Compositional Static-Ability Sub-Grammar (CR 303.4a / 601.2f / 604 / 613 / 614–616) -/
+
+/-- Extract the first `{N}` generic mana amount in `s`, if any. -/
+private def firstGenericBraceNat? (s : String) : Option Nat :=
+  let rec go : List Char → Option Nat
+    | [] => none
+    | '{' :: rest =>
+      let digits := rest.takeWhile Char.isDigit
+      match rest.dropWhile Char.isDigit with
+      | '}' :: _ =>
+        if digits.isEmpty then go rest else some (String.ofList digits).toNat!
+      | _ => go rest
+    | _ :: rest => go rest
+  go s.toList
+
+/-- Parse a signed integer token like `+2`, `-1`, `+0`, `−3`. -/
+private def parseSignedStatToken? (raw : String) : Option Int :=
+  let s := raw.trimAscii.copy
+  if s.isEmpty then none
+  else
+    let c0 := s.front
+    let isNeg := c0 == '-' || c0 == '−' || c0 == '–'
+    let isPos := c0 == '+'
+    if !isPos && !isNeg then none
+    else
+      let rest := (s.drop 1).copy
+      if !rest.isEmpty && rest.all Char.isDigit then
+        let n : Int := Int.ofNat rest.toNat!
+        some (if isNeg then -n else n)
+      else none
+
+/-- Parse a signed P/T modifier (e.g. `+2/+2` or `-1` / `-1`) into `(P, T)`. -/
+private def parsePTBonus? (raw : String) : Option (Int × Int) :=
+  let s := raw.trimAscii.copy
+  match s.splitOn "/" with
+  | [p, t] =>
+    match parseSignedStatToken? p, parseSignedStatToken? t with
+    | some pv, some tv => some (pv, tv)
+    | _, _ => none
+  | _ => none
+
+/-- Parse a comma/`and`-separated list of inline keywords (plus optional `ward {N}`). -/
+private def parseGrantedKeywordsList? (raw : String) : Option (Array KeywordAbility) := Id.run do
+  let s := cleanClause raw
+  if s.isEmpty then return none
+  let normalized := s.replace ", and " ", " |>.replace " and " ", "
+  let parts := normalized.splitOn "," |>.map (·.trimAscii.copy) |>.filter (!·.isEmpty)
+  if parts.isEmpty then return none
+  let mut out : Array KeywordAbility := #[]
+  for part in parts do
+    match parseKeywordAbility part with
+    | some k => out := out.push k
+    | none => return none
+  return some out
+
+/-- Parse `"a <sub1> or a <sub2>..."` subtype list (for check-lands / unless-control clauses). -/
+private def parseOrSubtypes? (raw : String) : Option (Array CardSubtype) := Id.run do
+  let s := cleanClause raw
+  let pieces := ((s.replace ", or " " or ").splitOn " or ").map (·.trimAscii.copy) |>.filter (!·.isEmpty)
+  if pieces.isEmpty then return none
+  let mut out : Array CardSubtype := #[]
+  for p in pieces do
+    let w := (dropPrefixCI? p "an ").orElse (fun _ => dropPrefixCI? p "a ") |>.getD p
+    match CardSubtype.ofOracle? w with
+    | some sub => out := out.push sub
+    | none => return none
+  return some out
+
+/-- Parse a Stage-4 static ability condition phrase (after `"if "` / `"unless "` / `"as long as "`),
+producing canonical `StaticAbility.cond*` shapes so round-trip matches `ToOracle` identically. -/
+private def parseStaticCondition? (raw : String) (cardName : String := "") : Option Condition := Id.run do
+  let s0 := cleanClause (replaceSelfName raw cardName "this permanent")
+  let low := lower s0
+  if low == "you control a legendary creature" || low == "you control a legendary" then
+    return some StaticAbility.condControlLegendaryCreature
+  if low == "you control an equipment" then
+    return some (StaticAbility.condControlSubtype .equipment)
+  if low == "you control a planeswalker" then
+    return some StaticAbility.condControlPlaneswalker
+  if low == "you control a commander" then
+    return some StaticAbility.condControlCommander
+  if low == "you control two or more other lands" then
+    return some (StaticAbility.condControlNOtherLands 2)
+  if low == "a creature died this turn" then
+    return some StaticAbility.condCreatureDiedThisTurn
+  if low == "you've cast a noncreature spell this turn" then
+    return some StaticAbility.condCastNoncreatureThisTurn
+  if low == "an opponent has cast a spell this turn" then
+    return some StaticAbility.condOpponentCastSpellThisTurn
+  if low == "an opponent was dealt noncombat damage this turn" then
+    return some StaticAbility.condOpponentDealtNoncombatDamageThisTurn
+  if low == "you have an enduring story" then
+    return some StaticAbility.condEnduringStory
+  if low == "it targets a creature that was dealt damage this turn" then
+    return some (StaticAbility.condTargetsCreature .wasDealtDamageThisTurn)
+  if low == "it targets a tapped creature" then
+    return some (StaticAbility.condTargetsCreature (.tapped true))
+  if low == "it targets an attacking nontoken creature" then
+    return some (StaticAbility.condTargetsCreature (.all #[.combatRole .attacking, .isToken false]))
+  if low == "it targets an attacking creature" then
+    return some (StaticAbility.condTargetsCreature (.combatRole .attacking))
+  -- `"you control N or more basic lands"`
+  if let some rest := dropPrefixCI? low "you control " then
+    if let some nStr := dropSuffixCI? rest " or more basic lands" then
+      if let some n := parseNatWord? nStr then
+        return some (StaticAbility.condControlNBasicLands n)
+    if let some nStr := dropSuffixCI? rest " or more other lands" then
+      if let some n := parseNatWord? nStr then
+        return some (StaticAbility.condControlNOtherLands n)
+    if let some subStr := dropPrefixCI? rest "another " then
+      if let some sub := CardSubtype.ofOracle? subStr then
+        return some (StaticAbility.condControlOtherSubtype sub)
+    -- `"you control a/an <sub1> or a/an <sub2>"` (land subtypes for check-lands)
+    if rest.contains " or " then
+      if let some subs := parseOrSubtypes? rest then
+        if subs.size ≥ 2 && subs.all (·.kind == .land) then
+          return some (StaticAbility.condControlLandAnySubtype subs)
+    let afterArt := (dropPrefixCI? rest "an ").orElse (fun _ => dropPrefixCI? rest "a ") |>.getD rest
+    if let some sub := CardSubtype.ofOracle? afterArt then
+      return some (StaticAbility.condControlSubtype sub)
+  -- `"your opponents control N or more lands"`
+  if let some rest := dropPrefixCI? low "your opponents control " then
+    if let some nStr := dropSuffixCI? rest " or more lands" then
+      if let some n := parseNatWord? nStr then
+        return some (StaticAbility.condOpponentsControlNLands n)
+  -- `"there are N or more cards / other cards / creature cards in your graveyard"`
+  if low == "there is a creature card in your graveyard" then
+    return some (StaticAbility.condGyCreatureCardsAtLeast 1)
+  if let some rest := dropPrefixCI? low "there are " then
+    if let some nStr := dropSuffixCI? rest " or more creature cards in your graveyard" then
+      if let some n := parseNatWord? nStr then
+        return some (StaticAbility.condGyCreatureCardsAtLeast n)
+    if let some nStr := dropSuffixCI? rest " or more other cards in your graveyard" then
+      if let some n := parseNatWord? nStr then
+        return some (StaticAbility.condOtherCardsInGraveyardAtLeast n)
+    if let some nStr := dropSuffixCI? rest " or more cards in your graveyard" then
+      if let some n := parseNatWord? nStr then
+        return some (StaticAbility.condGraveyardAtLeast n)
+    if let some nStr := dropSuffixCI? rest " or more lore counters among sagas you control" then
+      if let some n := parseNatWord? nStr then
+        return some (StaticAbility.condSagaLoreCountersAtLeast n)
+  -- `"an opponent has N or more poison counters"`
+  if let some rest := dropPrefixCI? low "an opponent has " then
+    if let some nStr := dropSuffixCI? rest " or more poison counters" then
+      if let some n := parseNatWord? nStr then
+        return some (StaticAbility.condOpponentPoisonAtLeast n)
+  parseCondition s0
+
+/-- Parse a Stage-4 high-precision static ability line (CR 303.4a / 601.2f / 604 / 613 / 614–616),
+returning one or more stratified `StaticAbility` values. Covers all migrated structural
+static, cost-modifier, ETB, as-enters, rule-modifying, and Aura enchant-restriction lines
+and round-trips canonically against `StaticAbility.toOracle`. -/
+def parseStaticAbilityLine (raw : String) (cardName : String := "") : Option (Array StaticAbility) := Id.run do
+  let cleaned := cleanClause (stripReminderText raw)
+  if cleaned.isEmpty then return none
+  let low := lower cleaned
+  let selfNorm := cleanClause (replaceSelfName cleaned cardName "this permanent")
+  let selfLow := lower selfNorm
+
+  -- Do not intercept triggered abilities (`When`/`Whenever`/`At the beginning`) or activated abilities (`:`)
+  -- unless the colon is inside quotes (`Creatures you control have "{T}: Add ..."`).
+  if low.startsWith "when " || low.startsWith "whenever " || low.startsWith "at the beginning" then
+    return none
+  let beforeQuote := (cleaned.splitOn "\"").headD cleaned
+  if beforeQuote.contains ':' then
+    return none
+
+  -- 1. Aura Enchant restrictions (CR 303.4a) — skip plain `"Enchant creature"` (default Aura target)
+  if let some rest := dropPrefixCI? cleaned "enchant " then
+    let rLow := lower rest
+    if rLow == "creature" then return none
+    if rLow == "artifact or non-aura enchantment" then
+      return some #[StaticAbility.enchantArtifactOrNonAuraEnchantment]
+    if rLow == "creature you control" then
+      return some #[StaticAbility.enchantCreatureYouControl]
+    if let some slot := parseTargetSlot ("target " ++ rest) then
+      return some #[.enchantRestriction { slot with count := .exact 1 }]
+    return none
+
+  -- 2. Self spell cost reductions / free casts (CR 601.2f)
+  if let some rest := dropPrefixCI? selfLow "this spell costs {x} less to cast, where x is " then
+    if rest == "the total power of creatures you control with flying" then
+      return some #[StaticAbility.costReductionEqualFlyingPower]
+    if rest == "the greatest number of artifacts an opponent controls" then
+      return some #[StaticAbility.costReductionEqualOppArtifacts]
+    if rest == "the greatest power among creatures you control" then
+      return some #[StaticAbility.costReductionGreatestPower]
+    if rest == "the greatest toughness among creatures you control" then
+      return some #[StaticAbility.costReductionGreatestToughness]
+    if let some v := parseValueExpr rest then
+      return some #[.costModifier none .thisSpell (.reduceGeneric v)]
+    return none
+
+  if selfLow.startsWith "this spell costs " && selfLow.contains " less to cast" then
+    let some k := firstGenericBraceNat? cleaned | return none
+    if selfLow.contains "dealt damage this turn" then
+      return some #[StaticAbility.costReductionIfTargetDamaged k]
+    if selfLow.contains "tapped creature" then
+      return some #[StaticAbility.costReductionIfTargetTapped k]
+    if selfLow.contains "attacking nontoken" then
+      return some #[StaticAbility.costReductionIfTargetAttackingNontoken k]
+    if selfLow.contains "attacking creature" then
+      return some #[StaticAbility.costReductionIfTargetAttacking k]
+    if selfLow.contains "if a creature died this turn" then
+      return some #[StaticAbility.costReductionIfCreatureDied k]
+    if selfLow.contains "if you've cast a noncreature spell this turn" then
+      return some #[StaticAbility.costsLessIfCastNoncreature k]
+    if let some (_, condStr) := splitFirstCI? cleaned " less to cast if " then
+      if let some cond := parseStaticCondition? condStr cardName then
+        return some #[.costModifier (some cond) .thisSpell (.reduceGeneric (.const k))]
+      return none
+    if selfLow.endsWith " less to cast" then
+      return some #[.costModifier none .thisSpell (.reduceGeneric (.const k))]
+    return none
+
+  if selfLow.contains "without paying its mana cost" && selfLow.contains "commander" then
+    return some #[StaticAbility.freeCastIfControlCommander]
+
+  -- 3. Multi-spell / Eminence / first-creature / not-from-hand cost modifiers & flash
+  if selfLow.startsWith "the first creature spell you cast each turn costs " then
+    let some k := firstGenericBraceNat? cleaned | return none
+    if selfLow.contains "as though it had flash" then
+      return some #[StaticAbility.firstCreatureCostsLess k, StaticAbility.firstCreatureHasFlash]
+    else
+      return some #[StaticAbility.firstCreatureCostsLess k]
+  if selfLow == "the first creature spell you cast each turn can be cast as though it had flash" then
+    return some #[StaticAbility.firstCreatureHasFlash]
+  if selfLow.contains "from anywhere other than your hand cost" then
+    let some k := firstGenericBraceNat? cleaned | return none
+    return some #[StaticAbility.costReductionNotFromHand k]
+  if selfLow.contains " spells you cast cost " &&
+      (selfLow.contains "command zone" || selfLow.startsWith "eminence") then
+    let some k := firstGenericBraceNat? cleaned | return none
+    let afterSubAnchor? :=
+      (splitFirstCI? cleaned "other ").map Prod.snd
+      |>.orElse fun _ => (splitFirstCI? cleaned "on the battlefield, ").map Prod.snd
+    if let some afterAnchor := afterSubAnchor? then
+      if let some (subStr, _) := splitFirstCI? afterAnchor " spells you cast" then
+        if let some sub := CardSubtype.ofOracle? subStr then
+          return some #[StaticAbility.eminenceSubtypeSpellsCostLess sub k]
+
+  -- 4. Play rules (cantBeCountered, flashIf, graveyard restriction, castExiled, look/cast/play top, commander)
+  if selfLow == "this spell can't be countered" then
+    return some #[StaticAbility.spellCantBeCountered]
+  if let some (_, condStr) := splitFirstCI? cleaned "you may cast this spell as though it had flash if " then
+    if let some cond := parseStaticCondition? condStr cardName then
+      return some #[.ruleModifying (some cond) (.play (.castAsThoughFlash .you .anyObject true none))]
+  if let some rest := dropPrefixCI? selfLow "as long as there are " then
+    if let some (numStr, tail) :=
+        splitFirstCI? rest " or more cards in your graveyard, you may cast the exiled card" then
+      if let some n := parseNatWord? numStr then
+        if n == 7 then
+          return some #[StaticAbility.castExiledWithSevenInGraveyard]
+        else
+          return some #[.ruleModifying (some (StaticAbility.condGraveyardAtLeast n))
+            (.play (.mayPlayFrom .you .exile .anyObject (linkedExile := true)
+              (castAnyColorMana := tail.contains "mana of any type")))]
+  if let some condStr := dropPrefixCI? selfLow "you can't cast this spell unless " then
+    if let some cond := parseStaticCondition? condStr cardName then
+      -- Normalize `there are N or more cards in your graveyard` to `other cards` for cast restriction
+      let cond :=
+        match cond with
+        | .cmp .ge (.playerMetric .graveyardSize .you) (.const n) =>
+          StaticAbility.condOtherCardsInGraveyardAtLeast n.toNat
+        | other => other
+      return some #[.ruleModifying none (.play (.castRestriction cond))]
+  if selfLow == "you may look at the top card of your library any time" then
+    return some #[StaticAbility.mayLookAtTopAnytime]
+  if selfLow == "you may cast creature spells from the top of your library" then
+    return some #[StaticAbility.mayCastCreaturesFromTop]
+  if selfLow == "you may play lands from the top of your library" then
+    return some #[StaticAbility.mayPlayLandsFromTop]
+  if selfLow == "you may play lands from your graveyard" then
+    return some #[StaticAbility.mayPlayLandsFromGraveyard]
+  if selfLow.endsWith " can be your commander" then
+    return some #[StaticAbility.canBeCommander]
+
+  -- 5. Player / Game rules (Platinum Angel, opponents can't gain life, -1/-1 lock, additional land)
+  if selfLow == "your opponents can't gain life" then
+    return some #[StaticAbility.opponentsCantGainLife]
+  if selfLow.contains "you can't lose the game" && selfLow.contains "your opponents can't win the game" then
+    return some #[StaticAbility.cantLoseAndOpponentsCantWin]
+  if selfLow == "you can't lose the game" then
+    return some #[.ruleModifying none (.player (.cantLoseGame .you))]
+  if selfLow == "your opponents can't win the game" then
+    return some #[.ruleModifying none (.player (.cantWinGame .opponent))]
+  if selfLow.contains "creatures you control can't have -1/-1 counters put on them" then
+    return some #[StaticAbility.creaturesCantGetMinusCounters]
+  if selfLow.contains "you may play an additional land" && selfLow.contains "as long as you control another " then
+    if let some (_, afterAnother) := splitFirstCI? cleaned "another " then
+      let subWord := ((afterAnother.splitOn ",").headD afterAnother).splitOn "." |>.headD "" |>.trimAscii.copy
+      if let some sub := CardSubtype.ofOracle? subWord then
+        return some #[StaticAbility.extraLandIfOtherSubtype sub]
+  if selfLow.startsWith "if this " && selfLow.contains "power is negative," &&
+      selfLow.contains "assigns combat damage as though" && selfLow.endsWith "power were positive" then
+    return some #[StaticAbility.negativePowerAssignsAsPositive]
+  if selfLow == "during combat, players can't cast spells or activate abilities that aren't mana abilities" then
+    return some #[StaticAbility.noSpellsOrAbilitiesDuringCombat]
+  if selfLow.contains "power is equal to the number of card types among cards in all graveyards" &&
+      selfLow.contains "toughness is equal to that number plus 1" then
+    return some #[StaticAbility.ptEqualGraveyardCardTypes]
+  if selfLow.contains "you've put one or more +1/+1 counters on" &&
+      selfLow.contains "this turn," && selfLow.endsWith "has flying" then
+    return some #[StaticAbility.flyingIfPlusOneThisTurn]
+
+  -- 6. ETB / As-enters / Replacement effects (CR 614 / 615)
+  if selfLow.contains "enters tapped" && selfLow.contains " life" &&
+      (selfLow.contains "you may pay " || selfLow.contains "unless you pay ") then
+    let afterPay? :=
+      (splitFirstCI? selfLow "you may pay ").map Prod.snd
+      |>.orElse fun _ => (splitFirstCI? selfLow "unless you pay ").map Prod.snd
+    if let some afterPay := afterPay? then
+      let digits := (afterPay.takeWhile Char.isDigit).copy
+      if !digits.isEmpty then
+        return some #[StaticAbility.entersTappedUnlessPayLife digits.toNat!]
+  if selfLow.contains "you may behold " && selfLow.contains "if you don't" && selfLow.contains "enters tapped" then
+    if let some (_, afterBehold) := splitFirstCI? cleaned "you may behold " then
+      let head := (afterBehold.splitOn ".").headD afterBehold |>.trimAscii.copy
+      let word := (dropPrefixCI? head "an ").orElse (fun _ => dropPrefixCI? head "a ") |>.getD head
+      if let some sub := CardSubtype.ofOracle? word then
+        return some #[StaticAbility.entersTappedUnlessBehold sub]
+  if selfLow == "this land enters tapped. as it enters, choose a color" then
+    return some #[StaticAbility.entersTappedChooseColor]
+  if let some (head, unlessStr) := splitFirstCI? selfNorm " enters tapped unless " then
+    if isSelfObjectPhrase head then
+      if let some cond := parseStaticCondition? unlessStr cardName then
+        return some #[StaticAbility.entersTappedUnless cond]
+  if let some head := dropSuffixCI? selfNorm " enters tapped" then
+    if isSelfObjectPhrase head then
+      return some #[StaticAbility.entersTapped]
+  if let some head := dropSuffixCI? selfNorm " enters prepared" then
+    if isSelfObjectPhrase head then
+      return some #[StaticAbility.entersPrepared]
+  if selfLow.contains "enters with a hope counter" && selfLow.contains "for each creature you control" then
+    return some #[StaticAbility.entersWithHopePerCreature]
+  if selfLow.contains "additional +1/+1 counters" && selfLow.contains "toughness" then
+    return some #[StaticAbility.othersEnterWithPlusOneEqualToughness]
+  if let some (head, afterWith) := splitFirstCI? selfNorm " enters with " then
+    if isSelfObjectPhrase head then
+      let trimmed := (dropSuffixCI? afterWith " on it").orElse
+        (fun _ => (dropSuffixCI? afterWith " on him").orElse
+          (fun _ => dropSuffixCI? afterWith " on her")) |>.getD afterWith
+      if let some (cntSpec, some kind) := parseCounterPhrase? trimmed then
+        match cntSpec with
+        | .exact n => return some #[StaticAbility.entersWithCounters kind (.const n)]
+        | .count v => return some #[StaticAbility.entersWithCounters kind v]
+        | _ => pure ()
+  if selfLow.startsWith "as " && selfLow.contains " enters, choose " then
+    if selfLow.endsWith "choose a creature type" then
+      return some #[StaticAbility.asEntersChooseCreatureType]
+    if selfLow.endsWith "choose odd or even" then
+      return some #[StaticAbility.asEntersChooseOddEven]
+    if selfLow.endsWith "choose a card type" then
+      return some #[StaticAbility.asEntersChooseCardType]
+    if selfLow.endsWith "choose a nonland card name" then
+      return some #[StaticAbility.asEntersChooseNonlandCardName]
+    if selfLow.endsWith "choose a color" then
+      return some #[.replacement none (.asEntersChoose .color)]
+  if selfLow.startsWith "as " && selfLow.contains " enters, you may have it become a copy of any creature on the battlefield until end of turn, except it has haste" then
+    return some #[StaticAbility.asEntersMayCopyCreatureHasteUntilEot]
+  if selfLow.contains "if you would create a food token" && selfLow.contains "treasure" then
+    return some #[StaticAbility.foodAlsoCreatesTreasure]
+  if selfLow.contains "twice that many of those tokens are created instead" then
+    return some #[StaticAbility.tokenDoubling]
+  if let some (beforeTimes, _) := splitFirstCI? selfLow " times that many of those tokens are created instead" then
+    let factorWord := (beforeTimes.splitOn ",").getLastD beforeTimes |>.trimAscii.copy
+    if let some factor := parseNatWord? factorWord then
+      if factor > 1 then
+        return some #[.replacement none (.multiplyTokens .you factor)]
+  if selfLow.contains "except the first one you draw in each of your draw steps" then
+    return some #[StaticAbility.drawTwoExceptFirstDrawStep]
+  if selfLow == "if you would lose unspent mana, that mana becomes colorless instead" then
+    return some #[StaticAbility.unspentManaBecomesColorless]
+
+  -- 7. Continuous abilities previously stored as CardDef fields
+  if selfLow.contains "creatures you control have" && selfLow.contains "add one mana of any color" then
+    return some #[StaticAbility.grantCreaturesTapAddAnyColor]
+  if selfLow.contains "lands you control have" && selfLow.contains "add one mana of any color" then
+    return some #[StaticAbility.grantLandsTapAnyColor]
+  if selfLow.contains "lore counters among sagas you control" && selfLow.contains "hexproof and indestructible" then
+    if let some (_, afterAre) := splitFirstCI? selfLow "there are " then
+      let numWord := (afterAre.splitOn " ").headD ""
+      if let some n := parseNatWord? numWord then
+        return some #[StaticAbility.hexproofIndestructibleIfLore n]
+  if selfLow.contains "for each mountain you control" && selfLow.contains "gets +" then
+    if let some (_, afterPlus) := splitFirstCI? selfLow "gets +" then
+      let digits := (afterPlus.takeWhile Char.isDigit).copy
+      if !digits.isEmpty then
+        return some #[StaticAbility.powerPerMountain digits.toNat!]
+  if selfLow.contains "gets +1/+1 for each unspent mana you have" then
+    return some #[StaticAbility.powerPerUnspentMana]
+  if selfLow == "you and creatures you control have protection from the chosen card type" then
+    return some #[StaticAbility.protectionFromChosenCardType]
+  if selfLow.contains "creatures you control with toxic have lifelink" then
+    return some #[StaticAbility.corruptedToxicLifelink]
+  if selfLow == "if a creature an opponent controls would die, exile it instead" then
+    return some #[StaticAbility.exileOpponentsDyingCreatures]
+
+  return none
+
+/-- Compositional fallback parser for novel static abilities not already present in the
+catalog prototype index (e.g. novel conditional lord buffs, novel spell cost modifiers,
+novel combat/player rules, novel CDAs). Invoked only after exact structural & prototype
+matching fails so existing catalog ASTs remain canonical. -/
+def parseNovelStaticAbilityLine (raw : String) (cardName : String := "") :
+    Option (Array StaticAbility) := Id.run do
+  let cleaned := cleanClause (stripReminderText raw)
+  if cleaned.isEmpty then return none
+  let low := lower cleaned
+  if low.startsWith "when " || low.startsWith "whenever " || low.startsWith "at the beginning" then
+    return none
+  let beforeQuote := (cleaned.splitOn "\"").headD cleaned
+  if beforeQuote.contains ':' then
+    return none
+
+  let selfNorm := cleanClause (replaceSelfName cleaned cardName "this permanent")
+
+  -- Peel optional leading condition (`"As long as <cond>, <body>"` / `"During your turn, <body>"`)
+  let (cond?, body) : Option Condition × String :=
+    if let some rest := dropPrefixCI? selfNorm "during your turn, " then
+      (some .isYourTurn, rest)
+    else if let some rest := dropPrefixCI? selfNorm "as long as " then
+      match splitFirstCI? rest ", " with
+      | some (condStr, restBody) =>
+        match parseStaticCondition? condStr cardName with
+        | some c => (some c, restBody)
+        | none => (none, selfNorm)
+      | none => (none, selfNorm)
+    else (none, selfNorm)
+
+  let bLow := lower body
+
+  -- Novel additional lands: `"you may play N additional land(s) on each of your turns"`
+  if let some rest := dropPrefixCI? bLow "you may play " then
+    if let some beforeAdd := (dropSuffixCI? rest " on each of your turns").orElse
+        (fun _ => some rest) then
+      if beforeAdd == "an additional land" then
+        return some #[.ruleModifying cond? (.player (.additionalLands .you 1))]
+      if let some nStr := dropSuffixCI? beforeAdd " additional lands" then
+        if let some n := parseNatWord? nStr then
+          return some #[.ruleModifying cond? (.player (.additionalLands .you n))]
+
+  -- Novel player hexproof / protection
+  if bLow == "you have hexproof" then
+    return some #[.ruleModifying cond? (.player (.hexproof .you none))]
+  if let some qStr := dropPrefixCI? bLow "you have protection from " then
+    if let some (.protection q) := parseKeywordAbility s!"protection from {qStr}" then
+      return some #[.ruleModifying cond? (.player (.protectionFrom .you q))]
+
+  -- Novel spell cost modifiers: `"<type/subtype/supertype> spells you cast / your opponents cast cost {N} less/more to cast"`
+  if let some (subjPart, costPart) := (splitFirstCI? body " cost ").orElse
+      (fun _ => splitFirstCI? body " costs ") then
+    let cLow := lower costPart
+    let isLess := cLow.contains " less to cast"
+    let isMore := cLow.contains " more to cast"
+    if isLess || isMore then
+      if let some n := firstGenericBraceNat? costPart then
+        let (caster?, predStr?) : Option PlayerFilter × Option String :=
+          match dropSuffixCI? subjPart " spells you cast" with
+          | some p => (some .you, some p)
+          | none =>
+            match dropSuffixCI? subjPart " spells your opponents cast" with
+            | some p => (some .opponent, some p)
+            | none => (none, none)
+        if let (some caster, some predStr) := (caster?, predStr?) then
+          let pLow := lower predStr
+          let spellPred? : Option ObjectPred :=
+            if pLow == "noncreature" then some (.not (.hasType .creature))
+            else if let some ty := CardType.ofOracle? pLow then some (.hasType ty)
+            else if let some sup := Supertype.ofOracle? pLow then some (.hasSupertype sup)
+            else if let some sub := CardSubtype.ofOracle? predStr then some (.hasSubtype (.literal sub))
+            else none
+          if let some sp := spellPred? then
+            let cm : CostModification :=
+              if isLess then .reduceGeneric (.const n) else .increaseGeneric (.const n)
+            return some #[.costModifier cond? (.spells caster sp) cm]
+
+  -- Novel CDA: `"this creature's power and toughness are each equal to <valueExpr>"` / `"this creature's power is equal to <valueExpr>"`
+  if let some vStr := dropPrefixCI? bLow "this permanent's power and toughness are each equal to " then
+    if let some v := parseValueExpr vStr then
+      return some #[.characteristicDefining (.setPT (some v) (some v))]
+  if let some vStr := dropPrefixCI? bLow "this creature's power and toughness are each equal to " then
+    if let some v := parseValueExpr vStr then
+      return some #[.characteristicDefining (.setPT (some v) (some v))]
+  if let some vStr := (dropPrefixCI? bLow "this permanent's power is equal to ").orElse
+      (fun _ => dropPrefixCI? bLow "this creature's power is equal to ") then
+    if let some v := parseValueExpr vStr then
+      return some #[.characteristicDefining (.setPT (some v) none)]
+
+  -- Novel continuous scope + gets +P/+T and/or has/have <keywords>
+  let parseScope? (subjRaw : String) : Option ObjectFilter :=
+    let sLow := lower (cleanClause subjRaw)
+    if isSelfObjectPhrase sLow then some StaticAbility.scopeSelf
+    else if sLow == "equipped creature" then some StaticAbility.scopeEquippedCreature
+    else if sLow == "enchanted creature" then some StaticAbility.scopeEnchantedCreature
+    else if sLow == "enchanted permanent" then some StaticAbility.scopeEnchantedPermanent
+    else if sLow == "creatures you control" then some StaticAbility.scopeCreaturesYouControl
+    else if sLow == "other creatures you control" then some StaticAbility.scopeOtherCreaturesYouControl
+    else if sLow == "creatures your opponents control" then some StaticAbility.scopeOpponentsCreatures
+    else if sLow == "lands you control" then some StaticAbility.scopeLandsYouControl
+    else if sLow == "planeswalkers you control" then some StaticAbility.scopePlaneswalkersYouControl
+    else
+      (parseNounPhrase subjRaw).map (·.filter)
+
+  -- Case 1: `"<scope> get(s) +P/+T and have/has <keywords>"`
+  let splitGets? := (splitFirstCI? body " get ").orElse (fun _ => splitFirstCI? body " gets ")
+  if let some (subjStr, afterGets) := splitGets? then
+    if let some sc := parseScope? subjStr then
+      let splitAndHas? := (splitFirstCI? afterGets " and have ").orElse
+        (fun _ => splitFirstCI? afterGets " and has ")
+      match splitAndHas? with
+      | some (ptStr, kwStr) =>
+        if let (some (p, t), some kws) := (parsePTBonus? ptStr, parseGrantedKeywordsList? kwStr) then
+          return some #[.continuous cond? sc (.all #[.modifyPT (.const p) (.const t), .grantKeywords kws])]
+      | none =>
+        if let some (p, t) := parsePTBonus? afterGets then
+          return some #[.continuous cond? sc (.modifyPT (.const p) (.const t))]
+
+  -- Case 2: `"<scope> have/has <keywords>"`
+  let splitHas? := (splitFirstCI? body " have ").orElse (fun _ => splitFirstCI? body " has ")
+  if let some (subjStr, kwStr) := splitHas? then
+    if !kwStr.contains '"' then
+      if let (some sc, some kws) := (parseScope? subjStr, parseGrantedKeywordsList? kwStr) then
+        return some #[.continuous cond? sc (.grantKeywords kws)]
+
+  return none
 
 end Mtg.Engine.Parser

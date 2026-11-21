@@ -60,19 +60,22 @@ def unprepare (g : Game) (o : GameObject) (cause : Option EventCause := none) : 
     let g := g.record (GameEvent.designation g.turnNumber (g.snapshot o) .prepared false (cause := resolvedCause))
     (g.removePreparedCopy o.id).logMsg s!"{oName} is no longer prepared"
 
-/-- True when `o` replaces an opposing creature dying with exile. -/
+/-- True when `o` replaces an opposing creature dying with exile (CR 614.6). -/
 def exilesOppDeath? (g : Game) (o : GameObject) : Bool :=
-  ((g.baseCard o).exileOppCreaturesInstead && g.retainsPrintedAbilities o) ||
-    (g.staticAbilities o).any (fun
-      | .exileOppDeathCreateWolf => true
-      | .fra .exileOpponentsDyingCreatures => true
-      | _ => false)
+  let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+  (g.staticAbilities o).any fun ab =>
+    ab.anyReplacement fun cond? sp =>
+      match sp with
+      | .exileInsteadOfDying _ _ => cond?.all (EvalExpr.evalCondition g env)
+      | _ => false
 
 /-- True when `o` also creates a Wolf after that replacement (Head of the Hunt). -/
 def createsWolfOnOppExileDeath? (g : Game) (o : GameObject) : Bool :=
-  (g.staticAbilities o).any (fun
-    | .exileOppDeathCreateWolf => true
-    | _ => false)
+  (g.staticAbilities o).any fun ab =>
+    ab.anyReplacement fun _ sp =>
+      match sp with
+      | .exileInsteadOfDying _ (some _) => true
+      | _ => false
 
 /-- Strip outer `.replaced` wrappers from `EventCause` to recover the underlying
 one-shot or game-rule cause for non-replaced side effects of the same instruction. -/
@@ -181,21 +184,33 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
           controller := oldCtrl
           affectedPlayer := affected
           kind := .exileInsteadOfGraveyard (some old.id) false }, none, true)
-    -- Opposing creature death replacements (Head of the Hunt, Kalitas, etc.).
+    -- Creature/permanent death-to-exile replacements (Head of the Hunt, Kalitas, etc., CR 614.6).
     if proposed.watches .wouldDie then
-      for src in bf.filter board.exilesOppDeath? do
+      for src in bf do
         if src.id != old.id then
-          match board.controllerOf src, oldCtrl with
-          | some p, some q =>
-            if p != q && !board.areTeammates p q then
-              specs := specs.push (
-                { id := { kind := .exileOppDeath, object := some src.id }
-                  source := some src.id
-                  controller := some p
-                  affectedPlayer := affected
-                  kind := .exileInsteadOfGraveyard (some old.id) (board.createsWolfOnOppExileDeath? src) },
-                some src, false)
-          | _, _ => pure ()
+          let srcCtrl := (board.controllerOf src).getD src.owner
+          let env : EvalEnv := { controller := srcCtrl, sourceId := some src.id }
+          let matchingTok? : Option (Option TokenSpec) :=
+            (board.staticAbilities src).findSome? fun ab =>
+              match ab with
+              | .replacement cond? spec =>
+                if cond?.all (EvalExpr.evalCondition board env) then
+                  spec.flatten.findSome? fun
+                    | .exileInsteadOfDying sc bonusTok? =>
+                      if EvalExpr.evalObjectPred board env (.live boardOld) sc.pred then
+                        some bonusTok?
+                      else none
+                    | _ => none
+                else none
+              | _ => none
+          if let some bonusTok? := matchingTok? then
+            specs := specs.push (
+              { id := { kind := .exileOppDeath, object := some src.id }
+                source := some src.id
+                controller := some srcCtrl
+                affectedPlayer := affected
+                kind := .exileInsteadOfGraveyard (some old.id) bonusTok?.isSome },
+              some src, false)
     -- Active `ContinuousEffect.replacement` effects for zone moves.
     for (_, eff) in g.activeEffects do
       match eff with
@@ -1011,7 +1026,9 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
           | none => .gameRule .spellCast)
       let g := g.ceaseToExist o.id (cause := cause)
       g.logMsg s!"{name} is countered"
-    else if ((g.baseCard o).cantBeCountered && g.retainsPrintedAbilities o) || g.uncounterableThisCast o then
+    else if (g.staticAbilities o).any (fun ab =>
+        ab.anyRule fun _ r => match r with | .play (.spellCantBeCountered none) => true | _ => false) ||
+        g.uncounterableThisCast o then
       g.logMsg s!"{g.name o} can't be countered"
     else
       let dest :=

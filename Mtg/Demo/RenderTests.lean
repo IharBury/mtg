@@ -1665,7 +1665,7 @@ def freeSacKnightActivating : Game :=
 /-- A spell whose entire generic mana cost is waived if a creature died. -/
 def freeCloud : CardDef :=
   creature "Free Cloud" (ManaCost.ofGeneric 3) #["Bat"] 1 1
-    (costReductionIfCreatureDied := 3)
+    (staticAbilities := #[.costReductionIfCreatureDied 3])
 
 def freeCloudInHand : Game :=
   addToHand (readyMain (emptyHand afterDraw ⟨0⟩)) freeCloud ⟨0⟩

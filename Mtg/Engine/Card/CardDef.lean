@@ -68,208 +68,45 @@ structure CardDef where
   spellEffect : Option Effect := none
   /-- Additional casting costs on this card (CR 118.8 / 601.2b,f,h). -/
   additionalCosts : Array AdditionalCostSpec := #[]
-  /-- This spell costs this much generic mana less if a creature died this
-  turn (e.g. Dreaded Bat-Cloud). -/
-  costReductionIfCreatureDied : Nat := 0
-  /-- This spell costs this much generic mana less if it targets a creature
-  that was dealt damage this turn (e.g. Bitter Downfall). -/
-  costReductionIfTargetDamaged : Nat := 0
-  /-- This spell costs this much generic mana less if it targets a tapped
-  creature (e.g. Magnificent End). -/
-  costReductionIfTargetTapped : Nat := 0
-  /-- This spell costs this much generic mana less if it targets an attacking
-  nontoken creature (e.g. Uneasy Partings). -/
-  costReductionIfTargetAttackingNontoken : Nat := 0
-  /-- This spell costs this much generic mana less if it targets an attacking
-  creature (e.g. Depower). -/
-  costReductionIfTargetAttacking : Nat := 0
-  /-- This spell costs this much generic mana less if you control a permanent
-  of this subtype (e.g. Visions of Villainy, Truck Toss). -/
-  costReductionIfYouControl : Option (Nat × CardSubtype) := none
-  /-- This spell costs this much generic mana less if you control a legendary
-  creature (e.g. Reality Fracture). -/
-  costReductionIfYouControlLegendary : Nat := 0
-  /-- This spell costs this much generic mana less if your graveyard has at
-  least this many creature cards (e.g. Punishing Punch). -/
-  costReductionIfGyCreaturesAtLeast : Option (Nat × Nat) := none
   /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
   spellModes : Array Effect := #[]
   /-- Modes of this card's modal triggered ability (“When this creature
   enters, choose one —”), chosen as it is put on the stack (CR 603.3c). -/
   fraTriggerModes : Array Effect := #[]
-  /-- This enchantment enters with a hope counter for each creature you control
-  (e.g. Dawn of a New Age). -/
-  entersWithHopePerCreature : Bool := false
-  /-- This permanent enters tapped (CR 110.5b exception). -/
-  entersTapped : Bool := false
   /-- This object is a token (CR 111). -/
   isToken : Bool := false
-  /-- This spell can't be countered. -/
-  cantBeCountered : Bool := false
-  /-- You may cast this as though it had flash if you control this subtype. -/
-  flashIfYouControlSubtype : Option CardSubtype := none
-  /-- “As long as there are seven or more cards in your graveyard, you may
-  cast the exiled card, and mana of any type can be spent to cast that
-  spell” (Null Summoner). -/
-  castExiledWithSevenInGraveyard : Bool := false
-  /-- This permanent enters tapped unless you control a legendary creature. -/
-  entersTappedUnlessLegendary : Bool := false
-  /-- This permanent enters tapped unless you control an Equipment. -/
-  entersTappedUnlessEquipment : Bool := false
-  /-- Abilities planeswalkers you control have (“Planeswalkers you control
-  have …”). -/
-  planeswalkersYouControlHave : Array ActivatedAbility := #[]
-  /-- This permanent enters with this many +1/+1 counters (CR 614.1c). -/
-  entersWithPlusOneCounters : Nat := 0
   /-- A deck can have any number of cards with this name (CR 100.2a). -/
   anyNumberInDeck : Bool := false
-  /-- You can't cast this spell unless there are at least this many other
-  cards in your graveyard. -/
-  castOnlyIfGraveyardAtLeast : Option Nat := none
-  /-- This permanent enters tapped unless you control a planeswalker. -/
-  entersTappedUnlessPlaneswalker : Bool := false
-  /-- This permanent enters tapped unless you control two or more other lands. -/
-  entersTappedUnlessTwoOtherLands : Bool := false
-  /-- This spell costs {X} less to cast, where X is the total power of
-  creatures you control with flying. -/
-  costReductionEqualFlyingPower : Bool := false
-  /-- This spell costs {X} less to cast, where X is the greatest power among
-  creatures you control. -/
-  costReductionGreatestPower : Bool := false
-  /-- This spell costs {X} less to cast, where X is the greatest toughness
-  among creatures you control. -/
-  costReductionGreatestToughness : Bool := false
   /-- Modal spell is “Choose one or both” rather than “Choose one”. -/
   chooseOneOrBoth : Bool := false
   /-- “Choose one. If you control a {subtype}, you may choose two instead.” -/
   chooseTwoIfYouControlSubtype : Option CardSubtype := none
-  /-- As this land enters, you may pay `n` life. If you don't, it enters tapped. -/
-  entersTappedUnlessPayLife : Option Nat := none
-  /-- As this land enters, you may behold a `subtype`. If you don't, this land enters tapped. -/
-  entersTappedUnlessBehold : Option CardSubtype := none
-  /-- As this enchantment enters, choose a creature type. -/
-  asEntersChooseCreatureType : Bool := false
   /-- Printed Saga chapters (CR 714). -/
   saga : Option SagaDef := none
-  /-- This spell costs {X} less, where X is the greatest number of artifacts
-  an opponent controls. -/
-  costReductionEqualOppArtifacts : Bool := false
-  /-- If you would create a Food token, also create a Treasure. -/
-  foodAlsoCreatesTreasure : Bool := false
-  /-- Other creatures enter with +1/+1 counters equal to this creature's toughness. -/
-  othersEnterWithPlusOneEqualToughness : Bool := false
-  /-- This gets +N/+0 for each Mountain you control. -/
-  powerPerMountain : Nat := 0
-  /-- You may play an additional land if you control another of this subtype. -/
-  extraLandIfOtherSubtype : Option CardSubtype := none
-  /-- If one or more tokens would be created under your control, twice that
-  many of those tokens are created instead (e.g. Bard, King of Dale). -/
-  tokenDoubling : Bool := false
-  /-- If you would draw a card except the first one you draw in each of your
-  draw steps, draw two cards instead. -/
-  drawTwoExceptFirstDrawStep : Bool := false
   /-- Printed activated abilities (CR 602), including mana abilities (CR 605.1a)
   and loyalty abilities (CR 606.2). Basic-land intrinsic mana abilities are
   synthesized from Layer 4 basic land types per CR 305.6. -/
   activatedAbilities : Array ActivatedAbility := #[]
-  /-- Static abilities other than printed keywords (CR 604). -/
+  /-- Printed stratified static abilities (CR 604 / 613 / 614–616 / 303.4a). -/
   staticAbilities : Array StaticAbility := #[]
   /-- Triggered abilities (CR 603). -/
   triggeredAbilities : Array TriggeredAbility := #[]
-  /-- If a creature an opponent controls would die, exile it instead
-  (e.g. Head of the Hunt). The original die event never happens (CR 614.6). -/
-  exileOppCreaturesInstead : Bool := false
-  /-- You may look at the top card of your library any time
-  (e.g. Elven Chorus). -/
-  mayLookAtTopAnytime : Bool := false
-  /-- You may cast creature spells from the top of your library
-  (e.g. Elven Chorus). Does not grant flash or change timing. -/
-  mayCastCreaturesFromTop : Bool := false
-  /-- You may play lands from the top of your library (e.g. Ka-Zar). -/
-  mayPlayLandsFromTop : Bool := false
-  /-- Creatures you control have `{T}: Add one mana of any color`
-  (e.g. Elven Chorus). -/
-  grantCreaturesTapAddAnyColor : Bool := false
-  /-- The first creature spell you cast each turn costs this much generic
-  less (e.g. Radagast of Rhosgobel). -/
-  firstCreatureCostsLess : Nat := 0
-  /-- The first creature spell you cast each turn can be cast as though it
-  had flash (e.g. Radagast of Rhosgobel). -/
-  firstCreatureHasFlash : Bool := false
-  /-- Hexproof and indestructible while you control this many lore counters
-  among Sagas (e.g. Tom Bombadil). -/
-  hexproofIndestructibleIfLore : Option Nat := none
-  /-- This creature enters with an indestructible counter. -/
-  entersWithIndestructibleCounter : Bool := false
-  /-- As this permanent enters, choose odd or even (Gollum, Riddle Master). -/
-  asEntersChooseOddEven : Bool := false
-  /-- Spells you cast from anywhere other than your hand cost this much
-  generic mana less (e.g. Bilbo, Thief in the Night). -/
-  costReductionNotFromHand : Nat := 0
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none
   /-- “Choose one. If this spell was cast using teamwork, choose both instead.” -/
   chooseBothIfTeamwork : Bool := false
-  /-- This permanent enters with this many shield counters. -/
-  entersWithShield : Nat := 0
   /-- Back face of a modal double-faced card that can transform. -/
   otherFace : Option CardDef := none
   /-- Empower Jace N on this spell (Reality Fracture). When the spell
   resolves, put N loyalty counters on a Jace planeswalker token you control,
   creating one first if you control none. -/
   empowerJace : Option Nat := none
-  /-- This permanent enters prepared (Reality Fracture). -/
-  entersPrepared : Bool := false
   /-- Sorcery or instant copied while this permanent is prepared. -/
   prepareFace : Option AdventureFace := none
-  /-- Lands you control have `{T}: Add one mana of any color.` -/
-  grantLandsTapAnyColor : Bool := false
-  /-- Enters tapped unless you control a land of one of these subtypes. -/
-  entersTappedUnlessAnySubtype : Array CardSubtype := #[]
-  /-- Enters tapped unless you control at least this many basic lands. -/
-  entersTappedUnlessNBasics : Option Nat := none
-  /-- Enters tapped unless opponents control at least this many lands. -/
-  entersTappedUnlessOppLands : Option Nat := none
   /-- Spending commander-identity mana from this land to cast a creature spell
   that shares a creature type with your commander scries 1 (Path of Ancestry). -/
   commanderIdentityScryCreature : Bool := false
-  /-- If you control a commander, you may cast this spell without paying its mana cost. -/
-  freeCastIfControlCommander : Bool := false
-  /-- This planeswalker can be your commander. -/
-  canBeCommander : Bool := false
-  /-- Your opponents can't gain life. -/
-  opponentsCantGainLife : Bool := false
-  /-- You can't lose the game. -/
-  cantLoseGame : Bool := false
-  /-- Your opponents can't win the game. -/
-  opponentsCantWin : Bool := false
-  /-- Creatures you control can't have minus counters put on them. -/
-  creaturesCantGetMinusCounters : Bool := false
-  /-- This creature gets +1/+1 for each unspent mana you have. -/
-  powerPerUnspentMana : Bool := false
-  /-- If you would lose unspent mana, that mana becomes colorless instead. -/
-  unspentManaBecomesColorless : Bool := false
-  /-- Eminence: other Sphinx spells you cast cost this much less while this is
-  in the command zone or on the battlefield. -/
-  eminenceSphinxReduction : Nat := 0
-  /-- As this creature enters, choose a card type. -/
-  asEntersChooseCardType : Bool := false
-  /-- You and creatures you control have protection from the chosen card type. -/
-  protectionFromChosenCardType : Bool := false
-  /-- Corrupted — creatures you control with toxic have lifelink while an
-  opponent has three or more poison counters. -/
-  corruptedToxicLifelink : Bool := false
-  /-- As this enchantment enters, choose Mardu or Jeskai. -/
-  asEntersChooseMarduOrJeskai : Bool := false
-  /-- As this artifact enters, you may have it become a copy of any creature on
-  the battlefield until end of turn, except it has haste (Cursed Mirror, CR
-  614.1c / 614.12). -/
-  asEntersMayCopyCreatureHasteUntilEot : Bool := false
-  /-- This creature can't block. -/
-  cantBlock : Bool := false
-  /-- Emblem: creatures you control get +2/+2 and have flying. -/
-  grantTeamPlusTwoFlying : Bool := false
 deriving Repr, Inhabited
 
 namespace CardDef
@@ -617,11 +454,11 @@ def adventureLines (c : CardDef) : List String :=
       | none => []
     header :: extra ++ a.extraLines.toList
 
-/-- Prepare-spell name, cost, and effect. -/
+/-- Prepare-spell name, cost, and effect (`"This creature enters prepared."` is
+rendered directly from `staticAbilities`). -/
 def prepareLines (c : CardDef) : List String :=
   match c.prepareFace with
-  | none =>
-    if c.entersPrepared then ["This creature enters prepared."] else []
+  | none => []
   | some a =>
     let header :=
       if a.manaCost.symbols.isEmpty then a.name else s!"{a.name} {a.manaCost}"
@@ -629,24 +466,13 @@ def prepareLines (c : CardDef) : List String :=
       match a.spellEffect with
       | some e => [e.phrase]
       | none => []
-    (if c.entersPrepared then ["This creature enters prepared."] else []) ++
-      [header] ++ effect ++ a.extraLines.toList
+    [header] ++ effect ++ a.extraLines.toList
 
 /-- Empower Jace printed on this spell. -/
 def empowerLines (c : CardDef) : List String :=
   match c.empowerJace with
   | some n => [s!"Empower Jace {n}."]
   | none => []
-
-/-- As-enters optional behold or copy-creature lines. -/
-def asEntersSpecialLines (c : CardDef) : List String :=
-  (match c.entersTappedUnlessBehold with
-   | some sub =>
-     [s!"As this land enters, you may behold {indefinite sub.englishName} {sub.englishName}. If you don't, this land enters tapped."]
-   | none => []) ++
-  (if c.asEntersMayCopyCreatureHasteUntilEot then
-     ["As this artifact enters, you may have it become a copy of any creature on the battlefield until end of turn, except it has haste."]
-   else [])
 
 /-- True when CR 601.2b must announce a choice additional cost (e.g. sacrifice-or-pay,
 discard-or-pay, behold-or-pay). -/
@@ -681,7 +507,6 @@ triggered, and spell abilities. -/
 def structuredAbilityLines (c : CardDef) : List String :=
   c.basicLandReminderLines ++
   c.additionalCostLines ++
-  c.asEntersSpecialLines ++
   c.activatedAbilities.toList.map activatedNotation ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map TriggeredAbility.toNotation ++
@@ -750,30 +575,98 @@ instance : ToString CardDef where
 
 /-- True when this card itself has improvise (CR 702.126). -/
 def hasImprovise (c : CardDef) : Bool :=
-  KeywordAbility.hasImprovise c.keywords ||
-  c.staticAbilities.any (fun
-    | .improvise => true
-    | _ => false)
+  KeywordAbility.hasImprovise c.keywords
 
-/-- True when this permanent grants improvise to noncreature spells you cast. -/
+/-- True when this permanent's printed static abilities grant improvise to noncreature spells. -/
 def grantsImproviseToNoncreature (c : CardDef) : Bool :=
-  c.staticAbilities.any (fun
-    | .noncreatureSpellsHaveImprovise => true
-    | _ => false)
+  c.staticAbilities.any fun
+    | .continuous _ sc mod =>
+      sc == StaticAbility.scopeNoncreatureSpellsYouControl &&
+        mod.flatten.any fun
+          | .grantKeywords ks => KeywordAbility.hasImprovise ks
+          | _ => false
+    | _ => false
 
-/-- True when this permanent has a boast ability (MSH). -/
+/-- True when this permanent has a printed boast activated ability (CR 702.142). -/
 def hasBoast (c : CardDef) : Bool :=
-  c.staticAbilities.any (fun
-    | .boast => true
-    | _ => false)
+  c.activatedAbilities.any (·.isBoast)
 
 /-- Sneak alternative cost, if any (CR 702.190). -/
 def sneakCost (c : CardDef) : Option ManaCost :=
-  (c.keywords.findSome? fun | .sneak cost => some cost.manaCost | _ => none) <|>
-  c.staticAbilities.foldl (fun acc ab =>
-    match acc, ab with
-    | none, .sneak cost => some cost
-    | acc, _ => acc) none
+  c.keywords.findSome? fun | .sneak cost => some cost.manaCost | _ => none
+
+/-- True when this card's printed static abilities include `"enters prepared"`. -/
+def entersPrepared (c : CardDef) : Bool :=
+  c.staticAbilities.any fun ab =>
+    ab.anyReplacement fun _ spec =>
+      match spec with
+      | .entersWithDesignation .prepared => true
+      | _ => false
+
+/-- True when this card's printed static abilities include `"enters with an indestructible counter"`. -/
+def entersWithIndestructibleCounter (c : CardDef) : Bool :=
+  c.staticAbilities.any fun ab =>
+    ab.anyReplacement fun _ spec =>
+      match spec with
+      | .entersWithCounters .self .indestructible (.const n) false => n > 0
+      | _ => false
+
+/-- True when this card has a printed static ability granting protection from the chosen card type.
+Checked at Layer 1 in Layer-4 fast paths to avoid Layer 4↔Layer 6 recursion. -/
+def hasProtectionFromChosenCardType (c : CardDef) : Bool :=
+  c.staticAbilities.any fun ab =>
+    ab.anyRule fun _ r =>
+      match r with
+      | .player (.protectionFrom _ .chosenCardType) => true
+      | _ => false
+
+/-- True when this card has `"As this enters, choose Mardu or Jeskai."` (Layer 1 anchor check). -/
+def isMarduOrJeskaiChoice (c : CardDef) : Bool :=
+  c.staticAbilities.any fun ab =>
+    ab.anyReplacement fun _ spec =>
+      match spec with
+      | .asEntersChoose (.namedAnchors opts) => opts == #["Mardu", "Jeskai"]
+      | _ => false
+
+/-- True when this card has a printed `"This spell can't be countered."` static ability. -/
+def cantBeCountered (c : CardDef) : Bool :=
+  c.staticAbilities.any fun ab =>
+    ab.anyRule fun _ r =>
+      match r with
+      | .play (.spellCantBeCountered none) => true
+      | _ => false
+
+/-- True when this card has `"This planeswalker can be your commander."` (CR 903.3). -/
+def canBeCommander (c : CardDef) : Bool :=
+  c.staticAbilities.any fun ab =>
+    ab.anyRule fun _ r =>
+      match r with
+      | .play .canBeCommander => true
+      | _ => false
+
+/-- True when this card has an `"As this enters, you may have it become a copy ..."` replacement. -/
+def hasAsEntersCopy (c : CardDef) : Bool :=
+  c.staticAbilities.any fun ab =>
+    ab.anyReplacement fun _ spec =>
+      match spec with
+      | .asEntersMayCopy .. => true
+      | _ => false
+
+/-- True when this card has an opening-hand battlefield placement static ability (CR 103.6). -/
+def mayBeginOnBattlefield (c : CardDef) : Bool :=
+  c.staticAbilities.any fun ab =>
+    ab.anyRule fun _ r =>
+      match r with
+      | .play .mayBeginOnBattlefield => true
+      | _ => false
+
+/-- True when this card unconditionally enters tapped. -/
+def entersTappedUnconditionally (c : CardDef) : Bool :=
+  c.staticAbilities.any fun ab =>
+    ab.anyReplacement fun _ spec =>
+      match spec with
+      | .entersTapped .self none => true
+      | _ => false
 
 /-- Equip worthy: legendary non-Villain creature that's red or white. -/
 def isWorthy (c : CardDef) : Bool :=
@@ -811,13 +704,8 @@ def spellLikeEffects (c : CardDef) : Array Effect :=
 Does not look at `otherFace`. -/
 def faceModellingError? (c : CardDef) : Option String :=
   let unparsed : Option String :=
-    c.staticAbilities.foldl (fun acc ab =>
-      match acc, ab with
-      | some e, _ => some e
-      | none, .printed line => some s!"unparsed rules line on {c.name}: {line}"
-      | none, _ => none) none
-      <|> (c.adventure.bind fun a =>
-        a.extraLines[0]?.map fun line => s!"unparsed rules line on {a.name}: {line}")
+    (c.adventure.bind fun a =>
+      a.extraLines[0]?.map fun line => s!"unparsed rules line on {a.name}: {line}")
       <|> (c.prepareFace.bind fun a =>
         a.extraLines[0]?.map fun line => s!"unparsed rules line on {a.name}: {line}")
   let spell : Option String :=
@@ -855,7 +743,7 @@ def toCardDef (a : AdventureFace) : CardDef := {
   types := a.types
   subtypes := a.subtypes
   spellEffect := a.spellEffect
-  staticAbilities := a.extraLines.map StaticAbility.printed
+  staticAbilities := #[]
   empowerJace := a.empowerJace
   additionalCosts := a.additionalCosts
 }

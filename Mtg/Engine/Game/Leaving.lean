@@ -18,15 +18,21 @@ def sbaPaused (g : Game) : Bool :=
   | .chooseReplacement .. | .chooseLegend .. => true
   | _ => false
 
-/-- True when an opponent of `p` controls a permanent or command-zone object
-whose static ability states opponents can't win the game (CR 104.2b). -/
+/-- True when a permanent or command-zone object's static ability states `p`
+can't win the game (CR 104.2b / 114.4). -/
 def playerCantWin (g : Game) (p : PlayerId) : Bool :=
-  (g.livingOpponents p).any (fun opp =>
-    (g.permanentsOf opp.id).any (fun o =>
-      (g.baseCard o).opponentsCantWin && g.retainsPrintedAbilities o) ||
-    (g.objects.filter (fun o =>
-      o.zone == .command && g.controlledBy o opp.id)).any (fun o =>
-        (g.baseCard o).opponentsCantWin && g.retainsPrintedAbilities o))
+  g.objects.any fun o =>
+    (o.isOnBattlefield || o.zone == .command) &&
+      let srcCtrl := (g.controllerOf o).getD o.owner
+      g.stillInGame srcCtrl &&
+        let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+        (g.staticAbilities o).any fun ab =>
+          ab.anyRule fun cond? r =>
+            match r with
+            | .player (.cantWinGame who) =>
+              cond?.all (EvalExpr.evalCondition g env) &&
+                EvalExpr.matchesPlayerFilter g env who p
+            | _ => false
 
 /-- If 0 living players remain or a single surviving player/team has no living
 opponents left, set the game result (CR 104.2a / 810.8a,b). -/
@@ -4241,8 +4247,17 @@ def emptyManaPools (g : Game) : Game :=
         for pl in g.players do
           if g.stillInGame pl.id && !pl.manaPool.isEmpty then
             let colorless :=
-              (g.permanentsOf pl.id).any (fun o =>
-                (g.baseCard o).unspentManaBecomesColorless && g.retainsPrintedAbilities o)
+              g.battlefield.any fun o =>
+                let srcCtrl := (g.controllerOf o).getD o.owner
+                g.stillInGame srcCtrl &&
+                  let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+                  (g.staticAbilities o).any fun ab =>
+                    ab.anyReplacement fun cond? sp =>
+                      match sp with
+                      | .unspentManaBecomesColorless who =>
+                        cond?.all (EvalExpr.evalCondition g env) &&
+                          EvalExpr.matchesPlayerFilter g env who pl.id
+                      | _ => false
             let units := pl.manaPool.toUnits
             if colorless then
               g := g.record (GameEvent.manaEmptied g.turnNumber pl.id units true (cause := cause))

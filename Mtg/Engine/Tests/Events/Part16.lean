@@ -31,7 +31,7 @@ private def replayOk50i1 (gs : Array Game) : Bool :=
   let oddEvenDef : CardDef := {
     name := "P50i1 OddStatue"
     types := #[.artifact]
-    asEntersChooseOddEven := true
+    staticAbilities := #[.asEntersChooseOddEven]
   }
 
   -- 1a(i). CR 800.4j `priorityInstead` normalization across `Decisions` probes when `p0`
@@ -335,7 +335,7 @@ private def isAnnounceKicker (a : Option Action) (want : Bool) : Bool :=
   --     `expireUntilNextTurnEffects` (`!teamHasLiving`) and `beginTurn` (`isSharedTurnFirstSeat`):
   let nullSummonerCloneDef : CardDef := {
     creature "P50i2 NullSummoner" ManaCost.empty #["Wizard"] 2 3 with
-    castExiledWithSevenInGraveyard := true
+    staticAbilities := #[.castExiledWithSevenInGraveyard]
   }
   let exiledSpellDef : CardDef := {
     name := "P50i2 ExiledBolt"
@@ -510,7 +510,7 @@ private def replayOk50i3 (gs : Array Game) : Bool :=
   let oddEvenDef : CardDef := {
     name := "P50i3 OddStatue"
     types := #[.artifact]
-    asEntersChooseOddEven := true
+    staticAbilities := #[.asEntersChooseOddEven]
   }
 
   -- 3a(i). `Phasing.phaseInControlled` defers `targetIds` evaluation when `sbaPausedOnPhasing g`

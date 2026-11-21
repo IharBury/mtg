@@ -138,7 +138,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
   let fsSelfDef : CardDef := {
     bear with
     name := "P24i4 First Strike Self"
-    staticAbilities := #[.fra .firstStrikeDuringYourTurn]
+    staticAbilities := #[.firstStrikeDuringYourTurn]
   }
   let eqLordDef : CardDef := {
     bear with
@@ -494,7 +494,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
     saga "P24i4 Saga" ManaCost.empty "" "I" #[chapter "I" "You gain 1 life." (Effect.gainLife 1)]
   let tomDef24 : CardDef := {
     legendaryCreature "P24i4 Tom Watcher" ManaCost.empty #["God", "Bard"] 4 4 with
-    hexproofIndestructibleIfLore := some 4
+    staticAbilities := #[.hexproofIndestructibleIfLore 4]
   }
   let gBase :=
     insertObject (addPermanent afterDraw tomDef24 me me) sagaDef24 me .battlefield (some me)
@@ -692,7 +692,7 @@ def mkThreePlayer25i1 (seed : UInt64 := 251) : Game :=
   let colorCardDef : CardDef := {
     bear with
     name := "P25i1 Entering Attacker"
-    entersTappedUnlessPayLife := some 2
+    staticAbilities := #[.entersTappedUnlessPayLife 2]
   }
   let gAtk0 := insertObject gBase colorCardDef p0 (.graveyard p0)
   let atkCardId := (gAtk0.player p0).graveyard.back!
@@ -2375,7 +2375,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
   let computedAnyCost :=
     gAny0.playManaCost { (gAny0.object! exTwobridId) with controller := some p0 } twobridCard
       (origPerm := some anyPerm)
-  let nullSummonerDef : CardDef := { bear with name := "P26i2 Null Summoner", castExiledWithSevenInGraveyard := true }
+  let nullSummonerDef : CardDef := { bear with name := "P26i2 Null Summoner", staticAbilities := #[.castExiledWithSevenInGraveyard] }
   let gNullBase := (List.range 7).foldl (fun g _ => insertObject g bear p0 (.graveyard p0)) gAny0
   let gNull0 := addPermanent gNullBase nullSummonerDef p0 p0
   let summonerId := (gNull0.battlefield.filter (·.name == nullSummonerDef.name))[0]!.id
@@ -2395,8 +2395,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     subtypes := #["Ninja"]
     power := some 2
     toughness := some 2
-    staticAbilities := #[.sneak ManaCost.empty]
-    keywords := #[.flashback CostSpec.empty]
+    keywords := #[.flashback CostSpec.empty, .sneak CostSpec.empty]
   }
   let gSnkSetup : Game :=
     let g := addPermanent afterDraw { bear with keywords := #[Keyword.haste] } p0 p0
@@ -2644,7 +2643,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
   let taxPermDef : CardDef := {
     name := "P26i2 Tax Statue"
     types := #[.artifact]
-    staticAbilities := #[.fra .opponentsNoncreatureSpellsCostMore]
+    staticAbilities := #[.opponentsNoncreatureSpellsCostMore]
   }
   let freeSorcDef : CardDef := {
     name := "P26i2 Taxed Free Sorcery"
@@ -3619,7 +3618,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
     name := "P27i1 Shock Land"
     types := #[.land]
     subtypes := #["Mountain", "Forest"]
-    entersTappedUnlessPayLife := some 2
+    staticAbilities := #[.entersTappedUnlessPayLife 2]
   }
   let treasureCardDef : CardDef := {
     name := "P27i1 Lotus Petal"
