@@ -245,33 +245,33 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
       let c' := c.withKeyword (.cycling none (CostSpec.ofMana cost))
       some { c' with activatedAbilities := c'.activatedAbilities.push ab }
     else if l.contains "your opponents can't gain life" then
-      some { c with opponentsCantGainLife := true }
+      some { c with staticAbilities := c.staticAbilities.push StaticAbility.opponentsCantGainLife }
     else if l.contains "can't lose the game" then
-      some { c with cantLoseGame := true, opponentsCantWin := true }
+      some { c with staticAbilities := c.staticAbilities.push StaticAbility.cantLoseAndOpponentsCantWin }
     else if l.contains "can't have -1/-1 counters" then
-      some { c with creaturesCantGetMinusCounters := true }
+      some { c with staticAbilities := c.staticAbilities.push StaticAbility.creaturesCantGetMinusCounters }
     else if l.contains "lands you control have" && l.contains "any color" then
-      some { c with grantLandsTapAnyColor := true }
+      some { c with staticAbilities := c.staticAbilities.push StaticAbility.grantLandsTapAnyColor }
     else if l.contains "for each unspent mana you have" then
-      some { c with powerPerUnspentMana := true }
+      some { c with staticAbilities := c.staticAbilities.push StaticAbility.powerPerUnspentMana }
     else if l.contains "that mana becomes colorless instead" then
-      some { c with unspentManaBecomesColorless := true }
+      some { c with staticAbilities := c.staticAbilities.push StaticAbility.unspentManaBecomesColorless }
     else if l.contains "other sphinx spells you cast cost" then
-      some { c with eminenceSphinxReduction := 1 }
+      some { c with staticAbilities := c.staticAbilities.push (StaticAbility.eminenceSubtypeSpellsCostLess .sphinx 1) }
     else if l.contains "choose a card type" then
-      some { c with asEntersChooseCardType := true }
+      some { c with staticAbilities := c.staticAbilities.push StaticAbility.asEntersChooseCardType }
     else if l.contains "protection from the chosen card type" then
-      some { c with protectionFromChosenCardType := true }
+      some { c with staticAbilities := c.staticAbilities.push StaticAbility.protectionFromChosenCardType }
     else if l.contains "creatures you control with toxic have lifelink" then
-      some { c with corruptedToxicLifelink := true }
+      some { c with staticAbilities := c.staticAbilities.push StaticAbility.corruptedToxicLifelink }
     else if l.contains "can be your commander" then
-      some { c with canBeCommander := true }
+      some { c with staticAbilities := c.staticAbilities.push StaticAbility.canBeCommander }
     else if l.contains "without paying its mana cost" && l.contains "commander" then
-      some { c with freeCastIfControlCommander := true }
+      some { c with staticAbilities := c.staticAbilities.push StaticAbility.freeCastIfControlCommander }
     else if l.contains "enters tapped unless you control two or more basic" then
-      some { c with entersTappedUnlessNBasics := some 2 }
+      some { c with staticAbilities := c.staticAbilities.push (StaticAbility.entersTappedUnlessNBasics 2) }
     else if l.contains "enters tapped unless your opponents control eight" then
-      some { c with entersTappedUnlessOppLands := some 8 }
+      some { c with staticAbilities := c.staticAbilities.push (StaticAbility.entersTappedUnlessOppLands 8) }
     else if l.contains "enters tapped unless you control a" &&
         (l.contains " or a " || l.contains " or an ") then
       let after :=
@@ -279,12 +279,19 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
         else (l.splitOn "control a ").getLastD ""
       let types := ((after.replace " or an " " or a ").splitOn " or a ").map fun p =>
         cap ((p.splitOn " ").headD "" |>.splitOn "." |>.headD "")
-      some { c with entersTappedUnlessAnySubtype := CardSubtype.ofSubtypes types.toArray }
+      let ab := StaticAbility.entersTappedUnlessAnySubtype (CardSubtype.ofSubtypes types.toArray)
+      some { c with staticAbilities := c.staticAbilities.push ab }
     else if l == s!"exile {low c.name}." then
       some c
     else if l.contains "choose mardu or jeskai" then
-      some (pushTrig { c with asEntersChooseMarduOrJeskai := true }
-        .yourUpkeep (frc .goblin line) line)
+      let anchorAb := StaticAbility.asEntersChooseNamedAnchors #["Mardu", "Jeskai"]
+      let c' :=
+        if c.staticAbilities.contains anchorAb then c
+        else { c with staticAbilities := c.staticAbilities.push anchorAb }
+      if l.contains "jeskai —" || l.contains "mardu —" then
+        some (pushTrig c' .yourUpkeep (frc .goblin line) line)
+      else
+        some c'
     else none
   match static with
   | some c => some c
@@ -360,7 +367,7 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
       else if l.contains "whenever this land attacks, scry" then
         some (pushTrig c .attack (Effect.scry 1) line)
       else if l.contains "as this artifact enters, you may have it become a copy" then
-        some { c with asEntersMayCopyCreatureHasteUntilEot := true }
+        some { c with staticAbilities := c.staticAbilities.push StaticAbility.asEntersMayCopyCreatureHasteUntilEot }
       else if l.contains "choose target opponent. until that player's next turn" then
         some (pushSpell c (frc .teferi line oppPlayer))
       else if l.contains "when venser enters, choose one" ||

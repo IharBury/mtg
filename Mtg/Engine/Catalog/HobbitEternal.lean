@@ -1378,7 +1378,7 @@ that also appear in other sets. -/
 #guard trollOfKhazadDum.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard mercilessExecutioner.triggeredAbilities == #[.onEnterEachPlayerSacrificesCreature]
 #guard bitterDownfall.spellEffect == some (Effect.destroyTargetCreatureControllerLosesLife 2)
-#guard bitterDownfall.costReductionIfTargetDamaged == 3
+#guard bitterDownfall.staticAbilities.contains (.costReductionIfTargetDamaged 3)
 #guard improvisedClub.isInstant
 #guard improvisedClub.spellEffect == some (Effect.dealDamage 4)
 #guard improvisedClub.additionalCosts == #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]

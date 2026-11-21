@@ -37,7 +37,7 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
   let oddEvenDef : CardDef := {
     name := "P49i1 OddStatue"
     types := #[.artifact]
-    asEntersChooseOddEven := true
+    staticAbilities := #[.asEntersChooseOddEven]
   }
   let zeroToughDef : CardDef := creature "P49i1 Germ" ManaCost.empty #["Germ"] 0 0
 
@@ -297,7 +297,7 @@ private def mustStepAgent49i2 (g : Game) (p : PlayerId) : Game :=
     bear with
     name := "P49i2 MorphBlockedFront"
     manaCost := ManaCost.ofGeneric 2
-    castOnlyIfGraveyardAtLeast := some 3
+    staticAbilities := #[.castOnlyIfGraveyardAtLeast 3]
     keywords := #[.morph (CostSpec.ofGeneric 2)]
   }
   let gPrepBase0 := addPermanent g3 prepHostDef p0 p0
@@ -330,7 +330,7 @@ private def mustStepAgent49i2 (g : Game) (p : PlayerId) : Game :=
   let nullSummonerDef : CardDef := {
     bear with
     name := "P49i2 NullSummoner"
-    castExiledWithSevenInGraveyard := true
+    staticAbilities := #[.castExiledWithSevenInGraveyard]
   }
   let rgCreatureDef : CardDef := {
     bear with
@@ -412,7 +412,7 @@ private def mustStepAgent49i2 (g : Game) (p : PlayerId) : Game :=
     bear with
     name := "P49i2 ForbidFrontMorph"
     manaCost := ManaCost.ofGeneric 2
-    castOnlyIfGraveyardAtLeast := some 3
+    staticAbilities := #[.castOnlyIfGraveyardAtLeast 3]
     keywords := #[.morph (CostSpec.ofGeneric 2)]
   }
   let gAgMorph2 :=
@@ -549,7 +549,7 @@ private def replayOk49i3 (gs : Array Game) : Bool :=
   let oddEvenDef : CardDef := {
     name := "P49i3 OddStatue"
     types := #[.artifact]
-    asEntersChooseOddEven := true
+    staticAbilities := #[.asEntersChooseOddEven]
   }
 
   -- 3a(i). Phased-out CR 800.4a unrelated-player guard (`owner == p3` living, `fallback == p0` already departed,
@@ -647,7 +647,7 @@ private def replayOk49i3 (gs : Array Game) : Bool :=
     name := "P49i3 Polish"
     types := #[.enchantment]
     subtypes := #["Aura"]
-    staticAbilities := #[.fra .enchantArtifactOrNonAuraEnchantment]
+    staticAbilities := #[.enchantArtifactOrNonAuraEnchantment]
   }
   let gAtt0 :=
     addPermanent (addPermanent (addPermanent g4 bear p0 p0) outerEqDef p0 p0) subAuraDef p0 p0
@@ -729,7 +729,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let lanternGrantDef : CardDef := {
     name := "P49i4 ChromaticOrb"
     types := #[.artifact]
-    grantLandsTapAnyColor := true
+    staticAbilities := #[.grantLandsTapAnyColor]
   }
   let gAvail0 := addPermanent (addPermanent g3 dragonRockDef p0 p0) lanternGrantDef p0 p0
   let availPaysGreen := (gAvail0.availableMana p0).canPay { symbols := #[.colored .green] }

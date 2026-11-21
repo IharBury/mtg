@@ -99,24 +99,42 @@ effect) applies and toughness is greater, or the absolute value of a
 negative power for Loot, the Anomaly. Neither changes the creature's power
 (rulings 825 / 850 / 851). -/
 def combatDamageAmount (g : Game) (source : GameObject) : Int :=
-  let ghalta :=
-    match g.controllerOf source with
-    | some p =>
-      (g.permanentsOf p).any (fun o =>
-        (g.staticAbilities o).any (fun
-          | .toughnessAssignsCombatDamage => true
-          | _ => false))
-    | none => false
+  let pw := g.power source
+  let tg := g.toughness source
+  let byToughnessStatic :=
+    g.battlefield.any fun o =>
+      let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+      (g.staticAbilities o).any fun ab =>
+        ab.anyRule fun cond? r =>
+          match r with
+          | .combat (.assignCombatDamageByToughness sc onlyIfGreater) =>
+            cond?.all (EvalExpr.evalCondition g env) &&
+              EvalExpr.evalObjectPred g env (.live source) sc.pred &&
+              (!onlyIfGreater || tg > pw)
+          | _ => false
   let byToughness :=
-    (ghalta || g.assignCombatDamageEqualToughness.any (g.controlledBy source ·)) &&
-      g.toughness source > g.power source
+    byToughnessStatic ||
+      (g.assignCombatDamageEqualToughness.any (g.controlledBy source ·) && tg > pw)
+  let negAsPos :=
+    let selfEnv : EvalEnv := { controller := (g.controllerOf source).getD source.owner, sourceId := some source.id }
+    (g.staticAbilities source).any (fun ab =>
+      ab.anyRule fun cond? r =>
+        match r with
+        | .combat (.assignNegativePowerAsPositive .self) => cond?.all (EvalExpr.evalCondition g selfEnv)
+        | _ => false) ||
+    g.battlefield.any (fun o =>
+      let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+      (g.staticAbilities o).any fun ab =>
+        ab.anyRule fun cond? r =>
+          match r with
+          | .combat (.assignNegativePowerAsPositive (.matching sc)) =>
+            cond?.all (EvalExpr.evalCondition g env) &&
+              EvalExpr.evalObjectPred g env (.live source) sc.pred
+          | _ => false)
   let amt :=
-    if byToughness then g.toughness source
-    else if (g.staticAbilities source).any (fun
-        | .negativePowerAssignsAsPositive => true
-        | _ => false) then
-      Int.ofNat (g.power source).natAbs
-    else g.power source
+    if byToughness then tg
+    else if negAsPos then Int.ofNat pw.natAbs
+    else pw
   max amt 0
 
 /-- Combat damage `source` must assign this step (CR 510.1a), or `0` if it

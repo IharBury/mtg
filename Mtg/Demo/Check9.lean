@@ -473,7 +473,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P47 ImproviseBolt"
     manaCost := ManaCost.ofGenericAndColor 1 .blue
     types := #[.sorcery]
-    staticAbilities := #[.improvise]
+    keywords := #[.simple .improvise]
     spellEffect := some (Effect.gainLife 2)
   }
   let inertArtDef : CardDef := { name := "P47 InertCog", types := #[.artifact] }
@@ -516,7 +516,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let nullSummonerDef : CardDef := {
     grizzlyBears with
     name := "P48 NullSummoner"
-    castExiledWithSevenInGraveyard := true
+    staticAbilities := #[.castExiledWithSevenInGraveyard]
     activatedAbilities := #[]
   }
   let rrSorcDef : CardDef := {
@@ -652,7 +652,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     grizzlyBears with
     name := "P49 ThresholdMorph"
     manaCost := ManaCost.ofGeneric 2
-    castOnlyIfGraveyardAtLeast := some 3
+    staticAbilities := #[.castOnlyIfGraveyardAtLeast 3]
     keywords := #[.morph (CostSpec.ofGeneric 2)]
   }
   let bigMorphDef : CardDef := {
@@ -815,7 +815,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
   let uncounterableLegDef : CardDef := {
     legGreen2Def with
     name := "P51 UncounterableLegend"
-    cantBeCountered := true
+    staticAbilities := #[.spellCantBeCountered]
   }
   let legGeneric1Def : CardDef := {
     grizzlyBears with

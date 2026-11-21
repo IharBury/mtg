@@ -1,6 +1,5 @@
 import Mtg.Engine.Card.ChapterEffects
 import Mtg.Engine.Card.SpellEffects
-import Mtg.Engine.Card.StaticAbility
 import Mtg.Engine.Card.TriggerEffects
 
 /-!
@@ -722,7 +721,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .fixed power, .fixed toughness, .cause _ =>
       s!"that creature gets {signedStat power}/{signedStat toughness} until end of turn"
     | .equalSourceToughness, .equalSourceToughness, .othersOfSubtype subtype =>
-      s!"each other {StaticAbility.pluralSubtype subtype} you control get +X/+X until end of turn, where X is this toughness"
+      s!"each other {pluralSubtype subtype} you control get +X/+X until end of turn, where X is this toughness"
     | .equalSourcePower, .fixed 0, .target =>
       s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
     | .fixed power, .fixed toughness, .creaturesYouControl =>
@@ -733,7 +732,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
       | some subtypes =>
         let recipients :=
           if subtypes == #[.goblin, .orc] then "other Goblins and Orcs you control"
-          else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
+          else s!"other {joinedSubtypes subtypes} you control"
         s!"{recipients} get {signedStat power}/{signedStat toughness} until end of turn"
       | none =>
         "those permanents get +P/+T until end of turn"
@@ -931,13 +930,13 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | .permanent, .lastKnownPower, _ =>
       s!"it deals damage equal to its power to {noun}"
     | .player .eachOpponent, .subtypeCount subtype, _ =>
-      s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to each opponent"
+      s!"it deals damage equal to the number of {pluralSubtype subtype} you control to each opponent"
     | .player .eachOpponent, .discardedHand, _ =>
       "this deals X damage to each opponent"
     | .player .eachOpponent, .fixed n, _ =>
       s!"this creature deals {n} damage to each opponent"
     | .target, .subtypeCount subtype, _ =>
-      s!"it deals damage equal to the number of {StaticAbility.pluralSubtype subtype} you control to {noun}"
+      s!"it deals damage equal to the number of {pluralSubtype subtype} you control to {noun}"
     | .target, .fixed n, .none =>
       s!"deals {n} damage to {noun}"
     | .target, .spellManaValue, _ =>
@@ -1117,7 +1116,7 @@ def resolutionPhrase (t : TriggerTiming) : String :=
     | some subtypes =>
       let who :=
         if subtypes == #[.goblin, .orc] then "other Goblins and Orcs you control"
-        else s!"other {StaticAbility.joinedSubtypes subtypes} you control"
+        else s!"other {joinedSubtypes subtypes} you control"
       s!"{who} get {signedStat p}/{signedStat t} until end of turn. Creatures your opponents control get {signedStat oppP}/{signedStat oppT} until end of turn"
     | none =>
       "resolve each step"

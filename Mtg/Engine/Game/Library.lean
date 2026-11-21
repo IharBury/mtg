@@ -73,15 +73,24 @@ partial def drawOneWithReplacements (g : Game) (p : PlayerId)
       if !pl.keptOpeningHand || !proposed.watches .wouldDraw then #[]
       else Id.run do
         let mut acc : Array (ReplacementSpec × Nat) := #[]
-        if !firstOfYourDrawStep then
-          for o in g.permanentsOf p do
-            if (g.baseCard o).drawTwoExceptFirstDrawStep && g.retainsPrintedAbilities o then
-              acc := acc.push (
-                { id := { kind := .drawTwoExceptFirstDrawStep, object := some o.id }
-                  source := some o.id
-                  controller := some p
-                  affectedPlayer := p
-                  kind := .replaceDraw p 2 true }, 2)
+        for o in g.permanentsOf p do
+          let env : EvalEnv := { controller := p, sourceId := some o.id }
+          for ab in g.staticAbilities o do
+            match ab with
+            | .replacement cond? spec =>
+              if cond?.all (EvalExpr.evalCondition g env) then
+                for sp in spec.flatten do
+                  match sp with
+                  | .extraDraw who factor exceptFirst =>
+                    if EvalExpr.matchesPlayerFilter g env who p && (!exceptFirst || !firstOfYourDrawStep) then
+                      acc := acc.push (
+                        { id := { kind := .drawTwoExceptFirstDrawStep, object := some o.id }
+                          source := some o.id
+                          controller := some p
+                          affectedPlayer := p
+                          kind := .replaceDraw p factor exceptFirst }, factor)
+                  | _ => pure ()
+            | _ => pure ()
         for (_, eff) in g.activeEffects do
           match eff with
           | .replacement spec d =>

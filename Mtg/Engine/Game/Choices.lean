@@ -493,11 +493,25 @@ def rewriteAbilityCardName (abilityText printedName copierName : String) : Strin
 def mustAttackCanDeclineIfOnlyAttackCosts (onlyAttacksRequireCost : Bool) : Bool :=
   onlyAttacksRequireCost
 
-/-- Ares and similar “attacks each combat if able” statics (MSH 130). -/
+/-- Ares and similar “attacks each combat if able” statics (MSH 130 / CR 508.1d). -/
 def hasAttacksIfAble (g : Game) (o : GameObject) : Bool :=
-  (g.staticAbilities o).any (fun
-    | .attacksEachCombatIfAble => true
-    | _ => false)
+  let selfEnv : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+  let selfMust :=
+    (g.staticAbilities o).any fun ab =>
+      ab.anyRule fun cond? r =>
+        match r with
+        | .combat (.attacksEachCombatIfAble .self) => cond?.all (EvalExpr.evalCondition g selfEnv)
+        | _ => false
+  selfMust ||
+    g.battlefield.any fun src =>
+      let env : EvalEnv := { controller := (g.controllerOf src).getD src.owner, sourceId := some src.id }
+      (g.staticAbilities src).any fun ab =>
+        ab.anyRule fun cond? r =>
+          match r with
+          | .combat (.attacksEachCombatIfAble (.matching sc)) =>
+            cond?.all (EvalExpr.evalCondition g env) &&
+              EvalExpr.evalObjectPred g env (.live o) sc.pred
+          | _ => false
 
 /-- Every legal attack target (player or planeswalker) charges a cost to be attacked. -/
 def everyAttackCosts (g : Game) (o : GameObject) : Bool :=

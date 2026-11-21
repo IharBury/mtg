@@ -8,7 +8,6 @@ import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.ManaSpec
 import Mtg.Engine.Card.Token
 import Mtg.Engine.Card.Targeting
-import Mtg.Engine.Card.Parser.SubGrammars
 import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.SpellResolution
 import Mtg.Engine.Card.AbilityResolution
@@ -16,16 +15,17 @@ import Mtg.Engine.Card.Chapter
 import Mtg.Engine.Card.SharedTrigger
 import Mtg.Engine.Card.Effect
 import Mtg.Engine.Card.ActivatedAbility
-import Mtg.Engine.Card.StaticAbility
 import Mtg.Engine.Card.TriggerEvent
 import Mtg.Engine.Card.Trigger
 import Mtg.Engine.Card.ChapterEffects
 import Mtg.Engine.Card.TriggerEffects
 import Mtg.Engine.Card.SpellEffects
 import Mtg.Engine.Card.TriggeredAbility
+import Mtg.Engine.Card.StaticAbility
 import Mtg.Engine.Card.KeywordExpand
 import Mtg.Engine.Card.Saga
 import Mtg.Engine.Card.CardDef
+import Mtg.Engine.Card.Parser.SubGrammars
 import Mtg.Engine.Card.ParseOracle
 import Mtg.Engine.Card.Guards
 

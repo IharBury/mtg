@@ -18,12 +18,6 @@ open Mtg.Engine.Catalog
 def frcCardNamed? (name : String) : Option CardDef :=
   realityFractureCommanderCards.find? (·.name == name)
 
-/-- True when `c` keeps a rules line as printed text. -/
-def keepsPrintedText (c : CardDef) : Bool :=
-  c.staticAbilities.any (fun
-    | .printed _ => true
-    | _ => false)
-
 #guard uniqueFrcOracleRulingCount == 180
 
 /- Every FRC ruling names at least one card in this set. -/
@@ -35,9 +29,8 @@ def keepsPrintedText (c : CardDef) : Bool :=
   if r.sets.all (· == "frc") then r.cards.all (fun n => (frcCardNamed? n).isSome)
   else true)
 
-/- Every FRC card is fully parsed: no rules line is kept as printed text. -/
-#guard realityFractureCommanderCards.all (fun c =>
-  c.modellingError?.isNone && !keepsPrintedText c)
+/- Every FRC card is fully parsed with no modelling errors (all abilities are structured). -/
+#guard realityFractureCommanderCards.all (fun c => c.modellingError?.isNone)
 
 #guard realityFractureCommanderCards.size == 87
 

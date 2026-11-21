@@ -239,6 +239,51 @@ def viewSubtypes (st : Game) : ObjectView → Array CardSubtype
   | .live o => st.subtypes o
   | .lki eo => eo.subtypes
 
+def viewHasSubtype (st : Game) (v : ObjectView) (sub : CardSubtype) : Bool :=
+  match v with
+  | .live o => st.hasSubtype o sub
+  | .lki eo => eo.subtypes.contains sub || (eo.changeling && sub.isCreatureType)
+
+/-- Synthesize an `ObjectView` for evaluating spell predicates against a card face
+(`face`, which may be an Adventure, MDFC back face, or prepare face) with its
+Layer-3 text changes and computed `manaValue` (CR 601.2f / 613.1c). -/
+def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : PlayerId)
+    (manaValue : Nat) : ObjectView :=
+  let tcs := g.evalLayer3 card
+  let subs :=
+    (CardSubtype.ofSubtypes face.subtypes).map fun s =>
+      if tcs.isEmpty then s else HasTextChange.applyTextChanges tcs s
+  let sas :=
+    if tcs.isEmpty then face.staticAbilities
+    else HasTextChange.applyTextChanges tcs face.staticAbilities
+  let isChangeling := face.hasSimpleKeyword .changeling ||
+    sas.any fun | .characteristicDefining .allCreatureTypes => true | _ => false
+  .lki {
+    id := some card.id
+    controller := some caster
+    owner := card.owner
+    name := face.name
+    colors := face.colors
+    manaValue := manaValue
+    supertypes := face.supertypes
+    types := face.types
+    subtypes := subs
+    power := face.power
+    toughness := face.toughness
+    loyalty := face.loyalty.map Int.toNat
+    keywords := face.keywords
+    toxic := KeywordAbility.toxicTotal face.keywords
+    staticAbilities := sas
+    zone := card.zone
+    token := face.isToken
+    isCopy := card.isCopy
+    isCommander := card.isCommander
+    changeling := isChangeling
+    printed := some face
+    copiable := some face
+    chosenX := card.chosenX
+  }
+
 def viewColors (st : Game) : ObjectView → ColorSet
   | .live o => st.colors o
   | .lki eo => eo.colors
@@ -361,6 +406,13 @@ def viewManaCost (st : Game) : ObjectView → ManaCost
 /-- Whether `v` currently has keyword `kw` (Layer 6 for live objects, snapshot for LKI;
 CR 613.1f / 702). -/
 def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
+  let hasProtChosenStatic (sas : Array StaticAbility) : Bool :=
+    sas.any fun
+      | .continuous _ _ mod =>
+        mod.flatten.any fun
+          | .grantKeywords ks => ks.contains (.protection .chosenCardType)
+          | _ => false
+      | _ => false
   match v with
   | .live o =>
     let curKw := st.currentKeywords o
@@ -370,18 +422,13 @@ def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
       let retains := st.retainsPrintedAbilities o
       let sas := st.staticAbilities o
       match kw with
-      | .splitSecond => sas.any (fun | .instantSorcerySplitSecond => true | _ => false)
-      | .improvise => sas.any (fun | .improvise => true | _ => false)
-      | .extort => sas.any (fun | .extort => true | _ => false)
       | .ward => !(st.wardCostsOn o).isEmpty
       | .protection =>
-        (retains && bc.protectionFromChosenCardType) ||
+        hasProtChosenStatic sas ||
           (st.controllerOf o).any fun p =>
             (st.permanentsOf p).any fun em =>
-              (st.baseCard em).protectionFromChosenCardType &&
-                st.retainsPrintedAbilities em && em.status.chosenCardType.isSome
+              hasProtChosenStatic (st.staticAbilities em) && em.status.chosenCardType.isSome
       | .param .equip => retains && bc.activatedAbilities.any (·.isEquip)
-      | .param .sneak => sas.any (fun | .sneak _ => true | _ => false)
       | _ => false
   | .lki eo =>
     if KeywordAbility.hasTag eo.keywords kw then true
@@ -390,13 +437,9 @@ def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
       let sas := eo.staticAbilities
       match kw with
       | .changeling => eo.changeling
-      | .splitSecond => sas.any (fun | .instantSorcerySplitSecond => true | _ => false)
-      | .improvise => sas.any (fun | .improvise => true | _ => false)
-      | .extort => sas.any (fun | .extort => true | _ => false)
       | .toxic => eo.toxic > 0
-      | .protection => bc?.any (·.protectionFromChosenCardType)
+      | .protection => hasProtChosenStatic sas
       | .param .equip => bc?.any (fun c => c.activatedAbilities.any (·.isEquip))
-      | .param .sneak => sas.any (fun | .sneak _ => true | _ => false)
       | _ => false
 
 def viewHasDesignation (st : Game) (v : ObjectView) (tag : PermanentDesignationTag) : Bool :=
@@ -476,6 +519,7 @@ def evalPlayerMetricSingle (g : Game) (env : EvalEnv) (m : PlayerMetric) (p : Pl
   | .unspentMana => Int.ofNat pl.manaPool.total
   | .poisonCounters => Int.ofNat pl.poison
   | .opponentsCount => Int.ofNat (st.livingOpponents p).size
+  | .one => 1
 
 /-- Index of the last combat-phase start (`phaseBegan .combat` or
 `stepBegan .beginningOfCombat`) on `turn` at or before `limit` in `events`
@@ -867,10 +911,10 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
   | .not inner => !evalObjectPred g env v inner
   | .hasType t => (viewTypes st v).contains t
   | .hasSupertype s => (viewSupertypes st v).contains s
-  | .hasSubtype (.literal sub) => (viewSubtypes st v).contains sub
+  | .hasSubtype (.literal sub) => viewHasSubtype st v sub
   | .hasSubtype .chosenOnSource =>
     match (sourceView? g env).bind viewChosenSubtype? with
-    | some sub => (viewSubtypes st v).contains sub
+    | some sub => viewHasSubtype st v sub
     | none => false
   | .hasColor (.literal c) => (viewColors st v).contains c
   | .hasColor .chosenOnSource =>
@@ -1002,7 +1046,7 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
     match v.id? with
     | some oid => st.declaredAsAttackerThisTurn oid
     | none => false
-  | .dealtDamageThisTurn combatOnly rec? =>
+  | .dealtDamageThisTurn combatOnly rec? thisTurnOnly =>
     match v.id? with
     | none => false
     | some oid =>
@@ -1017,14 +1061,69 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
           match r with
           | .permanent eo | .battle eo => evalObjectPred g env (.lki eo) f.pred
           | .player _ => false
-      g.events.any fun e =>
-        e.turn == st.turnNumber &&
+        | some (.playerOrObject pf f) =>
+          match r with
+          | .player p => (evalPlayerFilter g env pf).contains p
+          | .permanent eo | .battle eo => evalObjectPred g env (.lki eo) f.pred
+      if thisTurnOnly then
+        g.events.any fun e =>
+          e.turn == st.turnNumber &&
+            match e.change with
+            | .rules (.damage (.dealt pkts)) =>
+              pkts.any fun pkt =>
+                pkt.amount > 0 && pkt.source.id == some oid &&
+                  (!combatOnly || pkt.combat) && recMatches pkt.recipient
+            | _ => false
+      else
+        g.events.foldl (fun dealt e =>
           match e.change with
+          | .rules (.zone (.moved _ after _ .battlefield ..)) =>
+            if after.id == some oid then false else dealt
+          | .rules (.zone (.created obj _)) =>
+            if obj.zone == .battlefield && obj.id == some oid then false else dealt
           | .rules (.damage (.dealt pkts)) =>
-            pkts.any fun pkt =>
+            dealt || pkts.any fun pkt =>
               pkt.amount > 0 && pkt.source.id == some oid &&
                 (!combatOnly || pkt.combat) && recMatches pkt.recipient
-          | _ => false
+          | _ => dealt) false
+  | .wasDealtDamageThisTurn =>
+    let liveDamaged :=
+      match v with
+      | .live o => o.status.damage > 0
+      | .lki _ => false
+    liveDamaged ||
+      match v.id? with
+      | none => false
+      | some oid =>
+        g.events.any fun e =>
+          e.turn == st.turnNumber &&
+            match e.change with
+            | .rules (.damage (.dealt pkts)) =>
+              pkts.any fun pkt =>
+                pkt.amount > 0 &&
+                  match pkt.recipient with
+                  | .permanent eo | .battle eo => eo.id == some oid
+                  | .player _ => false
+            | _ => false
+  | .receivedCounterThisTurn kind? byPlayer? =>
+    match v.id? with
+    | none => false
+    | some oid =>
+      let allowedPlayers? := byPlayer?.map (evalPlayerFilter g env)
+      g.events.any fun e =>
+        e.turn == st.turnNumber &&
+          e.countersPutInEvent.any fun (eo, kind, n, actor?) =>
+            eo.id == some oid && n > 0 &&
+              (match kind? with | none => true | some k => kind == k) &&
+              (match allowedPlayers? with
+               | none => true
+               | some ps =>
+                 match actor? with
+                 | some p => ps.contains p
+                 | none =>
+                   match eo.controller with
+                   | some c => ps.contains c
+                   | none => true)
 
 /-- Evaluate an `ObjectExpr` to an ordered array of `ObjectView`s (live or LKI). -/
 partial def evalObjects (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Array ObjectView :=
@@ -1173,6 +1272,15 @@ partial def evalValue (g : Game) (env : EvalEnv) (expr : ValueExpr) : Int :=
     Int.ofNat seen.size
   | .playerMetric m whoExpr =>
     (evalPlayer g env whoExpr).foldl (fun acc p => acc + evalPlayerMetricSingle g env m p) 0
+  | .maxControlled who pred =>
+    let ps := evalPlayerFilter g env who
+    let allowPhased := predMentionsPhasedOut pred
+    ps.foldl (fun acc p =>
+      let cnt := st.objects.foldl (fun n o =>
+        if o.zone == .battlefield && (allowPhased || !o.status.phasedOut) &&
+            st.controllerOf o == some p && evalObjectPred g env (.live o) pred then n + 1
+        else n) 0
+      Max.max acc (Int.ofNat cnt)) 0
   | .manaSymbols col? objsExpr =>
     let views := evalObjects g env objsExpr
     let total : Nat := views.foldl (fun acc v =>
@@ -1262,7 +1370,19 @@ def evalCastPred (g : Game) (env : EvalEnv) (pred : CastContextPred) : Bool :=
 /-- Evaluate an `EventPattern` for players `who` on a specific `targetTurn`. -/
 def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
     (who : PlayerFilter) (pat : EventPattern) : Bool :=
-  let pids := evalPlayerFilter g env who
+  let st := boardState g env
+  let pids : Array PlayerId :=
+    if who.pred == .any then
+      -- CR 800.4 / Ruling 226: historical turn events still recognize players who later left the game.
+      st.players.filterMap fun pl =>
+        let relOk :=
+          match who.relation with
+          | .you => pl.id == env.controller
+          | .opponent => pl.id != env.controller && !st.areTeammates env.controller pl.id
+          | .teammate => st.areTeammates env.controller pl.id
+          | .anyPlayer => true
+        if relOk then some pl.id else none
+    else evalPlayerFilter g env who
   if pids.isEmpty then false
   else
     let anyPlayer := who == .any

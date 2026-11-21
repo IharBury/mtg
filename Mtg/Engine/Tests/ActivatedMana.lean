@@ -488,7 +488,7 @@ private def passBothPlayers (g : Game) : Game :=
     types := #[.creature]
     power := some 2
     toughness := some 2
-    entersWithPlusOneCounters := 1
+    staticAbilities := #[.entersWithPlusOneCounters 1]
   }
   let g0 :=
     insertObject

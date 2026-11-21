@@ -492,7 +492,6 @@ def hobbitDualLand (name : String) (a b : Color) (creatureTypes : Array String) 
       s!"\{2}{manaSymbolsText #[.colored a, .colored b]}, \{T}, Sacrifice this land: " ++
       s!"Put two +1/+1 counters on target {orJoin creatureTypes.toList} you control. " ++
       "Activate only as a sorcery.")
-    (entersTapped := true)
     (activatedAbilities := #[
       ActivatedAbility.manaAbility
         (.oneOf (.explicit #[.colored a, .colored b]) (.const 1)),
@@ -2240,7 +2239,7 @@ that are also in the core catalog. -/
 #guard (gollumSilentSlinker.summary.splitOn "menace").length > 1
 #guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
 #guard bilbosDeadlySlice.requiresTarget
-#guard dreadedBatCloud.costReductionIfCreatureDied == 3
+#guard dreadedBatCloud.staticAbilities.contains (.costReductionIfCreatureDied 3)
 #guard dreadedBatCloud.hasSimpleKeyword .flying
 #guard dreadedBatCloud.hasSimpleKeyword .deathtouch
 #guard crudeBentBlade.isEquipment

@@ -597,87 +597,165 @@ where
     let maxTargets ← if e.maxTargets == 0 then pure e.maxTargets else takeNat e.maxTargets
     return { e with targeting, resolution, maxTargets }
 
+private def takeStaticAnySubPred : ObjectPred → ArgM ObjectPred
+  | .hasSubtype (.literal s) => return .hasSubtype (.literal (← takeSubtype s))
+  | .any ps => do
+    let subs := ps.filterMap fun | .hasSubtype (.literal s) => some s | _ => none
+    if subs.size == ps.size && !subs.isEmpty then
+      let subs' ← takeSubtypes subs
+      return StaticAbility.anySubtypePred subs'
+    else
+      let ps' ← ps.mapM fun
+        | .hasSubtype (.literal s) => return .hasSubtype (.literal (← takeSubtype s))
+        | .hasType t => return .hasType (← takeCardType t)
+        | other => return other
+      return .any ps'
+  | other => return other
+
+private def takeStaticScope (sc : ObjectFilter) : ArgM ObjectFilter := do
+  match sc.zones.zones.toList, sc.pred with
+  | [.battlefield], .all #[.otherThan .this, .hasType .creature, subP, .controlledBy .you] =>
+    let subP' ← takeStaticAnySubPred subP
+    return { sc with pred := .all #[.otherThan .this, .hasType .creature, subP', .controlledBy .you] }
+  | [.battlefield], .all #[.otherThan .this, subP, .controlledBy .you] =>
+    let subP' ← takeStaticAnySubPred subP
+    return { sc with pred := .all #[.otherThan .this, subP', .controlledBy .you] }
+  | [.battlefield], .all #[.hasType .creature, .hasSubtype (.literal s), .controlledBy .you] =>
+    if s == .army then return sc
+    else
+      let s' ← takeSubtype s
+      return { sc with pred := .all #[.hasType .creature, .hasSubtype (.literal s'), .controlledBy .you] }
+  | [.battlefield], .all #[.hasSubtype (.literal s), .controlledBy .you] =>
+    let s' ← takeSubtype s
+    return { sc with pred := .all #[.hasSubtype (.literal s'), .controlledBy .you] }
+  | _, _ => return sc
+
+private def takeStaticCondition? : Option Condition → ArgM (Option Condition)
+  | some (.cmp .ge (.aggregate .count .one (.inZones .yourGraveyard (.all #[.isCard, .hasType .creature]))) (.const n)) =>
+    if n ≤ 1 then return some (.cmp .ge (.aggregate .count .one (.inZones .yourGraveyard (.all #[.isCard, .hasType .creature]))) (.const n))
+    else do
+      let k ← takeNat n.toNat
+      return some (StaticAbility.condGyCreatureCardsAtLeast k)
+  | some (.exists (.inZones .battlefield (.all #[.otherThan .this, .hasSubtype (.literal s), .controlledBy .you]))) =>
+    return some (StaticAbility.condControlOtherSubtype (← takeSubtype s))
+  | some (.exists (.inZones .battlefield (.all #[.hasSubtype (.literal s), .controlledBy .you]))) =>
+    return some (StaticAbility.condControlSubtype (← takeSubtype s))
+  | some (.exists (.inZones .battlefield (.all #[.hasType .planeswalker, .hasSubtype (.literal s), .controlledBy .you]))) =>
+    return some (StaticAbility.condControlPlaneswalkerSubtype (← takeSubtype s))
+  | some (.forAll .this (.stat .power .le (.const n))) =>
+    return some (.forAll .this (.stat .power .le (.const (← takeInt n))))
+  | other => return other
+
+private def takeStaticKeywords (ks : Array KeywordAbility) : ArgM (Array KeywordAbility) := do
+  ks.mapM fun
+    | .ward (.mk #[.mana (.mk #[.generic w])] _) =>
+      return .ward (CostSpec.ofGeneric (← takeNat w))
+    | other => return other
+
+private def takeStaticDynamicPT (p t : ValueExpr) : ArgM (ValueExpr × ValueExpr) := do
+  match p, t with
+  | .const pv, .const tv => return (.const (← takeInt pv), .const (← takeInt tv))
+  | .binary .mul (.const 2) (.binary .divFloor (.playerMetric .graveyardSize .you) (.const 7)), .const 0 =>
+    return (p, t)
+  | pExpr, .const 0 =>
+    match pExpr with
+    | .binary .mul (.const k) inner =>
+      return (StaticAbility.scaledValue (← takeInt k) inner, .const 0)
+    | .aggregate .count .one (.inZones .battlefield (.all #[.otherThan .this, .hasType .artifact, .controlledBy .you])) =>
+      return (StaticAbility.scaledValue (← takeInt 1) pExpr, .const 0)
+    | .aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .attachedTo .this])) =>
+      return (StaticAbility.scaledValue (← takeInt 1) pExpr, .const 0)
+    | _ => return (p, t)
+  | _, _ => return (p, t)
+
+private partial def takeStaticContMod : ContinuousModification → ArgM ContinuousModification
+  | .modifyPT p t => do
+    let (p', t') ← takeStaticDynamicPT p t
+    return .modifyPT p' t'
+  | .grantKeywords ks => return .grantKeywords (← takeStaticKeywords ks)
+  | .modifyTypes tm =>
+    if tm.mode == .setAndKeepNoncreatureSubtypes && tm.subtypes.size == 1 then
+      return .modifyTypes { tm with subtypes := #[← takeSubtype tm.subtypes[0]!] }
+    else if tm.mode == .addDedup && tm.supertypes == #[.legendary] && !tm.subtypes.isEmpty then
+      return .modifyTypes { tm with subtypes := ← takeSubtypes tm.subtypes }
+    else return .modifyTypes tm
+  | .copyActivatedFrom src =>
+    match src.pred with
+    | .all #[.isCard, .hasSubtype (.literal sub)] =>
+      return .copyActivatedFrom { src with pred := .all #[.isCard, .hasSubtype (.literal (← takeSubtype sub))] }
+    | _ => return .copyActivatedFrom src
+  | .all ms => return .all (← ms.mapM takeStaticContMod)
+  | other => return other
+
 def takeStatic (ab : StaticAbility) : ArgM StaticAbility := do
   match ab with
-  | .otherCreaturesHaveTrample ss => return .otherCreaturesHaveTrample (← takeSubtypes ss)
-  | .otherCreaturesGet ss p t =>
-    return .otherCreaturesGet (← takeSubtypes ss) (← takeInt p) (← takeInt t)
-  | .enchantedCreatureGets p t => return .enchantedCreatureGets (← takeInt p) (← takeInt t)
-  | .equippedCreatureGets p t => return .equippedCreatureGets (← takeInt p) (← takeInt t)
-  | .cantBlockUnlessYouControl ss => return .cantBlockUnlessYouControl (← takeSubtypes ss)
-  | .cantBeBlockedExceptBy n => return .cantBeBlockedExceptBy (← takeNat n)
-  | .cantBeBlockedByMoreThan n => return .cantBeBlockedByMoreThan (← takeNat n)
-  | .enchantedIsOnlySubtypeCantAttackOrBlock s =>
-    return .enchantedIsOnlySubtypeCantAttackOrBlock (← takeSubtype s)
-  | .enchantedCreatureGetsAndHas p t k =>
-    return .enchantedCreatureGetsAndHas (← takeInt p) (← takeInt t) k
-  | .creaturesYouControlGet p t => return .creaturesYouControlGet (← takeInt p) (← takeInt t)
-  | .hasteIfYouControlOtherSubtype s => return .hasteIfYouControlOtherSubtype (← takeSubtype s)
-  | .cantAttackUnlessYouControlNOther n s =>
-    return .cantAttackUnlessYouControlNOther (← takeNat n) (← takeSubtype s)
-  | .legendaryCreaturesGetAndWard p t w =>
-    return .legendaryCreaturesGetAndWard (← takeInt p) (← takeInt t) (← takeNat w)
-  | .nonlegendaryCreaturesGet p t => return .nonlegendaryCreaturesGet (← takeInt p) (← takeInt t)
-  | .equippedCreatureGetsAndHas p t k =>
-    return .equippedCreatureGetsAndHas (← takeInt p) (← takeInt t) k
-  | .equippedCreatureGetsAndWard p t w =>
-    return .equippedCreatureGetsAndWard (← takeInt p) (← takeInt t) (← takeNat w)
-  | .lifelinkIfYouControlOtherSubtype s => return .lifelinkIfYouControlOtherSubtype (← takeSubtype s)
-  | .thresholdGets p t => return .thresholdGets (← takeInt p) (← takeInt t)
-  | .cantBeBlockedByPowerAtMost n => return .cantBeBlockedByPowerAtMost (← takeInt n)
-  | .getsAndHasIfEnduringStory p t k =>
-    return .getsAndHasIfEnduringStory (← takeInt p) (← takeInt t) k
-  | .creaturesYouControlGetIfEnduringStory p t =>
-    return .creaturesYouControlGetIfEnduringStory (← takeInt p) (← takeInt t)
-  | .artifactsAndCreaturesHaveWardIfEnduringStory n =>
-    return .artifactsAndCreaturesHaveWardIfEnduringStory (← takeNat n)
-  | .creaturesCantAttackYouUnlessPayIfEnduringStory n =>
-    return .creaturesCantAttackYouUnlessPayIfEnduringStory (← takeNat n)
-  | .otherSubtypeHaveTapAddOneOf ss m =>
-    return .otherSubtypeHaveTapAddOneOf (← takeSubtypes ss) m
-  | .cantBeBlockedByPowerAtLeast n => return .cantBeBlockedByPowerAtLeast (← takeInt n)
-  | .equipAbilitiesTargetingThisCostLess n =>
-    return .equipAbilitiesTargetingThisCostLess (← takeNat n)
-  | .chosenTypeCreaturesGet p t => return .chosenTypeCreaturesGet (← takeInt p) (← takeInt t)
-  | .otherSubtypeGetPowerPerArtifactToken s =>
-    return .otherSubtypeGetPowerPerArtifactToken (← takeSubtype s)
-  | .extraTriggerIfEnduringStorySubtype s =>
-    return .extraTriggerIfEnduringStorySubtype (← takeSubtype s)
-  | .extraTriggerAnotherYouControl ss ts =>
-    return .extraTriggerAnotherYouControl (← takeSubtypes ss) (← takeCardTypes ts)
-  | .powerPerFatGraveyard p => return .powerPerFatGraveyard (← takeInt p)
-  | .copyActivatedFromGySubtype s => return .copyActivatedFromGySubtype (← takeSubtype s)
-  | .equippedGetsTrampleAndCombatTreasures p t =>
-    return .equippedGetsTrampleAndCombatTreasures (← takeInt p) (← takeInt t)
-  | .creaturesYouControlOfSubtypeGet s p t =>
-    return .creaturesYouControlOfSubtypeGet (← takeSubtype s) (← takeInt p) (← takeInt t)
-  | .youAndOtherSubtypeHaveHexproofIfShield s =>
-    return .youAndOtherSubtypeHaveHexproofIfShield (← takeSubtype s)
-  | .subtypeSpellsCostLess s n => return .subtypeSpellsCostLess (← takeSubtype s) (← takeNat n)
-  | .cantBeBlockedIfPowerAtMost n => return .cantBeBlockedIfPowerAtMost (← takeInt n)
-  | .maximumHandSize n => return .maximumHandSize (← takeNat n)
-  | .powerEqualSubtypeYouControl s => return .powerEqualSubtypeYouControl (← takeSubtype s)
-  | .typeSpellsCostLess ty n =>
-    return .typeSpellsCostLess (← takeCardType ty) (← takeNat n)
-  | .supertypeSpellsCostLess s n =>
-    return .supertypeSpellsCostLess (← takeSupertype s) (← takeNat n)
-  | .otherPowerUpCostsLess n => return .otherPowerUpCostsLess (← takeNat n)
-  | .enchantedCreatureHasWard n => return .enchantedCreatureHasWard (← takeNat n)
-  | .equippedCreatureGetsHasAndWard p t k w =>
-    return .equippedCreatureGetsHasAndWard (← takeInt p) (← takeInt t) k (← takeNat w)
-  | .opponentsCreaturesGet p t => return .opponentsCreaturesGet (← takeInt p) (← takeInt t)
-  | .getsPowerPerOtherArtifact p => return .getsPowerPerOtherArtifact (← takeInt p)
-  | .getsPowerPerAttachedEquipment p => return .getsPowerPerAttachedEquipment (← takeInt p)
-  | .getsIfGyCreatureCards n p t =>
-    return .getsIfGyCreatureCards (← takeNat n) (← takeInt p) (← takeInt t)
-  | .enchantedCreatureGetsHasAndTypes p t k ts =>
-    return .enchantedCreatureGetsHasAndTypes (← takeInt p) (← takeInt t) k (← takeSubtypes ts)
-  | .enchantedCreatureGetsHasAndWard p t k w =>
-    return .enchantedCreatureGetsHasAndWard (← takeInt p) (← takeInt t) k (← takeNat w)
-  | .getsAndAllTypesIfGyCreatureCards n p t =>
-    return .getsAndAllTypesIfGyCreatureCards (← takeNat n) (← takeInt p) (← takeInt t)
-  | .sneak c => return .sneak (← takeCost c)
-  | ab => return ab
+  | .characteristicDefining (.setPT (some (.aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal sub), .controlledBy .you])))) none) =>
+    return StaticAbility.powerEqualSubtypeYouControl (← takeSubtype sub)
+  | .characteristicDefining _ => return ab
+  | .continuous cond? sc mod =>
+    -- Preserve text-order slot collection: condition before scope before mod, except trailing conditions
+    let isTrailingCond :=
+      sc == StaticAbility.scopeSelf &&
+      match cond? with
+      | some (.exists (.inZones .battlefield (.all #[.otherThan .this, .hasSubtype (.literal _), .controlledBy .you]))) => true
+      | some (.exists (.inZones .battlefield (.all #[.hasType .planeswalker, .hasSubtype (.literal _), .controlledBy .you]))) => true
+      | _ => false
+    if isTrailingCond then
+      let sc' ← takeStaticScope sc
+      let mod' ← takeStaticContMod mod
+      let cond?' ← takeStaticCondition? cond?
+      return .continuous cond?' sc' mod'
+    else
+      let cond?' ← takeStaticCondition? cond?
+      let sc' ← takeStaticScope sc
+      let mod' ← takeStaticContMod mod
+      return .continuous cond?' sc' mod'
+  | .ruleModifying cond? rule =>
+    match cond?, rule with
+    | some (.forAll .this (.stat .power .le (.const n))), .combat (.cantBeBlocked .self) =>
+      return StaticAbility.cantBeBlockedIfPowerAtMost (← takeInt n)
+    | none, .combat (.cantBlock .self (some (.exists (.inZones .battlefield (.all #[subP, .controlledBy .you]))))) =>
+      let subP' ← takeStaticAnySubPred subP
+      return .ruleModifying none (.combat (.cantBlock .self (some (.exists (.inZones .battlefield (.all #[subP', .controlledBy .you]))))))
+    | none, .combat (.cantAttackUnless .self (.cmp .ge (.aggregate .count .one (.inZones .battlefield (.all #[.otherThan .this, .hasSubtype (.literal sub), .controlledBy .you]))) (.const n))) =>
+      let n' ← takeNat n.toNat
+      let sub' ← takeSubtype sub
+      return StaticAbility.cantAttackUnlessYouControlNOther n' sub'
+    | none, .combat (.minBlockers .self n) =>
+      return StaticAbility.cantBeBlockedExceptBy (← takeNat n)
+    | none, .combat (.maxBlockers .self n) =>
+      return StaticAbility.cantBeBlockedByMoreThan (← takeNat n)
+    | none, .combat (.cantBeBlockedBy .self (.all #[.hasType .creature, .stat .power .le (.const n)])) =>
+      return StaticAbility.cantBeBlockedByPowerAtMost (← takeInt n)
+    | none, .combat (.cantBeBlockedBy .self (.all #[.hasType .creature, .stat .power .ge (.const n)])) =>
+      return StaticAbility.cantBeBlockedByPowerAtLeast (← takeInt n)
+    | some c, .combat (.attackTax ap df (.mk #[.mana (.mk #[.generic n])] _)) =>
+      return .ruleModifying (some c) (.combat (.attackTax ap df (CostSpec.ofGeneric (← takeNat n))))
+    | none, .player (.maxHandSize w (some n)) =>
+      return .ruleModifying none (.player (.maxHandSize w (some (← takeNat n))))
+    | cond?, .trigger (.extraTrigger sc extra) =>
+      let sc' ← takeStaticScope sc
+      return .ruleModifying cond? (.trigger (.extraTrigger sc' extra))
+    | _, _ => return ab
+  | .costModifier cond? tgt mod =>
+    match tgt, mod with
+    | .spells caster (.hasSubtype (.literal s)) none none az, .reduceGeneric (.const n) =>
+      let s' ← takeSubtype s
+      let n' ← takeNat n.toNat
+      return .costModifier cond? (.spells caster (.hasSubtype (.literal s')) none none az) (.reduceGeneric (.const n'))
+    | .spells caster (.hasType ty) none none az, .reduceGeneric (.const n) =>
+      let ty' ← takeCardType ty
+      let n' ← takeNat n.toNat
+      return .costModifier cond? (.spells caster (.hasType ty') none none az) (.reduceGeneric (.const n'))
+    | .spells caster (.hasSupertype sup) none none az, .reduceGeneric (.const n) =>
+      let sup' ← takeSupertype sup
+      let n' ← takeNat n.toNat
+      return .costModifier cond? (.spells caster (.hasSupertype sup') none none az) (.reduceGeneric (.const n'))
+    | .abilities act tag? sc tgt? nth?, .reduceGeneric (.const n) =>
+      return .costModifier cond? (.abilities act tag? sc tgt? nth?) (.reduceGeneric (.const (← takeNat n.toNat)))
+    | _, _ => return ab
+  | .replacement _ _ => return ab
+  | .enchantRestriction _ => return ab
 
 mutual
 
@@ -867,7 +945,7 @@ def renderInt (fmt : IntFmt) (i : Int) : String :=
 def renderStr (fmt : StrFmt) (s : String) : String :=
   match fmt with
   | .word _ | .sub => s
-  | .plural | .subPlural => StaticAbility.pluralSubtype s
+  | .plural | .subPlural => pluralSubtype s
   | .cycling _ => s ++ "cycling"
   | .non => "non-" ++ s
 
@@ -953,7 +1031,7 @@ def strHit (i : Nat) (fmt : StrFmt) (s : String) (toks : List String) (fresh : B
   let needle :=
     match fmt with
     | .word _ => strWords s
-    | .plural => strWords (StaticAbility.pluralSubtype s)
+    | .plural => strWords (pluralSubtype s)
     | .cycling _ =>
       let ws := strWords s
       match ws.dropLast with

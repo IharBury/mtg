@@ -16,25 +16,48 @@ namespace Game
 cast a spell this turn (MSH 105). The permanent need not have been on
 the battlefield when that spell was cast. -/
 def cosmicAwarenessFlash (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o =>
-    (g.staticAbilities o).any (fun
-      | .flashIfOpponentCastThisTurn => true
-      | _ => false)) &&
-    g.players.any (fun q => q.id != p && !g.areTeammates p q.id && g.loggedSpellsCast q.id > 0)
+  g.battlefield.any fun o =>
+    let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+    (g.staticAbilities o).any fun ab =>
+      ab.anyRule fun cond? r =>
+        match r with
+        | .play (.castAsThoughFlash who .anyObject false none) =>
+          EvalExpr.matchesPlayerFilter g env who p && cond?.all (EvalExpr.evalCondition g env)
+        | _ => false
 
 /-- Timing check shared by beginning to cast a spell or an Adventure (CR 601.3)
 and CR 601.2b Morph vs. printed-face selection (`excludeStackId := some prop.spellId`). -/
 def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
     (excludeStackId : Option ObjectId := none)
-    (ignorePending : Bool := false) : Bool :=
-  let hasConditionalFlash :=
-    match face.flashIfYouControlSubtype with
-    | some t => g.controlsAnySubtype p #[t]
-    | none => false
-  let radagastFlash :=
-    face.isCreature && g.loggedCreatureSpells p == 0 &&
-      (g.permanentsOf p).any (fun o =>
-        (g.baseCard o).firstCreatureHasFlash && g.retainsPrintedAbilities o)
+    (ignorePending : Bool := false)
+    (card? : Option GameObject := none) : Bool :=
+  let dummy : GameObject :=
+    card?.getD { id := ⟨0⟩, owner := p, controller := some p, zone := .hand p, printed := face }
+  let tcs := match card? with | some c => g.evalLayer3 c | none => #[]
+  let faceStatics :=
+    if tcs.isEmpty then face.staticAbilities
+    else HasTextChange.applyTextChanges tcs face.staticAbilities
+  let selfEnv : EvalEnv := { controller := p, sourceId := card?.map (·.id) }
+  let hasSelfFlash :=
+    faceStatics.any fun ab =>
+      ab.anyRule fun cond? r =>
+        match r with
+        | .play (.castAsThoughFlash who _ true _) =>
+          EvalExpr.matchesPlayerFilter g selfEnv who p && cond?.all (EvalExpr.evalCondition g selfEnv)
+        | _ => false
+  let spellView := EvalExpr.spellFaceView g dummy face p face.manaValue
+  let hasPeerFlash :=
+    g.battlefield.any fun o =>
+      let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+      (g.staticAbilities o).any fun ab =>
+        ab.anyRule fun cond? r =>
+          match r with
+          | .play (.castAsThoughFlash who spellPred false nth?) =>
+            EvalExpr.matchesPlayerFilter g env who p &&
+              cond?.all (EvalExpr.evalCondition g env) &&
+              EvalExpr.evalObjectPred g env spellView spellPred &&
+              nth?.all (fun n => g.countMatchingSpellsCastThisTurn p env spellPred + 1 == n)
+          | _ => false
   let prioOk :=
     if excludeStackId.isSome || ignorePending then
       !g.over && g.priority == p && g.playersReceivePriority
@@ -50,8 +73,7 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
           g.step.isMainPhase && g.activePlayer == p && g.priority == p
       else g.asSorcery? p
   prioOk &&
-  (if face.hasSorcerySpeed && !hasConditionalFlash && !radagastFlash &&
-      !g.cosmicAwarenessFlash p then
+  (if face.hasSorcerySpeed && !hasSelfFlash && !hasPeerFlash then
     sorceryOk else true)
 
 /-- Every card face the game knows: each object's card, its other face,
@@ -68,26 +90,67 @@ def knownCardFaces (g : Game) : Array CardDef :=
 def isNonlandCardName (g : Game) (name : String) : Bool :=
   g.knownCardFaces.any (fun c => c.name == name && !c.isLand)
 
-/-- Whether a permanent forbids casting spells named `name` (Meddling Mage). -/
+/-- Whether a permanent forbids casting spells named `name` (Meddling Mage, CR 601.2 / 101.2). -/
 def spellNameForbidden (g : Game) (name : String) : Bool :=
   g.battlefield.any (fun o =>
     o.status.chosenName == some name &&
-      (g.staticAbilities o).any (· == .fra .chosenNameSpellsCantBeCast))
+      let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+      (g.staticAbilities o).any fun ab =>
+        ab.anyRule fun cond? r =>
+          match r with
+          | .player (.cantCastSpells _ (.named .chosenOnSource)) =>
+            cond?.all (EvalExpr.evalCondition g env)
+          | _ => false)
 
 /-- Whether any living member of the active team controls a permanent forbidding
 opponents from casting spells during that player's turn (CR 101.2 / 805.4a / 810.2). -/
 def opponentsCantCastOnActiveTurn (g : Game) (p : PlayerId) : Bool :=
-  !g.isOnActiveTeam p &&
-    (g.teamMembers g.activePlayer).any (fun tm =>
-      g.stillInGame tm &&
-        (g.permanentsOf tm).any (fun o =>
-          (g.staticAbilities o).any (· == .opponentsCantCastOnYourTurn)))
+  g.battlefield.any fun o =>
+    let srcCtrl := (g.controllerOf o).getD o.owner
+    g.stillInGame srcCtrl &&
+      let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+      (g.staticAbilities o).any fun ab =>
+        ab.anyRule fun cond? r =>
+          match r with
+          | .player (.cantCastSpells who .anyObject) =>
+            cond?.all (EvalExpr.evalCondition g env) &&
+              EvalExpr.matchesPlayerFilter g env who p
+          | _ => false
 
-/-- Whether `p`'s graveyard has enough other cards to cast `face` (Ruling 852). -/
+/-- Minimum number of other cards in graveyard required by a `castRestriction` static on `face`,
+if any (Ruling 852). -/
+def castOnlyIfGraveyardAtLeast? (face : CardDef) : Option Nat :=
+  face.staticAbilities.findSome? fun ab =>
+    match ab with
+    | .ruleModifying _ (.play (.castRestriction
+        (.cmp .ge (.aggregate .count .one (.inZones .yourGraveyard (.otherThan .this))) (.const n)))) =>
+      some n.toNat
+    | _ => none
+
+/-- Whether every `StaticPlayRule.castRestriction` on `face` is satisfied for `p` casting `cardId`
+(CR 601.2 / 101.2; Ruling 852). -/
 def graveyardCastThresholdMet (g : Game) (p : PlayerId) (cardId : ObjectId) (face : CardDef) : Bool :=
-  match face.castOnlyIfGraveyardAtLeast with
-  | some n => ((g.player p).graveyard.filter (· != cardId)).size >= n
-  | none => true
+  let tcs := (g.findObject? cardId).map g.evalLayer3 |>.getD #[]
+  let faceStatics :=
+    if tcs.isEmpty then face.staticAbilities
+    else HasTextChange.applyTextChanges tcs face.staticAbilities
+  let env : EvalEnv := { controller := p, sourceId := some cardId }
+  faceStatics.all fun ab =>
+    match ab with
+    | .ruleModifying cond? (.play (.castRestriction unlessCond)) =>
+      if cond?.all (EvalExpr.evalCondition g env) then
+        EvalExpr.evalCondition g env unlessCond
+      else true
+    | _ => true
+
+/-- Error message when `face`'s `castRestriction` prevents `p` from casting `cardId`. -/
+def castRestrictionError? (g : Game) (p : PlayerId) (cardId : ObjectId) (face : CardDef) :
+    Option String :=
+  if g.graveyardCastThresholdMet p cardId face then none
+  else
+    match castOnlyIfGraveyardAtLeast? face with
+    | some n => some s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+    | none => some s!"{face.name} can't be cast right now"
 
 /-- Why a mandatory sacrifice additional cost of `face` cannot be paid, if it cannot
 (CR 601.2b / 601.2h / 601.3). -/
@@ -569,15 +632,14 @@ def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : 
     throw s!"Spells named {face.name} can't be cast"
   if face.isLand then
     throw "Lands are played, not cast (CR 305)"
-  if !g.graveyardCastThresholdMet p card.id face then
-    let n := face.castOnlyIfGraveyardAtLeast.getD 0
-    throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+  if let some err := g.castRestrictionError? p card.id face then
+    throw err
   let perms := g.playPermissionsFor p card
   let anyIgnoreTiming :=
     match origPermOverride with
     | some pm => pm.ignoreTiming
     | none => perms.any (·.ignoreTiming)
-  if !(g.timingAllowsCast p face (excludeStackId := excludeIdOverride) ||
+  if !(g.timingAllowsCast p face (excludeStackId := excludeIdOverride) (card? := some card) ||
       anyIgnoreTiming || sneakCost.isSome) then
     throw s!"{face.name} has sorcery speed"
   if isModalSpellFace face then
@@ -1556,20 +1618,27 @@ def lockInTargetCostReduction (g : Game) : Game :=
         match g.findObject? oid with
         | some o =>
           let isSpell := prop.kind == .spell
-          let nDamaged :=
-            if isSpell && face.costReductionIfTargetDamaged > 0 && o.status.damage > 0 then
-              face.costReductionIfTargetDamaged
-            else 0
-          let nTapped :=
-            if isSpell && face.costReductionIfTargetTapped > 0 && o.status.tapped then
-              face.costReductionIfTargetTapped
-            else 0
-          let nAttacking :=
-            if !isSpell || !o.status.attacking then 0
-            else if face.costReductionIfTargetAttackingNontoken > 0 then
-              if o.printed.isToken then 0 else face.costReductionIfTargetAttackingNontoken
-            else face.costReductionIfTargetAttacking
           let targets := ((g.stackEntry? spell.id).map (·.targets)).getD #[]
+          let nSpellTarget : Nat :=
+            if !isSpell then 0
+            else
+              let tcs := g.evalLayer3 spell
+              let faceStatics :=
+                if tcs.isEmpty then face.staticAbilities
+                else HasTextChange.applyTextChanges tcs face.staticAbilities
+              let spellEnv : EvalEnv :=
+                { controller := prop.caster
+                  sourceId := some spell.id
+                  targetSlots := targets.map (fun t => #[t])
+                  chosenX := spell.chosenX.getD 0 }
+              faceStatics.foldl (fun acc ab =>
+                match ab with
+                | .costModifier cond? .thisSpell (.reduceGeneric amt) =>
+                  if (cond?.any Condition.mentionsTarget || amt.mentionsTarget) &&
+                      cond?.all (EvalExpr.evalCondition g spellEnv) then
+                    acc + (EvalExpr.evalValue g spellEnv amt).toNat
+                  else acc
+                | _ => acc) 0
           let nActTarget :=
             match prop.activation with
             | some ab =>
@@ -1577,14 +1646,28 @@ def lockInTargetCostReduction (g : Game) : Game :=
               if targetReds.isEmpty then 0
               else EvalExpr.evalActivationCostReductions g prop.caster prop.sourceId targetReds targets
             | none => 0
-          let nEquip :=
-            if prop.activation.any (·.isEquip) && g.controlledBy o prop.caster then
-              (g.staticAbilities o).foldl (fun acc ab =>
-                match ab with
-                | .equipAbilitiesTargetingThisCostLess k => acc + k
+          let nEquip : Nat :=
+            match prop.activation with
+            | none => 0
+            | some ab =>
+              let oEnv : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+              (g.staticAbilities o).foldl (fun acc sab =>
+                match sab with
+                | .costModifier cond? (.abilities act tag? sc (some tgtPred) none) (.reduceGeneric amt) =>
+                  let tagOk := match tag? with
+                    | none => true
+                    | some t => ab.tag? == some t || (match t with | .equip _ => ab.isEquip | _ => false)
+                  let srcOk := match prop.sourceId.bind g.findObject? with
+                    | some src => EvalExpr.evalObjectPred g oEnv (.live src) sc.pred
+                    | none => true
+                  if tagOk && srcOk &&
+                      EvalExpr.matchesPlayerFilter g oEnv act prop.caster &&
+                      cond?.all (EvalExpr.evalCondition g oEnv) &&
+                      EvalExpr.evalObjectPred g oEnv (.live o) tgtPred then
+                    acc + (EvalExpr.evalValue g oEnv amt).toNat
+                  else acc
                 | _ => acc) 0
-            else 0
-          let n := nDamaged + nTapped + nAttacking + nActTarget + nEquip
+          let n := nSpellTarget + nActTarget + nEquip
           if n == 0 then g
           else g.changeProposal (.reduceCostBy (ManaCost.ofGeneric n))
         | none => g

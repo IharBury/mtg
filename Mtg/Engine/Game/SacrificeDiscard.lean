@@ -160,14 +160,29 @@ def applyConnive (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
       while fuel > 0 do
         fuel := fuel - 1
         let mut specs : Array (ReplacementSpec × Nat) := #[]
-        for o in g.permanentsOf controller do
-          if (g.staticAbilities o).any (· == .extraDrawOnConnive) then
-            specs := specs.push (
-              { id := { kind := .extraDrawOnConnive, object := some o.id }
-                source := some o.id
-                controller := some controller
-                affectedPlayer := controller
-                kind := .extraDrawOnConnive controller 1 }, 1)
+        for o in g.battlefield do
+          let srcCtrl := (g.controllerOf o).getD o.owner
+          let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+          for ab in g.staticAbilities o do
+            match ab with
+            | .replacement cond? spec =>
+              if cond?.all (EvalExpr.evalCondition g env) then
+                for sp in spec.flatten do
+                  match sp with
+                  | .extraDrawOnConnive who sc n =>
+                    let conniverOk :=
+                      match sourceId.bind (EvalExpr.resolveObjectView? g env) with
+                      | some v => EvalExpr.evalObjectPred g env v sc.pred
+                      | none => true
+                    if n > 0 && EvalExpr.matchesPlayerFilter g env who controller && conniverOk then
+                      specs := specs.push (
+                        { id := { kind := .extraDrawOnConnive, object := some o.id }
+                          source := some o.id
+                          controller := some srcCtrl
+                          affectedPlayer := controller
+                          kind := .extraDrawOnConnive controller n }, n)
+                  | _ => pure ()
+            | _ => pure ()
         for (_, eff) in g.activeEffects do
           match eff with
           | .replacement spec d =>

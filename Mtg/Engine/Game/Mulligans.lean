@@ -48,9 +48,8 @@ def promptBottom (g : Game) (p : PlayerId) : Game :=
 /-- Cards that may begin the game on the battlefield from an opening hand
 (Quicksilver; MSH 84). -/
 def beginsOnBattlefieldFromOpeningHand (g : Game) (o : GameObject) : Bool :=
-  (g.staticAbilities o).any (fun
-    | .mayBeginOnBattlefield => true
-    | _ => false)
+  (g.staticAbilities o).any fun ab =>
+    ab.anyRule fun _ r => match r with | .play .mayBeginOnBattlefield => true | _ => false
 
 /-- Opening-hand cards that may begin the game on the battlefield, starting
 player first (MSH 84). -/

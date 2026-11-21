@@ -73,7 +73,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
   let chorusDef : CardDef := {
     name := "Phase12 Chorus"
     types := #[.enchantment]
-    mayCastCreaturesFromTop := true
+    staticAbilities := #[.mayCastCreaturesFromTop]
   }
   let costlyElfDef : CardDef := {
     name := "Phase12 Costly Elf"
@@ -122,7 +122,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     types := #[.creature]
     power := some 3
     toughness := some 3
-    staticAbilities := #[.boast]
+    activatedAbilities := #[ActivatedAbility.zemoBoastAbility]
   }
   let heavyBlackCard : CardDef := {
     name := "Phase12 Fifteen Black"
@@ -457,7 +457,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
   let poaDef : CardDef := {
     name := "Phase12 Path of Ancestry"
     types := #[.land]
-    entersTapped := true
+    staticAbilities := #[.entersTapped]
     activatedAbilities := #[ActivatedAbility.manaAbility (.colorAmong (.commanderColorIdentity .you) false)]
     commanderIdentityScryCreature := true
   }
@@ -729,7 +729,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
   --     Declining Ward counters with `.oneShotEffect` cause;
   --     Uncounterable spell still prompts `.payWard` and survives decline.
   let uncounterableBolt : CardDef :=
-    { lightningBolt with name := "Phase12 Inescapable Bolt", cantBeCountered := true }
+    { lightningBolt with name := "Phase12 Inescapable Bolt", staticAbilities := #[.spellCantBeCountered] }
   let castAtWard (spellDef : CardDef) : Game :=
     let g := insertObject (gWardBase.addMana me (.colored .red) 1) spellDef me (.hand me)
     let sid := ((g.player me).hand.filter (fun id => (g.object! id).name == spellDef.name))[0]!
@@ -780,7 +780,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     supertypes := #[.legendary]
     types := #[.land]
     subtypes := #["Gate"]
-    entersTappedUnlessPayLife := some 3
+    staticAbilities := #[.entersTappedUnlessPayLife 3]
     activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .black, .const 1)])]
   }
   let gBg0 := insertObject afterDraw blackGateDef me (.hand me)
@@ -1084,13 +1084,13 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let roomDef : CardDef := {
     name := "Phase13 Room of Refuge"
     types := #[.land]
-    staticAbilities := #[.fra .entersTappedChooseColor]
+    staticAbilities := #[.entersTappedChooseColor]
     activatedAbilities := #[ActivatedAbility.manaAbility (.oneOf .chosenColorOnSource (.const 1))]
   }
   let partyDef : CardDef := {
     name := "Phase13 Unexpected Party"
     types := #[.enchantment]
-    asEntersChooseCreatureType := true
+    staticAbilities := #[.asEntersChooseCreatureType]
   }
   let gollumDef : CardDef := {
     name := "Phase13 Gollum"
@@ -1098,7 +1098,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     subtypes := #["Halfling"]
     power := some 2
     toughness := some 2
-    asEntersChooseOddEven := true
+    staticAbilities := #[.asEntersChooseOddEven]
   }
   let mageDef : CardDef := {
     name := "Phase13 Meddling Mage"
@@ -1106,7 +1106,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     subtypes := #["Human", "Wizard"]
     power := some 2
     toughness := some 2
-    staticAbilities := #[.fra .entersChooseNonlandCardName]
+    staticAbilities := #[.asEntersChooseNonlandCardName]
   }
   let emissaryDef : CardDef := {
     name := "Phase13 Emissary"
@@ -1114,22 +1114,22 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     subtypes := #["Angel"]
     power := some 7
     toughness := some 7
-    asEntersChooseCardType := true
+    staticAbilities := #[.asEntersChooseCardType]
   }
   let siegeDef : CardDef := {
     name := "Phase13 Windcrag Siege"
     types := #[.enchantment]
-    asEntersChooseMarduOrJeskai := true
+    staticAbilities := #[.asEntersChooseNamedAnchors #["Mardu", "Jeskai"]]
   }
   let mirrorDef : CardDef := {
     name := "Phase13 Cursed Mirror"
     types := #[.artifact]
-    asEntersMayCopyCreatureHasteUntilEot := true
+    staticAbilities := #[.asEntersMayCopyCreatureHasteUntilEot]
   }
   let sanctumDef : CardDef := {
     name := "Phase13 Sanctum"
     types := #[.land]
-    entersTappedUnlessBehold := some .villain
+    staticAbilities := #[.entersTappedUnlessBehold .villain]
   }
   let villainCard : CardDef :=
     creature "Phase13 Hand Villain" ManaCost.empty #["Villain"] 2 2
@@ -2116,7 +2116,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
   let poaDef5 : CardDef := {
     name := "Phase13 Path of Ancestry"
     types := #[.land]
-    entersTapped := true
+    staticAbilities := #[.entersTapped]
     activatedAbilities := #[ActivatedAbility.manaAbility (.colorAmong (.commanderColorIdentity .you) false)]
     commanderIdentityScryCreature := true
   }
@@ -2526,7 +2526,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
   let mirrorDef14 : CardDef := {
     name := "Phase14 Cursed Mirror"
     types := #[.artifact]
-    asEntersMayCopyCreatureHasteUntilEot := true
+    staticAbilities := #[.asEntersMayCopyCreatureHasteUntilEot]
   }
   let (gMirrorCopy14, gMirrorClean14, mirrorPermId) :=
     let g0 := addPermanent afterDraw hero opp opp
@@ -2547,7 +2547,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase14 Parity Aura"
     types := #[.enchantment]
     subtypes := #["Aura"]
-    asEntersChooseOddEven := true
+    staticAbilities := #[.asEntersChooseOddEven]
   }
   let (gAuraPaused, gAuraAttached, auraHostId, auraPermId) :=
     let g0 := addPermanent afterDraw bear me me
@@ -3571,8 +3571,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase15 Banner"
     manaCost := ManaCost.empty
     types := #[.artifact]
-    asEntersChooseCreatureType := true
-    staticAbilities := #[.chosenTypeCreaturesGet 1 1]
+    staticAbilities := #[.asEntersChooseCreatureType, .chosenTypeCreaturesGet 1 1]
   }
   let elfDef15 : CardDef := creature "Phase15 Elf" ManaCost.empty #["Elf"] 1 1
   let gobDef15 : CardDef := creature "Phase15 Goblin" ManaCost.empty #["Goblin"] 2 2

@@ -3532,7 +3532,7 @@ def battleScarredStaysBlockedOk : Bool :=
 -/
 
 def lordOfEaglesGenericOnlyOk : Bool :=
-  theLordOfTheEagles.costReductionEqualFlyingPower &&
+  theLordOfTheEagles.staticAbilities.contains .costReductionEqualFlyingPower &&
     theLordOfTheEagles.manaCost.coloredCount .blue == 2 &&
     (ruling 280).comment.contains "colored mana must still be paid"
 
@@ -3595,7 +3595,7 @@ def flavorJudgeCommentsOk : Bool :=
 -/
 
 def headOfHuntExilesOk : Bool :=
-  headOfTheHunt.exileOppCreaturesInstead &&
+  headOfTheHunt.staticAbilities.contains .exileOppDeathCreateWolf &&
     headExilesPreyBeeSilent.objects.any (fun o =>
       o.name == "Grizzly Bears" && o.zone == .exile) &&
     countWaitingAbility headExilesPreyBeeSilent
@@ -4041,7 +4041,7 @@ def chorusStillPaysOk : Bool :=
 -/
 
 def tokenDoublingAllTokensOk : Bool :=
-  bardKingOfDale.tokenDoubling &&
+  bardKingOfDale.staticAbilities.contains .tokenDoubling &&
     (ruling 180).comment.contains "you'll do that for all the tokens" &&
     (ruling 190).comment.contains "apply those abilities individually"
 
@@ -4052,7 +4052,7 @@ def tokenDoublingAllTokensOk : Bool :=
 -/
 
 def drawReplacementOrderOk : Bool :=
-  bardKingOfDale.drawTwoExceptFirstDrawStep &&
+  bardKingOfDale.staticAbilities.contains .drawTwoExceptFirstDrawStep &&
     (ruling 193).comment.contains "the player drawing the card chooses the order"
 
 #guard drawReplacementOrderOk
@@ -4081,8 +4081,8 @@ def blockedStaysBlockedOk : Bool :=
 -/
 
 def announcedCostLocksInOk : Bool :=
-  cavernHoardDragon.costReductionEqualOppArtifacts &&
-    theLordOfTheEagles.costReductionEqualFlyingPower &&
+  cavernHoardDragon.staticAbilities.contains .costReductionEqualOppArtifacts &&
+    theLordOfTheEagles.staticAbilities.contains .costReductionEqualFlyingPower &&
     (ruling 246).comment.contains "cost is locked in" &&
     (ruling 247).comment.contains "cost is locked in" &&
     (ruling 249).comment.contains "no player may take actions until the spell has been paid" &&
@@ -4199,7 +4199,7 @@ def fireleaperLastKnownOk : Bool :=
 -/
 
 def genericCostReductionOk : Bool :=
-  radagastOfRhosgobel.firstCreatureCostsLess == 2 &&
+  radagastOfRhosgobel.staticAbilities.contains (.firstCreatureCostsLess 2) &&
     (ruling 310).comment.contains "start with the mana cost or alternative cost"
 
 #guard genericCostReductionOk
@@ -4284,7 +4284,7 @@ def bardsCompanyFlashLockOk : Bool :=
   let without := !(g.timingAllowsCast ⟨0⟩ bardsCompany)
   let g := addPermanent g lakeshoreApothecary ⟨0⟩ ⟨0⟩
   let withHuman := g.timingAllowsCast ⟨0⟩ bardsCompany
-  bardsCompany.flashIfYouControlSubtype == some .human &&
+  bardsCompany.staticAbilities.contains (.flashIfYouControlSubtype .human) &&
     without && withHuman &&
     (ruling 220).comment.contains "only as you begin the casting process"
 
@@ -4724,9 +4724,11 @@ def dainMustAttackDeclineOk : Bool :=
     !(Game.mustAttackCanDeclineIfOnlyAttackCosts false) &&
     (ruling 327).comment.contains "choose not to attack" &&
     dainLordOfTheIronHills.staticAbilities.any (fun ab =>
-      match ab with
-      | .creaturesCantAttackYouUnlessPayIfEnduringStory _ => true
-      | _ => false)
+      ab.anyRule fun cond? r =>
+        cond? == some StaticAbility.condEnduringStory &&
+          match r with
+          | .combat (.attackTax ..) => true
+          | _ => false)
 
 #guard dainMustAttackDeclineOk
 

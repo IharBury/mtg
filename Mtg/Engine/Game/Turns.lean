@@ -660,11 +660,28 @@ def untapStepPermanents (g : Game) (ids : Array ObjectId) : Game :=
         -- CR 502.3: the active player untaps their permanents. Logging each
         -- previously tapped permanent makes the battlefield status change
         -- visible in the demo before the zone reprint.
+        let skipsUntapRule :=
+          let selfEnv : EvalEnv := { controller := ap, sourceId := some o.id }
+          (g.staticAbilities o).any (fun ab =>
+            ab.anyRule fun cond? r =>
+              match r with
+              | .game (.doesntUntapDuringUntapStep .self unlessCond?) =>
+                cond?.all (EvalExpr.evalCondition g selfEnv) &&
+                  !(unlessCond?.any (EvalExpr.evalCondition g selfEnv))
+              | _ => false) ||
+          g.battlefield.any (fun src =>
+            let env : EvalEnv := { controller := (g.controllerOf src).getD src.owner, sourceId := some src.id }
+            (g.staticAbilities src).any fun ab =>
+              ab.anyRule fun cond? r =>
+                match r with
+                | .game (.doesntUntapDuringUntapStep (.matching sc) unlessCond?) =>
+                  cond?.all (EvalExpr.evalCondition g env) &&
+                    !(unlessCond?.any (EvalExpr.evalCondition g env)) &&
+                    EvalExpr.evalObjectPred g env (.live o) sc.pred
+                | _ => false)
         let skipUntap :=
           !o.isOnBattlefield || !g.controlledBy o ap ||
-          ((g.staticAbilities o).any StaticAbility.doesntUntapUnlessEnduringStory? &&
-            !g.hasEnduringStory ap) ||
-          (g.staticAbilities o).any (· == .fra .doesntUntap) ||
+          skipsUntapRule ||
           g.hostCantBecomeUntapped o ||
           g.hostSkipsUntapStep o
         if o.status.tapped && !skipUntap then

@@ -12,13 +12,40 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Whether `pw` is limited to one attacker each combat (Tomik, Orzhov
-Lawmage grants this to planeswalkers its controller controls). -/
+Lawmage grants this to planeswalkers its controller controls, CR 508.1c). -/
 def planeswalkerAttackedByOneAtMost (g : Game) (pw : GameObject) : Bool :=
-  match g.controllerOf pw with
-  | some q =>
-    (g.permanentsOf q).any (fun o =>
-      (g.staticAbilities o).any (· == .fra .planeswalkersAttackedByOneAtMost))
-  | none => false
+  let selfEnv : EvalEnv := { controller := (g.controllerOf pw).getD pw.owner, sourceId := some pw.id }
+  let selfCap :=
+    (g.staticAbilities pw).any fun ab =>
+      ab.anyRule fun cond? r =>
+        match r with
+        | .combat (.maxAttackersPerPermanent .self n) =>
+          n ≤ 1 && cond?.all (EvalExpr.evalCondition g selfEnv)
+        | _ => false
+  selfCap ||
+    g.battlefield.any fun o =>
+      let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+      (g.staticAbilities o).any fun ab =>
+        ab.anyRule (fun cond? r =>
+          match r with
+          | .combat (.maxAttackersPerPermanent (.matching sc) n) =>
+            n ≤ 1 && cond?.all (EvalExpr.evalCondition g env) &&
+              EvalExpr.evalObjectPred g env (.live pw) sc.pred
+          | _ => false) ||
+        match ab with
+        | .continuous cond? sc mod =>
+          cond?.all (EvalExpr.evalCondition g env) &&
+            EvalExpr.evalObjectPred g env (.live pw) sc.pred &&
+            mod.flatten.any fun
+              | .grantStatic sas =>
+                sas.any fun sa =>
+                  sa.anyRule fun c2? r2 =>
+                    match r2 with
+                    | .combat (.maxAttackersPerPermanent .self n) =>
+                      n ≤ 1 && c2?.all (EvalExpr.evalCondition g selfEnv)
+                    | _ => false
+              | _ => false
+        | _ => false
 
 def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (defender : Option PlayerId := none) (each : Array (Option PlayerId) := #[])

@@ -1390,7 +1390,7 @@ private def replayOk31i4 (gs : Array Game) : Bool :=
     name := "P31 Goyf"
     power := some 0
     toughness := some 1
-    staticAbilities := #[.fra .powerPerCreatureAndPlaneswalkerCard]
+    staticAbilities := #[.powerPerCreatureAndPlaneswalkerCard]
   }
   let gGy0 := insertObject (addPermanent afterDraw goyfDef p0 p0) relicDef p0 (.graveyard p0)
   let relicGyId := (gGy0.player p0).graveyard.back!
@@ -3812,14 +3812,12 @@ private def replayOk35i2 (gs : Array Game) : Bool :=
   let b3DualAsEnters : CardDef := {
     bear with
     name := "P35i2 Dual Choice Bear"
-    asEntersChooseOddEven := true
-    asEntersChooseCreatureType := true
+    staticAbilities := #[.asEntersChooseCreatureType, .asEntersChooseOddEven]
   }
   let p0DualAsEnters : CardDef := {
     bear with
     name := "P35i2 P0 Dual Choice Bear"
-    asEntersChooseOddEven := true
-    asEntersChooseCreatureType := true
+    staticAbilities := #[.asEntersChooseCreatureType, .asEntersChooseOddEven]
   }
   let oringDef : CardDef := { name := "P35i2 O-Ring", types := #[.enchantment] }
   let gSetup0 :=

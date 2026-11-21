@@ -6751,9 +6751,8 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
     if !canMorph then
       if g.spellNameForbidden face.name then
         throw s!"Spells named {face.name} can't be cast"
-      if !g.graveyardCastThresholdMet p card.id face then
-        let n := face.castOnlyIfGraveyardAtLeast.getD 0
-        throw s!"{face.name} can be cast only with {n} or more other cards in your graveyard"
+      if let some err := g.castRestrictionError? p card.id face then
+        throw err
       let tcs := g.evalLayer3 card
       if isModalSpellFace face &&
           !(effectiveSpellModes face).any (fun e =>

@@ -48,7 +48,7 @@ private def replayOk41i1 (gs : Array Game) : Bool :=
     name := "P41i1 ConstructAura"
     types := #[.enchantment]
     subtypes := #["Aura"]
-    staticAbilities := #[.fra .enchantedIsConstruct55]
+    staticAbilities := #[.enchantedIsConstruct55]
   }
 
   -- 1a. Legend-affecting attachment departure (`ceasedToExist` & CR 800.4a `moved`) and

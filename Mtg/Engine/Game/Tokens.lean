@@ -296,36 +296,53 @@ def replaceTokenBatchesChoice (g : Game) (initialBatches : Array ProposedTokenBa
           g.openBatchObjects.any (fun pre => pre.id == o.id && pre.isOnBattlefield)
       let ctrlPerms := (g.permanentsOf ctrl).filter preBatchPermOk
       let mut specs : Array ReplacementSpec := #[]
-      if includeKindReplacements && hasFood then
-        for o in ctrlPerms do
-          if (g.baseCard o).foodAlsoCreatesTreasure && g.retainsPrintedAbilities o then
-            specs := specs.push {
-              id := { kind := .foodAlsoCreatesTreasure, object := some o.id }
-              source := some o.id
-              controller := some ctrl
-              affectedPlayer := ctrl
-              kind := .createExtraTokenWithFood ctrl treasureToken
-            }
-      if includeKindReplacements && hasArtifact then
-        for o in ctrlPerms do
-          if (g.staticAbilities o).any (· == .artifactTokensBecomeDragons) then
-            specs := specs.push {
-              id := { kind := .artifactTokensBecomeDragons, object := some o.id }
-              source := some o.id
-              controller := some ctrl
-              affectedPlayer := ctrl
-              kind := .artifactTokensBecome ctrl dragon55flyingToken
-            }
-      if includeMultiplier then
-        for o in ctrlPerms do
-          if (g.baseCard o).tokenDoubling && g.retainsPrintedAbilities o then
-            specs := specs.push {
-              id := { kind := .tokenDoubling, object := some o.id }
-              source := some o.id
-              controller := some ctrl
-              affectedPlayer := ctrl
-              kind := .multiplyTokenCreation ctrl 2
-            }
+      for o in ctrlPerms do
+        let env : EvalEnv := { controller := ctrl, sourceId := some o.id }
+        for ab in g.staticAbilities o do
+          match ab with
+          | .replacement cond? spec =>
+            if cond?.all (EvalExpr.evalCondition g env) then
+              for sp in spec.flatten do
+                match sp with
+                | .extraTokenWith who triggerPred _ _ =>
+                  if includeKindReplacements && EvalExpr.matchesPlayerFilter g env who ctrl then
+                    let matchesBatch :=
+                      if triggerPred == .hasSubtype (.literal .food) then hasFood
+                      else batches.any fun b =>
+                        EvalExpr.evalObjectPred g env (.live (g.tokenBatchProbe b.controller b.printed)) triggerPred
+                    if matchesBatch then
+                      specs := specs.push {
+                        id := { kind := .foodAlsoCreatesTreasure, object := some o.id }
+                        source := some o.id
+                        controller := some ctrl
+                        affectedPlayer := ctrl
+                        kind := .createExtraTokenWithFood ctrl treasureToken
+                      }
+                | .replaceTokens who fromPred _ =>
+                  if includeKindReplacements && EvalExpr.matchesPlayerFilter g env who ctrl then
+                    let matchesBatch :=
+                      if fromPred == .hasType .artifact then hasArtifact
+                      else batches.any fun b =>
+                        EvalExpr.evalObjectPred g env (.live (g.tokenBatchProbe b.controller b.printed)) fromPred
+                    if matchesBatch then
+                      specs := specs.push {
+                        id := { kind := .artifactTokensBecomeDragons, object := some o.id }
+                        source := some o.id
+                        controller := some ctrl
+                        affectedPlayer := ctrl
+                        kind := .artifactTokensBecome ctrl dragon55flyingToken
+                      }
+                | .multiplyTokens who factor =>
+                  if includeMultiplier && factor > 1 && EvalExpr.matchesPlayerFilter g env who ctrl then
+                    specs := specs.push {
+                      id := { kind := .tokenDoubling, object := some o.id }
+                      source := some o.id
+                      controller := some ctrl
+                      affectedPlayer := ctrl
+                      kind := .multiplyTokenCreation ctrl factor
+                    }
+                | _ => pure ()
+          | _ => pure ()
       for (_, eff) in g.activeEffects do
         match eff with
         | .replacement spec d =>
@@ -908,7 +925,8 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
 def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
   match ab with
   | .toxic n => { c with keywords := KeywordAbility.add c.keywords (.toxic n) }
-  | .cantBlock => { c with cantBlock := true }
+  | .cantBlock =>
+    { c with staticAbilities := c.staticAbilities.push .cantBlock }
   | .attacksEachCombatIfAble =>
     { c with staticAbilities := c.staticAbilities.push .attacksEachCombatIfAble }
   | .cantBeBlockedByMoreThan n =>
@@ -1028,19 +1046,6 @@ def resolveCustomTokenPrinted (g : Game) (env : EvalEnv) (s : CustomTokenSpec) :
   }
   s.abilities.foldl applyTokenAbility base
 
-/-- True when `ab` is a CR 604.3 / 707.9d P/T-defining CDA omitted when a copy
-exception sets explicit base power and toughness. -/
-private def isPTDefiningCDA (ab : StaticAbility) : Bool :=
-  ab.isLandsYouControlPT ||
-  ab.isCardsInHandPower ||
-  ab.isCreaturesYouControlPower ||
-  match ab with
-  | .fra .powerEqualsBasicLandTypes
-  | .ptEqualGraveyardCardTypes
-  | .powerEqualSubtypeYouControl _
-  | .powerEqualLegendaryCreaturesYouControl => true
-  | _ => false
-
 /-- Apply a CR 707.9 copy exception to a copied `CardDef`. -/
 def applyCopyModification (c : CardDef) (m : CopyModification) : CardDef :=
   match m with
@@ -1049,7 +1054,7 @@ def applyCopyModification (c : CardDef) (m : CopyModification) : CardDef :=
     { c with
       power := some power
       toughness := some toughness
-      staticAbilities := c.staticAbilities.filter (!isPTDefiningCDA ·) }
+      staticAbilities := c.staticAbilities.filter (!StaticAbility.isPTDefiningCDA ·) }
   | .addTypes types =>
     let merged := types.foldl (fun acc t => if acc.contains t then acc else acc.push t) c.types
     { c with types := merged }

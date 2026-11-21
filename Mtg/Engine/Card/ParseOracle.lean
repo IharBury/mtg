@@ -319,12 +319,10 @@ def isCantBeBlockedLine (cardName line : String) : Bool :=
   let cleaned := dropLeadingThis ((prepared.replace "." "").trimAscii.copy)
   cleaned == "can't be blocked"
 
-/-- Keywords routed through Phase-6 transitional `StaticAbility` / `ActivatedAbility`
-handlers (`improvise`, `extort`, `sneak`, `equip`, `cycling`) stay out of
-`keywordLineAbilities` until Phase 6/7 migrates their catalog consumers. -/
+/-- Keywords routed through activated-ability handlers (`equip`, `cycling`) stay
+out of `keywordLineAbilities` until their catalog consumers migrate. -/
 private def isKeywordLineEligible : KeywordAbility → Bool
-  | .simple .improvise | .simple .extort => false
-  | .sneak _ | .equip _ _ | .cycling _ _ => false
+  | .equip _ _ | .cycling _ _ => false
   | _ => true
 
 /-- Keyword lines (such as `Flying, haste`, `Prowess, prowess`, `Nonbasic landwalk`,
@@ -684,13 +682,12 @@ def parseEquipLine (line : String) : Option ActivatedAbility :=
       some (activated (Effect.equipEffect subtype worthy) cost
         (timing := .sorcery) (tag? := some (.equip equipPred?)) (payLife := payLife))
 
-/-- Structural rules that are card fields rather than an ability value. -/
+/-- Structural rules (keywords, additional costs, Stage-4 static/cost/ETB/replacement
+abilities, Sagas, Equip, and mana abilities). -/
 def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   -- CR 207.2a: reminder text is not part of the ability being parsed.
   let raw := dropReminderText line
   let low := lowerAscii raw
-  let named := collapseWs (prepareLine c.name raw)
-  let n := firstBraceNat raw
   if low.contains "sacrifice this land" && low.contains "create x treasure tokens" then
     let head := (raw.splitOn ",").headD "" |>.trimAscii.copy
     match parseManaCost head with
@@ -700,51 +697,6 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
           (tap := low.contains "{t}") (sacrificeSource := true)
       some { c with activatedAbilities := c.activatedAbilities.push ab }
     | none => none
-  else if low.startsWith "this spell costs {x} less to cast, where x is the total power of creatures you control with flying" then
-    some { c with costReductionEqualFlyingPower := true }
-  else if low.startsWith "this spell costs {x} less to cast, where x is the greatest number of artifacts an opponent controls" then
-    some { c with costReductionEqualOppArtifacts := true }
-  else if low.startsWith "this spell costs {x} less to cast, where x is the greatest power among creatures you control" then
-    some { c with costReductionGreatestPower := true }
-  else if low.startsWith "this spell costs {x} less to cast, where x is the greatest toughness among creatures you control" then
-    some { c with costReductionGreatestToughness := true }
-  else if low.startsWith "this spell costs " && low.contains "less to cast if a creature died this turn" then
-    n.map fun k => { c with costReductionIfCreatureDied := k }
-  else if low.startsWith "this spell costs " && low.contains "dealt damage this turn" then
-    n.map fun k => { c with costReductionIfTargetDamaged := k }
-  else if low.startsWith "this spell costs " && low.contains "tapped creature" then
-    n.map fun k => { c with costReductionIfTargetTapped := k }
-  else if low.startsWith "this spell costs " && low.contains "attacking nontoken" then
-    n.map fun k => { c with costReductionIfTargetAttackingNontoken := k }
-  else if low.startsWith "this spell costs " && low.contains "attacking creature" then
-    n.map fun k => { c with costReductionIfTargetAttacking := k }
-  else if low.startsWith "this spell costs " && low.contains "if you control a " then
-    match n with
-    | none => none
-    | some k =>
-      let after := (low.splitOn "if you control a ").getLastD ""
-      let subtype := (after.splitOn ".").headD "" |>.trimAscii.copy
-      if subtype.isEmpty then none
-      else
-        let printed :=
-          (raw.splitOn "if you control a ").getLastD ""
-            |>.splitOn "." |>.headD "" |>.trimAscii.copy
-        if printed == "legendary creature" then
-          some { c with costReductionIfYouControlLegendary := k }
-        else
-          CardSubtype.ofOracle? printed |>.map fun sub =>
-            { c with costReductionIfYouControl := some (k, sub) }
-  else if low.startsWith "this spell costs " && low.contains "creature card" && low.contains "graveyard" then
-    match n with
-    | none => none
-    | some k =>
-      let min :=
-        if low.contains "a creature card" then 1
-        else
-          match (replaceNumberWords low |>.splitOn " or more creature").headD "" |>.splitOn " " |>.getLast? with
-          | some w => if w.all Char.isDigit && !w.isEmpty then w.toNat! else 1
-          | none => 1
-      some { c with costReductionIfGyCreaturesAtLeast := some (min, k) }
   else if low.startsWith "affinity for " then
     Parser.parseKeywordAbility raw |>.map c.withKeyword
   else if low.contains "cascade" &&
@@ -760,11 +712,6 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
   else if low.startsWith "as an additional cost to cast this spell," then
     Parser.parseAdditionalCostSpec raw |>.map fun spec =>
       { c with additionalCosts := c.additionalCosts.push spec }
-  else if low == "this spell can't be countered" || low == "this spell can't be countered." then
-    some { c with cantBeCountered := true }
-  else if low.startsWith "you may cast this spell as though it had flash if you control a " then
-    let t := (raw.splitOn "if you control a ").getLastD "" |>.replace "." "" |>.trimAscii.copy
-    CardSubtype.ofOracle? t |>.map fun sub => { c with flashIfYouControlSubtype := some sub }
   else if low.startsWith "ward " || low.startsWith "ward—" || low.startsWith "ward{" then
     let normWard := if low.startsWith "ward{" then "Ward " ++ (raw.drop 4).copy else raw
     Parser.parseKeywordAbility normWard |>.map c.withKeyword
@@ -774,102 +721,20 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     Parser.parseKeywordAbility raw |>.map c.withKeyword
   else if low.startsWith "toxic " then
     Parser.parseKeywordAbility raw |>.map c.withKeyword
-  else if low.contains "enters tapped unless you control a legendary" then
-    some { c with entersTappedUnlessLegendary := true }
-  else if low.contains "enters tapped unless you control an equipment" then
-    some { c with entersTappedUnlessEquipment := true }
-  else if low == "this creature enters with a +1/+1 counter on it." then
-    some { c with entersWithPlusOneCounters := 1 }
-  else if low.startsWith "as long as there are seven or more cards in your graveyard, you may cast the exiled card" then
-    some { c with castExiledWithSevenInGraveyard := true }
   else if low.startsWith "a deck can have any number of cards named" then
     some { c with anyNumberInDeck := true }
-  else if low.startsWith "you can't cast this spell unless there are seven or more cards in your graveyard" then
-    some { c with castOnlyIfGraveyardAtLeast := some 7 }
-  else if low.contains "enters tapped unless you control a planeswalker" then
-    some { c with entersTappedUnlessPlaneswalker := true }
-  else if low.contains "enters tapped unless you control two or more other lands" then
-    some { c with entersTappedUnlessTwoOtherLands := true }
-  else if low.contains "you may pay" && low.contains "if you don't, it enters tapped" then
-    let life :=
-      match (low.splitOn "pay ").getLastD "" |>.takeWhile Char.isDigit with
-      | "" => none
-      | d => some d.toNat!
-    life.map fun k => { c with entersTappedUnlessPayLife := some k }
-  else if low.contains "you may behold " && low.contains "if you don't" && low.contains "enters tapped" then
-    let afterBehold := (low.splitOn "you may behold ").getLastD ""
-    let afterArticle :=
-      if afterBehold.startsWith "an " then (afterBehold.drop 3).copy
-      else if afterBehold.startsWith "a " then (afterBehold.drop 2).copy
-      else afterBehold
-    let word := (afterArticle.splitOn ".").headD "" |>.trimAscii.copy
-    CardSubtype.ofOracle? word |>.map fun sub => { c with entersTappedUnlessBehold := some sub }
-  else if low == "this land enters tapped." || low == "this land enters tapped" ||
-      low == "this artifact enters tapped." || low == "this creature enters tapped." ||
-      low.endsWith " enters tapped." || low.endsWith " enters tapped" then
-    some { c with entersTapped := true }
-  else if low.contains "as this enchantment enters, choose a creature type" then
-    some { c with asEntersChooseCreatureType := true }
-  else if low.contains "enters with a hope counter" then
-    some { c with entersWithHopePerCreature := true }
-  else if low.contains "enters with" && low.contains "shield counter" then
-    let k := if low.contains "counters" then
-      match (low.splitOn "enters with ").getLastD "" |>.takeWhile Char.isDigit with
-      | "" => 1
-      | d => d.toNat!
-    else 1
-    some { c with entersWithShield := k }
-  else if low.contains "if you would create a food token" then
-    some { c with foodAlsoCreatesTreasure := true }
-  else if low.contains "except the first one you draw in each of your draw steps" then
-    some { c with drawTwoExceptFirstDrawStep := true }
-  else if low.contains "twice that many of those tokens are created instead" then
-    some { c with tokenDoubling := true }
-  else if named.contains "additional +1/+1 counters" && named.contains "equal to this toughness" then
-    some { c with othersEnterWithPlusOneEqualToughness := true }
-  else if low.contains "you may look at the top card of your library any time" then
-    some { c with mayLookAtTopAnytime := true }
-  else if low.contains "you may cast creature spells from the top of your library" then
-    some { c with mayCastCreaturesFromTop := true }
-  else if low.contains "you may play lands from the top of your library" then
-    some { c with mayPlayLandsFromTop := true }
-  else if low.contains "creatures you control have" && low.contains "add one mana of any color" then
-    some { c with grantCreaturesTapAddAnyColor := true }
-  else if low.contains "the first creature spell you cast each turn costs" then
-    match n with
-    | none => none
-    | some k =>
-      some { c with firstCreatureCostsLess := k, firstCreatureHasFlash := low.contains "flash" }
-  else if named.contains "as this enters" && named.contains "choose odd or even" then
-    some { c with asEntersChooseOddEven := true }
-  else if low.contains "from anywhere other than your hand cost" then
-    n.map fun k => { c with costReductionNotFromHand := k }
-  else if low.contains "enters with an indestructible counter" then
-    some { c with entersWithIndestructibleCounter := true }
-  else if low.contains "lore counters among sagas you control" && low.contains "hexproof and indestructible" then
-    let numbered := replaceNumberWords low
-    let k :=
-      match (numbered.splitOn "there are ").getLastD "" |>.takeWhile Char.isDigit with
-      | "" => 1
-      | d => d.toNat!
-    some { c with hexproofIndestructibleIfLore := some k }
-  else if low.contains "for each mountain you control" then
-    let k :=
-      match (low.splitOn "gets +").getLastD "" |>.takeWhile Char.isDigit with
-      | "" => 1
-      | d => d.toNat!
-    some { c with powerPerMountain := k }
-  else if low.contains "you may play an additional land" && low.contains "as long as you control another" then
-    let t := (raw.splitOn "another ").getLastD "" |>.splitOn "," |>.headD "" |>.trimAscii.copy
-    CardSubtype.ofOracle? t |>.map fun sub => { c with extraLandIfOtherSubtype := some sub }
-  else if low.contains "enters prepared" then
-    some { c with entersPrepared := true }
   else if low.contains "sacrifice after" && low.contains "lore counter" then
     let after := (raw.splitOn "Sacrifice after ").getLastD raw
     let roman := (after.takeWhile (fun c => c != '.' && c != ')')).trimAscii.copy
     let s := c.saga.getD { sacrificeAfter := roman, chapters := #[] }
     some { c with saga := some { s with sacrificeAfter := roman } }
   else
+    let staticRaw :=
+      if low.startsWith "eminence —" || low.startsWith "eminence—" then raw
+      else stripAbilityWord raw
+    match Parser.parseStaticAbilityLine staticRaw c.name with
+    | some abs => some { c with staticAbilities := c.staticAbilities ++ abs }
+    | none =>
     match parseSacrificeCounters raw with
     | some ab => some { c with activatedAbilities := c.activatedAbilities.push ab }
     | none =>
@@ -1821,7 +1686,7 @@ def parseLoyaltyAbilityLine (line : String) : Option (LoyaltySymbol × String) :
       else none
 
 partial def parseRules (c : CardDef) (lines : List String)
-    (keepUnrecognized : Bool := false) : Except String CardDef :=
+    (_keepUnrecognized : Bool := false) : Except String CardDef :=
   -- CR 207.2a: drop reminder text before any rule is read. A reminder may be
   -- the whole line (basic-land mana, Saga progress, a keyword on its own line).
   -- CR 207.4: the chaos symbol to the left of a chaos ability has no rules
@@ -1840,11 +1705,8 @@ partial def parseRules (c : CardDef) (lines : List String)
           if keepMechanicPrefix then base else stripAbilityWords base) |>.filter (· != ""))
       |>.flatMap splitKeywordWardLine
   let rec go (c : CardDef) (units : List String) : Except String CardDef :=
-    let unrecognized (c : CardDef) (line : String) (rest : List String) : Except String CardDef :=
-      if keepUnrecognized then
-        go { c with staticAbilities := c.staticAbilities.push (.printed line) } rest
-      else
-        .error s!"unrecognized Oracle line on {c.name}: {line}"
+    let unrecognized (c : CardDef) (line : String) : Except String CardDef :=
+      .error s!"unrecognized Oracle line on {c.name}: {line}"
     match units with
     | [] => .ok c
     | line :: rest =>
@@ -1859,12 +1721,6 @@ partial def parseRules (c : CardDef) (lines : List String)
       if (line.trimAscii.copy).isEmpty then go c rest
       else
       let units := line :: rest
-      let bare := lowerAscii line
-      let c :=
-        if bare.contains "a creature an opponent controls would die" &&
-            bare.contains "exile it instead" then
-          { c with exileOppCreaturesInstead := true }
-        else c
       if skipLine c line then go c rest
       else
         match beholdOrPay line with
@@ -1890,7 +1746,7 @@ partial def parseRules (c : CardDef) (lines : List String)
           else none
         match granted? with
         | some ab =>
-          go { c with planeswalkersYouControlHave := c.planeswalkersYouControlHave.push ab } rest
+          go { c with staticAbilities := c.staticAbilities.push (StaticAbility.planeswalkersYouControlHave #[ab]) } rest
         | none =>
         match parseLoyaltyAbilityLine line with
         | some (sym, effectText) =>
@@ -1909,7 +1765,7 @@ partial def parseRules (c : CardDef) (lines : List String)
                 if n == 1 then extendSpellSequence c.name e more else (e, more)
               let ab : ActivatedAbility := activated e (loyalty := some sym) (condition? := cond?)
               go { c with activatedAbilities := c.activatedAbilities.push ab } more
-            else unrecognized c line rest
+            else unrecognized c line
           | _ =>
             match spellSentenceSequence c.name effectText with
             | some e =>
@@ -1920,7 +1776,7 @@ partial def parseRules (c : CardDef) (lines : List String)
               | some e =>
                 let ab : ActivatedAbility := activated e (loyalty := some sym) (condition? := cond?)
                 go { c with activatedAbilities := c.activatedAbilities.push ab } rest
-              | none => unrecognized c line rest
+              | none => unrecognized c line
         | none =>
         if isCantBeBlockedLine c.name line then
           go { c with staticAbilities := c.staticAbilities.push .cantBeBlocked } rest
@@ -1942,9 +1798,7 @@ partial def parseRules (c : CardDef) (lines : List String)
               let s := { s with sacrificeAfter := romanNumeral s.finalChapterNumber }
               go { c with saga := some s } rest
             | none =>
-              if keepUnrecognized then
-                go { c with staticAbilities := c.staticAbilities.push (.printed line) } rest
-              else .error s!"unrecognized chapter on {c.name}: {line}"
+              .error s!"unrecognized chapter on {c.name}: {line}"
           | none =>
             match parseStructural c line with
             | some c => go c rest
@@ -1960,7 +1814,7 @@ partial def parseRules (c : CardDef) (lines : List String)
                 match matchModeled c.name units with
                 | some (.spell e, n) =>
                   let more := units.drop n
-                  if n == 0 || more.length == units.length then unrecognized c line rest
+                  if n == 0 || more.length == units.length then unrecognized c line
                   else
                     let (e, more) :=
                       if c.isInstantOrSorcery then extendSpellSequence c.name e more
@@ -1969,7 +1823,7 @@ partial def parseRules (c : CardDef) (lines : List String)
                 | some (ab, n) =>
                   let more := units.drop n
                   if more.length < units.length then go (applyParsed c ab) more
-                  else unrecognized c line rest
+                  else unrecognized c line
                 | none =>
                   match if c.isInstantOrSorcery then spellSentenceSequence c.name line else none with
                   | some e =>
@@ -1978,7 +1832,10 @@ partial def parseRules (c : CardDef) (lines : List String)
                   | none =>
                     match parseFrcLine c line with
                     | some c => go c rest
-                    | none => unrecognized c line rest
+                    | none =>
+                      match Parser.parseNovelStaticAbilityLine line c.name with
+                      | some abs => go { c with staticAbilities := c.staticAbilities ++ abs } rest
+                      | none => unrecognized c line
   go c units
 
 def parseAdventure (lines : List String) (keepUnrecognized : Bool := false) :
@@ -2017,9 +1874,7 @@ def parseAdventure (lines : List String) (keepUnrecognized : Bool := false) :
             subtypes := if c.subtypes.any (· == "Adventure") then c.subtypes else c.subtypes.push "Adventure"
             spellEffect := c.spellEffect
             additionalCosts := c.additionalCosts
-            extraLines := c.staticAbilities.filterMap fun
-              | .printed t => some t
-              | _ => none
+            extraLines := #[]
             empowerJace := c.empowerJace
           }
 

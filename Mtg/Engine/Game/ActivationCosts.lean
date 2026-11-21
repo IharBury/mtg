@@ -1096,7 +1096,7 @@ def canPayZemoBoast (g : Game) (p : PlayerId) (ids : Array ObjectId) (col : Colo
 
 /-- True when a boast ability of `o` may be activated (MSH / CR 702.142). -/
 def canActivateBoast (g : Game) (o : GameObject) : Bool :=
-  (g.staticAbilities o).any (· == .boast) &&
+  (g.activatedAbilitiesOf o).any ActivatedAbility.isBoast &&
     g.declaredAsAttackerThisTurn o.id && !g.boastUsedThisTurn o.id
 
 /-- Mark a boast activation used for the turn. -/

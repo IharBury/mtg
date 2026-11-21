@@ -103,9 +103,11 @@ battlefield (rulings 891–893). Replacement effects still apply (ruling 890). -
 def enteringCausesNoTriggers (g : Game) (o : GameObject) : Bool :=
   (g.isCreature o || (g.types o).contains .artifact) &&
     g.battlefield.any (fun src =>
-      (g.staticAbilities src).any (fun
-        | .enteringArtifactsCreaturesDontTrigger => true
-        | _ => false))
+      (g.staticAbilities src).any fun ab =>
+        ab.anyRule fun _ r =>
+          match r with
+          | .trigger (.suppressEnteringTriggers _) => true
+          | _ => false)
 
 /-- CR 306.5b: a planeswalker enters with loyalty counters equal to its
 printed loyalty (placed in `entersWith` during the zone change). -/
@@ -126,47 +128,77 @@ during the zone change). -/
 def enterWithPlusOnes (g : Game) (o : GameObject) : Game :=
   if o.status.faceDown || o.status.plusOnePlusOne == 0 then g
   else
-    let base := if g.retainsPrintedAbilities o then (g.baseCard o).entersWithPlusOneCounters else 0
+    let hasFixedPlusOne :=
+      (g.staticAbilities o).any fun ab =>
+        ab.anyReplacement fun _ sp =>
+          match sp with
+          | .entersWithCounters .self .plusOnePlusOne (.const n) false => n > 0
+          | _ => false
     let riderBonus :=
       if g.wasCast o.id then
         GameEvent.plusOneCounterManaRidersSpentOn g.events (GameEvent.stackSpellIdOf g.events o.id)
       else 0
-    if base == 0 && riderBonus == 0 then g
+    if !hasFixedPlusOne && riderBonus == 0 then g
     else
       let n := o.status.plusOnePlusOne
       g.logMsg s!"{g.name o} enters with {n} +1/+1 counter(s)"
 
 def enterWithIndestructibleCounter (g : Game) (o : GameObject) : Game :=
-  if !o.status.faceDown && g.retainsPrintedAbilities o &&
-      (g.baseCard o).entersWithIndestructibleCounter &&
-      o.status.indestructibleCounters > 0 then
+  let hasInd :=
+    (g.staticAbilities o).any fun ab =>
+      ab.anyReplacement fun _ sp =>
+        match sp with
+        | .entersWithCounters .self .indestructible _ false => true
+        | _ => false
+  if !o.status.faceDown && hasInd && o.status.indestructibleCounters > 0 then
     let phrase := CounterKind.indestructible.countersPhrase o.status.indestructibleCounters
     g.logMsg s!"{g.name o} enters with {phrase}"
   else g
 
 def enterWithShield (g : Game) (o : GameObject) : Game :=
-  if o.status.faceDown || !g.retainsPrintedAbilities o then g
+  if o.status.faceDown || o.status.shield == 0 then g
   else
-    let base := (g.baseCard o).entersWithShield
-    if base == 0 || o.status.shield == 0 then g
+    let hasShield :=
+      (g.staticAbilities o).any fun ab =>
+        ab.anyReplacement fun _ sp =>
+          match sp with
+          | .entersWithCounters .self .shield _ false => true
+          | _ => false
+    if !hasShield then g
     else
       let n := o.status.shield
       g.logMsg s!"{g.name o} enters with {n} shield counter(s)"
 
 def enterWithXPlusOnes (g : Game) (o : GameObject) : Game :=
-  if !o.status.faceDown && (g.staticAbilities o).any (fun
-      | .entersWithXPlusOne => true
-      | _ => false) &&
+  let sas := g.staticAbilities o
+  let hasXPlusOne :=
+    sas.any fun ab =>
+      ab.anyReplacement fun _ sp =>
+        match sp with
+        | .entersWithCounters .self .plusOnePlusOne .chosenX false => true
+        | _ => false
+  let hasFixedPlusOne :=
+    sas.any fun ab =>
+      ab.anyReplacement fun _ sp =>
+        match sp with
+        | .entersWithCounters .self .plusOnePlusOne (.const n) false => n > 0
+        | _ => false
+  if !o.status.faceDown && hasXPlusOne &&
       ((g.chosenXOf? o.id).getD 0) > 0 &&
       o.status.plusOnePlusOne > 0 &&
-      (!g.retainsPrintedAbilities o || (g.baseCard o).entersWithPlusOneCounters == 0) then
+      !hasFixedPlusOne then
     let n := o.status.plusOnePlusOne
     g.logMsg s!"{g.name o} enters with {n} +1/+1 counter(s)"
   else g
 
 def enterWithHope (g : Game) (o : GameObject) : Game :=
-  if !o.status.faceDown && g.retainsPrintedAbilities o &&
-      (g.baseCard o).entersWithHopePerCreature && o.status.hope > 0 then
+  let hasHope :=
+    (g.staticAbilities o).any fun ab =>
+      ab.anyReplacement fun _ sp =>
+        match sp with
+        | .entersWithCounters .self .hope _ false => true
+        | _ => false
+  if !o.status.faceDown && hasHope && o.status.hope > 0 then
     g.logMsg s!"{g.name o} enters with {o.status.hope} hope counter(s)"
   else g
 

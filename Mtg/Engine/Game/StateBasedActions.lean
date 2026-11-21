@@ -49,15 +49,19 @@ def legendChoicePending? (g : Game) : Bool :=
   | _ => false
 
 /-- True when `controller` controls a permanent saying planeswalkers they
-control aren't put into graveyards for having 0 loyalty (Sanctum Lurker). -/
+control aren't put into graveyards for having 0 loyalty (Sanctum Lurker, CR 704.5i). -/
 def planeswalkersSurviveZeroLoyalty (g : Game) (controller : Option PlayerId) : Bool :=
   match controller with
   | none => false
   | some p =>
     (g.permanentsOf p).any (fun o =>
-      (g.staticAbilities o).any (fun
-        | .planeswalkersSurviveZeroLoyalty => true
-        | _ => false))
+      let env : EvalEnv := { controller := p, sourceId := some o.id }
+      (g.staticAbilities o).any fun ab =>
+        ab.anyRule fun cond? r =>
+          match r with
+          | .game (.planeswalkersSurviveZeroLoyalty _) =>
+            cond?.all (EvalExpr.evalCondition g env)
+          | _ => false)
 
 /-- Default legend-rule choice: the copy that entered most recently. -/
 def defaultLegendToKeep (g : Game) (ids : Array ObjectId) : ObjectId :=
@@ -932,11 +936,18 @@ partial def checkSBACounted (g : Game)
       -- Players losing (CR 704.5a–c / 704.6a–b / 810.8a,c,d / 810.11). They
       -- leave after this SBA pass if the game continues (CR 800.4 / 800.4a).
       let hasCantLose (g : Game) (pid : PlayerId) : Bool :=
-        (g.permanentsOf pid).any (fun o =>
-          (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o) ||
-        (g.objects.filter (fun o =>
-          o.zone == .command && g.controlledBy o pid)).any (fun o =>
-            (g.baseCard o).cantLoseGame && g.retainsPrintedAbilities o)
+        g.objects.any fun o =>
+          (o.isOnBattlefield || o.zone == .command) &&
+            let srcCtrl := (g.controllerOf o).getD o.owner
+            g.stillInGame srcCtrl &&
+              let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+              (g.staticAbilities o).any fun ab =>
+                ab.anyRule fun cond? r =>
+                  match r with
+                  | .player (.cantLoseGame who) =>
+                    cond?.all (EvalExpr.evalCondition g env) &&
+                      EvalExpr.matchesPlayerFilter g env who pid
+                  | _ => false
       for pl in g.players do
         let curPl := g.player pl.id
         if g.stillInGame pl.id then

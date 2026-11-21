@@ -52,19 +52,13 @@ def asSorcery? (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.stack.isEmpty &&
   g.step.isMainPhase && g.activePlayer == p && g.priority == p
 
-/-- True while a spell with split second is on the stack (CR 702.61a): an
-instant or sorcery spell whose controller controls a permanent granting
-instant and sorcery spells they control split second (Samut). -/
+/-- True while a spell with split second is on the stack (CR 702.61a): either printed
+`Keyword.splitSecond` or granted in Layer 6 by a battlefield permanent (Samut). -/
 def splitSecondOnStack (g : Game) : Bool :=
   g.stack.any (fun e =>
     match g.findObject? e.objectId with
     | some o =>
-      o.abilityEffect.isNone && o.triggeredAbility.isNone &&
-        g.isInstantOrSorcery o &&
-        (g.permanentsOf e.controller).any (fun src =>
-          (g.staticAbilities src).any (fun
-            | .instantSorcerySplitSecond => true
-            | _ => false))
+      o.abilityEffect.isNone && o.triggeredAbility.isNone && g.hasSplitSecond o
     | none => false)
 
 /-- Yuriko, Blade of the Mighty: during combat, players can't cast spells or
@@ -72,7 +66,14 @@ activate abilities that aren't mana abilities. -/
 def combatLocksNonManaAbilities (g : Game) : Bool :=
   (g.step == .beginningOfCombat || g.step == .declareAttackers ||
     g.step == .declareBlockers || g.step == .combatDamage || g.step == .endOfCombat) &&
-    g.battlefield.any (fun x => (g.staticAbilities x).any (· == .fra .noSpellsOrAbilitiesDuringCombat))
+    g.battlefield.any (fun x =>
+      let xCtrl := g.controllerOf x |>.getD x.owner
+      (g.staticAbilities x).any fun ab =>
+        ab.anyRule fun cond? r =>
+          cond?.all (EvalExpr.evalCondition g { controller := xCtrl, sourceId := some x.id }) &&
+            match r with
+            | .game (.lockNonManaDuringPhase .combat _) => true
+            | _ => false)
 
 /-- Loyalty counters among Jace planeswalkers `p` controls. -/
 def jaceLoyaltyAmong (g : Game) (p : PlayerId) : Nat :=
@@ -99,19 +100,22 @@ def isManaActivation (ab : ActivatedAbility) : Bool :=
 def hasPriority (g : Game) (p : PlayerId) : Bool :=
   !g.over && g.pending == .none && g.priority == p && g.playersReceivePriority
 
-/-- Extra land plays from permanents such as Thranduil's Company. Each such
+/-- Extra land plays from permanents such as Thranduil's Company (CR 305.2). Each such
 permanent is cumulative with other extra-land effects (rulings 288 / 306). -/
 def extraLandsFromPermanents (g : Game) (p : PlayerId) : Nat :=
   (g.permanentsOf p).foldl (fun acc o =>
-    if !g.retainsPrintedAbilities o then acc
-    else
-      match (g.baseCard o).extraLandIfOtherSubtype with
-      | none => acc
-      | some t =>
-        if (g.permanentsOf p).any (fun other =>
-          other.id != o.id && g.hasSubtype other t) then
-          acc + 1
-        else acc) 0
+    let env : EvalEnv := { controller := p, sourceId := some o.id }
+    (g.staticAbilities o).foldl (fun a ab =>
+      match ab with
+      | .ruleModifying cond? rule =>
+        if cond?.all (EvalExpr.evalCondition g env) then
+          rule.flatten.foldl (fun n r =>
+            match r with
+            | .player (.additionalLands who cnt) =>
+              if EvalExpr.matchesPlayerFilter g env who p then n + cnt else n
+            | _ => n) a
+        else a
+      | _ => a) acc) 0
 
 /-- How many lands `p` may play this turn (CR 305.2 / 305.2b). -/
 def landPlaysAllowed (g : Game) (p : PlayerId) : Nat :=
@@ -148,10 +152,15 @@ def exiledPlayable (g : Game) (p : PlayerId) : Array GameObject :=
 /-- Mole Man lets you play land cards from your graveyard (MSH 253 / 254).
 Cycling and other activated abilities of those cards are still illegal. -/
 def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun x =>
-    (g.staticAbilities x).any (fun
-      | .mayPlayLandsFromGraveyard => true
-      | _ => false))
+  (g.permanentsOf p).any fun x =>
+    let env : EvalEnv := { controller := p, sourceId := some x.id }
+    (g.staticAbilities x).any fun ab =>
+      ab.anyRule fun cond? r =>
+        cond?.all (EvalExpr.evalCondition g env) &&
+          match r with
+          | .play (.mayPlayFrom who .graveyard (.hasType .land) true false _ _) =>
+            EvalExpr.matchesPlayerFilter g env who p
+          | _ => false
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p &&
@@ -160,8 +169,14 @@ def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 
 /-- True when `p` controls a permanent that lets them look at the library top. -/
 def controlsLookAtTop (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o =>
-    (g.baseCard o).mayLookAtTopAnytime && g.retainsPrintedAbilities o)
+  (g.permanentsOf p).any fun o =>
+    let env : EvalEnv := { controller := p, sourceId := some o.id }
+    (g.staticAbilities o).any fun ab =>
+      ab.anyRule fun cond? r =>
+        cond?.all (EvalExpr.evalCondition g env) &&
+          match r with
+          | .play (.lookAtTopOfLibrary who) => EvalExpr.matchesPlayerFilter g env who p
+          | _ => false
 
 /-- True when `p` may look at the top card of their library right now.
 Elven Chorus does not reveal a new top while a spell from that top is
@@ -172,14 +187,28 @@ def canLookAtLibraryTop (g : Game) (p : PlayerId) : Bool :=
 /-- True when `p` controls a permanent that lets them cast creatures from
 the top of their library. Does not grant flash or change timing. -/
 def controlsCastCreaturesFromTop (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o =>
-    (g.baseCard o).mayCastCreaturesFromTop && g.retainsPrintedAbilities o)
+  (g.permanentsOf p).any fun o =>
+    let env : EvalEnv := { controller := p, sourceId := some o.id }
+    (g.staticAbilities o).any fun ab =>
+      ab.anyRule fun cond? r =>
+        cond?.all (EvalExpr.evalCondition g env) &&
+          match r with
+          | .play (.mayPlayFrom who .library (.hasType .creature) false false _ _) =>
+            EvalExpr.matchesPlayerFilter g env who p
+          | _ => false
 
 /-- True when `o` is the top card of `p`'s library and they may cast it as
 a creature spell from there. Timing is still checked by `canCast`. -/
 def controlsPlayLandsFromTop (g : Game) (p : PlayerId) : Bool :=
-  (g.permanentsOf p).any (fun o =>
-    (g.baseCard o).mayPlayLandsFromTop && g.retainsPrintedAbilities o)
+  (g.permanentsOf p).any fun o =>
+    let env : EvalEnv := { controller := p, sourceId := some o.id }
+    (g.staticAbilities o).any fun ab =>
+      ab.anyRule fun cond? r =>
+        cond?.all (EvalExpr.evalCondition g env) &&
+          match r with
+          | .play (.mayPlayFrom who .library (.hasType .land) true false _ _) =>
+            EvalExpr.matchesPlayerFilter g env who p
+          | _ => false
 
 def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .library p &&

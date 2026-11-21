@@ -99,9 +99,24 @@ def resolvingDamageSourceEvent? (g : Game) : Option EventObject :=
 
 /-- True when all damage that would be dealt to `o` is prevented. -/
 def preventsAllDamageTo (g : Game) (o : GameObject) : Bool :=
-  (g.staticAbilities o).any (fun
-    | .preventAllDamageToThis => true
-    | _ => false) ||
+  let selfPrev :=
+    let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+    (g.staticAbilities o).any fun ab =>
+      ab.anyReplacement fun cond? sp =>
+        match sp with
+        | .preventDamage .self none => cond?.all (EvalExpr.evalCondition g env)
+        | _ => false
+  let peerPrev :=
+    g.battlefield.any fun src =>
+      let env : EvalEnv := { controller := (g.controllerOf src).getD src.owner, sourceId := some src.id }
+      (g.staticAbilities src).any fun ab =>
+        ab.anyReplacement fun cond? sp =>
+          match sp with
+          | .preventDamage (.matching sc) none =>
+            cond?.all (EvalExpr.evalCondition g env) &&
+              EvalExpr.evalObjectPred g env (.live o) sc.pred
+          | _ => false
+  selfPrev || peerPrev ||
   g.activeEffects.any (fun (_, eff) =>
     match eff with
     | .prevention spec d =>
@@ -211,7 +226,14 @@ def replaceDamage (g : Game) (n : Int)
                 affectedPlayer := affected
                 kind := .protectionPreventDamage o.id src.id
               })
-          if (g.staticAbilities o).any (· == .preventAllDamageToThis) then
+          let oSelfPrevent :=
+            let oEnv : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+            (g.staticAbilities o).any fun ab =>
+              ab.anyReplacement fun cond? sp =>
+                match sp with
+                | .preventDamage .self none => cond?.all (EvalExpr.evalCondition g oEnv)
+                | _ => false
+          if oSelfPrevent then
             items := items.push (.prevention {
               id := { kind := .preventAllDamageToThis, object := some o.id }
               source := some o.id
@@ -219,6 +241,24 @@ def replaceDamage (g : Game) (n : Int)
               affectedPlayer := affected
               kind := .preventAllDamageToPermanent o.id
             })
+          for psrc in g.battlefield do
+            let pEnv : EvalEnv := { controller := (g.controllerOf psrc).getD psrc.owner, sourceId := some psrc.id }
+            let preventsPeer :=
+              (g.staticAbilities psrc).any fun ab =>
+                ab.anyReplacement fun cond? sp =>
+                  match sp with
+                  | .preventDamage (.matching sc) none =>
+                    cond?.all (EvalExpr.evalCondition g pEnv) &&
+                      EvalExpr.evalObjectPred g pEnv (.live o) sc.pred
+                  | _ => false
+            if preventsPeer then
+              items := items.push (.prevention {
+                id := { kind := .preventAllDamageToPermanent, object := some psrc.id }
+                source := some psrc.id
+                controller := g.controllerOf psrc
+                affectedPlayer := affected
+                kind := .preventAllDamageToPermanent o.id
+              })
           let shieldId : ReplacementId := { kind := .shieldCounterPreventDamage, object := some o.id }
           if (o.status.shield > 0 || alreadyRemovedShield) && !shieldRemoved &&
               !curApplied.contains shieldId then
@@ -259,51 +299,67 @@ def replaceDamage (g : Game) (n : Int)
                 let ctrl := spec.controller.orElse (fun _ => spec.source.bind g.findObject? |>.bind g.controllerOf)
                 items := items.push (.prevention { spec with controller := ctrl, affectedPlayer := affected })
           | _ => pure ()
-      -- 2. Damage-increasing and damage-multiplying replacements
+      -- 2. Damage-increasing and damage-multiplying replacements (CR 614.1a / 616.1)
       if let some src := src? then
-        -- Hawkeye, Young Avenger (`.noncombatDamagePlusSourcePower`)
-        if !combat then
-          match g.controllerOf src, recipientCtrl? with
-          | some p, some r =>
-            if p != r && !g.areTeammates p r then
-              for o in g.permanentsOf p do
-                if (g.staticAbilities o).any (· == .noncombatDamagePlusSourcePower) then
-                  let bonus := (g.power o).toNat
-                  if bonus > 0 then
-                    items := items.push (.replacement {
-                      id := { kind := .noncombatDamagePlusSourcePower, object := some o.id }
-                      source := some o.id
-                      controller := some p
-                      affectedPlayer := affected
-                      kind := .addNoncombatDamage (some src.id) bonus
-                    })
-          | _, _ => pure ()
-        -- Mjölnir (`.equippedDealsDoubleDamage`)
-        for eq in g.battlefield do
-          if eq.attachedTo == some src.id &&
-              (g.staticAbilities eq).any (· == .equippedDealsDoubleDamage) then
-            items := items.push (.replacement {
-              id := { kind := .equippedDealsDoubleDamage, object := some eq.id }
-              source := some eq.id
-              controller := g.controllerOf eq
-              affectedPlayer := affected
-              kind := .multiplyDamage (some src.id) 2
-            })
-        -- Tomik, Izzet Sparkmage (`.fra .noncombatDamagePlusOne`)
-        if !combat then
-          match g.controllerOf src, recipientCtrl? with
-          | some p, some r =>
-            if p != r && !g.areTeammates p r then
-              for o in g.permanentsOf p do
-                if (g.staticAbilities o).any (· == .fra .noncombatDamagePlusOne) then
-                  items := items.push (.replacement {
-                    id := { kind := .noncombatDamagePlusOne, object := some o.id }
-                    source := some o.id
-                    controller := some p
-                    affectedPlayer := affected
-                    kind := .addNoncombatDamage (some src.id) 1
-                  })
-          | _, _ => pure ()
+        for o in g.battlefield do
+          let srcCtrl := (g.controllerOf o).getD o.owner
+          let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+          for ab in g.staticAbilities o do
+            match ab with
+            | .replacement cond? spec =>
+              if cond?.all (EvalExpr.evalCondition g env) then
+                for sp in spec.flatten do
+                  match sp with
+                  | .modifyDamage sourceScope noncombatOnly recipient mult addExpr =>
+                    if !noncombatOnly || !combat then
+                      let srcMatches : Bool :=
+                        if StaticAbility.isScopeEquippedCreature sourceScope then
+                          o.attachedTo == some src.id
+                        else if StaticAbility.isScopeSelf sourceScope then
+                          src.id == o.id
+                        else
+                          EvalExpr.evalObjectPred g env (.live src) sourceScope.pred
+                      let recMatches : Bool :=
+                        match recipient with
+                        | .any => true
+                        | .player pf =>
+                          recipientPlayer?.any (EvalExpr.matchesPlayerFilter g env pf)
+                        | .object of =>
+                          recipientPerm?.any (fun perm => EvalExpr.evalObjectPred g env (.live perm) of.pred)
+                        | .playerOrObject pf of =>
+                          recipientPlayer?.any (EvalExpr.matchesPlayerFilter g env pf) ||
+                            recipientPerm?.any (fun perm => EvalExpr.evalObjectPred g env (.live perm) of.pred)
+                      if srcMatches && recMatches then
+                        if mult > 1 then
+                          let rk : ReplacementEffectKind :=
+                            if StaticAbility.isScopeEquippedCreature sourceScope && mult == 2 then
+                              .equippedDealsDoubleDamage
+                            else .multiplyDamage
+                          items := items.push (.replacement {
+                            id := { kind := rk, object := some o.id }
+                            source := some o.id
+                            controller := some srcCtrl
+                            affectedPlayer := affected
+                            kind := .multiplyDamage (some src.id) mult
+                          })
+                        else
+                          let bonus := (EvalExpr.evalValue g env addExpr).toNat
+                          if bonus > 0 then
+                            let rk : ReplacementEffectKind :=
+                              if addExpr == .objectStat .power .this then
+                                .noncombatDamagePlusSourcePower
+                              else if addExpr == .const 1 && noncombatOnly then
+                                .noncombatDamagePlusOne
+                              else .addNoncombatDamage
+                            items := items.push (.replacement {
+                              id := { kind := rk, object := some o.id }
+                              source := some o.id
+                              controller := some srcCtrl
+                              affectedPlayer := affected
+                              kind := .addNoncombatDamage (some src.id) bonus
+                            })
+                  | _ => pure ()
+            | _ => pure ()
       for (_, eff) in g.activeEffects do
         match eff with
         | .replacement spec d =>
@@ -411,9 +467,12 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
       else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
   g.withBatch defaultCause fun g =>
   let healsOther :=
-    (g.staticAbilities o).any (fun
-      | .healOtherDamageWhenDealt => true
-      | _ => false)
+    let oEnv : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
+    (g.staticAbilities o).any fun ab =>
+      ab.anyReplacement fun cond? sp =>
+        match sp with
+        | .healOtherDamageWhenDealt .self => cond?.all (EvalExpr.evalCondition g oEnv)
+        | _ => false
   let dmgCause :=
     g.resolveOptionalCause cause (fallbackSrc := srcEvent.id) (fallbackCtrl := src?.bind g.controllerOf)
   let shieldCause :=
@@ -491,10 +550,20 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
   else
   let propCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
   let proposed := GameEvent.life g.turnNumber p n true (cause := propCause)
+  let cantGain :=
+    g.battlefield.any fun o =>
+      let srcCtrl := (g.controllerOf o).getD o.owner
+      g.stillInGame srcCtrl &&
+        let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }
+        (g.staticAbilities o).any fun ab =>
+          ab.anyRule fun cond? r =>
+            match r with
+            | .player (.cantGainLife who) =>
+              cond?.all (EvalExpr.evalCondition g env) &&
+                EvalExpr.matchesPlayerFilter g env who p
+            | _ => false
   if n == 0 || !proposed.watches .wouldGainLife then g
-  else if (g.livingOpponents p).any (fun opp =>
-      (g.permanentsOf opp.id).any (fun o =>
-        (g.baseCard o).opponentsCantGainLife && g.retainsPrintedAbilities o)) then
+  else if cantGain then
     g.logMsg s!"{(g.player p).name} can't gain life"
   else
     let pl := g.player p

@@ -435,14 +435,13 @@ def quakeMisses : Game :=
     types := #[.creature]
     power := some 2
     toughness := some 2
-    keywords := #[.morph (CostSpec.ofGeneric 3)]
-    staticAbilities := #[.sneak { symbols := #[.colored .red] }]
+    keywords := #[.morph (CostSpec.ofGeneric 3), .sneak (CostSpec.ofMana { symbols := #[.colored .red] })]
   }
   let flawless : CardDef := {
     name := "Test Flawless Maneuver"
     manaCost := { symbols := #[.generic 2, .colored .white] }
     types := #[.instant]
-    freeCastIfControlCommander := true
+    staticAbilities := #[.freeCastIfControlCommander]
   }
   let omniPerm : CardDef := {
     name := "Test Omnipresence"

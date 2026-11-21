@@ -127,7 +127,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   let oddEvenDef : CardDef := {
     name := "P48i1 OddStatue"
     types := #[.artifact]
-    asEntersChooseOddEven := true
+    staticAbilities := #[.asEntersChooseOddEven]
   }
   let gRep0 := insertObject gEx0 oddEvenDef p0 (.hand p0)
   let (gRepPaused, _) := gRep0.putOntoBattlefield (gRep0.player p0).hand.back! p0 (cause := some testCause)
@@ -475,7 +475,7 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
   let nullSummonerDef : CardDef := {
     bear with
     name := "P48i2 NullSummoner"
-    castExiledWithSevenInGraveyard := true
+    staticAbilities := #[.castExiledWithSevenInGraveyard]
   }
   let rrSorcDef : CardDef := {
     bear with
@@ -1087,7 +1087,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
   let lanternDef : CardDef := {
     name := "P48i4 ChromaticLantern"
     types := #[.artifact]
-    grantLandsTapAnyColor := true
+    staticAbilities := #[.grantLandsTapAnyColor]
   }
   let gShadow0 := addPermanent (addPermanent g3 dragonCavernDef p0 p0) lanternDef p0 p0
   let cavernObj := (gShadow0.permanentsOf p0).find? (·.name == dragonCavernDef.name) |>.get!
