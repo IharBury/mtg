@@ -1,36 +1,748 @@
-import Mtg.Engine.Card.AbilityResolution
-import Mtg.Engine.Card.SharedTrigger
+import Mtg.Engine.Card.Token
 
 /-!
-# Unified one-shot effects (CR 608)
+# Unified one-shot `Effect` & `Instruction` helpers (CR 605 / 608)
 
-The `Effect` structure shared by spells, activated abilities, Saga
-chapters, and triggered abilities. They resolve through `Resolution`
-(`SpellResolution` and `TriggeredAbility.TriggerResolution` name that
-inductive).
+Smart constructors, CR 605.1a/b structural predicates (`couldAddMana`,
+`movesToOrFromLibrary`), pure computed agent classifiers
+(`Effect.classifyForAgent`, `Effect.classifyAbilityForAgent`), and canonical
+`ToOracle` rendering for `Instruction` and `Effect`.
 -/
 
 namespace Mtg.Engine
 
+namespace Instruction
 
+/-! ### Canonical Smart Constructors -/
 
-/-- Unified one-shot effect for spells, activated abilities, Saga chapters,
-and triggered abilities. Targeting, printed wording, and resolution live
-here so Game has one apply path. -/
-structure Effect where
-  targeting : EffectTargeting := .of .none
-  allowsZeroTargets : Bool := false
-  maxTargets : Nat := 0
-  dividedDamage : Option (Nat × Nat) := none
-  spellCastKind : SpellCastKind := .extraLand
-  abilityCastKind : AbilityCastKind := .other
-  preferAsDefaultMode : Bool := false
-  resolution : Resolution := .draw 0
-  /-- Shared trigger this effect was built from, when any.
-  `asTrigger?` and `asChapter?` read it. The steps themselves are `resolution`. -/
-  sharedTrigger : Option SharedTrigger := none
-  phrase : String := ""
-deriving Repr, Inhabited, BEq
+def ifThen (cond : Condition) (thenBranch : Instruction) : Instruction :=
+  .ifCond cond thenBranch .noop
+
+def may (who : PlayerExpr) (cost? : Option CostSpec) (onYes : Instruction) : Instruction :=
+  .optional who cost? onYes .noop
+
+def pump (who : ObjectExpr) (p t : ValueExpr) (dur : DurationExpr := .untilEndOfTurn) : Instruction :=
+  .installEffect (.applyContinuous dur who (.modifyPT p t))
+
+def pumpFixed (who : ObjectExpr) (p t : Int) (dur : DurationExpr := .untilEndOfTurn) : Instruction :=
+  pump who (.const p) (.const t) dur
+
+def grantKeywords (who : ObjectExpr) (ks : Array KeywordAbility)
+    (dur : DurationExpr := .untilEndOfTurn) : Instruction :=
+  .installEffect (.applyContinuous dur who (.grantKeywords ks))
+
+def loseKeywords (who : ObjectExpr) (ks : Array KeywordAbility)
+    (dur : DurationExpr := .untilEndOfTurn) : Instruction :=
+  .installEffect (.applyContinuous dur who (.loseKeywords ks))
+
+def loseAllAbilities (who : ObjectExpr) (dur : DurationExpr := .untilEndOfTurn) : Instruction :=
+  .installEffect (.applyContinuous dur who .loseAllAbilities)
+
+def setBasePT (who : ObjectExpr) (p t : ValueExpr)
+    (dur : DurationExpr := .untilEndOfTurn) : Instruction :=
+  .installEffect (.applyContinuous dur who (.setBasePT (some p) (some t)))
+
+def setBasePTFixed (who : ObjectExpr) (p t : Int)
+    (dur : DurationExpr := .untilEndOfTurn) : Instruction :=
+  setBasePT who (.const p) (.const t) dur
+
+def cantBeBlocked (who : ObjectExpr) (dur : DurationExpr := .untilEndOfTurn) : Instruction :=
+  .installEffect (.applyContinuous dur who (.applyRule (.combat (.cantBeBlocked .self))))
+
+def doublePT (who : ObjectExpr) (dur : DurationExpr := .untilEndOfTurn) : Instruction :=
+  .installEffect (.applyContinuous dur who
+    (.modifyPT (.objectStat .power who) (.objectStat .toughness who)))
+
+def pumpAndTrample (who : ObjectExpr) (p t : Int) : Instruction :=
+  .seq #[pumpFixed who p t, grantKeywords who #[Keyword.trample]]
+
+def destroy (who : ObjectExpr) (mods : MoveMods := {}) : Instruction :=
+  .moveZone who .graveyard .destroy mods
+
+def exile (who : ObjectExpr) (mods : MoveMods := {}) : Instruction :=
+  .moveZone who .exile .exile mods
+
+def bounce (who : ObjectExpr) (mods : MoveMods := {}) : Instruction :=
+  .moveZone who (.hand .owner) .returnToHand mods
+
+def sacrifice (who : ObjectExpr) (mods : MoveMods := {}) : Instruction :=
+  .moveZone who .graveyard .sacrifice mods
+
+def putCounters (who : ObjectExpr) (kind : CounterKind) (n : ValueExpr := .const 1) : Instruction :=
+  .permanent (.modifyCounters (.put kind n) who)
+
+def putPlusOne (who : ObjectExpr) (n : Nat := 1) : Instruction :=
+  putCounters who .plusOnePlusOne (.const (Int.ofNat n))
+
+def tap (who : ObjectExpr) : Instruction :=
+  .permanent (.setTapped who true)
+
+def untap (who : ObjectExpr) : Instruction :=
+  .permanent (.setTapped who false)
+
+def tapAndStun (who : ObjectExpr) (n : ValueExpr := .const 1) : Instruction :=
+  .seq #[tap who, putCounters who .stun n]
+
+def becomePrepared (who : ObjectExpr) : Instruction :=
+  .permanent (.setDesignation who .prepared true)
+
+def becomeArtifactIndestructible (who : ObjectExpr) : Instruction :=
+  .installEffect (.applyContinuous .untilEndOfTurn who
+    (.all #[.modifyTypes { types := #[.artifact] }, .grantKeywords #[Keyword.indestructible]]))
+
+def putOnLibrary (who : ObjectExpr) (pos : LibraryPosSpec) : Instruction :=
+  .moveZone who (.library .owner pos) .put {}
+
+def dealDamage (to : RecipientExpr) (amount : ValueExpr)
+    (src : ObjectExpr := .this) (flags : DamageFlags := {}) : Instruction :=
+  .damage (.deal src to amount flags)
+
+def dealDamageFixed (to : RecipientExpr) (amount : Nat) (src : ObjectExpr := .this) : Instruction :=
+  dealDamage to (.const (Int.ofNat amount)) src
+
+def draw (n : ValueExpr := .const 1) (who : PlayerExpr := .you) : Instruction :=
+  .player (.drawCards who n)
+
+def drawFixed (n : Nat) (who : PlayerExpr := .you) : Instruction :=
+  draw (.const (Int.ofNat n)) who
+
+def discard (n : ValueExpr := .const 1) (who : PlayerExpr := .you)
+    (atRandom : Bool := false) : Instruction :=
+  .moveZone (.inZones (.handOf who) .anyObject) .graveyard .discard
+    { choice? := some { chooser := .player who, count := .exact n, atRandom } }
+
+def discardFixed (n : Nat) (who : PlayerExpr := .you) (atRandom : Bool := false) : Instruction :=
+  discard (.const (Int.ofNat n)) who atRandom
+
+def mill (n : ValueExpr := .const 1) (who : PlayerExpr := .you) : Instruction :=
+  .moveZone (.topOfLibrary who n) .graveyard .mill {}
+
+def millFixed (n : Nat) (who : PlayerExpr := .you) : Instruction :=
+  mill (.const (Int.ofNat n)) who
+
+def scry (n : ValueExpr := .const 1) (who : PlayerExpr := .you) : Instruction :=
+  .player (.scry who n)
+
+def scryFixed (n : Nat) (who : PlayerExpr := .you) : Instruction :=
+  scry (.const (Int.ofNat n)) who
+
+def surveil (n : ValueExpr := .const 1) (who : PlayerExpr := .you) : Instruction :=
+  .player (.surveil who n)
+
+def surveilFixed (n : Nat) (who : PlayerExpr := .you) : Instruction :=
+  surveil (.const (Int.ofNat n)) who
+
+def gainLife (n : ValueExpr) (who : PlayerExpr := .you) : Instruction :=
+  .life (.gain who n)
+
+def gainLifeFixed (n : Nat) (who : PlayerExpr := .you) : Instruction :=
+  gainLife (.const (Int.ofNat n)) who
+
+def loseLife (n : ValueExpr) (who : PlayerExpr := .you) : Instruction :=
+  .life (.lose who n)
+
+def loseLifeFixed (n : Nat) (who : PlayerExpr := .you) : Instruction :=
+  loseLife (.const (Int.ofNat n)) who
+
+def createTokens (spec : TokenSpec) (n : ValueExpr := .const 1)
+    (who : PlayerExpr := .you) (mods : EnterMods := {}) : Instruction :=
+  .create (.tokens who n spec mods)
+
+def createTokensFixed (spec : TokenSpec) (n : Nat)
+    (who : PlayerExpr := .you) (tapped : Bool := false) : Instruction :=
+  createTokens spec (.const (Int.ofNat n)) who { tapped }
+
+def addMana (spec : ManaProductionSpec) (who : PlayerExpr := .you) : Instruction :=
+  .player (.addMana who spec)
+
+def addSimpleMana (types : Array ManaType) (who : PlayerExpr := .you) : Instruction :=
+  addMana { spec := .sequence (types.map fun t => (t, .const 1)) } who
+
+/-- Canonical compositional Recruit instruction: draw a card, then discard a card;
+if the discarded card isn't a land card, create a 1/1 white Human Soldier creature token. -/
+def recruit (who : PlayerExpr := .you) : Instruction :=
+  .seq #[
+    drawFixed 1 who,
+    .bind ⟨0⟩ (discardFixed 1 who)
+      (ifThen (.exists (.filter (.stepObjects ⟨0⟩) (.not (.hasType .land))))
+        (createTokensFixed .humanSoldier 1 who))
+  ]
+
+/-- If the object referred to by `ref` would die this turn, exile it instead. -/
+def exileIfDiesThisTurn (ref : ObjectRef := .target 0) : Instruction :=
+  .installEffect (.applyReplacement .untilEndOfTurn
+    (.exileInsteadOfDying { zones := .battlefield, pred := .sameAs ref } none))
+
+/-- Play an additional land this turn (CR 305.2). -/
+def extraLand (who : PlayerFilter := .you) (count : Nat := 1) : Instruction :=
+  .installEffect (.applyRule .untilEndOfTurn (.player (.additionalLands who count)))
+
+/-- Counter target spell (or stack objects `objs`). -/
+def counter (objs : ObjectExpr := .target 0) (exileInstead : Bool := false)
+    (ifPermanentMayCastFree : Bool := false) : Instruction :=
+  .stack (.counterStack objs exileInstead ifPermanentMayCastFree)
+
+/-- Empower planeswalker of `subtype` by `amount`. -/
+def empower (subtype : CardSubtype := .jace) (amount : ValueExpr) : Instruction :=
+  .player (.empowerPlaneswalker subtype amount)
+
+/-- Empower Jace `n`. -/
+def empowerJace (n : Nat) : Instruction :=
+  empower .jace (.const (Int.ofNat n))
+
+/-- Amass `subtype` `amount`. -/
+def amass (amount : ValueExpr) (subtype : CardSubtype := .goblin)
+    (who : PlayerExpr := .you) : Instruction :=
+  .player (.amass who subtype amount)
+
+/-- Amass `subtype` `n`. -/
+def amassFixed (n : Nat) (subtype : CardSubtype := .goblin)
+    (who : PlayerExpr := .you) : Instruction :=
+  amass (.const (Int.ofNat n)) subtype who
+
+/-! ### Structural Predicates (CR 605.1a / 605.1b / Modal / Mana Inspection) -/
+
+/-- Top-level `ManaProductionSpec` when this instruction is a pure mana production. -/
+def manaProduction? : Instruction → Option ManaProductionSpec
+  | .player (.addMana _ mp) => some mp
+  | _ => none
+
+/-- Top-level `ModalSpec` when this instruction is a modal choice. -/
+def modalSpec? : Instruction → Option ModalSpec
+  | .chooseModes spec => some spec
+  | _ => none
+
+/-- True when executing `i` could add mana to a player's mana pool (CR 605.1a / 605.1b). -/
+partial def couldAddMana : Instruction → Bool
+  | .player (.addMana _ _) => true
+  | .seq steps => steps.any couldAddMana
+  | .bind _ s c => couldAddMana s || couldAddMana c
+  | .ifCond _ t e => couldAddMana t || couldAddMana e
+  | .optional _ _ y n => couldAddMana y || couldAddMana n
+  | .unlessPays _ _ u => couldAddMana u
+  | .chooseModes spec => spec.modes.any fun m => couldAddMana m.body
+  | .forEach _ _ b => couldAddMana b
+  | .queueReflexiveTrigger ab => couldAddMana ab.effect.body
+  | _ => false
+
+/-- True when `obj` references cards in a library. -/
+private partial def objExprReadsLibrary : ObjectExpr → Bool
+  | .topOfLibrary _ _ => true
+  | .inZones zs _ => zs.zones.contains .library
+  | .extremum _ _ a | .filter a _ => objExprReadsLibrary a
+  | .union xs => xs.any objExprReadsLibrary
+  | .diff a b => objExprReadsLibrary a || objExprReadsLibrary b
+  | _ => false
+
+/-- True when executing `i` includes instructions to move a card to or from a
+library, which disqualifies an activated ability from being a mana ability under
+the 25 September 2026 update to CR 605.1a. `.scry` reorders cards within a library
+without moving cards to or from it and returns `false`. -/
+partial def movesToOrFromLibrary : Instruction → Bool
+  | .moveZone objs dest _ _ =>
+    let toLib := match dest with | .library .. => true | _ => false
+    toLib || objExprReadsLibrary objs
+  | .player (.drawCards _ (.const 0)) => false
+  | .player (.drawCards _ _) => true
+  | .player (.surveil _ _) => true
+  | .player (.inspectLibrary spec) =>
+    match spec.source with
+    | .outsideTheGame _ _ => false
+    | _ => true
+  | .player (.searchLibrary spec) => spec.zones.zones.contains .library
+  | .player (.explore _) => true
+  | .player (.connive _) => true
+  | .seq steps => steps.any movesToOrFromLibrary
+  | .bind _ s c => movesToOrFromLibrary s || movesToOrFromLibrary c
+  | .ifCond _ t e => movesToOrFromLibrary t || movesToOrFromLibrary e
+  | .optional _ _ y n => movesToOrFromLibrary y || movesToOrFromLibrary n
+  | .unlessPays _ _ u => movesToOrFromLibrary u
+  | .chooseModes spec => spec.modes.any fun m => movesToOrFromLibrary m.body
+  | .forEach _ _ b => movesToOrFromLibrary b
+  | .queueReflexiveTrigger ab => movesToOrFromLibrary ab.effect.body
+  | _ => false
+
+/-- True when `i` is a bare no-op (`.noop`, empty `.seq`, or empty `.chooseModes`). -/
+partial def doesNothing : Instruction → Bool
+  | .noop => true
+  | .seq steps => steps.isEmpty || steps.all doesNothing
+  | .chooseModes spec => spec.modes.isEmpty
+  | _ => false
+
+private def objMentionsTarget (o : ObjectExpr) : Bool :=
+  (ValueExpr.count o).mentionsTarget
+
+private def playerMentionsTarget (p : PlayerExpr) : Bool :=
+  (ValueExpr.playerMetric .one p).mentionsTarget
+
+/-- True when any branch of `i` directly references a target slot. -/
+partial def mentionsTarget : Instruction → Bool
+  | .moveZone objs dest _ _ =>
+    objMentionsTarget objs ||
+      (match dest with
+       | .battlefield (.player p) | .hand (.player p) | .library (.player p) _ _ => playerMentionsTarget p
+       | _ => false)
+  | .damage (.deal _ (.targetSlot _) _ _) | .damage (.deal _ .allTargets _ _) => true
+  | .damage (.deal src (.objects o) _ _) => objMentionsTarget src || objMentionsTarget o
+  | .damage (.deal src (.players p) _ _) => objMentionsTarget src || playerMentionsTarget p
+  | .damage (.deal src (.both o p) _ _) =>
+    objMentionsTarget src || objMentionsTarget o || playerMentionsTarget p
+  | .damage (.fight a b _) => objMentionsTarget a || objMentionsTarget b
+  | .permanent (.setTapped o _) | .permanent (.modifyCounters _ o)
+  | .permanent (.transform o) | .permanent (.turnFaceUp o)
+  | .permanent (.phaseOut o _) | .permanent (.setDesignation o _ _) => objMentionsTarget o
+  | .permanent (.attach a b _) => objMentionsTarget a || objMentionsTarget b
+  | .life (.gain w _) | .life (.lose w _) | .life (.set w _) => playerMentionsTarget w
+  | .stack (.counterStack o _ _) | .stack (.copyStackObject o _ _) | .stack (.mayCastOrPlay o _) =>
+    objMentionsTarget o
+  | .installEffect (.applyContinuous _ aff _) => objMentionsTarget aff
+  | .seq steps => steps.any mentionsTarget
+  | .bind _ s c => mentionsTarget s || mentionsTarget c
+  | .ifCond c t e => c.mentionsTarget || mentionsTarget t || mentionsTarget e
+  | .optional w _ y n => playerMentionsTarget w || mentionsTarget y || mentionsTarget n
+  | .unlessPays p _ u => playerMentionsTarget p || mentionsTarget u
+  | .chooseModes spec => spec.modes.any fun m => !m.targeting.spec.isEmpty || mentionsTarget m.body
+  | .forEach _ _ b => mentionsTarget b
+  | _ => false
+
+/-! ### Canonical `ToOracle` Rendering -/
+
+private def printObjRef (ctx : PrintCtx) (noun : String) : ObjectExpr → String
+  | .this => ctx.selfRef
+  | .target 0 => if noun.isEmpty then "target permanent" else noun
+  | .target _ => "that permanent"
+  | .allTargets => if noun.isEmpty then "those targets" else noun
+  | .attachedHost => "enchanted creature"
+  | .triggerSubject => "that permanent"
+  | .stepObjects _ => "those cards"
+  | .linkedExile _ => s!"a card exiled with {ctx.selfRef}"
+  | .costPaidObjects => "those exiled cards"
+  | o => toOracleStr o { ctx with capitalize := false }
+
+private def printVal (ctx : PrintCtx) : ValueExpr → String
+  | .const n => toString n
+  | .chosenX => "X"
+  | v => toOracleStr v { ctx with capitalize := false }
+
+private def printCountInt (v : ValueExpr) : Option Nat :=
+  match v with
+  | .const n => if n >= 0 then some n.toNat else none
+  | _ => none
+
+/-- Canonical Oracle rendering of an `Instruction` (used by `ToOracle Instruction`
+and as fallback when `Effect.phrase` is empty). -/
+partial def toOracle (ctx : PrintCtx) (noun : String := "") : Instruction → String
+  | .noop => ""
+  | .seq steps =>
+    let parts := (steps.toList.map (toOracle { ctx with capitalize := false } noun)).filter (· != "")
+    let joined := String.intercalate ". " parts
+    if ctx.capitalize then capitalizeAscii joined else joined
+  | .bind _ step cont =>
+    let a := toOracle { ctx with capitalize := false } noun step
+    let b := toOracle { ctx with capitalize := false } noun cont
+    let joined := if a.isEmpty then b else if b.isEmpty then a else s!"{a}. {capitalizeAscii b}"
+    if ctx.capitalize then capitalizeAscii joined else joined
+  | .ifCond cond t e =>
+    let condS := toOracleStr cond { ctx with capitalize := false }
+    let tS := toOracle { ctx with capitalize := false } noun t
+    let base :=
+      match e with
+      | .noop => s!"if {condS}, {tS}"
+      | _ =>
+        let eS := toOracle { ctx with capitalize := false } noun e
+        s!"if {condS}, {tS}. Otherwise, {eS}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .optional who cost? onYes onNo =>
+    let whoS := match who with | .you => "you" | p => toOracleStr p { ctx with capitalize := false }
+    let yesS := toOracle { ctx with capitalize := false } noun onYes
+    let base :=
+      match cost? with
+      | some cs =>
+        let baseYes := s!"{whoS} may pay {cs.toNotation}. If {whoS} do, {yesS}"
+        match onNo with
+        | .noop => baseYes
+        | _ => s!"{baseYes}. Otherwise, {toOracle { ctx with capitalize := false } noun onNo}"
+      | none =>
+        let baseYes := s!"{whoS} may {yesS}"
+        match onNo with
+        | .noop => baseYes
+        | _ => s!"{baseYes}. Otherwise, {toOracle { ctx with capitalize := false } noun onNo}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .unlessPays payer cost ifUnpaid =>
+    let payerS := match payer with
+      | .controllerOf _ => "its controller"
+      | .you => "you"
+      | p => toOracleStr p { ctx with capitalize := false }
+    let uS := toOracle { ctx with capitalize := false } noun ifUnpaid
+    let base := s!"{uS} unless {payerS} pays {cost.toNotation}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .chooseModes spec =>
+    let header :=
+      match spec.minModes, spec.maxModes with
+      | .const 1, .const 1 => "Choose one —"
+      | .const 1, .const 2 => "Choose one or both —"
+      | .const 2, .const 2 => "Choose two —"
+      | _, _ => "Choose —"
+    let modeLines := spec.modes.toList.map fun m =>
+      let txt := if !m.phrase.isEmpty then m.phrase else toOracle {} m.targeting.spec.noun m.body
+      s!"• {capitalizeAscii txt}"
+    String.intercalate "\n" (header :: modeLines)
+  | .forEach iter _ body =>
+    let pref :=
+      match iter with
+      | .eachPlayer pf => s!"for each {toOracleStr pf { ctx with capitalize := false }}"
+      | .eachObject o => s!"for each {toOracleStr o { ctx with capitalize := false }}"
+      | .eachTargetSlot => "for each target"
+      | .repeatTimes c => s!"repeat {printVal ctx c} times:"
+    let base := s!"{pref}, {toOracle { ctx with capitalize := false } noun body}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .moveZone objs dest verb mods =>
+    let subj := printObjRef ctx noun objs
+    let base :=
+      match verb, dest with
+      | .destroy, .graveyard => s!"destroy {subj}"
+      | .exile, .exile =>
+        if mods.exileUntilSourceLeaves then s!"exile {subj} until {ctx.selfRef} leaves the battlefield"
+        else s!"exile {subj}"
+      | .returnToHand, .hand .owner => s!"return {subj} to its owner's hand"
+      | .returnToHand, .hand .controller => s!"return {subj} to your hand"
+      | .returnToHand, .hand _ => s!"return {subj} to its owner's hand"
+      | .sacrifice, .graveyard => s!"sacrifice {subj}"
+      | .discard, .graveyard =>
+        match mods.choice? with
+        | some ch =>
+          match ch.count with
+          | .exact v =>
+            match printCountInt v with
+            | some n => s!"discard {cardPhrase n}"
+            | none => s!"discard {printVal ctx v} cards"
+          | _ => "discard a card"
+        | none => "discard your hand"
+      | .mill, .graveyard =>
+        match objs with
+        | .topOfLibrary _ v =>
+          match printCountInt v with
+          | some n => s!"mill {cardPhrase n}"
+          | none => s!"mill {printVal ctx v} cards"
+        | _ => "mill a card"
+      | .put, .battlefield _ =>
+        let tapS := if mods.tapped then " tapped" else ""
+        s!"return {subj} to the battlefield{tapS}"
+      | .put, .library _ .top false => s!"{subj}'s owner puts it on top of their library"
+      | .put, .library _ .bottom false => s!"{subj}'s owner puts it on the bottom of their library"
+      | .put, .library _ _ true => s!"{subj}'s owner puts it on their choice of the top or bottom of their library"
+      | .shuffleIntoLibrary, _ => s!"shuffle {subj} into its owner's library"
+      | _, _ => s!"move {subj}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .create (.tokens who count spec mods) =>
+    let n? := printCountInt count
+    let phrase :=
+      match n? with
+      | some n => spec.createPhrase n mods.tapped
+      | none =>
+        let tapS := if mods.tapped then "tapped " else ""
+        s!"create {printVal ctx count} {tapS}{spec.pluralNoun}"
+    let base :=
+      match who with
+      | .you => phrase
+      | p => s!"{toOracleStr p { ctx with capitalize := false }} creates {phrase.drop 7}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .create (.emblem _ _) =>
+    let base := "you get an emblem"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .permanent (.setTapped objs true) =>
+    let base := s!"tap {printObjRef ctx noun objs}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .permanent (.setTapped objs false) =>
+    let base := s!"untap {printObjRef ctx noun objs}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .permanent (.modifyCounters (.put k v) objs) =>
+    let subj := printObjRef ctx noun objs
+    let cntS :=
+      match printCountInt v with
+      | some n => k.countersPhrase n
+      | none => s!"{printVal ctx v} {k.oracleName} counters"
+    let base := s!"put {cntS} on {subj}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .permanent (.modifyCounters (.remove k? c) objs) =>
+    let subj := printObjRef ctx noun objs
+    let kindS := match k? with | some k => s!"{k.oracleName} " | none => ""
+    let cntS := match c with
+      | .upTo v => s!"up to {printVal ctx v}"
+      | .exact v => printVal ctx v
+      | _ => "a"
+    let base := s!"remove {cntS} {kindS}counter(s) from {subj}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .permanent (.modifyCounters _ objs) =>
+    let base := s!"modify counters on {printObjRef ctx noun objs}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .permanent (.attach a b _) =>
+    let base := s!"attach {printObjRef ctx noun a} to {printObjRef ctx noun b}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .permanent (.transform objs) =>
+    let base := s!"transform {printObjRef ctx noun objs}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .permanent (.turnFaceUp objs) =>
+    let base := s!"turn {printObjRef ctx noun objs} face up"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .permanent (.phaseOut objs _) =>
+    let base := s!"{printObjRef ctx noun objs} phases out"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .permanent (.setDesignation objs tag _) =>
+    let subj := printObjRef ctx noun objs
+    let base :=
+      match tag with
+      | .prepared => s!"{subj} becomes prepared"
+      | .harnessed => s!"harness {subj}"
+      | .goaded => s!"goad {subj}"
+      | .ringBearer => s!"{subj} becomes your Ring-bearer"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .damage (.deal src to amt _) =>
+    let toS :=
+      match to with
+      | .targetSlot 0 => if noun.isEmpty then "any target" else noun
+      | .targetSlot _ => "that target"
+      | .objects o => printObjRef ctx noun o
+      | .players p => toOracleStr p { ctx with capitalize := false }
+      | .both o p =>
+        s!"{printObjRef ctx noun o} and {toOracleStr p { ctx with capitalize := false }}"
+      | .allTargets => if noun.isEmpty then "those targets" else noun
+    let srcS := printObjRef ctx noun src
+    let base := s!"{srcS} deals {printVal ctx amt} damage to {toS}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .damage (.fight a b oneWay) =>
+    let aS := printObjRef ctx noun a
+    let bS := printObjRef ctx noun b
+    let base :=
+      if oneWay then s!"{aS} deals damage equal to its power to {bS}"
+      else s!"{aS} fights {bS}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .life (.gain who amt) =>
+    let amtS := printVal ctx amt
+    let base :=
+      match who with
+      | .you => s!"you gain {amtS} life"
+      | p => s!"{toOracleStr p { ctx with capitalize := false }} gains {amtS} life"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .life (.lose who amt) =>
+    let amtS := printVal ctx amt
+    let base :=
+      match who with
+      | .you => s!"you lose {amtS} life"
+      | p => s!"{toOracleStr p { ctx with capitalize := false }} loses {amtS} life"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .life (.set who amt) =>
+    let amtS := printVal ctx amt
+    let base :=
+      match who with
+      | .you => s!"your life total becomes {amtS}"
+      | p => s!"{toOracleStr p { ctx with capitalize := false }}'s life total becomes {amtS}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.drawCards who amt) =>
+    let cardsS := match printCountInt amt with
+      | some n => cardPhrase n
+      | none => s!"{printVal ctx amt} cards"
+    let base :=
+      match who with
+      | .you => s!"draw {cardsS}"
+      | p => s!"{toOracleStr p { ctx with capitalize := false }} draws {cardsS}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.scry _ amt) =>
+    let base := s!"scry {printVal ctx amt}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.surveil _ amt) =>
+    let base := s!"surveil {printVal ctx amt}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.inspectLibrary _) =>
+    let base := "look at the top cards of your library"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.searchLibrary _) =>
+    let base := "search your library, then shuffle"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.reveal _ objs) =>
+    let base := s!"reveal {printObjRef ctx noun objs}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.shuffle _) =>
+    let base := "shuffle"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.addMana _ mp) =>
+    mp.toOracleSentence ctx
+  | .player (.proliferate _ (.const 1) none) =>
+    let base := "proliferate"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.proliferate _ amt _) =>
+    let base := s!"proliferate {printVal ctx amt} times"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.temptWithRing _) =>
+    let base := "the Ring tempts you"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.explore objs) =>
+    let base := s!"{printObjRef ctx noun objs} explores"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.amass _ sub amt) =>
+    let base := s!"amass {pluralizeName sub.englishName} {printVal ctx amt}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.connive objs) =>
+    let base := s!"{printObjRef ctx noun objs} connives"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.empowerPlaneswalker sub amt) =>
+    let base := s!"empower {sub.englishName} {printVal ctx amt}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.setStatus _ .monarch _) =>
+    let base := "you become the monarch"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.setStatus _ (.designation .citysBlessing) _) =>
+    let base := "you get the city's blessing for the rest of the game"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.setStatus _ (.designation .enduringStory) _) =>
+    let base := "you get enduring story for the rest of the game"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.choose _ .creatureType) =>
+    let base := "choose a creature type"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.choose _ .oddOrEven) =>
+    let base := "choose odd or even"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.choose _ (.keyword ks)) =>
+    let base := s!"choose {String.intercalate " or " (KeywordAbility.toOracleList ks)}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.choose _ .playerWithMostLife) =>
+    let base := "choose a player with the most life or tied for most life"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .turn (.extraTurn _ _) =>
+    let base := "take an extra turn after this one"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .turn (.extraPhase .combat _) =>
+    let base := "there is an additional combat phase after this phase"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .turn _ =>
+    let base := "take an additional phase or step"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .stack (.counterStack objs _ _) =>
+    let base := s!"counter {printObjRef ctx noun objs}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .stack (.copyStackObject objs _ _) =>
+    let base := s!"copy {printObjRef ctx noun objs}. You may choose new targets for the copy"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .stack (.mayCastOrPlay objs _) =>
+    let base := s!"you may play {printObjRef ctx noun objs}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .installEffect (.applyContinuous dur aff mod) =>
+    let subj := printObjRef ctx noun aff
+    let durS := toOracleStr dur { ctx with capitalize := false }
+    let base :=
+      match mod with
+      | .modifyPT (.const p) (.const t) =>
+        s!"{subj} gets {signedStat p}/{signedStat t} {durS}"
+      | .grantKeywords ks =>
+        s!"{subj} gains {KeywordAbility.joinedAnd ks} {durS}"
+      | .loseKeywords ks =>
+        s!"{subj} loses {KeywordAbility.joinedAnd ks} {durS}"
+      | .loseAllAbilities =>
+        s!"{subj} loses all abilities {durS}"
+      | .setBasePT (some (.const p)) (some (.const t)) =>
+        s!"{subj} has base power and toughness {p}/{t} {durS}"
+      | .gainControl _ =>
+        s!"gain control of {subj} {durS}"
+      | .exchangeControl _ =>
+        s!"exchange control of {subj}"
+      | .applyRule (.combat (.cantBeBlocked _)) =>
+        s!"{subj} can't be blocked this turn"
+      | _ => s!"{subj} is modified {durS}"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .installEffect (.applyRule _ (.player (.additionalLands _ 1))) =>
+    let base := "you may play an additional land this turn"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .installEffect (.applyRule _ _) =>
+    let base := "apply a rule modification"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .installEffect (.applyReplacement _ (.exileInsteadOfDying _ _)) =>
+    let base := "if that creature would die this turn, exile it instead"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .installEffect (.applyReplacement _ _) =>
+    let base := "apply a replacement effect"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .installEffect (.createDelayedTrigger _) =>
+    let base := "create a delayed triggered ability"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .queueReflexiveTrigger ab =>
+    let base := s!"when you do, {ab.effect.phrase}"
+    if ctx.capitalize then capitalizeAscii base else base
+
+instance : ToOracle Instruction where
+  toOracle ctx i := Instruction.toOracle ctx "" i
+
+end Instruction
+
+/-! ### Transitional Legacy Trigger-DSL Predicates (Phase 9) -/
+
+namespace Resolution
+
+/-- Nested `sequence` constructors, left to right. -/
+def flatten : Resolution → List Resolution
+  | .sequence rs => rs.flatMap flatten
+  | r => [r]
+
+/-- True when resolving legacy Trigger-DSL `r` as a triggered ability does nothing. -/
+partial def doesNothingAsTrigger : Resolution → Bool
+  | .sequence rs => rs.isEmpty || rs.any doesNothingAsTriggerStep
+  | .«if» _ d => doesNothingAsTriggerStep d
+  | .ifElse _ a b => doesNothingAsTriggerStep a || doesNothingAsTriggerStep b
+  | .may a b _ => doesNothingAsTriggerStep a || doesNothingAsTriggerSubStep b
+  | .or rs => rs.isEmpty || rs.any doesNothingAsTriggerStep
+  | .chooseModes ms _ => ms.isEmpty || ms.any doesNothingAsTriggerStep
+  | .queueReflexive r => doesNothingAsTriggerStep r
+  | .revealFromHand _ d => doesNothingAsTriggerStep d
+  | _ => false
+where
+  doesNothingAsTriggerStep : Resolution → Bool
+    | .sequence rs => rs.any doesNothingAsTriggerStep
+    | .«if» _ d => doesNothingAsTriggerStep d
+    | .ifElse _ a b => doesNothingAsTriggerStep a || doesNothingAsTriggerStep b
+    | .may a b _ => doesNothingAsTriggerStep a || doesNothingAsTriggerSubStep b
+    | .or rs => rs.any doesNothingAsTriggerStep
+    | .chooseModes ms _ => ms.any doesNothingAsTriggerStep
+    | .queueReflexive r => doesNothingAsTriggerStep r
+    | .revealFromHand _ d => doesNothingAsTriggerStep d
+    | _ => false
+  doesNothingAsTriggerSubStep : Resolution → Bool
+    | .sequence [] => false
+    | r => doesNothingAsTriggerStep r
+
+/-- True when legacy Trigger-DSL `r` could add mana (CR 605.1b). -/
+partial def couldAddMana : Resolution → Bool
+  | .addMana _ _ => true
+  | .sequence rs => rs.any couldAddMana
+  | .«if» _ d => couldAddMana d
+  | .ifElse _ a b => couldAddMana a || couldAddMana b
+  | .may a b _ => couldAddMana a || couldAddMana b
+  | .or rs => rs.any couldAddMana
+  | .chooseModes ms _ => ms.any couldAddMana
+  | .queueReflexive r => couldAddMana r
+  | .revealFromHand _ d => couldAddMana d
+  | _ => false
+
+/-- True when legacy Trigger-DSL `r` moves a card to or from a library (CR 605.1a). -/
+partial def movesToOrFromLibrary : Resolution → Bool
+  | .draw (.fixed 0) _ => false
+  | .draw _ _ | .searchLibrary _ | .putOnLibrary _ _ | .mill _ _ | .surveil _
+  | .cascade | .shuffleSource | .connive _ | .revealLibrary _ _ => true
+  | .exile (.opponentTop _) _ _ | .exile .top _ _ | .exile (.basicUpTo _ _) _ _ => true
+  | .put .top _ _ | .put (.opponentTop _) _ _ | .put (.basicUpTo _ _) _ _
+  | .put .forest _ _ | .put .basicLandOnTop _ _ | .put .dragon _ _ | .put .randomCreature _ _ => true
+  | .sequence rs => rs.any movesToOrFromLibrary
+  | .«if» _ d => movesToOrFromLibrary d
+  | .ifElse _ a b => movesToOrFromLibrary a || movesToOrFromLibrary b
+  | .may a b _ => movesToOrFromLibrary a || movesToOrFromLibrary b
+  | .or rs => rs.any movesToOrFromLibrary
+  | .chooseModes ms _ => ms.any movesToOrFromLibrary
+  | .queueReflexive r => movesToOrFromLibrary r
+  | .revealFromHand _ d => movesToOrFromLibrary d
+  | _ => false
+
+end Resolution
+
+/-! ### Unified `Effect` Operations & Pure Agent Classification -/
 
 namespace Effect
 
@@ -55,27 +767,235 @@ def requiresTarget (e : Effect) : Bool :=
 def maxTargetCount (e : Effect) : Nat :=
   if e.maxTargets == 0 then e.targetCount else e.maxTargets
 
-/-- Demonstration-agent category for a spell mode. -/
-def castKind (e : Effect) : SpellCastKind :=
-  e.spellCastKind
-
-/-- Demonstration-agent category for an activated-ability mode. -/
-def abilityKind (e : Effect) : AbilityCastKind :=
-  e.abilityCastKind
-
-/-- Recover a Saga chapter stored on this effect, if any. -/
-def asChapter? (e : Effect) : Option ChapterResolution :=
-  match e.sharedTrigger with
-  | some (.chapter _ ce) => some ce
-  | _ => none
-
 /-- Recover the leftover shared trigger stored on this effect, if any. -/
 def asTrigger? (e : Effect) : Option SharedTrigger :=
   e.sharedTrigger
 
-/-- Oracle-style reminder text. -/
+/-- Recover legacy `TokenSpec` at `idx` for transitional Phase-9 triggers. -/
+def legacyToken (e : Effect) (idx : Nat) : TokenSpec :=
+  e.legacyTokens[idx]?.getD .treasure
+
+/-- Transitional getter returning the legacy Trigger-DSL `Resolution` if present. -/
+def resolution (e : Effect) : Resolution :=
+  e.resolution?.getD (.draw (.fixed 0) .you)
+
+/-- Top-level `ManaProductionSpec` carried in `e.body`, if any. -/
+def manaProduction? (e : Effect) : Option ManaProductionSpec :=
+  e.body.manaProduction?
+
+/-- Top-level `ModalSpec` carried in `e.body`, if any. -/
+def modalSpec? (e : Effect) : Option ModalSpec :=
+  e.body.modalSpec?
+
+/-- True when resolving `e` could add mana to a player's mana pool (CR 605.1a/b). -/
+def couldAddMana (e : Effect) : Bool :=
+  match e.resolution? with
+  | some r => r.couldAddMana
+  | none => e.body.couldAddMana
+
+/-- True when resolving `e` moves a card to or from a library (CR 605.1a, 25 Sep 2026). -/
+def movesToOrFromLibrary (e : Effect) : Bool :=
+  match e.resolution? with
+  | some r => r.movesToOrFromLibrary
+  | none => e.body.movesToOrFromLibrary
+
+/-- True when resolving `e` as a spell would do nothing. -/
+def doesNothingAsSpell (e : Effect) : Bool :=
+  match e.resolution? with
+  | some _ => false
+  | none => e.body.doesNothing
+
+/-- True when resolving `e` as an activated ability would do nothing. -/
+def doesNothingAsActivated (e : Effect) : Bool :=
+  match e.resolution? with
+  | some _ => false
+  | none => e.body.doesNothing
+
+/-- True when resolving `e` as a triggered ability would do nothing. -/
+def doesNothingAsTrigger (e : Effect) : Bool :=
+  match e.resolution? with
+  | some r => r.doesNothingAsTrigger
+  | none => e.body.doesNothing
+
+/-- Helper: true when `TargetSpec`'s primary target requires flying. -/
+private def targetsFlyingCreature (spec : TargetSpec) : Bool :=
+  spec == .creatureWithFlying ||
+    match spec.slots.toList with
+    | slot :: _ =>
+      match slot.domain with
+      | .object _ (.all ps) => ps.contains (.hasKeyword .flying)
+      | _ => false
+    | [] => false
+
+/-- Helper: true when `TargetSpec` primarily targets artifacts, enchantments, or lands
+(not creatures). -/
+private def targetsArtifactOrLand (spec : TargetSpec) : Bool :=
+  spec == .artifact || spec == .artifactOrLand || spec == .artifactOrEnchantment ||
+    spec == .artifactToken || spec == .noncreatureArtifact ||
+    spec == .noncreatureArtifactOrEnchantment || spec == .colorlessNonland ||
+    spec == .nonland ||
+    match spec.slots.toList with
+    | slot :: _ =>
+      match slot.domain with
+      | .object _ (.hasType .artifact) => true
+      | .object _ (.hasType .land) => true
+      | .object _ (.hasType .enchantment) => true
+      | .object _ (.all ps) =>
+        (ps.contains (.hasType .artifact) || ps.contains (.hasType .enchantment) ||
+         ps.contains (.hasType .land)) && !ps.contains (.hasType .creature)
+      | _ => false
+    | [] => false
+
+/-- Helper: true when `TargetSpec` targets a player or any target (including players). -/
+private def targetsPlayerOrAny (spec : TargetSpec) : Bool :=
+  spec == .anyTarget || spec == .opponent || spec == .player ||
+    match spec.slots.toList with
+    | slot :: _ =>
+      match slot.domain with
+      | .anyTarget _ | .player _ => true
+      | _ => false
+    | [] => false
+
+/-- Pure structural classification of a spell `Effect` for the demonstration agent. -/
+partial def classifyForAgent (e : Effect) : SpellCastKind :=
+  classifyInstr e.targeting.spec e.body
+where
+  classifyInstr (spec : TargetSpec) : Instruction → SpellCastKind
+    | .chooseModes m =>
+      match m.modes[0]? with
+      | some first => classifyForAgent first
+      | none => .extraLand
+    | .seq steps =>
+      -- Inspect flat steps in priority order so counter/fight/destroy/damage/pump/draw
+      -- classify accurately even when followed by scry/surveil/gainLife/exile-if-dies.
+      let flat := steps.foldl (fun acc s => acc ++ s.flatten) #[]
+      if flat.any (fun | .stack (.counterStack ..) | .unlessPays _ _ (.stack (.counterStack ..)) => true | _ => false) then
+        .counter
+      else if flat.any (fun | .damage (.fight ..) => true | _ => false) then
+        .fight
+      else if flat.any (fun | .damage (.deal (.target 0) (.targetSlot 1) ..) => true | _ => false) then
+        .fight
+      else
+        match flat[0]? with
+        | some s0 =>
+          let k0 := classifyInstr spec s0
+          if k0 != .extraLand then k0
+          else
+            match flat[1]? with
+            | some s1 => classifyInstr spec s1
+            | none => .extraLand
+        | none => .extraLand
+    | .bind _ step cont =>
+      let ks := classifyInstr spec step
+      if ks != .extraLand then ks else classifyInstr spec cont
+    | .ifCond _ t f =>
+      let kt := classifyInstr spec t
+      if kt != .extraLand then kt else classifyInstr spec f
+    | .optional _ _ y n =>
+      let ky := classifyInstr spec y
+      if ky != .extraLand then ky else classifyInstr spec n
+    | .unlessPays _ _ u => classifyInstr spec u
+    | .stack (.counterStack ..) => .counter
+    | .stack (.copyStackObject ..) => .creatureDamage
+    | .damage (.fight ..) => .fight
+    | .damage (.deal (.target 0) (.targetSlot 1) ..) => .fight
+    | .damage (.deal _ to _ _) =>
+      match to with
+      | .targetSlot _ =>
+        if targetsFlyingCreature spec then .destroyFlying
+        else if targetsPlayerOrAny spec then .burn
+        else .creatureDamage
+      | .players _ => .burn
+      | .objects _ | .both _ _ | .allTargets => .creatureDamage
+    | .life (.lose (.matching .opponent _) _) => .burn
+    | .moveZone objs dest verb _ =>
+      match verb, dest with
+      | .destroy, .graveyard =>
+        if targetsFlyingCreature spec then .destroyFlying
+        else if targetsArtifactOrLand spec then .destroyArtifactOrLand
+        else .destroyCreature
+      | .exile, .exile =>
+        match objs with
+        | .topOfLibrary _ _ | .inZones { zones := #[.hand], .. } _
+        | .inZones { zones := #[.graveyard], .. } _ => .draw
+        | _ =>
+          if targetsArtifactOrLand spec then .destroyArtifactOrLand
+          else .destroyCreature
+      | .returnToHand, .hand .owner =>
+        match objs with
+        | .target _ | .allTargets =>
+          let targetsCreature :=
+            spec == .creature || spec == .oppCreature ||
+              (match spec.slots.toList with
+               | slot :: _ =>
+                 match slot.domain with
+                 | .object .battlefield (.all ps) => ps.contains (.hasType .creature)
+                 | _ => false
+               | [] => false)
+          if targetsCreature then .destroyCreature else .counter
+        | _ => .counter
+      | .returnToHand, .hand .controller => .draw
+      | .put, .battlefield _ => .draw
+      | .put, .library _ _ _ => .counter
+      | .sacrifice, .graveyard => .destroyCreature
+      | .mill, .graveyard => .draw
+      | _, _ => .extraLand
+    | .installEffect (.applyContinuous _ aff mod) =>
+      match mod with
+      | .modifyPT _ _ =>
+        match aff with
+        | .inZones _ _ => .massPump
+        | _ => .pump
+      | .setBasePT _ _ =>
+        if spec == .creature then .creatureDamage else .pump
+      | .grantKeywords _ | .loseKeywords _ | .all _ => .pump
+      | .gainControl _ => if spec == .creature then .pump else .counter
+      | .exchangeControl _ => .counter
+      | .applyRule (.combat (.cantBeBlocked _)) => .pump
+      | _ => .extraLand
+    | .installEffect (.applyRule _ (.player (.additionalLands _ _))) => .extraLand
+    | .installEffect (.applyReplacement _ (.exileInsteadOfDying _ _)) => .creatureDamage
+    | .permanent (.modifyCounters (.put .plusOnePlusOne _) _) => .pump
+    | .permanent (.setTapped _ true) => .pump
+    | .permanent (.phaseOut _ _) => .counter
+    | .player (.drawCards _ _) | .player (.scry _ _) | .player (.surveil _ _)
+    | .player (.inspectLibrary _) | .player (.searchLibrary _)
+    | .player (.addMana _ _) => .draw
+    | .player (.amass _ _ _) => .pump
+    | .player (.choose _ .creatureType) => .destroyCreature
+    | _ => .extraLand
+
+/-- Pure structural classification of an activated-ability mode for the demonstration
+agent (`SpellTargets.defaultAbilityMode`). -/
+partial def classifyAbilityForAgent (e : Effect) : AbilityCastKind :=
+  classifyInstr e.targeting.spec e.body
+where
+  classifyInstr (spec : TargetSpec) : Instruction → AbilityCastKind
+    | .damage (.deal _ _ _ _) => .creatureDamage
+    | .moveZone (.target 0) .graveyard .destroy _ =>
+      if spec == .colorlessNonland || spec == .artifactOrEnchantment ||
+          spec == .permanent || spec == .noncreatureArtifactOrEnchantment then
+        .destroyColorless
+      else .other
+    | .seq steps =>
+      match steps[0]? with
+      | some s0 => classifyInstr spec s0
+      | none => .other
+    | _ => .other
+
+/-- Demonstration-agent category for a spell mode (computed purely). -/
+def castKind (e : Effect) : SpellCastKind :=
+  e.classifyForAgent
+
+/-- Demonstration-agent category for an activated-ability mode (computed purely). -/
+def abilityKind (e : Effect) : AbilityCastKind :=
+  e.classifyAbilityForAgent
+
+/-- Oracle-style text for this effect. Uses transitional `phrase` when present,
+otherwise renders `body` canonically through `ToOracle Instruction`. -/
 def toNotation (e : Effect) : String :=
-  e.phrase
+  if !e.phrase.isEmpty then e.phrase
+  else Instruction.toOracle {} e.targeting.spec.noun e.body
 
 instance : HasTargeting Effect where
   targeting e := e.targeting
@@ -84,495 +1004,5 @@ instance : ToString Effect where
   toString := toNotation
 
 end Effect
-
-namespace Resolution
-
-/-- Nested `sequence` constructors, left to right. -/
-def flatten : Resolution → List Resolution
-  | .sequence rs => rs.flatMap flatten
-  | r => [r]
-
-/-- `toPhrase` of one activated-ability resolution. Spell and trigger steps
-phrase through `SpellResolution.toPhrase`.
-
-Keep this non-recursive: recursion through `List.map` makes a definition
-well-founded, and Lean then compiles a match splitter over every constructor,
-which clang takes many seconds to optimize. -/
-private def phraseWith (r : Resolution) (noun : String)
-    (sequence : List Resolution → String) : String :=
-  match r with
-  | .draw (.fixed n) .you =>
-    s!"Draw {cardPhrase n.toNat}"
-  | .scry (.fixed n) =>
-    s!"Scry {n}"
-  | .onPermanent (.dealDamage n) =>
-    s!"This creature deals {n} damage to {noun}"
-  | .onPermanent action =>
-    PermanentAction.toNotation action noun (sentence := true)
-  | .onSource action =>
-    PermanentAction.toNotation action "this creature" (sentence := true)
-  | .gainLife (.fixed n) =>
-    s!"You gain {n} life"
-  | .recruit _ =>
-    "Recruit"
-  | .amass (.fixed n) .goblin _ _ =>
-    s!"Amass Goblins {n.toNat}"
-  | .createTokens kind (.fixed n) tapped _ _ =>
-    capitalizeAscii (TokenSpec.createPhrase kind n.toNat (tapped := tapped))
-  | .addMana types (.fixed 1) =>
-    s!"Add {manaSymbolsText types}"
-  | .discard (.cards n) =>
-    s!"Discard {cardPhrase n}"
-  | .shuffleSource =>
-    "Shuffle this into its owner's library"
-  | .searchBasicLand =>
-    capitalizeAscii (searchBasicLandTappedPhrase "your")
-  | .searchLandTypeToHand t =>
-    capitalizeAscii (searchLibraryToHandPhrase s!"a {t} card")
-  | .exileTop =>
-    "Exile the top card of your library. You may play it until the end of your next turn"
-  | .attach .source .target =>
-    s!"Attach this Equipment to {noun}"
-  | .becomeSubtypeWithLandsPT subtype =>
-    s!"This enchantment becomes {indefinite subtype} {subtype} creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
-  | .returnFromGraveyardTapped =>
-    "Return this card from your graveyard to the battlefield tapped"
-  | .returnFromGraveyardToHand =>
-    "Return this card from your graveyard to your hand"
-  | .creaturesYouControlPump p t =>
-    s!"Creatures you control get {signedStat p}/{signedStat t} until end of turn"
-  | .mill (.fixed n) _ _ =>
-    s!"{noun} mills {n} cards"
-  | .addAnyColor =>
-    "Add one mana of any color"
-  | .returnFromGyAttach =>
-    s!"Return this card from your graveyard to the battlefield attached to {noun}"
-  | .searchBasicLandToHand =>
-    capitalizeAscii (searchLibraryToHandPhrase "a basic land card")
-  | .createTokensX kind =>
-    s!"Create X {kind.pluralNoun}"
-  | .searchTwoBasicsSplit =>
-    "Search your library for up to two basic land cards, reveal them, put one onto the battlefield tapped and the other into your hand, then shuffle"
-  | .subtypesGainMenace subtypes =>
-    s!"{joinedSubtypes subtypes CardSubtype.pluralName} you control gain menace until end of turn"
-  | .exileThenReturnNextEnd =>
-    "Exile up to two other target nonland permanents you control. Return those cards to the battlefield under their owner's control at the beginning of the next end step"
-  | .searchBasicBeholdSubtypeUntap subtype =>
-    s!"{capitalizeAscii (searchBasicLandTappedPhrase "your")}. You may behold {indefinite subtype} {subtype}. If you do, untap that land"
-  | .twoPlayersDraw =>
-    "Two target players each draw a card"
-  | .discardLegendarySameNameDraw =>
-    "Draw two cards"
-  | .dealDamageToAny n =>
-    s!"This creature deals {n} damage to any target"
-  | .drawEqualToLastKnownPower =>
-    "Draw cards equal to the sacrificed creature's power"
-  | .arwenShare =>
-    "Another target creature gains indestructible until end of turn. Put a +1/+1 counter and a lifelink counter on that creature and a +1/+1 counter and a lifelink counter on Arwen"
-  | .grantCombatDamageCreateTreasure =>
-    "Until end of turn, target creature gains \"Whenever this creature deals combat damage to a player, create a Treasure token.\""
-  | .putShadowCounter =>
-    "Put a shadow counter on target creature. For as long as that creature has a shadow counter on it, it's a Wraith in addition to its other types"
-  | .damageEachOpponent n =>
-    s!"This deals {n} damage to each opponent"
-  | .chooseTwoDestroyRest =>
-    "Choose up to two creatures, then destroy the rest"
-  | .blackGateUnblockable =>
-    "Choose a player with the most life or tied for most life. Target creature can't be blocked by creatures that player controls this turn"
-  | .drawEqualToBurdenCounters =>
-    "Draw a card for each burden counter on this"
-  | .teamGain k =>
-    s!"Creatures you control gain {KeywordAbility.joinedAnd k} until end of turn"
-  | .plusOneOnEachOtherSubtype subtype n =>
-    s!"Put {plusOnePlusOneCountersPhrase n} on each other {subtype} you control"
-  | .extraTurn =>
-    "Take an extra turn after this one. During that turn, power-up abilities can't be activated"
-  | .plusOneX =>
-    "Put X +1/+1 counters on this"
-  | .eachOppDiscardThenPlusOne =>
-    "Each opponent discards a card. Put a +1/+1 counter on this"
-  | .lookAtTopPutTypes n types =>
-    let names := (types.map CardSubtype.englishName).toList
-    let listed := orJoin names
-    let art := indefinite (names[0]?.getD "")
-    s!"Look at the top {n} cards of your library. You may put {art} {listed} card from among them onto the battlefield. If it's a double-faced card, you may transform it. {restOnBottomRandomPhrase}"
-  | .transform =>
-    "Transform this"
-  | .drawX =>
-    "Draw X cards"
-  | .lookAtTopRevealArtifact n =>
-    s!"Look at the top {n} cards of your library. You may reveal an artifact card from among them and put it into your hand. {restOnBottomRandomPhrase}"
-  | .connive .source =>
-    "This creature connives"
-  | .addAnyColorSpendOnlySubtype subtype =>
-    s!"Add one mana of any color. Spend this mana only to cast {indefinite subtype} {subtype} spell or to activate an ability of {indefinite subtype} {subtype} source"
-  | .addAnyColorSpendOnlyArtifactSpell =>
-    "Add one mana of any color. Spend this mana only to cast an artifact spell"
-  | .addTwoAnyColorCreatureSources =>
-    "Add two mana of any one color. Spend this mana only to activate abilities of creature sources"
-  | .addBlueCantNonartifact =>
-    "Add {U}. This mana can't be spent to cast a nonartifact spell"
-  | .addAnyColorEqualToSourcePower =>
-    "Add X mana of any one color, where X is this creature's power"
-  | .addFourAnyCombination =>
-    "Add four mana in any combination of colors"
-  | .addTwoAnyColorEquipment =>
-    "Add two mana of any one color. Spend this mana only to cast Equipment spells or activate equip abilities"
-  | .drawPerDiscardedThisTurn =>
-    "Draw a card for each card you've discarded this turn"
-  | .dealDamageToEachCreature n .each .fixed =>
-    s!"This deals {n} damage to each creature"
-  | .createTokensEqualRemovedPlusOnes kind =>
-    s!"Create that many {kind.pluralNoun}"
-  | .exileTopXPlayThisTurn =>
-    "Exile the top X cards of your library, where X is this creature's power. You may play those cards this turn"
-  | .targetPlayerDraw n =>
-    s!"{noun} draws {cardPhrase n}"
-  | .copyControlledAbility ty =>
-    let w := ty.oracleWord
-    s!"Copy target activated or triggered ability you control from {indefinite w} {w} source. You may choose new targets for the copy"
-  | .createTokensEqualSubtype kind subtype =>
-    s!"Create X {kind.pluralNoun}, where X is the number of {subtype}s you control"
-  | .proliferateEachKind =>
-    "For each kind of counter on target permanent or player, give that permanent or player another counter of that kind"
-  | .equipmentBecomesConstructHero =>
-    "If this Equipment isn't a creature, it becomes a 0/0 Construct Hero artifact creature with flying and \"This creature gets +1/+1 for each artifact you control\" until end of turn"
-  | .lookAtTopRevealSubtype n subtype =>
-    s!"Look at the top {n} cards of your library. You may reveal a {subtype} card from among them and put it into your hand. Put the rest on the bottom of your library in any order"
-  | .millThenPutSubtypeOrEnchantment n subtype =>
-    s!"Mill {n} cards. You may put {indefinite subtype} {subtype} or enchantment card from among those cards into your hand"
-  | .createTigerGod =>
-    "Create The Tiger God, a legendary 4/4 green Cat God creature token with \"The Tiger God can't be blocked by more than one creature.\""
-  | .chooseOddOrEvenDestroy =>
-    "Choose odd or even. Destroy each other creature with mana value of the chosen quality"
-  | .returnFromGyFinalityAttach =>
-    "Return this card from your graveyard to the battlefield with a finality counter on him. Then you may attach an Equipment you control to him"
-  | .revealTopDrawIfArtifact =>
-    "Reveal the top card of your library. If it's an artifact card, draw a card"
-  | .copyArtifactYouControlNotLegendary =>
-    "Target artifact you control becomes a copy of a second target artifact you control until end of turn, except it isn't legendary"
-  | .becomeTypes types p t k =>
-    let joined :=
-      if KeywordAbility.hasReach k && KeywordAbility.hasVigilance k then "reach and vigilance"
-      else KeywordAbility.joinedAnd k
-    let names := (types.map CardSubtype.englishName).toList
-    let typeWords := String.intercalate " " names
-    let art := indefinite (names[0]?.getD "")
-    s!"Until end of turn, this becomes {art} {typeWords} with base power and toughness {p}/{t} and gains {joined}"
-  | .nextInstantSorceryCopyIfMvAtMostSourcePower =>
-    "When you next cast an instant or sorcery spell with mana value less than or equal to this creature's power this turn, copy that spell. You may choose new targets for the copy"
-  | .harnessInfinityStone =>
-    "Harness this"
-  | .targetSubtypeConnives subtype =>
-    s!"Target {subtype} you control connives"
-  | .empowerJace (.fixed n) =>
-    s!"Empower Jace {n}"
-  | .surveil (.fixed n) =>
-    s!"Surveil {n}"
-  | .millSelf n =>
-    s!"Mill {cardPhrase n}"
-  | .mayDiscardDraw n =>
-    s!"You may discard a card. If you do, draw {cardPhrase n}"
-  | .createTokensLifeGained kind =>
-    s!"Create X {kind.pluralNoun}, where X is the amount of life you gained this turn"
-  | .oppSacrificesGreatestMv =>
-    s!"{capitalizeAscii noun} sacrifices a creature or planeswalker with the greatest mana value among creatures and planeswalkers they control"
-  | .creaturesWithoutFlyingCantBlock =>
-    "Creatures without flying can't block this turn"
-  | .targetPlayerLoseLife n =>
-    s!"{noun} loses {n} life"
-  | .controllerOfTargetLosesLife n =>
-    s!"Its controller loses {n} life"
-  | .returnTargetSpell =>
-    s!"Return {noun} to its owner's hand"
-  | .eachCreatureYouControlBecomesPrepared =>
-    "Each creature you control becomes prepared"
-  | .damageThenEmpowerExcess n =>
-    s!"This deals {n} damage to {noun}. If excess damage was dealt to that permanent this way, empower Jace X, where X is that excess damage"
-  | .jaceLoyaltyAtInstantSpeed =>
-    "Until end of turn, you may activate loyalty abilities of Jace planeswalkers you control on any player's turn any time you could cast an instant"
-  | .exileTopMayCastElseDamageOpponents n =>
-    s!"Exile the top card of your library. You may cast that card. If you don't, this deals {n} damage to each opponent"
-  | .emblemCastSpellDamage n =>
-    s!"You get an emblem with \"Whenever you cast a spell, this emblem deals {n} damage to any target.\""
-  | .firstDealsStatDamageToSecond useLoyalty =>
-    if useLoyalty then
-      "Target planeswalker you control deals damage equal to its loyalty to target creature or planeswalker an opponent controls"
-    else
-      "Target creature you control deals damage equal to its power to target creature or planeswalker an opponent controls"
-  | .returnFromGyWithFinality =>
-    "Return this card from your graveyard to the battlefield with a finality counter on it"
-  | .copyNextInstantSorceryThisTurn =>
-    "When you next cast an instant or sorcery spell this turn, copy that spell. You may choose new targets for the copy"
-  | .proliferatePlaneswalkerTypesTimes =>
-    "Proliferate X times, where X is the number of planeswalker types among planeswalkers you control"
-  | .copyEachCreatureOfTargetPlayer =>
-    s!"For each creature {noun} controls, create a token that's a copy of that creature, except it has haste and \"At the beginning of the end step, if you don't control a planeswalker, sacrifice this creature.\""
-  | .becomeCopyLegendRuleOff =>
-    s!"This land becomes a copy of {noun} until end of turn. The \"legend rule\" doesn't apply to permanents you control this turn"
-  | .sequence rs =>
-    sequence rs
-  | r =>
-    match r.fraPhrase? noun with
-    | some phrase => phrase
-    | none => SpellResolution.toPhrase r noun
-
-/-- Oracle-style reminder from targeting and resolution. Source-deals-damage
-uses the creature as the subject rather than the generic `PermanentAction`
-wording. -/
-def toPhrase (r : Resolution) (noun : String) : String :=
-  match r with
-  | .sequence rs => String.intercalate ". " (rs.map (fun step => toPhrase step noun))
-  | r => phraseWith r noun fun _ => ""
-
-/-- One spell step on the shared vocabulary. Names that already exist stay
-themselves. A few spell shapes land on the activated-ability constructor
-that means the same thing. `sequence` is flattened by `ofSpell`. -/
-def ofSpellStep : SpellResolution → Resolution
-  | .draw (.fixed n) .player => .targetPlayerDraw n.toNat
-  | .loseLife (.fixed n) .player => .targetPlayerLoseLife n.toNat
-  | .loseLife (.fixed n) (.controller .target) => .controllerOfTargetLosesLife n.toNat
-  | .returnTargetToHand .spell => .returnTargetSpell
-  | .returnTargetToHand .graveyard => .returnFromGyToHand
-  | .creaturesPump p t .youControl => .creaturesYouControlPump p t
-  | .createTokens kind .chosenX false .you .none => .createTokensX kind
-  | .sequence rs => .sequence (rs.map ofSpellStep)
-  | r => r
-
-/-- Lift a spell resolution onto the shared `Resolution` vocabulary. -/
-def ofSpell (r : SpellResolution) : Resolution :=
-  match r with
-  | .sequence rs => .sequence ((rs.map ofSpell).flatMap flatten)
-  | r => ofSpellStep r
-
-/-- A shared resolution as a spell step, when every part of it is one.
-Activated-ability constructors stay `none`, so `spellResolution` is
-`.unrecognized` for them. -/
-def toSpellStep : Resolution → Option SpellResolution
-  | .returnFromGyToHand => some (.returnTargetToHand .graveyard)
-  | .targetPlayerLoseLife n => some (.loseLife n .player)
-  | .controllerOfTargetLosesLife n => some (.loseLife n (.controller .target))
-  | .returnTargetSpell => some .returnTargetToHand
-  | .creaturesYouControlPump p t => some (.creaturesPump p t)
-  | .createTokensX kind => some (.createTokens kind .chosenX)
-  | .targetPlayerDraw n => some (.draw n .player)
-  | .unrecognized | .sequence _ => none
-  | .onSource _ | .searchBasicLand | .searchLandTypeToHand _
-  | .exileTop | .becomeSubtypeWithLandsPT _
-  | .returnFromGraveyardTapped | .returnFromGraveyardToHand
-  | .addAnyColor | .returnFromGyAttach | .searchBasicLandToHand
-  | .searchTwoBasicsSplit | .subtypesGainMenace _
-  | .exileThenReturnNextEnd | .searchBasicBeholdSubtypeUntap _
-  | .twoPlayersDraw | .discardLegendarySameNameDraw
-  | .dealDamageToAny _ | .drawEqualToLastKnownPower
-  | .drawEqualToBurdenCounters | .arwenShare
-  | .grantCombatDamageCreateTreasure | .putShadowCounter
-  | .damageEachOpponent _ | .chooseTwoDestroyRest
-  | .blackGateUnblockable | .plusOneOnEachOtherSubtype _ _
-  | .extraTurn | .plusOneX | .eachOppDiscardThenPlusOne
-  | .lookAtTopPutTypes _ _ | .transform | .drawX
-  | .lookAtTopRevealArtifact _
-  | .addAnyColorSpendOnlySubtype _ | .addAnyColorSpendOnlyArtifactSpell
-  | .addTwoAnyColorCreatureSources | .addBlueCantNonartifact
-  | .addAnyColorEqualToSourcePower | .addFourAnyCombination
-  | .addTwoAnyColorEquipment | .drawPerDiscardedThisTurn
-  | .createTokensEqualRemovedPlusOnes _ | .exileTopXPlayThisTurn
-  | .copyControlledAbility _ | .createTokensEqualSubtype _ _
-  | .proliferateEachKind | .equipmentBecomesConstructHero
-  | .lookAtTopRevealSubtype _ _ | .millThenPutSubtypeOrEnchantment _ _
-  | .createTigerGod | .chooseOddOrEvenDestroy
-  | .returnFromGyFinalityAttach | .revealTopDrawIfArtifact
-  | .copyArtifactYouControlNotLegendary
-  | .becomeTypes _ _ _ _ | .nextInstantSorceryCopyIfMvAtMostSourcePower
-  | .harnessInfinityStone | .targetSubtypeConnives _
-  | .millSelf _ | .mayDiscardDraw _ | .createTokensLifeGained _
-  | .oppSacrificesGreatestMv | .creaturesWithoutFlyingCantBlock
-  | .eachCreatureYouControlBecomesPrepared
-  | .damageThenEmpowerExcess _ | .jaceLoyaltyAtInstantSpeed
-  | .becomeCopyLegendRuleOff | .copyEachCreatureOfTargetPlayer
-  | .proliferatePlaneswalkerTypesTimes | .copyNextInstantSorceryThisTurn
-  | .returnFromGyWithFinality | .firstDealsStatDamageToSecond _
-  | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _ => none
-  | r => if r.isFra then none else some r
-
-/-- The spell view of `r`. A sequence is a spell sequence only when every
-step lifts; otherwise it stays unrecognized, as before. -/
-def toSpell (r : Resolution) : Option SpellResolution :=
-  match r with
-  | .sequence rs =>
-    match rs.flatMap flatten |>.mapM toSpellStep with
-    | some steps => some (.sequence steps)
-    | none => none
-  | r => toSpellStep r
-
-/-- Recover the spell view. `onSource` is the spell `onPermanent` of the
-same action. Anything that does not lift is `.unrecognized`. -/
-def _root_.Mtg.Engine.Effect.spellResolution (e : Effect) : SpellResolution :=
-  match e.resolution with
-  | .onSource a => .onPermanent a
-  | r => r.toSpell.getD .unrecognized
-
-/-- True when resolving `r` as a spell or Saga chapter would do nothing. -/
-partial def doesNothingAsSpell (r : Resolution) : Bool :=
-  match r with
-  | .sequence rs => rs.any doesNothingAsSpell
-  | .shuffleSource | .gainLife _ | .damageEachOpponent _ | .recruit _ | .addMana _ _ | .discard _ | .onSource _ => false
-  | .empowerJace _ | .surveil _ | .millSelf _ | .mayDiscardDraw _
-  | .createTokensLifeGained _ | .oppSacrificesGreatestMv
-  | .createTigerGod | .extraTurn | .drawEqualToBurdenCounters
-  | .creaturesWithoutFlyingCantBlock | .targetPlayerLoseLife _
-  | .controllerOfTargetLosesLife _ | .returnTargetSpell | .chooseOddOrEvenDestroy
-  | .eachCreatureYouControlBecomesPrepared | .damageThenEmpowerExcess _
-  | .exileTopMayCastElseDamageOpponents _ | .emblemCastSpellDamage _
-  | .firstDealsStatDamageToSecond _ | .returnFromGyWithFinality
-  | .copyNextInstantSorceryThisTurn | .proliferatePlaneswalkerTypesTimes
-  | .copyEachCreatureOfTargetPlayer | .becomeCopyLegendRuleOff
-  | .teamGain _ | .jaceLoyaltyAtInstantSpeed | .drawEqualToLastKnownPower => false
-  | .searchBasicLand | .searchLandTypeToHand _ | .searchBasicLandToHand | .exileTop => false
-  | .unrecognized => true
-  | r =>
-    if r.isFra then false
-    else ({ resolution := r } : Effect).spellResolution == .unrecognized
-
-/-- True when resolving `r` as an activated ability would do nothing. -/
-partial def doesNothingAsActivated (r : Resolution) : Bool :=
-  match r with
-  | .unrecognized => true
-  | .sequence rs => rs.any doesNothingAsActivated
-  | _ => false
-
-/-- True when resolving `r` as a triggered ability would do nothing (unrecognized
-or empty top-level no-op). Used by `CardDef.faceModellingError?` to reject
-unmodelled triggers (CR 603). -/
-partial def doesNothingAsTrigger : Resolution → Bool
-  | .unrecognized => true
-  | .sequence rs => rs.isEmpty || rs.any doesNothingAsTriggerStep
-  | .«if» _ d => doesNothingAsTriggerStep d
-  | .ifElse _ a b => doesNothingAsTriggerStep a || doesNothingAsTriggerStep b
-  | .may a b _ => doesNothingAsTriggerStep a || doesNothingAsTriggerSubStep b
-  | .or rs => rs.isEmpty || rs.any doesNothingAsTriggerStep
-  | .chooseModes ms _ => ms.isEmpty || ms.any doesNothingAsTriggerStep
-  | .unlessPays r _ => doesNothingAsTriggerStep r
-  | .queueReflexive r => doesNothingAsTriggerStep r
-  | .revealFromHand _ d => doesNothingAsTriggerStep d
-  | _ => false
-where
-  doesNothingAsTriggerStep : Resolution → Bool
-    | .unrecognized => true
-    | .sequence rs => rs.any doesNothingAsTriggerStep
-    | .«if» _ d => doesNothingAsTriggerStep d
-    | .ifElse _ a b => doesNothingAsTriggerStep a || doesNothingAsTriggerStep b
-    | .may a b _ => doesNothingAsTriggerStep a || doesNothingAsTriggerSubStep b
-    | .or rs => rs.any doesNothingAsTriggerStep
-    | .chooseModes ms _ => ms.any doesNothingAsTriggerStep
-    | .unlessPays r _ => doesNothingAsTriggerStep r
-    | .queueReflexive r => doesNothingAsTriggerStep r
-    | .revealFromHand _ d => doesNothingAsTriggerStep d
-    | _ => false
-  doesNothingAsTriggerSubStep : Resolution → Bool
-    | .sequence [] => false
-    | r => doesNothingAsTriggerStep r
-
-/-- Non-recursive check for atomic `Resolution` steps that could add mana
-(CR 605.1a). -/
-private def couldAddManaAtom : Resolution → Bool
-  | .addMana _ _ | .addAnyColor | .addAnyColorSpendOnlySubtype _
-  | .addAnyColorSpendOnlyArtifactSpell | .addTwoAnyColorCreatureSources
-  | .addBlueCantNonartifact | .addAnyColorEqualToSourcePower
-  | .addFourAnyCombination | .addTwoAnyColorEquipment
-  | .addRedPerOppArtifacts _ | .addFourManaDragonSpells _ _
-  | .addBlueNoncreatureOnly | .kothGeomancer | .frc .omnathCc => true
-  | _ => false
-
-/-- True when resolving `r` could add mana to a player's mana pool (CR 605.1a). -/
-partial def couldAddMana : Resolution → Bool
-  | .sequence rs => rs.any couldAddMana
-  | .«if» _ d => couldAddMana d
-  | .ifElse _ a b => couldAddMana a || couldAddMana b
-  | .may a b _ => couldAddMana a || couldAddMana b
-  | .or rs => rs.any couldAddMana
-  | .chooseModes ms _ => ms.any couldAddMana
-  | .unlessPays r _ => couldAddMana r
-  | .queueReflexive r => couldAddMana r
-  | .revealFromHand _ d => couldAddMana d
-  | r => couldAddManaAtom r
-
-/-- Non-recursive check for atomic `Resolution` steps whose instructions include
-moving a card to or from a library (CR 605.1a, 25 September 2026). `.scry` only
-reorders cards within a library and returns `false`. -/
-private def movesToOrFromLibraryAtom : Resolution → Bool
-  | .draw (.fixed 0) _ => false
-  | .draw _ _ | .searchLibrary _ | .putOnLibrary _ _ | .mill _ _ | .surveil _
-  | .cascade | .shuffleSource | .connive _ | .revealLibrary _ _
-  | .lookAtTopRevealTypes _ _ | .searchCard _ _ _
-  | .drawEqualToughnessThenPutCreatures | .millThenPut _ _
-  | .exileAttackersSearchBasics | .exileTopPlayIfYouControlSubtype _ _
-  | .exileTopXOppPlayForLife | .riddlesInTheDark _ | .lookAtTopLandsGainLife _ _
-  | .revealTopPutCreatures _ | .exileTopPlayUntilNext _
-  | .exileHandDrawPlayUntilNext | .millThenPutPermanentGainLife _ _
-  | .searchLibraryOrGyArtifactCreatureX | .gainLifeSearchBasicPlusOne _
-  | .ownerPutsLibraryThenConnive | .mayDrawPerArtifactOppsDraw _
-  | .mayPutHeroMvOrDraw _ _ | .maySacArtifactOrDiscardDraw _
-  | .searchBasicLand | .searchLandTypeToHand _ | .exileTop
-  | .searchBasicLandToHand | .searchTwoBasicsSplit
-  | .searchBasicBeholdSubtypeUntap _ | .twoPlayersDraw
-  | .discardLegendarySameNameDraw | .drawEqualToLastKnownPower
-  | .drawEqualToBurdenCounters | .lookAtTopPutTypes _ _ | .drawX
-  | .lookAtTopRevealArtifact _ | .drawPerDiscardedThisTurn
-  | .exileTopXPlayThisTurn | .targetPlayerDraw _
-  | .lookAtTopRevealSubtype _ _ | .millThenPutSubtypeOrEnchantment _ _
-  | .revealTopDrawIfArtifact | .targetSubtypeConnives _
-  | .millSelf _ | .mayDiscardDraw _ | .exileTopMayCastElseDamageOpponents _
-  | .eachPlayerMayWheel _ | .millMayPutPermanentGainLife _ _
-  | .millThenReturnLandTapped _ | .searchLandsTapped _
-  | .destroyDrawIfNotAttacking | .searchPlaneswalkerToTop
-  | .drawMilledThisTurn | .drawGreatestPowerLoseLife
-  | .drawPerCreatureYouControl | .sphinxsApproach | .clashOfElements
-  | .entrustTheSpark | .drawOneOrTwoIfNotFromHand
-  | .searchLandToGraveyard | .ownerPutsOnTopOrBottom | .drawTwoDiscardTwoStun
-  | .searchCardThenDiscardRandom | .maySearchLandsEqualDamage
-  | .maySearchBasicLandTapped | .eyeOfJace | .jiangYangguAlone
-  | .fblthpSearch | .mayDiscardThenSearchEnchantment
-  | .drawPerColorAmongOtherArtifacts | .identityEcho
-  | .destroyDrawIfLegendaryEnchantment
-  | .graveyardCardToLibraryBottom | .ownerShufflesIntoLibrary
-  | .surveilReturnNoncreatureNonland | .exileOpponentLibrariesButBottom
-  | .eachOpponentDiscardsTwoDrawPerShort
-  | .searchBasicLandTapped | .searchEnchantmentToHand
-  | .drawThenCountersPerDiscard
-  | .onPermanent .putOnTopOfLibrary | .onPermanent .putOnBottomOfLibrary
-  | .onSource .putOnTopOfLibrary | .onSource .putOnBottomOfLibrary
-  | .onCreatureAmongTargets .putOnTopOfLibrary
-  | .onCreatureAmongTargets .putOnBottomOfLibrary => true
-  | .exile (.opponentTop _) _ _ | .exile .top _ _ | .exile (.basicUpTo _ _) _ _ => true
-  | .put .top _ | .put (.opponentTop _) _ | .put (.basicUpTo _ _) _
-  | .put .forest _ | .put .basicLandOnTop _ | .put .dragon _ | .put .randomCreature _ => true
-  | .frc e => e.movesToOrFromLibrary
-  | _ => false
-
-/-- True when resolving `r` includes instructions to move a card to or from a
-library, which disqualifies an ability from being a mana ability under the
-25 September 2026 update to CR 605.1a. -/
-partial def movesToOrFromLibrary : Resolution → Bool
-  | .sequence rs => rs.any movesToOrFromLibrary
-  | .«if» _ d => movesToOrFromLibrary d
-  | .ifElse _ a b => movesToOrFromLibrary a || movesToOrFromLibrary b
-  | .may a b _ => movesToOrFromLibrary a || movesToOrFromLibrary b
-  | .or rs => rs.any movesToOrFromLibrary
-  | .chooseModes ms _ => ms.any movesToOrFromLibrary
-  | .unlessPays r _ => movesToOrFromLibrary r
-  | .queueReflexive r => movesToOrFromLibrary r
-  | .revealFromHand _ d => movesToOrFromLibrary d
-  | r => movesToOrFromLibraryAtom r
-
-end Resolution
-
-instance : HasTextChange Effect where
-  applyTextChanges tcs e :=
-    if tcs.isEmpty then e
-    else
-      { e with
-        targeting := HasTextChange.applyTextChanges tcs e.targeting
-        resolution := HasTextChange.applyTextChanges tcs e.resolution }
 
 end Mtg.Engine

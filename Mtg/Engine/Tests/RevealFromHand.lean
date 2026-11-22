@@ -232,7 +232,7 @@ exiles the chosen creature. -/
   let src := obj g0 "Cloak Source"
   let victim := obj g0 "Reveal Bear"
   let ab : TriggeredAbility :=
-    TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .exile))
+    TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.exile .target .forLater) }
   let swapped := step g0
     (.revealFromHand .onePlusCreatureCards (.exile .target .untilSourceLeaves))
     (some src.id) #[Target.permanent victim.id] ab
@@ -258,16 +258,16 @@ exiles the chosen creature. -/
   handSize g opp == 1 &&
     logContains g "reveals 1 card(s) (all, if fewer than 1)"
 
-#guard TriggeredAbility.resolutionPhrase { resolution := exileUntil } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (exileUntil) } ==
   "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
 #guard TriggeredAbility.resolutionPhrase (SharedTrigger.toEffect (.enter .revealDiscardFromHand)) ==
   "target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .revealFromHand .hand (.discard (.cards 1 (.target .opponent))) } ==
+    { resolution? := some (.revealFromHand .hand (.discard (.cards 1 (.target .opponent)))) } ==
   "reveal cards from their hand"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution :=
-        .revealFromHand .onePlusCreatureCards (.exile .target .untilSourceLeaves) } ==
+    { resolution? := some (
+        .revealFromHand .onePlusCreatureCards (.exile .target .untilSourceLeaves)) } ==
   "reveal cards from their hand"
 
 #guard TriggeredAbility.toNotation cloakAbility ==

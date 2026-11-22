@@ -41,7 +41,7 @@ private def replayOk28i2 (gs : Array Game) : Bool :=
   }
   let gMid1 :=
     (((gMid0.markDamageOn (gMid0.object! p0BearId) 2 "lethal" (cause := some testCause)).putReflexiveTrigger
-      p0 none { targeting := .of .player, resolution := .gainLife 1, phrase := "Target player gains 1 life" }).change
+      p0 none { targeting := .of .player, body := Instruction.gainLifeFixed 1, phrase := "Target player gains 1 life" }).change
       (.pushContinuationFrame {})).changes #[
       .pending (.activateManaAbilities p1),
       .proposedSpell (some propP1)
@@ -60,7 +60,7 @@ private def replayOk28i2 (gs : Array Game) : Bool :=
     manaCost := ⟨#[.colored .red]⟩
     types := #[.instant]
     additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
-    spellEffect := some { resolution := .gainLife 1, phrase := "You gain 1 life" }
+    spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
   }
   let stashedPr : PendingReplacement := .finishPostStep (.beginScryOne p0)
   let gCastRes0 :=
@@ -106,7 +106,7 @@ private def replayOk28i3 (gs : Array Game) : Bool :=
 
 -- 1. 2HG `.assignCombatDamage` `redirectPendingAfterLeave` teammate takeover & defender-stillInGame
 --    check, plus `g.stillInGame` guards across `Core`, `Library`, `SacrificeDiscard`, `Choices`,
---    `EffectResolution`, and `Tokens` when `leftTheGame == true` (CR 510.1c / 800.4a,c–d / 810.7).
+--    `ResolutionCompat`/`Interpreter`, and `Tokens` when `leftTheGame == true` (CR 510.1c / 800.4a,c–d / 810.7).
 #guard
   let p0 : PlayerId := ⟨0⟩
   let p1 : PlayerId := ⟨1⟩
@@ -192,7 +192,7 @@ private def replayOk28i4 (gs : Array Game) : Bool :=
 -- 1. CR 608.2h / 613.1a:
 --    *Palantír* (`offerPalantirChoice` & `.palantirMayDraw` decline) LKI `.influence` counter
 --    reads via `g.damageSourceById?`, Aura & Equipment `attachedTo` LKI fallbacks across
---    `ModeledTriggers.attachedHost?`, `FraResolve` `.tapEnchantedUnprepare`, and
+--    `ModeledTriggers.attachedHost?`, `Interpreter` tap-enchanted/unprepare, and
 --    `TriggeredAbilities` (`applyAttach` `.enchantedCreature`, `applyTap` `.enchanted`,
 --    `applyRemoveCounters` `.all, .enchanted`), `FraAbilities` `.damageEqualSourcePower` LKI
 --    power fallback, and Layer 1 `g.name` / `g.nameWithToken` log reads.
@@ -226,7 +226,7 @@ private def replayOk28i4 (gs : Array Game) : Bool :=
     name := "P28i4 Test Aura"
     types := #[.enchantment]
     subtypes := #["Aura"]
-    triggeredAbilities := #[TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLifeFixed 1 }]
   }
   let equipDef : CardDef := { name := "P28i4 Test Equip", types := #[.artifact], subtypes := #["Equipment"] }
   let gAura0 :=
@@ -239,8 +239,11 @@ private def replayOk28i4 (gs : Array Game) : Bool :=
   let (gAuraDeparted, _) := gAuraAttached.move auraId (.graveyard p0) none (cause := some testCause)
   -- `attachedHost?` finds `p0BearId` via LKI:
   let attachedHostLkiOk := (gAuraDeparted.attachedHost? (some auraId)).map (·.id) == some p0BearId
-  -- `FraResolve` `.tapEnchantedUnprepare` taps `p0BearId` via LKI:
-  let gFraTapHost := gAuraDeparted.applyFra p0 {} .tapEnchantedUnprepare #[] (some auraId)
+  -- Unified tap-enchanted + unprepare taps `p0BearId` via LKI:
+  let gFraTapHost :=
+    gAuraDeparted.applyAbilityEffect p0
+      { body := .seq #[Instruction.tap .attachedHost, .permanent (.setDesignation .attachedHost .prepared false)] }
+      #[] (some auraId)
   -- `TriggeredAbilities.applyTap` `.enchanted` taps `p0BearId` via LKI:
   let dummyTrig : TriggeredAbility := auraDef.triggeredAbilities[0]!
   let gTrigTapHost := gAuraDeparted.applyTap p0 dummyTrig (some auraId) #[] .enchanted
@@ -257,15 +260,16 @@ private def replayOk28i4 (gs : Array Game) : Bool :=
     (gTrigAttachHost.object! equipId).attachedTo == some p0BearId &&
     (gTrigRemCntHost.object! p0BearId).status.plusOnePlusOne == 0
 
-  -- 1c. `FraAbilities` `.damageEqualSourcePower` uses `g.sourcePowerNatAtResolution sourceId`
+  -- 1c. Unified `Instruction.dealDamage (.targetSlot 0) (.objectStat .power .this)` uses LKI
   --     when the source left the battlefield with pumped power (2 + 2 = 4) before resolution:
   let (gBearPumpedDeparted, _) :=
     (gBase.recordPutCounters p0BearId .plusOnePlusOne 2 (byPlayer := some p0) (cause := some testCause)).move
       p0BearId (.graveyard p0) none (cause := some testCause)
   let gDmgEqPow :=
     (gBearPumpedDeparted.change
-      (.pushContinuationFrame { resolvingAbility := some p0BearId })).applyFraAbility
-      p0 {} .damageEqualSourcePower #[.permanent p1BearId] (some p0BearId)
+      (.pushContinuationFrame { resolvingAbility := some p0BearId })).applyAbilityEffect
+      p0 { targeting := .of .creature, body := Instruction.dealDamage (.targetSlot 0) (.objectStat .power .this) }
+      #[.permanent p1BearId] (some p0BearId)
   let dmgEqSourcePowerLkiOk :=
     (gDmgEqPow.object! p1BearId).status.damage == 4
 
@@ -340,7 +344,7 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
   --       keeps when `spellId` is still on `.stack`:
   let boltDef : CardDef := {
     name := "P29i1 Bolt", manaCost := ⟨#[.colored .red]⟩, types := #[.instant]
-    spellEffect := some { targeting := .of .player, resolution := .dealDamage 3 .target }
+    spellEffect := some { targeting := .of .player, body := Instruction.dealDamageFixed (.targetSlot 0) 3 }
   }
   let gStack0 :=
     insertObject (insertObject g3 boltDef p0 (.hand p0)) boltDef p1 (.hand p1)
@@ -350,7 +354,7 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
   let (gStack2, p1SpellId) := gStack1.move p1HandBolt .stack (some p1) (cause := some testCause)
   let dummyModesRest : ChooseModesRest := {
     controller := p0
-    ability := TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }
+    ability := TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLifeFixed 1 }
     sourceId := none, targets := #[], lastKnownPower := none
     sourceName := "Test", modes := [], how := .vision
   }
@@ -487,7 +491,7 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
 end Phase29Item1EventAlignment
 
 /-! ### Phase 29 Item 2: `EventCause` allocation & `ContinuationFrame` pushing in
-`Library.moveIdsInOrder`, `EffectResolution.offerBottomAnyOrder`, `EffectResolution.offerCardChoice`,
+`Library.moveIdsInOrder`, `ResolutionCompat.offerBottomAnyOrder`, `ResolutionCompat.offerCardChoice`,
 `LibrarySearch.beginLibrarySearch`, `ModeledTriggers`, and `ResolutionEffects` -/
 section Phase29Item2EventAlignment
 
@@ -497,7 +501,7 @@ private def mustHold29i2 (label : String) (ok : Bool) : Bool :=
 private def replayOk29i2 (gs : Array Game) : Bool :=
   gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
 
--- 1. `Library.moveIdsInOrder` and `EffectResolution.offerBottomAnyOrder` allocate a `.oneShotEffect`
+-- 1. `Library.moveIdsInOrder` and `ResolutionCompat.offerBottomAnyOrder` allocate a `.oneShotEffect`
 --    `EventCause` from `currentResolvingContext?` via `allocDelayedCause`, `offerCardChoice` writes
 --    `stashedCause` onto the `ContinuationFrame` pushed by `beginFraChoice`, and `beginLibrarySearch`,
 --    `ModeledTriggers`, and `ResolutionEffects` push a `ContinuationFrame` via `beginFraChoice`
@@ -530,7 +534,7 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
       s2 == some srcId && c2 == some p0 && b1.isSome && b1 == b2
     | _, _ => false
 
-  -- 1b. `EffectResolution.offerBottomAnyOrder` with `cause := none` allocates a fresh
+  -- 1b. `ResolutionCompat.offerBottomAnyOrder` with `cause := none` allocates a fresh
   --     `.oneShotEffect` cause from `currentResolvingContext?` (ignoring any earlier move cause
   --     on the library cards) and stores it in `g.stashedCause`:
   let topTwo := gMovedInOrder.scryLookedIds p0 2
@@ -542,7 +546,7 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
       s == some srcId && c == some p0 && eid.raw + 1 == gOfferBottom.nextEffectId
     | _ => false
 
-  -- 1c. `EffectResolution.offerCardChoice` with `g.continuations == #[]` calls `beginFraChoice`
+  -- 1c. `ResolutionCompat.offerCardChoice` with `g.continuations == #[]` calls `beginFraChoice`
   --     BEFORE `.change (.stashedCause (some testCause))` so `g.stashedCause == some testCause`:
   let gCardChoice :=
     gBase.offerCardChoice p0 topTwo 1 (.toHand false) "Choose a card" (cause := some testCause)
@@ -556,7 +560,7 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
   --     `offerVisionModes` preserves `g.chooseModesRest.isSome`):
   let boltDef : CardDef := {
     name := "P29i2 Bolt", manaCost := ⟨#[.colored .red]⟩, types := #[.instant]
-    spellEffect := some { targeting := .of .player, resolution := .dealDamage 3 .target }
+    spellEffect := some { targeting := .of .player, body := Instruction.dealDamageFixed (.targetSlot 0) 3 }
   }
   let gWithStackAndHand :=
     insertObject (insertObject gBase bear p0 (.hand p0)) boltDef p0 (.hand p0)
@@ -564,7 +568,7 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
   let (gStack0, spellId) := gWithStackAndHand.move handBolt .stack (some p0) (cause := some testCause)
   let gStack :=
     gStack0.change (.pushStack { objectId := spellId, controller := p0, targets := #[Target.player p1], targetsAnnounced := true })
-  let dummyTrig : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }
+  let dummyTrig : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLifeFixed 1 }
 
   let gLibSearch := gBase.beginLibrarySearch p0 (fun _ => true) "a card" .hand
   let gLibMaySearch := gBase.beginLibrarySearch p0 (fun _ => true) "a card" .hand (optional := true)
@@ -641,7 +645,7 @@ private def replayOk29i3 (gs : Array Game) : Bool :=
   -- 1a. `Targeting.expandEachOpponentEffect` skips `p1` (`!g.stillInGame p1`) and includes only `p2`:
   let effOpp : Effect := {
     targeting := .of (.forEachOpponentControlled (.hasType .creature) (.exact 1))
-    resolution := .dealDamage 2 .target
+    body := Instruction.dealDamageFixed (.targetSlot 0) 2
   }
   let expandedEff := gLeft.expandEachOpponentEffect p0 effOpp (some p0BearId)
   let expandOppOk := expandedEff.maxTargets == 1
@@ -650,9 +654,9 @@ private def replayOk29i3 (gs : Array Game) : Bool :=
   --     `putReflexiveTrigger`, `beginMayCastFromLooked`) are no-ops when `!g.stillInGame p1`:
   let gTrigStack :=
     gLeft.putTriggeredAbilityOnStack p1 (gLeft.object! p0BearId)
-      (TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }) "enters"
+      (TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLifeFixed 1 }) "enters"
   let gQueueRefl := gLeft.queueFollowupReflexive p1 (some p0BearId) (.gainLife 1)
-  let gPutRefl := gLeft.putReflexiveTrigger p1 (some p0BearId) { resolution := .gainLife 1 }
+  let gPutRefl := gLeft.putReflexiveTrigger p1 (some p0BearId) { body := Instruction.gainLifeFixed 1 }
   let gLookCast := gLeft.beginMayCastFromLooked p1 6 5
 
   -- 1c. `SacrificeDiscard` (`finishConniveDraws`, `applyConnive`), `Choices` (`beholdQuality`,
@@ -931,7 +935,7 @@ private def replayOk30i2 (gs : Array Game) : Bool :=
     gSilentFinished.continuations.isEmpty &&
     gSilentFinished.pending == .none
 
-  -- 1b. Direct calls to `EffectResolution.beginVisionQuest` and `EffectResolution.offerBottomAnyOrder`
+  -- 1b. Direct calls to `ResolutionCompat.beginVisionQuest` and `ResolutionCompat.offerBottomAnyOrder`
   --     when `g.continuations.isEmpty` push a frame via `beginFraChoice`:
   let gLib2 := insertObject (insertObject gBase bear p0 (.library p0)) bear p0 (.library p0)
   let topTwo := (gLib2.player p0).library.extract ((gLib2.player p0).library.size - 2) (gLib2.player p0).library.size
@@ -1227,7 +1231,7 @@ private def replayOk31i1 (gs : Array Game) : Bool :=
 
 end Phase31Item1EventAlignment
 
-/-! ### Phase 31 Item 2: `ContinuationFrame` entry and exit guards across Scry, Surveil, May, SpellOr, UnlessPays, Chapters, FraResolve, FrcResolve, and `finishAndGrantPriority` -/
+/-! ### Phase 31 Item 2: `ContinuationFrame` entry and exit guards across Scry, Surveil, May, SpellOr, UnlessPays, Saga chapters, `Interpreter`, and `finishAndGrantPriority` -/
 section Phase31Item2EventAlignment
 
 private def mustHold31i2 (label : String) (ok : Bool) : Bool :=
@@ -1250,14 +1254,14 @@ private def replayOk31i2 (gs : Array Game) : Bool :=
   let gScryDraw1 := mustApply gScryDraw0 p0 (.scry #[topId] #[])
   let gSurv0 := gBase.beginSurveil p0 1
   let gSurv1 := mustApply gSurv0 p0 (.surveil #[topId] #[])
-  let gMay0 := gBase.beginMay p0 default #[] (.draw 1)
+  let gMay0 := gBase.beginMay p0 default #[] (Instruction.drawFixed 1)
   let gMay1 := mustApply gMay0 p0 .decline
-  let gOr0 := gBase.beginSpellOr p0 default #[] [.draw 1, .gainLife 2]
+  let gOr0 := gBase.beginSpellOr p0 default #[] [Instruction.drawFixed 1, Instruction.gainLifeFixed 2]
   let gOr1 :=
     match gOr0.chooseSpellOr p0 1 with
     | .ok g => g
     | .error _ => gOr0
-  let gUnless0 := gBase.beginUnlessPays p0 default #[Target.player p0] (.draw 1) 1
+  let gUnless0 := gBase.beginUnlessPays p0 default #[Target.player p0] (Instruction.drawFixed 1) 1
   let gUnless1 := mustApply gUnless0 p0 .decline
 
   let directFramesOk :=
@@ -1269,11 +1273,13 @@ private def replayOk31i2 (gs : Array Game) : Bool :=
     gOr0.continuations.size == 1 && gOr1.continuations.isEmpty &&
     gUnless0.continuations.size == 1 && gUnless1.continuations.isEmpty
 
-  -- 2b. Direct calls to `applyChapterEffect`, `applyFra`, and `applyFrc` when
-  --     `gBase.continuations.isEmpty` wrap in `withContinuationFrame` and pop the frame when finished:
-  let gChap0 := gBase.applyChapterEffect p0 (Effect.ofChapter (.addMana (.colored .green))) none #[]
-  let gFra0 := gBase.applyFra p0 default (.damageEachPlayer 1) #[] none
-  let gFrc0 := gBase.applyFrc p0 default .gingerbrute #[] none
+  -- 2b. Direct calls to `applyAbilityEffect` (chapter mana, each-player damage, monarch token) when
+  --     `gBase.continuations.isEmpty` wrap cleanly and leave no stray `ContinuationFrame` when finished:
+  let gChap0 := gBase.applyAbilityEffect p0 (Effect.chapterAddMana (.colored .green)) #[] none
+  let gFra0 := gBase.applyAbilityEffect p0 { body := Instruction.dealDamageFixed (.players .eachPlayer) 1 } #[] none
+  let gFrc0 :=
+    gBase.applyAbilityEffect p0
+      { body := Instruction.ifThen (.playerPred .you .isMonarch) (Instruction.createTokensFixed .gingerbrute 1) } #[] none
 
   let entrypointsFramesOk :=
     gChap0.continuations.isEmpty &&
@@ -1316,7 +1322,7 @@ private def replayOk31i3 (gs : Array Game) : Bool :=
     (gLoopDone.followMovedToZone? p0Hand1 (· == .library p0)).isSome
 
   -- 3b. Departed-player `stillInGame` guards across `Library`, `ResolutionEffects`,
-  --     `Tokens`, `FrcResolve`, `TriggeredAbilities`, and `Decisions`:
+  --     `Tokens`, `Interpreter`, `TriggeredAbilities`, and `Decisions`:
   let gLeft := gBase.playerLeavesGame p1
   let sIdx := gLeft.events.size
   let gReqShuf := gLeft.requestShuffle p1
@@ -1435,7 +1441,7 @@ private def replayOk32i1 (gs : Array Game) : Bool :=
   --     before `promptTriggerTargetsIfNeeded` opens `Pending.chooseTargets`:
   let gHkStack :=
     gBase.putReflexiveTrigger p0 (some p0Bear.id)
-      { resolution := .mshReflexive .trickArrows 1, phrase := "Choose up to 1 Trick Arrows mode" }
+      { resolution? := some (.mshReflexive .trickArrows 1), phrase := "Choose up to 1 Trick Arrows mode" }
   let gHkChoseNet := mustApply gHkStack p0 (.chooseMode 0)
   let emptyFramePoppedBeforeTargetsOk :=
     gBase.continuations.isEmpty &&
@@ -1467,7 +1473,7 @@ private def replayOk32i1 (gs : Array Game) : Bool :=
     gPrioGameOver.stack.isEmpty &&
     (gPrioGameOver.findObject? abObjId).isNone
 
-  -- 1c. `EffectResolution.finishChooseCards` `.landsTappedGainLife` and
+  -- 1c. `ResolutionCompat.finishChooseCards` `.landsTappedGainLife` and
   --     `Decisions.runPostStep` `.shuffleThenGainLife` pop their `ContinuationFrame` when
   --     `(g.player p0).library.size ≤ 1` and `g.continuations.isEmpty`:
   let gOneCardLib := gBase.mill p0 ((gBase.player p0).library.size - 1) (cause := some testCause)
@@ -1531,12 +1537,14 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
   let gUpToLeaverConcede := gUpToReopen0.concede p0
 
   let tokenOnlyUpToAb : TriggeredAbility :=
-    { upToAb with
-      modes := #[
-        { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-          resolution := .onPermanent .destroy
-          phrase := "Destroy target token" }
-      ] }
+    TriggeredAbility.mkTrigger .thisEnters
+      { Effect.enterChooseUpToXModes with
+        body := .chooseModes {
+          modes := #[
+            { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
+              body := Instruction.destroy (.target 0)
+              phrase := "Destroy target token" }
+          ] } }
   let tokenOnlyModesDef : CardDef := {
     bear with
     name := "P32 UpTo Token Modal"
@@ -1556,13 +1564,15 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
       | _ => false
 
   let twoModesUpToAb : TriggeredAbility :=
-    { upToAb with
-      modes := #[
-        { resolution := .gainLife (.fixed 2), phrase := "Gain 2 life" },
-        { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-          resolution := .onPermanent .destroy
-          phrase := "Destroy target token" }
-      ] }
+    TriggeredAbility.mkTrigger .thisEnters
+      { Effect.enterChooseUpToXModes with
+        body := .chooseModes {
+          modes := #[
+            { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life" },
+            { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
+              body := Instruction.destroy (.target 0)
+              phrase := "Destroy target token" }
+          ] } }
   let twoModesDef : CardDef := {
     bear with
     name := "P32 UpTo Two Modal"
@@ -1600,14 +1610,14 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
   --     (iii) Clears `.hawkeyeModes` when `objId? == none`.
   let gHkReopen0 :=
     gBase.putReflexiveTrigger p0 (some p0Bear.id)
-      { resolution := .mshReflexive .trickArrows 2, phrase := "Choose up to 2 Trick Arrows modes" }
+      { resolution? := some (.mshReflexive .trickArrows 2), phrase := "Choose up to 2 Trick Arrows modes" }
   let hkObjId1 := gHkReopen0.stack.back!.objectId
   let gHkReopen1 := gHkReopen0.concede p1
 
   let gNoP0Creature := addPermanent g3 hero p1 p1
   let gHkFin0 :=
     gNoP0Creature.putReflexiveTrigger p0 none
-      { resolution := .mshReflexive .trickArrows 3, phrase := "Choose up to 3 Trick Arrows modes" }
+      { resolution? := some (.mshReflexive .trickArrows 3), phrase := "Choose up to 3 Trick Arrows modes" }
   let hkFinObjId := gHkFin0.stack.back!.objectId
   let gHkPicked12 := mustApply (mustApply gHkFin0 p0 (.chooseMode 1)) p0 (.chooseMode 2)
   let preHkLeaveIdx := gHkPicked12.events.size
@@ -1662,7 +1672,7 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
   -- runs `redirectPendingAfterLeave p1` -> `.resumeChooseTargetsAfterLeave p0`, removing `p0`'s targetless
   -- stack trigger (CR 603.3d) rather than short-circuiting to `openPrompt`:
   let oppCreatureTrig : TriggeredAbility :=
-    TriggeredAbility.mkTrigger (.gainLife .you) { targeting := .of .oppCreature, resolution := .onPermanent .tap, phrase := "Tap target opponent creature" }
+    TriggeredAbility.mkTrigger (.gainLife .you) { targeting := .of .oppCreature, body := Instruction.tap (.target 0), phrase := "Tap target opponent creature" }
   let gTrigOnP1 := gBase.putTriggeredAbilityOnStack p0 p0Bear oppCreatureTrig "triggers" (eventCause := some testCause)
   let trigTargetId := gTrigOnP1.stack.back!.objectId
   let gP1Gone := gTrigOnP1.playerLeavesGame p1
@@ -1934,7 +1944,7 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gWardPaidSac.pending == .mayDiscardDraw p0 1 &&
     gWardPaidSac.pendingReplacement == some .afterWardResolved
 
-  -- 1d. `Core.clearMay`, `EffectResolution.beginMay`, and `redirectPendingAfterLeave`
+  -- 1d. `Core.clearMay`, `ResolutionCompat.beginMay`, and `redirectPendingAfterLeave`
   --     `.mayResolve` (`.ifYouDont` decline & `sequenceAllTargetsIllegal`), `.chooseCards`
   --     `.stashedCause none`, `.orderLibraryBottom`, and `.searchLibrary` (`plusOneAfterSearch`):
   let trigCtx : TriggerSequenceRest := {
@@ -1957,11 +1967,11 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gClearedMay := gStaleMay.clearMay
   let tapEff : Effect := {
     targeting := .of .creature
-    resolution := .onPermanent .tap
+    body := Instruction.tap (.target 0)
     phrase := "Tap target creature"
   }
   let gBeginMayAfterStale :=
-    gStaleMay.beginMay p0 tapEff #[Target.permanent p1Hero3.id] (.onPermanent .tap)
+    gStaleMay.beginMay p0 tapEff #[Target.permanent p1Hero3.id] (Instruction.tap (.target 0))
   -- `q != p` on `.mayResolve` cancels when all targets in `mayTargets` became illegal:
   let gMayTargetGone := gBeginMayAfterStale.concede p1
   -- `q == p` on `.mayResolve` with `mayOnDecline` + `mayContext` resumes `.ifYouDont` branch:
@@ -2053,7 +2063,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   -- 2a. Departed-seat `!g.stillInGame p` and controller/caster guards in `Decisions.runPostStep`:
   let gLeftP1 := gBase.playerLeavesGame p1
   let oppTrig : TriggeredAbility :=
-    TriggeredAbility.mkTrigger (.gainLife .you) { targeting := .of .creature, resolution := .onPermanent .tap, phrase := "Tap target creature" }
+    TriggeredAbility.mkTrigger (.gainLife .you) { targeting := .of .creature, body := Instruction.tap (.target 0), phrase := "Tap target creature" }
   let gP0TrigAwaiting := gLeftP1.putTriggeredAbilityOnStack p0 p0Bear oppTrig "triggers" (eventCause := some testCause)
   let p0TrigId := gP0TrigAwaiting.stack.back!.objectId
   -- Calling `.resumeChooseTargetsAfterLeave p1` (departed) or `.resumeChooseTargetsAfterLeave p2`
@@ -2066,7 +2076,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     name := "P33 Tap Spell"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some { targeting := .of .creature, resolution := .onPermanent .tap, phrase := "Tap target creature" }
+    spellEffect := some { targeting := .of .creature, body := Instruction.tap (.target 0), phrase := "Tap target creature" }
   }
   let gTap0 := insertObject gLeftP1 tapSpellDef p0 (.hand p0)
   let gTapCast := mustApply33i2 gTap0 p0 (.cast (gTap0.player p0).hand.back!)
@@ -2106,7 +2116,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let tokOnlyTrig : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you)
       { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-        resolution := .onPermanent .tap
+        body := Instruction.tap (.target 0)
         phrase := "Tap target token" }
   let gNoLegalTrig0 :=
     ((gLeftP1.putTriggeredAbilityOnStack p0 p0Bear tokOnlyTrig "triggers" (eventCause := some testCause)).change
@@ -2255,7 +2265,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
 
   -- 2b. Revalidation of already-selected modes in `chosen` across `.resumeChooseModeAfterLeave`,
   --     `.resumeTriggerModesAfterLeave`, `.resumeUpToTriggerModesAfterLeave`, and `.resumeHawkeyeModesAfterLeave`:
-  -- (i) Modal spell (`chooseOneOrBoth := true`) where mode 0 targets a token (only `p1` controls one)
+  -- (i) Modal spell (`Choose one or both` `ModalSpec`) where mode 0 targets a token (only `p1` controls one)
   --     and mode 1 gains 2 life: `p0` picks mode 0 while `chooseMode` stays open for the optional second mode;
   --     then `p1` concedes, removing the only token! `validChosen` drops mode 0 via `StackEntryChange.clearChosenModes`
   --     and re-opens `Pending.chooseMode p0` with `chosenModesOf == #[]`!
@@ -2263,13 +2273,17 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     name := "P33 Modal Both"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    chooseOneOrBoth := true
-    spellModes := #[
-      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-        resolution := .onPermanent .destroy
-        phrase := "Destroy target token" },
-      { resolution := .gainLife (.fixed 2), phrase := "Gain 2 life" }
-    ]
+    spellEffect := some {
+      body := .chooseModes {
+        maxModes := .const 2
+        modes := #[
+          { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
+            body := Instruction.destroy (.target 0)
+            phrase := "Destroy target token" },
+          { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life" }
+        ]
+      }
+    }
   }
   let (gModal0, _) := (insertObject g3 modalBothSpell p0 (.hand p0)).createOneToken p1
     { bear with name := "P33 Token", isToken := true } (cause := some testCause)
@@ -2288,14 +2302,13 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   --      `p1` leaves removing the token -> `validChosen == #[]` and `needed == 2`!
   --      Also verify `needed == 0` finalizes `validChosen == #[1]` when `remaining == 0`:
   let chooseTwoTrigAb : TriggeredAbility :=
-    TriggeredAbility.mkTrigger .thisEnters { resolution := .chooseTriggerModes 2, phrase := "Choose two" }
-      (modes := #[
-        { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-          resolution := .onPermanent .destroy
-          phrase := "Destroy target token" },
-        { resolution := .gainLife (.fixed 2), phrase := "Gain 2 life" },
-        { resolution := .draw (.fixed 1) .you, phrase := "Draw a card" }
-      ])
+    TriggeredAbility.mkModal .thisEnters #[
+      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
+        body := Instruction.destroy (.target 0)
+        phrase := "Destroy target token" },
+      { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life" },
+      { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    ] (headerPhrase := "Choose two") (minModes := .const 2) (maxModes := .const 2)
   let threeModesDef : CardDef := {
     bear with
     name := "P33 Three Modes"
@@ -2328,7 +2341,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gHkNoCreatures := g3
   let gHkStack :=
     gHkNoCreatures.putReflexiveTrigger p0 none
-      { resolution := .mshReflexive .trickArrows 2, phrase := "Choose up to 2 Trick Arrows modes" }
+      { resolution? := some (.mshReflexive .trickArrows 2), phrase := "Choose up to 2 Trick Arrows modes" }
   let hkObjId := gHkStack.stack.back!.objectId
   -- Mode 0 (`Net — target creature`) is illegal on empty battlefield while mode 2 (`Boomerang`) is legal:
   let gHkFiltered :=
@@ -2532,11 +2545,15 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     name := "P33 Twin Tap"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellModes := #[
-      { targeting := .of .creature, resolution := .onPermanent .tap, phrase := "Tap first creature" },
-      { targeting := .of .creature, resolution := .onPermanent .tap, phrase := "Tap second creature" }
-    ]
-    chooseOneOrBoth := true
+    spellEffect := some {
+      body := .chooseModes {
+        maxModes := .const 2
+        modes := #[
+          { targeting := .of .creature, body := Instruction.tap (.target 0), phrase := "Tap first creature" },
+          { targeting := .of .creature, body := Instruction.tap (.target 0), phrase := "Tap second creature" }
+        ]
+      }
+    }
   }
   let gTwin0 := insertObject gBase twoTargetSpell p0 (.hand p0)
   let handTwinId := (gTwin0.player p0).hand.back!
@@ -2899,7 +2916,7 @@ private def replayOk34i1 (gs : Array Game) : Bool :=
   let targTrigAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you) {
       targeting := .of .creature
-      resolution := .onPermanent .tap
+      body := Instruction.tap (.target 0)
       phrase := "Tap target creature"
     }
   let gUnannouncedTrig :=
@@ -3421,7 +3438,7 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
     })).change (.pending (.payOrLetCounter p0 2 (some stackBoltId)))).concede p1
   let tapCreatureEff : Effect := {
     targeting := .of .creature
-    resolution := .onPermanent .tap
+    body := Instruction.tap (.target 0)
     phrase := "Tap target creature"
   }
   let gPayOrCounterInsteadIllegal :=
@@ -3434,14 +3451,14 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
   -- (ii) `.castCopiesFree`, `.mayCastCopy`, and `.mayCastCascade`:
   let dummyModesRest : ChooseModesRest := {
     controller := p0
-    ability := TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }
+    ability := TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLifeFixed 1 }
     sourceName := "Test"
     how := .vision
   }
   let dummyTrigOr : TriggerOrRest := {
     controller := p1
     alternatives := #[.gainLife (.fixed 2)]
-    ability := TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife 1 }
+    ability := TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLifeFixed 1 }
     sourceId := some p0Bear.id
     targets := #[]
     dividedDamage := #[]
@@ -3532,7 +3549,7 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
 
 end Phase34Item3EventAlignment
 
-/-! ### Phase 34 Item 4: `stillInGame` guards (`addManaUnits`, `addManaLogged`, `temptWithTheRing`, `createCommandObject`, `.emblemCastSpellDamage`, `.elspethEmblem`, `registerDelayedTrigger`, `setPlayerControl`, `shuffleThen`, `.fblthpSearch`) and Layer 1–6 characteristic queries (`FraResolve`, `Turns`, `SpellResolution`) -/
+/-! ### Phase 34 Item 4: `stillInGame` guards (`addManaUnits`, `addManaLogged`, `temptWithTheRing`, `createCommandObject`, `.emblemCastSpellDamage`, `.elspethEmblem`, `registerDelayedTrigger`, `setPlayerControl`, `shuffleThen`, `.fblthpSearch`) and Layer 1–6 characteristic queries (`Interpreter`, `Turns`, `SpellResolution`) -/
 section Phase34Item4EventAlignment
 
 private def mustHold34i4 (label : String) (ok : Bool) : Bool :=
@@ -3549,7 +3566,6 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
   let gBase := addPermanent (addPermanent g3 bear p0 p0) bear p2 p2
   let p0Bear := (gBase.permanentsOf p0)[0]!
   let gLeftP1 := gBase.concede p1
-  let dummyEff : Effect := Effect.gainLife 1
 
   -- 4a. `g.stillInGame` guards on departed `p1`:
   let gAddManaDead := gLeftP1.addMana p1 (.colored .green) 2
@@ -3557,9 +3573,9 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
   let gTemptDead := gLeftP1.temptWithTheRing p1
   let gCmdObjDead := gLeftP1.createCommandObject p1 { name := "Dead Emblem", types := #[] }
   let gChandraEmblemDead :=
-    (gLeftP1.applyFraResolution? p1 { resolution := .emblemCastSpellDamage 2, phrase := "Emblem" } #[] none).getD gLeftP1
+    gLeftP1.applyAbilityEffect p1 (Effect.emblemCastSpellDamage 2) #[] none
   let gElspethEmblemDead :=
-    gLeftP1.applyFrc p1 dummyEff .elspethEmblem #[] none
+    gLeftP1.applyAbilityEffect p1 elspethSunsChampion.activatedAbilities[2]!.effect #[] none
   let gDelayTrigDead :=
     gLeftP1.registerDelayedTrigger {
       controller := p1
@@ -3572,7 +3588,8 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
   -- `shuffleThen` on departed `p1` skips `shuffleLibrary p1` and runs `PostStep.runAfterRandom`
   -- so `p0Bear` receives its `+1/+1` counter without opening `.resolveRandom (.shuffleLibrary p1)`:
   let gShuffleThenDead := gLeftP1.shuffleThen p1 (.plusOne p0Bear.id p0 none)
-  let gFblthpDead := gLeftP1.applyFra p1 dummyEff .fblthpSearch #[] (some p0Bear.id)
+  let gFblthpDead :=
+    gLeftP1.applyAbilityEffect p1 fblthpKnowsTheWay.triggeredAbilities[0]!.effect #[] (some p0Bear.id)
 
   let stillInGameGuardsOk :=
     mustHold34i4 "4a.addMana" (gAddManaDead == gLeftP1) &&
@@ -3588,11 +3605,11 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
     mustHold34i4 "4a.shuffleCounter" ((gShuffleThenDead.object! p0Bear.id).status.plusOnePlusOne == 1) &&
     mustHold34i4 "4a.fblthp" (gFblthpDead.objects == gLeftP1.objects && gFblthpDead.log == gLeftP1.log && gFblthpDead.pending == .none)
 
-  -- 4b. Layer 1–6 characteristic queries in `FraResolve`, `Turns`, and `SpellResolution`:
-  -- (i) `FraResolve` `.fblthpSearch`: checks `g.hasSupertype o .basic && g.isLand o`:
+  -- 4b. Layer 1–6 characteristic queries in `Interpreter`, `Turns`, and `SpellResolution`:
+  -- (i) `Interpreter` Fblthp distinct-name search: checks `g.hasSupertype o .basic && g.isLand o`:
   --     Insert a non-land card (`bear`) into `p0`'s library and apply Layer 1 copy effects so
   --     `targetLibId` becomes a basic land (`mountain`) while all other library cards become `bear`;
-  --     `.fblthpSearch` with `X = 1` finds `targetLibId` and puts it into `p0`'s hand!
+  --     Fblthp's trigger with `X = 1` finds `targetLibId` and puts it into `p0`'s hand!
   let gFblthpLib := insertObject gBase bear p0 (.library p0)
   let libIds := (gFblthpLib.player p0).library
   let targetLibId := libIds.back!
@@ -3602,7 +3619,8 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
       (fun g id => g.createEffect (ContinuousEffectSpec.copy id bear) (cause := some testCause))
       ((gFblthpLib.record (GameEvent.announced gFblthpLib.turnNumber p0Bear.id #[] (some 1) #[])).createEffect
         (ContinuousEffectSpec.copy targetLibId mountain) (cause := some testCause))
-  let gFblthp1 := gFblthp0.applyFra p0 dummyEff .fblthpSearch #[] (some p0Bear.id)
+  let gFblthp1 :=
+    gFblthp0.applyAbilityEffect p0 fblthpKnowsTheWay.triggeredAbilities[0]!.effect #[] (some p0Bear.id)
   let fblthpLayeredOk :=
     mustHold34i4 "4b.fblthp" ((gFblthp1.followMovedToZone? targetLibId (· == .hand p0)).isSome)
 
@@ -3634,7 +3652,7 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
     .may (.draw (.fixed 1) .you) (.sequence []) .ifYouDont
   let pauseTrigAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you) {
-      resolution := pauseRes
+      resolution? := some pauseRes
       phrase := "You may draw a card"
     }
   let gTrigStack0 :=
@@ -4419,7 +4437,7 @@ private def replayOk35i4 (gs : Array Game) : Bool :=
       .proposedSpell (some morphProp), .pending (.chooseMode p0) ]).runPostStep
       (.resumeChooseModeAfterLeave p0)
 
-  let targEff : Effect := { targeting := .of .player, resolution := .gainLife 1, phrase := "Target player" }
+  let targEff : Effect := { targeting := .of .player, body := Instruction.gainLifeFixed 1, phrase := "Target player" }
   let (gTarg1, targAbObj) := gModeCkpt.putStackAbility p0Bear p0 (abilityEffect := some targEff)
   let targAbProp : ProposedSpell := {
     caster := p0, cost := ManaCost.empty, spellId := targAbObj.id, original := targAbObj

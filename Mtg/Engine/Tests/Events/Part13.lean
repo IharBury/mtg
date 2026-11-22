@@ -81,7 +81,7 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
   let tgtTrigAnchor := (gAnchorBase.permanentsOf p0).back!
   let tgtTrigAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you)
-      { targeting := .of .player, resolution := .gainLife (.fixed 1), phrase := "Target player gains 1 life." }
+      { targeting := .of .player, resolution? := some (.gainLife (.fixed 1)), phrase := "Target player gains 1 life." }
   let gWithUnannTrig :=
     gAnchorBase.putTriggeredAbilityOnStack p0 tgtTrigAnchor tgtTrigAb "triggers" (eventCause := some testCause)
   let gTrigTargetGranted := gWithUnannTrig.finishAndGrantPriority p2
@@ -946,7 +946,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     subtypes := #["Treasure"]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
-      effect := { resolution := .addAnyColorSpendOnlyArtifactSpell, phrase := "Add one mana of any color for artifact spell." }
+      effect := { Effect.addAnyColorSpendOnlyArtifactSpell with phrase := "Add one mana of any color for artifact spell." }
     }]
   }
   let gTrRestr0 := addPermanent g3 trRestrDef p0 p0
@@ -993,7 +993,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
       cost := CostSpec.ofItems #[.mana { symbols := #[.x] }]
       effect := {
         targeting := .of .player
-        resolution := .addMana #[.colored .red] .chosenX
+        resolution? := some (.addMana #[.colored .red] .chosenX)
         phrase := "Target player; add X {R}."
       }
     }]
@@ -1007,7 +1007,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   let toughDiesDef : CardDef := {
     creature "P47i4 WallSap" ManaCost.empty #["Plant"] 1 4 with
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisDies { resolution := .addMana #[.colored .green] .equalSourceToughness, phrase := "Add {G} equal to toughness." }
+      TriggeredAbility.mkTrigger .thisDies { resolution? := some (.addMana #[.colored .green] .equalSourceToughness), phrase := "Add {G} equal to toughness." }
     ]
   }
   let gTough0 := addPermanent g3 toughDiesDef p0 p0
@@ -1021,7 +1021,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     name := "P47i4 ElfRite"
     manaCost := ManaCost.zero
     types := #[.sorcery]
-    spellEffect := some { resolution := .addMana #[.colored .green] (.perSubtype .elf), phrase := "Add {G} for each Elf you control." }
+    spellEffect := some { resolution? := some (.addMana #[.colored .green] (.perSubtype .elf)), phrase := "Add {G} for each Elf you control." }
   }
   let dwarfForgeDef : CardDef := {
     name := "P47i4 DwarfForge"

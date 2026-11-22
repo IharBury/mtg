@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.Chapters
+import Mtg.Engine.Game.Interpreter
 
 /-!
 # Triggered-ability resolution (CR 603)
@@ -681,10 +681,11 @@ def triggerIfHolds (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       | none => false)
 
 /-- Log line when a `TriggerResolution.or` asks the controller to choose. -/
-def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) : String :=
+def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution)
+    (effect : Effect := {}) : String :=
   match rs with
   | [.createTokens k1 (.fixed 1) false .you .none, .createTokens k2 (.fixed 1) false .you .none] =>
-    if k1 == .food && k2 == .treasure then
+    if effect.legacyToken k1 == .food && effect.legacyToken k2 == .treasure then
       s!"{name} creates a Food token or a Treasure token"
     else
       s!"{name} chooses one"
@@ -694,10 +695,11 @@ def triggerOrLog (name : String) (rs : List TriggeredAbility.TriggerResolution) 
     s!"{name} chooses one"
 
 /-- Pending-header text for a `TriggerResolution.or` choice. -/
-def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution) : String :=
+def triggerOrPendingText (rs : List TriggeredAbility.TriggerResolution)
+    (effect : Effect := {}) : String :=
   match rs with
   | [.createTokens k1 (.fixed 1) false .you .none, .createTokens k2 (.fixed 1) false .you .none] =>
-    if k1 == .food && k2 == .treasure then
+    if effect.legacyToken k1 == .food && effect.legacyToken k2 == .treasure then
       "create a Food token or a Treasure token"
     else
       "choose one"
@@ -858,25 +860,18 @@ def withAffected (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
           sourceId (some "The target is no longer legal")
     | none => g
 
-/-- Put `n` counters of `kind` on the permanent `who` names.
-`+1/+1`, and a single indestructible, double strike, or burden counter, go
-through `applyPermanentAction`. Other counts use the same bodies as the
-announced-permanent arms. -/
+/-- Put `n` counters of `kind` on the permanent `who` names. -/
 def applyAffectedCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     (sourceId : Option ObjectId) (targets : Array Target)
     (kind : CounterKind) (n : Nat) (who : TriggeredAbility.TriggerAffected) : Game :=
   g.withAffected controller ab sourceId targets who fun g o =>
     match kind with
-    | .plusOnePlusOne => g.applyPermanentAction o (.plusOne n)
-    | .indestructible =>
-      if n == 1 then g.applyPermanentAction o .indestructibleCounter
-      else g.addIndestructibleCounter o n
+    | .plusOnePlusOne => g.addPlusOnePlusOneTo o n
+    | .indestructible => g.addIndestructibleCounter o n
     | .doubleStrike =>
-      if n == 1 then g.applyPermanentAction o .doubleStrikeCounter
+      if n == 1 then g.addDoubleStrikeCounter o (sourceId := sourceId)
       else g.putCountersDeferredLog o.id .doubleStrike n (g.controllerOf o) .gets
-    | .burden =>
-      if n == 1 then g.applyPermanentAction o .burdenCounter
-      else g.addBurdenCounter o n
+    | .burden => g.addBurdenCounter o n
     | .stun =>
       g.putCountersDeferredLog o.id .stun n (g.controllerOf o) .isPutOn
     | .loyalty =>
@@ -1100,15 +1095,15 @@ def applyTriggerDamage (g : Game) (controller : PlayerId) (ab : TriggeredAbility
   | .source, .fixed n, _ =>
     let n := n.toNat
     g.withAffected controller ab sourceId targets .source fun g o =>
-      g.applyPermanentAction o (.dealDamage n) (sourceId := sourceId)
+      g.dealDamageToPermanent o n (source := sourceId.bind g.damageSourceEventById?)
   | .enchanted, .fixed n, _ =>
     let n := n.toNat
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
-      g.applyPermanentAction o (.dealDamage n) (sourceId := sourceId)
+      g.dealDamageToPermanent o n (source := sourceId.bind g.damageSourceEventById?)
   | .whileSource, .fixed n, _ | .target .whileSource, .fixed n, _ =>
     let n := n.toNat
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
-      g.applyPermanentAction o (.dealDamage n) (sourceId := sourceId)
+      g.dealDamageToPermanent o n (source := sourceId.bind g.damageSourceEventById?)
   | who, amount, .divided =>
     let ctx : TriggerRead :=
       { controller, sourceId, targets, lastKnownPower, lastKnownToughness }
@@ -1322,7 +1317,8 @@ def applyPutCounters (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         if some o.id != sourceId then acc.addPlusOnePlusOneTo o 1 else acc) g
   | .plusOneLastKnownMv, .permanent _ =>
     let n := (lastKnownPower.getD 0).toNat
-    g.applyOnPermanent controller ab.targetSpec targets (.plusOne n) sourceId
+    g.withLegalSpecPermanent controller ab.targetSpec targets
+      (fun g o => g.addPlusOnePlusOneTo o n) sourceId
       (some "The target is no longer legal")
   | .ofKind .loyalty _, .source =>
     g.withSourceOnBattlefield sourceId (fun g o =>
@@ -1579,7 +1575,7 @@ def finishCreatedTokenNote (g : Game) (controller : PlayerId)
     | some id =>
       g.putReflexiveTrigger controller (some id) {
         targeting := .of .creatureYouControl
-        resolution := .attach .source .target
+        body := .permanent (.attach .this (.target 0) false)
         phrase := "Attach it to target creature you control" }
         (causeIds := createdIds)
     | none => g
@@ -2004,13 +2000,13 @@ def applyExile (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       (g.move o.id .exile none).1) sourceId (some "The target is no longer legal")
   | .source, .forLater, .none =>
     g.withAffected controller ab sourceId targets .source fun g o =>
-      g.applyPermanentAction o .exile
+      (g.move o.id .exile none).1
   | .enchanted, .forLater, .none =>
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
-      g.applyPermanentAction o .exile
+      (g.move o.id .exile none).1
   | .whileSource, .forLater, .none | .target .whileSource, .forLater, .none =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
-      g.applyPermanentAction o .exile
+      (g.move o.id .exile none).1
   | .basicUpTo subtype max, .forLater, .linked =>
     g.beginLibrarySearch controller
       (fun c => isBasicLandCard c && c.hasSubtype subtype)
@@ -2762,13 +2758,13 @@ def applyDestroy (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     g.destroyChosenToken controller sourceId targets
   | .source, _ =>
     g.withAffected controller ab sourceId targets .source fun g o =>
-      g.applyPermanentAction o .destroy
+      g.destroyPermanent o
   | .enchanted, _ =>
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
-      g.applyPermanentAction o .destroy
+      g.destroyPermanent o
   | .whileSource, _ | .target .whileSource, _ =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
-      g.applyPermanentAction o .destroy
+      g.destroyPermanent o
   | what, note =>
     let ctx : TriggerRead :=
       { controller, sourceId, targets, lastKnownPower }
@@ -3317,13 +3313,13 @@ def applyGrant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       "The target is no longer legal"
   | .keywords k, .source =>
     g.withAffected controller ab sourceId targets .source fun g o =>
-      g.applyPermanentAction o (.grantKeywords k)
+      g.grantUntilEotLogged o k
   | .keywords k, .enchanted =>
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
-      g.applyPermanentAction o (.grantKeywords k)
+      g.grantUntilEotLogged o k
   | .keywords k, .whileSource | .keywords k, .target .whileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
-      g.applyPermanentAction o (.grantKeywords k)
+      g.grantUntilEotLogged o k
   | .keywords k, .creaturesYouControl =>
     g.forEachControlledCreature controller fun g o =>
       g.grantUntilEotLogged o k
@@ -3485,7 +3481,7 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
         else
           let effect : Effect :=
             { targeting := .of .creature, allowsZeroTargets := true
-              resolution := .damageEqualSourcePower
+              body := .damage (.deal .this (.objects (.target 0)) (.objectStat .power .this) {})
               phrase := s!"{g.name host} deals damage equal to its power to up to one target creature" }
           g.putReflexiveTrigger controller (some hostId) effect
       | none => g
@@ -3542,7 +3538,7 @@ def applyFight (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
             else
               let effect : Effect :=
                 { targeting := .of .creature, allowsZeroTargets := true
-                  resolution := .damageEqualSourcePower
+                  body := .damage (.deal .this (.objects (.target 0)) (.objectStat .power .this) {})
                   phrase :=
                     s!"{g.name f} deals damage equal to its power to up to one target creature" }
               g.putReflexiveTrigger controller (some f.id) effect) g
@@ -3632,24 +3628,24 @@ def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
       let mut g := g
       for o in g.battlefield do
         if o.status.attacking then
-          g := g.applyPermanentAction o .untap
+          g := g.untapPermanentLogged o
       return g
   | .target =>
     g.withAffected controller ab sourceId targets .target fun g o =>
-      g.applyPermanentAction o .untap
+      g.untapPermanentLogged o
   | .source =>
     g.withAffected controller ab sourceId targets .source fun g o =>
-      g.applyPermanentAction o .untap
+      g.untapPermanentLogged o
   | .enchanted =>
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
-      g.applyPermanentAction o .untap
+      g.untapPermanentLogged o
   | .whileSource | .target .whileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
-      g.applyPermanentAction o .untap
+      g.untapPermanentLogged o
   | .equipped =>
     match g.attachedHost? sourceId with
     | some host =>
-      if host.isOnBattlefield then g.applyPermanentAction host .untap
+      if host.isOnBattlefield then g.untapPermanentLogged host
       else
         g.change (.skipTriggerSequenceRest true) |>.logMsg "The equipped creature has left"
     | none =>
@@ -3658,12 +3654,12 @@ def applyUntap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     let id := g.resolvingCauseId.orElse (fun _ => g.loggedLastBecameTapped)
     match id.bind g.findObject? with
     | some o =>
-      if o.isOnBattlefield && o.status.tapped then g.applyPermanentAction o .untap else g
+      if o.isOnBattlefield && o.status.tapped then g.untapPermanentLogged o else g
     | none => g
   | who =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx who with
-    | some objs => g.withBatch none fun g => objs.foldl (fun g o => g.applyPermanentAction o .untap) g
+    | some objs => g.withBatch none fun g => objs.foldl (fun g o => g.untapPermanentLogged o) g
     | none => g
 
 /-- Resolve `TriggerResolution.tap`. Each printed combination keeps
@@ -3685,22 +3681,22 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         match ((g.lastKnownBefore? sid).bind (·.attachedTo)).bind g.findObject?
             |>.filter GameObject.isOnBattlefield with
         | none => g.logMsg "Nothing is enchanted"
-        | some host => g.applyPermanentAction host .tap
+        | some host => g.becomeTapped host
       | some src =>
         match src.attachedTo.bind g.findObject? with
         | none => g.logMsg "Nothing is enchanted"
-        | some host => g.applyPermanentAction host .tap
+        | some host => g.becomeTapped host
   | .ifPresent | .target .ifPresent =>
     match targets[0]? with
     | some (Target.permanent id) =>
       match g.findObject? id with
       | some tgt =>
-        if tgt.isOnBattlefield then g.applyPermanentAction tgt .tap else g
+        if tgt.isOnBattlefield then g.becomeTapped tgt else g
       | none => g
     | _ => g
   | .target =>
     g.withLegalSpecPermanent controller ab.targetSpec targets (fun g o =>
-      g.applyPermanentAction o .tap) sourceId (some "The target is no longer legal")
+      g.becomeTapped o) sourceId (some "The target is no longer legal")
   | .source =>
     if g.mayThenDrop > 0 then
       match sourceId.bind g.findObject? with
@@ -3714,17 +3710,17 @@ def applyTap (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
         (g.logMsg "The source is no longer on the battlefield. The reflexive ability doesn't trigger.").failMayThen
     else
       g.withAffected controller ab sourceId targets .source fun g o =>
-        g.applyPermanentAction o .tap
+        g.becomeTapped o
   | .enchantedWhileSource =>
     g.withAffected controller ab sourceId targets .enchanted fun g o =>
-      g.applyPermanentAction o .tap
+      g.becomeTapped o
   | .whileSource | .target .whileSource =>
     g.withAffected controller ab sourceId targets .targetWhileSource fun g o =>
-      g.applyPermanentAction o .tap
+      g.becomeTapped o
   | who =>
     let ctx : TriggerRead := { controller, sourceId, targets }
     match g.permanentsNamed ctx who with
-    | some objs => g.withBatch none fun g => objs.foldl (fun g o => g.applyPermanentAction o .tap) g
+    | some objs => g.withBatch none fun g => objs.foldl (fun g o => g.becomeTapped o) g
     | none => g
 
 /-- Resolve `TriggerResolution.removeCounters`. Each printed combination keeps
@@ -4276,7 +4272,7 @@ def applyLose (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match g.permanentsNamed ctx who with
     | some objs =>
       g.withBatch none fun g =>
-        objs.foldl (fun g o => g.applyPermanentAction o .loseIndestructible) g
+        objs.foldl (fun g o => g.loseIndestructibleUntilEot o) g
     | none => g
   | .allAbilities, who =>
     let ctx : TriggerRead := { controller, sourceId, targets }
@@ -4298,7 +4294,7 @@ def applyLose (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
 where
   loseIndestructible (affected : TriggeredAbility.TriggerAffected) : Game :=
     g.withAffected controller ab sourceId targets affected fun g o =>
-      g.applyPermanentAction o .loseIndestructible
+      g.loseIndestructibleUntilEot o
 
 /-- Resolve `TriggerResolution.cant`. Each printed selector keeps
 the behavior of the combination it replaced. Any other permanent the
@@ -4311,13 +4307,13 @@ def applyCant (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match asAffected who with
     | some affected =>
       g.withAffected controller ab sourceId targets affected fun g o =>
-        g.applyPermanentAction o .cantBeBlocked
+        g.grantCantBeBlockedThisTurn o
     | none =>
       let ctx : TriggerRead := { controller, sourceId, targets }
       match g.permanentsNamed ctx who with
       | some objs =>
         g.withBatch none fun g =>
-          objs.foldl (fun g o => g.applyPermanentAction o .cantBeBlocked) g
+          objs.foldl (fun g o => g.grantCantBeBlockedThisTurn o) g
       | none => g
   | .beBlockedExceptByHaste who =>
     match asAffected who with
@@ -4404,12 +4400,12 @@ def applyBecomePrepared (g : Game) (controller : PlayerId) (ab : TriggeredAbilit
     match g.permanentsNamed ctx who with
     | some objs =>
       g.withBatch none fun g =>
-        objs.foldl (fun g o => g.applyPermanentAction o .becomePrepared) g
+        objs.foldl (fun g o => g.becomePrepared o) g
     | none => g
 where
   become (affected : TriggeredAbility.TriggerAffected) : Game :=
     g.withAffected controller ab sourceId targets affected fun g o =>
-      g.applyPermanentAction o .becomePrepared
+      g.becomePrepared o
 
 /-- Resolve `TriggerResolution.putOnLibrary`. Each printed combination keeps
 the behavior of the constructor it replaced. A card from hand on top
@@ -4437,16 +4433,16 @@ def applyPutOnLibrary (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match g.permanentsNamed ctx what with
     | some objs =>
       g.withBatch none fun g =>
-        objs.foldl (fun g o => g.applyPermanentAction o action) g
+        objs.foldl (fun g o => g.putOnOwnerLibrary o onTop) g
     | none => g
 where
-  action : PermanentAction :=
+  onTop : Bool :=
     match place with
-    | .top => .putOnTopOfLibrary
-    | .bottom => .putOnBottomOfLibrary
+    | .top => true
+    | .bottom => false
   put (who : TriggeredAbility.TriggerAffected) : Game :=
     g.withAffected controller ab sourceId targets who fun g o =>
-      g.applyPermanentAction o action
+      g.putOnOwnerLibrary o onTop
 
 /-- Resolve `TriggerResolution.setBasePT`. `power` and `toughness` are read
 separately. Each printed combination keeps the behavior of the constructor
@@ -4478,12 +4474,12 @@ def applySetBasePT (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
     match g.triggerInt ctx power, g.triggerInt ctx toughness, g.permanentsNamed ctx who with
     | some pw, some tw, some objs =>
       g.withBatch none fun g =>
-        objs.foldl (fun g o => g.applyPermanentAction o (.setBasePT pw tw)) g
+        objs.foldl (fun g o => g.setBasePTUntilEotLogged o pw tw) g
     | _, _, _ => g
 where
   fixed (affected : TriggeredAbility.TriggerAffected) (pw tw : Int) : Game :=
     g.withAffected controller ab sourceId targets affected fun g o =>
-      g.applyPermanentAction o (.setBasePT pw tw)
+      g.setBasePTUntilEotLogged o pw tw
 
 /-- Create `n` tokens of `kind` for `controller` (`tapped := tapped`) and, when
 `holds` is true, have them enter attacking (CR 508.4 / ruling 181). When there
@@ -4654,7 +4650,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       g.applyTriggeredAbility controller ab sourceId
         targets dividedDamage lastKnownPower lastKnownToughness sourceName
         resolutionOverride sequencedCardPower
-  else if resolutionOverride.isSome || ab.effect.sharedTrigger.isSome then
+  else if resolutionOverride.isSome || ab.effect.resolution?.isSome || ab.effect.sharedTrigger.isSome then
   match resolutionOverride.getD ab.resolution with
   | .pump power toughness who =>
     g.applyTriggerPump controller ab sourceId targets lastKnownPower lastKnownToughness
@@ -4736,11 +4732,11 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           | _ => none
       let steps := rs.flatMap TriggeredAbility.TriggerResolution.flatten
       match steps with
-      | [.createTokens kind (.fixed n) tapped .you .none,
+      | [.createTokens kindIdx (.fixed n) tapped .you .none,
           .«if» cond .markRecentTokensAttacking] =>
         let (g, holds) :=
           g.triggerIfHolds controller ab sourceId targets lastKnownPower cond lastKnownToughness
-        g.createAndMarkTokensAttacking controller kind n.toNat tapped holds sourceId
+        g.createAndMarkTokensAttacking controller (ab.effect.legacyToken kindIdx) n.toNat tapped holds sourceId
           (copyCtx := g.copyTokenContextOf sourceId targets)
       | steps =>
       let rec runSteps (g : Game) (waiting : List TriggeredAbility.TriggerResolution)
@@ -4846,9 +4842,9 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
   | .amass amount subtype attachSource who =>
     g.applyAmass controller sourceId lastKnownPower amount subtype attachSource who
       targets lastKnownToughness
-  | .createTokens kind amount tapped who note =>
+  | .createTokens kindIdx amount tapped who note =>
     g.applyCreateTokens controller sourceId targets lastKnownPower
-      kind amount tapped who note (lastKnownToughness := lastKnownToughness)
+      (ab.effect.legacyToken kindIdx) amount tapped who note (lastKnownToughness := lastKnownToughness)
   | .attach what host =>
     g.applyAttach controller ab sourceId targets what host
   | .addMana types amount =>
@@ -4895,7 +4891,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         let cause := g.resolvingBatchCause controller sourceId
         g.withBatch cause fun g =>
           let g := g.giveControlUntilEot o controller
-          let g := g.applyPermanentAction (g.object! o.id) .untap (sourceId := sourceId)
+          let g := g.untapPermanentLogged (g.object! o.id) (sourceId := sourceId)
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement
               (.finishPostStep (.grantHasteUntilEotSilent o.id (g.currentBatch.bind (·.2))))
@@ -5018,7 +5014,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
               sourceName
               cardPower := sequencedCardPower
               alternatives := rs.toArray })]
-            |>.logMsg (triggerOrLog (g.player controller).name rs)
+            |>.logMsg (triggerOrLog (g.player controller).name rs ab.effect)
   | .may (.sacrifice .another _) _ =>
     g.applySacrifice controller ab sourceId targets .another .none
   | .additionalCombatPhase =>
@@ -5378,7 +5374,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       .mayOnAccept (some action),
       .mayOnDecline none,
       .mayContext (some ctx)]
-      |>.logMsg s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution := action }}"
+      |>.logMsg s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution? := some action }}"
   | .may (.mill (.fixed n) .you .none) (.sequence []) .ifYouDo =>
     let action : TriggeredAbility.TriggerResolution := .mill (.fixed n) .you .none
     let ctx : TriggerSequenceRest := {
@@ -5434,7 +5430,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         lastKnownPower lastKnownToughness sourceName
         (some (.sequence [.pay (CostSpec.ofMana m), follow])) sequencedCardPower
   | .may (.createTokens k (.fixed 1) false .you .none) (.sequence []) .ifYouDo =>
-    if k == .wall04defender then
+    if ab.effect.legacyToken k == .wall04defender then
       g.offerMayCreateWall controller
     else
       let g := g.changes #[.mayThenDrop 0, .mayThenConditional (some (.sequence []))]
@@ -5612,7 +5608,7 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
         g.logMsg "Red Hulk is no longer on the battlefield. The reflexive ability doesn't trigger."
     | .damage n =>
       g.putReflexiveTrigger controller sourceId
-        { targeting := .of .anyTarget, resolution := .damageAny n
+        { targeting := .of .anyTarget, body := Instruction.dealDamageFixed (.targetSlot 0) n
           phrase := s!"This deals {n} damage to any target" }
     | .copy =>
       let rawCauseId := (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)
@@ -5631,13 +5627,14 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
           .isKind .card,
           .any #[.hasType .enchantment, .hasType .instant, .hasType .sorcery],
           .stat .manaValue .le (.const mv)])))
-        resolution := .sarumanExileCopyMayCast
+        body := .bind ⟨0⟩ (.moveZone (.target 0) .exile .exile {})
+          (.stack (.mayCastOrPlay (.stepObjects ⟨0⟩) { copyAndCast := true, freeCast := true, maxCasts? := some 1 }))
         phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost" }
     | .divided amount =>
       g.putReflexiveTrigger controller sourceId {
         targeting := .of .anyTarget
         dividedDamage := some (amount, 2)
-        resolution := .mshReflexive .divideSevenDamage 0
+        resolution? := some (.mshReflexive .divideSevenDamage 0)
         phrase := s!"It deals {amount} damage divided as you choose among one or two targets" }
     | .attackPump =>
       g.attackPumpPerPlains controller
@@ -5659,68 +5656,58 @@ partial def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : Trigg
       .mayOnAccept (some action),
       .mayOnDecline (some follow),
       .mayContext (some ctx)]
-      |>.logMsg s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution := action }}"
+      |>.logMsg s!"{(g.player controller).name} may {TriggeredAbility.resolutionPhrase { resolution? := some action }}"
   | _ => g
   else
-  match ab.effect.resolution with
-  | .sequence rs =>
-    match rs.flatMap Resolution.flatten with
-    | [.onPermanent .tap, .scry (.fixed scryN), .draw (.fixed drawN)] =>
-      g.resolveTapScryDraw controller ab.effect targets scryN.toNat drawN.toNat sourceId
-        (fizzle := fun g => g.logIllegalSequenceTargets targets)
-    | steps =>
+  let chosenX := g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?
+  match ab.effect.resolution? with
+  | none =>
+    g.applyUnifiedAbility controller ab.effect targets sourceId lastKnownPower
+      (chosenX := chosenX) (lastKnownToughness := lastKnownToughness)
+  | some r =>
+    match r with
+    | .sequence rs =>
       if g.sequenceAllTargetsIllegal controller ab.effect targets sourceId then
         g.logIllegalSequenceTargets targets
       else
-        match steps with
+        match rs.flatMap Resolution.flatten with
         | [.shuffleSource, .draw (.fixed n)] =>
           g.shuffleSourceIntoLibrary sourceId (.draw controller n.toNat)
-        | [.createTokens kind (.fixed n) tapped .you .none,
+        | [.createTokens kindIdx (.fixed n) tapped .you .none,
             .«if» cond .markRecentTokensAttacking] =>
           let (g, holds) :=
             g.triggerIfHolds controller ab sourceId targets lastKnownPower cond lastKnownToughness
-          g.createAndMarkTokensAttacking controller kind n.toNat tapped holds sourceId
+          g.createAndMarkTokensAttacking controller (ab.effect.legacyToken kindIdx) n.toNat tapped holds sourceId
             (copyCtx := g.copyTokenContextOf sourceId targets)
         | steps =>
-          let stepAbs := steps.toArray.map fun r =>
-            { ab with effect := { ab.effect with resolution := r } }
+          let stepAbs := steps.toArray.map fun stepR =>
+            { ab with effect := { ab.effect with resolution? := some stepR } }
           g.runTriggeredSequenceSteps controller stepAbs sourceId targets dividedDamage
             lastKnownPower lastKnownToughness sourceName
-  | .shuffleSource =>
-    g.shuffleSourceIntoLibrary sourceId
-  | .draw (.fixed n) .you => g.draw controller n.toNat
-  | .scry (.fixed n) => g.beginScry controller n.toNat
-  | .pump power toughness who =>
-    g.applyTriggerPump controller ab sourceId targets lastKnownPower lastKnownToughness
-      power toughness who
-  | .onPermanent a =>
-    g.applyOnPermanent controller ab.targetSpec targets a sourceId
-      (some "The target is no longer legal")
-  | .onSource a => g.applyOnTriggerSource sourceId a
-  | .removeCounters what who =>
-    g.applyRemoveCounters controller sourceId targets what who
-  | .gainLife (.fixed n) => g.gainLife controller n.toNat
-  | .recruit _ => g.beginRecruit controller
-  | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
-  | .createTokens kind (.fixed n) tapped .you .none =>
-    g.createKindTokens controller kind n.toNat (tapped := tapped)
-      (copyCtx := g.copyTokenContextOf sourceId targets)
-  | .addMana types amount =>
-    let chosenX := g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?
-    g.applyAddMana controller sourceId types amount targets lastKnownPower lastKnownToughness
-      (chosenX := chosenX)
-  | .discard (.cards n) => g.beginDiscardCards #[controller] n
-  | r@(.may (.mill (.fixed _) .you .none) (.sequence []) .ifYouDo) =>
-    g.applyTriggeredAbility controller ab sourceId targets dividedDamage
-      lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
-  | r =>
-    let chosenX := g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?
-    match Resolution.toSpell r with
-    | some _ =>
-      g.applyUnified controller ab.effect targets (chosenX := chosenX) (sourceId := sourceId)
-        (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
-    | none =>
-      g.applyUnifiedAbility controller { ab.effect with resolution := r }
+    | .shuffleSource =>
+      g.shuffleSourceIntoLibrary sourceId
+    | .draw (.fixed n) .you => g.draw controller n.toNat
+    | .scry (.fixed n) => g.beginScry controller n.toNat
+    | .pump power toughness who =>
+      g.applyTriggerPump controller ab sourceId targets lastKnownPower lastKnownToughness
+        power toughness who
+    | .removeCounters what who =>
+      g.applyRemoveCounters controller sourceId targets what who
+    | .gainLife (.fixed n) => g.gainLife controller n.toNat
+    | .recruit _ => g.beginRecruit controller
+    | .amass (.fixed n) .goblin false .you => g.amassGoblins controller n.toNat
+    | .createTokens kindIdx (.fixed n) tapped .you .none =>
+      g.createKindTokens controller (ab.effect.legacyToken kindIdx) n.toNat (tapped := tapped)
+        (copyCtx := g.copyTokenContextOf sourceId targets)
+    | .addMana types amount =>
+      g.applyAddMana controller sourceId types amount targets lastKnownPower lastKnownToughness
+        (chosenX := chosenX)
+    | .discard (.cards n) => g.beginDiscardCards #[controller] n
+    | r@(.may (.mill (.fixed _) .you .none) (.sequence []) .ifYouDo) =>
+      g.applyTriggeredAbility controller ab sourceId targets dividedDamage
+        lastKnownPower lastKnownToughness sourceName (some r) sequencedCardPower
+    | r =>
+      g.applyUnifiedAbility controller { ab.effect with resolution? := some r }
         targets sourceId lastKnownPower (chosenX := chosenX)
         (lastKnownToughness := lastKnownToughness)
 

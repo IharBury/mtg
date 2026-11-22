@@ -18,43 +18,47 @@ Reality Fracture (CR 700.2). -/
 def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
   match ab.shared with
   | .tapOppOrUntapYours =>
-    #[{ targeting := .of .oppCreature, resolution := .onPermanent .tap
+    #[{ targeting := .of .oppCreature, body := .permanent (.setTapped (.target 0) true)
         phrase := "Tap target creature an opponent controls" },
-      { targeting := .of .creatureYouControl, resolution := .onPermanent .untap
+      { targeting := .of .creatureYouControl, body := .permanent (.setTapped (.target 0) false)
         phrase := "Untap target creature you control" }]
   | .tapOrUntapNonland =>
-    #[{ targeting := .of .nonland, resolution := .onPermanent .tap
+    #[{ targeting := .of .nonland, body := .permanent (.setTapped (.target 0) true)
         phrase := "Tap target nonland permanent" },
-      { targeting := .of .nonland, resolution := .onPermanent .untap
+      { targeting := .of .nonland, body := .permanent (.setTapped (.target 0) false)
         phrase := "Untap target nonland permanent" }]
   | .wolfPlusOneOrTreasure =>
     #[{ targeting := .of (.creatureYouControlAnySubtype #[.wolf])
-        resolution := .onPermanent (.plusOne 1)
+        body := Instruction.putCounters (.target 0) .plusOnePlusOne (.const 1)
         phrase := "Put a +1/+1 counter on target Wolf you control" },
-      { resolution := .createTokens .treasure 1
+      { body := Instruction.createTokensFixed .treasure 1
         phrase := "Create a Treasure token" }]
   | .enter .plusOnesOrReturnArtEnch =>
-    #[{ targeting := .of .creature, allowsZeroTargets := true, maxTargets := 2,
-        resolution := .plusOneOnEachTarget 1,
+    #[{ targeting := .of .creature, allowsZeroTargets := true, maxTargets := 2
+        body := Instruction.putCounters .allTargets .plusOnePlusOne (.const 1)
         phrase := "Put a +1/+1 counter on each of up to two target creatures" },
-      { targeting := .of .artEnchCardInYourGraveyard,
-        resolution := .returnFromGyToHand,
+      { targeting := .of .artEnchCardInYourGraveyard
+        body := Instruction.bounce (.target 0)
         phrase := "Return target artifact or enchantment card from your graveyard to your hand" }]
   | .watch .nontokenHeroModal =>
-    #[{ resolution := .createTokens .soldier11white 1
+    #[{ body := Instruction.createTokensFixed .soldier11white 1
         phrase := "Create a 1/1 white Soldier creature token" },
-      { resolution := .creaturesYouControlPump 1 1
+      { body := Instruction.pumpFixed
+          (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])) 1 1
         phrase := "Creatures you control get +1/+1 until end of turn" }]
   | .enter .chooseUpToXModes =>
-    #[{ resolution := .sequence [.discard (.cards 1), .draw (.fixed 1)]
+    #[{ body := .seq #[Instruction.discard (.const 1) .you, Instruction.drawFixed 1 .you]
         phrase := "Discard a card, then draw a card" },
       { targeting := .of .opponent
-        resolution := .targetPlayerLoseLife 2
+        body := Instruction.loseLifeFixed 2 (.target 0)
         phrase := "Target opponent loses 2 life" },
       { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-        resolution := .onPermanent .destroy
+        body := Instruction.destroy (.target 0)
         phrase := "Destroy target token" },
-      { resolution := .sacrifice .eachPlayersCreature
+      { body := .forEach (.eachPlayer .any) ⟨0⟩
+          (.moveZone (.inZones .battlefield (.all #[.hasType .creature, .controlledBy (.ofExpr (.stepPlayers ⟨0⟩))]))
+            .graveyard .sacrifice
+            { choice? := some { chooser := .player (.stepPlayers ⟨0⟩), count := .exact (.const 1) } })
         phrase := "Each player sacrifices a creature of their choice" }]
   | _ => #[]
 
@@ -68,18 +72,18 @@ def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
   let raw :=
     match obj.triggeredAbility with
     | some ab =>
-      if !ab.modes.isEmpty then ab.modes
+      if !ab.modeEffects.isEmpty then ab.modeEffects
       else sharedTriggerModes ab
     | none => #[]
   if tcs.isEmpty then raw else raw.map (TextChange.applyEffect tcs)
 
 /-- Individual mode effects for Hawkeye's Trick Arrows reflexive trigger (CR 603.3c / 700.2b). -/
 def hawkeyeModeEffects : Array Effect :=
-  #[{ targeting := .of .creature, resolution := .hawkeyeArrows [0]
+  #[{ targeting := .of .creature, resolution? := some (.hawkeyeArrows [0])
       phrase := "Net — Target creature can't block this turn" },
-    { targeting := .of .player, resolution := .hawkeyeArrows [1]
+    { targeting := .of .player, resolution? := some (.hawkeyeArrows [1])
       phrase := "Explosive — Hawkeye deals 2 damage to target player" },
-    { resolution := .hawkeyeArrows [2]
+    { resolution? := some (.hawkeyeArrows [2])
       phrase := "Boomerang — Discard a card, then draw a card" }]
 
 /-- Hawkeye's Trick Arrows with the chosen modes, in printed order. -/
@@ -94,7 +98,7 @@ def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
     if m == 0 then "Net — Target creature can't block this turn"
     else if m == 1 then "Explosive — Hawkeye deals 2 damage to target player"
     else "Boomerang — Discard a card, then draw a card")
-  { targeting, resolution := .hawkeyeArrows sorted.toList
+  { targeting, resolution? := some (.hawkeyeArrows sorted.toList)
     phrase := String.intercalate ". " names }
 
 /-- Whether `p` may choose this mode of a triggered ability (CR 603.3c / 700.2b / 115.5). -/
@@ -184,12 +188,12 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let obj := g.object! newId
     let srcLabel := if srcIdOpt.isNone then source.name else g.name source
     let g := g.logMsg s!"{srcLabel}'s {event} is put on the stack"
-    match obj.abilityEffect.map Effect.resolution with
+    match obj.abilityEffect.bind (·.resolution?) with
     | some (Resolution.mshReflexive .trickArrows paid) =>
       let choosable := hawkeyeModeEffects.filter (g.triggerModeChoosable controller obj)
       let maxModes := Nat.min paid 3
       if maxModes == 0 || choosable.isEmpty then
-        let noop : Effect := { resolution := Resolution.hawkeyeArrows [], phrase := "" }
+        let noop : Effect := { resolution? := some (Resolution.hawkeyeArrows []), phrase := "" }
         let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
         let g := g.changes #[
           .object obj.id (.abilityEffect (some noop)),
@@ -206,7 +210,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       let choosable := modes.filter (g.triggerModeChoosable controller obj)
       let maxModes := Nat.min x modes.size
       if maxModes == 0 || choosable.isEmpty then
-        let noop : Effect := { resolution := .sequence [], phrase := "" }
+        let noop : Effect := { body := .noop, phrase := "" }
         let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
         let g := g.changes #[
           .object obj.id (.abilityEffect (some noop)),
@@ -216,9 +220,13 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
         g.beginFraChoice controller (.upToTriggerModes obj.id maxModes #[])
           s!"{(g.player controller).name} chooses up to {maxModes} mode(s) for {g.name obj} (CR 603.3c)"
     | _ =>
-      match ab.effect.resolution with
-      | .chooseTriggerModes n => g.beginTriggerModeChoice controller obj n
-      | _ =>
+      if abilityEffectOverride.isSome then g
+      else
+      match ab.modalSpec? with
+      | some ms =>
+        let n := (ms.minModes.evalConst?.getD 1).toNat
+        g.beginTriggerModeChoice controller obj n
+      | none =>
         match ab.resolution with
         | .chooseModes modes how =>
           match how with

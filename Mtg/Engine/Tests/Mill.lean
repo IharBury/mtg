@@ -367,23 +367,23 @@ ability and clears the note. -/
     .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]
 #guard TriggeredAbility.resolution .onEnterVillainIfGyElseMill ==
   .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
-    (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))
-#guard TriggeredAbility.resolutionPhrase { resolution := .mill (.fixed 4) } == "mill 4 cards"
+    (.createTokens 0 (.fixed 1) true) (.mill (.fixed 2))
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.mill (.fixed 4)) } == "mill 4 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .mill (.fixed 4) (note := .milledCards) } == "mill 4 cards"
+    { resolution? := some (.mill (.fixed 4) (note := .milledCards)) } == "mill 4 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .player, resolution := .mill (.fixed 3) (.target .player) } ==
+    { targeting := .of .player, resolution? := some (.mill (.fixed 3) (.target .player)) } ==
   "target player mills 3 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .mill .thatManyLost .thatPlayer } ==
+    { resolution? := some (.mill .thatManyLost .thatPlayer) } ==
   "that player mills that many cards"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .mill (.fixed 2) .eachOpponent (note := .opponentsMilled) } ==
+    { resolution? := some (.mill (.fixed 2) .eachOpponent (note := .opponentsMilled)) } ==
   "each opponent mills 2 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .mill (.fixed 2) (.target .player) (note := .milledCards) } == "mill"
+    { resolution? := some (.mill (.fixed 2) (.target .player) (note := .milledCards)) } == "mill"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .mill .perOtherCreature } == "mill"
+    { resolution? := some (.mill .perOtherCreature) } == "mill"
 #guard TriggeredAbility.toNotation (.onDrawSecondMillPlayer 3) ==
   "Whenever you draw your second card each turn, target player mills 3 cards."
 #guard TriggeredAbility.toNotation .onPlayerLosesLifeMillThatMany ==

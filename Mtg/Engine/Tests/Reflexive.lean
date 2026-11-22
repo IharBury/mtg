@@ -75,26 +75,28 @@ use `queueReflexive`. -/
   .sequence [
     .mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
     .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]
-#guard (SharedTrigger.toEffect (.chapter 0 .grantAttackPumpPerPlainsThisTurn)).resolution ==
-  .queueReflexive (.pump .perPlains .perPlains .target)
+#guard
+  match Effect.chapterGrantAttackPumpPerPlainsThisTurn.body with
+  | .installEffect (.createDelayedTrigger spec) => spec.pattern == .youAttack
+  | _ => false
 
 #guard TriggeredAbility.TriggerReflexiveKind.grantIndestructible != .dealTwoDamage &&
   TriggeredAbility.TriggerReflexiveKind.divideSevenDamage != .plusOne
 
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .«if» .planWasSacrificed (.queueReflexive (.returnToHand (.graveyardInstants 2))) } ==
+    { resolution? := some (.«if» .planWasSacrificed (.queueReflexive (.returnToHand (.graveyardInstants 2)))) } ==
   "when you do, the reflexive ability triggers"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed 7) .target .divided)) } ==
+    { resolution? := some (.«if» .planWasSacrificed (.queueReflexive (.dealDamage (.fixed 7) .target .divided))) } ==
   "when you do, it deals 7 damage divided as you choose among one or two targets"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying) } ==
+    { resolution? := some (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) } ==
   "exile and copy a card"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying)) } ==
+    { resolution? := some (.«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))) } ==
   "when one or more cards are milled this way, exile and copy a card"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .queueReflexive (.pump .perPlains .perPlains .target) } ==
+    { resolution? := some (.queueReflexive (.pump .perPlains .perPlains .target)) } ==
   "whenever you attack this turn, target creature you control gets +1/+1 until end of turn for each Plains you control"
 #guard TriggeredAbility.resolutionPhrase
     (TriggeredAbility.onFourthPlanDividedDamage).effect ==
@@ -175,10 +177,9 @@ use `queueReflexive`. -/
   let g := step g0 (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))
   match stackEffect g with
   | some eff =>
-    match eff.resolution with
-    | .sarumanExileCopyMayCast =>
+    eff.body == .bind ⟨0⟩ (.moveZone (.target 0) .exile .exile {})
+      (.stack (.mayCastOrPlay (.stepObjects ⟨0⟩) { copyAndCast := true, freeCast := true, maxCasts? := some 1 })) &&
       logContains g "reflexive ability is put on the stack"
-    | _ => false
   | none => false
 
 /- No legal milled card removes the reflexive. -/

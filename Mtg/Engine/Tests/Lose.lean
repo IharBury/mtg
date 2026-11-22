@@ -21,7 +21,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .loseIndestructible))
+  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.lose .indestructible .target) }
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -267,51 +267,43 @@ source remains lose what the selector names. -/
     lostFlag dropped "Titan"
 
 /- Printed phrases stay with the combination that produces them. -/
-#guard TriggeredAbility.TriggerResolution.ofPermanent .loseIndestructible ==
-  indestructible
-#guard TriggeredAbility.TriggerResolution.ofSource .loseIndestructible ==
-  .lose .indestructible .source
-#guard TriggeredAbility.TriggerResolution.ofEnchanted .loseIndestructible ==
-  .lose .indestructible .enchanted
-#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .loseIndestructible ==
-  .lose .indestructible (.target .whileSource)
 #guard (SharedTrigger.toEffect (.enter .tapLoseAbilitiesWhileSource)).resolution ==
   targetLose
 #guard TriggeredAbility.resolution (.onEnter Effect.enterTapLoseAbilitiesWhileSource) ==
   targetLose
 
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution := indestructible } ==
+    { targeting := .of .creature, resolution? := some (indestructible) } ==
   "target creature loses indestructible until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .lose .indestructible .source } ==
+    { resolution? := some (.lose .indestructible .source) } ==
   "this creature loses indestructible until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .lose .indestructible .enchanted } ==
+    { resolution? := some (.lose .indestructible .enchanted) } ==
   "enchanted creature loses indestructible until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .lose .indestructible (.target .whileSource) } ==
+    { resolution? := some (.lose .indestructible (.target .whileSource)) } ==
   "that creature loses indestructible until end of turn"
-#guard TriggeredAbility.resolutionPhrase { resolution := abilities } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (abilities) } ==
   "it loses all abilities for as long as this remains on the battlefield"
-#guard TriggeredAbility.resolutionPhrase { resolution := targetLose } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (targetLose) } ==
   "tap up to one target creature. It loses all abilities for as long as this remains on the battlefield"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .lose .allAbilities } == "lose"
+    { resolution? := some (.lose .allAbilities) } == "lose"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .lose .indestructible (.target .ifPresent) } == "lose"
+    { resolution? := some (.lose .indestructible (.target .ifPresent)) } == "lose"
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
-    resolution := .sequence
-      [.attach .source .target, .lose .indestructible (.target .whileSource)] } ==
+    resolution? := some (.sequence
+      [.attach .source .target, .lose .indestructible (.target .whileSource)]) } ==
   "attach it to target creature you control. That creature loses indestructible until end of turn"
 
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature loses indestructible until end of turn."
 #guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .loseIndestructible))) ==
+    (TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.lose .indestructible .source) }) ==
   "When this permanent enters, this creature loses indestructible until end of turn."
-#guard TriggeredAbility.toNotation (.onEnterAttachThen .loseIndestructible) ==
+#guard TriggeredAbility.toNotation (.onEnterAttachThen (fun o => .installEffect (.applyContinuous .untilEndOfTurn o (.loseKeywords #[Keyword.indestructible])))) ==
   "When this Equipment enters, attach it to target creature you control. That creature loses indestructible until end of turn."
 #guard TriggeredAbility.toNotation (.onEnter Effect.enterTapLoseAbilitiesWhileSource) ==
   "When this permanent enters, tap up to one target creature. It loses all abilities for as long as this remains on the battlefield."

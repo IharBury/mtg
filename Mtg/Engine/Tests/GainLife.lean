@@ -171,19 +171,19 @@ opposing creatures are not counted. None gains nothing. -/
   life g == life g0 + 1 && counters g "Ally" == 1 && counters g "Source" == 0 &&
     counters g "Foe" == 0
 
-#guard TriggeredAbility.resolutionPhrase { resolution := .gainLife (.fixed 3) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.gainLife (.fixed 3)) } ==
   "you gain 3 life"
 
-#guard TriggeredAbility.resolutionPhrase { resolution := .gainLife .greatestPower } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.gainLife .greatestPower) } ==
   "you gain life"
 
-#guard TriggeredAbility.resolutionPhrase { resolution := equalPower } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (equalPower) } ==
   "you gain life equal to that card's power"
 
-#guard TriggeredAbility.resolutionPhrase { resolution := perDestroyed } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (perDestroyed) } ==
   "you gain 1 life for each permanent destroyed this way"
 
-#guard TriggeredAbility.resolutionPhrase { resolution := perOther } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (perOther) } ==
   "you gain 1 life for each other creature you control"
 
 #guard (SharedTrigger.toEffect .returnElfGainLife).resolution ==

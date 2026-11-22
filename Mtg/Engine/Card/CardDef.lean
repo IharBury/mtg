@@ -21,8 +21,6 @@ structure AdventureFace where
   additionalCosts : Array AdditionalCostSpec := #[]
   /-- Rules lines of this face that are not a modeled spell effect. -/
   extraLines : Array String := #[]
-  /-- Empower Jace N on this alternate face. -/
-  empowerJace : Option Nat := none
 deriving Repr, Inhabited, BEq
 
 set_option maxRecDepth 1024 in
@@ -67,16 +65,14 @@ structure CardDef where
   spellEffect : Option Effect := none
   /-- Additional casting costs on this card (CR 118.8 / 601.2b,f,h). -/
   additionalCosts : Array AdditionalCostSpec := #[]
-  /-- Modes of a “Choose one” spell (CR 700.2). Nonempty means the spell is modal. -/
+  /-- Transitional modal spell modes (CR 700.2; Phase-8 modal spells store their
+  `ModalSpec` directly in `spellEffect.body` as `.chooseModes`, and `CardDef.modalSpec?`
+  prefers `spellEffect` with fallback to `spellModes`). -/
   spellModes : Array Effect := #[]
   /-- This object is a token (CR 111). -/
   isToken : Bool := false
   /-- A deck can have any number of cards with this name (CR 100.2a). -/
   anyNumberInDeck : Bool := false
-  /-- Modal spell is “Choose one or both” rather than “Choose one”. -/
-  chooseOneOrBoth : Bool := false
-  /-- “Choose one. If you control a {subtype}, you may choose two instead.” -/
-  chooseTwoIfYouControlSubtype : Option CardSubtype := none
   /-- Printed activated abilities (CR 602), including mana abilities (CR 605.1a)
   and loyalty abilities (CR 606.2). Basic-land intrinsic mana abilities are
   synthesized from Layer 4 basic land types per CR 305.6. -/
@@ -84,19 +80,14 @@ structure CardDef where
   /-- Printed stratified static abilities (CR 604 / 613 / 614–616 / 303.4a). -/
   staticAbilities : Array StaticAbility := #[]
   /-- Triggered abilities (CR 603), including Saga chapter abilities (CR 714.2)
-  and modal triggered abilities (carrying their modes on `TriggeredAbility.modes`). -/
+  and modal triggered abilities (carrying their modes in `effect.body` via
+  `Instruction.chooseModes`). -/
   triggeredAbilities : Array TriggeredAbility := #[]
   /-- Alternative characteristics used when this card is cast as an Adventure
   (CR 715). -/
   adventure : Option AdventureFace := none
-  /-- “Choose one. If this spell was cast using teamwork, choose both instead.” -/
-  chooseBothIfTeamwork : Bool := false
   /-- Back face of a modal double-faced card that can transform. -/
   otherFace : Option CardDef := none
-  /-- Empower Jace N on this spell (Reality Fracture). When the spell
-  resolves, put N loyalty counters on a Jace planeswalker token you control,
-  creating one first if you control none. -/
-  empowerJace : Option Nat := none
   /-- Sorcery or instant copied while this permanent is prepared. -/
   prepareFace : Option AdventureFace := none
 deriving Repr, Inhabited
@@ -316,20 +307,43 @@ def hasSorcerySpeed (c : CardDef) : Bool :=
 def hasInstantSpeed (c : CardDef) : Bool :=
   c.isInstant || KeywordAbility.hasFlash c.keywords
 
+/-- Extract a fixed Empower Planeswalker count from an `Instruction` tree, if any.
+Only inspects top-level instructions and `.seq` steps (not modes inside `.chooseModes`). -/
+def extractEmpowerAmount : Instruction → Option Nat
+  | .player (.empowerPlaneswalker _ (.const n)) => if n > 0 then some n.toNat else none
+  | .seq steps => steps.attach.foldl (fun acc ⟨s, _⟩ => acc <|> extractEmpowerAmount s) none
+  | _ => none
+
+/-- Unified `ModalSpec` for a modal spell (CR 700.2). Prefers `spellEffect`'s
+`.chooseModes` instruction and falls back to transitional `spellModes`. -/
+def modalSpec? (c : CardDef) : Option ModalSpec :=
+  match c.spellEffect.bind (·.modalSpec?) with
+  | some ms => some ms
+  | none => if c.spellModes.isEmpty then none else some { modes := c.spellModes }
+
 /-- Modal spell with “Choose one” (CR 700.2). -/
 def isModal (c : CardDef) : Bool :=
-  !c.spellModes.isEmpty
+  c.modalSpec?.isSome
 
 /-- Modes of a modal spell; empty when the card is not modal. -/
 def modes (c : CardDef) : Array Effect :=
-  c.spellModes
+  match c.modalSpec? with
+  | some ms => ms.modes
+  | none => #[]
+
+/-- Fixed Empower Planeswalker amount carried directly on `c.spellEffect`, if any. -/
+def empowerPlaneswalkerAmount? (c : CardDef) : Option Nat :=
+  c.spellEffect.bind (fun e => extractEmpowerAmount e.body)
 
 /-- Whether casting this card requires choosing a target (CR 115.1, 303.4). -/
 def requiresTarget (c : CardDef) : Bool :=
   c.isAura ||
-  match c.spellEffect with
-  | some e => e.requiresTarget
-  | none => !c.spellModes.isEmpty && c.spellModes.all (·.requiresTarget)
+  match c.modalSpec? with
+  | some ms => !ms.modes.isEmpty && ms.modes.all (·.requiresTarget)
+  | none =>
+    match c.spellEffect with
+    | some e => e.requiresTarget
+    | none => false
 
 /-- True when the printed spell may be announced with zero targets. -/
 def allowsZeroTargets (c : CardDef) : Bool :=
@@ -337,13 +351,13 @@ def allowsZeroTargets (c : CardDef) : Bool :=
   | some e => e.allowsZeroTargets
   | none => false
 
-/-- True when the printed effect or a mode is classified as `k`. -/
+/-- True when the printed effect is classified as `k`. -/
 def hasCastKind (c : CardDef) (k : SpellCastKind) : Bool :=
   c.spellEffect.any (fun e => e.castKind == k)
 
 /-- True when a modal mode is classified as `k`. -/
 def hasModeCastKind (c : CardDef) (k : SpellCastKind) : Bool :=
-  c.spellModes.any (fun e => e.castKind == k)
+  c.modes.any (fun e => e.castKind == k)
 
 /-- True when this card has an Adventure (CR 715). -/
 def hasAdventure (c : CardDef) : Bool :=
@@ -360,14 +374,10 @@ turn or controlling a basic land (MSH conditional dual lands). -/
 def enteredOrBasicAddMana (c : CardDef) : Array ManaType :=
   c.activatedAbilities.foldl (fun acc ab =>
     if ab.condition? == some ActivatedAbility.condEnteredThisTurnOrControlBasicLand then
-      match ab.mana? with
+      match ab.manaProduction? with
       | some mp => acc ++ mp.spec.staticPossibleTypes
       | none => acc
-    else
-      match ab.effect.resolution with
-      | .addMana types amount => if amount == .fixed 0 then acc else acc ++ types
-      | .addBlueCantNonartifact => acc.push (.colored .blue)
-      | _ => acc) #[]
+    else acc) #[]
 
 /-- True when a `{T}: Add` ability requires this land entered this turn or
 a basic land you control. -/
@@ -380,17 +390,9 @@ mana abilities can statically produce (CR 305.6 / 605.1a). -/
 def manaAbilities (c : CardDef) : Array ManaType :=
   let basic := if c.isLand then c.basicLandMana.map ManaType.colored else #[]
   let fromActivated := c.activatedAbilities.foldl (fun acc ab =>
-    match ab.mana? with
+    match ab.manaProduction? with
     | some mp => acc ++ mp.spec.staticPossibleTypes
-    | none =>
-      match ab.effect.resolution with
-      | .addMana types amount => if amount == .fixed 0 then acc else acc ++ types
-      | .addBlueCantNonartifact => acc.push (.colored .blue)
-      | .addAnyColor | .addAnyColorSpendOnlySubtype _
-      | .addAnyColorSpendOnlyArtifactSpell | .addAnyColorEqualToSourcePower
-      | .addTwoAnyColorCreatureSources | .addFourAnyCombination
-      | .addTwoAnyColorEquipment => acc ++ anyColorMana
-      | _ => acc) #[]
+    | none => acc) #[]
   (basic ++ fromActivated).foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
 
 /-- Lowercase ASCII for comparing Oracle keyword lines to `KeywordAbility.toOracleList`. -/
@@ -432,6 +434,20 @@ def basicLandReminderLines (c : CardDef) : List String :=
   if !c.isLand then []
   else c.basicLandMana.toList.map fun col => s!"(\{T}: Add \{{col.letter}}.)"
 
+/-- Render an `AdventureFace` / prepare spell's effect and any folded Empower Jace line. -/
+private def faceSpellLines (a : AdventureFace) : List String :=
+  let effLines :=
+    match a.spellEffect with
+    | some e => if e.phrase.isEmpty then [] else [e.phrase]
+    | none => []
+  let empLines :=
+    match a.spellEffect.bind (fun e => extractEmpowerAmount e.body) with
+    | some n =>
+      let already := a.spellEffect.any fun e => (lowerAscii e.phrase).contains "empower jace"
+      if already then [] else [s!"Empower Jace {n}."]
+    | none => []
+  effLines ++ empLines
+
 /-- Adventure name, cost, and spell, without the Gatherer `//ADV//` marker. -/
 def adventureLines (c : CardDef) : List String :=
   match c.adventure with
@@ -440,10 +456,7 @@ def adventureLines (c : CardDef) : List String :=
     let header :=
       if a.manaCost.symbols.isEmpty then a.name else s!"{a.name} {a.manaCost}"
     let extra :=
-      a.additionalCosts.toList.map AdditionalCostSpec.toOracleLine ++
-      match a.spellEffect with
-      | some e => [e.phrase]
-      | none => []
+      a.additionalCosts.toList.map AdditionalCostSpec.toOracleLine ++ faceSpellLines a
     header :: extra ++ a.extraLines.toList
 
 /-- Prepare-spell name, cost, and effect (`"This creature enters prepared."` is
@@ -454,16 +467,14 @@ def prepareLines (c : CardDef) : List String :=
   | some a =>
     let header :=
       if a.manaCost.symbols.isEmpty then a.name else s!"{a.name} {a.manaCost}"
-    let effect :=
-      match a.spellEffect with
-      | some e => [e.phrase]
-      | none => []
-    [header] ++ effect ++ a.extraLines.toList
+    [header] ++ faceSpellLines a ++ a.extraLines.toList
 
-/-- Empower Jace printed on this spell. -/
+/-- Empower Jace printed on this spell when not already present in `spellEffect.phrase`. -/
 def empowerLines (c : CardDef) : List String :=
-  match c.empowerJace with
-  | some n => [s!"Empower Jace {n}."]
+  match c.empowerPlaneswalkerAmount? with
+  | some n =>
+    let alreadyInPhrase := c.spellEffect.any fun e => (lowerAscii e.phrase).contains "empower jace"
+    if alreadyInPhrase then [] else [s!"Empower Jace {n}."]
   | none => []
 
 /-- True when CR 601.2b must announce a choice additional cost (e.g. sacrifice-or-pay,
@@ -478,20 +489,44 @@ def additionalCostLines (c : CardDef) : List String :=
 /-- `{T}cycling` and other typecycling, printed as `Mountaincycling {1}`. -/
 def activatedNotation (ab : ActivatedAbility) : String :=
   if ab.isFromHand && ab.cost.discardSource then
-    match ab.effect.resolution with
-    | .searchLandTypeToHand t =>
+    match ab.tag? with
+    | some (.cycling (some t)) =>
       if t == "Plan" then ab.toNotation else s!"{t}cycling {ab.cost.mana}"
-    | _ => ab.toNotation
+    | _ =>
+      match ab.effect.body with
+      | .player (.searchLibrary spec) =>
+        match spec.filter with
+        | .hasSubtype (.literal sub) =>
+          if sub.englishName == "Plan" then ab.toNotation else s!"{sub}cycling {ab.cost.mana}"
+        | .all #[.hasSupertype .basic, .hasType .land] => s!"Basic landcycling {ab.cost.mana}"
+        | _ => ab.toNotation
+      | _ => ab.toNotation
   else
     ab.toNotation
 
+/-- Modal header string matching `parseModes` for round-trip Oracle rendering. -/
+def modalHeader (ms : ModalSpec) : String :=
+  match ms.altCountIf? with
+  | some (.castPred (.teamworkPaid .this), _, _) =>
+    "Choose one. If this spell was cast using teamwork, choose both instead —"
+  | some (.playerPred .you (.controls { zones := .battlefield, pred := .hasSubtype (.literal sub) } (.const 1)), _, _) =>
+    s!"Choose one. If you control a {sub}, you may choose two instead —"
+  | _ =>
+    if ms.minModes == .const 1 && ms.maxModes == .const 2 then
+      "Choose one or both —"
+    else
+      "Choose one —"
+
 /-- Spell effect, or `Choose one —` when the spell is modal. -/
 def spellLines (c : CardDef) : List String :=
-  if !c.spellModes.isEmpty then
-    [s!"Choose one — {String.intercalate "; " (c.spellModes.toList.map Effect.toNotation)}"]
-  else
+  match c.modalSpec? with
+  | some ms =>
+    [s!"{modalHeader ms} • {String.intercalate " • " (ms.modes.toList.map Effect.toNotation)}"]
+  | none =>
     match c.spellEffect with
-    | some e => [Effect.toNotation e]
+    | some e =>
+      let note := Effect.toNotation e
+      if note.isEmpty then [] else [note]
     | none => []
 
 /-- Oracle line for a triggered ability; Saga chapter triggers render with
@@ -695,13 +730,15 @@ def finalChapterNumber (c : CardDef) : Nat :=
 
 /-- Spell, modal, adventure, and prepare effects on this face.
 Saga chapters live in `triggeredAbilities` and are validated there via
-`Resolution.doesNothingAsTrigger`. -/
+`Effect.doesNothingAsTrigger`. -/
 def spellLikeEffects (c : CardDef) : Array Effect :=
-  let modes := if c.spellModes.isEmpty then
+  let modes :=
+    match c.modalSpec? with
+    | some ms => ms.modes
+    | none =>
       match c.spellEffect with
       | some e => #[e]
       | none => #[]
-    else c.spellModes
   let adv := match c.adventure with
     | some a => match a.spellEffect with
       | some e => #[e]
@@ -727,7 +764,7 @@ def faceModellingError? (c : CardDef) : Option String :=
       match acc with
       | some err => some err
       | none =>
-        if e.resolution.doesNothingAsSpell then
+        if e.doesNothingAsSpell then
           some s!"{c.name} is not fully modelled: {e.toNotation}"
         else none) none
   let activated : Option String :=
@@ -735,7 +772,7 @@ def faceModellingError? (c : CardDef) : Option String :=
       match acc with
       | some err => some err
       | none =>
-        if ab.mana?.isNone && ab.effect.resolution.doesNothingAsActivated then
+        if ab.manaProduction?.isNone && ab.effect.doesNothingAsActivated then
           some s!"{c.name} activated ability is not fully modelled: {ab.effect.toNotation}"
         else none) none
   let triggered : Option String :=
@@ -746,25 +783,21 @@ def faceModellingError? (c : CardDef) : Option String :=
         if ab.activeZones.isEmpty then
           some s!"{c.name} triggered ability has empty activeZones: {ab.toNotation}"
         else
-          let modeCountErr : Option String :=
-            match ab.effect.resolution with
-            | .chooseTriggerModes n =>
-              if ab.modes.size < n then
-                some s!"{c.name} modal triggered ability requires {n} modes but has {ab.modes.size}: {ab.toNotation}"
-              else none
-            | _ => none
-          match modeCountErr with
-          | some err => some err
-          | none =>
-            if !ab.modes.isEmpty then
-              ab.modes.foldl (fun mAcc m =>
+          match ab.modalSpec? with
+          | some ms =>
+            let minNeeded := match ms.minModes with | .const n => n.toNat | _ => 1
+            if ms.modes.size < minNeeded then
+              some s!"{c.name} modal triggered ability requires {minNeeded} modes but has {ms.modes.size}: {ab.toNotation}"
+            else
+              ms.modes.foldl (fun mAcc m =>
                 match mAcc with
                 | some err => some err
                 | none =>
-                  if m.resolution.doesNothingAsTrigger then
+                  if m.doesNothingAsTrigger then
                     some s!"{c.name} modal triggered ability mode is not fully modelled: {m.toNotation}"
                   else none) none
-            else if ab.effect.resolution.doesNothingAsTrigger then
+          | none =>
+            if ab.effect.doesNothingAsTrigger then
               some s!"{c.name} triggered ability is not fully modelled: {ab.toNotation}"
             else none) none
   unparsed <|> spell <|> activated <|> triggered
@@ -780,6 +813,10 @@ end CardDef
 
 namespace AdventureFace
 
+/-- Fixed Empower Planeswalker amount carried on this alternate face's spell effect. -/
+def empowerPlaneswalkerAmount? (a : AdventureFace) : Option Nat :=
+  a.spellEffect.bind (fun e => CardDef.extractEmpowerAmount e.body)
+
 /-- Characteristics used while this card is on the stack as an Adventure (CR 715.3b). -/
 def toCardDef (a : AdventureFace) : CardDef := {
   name := a.name
@@ -788,7 +825,6 @@ def toCardDef (a : AdventureFace) : CardDef := {
   subtypes := a.subtypes
   spellEffect := a.spellEffect
   staticAbilities := #[]
-  empowerJace := a.empowerJace
   additionalCosts := a.additionalCosts
 }
 

@@ -132,10 +132,10 @@ def rageAmass : Game :=
   (rageAmass.player ⟨0⟩).life == 19 &&
     (namedPermanent rageAmass "Goblin Army").status.plusOnePlusOne == 2
 
-/-- `Resolution.sequence` applies each step in order. -/
+/-- `Instruction.seq` applies each step in order. -/
 def sequenceDrawThenGain : Game :=
   started.applyEffect ⟨0⟩ {
-    resolution := .sequence [.draw 1, .gainLife 3]
+    body := .seq #[Instruction.drawFixed 1, Instruction.gainLifeFixed 3]
     phrase := "draw a card. You gain 3 life" } #[]
 
 #guard
@@ -1315,13 +1315,12 @@ def counterUnlessPaysDeclined : Game :=
 #guard counterUnlessPaysDeclined.objects.any (fun o =>
   o.name == "Lightning Bolt" && o.zone == .graveyard ⟨1⟩)
 
-/-- Any resolution can sit under `unlessPays`. Declining destroys; paying doesn't. -/
+/-- Any instruction can sit under `unlessPays`. Declining destroys; paying doesn't. -/
 def unlessPaysDestroyAsked : Game :=
   let g := addPermanent afterDraw grayOgre ⟨1⟩ ⟨1⟩
   let id := (namedPermanent g "Gray Ogre").id
   g.applyEffect ⟨0⟩ (Effect.mkSpell (.of .creature)
-      (.unlessPays (.onPermanent .destroy) 2)
-      (castKind := .destroyCreature))
+      (.unlessPays (.controllerOf (.target 0)) (CostSpec.ofGeneric 2) (Instruction.destroy (.target 0))) "")
     #[Target.permanent id]
 
 #guard
@@ -1378,13 +1377,14 @@ def ownerLibraryBottom : Game :=
   ((ownerLibraryBottom.player ⟨1⟩).library[0]?.map fun id =>
     (ownerLibraryBottom.object! id).name) == some "Grizzly Bears"
 
-/-- `if` resolves its resolution only when the target has the subtype. -/
+/-- `ifCond` resolves its instruction only when the target has the subtype. -/
 def ifDwarfPumped : Game :=
   let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype .dwarf) (.onPermanent (.pump 1 1))))
+      (Instruction.ifThen (.exists (.filter (.target 0) (.hasSubtype (.literal .dwarf))))
+        (Instruction.pumpFixed (.target 0) 1 1)) "")
     #[Target.permanent id]
 
 #guard ifDwarfPumped.power (namedPermanent ifDwarfPumped "Bofur, Reliable Guardian") == 2
@@ -1394,7 +1394,8 @@ def ifScoutPumped : Game :=
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype .scout) (.onPermanent (.pump 3 0))))
+      (Instruction.ifThen (.exists (.filter (.target 0) (.hasSubtype (.literal .scout))))
+        (Instruction.pumpFixed (.target 0) 3 0)) "")
     #[Target.permanent id]
 
 #guard ifScoutPumped.power (namedPermanent ifScoutPumped "Bofur, Reliable Guardian") == 4
@@ -1404,15 +1405,16 @@ def ifDwarfSkipsBear : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype .dwarf) (.onPermanent (.pump 1 1))))
+      (Instruction.ifThen (.exists (.filter (.target 0) (.hasSubtype (.literal .dwarf))))
+        (Instruction.pumpFixed (.target 0) 1 1)) "")
     #[Target.permanent id]
 
 #guard ifDwarfSkipsBear.power (namedPermanent ifDwarfSkipsBear "Grizzly Bears") == 2
 
-/-- `may` asks before resolving its resolution. Declining skips it. -/
+/-- `optional` asks before resolving its instruction. Declining skips it. -/
 def mayGainLifeAsked : Game :=
   afterDraw.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .none) (.may (.gainLife 3) (.sequence []))) #[]
+    (Effect.mkSpell (.of .none) (Instruction.may .you none (Instruction.gainLifeFixed 3)) "") #[]
 
 #guard
   match mayGainLifeAsked.pending with
@@ -1426,7 +1428,7 @@ def mayGainLifeAsked : Game :=
   | _ => false
 #guard
   let g := afterDraw.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .none) (.may (.loseLife 1) (.sequence []))) #[]
+    (Effect.mkSpell (.of .none) (Instruction.may .you none (Instruction.loseLifeFixed 1 .you)) "") #[]
   match Agent.choose g ⟨0⟩ with
   | some .decline => true
   | _ => false
@@ -1452,13 +1454,14 @@ def mayGainLifeAccepted : Game :=
   | .error msg => mentions msg "Only Chandra may accept"
   | .ok _ => false
 
-/-- `if` of `may` asks only when the target has the subtype. -/
+/-- `ifCond` of `optional` asks only when the target has the subtype. -/
 def mayIfDwarfAsked : Game :=
   let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype .dwarf) (.may (.gainLife 2) (.sequence []))))
+      (Instruction.ifThen (.exists (.filter (.target 0) (.hasSubtype (.literal .dwarf))))
+        (Instruction.may .you none (Instruction.gainLifeFixed 2))) "")
     #[Target.permanent id]
 
 #guard
@@ -1475,21 +1478,23 @@ def mayIfDwarfSkipsBear : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.«if» (.subtype .dwarf) (.may (.gainLife 2) (.sequence []))))
+      (Instruction.ifThen (.exists (.filter (.target 0) (.hasSubtype (.literal .dwarf))))
+        (Instruction.may .you none (Instruction.gainLifeFixed 2))) "")
     #[Target.permanent id]
 
 #guard
   mayIfDwarfSkipsBear.pending == .none &&
     (mayIfDwarfSkipsBear.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life
 
-/-- `ifElse` resolves the true branch when the condition holds, and the false
+/-- `ifCond` resolves the true branch when the condition holds, and the false
 branch otherwise. -/
 def ifElseDwarfGainsLife : Game :=
   let g := addPermanent afterDraw bofurReliableGuardian ⟨0⟩ ⟨0⟩
   let id := (namedPermanent g "Bofur, Reliable Guardian").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.ifElse (.subtype .dwarf) (.gainLife 3) (.draw 1)))
+      (.ifCond (.exists (.filter (.target 0) (.hasSubtype (.literal .dwarf))))
+        (Instruction.gainLifeFixed 3) (Instruction.drawFixed 1)) "")
     #[Target.permanent id]
 
 #guard
@@ -1501,21 +1506,23 @@ def ifElseBearDraws : Game :=
   let id := (namedPermanent g "Grizzly Bears").id
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControl)
-      (.ifElse (.subtype .dwarf) (.gainLife 3) (.draw 1)))
+      (.ifCond (.exists (.filter (.target 0) (.hasSubtype (.literal .dwarf))))
+        (Instruction.gainLifeFixed 3) (Instruction.drawFixed 1)) "")
     #[Target.permanent id]
 
 #guard
   (ifElseBearDraws.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
     (ifElseBearDraws.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1
 
-/-- `ifElse` on mana value uses the targeted spell's mana value. -/
+/-- `ifCond` on mana value uses the targeted spell's mana value. -/
 def ifElseMvAtMostDraws : Game :=
   let g := addToHand afterDraw lightningBolt ⟨1⟩
   let bolt := handCardNamed g ⟨1⟩ "Lightning Bolt"
   let (g, spellId) := g.move bolt.id .stack (some ⟨1⟩)
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .spell)
-      (.ifElse (.mvAtMost 1) (.draw 1) (.gainLife 3)))
+      (.ifCond (.exists (.filter (.target 0) (.stat .manaValue .le (.const 1))))
+        (Instruction.drawFixed 1) (Instruction.gainLifeFixed 3)) "")
     #[Target.card spellId]
 
 #guard
@@ -1528,18 +1535,21 @@ def ifElseMvAboveGainsLife : Game :=
   let (g, spellId) := g.move bolt.id .stack (some ⟨1⟩)
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .spell)
-      (.ifElse (.mvAtMost 0) (.draw 1) (.gainLife 3)))
+      (.ifCond (.exists (.filter (.target 0) (.stat .manaValue .le (.const 0))))
+        (Instruction.drawFixed 1) (Instruction.gainLifeFixed 3)) "")
     #[Target.card spellId]
 
 #guard
   (ifElseMvAboveGainsLife.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size &&
     (ifElseMvAboveGainsLife.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + (3 : Int)
 
-/-- `or` applies whichever resolution is chosen. The first draws, the second
-gains life, and a later mode scries. -/
+/-- `chooseModes (chooseAtResolution := true)` applies whichever option is chosen. -/
 def spellOrAsked : Game :=
   afterDraw.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .none) (.or [.draw 1, .gainLife 3, .scry 1])) #[]
+    (Effect.mkSpell (.of .none)
+      (.chooseModes {
+        modes := #[Effect.draw 1, Effect.gainLife 3, Effect.scry 1]
+        chooseAtResolution := true }) "") #[]
 
 #guard
   match spellOrAsked.pending with
@@ -1572,19 +1582,22 @@ def spellOrScried : Game :=
 
 #guard
   let before := (afterDraw.player ⟨0⟩).hand.size
-  let g := afterDraw.applyEffect ⟨0⟩ (Effect.mkSpell (.of .none) (.or [.draw 1])) #[]
+  let g := afterDraw.applyEffect ⟨0⟩
+    (Effect.mkSpell (.of .none)
+      (.chooseModes { modes := #[Effect.draw 1], chooseAtResolution := true }) "") #[]
   (g.player ⟨0⟩).hand.size == before + 1 && g.pending == .none && g.spellOr.isEmpty
 
 #guard uneasyPartings.spellEffect == some Effect.putOnTopOrBottom
 
-/-- `countersOnCreatureTargets` puts the requested kind on each creature target.
-A player target is left alone. +1/+1 still uses the counter triggers. -/
+/-- Putting counters on `.allTargets` puts the requested kind on each creature target.
++1/+1 still uses the counter triggers. -/
 def countersOnTargets (kind : CounterKind) (n : Nat) : Game :=
   let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
   let baloth := namedPermanent g "Rumbling Baloth"
   g.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .creature) (.countersOnCreatureTargets kind n) (maxTargets := 2))
+    (Effect.mkSpell (.of .creature)
+      (Instruction.putCounters .allTargets kind (.const (Int.ofNat n))) "" (maxTargets := 2))
     #[Target.permanent bears.id, Target.permanent baloth.id]
 
 #guard
@@ -1627,7 +1640,7 @@ def plusOneCreatureAndLife : Game :=
   (namedPermanent g "Grizzly Bears").status.minusOneMinusOne == 0 &&
     g.loggedLifeGained ⟨0⟩ == 1
 
-/-- `.firstYouControl` puts counters only on the first creature you control.
+/-- `.target 0` puts counters only on the first slot (creature you control).
 A later opposing creature is left alone. +1/+1 still uses the counter triggers. -/
 def countersOnFirstYouControl : Game :=
   let g := addPermanent (addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩) rumblingBaloth ⟨1⟩ ⟨1⟩
@@ -1635,7 +1648,7 @@ def countersOnFirstYouControl : Game :=
   let baloth := namedPermanent g "Rumbling Baloth"
   g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControlThenOppCreature)
-      (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl))
+      (Instruction.putCounters (.target 0) .plusOnePlusOne (.const 2)) "")
     #[Target.permanent bears.id, Target.permanent baloth.id]
 
 #guard
@@ -1649,18 +1662,18 @@ def countersOnFirstYouControl : Game :=
   let baloth := namedPermanent g "Rumbling Baloth"
   let g := g.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .creatureYouControlThenOppCreature)
-      (.countersOnCreatureTargets .stun 2 .firstYouControl))
+      (Instruction.putCounters (.target 0) .stun (.const 2)) "")
     #[Target.permanent bears.id, Target.permanent baloth.id]
   (namedPermanent g "Grizzly Bears").status.stun == 2 &&
     (namedPermanent g "Rumbling Baloth").status.stun == 0
 
-/- A first target you do not control is illegal for `.firstYouControl`. -/
+/- A first target you do not control is illegal for `.creatureYouControl`. -/
 #guard
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .creature)
-      (.countersOnCreatureTargets .stun 1 .firstYouControl))
+    (Effect.mkSpell (.of .creatureYouControl)
+      (Instruction.putCounters (.target 0) .stun (.const 1)) "")
     #[Target.permanent bears.id]
   (namedPermanent g "Grizzly Bears").status.stun == 0
 
@@ -1757,7 +1770,7 @@ def opponentsLoseTwo : Game :=
 
 def targetPlayerLosesThree : Game :=
   afterDraw.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .player) (.loseLife 3 .player))
+    (Effect.mkSpell (.of .player) (Instruction.loseLifeFixed 3 (.target 0)) "")
     #[Target.player ⟨1⟩]
 
 #guard
@@ -1851,7 +1864,8 @@ def eachCreatureTakesOne : Game :=
 
 def nonGoblinsTakeThree : Game :=
   bearAndGoblin.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .none) (.dealDamageToEachCreature 3 (.nonSubtype .goblin))) #[]
+    (Effect.mkSpell (.of .none)
+      (.damage (.deal .this (.objects (.inZones .battlefield (.all #[.hasType .creature, .not (.hasSubtype (.literal .goblin))]))) (.const 3) {})) "") #[]
 
 #guard
   (namedPermanent nonGoblinsTakeThree "Grizzly Bears").status.damage == 3 &&
@@ -1927,7 +1941,7 @@ under player 1's control, `TriggerPattern.createTokens .you (.hasType .creature)
   let creatorWatcher : CardDef := {
     name := "Creator Watcher", types := #[.enchantment]
     triggeredAbilities := #[TriggeredAbility.ofPattern (.createTokens .you (.hasType .creature))
-      "Whenever you create one or more creature tokens, draw a card." (.draw 1)
+      "Whenever you create one or more creature tokens, draw a card." (Instruction.drawFixed 1)
       (grouping := .oncePerBatch)]
   }
   let enterWatcher : CardDef := {

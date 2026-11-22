@@ -1,5 +1,7 @@
 import Mtg.Engine.Agent
 import Mtg.Engine.Fixture
+import Mtg.Engine.Catalog.RealityFracture
+import Mtg.Engine.Catalog.RealityFractureCommander
 
 /-!
 # Game events
@@ -1281,13 +1283,13 @@ printed static abilities (CR 702.26b / 702.26f). -/
     { name := "Loyalty Watcher"
       types := #[.enchantment]
       triggeredAbilities :=
-        #[TriggeredAbility.ofPattern (.youActivateLoyaltyAbility 0) "" (.draw 1),
-          TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (.draw 1)] }
+        #[TriggeredAbility.ofPattern (.youActivateLoyaltyAbility 0) "" (Instruction.drawFixed 1),
+          TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (Instruction.drawFixed 1)] }
   let oppWatcher : CardDef :=
     { name := "Opp Loyalty Watcher"
       types := #[.enchantment]
       triggeredAbilities :=
-        #[TriggeredAbility.ofPattern .opponentActivatesLoyaltyAbility "" (.draw 1)] }
+        #[TriggeredAbility.ofPattern .opponentActivatesLoyaltyAbility "" (Instruction.drawFixed 1)] }
   let gPw0 :=
     let g := addPermanent afterDraw pwWithMana me me
     let pw := (g.battlefield.filter (·.name == "Test Planeswalker"))[0]!
@@ -1344,7 +1346,7 @@ printed static abilities (CR 702.26b / 702.26f). -/
   let inc := (gInc0.battlefield.filter (·.name == "Incubator Token"))[0]!
   let gIncTransformed :=
     gInc0.withResolvingContext (some inc.id) me (fun g =>
-      g.applyFrc me default .transformIncubator #[] (some inc.id))
+      g.applyAbilityEffect me { body := .permanent (.transform .this) } #[] (some inc.id))
   let incAfter := gIncTransformed.object! inc.id
   let staticCreature : CardDef :=
     { name := "Static Bear"
@@ -1437,7 +1439,7 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
   -- 2. Kang's extra turn: delayed .oneShotEffect cause on creation, .cleanupClear on expiry
   let effBeforeExtra := g0.nextEffectId
   let gExtraQueued :=
-    g0.applyAbilityEffect me { resolution := .extraTurn } #[] (some h.id)
+    g0.applyAbilityEffect me { body := .turn (.extraTurn .you) } #[] (some h.id)
   let storedExtraCause? : Option EventCause :=
     gExtraQueued.events.findSome? (fun e =>
       match e.change with
@@ -1478,7 +1480,7 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
     (quiet (g0.markAttacking b.id)).beginStep .cleanup
   -- 5. Multi-permanent phaseOut shares a single .oneShotEffect id
   let gKickedPhase :=
-    (quiet g0).applyUnified me { resolution := .phaseOutKicker } #[Target.player me]
+    (quiet g0).applyUnified me { Effect.phaseOutKicker with targeting := .of .player } #[Target.player me]
       (kicked := true) (sourceId := some h.id)
   let kickedPhaseCauses :=
     gKickedPhase.events.filterMap (fun e =>
@@ -1615,7 +1617,7 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
   --    transforms via otherFace without EngineChange.object (.printed _)
   let gSynth :=
     (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
-      g.applyFrc me default .syntheticDestiny #[] (some s.id))
+      g.applyEffect me syntheticDestiny.spellEffect.get! #[] (sourceId := some s.id))
   let synthStoredCause := gSynth.delayedTriggers[0]!.cause
   let synthExileCauses :=
     gSynth.events.filterMap (fun e =>
@@ -1624,7 +1626,7 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
       | _ => none)
   let gSunfall :=
     (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
-      g.applyFrc me default .sunfall #[] (some s.id))
+      g.applyEffect me sunfall.spellEffect.get! #[] (sourceId := some s.id))
   let sunfallExileCauses :=
     gSunfall.events.filterMap (fun e =>
       match e.change with
@@ -1639,13 +1641,13 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
   let sunfallInc := (gSunfall.battlefield.filter (·.name == "Incubator"))[0]!
   let gSunfallTransformed :=
     (quiet gSunfall).withResolvingContext (some sunfallInc.id) me (fun g =>
-      g.applyFrc me default .transformIncubator #[] (some sunfallInc.id))
+      g.applyAbilityEffect me { body := .permanent (.transform .this) } #[] (some sunfallInc.id))
   let sunfallIncAfter := gSunfallTransformed.object! sunfallInc.id
   -- 4. .massPolymorph shares one exileCause for battlefield exiles and one distinct
   --    revealCause across revealUntil, putHits, and restBottom
   let gMassPoly :=
     (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
-      g.applyFrc me default .massPolymorph #[] (some s.id))
+      g.applyEffect me massPolymorph.spellEffect.get! #[] (sourceId := some s.id))
   let polyBfExiles :=
     gMassPoly.events.filterMap (fun e =>
       match e.change with
@@ -1667,7 +1669,7 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
   --    and both delayed end-step sacrifices
   let gVenser :=
     (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
-      g.applyFrc me default .venserPerm #[Target.permanent b.id] (some s.id))
+      g.applyAbilityEffect me { venserFerventForger.triggeredAbilities[0]!.modeEffects[1]! with targeting := {} } #[Target.permanent b.id] (some s.id))
   let venserCreateCauses :=
     gVenser.events.filterMap (fun e =>
       match e.change with
@@ -1693,13 +1695,13 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
     quiet g
   let gJhoiraPending :=
     gJhoiraSetup.withResolvingContext (some s.id) me (fun g =>
-      g.applyFrc me default .jhoira #[Target.player me] (some s.id))
+      g.applyAbilityEffect me { jhoiraWeatherlightCorsair.triggeredAbilities[0]!.effect with targeting := {} } #[Target.player me] (some s.id))
   let jhoiraPendingOk :=
     match gJhoiraPending.pending with
     | .resolveRandom (.orderInto ids (.library p) (some _)) => p == me && ids.size == 2
     | _ => false
   let gJhoiraDone :=
-    match (gJhoiraPending.change .popContinuationFrame).supplyOrder #[] with
+    match gJhoiraPending.supplyOrder #[] with
     | .ok g' => g'
     | .error _ => gJhoiraPending
   let jhoiraMoveCauses :=
@@ -2021,7 +2023,7 @@ across all constituent moves, transforms, and continuous-effect creations
   -- 7. `.identityEcho` uses one cause for the exile and a distinct shared cause for the reveal/put/bottom
   let gEchoPending :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
-      g.applyFraAbility me { targeting := .of .creatureYouControl } .identityEcho #[.permanent h.id] (some h.id))
+      g.applyAbilityEffect me identityEcho.activatedAbilities[0]!.effect #[.permanent h.id] (some h.id))
   let gEchoDone :=
     match gEchoPending.supplyOrder #[] with
     | .ok g' => g'
@@ -2104,7 +2106,7 @@ across all constituent moves, transforms, and continuous-effect creations
       | _ => none)
   let gTwoDraw :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
-      g.applyAbilityEffect me { resolution := .twoPlayersDraw } #[Target.player me, Target.player opp] (sourceId := some h.id))
+      g.applyAbilityEffect me Effect.twoPlayersDraw #[Target.player me, Target.player opp] (sourceId := some h.id))
   let twoDrawCauses :=
     gTwoDraw.events.filterMap (fun e =>
       match e.change with
@@ -2225,7 +2227,7 @@ across all constituent moves, transforms, and continuous-effect creations
       match e.change with
       | .rules _ => e.cause?
       | _ => none)
-  let gNivRaw := gDmgSetup.applyFrc me default .nivPay #[] (some lh.id) (lastKnownPower := some 2)
+  let gNivRaw := gDmgSetup.applyAbilityEffect me nivMizzetGhostCounsel.triggeredAbilities[0]!.effect #[] (some lh.id) (lastKnownPower := some 2)
   let nivRawCauses :=
     gNivRaw.events.filterMap (fun e =>
       match e.change with
@@ -2233,7 +2235,7 @@ across all constituent moves, transforms, and continuous-effect creations
       | _ => none)
   let gNivRes :=
     gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
-      g.applyFrc me default .nivPay #[] (some lh.id) (lastKnownPower := some 2))
+      g.applyAbilityEffect me nivMizzetGhostCounsel.triggeredAbilities[0]!.effect #[] (some lh.id) (lastKnownPower := some 2))
   let nivResCauses :=
     gNivRes.events.filterMap (fun e =>
       match e.change with
@@ -2242,13 +2244,13 @@ across all constituent moves, transforms, and continuous-effect creations
   let gNivLocked :=
     quiet (gDmgSetup.createEffect (.lifeCantChange me))
       |>.withResolvingContext (some lh.id) me (fun g =>
-        g.applyFrc me default .nivPay #[] (some lh.id) (lastKnownPower := some 2))
+        g.applyAbilityEffect me nivMizzetGhostCounsel.triggeredAbilities[0]!.effect #[] (some lh.id) (lastKnownPower := some 2))
   let nivLockedEvents :=
     gNivLocked.events.filterMap (fun e =>
       match e.change with
       | .rules _ => e.cause?
       | _ => none)
-  let gDreadRaw := gDmgSetup.applyFrc me default .dreadUpkeep #[] (some lh.id)
+  let gDreadRaw := gDmgSetup.applyAbilityEffect me dreadhordeInvasion.triggeredAbilities[0]!.effect #[] (some lh.id)
   let dreadRawCauses :=
     gDreadRaw.events.filterMap (fun e =>
       match e.change with
@@ -2256,13 +2258,13 @@ across all constituent moves, transforms, and continuous-effect creations
       | _ => none)
   let gDreadRes :=
     gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
-      g.applyFrc me default .dreadUpkeep #[] (some lh.id))
+      g.applyAbilityEffect me dreadhordeInvasion.triggeredAbilities[0]!.effect #[] (some lh.id))
   let dreadResCauses :=
     gDreadRes.events.filterMap (fun e =>
       match e.change with
       | .rules _ => e.cause?
       | _ => none)
-  let gSkrelvRaw := gDmgSetup.applyFrc me default .skrelv #[] (some lh.id)
+  let gSkrelvRaw := gDmgSetup.applyAbilityEffect me skrelvsHive.triggeredAbilities[0]!.effect #[] (some lh.id)
   let skrelvRawCauses :=
     gSkrelvRaw.events.filterMap (fun e =>
       match e.change with
@@ -2270,7 +2272,7 @@ across all constituent moves, transforms, and continuous-effect creations
       | _ => none)
   let gSkrelvRes :=
     gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
-      g.applyFrc me default .skrelv #[] (some lh.id))
+      g.applyAbilityEffect me skrelvsHive.triggeredAbilities[0]!.effect #[] (some lh.id))
   let skrelvResCauses :=
     gSkrelvRes.events.filterMap (fun e =>
       match e.change with
@@ -2518,11 +2520,11 @@ triggers once, while sequential batches fire them once per batch. -/
     { name := "Death Watcher"
       types := #[.enchantment]
       triggeredAbilities := #[
-        TriggeredAbility.ofPattern .otherCreaturesDie "" (.draw 1) (grouping := .oncePerBatch),
-        TriggeredAbility.ofPattern .nontokenCreatureYouControlDies "" (.gainLife (.fixed 1)),
-        TriggeredAbility.ofPattern .creatureCardPutIntoYourGy "" (.draw 1) (grouping := .oncePerBatch),
-        TriggeredAbility.ofPattern (.createTokens .you (.hasType .creature)) "" (.draw 1) (grouping := .oncePerBatch),
-        TriggeredAbility.ofPattern .creaturesYouControlBecomeTapped "" (.draw 1) (grouping := .oncePerBatch)] }
+        TriggeredAbility.ofPattern .otherCreaturesDie "" (Instruction.drawFixed 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern .nontokenCreatureYouControlDies "" (Instruction.gainLifeFixed 1),
+        TriggeredAbility.ofPattern .creatureCardPutIntoYourGy "" (Instruction.drawFixed 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern (.createTokens .you (.hasType .creature)) "" (Instruction.drawFixed 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern .creaturesYouControlBecomeTapped "" (Instruction.drawFixed 1) (grouping := .oncePerBatch)] }
   let gBase :=
     let g := addPermanent (addPermanent (addPermanent afterDraw deathWatcher me me) bear me me) hero me me
     let g := addPermanent g bear me me
@@ -2587,7 +2589,7 @@ triggers once, while sequential batches fire them once per batch. -/
   let discardWatcher : CardDef :=
     { name := "Discard Watcher"
       types := #[.enchantment]
-      triggeredAbilities := #[TriggeredAbility.ofPattern (.discard .any) "" (.draw 1)
+      triggeredAbilities := #[TriggeredAbility.ofPattern (.discard .any) "" (Instruction.drawFixed 1)
         (grouping := .perPlayerInBatch)] }
   let gDisc0 := quiet (addPermanent afterDraw discardWatcher me me)
   let gDisc1 := gDisc0.discardEntireHand me
@@ -2637,7 +2639,7 @@ triggers once, while sequential batches fire them once per batch. -/
     let g := (g.move topId (.library me) none (libraryPosition := some .top)).1
     quiet g
   let explorer := (gExp0.battlefield.filter (·.name == bear.name))[0]!
-  let gExp1 := gExp0.applyFrc me default .explore #[] (some explorer.id)
+  let gExp1 := gExp0.applyAbilityEffect me { body := .player (.explore .this) } #[] (some explorer.id)
   let explorerAfter := gExp1.object! explorer.id
   let expTrigs := gExp1.waitingTriggers.filter isYouPutPlusOne
   -- 3. Karn suppresses tokenYouControlEnters but not counter-put triggers on entering permanents,
@@ -2652,8 +2654,8 @@ triggers once, while sequential batches fire them once per batch. -/
       types := #[.enchantment]
       triggeredAbilities := #[
         SharedTrigger.watch .tokensEnterMayDraw |>.toTriggeredAbility,
-        TriggeredAbility.ofPattern .youPutCountersOnGoblinOrcArmy "" (.draw 1) (grouping := .oncePerBatch),
-        TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (.draw 1),
+        TriggeredAbility.ofPattern .youPutCountersOnGoblinOrcArmy "" (Instruction.drawFixed 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (Instruction.drawFixed 1),
         SharedTrigger.resource .plusOneOnHeroesCreateWall |>.toTriggeredAbility] }
   let artifactWalker : CardDef :=
     { name := "Artifact Walker"

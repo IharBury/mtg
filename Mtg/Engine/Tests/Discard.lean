@@ -210,33 +210,33 @@ Spending none discards nothing and leaves an earlier note alone. -/
     !(logContains g "must discard") && !(logContains g "may discard")
 
 /- Printed phrases stay with the combination that produces them. -/
-#guard TriggeredAbility.resolutionPhrase { resolution := .discard } == "discard a card"
-#guard TriggeredAbility.resolutionPhrase { resolution := .discard (.cards 2) } == "discard 2 cards"
-#guard TriggeredAbility.resolutionPhrase { resolution := .discard (.cards 1 .eachOpponent) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.discard) } == "discard a card"
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.discard (.cards 2)) } == "discard 2 cards"
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.discard (.cards 1 .eachOpponent)) } ==
   "each opponent discards a card"
-#guard TriggeredAbility.resolutionPhrase { resolution := .discard (.cards 2 .eachOpponent) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.discard (.cards 2 .eachOpponent)) } ==
   "each opponent discards 2 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .opponent, resolution := .discard (.cards 2 (.target .opponent)) } ==
+    { targeting := .of .opponent, resolution? := some (.discard (.cards 2 (.target .opponent))) } ==
   "target opponent discards 2 cards"
-#guard TriggeredAbility.resolutionPhrase { resolution := .discard .hand } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.discard .hand) } ==
   "discard your hand"
-#guard TriggeredAbility.resolutionPhrase { resolution := .may (.discard .hand) (.sequence []) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.may (.discard .hand) (.sequence [])) } ==
   "you may discard your hand"
-#guard TriggeredAbility.resolutionPhrase { resolution := .«if» .manaSpent (.discard (.cards 2)) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.«if» .manaSpent (.discard (.cards 2))) } ==
   "discard 2 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .may (.discard (.cards 1)) (.draw (.fixed 2)) .ifYouDo } ==
+    { resolution? := some (.may (.discard (.cards 1)) (.draw (.fixed 2)) .ifYouDo) } ==
   "you may discard a card. If you do, draw 2 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .may (.discard .hand) (.draw (.fixed 4)) .ifYouDo } ==
+    { resolution? := some (.may (.discard .hand) (.draw (.fixed 4)) .ifYouDo) } ==
   "you may discard your hand. If you do, draw 4 cards"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .sequence [
-        .draw .equalToManaSpent, .«if» .manaSpent (.discard (.cards 2))] } ==
+    { resolution? := some (.sequence [
+        .draw .equalToManaSpent, .«if» .manaSpent (.discard (.cards 2))]) } ==
   "draw X cards, where X is the amount of mana spent to cast that spell, then discard two cards"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .discard .source } == "discard cards"
+    { resolution? := some (.discard .source) } == "discard cards"
 
 /- CR 118.12a / 701.9b: Thirst for Knowledge's two-card discard shares a single
 batch whether paid one card at a time after declining or chosen simultaneously. -/

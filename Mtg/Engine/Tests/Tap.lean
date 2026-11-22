@@ -290,23 +290,23 @@ source to still be there. -/
 #guard (SharedTrigger.toEffect .tapHumansDraw).resolution == humansDraw
 #guard (SharedTrigger.toEffect .tapEnchantedRemoveCounters).resolution == enchantedRemove
 
-#guard TriggeredAbility.resolutionPhrase { resolution := .tap .humans } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.tap .humans) } ==
   "tap any number of untapped Humans you control"
-#guard TriggeredAbility.resolutionPhrase { resolution := .may (.tap .humans) (.sequence []) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.may (.tap .humans) (.sequence [])) } ==
   "you may tap any number of untapped Humans you control"
-#guard TriggeredAbility.resolutionPhrase { resolution := .tap .enchanted } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.tap .enchanted) } ==
   "tap enchanted creature"
-#guard TriggeredAbility.resolutionPhrase { resolution := .tap (.target .ifPresent) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.tap (.target .ifPresent)) } ==
   "tap up to one target creature"
-#guard TriggeredAbility.resolutionPhrase { resolution := .tap .attackingCreatures } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.tap .attackingCreatures) } ==
   "tap it"
-#guard TriggeredAbility.resolutionPhrase { resolution := .may (.tap .enchanted) (.sequence []) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.may (.tap .enchanted) (.sequence [])) } ==
   "you may do it"
-#guard TriggeredAbility.resolutionPhrase { resolution := humansDraw } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (humansDraw) } ==
   "you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way"
-#guard TriggeredAbility.resolutionPhrase { resolution := enchantedRemove } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (enchantedRemove) } ==
   "tap enchanted creature and remove all counters from it"
-#guard TriggeredAbility.resolutionPhrase { resolution := targetLose } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (targetLose) } ==
   "tap up to one target creature. It loses all abilities for as long as this remains on the battlefield"
 #guard TriggeredAbility.toNotation .onAttackTapHumansDraw ==
   "Whenever this creature attacks, you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way."

@@ -270,6 +270,7 @@ def toOraclePhrase (ctx : PrintCtx) : QualityFilter → String
   | .cardType t => pluralizeName t.englishName.toLower
   | .subtype (.literal s) => pluralizeName s.englishName
   | .subtype .chosenOnSource => "the chosen type"
+  | .subtype (.fromStep _) => "the chosen type"
   | .objectPred p => ToOracle.toOracle { ctx with capitalize := false } p
   | .multicolored => "multicolored"
 
@@ -313,6 +314,7 @@ def toOraclePhrase (ctx : PrintCtx) : ProtectionQuality → String
   | .chosenCardType => "the chosen card type"
   | .subtype (.literal s) => pluralizeName s.englishName
   | .subtype .chosenOnSource => "the chosen type"
+  | .subtype (.fromStep _) => "the chosen type"
   | .quality p => ToOracle.toOracle { ctx with capitalize := false } p
   | .everything => "everything"
   | .allColors => "all colors"

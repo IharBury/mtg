@@ -5,8 +5,9 @@ import Mtg.Engine.Card.Targeting
 /-!
 # Reality Fracture Commander Oracle lines
 
-Lines the shared parser does not already model. Called only after those
-matches fail, so an existing card keeps its current reading.
+Lines the shared parser does not already model, lowered directly into the
+unified Phase-8 `Instruction`, `StaticAbility`, `ActivatedAbility`, and
+`TriggeredAbility` AST.
 -/
 
 namespace Mtg.Engine
@@ -67,14 +68,8 @@ private def collectMana (s : String) : Array ManaSymbol :=
 private def costOf (s : String) : ManaCost :=
   { symbols := collectMana s }
 
-private def manaTypesOf (s : String) : Array ManaType :=
-  (collectMana s).filterMap fun
-    | .colored c => some (.colored c)
-    | .colorless => some .colorless
-    | _ => none
-
-private def frc (e : FrcEffect) (phrase : String) (spec : TargetSpec := .none) : Effect :=
-  { targeting := .of spec, resolution := .frc e, phrase }
+private def frcInstr (body : Instruction) (phrase : String) (spec : TargetSpec := .none) : Effect :=
+  { targeting := .of spec, body, phrase }
 
 private def creature : TargetSpec :=
   .creature
@@ -103,14 +98,14 @@ private def colorsFrom (text : String) : Array Color :=
 
 private def pushTrig (c : CardDef) (pattern : TriggerPattern) (e : Effect) (phrase : String)
     (spec : TargetSpec := .none) (grouping : BatchGrouping := .perOccurrence)
-    (interveningIf? : Option Condition := none) (activeZones : Array ZoneKind := #[.battlefield])
-    (modes : Array Effect := #[]) : CardDef :=
+    (interveningIf? : Option Condition := none) (activeZones : Array ZoneKind := #[.battlefield]) :
+    CardDef :=
   { c with
     triggeredAbilities :=
       c.triggeredAbilities.push
-        (TriggeredAbility.ofPattern pattern phrase e.resolution spec
+        (TriggeredAbility.ofPattern pattern phrase e.body spec
           (grouping := grouping) (interveningIf? := interveningIf?)
-          (activeZones := activeZones) (modes := modes)) }
+          (activeZones := activeZones)) }
 
 private def pushAct (c : CardDef) (e : Effect) (phrase : String) (costText : String)
     (sorcery := false) (loyalty : Option LoyaltySymbol := none) : CardDef :=
@@ -127,23 +122,82 @@ private def pushAct (c : CardDef) (e : Effect) (phrase : String) (costText : Str
 private def pushSpell (c : CardDef) (e : Effect) : CardDef :=
   { c with spellEffect := some e }
 
+/-- Draw `drawN` cards, then put `putN` cards from your hand on top of your library. -/
+private def instrDrawPutOnTop (drawN putN : Nat) : Instruction :=
+  .seq #[
+    Instruction.drawFixed drawN,
+    .moveZone (.inZones .yourHand .anyObject) (.library .owner .top false) .put
+      { choice? := some { chooser := .controller, count := .exact (.const putN) } }]
+
+/-- Search your library for a basic land card of one of `kinds`, put it onto the
+battlefield tapped, then shuffle; if `untapAt > 0` and you control `untapAt` or
+more lands, untap it. -/
+private def instrSearchBasics (kinds : Array CardSubtype) (untapAt : Nat) : Instruction :=
+  let kindPred : ObjectPred :=
+    .any (kinds.map fun k => .hasSubtype (.literal k))
+  let untapCond? : Option Condition :=
+    if untapAt == 0 then none
+    else some (.cmp .ge
+      (.aggregate .count .one (.inZones .battlefield (.all #[.hasType .land, .controlledBy .you])))
+      (.const untapAt))
+  .player (.searchLibrary {
+    filter := .all #[.hasSupertype .basic, .hasType .land, kindPred]
+    count := .upTo (.const 1)
+    dest := .battlefield .controller
+    mods := { tapped := true }
+    reveal := true
+    shuffle := true
+    untapIf? := untapCond? })
+
+/-- Animate this permanent into a `p/t` creature until end of turn, optionally
+with flying and/or first strike during your turn. -/
+private def instrAnimate (p t : Nat) (flying firstStrikeOnYourTurn : Bool) : Instruction :=
+  let mods : Array ContinuousModification := Id.run do
+    let mut out : Array ContinuousModification := #[
+      .modifyTypes { mode := .add, types := #[.creature] },
+      .setBasePT (some (.const p)) (some (.const t))]
+    if flying then
+      out := out.push (.grantKeywords #[Keyword.flying])
+    if firstStrikeOnYourTurn then
+      out := out.push (.grantStatic #[
+        .continuous (some .isYourTurn) StaticAbility.scopeSelf (.grantKeywords #[Keyword.firstStrike])])
+    return out
+  .installEffect (.applyContinuous .untilEndOfTurn .this (.all mods))
+
 /-- The effect of one loyalty ability, when it is an FRC ability. -/
 def parseFrcLoyaltyEffect (text : String) : Option Effect :=
   let l := low text
   if l.contains "create three 1/1 white soldier" then
     some (Effect.createTokens .soldier11white 3)
   else if l.contains "destroy all creatures with power 4" then
-    some (frc .elspethDestroy text)
+    some (frcInstr
+      (Instruction.destroy (.inZones .battlefield (.all #[.hasType .creature, .stat .power .ge (.const 4)])))
+      text)
   else if l.contains "emblem" && l.contains "flying" then
-    some (frc .elspethEmblem text)
+    some (frcInstr
+      (.create (.emblem .you { staticAbilities := #[StaticAbility.creaturesYouControlGetAndHave 2 2 #[Keyword.flying]] }))
+      text)
   else if l.contains "draw two cards, then put a card from your hand on the bottom" then
-    some (frc .jacePlus text)
+    some (frcInstr
+      (.seq #[
+        Instruction.drawFixed 2,
+        .moveZone (.inZones .yourHand .anyObject) (.library .owner .bottom false) .put
+          { choice? := some { chooser := .controller, count := .exact (.const 1) } }])
+      text)
   else if l.contains "exile another target planeswalker or creature" then
-    some (frc .jaceMinus text (.ofDomain (.object .battlefield (.all #[
-      .otherThan .this,
-      .any #[.hasType .planeswalker, .hasType .creature],
-      .controlledBy .you
-    ]))))
+    some (frcInstr
+      (.seq #[
+        Instruction.exile (.target 0),
+        .player (.inspectLibrary {
+          source := .revealUntil .you (.any #[.hasType .creature, .hasType .planeswalker]) (.const 1)
+          action := .moveAll (.battlefield .controller)
+          rest := .bottomRandom })])
+      text
+      (.ofDomain (.object .battlefield (.all #[
+        .otherThan .this,
+        .any #[.hasType .planeswalker, .hasType .creature],
+        .controlledBy .you
+      ]))))
   else none
 
 private def effectText (raw : String) : Option Effect :=
@@ -151,34 +205,106 @@ private def effectText (raw : String) : Option Effect :=
   | some e => some e
   | none =>
     let l := low raw
-    if l.contains "draw three cards, then put two cards" then some (frc (.drawPutOnTop 3 2) raw)
-    else if l.contains "draw four cards, then put two cards" then some (frc (.drawPutOnTop 4 2) raw)
+    if l.contains "draw three cards, then put two cards" then
+      some (frcInstr (instrDrawPutOnTop 3 2) raw)
+    else if l.contains "draw four cards, then put two cards" then
+      some (frcInstr (instrDrawPutOnTop 4 2) raw)
     else if l.contains "exile target permanent with mana value 4" then
-      some (frc .exileTarget raw (.ofDomain (.object .battlefield (.stat .manaValue .ge (.const 4)))))
+      some (frcInstr (Instruction.exile (.target 0)) raw
+        (.ofDomain (.object .battlefield (.stat .manaValue .ge (.const 4)))))
     else if l.contains "exile target creature. its controller may search" then
-      some (frc .pathToExile raw creature)
+      some (frcInstr
+        (.seq #[
+          Instruction.exile (.target 0),
+          Instruction.may (.controllerOf (.target 0)) none
+            (.player (.searchLibrary {
+              searcher := .controllerOf (.target 0)
+              zones := .libraryOf (.controllerOf (.target 0))
+              filter := .all #[.hasSupertype .basic, .hasType .land]
+              count := .upTo (.const 1)
+              dest := .battlefield (.player (.controllerOf (.target 0)))
+              mods := { tapped := true }
+              reveal := true
+              shuffle := true }))])
+        raw creature)
     else if l.contains "exile target creature. its controller gains life" then
-      some (frc .swords raw creature)
+      some (frcInstr
+        (.seq #[
+          Instruction.exile (.target 0),
+          .life (.gain (.controllerOf (.target 0)) (.objectStat .power (.target 0)))])
+        raw creature)
     else if l.contains "destroy target nonland" then
-      some (frc .stroke raw .nonland)
+      some (frcInstr
+        (.seq #[
+          Instruction.destroy (.target 0),
+          Instruction.createTokensFixed .human11white 1 (.controllerOf (.target 0))])
+        raw .nonland)
     else if l.contains "create x 1/1 green and white citizen" then
-      some (frc .grandCrescendo raw)
+      some (frcInstr
+        (.seq #[
+          .create (.tokens .you .chosenX .citizen),
+          Instruction.grantKeywords
+            (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you]))
+            #[Keyword.indestructible]])
+        raw)
     else if l.contains "create x 1/1 white soldier" && l.contains "if x is 5" then
-      some (frc .martialCoup raw)
+      some (frcInstr
+        (.bind ⟨0⟩ (.create (.tokens .you .chosenX .soldier11white))
+          (Instruction.ifThen (.cmp .ge .chosenX (.const 5))
+            (Instruction.destroy (.inZones .battlefield (.all #[.hasType .creature, .otherThan (.stepVar ⟨0⟩)])))))
+        raw)
     else if l.contains "create x 1/1 white warrior" then
-      some (frc .warriorsX raw)
+      some (frcInstr (.create (.tokens .you .chosenX .warrior)) raw)
     else if l.contains "you gain x life" && l.contains "phyrexian mite" then
-      some (frc .whiteSuns raw)
+      some (frcInstr
+        (.seq #[
+          .life (.gain .you .chosenX),
+          .bind ⟨0⟩ (.create (.tokens .you .chosenX .mite))
+            (Instruction.ifThen (.cmp .ge .chosenX (.const 5))
+              (Instruction.destroy (.inZones .battlefield (.all #[.hasType .creature, .otherThan (.stepVar ⟨0⟩)]))))])
+        raw)
     else if l.contains "draw x cards, then discard x cards" then
-      some (frc .occult raw)
+      some (frcInstr
+        (.seq #[
+          .player (.drawCards .you .chosenX),
+          .bind ⟨0⟩ (Instruction.discard .chosenX)
+            (.create (.tokens .you (.cardTypeCount (.stepObjects ⟨0⟩)) .spirit))])
+        raw)
     else if l.contains "exile all creatures. incubate" then
-      some (frc .sunfall raw)
+      some (frcInstr
+        (.bind ⟨0⟩ (Instruction.exile (.inZones .battlefield (.hasType .creature)))
+          (.create (.tokens .you (.const 1) .incubator
+            { counters := #[(.plusOnePlusOne, .stepMetric .movedCount ⟨0⟩)] })))
+        raw)
     else if l.contains "exile all creatures you control, then reveal" then
-      some (frc .massPolymorph raw)
+      some (frcInstr
+        (.bind ⟨0⟩ (Instruction.exile (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])))
+          (.player (.inspectLibrary {
+            source := .revealUntil .you (.hasType .creature) (.stepMetric .movedCount ⟨0⟩)
+            action := .moveAll (.battlefield .controller)
+            rest := .shuffleIntoLibrary })))
+        raw)
     else if l.contains "exile all creatures you control. at the beginning of the next end step" then
-      some (frc .syntheticDestiny raw)
+      some (frcInstr
+        (.bind ⟨0⟩ (Instruction.exile (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])))
+          (.installEffect (.createDelayedTrigger {
+            pattern := .stepBegins .end (.player .any)
+            duration := .untilEndOfTurn
+            oneShot := true
+            effect := {
+              body := .player (.inspectLibrary {
+                source := .revealUntil .you (.hasType .creature) (.stepMetric .movedCount ⟨0⟩)
+                action := .moveAll (.battlefield .controller)
+                rest := .shuffleIntoLibrary })
+              phrase := "Reveal cards from the top of your library until you reveal that many creature cards, put all creature cards revealed this way onto the battlefield, then shuffle the rest into your library" } })))
+        raw)
     else if l.contains "reveal the top five cards" then
-      some (frc .factOrFiction raw)
+      some (frcInstr
+        (.player (.inspectLibrary {
+          source := .topCards .you (.const 5) true
+          action := .splitIntoPiles .opponents .you 2 (.hand .controller) .graveyard
+          rest := .graveyard }))
+        raw)
     else if l.contains "create two 1/1 white spirit" then
       some (Effect.createTokens .spirit 2)
     else if l.contains "creatures you control gain indestructible" then
@@ -190,35 +316,54 @@ private def effectText (raw : String) : Option Effect :=
     else if l == "draw a card." || l == "draw a card" then
       some (Effect.draw 1)
     else if l.contains "each opponent loses 1 life and you gain 1" then
-      some (frc .nivDrain raw)
+      some (frcInstr (.seq #[.life (.lose .opponents (.const 1)), .life (.gain .you (.const 1))]) raw)
     else if l.contains "draw a card, then discard a card" then
-      some (frc .currencyLoot raw)
+      some (frcInstr (.seq #[Instruction.drawFixed 1, Instruction.discardFixed 1]) raw)
     else if l.contains "put a card exiled with this artifact" then
-      some (frc .currencyReturn raw)
+      some (frcInstr
+        (.bind ⟨0⟩ (.moveZone (.linkedExile .this) .graveyard .put
+            { choice? := some { chooser := .controller, count := .exact (.const 1) } })
+          (Instruction.ifThen (.cmp .ge (.stepMetric .movedCount ⟨0⟩) (.const 1))
+            (.ifCond (.exists (.filter (.stepObjects ⟨0⟩) (.hasType .land)))
+              (Instruction.createTokensFixed .treasure 1)
+              (Instruction.createTokensFixed .rogue22black 1))))
+        raw)
     else if l.contains "put target creature on the bottom" then
-      some (frc .proteus raw creature)
+      some (frcInstr
+        (.seq #[
+          .moveZone (.target 0) (.library .owner .bottom false) .put,
+          .player (.inspectLibrary {
+            source := .revealUntil (.controllerOf (.target 0)) (.hasType .creature) (.const 1)
+            action := .moveAll (.battlefield (.player (.controllerOf (.target 0))))
+            rest := .bottomRandom })])
+        raw creature)
     else if l.contains "becomes a 2/3" then
-      some (frc (.animate 2 3 true false) raw)
+      some (frcInstr (instrAnimate 2 3 true false) raw)
     else if l.contains "becomes a 2/1" then
-      some (frc (.animate 2 1 false true) raw)
+      some (frcInstr (instrAnimate 2 1 false true) raw)
     else if l.contains "create a 0/1 red kobold" then
-      some (frc .kobold raw)
+      some (frcInstr (Instruction.createTokensFixed .kobold 1) raw)
     else if l.contains "gets +1/+0 until end of turn" then
-      some (frc (.pump 1) raw)
+      some (frcInstr (Instruction.pumpFixed .this 1 0) raw)
     else if l.contains "search your library for a basic plains, island, or swamp" then
-      some (frc (.searchBasics #[.plains, .island, .swamp] 0) raw)
+      some (frcInstr (instrSearchBasics #[.plains, .island, .swamp] 0) raw)
     else if l.contains "search your library for a basic island, mountain, or plains" then
-      some (frc (.searchBasics #[.island, .mountain, .plains] 0) raw)
+      some (frcInstr (instrSearchBasics #[.island, .mountain, .plains] 0) raw)
     else if l.contains "search your library for a basic land card" then
-      some (frc (.searchBasics #[.plains, .island, .swamp, .mountain, .forest] 4) raw)
+      some (frcInstr (instrSearchBasics #[.plains, .island, .swamp, .mountain, .forest] 4) raw)
     else if l.contains "add {c}{c}" || l.contains "add {C}{C}" then
       some (Effect.addMana #[.colorless, .colorless])
     else if l.contains "copy target instant or sorcery" then
-      some (frc .venserSpell raw (.ofDomain (.object .stack (.all #[
-        .any #[.hasType .instant, .hasType .sorcery], .isKind .spell, .controlledBy .opponent
-      ]))))
+      some (frcInstr (.stack (.copyStackObject (.target 0) (.const 2) true)) raw
+        (.ofDomain (.object .stack (.all #[
+          .any #[.hasType .instant, .hasType .sorcery], .isKind .spell, .controlledBy .opponent
+        ]))))
     else if l.contains "create two tokens that are copies" then
-      some (frc .venserPerm raw .oppPermanent)
+      some (frcInstr
+        (.create (.tokens .you (.const 2) (.copyOf (.target 0) #[]) {
+          grantKeywordsUntilEot := #[Keyword.haste]
+          delayedAction? := some .sacrificeAtEndStep }))
+        raw .oppPermanent)
     else none
 
 /-- One unrecognized Oracle line on an FRC card, if this module models it. -/
@@ -290,7 +435,11 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
         if c.staticAbilities.contains anchorAb then c
         else { c with staticAbilities := c.staticAbilities.push anchorAb }
       if l.contains "jeskai —" || l.contains "mardu —" then
-        some (pushTrig c' .stepYourUpkeep (frc .goblin line) line)
+        let goblinInstr : Instruction :=
+          Instruction.ifThen (.exists (.filter .this (.chosenAnchorIs "Jeskai")))
+            (.create (.tokens .you (.const 1) .goblin11red
+              { grantKeywordsUntilEot := #[Keyword.lifelink, Keyword.haste] }))
+        some (pushTrig c' .stepYourUpkeep (frcInstr goblinInstr line) line)
       else
         some c'
     else none
@@ -308,79 +457,191 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
       | _ => none
     else
       if l.contains "enters or attacks" && l.contains "target opponent sacrifices" then
-        some (pushTrig c .enterOrAttack (frc .archon line oppPlayer) line oppPlayer)
+        let archonInstr : Instruction := .seq #[
+          .moveZone
+            (.inZones .battlefield (.all #[
+              .controlledBy (PlayerFilter.ofExpr (.target 0)),
+              .any #[.hasType .creature, .hasType .planeswalker]]))
+            .graveyard .sacrifice
+            { choice? := some { chooser := .player (.target 0), count := .exact (.const 1) } },
+          Instruction.discardFixed 1 (.target 0),
+          Instruction.loseLifeFixed 3 (.target 0),
+          Instruction.drawFixed 1,
+          Instruction.gainLifeFixed 3]
+        some (pushTrig c .enterOrAttack (frcInstr archonInstr line oppPlayer) line oppPlayer)
       else if l.contains "enters or attacks" && l.contains "historic" then
-        some (pushTrig c .enterOrAttack (frc .jhoira line oppPlayer) line oppPlayer)
+        let jhoiraInstr : Instruction :=
+          .bind ⟨0⟩
+            (.player (.inspectLibrary {
+              source := .revealUntil (.target 0) ObjectPred.historic (.const 1)
+              action := .moveAll (.battlefield .controller)
+              rest := .bottomRandom }))
+            (.life (.lose .you (.aggregate .sum (.stat .manaValue) (.stepObjects ⟨0⟩))))
+        some (pushTrig c .enterOrAttack (frcInstr jhoiraInstr line oppPlayer) line oppPlayer)
       else if l.contains "enters or attacks" && l.contains "insect" then
-        some (pushTrig c .enterOrAttack (frc .insects line) line)
+        some (pushTrig c .enterOrAttack (frcInstr (Instruction.createTokensFixed .insect21flying 2) line) line)
       else if l.contains "another nontoken creature you control dies" ||
           (l.contains "nontoken creature you control dies") then
-        some (pushTrig c .nontokenCreatureYouControlDies (frc .avacyn line) line)
+        let avacynInstr : Instruction :=
+          .installEffect (.createDelayedTrigger {
+            pattern := .stepBegins .end (.player .any)
+            duration := .untilEndOfTurn
+            oneShot := true
+            effect := {
+              body := .moveZone .triggerSubject (.battlefield .controller) .put
+              phrase := "Return that card to the battlefield under your control" } })
+        some (pushTrig c .nontokenCreatureYouControlDies (frcInstr avacynInstr line) line)
       else if l.contains "you become the monarch" && l.contains "enters" then
-        some (pushTrig c .thisEnters (frc .monarch line) line)
+        some (pushTrig c .thisEnters (frcInstr (.player (.becomeMonarch .you)) line) line)
       else if l.contains "you're the monarch" && l.contains "gingerbrute" then
-        some (pushTrig c .stepEachUpkeep (frc .gingerbrute line) line
+        let gbInstr : Instruction :=
+          Instruction.ifThen (.playerPred .you .isMonarch) (Instruction.createTokensFixed .gingerbrute 1)
+        some (pushTrig c .stepEachUpkeep (frcInstr gbInstr line) line
           (interveningIf? := some TriggeredAbility.condYouAreMonarch))
       else if l.contains "reveal cards from the top of your library until you reveal x creature" then
-        some (pushTrig c .thisEnters (frc .dack line) line)
+        let dackInstr : Instruction :=
+          .player (.inspectLibrary {
+            source := .revealUntil .you (.hasType .creature) (.playerMetric .opponentsCount .you)
+            action := .distributeEachOpponent (.battlefield .controller) { goaded := true }
+            rest := .shuffleIntoLibrary })
+        some (pushTrig c .thisEnters (frcInstr dackInstr line) line)
       else if l.contains "zombie token you control with power 6" then
-        some (pushTrig c .zombieTokenPowerSixAttacks (frc .dreadLink line) line)
+        some (pushTrig c .zombieTokenPowerSixAttacks
+          (frcInstr (Instruction.grantKeywords .triggerSubject #[Keyword.lifelink]) line) line)
       else if l.contains "you lose 1 life and amass zombies" then
-        some (pushTrig c .stepYourUpkeep (frc .dreadUpkeep line) line)
+        some (pushTrig c .stepYourUpkeep
+          (frcInstr (.seq #[Instruction.loseLifeFixed 1, Instruction.amassFixed 1 .zombie]) line) line)
       else if l.contains "you lose 1 life and create a 1/1 colorless phyrexian mite" then
-        some (pushTrig c .stepYourUpkeep (frc .skrelv line) line)
+        some (pushTrig c .stepYourUpkeep
+          (frcInstr (.seq #[Instruction.loseLifeFixed 1, Instruction.createTokensFixed .mite 1]) line) line)
       else if l.contains "whenever you gain life, you may pay" then
-        some (pushTrig c (.gainLife .you) (frc .nivPay line) line)
+        let nivPayInstr : Instruction :=
+          Instruction.may .you (some (CostSpec.ofItem (.payLife .eventAmount)))
+            (.player (.drawCards .you .eventAmount))
+        some (pushTrig c (.gainLife .you) (frcInstr nivPayInstr line) line)
       else if l.contains "destroy all tapped creatures your opponents control" then
-        some (pushTrig c .thisEnters (frc .obEnter line) line)
+        let obEnterInstr : Instruction :=
+          .bind ⟨0⟩
+            (Instruction.destroy (.inZones .battlefield (.all #[
+              .hasType .creature, .tapped true, .controlledBy .opponent])))
+            (.life (.gain .you (.stepMetric .movedCount ⟨0⟩)))
+        some (pushTrig c .thisEnters (frcInstr obEnterInstr line) line)
       else if l.contains "if you gained life this turn, create a 4/4" then
-        some (pushTrig c .stepEachEndStep (frc .obAngel line) line
+        let obAngelInstr : Instruction :=
+          Instruction.ifThen (TriggeredAbility.condGainedLifeAtLeast 1)
+            (Instruction.createTokensFixed .angel44white 1)
+        some (pushTrig c .stepEachEndStep (frcInstr obAngelInstr line) line
           (interveningIf? := some (TriggeredAbility.condGainedLifeAtLeast 1)))
       else if l.contains "whenever a land you control enters, add" then
-        some (pushTrig c .landYouControlEnters (frc .omnathCc line) line)
+        some (pushTrig c .landYouControlEnters
+          (frcInstr (Instruction.addSimpleMana #[.colorless, .colorless]) line) line)
       else if l.contains "whenever a land you control enters, draw a card" then
-        some (pushTrig c .landYouControlEnters (frc .nissa line) line)
+        let nissaInstr : Instruction :=
+          .seq #[
+            Instruction.drawFixed 1,
+            Instruction.ifThen (.turnHistory .optionalOnceUnusedThisTurn)
+              (.player (.inspectLibrary {
+                source := .revealUntil .you (.hasType .creature) (.const 1)
+                action := .moveAll (.battlefield .controller)
+                rest := .bottomRandom }))]
+        some (pushTrig c .landYouControlEnters (frcInstr nissaInstr line) line)
       else if l.contains "at the beginning of each end step, each opponent loses life" then
-        some (pushTrig c .stepEachEndStep (frc .despair line) line)
+        let despairInstr : Instruction :=
+          .forEach (.eachPlayer .opponent) ⟨0⟩
+            (.life (.lose (.stepPlayers ⟨0⟩) (.playerMetric .lifeLostThisTurn (.stepPlayers ⟨0⟩))))
+        some (pushTrig c .stepEachEndStep (frcInstr despairInstr line) line)
       else if l.contains "whenever you discard a card, you may exile" then
-        some (pushTrig c (.discard .you .anyObject) (frc .currencyExile line) line)
+        let currencyExileInstr : Instruction :=
+          Instruction.may .you none (.moveZone .triggerSubject .exile .exile { linkToSource := true })
+        some (pushTrig c (.discard .you .anyObject) (frcInstr currencyExileInstr line) line)
       else if l.contains "whenever you create one or more creature tokens" then
-        some (pushTrig c (.createTokens .you (.hasType .creature)) (frc .story line) line
+        some (pushTrig c (.createTokens .you (.hasType .creature))
+          (frcInstr (Instruction.putCounters .this .story (.const 1)) line) line
           (grouping := .oncePerBatch))
       else if l.contains "when this artifact enters, create a 1/1 white spirit" then
-        some (pushTrig c .thisEnters (frc .spirit line) line)
+        some (pushTrig c .thisEnters (frcInstr (Instruction.createTokensFixed .spirit 1) line) line)
       else if l.contains "when memnarch enters" || l.contains "create two 1/1 colorless myr" then
-        some (pushTrig c .thisEnters (frc (.myr 2) line) line)
+        some (pushTrig c .thisEnters (frcInstr (Instruction.createTokensFixed .myr 2) line) line)
       else if l.contains "draw a card for each artifact you control" then
-        some (pushTrig c .thisAttacks (frc .drawPerArtifact line) line)
+        let drawArtInstr : Instruction :=
+          .player (.drawCards .you
+            (.aggregate .count .one (.inZones .battlefield (.all #[.hasType .artifact, .controlledBy .you]))))
+        some (pushTrig c .thisAttacks (frcInstr drawArtInstr line) line)
       else if l.contains "whenever you cast a noncreature spell, create an x/x blue shark" then
-        some (pushTrig c .youCastNoncreature (frc .sharkCast line) line)
+        let sharkSpec : TokenSpec :=
+          .custom {
+            types := #[.creature]
+            subtypes := #[.shark]
+            colors := ColorSet.singleton .blue
+            power? := some (.objectStat .manaValue .triggerSubject)
+            toughness? := some (.objectStat .manaValue .triggerSubject)
+            keywords := #[Keyword.flying] }
+        some (pushTrig c .youCastNoncreature
+          (frcInstr (.create (.tokens .you (.const 1) sharkSpec)) line) line)
       else if l.contains "whenever you cast a noncreature spell, draw a card" then
         some (pushTrig c .youCastNoncreature (Effect.draw 1) line)
       else if l.contains "when you cycle this card" then
-        some (pushTrig c .thisCycled (frc .sharkCycle line) line (activeZones := #[.hand]))
+        let sharkSpec : TokenSpec :=
+          .custom {
+            types := #[.creature]
+            subtypes := #[.shark]
+            colors := ColorSet.singleton .blue
+            power? := some .eventAmount
+            toughness? := some .eventAmount
+            keywords := #[Keyword.flying] }
+        some (pushTrig c .thisCycled
+          (frcInstr (.create (.tokens .you (.const 1) sharkSpec)) line) line
+          (activeZones := #[.hand]))
       else if l.contains "combat on each opponent's turn" then
-        some (pushTrig c .stepOpponentBeginCombat (frc .jaceTax line) line)
+        let jaceTaxInstr : Instruction :=
+          .unlessPays .activePlayer (CostSpec.ofGeneric 2)
+            (.installEffect (.applyRule .untilEndOfTurn
+              (.combat (.cantAttackPlayer
+                (.all #[.hasType .creature, .controlledBy (PlayerFilter.ofExpr .activePlayer)])
+                .you
+                (some (.all #[.hasType .planeswalker, .hasSubtype (.literal .jace)]))))))
+        some (pushTrig c .stepOpponentBeginCombat (frcInstr jaceTaxInstr line) line)
       else if l.contains "while you're the monarch, tap those creatures" then
         some (pushTrig c (.whenCond .combatDamageToYou TriggeredAbility.condYouAreMonarch)
-          (frc .tamiyoStun line) line (grouping := .oncePerBatch))
+          (frcInstr (Instruction.tapAndStun .triggerSubject) line) line
+          (grouping := .oncePerBatch))
       else if l.contains "one or more sphinxes you control attack" then
-        some (pushTrig c .sphinxesYouControlAttack (frc .urSphinx line) line
+        let urSphinxInstr : Instruction :=
+          .forEach (.eachPlayer .any) ⟨0⟩
+            (.bind ⟨1⟩ (Instruction.mill .eventAmount (.stepPlayers ⟨0⟩))
+              (.stack (.mayCastOrPlay (.stepObjects ⟨1⟩)
+                { freeCast := true
+                  landsAllowed := false
+                  maxCasts? := some 1
+                  filter? := some (.not (.hasType .land)) })))
+        some (pushTrig c .sphinxesYouControlAttack (frcInstr urSphinxInstr line) line
           (grouping := .oncePerBatch))
       else if l.contains "whenever this land attacks, create a map" then
-        some (pushTrig c .thisAttacks (frc .mapToken line) line)
+        some (pushTrig c .thisAttacks (frcInstr (Instruction.createTokensFixed .map 1) line) line)
       else if l.contains "whenever this land attacks, scry" then
         some (pushTrig c .thisAttacks (Effect.scry 1) line)
       else if l.contains "as this artifact enters, you may have it become a copy" then
         some { c with staticAbilities := c.staticAbilities.push StaticAbility.asEntersMayCopyCreatureHasteUntilEot }
       else if l.contains "choose target opponent. until that player's next turn" then
-        some (pushSpell c (frc .teferi line oppPlayer))
+        let teferiInstr : Instruction := .seq #[
+          .installEffect (.applyRule (.untilNextTurnOf (.target 0))
+            (.all #[
+              .player (.protectionFrom (PlayerFilter.ofExpr (.target 0)) .everything),
+              .player (.lifeTotalCantChange (PlayerFilter.ofExpr (.target 0)))])),
+          .permanent (.phaseOut
+            (.inZones .battlefield (.all #[
+              .controlledBy (PlayerFilter.ofExpr (.target 0)),
+              .not (.hasType .land)]))
+            (some (.target 0))),
+          .installEffect (.applyReplacement .untilEndOfTurn .exileOnLeaveStack)]
+        some (pushSpell c (frcInstr teferiInstr line oppPlayer))
       else if l.contains "when venser enters, choose one" ||
           (l.contains "choose one" && l.contains "copy target instant") then
         match effectText "Copy target instant or sorcery spell an opponent controls twice.",
             effectText "Create two tokens that are copies of target permanent an opponent controls." with
         | some a, some b =>
-          some (pushTrig c .thisEnters (frcEffectChoose line) line (modes := #[a, b]))
+          let ab := TriggeredAbility.mkModal .thisEnters #[a, b] (word? := some .when)
+          some { c with triggeredAbilities := c.triggeredAbilities.push ab }
         | _, _ => none
       else
         match effectText line with
@@ -389,8 +650,5 @@ def parseFrcLine (c : CardDef) (line : String) : Option CardDef :=
             none
           else some (pushSpell c e)
         | none => none
-where
-  frcEffectChoose (phrase : String) : Effect :=
-    { resolution := .chooseTriggerModes 1, phrase }
 
 end Mtg.Engine

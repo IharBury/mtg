@@ -1254,11 +1254,11 @@ that also appear in other sets. -/
 
 #guard roguesPassage.isLand
 #guard roguesPassage.activatedAbilities.size == 2
-#guard roguesPassage.activatedAbilities[0]!.mana? == some { spec := .fixedOne .colorless }
+#guard roguesPassage.activatedAbilities[0]!.manaProduction? == some { spec := .fixedOne .colorless }
 #guard roguesPassage.activatedAbilities[1]!.effect == Effect.targetCantBeBlockedThisTurn
 #guard roguesPassage.activatedAbilities[1]!.cost.tap
 #guard roguesPassage.activatedAbilities[1]!.cost.mana == (ManaCost.ofGeneric 4)
-#guard elvishMystic.activatedAbilities[0]?.bind (·.mana?) == some { spec := .fixedOne (.colored .green) }
+#guard elvishMystic.activatedAbilities[0]?.bind (·.manaProduction?) == some { spec := .fixedOne (.colored .green) }
 #guard (wayfarersBauble.summary.splitOn "Search your library").length > 1
 #guard (roguesPassage.summary.splitOn "can't be blocked").length > 1
 #guard orcishSiegemaster.hasSimpleKeyword .trample
@@ -1286,7 +1286,7 @@ that also appear in other sets. -/
 #guard elvishVisionary.triggeredAbilities == #[.onEnterDraw 1]
 #guard (elvishVisionary.summary.splitOn "draw a card").length > 1
 #guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #[.elf] 1 1]
-#guard elvishArchdruid.activatedAbilities[0]?.bind (·.mana?) ==
+#guard elvishArchdruid.activatedAbilities[0]?.bind (·.manaProduction?) ==
   some { spec := .sequence #[(ManaType.colored .green,
     ValueExpr.count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))] }
 #guard elvishArchdruid.manaAbilities == #[.colored .green]
@@ -1315,9 +1315,8 @@ that also appear in other sets. -/
 #guard goblinCratermaker.activatedAbilities[0]!.cost.sacrificeSource
 #guard goblinCratermaker.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard goblinCratermaker.activatedAbilities[0]!.isModal
-#guard goblinCratermaker.activatedAbilities[0]!.effect == Effect.dealDamageToTargetCreature 2
-#guard goblinCratermaker.activatedAbilities[0]!.otherModes ==
-  #[Effect.destroyTargetColorlessNonland]
+#guard goblinCratermaker.activatedAbilities[0]!.allModes ==
+  #[Effect.dealDamageToTargetCreature 2, Effect.destroyTargetColorlessNonland]
 #guard (goblinCratermaker.summary.splitOn "Choose one").length > 1
 #guard (goblinCratermaker.summary.splitOn "colorless nonland").length > 1
 #guard smiteTheDeathless.isInstant

@@ -21,7 +21,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .becomePrepared))
+  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.becomePrepared .target) }
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -160,7 +160,7 @@ left, do not. A source with no prepare spell does not. -/
     logContains g "Angel becomes prepared. A copy of Seed is exiled"
 
 #guard
-  let g := step board (TriggeredAbility.TriggerResolution.ofSource .becomePrepared)
+  let g := step board (.becomePrepared .source)
     (some (pid board "Angel")) #[Target.permanent (pid board "Bear")]
   isPrepared g "Angel" && !isPrepared g "Bear" && seedExiled g "Angel"
 
@@ -193,7 +193,7 @@ An Aura that has left is reported. -/
 
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Angel"
-  let g := step g0 (TriggeredAbility.TriggerResolution.ofEnchanted .becomePrepared)
+  let g := step g0 (.becomePrepared .enchanted)
     (some (pid g0 "Grasp")) #[Target.permanent (pid g0 "Bear")]
   isPrepared g "Angel" && !isPrepared g "Bear"
 
@@ -223,8 +223,7 @@ the source is still there. -/
   isPrepared g "Angel" && !isPrepared g "Bear" && seedExiled g "Angel"
 
 #guard
-  let g := step board
-    (TriggeredAbility.TriggerResolution.ofTargetWhileSource .becomePrepared)
+  let g := step board (.becomePrepared (.target .whileSource))
     (some (pid board "Bear")) #[Target.permanent (pid board "Angel")]
   isPrepared g "Angel" && !isPrepared g "Bear"
 
@@ -257,40 +256,32 @@ become prepared. -/
     isPrepared yours "Angel" && !isPrepared yours "Bear"
 
 /- Printed phrases stay with the recipient that produces them. -/
-#guard TriggeredAbility.TriggerResolution.ofPermanent .becomePrepared ==
-  .becomePrepared
-#guard TriggeredAbility.TriggerResolution.ofSource .becomePrepared ==
-  .becomePrepared .source
-#guard TriggeredAbility.TriggerResolution.ofEnchanted .becomePrepared ==
-  .becomePrepared .enchanted
-#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .becomePrepared ==
-  .becomePrepared (.target .whileSource)
 
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution := prepared } ==
+    { targeting := .of .creature, resolution? := some (prepared) } ==
   "target creature becomes prepared"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomePrepared .source } ==
+    { resolution? := some (.becomePrepared .source) } ==
   "this creature becomes prepared"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomePrepared .enchanted } ==
+    { resolution? := some (.becomePrepared .enchanted) } ==
   "enchanted creature becomes prepared"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomePrepared (.target .whileSource) } ==
+    { resolution? := some (.becomePrepared (.target .whileSource)) } ==
   "that creature becomes prepared"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomePrepared .cause } ==
+    { resolution? := some (.becomePrepared .cause) } ==
   "becomes prepared"
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
-    resolution := .sequence
-      [.attach .source .target, .becomePrepared (.target .whileSource)] } ==
+    resolution? := some (.sequence
+      [.attach .source .target, .becomePrepared (.target .whileSource)]) } ==
   "attach it to target creature you control. That creature becomes prepared"
 
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature becomes prepared."
 #guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .becomePrepared))) ==
+    (TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.becomePrepared .source) }) ==
   "When this permanent enters, this creature becomes prepared."
 
 end Mtg.Engine.BecomePreparedTests

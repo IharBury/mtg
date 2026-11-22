@@ -57,7 +57,7 @@ attacks" triggers (CR 508.3a). -/
 #guard
   let attackWatcher : CardDef :=
     { (creature "Attack Watcher" ManaCost.empty #["Hero"] 2 2) with
-      triggeredAbilities := #[TriggeredAbility.ofPattern .creatureYouControlAttacks "" (.draw 1)] }
+      triggeredAbilities := #[TriggeredAbility.ofPattern .creatureYouControlAttacks "" (Instruction.drawFixed 1)] }
   let oppWalker : CardDef :=
     { name := "Opp Walker"
       types := #[.planeswalker]
@@ -268,9 +268,14 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     { name := "Test Modal X Bolt"
       manaCost := { symbols := #[.x, .colored .red] }
       types := #[.instant]
-      chooseOneOrBoth := true
       keywords := #[.kicker (CostSpec.ofGeneric 1), .gift .treasure]
-      spellModes := #[.dealDamage 2, .gainLife 2] }
+      spellEffect := some {
+        body := .chooseModes {
+          minModes := .const 1
+          maxModes := .const 2
+          modes := #[Effect.dealDamage 2, Effect.gainLife 2]
+        }
+      } }
   let gCast0 := insertObject (quiet afterDraw) testModalSpell me .stack (some me)
     (adventurerCard := some bear)
   let spId := (gCast0.objects.filter (·.name == "Test Modal X Bolt"))[0]!.id
@@ -331,7 +336,7 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
   -- 4. TriggerQueueEvent.putOnStack and StackObjectEvent.removedOnResolution (CR 608.2b)
   let gTrig0 := addPermanent (quiet afterDraw) bear opp opp
   let oppBear := (gTrig0.battlefield.filter (fun o => o.name == bear.name && gTrig0.controlledBy o opp))[0]!
-  let trigAb := TriggeredAbility.ofPattern .thisEnters "When this enters, destroy target creature an opponent controls." (.destroy (.target .creature)) (spec := .oppCreature)
+  let trigAb := TriggeredAbility.ofPattern .thisEnters "When this enters, destroy target creature an opponent controls." (Instruction.destroy (.target 0)) (spec := .oppCreature)
   let gTrigPut := gTrig0.putTriggeredAbilityOnStack me (gTrig0.object! oppBear.id) trigAb "enters"
   let gTrig1 := gTrigPut.setStackEntryTargets gTrigPut.stack.back!.objectId #[Target.permanent oppBear.id]
   let hasTrigPutOnStack := gTrig1.events.any (fun e =>
@@ -432,7 +437,7 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   --    on `pre` and both trigger.
   let deathWatcherAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .anotherCreatureOrPlaneswalkerYouControlDies
-      { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life" }
+      { resolution? := some (.gainLife (.fixed 1)), phrase := "You gain 1 life" }
   let deathWatcherDef : CardDef :=
     { bear with
       name := "Simultaneous Watcher"
@@ -467,7 +472,7 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   --    creature still sees the death in `pre`.
   let leaveWatcherAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisLeaves
-      { resolution := .gainLife (.fixed 2), phrase := "You gain 2 life" }
+      { resolution? := some (.gainLife (.fixed 2)), phrase := "You gain 2 life" }
   let phaserDef : CardDef :=
     { bear with
       name := "Phasing Watcher"
@@ -498,7 +503,7 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   --    in `g.events` (`g.loggedTriggeredThisTurn`) rather than `Status`.
   let onceAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you)
-      { resolution := .scry 1, phrase := "Scry 1" }
+      { body := Instruction.scryFixed 1, phrase := "Scry 1" }
       (limit := .onceEachTurn)
   let onceDef : CardDef :=
     { bear with
@@ -543,11 +548,11 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
     gHulkBatch.waitingTriggers[0]!.lastKnownPower == some 3
   let dmgAb1 : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisDealtDamage
-      { resolution := .gainLife (.fixed 1), phrase := "You gain 1 life" }
+      { resolution? := some (.gainLife (.fixed 1)), phrase := "You gain 1 life" }
       (grouping := .oncePerBatch)
   let dmgAb2 : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisDealtDamage
-      { resolution := .scry 1, phrase := "Scry 1" }
+      { body := Instruction.scryFixed 1, phrase := "Scry 1" }
       (grouping := .oncePerBatch)
   let dmgWatcherDef : CardDef :=
     { bear with
@@ -634,7 +639,7 @@ trigger, and the modified event carries `EventCause.replaced`. -/
   -- 2a. Death replaced by finality counter exile (CR 122.1h / 614.6).
   let diesWatcherAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisDies
-      { resolution := .gainLife (.fixed 5), phrase := "You gain 5 life" }
+      { resolution? := some (.gainLife (.fixed 5)), phrase := "You gain 5 life" }
   let finalityBearDef : CardDef :=
     { bear with
       name := "Finality Bear"
@@ -1562,9 +1567,9 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   let subEnterAb : TriggeredAbility := .onThisOrAnotherSubtypeEntersCreateTokens "Dwarf" .treasure 1
   let combatTokAb : TriggeredAbility := .onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2
   let preGrantAb : TriggeredAbility :=
-    TriggeredAbility.ofPattern .thisAttacks "Whenever this creature attacks, draw a card." (.draw 1)
+    TriggeredAbility.ofPattern .thisAttacks "Whenever this creature attacks, draw a card." (Instruction.drawFixed 1)
   let postGrantAb : TriggeredAbility :=
-    TriggeredAbility.ofPattern .thisAttacks "Whenever this creature attacks, you gain 2 life." (.gainLife 2)
+    TriggeredAbility.ofPattern .thisAttacks "Whenever this creature attacks, you gain 2 life." (Instruction.gainLifeFixed 2)
   let captainDef : CardDef :=
     creature "DwarfCaptain" ManaCost.empty #["Dwarf"] 2 2
       (triggeredAbilities := #[.onAttackScry 1, subEnterAb, combatTokAb])
@@ -2876,15 +2881,15 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     painCauses gPainRes == #[.gameRule .abilityActivated] &&
     noOneShotCauses gPainQuiet &&
     noOneShotCauses gPainRes
-  -- 2. `applyPermanentAction` and stun-counter `replaceUntap` outside resolution
+  -- 2. Direct permanent helpers and stun-counter `replaceUntap` outside resolution
   let gAct0 :=
     let g := addPermanent afterDraw bear me me
     let bid := (g.battlefield.filter (·.name == "Event Bear"))[0]!.id
     quiet (setTapped (g.recordPutCounters bid .stun 1) bid true)
   let actBear := (gAct0.battlefield.filter (·.name == "Event Bear"))[0]!
-  let gUntapStun := gAct0.applyPermanentAction actBear .untap
-  let gDbl := gAct0.applyPermanentAction actBear .doubleStrikeCounter
-  let gTapStun := gAct0.applyPermanentAction actBear .tapAndStun
+  let gUntapStun := gAct0.untapPermanentLogged actBear
+  let gDbl := gAct0.recordPutCounters actBear.id .doubleStrike 1
+  let gTapStun := gAct0.tapAndStunPermanent actBear
   let stunCauses :=
     gUntapStun.events.filterMap (fun e =>
       match e.change with
@@ -3139,7 +3144,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let loyaltyWatcherDef : CardDef := {
     name := "Phase11 Loyalty Watcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (.draw 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (Instruction.drawFixed 1)]
   }
   let gPw0 := addPermanent (addPermanent afterDraw rockDef me me) loyaltyWatcherDef me me
   let pwRock := (gPw0.battlefield.filter (·.name == "Phase11 Rock"))[0]!

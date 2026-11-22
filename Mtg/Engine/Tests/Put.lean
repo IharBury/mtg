@@ -320,21 +320,21 @@ put nothing. The top card of the library enters. -/
     logContains g "is put onto the battlefield"
 
 /- Printed phrases stay with the combination that produces them. -/
-#guard TriggeredAbility.resolutionPhrase { resolution := .put .linkedExile } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put .linkedExile) } ==
   "return the exiled card to the battlefield under its owner's control"
-#guard TriggeredAbility.resolutionPhrase { resolution := .put (.nonlandMvAtMost 3) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put (.nonlandMvAtMost 3)) } ==
   "put up to one target nonland permanent card with mana value 3 or less from a graveyard onto the battlefield under its owner's control"
-#guard TriggeredAbility.resolutionPhrase { resolution := .put .source (how := .asArtifact) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put .source (how := .asArtifact)) } ==
   "if they were a creature, return them to the battlefield. They're an artifact"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .put .source .underOwner (.entering [.loseAllAbilities]) } ==
+    { resolution? := some (.put .source .underOwner (.entering [.loseAllAbilities])) } ==
   "return this from its owner's graveyard to the battlefield under its owner's control"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .put (.cause (some .villain)) .underOwner } ==
+    { resolution? := some (.put (.cause (some .villain)) .underOwner) } ==
   "return it to the battlefield under its owner's control"
-#guard TriggeredAbility.resolutionPhrase { resolution := .put .landFromHand (how := .tapped) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put .landFromHand (how := .tapped)) } ==
   "put a land card from your hand onto the battlefield tapped"
-#guard TriggeredAbility.resolutionPhrase { resolution := .put .target } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put .target) } ==
   "put it onto the battlefield"
 
 end Mtg.Engine.PutTests

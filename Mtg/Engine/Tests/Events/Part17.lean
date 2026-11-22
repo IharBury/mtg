@@ -48,7 +48,7 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     name := "P51i1 TgtDiesGerm"
     triggeredAbilities := #[
       TriggeredAbility.mkTrigger .thisDies
-        { targeting := .of .player, resolution := .gainLife (.fixed 1), phrase := "Target player gains 1 life." }
+        { targeting := .of .player, resolution? := some (.gainLife (.fixed 1)), phrase := "Target player gains 1 life." }
     ]
   }
   let gZeroLifeWithTgtTrig := addPermanent gZeroLife tgtDiesZeroDef p2 p2
@@ -133,13 +133,13 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     name := "P51i1 SelfFatal"
     manaCost := ManaCost.zero
     types := #[.instant]
-    spellEffect := some { resolution := .ofSpell (.loseLife (.fixed 20) .you), phrase := "You lose 20 life." }
+    spellEffect := some { body := Instruction.loseLifeFixed 20, phrase := "You lose 20 life." }
   }
   let scryInstDef : CardDef := {
     name := "P51i1 ScryInst"
     manaCost := ManaCost.zero
     types := #[.instant]
-    spellEffect := some { resolution := .scry 1, phrase := "Scry 1." }
+    spellEffect := some { body := Instruction.scryFixed 1, phrase := "Scry 1." }
   }
   let gTwoStack0 :=
     insertObject (insertObject g4 zeroInstDef p2 (.hand p2)) selfLoseInstDef p0 (.hand p0)

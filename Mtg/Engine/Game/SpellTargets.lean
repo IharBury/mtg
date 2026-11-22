@@ -90,28 +90,29 @@ def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Eff
       allowsZeroTargets := !targeted.isEmpty &&
         targeted.all (fun m => m.allowsZeroTargets || m.effectiveTargetSpec.allowsZero)
       maxTargets := targeted.foldl (fun acc m => acc + m.maxTargetCount) 0
-      resolution := .sequence (es.map (·.resolution))
+      body := .seq (es.toArray.map (·.body))
+      resolution? := none
       phrase := String.intercalate ". " (es.map (·.phrase)) }
 
 /-- The targets a kicked spell announces instead (CR 702.33g / 601.2c): The
 Eagles Are Coming! chooses any number of creatures you own, and Galadriel's
 Dismissal targets a player. -/
 def kickedSpellEffect (e : Effect) : Effect :=
-  match e.resolution with
-  | .eaglesAreComing =>
+  if e.body == Effect.eaglesAreComing.body then
     { e with
       targeting := .of (.ofDomain
         (.object .battlefield (ObjectPred.andAll #[.hasType .creature, .ownedBy .you]))
         .anyNumber)
       allowsZeroTargets := true, maxTargets := 100 }
-  | .phaseOutKicker => { e with targeting := .of .player }
-  | _ => e
+  else if e.body == Effect.phaseOutKicker.body then
+    { e with targeting := .of .player }
+  else e
 
 /-- True when `c` is a “Choose up to two” graveyard-return modal spell
 (*Call Damage Control*, whose printed representation uses
 `Effect.returnUpToTwoGyModal` so `OracleCandidates` round-trips cleanly). -/
 def isReturnUpToTwoGyModal (c : CardDef) : Bool :=
-  c.spellEffect.any (·.resolution == .returnUpToTwoGyModal)
+  c.spellEffect.any (·.body == Effect.returnUpToTwoGyModal.body)
 
 /-- The four CR 700.2 modes of *Call Damage Control* in printed order:
 0 = target artifact card, 1 = target creature card,
@@ -121,14 +122,13 @@ def returnUpToTwoGyModes : Array Effect :=
     (.enchantment, "enchantment"), (.land, "land")].map fun (ty, label) =>
     Effect.mkSpell
       (.of (.ofDomain (.object .yourGraveyard (ObjectPred.andAll #[.isKind .card, .hasType ty]))))
-      .returnUpToTwoGyModal
-      (castKind := .draw)
-      (phraseOverride := s!"Target {label} card")
+      (.moveZone .allTargets (.hand .controller) .returnToHand {})
+      s!"Target {label} card"
 
 /-- Modes a modal spell face offers during CR 601.2b announcement. -/
 def effectiveSpellModes (c : CardDef) : Array Effect :=
   if isReturnUpToTwoGyModal c then returnUpToTwoGyModes
-  else c.spellModes
+  else c.modes
 
 /-- True when `c` announces modes at CR 601.2b (`c.isModal` or `isReturnUpToTwoGyModal c`). -/
 def isModalSpellFace (c : CardDef) : Bool :=

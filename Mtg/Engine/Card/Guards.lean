@@ -36,155 +36,119 @@ namespace CardDef
 #guard CardDef.stripAdventureDelimiter "//ADV// Spew Flame {4}{R}" ==
   some "Spew Flame {4}{R}"
 #guard (Effect.dealDamage 3).targetSpec == .anyTarget
-#guard (Effect.dealDamage 3).resolution == Resolution.onPermanent (.dealDamage 3)
+#guard (Effect.dealDamage 3).body == Instruction.dealDamageFixed (.targetSlot 0) 3
 #guard (Effect.dealDamage 3).phrase == "deals 3 damage to any target"
-#guard (Effect.dealDamage 3).spellResolution == .onPermanent (.dealDamage 3)
-#guard (Effect.draw 2).resolution == Resolution.draw 2
-#guard (Effect.scry 1).resolution == Resolution.scry 1
-#guard (Effect.gainLife 3).resolution == .gainLife 3
-#guard Resolution.toPhrase (.gainLife 3) "target creature" == "You gain 3 life"
-#guard Resolution.toPhrase (.draw 2) "target player" == "Draw 2 cards"
-#guard Resolution.toPhrase (.sequence [.draw 1, .discard (.cards 1)]) "target creature" ==
-  "Draw a card. Discard a card"
-#guard Resolution.toPhrase (.createTokens .treasure 1 (tapped := true)) "" ==
-  "Create a tapped Treasure token"
-#guard (Effect.drawLoseLifeThenAmass 2).resolution ==
-  Resolution.sequence [.draw 1, .loseLife 1, .amass 2]
-#guard (Effect.createTokensThenTeamPump .villain21menace 1 1 0).resolution ==
-  Resolution.sequence
-    [.createTokens .villain21menace 1, .creaturesYouControlPump 1 0]
-#guard (Effect.createTokens .treasure 1).spellResolution == .createTokens .treasure 1
-#guard (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1).spellResolution ==
-  .createTokens .leviathan65hexproof 1 (who := .player)
-#guard (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1).resolution ==
-  .createTokens .leviathan65hexproof 1 (who := .player)
-#guard SpellResolution.toPhrase (.createTokens .treasure 1) "target player" ==
-  "create a Treasure token"
-#guard SpellResolution.toPhrase
-    (.createTokens .leviathan65hexproof 1 (who := .player)) "target player" ==
-  "target player creates a 6/5 blue Leviathan creature token with hexproof"
-#guard (Effect.destroyArtifactOrEnchantmentGainLife 2).resolution ==
-  Resolution.sequence [.onPermanent .destroy, .gainLife 2]
-#guard (Effect.tapScryDraw 1 1).resolution ==
-  Resolution.sequence [.onPermanent .tap, .scry 1, .draw 1]
-#guard (Effect.tapScryDraw 1 1).spellResolution ==
-  .sequence [.onPermanent .tap, .scry 1, .draw 1]
+#guard (Effect.draw 2).body == Instruction.drawFixed 2
+#guard (Effect.scry 1).body == Instruction.scryFixed 1
+#guard (Effect.gainLife 3).body == Instruction.gainLifeFixed 3
+#guard (Effect.drawLoseLifeThenAmass 2).body ==
+  .seq #[Instruction.drawFixed 1, Instruction.loseLifeFixed 1, Instruction.amassFixed 2 .goblin]
+#guard (Effect.createTokensThenTeamPump .villain21menace 1 1 0).body ==
+  .seq #[Instruction.createTokensFixed .villain21menace 1,
+    Instruction.pumpFixed (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])) 1 0]
+#guard (Effect.createTokens .treasure 1).body == Instruction.createTokensFixed .treasure 1
+#guard (Effect.targetPlayerCreatesTokens .leviathan65hexproof 1).body ==
+  Instruction.createTokensFixed .leviathan65hexproof 1 (.target 0)
+#guard (Effect.destroyArtifactOrEnchantmentGainLife 2).body ==
+  .seq #[Instruction.destroy (.target 0), Instruction.gainLifeFixed 2]
+#guard (Effect.tapScryDraw 1 1).body ==
+  .seq #[Instruction.tap (.target 0), Instruction.scryFixed 1, Instruction.drawFixed 1]
 #guard (Effect.tapScryDraw 1 1).phrase ==
   "tap target creature. Scry 1. Draw a card"
-#guard (Effect.counterUnlessPays 4).spellResolution == .unlessPays .counter 4
+#guard (Effect.counterUnlessPays 4).body ==
+  .unlessPays (.controllerOf (.target 0)) (CostSpec.ofGeneric 4) (Instruction.counter (.target 0))
 #guard (Effect.counterUnlessPays 4).phrase ==
   "counter target spell unless its controller pays {4}"
-#guard Effect.putOnTopOrBottom.spellResolution ==
-  .or [.onPermanent .putOnTopOfLibrary, .onPermanent .putOnBottomOfLibrary]
+#guard Effect.putOnTopOrBottom.body ==
+  .moveZone (.target 0) (.library .owner .top true) .put {}
 #guard Effect.putOnTopOrBottom.phrase ==
   "target creature's owner puts it on their choice of the top or bottom of their library"
-#guard (Effect.untapPumpMaybeAttach 2 2).spellResolution ==
-  .sequence [
-    .onPermanent .untap,
-    .onPermanent (.pump 2 2),
-    .«if» (.subtype .dwarf) (.may .attachEquipment (.sequence []))]
+#guard (Effect.untapPumpMaybeAttach 2 2).body ==
+  .seq #[
+    Instruction.untap (.target 0),
+    Instruction.pumpFixed (.target 0) 2 2,
+    Instruction.ifThen (.exists (.filter (.target 0) (.hasSubtype (.literal .dwarf))))
+      (Instruction.may .you none
+        (.permanent (.attach
+          (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .controlledBy .you]))
+          (.target 0) true)))
+  ]
 #guard (Effect.untapPumpMaybeAttach 2 2).phrase ==
   "untap target creature you control. It gets +2/+2 until end of turn. If it's a Dwarf, you may attach an Equipment you control to it"
-#guard SpellResolution.toPhrase (.«if» (.subtype .elf) (.draw 1)) "target creature" ==
-  "if target creature is an Elf, draw a card"
-#guard SpellResolution.toPhrase (.may (.gainLife 3) (.sequence [])) "target creature" ==
-  "you may gain 3 life"
-#guard SpellResolution.toPhrase (.may .attachEquipment (.sequence [])) "target creature" ==
-  "you may attach an Equipment you control to it"
-#guard SpellResolution.toPhrase (.«if» (.subtype .dwarf) (.may .attachEquipment (.sequence []))) "target creature" ==
-  "if target creature is a Dwarf, you may attach an Equipment you control to it"
-#guard SpellResolution.toPhrase (.«if» (.mvAtMost 2) .recruit) "target spell" ==
-  "if that spell's mana value was 2 or less, recruit"
-#guard SpellResolution.toPhrase (.or [.draw 1, .gainLife 3]) "target creature" ==
-  "draw a card or you gain 3 life"
-#guard Effect.destroyCreatureSurveil.resolution ==
-  Resolution.sequence [.onPermanent .destroy, .surveil 1]
-#guard Effect.destroyCreatureSurveil.spellResolution ==
-  .sequence [.onPermanent .destroy, .surveil 1]
-#guard (Effect.pumpThenDraw (-4) 0).resolution ==
-  Resolution.sequence [.onPermanent (.pump (-4) 0), .draw 1]
-#guard (Effect.pumpThenDraw (-4) 0).spellResolution ==
-  .sequence [.onPermanent (.pump (-4) 0), .draw 1]
-#guard Effect.plusOneLifelinkIndestructible.resolution ==
-  Resolution.sequence [.onPermanent (.plusOne 1),
-    .onPermanent (.grantKeywords #[Keyword.lifelink, Keyword.indestructible])]
-#guard Effect.plusOneLifelinkIndestructible.spellResolution ==
-  .sequence [.onPermanent (.plusOne 1),
-    .onPermanent (.grantKeywords #[Keyword.lifelink, Keyword.indestructible])]
-#guard Effect.grantVigilanceUnblockable.resolution ==
-  Resolution.sequence
-    [.onPermanent (.grantKeywords #[Keyword.vigilance]),
-     .onPermanent .cantBeBlocked,
-     .draw 1]
-#guard Effect.grantVigilanceUnblockable.spellResolution ==
-  .sequence
-    [.onPermanent (.grantKeywords #[Keyword.vigilance]),
-     .onPermanent .cantBeBlocked,
-     .draw 1]
-#guard (Effect.creaturesYouControlGetAndGrant 1 1 #[Keyword.vigilance]).resolution ==
-  Resolution.sequence [.creaturesYouControlPump 1 1, .teamGain #[Keyword.vigilance]]
-#guard (Effect.creaturesYouControlGetAndGrant 1 1 #[Keyword.vigilance]).spellResolution ==
-  .sequence [.creaturesPump 1 1, .teamGain #[Keyword.vigilance]]
-#guard Effect.sourceGainsIndestructibleTap.resolution ==
-  Resolution.sequence
-    [.onSource (.grantKeywords #[Keyword.indestructible]), .onSource .tap]
+#guard Effect.destroyCreatureSurveil.body ==
+  .seq #[Instruction.destroy (.target 0), Instruction.surveilFixed 1]
+#guard (Effect.pumpThenDraw (-4) 0).body ==
+  .seq #[Instruction.pumpFixed (.target 0) (-4) 0, Instruction.drawFixed 1]
+#guard Effect.plusOneLifelinkIndestructible.body ==
+  .seq #[Instruction.putPlusOne (.target 0) 1,
+    Instruction.grantKeywords (.target 0) #[Keyword.lifelink, Keyword.indestructible]]
+#guard Effect.grantVigilanceUnblockable.body ==
+  .seq #[
+    Instruction.grantKeywords (.target 0) #[Keyword.vigilance],
+    Instruction.cantBeBlocked (.target 0),
+    Instruction.drawFixed 1
+  ]
+#guard (Effect.creaturesYouControlGetAndGrant 1 1 #[Keyword.vigilance]).body ==
+  .seq #[
+    Instruction.pumpFixed (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])) 1 1,
+    Instruction.grantKeywords (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])) #[Keyword.vigilance]
+  ]
+#guard Effect.sourceGainsIndestructibleTap.body ==
+  .seq #[Instruction.grantKeywords .this #[Keyword.indestructible], Instruction.tap .this]
 #guard Effect.sourceGainsIndestructibleTap.phrase ==
   "Witch-king of Angmar gains indestructible until end of turn. Tap him"
-#guard (Effect.drawThenDiscard 2).resolution ==
-  Resolution.sequence [.draw 2, .discard (.cards 1)]
-#guard (Effect.drawThenDiscard 2).spellResolution ==
-  .sequence [.draw 2, .discard (.cards 1)]
-#guard (Effect.abilityDrawThenDiscard 2).resolution ==
-  Resolution.sequence [.draw 2, .discard (.cards 1)]
-#guard (Effect.ownerShuffleSourceDraw 3).resolution ==
-  Resolution.sequence [.shuffleSource, .draw 3]
+#guard (Effect.drawThenDiscard 2).body ==
+  .seq #[Instruction.drawFixed 2, Instruction.discardFixed 1]
+#guard (Effect.abilityDrawThenDiscard 2).body ==
+  .seq #[Instruction.drawFixed 2, Instruction.discardFixed 1]
+#guard (Effect.ownerShuffleSourceDraw 3).body ==
+  .bind ⟨0⟩
+    (.moveZone .this (.library .owner .bottom false) .shuffleIntoLibrary { shuffleAfter := true })
+    (Instruction.ifThen (.stepSucceeded ⟨0⟩) (Instruction.drawFixed 3 (.ownerOf .this)))
 #guard (Effect.ownerShuffleSourceDraw 3).phrase ==
   "This owner shuffles him into their library and draws 3 cards"
-#guard (Effect.plusOneAndDraw 1 2).resolution ==
-  Resolution.sequence [.onSource (.plusOne 1), .draw 2]
+#guard (Effect.plusOneAndDraw 1 2).body ==
+  .seq #[Instruction.putPlusOne .this 1, Instruction.drawFixed 2]
 #guard (Effect.plusOneAndDraw 1 2).phrase ==
   "Put a +1/+1 counter on this and draw 2 cards"
-#guard Effect.destroyUpToOneThenPlusOne.resolution ==
-  Resolution.sequence [.onPermanent .destroy, .onSource (.plusOne 1)]
+#guard Effect.destroyUpToOneThenPlusOne.body ==
+  .seq #[Instruction.destroy (.target 0), Instruction.putPlusOne .this 1]
 #guard Effect.destroyUpToOneThenPlusOne.phrase ==
   "Destroy up to one target artifact or enchantment. Put a +1/+1 counter on this"
-#guard (Effect.plusOneAndCreateTokens 2 .robotVillain22).resolution ==
-  Resolution.sequence [.onSource (.plusOne 2), .createTokens .robotVillain22 1]
+#guard (Effect.plusOneAndCreateTokens 2 .robotVillain22).body ==
+  .seq #[Instruction.putPlusOne .this 2, Instruction.createTokensFixed .robotVillain22 1]
 #guard (Effect.plusOneAndCreateTokens 2 .robotVillain22).phrase ==
   "Put 2 +1/+1 counters on this creature and create a 2/2 colorless Robot Villain artifact creature token"
-#guard (Effect.plusOneAndGrant #[Keyword.vigilance, Keyword.indestructible, Keyword.haste]).resolution ==
-  Resolution.sequence
-    [.onSource (.plusOne 1),
-     .onSource (.grantKeywords #[Keyword.vigilance, Keyword.indestructible, Keyword.haste])]
+#guard (Effect.plusOneAndGrant #[Keyword.vigilance, Keyword.indestructible, Keyword.haste]).body ==
+  .seq #[
+    Instruction.putPlusOne .this 1,
+    Instruction.grantKeywords .this #[Keyword.vigilance, Keyword.indestructible, Keyword.haste]
+  ]
 #guard (Effect.plusOneAndGrant #[Keyword.vigilance, Keyword.indestructible, Keyword.haste]).phrase ==
   "Put a +1/+1 counter on this. He gains vigilance, indestructible, and haste until end of turn"
-#guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).resolution ==
-  Resolution.sequence
-    [.creaturesYouControlPump 1 0, .loseLife 1 .eachOpponent]
+#guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).body ==
+  .seq #[
+    Instruction.pumpFixed (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])) 1 0,
+    Instruction.loseLifeFixed 1 .opponents
+  ]
 #guard (Effect.creaturesYouControlGetOppsLoseLife 1 0 1).phrase ==
   "Creatures you control get +1/+0 until end of turn. Each opponent loses 1 life"
-#guard (Effect.subtypesGainMenace #["Goblin", "Orc"]).resolution ==
-  .subtypesGainMenace #[.goblin, .orc]
 #guard (Effect.subtypesGainMenace #["Goblin", "Orc"]).phrase ==
   "Goblins and Orcs you control gain menace until end of turn"
 #guard (Effect.subtypesGainMenace #["Elf"]).phrase ==
   "Elves you control gain menace until end of turn"
-#guard (Effect.drawLoseLifeThenAmass 2).spellResolution ==
-  .sequence [.draw 1, .loseLife 1, .amass 2]
-#guard (Effect.counterThenRecruitIfMvAtMost 2).spellResolution ==
-  .sequence [.counter, .«if» (.mvAtMost 2) .recruit]
-#guard (Effect.counterThenRecruitIfMvAtMost 2).resolution ==
-  .sequence [.counter, .«if» (.mvAtMost 2) .recruit]
+#guard (Effect.counterThenRecruitIfMvAtMost 2).body ==
+  .seq #[
+    Instruction.counter (.target 0),
+    Instruction.ifThen (.cmp .le (.objectStat .manaValue (.target 0)) (.const 2)) (Instruction.recruit .you)
+  ]
 #guard (Effect.counterThenRecruitIfMvAtMost 2).phrase ==
   "counter target spell. If that spell's mana value was 2 or less, recruit"
 #guard (Effect.counterThenRecruitIfMvAtMost 2).castKind == .counter
-#guard Resolution.flatten
-    (.sequence [.sequence [.draw 1, .gainLife 1], .amass 2]) ==
-  [.draw 1, .gainLife 1, .amass 2]
 #guard (Effect.ofTrigger (.scry 2)).resolution == .scry (.fixed 2)
 #guard (Effect.ofTrigger (.scry 2)).sharedTrigger == some (.scry 2)
-#guard (Effect.chapterRecruit).asChapter? == some .recruit
-#guard (Effect.chapterDraw 2).asChapter? == some (.draw 2)
+#guard Effect.chapterRecruit.body == Instruction.recruit .you
+#guard (Effect.chapterDraw 2).body == Instruction.drawFixed 2
 #guard (Effect.enterDealDamageUpToOne 4).allowsZeroTargets
 #guard Effect.watchHulk.resolution ==
   .sequence [
@@ -205,11 +169,12 @@ namespace CardDef
   "deals 5 damage to target creature"
 #guard (Effect.dealDamageLoseIndestructibleExile 3).phrase ==
   "deals 3 damage to target creature. That creature loses indestructible until end of turn. If that creature would die this turn, exile it instead"
-#guard (Effect.dealDamageLoseIndestructibleExile 3).spellResolution ==
-  .sequence [
-    .onPermanent (.dealDamage 3),
-    .onPermanent .loseIndestructible,
-    .replace .diesThisTurn .exile]
+#guard (Effect.dealDamageLoseIndestructibleExile 3).body ==
+  .seq #[
+    Instruction.dealDamageFixed (.targetSlot 0) 3,
+    Instruction.loseKeywords (.target 0) #[Keyword.indestructible],
+    Instruction.exileIfDiesThisTurn (.target 0)
+  ]
 #guard Effect.creatureYouControlDealsPowerToOppCreature.phrase ==
   "target creature you control deals damage equal to its power to target creature an opponent controls"
 #guard Effect.playAdditionalLandThisTurn.phrase ==
@@ -232,8 +197,8 @@ namespace CardDef
   "target creature gets +2/+2 and gains lifelink until end of turn"
 #guard (Effect.pumpAndExileIfDies (-5) (-5)).phrase ==
   "target creature gets -5/-5 until end of turn. If that creature would die this turn, exile it instead"
-#guard (Effect.pumpAndExileIfDies (-5) (-5)).spellResolution ==
-  .sequence [.onPermanent (.pump (-5) (-5)), .replace .diesThisTurn .exile]
+#guard (Effect.pumpAndExileIfDies (-5) (-5)).body ==
+  .seq #[Instruction.pumpFixed (.target 0) (-5) (-5), Instruction.exileIfDiesThisTurn (.target 0)]
 #guard (Effect.exileGraveyardCreaturesGrantCast.phrase).startsWith
   "exile all creature cards"
 #guard TargetSpec.noun .anyTarget == "any target"
@@ -329,86 +294,33 @@ namespace CardDef
   .upToOneCreatureThenPlayer
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).targetCount == 2
 #guard !(Effect.plusOneUpToOneAndPlayerGainsLife 2).allowsZeroTargets
-#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).spellResolution ==
-  .sequence [.countersOnCreatureTargets, .targetPlayersGainLife 2]
+#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).body ==
+  .seq #[Instruction.putPlusOne (.target 0) 1, Instruction.gainLifeFixed 2 (.target 1)]
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
   "put a +1/+1 counter on up to one target creature. Target player gains 2 life"
-#guard SpellResolution.toPhrase (.countersOnCreatureTargets .stun 2) "target creature" ==
-  "put 2 stun counters on up to one target creature"
-#guard SpellResolution.toPhrase
-    (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl) "target creature" ==
-  "put 2 +1/+1 counters on target creature you control"
-#guard Effect.fight.spellResolution == .mutualFight
-#guard (Effect.plusOneThenFight 2).spellResolution ==
-  .sequence [.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl,
-    .mutualFight]
-#guard (Effect.plusOneThenFight 2).resolution ==
-  .sequence [
-    .countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl,
-    .mutualFight]
+#guard Effect.fight.body == .damage (.fight (.target 0) (.target 1) false)
+#guard (Effect.plusOneThenFight 2).body ==
+  .seq #[Instruction.putPlusOne (.target 0) 2, .damage (.fight (.target 0) (.target 1) false)]
 #guard (Effect.plusOneThenFight 2).phrase ==
   "put 2 +1/+1 counters on target creature you control. Then it fights target creature an opponent controls"
-#guard Effect.plusOneThenEachOtherIfFromGy.spellResolution ==
-  .sequence [
-    .countersOnCreatureTargets .plusOnePlusOne 1 .firstYouControl,
-    .«if» .castFromGraveyard (.plusOneOnEachYouControl 1 .eachOther)]
-#guard Effect.plusOneThenEachOtherIfFromGy.resolution ==
-  .sequence [
-    .countersOnCreatureTargets .plusOnePlusOne 1 .firstYouControl,
-    .«if» .castFromGraveyard (.plusOneOnEachYouControl 1 .eachOther)]
 #guard Effect.plusOneThenEachOtherIfFromGy.phrase ==
   "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
-#guard SpellResolution.toPhrase
-    (.«if» .castFromGraveyard (.plusOneOnEachYouControl 1 .eachOther)) "target creature" ==
-  "if this spell was cast from a graveyard, put a +1/+1 counter on each other creature you control"
-#guard (Effect.drawIfFromGy 1 2).spellResolution ==
-  .ifElse .castFromGraveyard (.draw 2) (.draw 1)
-#guard (Effect.drawIfFromGy 1 2).resolution ==
-  .ifElse .castFromGraveyard (.draw 2) (.draw 1)
+#guard (Effect.drawIfFromGy 1 2).body ==
+  .ifCond (.castPred (.castFrom .graveyard .this)) (Instruction.drawFixed 2) (Instruction.drawFixed 1)
 #guard (Effect.drawIfFromGy 1 2).phrase ==
   "draw a card. If this spell was cast from a graveyard, draw 2 cards instead"
-#guard (Effect.amassGoblinsOrFromGy 1 3).spellResolution ==
-  .ifElse .castFromGraveyard (.amass 3) (.amass 1)
-#guard (Effect.amassGoblinsOrFromGy 1 3).resolution ==
-  .ifElse .castFromGraveyard (.amass 3) (.amass 1)
+#guard (Effect.amassGoblinsOrFromGy 1 3).body ==
+  .ifCond (.castPred (.castFrom .graveyard .this)) (Instruction.amassFixed 3 .goblin) (Instruction.amassFixed 1 .goblin)
 #guard (Effect.amassGoblinsOrFromGy 1 3).phrase ==
   "amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead"
-#guard SpellResolution.toPhrase
-    (.ifElse (.subtype .elf) (.gainLife 3) (.draw 1)) "target creature" ==
-  "draw a card. If target creature is an Elf, you gain 3 life instead"
-#guard SpellResolution.toPhrase
-    (.ifElse (.mvAtMost 2) .recruit (.draw 1)) "target spell" ==
-  "draw a card. If that spell's mana value was 2 or less, recruit instead"
-#guard SpellResolution.toPhrase (.plusOneOnEachYouControl 1 .eachOther) "target creature" ==
-  "put a +1/+1 counter on each other creature you control"
-#guard SpellResolution.toPhrase (.gainLife 3) "target creature" == "you gain 3 life"
-#guard SpellResolution.toPhrase (.targetPlayersGainLife 2) "target player" ==
-  "Target player gains 2 life"
-#guard SpellResolution.toPhrase .returnTargetToHand "target spell" ==
-  "return target spell to its owner's hand"
-#guard SpellResolution.toPhrase (.returnTargetToHand .graveyard)
-    "target creature card from your graveyard" ==
-  "return up to one target creature card from your graveyard to your hand"
-#guard Effect.returnSpellDraw.spellResolution ==
-  .sequence [.returnTargetToHand, .draw 1]
-#guard Effect.returnSpellDraw.resolution ==
-  Resolution.sequence [.returnTargetSpell, .draw 1]
+#guard Effect.returnSpellDraw.body ==
+  .seq #[Instruction.bounce (.target 0), Instruction.drawFixed 1]
 #guard Effect.returnSpellDraw.phrase ==
   "return target spell to its owner's hand. Draw a card"
-#guard (Effect.returnCreatureFromGyThenAmass 3).spellResolution ==
-  .sequence [.returnTargetToHand .graveyard, .amass 3]
-#guard (Effect.returnCreatureFromGyThenAmass 3).resolution ==
-  Resolution.sequence [.returnFromGyToHand, .amass 3]
+#guard (Effect.returnCreatureFromGyThenAmass 3).body ==
+  .seq #[.moveZone (.target 0) (.hand .controller) .returnToHand {}, Instruction.amassFixed 3 .goblin]
 #guard (Effect.returnCreatureFromGyThenAmass 3).phrase ==
   "return up to one target creature card from your graveyard to your hand. Amass Goblins 3"
-#guard Effect.returnSpellCantCastIfGift.spellResolution ==
-  .sequence [.returnTargetToHand, .«if» .giftPromised .playersCantCastThisTurn]
-#guard SpellResolution.toPhrase (.creaturesPump 1 1) "target creature" ==
-  "creatures you control get +1/+1 until end of turn"
-#guard SpellResolution.toPhrase (.creaturesPump (-4) (-4) .all) "" ==
-  "all creatures get -4/-4 until end of turn"
-#guard SpellResolution.toPhrase (.creaturesPump (-1) (-1) .ofTargetPlayer) "target player" ==
-  "creatures target player controls get -1/-1 until end of turn"
 #guard Effect.destroyArtifactOrLandNonflyersCantBlock.targetSpec == .artifactOrLand
 #guard Effect.playAdditionalLandThisTurn.targetSpec == .none
 #guard (Effect.destroyTargetCreatureControllerLosesLife 2).targetSpec == .creature
@@ -450,107 +362,31 @@ namespace CardDef
 #guard !Effect.destroyCreature.preferAsDefaultMode
 #guard !(Effect.pump 3 3).preferAsDefaultMode
 #guard !Effect.plusOnePlusOneTrampleHexproof.preferAsDefaultMode
-#guard (Effect.dealDamage 3).spellResolution == .onPermanent (.dealDamage 3)
-#guard (Effect.pump 3 3).spellResolution == .onPermanent (.pump 3 3)
-#guard Effect.destroyCreatureWithFlying.spellResolution == .onPermanent .destroy
-#guard Effect.destroyCreature.spellResolution == .onPermanent .destroy
-#guard Effect.playAdditionalLandThisTurn.spellResolution == .extraLand
-#guard (Effect.drawAndLoseLife 2 2).spellResolution ==
-  .sequence [.draw 2, .loseLife 2 .you]
-#guard (Effect.draw 2).spellResolution == .draw 2
-#guard (Effect.targetPlayerDraw 2).spellResolution == .draw 2 .player
-#guard (Effect.targetPlayerDraw 2).resolution == .targetPlayerDraw 2
-#guard SpellResolution.toPhrase (.draw 2 .you) "target player" == "draw 2 cards"
-#guard SpellResolution.toPhrase (.draw 2 .player) "target player" ==
-  "target player draws 2 cards"
-#guard (Effect.targetPlayerDrawLoseLife 2 2).spellResolution ==
-  .sequence [.draw 2 .player, .loseLife 2 .player]
-#guard (Effect.destroyTargetCreatureControllerLosesLife 2).spellResolution ==
-  .sequence [.onPermanent .destroy, .loseLife 2 (.controller .target)]
-#guard (Effect.eachOpponentLosesLife 2).spellResolution == .loseLife 2 .eachOpponent
-#guard SpellResolution.toPhrase (.loseLife 2 .you) "target player" == "lose 2 life"
-#guard SpellResolution.toPhrase (.loseLife 2 .player) "target player" ==
-  "target player loses 2 life"
-#guard SpellResolution.toPhrase (.loseLife 2 (.controller .target)) "target creature" ==
-  "its controller loses 2 life"
-#guard SpellResolution.toPhrase (.loseLife 2 .eachOpponent) "target player" ==
-  "each opponent loses 2 life"
-#guard (Effect.millThenPutInstantOrSorcery 4).spellResolution ==
-  .millThenPut 4 (.oneOf .instant .sorcery)
-#guard (Effect.millThenPutLands 4 2).spellResolution ==
-  .millThenPut 4 (.upTo 2 .land)
-#guard (Effect.millThenPutAllInstantsOrSorceries 6).spellResolution ==
-  .millThenPut 6 (.allOf .instant .sorcery)
+#guard (Effect.pump 3 3).body == Instruction.pumpFixed (.target 0) 3 3
+#guard Effect.destroyCreatureWithFlying.body == Instruction.destroy (.target 0)
+#guard Effect.destroyCreature.body == Instruction.destroy (.target 0)
+#guard Effect.playAdditionalLandThisTurn.body == Instruction.extraLand
+#guard (Effect.drawAndLoseLife 2 2).body ==
+  .seq #[Instruction.drawFixed 2, Instruction.loseLifeFixed 2]
+#guard (Effect.targetPlayerDraw 2).body == Instruction.drawFixed 2 (.target 0)
+#guard (Effect.targetPlayerDrawLoseLife 2 2).body ==
+  .seq #[Instruction.drawFixed 2 (.target 0), Instruction.loseLifeFixed 2 (.target 0)]
+#guard (Effect.destroyTargetCreatureControllerLosesLife 2).body ==
+  .seq #[Instruction.destroy (.target 0), Instruction.loseLifeFixed 2 (.controllerOf (.target 0))]
+#guard (Effect.eachOpponentLosesLife 2).body == Instruction.loseLifeFixed 2 .opponents
 #guard (Effect.millThenPutInstantOrSorcery 4).phrase ==
   "mill 4 cards, then put an instant or sorcery card from among them into your hand"
 #guard (Effect.millThenPutLands 4 2).phrase ==
   "mill 4 cards, then put up to two land cards from among them into your hand"
 #guard (Effect.millThenPutAllInstantsOrSorceries 6).phrase ==
   "mill 6 cards, then put all instant and sorcery cards from among them into your hand"
-#guard (Effect.artifactSpellsCostLessThisTurn 1).spellResolution ==
-  .spellsCostLessThisTurn (.cardType .artifact) 1
-#guard (Effect.supertypeSpellsCostLessThisTurn 2).spellResolution ==
-  .spellsCostLessThisTurn (.supertype .legendary) 2
-#guard SpellResolution.toPhrase
-    (.spellsCostLessThisTurn (.cardType .artifact) 1) "target player" ==
-  "Artifact spells you cast this turn cost {1} less to cast"
-#guard SpellResolution.toPhrase
-    (.spellsCostLessThisTurn (.supertype .legendary) 2) "target player" ==
-  "Legendary spells you cast this turn cost {2} less to cast"
-#guard (Effect.dealDamageToEachCreature 3).spellResolution == .dealDamageToEachCreature 3
-#guard (Effect.dealDamageToEachCreature 3).resolution == .dealDamageToEachCreature 3
-#guard (Effect.dealDamageToEachOppCreature 1).spellResolution ==
-  .dealDamageToEachCreature 1 .opponentsControl
-#guard (Effect.dealDamageToEachNonDragon 2).spellResolution ==
-  .dealDamageToEachCreature 2 (.nonSubtype .dragon)
-#guard SpellResolution.toPhrase (.dealDamageToEachCreature 3 .each) "target creature" ==
-  "deals 3 damage to each creature"
-#guard SpellResolution.toPhrase (.dealDamageToEachCreature 1 .opponentsControl) "target creature" ==
-  "deals 1 damage to each creature your opponents control"
-#guard SpellResolution.toPhrase
-    (.dealDamageToEachCreature 2 (.nonSubtype .elf)) "target creature" ==
-  "deals 2 damage to each non-Elf creature"
-#guard Effect.creatureYouControlDealsPowerToOppCreature.spellResolution ==
-  .fight .announced (.timesPower 1)
-#guard Effect.creatureYouControlDealsTwicePower.spellResolution == .fight .announced (.timesPower 2)
-#guard Effect.fightUpToOne.spellResolution == .mutualFight .upToOne
-#guard (Effect.createTokensX .dwarf).spellResolution ==
-  .createTokens .dwarf .chosenX
-#guard (Effect.createTokensPerSubtype .treasure "Villain").spellResolution ==
-  .createTokens .treasure (.perSubtype .villain)
-#guard Effect.damageOppCreaturesEqualOtherSpellsMv.spellResolution ==
-  .dealDamageToEachCreature 0 .opponentsControl .otherSpellsManaValue
-#guard (Effect.counterUnlessPaysTeamwork 2 4).spellResolution ==
-  .ifElse .teamwork (.unlessPays .counter 4) (.unlessPays .counter 2)
-#guard (Effect.dealDamageToAttackerOrBlocker 2 4).spellResolution ==
-  .ifElse .teamwork (.onPermanent (.dealDamage 4)) (.onPermanent (.dealDamage 2))
-#guard Effect.doublePowerAndToughness.spellResolution == .onPermanent .doublePowerAndToughness
-#guard (Effect.exileCreatureToughnessAtLeast 4).spellResolution == .onPermanent .exile
-#guard Effect.searchLegendaryCreatureToHand.spellResolution == .searchCard
-#guard (Effect.destroyLandSearchBasic).spellResolution ==
-  .sequence [.onPermanent .destroy, .searchCard .basic .land .ownerMayToBattlefield]
-#guard SpellResolution.toPhrase (.fight .announced (.timesPower 2)) "target creature" ==
-  "Target creature you control deals damage equal to twice its power to target creature an opponent controls."
-#guard SpellResolution.toPhrase (.mutualFight .upToOne) "target creature" ==
-  "target creature you control fights up to one other target creature"
-#guard SpellResolution.toPhrase
-    (.dealDamageToEachCreature 0 .opponentsControl .otherSpellsManaValue) "target creature" ==
-  "deals damage to each creature your opponents control equal to the total mana value of other spells you've cast this turn"
-#guard SpellResolution.toPhrase (.createTokens .dwarf .chosenX) "" ==
-  "create X 2/2 red Dwarf creature tokens"
-#guard SpellResolution.toPhrase
-    (.createTokens .treasure (.perSubtype .villain)) "" ==
-  "Create a Treasure token for each Villain you control"
-#guard (Effect.dealDamageToCreature 5).spellResolution ==
-  .onPermanent (.dealDamage 5)
-#guard (Effect.dealDamageToCreatureExileIfDies 3).spellResolution ==
-  .sequence [.replace .diesThisTurn .exile, .onPermanent (.dealDamage 3)]
+#guard Effect.doublePowerAndToughness.body == Instruction.doublePT (.target 0)
+#guard (Effect.exileCreatureToughnessAtLeast 4).body == Instruction.exile (.target 0)
+#guard (Effect.dealDamageToCreature 5).body == Instruction.dealDamageFixed (.targetSlot 0) 5
+#guard (Effect.dealDamageToCreatureExileIfDies 3).body ==
+  .seq #[Instruction.exileIfDiesThisTurn (.target 0), Instruction.dealDamageFixed (.targetSlot 0) 3]
 #guard (Effect.dealDamageToCreatureExileIfDies 3).phrase ==
   "deals 3 damage to target creature. If that creature would die this turn, exile it instead"
-#guard SpellResolution.toPhrase (.replace .diesThisTurn .exile) "target creature" ==
-  "if target creature would die this turn, exile it instead"
-#guard Effect.destroyArtifactOrLandNonflyersCantBlock.resolution ==
-  .sequence [.onPermanent .destroy, .creaturesWithoutFlyingCantBlock]
 #guard
   let c : CardDef := {
     name := "Silent Club"
@@ -566,8 +402,6 @@ namespace CardDef
 #guard (Effect.searchLandTypeToHand "Swamp").phrase ==
   "Search your library for a Swamp card, reveal it, put it into your hand, then shuffle"
 #guard !(Effect.searchLandTypeToHand "Mountain").requiresTarget
-#guard (Effect.searchLandTypeToHand "Swamp").resolution ==
-  .searchLandTypeToHand "Swamp"
 #guard Effect.addAnyColorSpendOnlyHero.phrase ==
   "Add one mana of any color. Spend this mana only to cast a Hero spell or to activate an ability of a Hero source"
 #guard Effect.addAnyColorSpendOnlyVillain.phrase ==
@@ -596,10 +430,6 @@ namespace CardDef
   "Return this card from your graveyard to your hand"
 #guard !Effect.returnFromGraveyardTapped.requiresTarget
 #guard !Effect.returnFromGraveyardToHand.requiresTarget
-#guard Effect.returnFromGraveyardTapped.resolution ==
-  .returnFromGraveyardTapped
-#guard Effect.returnFromGraveyardToHand.resolution ==
-  .returnFromGraveyardToHand
 #guard (Effect.dealDamageToTargetCreature 2).requiresTarget
 #guard Effect.destroyTargetColorlessNonland.requiresTarget
 #guard Effect.attachToTargetCreatureYouControl.requiresTarget
@@ -615,41 +445,35 @@ namespace CardDef
 #guard (Effect.dealDamageToTargetCreature 2).abilityKind == .creatureDamage
 #guard Effect.destroyTargetColorlessNonland.abilityKind == .destroyColorless
 #guard (Effect.sourceGets 1 0).abilityKind == .other
-#guard (Effect.dealDamageToTargetCreature 2).resolution ==
-  .onPermanent (.dealDamage 2)
-#guard Effect.destroyTargetColorlessNonland.resolution ==
-  .onPermanent .destroy
-#guard Effect.destroyTargetPermanent == Effect.destroyTarget .permanent
+#guard (Effect.dealDamageToTargetCreature 2).body ==
+  Instruction.dealDamageFixed (.targetSlot 0) 2
+#guard Effect.destroyTargetColorlessNonland.body ==
+  Instruction.destroy (.target 0)
+#guard Effect.destroyTargetPermanent == Effect.destroyTarget .permanent (capitalize := true)
 #guard Effect.destroyTargetArtifactOrEnchantment ==
-  Effect.destroyTarget .artifactOrEnchantment
+  Effect.destroyTarget .artifactOrEnchantment (capitalize := true)
 #guard Effect.destroyTargetNoncreatureArtOrEnch ==
-  Effect.destroyTarget .noncreatureArtifactOrEnchantment
+  Effect.destroyTarget .noncreatureArtifactOrEnchantment (capitalize := true)
 #guard Effect.destroyTargetNoncreatureArtOrEnch.phrase ==
   "Destroy target noncreature artifact or noncreature enchantment"
-#guard Effect.destroyCreature ==
-  Effect.destroyTarget .creature (spellKind := some .destroyCreature)
-#guard Effect.destroyTargetArtifact ==
-  Effect.destroyTarget .artifact (spellKind := some .destroyArtifactOrLand)
-#guard Effect.destroyTargetPermanent.resolution ==
-  Effect.destroyTargetColorlessNonland.resolution
+#guard Effect.destroyCreature.castKind == .destroyCreature
+#guard Effect.destroyTargetArtifact.castKind == .destroyArtifactOrLand
+#guard Effect.destroyTargetPermanent.body ==
+  Effect.destroyTargetColorlessNonland.body
 #guard Effect.destroyTargetPermanent.abilityKind ==
   Effect.destroyTargetColorlessNonland.abilityKind
-#guard Effect.targetCantBeBlockedThisTurn.resolution ==
-  .onPermanent .cantBeBlocked
-#guard (Effect.sourceGets 1 0).resolution == .onSource (.pump 1 0)
-#guard (Effect.putPlusOnePlusOneOnSource 3).resolution == .onSource (.plusOne 3)
-#guard Effect.becomeBearCreatureWithLandsPT.resolution ==
-  .becomeSubtypeWithLandsPT .bear
+#guard Effect.targetCantBeBlockedThisTurn.body ==
+  Instruction.cantBeBlocked (.target 0)
+#guard (Effect.sourceGets 1 0).body == Instruction.pumpFixed .this 1 0
+#guard (Effect.putPlusOnePlusOneOnSource 3).body == Instruction.putPlusOne .this 3
 #guard (Effect.becomeSubtypeWithLandsPT "Elf").phrase ==
   "This enchantment becomes an Elf creature in addition to its other types and gains \"This creature's power and toughness are each equal to the number of lands you control.\""
-#guard (Effect.searchBasicBeholdSubtypeUntap "Elf").resolution ==
-  .searchBasicBeholdSubtypeUntap .elf
 #guard (Effect.searchBasicBeholdSubtypeUntap "Orc").phrase.endsWith
   "You may behold an Orc. If you do, untap that land"
-#guard Effect.addAnyColorSpendOnlyHero.resolution ==
-  .addAnyColorSpendOnlySubtype .hero
-#guard Effect.addAnyColorSpendOnlyVillain.resolution ==
-  .addAnyColorSpendOnlySubtype .villain
+#guard Effect.addAnyColorSpendOnlyHero.manaProduction? ==
+  some { spec := .oneOf .anyColor (.const 1), restriction := some (.subtypeSpellOrSource .hero) }
+#guard Effect.addAnyColorSpendOnlyVillain.manaProduction? ==
+  some { spec := .oneOf .anyColor (.const 1), restriction := some (.subtypeSpellOrSource .villain) }
 #guard (Effect.teamGain #[Keyword.doubleStrike]).phrase ==
   "Creatures you control gain double strike until end of turn"
 #guard (Effect.becomeTypes #["Dinosaur", "Hero"] 3 5
@@ -659,7 +483,6 @@ namespace CardDef
   "Mill 4 cards. You may put a Hero or enchantment card from among those cards into your hand"
 #guard (Effect.lookAtTopPutTypes 7 #["Hero", "Equipment", "Vehicle"]).phrase.startsWith
   "Put two +1/+1 counters on this, then look at the top 7 cards"
-#guard Effect.searchBasicLandTapped.resolution == .searchBasicLand
 #guard !Effect.searchBasicLandTapped.requiresTarget
 #guard !Effect.becomeBearCreatureWithLandsPT.requiresTarget
 #guard (Effect.abilityDrawThenDiscard 1).phrase ==
@@ -681,30 +504,29 @@ namespace CardDef
   "When this permanent enters, create a Treasure token."
 #guard TriggeredAbility.toNotation (.onEnterCreateTokens .treasure 1 true) ==
   "When this permanent enters, create a tapped Treasure token."
-#guard TriggeredAbility.resolution (.onEnterCreateTokens .treasure 1) ==
-  .createTokens .treasure (.fixed 1) false
-#guard TriggeredAbility.resolution (.onEnterCreateTokens .treasure 1 true) ==
-  .createTokens .treasure (.fixed 1) true
+#guard (TriggeredAbility.onEnterCreateTokens .treasure 1).effect.body ==
+  Instruction.createTokensFixed .treasure 1
+#guard (TriggeredAbility.onEnterCreateTokens .treasure 1 true).effect.body ==
+  Instruction.createTokensFixed .treasure 1 .you true
 #guard TriggeredAbility.onEnterScry 2 == (SharedTrigger.scry 2).toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onAttackScry 1 == (SharedTrigger.scry 1).toTriggeredAbility (pattern? := some .thisAttacks)
 #guard TriggeredAbility.onEnterDraw 1 == (SharedTrigger.draw 1).toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onDiesDraw 1 == (SharedTrigger.draw 1).toTriggeredAbility (pattern? := some .thisDies)
 #guard TriggeredAbility.onEnterCreateTokens .treasure 1 true ==
-  (SharedTrigger.createTokens .treasure 1 true).toTriggeredAbility (pattern? := some .thisEnters)
+  TriggeredAbility.mkTrigger .thisEnters (Effect.triggerCreateTokens .treasure 1 true)
 #guard TriggeredAbility.onEnterOrAttackDealDividedDamage 3 3 ==
   (SharedTrigger.dividedDamage 3 3).toTriggeredAbility (pattern? := some .enterOrAttack)
 #guard TriggeredAbility.onEnterTargetOpponentSacrifices ==
   SharedTrigger.opponentSacrificesCreature.toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onEnterAttachToLegendary ==
   (SharedTrigger.attachTo .legendaryCreatureYouControl).toTriggeredAbility (pattern? := some .thisEnters)
-#guard TriggeredAbility.onCombatPlusOneOnCreatureYouControl ==
-  (SharedTrigger.onPermanent .creatureYouControl (.plusOne 1)).toTriggeredAbility (pattern? := some .stepYourBeginCombat)
+#guard TriggeredAbility.onCombatPlusOneOnCreatureYouControl.effect.body ==
+  Instruction.putPlusOne (.target 0) 1
 #guard TriggeredAbility.onEnterOrAttackCreateWall ==
-  (SharedTrigger.createTokens .wall 1).toTriggeredAbility (pattern? := some .enterOrAttack)
+  TriggeredAbility.mkTrigger .enterOrAttack (Effect.triggerCreateTokens .wall 1)
 #guard TriggeredAbility.onEnterConnive ==
   SharedTrigger.connive.toTriggeredAbility (pattern? := some .thisEnters)
-#guard TriggeredAbility.onDrawSecondPlusOne ==
-  (SharedTrigger.onSource (.plusOne 1)).toTriggeredAbility (pattern? := some (.drawCard .you)) (limit? := some (.nthEachTurn 2))
+#guard TriggeredAbility.onDrawSecondPlusOne.effect.body == Instruction.putPlusOne .this 1
 #guard TriggeredAbility.onYourEndStepDrawLoseLife ==
   TriggeredAbility.mkTrigger .stepYourEndStep Effect.seqDrawAndLoseLife
 #guard TriggeredAbility.onAttackFerociousGainLife 2 ==
@@ -712,8 +534,8 @@ namespace CardDef
     (pattern? := some (.whenCond .thisAttacks (TriggeredAbility.condControlCreaturePowerAtLeast 4)))
 #guard TriggeredAbility.onArtifactYouControlEntersDrawOnce ==
   (SharedTrigger.draw 1).toTriggeredAbility (pattern? := some .artifactYouControlEnters) (limit? := some .onceEachTurn)
-#guard TriggeredAbility.onCastColorPump .green 4 4 ==
-  (SharedTrigger.onPermanent .creature (.pump 4 4)).toTriggeredAbility (pattern? := some (.youCastColor .green))
+#guard (TriggeredAbility.onCastColorPump .green 4 4).effect.body ==
+  Instruction.pumpFixed (.target 0) 4 4
 #guard TriggeredAbility.onEnterExileOppTappedUntilLeaves ==
   (SharedTrigger.exileUntilLeaves .oppTappedCreature).toTriggeredAbility (pattern? := some .thisEnters)
 #guard TriggeredAbility.onOpponentCastsFirstNoncreatureRecruit ==
@@ -728,8 +550,6 @@ namespace CardDef
   .may (.discard (.cards 1)) (.draw (.fixed 2)) .ifYouDo
 #guard ((SharedTrigger.mayTo (.scry 1) (.gainLife 2)).toTriggeredAbility (pattern? := some .thisEnters)).resolution ==
   .may (.scry (.fixed 1)) (.gainLife (.fixed 2)) .ifYouDo
-#guard ((SharedTrigger.mayTo (.onPermanent .creature .tap) (.draw 1)).toTriggeredAbility (pattern? := some .thisEnters)).targetSpec ==
-  .creature
 #guard ((SharedTrigger.mayTo (.discard 1) (.millPlayer 3)).toTriggeredAbility (pattern? := some .thisEnters)).targetSpec ==
   .player
 #guard TriggeredAbility.onCastNoncreatureMayDrawXDiscard2 ==
@@ -740,8 +560,8 @@ namespace CardDef
   "Whenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
 #guard TriggeredAbility.onEnterEachOpponentDiscards ==
   SharedTrigger.opponentDiscards.toTriggeredAbility (pattern? := some .thisEnters)
-#guard TriggeredAbility.onAttackOtherGets2AndTrample ==
-  (SharedTrigger.onPermanent .anotherCreatureYouControl (.pumpAndTrample 2 0)).toTriggeredAbility (pattern? := some .thisAttacks)
+#guard TriggeredAbility.onAttackOtherGets2AndTrample.effect.body ==
+  Instruction.pumpAndTrample (.target 0) 2 0
 #guard TriggeredAbility.onEquipmentYouControlEntersDraw ==
   (SharedTrigger.draw 1).toTriggeredAbility (pattern? := some .equipmentYouControlEnters)
 #guard TriggeredAbility.onCreatureYouControlAttacksAloneInvestigate ==
@@ -776,9 +596,9 @@ namespace CardDef
 #guard TriggeredAbility.onBecomesBlockedDeal1ToBlockers ==
   (SharedTrigger.damageBlockers 1).toTriggeredAbility (pattern? := some .thisBecomesBlocked)
 #guard TriggeredAbility.onEnterCreateThenAttach .treasure ==
-  (SharedTrigger.createThenAttach .treasure).toTriggeredAbility (pattern? := some .thisEnters)
-#guard TriggeredAbility.resolution (.onEnterCreateThenAttach .dwarf) ==
-  .sequence [.createTokens .dwarf (.fixed 1) false, .attach .source .createdToken]
+  TriggeredAbility.mkTrigger .thisEnters (Effect.triggerCreateThenAttach .treasure)
+#guard (TriggeredAbility.onEnterCreateThenAttach .dwarf).effect.body ==
+  .bind ⟨0⟩ (Instruction.createTokensFixed .dwarf 1) (.permanent (.attach .this (.stepObjects ⟨0⟩)))
 #guard TriggeredAbility.toNotation (.onEnterCreateThenAttach .dwarf) ==
   "When this permanent enters, create a 2/2 red Dwarf creature token, then attach this Equipment to it."
 #guard TriggeredAbility.resolution (.onEnterGainLifeSearchBasicOnTop 2) ==
@@ -893,7 +713,7 @@ namespace CardDef
 #guard TriggeredAbility.onCombatDamageWolfPlusOneOrTreasure ==
   SharedTrigger.wolfPlusOneOrTreasure.toTriggeredAbility (pattern? := some .thisDealsCombatDamageToPlayer)
 #guard TriggeredAbility.resolution .onCombatDamageWolfPlusOneOrTreasure ==
-  .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens .treasure (.fixed 1) false]
+  .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .createTokens 0 (.fixed 1) false]
 #guard (SharedTrigger.toEffect .tapOppOrUntapYours).resolution ==
   .or [.tap .target, .untap]
 #guard TriggeredAbility.resolution .onLandYouControlEntersTapOrUntap ==
@@ -994,11 +814,9 @@ namespace CardDef
   toString ab ==
     "Pay 2 life: This creature gets +2/+2 until end of turn (activate only once each turn)"
 #guard
-  let ab : ActivatedAbility := {
-    cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) .self]
-    effect := Effect.dealDamageToTargetCreature 2
-    otherModes := #[Effect.destroyTargetColorlessNonland]
-  }
+  let ab : ActivatedAbility := ActivatedAbility.mkModal
+    (CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) .self])
+    #[Effect.dealDamageToTargetCreature 2, Effect.destroyTargetColorlessNonland]
   ab.isModal &&
     (toString ab).startsWith "{1}, Sacrifice this: Choose one —" &&
     ((toString ab).splitOn "target creature").length > 1 &&
@@ -1103,7 +921,7 @@ namespace CardDef
   .connive .target
 #guard TriggeredAbility.targetSpec .onCombatTargetYouControlConnives ==
   .creatureYouControl
-#guard TriggeredAbility.resolutionPhrase { resolution := .connive .hand } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.connive .hand) } ==
   "connive"
 #guard TriggeredAbility.targetSpec .onCombatAnotherGetsSourcePower ==
   .anotherCreatureYouControl
@@ -1290,49 +1108,42 @@ namespace CardDef
 #guard (TriggeredAbility.dividedDamage? .onScryPumpSelfForEachLookedAt).isNone
 #guard TriggeredAbility.resolution .onAttackPumpByGreatestPower ==
   .pump .greatestPower (.fixed 0) .source
-#guard (default : TriggeredAbility.TriggerResolution) ==
-  .pump .greatestPower .greatestPower .source
 #guard TriggeredAbility.resolution .onAttackSetOtherBasePT ==
   .setBasePT .equalSourcePower .equalSourceToughness
-#guard TriggeredAbility.resolution .onAttackOtherGets2AndTrample ==
-  .sequence [.pump (.fixed 2) (.fixed 0) .target, .grant (.keywords #[Keyword.trample]) .target]
+#guard TriggeredAbility.onAttackOtherGets2AndTrample.effect.body ==
+  Instruction.pumpAndTrample (.target 0) 2 0
 #guard TriggeredAbility.resolution (.onEnterScry 2) == .scry (.fixed 2)
 #guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil (.fixed 2)
-#guard TriggeredAbility.resolutionPhrase { resolution := .surveil .perOtherCreature } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.surveil .perOtherCreature) } ==
   "surveil"
-#guard TriggeredAbility.resolutionPhrase { resolution := .attach .source .source } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.attach .source .source) } ==
   "attach it"
-#guard TriggeredAbility.resolutionPhrase { resolution := .empowerJace (.fixed 2) } ==
+#guard TriggeredAbility.resolutionPhrase { body := Instruction.empowerJace 2 } ==
   "empower Jace 2"
-#guard TriggeredAbility.resolutionPhrase { resolution := .empowerJace .perOtherCreature } ==
+#guard (TriggeredAbility.resolutionPhrase
+    { body := Instruction.empower .jace (.aggregate .count .one (.inZones .battlefield (.all #[.otherThan .this, .hasType .creature, .controlledBy .you]))) }).startsWith
   "empower Jace"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .spellsCostLess (.cardType .artifact) (.fixed 1) } ==
-  "spells you cast this turn cost {1} less to cast"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution := .spellsCostLess (.cardType .artifact) .perOtherCreature } ==
-  "spells you cast this turn cost less to cast"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomePT (.fixed 2) (.fixed 2) } ==
+    { resolution? := some (.becomePT (.fixed 2) (.fixed 2)) } ==
   "you may have this creature's base power and toughness become 2/2 until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomePT .perOtherCreature (.fixed 2) } ==
+    { resolution? := some (.becomePT .perOtherCreature (.fixed 2)) } ==
   "you may have this creature's base power and toughness become those values until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .lookAtTopRevealTypes .perOtherCreature #["Dwarf"] } ==
+    { resolution? := some (.lookAtTopRevealTypes .perOtherCreature #["Dwarf"]) } ==
   "look at the top cards of your library"
 #guard TriggeredAbility.toNotation (.onEnterSurveil 1) ==
   "When this permanent enters, surveil 1."
-#guard TriggeredAbility.toNotation (.onEnterEnchanted (.grantKeywords #[Keyword.firstStrike])) ==
+#guard TriggeredAbility.toNotation (.onEnterEnchanted (fun o => Instruction.grantKeywords o #[Keyword.firstStrike])) ==
   "When this Aura enters, enchanted creature gains first strike until end of turn."
-#guard TriggeredAbility.toNotation (.onEnterEnchanted .tap) ==
+#guard TriggeredAbility.toNotation (.onEnterEnchanted Instruction.tap) ==
   "When this Aura enters, tap enchanted creature."
-#guard TriggeredAbility.resolution (.onEnterEnchanted .tap) == .tap .enchantedWhileSource
-#guard TriggeredAbility.toNotation (.onEnterAttachThen (.grantKeywords #[Keyword.indestructible])) ==
+#guard (TriggeredAbility.onEnterEnchanted Instruction.tap).effect.body == Instruction.tap .attachedHost
+#guard TriggeredAbility.toNotation (.onEnterAttachThen (fun o => Instruction.grantKeywords o #[Keyword.indestructible])) ==
   "When this Equipment enters, attach it to target creature you control. That creature gains indestructible until end of turn."
-#guard TriggeredAbility.toNotation (.onEnterAttachThen .untap) ==
+#guard TriggeredAbility.toNotation (.onEnterAttachThen Instruction.untap) ==
   "When this Equipment enters, attach it to target creature you control. Untap that creature."
-#guard TriggeredAbility.targetSpec (.onEnterAttachThen .untap) == .creatureYouControl
+#guard TriggeredAbility.targetSpec (.onEnterAttachThen Instruction.untap) == .creatureYouControl
 #guard TriggeredAbility.toNotation .onEnterExileOtherCopyEnchanted ==
   "When this Aura enters, exile up to one target creature other than enchanted creature until this Aura leaves the battlefield. Enchanted creature becomes a copy of that creature until this Aura leaves the battlefield."
 #guard TriggeredAbility.allowsZeroTargets .onEnterExileOtherCopyEnchanted
@@ -1347,7 +1158,7 @@ namespace CardDef
 #guard TriggeredAbility.toNotation .onEnterCreateFoodOrTreasure ==
   "When this creature enters, create a Food token or a Treasure token."
 #guard TriggeredAbility.resolution .onEnterCreateFoodOrTreasure ==
-  .or [.createTokens .food (.fixed 1) false, .createTokens .treasure (.fixed 1) false]
+  .or [.createTokens 0 (.fixed 1) false, .createTokens 1 (.fixed 1) false]
 #guard TriggeredAbility.resolution (.onEnter Effect.enterPlusOnesOrReturnArtEnch) ==
   .or [.putCounters (.ofKind .plusOnePlusOne) .permanent, .returnToHand .graveyardCard]
 #guard TriggeredAbility.toNotation (.onEnter Effect.enterPlusOnesOrReturnArtEnch) ==
@@ -1356,7 +1167,7 @@ namespace CardDef
   "When this creature enters, create a tapped 2/1 black Villain creature token with menace if there are two or more creature cards in your graveyard. Otherwise, mill two cards."
 #guard TriggeredAbility.resolution .onEnterVillainIfGyElseMill ==
   .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
-    (.createTokens .villain21menace (.fixed 1) true) (.mill (.fixed 2))
+    (.createTokens 0 (.fixed 1) true) (.mill (.fixed 2))
 #guard TriggeredAbility.toNotation .onEnterDrawMayPutLandTapped ==
   "When this creature enters, draw a card, then you may put a land card from your hand onto the battlefield tapped."
 #guard TriggeredAbility.toNotation .onEnterDrawGainLifeIfAnotherHero ==
@@ -1398,7 +1209,7 @@ namespace CardDef
   "When this permanent enters, create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\"."
 #guard TriggeredAbility.targetSpec (.onEnter Effect.enterOppCreatesTheVoid) == .opponent
 #guard TriggeredAbility.resolution (.onEnter Effect.enterCreateSturdyShieldAttach) ==
-  .sequence [.createTokens .sturdyShield (.fixed 1) false (note := .remember),
+  .sequence [.createTokens 0 (.fixed 1) false (note := .remember),
     .attach .createdToken .source]
 #guard TriggeredAbility.targetSpec (.onEnter Effect.enterExileGyPlayUntilNextTurn) ==
   .equipmentInstantOrSorceryInYourGraveyard
@@ -1451,12 +1262,12 @@ namespace CardDef
   .amass .lastKnownPower
 #guard TriggeredAbility.resolution (.onEnterAmassThenAttach 1) ==
   .amass (.fixed 1) (attachSource := true)
-#guard TriggeredAbility.resolutionPhrase { resolution := .amass .perOtherCreature } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.amass .perOtherCreature) } ==
   "amass"
 #guard TriggeredAbility.resolution .onOpponentCastsFirstNoncreatureRecruit == .recruit .you
 #guard TriggeredAbility.resolution .onEnterRecruit == .recruit
-#guard TriggeredAbility.onCombatDamageToPlayerLoot.effect.resolution ==
-  .sequence [.draw 1, .discard (.cards 1)]
+#guard TriggeredAbility.onCombatDamageToPlayerLoot.effect.body ==
+  .seq #[Instruction.drawFixed 1, Instruction.discardFixed 1]
 #guard TriggeredAbility.resolution .onEnterEachOpponentDiscards ==
   .discard (.cards 1 .eachOpponent)
 #guard TriggeredAbility.resolution (.onEnterTargetOpponentDiscards 2) ==
@@ -1464,9 +1275,9 @@ namespace CardDef
 #guard TriggeredAbility.resolution .onAttackFerociousPlusOneEach ==
   .putCounters (.ofKind .plusOnePlusOne) .youControl
 #guard TriggeredAbility.resolution .onEnterCreateAxe ==
-  .createTokens .axe (.fixed 1) false
+  .createTokens 0 (.fixed 1) false
 #guard TriggeredAbility.resolution .onEnterCreateAxeAttach ==
-  .createTokens .axe (.fixed 1) false (note := .attachReflexive)
+  .createTokens 0 (.fixed 1) false (note := .attachReflexive)
 #guard TriggeredAbility.resolution .onEquippedAttacksPlusOneEachIfCityBlessing ==
   .putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing)
 #guard TriggeredAbility.resolution
@@ -1495,8 +1306,8 @@ namespace CardDef
 #guard TriggeredAbility.toNotation
     (.onAnotherCreatureYouControlPowerAtMostEntersMayPayDraw 2 1) ==
   "Whenever another creature you control with power 2 or less enters, you may pay {1}. If you do, draw a card."
-#guard TriggeredAbility.resolution .onAttackWithTwoOrMoreGrantFlying ==
-  .grant (.keywords #[Keyword.flying]) .target
+#guard TriggeredAbility.onAttackWithTwoOrMoreGrantFlying.effect.body ==
+  Instruction.grantKeywords (.target 0) #[Keyword.flying]
 #guard TriggeredAbility.toNotation (.onOpponentCastsAmassOrcs 1) ==
   "Whenever an opponent casts a spell, amass Orcs 1."
 #guard TriggeredAbility.toNotation .onDiesAmassGoblinsEqualPower ==
@@ -1537,12 +1348,12 @@ namespace CardDef
   "Whenever two or more creatures you control attack a player, target attacking creature without flying gains flying until end of turn."
 #guard TriggeredAbility.resolution .onEnterTargetOpponentSacrificesCreature ==
   .sacrifice .opponentChosenCreature
-#guard TriggeredAbility.resolution (.onLandYouControlEntersGets 1 1) ==
-  .pump (.fixed 1) (.fixed 1) .source
-#guard TriggeredAbility.resolution .onLandYouControlEntersPlusOnePlusOne ==
-  .putCounters (.ofKind .plusOnePlusOne) .permanent
-#guard TriggeredAbility.resolution .onAnotherElfYouControlEntersGets1 ==
-  .pump (.fixed 1) (.fixed 1) .source
+#guard (TriggeredAbility.onLandYouControlEntersGets 1 1).effect.body ==
+  Instruction.pumpFixed .this 1 1
+#guard TriggeredAbility.onLandYouControlEntersPlusOnePlusOne.effect.body ==
+  Instruction.putPlusOne (.target 0) 1
+#guard TriggeredAbility.onAnotherElfYouControlEntersGets1.effect.body ==
+  Instruction.pumpFixed .this 1 1
 #guard TriggeredAbility.resolution (.onEnterDealDividedDamage 3 3) == .dividedDamage
 #guard TriggeredAbility.resolution (.onEnterOrAttackDealDividedDamage 3 3) ==
   .dividedDamage
@@ -1588,7 +1399,7 @@ end CardDef
   .sequence [.dealDamage .lastKnownPower .permanent .excess,
     .amass .notedExcess]
 #guard TriggeredAbility.resolution .onEquippedAttacksCreateSpirits ==
-  .sequence [.createTokens .spirit (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking]
+  .sequence [.createTokens 0 (.fixed 2) true, .«if» (.atLeast (.count (.intersection [.equipped, .legendaryCreaturesYouControl])) (.fixed 1)) .markRecentTokensAttacking]
 #guard TriggeredAbility.resolution .onEnterOrOpponentDrawsDeal1AmassOrcs ==
   .sequence [.dealDamage (.fixed 1) .target .markedPermanent, .amass (.fixed 1) .orc]
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 10) ==
@@ -1632,7 +1443,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onEnterDrawGainLifeIfAnotherHero ==
   .sequence [.draw (.fixed 1), .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.gainLife (.fixed 2))]
 #guard TriggeredAbility.resolution .onCombatCreateAlienPerInvasion ==
-  .sequence [.createTokens .alien (.fixed 1) false (note := .invasion),
+  .sequence [.createTokens 0 (.fixed 1) false (note := .invasion),
     .putCounters .plusOneNoted .createdToken,
     .putCounters (.ofKind .invasion) .source]
 #guard (SharedTrigger.toEffect .drawTwoWinIfEmptyShuffleSource).resolution ==
@@ -1650,7 +1461,7 @@ end CardDef
 #guard (SharedTrigger.toEffect .destroyOppPermanentIfSixLands).resolution ==
   .«if» ((.atLeast (.count .landsYouControl) (.fixed 6))) (.sequence [
     .destroy .target,
-    .createTokens .treasure (.fixed 1) false (who := .controller .target)])
+    .createTokens 0 (.fixed 1) false (who := .controller .target)])
 #guard TriggeredAbility.toNotation
     (SharedTrigger.destroyOppPermanentIfSixLands.toTriggeredAbility (pattern? := some .thisEnters)) ==
   "When this permanent enters, if you control six or more lands, destroy target permanent an opponent controls. They create a Treasure token."
@@ -1661,7 +1472,7 @@ end CardDef
 #guard TriggeredAbility.resolution .onDiesDrawPerFatGraveyard ==
   .draw .perFatGraveyard
 #guard (SharedTrigger.toEffect (.enter .createSturdyShieldAttach)).resolution ==
-  .sequence [.createTokens .sturdyShield (.fixed 1) false (note := .remember),
+  .sequence [.createTokens 0 (.fixed 1) false (note := .remember),
     .attach .createdToken .source]
 #guard (SharedTrigger.toEffect (.enter .tapLoseAbilitiesWhileSource)).resolution ==
   .sequence [.tap (.target .ifPresent), .lose .allAbilities (.target .ifPresent)]
@@ -1782,8 +1593,8 @@ end CardDef
     TokenSpec.creature #[.bear] 2 2 (ColorSet.singleton .blue) &&
   HasTextChange.applyTextChanges tcs (TokenSpec.copyOf .target #[.addSubtypes #[.dwarf], .addColors (ColorSet.singleton .red)]) ==
     TokenSpec.copyOf .target #[.addSubtypes #[.bear], .addColors (ColorSet.singleton .blue)] &&
-  HasTextChange.applyTextChanges tcs (Resolution.createTokens .dwarf (.fixed 2) false) ==
-    Resolution.createTokens (TokenSpec.creature #[.bear] 2 2 (ColorSet.singleton .blue)) (.fixed 2) false &&
+  HasTextChange.applyTextChanges tcs (Instruction.createTokensFixed .dwarf 2) ==
+    Instruction.createTokensFixed (TokenSpec.creature #[.bear] 2 2 (ColorSet.singleton .blue)) 2 &&
   HasTextChange.applyTextChanges #[] (StaticAbility.otherCreaturesGet #[.elf] 1 1) ==
     StaticAbility.otherCreaturesGet #[.elf] 1 1 &&
   HasTextChange.applyTextChanges #[.replaceCreatureType .elf .goblin]
@@ -2123,7 +1934,7 @@ end CardDef
   match Parser.parseManaAbilityLine "Exhaust — {T}: Add {G}{G}{G}." with
   | some ab => ab.isManaAbility && ab.isExhaust && ab.lifetimeLimit? == some 1 &&
       ab.cost == CostSpec.tapOnly &&
-      (ab.mana?.map (·.spec)) == some (.fixed #[.colored .green, .colored .green, .colored .green])
+      (ab.manaProduction?.map (·.spec)) == some (.fixed #[.colored .green, .colored .green, .colored .green])
   | none => false
 #guard
   match Parser.parseManaAbilityLine "Boast — {1}: Add {R}{R}." with
@@ -2154,45 +1965,45 @@ end CardDef
 #guard Parser.parseManaAbilityLine "{T}: Add {G}. Draw a card." == none
 
 -- CR 605.1a (25 September 2026) all 4 criteria on `ActivatedAbility.isManaAbility`:
--- default `Effect := {}` (resolution `.draw (.fixed 0) .you`) does NOT trip criterion 4.
 #guard (ActivatedAbility.manaSimple (.colored .green)).isManaAbility
 #guard (ActivatedAbility.intrinsicBasicLandMana .red).isManaAbility
 -- Fails criterion 1 (requires target).
-#guard !({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
-           effect := { targeting := .of TargetSpec.creature } } : ActivatedAbility).isManaAbility
+#guard !({ cost := CostSpec.tapOnly,
+           effect := { targeting := .of TargetSpec.creature,
+                       body := Instruction.addSimpleMana #[.colored .green] } } : ActivatedAbility).isManaAbility
 -- Fails criterion 2 (does not add mana).
 #guard !({ cost := CostSpec.tapOnly, effect := Effect.gainLife 1 } : ActivatedAbility).isManaAbility
 -- Fails criterion 3 (loyalty ability, CR 606.2).
 #guard !({ cost := CostSpec.ofLoyalty (.plus 1), timing := .loyalty,
-           mana? := some { spec := .fixedOne (.colored .red) } } : ActivatedAbility).isManaAbility
+           effect := { body := Instruction.addSimpleMana #[.colored .red] } } : ActivatedAbility).isManaAbility
 -- Fails criterion 4 (effect moves cards from library).
-#guard !({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
-           effect := Effect.draw 1 } : ActivatedAbility).isManaAbility
+#guard !({ cost := CostSpec.tapOnly,
+           effect := { body := .seq #[Instruction.addSimpleMana #[.colored .green], Instruction.drawFixed 1] } } : ActivatedAbility).isManaAbility
 -- Fails criterion 4 (cost exiles from library).
 #guard !({ cost := CostSpec.ofItems #[.tapSelf, .exile (.exact 1) { zones := #[.library], owner := .ofPlayer .you } (.filter .isCard)],
-           mana? := some { spec := .fixedOne (.colored .green) } } : ActivatedAbility).isManaAbility
--- Fails criterion 4 (sibling library-moving `Resolution` and `FrcEffect` ctors),
+           effect := { body := Instruction.addSimpleMana #[.colored .green] } } : ActivatedAbility).isManaAbility
+-- Fails criterion 4 (library-moving `Instruction` steps: draw, mill, search, inspect-to-hand, explore),
 -- while `.scry` only reorders cards inside a library and remains a mana ability.
-#guard [Resolution.clashOfElements, .entrustTheSpark, .sphinxsApproach,
-        .jiangYangguAlone, .exileOpponentLibrariesButBottom,
-        .riddlesInTheDark 4, .identityEcho, .eyeOfJace, .frc .explore].all fun r =>
-  !({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
-      effect := { resolution := r } } : ActivatedAbility).isManaAbility
-#guard ({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
-          effect := { resolution := .scry (.fixed 1) } } : ActivatedAbility).isManaAbility
+#guard [
+  Instruction.drawFixed 1,
+  Instruction.millFixed 2,
+  .player (.searchLibrary { filter := .hasType .land, dest := .hand .controller }),
+  .player (.explore .this)
+].all fun instr =>
+  !({ cost := CostSpec.tapOnly,
+      effect := { body := .seq #[Instruction.addSimpleMana #[.colored .green], instr] } } : ActivatedAbility).isManaAbility
+#guard ({ cost := CostSpec.tapOnly,
+          effect := { body := .seq #[Instruction.addSimpleMana #[.colored .green], Instruction.scryFixed 1] } } : ActivatedAbility).isManaAbility
 -- Modal activated abilities follow the exact four CR 605.1a criteria across every mode:
 -- untargeted non-library modal abilities that could add mana ARE mana abilities,
--- while a targeted or library-moving mode in `otherModes` disqualifies them.
-#guard ({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
-          otherModes := #[Effect.gainLife 1] } : ActivatedAbility).isManaAbility
-#guard ({ cost := CostSpec.tapOnly, effect := Effect.addMana #[.colored .red],
-          otherModes := #[Effect.addMana #[.colored .green]] } : ActivatedAbility).isManaAbility
-#guard ({ cost := CostSpec.tapOnly, effect := Effect.gainLife 1,
-          otherModes := #[Effect.addMana #[.colored .red]] } : ActivatedAbility).isManaAbility
-#guard !({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
-           otherModes := #[{ targeting := .of TargetSpec.creature, resolution := .gainLife 1 }] } : ActivatedAbility).isManaAbility
-#guard !({ cost := CostSpec.tapOnly, mana? := some { spec := .fixedOne (.colored .green) },
-           otherModes := #[Effect.draw 1] } : ActivatedAbility).isManaAbility
+-- while a targeted or library-moving mode disqualifies them.
+#guard (ActivatedAbility.mkModal CostSpec.tapOnly #[Effect.addMana #[.colored .green], Effect.gainLife 1]).isManaAbility
+#guard (ActivatedAbility.mkModal CostSpec.tapOnly #[Effect.addMana #[.colored .red], Effect.addMana #[.colored .green]]).isManaAbility
+#guard (ActivatedAbility.mkModal CostSpec.tapOnly #[Effect.gainLife 1, Effect.addMana #[.colored .red]]).isManaAbility
+#guard !(ActivatedAbility.mkModal CostSpec.tapOnly
+  #[Effect.addMana #[.colored .green], { targeting := .of TargetSpec.creature, body := Instruction.gainLifeFixed 1 }]).isManaAbility
+#guard !(ActivatedAbility.mkModal CostSpec.tapOnly
+  #[Effect.addMana #[.colored .green], Effect.draw 1]).isManaAbility
 
 -- Functorial `HasTextChange` on `ManaSpec`, `ManaProductionSpec`, `ActivationCostReduction`,
 -- `ActivationMechanicTag`, and `ActivatedAbility` (CR 612.2 / 613.1c).
@@ -2202,7 +2013,7 @@ end CardDef
     (.sequence #[(.colored .green, ValueExpr.count (.controlledOfSubtype .elf))])
     (restriction := some (.subtypeSpellOrSource .elf))
   let ab' := HasTextChange.applyTextChanges tcs ab
-  ab'.mana? == some {
+  ab'.manaProduction? == some {
     spec := .sequence #[(.colored .green, ValueExpr.count (.controlledOfSubtype .goblin))]
     restriction := some (.subtypeSpellOrSource .goblin)
   }
@@ -2365,12 +2176,12 @@ end CardDef
 -- CR 605.1b has NO library-movement exclusion (unlike CR 605.1a).
 #guard ({
   pattern := .activateAbility .you .anyObject .manaAbility
-  effect := { resolution := .sequence [.addMana #[.colored .green], .draw (.fixed 1)] }
+  effect := { body := .seq #[Instruction.addSimpleMana #[.colored .green], Instruction.drawFixed 1] }
 } : TriggeredAbility).isManaAbility
 -- Fails criterion 1 (requires target).
 #guard !({
   pattern := .activateAbility .you .anyObject .manaAbility
-  effect := { targeting := .of .creature, resolution := .addMana #[.colored .green] }
+  effect := { targeting := .of .creature, body := Instruction.addSimpleMana #[.colored .green] }
 } : TriggeredAbility).isManaAbility
 -- Fails criterion 2 (triggers on landfall, not activated mana ability / mana added).
 #guard !({
@@ -2413,8 +2224,8 @@ end CardDef
     types := #[.enchantment]
     subtypes := #["Saga"]
     triggeredAbilities := #[
-      TriggeredAbility.sagaChapter 1 (Effect.ofChapter (.draw 1)),
-      TriggeredAbility.sagaChapters #[2, 3] (Effect.ofChapter (.amass 2))
+      TriggeredAbility.sagaChapter 1 (Effect.chapterDraw 1),
+      TriggeredAbility.sagaChapters #[2, 3] (Effect.chapterAmassGoblins 2)
     ]
   }
   sagaCard.hasSagaChapters &&
@@ -2422,19 +2233,19 @@ end CardDef
     sagaCard.finalChapterNumber == 3 &&
     TriggeredAbility.finalChapterNumberOf #[] == 0
 
--- Phase 7: `CardDef.modellingError?` trigger validation.
+-- Phase 7 / 8: `CardDef.modellingError?` trigger validation.
 #guard
-  let badUnrec : CardDef := {
+  let badNoop : CardDef := {
     name := "Bad Trigger"
     types := #[.creature]
-    triggeredAbilities := #[{ pattern := .thisEnters, effect := { resolution := .unrecognized } }]
+    triggeredAbilities := #[{ pattern := .thisEnters, effect := { body := .noop } }]
   }
-  badUnrec.modellingError?.isSome
+  badNoop.modellingError?.isSome
 #guard
   let badEmptySeq : CardDef := {
     name := "Empty Seq Trigger"
     types := #[.creature]
-    triggeredAbilities := #[{ pattern := .thisEnters, effect := { resolution := .sequence [] } }]
+    triggeredAbilities := #[{ pattern := .thisEnters, effect := { body := .seq #[] } }]
   }
   badEmptySeq.modellingError?.isSome
 #guard
@@ -2448,11 +2259,8 @@ end CardDef
   let badModal : CardDef := {
     name := "Broken Modal Trigger"
     types := #[.creature]
-    triggeredAbilities := #[{
-      pattern := .thisEnters
-      effect := { resolution := .chooseTriggerModes 2 }
-      modes := #[Effect.draw 1]
-    }]
+    triggeredAbilities := #[TriggeredAbility.mkModal .thisEnters #[Effect.draw 1]
+      (minModes := .const 2) (maxModes := .const 2)]
   }
   badModal.modellingError?.isSome
 #guard
@@ -2461,7 +2269,7 @@ end CardDef
     types := #[.creature]
     triggeredAbilities := #[{
       pattern := .thisEnters
-      effect := { resolution := .may (.draw (.fixed 1)) (.sequence []) }
+      effect := { body := Instruction.may .you none (Instruction.drawFixed 1) }
     }]
   }
   goodMayNoElse.modellingError?.isNone
@@ -2514,5 +2322,73 @@ end CardDef
   | some h => h.activeZones == #[.hand]
   | none => false
 
+-- Phase 8: Unified `Instruction` AST, computed agent classification, `CardDef.modalSpec?` /
+-- `empowerPlaneswalkerAmount?`, `HasTextChange` on `Instruction`/`Effect`, and Stage-4
+-- compositional `Parser.parseInstructionSeq` / `Parser.parseInstructionEffect`.
+#guard (Effect.dealDamage 3).classifyForAgent == .burn
+#guard (Effect.dealDamageToCreature 5).classifyForAgent == .creatureDamage
+#guard Effect.destroyCreatureWithFlying.classifyForAgent == .destroyFlying
+#guard Effect.destroyCreature.classifyForAgent == .destroyCreature
+#guard Effect.destroyArtifactOrLandNonflyersCantBlock.classifyForAgent == .destroyArtifactOrLand
+#guard (Effect.pump 3 3).classifyForAgent == .pump
+#guard (Effect.allCreaturesGet (-4) (-4)).classifyForAgent == .massPump
+#guard Effect.playAdditionalLandThisTurn.classifyForAgent == .extraLand
+#guard (Effect.drawAndLoseLife 2 2).classifyForAgent == .draw
+#guard Effect.counterSpell.classifyForAgent == .counter
+#guard Effect.creatureYouControlDealsPowerToOppCreature.classifyForAgent == .fight
+#guard (Effect.dealDamageToTargetCreature 2).classifyAbilityForAgent == .creatureDamage
+#guard Effect.destroyTargetColorlessNonland.classifyAbilityForAgent == .destroyColorless
+#guard (Effect.sourceGets 1 0).classifyAbilityForAgent == .other
+#guard
+  let c : CardDef := {
+    name := "Test Modal"
+    types := #[.instant]
+    spellEffect := some {
+      body := .chooseModes {
+        minModes := .const 1
+        maxModes := .const 2
+        modes := #[Effect.draw 1, Effect.gainLife 3]
+      }
+    }
+  }
+  c.isModal && c.modes.size == 2 &&
+    (c.modalSpec?.map CardDef.modalHeader) == some "Choose one or both —"
+#guard
+  let c : CardDef := {
+    name := "Test Empower"
+    types := #[.sorcery]
+    spellEffect := some {
+      body := .seq #[Instruction.drawFixed 1, Instruction.empowerJace 3]
+      phrase := "draw a card"
+    }
+  }
+  c.empowerPlaneswalkerAmount? == some 3 &&
+    c.empowerLines == ["Empower Jace 3."]
+#guard
+  let tcs := #[TextChange.replaceCreatureType .elf .goblin]
+  let i : Instruction :=
+    .ifCond (.forAll (.target 0) (.hasSubtype (.literal .elf)))
+      (Instruction.createTokensFixed .elf 1) .noop
+  HasTextChange.applyTextChanges tcs i ==
+    .ifCond (.forAll (.target 0) (.hasSubtype (.literal .goblin)))
+      (Instruction.createTokensFixed (HasTextChange.applyTextChanges tcs TokenSpec.elf) 1) .noop
+#guard
+  match Parser.parseInstructionSeq "Draw two cards. You gain 3 life." with
+  | some (.seq #[.player (.drawCards .you (.const 2)), .life (.gain .you (.const 3))], _) => true
+  | _ => false
+#guard
+  match Parser.parseInstructionEffect "Destroy target creature. Scry 2." with
+  | some e =>
+    e.targetSpec == .creature &&
+      e.body == .seq #[Instruction.destroy (.target 0), Instruction.scryFixed 2]
+  | none => false
+#guard
+  match Parser.parseInstructionEffect "Exile target artifact. Draw a card." with
+  | some e =>
+    e.targetSpec == .artifact &&
+      e.body == .seq #[Instruction.exile (.target 0), Instruction.drawFixed 1]
+  | none => false
+
 end Mtg.Engine
+
 

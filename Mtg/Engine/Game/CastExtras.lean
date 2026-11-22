@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.EffectResolution
+import Mtg.Engine.Game.FraHelpers
 
 /-!
 # Optional costs, cascade, and the Ring
@@ -36,11 +36,6 @@ def withTriggerSource (g : Game) (sourceId : Option ObjectId)
     (f : Game → GameObject → Game) : Game :=
   g.withSourceOnBattlefield sourceId f
     "The triggered ability's source is no longer in play"
-
-/-- Apply `action` if the trigger's source is still on the battlefield. -/
-def applyOnTriggerSource (g : Game) (sourceId : Option ObjectId) (action : PermanentAction) :
-    Game :=
-  g.applyOnSource sourceId action "The triggered ability's source is no longer in play"
 
 /-- As the Ring tempts `p`: get The Ring emblem if needed, gain its next
 ability, then choose a Ring-bearer if `p` controls a creature. Re-choosing

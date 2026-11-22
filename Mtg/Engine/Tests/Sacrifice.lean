@@ -55,7 +55,7 @@ def pid (g : Game) (name : String) : ObjectId :=
 def withRelic : Game := addPermanent afterDraw relic caster caster
 
 def phrase (r : TriggeredAbility.TriggerResolution) : String :=
-  TriggeredAbility.resolutionPhrase { resolution := r }
+  TriggeredAbility.resolutionPhrase { resolution? := some (r) }
 
 /- The source is sacrificed. A missing source is reported and the noted
 flag stays clear. The controller's wording names that player. Moving the
@@ -257,7 +257,7 @@ that the source was sacrificed. -/
 
 /- Printed phrases stay with the selector that produces them. -/
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .opponent, resolution := .sacrifice .opponentChosenCreature } ==
+    { targeting := .of .opponent, resolution? := some (.sacrifice .opponentChosenCreature) } ==
   "target opponent sacrifices a creature of their choice"
 #guard phrase (.sacrifice .eachPlayersCreature) ==
   "each player sacrifices a creature of their choice"

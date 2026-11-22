@@ -772,11 +772,11 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .mayPutLandFromHand p =>
       s!" [may put a land from hand onto the battlefield tapped ({g.player p |>.name})]"
     | .chooseTriggerOr p =>
-      let rs :=
+      let (rs, eff) :=
         match g.triggerOr with
-        | some rest => rest.alternatives.toList
-        | none => []
-      s!" [{triggerOrPendingText rs} ({g.player p |>.name})]"
+        | some rest => (rest.alternatives.toList, rest.ability.effect)
+        | none => ([], {})
+      s!" [{triggerOrPendingText rs eff} ({g.player p |>.name})]"
     | .maySacArtifactOrDiscard p _ =>
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
     | .mayPutArtifactFromHand p _ =>

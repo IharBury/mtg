@@ -36,14 +36,10 @@ namespace Mtg.Engine
   a.spellModes == b.spellModes &&
   a.isToken == b.isToken &&
   a.anyNumberInDeck == b.anyNumberInDeck &&
-  a.chooseOneOrBoth == b.chooseOneOrBoth &&
-  a.chooseTwoIfYouControlSubtype == b.chooseTwoIfYouControlSubtype &&
   a.activatedAbilities == b.activatedAbilities &&
   a.staticAbilities == b.staticAbilities &&
   a.triggeredAbilities == b.triggeredAbilities &&
   a.adventure == b.adventure &&
-  a.chooseBothIfTeamwork == b.chooseBothIfTeamwork &&
-  a.empowerJace == b.empowerJace &&
   a.prepareFace == b.prepareFace
 
 private partial def cardDefBeq (a b : CardDef) : Bool :=
@@ -59,6 +55,26 @@ instance : BEq CardDef := ⟨cardDefBeq⟩
 delayed triggers created by game rules or player actions without a source
 object) outside the object allocation range (CR 603.7). -/
 def noSourceSentinelId : ObjectId := ⟨1000000000⟩
+
+/-- Post-replacement outcome summary of a single bound instruction step
+(CR 608.2c / 614.6). Stored in `ContinuationFrame.stepEnv` and `DelayedTrigger.stepEnv`
+and queried by `EvalExpr` via `VarId` bindings. -/
+structure StepOutcome where
+  objects : Array ObjectId := #[]
+  players : Array PlayerId := #[]
+  movedCount : Nat := 0
+  createdCount : Nat := 0
+  damageDealt : Nat := 0
+  excessDamage : Nat := 0
+  lifeChanged : Int := 0
+  countersChanged : Int := 0
+  sumPower : Int := 0
+  chosenNumber : Int := 0
+  chosenSubtype? : Option CardSubtype := none
+  chosenParity? : Option Bool := none
+  chosenKeywords : Array KeywordAbility := #[]
+  succeeded : Bool := false
+deriving Repr, Inhabited, BEq
 
 /-- Permission to play a card from exile (CR 701.18 / 715.3d).
 Duration (`untilEndOfTurn`, `untilEndOfNextTurnOf`, or `whileInZone`) is stored
@@ -413,6 +429,10 @@ structure DelayedTrigger where
   source : Option GameObject := none
   kind : DelayedTriggerKind
   cause : EventCause
+  /-- Lexical `stepEnv` captured when this delayed trigger was installed inside `.bind`. -/
+  stepEnv : Array (VarId × StepOutcome) := #[]
+  /-- Optional unified Phase-8 `Instruction` payload for generic delayed triggers. -/
+  instruction? : Option Instruction := none
 deriving Repr, Inhabited, BEq
 
 /-- A triggered ability waiting to be put onto the stack the next time a

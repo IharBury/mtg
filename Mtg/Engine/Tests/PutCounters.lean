@@ -78,7 +78,7 @@ def plus (g : Game) (name : String) : Nat :=
   (obj g name).status.plusOnePlusOne
 
 def phrase (r : TriggeredAbility.TriggerResolution) : String :=
-  TriggeredAbility.resolutionPhrase { resolution := r }
+  TriggeredAbility.resolutionPhrase { resolution? := some (r) }
 
 def board : Game :=
   let g := addPermanent afterDraw bear caster caster
@@ -253,7 +253,7 @@ in Layer 4 snapshots `.planeswalker` on `PermanentEvent.counters` and triggers
   let loyaltyWatcher : CardDef := {
     name := "Loyalty Watcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (.draw 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (Instruction.drawFixed 1)]
   }
   let g0 := addPermanent board loyaltyWatcher caster caster
   let rockId := pid g0 "Counter Rock"

@@ -453,7 +453,7 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
   impCard.staticAbilities.isEmpty &&
     afterDraw.spellHasImprovise impCard p0 &&
     extCard.staticAbilities.isEmpty &&
-    !(KeywordAbility.expand (.simple .extort)).triggeredSpecs.isEmpty &&
+    !(KeywordAbility.expand (.simple .extort)).triggeredAbilities.isEmpty &&
     snkCard.staticAbilities.isEmpty &&
     !(KeywordAbility.expand (.sneak (CostSpec.ofMana (ManaCost.ofGenericAndColor 1 .blue)))).alternativeCosts.isEmpty
 

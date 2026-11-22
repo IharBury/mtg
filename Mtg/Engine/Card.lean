@@ -8,11 +8,10 @@ import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.ManaSpec
 import Mtg.Engine.Card.Token
 import Mtg.Engine.Card.Targeting
-import Mtg.Engine.Card.PermanentAction
 import Mtg.Engine.Card.SpellResolution
 import Mtg.Engine.Card.AbilityResolution
-import Mtg.Engine.Card.Chapter
 import Mtg.Engine.Card.SharedTrigger
+import Mtg.Engine.Card.Ability
 import Mtg.Engine.Card.Effect
 import Mtg.Engine.Card.ActivatedAbility
 import Mtg.Engine.Card.TriggerPattern
@@ -58,23 +57,23 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `Targeting`: unified `TargetSpec` / `TargetSlot` / `TargetDomain` and
   `HasTargeting` (CR 115.1).
 - `Parser.SubGrammars`: Stage-4 compositional expression, target, cost,
-  keyword, static-ability, and trigger-clause parsers.
-- `PermanentAction`: shared actions on permanents (CR 608.2b).
-- `SpellResolution` / `AbilityCastKind` / `Chapter`: how spells resolve,
-  how the demo agent classifies activated abilities, and Saga chapter
-  resolutions (CR 608 / 714.2).
+  keyword, static-ability, trigger-clause, and instruction parsers.
+- `SpellResolution` / `AbilityResolution`: legacy trigger `Resolution` fallback
+  and demo-agent `SpellCastKind`/`AbilityCastKind` classification enums.
 - `SharedTrigger`: reusable trigger payloads (CR 603).
-- `Effect`: the unified one-shot `Effect` and `Resolution` vocabulary
-  (activated-ability leftovers live on `Resolution`).
-- `ActivatedAbility` / `StaticAbility`: printed abilities (CR 602 / 604).
+- `Ability`: unified Phase-8 `Instruction` AST, `Effect`, `ActivatedAbility`,
+  `TriggeredAbility`, `StaticAbility`, and `GrantedAbility`.
+- `Effect`: `Instruction` smart constructors, `ToOracle`, and pure computed
+  agent classifiers (`classifyForAgent` / `classifyAbilityForAgent`).
+- `ActivatedAbility` / `StaticAbility`: printed ability helpers (CR 602 / 604).
 - `TriggerPattern` / `Trigger`: unified trigger event patterns, batch
   groupings, turn limits, CR 603.10a–f look-back, CR 605.1b triggered mana
   ability classification, and Saga chapter triggers (CR 603 / 714.2).
 - `ChapterEffects` / `TriggerEffects` / `SpellEffects`: named `Effect`
-  constructors per family.
-- `TriggeredAbility`: printed triggered abilities (CR 603 / 714.2).
-- `KeywordExpand`: pure CR 702.1 `KeywordAbility.expand` lowering keywords into
-  static/triggered/activated/additional/alternative/special-action/spell rules.
+  constructors per family, all expressed in unified `Instruction`.
+- `TriggeredAbility`: printed triggered ability constructors and rendering.
+- `KeywordExpand`: pure CR 702.1 `KeywordAbility.expand` lowering keywords directly
+  into unified static/triggered/activated/additional/alternative/special-action/instruction rules.
 - `CardDef`: the printed card definition and `AdventureFace`.
 - `Guards`: cross-abstraction `#guard` regression tests.
 -/

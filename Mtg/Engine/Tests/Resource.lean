@@ -60,11 +60,11 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resolution (resource Effect.resourceGainLifePlusOnes) ==
   .putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown
 #guard TriggeredAbility.resolution (resource Effect.resourcePlusOneCreateInsectOnce) ==
-  .createTokens .insect11green (.fixed 1) false
+  .createTokens 0 (.fixed 1) false
 #guard TriggeredAbility.resolution (resource Effect.resourcePlusOneOnThisOnce) ==
   .putCounters (.ofKind .plusOnePlusOne) .source
 #guard TriggeredAbility.resolution (resource Effect.resourcePlusOneOnHeroesCreateWall) ==
-  .may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo
+  .may (.createTokens 0 (.fixed 1) false) (.sequence []) .ifYouDo
 
 #guard (SharedTrigger.toTriggeredAbility (.resource .plusOneCreateInsectOnce)).onceEachTurn
 #guard (SharedTrigger.toTriggeredAbility (.resource .plusOneOnThisOnce)).onceEachTurn

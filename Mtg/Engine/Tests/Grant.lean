@@ -165,12 +165,12 @@ nothing. -/
 
 #guard TriggeredAbility.resolution .onAttackEquippedGainDoubleStrike == doubleStrike
 #guard TriggeredAbility.resolution .onEnterIfCastProtectionEverything == protection
-#guard TriggeredAbility.resolutionPhrase { resolution := doubleStrike } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (doubleStrike) } ==
   "each equipped attacking creature gains double strike until end of turn"
-#guard TriggeredAbility.resolutionPhrase { resolution := protection } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (protection) } ==
   "if you cast it, you gain protection from everything until your next turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .grant .doubleStrike .youIfCast } == "grant"
+    { resolution? := some (.grant .doubleStrike .youIfCast) } == "grant"
 #guard TriggeredAbility.toNotation .onAttackEquippedGainDoubleStrike ==
   "Whenever Dáin attacks, each equipped attacking creature gains double strike until end of turn."
 #guard TriggeredAbility.toNotation .onEnterIfCastProtectionEverything ==

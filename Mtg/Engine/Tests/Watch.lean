@@ -68,7 +68,7 @@ def onWatch (e : Effect) : TriggeredAbility :=
   .putCounters (.ofKind .plusOnePlusOne) .source
 #guard TriggeredAbility.resolution (onWatch Effect.watchNontokenHeroModal) ==
   .chooseModes
-    [.createTokens .soldier11white (.fixed 1) false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl]
+    [.createTokens 0 (.fixed 1) false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl]
     .fromLastKnown
 #guard TriggeredAbility.resolution (onWatch Effect.watchUltronCopy) ==
   .may (.pay (CostSpec.ofGeneric 2)) (.becomeCopy .cause) .ifYouDo

@@ -485,8 +485,7 @@ namespace ContinuousEffectSpec
 /-- `object` gains combat-damage-creates-Treasure trigger until end of turn (CR 611.2 / 613.1f). -/
 @[inline] def combatDamageCreatesTreasureUntilEot (object : ObjectId) : ContinuousEffectSpec :=
   grantedTriggered object
-    ((SharedTrigger.createTokens .treasure 1).toTriggeredAbility
-      (pattern? := some .thisDealsCombatDamageToPlayer)) true
+    (TriggeredAbility.mkTrigger .thisDealsCombatDamageToPlayer (Effect.triggerCreateTokens .treasure 1)) true
 
 /-- `object` loses all abilities until end of turn (CR 611.2 / 613.1f). -/
 @[inline] def losesAbilitiesUntilEot (object : ObjectId) : ContinuousEffectSpec :=
@@ -1024,7 +1023,7 @@ inductive PutCounterLog where
   | received
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Deferred continuation step for FRC effects (`FrcResolve.lean`) resumed after a
+/-- Deferred continuation step for FRC effects resumed after a
 CR 616.1 `Pending.chooseReplacement` pause finishes. -/
 inductive FrcPostStep where
   | putDrawnBackOnTop (p : PlayerId) (count : Nat)
@@ -1439,7 +1438,7 @@ inductive PostStep where
   /-- Log `msg` only if `cardId` arrived in `owner`'s graveyard (CR 614.6); also
   used for the CR 303.4g stack-Aura graveyard log. -/
   | logDiscardIfInGraveyard (cardId : ObjectId) (owner : PlayerId) (msg : String)
-  /-- Resume `EffectResolution.chooseCardsToHandLoop`; `pendingCard` is the card
+  /-- Resume `ResolutionCompat.chooseCardsToHandLoop`; `pendingCard` is the card
   whose owner's-hand arrival (CR 400.3 / 614.6) is still to be logged. -/
   | chooseCardsToHandLoop (p : PlayerId) (remainingIds : Array ObjectId)
       (cause : Option EventCause)
@@ -1537,6 +1536,54 @@ inductive StackEntryChange where
   | targetsAnnounced (done : Bool)
   | lastKnownPT (power toughness : Option Int)
   | clearChosenModes
+deriving Repr, Inhabited, BEq
+
+/-- Execution context for the unified Phase-8 `Instruction` interpreter (CR 608.2). -/
+structure InterpCtx where
+  controller : PlayerId := ⟨0⟩
+  sourceId : Option ObjectId := none
+  sourceSnapshot : Option EventObject := none
+  targets : Array Target := #[]
+  targetSlots : Array (Array Target) := #[]
+  targetSpec : TargetSpec := .none
+  triggerSubjectId : Option ObjectId := none
+  triggerSubjectIds : Array ObjectId := #[]
+  triggerSubjectSnapshot : Option EventObject := none
+  triggerPlayers : Array (TriggerPlayerRole × PlayerId) := #[]
+  chosenX : Nat := 0
+  castFromGraveyard : Bool := false
+  kicked : Bool := false
+  giftPromised : Bool := false
+  lastKnownPower : Option Int := none
+  lastKnownToughness : Option Int := none
+  skippedOptionalSlots : Array Nat := #[]
+  /-- Active one-shot effect ID for CR 614.6 event-slice outcome summarization. -/
+  oneShotEffectId : EffectId := ⟨0⟩
+deriving Repr, Inhabited, BEq
+
+/-- One suspended continuation frame inside the unified `Instruction` interpreter. -/
+inductive InterpCont where
+  /-- Remaining instructions in a `.seq` block. -/
+  | seqRest (rest : Array Instruction)
+  /-- Close a `.bind v step body` scope once `step` completes: summarize events
+  since `startEventIdx` filtered by `stepEffectId`, bind `v`, then run `body`. -/
+  | bindClose (v : VarId) (startEventIdx : Nat) (stepEffectId : EffectId)
+      (body : Instruction) (extraOverride? : Option StepOutcome := none)
+  /-- Remaining players in `.forEachPlayer` (APNAP order), bound to `v`. -/
+  | forEachPlayerRest (v : VarId) (players : Array PlayerId) (body : Instruction)
+  /-- Remaining objects in `.forEachObject`, bound to `v`. -/
+  | forEachObjectRest (v : VarId) (objects : Array ObjectId) (body : Instruction)
+  /-- Run `onYes` or `onNo` after a `.optional` / `.unlessPays` choice. -/
+  | branchOnChoice (onYes onNo : Instruction)
+  /-- Run `body` with `v` bound to the chosen subtype/parity/keywords/objects/players. -/
+  | bindChosenAndRun (v : VarId) (body : Instruction)
+deriving Repr, Inhabited, BEq
+
+/-- Complete resumable state of the unified `Instruction` interpreter. -/
+structure InterpState where
+  ctx : InterpCtx := {}
+  queue : Array Instruction := #[]
+  stack : Array InterpCont := #[]
 deriving Repr, Inhabited, BEq
 
 mutual
@@ -1773,7 +1820,7 @@ inductive PendingReplacement where
   | continueSpellModes (controller : PlayerId) (modeEffects : Array Effect)
       (remainingTargets : Array Target)
       (castFromGraveyard kicked giftPromised : Bool) (chosenX : Option Nat := none)
-      (sourceId : Option ObjectId := none) (empowerJaceN : Option Nat := none)
+      (sourceId : Option ObjectId := none)
       (skippedOptionalSlots : Array Nat := #[])
       (lastKnownPower : Option Int := none)
       (lastKnownToughness : Option Int := none)
@@ -1910,6 +1957,9 @@ inductive PendingReplacement where
       (startEventIdx : Option Nat := none)
       (reconcile : Bool := true)
       (allowDirectSingle : Bool := false)
+  /-- Resume the unified Phase-8 `Instruction` interpreter after a CR 616.1
+  replacement choice completes (CR 608.2c / 614.6). -/
+  | continueInterpreter (state : InterpState)
 deriving Inhabited
 
 /-- One frame of mid-resolution continuation state (CR 608.2). Grouping the
@@ -2097,6 +2147,11 @@ structure ContinuationFrame where
   /-- Deferred `StackObjectEvent.resolved` payload waiting on an ETB replacement
   or as-enters choice opened during `resolutionFinish`. -/
   pendingResolvedEvent : Option (EventObject × PlayerId × EventCause) := none
+  /-- Lexical `stepEnv` bindings from bound `Instruction.bind` steps (CR 608.2c / 614.6). -/
+  stepEnv : Array (VarId × StepOutcome) := #[]
+  /-- Suspended unified Phase-8 `Instruction` interpreter state waiting on an
+  interactive `Pending` choice or `AfterRandom.continueInterpreter`. -/
+  interpWait? : Option InterpState := none
 deriving Inhabited
 
 /-- Mutations to the top frame of `Game.continuations`. -/
@@ -2194,6 +2249,9 @@ inductive ContinuationChange where
   | afterRandom (v : AfterRandom)
   | resolutionFinish (v : Option ResolutionFinish)
   | pendingResolvedEvent (v : Option (EventObject × PlayerId × EventCause))
+  | stepEnv (v : Array (VarId × StepOutcome))
+  | bindStepOutcome (v : VarId) (o : StepOutcome)
+  | interpWait? (v : Option InterpState)
 deriving Inhabited
 
 /-- Internal engine state mutations that are not rules-level occurrences. -/
@@ -2622,6 +2680,9 @@ namespace EngineChange
 @[inline] def afterRandom (v : AfterRandom) : EngineChange := .continuation (.afterRandom v)
 @[inline] def resolutionFinish (v : Option ResolutionFinish) : EngineChange := .continuation (.resolutionFinish v)
 @[inline] def pendingResolvedEvent (v : Option (EventObject × PlayerId × EventCause)) : EngineChange := .continuation (.pendingResolvedEvent v)
+@[inline] def stepEnv (v : Array (VarId × StepOutcome)) : EngineChange := .continuation (.stepEnv v)
+@[inline] def bindStepOutcome (v : VarId) (o : StepOutcome) : EngineChange := .continuation (.bindStepOutcome v o)
+@[inline] def interpWait? (v : Option InterpState) : EngineChange := .continuation (.interpWait? v)
 end EngineChange
 
 namespace GameEvent
@@ -3368,7 +3429,8 @@ private def matchesZoneEndpoint (listener : PlayerId) (isTeammate : PlayerId →
   | .ownedBy pf => matchesEventPlayer listener isTeammate pf o.owner
   | .attachedTo _ | .hasAttachment _ | .targets _ | .shares _ _
   | .wasCast | .castFrom _ | .enteredThisTurn | .attackedThisTurn
-  | .dealtDamageThisTurn .. | .wasDealtDamageThisTurn | .receivedCounterThisTurn .. => true
+  | .dealtDamageThisTurn .. | .wasDealtDamageThisTurn | .receivedCounterThisTurn ..
+  | .putIntoGraveyardFromBattlefieldThisTurn | .chosenAnchorIs _ => true
 
 @[noinline] private def matchesPatternZone (ze : ZoneEvent) (cause? : Option EventCause)
     (listener : PlayerId) (sourceId : Option ObjectId) (pat : TriggerPattern)

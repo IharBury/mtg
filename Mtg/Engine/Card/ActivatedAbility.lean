@@ -1,66 +1,16 @@
 import Mtg.Engine.Card.Effect
-import Mtg.Engine.Card.ManaSpec
 
 /-!
 # Activated abilities (CR 602, 605, 606, 305.6)
 
-Unified representation of every activated ability — including mana abilities
-(CR 605.1a), loyalty abilities (CR 606.2), intrinsic basic-land mana abilities
-(CR 305.6), equip/cycling/boast/exhaust/power-up/crew keyword abilities
-(CR 702), zone-scoped abilities (CR 113.6), activation conditions (CR 602.5b),
-and declarative cost reductions (CR 602.2b / 601.2f) — anchored to the
-25 September 2026 Comprehensive Rules.
+Unified helper methods, CR 605.1a structural mana classification, CR 305.6
+intrinsic basic-land mana synthesis, modal/mana body projections, and canonical
+`ToOracle` rendering for `ActivatedAbility` (defined in `Ability.lean`).
+Mana production (`PlayerOp.addMana`) and modes (`Instruction.chooseModes`) live
+directly inside `ActivatedAbility.effect.body`.
 -/
 
 namespace Mtg.Engine
-
-/-- Activation timing class of an activated ability (CR 117.1b / 307.5 / 606.3). -/
-inductive ActivationTiming where
-  /-- Any time the player has priority (default). -/
-  | instant
-  /-- "Activate only as a sorcery" (CR 307.5). -/
-  | sorcery
-  /-- Loyalty ability timing (CR 606.3): main phase, empty stack, once per
-  permanent per turn (subject to static exceptions such as Jace instant-speed). -/
-  | loyalty
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Keyword / mechanic tag carried by an `ActivatedAbility` so keyword-sensitive
-rules (e.g. Equip discounts, Cycling triggers, Boast CR 702.142a, Exhaust
-CR 702.177a, Power-up CR 702.193a–b, Crew CR 702.122a) identify it directly. -/
-inductive ActivationMechanicTag where
-  /-- Equip (CR 702.6), with an optional extra creature filter (e.g. Human,
-  worthy). -/
-  | equip (filter? : Option ObjectPred := none)
-  /-- Cycling / typecycling (CR 702.29). -/
-  | cycling (subtype? : Option String := none)
-  /-- Boast (CR 702.142a): activate only if this creature attacked this turn and
-  only once each turn. -/
-  | boast
-  /-- Power-up (CR 702.193a–b): activate only once; if the source entered this
-  turn, reduced by the permanent's mana cost. -/
-  | powerUp
-  /-- Exhaust (CR 702.177a): activate this ability only once. -/
-  | exhaust
-  /-- Crew N (CR 702.122a). -/
-  | crew (minPower : Nat)
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange ActivationMechanicTag where
-  applyTextChanges tcs tag :=
-    if tcs.isEmpty then tag
-    else
-      match tag with
-      | .equip (some pred) => .equip (some (HasTextChange.applyTextChanges tcs pred))
-      | other => other
-
-/-- Declarative generic-mana cost reduction on an activated ability
-(CR 602.2b / 601.2f). `amount` evaluates to generic mana subtracted from the
-ability's mana cost whenever `condition?` holds (unconditionally when `none`). -/
-structure ActivationCostReduction where
-  amount : ValueExpr
-  condition? : Option Condition := none
-deriving Repr, Inhabited, BEq
 
 namespace ActivationCostReduction
 
@@ -95,53 +45,6 @@ def perPlusOneOnTarget : ActivationCostReduction :=
   { amount := .counterCount (some .plusOnePlusOne) (.target 0) }
 
 end ActivationCostReduction
-
-instance : HasTextChange ActivationCostReduction where
-  applyTextChanges tcs r :=
-    if tcs.isEmpty then r
-    else
-      { amount := HasTextChange.applyTextChanges tcs r.amount
-        condition? := r.condition?.map (HasTextChange.applyTextChanges tcs) }
-
-/-- An activated ability (CR 602.1), unifying stack activated abilities, mana
-abilities (CR 605.1a), loyalty abilities (CR 606.2), and CR 305.6 intrinsic
-basic-land mana abilities. -/
-structure ActivatedAbility where
-  cost : CostSpec := {}
-  /-- The ability's printed line, when its wording isn't built from the cost
-  and effect. -/
-  printed : String := ""
-  /-- First (or only) mode of this ability. Pure declarative mana abilities
-  leave this at `{}` and carry their production in `mana?`. -/
-  effect : Effect := {}
-  /-- Additional modes of a modal ability (CR 700.2). Empty means the ability
-  is not modal; the player otherwise chooses one mode at CR 601.2b. -/
-  otherModes : Array Effect := #[]
-  /-- Declarative mana production when this ability produces mana
-  (CR 106.1 / 106.6 / 605.1a). -/
-  mana? : Option ManaProductionSpec := none
-  /-- Activation timing class: `.instant` (default), `.sorcery` (CR 307.5), or
-  `.loyalty` (CR 606.3). -/
-  timing : ActivationTiming := .instant
-  /-- Zones from which this ability may be activated (CR 113.6). Defaults to
-  the battlefield. -/
-  activeZones : Array ZoneKind := #[.battlefield]
-  /-- Maximum activations of this specific ability per turn (e.g. `some 1` for
-  "Activate only once each turn" or Boast CR 702.142a). -/
-  turnLimit? : Option Nat := none
-  /-- Maximum activations of this specific ability across this permanent's
-  lifetime on the battlefield (e.g. `some 1` for Exhaust CR 702.177a and
-  Power-up CR 702.193a). -/
-  lifetimeLimit? : Option Nat := none
-  /-- Additional activation condition ("Activate only if ..." / "Activate only
-  during your turn", CR 602.5b). -/
-  condition? : Option Condition := none
-  /-- Declarative generic-mana cost reductions (CR 602.2b / 601.2f). -/
-  costReductions : Array ActivationCostReduction := #[]
-  /-- Optional keyword / mechanic tag (`equip`, `cycling`, `boast`, `powerUp`,
-  `exhaust`, `crew`). -/
-  tag? : Option ActivationMechanicTag := none
-deriving Repr, Inhabited, BEq
 
 namespace ActivatedAbility
 
@@ -196,6 +99,32 @@ def condEnteredThisTurnOrControlBasicLand : Condition :=
 def condSourceAttackedThisTurn : Condition :=
   .all #[.exists .this, .forAll .this .attackedThisTurn]
 
+/-! ### Body Projections (Folded Mana & Modes) -/
+
+/-- Declarative mana production carried directly in `ab.effect.body`, if any. -/
+def manaProduction? (ab : ActivatedAbility) : Option ManaProductionSpec :=
+  ab.effect.manaProduction?
+
+/-- Modal specification carried directly in `ab.effect.body`, if any (CR 700.2). -/
+def modalSpec? (ab : ActivatedAbility) : Option ModalSpec :=
+  ab.effect.modalSpec?
+
+/-- Every mode of this ability; a non-modal ability is a singleton. -/
+def allModes (ab : ActivatedAbility) : Array Effect :=
+  match ab.modalSpec? with
+  | some spec => if spec.modes.isEmpty then #[ab.effect] else spec.modes
+  | none => #[ab.effect]
+
+/-- True when the player must choose among two or more modes (CR 700.2). -/
+def isModal (ab : ActivatedAbility) : Bool :=
+  match ab.modalSpec? with
+  | some spec => spec.modes.size >= 2
+  | none => false
+
+/-- True when zero targets is a legal announcement (CR 115.1c). -/
+def allowsZeroTargets (ab : ActivatedAbility) : Bool :=
+  ab.effect.allowsZeroTargets
+
 /-! ### Zone / Timing / Mechanic Predicates -/
 
 def isFromBattlefield (ab : ActivatedAbility) : Bool :=
@@ -214,12 +143,18 @@ def isSorcerySpeed (ab : ActivatedAbility) : Bool :=
 def isLoyaltyAbility (ab : ActivatedAbility) : Bool :=
   ab.timing == .loyalty || ab.cost.isLoyalty
 
+/-- True when this entry represents a Morph turn-face-up special action (CR 702.37e). -/
+def isTurnFaceUp (ab : ActivatedAbility) : Bool :=
+  ab.effect.body == .permanent (.turnFaceUp .this)
+
 /-- An equip ability (CR 702.6): attach to target creature you control,
 only as a sorcery. -/
 def isEquip (ab : ActivatedAbility) : Bool :=
   match ab.tag? with
   | some (.equip _) => true
-  | _ => ab.effect.resolution == .attach .source .target && ab.timing == .sorcery && ab.otherModes.isEmpty
+  | _ =>
+    ab.effect.body == .permanent (.attach .this (.target 0)) &&
+      ab.timing == .sorcery && !ab.isModal
 
 /-- Creature subtype restriction on an Equip `<Subtype>` ability, if any (CR 702.6c). -/
 def equipSubtype? (ab : ActivatedAbility) : Option CardSubtype :=
@@ -247,9 +182,10 @@ def isCycling (ab : ActivatedAbility) : Bool :=
   | _ =>
     ab.isFromHand && ab.cost.discardSource &&
       ((ab.printed.toLower).startsWith "cycling " ||
-       match ab.effect.resolution with
-       | .draw 1 => ab.printed.isEmpty
-       | .searchLandTypeToHand t => t != "Plan"
+       match ab.effect.body with
+       | .player (.drawCards .you (.const 1)) => ab.printed.isEmpty
+       | .player (.searchLibrary spec) =>
+         spec.filter != .hasSubtype (.literal .plan) && spec.dest == .hand .controller
        | _ => false)
 
 def isBoast (ab : ActivatedAbility) : Bool :=
@@ -279,7 +215,7 @@ def isOnceEachTurn (ab : ActivatedAbility) : Bool :=
 /-- True when resolving any mode of this ability could add mana to a player's
 mana pool (CR 605.1a). -/
 def couldAddMana (ab : ActivatedAbility) : Bool :=
-  ab.mana?.isSome || (#[ab.effect] ++ ab.otherModes).any (fun m => m.resolution.couldAddMana)
+  ab.allModes.any Effect.couldAddMana
 
 /-- CR 605.1a (25 September 2026): an activated ability is a mana ability iff:
 1. it does not require a target;
@@ -288,19 +224,36 @@ def couldAddMana (ab : ActivatedAbility) : Bool :=
 4. its instructions do not include moving a card to or from a library.
 All modes of a modal ability are inspected uniformly. -/
 def isManaAbility (ab : ActivatedAbility) : Bool :=
-  let modes := #[ab.effect] ++ ab.otherModes
+  let modes := ab.allModes
   !ab.isLoyaltyAbility &&
     !modes.any (fun m => !m.targetSpec.isEmpty) &&
     ab.couldAddMana &&
     !ab.cost.movesToOrFromLibrary &&
-    !modes.any (fun m => m.resolution.movesToOrFromLibrary)
+    !modes.any Effect.movesToOrFromLibrary
 
 /-! ### Canonical Ability Constructors -/
+
+/-- Build a modal `ActivatedAbility` folding `modes` into `Instruction.chooseModes` (CR 700.2). -/
+def mkModal (cost : CostSpec) (modes : Array Effect)
+    (timing : ActivationTiming := .instant)
+    (activeZones : Array ZoneKind := #[.battlefield])
+    (turnLimit? : Option Nat := none)
+    (lifetimeLimit? : Option Nat := none)
+    (condition? : Option Condition := none)
+    (costReductions : Array ActivationCostReduction := #[])
+    (tag? : Option ActivationMechanicTag := none)
+    (printed : String := "") : ActivatedAbility :=
+  { cost, printed, timing, activeZones, turnLimit?, lifetimeLimit?,
+    condition?, costReductions, tag?
+    effect :=
+      match modes.toList with
+      | [single] => single
+      | _ => { body := .chooseModes { modes } } }
 
 /-- Intrinsic `{T}: Add {M}` mana ability granted by a basic land type (CR 305.6). -/
 def intrinsicBasicLandMana (c : Color) : ActivatedAbility :=
   { cost := CostSpec.tapOnly
-    mana? := some { spec := .fixedOne (.colored c) } }
+    effect := { body := .player (.addMana .you { spec := .fixedOne (.colored c) }) } }
 
 /-- Declarative mana ability builder with configurable cost, `ManaSpec`,
 spending restriction, spell riders, self-damage, and activation condition. -/
@@ -311,9 +264,11 @@ def manaAbility (spec : ManaSpec) (cost : CostSpec := CostSpec.tapOnly)
     (lifetimeLimit? : Option Nat := none) (timing : ActivationTiming := .instant)
     (chooseColorPrefix : Bool := false) (filterPairFormat : Bool := false)
     (printed : String := "") : ActivatedAbility :=
+  let mp : ManaProductionSpec :=
+    { spec, restriction, riders, damageYou, chooseColorPrefix, filterPairFormat }
   { cost
     printed
-    mana? := some { spec, restriction, riders, damageYou, chooseColorPrefix, filterPairFormat }
+    effect := { body := .player (.addMana .you mp) }
     timing
     turnLimit?
     lifetimeLimit?
@@ -342,8 +297,11 @@ def manaTapChosenColor : ActivatedAbility :=
 def crewAbility (n : Nat) : ActivatedAbility :=
   { cost := CostSpec.crewCost n
     printed := s!"Crew {n}"
-    effect := { resolution := .becomeArtifactCreatureUntilEot
-                phrase := "This Vehicle becomes an artifact creature until end of turn" }
+    effect := {
+      body := .installEffect (.applyContinuous .untilEndOfTurn .this
+        (.modifyTypes { types := #[.artifact, .creature] }))
+      phrase := "This Vehicle becomes an artifact creature until end of turn"
+    }
     tag? := some (.crew n) }
 
 /-- Baron Helmut Zemo's boast ability (CR 702.142a: activate only if this
@@ -351,28 +309,20 @@ creature attacked this turn and only once each turn). -/
 def zemoBoastAbility : ActivatedAbility :=
   { cost := CostSpec.exileBlackManaSymbols 15
     printed := "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
-    effect := { resolution := .zemoBoastCopies
-                phrase := "Copy those exiled cards. You may cast up to three of the copies without paying their mana costs" }
+    effect := {
+      body := .stack (.mayCastOrPlay .costPaidObjects
+        { duration := .untilEndOfTurn, landsAllowed := false, freeCast := true,
+          copyAndCast := true, maxCasts? := some 3 })
+      phrase := "Copy those exiled cards. You may cast up to three of the copies without paying their mana costs"
+    }
     turnLimit? := some 1
     condition? := some condSourceAttackedThisTurn
     tag? := some .boast }
 
-/-- Every mode of this ability; a non-modal ability is a singleton. -/
-def allModes (ab : ActivatedAbility) : Array Effect :=
-  #[ab.effect] ++ ab.otherModes
-
-/-- True when zero targets is a legal announcement (CR 115.1c). -/
-def allowsZeroTargets (ab : ActivatedAbility) : Bool :=
-  ab.effect.allowsZeroTargets
-
-/-- True when the player must choose among two or more modes (CR 700.2). -/
-def isModal (ab : ActivatedAbility) : Bool :=
-  !ab.otherModes.isEmpty
-
 /-- Canonical Oracle rendering of an `ActivatedAbility` (CR 602.1 / 605). -/
 def toOracle (ctx : PrintCtx) (ab : ActivatedAbility) : String :=
   let body :=
-    match ab.mana? with
+    match ab.manaProduction? with
     | some mp => mp.toOracleSentence ctx
     | none =>
       if ab.isModal then
@@ -415,7 +365,7 @@ def toOracle (ctx : PrintCtx) (ab : ActivatedAbility) : String :=
   else s!"{base} {String.intercalate " " clauses}"
 
 def toNotation (ab : ActivatedAbility) : String :=
-  if ab.mana?.isSome then
+  if ab.manaProduction?.isSome then
     ab.toOracle {}
   else if ab.isBoast && !ab.printed.isEmpty then
     ab.printed
@@ -450,18 +400,5 @@ instance : ToString ActivatedAbility where
   toString := toNotation
 
 end ActivatedAbility
-
-instance : HasTextChange ActivatedAbility where
-  applyTextChanges tcs ab :=
-    if tcs.isEmpty then ab
-    else
-      { ab with
-        cost := HasTextChange.applyTextChanges tcs ab.cost
-        effect := HasTextChange.applyTextChanges tcs ab.effect
-        otherModes := HasTextChange.applyTextChanges tcs ab.otherModes
-        mana? := ab.mana?.map (HasTextChange.applyTextChanges tcs)
-        condition? := ab.condition?.map (HasTextChange.applyTextChanges tcs)
-        costReductions := ab.costReductions.map (HasTextChange.applyTextChanges tcs)
-        tag? := ab.tag?.map (HasTextChange.applyTextChanges tcs) }
 
 end Mtg.Engine

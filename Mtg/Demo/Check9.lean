@@ -301,7 +301,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf]
-      effect := { resolution := .addAnyColorSpendOnlySubtype .goblin, phrase := "Add one mana for Goblin." }
+      effect := Effect.addAnyColorSpendOnlySubtype "Goblin"
     }]
   }
   let gobAbDef : CardDef := {
@@ -728,7 +728,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf]
-      effect := { resolution := .addMana #[.colored .green] (.fixed 2), phrase := "Add {G}{G}." }
+      effect := Effect.addMana #[.colored .green, .colored .green]
     }]
   }
   let filterURToGGDef : CardDef := {
@@ -736,7 +736,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana { symbols := #[.colored .blue, .colored .red] }, .tapSelf]
-      effect := { resolution := .addMana #[.colored .green] (.fixed 2), phrase := "Add {G}{G}." }
+      effect := Effect.addMana #[.colored .green, .colored .green]
     }]
   }
   let gUnpayableFilter := addPermanent gMain filter1ToGGDef p0 p0
@@ -881,7 +881,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf]
-      effect := { resolution := .addAnyColorSpendOnlySubtype .elf, phrase := "Add one mana for Elf." }
+      effect := Effect.addAnyColorSpendOnlySubtype "Elf"
     }]
   }
   let gSupLarge0 := Id.run do

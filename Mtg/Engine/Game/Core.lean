@@ -275,6 +275,8 @@ namespace Game
 @[inline] def afterRandom (g : Game) := g.topFrame.afterRandom
 @[inline] def resolutionFinish (g : Game) := g.topFrame.resolutionFinish
 @[inline] def pendingResolvedEvent (g : Game) := g.topFrame.pendingResolvedEvent
+@[inline] def currentStepEnv (g : Game) : Array (VarId × StepOutcome) := g.topFrame.stepEnv
+@[inline] def currentInterpWait? (g : Game) : Option InterpState := g.topFrame.interpWait?
 
 end Game
 
@@ -2717,10 +2719,17 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
     checkValidObjId pred fid || checkValidObjIds pred rem
   | .continueUnified _ _ _ tgts _ _ _ _ sid _ _
   | .continueUnifiedAbility _ _ _ tgts sid _ _ _
-  | .continueSpellModes _ _ tgts _ _ _ _ sid _ _ _ _
+  | .continueSpellModes _ _ tgts _ _ _ _ sid _ _ _
   | .continueTriggeredSequence _ _ sid tgts _ _ _ _
   | .continueTriggeredModes _ _ _ sid tgts _ _ _ _ =>
     tgts.any (targetAnyObjId pred) || checkValidOptObjId pred sid
+  | .continueInterpreter st =>
+    st.ctx.targets.any (targetAnyObjId pred) ||
+      checkValidOptObjId pred st.ctx.sourceId ||
+      checkValidOptObjId pred st.ctx.triggerSubjectId ||
+      checkValidObjIds pred st.ctx.triggerSubjectIds ||
+      st.ctx.sourceSnapshot.any (eventObjAnyObjId pred) ||
+      st.ctx.triggerSubjectSnapshot.any (eventObjAnyObjId pred)
   | .empowerJace _ _ _ tid c =>
     checkValidOptObjId pred tid || c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .dealDamageToEachCreatureMatching rem _ _ _ _ src c _ _ =>
@@ -4511,6 +4520,10 @@ def ckptPendingReplacementUntouchedBeforeLeave (g : Game) (ckpt : ProposalCheckp
   | .afterRandom v => { f with afterRandom := v }
   | .resolutionFinish v => { f with resolutionFinish := v }
   | .pendingResolvedEvent v => { f with pendingResolvedEvent := v }
+  | .stepEnv v => { f with stepEnv := v }
+  | .bindStepOutcome v o =>
+    { f with stepEnv := (f.stepEnv.filter (·.1 != v)).push (v, o) }
+  | .interpWait? v => { f with interpWait? := v }
 
 /-- Process one `EngineChange` in isolation. -/
 def applyEngineChange (g : Game) (c : EngineChange) : Game :=
@@ -6429,7 +6442,8 @@ private partial def objExprMentionsKeyword : ObjectExpr → Bool
 
 private partial def valExprMentionsKeyword : ValueExpr → Bool
   | .objectStat _ oe | .counterCount _ oe | .aggregate _ _ oe
-  | .basicLandTypeCount oe | .cardTypeCount oe | .subtypeCount _ oe | .manaSymbols _ oe =>
+  | .basicLandTypeCount oe | .cardTypeCount oe | .subtypeCount _ oe
+  | .manaSymbols _ oe | .colorCountAmong oe =>
     objExprMentionsKeyword oe
   | .playerMetric _ pe => playerExprMentionsKeyword pe
   | .maxControlled who p => playerPredMentionsKeyword who.pred || predMentionsKeyword p
@@ -6441,6 +6455,7 @@ private partial def playerPredMentionsKeyword : PlayerPred → Bool
   | .not p => playerPredMentionsKeyword p
   | .metric _ _ rhs => valExprMentionsKeyword rhs
   | .controls f v => predMentionsKeyword f.pred || valExprMentionsKeyword v
+  | .matchesExpr pe => playerExprMentionsKeyword pe
   | _ => false
 
 private partial def playerExprMentionsKeyword : PlayerExpr → Bool
@@ -6495,13 +6510,16 @@ private partial def objExprReadsPT : ObjectExpr → Bool
   | .extremum _ metric oe => metric == .power || metric == .toughness || objExprReadsPT oe
   | .union es => es.any objExprReadsPT
   | .diff lhs rhs => objExprReadsPT lhs || objExprReadsPT rhs
+  | .linkedExile oe => objExprReadsPT oe
+  | .filter oe p => objExprReadsPT oe || predReadsPT p
   | _ => false
 
 private partial def valExprReadsPT : ValueExpr → Bool
   | .objectStat .power _ | .objectStat .toughness _ => true
   | .aggregate _ (.stat .power) _ | .aggregate _ (.stat .toughness) _ => true
   | .objectStat _ oe | .counterCount _ oe | .aggregate _ _ oe
-  | .basicLandTypeCount oe | .cardTypeCount oe | .subtypeCount _ oe | .manaSymbols _ oe =>
+  | .basicLandTypeCount oe | .cardTypeCount oe | .subtypeCount _ oe
+  | .manaSymbols _ oe | .colorCountAmong oe =>
     objExprReadsPT oe
   | .playerMetric _ pe => playerExprReadsPT pe
   | .maxControlled who p => playerPredReadsPT who.pred || predReadsPT p
@@ -6513,6 +6531,7 @@ private partial def playerPredReadsPT : PlayerPred → Bool
   | .not p => playerPredReadsPT p
   | .metric _ _ rhs => valExprReadsPT rhs
   | .controls f v => predReadsPT f.pred || valExprReadsPT v
+  | .matchesExpr pe => playerExprReadsPT pe
   | _ => false
 
 private partial def playerExprReadsPT : PlayerExpr → Bool
@@ -6532,6 +6551,37 @@ private partial def condReadsPT : Condition → Bool
 
 end
 
+/-- Reconstruct `(leaveTriggerExile, linkedExile)` recorded on departed source
+`sid` from `g.events` (CR 607.2a). -/
+def departedLinkedExiles (g : Game) (sid : ObjectId) : Array ObjectId × Array ObjectId :=
+  g.events.foldl (fun (lte, le) ev =>
+    match ev.change with
+    | .rules (.zone (.moved _ after ..)) =>
+      if after.id == some sid then (#[], #[]) else (lte, le)
+    | .rules (.zone (.created after _)) =>
+      if after.id == some sid then (#[], #[]) else (lte, le)
+    | .engine (.materializeObject obj _) =>
+      if obj.id == sid then (obj.leaveTriggerExile, obj.linkedExile) else (lte, le)
+    | .engine (.object id oc) =>
+      if id != sid then (lte, le)
+      else
+        match oc with
+        | .leaveTriggerExile v => (v, le)
+        | .pushLeaveTriggerExile x => (lte.push x, le)
+        | .linkedExile v => (lte, v)
+        | .pushLinkedExile x => (lte, le.push x)
+        | _ => (lte, le)
+    | _ => (lte, le)) (#[], #[])
+
+/-- Linked-exile object ids (`leaveTriggerExile ++ linkedExile`) of `sid`,
+consulting `g.events` LKI when `sid` has already left its zone (CR 607.2a). -/
+def allLinkedExilesOf (g : Game) (sid : ObjectId) : Array ObjectId :=
+  match g.findObject? sid with
+  | some src => src.leaveTriggerExile ++ src.linkedExile
+  | none =>
+    let (lte, le) := g.departedLinkedExiles sid
+    lte ++ le
+
 private def matchStaticPlayerRel (g : Game) (srcCtrl : PlayerId) (rel : PlayerRelation)
     (p : PlayerId) : Bool :=
   g.stillInGame p &&
@@ -6546,7 +6596,8 @@ private def staticPlayersMatchingRel (g : Game) (srcCtrl : PlayerId) (rel : Play
   g.players.filterMap fun pl =>
     if g.matchStaticPlayerRel srcCtrl rel pl.id then some pl.id else none
 
-private def evalStaticPlayerMetricSingle (g : Game) (m : PlayerMetric) (p : PlayerId) : Int :=
+private def evalStaticPlayerMetricSingle (g : Game) (m : PlayerMetric) (p : PlayerId)
+    (excludeObjId? : Option ObjectId := none) : Int :=
   let pl := g.player p
   match m with
   | .life => pl.life
@@ -6556,6 +6607,30 @@ private def evalStaticPlayerMetricSingle (g : Game) (m : PlayerMetric) (p : Play
   | .landsPlayedThisTurn => Int.ofNat (GameEvent.landsPlayed g.events g.turnNumber p)
   | .spellsCastThisTurn => Int.ofNat (GameEvent.spellsCast g.events g.turnNumber p)
   | .cardsDrawnThisTurn => Int.ofNat (GameEvent.draws g.events g.turnNumber p)
+  | .cardsDiscardedThisTurn =>
+    Int.ofNat (g.events.foldl (fun n e =>
+      if e.turn == g.turnNumber then
+        match e.change with
+        | .rules (.zone (.moved _ _ (.hand q) _ .discard _ _ _)) => if q == p then n + 1 else n
+        | _ => n
+      else n) 0)
+  | .cardsMilledThisTurn =>
+    Int.ofNat (g.events.foldl (fun n e =>
+      if e.turn == g.turnNumber then
+        match e.change with
+        | .rules (.zone (.moved _ _ (.library q) _ .mill _ _ _)) => if q == p then n + 1 else n
+        | _ => n
+      else n) 0)
+  | .otherSpellsManaValueThisTurn =>
+    Int.ofNat (g.events.foldl (fun n e =>
+      if e.turn == g.turnNumber then
+        match e.change with
+        | .rules (.cast (.spellCast spellSnap q _)) =>
+          if q == p && (excludeObjId?.isNone || spellSnap.id != excludeObjId?) then
+            n + spellSnap.manaValue
+          else n
+        | _ => n
+      else n) 0)
   | .lifeGainedThisTurn => Int.ofNat (GameEvent.lifeGained g.events g.turnNumber p)
   | .lifeLostThisTurn => Int.ofNat (GameEvent.lifeLost g.events g.turnNumber p)
   | .unspentMana => Int.ofNat pl.manaPool.total
@@ -6776,7 +6851,7 @@ private partial def evalStaticPlayerPredL5 (g : Game) (src : GameObject) (srcCtr
         let defs := g.defendingPlayers
         if defs.isEmpty then g.defendingPlayer == p else defs.contains p
     | .metric m op rhs =>
-      op.eval (g.evalStaticPlayerMetricSingle m p) (g.evalStaticValL5 src srcCtrl rhs ok ptOf? kwOf? triggerSubject?)
+      op.eval (g.evalStaticPlayerMetricSingle m p (some src.id)) (g.evalStaticValL5 src srcCtrl rhs ok ptOf? kwOf? triggerSubject?)
     | .controls filter minCount =>
       let need := g.evalStaticValL5 src srcCtrl minCount ok ptOf? kwOf? triggerSubject?
       let objs := g.evalStaticObjsL5 src p filter.toExpr ok ptOf? kwOf? triggerSubject?
@@ -6784,6 +6859,8 @@ private partial def evalStaticPlayerPredL5 (g : Game) (src : GameObject) (srcCtr
       Int.ofNat controlled.size ≥ need
     | .isSeat idx => p.idx == idx
     | .thatPlayer => true
+    | .matchesExpr pe =>
+      (g.evalStaticPlayerExprL5 src srcCtrl pe ok ptOf? kwOf? triggerSubject?).contains p
 
 /-- Evaluate `PlayerFilter` on a candidate player `p`. -/
 private partial def matchStaticPlayerFilterL5 (g : Game) (src : GameObject) (srcCtrl : PlayerId)
@@ -6865,6 +6942,7 @@ private partial def evalStaticPredL5 (g : Game) (src : GameObject) (srcCtrl : Pl
     match src.status.chosenCreatureType with
     | some ty => g.hasSubtype target ty
     | none => false
+  | .hasSubtype (.fromStep _) => false
   | .hasColor (.literal c) => (g.colors target).contains c
   | .hasColor .chosenOnSource =>
     match src.status.chosenColor with
@@ -6903,6 +6981,7 @@ private partial def evalStaticPredL5 (g : Game) (src : GameObject) (srcCtrl : Pl
         match src.status.chosenOdd with
         | some wantOdd => isOdd == wantOdd
         | none => false
+      | .fromStep _ => false
   | .isToken want => target.printed.isToken == want
   | .isFaceDown want => target.status.faceDown == want
   | .isCopy want => (target.isCopy || g.hasActiveCopy target) == want
@@ -7103,6 +7182,15 @@ private partial def evalStaticPredL5 (g : Game) (src : GameObject) (srcCtrl : Pl
                  match eo.controller with
                  | some c => g.matchStaticPlayerFilterL5 src srcCtrl pf c ok ptOf? kwOf? triggerSubject?
                  | none => true)
+  | .putIntoGraveyardFromBattlefieldThisTurn =>
+    g.events.any fun e =>
+      e.turn == g.turnNumber &&
+        match e.change with
+        | .rules (.zone (.moved _ after .battlefield (.graveyard _) ..)) =>
+          after.id == some target.id
+        | _ => false
+  | .chosenAnchorIs name =>
+    target.status.chosenAnchor == some name
 
 /-- Evaluate `ObjectExpr` to matching live `GameObject`s. -/
 private partial def evalStaticObjsL5 (g : Game) (src : GameObject) (srcCtrl : PlayerId)
@@ -7214,7 +7302,17 @@ private partial def evalStaticObjsL5 (g : Game) (src : GameObject) (srcCtrl : Pl
   | .diff lhs rhs =>
     let rIds := (g.evalStaticObjsL5 src srcCtrl rhs ok ptOf? kwOf? triggerSubject?).map (·.id)
     (g.evalStaticObjsL5 src srcCtrl lhs ok ptOf? kwOf? triggerSubject?).filter (fun o => !rIds.contains o.id)
-  | .target _ | .stepObjects _ => #[]
+  | .linkedExile srcExpr =>
+    let srcs := g.evalStaticObjsL5 src srcCtrl srcExpr ok ptOf? kwOf? triggerSubject?
+    dedupObjs (srcs.foldl (fun acc s =>
+      (g.allLinkedExilesOf s.id).foldl (fun a eid =>
+        match g.findObject? eid with
+        | some eo => if eo.zone == .exile then a.push eo else a
+        | none => a) acc) #[])
+  | .filter inner pred =>
+    (g.evalStaticObjsL5 src srcCtrl inner ok ptOf? kwOf? triggerSubject?).filter fun o =>
+      g.evalStaticPredL5 src srcCtrl o pred ok ptOf? kwOf? triggerSubject?
+  | .target _ | .allTargets | .stepObjects _ | .costPaidObjects => #[]
 
 /-- Evaluate `ValueExpr` (CR 107.1–2 / 604 / 613), mirroring `EvalExpr.evalValue`
 with optional P/T callback `ptOf?` and Layer 6 keyword callback `kwOf?`. -/
@@ -7278,9 +7376,13 @@ private partial def evalStaticValL5 (g : Game) (src : GameObject) (srcCtrl : Pla
       (g.subtypes o).foldl (fun a sub =>
         if cat.matchesSubtype sub && !a.contains sub then a.push sub else a) acc) (#[] : Array CardSubtype)
     Int.ofNat seen.size
+  | .colorCountAmong oe =>
+    let objs := g.evalStaticObjsL5 src srcCtrl oe ok ptOf? kwOf? triggerSubject?
+    let mask := objs.foldl (fun acc o => ColorSet.union acc (g.colors o)) ColorSet.empty
+    Int.ofNat mask.count
   | .playerMetric m pe =>
     (g.evalStaticPlayerExprL5 src srcCtrl pe ok ptOf? kwOf? triggerSubject?).foldl
-      (fun acc p => acc + g.evalStaticPlayerMetricSingle m p) 0
+      (fun acc p => acc + g.evalStaticPlayerMetricSingle m p (some src.id)) 0
   | .maxControlled who pred =>
     let ps := (g.staticPlayersMatchingRel srcCtrl who.relation).filter fun p =>
       g.evalStaticPlayerPredL5 src srcCtrl p who.pred ok ptOf? kwOf? triggerSubject?
@@ -7304,7 +7406,7 @@ private partial def evalStaticValL5 (g : Game) (src : GameObject) (srcCtrl : Pla
             | .generic _ | .x => n) 0
       acc + contrib) 0
     Int.ofNat total
-  | .stepMetric _ _ => 0
+  | .stepMetric _ _ | .eventAmount => 0
   | .binary op a b =>
     op.eval (g.evalStaticValL5 src srcCtrl a ok ptOf? kwOf? triggerSubject?)
       (g.evalStaticValL5 src srcCtrl b ok ptOf? kwOf? triggerSubject?)
@@ -7451,6 +7553,8 @@ private partial def evalStaticCondL5 (g : Game) (src : GameObject) (srcCtrl : Pl
     | .eventOccurredThisTurn who pat => evalEvPatOnTurn g.turnNumber who pat
     | .eventOccurredLastTurn who pat =>
       if g.turnNumber > 0 then evalEvPatOnTurn (g.turnNumber - 1) who pat else false
+    | .firstResolutionThisTurn => true
+    | .optionalOnceUnusedThisTurn => !g.optionalOnceUsedThisTurn src.id
   | .stepSucceeded _ => false
   | .duringStep s => g.step == s
   | .duringPhase ph => g.step.phase == ph
@@ -7625,7 +7729,7 @@ private def extractContinuousL6 (g : Game) (src : GameObject) (srcCtrl : PlayerI
             if kwOnly || abs.isEmpty then acc
             else
               let (mAdd, lAdd) := abs.foldl (fun (ms, lt) act =>
-                match act.mana? with
+                match act.manaProduction? with
                 | some mp =>
                   match mp.spec with
                   | .oneOf .anyColor (.const 1) =>
@@ -7910,7 +8014,10 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
             triggers :=
               let rawPrintedTrigs :=
                 if bc.isMarduOrJeskaiChoice && o.status.chosenAnchor != some "Jeskai" then
-                  bc.triggeredAbilities.filter (·.effect.resolution != .frc .goblin)
+                  bc.triggeredAbilities.filter fun ab =>
+                    match ab.effect.body with
+                    | .ifCond (.exists (.filter .this (.chosenAnchorIs "Jeskai"))) _ _ => false
+                    | _ => true
                 else bc.triggeredAbilities
               (if oTcs.isEmpty then rawPrintedTrigs
                else rawPrintedTrigs.map (TextChange.applyTriggeredAbility oTcs)) ++
@@ -9625,7 +9732,10 @@ def triggeredAbilities (g : Game) (o : GameObject) : Array TriggeredAbility :=
         else #[]
       let rawPrintedTrigs :=
         if bc.isMarduOrJeskaiChoice && o.status.chosenAnchor != some "Jeskai" then
-          bc.triggeredAbilities.filter (·.effect.resolution != .frc .goblin)
+          bc.triggeredAbilities.filter fun ab =>
+            match ab.effect.body with
+            | .ifCond (.exists (.filter .this (.chosenAnchorIs "Jeskai"))) _ _ => false
+            | _ => true
         else bc.triggeredAbilities
       rawPrintedTrigs ++ impTrig
   else
@@ -9654,7 +9764,10 @@ def triggeredAbilities (g : Game) (o : GameObject) : Array TriggeredAbility :=
         else #[]
       let rawPrintedTrigs :=
         if bc.isMarduOrJeskaiChoice && o.status.chosenAnchor != some "Jeskai" then
-          bc.triggeredAbilities.filter (·.effect.resolution != .frc .goblin)
+          bc.triggeredAbilities.filter fun ab =>
+            match ab.effect.body with
+            | .ifCond (.exists (.filter .this (.chosenAnchorIs "Jeskai"))) _ _ => false
+            | _ => true
         else bc.triggeredAbilities
       if rawPrintedTrigs.isEmpty then impTrig
       else
@@ -9682,7 +9795,7 @@ def prowessTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
     else
       Array.replicate cnt (TriggeredAbility.ofPattern .youCastNoncreature
         "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)"
-        (.pump (.fixed 1) (.fixed 1) .source))
+        (Instruction.pumpFixed .this 1 1))
 
 /-- Number of Iron Fist tap abilities currently granted to `o` in Layer 6. -/
 def ironFistTapGrants (g : Game) (o : GameObject) : Nat :=
@@ -9743,7 +9856,7 @@ def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
       let morphAb : Array ActivatedAbility :=
         match (g.unmaskedCopiableValues o).morphCost? with
         | some cost =>
-          #[{ effect := { resolution := .frc .turnFaceUp, phrase := "Turn this face up." }
+          #[{ effect := { body := .permanent (.turnFaceUp .this), phrase := "Turn this face up." }
               cost := cost }]
         | none => #[]
       morphAb ++ (g.evalLayer6Fast o).activated
@@ -12640,9 +12753,8 @@ def triggerNeedingTargets (g : Game) : Option StackEntry :=
             !e.targetsAnnounced
           else eff.requiresTarget && e.targets.isEmpty
       | some ab, none =>
-        match ab.effect.resolution with
-        | .chooseTriggerModes _ => false
-        | _ => triggerStillNeedsTargets e ab
+        if ab.isModal then false
+        else triggerStillNeedsTargets e ab
       | none, _ => false
     | none => false)
 
@@ -13366,11 +13478,7 @@ control-lost, and counter placement including Saga chapters and plan thresholds
                     if prevCnt < ch && ch ≤ newCnt then
                       let abForCh : TriggeredAbility :=
                         if targetKind == .lore then
-                          let eff' :=
-                            match ab.effect.sharedTrigger with
-                            | some (.chapter _ ce) => { ab.effect with sharedTrigger := some (.chapter ch ce) }
-                            | _ => ab.effect
-                          { ab with grouping := .counterThreshold .lore #[ch], effect := eff' }
+                          { ab with grouping := .counterThreshold .lore #[ch] }
                         else ab
                       hits := hits.push {
                         eventIdx := eIdx, cause := some postObj,
@@ -14023,7 +14131,7 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
         let ab : TriggeredAbility :=
           TriggeredAbility.ofPattern .combatDamageToYou
             "Whenever a creature deals combat damage to the monarch, its controller becomes the monarch."
-            (.frc .monarch)
+            (.player (.setStatus (.triggerPlayer .controllerOfSubject) .monarch))
         for (srcObj?, sid?, attCtrl) in attackers do
           waiting := waiting.push
             { controller := monarchPl.id, source := src, ability := ab,
@@ -14080,7 +14188,7 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
               let ab : TriggeredAbility :=
                 TriggeredAbility.ofPattern .stepYourEndStep
                   "At the beginning of the monarch's end step, that player draws a card."
-                  (.draw (.fixed 1))
+                  (Instruction.drawFixed 1 .you)
               waiting := waiting.push
                 { controller := monarchPl.id, source := src, ability := ab,
                   pattern := .stepYourEndStep, checked := true }
@@ -14136,14 +14244,14 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
         -- Photon Blast Barrage copy-self
         let isUncastCopy := GameEvent.isUncastStackCopy post.events castObj.id
         let copiesSelf :=
-          match (post.baseCard castObj).spellEffect.map (·.resolution) with
-          | some (.copyThisSpellXTimesThenDamage _) => !isUncastCopy
-          | _ => false
+          match (post.baseCard castObj).spellEffect with
+          | some eff => !isUncastCopy && eff.phrase.startsWith "When you cast this spell, copy it X times."
+          | none => false
         if copiesSelf then
           let copySelfAb : TriggeredAbility :=
             TriggeredAbility.ofPattern .thisCast
               "When you cast this spell, copy it X times. You may choose new targets for the copies"
-              .copySourceSpellXTimes (activeZones := #[.stack])
+              (.stack (.copyStackObject .this .chosenX true)) (activeZones := #[.stack])
           let (w, fs) :=
             queueTriggerAb post post caster castObj copySelfAb .thisCast
               (w := waiting) (fs := firedSources)
@@ -14199,14 +14307,11 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
         -- Extort (CR 702.101a)
         for o in post.permanentsOf caster do
           if post.hasSimpleKeyword o .extort then
-            let extortAb : TriggeredAbility :=
-              TriggeredAbility.ofPattern .youCastSpell
-                "You may pay {W/B}. If you do, each opponent loses 1 life and you gain that much life"
-                .extort
-            let (w, fs) :=
-              queueTriggerAb post post caster o extortAb .youCastSpell
-                (w := waiting) (fs := firedSources)
-            waiting := w; firedSources := fs
+            for extortAb in (KeywordAbility.expand (.simple .extort)).triggeredAbilities do
+              let (w, fs) :=
+                queueTriggerAb post post caster o extortAb .youCastSpell
+                  (w := waiting) (fs := firedSources)
+              waiting := w; firedSources := fs
     | .rules (.cast (.abilityActivated abilityId _ ctrl (.nonMana ..))) =>
       let targets := ((post.stackEntry? abilityId).map (·.targets)).getD #[]
       if let some abObj := post.findObject? abilityId then
@@ -17371,37 +17476,6 @@ def expireEffectsOnLeavingObject (g : Game) (o : GameObject)
     (cause := cause) (reconcileControl := reconcileControl)
     (preState? := preState?) (suppressEmblemLog := suppressEmblemLog)
     (suppressReturnLog := suppressReturnLog) (skipLogIds := skipLogIds)
-
-/-- Reconstruct `(leaveTriggerExile, linkedExile)` recorded on departed source
-`sid` from `g.events` (CR 607.2a). -/
-def departedLinkedExiles (g : Game) (sid : ObjectId) : Array ObjectId × Array ObjectId :=
-  g.events.foldl (fun (lte, le) ev =>
-    match ev.change with
-    | .rules (.zone (.moved _ after ..)) =>
-      if after.id == some sid then (#[], #[]) else (lte, le)
-    | .rules (.zone (.created after _)) =>
-      if after.id == some sid then (#[], #[]) else (lte, le)
-    | .engine (.materializeObject obj _) =>
-      if obj.id == sid then (obj.leaveTriggerExile, obj.linkedExile) else (lte, le)
-    | .engine (.object id oc) =>
-      if id != sid then (lte, le)
-      else
-        match oc with
-        | .leaveTriggerExile v => (v, le)
-        | .pushLeaveTriggerExile x => (lte.push x, le)
-        | .linkedExile v => (lte, v)
-        | .pushLinkedExile x => (lte, le.push x)
-        | _ => (lte, le)
-    | _ => (lte, le)) (#[], #[])
-
-/-- Linked-exile object ids (`leaveTriggerExile ++ linkedExile`) of `sid`,
-consulting `g.events` LKI when `sid` has already left its zone (CR 607.2a). -/
-def allLinkedExilesOf (g : Game) (sid : ObjectId) : Array ObjectId :=
-  match g.findObject? sid with
-  | some src => src.leaveTriggerExile ++ src.linkedExile
-  | none =>
-    let (lte, le) := g.departedLinkedExiles sid
-    lte ++ le
 
 /-- Remove `eid` from a live `sid`'s `leaveTriggerExile` and `linkedExile`
 metadata lists once `eid` has been consumed by a linked ability (CR 607.2a). -/

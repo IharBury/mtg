@@ -2076,7 +2076,11 @@ partial def drainPendingContinuations (g : Game) : Game :=
       let g := ((g.change (.pendingReplacement none)).popEmptyTopContinuationFrames).resumePendingReplacement cont
       g.drainPendingContinuations
     | none =>
-      if g.triggerSequenceRest.isSome &&
+      if g.currentInterpWait?.isSome &&
+          !(g.proposedSpell.isNone && (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)) then
+        let g := g.resumeInterpWaitIfReady
+        g.drainPendingContinuations
+      else if g.triggerSequenceRest.isSome &&
           !(g.proposedSpell.isNone && (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)) then
         let g := g.resumeTriggerSequence
         g.drainPendingContinuations
@@ -2161,10 +2165,10 @@ partial def finishAndGrantPriority (g : Game)
     let g := g.reopenDeferredExileCasts
     if let .chooseReplacement .. := g.pending then
       if g.anyContinuationSettlesControlFlow then g
-      else if g.triggerSequenceRest.isSome then g.chainPendingReplacement .finishFraChoice
+      else if g.triggerSequenceRest.isSome || g.currentInterpWait?.isSome then g.chainPendingReplacement .finishFraChoice
       else g.chainPendingReplacement (.receivePriority (g.priorityInstead p))
     else if g.pending != .none then g
-    else if g.triggerSequenceRest.isSome || g.pendingReplacement.isSome ||
+    else if g.triggerSequenceRest.isSome || g.currentInterpWait?.isSome || g.pendingReplacement.isSome ||
         !g.outerPendingReplacements.isEmpty then
       g.finishFraChoice
     else if g.triggerNeedingTargets.isSome then
@@ -2272,7 +2276,7 @@ partial def finishFraChoice (g : Game) : Game :=
           if g.anyContinuationSettlesControlFlow then g
           else g.chainPendingReplacement .finishFraChoice
         else if g.pending != .none then g
-        else if g.triggerSequenceRest.isSome || g.pendingReplacement.isSome ||
+        else if g.triggerSequenceRest.isSome || g.currentInterpWait?.isSome || g.pendingReplacement.isSome ||
             !g.outerPendingReplacements.isEmpty then
           g.finishFraChoice
         else if g.triggerNeedingTargets.isSome then
@@ -3523,8 +3527,10 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     g.runUnifiedSteps controller effect steps targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower lastKnownToughness
   | .continueUnifiedAbility controller effect steps targets sourceId lastKnownPower chosenX lastKnownToughness =>
     g.runUnifiedAbilitySteps controller effect steps targets sourceId lastKnownPower chosenX lastKnownToughness
-  | .continueSpellModes controller modeEffects remainingTargets castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN skippedOptionalSlots lastKnownPower lastKnownToughness =>
-    g.runSpellModesAndEmpower controller modeEffects remainingTargets castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN skippedOptionalSlots lastKnownPower lastKnownToughness
+  | .continueInterpreter st =>
+    g.withContinuationFrame fun g => g.resumeInterpreter st
+  | .continueSpellModes controller modeEffects remainingTargets castFromGraveyard kicked giftPromised chosenX sourceId skippedOptionalSlots lastKnownPower lastKnownToughness =>
+    g.runSpellModesAndEmpower controller modeEffects remainingTargets castFromGraveyard kicked giftPromised chosenX sourceId skippedOptionalSlots lastKnownPower lastKnownToughness
   | .empowerJace controller n stage targetId cause =>
     g.empowerJaceStep controller n stage targetId cause
   | .continueTriggeredSequence controller steps sourceId targets dividedDamage lastKnownPower lastKnownToughness sourceName =>
@@ -3938,7 +3944,10 @@ partial def runPostStep (g : Game) (step : PostStep)
     else
       g.putReflexiveTrigger p sourceId
         { targeting := .of .creature, maxTargets := nonlandCount
-          allowsZeroTargets := true, resolution := .tapAndStunPerOpponent
+          allowsZeroTargets := true
+          body := .seq #[
+            .permanent (.setTapped .allTargets true),
+            .permanent (.modifyCounters (.put .stun (.const 1)) .allTargets)]
           phrase := "Tap up to that many target creatures and put a stun counter on each of them" }
         (deferToPriority := true)
   | .nickFuryMayTransformOrBottom p cardId rest cause =>
@@ -4059,7 +4068,7 @@ partial def runPostStep (g : Game) (step : PostStep)
     let count := creatureIds.foldl (fun acc id => if g.wasPermanentExiled id startIdx then acc + 1 else acc) 0
     g.empowerJace controller count
   | .reflexiveReturnLandTapped controller sourceId =>
-    g.applyFra controller default .reflexiveReturnLandTapped #[] sourceId
+    g.applyEffect controller (fraNextToEffect .reflexiveReturnLandTapped) #[] (sourceId := sourceId)
   | .offerPutMilledPermanentOrGainLife controller preIds life =>
     if !g.stillInGame controller then g
     else
@@ -4112,7 +4121,7 @@ partial def runPostStep (g : Game) (step : PostStep)
   | .grantCantBeBlockedIfOnBattlefield cardId =>
     match g.findObject? cardId with
     | some cur =>
-      if cur.isOnBattlefield then g.applyPermanentAction cur .cantBeBlocked else g
+      if cur.isOnBattlefield then g.grantCantBeBlockedThisTurn cur else g
     | none => g
   | .logReturnsAsArtifactAndEnter cardId =>
     match g.followMovedToZone? cardId (· == .battlefield) with
@@ -4348,7 +4357,7 @@ partial def runPostStep (g : Game) (step : PostStep)
           if remaining > 0 && anyChoosableLeft then
             g.change (.pending (.fraChoice p (.upToTriggerModes obj.id remaining validChosen)))
           else if validChosen.isEmpty then
-            let noop : Effect := { resolution := .sequence [], phrase := "" }
+            let noop : Effect := { body := .noop, phrase := "" }
             let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
             let g := g.changes #[
               .object obj.id (.abilityEffect (some noop)),
@@ -4381,7 +4390,7 @@ partial def runPostStep (g : Game) (step : PostStep)
           else
             let sorted := validChosen.qsort (· < ·)
             let eff : Effect :=
-              if sorted.isEmpty then { resolution := Resolution.hawkeyeArrows [], phrase := "" }
+              if sorted.isEmpty then { resolution? := some (Resolution.hawkeyeArrows []), phrase := "" }
               else hawkeyeArrowsEffect sorted
             let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
             let g := g.changeObject obj.id (.abilityEffect (some eff))
@@ -4840,7 +4849,7 @@ partial def finishLibraryLookCore (g : Game) : Game :=
       match g.fraAfterLook with
       | some (c, src, next) =>
         let g := g.change (.fraAfterLook none)
-        if g.stillInGame c then g.applyFra c default next.toResolution #[] src else g
+        if g.stillInGame c then g.applyEffect c (fraNextToEffect next) #[] (sourceId := src) else g
       | none => g
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement .finishLibraryLook
@@ -5856,6 +5865,8 @@ partial def runInGameAfterRandom (g : Game) (after : AfterRandom)
       if hand.isEmpty then g
       else if hand.size == 1 then g.discardFromHandRandomly p hand[0]!
       else g.changes #[.pending (.resolveRandom (.chooseObject hand)), .afterRandom (.discardRandom p)]
+  | .continueInterpreter _ =>
+    g.resumeInterpWaitIfReady
 
 /-- Resolve a single-object `--norandom` `.chooseObject` choice without host
 priority wrapping (shared by `supplyOrder`, `.restorePending`, and
@@ -6032,7 +6043,11 @@ def payTeamworkCreatures (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     g := g.logMsg s!"{(g.player p).name} announces teamwork"
     -- “If this spell was cast using teamwork, choose both instead.”
     let effModes := g.evalSpellModes p spell
-    if face.chooseBothIfTeamwork &&
+    let teamworkBoth := face.modalSpec?.any fun ms =>
+      match ms.altCountIf? with
+      | some (.castPred (.teamworkPaid .this), _, _) => true
+      | _ => false
+    if teamworkBoth &&
         effModes.all (fun m => g.spellModeIsChoosable p m (some spell.id)) then
       let chosen := g.chosenModesOf spell
       for i in [0:effModes.size] do
@@ -6655,7 +6670,7 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
         if !(o.isOnBattlefield && g.controlledBy o p && g.hasSubtype o .human &&
             !o.status.tapped) then
           throw s!"{g.name o} is not an untapped Human you control"
-        g := g.applyPermanentAction o .tap
+        g := g.becomeTapped o
         n := n + 1
       return (g, n)
     let mut g := g.change (.humansTappedThisWay n)
@@ -6668,8 +6683,6 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
   | .chooseTeamworkCreatures _ _ =>
     g.payTeamworkCreatures p ids
   | .chooseDiscardCard q remaining =>
-    if g.thirstDiscardsLeft == 0 then
-      throw "Not time to choose permanents"
     if p != q then
       throw s!"Only {(g.player q).name} may discard"
     if !uniqueObjectIds ids then
@@ -6677,15 +6690,21 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
     let hand := (g.player p).hand
     if !ids.all hand.contains then
       throw "That card is not in your hand"
-    let nReq := Nat.min g.thirstDiscardsLeft hand.size
-    let isSingleEscape :=
-      ids.size == 1 && (g.findObject? ids[0]!).any (fun c => g.hasType c g.thirstDiscardType)
-    let isFullDiscard := ids.size == nReq && ids.size > 0
-    if !isSingleEscape && !isFullDiscard then
-      throw s!"Choose one {g.thirstDiscardType.oracleWord} card or {nReq} card(s) from your hand"
+    if g.thirstDiscardsLeft > 0 then
+      let nReq := Nat.min g.thirstDiscardsLeft hand.size
+      let isSingleEscape :=
+        ids.size == 1 && (g.findObject? ids[0]!).any (fun c => g.hasType c g.thirstDiscardType)
+      let isFullDiscard := ids.size == nReq && ids.size > 0
+      if !isSingleEscape && !isFullDiscard then
+        throw s!"Choose one {g.thirstDiscardType.oracleWord} card or {nReq} card(s) from your hand"
+    else
+      let want := if g.pendingDiscardsLeft > 0 then g.pendingDiscardsLeft else 1
+      let nReq := Nat.min want hand.size
+      if ids.size != nReq || ids.isEmpty then
+        throw s!"Choose {nReq} card(s) from your hand"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g := g.changes #[.pending .none, .thirstDiscardsLeft 0]
+    let g := g.changes #[.pending .none, .thirstDiscardsLeft 0, .pendingDiscardsLeft 0]
     let pairs := ids.map (fun cid => (p, cid))
     let g :=
       if g.discardBatch.isSome then

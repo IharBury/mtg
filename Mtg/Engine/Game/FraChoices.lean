@@ -23,6 +23,30 @@ inductive FraAnswer where
   | name (name : String)
 deriving Repr, BEq
 
+private def applyOrChainFraNext (g : Game) (p : PlayerId) (next : FraNext)
+    (sourceId : Option ObjectId) : Game :=
+  let eff := fraNextToEffect next
+  if let .chooseReplacement .. := g.pending then
+    match eff.resolution? with
+    | some r => g.chainPendingReplacement (.continueUnifiedAbility p eff #[r] #[] sourceId none none)
+    | none =>
+      g.chainPendingReplacement (.continueInterpreter {
+        ctx := { controller := p, sourceId }
+        queue := #[eff.body]
+        stack := #[] })
+  else
+    g.applyUnifiedAbility p eff #[] sourceId
+
+private def bindInterpChoiceOverride? (g : Game) (ov : StepOutcome) : Option Game :=
+  match g.currentInterpWait? with
+  | some st =>
+    match st.stack.back? with
+    | some (.bindClose v sIdx eid body _) =>
+      let st' := { st with stack := st.stack.pop.push (.bindClose v sIdx eid body (some ov)) }
+      some (g.change (.interpWait? (some st')))
+    | _ => none
+  | none => none
+
 /-- Cast one of the copies of a pending “cast copies without paying their mana
 costs” choice (Uldaros Theorix). X is 0 (ruling 806). -/
 def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
@@ -361,7 +385,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return (g.gainLife p life).finishFraChoice
   | .mayPutMilledPermanent .., _ => throw "Choose a milled permanent card, or decline"
   | .mayThen next sourceId, .accept =>
-    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
+    return (applyOrChainFraNext g p next sourceId).finishFraChoice
   | .mayThen .., .decline => return g.finishFraChoice
   | .mayThen .., _ => throw "Answer accept or decline"
   | .mayPayThen n next sourceId, .accept =>
@@ -370,17 +394,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g ← g.payCost p (ManaCost.ofGeneric n)
       (forObject := resolvingForObj <|> sourceId)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
-    return (g.applyFra p default next.toResolution #[] sourceId).finishFraChoice
+    return (applyOrChainFraNext g p next sourceId).finishFraChoice
   | .mayPayThen .., .decline => return g.finishFraChoice
   | .mayPayThen .., _ => throw "Pay or decline"
   | .mayDiscardThen next sourceId, .objects #[id] =>
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
     let g := g.discardFromHand p id
-    let g :=
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.continueUnifiedAbility p default #[next.toResolution] #[] sourceId none none)
-      else
-        g.applyFra p default next.toResolution #[] sourceId
+    let g := applyOrChainFraNext g p next sourceId
     return g.finishFraChoice
   | .mayDiscardThen .., .decline => return g.finishFraChoice
   | .mayDiscardThen .., _ => throw "Choose a card to discard, or decline"
@@ -414,11 +434,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let ok := o.isOnBattlefield && g.controlledBy o p && types.any (g.hasType o)
     if !ok then throw s!"Can't sacrifice {g.name o}"
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {g.name o}"
-    let g :=
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.continueUnifiedAbility p default #[next.toResolution] #[] sourceId none none)
-      else
-        g.applyFra p default next.toResolution #[] sourceId
+    let g := applyOrChainFraNext g p next sourceId
     return g.finishFraChoice
   | .maySacrificeThen .., .decline => return g.finishFraChoice
   | .maySacrificeThen .., _ => throw "Choose a permanent to sacrifice, or decline"
@@ -522,7 +538,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some obj := g.findObject? objId | return g.finishFraChoice
     let modes := g.triggerModesOf obj
     if chosen.isEmpty then
-      let noop : Effect := { resolution := .sequence [], phrase := "" }
+      let noop : Effect := { body := .noop, phrase := "" }
       let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
       let g := g.changes #[
         .object obj.id (.abilityEffect (some noop)),
@@ -830,14 +846,20 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .costPicks .., _ => throw "Choose what to pay the cost with, or decline to cancel"
   | .chooseCreatureType types, .mode idx =>
     let some sub := types[idx]? | throw "No such creature type"
-    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o sub)).size
     let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
-    return (g.createTreasureTokens p n).finishFraChoice
+    match bindInterpChoiceOverride? g { chosenSubtype? := some sub, succeeded := true } with
+    | some g' => return g'.finishFraChoice
+    | none =>
+      let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o sub)).size
+      return (g.createTreasureTokens p n).finishFraChoice
   | .chooseCreatureType _, .name t =>
     let some sub := CardSubtype.ofOracle? t | throw "Choose a creature type"
-    let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o sub)).size
     let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
-    return (g.createTreasureTokens p n).finishFraChoice
+    match bindInterpChoiceOverride? g { chosenSubtype? := some sub, succeeded := true } with
+    | some g' => return g'.finishFraChoice
+    | none =>
+      let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o sub)).size
+      return (g.createTreasureTokens p n).finishFraChoice
   | .chooseCreatureType _, _ => throw "Choose a creature type"
   | .maySacrificeAnotherCreatureForPower sourceId, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
@@ -866,13 +888,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
+      let drawnBody : Instruction := .seq #[
+        Instruction.drawFixed 1 .you,
+        Instruction.createTokensFixed .treasure 1]
       let drawn : Effect := {
-        resolution := .sequence [.draw 1, .createTokens .treasure 1]
+        body := drawnBody
         phrase := "Draw a card and create a Treasure" }
       let g :=
         if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.continueUnifiedAbility p drawn #[.draw 1, .createTokens .treasure 1] #[] (some sourceId) none none)
+          g.chainPendingReplacement (.continueInterpreter {
+            ctx := { controller := p, sourceId := some sourceId }
+            queue := #[drawnBody]
+            stack := #[] })
         else
           g.applyUnifiedAbility p drawn #[] (some sourceId)
       return g.finishFraChoice
@@ -923,7 +950,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
-      return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
+      return (applyOrChainFraNext g p next (some sourceId)).finishFraChoice
   | .mayPaySymbolsThen .., .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
   | .mayPaySymbolsThen .., _ => throw "Pay (accept), or decline"
@@ -957,12 +984,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
-      let g :=
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.continueUnifiedAbility p default #[next.toResolution] #[] sourceId none none)
-        else
-          g.applyFra p default next.toResolution #[] sourceId
+      let g := applyOrChainFraNext g p next sourceId
       return g.finishFraChoice
   | .mayPayPickThen .., .decline =>
     if g.mayThenDrop > 0 then return g.declineMayThen else return g.finishFraChoice
@@ -1080,7 +1102,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if g.mayThenDrop > 0 then
       return g.acceptMayThen
     else
-      return (g.applyFra p default (.queueMshReflexive kind times) #[] sourceId).finishFraChoice
+      return (g.applyUnifiedAbility p { resolution? := some (.queueMshReflexive kind times) } #[] sourceId).finishFraChoice
   | .mayPayManaForReflexive .., .decline =>
     let g := g.logMsg "The cost isn't paid. The reflexive ability doesn't trigger."
     if g.mayThenDrop > 0 then return g.declineMayThen
@@ -1094,7 +1116,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         if g.mayThenDrop > 0 then
           return g.acceptMayThen
         else
-          return (g.applyFra p default next.toResolution #[] (some sourceId)).finishFraChoice
+          return (applyOrChainFraNext g p next (some sourceId)).finishFraChoice
       else throw s!"{g.name o} can't be tapped"
     | none => throw "The source is gone"
   | .mayTapSourceThen .., .decline =>
@@ -1124,7 +1146,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some obj := g.findObject? objId | return g.finishFraChoice
     let sorted := chosen.qsort (· < ·)
     let eff : Effect :=
-      if sorted.isEmpty then { resolution := Resolution.hawkeyeArrows [], phrase := "" }
+      if sorted.isEmpty then { resolution? := some (Resolution.hawkeyeArrows []), phrase := "" }
       else hawkeyeArrowsEffect sorted
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
     let g := g.changeObject obj.id (.abilityEffect (some eff))
@@ -1577,7 +1599,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .mayPutHeroFromHandOrDraw _, _ => throw "Put a Hero onto the battlefield, or decline to draw"
   | .oddOrEvenDestroy sourceId, .mode m =>
     if m > 1 then throw "Choose 0 for even or 1 for odd"
-    return (g.destroyCreaturesByManaParity sourceId (m == 0)).finishFraChoice
+    match bindInterpChoiceOverride? g { chosenParity? := some (m == 1), succeeded := true } with
+    | some g' =>
+      let g' := g'.logMsg s!"{(g'.player p).name} chooses {if m == 0 then "even" else "odd"}"
+      return g'.finishFraChoice
+    | none =>
+      return (g.destroyCreaturesByManaParity sourceId (m == 0)).finishFraChoice
   | .oddOrEvenDestroy _, _ => throw "Choose even (0) or odd (1)"
   | .visionQuestZones lib gy x, .accept =>
     return g.change (.pending (.fraChoice p (.visionQuestPick (lib ++ gy) x true)))

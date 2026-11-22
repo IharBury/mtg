@@ -1,43 +1,15 @@
-import Mtg.Engine.Card.Keywords
-import Mtg.Engine.Card.Text
-import Mtg.Engine.Card.Primitives
-import Mtg.Engine.Card.Expr
+import Mtg.Engine.Card.Ability
 
 /-!
-# Token specifications (CR 111, 707.9)
+# Token specifications & canonical token constructors (CR 111, 707.9)
 
-Unified, parameterized `TokenSpec` anchored to the 25 September 2026
-Comprehensive Rules:
-- `PredefinedToken` (CR 111.10a–x)
-- `CustomTokenSpec` (CR 111.3 / 111.4 / 111.11, with `ValueExpr` P/T)
-- `TokenSpec.copyOf` / `CopyModification` (CR 707.9, with `ObjectExpr` source ref)
+Smart constructors, `ToOracle` rendering, and regression guards for the unified
+`TokenSpec` (`PredefinedToken`, `CustomTokenSpec`, `CopyModification`) defined
+in `Mtg/Engine/Card/Ability.lean`, with token abilities represented directly as
+mutual `GrantedAbility` values.
 -/
 
 namespace Mtg.Engine
-
-/-- Predefined tokens defined directly by CR 111.10a–x (25 September 2026). -/
-inductive PredefinedToken where
-  /-- CR 111.10a: Colorless Treasure artifact token. -/
-  | treasure
-  /-- CR 111.10b: Colorless Food artifact token. -/
-  | food
-  /-- CR 111.10f: Colorless Clue artifact token. -/
-  | clue
-  /-- CR 111.10i: Transforming colorless Incubator artifact token. -/
-  | incubator
-  /-- CR 111.10s: Colorless Map artifact token. -/
-  | map
-  /-- CR 111.10t: Colorless Junk artifact token. -/
-  | junk
-  /-- CR 111.10u: Colorless Lander artifact token. -/
-  | lander
-  /-- CR 111.10v: Colorless Mutagen artifact token. -/
-  | mutagen
-  /-- CR 111.10w: Colorless Vibranium artifact token (indestructible; `{T}: Add {C}`, not for nonartifact spells). -/
-  | vibranium
-  /-- CR 111.10x: Red and green Heartwood artifact token (`{T}: Add {R} or {G}`). -/
-  | heartwood
-deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace PredefinedToken
 
@@ -58,130 +30,184 @@ def oracleNoun (p : PredefinedToken) : String :=
 
 end PredefinedToken
 
-/-- Parameterized abilities carried by custom tokens (CR 111.3; generalized to
-the full mutual `Ability` AST in Phase 8). -/
-inductive TokenAbilitySpec where
-  /-- Toxic `n` (CR 702.164). -/
-  | toxic (n : Nat)
-  /-- This token can't block (CR 509.1b). -/
-  | cantBlock
-  /-- This token attacks each combat if able (CR 508.1d). -/
-  | attacksEachCombatIfAble
-  /-- This token can't be blocked by more than `n` creature(s) (CR 509.1b). -/
-  | cantBeBlockedByMoreThan (n : Nat)
-  /-- Equipped creature gets `+power/+toughness` (CR 301.5). -/
-  | equippedCreatureGets (power toughness : Int)
-  /-- `Equip {generic}` (CR 702.6a). -/
-  | equipGeneric (generic : Nat)
-  /-- `{T}, Sacrifice this token: Add <amount> mana of any one color.` -/
-  | tapSacrificeAddAnyOneColor (amount : Nat := 1)
-  /-- `{generic}, {T}, Sacrifice this token: You gain <life> life.` -/
-  | tapSacrificeGainLife (generic life : Nat)
-  /-- `{generic}: This token can't be blocked this turn except by creatures with haste.` -/
-  | payGenericCantBeBlockedExceptHaste (generic : Nat)
-  /-- `[-cost]: Surveil <n>.` (CR 606). -/
-  | loyaltyMinusSurveil (cost n : Nat)
-  /-- `[-cost]: Draw <n> card(s).` (CR 606). -/
-  | loyaltyMinusDraw (cost n : Nat)
-  /-- `"Whenever this token attacks, you may mill <n> card(s)."` -/
-  | onAttackMayMill (n : Nat)
-  /-- `"Whenever this token attacks, scry <n>."` -/
-  | onAttackScry (n : Nat)
-  /-- `"Whenever this token attacks, destroy target land."` -/
-  | onAttackDestroyTargetLand
-  /-- `"Whenever you gain life, put <n> +1/+1 counter(s) on this token."` -/
-  | onGainLifePutPlusOne (n : Nat := 1)
-  /-- `"Whenever a land you control enters, put <n> +1/+1 counter(s) on this token."` -/
-  | onLandYouControlEntersPutPlusOne (n : Nat := 1)
-deriving DecidableEq, Repr, Inhabited, BEq
+namespace GrantedAbility
 
-namespace TokenAbilitySpec
+private def tokenEquippedCreatureScope : ObjectFilter :=
+  { zones := .battlefield
+    pred := .all #[
+      .hasType .creature,
+      .hasAttachment { zones := .battlefield
+                       pred := .all #[.sameAs .this, .hasSubtype (.literal .equipment)] }
+    ] }
+
+/-- `Toxic n` (CR 702.164). -/
+def toxic (n : Nat) : GrantedAbility :=
+  .keyword (.toxic n)
+
+/-- `"This token can't block"` (CR 509.1b). -/
+def cantBlock : GrantedAbility :=
+  .static (.ruleModifying none (.combat (.cantBlock .self none)))
+
+/-- `"This token attacks each combat if able"` (CR 508.1d). -/
+def attacksEachCombatIfAble : GrantedAbility :=
+  .static (.ruleModifying none (.combat (.attacksEachCombatIfAble .self)))
+
+/-- `"This token can't be blocked by more than n creature(s)"` (CR 509.1b). -/
+def cantBeBlockedByMoreThan (n : Nat) : GrantedAbility :=
+  .static (.ruleModifying none (.combat (.maxBlockers .self n)))
+
+/-- `"Equipped creature gets +power/+toughness"` (CR 301.5). -/
+def equippedCreatureGets (power toughness : Int) : GrantedAbility :=
+  .static (.continuous none tokenEquippedCreatureScope
+    (.modifyPT (.const power) (.const toughness)))
+
+/-- `Equip {generic}` (CR 702.6a). -/
+def equipGeneric (generic : Nat) : GrantedAbility :=
+  .activated {
+    cost := CostSpec.ofGeneric generic
+    effect := {
+      targeting := .of .creatureYouControl
+      body := .permanent (.attach .this (.target 0))
+      phrase := "Attach to target creature you control"
+    }
+    timing := .sorcery
+    tag? := some (.equip none)
+  }
+
+/-- `"{T}, Sacrifice this token: Add <amount> mana of any one color."` -/
+def tapSacrificeAddAnyOneColor (amount : Nat := 1) : GrantedAbility :=
+  let printed :=
+    if amount == 1 then "{T}, Sacrifice this token: Add one mana of any color."
+    else s!"\{T}, Sacrifice this token: Add {englishNumber amount} mana of any one color."
+  .activated {
+    cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
+    printed
+    effect := {
+      body := .player (.addMana .you { spec := .oneOf .anyColor (.const (Int.ofNat amount)) })
+    }
+  }
+
+/-- `"{generic}, {T}, Sacrifice this token: You gain <life> life."` -/
+def tapSacrificeGainLife (generic life : Nat) : GrantedAbility :=
+  .activated {
+    cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric generic), .tapSelf, .sacrifice (.exact 1) .self]
+    effect := {
+      body := .life (.gain .you (.const (Int.ofNat life)))
+      phrase := s!"You gain {life} life"
+    }
+  }
+
+/-- `"{generic}: This token can't be blocked this turn except by creatures with haste."` -/
+def payGenericCantBeBlockedExceptHaste (generic : Nat) : GrantedAbility :=
+  .activated {
+    cost := CostSpec.ofGeneric generic
+    effect := {
+      body := .installEffect (.applyContinuous .untilEndOfTurn .this
+        (.applyRule (.combat (.cantBeBlockedBy .self (.not (.hasKeyword .haste))))))
+      phrase := "This token can't be blocked this turn except by creatures with haste"
+    }
+  }
+
+/-- `"[-cost]: Surveil n."` (CR 606). -/
+def loyaltyMinusSurveil (cost n : Nat) : GrantedAbility :=
+  .activated {
+    cost := CostSpec.ofItem (.loyalty (.minus cost))
+    timing := .loyalty
+    effect := {
+      body := .player (.surveil .you (.const (Int.ofNat n)))
+      phrase := s!"Surveil {n}"
+    }
+  }
+
+/-- `"[-cost]: Draw n card(s)."` (CR 606). -/
+def loyaltyMinusDraw (cost n : Nat) : GrantedAbility :=
+  .activated {
+    cost := CostSpec.ofItem (.loyalty (.minus cost))
+    timing := .loyalty
+    effect := {
+      body := .player (.drawCards .you (.const (Int.ofNat n)))
+      phrase := s!"Draw {cardPhrase n}"
+    }
+  }
+
+/-- `"Whenever this token attacks, you may mill n card(s)."` -/
+def onAttackMayMill (n : Nat) : GrantedAbility :=
+  let phrase :=
+    if n == 1 then "Whenever this token attacks, you may mill a card."
+    else s!"Whenever this token attacks, you may mill {n} cards."
+  .triggered {
+    word := .whenever
+    pattern := .thisAttacks
+    effect := {
+      body := .optional .you none
+        (.moveZone (.topOfLibrary .you (.const (Int.ofNat n))) .graveyard .mill) .noop
+      phrase
+    }
+  }
+
+/-- `"Whenever this token attacks, scry n."` -/
+def onAttackScry (n : Nat) : GrantedAbility :=
+  .triggered {
+    word := .whenever
+    pattern := .thisAttacks
+    effect := {
+      body := .player (.scry .you (.const (Int.ofNat n)))
+      phrase := s!"scry {n}"
+    }
+  }
+
+/-- `"Whenever this token attacks, destroy target land."` -/
+def onAttackDestroyTargetLand : GrantedAbility :=
+  .triggered {
+    word := .whenever
+    pattern := .thisAttacks
+    effect := {
+      targeting := .of .land
+      body := .moveZone (.target 0) .graveyard .destroy
+      phrase := "destroy target land"
+    }
+  }
+
+/-- `"Whenever you gain life, put n +1/+1 counter(s) on this token."` -/
+def onGainLifePutPlusOne (n : Nat := 1) : GrantedAbility :=
+  let phrase :=
+    if n == 1 then "Whenever you gain life, put a +1/+1 counter on this token."
+    else s!"Whenever you gain life, put {plusOnePlusOneCountersPhrase n} on this token."
+  .triggered {
+    word := .whenever
+    pattern := .gainLife .you
+    effect := {
+      body := .permanent (.modifyCounters (.put .plusOnePlusOne (.const (Int.ofNat n))) .this)
+      phrase
+    }
+  }
+
+/-- `"Whenever a land you control enters, put n +1/+1 counter(s) on this token."` -/
+def onLandYouControlEntersPutPlusOne (n : Nat := 1) : GrantedAbility :=
+  .triggered {
+    word := .whenever
+    pattern := .landYouControlEnters
+    effect := {
+      body := .permanent (.modifyCounters (.put .plusOnePlusOne (.const (Int.ofNat n))) .this)
+      phrase := s!"put {plusOnePlusOneCountersPhrase n} on this token"
+    }
+  }
 
 /-- Quoted rules-text suffix printed inside `CustomTokenSpec.oracleNoun` when
 Oracle text writes `with "..."` inline on the token description. -/
-def oracleQuote? : TokenAbilitySpec → Option String
-  | .tapSacrificeAddAnyOneColor 1 =>
-    some "{T}, Sacrifice this token: Add one mana of any color."
-  | .onAttackMayMill n =>
-    some (if n == 1 then "Whenever this token attacks, you may mill a card."
-      else s!"Whenever this token attacks, you may mill {n} cards.")
-  | .onGainLifePutPlusOne 1 =>
-    some "Whenever you gain life, put a +1/+1 counter on this token."
+def oracleQuote? : GrantedAbility → Option String
+  | .activated ab =>
+    if ab.printed == "{T}, Sacrifice this token: Add one mana of any color." then
+      some ab.printed
+    else none
+  | .triggered ab =>
+    if ab.effect.phrase.startsWith "Whenever this token attacks, you may mill" ||
+        ab.effect.phrase.startsWith "Whenever you gain life, put" then
+      some ab.effect.phrase
+    else none
   | _ => none
 
-end TokenAbilitySpec
-
-/-- Characteristics of a custom token (CR 111.3 / 111.4 / 111.11). -/
-structure CustomTokenSpec where
-  /-- Explicit name when differing from default CR 111.4 subtype name (e.g.
-  `named Stone Boulder`, `named Doombot`, or CR 111.11 `Lotus` / `Gingerbrute`). -/
-  name? : Option String := none
-  supertypes : Array Supertype := #[]
-  types : Array CardType := #[.creature]
-  subtypes : Array CardSubtype := #[]
-  colors : ColorSet := ColorSet.empty
-  power? : Option ValueExpr := none
-  toughness? : Option ValueExpr := none
-  loyalty? : Option Int := none
-  keywords : Array KeywordAbility := #[]
-  abilities : Array TokenAbilitySpec := #[]
-  /-- True for CR 111.11 Oracle-card-named shorthand tokens printed as
-  `"<Name> token"` (e.g. `"Lotus token"`, `"Gingerbrute token"`). -/
-  useCardNameShorthand : Bool := false
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange CustomTokenSpec where
-  applyTextChanges tcs s :=
-    if tcs.isEmpty then s
-    else
-      { s with
-        subtypes := HasTextChange.applyTextChanges tcs s.subtypes
-        colors := HasTextChange.applyTextChanges tcs s.colors
-        power? := HasTextChange.applyTextChanges tcs s.power?
-        toughness? := HasTextChange.applyTextChanges tcs s.toughness?
-        keywords := HasTextChange.applyTextChanges tcs s.keywords }
-
-/-- Modification applied while creating a token copy (CR 707.9). -/
-inductive CopyModification where
-  | setName (name : String)
-  | setBasePT (power toughness : Int)
-  | addTypes (types : Array CardType)
-  | addSubtypes (subtypes : Array CardSubtype)
-  | addColors (colors : ColorSet)
-  | removeSupertype (supertype : Supertype)
-  | addKeywords (keywords : Array KeywordAbility)
-  | addAbilities (abilities : Array TokenAbilitySpec)
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange CopyModification where
-  applyTextChanges tcs m :=
-    if tcs.isEmpty then m
-    else
-      match m with
-      | .addSubtypes subs => .addSubtypes (HasTextChange.applyTextChanges tcs subs)
-      | .addColors cols => .addColors (HasTextChange.applyTextChanges tcs cols)
-      | .addKeywords kws => .addKeywords (HasTextChange.applyTextChanges tcs kws)
-      | other => other
-
-/-- Unified, parameterized token specification (CR 111, 707.9). -/
-inductive TokenSpec where
-  /-- A CR 111.10a–x predefined token (Treasure, Food, Clue, Incubator, Map, etc.). -/
-  | predefined (kind : PredefinedToken)
-  /-- A custom token with explicit characteristics, including CR 111.11 card-named tokens. -/
-  | custom (spec : CustomTokenSpec)
-  /-- A token copy of a referenced object with optional CR 707.9 exceptions. -/
-  | copyOf (ref : ObjectExpr) (mods : Array CopyModification := #[])
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange TokenSpec where
-  applyTextChanges tcs t :=
-    if tcs.isEmpty then t
-    else
-      match t with
-      | .predefined k => .predefined k
-      | .custom s => .custom (HasTextChange.applyTextChanges tcs s)
-      | .copyOf tgt mods =>
-        .copyOf (HasTextChange.applyTextChanges tcs tgt) (HasTextChange.applyTextChanges tcs mods)
+end GrantedAbility
 
 namespace TokenSpec
 
@@ -204,7 +230,7 @@ def creature (subtypes : Array CardSubtype) (power toughness : Int)
     (types : Array CardType := #[.creature])
     (supertypes : Array Supertype := #[])
     (name? : Option String := none)
-    (abilities : Array TokenAbilitySpec := #[]) : TokenSpec :=
+    (abilities : Array GrantedAbility := #[]) : TokenSpec :=
   .custom {
     name?, supertypes, types, subtypes, colors
     power? := some (.const power)
@@ -436,6 +462,12 @@ def goblin11red : TokenSpec :=
 def rogue22black : TokenSpec :=
   creature #[.rogue] 2 2 (ColorSet.singleton .black)
 
+def fish11blue : TokenSpec :=
+  creature #[.fish] 1 1 (ColorSet.singleton .blue)
+
+def octopus88blue : TokenSpec :=
+  creature #[.octopus] 8 8 (ColorSet.singleton .blue)
+
 private def supertypeLower : Supertype → String
   | .basic => "basic"
   | .legendary => "legendary"
@@ -486,7 +518,7 @@ def customOracleNoun (s : CustomTokenSpec) : String :=
       match s.name? with
       | some n => if n == defaultName then [] else [s!"named {n}"]
       | none => []
-    let abilityQuotes := s.abilities.toList.filterMap TokenAbilitySpec.oracleQuote?
+    let abilityQuotes := s.abilities.toList.filterMap GrantedAbility.oracleQuote?
     let abilitySuffix :=
       if abilityQuotes.isEmpty then []
       else ["with " ++ String.intercalate " and " (abilityQuotes.map fun q => s!"\"{q}\"")]
@@ -510,8 +542,7 @@ def pluralNoun (t : TokenSpec) : String :=
   t.oracleNoun.replace "token" "tokens"
 
 /-- Noun phrase for `n` created tokens (`a Treasure token`, `two 2/2 green
-Wolf creature tokens`). `createPhrase` and “that player creates …” wordings
-share it. -/
+Wolf creature tokens`). -/
 def createdTokensPhrase (t : TokenSpec) (n : Nat) (tapped := false) : String :=
   let tappedS := if tapped then "tapped " else ""
   if n == 1 then

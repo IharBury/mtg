@@ -357,7 +357,8 @@ target opponent's revealed hand. -/
 
 /- Vraska's Final Mercy: each mode keeps its own wording; only the second
 mode empowers Jace. -/
-#guard vraskasFinalMercy.empowerJace.isNone
+#guard vraskasFinalMercy.modes.size == 2 &&
+  vraskasFinalMercy.modes[0]!.body != Instruction.empowerJace 6
 #guard
   let g := resolved (castFra withBears vraskasFinalMercy [.chooseMode 0, tgt withBears "Grizzly Bears"])
   !onBattlefield g "Grizzly Bears" && life g me == 18 && (g.jacePlaneswalkerTokens me).isEmpty
@@ -506,7 +507,8 @@ and is dealt 2 damage, or puts it on the bottom. -/
 
 /- Fatehold Charm: draw and empower Jace 2 (only that mode empowers), bounce a
 spell or creature, or creatures you control get +1/+2. -/
-#guard fateholdCharm.empowerJace.isNone
+#guard fateholdCharm.modes.size == 3 &&
+  fateholdCharm.modes[1]!.body != Instruction.empowerJace 2
 #guard
   let g := resolved (castFra afterDraw fateholdCharm [.chooseMode 0])
   (jaceTokenOf g).status.loyaltyCounters == 2 && handSize g me == handSize afterDraw me + 1

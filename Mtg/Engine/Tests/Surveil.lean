@@ -49,9 +49,9 @@ def step (r : TriggeredAbility.TriggerResolution) : Game :=
 #guard (SharedTrigger.toEffect (.surveil 1)).resolution == .surveil (.fixed 1)
 
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .surveil (.fixed 2) } == "surveil 2"
+    { resolution? := some (.surveil (.fixed 2)) } == "surveil 2"
 
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .surveil .perOtherCreature } == "surveil"
+    { resolution? := some (.surveil .perOtherCreature) } == "surveil"
 
 end Mtg.Engine.SurveilTests

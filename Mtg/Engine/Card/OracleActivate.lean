@@ -17,8 +17,8 @@ def activated (effect : Effect := {}) (mana : ManaCost := ManaCost.empty)
     (condition? : Option Condition := none)
     (costReductions : Array ActivationCostReduction := #[])
     (tag? : Option ActivationMechanicTag := none)
-    (mana? : Option ManaProductionSpec := none)
-    (otherModes : Array Effect := #[]) (payLife : Nat := 0)
+    (manaProd? : Option ManaProductionSpec := none)
+    (extraModes : Array Effect := #[]) (payLife : Nat := 0)
     (discardSource : Bool := false)
     (sacrificeAnotherSubtype : Option CardSubtype := none)
     (sacrificeAnotherCreature : Bool := false)
@@ -103,15 +103,25 @@ def activated (effect : Effect := {}) (mana : ManaCost := ManaCost.empty)
     if tag? == some .boast then
       Condition.andOpt condition? (some ActivatedAbility.condSourceAttackedThisTurn)
     else condition?
+  let baseEff : Effect :=
+    if effect == Effect.attachToTargetCreatureYouControl && (equipSub?.isSome || isWorthyEquip) then
+      Effect.equipEffect equipSub? isWorthyEquip
+    else
+      match manaProd? with
+      | some mp =>
+        { effect with
+          body := .player (.addMana .you mp)
+          resolution? := none }
+      | none => effect
+  let finalEff : Effect :=
+    if extraModes.isEmpty then baseEff
+    else
+      let modes := #[baseEff] ++ extraModes
+      { body := .chooseModes { modes }
+        phrase := s!"Choose one — {String.intercalate "; " (modes.toList.map Effect.toNotation)}" }
   {
     cost := { items, bindVar? := extraCost.bindVar? }
-    effect :=
-      if effect == Effect.attachToTargetCreatureYouControl && (equipSub?.isSome || isWorthyEquip) then
-        Effect.equipEffect equipSub? isWorthyEquip
-      else
-        effect
-    otherModes := otherModes
-    mana?
+    effect := finalEff
     timing := effTiming
     activeZones
     turnLimit? := effTurnLimit

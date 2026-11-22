@@ -53,7 +53,7 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
   let wtGain1 : WaitingTrigger := {
     controller := p0
     source := anchorObj
-    ability := TriggeredAbility.mkTrigger (.gainLife .you) { resolution := .gainLife (.fixed 1), phrase := "Gain 1 life." }
+    ability := TriggeredAbility.mkTrigger (.gainLife .you) { body := Instruction.gainLifeFixed 1, phrase := "Gain 1 life." }
     eventCause := some testCause
   }
   let gRepEmpty0 := insertObject gCopyAnchor oddEvenDef p0 (.hand p0)
@@ -592,14 +592,14 @@ private def replayOk49i3 (gs : Array Game) : Bool :=
     name := "P49i3 LeaveWatcher"
     triggeredAbilities := #[
       TriggeredAbility.ofPattern (.permanentLeaves (.all #[.hasType .creature, .controlledBy .you]))
-        "Whenever a creature you control leaves, gain 2 life." (.gainLife 2)
+        "Whenever a creature you control leaves, gain 2 life." (Instruction.gainLifeFixed 2)
     ]
   }
   let dyingPoDef : CardDef := {
     bear with
     name := "P49i3 PhasedVictim"
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisLeaves { resolution := .gainLife (.fixed 3), phrase := "When this leaves, gain 3 life." }
+      TriggeredAbility.mkTrigger .thisLeaves { body := Instruction.gainLifeFixed 3, phrase := "When this leaves, gain 3 life." }
     ]
   }
   let gTrigPo0 := addPermanent (addPermanent g4 ltbWatcherDef p0 p0) dyingPoDef p0 p0
@@ -740,7 +740,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
-      effect := { resolution := .addMana #[.colored .blue] (.fixed 1), phrase := "Add {U}." }
+      effect := { body := Instruction.addSimpleMana #[.colored .blue], phrase := "Add {U}." }
     }]
   }
   let gDrum0 := addPermanent (addPermanent g3 tapCreatureManaArtDef p0 p0) bear p0 p0
@@ -852,12 +852,12 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     mustHold49i4 "4a_chooseXCostReducedAndCombination"
       (redXChoseOne && comboXChoseOne)
 
-  -- 4b(i). `TriggeredAbilities` `TriggerRead.chosenX`, `FraAbilities.applyFraAbility` (`tapAndStunX`),
-  --        and `applyUnified` -> `applyFraResolution?` -> `applyFra` -> `FrcResolve.spellX` (`warriorsX`):
+  -- 4b(i). `TriggeredAbilities` `TriggerRead.chosenX`, unified `Instruction.tapAndStun` (`chosenX`),
+  --        and `applyEffect` with `ValueExpr.chosenX` (`createTokens` Warriors):
   let xEtbLifeDef : CardDef := {
     creature "P49i4 XHydraLifegiver" { symbols := #[.x] } #["Hydra"] 2 2 with
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisEnters { resolution := .gainLife .chosenX, phrase := "When this enters, gain X life." }
+      TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.gainLife .chosenX), phrase := "When this enters, gain X life." }
     ]
   }
   let gXEtb0 := (insertObject g3 xEtbLifeDef p0 (.hand p0)).addMana p0 .colorless 4
@@ -871,7 +871,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana { symbols := #[.x] }]
-      effect := { targeting := .of .creature, resolution := .tapAndStunX, phrase := "Tap target creature and put X stun counters on it." }
+      effect := { targeting := .of .creature, body := Instruction.tapAndStun (.target 0) .chosenX, phrase := "Tap target creature and put X stun counters on it." }
     }]
   }
   let gStun0 := (addPermanent (addPermanent g3 stunRodDef p0 p0) bear p1 p1).addMana p0 .colorless 3
@@ -881,32 +881,36 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     mustApply (mustApply (mustApply (mustApply gStun0 p0 (.activate wandId 0)) p0 (.chooseX 3)) p0 (.target (.permanent p1BearId))) p0 .pay
   let gStunResolved := mustApply (mustApply (mustApply gStunAct p0 .pass) p1 .pass) p2 .pass
 
-  let warriorsXEffect : Effect := { resolution := .frc .warriorsX, phrase := "Create X 1/1 Warrior creature tokens." }
+  let warriorsXEffect : Effect := {
+    body := Instruction.createTokens .warrior .chosenX
+    phrase := "Create X 1/1 Warrior creature tokens."
+  }
   let gWarriorsX := g3.applyEffect p0 warriorsXEffect #[] (chosenX := some 2)
 
-  -- 4b(ii). `EffectResolution.applyUnified` (`.or [r]`, `.«if»`, `.ifElse`), `beginMay`/`acceptMay`,
+  -- 4b(ii). Unified `Interpreter` (`.chooseModes` singleton/or, `.ifCond`), `beginMay`/`acceptMay`,
   --         `beginSpellOr`/`chooseSpellOr`, and `ModeledTriggers.applyModeledTrigger`/`offerVisionModes` LKI forwarding:
-  let rPow : SpellResolution := .loseLife .equalSourcePower .eachOpponent
-  let rTgh : SpellResolution := .loseLife .equalSourceToughness .eachOpponent
-  let rChX : SpellResolution := .loseLife .chosenX .eachOpponent
-  let mkSpellEff (sr : SpellResolution) : Effect := { resolution := .ofSpell sr, phrase := "Opponents lose life." }
+  let rPow : Instruction := Instruction.loseLife (.objectStat .power .this) .opponents
+  let rTgh : Instruction := Instruction.loseLife (.objectStat .toughness .this) .opponents
+  let rChX : Instruction := Instruction.loseLife .chosenX .opponents
+  let mkSpellEff (body : Instruction) : Effect := { body, phrase := "Opponents lose life." }
 
   let gOrSingleton :=
-    g3.applyEffect p0 (mkSpellEff (.or [rTgh])) #[] (lastKnownPower := some 4) (lastKnownToughness := some 6)
+    g3.applyUnified p0 (mkSpellEff (.chooseModes { modes := #[{ body := rTgh }], chooseAtResolution := true })) #[]
+      (lastKnownPower := some 4) (lastKnownToughness := some 6)
   let gIfGy :=
-    g3.applyEffect p0 (mkSpellEff (.«if» .castFromGraveyard rPow)) #[]
+    g3.applyUnified p0 (mkSpellEff (Instruction.ifThen (.castPred (.castFrom .graveyard .this)) rPow)) #[]
       (castFromGraveyard := true) (lastKnownPower := some 4) (lastKnownToughness := some 6)
   let gIfElseGift :=
-    g3.applyEffect p0 (mkSpellEff (.ifElse .giftPromised rChX (.loseLife (.fixed 1) .eachOpponent))) #[]
+    g3.applyUnified p0 (mkSpellEff (.ifCond (.castPred (.giftPromised .this)) rChX (Instruction.loseLifeFixed 1 .opponents))) #[]
       (giftPromised := true) (chosenX := some 3) (lastKnownPower := some 4) (lastKnownToughness := some 6)
 
   let gMayPrompt :=
-    g3.applyEffect p0 (mkSpellEff (.may rTgh (.sequence []) .ifYouDont)) #[]
+    g3.applyUnified p0 (mkSpellEff (Instruction.may .you none rTgh)) #[]
       (chosenX := some 3) (lastKnownPower := some 4) (lastKnownToughness := some 6)
   let gMayAccepted := mustApply gMayPrompt p0 .accept
 
   let gSpellOrPrompt :=
-    g3.applyEffect p0 (mkSpellEff (.or [rPow, rTgh])) #[]
+    g3.applyUnified p0 (mkSpellEff (.chooseModes { modes := #[{ body := rPow }, { body := rTgh }], chooseAtResolution := true })) #[]
       (chosenX := some 3) (lastKnownPower := some 4) (lastKnownToughness := some 6)
   let gSpellOrChosen :=
     match gSpellOrPrompt.chooseSpellOr p0 1 with
@@ -982,10 +986,12 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let g0 := afterDraw
 
   -- 1. Incubator back face named "Phyrexian Token" (CR 111.10i)
+  let transformSelfEff : Effect := { body := .permanent (.transform .this) }
+  let exploreSelfEff : Effect := { body := .player (.explore .this) }
   let gInc0 := g0.createKindTokens p0 .incubator 1
   let incObj := (gInc0.permanentsOf p0).find? (·.name == "Incubator") |>.get!
   let gIncTr := gInc0.withResolvingContext (some incObj.id) p0 (fun g =>
-    g.applyFrc p0 default .transformIncubator #[] (some incObj.id))
+    g.applyEffect p0 transformSelfEff #[] (sourceId := some incObj.id))
   let incAfter := gIncTr.object! incObj.id
   let incubatorOk :=
     (Game.predefinedTokenPrinted .incubator).otherFace.map (·.name) == some "Phyrexian Token" &&
@@ -1054,13 +1060,13 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
     (g.move topId (.library p0) none (libraryPosition := some .top)).1
   let relicObj := (gRelic0.permanentsOf p0).find? (·.name == "Explore Relic") |>.get!
   let relicTopId := (gRelic0.player p0).library.back!
-  let gRelicExp := gRelic0.applyFrc p0 default .explore #[] (some relicObj.id)
+  let gRelicExp := gRelic0.applyEffect p0 exploreSelfEff #[] (sourceId := some relicObj.id)
   let gRelicExpAccept := mustApply gRelicExp p0 .accept
   let gEmptyLib0 :=
     let g := addPermanent g0 bear p0 p0
     (g.player p0).library.foldl (fun acc id => (acc.move id .exile none).1) g
   let emptyBear := (gEmptyLib0.permanentsOf p0).find? (·.name == bear.name) |>.get!
-  let gEmptyExp := gEmptyLib0.applyFrc p0 default .explore #[] (some emptyBear.id)
+  let gEmptyExp := gEmptyLib0.applyEffect p0 exploreSelfEff #[] (sourceId := some emptyBear.id)
   -- Departed permanent: owned by p0, controlled by p1 on battlefield before leaving;
   -- ability controller is p0, yet CR 701.44c reveals p1's library (LKI controller).
   let gStolen0 := addPermanent g0 bear p0 p1
@@ -1073,14 +1079,14 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let p1TopNonland := (gDepNonland0.player p1).library.back!
   let p0LibSizeBefore := (gDepNonland0.player p0).library.size
   let p1GyBefore := (gDepNonland0.player p1).graveyard.size
-  let gDepNonland := gDepNonland0.applyFrc p0 default .explore #[] (some stolenObj.id)
+  let gDepNonland := gDepNonland0.applyEffect p0 exploreSelfEff #[] (sourceId := some stolenObj.id)
   let gDepNonlandAccept := mustApply gDepNonland p1 .accept
   let gDepLand0 :=
     let g := addPermanent gDepartedBase forest p1 p1
     let topId := g.battlefield.back!.id
     (g.move topId (.library p1) none (libraryPosition := some .top)).1
   let p1HandBefore := (gDepLand0.player p1).hand.size
-  let gDepLand := gDepLand0.applyFrc p0 default .explore #[] (some stolenObj.id)
+  let gDepLand := gDepLand0.applyEffect p0 exploreSelfEff #[] (sourceId := some stolenObj.id)
   -- CR 400.3: top card of p0's library owned by p1 goes to p1's hand (land) or p1's graveyard (nonland)
   let gOwnBase := addPermanent g0 bear p0 p0
   let ownExplorer := (gOwnBase.permanentsOf p0).find? (·.name == bear.name) |>.get!
@@ -1090,14 +1096,14 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
     (g.move topId (.library p0) none (libraryPosition := some .top)).1
   let p0HandBeforeOwn := (gOwnLand0.player p0).hand.size
   let p1HandBeforeOwn := (gOwnLand0.player p1).hand.size
-  let gOwnLand := gOwnLand0.applyFrc p0 default .explore #[] (some ownExplorer.id)
+  let gOwnLand := gOwnLand0.applyEffect p0 exploreSelfEff #[] (sourceId := some ownExplorer.id)
   let gOwnNonland0 :=
     let g := addPermanent gOwnBase bear p1 p1
     let topId := g.battlefield.back!.id
     (g.move topId (.library p0) none (libraryPosition := some .top)).1
   let p0GyBeforeOwn := (gOwnNonland0.player p0).graveyard.size
   let p1GyBeforeOwn := (gOwnNonland0.player p1).graveyard.size
-  let gOwnNonland := gOwnNonland0.applyFrc p0 default .explore #[] (some ownExplorer.id)
+  let gOwnNonland := gOwnNonland0.applyEffect p0 exploreSelfEff #[] (sourceId := some ownExplorer.id)
   let gOwnNonlandAccept := mustApply gOwnNonland p0 .accept
   let exploreCr70144Ok :=
     !gRelic0.isCreature relicObj &&
@@ -1314,7 +1320,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
     gCastGy0.restrictionAllowsProposed (some .notSpellsFromHand) fakeProp
 
   -- 7. CopyTokenContext propagation across createAndMarkTokensAttacking (both holds arms &
-  --    across PendingReplacement pause), EffectResolution.createTokensLifeGained, and
+  --    across PendingReplacement pause), unified life-gained token creation, and
   --    FraChoice.mayCreateTokens
   let atkCopyNoHolds :=
     gCopy0.createAndMarkTokensAttacking p0 copySpec 1 false false
@@ -1356,18 +1362,19 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let atkSeqAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisAttacks {
       targeting := .of .creature
-      resolution := .sequence [
-        .createTokens copySpec (.fixed 1) true .you .none,
+      legacyTokens := #[copySpec]
+      resolution? := some (.sequence [
+        .createTokens 0 (.fixed 1) true .you .none,
         .«if» (.atLeast (.count .creaturesYouControl) (.fixed 1)) .markRecentTokensAttacking
-      ]
+      ])
     }
   let gSeqRes := gCopy0.applyTriggeredAbility p0 atkSeqAb none #[.permanent origObj.id]
-  -- EffectResolution.createTokensLifeGained forwards copyCtx:
+  -- Unified `.create (.tokens ...)` with `.lifeGainedThisTurn` forwards copyCtx:
   let gLifeGain0 := gCopy0.gainLife p0 2
   let gLifeGainTok :=
     gLifeGain0.applyEffect p0 {
       targeting := .of .creature
-      resolution := .createTokensLifeGained copySpec
+      body := .create (.tokens .you (.playerMetric .lifeGainedThisTurn .you) copySpec {})
     } #[.permanent origObj.id]
   let lifeGainCopies := (gLifeGainTok.permanentsOf p0).filter (·.name == "Shadow Copy")
   -- FraChoice.mayCreateTokens forwards copyCtx:

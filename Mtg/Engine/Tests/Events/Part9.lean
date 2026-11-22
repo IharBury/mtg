@@ -911,7 +911,7 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
   -- standalone `payCostPick`, `.turnFaceUp`, and `FraChoices.mayPayPickThen` `resolvingForObj <|> sourceId`):
   let dorkManaAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[.tapSelf]
-    effect := { resolution := .addMana #[.colored .green] }
+    effect := Effect.addMana #[.colored .green]
   }
   let morphDorkDef : CardDef := {
     creature "P41i4 MorphDork" ManaCost.empty #["Elf", "Druid"] 2 2 with

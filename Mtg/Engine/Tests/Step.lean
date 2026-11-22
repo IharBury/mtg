@@ -169,9 +169,9 @@ def notedMissing : Game :=
   let g := g0.applyTriggeredAbility me (TriggeredAbility.onEnterDraw 1) none
     (resolutionOverride := some (.becomeCopy .source))
   (g.copyRestore (named g "Grizzly Bears")).isNone && g.log.size == g0.log.size
-#guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy .source } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.becomeCopy .source) } ==
   "become a copy"
-#guard TriggeredAbility.resolutionPhrase { resolution := .becomeCopy (.cause (some .villain)) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.becomeCopy (.cause (some .villain))) } ==
   "become a copy"
 
 /- Taskmaster copies a creature card in a graveyard and replaces his type line. -/

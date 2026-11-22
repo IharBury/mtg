@@ -583,7 +583,7 @@ private def replayOk50i3 (gs : Array Game) : Bool :=
   let goblinWatcherDef : CardDef := {
     name := "P50i3 GoblinWatcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutCountersOnGoblinOrcArmy "" (.draw 1)
+    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutCountersOnGoblinOrcArmy "" (Instruction.drawFixed 1)
       (grouping := .oncePerBatch)]
   }
   let tapWatcherDef : CardDef := {
@@ -747,7 +747,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
-      effect := { resolution := .addMana #[.colored .blue] (.fixed 1), phrase := "Add {U}." }
+      effect := { resolution? := some (.addMana #[.colored .blue] (.fixed 1)), phrase := "Add {U}." }
     }]
   }
   let crewSkiffDef : CardDef := {
@@ -777,7 +777,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf]
-      effect := { resolution := .addMana #[.colored .blue] (.fixed 2), phrase := "Add {U}{U}." }
+      effect := { resolution? := some (.addMana #[.colored .blue] (.fixed 2)), phrase := "Add {U}{U}." }
     }]
   }
   let hasteElfDef : CardDef := {
@@ -904,20 +904,24 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     lastKnownPower := some 5
     lastKnownToughness := some 7
   }
-  let innerAllCtx : SpellResolution :=
-    .sequence [
-      .«if» .castFromGraveyard (.loseLife .equalSourcePower .eachOpponent),
-      .loseLife .equalSourceToughness .eachOpponent,
-      .«if» .giftPromised (.loseLife .chosenX .eachOpponent),
-      .phaseOutKicker
+  let innerAllCtx : Instruction :=
+    .seq #[
+      Instruction.ifThen (.castPred (.castFrom .graveyard .this))
+        (Instruction.loseLife (.objectStat .power .this) .opponents),
+      Instruction.loseLife (.objectStat .toughness .this) .opponents,
+      Instruction.ifThen (.castPred (.giftPromised .this))
+        (Instruction.loseLife .chosenX .opponents),
+      .ifCond (.castPred (.wasKicked .this))
+        (.permanent (.phaseOut (.inZones .battlefield (.all #[.hasType .creature, .controlledBy (PlayerFilter.ofExpr (.controllerOf (.target 0)))]))))
+        (.permanent (.phaseOut (.target 0)))
     ]
   let unlessEff : Effect := {
     targeting := .of .creature
-    resolution := .ofSpell (.unlessPays innerAllCtx 2)
+    body := .unlessPays (.controllerOf (.target 0)) (CostSpec.ofGeneric 2) innerAllCtx
     phrase := "Target creature's controller pays {2} or loses life and creatures phase out."
   }
   let gUnless0 :=
-    gUnlessBase.applyEffect p0 unlessEff #[.permanent bearAId]
+    gUnlessBase.applyUnified p0 unlessEff #[.permanent bearAId]
       (castFromGraveyard := ctxRich.castFromGraveyard)
       (kicked := ctxRich.kicked)
       (giftPromised := ctxRich.giftPromised)
@@ -933,7 +937,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   let gUnlessFlushed := mustApply gUnless0 p2 .concede
 
   -- 4b(ii). Explicit `chosenX = some 0` precedence over permanent `sourceId` `chosenXOf? == some 5`
-  --         across `applyFraResolution?` / `FrcResolve.spellX`, `applyUnifiedAbility`,
+  --         across unified `Interpreter` (`warriorsX`, `applyUnifiedAbility`),
   --         `.continueUnifiedAbility` (also verifying `chosenX` and `lastKnownToughness` are NOT swapped!),
   --         `.continueSpellModes`, `acceptMay`, `chooseSpellOr`, and `TriggerArgs` (`triggerInt` & `applyAddMana`):
   let xHydraPermDef : CardDef :=
@@ -945,8 +949,11 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   let xSrcId := (gXSrcBf.permanentsOf p0).find? (·.name == xHydraPermDef.name) |>.get!.id
   let srcHasX5 := gXSrcBf.chosenXOf? xSrcId == some 5
 
-  -- 1. `FrcResolve.spellX` / `applyFraResolution?` (`.frc .warriorsX`):
-  let warriorsEff : Effect := { resolution := .frc .warriorsX, phrase := "Create X 1/1 Warrior creature tokens." }
+  -- 1. Unified `Interpreter` (`createTokens` Warriors with `ValueExpr.chosenX`):
+  let warriorsEff : Effect := {
+    body := Instruction.createTokens .warrior .chosenX
+    phrase := "Create X 1/1 Warrior creature tokens."
+  }
   let gWarriorsZero := gXSrcBf.applyEffect p0 warriorsEff #[] (chosenX := some 0) (sourceId := some xSrcId)
   let gWarriorsFallback := gXSrcBf.applyEffect p0 warriorsEff #[] (chosenX := none) (sourceId := some xSrcId)
   let countWarriors (g : Game) : Nat :=
@@ -954,7 +961,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
 
   -- 2. `applyUnifiedAbility`:
   let loseXEff : Effect := {
-    resolution := .ofSpell (.loseLife .chosenX .eachOpponent)
+    body := Instruction.loseLife .chosenX .opponents
     phrase := "Each opponent loses X life."
   }
   let gAbZero :=
@@ -967,8 +974,8 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   --    `xSrcId`'s `chosenXOf? = some 5` and is not swapped with `lastKnownToughness = some 7`), and
   --    off-battlefield (`sourceId := none`) deals `0 + 7 = 7` (`20 -> 13`, proving `lastKnownToughness`
   --    is preserved in its own slot):
-  let loseTghStep : Resolution := .ofSpell (.loseLife .equalSourceToughness .eachOpponent)
-  let loseXStep : Resolution := .ofSpell (.loseLife .chosenX .eachOpponent)
+  let loseTghStep : Resolution := .loseLife .equalSourceToughness .eachOpponent
+  let loseXStep : Resolution := .loseLife .chosenX .eachOpponent
   let gContAbZero :=
     gXSrcBf.resumePendingReplacement
       (.continueUnifiedAbility p0 loseXEff #[loseXStep, loseTghStep] #[]
@@ -985,13 +992,16 @@ private def isAcceptDirect4 (a : Action) : Bool :=
 
   -- 5. `acceptMay` & `chooseSpellOr` (`chosenX := some 0`, `sourceId := some xSrcId`):
   let mayXEff : Effect := {
-    resolution := .ofSpell (.may (.loseLife .chosenX .eachOpponent) (.sequence []) .ifYouDont)
+    body := Instruction.may .you none (Instruction.loseLife .chosenX .opponents)
     phrase := "You may have each opponent lose X life."
   }
   let gMayZero :=
     mustApply (gXSrcBf.applyEffect p0 mayXEff #[] (chosenX := some 0) (sourceId := some xSrcId)) p0 .accept
   let orXEff : Effect := {
-    resolution := .ofSpell (.or [.loseLife .chosenX .eachOpponent, .gainLife (.fixed 1)])
+    body := .chooseModes {
+      modes := #[{ body := Instruction.loseLife .chosenX .opponents }, { body := Instruction.gainLifeFixed 1 }]
+      chooseAtResolution := true
+    }
     phrase := "Choose one."
   }
   let gOrPromptZero :=

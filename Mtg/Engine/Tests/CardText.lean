@@ -103,7 +103,7 @@ open Mtg.Engine.Catalog
 #guard elvishArchdruid.staticAbilities.size == 1
 #guard elvishArchdruid.staticAbilities == #[.otherCreaturesGet #[.elf] 1 1]
 #guard elvishArchdruid.activatedAbilities.any fun ab =>
-  ab.mana?.any fun mp =>
+  ab.manaProduction?.any fun mp =>
     mp.spec == .sequence #[(.colored .green, .count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))]
 #guard mentions mirkwoodElk.summary "trample"
 #guard mentions mirkwoodElk.summary "Elf card"
@@ -128,7 +128,7 @@ open Mtg.Engine.Catalog
 #guard woodlandWeavemaster.triggeredAbilities.size == 1
 #guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
 #guard woodlandWeavemaster.activatedAbilities.any fun ab =>
-  ab.mana?.any fun mp => mp.spec == .oneOf .anyColor (.objectStat .power .this)
+  ab.manaProduction?.any fun mp => mp.spec == .oneOf .anyColor (.objectStat .power .this)
 #guard mentions oliphaunt.summary "trample"
 #guard mentions oliphaunt.summary "+2/+0"
 #guard mentions oliphaunt.summary "Mountaincycling"

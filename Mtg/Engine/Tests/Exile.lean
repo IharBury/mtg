@@ -25,7 +25,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .exile))
+  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.exile .target .forLater) }
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -271,38 +271,30 @@ controller's next turn. -/
     | none => false
 
 /- Printed phrases stay with the combination that produces them. -/
-#guard TriggeredAbility.TriggerResolution.ofPermanent .exile ==
-  .exile .target .forLater
-#guard TriggeredAbility.TriggerResolution.ofSource .exile ==
-  .exile .source .forLater
-#guard TriggeredAbility.TriggerResolution.ofEnchanted .exile ==
-  .exile .enchanted .forLater
-#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .exile ==
-  .exile (.target .whileSource) .forLater
 
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution := .exile .target .forLater } ==
+    { targeting := .of .creature, resolution? := some (.exile .target .forLater) } ==
   "exile target creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .exile .source .forLater } ==
+    { resolution? := some (.exile .source .forLater) } ==
   "exile this creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .exile .enchanted .forLater } ==
+    { resolution? := some (.exile .enchanted .forLater) } ==
   "exile enchanted creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .exile (.target .whileSource) .forLater } ==
+    { resolution? := some (.exile (.target .whileSource) .forLater) } ==
   "exile that creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .exile .top .playUntilNextTurn } ==
+    { resolution? := some (.exile .top .playUntilNextTurn) } ==
   "exile the top card of your library. Until the end of your next turn, you may play that card"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .exile (.target .eachPermanent) .untilSourceLeaves } ==
+    { resolution? := some (.exile (.target .eachPermanent) .untilSourceLeaves) } ==
   "for each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .exile .landsYouControl .forLater .lands } ==
+    { resolution? := some (.exile .landsYouControl .forLater .lands) } ==
   "exile up to three target lands you control"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .exile .cause .forLater } ==
+    { resolution? := some (.exile .cause .forLater) } ==
   "exile it"
 
 end Mtg.Engine.ExileTests

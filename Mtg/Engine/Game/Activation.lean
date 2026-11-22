@@ -172,7 +172,7 @@ action rather than an activated ability (so Split Second does not forbid it,
 CR 702.61b). -/
 def canActivate (g : Game) (p : PlayerId) (o : GameObject) (ab : ActivatedAbility)
     (idx? : Option Nat := none) : Bool :=
-  if o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp then
+  if o.status.faceDown && ab.isTurnFaceUp then
     g.hasPriority p && o.isOnBattlefield && g.controlledBy o p &&
       (g.unmaskedCopiableValues o).morph.isSome
   else
@@ -188,7 +188,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
     throw s!"{g.name o} has no activated ability"
   let some ab := abs[abilityIdx]?
     | throw s!"{g.name o} has no such activated ability"
-  if o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp then
+  if o.status.faceDown && ab.isTurnFaceUp then
     if !g.hasPriority p then
       throw "You don't have priority"
     if !o.isOnBattlefield then

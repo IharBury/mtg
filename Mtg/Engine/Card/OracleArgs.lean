@@ -293,155 +293,6 @@ def takeTargetSpec (ts : TargetSpec) : ArgM TargetSpec := do
 def takeTargeting (t : EffectTargeting) : ArgM EffectTargeting := do
   return { t with spec := ← takeTargetSpec t.spec }
 
-def takeAction (a : PermanentAction) : ArgM PermanentAction := do
-  match a with
-  | .pump p t => return .pump (← takeInt p) (← takeInt t)
-  | .pumpAndTrample p t => return .pumpAndTrample (← takeInt p) (← takeInt t)
-  | .plusOne n => return .plusOne (← takeNat n)
-  | .dealDamage n => return .dealDamage (← takeNat n)
-  | .setBasePT p t => return .setBasePT (← takeInt p) (← takeInt t)
-  | a => return a
-
-def takeSpell (r : SpellResolution) : ArgM SpellResolution := do
-  match r with
-  | .onPermanent a => return .onPermanent (← takeAction a)
-  | .creaturesPump p t scope =>
-    return .creaturesPump (← takeInt p) (← takeInt t) scope
-  | .draw (.fixed n) who => return .draw (← takeNat n.toNat) who
-  | .discard (.cards n) => return .discard (.cards (← takeNat n))
-  | .loseLife (.fixed n) who => return .loseLife (← takeNat n.toNat) who
-  | .gainLife (.fixed n) => return .gainLife (← takeNat n.toNat)
-  | .targetPlayersGainLife n => return .targetPlayersGainLife (← takeNat n)
-  | .scry (.fixed n) => return .scry (← takeNat n.toNat)
-  | .surveil (.fixed n) => return .surveil (← takeNat n.toNat)
-  | .unlessPays r n => return .unlessPays (← takeSpell r) (← takeNat n)
-  | .or rs => return .or (← rs.mapM takeSpell)
-  | .may r _ _ => return .may (← takeSpell r) (.sequence [])
-  | .«if» .teamwork (.onPermanent (.grantKeywords kw)) =>
-    let name ← takeStr (KeywordAbility.joinedAnd kw)
-    let kw := ((KeywordAbility.ofSimpleName? name).map (#[·])).getD kw
-    return .«if» .teamwork (.onPermanent (.grantKeywords kw))
-  | .«if» cond r =>
-    let r ← takeSpell r
-    match cond with
-    | .subtype s => return .«if» (.subtype (← takeSubtype s)) r
-    | .mvAtMost n => return .«if» (.mvAtMost (← takeNat n)) r
-    | .castFromGraveyard => return .«if» .castFromGraveyard r
-    | .teamwork => return .«if» .teamwork r
-    | .giftPromised => return .«if» .giftPromised r
-    | _ => return .«if» cond r
-  | .ifElse cond whenTrue whenFalse =>
-    -- Printed order is the otherwise branch, then the condition, then the
-    -- true branch.
-    let whenFalse ← takeSpell whenFalse
-    let cond ← match cond with
-      | .subtype s => do
-        let s ← takeSubtype s
-        pure (.subtype s)
-      | .mvAtMost n => do
-        let n ← takeNat n
-        pure (.mvAtMost n)
-      | .castFromGraveyard => pure .castFromGraveyard
-      | .teamwork => pure .teamwork
-      | .giftPromised => pure .giftPromised
-      | c => pure c
-    let whenTrue ← takeSpell whenTrue
-    return .ifElse cond whenTrue whenFalse
-  | .countersOnCreatureTargets kind n which =>
-    return .countersOnCreatureTargets (← takeCounter kind) (← takeNat n) which
-  | .exileGraveyardCreaturesGrantCast ty =>
-    return .exileGraveyardCreaturesGrantCast (← takeCardType ty)
-  | .searchCard s ty how =>
-    return .searchCard (← takeSupertype s) (← takeCardType ty) how
-  | .addRedPerOppArtifacts ty => return .addRedPerOppArtifacts (← takeCardType ty)
-  | .addFourManaDragonSpells n s =>
-    return .addFourManaDragonSpells (← takeNat n) (← takeSubtype s)
-  | .riddlesInTheDark n => return .riddlesInTheDark (← takeNat n)
-  | .onCreatureAmongTargets a => return .onCreatureAmongTargets (← takeAction a)
-  | .becomeArtifactCreature44Flying p t kw =>
-    return .becomeArtifactCreature44Flying (← takeInt p) (← takeInt t) (← takeStr kw)
-  | .discardTwoUnlessArtifact n ty =>
-    return .discardTwoUnlessArtifact (← takeNat n) (← takeCardType ty)
-  | .plusOneOnEachYouControl n which =>
-    return .plusOneOnEachYouControl (← takeNat n) which
-  | .fight .announced (.timesPower k) =>
-    if k == 1 then return .fight .announced (.timesPower 1)
-    else return .fight .announced (.timesPower (← takeNat k))
-  | .dealDamageToControllerOfTarget n =>
-    return .dealDamageToControllerOfTarget (← takeNat n)
-  | .mayDrawPerArtifactOppsDraw ty => return .mayDrawPerArtifactOppsDraw (← takeCardType ty)
-  | .mayPutHeroMvOrDraw n s => return .mayPutHeroMvOrDraw (← takeNat n) (← takeSubtype s)
-  | .amass (.fixed n) subtype =>
-    return .amass (← takeNat n.toNat) (← takeSubtype subtype)
-  | .dealDamageToEachCreature n which amount =>
-    match amount with
-    | .otherSpellsManaValue =>
-      return .dealDamageToEachCreature n which .otherSpellsManaValue
-    | .fixed =>
-      match which with
-      | .each => return .dealDamageToEachCreature (← takeNat n)
-      | .opponentsControl =>
-        return .dealDamageToEachCreature (← takeNat n) .opponentsControl
-      | .nonSubtype subtype =>
-        return .dealDamageToEachCreature (← takeNat n) (.nonSubtype (← takeSubtype subtype))
-  | .millThenPut n which =>
-    match which with
-    | .oneOf a b =>
-      return .millThenPut (← takeNat n) (.oneOf (← takeCardType a) (← takeCardType b))
-    | .upTo max ty =>
-      return .millThenPut (← takeNat n) (.upTo (← takeNat max) (← takeCardType ty))
-    | .allOf a b =>
-      return .millThenPut (← takeNat n) (.allOf (← takeCardType a) (← takeCardType b))
-  | .exileTopPlayUntilNext n => return .exileTopPlayUntilNext (← takeNat n)
-  | .exileTopPlayIfYouControlSubtype n s =>
-    return .exileTopPlayIfYouControlSubtype (← takeNat n) (← takeSubtype s)
-  | .lookAtTopLandsGainLife a b => return .lookAtTopLandsGainLife (← takeNat a) (← takeNat b)
-  | .exileCreatureMvAtMostOrAnyIfTeamwork a b =>
-    return .exileCreatureMvAtMostOrAnyIfTeamwork (← takeNat a) (← takeNat b)
-  | .returnGyCreatureMvAtMostOrAny n => return .returnGyCreatureMvAtMostOrAny (← takeNat n)
-  | .revealTopPutCreatures n => return .revealTopPutCreatures (← takeNat n)
-  | .createTokens k (.fixed n) tapped who note =>
-    return .createTokens k (← takeNat n.toNat) tapped who note
-  | .createTokens k .chosenX tapped who note =>
-    return .createTokens k .chosenX tapped who note
-  | .createTokens k (.perSubtype s) tapped who note =>
-    return .createTokens k (.perSubtype (← takeSubtype s)) tapped who note
-  | .returnGySubtypeToHand s => return .returnGySubtypeToHand (← takeSubtype s)
-  | .plusOneOnCreatureN n => return .plusOneOnCreatureN (← takeNat n)
-  | .millThenPutPermanentGainLife a b =>
-    return .millThenPutPermanentGainLife (← takeNat a) (← takeNat b)
-  | .gainLifeSearchBasicPlusOne n => return .gainLifeSearchBasicPlusOne (← takeNat n)
-  | .copyThisSpellXTimesThenDamage n => return .copyThisSpellXTimesThenDamage (← takeNat n)
-  | .maySacArtifactOrDiscardDraw n => return .maySacArtifactOrDiscardDraw (← takeNat n)
-  | .spellsCostLessThisTurn which n =>
-    match which with
-    | .cardType ty =>
-      return .spellsCostLessThisTurn (.cardType (← takeCardType ty)) (← takeNat n)
-    | .supertype s =>
-      return .spellsCostLessThisTurn (.supertype (← takeSupertype s)) (← takeNat n)
-  | .sequence rs => return .sequence (← rs.mapM takeSpell)
-  | r => return r
-
-def takeChapter (c : ChapterResolution) : ArgM ChapterResolution := do
-  match c with
-  | .dealDamageToOppCreature n => return .dealDamageToOppCreature (← takeNat n)
-  | .elvesGetVigilance p => return .elvesGetVigilance (← takeInt p)
-  | .amass n => return .amass (← takeNat n)
-  | .opponentLosesYouGain n => return .opponentLosesYouGain (← takeNat n)
-  | .draw n => return .draw (← takeNat n)
-  | .searchBasicPlainsExileGainLife a b =>
-    return .searchBasicPlainsExileGainLife (← takeNat a) (← takeNat b)
-  | .returnCreatureFromGyMvAtMost n => return .returnCreatureFromGyMvAtMost (← takeNat n)
-  | .gainControlOfUpToTwoCreaturesTotalMvAtMost n =>
-    return .gainControlOfUpToTwoCreaturesTotalMvAtMost (← takeNat n)
-  | .dealDamageToEachNonSubtypeAndOpponents n s =>
-    return .dealDamageToEachNonSubtypeAndOpponents (← takeNat n) (← takeSubtype s)
-  | .spell s =>
-    return .spell { s with
-      targeting := ← takeTargeting s.targeting
-      resolution := ← takeSpell s.resolution }
-  | c => return c
-
 def takeEnter (e : EnterLeftover) : ArgM EnterLeftover := do
   match e with
   | .destroy k => return .destroy (← takeWholeTargetSpec k)
@@ -455,6 +306,16 @@ private partial def takeTriggerCond (c : Condition) : ArgM Condition := do
   | .cmp .ge (.playerMetric .lifeGainedThisTurn pf) (.const n) =>
     let k ← takeNat n.toNat
     return .cmp .ge (.playerMetric .lifeGainedThisTurn pf) (.const (Int.ofNat k))
+  | .exists (.inZones zs (.all #[.hasSubtype (.literal s), .controlledBy pf])) =>
+    return .exists (.inZones zs (.all #[.hasSubtype (.literal (← takeSubtype s)), .controlledBy pf]))
+  | .exists (.inZones zs (.hasSubtype (.literal s))) =>
+    return .exists (.inZones zs (.hasSubtype (.literal (← takeSubtype s))))
+  | .playerPred who (.controls { zones, pred := .hasSubtype (.literal s) } cnt) =>
+    return .playerPred who (.controls { zones, pred := .hasSubtype (.literal (← takeSubtype s)) } cnt)
+  | .exists (.filter o (.stat .manaValue .le (.const n))) =>
+    return .exists (.filter o (.stat .manaValue .le (.const (Int.ofNat (← takeNat n.toNat)))))
+  | .cmp op (.objectStat stat obj) (.const n) =>
+    return .cmp op (.objectStat stat obj) (.const (Int.ofNat (← takeNat n.toNat)))
   | other => return other
 
 private partial def takeTriggerPattern (p : TriggerPattern) : ArgM TriggerPattern := do
@@ -492,12 +353,94 @@ private def takeTriggerGrouping (g : BatchGrouping) : ArgM BatchGrouping := do
   | .counterThreshold .plan #[n] => return .counterThreshold .plan #[← takeNat n]
   | other => return other
 
+private def takeSubPredArray (ps : Array ObjectPred) : ArgM (Array ObjectPred) := do
+  let subs := ps.filterMap fun | .hasSubtype (.literal s) => some s | _ => none
+  if !subs.isEmpty && subs.size == ps.size then
+    let subs' ← takeSubtypes subs
+    return subs'.map fun s => .hasSubtype (.literal s)
+  else return ps
+
+private def takeInstrContMod : ContinuousModification → ArgM ContinuousModification
+  | .modifyPT (.const p) (.const t) =>
+    return .modifyPT (.const (← takeInt p)) (.const (← takeInt t))
+  | .setBasePT (some (.const p)) (some (.const t)) =>
+    return .setBasePT (some (.const (← takeInt p))) (some (.const (← takeInt t)))
+  | .grantKeywords ks => do
+    if ks.isEmpty then return .grantKeywords ks
+    else
+      let name ← takeStr (KeywordAbility.joinedAnd ks)
+      let ks' := ((KeywordAbility.ofSimpleName? name).map (#[·])).getD ks
+      return .grantKeywords ks'
+  | .modifyTypes m => do
+    if m.subtypes.isEmpty then return .modifyTypes m
+    else return .modifyTypes { m with subtypes := ← takeSubtypes m.subtypes }
+  | .all mods => return .all (← mods.attach.mapM fun ⟨m, _⟩ => takeInstrContMod m)
+  | other => return other
+
+private def takeInstrMoveMods (mods : MoveMods) : ArgM MoveMods := do
+  let choice? ←
+    match mods.choice? with
+    | none => pure none
+    | some c =>
+      let count ←
+        match c.count with
+        | .exact (.const n) => pure (.exact (.const (Int.ofNat (← takeNat n.toNat))))
+        | .upTo (.const n) => pure (.upTo (.const (Int.ofNat (← takeNat n.toNat))))
+        | other => pure other
+      let unlessMatching? ←
+        match c.unlessMatching? with
+        | some (.hasType ty) => pure (some (.hasType (← takeCardType ty)))
+        | other => pure other
+      let filter? ←
+        match c.filter? with
+        | some (.hasSubtype (.literal s)) => pure (some (.hasSubtype (.literal (← takeSubtype s))))
+        | some (.stat .manaValue .le (.const n)) =>
+          pure (some (.stat .manaValue .le (.const (Int.ofNat (← takeNat n.toNat)))))
+        | some (.all #[.hasType .creature, .stat .manaValue .le (.const n)]) =>
+          pure (some (.all #[.hasType .creature, .stat .manaValue .le (.const (Int.ofNat (← takeNat n.toNat)))]))
+        | other => pure other
+      pure (some { c with count, unlessMatching?, filter? })
+  let grantPlayPerm? ←
+    match mods.grantPlayPerm? with
+    | none => pure none
+    | some gp =>
+      let condition? ←
+        match gp.condition? with
+        | some c => pure (some (← takeTriggerCond c))
+        | none => pure none
+      let filter? ←
+        match gp.filter? with
+        | some (.hasType ty) => pure (some (.hasType (← takeCardType ty)))
+        | other => pure other
+      pure (some { gp with condition?, filter? })
+  return { mods with choice?, grantPlayPerm? }
+
+private def takeInstrSearchFilter : ObjectPred → ArgM ObjectPred
+  | .all #[.hasSupertype sup, .hasType ty] =>
+    return .all #[.hasSupertype (← takeSupertype sup), .hasType (← takeCardType ty)]
+  | .hasSupertype sup => do
+    let name ← takeStr sup.englishName
+    return Effect.searchLandTypeFilter name
+  | .hasSubtype (.literal s) => do
+    let name ← takeStr s.englishName
+    return Effect.searchLandTypeFilter name
+  | other => return other
+
+private def takeInstrInspectFilter : ObjectPred → ArgM ObjectPred
+  | .any #[.hasType a, .hasType b] =>
+    return .any #[.hasType (← takeCardType a), .hasType (← takeCardType b)]
+  | .hasType ty => return .hasType (← takeCardType ty)
+  | .hasSubtype (.literal s) => return .hasSubtype (.literal (← takeSubtype s))
+  | .any ps => return .any (← takeSubPredArray ps)
+  | other => return other
+
 mutual
-def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
+
+partial def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   match e with
   | .scry n => return .scry (← takeNat n)
   | .draw n => return .draw (← takeNat n)
-  | .createTokens k n tapped => return .createTokens k (← takeNat n) tapped
+  | .createTokens tokIdx n tapped => return .createTokens tokIdx (← takeNat n) tapped
   | .amass n subtype amount attach =>
     match amount with
     | .fixed =>
@@ -514,8 +457,6 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .exileUntilLeaves k => return .exileUntilLeaves (← takeTargetSpec k)
   | .damageEachOpponent n => return .damageEachOpponent (← takeNat n)
   | .attachTo k => return .attachTo (← takeTargetSpec k)
-  | .onPermanent k a => return .onPermanent (← takeTargetSpec k) (← takeAction a)
-  | .onSource a => return .onSource (← takeAction a)
   | .discard n => return .discard (← takeNat n)
   | .mayTo (.discard _) (.draw n) =>
     return .mayTo .discard (.draw (← takeNat n))
@@ -548,7 +489,6 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
   | .untapAttackersExtraCombat n => return .untapAttackersExtraCombat (← takeInt n)
   | .revealTopPutRandomCreature n => return .revealTopPutRandomCreature (← takeNat n)
   | .damageTargetOpponent n => return .damageTargetOpponent (← takeNat n)
-  | .chapter n ce => return .chapter (← takeNat n) (← takeChapter ce)
   | .drawIfAttackedOrEnteredSubtype s => return .drawIfAttackedOrEnteredSubtype (← takeSubtype s)
   | .othersOfSubtypeGetEqualSourceToughness s =>
     return .othersOfSubtypeGetEqualSourceToughness (← takeSubtype s)
@@ -563,76 +503,247 @@ def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
     match which with
     | .eachCreature | .citysBlessing => return .plusOneEachYouControl which
     | .subtype s => return .plusOneEachYouControl (.subtype (← takeSubtype s))
-  | .onEnchanted a => return .onEnchanted (← takeAction a)
-  | .attachThen a => return .attachThen (← takeAction a)
   | .enter e => return .enter (← takeEnter e)
   | e => return e
 
-def takeResolution (r : Resolution) : ArgM Resolution := do
+partial def takeResolution (r : Resolution) : ArgM Resolution := do
   match r with
-  | .onSource a => return .onSource (← takeAction a)
-  | .searchLandTypeToHand s => return .searchLandTypeToHand (← takeStr s)
-  | .becomeSubtypeWithLandsPT s => return .becomeSubtypeWithLandsPT (← takeSubtype s)
-  | .creaturesYouControlPump p t => return .creaturesYouControlPump (← takeInt p) (← takeInt t)
+  | .draw (.fixed n) who => return .draw (← takeNat n.toNat) who
+  | .discard (.cards n) => return .discard (.cards (← takeNat n))
   | .mill (.fixed n) who note => return .mill (← takeNat n.toNat) who note
-  | .subtypesGainMenace ss => return .subtypesGainMenace (← takeSubtypes ss)
-  | .searchBasicBeholdSubtypeUntap s => return .searchBasicBeholdSubtypeUntap (← takeSubtype s)
-  | .dealDamageToAny n => return .dealDamageToAny (← takeNat n)
-  | .damageEachOpponent n => return .damageEachOpponent (← takeNat n)
-  | .plusOneOnEachOtherSubtype s n =>
-    return .plusOneOnEachOtherSubtype (← takeSubtype s) (← takeNat n)
-  | .lookAtTopPutTypes n ts => return .lookAtTopPutTypes (← takeNat n) (← takeSubtypes ts)
-  | .lookAtTopRevealArtifact n => return .lookAtTopRevealArtifact (← takeNat n)
-  | .addAnyColorSpendOnlySubtype s => return .addAnyColorSpendOnlySubtype (← takeSubtype s)
-  | .targetPlayerDraw n => return .targetPlayerDraw (← takeNat n)
-  | .createTokensEqualSubtype k s => return .createTokensEqualSubtype k (← takeSubtype s)
-  | .lookAtTopRevealSubtype n s => return .lookAtTopRevealSubtype (← takeNat n) (← takeSubtype s)
-  | .millThenPutSubtypeOrEnchantment n s =>
-    return .millThenPutSubtypeOrEnchantment (← takeNat n) (← takeSubtype s)
-  | .becomeTypes ts p t k =>
-    return .becomeTypes (← takeSubtypes ts) (← takeInt p) (← takeInt t) k
-  | .targetSubtypeConnives s => return .targetSubtypeConnives (← takeSubtype s)
+  | .loseLife (.fixed n) who => return .loseLife (← takeNat n.toNat) who
+  | .gainLife (.fixed n) => return .gainLife (← takeNat n.toNat)
+  | .scry (.fixed n) => return .scry (← takeNat n.toNat)
+  | .surveil (.fixed n) => return .surveil (← takeNat n.toNat)
+  | .amass (.fixed n) subtype => return .amass (← takeNat n.toNat) (← takeSubtype subtype)
+  | .createTokens tokIdx (.fixed n) tapped who note =>
+    return .createTokens tokIdx (← takeNat n.toNat) tapped who note
+  | .createTokens tokIdx (.perSubtype s) tapped who note =>
+    return .createTokens tokIdx (.perSubtype (← takeSubtype s)) tapped who note
   | .empowerJace (.fixed n) => return .empowerJace (← takeNat n.toNat)
-  | .exileTopMayCastElseDamageOpponents n => return .exileTopMayCastElseDamageOpponents (← takeNat n)
-  | .emblemCastSpellDamage n => return .emblemCastSpellDamage (← takeNat n)
-  | .millSelf n => return .millSelf (← takeNat n)
-  | .mayDiscardDraw n => return .mayDiscardDraw (← takeNat n)
-  | .targetPlayerLoseLife n => return .targetPlayerLoseLife (← takeNat n)
-  | .controllerOfTargetLosesLife n => return .controllerOfTargetLosesLife (← takeNat n)
-  | .damageAny n => return .damageAny (← takeNat n)
-  | .damageThenEmpowerExcess n => return .damageThenEmpowerExcess (← takeNat n)
+  | .may r _ _ => return .may (← takeResolution r) (.sequence [])
+  | .«if» cond r =>
+    let r ← takeResolution r
+    match cond with
+    | .subtype s => return .«if» (.subtype (← takeSubtype s)) r
+    | .mvAtMost n => return .«if» (.mvAtMost (← takeNat n)) r
+    | _ => return .«if» cond r
+  | .ifElse cond whenTrue whenFalse =>
+    let whenFalse ← takeResolution whenFalse
+    let cond ← match cond with
+      | .subtype s => pure (.subtype (← takeSubtype s))
+      | .mvAtMost n => pure (.mvAtMost (← takeNat n))
+      | c => pure c
+    let whenTrue ← takeResolution whenTrue
+    return .ifElse cond whenTrue whenFalse
   | .sequence rs => return .sequence (← rs.mapM takeResolution)
-  | r => takeSpell r
-end
+  | other => return other
 
-def takeEffect (e : Effect) : ArgM Effect := do
+partial def takeInstr (instr : Instruction) : ArgM Instruction := do
+  match instr with
+  | .moveZone objs dest verb mods =>
+    let objs' ←
+      match objs with
+      | .topOfLibrary who (.const n) =>
+        pure (.topOfLibrary who (.const (Int.ofNat (← takeNat n.toNat))))
+      | .inZones zs (.hasType ty) =>
+        if verb == .exile && mods.grantPlayPerm?.isSome then
+          pure (.inZones zs (.hasType (← takeCardType ty)))
+        else pure objs
+      | .inZones zs (.all #[.hasType .creature, .stat .manaValue .le (.const n)]) =>
+        pure (.inZones zs (.all #[.hasType .creature, .stat .manaValue .le (.const (Int.ofNat (← takeNat n.toNat)))]))
+      | .inZones zs (.hasSubtype (.literal s)) =>
+        pure (.inZones zs (.hasSubtype (.literal (← takeSubtype s))))
+      | other => pure other
+    let mods' ← takeInstrMoveMods mods
+    return .moveZone objs' dest verb mods'
+  | .create (.tokens who cnt spec mods) =>
+    let cnt' ←
+      match cnt with
+      | .const n => pure (.const (Int.ofNat (← takeNat n.toNat)))
+      | .aggregate .count .one (.inZones zs (.all #[.hasSubtype (.literal s), .controlledBy pf])) =>
+        pure (.aggregate .count .one (.inZones zs (.all #[.hasSubtype (.literal (← takeSubtype s)), .controlledBy pf])))
+      | other => pure other
+    return .create (.tokens who cnt' spec mods)
+  | .permanent (.modifyCounters (.put kind (.const n)) objs) =>
+    let kind' ← takeCounter kind
+    let n' ← takeNat n.toNat
+    let objs' ←
+      match objs with
+      | .inZones zs (.all #[.otherThan .this, .hasSubtype (.literal s), .controlledBy pf]) =>
+        pure (.inZones zs (.all #[.otherThan .this, .hasSubtype (.literal (← takeSubtype s)), .controlledBy pf]))
+      | other => pure other
+    return .permanent (.modifyCounters (.put kind' (.const (Int.ofNat n'))) objs')
+  | .permanent (.modifyCounters (.remove k? (.exact (.const n))) objs) =>
+    return .permanent (.modifyCounters (.remove k? (.exact (.const (Int.ofNat (← takeNat n.toNat))))) objs)
+  | .damage (.deal src rec amt fl) =>
+    let amt' ←
+      match amt with
+      | .const n => pure (.const (Int.ofNat (← takeNat n.toNat)))
+      | .binary .mul (.const k) rhs =>
+        if k == 1 then pure amt
+        else pure (.binary .mul (.const (Int.ofNat (← takeNat k.toNat))) rhs)
+      | other => pure other
+    let rec' ←
+      match rec with
+      | .objects (.inZones zs (.all #[.hasType .creature, .not (.hasSubtype (.literal s))])) =>
+        pure (.objects (.inZones zs (.all #[.hasType .creature, .not (.hasSubtype (.literal (← takeSubtype s)))])))
+      | .both (.inZones zs (.all #[.hasType .creature, .not (.hasSubtype (.literal s))])) pls =>
+        pure (.both (.inZones zs (.all #[.hasType .creature, .not (.hasSubtype (.literal (← takeSubtype s)))])) pls)
+      | other => pure other
+    return .damage (.deal src rec' amt' fl)
+  | .life (.gain who (.const n)) =>
+    return .life (.gain who (.const (Int.ofNat (← takeNat n.toNat))))
+  | .life (.lose who (.const n)) =>
+    return .life (.lose who (.const (Int.ofNat (← takeNat n.toNat))))
+  | .life (.set who (.const n)) =>
+    return .life (.set who (.const (Int.ofNat (← takeNat n.toNat))))
+  | .player (.drawCards who (.const n)) =>
+    return .player (.drawCards who (.const (Int.ofNat (← takeNat n.toNat))))
+  | .player (.drawCards who (.aggregate .count .one (.inZones zs (.all #[.hasType ty, .controlledBy pf])))) =>
+    return .player (.drawCards who (.aggregate .count .one (.inZones zs (.all #[.hasType (← takeCardType ty), .controlledBy pf]))))
+  | .player (.scry who (.const n)) =>
+    return .player (.scry who (.const (Int.ofNat (← takeNat n.toNat))))
+  | .player (.surveil who (.const n)) =>
+    return .player (.surveil who (.const (Int.ofNat (← takeNat n.toNat))))
+  | .player (.amass who sub (.const n)) =>
+    let n' ← takeNat n.toNat
+    let sub' ← takeSubtype sub
+    return .player (.amass who sub' (.const (Int.ofNat n')))
+  | .player (.empowerPlaneswalker sub (.const n)) =>
+    return .player (.empowerPlaneswalker sub (.const (Int.ofNat (← takeNat n.toNat))))
+  | .player (.addMana who mp) =>
+    let spec' : ManaSpec ←
+      match mp.spec with
+      | .sequence #[(.colored c, .aggregate .count .one (.inZones zs (.all #[.hasType ty, .controlledBy pf])))] =>
+        pure (ManaSpec.sequence #[(.colored c, .aggregate .count .one (.inZones zs (.all #[.hasType (← takeCardType ty), .controlledBy pf])))])
+      | .combination pal (.const n) =>
+        pure (ManaSpec.combination pal (.const (Int.ofNat (← takeNat n.toNat))))
+      | other => pure other
+    let restriction' ←
+      match mp.restriction with
+      | some (.onlyForSpells (.hasSubtype s) riders) =>
+        pure (some (.onlyForSpells (.hasSubtype (← takeSubtype s)) riders))
+      | other => pure other
+    return .player (.addMana who { mp with spec := spec', restriction := restriction' })
+  | .player (.searchLibrary spec) =>
+    let filter' ← takeInstrSearchFilter spec.filter
+    return .player (.searchLibrary { spec with filter := filter' })
+  | .player (.inspectLibrary spec) =>
+    let source' ←
+      match spec.source with
+      | .topCards who (.const n) rev =>
+        pure (.topCards who (.const (Int.ofNat (← takeNat n.toNat))) rev)
+      | .millCards who (.const n) =>
+        pure (.millCards who (.const (Int.ofNat (← takeNat n.toNat))))
+      | other => pure other
+    let action' ←
+      match spec.action with
+      | .takeMatching flt cnt dest mods rev =>
+        let cnt' ←
+          match cnt with
+          | .upTo (.const k) =>
+            if k > 1 then pure (.upTo (.const (Int.ofNat (← takeNat k.toNat)))) else pure cnt
+          | other => pure other
+        let flt' ← takeInstrInspectFilter flt
+        pure (.takeMatching flt' cnt' dest mods rev)
+      | other => pure other
+    return .player (.inspectLibrary { spec with source := source', action := action' })
+  | .installEffect (.applyContinuous dur objs mod) =>
+    let objs' ←
+      match objs with
+      | .inZones zs (.all #[.any ps, .controlledBy pf]) =>
+        pure (.inZones zs (.all #[.any (← takeSubPredArray ps), .controlledBy pf]))
+      | other => pure other
+    let mod' ← takeInstrContMod mod
+    return .installEffect (.applyContinuous dur objs' mod')
+  | .installEffect (.applyRule dur (.costMod (.spells caster pred nth notFrom az) (.reduceGeneric (.const n)) nextOnly)) =>
+    let pred' ←
+      match pred with
+      | .hasType ty => pure (.hasType (← takeCardType ty))
+      | .hasSupertype sup => pure (.hasSupertype (← takeSupertype sup))
+      | other => pure other
+    let n' ← takeNat n.toNat
+    return .installEffect (.applyRule dur
+      (.costMod (.spells caster pred' nth notFrom az) (.reduceGeneric (.const (Int.ofNat n'))) nextOnly))
+  | .stack (.copyStackObject objs (.const n) nt) =>
+    return .stack (.copyStackObject objs (.const (Int.ofNat (← takeNat n.toNat))) nt)
+  | .seq steps =>
+    return .seq (← steps.mapM takeInstr)
+  | .bind v step cont =>
+    let step' ← takeInstr step
+    let cont' ← takeInstr cont
+    return .bind v step' cont'
+  | .ifCond cond thenB elseB =>
+    if elseB == .noop then
+      let thenB' ← takeInstr thenB
+      let cond' ← takeTriggerCond cond
+      return .ifCond cond' thenB' .noop
+    else
+      -- Printed order is the otherwise branch, then the condition, then the true branch.
+      let elseB' ← takeInstr elseB
+      let cond' ← takeTriggerCond cond
+      let thenB' ← takeInstr thenB
+      return .ifCond cond' thenB' elseB'
+  | .optional who cost? onYes onNo =>
+    let onYes' ← takeInstr onYes
+    let onNo' ← takeInstr onNo
+    return .optional who cost? onYes' onNo'
+  | .unlessPays payer cost ifUnpaid =>
+    let ifUnpaid' ← takeInstr ifUnpaid
+    let cost' ←
+      match cost.soleGenericMana? with
+      | some n => pure (CostSpec.ofGeneric (← takeNat n))
+      | none => pure cost
+    return .unlessPays payer cost' ifUnpaid'
+  | .chooseModes spec =>
+    let modes' ← spec.modes.mapM takeEffect
+    return .chooseModes { spec with modes := modes' }
+  | .forEach iter v body =>
+    return .forEach iter v (← takeInstr body)
+  | other => return other
+
+partial def takeEffect (e : Effect) : ArgM Effect := do
   match e.sharedTrigger with
   | some te =>
     let te ← takeTrigger te
+    let t := te.toEffect
     return { e with
       sharedTrigger := some te
-      resolution := te.toEffect.resolution }
+      body := t.body
+      resolution? := t.resolution?
+      legacyTokens := t.legacyTokens }
   | none =>
-  match e.resolution with
-  | .onPermanent .destroy =>
-    let spec ← takeWholeTargetSpec e.targeting.spec
-    return { e with targeting := { e.targeting with spec } }
-  | .onPermanent (.plusOne n) =>
-    if e.targeting.spec == .creatureYouControl ||
-        e.targeting.spec.creatureYouControlAnySubtype?.isSome then
+  match e.resolution? with
+  | some r =>
+    let targeting ← takeTargeting e.targeting
+    let r' ← takeResolution r
+    let maxTargets ← if e.maxTargets == 0 then pure e.maxTargets else takeNat e.maxTargets
+    return { e with targeting, resolution? := some r', maxTargets }
+  | none =>
+    if e.body == Instruction.destroy (.target 0) then
       let spec ← takeWholeTargetSpec e.targeting.spec
-      let n ← takeNat n
-      return { e with
-        targeting := { e.targeting with spec }
-        resolution := .onPermanent (.plusOne n) }
-    else takeEffectRest e
-  | _ => takeEffectRest e
+      return { e with targeting := { e.targeting with spec } }
+    else
+      match e.body with
+      | .permanent (.modifyCounters (.put .plusOnePlusOne (.const n)) (.target 0)) =>
+        if e.targeting.spec == .creatureYouControl ||
+            e.targeting.spec.creatureYouControlAnySubtype?.isSome then
+          let spec ← takeWholeTargetSpec e.targeting.spec
+          let n' ← takeNat n.toNat
+          return { e with
+            targeting := { e.targeting with spec }
+            body := Instruction.putPlusOne (.target 0) n' }
+        else takeEffectRest e
+      | _ => takeEffectRest e
 where
   takeEffectRest (e : Effect) : ArgM Effect := do
     let targeting ← takeTargeting e.targeting
-    let resolution ← takeResolution e.resolution
+    let body ← takeInstr e.body
     let maxTargets ← if e.maxTargets == 0 then pure e.maxTargets else takeNat e.maxTargets
-    return { e with targeting, resolution, maxTargets }
+    return { e with targeting, body, maxTargets }
+
+end
 
 private def takeStaticAnySubPred : ObjectPred → ArgM ObjectPred
   | .hasSubtype (.literal s) => return .hasSubtype (.literal (← takeSubtype s))
@@ -853,7 +964,6 @@ def takeActivationCondition? : Option Condition → ArgM (Option Condition)
 def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
   let cost ← takeCostSpec ab.cost
   let effect ← takeEffect ab.effect
-  let otherModes ← ab.otherModes.mapM takeEffect
   let costReductions ← ab.costReductions.mapM takeCostReduction
   let condition? ← takeActivationCondition? ab.condition?
   let tag? ←
@@ -865,11 +975,17 @@ def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
         let s ← takeSubtype sub
         pure (some (.equip (some (.hasSubtype (.literal s)))))
     | some (.cycling (some _)) =>
-      match effect.resolution with
-      | .searchLandTypeToHand t => pure (some (.cycling (some t)))
+      match effect.body with
+      | .player (.searchLibrary spec) =>
+        match spec.filter with
+        | .hasSubtype (.literal sub) => pure (some (.cycling (some sub.englishName)))
+        | .hasSupertype sup => pure (some (.cycling (some sup.englishName)))
+        | .hasType ty => pure (some (.cycling (some ty.englishName)))
+        | .all #[.hasSupertype .basic, .hasType .land] => pure (some (.cycling (some "Basic land")))
+        | _ => pure ab.tag?
       | _ => pure ab.tag?
     | other => pure other
-  return { ab with cost, effect, otherModes, costReductions, condition?, tag? }
+  return { ab with cost, effect, costReductions, condition?, tag? }
 
 def takeTriggered (ab : TriggeredAbility) : ArgM TriggeredAbility := do
   let pattern ← takeTriggerPattern ab.pattern
@@ -879,8 +995,7 @@ def takeTriggered (ab : TriggeredAbility) : ArgM TriggeredAbility := do
     match ab.interveningIf? with
     | some c => pure (some (← takeTriggerCond c))
     | none => pure none
-  let modes ← ab.modes.mapM takeEffect
-  return { ab with pattern, grouping, interveningIf?, effect, modes }
+  return { ab with pattern, grouping, interveningIf?, effect }
 
 def runCollect {α} (m : ArgM α) : Array SlotVal :=
   let (_, s) := m.run { mode := .collect, vals := [] }
@@ -1195,7 +1310,7 @@ def hitsAt (args : Array SlotVal) (toks : List String) (used : List Nat) : List 
       | .targets ts =>
         hs := consider hs (kindHit i ts toks fresh)
       | .ctr _ => pure ()
-    return hs
+    return hs.reverse
 
 /-- Prefer a still-unused argument, then the longest printed form. -/
 def chooseHit (args : Array SlotVal) (toks : List String) (used : List Nat) : Option Hit :=
@@ -1661,35 +1776,37 @@ def splicePhrase (phrase : String) (old new : Array SlotVal) : String :=
         | none => go fuel rest (some c) used (c :: acc)
     String.ofList (go phrase.length phrase.toList none [] [])
 
-def finishEffect (old new : Effect) : Effect :=
+partial def finishEffect (old new : Effect) : Effect :=
   let oldArgs := collectEffect old
   let newArgs := collectEffect new
   match new.sharedTrigger with
-  | some (.chapter k (.spell s)) =>
-    let s := { s with phrase := splicePhrase s.phrase oldArgs newArgs }
-    let ce : ChapterResolution := .spell s
-    let rebuilt := Effect.ofChapter ce
-    { rebuilt with sharedTrigger := some (.chapter k ce) }
-  | some (.chapter k ce) =>
-    let rebuilt := Effect.ofChapter ce
-    { rebuilt with sharedTrigger := some (.chapter k ce) }
   | some te =>
     let t := te.toEffect
     { new with
       targeting := t.targeting
       allowsZeroTargets := t.allowsZeroTargets
       dividedDamage := t.dividedDamage
-      resolution := t.resolution
+      body := t.body
+      resolution? := t.resolution?
+      legacyTokens := t.legacyTokens
       phrase := "" }
   | none =>
-  match new.resolution with
-  | .onPermanent .destroy =>
-    Effect.canonicalDestroy new.targeting.spec
-  | .onPermanent (.plusOne n) =>
-    match Effect.canonicalPlusOne n new.targeting.spec with
-    | some e => e
-    | none => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
-  | _ => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
+  match old.body, new.body with
+  | .chooseModes oldSpec, .chooseModes newSpec =>
+    let modes := (oldSpec.modes.zip newSpec.modes).map fun (om, nm) => finishEffect om nm
+    { new with
+      body := .chooseModes { newSpec with modes }
+      phrase := splicePhrase old.phrase oldArgs newArgs }
+  | _, _ =>
+    if new.resolution?.isNone && new.body == Instruction.destroy (.target 0) then
+      Effect.canonicalDestroy new.targeting.spec
+    else
+      match new.resolution?, new.body with
+      | none, .permanent (.modifyCounters (.put .plusOnePlusOne (.const n)) (.target 0)) =>
+        match Effect.canonicalPlusOne n.toNat new.targeting.spec with
+        | some e => e
+        | none => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
+      | _, _ => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
 
 def refillEffect (e : Effect) (vals : Array SlotVal) : Effect :=
   finishEffect e (runFill (takeEffect e) vals)
@@ -1699,17 +1816,11 @@ def refillStatic (ab : StaticAbility) (vals : Array SlotVal) : StaticAbility :=
 
 def refillActivated (ab : ActivatedAbility) (vals : Array SlotVal) : ActivatedAbility :=
   let walked := runFill (takeActivated ab) vals
-  let modes := (walked.otherModes.zip ab.otherModes).map fun (m, old) => finishEffect old m
-  { walked with
-    effect := finishEffect ab.effect walked.effect
-    otherModes := modes }
+  { walked with effect := finishEffect ab.effect walked.effect }
 
 def refillTriggered (ab : TriggeredAbility) (vals : Array SlotVal) : TriggeredAbility :=
   let walked := runFill (takeTriggered ab) vals
-  let modes := (walked.modes.zip ab.modes).map fun (m, old) => finishEffect old m
-  { walked with
-    effect := finishEffect ab.effect walked.effect
-    modes }
+  { walked with effect := finishEffect ab.effect walked.effect }
 
 #guard
   let ab := TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2
@@ -1751,16 +1862,17 @@ def setNat (e : Effect) (i n : Nat) : Effect :=
   match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
-    (refillEffect e vals).resolution ==
-      (.spellsCostLessThisTurn (.cardType .planeswalker) 3)
+    (refillEffect e vals).body ==
+      .installEffect (.applyRule .untilEndOfTurn
+        (.costMod (.spells .you (.hasType .planeswalker)) (.reduceGeneric (.const 3))))
   | none => false
 
-/-- Refill `proto` from `query` and keep the resolution. -/
-private def refilled (proto : Effect) (query : String) : Option Resolution :=
+/-- Refill `proto` from `query` and keep the Phase-8 `Instruction` body. -/
+private def refilled (proto : Effect) (query : String) : Option Instruction :=
   let args := collectEffect proto
   match matchPats (patsOf (normalizeUnit "X" proto.phrase) args)
       (tokenize (normalizeUnit "X" query)) args with
-  | some vals => some (refillEffect proto vals).resolution
+  | some vals => some (refillEffect proto vals).body
   | none => none
 
 #guard (Effect.amassGoblins 1).phrase == "amass Goblins 1"
@@ -1774,80 +1886,107 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   "draw three cards. Then discard two cards unless you discard an artifact card"
 
 #guard refilled (Effect.amassGoblins 1) "amass Zombies 4" ==
-  some ((.amass 4 .zombie))
+  some (Instruction.amassFixed 4 .zombie)
 
 #guard refilled (Effect.riddlesInTheDark) "look at the top six cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard" ==
-  some ((.riddlesInTheDark 6))
+  some (.player (.inspectLibrary {
+    source := .topCards .you (.const 6) false
+    action := .splitIntoPiles .you .opponents 2 (.hand .controller) .graveyard
+    rest := .leaveInPlace }))
 
 #guard refilled (Effect.plusOneOnEachYouControl) "put 3 +1/+1 counters on each creature you control" ==
-  some ((.plusOneOnEachYouControl 3))
+  some (Instruction.putPlusOne (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])) 3)
 
 #guard Effect.plusOneThenEachOtherIfFromGy.phrase ==
   "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
 
 #guard refilled Effect.plusOneThenEachOtherIfFromGy
     "Put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control." ==
-  some Effect.plusOneThenEachOtherIfFromGy.resolution
+  some Effect.plusOneThenEachOtherIfFromGy.body
 
 #guard refilled Effect.plusOneThenEachOtherIfFromGy
     "Put 2 +1/+1 counters on target creature you control. If this spell was cast from a graveyard, also put 3 +1/+1 counters on each other creature you control." ==
-  some (.sequence [
-    (.countersOnCreatureTargets .plusOnePlusOne 2 .firstYouControl),
-    (.«if» .castFromGraveyard (.plusOneOnEachYouControl 3 .eachOther))])
+  some (.seq #[
+    Instruction.putPlusOne (.target 0) 2,
+    Instruction.ifThen (.castPred (.castFrom .graveyard .this))
+      (Instruction.putPlusOne
+        (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you, .otherThan (.target 0)])) 3)])
 
 #guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
   "put a +1/+1 counter on up to one target creature. Target player gains 2 life"
 
 #guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
     "Put a +1/+1 counter on up to one target creature. Target player gains 2 life." ==
-  some (Effect.plusOneUpToOneAndPlayerGainsLife 2).resolution
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 2).body
 
 #guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
     "Put a stun counter on up to one target creature. Target player gains 4 life." ==
-  some (Effect.plusOneUpToOneAndPlayerGainsLife 4 .stun).resolution
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 4 .stun).body
 
 #guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
     "Put two shield counters on up to one target creature. Target player gains 2 life." ==
-  some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .shield 2).resolution
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .shield 2).body
 
 #guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
     "Put an indestructible counter on up to one target creature. Target player gains 2 life." ==
-  some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .indestructible).resolution
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .indestructible).body
 
 #guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
     "Put a first strike counter on up to one target creature. Target player gains 1 life." ==
-  some (Effect.plusOneUpToOneAndPlayerGainsLife 1 .firstStrike).resolution
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 1 .firstStrike).body
 
 #guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
     "Put a -1/-1 counter on up to one target creature. Target player gains 2 life." ==
-  some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .minusOneMinusOne).resolution
+  some (Effect.plusOneUpToOneAndPlayerGainsLife 2 .minusOneMinusOne).body
 
 #guard refilled (Effect.dealDamageToEachNonDragon 2) "deals 5 damage to each non-Elf creature" ==
-  some ((.dealDamageToEachCreature 5 (.nonSubtype .elf)))
+  some (Instruction.dealDamageFixed
+    (.objects (.inZones .battlefield (.all #[.hasType .creature, .not (.hasSubtype (.literal .elf))]))) 5)
 
 #guard refilled (Effect.searchLegendaryCreatureToHand)
     "search your library for a basic land card, reveal it, put it into your hand, then shuffle" ==
-  some ((.searchCard .basic .land))
+  some (.player (.searchLibrary {
+    zones := .libraryOf .you
+    filter := .all #[.hasSupertype .basic, .hasType .land]
+    count := .upTo (.const 1)
+    dest := .hand .controller
+    reveal := true
+    shuffle := true }))
 
 #guard refilled (Effect.creatureYouControlDealsTwicePower)
     "Target creature you control deals damage equal to 3 times its power to target creature an opponent controls." ==
-  some ((.fight .announced (.timesPower 3)))
+  some (Effect.creatureYouControlDealsTwicePower 3).body
 
 #guard refilled (Effect.drawThreeDiscardUnlessArtifact)
     "draw three cards. Then discard four cards unless you discard an enchantment card" ==
-  some (.sequence [.draw 3, (.discardTwoUnlessArtifact 4 .enchantment)])
+  some (.seq #[
+    Instruction.drawFixed 3,
+    .moveZone (.inZones (.handOf .you) .anyObject) .graveyard .discard {
+      choice? := some {
+        chooser := .controller
+        count := .exact (.const 4)
+        unlessMatching? := some (.hasType .enchantment) } }])
 
 #guard refilled (Effect.becomeArtifactCreature44Flying)
     "until end of turn, target artifact or creature you control becomes an artifact creature with base power and toughness 2/3 and gains haste" ==
-  some ((.becomeArtifactCreature44Flying 2 3 "Haste"))
+  some (.installEffect (.applyContinuous .untilEndOfTurn (.target 0)
+    (.all #[
+      .modifyTypes { types := #[.artifact, .creature] },
+      .setBasePT (some (.const 2)) (some (.const 3)),
+      .grantKeywords #[Keyword.haste] ])))
 
 #guard refilled (Effect.mayDrawPerArtifactOppsDraw)
     "You may draw a card for each creature you control. If you do, each opponent draws a card" ==
-  some ((.mayDrawPerArtifactOppsDraw .creature))
+  some (Instruction.may .you none
+    (.seq #[
+      Instruction.draw (.aggregate .count .one (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you]))),
+      Instruction.drawFixed 1 .opponents ]))
 
 #guard refilled (Effect.addRedPerOppArtifacts)
     "add {R} for each enchantment your opponents control" ==
-  some ((.addRedPerOppArtifacts .enchantment))
+  some (Instruction.addMana {
+    spec := .sequence #[(.colored .red,
+      .aggregate .count .one (.inZones .battlefield (.all #[.hasType .enchantment, .controlledBy .opponent])))] })
 
 #guard CardType.all.all fun t =>
   let ab := StaticAbility.typeSpellsCostLess .artifact 1
@@ -1874,8 +2013,9 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
   match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
-    (refillEffect e vals).resolution ==
-      (.spellsCostLessThisTurn (.supertype s) 3)
+    (refillEffect e vals).body ==
+      .installEffect (.applyRule .untilEndOfTurn
+        (.costMod (.spells .you (.hasSupertype s)) (.reduceGeneric (.const 3))))
   | none => false
 
 #guard
@@ -1920,8 +2060,9 @@ private def refilled (proto : Effect) (query : String) : Option Resolution :=
       (tokenize (normalizeUnit "X"
         "Amass Zombies 2. If this spell was cast from a graveyard, amass Zombies 4 instead.")) args with
   | some vals =>
-    (refillEffect e vals).resolution ==
-      (.ifElse .castFromGraveyard (.amass 4 .zombie) (.amass 2 .zombie))
+    (refillEffect e vals).body ==
+      .ifCond (.castPred (.castFrom .graveyard .this))
+        (Instruction.amassFixed 4 .zombie) (Instruction.amassFixed 2 .zombie)
   | none => false
 
 #guard

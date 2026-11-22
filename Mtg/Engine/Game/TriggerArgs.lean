@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.FraResolve
+import Mtg.Engine.Game.FraHelpers
 
 /-!
 # Reading `TriggerResolution` arguments

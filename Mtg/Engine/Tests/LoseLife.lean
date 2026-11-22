@@ -268,18 +268,18 @@ name both controllers. A hand names no player. -/
 #guard TriggeredAbility.resolution .onCreatureCardsToGyDrawLoseLifeAndPlan ==
   .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)]
 
-#guard TriggeredAbility.resolutionPhrase { resolution := .loseLife (.fixed 3) } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.loseLife (.fixed 3)) } ==
   "you lose 3 life"
 #guard TriggeredAbility.resolutionPhrase (SharedTrigger.toEffect (.targetOpponentLosesLife 1)) ==
   "target opponent loses 1 life"
-#guard TriggeredAbility.resolutionPhrase { resolution := eachOpp 2 } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (eachOpp 2) } ==
   "each opponent loses 2 life"
-#guard TriggeredAbility.resolutionPhrase { resolution := perBurden } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (perBurden) } ==
   "you lose 1 life for each burden counter on this"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .loseLife .perBurden .eachOpponent } == "lose life"
+    { resolution? := some (.loseLife .perBurden .eachOpponent) } == "lose life"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .loseLife .perOtherCreature } == "lose life"
+    { resolution? := some (.loseLife .perOtherCreature) } == "lose life"
 
 #guard TriggeredAbility.toNotation .onYouSacrificeTokenOppLosesLife ==
   "Whenever you sacrifice a token, target opponent loses 1 life."

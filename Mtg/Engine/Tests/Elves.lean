@@ -618,7 +618,7 @@ any-color mana equal to power. -/
 #guard KeywordAbility.hasVigilance woodlandWeavemaster.keywords
 #guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
 #guard woodlandWeavemaster.activatedAbilities.any fun ab =>
-  ab.mana?.any fun mp => mp.spec == .oneOf .anyColor (.objectStat .power .this)
+  ab.manaProduction?.any fun mp => mp.spec == .oneOf .anyColor (.objectStat .power .this)
 #guard woodlandWeavemaster.manaAbilities.contains (.colored .green)
 #guard woodlandWeavemaster.manaAbilities.contains (.colored .white)
 #guard !woodlandWeavemaster.manaAbilities.contains .colorless

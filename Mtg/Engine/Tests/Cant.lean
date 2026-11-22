@@ -20,7 +20,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .cantBeBlocked))
+  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.cant (.beBlocked .target)) }
 
 def spider : TriggeredAbility :=
   .onEnter Effect.enterTapOppCantUntapWhileControl
@@ -262,56 +262,48 @@ enchanted by that source, is left alone. -/
         grantedBy g "Bear" == #[] && g.log == g0.log
 
 /- Printed phrases stay with the combination that produces them. -/
-#guard TriggeredAbility.TriggerResolution.ofPermanent .cantBeBlocked ==
-  unblockable
-#guard TriggeredAbility.TriggerResolution.ofSource .cantBeBlocked ==
-  .cant (.beBlocked .source)
-#guard TriggeredAbility.TriggerResolution.ofEnchanted .cantBeBlocked ==
-  .cant (.beBlocked .enchanted)
-#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .cantBeBlocked ==
-  .cant (.beBlocked (.target .whileSource))
 #guard (SharedTrigger.toEffect (.enter .tapOppCantUntapWhileControl)).resolution ==
   tapThenFrozen
 #guard TriggeredAbility.resolution spider == tapThenFrozen
 
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution := unblockable } ==
+    { targeting := .of .creature, resolution? := some (unblockable) } ==
   "target creature can't be blocked this turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .cant (.beBlocked .source) } ==
+    { resolution? := some (.cant (.beBlocked .source)) } ==
   "this creature can't be blocked this turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .cant (.beBlocked .enchanted) } ==
+    { resolution? := some (.cant (.beBlocked .enchanted)) } ==
   "enchanted creature can't be blocked this turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .cant (.beBlocked (.target .whileSource)) } ==
+    { resolution? := some (.cant (.beBlocked (.target .whileSource))) } ==
   "that creature can't be blocked this turn"
-#guard TriggeredAbility.resolutionPhrase { resolution := frozen } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (frozen) } ==
   "that creature can't become untapped for as long as you control this creature"
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .oppCreature, resolution := tapThenFrozen } ==
+    { targeting := .of .oppCreature, resolution? := some (tapThenFrozen) } ==
   "tap target creature an opponent controls. That creature can't become untapped for as long as you control this creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .cant (.untapWhileYouControl .source) } == "can't"
+    { resolution? := some (.cant (.untapWhileYouControl .source)) } == "can't"
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
-    resolution := .sequence
-      [.attach .source .target, .cant (.beBlocked (.target .whileSource))] } ==
+    resolution? := some (.sequence
+      [.attach .source .target, .cant (.beBlocked (.target .whileSource))]) } ==
   "attach it to target creature you control. That creature can't be blocked this turn"
 
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature can't be blocked this turn."
 #guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .cantBeBlocked))) ==
+    (TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.cant (.beBlocked .source)) }) ==
   "When this permanent enters, this creature can't be blocked this turn."
-#guard TriggeredAbility.toNotation (.onEnterAttachThen .cantBeBlocked) ==
+#guard TriggeredAbility.toNotation (.onEnterAttachThen Instruction.cantBeBlocked) ==
   "When this Equipment enters, attach it to target creature you control. That creature can't be blocked this turn."
 #guard TriggeredAbility.toNotation spider ==
   "When this permanent enters, tap target creature an opponent controls. That creature can't become untapped for as long as you control this creature."
 
 /- A recipient this effect does not name can't be blocked and changes nothing. -/
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .cant (.beBlocked .hand) } == "can't"
+    { resolution? := some (.cant (.beBlocked .hand)) } == "can't"
 #guard
   let g := step board (.cant (.beBlocked .hand)) (some (pid board "Titan"))
   !blocked g "Titan" && g.log == board.log

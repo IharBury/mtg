@@ -98,8 +98,8 @@ def jaceFive : Game := afterDraw.empowerJace ⟨0⟩ 5
 #guard Game.jacePlaneswalkerToken.colors == ColorSet.singleton .blue
 #guard Game.jacePlaneswalkerToken.activatedAbilities.map (·.cost.loyalty) ==
   #[some (.minus 1), some (.minus 3)]
-#guard Game.jacePlaneswalkerToken.activatedAbilities.map (·.effect.resolution) ==
-  #[.surveil 1, .draw 1]
+#guard Game.jacePlaneswalkerToken.activatedAbilities.map (·.effect.body) ==
+  #[Instruction.surveilFixed 1, Instruction.drawFixed 1]
 #guard (jaceTokenOf jaceFive).status.loyaltyCounters == 5
 #guard (fraRuling 732).comment.contains "create a blue Jace planeswalker token with 0 loyalty"
 
@@ -177,7 +177,7 @@ ability (CR 605.1a), so it uses the stack and follows loyalty timing. -/
 #guard
   let ab : ActivatedAbility :=
     { cost := CostSpec.ofItems #[.loyalty (.plus 1)]
-      effect := { resolution := .addMana #[.colored .red], phrase := "Add {R}" } }
+      effect := Effect.addMana #[.colored .red] }
   !Game.isManaActivation ab
 #guard (fraRuling 856).comment.contains "Loyalty abilities can't be mana abilities"
 #guard (fraRuling 862).comment.contains "Loyalty abilities can't be mana abilities"
@@ -255,7 +255,7 @@ def ascentFizzled : Game :=
 an activated ability (Theorist's Sanctum). -/
 #guard mindseekerOculus.triggeredAbilities.map toString ==
   #["When this permanent enters, empower Jace 4."]
-#guard theoristsSanctum.activatedAbilities.map (·.effect.resolution) == #[.empowerJace 2]
+#guard theoristsSanctum.activatedAbilities.map (·.effect.body) == #[Instruction.empowerJace 2]
 
 def oculusEntered : Game := (enterPermanent afterDraw mindseekerOculus ⟨0⟩).receivePriority ⟨0⟩
 

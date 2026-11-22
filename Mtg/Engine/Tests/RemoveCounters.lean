@@ -258,16 +258,16 @@ not announced clears the note and removes nothing. -/
 #guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
   .sequence [.tap .enchanted, allFromEnchanted]
 
-#guard TriggeredAbility.resolutionPhrase { resolution := hopeFromSource } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (hopeFromSource) } ==
   "remove a hope counter from this"
-#guard TriggeredAbility.resolutionPhrase { resolution := allFromEnchanted } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (allFromEnchanted) } ==
   "remove all counters from enchanted creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .removeCounters .hope .enchanted } == "remove counters"
+    { resolution? := some (.removeCounters .hope .enchanted) } == "remove counters"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .removeCounters .all .source } == "remove counters"
+    { resolution? := some (.removeCounters .all .source) } == "remove counters"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .removeCounters .hope .target } == "remove counters"
+    { resolution? := some (.removeCounters .hope .target) } == "remove counters"
 #guard TriggeredAbility.resolutionPhrase
     (SharedTrigger.toEffect .removeHopeDrawSac) ==
   "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"

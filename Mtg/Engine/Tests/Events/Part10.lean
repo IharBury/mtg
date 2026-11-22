@@ -269,7 +269,7 @@ private def replayOk42i1 (gs : Array Game) : Bool :=
       (gManaOuterPrio0.snapshot p2Forest) #[.colorless] true (some 0) .none 0 false .none (wasPaused := false)
   -- (iii) Unpaused mana ability with `triggerSequenceRest` (`steps := [.gainLife (.fixed 5)]` for `p1`) and `mayThenResume`:
   let dummyTrig42 : TriggeredAbility :=
-    TriggeredAbility.mkTrigger .thisDies { resolution := .gainLife (.fixed 5), phrase := "You gain 5 life." }
+    TriggeredAbility.mkTrigger .thisDies { body := Instruction.gainLifeFixed 5, phrase := "You gain 5 life." }
   let trigSeqP1 : TriggerSequenceRest := {
     controller := p1
     ability := dummyTrig42
@@ -386,7 +386,7 @@ private def replayOk42i2 (gs : Array Game) : Bool :=
     creature "P42i2 LTBWatcher" ManaCost.empty #["Cleric"] 2 2 with
     triggeredAbilities := #[
       TriggeredAbility.mkTrigger (.permanentLeaves (.all #[.hasType .creature, .controlledBy .you]))
-        { resolution := .gainLife (.fixed 3), phrase := "You gain 3 life." }
+        { resolution? := some (.gainLife (.fixed 3)), phrase := "You gain 3 life." }
     ]
   }
 
@@ -1344,7 +1344,7 @@ private def replayOk43i2 (gs : Array Game) : Bool :=
     creature "P43i2 LTBWatcher" ManaCost.empty #["Cleric"] 2 2 with
     triggeredAbilities := #[
       TriggeredAbility.mkTrigger (.permanentLeaves (.all #[.hasType .creature, .controlledBy .you]))
-        { resolution := .gainLife (.fixed 3), phrase := "You gain 3 life." }
+        { resolution? := some (.gainLife (.fixed 3)), phrase := "You gain 3 life." }
     ]
   }
 
@@ -1727,7 +1727,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     g0.sourceStillPayable g0.proposedSpell.get!
 
   -- 4a. Resolving stack-object `forObject` priority (`resolvingAbility` / `resolvingSpell` ahead of permanent `sourceId`
-  --     in `Decisions.payGeneric` / `FraChoices.mayPaySymbolsThen` / `FrcResolve` `.nivPay`) AND `spellCast`-bounded
+  --     in `Decisions.payGeneric` / `FraChoices.mayPaySymbolsThen` / `Interpreter` `.nivPay`) AND `spellCast`-bounded
   --     `manaSpentOn`, `treasureManaSpentOn`, `legendaryManaSpentOn`, and `ancestryManaSpentOn`:
   let ancestryLandDef : CardDef := {
     name := "P43i4 PathOfAncestry"
@@ -1747,7 +1747,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     subtypes := #["Treasure"]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
-      effect := { resolution := .addMana #[.colorless], phrase := "Add {C}." }
+      effect := { Effect.addMana #[.colorless] with phrase := "Add {C}." }
     }]
   }
   let gBound0 :=
@@ -1865,19 +1865,19 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     gGySacPaid.stack.size == 1 &&
     (gGySacPaid.followMovedToZone? bfFodderId (· == .graveyard p0)).isSome
 
-  -- 4c. `Timing.isManaActivation` & `ManaAbilities` parity (`otherModes`, `fromGy`/`fromHand`, `removeStoryCounter`,
+  -- 4c. `Timing.isManaActivation` & `ManaAbilities` parity (modal activated abilities, `fromGy`/`fromHand`, `removeStoryCounter`,
   --     `powerUp` + `activationManaCost` + `powerUpActivations`, `exhaust` + `exhaustUsed`, `timing := .sorcery`, `turnLimit?`)
   --     AND CR 601.2g self-sacrificing mana abilities (`isPlainTap == false`, `manaSourcesForProposed` source reservation,
   --     and `sourceStillPayable` + `Action.pay` succeeding after sacrificing `src` to a CR 601.2g mana ability):
-  let modalAddManaAb : ActivatedAbility := {
-    cost := CostSpec.ofItems #[.tapSelf]
-    effect := { resolution := .addMana #[.colorless], phrase := "Add {C}." }
-    otherModes := #[Effect.gainLife 1]
-  }
+  let modalAddManaAb : ActivatedAbility :=
+    ActivatedAbility.mkModal (CostSpec.ofItems #[.tapSelf]) #[
+      { Effect.addMana #[.colorless] with phrase := "Add {C}." },
+      Effect.gainLife 1
+    ]
   let gyAddManaAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[.exile (.exact 1) .yourGraveyard .self]
     activeZones := #[.graveyard]
-    effect := { resolution := .addMana #[.colorless], phrase := "Add {C}." }
+    effect := { Effect.addMana #[.colorless] with phrase := "Add {C}." }
   }
   let storyPowerExhaustDef : CardDef := {
     creature "P43i4 Dynamo" ManaCost.empty #["Construct"] 2 2 with
@@ -1886,13 +1886,13 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
       { cost := CostSpec.ofItems #[.removeCounters (.exact 1) (some .story) .self]
         tag? := some .exhaust
         lifetimeLimit? := some 1
-        effect := { resolution := .addMana #[.colored .blue], phrase := "Add {U}." } },
+        effect := { Effect.addMana #[.colored .blue] with phrase := "Add {U}." } },
       -- idx 1: `powerUp` + `timing := .sorcery` mana ability costing `{2}`
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)]
         tag? := some .powerUp
         lifetimeLimit? := some 1
         timing := .sorcery
-        effect := { resolution := .addMana #[.colored .red, .colored .red, .colored .red], phrase := "Add {R}{R}{R}." } }
+        effect := { Effect.addMana #[.colored .red, .colored .red, .colored .red] with phrase := "Add {R}{R}{R}." } }
     ]
   }
   let selfSacManaAndManaAbDef : CardDef := {
@@ -1996,9 +1996,9 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.tapSelf], tag? := some .exhaust, lifetimeLimit? := some 1
-        effect := { resolution := .addMana #[.colored .blue], phrase := "Add {U}." } },
+        effect := { Effect.addMana #[.colored .blue] with phrase := "Add {U}." } },
       { cost := CostSpec.ofItems #[.tapSelf, .payLife (.const 1)]
-        effect := { resolution := .addMana #[.colored .blue], phrase := "Add {U}." } }
+        effect := { Effect.addMana #[.colored .blue] with phrase := "Add {U}." } }
     ]
   }
   let gDual0 := addPermanent g2 dualBlueDef p0 p0
@@ -2862,7 +2862,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     isToken := true
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
-      effect := { resolution := .addMana #[.colorless], phrase := "Add {C}." }
+      effect := { Effect.addMana #[.colorless] with phrase := "Add {C}." }
     }]
   }
   let morphDef : CardDef := { bear with name := "P44i4 MorphBear", keywords := #[.morph (CostSpec.ofGeneric 1)] }
@@ -2875,7 +2875,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
   let morphObj := gMorphDown.object! morphId
   let morphTurnUpIdx :=
     ((gMorphDown.activatedAbilitiesOf morphObj).findIdx?
-      (fun ab => ab.effect.resolution == .frc .turnFaceUp)).getD 0
+      (fun ab => ab.effect.body == .permanent (.turnFaceUp .this))).getD 0
   let gMorphProp := mustApply gMorphDown p0 (.activate morphId morphTurnUpIdx)
   let gMorphMana : Game :=
     match gMorphProp.activateManaAbility p0 trId 0 #[.colorless] with
@@ -2910,7 +2910,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     activatedAbilities := #[
       ActivatedAbility.manaAbility (.oneOf (.explicit #[.colored .blue]) (.const 1))
         (condition? := some ActivatedAbility.condEnteredThisTurnOrControlBasicLand),
-      { cost := CostSpec.ofItems #[.tapSelf], effect := { resolution := .addAnyColor, phrase := "Add one mana of any color." } }
+      { cost := CostSpec.ofItems #[.tapSelf], effect := { Effect.addAnyColor with phrase := "Add one mana of any color." } }
     ]
   }
   let condLandOnlyDef : CardDef := {
@@ -2943,9 +2943,9 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.tapSelf, .putCounters (.const 1) .stun .self]
-        effect := { resolution := .addAnyColorSpendOnlySubtype .elf, phrase := "Add one mana of any color. Spend this mana only to cast an Elf spell." } },
+        effect := { Effect.addAnyColorSpendOnlySubtype "Elf" with phrase := "Add one mana of any color. Spend this mana only to cast an Elf spell." } },
       { cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
-        effect := { resolution := .addMana #[.colored .black, .colored .black], phrase := "Add {B}{B}." } }
+        effect := { Effect.addMana #[.colored .black, .colored .black] with phrase := "Add {B}{B}." } }
     ]
   }
   let gStunSac0 := addPermanent (addPermanent g2 stunElfManaDef p0 p0) bear p0 p0
@@ -2978,7 +2978,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)]
-        effect := { resolution := .addAnyColor, phrase := "Add one mana of any color." } },
+        effect := { Effect.addAnyColor with phrase := "Add one mana of any color." } },
       { cost := CostSpec.ofItems #[.tapSelf], effect := Effect.gainLife 1 }
     ]
   }

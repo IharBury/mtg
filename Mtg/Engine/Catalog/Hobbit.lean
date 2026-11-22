@@ -2160,7 +2160,7 @@ that are also in the core catalog. -/
 #guard galionElvenkingsButler.toughness == some 4
 #guard woodlandWeavemaster.hasSimpleKeyword .vigilance
 #guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
-#guard woodlandWeavemaster.activatedAbilities[0]?.bind (·.mana?) ==
+#guard woodlandWeavemaster.activatedAbilities[0]?.bind (·.manaProduction?) ==
   some { spec := .oneOf .anyColor (.objectStat .power .this)
          restriction := some (.subtypeSpellOrSource .elf) }
 #guard woodlandWeavemaster.manaAbilities == #[
@@ -2181,7 +2181,7 @@ that are also in the core catalog. -/
 #guard wargTactics.isInstant
 #guard wargTactics.isModal
 #guard wargTactics.requiresTarget
-#guard wargTactics.spellModes == #[
+#guard wargTactics.modes == #[
   Effect.destroyCreatureWithFlying,
   Effect.plusOnePlusOneTrampleHexproof]
 #guard (wargTactics.summary.splitOn "Choose one").length > 1
@@ -2254,11 +2254,11 @@ that are also in the core catalog. -/
 #guard gollumTheAbandoned.activatedAbilities[0]!.isSorcerySpeed
 #guard gollumTheAbandoned.activatedAbilities[0]!.effect == Effect.returnFromGraveyardToHand
 #guard gnashingOfTeeth.isModal
-#guard gnashingOfTeeth.spellModes ==
+#guard gnashingOfTeeth.modes ==
   #[Effect.pumpAndExileIfDies (-5) (-5),
     Effect.creaturesTargetPlayerGet (-1) (-1)]
 #guard reverentHowl.isModal
-#guard reverentHowl.spellModes ==
+#guard reverentHowl.modes ==
   #[Effect.targetPlayerDrawLoseLife 2 2,
     Effect.pumpAndLifelink 2 2]
 #guard stonyVoicedGoblins.triggeredAbilities == #[.onEnterEachOpponentDiscards]

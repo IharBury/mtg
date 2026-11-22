@@ -197,143 +197,6 @@ def ManaAbilityDef.allChoicesFor (d : ManaAbilityDef)
 private def uniqMana (ts : Array ManaType) : Array ManaType :=
   ts.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
 
-private partial def manaNamedPermanents (g : Game) (o : GameObject) (controller : PlayerId) :
-    TriggeredAbility.ObjectSelector → Option (Array GameObject)
-  | .source | .sourceIfPresent | .sacrificedSource _ | .plan =>
-    some (if o.isOnBattlefield then #[o] else #[])
-  | .creaturesYouControl => some (g.creaturesControlledBy controller)
-  | .othersOfSubtype subtype =>
-    some (g.battlefield.filter (fun x =>
-      g.controlledBy x controller && x.id != o.id && g.hasSubtype x subtype))
-  | .youControl (.subtype s) =>
-    some ((g.permanentsOf controller).filter (g.hasSubtype · s))
-  | .youControl _ => some (g.creaturesControlledBy controller)
-  | .eachOther =>
-    some (g.battlefield.filter (fun x =>
-      g.isCreature x && g.controlledBy x controller && x.id != o.id))
-  | .landsYouControl => some ((g.permanentsOf controller).filter (g.isLand ·))
-  | .legendaryCreaturesYouControl =>
-    some ((g.permanentsOf controller).filter (fun x => g.isCreature x && g.isLegendary x))
-  | .planeswalkersYouControl =>
-    some ((g.permanentsOf controller).filter (g.isPlaneswalker ·))
-  | .artifact => some ((g.permanentsOf controller).filter (g.isArtifact ·))
-  | .anotherCreatureOrArtifact =>
-    some ((g.permanentsOf controller).filter (fun x =>
-      x.id != o.id && (g.isCreature x || g.isArtifact x)))
-  | .attackingCreatures => some (g.battlefield.filter (·.status.attacking))
-  | .humans =>
-    some (g.battlefield.filter (fun x =>
-      g.isCreature x && g.controlledBy x controller && g.hasSubtype x .human))
-  | .opponentsCreatures =>
-    some (g.battlefield.filter (fun x =>
-      g.isCreature x && (g.controllerOf x).any (g.isLivingOpponentOf controller ·)))
-  | .eachNonSubtypeAndOpponents subtype =>
-    some (g.battlefield.filter (fun x => g.isCreature x && !g.hasSubtype x subtype))
-  | .intersection ws =>
-    match ws with
-    | [] => some #[]
-    | w0 :: rest =>
-      rest.foldl (fun acc? w =>
-        match acc?, manaNamedPermanents g o controller w with
-        | some acc, some ys => some (acc.filter fun x => ys.any (·.id == x.id))
-        | _, _ => none) (manaNamedPermanents g o controller w0)
-  | .union ws =>
-    ws.foldl (fun acc? w =>
-      match acc?, manaNamedPermanents g o controller w with
-      | some acc, some ys =>
-        some (ys.foldl (fun a y => if a.any (·.id == y.id) then a else a.push y) acc)
-      | _, _ => none) (some #[])
-  | _ => none
-
-/-- Evaluate `amount` for a mana ability on `o` (CR 605.3b). -/
-def manaSelectorCount (g : Game) (o : GameObject) (amount : TriggeredAbility.NumberSelector)
-    (chosenX : Nat := 0) : Nat :=
-  let controller := (g.controllerOf o).getD o.owner
-  match amount with
-  | .fixed n => n.toNat
-  | .chosenX => chosenX
-  | .double | .chosenCreatureType => 0
-  | .greatestPower => (g.greatestPowerAmongCreatures controller).toNat
-  | .perLookedAt | .lastKnownPower | .thatManyLost | .spellManaValue
-  | .equalToManaSpent | .equalToTargetPower | .blueManaSymbols => 0
-  | .perOtherCreature =>
-    (g.battlefield.filter (fun c =>
-      g.isCreature c && g.controlledBy c controller && c.id != o.id)).size
-  | .perPlains => ((g.permanentsOf controller).filter (g.hasSubtype · .plains)).size
-  | .equalSourcePower => (g.power o).toNat
-  | .equalSourceToughness => (g.toughness o).toNat
-  | .subtypeCount subtype | .perSubtype subtype =>
-    ((g.permanentsOf controller).filter (g.hasSubtype · subtype)).size
-  | .discardedHand => g.handDiscardedThisWay.getD 0
-  | .greatestArtifactMv =>
-    (g.permanentsOf controller).foldl (fun acc x =>
-      if g.isArtifact x then max acc (g.objectManaValue x) else acc) 0
-  | .forEachTappedHuman => g.humansTappedThisWay
-  | .perFatGraveyard => (g.players.filter (fun pl => pl.graveyard.size >= 7)).size
-  | .perControlled ty => ((g.permanentsOf controller).filter (g.hasType · ty)).size
-  | .upToHandSize n =>
-    let cards := (g.player controller).hand.size
-    if cards < n then n - cards else 0
-  | .plusOneCounters => if o.isOnBattlefield then o.status.plusOnePlusOne else 0
-  | .forEachDestroyedThisWay => g.permanentsDestroyedThisWay
-  | .attachedEquipment => g.attachedEquipmentCount o
-  | .perBurden => o.status.burden
-  | .notedExcess => g.excessDamageThisWay
-  | .notedPower => if g.destroyedForAmassThisWay then g.amassAmountThisWay else 0
-  | .perChargeCounter =>
-    let n := if o.isOnBattlefield then o.status.charge else 0
-    if n == 0 then
-      match g.lastKnownCounterStatus? o.id with
-      | some last => last.charge
-      | none => n
-    else n
-  | .oppArtifacts =>
-    (g.battlefield.filter (fun x =>
-      g.isArtifact x && (g.controllerOf x).any (g.isLivingOpponentOf controller ·))).size
-  | .damagedPlayerArtifacts =>
-    match g.loggedLastCombatDamagePlayer.orElse (fun _ => g.firstLivingOpponent? controller) with
-    | some pid => ((g.permanentsOf pid).filter (g.isArtifact ·)).size
-    | none => 0
-  | .cardsDrawnThisTurn => g.loggedDraws controller
-  | .libraryCards => (g.player controller).library.size
-  | .count what =>
-    match what with
-    | .questCounters => if o.isOnBattlefield then o.status.quest else 0
-    | .creatureCardsInGraveyard =>
-      ((g.player controller).graveyard.filter (fun id => (g.findObject? id).any g.isCreature)).size
-    | .harnessedSource => if o.status.harnessed then 1 else 0
-    | _ => (manaNamedPermanents g o controller what).map (·.size) |>.getD 0
-
-/-- Legacy fallback mana output for activated abilities whose effect is encoded
-as a `Resolution.add*` variant rather than `ActivatedAbility.mana?`. -/
-private def legacyResolutionManaOutput (g : Game) (o : GameObject) (r : Resolution)
-    (chosenX : Nat := 0) :
-    Option (ManaOutput × Option ManaSpendRestriction) :=
-  let controller := (g.controllerOf o).getD o.owner
-  let power := (g.power o).toNat
-  match r with
-  | .addMana types amount =>
-    let n := g.manaSelectorCount o amount (chosenX := chosenX)
-    some (.fixed (types.foldl (fun acc t => acc ++ Array.replicate n t) #[]), none)
-  | .addAnyColor => some (.oneOf anyColorMana 1, none)
-  | .addAnyColorSpendOnlySubtype s => some (.oneOf anyColorMana 1, some (.subtypeSpellOrSource s))
-  | .addAnyColorSpendOnlyArtifactSpell => some (.oneOf anyColorMana 1, some .artifactSpell)
-  | .addTwoAnyColorCreatureSources => some (.oneOf anyColorMana 2, some .creatureSource)
-  | .addBlueCantNonartifact => some (.fixed #[.colored .blue], some .cantNonartifact)
-  | .addAnyColorEqualToSourcePower => some (.oneOf anyColorMana power, none)
-  | .addFourAnyCombination => some (.combination anyColorMana 4, none)
-  | .addTwoAnyColorEquipment => some (.oneOf anyColorMana 2, some .equipmentOrEquip)
-  | .addRedPerOppArtifacts ty =>
-    let n :=
-      (g.battlefield.filter (fun x =>
-        g.hasType x ty && (g.controllerOf x).any (g.isLivingOpponentOf controller ·))).size
-    some (.fixed (Array.replicate n (.colored .red)), none)
-  | .addFourManaDragonSpells n subtype =>
-    some (.combination anyColorMana n, some (.subtypeSpell subtype))
-  | .addBlueNoncreatureOnly =>
-    some (.fixed #[.colored .blue], some .noncreatureSpell)
-  | _ => none
-
 /-- Mana a land can produce from its evaluated Layer-6 battlefield mana abilities
 (CR 106.7 / 305.6 / 305.7 / 605.1a / 613.1f). Abilities that themselves query
 "could produce" (`ManaSpec.usesLandsCouldProduce`) are skipped so two such
@@ -348,20 +211,13 @@ def intrinsicLandMana (g : Game) (o : GameObject) : Array ManaType :=
       else
         let maxX := if ab.cost.removeAnyNumberPlusOne then o.status.plusOnePlusOne else 0
         let env : EvalEnv := { controller := p, sourceId := some o.id, chosenX := maxX }
-        let acc :=
-          match ab.mana? with
+        ab.allModes.foldl (fun acc m =>
+          match m.manaProduction? with
           | some mp =>
             if mp.spec.usesLandsCouldProduce then acc
             else
               let out := EvalExpr.evalManaSpec g env (fun _ _ => #[]) mp.spec
               acc ++ out.producibleTypes
-          | none =>
-            match legacyResolutionManaOutput g o ab.effect.resolution (chosenX := maxX) with
-            | some (out, _) => acc ++ out.producibleTypes
-            | none => acc
-        ab.otherModes.foldl (fun acc m =>
-          match legacyResolutionManaOutput g o m.resolution (chosenX := maxX) with
-          | some (out, _) => acc ++ out.producibleTypes
           | none => acc) acc) #[]
     uniqMana produced
 
@@ -379,35 +235,30 @@ def evalManaPalette (g : Game) (env : EvalEnv) (palette : ManaPoolPalette) : Arr
 def evalManaSpec (g : Game) (env : EvalEnv) (spec : ManaSpec) : ManaOutput :=
   EvalExpr.evalManaSpec g env Game.landsCouldProduce spec
 
-/-- Evaluate mode `modeIdx` of an activated mana ability `ab` on `o` at `chosenX`. -/
+/-- Evaluate one mode of an activated mana ability on `o` at `chosenX`. -/
 private def evalActivatedManaMode (g : Game) (o : GameObject) (p : PlayerId)
-    (ab : ActivatedAbility) (modeIdx : Nat) (mode : Effect) (chosenX : Nat := 0) :
+    (mode : Effect) (chosenX : Nat := 0) :
     ManaAbilityMode :=
-  if modeIdx == 0 then
-    match ab.mana? with
-    | some mp =>
-      let env : EvalEnv := { controller := p, sourceId := some o.id, chosenX := chosenX }
-      { effect := mode
-        output? := some (g.evalManaSpec env mp.spec)
-        restriction := mp.restriction
-        riders := mp.allRiders
-        damageYou := mp.damageYou }
-    | none =>
-      match legacyResolutionManaOutput g o mode.resolution (chosenX := chosenX) with
-      | some (out, r) =>
-        { effect := mode
-          output? := some out
-          restriction := r
-          riders := match r with | some rr => rr.riders | none => #[] }
-      | none => { effect := mode }
-  else
-    match legacyResolutionManaOutput g o mode.resolution (chosenX := chosenX) with
-    | some (out, r) =>
-      { effect := mode
-        output? := some out
-        restriction := r
-        riders := match r with | some rr => rr.riders | none => #[] }
-    | none => { effect := mode }
+  match mode.manaProduction? with
+  | some mp =>
+    let env : EvalEnv := { controller := p, sourceId := some o.id, chosenX := chosenX }
+    { effect := mode
+      output? := some (g.evalManaSpec env mp.spec)
+      restriction := mp.restriction
+      riders := mp.allRiders
+      damageYou := mp.damageYou }
+  | none =>
+    match mode.resolution? with
+    | some (.addMana ts amt) =>
+      let n : Nat :=
+        match amt with
+        | .fixed k => k.toNat
+        | .perChargeCounter => o.status.charge
+        | .chosenX => chosenX
+        | _ => 0
+      let units := (Array.replicate n ts).foldl (· ++ ·) #[]
+      { effect := mode, output? := some (.fixed units) }
+    | _ => { effect := mode }
 
 /-- Build a `ManaAbilityDef` from an evaluated Layer-6 `ActivatedAbility`
 satisfying CR 605.1a (`isManaActivation`). Always returns `some` whenever
@@ -449,10 +300,10 @@ def manaAbilityDefOfActivated (g : Game) (o : GameObject) (i : Nat)
       isBoast := ab.isBoast
       sourceAbility := some ab
     }
-    if !ab.otherModes.isEmpty then
-      let rawModes := #[ab.effect] ++ ab.otherModes
-      let modes := (List.range rawModes.size).toArray.map fun k =>
-        evalActivatedManaMode g o p ab k rawModes[k]! (chosenX := maxX)
+    if ab.isModal then
+      let rawModes := ab.allModes
+      let modes := rawModes.map fun mode =>
+        evalActivatedManaMode g o p mode (chosenX := maxX)
       let manaOuts := modes.filterMap (·.output?)
       let summaryOut : ManaOutput :=
         if manaOuts.size == 1 then manaOuts[0]!
@@ -461,7 +312,7 @@ def manaAbilityDefOfActivated (g : Game) (o : GameObject) (i : Nat)
           if ts.isEmpty then .fixed #[] else .oneOf ts 1
       some { base with output := summaryOut, modeChoices := modes }
     else
-      let m0 := evalActivatedManaMode g o p ab 0 ab.effect (chosenX := maxX)
+      let m0 := evalActivatedManaMode g o p ab.effect (chosenX := maxX)
       match m0.output? with
       | some out =>
         some { base with
@@ -1201,29 +1052,29 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     if !g.controlledBy o p || !o.isOnBattlefield then
       throw "You don't control that permanent"
   let maxX := if d.removeAnyNumberPlusOne && o.isOnBattlefield then o.status.plusOnePlusOne else 0
-  let findModeX (ab : ActivatedAbility) (modeIdx : Nat) (mode : Effect) :
+  let findModeX (mode : Effect) :
       Option (Nat × ManaAbilityMode) :=
     if d.removeAnyNumberPlusOne then
       (List.range (maxX + 1)).findSome? fun x =>
-        let m := evalActivatedManaMode g o p ab modeIdx mode (chosenX := x)
+        let m := evalActivatedManaMode g o p mode (chosenX := x)
         if m.output?.any (·.allows mana) then some (x, m) else none
     else
-      let m := evalActivatedManaMode g o p ab modeIdx mode (chosenX := 0)
+      let m := evalActivatedManaMode g o p mode (chosenX := 0)
       if m.output?.any (·.allows mana) then some (0, m) else none
   let (effRestriction, effRiders, effDamageYou, effExtraEffect?, removePlusOnesCount) ←
     if !d.modeChoices.isEmpty then
       match d.sourceAbility with
       | some ab =>
-        let rawModes := #[ab.effect] ++ ab.otherModes
+        let rawModes := ab.allModes
         if !mana.isEmpty then
-          match (List.range rawModes.size).findSome? (fun k => findModeX ab k rawModes[k]!) with
+          match rawModes.findSome? findModeX with
           | some (x, m) => pure (m.restriction, m.riders, m.damageYou, none, x)
           | none => throw s!"{oname}'s mana ability can't add that mana"
         else
           match d.modeChoices.find? (·.output?.isNone) with
           | some m => pure (none, #[], 0, some m.effect, 0)
           | none =>
-            match (List.range rawModes.size).findSome? (fun k => findModeX ab k rawModes[k]!) with
+            match rawModes.findSome? findModeX with
             | some (x, m) => pure (m.restriction, m.riders, m.damageYou, none, x)
             | none => throw s!"{oname}'s mana ability can't add that mana"
       | none =>
@@ -1245,7 +1096,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     else if d.removeAnyNumberPlusOne then
       match d.sourceAbility with
       | some ab =>
-        match findModeX ab 0 ab.effect with
+        match findModeX ab.effect with
         | some (x, m) => pure (m.restriction, m.riders, m.damageYou, none, x)
         | none => throw s!"{oname}'s mana ability can't add that mana"
       | none =>

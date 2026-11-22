@@ -21,7 +21,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .putOnTopOfLibrary))
+  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.putOnLibrary .top .target) }
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -280,58 +280,50 @@ go on the bottom. The announced permanent goes on top. -/
 #guard (.putOnLibrary .top : TriggeredAbility.TriggerResolution) ==
   .putOnLibrary .top .target
 #guard (.putOnLibrary : TriggeredAbility.TriggerResolution) == onTop
-#guard TriggeredAbility.TriggerResolution.ofPermanent .putOnTopOfLibrary == onTop
-#guard TriggeredAbility.TriggerResolution.ofPermanent .putOnBottomOfLibrary == onBottom
-#guard TriggeredAbility.TriggerResolution.ofSource .putOnBottomOfLibrary ==
-  .putOnLibrary .bottom .source
-#guard TriggeredAbility.TriggerResolution.ofEnchanted .putOnTopOfLibrary ==
-  .putOnLibrary .top .enchanted
-#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .putOnBottomOfLibrary ==
-  .putOnLibrary .bottom (.target .whileSource)
 #guard TriggeredAbility.resolution .onEnterDrawThenBottomIfNoLegendary ==
   .sequence [.draw (.fixed 1), .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) fromHand]
 
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution := onTop } ==
+    { targeting := .of .creature, resolution? := some (onTop) } ==
   "target creature's owner puts it on top of their library"
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution := onBottom } ==
+    { targeting := .of .creature, resolution? := some (onBottom) } ==
   "target creature's owner puts it on the bottom of their library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .putOnLibrary .top .source } ==
+    { resolution? := some (.putOnLibrary .top .source) } ==
   "this creature's owner puts it on top of their library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .putOnLibrary .bottom .enchanted } ==
+    { resolution? := some (.putOnLibrary .bottom .enchanted) } ==
   "enchanted creature's owner puts it on the bottom of their library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .putOnLibrary .top (.target .whileSource) } ==
+    { resolution? := some (.putOnLibrary .top (.target .whileSource)) } ==
   "that creature's owner puts it on top of their library"
-#guard TriggeredAbility.resolutionPhrase { resolution := fromHand } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (fromHand) } ==
   "put a card from your hand on the bottom of your library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) fromHand } ==
+    { resolution? := some (.«if» (.not (.atLeast (.count .legendaryCreaturesYouControl) (.fixed 1))) fromHand) } ==
   "if you don't control a legendary creature, put a card from your hand on the bottom of your library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .putOnLibrary .top .cardFromHand } == "put on library"
+    { resolution? := some (.putOnLibrary .top .cardFromHand) } == "put on library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .putOnLibrary .bottom .cause } == "put on library"
+    { resolution? := some (.putOnLibrary .bottom .cause) } == "put on library"
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
-    resolution := .sequence
-      [.attach .source .target, .putOnLibrary .bottom (.target .whileSource)] } ==
+    resolution? := some (.sequence
+      [.attach .source .target, .putOnLibrary .bottom (.target .whileSource)]) } ==
   "attach it to target creature you control. That creature's owner puts it on the bottom of their library"
 
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature's owner puts it on top of their library."
 #guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .putOnBottomOfLibrary))) ==
+    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.putOnLibrary .bottom .target) }) ==
   "When this permanent enters, target creature's owner puts it on the bottom of their library."
 #guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .putOnTopOfLibrary))) ==
+    (TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.putOnLibrary .top .source) }) ==
   "When this permanent enters, this creature's owner puts it on top of their library."
-#guard TriggeredAbility.toNotation (.onEnterEnchanted .putOnBottomOfLibrary) ==
+#guard TriggeredAbility.toNotation (.onEnterEnchanted (fun o => .moveZone o (.library .owner .bottom) .put {})) ==
   "When this Aura enters, enchanted creature's owner puts it on the bottom of their library."
-#guard TriggeredAbility.toNotation (.onEnterAttachThen .putOnTopOfLibrary) ==
+#guard TriggeredAbility.toNotation (.onEnterAttachThen (fun o => .moveZone o (.library .owner .top) .put {})) ==
   "When this Equipment enters, attach it to target creature you control. That creature's owner puts it on top of their library."
 #guard TriggeredAbility.toNotation .onEnterDrawThenBottomIfNoLegendary ==
   "When this permanent enters, draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library."

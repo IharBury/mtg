@@ -109,7 +109,7 @@ target is chosen then, and only that creature is dealt damage. -/
   let g := step (g0.change (.equipmentAttachedHost (some alphaId))) hostDamage
   match (g.object! g.stack.back!.objectId).abilityEffect with
   | some e =>
-    e.resolution == .damageEqualSourcePower && e.allowsZeroTargets &&
+    e.body == .damage (.deal .this (.objects (.target 0)) (.objectStat .power .this) {}) && e.allowsZeroTargets &&
       e.phrase == "Alpha deals damage equal to its power to up to one target creature" &&
       (g.object! g.stack.back!.objectId).sourceId == some alphaId
   | none => false
@@ -178,23 +178,23 @@ other creature chosen, has nothing to fight. -/
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard (.fight : TriggeredAbility.TriggerResolution) == sourceFight
-#guard TriggeredAbility.resolutionPhrase { resolution := .fight } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.fight) } ==
   "this fights up to one other target creature"
-#guard TriggeredAbility.resolutionPhrase { resolution := sourceFight } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (sourceFight) } ==
   "this fights up to one other target creature"
-#guard TriggeredAbility.resolutionPhrase { resolution := hostDamage } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (hostDamage) } ==
   "that creature deals damage equal to its power to up to one target creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .«if» .equipmentAttached hostDamage } ==
+    { resolution? := some (.«if» .equipmentAttached hostDamage) } ==
   "that creature deals damage equal to its power to up to one target creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .sequence [.attach .anyYouControl .target,
-        .«if» .equipmentAttached hostDamage] } ==
+    { resolution? := some (.sequence [.attach .anyYouControl .target,
+        .«if» .equipmentAttached hostDamage]) } ==
   "attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .fight .source .reflexive } == "fight"
+    { resolution? := some (.fight .source .reflexive) } == "fight"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .fight .equipmentHost .mutual } == "fight"
+    { resolution? := some (.fight .equipmentHost .mutual) } == "fight"
 #guard TriggeredAbility.resolution (.onEnter Effect.enterFightUpToOne) == .fight
 #guard TriggeredAbility.resolution .onEnterAttachEquipmentThenFight ==
   .sequence [.attach .anyYouControl .target, .«if» .equipmentAttached hostDamage]

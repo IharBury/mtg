@@ -485,8 +485,8 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
               if o.isOnBattlefield then
                 let records :=
                   g.isCreature o && (abilityId.bind g.findObject?).any (fun ab =>
-                    (ab.abilityEffect.map (·.resolution)) ==
-                      some (.sequence [.drawEqualToLastKnownPower, .discard (.cards 1)]))
+                    (ab.abilityEffect.map (·.body)) ==
+                      some Effect.drawEqualSacrificedPowerThenDiscard.body)
                 let pw := g.power o
                 let oName := g.name o
                 g := g.sacrificeToGraveyard o s!"{name} sacrifices {oName}"

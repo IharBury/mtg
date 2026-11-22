@@ -37,10 +37,9 @@ import Mtg.Engine.Game.ResolutionEffects
 import Mtg.Engine.Game.ModeledTriggers
 import Mtg.Engine.Game.FraHelpers
 import Mtg.Engine.Game.FraAbilities
-import Mtg.Engine.Game.FraResolve
-import Mtg.Engine.Game.EffectResolution
 import Mtg.Engine.Game.CastExtras
-import Mtg.Engine.Game.Chapters
+import Mtg.Engine.Game.ResolutionCompat
+import Mtg.Engine.Game.Interpreter
 import Mtg.Engine.Game.TriggeredAbilities
 import Mtg.Engine.Game.SpellResolution
 import Mtg.Engine.Game.Combat
@@ -177,9 +176,9 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `ResolutionHelpers`: Resolution target helpers (CR 608.2b)
 - `ResolutionEffects`: Named resolution effects
 - `ModeledTriggers`: Modeled trigger resolution
-- `EffectResolution`: Unified effect resolution (CR 608)
 - `CastExtras`: Optional costs, cascade, and the Ring
-- `Chapters`: Saga chapter resolution (CR 714.2)
+- `ResolutionCompat`: Phase-9 legacy continuation loops
+- `Interpreter`: Unified `Instruction` & `stepEnv` interpreter (CR 608 / 614.6 / 714.2)
 - `TriggeredAbilities`: Triggered-ability resolution (CR 603)
 - `SpellResolution`: Spell resolution (CR 608)
 - `Combat`: Combat (CR 506–510)
