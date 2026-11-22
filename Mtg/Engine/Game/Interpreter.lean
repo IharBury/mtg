@@ -2293,24 +2293,23 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
           else
             ctx := { ctx with oneShotEffectId := ⟨0⟩ }
           queue := #[body]
-        | .forEachPlayerRest players body =>
+        | .forEachPlayerRest v players body =>
           match players[0]? with
           | none => pure ()
           | some p =>
             let rem := players.extract 1 players.size
-            -- Note: binding `v` was encoded via `bindChosenAndRun` below; `forEachPlayerRest` carries next players.
             if !rem.isEmpty then
-              stack := stack.push (.forEachPlayerRest rem body)
-            g := g.change (.bindStepOutcome ⟨0⟩ { players := #[p], succeeded := true })
+              stack := stack.push (.forEachPlayerRest v rem body)
+            g := g.change (.bindStepOutcome v { players := #[p], succeeded := true })
             queue := #[body]
-        | .forEachObjectRest objects body =>
+        | .forEachObjectRest v objects body =>
           match objects[0]? with
           | none => pure ()
           | some oid =>
             let rem := objects.extract 1 objects.size
             if !rem.isEmpty then
-              stack := stack.push (.forEachObjectRest rem body)
-            g := g.change (.bindStepOutcome ⟨0⟩ { objects := #[oid], succeeded := true })
+              stack := stack.push (.forEachObjectRest v rem body)
+            g := g.change (.bindStepOutcome v { objects := #[oid], succeeded := true })
             queue := #[body]
         | .branchOnChoice onYes onNo =>
           -- Used when an external choice records a boolean in `stepEnv`
@@ -2548,6 +2547,17 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                     (.battlefieldTappedBeholdUntap sub))
                 | _ => (false, g)
               else (false, g)
+            | .moveZone (.inZones .battlefield (.hasType .creature)) .exile .exile _,
+              .seq #[
+                .forEach (.eachPlayer .any) v1
+                  (.moveZone (.inZones (.handOf (.stepPlayers v2)) (.hasType .creature))
+                    (.battlefield (.player (.stepPlayers v3))) .put { choice? := some { count := .anyNumber, .. }, .. }),
+                .moveZone (.stepObjects v0) (.hand .owner) .put _,
+                .installEffect (.applyReplacement .untilEndOfTurn .exileOnLeaveStack)
+              ] =>
+              if v == v0 && v1 == v2 && v2 == v3 then
+                (true, g.applyWorldsWithinWorlds ctx.controller (ctx.sourceId.orElse (fun _ => g.resolvingSpell)))
+              else (false, g)
             | _, _ => (false, g)
           if handledSpecial.1 then
             g := handledSpecial.2
@@ -2610,20 +2620,14 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               if paused then return g'
               g := g'
             | none =>
-              if v == ⟨0⟩ then
-                match ps[0]? with
-                | none => queue := #[]
-                | some p0 =>
-                  let rem := ps.extract 1 ps.size
-                  if !rem.isEmpty then
-                    stack := stack.push (.forEachPlayerRest rem body)
-                  g := g.change (.bindStepOutcome v { players := #[p0], succeeded := true })
-                  queue := #[body]
-              else
-                for p in ps do
-                  g := g.change (.bindStepOutcome v { players := #[p], succeeded := true })
-                  g := g.resumeInterpreter { ctx, queue := #[body], stack := #[] }
-                queue := #[]
+              match ps[0]? with
+              | none => queue := #[]
+              | some p0 =>
+                let rem := ps.extract 1 ps.size
+                if !rem.isEmpty then
+                  stack := stack.push (.forEachPlayerRest v rem body)
+                g := g.change (.bindStepOutcome v { players := #[p0], succeeded := true })
+                queue := #[body]
           | .eachObject oe =>
             let oids := resolveObjectIds g env oe
             let batchCopy? : Option (PlayerExpr × Array CopyModification) :=
@@ -2656,20 +2660,14 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               if paused then return g'
               g := g'
             | none =>
-              if v == ⟨0⟩ then
-                match oids[0]? with
-                | none => queue := #[]
-                | some o0 =>
-                  let rem := oids.extract 1 oids.size
-                  if !rem.isEmpty then
-                    stack := stack.push (.forEachObjectRest rem body)
-                  g := g.change (.bindStepOutcome v { objects := #[o0], succeeded := true })
-                  queue := #[body]
-              else
-                for oid in oids do
-                  g := g.change (.bindStepOutcome v { objects := #[oid], succeeded := true })
-                  g := g.resumeInterpreter { ctx, queue := #[body], stack := #[] }
-                queue := #[]
+              match oids[0]? with
+              | none => queue := #[]
+              | some o0 =>
+                let rem := oids.extract 1 oids.size
+                if !rem.isEmpty then
+                  stack := stack.push (.forEachObjectRest v rem body)
+                g := g.change (.bindStepOutcome v { objects := #[o0], succeeded := true })
+                queue := #[body]
           | .eachTargetSlot =>
             queue := #[body]
           | .repeatTimes cntExpr =>

@@ -415,4 +415,71 @@ private def basicIsland : CardDef :=
 
   drawLifeOk && artScryOk && payAstOk && replayOk #[g1, gArt1]
 
+/-! ## 9. `Instruction.forEach` pause/resume with non-zero `VarId` & `Effect.worldsWithinWorlds` -/
+
+#guard
+  -- 9a. `.forEach (.eachPlayer .any) ⟨2⟩` pausing on interactive `Pending.chooseDiscard`
+  --     for each player in APNAP order, then resuming the trailing instruction after the loop.
+  let eachDiscardThenGain : Effect := {
+    body := .seq #[
+      .forEach (.eachPlayer .any) ⟨2⟩ (Instruction.discardFixed 1 (.stepPlayers ⟨2⟩)),
+      Instruction.gainLifeFixed 4
+    ]
+  }
+  let g0 :=
+    insertObject (insertObject (insertObject (insertObject (emptyHand (emptyHand afterDraw p0) p1)
+      bearDef p0 (.hand p0)) elfDef p0 (.hand p0))
+      bearDef p1 (.hand p1)) elfDef p1 (.hand p1)
+  let gAsk0 := g0.applyEffect p0 eachDiscardThenGain #[]
+  let ask0Ok := match gAsk0.pending with | .chooseDiscardCard q _ => q == p0 | _ => false
+  let gAsk1 := mustApply gAsk0 p0 (.discard (gAsk0.player p0).hand[0]!)
+  let ask1Ok := match gAsk1.pending with | .chooseDiscardCard q _ => q == p1 | _ => false
+  let gDone := mustApply gAsk1 p1 (.discard (gAsk1.player p1).hand[0]!)
+  let forEachPlayerOk :=
+    ask0Ok && ask1Ok &&
+    gDone.pending == .none &&
+    (gDone.player p0).hand.size == 1 &&
+    (gDone.player p1).hand.size == 1 &&
+    (gDone.player p0).life == 24
+
+  -- 9b. `.forEach (.eachObject ...) ⟨2⟩` with non-zero `VarId` across multiple objects.
+  let eachCreatureCounter : Effect := {
+    body := .forEach (.eachObject (.inZones .battlefield (.hasType .creature))) ⟨2⟩
+      (Instruction.putPlusOne (.stepObjects ⟨2⟩) 1)
+  }
+  let gObj0 := addPermanent (addPermanent afterDraw bearDef p0 p0) elfDef p1 p1
+  let gObj1 := gObj0.applyEffect p0 eachCreatureCounter #[]
+  let forEachObjOk :=
+    (gObj1.permanentsOf p0).all (fun o => !gObj1.isCreature o || o.status.plusOnePlusOne == 1) &&
+    (gObj1.permanentsOf p1).all (fun o => !gObj1.isCreature o || o.status.plusOnePlusOne == 1)
+
+  -- 9c. `Effect.worldsWithinWorlds` resolved directly via `applyEffect` opens APNAP
+  --     `FraChoice.worldsPutCreatures` prompts, enters chosen creatures simultaneously,
+  --     and returns the initially exiled battlefield creature to its owner's hand.
+  let gW0 :=
+    insertObject (insertObject
+      (addPermanent (emptyHand (emptyHand afterDraw p0) p1) bearDef p0 p0)
+      elfDef p0 (.hand p0))
+      elfDef p1 (.hand p1)
+  let gWAsk0 := gW0.applyEffect p0 Effect.worldsWithinWorlds #[]
+  let wAsk0Ok := match gWAsk0.pending with
+    | .fraChoice q (.worldsPutCreatures ..) => q == p0
+    | _ => false
+  let p0Elf := (gWAsk0.player p0).hand[0]!
+  let gWAsk1 := mustApply gWAsk0 p0 (.choosePermanents #[p0Elf])
+  let wAsk1Ok := match gWAsk1.pending with
+    | .fraChoice q (.worldsPutCreatures ..) => q == p1
+    | _ => false
+  let p1Elf := (gWAsk1.player p1).hand[0]!
+  let gWDone := mustApply gWAsk1 p1 (.choosePermanents #[p1Elf])
+  let worldsOk :=
+    wAsk0Ok && wAsk1Ok &&
+    gWDone.pending == .none &&
+    (gWDone.permanentsOf p0).any (·.name == elfDef.name) &&
+    (gWDone.permanentsOf p1).any (·.name == elfDef.name) &&
+    (gWDone.player p0).hand.any (fun id => (gWDone.object! id).name == bearDef.name)
+
+  forEachPlayerOk && forEachObjOk && worldsOk && replayOk #[gAsk0, gAsk1, gDone, gObj1, gWDone]
+
 end Mtg.Engine.Tests.InterpreterSuite
+

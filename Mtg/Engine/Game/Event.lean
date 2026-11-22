@@ -1569,10 +1569,10 @@ inductive InterpCont where
   since `startEventIdx` filtered by `stepEffectId`, bind `v`, then run `body`. -/
   | bindClose (v : VarId) (startEventIdx : Nat) (stepEffectId : EffectId)
       (body : Instruction) (extraOverride? : Option StepOutcome := none)
-  /-- Remaining players in `.forEachPlayer` (APNAP order). -/
-  | forEachPlayerRest (players : Array PlayerId) (body : Instruction)
-  /-- Remaining objects in `.forEachObject`. -/
-  | forEachObjectRest (objects : Array ObjectId) (body : Instruction)
+  /-- Remaining players in `.forEachPlayer` (APNAP order), bound to `v`. -/
+  | forEachPlayerRest (v : VarId) (players : Array PlayerId) (body : Instruction)
+  /-- Remaining objects in `.forEachObject`, bound to `v`. -/
+  | forEachObjectRest (v : VarId) (objects : Array ObjectId) (body : Instruction)
   /-- Run `onYes` or `onNo` after a `.optional` / `.unlessPays` choice. -/
   | branchOnChoice (onYes onNo : Instruction)
   /-- Run `body` with `v` bound to the chosen subtype/parity/keywords/objects/players. -/
