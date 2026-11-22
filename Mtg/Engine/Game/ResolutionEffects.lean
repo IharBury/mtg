@@ -400,7 +400,7 @@ def theVoidToken : CardDef := (tokenPrinted? .theVoid).getD default
 
 def galactusAttackTrigger : Effect := {
   targeting := .of .land
-  resolution := .onPermanent .destroy
+  body := Instruction.destroy (.target 0)
   phrase := "Whenever Galactus attacks, destroy target land."
 }
 
@@ -637,7 +637,7 @@ def queueFollowupReflexive (g : Game) (controller : PlayerId) (sourceId : Option
   else
     let src := g.abilitySourceFor controller sourceId
     let effect : Effect := {
-      resolution := .draw 0
+      body := .noop
       phrase := "when you do, that ability triggers" }
     let marker : TriggeredAbility := { word := .when, pattern := .thisEnters, effect }
     let eventCause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := some controller)
@@ -682,7 +682,7 @@ def putReflexiveTrigger (g : Game) (controller : PlayerId) (sourceId : Option Ob
 /-- The reflexive triggered ability `kind` of an MSH card, with its targets
 (MSH 359–369). -/
 def modeledReflexiveEffect (kind : TriggeredAbility.TriggerReflexiveKind) (paid : Nat) : Effect :=
-  let base : Effect := { resolution := .mshReflexive kind paid }
+  let base : Effect := { resolution? := some (.mshReflexive kind paid) }
   match kind with
   | .grantIndestructible =>
     { base with
@@ -1220,7 +1220,7 @@ def resolveModeledReflexive (g : Game) (controller : PlayerId) (sourceId : Optio
 /-- Whether an MSH reflexive ability is on the stack. -/
 def hasModeledReflexiveOnStack (g : Game) : Bool :=
   g.stack.any (fun e =>
-    match ((g.findObject? e.objectId).bind (·.abilityEffect)).map Effect.resolution with
+    match ((g.findObject? e.objectId).bind (·.abilityEffect)).bind (·.resolution?) with
     | some (Resolution.mshReflexive _ _) | some (Resolution.hawkeyeArrows _) => true
     | _ => false)
 

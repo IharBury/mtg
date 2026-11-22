@@ -1,5 +1,4 @@
-import Mtg.Engine.Card.PermanentAction
-import Mtg.Engine.Card.Chapter
+import Mtg.Engine.Card.SpellResolution
 
 /-!
 # Shared triggers (CR 603)
@@ -313,7 +312,7 @@ inductive SharedTrigger where
   /-- Draw `n` cards. -/
   | draw (n : Nat)
   /-- Create `n` tokens of this spec. `tapped` is Treasure-style “create a tapped …”. -/
-  | createTokens (kind : TokenSpec) (n : Nat) (tapped : Bool := false)
+  | createTokens (tokIdx : Nat) (n : Nat) (tapped : Bool := false)
   /-- Amass `subtype` `n`. Goblins `n` is `.amass n`.
   Orcs `n` is `.amass n "Orc"`.
   Amass equal to this creature's power is `.amass 0 (amount := .sourcePower)`.
@@ -338,11 +337,6 @@ inductive SharedTrigger where
   | attachTo (kind : TargetSpec)
   /-- Target opponent sacrifices a creature of their choice. -/
   | opponentSacrificesCreature
-  /-- Affect a still-legal permanent target. -/
-  | onPermanent (kind : TargetSpec) (action : PermanentAction)
-  /-- Affect the trigger's source if it is still on the battlefield.
-  Resolves as `TriggerResolution.ofSource`. -/
-  | onSource (action : PermanentAction)
   /-- Exile the top card; you may play it until the end of your next turn. -/
   | exileTop
   /-- Discard `n` cards. One card is `.discard`. -/
@@ -407,7 +401,7 @@ inductive SharedTrigger where
   | returnLinkedExile
   /-- Create one token, then attach the source to it.
   Resolves as `.sequence [.createTokens kind (.fixed 1) false, .attach .source .createdToken]`. -/
-  | createThenAttach (kind : TokenSpec)
+  | createThenAttach (tokIdx : Nat)
   /-- Gain `n` life, then you may search a basic land to the top.
   Resolves as `.sequence [.gainLife (.fixed n), .searchLibrary (.put .basicLandOnTop)]`. -/
   | gainLifeSearchBasicOnTop (n : Nat)
@@ -618,8 +612,6 @@ inductive SharedTrigger where
   /-- Opponents sac damagers; the Ring tempts you. Resolves as
   `.sequence [.sacrifice .combatDamager, .ringTempts]`. -/
   | sacDamagersRingTempts
-  /-- A Saga chapter. Resolves as `TriggeredAbility.chapterEffect`. -/
-  | chapter (n : Nat) (e : ChapterResolution)
   /-- Draw if you attacked with this subtype or one entered under your control.
   Resolves as
   `.«if» (.or [.attackedWithSubtype subtype, .subtypeEntered subtype]) (.draw (.fixed 1))`. -/
@@ -708,12 +700,6 @@ inductive SharedTrigger where
   the life gained put into the graveyard this way goes to your hand. Resolves as
   `.sequence [.armSurveilReturnLifeGained, .surveil (.fixed 1)]`. -/
   | surveilReturnIfGainedLife
-  /-- Apply `action` to the enchanted creature.
-  Resolves as `TriggerResolution.ofEnchanted`. -/
-  | onEnchanted (action : PermanentAction)
-  /-- Attach to target, then apply `followup`. Resolves as `.attach .source .target`
-  followed by `TriggerResolution.ofTargetWhileSource`. -/
-  | attachThen (followup : PermanentAction)
   /-- Exile another creature; enchanted becomes a copy. Resolves as
   `.sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted]`. -/
   | exileOtherCopyEnchanted
@@ -892,6 +878,41 @@ inductive SharedTrigger where
   You may create a 0/4 Wall with defender is
   `.may (.createTokens .wall04defender (.fixed 1) false) (.sequence []) .ifYouDo`. -/
   | resource (e : ResourceLeftover)
-deriving Repr, Inhabited, BEq
+deriving Repr, BEq
+
+instance : Inhabited SharedTrigger := ⟨.scry 0⟩
+
+private partial def SharedTrigger.applyTextChangesAux (tcs : Array TextChange) :
+    SharedTrigger → SharedTrigger
+  | .amass n sub amt att => .amass n (HasTextChange.applyTextChanges tcs sub) amt att
+  | .connive (.target ts) => .connive (.target (HasTextChange.applyTextChanges tcs ts))
+  | .exileUntilLeaves ts => .exileUntilLeaves (HasTextChange.applyTextChanges tcs ts)
+  | .attachTo ts => .attachTo (HasTextChange.applyTextChanges tcs ts)
+  | .mayTo a b =>
+    .mayTo (SharedTrigger.applyTextChangesAux tcs a)
+      (SharedTrigger.applyTextChangesAux tcs b)
+  | .may a => .may (SharedTrigger.applyTextChangesAux tcs a)
+  | .exileTarget ts => .exileTarget (HasTextChange.applyTextChanges tcs ts)
+  | .plusOneEachYouControl (.subtype s) =>
+    .plusOneEachYouControl (.subtype (HasTextChange.applyTextChanges tcs s))
+  | .damageEqualSubtypeToEachOpponent s =>
+    .damageEqualSubtypeToEachOpponent (HasTextChange.applyTextChanges tcs s)
+  | .dealDamageDestroyIfSubtype n s =>
+    .dealDamageDestroyIfSubtype n (HasTextChange.applyTextChanges tcs s)
+  | .othersGetAndOppsGet subs p t op ot =>
+    .othersGetAndOppsGet (HasTextChange.applyTextChanges tcs subs) p t op ot
+  | .millThenSubtypeToHand n s =>
+    .millThenSubtypeToHand n (HasTextChange.applyTextChanges tcs s)
+  | .drawIfAttackedOrEnteredSubtype s =>
+    .drawIfAttackedOrEnteredSubtype (HasTextChange.applyTextChanges tcs s)
+  | .othersOfSubtypeGetEqualSourceToughness s =>
+    .othersOfSubtypeGetEqualSourceToughness (HasTextChange.applyTextChanges tcs s)
+  | .grantThenCounterByType ks =>
+    .grantThenCounterByType (HasTextChange.applyTextChanges tcs ks)
+  | other => other
+
+instance : HasTextChange SharedTrigger where
+  applyTextChanges tcs s :=
+    if tcs.isEmpty then s else SharedTrigger.applyTextChangesAux tcs s
 
 end Mtg.Engine

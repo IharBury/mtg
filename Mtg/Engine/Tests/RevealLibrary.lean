@@ -557,21 +557,21 @@ what gives them the revealed cards. -/
 #guard TriggeredAbility.resolution .onCombatDamageImpulseInstantSorcery ==
   .sequence [exileImpulse, .mayCast .impulse .unlimited .withoutPaying]
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .revealLibrary (.top 4) (.put .randomCreature) } ==
+    { resolution? := some (.revealLibrary (.top 4) (.put .randomCreature)) } ==
   s!"reveal the top 4 cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
-#guard TriggeredAbility.resolutionPhrase { resolution := untilCreature } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (untilCreature) } ==
   s!"reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}"
-#guard TriggeredAbility.resolutionPhrase { resolution := untilSaga } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (untilSaga) } ==
   "reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order"
-#guard TriggeredAbility.resolutionPhrase { resolution := exileImpulse } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (exileImpulse) } ==
   "that player exiles cards from the top of their library until they exile an instant or sorcery card"
-#guard TriggeredAbility.resolutionPhrase { resolution := untilNonland } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (untilNonland) } ==
   "that player exiles cards until a nonland card"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .revealLibrary (.top 2) (.put .revealed) } ==
+    { resolution? := some (.revealLibrary (.top 2) (.put .revealed)) } ==
   "reveal cards from a library"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .revealLibrary (.top 3) (.put .randomCreature) .eachOpponent } ==
+    { resolution? := some (.revealLibrary (.top 3) (.put .randomCreature) .eachOpponent) } ==
   "reveal cards from a library"
 #guard TriggeredAbility.toNotation (.onDiesRevealTopPutRandomCreature 4) ==
   s!"When this artifact is put into a graveyard from the battlefield, reveal the top 4 cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}."

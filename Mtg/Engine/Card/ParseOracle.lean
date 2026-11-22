@@ -479,9 +479,19 @@ def isEquipAbility (ab : ActivatedAbility) : Bool :=
 
 def typecyclingLand? (ab : ActivatedAbility) : Option String :=
   if ab.isFromHand && ab.cost.discardSource then
-    match ab.effect.resolution with
-    | .searchLandTypeToHand t => if t == "Plan" then none else some t
-    | _ => none
+    match ab.tag? with
+    | some (.cycling (some t)) => if t == "Plan" then none else some t
+    | _ =>
+      match ab.effect.body with
+      | .player (.searchLibrary spec) =>
+        match spec.filter with
+        | .hasSubtype (.literal sub) =>
+          if sub.englishName == "Plan" then none else some sub.englishName
+        | .hasSupertype sup => some sup.englishName
+        | .hasType ty => some ty.englishName
+        | .all #[.hasSupertype .basic, .hasType .land] => some "Basic land"
+        | _ => none
+      | _ => none
   else none
 
 private def renderActivatedCostReduction (r : ActivationCostReduction) : String :=
@@ -536,7 +546,7 @@ private def renderActivatedCondition (cond? : Option Condition) (onceEachTurn : 
 /-- Oracle line for one activated ability, matching the wording catalogs store. -/
 def printedActivated (ab : ActivatedAbility) : String :=
   if !ab.printed.isEmpty then ab.printed
-  else if ab.mana?.isSome then ab.toOracle {}
+  else if ab.manaProduction?.isSome then ab.toOracle {}
   else if isEquipAbility ab then
     let pay := if ab.cost.payLife != 0 then s!", Pay {ab.cost.payLife} life" else ""
     let subtype? :=
@@ -573,27 +583,57 @@ def spellBody (cardName : String) (e : Effect) : String :=
 def effectLines (cardName : String) (e : Effect) : List String :=
   let fallback :=
     (spellBody cardName e).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
-  match e.spellResolution with
-  | .sequence [.onPermanent .tap, .scry (.fixed scryN), .draw (.fixed drawN)] =>
-    [s!"Tap target creature. Scry {scryN}.",
-      if drawN == 1 then "Draw a card." else s!"Draw {drawN} cards."]
-  | .sequence [.returnTargetToHand .spell, .draw (.fixed 1)] =>
-    ["Return target spell to its owner's hand.", "Draw a card."]
-  | .sequence [.draw (.fixed 1), .loseLife (.fixed 1), .amass (.fixed n) subtype] =>
-    ["You draw a card and lose 1 life.", s!"Amass {pluralizeName subtype} {n}."]
-  | .sequence [.returnTargetToHand .graveyard, .amass (.fixed n) subtype] =>
+  match e.body with
+  | .seq #[
+      .permanent (.setTapped (.target 0) true),
+      .player (.scry .you (.const scryN)),
+      .player (.drawCards .you (.const drawN))
+    ] =>
+    let s := scryN.toNat
+    let d := drawN.toNat
+    [s!"Tap target creature. Scry {s}.",
+      if d == 1 then "Draw a card." else s!"Draw {d} cards."]
+  | .seq #[
+      .moveZone (.target 0) (.hand .owner) .returnToHand _,
+      .player (.drawCards .you (.const 1))
+    ] =>
+    if e.targetSpec == .spell then
+      ["Return target spell to its owner's hand.", "Draw a card."]
+    else fallback
+  | .seq #[
+      .player (.drawCards .you (.const 1)),
+      .life (.lose .you (.const 1)),
+      .player (.amass .you subtype (.const n))
+    ] =>
+    ["You draw a card and lose 1 life.", s!"Amass {pluralizeName subtype.englishName} {n.toNat}."]
+  | .seq #[
+      .moveZone (.target 0) (.hand .controller) .returnToHand _,
+      .player (.amass .you subtype (.const n))
+    ] =>
     ["Return up to one target creature card from your graveyard to your hand.",
-      s!"Amass {pluralizeName subtype} {n}."]
-  | .sequence [.dealDamageToEachCreature n (.nonSubtype sub) .fixed, .addFourManaDragonSpells m sub2] =>
-    [s!"{cardName} deals {n} damage to each non-{sub} creature.",
-      s!"Add {englishNumber m} mana in any combination of colors. Spend this mana only to cast {sub2} spells."]
-  | .sequence [.onPermanent (.grantKeywords k), .onPermanent .cantBeBlocked, .draw (.fixed 1)] =>
+      s!"Amass {pluralizeName subtype.englishName} {n.toNat}."]
+  | .seq #[
+      .damage (.deal .this (.objects (.inZones .battlefield (.all #[.hasType .creature, .not (.hasSubtype (.literal sub))]))) (.const n) _),
+      .player (.addMana .you { spec := .combination .anyColor (.const m), restriction := some (.onlyForSpells (.hasSubtype sub2) _), .. })
+    ] =>
+    [s!"{cardName} deals {n.toNat} damage to each non-{sub} creature.",
+      s!"Add {englishNumber m.toNat} mana in any combination of colors. Spend this mana only to cast {sub2} spells."]
+  | .seq #[
+      .installEffect (.applyContinuous .untilEndOfTurn (.target 0) (.grantKeywords k)),
+      .installEffect (.applyContinuous .untilEndOfTurn (.target 0) (.applyRule (.combat (.cantBeBlocked .self)))),
+      .player (.drawCards .you (.const 1))
+    ] =>
     if k == #[Keyword.vigilance] then
       ["Target creature gains vigilance until end of turn and can't be blocked this turn.",
         "Draw a card."]
     else fallback
-  | .becomeArtifactCreature44Flying p t kw =>
-    [s!"Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness {p}/{t} and gains {kw}.",
+  | .installEffect (.applyContinuous .untilEndOfTurn (.target 0)
+      (.all #[
+        .modifyTypes { types := #[.artifact, .creature], .. },
+        .setBasePT (some (.const p)) (some (.const t)),
+        .grantKeywords #[kw]
+      ])) =>
+    [s!"Until end of turn, target artifact or creature becomes an artifact creature with base power and toughness {p}/{t} and gains {KeywordAbility.toOracleStr {} kw}.",
       "Draw a card."]
   | _ => fallback
 
@@ -612,11 +652,22 @@ def applyParsed (c : CardDef) (ab : ParsedAbility) : CardDef :=
   | .activated ab => { c with activatedAbilities := c.activatedAbilities.push ab }
   | .spell e => { c with spellEffect := some e }
   | .modes es oneOrBoth teamwork twoIf =>
-    { c with
-      spellModes := es
-      chooseOneOrBoth := oneOrBoth
-      chooseBothIfTeamwork := teamwork
-      chooseTwoIfYouControlSubtype := twoIf.bind CardSubtype.ofOracle? }
+    let altCountIf? : Option (Condition × ValueExpr × ValueExpr) :=
+      if teamwork then
+        some (.castPred (.teamworkPaid .this), .const 2, .const 2)
+      else
+        match twoIf.bind CardSubtype.ofOracle? with
+        | some sub =>
+          some (.playerPred .you (.controls { zones := .battlefield, pred := .hasSubtype (.literal sub) } (.const 1)),
+            .const 1, .const 2)
+        | none => none
+    let ms : ModalSpec := {
+      minModes := .const 1
+      maxModes := if oneOrBoth then .const 2 else .const 1
+      altCountIf?
+      modes := es
+    }
+    { c with spellEffect := some { body := .chooseModes ms } }
 
 def splitCreatureTypes (s : String) : Array String :=
   let s := s.replace ", or " ", " |>.replace " or " ", "
@@ -750,7 +801,7 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
         let isIntrinsicBasic :=
           c.isLand && ab.cost == CostSpec.tapOnly && ab.condition?.isNone &&
             ab.turnLimit?.isNone && ab.lifetimeLimit?.isNone &&
-            match ab.mana? with
+            match ab.manaProduction? with
             | some mp =>
               mp.restriction.isNone && mp.riders.isEmpty && mp.damageYou == 0 &&
                 match mp.spec with
@@ -890,25 +941,36 @@ def splitOnThen (s : String) : Option (String × String) :=
     if a.isEmpty || b.isEmpty then none else some (a, b)
   | _ => none
 
+/-- Flatten nested `Instruction.seq` steps while preserving order. -/
+def instrSteps : Instruction → Array Instruction
+  | .seq xs => xs.attach.foldl (fun acc ⟨x, _⟩ => acc ++ instrSteps x) #[]
+  | .noop => #[]
+  | x => #[x]
+
+/-- Combine instructions into a flat sequence (`.noop` for empty, bare step for singleton). -/
+def joinInstructions (xs : List Instruction) : Instruction :=
+  let flat := xs.foldl (fun acc x => acc ++ instrSteps x) #[]
+  match flat.toList with
+  | [] => .noop
+  | [x] => x
+  | _ => .seq flat
+
 /-- One effect whose steps are `es`, phrased with “, then” between them. -/
 def joinThenEffects (es : List Effect) : Effect :=
   match es with
-  | [] => { resolution := .sequence [] }
+  | [] => {}
   | [e] => e
   | _ =>
     let targeted := es.find? (·.requiresTarget) |>.getD es.head!
-    let steps := es.flatMap fun e =>
-      match e.resolution with
-      | .sequence rs => rs.flatMap Resolution.flatten
-      | r => [r]
     { targeted with
-      resolution := .sequence steps
+      body := joinInstructions (es.map (·.body))
+      resolution? := none
       phrase := String.intercalate ", then " (es.map (·.phrase)) }
 
-/-- First spell prototype that matches `text` and whose resolution passes `ok`.
+/-- First spell prototype that matches `text` and whose instruction passes `ok`.
 An earlier prototype can share the printed words and name a different effect
 (`Draw two cards` is also the legendary-discard ability). -/
-def matchSpellProtoSuchThat (cardName text : String) (ok : Resolution → Bool) : Option Effect :=
+def matchSpellProtoSuchThat (cardName text : String) (ok : Instruction → Bool) : Option Effect :=
   let q := EffectQuery.of cardName text
   spellProtos.get.foldl (fun acc p =>
     match acc with
@@ -920,7 +982,7 @@ def matchSpellProtoSuchThat (cardName text : String) (ok : Resolution → Bool) 
         let matched :=
           if proto.sameText q then some proto.effect else proto.matchText q
         match matched with
-        | some e => if ok e.resolution then some e else none
+        | some e => if ok e.body then some e else none
         | none => none) none
 
 /-- “Draw N cards, then discard a card”, from the `draw` and `discardCards`
@@ -930,10 +992,10 @@ def matchDrawThenDiscard (cardName text : String) : Option Effect :=
   match splitOnThen text with
   | none => none
   | some (drawText, discardText) =>
-    match matchSpellProtoSuchThat cardName drawText (fun r =>
-        match r with | .draw _ => true | _ => false),
-      matchSpellProtoSuchThat cardName discardText (fun r =>
-        match r with | .discard _ => true | _ => false) with
+    match matchSpellProtoSuchThat cardName drawText (fun i =>
+        match i with | .player (.drawCards ..) => true | _ => false),
+      matchSpellProtoSuchThat cardName discardText (fun i =>
+        match i with | .moveZone _ .graveyard .discard _ => true | _ => false) with
     | some drawE, some discardE => some (joinThenEffects [drawE, discardE])
     | _, _ => none
 
@@ -969,7 +1031,7 @@ def matchTriggerMode (cardName text : String) : Option Effect :=
     | none => matchChapter cardName text
 
 /-- A modal triggered ability (“When/Whenever/At …, choose one/two — • …”),
-storing its modes directly on `TriggeredAbility.modes` (CR 603.3c / 700.2). -/
+storing its modes inside `effect.body` as `Instruction.chooseModes` (CR 603.3c / 700.2). -/
 def parseTriggerModes (cardName line : String) : Option TriggeredAbility :=
   let raw := line.trimAscii.copy
   let low := lowerAscii raw
@@ -987,29 +1049,20 @@ def parseTriggerModes (cardName line : String) : Option TriggeredAbility :=
     let effects := modes.filterMap fun m => matchTriggerMode cardName (stripAbilityWord m)
     if modes.isEmpty || effects.length != modes.length then none
     else
-      let eff : Effect :=
-        { resolution := .chooseTriggerModes n
-          phrase := if n == 2 then "choose two" else "choose one" }
+      let headerPhrase := if n == 2 then "choose two" else "choose one"
+      let nExpr : ValueExpr := .const (Int.ofNat n)
       if low.startsWith "when " && named.startsWith "when this enters, choose" then
-        some {
-          word := .when
-          pattern := .thisEnters
-          effect := eff
-          modes := effects.toArray
-        }
+        some (TriggeredAbility.mkModal .thisEnters effects.toArray
+          (word? := some .when) (headerPhrase := headerPhrase)
+          (minModes := nExpr) (maxModes := nExpr))
       else
         match Parser.parseTriggerClause header cardName with
         | some hdr =>
-          some {
-            word := hdr.word
-            pattern := hdr.pattern
-            grouping := hdr.grouping
-            interveningIf? := hdr.interveningIf?
-            activeZones := hdr.activeZones
-            limit := hdr.limit
-            effect := eff
-            modes := effects.toArray
-          }
+          some (TriggeredAbility.mkModal hdr.pattern effects.toArray
+            (word? := some hdr.word) (grouping := hdr.grouping)
+            (interveningIf? := hdr.interveningIf?) (activeZones := hdr.activeZones)
+            (limit := hdr.limit) (headerPhrase := headerPhrase)
+            (minModes := nExpr) (maxModes := nExpr))
         | none => none
 
 def parseModes (cardName line : String) : Option ParsedAbility :=
@@ -1034,8 +1087,13 @@ def parseModes (cardName line : String) : Option ParsedAbility :=
           let teamwork := low.contains "using teamwork"
           let twoIf :=
             if low.contains "you may choose two instead" then
-              let after := (header.splitOn "you control a ").getLastD ""
-              let t := (after.splitOn " ").headD "" |>.trimAscii.copy
+              let after :=
+                if header.contains "you control a " then
+                  (header.splitOn "you control a ").getLastD ""
+                else if header.contains "you control an " then
+                  (header.splitOn "you control an ").getLastD ""
+                else ""
+              let t := ((after.splitOn " ").headD "" |>.replace "," "").trimAscii.copy
               if t.isEmpty then none else some t
             else none
           some (.modes effects.toArray oneOrBoth teamwork twoIf)
@@ -1196,13 +1254,10 @@ def candidateNorm (cardName : String) (keys : List String) (item : IndexedAbilit
   let mut groups : Std.HashMap String (Array Nat) := {}
   let mut order : Nat := 0
   for e in spellEffects.get do
-    -- Ability effects use `abilityCastKind`; filing them as spells steals lines
-    -- from the real spell (`Shock` vs `deals N to any target`).
-    if e.abilityCastKind == .other then
-      let stepped := insertUnique out groups (indexItem 1 order (.spell e) (effectLines indexName e))
-      out := stepped.1
-      groups := stepped.2
-      order := order + 1
+    let stepped := insertUnique out groups (indexItem 1 order (.spell e) (effectLines indexName e))
+    out := stepped.1
+    groups := stepped.2
+    order := order + 1
   for ab in staticAbilities.get do
     let stepped := insertUnique out groups (indexItem 2 order (.static ab) [StaticAbility.toNotation ab])
     out := stepped.1
@@ -1362,22 +1417,17 @@ def oracleSentences (line : String) : List String :=
     let s := s.trimAscii.copy
     if s.endsWith "." then (s.dropEnd 1).trimAscii.copy else s).filter (· != "")
 
-/-- Resolutions of `e`, flattening a sequence so a later join stays one list. -/
-def effectSteps (e : Effect) : List Resolution :=
-  match e.resolution with
-  | .sequence rs => rs.flatMap Resolution.flatten
-  | r => [r]
-
 /-- One spell whose steps are `es` in printed order.
-Targeting and cast kind come from the step that chooses a target. -/
+Targeting comes from the step that chooses a target. -/
 def joinSpellEffects (es : List Effect) : Effect :=
   match es with
-  | [] => { resolution := .sequence [] }
+  | [] => {}
   | [e] => e
   | _ =>
     let targeted := es.find? (·.requiresTarget) |>.getD es.head!
     { targeted with
-      resolution := .sequence (es.flatMap effectSteps)
+      body := joinInstructions (es.map (·.body))
+      resolution? := none
       phrase := String.intercalate ". " (es.map (·.phrase)) }
 
 /-- One sentence as a spell prototype, or as draw-then-discard. -/
@@ -1726,28 +1776,37 @@ partial def parseRules (c : CardDef) (lines : List String)
               (Parser.parseManaAbilityLine base c.name).isSome
           if keepMechanicPrefix then base else stripAbilityWords base) |>.filter (· != ""))
       |>.flatMap splitKeywordWardLine
-  let rec go (c : CardDef) (units : List String) : Except String CardDef :=
+  let foldEmpower (c : CardDef) (empowerN? : Option Nat) : CardDef :=
+    match empowerN? with
+    | none => c
+    | some n =>
+      match c.spellEffect with
+      | some e =>
+        { c with spellEffect := some { e with body := joinInstructions [e.body, Instruction.empowerJace n] } }
+      | none =>
+        { c with spellEffect := some { body := Instruction.empowerJace n, phrase := "" } }
+  let rec go (c : CardDef) (empowerN? : Option Nat) (units : List String) : Except String CardDef :=
     let unrecognized (c : CardDef) (line : String) : Except String CardDef :=
       .error s!"unrecognized Oracle line on {c.name}: {line}"
     match units with
-    | [] => .ok c
+    | [] => .ok (foldEmpower c empowerN?)
     | line :: rest =>
       -- A modal line keeps its Empower Jace on the mode that prints it.
       let modal := (lowerAscii line).contains "•"
-      let (c, line) :=
+      let (empowerN?, line) :=
         match if modal then none else spellEmpower line with
         | some (n, leftover) =>
-          let amount := match c.empowerJace with | some k => k | none => n
-          ({ c with empowerJace := some amount }, leftover)
-        | none => (c, line)
-      if (line.trimAscii.copy).isEmpty then go c rest
+          let amount := match empowerN? with | some k => k | none => n
+          (some amount, leftover)
+        | none => (empowerN?, line)
+      if (line.trimAscii.copy).isEmpty then go c empowerN? rest
       else
       let units := line :: rest
-      if skipLine c line then go c rest
+      if skipLine c line then go c empowerN? rest
       else
         match beholdOrPay line with
         | some (sub, n) =>
-          go { c with additionalCosts := c.additionalCosts.push (AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric sub n)) } rest
+          go { c with additionalCosts := c.additionalCosts.push (AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric sub n)) } empowerN? rest
         | none =>
         -- CR 606.2: a loyalty symbol in the cost makes this a loyalty ability.
         -- “Planeswalkers you control have "[−N]: …"”: a granted loyalty ability.
@@ -1768,7 +1827,7 @@ partial def parseRules (c : CardDef) (lines : List String)
           else none
         match granted? with
         | some ab =>
-          go { c with staticAbilities := c.staticAbilities.push (StaticAbility.planeswalkersYouControlHave #[ab]) } rest
+          go { c with staticAbilities := c.staticAbilities.push (StaticAbility.planeswalkersYouControlHave #[ab]) } empowerN? rest
         | none =>
         match parseLoyaltyAbilityLine line with
         | some (sym, effectText) =>
@@ -1786,26 +1845,26 @@ partial def parseRules (c : CardDef) (lines : List String)
               let (e, more) :=
                 if n == 1 then extendSpellSequence c.name e more else (e, more)
               let ab : ActivatedAbility := activated e (loyalty := some sym) (condition? := cond?)
-              go { c with activatedAbilities := c.activatedAbilities.push ab } more
+              go { c with activatedAbilities := c.activatedAbilities.push ab } empowerN? more
             else unrecognized c line
           | _ =>
             match spellSentenceSequence c.name effectText with
             | some e =>
               let ab : ActivatedAbility := activated e (loyalty := some sym) (condition? := cond?)
-              go { c with activatedAbilities := c.activatedAbilities.push ab } rest
+              go { c with activatedAbilities := c.activatedAbilities.push ab } empowerN? rest
             | none =>
               match parseFrcLoyaltyEffect effectText with
               | some e =>
                 let ab : ActivatedAbility := activated e (loyalty := some sym) (condition? := cond?)
-                go { c with activatedAbilities := c.activatedAbilities.push ab } rest
+                go { c with activatedAbilities := c.activatedAbilities.push ab } empowerN? rest
               | none => unrecognized c line
         | none =>
         if isCantBeBlockedLine c.name line then
-          go { c with staticAbilities := c.staticAbilities.push .cantBeBlocked } rest
+          go { c with staticAbilities := c.staticAbilities.push .cantBeBlocked } empowerN? rest
         else
         match keywordLineAbilities c.name line with
         | some kws =>
-          go (c.withKeywords kws) rest
+          go (c.withKeywords kws) empowerN? rest
         | none =>
           match parseChapterHeader line with
           | some (roman, text) =>
@@ -1813,19 +1872,19 @@ partial def parseRules (c : CardDef) (lines : List String)
             match matchChapter c.name text with
             | some e =>
               let ab := TriggeredAbility.sagaChapters (parseChapterNumbers roman) { e with phrase := printed }
-              go { c with triggeredAbilities := c.triggeredAbilities.push ab } rest
+              go { c with triggeredAbilities := c.triggeredAbilities.push ab } empowerN? rest
             | none =>
               .error s!"unrecognized chapter on {c.name}: {line}"
           | none =>
             match parseStructural c line with
-            | some c => go c rest
+            | some c => go c empowerN? rest
             | none =>
               match parseTriggerModes c.name line with
               | some ab =>
-                go { c with triggeredAbilities := c.triggeredAbilities.push ab } rest
+                go { c with triggeredAbilities := c.triggeredAbilities.push ab } empowerN? rest
               | none =>
               match parseModes c.name line with
-              | some ab => go (applyParsed c ab) rest
+              | some ab => go (applyParsed c ab) empowerN? rest
               | none =>
                 match matchModeled c.name units with
                 | some (.spell e, n) =>
@@ -1835,28 +1894,34 @@ partial def parseRules (c : CardDef) (lines : List String)
                     let (e, more) :=
                       if c.isInstantOrSorcery then extendSpellSequence c.name e more
                       else (e, more)
-                    go (applyParsed c (.spell e)) more
+                    go (applyParsed c (.spell e)) empowerN? more
                 | some (ab, n) =>
                   let more := units.drop n
-                  if more.length < units.length then go (applyParsed c ab) more
+                  if more.length < units.length then go (applyParsed c ab) empowerN? more
                   else unrecognized c line
                 | none =>
                   match if c.isInstantOrSorcery then spellSentenceSequence c.name line else none with
                   | some e =>
                     let (e, more) := extendSpellSequence c.name e rest
-                    go (applyParsed c (.spell e)) more
+                    go (applyParsed c (.spell e)) empowerN? more
                   | none =>
                     match parseFrcLine c line with
-                    | some c => go c rest
+                    | some c => go c empowerN? rest
                     | none =>
                       match Parser.parseNovelStaticAbilityLine line c.name with
-                      | some abs => go { c with staticAbilities := c.staticAbilities ++ abs } rest
+                      | some abs => go { c with staticAbilities := c.staticAbilities ++ abs } empowerN? rest
                       | none =>
                         match Parser.parseNovelTriggeredAbilityLines line c.name
-                            (fun effText => matchTriggerMode c.name effText <|> spellSentenceSequence c.name effText) with
-                        | some abs => go { c with triggeredAbilities := c.triggeredAbilities ++ abs } rest
-                        | none => unrecognized c line
-  go c units
+                            (fun effText =>
+                              matchTriggerMode c.name effText <|>
+                              spellSentenceSequence c.name effText <|>
+                              Parser.parseInstructionEffect effText c.name) with
+                        | some abs => go { c with triggeredAbilities := c.triggeredAbilities ++ abs } empowerN? rest
+                        | none =>
+                          match if c.isInstantOrSorcery then Parser.parseInstructionEffect line c.name else none with
+                          | some e => go (applyParsed c (.spell e)) empowerN? rest
+                          | none => unrecognized c line
+  go c none units
 
 def parseAdventure (lines : List String) (keepUnrecognized : Bool := false) :
     Except String AdventureFace :=
@@ -1895,7 +1960,6 @@ def parseAdventure (lines : List String) (keepUnrecognized : Bool := false) :
             spellEffect := c.spellEffect
             additionalCosts := c.additionalCosts
             extraLines := #[]
-            empowerJace := c.empowerJace
           }
 
 /-- Parse one face (no `//` back face) into a `CardDef`. -/
@@ -2028,7 +2092,7 @@ is parsed and every effect is modelled. -/
       "Snack\n{B}\nSorcery\nPut a stun counter on up to one target creature. Target player gains 2 life." with
   | .ok c =>
     match c.spellEffect with
-    | some e => e.resolution == (Effect.plusOneUpToOneAndPlayerGainsLife 2 .stun).resolution
+    | some e => e.body == (Effect.plusOneUpToOneAndPlayerGainsLife 2 .stun).body
     | none => false
   | .error _ => false
 
@@ -2038,7 +2102,7 @@ is parsed and every effect is modelled. -/
   | .ok c =>
     match c.spellEffect with
     | some e =>
-      e.resolution == (Effect.plusOneUpToOneAndPlayerGainsLife 3 .firstStrike 2).resolution
+      e.body == (Effect.plusOneUpToOneAndPlayerGainsLife 3 .firstStrike 2).body
     | none => false
   | .error _ => false
 
@@ -2090,7 +2154,7 @@ partial def renderFullOracle (c : CardDef) : String :=
   let cForAbilities :=
     if hasCyclingKw then
       { c with activatedAbilities := c.activatedAbilities.filter fun ab =>
-          !(ab.isCycling && ab.effect.resolution == .draw 1) }
+          !(ab.isCycling && ab.effect.body == Instruction.drawFixed 1) }
     else c
   let rules := String.intercalate "\n" (kwLines ++ cForAbilities.structuredAbilityLines)
   let face :=

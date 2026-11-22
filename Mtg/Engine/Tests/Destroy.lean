@@ -290,9 +290,9 @@ controller still amasses when the creature is indestructible. -/
     (SharedTrigger.toEffect .destroyOtherAmassControllerPower) ==
   "destroy another target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
 
-#guard TriggeredAbility.resolutionPhrase { resolution := .destroy .target } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.destroy .target) } ==
   "destroy it"
-#guard TriggeredAbility.resolutionPhrase { resolution := .destroy .humans } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.destroy .humans) } ==
   "destroy it"
 
 /- Amass reads the count. Zero other creatures still amasses Goblins 0. -/

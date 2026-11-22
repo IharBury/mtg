@@ -20,7 +20,10 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .becomeArtifactIndestructible))
+  TriggeredAbility.mkTrigger .thisEnters {
+    targeting := .of .creature
+    resolution? := some (.sequence [.becomeArtifact .target, .grant (.keywords #[Keyword.indestructible]) .target])
+  }
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -137,7 +140,7 @@ has left, do not. Gaining indestructible follows the same recipient. -/
     logContains g "Titan becomes an artifact until end of turn"
 
 #guard
-  let g := step board (TriggeredAbility.TriggerResolution.ofSource .becomeArtifactIndestructible)
+  let g := step board (.sequence [.becomeArtifact .source, .grant (.keywords #[Keyword.indestructible]) .source])
     (some (pid board "Titan")) #[Target.permanent (pid board "Titan")]
   became g "Titan" && g.hasIndestructible (obj g "Titan") && !flagged g "Bear"
 
@@ -163,7 +166,7 @@ silent. An Aura that has left is reported. -/
 
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
-  let g := step g0 (TriggeredAbility.TriggerResolution.ofEnchanted .becomeArtifactIndestructible)
+  let g := step g0 (.sequence [.becomeArtifact .enchanted, .grant (.keywords #[Keyword.indestructible]) .enchanted])
     (some (pid g0 "Grasp")) #[Target.permanent (pid g0 "Titan")]
   became g "Titan" && g.hasIndestructible (obj g "Titan")
 
@@ -194,7 +197,7 @@ the source is still there. -/
 
 #guard
   let g := step board
-    (TriggeredAbility.TriggerResolution.ofTargetWhileSource .becomeArtifactIndestructible)
+    (.sequence [.becomeArtifact (.target .whileSource), .grant (.keywords #[Keyword.indestructible]) (.target .whileSource)])
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   became g "Titan" && g.hasIndestructible (obj g "Titan") && !flagged g "Bear"
 
@@ -227,44 +230,34 @@ become artifacts. -/
     became yours "Titan" && !flagged yours "Bear"
 
 /- Printed phrases stay with the recipient that produces them. -/
-#guard TriggeredAbility.TriggerResolution.ofPermanent .becomeArtifactIndestructible ==
-  both
-#guard TriggeredAbility.TriggerResolution.ofSource .becomeArtifactIndestructible ==
-  .sequence [.becomeArtifact .source, .grant (.keywords #[Keyword.indestructible]) .source]
-#guard TriggeredAbility.TriggerResolution.ofEnchanted .becomeArtifactIndestructible ==
-  .sequence [.becomeArtifact .enchanted, .grant (.keywords #[Keyword.indestructible]) .enchanted]
-#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .becomeArtifactIndestructible ==
-  .sequence [.becomeArtifact (.target .whileSource),
-    .grant (.keywords #[Keyword.indestructible]) (.target .whileSource)]
-
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution := artifacted } ==
+    { targeting := .of .creature, resolution? := some (artifacted) } ==
   "until end of turn, target creature becomes an artifact in addition to its other types"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomeArtifact .source } ==
+    { resolution? := some (.becomeArtifact .source) } ==
   "until end of turn, this creature becomes an artifact in addition to its other types"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomeArtifact .enchanted } ==
+    { resolution? := some (.becomeArtifact .enchanted) } ==
   "until end of turn, enchanted creature becomes an artifact in addition to its other types"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomeArtifact (.target .whileSource) } ==
+    { resolution? := some (.becomeArtifact (.target .whileSource)) } ==
   "until end of turn, that creature becomes an artifact in addition to its other types"
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution := both } ==
+    { targeting := .of .creature, resolution? := some (both) } ==
   "until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .becomeArtifact .cause } ==
+    { resolution? := some (.becomeArtifact .cause) } ==
   "becomes an artifact"
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
-    resolution := .sequence
-      [.attach .source .target, .becomeArtifact (.target .whileSource)] } ==
+    resolution? := some (.sequence
+      [.attach .source .target, .becomeArtifact (.target .whileSource)]) } ==
   "attach it to target creature you control. Until end of turn, that creature becomes an artifact in addition to its other types"
 
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible."
 #guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .becomeArtifactIndestructible))) ==
+    (TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.sequence [.becomeArtifact .source, .grant (.keywords #[Keyword.indestructible]) .source]) }) ==
   "When this permanent enters, resolve each step."
 
 end Mtg.Engine.BecomeArtifactTests

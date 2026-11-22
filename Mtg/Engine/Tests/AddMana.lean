@@ -121,6 +121,6 @@ A count of other creatures adds that many. -/
   manaOf g (.colored .red) == 1
 
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .addMana #[.colored .red] .perOtherCreature } == "add mana"
+    { resolution? := some (.addMana #[.colored .red] .perOtherCreature) } == "add mana"
 
 end Mtg.Engine.AddManaTests

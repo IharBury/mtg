@@ -28,6 +28,6 @@ def caster : PlayerId := ⟨0⟩
 
 #guard (SharedTrigger.toEffect .connive).resolution == .connive .source
 
-#guard TriggeredAbility.resolutionPhrase { resolution := .connive .hand } == "connive"
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.connive .hand) } == "connive"
 
 end Mtg.Engine.ConniveTests

@@ -85,13 +85,13 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
     manaCost := ManaCost.ofGeneric 2
     types := #[.sorcery]
     additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)]
-    spellEffect := some { resolution := .gainLife 2, phrase := "Gain 2 life." }
+    spellEffect := some { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life." }
   }
   let bigCopyDef : CardDef := {
     name := "P46i1 BigCopy"
     manaCost := ManaCost.ofGeneric 3
     types := #[.sorcery]
-    spellEffect := some { resolution := .gainLife 3, phrase := "Gain 3 life." }
+    spellEffect := some { body := Instruction.gainLifeFixed 3, phrase := "Gain 3 life." }
   }
   let gFreeCp0 := insertObject (insertObject g4 sacOrPayCopyDef p0 .exile) bigCopyDef p0 .exile
   let cp1Obj := (gFreeCp0.objects.filter (fun o => o.zone == .exile && o.name == sacOrPayCopyDef.name))[0]!
@@ -274,7 +274,7 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
     types := #[.sorcery]
     spellEffect := some {
       targeting := .of .oppCreature
-      resolution := .gainLife 1
+      body := Instruction.gainLifeFixed 1
       phrase := "Target creature an opponent controls; gain 1 life."
     }
   }
@@ -427,7 +427,7 @@ private def replayOk46i2 (gs : Array Game) : Bool :=
     name := "P46i2 Quest"
     manaCost := ManaCost.empty
     types := #[.instant]
-    spellEffect := some { resolution := .gainLife 1, phrase := "Gain 1 life." }
+    spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "Gain 1 life." }
   }
   let advCreatureDef : CardDef := { bear with name := "P46i2 Adventurer", adventure := some advQuestFace }
   let gExStack0 := insertObject gP3Gone advCreatureDef p0 .exile
@@ -499,7 +499,7 @@ private def replayOk46i2 (gs : Array Game) : Bool :=
       name := "P46i2 PaidQuest"
       manaCost := ManaCost.ofGeneric 2
       types := #[.sorcery]
-      spellEffect := some { resolution := .gainLife 2, phrase := "Gain 2 life." }
+      spellEffect := some { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life." }
     }
   }
   let gMultiGrant0 := insertObject gP3Gone costedAdvDef p0 .exile
@@ -529,7 +529,7 @@ private def replayOk46i2 (gs : Array Game) : Bool :=
       name := "P46i2 Rally"
       manaCost := ManaCost.empty
       types := #[.instant]
-      spellEffect := some { resolution := .gainLife 2, phrase := "Gain 2 life." }
+      spellEffect := some { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life." }
     }
   }
   let gPrep0 := addPermanent gP3Gone prepCreatureDef p0 p0
@@ -682,7 +682,7 @@ private def replayOk46i3 (gs : Array Game) : Bool :=
   let tokWatcherDef : CardDef := {
     name := "P46i3 TokWatcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.ofPattern .tokenYouControlEnters "Draw a card." (.draw 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .tokenYouControlEnters "Draw a card." (Instruction.drawFixed 1)]
   }
   let gCreatedStepBase := addPermanent g4 tokWatcherDef p1 p1
   let noCtrlTokId : ObjectId := ⟨gCreatedStepBase.nextObjectId + 15⟩
@@ -990,7 +990,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
       effect := {
         targeting := .of .player
-        resolution := .addMana #[.colored .red] (.fixed 2)
+        resolution? := some (.addMana #[.colored .red] (.fixed 2))
         phrase := "Target player; add {R}{R}."
       }
     }]
@@ -1002,7 +1002,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
   let gTrStackAb := mustApply (mustApply gTr0 p0 (.activate trId 0)) p0 (.target (.player p0))
   let gTrStackRes := mustApply (mustApply (mustApply gTrStackAb p0 .pass) p1 .pass) p2 .pass
   -- Triggered ability from `stackTreasureDef` put on `.stack`, then `trId` leaves before resolution:
-  let trTrigAb := TriggeredAbility.ofPattern (.gainLife .you) "Add {U}{U}." (.addMana #[.colored .blue] (.fixed 2))
+  let trTrigAb := TriggeredAbility.ofPattern (.gainLife .you) "Add {U}{U}." (Instruction.addSimpleMana #[.colored .blue, .colored .blue])
   let gTrTrigOnStack := gTr0.putTriggeredAbilityOnStack p0 (gTr0.object! trId) trTrigAb "triggers" (eventCause := some testCause)
   let (gTrTrigGone, _) := gTrTrigOnStack.move trId (.graveyard p0) none (cause := some testCause)
   let gTrTrigRes := mustApply (mustApply (mustApply gTrTrigGone p0 .pass) p1 .pass) p2 .pass
@@ -1028,14 +1028,14 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf]
-      effect := { resolution := .addMana #[.colored .red] .perChargeCounter, phrase := "Add {R} for each charge counter." }
+      effect := { resolution? := some (.addMana #[.colored .red] .perChargeCounter), phrase := "Add {R} for each charge counter." }
     }]
   }
   let ritual3Def : CardDef := {
     name := "P46i4 Ritual3"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some { resolution := .addMana #[.colored .red] (.fixed 3), phrase := "Add {R}{R}{R}." }
+    spellEffect := some { resolution? := some (.addMana #[.colored .red] (.fixed 3)), phrase := "Add {R}{R}{R}." }
   }
   let gDyn0 :=
     let g := addPermanent g3 chargeDynamoDef p0 p0
@@ -1057,7 +1057,10 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf]
       effect := {
-        resolution := .addAnyColorSpendOnlySubtype .goblin
+        body := Instruction.addMana {
+          spec := .oneOf .anyColor (.const 1)
+          restriction := some (.subtypeSpellOrSource .goblin)
+        }
         phrase := "Add one mana of any color. Spend this mana only to cast a Goblin spell or to activate an ability of a Goblin source."
       }
     }]
@@ -1125,7 +1128,10 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     manaCost := ManaCost.empty
     types := #[.sorcery]
     spellEffect := some {
-      resolution := .addFourManaDragonSpells 4 .dragon
+      body := Instruction.addMana {
+        spec := .combination .anyColor (.const 4)
+        restriction := some (.subtypeSpell .dragon)
+      }
       phrase := "Add four mana in any combination of colors for Dragon spells."
     }
   }

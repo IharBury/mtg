@@ -202,7 +202,7 @@ private def passBothPlayers (g : Game) : Game :=
       cost := CostSpec.tapOnly
       effect := {
         targeting := .of TargetSpec.creature
-        resolution := .addMana #[.colored .green]
+        body := Instruction.addMana { spec := .fixedOne (.colored .green) }
         phrase := "Target creature gets nothing; add {G}"
       }
     }]
@@ -260,7 +260,7 @@ private def passBothPlayers (g : Game) : Game :=
     activatedAbilities := #[{
       cost := CostSpec.tapOnly
       effect := {
-        resolution := .sequence [.addMana #[.colored .green], .draw 1]
+        body := .seq #[Instruction.addMana { spec := .fixedOne (.colored .green) }, Instruction.drawFixed 1]
         phrase := "Add {G}. Draw a card"
       }
     }]
@@ -304,7 +304,7 @@ private def passBothPlayers (g : Game) : Game :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.tapOnly
-      effect := { resolution := .sequence [.addMana #[.colored .green], .draw 1], phrase := "Add {G}. Draw a card" }
+      effect := { body := .seq #[Instruction.addMana { spec := .fixedOne (.colored .green) }, Instruction.drawFixed 1], phrase := "Add {G}. Draw a card" }
     }]
   }
   let splitEnabler : CardDef := {
@@ -555,7 +555,7 @@ private def passBothPlayers (g : Game) : Game :=
   }
   let abTarget : ActivatedAbility := {
     cost := CostSpec.ofGeneric 5
-    effect := { targeting := .of TargetSpec.creature, resolution := .gainLife 1 }
+    effect := { targeting := .of TargetSpec.creature, body := Instruction.gainLifeFixed 1 }
     costReductions := #[
       ActivationCostReduction.ifTargetPowerAtMost 2 2,
       ActivationCostReduction.perPlusOneOnTarget
@@ -729,36 +729,31 @@ private def passBothPlayers (g : Game) : Game :=
 
 -- CR 605.1a modal mana abilities resolve immediately without using the stack
 -- (both mana-producing modes and non-mana modes), whereas modal abilities with
--- a targeted or library-moving mode in `otherModes` use the stack.
+-- a targeted or library-moving mode use the stack.
 #guard
   let dualModalMana : CardDef := {
     name := "P5 Dual Modal Rock"
     types := #[.artifact]
-    activatedAbilities := #[{
-      cost := CostSpec.tapOnly
-      effect := Effect.addMana #[.colored .red]
-      otherModes := #[Effect.addMana #[.colored .green]]
-    }]
+    activatedAbilities := #[
+      ActivatedAbility.mkModal CostSpec.tapOnly
+        #[Effect.addMana #[.colored .red], Effect.addMana #[.colored .green]]
+    ]
   }
   let hybridModalMana : CardDef := {
     name := "P5 Hybrid Modal Rock"
     types := #[.artifact]
-    activatedAbilities := #[{
-      cost := CostSpec.tapOnly
-      effect := Effect.gainLife 2
-      otherModes := #[Effect.addMana #[.colored .green]]
-    }]
+    activatedAbilities := #[
+      ActivatedAbility.mkModal CostSpec.tapOnly
+        #[Effect.gainLife 2, Effect.addMana #[.colored .green]]
+    ]
   }
-  let badModalTarget : ActivatedAbility := {
-    cost := CostSpec.tapOnly
-    effect := Effect.addMana #[.colored .green]
-    otherModes := #[{ targeting := .of TargetSpec.creature, resolution := .gainLife 1 }]
-  }
-  let badModalDraw : ActivatedAbility := {
-    cost := CostSpec.tapOnly
-    effect := Effect.addMana #[.colored .green]
-    otherModes := #[Effect.draw 1]
-  }
+  let badModalTarget : ActivatedAbility :=
+    ActivatedAbility.mkModal CostSpec.tapOnly
+      #[Effect.addMana #[.colored .green],
+        { targeting := .of TargetSpec.creature, body := Instruction.gainLifeFixed 1 }]
+  let badModalDraw : ActivatedAbility :=
+    ActivatedAbility.mkModal CostSpec.tapOnly
+      #[Effect.addMana #[.colored .green], Effect.draw 1]
   let gDual := addPermanent afterDraw dualModalMana p0 p0
   let dualId := (namedPerm gDual dualModalMana.name).id
   let gDualRed := mustOk (gDual.apply p0 (.activateManaAbility dualId 0 #[.colored .red] #[]))
@@ -789,7 +784,7 @@ private def passBothPlayers (g : Game) : Game :=
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.exile (.exact 1) .yourHand .self]
       activeZones := #[.hand]
-      mana? := some { spec := .fixedOne (.colored .green) }
+      effect := { body := Instruction.addMana { spec := .fixedOne (.colored .green) } }
     }]
   }
   let cheapGreenSpell : CardDef := {
@@ -807,7 +802,7 @@ private def passBothPlayers (g : Game) : Game :=
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.discard (.exact 1) .self]
       activeZones := #[.hand]
-      mana? := some { spec := .fixedOne (.colored .red) }
+      effect := { body := Instruction.addMana { spec := .fixedOne (.colored .red) } }
     }]
   }
   let gyMana : CardDef := {
@@ -858,7 +853,7 @@ private def passBothPlayers (g : Game) : Game :=
     toughness := some 1
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .removeCounters .anyNumber (some .plusOnePlusOne) .self]
-      mana? := some { spec := .sequence #[(.colored .green, .chosenX)] }
+      effect := { body := Instruction.addMana { spec := .sequence #[(.colored .green, .chosenX)] } }
     }]
   }
   let crewManaVehicle : CardDef := {
@@ -867,7 +862,7 @@ private def passBothPlayers (g : Game) : Game :=
     subtypes := #["Vehicle"]
     activatedAbilities := #[{
       cost := CostSpec.crewCost 2
-      mana? := some { spec := .fixed #[.colored .red, .colored .red] }
+      effect := { body := Instruction.addMana { spec := .fixed #[.colored .red, .colored .red] } }
     }]
   }
   let exileSymMana : CardDef := {
@@ -875,7 +870,7 @@ private def passBothPlayers (g : Game) : Game :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.exile (.totalManaSymbolsAtLeast (some .black) (.const 2)) .yourGraveyard (.filter (.all #[.hasColor (.literal .black), .isKind .card]))]
-      mana? := some { spec := .fixed #[.colored .black, .colored .black, .colored .black] }
+      effect := { body := Instruction.addMana { spec := .fixed #[.colored .black, .colored .black, .colored .black] } }
     }]
   }
   let bbCard : CardDef := {

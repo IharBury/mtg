@@ -885,7 +885,7 @@ def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility
   | (.casting .tapCreatureOrLand) =>
     let spec := TargetSpec.ofDomain (.object .battlefield (.any #[.hasType .creature, .hasType .land]))
     g.withLegalSpecPermanent controller spec targets
-      (fun g o => g.applyPermanentAction o .tap) sourceId
+      (fun g o => g.becomeTapped o) sourceId
       (some "The target is no longer legal")
   | (.resource .discardExilePlay) =>
     g.offerMayExileDiscarded controller
@@ -997,15 +997,15 @@ def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=
     | none => g.logMsg "The target is no longer legal"
   | _ => g.logMsg "The target is no longer legal"
 
-/-- Ask the target's controller to pay `{n}`. If they do not, resolve `r`.
+/-- Ask the target's controller to pay `{n}`. If they do not, resolve `body`.
 Countering uses the existing “pay or let the spell be countered” choice. -/
 def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
-    (targets : Array Target) (r : SpellResolution) (n : Nat)
+    (targets : Array Target) (body : Instruction) (n : Nat)
     (sourceId : Option ObjectId := none)
     (resCtx : SpellResolutionCtx := {}) : Game :=
   g.withContinuationFrame fun g =>
-    match r with
-    | .counter => g.beginPayOrLetCounter targets n
+    match body with
+    | .stack (.counterStack ..) => g.beginPayOrLetCounter targets n
     | _ =>
       let payer? : Option (PlayerId × Option ObjectId) :=
         match targets[0]? with
@@ -1026,7 +1026,7 @@ def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
       match payer? with
       | none => g.logMsg "The target is no longer legal"
       | some (payer, spellId?) =>
-        let inner := { effect with resolution := Resolution.ofSpell r }
+        let inner : Effect := { effect with body, resolution? := none }
         (g.changes #[
           .pending (.payOrLetCounter payer n spellId?),
           .unlessPaysInstead (some inner),
@@ -1035,7 +1035,7 @@ def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
           .unlessPaysSource sourceId,
           .unlessPaysDue false,
           .unlessPaysResCtx resCtx]).logMsg
-          s!"{(g.player payer).name} may pay \{{n}} or {SpellResolution.toPhrase r effect.targeting.spec.noun}"
+          s!"{(g.player payer).name} may pay \{{n}} or {if inner.phrase.isEmpty then ToOracle.toOracle {} inner.body else inner.phrase}"
 
 /-- Exile `o`, then immediately return it to the battlefield under its
 owner's control. `clearExileFields` drops a play permission or linked exile

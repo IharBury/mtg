@@ -166,6 +166,9 @@ inductive PlayerMetric where
   | landsPlayedThisTurn
   | spellsCastThisTurn
   | cardsDrawnThisTurn
+  | cardsDiscardedThisTurn
+  | cardsMilledThisTurn
+  | otherSpellsManaValueThisTurn
   | lifeGainedThisTurn
   | lifeLostThisTurn
   | unspentMana
@@ -194,6 +197,7 @@ inductive TriggerPlayerRole where
   | targetPlayer
   | controllerOfSubject
   | ownerOfSubject
+  | giftOpponent
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Relationship of a player to the evaluating controller (CR 102 / 810). -/
@@ -212,10 +216,12 @@ inductive CountRange where
   | anyNumber
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Subtype reference: printed literal or creature type chosen on the source (CR 614.12). -/
+/-- Subtype reference: printed literal, creature type chosen on the source (CR 614.12),
+or creature type chosen by an earlier step (`VarId`). -/
 inductive SubtypeRef where
   | literal (subtype : CardSubtype)
   | chosenOnSource
+  | fromStep (v : VarId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 instance : HasTextChange SubtypeRef where
@@ -225,6 +231,7 @@ instance : HasTextChange SubtypeRef where
       match r with
       | .literal s => .literal (HasTextChange.applyTextChanges tcs s)
       | .chosenOnSource => .chosenOnSource
+      | .fromStep v => .fromStep v
 
 /-- Color reference: printed literal, color chosen on the source, or commander color identity
 (CR 105 / 614.12 / 903.4). -/
@@ -249,11 +256,13 @@ inductive NameRef where
   | chosenOnSource
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Parity reference: literal odd/even or parity chosen on the source (CR 614.12). -/
+/-- Parity reference: literal odd/even, parity chosen on the source (CR 614.12),
+or parity chosen by an earlier step (`VarId`). -/
 inductive ParityRef where
   | odd
   | even
   | chosenOnSource
+  | fromStep (v : VarId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Parameterized CR 702 keyword tag matched by `KeywordTag.param`. -/
@@ -524,6 +533,7 @@ inductive PlayerPred where
   | controls (filter : ObjectFilter) (minCount : ValueExpr)
   | isSeat (idx : Nat)
   | thatPlayer
+  | matchesExpr (who : PlayerExpr)
 
 /-- Pure expression evaluating to zero, one, or more players (11 constructors). -/
 inductive PlayerExpr where
@@ -620,35 +630,43 @@ inductive ObjectPred where
       (thisTurnOnly : Bool := true)
   | wasDealtDamageThisTurn
   | receivedCounterThisTurn (kind? : Option CounterKind) (byPlayer? : Option PlayerFilter)
+  | putIntoGraveyardFromBattlefieldThisTurn
+  | chosenAnchorIs (anchor : String)
 
 /-- Zone-scoped object predicate (used by continuous effects, filters, and noun phrases). -/
 structure ObjectFilter where
   zones : ZoneSetSpec
   pred : ObjectPred
 
-/-- Pure expression evaluating to a sequence of objects (live or LKI, 10 constructors). -/
+/-- Pure expression evaluating to a sequence of objects (live or LKI, 14 constructors). -/
 inductive ObjectExpr where
   | this
   | target (slot : Nat := 0)
+  | allTargets
   | attachedHost
   | triggerSubject
   | stepObjects (v : VarId)
+  | linkedExile (source : ObjectExpr)
+  | costPaidObjects
   | inZones (zones : ZoneSetSpec) (pred : ObjectPred)
   | topOfLibrary (owner : PlayerExpr) (count : ValueExpr)
   | extremum (dir : ExtremumDir) (metric : StatKind) (among : ObjectExpr)
+  | filter (objs : ObjectExpr) (pred : ObjectPred)
   | union (exprs : Array ObjectExpr)
   | diff (lhs rhs : ObjectExpr)
 
-/-- Pure integer-valued expression (CR 107 / 608.2h; 13 constructors). -/
+/-- Pure integer-valued expression (CR 107 / 608.2h; 15 constructors). -/
 inductive ValueExpr where
   | const (n : Int)
   | chosenX
+  | eventAmount
   | objectStat (kind : StatKind) (obj : ObjectExpr)
   | counterCount (kind? : Option CounterKind) (obj : ObjectExpr)
   | aggregate (op : AggOp) (metric : ObjectMetric) (objs : ObjectExpr)
   | basicLandTypeCount (objs : ObjectExpr)
   | cardTypeCount (objs : ObjectExpr)
   | subtypeCount (category : SubtypeCategory) (objs : ObjectExpr)
+  | colorCountAmong (objs : ObjectExpr)
   | playerMetric (metric : PlayerMetric) (who : PlayerExpr)
   | maxControlled (who : PlayerFilter) (pred : ObjectPred)
   | manaSymbols (color? : Option Color) (objs : ObjectExpr)
@@ -733,6 +751,8 @@ inductive EventHistoryPred where
   | surveilledThisTurn (who : PlayerFilter := { relation := .you, pred := .any })
   | eventOccurredThisTurn (who : PlayerFilter) (pattern : EventPattern)
   | eventOccurredLastTurn (who : PlayerFilter) (pattern : EventPattern)
+  | firstResolutionThisTurn
+  | optionalOnceUnusedThisTurn
 deriving Repr, Inhabited, BEq
 
 /-- Pure boolean condition (CR 603.4 / 608.2 / 611; 14 constructors). -/
@@ -780,6 +800,7 @@ def any : PlayerFilter := { relation := .anyPlayer, pred := .any }
 def defendingPlayer : PlayerFilter := { relation := .anyPlayer, pred := .isDefendingPlayer }
 def seat (idx : Nat) : PlayerFilter := { relation := .anyPlayer, pred := .isSeat idx }
 def thatPlayer : PlayerFilter := { relation := .anyPlayer, pred := .thatPlayer }
+def ofExpr (who : PlayerExpr) : PlayerFilter := { relation := .anyPlayer, pred := .matchesExpr who }
 
 end PlayerFilter
 
@@ -794,8 +815,20 @@ def opponentGraveyard : ZoneSetSpec := { zones := #[.graveyard], owner := .match
 def anyGraveyard : ZoneSetSpec := { zones := #[.graveyard], owner := .any }
 def yourHand : ZoneSetSpec := { zones := #[.hand], owner := .matching .you }
 def yourLibrary : ZoneSetSpec := { zones := #[.library], owner := .matching .you }
+def ofPlayer (z : ZoneKind) (who : PlayerExpr) : ZoneSetSpec :=
+  { zones := #[z], owner := .ofPlayer who }
+def handOf (who : PlayerExpr) : ZoneSetSpec := ofPlayer .hand who
+def graveyardOf (who : PlayerExpr) : ZoneSetSpec := ofPlayer .graveyard who
+def libraryOf (who : PlayerExpr) : ZoneSetSpec := ofPlayer .library who
 
 end ZoneSetSpec
+
+namespace PlayerExpr
+
+def opponents : PlayerExpr := .matching .opponent .any
+def eachPlayer : PlayerExpr := .matching .anyPlayer .any
+
+end PlayerExpr
 
 namespace ObjectPred
 
@@ -955,6 +988,7 @@ private partial def playerPredMentionsTarget : PlayerPred → Bool
   | .not p => playerPredMentionsTarget p
   | .metric _ _ rhs => valueExprMentionsTarget rhs
   | .controls f minC => objectFilterMentionsTarget f || valueExprMentionsTarget minC
+  | .matchesExpr who => playerExprMentionsTarget who
   | _ => false
 
 private partial def playerExprMentionsTarget : PlayerExpr → Bool
@@ -991,7 +1025,8 @@ private partial def objectFilterMentionsTarget (f : ObjectFilter) : Bool :=
    | .any => false) || objectPredMentionsTarget f.pred
 
 private partial def objectExprMentionsTarget : ObjectExpr → Bool
-  | .target _ => true
+  | .target _ | .allTargets => true
+  | .linkedExile src => objectExprMentionsTarget src
   | .inZones zs pred =>
     (match zs.owner with
      | .matching pf => playerFilterMentionsTarget pf
@@ -999,13 +1034,15 @@ private partial def objectExprMentionsTarget : ObjectExpr → Bool
      | .any => false) || objectPredMentionsTarget pred
   | .topOfLibrary owner cnt => playerExprMentionsTarget owner || valueExprMentionsTarget cnt
   | .extremum _ _ among => objectExprMentionsTarget among
+  | .filter objs pred => objectExprMentionsTarget objs || objectPredMentionsTarget pred
   | .union es => es.any objectExprMentionsTarget
   | .diff a b => objectExprMentionsTarget a || objectExprMentionsTarget b
   | _ => false
 
 private partial def valueExprMentionsTarget : ValueExpr → Bool
   | .objectStat _ o | .counterCount _ o | .aggregate _ _ o | .basicLandTypeCount o
-  | .cardTypeCount o | .subtypeCount _ o | .manaSymbols _ o => objectExprMentionsTarget o
+  | .cardTypeCount o | .subtypeCount _ o | .colorCountAmong o | .manaSymbols _ o =>
+    objectExprMentionsTarget o
   | .playerMetric _ w => playerExprMentionsTarget w
   | .maxControlled pf pred => playerFilterMentionsTarget pf || objectPredMentionsTarget pred
   | .binary _ a b => valueExprMentionsTarget a || valueExprMentionsTarget b
@@ -1055,6 +1092,7 @@ private partial def applyTcPlayerPred (tcs : Array TextChange) : PlayerPred → 
   | .controls f minC => .controls (applyTcObjectFilter tcs f) (applyTcValueExpr tcs minC)
   | .isSeat idx => .isSeat idx
   | .thatPlayer => .thatPlayer
+  | .matchesExpr who => .matchesExpr (applyTcPlayerExpr tcs who)
 
 private partial def applyTcPlayerExpr (tcs : Array TextChange) : PlayerExpr → PlayerExpr
   | .you => .you
@@ -1138,6 +1176,8 @@ private partial def applyTcObjectPred (tcs : Array TextChange) : ObjectPred → 
   | .wasDealtDamageThisTurn => .wasDealtDamageThisTurn
   | .receivedCounterThisTurn kind? byPlayer? =>
     .receivedCounterThisTurn kind? (byPlayer?.map (applyTcPlayerFilter tcs))
+  | .putIntoGraveyardFromBattlefieldThisTurn => .putIntoGraveyardFromBattlefieldThisTurn
+  | .chosenAnchorIs anchor => .chosenAnchorIs anchor
 
 private partial def applyTcObjectFilter (tcs : Array TextChange) (f : ObjectFilter) : ObjectFilter :=
   { zones := applyTcZoneSetSpec tcs f.zones, pred := applyTcObjectPred tcs f.pred }
@@ -1145,25 +1185,31 @@ private partial def applyTcObjectFilter (tcs : Array TextChange) (f : ObjectFilt
 private partial def applyTcObjectExpr (tcs : Array TextChange) : ObjectExpr → ObjectExpr
   | .this => .this
   | .target slot => .target slot
+  | .allTargets => .allTargets
   | .attachedHost => .attachedHost
   | .triggerSubject => .triggerSubject
   | .stepObjects v => .stepObjects v
+  | .linkedExile src => .linkedExile (applyTcObjectExpr tcs src)
+  | .costPaidObjects => .costPaidObjects
   | .inZones zs pred => .inZones (applyTcZoneSetSpec tcs zs) (applyTcObjectPred tcs pred)
   | .topOfLibrary owner cnt =>
     .topOfLibrary (applyTcPlayerExpr tcs owner) (applyTcValueExpr tcs cnt)
   | .extremum dir m among => .extremum dir m (applyTcObjectExpr tcs among)
+  | .filter objs pred => .filter (applyTcObjectExpr tcs objs) (applyTcObjectPred tcs pred)
   | .union es => .union (es.map (applyTcObjectExpr tcs))
   | .diff a b => .diff (applyTcObjectExpr tcs a) (applyTcObjectExpr tcs b)
 
 private partial def applyTcValueExpr (tcs : Array TextChange) : ValueExpr → ValueExpr
   | .const n => .const n
   | .chosenX => .chosenX
+  | .eventAmount => .eventAmount
   | .objectStat k obj => .objectStat k (applyTcObjectExpr tcs obj)
   | .counterCount k? obj => .counterCount k? (applyTcObjectExpr tcs obj)
   | .aggregate op m objs => .aggregate op m (applyTcObjectExpr tcs objs)
   | .basicLandTypeCount objs => .basicLandTypeCount (applyTcObjectExpr tcs objs)
   | .cardTypeCount objs => .cardTypeCount (applyTcObjectExpr tcs objs)
   | .subtypeCount cat objs => .subtypeCount cat (applyTcObjectExpr tcs objs)
+  | .colorCountAmong objs => .colorCountAmong (applyTcObjectExpr tcs objs)
   | .playerMetric m who => .playerMetric m (applyTcPlayerExpr tcs who)
   | .maxControlled pf pred => .maxControlled (applyTcPlayerFilter tcs pf) (applyTcObjectPred tcs pred)
   | .manaSymbols col? objs =>
@@ -1242,6 +1288,8 @@ instance : HasTextChange EventHistoryPred where
       | .eventOccurredLastTurn who pat =>
         .eventOccurredLastTurn (HasTextChange.applyTextChanges tcs who)
           (HasTextChange.applyTextChanges tcs pat)
+      | .firstResolutionThisTurn => .firstResolutionThisTurn
+      | .optionalOnceUnusedThisTurn => .optionalOnceUnusedThisTurn
 
 private def applyTcCondition (tcs : Array TextChange) : Condition → Condition
   | .cmp op a b => .cmp op (HasTextChange.applyTextChanges tcs a) (HasTextChange.applyTextChanges tcs b)
@@ -1348,6 +1396,7 @@ private partial def printPlayerFilter (ctx : PrintCtx) (pf : PlayerFilter) : Str
   | _, .any => base
   | .anyPlayer, .isDefendingPlayer => "defending player"
   | .anyPlayer, .isSeat _ | .anyPlayer, .thatPlayer => "that player"
+  | .anyPlayer, .matchesExpr who => printPlayerExpr { ctx with capitalize := false } who
   | _, p => s!"{base} who {printPlayerPred { ctx with capitalize := false } p}"
 
 private partial def printPlayerPred (ctx : PrintCtx) : PlayerPred → String
@@ -1372,6 +1421,9 @@ private partial def printPlayerPred (ctx : PrintCtx) : PlayerPred → String
       | .landsPlayedThisTurn => "number of lands played this turn"
       | .spellsCastThisTurn => "number of spells cast this turn"
       | .cardsDrawnThisTurn => "number of cards drawn this turn"
+      | .cardsDiscardedThisTurn => "number of cards discarded this turn"
+      | .cardsMilledThisTurn => "number of cards milled this turn"
+      | .otherSpellsManaValueThisTurn => "total mana value of other spells cast this turn"
       | .lifeGainedThisTurn => "life gained this turn"
       | .lifeLostThisTurn => "life lost this turn"
       | .unspentMana => "unspent mana"
@@ -1387,6 +1439,7 @@ private partial def printPlayerPred (ctx : PrintCtx) : PlayerPred → String
       let noun := printObjectFilter { ctx with plural := true, capitalize := false } f
       s!"controls {printValueExpr { ctx with capitalize := false } minC} or more {noun}"
   | .isSeat _ | .thatPlayer => "is that player"
+  | .matchesExpr who => s!"is {printPlayerExpr { ctx with capitalize := false } who}"
 
 private partial def printPlayerExpr (ctx : PrintCtx) : PlayerExpr → String
   | .you => "you"
@@ -1403,6 +1456,7 @@ private partial def printPlayerExpr (ctx : PrintCtx) : PlayerExpr → String
   | .triggerPlayer .targetPlayer => "that player"
   | .triggerPlayer .controllerOfSubject => "its controller"
   | .triggerPlayer .ownerOfSubject => "its owner"
+  | .triggerPlayer .giftOpponent => "the chosen opponent"
   | .stepPlayers _ => "that player"
   | .matching rel .any =>
     match rel with
@@ -1511,7 +1565,8 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
     | .hasSupertype s => superMods := superMods ++ [s.oracleWord]
     | .not (.hasSupertype s) => superMods := superMods ++ [s!"non{s.oracleWord}"]
     | .hasSubtype (.literal s) => subtypeMods := subtypeMods ++ [s.englishName]
-    | .hasSubtype .chosenOnSource => thatClauses := thatClauses ++ ["of the chosen type"]
+    | .hasSubtype .chosenOnSource | .hasSubtype (.fromStep _) =>
+      thatClauses := thatClauses ++ ["of the chosen type"]
     | .not (.hasSubtype (.literal s)) => subtypeMods := subtypeMods ++ [s!"non-{s.englishName}"]
     | .hasType t =>
       typeWords := typeWords ++ [if ctx.plural && typeIsHead then t.pluralName else t.oracleWord]
@@ -1585,7 +1640,7 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
         [s!"{k.oracleWord} {renderCmpBound op (printValueExpr { ctx with capitalize := false } rhs)}"]
     | .statParity k .odd => withClauses := withClauses ++ [s!"odd {k.oracleWord}"]
     | .statParity k .even => withClauses := withClauses ++ [s!"even {k.oracleWord}"]
-    | .statParity k .chosenOnSource =>
+    | .statParity k .chosenOnSource | .statParity k (.fromStep _) =>
       withClauses := withClauses ++ [s!"{k.oracleWord} of the chosen quality"]
     | .counterCount (some k) .ge (.const 1) =>
       withClauses := withClauses ++ [s!"{k.countersPhrase 1} on it"]
@@ -1662,6 +1717,10 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
         thatClauses := thatClauses ++ [s!"that {whoS} {kS} on this turn"]
       else
         thatClauses := thatClauses ++ [s!"that had {kS} put on it this turn"]
+    | .putIntoGraveyardFromBattlefieldThisTurn =>
+      thatClauses := thatClauses ++ ["that were put there from the battlefield this turn"]
+    | .chosenAnchorIs anchor =>
+      thatClauses := thatClauses ++ [s!"whose chosen option is {anchor}"]
     | .not inner =>
       thatClauses := thatClauses ++ [s!"that isn't {printObjectPredParts ctx inner zones}"]
     | .all _ => pure ()
@@ -1709,9 +1768,12 @@ private partial def printObjectFilter (ctx : PrintCtx) (f : ObjectFilter) : Stri
 private partial def printObjectExpr (ctx : PrintCtx) : ObjectExpr → String
   | .this => ctx.selfRef
   | .target _ => "target"
+  | .allTargets => "each target"
   | .attachedHost => "enchanted or equipped permanent"
   | .triggerSubject => "that object"
   | .stepObjects _ => "those objects"
+  | .linkedExile src => s!"cards exiled with {printObjectExpr { ctx with capitalize := false } src}"
+  | .costPaidObjects => "those exiled cards"
   | .inZones zs pred => printObjectPredParts ctx pred zs
   | .topOfLibrary owner cnt =>
     let whoS :=
@@ -1724,6 +1786,8 @@ private partial def printObjectExpr (ctx : PrintCtx) : ObjectExpr → String
   | .extremum dir m among =>
     let adj := match dir with | .max => "greatest" | .min => "least"
     s!"{printObjectExpr { ctx with plural := false, capitalize := false } among} with the {adj} {m.oracleWord}"
+  | .filter objs pred =>
+    s!"{printObjectExpr { ctx with capitalize := false } objs} matching {printObjectPredParts { ctx with capitalize := false } pred .battlefield}"
   | .union es =>
     String.intercalate " and " (es.toList.map (printObjectExpr { ctx with capitalize := false }))
   | .diff a b =>
@@ -1732,6 +1796,7 @@ private partial def printObjectExpr (ctx : PrintCtx) : ObjectExpr → String
 private partial def printValueExpr (ctx : PrintCtx) : ValueExpr → String
   | .const n => toString n
   | .chosenX => "X"
+  | .eventAmount => "that amount"
   | .objectStat k obj =>
     s!"{printObjectExpr { ctx with plural := false, capitalize := false } obj}'s {k.oracleWord}"
   | .counterCount (some k) obj =>
@@ -1764,6 +1829,8 @@ private partial def printValueExpr (ctx : PrintCtx) : ValueExpr → String
     s!"the number of card types among {printObjectExpr { ctx with plural := true, capitalize := false } objs}"
   | .subtypeCount cat objs =>
     s!"the number of {cat.oraclePhrase} among {printObjectExpr { ctx with plural := true, capitalize := false } objs}"
+  | .colorCountAmong objs =>
+    s!"the number of colors among {printObjectExpr { ctx with plural := true, capitalize := false } objs}"
   | .playerMetric m who =>
     let isYou := who == .you
     let poss := if isYou then "your" else s!"{printPlayerExpr { ctx with capitalize := false } who}'s"
@@ -1783,6 +1850,15 @@ private partial def printValueExpr (ctx : PrintCtx) : ValueExpr → String
     | .cardsDrawnThisTurn =>
       if isYou then "the number of cards you've drawn this turn"
       else s!"the number of cards {subj} drew this turn"
+    | .cardsDiscardedThisTurn =>
+      if isYou then "the number of cards you've discarded this turn"
+      else s!"the number of cards {subj} discarded this turn"
+    | .cardsMilledThisTurn =>
+      if isYou then "the number of cards put into your graveyard from your library this turn"
+      else s!"the number of cards put into {poss} graveyard from {poss} library this turn"
+    | .otherSpellsManaValueThisTurn =>
+      if isYou then "the total mana value of other spells you've cast this turn"
+      else s!"the total mana value of other spells {subj} cast this turn"
     | .lifeGainedThisTurn => s!"the amount of life {subj} gained this turn"
     | .lifeLostThisTurn => s!"the amount of life {subj} lost this turn"
     | .unspentMana =>
@@ -1853,6 +1929,8 @@ private def printEventHistory (ctx : PrintCtx) : EventHistoryPred → String
     s!"{printPlayerFilter { ctx with capitalize := false } pf} surveilled this turn"
   | .eventOccurredThisTurn who pat => printEventAtTurn ctx who pat "this turn"
   | .eventOccurredLastTurn who pat => printEventAtTurn ctx who pat "last turn"
+  | .firstResolutionThisTurn => "this is the first time this ability has resolved this turn"
+  | .optionalOnceUnusedThisTurn => "this optional effect hasn't been used this turn"
 where
   printEventAtTurn (ctx : PrintCtx) (who : PlayerFilter) (pat : EventPattern) (whenS : String) : String :=
     let whoS :=

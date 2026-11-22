@@ -2997,7 +2997,7 @@ def parseManaProductionSpec (sentences : Array String) (cardName : String := "")
 
 /-- Parse a complete Oracle mana-producing activated ability line
 (`"<cost>: Add ... [self-damage.] [Spend this mana ...] [Activate only ...]"`)
-into a unified `ActivatedAbility` with `mana? := some ...` (CR 605.1a).
+into a unified `ActivatedAbility` with `PlayerOp.addMana` in `effect.body` (CR 605.1a).
 Rejects triggered abilities and loyalty abilities (`[+1]: ...`), and returns
 `none` if the effect contains non-mana instructions. -/
 def parseManaAbilityLine (raw : String) (cardName : String := "") : Option ActivatedAbility := Id.run do
@@ -3071,7 +3071,7 @@ def parseManaAbilityLine (raw : String) (cardName : String := "") : Option Activ
   let some mp := parseManaProductionSpec manaSents cardName | return none
   return some {
     cost
-    mana? := some mp
+    effect := { body := .player (.addMana .you mp) }
     timing
     activeZones
     turnLimit?
@@ -4041,14 +4041,14 @@ def parseTriggerClause (raw : String) (cardName : String := "") : Option ParsedT
 
 /-- Compositional fallback parser for novel triggered abilities not present in the
 catalog prototype table. Composes `parseTriggerClauses` with an effect parser
-`parseEffect` and rejects any effect whose resolution does nothing as a trigger. -/
+`parseEffect` and rejects any effect whose body/resolution does nothing as a trigger. -/
 def parseNovelTriggeredAbilityLines (raw : String) (cardName : String := "")
     (parseEffect : String → Option Effect) : Option (Array TriggeredAbility) := do
   let hdrs := parseTriggerClauses raw cardName
   if hdrs.isEmpty then none
   else
     let eff ← parseEffect hdrs[0]!.effectText
-    if eff.resolution.doesNothingAsTrigger then none
+    if eff.doesNothingAsTrigger then none
     else
       some (hdrs.map fun hdr => {
         word := hdr.word
@@ -4066,5 +4066,465 @@ def parseNovelTriggeredAbilityLine (raw : String) (cardName : String := "")
   match parseNovelTriggeredAbilityLines raw cardName parseEffect with
   | some #[ab] => some ab
   | _ => none
+
+/-! ### Stage-4 Compositional One-Shot `Instruction` Sub-Grammar (CR 608 / Phase 8) -/
+
+/-- Parse a target-or-object subject phrase, appending any new `TargetSlot` onto `slots`. -/
+private def parseInstrObj (raw : String) (slots : Array TargetSlot) :
+    Option (ObjectExpr × Array TargetSlot) :=
+  let s := cleanClause raw
+  let sLow := lower s
+  if sLow == "it" || sLow == "them" || sLow == "that creature" || sLow == "that permanent" ||
+      sLow == "that card" then
+    if slots.isEmpty then some (.triggerSubject, slots)
+    else some (.target (slots.size - 1), slots)
+  else if sLow == "this creature" || sLow == "this permanent" || sLow == "this artifact" ||
+      sLow == "this enchantment" || sLow == "this land" || sLow == "this planeswalker" ||
+      sLow == "this card" then
+    some (.this, slots)
+  else if sLow.contains "target " then
+    match parseTargetSlot s with
+    | some slot =>
+      let idx := slots.size
+      some (.target idx, slots.push slot)
+    | none => none
+  else
+    match parseObjectExpr? s with
+    | some oe => some (oe, slots)
+    | none => none
+
+/-- Parse a target-or-player subject phrase, appending any new `TargetSlot` onto `slots`. -/
+private def parseInstrPlayer (raw : String) (slots : Array TargetSlot) :
+    Option (PlayerExpr × Array TargetSlot) :=
+  let s := cleanClause raw
+  let sLow := lower s
+  if sLow == "you" then some (.you, slots)
+  else if sLow == "each opponent" then some (.opponents, slots)
+  else if sLow == "each player" then some (.eachPlayer, slots)
+  else if sLow.contains "target " then
+    match parseTargetSlot s with
+    | some slot =>
+      let idx := slots.size
+      some (.target idx, slots.push slot)
+    | none => none
+  else
+    match parsePlayerExpr? s with
+    | some pe => some (pe, slots)
+    | none => none
+
+/-- Parse a damage recipient phrase (`"any target"`, `"target ..."`, `"each opponent"`,
+`"each creature"`, etc.), appending any new `TargetSlot` onto `slots`. -/
+private def parseInstrRecipient (raw : String) (slots : Array TargetSlot) :
+    Option (RecipientExpr × Array TargetSlot) :=
+  let s := cleanClause raw
+  let sLow := lower s
+  if sLow == "any target" then
+    let idx := slots.size
+    some (.targetSlot idx, slots.push { domain := .anyTarget })
+  else if sLow == "each opponent" then
+    some (.players .opponents, slots)
+  else if sLow == "each player" then
+    some (.players .eachPlayer, slots)
+  else if sLow == "you" then
+    some (.players .you, slots)
+  else if sLow == "each creature" then
+    some (.objects (.inZones .battlefield (.hasType .creature)), slots)
+  else if sLow == "each creature and each planeswalker" then
+    some (.objects (.inZones .battlefield (.any #[.hasType .creature, .hasType .planeswalker])), slots)
+  else if sLow == "each creature and each player" then
+    some (.both (.inZones .battlefield (.hasType .creature)) .eachPlayer, slots)
+  else if sLow.contains "target " then
+    match parseTargetSlot s with
+    | some slot =>
+      let idx := slots.size
+      some (.targetSlot idx, slots.push slot)
+    | none => none
+  else
+    match parsePlayerExpr? s with
+    | some pe => some (.players pe, slots)
+    | none =>
+      match parseObjectExpr? s with
+      | some oe => some (.objects oe, slots)
+      | none => none
+
+/-- Parse a count phrase (`"a"` / `"an"` / `"two"` / `"3"` / `"X"` / general `ValueExpr`). -/
+private def parseInstrCount (raw : String) : Option ValueExpr :=
+  let s := cleanClause raw
+  let sLow := lower s
+  if sLow == "a" || sLow == "an" then some (.const 1)
+  else if sLow == "x" then some .chosenX
+  else
+    match parseNatWord? s with
+    | some n => some (.const n)
+    | none => parseValueExpr s
+
+/-- Parse a predefined token name (`Food`, `Treasure`, `Clue`, `Map`, `Junk`, `Lander`,
+`Mutagen`, `Vibranium`, `Heartwood`). -/
+private def parsePredefinedTokenWord? (raw : String) : Option PredefinedToken :=
+  match lower (cleanClause raw) with
+  | "treasure" => some .treasure
+  | "food" => some .food
+  | "clue" => some .clue
+  | "map" => some .map
+  | "junk" => some .junk
+  | "lander" => some .lander
+  | "mutagen" => some .mutagen
+  | "vibranium" => some .vibranium
+  | "heartwood" => some .heartwood
+  | _ => none
+
+/-- Parse a `"Create <count> [tapped] <spec> token(s)"` body into `CreateOp.tokens`. -/
+private def parseCreateTokensClause? (rest : String) : Option Instruction := Id.run do
+  let s := cleanClause rest
+  let words := splitWords s
+  if words.size < 2 then return none
+  let some cnt := parseInstrCount words[0]! | return none
+  let mut idx : Nat := 1
+  let mut tapped := false
+  if idx < words.size && lower words[idx]! == "tapped" then
+    tapped := true
+    idx := idx + 1
+  let tail := String.intercalate " " (words.extract idx words.size).toList
+  let core? :=
+    (dropSuffixCI? tail " tokens").orElse (fun _ => dropSuffixCI? tail " token")
+  let some core := core? | return none
+  -- Predefined tokens: `"Treasure"`, `"Food"`, `"Clue"`, etc.
+  if let some pre := parsePredefinedTokenWord? core then
+    return some (.create (.tokens .you cnt (.predefined pre) { tapped }))
+  -- Custom creature token: `"P/T <colors...> <subtypes...> creature [with <keywords>]"`
+  let (descPart, kwsPart?) :=
+    match splitFirstCI? core " with " with
+    | some (a, b) => (cleanClause a, some (cleanClause b))
+    | none => (cleanClause core, none)
+  let descCore? := dropSuffixCI? descPart " creature"
+  let some descCore := descCore? | return none
+  let dWords := splitWords descCore
+  if dWords.size < 2 then return none
+  let ptParts := dWords[0]!.splitOn "/"
+  if ptParts.length != 2 then return none
+  let some pVal := parseInstrCount ptParts[0]! | return none
+  let some tVal := parseInstrCount ptParts[1]! | return none
+  let mut colors := ColorSet.empty
+  let mut subtypes : Array CardSubtype := #[]
+  for w in dWords.extract 1 dWords.size do
+    let wl := lower w
+    if wl == "and" || wl == "colorless" then
+      pure ()
+    else if let some col := parseColorWord? w then
+      colors := colors.insert col
+    else if let some sub := CardSubtype.ofOracle? w then
+      subtypes := subtypes.push sub
+    else
+      return none
+  let kwsOpt : Option (Array KeywordAbility) :=
+    match kwsPart? with
+    | none => some #[]
+    | some kwStr => parseGrantedKeywordsList? kwStr
+  let some kws := kwsOpt | return none
+  return some (.create (.tokens .you cnt (.custom {
+    types := #[.creature]
+    subtypes
+    colors
+    power? := some pVal
+    toughness? := some tVal
+    keywords := kws }) { tapped }))
+
+/-- Parse one atomic one-shot instruction clause (no combinators), updating `slots`. -/
+private def parseAtomicInstruction (raw : String) (cardName : String)
+    (slots : Array TargetSlot) : Option (Instruction × Array TargetSlot) := Id.run do
+  let norm := cleanClause (replaceSelfName raw cardName "this permanent")
+  if norm.isEmpty then return none
+  let lowNorm := lower norm
+
+  -- Simple standalone keyword actions
+  if lowNorm == "proliferate" then
+    return some (.player (.proliferate .you), slots)
+  if lowNorm == "the ring tempts you" then
+    return some (.player (.temptWithRing .you), slots)
+  if lowNorm == "you become the monarch" then
+    return some (.player (.becomeMonarch .you), slots)
+  if lowNorm == "draw a card" then
+    return some (Instruction.drawFixed 1, slots)
+  if lowNorm == "discard a card" then
+    return some (Instruction.discardFixed 1, slots)
+
+  -- `"Scry N"` / `"Surveil N"`
+  if let some nStr := dropPrefixCI? norm "scry " then
+    if let some v := parseInstrCount nStr then
+      return some (.player (.scry .you v), slots)
+  if let some nStr := dropPrefixCI? norm "surveil " then
+    if let some v := parseInstrCount nStr then
+      return some (.player (.surveil .you v), slots)
+
+  -- `"Empower <subtype> N"`
+  if let some rest := dropPrefixCI? norm "empower " then
+    let ws := splitWords rest
+    if ws.size == 2 then
+      match CardSubtype.ofOracle? ws[0]!, parseInstrCount ws[1]! with
+      | some sub, some amt => return some (.player (.empowerPlaneswalker sub amt), slots)
+      | _, _ => pure ()
+
+  -- `"Amass <subtype> N"`
+  if let some rest := dropPrefixCI? norm "amass " then
+    let ws := splitWords rest
+    if ws.size == 2 then
+      let subWord := (dropSuffixCI? ws[0]! "s").getD ws[0]!
+      match CardSubtype.ofOracle? subWord, parseInstrCount ws[1]! with
+      | some sub, some amt => return some (.player (.amass .you sub amt), slots)
+      | _, _ => pure ()
+
+  -- `"Add <mana>"`
+  if lowNorm.startsWith "add " then
+    if let some mp := parseManaProductionSpec #[norm] cardName then
+      return some (.player (.addMana .you mp), slots)
+
+  -- `"Destroy ..."` / `"Exile ..."` / `"Counter ..."` / `"Tap ..."` / `"Untap ..."`
+  if let some rest := dropPrefixCI? norm "destroy " then
+    if let some (obj, slots') := parseInstrObj rest slots then
+      return some (Instruction.destroy obj, slots')
+  if let some rest := dropPrefixCI? norm "exile " then
+    if let some (obj, slots') := parseInstrObj rest slots then
+      return some (Instruction.exile obj, slots')
+  if let some rest := dropPrefixCI? norm "return " then
+    if let some objStr := (dropSuffixCI? rest " to its owner's hand").orElse
+        (fun _ => (dropSuffixCI? rest " to their owners' hands").orElse
+          (fun _ => dropSuffixCI? rest " to your hand")) then
+      if let some (obj, slots') := parseInstrObj objStr slots then
+        return some (Instruction.bounce obj, slots')
+  if let some rest := dropPrefixCI? norm "counter " then
+    if let some (obj, slots') := parseInstrObj rest slots then
+      return some (Instruction.counter obj, slots')
+  if let some rest := dropPrefixCI? norm "tap " then
+    if let some (obj, slots') := parseInstrObj rest slots then
+      return some (Instruction.tap obj, slots')
+  if let some rest := dropPrefixCI? norm "untap " then
+    if let some (obj, slots') := parseInstrObj rest slots then
+      return some (Instruction.untap obj, slots')
+
+  -- `"Create ..."`
+  if let some rest := dropPrefixCI? norm "create " then
+    if let some instr := parseCreateTokensClause? rest then
+      return some (instr, slots)
+
+  -- `"Draw N cards"` / `"<player> draws N cards"`
+  if let some rest := dropPrefixCI? norm "draw " then
+    if let some nStr := (dropSuffixCI? rest " cards").orElse (fun _ => dropSuffixCI? rest " card") then
+      if let some v := parseInstrCount nStr then
+        return some (.player (.drawCards .you v), slots)
+  if let some (whoStr, tail) := (splitFirstCI? norm " draws ").orElse (fun _ => splitFirstCI? norm " draw ") then
+    if let some nStr := (dropSuffixCI? tail " cards").orElse (fun _ => dropSuffixCI? tail " card") then
+      match parseInstrPlayer whoStr slots, parseInstrCount nStr with
+      | some (who, slots'), some v => return some (.player (.drawCards who v), slots')
+      | _, _ => pure ()
+
+  -- `"Discard N cards"` / `"<player> discards N cards"`
+  if let some rest := dropPrefixCI? norm "discard " then
+    if let some nStr := (dropSuffixCI? rest " cards").orElse (fun _ => dropSuffixCI? rest " card") then
+      if let some v := parseInstrCount nStr then
+        return some (Instruction.discard v .you, slots)
+  if let some (whoStr, tail) := (splitFirstCI? norm " discards ").orElse (fun _ => splitFirstCI? norm " discard ") then
+    if let some nStr := (dropSuffixCI? tail " cards").orElse (fun _ => dropSuffixCI? tail " card") then
+      match parseInstrPlayer whoStr slots, parseInstrCount nStr with
+      | some (who, slots'), some v => return some (Instruction.discard v who, slots')
+      | _, _ => pure ()
+
+  -- `"Mill N cards"` / `"<player> mills N cards"`
+  if let some rest := dropPrefixCI? norm "mill " then
+    if let some nStr := (dropSuffixCI? rest " cards").orElse (fun _ => dropSuffixCI? rest " card") then
+      if let some v := parseInstrCount nStr then
+        return some (Instruction.mill v .you, slots)
+  if let some (whoStr, tail) := (splitFirstCI? norm " mills ").orElse (fun _ => splitFirstCI? norm " mill ") then
+    if let some nStr := (dropSuffixCI? tail " cards").orElse (fun _ => dropSuffixCI? tail " card") then
+      match parseInstrPlayer whoStr slots, parseInstrCount nStr with
+      | some (who, slots'), some v => return some (Instruction.mill v who, slots')
+      | _, _ => pure ()
+
+  -- `"You gain N life"` / `"Gain N life"` / `"<player> gains N life"` / `"loses N life"`
+  if let some rest := (dropPrefixCI? norm "you gain ").orElse (fun _ => dropPrefixCI? norm "gain ") then
+    if let some nStr := dropSuffixCI? rest " life" then
+      if let some v := parseInstrCount nStr then
+        return some (.life (.gain .you v), slots)
+  if let some (whoStr, tail) := splitFirstCI? norm " gains " then
+    if let some nStr := dropSuffixCI? tail " life" then
+      match parseInstrPlayer whoStr slots, parseInstrCount nStr with
+      | some (who, slots'), some v => return some (.life (.gain who v), slots')
+      | _, _ => pure ()
+  if let some rest := (dropPrefixCI? norm "you lose ").orElse (fun _ => dropPrefixCI? norm "lose ") then
+    if let some nStr := dropSuffixCI? rest " life" then
+      if let some v := parseInstrCount nStr then
+        return some (.life (.lose .you v), slots)
+  if let some (whoStr, tail) := splitFirstCI? norm " loses " then
+    if let some nStr := dropSuffixCI? tail " life" then
+      match parseInstrPlayer whoStr slots, parseInstrCount nStr with
+      | some (who, slots'), some v => return some (.life (.lose who v), slots')
+      | _, _ => pure ()
+
+  -- `"<source> deals N damage to <recipient>"`
+  if let some (srcStr, tail) := splitFirstCI? norm " deals " then
+    if let some (amtStr, recStr) := splitFirstCI? tail " damage to " then
+      match parseInstrObj srcStr slots, parseInstrCount amtStr with
+      | some (src, slots1), some amt =>
+        if let some (rec, slots2) := parseInstrRecipient recStr slots1 then
+          return some (.damage (.deal src rec amt), slots2)
+      | _, _ => pure ()
+
+  -- `"Put <count> <counter> counter(s) on <obj>"`
+  if let some rest := dropPrefixCI? norm "put " then
+    if let some (ctrPart, objPart) := splitFirstCI? rest " on " then
+      let ws := (splitWords ctrPart).toList.map lower
+      if let some (n, kind, _) := CounterKind.matchPhrase ws then
+        if let some (obj, slots') := parseInstrObj objPart slots then
+          return some (.permanent (.modifyCounters (.put kind (.const n)) obj), slots')
+
+  -- `"<obj> explores"` / `"<obj> connives"`
+  if let some objStr := (dropSuffixCI? norm " explores").orElse (fun _ => dropSuffixCI? norm " explore") then
+    if let some (obj, slots') := parseInstrObj objStr slots then
+      return some (.player (.explore obj), slots')
+  if let some objStr := (dropSuffixCI? norm " connives").orElse (fun _ => dropSuffixCI? norm " connive") then
+    if let some (obj, slots') := parseInstrObj objStr slots then
+      return some (.player (.connive obj), slots')
+
+  -- `"<obj> gets +P/+T [and gains <kws>] until end of turn"` / `"<obj> gains <kws> until end of turn"`
+  if let some core := dropSuffixCI? norm " until end of turn" then
+    if let some (objStr, modStr) := (splitFirstCI? core " gets ").orElse (fun _ => splitFirstCI? core " get ") then
+      if let some (obj, slots') := parseInstrObj objStr slots then
+        match splitFirstCI? modStr " and gains " with
+        | some (ptStr, kwStr) =>
+          match parsePTBonus? ptStr, parseGrantedKeywordsList? kwStr with
+          | some (p, t), some kws =>
+            return some (.installEffect (.applyContinuous .untilEndOfTurn obj
+              (.all #[.modifyPT (.const p) (.const t), .grantKeywords kws])), slots')
+          | _, _ => pure ()
+        | none =>
+          if let some (p, t) := parsePTBonus? modStr then
+            return some (Instruction.pumpFixed obj p t, slots')
+    else if let some (objStr, kwStr) := (splitFirstCI? core " gains ").orElse (fun _ => splitFirstCI? core " gain ") then
+      if let some (obj, slots') := parseInstrObj objStr slots then
+        if let some kws := parseGrantedKeywordsList? kwStr then
+          return some (Instruction.grantKeywords obj kws, slots')
+
+  return none
+
+/-- Parse one combinator-wrapped or sequential clause (`You may ...`, `If ..., ...`,
+`... unless <player> pays <cost>`, `..., then ...`), updating `slots`. -/
+private partial def parseClause (raw : String) (cardName : String)
+    (slots : Array TargetSlot) : Option (Instruction × Array TargetSlot) :=
+  let s := cleanClause raw
+  if s.isEmpty then none
+  else if let some (lhs, rhs) := splitFirstCI? s ", then " then
+    do
+      let (i1, slots1) ← parseClause lhs cardName slots
+      let (i2, slots2) ← parseClause rhs cardName slots1
+      some (.seq #[i1, i2], slots2)
+  else if let some (actionStr, unlessTail) := splitFirstCI? s " unless " then
+    match splitFirstCI? unlessTail " pays " with
+    | some (payerStr, costStr) =>
+      do
+        let (act, slots1) ← parseClause actionStr cardName slots
+        let (payer, slots2) ← parseInstrPlayer payerStr slots1
+        let cost ← parseCostSpec (replaceSelfName costStr cardName "this permanent")
+        some (.unlessPays payer cost act, slots2)
+    | none => parseAtomicInstruction s cardName slots
+  else if let some rest := dropPrefixCI? s "you may " then
+    do
+      let (inner, slots1) ← parseClause rest cardName slots
+      some (.optional .you none inner .noop, slots1)
+  else if let some ifRest := dropPrefixCI? s "if " then
+    match splitFirstCI? ifRest ", " with
+    | some (condStr, thenStr) =>
+      let condNorm := replaceSelfName condStr cardName "this permanent"
+      match (parseStaticCondition? condNorm cardName).orElse (fun _ => parseCondition condNorm) with
+      | some c =>
+        do
+          let (inner, slots1) ← parseClause thenStr cardName slots
+          some (.ifCond c inner .noop, slots1)
+      | none => parseAtomicInstruction s cardName slots
+    | none => parseAtomicInstruction s cardName slots
+  else
+    parseAtomicInstruction s cardName slots
+
+/-- Stage-4 compositional Oracle parser for one-shot `Instruction` sequences
+(CR 608 / Phase 8): handles modal `•` bullets, sentence sequences, `"You may pay
+<cost>. If you do, ..."`, `", then "`, `"You may ..."`, `"If <cond>, ..."`,
+`"... unless <player> pays <cost>"`, and verb-dispatched atomic MTG actions,
+collecting inferred `TargetSlot`s in printed order. -/
+partial def parseInstructionSeq (raw : String) (cardName : String := "") :
+    Option (Instruction × Array TargetSlot) := Id.run do
+  let cleaned := (stripReminderText raw).trimAscii.copy
+  if cleaned.isEmpty then return none
+
+  -- Modal bullets (`"Choose one — • ... • ..."`, `"Choose one or both — ..."`, `"Choose two — ..."`)
+  if cleaned.contains "•" then
+    let parts := cleaned.splitOn "•" |>.map (·.trimAscii.copy) |>.filter (!·.isEmpty)
+    match parts with
+    | header :: modeTexts =>
+      if modeTexts.isEmpty then return none
+      let hLow := lower header
+      let (minM, maxM) : Nat × Nat :=
+        if hLow.contains "choose one or both" then (1, 2)
+        else if hLow.contains "choose two" then (2, 2)
+        else if hLow.contains "choose one" then (1, 1)
+        else (0, 0)
+      if minM == 0 then return none
+      let mut modes : Array Effect := #[]
+      for mText in modeTexts do
+        match parseInstructionSeq mText cardName with
+        | some (mBody, mSlots) =>
+          modes := modes.push {
+            targeting := EffectTargeting.of { slots := mSlots }
+            body := mBody
+            phrase := mText
+          }
+        | none => return none
+      return some (.chooseModes {
+        minModes := .const minM
+        maxModes := .const maxM
+        modes }, #[])
+    | _ => return none
+
+  let sents := splitSentences cleaned
+  if sents.isEmpty then return none
+
+  let mut steps : Array Instruction := #[]
+  let mut slots : Array TargetSlot := #[]
+  let mut idx : Nat := 0
+  while idx < sents.size do
+    let sent := sents[idx]!
+    -- Combine `"You may pay <cost>. If you do, <effect>"` across two sentences.
+    let mut handledPair := false
+    if let some costStr := dropPrefixCI? sent "you may pay " then
+      if idx + 1 < sents.size then
+        if let some followStr := dropPrefixCI? sents[idx + 1]! "if you do, " then
+          let costNorm := replaceSelfName costStr cardName "this permanent"
+          if let some cost := parseCostSpec costNorm then
+            if let some (followInstr, slots') := parseClause followStr cardName slots then
+              steps := steps.push (.optional .you (some cost) followInstr .noop)
+              slots := slots'
+              idx := idx + 2
+              handledPair := true
+    if !handledPair then
+      match parseClause sent cardName slots with
+      | some (instr, slots') =>
+        steps := steps.push instr
+        slots := slots'
+        idx := idx + 1
+      | none => return none
+
+  if steps.isEmpty then return none
+  else if steps.size == 1 then return some (steps[0]!, slots)
+  else return some (.seq steps, slots)
+
+/-- Parse a complete Oracle effect text directly into a unified Phase-8 `Effect`
+via `parseInstructionSeq`. -/
+def parseInstructionEffect (raw : String) (cardName : String := "") : Option Effect :=
+  match parseInstructionSeq raw cardName with
+  | some (body, slots) =>
+    let eff : Effect := {
+      targeting := EffectTargeting.of { slots }
+      body
+      phrase := raw.trimAscii.copy
+    }
+    if eff.doesNothingAsSpell then none else some eff
+  | none => none
 
 end Mtg.Engine.Parser

@@ -78,7 +78,7 @@ def normLineAgrees (cardName line : String) : Bool :=
   let bogus : CardDef := {
     name := "Bogus"
     types := #[.instant]
-    spellEffect := some { resolution := .unrecognized }
+    spellEffect := some { body := .noop }
   }
   match bogus.modellingError? with
   | some e => e.contains "not fully modelled"
@@ -132,9 +132,8 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard
     ("Depower\n{2}{U}\nInstant\nThis spell costs {2} less to cast if it targets an attacking creature.\n" ++
       "Target creature gets -4/-0 until end of turn.\nDraw a card.")).toOption.bind
-    (fun c => c.spellEffect.map (·.spellResolution)) ==
-    some (some (SpellResolution.sequence
-      [.onPermanent (.pump (-4) 0), .draw 1]))
+    (fun c => c.spellEffect.map (·.body)) ==
+    some (.seq #[Instruction.pumpFixed (.target 0) (-4) 0, Instruction.drawFixed 1])
 #guard (parseOracleCard "Wander\n{G}\nInstant\nForestcycling {2}").toOption.bind
     (fun c => c.activatedAbilities[0]?) ==
     some (typecyclingAbility "Forest" (ManaCost.ofGeneric 2))
@@ -143,8 +142,8 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Warren Chief\n{1}{R}\nCreature — Goblin\n2/2\nOther Goblin creatures you control get +2/+2.").toOption.bind
     (fun c => c.staticAbilities[0]?) == some (.otherCreaturesGet #[.goblin] 2 2)
 #guard (parseOracleCard "Test Saga\n{2}{R}\nEnchantment — Saga\nI — Draw seven cards.").toOption.bind
-    (fun c => (c.sagaChapters[0]?).bind (·.effect.asChapter?)) ==
-    some (.draw 7)
+    (fun c => (c.sagaChapters[0]?).map (·.effect.body)) ==
+    some (Instruction.drawFixed 7)
 #guard (indexedAbilities.get).any fun item =>
   match item.ability with
   | .spell e => e == Effect.draw 1
@@ -471,8 +470,9 @@ def normLineAgrees (cardName line : String) : Bool :=
   | .error _ => false
 #guard Supertype.all.all fun s =>
   match parseOracleCard s!"Surge\n\{R}\nSorcery\n{s} spells you cast this turn cost \{{3}} less to cast." with
-  | .ok c => c.spellEffect.map (·.resolution) ==
-      some (.spellsCostLessThisTurn (.supertype s) 3)
+  | .ok c => c.spellEffect.map (·.body) ==
+      some (.installEffect (.applyRule .untilEndOfTurn
+        (.costMod (.spells .you (.hasSupertype s)) (.reduceGeneric (.const 3)))))
   | .error _ => false
 #guard (parseOracleCard "Walk\n{G}\nInstant\nSnowcycling {2}").toOption.bind
     (fun c => c.activatedAbilities[0]?) ==
@@ -483,8 +483,9 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Helm\n{1}\nArtifact\nVillain spells you cast cost {1} less to cast.").toOption.bind
     (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess .villain 1)
 #guard (parseOracleCard "Surge\n{R}\nSorcery\nPlaneswalker spells you cast this turn cost {2} less to cast.").toOption.bind
-    (fun c => c.spellEffect.map (·.resolution)) ==
-    some (.spellsCostLessThisTurn (.cardType .planeswalker) 2)
+    (fun c => c.spellEffect.map (·.body)) ==
+    some (.installEffect (.applyRule .untilEndOfTurn
+      (.costMod (.spells .you (.hasType .planeswalker)) (.reduceGeneric (.const 2)))))
 
 #guard artifactTypes.all fun s =>
   (parseTypeLine s!"Artifact — {s}").toOption == some (#[], #[.artifact], #[s])
@@ -532,8 +533,8 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Walk\n{G}\nSorcery\nSearch your library for a Bolas's Meditation Realm card, reveal it, put it into your hand, then shuffle.").toOption.bind
     (fun c => c.spellEffect) == some (Effect.searchLandTypeToHand "Bolas's Meditation Realm")
 #guard (parseOracleCard "Saga\n{2}\nEnchantment — Saga\nI — This Saga deals 3 damage to each non-Time Lord creature and each opponent.").toOption.bind
-    (fun c => (c.sagaChapters[0]?).bind (·.effect.asChapter?)) ==
-    some (.dealDamageToEachNonSubtypeAndOpponents 3 .timeLord)
+    (fun c => (c.sagaChapters[0]?).map (·.effect.body)) ==
+    some (Effect.chapterDealDamageToEachNonSubtypeAndOpponents 3 "Time Lord").body
 
 -- CR 207.2c: ability words are not rules text. The ability parses as if the
 -- word were absent, including multi-word words and words inside a quote.
@@ -554,13 +555,13 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nI — Spell Mastery — Draw seven cards.").toOption.map
     (fun c =>
       c.sagaChapters.size == 1 &&
-        (c.sagaChapters[0]?).any (fun ch => ch.chapterNumbers? == some #[1] && !ch.effect.resolution.doesNothingAsTrigger)) == some true
+        (c.sagaChapters[0]?).any (fun ch => ch.chapterNumbers? == some #[1] && ch.effect.body == Instruction.drawFixed 7)) == some true
 #guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — This Saga gains \"Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
-    (fun c => (c.sagaChapters[0]?).bind (·.effect.asChapter?)) ==
-    some .gainLandfallCreateElf
+    (fun c => (c.sagaChapters[0]?).map (·.effect.body)) ==
+    some Effect.chapterGainLandfallCreateElf.body
 #guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — Council's Dilemma — This Saga gains \"Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
-    (fun c => (c.sagaChapters[0]?).bind (·.effect.asChapter?)) ==
-    some .gainLandfallCreateElf
+    (fun c => (c.sagaChapters[0]?).map (·.effect.body)) ==
+    some Effect.chapterGainLandfallCreateElf.body
 
 -- CR 207.4: the chaos symbol is not rules text. Towashi's chaos ability is the
 -- text after the symbol, and a `{CHAOS}` that names a planar-die face stays.
@@ -587,8 +588,8 @@ private def towashiChaosAbility : String :=
   | .error e => e == "unrecognized Oracle line on Roll: Whenever you roll {CHAOS}, draw a card."
   | .ok _ => false
 #guard (parseOracleCard "Tale\n{2}\nEnchantment — Saga\nII — This Saga gains \"{CHAOS} Landfall — Whenever a land you control enters, create a 1/1 green Elf creature token.\"").toOption.bind
-    (fun c => (c.sagaChapters[0]?).bind (·.effect.asChapter?)) ==
-    some .gainLandfallCreateElf
+    (fun c => (c.sagaChapters[0]?).map (·.effect.body)) ==
+    some Effect.chapterGainLandfallCreateElf.body
 
 -- CR 207.2a: reminder text is not rules text, on the ability's line or its own line.
 #guard (parseOracleCard "Bear\n{1}{G}\nCreature — Bear\n2/2\nMenace (This creature can't be blocked except by two or more creatures.)").toOption.map
@@ -667,14 +668,14 @@ private def roundTripsOracleCard (raw : String) : Bool :=
   | .ok c =>
     c.activatedAbilities.size == 1 &&
       c.activatedAbilities[0]!.isManaAbility &&
-      (c.activatedAbilities[0]!.mana?.map (·.riders)) == some #[.gainsHaste]
+      (c.activatedAbilities[0]!.manaProduction?.map (·.riders)) == some #[.gainsHaste]
   | .error _ => false
 #guard
   match parseOracleCard "Anvil of Growth\nLand\n{T}: Add {C}. If that mana is spent on a creature spell, that creature enters with two additional +1/+1 counters on it." with
   | .ok c =>
     c.activatedAbilities.size == 1 &&
       c.activatedAbilities[0]!.isManaAbility &&
-      (c.activatedAbilities[0]!.mana?.map (·.riders)) == some #[.entersWithPlusOneCounters 2]
+      (c.activatedAbilities[0]!.manaProduction?.map (·.riders)) == some #[.entersWithPlusOneCounters 2]
   | .error _ => false
 #guard
   match parseOracleCard "Twice-Clock Conduit\n{2}\nArtifact\n{T}: Add {U}. Activate no more than two times each turn." with
@@ -828,7 +829,7 @@ private def roundTripsOracleCard (raw : String) : Bool :=
       (.grantKeywords #[Keyword.trample])
 
 -- Phase 7: Unified `TriggerPattern`, Saga chapters in `triggeredAbilities`,
--- per-trigger `TriggeredAbility.modes`, Path of Ancestry `isManaSpentCastScry`,
+-- per-trigger `ModalSpec` modes, Path of Ancestry `isManaSpentCastScry`,
 -- and novel compositional triggered abilities parsed by `Parser.parseNovelTriggeredAbilityLine`.
 #guard [
   -- Novel compositional triggers never printed in the catalog:
@@ -859,7 +860,7 @@ private def roundTripsOracleCard (raw : String) : Bool :=
     c.triggeredAbilities.any (·.isManaSpentCastScry)
   | .error _ => false
 
--- Two distinct modal triggers on one card parse into independent `TriggeredAbility.modes` arrays.
+-- Two distinct modal triggers on one card parse into independent `Instruction.chooseModes` arrays.
 #guard
   match parseOracleCard
       ("Dual Modal Oracle\n{3}{U}\nCreature — Sphinx\n3/3\n" ++
@@ -872,10 +873,10 @@ private def roundTripsOracleCard (raw : String) : Bool :=
   | .ok c =>
     c.triggeredAbilities.size == 2 &&
       c.triggeredAbilities[0]!.pattern == .thisEnters &&
-      c.triggeredAbilities[0]!.modes.size == 2 &&
+      c.triggeredAbilities[0]!.modeEffects.size == 2 &&
       c.triggeredAbilities[1]!.pattern == .thisDies &&
-      c.triggeredAbilities[1]!.modes.size == 2 &&
-      c.triggeredAbilities[0]!.modes != c.triggeredAbilities[1]!.modes
+      c.triggeredAbilities[1]!.modeEffects.size == 2 &&
+      c.triggeredAbilities[0]!.modeEffects != c.triggeredAbilities[1]!.modeEffects
   | .error _ => false
 
 -- Novel compositional trigger ASTs: CR 603.10e look-back, CR 603.4 `interveningIf?`,
@@ -884,7 +885,7 @@ private def roundTripsOracleCard (raw : String) : Bool :=
   match parseOracleCard "Arcane Rebuke\n{2}{U}\nEnchantment\nWhenever a spell you control is countered, draw a card." with
   | .ok c =>
     match c.triggeredAbilities with
-    | #[ab] => ab.pattern.usesLookBack && ab.effect.resolution == .draw (.fixed 1)
+    | #[ab] => ab.pattern.usesLookBack && ab.effect.body == Instruction.drawFixed 1
     | _ => false
   | .error _ => false
 #guard
@@ -894,7 +895,7 @@ private def roundTripsOracleCard (raw : String) : Bool :=
     | #[ab] =>
       ab.pattern.usesLookBack &&
         ab.interveningIf? == some TriggeredAbility.condYouAreMonarch &&
-        ab.effect.resolution == .gainLife (.fixed 3)
+        ab.effect.body == Instruction.gainLifeFixed 3
     | _ => false
   | .error _ => false
 #guard
@@ -904,7 +905,7 @@ private def roundTripsOracleCard (raw : String) : Bool :=
     | #[ab] =>
       !ab.pattern.usesLookBack &&
         ab.limit == .onceEachTurn &&
-        ab.effect.resolution == .scry (.fixed 1) &&
+        ab.effect.body == Instruction.scryFixed 1 &&
         HasTextChange.applyTextChanges #[.replaceCreatureType .elf .goblin] ab.pattern ==
           TriggerPattern.permanentEnters (.all #[.hasSubtype (.literal .goblin), .hasType .creature, .controlledBy .you])
     | _ => false
@@ -927,7 +928,7 @@ private def roundTripsOracleCard (raw : String) : Bool :=
     | #[ab] =>
       ab.pattern == .spellCountered (.sameAs .this) &&
         ab.activeZones == #[.stack] &&
-        ab.effect.resolution == .draw (.fixed 1) &&
+        ab.effect.body == Instruction.drawFixed 1 &&
         match parseOracleCard (renderFullOracle c) with
         | .ok c2 => reprStr c2.triggeredAbilities == reprStr c.triggeredAbilities
         | .error _ => false
@@ -988,5 +989,55 @@ private def roundTripsOracleCard (raw : String) : Bool :=
       | _ => false
     | .error _ => false
   hetGroupOk && hetLimitOk && hetZonesOk && hetOnceRejected && homMergedOk
+
+-- Phase 8: Stage-4 compositional `Parser.parseInstructionEffect`, unified `ModalSpec`
+-- (`Choose one or both`, teamwork `altCountIf?`, subtype `altCountIf?`), and folded
+-- `"Empower Jace"` round-trip checks.
+#guard
+  (Parser.parseInstructionEffect "Draw two cards, then scry 1.").isSome &&
+  (Parser.parseInstructionEffect "Destroy target creature. You gain 2 life.").isSome &&
+  (Parser.parseInstructionEffect "Choose one or both — • Draw a card. • Each opponent loses 2 life.").isSome &&
+  (Parser.parseInstructionEffect "You may pay {2}. If you do, draw two cards.").isSome
+
+#guard [
+  "Jace's Bolt\n{1}{R}\nSorcery\nJace's Bolt deals 2 damage to target creature. Empower Jace 3.",
+  "Twin Boon\n{1}{W}\nSorcery\nChoose one or both —\n• Draw a card.\n• You gain 3 life.",
+  "Teamwork Tactics\n{2}{U}\nSorcery\nTeamwork 2 (As you cast this spell, you may tap any number of untapped creatures you control with total power 2 or greater.)\nChoose one. If this spell was cast using teamwork, choose both instead.\n• Draw a card.\n• You gain 2 life.",
+  "Elf Boon\n{1}{G}\nSorcery\nChoose one. If you control an Elf, you may choose two instead.\n• Draw a card.\n• You gain 2 life."
+].all roundTripsOracleCard
+
+#guard
+  let empowerOk :=
+    match parseOracleCard "Jace's Bolt\n{1}{R}\nSorcery\nJace's Bolt deals 2 damage to target creature. Empower Jace 3." with
+    | .ok c => c.empowerPlaneswalkerAmount? == some 3
+    | .error _ => false
+  let bothOk :=
+    match parseOracleCard "Twin Boon\n{1}{W}\nSorcery\nChoose one or both —\n• Draw a card.\n• You gain 3 life." with
+    | .ok c =>
+      c.modalSpec?.any fun (ms : ModalSpec) =>
+        ms.minModes == ValueExpr.const 1 && ms.maxModes == ValueExpr.const 2 && ms.modes.size == 2
+    | .error _ => false
+  let teamworkOk :=
+    match parseOracleCard
+        ("Teamwork Tactics\n{2}{U}\nSorcery\n" ++
+          "Teamwork 2 (As you cast this spell, you may tap any number of untapped creatures you control with total power 2 or greater.)\n" ++
+          "Choose one. If this spell was cast using teamwork, choose both instead.\n" ++
+          "• Draw a card.\n• You gain 2 life.") with
+    | .ok c =>
+      c.modalSpec?.any fun (ms : ModalSpec) =>
+        match ms.altCountIf? with
+        | some (.castPred (.teamworkPaid .this), .const 2, .const 2) => ms.modes.size == 2
+        | _ => false
+    | .error _ => false
+  let subtypeOk :=
+    match parseOracleCard
+        ("Elf Boon\n{1}{G}\nSorcery\n" ++
+          "Choose one. If you control an Elf, you may choose two instead.\n" ++
+          "• Draw a card.\n• You gain 2 life.") with
+    | .ok c =>
+      c.modalSpec?.any fun (ms : ModalSpec) =>
+        ms.altCountIf?.isSome && ms.modes.size == 2
+    | .error _ => false
+  empowerOk && bothOk && teamworkOk && subtypeOk
 
 end Mtg.Engine.Tests

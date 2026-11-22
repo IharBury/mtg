@@ -59,20 +59,20 @@ def upToXModes : TriggeredAbility.TriggerResolution :=
   upToXModes
 
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := allianceModes } ==
+    { resolution? := some (allianceModes) } ==
   "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
 
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := gollumModes } ==
+    { resolution? := some (gollumModes) } ==
   "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card"
 
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := upToXModes } ==
+    { resolution? := some (upToXModes) } ==
   "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
 
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .chooseModes TriggeredAbility.TriggerResolution.hydeModes
-        .plusOneOrRemoveCounter } ==
+    { resolution? := some (.chooseModes TriggeredAbility.TriggerResolution.hydeModes
+        .plusOneOrRemoveCounter) } ==
   "choose one — put a +1/+1 counter on this, or remove a counter from a creature you control and draw a card"
 
 /- Alliance offers the modes still unused this turn. All three chosen

@@ -28,596 +28,7 @@ canonical Oracle text through `ToOracle` / `toNotation`.
 
 namespace Mtg.Engine
 
-/-! ### 1. Characteristic-Defining Abilities (CR 604.3) -/
-
-/-- Characteristic-defining ability specification (CR 604.3, functions in all zones;
-4 constructors). -/
-inductive CdaSpec where
-  /-- Layer 7a (CR 613.4a): sets power and/or toughness (`*/*`, `*/1`, `*/1+*`). -/
-  | setPT (power? toughness? : Option ValueExpr)
-  /-- Layer 4 (CR 613.1d): defines types/subtypes in all zones. -/
-  | setTypes (mod : TypeSetMod)
-  /-- Layer 4 (CR 702.73a): this card is every creature type in all zones. -/
-  | allCreatureTypes
-  /-- Layer 5 (CR 613.1e): defines colors in all zones. -/
-  | setColors (colors : ColorSet)
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange CdaSpec where
-  applyTextChanges tcs cda :=
-    if tcs.isEmpty then cda
-    else
-      match cda with
-      | .setPT p? t? =>
-        .setPT (HasTextChange.applyTextChanges tcs p?) (HasTextChange.applyTextChanges tcs t?)
-      | .setTypes m => .setTypes (HasTextChange.applyTextChanges tcs m)
-      | .allCreatureTypes => .allCreatureTypes
-      | .setColors cs => .setColors (HasTextChange.applyTextChanges tcs cs)
-
-/-! ### 2. Rule-Modifying Static Abilities (CR 604 / 101.2) -/
-
-/-- Subject of a combat, untap, or replacement static rule: either the source
-permanent itself (or attached host when inside `ContinuousModification.applyRule`)
-or permanents matching `filter`. -/
-inductive StaticSubject where
-  | self
-  | matching (filter : ObjectFilter)
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange StaticSubject where
-  applyTextChanges tcs s :=
-    if tcs.isEmpty then s
-    else
-      match s with
-      | .self => .self
-      | .matching f => .matching (HasTextChange.applyTextChanges tcs f)
-
-/-- Rule-modifying static abilities affecting players (CR 104 / 119.7 / 305.2 / 402.3 /
-601.2 / 602.5 / 702.11c / 702.16j; 10 constructors). -/
-inductive StaticPlayerRule where
-  /-- Maximum hand size: `none` = no maximum hand size; `some n` = `n` (CR 402.3). -/
-  | maxHandSize (who : PlayerFilter := .you) (limit? : Option Nat)
-  /-- Matching players may play `count` additional land(s) on each of their turns (CR 305.2). -/
-  | additionalLands (who : PlayerFilter := .you) (count : Nat := 1)
-  /-- Matching players can't gain life (CR 119.7). -/
-  | cantGainLife (who : PlayerFilter)
-  /-- Matching players can't lose the game (CR 104.3). -/
-  | cantLoseGame (who : PlayerFilter)
-  /-- Matching players can't win the game (CR 104.2). -/
-  | cantWinGame (who : PlayerFilter)
-  /-- Matching players have hexproof (optionally from `from?`, CR 702.11c–d). -/
-  | hexproof (who : PlayerFilter) (from? : Option QualityFilter := none)
-  /-- Matching players have protection from `quality` (CR 702.16j). -/
-  | protectionFrom (who : PlayerFilter) (quality : ProtectionQuality)
-  /-- Matching players can't cast matching spells (CR 601.2 / 101.2). -/
-  | cantCastSpells (who : PlayerFilter) (spellPred : ObjectPred := .anyObject)
-  /-- Matching players may activate abilities of matching permanents as though they had haste. -/
-  | activateAsThoughHaste (who : PlayerFilter := .you) (scope : ObjectFilter)
-  /-- Each matching ability of matching permanents may be activated `extra` additional time(s). -/
-  | extraAbilityActivation (tag : ActivationMechanicTag) (scope : ObjectFilter) (extra : Nat := 1)
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange StaticPlayerRule where
-  applyTextChanges tcs r :=
-    if tcs.isEmpty then r
-    else
-      match r with
-      | .maxHandSize w lim => .maxHandSize (HasTextChange.applyTextChanges tcs w) lim
-      | .additionalLands w n => .additionalLands (HasTextChange.applyTextChanges tcs w) n
-      | .cantGainLife w => .cantGainLife (HasTextChange.applyTextChanges tcs w)
-      | .cantLoseGame w => .cantLoseGame (HasTextChange.applyTextChanges tcs w)
-      | .cantWinGame w => .cantWinGame (HasTextChange.applyTextChanges tcs w)
-      | .hexproof w fq =>
-        .hexproof (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs fq)
-      | .protectionFrom w q =>
-        .protectionFrom (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs q)
-      | .cantCastSpells w p =>
-        .cantCastSpells (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs p)
-      | .activateAsThoughHaste w sc =>
-        .activateAsThoughHaste (HasTextChange.applyTextChanges tcs w)
-          (HasTextChange.applyTextChanges tcs sc)
-      | .extraAbilityActivation tag sc n =>
-        .extraAbilityActivation (HasTextChange.applyTextChanges tcs tag)
-          (HasTextChange.applyTextChanges tcs sc) n
-
-/-- Rule-modifying static abilities affecting play permissions, timing, counterability,
-opening-hand placement, and commander eligibility (CR 101.2 / 103.6 / 401.2 / 601.2–3 / 903.3;
-7 constructors). -/
-inductive StaticPlayRule where
-  /-- Players may look at the top card of their library any time (CR 401.2). -/
-  | lookAtTopOfLibrary (who : PlayerFilter := .you)
-  /-- Players may play lands (`landsAllowed`) or cast matching spells from `fromZone`.
-  `linkedExile` restricts to cards exiled by this source; `castAnyColorMana` lets mana of
-  any type be spent; `freeCast` allows casting without paying mana costs. -/
-  | mayPlayFrom (who : PlayerFilter := .you) (fromZone : ZoneKind)
-      (pred : ObjectPred := .anyObject) (landsAllowed : Bool := false)
-      (linkedExile : Bool := false) (castAnyColorMana : Bool := false)
-      (freeCast : Bool := false)
-  /-- Players may cast matching spells (or this spell when `thisSpell := true`) as though
-  they had flash (CR 601.3b). -/
-  | castAsThoughFlash (who : PlayerFilter := .you) (spellPred : ObjectPred := .anyObject)
-      (thisSpell : Bool := false) (nthEachTurn? : Option Nat := none)
-  /-- This spell (`spellPred := none`) or matching spells can't be countered (CR 101.2 / 701.5). -/
-  | spellCantBeCountered (spellPred : Option ObjectPred := none)
-  /-- This spell can't be cast unless `unlessCond` holds (CR 601.2 / 101.2). -/
-  | castRestriction (unlessCond : Condition)
-  /-- If this card is in your opening hand, you may begin the game with it on the
-  battlefield (CR 103.6). -/
-  | mayBeginOnBattlefield
-  /-- This card can be your commander (CR 903.3). -/
-  | canBeCommander
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange StaticPlayRule where
-  applyTextChanges tcs r :=
-    if tcs.isEmpty then r
-    else
-      match r with
-      | .lookAtTopOfLibrary w => .lookAtTopOfLibrary (HasTextChange.applyTextChanges tcs w)
-      | .mayPlayFrom w z p la le anyC free =>
-        .mayPlayFrom (HasTextChange.applyTextChanges tcs w) z
-          (HasTextChange.applyTextChanges tcs p) la le anyC free
-      | .castAsThoughFlash w p ts nth =>
-        .castAsThoughFlash (HasTextChange.applyTextChanges tcs w)
-          (HasTextChange.applyTextChanges tcs p) ts nth
-      | .spellCantBeCountered p? => .spellCantBeCountered (HasTextChange.applyTextChanges tcs p?)
-      | .castRestriction c => .castRestriction (HasTextChange.applyTextChanges tcs c)
-      | .mayBeginOnBattlefield => .mayBeginOnBattlefield
-      | .canBeCommander => .canBeCommander
-
-/-- Rule-modifying static abilities affecting combat declarations and combat damage
-assignment (CR 508 / 509 / 510; 15 constructors). -/
-inductive StaticCombatRule where
-  /-- Matching creatures can't attack (CR 508.1c). -/
-  | cantAttack (subject : StaticSubject := .self)
-  /-- Matching creatures can't attack unless `unlessCond` holds (CR 508.1c). -/
-  | cantAttackUnless (subject : StaticSubject := .self) (unlessCond : Condition)
-  /-- Creatures matching `attackerPred` can't attack `defending` unless their controller
-  pays `costPerAttacker` for each (CR 508.1d / 508.1h). -/
-  | attackTax (attackerPred : ObjectPred := .hasType .creature)
-      (defending : PlayerFilter := .you) (costPerAttacker : CostSpec)
-  /-- Creatures matching `attackerPred` can't attack `defending` (CR 508.1c). -/
-  | cantAttackPlayer (attackerPred : ObjectPred) (defending : PlayerFilter := .you)
-  /-- Matching creatures attack each combat if able (CR 508.1d). -/
-  | attacksEachCombatIfAble (subject : StaticSubject := .self)
-  /-- Matching creatures can attack as though they didn't have defender (CR 702.3b). -/
-  | attackDespiteDefender (subject : StaticSubject := .self)
-  /-- No more than `maxAttackers` creature(s) can attack `subject` each combat (CR 508.1c). -/
-  | maxAttackersPerPermanent (subject : StaticSubject := .self) (maxAttackers : Nat)
-  /-- Matching creatures can't block, or can't block unless `unlessCond?` holds (CR 509.1b). -/
-  | cantBlock (subject : StaticSubject := .self) (unlessCond? : Option Condition := none)
-  /-- Creatures matching `blockerPred` can't block creatures matching `attackerPred` (CR 509.1b). -/
-  | cantBlockMatching (blockerPred : ObjectPred) (attackerPred : ObjectPred)
-  /-- Matching creatures can't be blocked (CR 509.1b). -/
-  | cantBeBlocked (subject : StaticSubject := .self)
-  /-- Matching creatures can't be blocked by creatures matching `blockerPred` (CR 509.1b). -/
-  | cantBeBlockedBy (subject : StaticSubject := .self) (blockerPred : ObjectPred)
-  /-- Matching creatures can't be blocked except by `min` or more creatures (CR 509.1b). -/
-  | minBlockers (subject : StaticSubject := .self) (min : Nat)
-  /-- Matching creatures can't be blocked by more than `max` creature(s) (CR 509.1b). -/
-  | maxBlockers (subject : StaticSubject := .self) (max : Nat)
-  /-- Matching creatures assign combat damage equal to toughness rather than power (CR 510.1a). -/
-  | assignCombatDamageByToughness (scope : ObjectFilter) (onlyIfToughnessGreater : Bool := false)
-  /-- If a matching creature's power is negative, it assigns combat damage as though
-  its power were positive (CR 510.1a). -/
-  | assignNegativePowerAsPositive (subject : StaticSubject := .self)
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange StaticCombatRule where
-  applyTextChanges tcs r :=
-    if tcs.isEmpty then r
-    else
-      match r with
-      | .cantAttack s => .cantAttack (HasTextChange.applyTextChanges tcs s)
-      | .cantAttackUnless s c =>
-        .cantAttackUnless (HasTextChange.applyTextChanges tcs s)
-          (HasTextChange.applyTextChanges tcs c)
-      | .attackTax ap df cs =>
-        .attackTax (HasTextChange.applyTextChanges tcs ap)
-          (HasTextChange.applyTextChanges tcs df) (HasTextChange.applyTextChanges tcs cs)
-      | .cantAttackPlayer ap df =>
-        .cantAttackPlayer (HasTextChange.applyTextChanges tcs ap)
-          (HasTextChange.applyTextChanges tcs df)
-      | .attacksEachCombatIfAble s => .attacksEachCombatIfAble (HasTextChange.applyTextChanges tcs s)
-      | .attackDespiteDefender s => .attackDespiteDefender (HasTextChange.applyTextChanges tcs s)
-      | .maxAttackersPerPermanent s n =>
-        .maxAttackersPerPermanent (HasTextChange.applyTextChanges tcs s) n
-      | .cantBlock s c? =>
-        .cantBlock (HasTextChange.applyTextChanges tcs s) (HasTextChange.applyTextChanges tcs c?)
-      | .cantBlockMatching bp ap =>
-        .cantBlockMatching (HasTextChange.applyTextChanges tcs bp)
-          (HasTextChange.applyTextChanges tcs ap)
-      | .cantBeBlocked s => .cantBeBlocked (HasTextChange.applyTextChanges tcs s)
-      | .cantBeBlockedBy s bp =>
-        .cantBeBlockedBy (HasTextChange.applyTextChanges tcs s)
-          (HasTextChange.applyTextChanges tcs bp)
-      | .minBlockers s n => .minBlockers (HasTextChange.applyTextChanges tcs s) n
-      | .maxBlockers s n => .maxBlockers (HasTextChange.applyTextChanges tcs s) n
-      | .assignCombatDamageByToughness sc onlyGt =>
-        .assignCombatDamageByToughness (HasTextChange.applyTextChanges tcs sc) onlyGt
-      | .assignNegativePowerAsPositive s =>
-        .assignNegativePowerAsPositive (HasTextChange.applyTextChanges tcs s)
-
-/-- Rule-modifying static abilities affecting triggered abilities (CR 603.2 / 603.2d;
-2 constructors). -/
-inductive StaticTriggerRule where
-  /-- If a triggered ability of a permanent matching `sourceScope` triggers, it triggers
-  `extra` additional time(s) (CR 603.2d). -/
-  | extraTrigger (sourceScope : ObjectFilter) (extra : Nat := 1)
-  /-- Permanents matching `enteringScope` entering the battlefield don't cause abilities
-  to trigger (CR 603.2 / 101.2). -/
-  | suppressEnteringTriggers (enteringScope : ObjectFilter)
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange StaticTriggerRule where
-  applyTextChanges tcs r :=
-    if tcs.isEmpty then r
-    else
-      match r with
-      | .extraTrigger sc n => .extraTrigger (HasTextChange.applyTextChanges tcs sc) n
-      | .suppressEnteringTriggers sc =>
-        .suppressEnteringTriggers (HasTextChange.applyTextChanges tcs sc)
-
-/-- Rule-modifying static abilities affecting untap rules, phase locks, state-based
-actions, and counter placement prohibitions (CR 122.1 / 502.3 / 704.5i; 5 constructors). -/
-inductive StaticGameRule where
-  /-- Matching permanents don't untap during their controller's untap step, optionally
-  unless `unlessCond?` holds (CR 502.3). -/
-  | doesntUntapDuringUntapStep (subject : StaticSubject := .self)
-      (unlessCond? : Option Condition := none)
-  /-- Matching permanents can't become untapped (CR 101.2 / 502.3). -/
-  | cantBecomeUntapped (subject : StaticSubject := .self)
-  /-- During `phase`, matching players can't cast spells or activate non-mana abilities. -/
-  | lockNonManaDuringPhase (phase : Phase) (who : PlayerFilter := .any)
-  /-- Planeswalkers matching `scope` aren't put into their owners' graveyards for having
-  0 loyalty (CR 704.5i). -/
-  | planeswalkersSurviveZeroLoyalty (scope : ObjectFilter)
-  /-- Matching permanents can't have counters of `counterKind?` (`none` = any) put on them (CR 122.1). -/
-  | cantHaveCountersPutOn (scope : ObjectFilter) (counterKind? : Option CounterKind)
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange StaticGameRule where
-  applyTextChanges tcs r :=
-    if tcs.isEmpty then r
-    else
-      match r with
-      | .doesntUntapDuringUntapStep s c? =>
-        .doesntUntapDuringUntapStep (HasTextChange.applyTextChanges tcs s)
-          (HasTextChange.applyTextChanges tcs c?)
-      | .cantBecomeUntapped s => .cantBecomeUntapped (HasTextChange.applyTextChanges tcs s)
-      | .lockNonManaDuringPhase ph w =>
-        .lockNonManaDuringPhase ph (HasTextChange.applyTextChanges tcs w)
-      | .planeswalkersSurviveZeroLoyalty sc =>
-        .planeswalkersSurviveZeroLoyalty (HasTextChange.applyTextChanges tcs sc)
-      | .cantHaveCountersPutOn sc k? =>
-        .cantHaveCountersPutOn (HasTextChange.applyTextChanges tcs sc) k?
-
-/-- Stratified rule-modifying static ability payload (CR 604 / 101.2; 6 constructors). -/
-inductive RuleModification where
-  | player (rule : StaticPlayerRule)
-  | play (rule : StaticPlayRule)
-  | combat (rule : StaticCombatRule)
-  | trigger (rule : StaticTriggerRule)
-  | game (rule : StaticGameRule)
-  | all (rules : Array RuleModification)
-deriving Repr, Inhabited, BEq
-
-private def applyTcRuleMod (tcs : Array TextChange) : RuleModification → RuleModification
-  | .player r => .player (HasTextChange.applyTextChanges tcs r)
-  | .play r => .play (HasTextChange.applyTextChanges tcs r)
-  | .combat r => .combat (HasTextChange.applyTextChanges tcs r)
-  | .trigger r => .trigger (HasTextChange.applyTextChanges tcs r)
-  | .game r => .game (HasTextChange.applyTextChanges tcs r)
-  | .all rs => .all (rs.attach.map fun ⟨r, _⟩ => applyTcRuleMod tcs r)
-
-instance : HasTextChange RuleModification where
-  applyTextChanges tcs r := if tcs.isEmpty then r else applyTcRuleMod tcs r
-
-namespace RuleModification
-
-/-- Flatten nested `.all` rules in printed order. -/
-def flatten : RuleModification → Array RuleModification
-  | .all rs => rs.attach.foldl (fun acc ⟨r, _⟩ => acc ++ flatten r) #[]
-  | r => #[r]
-
-end RuleModification
-
-/-! ### 3. Cost-Modifying Static Abilities (CR 601.2f / 602.2b) -/
-
-/-- Target spells or activated abilities of a `StaticAbility.costModifier`
-(CR 601.2f / 602.2b / 113.6m; 3 constructors). -/
-inductive CostTargetSpec where
-  /-- This spell itself (active on the stack during CR 601.2f cost determination). -/
-  | thisSpell
-  /-- Spells cast by `caster` matching `spellPred`. `nthEachTurn?` restricts to the
-  nth matching spell cast that turn; `notFromZone?` restricts to spells cast from
-  anywhere other than that zone; `activeZones` lists zones where the static ability
-  functions (default `#[.battlefield]`; Eminence uses `#[.battlefield, .command]`). -/
-  | spells (caster : PlayerFilter := .you) (spellPred : ObjectPred := .anyObject)
-      (nthEachTurn? : Option Nat := none) (notFromZone? : Option ZoneKind := none)
-      (activeZones : Array ZoneKind := #[.battlefield])
-  /-- Activated abilities matching `tag?` on sources matching `sourceScope`, optionally
-  restricted to those targeting `targetPred?` and/or the `nthEachTurn?` activation. -/
-  | abilities (activator : PlayerFilter := .you)
-      (tag? : Option ActivationMechanicTag := none)
-      (sourceScope : ObjectFilter := { zones := .battlefield, pred := .anyObject })
-      (targetPred? : Option ObjectPred := none)
-      (nthEachTurn? : Option Nat := none)
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange CostTargetSpec where
-  applyTextChanges tcs s :=
-    if tcs.isEmpty then s
-    else
-      match s with
-      | .thisSpell => .thisSpell
-      | .spells caster pred nth notFrom az =>
-        .spells (HasTextChange.applyTextChanges tcs caster)
-          (HasTextChange.applyTextChanges tcs pred) nth notFrom az
-      | .abilities act tag? sc tgt? nth =>
-        .abilities (HasTextChange.applyTextChanges tcs act)
-          (HasTextChange.applyTextChanges tcs tag?)
-          (HasTextChange.applyTextChanges tcs sc)
-          (HasTextChange.applyTextChanges tcs tgt?) nth
-
-/-- Cost modification applied by `StaticAbility.costModifier` (CR 601.2f / 602.2b / 118.9;
-3 constructors). -/
-inductive CostModification where
-  /-- Reduce generic mana cost by `amount` (CR 601.2f / 118.7a). -/
-  | reduceGeneric (amount : ValueExpr)
-  /-- Increase generic mana cost by `amount` (CR 601.2f). -/
-  | increaseGeneric (amount : ValueExpr)
-  /-- Alternative cost `{0}` — cast or activate without paying mana / equip cost (CR 118.9). -/
-  | alternativeFree
-deriving Repr, Inhabited, BEq
-
-instance : HasTextChange CostModification where
-  applyTextChanges tcs m :=
-    if tcs.isEmpty then m
-    else
-      match m with
-      | .reduceGeneric v => .reduceGeneric (HasTextChange.applyTextChanges tcs v)
-      | .increaseGeneric v => .increaseGeneric (HasTextChange.applyTextChanges tcs v)
-      | .alternativeFree => .alternativeFree
-
-/-! ### 4. Replacement & Prevention Static Abilities (CR 614 / 615) -/
-
-/-- Choice made as a permanent enters the battlefield (CR 614.1c / 614.12; 6 constructors). -/
-inductive AsEntersChoiceKind where
-  | color
-  | creatureType
-  | cardType
-  | nonlandCardName
-  | oddOrEven
-  | namedAnchors (options : Array String)
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Static replacement or prevention effect specification (CR 614 / 615; 18 constructors). -/
-inductive StaticReplacementSpec where
-  /-- CR 614.1c: Enters tapped, optionally unless `unlessCond?` holds. -/
-  | entersTapped (subject : StaticSubject := .self) (unlessCond? : Option Condition := none)
-  /-- CR 614.1c: As this enters, you may pay `cost` (e.g. Pay N life, Behold a subtype).
-  If you don't, it enters tapped. -/
-  | entersTappedUnlessPay (cost : CostSpec)
-  /-- CR 614.1c: Matching permanent(s) enter with `count` (or `additional` more) counters
-  of `kind`. -/
-  | entersWithCounters (subject : StaticSubject := .self) (kind : CounterKind)
-      (count : ValueExpr) (additional : Bool := false)
-  /-- CR 614.1c: This permanent enters with designation `tag` (e.g. prepared). -/
-  | entersWithDesignation (tag : PermanentDesignationTag)
-  /-- CR 614.1c / 614.12: As this enters, choose a color, creature type, card type,
-  nonland card name, odd/even, or named anchor. -/
-  | asEntersChoose (kind : AsEntersChoiceKind)
-  /-- CR 614.1c / 614.12 / 707.9: As this enters, you may have it become a copy of
-  any permanent matching `copyFilter` for `duration`, with `mods`. -/
-  | asEntersMayCopy (copyFilter : ObjectFilter) (duration : DurationExpr := .indefinite)
-      (mods : Array CopyModification := #[])
-  /-- CR 614.6: If a permanent matching `scope` would die, exile it instead,
-  optionally also creating `bonusToken?`. -/
-  | exileInsteadOfDying (scope : ObjectFilter) (bonusToken? : Option TokenSpec := none)
-  /-- CR 614.1a: If one or more tokens would be created under `who`'s control,
-  `factor` times that many are created instead. -/
-  | multiplyTokens (who : PlayerFilter := .you) (factor : Nat := 2)
-  /-- CR 614.1a: If `who` would create a token matching `triggerPred`, also create
-  `count` `extraToken` token(s). -/
-  | extraTokenWith (who : PlayerFilter := .you) (triggerPred : ObjectPred)
-      (extraToken : TokenSpec) (count : Nat := 1)
-  /-- CR 614.1a: If one or more tokens matching `fromPred` would be created under
-  `who`'s control, that many `replacement` tokens are created instead. -/
-  | replaceTokens (who : PlayerFilter := .you) (fromPred : ObjectPred)
-      (replacement : TokenSpec)
-  /-- CR 614.1a: If `who` would draw a card (optionally `exceptFirstDrawStep`),
-  draw `drawCount` cards instead. -/
-  | extraDraw (who : PlayerFilter := .you) (drawCount : Nat := 2)
-      (exceptFirstDrawStep : Bool := false)
-  /-- CR 614.1a: If a creature matching `scope` would connive, `who` draws `extraCards`
-  card(s) first, then it connives. -/
-  | extraDrawOnConnive (who : PlayerFilter := .you) (scope : ObjectFilter)
-      (extraCards : Nat := 1)
-  /-- CR 614.1a / 122.6: If one or more counters (optionally of `kind?`) would be put
-  on a permanent matching `scope` (optionally by `byPlayer?`), put `addCount` more. -/
-  | modifyCountersPut (scope : ObjectFilter) (kind? : Option CounterKind := none)
-      (byPlayer? : Option PlayerFilter := none) (addCount : Nat := 1)
-  /-- CR 615: Prevent all damage (`amount? := none`) or `amount` damage that would be
-  dealt to `subject`. -/
-  | preventDamage (subject : StaticSubject := .self) (amount? : Option ValueExpr := none)
-  /-- CR 614.1a / 616: If a source matching `sourceScope` would deal damage
-  (`noncombatOnly`) to `recipient`, multiply by `multiplier` and add `addAmount`. -/
-  | modifyDamage (sourceScope : ObjectFilter) (noncombatOnly : Bool := false)
-      (recipient : RecipientFilter := .any) (multiplier : Nat := 1)
-      (addAmount : ValueExpr := .const 0)
-  /-- CR 614.1a: If damage would be dealt to `subject`, that damage is dealt and all
-  other damage already marked on it is removed. -/
-  | healOtherDamageWhenDealt (subject : StaticSubject := .self)
-  /-- CR 614.1a / 500.4: If `who` would lose unspent mana as steps and phases end,
-  that mana becomes colorless instead. -/
-  | unspentManaBecomesColorless (who : PlayerFilter := .you)
-  /-- Compound replacement spec from a single printed ability. -/
-  | all (specs : Array StaticReplacementSpec)
-deriving Repr, Inhabited, BEq
-
-private def applyTcReplacementSpec (tcs : Array TextChange) :
-    StaticReplacementSpec → StaticReplacementSpec
-  | .entersTapped s c? =>
-    .entersTapped (HasTextChange.applyTextChanges tcs s) (HasTextChange.applyTextChanges tcs c?)
-  | .entersTappedUnlessPay cs => .entersTappedUnlessPay (HasTextChange.applyTextChanges tcs cs)
-  | .entersWithCounters s k v add =>
-    .entersWithCounters (HasTextChange.applyTextChanges tcs s) k
-      (HasTextChange.applyTextChanges tcs v) add
-  | .entersWithDesignation tag => .entersWithDesignation tag
-  | .asEntersChoose kind => .asEntersChoose kind
-  | .asEntersMayCopy f dur mods =>
-    .asEntersMayCopy (HasTextChange.applyTextChanges tcs f)
-      (HasTextChange.applyTextChanges tcs dur) (HasTextChange.applyTextChanges tcs mods)
-  | .exileInsteadOfDying sc tok? =>
-    .exileInsteadOfDying (HasTextChange.applyTextChanges tcs sc)
-      (HasTextChange.applyTextChanges tcs tok?)
-  | .multiplyTokens w n => .multiplyTokens (HasTextChange.applyTextChanges tcs w) n
-  | .extraTokenWith w tp tok n =>
-    .extraTokenWith (HasTextChange.applyTextChanges tcs w)
-      (HasTextChange.applyTextChanges tcs tp) (HasTextChange.applyTextChanges tcs tok) n
-  | .replaceTokens w fp tok =>
-    .replaceTokens (HasTextChange.applyTextChanges tcs w)
-      (HasTextChange.applyTextChanges tcs fp) (HasTextChange.applyTextChanges tcs tok)
-  | .extraDraw w n ex => .extraDraw (HasTextChange.applyTextChanges tcs w) n ex
-  | .extraDrawOnConnive w sc n =>
-    .extraDrawOnConnive (HasTextChange.applyTextChanges tcs w)
-      (HasTextChange.applyTextChanges tcs sc) n
-  | .modifyCountersPut sc k? bp? n =>
-    .modifyCountersPut (HasTextChange.applyTextChanges tcs sc) k?
-      (HasTextChange.applyTextChanges tcs bp?) n
-  | .preventDamage s amt? =>
-    .preventDamage (HasTextChange.applyTextChanges tcs s) (HasTextChange.applyTextChanges tcs amt?)
-  | .modifyDamage sc nc rec mult add =>
-    .modifyDamage (HasTextChange.applyTextChanges tcs sc) nc
-      (HasTextChange.applyTextChanges tcs rec) mult (HasTextChange.applyTextChanges tcs add)
-  | .healOtherDamageWhenDealt s =>
-    .healOtherDamageWhenDealt (HasTextChange.applyTextChanges tcs s)
-  | .unspentManaBecomesColorless w =>
-    .unspentManaBecomesColorless (HasTextChange.applyTextChanges tcs w)
-  | .all xs => .all (xs.attach.map fun ⟨x, _⟩ => applyTcReplacementSpec tcs x)
-
-instance : HasTextChange StaticReplacementSpec where
-  applyTextChanges tcs s := if tcs.isEmpty then s else applyTcReplacementSpec tcs s
-
-namespace StaticReplacementSpec
-
-/-- Flatten nested `.all` replacement specs in printed order. -/
-def flatten : StaticReplacementSpec → Array StaticReplacementSpec
-  | .all xs => xs.attach.foldl (fun acc ⟨x, _⟩ => acc ++ flatten x) #[]
-  | x => #[x]
-
-end StaticReplacementSpec
-
-/-! ### 5. Stratified `StaticAbility` (6 ctors) & `ContinuousModification` (13 ctors) -/
-
-mutual
-
-/-- Compositional Layer 4–7d modification applied by `StaticAbility.continuous`
-(CR 611.3 / 613; 13 constructors). -/
-inductive ContinuousModification where
-  /-- Layer 4 (CR 613.1d): set/add/remove types, subtypes, or supertypes. -/
-  | modifyTypes (mod : TypeSetMod)
-  /-- Layer 4 (CR 613.1d): affected permanents are every creature type. -/
-  | addAllCreatureTypes
-  /-- Layer 5 (CR 613.1e): set/add/remove colors. -/
-  | modifyColors (mod : ColorSetMod)
-  /-- Layer 6 (CR 613.1f): grant keyword abilities (preserving multiplicity). -/
-  | grantKeywords (keywords : Array KeywordAbility)
-  /-- Layer 6 (CR 613.1f): grant activated abilities (including mana & loyalty abilities). -/
-  | grantActivated (abilities : Array ActivatedAbility)
-  /-- Layer 6 (CR 613.1f): grant triggered abilities. -/
-  | grantTriggered (abilities : Array TriggeredAbility)
-  /-- Layer 6 (CR 613.1f): grant static abilities to the affected objects. -/
-  | grantStatic (abilities : Array StaticAbility)
-  /-- Layer 6 (CR 613.1f): copy all activated abilities of objects matching `source`. -/
-  | copyActivatedFrom (source : ObjectFilter)
-  /-- Layer 6 (CR 613.1f): lose all abilities. -/
-  | loseAllAbilities
-  /-- Layer 7b (CR 613.4b): set base power and/or toughness. -/
-  | setBasePT (power? toughness? : Option ValueExpr)
-  /-- Layer 7c (CR 613.4c): modify power and/or toughness by `+power/+toughness`. -/
-  | modifyPT (power toughness : ValueExpr)
-  /-- Accompanying rule modification exerted by the source itself (not granted as an
-  ability to the affected objects, e.g. Aura "doesn't untap" / "can't attack or block",
-  or paired "you have hexproof / protection"). -/
-  | applyRule (rule : RuleModification)
-  /-- Compound continuous modification from one static ability. -/
-  | all (mods : Array ContinuousModification)
-
-/-- CR-stratified static ability (CR 113.3d / 303.4a / 601.2f / 604 / 613 / 614–616;
-6 constructors). -/
-inductive StaticAbility where
-  /-- CR 604.3: Characteristic-defining ability (all zones; Layers 4/5/7a). -/
-  | characteristicDefining (cda : CdaSpec)
-  /-- CR 611.3 / 613: Continuous effect across Layers 4–7d on objects matching `scope`
-  while optional `cond?` holds. -/
-  | continuous (cond? : Option Condition) (scope : ObjectFilter) (mod : ContinuousModification)
-  /-- CR 604 / 101.2: Rule-modifying static ability (player, play, combat, trigger, game). -/
-  | ruleModifying (cond? : Option Condition) (rule : RuleModification)
-  /-- CR 601.2f / 602.2b: Spell or activated-ability cost modifier. -/
-  | costModifier (cond? : Option Condition) (appliesTo : CostTargetSpec) (mod : CostModification)
-  /-- CR 614 / 615: Replacement or prevention static ability. -/
-  | replacement (cond? : Option Condition) (spec : StaticReplacementSpec)
-  /-- CR 303.4a: Non-default Enchant restriction on an Aura. -/
-  | enchantRestriction (filter : TargetSlot)
-
-end
-
-instance : Inhabited ContinuousModification := ⟨.all #[]⟩
-instance : Inhabited StaticAbility := ⟨.ruleModifying none (.all #[])⟩
-
--- Derive the 2-way mutual `BEq` and `Repr` tuples ONCE and project both instances.
-deriving instance BEq, Repr for ContinuousModification
-
-instance : BEq StaticAbility := ⟨instBEqContinuousModification.beq_2⟩
-instance : Repr StaticAbility := ⟨instReprContinuousModification.repr_2⟩
-
-mutual
-
-private partial def applyTcContMod (tcs : Array TextChange) :
-    ContinuousModification → ContinuousModification
-  | .modifyTypes m => .modifyTypes (HasTextChange.applyTextChanges tcs m)
-  | .addAllCreatureTypes => .addAllCreatureTypes
-  | .modifyColors m => .modifyColors (HasTextChange.applyTextChanges tcs m)
-  | .grantKeywords ks => .grantKeywords (HasTextChange.applyTextChanges tcs ks)
-  | .grantActivated abs => .grantActivated (HasTextChange.applyTextChanges tcs abs)
-  | .grantTriggered trs => .grantTriggered (HasTextChange.applyTextChanges tcs trs)
-  | .grantStatic sas => .grantStatic (sas.map (applyTcStatic tcs))
-  | .copyActivatedFrom src => .copyActivatedFrom (HasTextChange.applyTextChanges tcs src)
-  | .loseAllAbilities => .loseAllAbilities
-  | .setBasePT p? t? =>
-    .setBasePT (HasTextChange.applyTextChanges tcs p?) (HasTextChange.applyTextChanges tcs t?)
-  | .modifyPT p t =>
-    .modifyPT (HasTextChange.applyTextChanges tcs p) (HasTextChange.applyTextChanges tcs t)
-  | .applyRule r => .applyRule (HasTextChange.applyTextChanges tcs r)
-  | .all ms => .all (ms.map (applyTcContMod tcs))
-
-private partial def applyTcStatic (tcs : Array TextChange) : StaticAbility → StaticAbility
-  | .characteristicDefining cda =>
-    .characteristicDefining (HasTextChange.applyTextChanges tcs cda)
-  | .continuous cond? sc mod =>
-    .continuous (HasTextChange.applyTextChanges tcs cond?)
-      (HasTextChange.applyTextChanges tcs sc) (applyTcContMod tcs mod)
-  | .ruleModifying cond? rule =>
-    .ruleModifying (HasTextChange.applyTextChanges tcs cond?)
-      (HasTextChange.applyTextChanges tcs rule)
-  | .costModifier cond? tgt mod =>
-    .costModifier (HasTextChange.applyTextChanges tcs cond?)
-      (HasTextChange.applyTextChanges tcs tgt) (HasTextChange.applyTextChanges tcs mod)
-  | .replacement cond? spec =>
-    .replacement (HasTextChange.applyTextChanges tcs cond?)
-      (HasTextChange.applyTextChanges tcs spec)
-  | .enchantRestriction slot =>
-    .enchantRestriction (HasTextChange.applyTextChanges tcs slot)
-
-end
-
-instance : HasTextChange ContinuousModification where
-  applyTextChanges tcs m := if tcs.isEmpty then m else applyTcContMod tcs m
-
-instance : HasTextChange StaticAbility where
-  applyTextChanges tcs ab := if tcs.isEmpty then ab else applyTcStatic tcs ab
+/-! ### 1. Continuous Modification Helpers -/
 
 namespace ContinuousModification
 
@@ -1261,7 +672,7 @@ def equippedGetsAndAttackChooseKeyword : StaticAbility :=
       .modifyPT (.const 2) (.const 0),
       .grantTriggered #[TriggeredAbility.ofPattern .thisAttacks
         "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
-        (.chooseKeyword [.trample, .deathtouch])]
+        (.player (.choose .you (.keyword #[Keyword.trample, Keyword.deathtouch])))]
     ])
 
 /-- `Equipped creature gets +1/+0 and has flying and "Whenever this creature attacks, you gain 1 life."` -/
@@ -1271,7 +682,7 @@ def equippedGetsFlyingAndAttackGainLife : StaticAbility :=
       .modifyPT (.const 1) (.const 0),
       .grantKeywords #[Keyword.flying],
       .grantTriggered #[TriggeredAbility.ofPattern .thisAttacks
-        "Whenever this creature attacks, you gain 1 life." (.gainLife 1)]
+        "Whenever this creature attacks, you gain 1 life." (Instruction.gainLifeFixed 1)]
     ])
 
 /-- `Equipped creature gets +P/+T and has trample and "Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens."` -/
@@ -1280,8 +691,9 @@ def equippedGetsTrampleAndCombatTreasures (power toughness : Int) : StaticAbilit
     (.all #[
       .modifyPT (.const power) (.const toughness),
       .grantKeywords #[Keyword.trample],
-      .grantTriggered #[SharedTrigger.treasuresEqualLastKnown.toTriggeredAbility
-        (pattern? := some .thisDealsCombatDamageToPlayerOrPlaneswalker)]
+      .grantTriggered #[TriggeredAbility.ofPattern .thisDealsCombatDamageToPlayerOrPlaneswalker
+        "Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens."
+        (Instruction.createTokens .treasure .eventAmount)]
     ])
 
 /-- `Equipped creature has first strike and gets +1/+0 for each instant and sorcery card in your graveyard.` -/
@@ -2120,6 +1532,16 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
         | .player (.extraAbilityActivation _ sc n) =>
           let (subj, _) := renderScopeSubject ctx sc
           s!"Activated abilities of {subj} can be activated {englishNumber n} additional time(s)."
+        | .player (.lifeTotalCantChange pf) =>
+          s!"{toOracleStr pf { ctx with capitalize := true }}'s life total can't change."
+        | .player (.forbidAbilityActivation _ .powerUp) =>
+          "Power-up abilities can't be activated."
+        | .player (.forbidAbilityActivation _ _) =>
+          "Abilities can't be activated."
+        | .player (.gainDesignation _ .citysBlessing) =>
+          "You get the city's blessing for the rest of the game."
+        | .player (.gainDesignation _ .enduringStory) =>
+          "You get an enduring story for the rest of the game."
         | .play (.lookAtTopOfLibrary _) =>
           "You may look at the top card of your library any time."
         | .play (.mayPlayFrom _ .library (.hasType .creature) false false false false) =>
@@ -2156,12 +1578,16 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
         | .play (.spellCantBeCountered none) => "This spell can't be countered."
         | .play (.spellCantBeCountered (some pred)) =>
           s!"{toOracleStr pred { ctx with plural := true, capitalize := true }} spells can't be countered."
+        | .play (.nextSpellCantBeCountered _ _) =>
+          "The next spell you cast can't be countered."
         | .play (.castRestriction c) =>
           s!"You can't cast this spell unless {renderConditionClause ctx c}."
         | .play .mayBeginOnBattlefield =>
           "If this card is in your opening hand, you may begin the game with it on the battlefield."
         | .play .canBeCommander =>
           "This planeswalker can be your commander."
+        | .play (.activateLoyaltyAsInstant _ _) =>
+          "You may activate loyalty abilities of planeswalkers you control on any player's turn any time you could cast an instant."
         | .combat (.cantAttack s) =>
           let (subj, _) := renderSubjectPhrase ctx s
           s!"{subj} can't attack."
@@ -2170,7 +1596,9 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
           s!"{subj} can't attack unless {renderConditionClause ctx c}."
         | .combat (.attackTax _ _ cost) =>
           s!"Creatures can't attack you unless their controller pays {cost.toNotation} for each of those creatures."
-        | .combat (.cantAttackPlayer ap _) =>
+        | .combat (.attackPlaneswalkerTax _ _ cost) =>
+          s!"Creatures can't attack planeswalkers you control unless their controller pays {cost.toNotation} for each of those creatures."
+        | .combat (.cantAttackPlayer ap _ _) =>
           s!"{toOracleStr ap { ctx with plural := true, capitalize := true }} can't attack you."
         | .combat (.attacksEachCombatIfAble s) =>
           let (subj, pl) := renderSubjectPhrase ctx s
@@ -2270,6 +1698,10 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
         | .game (.cantHaveCountersPutOn sc none) =>
           let (subj, _) := renderScopeSubject ctx sc
           s!"{capitalizeAscii subj} can't have counters put on them."
+        | .game (.legendRuleDisabled _) =>
+          "The \"legend rule\" doesn't apply to permanents you control."
+        | .costMod _ _ _ =>
+          "Spells and abilities cost different mana."
         | .all _ => ""
       String.intercalate " " (flat.toList.map renderOne)
   match cond? with
@@ -2488,6 +1920,10 @@ private def renderReplacementOne (ctx : PrintCtx) : StaticReplacementSpec → St
     "If damage would be dealt to this creature, instead that damage is dealt, but all other damage already dealt to it is healed."
   | .unspentManaBecomesColorless _ =>
     "If you would lose unspent mana, that mana becomes colorless instead."
+  | .exileOnLeaveStack =>
+    "If this spell would leave the stack, exile it instead of putting it anywhere else."
+  | .entersTappedAndAttackingSameDefender =>
+    "This creature enters tapped and attacking the same defender."
   | .all _ => ""
 
 private def renderReplacement (ctx : PrintCtx) (cond? : Option Condition)
@@ -2555,6 +1991,9 @@ private def renderContinuous (ctx : PrintCtx) (cond? : Option Condition)
       | .grantKeywords ks =>
         if !ks.isEmpty then
           out := out ++ [s!"{haveVerb} {renderKeywordsAndWards ks}"]
+      | .loseKeywords ks =>
+        if !ks.isEmpty then
+          out := out ++ [s!"{loseVerb} {KeywordAbility.joinedAnd ks}"]
       | .grantActivated abs =>
         for ab in abs do
           let q := ab.toOracle ctx
@@ -2585,6 +2024,12 @@ private def renderContinuous (ctx : PrintCtx) (cond? : Option Condition)
           out := out ++ [s!"{haveVerb} all activated abilities of {toOracleStr src { ctx with plural := true, capitalize := false }}"]
       | .loseAllAbilities =>
         out := out ++ [s!"{loseVerb} all abilities"]
+      | .gainControl _ =>
+        out := out ++ ["is controlled by you"]
+      | .exchangeControl _ =>
+        out := out ++ ["exchanges control"]
+      | .becomeCopyOf _ _ =>
+        out := out ++ ["is a copy"]
       | .addAllCreatureTypes =>
         out := out ++ [s!"{isVerb} all creature types"]
       | .modifyTypes tm =>

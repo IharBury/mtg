@@ -20,8 +20,8 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     name := "Phase12 Tap Watcher"
     types := #[.enchantment]
     triggeredAbilities := #[
-      TriggeredAbility.ofPattern .creaturesYouControlBecomeTapped "" (.draw 1) (grouping := .oncePerBatch),
-      TriggeredAbility.ofPattern .youCastNoncreature "" (.draw 1)]
+      TriggeredAbility.ofPattern .creaturesYouControlBecomeTapped "" (Instruction.drawFixed 1) (grouping := .oncePerBatch),
+      TriggeredAbility.ofPattern .youCastNoncreature "" (Instruction.drawFixed 1)]
   }
   let manaDorkDef : CardDef := {
     name := "Phase12 Mana Dork"
@@ -35,7 +35,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     name := "Phase12 Two-Mana Divination"
     manaCost := ManaCost.ofGeneric 2
     types := #[.sorcery]
-    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   let gPropBase0 :=
     let g := addPermanent (addPermanent afterDraw tapWatcherDef me me) manaDorkDef me me
@@ -273,7 +273,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     types := #[.sorcery]
     spellEffect := some {
       targeting := .of .creature
-      resolution := .destroyTarget
+      body := Instruction.destroy (.target 0)
       phrase := "Destroy target creature"
     }
   }
@@ -323,7 +323,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
   let exHero := (gExBase.battlefield.filter (·.name == hero.name))[0]!
   let exEffect : Effect := {
     targeting := .of (TargetSpec.creature.append .creature)
-    resolution := .exchangeControl
+    body := .installEffect (.applyContinuous .indefinite (.target 0) (.exchangeControl (.target 1)))
     phrase := "Exchange control of two target creatures"
   }
   let gExDone :=
@@ -565,7 +565,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
   let hasScryPendingOrQueued (g : Game) : Bool :=
     (match g.pending with | .scry p 1 1 => p == me | _ => false) ||
       g.stack.any (fun e => (g.object! e.objectId).triggeredAbility.any (fun ab =>
-        ab.effect.resolution == .scry 1))
+        ab.effect.body == Instruction.scryFixed 1))
   let ancestryAllOk :=
     hasScryPendingOrQueued gPoaDuring &&
     hasScryPendingOrQueued gPoaLki &&
@@ -612,11 +612,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     name := "Phase12 Barrage"
     manaCost := { symbols := #[.x, .colored .red, .colored .red] }
     types := #[.sorcery]
-    spellEffect := some {
-      targeting := .of .creature
-      resolution := .copyThisSpellXTimesThenDamage 1
-      phrase := "Deal 1 damage to target creature"
-    }
+    spellEffect := some (Effect.copyThisSpellXTimesThenDamage 1)
   }
   let gPbb0 :=
     let g := addPermanent afterDraw bear opp opp
@@ -630,7 +626,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     let g := mustApply g me (.target (.permanent oppBearPbb.id))
     mustApply g me .pay
   let pbbTriggerOnStack := gPbbCast.stack.any (fun se =>
-    ((gPbbCast.object! se.objectId).triggeredAbility.map (·.effect.resolution)) == some .copySourceSpellXTimes)
+    ((gPbbCast.object! se.objectId).triggeredAbility.map (·.effect.body)) == some (.stack (.copyStackObject .this .chosenX true)))
   -- `.youTargetSomething` on targeted `.abilityActivated`
   let youTargetTrig : TriggeredAbility :=
     SharedTrigger.watch .youTargetDrawOnce |>.toTriggeredAbility
@@ -644,7 +640,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf]
-      effect := { targeting := .of .creature, resolution := .tapTargets, phrase := "Tap target creature" }
+      effect := { targeting := .of .creature, body := Instruction.tap .allTargets, phrase := "Tap target creature" }
     }]
   }
   let gTgtAct0 :=
@@ -670,7 +666,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     (gWardAct.object! se.objectId).triggeredAbility == some (.onWard (CostSpec.ofGeneric 2)))
   -- (b) Triggered ability choosing opponent's Ward creature as target queues Ward
   let etbTapTrigger : TriggeredAbility :=
-    TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution := .tapTargets, phrase := "Tap target creature" }
+    TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, body := Instruction.tap .allTargets, phrase := "Tap target creature" }
   let gWardTrig :=
     let g := gWardBase.putTriggeredAbilityOnStack me (gWardBase.object! wardPingerId) etbTapTrigger "enters"
     let g := g.promptTriggerTargetsIfNeeded
@@ -698,7 +694,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     types := #[.instant]
     spellEffect := some {
       targeting := .of (TargetSpec.creature.append .creature)
-      resolution := .tapTargets
+      body := Instruction.tap .allTargets
       phrase := "Tap two target creatures"
     }
   }
@@ -870,7 +866,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     name := "Phase13 Five-Mana Sorcery"
     manaCost := ManaCost.ofGeneric 5
     types := #[.sorcery]
-    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   let gAct0 :=
     let g := addPermanent (addPermanent (addPermanent afterDraw dorkDef me me) dorkDef me me) filterLandDef me me
@@ -970,7 +966,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     types := #[.sorcery]
     spellEffect := some {
       targeting := .of .creature
-      resolution := .destroyTarget
+      body := Instruction.destroy (.target 0)
       phrase := "Destroy target creature"
     }
   }
@@ -978,7 +974,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     name := "Phase13 Free Draw"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   -- (a) Deferred `PostCastCleanup.lookedBottom`: library order untouched while paused on
   --     `Pending.chooseTargets`, then bottomed when `becomeCast` completes OR when
@@ -1037,8 +1033,8 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     types := #[.sorcery]
     keywords := #[.kicker (CostSpec.ofGeneric 5)]
     spellModes := #[
-      { resolution := .draw 1, phrase := "Draw a card" },
-      { resolution := .gainLife 1, phrase := "Gain 1 life" }
+      { body := Instruction.drawFixed 1, phrase := "Draw a card" },
+      { body := Instruction.gainLifeFixed 1, phrase := "Gain 1 life" }
     ]
   }
   let gSeqRev :=
@@ -1046,7 +1042,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     let rid := ((g.player me).hand.filter (fun id => (g.object! id).name == "Phase13 Modal Kicker"))[0]!
     let g := (g.change (.pushContinuationFrame {})).change (.triggerSequenceRest (some {
       controller := me
-      ability := TriggeredAbility.ofPattern .youCastNoncreature "" (.draw 1)
+      ability := TriggeredAbility.ofPattern .youCastNoncreature "" (Instruction.drawFixed 1)
       sourceId := none
       targets := #[]
       steps := [.gainLife (.fixed 1)]
@@ -1381,8 +1377,8 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     | .ok g => keepOpeningHands g 12
     | .error e => panic! e
   let gThreeQueued :=
-    let g := gThree0.putReflexiveTrigger ⟨0⟩ none { resolution := .draw 1, phrase := "Draw a card" } (deferToPriority := true)
-    g.putReflexiveTrigger ⟨1⟩ none { resolution := .draw 1, phrase := "Draw a card" } (deferToPriority := true)
+    let g := gThree0.putReflexiveTrigger ⟨0⟩ none { body := Instruction.drawFixed 1, phrase := "Draw a card" } (deferToPriority := true)
+    g.putReflexiveTrigger ⟨1⟩ none { body := Instruction.drawFixed 1, phrase := "Draw a card" } (deferToPriority := true)
   let gThreeConceded := gThreeQueued.concede ⟨0⟩
   -- Simultaneous SBA / leaving-caused reflexive triggers (Head of the Hunt, CR 800.4d):
   -- when player `⟨0⟩` loses the game in the same SBA sweep where an opponent's creature dies
@@ -1400,7 +1396,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     g.loseLife ⟨0⟩ 20 (cause := some testCause)
   let gThreeSbaDone :=
     (gThreeSba0.checkSBA).putReflexiveTrigger ⟨0⟩ none
-      { resolution := .draw 1, phrase := "Draw a card" } (deferToPriority := true)
+      { body := Instruction.drawFixed 1, phrase := "Draw a card" } (deferToPriority := true)
   let leftGameTriggersOk :=
     gThreeQueued.waitingTriggers.size == 2 &&
     !gThreeConceded.over &&
@@ -1638,7 +1634,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let mkSeqFrame (g : Game) (gain : Nat) : Game :=
     (g.change (.pushContinuationFrame {})).change (.triggerSequenceRest (some {
       controller := me
-      ability := TriggeredAbility.ofPattern .youCastNoncreature "" (.draw 1)
+      ability := TriggeredAbility.ofPattern .youCastNoncreature "" (Instruction.drawFixed 1)
       sourceId := none
       targets := #[]
       steps := [.gainLife (.fixed gain)]
@@ -1648,7 +1644,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .hasType .artifact]))]
-      effect := { resolution := .draw 1, phrase := "Draw a card" }
+      effect := { body := Instruction.drawFixed 1, phrase := "Draw a card" }
     }]
   }
   let gActPayRev :=
@@ -1676,7 +1672,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
       cost := CostSpec.ofItems #[.tapObjects (.exact 2) (.all #[.hasType .artifact, .tapped false, .controlledBy .you])]
       effect := {
         targeting := .of .player
-        resolution := .gainLife 1
+        body := Instruction.gainLifeFixed 1
         phrase := "Target player gains 1 life"
       }
     }]
@@ -1700,8 +1696,8 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     manaCost := ManaCost.empty
     types := #[.sorcery]
     spellModes := #[
-      { targeting := .of .creature, resolution := .destroyTarget, phrase := "Destroy target creature" },
-      { targeting := .of .creature, resolution := .exileTarget, phrase := "Exile target creature" }
+      { targeting := .of .creature, body := Instruction.destroy (.target 0), phrase := "Destroy target creature" },
+      { targeting := .of .creature, body := Instruction.exile (.target 0), phrase := "Exile target creature" }
     ]
   }
   let mkTopLook1 (d : CardDef) : Game × ObjectId :=
@@ -1746,7 +1742,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.empty
-      effect := { resolution := .draw 1, phrase := "Draw a card" }
+      effect := { body := Instruction.drawFixed 1, phrase := "Draw a card" }
     }]
   }
   let manaActDef : CardDef := {
@@ -1754,7 +1750,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1)]
-      effect := { resolution := .draw 1, phrase := "Draw a card" }
+      effect := { body := Instruction.drawFixed 1, phrase := "Draw a card" }
     }]
   }
   let sacOtherActDef : CardDef := {
@@ -1762,7 +1758,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
-      effect := { resolution := .draw 1, phrase := "Draw a card" }
+      effect := { body := Instruction.drawFixed 1, phrase := "Draw a card" }
     }]
   }
   let crewVehDef : CardDef := {
@@ -1842,7 +1838,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     manaCost := ManaCost.empty
     types := #[.instant]
     additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
-    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   -- (a) Non-active player `opp` activates `sacOtherActDef` sacrificing a creature
   -- with competing death replacements (finality counter vs `me`'s `headHuntDef`):
@@ -1992,13 +1988,13 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     manaCost := ManaCost.empty
     types := #[.instant]
     additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
-    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   let freeDrawDef : CardDef := {
     name := "Phase13 Free Draw"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   -- (a) `{T}, Sacrifice this, Sacrifice a legendary artifact` where BOTH the
   --     chosen legendary artifact AND the sacrificed source pause on
@@ -2010,7 +2006,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase13 Mount Doom Engine"
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self, .sacrifice (.exact 1) (.filter (.all #[.hasSupertype .legendary, .hasType .artifact]))]
-      effect := { resolution := .draw 1, phrase := "Draw a card" }
+      effect := { body := Instruction.drawFixed 1, phrase := "Draw a card" }
     }]
   }
   let legArtBearDef : CardDef := {
@@ -2060,7 +2056,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase13 Dual Sac Engine"
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.sacrifice (.exact 1) .self, .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
-      effect := { resolution := .draw 1, phrase := "Draw a card" }
+      effect := { body := Instruction.drawFixed 1, phrase := "Draw a card" }
     }]
   }
   let twoPickActDef : CardDef := {
@@ -2068,7 +2064,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase13 Two Pick Engine"
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.all #[.hasSupertype .legendary, .hasType .artifact])), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .hasType .creature]))]
-      effect := { resolution := .draw 1, phrase := "Draw a card" }
+      effect := { body := Instruction.drawFixed 1, phrase := "Draw a card" }
     }]
   }
   let gOppDualSacDone :=
@@ -2302,7 +2298,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     loyalty := some 4
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.loyalty (.plus 1)]
-      effect := { resolution := .draw 1, phrase := "Draw a card" }
+      effect := { body := Instruction.drawFixed 1, phrase := "Draw a card" }
     }]
   }
   let planDef14 : CardDef := {
@@ -2321,7 +2317,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase14 RG Spell"
     manaCost := ⟨#[.colored .red, .colored .green]⟩
     types := #[.instant]
-    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   let painLandDef : CardDef := {
     name := "Phase14 Pain Land"
@@ -2469,7 +2465,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase14 X Burn"
     manaCost := ⟨#[.x, .colored .red]⟩
     types := #[.sorcery]
-    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   let gResXDone :=
     let g := insertObject afterDraw xBurnDef opp .exile
@@ -2581,7 +2577,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
   let (gCountersAndLife, countersAndLifeSubOk) :=
     let g0 := addPermanent (addPermanent afterDraw samsonDef14 me me) bear me me
     let bid := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear"))[0]!.id
-    let g1 := g0.applyPermanentAction (g0.object! bid) .tapAndStun
+    let g1 := g0.tapAndStunPermanent (g0.object! bid)
     let g2 := (g1.empowerJace me 2).empowerJace me 2
     let jaceLoyalty :=
       ((g2.battlefield.filter (fun (o : GameObject) => g2.hasSubtype o .jace))[0]!).status.loyaltyCounters
@@ -2671,7 +2667,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     triggeredAbilities := #[
       TriggeredAbility.ofPattern .anotherCreatureOrPlaneswalkerYouControlDies
         "Whenever another creature or planeswalker you control dies, you gain 1 life."
-        (.gainLife 1)
+        (Instruction.gainLifeFixed 1)
     ]
   }
   let (gSimDies, simDiesOk) :=
@@ -2814,7 +2810,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     triggeredAbilities := #[
       TriggeredAbility.ofPattern (.playerAction .you .proliferate)
         "Whenever you proliferate, you gain 1 life."
-        (.gainLife 1)
+        (Instruction.gainLifeFixed 1)
     ]
   }
   let (gProlifP1, gProlifP2, gProlifDone, prolifSubOk) :=
@@ -2919,7 +2915,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     manaCost := ManaCost.empty
     types := #[.sorcery]
     spellEffect := some {
-      resolution := .sequence [.scry (.fixed 1), .destroyAllCreatures, .draw (.fixed 1)]
+      body := .seq #[Instruction.scryFixed 1, Instruction.destroy (.inZones .battlefield (.hasType .creature)), Instruction.drawFixed 1]
       phrase := "Scry 1. Destroy all creatures. Draw a card."
     }
   }
@@ -3035,7 +3031,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase15 Paid Draw"
     manaCost := ⟨#[.colored .white]⟩
     types := #[.instant]
-    spellEffect := some { resolution := .draw 1, phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   let teamworkStrikeDef : CardDef := {
     lightningBolt with
@@ -3234,7 +3230,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let subBearId := (g0.battlefield.filter (·.name == bear.name))[0]!.id
     let artCrId := (g0.battlefield.filter (·.name == "Phase15 Artifact Creature"))[0]!.id
     let indCrId := (g0.battlefield.filter (·.name == "Phase15 Conditional Indestructible"))[0]!.id
-    let gWiped := g0.applyUnified me { resolution := .destroyAllCreatures, phrase := "Destroy all creatures" } #[]
+    let gWiped := g0.applyUnified me { body := Instruction.destroy (.inZones .battlefield (.hasType .creature)), phrase := "Destroy all creatures" } #[]
     let lkiPowerOk := gWiped.lastKnownPowerOf? subBearId == some 3
     let indSurvived :=
       !(gWiped.battlefield.any (fun o => o.id == lordId || o.id == subBearId || o.id == artCrId)) &&

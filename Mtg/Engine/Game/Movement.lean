@@ -702,7 +702,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           else
             let ab := TriggeredAbility.ofPattern .thisEnters
               "When you do, create a 2/2 green Wolf creature token."
-              (.createTokens .wolf 1) (word := .when)
+              (Instruction.createTokensFixed .wolf 1) (word := .when)
             g.recordReflexiveTrigger {
                 controller := p, source := src, ability := ab,
                 pattern := ab.pattern, checked := true }

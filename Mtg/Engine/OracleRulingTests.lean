@@ -3644,7 +3644,7 @@ def testSagaFourChapters : CardDef :=
       TriggeredAbility.sagaChapter 1 (Effect.chapterDraw 1),
       TriggeredAbility.sagaChapter 2 (Effect.chapterDraw 1),
       TriggeredAbility.sagaChapter 3 {
-        resolution := .draw 0
+        body := Instruction.drawFixed 0
         phrase := "Return Tom Bombadil from your graveyard to the battlefield."
       }
     ])
@@ -4093,7 +4093,10 @@ def announcedCostLocksInOk : Bool :=
 -/
 
 def flameModesStayOk : Bool :=
-  flameOfAnor.chooseTwoIfYouControlSubtype == some .wizard &&
+  flameOfAnor.modalSpec?.any (fun ms =>
+      match ms.altCountIf? with
+      | some (.playerPred .you (.controls { zones := .battlefield, pred := .hasSubtype (.literal .wizard) } (.const 1)), .const 1, .const 2) => true
+      | _ => false) &&
     (ruling 250).comment.contains "will still have two modes chosen"
 
 #guard flameModesStayOk
@@ -4220,7 +4223,7 @@ def dainCountsOnResolveOk : Bool :=
 def weavemasterManaAbilityOk : Bool :=
   woodlandWeavemaster.activatedAbilities.any (fun ab =>
       ab.isManaAbility &&
-        ab.mana?.any fun mp => mp.spec == .oneOf .anyColor (.objectStat .power .this)) &&
+        ab.manaProduction?.any fun mp => mp.spec == .oneOf .anyColor (.objectStat .power .this)) &&
     (ruling 329).comment.contains "mana ability"
 
 #guard weavemasterManaAbilityOk

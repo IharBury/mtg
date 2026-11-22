@@ -23,7 +23,10 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature (.setBasePT 1 1)))
+  TriggeredAbility.mkTrigger .thisEnters {
+    targeting := .of .creature
+    resolution? := some (.setBasePT (.fixed 1) (.fixed 1) .target)
+  }
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -276,51 +279,43 @@ player, and doubling set nothing. -/
     doubled.log == g0.log
 
 /- Printed phrases stay with the combination that produces them. -/
-#guard TriggeredAbility.TriggerResolution.ofPermanent (.setBasePT 2 2) ==
-  .setBasePT (.fixed 2) (.fixed 2)
-#guard TriggeredAbility.TriggerResolution.ofSource (.setBasePT 2 2) ==
-  .setBasePT (.fixed 2) (.fixed 2) .source
-#guard TriggeredAbility.TriggerResolution.ofEnchanted (.setBasePT 2 2) ==
-  .setBasePT (.fixed 2) (.fixed 2) .enchanted
-#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource (.setBasePT 2 2) ==
-  .setBasePT (.fixed 2) (.fixed 2) (.target .whileSource)
 #guard equalSource == .setBasePT .equalSourcePower .equalSourceToughness .target
 #guard TriggeredAbility.resolution .onAttackSetOtherBasePT == equalSource
 
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution := fixed } ==
+    { targeting := .of .creature, resolution? := some (fixed) } ==
   "target creature has base power and toughness 1/1 until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .setBasePT (.fixed 5) (.fixed 5) .source } ==
+    { resolution? := some (.setBasePT (.fixed 5) (.fixed 5) .source) } ==
   "this creature has base power and toughness 5/5 until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .setBasePT (.fixed 0) (.fixed 2) .enchanted } ==
+    { resolution? := some (.setBasePT (.fixed 0) (.fixed 2) .enchanted) } ==
   "enchanted creature has base power and toughness 0/2 until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .setBasePT (.fixed 3) (.fixed 1) (.target .whileSource) } ==
+    { resolution? := some (.setBasePT (.fixed 3) (.fixed 1) (.target .whileSource)) } ==
   "that creature has base power and toughness 3/1 until end of turn"
-#guard TriggeredAbility.resolutionPhrase { resolution := equalSource } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (equalSource) } ==
   "choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .setBasePT .equalSourcePower .equalSourceToughness .source } ==
+    { resolution? := some (.setBasePT .equalSourcePower .equalSourceToughness .source) } ==
   "set base power and toughness"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .setBasePT (.fixed 1) (.fixed 1) .cause } ==
+    { resolution? := some (.setBasePT (.fixed 1) (.fixed 1) .cause) } ==
   "set base power and toughness"
 #guard TriggeredAbility.resolutionPhrase {
     targeting := .of .creatureYouControl
-    resolution := .sequence
-      [.attach .source .target, .setBasePT (.fixed 2) (.fixed 2) (.target .whileSource)] } ==
+    resolution? := some (.sequence
+      [.attach .source .target, .setBasePT (.fixed 2) (.fixed 2) (.target .whileSource)]) } ==
   "attach it to target creature you control. That creature has base power and toughness 2/2 until end of turn"
 
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature has base power and toughness 1/1 until end of turn."
 #guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource (.setBasePT 5 5)))) ==
+    (TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.setBasePT (.fixed 5) (.fixed 5) .source) }) ==
   "When this permanent enters, this creature has base power and toughness 5/5 until end of turn."
-#guard TriggeredAbility.toNotation (.onEnterEnchanted (.setBasePT 0 2)) ==
+#guard TriggeredAbility.toNotation (.onEnterEnchanted (fun o => .installEffect (.applyContinuous .untilEndOfTurn o (.setBasePT (some (.const 0)) (some (.const 2)))))) ==
   "When this Aura enters, enchanted creature has base power and toughness 0/2 until end of turn."
-#guard TriggeredAbility.toNotation (.onEnterAttachThen (.setBasePT 2 2)) ==
+#guard TriggeredAbility.toNotation (.onEnterAttachThen (fun o => .installEffect (.applyContinuous .untilEndOfTurn o (.setBasePT (some (.const 2)) (some (.const 2)))))) ==
   "When this Equipment enters, attach it to target creature you control. That creature has base power and toughness 2/2 until end of turn."
 #guard TriggeredAbility.toNotation .onAttackSetOtherBasePT ==
   "Whenever this creature attacks, choose up to one other target creature you control. Its base power and toughness become equal to this creature's power and toughness until end of turn."

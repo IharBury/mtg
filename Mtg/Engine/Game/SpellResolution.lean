@@ -167,19 +167,16 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
 
 /-- Step through `modeEffects` in printed order (each with its own slice of
 `remainingTargets`), pausing and chaining `.continueSpellModes` if any mode opens
-a pending choice or `--norandom` request, then running `empowerJace` when done. -/
+a pending choice or `--norandom` request. -/
 partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
     (modeEffects : Array Effect) (remainingTargets : Array Target)
     (castFromGraveyard kicked giftPromised : Bool) (chosenX : Option Nat)
-    (sourceId : Option ObjectId) (empowerJaceN : Option Nat)
+    (sourceId : Option ObjectId)
     (skippedOptionalSlots : Array Nat := #[])
     (lastKnownPower : Option Int := none)
     (lastKnownToughness : Option Int := none) : Game :=
   match modeEffects[0]? with
-  | none =>
-    match empowerJaceN with
-    | some n => g.empowerJace controller n
-    | none => g
+  | none => g
   | some e =>
     let e := g.expandEachOpponentEffect controller e
       (if g.resolvingAbility.isSome then g.resolvingAbility else g.resolvingSpell)
@@ -213,16 +210,16 @@ partial def runSpellModesAndEmpower (g : Game) (controller : PlayerId)
           (sourceId := sourceId)
           (lastKnownPower := lastKnownPower)
           (lastKnownToughness := lastKnownToughness)
-    if restModes.isEmpty && empowerJaceN.isNone then g
+    if restModes.isEmpty then g
     else if (g.pending != pendingBefore && g.pending != .none) ||
         (g.afterRandom != randomBefore && g.afterRandom != .none) then
       g.chainPendingReplacement
         (.continueSpellModes controller restModes restTargets
-          castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN
+          castFromGraveyard kicked giftPromised chosenX sourceId
           restSkipped lastKnownPower lastKnownToughness)
     else
       g.runSpellModesAndEmpower controller restModes restTargets
-        castFromGraveyard kicked giftPromised chosenX sourceId empowerJaceN
+        castFromGraveyard kicked giftPromised chosenX sourceId
         restSkipped lastKnownPower lastKnownToughness
 
 def resolveTop (g : Game) : Game :=
@@ -273,7 +270,7 @@ def resolveTop (g : Game) : Game :=
                 trigModes[i]?.map fun mEff =>
                   if tcs.isEmpty then mEff else TextChange.applyEffect tcs mEff
             g.runSpellModesAndEmpower entry.controller modeEffects entry.targets
-              false false false chosenX obj.sourceId none entry.skippedOptionalSlots
+              false false false chosenX obj.sourceId entry.skippedOptionalSlots
               entry.lastKnownPower entry.lastKnownToughness
           else
             g.applyUnifiedAbility entry.controller e entry.targets obj.sourceId
@@ -343,11 +340,7 @@ def resolveTop (g : Game) : Game :=
             g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
           g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
         else
-          let sagaChapter :=
-            t.chapterNumbers?.bind (·[0]?) |>.orElse fun _ =>
-              match t.shared with
-              | .chapter n _ => some n
-              | _ => none
+          let sagaChapter := t.chapterNumbers?.bind (·[0]?)
           let snap := g.snapshot obj
           let srcName := (g.name obj).replace "'s ability" ""
           let g := g.change (.pushContinuationFrame {
@@ -445,7 +438,6 @@ def resolveTop (g : Game) : Game :=
             else
               let evalModes := g.evalSpellModes entry.controller obj
               ((entry.chosenMode.toArray ++ entry.extraModes).qsort (· < ·)).filterMap (evalModes[·]?)
-          let empowerJaceN := bc.empowerJace
           -- CR 702.131a: Ascend on a resolving instant or sorcery spell is a spell ability.
           let g :=
             if g.isInstantOrSorcery obj && g.hasAscend obj then
@@ -460,15 +452,15 @@ def resolveTop (g : Game) : Game :=
           -- announced for its own instances of “target” (CR 700.2 / 608.2c).
           let g :=
             if g.pending != .none || g.afterRandom != .none then
-              if !modeEffects.isEmpty || empowerJaceN.isSome then
+              if !modeEffects.isEmpty then
                 g.chainPendingReplacement
                   (.continueSpellModes entry.controller modeEffects entry.targets
-                    fromGy kicked giftTo.isSome chosenX (some obj.id) empowerJaceN
+                    fromGy kicked giftTo.isSome chosenX (some obj.id)
                     entry.skippedOptionalSlots entry.lastKnownPower entry.lastKnownToughness)
               else g
             else
               g.runSpellModesAndEmpower entry.controller modeEffects entry.targets
-                fromGy kicked giftTo.isSome chosenX (some obj.id) empowerJaceN
+                fromGy kicked giftTo.isSome chosenX (some obj.id)
                 entry.skippedOptionalSlots entry.lastKnownPower entry.lastKnownToughness
           g.completeActiveResolutions
 

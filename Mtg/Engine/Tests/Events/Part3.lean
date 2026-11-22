@@ -274,11 +274,11 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
 #guard
   let etbAuraDef : CardDef :=
     aura "Phase16 Exile Aura" ManaCost.empty "Enchant creature\nWhen Phase16 Exile Aura enters, you gain 5 life."
-      (triggeredAbilities := #[TriggeredAbility.ofPattern .thisEnters "When Phase16 Exile Aura enters, you gain 5 life." (.gainLife (.fixed 5))])
+      (triggeredAbilities := #[TriggeredAbility.ofPattern .thisEnters "When Phase16 Exile Aura enters, you gain 5 life." (Instruction.gainLifeFixed 5)])
   let etbPermDef : CardDef := {
     bear with
     name := "Phase16 Exile Bear"
-    triggeredAbilities := #[TriggeredAbility.ofPattern .thisEnters "When Phase16 Exile Bear enters, you gain 5 life." (.gainLife (.fixed 5))]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .thisEnters "When Phase16 Exile Bear enters, you gain 5 life." (Instruction.gainLifeFixed 5)]
   }
   let gE0 : Game := addPermanent afterDraw bear me me
   let hostId := (gE0.battlefield.filter (·.name == bear.name))[0]!.id
@@ -948,7 +948,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
 #guard
   let deathWatcherAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .creatureYouControlDies
-      { resolution := .gainLife (.fixed 2), phrase := "You gain 2 life" }
+      { body := Instruction.gainLifeFixed 2, phrase := "You gain 2 life" }
   let watcherDef : CardDef :=
     { bear with name := "Phase17 Watcher", triggeredAbilities := #[deathWatcherAb] }
   let gR0 : Game := addPermanent (addPermanent afterDraw watcherDef me me) hero me me
@@ -1053,8 +1053,14 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
       uuBear .stun 1 (some me) (cause := some testCause)).createEffect
       (.replacement { id := idStunExt, source := some uuHero, controller := some me, affectedPlayer := me,
                       kind := .stunCounterUntap uuBear }) (cause := some testCause)
-  let uuEff : Effect := { targeting := .of .creature, resolution := .untapUnblockable }
-  let gUUPaused : Game := gUU1.applyFra me uuEff .untapUnblockable #[Target.permanent uuBear] (some uuHero)
+  let uuEff : Effect := {
+    targeting := .of .creature
+    body := .seq #[
+      Instruction.untap (.target 0),
+      Instruction.cantBeBlocked (.target 0)
+    ]
+  }
+  let gUUPaused : Game := gUU1.applyEffect me uuEff #[Target.permanent uuBear] (sourceId := some uuHero)
   let uuPausedOk : Bool :=
     (match gUUPaused.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
     !gUUPaused.hasCantBeBlocked (gUUPaused.object! uuBear)
@@ -1118,7 +1124,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   -- 4a. Mandatory-target non-FRA triggered ability with zero legal targets is removed in `putQueuedTrigger` (CR 603.3d).
   let mandTargetAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you)
-      { targeting := .of .oppCreature, resolution := .destroy .target, phrase := "Destroy target creature an opponent controls." }
+      { targeting := .of .oppCreature, body := Instruction.destroy (.target 0), phrase := "Destroy target creature an opponent controls." }
   let mandWatcherDef : CardDef := { bear with name := "Phase17 Mandatory Watcher", triggeredAbilities := #[mandTargetAb] }
   let gMand0 : Game := addPermanent afterDraw mandWatcherDef me me
   let logBeforeMand := gMand0.log.size
@@ -1208,10 +1214,11 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
 
 -- 5. CR 603.4 / 608.2a intervening-`"if"` & trigger checks (`gingerbrute`, `obAngel`, `tamiyoStun`, `windcragSiege`, `copySelfNonlegendary`).
 #guard
-  -- 5a. `FrcEffect.gingerbrute`: requires `isMonarch` on both trigger and resolution.
+  -- 5a. Gingerbrute monarch trigger: requires `isMonarch` on both trigger and resolution.
   let gingerAb : TriggeredAbility := TriggeredAbility.ofPattern .stepYourUpkeep
     "At the beginning of your upkeep, if you're the monarch, create a Gingerbrute token."
-    (.frc .gingerbrute) (interveningIf? := some TriggeredAbility.condYouAreMonarch)
+    (Instruction.ifThen (.playerPred .you .isMonarch) (Instruction.createTokensFixed .gingerbrute 1))
+    (interveningIf? := some TriggeredAbility.condYouAreMonarch)
   let gingerSrcDef : CardDef := { bear with name := "Phase17 Ginger Court", triggeredAbilities := #[gingerAb] }
   let gGin0 : Game := addPermanent afterDraw gingerSrcDef me me
   let gGinNoMonarch : Game := gGin0.record (GameEvent.stepped gGin0.turnNumber .upkeep me)
@@ -1226,22 +1233,23 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
     gGinLostMonarch.events.any (fun e => match e.change with | .rules (.stackObject (.removedOnResolution ..)) => true | _ => false) &&
     (gGinKeptMonarch.permanentsOf me).any (·.name == "Gingerbrute")
 
-  -- 5b. `FrcEffect.obAngel`: requires `loggedLifeGained > 0` on trigger and resolution.
+  -- 5b. Ob Nixilis Angel trigger: requires `loggedLifeGained > 0` on trigger and resolution.
   let obAb : TriggeredAbility := TriggeredAbility.ofPattern .stepEachEndStep
     "At the beginning of each end step, if you gained life this turn, ..."
-    (.frc .obAngel) (interveningIf? := some (TriggeredAbility.condGainedLifeAtLeast 1))
+    (Instruction.ifThen (TriggeredAbility.condGainedLifeAtLeast 1) (Instruction.createTokensFixed .angel44white 1))
+    (interveningIf? := some (TriggeredAbility.condGainedLifeAtLeast 1))
   let obSrcDef : CardDef := { bear with name := "Phase17 Angelic Watcher", triggeredAbilities := #[obAb] }
   let gOb0 : Game := addPermanent afterDraw obSrcDef me me
   let gObNoLife : Game := gOb0.record (GameEvent.stepped gOb0.turnNumber .end me)
   let gObLife : Game := (gOb0.gainLife me 1 (cause := some testCause)).record (GameEvent.stepped gOb0.turnNumber .end me)
   let obOk : Bool := gObNoLife.waitingTriggers.isEmpty && gObLife.waitingTriggers.size == 1
 
-  -- 5c. `FrcEffect.tamiyoStun`: triggers ONLY if `me` is monarch at combat damage, does NOT recheck `isMonarch` at resolution,
+  -- 5c. Tamiyo stun trigger: triggers ONLY if `me` is monarch at combat damage, does NOT recheck `isMonarch` at resolution,
   --     and taps + stuns ALL creatures that dealt combat damage to `me` in that batch!
   let tamAb : TriggeredAbility := TriggeredAbility.ofPattern
     (.whenCond .combatDamageToYou TriggeredAbility.condYouAreMonarch)
     "Whenever one or more creatures deal combat damage to you, if you were the monarch..."
-    (.frc .tamiyoStun) (grouping := .oncePerBatch)
+    (Instruction.tapAndStun .triggerSubject) (grouping := .oncePerBatch)
   let tamSrcDef : CardDef := { bear with name := "Phase17 Tamiyo Watcher", triggeredAbilities := #[tamAb] }
   let gTam0 : Game := addPermanent (addPermanent (addPermanent afterDraw tamSrcDef me me) bear opp opp) hero opp opp
   let oppBear := (gTam0.battlefield.filter (fun o => o.name == bear.name && o.controller == some opp))[0]!.id
@@ -1317,8 +1325,8 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let gUl0 : Game := insertObject (insertObject afterDraw bear me (.graveyard me)) freeInstDef me (.graveyard me)
   let gyBear := ((gUl0.player me).graveyard.filter (fun id => (gUl0.object! id).name == bear.name))[0]!
   let gyInst := ((gUl0.player me).graveyard.filter (fun id => (gUl0.object! id).name == "Phase17 Free Bolt"))[0]!
-  let uldEff : Effect := { resolution := .uldarosCopies }
-  let gUl1 : Game := gUl0.applyFra me uldEff .uldarosCopies #[Target.card gyBear, Target.card gyInst] none
+  let uldEff : Effect := { uldarosTheorix.triggeredAbilities[0]!.effect with targeting := {} }
+  let gUl1 : Game := gUl0.applyAbilityEffect me uldEff #[Target.card gyBear, Target.card gyInst]
   let exCopies := gUl1.objects.filter (fun o => o.zone == .exile && o.isCopy)
   let exileCopyStateOk : Bool :=
     exCopies.size == 2 && exCopies.all (fun o => !o.printed.isToken && o.isCopy)
@@ -1394,7 +1402,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
     name := "Phase17 Dual Rally"
     manaCost := ManaCost.empty
     types := #[.instant]
-    spellEffect := some { targeting := .of .twoCreaturesOrLandsYouControl, resolution := .sequence [], phrase := "Choose two target creatures and/or lands you control." }
+    spellEffect := some { targeting := .of .twoCreaturesOrLandsYouControl, body := .noop, phrase := "Choose two target creatures and/or lands you control." }
   }
   let gMT0 : Game := insertObject (addPermanent (addPermanent (addPermanent afterDraw bear me me) hero me me) samsonDef17 me me) twoTargetInst me (.hand me)
   let cA := (gMT0.battlefield.filter (·.name == bear.name))[0]!.id
@@ -1422,7 +1430,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
 #guard
   -- 7a. Recursive left-nested `.seq` in `keepLegend`: 3 simultaneous SBA actions alongside `chooseLegend` still preserve `preBf` LKI!
   let legWatcherAb : TriggeredAbility :=
-    TriggeredAbility.mkTrigger .anotherCreatureOrPlaneswalkerYouControlDies { resolution := .gainLife (.fixed 4), phrase := "You gain 4 life." }
+    TriggeredAbility.mkTrigger .anotherCreatureOrPlaneswalkerYouControlDies { body := Instruction.gainLifeFixed 4, phrase := "You gain 4 life." }
   let legDef17 : CardDef := { bear with name := "Phase17 Legend", supertypes := #[.legendary] }
   let zeroWatcher17 : CardDef := { creature "Phase17 Zero Watcher" ManaCost.empty #["Spirit"] 0 0 with triggeredAbilities := #[legWatcherAb] }
   let strayAura17 : CardDef := aura "Phase17 Stray Aura" ManaCost.empty "Enchant creature"
@@ -2191,11 +2199,10 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     bear with
     name := "Phase18 Modal ETB"
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisEnters { resolution := .chooseTriggerModes 1, phrase := "Choose one —" }
-        (modes := #[
-          { resolution := .gainLife (.fixed 3), phrase := "You gain 3 life" },
-          { resolution := .draw (.fixed 1), phrase := "Draw a card" }
-        ])
+      TriggeredAbility.mkModal .thisEnters #[
+        { body := Instruction.gainLifeFixed 3, phrase := "You gain 3 life" },
+        { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+      ] (headerPhrase := "Choose one —")
     ]
   }
   let doublerDef : CardDef := {
@@ -2231,12 +2238,11 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     bear with
     name := "Phase18 Choose Two"
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisEnters { resolution := .chooseTriggerModes 2, phrase := "Choose two —" }
-        (modes := #[
-          { resolution := .gainLife (.fixed 2), phrase := "You gain 2 life" },
-          { targeting := .of .oppArtifact, resolution := .destroy .target, phrase := "Destroy target artifact an opponent controls" },
-          { targeting := .of oppEnchSpec, resolution := .destroy .target, phrase := "Destroy target enchantment an opponent controls" }
-        ])
+      TriggeredAbility.mkModal .thisEnters #[
+        { body := Instruction.gainLifeFixed 2, phrase := "You gain 2 life" },
+        { targeting := .of .oppArtifact, body := Instruction.destroy (.target 0), phrase := "Destroy target artifact an opponent controls" },
+        { targeting := .of oppEnchSpec, body := Instruction.destroy (.target 0), phrase := "Destroy target enchantment an opponent controls" }
+      ] (headerPhrase := "Choose two —") (minModes := .const 2) (maxModes := .const 2)
     ]
   }
   let gCh2_0 : Game := addPermanent afterDraw choose2Def me me
@@ -2270,7 +2276,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let hkSrc := (gHk0.battlefield.filter (·.name == bear.name))[0]!
   let gHkStack : Game :=
     gHk0.putReflexiveTrigger me (some hkSrc.id)
-      { resolution := .mshReflexive .trickArrows 2, phrase := "Choose up to 2 Trick Arrows modes" }
+      { resolution? := some (.mshReflexive .trickArrows 2), phrase := "Choose up to 2 Trick Arrows modes" }
   let hkPromptOnStack : Bool :=
     match gHkStack.pending with
     | .fraChoice p (.hawkeyeModes 2 #[] (some _)) => p == me
@@ -2283,9 +2289,9 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let gHkZeroRes : Game := gHkZero.resolveTop
 
   -- 4e. `combineTriggerModes`: preserves `allowsZeroTargets` & sums `maxTargets` across chosen modes!
-  let mOpt1 : Effect := { targeting := .of .creature, allowsZeroTargets := true, maxTargets := 1, resolution := .tap .target, phrase := "Tap up to one" }
-  let mOpt2 : Effect := { targeting := .of .opponent, allowsZeroTargets := true, maxTargets := 2, resolution := .loseLife (.fixed 1) (.target .opponent), phrase := "Up to two opps" }
-  let mMand : Effect := { targeting := .of .creature, allowsZeroTargets := false, maxTargets := 1, resolution := .untap .target, phrase := "Untap target" }
+  let mOpt1 : Effect := { targeting := .of .creature, allowsZeroTargets := true, maxTargets := 1, body := Instruction.tap (.target 0), phrase := "Tap up to one" }
+  let mOpt2 : Effect := { targeting := .of .opponent, allowsZeroTargets := true, maxTargets := 2, body := Instruction.loseLifeFixed 1 (.target 0), phrase := "Up to two opps" }
+  let mMand : Effect := { targeting := .of .creature, allowsZeroTargets := false, maxTargets := 1, body := Instruction.untap (.target 0), phrase := "Untap target" }
   let combBothOpt := Game.combineTriggerModes #[mOpt1, mOpt2] #[0, 1]
   let combMixed := Game.combineTriggerModes #[mOpt1, mMand] #[0, 1]
   let combineModesOk : Bool :=
@@ -2386,14 +2392,9 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let gRtCast : Game := mustApply (mustApply (gRt0.change (.priority opp18)) opp18 (.cast boltH)) opp18 (.target (.permanent tBear))
   let boltStackId := gRtCast.stack.back!.objectId
 
-  -- 6a. `.venserSpell` copies opponent's targeted spell twice and prompts `.newTargetsForCopies #[c1, c2]`!
-  let venserEff : Effect := {
-    targeting := .of (.ofDomain (.object .stack (ObjectPred.andAll #[
-      .any #[.hasType .instant, .hasType .sorcery], .controlledBy .opponent])))
-    resolution := .frc .venserSpell
-    phrase := "Copy target instant or sorcery spell an opponent controls twice. You may choose new targets for the copies."
-  }
-  let gVenPrompt : Game := gRtCast.applyFrc me venserEff .venserSpell #[Target.card boltStackId] none
+  -- 6a. Venser spell-copy mode copies opponent's targeted spell twice and prompts `.newTargetsForCopies #[c1, c2]`!
+  let venserEff : Effect := venserFerventForger.triggeredAbilities[0]!.modeEffects[0]!
+  let gVenPrompt : Game := gRtCast.applyAbilityEffect me venserEff #[Target.card boltStackId]
   let venCopiesPromptOk : Bool :=
     match gVenPrompt.pending with
     | .fraChoice p (.newTargetsForCopies cs) => p == me && cs.size == 2
@@ -2402,8 +2403,8 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     let g1 := mustApply gVenPrompt me (.choosePermanents #[tHero])
     mustApply g1 me .decline
 
-  -- `.copyCauseSpell` also prompts `.newTargetsForCopies #[copyId]`!
-  let copyCauseEff : Effect := { resolution := .copyCauseSpell, phrase := "Copy that spell" }
+  -- Copy-cause-spell also prompts `.newTargetsForCopies #[copyId]`!
+  let copyCauseEff : Effect := { body := .stack (.copyStackObject .triggerSubject (.const 1) true), phrase := "Copy that spell" }
   let abId : ObjectId := ⟨gRtCast.nextObjectId⟩
   let gCauseStacked : Game :=
     gRtCast.record (GameEvent.triggerPutOnStack gRtCast.turnNumber abId (gRtCast.snapshot (gRtCast.object! tBear)) me
@@ -2423,7 +2424,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     types := #[.sorcery]
     spellEffect := some {
       targeting := .of .twoNonlandsSharingType
-      resolution := .exchangeControl
+      body := .installEffect (.applyContinuous .indefinite (.target 0) (.exchangeControl (.target 1)))
       phrase := "Exchange control of two target nonland permanents that share a card type"
     }
   }
@@ -2459,17 +2460,17 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let validArtRetargetOk : Bool :=
     (gSwValidArt.stackEntry? swSpellId).map (·.targets) == some #[Target.permanent swRel1, Target.permanent swRel2]
 
-  -- 6c. CR 608.2b multi-target per-slot legality: `.destroyEachTarget` skips target that gained hexproof while destroying remaining legal target!
+  -- 6c. CR 608.2b multi-target per-slot legality: destroy-all-targets skips target that gained hexproof while destroying remaining legal target!
   let destroyTwoEff : Effect := {
     targeting := .of (.ofDomain .oppCreatureOrPlaneswalker (.exact 2))
-    resolution := .destroyEachTarget
+    body := Instruction.destroy .allTargets
     phrase := "Destroy two target creatures or planeswalkers an opponent controls"
   }
   let gMt0 : Game := addPermanent (addPermanent afterDraw bear opp18 opp18) hero opp18 opp18
   let mtBear := (gMt0.battlefield.filter (·.name == bear.name))[0]!.id
   let mtHero := (gMt0.battlefield.filter (·.name == hero.name))[0]!.id
   let gMtHex : Game := gMt0.createEffect (.keywordsUntilEot mtBear #[Keyword.hexproof]) (cause := some testCause)
-  let gMtRes : Game := gMtHex.applyFra me destroyTwoEff .destroyEachTarget #[Target.permanent mtBear, Target.permanent mtHero] none
+  let gMtRes : Game := gMtHex.applyEffect me destroyTwoEff #[Target.permanent mtBear, Target.permanent mtHero]
   let multiTargetPerSlotOk : Bool :=
     (gMtRes.findObject? mtBear).any (·.isOnBattlefield) &&
     !(gMtRes.findObject? mtHero).any (·.isOnBattlefield)
@@ -2505,12 +2506,12 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let auraTokenNoHostOk : Bool :=
     !(gAuTokEmpty.permanentsOf me).any (·.name == "Phase18 Aura")
 
-  -- 7a3. CR 111.8: token `isCopy := true` exiled by `.exileThenReturnYouControl` ceases to exist and does NOT return to `.battlefield`!
+  -- 7a3. CR 111.8: token `isCopy := true` exiled by `exileThenReturnYouControl` ceases to exist and does NOT return to `.battlefield`!
   let (gTk0, tokCopyObj) := afterDraw.createToken me bear (cause := some testCause)
   let gTkFlicker : Game :=
     gTk0.applyUnified me
       { targeting := .of .creatureYouControl
-        resolution := .exileThenReturnYouControl
+        body := Effect.exileThenReturnYouControl.body
         phrase := "Exile target creature you control, then return it to the battlefield" }
       #[Target.permanent tokCopyObj.id]
   let gTkChecked : Game := gTkFlicker.checkSBA
@@ -2524,7 +2525,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     name := "Phase18 Co-Enter Copy"
     triggeredAbilities := #[
       TriggeredAbility.mkTrigger .anotherCreatureYouControlEnters
-        { resolution := .gainLife (.fixed 1), phrase := "Whenever another creature you control enters, you gain 1 life" }
+        { body := Instruction.gainLifeFixed 1, phrase := "Whenever another creature you control enters, you gain 1 life" }
     ]
   }
   let preContSize := afterDraw.continuations.size
@@ -2608,7 +2609,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     manaCost := ManaCost.empty
     types := #[.instant]
     keywords := #[.gift .treasure]
-    spellEffect := some { resolution := .draw (.fixed 1), phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   let gGf0 : Game := (insertObject g3Base giftSpellDef ⟨0⟩ (.hand ⟨0⟩)).concede ⟨1⟩
   let gfH := (gGf0.player ⟨0⟩).hand.back!
@@ -2618,7 +2619,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
 
   -- Stacked trigger waiting on `.chooseTargets ⟨0⟩` whose only legal target belonged to `⟨1⟩` is removed when `⟨1⟩` concedes!
   let killOppCrAb : TriggeredAbility :=
-    TriggeredAbility.mkTrigger .thisEnters { targeting := .of .oppCreature, resolution := .destroy .target, phrase := "Destroy target creature an opponent controls" }
+    TriggeredAbility.mkTrigger .thisEnters { targeting := .of .oppCreature, body := Instruction.destroy (.target 0), phrase := "Destroy target creature an opponent controls" }
   let gTg0 : Game := addPermanent (addPermanent g3Base { bear with name := "Phase18 Hunter", triggeredAbilities := #[killOppCrAb] } ⟨0⟩ ⟨0⟩) bear ⟨1⟩ ⟨1⟩
   let hntObj := (gTg0.battlefield.filter (·.name == "Phase18 Hunter"))[0]!
   let gTgPrompt : Game := (gTg0.putTriggeredAbilityOnStack ⟨0⟩ hntObj killOppCrAb "enter" (eventCause := some testCause)).promptTriggerTargetsIfNeeded
@@ -2979,7 +2980,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     (gRidDone.followMovedToZone? c2 (· == .exile)).isSome &&
     (gRidDone.followMovedToZone? c3 (· == .hand me)).isSome
 
-  -- 2b. `Chapters.returnLinkedExileToHand` clears `linkedExile` across `Pending.chooseReplacement` only after arrival,
+  -- 2b. `returnLinkedExileToHand` clears `linkedExile` across `Pending.chooseReplacement` only after arrival,
   --     and preserves `linkedExile` when an exiled token cannot move out of exile (CR 111.8)!
   let sagaDummy : CardDef := { name := "Phase19 Link Saga", manaCost := ManaCost.empty, types := #[.enchantment] }
   let gLk0 : Game := addPermanent (insertObject afterDraw bear me .exile) sagaDummy me me
@@ -3207,7 +3208,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
   let tgtPingTrig : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisEnters {
       targeting := .of .opponent
-      resolution := .dealDamage (.fixed 1) (.player (.target .opponent))
+      body := Instruction.dealDamageFixed (.targetSlot 0) 1
       phrase := "When this enters, deal 1 damage to target opponent."
     }
   let drawTrig : TriggeredAbility := .onEnterDraw 1
@@ -3307,7 +3308,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     name := "Phase19 Untargeted Draw"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some { resolution := .draw (.fixed 1), phrase := "Draw a card." }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card." }
   }
   let gCp0 : Game := addPermanent (insertObject afterDraw untargetedSorcery me (.hand me)) bear me me
   let cpSrc := (gCp0.battlefield.filter (·.name == bear.name))[0]!
@@ -3698,7 +3699,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     name := "Phase20 Adv Instant"
     manaCost := ManaCost.empty
     types := #[.instant]
-    spellEffect := some { resolution := .ofSpell (.draw (.fixed 1) .you), phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   let advCardDef : CardDef := { bear with name := "Phase20 Adventurer", adventure := some advSpellFace }
   let gAdv0 : Game := insertObject afterDraw advCardDef me (.hand me)
@@ -3724,7 +3725,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
 -- 2. CR 607.2a `leaveTriggerExile` vs CR 610.3 `linkedExile` (`exileSearchedLinked`),
---    departed-source LKI on `onLeaveReturnExiled`, `Chapters.returnLinkedExileToHand`, and `FrcResolve` `.currencyReturn`.
+--    departed-source LKI on `onLeaveReturnExiled`, `returnLinkedExileToHand`, and Currency Converter `.currencyReturn`.
 #guard
   -- 2a. `exileSearchedLinked` stores `leaveTriggerExile` (NOT `linkedExile`), so source departure does NOT auto-return onto `.battlefield`!
   let gEx0 : Game := addPermanent (insertObject afterDraw plains me (.library me)) { name := "Phase20 Saga Box", types := #[.enchantment] } me me
@@ -3740,7 +3741,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     (gSagaGone.object! exPlainsId).zone == .exile &&
     !gSagaGone.battlefield.any (·.name == plains.name)
 
-  -- 2b. Departed-source LKI: `Chapters.returnLinkedExileToHand (some sagaSrcId)` & `FrcResolve` `.currencyReturn` find exiled cards after source departed!
+  -- 2b. Departed-source LKI: `returnLinkedExileToHand (some sagaSrcId)` & Currency Converter `.currencyReturn` find exiled cards after source departed!
   let gHandAfterDepart : Game := gSagaGone.returnLinkedExileToHand (some sagaSrcId)
   let gCur0 : Game := addPermanent (insertObject afterDraw plains me (.graveyard me)) { name := "Phase20 Currency Box", types := #[.artifact] } me me
   let curSrcId := (gCur0.battlefield.filter (·.name == "Phase20 Currency Box"))[0]!.id
@@ -3750,7 +3751,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let (gCurDeparted, _) := gCur1.move curSrcId (.graveyard me) none (verb := some .destroy) (cause := some testCause)
   let gCurResolved : Game :=
     gCurDeparted.withResolvingContext (some curSrcId) me fun g =>
-      g.applyFrc me default .currencyReturn #[] (some curSrcId)
+      g.applyAbilityEffect me currencyConverter.activatedAbilities[1]!.effect #[] (some curSrcId)
   let departedSagaAndCurrencyOk : Bool :=
     (gHandAfterDepart.player me).hand.any (fun id => (gHandAfterDepart.object! id).name == plains.name) &&
     !(gCurResolved.objects.any (fun o => o.id == curExId && o.zone == .exile)) &&
@@ -3872,7 +3873,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     name := "Phase20 X Burn"
     manaCost := { symbols := #[.x, .colored .red] }
     types := #[.sorcery]
-    spellEffect := some { resolution := .ofSpell (.draw (.fixed 1) .you), phrase := "Draw a card" }
+    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
   }
   let gExX0 : Game :=
     (addPermanent (insertObject afterDraw xBurnDef me .exile) reducerDef me me).addMana
@@ -3962,18 +3963,17 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     name := "Phase20 Modal Rod"
     manaCost := ManaCost.ofColor .red
     types := #[.artifact]
-    activatedAbilities := #[{
-      cost := CostSpec.empty
-      effect := {
+    activatedAbilities := #[ActivatedAbility.mkModal CostSpec.empty #[
+      {
         targeting := .of .creature
-        resolution := .ofSpell (.onPermanent .tap)
+        body := Instruction.tap (.target 0)
         phrase := "Tap target creature"
-      }
-      otherModes := #[{
-        resolution := .ofSpell (.draw (.fixed 1) .you)
+      },
+      {
+        body := Instruction.drawFixed 1
         phrase := "Draw a card"
-      }]
-    }]
+      }
+    ]]
   }
   let protRedBear : CardDef := {
     bear with
@@ -4002,8 +4002,8 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     manaCost := ManaCost.empty
     types := #[.sorcery]
     spellModes := #[
-      { resolution := .ofSpell (.draw (.fixed 1) .you), phrase := "Draw a card" },
-      { resolution := .ofSpell (.gainLife 2), phrase := "Gain 2 life" }
+      { body := Instruction.drawFixed 1, phrase := "Draw a card" },
+      { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life" }
     ]
   }
   let gModSp0 : Game := insertObject afterDraw modalSorcery20 me (.hand me)
@@ -4044,11 +4044,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     name := "Phase20 Barrage"
     manaCost := { symbols := #[.x, .colored .red, .colored .red] }
     types := #[.sorcery]
-    spellEffect := some {
-      targeting := .of .creature
-      resolution := .copyThisSpellXTimesThenDamage 1
-      phrase := "Deal 1 damage to target creature"
-    }
+    spellEffect := some (Effect.copyThisSpellXTimesThenDamage 1)
   }
   let gPbb0 : Game :=
     (addPermanent (addPermanent (insertObject afterDraw pbbDef20 me (.hand me)) bear opp20 opp20) hero opp20 opp20).addMana
@@ -4068,21 +4064,22 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     gPbbRetargeted.pending == .none &&
     gPbbRetargeted.stack.size == 3
 
-  -- 6b. `.damageUpToOneAndPlayer 2` with slot `0` skipped (`resolvingSkippedSlots := #[0]`) deals 2 damage to `opp20`!
-  let upToOneAndPlEff : Effect :=
-    FraCandidates.ab (.damageUpToOneAndPlayer 2)
-      "Deal 2 damage to up to one target creature or planeswalker and 2 damage to target player"
-      (.ofSlots #[
-        { domain := .creatureOrPlaneswalker, count := .upTo 1 },
-        .of .anyPlayer
-      ])
+  -- 6b. Up-to-one + player damage with slot `0` skipped (`resolvingSkippedSlots := #[0]`) deals 2 damage to `opp20`!
+  let upToOneAndPlEff : Effect := {
+    targeting := .of (.ofSlots #[
+      { domain := .creatureOrPlaneswalker, count := .upTo 1 },
+      .of .anyPlayer
+    ])
+    body := Instruction.dealDamageFixed (.both (.target 0) (.target 1)) 2
+    phrase := "Deal 2 damage to up to one target creature or planeswalker and 2 damage to target player"
+  }
   let gSkip0 : Game := addPermanent afterDraw bear me me
   let skipSrcId := (gSkip0.battlefield.filter (·.name == bear.name))[0]!.id
   let oppPreLife := (gSkip0.player opp20).life
   let gSkip1 : Game :=
     gSkip0.withResolvingContext (some skipSrcId) me fun g =>
-      (g.change (.resolvingSkippedSlots #[0])).applyFraAbility
-        me upToOneAndPlEff (.damageUpToOneAndPlayer 2) #[Target.player opp20] (some skipSrcId)
+      (g.change (.resolvingSkippedSlots #[0])).applyAbilityEffect
+        me upToOneAndPlEff #[Target.player opp20] (some skipSrcId)
   let skippedSlotDamageOk : Bool := (gSkip1.player opp20).life == oppPreLife - 2
 
   -- 6c. `Targeting.spellPaidTeamwork` returns `false` when an unrelated teamwork spell sits on `g.stack`, and `true` when retargeting a teamwork copy!
@@ -4242,7 +4239,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let cantWinDef : CardDef := { bear with name := "Phase20 NoWin Angel", staticAbilities := #[.cantLoseAndOpponentsCantWin] }
   let abolisherDef : CardDef := { bear with name := "Phase20 Teammate Abolisher", staticAbilities := #[.opponentsCantCastOnYourTurn] }
   let corruptedDef : CardDef := { bear with name := "Phase20 Corrupted Bear", keywords := #[.toxic 1], staticAbilities := #[.corruptedToxicLifelink] }
-  let freeInstant20 : CardDef := { name := "Phase20 Free Opt", manaCost := ManaCost.empty, types := #[.instant], spellEffect := some { resolution := .ofSpell (.gainLife 1), phrase := "Gain 1 life" } }
+  let freeInstant20 : CardDef := { name := "Phase20 Free Opt", manaCost := ManaCost.empty, types := #[.instant], spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "Gain 1 life" } }
   let g2hWin0 : Game := addPermanent (addPermanent (addPermanent mkTwoHeadedGiant20 cantWinDef ⟨2⟩ ⟨2⟩) abolisherDef ⟨0⟩ ⟨0⟩) corruptedDef ⟨0⟩ ⟨0⟩
   let corId := (g2hWin0.battlefield.filter (·.name == "Phase20 Corrupted Bear"))[0]!.id
   let g2hTryWin : Game :=

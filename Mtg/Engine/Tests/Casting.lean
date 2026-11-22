@@ -55,9 +55,9 @@ def casting (e : Effect) : TriggeredAbility :=
 /- The shared cast effects resolve as constructors that do not carry
 `CastLeftover`. The printed sentence stays the Oracle line. -/
 #guard TriggeredAbility.resolution (casting Effect.castingVillainToken) ==
-  .createTokens .villain21menace (.fixed 1) false
+  .createTokens 0 (.fixed 1) false
 #guard TriggeredAbility.resolution (casting Effect.castingMerfolkFromBlue) ==
-  .createTokens .merfolk .blueManaSymbols false
+  .createTokens 0 .blueManaSymbols false
 #guard TriggeredAbility.resolution (casting Effect.castingMayPayHasteUnblockable) ==
   .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo
 #guard TriggeredAbility.resolution (casting Effect.castingPlusOneEachOther) ==

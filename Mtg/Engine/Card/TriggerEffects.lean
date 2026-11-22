@@ -3,9 +3,10 @@ import Mtg.Engine.Card.Trigger
 /-!
 # Shared-trigger effect constructors
 
-`Effect.ofTrigger` plus the `Effect.enter*` / `step*` / `death*` /
-`watch*` / `casting*` / `resource*` constructors that lift shared triggers
-onto unified effects.
+`Effect.ofTrigger`, pure `Instruction` token/sequence trigger constructors, plus
+the transitional Phase-9 `Effect.enter*` / `step*` / `death*` / `watch*` /
+`casting*` / `resource*` constructors that lift `SharedTrigger` payloads onto
+unified effects.
 -/
 
 namespace Mtg.Engine
@@ -15,6 +16,15 @@ namespace Effect
 /-- Convert a shared trigger effect to the unified `Effect`. -/
 def ofTrigger (e : SharedTrigger) : Effect :=
   e.toEffect
+
+/-- Pure Phase 8 `Instruction` trigger effect: create `n` tokens of `kind` (`tapped`). -/
+def triggerCreateTokens (kind : TokenSpec) (n : Nat) (tapped : Bool := false) : Effect :=
+  { body := Instruction.createTokensFixed kind n .you tapped }
+
+/-- Pure Phase 8 `Instruction` trigger effect: create one `kind` token, then attach this source to it. -/
+def triggerCreateThenAttach (kind : TokenSpec) : Effect :=
+  { body := .bind ⟨0⟩ (Instruction.createTokensFixed kind 1)
+      (.permanent (.attach .this (.stepObjects ⟨0⟩))) }
 
 /-- Leftover trigger constructors as unified `Effect` factories. -/
 def enterDestroy (kind : TargetSpec) : Effect :=
@@ -202,73 +212,89 @@ def resourcePlusOneOnThisOnce : Effect := ofTrigger (.resource .plusOneOnThisOnc
 def resourcePlusOneOnHeroesCreateWall : Effect := ofTrigger (.resource .plusOneOnHeroesCreateWall)
 
 /-!
-Triggers whose effect is a list of independent steps. `Resolution.sequence`
-already resolves them, so they are not `SharedTrigger` constructors.
-`TriggeredAbility.toNotation` prints the clause from the sequence shape.
+Triggers whose effect is a pure Phase 8 `Instruction` sequence.
+`TriggeredAbility.sequenceClause` prints the exact Oracle clause from the `Instruction` shape.
 -/
+
+private def creaturesYouControlExpr : ObjectExpr :=
+  .inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])
 
 /-- Draw a card and lose 1 life. -/
 def seqDrawAndLoseLife : Effect :=
-  { resolution := .sequence [.draw 1, .loseLife 1] }
+  { body := .seq #[Instruction.drawFixed 1, Instruction.loseLifeFixed 1] }
 
 /-- Draw `n` cards, then discard a card. -/
 def seqDrawThenDiscard (n : Nat) : Effect :=
-  { resolution := .sequence [.draw n, .discard (.cards 1)] }
+  { body := .seq #[Instruction.drawFixed n, Instruction.discardFixed 1] }
 
 /-- The source gets +P/+0 and creatures you control gain trample. -/
 def seqSourceGetsAndTeamTrample (power : Int) : Effect :=
-  { resolution := .sequence [.onSource (.pump power 0), .teamGain #[Keyword.trample]] }
+  { body := .seq #[
+      Instruction.pumpFixed .this power 0,
+      Instruction.grantKeywords creaturesYouControlExpr #[Keyword.trample]
+    ] }
 
 /-- Put a +1/+1 counter on a target of this kind. It gains lifelink until end of turn. -/
 def seqPlusOneAndLifelink (kind : TargetSpec) : Effect :=
   { targeting := .of kind
-    resolution := .sequence
-      [.onPermanent (.plusOne 1), .onPermanent (.grantKeywords #[Keyword.lifelink])] }
+    body := .seq #[
+      Instruction.putPlusOne (.target 0) 1,
+      Instruction.grantKeywords (.target 0) #[Keyword.lifelink]
+    ] }
 
 /-- The source gets +1/+0 and can't be blocked this turn. -/
 def seqPumpAndUnblockable : Effect :=
-  { resolution := .sequence [.onSource (.pump 1 0), .onSource .cantBeBlocked] }
+  { body := .seq #[Instruction.pumpFixed .this 1 0, Instruction.cantBeBlocked .this] }
 
 /-- Put `n` +1/+1 counters on a creature you control. It gains vigilance until end of turn. -/
 def seqPlusOneVigilance (n : Nat) : Effect :=
   { targeting := .of .creatureYouControl
-    resolution := .sequence
-      [.onPermanent (.plusOne n), .onPermanent (.grantKeywords #[Keyword.vigilance])] }
+    body := .seq #[
+      Instruction.putPlusOne (.target 0) n,
+      Instruction.grantKeywords (.target 0) #[Keyword.vigilance]
+    ] }
 
 /-- Draw a card and put a +1/+1 counter on the source. -/
 def seqDrawPlusOneSource : Effect :=
-  { resolution := .sequence [.draw 1, .onSource (.plusOne 1)] }
+  { body := .seq #[Instruction.drawFixed 1, Instruction.putPlusOne .this 1] }
 
 /-- Creatures you control get +P/+0 and gain first strike until end of turn. -/
 def seqCreaturesPumpAndFirstStrike (power : Int) : Effect :=
-  { resolution := .sequence
-      [.creaturesYouControlPump power 0, .teamGain #[Keyword.firstStrike]] }
+  { body := .seq #[
+      Instruction.pumpFixed creaturesYouControlExpr power 0,
+      Instruction.grantKeywords creaturesYouControlExpr #[Keyword.firstStrike]
+    ] }
 
 /-- Put a +1/+1 counter on the source and draw a card. -/
 def seqPlusOneOnSourceAndDraw : Effect :=
-  { resolution := .sequence [.onSource (.plusOne 1), .draw 1] }
+  { body := .seq #[Instruction.putPlusOne .this 1, Instruction.drawFixed 1] }
 
 /-- The source gets +1/+1 until end of turn and deals `n` damage to each opponent. -/
 def seqPumpAndDamageOpponents (n : Nat) : Effect :=
-  { resolution := .sequence [.onSource (.pump 1 1), .damageEachOpponent n] }
+  { body := .seq #[
+      Instruction.pumpFixed .this 1 1,
+      Instruction.dealDamageFixed (.players .opponents) n
+    ] }
 
 /-- Untap another creature you control. If it has `subtype`, put a +1/+1 counter on it. -/
 def seqUntapPlusOneIfSubtype (subtype : String) : Effect :=
+  let sub := CardSubtype.ofOracleD subtype
   { targeting := .of .anotherCreatureYouControl
-    resolution := .sequence
-      [.onPermanent .untap,
-       .«if» (.subtype (CardSubtype.ofOracleD subtype)) (.onPermanent (.plusOne 1))] }
+    body := .seq #[
+      Instruction.untap (.target 0),
+      Instruction.ifThen (.exists (.filter (.target 0) (.hasSubtype (.literal sub))))
+        (Instruction.putPlusOne (.target 0) 1)
+    ] }
 
 /-- You lose 1 life and create a Treasure token. -/
 def seqLoseLifeCreateTreasure : Effect :=
-  { resolution := .sequence [.loseLife 1, .createTokens .treasure 1] }
+  { body := .seq #[Instruction.loseLifeFixed 1, Instruction.createTokensFixed .treasure 1] }
 
 /-- Exile up to one card from an opponent's graveyard. Each opponent loses `life`. -/
 def seqExileOppGyCardOppsLoseLife (life : Nat) : Effect :=
   { targeting := .of .oppGraveyardCard
     allowsZeroTargets := true
-    resolution := .sequence
-      [.exileCardFromGraveyard, .loseLife life .eachOpponent] }
+    body := .seq #[Instruction.exile (.target 0), Instruction.loseLifeFixed life .opponents] }
 
 instance : Coe SharedTrigger Effect where
   coe := ofTrigger

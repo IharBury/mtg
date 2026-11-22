@@ -67,6 +67,8 @@ inductive AfterRandom where
   | plusOne (id : ObjectId) (controller : PlayerId) (sourceId : Option ObjectId := none)
 /-- Discard a card at random after the shuffle (Curse-Marred Demon). -/
   | discardRandom (p : PlayerId)
+  /-- Resume the unified Phase-8 `Instruction` interpreter stashed on `ContinuationFrame.interpWait?`. -/
+  | continueInterpreter (p : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Player whose in-game library, hand, life total, or target control this
@@ -74,11 +76,11 @@ deriving DecidableEq, Repr, Inhabited, BEq
 def AfterRandom.player? : AfterRandom → Option PlayerId
   | .none => Option.none
   | .draw q _ | .gainLife q _ | .revealRandomCreatureThenBottom q _
-  | .putOnTop q _ | .beholdUntap q _ _ | .discardRandom q => some q
+  | .putOnTop q _ | .beholdUntap q _ _ | .discardRandom q | .continueInterpreter q => some q
   | .plusOne _ ctrl _ => some ctrl
 
-/-- What happens after a Reality Fracture choice is made. Each one is also a
-`Resolution` step, run through the same interpreter. -/
+/-- What happens after a Reality Fracture choice is made. Each one is resolved
+through the unified Phase-8 `Instruction` interpreter (`FraNext.toEffect`). -/
 inductive FraNext where
   | searchBasicLandTapped
   | searchLandsTapped (n : Nat)
@@ -97,23 +99,6 @@ inductive FraNext where
   /-- Return the source from the graveyard to its owner's hand. -/
   | returnSourceToHand
 deriving DecidableEq, Repr, Inhabited, BEq
-
-def FraNext.toResolution : FraNext → Resolution
-  | .searchBasicLandTapped => .searchBasicLandTapped
-  | .searchLandsTapped n => .searchLandsTapped n
-  | .searchEnchantmentToHand => .searchEnchantmentToHand
-  | .tappedHeartwoods n => .tappedHeartwoods n
-  | .eachOpponentSacrificesCreature => .eachOpponentSacrificesCreature
-  | .drawThenCountersPerDiscard => .drawThenCountersPerDiscard
-  | .eyeOfJaceCheck => .eyeOfJaceCheck
-  | .reflexiveDamageAnyTarget n => .reflexiveDamageAnyTarget n
-  | .reflexiveDestroyPerOpponent => .reflexiveDestroyPerOpponent
-  | .reflexiveReturnLandTapped => .reflexiveReturnLandTapped
-  | .beastToken => .beastToken
-  | .proliferate n => .proliferate n
-  | .mshReflexive k paid => .queueMshReflexive k paid
-  | .gainLife n => .gainLife n
-  | .returnSourceToHand => .returnSourceToHand
 
 /-- Where cards found by a library search go (CR 701.23). -/
 inductive SearchDest where
@@ -370,7 +355,7 @@ inductive FraChoice where
   2 draw). -/
   | gollumMode (sourceId : ObjectId) (available : Array Nat)
   /-- Choose `remaining` more modes for the triggered ability `objectId`
-  from `TriggeredAbility.modes` on the stack object. -/
+  from its `ModalSpec` modes on the stack object. -/
   | triggerModes (objectId : ObjectId) (remaining : Nat) (chosen : Array Nat)
   /-- Choose up to `remaining` more modes for the triggered ability `objectId`;
   declining finishes mode selection with `chosen` (CR 603.3c / 700.2). -/

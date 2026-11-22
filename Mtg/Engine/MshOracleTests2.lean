@@ -1092,15 +1092,15 @@ def superHeroCivilWarLeaveOk : Bool :=
   let saga := namedPermanent g "The Super Hero Civil War"
   let bears := namedPermanent g "Grizzly Bears"
   let (g, _) := g.move saga.id (.graveyard ⟨0⟩) none
-  let g := g.applyChapterEffect ⟨0⟩ (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6)
-    (some saga.id) #[Target.permanent bears.id]
+  let g := g.applyUnifiedAbility ⟨0⟩ (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6)
+    #[Target.permanent bears.id] (some saga.id)
   g.controlledBy (namedPermanent g "Grizzly Bears") ⟨1⟩ &&
     (let g := addPermanent afterDraw theSuperHeroCivilWar ⟨0⟩ ⟨0⟩
      let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
      let saga := namedPermanent g "The Super Hero Civil War"
      let bears := namedPermanent g "Grizzly Bears"
-     let g := g.applyChapterEffect ⟨0⟩ (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6)
-       (some saga.id) #[Target.permanent bears.id]
+     let g := g.applyUnifiedAbility ⟨0⟩ (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6)
+       #[Target.permanent bears.id] (some saga.id)
      g.controlledBy (namedPermanent g "Grizzly Bears") ⟨0⟩) &&
     (mshRuling 496).comment.contains "won't gain control"
 

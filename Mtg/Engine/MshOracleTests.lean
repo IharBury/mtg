@@ -1243,7 +1243,7 @@ def tapAlreadyTappedOk : Bool :=
   let o := namedPermanent g "Captain America, Living Legend"
   let g := setTapped g o.id true
   let o := g.object! o.id
-  let g := g.applyPermanentAction o PermanentAction.tap
+  let g := g.becomeTapped o
   let o2 := g.object! o.id
   o.status.tapped && o2.status.tapped &&
     logContains g "already tapped" &&
@@ -1581,7 +1581,7 @@ def docSamsonYouPutAllKindsOk : Bool :=
   let g := g.addIndestructibleCounter bears
   let g := g.addBurdenCounter (g.object! bears.id)
   let g := g.addLifelinkCounter (g.object! bears.id)
-  let g := g.applyPermanentAction (g.object! bears.id) .tapAndStun
+  let g := g.tapAndStunPermanent (g.object! bears.id)
   let marked := g.object! bears.id
   let kinds :=
     marked.status.indestructibleCounters == 2 &&
@@ -1689,7 +1689,7 @@ def frozenInIceCantUntapOk : Bool :=
   let g := setTapped g (namedPermanent g "Grizzly Bears").id true
   let host := namedPermanent g "Grizzly Bears"
   g.hostCantBecomeUntapped host &&
-    (let g := g.applyPermanentAction host PermanentAction.untap
+    (let g := g.untapPermanentLogged host
      (namedPermanent g "Grizzly Bears").status.tapped &&
        logContains g "can't become untapped") &&
     (mshRuling 518).comment.contains "won't untap" &&
@@ -1850,7 +1850,7 @@ def capLivingLegendFirstTapUntapsOk : Bool :=
   let g := addPermanent afterDraw captainAmericaLivingLegend ⟨0⟩ ⟨0⟩
   let g := addPermanent g grizzlyBears ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.applyPermanentAction bears PermanentAction.tap
+  let g := g.becomeTapped bears
   let bears := namedPermanent g "Grizzly Bears"
   bears.status.tapped && g.becameTappedThisTurn bears.id &&
     g.waitingTriggers.any (fun t =>
@@ -1869,11 +1869,11 @@ def hawkeyeBowBecomesTappedOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addAttachedAura g hawkeyeSBow (namedPermanent g "Grizzly Bears") ⟨0⟩ ⟨0⟩
   let host := namedPermanent g "Grizzly Bears"
-  let gTap := g.applyPermanentAction host PermanentAction.tap
+  let gTap := g.becomeTapped host
   let fired :=
     gTap.waitingTriggers.any (fun t => t.source.name == "Hawkeye's Bow")
   let host := namedPermanent gTap "Grizzly Bears"
-  let gAgain := gTap.applyPermanentAction host PermanentAction.tap
+  let gAgain := gTap.becomeTapped host
   let life1 := (g.player ⟨1⟩).life
   let bow := namedPermanent gTap "Hawkeye's Bow"
   let gDmg :=
@@ -2631,20 +2631,20 @@ became tapped this turn does not trigger. -/
 def capUntapsTriggeringCreatureOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let early := namedPermanent g "Grizzly Bears"
-  let g := g.applyPermanentAction early .tap
-  let g := g.applyPermanentAction (namedPermanent g "Grizzly Bears") .untap
+  let g := g.becomeTapped early
+  let g := g.untapPermanentLogged (namedPermanent g "Grizzly Bears")
   let g := addPermanent g captainAmericaLivingLegend ⟨0⟩ ⟨0⟩
   let before := (g.waitingTriggers.filter (fun t =>
     t.source.name == "Captain America, Living Legend")).size
-  let g := g.applyPermanentAction (namedPermanent g "Grizzly Bears") .tap
+  let g := g.becomeTapped (namedPermanent g "Grizzly Bears")
   let afterEarly := (g.waitingTriggers.filter (fun t =>
     t.source.name == "Captain America, Living Legend")).size
-  let g := g.applyPermanentAction (namedPermanent g "Grizzly Bears") .untap
+  let g := g.untapPermanentLogged (namedPermanent g "Grizzly Bears")
   let g := addPermanent g hillGiant ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
   let giant := namedPermanent g "Hill Giant"
-  let g := g.applyPermanentAction bears .tap
-  let g := g.applyPermanentAction giant .tap
+  let g := g.becomeTapped bears
+  let g := g.becomeTapped giant
   let cap := namedPermanent g "Captain America, Living Legend"
   let abId : ObjectId := ⟨g.nextObjectId⟩
   let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot cap) ⟨0⟩
@@ -3627,7 +3627,8 @@ def pantherPounceTargetsOk : Bool :=
 
 /-- Decoy Ploy returns only the chosen subtype. -/
 def decoyPloySubtypeOk : Bool :=
-  decoyPloy.chooseOneOrBoth && decoyPloy.spellModes.size == 2 &&
+  decoyPloy.modalSpec?.any (fun ms => ms.minModes == .const 1 && ms.maxModes == .const 2) &&
+    decoyPloy.modes.size == 2 &&
     (let g := addToGraveyard (addToGraveyard (addToGraveyard afterDraw doctorDoom ⟨0⟩)
         reptilDinomorpher ⟨0⟩) grizzlyBears ⟨0⟩
      let doom := namedGraveyardCard g ⟨0⟩ "Doctor Doom"
@@ -4354,10 +4355,10 @@ def returnOneOrTwoPartialOk : Bool :=
 
 /-- A resolution that is not a spell shape does not play an additional land. -/
 def unrecognizedIsNotExtraLandOk : Bool :=
-  let e : Effect := { resolution := .unrecognized }
+  let e : Effect := { body := .noop }
   let before := afterDraw.additionalLandsThisTurn ⟨0⟩
   let g := afterDraw.applyEffect ⟨0⟩ e #[]
-  e.spellResolution == .unrecognized &&
+  e.body == .noop && e.resolution?.isNone &&
     g.additionalLandsThisTurn ⟨0⟩ == before &&
     (let g2 := afterDraw.applyEffect ⟨0⟩ Effect.playAdditionalLandThisTurn #[]
      g2.additionalLandsThisTurn ⟨0⟩ == before + 1)
@@ -4566,11 +4567,11 @@ def loseAbilitiesUntapOk : Bool :=
   let ice := ice.attachSourceTo (namedPermanent ice "Frozen in Ice")
     (namedPermanent ice "Large Bear")
   let bear := namedPermanent ice "Large Bear"
-  let iced := ice.applyPermanentAction bear .untap
+  let iced := ice.untapPermanentLogged bear
   let river := addPermanent g enchantedRiverSGrasp ⟨0⟩ ⟨0⟩
   let river := river.attachSourceTo (namedPermanent river "Enchanted River's Grasp")
     (namedPermanent river "Large Bear")
-  let freed := river.applyPermanentAction (namedPermanent river "Large Bear") .untap
+  let freed := river.untapPermanentLogged (namedPermanent river "Large Bear")
   let held := river.beginStep .untap
   !ice.hasTrample bear && !ice.hasHaste bear &&
     (namedPermanent iced "Large Bear").status.tapped &&

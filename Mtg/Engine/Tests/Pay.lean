@@ -23,11 +23,14 @@ def opp : PlayerId := ⟨1⟩
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) : Game :=
-  g.applyTriggeredAbility caster (.onEnterDraw 1) sourceId #[]
+  let ab : TriggeredAbility :=
+    { TriggeredAbility.onEnterDraw 1 with
+      effect := { (TriggeredAbility.onEnterDraw 1).effect with legacyTokens := #[.treasure] } }
+  g.applyTriggeredAbility caster ab sourceId #[]
     (resolutionOverride := some r)
 
 def phrase (r : TriggeredAbility.TriggerResolution) : String :=
-  TriggeredAbility.resolutionPhrase { resolution := r }
+  TriggeredAbility.resolutionPhrase { resolution? := some (r) }
 
 def bear : CardDef := creature "Bear" ManaCost.empty #[] 2 2
 def ox : CardDef := creature "Ox" ManaCost.empty #[] 3 3
@@ -94,7 +97,7 @@ def sacPower : TriggeredAbility.TriggerResolution :=
 
 def sacTreasure : TriggeredAbility.TriggerResolution :=
   .may (.pay CostSpec.sacrificeAnotherCreatureOrArtifactSpec)
-    (.sequence [.draw (.fixed 1), .createTokens .treasure (.fixed 1) false]) .ifYouDo
+    (.sequence [.draw (.fixed 1), .createTokens 0 (.fixed 1) false]) .ifYouDo
 
 def sacOrDiscard : TriggeredAbility.TriggerResolution :=
   .may (.pay CostSpec.sacrificeArtifactOrDiscardCard)

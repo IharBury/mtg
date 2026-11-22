@@ -140,7 +140,10 @@ def vraskaShock : Game := castShockAtNissa (addPermanent afterDraw vraskaSoulOfS
   let g := passBoth vraskaShock
   topOfStack g == "Shock" &&
     (let s := namedPermanent g "Sculpture"
-     s.printed.isArtifact && g.isCreature s && s.printed.activatedAbilities.contains ActivatedAbility.manaTapSacrificeAnyColor &&
+     s.printed.isArtifact && g.isCreature s &&
+       s.printed.activatedAbilities.any (fun a =>
+         a.cost == ActivatedAbility.manaTapSacrificeAnyColor.cost &&
+         a.effect == ActivatedAbility.manaTapSacrificeAnyColor.effect) &&
        g.hasSubtype s .treasure)
 #guard (fraRuling 887).comment.contains "resolves before the spell that caused it to trigger"
 

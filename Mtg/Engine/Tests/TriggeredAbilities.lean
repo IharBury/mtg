@@ -22,7 +22,7 @@ Comprehensive gameplay `#guard` regression suite for Phase 7 of
 6. CR 714.2b/d/4 & 704.5s dynamic Layer-6 Saga chapter grants and removals
    updating `Game.finalChapterNumber`, `addLoreAfterDrawStep`, chapter triggers,
    and SBA sacrifice.
-7. Two distinct modal triggers on one card with independent `TriggeredAbility.modes`.
+7. Two distinct modal triggers on one card with independent `ModalSpec` modes.
 8. Path of Ancestry via `triggeredAbilities` (`isManaSpentCastCommanderTypeScry`):
    live, LKI departed, phased-out (CR 702.26d), Layer-6 ability removal, and copy.
 9. `CardDef.modellingError?` trigger validation (empty `activeZones`, no-op
@@ -113,10 +113,10 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
 -- Player-action triggers: scry, surveil, proliferate, and CR 603.10f player loses the game.
 #guard
   let actionsWatcher := mkEnchantment "Action Watcher" #[
-    TriggeredAbility.ofPattern (.playerAction .you .scry) "" (.gainLife 1),
-    TriggeredAbility.ofPattern (.playerAction .you .surveil) "" (.gainLife 2),
-    TriggeredAbility.ofPattern (.playerAction .you .proliferate) "" (.gainLife 3),
-    TriggeredAbility.ofPattern (.playerAction .opponent .losesGame) "" (.gainLife 4)
+    TriggeredAbility.ofPattern (.playerAction .you .scry) "" (Instruction.gainLifeFixed 1),
+    TriggeredAbility.ofPattern (.playerAction .you .surveil) "" (Instruction.gainLifeFixed 2),
+    TriggeredAbility.ofPattern (.playerAction .you .proliferate) "" (Instruction.gainLifeFixed 3),
+    TriggeredAbility.ofPattern (.playerAction .opponent .losesGame) "" (Instruction.gainLifeFixed 4)
   ]
   let g0 := quietGame (addPermanent afterDraw actionsWatcher p0 p0)
   let gScry := g0.record (GameEvent.looked g0.turnNumber p0 1 (cause := some testCause))
@@ -245,11 +245,11 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
   let ifAb : TriggeredAbility :=
     TriggeredAbility.ofPattern .stepYourUpkeep
       "At the beginning of your upkeep, if you're the monarch, you gain 3 life."
-      (.gainLife 3) (interveningIf? := some TriggeredAbility.condYouAreMonarch)
+      (Instruction.gainLifeFixed 3) (interveningIf? := some TriggeredAbility.condYouAreMonarch)
   let whenCondAb : TriggeredAbility :=
     TriggeredAbility.ofPattern (.whenCond .stepYourUpkeep TriggeredAbility.condYouAreMonarch)
       "At the beginning of your upkeep while you're the monarch, you gain 5 life."
-      (.gainLife 5)
+      (Instruction.gainLifeFixed 5)
   let ifCard := mkEnchantment "Intervening-If Crown" #[ifAb]
   let wcCard := mkEnchantment "WhenCond Crown" #[whenCondAb]
   let g0 := quietGame (addPermanent (addPermanent afterDraw ifCard p0 p0) wcCard p0 p0)
@@ -279,41 +279,37 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
 #guard
   let onManaAddMana : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.activateAbility .any .anyObject .manaAbility)
-      { resolution := .addMana #[.colored .green] (.fixed 1) }
+      { resolution? := some (.addMana #[.colored .green] (.fixed 1)) }
   let onManaAddedPool : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.playerAction .you .manaAdded)
-      { resolution := .addMana #[.colored .red] (.fixed 1) }
+      { resolution? := some (.addMana #[.colored .red] (.fixed 1)) }
   -- CR 605.1b has NO library-movement exclusion (unlike CR 605.1a):
   let onManaAddAndDraw : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.playerAction .you .manaAdded)
-      { resolution := .sequence [.addMana #[.colored .blue] (.fixed 1), .draw (.fixed 1) .you] }
+      { resolution? := some (.sequence [.addMana #[.colored .blue] (.fixed 1), .draw (.fixed 1) .you]) }
   -- Fails criterion 1 (requires target):
   let targetedManaTrigger : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.playerAction .you .manaAdded)
-      { targeting := .of .creature, resolution := .addMana #[.colored .green] (.fixed 1) }
+      { targeting := .of .creature, resolution? := some (.addMana #[.colored .green] (.fixed 1)) }
   -- Fails criterion 2 (does not trigger from mana ability or mana added):
   let etbAddMana : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisEnters
-      { resolution := .addMana #[.colored .green] (.fixed 1) }
+      { resolution? := some (.addMana #[.colored .green] (.fixed 1)) }
   -- Fails criterion 3 (cannot add mana):
   let onManaGainLife : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.playerAction .you .manaAdded) (Effect.gainLife 1)
   -- Modal where one mode targets fails criterion 1:
   let modalTargetedMana : TriggeredAbility :=
-    TriggeredAbility.mkTrigger (.playerAction .you .manaAdded)
-      { resolution := .chooseTriggerModes 1 }
-      (modes := #[
-        { resolution := .addMana #[.colored .green] (.fixed 1) },
-        { targeting := .of .creature, resolution := .tap .target }
-      ])
+    TriggeredAbility.mkModal (.playerAction .you .manaAdded) #[
+      { resolution? := some (.addMana #[.colored .green] (.fixed 1)) },
+      { targeting := .of .creature, resolution? := some (.tap .target) }
+    ]
   -- Modal where no mode targets and at least one adds mana succeeds:
   let modalUntargetedMana : TriggeredAbility :=
-    TriggeredAbility.mkTrigger (.playerAction .you .manaAdded)
-      { resolution := .chooseTriggerModes 1 }
-      (modes := #[
-        { resolution := .addMana #[.colored .green] (.fixed 1) },
-        Effect.gainLife 1
-      ])
+    TriggeredAbility.mkModal (.playerAction .you .manaAdded) #[
+      { resolution? := some (.addMana #[.colored .green] (.fixed 1)) },
+      Effect.gainLife 1
+    ]
   onManaAddMana.isManaAbility &&
     onManaAddedPool.isManaAbility &&
     onManaAddAndDraw.isManaAbility &&
@@ -377,7 +373,7 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     dmgTrigs.any (fun wt => wt.causeId == some idB && wt.lastKnownPower == some 7)
   dieGroupingOk && discGroupingOk && dmgGroupingOk
 
-/-! ### 6. CR 714.2b/d/4 & 704.5s Dynamic Layer-6 Saga Chapters -/
+/-! ### 6. CR 714.2b/d/4 & 704.5s Dynamic Layer-6 Saga chapters -/
 
 -- Granting a Chapter III ability in Layer 6 dynamically raises `Game.finalChapterNumber`
 -- from 2 → 3, prevents CR 704.5s SBA sacrifice at 2 lore counters, allows
@@ -428,25 +424,21 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
   baseFinalOk && sacAt2Ok && grantedFinalOk && survivesAt2Ok &&
     chapter3TriggeredOk && sacAfterCh3Ok && humFinalOk
 
-/-! ### 7. Two Distinct Modal Triggers on One Card (`TriggeredAbility.modes`) -/
+/-! ### 7. Two Distinct Modal Triggers on One Card (`Instruction.chooseModes`) -/
 
 -- A single card with an enters modal trigger (`[gain 3 life, draw 1]`) and a dies
--- modal trigger (`[gain 5 life, scry 2]`) preserves independent `modes` for each.
+-- modal trigger (`[gain 5 life, scry 2]`) preserves independent modes for each.
 #guard
   let etbModal : TriggeredAbility :=
-    TriggeredAbility.mkTrigger .thisEnters
-      { resolution := .chooseTriggerModes 1, phrase := "Choose one —" }
-      (modes := #[
-        { resolution := .gainLife (.fixed 3), phrase := "You gain 3 life." },
-        { resolution := .draw (.fixed 1) .you, phrase := "Draw a card." }
-      ])
+    TriggeredAbility.mkModal .thisEnters #[
+      { resolution? := some (.gainLife (.fixed 3)), phrase := "You gain 3 life." },
+      { resolution? := some (.draw (.fixed 1) .you), phrase := "Draw a card." }
+    ] (headerPhrase := "Choose one —")
   let diesModal : TriggeredAbility :=
-    TriggeredAbility.mkTrigger .thisDies
-      { resolution := .chooseTriggerModes 1, phrase := "Choose one —" }
-      (modes := #[
-        { resolution := .gainLife (.fixed 5), phrase := "You gain 5 life." },
-        { resolution := .scry (.fixed 2), phrase := "Scry 2." }
-      ])
+    TriggeredAbility.mkModal .thisDies #[
+      { resolution? := some (.gainLife (.fixed 5)), phrase := "You gain 5 life." },
+      { resolution? := some (.scry (.fixed 2)), phrase := "Scry 2." }
+    ] (headerPhrase := "Choose one —")
   let dualModalCard := mkCreature "Dual Modal Oracle" #["Sphinx"] (triggers := #[etbModal, diesModal])
   let (g0, hObj) := addToZone (quietGame afterDraw) dualModalCard p0 (.hand p0) (some p0)
   let (gEnt, bfId) := g0.putOntoBattlefield hObj.id p0
@@ -457,9 +449,9 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     | none => #[]
   let gEntDone := (mustApply gEntPrompt p0 (.chooseMode 0)).resolveTop
   let etbOk :=
-    etbModesSeen == etbModal.modes &&
+    etbModesSeen == etbModal.modeEffects &&
     lifeOf gEntDone p0 == lifeOf g0 p0 + 3
-  -- Now destroy it; dies modal trigger must offer `diesModal.modes` (gain 5 life / scry 2)!
+  -- Now destroy it; dies modal trigger must offer `diesModal.modeEffects` (gain 5 life / scry 2)!
   let gDied := (quietGame gEntDone).moveToOwnerGraveyard (gEntDone.object! bfId) "dies" (verb := some .destroy) (cause := some testCause)
   let gDiePrompt := gDied.receivePriority p0
   let dieModesSeen :=
@@ -468,7 +460,7 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     | none => #[]
   let gDieDone := (mustApply gDiePrompt p0 (.chooseMode 0)).resolveTop
   let dieOk :=
-    dieModesSeen == diesModal.modes &&
+    dieModesSeen == diesModal.modeEffects &&
     lifeOf gDieDone p0 == lifeOf gEntDone p0 + 5
   etbOk && dieOk
 
@@ -556,19 +548,17 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     { TriggeredAbility.mkTrigger .thisEnters (Effect.gainLife 1) with activeZones := #[] }
   ]
   let noopTriggerCard := mkEnchantment "Noop Trigger" #[
-    TriggeredAbility.mkTrigger .thisEnters { resolution := .unrecognized }
+    TriggeredAbility.mkTrigger .thisEnters { body := .noop }
   ]
   let emptyModesCard := mkEnchantment "Empty Modes" #[
-    TriggeredAbility.mkTrigger .thisEnters { resolution := .chooseTriggerModes 1 } (modes := #[])
+    TriggeredAbility.mkModal .thisEnters #[]
   ]
   let badModeCard := mkEnchantment "Bad Mode" #[
-    TriggeredAbility.mkTrigger .thisEnters { resolution := .chooseTriggerModes 1 }
-      (modes := #[Effect.gainLife 1, { resolution := .unrecognized }])
+    TriggeredAbility.mkModal .thisEnters #[Effect.gainLife 1, { body := .noop }]
   ]
   let validCard := mkEnchantment "Valid Trigger" #[
     TriggeredAbility.mkTrigger .thisEnters (Effect.gainLife 1),
-    TriggeredAbility.mkTrigger .thisDies { resolution := .chooseTriggerModes 1 }
-      (modes := #[Effect.gainLife 2, Effect.scry 1]),
+    TriggeredAbility.mkModal .thisDies #[Effect.gainLife 2, Effect.scry 1],
     TriggeredAbility.onManaSpentCastCommanderTypeScry
   ]
   let validSaga : CardDef := {

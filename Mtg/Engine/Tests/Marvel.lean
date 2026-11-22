@@ -944,7 +944,7 @@ def flyerVsHawkeyeBow : Game :=
 /-- Tapping the equipped creature queues the Bow and deals 1 to each opponent. -/
 def hawkeyeBowTapped : Game :=
   let host := namedPermanent hawkeyeBowEquipped "Grizzly Bears"
-  hawkeyeBowEquipped.applyPermanentAction host PermanentAction.tap
+  hawkeyeBowEquipped.becomeTapped host
 
 #guard (namedPermanent hawkeyeBowTapped "Grizzly Bears").status.tapped
 #guard hawkeyeBowTapped.waitingTriggers.any (fun t =>
@@ -966,13 +966,13 @@ def hawkeyeBowTapResolved : Game :=
   let g := addPermanent afterDraw grizzlyBears ⟨0⟩ ⟨0⟩
   let g := addPermanent g hawkeyeSBow ⟨0⟩ ⟨0⟩
   let host := namedPermanent g "Grizzly Bears"
-  let g := g.applyPermanentAction host PermanentAction.tap
+  let g := g.becomeTapped host
   !g.waitingTriggers.any (fun t => t.source.name == "Hawkeye's Bow")
 
 -- Tapping an already-tapped equipped creature does not trigger the Bow.
 #guard
   let host := namedPermanent hawkeyeBowTapped "Grizzly Bears"
-  let g := hawkeyeBowTapped.applyPermanentAction host PermanentAction.tap
+  let g := hawkeyeBowTapped.becomeTapped host
   g.waitingTriggers.size == hawkeyeBowTapped.waitingTriggers.size &&
     g.log.any (fun s => mentions s "already tapped")
 

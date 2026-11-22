@@ -1030,7 +1030,7 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   }
   let manaSelfSacArtDef : CardDef := {
     name := "P36i4 Mana Censer", types := #[.artifact]
-    activatedAbilities := #[{ cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) (.filter (.hasType .artifact))], effect := { resolution := .addMana #[.colorless] } }]
+    activatedAbilities := #[{ cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) (.filter (.hasType .artifact))], effect := Effect.addMana #[.colorless] }]
   }
   let gTapSac0 := addPermanent (addPermanent g3 selfSacArtDef p0 p0) bear p0 p0
   let censer := (gTapSac0.permanentsOf p0).find? (·.name == selfSacArtDef.name) |>.get!
@@ -1917,7 +1917,17 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
     name := "P37i3 Protection", manaCost := ManaCost.empty, types := #[.instant]
     spellEffect := some {
       targeting := { spec := .player, prefer := .opponent }, maxTargets := 1
-      resolution := .frc .teferi
+      body := .seq #[
+        .installEffect (.applyRule (.untilNextTurnOf (.target 0))
+          (.all #[
+            .player (.protectionFrom (PlayerFilter.ofExpr (.target 0)) .everything),
+            .player (.lifeTotalCantChange (PlayerFilter.ofExpr (.target 0)))])),
+        .permanent (.phaseOut
+          (.inZones .battlefield (.all #[
+            .controlledBy (PlayerFilter.ofExpr (.target 0)),
+            .not (.hasType .land)]))
+          (some (.target 0))),
+        .installEffect (.applyReplacement .untilEndOfTurn .exileOnLeaveStack)]
     }
   }
   let gTef0 :=
@@ -2146,7 +2156,7 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
     name := "P37i4 PainPetal", types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
-      effect := { resolution := .addMana #[.colored .red] }
+      effect := Effect.addMana #[.colored .red]
     }]
   }
   -- Test 1: `p0` activates `PainPetal` at priority (`prevPending = .none`), pausing on `leyA`/`leyB`;
@@ -2216,11 +2226,7 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
   -- (i) `announceMode` reverses when `sourceStillPayable` is false:
   let modalAbDef : CardDef := {
     name := "P37i4 ModalRod", types := #[.artifact]
-    activatedAbilities := #[{
-      cost := CostSpec.ofItems #[.tapSelf]
-      effect := Effect.gainLife 1
-      otherModes := #[Effect.gainLife 2]
-    }]
+    activatedAbilities := #[ActivatedAbility.mkModal (CostSpec.ofItems #[.tapSelf]) #[Effect.gainLife 1, Effect.gainLife 2]]
   }
   let gAm0 := addPermanent g3 modalAbDef p0 p0
   let rodId := (gAm0.permanentsOf p0)[0]!.id
@@ -3462,9 +3468,7 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
   }
   let modalRodDef : CardDef := {
     name := "P38i4 ModalRod", types := #[.artifact]
-    activatedAbilities := #[{
-      cost := CostSpec.ofItems #[.tapSelf], effect := Effect.gainLife 1, otherModes := #[Effect.gainLife 2]
-    }]
+    activatedAbilities := #[ActivatedAbility.mkModal (CostSpec.ofItems #[.tapSelf]) #[Effect.gainLife 1, Effect.gainLife 2]]
   }
   let gMidRev0 :=
     insertObject

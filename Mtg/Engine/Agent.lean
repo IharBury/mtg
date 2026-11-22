@@ -514,9 +514,12 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
     | .mayResolve _ =>
       match g.mayEffect with
       | some e =>
-        match e.spellResolution with
-        | .loseLife _ _ | .discard _ => some .decline
-        | _ => some .accept
+        match e.body with
+        | .life (.lose ..) | .moveZone _ .graveyard .discard _ => some .decline
+        | _ =>
+          match e.resolution? with
+          | some (.loseLife _ _) | some (.discard _) => some .decline
+          | _ => some .accept
       | none => some .decline
     | .tapHumans _ =>
       let humans :=
@@ -872,7 +875,7 @@ where
   /-- Activate a non-mana ability if the available mana covers its cost. -/
   chooseActivate (g : Game) (p : PlayerId) : Option Action :=
     let shouldActivate (o : GameObject) (idx : Nat) (ab : ActivatedAbility) : Bool :=
-      let isTurnFaceUp := o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp
+      let isTurnFaceUp := o.status.faceDown && ab.isTurnFaceUp
       let selfExcl : Array ObjectId :=
         if !isTurnFaceUp && ab.cost.tap then #[o.id] else #[]
       let allPicks :=
@@ -1122,8 +1125,8 @@ where
       (spellKind o .draw || modeKind o .draw) &&
         match (g.baseCard o).spellEffect with
         | some e =>
-          match e.spellResolution with
-          | .sequence [.draw (.fixed cards) .you, .loseLife (.fixed life) .you] =>
+          match e.body with
+          | .seq #[.player (.drawCards .you (.const cards)), .life (.lose .you (.const life))] =>
             (g.player p).life > life &&
               (g.player p).library.size >= cards.toNat
           | _ => true
@@ -1145,7 +1148,7 @@ where
       if ownCreature.isSome then
         playable.find? (fun o =>
           spellKind o .pump ||
-            (g.baseCard o).spellModes.any (fun e =>
+            (g.baseCard o).modes.any (fun e =>
               e.castKind == .pump && !(g.legalTargetsForSpec p e.effectiveTargetSpec).isEmpty))
       else none
     let aura :=
@@ -1156,11 +1159,12 @@ where
       adventurePlayable.find? (fun o => adventureKind o .extraLand)
     let isSpellCounter (o : GameObject) : Bool :=
       (g.baseCard o).spellEffect.any (fun e => e.targetSpec.targetsStackSpell) ||
-        (g.baseCard o).spellModes.any (fun e => e.targetSpec.targetsStackSpell)
+        (g.baseCard o).modes.any (fun e => e.targetSpec.targetsStackSpell)
     let hasOppSpellTarget (o : GameObject) : Bool :=
-      match (g.baseCard o).spellEffect with
-      | some e => g.effectHasOppSpellTarget p e
-      | none => (g.baseCard o).spellModes.any (g.effectHasOppSpellTarget p)
+      if !(g.baseCard o).modes.isEmpty then
+        (g.baseCard o).modes.any (g.effectHasOppSpellTarget p)
+      else
+        (g.baseCard o).spellEffect.any (g.effectHasOppSpellTarget p)
     -- Cast a counter only when an opponent's spell is a legal target.
     let counter :=
       playable.find? (fun o =>

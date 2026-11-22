@@ -3,9 +3,8 @@ import Mtg.Engine.Game.LibrarySearch
 /-!
 # Resolution target helpers (CR 608.2b)
 
-Re-checking target legality as an effect resolves, `applyPermanentAction`
-for shared actions on permanents, beginning scry, mill (CR 701.17), and
-damage to each matching creature.
+Re-checking target legality as an effect resolves, direct permanent helpers,
+beginning scry, mill (CR 701.17), and damage to each matching creature.
 -/
 
 namespace Mtg.Engine
@@ -186,75 +185,61 @@ def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
     g.logMsg s!"{(g.player owner).name} puts {name} on the {side} of their library"
   else g
 
-/-- Apply a shared permanent action (spells, activated abilities, and triggers). -/
-def applyPermanentAction (g : Game) (o : GameObject) (action : PermanentAction)
+/-- Untap permanent `o` during resolution, respecting replacement pauses and
+"can't become untapped" restrictions (CR 701.21). -/
+def untapPermanentLogged (g : Game) (o : GameObject)
     (sourceId : Option ObjectId := none) : Game :=
-  match action with
-  | .pump pw tw => g.pumpPermanent o pw tw
-  | .pumpAndTrample pw tw => g.pumpAndGrantTrample o pw tw
-  | .destroy => g.destroyPermanent o
-  | .plusOne n => g.addPlusOnePlusOneTo o n
-  | .dealDamage n =>
-    g.dealDamageToPermanent o n (source := sourceId.bind g.damageSourceEventById?)
-  | .loseIndestructible =>
-    let g := g.createEffect (.loseIndestructibleUntilEot o.id)
-    g.logMsg s!"{g.name o} loses indestructible until end of turn"
-  | .cantBeBlocked => g.grantCantBeBlockedThisTurn o
-  | .grantKeywords k =>
-    g.grantUntilEotLogged o k
-  | .indestructibleCounter => g.addIndestructibleCounter o
-  | .doubleStrikeCounter =>
-    let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
-    g.putCountersDeferredLog o.id .doubleStrike 1 (g.controllerOf o) .gets (cause := some cause)
-  | .burdenCounter => g.addBurdenCounter o
-  | .tap => g.becomeTapped o
-  | .untap =>
-    if let .chooseReplacement .. := g.pending then
-      let baseCause :=
-        g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
-          (defaultCause := .turnBased .untapAll)
-      g.chainPendingReplacement (.untapPermanent o.id false true (some baseCause))
-    else if g.hostCantBecomeUntapped o then
-      g.logMsg s!"{g.name o} can't become untapped"
-    else if !o.status.tapped then
-      g.logMsg s!"{g.name o} is already untapped"
-    else
-      let baseCause :=
-        g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
-          (defaultCause := .turnBased .untapAll)
-      g.untapPermanent o (cause := some baseCause)
-  | .becomeArtifactIndestructible =>
-    let g := g.createEffects #[
-      .additionalArtifactUntilEot o.id,
-      .keywordsUntilEot o.id #[Keyword.indestructible]]
-    g.logMsg
-      s!"{g.name o} becomes an artifact and gains indestructible until end of turn"
-  | .becomePrepared => g.becomePrepared o
-  | .tapAndStun =>
-    -- Ruling 764: an already tapped creature still gets the stun counter.
-    let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
-    g.withBatch (some cause) fun g =>
-      let g := if o.status.tapped then g else g.becomeTapped o (cause := some cause)
-      let cur := g.object! o.id
-      g.putCountersDeferredLog cur.id .stun 1 (g.controllerOf cur) .isPutOn (cause := some cause)
-  | .setBasePT pw tw =>
-    let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
-    g.logMsg s!"{g.name o} has base power and toughness {pw}/{tw} until end of turn"
-  | .putOnTopOfLibrary => g.putOnOwnerLibrary o true
-  | .putOnBottomOfLibrary => g.putOnOwnerLibrary o false
-  | .exile => (g.move o.id .exile none).1
-  | .doublePowerAndToughness =>
-    g.pumpPermanent o (g.power o) (g.toughness o)
+  if let .chooseReplacement .. := g.pending then
+    let baseCause :=
+      g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
+        (defaultCause := .turnBased .untapAll)
+    g.chainPendingReplacement (.untapPermanent o.id false true (some baseCause))
+  else if g.hostCantBecomeUntapped o then
+    g.logMsg s!"{g.name o} can't become untapped"
+  else if !o.status.tapped then
+    g.logMsg s!"{g.name o} is already untapped"
+  else
+    let baseCause :=
+      g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
+        (defaultCause := .turnBased .untapAll)
+    g.untapPermanent o (cause := some baseCause)
 
-def applyOnPermanent (g : Game) (controller : PlayerId) (spec : TargetSpec)
-    (targets : Array Target) (action : PermanentAction)
-    (sourceId : Option ObjectId := none) (missing : Option String := none) : Game :=
-  match action with
-  | .dealDamage n =>
-    g.applyDamageToSpecTarget controller spec targets n sourceId missing
-  | _ =>
-    g.withLegalSpecPermanent controller spec targets (fun g o =>
-      g.applyPermanentAction o action (sourceId := sourceId)) sourceId missing
+/-- Put a double strike counter on `o` with deferred logging across replacements. -/
+def addDoubleStrikeCounter (g : Game) (o : GameObject)
+    (sourceId : Option ObjectId := none) : Game :=
+  let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
+  g.putCountersDeferredLog o.id .doubleStrike 1 (g.controllerOf o) .gets (cause := some cause)
+
+/-- Make `o` lose indestructible until end of turn. -/
+def loseIndestructibleUntilEot (g : Game) (o : GameObject) : Game :=
+  let g := g.createEffect (.loseIndestructibleUntilEot o.id)
+  g.logMsg s!"{g.name o} loses indestructible until end of turn"
+
+/-- Make `o` become an artifact and gain indestructible until end of turn. -/
+def becomeArtifactIndestructibleUntilEot (g : Game) (o : GameObject) : Game :=
+  let g := g.createEffects #[
+    .additionalArtifactUntilEot o.id,
+    .keywordsUntilEot o.id #[Keyword.indestructible]]
+  g.logMsg s!"{g.name o} becomes an artifact and gains indestructible until end of turn"
+
+/-- Tap `o` and put a stun counter on it (Ruling 764: an already tapped permanent
+still receives the stun counter). -/
+def tapAndStunPermanent (g : Game) (o : GameObject)
+    (sourceId : Option ObjectId := none) : Game :=
+  let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
+  g.withBatch (some cause) fun g =>
+    let g := if o.status.tapped then g else g.becomeTapped o (cause := some cause)
+    let cur := g.object! o.id
+    g.putCountersDeferredLog cur.id .stun 1 (g.controllerOf cur) .isPutOn (cause := some cause)
+
+/-- Set `o`'s base power and toughness to `pw`/`tw` until end of turn. -/
+def setBasePTUntilEotLogged (g : Game) (o : GameObject) (pw tw : Int) : Game :=
+  let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
+  g.logMsg s!"{g.name o} has base power and toughness {pw}/{tw} until end of turn"
+
+/-- Double `o`'s power and toughness until end of turn (CR 701.10). -/
+def doublePowerAndToughness (g : Game) (o : GameObject) : Game :=
+  g.pumpPermanent o (g.power o) (g.toughness o)
 
 /-- Start surveilling `n` during resolution (CR 701.25): look at the top
 `n` cards, put any number into the graveyard and the rest back on top in any

@@ -452,7 +452,7 @@ def meagerMealNoCreatureAfterSkip : Game :=
     creature "Echo Test" { symbols := #[.generic 2] } #["Human"] 2 2 with
     activatedAbilities := #[
       { cost := CostSpec.empty, effect := Effect.copyControlledAbility .creature },
-      { cost := CostSpec.empty, effect := Effect.mkAbility (.of .anotherCreature) (.onPermanent .tap) }
+      { cost := CostSpec.empty, effect := Effect.mkAbility (.of .anotherCreature) (Instruction.tap (.target 0)) "" }
     ]
   }
   let otherCreature : CardDef :=
@@ -516,8 +516,8 @@ def meagerMealNoCreatureAfterSkip : Game :=
   match Parser.parseTargetSpec "for each player, up to one target creature that player controls",
         Parser.parseTargetSpec "for each player, target creature that player controls" with
   | some optSpec, some reqSpec =>
-    let optEff : Effect := { targeting := .of optSpec, allowsZeroTargets := true, resolution := .onPermanent .tap }
-    let reqEff : Effect := { targeting := .of reqSpec, resolution := .onPermanent .tap }
+    let optEff : Effect := { targeting := .of optSpec, allowsZeroTargets := true, body := Instruction.tap (.target 0) }
+    let reqEff : Effect := { targeting := .of reqSpec, body := Instruction.tap (.target 0) }
     let g0 := readyMain (emptyHand afterDraw p0)
     let gOnlyP0 := addPermanent g0 grizzlyBears p0 p0
     let gBoth := addPermanent gOnlyP0 grizzlyBears p1 p1

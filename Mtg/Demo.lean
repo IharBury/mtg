@@ -905,7 +905,7 @@ def defaultTapMana (g : Game) (p : PlayerId) (o : GameObject) : Option ManaType 
   | some first =>
     let hasPowerScaledAnyColor :=
       (g.activatedAbilitiesOf o).any fun ab =>
-        ab.mana?.any fun mp =>
+        ab.manaProduction?.any fun mp =>
           match mp.spec with
           | .oneOf .anyColor (.objectStat .power .this) => true
           | _ => false
@@ -2122,7 +2122,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
       let abs := g.activatedAbilitiesOf o
       (List.range abs.size).any (fun idx =>
         let ab := abs[idx]!
-        let isTurnFaceUp := o.status.faceDown && ab.effect.resolution == .frc .turnFaceUp
+        let isTurnFaceUp := o.status.faceDown && ab.isTurnFaceUp
         let manaCost := if isTurnFaceUp then ab.cost.mana else g.activationManaCost p ab (some o)
         let excludeIds := if !isTurnFaceUp && ab.cost.tap then #[o.id] else #[]
         g.canActivate p o ab (idx? := some idx) &&

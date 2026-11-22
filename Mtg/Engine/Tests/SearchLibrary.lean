@@ -412,23 +412,23 @@ what searches. -/
 #guard (SharedTrigger.toEffect .searchBasicLandToHand).resolution ==
   .searchLibrary (.returnToHand .basicLand)
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .searchLibrary (.put .forest) } ==
+    { resolution? := some (.searchLibrary (.put .forest)) } ==
   "search your library for a Forest card, put that card onto the battlefield, then shuffle"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .searchLibrary (.returnToHand .basicLand) } ==
+    { resolution? := some (.searchLibrary (.returnToHand .basicLand)) } ==
   "search your library for a basic land card, reveal it, put it into your hand, then shuffle"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .searchLibrary (.put .basicLandOnTop) } ==
+    { resolution? := some (.searchLibrary (.put .basicLandOnTop)) } ==
   "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .searchLibrary (.put .dragon) } ==
+    { resolution? := some (.searchLibrary (.put .dragon)) } ==
   "search your hand and/or library for a Dragon card and put it onto the battlefield"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .searchLibrary (.draw (.fixed 1)) } ==
+    { resolution? := some (.searchLibrary (.draw (.fixed 1))) } ==
   "search your library"
-#guard TriggeredAbility.resolutionPhrase { resolution := .put .basicLandOnTop } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put .basicLandOnTop) } ==
   "put that card on top of your library"
-#guard TriggeredAbility.resolutionPhrase { resolution := .returnToHand .basicLand } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.returnToHand .basicLand) } ==
   "put it into your hand"
 #guard TriggeredAbility.toNotation .onEnterSearchForest ==
   "When this permanent enters, search your library for a Forest card, put that card onto the battlefield, then shuffle."

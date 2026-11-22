@@ -211,7 +211,7 @@ permanent returns to its owner's hand even without the return note. -/
     !g.returnedPermanentThisWay &&
     logContains g "Grave Relic is returned to Nissa's hand"
 
-#guard TriggeredAbility.resolutionPhrase { resolution := .returnToHand .hand } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.returnToHand .hand) } ==
   "return it to a hand"
 
 #guard TriggeredAbility.resolution (.onEnter Effect.enterReturnGyPermanentThisTurn) ==

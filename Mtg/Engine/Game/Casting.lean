@@ -2058,16 +2058,26 @@ def setStackEntryTargets (g : Game) (objectId : ObjectId) (targets : Array Targe
 or both”, “choose up to two”, and “choose two if you control a [subtype]”
 while they do. -/
 def maxModesFor (g : Game) (p : PlayerId) (face : CardDef) : Nat :=
-  if face.chooseOneOrBoth || isReturnUpToTwoGyModal face then 2
+  if isReturnUpToTwoGyModal face then 2
   else
-    match face.chooseTwoIfYouControlSubtype with
-    | some s => if (g.permanentsOf p).any (fun o => g.hasSubtype o s) then 2 else 1
+    match face.modalSpec? with
     | none => 1
+    | some ms =>
+      let env : EvalEnv := { controller := p, sourceId := g.proposedSpell.map (·.spellId) }
+      match ms.altCountIf? with
+      | some (cond, _, altMax) =>
+        if EvalExpr.evalCondition g env cond then (EvalExpr.evalValue g env altMax).toNat
+        else (EvalExpr.evalValue g env ms.maxModes).toNat
+      | none => (EvalExpr.evalValue g env ms.maxModes).toNat
 
 /-- Minimum number of modes required for `face` (CR 700.2b): `0` for “choose
 up to two”, `1` otherwise. -/
 def minModesFor (face : CardDef) : Nat :=
-  if isReturnUpToTwoGyModal face then 0 else 1
+  if isReturnUpToTwoGyModal face then 0
+  else
+    match face.modalSpec? with
+    | some ms => (ms.minModes.evalConst?.getD 1).toNat
+    | none => 1
 
 /-- Add `mode` to the proposed spell's chosen modes. -/
 def addProposedExtraMode (g : Game) (mode : Nat) : Game :=

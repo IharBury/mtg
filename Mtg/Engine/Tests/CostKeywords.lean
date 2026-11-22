@@ -390,7 +390,7 @@ private def triggerWardPrompt (wardKws : Array KeywordAbility) : Game × ObjectI
   let expImpending := KeywordAbility.expand (.impending 4 (CostSpec.ofMana { symbols := #[.generic 1, .colored .white] }))
   let expCycling := KeywordAbility.expand (.cycling none (CostSpec.ofGeneric 2))
   let expTeamwork := KeywordAbility.expand (.teamwork 2)
-  expWard.triggeredSpecs.size == 1 &&
+  expWard.triggeredAbilities.size == 1 &&
     expCrew.activatedAbilities.size == 1 &&
     expCrew.activatedAbilities[0]!.cost.crewPower? == some 3 &&
     expGift.additionalCosts.size == 1 && expGift.additionalCosts[0]!.optional &&

@@ -69,7 +69,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   let tgtAnchor := (gAnchorBase.permanentsOf p0).back!
   let tgtTrigAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you)
-      { targeting := .of .player, resolution := .gainLife (.fixed 1), phrase := "Target player gains 1 life." }
+      { targeting := .of .player, resolution? := some (.gainLife (.fixed 1)), phrase := "Target player gains 1 life." }
   let gExAndTrig :=
     gAnchorBase.putTriggeredAbilityOnStack p0 tgtAnchor tgtTrigAb "triggers" (eventCause := some testCause)
 
@@ -109,7 +109,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
     name := "P48i1 Bolt"
     manaCost := ManaCost.zero
     types := #[.instant]
-    spellEffect := some { targeting := .of .creature, resolution := .gainLife (.fixed 1), phrase := "Target creature." }
+    spellEffect := some { targeting := .of .creature, resolution? := some (.gainLife (.fixed 1)), phrase := "Target creature." }
   }
   let gWard0 := insertObject (addPermanent gEx0 wardPermDef p1 p1) tgtBoltDef p0 (.hand p0)
   let wardCreatureId := (gWard0.permanentsOf p1)[0]!.id
@@ -143,7 +143,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   --         `afterTriggerTargetsChosen` consumes only `.chooseTargets _` and defers reopen while `pending != .none || afterRandom != .none`:
   let trigSeqP0 : TriggerSequenceRest := {
     controller := p0
-    ability := TriggeredAbility.mkTrigger .thisDies { resolution := .gainLife (.fixed 4), phrase := "You gain 4 life." }
+    ability := TriggeredAbility.mkTrigger .thisDies { resolution? := some (.gainLife (.fixed 4)), phrase := "You gain 4 life." }
     sourceId := some tgtAnchor.id
     sourceName := tgtAnchor.name
     steps := [.gainLife (.fixed 4)]
@@ -1194,12 +1194,10 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
   let modalToughTrigDef : CardDef := {
     creature "P48i4 ElderOak" ManaCost.empty #["Treefolk"] 1 5 with
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisDies
-        { resolution := .gainLife (.fixed 0), phrase := "Choose two." }
-        (modes := #[
-          Effect.scry 1,
-          { resolution := .addMana #[.colored .green] .equalSourceToughness, phrase := "Add {G} equal to toughness." }
-        ])
+      TriggeredAbility.mkModal .thisDies #[
+        Effect.scry 1,
+        { resolution? := some (.addMana #[.colored .green] .equalSourceToughness), phrase := "Add {G} equal to toughness." }
+      ] (headerPhrase := "Choose two.")
     ]
   }
   let gOak0 := addPermanent gLibSeeded modalToughTrigDef p0 p0
@@ -1209,7 +1207,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
   let gOakStacked0 :=
     gOakGone.putTriggeredAbilityOnStack p0 oakObj oakAb "triggers"
       (lastKnownPower := some 1) (lastKnownToughness := some 5) (eventCause := some testCause)
-      (abilityEffectOverride := some oakAb.modes[0]!)
+      (abilityEffectOverride := some oakAb.modeEffects[0]!)
   let oakTopEntry := gOakStacked0.stack.back!
   let gOakStacked :=
     gOakStacked0.changes #[
@@ -1224,7 +1222,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
     manaCost := { symbols := #[.x] }
     types := #[.artifact]
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisEnters { resolution := .addMana #[.colored .red] .chosenX, phrase := "When this enters, add X {R}." }
+      TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.addMana #[.colored .red] .chosenX), phrase := "When this enters, add X {R}." }
     ]
   }
   let gXPerm0 := (insertObject g3 xPermManaDef p0 (.hand p0)).addMana p0 .colorless 3

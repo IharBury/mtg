@@ -527,7 +527,7 @@ private def replayOk39i3 (gs : Array Game) : Bool :=
         fraCauseStatus := some { counters := #[(.charge, 1), (.plusOnePlusOne, 2)] } }))).changes
       #[.pushContinuationFrame {}, .resolvingAbility (some fraAbId)]
   let gFraPostExile :=
-    gFra2.applyFraAbility p0 (Effect.gainLife 0) .putCauseCountersOnSource #[] (some fraSrc.id)
+    gFra2.applyUnifiedAbility p0 { body := .permanent (.modifyCounters (.copyFromLki .triggerSubject) .this) } #[] (some fraSrc.id)
   let fraPostExileSafeOk :=
     (gFraPostExile.findObject? fraSrc.id).isNone &&
     (gFraPostExile.followMovedToZone? fraSrc.id (· == .exile)).any (·.status.plusOnePlusOne == 0)
@@ -820,7 +820,7 @@ private def replayOk39i4 (gs : Array Game) : Bool :=
     name := "P39i4 SacManaAltar", types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.hasType .artifact)), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
-      effect := { resolution := .addMana #[.colored .green] }
+      effect := Effect.addMana #[.colored .green]
     }]
   }
   let greenSpellDef : CardDef := {
@@ -1769,7 +1769,7 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
   let artDefA : CardDef := { name := "P40i4 ArtA", types := #[.artifact] }
   let storyAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[.tapSelf, .removeCounters (.exact 1) (some .story) .self]
-    effect := { resolution := .gainLife 2 }
+    effect := Effect.gainLife 2
   }
   let storyRelicDef : CardDef := {
     name := "P40i4 StoryRelic"
@@ -1852,7 +1852,7 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
   --     respects `hasFollowingSeq` & dead-player priority fallback:
   let comboManaAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.hasType .artifact)), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
-    effect := { resolution := .addMana #[.colorless] }
+    effect := Effect.addMana #[.colorless]
   }
   let comboManaDef : CardDef := {
     name := "P40i4 ManaAltar"
@@ -1904,7 +1904,7 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
   let gMfZeroDown := setFaceDown gMfZero0 mfZeroId true
   let gMfZeroActIdx :=
     ((gMfZeroDown.activatedAbilitiesOf (gMfZeroDown.object! mfZeroId)).findIdx?
-      (fun ab => ab.effect.resolution == .frc .turnFaceUp)).getD 0
+      (fun ab => ab.effect.body == .permanent (.turnFaceUp .this))).getD 0
   let gMfZeroUp := mustApply gMfZeroDown p1 (.activate mfZeroId gMfZeroActIdx)
   let zeroMorphPrioOk :=
     !(gMfZeroUp.object! mfZeroId).status.faceDown &&
@@ -1992,7 +1992,7 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
   -- 4d. Combined `loyaltyX` + `removePlusOneX` in `CastSpell.announceX` and `Agent.choose` / `Agent.maxAffordableX` `exclude`:
   let pwXAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[.loyalty .minusX, .removeCounters .anyNumber (some .plusOnePlusOne) .self]
-    effect := { resolution := .gainLife 1 }
+    effect := Effect.gainLife 1
   }
   let pwXDef : CardDef := {
     name := "P40i4 HybridPW"
@@ -2027,7 +2027,7 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
   }
   let manaAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[.tapSelf]
-    effect := { resolution := .addMana #[.colored .green] }
+    effect := Effect.addMana #[.colored .green]
   }
   let dorkXDef : CardDef := {
     creature "P40i4 DorkX" ManaCost.empty #["Elf", "Druid"] 1 1 with

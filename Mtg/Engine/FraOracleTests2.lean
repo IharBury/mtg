@@ -408,8 +408,8 @@ Jace, Reality Sculptor has 5, so 1 is excess. -/
   o.printed.isToken && o.printed.isArtifact && g.hasSubtype o .heartwood &&
     o.printed.colors == (ColorSet.singleton .red).insert .green &&
     o.printed.manaAbilities == #[.colored .red, .colored .green]
-#guard (heartwoodCrafter.prepareFace.bind (·.spellEffect)).map (·.resolution) ==
-  some (.createTokens .heartwood 1)
+#guard (heartwoodCrafter.prepareFace.bind (·.spellEffect)).map (·.body) ==
+  some (Instruction.createTokensFixed .heartwood 1)
 #guard (fraRuling 793).comment.contains "artifact subtype Heartwood"
 
 /- Ruling 823: the Ajani's Pridemate token has no mana cost. -/

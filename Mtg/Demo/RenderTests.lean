@@ -1724,7 +1724,9 @@ def freeCloudAfterDeath : Game :=
     name := "Render Twin Share"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some { targeting := .of .twoNonlandsSharingType, resolution := .exchangeControl }
+    spellEffect := some {
+      targeting := .of .twoNonlandsSharingType
+      body := .installEffect (.applyContinuous .indefinite (.target 0) (.exchangeControl (.target 1))) }
   }
   let gSh0 := addToHand (addPermanent (addPermanent g0 grizzlyBears p0 p0) grayOgre ⟨1⟩ ⟨1⟩) shareDef p0
   let gShProp := mustApply gSh0 p0 (.cast (handCardNamed gSh0 p0 "Render Twin Share").id)

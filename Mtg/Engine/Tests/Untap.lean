@@ -20,7 +20,7 @@ def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onPermanent .creature .untap))
+  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.untap .target) }
 
 def step (g : Game) (r : TriggeredAbility.TriggerResolution)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
@@ -262,40 +262,35 @@ already untapped attacker is unchanged. No attackers changes nothing. -/
   tapped g "Titan" && g.log == g0.log
 
 /- Printed phrases stay with the combination that produces them. -/
-#guard TriggeredAbility.TriggerResolution.ofPermanent .untap == .untap
-#guard TriggeredAbility.TriggerResolution.ofSource .untap == .untap .source
-#guard TriggeredAbility.TriggerResolution.ofEnchanted .untap == .untap .enchanted
-#guard TriggeredAbility.TriggerResolution.ofTargetWhileSource .untap ==
-  .untap (.target .whileSource)
 #guard TriggeredAbility.resolution (.onAttackWithTotalPowerUntapExtraCombat 12) ==
   .sequence [.untap .attackingCreatures, .additionalCombatPhase]
 
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution := .untap } ==
+    { targeting := .of .creature, resolution? := some (.untap) } ==
   "untap target creature"
-#guard TriggeredAbility.resolutionPhrase { resolution := .untap .source } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.untap .source) } ==
   "untap this creature"
-#guard TriggeredAbility.resolutionPhrase { resolution := .untap .enchanted } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.untap .enchanted) } ==
   "untap enchanted creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .untap (.target .whileSource) } ==
+    { resolution? := some (.untap (.target .whileSource)) } ==
   "untap that creature"
-#guard TriggeredAbility.resolutionPhrase { resolution := attackers } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (attackers) } ==
   "untap all attacking creatures"
-#guard TriggeredAbility.resolutionPhrase { resolution := .untap .humans } ==
+#guard TriggeredAbility.resolutionPhrase { resolution? := some (.untap .humans) } ==
   "untap it"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution := .sequence [.untap .attackingCreatures, .additionalCombatPhase] } ==
+    { resolution? := some (.sequence [.untap .attackingCreatures, .additionalCombatPhase]) } ==
   "untap all attacking creatures. After this phase, there is an additional combat phase"
 
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, untap target creature."
 #guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger (.onSource .untap))) ==
+    (TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.untap .source) }) ==
   "When this permanent enters, untap this creature."
-#guard TriggeredAbility.toNotation (.onEnterEnchanted .untap) ==
+#guard TriggeredAbility.toNotation (.onEnterEnchanted Instruction.untap) ==
   "When this Aura enters, untap enchanted creature."
-#guard TriggeredAbility.toNotation (.onEnterAttachThen .untap) ==
+#guard TriggeredAbility.toNotation (.onEnterAttachThen Instruction.untap) ==
   "When this Equipment enters, attach it to target creature you control. Untap that creature."
 #guard TriggeredAbility.toNotation (.onAttackWithTotalPowerUntapExtraCombat 12) ==
   "Whenever you attack with creatures with total power 12 or greater for the first time each turn, untap all attacking creatures. After this phase, there is an additional combat phase."

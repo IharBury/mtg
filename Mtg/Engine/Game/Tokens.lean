@@ -675,7 +675,7 @@ def insect11greenToken : CardDef :=
 def moloidToken : CardDef :=
   { creatureToken "Moloid" #[.minion] 1 1 (some .green) with
     triggeredAbilities := #[TriggeredAbility.mkTrigger .thisAttacks {
-      resolution := .may (.mill (.fixed 1) .you .none) (.sequence []) .ifYouDo
+      body := Instruction.may .you none (Instruction.mill (.const 1) .you)
       phrase := "you may mill a card"
     }] }
 
@@ -738,9 +738,9 @@ def jacePlaneswalkerToken : CardDef := {
   isToken := true
   activatedAbilities := #[
     { cost := CostSpec.ofLoyalty (.minus 1)
-      effect := { resolution := .surveil 1, phrase := "Surveil 1" } },
+      effect := { body := .player (.surveil .you (.const 1)), phrase := "Surveil 1" } },
     { cost := CostSpec.ofLoyalty (.minus 3)
-      effect := { resolution := .draw 1, phrase := "Draw a card" } }]
+      effect := { body := Instruction.drawFixed 1 .you, phrase := "Draw a card" } }]
 }
 
 /-- A 1/1 colorless Sculpture Treasure artifact creature token. -/
@@ -870,7 +870,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
         toughness := some 0
         isToken := true }
       activatedAbilities := #[
-        { effect := { resolution := .frc .transformIncubator, phrase := "Transform this token." }
+        { effect := { body := .permanent (.transform .this), phrase := "Transform this token." }
           cost := CostSpec.ofGeneric 2 } ] }
   | .map => {
       name := "Map"
@@ -880,7 +880,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
       activatedAbilities := #[
         { effect := {
             targeting := .of .creatureYouControl
-            resolution := .frc .explore
+            body := .player (.explore (.target 0))
             phrase := "Target creature you control explores."
           }
           cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self]
@@ -892,7 +892,9 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
       isToken := true
       activatedAbilities := #[
         { effect := {
-            resolution := .exileTopPlayUntilNext 1
+            body := .moveZone (.topOfLibrary .you (.const 1)) .exile .exile {
+              grantPlayPerm? := some { duration := .untilEndOfTurn, landsAllowed := true }
+            }
             phrase := "Exile the top card of your library. You may play that card this turn."
           }
           cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
@@ -913,7 +915,7 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
       activatedAbilities := #[
         { effect := {
             targeting := .of .creature
-            resolution := .onPermanent (.plusOne 1)
+            body := Instruction.putCounters (.target 0) .plusOnePlusOne (.const 1)
             phrase := "Put a +1/+1 counter on target creature."
           }
           cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self]
@@ -921,83 +923,13 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
   | .vibranium => vibraniumToken
   | .heartwood => heartwoodToken
 
-/-- Apply a parameterized `TokenAbilitySpec` onto a custom token's printed `CardDef` (CR 111.3). -/
-def applyTokenAbility (c : CardDef) (ab : TokenAbilitySpec) : CardDef :=
+/-- Apply a unified `GrantedAbility` onto a custom token's printed `CardDef` (CR 111.3). -/
+def applyGrantedAbility (c : CardDef) (ab : GrantedAbility) : CardDef :=
   match ab with
-  | .toxic n => { c with keywords := KeywordAbility.add c.keywords (.toxic n) }
-  | .cantBlock =>
-    { c with staticAbilities := c.staticAbilities.push .cantBlock }
-  | .attacksEachCombatIfAble =>
-    { c with staticAbilities := c.staticAbilities.push .attacksEachCombatIfAble }
-  | .cantBeBlockedByMoreThan n =>
-    { c with staticAbilities := c.staticAbilities.push (.cantBeBlockedByMoreThan n) }
-  | .equippedCreatureGets p t =>
-    { c with staticAbilities := c.staticAbilities.push (.equippedCreatureGets p t) }
-  | .equipGeneric generic =>
-    { c with
-      activatedAbilities := c.activatedAbilities.push {
-        cost := CostSpec.ofGeneric generic
-        effect := Effect.attachToTargetCreatureYouControl
-        timing := .sorcery
-        tag? := some (.equip none)
-      } }
-  | .tapSacrificeAddAnyOneColor n =>
-    { c with
-      activatedAbilities := c.activatedAbilities.push
-        (if n == 1 then ActivatedAbility.manaTapSacrificeAnyColor
-         else if n == 3 then ActivatedAbility.manaTapSacrificeThreeOfOneColor
-         else ActivatedAbility.manaAbility (.oneOf .anyColor (.const (Int.ofNat n)))
-           (CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self])) }
-  | .tapSacrificeGainLife generic life =>
-    { c with
-      activatedAbilities := c.activatedAbilities.push {
-        effect := Effect.gainLife life
-        cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric generic), .tapSelf, .sacrifice (.exact 1) .self]
-      } }
-  | .payGenericCantBeBlockedExceptHaste generic =>
-    { c with
-      activatedAbilities := c.activatedAbilities.push {
-        effect := {
-          resolution := .frc .gingerDash
-          phrase := "This token can't be blocked this turn except by creatures with haste."
-        }
-        cost := CostSpec.ofGeneric generic
-      } }
-  | .loyaltyMinusSurveil cost n =>
-    { c with
-      activatedAbilities := c.activatedAbilities.push {
-        cost := CostSpec.ofLoyalty (.minus cost)
-        effect := { resolution := .surveil n, phrase := s!"Surveil {n}" }
-      } }
-  | .loyaltyMinusDraw cost n =>
-    { c with
-      activatedAbilities := c.activatedAbilities.push {
-        cost := CostSpec.ofLoyalty (.minus cost)
-        effect := {
-          resolution := .draw n
-          phrase := if n == 1 then "Draw a card" else s!"Draw {n} cards"
-        }
-      } }
-  | .onAttackMayMill n =>
-    let eff : Effect := {
-      resolution := .may (.mill (.fixed n) .you .none) (.sequence []) .ifYouDo
-      phrase := if n == 1 then "you may mill a card" else s!"you may mill {n} cards"
-    }
-    { c with triggeredAbilities := c.triggeredAbilities.push (TriggeredAbility.mkTrigger .thisAttacks eff) }
-  | .onAttackScry n =>
-    { c with triggeredAbilities := c.triggeredAbilities.push (.onAttackScry n) }
-  | .onAttackDestroyTargetLand =>
-    let trigName := if c.name.isEmpty then "this token" else c.name
-    let eff : Effect := {
-      targeting := .of .land
-      resolution := .onPermanent .destroy
-      phrase := s!"Whenever {trigName} attacks, destroy target land."
-    }
-    { c with triggeredAbilities := c.triggeredAbilities.push (TriggeredAbility.mkTrigger .thisAttacks eff) }
-  | .onGainLifePutPlusOne _ =>
-    { c with triggeredAbilities := c.triggeredAbilities.push .onGainLifePlusOne }
-  | .onLandYouControlEntersPutPlusOne _ =>
-    { c with triggeredAbilities := c.triggeredAbilities.push .onLandYouControlEntersPlusOnePlusOne }
+  | .keyword kw => { c with keywords := KeywordAbility.add c.keywords kw }
+  | .static s => { c with staticAbilities := c.staticAbilities.push s }
+  | .activated a => { c with activatedAbilities := c.activatedAbilities.push a }
+  | .triggered t => { c with triggeredAbilities := c.triggeredAbilities.push t }
 
 /-- Realize a context-independent `CustomTokenSpec` into its printed `CardDef`
 (CR 111.3 / 111.4 / 111.11). Returns `none` when `power?` or `toughness?` requires
@@ -1023,7 +955,7 @@ def customTokenPrinted? (s : CustomTokenSpec) (x : Nat := 0) : Option CardDef :=
       keywords := s.keywords
       isToken := true
     }
-    some (s.abilities.foldl applyTokenAbility base)
+    some (s.abilities.foldl applyGrantedAbility base)
   | _, _ => none
 
 /-- Realize a `CustomTokenSpec` into its printed `CardDef` in `(g, env)`
@@ -1044,7 +976,7 @@ def resolveCustomTokenPrinted (g : Game) (env : EvalEnv) (s : CustomTokenSpec) :
     keywords := s.keywords
     isToken := true
   }
-  s.abilities.foldl applyTokenAbility base
+  s.abilities.foldl applyGrantedAbility base
 
 /-- Apply a CR 707.9 copy exception to a copied `CardDef`. -/
 def applyCopyModification (c : CardDef) (m : CopyModification) : CardDef :=
@@ -1071,7 +1003,7 @@ def applyCopyModification (c : CardDef) (m : CopyModification) : CardDef :=
   | .addKeywords kw =>
     { c with keywords := KeywordAbility.merge c.keywords kw }
   | .addAbilities abs =>
-    abs.foldl applyTokenAbility c
+    abs.foldl applyGrantedAbility c
 
 /-- Build a `CopyTokenContext` from effect resolution references. -/
 def copyTokenContextOf (g : Game) (sourceId : Option ObjectId := none)

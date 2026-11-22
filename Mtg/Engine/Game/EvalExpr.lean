@@ -17,23 +17,6 @@ Supports both:
 
 namespace Mtg.Engine
 
-/-- Post-replacement outcome summary of a single bound instruction step
-(CR 608.2c / 614.6). Populated from `EventCause.oneShotEffectId?`-filtered
-`RulesEvent` slices in Phases 8–9 and already queryable by `EvalExpr`. -/
-structure StepOutcome where
-  objects : Array ObjectId := #[]
-  players : Array PlayerId := #[]
-  movedCount : Nat := 0
-  createdCount : Nat := 0
-  damageDealt : Nat := 0
-  excessDamage : Nat := 0
-  lifeChanged : Int := 0
-  countersChanged : Int := 0
-  sumPower : Int := 0
-  chosenNumber : Int := 0
-  succeeded : Bool := false
-deriving Repr, Inhabited, BEq
-
 /-- Read-only evaluation environment for pure expression queries over
 `(Game, EvalEnv)` (CR 109.3 / 109.5 / 400.7 / 603.10 / 608.2h). -/
 structure EvalEnv where
@@ -47,12 +30,18 @@ structure EvalEnv where
   targetSlots : Array (Array Target) := #[]
   /-- Object that caused a trigger ("that creature" / "it"). -/
   triggerSubjectId : Option ObjectId := none
+  /-- All objects that caused a batched trigger (CR 700.1 `oncePerBatch`). -/
+  triggerSubjectIds : Array ObjectId := #[]
   /-- Frozen LKI snapshot of the trigger subject when available (CR 603.10 / 608.2h). -/
   triggerSubjectSnapshot : Option EventObject := none
   /-- Named player roles carried by a triggering event. -/
   triggerPlayers : Array (TriggerPlayerRole × PlayerId) := #[]
   /-- Announced value of `{X}` (CR 107.3a). -/
   chosenX : Nat := 0
+  /-- Numeric amount carried by a triggering/cost event (`ValueExpr.eventAmount`). -/
+  eventAmount : Int := 0
+  /-- Explicit objects paid as a cost (`ObjectExpr.costPaidObjects`). -/
+  costPaidObjects : Array ObjectId := #[]
   /-- Lexical bindings from earlier bound steps (`Instruction.bind`, CR 608.2c / 614.6). -/
   stepEnv : Array (VarId × StepOutcome) := #[]
   /-- Optional pre-event `GameSnapshot` for CR 603.10 look-back evaluation.
@@ -81,6 +70,24 @@ def ofCopyTokenContext (controller : PlayerId := ⟨0⟩) (chosenX : Nat := 0)
       | none => #[]
     triggerSubjectId := copyCtx.triggerSubjectId
     chosenX }
+
+/-- Construct an `EvalEnv` from a live `Game` and unified interpreter context `InterpCtx`,
+populating `stepEnv` from `g.currentStepEnv`. -/
+def ofInterpCtx (g : Game) (ctx : InterpCtx) : EvalEnv :=
+  let slots : Array (Array Target) :=
+    if !ctx.targetSlots.isEmpty then ctx.targetSlots
+    else ctx.targets.map fun t => #[t]
+  { controller := ctx.controller
+    sourceId := ctx.sourceId
+    sourceSnapshot := ctx.sourceSnapshot
+    targetSlots := slots
+    triggerSubjectId := ctx.triggerSubjectId
+    triggerSubjectIds := ctx.triggerSubjectIds
+    triggerSubjectSnapshot := ctx.triggerSubjectSnapshot
+    triggerPlayers := ctx.triggerPlayers
+    chosenX := ctx.chosenX
+    eventAmount := ctx.lastKnownPower.getD (Int.ofNat ctx.chosenX)
+    stepEnv := g.currentStepEnv }
 
 /-- Look up a bound `StepOutcome` by `VarId`. -/
 def stepOutcome? (env : EvalEnv) (v : VarId) : Option StepOutcome :=
@@ -186,12 +193,15 @@ def resolveRefViews (g : Game) (env : EvalEnv) (ref : ObjectRef) : Array ObjectV
       | none => #[]
     | none => #[]
   | .triggerSubject =>
-    match env.triggerSubjectId with
-    | some sid =>
-      match resolveObjectView? g env sid with
-      | some v => #[v]
+    if !env.triggerSubjectIds.isEmpty then
+      env.triggerSubjectIds.filterMap (resolveObjectView? g env)
+    else
+      match env.triggerSubjectId with
+      | some sid =>
+        match resolveObjectView? g env sid with
+        | some v => #[v]
+        | none => match env.triggerSubjectSnapshot with | some eo => #[.lki eo] | none => #[]
       | none => match env.triggerSubjectSnapshot with | some eo => #[.lki eo] | none => #[]
-    | none => match env.triggerSubjectSnapshot with | some eo => #[.lki eo] | none => #[]
   | .stepVar v =>
     match env.stepOutcome? v with
     | some out => out.objects.filterMap (resolveObjectView? g env)
@@ -211,9 +221,11 @@ def resolveRefIds (g : Game) (env : EvalEnv) (ref : ObjectRef) : Array ObjectId 
   | .attachedHost =>
     (resolveRefViews g env .attachedHost).filterMap ObjectView.id?
   | .triggerSubject =>
-    match env.triggerSubjectId with
-    | some id => #[id]
-    | none => match env.triggerSubjectSnapshot.bind (·.id) with | some id => #[id] | none => #[]
+    if !env.triggerSubjectIds.isEmpty then env.triggerSubjectIds
+    else
+      match env.triggerSubjectId with
+      | some id => #[id]
+      | none => match env.triggerSubjectSnapshot.bind (·.id) with | some id => #[id] | none => #[]
   | .stepVar v =>
     (env.stepOutcome? v).map (·.objects) |>.getD #[]
 
@@ -361,6 +373,10 @@ def viewChosenName? : ObjectView → Option String
 def viewChosenOdd? : ObjectView → Option Bool
   | .live o => o.status.chosenOdd
   | .lki eo => eo.chosenOdd
+
+def viewChosenAnchor? : ObjectView → Option String
+  | .live o => o.status.chosenAnchor
+  | .lki eo => eo.chosenAnchor
 
 def viewCounterCount (v : ObjectView) (kind? : Option CounterKind) : Nat :=
   let bag : CounterBag :=
@@ -514,6 +530,39 @@ def evalPlayerMetricSingle (g : Game) (env : EvalEnv) (m : PlayerMetric) (p : Pl
   | .landsPlayedThisTurn => Int.ofNat (GameEvent.landsPlayed g.events st.turnNumber p)
   | .spellsCastThisTurn => Int.ofNat (GameEvent.spellsCast g.events st.turnNumber p)
   | .cardsDrawnThisTurn => Int.ofNat (GameEvent.draws g.events st.turnNumber p)
+  | .cardsDiscardedThisTurn =>
+    Int.ofNat (g.events.foldl (fun n e =>
+      if e.turn == st.turnNumber then
+        match e.change with
+        | .rules (.zone (.moved _ _ (.hand q) _ .discard _ _ _)) => if q == p then n + 1 else n
+        | _ => n
+      else n) 0)
+  | .cardsMilledThisTurn =>
+    Int.ofNat (g.events.foldl (fun n e =>
+      if e.turn == st.turnNumber then
+        match e.change with
+        | .rules (.zone (.moved _ _ (.library q) _ .mill _ _ _)) => if q == p then n + 1 else n
+        | _ => n
+      else n) 0)
+  | .otherSpellsManaValueThisTurn =>
+    let total := g.events.foldl (fun n e =>
+      if e.turn == st.turnNumber then
+        match e.change with
+        | .rules (.cast (.spellCast spellSnap q _)) =>
+          if q == p then n + spellSnap.manaValue else n
+        | _ => n
+      else n) 0
+    let selfSpellId? :=
+      g.resolvingSpell.orElse (fun _ => env.sourceId.map (GameEvent.stackSpellIdOf g.events))
+    let own :=
+      match selfSpellId?.bind st.findObject? with
+      | some spell =>
+        if spell.zone == .stack && !GameEvent.isUncastStackCopy g.events spell.id &&
+            st.controllerOf spell == some p then
+          st.objectManaValue spell
+        else 0
+      | none => 0
+    Int.ofNat (total - own)
   | .lifeGainedThisTurn => Int.ofNat (GameEvent.lifeGained g.events st.turnNumber p)
   | .lifeLostThisTurn => Int.ofNat (GameEvent.lifeLost g.events st.turnNumber p)
   | .unspentMana => Int.ofNat pl.manaPool.total
@@ -799,6 +848,7 @@ partial def evalPlayerPred (g : Game) (env : EvalEnv) (p : PlayerId) (pred : Pla
       match env.triggerPlayers.find? (·.1 == .actor) with
       | some (_, tp) => p == tp
       | none => true
+    | .matchesExpr who => (evalPlayer g env who).contains p
 
 /-- Whether living player `p` satisfies `pf` under `env`. -/
 partial def matchesPlayerFilter (g : Game) (env : EvalEnv) (pf : PlayerFilter) (p : PlayerId) : Bool :=
@@ -850,6 +900,13 @@ partial def evalPlayer (g : Game) (env : EvalEnv) (expr : PlayerExpr) : Array Pl
           | none => acc) #[]
       | .ownerOfSubject =>
         (resolveRefViews g env .triggerSubject).foldl (fun acc v => pushUnique acc v.owner) #[]
+      | .giftOpponent =>
+        match env.sourceId.bind (GameEvent.giftPromisedTo? g.events) with
+        | some p => if st.stillInGame p then #[p] else #[]
+        | none =>
+          match st.proposedSpell.bind (·.giftTo) with
+          | some p => if st.stillInGame p then #[p] else #[]
+          | none => #[]
       | _ => #[]
   | .stepPlayers v =>
     (env.stepOutcome? v).map (·.players) |>.getD #[]
@@ -916,6 +973,10 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
     match (sourceView? g env).bind viewChosenSubtype? with
     | some sub => viewHasSubtype st v sub
     | none => false
+  | .hasSubtype (.fromStep sv) =>
+    match (env.stepOutcome? sv).bind (·.chosenSubtype?) with
+    | some sub => viewHasSubtype st v sub
+    | none => false
   | .hasColor (.literal c) => (viewColors st v).contains c
   | .hasColor .chosenOnSource =>
     match (sourceView? g env).bind viewChosenColor? with
@@ -948,6 +1009,10 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
       | .even => !isOdd
       | .chosenOnSource =>
         match (sourceView? g env).bind viewChosenOdd? with
+        | some wantOdd => isOdd == wantOdd
+        | none => false
+      | .fromStep sv =>
+        match (env.stepOutcome? sv).bind (·.chosenParity?) with
         | some wantOdd => isOdd == wantOdd
         | none => false
   | .isToken want => viewIsToken v == want
@@ -1142,6 +1207,18 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
                    match eo.controller with
                    | some c => ps.contains c
                    | none => true)
+  | .putIntoGraveyardFromBattlefieldThisTurn =>
+    match v.id? with
+    | none => false
+    | some oid =>
+      g.events.any fun e =>
+        e.turn == st.turnNumber &&
+          match e.change with
+          | .rules (.zone (.moved _ after .battlefield (.graveyard _) _ _ _ _)) =>
+            after.id == some oid
+          | _ => false
+  | .chosenAnchorIs anchor =>
+    viewChosenAnchor? v == some anchor
 
 /-- Evaluate an `ObjectExpr` to an ordered array of `ObjectView`s (live or LKI). -/
 partial def evalObjects (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Array ObjectView :=
@@ -1233,6 +1310,45 @@ partial def evalObjects (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Array O
       match v.id? with
       | some oid => !rIds.contains oid
       | none => true
+  | .allTargets =>
+    dedupViews (env.targetSlots.foldl (fun acc slot =>
+      slot.foldl (fun a t =>
+        match t with
+        | .permanent oid | .card oid =>
+          match resolveObjectView? g env oid with
+          | some v => a.push v
+          | none => a
+        | .player _ => a) acc) #[])
+  | .linkedExile srcExpr =>
+    let srcs := evalObjects g env srcExpr
+    dedupViews (srcs.foldl (fun acc sv =>
+      match sv.id? with
+      | none => acc
+      | some sid =>
+        (st.allLinkedExilesOf sid).foldl (fun a eid =>
+          match st.findObject? eid with
+          | some eo => if eo.zone == .exile then a.push (.live eo) else a
+          | none => a) acc) #[])
+  | .costPaidObjects =>
+    if !env.costPaidObjects.isEmpty then
+      dedupViews (env.costPaidObjects.filterMap (resolveObjectView? g env))
+    else
+      match env.sourceId with
+      | none => #[]
+      | some sid =>
+        let spellId := GameEvent.stackSpellIdOf g.events sid
+        let ids : Array ObjectId := g.events.foldl (fun acc e =>
+          match e.cause?, e.change with
+          | some (.costPayment _ _ (some forObj)), .rules (.zone (.moved before after ..)) =>
+            if forObj == sid || forObj == spellId then
+              match after.id.orElse (fun _ => before.id) with
+              | some oid => pushUnique acc oid
+              | none => acc
+            else acc
+          | _, _ => acc) #[]
+        dedupViews (ids.filterMap (resolveObjectView? g env))
+  | .filter inner pred =>
+    (evalObjects g env inner).filter (fun v => evalObjectPred g env v pred)
 
 /-- Evaluate a `ValueExpr` to an `Int` (CR 107.1–2 / 608.2h). -/
 partial def evalValue (g : Game) (env : EvalEnv) (expr : ValueExpr) : Int :=
@@ -1240,6 +1356,7 @@ partial def evalValue (g : Game) (env : EvalEnv) (expr : ValueExpr) : Int :=
   match expr with
   | .const n => n
   | .chosenX => Int.ofNat env.chosenX
+  | .eventAmount => env.eventAmount
   | .objectStat kind objExpr =>
     match (evalObjects g env objExpr)[0]? with
     | some v => (viewStat? st v kind).getD 0
@@ -1288,6 +1405,10 @@ partial def evalValue (g : Game) (env : EvalEnv) (expr : ValueExpr) : Int :=
       (viewSubtypes st v).foldl (fun a sub =>
         if cat.matchesSubtype sub then pushUnique a sub else a) acc) #[]
     Int.ofNat seen.size
+  | .colorCountAmong objsExpr =>
+    let views := evalObjects g env objsExpr
+    let mask := views.foldl (fun acc v => ColorSet.union acc (viewColors st v)) ColorSet.empty
+    Int.ofNat mask.count
   | .playerMetric m whoExpr =>
     (evalPlayer g env whoExpr).foldl (fun acc p => acc + evalPlayerMetricSingle g env m p) 0
   | .maxControlled who pred =>
@@ -1532,6 +1653,20 @@ def evalEventHistory (g : Game) (env : EvalEnv) (hp : EventHistoryPred) : Bool :
   | .eventOccurredLastTurn who pat =>
     if turn > 1 then evalEventPatternOnTurn g env (turn - 1) who pat
     else false
+  | .firstResolutionThisTurn =>
+    match env.sourceId with
+    | none => true
+    | some sid =>
+      !g.events.any fun e =>
+        e.turn == turn &&
+          match e.change with
+          | .rules (.stackObject (.resolved _ nth srcId? _)) => nth > 0 && srcId? == some sid
+          | .rules (.player (.optionalOnceActed _ s)) => s == sid
+          | _ => false
+  | .optionalOnceUnusedThisTurn =>
+    match env.sourceId with
+    | none => true
+    | some sid => !(boardState g env).optionalOnceUsedThisTurn sid
 
 /-- Evaluate a pure `Condition` over `(g, env)` (CR 603.4 / 608.2 / 611). -/
 partial def evalCondition (g : Game) (env : EvalEnv) (cond : Condition) : Bool :=

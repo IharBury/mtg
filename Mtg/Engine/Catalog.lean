@@ -36,13 +36,10 @@ rules text. -/
     (additionalCosts : Array AdditionalCostSpec := #[])
     (isToken : Bool := false)
     (colorIndicator : Option ColorSet := none)
-    (chooseOneOrBoth : Bool := false)
-    (chooseTwoIfYouControlSubtype : Option CardSubtype := none)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
     (adventure : Option AdventureFace := none)
-    (chooseBothIfTeamwork : Bool := false)
     (otherFace : Option CardDef := none) : CardDef :=
   let text :=
     formatPrintedCard name manaCost supertypes types subtypes power toughness
@@ -54,13 +51,10 @@ rules text. -/
       spellEffect
       spellModes
       additionalCosts
-      chooseOneOrBoth
-      chooseTwoIfYouControlSubtype
       staticAbilities
       triggeredAbilities
       activatedAbilities
-      adventure
-      chooseBothIfTeamwork }
+      adventure }
   else
     parsed
 
@@ -155,18 +149,12 @@ def forest : CardDef :=
     (spellModes : Array Effect := #[])
     (additionalCosts : Array AdditionalCostSpec := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (chooseOneOrBoth : Bool := false)
-    (chooseTwoIfYouControlSubtype : Option CardSubtype := none)
-    (staticAbilities : Array StaticAbility := #[])
-    (chooseBothIfTeamwork : Bool := false) : CardDef :=
+    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   card name #[cardType] manaCost (oracleText := oracleText)
     (spellEffect := spellEffect) (spellModes := spellModes)
     (additionalCosts := additionalCosts)
     (activatedAbilities := activatedAbilities)
-    (chooseOneOrBoth := chooseOneOrBoth)
-    (chooseTwoIfYouControlSubtype := chooseTwoIfYouControlSubtype)
     (staticAbilities := staticAbilities)
-    (chooseBothIfTeamwork := chooseBothIfTeamwork)
 
 /-- An instant, optionally with a one-shot effect or modal modes. -/
 @[irreducible, noinline] def instant (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -174,18 +162,12 @@ def forest : CardDef :=
     (spellModes : Array Effect := #[])
     (additionalCosts : Array AdditionalCostSpec := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (chooseOneOrBoth : Bool := false)
-    (chooseTwoIfYouControlSubtype : Option CardSubtype := none)
-    (staticAbilities : Array StaticAbility := #[])
-    (chooseBothIfTeamwork : Bool := false) : CardDef :=
+    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   spellCard .instant name manaCost oracleText spellEffect
     (spellModes := spellModes)
     (additionalCosts := additionalCosts)
     (activatedAbilities := activatedAbilities)
-    (chooseOneOrBoth := chooseOneOrBoth)
-    (chooseTwoIfYouControlSubtype := chooseTwoIfYouControlSubtype)
     (staticAbilities := staticAbilities)
-    (chooseBothIfTeamwork := chooseBothIfTeamwork)
 
 /-- A sorcery, optionally with a one-shot effect or modal modes. -/
 @[irreducible, noinline] def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -193,18 +175,12 @@ def forest : CardDef :=
     (spellModes : Array Effect := #[])
     (additionalCosts : Array AdditionalCostSpec := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (chooseOneOrBoth : Bool := false)
-    (chooseTwoIfYouControlSubtype : Option CardSubtype := none)
-    (staticAbilities : Array StaticAbility := #[])
-    (chooseBothIfTeamwork : Bool := false) : CardDef :=
+    (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   spellCard .sorcery name manaCost oracleText spellEffect
     (spellModes := spellModes)
     (additionalCosts := additionalCosts)
     (activatedAbilities := activatedAbilities)
-    (chooseOneOrBoth := chooseOneOrBoth)
-    (chooseTwoIfYouControlSubtype := chooseTwoIfYouControlSubtype)
     (staticAbilities := staticAbilities)
-    (chooseBothIfTeamwork := chooseBothIfTeamwork)
 
 /-- A non-Aura enchantment. -/
 @[irreducible, noinline] def enchantment (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -385,7 +361,7 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (condition? : Option Condition := none)
     (costReductions : Array ActivationCostReduction := #[])
     (tag? : Option ActivationMechanicTag := none)
-    (otherModes : Array Effect := #[]) (payLife : Nat := 0)
+    (extraModes : Array Effect := #[]) (payLife : Nat := 0)
     (discardSource : Bool := false)
     (sacrificeAnotherSubtype : Option CardSubtype := none)
     (sacrificeAnotherCreature : Bool := false)
@@ -407,7 +383,7 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (timing := timing) (activeZones := activeZones)
     (turnLimit? := turnLimit?) (lifetimeLimit? := lifetimeLimit?)
     (condition? := condition?) (costReductions := costReductions) (tag? := tag?)
-    (otherModes := otherModes) (payLife := payLife)
+    (extraModes := extraModes) (payLife := payLife)
     (discardSource := discardSource)
     (sacrificeAnotherSubtype := sacrificeAnotherSubtype)
     (sacrificeAnotherCreature := sacrificeAnotherCreature)
@@ -680,7 +656,7 @@ reconstructed from the colors. -/
 #guard (artifactCreature "Silent Construct" ManaCost.empty #["Construct"] 1 1
   (supertypes := #[.legendary])).hasType .creature
 #guard (gainLifeDualLand "Silent Plaza" .blue .black).entersTappedUnconditionally
-#guard (conditionalDualLand "Silent Keep" .blue .black).activatedAbilities[0]?.bind (·.mana?) ==
+#guard (conditionalDualLand "Silent Keep" .blue .black).activatedAbilities[0]?.bind (·.manaProduction?) ==
   some { spec := .fixedOne .colorless }
 #guard (powerUpAbility (Effect.putPlusOnePlusOneOnSource 1) (ManaCost.ofGeneric 3)).isPowerUp
 #guard (KeywordAbility.mergeAll #[#[Keyword.flying], #[Keyword.trample], #[Keyword.haste]]) ==

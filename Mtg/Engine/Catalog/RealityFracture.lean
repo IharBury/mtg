@@ -3133,7 +3133,7 @@ def realityFractureForest : CardDef :=
 
 #guard realityFractureCards.size == 285
 #guard realityFractureCards.any (fun c =>
-  c.name == "Academic Ascent" && c.empowerJace == some 2)
+  c.name == "Academic Ascent" && c.empowerPlaneswalkerAmount? == some 2)
 #guard realityFractureCards.any (fun c =>
   c.name == "Blossom-Blessed Angel" && c.entersPrepared &&
     c.prepareFace.any (fun a => a.name == "Seed Suture"))

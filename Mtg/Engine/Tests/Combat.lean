@@ -35,9 +35,8 @@ def cratermakerAbility : ActivatedAbility :=
 
 #guard cratermakerAbility.isModal
 #guard cratermakerAbility.cost.sacrificeSource
-#guard cratermakerAbility.effect == Effect.dealDamageToTargetCreature 2
-#guard cratermakerAbility.otherModes ==
-  #[Effect.destroyTargetColorlessNonland]
+#guard cratermakerAbility.allModes ==
+  #[Effect.dealDamageToTargetCreature 2, Effect.destroyTargetColorlessNonland]
 #guard cratermakerReady.canActivate ⟨0⟩ (cratermakerSource cratermakerReady) cratermakerAbility
 #guard !(cratermakerReady.canActivate ⟨1⟩ (cratermakerSource cratermakerReady)
   cratermakerAbility)
