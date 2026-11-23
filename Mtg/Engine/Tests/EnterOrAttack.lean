@@ -6,7 +6,7 @@ import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 
 /-!
-# Enters-or-attacks triggers without `EnterOrAttackLeftover`
+# Unified enters-or-attacks triggers
 
 Super-Adaptoid puts keyword counters for keywords the target has that it
 lacks. Squirrel Girl creates a 1/1 green Squirrel.
@@ -30,19 +30,11 @@ def named (g : Game) (name : String) : GameObject :=
 def squirrels (g : Game) : Nat :=
   (g.battlefield.filter (·.name == "Squirrel")).size
 
-/- The shared enters-or-attacks effects resolve as constructors that do not
-carry `EnterOrAttackLeftover`. The printed sentence stays the Oracle line. -/
-#guard TriggeredAbility.resolution
-    (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords) ==
-  .putCounters .missingKeywordsFromTarget .source
-#guard TriggeredAbility.resolution
-    (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCreateSquirrel) ==
-  .createTokens 0 (.fixed 1) false
-
-#guard toString (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCopyKeywords) ==
-  TriggeredAbility.enterOrAttackSentence .copyKeywords
-#guard toString (TriggeredAbility.onEnterOrAttack Effect.enterOrAttackCreateSquirrel) ==
-  TriggeredAbility.enterOrAttackSentence .createSquirrel
+/- The enters-or-attacks triggers carry unified `Instruction` bodies and keep their Oracle lines. -/
+#guard TriggeredAbility.enterOrAttackCopyKeywords.effect.body == Effect.enterOrAttackCopyKeywords.body
+#guard TriggeredAbility.enterOrAttackCreateSquirrel.effect.body == Effect.enterOrAttackCreateSquirrel.body
+#guard TriggeredAbility.enterOrAttackCopyKeywords.toNotation.contains "another target creature"
+#guard TriggeredAbility.enterOrAttackCreateSquirrel.toNotation.contains "Squirrel"
 
 /- A creature with no extra keywords gives Super-Adaptoid nothing.
 Double strike does not also grant first strike. Targeting itself is illegal.

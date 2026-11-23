@@ -537,8 +537,8 @@ def wasPermanentDestroyed (g : Game) (id : ObjectId) : Bool :=
 
 /-- Destroy each permanent in `remainingIds` sequentially inside an open or
 standalone batch, pausing on `Pending.chooseReplacement` and optionally
-recording `destroyedCountThisWay` (`countNote`), gaining life per destroyed
-permanent (`obGainLifeFor`), or logging `logMsgAfter` once all finish. -/
+gaining life per destroyed permanent (`obGainLifeFor`) or logging `logMsgAfter`
+once all finish. -/
 def destroyPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
     (allCandidates : Array ObjectId := #[])
     (countNote : Bool := false)
@@ -570,12 +570,10 @@ def destroyPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
           return g
     | none => pure ()
   let destroyedCount :=
-    if countNote || obGainLifeFor.isSome then
+    if obGainLifeFor.isSome then
       allCands.foldl (fun acc id =>
         if g.wasPermanentDestroyed id then acc + 1 else acc) 0
     else 0
-  if countNote then
-    g := g.change (.permanentsDestroyedThisWay destroyedCount)
   if let some pid := obGainLifeFor then
     if destroyedCount > 0 then
       g := g.gainLife pid destroyedCount (cause := cause)
@@ -773,6 +771,306 @@ def resumeFlickerLoop (g : Game) (remainingIds : Array ObjectId)
     | .beforeExileBatch =>
       g.flickerPermanents remainingIds (logText := logText) (tapped := tapped)
         (onlyLandTapped := onlyLandTapped) (clearExileFields := clearExileFields) (cause := cause)
+
+/-! ### Reveal, Choice, Proliferate, and Transform Helpers -/
+
+def revealUntilCards (g : Game) (p : PlayerId) (pred : GameObject → Bool) (limit : Nat)
+    (cause : Option EventCause := none) :
+    Game × Array ObjectId × Array ObjectId :=
+  Id.run do
+    let mut g := g
+    let mut hits : Array ObjectId := #[]
+    let mut rest : Array ObjectId := #[]
+    let mut shown : Array ObjectId := #[]
+    let lib := (g.player p).library
+    let mut idx := lib.size
+    while hits.size < limit && idx > 0 do
+      idx := idx - 1
+      let cid := lib[idx]!
+      let card := g.object! cid
+      shown := shown.push cid
+      g := g.logMsg s!"{(g.player p).name} reveals {g.name card}"
+      if pred card then hits := hits.push cid
+      else rest := rest.push cid
+    if !shown.isEmpty then
+      g := g.record (GameEvent.revealed g.turnNumber p shown
+        (cause := some (cause.getD (g.resolvingOrRuleCause p))))
+    return (g, hits, rest)
+
+def putHitsToBattlefield (g : Game) (p : PlayerId) (hits : Array ObjectId) (haste := false)
+    (tapped := false) (cause : Option EventCause := none) : Game :=
+  g.withBatch cause fun g =>
+    g.putToBattlefieldLoop p hits (tapped := tapped) (haste := haste) (cause := cause)
+
+def restBottomCards (g : Game) (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool)
+    (cause : Option EventCause := none) : Game :=
+  if shuffle then g.shuffleThen p .none
+  else if rest.isEmpty then g
+  else
+    g.requestOrderInto rest (.library p)
+      s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
+      (cause := cause)
+
+def proliferateTarget (g : Game) (controller : PlayerId) (targets : Array Target)
+    (sourceId : Option ObjectId := none) : Game :=
+  g.withLegalSpecTarget controller .permanentOrPlayer targets (fun g t =>
+    let cause := some (g.resolvingOrRuleCause controller)
+    g.withBatch cause fun g =>
+      let effCause := g.resolveOptionalCause cause (fallbackCtrl := some controller)
+      match t with
+      | Target.permanent id =>
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield && o.status.hasCounters then
+            let hasPlusOne := o.status.plusOnePlusOne > 0
+            let nonPlusKinds :=
+              o.status.toCounterBag.filterMap (fun (kind, _) =>
+                if kind == .plusOnePlusOne then none else some kind)
+            g.finishProliferateEachKind controller id nonPlusKinds hasPlusOne effCause
+          else g.logMsg s!"{g.name o} has no counters"
+        | none => g.logMsg "The target is no longer legal"
+      | Target.player pid =>
+        let pl := g.player pid
+        let hasPoison := g.teamPoison pid > 0
+        let otherKinds := pl.counters.filterMap fun (k, cnt) =>
+          if k != .poison && cnt > 0 then some k else none
+        if hasPoison || !otherKinds.isEmpty then
+          let g :=
+            if hasPoison then
+              (g.record (GameEvent.poisoned g.turnNumber pid 1 (byPlayer := some controller) (cause := effCause)))
+                |>.logMsg s!"{pl.name} gets a poison counter"
+            else g
+          let g :=
+            otherKinds.foldl (fun g kind =>
+              (g.record (GameEvent.playerCounters g.turnNumber pid kind (.put 1)
+                (byPlayer := some controller) (cause := effCause)))
+                |>.logMsg s!"{pl.name} gets another counter") g
+          g.record (GameEvent.proliferated g.turnNumber controller (players := #[pid]) (cause := effCause))
+        else g.logMsg s!"{pl.name} has no counters"
+      | Target.card _ => g.logMsg "The target is no longer legal") sourceId
+    (some "The target is no longer legal")
+
+private def logChosenCardToHand (g : Game) (p : PlayerId) (id : ObjectId)
+    (owner : PlayerId) (name : String) : Game :=
+  if (g.followMovedToZone? id (· == .hand owner)).isSome then
+    if owner == p then g.logMsg s!"{(g.player p).name} puts {name} into their hand"
+    else g.logMsg s!"{(g.player p).name} puts {name} into {(g.player owner).name}'s hand"
+  else g
+
+def chooseCardsToHandLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
+    (cause : Option EventCause) (pendingCard : Option (ObjectId × PlayerId × String) := none) :
+    Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.chooseCardsToHandLoop p remainingIds cause pendingCard))
+  let mut g := g
+  if let some (cid, owner, name) := pendingCard then
+    g := g.logChosenCardToHand p cid owner name
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | some o =>
+      if isPublicZone o.zone || o.zone == .hand o.owner then
+        let owner := o.owner
+        let name := g.name o
+        let (g', _) := g.move id (.hand owner) none (cause := cause)
+        g := g'
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          return g.chainPendingReplacement
+            (.finishPostStep (.chooseCardsToHandLoop p rem cause (some (id, owner, name))))
+        g := g.logChosenCardToHand p id owner name
+    | none => pure ()
+  return g
+
+@[export mtg_game_finish_choose_cards]
+def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
+    (purpose : CardChoice) (cause : Option EventCause := none) : Game :=
+  let stashed := cause.orElse (fun _ => g.stashedCause.orElse (fun _ => chosen[0]?.bind g.lastMoveCauseOf?))
+  let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
+  let allocIfResolving (g : Game) : Game × Option EventCause :=
+    match g.currentResolvingContext? with
+    | some (src, ctrl) =>
+      let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+      (g, some c)
+    | none => (g, none)
+  match purpose with
+  | .toHand _ =>
+    let (g, cause?) : Game × Option EventCause :=
+      if chosen.isEmpty then (g, none)
+      else
+        match stashed with
+        | some c => (g, some c)
+        | none => allocIfResolving g
+    g.withBatch cause? fun g => g.chooseCardsToHandLoop p chosen cause?
+  | .creaturesToBattlefield =>
+    let valid := chosen.filter fun id =>
+      (g.findObject? id).any (fun o => o.zone == .hand o.owner && g.isCreature o)
+    let (g, cause?) : Game × Option EventCause :=
+      if valid.isEmpty then (g, none)
+      else
+        match stashed with
+        | some c => (g, some c)
+        | none => allocIfResolving g
+    g.withBatch cause? fun g =>
+      g.putToBattlefieldLoop p valid (entryLog := .enters) (cause := cause?)
+  | .landsTappedGainLife life =>
+    let valid := chosen.filter fun id =>
+      (g.findObject? id).any (fun o => g.isLand o && o.zone == .library o.owner)
+    let (g, cause?) : Game × Option EventCause :=
+      if valid.isEmpty then (g, none)
+      else
+        match stashed with
+        | some c => (g, some c)
+        | none => allocIfResolving g
+    let g := g.withBatch cause? fun g =>
+      g.putToBattlefieldLoop p valid (tapped := true) (isLandEnters := true)
+        (entryLog := .entersTapped) (cause := cause?)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishPostStep (.shuffleThenGainLife p life))
+    else
+      g.withContinuationFrame fun g =>
+        (g.requestShuffle p (.gainLife p life)).continueIfShuffled
+  | .keepDestroyRest =>
+    let preBf := g.battlefield
+    let doomed := (preBf.filter (fun o => g.isCreature o && !chosen.contains o.id)).map (·.id)
+    let (g, cause?) : Game × Option EventCause :=
+      if !doomed.isEmpty then
+        match stashed with
+        | some c => (g, some c)
+        | none => allocIfResolving g
+      else (g, none)
+    g.withBatch cause? fun g =>
+      g.destroyPermanentsLoop doomed
+        (logMsgAfter := some "Chosen creatures are kept; the rest are destroyed")
+        (preBattlefield := some preBf) (cause := cause?)
+  | .amassArmy subtype n attach =>
+    match chosen[0]? with
+    | some id => g.finishAmassOn p id subtype n attach (cause := stashed)
+    | none => g.logMsg s!"{(g.player p).name} doesn't choose an Army"
+
+def offerCardChoice (g : Game) (p : PlayerId) (ids : Array ObjectId) (max : Nat)
+    (purpose : CardChoice) (msg : String) (cause : Option EventCause := none) : Game :=
+  if ids.isEmpty || max == 0 then g.finishChooseCards p #[] purpose (cause := cause)
+  else
+    let g := g.beginFraChoice p (.chooseCards ids max purpose) msg
+    match cause with
+    | some c => g.change (.stashedCause (some c))
+    | none => g
+
+def finishMillChooseForHand (g : Game) (p : PlayerId) (preIds : Array ObjectId)
+    (pred : ObjectId → GameObject → Bool) (max : Nat) (mustOne : Bool)
+    (cause : Option EventCause := none) : Game :=
+  let eligible := preIds.filterMap (fun id =>
+    match g.followMilledPublic? id with
+    | some o => if pred id o then some o.id else none
+    | none => none)
+  if eligible.isEmpty then g
+  else if mustOne && eligible.size == 1 then
+    g.finishChooseCards p eligible (.toHand true) (cause := cause)
+  else
+    g.offerCardChoice p eligible max (.toHand mustOne)
+      s!"{(g.player p).name} chooses cards to put into their hand"
+      (cause := cause)
+
+def millThenChooseForHand (g : Game) (p : PlayerId) (n : Nat)
+    (pred : GameObject → Bool) (max : Nat) (mustOne : Bool)
+    (types : Array CardType := #[]) : Game :=
+  let lib := (g.player p).library
+  let count := min n lib.size
+  let tops := (lib.extract (lib.size - count) lib.size).reverse
+  let matchedPreIds := tops.filter (fun id => (g.findObject? id).any pred)
+  let (g, cause?) : Game × Option EventCause :=
+    if n == 0 || lib.isEmpty then (g, none)
+    else
+      match g.currentResolvingContext? with
+      | some (src, ctrl) =>
+        let (g, c) := g.allocDelayedCause (ctrl.orElse (fun _ => some p)) src
+        (g, some c)
+      | none => (g, none)
+  let g := g.mill p n (cause := cause?)
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishMillChooseForHand p tops types matchedPreIds max mustOne false none cause?)
+  else
+    g.finishMillChooseForHand p tops (fun _ o => pred o) max mustOne (cause := cause?)
+
+@[export mtg_game_sequence_all_targets_illegal]
+def sequenceAllTargetsIllegal (g : Game) (controller : PlayerId) (effect : Effect)
+    (targets : Array Target) (sourceId : Option ObjectId := none) : Bool :=
+  let spec := effect.effectiveTargetSpec
+  let stackSelf := g.resolvingAbility.orElse (fun _ => g.resolvingSpell)
+  effect.requiresTarget &&
+    !((effect.allowsZeroTargets || spec.allowsZero) && targets.isEmpty) &&
+    (targets.isEmpty ||
+      targets.all fun t =>
+        spec.slots.all fun slot =>
+          !(g.legalTargetsForSlot controller slot sourceId stackSelf).contains t)
+
+def logIllegalSequenceTargets (g : Game) (targets : Array Target) : Game :=
+  if targets.isEmpty then
+    g.logMsg "The target is no longer legal"
+  else
+    targets.foldl (fun g t => g.illegalAbilityTarget t) g
+
+def offerBottomAnyOrder (g : Game) (p : PlayerId) (ids : Array ObjectId)
+    (cause : Option EventCause := none) : Game :=
+  if !g.stillInGame p then g
+  else
+    let (g, cause) : Game × Option EventCause :=
+      match cause with
+      | some c => (g, some c)
+      | none =>
+        if ids.isEmpty then (g, none)
+        else
+          match g.currentResolvingContext? with
+          | some (src, ctrl) =>
+            let (g, c) := g.allocDelayedCause ctrl src
+            (g, some c)
+          | none => (g, none)
+    if ids.size ≤ 1 then
+      g.moveIdsInOrder ids (.library p) (cause := cause)
+        (log := s!"{(g.player p).name} puts the rest on the bottom of their library")
+    else
+      let g :=
+        g.beginFraChoice p (.orderLibraryBottom ids)
+          s!"{(g.player p).name} puts the rest on the bottom of their library in any order"
+      match cause with
+      | some c => g.change (.stashedCause (some c))
+      | none => g
+
+def finishPlusOneAfterDiscards (g : Game) : Game :=
+  match g.plusOneAfterDiscards with
+  | none => g
+  | some id =>
+    let g := g.change (.plusOneAfterDiscards none)
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
+    | none => g
+
+def transformPermanent (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
+    (cause : Option EventCause := none) : Game :=
+  g.withSourceOnBattlefield sourceId fun g o =>
+    if g.cantTransform o then
+      g.logMsg s!"{g.name o} can't transform (entered back face up at night)"
+    else
+      match (g.baseCard o).otherFace with
+      | none => g.logMsg s!"{g.name o} has no other face"
+      | some face =>
+        let oldName := g.name o
+        let batchCause :=
+          cause.orElse (fun _ =>
+            g.currentResolvingContext?.map fun (s, c) =>
+              .oneShotEffect none (s.orElse (fun _ => some o.id)) (c.orElse (fun _ => some controller)))
+        g.withBatch batchCause fun g =>
+          let fallback := batchCause.getD (.gameRule .spellCast)
+          let pre := g
+          let g := g.record
+            (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
+              (cause := fallback))
+          let g := g.logMsg s!"{oldName} transforms into {face.name}"
+          reconcileControlAfterTransition pre g (cause := some fallback)
 
 end Game
 end Mtg.Engine

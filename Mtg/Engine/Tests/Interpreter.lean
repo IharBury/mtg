@@ -481,5 +481,107 @@ private def basicIsland : CardDef :=
 
   forEachPlayerOk && forEachObjOk && worldsOk && replayOk #[gAsk0, gAsk1, gDone, gObj1, gWDone]
 
+/-! ## 10. Phase 9: Unified Trigger Families, `CostSpec.bindVar?`, & `EvalEnv` Copy-Token Tie Prompting -/
+
+#guard
+  -- 10a. Migrated trigger families (watch, step, death, attack, casting, resource, enterOrAttack,
+  --      modal, reflexive) execute directly via unified `Instruction` in `Game/Interpreter.lean`.
+  let g0 := addPermanent (addPermanent (emptyHand afterDraw p0) bearDef p0 p0) elfDef p1 p1
+  let bearId := (g0.permanentsOf p0)[0]!.id
+  let elfId := (g0.permanentsOf p1)[0]!.id
+  -- Watch trigger: `watchTokensEnterMayDraw` pauses on `.mayResolve`, accept draws 1.
+  let gWatchAsk := g0.applyTriggeredAbility p0 (.onWatch Effect.watchTokensEnterMayDraw) (some bearId)
+  let gWatchYes := mustApply gWatchAsk p0 .accept
+  let watchOk := gWatchAsk.pending == .mayResolve p0 && (gWatchYes.player p0).hand.size == 1
+  -- Step trigger: `stepDrawToTen` draws up to 10 cards via `ValueExpr.binary .max`.
+  let gStep := g0.applyTriggeredAbility p0 (.onStep Effect.stepDrawToTen) (some bearId)
+  let stepOk := (gStep.player p0).hand.size == 10
+  -- Casting trigger: `castingPlusOneEachOther` puts +1/+1 on each other creature you control.
+  let gCast0 := addPermanent g0 elfDef p0 p0
+  let p0ElfId := (gCast0.permanentsOf p0).find? (·.name == elfDef.name) |>.get!.id
+  let gCast1 := gCast0.applyTriggeredAbility p0 (.onCasting Effect.castingPlusOneEachOther) (some bearId)
+  let castingOk :=
+    (gCast1.object! p0ElfId).status.plusOnePlusOne == 1 &&
+    (gCast1.object! bearId).status.plusOnePlusOne == 0
+  -- Resource trigger: `resourceSecondDrawDrain` drains opponent 1 and gains 1.
+  let gRes := g0.applyTriggeredAbility p0 (.onResource Effect.resourceSecondDrawDrain) (some bearId)
+  let resourceOk := (gRes.player p1).life == 19 && (gRes.player p0).life == 21
+  -- Enter-or-attack trigger: `enterOrAttackCreateSquirrel` creates a 1/1 green Squirrel token.
+  let gEoa := g0.applyTriggeredAbility p0 (.onEnterOrAttack Effect.enterOrAttackCreateSquirrel) (some bearId)
+  let eoaOk := (gEoa.permanentsOf p0).any (·.name == "Squirrel")
+  -- Attack trigger: `thisAttackDrawIfPower4` draws when source power >= 4 (not at 2).
+  let gAtkSmall := g0.applyTriggeredAbility p0 (.onThisAttack Effect.thisAttackDrawIfPower4) (some bearId)
+  let gAtkBig := (g0.recordPutCounters bearId .plusOnePlusOne 2).applyTriggeredAbility p0
+    (.onThisAttack Effect.thisAttackDrawIfPower4) (some bearId)
+  let attackOk := (gAtkSmall.player p0).hand.isEmpty && (gAtkBig.player p0).hand.size == 1
+  -- Death trigger: `deathDeathtouchOppSac` opens nontoken sacrifice choice for opponent.
+  let gDeath := g0.applyTriggeredAbility p0 (.onDeath Effect.deathDeathtouchOppSac) (some bearId)
+  let deathOk := match gDeath.pending with | .fraChoice q (.sacrificeNontokenEach _ _) => q == p1 | _ => false
+  -- Modal trigger: `triggerWolfPlusOneOrTreasure` resolves mode 1 (create Treasure token).
+  let gMod0 := g0.change (.pushContinuationFrame { resolvingModes := some #[1] })
+  let gMod1 := gMod0.applyTriggeredAbility p0 .onCombatDamageWolfPlusOneOrTreasure (some bearId)
+  let modalOk := (gMod1.permanentsOf p0).any (·.name == "Treasure")
+  -- Reflexive trigger: `triggerCreateAxe true` creates Axe and queues attach reflexive trigger.
+  let gRef := g0.applyTriggeredAbility p0 .onEnterCreateAxeAttach (some bearId)
+  let reflexiveOk :=
+    (gRef.permanentsOf p0).any (·.name == "Axe") &&
+    match gRef.pending with | .chooseTargets q => q == p0 | _ => false
+  -- Prevent unused binding warning on `elfId` by checking opponent creature untouched.
+  let oppOk := (gCast1.object! elfId).status.plusOnePlusOne == 0
+  watchOk && stepOk && castingOk && resourceOk && eoaOk && attackOk && deathOk &&
+    modalOk && reflexiveOk && oppOk &&
+    replayOk #[gWatchAsk, gWatchYes, gStep, gCast1, gRes, gEoa, gAtkSmall, gAtkBig, gDeath, gMod1, gRef]
+
+#guard
+  -- 10b. `CostSpec.bindVar?` binds cost-paid power into `stepEnv` for an activated ability
+  --      that sacrifices a creature and gains life equal to the sacrificed creature's power.
+  let sacGainCard : CardDef := {
+    name := "Phase9 Sac Altar"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { CostSpec.sacrificeCreature with bindVar? := some ⟨0⟩ }
+      effect := { body := Instruction.gainLife (.stepMetric .sumPower ⟨0⟩) }
+    }]
+  }
+  let bigBear : CardDef := { bearDef with name := "Phase9 Big Bear", power := some 5, toughness := some 5 }
+  let g0 := addPermanent (addPermanent (emptyHand afterDraw p0) sacGainCard p0 p0) bigBear p0 p0
+  let altarId := (g0.permanentsOf p0).find? (·.name == "Phase9 Sac Altar") |>.get!.id
+  let bigId := (g0.permanentsOf p0).find? (·.name == "Phase9 Big Bear") |>.get!.id
+  let gAct := mustApply g0 p0 (.activate altarId 0)
+  let gPaid := mustApply gAct p0 (.choosePermanents #[bigId])
+  let gRes := passBoth gPaid
+  let bindCostOk :=
+    !gRes.battlefield.any (·.id == bigId) &&
+    (gRes.player p0).life == 25 &&
+    replayOk #[gAct, gPaid, gRes]
+
+  -- 10c. `EvalEnv` copy-token tie prompting (`FraChoice.chooseTokenCopyObject`):
+  --      Copying the creature you control with the greatest power when two 2/2 creatures tie
+  --      pauses on `chooseTokenCopyObject` and creates a copy of the player's chosen creature.
+  let bearA : CardDef := { bearDef with name := "Tied Bear Alpha" }
+  let bearB : CardDef := { bearDef with name := "Tied Bear Beta" }
+  let copyGreatest : Effect := {
+    body := Instruction.createTokens
+      (.copyOf (.extremum .max .power
+        (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you]))) #[])
+      (.const 1)
+  }
+  let gTie0 := addPermanent (addPermanent (emptyHand afterDraw p0) bearA p0 p0) bearB p0 p0
+  let idB := (gTie0.permanentsOf p0).find? (·.name == "Tied Bear Beta") |>.get!.id
+  let gTieAsk := gTie0.applyEffect p0 copyGreatest #[]
+  let tieAskOk := match gTieAsk.pending with
+    | .fraChoice q (.chooseTokenCopyObject ids ..) => q == p0 && ids.size == 2
+    | _ => false
+  let gTieDone := mustApply gTieAsk p0 (.choosePermanents #[idB])
+  let betaCount := ((gTieDone.permanentsOf p0).filter (·.name == "Tied Bear Beta")).size
+  let alphaCount := ((gTieDone.permanentsOf p0).filter (·.name == "Tied Bear Alpha")).size
+  let copyTieOk :=
+    tieAskOk && gTieDone.pending == .none &&
+    betaCount == 2 && alphaCount == 1 &&
+    replayOk #[gTieAsk, gTieDone]
+
+  bindCostOk && copyTieOk
+
 end Mtg.Engine.Tests.InterpreterSuite
+
 

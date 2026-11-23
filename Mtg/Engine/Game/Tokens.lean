@@ -987,6 +987,9 @@ def applyCopyModification (c : CardDef) (m : CopyModification) : CardDef :=
       power := some power
       toughness := some toughness
       staticAbilities := c.staticAbilities.filter (!StaticAbility.isPTDefiningCDA ·) }
+  | .addSupertypes sups =>
+    let merged := sups.foldl (fun acc s => if acc.contains s then acc else acc.push s) c.supertypes
+    { c with supertypes := merged }
   | .addTypes types =>
     let merged := types.foldl (fun acc t => if acc.contains t then acc else acc.push t) c.types
     { c with types := merged }
@@ -994,6 +997,13 @@ def applyCopyModification (c : CardDef) (m : CopyModification) : CardDef :=
     let merged := subtypes.foldl (fun acc s =>
       let nm := s.englishName
       if acc.contains nm then acc else acc.push nm) c.subtypes
+    { c with subtypes := merged }
+  | .replaceCreatureSubtypes subtypes =>
+    let kept := c.subtypes.filter fun nm =>
+      !(CardSubtype.ofSubtypes #[nm]).any (·.isCreatureType)
+    let merged := subtypes.foldl (fun acc s =>
+      let nm := s.englishName
+      if acc.contains nm then acc else acc.push nm) kept
     { c with subtypes := merged }
   | .addColors colors =>
     if colors.isColorless then c
@@ -1005,17 +1015,36 @@ def applyCopyModification (c : CardDef) (m : CopyModification) : CardDef :=
   | .addAbilities abs =>
     abs.foldl applyGrantedAbility c
 
-/-- Build a `CopyTokenContext` from effect resolution references. -/
-def copyTokenContextOf (g : Game) (sourceId : Option ObjectId := none)
-    (targets : Array Target := #[]) (triggerSubjectId : Option ObjectId := none) :
-    CopyTokenContext :=
-  let targetId := targets.findSome? fun
-    | Target.permanent id => some id
-    | Target.card id => some id
-    | Target.player _ => none
+/-- Build a serializable `StoredEvalEnv` from effect resolution references
+(CR 707.2 / 707.9 / 111.12). -/
+def storedEvalEnvOf (g : Game) (controller : PlayerId := ⟨0⟩)
+    (sourceId : Option ObjectId := none)
+    (targets : Array Target := #[])
+    (triggerSubjectId : Option ObjectId := none)
+    (chosenX : Nat := 0) : StoredEvalEnv :=
   let subjId := triggerSubjectId.orElse (fun _ =>
     (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId))
-  { sourceId, targetId, triggerSubjectId := subjId }
+  { controller
+    sourceId
+    targetSlots := targets.map fun t => #[t]
+    triggerSubjectId := subjId
+    chosenX
+    stepEnv := g.currentStepEnv }
+
+/-- Hydrate a live `EvalEnv` from a serializable `StoredEvalEnv`, defaulting
+`controller`, `chosenX`, `triggerSubjectId`, and `stepEnv` from the current game
+when unset. -/
+private def hydrateCopyEnv (g : Game) (copyEnv : StoredEvalEnv) (x : Nat)
+    (controller : PlayerId) : EvalEnv :=
+  let effectiveSubjId :=
+    copyEnv.triggerSubjectId.orElse (fun _ =>
+      (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId))
+  let evalCtrl := if copyEnv == {} then controller else copyEnv.controller
+  { copyEnv.toEvalEnv with
+    controller := evalCtrl
+    chosenX := if x > 0 then x else copyEnv.chosenX
+    triggerSubjectId := effectiveSubjId
+    stepEnv := if copyEnv.stepEnv.isEmpty then g.currentStepEnv else copyEnv.stepEnv }
 
 /-- Printed characteristics for a context-independent `TokenSpec` (CR 111).
 Returns `none` for `.copyOf` or dynamic `ValueExpr` P/T specs requiring game state
@@ -1060,13 +1089,9 @@ callers create directly when unique and prompt `controller` to choose when
 multiple objects tie (e.g. tied `ObjectExpr.extremum`). -/
 def resolveCopyTokenCandidates (g : Game) (ref : ObjectExpr)
     (mods : Array CopyModification := #[]) (x : Nat := 0)
-    (copyCtx : CopyTokenContext := {}) (controller : PlayerId := ⟨0⟩) :
+    (copyEnv : StoredEvalEnv := {}) (controller : PlayerId := ⟨0⟩) :
     Array (Option ObjectId × CardDef) :=
-  let effectiveSubjId :=
-    copyCtx.triggerSubjectId.orElse (fun _ =>
-      (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId))
-  let effectiveCopyCtx : CopyTokenContext := { copyCtx with triggerSubjectId := effectiveSubjId }
-  let env : EvalEnv := EvalEnv.ofCopyTokenContext controller x effectiveCopyCtx
+  let env := g.hydrateCopyEnv copyEnv x controller
   let singleWithLki (oid? : Option ObjectId) (preferBfOrStack : Bool) :
       Array (Option ObjectId × CardDef) :=
     let cv? : Option CardDef :=
@@ -1106,19 +1131,15 @@ objects tie and require a player choice (use `resolveCopyTokenCandidates`), when
 the copied object is an instant or sorcery (CR 111.5), or when the resulting
 token's characteristics include instant or sorcery (CR 111.5 / 304.4 / 307.4). -/
 def resolveTokenPrinted? (g : Game) (spec : TokenSpec) (x : Nat := 0)
-    (copyCtx : CopyTokenContext := {}) (controller : PlayerId := ⟨0⟩) : Option CardDef :=
-  let effectiveSubjId :=
-    copyCtx.triggerSubjectId.orElse (fun _ =>
-      (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId))
-  let effectiveCopyCtx : CopyTokenContext := { copyCtx with triggerSubjectId := effectiveSubjId }
-  let env : EvalEnv := EvalEnv.ofCopyTokenContext controller x effectiveCopyCtx
+    (copyEnv : StoredEvalEnv := {}) (controller : PlayerId := ⟨0⟩) : Option CardDef :=
+  let env := g.hydrateCopyEnv copyEnv x controller
   match spec with
   | .predefined p => some (predefinedTokenPrinted p)
   | .custom s =>
     let printed := resolveCustomTokenPrinted g env s
     if printed.isInstantOrSorcery then none else some printed
   | .copyOf ref mods =>
-    let cands := g.resolveCopyTokenCandidates ref mods x effectiveCopyCtx (controller := controller)
+    let cands := g.resolveCopyTokenCandidates ref mods x copyEnv (controller := controller)
     if cands.size == 1 then some cands[0]!.2 else none
 
 /-- Reverse lookup of a `TokenSpec` matching `c` (ignoring `isToken`), if any. -/
@@ -1221,12 +1242,23 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenSpec)
     (attackingTarget : Option AttackTarget := none)
     (resetRecent : Bool := true)
     (cause : Option EventCause := none)
-    (copyCtx : CopyTokenContext := {}) : Game :=
+    (copyEnv : StoredEvalEnv := {})
+    (x : Nat := 0)
+    (extraCounters : CounterBag := #[]) : Game :=
+  let envWithX := if x > 0 then { copyEnv with chosenX := x } else copyEnv
   if let .chooseReplacement .. := g.pending then
     if n == 0 then g
+    else if !extraCounters.isEmpty then
+      match g.resolveTokenPrinted? kind x envWithX (controller := controller) with
+      | some printed =>
+        g.chainPendingReplacement
+          (.createToken controller printed tapped attacking attackingTarget true extraCounters true cause n)
+      | none =>
+        g.chainPendingReplacement
+          (.createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause envWithX)
     else
       g.chainPendingReplacement
-        (.createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause copyCtx)
+        (.createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause envWithX)
   else if !g.stillInGame controller then
     let g := if resetRecent then g.change (.recentTokenIds #[]) else g
     if n == 0 then g
@@ -1237,39 +1269,96 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenSpec)
     else
       match kind with
       | .copyOf ref mods =>
-        let cands := g.resolveCopyTokenCandidates ref mods 0 copyCtx (controller := controller)
+        let cands := g.resolveCopyTokenCandidates ref mods x envWithX (controller := controller)
         if cands.isEmpty then
           g.logMsg "no token is created (CR 111.5 / 111.12)"
         else if cands.size > 1 then
           let ids := cands.filterMap Prod.fst
           if ids.size > 1 then
             g.beginFraChoice controller
-              (.chooseTokenCopyObject ids mods n tapped attacking attackingTarget #[] cause)
+              (.chooseTokenCopyObject ids mods n tapped attacking attackingTarget extraCounters cause envWithX.sourceId)
               s!"{(g.player controller).name} chooses an object to copy"
           else
             let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
             let isAttacking := resolvedTarget.isSome
             (g.createToken controller cands[0]!.2 (tapped := tapped)
               (attacking := isAttacking)
-              (attackingTarget := resolvedTarget) (recordRecent := true) (cause := cause)
+              (attackingTarget := resolvedTarget) (extraCounters := extraCounters)
+              (recordRecent := true) (cause := cause)
               (count := n)).1
         else
           let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
           let isAttacking := resolvedTarget.isSome
           (g.createToken controller cands[0]!.2 (tapped := tapped)
             (attacking := isAttacking)
-            (attackingTarget := resolvedTarget) (recordRecent := true) (cause := cause)
+            (attackingTarget := resolvedTarget) (extraCounters := extraCounters)
+            (recordRecent := true) (cause := cause)
             (count := n)).1
       | _ =>
-        match g.resolveTokenPrinted? kind 0 copyCtx (controller := controller) with
+        match g.resolveTokenPrinted? kind x envWithX (controller := controller) with
         | none => g.logMsg "no token is created (CR 111.5 / 111.12)"
         | some printed =>
           let resolvedTarget := g.resolveEnteringAttackTarget? controller attacking attackingTarget
           let isAttacking := resolvedTarget.isSome
           (g.createToken controller printed (tapped := tapped)
             (attacking := isAttacking)
-            (attackingTarget := resolvedTarget) (recordRecent := true) (cause := cause)
+            (attackingTarget := resolvedTarget) (extraCounters := extraCounters)
+            (recordRecent := true) (cause := cause)
             (count := n)).1
+
+/-- Create one token copy per snapshot in `snapshots` as a single simultaneous
+batched token-creation event (CR 111 / 616.1). -/
+partial def copyNontokenCreaturesStep (g : Game) (p : PlayerId)
+    (snapshots : Array CardDef) (cause : Option EventCause := none) : Game :=
+  if snapshots.isEmpty then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.copyNontokenCreatures p snapshots cause)
+  else if !g.stillInGame p then
+    g.logMsg "no token is created (CR 800.4b)"
+  else
+    let baseCause :=
+      cause.orElse (fun _ =>
+        match g.currentBatch.bind (·.2) with
+        | some bc => some bc
+        | none => g.resolvingBatchCause p)
+    let initialBatches : Array ProposedTokenBatch :=
+      snapshots.map fun printed => {
+        controller := p
+        printed := printed
+        count := 1
+        cause := baseCause
+      }
+    let (batches, applied, choice?) := g.replaceTokenBatchesChoice initialBatches
+    match choice? with
+    | some (chooser, choices) =>
+      g.promptChooseReplacement chooser choices (.copyNontokenCreatures p snapshots baseCause)
+    | none =>
+      let g := g.consumeReplacementOrder applied
+      let expanded := batches.foldl (fun acc b =>
+        Id.run do
+          let mut acc := acc
+          for _ in [0:b.count] do
+            acc := acc.push { b with count := 1 }
+          return acc) #[]
+      if expanded.isEmpty then g
+      else
+        (g.createTokenBatches expanded (recordRecent := true) (cause := baseCause)).1
+
+/-- Create `n` tokens of `k` in a single rules-event batch using `createKindTokens`. -/
+def makeTokenSpecBatched (g : Game) (p : PlayerId) (k : TokenSpec) (n : Nat := 1) (x : Nat := 0)
+    (extraCounters : CounterBag := #[]) (cause : Option EventCause := none)
+    (copyEnv : StoredEvalEnv := {}) : Game :=
+  let envWithX := if x > 0 then { copyEnv with chosenX := x } else copyEnv
+  if let .chooseReplacement .. := g.pending then
+    if n == 0 || !g.stillInGame p then g
+    else g.createKindTokens p k n (cause := cause) (copyEnv := envWithX) (x := x) (extraCounters := extraCounters)
+  else if n == 0 || !g.stillInGame p then g.change (.recentTokenIds #[])
+  else
+    let g := g.change (.recentTokenIds #[])
+    let batchCause := cause.orElse (fun _ => g.resolvingBatchCause p none)
+    (g.withBatchCore batchCause fun g =>
+      g.createKindTokens p k n (resetRecent := false) (cause := cause)
+        (copyEnv := envWithX) (x := x) (extraCounters := extraCounters)).flushQueuedLinkedExileFwd
 
 end Game
 end Mtg.Engine

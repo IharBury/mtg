@@ -287,19 +287,14 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
       | none => g
   | _ => throw "Not time to have a Villain connive"
 
-/-- After paying K'un-Lun's optional cost, draw a card. Inside `mayThen` the
-conditional does the draw, so this records or chains `acceptMayThen` before any
-outer continuation resumes. -/
+/-- After paying an optional sacrifice-artifact-or-discard cost, draw `n` cards
+(when `n > 0`; `n == 0` leaves follow-up work to the unified interpreter). -/
 def finishSacArtifactOrDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  if g.mayThenDrop > 0 then
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement .acceptMayThen
-    else
-      g.changes #[.pending .none, .mayThenResume true]
-  else if let .chooseReplacement .. := g.pending then
+  if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.finishSacArtifactOrDiscardDraw p n)
   else
-    (g.change (.pending .none)).draw p n
+    let g := g.change (.pending .none)
+    if n == 0 then g else g.draw p n
 
 /-- After mana is paid, sacrifice an artifact or creature (CR 601.2h / 602.2b), or sacrifice a creature a resolved trigger requires (CR 608.2d / 701.21). -/
 def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
@@ -389,7 +384,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
         | none =>
           let g :=
             if !paused && !g.over && outerCont?.isNone && g.pending == .none &&
-                g.pendingReplacement.isNone && g.triggerSequenceRest.isNone then
+                g.pendingReplacement.isNone && g.currentInterpWait?.isNone then
               g.receivePriority (g.priorityInstead p)
             else g
           pure (g, false)
@@ -496,16 +491,13 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let some sac := g.findObject? id | throw "no such object"
     if !sac.isOnBattlefield || !g.isArtifact sac || !g.controlledBy sac p then
       throw s!"Can't sacrifice {g.name sac}"
-    let inMayThen := g.mayThenDrop > 0
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac}"
     let g := g.finishSacArtifactOrDiscardDraw p n
     return match outerCont? with
-      | some outer =>
-        if inMayThen then g.change (.pushOuterPendingReplacement outer)
-        else g.chainPendingReplacement outer
+      | some outer => g.chainPendingReplacement outer
       | none => g
   | _ => throw "Not time to sacrifice a permanent"
 

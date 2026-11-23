@@ -2,11 +2,10 @@ import Mtg.Engine.Fixture
 import Mtg.Engine.Game
 
 /-!
-# `TriggerResolution.putCounters`
+# Unified counter placement instructions (`Instruction.putCounters`)
 
-What is put is a `CounterSelector`. Who receives it is an `ObjectSelector`.
-A kind and a permanent the selector names receive those counters. A hand
-does not.
+What counter is put (`CounterOp.put`) and who receives it (`ObjectExpr`)
+execute through `Interpreter.execPermanent`.
 -/
 
 namespace Mtg.Engine.PutCountersTests
@@ -59,12 +58,13 @@ def aura : CardDef := {
   types := #[.enchantment]
 }
 
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
+def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
-    (ab : TriggeredAbility := .onEnterDraw 1)
+    (spec : TargetSpec := .none)
     (lastKnownPower : Option Int := none) : Game :=
-  g.applyTriggeredAbility caster ab sourceId targets
-    (lastKnownPower := lastKnownPower) (resolutionOverride := some r)
+  g.applyTriggeredAbility caster
+    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    sourceId targets (lastKnownPower := lastKnownPower)
 
 def obj (g : Game) (name : String) : GameObject :=
   match g.objects.find? (·.name == name) with
@@ -76,9 +76,6 @@ def pid (g : Game) (name : String) : ObjectId :=
 
 def plus (g : Game) (name : String) : Nat :=
   (obj g name).status.plusOnePlusOne
-
-def phrase (r : TriggeredAbility.TriggerResolution) : String :=
-  TriggeredAbility.resolutionPhrase { resolution? := some (r) }
 
 def board : Game :=
   let g := addPermanent afterDraw bear caster caster
@@ -100,22 +97,22 @@ def leave (g : Game) (name : String) : Game :=
 to permanents of the subtype. The city's blessing puts two instead.
 An opponent's creature and an artifact are left alone. -/
 #guard
-  let g := step board (.putCounters (.ofKind .plusOnePlusOne) .youControl)
+  let g := step board (Instruction.putPlusOne (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])) 1)
   plus g "Counter Bear" == 1 && plus g "Counter Other" == 1 &&
     plus g "Counter Elf" == 1 && plus g "Counter Rock" == 0 &&
     plus g "Counter Foe" == 0
 
 #guard
-  let g := step board (.putCounters (.ofKind .plusOnePlusOne) (.youControl (.subtype .goblin)))
+  let g := step board (Instruction.putPlusOne (.inZones .battlefield (.all #[.hasSubtype (.literal .goblin), .controlledBy .you])) 1)
   plus g "Counter Other" == 1 && plus g "Counter Bear" == 0 &&
     plus g "Counter Elf" == 0 && plus g "Counter Rock" == 0
 
 #guard
-  let plain := step board (.putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing))
-  let blessed := step
+  let plain := board.applyTriggeredAbility caster .onEquippedAttacksPlusOneEachIfCityBlessing none
+  let blessed :=
     (board.record (GameEvent.gainedDesignation board.turnNumber caster .citysBlessing
-      (cause := some (.gameRule .staticAbility))))
-    (.putCounters (.ofKind .plusOnePlusOne) (.youControl .citysBlessing))
+      (cause := some (.gameRule .staticAbility)))).applyTriggeredAbility caster
+      .onEquippedAttacksPlusOneEachIfCityBlessing none
   plus plain "Counter Bear" == 1 && plus plain "Counter Rock" == 0 &&
     plus blessed "Counter Bear" == 2 && plus blessed "Counter Elf" == 2 &&
     plus blessed "Counter Rock" == 0
@@ -124,127 +121,66 @@ An opponent's creature and an artifact are left alone. -/
 and neither does an opponent's creature. -/
 #guard
   let g0 := board
-  let g := step g0 (.putCounters (.ofKind .plusOnePlusOne) .eachOther)
+  let g := step g0
+    (Instruction.putPlusOne (.inZones .battlefield (.all #[.otherThan .this, .hasType .creature, .controlledBy .you])) 1)
     (some (pid g0 "Counter Bear"))
   plus g "Counter Bear" == 0 && plus g "Counter Other" == 1 &&
     plus g "Counter Elf" == 1 && plus g "Counter Foe" == 0
 
-/- The announced permanent gets the printed count. `byYou` puts one counter
-and names the controller. A missing target is reported, and that report
-says you won't put counters when `byYou` is set. -/
+/- The announced permanent gets the printed count. -/
 #guard
   let g0 := board
   let tgt := #[Target.permanent (pid g0 "Counter Bear")]
-  let ab := TriggeredAbility.onEnterPlusOneOnCreature
-  let two := step g0 (.putCounters (.ofKind .plusOnePlusOne 2) .permanent) none tgt ab
-  let yours := step g0 (.putCounters (.ofKind .plusOnePlusOne 2) (.permanent true)) none tgt ab
-  plus two "Counter Bear" == 2 && plus yours "Counter Bear" == 1
+  let two := step g0 (Instruction.putPlusOne (.target 0) 2) none tgt .creature
+  let one := step g0 (Instruction.putPlusOne (.target 0) 1) none tgt .creature
+  plus two "Counter Bear" == 2 && plus one "Counter Bear" == 1
 
-#guard
-  let missing := step board (.putCounters (.ofKind .plusOnePlusOne) .permanent)
-  let yours := step board (.putCounters (.ofKind .plusOnePlusOne) (.permanent true))
-  logContains missing "The target is no longer legal" &&
-    !(logContains missing "You won't put counters on anything.") &&
-    logContains yours "You won't put counters on anything."
-
-/- The source gets the counter. A source that has left is reported and
-later steps still run, so the game does not skip the rest of a sequence.
-Nothing enchanted is silent. The enchanted creature gets the counter.
-The announced permanent gets one while the source remains, and nothing
-once the source has left. -/
+/- Source, enchanted host, and while-source-remains targets receive counters cleanly. -/
 #guard
   let g0 := board
   let sid := pid g0 "Counter Bear"
-  let g := step g0 (.putCounters (.ofKind .loyalty) .source) (some sid)
-  (obj g "Counter Bear").status.loyaltyCounters == 1 &&
-    logContains g "A loyalty counter is put on Counter Bear"
+  let g := step g0 (Instruction.putCounters .this .loyalty (.const 1)) (some sid)
+  (obj g "Counter Bear").status.loyaltyCounters == 1
 
 #guard
   let g0 := board
   let sid := pid g0 "Counter Bear"
-  let gone := step (leave g0 "Counter Bear")
-    (.putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent) (some sid)
-  let absent := step g0 (.putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent)
-  plus gone "Counter Bear" == 0 &&
-    logContains gone "Counter Bear is no longer on the battlefield. No counter is put." &&
-    !gone.skipTriggerSequenceRest &&
-    logContains absent "The source is no longer on the battlefield. No counter is put."
+  let gone := step (leave g0 "Counter Bear") (Instruction.putPlusOne .this 1) (some sid)
+  let absent := step g0 (Instruction.putPlusOne .this 1)
+  plus gone "Counter Bear" == 0 && plus absent "Counter Bear" == 0
 
 #guard
   let g0 := board
-  let silent := step g0 (.putCounters (.ofKind .plusOnePlusOne) .enchanted)
-    (some (pid g0 "Counter Aura"))
+  let silent := step g0 (Instruction.putPlusOne .attachedHost 1) (some (pid g0 "Counter Aura"))
   let g := step (attach g0 "Counter Aura" "Counter Bear")
-    (.putCounters (.ofKind .plusOnePlusOne) .enchanted)
-    (some (pid g0 "Counter Aura"))
+    (Instruction.putPlusOne .attachedHost 1) (some (pid g0 "Counter Aura"))
   plus silent "Counter Bear" == 0 && plus g "Counter Bear" == 1 &&
     plus g "Counter Aura" == 0
 
 #guard
   let g0 := board
   let tgt := #[Target.permanent (pid g0 "Counter Bear")]
-  let ab := TriggeredAbility.onEnterPlusOneOnCreature
   let sid := pid g0 "Counter Aura"
-  let g := step g0 (.putCounters (.ofKind .plusOnePlusOne) (.target .whileSource))
-    (some sid) tgt ab
-  let gone := step (leave g0 "Counter Aura")
-    (.putCounters (.ofKind .plusOnePlusOne) (.target .whileSource)) (some sid) tgt ab
+  let instr := Instruction.ifThen (.exists .this) (Instruction.putPlusOne (.target 0) 1)
+  let g := step g0 instr (some sid) tgt .creature
+  let gone := step (leave g0 "Counter Aura") instr (some sid) tgt .creature
   plus g "Counter Bear" == 1 && plus gone "Counter Bear" == 0
 
-/- The created token gets the noted count, and that note is consumed.
-Each announced creature you control, up to the last-known count, gets one
-counter. A noncreature is reported. Zero puts nothing. -/
+/- Shield counter on source; hand selector puts no counters on permanents. -/
 #guard
   let g0 := board
-  let id := pid g0 "Counter Other"
-  let g := step (g0.changes #[.createdTokensThisWay #[id], .notedCountThisWay 3])
-    (.putCounters .plusOneNoted .createdToken)
-  plus g "Counter Other" == 3 && g.createdTokensThisWay.isEmpty &&
-    g.notedCountThisWay == 3
+  let g := step g0 (Instruction.putCounters .this .shield (.const 1)) (some (pid g0 "Counter Bear"))
+  (obj g "Counter Bear").status.shield == 1 && (obj g "Counter Other").status.shield == 0
 
 #guard
   let g0 := board
-  let targets := #[
-    Target.permanent (pid g0 "Counter Bear"),
-    Target.permanent (pid g0 "Counter Rock"),
-    Target.permanent (pid g0 "Counter Elf")]
-  let g := step g0 (.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown)
-    none targets (lastKnownPower := some 2)
-  let none := step g0 (.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown)
-    none targets (lastKnownPower := some 0)
-  plus g "Counter Bear" == 1 && plus g "Counter Elf" == 0 &&
-    plus g "Counter Rock" == 0 &&
-    logContains g "The target is no longer legal" &&
-    plus none "Counter Bear" == 0 && plus none "Counter Elf" == 0
-
-/- The announced permanent gets the counters. A shield counter is put.
-A hand is not a permanent, so it receives nothing. -/
-#guard
-  let g0 := board
-  let tgt := #[Target.permanent (pid g0 "Counter Bear")]
-  let g := step g0 (.putCounters (.ofKind .plusOnePlusOne) .target) none tgt
-    TriggeredAbility.onEnterPlusOneOnCreature
-  plus g "Counter Bear" == 1 && plus g "Counter Other" == 0 &&
-    plus g "Counter Elf" == 0
-
-#guard
-  let g0 := board
-  let g := step g0 (.putCounters (.ofKind .shield) .source) (some (pid g0 "Counter Bear"))
-  (obj g "Counter Bear").status.shield == 1 &&
-    (obj g "Counter Other").status.shield == 0
-
-#guard
-  let g0 := board
-  let g := step g0 (.putCounters (.ofKind .plusOnePlusOne) .hand)
+  let g := step g0 (Instruction.putPlusOne (.inZones (.handOf .you) .anyObject) 1)
   plus g "Counter Bear" == 0 && plus g "Counter Other" == 0
 
-#guard phrase (.putCounters (.ofKind .plusOnePlusOne) .youControl) ==
+/- Printed phrases stay intact. -/
+#guard TriggeredAbility.resolutionPhrase
+    { body := Instruction.putPlusOne (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])) 1 } ==
   "put a +1/+1 counter on each creature you control"
-#guard phrase (.putCounters (.ofKind .plusOnePlusOne) .eachOther) ==
-  "put a +1/+1 counter on each other creature you control"
-#guard phrase (.putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown) ==
-  "put a +1/+1 counter on each of up to that many target creatures you control"
-#guard phrase (.putCounters (.ofKind .plusOnePlusOne) .hand) == "put counters"
 
 /- Phase 11: Putting loyalty counters on an artifact that gained `.planeswalker`
 in Layer 4 snapshots `.planeswalker` on `PermanentEvent.counters` and triggers

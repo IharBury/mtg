@@ -628,8 +628,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
   let pbbTriggerOnStack := gPbbCast.stack.any (fun se =>
     ((gPbbCast.object! se.objectId).triggeredAbility.map (·.effect.body)) == some (.stack (.copyStackObject .this .chosenX true)))
   -- `.youTargetSomething` on targeted `.abilityActivated`
-  let youTargetTrig : TriggeredAbility :=
-    SharedTrigger.watch .youTargetDrawOnce |>.toTriggeredAbility
+  let youTargetTrig : TriggeredAbility := TriggeredAbility.watchYouTargetDrawOnce
   let targetWatcherDef : CardDef := {
     name := "Phase12 Target Watcher"
     types := #[.enchantment]
@@ -1026,7 +1025,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     Game.replayEvents gLookRev.events == gLookRev
   let lookPostCastBottomOk := lookCastBottomed
   -- (b) Reversing a paused mid-resolution free cast (modal + kicker `{5}` failing `.pay`)
-  --     resumes `triggerSequenceRest` (`gainLife 1`).
+  --     resumes `interpWait?` (`gainLifeFixed 1`).
   let modalKickerDef : CardDef := {
     name := "Phase13 Modal Kicker"
     manaCost := ManaCost.empty
@@ -1040,19 +1039,17 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let gSeqRev :=
     let g := insertObject afterDraw modalKickerDef me (.hand me)
     let rid := ((g.player me).hand.filter (fun id => (g.object! id).name == "Phase13 Modal Kicker"))[0]!
-    let g := (g.change (.pushContinuationFrame {})).change (.triggerSequenceRest (some {
-      controller := me
-      ability := TriggeredAbility.ofPattern .youCastNoncreature "" (Instruction.drawFixed 1)
-      sourceId := none
-      targets := #[]
-      steps := [.gainLife (.fixed 1)]
+    let g := (g.change (.pushContinuationFrame {})).change (.interpWait? (some {
+      ctx := { controller := me }
+      queue := #[Instruction.gainLifeFixed 1]
+      stack := #[]
     }))
     let gPaused := g.castAsPartOfResolution me rid
     let gMode := mustApply gPaused me (.chooseMode 0)
     let gKick := mustApply gMode me (.announceKicker true)
     mustApply gKick me .pay
   let seqContOk :=
-    gSeqRev.triggerSequenceRest.isNone &&
+    gSeqRev.currentInterpWait?.isNone &&
     (gSeqRev.player me).life == 21 &&
     Game.replayEvents gSeqRev.events == gSeqRev
   -- (c) Doom Reigns `.mayCastUpToFromExile`: reversing a paused first exiled cast restores the choice for the second!
@@ -1471,11 +1468,11 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
 
   -- 9. Pre-move `PlayerEvent.revealed` & declined hand-or-library search shuffle.
   let preRevIdx := afterDraw.events.size
-  let (gRevLib, hitId?, _) :=
-    afterDraw.revealUntil me 5 (fun o => o.printed.isLand) #[] (cause := some testCause)
+  let (gRevLib, hits, _) :=
+    afterDraw.revealUntilCards me (fun o => o.printed.isLand) 1 (cause := some testCause)
   let revSlice := gRevLib.events.extract preRevIdx gRevLib.events.size
   let preMoveRevealOk :=
-    hitId?.isSome &&
+    !hits.isEmpty &&
     revSlice.any (fun e => match e.change with | .rules (.player (.revealed p ids)) => p == me && !ids.isEmpty | _ => false) &&
     !revSlice.any (fun e => match e.change with | .rules (.zone _) => true | _ => false) &&
     Game.replayEvents gRevLib.events == gRevLib
@@ -1632,12 +1629,10 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   -- (`beginActivationPayment` / `afterTargetsChosen`) and `chooseCastFromLooked`
   -- (`beginResolutionCastTargets` illegal mode/target, synchronous cast, and decline):
   let mkSeqFrame (g : Game) (gain : Nat) : Game :=
-    (g.change (.pushContinuationFrame {})).change (.triggerSequenceRest (some {
-      controller := me
-      ability := TriggeredAbility.ofPattern .youCastNoncreature "" (Instruction.drawFixed 1)
-      sourceId := none
-      targets := #[]
-      steps := [.gainLife (.fixed gain)]
+    (g.change (.pushContinuationFrame {})).change (.interpWait? (some {
+      ctx := { controller := me }
+      queue := #[Instruction.gainLifeFixed gain]
+      stack := #[]
     }))
   let sacArtEngineDef : CardDef := {
     name := "Phase13 Sac Artifact Engine"
@@ -1656,7 +1651,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     let gMana := mustApply gAct me (.tapForMana trId (.colored .red))
     (mustApply gMana me .pay, trId)
   let actPayRevOk :=
-    gActPayRev.1.triggerSequenceRest.isNone &&
+    gActPayRev.1.currentInterpWait?.isNone &&
     gActPayRev.1.continuations.isEmpty &&
     (gActPayRev.1.player me).life == 24 &&
     (gActPayRev.1.findObject? gActPayRev.2).any (·.isOnBattlefield) &&
@@ -1686,7 +1681,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     let gTapOne := gAct.becomeTapped (gAct.object! tr0) (cause := some testCause)
     mustApply gTapOne me (.target (.player me))
   let actTargetRevOk :=
-    gActTargetRev.triggerSequenceRest.isNone &&
+    gActTargetRev.currentInterpWait?.isNone &&
     gActTargetRev.continuations.isEmpty &&
     (gActTargetRev.player me).life == 24 &&
     gActTargetRev.stack.isEmpty &&
@@ -1723,13 +1718,13 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let gLookDec := mustApply gLookSync0 me .decline
   let lookedContAllOk :=
     lookNoTgtRejected && lookNoModeRejected &&
-    gLookNoTgt.triggerSequenceRest.isNone && gLookNoTgt.continuations.isEmpty &&
+    gLookNoTgt.currentInterpWait?.isNone && gLookNoTgt.continuations.isEmpty &&
     (gLookNoTgt.player me).life == 23 && gLookNoTgt.stack.isEmpty &&
-    gLookNoMode.triggerSequenceRest.isNone && gLookNoMode.continuations.isEmpty &&
+    gLookNoMode.currentInterpWait?.isNone && gLookNoMode.continuations.isEmpty &&
     (gLookNoMode.player me).life == 23 && gLookNoMode.stack.isEmpty &&
-    gLookSync.triggerSequenceRest.isNone && gLookSync.continuations.isEmpty &&
+    gLookSync.currentInterpWait?.isNone && gLookSync.continuations.isEmpty &&
     (gLookSync.player me).life == 23 && gLookSync.stack.size == 1 &&
-    gLookDec.triggerSequenceRest.isNone && gLookDec.continuations.isEmpty &&
+    gLookDec.currentInterpWait?.isNone && gLookDec.continuations.isEmpty &&
     (gLookDec.player me).life == 23 && gLookDec.stack.isEmpty &&
     [gLookNoTgt, gLookNoMode, gLookSync, gLookDec].all (fun g => Game.replayEvents g.events == g)
   let reviewRound2ContOk := actPayRevOk && actTargetRevOk && lookedContAllOk
@@ -1815,7 +1810,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let paidActStates := [gFreeActPaid, gManaActPaid, gCostPicksPaid, gSacOtherPaid, gCrewPaid]
   let reviewRound3ContOk :=
     paidActStates.all (fun g =>
-      g.triggerSequenceRest.isNone &&
+      g.currentInterpWait?.isNone &&
       g.continuations.isEmpty &&
       (g.player me).life == 24 &&
       g.stack.size == 1 &&
@@ -1827,7 +1822,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   -- Activation and spell costs that pause on `Pending.chooseReplacement` chain
   -- `.receivePriority caster` outside open continuations (checking SBAs, putting
   -- waiting triggers on the stack, and preserving non-active activator/caster
-  -- priority per CR 117.3c) and chain `.finishFraChoice` when `triggerSequenceRest`,
+  -- priority per CR 117.3c) and chain `.finishFraChoice` when `interpWait?`,
   -- `pendingMayCastFromExile`, or an outer `pendingReplacement` is open:
   let headHuntDef : CardDef :=
     { bear with name := "Phase13 Head Hunt", staticAbilities := #[.exileOppDeathCreateWolf] }
@@ -1894,7 +1889,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     (gOppSpellRepDone.findObject? oppSpellZeroId).all (!·.isOnBattlefield) &&
     Game.replayEvents gOppSpellRepPaused.events == gOppSpellRepPaused &&
     Game.replayEvents gOppSpellRepDone.events == gOppSpellRepDone
-  -- (c) Doom Reigns `.mayCastUpToFromExile` + `triggerSequenceRest` across a spell
+  -- (c) Doom Reigns `.mayCastUpToFromExile` + `interpWait?` across a spell
   -- sacrifice cost that pauses on `Pending.chooseReplacement`:
   let (gQueueSpellPaused, gQueueSpellDone) :=
     let g := addPermanent (addPermanent afterDraw bear me me) headHuntDef opp opp
@@ -1916,14 +1911,14 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     (match gQueueSpellPaused.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
     gQueueSpellDone.pending == .none &&
     gQueueSpellDone.pendingMayCastFromExile.isNone &&
-    gQueueSpellDone.triggerSequenceRest.isNone &&
+    gQueueSpellDone.currentInterpWait?.isNone &&
     gQueueSpellDone.continuations.isEmpty &&
     gQueueSpellDone.waitingTriggers.isEmpty &&
     (gQueueSpellDone.player me).life == 24 &&
     gQueueSpellDone.stack.size == 3 &&
     Game.replayEvents gQueueSpellPaused.events == gQueueSpellPaused &&
     Game.replayEvents gQueueSpellDone.events == gQueueSpellDone
-  -- (d) Activation with `.costPicks` (`sacArtEngineDef`) while both `triggerSequenceRest`
+  -- (d) Activation with `.costPicks` (`sacArtEngineDef`) while both `interpWait?`
   -- and an outer `pendingReplacement` are open, and the sacrificed artifact creature
   -- pauses on `Pending.chooseReplacement`:
   let artBearDef : CardDef :=
@@ -1946,7 +1941,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let actOuterRepOk :=
     (match gActOuterPaused.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
     gActOuterDone.pending == .none &&
-    gActOuterDone.triggerSequenceRest.isNone &&
+    gActOuterDone.currentInterpWait?.isNone &&
     gActOuterDone.continuations.isEmpty &&
     gActOuterDone.waitingTriggers.isEmpty &&
     (gActOuterDone.player me).life == 24 &&
@@ -2737,7 +2732,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let g0 := addPermanent (addPermanent afterDraw planDef14 me me) bear opp opp
     let planId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Phase14 Plan"))[0]!.id
     let bId := (g0.battlefield.filter (fun (o : GameObject) => o.name == "Event Bear" && o.controller == some opp))[0]!.id
-    let g1 := mustApply (g0.queueModeledReflexive me (some planId) .divideSevenDamage) me
+    let g1 := mustApply (g0.applyTriggeredAbility me .onFourthPlanDividedDamage (some planId)) me
       (.divideDamage #[(Target.permanent bId, 7)])
     let (g2, _) := g1.move bId .exile none (cause := some testCause)
     let preRes := g2.events.size
@@ -2960,13 +2955,15 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let g0 := g0.record (GameEvent.triggerPutOnStack g0.turnNumber abObjId (g0.snapshot (g0.object! srcId)) me
       (spec := { sourceId := some srcId }))
     let g0 := g0.change (.pushContinuationFrame { resolvingAbility := some abObjId })
-    let gP1 := g0.applyTriggeredAbility me (.onEnterDraw 1) (some srcId) #[] #[] none none "Hero"
-      (some (.may (.pay CostSpec.sacrificeAnotherCreature) (.draw (.fixed 1)) .ifYouDo))
+    let gP1 := g0.applyTriggeredAbility me
+      (TriggeredAbility.mkTrigger .thisEnters {
+        body := Instruction.may .you (some CostSpec.sacrificeAnotherCreature) (Instruction.drawFixed 1)
+      }) (some srcId)
     let gP2 := mustApply gP1 me (.choosePermanents #[vicId])
     let pickFinV : ReplacementId := { kind := .finalityCounterExile, object := some vicId }
     let gDone := mustApply gP2 me (.chooseReplacement pickFinV)
     let ok :=
-      (match gP1.pending with | .fraChoice p (.maySacrificeAnotherCreatureForPower _) => p == me | _ => false) &&
+      (match gP1.pending with | .fraChoice p (.mayPayPickThen .sacrificeAnotherCreature ..) => p == me | _ => false) &&
       (gP1.player me).hand.size == handPre &&
       (match gP2.pending with | .chooseReplacement p cs => p == me && cs.contains pickFinV | _ => false) &&
       (gP2.player me).hand.size == handPre &&
@@ -3278,7 +3275,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     name := "Phase15 Batch Damage Watcher"
     manaCost := ManaCost.empty
     types := #[.enchantment]
-    triggeredAbilities := #[SharedTrigger.watch .sheHulkRedirectOnce |>.toTriggeredAbility]
+    triggeredAbilities := #[TriggeredAbility.watchSheHulkRedirectOnce]
   }
   -- 7a. CR 510.4: first-strike attacker deals 2 in FS step; granting `Event Bear` first strike AFTER FS step does NOT
   --     exclude `Event Bear` from regular combat damage, while granting `FS Bear` double strike AFTER FS step lets `FS Bear`

@@ -48,7 +48,7 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     name := "P51i1 TgtDiesGerm"
     triggeredAbilities := #[
       TriggeredAbility.mkTrigger .thisDies
-        { targeting := .of .player, resolution? := some (.gainLife (.fixed 1)), phrase := "Target player gains 1 life." }
+        { targeting := .of .player, body := Instruction.gainLifeFixed 1 (.target 0), phrase := "Target player gains 1 life." }
     ]
   }
   let gZeroLifeWithTgtTrig := addPermanent gZeroLife tgtDiesZeroDef p2 p2
@@ -253,24 +253,24 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     | .ok g' => g'
     | .error e => panic! e
 
-  let gUnlessPaysBase :=
-    g4.changes #[.pushContinuationFrame {}, .unlessPaysDue true]
-  let gUnlessPaysAllGone :=
+  let gEmptySettleBase :=
+    g4.changes #[.pushContinuationFrame {}, .pendingReplacement (some (.receivePriority p0))]
+  let gEmptySettleAllGone :=
     #[p0, p1, p2, p3].foldl
       (fun acc p => acc.record (GameEvent.playerLeftGame acc.turnNumber p))
-      gUnlessPaysBase
-  let unlessPaysSettlesOk :=
-    !gUnlessPaysAllGone.over &&
-    gUnlessPaysAllGone.livingPlayers.isEmpty &&
-    gUnlessPaysBase.continuationSettlesControlFlow false (.restorePending .none false) &&
-    gUnlessPaysAllGone.continuationSettlesControlFlow false (.restorePending .none false) &&
-    gUnlessPaysAllGone.continuationSettlesControlFlow false
+      gEmptySettleBase
+  let emptySettlesOk :=
+    !gEmptySettleAllGone.over &&
+    gEmptySettleAllGone.livingPlayers.isEmpty &&
+    gEmptySettleBase.continuationSettlesControlFlow false (.restorePending .none false) &&
+    !gEmptySettleAllGone.continuationSettlesControlFlow false (.restorePending .none false) &&
+    !gEmptySettleAllGone.continuationSettlesControlFlow false
       (.restorePending (.discardForAdditionalCost p0) false)
 
   let item1bOk :=
     mustHold51i1 "1b_anyContinuationSettlesControlFlowGuards"
       (settlesWithoutGrant &&
-       unlessPaysSettlesOk &&
+       emptySettlesOk &&
        gAfterFagp.pendingReplacement == gSettlingPaused.pendingReplacement &&
        gAfterFfc.pendingReplacement == gSettlingPaused.pendingReplacement &&
        gAfterChooseMode.pending == .declareAttackers &&
@@ -285,7 +285,7 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     (replayOk51i1 #[
       gRecvAfterSba, gRecvTgtAfterSba, gRecvOrderAfterSba,
       gCleanupAfterKeep, gTwoStack1, gTopLoseViaPass, gFcGrantsNoneProbe,
-      gAfterFagp, gAfterFfc, gAfterChooseMode, gAfterManaAct, gUnlessPaysAllGone ])
+      gAfterFagp, gAfterFfc, gAfterChooseMode, gAfterManaAct, gEmptySettleAllGone ])
 
 end Phase51Item1EventAlignment
 

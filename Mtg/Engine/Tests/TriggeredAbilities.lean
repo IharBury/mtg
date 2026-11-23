@@ -279,35 +279,35 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
 #guard
   let onManaAddMana : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.activateAbility .any .anyObject .manaAbility)
-      { resolution? := some (.addMana #[.colored .green] (.fixed 1)) }
+      { body := Instruction.addSimpleMana #[.colored .green] }
   let onManaAddedPool : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.playerAction .you .manaAdded)
-      { resolution? := some (.addMana #[.colored .red] (.fixed 1)) }
+      { body := Instruction.addSimpleMana #[.colored .red] }
   -- CR 605.1b has NO library-movement exclusion (unlike CR 605.1a):
   let onManaAddAndDraw : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.playerAction .you .manaAdded)
-      { resolution? := some (.sequence [.addMana #[.colored .blue] (.fixed 1), .draw (.fixed 1) .you]) }
+      { body := .seq #[Instruction.addSimpleMana #[.colored .blue], Instruction.drawFixed 1] }
   -- Fails criterion 1 (requires target):
   let targetedManaTrigger : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.playerAction .you .manaAdded)
-      { targeting := .of .creature, resolution? := some (.addMana #[.colored .green] (.fixed 1)) }
+      { targeting := .of .creature, body := Instruction.addSimpleMana #[.colored .green] }
   -- Fails criterion 2 (does not trigger from mana ability or mana added):
   let etbAddMana : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisEnters
-      { resolution? := some (.addMana #[.colored .green] (.fixed 1)) }
+      { body := Instruction.addSimpleMana #[.colored .green] }
   -- Fails criterion 3 (cannot add mana):
   let onManaGainLife : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.playerAction .you .manaAdded) (Effect.gainLife 1)
   -- Modal where one mode targets fails criterion 1:
   let modalTargetedMana : TriggeredAbility :=
     TriggeredAbility.mkModal (.playerAction .you .manaAdded) #[
-      { resolution? := some (.addMana #[.colored .green] (.fixed 1)) },
-      { targeting := .of .creature, resolution? := some (.tap .target) }
+      { body := Instruction.addSimpleMana #[.colored .green] },
+      { targeting := .of .creature, body := Instruction.tap (.target 0) }
     ]
   -- Modal where no mode targets and at least one adds mana succeeds:
   let modalUntargetedMana : TriggeredAbility :=
     TriggeredAbility.mkModal (.playerAction .you .manaAdded) #[
-      { resolution? := some (.addMana #[.colored .green] (.fixed 1)) },
+      { body := Instruction.addSimpleMana #[.colored .green] },
       Effect.gainLife 1
     ]
   onManaAddMana.isManaAbility &&
@@ -431,13 +431,13 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
 #guard
   let etbModal : TriggeredAbility :=
     TriggeredAbility.mkModal .thisEnters #[
-      { resolution? := some (.gainLife (.fixed 3)), phrase := "You gain 3 life." },
-      { resolution? := some (.draw (.fixed 1) .you), phrase := "Draw a card." }
+      { body := Instruction.gainLifeFixed 3, phrase := "You gain 3 life." },
+      { body := Instruction.drawFixed 1, phrase := "Draw a card." }
     ] (headerPhrase := "Choose one —")
   let diesModal : TriggeredAbility :=
     TriggeredAbility.mkModal .thisDies #[
-      { resolution? := some (.gainLife (.fixed 5)), phrase := "You gain 5 life." },
-      { resolution? := some (.scry (.fixed 2)), phrase := "Scry 2." }
+      { body := Instruction.gainLifeFixed 5, phrase := "You gain 5 life." },
+      { body := Instruction.scryFixed 2, phrase := "Scry 2." }
     ] (headerPhrase := "Choose one —")
   let dualModalCard := mkCreature "Dual Modal Oracle" #["Sphinx"] (triggers := #[etbModal, diesModal])
   let (g0, hObj) := addToZone (quietGame afterDraw) dualModalCard p0 (.hand p0) (some p0)

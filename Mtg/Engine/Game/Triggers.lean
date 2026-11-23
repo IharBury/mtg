@@ -13,55 +13,6 @@ lookups, waiting-trigger batches stacked in APNAP order (CR 603.3b), and
 namespace Mtg.Engine
 namespace Game
 
-/-- Modes of a modal triggered ability (“choose one —”) printed outside
-Reality Fracture (CR 700.2). -/
-def sharedTriggerModes (ab : TriggeredAbility) : Array Effect :=
-  match ab.shared with
-  | .tapOppOrUntapYours =>
-    #[{ targeting := .of .oppCreature, body := .permanent (.setTapped (.target 0) true)
-        phrase := "Tap target creature an opponent controls" },
-      { targeting := .of .creatureYouControl, body := .permanent (.setTapped (.target 0) false)
-        phrase := "Untap target creature you control" }]
-  | .tapOrUntapNonland =>
-    #[{ targeting := .of .nonland, body := .permanent (.setTapped (.target 0) true)
-        phrase := "Tap target nonland permanent" },
-      { targeting := .of .nonland, body := .permanent (.setTapped (.target 0) false)
-        phrase := "Untap target nonland permanent" }]
-  | .wolfPlusOneOrTreasure =>
-    #[{ targeting := .of (.creatureYouControlAnySubtype #[.wolf])
-        body := Instruction.putCounters (.target 0) .plusOnePlusOne (.const 1)
-        phrase := "Put a +1/+1 counter on target Wolf you control" },
-      { body := Instruction.createTokensFixed .treasure 1
-        phrase := "Create a Treasure token" }]
-  | .enter .plusOnesOrReturnArtEnch =>
-    #[{ targeting := .of .creature, allowsZeroTargets := true, maxTargets := 2
-        body := Instruction.putCounters .allTargets .plusOnePlusOne (.const 1)
-        phrase := "Put a +1/+1 counter on each of up to two target creatures" },
-      { targeting := .of .artEnchCardInYourGraveyard
-        body := Instruction.bounce (.target 0)
-        phrase := "Return target artifact or enchantment card from your graveyard to your hand" }]
-  | .watch .nontokenHeroModal =>
-    #[{ body := Instruction.createTokensFixed .soldier11white 1
-        phrase := "Create a 1/1 white Soldier creature token" },
-      { body := Instruction.pumpFixed
-          (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])) 1 1
-        phrase := "Creatures you control get +1/+1 until end of turn" }]
-  | .enter .chooseUpToXModes =>
-    #[{ body := .seq #[Instruction.discard (.const 1) .you, Instruction.drawFixed 1 .you]
-        phrase := "Discard a card, then draw a card" },
-      { targeting := .of .opponent
-        body := Instruction.loseLifeFixed 2 (.target 0)
-        phrase := "Target opponent loses 2 life" },
-      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-        body := Instruction.destroy (.target 0)
-        phrase := "Destroy target token" },
-      { body := .forEach (.eachPlayer .any) ⟨0⟩
-          (.moveZone (.inZones .battlefield (.all #[.hasType .creature, .controlledBy (.ofExpr (.stepPlayers ⟨0⟩))]))
-            .graveyard .sacrifice
-            { choice? := some { chooser := .player (.stepPlayers ⟨0⟩), count := .exact (.const 1) } })
-        phrase := "Each player sacrifices a creature of their choice" }]
-  | _ => #[]
-
 /-- Modes of the triggered ability `obj` (from its source). -/
 def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
   let src? := obj.sourceId.bind g.damageSourceById?
@@ -70,36 +21,42 @@ def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
     | some src => g.evalLayer3 src
     | none => g.evalLayer3 obj
   let raw :=
-    match obj.triggeredAbility with
-    | some ab =>
-      if !ab.modeEffects.isEmpty then ab.modeEffects
-      else sharedTriggerModes ab
-    | none => #[]
+    match obj.abilityEffect.bind (·.modalSpec?) with
+    | some ms => ms.modes
+    | none =>
+      match obj.triggeredAbility with
+      | some ab => ab.modeEffects
+      | none => #[]
   if tcs.isEmpty then raw else raw.map (TextChange.applyEffect tcs)
 
 /-- Individual mode effects for Hawkeye's Trick Arrows reflexive trigger (CR 603.3c / 700.2b). -/
 def hawkeyeModeEffects : Array Effect :=
-  #[{ targeting := .of .creature, resolution? := some (.hawkeyeArrows [0])
-      phrase := "Net — Target creature can't block this turn" },
-    { targeting := .of .player, resolution? := some (.hawkeyeArrows [1])
-      phrase := "Explosive — Hawkeye deals 2 damage to target player" },
-    { resolution? := some (.hawkeyeArrows [2])
-      phrase := "Boomerang — Discard a card, then draw a card" }]
+  Effect.hawkeyeModeEffects
 
-/-- Hawkeye's Trick Arrows with the chosen modes, in printed order. -/
+/-- Hawkeye's Trick Arrows with the chosen modes, in printed order, with
+target slots aligned across combined modes. -/
 def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
   let sorted := modes.qsort (· < ·)
-  let spec := sorted.foldl (fun acc m =>
-    if m == 0 then acc.append TargetSpec.creature
-    else if m == 1 then acc.append TargetSpec.player
-    else acc) TargetSpec.none
-  let targeting : EffectTargeting := .of spec
-  let names := sorted.toList.map (fun m =>
-    if m == 0 then "Net — Target creature can't block this turn"
-    else if m == 1 then "Explosive — Hawkeye deals 2 damage to target player"
-    else "Boomerang — Discard a card, then draw a card")
-  { targeting, resolution? := some (.hawkeyeArrows sorted.toList)
-    phrase := String.intercalate ". " names }
+  let (spec, steps, names, _) := sorted.foldl (fun (accSpec, accSteps, accNames, nextSlot) m =>
+    if m == 0 then
+      let body := Instruction.installEffect
+        (.applyContinuous .untilEndOfTurn (.target nextSlot) (.applyRule (.combat (.cantBlock .self none))))
+      (accSpec.append TargetSpec.creature, accSteps.push body,
+       accNames.push "Net — Target creature can't block this turn", nextSlot + 1)
+    else if m == 1 then
+      let body := Instruction.dealDamageFixed (.players (.target nextSlot)) 2
+      (accSpec.append TargetSpec.player, accSteps.push body,
+       accNames.push "Explosive — Hawkeye deals 2 damage to target player", nextSlot + 1)
+    else
+      let body := Instruction.seq #[Instruction.discardFixed 1, Instruction.drawFixed 1]
+      (accSpec, accSteps.push body,
+       accNames.push "Boomerang — Discard a card, then draw a card", nextSlot))
+    (TargetSpec.none, #[], #[], 0)
+  let body :=
+    if steps.isEmpty then .noop
+    else if steps.size == 1 then steps[0]!
+    else .seq steps
+  { targeting := .of spec, body, phrase := String.intercalate ". " names.toList }
 
 /-- Whether `p` may choose this mode of a triggered ability (CR 603.3c / 700.2b / 115.5). -/
 def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
@@ -141,7 +98,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     (eventCause : Option EventCause := none)
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
     (abilityEffectOverride : Option Effect := none)
-    (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
+    (isReflexive : Bool := false) : Game :=
   if !g.stillInGame controller then g
   else
     -- “For each opponent / player, ...”: expand `forEach?` into one slot per matching player (CR 601.2c).
@@ -169,7 +126,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let spec : StackTriggerSpec := {
       triggeredAbility := some ab
       abilityEffect := abilityEffect
-      reflexiveResolution := reflexiveResolution
+      isReflexive := isReflexive || abilityEffectOverride.isSome
       sourceId := srcIdOpt
       abilityName := some s!"{g.name source}'s ability"
       delayedTrigger := delayedTrigger
@@ -188,85 +145,76 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let obj := g.object! newId
     let srcLabel := if srcIdOpt.isNone then source.name else g.name source
     let g := g.logMsg s!"{srcLabel}'s {event} is put on the stack"
-    match obj.abilityEffect.bind (·.resolution?) with
-    | some (Resolution.mshReflexive .trickArrows paid) =>
-      let choosable := hawkeyeModeEffects.filter (g.triggerModeChoosable controller obj)
-      let maxModes := Nat.min paid 3
-      if maxModes == 0 || choosable.isEmpty then
-        let noop : Effect := { resolution? := some (Resolution.hawkeyeArrows []), phrase := "" }
-        let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
-        let g := g.changes #[
-          .object obj.id (.abilityEffect (some noop)),
-          .stackEntry obj.id (.targetsAnnounced true)]
-        g.logMsg s!"{(g.player controller).name} chooses 0 modes for {g.name obj} (CR 603.3c)"
+    let modal? := (obj.abilityEffect.bind (·.modalSpec?)).orElse (fun _ =>
+      if abilityEffectOverride.isSome then none else ab.modalSpec?)
+    match modal? with
+    | none => g
+    | some ms =>
+      if ms.chooseAtResolution then g
+      else if ms.maxModes == .eventAmount then
+        -- Hawkeye's Trick Arrows reflexive modal trigger (up to paid-times modes).
+        let paid := (lastKnownPower.map Int.toNat).getD 0
+        let choosable := ms.modes.filter (g.triggerModeChoosable controller obj)
+        let maxModes := Nat.min paid ms.modes.size
+        if maxModes == 0 || choosable.isEmpty then
+          let noop : Effect := { body := .noop, phrase := "" }
+          let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
+          let g := g.changes #[
+            .object obj.id (.abilityEffect (some noop)),
+            .stackEntry obj.id (.targetsAnnounced true)]
+          g.logMsg s!"{(g.player controller).name} chooses 0 modes for {g.name obj} (CR 603.3c)"
+        else
+          g.beginFraChoice controller (.hawkeyeModes maxModes #[] (some obj.id))
+            s!"{(g.player controller).name} chooses up to {maxModes} Trick Arrows modes (CR 603.3c)"
+      else if ms.maxModes == .chosenX then
+        let x := (source.chosenX.orElse (fun _ => g.chosenXOf? source.id)).getD 0
+        let modes := g.triggerModesOf obj
+        let choosable := modes.filter (g.triggerModeChoosable controller obj)
+        let maxModes := Nat.min x modes.size
+        if maxModes == 0 || choosable.isEmpty then
+          let noop : Effect := { body := .noop, phrase := "" }
+          let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
+          let g := g.changes #[
+            .object obj.id (.abilityEffect (some noop)),
+            .stackEntry obj.id (.targetsAnnounced true)]
+          g.logMsg s!"{(g.player controller).name} chooses 0 modes for {g.name obj} (CR 603.3c)"
+        else
+          g.beginFraChoice controller (.upToTriggerModes obj.id maxModes #[])
+            s!"{(g.player controller).name} chooses up to {maxModes} mode(s) for {g.name obj} (CR 603.3c)"
+      else if ms.unusedThisTurn || ms.unusedEver then
+        let lifetime := ms.unusedEver
+        let memory :=
+          match srcIdOpt with
+          | some sid => if lifetime then g.modesChosenEver sid else g.modesChosenThisTurn sid
+          | none => #[]
+        let available := (List.range ms.modes.size).toArray.filter (fun m => !memory.contains m)
+        if available.isEmpty then
+          let objName := g.name obj
+          let g := g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
+          let msg :=
+            if lifetime then
+              s!"all three modes have been chosen. {objName} is removed from the stack (CR 603.3c)"
+            else if ab.effect.body == Effect.castingVisionModes.body then
+              s!"{objName} has no unused mode and is removed from the stack (CR 603.3c)"
+            else
+              s!"all three modes have been chosen this turn. {objName} is removed from the stack (CR 603.3c)"
+          g.logMsg msg
+        else
+          let prompt :=
+            if lifetime then
+              s!"{(g.player controller).name} chooses a mode that hasn't been chosen (CR 603.3c)"
+            else if ab.effect.body == Effect.castingVisionModes.body then
+              "Choose one that hasn't been chosen this turn (CR 603.3c)"
+            else
+              s!"{(g.player controller).name} chooses an Alliance mode that hasn't been chosen this turn (CR 603.3c)"
+          g.beginFraChoice controller (.stackTriggerUnusedMode obj.id srcIdOpt available lifetime)
+            prompt
+      else if ab.effect.body == Effect.stepHydeChoose.body then
+        g.beginFraChoice controller (.stackHydeMode obj.id)
+          s!"{(g.player controller).name} chooses a mode for {g.name obj} — 0 put a +1/+1 counter, 1 remove a counter and draw (CR 603.3c)"
       else
-        g.beginFraChoice controller (.hawkeyeModes maxModes #[] (some obj.id))
-          s!"{(g.player controller).name} chooses up to {maxModes} Trick Arrows modes (CR 603.3c)"
-    | _ =>
-    match ab.shared with
-    | .enter .chooseUpToXModes =>
-      let x := (source.chosenX.orElse (fun _ => g.chosenXOf? source.id)).getD 0
-      let modes := g.triggerModesOf obj
-      let choosable := modes.filter (g.triggerModeChoosable controller obj)
-      let maxModes := Nat.min x modes.size
-      if maxModes == 0 || choosable.isEmpty then
-        let noop : Effect := { body := .noop, phrase := "" }
-        let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
-        let g := g.changes #[
-          .object obj.id (.abilityEffect (some noop)),
-          .stackEntry obj.id (.targetsAnnounced true)]
-        g.logMsg s!"{(g.player controller).name} chooses 0 modes for {g.name obj} (CR 603.3c)"
-      else
-        g.beginFraChoice controller (.upToTriggerModes obj.id maxModes #[])
-          s!"{(g.player controller).name} chooses up to {maxModes} mode(s) for {g.name obj} (CR 603.3c)"
-    | _ =>
-      if abilityEffectOverride.isSome then g
-      else
-      match ab.modalSpec? with
-      | some ms =>
         let n := (ms.minModes.evalConst?.getD 1).toNat
         g.beginTriggerModeChoice controller obj n
-      | none =>
-        match ab.resolution with
-        | .chooseModes modes how =>
-          match how with
-          | .plusOneOrRemoveCounter =>
-            g.beginFraChoice controller (.stackHydeMode obj.id)
-              s!"{(g.player controller).name} chooses a mode for {g.name obj} — 0 put a +1/+1 counter, 1 remove a counter and draw (CR 603.3c)"
-          | .vision | .oneUnused | .oneUnusedThisTurn =>
-            let lifetime := how == .oneUnused
-            let memory :=
-              match srcIdOpt with
-              | some sid => if lifetime then g.modesChosenEver sid else g.modesChosenThisTurn sid
-              | none => #[]
-            let available := (List.range modes.length).toArray.filter (fun m => !memory.contains m)
-            if available.isEmpty then
-              let objName := g.name obj
-              let g := g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
-              let msg :=
-                match how with
-                | .oneUnusedThisTurn =>
-                  s!"all three modes have been chosen this turn. {objName} is removed from the stack (CR 603.3c)"
-                | .vision =>
-                  s!"{objName} has no unused mode and is removed from the stack (CR 603.3c)"
-                | _ =>
-                  s!"all three modes have been chosen. {objName} is removed from the stack (CR 603.3c)"
-              g.logMsg msg
-            else
-              let prompt :=
-                match how with
-                | .oneUnusedThisTurn =>
-                  s!"{(g.player controller).name} chooses an Alliance mode that hasn't been chosen this turn (CR 603.3c)"
-                | .vision =>
-                  "Choose one that hasn't been chosen this turn (CR 603.3c)"
-                | _ =>
-                  s!"{(g.player controller).name} chooses a mode that hasn't been chosen (CR 603.3c)"
-              g.beginFraChoice controller (.stackTriggerUnusedMode obj.id srcIdOpt available lifetime)
-                prompt
-          | _ =>
-            if (sharedTriggerModes ab).isEmpty then g else g.beginTriggerModeChoice controller obj 1
-        | _ =>
-          if (sharedTriggerModes ab).isEmpty then g else g.beginTriggerModeChoice controller obj 1
 
 /-- True when this trigger would be put on the stack with no legal target (CR 603.3d). -/
 def triggerHasNoLegalTarget (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
@@ -292,9 +240,9 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
     (eventCause : Option EventCause := none)
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
     (abilityEffectOverride : Option Effect := none)
-    (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
+    (isReflexive : Bool := false) : Game :=
   if g.triggerHasNoLegalTarget controller ab source.id abilityEffectOverride then
-    let isRefl := abilityEffectOverride.isSome || reflexiveResolution.isSome
+    let isRefl := isReflexive || abilityEffectOverride.isSome
     let srcLabel :=
       if source.id == noSourceSentinelId then source.name
       else g.name source
@@ -309,7 +257,7 @@ def putTriggerOrFizzle (g : Game) (controller : PlayerId) (source : GameObject)
       (eventCause := eventCause)
       (delayedTrigger := delayedTrigger)
       (abilityEffectOverride := abilityEffectOverride)
-      (reflexiveResolution := reflexiveResolution)
+      (isReflexive := isReflexive)
 
 /-- Put `ab` on the stack for `pattern`, using that pattern's label and CR 603.3d check. -/
 def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
@@ -321,11 +269,11 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
     (eventCause : Option EventCause := none)
     (delayedTrigger : Option (DelayedTriggerKind × EventCause) := none)
     (abilityEffectOverride : Option Effect := none)
-    (reflexiveResolution : Option TriggeredAbility.TriggerResolution := none) : Game :=
+    (isReflexive : Bool := false) : Game :=
   if !g.stillInGame controller then g
   else
     let label :=
-      if abilityEffectOverride.isSome || reflexiveResolution.isSome then "reflexive ability"
+      if isReflexive || abilityEffectOverride.isSome then "reflexive ability"
       else pattern.label
     if abilityEffectOverride.isSome || (ab.requiresTarget && !ab.allowsZeroTargets) then
       g.putTriggerOrFizzle controller source ab label lastKnownPower lastKnownToughness
@@ -333,7 +281,7 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
         (eventCause := eventCause)
         (delayedTrigger := delayedTrigger)
         (abilityEffectOverride := abilityEffectOverride)
-        (reflexiveResolution := reflexiveResolution)
+        (isReflexive := isReflexive)
     else
       g.putTriggeredAbilityOnStack controller source ab label
         lastKnownPower lastKnownToughness (cause := cause) (causeId := causeId)
@@ -341,7 +289,7 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
         (causeIds := causeIds)
         (eventCause := eventCause) (delayedTrigger := delayedTrigger)
         (abilityEffectOverride := abilityEffectOverride)
-        (reflexiveResolution := reflexiveResolution)
+        (isReflexive := isReflexive)
 
 /-- Add `n` lore counters via `replaceCountersPutChoice`, including Doc Samson's
 +1 replacement (CR 614.1a / MSH 517), emitting a single `n'`-counter `.lore`
@@ -531,7 +479,7 @@ def removeWaitingTrigger (g : Game) (wt : WaitingTrigger) : Game :=
       w.causeController == wt.causeController &&
       w.delayedTrigger == wt.delayedTrigger &&
       w.abilityEffect == wt.abilityEffect &&
-      w.reflexiveResolution == wt.reflexiveResolution) with
+      w.isReflexive == wt.isReflexive) with
   | none => g
   | some i => g.change (.waitingTriggers (g.waitingTriggers.eraseIdx! i))
 
@@ -548,7 +496,7 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (pattern : TriggerPattern
       (causeIds := wt.causeIds)
       (eventCause := wt.eventCause) (delayedTrigger := wt.delayedTrigger)
       (abilityEffectOverride := wt.abilityEffect)
-      (reflexiveResolution := wt.reflexiveResolution)
+      (isReflexive := wt.isReflexive)
   if wt.checked then (put g).promptTriggerTargetsIfNeeded
   else
     if wt.ability.onceEachTurn && g.loggedTriggeredThisTurn wt.source.id wt.ability then g

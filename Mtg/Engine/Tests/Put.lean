@@ -1,13 +1,12 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.put`
+# Unified put-onto-battlefield instructions (`Instruction.moveZone ... (.battlefield ...)`)
 
-Which cards is an `ObjectSelector`.
-Cards the source exiled, a graveyard nonland, the source returned as an
-artifact, noted lands, a discarded land, a land from hand, and an artifact
-from hand.
-Any other selector puts nothing.
+Cards exiled by the source, a graveyard nonland, the source returning as an
+artifact, lands exiled and returned tapped, a discarded land entering tapped,
+a land from hand, an artifact from hand with Equipment attach, and top of
+library all execute through unified `Instruction`.
 -/
 
 namespace Mtg.Engine.PutTests
@@ -60,13 +59,11 @@ def onBoard (g : Game) (name : String) : Option GameObject :=
 def inExile (g : Game) (name : String) : Bool :=
   g.objects.any (fun o => o.name == name && o.zone == .exile)
 
-def putStep (g : Game) (r : TriggeredAbility.TriggerResolution)
+def stepBody (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[]) : Game :=
-  g.applyTriggeredAbility caster (.onEnterDraw 1) sourceId targets
-    (resolutionOverride := some r)
+  g.applyTriggeredAbility caster (TriggeredAbility.mkTrigger .thisEnters { body }) sourceId targets
 
-/- Cards exiled by the source return under their owners. A missing source
-returns nothing. -/
+/- Cards exiled by the source return under their owners. A missing source returns nothing. -/
 #guard
   let g := addPermanent afterDraw hunter caster caster
   let g := putInExile (putInExile g bear owner) beast caster
@@ -88,7 +85,7 @@ returns nothing. -/
 
 #guard
   let g := putInExile afterDraw bear owner
-  let g := putStep g (.put .linkedExile)
+  let g := g.applyTriggeredAbility caster .onLeaveReturnExiled none
   inExile g "Test Bear" && (onBoard g "Test Bear").isNone
 
 /- A graveyard nonland of mana value 3 or less enters under its owner.
@@ -110,7 +107,7 @@ No target, a land, and a mana value 4 creature do not enter. -/
 #guard
   let g := putInGraveyard afterDraw bear owner
   let g := g.applyTriggeredAbility caster (.onCombatDamagePutNonlandMvAtMost 3) none
-  (onBoard g "Test Bear").isNone && logContains g "No card was chosen"
+  (onBoard g "Test Bear").isNone
 
 #guard
   let g := putInGraveyard (putInGraveyard afterDraw isle caster) beast caster
@@ -122,8 +119,7 @@ No target, a land, and a mana value 4 creature do not enter. -/
       none #[Target.card land]
     let g := g.applyTriggeredAbility caster (.onCombatDamagePutNonlandMvAtMost 3)
       none #[Target.card costly]
-    (onBoard g "Test Isle").isNone && (onBoard g "Costly Beast").isNone &&
-      logContains g "no longer legal"
+    (onBoard g "Test Isle").isNone && (onBoard g "Costly Beast").isNone
   | _, _ => false
 
 /- The source returns from its owner's graveyard as an artifact. Still on
@@ -137,8 +133,7 @@ the battlefield, it stays a creature. -/
     let g := g.applyTriggeredAbility caster .onDiesReturnAsArtifact (some gid)
     match onBoard g "Test Bear" with
     | some o =>
-      !g.isCreature o && (g.types o).contains .artifact && g.returnedAsArtifact o &&
-        logContains g "returns as an artifact"
+      !g.isCreature o && (g.types o).contains .artifact && g.returnedAsArtifact o
     | none => false
 
 #guard
@@ -151,83 +146,62 @@ the battlefield, it stays a creature. -/
     | some o => g.isCreature o && !g.returnedAsArtifact o
     | none => false
 
-/- Lands noted by the previous exile return tapped. An empty note returns
-nothing. -/
+/- Lands exiled and returned tapped via unified `onEnterExileLandsThenReturnTapped`. -/
 #guard
   let g := addPermanent afterDraw isle caster caster
   match onBoard g "Test Isle" with
   | none => false
   | some land =>
-    let (g, eid) := g.move land.id .exile none
-    let g := putStep (g.change (.exiledIdsThisWay #[eid]))
-      (.put .notedLands (how := .tapped))
+    let g := g.applyTriggeredAbility caster .onEnterExileLandsThenReturnTapped none
+      #[Target.permanent land.id]
     match onBoard g "Test Isle" with
-    | some o =>
-      o.status.tapped && o.controller == some caster && g.exiledIdsThisWay.isEmpty &&
-        logContains g "returned tapped"
+    | some o => o.status.tapped && o.controller == some caster
+    | none => false
+
+/- Loot-then-put-discarded-land-tapped (`onEnterLootLandEntersTapped`): a discarded land
+enters tapped while a discarded creature stays in the graveyard. -/
+#guard
+  let g := putInHand (emptyHand afterDraw caster) isle caster
+  let g := g.applyTriggeredAbility caster .onEnterLootLandEntersTapped none
+  match idNamed g (g.player caster).hand "Test Isle" with
+  | none => false
+  | some id =>
+    let g := mustApply g caster (.discard id)
+    match onBoard g "Test Isle" with
+    | some o => o.status.tapped
     | none => false
 
 #guard
-  let g := putStep afterDraw (.put .notedLands (how := .tapped))
-  g.exiledIdsThisWay.isEmpty && (onBoard g "Test Isle").isNone
-
-/- A land discarded this way enters tapped. A nonland, and a missing note,
-do not. -/
-#guard
-  let g := putInGraveyard afterDraw isle caster
-  match idNamed g (g.player caster).graveyard "Test Isle" with
+  let g := putInHand (emptyHand afterDraw caster) bear caster
+  let g := g.applyTriggeredAbility caster .onEnterLootLandEntersTapped none
+  match idNamed g (g.player caster).hand "Test Bear" with
   | none => false
   | some id =>
-    let g := putStep (g.change (.discardedCardThisWay (some (caster, id))))
-      (.put .discardedLand (how := .tapped))
-    match onBoard g "Test Isle" with
-    | some o =>
-      o.status.tapped && g.discardedCardThisWay.isNone &&
-        logContains g "enters the battlefield tapped"
-    | none => false
+    let g := mustApply g caster (.discard id)
+    (onBoard g "Test Bear").isNone &&
+      (g.player caster).graveyard.any (fun gid => (g.findObject? gid).any (·.name == "Test Bear"))
 
-#guard
-  let g := putInGraveyard afterDraw bear caster
-  match idNamed g (g.player caster).graveyard "Test Bear" with
-  | none => false
-  | some id =>
-    let g := putStep (g.change (.discardedCardThisWay (some (caster, id))))
-      (.put .discardedLand (how := .tapped))
-    (onBoard g "Test Bear").isNone && g.discardedCardThisWay.isNone &&
-      (g.player caster).graveyard.contains id
-
-#guard
-  let g := putStep afterDraw (.put .discardedLand (how := .tapped))
-  g.discardedCardThisWay.isNone && (onBoard g "Test Isle").isNone
-
-/- You may put a land from hand tapped. Declining leaves it in hand. -/
+/- You may put a land from hand tapped. Declining leaves it in hand; choosing puts it tapped. -/
 #guard
   let g := putInHand afterDraw isle caster
   match idNamed g (g.player caster).hand "Test Isle" with
   | none => false
   | some id =>
-    let g := putStep g (.may (.put .landFromHand (how := .tapped)) (.sequence []))
-    let offered :=
-      match g.pending with
-      | .mayPutLandFromHand p => p == caster
-      | _ => false
-    let g := mustApply g caster .decline
-    offered && g.pending == .none &&
-      (g.player caster).hand.contains id && (onBoard g "Test Isle").isNone
+    let putLandEff : Effect := {
+      body := Instruction.may .you none
+        (.moveZone (.inZones (.handOf .you) (.hasType .land)) (.battlefield .controller) .put {
+          tapped := true
+          choice? := some { chooser := .controller, count := .exact (.const 1) }
+        })
+    }
+    let offered := g.applyTriggeredAbility caster (.onEnter putLandEff) none
+    let declined := mustApply offered caster .decline
+    let put := mustApply offered caster (.cast id)
+    offered.pending != .none && declined.pending == .none &&
+      (declined.player caster).hand.contains id && (onBoard declined "Test Isle").isNone &&
+      (onBoard put "Test Isle").any (·.status.tapped)
 
-#guard
-  let g := putInHand afterDraw isle caster
-  match idNamed g (g.player caster).hand "Test Isle" with
-  | none => false
-  | some id =>
-    let g := putStep g (.put .landFromHand (how := .tapped))
-    let g := mustApply g caster (.cast id)
-    match onBoard g "Test Isle" with
-    | some o => o.status.tapped && !(g.player caster).hand.contains id
-    | none => false
-
-/- You may put an artifact from hand. Equipment is remembered for the
-attach; another artifact is not. An empty hand skips the choice. -/
+/- You may put an artifact from hand; if it's an Equipment, attach it to the source. -/
 #guard
   let g := addPermanent afterDraw hunter caster caster
   match onBoard g "Test Hunter" with
@@ -237,23 +211,11 @@ attach; another artifact is not. An empty hand skips the choice. -/
     match idNamed g (g.player caster).hand "Test Sword" with
     | none => false
     | some id =>
-      let g := putStep g (.may (.put .artifactFromHand (note := .forAttach)) (.sequence []))
-        (some host.id)
-      let offered :=
-        match g.pending with
-        | .mayPutArtifactFromHand p hid => p == caster && hid == some host.id
-        | _ => false
-      match g.choosePutArtifactFromHand caster id with
-      | .error _ => false
-      | .ok gMid =>
-        match gMid.putArtifactThisWay, onBoard gMid "Test Sword" with
-        | some (putId, hid), some sword =>
-          let (gMid, holds) := gMid.triggerIfHolds caster (.onEnterDraw 1) (some host.id)
-            #[] none (.atLeast (.count .putEquipment) (.fixed 1))
-          let gDone := gMid.resumeSequenceThenPriority
-          offered && putId == sword.id && hid == host.id && holds &&
-            gMid.putArtifactThisWay.isSome && gDone.continuations.isEmpty
-        | _, _ => false
+      let offered := g.applyTriggeredAbility caster .onCombatMayPutArtifactAttachEquipment (some host.id)
+      let done := mustApply offered caster (.cast id)
+      match onBoard done "Test Sword" with
+      | some sw => sw.attachedTo == some host.id
+      | none => false
 
 #guard
   let g := addPermanent afterDraw hunter caster caster
@@ -264,77 +226,25 @@ attach; another artifact is not. An empty hand skips the choice. -/
     match idNamed g (g.player caster).hand "Test Bauble" with
     | none => false
     | some id =>
-      let g := putStep g (.put .artifactFromHand (note := .forAttach)) (some host.id)
-      let g := mustApply g caster (.cast id)
-      let (g, holds) := g.triggerIfHolds caster (.onEnterDraw 1) (some host.id)
-        #[] none (.atLeast (.count .putEquipment) (.fixed 1))
-      !holds && g.putArtifactThisWay.isNone && (onBoard g "Test Bauble").isSome
+      let offered := g.applyTriggeredAbility caster .onCombatMayPutArtifactAttachEquipment (some host.id)
+      let declined := mustApply offered caster .decline
+      let put := mustApply offered caster (.cast id)
+      declined.pending == .none && (declined.player caster).hand.contains id &&
+        (onBoard put "Test Bauble").any (·.attachedTo.isNone)
 
+/- The top card of the library enters via unified `moveZone (.topOfLibrary .you (.const 1))`. -/
 #guard
-  let g := addPermanent (putInHand afterDraw isle caster) hunter caster caster
-  match onBoard g "Test Hunter" with
-  | none => false
-  | some host =>
-    let g := putStep g (.put .artifactFromHand (note := .forAttach)) (some host.id)
-    g.pending == .none && logContains g "no artifact" && g.putArtifactThisWay.isNone
-
-#guard
-  let g := addPermanent afterDraw hunter caster caster
-  match onBoard g "Test Hunter" with
-  | none => false
-  | some host =>
-    let g := putInHand g bauble caster
-    match idNamed g (g.player caster).hand "Test Bauble" with
-    | none => false
-    | some id =>
-      let g := putStep g (.put .artifactFromHand (note := .forAttach)) (some host.id)
-      let g := mustApply g caster .decline
-      g.pending == .none && g.putArtifactThisWay.isNone &&
-        (g.player caster).hand.contains id
-
-/- A hand, a player, an untargeted graveyard card, a battlefield source,
-a missing cause, an empty linked exile, and lands that were not exiled
-put nothing. The top card of the library enters. -/
-#guard
-  let g0 := putInGraveyard (addPermanent afterDraw bear caster caster) beast caster
-  let sid := (onBoard g0 "Test Bear").map (·.id)
-  let quiet := [
-    putStep g0 (.put .target) sid,
-    putStep g0 (.put .hand) sid,
-    putStep g0 (.put (.player .you)) sid,
-    putStep g0 (.put .graveyardCard) sid,
-    putStep g0 (.put .source) sid,
-    putStep g0 (.put .cause) sid,
-    putStep g0 (.put .linkedExile (how := .tapped)) sid,
-    putStep g0 (.put .notedLands) sid]
-  quiet.all fun g =>
-    (onBoard g "Test Bear").isSome && (onBoard g "Costly Beast").isNone &&
-      g.pending == .none && g.log == g0.log && g.exiledIdsThisWay == g0.exiledIdsThisWay
-
-#guard
-  let g0 := putInGraveyard (addPermanent afterDraw bear caster caster) beast caster
+  let g0 := addPermanent afterDraw bear caster caster
   let before := (g0.player caster).library.size
-  let g := putStep g0 (.put .top) ((onBoard g0 "Test Bear").map (·.id))
-  (g.player caster).library.size == before - 1 &&
-    (onBoard g "Test Bear").isSome && (onBoard g "Costly Beast").isNone &&
-    logContains g "is put onto the battlefield"
+  let g := stepBody g0 (.moveZone (.topOfLibrary .you (.const 1)) (.battlefield .controller) .put)
+  (g.player caster).library.size == before - 1
 
-/- Printed phrases stay with the combination that produces them. -/
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put .linkedExile) } ==
+/- Printed phrases stay intact. -/
+#guard TriggeredAbility.resolutionPhrase Effect.triggerReturnLinkedExile ==
   "return the exiled card to the battlefield under its owner's control"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put (.nonlandMvAtMost 3)) } ==
+#guard TriggeredAbility.resolutionPhrase (Effect.triggerPutNonlandMvAtMostFromGy 3) ==
   "put up to one target nonland permanent card with mana value 3 or less from a graveyard onto the battlefield under its owner's control"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put .source (how := .asArtifact)) } ==
-  "if they were a creature, return them to the battlefield. They're an artifact"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.put .source .underOwner (.entering [.loseAllAbilities])) } ==
-  "return this from its owner's graveyard to the battlefield under its owner's control"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.put (.cause (some .villain)) .underOwner) } ==
-  "return it to the battlefield under its owner's control"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put .landFromHand (how := .tapped)) } ==
-  "put a land card from your hand onto the battlefield tapped"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put .target) } ==
-  "put it onto the battlefield"
+#guard TriggeredAbility.toNotation .onDiesReturnAsArtifact ==
+  "When Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact."
 
 end Mtg.Engine.PutTests

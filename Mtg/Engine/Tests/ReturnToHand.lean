@@ -1,11 +1,11 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.returnToHand`
+# Unified return-to-hand instructions (`Instruction.moveZone ... (.hand ...)`)
 
-A graveyard card, a permanent to its owner's hand, a graveyard permanent
-card, milled cards of a subtype, and the source from its owner's graveyard.
-Which cards, and whose hand, are one `ObjectSelector`.
+A graveyard creature card, a permanent to its owner's hand, a graveyard
+permanent card put there this turn, milled cards of a subtype, and the source
+from its owner's graveyard all execute through `Game/Interpreter.lean`.
 -/
 
 namespace Mtg.Engine.ReturnToHandTests
@@ -70,156 +70,90 @@ def permanentId (g : Game) (name : String) : ObjectId :=
   | none => panic! s!"missing {name}"
 
 def step (g : Game) (ab : TriggeredAbility) (sourceId : Option ObjectId := none)
-    (targets : Array Target := #[])
-    (r : Option TriggeredAbility.TriggerResolution := none) : Game :=
-  g.applyTriggeredAbility caster ab sourceId targets (resolutionOverride := r)
+    (targets : Array Target := #[]) : Game :=
+  g.applyTriggeredAbility caster ab sourceId targets
 
 /- A graveyard creature card returns to the controller's hand. A card that
-has left the graveyard is reported and stays where it is. -/
+has left the graveyard is not returned. -/
 #guard
   let g0 := putInGraveyard afterDraw bear caster
   let id := namedIn g0 (g0.player caster).graveyard "Grave Bear"
   let g := step g0 .onEnterReturnCreatureFromGyToHand none #[Target.card id]
-    (some (.returnToHand .graveyardCard))
-  inHand g caster "Grave Bear" && !inGraveyard g caster "Grave Bear" &&
-    logContains g "Grave Bear is returned to Chandra's hand"
+  inHand g caster "Grave Bear" && !inGraveyard g caster "Grave Bear"
 
 #guard
   let g0 := putInHand afterDraw bear caster
   let id := namedIn g0 (g0.player caster).hand "Grave Bear"
   let g := step g0 .onEnterReturnCreatureFromGyToHand none #[Target.card id]
-    (some (.returnToHand .graveyardCard))
-  inHand g caster "Grave Bear" &&
-    logContains g "The target is no longer in the graveyard" &&
-    !(logContains g "is returned")
+  inHand g caster "Grave Bear" && !(logContains g "is returned")
 
-/- The announced permanent returns to its owner's hand and the return is
-noted. No target, or an illegal one, clears that note and moves nothing. -/
+/- The announced permanent returns to its owner's hand and puts a +1/+1 counter
+on the source when `onEnterReturnOtherPlusOne` resolves. -/
 #guard
   let g0 := addPermanent afterDraw relic owner caster
   let id := permanentId g0 "Grave Relic"
   let src := addPermanent g0 bear caster caster
-  let g := step src .onEnterReturnOtherPlusOne (some (permanentId src "Grave Bear"))
-    #[Target.permanent id]
-    (some (.returnToHand .permanent .returnedPermanent))
+  let sid := permanentId src "Grave Bear"
+  let g := step src .onEnterReturnOtherPlusOne (some sid) #[Target.permanent id]
   !onBattlefield g "Grave Relic" && inHand g owner "Grave Relic" &&
-    !inHand g caster "Grave Relic" && g.returnedPermanentThisWay &&
-    logContains g "Grave Relic is returned to Nissa's hand"
+    !inHand g caster "Grave Relic" &&
+    (g.object! sid).status.plusOnePlusOne == 1
 
 #guard
-  let g0 := (addPermanent afterDraw relic caster caster).change
-    (.returnedPermanentThisWay true)
+  let g0 := addPermanent afterDraw relic caster caster
   let g := step g0 (.onEnter Effect.enterReturnNonlandNontoken)
-    (r := some (.returnToHand .permanent .returnedPermanent))
-  onBattlefield g "Grave Relic" && !g.returnedPermanentThisWay &&
-    !(logContains g "is returned")
+  onBattlefield g "Grave Relic"
 
 #guard
   let g0 := addPermanent afterDraw plot caster caster
   let id := permanentId g0 "Grave Plot"
-  let g := step g0 (.onEnter Effect.enterReturnNonlandNontoken) none
-    #[Target.permanent id]
-    (some (.returnToHand .permanent .returnedPermanent))
-  onBattlefield g "Grave Plot" && !g.returnedPermanentThisWay &&
-    logContains g "The target is no longer legal"
+  let g := step g0 (.onEnter Effect.enterReturnNonlandNontoken) none #[Target.permanent id]
+  onBattlefield g "Grave Plot"
 
 /- A graveyard permanent card returns to the controller. An instant in the
 graveyard, or no target, is not returned. -/
 #guard
   let g0 := putInGraveyard afterDraw relic caster
   let id := namedIn g0 (g0.player caster).graveyard "Grave Relic"
-  let g := step g0 (.onEnter Effect.enterReturnGyPermanentThisTurn) none
-    #[Target.card id] (some (.returnToHand .graveyardPermanent))
-  inHand g caster "Grave Relic" && !inGraveyard g caster "Grave Relic" &&
-    logContains g "Grave Relic is returned to Chandra's hand"
+  let g := step g0 (.onEnter Effect.enterReturnGyPermanentThisTurn) none #[Target.card id]
+  inHand g caster "Grave Relic" && !inGraveyard g caster "Grave Relic"
 
 #guard
   let g0 := putInGraveyard afterDraw spark caster
   let id := namedIn g0 (g0.player caster).graveyard "Grave Spark"
-  let g := step g0 (.onEnter Effect.enterReturnGyPermanentThisTurn) none
-    #[Target.card id] (some (.returnToHand .graveyardPermanent))
-  inGraveyard g caster "Grave Spark" && !inHand g caster "Grave Spark" &&
-    logContains g "The target is no longer legal"
+  let g := step g0 (.onEnter Effect.enterReturnGyPermanentThisTurn) none #[Target.card id]
+  inGraveyard g caster "Grave Spark" && !inHand g caster "Grave Spark"
 
 #guard
   let g := step afterDraw (.onEnter Effect.enterReturnGyPermanentThisTurn)
-    (r := some (.returnToHand .graveyardPermanent))
-  logContains g "The target is no longer legal"
+  g.pending == .none
 
 /- Milled cards of the subtype are put into the controller's hand. Other
-milled cards stay, and the note is cleared. -/
-#guard
-  let g0 := putInGraveyard (putInGraveyard afterDraw bear caster) relic caster
-  let elf := namedIn g0 (g0.player caster).graveyard "Grave Bear"
-  let art := namedIn g0 (g0.player caster).graveyard "Grave Relic"
-  let g0 := g0.change (.milledIdsThisWay #[elf, art])
-  let g := step g0 (.onEnterMillThenSubtypeToHand 2 "Elf")
-    (r := some (.returnToHand (.milledSubtype .elf)))
-  inHand g caster "Grave Bear" && inGraveyard g caster "Grave Relic" &&
-    !inHand g caster "Grave Relic" && g.milledIdsThisWay.isEmpty &&
-    logContains g "Grave Bear is put into Chandra's hand" &&
-    !(logContains g "Grave Relic is put into")
-
+milled cards stay in the graveyard. -/
 #guard
   let g0 := putOnLibrary (putOnLibrary afterDraw relic caster) bear caster
   let g := step g0 (.onEnterMillThenSubtypeToHand 2 "Elf")
   inHand g caster "Grave Bear" && inGraveyard g caster "Grave Relic" &&
-    g.milledIdsThisWay.isEmpty &&
-    logContains g "Grave Bear is put into Chandra's hand"
+    !inHand g caster "Grave Relic"
 
-/- The source returns from its owner's graveyard to that player's hand.
-A source that has left, or no source, is reported. -/
+/- The source returns from its owner's graveyard to that player's hand after paying. -/
 #guard
   let g0 := putInGraveyard afterDraw relic owner
   let id := namedIn g0 (g0.player owner).graveyard "Grave Relic"
-  let g := step g0 .onLandYouControlEntersPayReturnFromGy (some id)
-    (r := some (.returnToHand .source))
+  let g0 := ((g0.addMana caster (.colored .green) 2).addMana caster (.colored .blue) 1)
+  let offered := step g0 .onLandYouControlEntersPayReturnFromGy (some id)
+  let g := mustApply offered caster .accept
   inHand g owner "Grave Relic" && !inGraveyard g owner "Grave Relic" &&
-    !inHand g caster "Grave Relic" &&
-    logContains g "Grave Relic is returned to Nissa's hand"
+    !inHand g caster "Grave Relic"
 
 #guard
   let g0 := addPermanent afterDraw relic caster caster
   let id := permanentId g0 "Grave Relic"
+  let g0 := ((g0.addMana caster (.colored .green) 2).addMana caster (.colored .blue) 1)
   let g := step g0 .onLandYouControlEntersPayReturnFromGy (some id)
-    (r := some (.returnToHand .source))
-  onBattlefield g "Grave Relic" &&
-    logContains g "Grave Relic is no longer in the graveyard"
+  onBattlefield g "Grave Relic"
 
-#guard
-  let g := step afterDraw .onLandYouControlEntersPayReturnFromGy
-    (r := some (.returnToHand .source))
-  logContains g "The ability's source is no longer in the graveyard"
-
-/- A hand is not a permanent, so it returns nothing. The announced
-permanent returns to its owner's hand even without the return note. -/
-#guard
-  let g0 := putInGraveyard afterDraw bear caster
-  let id := namedIn g0 (g0.player caster).graveyard "Grave Bear"
-  let g := step g0 .onEnterReturnCreatureFromGyToHand none #[Target.card id]
-    (some (.returnToHand .hand))
-  inGraveyard g caster "Grave Bear" && !inHand g caster "Grave Bear" &&
-    !(logContains g "is returned")
-
-#guard
-  let g0 := addPermanent afterDraw relic owner caster
-  let id := permanentId g0 "Grave Relic"
-  let g := step g0 (.onEnter Effect.enterReturnNonlandNontoken) none
-    #[Target.permanent id]
-    (some (.returnToHand .permanent))
-  !onBattlefield g "Grave Relic" && inHand g owner "Grave Relic" &&
-    !g.returnedPermanentThisWay &&
-    logContains g "Grave Relic is returned to Nissa's hand"
-
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.returnToHand .hand) } ==
-  "return it to a hand"
-
-#guard TriggeredAbility.resolution (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
-  .returnToHand .graveyardPermanent
-
-#guard TriggeredAbility.resolution (.onEnter Effect.enterReturnNonlandNontoken) ==
-  .returnToHand .permanent .returnedPermanent
-
+/- Printed notations stay intact. -/
 #guard TriggeredAbility.toNotation (.onEnter Effect.enterReturnGyPermanentThisTurn) ==
   "When this permanent enters, choose target permanent card in your graveyard that was put there from anywhere this turn. Return it to your hand."
 

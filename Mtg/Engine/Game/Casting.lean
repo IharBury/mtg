@@ -1318,7 +1318,7 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       else if g.pending != .none || g.afterRandom != .none then
         return (stashPendingPrio g, false)
       else if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
-          g.triggerSequenceRest.isSome || g.mayThenResume then
+          g.currentInterpWait?.isSome then
         return (g, true)
       else if !g.over && g.triggerNeedingTargets.isSome then
         let g := stashPendingPrio g
@@ -1435,18 +1435,18 @@ partial def afterWardResolved (g : Game) : Game :=
     | _ => g
   if g.over then
     reverseOrphanedIfOver g
-  else if (g.mayThenResume || g.triggerSequenceRest.isSome) &&
+  else if (g.currentInterpWait?.isSome) &&
       (g.pending != .none || g.afterRandom != .none) then
     let existing := g.outerPendingReplacements
     replaceTopOuters g existing.size (#[.afterWardResolved] ++ existing)
-  else if g.mayThenResume || g.triggerSequenceRest.isSome then
+  else if g.currentInterpWait?.isSome then
     let stashedPending := g.pendingReplacement
     let stashedOuters := g.outerPendingReplacements
     let g := if stashedPending.isSome then g.change (.pendingReplacement none) else g
     let g := (Array.replicate stashedOuters.size EngineChange.popOuterPendingReplacement).foldl Game.change g
     let rec drainTriggerWithDeferredExile (g : Game) : Game :=
       let g := g.drainPendingContinuations
-      if !g.over && (g.mayThenResume || g.triggerSequenceRest.isSome) &&
+      if !g.over && (g.currentInterpWait?.isSome) &&
           g.pending == .none && g.afterRandom == .none && g.proposedSpell.isNone &&
           (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
         let g := g.reopenDeferredExileCasts
@@ -1461,7 +1461,7 @@ partial def afterWardResolved (g : Game) : Game :=
       let drainSuffix :=
         if g.pending != .none || g.afterRandom != .none then g.outerPendingReplacements
         else #[]
-      if g.mayThenResume || g.triggerSequenceRest.isSome then
+      if g.currentInterpWait?.isSome then
         let wardCont :=
           match stashedPending with
           | some c => .seq c .afterWardResolved
@@ -1533,14 +1533,14 @@ def finishPostCast (g : Game) (p : PlayerId)
     | none => g
   if !grantPriority then g
   else if let .chooseReplacement .. := g.pending then
-    if g.triggerSequenceRest.isSome || hadOuterReplacement then
+    if g.currentInterpWait?.isSome || hadOuterReplacement then
       g.chainPendingReplacement .finishFraChoice
     else
       g.chainPendingReplacement (.receivePriority (if hadOpenContinuation then g.activePlayer else p))
   else if g.pending != .none then g
   else if hadOuterReplacement && g.pendingReplacement.isNone then
     g
-  else if g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
+  else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome then
     g.chainPendingReplacement .finishFraChoice
   else g.receivePriority (if hadOpenContinuation then g.activePlayer else p)
 
@@ -1587,7 +1587,7 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
       let needsDeferredPostCast :=
         g.postCastCleanup.isSome || g.pendingMayCastFromExile.isSome ||
           g.pendingFreeCopies.isSome ||
-          g.triggerSequenceRest.isSome || g.pendingReplacement.isSome ||
+          g.currentInterpWait?.isSome || g.pendingReplacement.isSome ||
           hadOuterReplacement || !grantPriority ||
           (grantPriority && !openCont && p != g.activePlayer)
       if needsDeferredPostCast then
@@ -1696,10 +1696,10 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
       let clearCkpt := if g.proposalCheckpoint.isSome then #[EngineChange.clearProposalCheckpoint] else #[]
       let g := g.changes (clearProp ++ clearCkpt)
       if !g.over && !hadOuterReplacement && g.pending == .none &&
-          g.pendingReplacement.isNone && g.triggerSequenceRest.isNone then
+          g.pendingReplacement.isNone && g.currentInterpWait?.isNone then
         g.receivePriority (g.priorityInstead (if openCont then g.activePlayer else p))
       else if !g.over && !hadOuterReplacement && g.pending == .none &&
-          (g.pendingReplacement.isSome || g.triggerSequenceRest.isSome) then
+          (g.pendingReplacement.isSome || g.currentInterpWait?.isSome) then
         g.chainPendingReplacement .finishFraChoice
       else g
   else
@@ -1739,7 +1739,7 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
     if g.pending != .none then g
     else if hadOuterReplacement && g.pendingReplacement.isNone then
       g
-    else if g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then
+    else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome then
       g.chainPendingReplacement .finishFraChoice
     else g.receivePriority (if openCont then g.activePlayer else p)
 
@@ -1767,7 +1767,7 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
       let changes := clearPending ++ clearProp ++ clearCkpt
       let g := if changes.isEmpty then g else g.changes changes
       if g.over || g.pending != .none then (g, false)
-      else if !hadOuterReplacement && (g.pendingReplacement.isSome || g.triggerSequenceRest.isSome) then
+      else if !hadOuterReplacement && (g.pendingReplacement.isSome || g.currentInterpWait?.isSome) then
         (g.chainPendingReplacement .finishFraChoice, true)
       else if !hadOuterReplacement && g.continuations.isEmpty then
         (g.receivePriority (g.priorityInstead caster), false)
@@ -1792,10 +1792,10 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
         let g := g.changes (clearPending ++ #[.proposedSpell none, .consecutivePasses 0] ++ clearCkpt)
         let g :=
           if !g.over && !hadOuterReplacement && wasIdle && g.pending == .none &&
-              g.continuations.isEmpty && g.pendingReplacement.isNone && g.triggerSequenceRest.isNone then
+              g.continuations.isEmpty && g.pendingReplacement.isNone && g.currentInterpWait?.isNone then
             g.receivePriority (g.priorityInstead caster)
           else if !g.over && !hadOuterReplacement && g.pending == .none &&
-              (g.pendingReplacement.isSome || g.triggerSequenceRest.isSome) then
+              (g.pendingReplacement.isSome || g.currentInterpWait?.isSome) then
             g.chainPendingReplacement .finishFraChoice
           else g
         (g, !g.over && g.pending == .none)
@@ -1811,7 +1811,7 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
           (cause := .specialAction .turnFaceUp caster))
       let objName := (g.findObject? spellId).map g.name |>.getD (g.name o)
       let g := g.logMsg s!"{(g.player caster).name} turns {objName} face up"
-      let hadPreReconcileCont := g.triggerSequenceRest.isSome || g.pendingReplacement.isSome
+      let hadPreReconcileCont := g.currentInterpWait?.isSome || g.pendingReplacement.isSome
       let g :=
         (reconcileControlAfterTransition pre g (cause := some (.specialAction .turnFaceUp caster)))
           |>.flushQueuedLinkedExile
@@ -1877,7 +1877,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
         let clearCkpt := if g.proposalCheckpoint.isSome then #[EngineChange.clearProposalCheckpoint] else #[]
         let g := g.changes (clearProp ++ clearCkpt)
         if !g.over && !hadOuterReplacement && g.pending == .none &&
-            g.pendingReplacement.isNone && g.triggerSequenceRest.isNone then
+            g.pendingReplacement.isNone && g.currentInterpWait?.isNone then
           g.receivePriority (g.priorityInstead (if openCont then g.activePlayer else p))
         else g
     else

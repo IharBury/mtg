@@ -10,12 +10,58 @@ and the `Pending` prompt a player must answer before the game continues.
 
 namespace Mtg.Engine
 
-/-- Object references available to resolve `TokenSpec.copyOf` (CR 707.2 / 707.9 / 111.12). -/
-structure CopyTokenContext where
+/-- Read-only evaluation environment for pure expression queries over
+`(Game, EvalEnv)` (CR 109.3 / 109.5 / 400.7 / 603.10 / 608.2h).
+Parameterized by `Snap` so serializable continuations (`Pending`,
+`PendingReplacement`) store `StoredEvalEnv := EvalEnvOf Unit` while live
+evaluation uses `EvalEnv := EvalEnvOf GameSnapshot`. -/
+structure EvalEnvOf (Snap : Type) where
+  /-- Controller of the spell, ability, or static ability ("you", CR 109.5). -/
+  controller : PlayerId := ⟨0⟩
+  /-- Source object of the spell or ability ("this permanent" / "this spell"). -/
   sourceId : Option ObjectId := none
-  targetId : Option ObjectId := none
+  /-- Frozen LKI snapshot of the source if it already left its zone (CR 113.7a / 608.2h). -/
+  sourceSnapshot : Option EventObject := none
+  /-- Announced targets per slot (CR 115.1 / 601.2c). -/
+  targetSlots : Array (Array Target) := #[]
+  /-- Object that caused a trigger ("that creature" / "it"). -/
   triggerSubjectId : Option ObjectId := none
-deriving DecidableEq, Repr, Inhabited, BEq
+  /-- All objects that caused a batched trigger (CR 700.1 `oncePerBatch`). -/
+  triggerSubjectIds : Array ObjectId := #[]
+  /-- Frozen LKI snapshot of the trigger subject when available (CR 603.10 / 608.2h). -/
+  triggerSubjectSnapshot : Option EventObject := none
+  /-- Named player roles carried by a triggering event. -/
+  triggerPlayers : Array (TriggerPlayerRole × PlayerId) := #[]
+  /-- Announced value of `{X}` (CR 107.3a). -/
+  chosenX : Nat := 0
+  /-- Numeric amount carried by a triggering/cost event (`ValueExpr.eventAmount`). -/
+  eventAmount : Int := 0
+  /-- Explicit objects paid as a cost (`ObjectExpr.costPaidObjects`). -/
+  costPaidObjects : Array ObjectId := #[]
+  /-- Lexical bindings from earlier bound steps (`Instruction.bind`, CR 608.2c / 614.6). -/
+  stepEnv : Array (VarId × StepOutcome) := #[]
+  /-- Optional pre-event snapshot for CR 603.10 look-back evaluation. -/
+  lookBackState? : Option Snap := none
+  /-- Explicit LKI snapshots for objects referenced after leaving their zone (CR 608.2h). -/
+  lkiObjects : Array (ObjectId × EventObject) := #[]
+  /-- Pre-resolved player choices for `PlayerExpr.chosenBy` (pure query). -/
+  chosenPlayers : Array PlayerId := #[]
+  /-- Optional index into `g.events` when evaluating an object predicate against a
+  specific historical event inside `evalEventPatternOnTurn`. -/
+  eventIdx? : Option Nat := none
+deriving Repr, Inhabited, BEq
+
+/-- Snapshot-free `EvalEnv` stored inside serializable `Pending` / `PendingReplacement`
+continuations (CR 707.2 / 707.9 / 111.12). -/
+abbrev StoredEvalEnv := EvalEnvOf Unit
+
+/-- Strip `lookBackState?` to obtain a serializable `StoredEvalEnv`. -/
+@[inline] def EvalEnvOf.toStored {Snap : Type} (env : EvalEnvOf Snap) : StoredEvalEnv :=
+  { env with lookBackState? := none }
+
+/-- Lift a serializable `StoredEvalEnv` to `EvalEnvOf Snap` (`lookBackState? := none`). -/
+@[inline] def StoredEvalEnv.toEvalEnv {Snap : Type} (env : StoredEvalEnv) : EvalEnvOf Snap :=
+  { env with lookBackState? := none }
 
 /-- A random event the engine would otherwise resolve with `Rng`.
 `--norandom` leaves it pending so a host (the demo) can supply the result. -/
@@ -67,7 +113,7 @@ inductive AfterRandom where
   | plusOne (id : ObjectId) (controller : PlayerId) (sourceId : Option ObjectId := none)
 /-- Discard a card at random after the shuffle (Curse-Marred Demon). -/
   | discardRandom (p : PlayerId)
-  /-- Resume the unified Phase-8 `Instruction` interpreter stashed on `ContinuationFrame.interpWait?`. -/
+  /-- Resume the unified `Instruction` interpreter stashed on `ContinuationFrame.interpWait?`. -/
   | continueInterpreter (p : PlayerId)
 deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -78,27 +124,6 @@ def AfterRandom.player? : AfterRandom → Option PlayerId
   | .draw q _ | .gainLife q _ | .revealRandomCreatureThenBottom q _
   | .putOnTop q _ | .beholdUntap q _ _ | .discardRandom q | .continueInterpreter q => some q
   | .plusOne _ ctrl _ => some ctrl
-
-/-- What happens after a Reality Fracture choice is made. Each one is resolved
-through the unified Phase-8 `Instruction` interpreter (`FraNext.toEffect`). -/
-inductive FraNext where
-  | searchBasicLandTapped
-  | searchLandsTapped (n : Nat)
-  | searchEnchantmentToHand
-  | tappedHeartwoods (n : Nat)
-  | eachOpponentSacrificesCreature
-  | drawThenCountersPerDiscard
-  | eyeOfJaceCheck
-  | reflexiveDamageAnyTarget (n : Nat)
-  | reflexiveDestroyPerOpponent
-  | reflexiveReturnLandTapped
-  | beastToken
-  | proliferate (times : Nat)
-  | mshReflexive (kind : TriggeredAbility.TriggerReflexiveKind) (paid : Nat)
-  | gainLife (n : Nat)
-  /-- Return the source from the graveyard to its owner's hand. -/
-  | returnSourceToHand
-deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Where cards found by a library search go (CR 701.23). -/
 inductive SearchDest where
@@ -279,7 +304,7 @@ inductive EnteringAttackItem where
   | card (cardId : ObjectId) (enteringController : PlayerId)
       (effectController : PlayerId) (tapped : Bool) (returnedAsArtifact : Bool)
       (extraEntersWith : CounterBag)
-      (mods : List TriggeredAbility.TriggerEnterWith)
+      (mods : List EnterMod)
       (logKind : EnteringAttackLog) (options : Array AttackTarget)
 deriving Repr, Inhabited, BEq
 
@@ -322,20 +347,20 @@ inductive FraChoice where
   then you gain `life` life. -/
   | mayPutMilledPermanent (ids : Array ObjectId) (life : Nat)
   /-- You may do `next` (accept or decline). -/
-  | mayThen (next : FraNext) (sourceId : Option ObjectId)
+  | mayThen (next : Instruction) (sourceId : Option ObjectId)
   /-- You may pay `{n}`; if you do, do `next`. -/
-  | mayPayThen (n : Nat) (next : FraNext) (sourceId : Option ObjectId)
+  | mayPayThen (n : Nat) (next : Instruction) (sourceId : Option ObjectId)
   /-- You may discard a card; if you do, do `next`. -/
-  | mayDiscardThen (next : FraNext) (sourceId : Option ObjectId)
+  | mayDiscardThen (next : Instruction) (sourceId : Option ObjectId)
   /-- Discard a card (required while you have one), then do `next`. -/
-  | discardThen (next : FraNext) (sourceId : Option ObjectId)
+  | discardThen (next : Instruction) (sourceId : Option ObjectId)
     (causeId : Option ObjectId)
   /-- Discard `n` cards, then tap and stun up to as many target creatures as
   nonland cards were discarded (Seasoned Cryomancer). -/
   | discardThenStun (n : Nat) (sourceId : Option ObjectId)
   /-- You may sacrifice a permanent with one of `types` (land, creature or planeswalker);
   if you do, do `next`. -/
-  | maySacrificeThen (types : Array CardType) (next : FraNext)
+  | maySacrificeThen (types : Array CardType) (next : Instruction)
     (sourceId : Option ObjectId)
   /-- You may remove a +1/+1 counter from `sourceId` (Guiding Hydra). -/
   | mayMovePlusOne (sourceId : ObjectId)
@@ -369,7 +394,7 @@ inductive FraChoice where
   | stackHydeMode (objectId : ObjectId)
   /-- `objectId` gains your choice of the keywords in `options` until end of
   turn. Answered with the index of an option. -/
-  | chooseKeyword (objectId : ObjectId) (options : Array KeywordChoice)
+  | chooseKeyword (objectId : ObjectId) (options : Array KeywordAbility)
   /-- Each player sacrifices a creature of their choice; `controller` creates
   a 4/4 Beast if they sacrificed one (Garruk, Veiled Butcher). `chosen` are
   sacrificed together once everyone has chosen. -/
@@ -392,7 +417,7 @@ inductive FraChoice where
   | costPicks (sourceId : ObjectId) (picks : Array CostPick) (paid : Bool)
   /-- You may pay `pick` (sacrifice, discard, …) as an ability of `sourceId`
   resolves; when you do, do `next`. -/
-  | mayPayPickThen (pick : CostPick) (next : FraNext) (sourceId : Option ObjectId)
+  | mayPayPickThen (pick : CostPick) (next : Instruction) (sourceId : Option ObjectId)
   /-- Choose a creature type you control. `types` are offered by index
   (Orcrist). Answered with `Action.chooseMode` or `Action.chooseName`. -/
   | chooseCreatureType (types : Array CardSubtype)
@@ -407,7 +432,7 @@ inductive FraChoice where
   /-- You may discard `n` of `ids`. Declining pays nothing. -/
   | mayDiscardThese (n : Nat) (ids : Array ObjectId)
   /-- You may pay `symbols`. If you do, do `next` (Silvan Reveler). -/
-  | mayPaySymbolsThen (symbols : Array ManaSymbol) (next : FraNext) (sourceId : ObjectId)
+  | mayPaySymbolsThen (symbols : Array ManaSymbol) (next : Instruction) (sourceId : ObjectId)
   /-- Choose any number of Equipment to attach to `hostId`. Declining
   attaches none (Thorin, Mountain-king). -/
   | attachAnyEquipment (hostId : ObjectId) (eligible : Array ObjectId)
@@ -425,7 +450,7 @@ inductive FraChoice where
   `chosen` are sacrificed together at the end (The Serpent Society). -/
   | sacrificeNontokenEach (rest : Array PlayerId) (chosen : Array ObjectId)
   /-- You may create `n` tokens of `kind`. -/
-  | mayCreateTokens (kind : TokenSpec) (n : Nat) (copyCtx : CopyTokenContext := {})
+  | mayCreateTokens (kind : TokenSpec) (n : Nat) (env : StoredEvalEnv := {})
   /-- You may have `objectId`'s base power and toughness become `p`/`t`
   until end of turn. -/
   | mayBecomeBasePT (objectId : ObjectId) (p t : Int)
@@ -453,19 +478,17 @@ inductive FraChoice where
   /-- Search: choose up to `count` of `eligible` (or none, CR 701.23b), send
   them to `dest`, shuffle, then do `after`. `kind` is the logged card phrase. -/
   | searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
-    (after : Option FraNext) (kind : String)
+    (after : Option Instruction) (kind : String)
   /-- You may search (Old Thrush). Declining does not shuffle. Accepting
   continues as `searchLibrary`. -/
   | maySearchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)
-    (after : Option FraNext) (kind : String)
+    (after : Option Instruction) (kind : String)
   /-- You may pay `cost` up to `maxTimes` times (accept pays once; a mode
-  index pays that many times); when you do, the reflexive ability `kind`
-  triggers. -/
+  index pays that many times); when you do, `reflexive` triggers (CR 603.12). -/
   | mayPayManaForReflexive (cost : Array ManaSymbol) (maxTimes : Nat)
-    (kind : TriggeredAbility.TriggerReflexiveKind)
-    (sourceId : Option ObjectId)
+    (reflexive : Effect) (sourceId : Option ObjectId)
   /-- You may tap the untapped source; if you do, do `next`. -/
-  | mayTapSourceThen (next : FraNext) (sourceId : ObjectId)
+  | mayTapSourceThen (next : Instruction) (sourceId : ObjectId)
   /-- Choose up to `left` more different modes of Hawkeye's Trick Arrows
   (0 Net, 1 Explosive, 2 Boomerang); decline to stop. -/
   | hawkeyeModes (left : Nat) (chosen : Array Nat) (sourceId : Option ObjectId)
@@ -570,11 +593,9 @@ inductive FraChoice where
   /-- Choose one creature type among `types`, then return every creature that
   isn't that type (Raise the Palisade). -/
   | palisadeCreatureType (types : Array CardSubtype)
-  /-- `eligible` are this player's creature cards in hand. `rest` choose next.
-  `exiled` return to their owners' hands after `chosen` enter (Worlds Within
-  Worlds). -/
-  | worldsPutCreatures (eligible : Array ObjectId) (rest : Array PlayerId)
-      (exiled chosen : Array ObjectId) (sourceId : Option ObjectId)
+  /-- `eligible` are this player's creature cards in hand that may be put onto
+  the battlefield (Worlds Within Worlds; continuation carried by `InterpCont`). -/
+  | worldsPutCreatures (eligible : Array ObjectId)
   /-- Put creature cards from `creatures` onto the battlefield. At most one
   when `anyNumber` is false (Earth's Mightiest Heroes). The rest of `looked`
   go to the graveyard. -/
@@ -663,21 +684,21 @@ inductive Pending where
   | chooseTriggerToStack (player : PlayerId)
   /-- You may pay `{n}` generic mana; if you do, draw a card. -/
   | mayPayGeneric (player : PlayerId) (n : Nat)
-  /-- Choose one alternative of a `SpellResolution.or`. For a library
-  top-or-bottom choice, `id` is `some permanentId` and top/bottom name the side.
-  Otherwise `id` is `none`, `chooseTop` is the first alternative, and
+  /-- Choose one alternative of a resolution-time branch choice (`InterpCont.chooseBranch`).
+  For a library top-or-bottom choice, `id` is `some permanentId` and top/bottom name
+  the side. Otherwise `id` is `none`, `chooseTop` is the first alternative, and
   `chooseBottom` the second. -/
   | chooseLibraryPlacement (player : PlayerId) (id : Option ObjectId)
   /-- You may attach an Equipment you control to this creature. -/
   | mayAttachEquipment (player : PlayerId) (hostId : ObjectId)
       (sourceId : Option ObjectId := none)
-  /-- You may resolve the effect stashed in `mayEffect`. -/
+  /-- You may resolve the optional branch stashed in `InterpCont.branchOnChoice`. -/
   | mayResolve (player : PlayerId)
-  /-- Tap any number of untapped Humans you control. A later sequence step
-  draws a card for each Human tapped. -/
+  /-- Tap any number of untapped Humans you control; the tapped count binds
+  into `stepEnv` for the following draw instruction. -/
   | tapHumans (player : PlayerId)
   /-- Pay `{n}` or let the targeted spell (`some spellId`) be countered; when
-  `spellId` is `none`, `unlessPaysInstead` resolves on decline instead. -/
+  `spellId` is `none`, `InterpCont.unlessPays` resolves on decline instead. -/
   | payOrLetCounter (player : PlayerId) (n : Nat) (spellId : Option ObjectId)
   /-- Pay this ward cost or let the targeting spell or ability be countered
   (CR 702.21). `chosen` holds objects already selected for multi-object ward
@@ -702,7 +723,7 @@ inductive Pending where
   | mayCastFromLooked (player : PlayerId) (ids : Array ObjectId) (maxMv : Int)
   /-- You may put a land from hand onto the battlefield tapped. -/
   | mayPutLandFromHand (player : PlayerId)
-  /-- The controller chooses one alternative of a `TriggerResolution.or`. -/
+  /-- The controller chooses one alternative of a resolution-time modal trigger. -/
   | chooseTriggerOr (player : PlayerId)
   /-- You may sacrifice an artifact or discard a card. If you do, draw. -/
   | maySacArtifactOrDiscard (player : PlayerId) (draw : Nat)

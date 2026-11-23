@@ -164,7 +164,7 @@ def speedYoungAvengerReflexiveOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let speed := namedPermanent g "Speed, Young Avenger"
   let unpaid :=
-    g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable) (some speed.id)
+    g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable) (some speed.id)
   !unpaid.hasModeledReflexiveOnStack &&
     (let g := unpaid.addMana ⟨0⟩ (.colored .red) 1
      let g := mustApply g ⟨0⟩ .accept
@@ -190,10 +190,10 @@ def speedReflexiveHasteOnlyOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let g := g.addMana ⟨0⟩ (.colored .red) 1
   let speed := namedPermanent g "Speed, Young Avenger"
-  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingMayPayHasteUnblockable)
     (some speed.id)
   let g := mustApply g ⟨0⟩ .accept
-  let spec := (Game.modeledReflexiveEffect .hasteUnblockable 1).targetSpec
+  let spec := TargetSpec.ofDomain (.object .battlefield (.all #[.hasType .creature, .hasKeyword .haste]))
   let legal := g.legalTargetsForSpec ⟨0⟩ spec (some speed.id)
   let bears := namedPermanent g "Grizzly Bears"
   legal.contains (Target.permanent speed.id) &&
@@ -288,8 +288,8 @@ def kingpinExtortAndToughnessOk : Bool :=
      let g := g.markAttacking kp.id (some (.player ⟨1⟩))
      let kp := namedPermanent g "The Kingpin of Crime"
      let life0 := (g.player ⟨0⟩).life
-     let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingPay2LifeToughness) (some kp.id)
-       #[] "The Kingpin of Crime" (some (1 : Int))
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onYouAttacking Effect.youAttackingPay2LifeToughness) (some kp.id)
+       #[] (lastKnownPower := some (1 : Int))
      let g := mustApply g ⟨0⟩ .accept
      let kp := namedPermanent g "The Kingpin of Crime"
      g.power kp == 1 &&
@@ -335,7 +335,7 @@ def aresDiesAttackingOk : Bool :=
   let g := g.markAttacking ares.id (some (.player ⟨1⟩))
   let ares := namedPermanent g "Ares, God of War"
   let (g, _) := g.move ares.id (.graveyard ⟨0⟩) none
-  let g := g.applyModeledTrigger ⟨0⟩ (.onDeath Effect.deathAttackingReturnHand)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onDeath Effect.deathAttackingReturnHand)
     (some ares.id)
   (g.handObjects ⟨0⟩).any (fun o => o.name == "Ares, God of War") &&
     !g.battlefield.any (fun o => o.name == "Ares, God of War") &&
@@ -574,7 +574,7 @@ def daredevilPlayExiledOk : Bool :=
   let g := addPermanent afterDraw daredevilManWithoutFear ⟨0⟩ ⟨0⟩
   let g := addToLibraryTop g lightningBolt ⟨0⟩
   let dd := namedPermanent g "Daredevil, Man Without Fear"
-  let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
   let g := mustApply g ⟨0⟩ .accept
   let bolt? := g.objects.find? (fun o =>
     o.name == "Lightning Bolt" && o.zone == .exile)
@@ -586,7 +586,7 @@ def daredevilPlayExiledOk : Bool :=
     (let g := addPermanent afterDraw daredevilManWithoutFear ⟨0⟩ ⟨0⟩
      let g := addToLibraryTop g mistyKnightHeroForHire ⟨0⟩
      let dd := namedPermanent g "Daredevil, Man Without Fear"
-     let g := g.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump) (some dd.id)
      let g := mustApply g ⟨0⟩ .accept
      let hero? := g.objects.find? (fun o =>
        o.name == "Misty Knight, Hero for Hire" && o.zone == .exile)

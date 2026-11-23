@@ -3,7 +3,7 @@ import Mtg.Engine.Game.ModeledTriggers
 /-!
 # Reality Fracture resolution helpers
 
-Shared helpers for resolving `Resolution.fra`: target legality, sources and
+Shared helpers for resolving activated and loyalty abilities: target legality, sources and
 causes of resolving abilities, reflexive triggers, and searches.
 -/
 

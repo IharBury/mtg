@@ -380,7 +380,7 @@ stack-exit actions and popping frames back to `#[]`. -/
 partial def completeActiveResolutions (g : Game) : Game :=
   if !g.over && (g.pending != .none || g.afterRandom != .none || g.currentBatch.isSome ||
       g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
-      g.triggerSequenceRest.isSome || g.mayThenResume ||
+      g.currentInterpWait?.isSome ||
       (g.proposedSpell.isNone &&
         (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome))) then g
   else
@@ -440,7 +440,7 @@ partial def completeActiveResolutions (g : Game) : Game :=
         let g := g.finishOneResolution fin
         if g.pending != .none || g.afterRandom != .none || g.currentBatch.isSome ||
             g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
-            g.triggerSequenceRest.isSome || g.mayThenResume ||
+            g.currentInterpWait?.isSome ||
             (g.proposedSpell.isNone &&
               (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)) then g
         else completeActiveResolutions (g.change .popContinuationFrame)
@@ -468,7 +468,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
       g.chainPendingReplacement (.receivePriority p)
     else if g.pending != .none || g.afterRandom != .none then
       if g.pendingPriority == some oldP && oldP != p then savePendingP g p else g
-    else if g.triggerSequenceRest.isSome || g.mayThenResume ||
+    else if g.currentInterpWait?.isSome ||
         g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty then
       g.finishAndGrantPriorityFwd p
     else
@@ -529,7 +529,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
                   w.lastKnownToughness == mine[0]!.lastKnownToughness &&
                   w.delayedTrigger == mine[0]!.delayedTrigger &&
                   w.abilityEffect == mine[0]!.abilityEffect &&
-                  w.reflexiveResolution == mine[0]!.reflexiveResolution)
+                  w.isReflexive == mine[0]!.isReflexive)
           if allIdentical || mine.all (·.ordered) then
             let g := g.putTriggerBatch mine
             let p := g.priorityInstead p

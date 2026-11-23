@@ -638,13 +638,14 @@ structure ObjectFilter where
   zones : ZoneSetSpec
   pred : ObjectPred
 
-/-- Pure expression evaluating to a sequence of objects (live or LKI, 14 constructors). -/
+/-- Pure expression evaluating to a sequence of objects (live or LKI, 15 constructors). -/
 inductive ObjectExpr where
   | this
   | target (slot : Nat := 0)
   | allTargets
   | attachedHost
   | triggerSubject
+  | targetsOf (stackObj : ObjectExpr)
   | stepObjects (v : VarId)
   | linkedExile (source : ObjectExpr)
   | costPaidObjects
@@ -655,7 +656,7 @@ inductive ObjectExpr where
   | union (exprs : Array ObjectExpr)
   | diff (lhs rhs : ObjectExpr)
 
-/-- Pure integer-valued expression (CR 107 / 608.2h; 15 constructors). -/
+/-- Pure integer-valued expression (CR 107 / 608.2h; 16 constructors). -/
 inductive ValueExpr where
   | const (n : Int)
   | chosenX
@@ -670,6 +671,7 @@ inductive ValueExpr where
   | playerMetric (metric : PlayerMetric) (who : PlayerExpr)
   | maxControlled (who : PlayerFilter) (pred : ObjectPred)
   | manaSymbols (color? : Option Color) (objs : ObjectExpr)
+  | manaSpent (obj : ObjectExpr)
   | stepMetric (metric : StepMetric) (v : VarId)
   | binary (op : ArithOp) (lhs rhs : ValueExpr)
 
@@ -722,6 +724,7 @@ instance : Repr ValueExpr := ⟨instReprPlayerFilter.repr_12⟩
 inductive LibraryPosSpec where
   | top
   | bottom
+  | bottomRandom
   | fromTop (offset : ValueExpr)
   | shuffledIn
 deriving Repr, Inhabited, BEq
@@ -752,6 +755,7 @@ inductive EventHistoryPred where
   | eventOccurredThisTurn (who : PlayerFilter) (pattern : EventPattern)
   | eventOccurredLastTurn (who : PlayerFilter) (pattern : EventPattern)
   | firstResolutionThisTurn
+  | nthResolutionThisTurn (n : Nat)
   | optionalOnceUnusedThisTurn
 deriving Repr, Inhabited, BEq
 
@@ -1026,6 +1030,7 @@ private partial def objectFilterMentionsTarget (f : ObjectFilter) : Bool :=
 
 private partial def objectExprMentionsTarget : ObjectExpr → Bool
   | .target _ | .allTargets => true
+  | .targetsOf stackObj => objectExprMentionsTarget stackObj
   | .linkedExile src => objectExprMentionsTarget src
   | .inZones zs pred =>
     (match zs.owner with
@@ -1041,7 +1046,8 @@ private partial def objectExprMentionsTarget : ObjectExpr → Bool
 
 private partial def valueExprMentionsTarget : ValueExpr → Bool
   | .objectStat _ o | .counterCount _ o | .aggregate _ _ o | .basicLandTypeCount o
-  | .cardTypeCount o | .subtypeCount _ o | .colorCountAmong o | .manaSymbols _ o =>
+  | .cardTypeCount o | .subtypeCount _ o | .colorCountAmong o | .manaSymbols _ o
+  | .manaSpent o =>
     objectExprMentionsTarget o
   | .playerMetric _ w => playerExprMentionsTarget w
   | .maxControlled pf pred => playerFilterMentionsTarget pf || objectPredMentionsTarget pred
@@ -1188,6 +1194,7 @@ private partial def applyTcObjectExpr (tcs : Array TextChange) : ObjectExpr → 
   | .allTargets => .allTargets
   | .attachedHost => .attachedHost
   | .triggerSubject => .triggerSubject
+  | .targetsOf stackObj => .targetsOf (applyTcObjectExpr tcs stackObj)
   | .stepObjects v => .stepObjects v
   | .linkedExile src => .linkedExile (applyTcObjectExpr tcs src)
   | .costPaidObjects => .costPaidObjects
@@ -1214,6 +1221,7 @@ private partial def applyTcValueExpr (tcs : Array TextChange) : ValueExpr → Va
   | .maxControlled pf pred => .maxControlled (applyTcPlayerFilter tcs pf) (applyTcObjectPred tcs pred)
   | .manaSymbols col? objs =>
     .manaSymbols (HasTextChange.applyTextChanges tcs col?) (applyTcObjectExpr tcs objs)
+  | .manaSpent obj => .manaSpent (applyTcObjectExpr tcs obj)
   | .stepMetric m v => .stepMetric m v
   | .binary op a b => .binary op (applyTcValueExpr tcs a) (applyTcValueExpr tcs b)
 
@@ -1289,6 +1297,7 @@ instance : HasTextChange EventHistoryPred where
         .eventOccurredLastTurn (HasTextChange.applyTextChanges tcs who)
           (HasTextChange.applyTextChanges tcs pat)
       | .firstResolutionThisTurn => .firstResolutionThisTurn
+      | .nthResolutionThisTurn n => .nthResolutionThisTurn n
       | .optionalOnceUnusedThisTurn => .optionalOnceUnusedThisTurn
 
 private def applyTcCondition (tcs : Array TextChange) : Condition → Condition
@@ -1771,6 +1780,7 @@ private partial def printObjectExpr (ctx : PrintCtx) : ObjectExpr → String
   | .allTargets => "each target"
   | .attachedHost => "enchanted or equipped permanent"
   | .triggerSubject => "that object"
+  | .targetsOf stackObj => s!"objects targeted by {printObjectExpr { ctx with capitalize := false } stackObj}"
   | .stepObjects _ => "those objects"
   | .linkedExile src => s!"cards exiled with {printObjectExpr { ctx with capitalize := false } src}"
   | .costPaidObjects => "those exiled cards"
@@ -1878,6 +1888,8 @@ private partial def printValueExpr (ctx : PrintCtx) : ValueExpr → String
     s!"the number of {c.englishName} mana symbols in the mana costs of {printObjectExpr { ctx with plural := true, capitalize := false } objs}"
   | .manaSymbols none objs =>
     s!"the number of mana symbols in the mana costs of {printObjectExpr { ctx with plural := true, capitalize := false } objs}"
+  | .manaSpent obj =>
+    s!"the amount of mana spent to cast {printObjectExpr { ctx with plural := false, capitalize := false } obj}"
   | .stepMetric .movedCount _ => "the number of cards moved this way"
   | .stepMetric .createdCount _ => "the number of tokens created this way"
   | .stepMetric .damageDealt _ => "the amount of damage dealt this way"
@@ -1917,6 +1929,7 @@ instance : ToOracle LibraryPosSpec where
   toOracle ctx
     | .top => applyCap ctx "on top of its owner's library"
     | .bottom => applyCap ctx "on the bottom of its owner's library"
+    | .bottomRandom => applyCap ctx "on the bottom of its owner's library in a random order"
     | .fromTop v =>
       applyCap ctx s!"{printValueExpr { ctx with capitalize := false } v} from the top of its owner's library"
     | .shuffledIn => applyCap ctx "shuffled into its owner's library"
@@ -1930,6 +1943,10 @@ private def printEventHistory (ctx : PrintCtx) : EventHistoryPred → String
   | .eventOccurredThisTurn who pat => printEventAtTurn ctx who pat "this turn"
   | .eventOccurredLastTurn who pat => printEventAtTurn ctx who pat "last turn"
   | .firstResolutionThisTurn => "this is the first time this ability has resolved this turn"
+  | .nthResolutionThisTurn 1 => "this is the first time this ability has resolved this turn"
+  | .nthResolutionThisTurn 2 => "this is the second time this ability has resolved this turn"
+  | .nthResolutionThisTurn 3 => "this is the third time this ability has resolved this turn"
+  | .nthResolutionThisTurn n => s!"this is time {n} this ability has resolved this turn"
   | .optionalOnceUnusedThisTurn => "this optional effect hasn't been used this turn"
 where
   printEventAtTurn (ctx : PrintCtx) (who : PlayerFilter) (pat : EventPattern) (whenS : String) : String :=

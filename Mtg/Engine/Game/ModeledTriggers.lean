@@ -1,10 +1,10 @@
 import Mtg.Engine.Game.ResolutionEffects
 
 /-!
-# Modeled trigger resolution
+# Modeled trigger helpers
 
-`applyModeledTrigger` — resolving the shared-trigger payloads — leftover
-rules-text effects, and boast, teamwork, and pay-or-counter helpers.
+Supporting helpers for trigger resolution, boast, teamwork, and pay-or-counter
+flows.
 -/
 
 namespace Mtg.Engine
@@ -78,58 +78,6 @@ def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
         anyMana := true }) (cause := cause)
         |>.logMsg s!"{(g.player controller).name} may cast {g.name o} until end of turn"
 
-/-- Finish Black Widow's combat-damage trigger once `exileLibraryUntilNonlandLoop`
-stops on a nonland card or an empty library (CR 616.1). -/
-def finishExileLibraryUntilNonland (g : Game) (controller : PlayerId)
-    (sourceId : Option ObjectId) (nonland? : Option ObjectId)
-    (cause : Option EventCause) : Game :=
-  if !g.stillInGame controller then g
-  else
-    let onBf := (sourceId.bind g.findObject?).any (·.isOnBattlefield)
-    if onBf then
-      g.beginFraChoice controller (.widowMayCounter sourceId nonland?)
-        "You may put a +1/+1 counter on Black Widow"
-    else
-      g.grantWidowCast controller nonland? (cause := cause)
-
-/-- Pause-safe loop exiling from `pid`'s library until a nonland card is exiled,
-then finishing Black Widow's counter/cast prompt (CR 614.6 / 616.1). -/
-partial def exileLibraryUntilNonlandLoop (g : Game) (pid controller : PlayerId)
-    (sourceId : Option ObjectId) (cause : Option EventCause)
-    (pendingFromId : Option ObjectId := none) : Game :=
-  match pendingFromId with
-  | some fid =>
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep (.exileLibraryUntilNonlandLoop pid controller sourceId cause (some fid)))
-    else
-      match g.followMovedToZone? fid (· == .exile) with
-      | some o =>
-        let g := g.logMsg s!"{(g.player pid).name} exiles {g.name o}"
-        if !g.isLand o then
-          g.finishExileLibraryUntilNonland controller sourceId (some o.id) cause
-        else
-          g.exileLibraryUntilNonlandLoop pid controller sourceId cause none
-      | none =>
-        g.exileLibraryUntilNonlandLoop pid controller sourceId cause none
-  | none =>
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep (.exileLibraryUntilNonlandLoop pid controller sourceId cause none))
-    else if !g.stillInGame pid then
-      g.finishExileLibraryUntilNonland controller sourceId none cause
-    else
-      match (g.player pid).library.back? with
-      | none =>
-        g.finishExileLibraryUntilNonland controller sourceId none cause
-      | some id =>
-        let (g, _) := g.move id .exile none (cause := cause)
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.finishPostStep (.exileLibraryUntilNonlandLoop pid controller sourceId cause (some id)))
-        else
-          g.exileLibraryUntilNonlandLoop pid controller sourceId cause (some id)
-
 /-- Finish entering and animating token(s) recorded in `recentTokenIds` for
 Ultron's artifact-copy trigger (MSH 547 / 574 / 656). -/
 def finishArtifactCopyTokens (g : Game) : Game :=
@@ -154,48 +102,6 @@ def finishArtifactCopyTokens (g : Game) : Game :=
                 (.layered (.objects #[tok.id]) (.ptSet 2 2) .indefinite)
             g.logMsg s!"{g.name tok} becomes a 2/2 Robot Villain creature after it enters") g
 
-/-- Copy the nontoken artifact that entered (using `lastKnownBefore?` LKI if it
-has already left the battlefield; CR 608.2h / 707.12 / MSH 547 / 656), then make
-a noncreature token a 2/2 Robot Villain after it enters (MSH 574). -/
-def copyEnteredArtifact (g : Game) (controller : PlayerId) (artifactId : ObjectId) : Game :=
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.copyEnteredArtifact controller artifactId))
-  else
-  let copiableRes : Except String CardDef :=
-    match g.findObject? artifactId with
-    | some src =>
-      if src.isOnBattlefield then
-        if src.printed.isToken || !g.isArtifact src then
-          .error "That permanent isn't a nontoken artifact"
-        else
-          .ok (g.copiableValues src)
-      else
-        match g.lastKnownBefore? artifactId with
-        | some eo =>
-          if eo.token || !eo.artifact then .error "That permanent isn't a nontoken artifact"
-          else .ok (eo.copiable.getD eo.toCardDef)
-        | none => .error "Ultron has nothing to copy"
-    | none =>
-      match g.lastKnownBefore? artifactId with
-      | some eo =>
-        if eo.token || !eo.artifact then .error "That permanent isn't a nontoken artifact"
-        else .ok (eo.copiable.getD eo.toCardDef)
-      | none => .error "Ultron has nothing to copy"
-  match copiableRes with
-  | .error msg => g.logMsg msg
-  | .ok copiable =>
-    let pushedFrame := g.continuations.isEmpty
-    let g := if pushedFrame then g.change (.pushContinuationFrame {}) else g
-    let g := g.change (.recentTokenIds #[])
-    let (g, _) := g.createToken controller copiable (recordRecent := true)
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement .finishArtifactCopyToken
-    else
-      let g := g.finishArtifactCopyTokens
-      if pushedFrame && g.pending == .none && g.pendingReplacement.isNone then
-        g.change .popContinuationFrame
-      else g
-
 /-- Finish pumping Daredevil after `exileTopPlayThisTurn` completes (MSH 685). -/
 def finishDaredevilExile (g : Game) (sourceId : Option ObjectId)
     (top? : Option ObjectId) : Game :=
@@ -212,10 +118,7 @@ exiled card may be played this turn either way (MSH 685). -/
 def applyDaredevilExile (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
   let top? := (g.player controller).library.back?
   let g := g.exileTopPlayThisTurn controller 1
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.finishDaredevilExile sourceId top?))
-  else
-    g.finishDaredevilExile sourceId top?
+  g.finishDaredevilExile sourceId top?
 
 /-- The Vision's chosen mode that hasn't been chosen yet this turn.
 0 double strike, 1 indestructible, 2 draw. -/
@@ -349,76 +252,6 @@ def offerHydeChoice (g : Game) (controller : PlayerId) (sourceId : Option Object
   g.beginFraChoice controller (.hydeMode sourceId)
     s!"{(g.player controller).name} chooses one — 0 put a +1/+1 counter, 1 remove a counter and draw"
 
-/-- Something becomes a copy, as `of` says. The source copies an announced
-object until the controller's next turn and keeps the printed exception
-name. Choosing none copies nothing. A missing source copies nothing.
-`.noted` makes the enchanted creature a copy of the creature an earlier
-step noted, until the source leaves. Nothing noted copies nothing.
-`.cause` with no subtype creates a token copy of the nontoken artifact
-that caused this. An announced permanent is used when one was chosen;
-otherwise the recorded cause. The source need not still be on the
-battlefield. Any other selector copies nothing. -/
-def applyBecomeCopy (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
-    (targets : Array Target) (of : TriggeredAbility.ObjectSelector) : Game :=
-  match of with
-  | .noted =>
-    let copied := g.notedCopyObject
-    let hostId := g.notedHostId
-    let g := g.changes #[.notedCopyObject none, .notedHostId none]
-    match copied, hostId with
-    | some tgt, some hid =>
-      match g.findObject? hid with
-      | some host => g.becomeCopyOf host tgt (untilSourceLeaves := sourceId)
-      | none => g
-    | _, _ => g
-  | .cause none =>
-    let fromTarget :=
-      match targets[0]? with
-      | some (Target.permanent id) => some id
-      | _ => none
-    let causeId :=
-      (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)
-    match fromTarget.orElse (fun _ => causeId) with
-    | none => g.logMsg "Ultron has nothing to copy"
-    | some id => g.copyEnteredArtifact controller id
-  | .artifactEnchantmentOrLand =>
-    g.withSourceOnBattlefield sourceId (fun g src =>
-      match targets[0]? with
-      | some (Target.permanent id) =>
-        match g.findObject? id with
-        | some tgt =>
-          let ok := tgt.isOnBattlefield && !g.isAura tgt &&
-            (g.isArtifact tgt || g.isEnchantment tgt || g.isLand tgt)
-          if ok then
-            g.becomeCopyOf src tgt (untilNextTurn := true) (nextTurnOf := some controller)
-              (exceptName := some "Absorbing Man")
-              (addSupertypes := #[.legendary]) (addTypes := #[.creature])
-              (addSubtypes := #[.human, .villain])
-              (setPT := some (4, 4)) (addVigilance := true)
-          else g.logMsg "That permanent isn't an artifact, non-Aura enchantment, or land"
-        | none => g.logMsg "The target is no longer legal"
-      | _ => g.logMsg "Absorbing Man doesn't become a copy")
-      "The source is no longer in play"
-  | .creatureOrGraveyardCard =>
-    g.withSourceOnBattlefield sourceId (fun g src =>
-      match targets[0]? with
-      | some (Target.permanent id) | some (Target.card id) =>
-        match g.findObject? id with
-        | some tgt =>
-          let onBf := tgt.isOnBattlefield && g.isCreature tgt
-          let inGy := tgt.zone == .graveyard tgt.owner && g.isCreature tgt
-          if onBf || inGy then
-            g.becomeCopyOf src tgt (untilNextTurn := true) (nextTurnOf := some controller)
-              (exceptName := some "Taskmaster, Mercenary Mimic")
-              (addSupertypes := #[.legendary]) (addTypes := #[.creature])
-              (addSubtypes := #[.human, .mercenary, .villain])
-              (replaceCreatureLine := true)
-          else g.logMsg "That isn't a creature or a creature card in a graveyard"
-        | none => g.logMsg "The target is no longer legal"
-      | _ => g.logMsg "Taskmaster doesn't become a copy")
-      "The source is no longer in play"
-  | _ => g
-
 /-- Exile the announced nonland the controller still controls, other than the
 source, then return it under its owner's control. Choosing none does nothing.
 An illegal target is reported. -/
@@ -460,7 +293,7 @@ def returnNontokenTapped (g : Game) (targets : Array Target) : Game :=
 /-- Put `o` onto the battlefield under its owner's control, then apply
 `mods` before its enters abilities. -/
 def enterFromOwnerGraveyard (g : Game) (controller : PlayerId) (o : GameObject)
-    (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
+    (mods : List EnterMod) : Game :=
   let (g, cause) := g.allocDelayedCause (some controller)
   let options := g.enterModsAttackOptions o.owner mods
   let item := EnteringAttackItem.card o.id o.owner controller false false
@@ -470,7 +303,7 @@ def enterFromOwnerGraveyard (g : Game) (controller : PlayerId) (o : GameObject)
 /-- Return the source from its owner's graveyard under its owner's control.
 Hellcat's return reports her by name when she has already left. -/
 def returnSourceUnderOwner (g : Game) (controller : PlayerId)
-    (sourceId : Option ObjectId) (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
+    (sourceId : Option ObjectId) (mods : List EnterMod) : Game :=
   let hellcat := losesAbilitiesAndHaste mods
   let missing :=
     if hellcat then "Hellcat is no longer in the graveyard"
@@ -492,7 +325,7 @@ def announcedOrCauseGraveyardObj? (g : Game) (targets : Array Target) : Option G
 /-- Return the cause from its owner's graveyard under its owner's control.
 `subtype`, when set, requires that subtype. A missing cause puts nothing. -/
 def returnCauseUnderOwner (g : Game) (controller : PlayerId) (targets : Array Target)
-    (subtype : Option CardSubtype) (mods : List TriggeredAbility.TriggerEnterWith) : Game :=
+    (subtype : Option CardSubtype) (mods : List EnterMod) : Game :=
   match g.announcedOrCauseGraveyardObj? targets with
   | some o =>
     let ok :=
@@ -599,51 +432,6 @@ def blueSymbolsInCastSpell (g : Game) (lastKnownPower : Option Int) : Nat :=
         | some o => (g.copiableValues o).manaCost.symbolsIncludingColor .blue
         | none => 0
 
-/-- Create one 1/1 blue Merfolk for each blue mana symbol in the causing spell. -/
-def createMerfolkForBlueSymbols (g : Game) (controller : PlayerId)
-    (lastKnownPower : Option Int) : Game :=
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.createMerfolkForBlueSymbols controller lastKnownPower))
-  else
-    let n := g.blueSymbolsInCastSpell lastKnownPower
-    if n == 0 then
-      g.logMsg "No blue mana symbols. No Merfolk are created."
-    else
-      g.withBatch none fun g =>
-        (g.createToken controller merfolk11blueToken (count := n)).1
-
-/-- Ask for one Vision mode that has not been chosen this turn. The chosen
-resolution is `TriggerResolution.visionModes`. -/
-def offerVisionModes (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target := #[])
-    (lastKnownPower : Option Int := none) (sourceName : String := "This creature")
-    (lastKnownToughness : Option Int := none) : Game :=
-  match sourceId with
-  | some sid =>
-    if (g.findObject? sid).isNone && (g.lastKnownBefore? sid).isNone then
-      g.logMsg "The Vision is no longer in play"
-    else
-      let chosen := g.modesChosenThisTurn sid
-      let available :=
-        #[0, 1, 2].filter (fun m => !chosen.contains m)
-      if available.isEmpty then
-        g.logMsg "The Vision's ability is removed from the stack with no effect"
-      else
-        g.beginFraChoice controller (.visionMode sid available)
-          "Choose one that hasn't been chosen this turn"
-          |>.change (.chooseModesRest (some {
-            controller
-            ability := ab
-            sourceId
-            targets
-            lastKnownPower
-            lastKnownToughness
-            sourceName
-            modes := TriggeredAbility.TriggerResolution.visionModes
-            how := .vision }))
-  | none =>
-    g.logMsg "The Vision is no longer in play"
-
 /-- The source gains Iron Fist's tap ability until end of turn. -/
 def grantIronFistTap (g : Game) (sourceId : Option ObjectId) : Game :=
   g.withSourceOnBattlefield sourceId (fun g o =>
@@ -718,192 +506,6 @@ def offerMayCreateWall (g : Game) (controller : PlayerId) : Game :=
   g.beginFraChoice controller (.mayCreateTokens .wall04defender 1)
     s!"{(g.player controller).name} may create a 0/4 Wall creature token with defender"
 
-/-- Put a +1/+1 counter on each `remaining` target creature `controller`
-controls one at a time, pausing across `Pending.chooseReplacement` so subsequent
-target legality checks do not run before an earlier replacement resolves. -/
-partial def putPlusOnesUpToLastKnownLoop (g : Game) (controller : PlayerId)
-    (remaining : Array Target) (sourceId : Option ObjectId := none) : Game :=
-  match remaining[0]? with
-  | none => g
-  | some t =>
-    let rest := remaining.extract 1 remaining.size
-    let g :=
-      match t with
-      | Target.permanent id =>
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller &&
-              g.canBeTargetedBy controller o sourceId then
-            g.addPlusOnePlusOneTo o 1
-          else g.logMsg "The target is no longer legal"
-        | none => g.logMsg "The target is no longer legal"
-      | _ => g.logMsg "The target is no longer legal"
-    if rest.isEmpty then g
-    else if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep (.putPlusOnesUpToLastKnownLoop controller rest sourceId))
-    else
-      g.putPlusOnesUpToLastKnownLoop controller rest sourceId
-
-/-- Put a +1/+1 counter on each announced creature you control, up to the
-life gained in that event (the trigger's last-known power). -/
-def putPlusOnesUpToLastKnown (g : Game) (controller : PlayerId)
-    (targets : Array Target) (lastKnownPower : Option Int)
-    (sourceId : Option ObjectId := none) : Game :=
-  let n := (lastKnownPower.getD 0).toNat
-  g.withBatch none fun g =>
-    g.putPlusOnesUpToLastKnownLoop controller (targets.extract 0 n) sourceId
-
-/-- Finish registering `.endStepReturn` for `(.casting .exileFlicker)` after
-`g.move` to `.exile` completes (CR 614.6 / 616.1). -/
-def finishExileFlickerAfterExile (g : Game) (controller : PlayerId)
-    (fromId : ObjectId) (cardName : String) (sourceId : Option ObjectId)
-    (cause : EventCause) : Game :=
-  match g.followMovedToZone? fromId (· == .exile) with
-  | none => g
-  | some moved =>
-    let src := (sourceId.bind g.findObject?).orElse (fun _ => some moved)
-    g.registerDelayedTrigger { controller, source := src, kind := .endStepReturn moved.id, cause }
-      |>.logMsg s!"{cardName} is exiled until the beginning of the next end step"
-
-/-- Resolve a modeled leftover trigger from its `SharedTrigger` constructor.
-Effects are applied from that structured payload — not from Oracle text. -/
-def applyModeledTrigger (g : Game) (controller : PlayerId) (t : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target := #[])
-    (sourceName : String := "This creature")
-    (lastKnownPower : Option Int := none)
-    (lastKnownToughness : Option Int := none) : Game :=
-  match t.shared with
-  | (.step .copyAbsorbingMan) =>
-    g.applyBecomeCopy controller sourceId targets .artifactEnchantmentOrLand
-  | (.step .copyTaskmaster) =>
-    g.applyBecomeCopy controller sourceId targets .creatureOrGraveyardCard
-  | (.casting .mayPayHasteUnblockable) =>
-    g.offerPayForReflexive controller sourceId #[.generic 1] .hasteUnblockable
-  | (.youAttacking .exileTopHeroPump) =>
-    g.offerExileTopHeroPump controller sourceId
-  | (.youAttacking .pay2LifeToughness) =>
-    g.offerPay2LifeToughness controller
-  | (.death .attackingReturnHand) =>
-    g.returnCauseToOwnerHand targets
-  | (.death .villainReturnAsHero) =>
-    g.returnCauseUnderOwner controller targets (some .villain)
-      [.additionalSubtype .hero, .counter .finality]
-  | (.casting .villainToken) =>
-    g.createKindTokens controller .villain21menace 1
-  | (.resource .plusOneCreateInsectOnce) =>
-    g.createKindTokens controller .insect11green 1
-  | (.resource .plusOneOnHeroesCreateWall) =>
-    g.offerMayCreateWall controller
-  | (.resource .secondDrawBecome66) =>
-    g.withSourceOnBattlefield sourceId (fun g o =>
-      g.createEffects
-        #[.setBasePTUntilEot o.id (6, 6), .keywordsUntilEot o.id #[Keyword.trample]]
-        |>.logMsg s!"{g.name o}'s base power and toughness become 6/6")
-      "The source is no longer in play"
-  | (.casting .visionModes) =>
-    g.offerVisionModes controller t sourceId targets lastKnownPower sourceName
-      (lastKnownToughness := lastKnownToughness)
-  | (.casting .ironFistTap) =>
-    g.grantIronFistTap sourceId
-  | (.casting .drawPowerEqualHand) =>
-    let g := g.draw controller 1
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep (.grantHandSizePower sourceId))
-    else
-      g.grantHandSizePower sourceId
-  | (.step .hydeChoose) =>
-    let chosenMode? :=
-      g.resolvingModes.bind (·[0]?) <|>
-        (g.resolvingAbility.bind g.stackEntry?).bind (·.chosenMode)
-    match chosenMode? with
-    | none => g.offerHydeChoice controller sourceId
-    | some mode => g.applyHydeMode controller sourceId mode targets
-  | (.resource .drawIfAnotherHeroDamage) =>
-    if (g.permanentsOf controller).any (fun o =>
-        g.hasSubtype o .hero && some o.id != sourceId) then
-      g.withLegalSpecTarget controller .opponent targets (fun g tgt =>
-        match tgt with
-        | Target.player pid => g.dealDamageToPlayer pid 1 (source := sourceId.bind g.damageSourceById?)
-        | _ => g) sourceId none
-    else
-      g.logMsg "Human Torch's ability has no effect"
-  | (.step .drawToTen) =>
-    g.drawUpToHandSize controller 10
-  | (.step .harnessedFlicker) =>
-    g.resolveHarnessedFlicker controller sourceId targets
-  | (.youAttacking .lookSixCast) =>
-    g.offerLookSixCast controller
-  | (.step .enchantedControllerDraws) =>
-    g.drawForEnchantedController sourceId
-  | (.death .hellcatReturn) =>
-    g.returnSourceUnderOwner controller sourceId
-      [.loseAllAbilities, .keywords #[Keyword.haste], .counter .plusOnePlusOne (asEnters := true)]
-  | (.death .deathtouchOppSac) =>
-    g.continueNontokenSacrifices ((g.livingOpponents controller).map (·.id)) #[]
-  | (.casting .exileFlicker) =>
-    let spec := TargetSpec.ofDomain (.object .battlefield (ObjectPred.andAll #[
-      .otherThan .this, .not (.hasType .land), .isToken false]))
-    g.withLegalSpecPermanent controller spec targets (fun g o =>
-      let name := g.name o
-      let (g, cause) := g.allocDelayedCause (some controller) sourceId
-      let (g, _) := g.move o.id .exile none (cause := some cause)
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement
-          (.finishPostStep (.exileFlickerAfterExile controller o.id name sourceId cause))
-      else
-        g.finishExileFlickerAfterExile controller o.id name sourceId cause)
-      sourceId (some "The target is no longer legal")
-  | (.casting .damageEqualMv) =>
-    let n := g.castSpellManaValue controller lastKnownPower
-    g.applyDamageToSpecTarget controller .anyTarget targets n sourceId none
-  | (.casting .merfolkFromBlue) =>
-    g.createMerfolkForBlueSymbols controller lastKnownPower
-  | (.casting .plusOneEachOther) =>
-    g.forEachControlledCreature controller (fun g o =>
-      if some o.id != sourceId then g.addPlusOnePlusOneTo o 1 else g)
-  | (.casting .plusOneThis) =>
-    g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-      "The source is no longer in play"
-  | (.casting .plusOneScry) =>
-    let g :=
-      g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-        "The source is no longer in play"
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep (.beginScryOne controller))
-    else
-      g.beginScry controller 1
-  | (.casting .targetsGainFlying) =>
-    g.grantKeywordsToSpellCreatureTargets #[Keyword.flying]
-  | (.casting .copyIfArtifactOrLand) =>
-    let g := g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 2)
-      "The source is no longer in play"
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep (.copyCastTriggerSpell controller))
-    else
-      g.copyCastTriggerSpell controller
-  | (.casting .tapCreatureOrLand) =>
-    let spec := TargetSpec.ofDomain (.object .battlefield (.any #[.hasType .creature, .hasType .land]))
-    g.withLegalSpecPermanent controller spec targets
-      (fun g o => g.becomeTapped o) sourceId
-      (some "The target is no longer legal")
-  | (.resource .discardExilePlay) =>
-    g.offerMayExileDiscarded controller
-  | (.resource .secondDrawPlusOneTarget) =>
-    g.withLegalSpecPermanent controller .creature targets
-      (fun g o => g.addPlusOnePlusOneTo o 1) sourceId
-      (some "The target is no longer legal")
-  | (.resource .secondDrawDrain) =>
-    g.eachOpponentLosesYouGain controller 1
-  | (.resource .gainLifePlusOnes) =>
-    g.putPlusOnesUpToLastKnown controller targets lastKnownPower (sourceId := sourceId)
-  | (.resource .plusOneOnThisOnce) =>
-    g.withSourceOnBattlefield sourceId (fun g o => g.addPlusOnePlusOneTo o 1)
-      "The source is no longer in play"
-  | _ =>
-    g.withSourceOnBattlefield sourceId (fun g _ => g)
-      s!"{sourceName} resolves"
-
 /-- Put the targeted creature into its owner's library, second from the top
 or on the bottom (Trickster's Stratagem). -/
 def applyOwnerPutsLibraryThenConnive (g : Game) (controller : PlayerId)
@@ -936,42 +538,6 @@ def applyOwnerPutsLibraryThenConnive (g : Game) (controller : PlayerId)
       | none => g.logMsg "The target is no longer legal"
     | _ => g.logMsg "The target is no longer legal"
 
-/-- Avengers Disassembled: if the land mode was chosen and that target is
-illegal, the spell does not resolve — even the untargeted damage mode
-(MSH 207). If the land is legal but indestructible, its controller still
-searches. -/
-def applyAvengersDisassembled (g : Game) (controller : PlayerId)
-    (choseDamage choseLand : Bool) (landId : Option ObjectId)
-    (sourceId : Option ObjectId := none) : Game :=
-  let srcId := sourceId.orElse (fun _ => g.resolvingSpell)
-  let landOk :=
-    match landId.bind g.findObject? with
-    | some o => o.isOnBattlefield && g.isLand o && g.canBeTargetedBy controller o srcId
-    | none => false
-  if choseLand && !landOk then
-    g.logMsg "The target is no longer legal. Avengers Disassembled doesn't resolve."
-  else
-    let g :=
-      if choseDamage then
-        g.dealDamageToEachCreatureMatching 3
-      else g
-    if choseLand then
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep (.destroyTargetLandThenOfferSearchBasics controller srcId landId))
-      else
-        match landId.bind g.findObject? with
-        | some o =>
-          if o.isOnBattlefield && g.isLand o && g.canBeTargetedBy controller o srcId then
-            let owner := o.owner
-            let g := g.destroyPermanent o
-            if let .chooseReplacement .. := g.pending then
-              g.chainPendingReplacement (.finishPostStep (.offerMaySearchBasics owner))
-            else
-              g.offerMaySearchBasics owner
-          else g
-        | none => g
-    else g
-
 /-- Whether the resolving stack object paid its teamwork cost. -/
 def resolvingTeamworkPaid (g : Game) : Bool :=
   g.spellPaidTeamwork
@@ -992,50 +558,10 @@ def beginPayOrLetCounter (g : Game) (targets : Array Target) (n : Nat) : Game :=
     match g.findObject? id with
     | some o =>
       let ctrl := o.controller.getD o.owner
-      ((g.clearUnlessPays).change (.pending (.payOrLetCounter ctrl n (some id)))).logMsg
+      (g.change (.pending (.payOrLetCounter ctrl n (some id)))).logMsg
         s!"{(g.player ctrl).name} may pay \{{n}} or {g.name o} is countered"
     | none => g.logMsg "The target is no longer legal"
   | _ => g.logMsg "The target is no longer legal"
-
-/-- Ask the target's controller to pay `{n}`. If they do not, resolve `body`.
-Countering uses the existing “pay or let the spell be countered” choice. -/
-def beginUnlessPays (g : Game) (controller : PlayerId) (effect : Effect)
-    (targets : Array Target) (body : Instruction) (n : Nat)
-    (sourceId : Option ObjectId := none)
-    (resCtx : SpellResolutionCtx := {}) : Game :=
-  g.withContinuationFrame fun g =>
-    match body with
-    | .stack (.counterStack ..) => g.beginPayOrLetCounter targets n
-    | _ =>
-      let payer? : Option (PlayerId × Option ObjectId) :=
-        match targets[0]? with
-        | some (Target.card id) =>
-          match g.findObject? id with
-          | some o => some (o.controller.getD o.owner, some id)
-          | none => none
-        | some (Target.permanent id) =>
-          match g.findObject? id with
-          | some o =>
-            if o.isOnBattlefield && !g.canBeTargetedBy controller o sourceId then none
-            else (g.lastControllerOf? o).map (fun pid => (pid, none))
-          | none => none
-        | some (Target.player pid) =>
-          if !g.stillInGame pid || !g.playerCanBeTargetedBy controller pid sourceId then none
-          else some (pid, none)
-        | _ => none
-      match payer? with
-      | none => g.logMsg "The target is no longer legal"
-      | some (payer, spellId?) =>
-        let inner : Effect := { effect with body, resolution? := none }
-        (g.changes #[
-          .pending (.payOrLetCounter payer n spellId?),
-          .unlessPaysInstead (some inner),
-          .unlessPaysController controller,
-          .unlessPaysTargets targets,
-          .unlessPaysSource sourceId,
-          .unlessPaysDue false,
-          .unlessPaysResCtx resCtx]).logMsg
-          s!"{(g.player payer).name} may pay \{{n}} or {if inner.phrase.isEmpty then ToOracle.toOracle {} inner.body else inner.phrase}"
 
 /-- Exile `o`, then immediately return it to the battlefield under its
 owner's control. `clearExileFields` drops a play permission or linked exile

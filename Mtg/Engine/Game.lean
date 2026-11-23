@@ -38,7 +38,6 @@ import Mtg.Engine.Game.ModeledTriggers
 import Mtg.Engine.Game.FraHelpers
 import Mtg.Engine.Game.FraAbilities
 import Mtg.Engine.Game.CastExtras
-import Mtg.Engine.Game.ResolutionCompat
 import Mtg.Engine.Game.Interpreter
 import Mtg.Engine.Game.TriggeredAbilities
 import Mtg.Engine.Game.SpellResolution
@@ -177,7 +176,6 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `ResolutionEffects`: Named resolution effects
 - `ModeledTriggers`: Modeled trigger resolution
 - `CastExtras`: Optional costs, cascade, and the Ring
-- `ResolutionCompat`: Phase-9 legacy continuation loops
 - `Interpreter`: Unified `Instruction` & `stepEnv` interpreter (CR 608 / 614.6 / 714.2)
 - `TriggeredAbilities`: Triggered-ability resolution (CR 603)
 - `SpellResolution`: Spell resolution (CR 608)

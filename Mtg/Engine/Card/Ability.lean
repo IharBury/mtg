@@ -1,10 +1,12 @@
 import Mtg.Engine.Card.AbilityResolution
+import Mtg.Engine.Card.Cost
+import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.ManaSpec
-import Mtg.Engine.Card.SharedTrigger
+import Mtg.Engine.Card.Targeting
 import Mtg.Engine.Card.TriggerPattern
 
 /-!
-# Unified CR 113.3 Ability & One-Shot `Instruction` AST (Phase 8)
+# Unified CR 113.3 Ability & One-Shot `Instruction` AST (Phase 8 / Phase 9)
 
 Unifies all MTG ability categories (CR 113.3a–d), tokens (CR 111 / 707.9),
 emblems (CR 114), continuous modifications (CR 611 / 613), replacements
@@ -121,7 +123,7 @@ instance : HasTextChange StaticSubject where
       | .matching f => .matching (HasTextChange.applyTextChanges tcs f)
 
 /-- Rule-modifying static abilities affecting players (CR 104 / 119.7–8 / 305.2 /
-402.3 / 601.2 / 602.5 / 702.11c / 702.16j / 702.131b; 13 constructors). -/
+402.3 / 601.2 / 602.5 / 702.11c / 702.16j / 702.131b / 718; 14 constructors). -/
 inductive StaticPlayerRule where
   /-- Maximum hand size: `none` = no maximum hand size; `some n` = `n` (CR 402.3). -/
   | maxHandSize (who : PlayerFilter := .you) (limit? : Option Nat)
@@ -149,6 +151,8 @@ inductive StaticPlayerRule where
   | forbidAbilityActivation (who : PlayerFilter) (tag : ActivationMechanicTag)
   /-- Static designation check (e.g. permanent Ascend CR 702.131b / Storied). -/
   | gainDesignation (who : PlayerFilter := .you) (designation : PlayerDesignation)
+  /-- CR 718: you control matching player(s) during their next turn. -/
+  | controlPlayer (who : PlayerFilter)
 deriving Repr, Inhabited, BEq
 
 instance : HasTextChange StaticPlayerRule where
@@ -178,6 +182,7 @@ instance : HasTextChange StaticPlayerRule where
         .forbidAbilityActivation (HasTextChange.applyTextChanges tcs w)
           (HasTextChange.applyTextChanges tcs tag)
       | .gainDesignation w d => .gainDesignation (HasTextChange.applyTextChanges tcs w) d
+      | .controlPlayer w => .controlPlayer (HasTextChange.applyTextChanges tcs w)
 
 /-- Rule-modifying static abilities affecting play permissions, timing,
 counterability, opening-hand placement, and commander eligibility
@@ -547,6 +552,10 @@ structure GrantPlayPermSpec where
   copyAndCast : Bool := false
   /-- Flashback permission granting cast from graveyard with mana cost as flashback cost. -/
   asFlashback : Bool := false
+  /-- Cast immediately during resolution rather than granting a later-in-turn play permission (CR 608.2g). -/
+  castNow : Bool := false
+  /-- If an instant or sorcery spell cast this way would be put into its owner's graveyard, exile it instead. -/
+  exileOnResolveInstead : Bool := false
   maxCasts? : Option Nat := none
   maxTotalManaValue? : Option ValueExpr := none
   condition? : Option Condition := none
@@ -791,13 +800,14 @@ instance : HasTextChange LifeOp where
       | .lose w a => .lose (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs a)
       | .set w a => .set (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs a)
 
-/-- Counter modification mode for `PermanentOp.modifyCounters` (CR 122; 6 constructors). -/
+/-- Counter modification mode for `PermanentOp.modifyCounters` (CR 122; 7 constructors). -/
 inductive CounterModifyMode where
   | put (kind : CounterKind) (count : ValueExpr)
   | remove (kind? : Option CounterKind) (count : ExprCountRange)
   | moveAll (fromObj : ObjectExpr) (kind? : Option CounterKind := none)
   | moveOne (fromObj : ObjectExpr) (kind : CounterKind)
   | copyFromLki (fromObj : ObjectExpr)
+  | copyMissingKeywords (fromObj : ObjectExpr)
   | double (kind? : Option CounterKind := none)
 deriving Repr, Inhabited, BEq
 
@@ -811,12 +821,14 @@ instance : HasTextChange CounterModifyMode where
       | .moveAll src k? => .moveAll (HasTextChange.applyTextChanges tcs src) k?
       | .moveOne src k => .moveOne (HasTextChange.applyTextChanges tcs src) k
       | .copyFromLki src => .copyFromLki (HasTextChange.applyTextChanges tcs src)
+      | .copyMissingKeywords src => .copyMissingKeywords (HasTextChange.applyTextChanges tcs src)
       | .double k? => .double k?
 
 /-- Permanent-state actions aligned with `RulesEvent.permanent` (CR 701; 7 constructors). -/
 inductive PermanentOp where
-  | setTapped (objs : ObjectExpr) (tapped : Bool)
+  | setTapped (objs : ObjectExpr) (tapped : Bool) (choice? : Option MoveChoiceSpec := none)
   | modifyCounters (mode : CounterModifyMode) (objs : ObjectExpr)
+      (choice? : Option MoveChoiceSpec := none)
   | attach (attachment : ObjectExpr) (toObj : ObjectExpr) (chooseFromPool : Bool := false)
   | transform (objs : ObjectExpr)
   | turnFaceUp (objs : ObjectExpr)
@@ -829,9 +841,11 @@ instance : HasTextChange PermanentOp where
     if tcs.isEmpty then op
     else
       match op with
-      | .setTapped o t => .setTapped (HasTextChange.applyTextChanges tcs o) t
-      | .modifyCounters m o =>
+      | .setTapped o t ch? =>
+        .setTapped (HasTextChange.applyTextChanges tcs o) t (HasTextChange.applyTextChanges tcs ch?)
+      | .modifyCounters m o ch? =>
         .modifyCounters (HasTextChange.applyTextChanges tcs m) (HasTextChange.applyTextChanges tcs o)
+          (HasTextChange.applyTextChanges tcs ch?)
       | .attach a b ch =>
         .attach (HasTextChange.applyTextChanges tcs a) (HasTextChange.applyTextChanges tcs b) ch
       | .transform o => .transform (HasTextChange.applyTextChanges tcs o)
@@ -880,7 +894,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 inductive InspectAction where
   /-- Choose matching cards from the inspected set and move them to `dest`. -/
   | takeMatching (filter : ObjectPred) (count : ExprCountRange) (dest : DestZoneSpec)
-      (mods : MoveMods := {}) (revealTaken : Bool := false)
+      (mods : MoveMods := {}) (revealTaken : Bool := false) (atRandom : Bool := false)
   /-- Split inspected cards into piles (`Fact or Fiction`, `Riddles in the Dark`). -/
   | splitIntoPiles (splitter : PlayerExpr) (chooser : PlayerExpr) (pileCount : Nat := 2)
       (chosenDest : DestZoneSpec) (otherDest : DestZoneSpec)
@@ -898,9 +912,9 @@ instance : HasTextChange InspectAction where
     if tcs.isEmpty then a
     else
       match a with
-      | .takeMatching f cnt dest mods rev =>
+      | .takeMatching f cnt dest mods rev rand =>
         .takeMatching (HasTextChange.applyTextChanges tcs f) (HasTextChange.applyTextChanges tcs cnt)
-          (HasTextChange.applyTextChanges tcs dest) (HasTextChange.applyTextChanges tcs mods) rev
+          (HasTextChange.applyTextChanges tcs dest) (HasTextChange.applyTextChanges tcs mods) rev rand
       | .splitIntoPiles sp ch n d1 d2 opt =>
         .splitIntoPiles (HasTextChange.applyTextChanges tcs sp) (HasTextChange.applyTextChanges tcs ch)
           n (HasTextChange.applyTextChanges tcs d1) (HasTextChange.applyTextChanges tcs d2) opt
@@ -962,10 +976,11 @@ instance : HasTextChange SearchLibrarySpec where
           (HasTextChange.applyTextChanges tcs d, HasTextChange.applyTextChanges tcs m)
         untapIf? := HasTextChange.applyTextChanges tcs s.untapIf? }
 
-/-- Player status/designation granted by `PlayerOp.setStatus` (2 constructors). -/
+/-- Player status/designation granted by `PlayerOp.setStatus` (3 constructors). -/
 inductive PlayerStatusKind where
   | designation (d : PlayerDesignation)
   | monarch
+  | winGame
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Resolution-time choice bound into `stepEnv` via `Instruction.bind` (4 constructors). -/
@@ -992,7 +1007,7 @@ inductive PlayerOp where
   | surveil (who : PlayerExpr) (amount : ValueExpr)
   | inspectLibrary (spec : InspectLibrarySpec)
   | searchLibrary (spec : SearchLibrarySpec)
-  | reveal (who : PlayerExpr) (objs : ObjectExpr)
+  | reveal (who : PlayerExpr) (objs : ObjectExpr) (count? : Option ExprCountRange := none)
   | shuffle (who : PlayerExpr)
   | addMana (who : PlayerExpr) (spec : ManaProductionSpec)
   | proliferate (who : PlayerExpr) (times : ValueExpr := .const 1)
@@ -1033,8 +1048,9 @@ instance : HasTextChange PlayerOp where
         .surveil (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs a)
       | .inspectLibrary s => .inspectLibrary (HasTextChange.applyTextChanges tcs s)
       | .searchLibrary s => .searchLibrary (HasTextChange.applyTextChanges tcs s)
-      | .reveal w o =>
+      | .reveal w o cnt? =>
         .reveal (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs o)
+          (HasTextChange.applyTextChanges tcs cnt?)
       | .shuffle w => .shuffle (HasTextChange.applyTextChanges tcs w)
       | .addMana w s =>
         .addMana (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs s)
@@ -1073,12 +1089,13 @@ instance : HasTextChange TurnOp where
       | .extraStep st ac => .extraStep st ac
 
 /-- Stack & mid-resolution cast actions aligned with `RulesEvent.stackObject` /
-`RulesEvent.cast` (CR 601 / 701.5 / 707.10; 3 constructors). -/
+`RulesEvent.cast` (CR 115.7d / 601 / 701.5 / 707.10; 4 constructors). -/
 inductive StackOp where
   | counterStack (objs : ObjectExpr) (exileInstead : Bool := false)
       (ifPermanentMayCastFree : Bool := false)
   | copyStackObject (objs : ObjectExpr) (copies : ValueExpr := .const 1)
       (mayChooseNewTargets : Bool := true)
+  | chooseNewTargets (objs : ObjectExpr) (optional : Bool := true)
   | mayCastOrPlay (objs : ObjectExpr) (perm : GrantPlayPermSpec)
 deriving Repr, Inhabited, BEq
 
@@ -1091,6 +1108,8 @@ instance : HasTextChange StackOp where
       | .copyStackObject o n nt =>
         .copyStackObject (HasTextChange.applyTextChanges tcs o)
           (HasTextChange.applyTextChanges tcs n) nt
+      | .chooseNewTargets o opt =>
+        .chooseNewTargets (HasTextChange.applyTextChanges tcs o) opt
       | .mayCastOrPlay o p =>
         .mayCastOrPlay (HasTextChange.applyTextChanges tcs o)
           (HasTextChange.applyTextChanges tcs p)
@@ -1139,12 +1158,14 @@ structure CustomTokenSpec where
   abilities : Array GrantedAbility
   useCardNameShorthand : Bool := false
 
-/-- Modification applied while creating a token copy or copy effect (CR 707.9; 8 constructors). -/
+/-- Modification applied while creating a token copy or copy effect (CR 707.9; 10 constructors). -/
 inductive CopyModification where
   | setName (name : String)
   | setBasePT (power toughness : Int)
+  | addSupertypes (supertypes : Array Supertype)
   | addTypes (types : Array CardType)
   | addSubtypes (subtypes : Array CardSubtype)
+  | replaceCreatureSubtypes (subtypes : Array CardSubtype)
   | addColors (colors : ColorSet)
   | removeSupertype (supertype : Supertype)
   | addKeywords (keywords : Array KeywordAbility)
@@ -1219,6 +1240,7 @@ structure ModalSpec where
   allowRepeat : Bool := false
   chooseAtResolution : Bool := false
   unusedThisTurn : Bool := false
+  unusedEver : Bool := false
   modes : Array Effect
 
 /-- Continuous-effect & delayed-trigger installation aligned with
@@ -1250,7 +1272,7 @@ inductive Instruction where
   | bind (var : VarId) (step : Instruction) (cont : Instruction)
   | ifCond (cond : Condition) (thenBranch : Instruction) (elseBranch : Instruction)
   | optional (who : PlayerExpr) (cost? : Option CostSpec) (onYes : Instruction)
-      (onNo : Instruction)
+      (onNo : Instruction) (maxTimes : Nat := 1)
   | unlessPays (payer : PlayerExpr) (cost : CostSpec) (ifUnpaid : Instruction)
   | chooseModes (spec : ModalSpec)
   | forEach (iter : ForEachSpec) (var : VarId) (body : Instruction)
@@ -1264,14 +1286,8 @@ structure Effect where
   maxTargets : Nat := 0
   dividedDamage : Option (Nat × Nat) := none
   preferAsDefaultMode : Bool := false
-  /-- Unified Phase 8 one-shot `Instruction` body. -/
+  /-- Unified one-shot `Instruction` body. -/
   body : Instruction
-  /-- Transitional Phase 9 trigger-DSL payload (`none` for all migrated effects). -/
-  resolution? : Option Resolution := none
-  /-- Transitional Phase 9 token payloads indexed by `Resolution.createTokens tokIdx`. -/
-  legacyTokens : Array TokenSpec
-  /-- Transitional Phase 9 leftover shared-trigger tag. -/
-  sharedTrigger : Option SharedTrigger := none
   /-- Transitional printed phrase (retired in Phase 10). -/
   phrase : String := ""
 
@@ -1341,7 +1357,6 @@ def EmblemSpec.staticAbilities._default : Array StaticAbility := #[]
 def EmblemSpec.triggeredAbilities._default : Array TriggeredAbility := #[]
 def EmblemSpec.activatedAbilities._default : Array ActivatedAbility := #[]
 def Effect.body._default : Instruction := .noop
-def Effect.legacyTokens._default : Array TokenSpec := #[]
 def DelayedTriggerSpec.effect._default : Effect := {}
 def ModalSpec.modes._default : Array Effect := #[]
 def ActivatedAbility.effect._default : Effect := {}
@@ -1422,6 +1437,8 @@ private partial def applyTcCustomToken (tcs : Array TextChange)
 private partial def applyTcCopyMod (tcs : Array TextChange) :
     CopyModification → CopyModification
   | .addSubtypes subs => .addSubtypes (HasTextChange.applyTextChanges tcs subs)
+  | .replaceCreatureSubtypes subs =>
+    .replaceCreatureSubtypes (HasTextChange.applyTextChanges tcs subs)
   | .addColors cols => .addColors (HasTextChange.applyTextChanges tcs cols)
   | .addKeywords kws => .addKeywords (HasTextChange.applyTextChanges tcs kws)
   | .addAbilities abs => .addAbilities (abs.map (applyTcGranted tcs))
@@ -1535,9 +1552,9 @@ private partial def applyTcInstr (tcs : Array TextChange) : Instruction → Inst
   | .bind v step cont => .bind v (applyTcInstr tcs step) (applyTcInstr tcs cont)
   | .ifCond c t e =>
     .ifCond (HasTextChange.applyTextChanges tcs c) (applyTcInstr tcs t) (applyTcInstr tcs e)
-  | .optional w cost? y n =>
+  | .optional w cost? y n mt =>
     .optional (HasTextChange.applyTextChanges tcs w) (HasTextChange.applyTextChanges tcs cost?)
-      (applyTcInstr tcs y) (applyTcInstr tcs n)
+      (applyTcInstr tcs y) (applyTcInstr tcs n) mt
   | .unlessPays p cost ifUnp =>
     .unlessPays (HasTextChange.applyTextChanges tcs p) (HasTextChange.applyTextChanges tcs cost)
       (applyTcInstr tcs ifUnp)
@@ -1548,10 +1565,7 @@ private partial def applyTcInstr (tcs : Array TextChange) : Instruction → Inst
 private partial def applyTcEffect (tcs : Array TextChange) (e : Effect) : Effect :=
   { e with
     targeting := HasTextChange.applyTextChanges tcs e.targeting
-    body := applyTcInstr tcs e.body
-    resolution? := HasTextChange.applyTextChanges tcs e.resolution?
-    legacyTokens := e.legacyTokens.map (applyTcTokenSpec tcs)
-    sharedTrigger := HasTextChange.applyTextChanges tcs e.sharedTrigger }
+    body := applyTcInstr tcs e.body }
 
 private partial def applyTcActivated (tcs : Array TextChange)
     (ab : ActivatedAbility) : ActivatedAbility :=

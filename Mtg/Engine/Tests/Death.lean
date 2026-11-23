@@ -6,7 +6,7 @@ import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 
 /-!
-# Dies triggers without `DeathLeftover`
+# Unified dies triggers
 
 Hellcat returns under her owner's control. A Villain returns as a Hero.
 An attacking creature returns to its owner's hand. Each opponent sacrifices
@@ -35,28 +35,19 @@ def onBoard (g : Game) (name : String) : Bool :=
 def inZone (g : Game) (z : Zone) (name : String) : Bool :=
   g.objects.any (fun o => o.zone == z && o.name == name)
 
-/- The shared dies effects resolve as constructors that do not carry
-`DeathLeftover`. The printed sentence stays the Oracle line. -/
-#guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathHellcatReturn) ==
-  .put .source .underOwner (.entering [
-    .loseAllAbilities, .keywords #[Keyword.haste],
-    .counter .plusOnePlusOne (asEnters := true)])
-#guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathVillainReturnAsHero) ==
-  .put (.cause (some .villain)) .underOwner (.entering [
-    .additionalSubtype .hero, .counter .finality])
-#guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathAttackingReturnHand) ==
-  .returnToHand .cause
-#guard TriggeredAbility.resolution (TriggeredAbility.onDeath Effect.deathDeathtouchOppSac) ==
-  .sacrifice .chosenNontokenCreature
-
+/- The dies triggers carry unified `Instruction` bodies and keep their Oracle lines. -/
+#guard (TriggeredAbility.onDeath Effect.deathHellcatReturn).effect.body == Effect.deathHellcatReturn.body
+#guard (TriggeredAbility.onDeath Effect.deathVillainReturnAsHero).effect.body == Effect.deathVillainReturnAsHero.body
+#guard (TriggeredAbility.onDeath Effect.deathAttackingReturnHand).effect.body == Effect.deathAttackingReturnHand.body
+#guard (TriggeredAbility.onDeath Effect.deathDeathtouchOppSac).effect.body == Effect.deathDeathtouchOppSac.body
 #guard toString (TriggeredAbility.onDeath Effect.deathHellcatReturn) ==
-  TriggeredAbility.deathSentence .hellcatReturn
+  "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
 #guard toString (TriggeredAbility.onDeath Effect.deathVillainReturnAsHero) ==
-  TriggeredAbility.deathSentence .villainReturnAsHero
+  "Whenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types."
 #guard toString (TriggeredAbility.onDeath Effect.deathAttackingReturnHand) ==
-  TriggeredAbility.deathSentence .attackingReturnHand
+  "Whenever an attacking creature you control dies, return that card to its owner's hand."
 #guard toString (TriggeredAbility.onDeath Effect.deathDeathtouchOppSac) ==
-  TriggeredAbility.deathSentence .deathtouchOppSac
+  "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
 
 /- Hellcat returns with a +1/+1 counter, haste, and no abilities.
 A Hellcat still on the battlefield is reported and stays there. -/

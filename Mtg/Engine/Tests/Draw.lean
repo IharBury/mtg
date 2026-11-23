@@ -1,7 +1,7 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.draw`
+# Unified `PlayerOp.drawCards`
 
 A fixed count, one card per tapped Human, one card per fat graveyard, the
 discarded hand, mana spent to cast the triggering spell, and the opponent's
@@ -19,6 +19,8 @@ def caster : PlayerId := ⟨0⟩
 def opponent : PlayerId := ⟨1⟩
 
 def pebble : CardDef := { name := "Pebble", types := #[.artifact] }
+def humanDef : CardDef :=
+  { name := "Town Human", types := #[.creature], subtypes := #["Human"], power := some 1, toughness := some 1 }
 
 def handSize (g : Game) (p : PlayerId) : Nat :=
   (g.player p).hand.size
@@ -41,9 +43,8 @@ def withSpent (spent : Nat) : Game :=
     (spec := { sourceId := some src.id, fraCauseId := some causeId, fraCauseStatus := some {} }))
   g.change (.resolvingAbility (some abId))
 
-def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
-  g.applyTriggeredAbility caster (.onEnterDraw 1) none
-    (resolutionOverride := some r)
+def drawStep (g : Game) (i : Instruction) : Game :=
+  g.applyTriggeredAbility caster (TriggeredAbility.ofPattern .thisEnters "" i) none
 
 /- The controller draws the printed count. -/
 #guard
@@ -53,16 +54,19 @@ def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
 
 /- Each Human tapped by the previous step is one card. Zero taps draw nothing. -/
 #guard
-  let before := handSize afterDraw caster
-  let g := drawStep (afterDraw.change (.humansTappedThisWay 2))
-    (.draw .forEachTappedHuman)
-  handSize g caster == before + 2 && g.humansTappedThisWay == 0
+  let g0 := addPermanent (addPermanent afterDraw humanDef caster caster) humanDef caster caster
+  let humans := (g0.permanentsOf caster).filter (fun o => g0.hasSubtype o .human) |>.map (·.id)
+  let before := handSize g0 caster
+  let g1 := g0.applyTriggeredAbility caster .onAttackTapHumansDraw none
+  let g2 := mustApply g1 caster (.choosePermanents humans)
+  g1.pending == .tapHumans caster && handSize g2 caster == before + 2
 
 #guard
-  let before := handSize afterDraw caster
-  let g := drawStep (afterDraw.change (.humansTappedThisWay 0))
-    (.draw .forEachTappedHuman)
-  handSize g caster == before && g.humansTappedThisWay == 0
+  let g0 := addPermanent afterDraw humanDef caster caster
+  let before := handSize g0 caster
+  let g1 := g0.applyTriggeredAbility caster .onAttackTapHumansDraw none
+  let g2 := mustApply g1 caster .decline
+  g1.pending == .tapHumans caster && handSize g2 caster == before
 
 /- One card for each graveyard with seven or more cards. -/
 #guard
@@ -76,45 +80,42 @@ def drawStep (g : Game) (r : TriggeredAbility.TriggerResolution) : Game :=
   let g := afterDraw.applyTriggeredAbility caster .onDiesDrawPerFatGraveyard none
   handSize g caster == before && logContains g "draws no cards"
 
-/- The discarded-hand note is the draw count. A declined discard draws nothing. -/
+/- Balin's discarded-hand count is the draw count. A declined discard draws nothing. -/
 #guard
   let before := handSize afterDraw caster
-  let g := drawStep (afterDraw.change (.handDiscardedThisWay (some 3)))
-    (.draw .discardedHand)
-  handSize g caster == before + 3
+  let g1 := afterDraw.applyTriggeredAbility caster (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") none
+  let g2 := mustApply g1 caster .accept
+  handSize g2 caster == before
 
 #guard
   let before := handSize afterDraw caster
-  let g := drawStep afterDraw (.draw .discardedHand)
-  handSize g caster == before
+  let g1 := afterDraw.applyTriggeredAbility caster (.onThisOrAnotherSubtypeEntersDiscardHand "Dwarf") none
+  let g2 := mustApply g1 caster .decline
+  handSize g2 caster == before
 
-/- Mana spent to cast the triggering spell is the draw count. None skips
-the rest of the sequence. -/
+/- Mana spent to cast the triggering spell is the draw count. -/
 #guard
   let g0 := withSpent 4
   let before := handSize g0 caster
-  let g := drawStep g0 (.draw .equalToManaSpent)
-  handSize g caster == before + 4 && !g.skipTriggerSequenceRest
+  let g := drawStep g0 (Instruction.draw (.manaSpent .triggerSubject))
+  handSize g caster == before + 4
 
 #guard
-  let g := drawStep (withSpent 0) (.draw .equalToManaSpent)
-  g.skipTriggerSequenceRest && logContains g "No mana was spent to cast that spell" &&
-    handSize g caster == handSize (withSpent 0) caster
+  let g0 := withSpent 0
+  let g := drawStep g0 (Instruction.draw (.manaSpent .triggerSubject))
+  handSize g caster == handSize g0 caster
 
-/- The targeted opponent is offered the draw. A missing offer does nothing. -/
+/- Palantír offers the targeted opponent to let you draw (after scrying 2). -/
 #guard
   let g0 := addPermanent afterDraw pebble caster caster
   let sid := (pebbleOf g0).id
-  let g := drawStep (g0.change (.palantirChoiceReady (some (caster, opponent, sid))))
-    (.draw (.fixed 1) (who := .opponentHasYou))
-  match g.pending with
-  | .fraChoice p (.palantirMayDraw c id) =>
-    p == opponent && c == caster && id == sid && g.palantirChoiceReady.isNone
+  let g1 := g0.applyTriggeredAbility caster .onYourEndStepPalantir (some sid) #[.player opponent]
+  let lib := (g1.player caster).library
+  let top2 := #[lib[lib.size - 1]!, lib[lib.size - 2]!]
+  let g2 := mustApply g1 caster (.scry top2 #[])
+  match g2.pending with
+  | .fraChoice p (.palantirMayDraw c id) => p == opponent && c == caster && id == sid
   | _ => false
-
-#guard
-  let g := drawStep afterDraw (.may (.draw (.fixed 1) (who := .opponentHasYou)) (.sequence []))
-  g.pending == .none && handSize g caster == handSize afterDraw caster
 
 /- You may draw X and discard two when mana was spent. -/
 #guard
@@ -129,11 +130,6 @@ the rest of the sequence. -/
     .onCastNoncreatureMayDrawXDiscard2 none
   g.pending == .none && logContains g "No mana was spent to cast that spell"
 
-/- Tapping Humans is the choice that records the later draw count. -/
-#guard
-  let g := afterDraw.applyTriggeredAbility caster .onAttackTapHumansDraw none
-  g.pending == .tapHumans caster && g.humansTappedThisWay == 0
-
 /- CR 101.4 / 121.2 / 121.2c: triggered multi-opponent draws are unbatched
 per card, share one `.oneShotEffect` cause, and draw in APNAP order. -/
 #guard
@@ -147,7 +143,7 @@ per card, share one `.oneShotEffect` cause, and draw in APNAP order. -/
     | .ok g => keepOpeningHands g 16
     | .error e => panic! e
   let startIdx := g3.events.size
-  let gAfter := g3.applyTriggerDraw ⟨0⟩ none (.fixed 1) .eachOpponent
+  let gAfter := g3.applyAbilityEffect ⟨0⟩ { body := Instruction.drawFixed 1 .opponents } #[] none
   let drawEvs := (gAfter.events.extract startIdx gAfter.events.size).filter fun e =>
     match e.change with
     | .rules (.zone (.moved _ _ _ _ (.draw _ _) _ _ _)) => true

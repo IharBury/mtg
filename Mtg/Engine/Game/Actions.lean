@@ -47,8 +47,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
         | some id => g.chooseReplacement p id
         | none => throw "No such choice"
     | .chooseTriggerOr _ => g.chooseTriggerOr p idx
-    | .chooseLibraryPlacement _ _ =>
-      if g.spellOr.isEmpty then g.announceMode p idx else g.chooseSpellOr p idx
+    | .chooseLibraryPlacement _ _ => g.chooseSpellOr p idx
     | _ => g.announceMode p idx
   | .chooseX n => g.announceX p n
   | .target t => g.announceTarget p t
@@ -88,7 +87,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
     else if wasProp then
       return if isTurnFaceUpSac then g else g.resumeAfterBecomeCast
     else
-      return if g.mayThenResume then g.acceptMayThen else g.finishAndGrantPriority
+      return g.finishAndGrantPriority
   | .chooseAdditionalCost payGeneric => g.announceAdditionalCost p payGeneric
   | .declareAttackers ids defender each pws => g.declareAttackers p ids defender each pws
   | .declareBlockers as => g.declareBlockers p as
@@ -100,9 +99,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
   | .putOnBottom ids => g.putCardsOnBottom p ids
   | .scry top bottom => g.finishScry p top bottom
   | .surveil top graveyard => g.finishSurveil p top graveyard
-  | .discard id => do
-    let g ← g.discardForDraw p id
-    return if g.mayThenResume then g.acceptMayThen else g
+  | .discard id => g.discardForDraw p id
   | .decline =>
     match g.pending with
     | .fraChoice .. => g.answerFraChoice p .decline
@@ -287,7 +284,7 @@ def apply (g : Game) (p : PlayerId) (a : Action) : Except String Game := do
     if g.pending == .none && g.waitingTriggers.size > beforeWaiting && !g.over then
       g.receivePriority g.priority
     else g
-  return g.flushUnlessPays
+  return g
 
 def handObjects (g : Game) (p : PlayerId) : Array GameObject :=
   (g.player p).hand.filterMap (fun id => g.findObject? id)
@@ -304,7 +301,23 @@ def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
     let srcId := g.currentResolvingContext?.bind Prod.fst
     let (g, cause) := g.allocDelayedCause (some p) srcId
     g.withBatch (some cause) fun g =>
-      g.eaglesReturnCreaturesLoop p 0 srcId eligible (some cause) (targeted := false)
+      let (g, count) := eligible.foldl (fun (g, count) id =>
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield && g.isCreature o && o.owner == p then
+            let name := g.name o
+            let (g, _) := g.move o.id (.hand o.owner) none (cause := some cause)
+            if (g.followMovedToZone? o.id (· == .hand o.owner)).isSome then
+              (g.logMsg s!"{name} is returned to {(g.player o.owner).name}'s hand", count + 1)
+            else (g, count)
+          else (g, count)
+        | none => (g, count)) (g, 0)
+      if count > 0 then
+        let src := srcId.bind g.damageSourceById?
+        (g.registerDelayedTrigger
+          { controller := p, source := src, kind := .eaglesBirds count, cause }).logMsg
+          s!"At the beginning of the next upkeep, {count} Bird Soldier token(s) will be created"
+      else g
 
 /-- Choose up to two creatures (they are not targets) and destroy the rest
 (Mount Doom). Shroud and hexproof do not stop the choice. -/
@@ -332,7 +345,7 @@ def twoPlayersEachDraw (g : Game) (a b : PlayerId) : Except String Game := do
     | none => (g, none)
   let g := g.draw first 1 (cause := cause?)
   if let .chooseReplacement .. := g.pending then
-    return g.chainPendingReplacement (.finishPostStep (.twoPlayersEachDrawSecond second 1 cause?))
+    return g.chainPendingReplacement (.finishPostStep (.drawCardsPlayer second 1 cause?))
   else
     return g.draw second 1 (cause := cause?)
 

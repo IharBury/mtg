@@ -18,58 +18,12 @@ Supports both:
 namespace Mtg.Engine
 
 /-- Read-only evaluation environment for pure expression queries over
-`(Game, EvalEnv)` (CR 109.3 / 109.5 / 400.7 / 603.10 / 608.2h). -/
-structure EvalEnv where
-  /-- Controller of the spell, ability, or static ability ("you", CR 109.5). -/
-  controller : PlayerId := ⟨0⟩
-  /-- Source object of the spell or ability ("this permanent" / "this spell"). -/
-  sourceId : Option ObjectId := none
-  /-- Frozen LKI snapshot of the source if it already left its zone (CR 113.7a / 608.2h). -/
-  sourceSnapshot : Option EventObject := none
-  /-- Announced targets per slot (CR 115.1 / 601.2c). -/
-  targetSlots : Array (Array Target) := #[]
-  /-- Object that caused a trigger ("that creature" / "it"). -/
-  triggerSubjectId : Option ObjectId := none
-  /-- All objects that caused a batched trigger (CR 700.1 `oncePerBatch`). -/
-  triggerSubjectIds : Array ObjectId := #[]
-  /-- Frozen LKI snapshot of the trigger subject when available (CR 603.10 / 608.2h). -/
-  triggerSubjectSnapshot : Option EventObject := none
-  /-- Named player roles carried by a triggering event. -/
-  triggerPlayers : Array (TriggerPlayerRole × PlayerId) := #[]
-  /-- Announced value of `{X}` (CR 107.3a). -/
-  chosenX : Nat := 0
-  /-- Numeric amount carried by a triggering/cost event (`ValueExpr.eventAmount`). -/
-  eventAmount : Int := 0
-  /-- Explicit objects paid as a cost (`ObjectExpr.costPaidObjects`). -/
-  costPaidObjects : Array ObjectId := #[]
-  /-- Lexical bindings from earlier bound steps (`Instruction.bind`, CR 608.2c / 614.6). -/
-  stepEnv : Array (VarId × StepOutcome) := #[]
-  /-- Optional pre-event `GameSnapshot` for CR 603.10 look-back evaluation.
-  When present, board existence and live characteristics are queried against
-  this snapshot while event-log history queries consult `g.events`. -/
-  lookBackState? : Option GameSnapshot := none
-  /-- Explicit LKI snapshots for objects referenced after leaving their zone (CR 608.2h). -/
-  lkiObjects : Array (ObjectId × EventObject) := #[]
-  /-- Pre-resolved player choices for `PlayerExpr.chosenBy` (pure query). -/
-  chosenPlayers : Array PlayerId := #[]
-  /-- Optional index into `g.events` when evaluating an object predicate against a
-  specific historical event inside `evalEventPatternOnTurn`. -/
-  eventIdx? : Option Nat := none
-deriving Inhabited
+`(Game, EvalEnv)` (CR 109.3 / 109.5 / 400.7 / 603.10 / 608.2h).
+Parameterized as `EvalEnvOf GameSnapshot` so serializable continuations store
+`StoredEvalEnv := EvalEnvOf Unit` without duplicating the struct (CR 707.2). -/
+abbrev EvalEnv := EvalEnvOf GameSnapshot
 
 namespace EvalEnv
-
-/-- Construct an `EvalEnv` from a Phase-1 `CopyTokenContext`, controller, and `{X}` value. -/
-def ofCopyTokenContext (controller : PlayerId := ⟨0⟩) (chosenX : Nat := 0)
-    (copyCtx : CopyTokenContext := {}) : EvalEnv :=
-  { controller
-    sourceId := copyCtx.sourceId
-    targetSlots :=
-      match copyCtx.targetId with
-      | some tid => #[#[.permanent tid]]
-      | none => #[]
-    triggerSubjectId := copyCtx.triggerSubjectId
-    chosenX }
 
 /-- Construct an `EvalEnv` from a live `Game` and unified interpreter context `InterpCtx`,
 populating `stepEnv` from `g.currentStepEnv`. -/
@@ -320,7 +274,7 @@ def viewIsCommander : ObjectView → Bool
 (not a spell or card; CR 112.1 / 113.1). -/
 def viewIsStackAbility (st : Game) : ObjectView → Bool
   | .live o =>
-    o.abilityEffect.isSome || o.triggeredAbility.isSome || o.reflexiveResolution.isSome ||
+    o.abilityEffect.isSome || o.triggeredAbility.isSome || o.isReflexive ||
       (o.zone == .stack && st.stack.any (fun e => e.objectId == o.id && e.delayedTrigger.isSome))
   | .lki eo => eo.zone == .stack && eo.types.isEmpty
 
@@ -834,7 +788,8 @@ partial def evalPlayerPred (g : Game) (env : EvalEnv) (p : PlayerId) (pred : Pla
       | some dp => dp == p
       | none =>
         let defs := st.defendingPlayers
-        if defs.isEmpty then st.defendingPlayer == p else defs.contains p
+        if defs.isEmpty then st.isLivingOpponentOf st.activePlayer st.defendingPlayer && st.defendingPlayer == p
+        else defs.contains p
     | .metric m op rhs =>
       op.eval (evalPlayerMetricSingle g env m p) (evalValue g env rhs)
     | .controls filter minCount =>
@@ -871,9 +826,24 @@ partial def evalPlayer (g : Game) (env : EvalEnv) (expr : PlayerExpr) : Array Pl
   | .you => if st.stillInGame env.controller then #[env.controller] else #[]
   | .activePlayer => if st.stillInGame st.activePlayer then #[st.activePlayer] else #[]
   | .defendingPlayer =>
-    let defs := st.defendingPlayers
-    if !defs.isEmpty then defs
-    else if st.stillInGame st.defendingPlayer then #[st.defendingPlayer] else #[]
+    let attackerDef? : Option PlayerId :=
+      env.sourceId.bind fun sid =>
+        match st.findObject? sid with
+        | some src =>
+          let fromHost :=
+            src.attachedTo.bind fun hid =>
+              match st.findObject? hid with
+              | some host => if host.status.attacking then some (st.defendingPlayerOf host) else none
+              | none => none
+          let fromSelf := if src.status.attacking then some (st.defendingPlayerOf src) else none
+          fromHost.orElse fun _ => fromSelf
+        | none => none
+    match attackerDef? with
+    | some dp => if st.stillInGame dp then #[dp] else #[]
+    | none =>
+      let defs := st.defendingPlayers
+      if !defs.isEmpty then defs
+      else if st.isLivingOpponentOf st.activePlayer st.defendingPlayer then #[st.defendingPlayer] else #[]
   | .monarch =>
     let ordered := st.playersInOrderFrom st.activePlayer (fun pl => st.stillInGame pl.id)
     ordered.filter fun p => (st.player p).isMonarch
@@ -1042,9 +1012,20 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
     | none => false
   | .ownedBy pf => (evalPlayerFilter g env pf).contains v.owner
   | .attachedTo hostExpr =>
+    let hostIds := (evalObjects g env hostExpr).filterMap ObjectView.id?
     match viewAttachedTo? v with
-    | some hid => ((evalObjects g env hostExpr).filterMap ObjectView.id?).contains hid
-    | none => false
+    | some hid => hostIds.contains hid
+    | none =>
+      match v.id? with
+      | none => false
+      | some attId =>
+        hostIds.any fun hid =>
+          !(g.findObject? hid).any (·.zone == .battlefield) &&
+            g.events.any fun ev =>
+              match ev.change, ev.cause? with
+              | .rules (.permanent (.unattached att fromHost)), some (.gameRule .unattachOnHostLeave) =>
+                fromHost == hid && att.id == some attId
+              | _, _ => false
   | .hasAttachment attFilter =>
     match v.id? with
     | none => false
@@ -1347,6 +1328,27 @@ partial def evalObjects (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Array O
             else acc
           | _, _ => acc) #[]
         dedupViews (ids.filterMap (resolveObjectView? g env))
+  | .targetsOf stackObj =>
+    let objs := evalObjects g env stackObj
+    dedupViews (objs.foldl (fun acc sv =>
+      match sv.id? with
+      | none => acc
+      | some oid =>
+        let tgts : Array Target :=
+          match st.stack.find? (·.objectId == oid) with
+          | some entry => entry.targets
+          | none =>
+            (g.events.reverse.findSome? fun e =>
+              match e.change with
+              | .rules (.cast (.targeted tid ts _ _)) => if tid == oid then some ts else none
+              | _ => none).getD #[]
+        tgts.foldl (fun a t =>
+          match t with
+          | .permanent tid | .card tid =>
+            match resolveObjectView? g env tid with
+            | some v => a.push v
+            | none => a
+          | .player _ => a) acc) #[])
   | .filter inner pred =>
     (evalObjects g env inner).filter (fun v => evalObjectPred g env v pred)
 
@@ -1434,6 +1436,16 @@ partial def evalValue (g : Game) (env : EvalEnv) (expr : ValueExpr) : Int :=
             | .generic _ | .x => n) 0
       acc + contrib) 0
     Int.ofNat total
+  | .manaSpent objsExpr =>
+    let oid? :=
+      ((evalObjects g env objsExpr)[0]?.bind ObjectView.id?).orElse fun _ =>
+        match objsExpr with
+        | .triggerSubject => env.triggerSubjectId
+        | .this => env.sourceId
+        | _ => none
+    match oid? with
+    | some oid => Int.ofNat (manaUnitsSpentOn g.events oid).size
+    | none => 0
   | .stepMetric m v =>
     match env.stepOutcome? v with
     | none => 0
@@ -1663,6 +1675,10 @@ def evalEventHistory (g : Game) (env : EvalEnv) (hp : EventHistoryPred) : Bool :
           | .rules (.stackObject (.resolved _ nth srcId? _)) => nth > 0 && srcId? == some sid
           | .rules (.player (.optionalOnceActed _ s)) => s == sid
           | _ => false
+  | .nthResolutionThisTurn n =>
+    let ab? := (boardState g env).resolvingAbility.bind fun id =>
+      ((boardState g env).findObject? id).bind (·.triggeredAbility)
+    GameEvent.resolutions g.events turn env.controller env.sourceId ab? == n
   | .optionalOnceUnusedThisTurn =>
     match env.sourceId with
     | none => true
@@ -1718,7 +1734,7 @@ def evalDuration (g : Game) (env : EvalEnv) (dur : DurationExpr) : Option Effect
 def evalLibraryPos (g : Game) (env : EvalEnv) (pos : LibraryPosSpec) : LibraryPosition :=
   match pos with
   | .top => .top
-  | .bottom => .bottom
+  | .bottom | .bottomRandom => .bottom
   | .fromTop v => .fromTop (evalValue g env v).toNat
   | .shuffledIn => .shuffledIn
 

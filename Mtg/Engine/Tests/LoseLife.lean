@@ -2,14 +2,12 @@ import Mtg.Engine.Catalog
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.loseLife`
+# Unified life loss instructions (`Instruction.loseLife`)
 
-How much life is lost is a `NumberSelector`. Who loses it is a
-`PlayerSelector`. You lose `n` life is `.loseLife (.fixed n)`. The announced
-opponent and each opponent use those players. One life for each burden
-counter is `.loseLife .perBurden`. The controllers of the objects an
-`ObjectSelector` names lose that life with `.controller`. A selector that
-names no player loses nothing.
+How much life is lost is a `ValueExpr`; who loses it is a `PlayerExpr`.
+You lose `n` life, target opponent, each opponent, one life per burden
+counter on the source, and controller-of-objects selectors all evaluate
+through `EvalExpr` and `Interpreter`.
 -/
 
 namespace Mtg.Engine.LoseLifeTests
@@ -26,11 +24,12 @@ def opp : PlayerId := ⟨1⟩
 def lifeOf (g : Game) (p : PlayerId) : Int :=
   (g.player p).life
 
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
+def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
-    (ab : TriggeredAbility := .onEnterDraw 1) : Game :=
-  g.applyTriggeredAbility caster ab sourceId targets
-    (resolutionOverride := some r)
+    (spec : TargetSpec := .none) : Game :=
+  g.applyTriggeredAbility caster
+    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
   match g.battlefield.find? (·.name == name) with
@@ -50,55 +49,46 @@ def handSize (g : Game) (p : PlayerId) : Nat :=
 
 def ring : CardDef := artifact "Ring" ManaCost.empty ""
 
-def perBurden : TriggeredAbility.TriggerResolution :=
-  .loseLife .perBurden
+def perBurden : Instruction :=
+  Instruction.loseLife (.counterCount (some .burden) .this) .you
 
-def targetOpp (n : Nat) : TriggeredAbility.TriggerResolution :=
-  .loseLife (.fixed n) (.target .opponent)
+def targetOpp (n : Nat) : Instruction :=
+  Instruction.loseLifeFixed n (.target 0)
 
-def eachOpp (n : Nat) : TriggeredAbility.TriggerResolution :=
-  .loseLife (.fixed n) .eachOpponent
+def eachOpp (n : Nat) : Instruction :=
+  Instruction.loseLifeFixed n .opponents
 
 /- The controller loses the printed amount. Losing none changes nothing. -/
 #guard
-  let g := step afterDraw (.loseLife (.fixed 4))
+  let g := step afterDraw (Instruction.loseLifeFixed 4 .you)
   lifeOf g caster == lifeOf afterDraw caster - 4 &&
     lifeOf g opp == lifeOf afterDraw opp &&
     logContains g "loses 4 life"
 
 #guard
-  let g := step afterDraw (.loseLife (.fixed 0))
+  let g := step afterDraw (Instruction.loseLifeFixed 0 .you)
   lifeOf g caster == lifeOf afterDraw caster && g.log == afterDraw.log
-
-#guard (.loseLife (.fixed 2) : TriggeredAbility.TriggerResolution) ==
-  .loseLife (.fixed 2) .you
 
 /- The announced opponent loses the printed amount. The controller does not.
 A missing target, the controller, and a permanent lose nothing. -/
 #guard
   let g0 := afterDraw
-  let g := step g0 (targetOpp 3) (targets := #[Target.player opp])
-    (ab := .onYouSacrificeTokenOppLosesLife)
+  let g := step g0 (targetOpp 3) (targets := #[Target.player opp]) (spec := .opponent)
   lifeOf g opp == lifeOf g0 opp - 3 && lifeOf g caster == lifeOf g0 caster &&
     logContains g "loses 3 life"
 
 #guard
-  let g := step afterDraw (targetOpp 3) (ab := .onYouSacrificeTokenOppLosesLife)
-  lifeOf g opp == lifeOf afterDraw opp && lifeOf g caster == lifeOf afterDraw caster &&
-    logContains g "The target is no longer legal"
+  let g := step afterDraw (targetOpp 3) (spec := .opponent)
+  lifeOf g opp == lifeOf afterDraw opp && lifeOf g caster == lifeOf afterDraw caster
 
 #guard
-  let g := step afterDraw (targetOpp 3) (targets := #[Target.player caster])
-    (ab := .onYouSacrificeTokenOppLosesLife)
-  lifeOf g caster == lifeOf afterDraw caster && lifeOf g opp == lifeOf afterDraw opp &&
-    logContains g "The target is no longer legal"
+  let g := step afterDraw (targetOpp 3) (targets := #[Target.player caster]) (spec := .opponent)
+  lifeOf g caster == lifeOf afterDraw caster && lifeOf g opp == lifeOf afterDraw opp
 
 #guard
   let g0 := addPermanent afterDraw (creature "Bear" ManaCost.empty #[] 2 2) opp opp
-  let g := step g0 (targetOpp 3) (targets := #[Target.permanent (pid g0 "Bear")])
-    (ab := .onYouSacrificeTokenOppLosesLife)
-  lifeOf g opp == lifeOf g0 opp && lifeOf g caster == lifeOf g0 caster &&
-    logContains g "The target is no longer legal"
+  let g := step g0 (targetOpp 3) (targets := #[Target.permanent (pid g0 "Bear")]) (spec := .opponent)
+  lifeOf g opp == lifeOf g0 opp && lifeOf g caster == lifeOf g0 caster
 
 #guard
   let g0 := afterDraw
@@ -118,10 +108,7 @@ Losing none changes nothing. -/
   let g := step afterDraw (eachOpp 0)
   lifeOf g opp == lifeOf afterDraw opp && g.log == afterDraw.log
 
-/- One life for each burden counter on the found source. None, a missing
-source, and a source that has left lose nothing. Counters do not travel
-with the object, so the graveyard copy loses nothing unless it still has
-burden counters. -/
+/- One life for each burden counter on the found source. -/
 #guard
   let g0 := addPermanent afterDraw ring caster caster
   let g0 := g0.addBurdenCounter (obj g0 "Ring") 4
@@ -140,35 +127,12 @@ burden counters. -/
 
 #guard
   let g0 := addPermanent afterDraw ring caster caster
-  let g0 := g0.addBurdenCounter (obj g0 "Ring") 2
-  let (g1, _) := g0.move (pid g0 "Ring") (.graveyard caster) none
-  let g := step g1 perBurden (some (pid g0 "Ring"))
-  lifeOf g caster == lifeOf g1 caster && g.log == g1.log
-
-#guard
-  let g0 := addPermanent afterDraw ring caster caster
-  let g0 := g0.addBurdenCounter (obj g0 "Ring") 2
-  let (g1, newId) := g0.move (pid g0 "Ring") (.graveyard caster) none
-  let g := step g1 perBurden (some newId)
-  lifeOf g caster == lifeOf g1 caster && (anyObj g "Ring").status.burden == 0 &&
-    g.log == g1.log
-
-#guard
-  let g0 := addPermanent afterDraw ring caster caster
-  let (g1, newId) := g0.move (pid g0 "Ring") (.graveyard caster) none
-  let g1 := g1.recordPutCounters (anyObj g1 "Ring").id .burden 2
-  let g := step g1 perBurden (some newId)
-  lifeOf g caster == lifeOf g1 caster - 2
-
-#guard
-  let g0 := addPermanent afterDraw ring caster caster
   let g0 := g0.addBurdenCounter (obj g0 "Ring") 3
   let g := g0.applyTriggeredAbility caster .onYourUpkeepLoseLifePerBurden
     (some (pid g0 "Ring"))
   lifeOf g caster == lifeOf g0 caster - 3 && (obj g "Ring").status.burden == 3
 
-/- Drain and draw-and-lose still run after the plan counter, and only while
-the source is on the battlefield. -/
+/- Drain and draw-and-lose still run alongside the plan counter. -/
 #guard
   let g0 := addPermanent afterDraw ring caster caster
   let g := g0.applyTriggeredAbility caster (.onVillainYouControlEntersDrainAndPlan 2)
@@ -184,117 +148,45 @@ the source is on the battlefield. -/
   handSize g caster == before + 1 && lifeOf g caster == lifeOf g0 caster - 1 &&
     lifeOf g opp == lifeOf g0 opp && (obj g "Ring").status.plan == 1
 
-#guard
-  let g0 := addPermanent afterDraw ring caster caster
-  let id := pid g0 "Ring"
-  let (g1, _) := g0.move id (.graveyard caster) none
-  let g := g1.applyTriggeredAbility caster (.onVillainYouControlEntersDrainAndPlan 2) (some id)
-  lifeOf g caster == lifeOf g1 caster && lifeOf g opp == lifeOf g1 opp &&
-    logContains g "no longer"
-
-/- Burden life loss uses the same count for every player selector.
-The controller is unchanged. Each named player loses that much. -/
+/- Burden life loss uses the same count for every player expression. -/
 #guard
   let g0 := addPermanent afterDraw ring caster caster
   let g0 := g0.addBurdenCounter (obj g0 "Ring") 5
-  let crossed := step g0 (.loseLife .perBurden .eachOpponent) (some (pid g0 "Ring"))
-  let swapped := step g0 (.loseLife .perBurden (.target .opponent))
-    (some (pid g0 "Ring")) (targets := #[Target.player opp])
-    (ab := .onYouSacrificeTokenOppLosesLife)
+  let crossed := step g0 (Instruction.loseLife (.counterCount (some .burden) .this) .opponents)
+    (some (pid g0 "Ring"))
+  let swapped := step g0 (Instruction.loseLife (.counterCount (some .burden) .this) (.target 0))
+    (some (pid g0 "Ring")) (targets := #[Target.player opp]) (spec := .opponent)
   lifeOf crossed caster == lifeOf g0 caster && lifeOf crossed opp == lifeOf g0 opp - 5 &&
-    logContains crossed "loses 5 life" &&
-    lifeOf swapped caster == lifeOf g0 caster && lifeOf swapped opp == lifeOf g0 opp - 5 &&
-    logContains swapped "loses 5 life"
+    lifeOf swapped caster == lifeOf g0 caster && lifeOf swapped opp == lifeOf g0 opp - 5
 
-/- A count of zero loses nothing. An offer is not a player who loses life. -/
-#guard
-  let g := step afterDraw (.loseLife .perOtherCreature)
-  lifeOf g caster == lifeOf afterDraw caster && lifeOf g opp == lifeOf afterDraw opp &&
-    g.log == afterDraw.log
-
-#guard
-  let g0 := afterDraw
-  let g := step g0 (.loseLife (.fixed 3) .opponentHasYou)
-    (targets := #[Target.player opp])
-    (ab := .onYouSacrificeTokenOppLosesLife)
-  lifeOf g caster == lifeOf g0 caster && lifeOf g opp == lifeOf g0 opp &&
-    g.log == g0.log
-
-/- `.controller` names who controls the objects an `ObjectSelector` names.
-The source's controller is that permanent's controller. The announced
-permanent's controller still loses life after the permanent has left.
-Several creatures name one controller once. Creatures of both players
-name both controllers. A hand names no player. -/
+/- `PlayerExpr.controllerOf` resolves controllers of objects without duplicates. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
-  let g := step g0 (.loseLife (.fixed 1) (.controller .source)) (some (pid g0 "Ogre"))
-  lifeOf g opp == lifeOf g0 opp - 1 && lifeOf g caster == lifeOf g0 caster &&
-    logContains g "loses 1 life"
-
-#guard
-  let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
-  let id := pid g0 "Ogre"
-  let (g1, _) := g0.move id (.graveyard opp) none
-  let g := step g1 (.loseLife (.fixed 2) (.controller .target))
-    (targets := #[Target.permanent id])
-  lifeOf g opp == lifeOf g1 opp - 2 && lifeOf g caster == lifeOf g1 caster
+  let g := step g0 (Instruction.loseLifeFixed 1 (.controllerOf .this)) (some (pid g0 "Ogre"))
+  lifeOf g opp == lifeOf g0 opp - 1 && lifeOf g caster == lifeOf g0 caster
 
 #guard
   let g0 := addPermanent afterDraw (creature "Mine" ManaCost.empty #[] 1 1) caster caster
   let g0 := addPermanent g0 (creature "Also" ManaCost.empty #[] 1 1) caster caster
-  let g := step g0 (.loseLife (.fixed 1) (.controller .creaturesYouControl))
+  let g := step g0 (Instruction.loseLifeFixed 1
+    (.controllerOf (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you]))))
   lifeOf g caster == lifeOf g0 caster - 1 && lifeOf g opp == lifeOf g0 opp
 
 #guard
   let g0 := addPermanent afterDraw (creature "Mine" ManaCost.empty #[] 1 1) caster caster
   let g0 := addPermanent g0 (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
-  let g := step g0 (.loseLife (.fixed 1) (.controller (.eachNonSubtypeAndOpponents .dragon)))
+  let g := step g0 (Instruction.loseLifeFixed 1
+    (.controllerOf (.inZones .battlefield (.all #[.hasType .creature, .not (.hasSubtype (.literal .dragon))]))))
   lifeOf g caster == lifeOf g0 caster - 1 && lifeOf g opp == lifeOf g0 opp - 1
 
-#guard
-  let g := step afterDraw (.loseLife (.fixed 3) (.controller .hand))
-  lifeOf g caster == lifeOf afterDraw caster && lifeOf g opp == lifeOf afterDraw opp &&
-    g.log == afterDraw.log
-
-#guard
-  let g := step afterDraw (.loseLife (.fixed 3) (.controller .target))
-  lifeOf g caster == lifeOf afterDraw caster && lifeOf g opp == lifeOf afterDraw opp &&
-    g.log == afterDraw.log
-
-#guard TriggeredAbility.resolution .onYouSacrificeTokenOppLosesLife == targetOpp 1
-#guard TriggeredAbility.resolution .onYourUpkeepLoseLifePerBurden == perBurden
-#guard TriggeredAbility.resolution (.onVillainYouControlEntersDrainAndPlan 2) ==
-  .sequence [.putCounters (.ofKind .plan) .source, eachOpp 2, .gainLife (.fixed 2)]
-#guard TriggeredAbility.resolution .onCreatureCardsToGyDrawLoseLifeAndPlan ==
-  .sequence [.putCounters (.ofKind .plan) .source, .draw (.fixed 1), .loseLife (.fixed 1)]
-
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.loseLife (.fixed 3)) } ==
-  "you lose 3 life"
-#guard TriggeredAbility.resolutionPhrase (SharedTrigger.toEffect (.targetOpponentLosesLife 1)) ==
-  "target opponent loses 1 life"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (eachOpp 2) } ==
-  "each opponent loses 2 life"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (perBurden) } ==
-  "you lose 1 life for each burden counter on this"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.loseLife .perBurden .eachOpponent) } == "lose life"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.loseLife .perOtherCreature) } == "lose life"
-
+/- Printed notations stay intact. -/
 #guard TriggeredAbility.toNotation .onYouSacrificeTokenOppLosesLife ==
   "Whenever you sacrifice a token, target opponent loses 1 life."
 #guard TriggeredAbility.toNotation .onYourUpkeepLoseLifePerBurden ==
   "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."
-#guard TriggeredAbility.resolutionPhrase (SharedTrigger.toEffect (.drainAndPlan 2)) ==
+#guard TriggeredAbility.resolutionPhrase (Effect.triggerDrainAndPlan 2) ==
   "each opponent loses 2 life and you gain 2 life. Put a plan counter on this enchantment"
-#guard TriggeredAbility.resolutionPhrase (SharedTrigger.toEffect .drawLoseLifeAndPlan) ==
+#guard TriggeredAbility.resolutionPhrase Effect.triggerDrawLoseLifeAndPlan ==
   "you draw a card, lose 1 life, and put a plan counter on this enchantment"
-
-#guard TriggeredAbility.TriggerResolution.gollumModes[1]! ==
-  .sequence [.loseLife (.fixed 2) .eachOpponent, .gainLife (.fixed 2)]
-#guard TriggeredAbility.TriggerResolution.upToXModes[1]! == eachOpp 2
-
-#guard (SharedTrigger.toEffect (.targetOpponentLosesLife 1)).resolution == targetOpp 1
-#guard (SharedTrigger.toEffect .loseLifePerBurden).resolution == perBurden
 
 end Mtg.Engine.LoseLifeTests

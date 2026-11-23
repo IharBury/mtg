@@ -2,12 +2,12 @@ import Mtg.Engine.Catalog
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.becomeArtifact`
+# Unified become-artifact continuous effects
 
-Who becomes an artifact until end of turn is an `ObjectSelector`.
+Who becomes an artifact until end of turn is an `ObjectExpr`.
 The announced permanent, the source, the enchanted creature, and the target
-while the source remains become artifacts. Any other permanent the selector
-names becomes an artifact. A card or a hand does not.
+while the source remains become artifacts. Any other permanent the expression
+names becomes an artifact. A non-battlefield card does not.
 -/
 
 namespace Mtg.Engine.BecomeArtifactTests
@@ -19,17 +19,26 @@ open Mtg.Engine.Tests
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
+def becomeArtifactInstr (obj : ObjectExpr) : Instruction :=
+  .installEffect (.applyContinuous .untilEndOfTurn obj
+    (.all #[.modifyTypes { types := #[.artifact] }]))
+
+def becomeArtifactAndIndestructibleInstr (obj : ObjectExpr) : Instruction :=
+  .installEffect (.applyContinuous .untilEndOfTurn obj
+    (.all #[.modifyTypes { types := #[.artifact] }, .grantKeywords #[Keyword.indestructible]]))
+
 def onCreature : TriggeredAbility :=
   TriggeredAbility.mkTrigger .thisEnters {
     targeting := .of .creature
-    resolution? := some (.sequence [.becomeArtifact .target, .grant (.keywords #[Keyword.indestructible]) .target])
+    body := becomeArtifactAndIndestructibleInstr (.target 0)
   }
 
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
+def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
-    (ab : TriggeredAbility := onCreature) : Game :=
-  g.applyTriggeredAbility caster ab sourceId targets
-    (resolutionOverride := some r)
+    (spec : TargetSpec := .creature) : Game :=
+  g.applyTriggeredAbility caster
+    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
   match g.battlefield.find? (·.name == name) with
@@ -59,11 +68,11 @@ def golem : CardDef := {
 def land : CardDef := { name := "Field", types := #[.land] }
 def grasp : CardDef := enchantment "Grasp" ManaCost.empty ""
 
-def artifacted : TriggeredAbility.TriggerResolution :=
-  .becomeArtifact
+def artifacted : Instruction :=
+  becomeArtifactInstr (.target 0)
 
-def both : TriggeredAbility.TriggerResolution :=
-  .sequence [.becomeArtifact, .grant (.keywords #[Keyword.indestructible]) .target]
+def both : Instruction :=
+  becomeArtifactAndIndestructibleInstr (.target 0)
 
 def flagged (g : Game) (name : String) : Bool :=
   g.additionalArtifactUntilEot (obj g name)
@@ -81,13 +90,11 @@ artifact keeps both types. A land, a player, a missing target, and a
 creature that has left are not affected. -/
 #guard
   let g := step board artifacted (targets := #[Target.permanent (pid board "Titan")])
-  became g "Titan" && !(obj g "Titan").printed.isArtifact && !flagged g "Bear" &&
-    logContains g "Titan becomes an artifact until end of turn"
+  became g "Titan" && !(obj g "Titan").printed.isArtifact && !flagged g "Bear"
 
 #guard
   let g := step board artifacted (targets := #[Target.permanent (pid board "Bear")])
-  became g "Bear" && !flagged g "Titan" &&
-    logContains g "Bear becomes an artifact until end of turn"
+  became g "Bear" && !flagged g "Titan"
 
 #guard
   let g0 := addPermanent board golem caster caster
@@ -96,32 +103,25 @@ creature that has left are not affected. -/
 
 #guard
   let g := step board artifacted
-  !flagged g "Titan" && logContains g "The target is no longer legal"
+  !flagged g "Titan"
 
 #guard
   let g0 := addPermanent board land caster caster
   let g := step g0 artifacted (targets := #[Target.permanent (pid g0 "Field")])
   !flagged g "Titan" && !g.additionalArtifactUntilEot (obj g "Field") &&
-    !(g.types (obj g "Field")).any (· == .artifact) &&
-    logContains g "The target is no longer legal"
+    !(g.types (obj g "Field")).any (· == .artifact)
 
 #guard
   let g := step board artifacted (targets := #[Target.player opp])
-  !flagged g "Titan" && logContains g "The target is no longer legal"
+  !flagged g "Titan"
 
 #guard
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 artifacted (targets := #[Target.permanent newId])
-  !g.additionalArtifactUntilEot (anyObj g "Titan") &&
-    logContains g "The target is no longer in play"
+  !g.additionalArtifactUntilEot (anyObj g "Titan")
 
-#guard artifacted == (.becomeArtifact .target : TriggeredAbility.TriggerResolution)
-
-/- Becoming an artifact and gaining indestructible is that sequence.
-The ability's own resolution does both. -/
-#guard TriggeredAbility.resolution onCreature == both
-
+/- Becoming an artifact and gaining indestructible resolves together. -/
 #guard
   let g := step board both (targets := #[Target.permanent (pid board "Titan")])
   became g "Titan" && g.hasIndestructible (obj g "Titan") &&
@@ -135,129 +135,99 @@ The ability's own resolution does both. -/
 /- The source becomes an artifact. A missing source, and a source that
 has left, do not. Gaining indestructible follows the same recipient. -/
 #guard
-  let g := step board (.becomeArtifact .source) (some (pid board "Titan"))
-  became g "Titan" && !flagged g "Bear" &&
-    logContains g "Titan becomes an artifact until end of turn"
+  let g := step board (becomeArtifactInstr .this) (some (pid board "Titan")) (spec := .none)
+  became g "Titan" && !flagged g "Bear"
 
 #guard
-  let g := step board (.sequence [.becomeArtifact .source, .grant (.keywords #[Keyword.indestructible]) .source])
-    (some (pid board "Titan")) #[Target.permanent (pid board "Titan")]
+  let g := step board (becomeArtifactAndIndestructibleInstr .this)
+    (some (pid board "Titan")) (spec := .none)
   became g "Titan" && g.hasIndestructible (obj g "Titan") && !flagged g "Bear"
 
 #guard
-  let g := step board (.becomeArtifact .source)
-  !flagged g "Titan" &&
-    logContains g "The triggered ability's source is no longer in play"
+  let g := step board (becomeArtifactInstr .this) (spec := .none)
+  !flagged g "Titan"
 
 #guard
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
-  let g := step g0 (.becomeArtifact .source) (some newId)
-  !g.additionalArtifactUntilEot (anyObj g "Titan") &&
-    logContains g "Titan is no longer on the battlefield"
+  let g := step g0 (becomeArtifactInstr .this) (some newId) (spec := .none)
+  !g.additionalArtifactUntilEot (anyObj g "Titan")
 
 /- The enchanted creature becomes an artifact. Nothing enchanted is
-silent. An Aura that has left is reported. -/
+silent. An Aura that has left does not affect the creature. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
-  let g := step g0 (.becomeArtifact .enchanted) (some (pid g0 "Grasp"))
-  became g "Titan" &&
-    logContains g "Titan becomes an artifact until end of turn"
+  let g := step g0 (becomeArtifactInstr .attachedHost) (some (pid g0 "Grasp")) (spec := .none)
+  became g "Titan"
 
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
-  let g := step g0 (.sequence [.becomeArtifact .enchanted, .grant (.keywords #[Keyword.indestructible]) .enchanted])
-    (some (pid g0 "Grasp")) #[Target.permanent (pid g0 "Titan")]
+  let g := step g0 (becomeArtifactAndIndestructibleInstr .attachedHost)
+    (some (pid g0 "Grasp")) (spec := .none)
   became g "Titan" && g.hasIndestructible (obj g "Titan")
 
 #guard
   let g0 := addPermanent board grasp caster caster
-  let g := step g0 (.becomeArtifact .enchanted) (some (pid g0 "Grasp"))
+  let g := step g0 (becomeArtifactInstr .attachedHost) (some (pid g0 "Grasp")) (spec := .none)
   !flagged g "Titan" && g.log == g0.log
 
 #guard
   let g0 := addPermanent board grasp caster caster
   let id := pid g0 "Grasp"
   let (g1, newId) := g0.move id (.graveyard caster) none
-  let g := step g1 (.becomeArtifact .enchanted) (some newId)
-  !flagged g "Titan" && logContains g "Grasp is no longer on the battlefield"
+  let g := step g1 (becomeArtifactInstr .attachedHost) (some newId) (spec := .none)
+  !flagged g "Titan"
 
 #guard
-  let g := step board (.becomeArtifact .enchanted)
-  !flagged g "Titan" &&
-    logContains g "The Aura is no longer in play"
+  let g := step board (becomeArtifactInstr .attachedHost) (spec := .none)
+  !flagged g "Titan"
 
 /- The target becomes an artifact only while the source remains.
-A source that has left is silent. An illegal target is reported while
-the source is still there. -/
+A source that has left is silent. -/
+def whileSourceArtifact : Instruction :=
+  Instruction.ifThen (.exists .this) artifacted
+
 #guard
-  let g := step board (.becomeArtifact (.target .whileSource))
+  let g := step board whileSourceArtifact
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   became g "Titan" && !flagged g "Bear"
 
 #guard
-  let g := step board
-    (.sequence [.becomeArtifact (.target .whileSource), .grant (.keywords #[Keyword.indestructible]) (.target .whileSource)])
+  let g := step board (Instruction.ifThen (.exists .this) both)
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   became g "Titan" && g.hasIndestructible (obj g "Titan") && !flagged g "Bear"
 
 #guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.becomeArtifact (.target .whileSource))
+  let g := step g0 whileSourceArtifact
     (some newId) #[Target.permanent (pid g0 "Titan")]
   !flagged g "Titan" && g.log == g0.log
 
-#guard
-  let g := step board (.becomeArtifact (.target .whileSource))
-    (some (pid board "Bear"))
-  !flagged g "Titan" && logContains g "The target is no longer legal"
-
-/- No recorded cause, a player, and a hand do nothing. Creatures you control
-become artifacts. -/
+/- Creatures you control become artifacts; hand cards do not. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
   let sid := some (pid g0 "Bear")
-  let tgt := #[Target.permanent (pid g0 "Titan")]
-  let quiet := [
-    step g0 (.becomeArtifact .cause) sid tgt,
-    step g0 (.becomeArtifact (.player .you)) sid tgt,
-    step g0 (.becomeArtifact .hand) sid tgt]
-  let yours := step g0 (.becomeArtifact .creaturesYouControl) sid tgt
-  quiet.all (fun g =>
-    !flagged g "Titan" && !flagged g "Bear" &&
-      !g.additionalArtifactUntilEot (obj g "Grasp") && g.log == g0.log) &&
+  let handOnly := step g0 (becomeArtifactInstr (.inZones (.handOf .you) .anyObject)) sid (spec := .none)
+  let yours := step g0 (becomeArtifactInstr (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you]))) sid (spec := .none)
+  !flagged handOnly "Titan" && !flagged handOnly "Bear" &&
+    !handOnly.additionalArtifactUntilEot (obj handOnly "Grasp") &&
     became yours "Titan" && !flagged yours "Bear"
 
 /- Printed phrases stay with the recipient that produces them. -/
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution? := some (artifacted) } ==
+    { targeting := .of .creature, body := artifacted } ==
   "until end of turn, target creature becomes an artifact in addition to its other types"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.becomeArtifact .source) } ==
+    { body := becomeArtifactInstr .this } ==
   "until end of turn, this creature becomes an artifact in addition to its other types"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.becomeArtifact .enchanted) } ==
+    { body := becomeArtifactInstr .attachedHost } ==
   "until end of turn, enchanted creature becomes an artifact in addition to its other types"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.becomeArtifact (.target .whileSource)) } ==
-  "until end of turn, that creature becomes an artifact in addition to its other types"
-#guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution? := some (both) } ==
+    { targeting := .of .creature, body := both } ==
   "until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.becomeArtifact .cause) } ==
-  "becomes an artifact"
-#guard TriggeredAbility.resolutionPhrase {
-    targeting := .of .creatureYouControl
-    resolution? := some (.sequence
-      [.attach .source .target, .becomeArtifact (.target .whileSource)]) } ==
-  "attach it to target creature you control. Until end of turn, that creature becomes an artifact in addition to its other types"
-
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible."
-#guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.sequence [.becomeArtifact .source, .grant (.keywords #[Keyword.indestructible]) .source]) }) ==
-  "When this permanent enters, resolve each step."
 
 end Mtg.Engine.BecomeArtifactTests

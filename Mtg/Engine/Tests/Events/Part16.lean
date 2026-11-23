@@ -578,7 +578,7 @@ private def replayOk50i3 (gs : Array Game) : Bool :=
   --        `Event.matchesTrigger`, and `Core.matchTriggers`:
   let plusOneWatcherDef : CardDef := {
     creature "P50i3 PlusOneWatcher" ManaCost.empty #["Hero"] 1 4 with
-    triggeredAbilities := #[SharedTrigger.resource .plusOneOnHeroesCreateWall |>.toTriggeredAbility]
+    triggeredAbilities := #[TriggeredAbility.resourcePlusOneOnHeroesCreateWall]
   }
   let goblinWatcherDef : CardDef := {
     name := "P50i3 GoblinWatcher"
@@ -589,7 +589,7 @@ private def replayOk50i3 (gs : Array Game) : Bool :=
   let tapWatcherDef : CardDef := {
     name := "P50i3 TapWatcher"
     types := #[.enchantment]
-    triggeredAbilities := #[SharedTrigger.watch .firstTapUntap |>.toTriggeredAbility]
+    triggeredAbilities := #[TriggeredAbility.watchFirstTapUntap]
   }
   let goblinHeroDef : CardDef :=
     creature "P50i3 GoblinHero" ManaCost.empty #["Goblin", "Hero"] 2 2
@@ -747,7 +747,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
-      effect := { resolution? := some (.addMana #[.colored .blue] (.fixed 1)), phrase := "Add {U}." }
+      effect := { body := Instruction.addSimpleMana #[.colored .blue], phrase := "Add {U}." }
     }]
   }
   let crewSkiffDef : CardDef := {
@@ -777,7 +777,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf]
-      effect := { resolution? := some (.addMana #[.colored .blue] (.fixed 2)), phrase := "Add {U}{U}." }
+      effect := { body := Instruction.addSimpleMana #[.colored .blue, .colored .blue], phrase := "Add {U}{U}." }
     }]
   }
   let hasteElfDef : CardDef := {
@@ -883,8 +883,8 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     mustHold50i4 "4a_6_cascNoSac" (isDeclineDirect4 (gCascNoSac.defaultFraAction p0 (.mayCastCascade cascNoSacId #[]))) &&
     mustHold50i4 "4a_7_cascWithSac" (isAcceptDirect4 (gCascWithSac.defaultFraAction p0 (.mayCastCascade cascNoSacId #[])))
 
-  -- 4b(i). `unlessPaysResCtx` preservation across `beginUnlessPays` -> `Decisions.decline`
-  --        `.payOrLetCounter` AND `Decisions.flushUnlessPays` (when payer `p2` concedes):
+  -- 4b(i). `InterpCtx` preservation across `.unlessPays` -> `Decisions.decline`
+  --        `.payOrLetCounter` AND payer `p2` conceding (CR 800.4a):
   let gUnlessB0 :=
     addPermanent (addPermanent (addPermanent g3 bear p1 p1) bear p1 p1) bear p2 p2
   let p1Bears := gUnlessB0.permanentsOf p1
@@ -892,18 +892,10 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   let bearBId := p1Bears[1]!.id
   let p2ExtraBearId := (gUnlessB0.permanentsOf p2)[0]!.id
   -- `p2` temporarily controls `bearA` (owned by `p1`); if `p2` concedes (CR 800.4a), control of
-  -- `bearA` reverts to `p1` so `Target.permanent bearAId` stays legal when `flushUnlessPays` runs!
+  -- `bearA` reverts to `p1` so `Target.permanent bearAId` stays legal when the `.unlessPays` continuation runs!
   let gUnlessBase :=
     gUnlessB0.createEffect (.layered (.objects #[bearAId]) (.control p2) .untilEndOfTurn)
       (cause := some testCause)
-  let ctxRich : SpellResolutionCtx := {
-    castFromGraveyard := true
-    kicked := true
-    giftPromised := true
-    chosenX := some 4
-    lastKnownPower := some 5
-    lastKnownToughness := some 7
-  }
   let innerAllCtx : Instruction :=
     .seq #[
       Instruction.ifThen (.castPred (.castFrom .graveyard .this))
@@ -922,24 +914,23 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   }
   let gUnless0 :=
     gUnlessBase.applyUnified p0 unlessEff #[.permanent bearAId]
-      (castFromGraveyard := ctxRich.castFromGraveyard)
-      (kicked := ctxRich.kicked)
-      (giftPromised := ctxRich.giftPromised)
-      (chosenX := ctxRich.chosenX)
-      (lastKnownPower := ctxRich.lastKnownPower)
-      (lastKnownToughness := ctxRich.lastKnownToughness)
+      (castFromGraveyard := true)
+      (kicked := true)
+      (giftPromised := true)
+      (chosenX := some 4)
+      (lastKnownPower := some 5)
+      (lastKnownToughness := some 7)
   -- Decline `.payOrLetCounter` as `p2`: `p1` & `p2` each lose `5 + 7 + 4 = 16` life (`20 -> 4`),
   -- and `phaseOutKicker` (`kicked == true`) phases out BOTH creatures `p2` controls (`bearA` & `p2ExtraBearId`)!
   let gUnlessDeclined := mustApply gUnless0 p2 .decline
-  -- Payer `p2` concedes at `.payOrLetCounter`: `Leaving` sets `unlessPaysDue := true`, `bearA`
-  -- reverts to `p1`, and `flushUnlessPays` causes `p1` to lose `16` life (`20 -> 4`) and phases out
+  -- Payer `p2` concedes at `.payOrLetCounter`: `Leaving` sets `interpChoiceVar` false, `bearA`
+  -- reverts to `p1`, and the resumed `.unlessPays` continuation causes `p1` to lose `16` life (`20 -> 4`) and phases out
   -- BOTH `bearA` and `bearB` (`kicked == true`, whereas `kicked == false` would phase out only `bearA`)!
   let gUnlessFlushed := mustApply gUnless0 p2 .concede
 
   -- 4b(ii). Explicit `chosenX = some 0` precedence over permanent `sourceId` `chosenXOf? == some 5`
   --         across unified `Interpreter` (`warriorsX`, `applyUnifiedAbility`),
-  --         `.continueUnifiedAbility` (also verifying `chosenX` and `lastKnownToughness` are NOT swapped!),
-  --         `.continueSpellModes`, `acceptMay`, `chooseSpellOr`, and `TriggerArgs` (`triggerInt` & `applyAddMana`):
+  --         `.continueInterpreter`, `.continueSpellModes`, `acceptMay`, `chooseSpellOr`, and `Instruction.addMana`:
   let xHydraPermDef : CardDef :=
     creature "P50i4 XSourceHydra" { symbols := #[.x] } #["Hydra"] 3 3
   let gXSrc0 := (insertObject gBase xHydraPermDef p0 (.hand p0)).addMana p0 .colorless 5
@@ -969,21 +960,29 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   let gAbFallback :=
     gXSrcBf.applyAbilityEffect p0 loseXEff #[] (sourceId := some xSrcId) (chosenX := none)
 
-  -- 3. `.continueUnifiedAbility` (`chosenX := some 0`, `lastKnownToughness := some 7`):
-  --    On-battlefield `xSrcId` (`3/3`) deals `0 + 3 = 3` (`20 -> 17`, proving `chosenX = some 0` beats
+  -- 3. `.continueInterpreter` (`chosenX := 0`, `lastKnownToughness := some 7`):
+  --    On-battlefield `xSrcId` (`3/3`) deals `0 + 3 = 3` (`20 -> 17`, proving `chosenX = 0` beats
   --    `xSrcId`'s `chosenXOf? = some 5` and is not swapped with `lastKnownToughness = some 7`), and
   --    off-battlefield (`sourceId := none`) deals `0 + 7 = 7` (`20 -> 13`, proving `lastKnownToughness`
   --    is preserved in its own slot):
-  let loseTghStep : Resolution := .loseLife .equalSourceToughness .eachOpponent
-  let loseXStep : Resolution := .loseLife .chosenX .eachOpponent
+  let loseXAndTghQueue : Array Instruction := #[
+    Instruction.loseLife .chosenX .opponents,
+    Instruction.loseLife (.objectStat .toughness .this) .opponents
+  ]
   let gContAbZero :=
     gXSrcBf.resumePendingReplacement
-      (.continueUnifiedAbility p0 loseXEff #[loseXStep, loseTghStep] #[]
-        (some xSrcId) (some 4) (some 0) (some 7))
+      (.continueInterpreter {
+        ctx := { controller := p0, sourceId := some xSrcId, chosenX := 0, lastKnownPower := some 4, lastKnownToughness := some 7 }
+        queue := loseXAndTghQueue
+        stack := #[]
+      })
   let gContAbLkiZero :=
     gXSrcBf.resumePendingReplacement
-      (.continueUnifiedAbility p0 loseXEff #[loseXStep, loseTghStep] #[]
-        none (some 4) (some 0) (some 7))
+      (.continueInterpreter {
+        ctx := { controller := p0, sourceId := none, chosenX := 0, lastKnownPower := some 4, lastKnownToughness := some 7 }
+        queue := loseXAndTghQueue
+        stack := #[]
+      })
 
   -- 4. `.continueSpellModes` (`chosenX := some 0`, `sourceId := some xSrcId`):
   let gContModesZero :=
@@ -1011,19 +1010,25 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     | .ok g' => g'
     | .error msg => panic! s!"chooseSpellOr failed: {msg}"
 
-  -- 6. `TriggerArgs.triggerInt` & `applyAddMana`:
-  let trigIntZero :=
-    gXSrcBf.triggerInt { controller := p0, sourceId := some xSrcId, chosenX := some 0 } .chosenX
-  let trigIntFallback :=
-    gXSrcBf.triggerInt { controller := p0, sourceId := some xSrcId, chosenX := none } .chosenX
+  -- 6. Unified `Instruction.addMana` (`chosenX := some 0` vs `chosenX := none` fallback):
+  let addManaXEff : Effect := {
+    body := Instruction.addMana { spec := .sequence #[(.colorless, .chosenX)] }
+    phrase := "Add X colorless mana."
+  }
   let gAddManaZero :=
-    gXSrcBf.applyAddMana p0 (some xSrcId) #[.colorless] .chosenX (chosenX := some 0)
+    gXSrcBf.applyAbilityEffect p0 addManaXEff #[] (sourceId := some xSrcId) (chosenX := some 0)
   let gAddManaFallback :=
-    gXSrcBf.applyAddMana p0 (some xSrcId) #[.colorless] .chosenX (chosenX := none)
+    gXSrcBf.applyAbilityEffect p0 addManaXEff #[] (sourceId := some xSrcId) (chosenX := none)
 
+  let unlessCtxOk :=
+    match gUnless0.currentInterpWait? with
+    | some st =>
+      st.ctx.castFromGraveyard && st.ctx.kicked && st.ctx.giftPromised &&
+        st.ctx.chosenX == 4 && st.ctx.lastKnownPower == some 5 && st.ctx.lastKnownToughness == some 7
+    | none => false
   let item4bOk :=
     mustHold50i4 "4b_unlessPaysResCtxDeclineAndFlush"
-      (gUnless0.unlessPaysResCtx == ctxRich &&
+      (unlessCtxOk &&
        (gUnlessDeclined.player p1).life == 4 &&
        (gUnlessDeclined.player p2).life == 4 &&
        (gUnlessDeclined.object! bearAId).status.phasedOut &&
@@ -1044,8 +1049,6 @@ private def isAcceptDirect4 (a : Action) : Bool :=
        (gContModesZero.player p1).life == 20 &&
        (gMayZero.player p1).life == 20 &&
        (gOrZero.player p1).life == 20 &&
-       trigIntZero == some 0 &&
-       trigIntFallback == some 5 &&
        (gAddManaZero.player p0).manaPool.total == 0 &&
        (gAddManaFallback.player p0).manaPool.total == 5)
 

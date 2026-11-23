@@ -147,11 +147,16 @@ def avengersDisassembledFizzleOk : Bool :=
   let g := addPermanent afterDraw grizzlyBears ⟨1⟩ ⟨1⟩
   let g := addPermanent g forest ⟨1⟩ ⟨1⟩
   let land := namedPermanent g "Forest"
+  let putSpell (base : Game) : Game :=
+    let (g, spell) := base.allocObject avengersDisassembled ⟨0⟩ .stack (some ⟨0⟩)
+    let g := g.putStackEntry ⟨0⟩ spell.id
+    let g := g.record (GameEvent.announced g.turnNumber spell.id (modes := #[0, 1]))
+    (g.setStackEntryTargets spell.id #[Target.permanent land.id]).resolveTop
   let (gGone, _) := g.move land.id (.graveyard ⟨1⟩) none
-  let fizzled := gGone.applyAvengersDisassembled ⟨0⟩ true true (some land.id)
+  let fizzled := putSpell gGone
   (namedPermanent fizzled "Grizzly Bears").status.damage == 0 &&
     logContains fizzled "doesn't resolve" &&
-    (let gOk := g.applyAvengersDisassembled ⟨0⟩ true true (some land.id)
+    (let gOk := putSpell g
      (namedPermanent gOk "Grizzly Bears").status.damage == 3 &&
        logContains gOk "may search") &&
     (mshRuling 559).comment.contains "won't resolve"
@@ -207,7 +212,7 @@ def deathToOurEnemiesDivisionOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let plan := namedPermanent g "Death to Our Enemies"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.queueModeledReflexive ⟨0⟩ (some plan.id) .divideSevenDamage 7
+  let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanDividedDamage (some plan.id)
   let g := mustApply g ⟨0⟩ (.divideDamage #[(Target.player ⟨1⟩, 4), (Target.permanent bears.id, 3)])
   let (gGone, _) := g.move bears.id (.graveyard ⟨1⟩) none
   let gGone := passBoth gGone
@@ -223,7 +228,7 @@ def deathToOurEnemiesEachTargetAtLeastOneOk : Bool :=
   let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
   let plan := namedPermanent g "Death to Our Enemies"
   let bears := namedPermanent g "Grizzly Bears"
-  let g := g.queueModeledReflexive ⟨0⟩ (some plan.id) .divideSevenDamage
+  let g := g.applyTriggeredAbility ⟨0⟩ .onFourthPlanDividedDamage (some plan.id)
   let life0 := (g.player ⟨1⟩).life
   let zeroRejected :=
     match g.apply ⟨0⟩ (.divideDamage #[(Target.player ⟨1⟩, 0), (Target.permanent bears.id, 7)]) with
@@ -275,7 +280,7 @@ def visionModesExhaustedOk : Bool :=
   let vis := namedPermanent g "The Vision"
   let g := #[0, 1, 2].foldl (fun acc m => acc.record (GameEvent.triggerModeChosen acc.turnNumber vis.id m)) g
   let hand0 := (g.player ⟨0⟩).hand.size
-  let g := g.applyModeledTrigger ⟨0⟩ (.onCasting Effect.castingVisionModes)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingVisionModes)
     (some (namedPermanent g "The Vision").id)
   (g.player ⟨0⟩).hand.size == hand0 &&
     logContains g "removed from the stack" &&
@@ -307,15 +312,13 @@ def hydeMustRemoveOk : Bool :=
   let hyde := namedPermanent g "Mister Hyde, Monster Within"
   let g := g.addPlusOnePlusOneTo hyde 1
   let g0 := g.change (.pushContinuationFrame { resolvingModes := some #[1] })
-  let g := g0.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepHydeChoose)
+  let g := g0.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepHydeChoose)
     (some (namedPermanent g0 "Mister Hyde, Monster Within").id) #[]
-    "Mister Hyde, Monster Within"
   logContains g "must remove a counter" &&
     (let hyde := namedPermanent g "Mister Hyde, Monster Within"
      let g1 := g.change (.pushContinuationFrame { resolvingModes := some #[1] })
-     let g := g1.applyModeledTrigger ⟨0⟩ (.onStep Effect.stepHydeChoose)
+     let g := g1.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepHydeChoose)
        (some hyde.id) #[Target.permanent hyde.id]
-       "Mister Hyde, Monster Within"
      (namedPermanent g "Mister Hyde, Monster Within").status.plusOnePlusOne == 0 &&
        (g.player ⟨0⟩).hand.size >= 1) &&
     (mshRuling 584).comment.contains "must remove a counter"
@@ -326,14 +329,14 @@ def hydeMustRemoveOk : Bool :=
 def humanTorchInterveningOk : Bool :=
   let g := addPermanent afterDraw humanTorchJohnnyStorm ⟨0⟩ ⟨0⟩
   let torch := namedPermanent g "Human Torch, Johnny Storm"
-  let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
+  let g := g.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
     #[Target.player ⟨1⟩]
   (g.player ⟨1⟩).life == 20 &&
     logContains g "has no effect" &&
     (let g := addPermanent afterDraw humanTorchJohnnyStorm ⟨0⟩ ⟨0⟩
      let g := addPermanent g colleenWingStreetSamurai ⟨0⟩ ⟨0⟩
      let torch := namedPermanent g "Human Torch, Johnny Storm"
-     let g := g.applyModeledTrigger ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
+     let g := g.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceDrawIfAnotherHeroDamage) (some torch.id)
        #[Target.player ⟨1⟩]
      (g.player ⟨1⟩).life == 19) &&
     (mshRuling 585).comment.contains "won't trigger"

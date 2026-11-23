@@ -11,12 +11,12 @@ namespace Mtg.Engine
 namespace Game
 
 /-- Ask `p` which of `options` the permanent `id` gains until end of turn. -/
-def beginChooseKeyword (g : Game) (p : PlayerId) (id : ObjectId) (options : Array KeywordChoice) : Game :=
+def beginChooseKeyword (g : Game) (p : PlayerId) (id : ObjectId) (options : Array KeywordAbility) : Game :=
   match g.findObject? id with
   | some o =>
     if !o.isOnBattlefield then g
     else
-      let names := String.intercalate ", " (options.toList.map KeywordChoice.name)
+      let names := String.intercalate ", " (options.toList.map fun k => ToOracle.toOracle {} k)
       g.beginFraChoice p (.chooseKeyword id options)
         s!"{(g.player p).name} chooses {names} for {g.name o}"
   | none => g
@@ -241,55 +241,6 @@ def finishIdentityEchoAfterExile (g : Game) (controller : PlayerId)
         s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
         (cause := revealCause?)
 
-/-- Bounce each `remaining` target permanent one at a time, pausing across
-`Pending.chooseReplacement` so subsequent target legality checks do not run
-before an earlier replacement resolves. -/
-partial def bounceEachTargetLoop (g : Game) (controller : PlayerId) (spec : TargetSpec)
-    (remaining : Array (Nat × Target)) (sourceId : Option ObjectId) : Game :=
-  match remaining[0]? with
-  | none => g
-  | some (i, t) =>
-    let rest := remaining.extract 1 remaining.size
-    let g :=
-      match t with
-      | Target.permanent id =>
-        if g.targetLegalAt controller spec i t sourceId then
-          match g.findObject? id with
-          | some o => g.returnToHand id o.owner
-          | none => g
-        else g.illegalAbilityTarget t
-      | _ => g
-    if rest.isEmpty then g
-    else if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep (.bounceEachTargetLoop controller spec rest sourceId))
-    else
-      g.bounceEachTargetLoop controller spec rest sourceId
-
-/-- Untap each `remaining` target permanent one at a time, pausing across
-`Pending.chooseReplacement` before checking subsequent targets. -/
-partial def untapTargetsLoop (g : Game) (controller : PlayerId) (spec : TargetSpec)
-    (remaining : Array (Nat × Target)) (sourceId : Option ObjectId) : Game :=
-  match remaining[0]? with
-  | none => g
-  | some (i, t) =>
-    let rest := remaining.extract 1 remaining.size
-    let g :=
-      match t with
-      | Target.permanent id =>
-        if g.targetLegalAt controller spec i t sourceId then
-          match g.findObject? id with
-          | some o => g.untapPermanentLogged o
-          | none => g
-        else g.illegalAbilityTarget t
-      | _ => g
-    if rest.isEmpty then g
-    else if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep (.untapTargetsLoop controller spec rest sourceId))
-    else
-      g.untapTargetsLoop controller spec rest sourceId
-
 /-- Deal `n` damage to each `remaining` target permanent or player one at a
 time, pausing across `Pending.chooseReplacement` before checking subsequent
 targets. -/
@@ -384,6 +335,153 @@ partial def exileOpponentLibrariesLoop (g : Game) (remainingOpps : Array PlayerI
           if (g.followMovedToZone? cid (· == .exile)).isSome then
             anyMoved := true
   return g
+
+/-! ### Additional Choice Resolution Helpers -/
+
+def destroyCreaturesByManaParity (g : Game) (sourceId : Option ObjectId) (even : Bool) : Game :=
+  let preBf := g.battlefield
+  let ids := (preBf.filter (fun o =>
+    some o.id != sourceId && g.isCreature o &&
+      ((g.objectManaValue o % 2 == 0) == even))).map (·.id)
+  let quality := if even then "even" else "odd"
+  let g := g.logMsg s!"Destroy each other creature with {quality} mana value"
+  g.withBatch none fun g =>
+    g.destroyPermanentsLoop ids (preBattlefield := some preBf)
+
+def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
+    (x : Nat) (shuffle : Bool) : Game :=
+  let g :=
+    if shuffle then
+      let foundFromLib :=
+        match id? with
+        | some id =>
+          if (g.findObject? id).any (fun o =>
+              o.zone == .library p && g.isArtifact o && g.isCreature o &&
+                g.objectManaValue o ≤ x) then #[id]
+          else #[]
+        | none => #[]
+      g.record (GameEvent.searched g.turnNumber p p foundFromLib
+        (cause := some (g.resolvingOrRuleCause p)))
+    else g
+  match id? with
+  | none =>
+    let g := g.logMsg s!"{(g.player p).name} finds no artifact creature card"
+    if shuffle then g.shuffleThen p .none else g
+  | some id =>
+    match g.findObject? id with
+    | some o =>
+      if (o.zone == .library p || o.zone == .graveyard p) &&
+          g.isArtifact o && g.isCreature o &&
+          g.objectManaValue o ≤ x then
+        let (g, newId) := g.putOntoBattlefield id p
+          (extraEntersWith := if x > 0 then #[(.plusOnePlusOne, x)] else #[])
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement (.finishPostStep (.putOntoBattlefieldHasteAtFour p id x shuffle))
+        else
+          let entered := g.object! newId
+          let g :=
+            if entered.isOnBattlefield then
+              let name := g.name entered
+              let g := g.afterPermanentEnters entered
+              let g :=
+                if x ≥ 4 then g.grantUntilEotLogged (g.object! newId) #[Keyword.haste] else g
+              g.logMsg s!"{name} is put onto the battlefield"
+            else g
+          if shuffle then g.shuffleThen p .none else g
+      else
+        let g := g.logMsg "That card can't be found"
+        if shuffle then g.shuffleThen p .none else g
+    | none =>
+      let g := g.logMsg "That card can't be found"
+      if shuffle then g.shuffleThen p .none else g
+
+def beginVisionQuest (g : Game) (p : PlayerId) (x : Nat) : Game :=
+  if !g.stillInGame p then g
+  else
+    let ok (o : GameObject) : Bool :=
+      g.isArtifact o && g.isCreature o && g.objectManaValue o ≤ x
+    let lib := (g.player p).library.filter (fun id => (g.findObject? id).any ok)
+    let gy := (g.player p).graveyard.filter (fun id => (g.findObject? id).any ok)
+    if lib.isEmpty && gy.isEmpty then
+      let g := g.record (GameEvent.searched g.turnNumber p p #[]
+        (cause := some (g.resolvingOrRuleCause p)))
+      (g.logMsg s!"{(g.player p).name} finds no artifact creature card").shuffleThen p .none
+    else
+      g.beginFraChoice p (.visionQuestZones lib gy x)
+        s!"{(g.player p).name} may search their library and their graveyard"
+
+def conniveTricksterTarget (g : Game) (controller : PlayerId) (id? : Option ObjectId)
+    (sourceId : Option ObjectId := none) : Game :=
+  if !g.stillInGame controller then g
+  else
+    match id? with
+    | none => g
+    | some id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller &&
+            g.canBeTargetedBy controller o sourceId then
+          g.applyConnive controller (some id)
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
+
+def battlefieldCreatureTypes (g : Game) : Array CardSubtype :=
+  g.battlefield.foldl (fun acc o =>
+    if !g.isCreature o then acc
+    else
+      (g.subtypes o).foldl (fun acc t =>
+        if t.isCreatureType && !acc.contains t then acc.push t else acc) acc) #[]
+
+def returnCreaturesNotOfType (g : Game) (chosen : CardSubtype) : Game :=
+  g.withBatch none fun g =>
+    g.foldBattlefield (fun o => g.isCreature o && !g.hasSubtype o chosen)
+      (fun g o => g.returnToHand o.id o.owner)
+
+def finishRevealPutCreaturesStep (g : Game) (p : PlayerId)
+    (remaining put enteredFromIds : Array ObjectId)
+    (cause : Option EventCause := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.revealPutCreaturesStep p remaining put enteredFromIds cause))
+  let mut g := g
+  let mut entered := enteredFromIds
+  for i in [0:remaining.size] do
+    let id := remaining[i]!
+    match g.findObject? id with
+    | some o =>
+      if put.contains id && g.isCreature o && o.zone == .library p then
+        let (g', _) := g.putOntoBattlefield id p (cause := cause)
+        g := g'
+        entered := entered.push id
+      else if o.zone == .library o.owner then
+        let (g', _) := g.move id (.graveyard o.owner) none (cause := cause)
+        g := g'
+      if let .chooseReplacement .. := g.pending then
+        let rem := remaining.extract (i + 1) remaining.size
+        return g.chainPendingReplacement
+          (.finishPostStep (.revealPutCreaturesStep p rem put entered cause))
+    | none => pure ()
+  for k in [0:entered.size] do
+    let fromId := entered[k]!
+    match g.followMovedToZone? fromId (· == .battlefield) with
+    | some enteredObj =>
+      g := g.logMsg s!"{(g.player p).name} puts {g.name enteredObj} onto the battlefield"
+      g := g.afterPermanentEnters enteredObj
+      if let .chooseReplacement .. := g.pending then
+        let remEntered := entered.extract (k + 1) entered.size
+        return g.chainPendingReplacement
+          (.finishPostStep (.revealPutCreaturesStep p #[] put remEntered cause))
+    | none => pure ()
+  return g
+
+def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array ObjectId) : Game :=
+  let (g0, cause?) : Game × Option EventCause :=
+    if looked.isEmpty then (g, none)
+    else
+      let (g, c) := g.allocDelayedCause (some p)
+      (g, some c)
+  g0.withBatch cause? fun g =>
+    g.finishRevealPutCreaturesStep p looked put #[] (cause := cause?)
 
 end Game
 end Mtg.Engine

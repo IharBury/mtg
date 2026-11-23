@@ -274,7 +274,7 @@ def resolveSearchBasicPlainsExile (g : Game) (p : PlayerId)
     (sourceId : Option ObjectId) (max life : Nat) : Game :=
   g.beginLibrarySearch p (fun c => isBasicLandCard c && c.hasSubtype .plains)
     "a basic Plains card" (.exileLinked sourceId) (count := max)
-    (after := some (.gainLife life))
+    (after := some (Instruction.gainLifeFixed life))
 
 /-- Target opponent reveals their hand; you discard a nonland of your choice. -/
 def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=

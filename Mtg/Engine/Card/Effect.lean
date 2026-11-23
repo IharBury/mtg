@@ -1,3 +1,4 @@
+import Mtg.Engine.Card.SpellResolution
 import Mtg.Engine.Card.Token
 
 /-!
@@ -218,7 +219,7 @@ partial def couldAddMana : Instruction → Bool
   | .seq steps => steps.any couldAddMana
   | .bind _ s c => couldAddMana s || couldAddMana c
   | .ifCond _ t e => couldAddMana t || couldAddMana e
-  | .optional _ _ y n => couldAddMana y || couldAddMana n
+  | .optional _ _ y n _ => couldAddMana y || couldAddMana n
   | .unlessPays _ _ u => couldAddMana u
   | .chooseModes spec => spec.modes.any fun m => couldAddMana m.body
   | .forEach _ _ b => couldAddMana b
@@ -255,7 +256,7 @@ partial def movesToOrFromLibrary : Instruction → Bool
   | .seq steps => steps.any movesToOrFromLibrary
   | .bind _ s c => movesToOrFromLibrary s || movesToOrFromLibrary c
   | .ifCond _ t e => movesToOrFromLibrary t || movesToOrFromLibrary e
-  | .optional _ _ y n => movesToOrFromLibrary y || movesToOrFromLibrary n
+  | .optional _ _ y n _ => movesToOrFromLibrary y || movesToOrFromLibrary n
   | .unlessPays _ _ u => movesToOrFromLibrary u
   | .chooseModes spec => spec.modes.any fun m => movesToOrFromLibrary m.body
   | .forEach _ _ b => movesToOrFromLibrary b
@@ -288,18 +289,19 @@ partial def mentionsTarget : Instruction → Bool
   | .damage (.deal src (.both o p) _ _) =>
     objMentionsTarget src || objMentionsTarget o || playerMentionsTarget p
   | .damage (.fight a b _) => objMentionsTarget a || objMentionsTarget b
-  | .permanent (.setTapped o _) | .permanent (.modifyCounters _ o)
+  | .permanent (.setTapped o _ _) | .permanent (.modifyCounters _ o _)
   | .permanent (.transform o) | .permanent (.turnFaceUp o)
   | .permanent (.phaseOut o _) | .permanent (.setDesignation o _ _) => objMentionsTarget o
   | .permanent (.attach a b _) => objMentionsTarget a || objMentionsTarget b
   | .life (.gain w _) | .life (.lose w _) | .life (.set w _) => playerMentionsTarget w
-  | .stack (.counterStack o _ _) | .stack (.copyStackObject o _ _) | .stack (.mayCastOrPlay o _) =>
+  | .stack (.counterStack o _ _) | .stack (.copyStackObject o _ _)
+  | .stack (.chooseNewTargets o _) | .stack (.mayCastOrPlay o _) =>
     objMentionsTarget o
   | .installEffect (.applyContinuous _ aff _) => objMentionsTarget aff
   | .seq steps => steps.any mentionsTarget
   | .bind _ s c => mentionsTarget s || mentionsTarget c
   | .ifCond c t e => c.mentionsTarget || mentionsTarget t || mentionsTarget e
-  | .optional w _ y n => playerMentionsTarget w || mentionsTarget y || mentionsTarget n
+  | .optional w _ y n _ => playerMentionsTarget w || mentionsTarget y || mentionsTarget n
   | .unlessPays p _ u => playerMentionsTarget p || mentionsTarget u
   | .chooseModes spec => spec.modes.any fun m => !m.targeting.spec.isEmpty || mentionsTarget m.body
   | .forEach _ _ b => mentionsTarget b
@@ -314,6 +316,7 @@ private def printObjRef (ctx : PrintCtx) (noun : String) : ObjectExpr → String
   | .allTargets => if noun.isEmpty then "those targets" else noun
   | .attachedHost => "enchanted creature"
   | .triggerSubject => "that permanent"
+  | .targetsOf s => s!"objects targeted by {printObjRef ctx noun s}"
   | .stepObjects _ => "those cards"
   | .linkedExile _ => s!"a card exiled with {ctx.selfRef}"
   | .costPaidObjects => "those exiled cards"
@@ -352,13 +355,14 @@ partial def toOracle (ctx : PrintCtx) (noun : String := "") : Instruction → St
         let eS := toOracle { ctx with capitalize := false } noun e
         s!"if {condS}, {tS}. Otherwise, {eS}"
     if ctx.capitalize then capitalizeAscii base else base
-  | .optional who cost? onYes onNo =>
+  | .optional who cost? onYes onNo maxTimes =>
     let whoS := match who with | .you => "you" | p => toOracleStr p { ctx with capitalize := false }
     let yesS := toOracle { ctx with capitalize := false } noun onYes
+    let timesS := if maxTimes > 1 then s!" up to {englishNumber maxTimes} times" else ""
     let base :=
       match cost? with
       | some cs =>
-        let baseYes := s!"{whoS} may pay {cs.toNotation}. If {whoS} do, {yesS}"
+        let baseYes := s!"{whoS} may pay {cs.toNotation}{timesS}. If {whoS} do, {yesS}"
         match onNo with
         | .noop => baseYes
         | _ => s!"{baseYes}. Otherwise, {toOracle { ctx with capitalize := false } noun onNo}"
@@ -430,6 +434,8 @@ partial def toOracle (ctx : PrintCtx) (noun : String := "") : Instruction → St
         s!"return {subj} to the battlefield{tapS}"
       | .put, .library _ .top false => s!"{subj}'s owner puts it on top of their library"
       | .put, .library _ .bottom false => s!"{subj}'s owner puts it on the bottom of their library"
+      | .put, .library _ .bottomRandom false =>
+        s!"put {subj} on the bottom of its owner's library in a random order"
       | .put, .library _ _ true => s!"{subj}'s owner puts it on their choice of the top or bottom of their library"
       | .shuffleIntoLibrary, _ => s!"shuffle {subj} into its owner's library"
       | _, _ => s!"move {subj}"
@@ -450,13 +456,13 @@ partial def toOracle (ctx : PrintCtx) (noun : String := "") : Instruction → St
   | .create (.emblem _ _) =>
     let base := "you get an emblem"
     if ctx.capitalize then capitalizeAscii base else base
-  | .permanent (.setTapped objs true) =>
+  | .permanent (.setTapped objs true _) =>
     let base := s!"tap {printObjRef ctx noun objs}"
     if ctx.capitalize then capitalizeAscii base else base
-  | .permanent (.setTapped objs false) =>
+  | .permanent (.setTapped objs false _) =>
     let base := s!"untap {printObjRef ctx noun objs}"
     if ctx.capitalize then capitalizeAscii base else base
-  | .permanent (.modifyCounters (.put k v) objs) =>
+  | .permanent (.modifyCounters (.put k v) objs _) =>
     let subj := printObjRef ctx noun objs
     let cntS :=
       match printCountInt v with
@@ -464,7 +470,7 @@ partial def toOracle (ctx : PrintCtx) (noun : String := "") : Instruction → St
       | none => s!"{printVal ctx v} {k.oracleName} counters"
     let base := s!"put {cntS} on {subj}"
     if ctx.capitalize then capitalizeAscii base else base
-  | .permanent (.modifyCounters (.remove k? c) objs) =>
+  | .permanent (.modifyCounters (.remove k? c) objs _) =>
     let subj := printObjRef ctx noun objs
     let kindS := match k? with | some k => s!"{k.oracleName} " | none => ""
     let cntS := match c with
@@ -473,7 +479,7 @@ partial def toOracle (ctx : PrintCtx) (noun : String := "") : Instruction → St
       | _ => "a"
     let base := s!"remove {cntS} {kindS}counter(s) from {subj}"
     if ctx.capitalize then capitalizeAscii base else base
-  | .permanent (.modifyCounters _ objs) =>
+  | .permanent (.modifyCounters _ objs _) =>
     let base := s!"modify counters on {printObjRef ctx noun objs}"
     if ctx.capitalize then capitalizeAscii base else base
   | .permanent (.attach a b _) =>
@@ -559,7 +565,7 @@ partial def toOracle (ctx : PrintCtx) (noun : String := "") : Instruction → St
   | .player (.searchLibrary _) =>
     let base := "search your library, then shuffle"
     if ctx.capitalize then capitalizeAscii base else base
-  | .player (.reveal _ objs) =>
+  | .player (.reveal _ objs _) =>
     let base := s!"reveal {printObjRef ctx noun objs}"
     if ctx.capitalize then capitalizeAscii base else base
   | .player (.shuffle _) =>
@@ -590,6 +596,9 @@ partial def toOracle (ctx : PrintCtx) (noun : String := "") : Instruction → St
     if ctx.capitalize then capitalizeAscii base else base
   | .player (.setStatus _ .monarch _) =>
     let base := "you become the monarch"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .player (.setStatus _ .winGame _) =>
+    let base := "you win the game"
     if ctx.capitalize then capitalizeAscii base else base
   | .player (.setStatus _ (.designation .citysBlessing) _) =>
     let base := "you get the city's blessing for the rest of the game"
@@ -623,6 +632,9 @@ partial def toOracle (ctx : PrintCtx) (noun : String := "") : Instruction → St
     if ctx.capitalize then capitalizeAscii base else base
   | .stack (.copyStackObject objs _ _) =>
     let base := s!"copy {printObjRef ctx noun objs}. You may choose new targets for the copy"
+    if ctx.capitalize then capitalizeAscii base else base
+  | .stack (.chooseNewTargets objs _) =>
+    let base := s!"choose new targets for {printObjRef ctx noun objs}"
     if ctx.capitalize then capitalizeAscii base else base
   | .stack (.mayCastOrPlay objs _) =>
     let base := s!"you may play {printObjRef ctx noun objs}"
@@ -674,74 +686,6 @@ instance : ToOracle Instruction where
 
 end Instruction
 
-/-! ### Transitional Legacy Trigger-DSL Predicates (Phase 9) -/
-
-namespace Resolution
-
-/-- Nested `sequence` constructors, left to right. -/
-def flatten : Resolution → List Resolution
-  | .sequence rs => rs.flatMap flatten
-  | r => [r]
-
-/-- True when resolving legacy Trigger-DSL `r` as a triggered ability does nothing. -/
-partial def doesNothingAsTrigger : Resolution → Bool
-  | .sequence rs => rs.isEmpty || rs.any doesNothingAsTriggerStep
-  | .«if» _ d => doesNothingAsTriggerStep d
-  | .ifElse _ a b => doesNothingAsTriggerStep a || doesNothingAsTriggerStep b
-  | .may a b _ => doesNothingAsTriggerStep a || doesNothingAsTriggerSubStep b
-  | .or rs => rs.isEmpty || rs.any doesNothingAsTriggerStep
-  | .chooseModes ms _ => ms.isEmpty || ms.any doesNothingAsTriggerStep
-  | .queueReflexive r => doesNothingAsTriggerStep r
-  | .revealFromHand _ d => doesNothingAsTriggerStep d
-  | _ => false
-where
-  doesNothingAsTriggerStep : Resolution → Bool
-    | .sequence rs => rs.any doesNothingAsTriggerStep
-    | .«if» _ d => doesNothingAsTriggerStep d
-    | .ifElse _ a b => doesNothingAsTriggerStep a || doesNothingAsTriggerStep b
-    | .may a b _ => doesNothingAsTriggerStep a || doesNothingAsTriggerSubStep b
-    | .or rs => rs.any doesNothingAsTriggerStep
-    | .chooseModes ms _ => ms.any doesNothingAsTriggerStep
-    | .queueReflexive r => doesNothingAsTriggerStep r
-    | .revealFromHand _ d => doesNothingAsTriggerStep d
-    | _ => false
-  doesNothingAsTriggerSubStep : Resolution → Bool
-    | .sequence [] => false
-    | r => doesNothingAsTriggerStep r
-
-/-- True when legacy Trigger-DSL `r` could add mana (CR 605.1b). -/
-partial def couldAddMana : Resolution → Bool
-  | .addMana _ _ => true
-  | .sequence rs => rs.any couldAddMana
-  | .«if» _ d => couldAddMana d
-  | .ifElse _ a b => couldAddMana a || couldAddMana b
-  | .may a b _ => couldAddMana a || couldAddMana b
-  | .or rs => rs.any couldAddMana
-  | .chooseModes ms _ => ms.any couldAddMana
-  | .queueReflexive r => couldAddMana r
-  | .revealFromHand _ d => couldAddMana d
-  | _ => false
-
-/-- True when legacy Trigger-DSL `r` moves a card to or from a library (CR 605.1a). -/
-partial def movesToOrFromLibrary : Resolution → Bool
-  | .draw (.fixed 0) _ => false
-  | .draw _ _ | .searchLibrary _ | .putOnLibrary _ _ | .mill _ _ | .surveil _
-  | .cascade | .shuffleSource | .connive _ | .revealLibrary _ _ => true
-  | .exile (.opponentTop _) _ _ | .exile .top _ _ | .exile (.basicUpTo _ _) _ _ => true
-  | .put .top _ _ | .put (.opponentTop _) _ _ | .put (.basicUpTo _ _) _ _
-  | .put .forest _ _ | .put .basicLandOnTop _ _ | .put .dragon _ _ | .put .randomCreature _ _ => true
-  | .sequence rs => rs.any movesToOrFromLibrary
-  | .«if» _ d => movesToOrFromLibrary d
-  | .ifElse _ a b => movesToOrFromLibrary a || movesToOrFromLibrary b
-  | .may a b _ => movesToOrFromLibrary a || movesToOrFromLibrary b
-  | .or rs => rs.any movesToOrFromLibrary
-  | .chooseModes ms _ => ms.any movesToOrFromLibrary
-  | .queueReflexive r => movesToOrFromLibrary r
-  | .revealFromHand _ d => movesToOrFromLibrary d
-  | _ => false
-
-end Resolution
-
 /-! ### Unified `Effect` Operations & Pure Agent Classification -/
 
 namespace Effect
@@ -767,18 +711,6 @@ def requiresTarget (e : Effect) : Bool :=
 def maxTargetCount (e : Effect) : Nat :=
   if e.maxTargets == 0 then e.targetCount else e.maxTargets
 
-/-- Recover the leftover shared trigger stored on this effect, if any. -/
-def asTrigger? (e : Effect) : Option SharedTrigger :=
-  e.sharedTrigger
-
-/-- Recover legacy `TokenSpec` at `idx` for transitional Phase-9 triggers. -/
-def legacyToken (e : Effect) (idx : Nat) : TokenSpec :=
-  e.legacyTokens[idx]?.getD .treasure
-
-/-- Transitional getter returning the legacy Trigger-DSL `Resolution` if present. -/
-def resolution (e : Effect) : Resolution :=
-  e.resolution?.getD (.draw (.fixed 0) .you)
-
 /-- Top-level `ManaProductionSpec` carried in `e.body`, if any. -/
 def manaProduction? (e : Effect) : Option ManaProductionSpec :=
   e.body.manaProduction?
@@ -789,33 +721,23 @@ def modalSpec? (e : Effect) : Option ModalSpec :=
 
 /-- True when resolving `e` could add mana to a player's mana pool (CR 605.1a/b). -/
 def couldAddMana (e : Effect) : Bool :=
-  match e.resolution? with
-  | some r => r.couldAddMana
-  | none => e.body.couldAddMana
+  e.body.couldAddMana
 
 /-- True when resolving `e` moves a card to or from a library (CR 605.1a, 25 Sep 2026). -/
 def movesToOrFromLibrary (e : Effect) : Bool :=
-  match e.resolution? with
-  | some r => r.movesToOrFromLibrary
-  | none => e.body.movesToOrFromLibrary
+  e.body.movesToOrFromLibrary
 
 /-- True when resolving `e` as a spell would do nothing. -/
 def doesNothingAsSpell (e : Effect) : Bool :=
-  match e.resolution? with
-  | some _ => false
-  | none => e.body.doesNothing
+  e.body.doesNothing
 
 /-- True when resolving `e` as an activated ability would do nothing. -/
 def doesNothingAsActivated (e : Effect) : Bool :=
-  match e.resolution? with
-  | some _ => false
-  | none => e.body.doesNothing
+  e.body.doesNothing
 
 /-- True when resolving `e` as a triggered ability would do nothing. -/
 def doesNothingAsTrigger (e : Effect) : Bool :=
-  match e.resolution? with
-  | some r => r.doesNothingAsTrigger
-  | none => e.body.doesNothing
+  e.body.doesNothing
 
 /-- Helper: true when `TargetSpec`'s primary target requires flying. -/
 private def targetsFlyingCreature (spec : TargetSpec) : Bool :=
@@ -891,7 +813,7 @@ where
     | .ifCond _ t f =>
       let kt := classifyInstr spec t
       if kt != .extraLand then kt else classifyInstr spec f
-    | .optional _ _ y n =>
+    | .optional _ _ y n _ =>
       let ky := classifyInstr spec y
       if ky != .extraLand then ky else classifyInstr spec n
     | .unlessPays _ _ u => classifyInstr spec u
@@ -955,8 +877,8 @@ where
       | _ => .extraLand
     | .installEffect (.applyRule _ (.player (.additionalLands _ _))) => .extraLand
     | .installEffect (.applyReplacement _ (.exileInsteadOfDying _ _)) => .creatureDamage
-    | .permanent (.modifyCounters (.put .plusOnePlusOne _) _) => .pump
-    | .permanent (.setTapped _ true) => .pump
+    | .permanent (.modifyCounters (.put .plusOnePlusOne _) _ _) => .pump
+    | .permanent (.setTapped _ true _) => .pump
     | .permanent (.phaseOut _ _) => .counter
     | .player (.drawCards _ _) | .player (.scry _ _) | .player (.surveil _ _)
     | .player (.inspectLibrary _) | .player (.searchLibrary _)

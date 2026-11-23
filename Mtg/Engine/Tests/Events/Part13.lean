@@ -81,7 +81,7 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
   let tgtTrigAnchor := (gAnchorBase.permanentsOf p0).back!
   let tgtTrigAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you)
-      { targeting := .of .player, resolution? := some (.gainLife (.fixed 1)), phrase := "Target player gains 1 life." }
+      { targeting := .of .player, body := Instruction.gainLifeFixed 1 (.target 0), phrase := "Target player gains 1 life." }
   let gWithUnannTrig :=
     gAnchorBase.putTriggeredAbilityOnStack p0 tgtTrigAnchor tgtTrigAb "triggers" (eventCause := some testCause)
   let gTrigTargetGranted := gWithUnannTrig.finishAndGrantPriority p2
@@ -993,7 +993,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
       cost := CostSpec.ofItems #[.mana { symbols := #[.x] }]
       effect := {
         targeting := .of .player
-        resolution? := some (.addMana #[.colored .red] .chosenX)
+        body := Instruction.addMana { spec := .sequence #[(.colored .red, .chosenX)] }
         phrase := "Target player; add X {R}."
       }
     }]
@@ -1007,7 +1007,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   let toughDiesDef : CardDef := {
     creature "P47i4 WallSap" ManaCost.empty #["Plant"] 1 4 with
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisDies { resolution? := some (.addMana #[.colored .green] .equalSourceToughness), phrase := "Add {G} equal to toughness." }
+      TriggeredAbility.mkTrigger .thisDies { body := Instruction.addMana { spec := .sequence #[(.colored .green, .objectStat .toughness .this)] }, phrase := "Add {G} equal to toughness." }
     ]
   }
   let gTough0 := addPermanent g3 toughDiesDef p0 p0
@@ -1015,13 +1015,13 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   let gToughDestroyed := (gTough0.destroyPermanent (gTough0.object! wallId) (cause := some testCause)).receivePriority p0
   let gToughRes := mustApply (mustApply (mustApply gToughDestroyed p0 .pass) p1 .pass) p2 .pass
 
-  -- 4c(ii). Layer 3 `TextChange` `Resolution.addMana` `NumberSelector` / unified mana restriction (`ManaSpendRestriction.dwarfEquipmentSagaSpell`)
+  -- 4c(ii). Layer 3 `TextChange` `PlayerOp.addMana` / unified mana restriction (`ManaSpendRestriction.dwarfEquipmentSagaSpell`)
   --         & unified per-subtype colorless mana parity:
   let countElfRitualDef : CardDef := {
     name := "P47i4 ElfRite"
     manaCost := ManaCost.zero
     types := #[.sorcery]
-    spellEffect := some { resolution? := some (.addMana #[.colored .green] (.perSubtype .elf)), phrase := "Add {G} for each Elf you control." }
+    spellEffect := some { body := Instruction.addMana { spec := .sequence #[(.colored .green, .count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))] }, phrase := "Add {G} for each Elf you control." }
   }
   let dwarfForgeDef : CardDef := {
     name := "P47i4 DwarfForge"

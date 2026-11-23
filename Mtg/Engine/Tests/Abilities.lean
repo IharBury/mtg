@@ -919,9 +919,10 @@ def flyingAntTapOk : Bool :=
   let g := addPermanent g giantSizedFlyingAnt ⟨0⟩ ⟨0⟩
   let bears := namedPermanent g "Grizzly Bears"
   let ant := namedPermanent g "Giant-Sized Flying Ant"
-  let g := g.applyTriggeredAbility ⟨0⟩ .onEnterTapOrUntapNonland
-    (some ant.id) #[Target.permanent bears.id]
+  let g := g.putTriggeredAbilityOnStack ⟨0⟩ ant .onEnterTapOrUntapNonland "enter"
   let g := mustApply g ⟨0⟩ (.chooseMode 0)
+  let g := mustApply g ⟨0⟩ (.target (Target.permanent bears.id))
+  let g := g.resolveTop
   (g.object! bears.id).status.tapped
 
 #guard flyingAntTapOk
@@ -947,7 +948,7 @@ def whiteWidowPlusOneOk : Bool :=
     (some widow.id) #[Target.permanent bears.id]
   let g := mustApply g ⟨0⟩ (.chooseMode 0)
   (g.object! bears.id).status.plusOnePlusOne == 1 &&
-    g.triggerOr.isNone && g.pending == .none
+    g.currentInterpWait?.isNone && g.pending == .none
 
 #guard whiteWidowPlusOneOk
 

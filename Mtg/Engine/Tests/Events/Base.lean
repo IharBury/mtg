@@ -28,8 +28,8 @@ def bear : CardDef :=
 def hero : CardDef :=
   creature "Event Hero" ManaCost.empty #["Hero"] 2 2
 
-def holds (g : Game) (cond : TriggeredAbility.ConditionSelector) : Game × Bool :=
-  g.triggerIfHolds me (.onEnterDraw 1) none #[] none cond
+def holds (g : Game) (cond : Condition) : Game × Bool :=
+  (g, EvalExpr.evalCondition g { controller := me } cond)
 
 def quiet (g : Game) : Game :=
   { g with events := #[] }
@@ -38,35 +38,37 @@ def quiet (g : Game) : Game :=
 turn counter is cleared. -/
 #guard
   let g := quiet afterDraw
-  let (_, noDraw) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 1))
+  let (_, noDraw) := holds g (.cmp .ge (.playerMetric .cardsDrawnThisTurn .you) (.const 1))
   let g := (g.record (GameEvent.drew g.turnNumber me ⟨9⟩ 1 (cause := testCause))).record
     (GameEvent.drew g.turnNumber me ⟨8⟩ 2 (cause := testCause))
-  let (_, two) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 2))
-  let (_, three) := holds g (.atLeast .cardsDrawnThisTurn (.fixed 3))
+  let (_, two) := holds g (.cmp .ge (.playerMetric .cardsDrawnThisTurn .you) (.const 2))
+  let (_, three) := holds g (.cmp .ge (.playerMetric .cardsDrawnThisTurn .you) (.const 3))
   !noDraw && two && !three && g.loggedDraws me == 2
 
 /- Scrying and surveilling are the look events. Scry 0 does not count. -/
 #guard
   let g := quiet afterDraw
-  let (_, noScry) := holds g .scriedThisTurn
-  let (_, noSurveil) := holds g .surveilledThisTurn
+  let (_, noScry) := holds g (.turnHistory (.scriedThisTurn { relation := .you, pred := .any }))
+  let (_, noSurveil) := holds g (.turnHistory (.surveilledThisTurn { relation := .you, pred := .any }))
   let g := g.record (GameEvent.looked g.turnNumber me 0)
-  let (_, zero) := holds g .scriedThisTurn
+  let (_, zero) := holds g (.turnHistory (.scriedThisTurn { relation := .you, pred := .any }))
   let g := g.record (GameEvent.looked g.turnNumber me 2)
-  let (_, scried) := holds g .scriedThisTurn
+  let (_, scried) := holds g (.turnHistory (.scriedThisTurn { relation := .you, pred := .any }))
   let g := g.record (GameEvent.looked g.turnNumber me 1 true)
-  let (_, surveilled) := holds g .surveilledThisTurn
+  let (_, surveilled) := holds g (.turnHistory (.surveilledThisTurn { relation := .you, pred := .any }))
   !noScry && !noSurveil && !zero && scried && surveilled
 
 /- An artifact that entered is in the log, including after the flag is clear. -/
 #guard
   let g := quiet afterDraw
-  let (_, no) := holds g .artifactEnteredThisTurn
+  let artEnteredCond : Condition :=
+    .turnHistory (.eventOccurredThisTurn { relation := .you, pred := .any } (.permanentEntered (.hasType .artifact)))
+  let (_, no) := holds g artEnteredCond
   let entered := GameEvent.moved g.turnNumber
     { id := some ⟨4⟩, controller := some me, owner := me, types := #[.artifact] } .stack .battlefield
     (cause := testCause)
   let g := g.record entered
-  let (_, yes) := holds g .artifactEnteredThisTurn
+  let (_, yes) := holds g artEnteredCond
   !no && yes && entered.watches .wouldEnterBattlefield
 
 /- A Hero that left after attacking still counts, from the attack event. -/
@@ -78,8 +80,8 @@ turn counter is cleared. -/
     { id := some ⟨6⟩, controller := some me, owner := me, types := #[.creature], subtypes := #[.villain] } .stack .battlefield
     (cause := testCause)
   let g := (g.record attack).record entered
-  let (_, yes) := holds g (.attackedWithSubtype .hero)
-  let (_, no) := holds g (.attackedWithSubtype .goblin)
+  let (_, yes) := holds g (.turnHistory (.eventOccurredThisTurn { relation := .you, pred := .any } (.attackedWith (.hasSubtype (.literal .hero)))))
+  let (_, no) := holds g (.turnHistory (.eventOccurredThisTurn { relation := .you, pred := .any } (.attackedWith (.hasSubtype (.literal .goblin)))))
   yes && !no && attack.matchesTriggerPattern me (some ⟨5⟩) .thisAttacks &&
     entered.matchesTriggerPattern me none (.subtypeYouControlEnters .villain) &&
     !entered.matchesTriggerPattern me none (.subtypeYouControlEnters .hero) &&
@@ -1577,7 +1579,7 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
   let srcCard : CardDef :=
     { name := "Source Artifact"
       types := #[.artifact]
-      triggeredAbilities := #[SharedTrigger.resource .plusOneCreateInsectOnce |>.toTriggeredAbility] }
+      triggeredAbilities := #[TriggeredAbility.resourcePlusOneCreateInsectOnce] }
   let gWithSrc := quiet (addPermanent g0 srcCard me me)
   let s := (gWithSrc.battlefield.filter (·.name == "Source Artifact"))[0]!
   -- 1. createEffect / createEffects inside resolving context: distinct one-shot vs. continuous EffectIds
@@ -1781,28 +1783,41 @@ produced by the single one-shot instruction (CR 610.1 / 701.18 / 702.85a). -/
   let g0 := addPermanent (addPermanent g0 bear me me) hero me me
   let b := (g0.battlefield.filter (·.name == bear.name))[0]!
   let h := (g0.battlefield.filter (·.name == hero.name))[0]!
-  -- 1. `.landsYouControl .forLater .lands` shares one cause across all exiled lands
+  -- 1. Exiling multiple lands you control shares one cause across all exiled lands
   let gLands :=
-    (quiet g0).applyExile me default (some b.id) #[Target.permanent l1.id, Target.permanent l2.id]
-      .landsYouControl .forLater .lands
+    (quiet g0).applyAbilityEffect me
+      { targeting := .of (.single {
+          domain := .object .battlefield (.all #[.hasType .land, .controlledBy .you])
+          count := .upTo 3 })
+        allowsZeroTargets := true
+        maxTargets := 3
+        body := Instruction.exile .allTargets { linkToSource := true } }
+      #[Target.permanent l1.id, Target.permanent l2.id] (some b.id)
   let landExileCauses :=
     gLands.events.filterMap (fun e =>
       match e.change with
       | .rules (.zone (.moved _ _ .battlefield .exile ..)) => e.cause?
       | _ => none)
-  -- 2. `applyExile` with `.nextEndStep` on multiple permanents shares one cause
+  -- 2. Exiling multiple permanents until next end step shares one cause
   let gNextEndTrig :=
-    (quiet g0).applyExile me default (some b.id) #[Target.permanent b.id, Target.permanent h.id]
-      .eachPermanent .nextEndStep .none
+    (quiet g0).applyAbilityEffect me
+      { targeting := .of (.single { domain := .object .battlefield .anyObject, count := .upTo 2 })
+        allowsZeroTargets := true
+        maxTargets := 2
+        body := Instruction.exile .allTargets { delayedReturn? := some (.atNextEndStep false .owner) } }
+      #[Target.permanent b.id, Target.permanent h.id] (some b.id)
   let nextEndTrigCauses :=
     gNextEndTrig.events.filterMap (fun e =>
       match e.change with
       | .rules (.zone (.moved _ _ .battlefield .exile ..)) => e.cause?
       | _ => none)
-  -- 3. `applyExile` `.playUntilNextTurn` and `.playThisTurn` share cause between
+  -- 3. Impulse exile until next turn / this turn shares cause between
   --    `ZoneEvent.moved` and `effectCreated (.playPermission ...)`
   let gPlayNext :=
-    (quiet g0).applyExile me default (some b.id) #[] .top .playUntilNextTurn .none
+    (quiet g0).applyAbilityEffect me
+      { body := Instruction.exile (.topOfLibrary .you (.const 1)) {
+          grantPlayPerm? := some { duration := .untilEndOfNextTurnOf .you, landsAllowed := true } } }
+      #[] (some b.id)
   let playNextMoveCauses :=
     gPlayNext.events.filterMap (fun e =>
       match e.change with
@@ -1814,7 +1829,10 @@ produced by the single one-shot instruction (CR 610.1 / 701.18 / 702.85a). -/
       | .rules (.continuousEffect (.created ..)) => e.cause?
       | _ => none)
   let gPlayThis :=
-    (quiet g0).applyExile me default (some b.id) #[] .top .playThisTurn .none
+    (quiet g0).applyAbilityEffect me
+      { body := Instruction.exile (.topOfLibrary .you (.const 1)) {
+          grantPlayPerm? := some { duration := .untilEndOfTurn, landsAllowed := true } } }
+      #[] (some b.id)
   let playThisMoveCauses :=
     gPlayThis.events.filterMap (fun e =>
       match e.change with
@@ -1825,20 +1843,15 @@ produced by the single one-shot instruction (CR 610.1 / 701.18 / 702.85a). -/
       match e.change with
       | .rules (.continuousEffect (.created ..)) => e.cause?
       | _ => none)
-  -- 4. `applyRevealLibrary` `.untilCreature` shares one cause across revealed
-  --    non-creature exiles, putting the creature onto the battlefield, and
-  --    putting the rest on the bottom of the library (`putRestOnBottomRandom`)
+  -- 4. Reveal-until-creature shares one cause across putting the creature onto
+  --    the battlefield and putting the rest on the bottom of the library
   let gRevSetup :=
     let g := (g0.move b.id (.library me) none (libraryPosition := some .top)).1
     let g := (g.move l1.id (.library me) none (libraryPosition := some .top)).1
     let g := (g.move l2.id (.library me) none (libraryPosition := some .top)).1
     quiet g
   let gRevPending :=
-    (gRevSetup.applyRevealLibrary me (some h.id) #[] .untilCreature
-      (.ifElse .revealedManaValueAtMostLands
-        (.put .revealed .asPrinted .none)
-        (.returnToHand .revealed .none))
-      .you).getD gRevSetup
+    gRevSetup.applyTriggeredAbility me (.onEnter Effect.triggerRevealUntilCreature) (some h.id)
   let gRevDone :=
     match (gRevPending.change .popContinuationFrame).supplyOrder #[] with
     | .ok g' => g'
@@ -1884,7 +1897,7 @@ produced by the single one-shot instruction (CR 610.1 / 701.18 / 702.85a). -/
 /- Phase 3: `.mayRevealToHand` (`anyOrder := true`) + `.orderLibraryBottom`,
 `.nickFuryPut` + `.nickFuryMayTransform` `.accept`,
 `grimaExileUntilInstantOrSorcery` (`castTheCard := true`),
-generic `TriggerResolution.revealLibrary` (`applyRevealLibrary == none`), and
+generic `.inspectLibrary` (`.revealUntil`), and
 `exileTopPlayIfYouControlSubtype` each share a single `.oneShotEffect` cause
 across all constituent moves, transforms, and continuous-effect creations
 (CR 608.2c / 610.1 / 701.18 / 701.27a). -/
@@ -1915,7 +1928,12 @@ across all constituent moves, transforms, and continuous-effect creations
   -- 1. `.mayRevealToHand` (`anyOrder := true`) + `.orderLibraryBottom`
   let gMayRev0 :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
-      g.beginLookRevealToHand me 3 (fun _ => true) true)
+      g.applyAbilityEffect me
+        { body := .player (.inspectLibrary {
+            source := .topCards .you (.const 3) false
+            action := .takeMatching .anyObject (.upTo (.const 1)) (.hand .controller) {} true false
+            rest := .bottomAnyOrder }) }
+        #[] (some h.id))
   let looked3 := gLibSetup.scryLookedIds me 3
   let picked := looked3[0]!
   let rest2 := looked3.filter (· != picked)
@@ -1943,7 +1961,13 @@ across all constituent moves, transforms, and continuous-effect creations
   let dfcLibId := (gNickSetup.player me).library.back!
   let gNick1 :=
     gNickSetup.withResolvingContext (some h.id) me (fun g =>
-      g.beginLookPutTypes me 3 #[.hero])
+      g.applyAbilityEffect me
+        { body := .player (.inspectLibrary {
+            source := .topCards .you (.const 3) false
+            action := .takeMatching (.hasSubtype (.literal .hero)) (.upTo (.const 1))
+              (.battlefield .controller) { mayTransformOnEnter := true } false false
+            rest := .bottomRandom }) }
+        #[] (some h.id))
   let gNick2 :=
     match gNick1.answerFraChoice me (.objects #[dfcLibId]) with
     | .ok g' => g'
@@ -1985,11 +2009,15 @@ across all constituent moves, transforms, and continuous-effect creations
       match e.change with
       | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
-  -- 4. Generic `TriggerResolution.revealLibrary` (`applyRevealLibrary == none`)
+  -- 4. Generic `inspectLibrary` (`.revealUntil` onto battlefield, rest on bottom random)
   let gTrigRevPending :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
-      g.applyTriggeredAbility me (.onEnterDraw 1) (some h.id) #[] #[] none none "This creature"
-        (some (.revealLibrary .untilCreature (.put .revealed .asPrinted .none) .you)))
+      g.applyTriggeredAbility me (TriggeredAbility.ofPattern .thisEnters ""
+        (.player (.inspectLibrary {
+          source := .revealUntil .you (.hasType .creature) (.const 1)
+          action := .moveAll (.battlefield .controller) {}
+          rest := .bottomRandom
+        }))) (some h.id))
   let gTrigRevDone :=
     match gTrigRevPending.supplyOrder #[] with
     | .ok g' => g'
@@ -2013,7 +2041,7 @@ across all constituent moves, transforms, and continuous-effect creations
   let handSize := (gLibSetup.player me).hand.size
   let gHex :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
-      g.exileHandDrawPlayUntilNext me)
+      g.applyAbilityEffect me Effect.exileHandDrawPlayUntilNext #[] (some h.id))
   let hexCauses :=
     gHex.events.filterMap (fun e =>
       match e.change with
@@ -2114,8 +2142,7 @@ across all constituent moves, transforms, and continuous-effect creations
       | _ => none)
   let gMillSubtype :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
-      g.applyTriggeredAbility me (.onEnterMillThenSubtypeToHand 3 "Bear") (some h.id) #[] #[] none none "This creature"
-        (some (.sequence [.mill (.fixed 3) .you .milledCards, .returnToHand (.milledSubtype .bear)])))
+      g.applyTriggeredAbility me (.onEnterMillThenSubtypeToHand 3 "Bear") (some h.id) #[] #[] none none "This creature")
   let millSubtypeCauses :=
     gMillSubtype.events.filterMap (fun e =>
       match e.change with
@@ -2146,8 +2173,8 @@ across all constituent moves, transforms, and continuous-effect creations
       | .rules (.zone (.moved ..)) => e.cause?
       | .rules (.life (.lost ..)) => e.cause?
       | _ => none)
-  let balinSeq : TriggeredAbility.TriggerResolution :=
-    .sequence [.may (.discard .hand) (.sequence []), .draw .discardedHand]
+  let balinAb : TriggeredAbility :=
+    TriggeredAbility.ofPattern .thisEnters "" Effect.triggerDiscardHandDrawDamageIfStory.body
   let gBalinRaw0 :=
     gLibSetup.change (.pending (.fraChoice me (.mayDiscardHandBalin (some h.id))))
   let gBalinRaw :=
@@ -2161,8 +2188,7 @@ across all constituent moves, transforms, and continuous-effect creations
       | _ => none)
   let gBalinRes0 :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
-      g.applyTriggeredAbility me (.onEnterDraw 1) (some h.id)
-        (resolutionOverride := some balinSeq))
+      g.applyTriggeredAbility me balinAb (some h.id))
   let gBalinRes :=
     match gBalinRes0.answerFraChoice me .accept with
     | .ok g' => g'
@@ -2220,8 +2246,11 @@ across all constituent moves, transforms, and continuous-effect creations
       | _ => none)
   let gSweepRes :=
     gDmgSetup.withResolvingContext (some lh.id) me (fun g =>
-      g.applyTriggeredAbility me (.onEnterDraw 1) (some lh.id)
-        (resolutionOverride := some (.dealDamage (.fixed 1) (.eachNonSubtypeAndOpponents .dragon))))
+      g.applyTriggeredAbility me
+        (TriggeredAbility.mkTrigger .thisEnters {
+          body := Instruction.dealDamageFixed
+            (.both (.inZones .battlefield (.all #[.hasType .creature, .not (.hasSubtype (.literal .dragon))])) .opponents) 1
+        }) (some lh.id))
   let sweepResCauses :=
     gSweepRes.events.filterMap (fun e =>
       match e.change with
@@ -2340,7 +2369,7 @@ across all constituent moves, transforms, and continuous-effect creations
     palantirRawCauses.size == 4 &&
     palantirRawCauses.all isClassifiedNonOneShot &&
     gPalantirRawDone.nextEffectId == gPalantirRaw0.nextEffectId &&
-    balinRawCauses.size == handSize &&
+    balinRawCauses.size == handSize * 2 &&
     balinRawCauses.all isClassifiedNonOneShot &&
     gBalinRaw.nextEffectId == gBalinRaw0.nextEffectId &&
     balinResCauses.size == handSize * 2 &&
@@ -2604,13 +2633,13 @@ triggers once, while sequential batches fire them once per batch. -/
   -- 2. Unified +1/+1 counter put on printed entersWithPlusOneCounters and .explore + Doc Samson
   let insectWatcher : CardDef :=
     { (creature "Insect Watcher" ManaCost.empty #["Hero"] 1 1) with
-      triggeredAbilities := #[SharedTrigger.resource .plusOneCreateInsectOnce |>.toTriggeredAbility] }
+      triggeredAbilities := #[TriggeredAbility.resourcePlusOneCreateInsectOnce] }
   let selfOnceWatcher : CardDef :=
     { (creature "Self Once Watcher" ManaCost.empty #["Hero"] 2 2) with
-      triggeredAbilities := #[SharedTrigger.resource .plusOneOnThisOnce |>.toTriggeredAbility] }
+      triggeredAbilities := #[TriggeredAbility.resourcePlusOneOnThisOnce] }
   let wallWatcher : CardDef :=
     { (creature "Wall Watcher" ManaCost.empty #["Hero"] 1 4) with
-      triggeredAbilities := #[SharedTrigger.resource .plusOneOnHeroesCreateWall |>.toTriggeredAbility] }
+      triggeredAbilities := #[TriggeredAbility.resourcePlusOneOnHeroesCreateWall] }
   let entersHero : CardDef :=
     { (creature "Enters Hero" ManaCost.empty #["Hero", "Goblin"] 1 1) with
       staticAbilities := #[.entersWithPlusOneCounters 2] }
@@ -2653,10 +2682,10 @@ triggers once, while sequential batches fire them once per batch. -/
     { name := "Counter And Token Watcher"
       types := #[.enchantment]
       triggeredAbilities := #[
-        SharedTrigger.watch .tokensEnterMayDraw |>.toTriggeredAbility,
+        TriggeredAbility.watchTokensEnterMayDraw,
         TriggeredAbility.ofPattern .youPutCountersOnGoblinOrcArmy "" (Instruction.drawFixed 1) (grouping := .oncePerBatch),
         TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (Instruction.drawFixed 1),
-        SharedTrigger.resource .plusOneOnHeroesCreateWall |>.toTriggeredAbility] }
+        TriggeredAbility.resourcePlusOneOnHeroesCreateWall] }
   let artifactWalker : CardDef :=
     { name := "Artifact Walker"
       types := #[.artifact, .planeswalker]

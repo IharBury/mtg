@@ -3,8 +3,8 @@ import Mtg.Engine.Card.Text
 /-!
 # Counters (CR 122)
 
-The counter kinds a permanent can carry. `SpellResolution.countersOnCreatureTargets`
-puts any one of them; `Status` stores each kind in its own field.
+The counter kinds a permanent can carry (CR 122); `Status` stores each kind in
+its own field.
 -/
 
 namespace Mtg.Engine

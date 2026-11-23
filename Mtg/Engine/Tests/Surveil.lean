@@ -1,10 +1,10 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.surveil`
+# Unified surveil instructions (`Instruction.surveil` / `PlayerOp.surveil`)
 
-How many cards is a `NumberSelector`. `.fixed` surveils that many.
-Every other count is read the same way. Surveil 0 still logs.
+Fixed counts and dynamic `ValueExpr` counts both execute through
+`Game/Interpreter.lean`. Surveil 0 still logs.
 -/
 
 namespace Mtg.Engine.SurveilTests
@@ -14,20 +14,22 @@ open Mtg.Engine.Tests
 
 def caster : PlayerId := ⟨0⟩
 
-def step (r : TriggeredAbility.TriggerResolution) : Game :=
-  afterDraw.applyTriggeredAbility caster (.onEnterDraw 1) none
-    (resolutionOverride := some r)
+def perOtherCreature : ValueExpr :=
+  ValueExpr.count (.inZones .battlefield (.all #[.otherThan .this, .hasType .creature, .controlledBy .you]))
+
+def stepBody (g : Game) (body : Instruction) : Game :=
+  g.applyTriggeredAbility caster (TriggeredAbility.mkTrigger .thisEnters { body }) none
 
 /- Surveil 1 looks at one card. -/
 #guard
-  let g := step (.surveil (.fixed 1))
+  let g := stepBody afterDraw (Instruction.surveilFixed 1)
   match g.pending with
   | .surveil p n _ => p == caster && n == 1
   | _ => false
 
 /- A count of other creatures is surveilled. Zero creatures still surveils 0. -/
 #guard
-  let g := step (.surveil .perOtherCreature)
+  let g := stepBody afterDraw (Instruction.surveil perOtherCreature)
   g.pending == afterDraw.pending && logContains g "surveils 0"
 
 #guard
@@ -38,20 +40,13 @@ def step (r : TriggeredAbility.TriggerResolution) : Game :=
     toughness := some 2
   }
   let g0 := addPermanent afterDraw bear caster caster
-  let g := g0.applyTriggeredAbility caster (.onEnterDraw 1) none
-    (resolutionOverride := some (.surveil .perOtherCreature))
+  let g := stepBody g0 (Instruction.surveil perOtherCreature)
   match g.pending with
   | .surveil p n _ => p == caster && n == 1
   | _ => false
 
-#guard TriggeredAbility.resolution (.onEnterSurveil 2) == .surveil (.fixed 2)
-
-#guard (SharedTrigger.toEffect (.surveil 1)).resolution == .surveil (.fixed 1)
-
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.surveil (.fixed 2)) } == "surveil 2"
-
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.surveil .perOtherCreature) } == "surveil"
+#guard (TriggeredAbility.onEnterSurveil 2).effect.body == Instruction.surveilFixed 2
+#guard TriggeredAbility.resolutionPhrase { body := Instruction.surveilFixed 2 } == "surveil 2"
+#guard TriggeredAbility.toNotation (.onEnterSurveil 2) == "When this permanent enters, surveil 2."
 
 end Mtg.Engine.SurveilTests

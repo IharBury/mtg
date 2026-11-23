@@ -121,9 +121,9 @@ structure GameObject where
   abilityEffect : Option Effect := none
   /-- Present when this object is a triggered ability on the stack (CR 603.3). -/
   triggeredAbility : Option TriggeredAbility := none
-  /-- Follow-up a generic `queueReflexive` resolves as. Printed MSH reflexes
-  use `abilityEffect` and leave this empty. -/
-  reflexiveResolution : Option TriggeredAbility.TriggerResolution := none
+  /-- True when this stack ability is a CR 603.12 reflexive triggered ability
+  (whose payload lives in `abilityEffect` and skips intervening-if recheck). -/
+  isReflexive : Bool := false
   /-- Source of an activated or triggered ability on the stack (CR 113.7). -/
   sourceId : Option ObjectId := none
   /-- Object this Aura or Equipment is attached to (CR 303.4 / 301.5). -/
@@ -172,7 +172,7 @@ structure CreatureCombatAssignment where
   /-- Damage assigned to creatures blocking it (CR 510.1c) or that it is
   blocking (CR 510.1d). -/
   toCreatures : Array (ObjectId × Int) := #[]
-  /-- Leftover assigned to the defending player (unblocked or trample). -/
+  /-- Remaining damage assigned to the defending player (unblocked or trample). -/
   toPlayer : Int := 0
 deriving Repr, Inhabited, BEq
 
@@ -466,8 +466,8 @@ structure WaitingTrigger where
   delayedTrigger : Option (DelayedTriggerKind × EventCause) := none
   /-- Explicit one-shot `Effect` payload for reflexive triggers (CR 603.12). -/
   abilityEffect : Option Effect := none
-  /-- Explicit `TriggerResolution` payload for reflexive triggers (CR 603.12). -/
-  reflexiveResolution : Option TriggeredAbility.TriggerResolution := none
+  /-- True when this waiting trigger is a CR 603.12 reflexive triggered ability. -/
+  isReflexive : Bool := false
   /-- “Only once each turn” and extra trigger copies were already applied
   when this was queued. -/
   checked : Bool := false

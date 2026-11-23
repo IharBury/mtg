@@ -6,7 +6,7 @@ import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 
 /-!
-# Step triggers without `StepLeftover`
+# Unified step triggers
 
 The enchanted creature's controller draws. Drawing fills a hand to ten.
 The source becomes a copy until the controller's next turn. A +1/+1 counter
@@ -38,36 +38,30 @@ def named (g : Game) (name : String) : GameObject :=
 def onBoard (g : Game) (name : String) : Bool :=
   g.battlefield.any (·.name == name)
 
-/- The shared step effects resolve as constructors that do not carry
-`StepLeftover`. The printed sentence stays the Oracle line. -/
-#guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepEnchantedControllerDraws) ==
-  .draw (.fixed 1) (who := .controller .enchanted)
-#guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepDrawToTen) ==
-  .draw (.upToHandSize 10)
-#guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepCopyAbsorbingMan) ==
-  .becomeCopy .artifactEnchantmentOrLand
-#guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepCopyTaskmaster) ==
-  .becomeCopy .creatureOrGraveyardCard
-#guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepHydeChoose) ==
-  .chooseModes TriggeredAbility.TriggerResolution.hydeModes .plusOneOrRemoveCounter
-#guard TriggeredAbility.resolution
-    (TriggeredAbility.onEnter (Effect.ofTrigger .exileOtherCopyEnchanted)) ==
-  .sequence [.exile .target .untilSourceLeaves .copyAndHost, .becomeCopy .noted]
-#guard TriggeredAbility.resolution (TriggeredAbility.onStep Effect.stepHarnessedFlicker) ==
-  .«if» (.atLeast (.count .harnessedSource) (.fixed 1)) (.exile .target .returnImmediately)
+/- The step triggers carry unified `Instruction` bodies and keep their Oracle lines. -/
+#guard (TriggeredAbility.onStep Effect.stepEnchantedControllerDraws).effect.body ==
+  Effect.stepEnchantedControllerDraws.body
+#guard (TriggeredAbility.onStep Effect.stepDrawToTen).effect.body ==
+  Effect.stepDrawToTen.body
+#guard (TriggeredAbility.onStep Effect.stepCopyAbsorbingMan).effect.body ==
+  Effect.stepCopyAbsorbingMan.body
+#guard (TriggeredAbility.onStep Effect.stepCopyTaskmaster).effect.body ==
+  Effect.stepCopyTaskmaster.body
+#guard (TriggeredAbility.onStep Effect.stepHydeChoose).effect.body ==
+  Effect.stepHydeChoose.body
+#guard (TriggeredAbility.onStep Effect.stepHarnessedFlicker).effect.body ==
+  Effect.stepHarnessedFlicker.body
+#guard (TriggeredAbility.onEnter Effect.triggerExileOtherCopyEnchanted).effect.body ==
+  Effect.triggerExileOtherCopyEnchanted.body
 
 #guard toString (TriggeredAbility.onStep Effect.stepEnchantedControllerDraws) ==
-  TriggeredAbility.stepSentence .enchantedControllerDraws
+  "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
 #guard toString (TriggeredAbility.onStep Effect.stepDrawToTen) ==
-  TriggeredAbility.stepSentence .drawToTen
-#guard toString (TriggeredAbility.onStep Effect.stepCopyAbsorbingMan) ==
-  TriggeredAbility.stepSentence .copyAbsorbingMan
-#guard toString (TriggeredAbility.onStep Effect.stepCopyTaskmaster) ==
-  TriggeredAbility.stepSentence .copyTaskmaster
-#guard toString (TriggeredAbility.onStep Effect.stepHydeChoose) ==
-  TriggeredAbility.stepSentence .hydeChoose
-#guard toString (TriggeredAbility.onStep Effect.stepHarnessedFlicker) ==
-  TriggeredAbility.stepSentence .harnessedFlicker
+  "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
+#guard (toString (TriggeredAbility.onStep Effect.stepCopyAbsorbingMan)).contains "Absorbing Man becomes a copy"
+#guard (toString (TriggeredAbility.onStep Effect.stepCopyTaskmaster)).contains "Taskmaster becomes a copy"
+#guard (toString (TriggeredAbility.onStep Effect.stepHydeChoose)).contains "Mister Hyde"
+#guard (toString (TriggeredAbility.onStep Effect.stepHarnessedFlicker)).contains "exile up to one other target nonland permanent you control"
 
 /- The enchanted creature's controller draws. The Aura's controller does not.
 Nothing enchanted draws nothing. -/
@@ -136,43 +130,32 @@ def copyNothing : Game :=
 #guard !copyNothing.isLand (named copyNothing "Absorbing Man") &&
   logContains copyNothing "doesn't become a copy"
 
-/- The enchanted creature becomes a copy of the creature an earlier step
-noted. Nothing noted leaves the creature unchanged. -/
+/- The enchanted creature becomes a copy of the creature exiled by the Aura's
+unified enter trigger. Nothing targeted leaves the creature unchanged. -/
 def notedCopy : Game :=
   let g := addPermanent (addPermanent afterDraw grizzlyBears me me) hillGiant opp opp
+  let g := addPermanent g superIntelligence me me
   let host := named g "Grizzly Bears"
+  let aura := named g "Super Intelligence"
   let giant := named g "Hill Giant"
-  let g := g.changes #[.notedCopyObject (some giant), .notedHostId (some host.id)]
-  g.applyTriggeredAbility me (TriggeredAbility.onEnterDraw 1) none
-    (resolutionOverride := some (.becomeCopy .noted))
+  let g := g.attachSourceTo aura host
+  resolve g (TriggeredAbility.onEnter Effect.triggerExileOtherCopyEnchanted)
+    (some aura.id) #[Target.permanent giant.id]
 
 #guard
   match notedCopy.battlefield.find? (fun o => (notedCopy.copyRestore o).isSome) with
   | some o =>
     notedCopy.name o == "Hill Giant" &&
       o.printed.name == "Grizzly Bears" &&
-      ((notedCopy.copyRestore o).getD o.printed).name == "Grizzly Bears" &&
-      notedCopy.notedCopyObject.isNone
+      ((notedCopy.copyRestore o).getD o.printed).name == "Grizzly Bears"
   | none => false
 
 def notedMissing : Game :=
   let g := addPermanent afterDraw grizzlyBears me me
-  g.applyTriggeredAbility me (TriggeredAbility.onEnterDraw 1) none
-    (resolutionOverride := some (.becomeCopy .noted))
+  resolve g (TriggeredAbility.onEnter Effect.triggerExileOtherCopyEnchanted) none #[]
 
 #guard (named notedMissing "Grizzly Bears").name == "Grizzly Bears" &&
   (notedMissing.copyRestore (named notedMissing "Grizzly Bears")).isNone
-
-/- Any other selector copies nothing. -/
-#guard
-  let g0 := addPermanent afterDraw grizzlyBears me me
-  let g := g0.applyTriggeredAbility me (TriggeredAbility.onEnterDraw 1) none
-    (resolutionOverride := some (.becomeCopy .source))
-  (g.copyRestore (named g "Grizzly Bears")).isNone && g.log.size == g0.log.size
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.becomeCopy .source) } ==
-  "become a copy"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.becomeCopy (.cause (some .villain))) } ==
-  "become a copy"
 
 /- Taskmaster copies a creature card in a graveyard and replaces his type line. -/
 def copiedGraveyard : Game :=

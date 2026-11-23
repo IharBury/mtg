@@ -62,7 +62,8 @@ private def replayOk28i2 (gs : Array Game) : Bool :=
     additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
     spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
   }
-  let stashedPr : PendingReplacement := .finishPostStep (.beginScryOne p0)
+  let stashedPr : PendingReplacement :=
+    .continueInterpreter { ctx := { controller := p0 }, queue := #[Instruction.scryFixed 1], stack := #[] }
   let gCastRes0 :=
     ((insertObject (addPermanent afterDraw bear p0 p0) costSpellDef p0 .exile).change
       (.pushContinuationFrame {})).change (.pendingReplacement (some stashedPr))
@@ -106,7 +107,7 @@ private def replayOk28i3 (gs : Array Game) : Bool :=
 
 -- 1. 2HG `.assignCombatDamage` `redirectPendingAfterLeave` teammate takeover & defender-stillInGame
 --    check, plus `g.stillInGame` guards across `Core`, `Library`, `SacrificeDiscard`, `Choices`,
---    `ResolutionCompat`/`Interpreter`, and `Tokens` when `leftTheGame == true` (CR 510.1c / 800.4a,c–d / 810.7).
+--    `Interpreter`, and `Tokens` when `leftTheGame == true` (CR 510.1c / 800.4a,c–d / 810.7).
 #guard
   let p0 : PlayerId := ⟨0⟩
   let p1 : PlayerId := ⟨1⟩
@@ -153,7 +154,7 @@ private def replayOk28i3 (gs : Array Game) : Bool :=
   let gExSub := gLeftOnly.exileTopPlayIfYouControlSubtype p1 2 .elf
   let gRiddles := gLeftOnly.riddlesInTheDark p1 2 false
   let gTreasures := gLeftOnly.createTreasureTokens p1 2
-  let gGainLifeSearch := gLeftOnly.applyGainLifeSearchBasicPlusOne p0 #[.player p1] 2 (some atkId)
+  let gGainLifeSearch := gLeftOnly.applyEffect p0 (Effect.gainLifeSearchBasicPlusOne 2) #[.player p1] (sourceId := some atkId)
   let stillInGameGuardsOk :=
     !gLeftOnly.stillInGame p1 &&
     (gLeftOnly.player p1).leftTheGame &&
@@ -171,7 +172,7 @@ private def replayOk28i3 (gs : Array Game) : Bool :=
     gRiddles.events.size == sIdx &&
     gTreasures.battlefield.size == gLeftOnly.battlefield.size &&
     gTreasures.log.back? == some "no token is created (CR 800.4b)" &&
-    gGainLifeSearch.log.back? == some "The target is no longer legal"
+    gGainLifeSearch.log.contains "The target is no longer legal"
 
   mustHold28i3 "1a.teammateTakeoverOk" teammateTakeoverOk &&
   mustHold28i3 "1b.stillInGameGuardsOk" stillInGameGuardsOk &&
@@ -192,10 +193,8 @@ private def replayOk28i4 (gs : Array Game) : Bool :=
 -- 1. CR 608.2h / 613.1a:
 --    *Palantír* (`offerPalantirChoice` & `.palantirMayDraw` decline) LKI `.influence` counter
 --    reads via `g.damageSourceById?`, Aura & Equipment `attachedTo` LKI fallbacks across
---    `ModeledTriggers.attachedHost?`, `Interpreter` tap-enchanted/unprepare, and
---    `TriggeredAbilities` (`applyAttach` `.enchantedCreature`, `applyTap` `.enchanted`,
---    `applyRemoveCounters` `.all, .enchanted`), `FraAbilities` `.damageEqualSourcePower` LKI
---    power fallback, and Layer 1 `g.name` / `g.nameWithToken` log reads.
+--    `ModeledTriggers.attachedHost?`, `Interpreter` tap-enchanted/unprepare/attach/removeCounters,
+--    `.damageEqualSourcePower` LKI power fallback, and Layer 1 `g.name` / `g.nameWithToken` log reads.
 #guard
   let p0 : PlayerId := ⟨0⟩
   let p1 : PlayerId := ⟨1⟩
@@ -244,15 +243,18 @@ private def replayOk28i4 (gs : Array Game) : Bool :=
     gAuraDeparted.applyAbilityEffect p0
       { body := .seq #[Instruction.tap .attachedHost, .permanent (.setDesignation .attachedHost .prepared false)] }
       #[] (some auraId)
-  -- `TriggeredAbilities.applyTap` `.enchanted` taps `p0BearId` via LKI:
-  let dummyTrig : TriggeredAbility := auraDef.triggeredAbilities[0]!
-  let gTrigTapHost := gAuraDeparted.applyTap p0 dummyTrig (some auraId) #[] .enchanted
-  -- `TriggeredAbilities.applyAttach` `.eachEquipment, .enchantedCreature` attaches `equipId` to `p0BearId` via LKI:
+  -- Unified `Instruction.tap .attachedHost` taps `p0BearId` via LKI:
+  let gTrigTapHost := gAuraDeparted.applyAbilityEffect p0 { body := Instruction.tap .attachedHost } #[] (some auraId)
+  -- Unified `.permanent (.attach ... .attachedHost)` attaches `equipId` to `p0BearId` via LKI:
   let gTrigAttachHost :=
-    gAuraDeparted.applyAttach p0 dummyTrig (some auraId) #[.permanent equipId] .eachEquipment .enchantedCreature
-  -- `TriggeredAbilities.applyRemoveCounters` `.all, .enchanted` removes all counters from `p0BearId` via LKI:
+    gAuraDeparted.applyAbilityEffect p0
+      { body := .permanent (.attach (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .controlledBy .you])) .attachedHost) }
+      #[] (some auraId)
+  -- Unified `.permanent (.modifyCounters (.remove none .anyNumber) .attachedHost)` removes all counters from `p0BearId` via LKI:
   let gTrigRemCntHost :=
-    gAuraDeparted.applyRemoveCounters p0 (some auraId) #[] .all .enchanted
+    gAuraDeparted.applyAbilityEffect p0
+      { body := .permanent (.modifyCounters (.remove none .anyNumber) .attachedHost) }
+      #[] (some auraId)
   let auraHostLkiFallbacksOk :=
     attachedHostLkiOk &&
     (gFraTapHost.object! p0BearId).status.tapped &&
@@ -319,9 +321,13 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
   --     subsequent departure takes the `q == p` branch and runs `runPostCastAndPropCleanup`
   --     to resume `p2`'s outer continuation (`.beginScryOne p2`):
   let rConnive : ReplacementId := { kind := .extraDrawOnConnive, object := none }
+  let scryP2Pr : PendingReplacement :=
+    .continueInterpreter { ctx := { controller := p2 }, queue := #[Instruction.scryFixed 1], stack := #[] }
+  let scryP0Pr : PendingReplacement :=
+    .continueInterpreter { ctx := { controller := p0 }, queue := #[Instruction.scryFixed 1], stack := #[] }
   let gCoLost0 :=
     ((g3.change (.pushContinuationFrame {
-        pendingReplacement := some (.finishPostStep (.beginScryOne p2))
+        pendingReplacement := some scryP2Pr
       })).record
       (GameEvent.playerLost g3.turnNumber p0 .lifeZeroOrLess (cause := some (.stateBased .lifeZeroOrLess)))).record
       (GameEvent.playerLost g3.turnNumber p1 .lifeZeroOrLess (cause := some (.stateBased .lifeZeroOrLess)))
@@ -352,26 +358,20 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
   let p1HandBolt := (gStack0.player p1).hand.back!
   let (gStack1, p0SpellId) := gStack0.move p0HandBolt .stack (some p0) (cause := some testCause)
   let (gStack2, p1SpellId) := gStack1.move p1HandBolt .stack (some p1) (cause := some testCause)
-  let dummyModesRest : ChooseModesRest := {
-    controller := p0
-    ability := TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLifeFixed 1 }
-    sourceId := none, targets := #[], lastKnownPower := none
-    sourceName := "Test", modes := [], how := .vision
-  }
   let gRetargetStale :=
-    ((gStack2.change (.pushContinuationFrame { chooseModesRest := some dummyModesRest })).change
+    ((gStack2.change (.pushContinuationFrame {})).change
       (.pending (.fraChoice p0 (.mayChangeSpellTarget p1SpellId 0 #[.player p0])))).playerLeavesGame p1
   let gRetargetLive :=
-    ((gStack2.change (.pushContinuationFrame { chooseModesRest := some dummyModesRest })).change
+    ((gStack2.change (.pushContinuationFrame {})).change
       (.pending (.fraChoice p0 (.mayChangeSpellTarget p0SpellId 0 #[.player p0])))).playerLeavesGame p1
   --     * `.newTargetsForCopySlot`:
-  --       - all copies gone -> clears `.pending` and `chooseModesRest`;
+  --       - all copies gone -> clears `.pending`;
   --       - `copies[0]` (`p1SpellId`) gone while `copies[1]` (`p0SpellId`) still on `.stack` ->
   --         resets to `.fraChoice p0 (.newTargetsForCopies #[p0SpellId])`;
   --       - `copies[0]` (`p0SpellId`) still on `.stack` while `copies[1]` (`p1SpellId`) gone ->
   --         preserves `.fraChoice p0 (.newTargetsForCopySlot #[p0SpellId] 1 #[.player p0])`:
   let gCopiesAllGone :=
-    ((gStack2.change (.pushContinuationFrame { chooseModesRest := some dummyModesRest })).change
+    ((gStack2.change (.pushContinuationFrame {})).change
       (.pending (.fraChoice p0 (.newTargetsForCopies #[p1SpellId])))).playerLeavesGame p1
   let gCopiesFirstGone :=
     ((gStack2.change (.pushContinuationFrame {})).change
@@ -381,10 +381,8 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
       (.pending (.fraChoice p0 (.newTargetsForCopySlot #[p0SpellId, p1SpellId] 1 #[.player p0])))).playerLeavesGame p1
   let retargetAfterLeaveOk :=
     gRetargetStale.pending == .none &&
-    gRetargetStale.chooseModesRest.isNone &&
     gRetargetLive.pending == .fraChoice p0 (.mayChangeSpellTarget p0SpellId 0 #[.player p0]) &&
     gCopiesAllGone.pending == .none &&
-    gCopiesAllGone.chooseModesRest.isNone &&
     gCopiesFirstGone.pending == .fraChoice p0 (.newTargetsForCopies #[p0SpellId]) &&
     gCopiesSecondGone.pending == .fraChoice p0 (.newTargetsForCopySlot #[p0SpellId] 1 #[.player p0])
 
@@ -419,12 +417,12 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
   -- `.restorePending` + `checkReversal` inside `.seq`:
   -- Untapped power for `p0` is `0 + 2 = 2`. So `crew` / `chooseTeamworkCreatures` needing `3`
   -- fails revalidation and reverses `proposedSpell`, and `checkReversal` stops `.seq` from running
-  -- the second half (`.finishPostStep (.beginScryOne p0)`), whereas needing `2` succeeds and
+  -- the second half (`scryP0Pr`), whereas needing `2` succeeds and
   -- opens the prompt!
   let gCrewFailSeq :=
     gWithProp.resumePendingReplacement
       (.seq (.restorePending (.fraChoice p0 (.crew vehId vehId 3)) false)
-            (.finishPostStep (.beginScryOne p0)))
+            scryP0Pr)
   let gCrewOk :=
     gWithProp.resumePendingReplacement (.restorePending (.fraChoice p0 (.crew vehId vehId 2)) false)
   let gZemoOk :=
@@ -434,11 +432,11 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
     let (gNoGy, _) := gWithProp.move gyId .exile none (cause := some testCause)
     gNoGy.resumePendingReplacement
       (.seq (.restorePending (.fraChoice p0 (.zemoBoastExile bearId bearId)) false)
-            (.finishPostStep (.beginScryOne p0)))
+            scryP0Pr)
   let gTwFailSeq :=
     gWithProp.resumePendingReplacement
       (.seq (.restorePending (.chooseTeamworkCreatures p0 3) false)
-            (.finishPostStep (.beginScryOne p0)))
+            scryP0Pr)
   let gTwOk :=
     gWithProp.resumePendingReplacement (.restorePending (.chooseTeamworkCreatures p0 2) false)
   let restoreCostRevalOk :=
@@ -491,7 +489,7 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
 end Phase29Item1EventAlignment
 
 /-! ### Phase 29 Item 2: `EventCause` allocation & `ContinuationFrame` pushing in
-`Library.moveIdsInOrder`, `ResolutionCompat.offerBottomAnyOrder`, `ResolutionCompat.offerCardChoice`,
+`Library.moveIdsInOrder`, `ResolutionEffects.offerBottomAnyOrder`, `ResolutionEffects.offerCardChoice`,
 `LibrarySearch.beginLibrarySearch`, `ModeledTriggers`, and `ResolutionEffects` -/
 section Phase29Item2EventAlignment
 
@@ -501,11 +499,11 @@ private def mustHold29i2 (label : String) (ok : Bool) : Bool :=
 private def replayOk29i2 (gs : Array Game) : Bool :=
   gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
 
--- 1. `Library.moveIdsInOrder` and `ResolutionCompat.offerBottomAnyOrder` allocate a `.oneShotEffect`
+-- 1. `Library.moveIdsInOrder` and `ResolutionEffects.offerBottomAnyOrder` allocate a `.oneShotEffect`
 --    `EventCause` from `currentResolvingContext?` via `allocDelayedCause`, `offerCardChoice` writes
 --    `stashedCause` onto the `ContinuationFrame` pushed by `beginFraChoice`, and `beginLibrarySearch`,
 --    `ModeledTriggers`, and `ResolutionEffects` push a `ContinuationFrame` via `beginFraChoice`
---    (including `offerVisionModes` preserving `chooseModesRest`, CR 608.2c / 701.20 / 701.23).
+--    (CR 608.2c / 701.20 / 701.23).
 #guard
   let p0 : PlayerId := ⟨0⟩
   let p1 : PlayerId := ⟨1⟩
@@ -534,7 +532,7 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
       s2 == some srcId && c2 == some p0 && b1.isSome && b1 == b2
     | _, _ => false
 
-  -- 1b. `ResolutionCompat.offerBottomAnyOrder` with `cause := none` allocates a fresh
+  -- 1b. `ResolutionEffects.offerBottomAnyOrder` with `cause := none` allocates a fresh
   --     `.oneShotEffect` cause from `currentResolvingContext?` (ignoring any earlier move cause
   --     on the library cards) and stores it in `g.stashedCause`:
   let topTwo := gMovedInOrder.scryLookedIds p0 2
@@ -546,7 +544,7 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
       s == some srcId && c == some p0 && eid.raw + 1 == gOfferBottom.nextEffectId
     | _ => false
 
-  -- 1c. `ResolutionCompat.offerCardChoice` with `g.continuations == #[]` calls `beginFraChoice`
+  -- 1c. `ResolutionEffects.offerCardChoice` with `g.continuations == #[]` calls `beginFraChoice`
   --     BEFORE `.change (.stashedCause (some testCause))` so `g.stashedCause == some testCause`:
   let gCardChoice :=
     gBase.offerCardChoice p0 topTwo 1 (.toHand false) "Choose a card" (cause := some testCause)
@@ -568,32 +566,30 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
   let (gStack0, spellId) := gWithStackAndHand.move handBolt .stack (some p0) (cause := some testCause)
   let gStack :=
     gStack0.change (.pushStack { objectId := spellId, controller := p0, targets := #[Target.player p1], targetsAnnounced := true })
-  let dummyTrig : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLifeFixed 1 }
 
   let gLibSearch := gBase.beginLibrarySearch p0 (fun _ => true) "a card" .hand
   let gLibMaySearch := gBase.beginLibrarySearch p0 (fun _ => true) "a card" .hand (optional := true)
   let gSacNontoken := gBase.continueNontokenSacrifices #[p0] #[]
-  let gWidow := gBase.finishExileLibraryUntilNonland p0 (some srcId) none none
   let gRetarget := gStack.offerSpellRetarget p0 spellId 0
   let gHyde := gBase.offerHydeChoice p0 (some srcId)
   let gDaredevil := gBase.offerExileTopHeroPump p0 (some srcId)
   let gKingpin := gBase.offerPay2LifeToughness p0
-  let gVision := gBase.offerVisionModes p0 dummyTrig (some srcId) #[]
+  let gVision := gBase.beginFraChoice p0 (.visionMode srcId #[0, 1, 2]) "Choose a mode"
   let gWall := gBase.offerMayCreateWall p0
-  let gPayRefl := gBase.offerPayForReflexive p0 (some srcId) #[.colored .red] .dealTwoDamage 1
+  let gPayRefl := gBase.offerPayForReflexive p0 (some srcId) #[.colored .red]
+    { targeting := .of .anyTarget, body := Instruction.dealDamageFixed (.targetSlot 0) 2 } 1
   let gExCasts := gBase.offerExileCasts p0 #[srcId] 1
   let gEntAtk :=
     gBase.promptEnteringAttackItems #[.token p0 .soldier11white true #[.player p1, .player p2] none]
-  let gWorlds := gStack.offerWorldsCreatures [p0] #[] #[] (some srcId)
+  let gWorlds := gStack.beginFraChoice p0 (.worldsPutCreatures #[srcId]) "put creatures"
 
   let allFraPushFrameOk :=
-    #[gLibSearch, gLibMaySearch, gSacNontoken, gWidow, gRetarget, gHyde,
+    #[gLibSearch, gLibMaySearch, gSacNontoken, gRetarget, gHyde,
       gDaredevil, gKingpin, gVision, gWall, gPayRefl, gExCasts, gEntAtk, gWorlds].all (fun g =>
       !g.continuations.isEmpty &&
       match g.pending with
       | .fraChoice .. => true
-      | _ => false) &&
-    gVision.chooseModesRest.isSome
+      | _ => false)
 
   mustHold29i2 "1a.moveIdsInOrderCauseOk" moveIdsInOrderCauseOk &&
   mustHold29i2 "1b.offerBottomCauseOk" offerBottomCauseOk &&
@@ -602,7 +598,7 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
   mustHold29i2 "1.replay"
     (replayOk29i2 #[
       gMovedInOrder, gOfferBottom, gCardChoice, gLibSearch, gLibMaySearch,
-      gSacNontoken, gWidow, gRetarget, gHyde, gDaredevil, gKingpin, gVision,
+      gSacNontoken, gRetarget, gHyde, gDaredevil, gKingpin, gVision,
       gWall, gPayRefl, gExCasts, gEntAtk, gWorlds
     ])
 
@@ -655,7 +651,7 @@ private def replayOk29i3 (gs : Array Game) : Bool :=
   let gTrigStack :=
     gLeft.putTriggeredAbilityOnStack p1 (gLeft.object! p0BearId)
       (TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLifeFixed 1 }) "enters"
-  let gQueueRefl := gLeft.queueFollowupReflexive p1 (some p0BearId) (.gainLife 1)
+  let gQueueRefl := gLeft.putReflexiveTrigger p1 (some p0BearId) { body := Instruction.gainLifeFixed 1 }
   let gPutRefl := gLeft.putReflexiveTrigger p1 (some p0BearId) { body := Instruction.gainLifeFixed 1 }
   let gLookCast := gLeft.beginMayCastFromLooked p1 6 5
 
@@ -672,26 +668,20 @@ private def replayOk29i3 (gs : Array Game) : Bool :=
   let gWheel := gLeft.discardHandThenDraw p1 3
   let gExSubLoop := gLeft.exileTopPlayIfYouControlSubtypeLoop p1 .bear 2 none
   let gFinGrima := gLeft.finishGrimaDirectCast p1 p1 p0BearId #[p0BearId] none
-  let gExLoop := gLeft.exileUntilInstantOrSorceryLoop p1 (.directCastOrBottom p0 false) none #[p0BearId]
+  let gExLoop := gLeft.exileUntilInstantOrSorceryLoop p1 p0 false none #[p0BearId]
   let gGrimaEntry := gLeft.grimaExileUntilInstantOrSorcery p0 p1 false
   let gExPlayNext := gLeft.resolveExileTopPlayUntilEndOfNextTurn p1
   let gGrantPost := gLeft.runPostStep (.grantPlayUntilEndOfNextTurn p1 p0BearId none)
-
-  -- Also verify `exileUntilInstantOrSorceryLoop` with `.impulseState` when `victim` (`p1`) left
-  -- after a replacement pause: it skips the `while` loop (`p1`'s library is untouched) and still
-  -- finishes `.impulseState` (`grimaImpulseReady == true`):
-  let gExImpulse := gLeft.exileUntilInstantOrSorceryLoop p1 .impulseState none #[]
 
   let allDepartedNoOpsOk :=
     expandOppOk &&
     #[gTrigStack, gQueueRefl, gPutRefl, gLookCast, gFinConnive, gAppConnive,
       gBehold, gDraw7, gMayWheel, gWheel, gExSubLoop, gFinGrima, gExLoop,
       gGrimaEntry, gExPlayNext, gGrantPost].all (fun g => g.events.size == sIdx) &&
-    gExImpulse.grimaImpulseReady &&
-    (gExImpulse.player p1).library.size == (gLeft.player p1).library.size
+    (gExLoop.player p1).library.size == (gLeft.player p1).library.size
 
   mustHold29i3 "1.allDepartedNoOpsOk" allDepartedNoOpsOk &&
-  mustHold29i3 "1.replay" (replayOk29i3 #[gLeft, gExImpulse])
+  mustHold29i3 "1.replay" (replayOk29i3 #[gLeft, gExLoop])
 
 end Phase29Item3EventAlignment
 
@@ -770,12 +760,8 @@ private def replayOk29i4 (gs : Array Game) : Bool :=
   -- copy is `2` (`> 0`), so `.untilCreature` finds `topRelicId` via `g.isCreature` and puts it into
   -- `p0`'s hand (rather than onto the battlefield as a 0-MV card):
   let gAfterRevealUntilCreature :=
-    match gLibCopiedAsCreature.applyRevealLibrary p0 (some p0BearId) #[]
-      .untilCreature
-      (.ifElse .revealedManaValueAtMostLands (.put .revealed .asPrinted .none) (.returnToHand .revealed .none))
-      .you with
-    | some g' => g'
-    | none => panic! "expected applyRevealLibrary some"
+    gLibCopiedAsCreature.applyTriggeredAbility p0
+      (TriggeredAbility.mkTrigger .thisEnters Effect.triggerRevealUntilCreature) (some p0BearId)
   let layer1RevealLibraryOk :=
     (gAfterRevealUntilCreature.followMovedToZone? topRelicId (· == .hand p0)).isSome
 
@@ -855,20 +841,17 @@ private def replayOk30i1 (gs : Array Game) : Bool :=
   let gAfterLeastPowerLeave := gPendLeastPower.concede p1
   let leastPowerLeaveOk :=
     (gAfterLeastPowerLeave.followMovedToZone? p0BearId (· == .graveyard p0)).isSome &&
-    !gAfterLeastPowerLeave.events.any (fun e => e.change == .engine (.chooseModesRest none)) &&
     gAfterLeastPowerLeave.continuations.isEmpty
 
   -- 1e. `.fraChoice p0 (.hydeRemoveCounter #[p0BearId, p1BearId])`: when `p1` (`q != leaver`)
   --     leaves while `p0BearId` has a `+1/+1` counter (`live.size == 1 <= 1`),
   --     `redirectPendingAfterLeave` runs `(clearPending g).applyHydeMode p0 none 1 #[Target.permanent p0BearId]`
-  --     inside `withOuterContStashed` (removing the `+1/+1` counter from `p0BearId` without
-  --     journaling `.chooseModesRest none`):
+  --     inside `withOuterContStashed`:
   let gWithCounter := gBase.addPlusOnePlusOneTo (gBase.object! p0BearId) 1 (cause := some testCause)
   let gPendHyde := gWithCounter.beginFraChoice p0 (.hydeRemoveCounter #[p0BearId, p1BearId])
   let gAfterHydeLeave := gPendHyde.concede p1
   let hydeLeaveOk :=
     (gAfterHydeLeave.object! p0BearId).status.plusOnePlusOne == 0 &&
-    !gAfterHydeLeave.events.any (fun e => e.change == .engine (.chooseModesRest none)) &&
     gAfterHydeLeave.continuations.isEmpty
 
   -- 1f. `.sacrificeCreature p0`: when `p1` leaves while `p0` (`q != leaver`) has no remaining
@@ -935,7 +918,7 @@ private def replayOk30i2 (gs : Array Game) : Bool :=
     gSilentFinished.continuations.isEmpty &&
     gSilentFinished.pending == .none
 
-  -- 1b. Direct calls to `ResolutionCompat.beginVisionQuest` and `ResolutionCompat.offerBottomAnyOrder`
+  -- 1b. Direct calls to `ResolutionEffects.offerBottomAnyOrder`
   --     when `g.continuations.isEmpty` push a frame via `beginFraChoice`:
   let gLib2 := insertObject (insertObject gBase bear p0 (.library p0)) bear p0 (.library p0)
   let topTwo := (gLib2.player p0).library.extract ((gLib2.player p0).library.size - 2) (gLib2.player p0).library.size
@@ -978,15 +961,15 @@ private def replayOk30i3 (gs : Array Game) : Bool :=
   let gMoveOrder := gLeft.moveIdsInOrderLoop #[p0BearId] (.library p1) "ordered"
   let gReqOrder := gLeft.requestOrderInto #[p0BearId] (.library p1) "ordered"
   let gWidowCast := gLeft.grantWidowCast p1 (some p0BearId)
-  let gFinWidow := gLeft.finishExileLibraryUntilNonland p1 (some p0BearId) (some p0BearId) none
   let gPostNick := gLeft.runPostStep (.nickFuryMayTransformOrBottom p1 p0BearId #[] none)
   let gPostOppDraw := gLeft.runPostStep (.opponentsDrawOneLoop p1 #[p1] none)
   let gPostLoseMill := gLeft.runPostStep (.loseLifeForMilledManaValue p1 #[p0BearId] none)
-  let gPostShuffle := gLeft.runPostStep (.logShuffleIntoLibrary p1 p0BearId)
-  let gPostPutMill := gLeft.runPostStep (.offerPutMilledPermanentOrGainLife p1 #[p0BearId] 3)
+  let gPostShuffle := gLeft.shuffleThen p1 .none
+  let gPostPutMill :=
+    gLeft.resumeInterpreter { ctx := { controller := p1 }, queue := #[], stack := #[.afterMillOfferPermanentOrGainLife p1 #[p0BearId] 3] }
 
-  -- 2. Verify pending-arrival logs in `millCardsLoop`, `movePublicCardsToHandLoop`, and
-  --    `.logShuffleIntoLibrary` still emit when the card already arrived before `p1` left,
+  -- 2. Verify pending-arrival logs in `millCardsLoop` and `movePublicCardsToHandLoop`
+  --    still emit when the card already arrived before `p1` left,
   --    then return before further departed-player actions:
   let gMillWithLog := gLeft.millCardsLoop p1 #[p0BearId] (logCard := some bear.name)
   let gMovedToP1Hand := (gBase.move p0BearId (.hand p1) none (cause := some testCause)).1.playerLeavesGame p1
@@ -994,17 +977,11 @@ private def replayOk30i3 (gs : Array Game) : Bool :=
   let gMovePubWithPending :=
     gMovedToP1Hand.movePublicCardsToHandLoop p1 #[p0BearId] 1 true none
       (pendingCard := some (p0BearId, bear.name))
-  let gMovedToP1Lib := (gBase.move p0BearId (.library p1) none (cause := some testCause)).1.playerLeavesGame p1
-  let sIdxLib := gMovedToP1Lib.events.size
-  let gPostShuffleArrived := gMovedToP1Lib.runPostStep (.logShuffleIntoLibrary p1 p0BearId)
   let pendingArrivalLogsOk :=
     gMillWithLog.log.back? == some s!"{(gLeft.player p1).name} mills {bear.name}" &&
     gMillWithLog.events.size == sIdx + 1 &&
     gMovePubWithPending.log.back? == some s!"{(gLeft.player p1).name} puts {bear.name} into their hand" &&
-    gMovePubWithPending.events.size == sIdxHand + 1 &&
-    gPostShuffleArrived.log.back? == some s!"{(gLeft.player p1).name} shuffles {bear.name} into their library" &&
-    gPostShuffleArrived.events.size == sIdxLib + 1 &&
-    gPostShuffleArrived.pending == .none
+    gMovePubWithPending.events.size == sIdxHand + 1
 
   -- 3. Also verify `.grantAdventureExilePermission` when `controller` (`p1`) has left the game:
   --    logs `"{name} is exiled"` without creating a `.playPermission` effect for `p1`:
@@ -1017,7 +994,7 @@ private def replayOk30i3 (gs : Array Game) : Bool :=
 
   let departedGuardsOk :=
     #[gCascadeLoop, gCascade, gMayCastLooked, gMill, gMillLoop, gMovePubHand,
-      gMoveOrder, gReqOrder, gWidowCast, gFinWidow, gPostNick, gPostOppDraw,
+      gMoveOrder, gReqOrder, gWidowCast, gPostNick, gPostOppDraw,
       gPostLoseMill, gPostShuffle, gPostPutMill].all (fun g => g.events.size == sIdx) &&
     pendingArrivalLogsOk &&
     advGoneOk
@@ -1025,7 +1002,7 @@ private def replayOk30i3 (gs : Array Game) : Bool :=
   mustHold30i3 "1.departedGuardsOk" departedGuardsOk &&
   mustHold30i3 "1.replay"
     (replayOk30i3 #[gLeft, gMillWithLog, gMovedToP1Hand, gMovePubWithPending,
-      gMovedToP1Lib, gPostShuffleArrived, gExBear, gAdvGone])
+      gExBear, gAdvGone])
 
 end Phase30Item3EventAlignment
 
@@ -1086,7 +1063,7 @@ private def replayOk30i4 (gs : Array Game) : Bool :=
 
 end Phase30Item4EventAlignment
 
-/-! ### Phase 31 Item 1: `redirectPendingAfterLeave` `q != p` revalidation, `mayThenDrop > 0` `declineMayThenCore` cleanup, and `resumePendingReplacement` `.restorePending` (`departed`) revalidation -/
+/-! ### Phase 31 Item 1: `redirectPendingAfterLeave` `q != p` revalidation, `interpWait?` departure cleanup, and `resumePendingReplacement` `.restorePending` (`departed`) revalidation -/
 section Phase31Item1EventAlignment
 
 private def mustHold31i1 (label : String) (ok : Bool) : Bool :=
@@ -1122,8 +1099,13 @@ private def replayOk31i1 (gs : Array Game) : Bool :=
   let gPendMayBolg := gP0ControlsP1Bear.change (.pending (.maySacrificeAnotherBolg p0 p0BearId))
   let gAfterMayBolg := gPendMayBolg.concede p1
   let gPendLibPlace :=
-    (gBase.change (.pushContinuationFrame { spellOrLibrary := true })).change
-      (.pending (.chooseLibraryPlacement p0 (some p1BearId)))
+    (gBase.change (.pushContinuationFrame {
+      interpWait? := some {
+        ctx := { controller := p0 }
+        queue := #[]
+        stack := #[.chooseBranch #[Instruction.drawFixed 1, Instruction.noop] true]
+      }
+    })).change (.pending (.chooseLibraryPlacement p0 (some p1BearId)))
   let gAfterLibPlace := gPendLibPlace.concede p1
 
   let nonFraLeaveRevalOk :=
@@ -1187,17 +1169,19 @@ private def replayOk31i1 (gs : Array Game) : Bool :=
     gAfterWidowLeave.pending != Pending.fraChoice p0 (.widowMayCounter (some p1BearId) none) &&
     (gAfterLeastPowLeave.followMovedToZone? p0BearId (· == .graveyard p0)).isSome
 
-  -- 1c. `mayThenDrop > 0` in `redirectPendingAfterLeave` calls `declineMayThenCore` cleanly
+  -- 1c. `interpWait?` `.branchOnChoice` in `redirectPendingAfterLeave` declines cleanly
   --     when `p1` concedes during `.mayPutLandFromHand p1`:
   let gPendMayLand :=
     (gBase.change (.pushContinuationFrame {
-      mayThenDrop := 1
-      mayThenConditional := some (.draw (.fixed 1) .you)
+      interpWait? := some {
+        ctx := { controller := p1 }
+        queue := #[]
+        stack := #[.branchOnChoice (Instruction.drawFixed 1) .noop]
+      }
     })).change (.pending (.mayPutLandFromHand p1))
   let gAfterMayLandLeave := gPendMayLand.concede p1
   let mayThenDropLeaveOk :=
-    gAfterMayLandLeave.mayThenDrop == 0 &&
-    gAfterMayLandLeave.mayThenConditional.isNone
+    gAfterMayLandLeave.currentInterpWait?.isNone
 
   -- 1d. `Decisions.resumePendingReplacement` `.restorePending saved checkSBA promptLog departed`:
   --     revalidates `saved` after post-leave exile / SBA and routes `departed` through
@@ -1209,14 +1193,16 @@ private def replayOk31i1 (gs : Array Game) : Bool :=
   let gLeftP1 := gBase.playerLeavesGame p1
   let gRestoreDeparted :=
     (gLeftP1.change (.pushContinuationFrame {
-      mayThenDrop := 1
-      mayThenConditional := some (.draw (.fixed 1) .you)
+      interpWait? := some {
+        ctx := { controller := p1 }
+        queue := #[]
+        stack := #[.branchOnChoice (Instruction.drawFixed 1) .noop]
+      }
     })).resumePendingReplacement
       (.restorePending (.mayPutLandFromHand p1) false none #[p1])
   let restorePendingRevalOk :=
     gRestoreLegend.pending == .none &&
-    gRestoreDeparted.mayThenDrop == 0 &&
-    gRestoreDeparted.mayThenConditional.isNone &&
+    gRestoreDeparted.currentInterpWait?.isNone &&
     gRestoreDeparted.pending == .none
 
   mustHold31i1 "1a.nonFraLeaveRevalOk" nonFraLeaveRevalOk &&
@@ -1231,7 +1217,7 @@ private def replayOk31i1 (gs : Array Game) : Bool :=
 
 end Phase31Item1EventAlignment
 
-/-! ### Phase 31 Item 2: `ContinuationFrame` entry and exit guards across Scry, Surveil, May, SpellOr, UnlessPays, Saga chapters, `Interpreter`, and `finishAndGrantPriority` -/
+/-! ### Phase 31 Item 2: `ContinuationFrame` entry and exit guards across Scry, Surveil, May, ChooseModes, UnlessPays, Saga chapters, `Interpreter`, and `finishAndGrantPriority` -/
 section Phase31Item2EventAlignment
 
 private def mustHold31i2 (label : String) (ok : Bool) : Bool :=
@@ -1246,7 +1232,7 @@ private def replayOk31i2 (gs : Array Game) : Bool :=
   let topId := (gBase.player p0).library.back!
 
   -- 2a. Direct calls when `gBase.continuations.isEmpty`:
-  --     `beginScry`, `scryThenDraw`, `beginSurveil`, `beginMay`, `beginSpellOr`, and `beginUnlessPays`
+  --     `beginScry`, `scryThenDraw`, `beginSurveil`, unified `.optional`, `.chooseModes`, and `.unlessPays`
   --     each push a `ContinuationFrame` on entry (`continuations.size == 1`) and pop it on exit (`continuations.isEmpty`):
   let gScry0 := gBase.beginScry p0 1
   let gScry1 := mustApply gScry0 p0 (.scry #[topId] #[])
@@ -1254,14 +1240,22 @@ private def replayOk31i2 (gs : Array Game) : Bool :=
   let gScryDraw1 := mustApply gScryDraw0 p0 (.scry #[topId] #[])
   let gSurv0 := gBase.beginSurveil p0 1
   let gSurv1 := mustApply gSurv0 p0 (.surveil #[topId] #[])
-  let gMay0 := gBase.beginMay p0 default #[] (Instruction.drawFixed 1)
+  let gMay0 := gBase.applyEffect p0 { body := Instruction.may .you none (Instruction.drawFixed 1) } #[]
   let gMay1 := mustApply gMay0 p0 .decline
-  let gOr0 := gBase.beginSpellOr p0 default #[] [Instruction.drawFixed 1, Instruction.gainLifeFixed 2]
+  let gOr0 := gBase.applyEffect p0 {
+    body := .chooseModes {
+      modes := #[{ body := Instruction.drawFixed 1 }, { body := Instruction.gainLifeFixed 2 }]
+      chooseAtResolution := true
+    }
+  } #[]
   let gOr1 :=
     match gOr0.chooseSpellOr p0 1 with
     | .ok g => g
     | .error _ => gOr0
-  let gUnless0 := gBase.beginUnlessPays p0 default #[Target.player p0] (Instruction.drawFixed 1) 1
+  let gUnless0 := gBase.applyEffect p0 {
+    targeting := .of .player
+    body := .unlessPays (.target 0) (CostSpec.ofGeneric 1) (Instruction.drawFixed 1)
+  } #[Target.player p0]
   let gUnless1 := mustApply gUnless0 p0 .decline
 
   let directFramesOk :=
@@ -1328,20 +1322,11 @@ private def replayOk31i3 (gs : Array Game) : Bool :=
   let gReqShuf := gLeft.requestShuffle p1
   let gExTopPlay := gLeft.exileTopForPlay p1 p1 2 (fun o c => s!"{o} {c}") false
   let gEmpJace := gLeft.empowerJace p1 2
-  let gHandDisc := gLeft.runFrcPostStep (.discardHand p1)
-  let gHandBot := gLeft.runFrcPostStep (.handDiscardToBottom p1)
-  let gFrcPutDrawn := gLeft.runFrcPostStep (.putDrawnBackOnTop p1 2)
-  let gFrcPolyRev := gLeft.runFrcPostStep (.polymorphRevealCreatures p1 1 none #[])
-  let gFrcPolySingle := gLeft.runFrcPostStep (.polymorphSingleTargetReveal p1 p0 none)
-  let gFrcOptPoly := gLeft.runFrcPostStep (.optionalOncePolymorphReveal p1 none)
-  let gFrcRevCr := gLeft.runFrcPostStep (.revealCreatureOrPlaneswalker p1 none)
-  let gTrigExLoop := gLeft.runTriggerExileLoop p1 none .playThisTurn #[p0Hand0] #[] (some testCause)
+  let gHandDisc := gLeft.discardEntireHand p1
   let gSurvLoop := gLeft.surveilMoveLoop p1 #[p0Hand0] none
 
   let departedStillInGameOk :=
-    #[gReqShuf, gExTopPlay, gEmpJace, gHandDisc, gHandBot,
-      gFrcPutDrawn, gFrcPolyRev, gFrcPolySingle, gFrcOptPoly,
-      gFrcRevCr, gTrigExLoop, gSurvLoop].all (fun g => g.events.size == sIdx)
+    #[gReqShuf, gExTopPlay, gEmpJace, gHandDisc, gSurvLoop].all (fun g => g.events.size == sIdx)
 
   mustHold31i3 "3a.moveOrderPrevOk" moveOrderPrevOk &&
   mustHold31i3 "3b.departedStillInGameOk" departedStillInGameOk &&
@@ -1377,9 +1362,9 @@ private def replayOk31i4 (gs : Array Game) : Bool :=
   let (gWallGone, _) := gWall0.move wallObj.id (.graveyard p0) none (cause := some testCause)
   let lifeBefore := (gWallGone.player p0).life
   let gWallResolved :=
-    gWallGone.applyGainLife p0 default (some wallObj.id) #[] .equalSourceToughness none
-      (lastKnownPower := wallSnap.power) (cause := some testCause)
-      (lastKnownToughness := wallSnap.toughness)
+    gWallGone.applyTriggeredAbility p0
+      (TriggeredAbility.mkTrigger .thisLeaves { body := Instruction.gainLife (.objectStat .toughness .this) })
+      (some wallObj.id) #[] #[] wallSnap.power wallSnap.toughness
   let lkiToughnessOk :=
     wallSnap.toughness == some 5 &&
     (gWallResolved.player p0).life == lifeBefore + 5
@@ -1441,7 +1426,9 @@ private def replayOk32i1 (gs : Array Game) : Bool :=
   --     before `promptTriggerTargetsIfNeeded` opens `Pending.chooseTargets`:
   let gHkStack :=
     gBase.putReflexiveTrigger p0 (some p0Bear.id)
-      { resolution? := some (.mshReflexive .trickArrows 1), phrase := "Choose up to 1 Trick Arrows mode" }
+      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects }
+        phrase := "Choose up to 1 Trick Arrows mode" }
+      (lastKnownPower := some 1)
   let gHkChoseNet := mustApply gHkStack p0 (.chooseMode 0)
   let emptyFramePoppedBeforeTargetsOk :=
     gBase.continuations.isEmpty &&
@@ -1473,7 +1460,7 @@ private def replayOk32i1 (gs : Array Game) : Bool :=
     gPrioGameOver.stack.isEmpty &&
     (gPrioGameOver.findObject? abObjId).isNone
 
-  -- 1c. `ResolutionCompat.finishChooseCards` `.landsTappedGainLife` and
+  -- 1c. `ResolutionEffects.finishChooseCards` `.landsTappedGainLife` and
   --     `Decisions.runPostStep` `.shuffleThenGainLife` pop their `ContinuationFrame` when
   --     `(g.player p0).library.size ≤ 1` and `g.continuations.isEmpty`:
   let gOneCardLib := gBase.mill p0 ((gBase.player p0).library.size - 1) (cause := some testCause)
@@ -1540,6 +1527,8 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
     TriggeredAbility.mkTrigger .thisEnters
       { Effect.enterChooseUpToXModes with
         body := .chooseModes {
+          minModes := .const 0
+          maxModes := .chosenX
           modes := #[
             { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
               body := Instruction.destroy (.target 0)
@@ -1567,6 +1556,8 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
     TriggeredAbility.mkTrigger .thisEnters
       { Effect.enterChooseUpToXModes with
         body := .chooseModes {
+          minModes := .const 0
+          maxModes := .chosenX
           modes := #[
             { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life" },
             { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
@@ -1610,14 +1601,18 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
   --     (iii) Clears `.hawkeyeModes` when `objId? == none`.
   let gHkReopen0 :=
     gBase.putReflexiveTrigger p0 (some p0Bear.id)
-      { resolution? := some (.mshReflexive .trickArrows 2), phrase := "Choose up to 2 Trick Arrows modes" }
+      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects }
+        phrase := "Choose up to 2 Trick Arrows modes" }
+      (lastKnownPower := some 2)
   let hkObjId1 := gHkReopen0.stack.back!.objectId
   let gHkReopen1 := gHkReopen0.concede p1
 
   let gNoP0Creature := addPermanent g3 hero p1 p1
   let gHkFin0 :=
     gNoP0Creature.putReflexiveTrigger p0 none
-      { resolution? := some (.mshReflexive .trickArrows 3), phrase := "Choose up to 3 Trick Arrows modes" }
+      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects }
+        phrase := "Choose up to 3 Trick Arrows modes" }
+      (lastKnownPower := some 3)
   let hkFinObjId := gHkFin0.stack.back!.objectId
   let gHkPicked12 := mustApply (mustApply gHkFin0 p0 (.chooseMode 1)) p0 (.chooseMode 2)
   let preHkLeaveIdx := gHkPicked12.events.size
@@ -1639,7 +1634,7 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
     gHkNoneObj.pending == .none
 
   -- 2c. `.stackHydeMode` and `.stackTriggerUnusedMode` on `q != p` (on-stack vs off-stack) and `q == p`:
-  let unusedAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.ofTrigger .gollumMode)
+  let unusedAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) Effect.triggerGollumMode
   let gUnused0 := gBase.putTriggeredAbilityOnStack p0 p0Bear unusedAb "triggers" (eventCause := some testCause)
   let unusedObjId := gUnused0.stack.back!.objectId
   let gUnusedKeep := gUnused0.concede p1
@@ -1736,7 +1731,7 @@ private def replayOk32i3 (gs : Array Game) : Bool :=
   --     (i) `q != p` when `cardId` (owned by `p1` in `.exile`) leaves the game with `p1`:
   --         clears the prompt and deals `n` damage to remaining opponent `p2`;
   --     (ii) `q != p` when `cardId` is owned by `p0` (still in `.exile`): keeps the prompt open;
-  --     (iii) `q == p` when `mayThenDrop > 0`: clears `mayThenDrop` via `declineMayThenCore`, logs
+  --     (iii) `q == p` with `interpWait?`: declines cleanly, logs
   --         `"declines (CR 800.4f)"`, and deals `n` damage to remaining opponents.
   let gWithP1Exiled := insertObject gBase bear p1 .exile
   let p1ExiledId := (gWithP1Exiled.objects.filter (fun o => o.owner == p1 && o.zone == .exile))[0]!.id
@@ -1753,29 +1748,31 @@ private def replayOk32i3 (gs : Array Game) : Bool :=
 
   let gCastExSelfLeave :=
     ((gWithP0Exiled.change (.pushContinuationFrame {
-      mayThenDrop := 1
-      mayThenConditional := some (.draw (.fixed 1) .you)
+      interpWait? := some {
+        ctx := { controller := p1 }
+        queue := #[]
+        stack := #[.branchOnChoice (Instruction.drawFixed 1) .noop]
+      }
     })).change (.pending (.mayCastExiledElseDamage p1 p0ExiledId 2 none))).concede p1
 
   let mayCastExiledLeaveOk :=
     gCastExP1Card.pending != .mayCastExiledElseDamage p0 p1ExiledId 3 (some p0BearId) &&
     (gCastExP1Card.player p2).life == p2LifeBefore - 3 &&
     gCastExP0Card.pending == .mayCastExiledElseDamage p0 p0ExiledId 3 (some p0BearId) &&
-    gCastExSelfLeave.mayThenDrop == 0 &&
-    gCastExSelfLeave.mayThenConditional.isNone &&
+    gCastExSelfLeave.currentInterpWait?.isNone &&
     gCastExSelfLeave.log.any (·.endsWith "declines (CR 800.4f)") &&
     (gCastExSelfLeave.player p0).life == (gWithP0Exiled.player p0).life - 2 &&
     (gCastExSelfLeave.player p2).life == (gWithP0Exiled.player p2).life - 2
 
   -- 3b. Object-referencing `FraChoice` prompts on `q != p` when `p1`'s permanent leaves with `p1`:
   let gTopBot := (gBase.beginFraChoice p0 (.topOrBottomDamage p1BearId 2 none)).concede p1
-  let gChooseKw := (gBase.beginFraChoice p0 (.chooseKeyword p1BearId #[.trample, .deathtouch])).concede p1
+  let gChooseKw := (gBase.beginFraChoice p0 (.chooseKeyword p1BearId #[Keyword.trample, Keyword.deathtouch])).concede p1
   let gBecomePT := (gBase.beginFraChoice p0 (.mayBecomeBasePT p1BearId 4 4)).concede p1
   let gPlusOne :=
     ((gBase.addPlusOnePlusOneTo (gBase.object! p1BearId) 1 (cause := some testCause)).beginFraChoice
       p0 (.mayMovePlusOne p1BearId)).concede p1
   let gMoveAll := (gBase.beginFraChoice p0 (.mayMoveAllCounters p0BearId p1BearId)).concede p1
-  let gTapSrc := (gBase.beginFraChoice p0 (.mayTapSourceThen (.gainLife 2) p1BearId)).concede p1
+  let gTapSrc := (gBase.beginFraChoice p0 (.mayTapSourceThen (Instruction.gainLifeFixed 2) p1BearId)).concede p1
 
   let gWithRestCard := insertObject gBase hero p0 .exile
   let restCardId := (gWithRestCard.objects.filter (fun o => o.owner == p0 && o.zone == .exile && o.name == hero.name))[0]!.id
@@ -1804,14 +1801,26 @@ private def replayOk32i3 (gs : Array Game) : Bool :=
     nickFuryTwoRestRandomOk
 
   -- 3c. Departed-player `stillInGame` guards on `beginMayDiscardDraw`, `beginSacrificeCreature`,
-  --     and `sacrificeGreatestManaValue`:
+  --     and unified greatest-mana-value sacrifice:
   let gLeft := gBase.playerLeavesGame p1
   let sIdx := gLeft.events.size
   let gMayDisc := gLeft.beginMayDiscardDraw p1 2
   let gSacCr := gLeft.beginSacrificeCreature p1
-  let gSacGreatest := gLeft.sacrificeGreatestManaValue p1
+  let sacGreatestEff : Effect := {
+    body := .moveZone
+      (.inZones .battlefield (.all #[.any #[.hasType .creature, .hasType .planeswalker], .controlledBy .you]))
+      .graveyard .sacrifice
+      { choice? := some { chooser := .player .you, count := .exact (.const 1), extremeMetric? := some (true, .stat .manaValue) } }
+  }
+  let gSacGreatest := gLeft.applyEffect p1 sacGreatestEff #[]
+  let noRulesChange (g : Game) : Bool :=
+    g.pending == .none &&
+    g.continuations.isEmpty &&
+    (g.events.extract sIdx g.events.size).all (fun e => match e.change with | .rules _ => false | _ => true)
   let stillInGameGuardsOk :=
-    #[gMayDisc, gSacCr, gSacGreatest].all (fun g => g.events.size == sIdx && g.pending == .none)
+    gMayDisc.events.size == sIdx && gMayDisc.pending == .none &&
+    gSacCr.events.size == sIdx && gSacCr.pending == .none &&
+    noRulesChange gSacGreatest
 
   mustHold32i3 "3a.mayCastExiledLeaveOk" mayCastExiledLeaveOk &&
   mustHold32i3 "3b.objFraChoicesLeaveOk" objFraChoicesLeaveOk &&
@@ -1944,44 +1953,26 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gWardPaidSac.pending == .mayDiscardDraw p0 1 &&
     gWardPaidSac.pendingReplacement == some .afterWardResolved
 
-  -- 1d. `Core.clearMay`, `ResolutionCompat.beginMay`, and `redirectPendingAfterLeave`
-  --     `.mayResolve` (`.ifYouDont` decline & `sequenceAllTargetsIllegal`), `.chooseCards`
-  --     `.stashedCause none`, `.orderLibraryBottom`, and `.searchLibrary` (`plusOneAfterSearch`):
-  let trigCtx : TriggerSequenceRest := {
-    controller := p1
-    ability := simpleAb
-    sourceId := some p1Hero3.id
-    targets := #[]
-    dividedDamage := #[]
-    lastKnownPower := none
-    lastKnownToughness := none
-    sourceName := hero.name
-    cardPower := none
-    steps := []
-  }
-  let gStaleMay :=
-    (g3Base.change (.pushContinuationFrame {})).changes #[
-      .mayOnAccept (some (.gainLife (.fixed 1))),
-      .mayOnDecline (some (.gainLife (.fixed 5))),
-      .mayContext (some trigCtx) ]
-  let gClearedMay := gStaleMay.clearMay
+  -- 1d. Unified `.mayResolve` departure handling (`.branchOnChoice` decline & illegal targets),
+  --     `.chooseCards` `.stashedCause none`, `.orderLibraryBottom`, and `.searchLibrary` (`plusOneAfterSearch`):
   let tapEff : Effect := {
     targeting := .of .creature
-    body := Instruction.tap (.target 0)
-    phrase := "Tap target creature"
+    body := Instruction.may .you none (Instruction.tap (.target 0))
+    phrase := "You may tap target creature"
   }
   let gBeginMayAfterStale :=
-    gStaleMay.beginMay p0 tapEff #[Target.permanent p1Hero3.id] (Instruction.tap (.target 0))
-  -- `q != p` on `.mayResolve` cancels when all targets in `mayTargets` became illegal:
+    g3Base.applyEffect p0 tapEff #[Target.permanent p1Hero3.id]
+  -- `q != p` on `.mayResolve` cancels when all targets became illegal:
   let gMayTargetGone := gBeginMayAfterStale.concede p1
-  -- `q == p` on `.mayResolve` with `mayOnDecline` + `mayContext` resumes `.ifYouDont` branch:
-  let oppLoseFollow : TriggeredAbility.TriggerResolution := .loseLife (.fixed 3) .eachOpponent
+  -- `q == p` on `.mayResolve` with `.branchOnChoice` `onNo` resumes `.ifYouDont` branch:
   let gMayIfYouDont :=
-    ((g3Base.change (.pushContinuationFrame {})).changes #[
-      .pending (.mayResolve p1),
-      .mayOnAccept (some (.gainLife (.fixed 1))),
-      .mayOnDecline (some oppLoseFollow),
-      .mayContext (some trigCtx) ]).concede p1
+    ((g3Base.change (.pushContinuationFrame {
+      interpWait? := some {
+        ctx := { controller := p1, sourceId := some p1Hero3.id }
+        queue := #[]
+        stack := #[.branchOnChoice (Instruction.gainLifeFixed 1) (Instruction.loseLifeFixed 3 .opponents)]
+      }
+    })).change (.pending (.mayResolve p1))).concede p1
   -- `.chooseCards` (`q == p`) clears `.stashedCause none`:
   let gChooseCardsLeave :=
     ((g3Base.change (.pushContinuationFrame { stashedCause := some testCause })).change
@@ -2004,14 +1995,8 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
     })).change (.pending (.fraChoice p0 (.maySearchLibrary #[p0TopId, p1TopId] 1 .hand none "a card")))).concede p1
 
   let mayAndScratchCleanupOk :=
-    gClearedMay.mayOnAccept.isNone &&
-    gClearedMay.mayOnDecline.isNone &&
-    gClearedMay.mayContext.isNone &&
-    gBeginMayAfterStale.mayOnAccept.isNone &&
-    gBeginMayAfterStale.mayOnDecline.isNone &&
-    gBeginMayAfterStale.mayContext.isNone &&
     gMayTargetGone.pending == .none &&
-    gMayTargetGone.mayEffect.isNone &&
+    gMayTargetGone.currentInterpWait?.isNone &&
     gMayTargetGone.continuations.isEmpty &&
     gMayTargetGone.log.any (· == "The target is no longer legal") &&
     gMayIfYouDont.pending == .none &&
@@ -2033,12 +2018,12 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
   mustHold33i1 "1.replay"
     (replayOk33i1 #[gConcedeOver, gReceivePrioEntryOver, gReceivePrioSbaOver, gFinishConcedeOver, gConcedeLoopOver,
       gHostRandomOver, gEmptyFrameBeforeTargets, gRestoreFraPushesFrame,
-      gWardPaidMana, gWardPaidSac, gClearedMay, gBeginMayAfterStale, gMayTargetGone,
+      gWardPaidMana, gWardPaidSac, gBeginMayAfterStale, gMayTargetGone,
       gMayIfYouDont, gChooseCardsLeave, gOrderBotSingle, gSearchTargetLeaves, gSearchOtherLeaves])
 
 end Phase33Item1EventAlignment
 
-/-! ### Phase 33 Item 2: Modal `chosen` revalidation & departed-seat guards in `runPostStep`, and `.restorePending` cost/2HG-combat/`unlessPaysDue` completion -/
+/-! ### Phase 33 Item 2: Modal `chosen` revalidation & departed-seat guards in `runPostStep`, and `.restorePending` cost/2HG-combat/`.unlessPays` completion -/
 section Phase33Item2EventAlignment
 
 private def mustHold33i2 (label : String) (ok : Bool) : Bool :=
@@ -2341,7 +2326,9 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gHkNoCreatures := g3
   let gHkStack :=
     gHkNoCreatures.putReflexiveTrigger p0 none
-      { resolution? := some (.mshReflexive .trickArrows 2), phrase := "Choose up to 2 Trick Arrows modes" }
+      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects }
+        phrase := "Choose up to 2 Trick Arrows modes" }
+      (lastKnownPower := some 2)
   let hkObjId := gHkStack.stack.back!.objectId
   -- Mode 0 (`Net — target creature`) is illegal on empty battlefield while mode 2 (`Boomerang`) is legal:
   let gHkFiltered :=
@@ -2354,7 +2341,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gHkFiltered.chosenModesOf (gHkFiltered.object! hkObjId) == #[2]
 
   -- 2c. `.restorePending` proposal-cost `proposalCostPromptStillPayable`, 2HG attacker
-  --     `.assignCombatDamage`, and `unlessPaysDue` flushing:
+  --     `.assignCombatDamage`, and `.unlessPays` flushing:
   let gRestoreDeadCost :=
     gLeftP1.resumePendingReplacement (.restorePending (.discardForAdditionalCost p1) false none #[])
   -- `.assignCombatDamage q true`: departed `q` with no living teammate needing assignment clears
@@ -2383,11 +2370,14 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
       (GameEvent.becameBlocked g2HG1.turnNumber (g2HG1.snapshot (g2HG1.object! p1AtkId)) #[b1Id, b2Id])).playerLeavesGame p0
   let g2HGHandoff :=
     g2HGCombat.resumePendingReplacement (.restorePending (.assignCombatDamage p0 true) false none #[])
-  -- `unlessPaysDue` flushing in `.restorePending` when `p1` left via `playerLeavesGame`:
+  -- `.unlessPays` flushing in `.restorePending` when `p1` left via `playerLeavesGame`:
   let gUnless0 :=
     ((gBase.change (.pushContinuationFrame {
-      unlessPaysInstead := some (Effect.gainLife 3)
-      unlessPaysController := p0
+      interpWait? := some {
+        ctx := { controller := p0 }
+        queue := #[]
+        stack := #[.unlessPays p1 (Instruction.gainLifeFixed 3)]
+      }
     })).change (.pending (.payOrLetCounter p1 2 none)))
   let p0LifeBefore := (gUnless0.player p0).life
   let gUnlessLeft := (gUnless0.change (.pending .none)).playerLeavesGame p1
@@ -2405,7 +2395,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     g2HGHandoff.pending == .assignCombatDamage p1 true &&
     g2HGHandoff.log.any (·.endsWith "assigns combat damage (CR 800.4h)") &&
     gUnlessRestored.pending == .none &&
-    !gUnlessRestored.unlessPaysDue &&
+    gUnlessRestored.currentInterpWait?.isNone &&
     (gUnlessRestored.player p0).life == p0LifeBefore + 3
 
   mustHold33i2 "2a.departedSeatGuardsOk" departedSeatGuardsOk &&
@@ -2817,7 +2807,7 @@ private def mustApply33i4 (g : Game) (p : PlayerId) (a : Action) : Game :=
 
 end Phase33Item4EventAlignment
 
-/-! ### Phase 34 Item 1: `reverseToProposalCheckpointCore?` non-proposal modal trigger preservation, `finishFraChoice` / `finishAndGrantPriority` / `afterWardResolved` proposal reversal & `mayThenResume` / `triggerSequenceRest` ordering -/
+/-! ### Phase 34 Item 1: `reverseToProposalCheckpointCore?` non-proposal modal trigger preservation, `finishFraChoice` / `finishAndGrantPriority` / `afterWardResolved` proposal reversal & `interpWait?` ordering -/
 section Phase34Item1EventAlignment
 
 private def mustHold34i1 (label : String) (ok : Bool) : Bool :=
@@ -2956,33 +2946,29 @@ private def replayOk34i1 (gs : Array Game) : Bool :=
   --     - Game-over (`g.over`) reverses orphaned `proposedSpell` before `completeActiveResolutions`;
   --     - Live `proposedSpell` returns without granting idle priority;
   --     - Vanished `proposedSpell` reverses via `reverseProposedSpell`;
-  --     - `mayThenResume` + `triggerSequenceRest` drains `acceptMayThenCore` + `resumeTriggerSequence`
-  --       before popping the continuation frame;
-  --     - `triggerSequenceRest` resumes `resumeTriggerSequence` and drains `pendingReplacement` before popping.
+  --     - `interpWait?` (`.branchOnChoice` and queued instruction) resumes and drains
+  --       before popping the continuation frame.
   let gWardOver := gOverWithProp.afterWardResolved
   let gWardLiveProp :=
     ((gWithProp.change (.pushContinuationFrame {})).change (.pending .none)).afterWardResolved
   let gWardVanishedProp := gVanishedProp.afterWardResolved
-  let trigCtx : TriggerSequenceRest := {
-    controller := p0
-    ability := simpleTrigAb
-    sourceId := some p0Bear.id
-    targets := #[]
-    dividedDamage := #[]
-    lastKnownPower := none
-    lastKnownToughness := none
-    sourceName := bear.name
-    cardPower := none
-    steps := [.gainLife (.fixed 4)]
-  }
+  let interpCtx34 : InterpCtx := { controller := p0, sourceId := some p0Bear.id }
   let gWardMayResume :=
     ((gBase.change (.pushContinuationFrame {
-      mayThenResume := true
-      triggerSequenceRest := some trigCtx
+      interpWait? := some {
+        ctx := interpCtx34
+        queue := #[]
+        stack := #[.branchOnChoice (Instruction.gainLifeFixed 4) .noop]
+      }
+      stepEnv := #[(⟨999⟩, { succeeded := true })]
     })).change (.pending .none)).afterWardResolved
   let gWardTrigSeqResume :=
     ((gBase.change (.pushContinuationFrame {
-      triggerSequenceRest := some trigCtx
+      interpWait? := some {
+        ctx := interpCtx34
+        queue := #[Instruction.gainLifeFixed 4]
+        stack := #[]
+      }
     })).change (.pending .none)).afterWardResolved
 
   let afterWardOk :=
@@ -2994,7 +2980,7 @@ private def replayOk34i1 (gs : Array Game) : Bool :=
     gWardVanishedProp.proposedSpell.isNone &&
     (gWardVanishedProp.player p0).hand.contains handBoltId &&
     (gWardMayResume.player p0).life == (gBase.player p0).life + 4 &&
-    !gWardMayResume.mayThenResume &&
+    gWardMayResume.currentInterpWait?.isNone &&
     gWardMayResume.continuations.isEmpty &&
     (gWardTrigSeqResume.player p0).life == (gBase.player p0).life + 4 &&
     gWardTrigSeqResume.continuations.isEmpty &&
@@ -3417,9 +3403,9 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
   -- 3b. `redirectPendingAfterLeave`:
   -- (i) `.payOrLetCounter`:
   --     - `q == p1` with `p0`'s spell on stack counters `p0`'s spell (unless `controlledBy o p1`);
-  --     - `q == p0` when `spellId` left `.stack` clears `.payOrLetCounter` & `clearUnlessPays`;
-  --     - `q == p0` with `spellId == none` and `unlessPaysInstead` whose target left (or controller left)
-  --       clears `.payOrLetCounter` & `clearUnlessPays`.
+  --     - `q == p0` when `spellId` left `.stack` clears `.payOrLetCounter` & `interpWait?`;
+  --     - `q == p0` with `spellId == none` and `.unlessPays` whose target left (or controller left)
+  --       clears `.payOrLetCounter` & `interpWait?`.
   let (gBoltStack0, stackBoltId) := gBase.move handBoltId .stack (some p0) (cause := some testCause)
   let gBoltOnStack :=
     gBoltStack0.change (.pushStack {
@@ -3429,87 +3415,59 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
       targetsAnnounced := true
     })
   let gPayOrCounterP1Leaves :=
-    ((gBoltOnStack.change (.pushContinuationFrame { unlessPaysController := p0 })).change
-      (.pending (.payOrLetCounter p1 2 (some stackBoltId)))).concede p1
+    ((gBoltOnStack.change (.pushContinuationFrame {
+      interpWait? := some { ctx := { controller := p0 }, queue := #[], stack := #[] }
+    })).change (.pending (.payOrLetCounter p1 2 (some stackBoltId)))).concede p1
   let gPayOrCounterSpellGone :=
     ((gBase.change (.pushContinuationFrame {
-      unlessPaysController := p1
-      unlessPaysInstead := some (Effect.gainLife 1)
+      interpWait? := some {
+        ctx := { controller := p1 }
+        queue := #[]
+        stack := #[.unlessPays p0 (Instruction.gainLifeFixed 1)]
+      }
     })).change (.pending (.payOrLetCounter p0 2 (some stackBoltId)))).concede p1
-  let tapCreatureEff : Effect := {
-    targeting := .of .creature
-    body := Instruction.tap (.target 0)
-    phrase := "Tap target creature"
-  }
   let gPayOrCounterInsteadIllegal :=
     ((gBase.change (.pushContinuationFrame {
-      unlessPaysController := p0
-      unlessPaysInstead := some tapCreatureEff
-      unlessPaysTargets := #[Target.permanent p1Hero.id]
+      interpWait? := some {
+        ctx := { controller := p0, targets := #[Target.permanent p1Hero.id], targetSpec := .creature }
+        queue := #[]
+        stack := #[.unlessPays p0 (Instruction.tap (.target 0))]
+      }
     })).change (.pending (.payOrLetCounter p0 2 none))).concede p1
 
   -- (ii) `.castCopiesFree`, `.mayCastCopy`, and `.mayCastCascade`:
-  let dummyModesRest : ChooseModesRest := {
-    controller := p0
-    ability := TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLifeFixed 1 }
-    sourceName := "Test"
-    how := .vision
-  }
-  let dummyTrigOr : TriggerOrRest := {
-    controller := p1
-    alternatives := #[.gainLife (.fixed 2)]
-    ability := TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLifeFixed 1 }
-    sourceId := some p0Bear.id
-    targets := #[]
-    dividedDamage := #[]
-    lastKnownPower := none
-    lastKnownToughness := none
-    sourceName := "Test"
-    cardPower := none
-  }
   let (gCopy0, exCopyId1) := gBase.move handBoltId .exile none (isCopy := some true) (cause := some testCause)
   let gCopiesFreeP1Leaves :=
     ((gCopy0.change (.pushContinuationFrame {
-      chooseModesRest := some dummyModesRest
       pendingFreeCopies := some (p1, #[exCopyId1], 3, 1)
     })).change (.pending (.fraChoice p1 (.castCopiesFree #[exCopyId1] 3 1)))).concede p1
   let gCopiesFreeUnpayable :=
     ((gCopy0.change (.pushContinuationFrame {
-      chooseModesRest := some dummyModesRest
       pendingFreeCopies := some (p0, #[exCopyId1], 0, 0)
     })).change (.pending (.fraChoice p0 (.castCopiesFree #[exCopyId1] 0 0)))).concede p1
   let gMayCastCopyP1Leaves :=
-    ((gCopy0.change (.pushContinuationFrame {
-      chooseModesRest := some dummyModesRest
-    })).change (.pending (.fraChoice p1 (.mayCastCopy exCopyId1)))).concede p1
+    ((gCopy0.change (.pushContinuationFrame {})).change (.pending (.fraChoice p1 (.mayCastCopy exCopyId1)))).concede p1
   let gMayCastCopyGone :=
-    ((gBase.change (.pushContinuationFrame {
-      chooseModesRest := some dummyModesRest
-    })).change (.pending (.fraChoice p0 (.mayCastCopy handBoltId)))).concede p1
+    ((gBase.change (.pushContinuationFrame {})).change (.pending (.fraChoice p0 (.mayCastCopy handBoltId)))).concede p1
   let p0TopLibId := (gBase.player p0).library.back!
   let (gCasc0, exOtherId) := gBase.move p0TopLibId .exile none (cause := some testCause)
   let gCascadeCardGone :=
-    ((gCasc0.change (.pushContinuationFrame {
-      chooseModesRest := some dummyModesRest
-    })).change (.pending (.fraChoice p0 (.mayCastCascade handBoltId #[exOtherId, p1Hero.id])))).concede p1
+    ((gCasc0.change (.pushContinuationFrame {})).change
+      (.pending (.fraChoice p0 (.mayCastCascade handBoltId #[exOtherId, p1Hero.id])))).concede p1
 
   -- (iii) `.chooseTriggerOr`, `.tapHumans`, and `.mayPutArtifactFromHand`:
   let gTrigOrP1Leaves :=
     ((gBase.change (.pushContinuationFrame {
-      triggerOr := some dummyTrigOr
-      chooseModesRest := some dummyModesRest
+      interpWait? := some {
+        ctx := { controller := p1, sourceId := some p0Bear.id }
+        queue := #[]
+        stack := #[.chooseBranch #[Instruction.gainLifeFixed 2] false]
+      }
     })).change (.pending (.chooseTriggerOr p1))).concede p1
   let gTapHumansP1Leaves :=
-    ((gBase.change (.pushContinuationFrame {
-      chooseModesRest := some dummyModesRest
-    })).changes #[
-      .humansTappedThisWay 2,
-      .pending (.tapHumans p1) ]).concede p1
+    ((gBase.change (.pushContinuationFrame {})).change (.pending (.tapHumans p1))).concede p1
   let gPutArtP1Leaves :=
-    ((gBase.change (.pushContinuationFrame {
-      putArtifactThisWay := some (p0Bear.id, p0Bear.id)
-      chooseModesRest := some dummyModesRest
-    })).change (.pending (.mayPutArtifactFromHand p1 (some p0Bear.id)))).concede p1
+    ((gBase.change (.pushContinuationFrame {})).change (.pending (.mayPutArtifactFromHand p1 (some p0Bear.id)))).concede p1
 
   let redirectCleanupOk :=
     mustHold34i3 "3b.payOrCounterP1" (gPayOrCounterP1Leaves.pending == .none &&
@@ -3596,7 +3554,7 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
     mustHold34i4 "4a.addManaLogged" (gAddManaLoggedDead == gLeftP1) &&
     mustHold34i4 "4a.tempt" (gTemptDead == gLeftP1) &&
     mustHold34i4 "4a.cmdObj" (gCmdObjDead == gLeftP1) &&
-    mustHold34i4 "4a.chandra" (gChandraEmblemDead == gLeftP1) &&
+    mustHold34i4 "4a.chandra" (gChandraEmblemDead.objects == gLeftP1.objects && gChandraEmblemDead.log == gLeftP1.log && gChandraEmblemDead.pending == .none) &&
     mustHold34i4 "4a.elspeth" (gElspethEmblemDead.objects == gLeftP1.objects && gElspethEmblemDead.log == gLeftP1.log) &&
     mustHold34i4 "4a.delayTrig" (gDelayTrigDead == gLeftP1) &&
     mustHold34i4 "4a.ctrlTarget" (gCtrlTargetDead == gLeftP1) &&
@@ -3646,18 +3604,16 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
     mustHold34i4 "4b.cleanup"
       (gCleanedUp.log.any (·.endsWith "discards Cloned Cleanup Card (cleanup)"))
 
-  -- (iv) `SpellResolution.resolveTop`: computes `srcName := (g.name obj).replace "'s ability" ""`
-  --      from the stack ability's Layer 1 name (`"Cloned Trigger Source's ability"` -> `"Cloned Trigger Source"`):
-  let pauseRes : TriggeredAbility.TriggerResolution :=
-    .may (.draw (.fixed 1) .you) (.sequence []) .ifYouDont
+  -- (iv) `SpellResolution.resolveTop`: resolves a cloned stack ability whose Layer 1 name is
+  --      `"Cloned Trigger Source's ability"`, pausing on `.mayResolve p0` with `currentInterpWait?.isSome`:
   let pauseTrigAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you) {
-      resolution? := some pauseRes
+      body := Instruction.may .you none (Instruction.drawFixed 1)
       phrase := "You may draw a card"
     }
   let gTrigStack0 :=
     gBase.putTriggeredAbilityOnStack p0 p0Bear pauseTrigAb "triggers"
-      (eventCause := some testCause) (reflexiveResolution := some pauseRes)
+      (eventCause := some testCause)
   let stackTrigId := gTrigStack0.stack.back!.objectId
   let cloneAbDef : CardDef := { bear with name := "Cloned Trigger Source's ability" }
   let gTrigCopied :=
@@ -3665,7 +3621,9 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
   let gTrigResolving := gTrigCopied.resolveTop
   let resolveTopSrcNameOk :=
     mustHold34i4 "4b.resolveTop"
-      (gTrigResolving.mayContext.map (·.sourceName) == some "Cloned Trigger Source")
+      (gTrigCopied.name (gTrigCopied.object! stackTrigId) == "Cloned Trigger Source's ability" &&
+       gTrigResolving.pending == .mayResolve p0 &&
+       gTrigResolving.currentInterpWait?.isSome)
 
   let layeredQueriesOk :=
     fblthpLayeredOk && expireLogOk && cleanupLogOk && resolveTopSrcNameOk
