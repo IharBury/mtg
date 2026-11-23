@@ -25,13 +25,13 @@ def putBottomInstr (obj : ObjectExpr) : Instruction :=
   .moveZone obj (.library .owner .bottom) .put {}
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, body := putTopInstr (.target 0) }
+  TriggeredAbility.mkTrigger .thisEnters { targets := .creature, body := putTopInstr (.target 0) }
 
 def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (spec : TargetSpec := .creature) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
@@ -216,7 +216,7 @@ creature that has left stay where they are. -/
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature's owner puts it on top of their library."
 #guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, body := onBottom }) ==
+    (TriggeredAbility.mkTrigger .thisEnters { targets := .creature, body := onBottom }) ==
   "When this permanent enters, target creature's owner puts it on the bottom of their library."
 #guard TriggeredAbility.toNotation
     (TriggeredAbility.mkTrigger .thisEnters { body := putTopInstr .this }) ==

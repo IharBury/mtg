@@ -4057,7 +4057,7 @@ def parseNovelTriggeredAbilityLines (raw : String) (cardName : String := "")
         interveningIf? := hdr.interveningIf?
         activeZones := hdr.activeZones
         limit := hdr.limit
-        effect := { eff with phrase := "" }
+        effect := eff
       })
 
 /-- Single-ability convenience wrapper around `parseNovelTriggeredAbilityLines`. -/
@@ -4471,9 +4471,8 @@ partial def parseInstructionSeq (raw : String) (cardName : String := "") :
         match parseInstructionSeq mText cardName with
         | some (mBody, mSlots) =>
           modes := modes.push {
-            targeting := EffectTargeting.of { slots := mSlots }
+            targets := { slots := mSlots }
             body := mBody
-            phrase := mText
           }
         | none => return none
       return some (.chooseModes {
@@ -4520,9 +4519,8 @@ def parseInstructionEffect (raw : String) (cardName : String := "") : Option Eff
   match parseInstructionSeq raw cardName with
   | some (body, slots) =>
     let eff : Effect := {
-      targeting := EffectTargeting.of { slots }
+      targets := { slots }
       body
-      phrase := raw.trimAscii.copy
     }
     if eff.doesNothingAsSpell then none else some eff
   | none => none

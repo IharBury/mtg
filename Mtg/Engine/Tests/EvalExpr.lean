@@ -288,8 +288,8 @@ private def elf22 : CardDef := {
   manaCost := ManaCost.ofGenericAndColors 1 [.green, .green]
   types := #[.creature]
   subtypes := #["Elf", "Warrior"]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
   keywords := #[Keyword.vigilance]
 }
 
@@ -299,8 +299,8 @@ private def legendDragon : CardDef := {
   supertypes := #[.legendary]
   types := #[.creature]
   subtypes := #["Dragon"]
-  power := some 5
-  toughness := some 4
+  power := some (.fixed 5)
+  toughness := some (.fixed 4)
   keywords := #[Keyword.flying]
 }
 
@@ -527,12 +527,12 @@ private def testSwamp : CardDef := {
     (Game.tokenPrinted? dynTokenSpec).isNone &&
     -- `resolveTokenPrinted?` & `createKindTokens` evaluate dynamic P/T = 2/2 (p0 controls 2 creatures)
     (g16.resolveTokenPrinted? dynTokenSpec (controller := p0)).map (fun c => (c.power, c.toughness)) ==
-      some (some 2, some 2) &&
+      some (some (.fixed 2), some (.fixed 2)) &&
     dynObj.name == "Pack Avatar" && gDynTok.power dynObj == 2 && gDynTok.toughness dynObj == 2 &&
     -- Generalized `.copyOf (.extremum .max .power .creaturesYouControl)` copies Dragon without legendary
     (g16.resolveTokenPrinted? maxPowerCopySpec (controller := p0)).map
       (fun c => (c.name, c.power, c.supertypes.contains .legendary, c.isToken)) ==
-      some ("Test Dragon", some 5, false, true)
+      some ("Test Dragon", some (.fixed 5), false, true)
 
   -- Generalized `ManaSpec` / `ManaPoolPalette` via `Game.evalManaSpec`
   let elfCountMana : ManaSpec :=
@@ -560,8 +560,8 @@ private def testVehicle : CardDef := {
   manaCost := ManaCost.ofGeneric 3
   types := #[.artifact]
   subtypes := #["Vehicle"]
-  power := some 4
-  toughness := some 4
+  power := some (.fixed 4)
+  toughness := some (.fixed 4)
 }
 
 private def testColossus : CardDef := {
@@ -569,8 +569,8 @@ private def testColossus : CardDef := {
   manaCost := ManaCost.ofGenericAndColors 4 [.green]
   types := #[.creature]
   subtypes := #["Giant"]
-  power := some 5
-  toughness := some 5
+  power := some (.fixed 5)
+  toughness := some (.fixed 5)
 }
 
 -- CR 208.3: uncrewed Vehicle has NO power or toughness (both live and LKI), even with printed 4/4.

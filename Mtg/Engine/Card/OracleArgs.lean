@@ -290,9 +290,6 @@ def takeTargetSpec (ts : TargetSpec) : ArgM TargetSpec := do
   else
     return { ts with slots := ← ts.slots.mapM takeTargetSlot }
 
-def takeTargeting (t : EffectTargeting) : ArgM EffectTargeting := do
-  return { t with spec := ← takeTargetSpec t.spec }
-
 private partial def takeTriggerCond (c : Condition) : ArgM Condition := do
   match c with
   | .exists (.inZones zs (.all #[.hasType .creature, .controlledBy pf, .stat .power .ge (.const n)])) =>
@@ -642,38 +639,37 @@ partial def takeInstr (instr : Instruction) : ArgM Instruction := do
   | other => return other
 
 partial def takeEffect (e : Effect) : ArgM Effect := do
-  match e.dividedDamage, e.body with
+  match e.dividedDamage?, e.body with
   | some (amt, maxT), .damage (.deal src .allTargets (.const _) fl) =>
     if fl.divided then
       let amt' ← takeNat amt
       let maxT' ← takeNat maxT
-      return { e with
-        dividedDamage := some (amt', maxT')
+      return {
+        targets := TargetSpec.dividedDamage .anyTarget amt' maxT'
         body := .damage (.deal src .allTargets (.const (Int.ofNat amt')) fl) }
     else takeEffectNonDivided e
   | _, _ => takeEffectNonDivided e
 where
   takeEffectNonDivided (e : Effect) : ArgM Effect := do
     if e.body == Instruction.destroy (.target 0) then
-      let spec ← takeWholeTargetSpec e.targeting.spec
-      return { e with targeting := { e.targeting with spec } }
+      let targets ← takeWholeTargetSpec e.targets
+      return { e with targets }
     else
       match e.body with
       | .permanent (.modifyCounters (.put .plusOnePlusOne (.const n)) (.target 0) none) =>
-        if e.targeting.spec == .creatureYouControl ||
-            e.targeting.spec.creatureYouControlAnySubtype?.isSome then
-          let spec ← takeWholeTargetSpec e.targeting.spec
+        if e.targets == .creatureYouControl ||
+            e.targets.creatureYouControlAnySubtype?.isSome then
+          let targets ← takeWholeTargetSpec e.targets
           let n' ← takeNat n.toNat
-          return { e with
-            targeting := { e.targeting with spec }
+          return {
+            targets
             body := Instruction.putPlusOne (.target 0) n' }
         else takeEffectRest e
       | _ => takeEffectRest e
   takeEffectRest (e : Effect) : ArgM Effect := do
-    let targeting ← takeTargeting e.targeting
+    let targets ← takeTargetSpec e.targets
     let body ← takeInstr e.body
-    let maxTargets ← if e.maxTargets == 0 then pure e.maxTargets else takeNat e.maxTargets
-    return { e with targeting, body, maxTargets }
+    return { targets, body }
 
 end
 
@@ -901,7 +897,7 @@ def takeActivated (ab : ActivatedAbility) : ArgM ActivatedAbility := do
   let tag? ←
     match ab.tag? with
     | some (.equip (some (.hasSubtype (.literal sub)))) =>
-      match effect.targeting.spec.creatureYouControlSubtype? with
+      match effect.targets.creatureYouControlSubtype? with
       | some s => pure (some (.equip (some (.hasSubtype (.literal s)))))
       | none => do
         let s ← takeSubtype sub
@@ -1540,109 +1536,34 @@ def lineKeys (s : String) : List String :=
 def patKey (pats : List (List Pat)) : String :=
   let piece : Pat → String
     | .lit s => s
-    | .nat _ fmt =>
+    | .nat i fmt =>
+      let tag :=
+        match fmt with
+        | .digits => "d"
+        | .cards => "c"
+        | .counters => "k"
+        | .brace => "b"
+        | .english => "e"
+        | .times => "x"
+      s!"#{i}{tag}"
+    | .int i fmt =>
       match fmt with
-      | .digits => "#d"
-      | .cards => "#c"
-      | .counters => "#k"
-      | .brace => "#b"
-      | .english => "#e"
-      | .times => "#x"
-    | .int _ fmt =>
+      | .signed => s!"#{i}+"
+      | .digits => s!"#{i}i"
+    | .str i fmt =>
       match fmt with
-      | .signed => "#+"
-      | .digits => "#i"
-    | .str _ fmt =>
-      match fmt with
-      | .word n => s!"$w{n}"
-      | .plural => "$p"
-      | .cycling n => s!"$c{n}"
-      | .non => "$n"
-      | .sub => "$s"
-      | .subPlural => "$sp"
-    | .ty _ => "$t"
-    | .sup _ => "$sup"
-    | .kind _ => "$k"
-    | .pt _ _ signed => if signed then "+/+" else "#/#"
-    | .counterPhrase _ _ => "#ctr"
+      | .word n => s!"$w{i}:{n}"
+      | .plural => s!"$p{i}"
+      | .cycling n => s!"$c{i}:{n}"
+      | .non => s!"$n{i}"
+      | .sub => s!"$s{i}"
+      | .subPlural => s!"$sp{i}"
+    | .ty i => s!"$t{i}"
+    | .sup i => s!"$sup{i}"
+    | .kind i => s!"$k{i}"
+    | .pt i j signed => if signed then s!"+{i}/+{j}" else s!"#{i}/#{j}"
+    | .counterPhrase i j => s!"#ctr{i}:{j}"
   String.intercalate "\n" (pats.map fun line => String.intercalate " " (line.map piece))
-
-def renderHit (h : Hit) (vals : Array SlotVal) : String :=
-  match h.pat with
-  | .nat i fmt => renderNat fmt (slotNat vals i)
-  | .int i fmt => renderInt fmt (slotInt vals i)
-  | .str i fmt => renderStr fmt (slotStr vals i)
-  | .ty i => (slotTy vals i).englishName
-  | .sup i => (slotSup vals i).englishName
-  | .kind i => TargetSpec.noun (slotTarget vals i)
-  | .pt i j signed => renderPt signed (slotInt vals i) (slotInt vals j)
-  | .counterPhrase ni ki => (slotCounter vals ki).countersPhrase (slotNat vals ni)
-  | .lit s => s
-
-/-- Every way an argument can be spelled, independent of the surrounding line. -/
-def allNeedles (args : Array SlotVal) : List Hit :=
-  Id.run do
-    let mut hs : List Hit := []
-    for i in [:args.size] do
-      match args[i]! with
-      | .nat n =>
-        for fmt in [NatFmt.cards, .counters, .brace, .english, .digits, .times] do
-          -- A bare `1` is also "up to one". The counter phrase needle covers the count.
-          let skipDigit :=
-            isCounterCount args i && (fmt == .digits || fmt == .english)
-          if !skipDigit then
-            let needle := renderNat fmt n
-            hs := { width := needle.length, used := [i], pat := .nat i fmt, needle, repl := needle } :: hs
-        if isCounterCount args i then
-          match args[i - 1]! with
-          | .ctr k =>
-            let needle := k.countersPhrase n
-            hs := {
-              width := needle.length, used := [i, i - 1], pat := .counterPhrase i (i - 1),
-              needle, repl := needle
-            } :: hs
-          | _ => pure ()
-      | .int v =>
-        for fmt in [IntFmt.signed, .digits] do
-          let needle := renderInt fmt v
-          hs := { width := needle.length, used := [i], pat := .int i fmt, needle, repl := needle } :: hs
-        for j in [:args.size] do
-          if i < j then
-            match args[j]! with
-            | .int t =>
-              for signed in [true, false] do
-                let needle := renderPt signed v t
-                hs := {
-                  width := needle.length, used := [i, j], pat := .pt i j signed, needle, repl := needle
-                } :: hs
-            | _ => pure ()
-      | .str s =>
-        if s.length >= 2 then
-          let fmts :=
-            match ofOracle? s with
-            | some _ =>
-              [StrFmt.sub, .subPlural, .non, .cycling (strWords s).length]
-            | none =>
-              [.word (strWords s).length, StrFmt.plural,
-                .cycling (strWords s).length, StrFmt.non]
-          for fmt in fmts do
-            let needle := renderStr fmt s
-            hs := { width := needle.length, used := [i], pat := .str i fmt, needle, repl := needle } :: hs
-      | .ty t =>
-        let needle := lowerAscii t.englishName
-        hs := { width := needle.length, used := [i], pat := .ty i, needle, repl := t.englishName } :: hs
-      | .sup s =>
-        let needle := lowerAscii s.englishName
-        hs := { width := needle.length, used := [i], pat := .sup i, needle, repl := s.englishName } :: hs
-      | .targets ts =>
-        let needle := lowerAscii ts.noun
-        if !needle.isEmpty then
-          hs := {
-            width := needle.length, used := [i], pat := .kind i, needle,
-            repl := ts.noun
-          } :: hs
-      | .ctr _ => pure ()
-    return hs
 
 /-- Replace each counter phrase (`a stun counter`, `2 shield counters`) with `$ctr`
 so lines that differ only by kind and count share a lookup key. -/
@@ -1671,78 +1592,17 @@ def abstractCounterLine (s : String) : Option String :=
   some "put $ctr on it"
 #guard abstractCounterLine "draw a card" == none
 
-def charHit (args : Array SlotVal) (cs : List Char) (prev : Option Char) (used : List Nat) :
-    Option Hit :=
-  let boundaryBefore :=
-    match prev with
-    | none => true
-    | some p => !tokenChar p
-  if !boundaryBefore || cs.isEmpty then none
-  else
-    let ok := (allNeedles args).filter fun h =>
-      let n := h.needle.toList
-      !n.isEmpty && n.isPrefixOf cs &&
-        lowerAscii (String.ofList (cs.take n.length)) == lowerAscii h.needle &&
-        match cs.drop n.length with
-        | [] => true
-        | c :: _ => !tokenChar c
-    let fresh := ok.filter fun h => !h.used.isEmpty && h.used.all fun i => !used.contains i
-    let pool :=
-      if fresh.isEmpty then ok.filter fun h => h.used.all fun i => used.contains i else fresh
-    bestHit pool
-
-def splicePhrase (phrase : String) (old new : Array SlotVal) : String :=
-  if phrase.isEmpty || old.size != new.size then phrase
-  else
-    let rec go (fuel : Nat) (cs : List Char) (prev : Option Char) (used : List Nat)
-        (acc : List Char) : List Char :=
-      match fuel, cs with
-      | 0, _ | _, [] => acc.reverse
-      | fuel + 1, c :: rest =>
-        match charHit old cs prev used with
-        | some h =>
-          let repl := renderHit h new
-          let replChars := repl.toList
-          let n := max h.needle.length 1
-          go fuel (cs.drop n) replChars.getLast? (h.used ++ used) (replChars.reverse ++ acc)
-        | none => go fuel rest (some c) used (c :: acc)
-    String.ofList (go phrase.length phrase.toList none [] [])
-
-partial def finishEffect (old new : Effect) : Effect :=
-  let oldArgs := collectEffect old
-  let newArgs := collectEffect new
-  match old.body, new.body with
-  | .chooseModes oldSpec, .chooseModes newSpec =>
-    let modes := (oldSpec.modes.zip newSpec.modes).map fun (om, nm) => finishEffect om nm
-    { new with
-      body := .chooseModes { newSpec with modes }
-      phrase := splicePhrase old.phrase oldArgs newArgs }
-  | _, _ =>
-    if !old.phrase.isEmpty && new.body == Instruction.destroy (.target 0) then
-      Effect.canonicalDestroy new.targeting.spec
-    else
-      match new.body with
-      | .permanent (.modifyCounters (.put .plusOnePlusOne (.const n)) (.target 0) none) =>
-        if !old.phrase.isEmpty then
-          match Effect.canonicalPlusOne n.toNat new.targeting.spec with
-          | some e => e
-          | none => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
-        else new
-      | _ => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
-
 def refillEffect (e : Effect) (vals : Array SlotVal) : Effect :=
-  finishEffect e (runFill (takeEffect e) vals)
+  runFill (takeEffect e) vals
 
 def refillStatic (ab : StaticAbility) (vals : Array SlotVal) : StaticAbility :=
   runFill (takeStatic ab) vals
 
 def refillActivated (ab : ActivatedAbility) (vals : Array SlotVal) : ActivatedAbility :=
-  let walked := runFill (takeActivated ab) vals
-  { walked with effect := finishEffect ab.effect walked.effect }
+  runFill (takeActivated ab) vals
 
 def refillTriggered (ab : TriggeredAbility) (vals : Array SlotVal) : TriggeredAbility :=
-  let walked := runFill (takeTriggered ab) vals
-  { walked with effect := finishEffect ab.effect walked.effect }
+  runFill (takeTriggered ab) vals
 
 #guard
   let ab := TriggeredAbility.onEnterExileOppGyCardOppsLoseLife 2
@@ -1781,7 +1641,7 @@ def setNat (e : Effect) (i n : Nat) : Effect :=
   let e := Effect.artifactSpellsCostLessThisTurn 1
   let args := collectEffect e
   let query := "Planeswalker spells you cast this turn cost {3} less to cast."
-  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+  match matchPats (patsOf (normalizeUnit "X" e.toNotation) args)
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
     (refillEffect e vals).body ==
@@ -1792,20 +1652,20 @@ def setNat (e : Effect) (i n : Nat) : Effect :=
 /-- Refill `proto` from `query` and keep the Phase-8 `Instruction` body. -/
 private def refilled (proto : Effect) (query : String) : Option Instruction :=
   let args := collectEffect proto
-  match matchPats (patsOf (normalizeUnit "X" proto.phrase) args)
+  match matchPats (patsOf (normalizeUnit "X" proto.toNotation) args)
       (tokenize (normalizeUnit "X" query)) args with
   | some vals => some (refillEffect proto vals).body
   | none => none
 
-#guard (Effect.amassGoblins 1).phrase == "amass Goblins 1"
-#guard (Effect.riddlesInTheDark).phrase ==
+#guard (Effect.amassGoblins 1).toNotation == "amass Goblins 1"
+#guard (Effect.riddlesInTheDark).toNotation ==
   "look at the top four cards of your library and separate them into a face-down pile and a face-up pile. An opponent chooses one of the piles. Put that pile into your hand and the other into your graveyard"
-#guard (Effect.plusOneOnEachYouControl).phrase ==
+#guard (Effect.plusOneOnEachYouControl).toNotation ==
   "put a +1/+1 counter on each creature you control"
-#guard (Effect.creatureYouControlDealsTwicePower).phrase ==
-  "Target creature you control deals damage equal to twice its power to target creature an opponent controls."
-#guard (Effect.drawThreeDiscardUnlessArtifact).phrase ==
-  "draw three cards. Then discard two cards unless you discard an artifact card"
+#guard (Effect.creatureYouControlDealsTwicePower).toNotation ==
+  "target creature you control deals damage equal to twice its power to target creature an opponent controls"
+#guard (Effect.drawThreeDiscardUnlessArtifact).toNotation ==
+  "draw 3 cards. Then discard 2 cards unless you discard an artifact card"
 
 #guard refilled (Effect.amassGoblins 1) "amass Zombies 4" ==
   some (Instruction.amassFixed 4 .zombie)
@@ -1819,22 +1679,22 @@ private def refilled (proto : Effect) (query : String) : Option Instruction :=
 #guard refilled (Effect.plusOneOnEachYouControl) "put 3 +1/+1 counters on each creature you control" ==
   some (Instruction.putPlusOne (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])) 3)
 
-#guard Effect.plusOneThenEachOtherIfFromGy.phrase ==
-  "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control"
+#guard Effect.plusOneThenEachOtherIfFromGy.toNotation ==
+  "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, put a +1/+1 counter on each other creature you control"
 
 #guard refilled Effect.plusOneThenEachOtherIfFromGy
-    "Put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, also put a +1/+1 counter on each other creature you control." ==
+    "Put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, put a +1/+1 counter on each other creature you control." ==
   some Effect.plusOneThenEachOtherIfFromGy.body
 
 #guard refilled Effect.plusOneThenEachOtherIfFromGy
-    "Put 2 +1/+1 counters on target creature you control. If this spell was cast from a graveyard, also put 3 +1/+1 counters on each other creature you control." ==
+    "Put 2 +1/+1 counters on target creature you control. If this spell was cast from a graveyard, put 3 +1/+1 counters on each other creature you control." ==
   some (.seq #[
     Instruction.putPlusOne (.target 0) 2,
     Instruction.ifThen (.castPred (.castFrom .graveyard .this))
       (Instruction.putPlusOne
         (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you, .otherThan (.target 0)])) 3)])
 
-#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).phrase ==
+#guard (Effect.plusOneUpToOneAndPlayerGainsLife 2).toNotation ==
   "put a +1/+1 counter on up to one target creature. Target player gains 2 life"
 
 #guard refilled (Effect.plusOneUpToOneAndPlayerGainsLife 2)
@@ -1905,7 +1765,7 @@ private def refilled (proto : Effect) (query : String) : Option Instruction :=
       Instruction.drawFixed 1 .opponents ]))
 
 #guard refilled (Effect.addRedPerOppArtifacts)
-    "add {R} for each enchantment your opponents control" ==
+    "add {R} for each enchantment an opponent controls" ==
   some (Instruction.addMana {
     spec := .sequence #[(.colored .red,
       .aggregate .count .one (.inZones .battlefield (.all #[.hasType .enchantment, .controlledBy .opponent])))] })
@@ -1932,7 +1792,7 @@ private def refilled (proto : Effect) (query : String) : Option Instruction :=
   let e := Effect.supertypeSpellsCostLessThisTurn 1
   let args := collectEffect e
   let query := s!"{s} spells you cast this turn cost \{{3}} less to cast."
-  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+  match matchPats (patsOf (normalizeUnit "X" e.toNotation) args)
       (tokenize (normalizeUnit "X" query)) args with
   | some vals =>
     (refillEffect e vals).body ==
@@ -1943,7 +1803,7 @@ private def refilled (proto : Effect) (query : String) : Option Instruction :=
 #guard
   let e := Effect.draw 2
   let args := collectEffect e
-  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+  match matchPats (patsOf (normalizeUnit "X" e.toNotation) args)
       (tokenize (normalizeUnit "X" "draw 7 cards")) args with
   | some vals => refillEffect e vals == Effect.draw 7
   | none => false
@@ -1951,7 +1811,7 @@ private def refilled (proto : Effect) (query : String) : Option Instruction :=
 #guard
   let e := Effect.drawIfFromGy 1 2
   let args := collectEffect e
-  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+  match matchPats (patsOf (normalizeUnit "X" e.toNotation) args)
       (tokenize (normalizeUnit "X"
         "Draw a card. If this spell was cast from a graveyard, draw two cards instead.")) args with
   | some vals => refillEffect e vals == Effect.drawIfFromGy 1 2
@@ -1960,7 +1820,7 @@ private def refilled (proto : Effect) (query : String) : Option Instruction :=
 #guard
   let e := Effect.drawIfFromGy 1 2
   let args := collectEffect e
-  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+  match matchPats (patsOf (normalizeUnit "X" e.toNotation) args)
       (tokenize (normalizeUnit "X"
         "Draw three cards. If this spell was cast from a graveyard, draw four cards instead.")) args with
   | some vals => refillEffect e vals == Effect.drawIfFromGy 3 4
@@ -1969,7 +1829,7 @@ private def refilled (proto : Effect) (query : String) : Option Instruction :=
 #guard
   let e := Effect.amassGoblinsOrFromGy 1 3
   let args := collectEffect e
-  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+  match matchPats (patsOf (normalizeUnit "X" e.toNotation) args)
       (tokenize (normalizeUnit "X"
         "Amass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead.")) args with
   | some vals => refillEffect e vals == Effect.amassGoblinsOrFromGy 1 3
@@ -1978,7 +1838,7 @@ private def refilled (proto : Effect) (query : String) : Option Instruction :=
 #guard
   let e := Effect.amassGoblinsOrFromGy 1 3
   let args := collectEffect e
-  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
+  match matchPats (patsOf (normalizeUnit "X" e.toNotation) args)
       (tokenize (normalizeUnit "X"
         "Amass Zombies 2. If this spell was cast from a graveyard, amass Zombies 4 instead.")) args with
   | some vals =>
@@ -1990,8 +1850,8 @@ private def refilled (proto : Effect) (query : String) : Option Instruction :=
 #guard
   let e := Effect.searchLandTypeToHand "Mountain"
   let args := collectEffect e
-  match matchPats (patsOf (normalizeUnit "X" e.phrase) args)
-      (tokenize (normalizeUnit "X" (Effect.searchLandTypeToHand "Forest").phrase)) args with
+  match matchPats (patsOf (normalizeUnit "X" e.toNotation) args)
+      (tokenize (normalizeUnit "X" (Effect.searchLandTypeToHand "Forest").toNotation)) args with
   | some vals => refillEffect e vals == Effect.searchLandTypeToHand "Forest"
   | none => false
 
@@ -1999,8 +1859,8 @@ private def refilled (proto : Effect) (query : String) : Option Instruction :=
 private def matchesDestroy (target : Effect) : Bool :=
   let proto := Effect.destroyCreature
   let args := collectEffect proto
-  match matchPats (patsOf (normalizeUnit "X" proto.phrase) args)
-      (tokenize (normalizeUnit "X" target.phrase)) args with
+  match matchPats (patsOf (normalizeUnit "X" proto.toNotation) args)
+      (tokenize (normalizeUnit "X" target.toNotation)) args with
   | some vals => refillEffect proto vals == target
   | none => false
 
@@ -2018,15 +1878,15 @@ private def matchesDestroy (target : Effect) : Bool :=
 #guard
   let proto := Effect.destroyCreature
   let args := collectEffect proto
-  let line := normalizeUnit "X" Effect.destroyArtifactOrLandNonflyersCantBlock.phrase
-  matchPats (patsOf (normalizeUnit "X" proto.phrase) args) (tokenize line) args == none
+  let line := normalizeUnit "X" Effect.destroyArtifactOrLandNonflyersCantBlock.toNotation
+  matchPats (patsOf (normalizeUnit "X" proto.toNotation) args) (tokenize line) args == none
 
 /-- `Effect.plusOneOnTarget 2` refills to the other counter counts and subtype lists. -/
 private def matchesPlus (target : Effect) : Bool :=
   let proto := Effect.plusOneOnTarget 2
   let args := collectEffect proto
-  match matchPats (patsOf (normalizeUnit "X" proto.phrase) args)
-      (tokenize (normalizeUnit "X" target.phrase)) args with
+  match matchPats (patsOf (normalizeUnit "X" proto.toNotation) args)
+      (tokenize (normalizeUnit "X" target.toNotation)) args with
   | some vals => refillEffect proto vals == target
   | none => false
 
@@ -2040,7 +1900,7 @@ private def matchesPlus (target : Effect) : Bool :=
   let proto := Effect.plusOneOnTarget 2
   let args := collectEffect proto
   let line := normalizeUnit "X" "Put a +1/+1 counter on target creature. You gain 1 life"
-  matchPats (patsOf (normalizeUnit "X" proto.phrase) args) (tokenize line) args == none
+  matchPats (patsOf (normalizeUnit "X" proto.toNotation) args) (tokenize line) args == none
 
 /-- One enters-and-destroy prototype refills to the other target noun. -/
 private def matchesEnterDestroy (target : TriggeredAbility) : Bool :=

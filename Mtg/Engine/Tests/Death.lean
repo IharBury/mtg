@@ -41,13 +41,13 @@ def inZone (g : Game) (z : Zone) (name : String) : Bool :=
 #guard (TriggeredAbility.onDeath Effect.deathAttackingReturnHand).effect.body == Effect.deathAttackingReturnHand.body
 #guard (TriggeredAbility.onDeath Effect.deathDeathtouchOppSac).effect.body == Effect.deathDeathtouchOppSac.body
 #guard toString (TriggeredAbility.onDeath Effect.deathHellcatReturn) ==
-  "When Hellcat dies, return her to the battlefield under her owner's control with a +1/+1 counter on her. She loses all abilities and gains haste."
+  "When this creature dies, return card in a graveyard that is this permanent onto the battlefield under its owner's control with a +1/+1 counter on it with haste with no abilities."
 #guard toString (TriggeredAbility.onDeath Effect.deathVillainReturnAsHero) ==
-  "Whenever a Villain you control dies, return it to the battlefield under its owner's control with a finality counter on it. That creature is a Hero in addition to its other types."
+  "Whenever a Villain creature you control dies, return that permanent matching Villain onto the battlefield under its owner's control with a finality counter on it as Hero in addition to its other types."
 #guard toString (TriggeredAbility.onDeath Effect.deathAttackingReturnHand) ==
-  "Whenever an attacking creature you control dies, return that card to its owner's hand."
+  "Whenever an attacking creature you control dies, return that permanent to its owner's hand."
 #guard toString (TriggeredAbility.onDeath Effect.deathDeathtouchOppSac) ==
-  "Whenever another creature you control with deathtouch dies, each opponent sacrifices a nontoken creature of their choice."
+  "Whenever another creature you control with deathtouch dies, for each an opponent, that player sacrifices a nontoken creature that player controls."
 
 /- Hellcat returns with a +1/+1 counter, haste, and no abilities.
 A Hellcat still on the battlefield is reported and stays there. -/

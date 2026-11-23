@@ -341,7 +341,7 @@ private def isAnnounceKicker (a : Option Action) (want : Bool) : Bool :=
     name := "P50i2 ExiledBolt"
     manaCost := ManaCost.ofGeneric 1
     types := #[.instant]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2 }
   }
   -- Build a state where `p1` controls `bear` copied into `nullSummonerCloneDef` until `p0`'s next
   -- turn, `p1` has 7 cards in graveyard, `exId` was exiled with `exiledBy := some copierId`, and
@@ -583,7 +583,7 @@ private def replayOk50i3 (gs : Array Game) : Bool :=
   let goblinWatcherDef : CardDef := {
     name := "P50i3 GoblinWatcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutCountersOnGoblinOrcArmy "" (Instruction.drawFixed 1)
+    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutCountersOnGoblinOrcArmy (Instruction.drawFixed 1)
       (grouping := .oncePerBatch)]
   }
   let tapWatcherDef : CardDef := {
@@ -724,8 +724,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     name := "P50i4 ShrapnelBlast"
     manaCost := { symbols := #[.colored .green] }
     types := #[.instant]
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]
-    spellEffect := some (Effect.gainLife 3)
+    spellAbility := some { effect := Effect.gainLife 3, additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature] }
   }
   let gBase := emptyHand g3 p0
   let (gTr1a, _) :=
@@ -747,7 +746,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
-      effect := { body := Instruction.addSimpleMana #[.colored .blue], phrase := "Add {U}." }
+      effect := { body := Instruction.addSimpleMana #[.colored .blue] }
     }]
   }
   let crewSkiffDef : CardDef := {
@@ -777,14 +776,14 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf]
-      effect := { body := Instruction.addSimpleMana #[.colored .blue, .colored .blue], phrase := "Add {U}{U}." }
+      effect := { body := Instruction.addSimpleMana #[.colored .blue, .colored .blue] }
     }]
   }
   let hasteElfDef : CardDef := {
     llanowarElves with
     name := "P50i4 HasteElf"
-    power := some 1
-    toughness := some 1
+    power := some (.fixed 1)
+    toughness := some (.fixed 1)
     keywords := #[Keyword.haste]
   }
   let gEffCrew1 :=
@@ -809,7 +808,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     name := "P50i4 SteamBolt"
     manaCost := { symbols := #[.colored .blue, .colored .red] }
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2 }
   }
   let greenCreature2Def : CardDef :=
     creature "P50i4 SaprolingHost" { symbols := #[.generic 1, .colored .green] } #["Plant"] 2 2
@@ -848,8 +847,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     name := "P50i4 SteamCascade"
     manaCost := { symbols := #[.generic 2] }
     types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.discardCardOrPayGeneric 2)]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2, additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.discardCardOrPayGeneric 2)] }
   }
   let gCascPay0 := insertObject gBase discardOrPay2CascDef p0 .exile
   let cascPayId := (gCascPay0.objects.filter (fun o => o.zone == .exile)).back!.id
@@ -908,9 +906,8 @@ private def isAcceptDirect4 (a : Action) : Bool :=
         (.permanent (.phaseOut (.target 0)))
     ]
   let unlessEff : Effect := {
-    targeting := .of .creature
+    targets := .creature
     body := .unlessPays (.controllerOf (.target 0)) (CostSpec.ofGeneric 2) innerAllCtx
-    phrase := "Target creature's controller pays {2} or loses life and creatures phase out."
   }
   let gUnless0 :=
     gUnlessBase.applyUnified p0 unlessEff #[.permanent bearAId]
@@ -943,7 +940,6 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   -- 1. Unified `Interpreter` (`createTokens` Warriors with `ValueExpr.chosenX`):
   let warriorsEff : Effect := {
     body := Instruction.createTokens .warrior .chosenX
-    phrase := "Create X 1/1 Warrior creature tokens."
   }
   let gWarriorsZero := gXSrcBf.applyEffect p0 warriorsEff #[] (chosenX := some 0) (sourceId := some xSrcId)
   let gWarriorsFallback := gXSrcBf.applyEffect p0 warriorsEff #[] (chosenX := none) (sourceId := some xSrcId)
@@ -953,7 +949,6 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   -- 2. `applyUnifiedAbility`:
   let loseXEff : Effect := {
     body := Instruction.loseLife .chosenX .opponents
-    phrase := "Each opponent loses X life."
   }
   let gAbZero :=
     gXSrcBf.applyAbilityEffect p0 loseXEff #[] (sourceId := some xSrcId) (chosenX := some 0)
@@ -992,7 +987,6 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   -- 5. `acceptMay` & `chooseSpellOr` (`chosenX := some 0`, `sourceId := some xSrcId`):
   let mayXEff : Effect := {
     body := Instruction.may .you none (Instruction.loseLife .chosenX .opponents)
-    phrase := "You may have each opponent lose X life."
   }
   let gMayZero :=
     mustApply (gXSrcBf.applyEffect p0 mayXEff #[] (chosenX := some 0) (sourceId := some xSrcId)) p0 .accept
@@ -1001,7 +995,6 @@ private def isAcceptDirect4 (a : Action) : Bool :=
       modes := #[{ body := Instruction.loseLife .chosenX .opponents }, { body := Instruction.gainLifeFixed 1 }]
       chooseAtResolution := true
     }
-    phrase := "Choose one."
   }
   let gOrPromptZero :=
     gXSrcBf.applyEffect p0 orXEff #[] (chosenX := some 0) (sourceId := some xSrcId)
@@ -1013,7 +1006,6 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   -- 6. Unified `Instruction.addMana` (`chosenX := some 0` vs `chosenX := none` fallback):
   let addManaXEff : Effect := {
     body := Instruction.addMana { spec := .sequence #[(.colorless, .chosenX)] }
-    phrase := "Add X colorless mana."
   }
   let gAddManaZero :=
     gXSrcBf.applyAbilityEffect p0 addManaXEff #[] (sourceId := some xSrcId) (chosenX := some 0)

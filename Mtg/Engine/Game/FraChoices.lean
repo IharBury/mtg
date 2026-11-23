@@ -153,7 +153,7 @@ private def advanceCopyRetarget (g : Game) (p : PlayerId) (copies : Array Object
         | some e, some obj =>
           if staged.isEmpty || staged == e.targets then g
           else
-            let spec := (g.targetingOf obj).spec
+            let spec := g.targetSpecOf obj
             if g.validTargetArrayForEntry e obj spec staged (allowUnchangedIllegal := true) then
               g.setStackEntryTargets c staged (dividedDamage := e.dividedDamage)
             else
@@ -184,7 +184,7 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
         match g.findObject? id with
         | some o => if o.isOnBattlefield then Target.permanent id else Target.card id
         | none => Target.permanent id
-      let spec := (g.targetingOf obj).spec
+      let spec := g.targetSpecOf obj
       if !g.validTargetArrayForEntry e obj spec cand (allowUnchangedIllegal := true) then
         throw "Illegal target (CR 601.2c)"
       let g := g.setStackEntryTargets c cand (dividedDamage := e.dividedDamage)
@@ -199,7 +199,7 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
       let some e := g.stackEntry? c | throw "The copy left the stack"
       if slotIdx >= e.targets.size then
         return advanceCopyRetarget g p copies slotIdx e.targets.size baseStaged
-      let spec := (g.targetingOf obj).spec
+      let spec := g.targetSpecOf obj
       let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
       let selfStackId := if obj.zone == .stack then some obj.id else none
       let totalPos := e.targets.size + e.skippedOptionalSlots.size
@@ -221,7 +221,7 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
     let some e := g.stackEntry? c | throw "The copy left the stack"
     if slotIdx >= e.targets.size then
       return advanceCopyRetarget g p copies slotIdx e.targets.size baseStaged
-    let spec := (g.targetingOf obj).spec
+    let spec := g.targetSpecOf obj
     let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
     let selfStackId := if obj.zone == .stack then some obj.id else none
     let totalPos := e.targets.size + e.skippedOptionalSlots.size
@@ -486,7 +486,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if chosen.contains idx then throw "That mode was already chosen (CR 700.2d)"
     if !g.triggerModeChoosable p obj e then
       throw "That mode has no legal target (CR 603.3c / 700.2b)"
-    let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1} ({e.phrase})"
+    let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1} ({e.toNotation})"
     let chosen := chosen.push idx
     let left := remaining - 1
     if left > 0 then
@@ -515,7 +515,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if chosen.contains idx then throw "That mode was already chosen (CR 700.2d)"
     if !g.triggerModeChoosable p obj e then
       throw "That mode has no legal target (CR 603.3c / 700.2b)"
-    let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1} ({e.phrase})"
+    let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1} ({e.toNotation})"
     let chosen := chosen.push idx
     let left := remaining - 1
     let anyLeft := (List.range modes.size).any (fun i =>
@@ -534,7 +534,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some obj := g.findObject? objId | return g.finishFraChoice
     let modes := g.triggerModesOf obj
     if chosen.isEmpty then
-      let noop : Effect := { body := .noop, phrase := "" }
+      let noop : Effect := { body := .noop }
       let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
       let g := g.changes #[
         .object obj.id (.abilityEffect (some noop)),
@@ -1086,7 +1086,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some obj := g.findObject? objId | return g.finishFraChoice
     if !g.triggerModeChoosable p obj e then
       throw "That mode has no legal target (CR 603.3c / 700.2b)"
-    let g := g.logMsg s!"{(g.player p).name} chooses {e.phrase}"
+    let g := g.logMsg s!"{(g.player p).name} chooses {e.toNotation}"
     let chosen := chosen.push idx
     let anyMoreChoosable := (List.range hawkeyeModeEffects.size).any (fun i =>
       !chosen.contains i && (hawkeyeModeEffects[i]?.any (g.triggerModeChoosable p obj)))
@@ -1103,7 +1103,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some obj := g.findObject? objId | return g.finishFraChoice
     let sorted := chosen.qsort (· < ·)
     let eff : Effect :=
-      if sorted.isEmpty then { body := .noop, phrase := "" }
+      if sorted.isEmpty then { body := .noop }
       else hawkeyeArrowsEffect sorted
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
     let g := g.changeObject obj.id (.abilityEffect (some eff))

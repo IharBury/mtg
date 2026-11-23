@@ -1655,7 +1655,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
   let interpTargetsAllIllegal (g : Game) (st : InterpState) : Bool :=
     !st.ctx.targets.isEmpty &&
       g.sequenceAllTargetsIllegal st.ctx.controller
-        { targeting := .of st.ctx.targetSpec, body := .noop } st.ctx.targets st.ctx.sourceId
+        { targets := st.ctx.targetSpec, body := .noop } st.ctx.targets st.ctx.sourceId
   match pending with
   | .none => (g, .none)
   | .declareAttackers =>

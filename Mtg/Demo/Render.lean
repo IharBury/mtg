@@ -67,7 +67,7 @@ def describeStackTarget (g : Game) (e : StackEntry) (i : Nat) : String :=
 word “target” (chosen together) rather than successive instances. -/
 def targetsShareOneTargetWord (g : Game) (e : StackEntry) : Bool :=
   match g.findObject? e.objectId with
-  | some o => !(g.targetingOf o).spec.isMultiSlot
+  | some o => !(g.targetSpecOf o).isMultiSlot
   | none => true
 
 /-- Join same-instance targets with `and`; successive “target” words with
@@ -130,7 +130,7 @@ def stackFaceExtras (g : Game) (o : GameObject) : String :=
   let s :=
     match o.triggeredAbility, o.abilityEffect with
     | some t, _ => textForStackedAbility face (TriggeredAbility.toNotation t)
-    | none, some e => textForStackedAbility face (Effect.toNotation e)
+    | none, some e => textForStackedAbility face (Effect.toOracle { capitalize := true } e)
     | none, none => face.keywordsAndAbilities
   spacedSuffix s
 
@@ -645,7 +645,7 @@ def chooseTargetsPending (g : Game) (p : PlayerId) : String :=
   match g.objectAwaitingTargets with
   | none => s!" [choose targets (CR 601.2c, {name})]"
   | some o =>
-    let spec := (g.targetingOf o).spec
+    let spec := g.targetSpecOf o
     let maxN := (g.announcedTargetBounds o).2
     if (o.triggeredAbility.bind TriggeredAbility.dividedDamage?).isSome ||
         (!spec.isMultiSlot && maxN > 1) then

@@ -59,16 +59,16 @@ def resource (e : Effect) : TriggeredAbility :=
 #guard TriggeredAbility.resourcePlusOneCreateInsectOnce.onceEachTurn
 #guard TriggeredAbility.resourcePlusOneOnThisOnce.onceEachTurn
 #guard Effect.resourceGainLifePlusOnes.allowsZeroTargets
-#guard Effect.resourceDrawIfAnotherHeroDamage.targeting.spec == .opponent
-#guard Effect.resourceSecondDrawPlusOneTarget.targeting.spec == .creature
-#guard Effect.resourceGainLifePlusOnes.targeting.spec == .creatureYouControl
+#guard Effect.resourceDrawIfAnotherHeroDamage.targets == .opponent
+#guard Effect.resourceSecondDrawPlusOneTarget.targets == .creature
+#guard Effect.resourceGainLifePlusOnes.targets == TargetSpec.creatureYouControl.asAnyNumber
 
-#guard (toString (resource Effect.resourceDiscardExilePlay)).contains "exile that card from your graveyard"
-#guard (toString (resource Effect.resourceDrawIfAnotherHeroDamage)).contains "Human Torch"
-#guard (toString (resource Effect.resourceSecondDrawBecome66)).contains "Moon Girl and Devil Dinosaur"
+#guard (toString (resource Effect.resourceDiscardExilePlay)).contains "exile that permanent"
+#guard (toString (resource Effect.resourceDrawIfAnotherHeroDamage)).contains "deals 1 damage to target opponent"
+#guard (toString (resource Effect.resourceSecondDrawBecome66)).contains "base power and toughness 6/6"
 #guard (toString (resource Effect.resourceSecondDrawPlusOneTarget)).contains "put a +1/+1 counter on target creature"
-#guard (toString (resource Effect.resourceSecondDrawDrain)).contains "each opponent loses 1 life and you gain 1 life"
-#guard (toString (resource Effect.resourceGainLifePlusOnes)).contains "choose up to that many target creatures you control"
+#guard (toString (resource Effect.resourceSecondDrawDrain)).contains "each opponent loses 1 life. You gain 1 life"
+#guard (toString (resource Effect.resourceGainLifePlusOnes)).contains "any number of target creatures you control"
 #guard (toString (resource Effect.resourcePlusOneCreateInsectOnce)).contains "1/1 green Insect"
 #guard (toString (resource Effect.resourcePlusOneOnThisOnce)).contains "put a +1/+1 counter on this creature"
 #guard (toString (resource Effect.resourcePlusOneOnHeroesCreateWall)).contains "0/4 colorless Wall"

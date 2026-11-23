@@ -282,7 +282,11 @@ planeswalker each opponent controls. -/
 
 #guard
   let g := addPermanent afterDraw grizzlyBears me me
-  let g := settle (enterPermanent g rampartHunter me)
+  let g := stackTriggers (enterPermanent g rampartHunter me)
+  let g := match g.pending with
+    | .chooseTargets _ => mustApply g me (tgt g "Grizzly Bears")
+    | _ => g
+  let g := resolved g
   g.power (namedPermanent g "Grizzly Bears") == 4 && g.hasDeathtouch (namedPermanent g "Grizzly Bears")
 
 /- Ajani's Anguish deals X damage, X as cast. -/
@@ -560,7 +564,7 @@ value in your graveyard; they annihilate with +1/+1 counters (ruling 885). -/
   let g := addPermanent afterDraw arniRenownedChampion me me
   let g := settle (enterPermanent g hillGiant me)
   g.power (namedPermanent g "Arni, Renowned Champion") ==
-    (arniRenownedChampion.power.getD 0) + 3
+    (arniRenownedChampion.powerValue.getD 0) + 3
 #guard
   let g := addPermanent afterDraw garrukCurseBreaker me me
   let before := handSize g me

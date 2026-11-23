@@ -1713,7 +1713,7 @@ def freeCloudAfterDeath : Game :=
     name := "Render Meal"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some (Effect.plusOneUpToOneAndPlayerGainsLife 2)
+    spellAbility := some { effect := Effect.plusOneUpToOneAndPlayerGainsLife 2 }
   }
   let g1 := addToHand (addPermanent g0 grizzlyBears p0 p0) mealDef p0
   let mealId := (handCardNamed g1 p0 "Render Meal").id
@@ -1724,9 +1724,10 @@ def freeCloudAfterDeath : Game :=
     name := "Render Twin Share"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some {
-      targeting := .of .twoNonlandsSharingType
-      body := .installEffect (.applyContinuous .indefinite (.target 0) (.exchangeControl (.target 1))) }
+    spellAbility := some {
+      effect := {
+        targets := .twoNonlandsSharingType
+        body := .installEffect (.applyContinuous .indefinite (.target 0) (.exchangeControl (.target 1))) } }
   }
   let gSh0 := addToHand (addPermanent (addPermanent g0 grizzlyBears p0 p0) grayOgre ⟨1⟩ ⟨1⟩) shareDef p0
   let gShProp := mustApply gSh0 p0 (.cast (handCardNamed gSh0 p0 "Render Twin Share").id)

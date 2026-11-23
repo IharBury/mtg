@@ -22,9 +22,9 @@ def caster : PlayerId := ⟨0⟩
   g.pending == afterDraw.pending
 
 #guard Effect.triggerConniveTarget .creatureYouControl ==
-  { targeting := .of .creatureYouControl, body := .player (.connive (.target 0)) }
+  { targets := .creatureYouControl, body := .player (.connive (.target 0)) }
 
-#guard (Effect.triggerConniveTarget .creatureYouControl).targeting.spec ==
+#guard (Effect.triggerConniveTarget .creatureYouControl).targets ==
   .creatureYouControl
 
 #guard Effect.triggerConniveSource.body == .player (.connive .this)

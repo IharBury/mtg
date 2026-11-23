@@ -86,16 +86,16 @@ def onWatch (e : Effect) : TriggeredAbility :=
 #guard (onWatch Effect.watchHulk).effect.body ==
   Effect.watchHulk.body
 
-#guard (toString (onWatch Effect.watchJusticeBounce)).contains "Justice"
+#guard (toString TriggeredAbility.watchJusticeBounce).contains "returned to its owner's hand"
 #guard (toString (onWatch Effect.watchHulk)).contains "additional combat phase"
-#guard (toString (onWatch Effect.watchHawkeyeModes)).contains "Trick Arrows"
+#guard (toString (onWatch Effect.watchHawkeyeModes)).contains "Choose up to that many"
 
 /- Justice puts a +1/+1 counter on the source. A draw trigger draws one card.
 A declined token-enter draw leaves the hand unchanged. A creature attacking
 alone gains first strike and menace. -/
 def justiceCounter : Game :=
   let g := addPermanent afterDraw grizzlyBears me me
-  resolve g (onWatch Effect.watchJusticeBounce) (some (named g "Grizzly Bears").id)
+  resolve g TriggeredAbility.watchJusticeBounce (some (named g "Grizzly Bears").id)
 
 #guard (named justiceCounter "Grizzly Bears").status.plusOnePlusOne == 1
 

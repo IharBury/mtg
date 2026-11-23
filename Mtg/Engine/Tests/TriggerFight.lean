@@ -47,8 +47,7 @@ def board : Game :=
   addPermanent (addPermanent afterDraw alpha caster caster) beta opp opp
 
 def oneWayBite : Effect :=
-  { targeting := .of .creature
-    allowsZeroTargets := true
+  { targets := TargetSpec.creature.asUpTo 1
     body := .damage (.fight .this (.target 0) true) }
 
 /- The source and the announced creature each deal damage equal to their
@@ -136,6 +135,6 @@ power to up to one target creature. Declining to attach queues nothing. -/
 #guard TriggeredAbility.onEnterAttachEquipmentThenFight.effect.body ==
   Effect.triggerAttachEquipmentThenFight.body
 #guard TriggeredAbility.toNotation .onEnterAttachEquipmentThenFight ==
-  "When Thorin enters, attach any number of target Equipment you control to target creature you control. When one or more Equipment become attached to that creature this way, that creature deals damage equal to its power to up to one target creature."
+  "When this permanent enters, attach Equipment you control (chosen) to target creature you control. If you do, when you do, that permanent deals damage equal to its power to up to one target creature."
 
 end Mtg.Engine.TriggerFightTests

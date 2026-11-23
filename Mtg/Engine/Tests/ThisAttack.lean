@@ -79,7 +79,7 @@ def reaperOffer : Game :=
   match reaperOffer.pending with
   | .fraChoice q (.mayPayManaForReflexive cost _ eff _) =>
     q == me && cost == #[.generic 3, .colored .black] &&
-      eff.targeting.spec == .creatureCardInYourGraveyard
+      eff.targets == .creatureCardInYourGraveyard
   | _ => false
 
 /- Iron Man's draw is an intervening if: it does not trigger without an

@@ -3,44 +3,120 @@ import Mtg.Engine.Card.KeywordExpand
 /-!
 # Card definitions (CR 108, 109.3, section 2)
 
-Printed Oracle characteristics: `CardDef`, the `AdventureFace` of
-adventurer cards, and per-card mana-ability storage.
+Printed Oracle characteristics: `PrintedStat` (CR 208.1–2), `DeckLimit`
+(CR 100.2a), `SubFaceKind` / `SubFace` (CR 715 Adventure & Prepare sub-faces),
+and the slim 21-field `CardDef` with structural `BEq` and canonical `ToOracle` /
+`renderFullOracle` printing.
 -/
 
 namespace Mtg.Engine
 
-/-- Alternative characteristics of an adventurer card while it is a spell
-cast as an Adventure (CR 715.2). -/
-structure AdventureFace where
+/-- Printed side of a creature's power/toughness box (CR 208.1 / 208.2 / 208.2a).
+`star 0` prints `*`, `star k` prints `k+*`; when `*` is undetermined it counts as
+0 so the stat evaluates to `addend` (CR 208.2a). -/
+inductive PrintedStat where
+  | fixed (n : Int)
+  | star (addend : Int := 0)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace PrintedStat
+
+/-- Value used when a `*` CDA cannot be determined (CR 208.2a: `*` is 0, `1+*` is 1). -/
+def undeterminedValue : PrintedStat → Int
+  | .fixed n => n
+  | .star k => k
+
+/-- Alias for `undeterminedValue`. -/
+abbrev undetermined := undeterminedValue
+
+/-- True when this printed stat contains a `*` (CR 208.2). -/
+def isStar : PrintedStat → Bool
+  | .fixed _ => false
+  | .star _ => true
+
+/-- Printed constant integer part (`none` for bare `*`, `some k` for `k` or `k+*`). -/
+def printedInt? : PrintedStat → Option Int
+  | .fixed n => some n
+  | .star k => if k == 0 then none else some k
+
+/-- Construct a `PrintedStat` from optional integer and star flag. -/
+def ofParts (n : Option Int) (star : Bool) : Option PrintedStat :=
+  if star then some (.star (n.getD 0))
+  else n.map .fixed
+
+/-- Canonical Oracle rendering of one side of a P/T box (CR 208.1 / 208.2a). -/
+def toOracleStr : PrintedStat → String
+  | .fixed n => toString n
+  | .star k => if k == 0 then "*" else s!"{k}+*"
+
+instance : ToString PrintedStat where
+  toString := toOracleStr
+
+instance : ToOracle PrintedStat where
+  toOracle _ s := s.toOracleStr
+
+end PrintedStat
+
+/-- Constructed-play deck-limit override printed on a card (CR 100.2a). -/
+inductive DeckLimit where
+  /-- `"A deck can have any number of cards named <name>."` -/
+  | unlimited
+  /-- `"A deck can have up to N cards named <name>."` -/
+  | maxCopies (n : Nat)
+deriving DecidableEq, Repr, Inhabited, BEq
+
+namespace DeckLimit
+
+/-- Canonical Oracle rules line for a deck-limit override (CR 100.2a). -/
+def toOracleLine (name : String := "this card") : DeckLimit → String
+  | .unlimited => s!"A deck can have any number of cards named {name}."
+  | .maxCopies n => s!"A deck can have up to {englishNumber n} cards named {name}."
+
+instance : ToOracle DeckLimit where
+  toOracle ctx d := d.toOracleLine ctx.selfRef
+
+end DeckLimit
+
+/-- Discriminator for secondary castable sub-faces stored in `CardDef.subFaces`. -/
+inductive SubFaceKind where
+  /-- CR 715 Adventure sub-face (`//ADV//`). -/
+  | adventure
+  /-- Reality Fracture Prepare spell sub-face (`//PREP//`). -/
+  | prepare
+deriving DecidableEq, Repr, Inhabited, BEq
+
+/-- Alternative characteristics of a card's secondary sub-face (CR 715 Adventure
+or Prepare spell), unified with `SpellAbility` and `StaticAbility`. -/
+structure SubFace where
+  kind : SubFaceKind
   name : String
   manaCost : ManaCost := ManaCost.empty
+  colorIndicator : Option ColorSet := none
+  supertypes : Array Supertype := #[]
   types : Array CardType := #[.sorcery]
-  subtypes : Array Subtype := #["Adventure"]
-  spellEffect : Option Effect := none
-  /-- Additional casting costs on this Adventure face (CR 118.8 / 601.2b,h). -/
-  additionalCosts : Array AdditionalCostSpec := #[]
-  /-- Rules lines of this face that are not a modeled spell effect. -/
-  extraLines : Array String := #[]
+  subtypes : Array Subtype := #[]
+  keywords : Array KeywordAbility := #[]
+  spellAbility : Option SpellAbility := none
+  staticAbilities : Array StaticAbility := #[]
 deriving Repr, Inhabited, BEq
 
-set_option maxRecDepth 1024 in
-/-- Printed (Oracle) characteristics of a card. -/
+/-- Printed (Oracle) characteristics of a card — slim 21-field representation
+(12 CR 201–212 characteristics, `keywords` CR 702, 4 CR 113.3a–d ability
+containers, and 4 CR 100.2a / 111.1 / 712 / 715 structural fields). -/
 structure CardDef where
   name : String
   manaCost : ManaCost := ManaCost.empty
-  types : Array CardType
-  subtypes : Array Subtype := #[]
+  /-- Explicit color indicator, if any (CR 107.13 / 202.2 / 204.1). -/
+  colorIndicator : Option ColorSet := none
   supertypes : Array Supertype := #[]
-  power : Option Int := none
-  toughness : Option Int := none
-  /-- Printed power includes a star added to `power` (CR 208.2).
-  A bare `*` leaves `power` empty. `1+*` and `*+1` are `some 1`.
-  When that star can't be determined it counts as 0, so the power is
-  `power.getD 0`: `*` is 0 and `1+*` is 1 (CR 208.2a). -/
-  powerStar : Bool := false
-  /-- Printed toughness includes a star added to `toughness` (CR 208.2).
-  See `powerStar`. -/
-  toughnessStar : Bool := false
+  types : Array CardType := #[]
+  subtypes : Array Subtype := #[]
+  /-- This object is a token (CR 111). -/
+  isToken : Bool := false
+  /-- Printed power (CR 208.1–3). -/
+  power : Option PrintedStat := none
+  /-- Printed toughness (CR 208.1–3). -/
+  toughness : Option PrintedStat := none
   /-- Printed loyalty number (CR 209.1). While this planeswalker is not on
   the battlefield, its loyalty is this number. It enters the battlefield
   with that many loyalty counters. -/
@@ -57,40 +133,58 @@ structure CardDef where
   a number preceded by a plus sign, a number preceded by a minus sign, or
   zero. It modifies its owner's starting life total. -/
   lifeModifier : Option Int := none
-  /-- Explicit color indicator, if any (CR 107.13 / 202.2). -/
-  colorIndicator : Option ColorSet := none
   /-- Parameterized CR 702 keyword abilities, retaining multiplicity for
   cumulative keywords (Prowess, Cascade, Ward, Toxic, Affinity, Exalted). -/
   keywords : Array KeywordAbility := #[]
-  spellEffect : Option Effect := none
-  /-- Additional casting costs on this card (CR 118.8 / 601.2b,f,h). -/
-  additionalCosts : Array AdditionalCostSpec := #[]
-  /-- Transitional modal spell modes (CR 700.2; Phase-8 modal spells store their
-  `ModalSpec` directly in `spellEffect.body` as `.chooseModes`, and `CardDef.modalSpec?`
-  prefers `spellEffect` with fallback to `spellModes`). -/
-  spellModes : Array Effect := #[]
-  /-- This object is a token (CR 111). -/
-  isToken : Bool := false
-  /-- A deck can have any number of cards with this name (CR 100.2a). -/
-  anyNumberInDeck : Bool := false
+  /-- Spell ability (CR 113.3a), carrying resolution effect, additional costs,
+  alternative costs, and cast restrictions. -/
+  spellAbility : Option SpellAbility := none
   /-- Printed activated abilities (CR 602), including mana abilities (CR 605.1a)
   and loyalty abilities (CR 606.2). Basic-land intrinsic mana abilities are
   synthesized from Layer 4 basic land types per CR 305.6. -/
   activatedAbilities : Array ActivatedAbility := #[]
-  /-- Printed stratified static abilities (CR 604 / 613 / 614–616 / 303.4a). -/
-  staticAbilities : Array StaticAbility := #[]
   /-- Triggered abilities (CR 603), including Saga chapter abilities (CR 714.2)
   and modal triggered abilities (carrying their modes in `effect.body` via
   `Instruction.chooseModes`). -/
   triggeredAbilities : Array TriggeredAbility := #[]
-  /-- Alternative characteristics used when this card is cast as an Adventure
-  (CR 715). -/
-  adventure : Option AdventureFace := none
-  /-- Back face of a modal double-faced card that can transform. -/
+  /-- Printed stratified static abilities (CR 604 / 613 / 614–616 / 303.4a). -/
+  staticAbilities : Array StaticAbility := #[]
+  /-- Back face of a double-faced card (CR 712). -/
   otherFace : Option CardDef := none
-  /-- Sorcery or instant copied while this permanent is prepared. -/
-  prepareFace : Option AdventureFace := none
+  /-- Secondary castable sub-faces such as Adventure (CR 715) and Prepare. -/
+  subFaces : Array SubFace := #[]
+  /-- Constructed-play deck-limit override (CR 100.2a). -/
+  deckLimitOverride : Option DeckLimit := none
 deriving Repr, Inhabited
+
+/-- Structural equality on `CardDef` recursing over `otherFace : Option CardDef`. -/
+private partial def beqCardDef (a b : CardDef) : Bool :=
+  a.name == b.name &&
+  a.manaCost == b.manaCost &&
+  a.colorIndicator == b.colorIndicator &&
+  a.supertypes == b.supertypes &&
+  a.types == b.types &&
+  a.subtypes == b.subtypes &&
+  a.isToken == b.isToken &&
+  a.power == b.power &&
+  a.toughness == b.toughness &&
+  a.loyalty == b.loyalty &&
+  a.defense == b.defense &&
+  a.handModifier == b.handModifier &&
+  a.lifeModifier == b.lifeModifier &&
+  a.keywords == b.keywords &&
+  a.spellAbility == b.spellAbility &&
+  a.activatedAbilities == b.activatedAbilities &&
+  a.triggeredAbilities == b.triggeredAbilities &&
+  a.staticAbilities == b.staticAbilities &&
+  a.subFaces == b.subFaces &&
+  a.deckLimitOverride == b.deckLimitOverride &&
+  match a.otherFace, b.otherFace with
+  | none, none => true
+  | some fa, some fb => beqCardDef fa fb
+  | _, _ => false
+
+instance : BEq CardDef := ⟨beqCardDef⟩
 
 namespace CardDef
 
@@ -219,6 +313,112 @@ def cycling (c : CardDef) : Option ManaCost :=
 def toxic (c : CardDef) : Nat :=
   KeywordAbility.toxicTotal c.keywords
 
+/-- True when `t` is among this card's types. -/
+def hasType (c : CardDef) (t : CardType) : Bool := c.types.any (· == t)
+
+/-- True when `s` is among this card's subtypes, including CR 702.73a changeling
+expansion for creature and kindred cards. -/
+def hasSubtype (c : CardDef) (s : CardSubtype) : Bool :=
+  c.subtypes.any (· == s.englishName) ||
+    (KeywordAbility.hasChangeling c.keywords && (c.hasType .creature || c.hasType .kindred) && !s.isNoncreature)
+
+/-- True when `s` is among this card's supertypes. -/
+def hasSupertype (c : CardDef) (s : Supertype) : Bool := c.supertypes.any (· == s)
+
+def isLand (c : CardDef) : Bool := c.hasType .land
+def isCreature (c : CardDef) : Bool := c.hasType .creature
+def isArtifact (c : CardDef) : Bool := c.hasType .artifact
+def isInstant (c : CardDef) : Bool := c.hasType .instant
+def isSorcery (c : CardDef) : Bool := c.hasType .sorcery
+def isInstantOrSorcery (c : CardDef) : Bool := c.types.any CardType.isInstantOrSorcery
+def isEnchantment (c : CardDef) : Bool := c.hasType .enchantment
+def isPlaneswalker (c : CardDef) : Bool := c.hasType .planeswalker
+def isBattle (c : CardDef) : Bool := c.hasType .battle
+def isVanguard (c : CardDef) : Bool := c.hasType .vanguard
+def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
+/-- Aura subtype on an Enchantment (CR 303.4). -/
+def isAura (c : CardDef) : Bool :=
+  c.isEnchantment && c.hasSubtype .aura
+/-- Equipment subtype on an Artifact (CR 301.5). -/
+def isEquipment (c : CardDef) : Bool :=
+  c.isArtifact && c.hasSubtype .equipment
+
+/-- Resolving spell `Effect` carried by `c.spellAbility`, if any.
+Permanent cards carrying only casting modifiers (such as additional costs on a
+creature spell) store `effect := {}` inside `spellAbility` and report `none`
+here so `faceModellingError?` distinguishes them from unmodeled instants/sorceries. -/
+def spellEffect (c : CardDef) : Option Effect :=
+  match c.spellAbility with
+  | none => none
+  | some sa =>
+    if sa.effect.body == .noop && !c.isInstantOrSorcery &&
+        (!sa.additionalCosts.isEmpty || !sa.alternativeCosts.isEmpty || !sa.castRestrictions.isEmpty) then
+      none
+    else some sa.effect
+
+/-- Additional casting costs carried by `c.spellAbility` (CR 118.8 / 601.2b,f,h). -/
+def additionalCosts (c : CardDef) : Array AdditionalCostSpec :=
+  (c.spellAbility.map (·.additionalCosts)).getD #[]
+
+/-- Alternative casting costs carried by `c.spellAbility` (CR 118.9). -/
+def alternativeCosts (c : CardDef) : Array AlternativeCostSpec :=
+  (c.spellAbility.map (·.alternativeCosts)).getD #[]
+
+/-- Cast restrictions carried by `c.spellAbility` (CR 601.3). -/
+def castRestrictions (c : CardDef) : Array Condition :=
+  (c.spellAbility.map (·.castRestrictions)).getD #[]
+
+/-- Set or replace the resolving spell `Effect` on `c.spellAbility`, preserving
+any existing additional/alternative costs and cast restrictions. -/
+def withSpellEffect (c : CardDef) (e : Effect) : CardDef :=
+  let sa : SpellAbility :=
+    match c.spellAbility with
+    | some existing => { existing with effect := e }
+    | none => { effect := e }
+  { c with spellAbility := some sa }
+
+/-- Append an additional casting cost onto `c.spellAbility`. -/
+def withAdditionalCost (c : CardDef) (cost : AdditionalCostSpec) : CardDef :=
+  let sa : SpellAbility :=
+    match c.spellAbility with
+    | some existing => { existing with additionalCosts := existing.additionalCosts.push cost }
+    | none => { effect := {}, additionalCosts := #[cost] }
+  { c with spellAbility := some sa }
+
+/-- Set or replace the `SubFace` of `sf.kind` in `c.subFaces`. -/
+def withSubFace (c : CardDef) (sf : SubFace) : CardDef :=
+  match c.subFaces.findIdx? (·.kind == sf.kind) with
+  | some i => { c with subFaces := c.subFaces.set! i sf }
+  | none => { c with subFaces := c.subFaces.push sf }
+
+/-- Adventure sub-face on `c`, if any (CR 715). -/
+def adventure (c : CardDef) : Option SubFace :=
+  c.subFaces.find? (·.kind == .adventure)
+
+/-- Prepare sub-face on `c`, if any. -/
+def prepareFace (c : CardDef) : Option SubFace :=
+  c.subFaces.find? (·.kind == .prepare)
+
+/-- True when a deck can contain any number of copies of `c` (CR 100.2a). -/
+def anyNumberInDeck (c : CardDef) : Bool :=
+  c.deckLimitOverride == some .unlimited
+
+/-- Printed power value, evaluating undetermined `*` to its addend (CR 208.2a). -/
+def powerValue (c : CardDef) : Option Int :=
+  c.power.map PrintedStat.undeterminedValue
+
+/-- Printed toughness value, evaluating undetermined `*` to its addend (CR 208.2a). -/
+def toughnessValue (c : CardDef) : Option Int :=
+  c.toughness.map PrintedStat.undeterminedValue
+
+/-- True when printed power contains `*` (CR 208.2). -/
+def hasPowerStar (c : CardDef) : Bool :=
+  c.power.any PrintedStat.isStar
+
+/-- True when printed toughness contains `*` (CR 208.2). -/
+def hasToughnessStar (c : CardDef) : Bool :=
+  c.toughness.any PrintedStat.isStar
+
 /-- Mandatory additional costs on `c` (CR 118.8 / 601.2b,h). -/
 def mandatoryAdditionalCosts (c : CardDef) : Array CostSpec :=
   c.additionalCosts.filterMap fun a => if a.optional then none else some a.cost
@@ -263,36 +463,6 @@ def colorIdentity (c : CardDef) : ColorSet :=
   | none => c.faceColorIdentity
   | some back => c.faceColorIdentity.union back.faceColorIdentity
 
-/-- True when `t` is among this card's types. -/
-def hasType (c : CardDef) (t : CardType) : Bool := c.types.any (· == t)
-
-/-- True when `s` is among this card's subtypes, including CR 702.73a changeling
-expansion for creature and kindred cards. -/
-def hasSubtype (c : CardDef) (s : CardSubtype) : Bool :=
-  c.subtypes.any (· == s.englishName) ||
-    (KeywordAbility.hasChangeling c.keywords && (c.hasType .creature || c.hasType .kindred) && !s.isNoncreature)
-
-/-- True when `s` is among this card's supertypes. -/
-def hasSupertype (c : CardDef) (s : Supertype) : Bool := c.supertypes.any (· == s)
-
-def isLand (c : CardDef) : Bool := c.hasType .land
-def isCreature (c : CardDef) : Bool := c.hasType .creature
-def isArtifact (c : CardDef) : Bool := c.hasType .artifact
-def isInstant (c : CardDef) : Bool := c.hasType .instant
-def isSorcery (c : CardDef) : Bool := c.hasType .sorcery
-def isInstantOrSorcery (c : CardDef) : Bool := c.types.any CardType.isInstantOrSorcery
-def isEnchantment (c : CardDef) : Bool := c.hasType .enchantment
-def isPlaneswalker (c : CardDef) : Bool := c.hasType .planeswalker
-def isBattle (c : CardDef) : Bool := c.hasType .battle
-def isVanguard (c : CardDef) : Bool := c.hasType .vanguard
-def isPermanentCard (c : CardDef) : Bool := c.types.any CardType.isPermanentType
-/-- Aura subtype on an Enchantment (CR 303.4). -/
-def isAura (c : CardDef) : Bool :=
-  c.isEnchantment && c.hasSubtype .aura
-/-- Equipment subtype on an Artifact (CR 301.5). -/
-def isEquipment (c : CardDef) : Bool :=
-  c.isArtifact && c.hasSubtype .equipment
-
 /-- Names a player may choose for “choose a card name”, including an
 Adventure face (Gatherer ruling on adventurer cards). -/
 def choosableNames (c : CardDef) : Array String :=
@@ -314,12 +484,9 @@ def extractEmpowerAmount : Instruction → Option Nat
   | .seq steps => steps.attach.foldl (fun acc ⟨s, _⟩ => acc <|> extractEmpowerAmount s) none
   | _ => none
 
-/-- Unified `ModalSpec` for a modal spell (CR 700.2). Prefers `spellEffect`'s
-`.chooseModes` instruction and falls back to transitional `spellModes`. -/
+/-- Unified `ModalSpec` for a modal spell (CR 700.2). -/
 def modalSpec? (c : CardDef) : Option ModalSpec :=
-  match c.spellEffect.bind (·.modalSpec?) with
-  | some ms => some ms
-  | none => if c.spellModes.isEmpty then none else some { modes := c.spellModes }
+  c.spellEffect.bind (·.modalSpec?)
 
 /-- Modal spell with “Choose one” (CR 700.2). -/
 def isModal (c : CardDef) : Bool :=
@@ -434,49 +601,6 @@ def basicLandReminderLines (c : CardDef) : List String :=
   if !c.isLand then []
   else c.basicLandMana.toList.map fun col => s!"(\{T}: Add \{{col.letter}}.)"
 
-/-- Render an `AdventureFace` / prepare spell's effect and any folded Empower Jace line. -/
-private def faceSpellLines (a : AdventureFace) : List String :=
-  let effLines :=
-    match a.spellEffect with
-    | some e => if e.phrase.isEmpty then [] else [e.phrase]
-    | none => []
-  let empLines :=
-    match a.spellEffect.bind (fun e => extractEmpowerAmount e.body) with
-    | some n =>
-      let already := a.spellEffect.any fun e => (lowerAscii e.phrase).contains "empower jace"
-      if already then [] else [s!"Empower Jace {n}."]
-    | none => []
-  effLines ++ empLines
-
-/-- Adventure name, cost, and spell, without the Gatherer `//ADV//` marker. -/
-def adventureLines (c : CardDef) : List String :=
-  match c.adventure with
-  | none => []
-  | some a =>
-    let header :=
-      if a.manaCost.symbols.isEmpty then a.name else s!"{a.name} {a.manaCost}"
-    let extra :=
-      a.additionalCosts.toList.map AdditionalCostSpec.toOracleLine ++ faceSpellLines a
-    header :: extra ++ a.extraLines.toList
-
-/-- Prepare-spell name, cost, and effect (`"This creature enters prepared."` is
-rendered directly from `staticAbilities`). -/
-def prepareLines (c : CardDef) : List String :=
-  match c.prepareFace with
-  | none => []
-  | some a =>
-    let header :=
-      if a.manaCost.symbols.isEmpty then a.name else s!"{a.name} {a.manaCost}"
-    [header] ++ faceSpellLines a ++ a.extraLines.toList
-
-/-- Empower Jace printed on this spell when not already present in `spellEffect.phrase`. -/
-def empowerLines (c : CardDef) : List String :=
-  match c.empowerPlaneswalkerAmount? with
-  | some n =>
-    let alreadyInPhrase := c.spellEffect.any fun e => (lowerAscii e.phrase).contains "empower jace"
-    if alreadyInPhrase then [] else [s!"Empower Jace {n}."]
-  | none => []
-
 /-- True when CR 601.2b must announce a choice additional cost (e.g. sacrifice-or-pay,
 discard-or-pay, behold-or-pay). -/
 def announcesAdditionalCost (c : CardDef) : Bool :=
@@ -486,23 +610,11 @@ def announcesAdditionalCost (c : CardDef) : Bool :=
 def additionalCostLines (c : CardDef) : List String :=
   c.additionalCosts.toList.map AdditionalCostSpec.toOracleLine
 
-/-- `{T}cycling` and other typecycling, printed as `Mountaincycling {1}`. -/
-def activatedNotation (ab : ActivatedAbility) : String :=
-  if ab.isFromHand && ab.cost.discardSource then
-    match ab.tag? with
-    | some (.cycling (some t)) =>
-      if t == "Plan" then ab.toNotation else s!"{t}cycling {ab.cost.mana}"
-    | _ =>
-      match ab.effect.body with
-      | .player (.searchLibrary spec) =>
-        match spec.filter with
-        | .hasSubtype (.literal sub) =>
-          if sub.englishName == "Plan" then ab.toNotation else s!"{sub}cycling {ab.cost.mana}"
-        | .all #[.hasSupertype .basic, .hasType .land] => s!"Basic landcycling {ab.cost.mana}"
-        | _ => ab.toNotation
-      | _ => ab.toNotation
-  else
-    ab.toNotation
+/-- Deck-limit rules line printed on `c`, if any (CR 100.2a). -/
+def deckLimitLines (c : CardDef) : List String :=
+  match c.deckLimitOverride with
+  | none => []
+  | some lim => [lim.toOracleLine c.name]
 
 /-- Modal header string matching `parseModes` for round-trip Oracle rendering. -/
 def modalHeader (ms : ModalSpec) : String :=
@@ -516,6 +628,25 @@ def modalHeader (ms : ModalSpec) : String :=
       "Choose one or both —"
     else
       "Choose one —"
+
+/-- Render a `SpellAbility`'s rules lines (additional costs + effect or modal block). -/
+def renderSpellAbilityLines (sa : SpellAbility) (isInstantOrSorcery : Bool := true) : List String :=
+  let addLines := sa.additionalCosts.toList.map AdditionalCostSpec.toOracleLine
+  let effLines :=
+    if sa.effect.body == .noop && !isInstantOrSorcery then []
+    else
+      match sa.effect.modalSpec? with
+      | some ms =>
+        let modeStrs := ms.modes.toList.map fun (m : Effect) =>
+          let s := m.toOracle { capitalize := true }
+          if s.isEmpty || s.endsWith "." then s else s!"{s}."
+        [s!"{modalHeader ms} • {String.intercalate " • " modeStrs}"]
+      | none =>
+        let s := sa.effect.toOracle { capitalize := true }
+        if s.isEmpty then []
+        else if s.endsWith "." || s.endsWith "\"" then [s]
+        else [s!"{s}."]
+  addLines ++ effLines
 
 /-- Spell effect, or `Choose one —` when the spell is modal. -/
 def spellLines (c : CardDef) : List String :=
@@ -535,34 +666,70 @@ through `parseChapterHeader`. -/
 def triggeredNotation (ab : TriggeredAbility) : String :=
   match ab.chapterNumbers? with
   | some ns =>
-    let body := ab.effect.phrase.trimAscii.copy
-    let body := if body.endsWith "." then body else s!"{body}."
+    let body := (TriggeredAbility.resolutionPhrase ab.effect).trimAscii.copy
+    let body := if body.endsWith "." || body.endsWith "\"" then body else s!"{body}."
     s!"{formatChapterRoman ns} — {capitalizeAscii body}"
   | none => ab.toNotation
 
-/-- Basic-land reminders, additional costs, activated (including mana), static,
-triggered, and spell abilities. -/
-def structuredAbilityLines (c : CardDef) : List String :=
+/-- Render a `SubFace`'s summary lines for demo `abilitiesText` (omitting `//ADV//` / `//PREP//`
+markers and sub-face type line). -/
+def subFaceSummaryLines (a : SubFace) : List String :=
+  let header :=
+    if a.manaCost.symbols.isEmpty then a.name else s!"{a.name} {a.manaCost}"
+  let kwLines := KeywordAbility.renderOracleLines a.keywords
+  let staticLines := a.staticAbilities.toList.map StaticAbility.toNotation
+  let spellPart :=
+    match a.spellAbility with
+    | some sa =>
+      let addLines := sa.additionalCosts.toList.map AdditionalCostSpec.toOracleLine
+      let eff := sa.effect.toNotation
+      addLines ++ (if eff.isEmpty then [] else [eff])
+    | none => []
+  header :: (kwLines ++ staticLines ++ spellPart)
+
+/-- Adventure name, cost, and spell, without the Gatherer `//ADV//` marker. -/
+def adventureLines (c : CardDef) : List String :=
+  match c.adventure with
+  | none => []
+  | some a => subFaceSummaryLines a
+
+/-- Prepare-spell name, cost, and effect. -/
+def prepareLines (c : CardDef) : List String :=
+  match c.prepareFace with
+  | none => []
+  | some a => subFaceSummaryLines a
+
+/-- Canonical rules-text ability lines for this face (basic-land reminders, deck
+limit, additional costs, activated abilities, static abilities, triggered
+abilities, and spell ability). Activated bare-cycling abilities duplicated by
+`KeywordAbility.cycling none _` are deduplicated when `dedupCycling` is true. -/
+def abilityOracleLines (c : CardDef) (dedupCycling : Bool := false) : List String :=
+  let hasCyclingKw := c.keywords.any fun | .cycling none _ => true | _ => false
+  let acts :=
+    if dedupCycling && hasCyclingKw then
+      c.activatedAbilities.filter fun ab =>
+        !(ab.isCycling && ab.effect.body == Instruction.drawFixed 1)
+    else c.activatedAbilities
   c.basicLandReminderLines ++
+  c.deckLimitLines ++
   c.additionalCostLines ++
-  c.activatedAbilities.toList.map activatedNotation ++
+  acts.toList.map (ActivatedAbility.toOracle {}) ++
   c.staticAbilities.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map triggeredNotation ++
-  c.adventureLines ++
-  c.prepareLines ++
-  c.empowerLines ++
   c.spellLines
 
-/-- Modeled ability lines. Keyword-only lines are omitted; those print with
-`KeywordAbility`. -/
+/-- Modeled ability lines for display and leftover checks. Keyword-only lines are
+omitted; those print with `KeywordAbility`. -/
 def leftoverOracleLines (c : CardDef) : List String :=
-  c.structuredAbilityLines.filter fun line => !isKeywordRestatement c.keywords line
+  let all := c.abilityOracleLines ++ c.subFaces.toList.flatMap subFaceSummaryLines
+  all.filter fun line => !isKeywordRestatement c.keywords line
 
 /-- Abilities to print in the demo, taken from the modeled fields. -/
 def abilitiesText (c : CardDef) : String :=
-  String.intercalate "; " (structuredAbilityLines c)
+  let all := c.abilityOracleLines ++ c.subFaces.toList.flatMap subFaceSummaryLines
+  String.intercalate "; " all
 
-/-- Keywords `k` plus leftover Oracle / structured abilities. -/
+/-- Keywords `k` plus modeled abilities. -/
 def keywordsAndAbilitiesOf (c : CardDef) (k : Array KeywordAbility) : String :=
   String.intercalate " "
     ([KeywordAbility.renderSummary k, c.abilitiesText].filter (fun s => !s.isEmpty))
@@ -574,31 +741,19 @@ def keywordsAndAbilities (c : CardDef) : String :=
 def typeLine (c : CardDef) : String :=
   formatTypeLine c.supertypes c.types c.subtypes
 
-/-- One side of a power/toughness box (CR 208.1 / 208.2).
-A star plus constant `k` prints as `k+*` (CR 208.2a writes `1+*`). A bare
-star, and `*+0`, print as `*`. -/
-def renderPrintedStat (n : Option Int) (star : Bool) : String :=
-  if star then
-    match n with
-    | some k => if k == 0 then "*" else s!"{k}+*"
-    | none => "*"
-  else
-    match n with
-    | some k => toString k
-    | none => "*"
-
 /-- Printed `power/toughness`, if this object has one.
 A creature with neither a number nor a star prints `*/*`. Any other object
 with neither prints nothing (CR 208.3). -/
-def formatPowerToughness (power toughness : Option Int)
-    (powerStar toughnessStar isCreature : Bool) : Option String :=
-  if power.isNone && toughness.isNone && !powerStar && !toughnessStar then
-    if isCreature then some "*/*" else none
-  else
-    some s!"{renderPrintedStat power powerStar}/{renderPrintedStat toughness toughnessStar}"
+def formatPowerToughness (power toughness : Option PrintedStat) (isCreature : Bool) : Option String :=
+  match power, toughness with
+  | none, none => if isCreature then some "*/*" else none
+  | p, t =>
+    let ps := match p with | some s => s.toOracleStr | none => "*"
+    let ts := match t with | some s => s.toOracleStr | none => "*"
+    some s!"{ps}/{ts}"
 
 def ptString (c : CardDef) : String :=
-  (formatPowerToughness c.power c.toughness c.powerStar c.toughnessStar c.isCreature).getD ""
+  (formatPowerToughness c.power c.toughness c.isCreature).getD ""
 
 /-- Name, printed mana cost if any, type line, P/T, then keywords and abilities.
 Cards with no mana cost (lands, and other objects whose cost cannot be paid)
@@ -610,6 +765,69 @@ def summary (c : CardDef) : String :=
 
 instance : ToString CardDef where
   toString := summary
+
+private def renderModifierInt (n : Int) : String :=
+  if n > 0 then s!"+{n}" else toString n
+
+private def renderColorSetNames (cs : ColorSet) : String :=
+  String.intercalate ", " (Color.all.filter cs.contains |>.map Color.englishName)
+
+/-- Canonical full Oracle lines for a `SubFace` (`//ADV//` or `//PREP//` block). -/
+def renderSubFaceOracleLines (a : SubFace) : List String :=
+  let marker := match a.kind with | .adventure => "//ADV//" | .prepare => "//PREP//"
+  let cost := if a.manaCost.symbols.isEmpty then [] else [toString a.manaCost]
+  let color :=
+    match a.colorIndicator with
+    | some cs => [s!"Color indicator: {renderColorSetNames cs}"]
+    | none => []
+  let kwLines := KeywordAbility.renderOracleLines a.keywords
+  let staticLines := a.staticAbilities.toList.map StaticAbility.toNotation
+  let spellPart :=
+    match a.spellAbility with
+    | some sa => renderSpellAbilityLines sa true
+    | none => []
+  [marker, a.name] ++ cost ++ [formatTypeLine a.supertypes a.types a.subtypes] ++
+    color ++ kwLines ++ staticLines ++ spellPart
+
+/-- Canonical full Oracle text for one face of `c` (excluding `otherFace`),
+reconstructed purely via `ToOracle`. -/
+def renderFaceOracle (c : CardDef) : String :=
+  let cost := if c.manaCost.symbols.isEmpty then [] else [toString c.manaCost]
+  let pt := match formatPowerToughness c.power c.toughness c.isCreature with
+    | some s => [s]
+    | none => []
+  let color :=
+    match c.colorIndicator with
+    | some cs => [s!"Color indicator: {renderColorSetNames cs}"]
+    | none => []
+  let token := if c.isToken then ["Token"] else []
+  let isPlainCycling : KeywordAbility → Bool
+    | .cycling none _ => true
+    | _ => false
+  let nonCyclingKws := c.keywords.filter (!isPlainCycling ·)
+  let cyclingKws := c.keywords.filter isPlainCycling
+  let kwLines := KeywordAbility.renderOracleLines nonCyclingKws
+  let cyclingLines := KeywordAbility.renderOracleLines cyclingKws
+  let abilityLines := c.abilityOracleLines (dedupCycling := true)
+  let loyalty := match c.loyalty with | some n => [s!"Loyalty: {n}"] | none => []
+  let defense := match c.defense with | some n => [s!"Defense: {n}"] | none => []
+  let handMod := match c.handModifier with | some n => [s!"Hand: {renderModifierInt n}"] | none => []
+  let lifeMod := match c.lifeModifier with | some n => [s!"Life: {renderModifierInt n}"] | none => []
+  let subLines := c.subFaces.toList.flatMap renderSubFaceOracleLines
+  String.intercalate "\n"
+    ([c.name] ++ cost ++ [c.typeLine] ++ pt ++ color ++ token ++
+      kwLines ++ abilityLines ++ cyclingLines ++ loyalty ++ defense ++ handMod ++ lifeMod ++ subLines)
+
+/-- Canonical full Oracle text for `c` (including `//` back face and `//ADV//` /
+`//PREP//` sub-faces), reconstructed purely from the AST via `ToOracle`. -/
+partial def renderFullOracle (c : CardDef) : String :=
+  let face := c.renderFaceOracle
+  match c.otherFace with
+  | none => face
+  | some back => face ++ "\n//\n" ++ renderFullOracle back
+
+instance : ToOracle CardDef where
+  toOracle _ c := c.renderFullOracle
 
 /-- True when this card itself has improvise (CR 702.126). -/
 def hasImprovise (c : CardDef) : Bool :=
@@ -728,7 +946,7 @@ def sagaChapters (c : CardDef) : Array TriggeredAbility :=
 def finalChapterNumber (c : CardDef) : Nat :=
   TriggeredAbility.finalChapterNumberOf c.triggeredAbilities
 
-/-- Spell, modal, adventure, and prepare effects on this face.
+/-- Spell, modal, and sub-face effects on this face.
 Saga chapters live in `triggeredAbilities` and are validated there via
 `Effect.doesNothingAsTrigger`. -/
 def spellLikeEffects (c : CardDef) : Array Effect :=
@@ -739,26 +957,12 @@ def spellLikeEffects (c : CardDef) : Array Effect :=
       match c.spellEffect with
       | some e => #[e]
       | none => #[]
-  let adv := match c.adventure with
-    | some a => match a.spellEffect with
-      | some e => #[e]
-      | none => #[]
-    | none => #[]
-  let prep := match c.prepareFace with
-    | some a => match a.spellEffect with
-      | some e => #[e]
-      | none => #[]
-    | none => #[]
-  modes ++ adv ++ prep
+  let subEffs := c.subFaces.filterMap fun sf => sf.spellAbility.map (·.effect)
+  modes ++ subEffs
 
 /-- Why this face is not fully parsed or its effects are not fully modelled.
 Does not look at `otherFace`. -/
 def faceModellingError? (c : CardDef) : Option String :=
-  let unparsed : Option String :=
-    (c.adventure.bind fun a =>
-      a.extraLines[0]?.map fun line => s!"unparsed rules line on {a.name}: {line}")
-      <|> (c.prepareFace.bind fun a =>
-        a.extraLines[0]?.map fun line => s!"unparsed rules line on {a.name}: {line}")
   let spell : Option String :=
     c.spellLikeEffects.foldl (fun acc e =>
       match acc with
@@ -800,39 +1004,65 @@ def faceModellingError? (c : CardDef) : Option String :=
             if ab.effect.doesNothingAsTrigger then
               some s!"{c.name} triggered ability is not fully modelled: {ab.toNotation}"
             else none) none
-  unparsed <|> spell <|> activated <|> triggered
+  spell <|> activated <|> triggered
 
 /-- Why `c` or its back face is not fully parsed or fully modelled.
 `none` when every rules line was recognized and every spell, mode,
-adventure, prepare face, Saga chapter, activated ability, and triggered ability
-resolves. -/
+sub-face, Saga chapter, activated ability, and triggered ability resolves. -/
 def modellingError? (c : CardDef) : Option String :=
   c.faceModellingError? <|> (c.otherFace.bind faceModellingError?)
 
 end CardDef
 
-namespace AdventureFace
+namespace SubFace
+
+/-- Resolving spell `Effect` carried by `a.spellAbility`, if any. -/
+def spellEffect (a : SubFace) : Option Effect :=
+  a.spellAbility.map (·.effect)
+
+/-- Additional casting costs carried by `a.spellAbility` (CR 118.8). -/
+def additionalCosts (a : SubFace) : Array AdditionalCostSpec :=
+  (a.spellAbility.map (·.additionalCosts)).getD #[]
+
+/-- Set or replace the resolving spell `Effect` on `a.spellAbility`. -/
+def withSpellEffect (a : SubFace) (e : Effect) : SubFace :=
+  let sa : SpellAbility :=
+    match a.spellAbility with
+    | some existing => { existing with effect := e }
+    | none => { effect := e }
+  { a with spellAbility := some sa }
+
+/-- Append an additional casting cost onto `a.spellAbility`. -/
+def withAdditionalCost (a : SubFace) (cost : AdditionalCostSpec) : SubFace :=
+  let sa : SpellAbility :=
+    match a.spellAbility with
+    | some existing => { existing with additionalCosts := existing.additionalCosts.push cost }
+    | none => { effect := {}, additionalCosts := #[cost] }
+  { a with spellAbility := some sa }
 
 /-- Fixed Empower Planeswalker amount carried on this alternate face's spell effect. -/
-def empowerPlaneswalkerAmount? (a : AdventureFace) : Option Nat :=
+def empowerPlaneswalkerAmount? (a : SubFace) : Option Nat :=
   a.spellEffect.bind (fun e => CardDef.extractEmpowerAmount e.body)
 
-/-- Characteristics used while this card is on the stack as an Adventure (CR 715.3b). -/
-def toCardDef (a : AdventureFace) : CardDef := {
+/-- Characteristics used while this card is on the stack as an Adventure or Prepare
+spell (CR 715.3b). -/
+def toCardDef (a : SubFace) : CardDef := {
   name := a.name
   manaCost := a.manaCost
+  colorIndicator := a.colorIndicator
+  supertypes := a.supertypes
   types := a.types
   subtypes := a.subtypes
-  spellEffect := a.spellEffect
-  staticAbilities := #[]
-  additionalCosts := a.additionalCosts
+  keywords := a.keywords
+  spellAbility := a.spellAbility
+  staticAbilities := a.staticAbilities
 }
 
-/-- True when this Adventure's effect is classified as `k`. -/
-def hasCastKind (a : AdventureFace) (k : SpellCastKind) : Bool :=
+/-- True when this sub-face's effect is classified as `k`. -/
+def hasCastKind (a : SubFace) (k : SpellCastKind) : Bool :=
   a.spellEffect.any (fun e => e.castKind == k)
 
-end AdventureFace
+end SubFace
 
 /-- Constructed-play four-of rule applies to non-basic-land English names (CR 100.2a). -/
 def isBasicLandCard (c : CardDef) : Bool :=

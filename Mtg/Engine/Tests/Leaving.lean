@@ -163,9 +163,9 @@ def threeSkipLeftPlayerTurn : Game :=
 def unlessPaysLeaveAsked : Game :=
   let g := addPermanent threeStarted grayOgre ⟨0⟩ ⟨0⟩
   let id := (namedPermanent g "Gray Ogre").id
-  g.applyEffect ⟨1⟩ (Effect.mkSpell (.of .creature)
+  g.applyEffect ⟨1⟩ (Effect.mkSpell .creature
       (.unlessPays (.controllerOf (.target 0)) (CostSpec.ofGeneric 3) (Instruction.loseLifeFixed 5 .you))
-      "")
+     )
     #[Target.permanent id]
 
 #guard
@@ -190,7 +190,7 @@ def unlessPaysLeftUnpaid : Game :=
 /-- Leaving while `may` is pending skips the optional effect. -/
 def mayLeaveAsked : Game :=
   threeStarted.applyEffect ⟨0⟩
-    (Effect.mkSpell (.of .none) (Instruction.may .you none (Instruction.gainLifeFixed 3)) "") #[]
+    (Effect.mkSpell .none (Instruction.may .you none (Instruction.gainLifeFixed 3))) #[]
 
 #guard
   match mayLeaveAsked.pending with

@@ -86,11 +86,11 @@ private def passBoth (g : Game) : Game :=
 
 private def bearDef : CardDef :=
   { name := "Phase8 Bear", manaCost := ManaCost.ofGeneric 2
-    types := #[.creature], subtypes := #["Bear"], power := some 2, toughness := some 2 }
+    types := #[.creature], subtypes := #["Bear"], power := some (.fixed 2), toughness := some (.fixed 2) }
 
 private def elfDef : CardDef :=
   { name := "Phase8 Elf", manaCost := ManaCost.ofGeneric 1
-    types := #[.creature], subtypes := #["Elf"], power := some 1, toughness := some 1 }
+    types := #[.creature], subtypes := #["Elf"], power := some (.fixed 1), toughness := some (.fixed 1) }
 
 private def relicDef : CardDef :=
   { name := "Phase8 Relic", manaCost := ManaCost.ofGeneric 1, types := #[.artifact] }
@@ -174,7 +174,7 @@ private def basicIsland : CardDef :=
     (g0.createEffect (.replacement cntAdd) (cause := some testCause)).createEffect
       (.replacement cntMul) (cause := some testCause)
   let eff : Effect := {
-    targeting := .of .creature
+    targets := .creature
     body := .bind ⟨0⟩
       (Instruction.putPlusOne (.target 0) 1)
       (Instruction.gainLifeFixed 3)
@@ -192,7 +192,7 @@ private def basicIsland : CardDef :=
 
 #guard
   let burnExcess : Effect := {
-    targeting := .of .creature
+    targets := .creature
     body := .bind ⟨0⟩
       (.damage (.deal .this (.targetSlot 0) (.const 5) { trackExcess := true }))
       (Instruction.gainLife (.stepMetric .excessDamage ⟨0⟩))
@@ -315,8 +315,8 @@ private def basicIsland : CardDef :=
   let rodDef : CardDef := {
     name := "Phase8 Modal Rod", types := #[.artifact]
     activatedAbilities := #[ActivatedAbility.mkModal CostSpec.empty #[
-      { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" },
-      { body := Instruction.gainLifeFixed 4, phrase := "You gain 4 life" }
+      { body := Instruction.gainLifeFixed 1 },
+      { body := Instruction.gainLifeFixed 4 }
     ]]
   }
   let gAct0 := addPermanent (emptyHand afterDraw p0) rodDef p0 p0
@@ -549,7 +549,7 @@ private def basicIsland : CardDef :=
       effect := { body := Instruction.gainLife (.stepMetric .sumPower ⟨0⟩) }
     }]
   }
-  let bigBear : CardDef := { bearDef with name := "Phase9 Big Bear", power := some 5, toughness := some 5 }
+  let bigBear : CardDef := { bearDef with name := "Phase9 Big Bear", power := some (.fixed 5), toughness := some (.fixed 5) }
   let g0 := addPermanent (addPermanent (emptyHand afterDraw p0) sacGainCard p0 p0) bigBear p0 p0
   let altarId := (g0.permanentsOf p0).find? (·.name == "Phase9 Sac Altar") |>.get!.id
   let bigId := (g0.permanentsOf p0).find? (·.name == "Phase9 Big Bear") |>.get!.id

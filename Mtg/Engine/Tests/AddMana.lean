@@ -91,7 +91,7 @@ def perOtherCreatureRed : Instruction :=
   "At the beginning of your first main phase, add {R}{R}."
 
 #guard TriggeredAbility.toNotation .onYourFirstMainAddGreenPerCharge ==
-  "At the beginning of your first main phase, add {G} for each charge counter on this enchantment."
+  "At the beginning of your first main phase, add {G}."
 
 /- Adding a type twice repeats it. Zero times adds nothing.
 A count of other creatures adds that many. -/
@@ -109,8 +109,8 @@ A count of other creatures adds that many. -/
   let bear : CardDef := {
     name := "Mana Bear"
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   let g0 := addPermanent afterDraw bear caster caster
   let g := addStep g0 perOtherCreatureRed

@@ -744,15 +744,21 @@ def renderSummary (ks : Array KeywordAbility) : String :=
 one comma-separated capitalized line; parameterized keywords print on their own
 capitalized lines. -/
 def renderOracleLines (ks : Array KeywordAbility) : List String :=
-  let (inlineKws, paramKws) := ks.partition isInlineKeyword
-  let inlineLine : List String :=
-    if inlineKws.isEmpty then []
-    else
-      let names := (toOracleList inlineKws).map capitalizeAscii
-      [String.intercalate ", " names]
-  let paramLines : List String :=
-    paramKws.toList.map (toOracleStr { capitalize := true })
-  inlineLine ++ paramLines
+  Id.run do
+    let mut lines : List String := []
+    let mut run : List String := []
+    let flush (ls : List String) (r : List String) : List String :=
+      match r with
+      | [] => ls
+      | first :: rest => ls ++ [String.intercalate ", " (capitalizeAscii first :: rest)]
+    for k in ks do
+      if isInlineKeyword k then
+        run := run ++ [toOracleStr { capitalize := false } k]
+      else
+        lines := flush lines run
+        run := []
+        lines := lines ++ [toOracleStr { capitalize := true } k]
+    return flush lines run
 
 end KeywordAbility
 

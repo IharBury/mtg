@@ -603,8 +603,8 @@ private def replayOk39i3 (gs : Array Game) : Bool :=
   let phTargets := gPhBase.permanentsOf p0
   let phOutBear := phTargets[0]!
   let liveBear := phTargets[1]!
-  let preCopyDef : CardDef := { bear with name := "PrePhaseClone", power := some 4, toughness := some 4 }
-  let postCopyDef : CardDef := { bear with name := "PostPhaseClone", power := some 7, toughness := some 7 }
+  let preCopyDef : CardDef := { bear with name := "PrePhaseClone", power := some (.fixed 4), toughness := some (.fixed 4) }
+  let postCopyDef : CardDef := { bear with name := "PostPhaseClone", power := some (.fixed 7), toughness := some (.fixed 7) }
   -- Pre-phase-out Layer 1 effect (`eid < phEid`) applies to `phOutBear`, then `phOutBear` phases out, then
   -- post-phase-out Layer 1 (`.creaturesControlledBy p0` copy) and Layer 2 (`.creaturesControlledBy p0` `.control p2`) effects (`eid > phEid`) are created:
   let gPreScoped :=
@@ -825,7 +825,7 @@ private def replayOk39i4 (gs : Array Game) : Bool :=
   }
   let greenSpellDef : CardDef := {
     name := "P39i4 GreenGrowth", manaCost := { symbols := #[.colored .green] }, types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 3)
+    spellAbility := some { effect := Effect.gainLife 3 }
   }
   let gMaNest0 :=
     insertObject
@@ -1395,10 +1395,10 @@ private def replayOk40i2 (gs : Array Game) : Bool :=
   let srcDef : CardDef := creature "P40i2 Src" ManaCost.empty #["Construct"] 4 4
   let leyADef : CardDef := { name := "P40i2 LeyA", types := #[.enchantment] }
   let leyBDef : CardDef := { name := "P40i2 LeyB", types := #[.enchantment] }
-  let prepSpellFace : AdventureFace := { name := "P40i2 PrepSpell" }
+  let prepSpellFace : SubFace := { kind := .prepare, name := "P40i2 PrepSpell" }
   let prepCreatureDef : CardDef := {
     creature "P40i2 PrepMage" ManaCost.empty #["Wizard"] 2 2 with
-    prepareFace := some prepSpellFace
+    subFaces := #[prepSpellFace]
   }
 
   -- 2a. Simultaneous outer-`pre` control snapshots across `removeAllCountersFrom`, CR 704.5q (`+1/+1`/`-1/-1` SBA),
@@ -1998,8 +1998,8 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
     name := "P40i4 HybridPW"
     types := #[.planeswalker, .creature]
     subtypes := #["Construct"]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
     loyalty := some 5
     activatedAbilities := #[pwXAb]
   }

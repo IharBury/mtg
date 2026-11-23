@@ -268,18 +268,17 @@ def meagerMealNoCreatureAfterSkip : Game :=
   let mvCapSpell : CardDef := {
     name := "Mv Cap Grab"
     types := #[.sorcery]
-    spellEffect := some {
-      targeting := .of (.upToTwoCreaturesTotalMvAtMost 3)
-      allowsZeroTargets := true
-      maxTargets := 2
-    }
+    spellAbility := some { effect := {
+      targets := (.upToTwoCreaturesTotalMvAtMost 3)
+      body := .noop
+    } }
   }
   let oneDrop : CardDef := {
     name := "Tiny Cub"
     manaCost := { symbols := #[.colored .green] }
     types := #[.creature]
-    power := some 1
-    toughness := some 1
+    power := some (.fixed 1)
+    toughness := some (.fixed 1)
   }
   let gMv0 := readyMain (emptyHand afterDraw p0)
   let gMv1 := addPermanent (addPermanent (addPermanent gMv0 grizzlyBears p0 p0) grizzlyBears ⟨1⟩ ⟨1⟩) oneDrop p0 p0
@@ -298,7 +297,7 @@ def meagerMealNoCreatureAfterSkip : Game :=
   let shareSpell : CardDef := {
     name := "Twin Polish"
     types := #[.sorcery]
-    spellEffect := some { targeting := .of .twoNonlandsSharingType }
+    spellAbility := some { effect := { targets := .twoNonlandsSharingType } }
   }
   let rockA : CardDef := { name := "Polish Rock A", types := #[.artifact] }
   let rockB : CardDef := { name := "Polish Rock B", types := #[.artifact] }
@@ -318,7 +317,7 @@ def meagerMealNoCreatureAfterSkip : Game :=
   let twoArtsSpell : CardDef := {
     name := "Dual Tinker"
     types := #[.sorcery]
-    spellEffect := some { targeting := .of .twoArtifactsYouControl }
+    spellAbility := some { effect := { targets := .twoArtifactsYouControl } }
   }
   let gOneArt := addToHand (addPermanent (readyMain (emptyHand afterDraw p0)) rockA p0 p0) twoArtsSpell p0
   let oneArtCard := handCardNamed gOneArt p0 "Dual Tinker"
@@ -354,8 +353,8 @@ def meagerMealNoCreatureAfterSkip : Game :=
     name := "Artifact Construct"
     types := #[.artifact, .creature]
     subtypes := #["Construct"]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   let g0 := readyMain (emptyHand afterDraw p0)
   let g1 :=
@@ -452,7 +451,7 @@ def meagerMealNoCreatureAfterSkip : Game :=
     creature "Echo Test" { symbols := #[.generic 2] } #["Human"] 2 2 with
     activatedAbilities := #[
       { cost := CostSpec.empty, effect := Effect.copyControlledAbility .creature },
-      { cost := CostSpec.empty, effect := Effect.mkAbility (.of .anotherCreature) (Instruction.tap (.target 0)) "" }
+      { cost := CostSpec.empty, effect := Effect.mkAbility .anotherCreature (Instruction.tap (.target 0)) }
     ]
   }
   let otherCreature : CardDef :=
@@ -486,7 +485,7 @@ def meagerMealNoCreatureAfterSkip : Game :=
   let copyId := copyId?.get!
   let copyObj := gCopied.object! copyId
   let copyEntry := (gCopied.stackEntry? copyId).get!
-  let copySpec := (gCopied.targetingOf copyObj).spec
+  let copySpec := gCopied.targetSpecOf copyObj
   let copySelfExcluded :=
     !gCopied.validTargetArrayForEntry copyEntry copyObj copySpec #[.card copyId] (allowUnchangedIllegal := true) &&
     gCopied.validTargetArrayForEntry copyEntry copyObj copySpec #[.card ab0.id] (allowUnchangedIllegal := true) &&
@@ -516,8 +515,8 @@ def meagerMealNoCreatureAfterSkip : Game :=
   match Parser.parseTargetSpec "for each player, up to one target creature that player controls",
         Parser.parseTargetSpec "for each player, target creature that player controls" with
   | some optSpec, some reqSpec =>
-    let optEff : Effect := { targeting := .of optSpec, allowsZeroTargets := true, body := Instruction.tap (.target 0) }
-    let reqEff : Effect := { targeting := .of reqSpec, body := Instruction.tap (.target 0) }
+    let optEff : Effect := { targets := optSpec, body := Instruction.tap (.target 0) }
+    let reqEff : Effect := { targets := reqSpec, body := Instruction.tap (.target 0) }
     let g0 := readyMain (emptyHand afterDraw p0)
     let gOnlyP0 := addPermanent g0 grizzlyBears p0 p0
     let gBoth := addPermanent gOnlyP0 grizzlyBears p1 p1
@@ -538,7 +537,7 @@ def meagerMealNoCreatureAfterSkip : Game :=
       gOnlyP0.effectHasEnoughTargets p0 optEff none
     -- Casting a spell with `reqEff` prompts slot 0 (`p0`'s creature), then slot 1 (`p1`'s creature).
     let spellCard : CardDef := {
-      name := "Each Player Tap", types := #[.sorcery], spellEffect := some reqEff }
+      name := "Each Player Tap", types := #[.sorcery], spellAbility := some { effect := reqEff }}
     let (gHand, spellObj) := gBoth.allocObject spellCard p0 (.hand p0)
     let gCast :=
       match gHand.castSpell p0 spellObj.id with

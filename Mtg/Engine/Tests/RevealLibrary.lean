@@ -22,23 +22,23 @@ def opp : PlayerId := ⟨1⟩
 def bear : CardDef := {
   name := "Reveal Bear"
   types := #[.creature]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
 }
 
 def elf : CardDef := {
   name := "Reveal Elf"
   types := #[.creature]
-  power := some 1
-  toughness := some 1
+  power := some (.fixed 1)
+  toughness := some (.fixed 1)
 }
 
 def costly : CardDef := {
   name := "Costly Bear"
   manaCost := ManaCost.ofGeneric 2
   types := #[.creature]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
 }
 
 def plot : CardDef := {
@@ -66,8 +66,8 @@ def tale : CardDef := {
 def spy : CardDef := {
   name := "Widow Source"
   types := #[.creature]
-  power := some 1
-  toughness := some 2
+  power := some (.fixed 1)
+  toughness := some (.fixed 2)
 }
 
 def putOnLibrary (g : Game) (card : CardDef) (p : PlayerId) : Game :=
@@ -249,8 +249,8 @@ def noteHit (g : Game) (p : PlayerId) : Game :=
 #guard TriggeredAbility.toNotation .onNontokenYouControlDiesRevealCreature ==
   s!"Whenever a nontoken creature you control dies, reveal cards from the top of your library until you reveal a creature card. If its mana value is less than or equal to the number of lands you control, put it onto the battlefield. Otherwise, put it into your hand. {restOnBottomRandomPhrase}. This ability triggers only once each turn."
 #guard TriggeredAbility.toNotation .onFinalSagaChapterRevealSaga ==
-  "Whenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put that card onto the battlefield and the rest on the bottom of your library in a random order. This ability triggers only once each turn."
+  "Whenever the final chapter ability of a Saga you control resolves, reveal cards from the top of your library until you reveal a Saga card. Put all of them onto the battlefield under your control. Put the rest on the bottom of your library in a random order. This ability triggers only once each turn."
 #guard TriggeredAbility.toNotation .onCombatDamageImpulseInstantSorcery ==
-  "Whenever Gríma deals combat damage to a player, that player exiles cards from the top of their library until they exile an instant or sorcery card. You may cast that card without paying its mana cost. Then that player puts the exiled cards that weren't cast this way on the bottom of their library in a random order."
+  "Whenever this deals combat damage to a player, exile cards from the top of that player's library until you exile an instant or sorcery card. You may cast those cards matching instant or sorcery now without paying their mana costs. Put those cards on the bottom of its owner's library in a random order."
 
 end Mtg.Engine.RevealLibraryTests

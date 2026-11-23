@@ -62,8 +62,8 @@ private def mkCreature (name : String) (subs : Array String)
     manaCost := mana
     types := #[.creature]
     subtypes := subs
-    power := some p
-    toughness := some t
+    power := some (.fixed p)
+    toughness := some (.fixed t)
     staticAbilities := statics
     keywords := kws }
 
@@ -306,8 +306,8 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     name := "P6 Land-Bound Stalker"
     types := #[.creature]
     subtypes := #["Elemental"]
-    powerStar := true
-    toughnessStar := true
+    power := some (.star 0)
+    toughness := some (.star 0)
     staticAbilities := #[.powerToughnessEqualLandsYouControl, .cantBeBlocked]
   }
   let g0 := addPermanent (addPermanent afterDraw cdaCreature p0 p0) forest p0 p0
@@ -316,8 +316,8 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
   | none => false
   | some copiedDef =>
     let (g1, tok) := g0.createToken p0 copiedDef
-    copiedDef.power == some 4 &&
-      copiedDef.toughness == some 4 &&
+    copiedDef.power == some (.fixed 4) &&
+      copiedDef.toughness == some (.fixed 4) &&
       !(copiedDef.staticAbilities.any StaticAbility.isPTDefiningCDA) &&
       copiedDef.staticAbilities.contains .cantBeBlocked &&
       g1.power (g1.object! tok.id) == 4 &&
@@ -335,8 +335,8 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     name := "P6 Layer7 Elemental"
     types := #[.creature]
     subtypes := #["Elemental"]
-    powerStar := true
-    toughnessStar := true
+    power := some (.star 0)
+    toughness := some (.star 0)
     staticAbilities := #[.powerToughnessEqualLandsYouControl]
   }
   let g0 := addPermanent (addPermanent (addPermanent (addPermanent afterDraw landElem p0 p0)
@@ -916,8 +916,8 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
         (.modifyPT (.const 2) (.const 0))
     ]
   }
-  let redGob : CardDef := { name := "P6 Red Gob", manaCost := ManaCost.ofColor .red, types := #[.creature], subtypes := #["Goblin"], power := some 1, toughness := some 1 }
-  let blueFish : CardDef := { name := "P6 Blue Fish", manaCost := ManaCost.ofColor .blue, types := #[.creature], subtypes := #["Fish"], power := some 1, toughness := some 1 }
+  let redGob : CardDef := { name := "P6 Red Gob", manaCost := ManaCost.ofColor .red, types := #[.creature], subtypes := #["Goblin"], power := some (.fixed 1), toughness := some (.fixed 1) }
+  let blueFish : CardDef := { name := "P6 Blue Fish", manaCost := ManaCost.ofColor .blue, types := #[.creature], subtypes := #["Fish"], power := some (.fixed 1), toughness := some (.fixed 1) }
   let gCmd0 := addPermanent (addPermanent (addPermanent afterDraw cmdAnthem p0 p0) redGob p0 p0) blueFish p0 p0
   let gCmd1 : Game := { gCmd0 with
     players := gCmd0.players.map fun (pl : Player) =>

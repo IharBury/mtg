@@ -57,7 +57,7 @@ attacks" triggers (CR 508.3a). -/
 #guard
   let attackWatcher : CardDef :=
     { (creature "Attack Watcher" ManaCost.empty #["Hero"] 2 2) with
-      triggeredAbilities := #[TriggeredAbility.ofPattern .creatureYouControlAttacks "" (Instruction.drawFixed 1)] }
+      triggeredAbilities := #[TriggeredAbility.ofPattern .creatureYouControlAttacks (Instruction.drawFixed 1)] }
   let oppWalker : CardDef :=
     { name := "Opp Walker"
       types := #[.planeswalker]
@@ -269,13 +269,13 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
       manaCost := { symbols := #[.x, .colored .red] }
       types := #[.instant]
       keywords := #[.kicker (CostSpec.ofGeneric 1), .gift .treasure]
-      spellEffect := some {
+      spellAbility := some { effect := {
         body := .chooseModes {
           minModes := .const 1
           maxModes := .const 2
           modes := #[Effect.dealDamage 2, Effect.gainLife 2]
         }
-      } }
+      } }}
   let gCast0 := insertObject (quiet afterDraw) testModalSpell me .stack (some me)
     (adventurerCard := some bear)
   let spId := (gCast0.objects.filter (·.name == "Test Modal X Bolt"))[0]!.id
@@ -337,7 +337,7 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
   -- 4. TriggerQueueEvent.putOnStack and StackObjectEvent.removedOnResolution (CR 608.2b)
   let gTrig0 := addPermanent (quiet afterDraw) bear opp opp
   let oppBear := (gTrig0.battlefield.filter (fun o => o.name == bear.name && gTrig0.controlledBy o opp))[0]!
-  let trigAb := TriggeredAbility.ofPattern .thisEnters "When this enters, destroy target creature an opponent controls." (Instruction.destroy (.target 0)) (spec := .oppCreature)
+  let trigAb := TriggeredAbility.ofPattern .thisEnters (Instruction.destroy (.target 0)) (spec := .oppCreature)
   let gTrigPut := gTrig0.putTriggeredAbilityOnStack me (gTrig0.object! oppBear.id) trigAb "enters"
   let gTrig1 := gTrigPut.setStackEntryTargets gTrigPut.stack.back!.objectId #[Target.permanent oppBear.id]
   let hasTrigPutOnStack := gTrig1.events.any (fun e =>
@@ -439,7 +439,7 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   --    on `pre` and both trigger.
   let deathWatcherAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .anotherCreatureOrPlaneswalkerYouControlDies
-      { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
+      { body := Instruction.gainLifeFixed 1 }
   let deathWatcherDef : CardDef :=
     { bear with
       name := "Simultaneous Watcher"
@@ -474,7 +474,7 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   --    creature still sees the death in `pre`.
   let leaveWatcherAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisLeaves
-      { body := Instruction.gainLifeFixed 2, phrase := "You gain 2 life" }
+      { body := Instruction.gainLifeFixed 2 }
   let phaserDef : CardDef :=
     { bear with
       name := "Phasing Watcher"
@@ -505,7 +505,7 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   --    in `g.events` (`g.loggedTriggeredThisTurn`) rather than `Status`.
   let onceAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you)
-      { body := Instruction.scryFixed 1, phrase := "Scry 1" }
+      { body := Instruction.scryFixed 1 }
       (limit := .onceEachTurn)
   let onceDef : CardDef :=
     { bear with
@@ -531,8 +531,8 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   let hulkDef : CardDef :=
     { bear with
       name := "Test Hulk"
-      power := some 6
-      toughness := some 6
+      power := some (.fixed 6)
+      toughness := some (.fixed 6)
       triggeredAbilities := #[hulkEnrageAb] }
   let gHulk0 := addPermanent (quiet afterDraw) hulkDef me me
   let hulk0 := (gHulk0.battlefield.filter (·.name == "Test Hulk"))[0]!
@@ -549,11 +549,11 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
     gHulkBatch.waitingTriggers[0]!.lastKnownPower == some 3
   let dmgAb1 : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisDealtDamage
-      { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
+      { body := Instruction.gainLifeFixed 1 }
       (grouping := .oncePerBatch)
   let dmgAb2 : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisDealtDamage
-      { body := Instruction.scryFixed 1, phrase := "Scry 1" }
+      { body := Instruction.scryFixed 1 }
       (grouping := .oncePerBatch)
   let dmgWatcherDef : CardDef :=
     { bear with
@@ -640,7 +640,7 @@ trigger, and the modified event carries `EventCause.replaced`. -/
   -- 2a. Death replaced by finality counter exile (CR 122.1h / 614.6).
   let diesWatcherAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisDies
-      { body := Instruction.gainLifeFixed 5, phrase := "You gain 5 life" }
+      { body := Instruction.gainLifeFixed 5 }
   let finalityBearDef : CardDef :=
     { bear with
       name := "Finality Bear"
@@ -763,7 +763,7 @@ trigger, and the modified event carries `EventCause.replaced`. -/
 `g.replacementOrder` lists lower-priority tiers first. -/
 #guard
   let dfcBackFace : CardDef :=
-    { bear with name := "Back Face Bear", power := some 5, toughness := some 5 }
+    { bear with name := "Back Face Bear", power := some (.fixed 5), toughness := some (.fixed 5) }
   let dfcFrontDef : CardDef :=
     { bear with
       name := "Front Face Bear"
@@ -942,7 +942,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
   let samsonDef : CardDef :=
     { bear with name := "Doc Samson Test", staticAbilities := #[.extraCounterOnPermanents] }
   let arwenDef : CardDef :=
-    { bear with name := "Arwen Test", toughness := some 2, staticAbilities := #[.othersEnterWithPlusOneEqualToughness] }
+    { bear with name := "Arwen Test", toughness := some (.fixed 2), staticAbilities := #[.othersEnterWithPlusOneEqualToughness] }
   let gArw0 :=
     insertObject
       (addPermanent (addPermanent (quiet afterDraw) samsonDef me me) arwenDef me me)
@@ -1035,7 +1035,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
   -- `fightCreatures` chains the second creature's fight damage after a replacement choice on the first.
   let gFight0 :=
     addPermanent (addPermanent gOrd0 { bear with name := "Fighter A" } me me)
-      { bear with name := "Fighter B", toughness := some 10 } opp opp
+      { bear with name := "Fighter B", toughness := some (.fixed 10) } opp opp
   let fighterA := (gFight0.battlefield.filter (·.name == "Fighter A"))[0]!
   let fighterB := (gFight0.battlefield.filter (·.name == "Fighter B"))[0]!
   let idFightAdd : ReplacementId := { kind := .addNoncombatDamage, object := some fighterA.id }
@@ -1569,9 +1569,9 @@ count as a turn of `p` beginning, so both last until cleanup of `p`'s next turn.
   let subEnterAb : TriggeredAbility := .onThisOrAnotherSubtypeEntersCreateTokens "Dwarf" .treasure 1
   let combatTokAb : TriggeredAbility := .onSubtypeYouControlCombatDamageCreateTokens "Dwarf" .treasure 2
   let preGrantAb : TriggeredAbility :=
-    TriggeredAbility.ofPattern .thisAttacks "Whenever this creature attacks, draw a card." (Instruction.drawFixed 1)
+    TriggeredAbility.ofPattern .thisAttacks (Instruction.drawFixed 1)
   let postGrantAb : TriggeredAbility :=
-    TriggeredAbility.ofPattern .thisAttacks "Whenever this creature attacks, you gain 2 life." (Instruction.gainLifeFixed 2)
+    TriggeredAbility.ofPattern .thisAttacks (Instruction.gainLifeFixed 2)
   let captainDef : CardDef :=
     creature "DwarfCaptain" ManaCost.empty #["Dwarf"] 2 2
       (triggeredAbilities := #[.onAttackScry 1, subEnterAb, combatTokAb])
@@ -2525,7 +2525,7 @@ substitutions vs mana-derived colors):
     { name := "Phase9 Criticism"
       manaCost := { symbols := #[.colored .black] }
       types := #[.instant]
-      spellEffect := some .terminalCriticism }
+      spellAbility := some { effect := .terminalCriticism }}
   let gTxt0 :=
     insertObject
       (addPermanent
@@ -2786,7 +2786,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     { name := "Phase10 Scry Instant"
       manaCost := ManaCost.empty
       types := #[.instant]
-      spellEffect := some (Effect.scry 2) }
+      spellAbility := some { effect := Effect.scry 2 }}
   let (gSp0, spObj) := (quiet afterDraw).allocObject scrySpellDef me .stack (some me)
   let gSpOnStack := gSp0.putStackEntry me spObj.id
   let gSpMid := gSpOnStack.resolveTop
@@ -2985,7 +2985,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   -- 6. `becomePrepared`, `unprepare`, and `phaseOut` outside vs inside resolution
   let prepDef : CardDef :=
     { creature "Phase10 Prepared" ManaCost.empty #["Knight"] 2 2 with
-      prepareFace := some { name := "Phase10 Seed" } }
+      subFaces := #[{ kind := .prepare, name := "Phase10 Seed" }] }
   let gPrep0 := quiet (addPermanent afterDraw prepDef me me)
   let prepObj := (gPrep0.battlefield.filter (·.name == "Phase10 Prepared"))[0]!
   let gPrepQuiet := gPrep0.becomePrepared prepObj
@@ -3130,7 +3130,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     | .ok g => g
     | .error _ => gAb0
   let (gTok, _) := gAb0.createToken me treasureToken
-  let gPrepCopy := gAb0.createPreparedCopy baseBear { name := "Phase11 Seed" }
+  let gPrepCopy := gAb0.createPreparedCopy baseBear { kind := .prepare, name := "Phase11 Seed" }
   let hasTrigPut (evs : Array GameEvent) : Bool :=
     evs.any fun e => match e.change with | .rules (.triggerQueue (.putOnStack ..)) => true | _ => false
   let materializeIsolationOk :=
@@ -3146,7 +3146,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let loyaltyWatcherDef : CardDef := {
     name := "Phase11 Loyalty Watcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (Instruction.drawFixed 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutLoyaltyCounters (Instruction.drawFixed 1)]
   }
   let gPw0 := addPermanent (addPermanent afterDraw rockDef me me) loyaltyWatcherDef me me
   let pwRock := (gPw0.battlefield.filter (·.name == "Phase11 Rock"))[0]!
@@ -3211,8 +3211,8 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let humCreatureDef : CardDef := {
     name := "Phase11 Counters Bear"
     types := #[.creature]
-    power := some 1
-    toughness := some 1
+    power := some (.fixed 1)
+    toughness := some (.fixed 1)
     staticAbilities := #[.entersTapped, .entersWithPlusOneCounters 2]
   }
   let (gHum0, humCand) := afterDraw.allocObject humCreatureDef me (.outside me) (some me)
@@ -3259,8 +3259,8 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     types := #[.creature]
     subtypes := #["Shapeshifter"]
     keywords := #[Keyword.changeling]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   let gCh0 := quiet (insertObject (emptyHand afterDraw me) changelingDef me (.hand me))
   let gChDragon := gCh0.beholdQuality me .dragon (cause := some (.gameRule .spellCast))
@@ -3329,8 +3329,8 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     otherFace := some {
       name := "Phase11 Siege Back"
       types := #[.creature]
-      power := some 4
-      toughness := some 4
+      power := some (.fixed 4)
+      toughness := some (.fixed 4)
       staticAbilities := #[
         .asEntersChooseNamedAnchors #["Mardu", "Jeskai"],
         .entersPrepared

@@ -224,7 +224,7 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
     name := "P45i1 DrawTwo"
     manaCost := ManaCost.ofGeneric 2
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.drawFixed 2, phrase := "Draw two cards." }
+    spellAbility := some { effect := { body := Instruction.drawFixed 2 } }
   }
   let gMayEx0 :=
     (insertObject (insertObject g4 shock p2 .exile) drawDivDef p0 .exile).changes #[
@@ -371,8 +371,7 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
     name := "P45i1 UnpayableSac"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
-    spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "Gain 1 life." }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 1 }, additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
   }
   let gRevExp0 := insertObject g4 revSacSpellDef p0 .exile
   let revSpellObj := (gRevExp0.objects.filter (·.zone == .exile))[0]!
@@ -402,8 +401,7 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
     name := "P45i1 AltarRite"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]
-    spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "Gain 1 life." }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 1 }, additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature] }
   }
   let gSacRes0 :=
     (insertObject (addPermanent g4 bear p0 p0) sacCastDef p0 .exile).changes #[
@@ -553,7 +551,7 @@ private def replayOk45i2 (gs : Array Game) : Bool :=
 
   -- Emblem-chain + exile-path `coDepartingIds`: `srcB` -> `.fraEmblem embChain` -> `.whileInZone embChain .command` on `coEqC`:
   let gP3Gone2 := mustApply g4 p3 .concede
-  let anchorBDef : CardDef := { name := "P45i2 SrcHost", types := #[.creature], power := some 2, toughness := some 2 }
+  let anchorBDef : CardDef := { name := "P45i2 SrcHost", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2) }
   let gChain0 :=
     insertObject
       (addPermanent (addPermanent gP3Gone2 anchorBDef p0 p3) eqDef2 p0 p3)
@@ -609,7 +607,6 @@ private def replayOk45i2 (gs : Array Game) : Bool :=
     gElsSrc.putStackAbility elspethAbSrc p0
       (abilityEffect := some {
         body := .create (.emblem .you { staticAbilities := #[StaticAbility.creaturesYouControlGetAndHave 2 2 #[Keyword.flying]] })
-        phrase := "You get an emblem."
       })
   let gElsResolved := mustApply (mustApply (mustApply (mustApply gEls0 p0 .pass) p1 .pass) p2 .pass) p3 .pass
   let elsEmb? := gElsResolved.objects.find? (fun o => o.zone == .command && o.name == s!"{elspethAbSrc.name} Emblem")
@@ -890,8 +887,8 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
     name := "P45i4 ManaSkiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 4
-    toughness := some 4
+    power := some (.fixed 4)
+    toughness := some (.fixed 4)
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 2 },
       { cost := CostSpec.ofItems #[.tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 1 }
@@ -960,7 +957,7 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
     isToken := true
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
-      effect := { Effect.addMana #[.colorless] with phrase := "Add {C}." }
+      effect := { Effect.addMana #[.colorless] with }
     }]
   }
   let morphDef4 : CardDef := { bear with name := "P45i4 MorphBear", keywords := #[.morph (CostSpec.ofGeneric 1)] }
@@ -1004,7 +1001,7 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
-        effect := { Effect.addMana #[.colorless] with phrase := "Add {C}." } }
+        effect := { Effect.addMana #[.colorless] with } }
     ]
   }
   let gNested0 := addPermanent (addPermanent (addPermanent g3 sacSelfAbDef p0 p0) pickManaDef p0 p0) bear p0 p0
@@ -1031,8 +1028,7 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
     name := "P45i4 AltCostBolt"
     manaCost := ManaCost.ofColor .red
     types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)]
-    spellEffect := some { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life." }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 2 }, additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)] }
   }
   let gAltRew00 := insertObject (addPermanent g3 bear p0 p0) altSacSpellDef p2 .exile
   let altExId := (gAltRew00.objects.filter (·.zone == .exile))[0]!.id
@@ -1087,8 +1083,8 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
     name := "P45i4 CrewTapSkiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 4
-    toughness := some 4
+    power := some (.fixed 4)
+    toughness := some (.fixed 4)
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you]), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 2 }
     ]
@@ -1110,8 +1106,8 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
   let armedArtHeroDef : CardDef := {
     name := "P45i4 ArmedConstruct"
     types := #[.artifact, .creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .sacrifice (.exact 1) (.filter (.all #[.hasSubtype (.literal .equipment), .attachedTo .this]))]
         effect := Effect.gainLife 2 },
@@ -1148,8 +1144,8 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
     name := "P45i4 SacSkiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 4
-    toughness := some 4
+    power := some (.fixed 4)
+    toughness := some (.fixed 4)
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you]), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .hasType .creature]))]
       effect := Effect.gainLife 3
@@ -1159,8 +1155,8 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
     name := "P45i4 TapSkiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 4
-    toughness := some 4
+    power := some (.fixed 4)
+    toughness := some (.fixed 4)
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you]), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
       effect := Effect.gainLife 3
@@ -1182,12 +1178,12 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
   let anchor4 := (addPermanent g3 loneArtDef p0 p0).permanentsOf p0 |>.back!
   let (gArtMana0, _) :=
     (addPermanent g3 loneArtDef p0 p0).putStackAbility anchor4 p0
-      (abilityEffect := some { Effect.addAnyColorSpendOnlyArtifactSpell with phrase := "Add one mana for artifact spell." })
+      (abilityEffect := some { Effect.addAnyColorSpendOnlyArtifactSpell with })
   let gArtManaRes := mustApply (mustApply (mustApply gArtMana0 p0 .pass) p1 .pass) p2 .pass
   let artPool := (gArtManaRes.player p0).manaPool
   let (gEqMana0, _) :=
     (addPermanent g3 loneArtDef p0 p0).putStackAbility anchor4 p0
-      (abilityEffect := some { Effect.addTwoAnyColorEquipment with phrase := "Add two mana for Equipment or equip." })
+      (abilityEffect := some { Effect.addTwoAnyColorEquipment with })
   let gEqManaRes := mustApply (mustApply (mustApply gEqMana0 p0 .pass) p1 .pass) p2 .pass
   let eqPool := (gEqManaRes.player p0).manaPool
 

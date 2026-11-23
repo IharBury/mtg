@@ -380,7 +380,7 @@ private def replayOk42i2 (gs : Array Game) : Bool :=
     creature "P42i2 LTBWatcher" ManaCost.empty #["Cleric"] 2 2 with
     triggeredAbilities := #[
       TriggeredAbility.mkTrigger (.permanentLeaves (.all #[.hasType .creature, .controlledBy .you]))
-        { body := Instruction.gainLifeFixed 3, phrase := "You gain 3 life." }
+        { body := Instruction.gainLifeFixed 3 }
     ]
   }
 
@@ -1338,7 +1338,7 @@ private def replayOk43i2 (gs : Array Game) : Bool :=
     creature "P43i2 LTBWatcher" ManaCost.empty #["Cleric"] 2 2 with
     triggeredAbilities := #[
       TriggeredAbility.mkTrigger (.permanentLeaves (.all #[.hasType .creature, .controlledBy .you]))
-        { body := Instruction.gainLifeFixed 3, phrase := "You gain 3 life." }
+        { body := Instruction.gainLifeFixed 3 }
     ]
   }
 
@@ -1741,7 +1741,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     subtypes := #["Treasure"]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
-      effect := { Effect.addMana #[.colorless] with phrase := "Add {C}." }
+      effect := { Effect.addMana #[.colorless] with }
     }]
   }
   let gBound0 :=
@@ -1797,8 +1797,8 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     name := "P43i4 Skiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 3
-    toughness := some 3
+    power := some (.fixed 3)
+    toughness := some (.fixed 3)
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapObjects (.totalPowerAtLeast (.const 1)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])]
       activeZones := #[.graveyard]
@@ -1865,13 +1865,13 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
   --     and `sourceStillPayable` + `Action.pay` succeeding after sacrificing `src` to a CR 601.2g mana ability):
   let modalAddManaAb : ActivatedAbility :=
     ActivatedAbility.mkModal (CostSpec.ofItems #[.tapSelf]) #[
-      { Effect.addMana #[.colorless] with phrase := "Add {C}." },
+      { Effect.addMana #[.colorless] with },
       Effect.gainLife 1
     ]
   let gyAddManaAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[.exile (.exact 1) .yourGraveyard .self]
     activeZones := #[.graveyard]
-    effect := { Effect.addMana #[.colorless] with phrase := "Add {C}." }
+    effect := { Effect.addMana #[.colorless] with }
   }
   let storyPowerExhaustDef : CardDef := {
     creature "P43i4 Dynamo" ManaCost.empty #["Construct"] 2 2 with
@@ -1880,13 +1880,13 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
       { cost := CostSpec.ofItems #[.removeCounters (.exact 1) (some .story) .self]
         tag? := some .exhaust
         lifetimeLimit? := some 1
-        effect := { Effect.addMana #[.colored .blue] with phrase := "Add {U}." } },
+        effect := { Effect.addMana #[.colored .blue] with } },
       -- idx 1: `powerUp` + `timing := .sorcery` mana ability costing `{2}`
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)]
         tag? := some .powerUp
         lifetimeLimit? := some 1
         timing := .sorcery
-        effect := { Effect.addMana #[.colored .red, .colored .red, .colored .red] with phrase := "Add {R}{R}{R}." } }
+        effect := { Effect.addMana #[.colored .red, .colored .red, .colored .red] with } }
     ]
   }
   let selfSacManaAndManaAbDef : CardDef := {
@@ -1990,9 +1990,9 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.tapSelf], tag? := some .exhaust, lifetimeLimit? := some 1
-        effect := { Effect.addMana #[.colored .blue] with phrase := "Add {U}." } },
+        effect := { Effect.addMana #[.colored .blue] with } },
       { cost := CostSpec.ofItems #[.tapSelf, .payLife (.const 1)]
-        effect := { Effect.addMana #[.colored .blue] with phrase := "Add {U}." } }
+        effect := { Effect.addMana #[.colored .blue] with } }
     ]
   }
   let gDual0 := addPermanent g2 dualBlueDef p0 p0
@@ -2005,8 +2005,8 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     name := "P43i4 ManaChariot"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 4
-    toughness := some 4
+    power := some (.fixed 4)
+    toughness := some (.fixed 4)
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 3 },
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 5 },
@@ -2738,8 +2738,8 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     name := "P44i4 TargetedSkiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 3
-    toughness := some 3
+    power := some (.fixed 3)
+    toughness := some (.fixed 3)
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.pump 1 1 },
       { cost := CostSpec.ofItems #[.sacrifice (.exact 1) .self, .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 2 }
@@ -2815,8 +2815,8 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     name := "P44i4 ManaSkiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 4
-    toughness := some 4
+    power := some (.fixed 4)
+    toughness := some (.fixed 4)
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 2 }
     ]
@@ -2856,7 +2856,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     isToken := true
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
-      effect := { Effect.addMana #[.colorless] with phrase := "Add {C}." }
+      effect := { Effect.addMana #[.colorless] with }
     }]
   }
   let morphDef : CardDef := { bear with name := "P44i4 MorphBear", keywords := #[.morph (CostSpec.ofGeneric 1)] }
@@ -2904,7 +2904,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     activatedAbilities := #[
       ActivatedAbility.manaAbility (.oneOf (.explicit #[.colored .blue]) (.const 1))
         (condition? := some ActivatedAbility.condEnteredThisTurnOrControlBasicLand),
-      { cost := CostSpec.ofItems #[.tapSelf], effect := { Effect.addAnyColor with phrase := "Add one mana of any color." } }
+      { cost := CostSpec.ofItems #[.tapSelf], effect := { Effect.addAnyColor with } }
     ]
   }
   let condLandOnlyDef : CardDef := {
@@ -2937,9 +2937,9 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.tapSelf, .putCounters (.const 1) .stun .self]
-        effect := { Effect.addAnyColorSpendOnlySubtype "Elf" with phrase := "Add one mana of any color. Spend this mana only to cast an Elf spell." } },
+        effect := { Effect.addAnyColorSpendOnlySubtype "Elf" with } },
       { cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))]
-        effect := { Effect.addMana #[.colored .black, .colored .black] with phrase := "Add {B}{B}." } }
+        effect := { Effect.addMana #[.colored .black, .colored .black] with } }
     ]
   }
   let gStunSac0 := addPermanent (addPermanent g2 stunElfManaDef p0 p0) bear p0 p0
@@ -2961,8 +2961,8 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     name := "P44i4 CrewDiscSkiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 3
-    toughness := some 3
+    power := some (.fixed 3)
+    toughness := some (.fixed 3)
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.discard (.exact 1) .hand, .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 2 }
     ]
@@ -2972,7 +2972,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)]
-        effect := { Effect.addAnyColor with phrase := "Add one mana of any color." } },
+        effect := { Effect.addAnyColor with } },
       { cost := CostSpec.ofItems #[.tapSelf], effect := Effect.gainLife 1 }
     ]
   }

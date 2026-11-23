@@ -59,8 +59,8 @@ private def mkCreature (name : String) (subs : Array String := #[])
     manaCost := mana
     types := #[.creature]
     subtypes := subs
-    power := some p
-    toughness := some t
+    power := some (.fixed p)
+    toughness := some (.fixed t)
     triggeredAbilities := triggers
     staticAbilities := statics
     keywords := kws }
@@ -113,10 +113,10 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
 -- Player-action triggers: scry, surveil, proliferate, and CR 603.10f player loses the game.
 #guard
   let actionsWatcher := mkEnchantment "Action Watcher" #[
-    TriggeredAbility.ofPattern (.playerAction .you .scry) "" (Instruction.gainLifeFixed 1),
-    TriggeredAbility.ofPattern (.playerAction .you .surveil) "" (Instruction.gainLifeFixed 2),
-    TriggeredAbility.ofPattern (.playerAction .you .proliferate) "" (Instruction.gainLifeFixed 3),
-    TriggeredAbility.ofPattern (.playerAction .opponent .losesGame) "" (Instruction.gainLifeFixed 4)
+    TriggeredAbility.ofPattern (.playerAction .you .scry) (Instruction.gainLifeFixed 1),
+    TriggeredAbility.ofPattern (.playerAction .you .surveil) (Instruction.gainLifeFixed 2),
+    TriggeredAbility.ofPattern (.playerAction .you .proliferate) (Instruction.gainLifeFixed 3),
+    TriggeredAbility.ofPattern (.playerAction .opponent .losesGame) (Instruction.gainLifeFixed 4)
   ]
   let g0 := quietGame (addPermanent afterDraw actionsWatcher p0 p0)
   let gScry := g0.record (GameEvent.looked g0.turnNumber p0 1 (cause := some testCause))
@@ -244,11 +244,9 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     g.record (GameEvent.becameMonarch g.turnNumber who prev)
   let ifAb : TriggeredAbility :=
     TriggeredAbility.ofPattern .stepYourUpkeep
-      "At the beginning of your upkeep, if you're the monarch, you gain 3 life."
       (Instruction.gainLifeFixed 3) (interveningIf? := some TriggeredAbility.condYouAreMonarch)
   let whenCondAb : TriggeredAbility :=
     TriggeredAbility.ofPattern (.whenCond .stepYourUpkeep TriggeredAbility.condYouAreMonarch)
-      "At the beginning of your upkeep while you're the monarch, you gain 5 life."
       (Instruction.gainLifeFixed 5)
   let ifCard := mkEnchantment "Intervening-If Crown" #[ifAb]
   let wcCard := mkEnchantment "WhenCond Crown" #[whenCondAb]
@@ -290,7 +288,7 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
   -- Fails criterion 1 (requires target):
   let targetedManaTrigger : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.playerAction .you .manaAdded)
-      { targeting := .of .creature, body := Instruction.addSimpleMana #[.colored .green] }
+      { targets := .creature, body := Instruction.addSimpleMana #[.colored .green] }
   -- Fails criterion 2 (does not trigger from mana ability or mana added):
   let etbAddMana : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisEnters
@@ -302,7 +300,7 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
   let modalTargetedMana : TriggeredAbility :=
     TriggeredAbility.mkModal (.playerAction .you .manaAdded) #[
       { body := Instruction.addSimpleMana #[.colored .green] },
-      { targeting := .of .creature, body := Instruction.tap (.target 0) }
+      { targets := .creature, body := Instruction.tap (.target 0) }
     ]
   -- Modal where no mode targets and at least one adds mana succeeds:
   let modalUntargetedMana : TriggeredAbility :=
@@ -431,14 +429,14 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
 #guard
   let etbModal : TriggeredAbility :=
     TriggeredAbility.mkModal .thisEnters #[
-      { body := Instruction.gainLifeFixed 3, phrase := "You gain 3 life." },
-      { body := Instruction.drawFixed 1, phrase := "Draw a card." }
-    ] (headerPhrase := "Choose one —")
+      { body := Instruction.gainLifeFixed 3 },
+      { body := Instruction.drawFixed 1 }
+    ]
   let diesModal : TriggeredAbility :=
     TriggeredAbility.mkModal .thisDies #[
-      { body := Instruction.gainLifeFixed 5, phrase := "You gain 5 life." },
-      { body := Instruction.scryFixed 2, phrase := "Scry 2." }
-    ] (headerPhrase := "Choose one —")
+      { body := Instruction.gainLifeFixed 5 },
+      { body := Instruction.scryFixed 2 }
+    ]
   let dualModalCard := mkCreature "Dual Modal Oracle" #["Sphinx"] (triggers := #[etbModal, diesModal])
   let (g0, hObj) := addToZone (quietGame afterDraw) dualModalCard p0 (.hand p0) (some p0)
   let (gEnt, bfId) := g0.putOntoBattlefield hObj.id p0
@@ -472,7 +470,7 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
   let cmdrDef : CardDef := {
     name := "Elf Commander", manaCost := ManaCost.ofColor .green
     supertypes := #[.legendary], types := #[.creature], subtypes := #["Elf", "Noble"]
-    power := some 2, toughness := some 2
+    power := some (.fixed 2), toughness := some (.fixed 2)
   }
   let elfSpell := mkCreature "Llanowar Test" #["Elf"] (mana := ManaCost.ofGeneric 1)
   let ancestryLand : CardDef := {
@@ -702,7 +700,7 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
       (Effect.gainLife 1)
   ]
   let artCrea : CardDef := {
-    name := "Clockwork Bear", types := #[.artifact, .creature], power := some 2, toughness := some 2
+    name := "Clockwork Bear", types := #[.artifact, .creature], power := some (.fixed 2), toughness := some (.fixed 2)
   }
   let gs0 := quietGame (addPermanent (addPermanent (addPermanent afterDraw artOrCreaSteal p0 p0) artCrea p0 p0) stolenB p0 p0)
   let objArt := namedPerm gs0 "Clockwork Bear"

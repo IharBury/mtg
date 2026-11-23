@@ -95,7 +95,7 @@ def cratermakerModeChosen : Game :=
 #guard (cratermakerModeChosen.object! cratermakerModeChosen.stack.back!.objectId).abilityEffect ==
   some (Effect.dealDamageToTargetCreature 2)
 #guard cratermakerModeChosen.log.any (fun s =>
-  mentions s "chooses a mode: This creature deals 2 damage")
+  mentions s "chooses a mode: deals 2 damage")
 #guard cratermakerModeChosen.log.any (fun s => mentions s "must choose a target (CR 601.2c)")
 
 -- A player is not a legal target for the damage mode.

@@ -69,7 +69,7 @@ def withSaga : Game := addPermanent afterDraw saga caster caster
 #guard (Effect.chapterDealDamageToEachNonSubtypeAndOpponents 2 "Villain").body != .noop
 #guard Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv.body != .noop
 
-#guard (Effect.chapterDealDamageToOppCreature 6).targeting.spec == .oppCreature
+#guard (Effect.chapterDealDamageToOppCreature 6).targets == .oppCreature
 #guard Effect.chapterPlusOneUpToOne.allowsZeroTargets
 #guard Effect.chapterBlinkUntilEndStep.allowsZeroTargets
 #guard !Effect.chapterDestroyOppArtifact.allowsZeroTargets

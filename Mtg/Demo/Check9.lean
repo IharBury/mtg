@@ -121,21 +121,19 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "Sac Or Pay Copy"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1, additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)] }
   }
   let discOrPayDef : CardDef := {
     name := "Disc Or Pay Copy"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.discardCardOrPayGeneric 2)]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1, additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.discardCardOrPayGeneric 2)] }
   }
   let plainSorcery : CardDef := {
     name := "Plain Sorcery"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let gAdd0 :=
     addPermanent
@@ -187,7 +185,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "Expensive Orb"
     manaCost := ManaCost.ofGeneric 5
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let freeSpellCopy : CardDef := {
     expensiveSpell with
@@ -197,12 +195,13 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let advCopy : CardDef := {
     expensiveSpell with
     name := "Zero Adventure"
-    adventure := some {
+    subFaces := #[{
+      kind := .adventure
       name := "Free Quest"
       manaCost := ManaCost.empty
       types := #[.instant]
-      spellEffect := some (Effect.gainLife 1)
-    }
+      spellAbility := some { effect := Effect.gainLife 1 }
+    }]
   }
   let gPrio0 := insertObject gMain expensiveSpell p0 (.hand p0)
   let expHandId := (gPrio0.player p0).hand.back!
@@ -278,12 +277,13 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
   let prepDef : CardDef := {
     grizzlyBears with
     name := "P46 PrepScout"
-    prepareFace := some {
+    subFaces := #[{
+      kind := .prepare
       name := "P46 ScoutCall"
       manaCost := ManaCost.empty
       types := #[.instant]
-      spellEffect := some (Effect.gainLife 1)
-    }
+      spellAbility := some { effect := Effect.gainLife 1 }
+    }]
   }
   let gPrep0 := (addPermanent gMain prepDef p0 p0)
   let prepObj := (gPrep0.permanentsOf p0).back!
@@ -329,8 +329,8 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P46 Skiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 4
-    toughness := some 4
+    power := some (.fixed 4)
+    toughness := some (.fixed 4)
     activatedAbilities := #[{ cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 1 }]
   }
   let gUniqueCrew0 := addPermanent (addPermanent (addPermanent gMain crewVeh p0 p0) dork22 p0 p0) forest p0 p0
@@ -364,18 +364,19 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P47 Sorc3"
     manaCost := ManaCost.ofGeneric 3
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let adv3Def : CardDef := {
     grizzlyBears with
     name := "P47 AdvKnight"
     manaCost := ManaCost.ofGeneric 3
-    adventure := some {
+    subFaces := #[{
+      kind := .adventure
       name := "P47 AdvQuest"
       manaCost := ManaCost.zero
       types := #[.instant]
-      spellEffect := some (Effect.gainLife 1)
-    }
+      spellAbility := some { effect := Effect.gainLife 1 }
+    }]
   }
   let gEx0 := insertObject gMain sorc3Def p0 .exile
   let exSorcId := (gEx0.objects.filter (·.zone == .exile)).back!.id
@@ -467,14 +468,14 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     manaCost := ManaCost.ofGenericAndColor 1 .green
     types := #[.sorcery]
     keywords := #[Keyword.convoke]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2 }
   }
   let improviseSpellDef : CardDef := {
     name := "P47 ImproviseBolt"
     manaCost := ManaCost.ofGenericAndColor 1 .blue
     types := #[.sorcery]
     keywords := #[.simple .improvise]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2 }
   }
   let inertArtDef : CardDef := { name := "P47 InertCog", types := #[.artifact] }
   let gConv0 :=
@@ -523,7 +524,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P48 RedPyre"
     manaCost := { symbols := #[.colored .red, .colored .red] }
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let gNullBase :=
     Id.run do
@@ -554,7 +555,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P48 GreenChant"
     manaCost := { symbols := #[.colored .green] }
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let gTrForest0 := insertObject (addPermanent gWithTreasure forest p0 p0) gGreenSpellDef p0 (.hand p0)
   let gTrForestProp := mustApply gTrForest0 p0 (.cast (gTrForest0.player p0).hand.back!)
@@ -616,7 +617,7 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P48 SteamSurge"
     manaCost := { symbols := #[.colored .blue, .colored .red] }
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2 }
   }
   let gCombo0 := insertObject (addPermanent gMain comboFilterDef p0 p0) urSpellDef p0 (.hand p0)
   let conduitId := (gCombo0.permanentsOf p0).find? (·.name == comboFilterDef.name) |>.get!.id
@@ -683,18 +684,19 @@ private def mustHoldCheck9 (label : String) (ok : Bool) : Bool :=
     name := "P49 SteamBolt"
     manaCost := { symbols := #[.colored .blue, .colored .red] }
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2 }
   }
   let urAdvCardDef : CardDef := {
     grizzlyBears with
     name := "P49 SteamKnight"
     manaCost := ManaCost.ofGeneric 5
-    adventure := some {
+    subFaces := #[{
+      kind := .adventure
       name := "P49 SteamSpark"
       manaCost := { symbols := #[.colored .blue, .colored .red] }
       types := #[.instant]
-      spellEffect := some (Effect.gainLife 1)
-    }
+      spellAbility := some { effect := Effect.gainLife 1 }
+    }]
   }
   let urShrineDef : CardDef := {
     name := "P49 SteamShrine"
@@ -775,8 +777,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     name := "P50 DemoSacBolt"
     manaCost := { symbols := #[.colored .green] }
     types := #[.instant]
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2, additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature] }
   }
   let (gTrOnly0, _) :=
     (insertObject (addPermanent gMain forest p0 p0) sacSpellDef p0 (.hand p0)).createOneToken
@@ -918,13 +919,13 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     name := "P51 Spark1"
     manaCost := ManaCost.ofGeneric 1
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let rgSorcDef : CardDef := {
     name := "P51 RgPulse"
     manaCost := { symbols := #[.colored .red, .colored .green] }
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2 }
   }
   let gCombo1 := insertObject (addPermanent gMain rgComboDef p0 p0) gen1SorcDef p0 (.hand p0)
   let gCombo1Prop := mustApply gCombo1 p0 (.cast (gCombo1.player p0).hand.back!)
@@ -955,8 +956,7 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     name := "P51 SneakSac"
     manaCost := ManaCost.ofGeneric 1
     types := #[.instant]
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1, additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
   }
   let gSneak0 :=
     ((insertObject (addPermanent gBaseForest grizzlyBears p0 p0) sacCreatureSpellDef p0 (.hand p0)).record
@@ -999,8 +999,8 @@ and `Demo.hasUniqueManaPayment` respects post-mana sacrifice & `.crew` reservati
     name := "P51 DarkRitualists"
     manaCost := { symbols := #[.colored .black, .colored .black, .colored .black] }
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   let gZemo0 := Id.run do
     let mut g := addPermanent gBaseForest zemoPaidDef p0 p0
@@ -1055,14 +1055,14 @@ the creature spell's material rider outcome, whereas for a noncreature spell it 
     name := "P5 Check9 GreenInstant"
     manaCost := ManaCost.ofColor .green
     types := #[.instant]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let gCreatureDef : CardDef := {
     name := "P5 Check9 GreenCreature"
     manaCost := ManaCost.ofColor .green
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   -- Floating `{G}` + untapped `hasteLand`:
   -- * On a creature spell -> NOT unique (tapping hasteLand grants `.gainsHaste`)!

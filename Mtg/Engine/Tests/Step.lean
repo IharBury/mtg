@@ -55,12 +55,12 @@ def onBoard (g : Game) (name : String) : Bool :=
   Effect.triggerExileOtherCopyEnchanted.body
 
 #guard toString (TriggeredAbility.onStep Effect.stepEnchantedControllerDraws) ==
-  "At the beginning of the upkeep of enchanted creature's controller, that player draws a card."
+  "At the beginning of the upkeep of enchanted creature's controller, enchanted creature's controller draws a card."
 #guard toString (TriggeredAbility.onStep Effect.stepDrawToTen) ==
-  "At the beginning of your end step, if you have fewer than ten cards in hand, draw cards equal to the difference."
-#guard (toString (TriggeredAbility.onStep Effect.stepCopyAbsorbingMan)).contains "Absorbing Man becomes a copy"
-#guard (toString (TriggeredAbility.onStep Effect.stepCopyTaskmaster)).contains "Taskmaster becomes a copy"
-#guard (toString (TriggeredAbility.onStep Effect.stepHydeChoose)).contains "Mister Hyde"
+  "At the beginning of your end step, if the number of cards in your hand is less than 10, draw the greater of 0 and 10 minus the number of cards in your hand cards."
+#guard (toString (TriggeredAbility.onStep Effect.stepCopyAbsorbingMan)).contains "this permanent becomes a copy of up to one target artifact"
+#guard (toString (TriggeredAbility.onStep Effect.stepCopyTaskmaster)).contains "this permanent becomes a copy of up to one target creature"
+#guard (toString (TriggeredAbility.onStep Effect.stepHydeChoose)).contains "Put a +1/+1 counter on this creature."
 #guard (toString (TriggeredAbility.onStep Effect.stepHarnessedFlicker)).contains "exile up to one other target nonland permanent you control"
 
 /- The enchanted creature's controller draws. The Aura's controller does not.

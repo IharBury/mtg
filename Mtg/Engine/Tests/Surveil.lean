@@ -36,8 +36,8 @@ def stepBody (g : Game) (body : Instruction) : Game :=
   let bear : CardDef := {
     name := "Surveil Bear"
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   let g0 := addPermanent afterDraw bear caster caster
   let g := stepBody g0 (Instruction.surveil perOtherCreature)

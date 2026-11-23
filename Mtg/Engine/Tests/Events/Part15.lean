@@ -26,13 +26,13 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
     name := "P49i1 ZeroBolt"
     manaCost := ManaCost.zero
     types := #[.instant]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let bigSorcDef : CardDef := {
     name := "P49i1 HugeSorc"
     manaCost := ManaCost.ofGeneric 6
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let oddEvenDef : CardDef := {
     name := "P49i1 OddStatue"
@@ -53,7 +53,7 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
   let wtGain1 : WaitingTrigger := {
     controller := p0
     source := anchorObj
-    ability := TriggeredAbility.mkTrigger (.gainLife .you) { body := Instruction.gainLifeFixed 1, phrase := "Gain 1 life." }
+    ability := TriggeredAbility.mkTrigger (.gainLife .you) { body := Instruction.gainLifeFixed 1 }
     eventCause := some testCause
   }
   let gRepEmpty0 := insertObject gCopyAnchor oddEvenDef p0 (.hand p0)
@@ -250,12 +250,13 @@ private def mustStepAgent49i2 (g : Game) (p : PlayerId) : Game :=
     bear with
     name := "P49i2 AdvKnight"
     manaCost := { symbols := #[.colored .red, .colored .red] }
-    adventure := some {
+    subFaces := #[{
+      kind := .adventure
       name := "P49i2 AdvQuest"
       manaCost := { symbols := #[.colored .red] }
       types := #[.instant]
-      spellEffect := some (Effect.gainLife 1)
-    }
+      spellAbility := some { effect := Effect.gainLife 1 }
+    }]
   }
   let gPaid0 := insertObject (toOffTurnP1 g3) advKnightDef p0 .exile
   let paidExId := (gPaid0.objects.filter (fun (o : GameObject) => o.zone == .exile)).back!.id
@@ -280,12 +281,13 @@ private def mustStepAgent49i2 (g : Game) (p : PlayerId) : Game :=
   let prepHostDef : CardDef := {
     bear with
     name := "P49i2 PrepHost"
-    prepareFace := some {
+    subFaces := #[{
+      kind := .prepare
       name := "P49i2 PrepRally"
       manaCost := ManaCost.empty
       types := #[.instant]
-      spellEffect := some (Effect.gainLife 1)
-    }
+      spellAbility := some { effect := Effect.gainLife 1 }
+    }]
   }
   let morphLegalFrontDef : CardDef := {
     bear with
@@ -370,12 +372,13 @@ private def mustStepAgent49i2 (g : Game) (p : PlayerId) : Game :=
     bear with
     name := "P49i2 GiantAdv"
     manaCost := ManaCost.ofGeneric 6
-    adventure := some {
+    subFaces := #[{
+      kind := .adventure
       name := "P49i2 TinySpark"
       manaCost := { symbols := #[.colored .red] }
       types := #[.instant]
-      spellEffect := some (Effect.gainLife 1)
-    }
+      spellAbility := some { effect := Effect.gainLife 1 }
+    }]
   }
   let gAdvLife0 := (insertObject g3 bigAdvDef p0 .exile).loseLife p0 18 -- life == 2
   let advLifeExId := (gAdvLife0.objects.filter (fun (o : GameObject) => o.zone == .exile)).back!.id
@@ -486,7 +489,7 @@ private def mustStepAgent49i2 (g : Game) (p : PlayerId) : Game :=
   let dragonCopyDef : CardDef := creature "P49i2 MirrorDragon" (ManaCost.ofGeneric 4) #["Dragon"] 4 4
   let gCopyCtrl0 :=
     addPermanent (addPermanent g3 bear p0 p0)
-      ({ name := "P49i2 Puppeteer", types := #[.creature], power := some 1, toughness := some 1 }) p1 p1
+      ({ name := "P49i2 Puppeteer", types := #[.creature], power := some (.fixed 1), toughness := some (.fixed 1) }) p1 p1
   let origBearObj := (gCopyCtrl0.permanentsOf p0).find? (·.name == bear.name) |>.get!
   let puppeteerObj := (gCopyCtrl0.permanentsOf p1).find? (·.name == "P49i2 Puppeteer") |>.get!
   let gCopyCtrl1 :=
@@ -592,14 +595,14 @@ private def replayOk49i3 (gs : Array Game) : Bool :=
     name := "P49i3 LeaveWatcher"
     triggeredAbilities := #[
       TriggeredAbility.ofPattern (.permanentLeaves (.all #[.hasType .creature, .controlledBy .you]))
-        "Whenever a creature you control leaves, gain 2 life." (Instruction.gainLifeFixed 2)
+        (Instruction.gainLifeFixed 2)
     ]
   }
   let dyingPoDef : CardDef := {
     bear with
     name := "P49i3 PhasedVictim"
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisLeaves { body := Instruction.gainLifeFixed 3, phrase := "When this leaves, gain 3 life." }
+      TriggeredAbility.mkTrigger .thisLeaves { body := Instruction.gainLifeFixed 3 }
     ]
   }
   let gTrigPo0 := addPermanent (addPermanent g4 ltbWatcherDef p0 p0) dyingPoDef p0 p0
@@ -740,7 +743,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
-      effect := { body := Instruction.addSimpleMana #[.colored .blue], phrase := "Add {U}." }
+      effect := { body := Instruction.addSimpleMana #[.colored .blue] }
     }]
   }
   let gDrum0 := addPermanent (addPermanent g3 tapCreatureManaArtDef p0 p0) bear p0 p0
@@ -770,8 +773,8 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let onePowManaElfDef : CardDef := {
     llanowarElves with
     name := "P49i4 QuickElf"
-    power := some 1
-    toughness := some 1
+    power := some (.fixed 1)
+    toughness := some (.fixed 1)
     keywords := #[Keyword.haste]
   }
   let gSkiff0 :=
@@ -817,7 +820,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     name := "P49i4 MindBlaze"
     manaCost := { symbols := #[.x] }
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let gRedX0 :=
     insertObject (g3.grantTypeCostLessThisTurn p0 .sorcery 1) xSorcDef p0 (.hand p0)
@@ -834,7 +837,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     name := "P49i4 SteamX"
     manaCost := { symbols := #[.x, .colored .blue, .colored .red] }
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let gComboX0 :=
     insertObject (addPermanent (addPermanent g3 urComboLandDef p0 p0) forest p0 p0) xUrSorcDef p0 (.hand p0)
@@ -857,7 +860,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let xEtbLifeDef : CardDef := {
     creature "P49i4 XHydraLifegiver" { symbols := #[.x] } #["Hydra"] 2 2 with
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLife .chosenX, phrase := "When this enters, gain X life." }
+      TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLife .chosenX }
     ]
   }
   let gXEtb0 := (insertObject g3 xEtbLifeDef p0 (.hand p0)).addMana p0 .colorless 4
@@ -871,7 +874,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana { symbols := #[.x] }]
-      effect := { targeting := .of .creature, body := Instruction.tapAndStun (.target 0) .chosenX, phrase := "Tap target creature and put X stun counters on it." }
+      effect := { targets := .creature, body := Instruction.tapAndStun (.target 0) .chosenX }
     }]
   }
   let gStun0 := (addPermanent (addPermanent g3 stunRodDef p0 p0) bear p1 p1).addMana p0 .colorless 3
@@ -883,7 +886,6 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
 
   let warriorsXEffect : Effect := {
     body := Instruction.createTokens .warrior .chosenX
-    phrase := "Create X 1/1 Warrior creature tokens."
   }
   let gWarriorsX := g3.applyEffect p0 warriorsXEffect #[] (chosenX := some 2)
 
@@ -892,7 +894,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let rPow : Instruction := Instruction.loseLife (.objectStat .power .this) .opponents
   let rTgh : Instruction := Instruction.loseLife (.objectStat .toughness .this) .opponents
   let rChX : Instruction := Instruction.loseLife .chosenX .opponents
-  let mkSpellEff (body : Instruction) : Effect := { body, phrase := "Opponents lose life." }
+  let mkSpellEff (body : Instruction) : Effect := { body }
 
   let gOrSingleton :=
     g3.applyUnified p0 (mkSpellEff (.chooseModes { modes := #[{ body := rTgh }], chooseAtResolution := true })) #[]
@@ -1199,8 +1201,8 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
     supertypes := #[.legendary]
     types := #[.creature]
     subtypes := #["Elf"]
-    power := some 0
-    toughness := some 0
+    power := some (.fixed 0)
+    toughness := some (.fixed 0)
     staticAbilities := #[.powerToughnessEqualLandsYouControl]
   }
   let gCopy0 := addPermanent (addPermanent (addPermanent g0 cdaLegendDef p0 p0) forest p0 p0) forest p0 p0
@@ -1361,7 +1363,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   -- Triggered caller (`applyTriggeredAbility`) forwards targets into attacking copy token creation:
   let atkSeqAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisAttacks {
-      targeting := .of .creature
+      targets := .creature
       body := .create (.tokens .you (.const 1) copySpec { tapped := true, attacking := true })
     }
   let gSeqRes := gCopy0.applyTriggeredAbility p0 atkSeqAb none #[.permanent origObj.id]
@@ -1369,7 +1371,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let gLifeGain0 := gCopy0.gainLife p0 2
   let gLifeGainTok :=
     gLifeGain0.applyEffect p0 {
-      targeting := .of .creature
+      targets := .creature
       body := .create (.tokens .you (.playerMetric .lifeGainedThisTurn .you) copySpec {})
     } #[.permanent origObj.id]
   let lifeGainCopies := (gLifeGainTok.permanentsOf p0).filter (·.name == "Shadow Copy")

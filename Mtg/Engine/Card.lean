@@ -72,6 +72,6 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `TriggeredAbility`: printed triggered ability constructors and rendering.
 - `KeywordExpand`: pure CR 702.1 `KeywordAbility.expand` lowering keywords directly
   into unified static/triggered/activated/additional/alternative/special-action/instruction rules.
-- `CardDef`: the printed card definition and `AdventureFace`.
+- `CardDef`: `PrintedStat`, `DeckLimit`, `SubFace`, and the 21-field `CardDef`.
 - `Guards`: cross-abstraction `#guard` regression tests.
 -/

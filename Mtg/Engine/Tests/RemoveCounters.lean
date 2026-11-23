@@ -56,14 +56,14 @@ def grasp : CardDef := { name := "Grasp", types := #[.enchantment] }
 def bear : CardDef := {
   name := "Bear"
   types := #[.creature]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
 }
 def foe : CardDef := {
   name := "Foe"
   types := #[.creature]
-  power := some 3
-  toughness := some 3
+  power := some (.fixed 3)
+  toughness := some (.fixed 3)
 }
 
 def hopeFromSource : Instruction :=
@@ -190,6 +190,6 @@ Damage and a pump stay. Nothing enchanted leaves counters intact. -/
 #guard TriggeredAbility.toNotation .onYourEndStepRemoveHopeDrawSac ==
   "At the beginning of your end step, remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life."
 #guard TriggeredAbility.toNotation .onEnterTapEnchantedRemoveCounters ==
-  "When this Aura enters, tap enchanted creature and remove all counters from it."
+  "When this Aura enters, tap enchanted creature. Remove any number of counter(s) from enchanted creature."
 
 end Mtg.Engine.RemoveCountersTests

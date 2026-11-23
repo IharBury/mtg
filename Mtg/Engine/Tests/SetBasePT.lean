@@ -21,7 +21,7 @@ def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
   TriggeredAbility.mkTrigger .thisEnters {
-    targeting := .of .creature
+    targets := .creature
     body := Instruction.setBasePTFixed (.target 0) 1 1
   }
 
@@ -56,7 +56,7 @@ def land : CardDef := { name := "Field", types := #[.land] }
 def grasp : CardDef := enchantment "Grasp" ManaCost.empty ""
 
 def fixedTarget : Effect :=
-  { targeting := .of .creature, body := Instruction.setBasePTFixed (.target 0) 1 1 }
+  { targets := .creature, body := Instruction.setBasePTFixed (.target 0) 1 1 }
 
 def fixedSource : Effect :=
   { body := Instruction.setBasePTFixed .this 5 5 }
@@ -65,7 +65,7 @@ def fixedEnchanted : Effect :=
   { body := Instruction.setBasePTFixed .attachedHost 0 2 }
 
 def fixedWhileSource : Effect :=
-  { targeting := .of .creature
+  { targets := .creature
     body := Instruction.ifThen (.exists .this) (Instruction.setBasePTFixed (.target 0) 3 1) }
 
 def fixedYours : Effect :=

@@ -66,7 +66,7 @@ def putStackAbility (g : Game) (source : GameObject) (controller : PlayerId)
 
 /-- Create the exiled copy of `o`'s prepare spell and grant permission to cast
 it while `o` remains prepared (ruling 742). -/
-def createPreparedCopy (g : Game) (o : GameObject) (face : AdventureFace)
+def createPreparedCopy (g : Game) (o : GameObject) (face : SubFace)
     (cause : Option EventCause := none) : Game :=
   let p := (g.controllerOf o).getD o.owner
   let copyId : ObjectId := ⟨g.nextObjectId⟩

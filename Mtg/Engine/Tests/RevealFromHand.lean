@@ -19,15 +19,15 @@ def opp : PlayerId := ⟨1⟩
 def sourceCard : CardDef := {
   name := "Cloak Source"
   types := #[.creature]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
 }
 
 def bear : CardDef := {
   name := "Reveal Bear"
   types := #[.creature]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
 }
 
 def spell : CardDef := {

@@ -24,13 +24,13 @@ def prepareInstr (obj : ObjectExpr) : Instruction :=
   .permanent (.setDesignation obj .prepared true)
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, body := prepareInstr (.target 0) }
+  TriggeredAbility.mkTrigger .thisEnters { targets := .creature, body := prepareInstr (.target 0) }
 
 def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (spec : TargetSpec := .creature) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
@@ -54,22 +54,22 @@ def markPrepared (g : Game) (name : String) : Game :=
   let o := obj g name
   g.record (GameEvent.designation g.turnNumber (g.snapshot o) .prepared true (cause := .gameRule .staticAbility))
 
-def seed : AdventureFace := { name := "Seed" }
+def seed : SubFace := { kind := .prepare, name := "Seed" }
 
 def angel : CardDef := {
   name := "Angel"
   types := #[.creature]
-  power := some 2
-  toughness := some 4
-  prepareFace := some seed
+  power := some (.fixed 2)
+  toughness := some (.fixed 4)
+  subFaces := #[{ seed with kind := .prepare }]
 }
 
 def bear : CardDef := {
   name := "Bear"
   types := #[.creature]
-  power := some 2
-  toughness := some 2
-  prepareFace := some seed
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
+  subFaces := #[{ seed with kind := .prepare }]
 }
 
 def plain : CardDef := creature "Plain" ManaCost.empty #[] 1 1
@@ -221,7 +221,7 @@ def whileSourcePrepared : Instruction :=
 
 /- Printed phrases stay with the recipient that produces them. -/
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, body := prepared } ==
+    { targets := .creature, body := prepared } ==
   "target creature becomes prepared"
 #guard TriggeredAbility.resolutionPhrase
     { body := prepareInstr .this } ==

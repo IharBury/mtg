@@ -790,7 +790,7 @@ where
     match g.objectAwaitingTargets with
     | none => some .pass
     | some spell =>
-      let spec := (g.targetingOf spell).spec
+      let spec := g.targetSpecOf spell
       let curPos := g.currentTargetSlot spell
       let reqCount : Nat :=
         if !spec.isMultiSlot then (g.announcedTargetBounds spell).1

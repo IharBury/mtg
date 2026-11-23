@@ -1026,7 +1026,7 @@ def applyStackObjectEvent (g : Game) (e : StackObjectEvent) : Game :=
     let origEntry? := g.stack.find? (·.objectId == original)
     let isFaceDown := copy.faceDown || origObj?.any (·.status.faceDown)
     let faceDownCard : CardDef :=
-      { name := "", types := #[.creature], power := some 2, toughness := some 2 }
+      { name := "", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2) }
     let printed :=
       if isFaceDown then
         copy.copiable.getD faceDownCard
@@ -3657,7 +3657,7 @@ timestamp. -/
 def copiableValuesWithTs (g : Game) (o : GameObject) : CardDef × (Nat × Nat) :=
   if o.isLkiSnapshot then (o.printed, g.objectEntryTimestamp o)
   else if o.status.faceDown then
-    ({ name := "", types := #[.creature], power := some 2, toughness := some 2 },
+    ({ name := "", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2) },
      g.objectEntryTimestamp o)
   else
     g.unmaskedCopiableValuesWithTs o
@@ -3667,7 +3667,7 @@ face-down status (CR 613.2a–c / 707.2 / 708.2). -/
 def copiableValues (g : Game) (o : GameObject) : CardDef :=
   if o.isLkiSnapshot then o.printed
   else if o.status.faceDown then
-    { name := "", types := #[.creature], power := some 2, toughness := some 2 }
+    { name := "", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2) }
   else
     g.unmaskedCopiableValues o
 
@@ -6314,20 +6314,20 @@ private def evalStaticStat? (g : Game) (ptOf? : Option (GameObject → Int × In
   match sk with
   | .power =>
     if !g.isCreature o then none
-    else if o.isLkiSnapshot then o.printed.power
+    else if o.isLkiSnapshot then o.printed.powerValue
     else match ptOf? with
       | some f => some (f o).1
       | none =>
         let bc := g.baseCard o
-        some (if o.status.faceDown && o.isOnBattlefield then 2 else bc.power.getD 0)
+        some (if o.status.faceDown && o.isOnBattlefield then 2 else bc.powerValue.getD 0)
   | .toughness =>
     if !g.isCreature o then none
-    else if o.isLkiSnapshot then o.printed.toughness
+    else if o.isLkiSnapshot then o.printed.toughnessValue
     else match ptOf? with
       | some f => some (f o).2
       | none =>
         let bc := g.baseCard o
-        some (if o.status.faceDown && o.isOnBattlefield then 2 else bc.toughness.getD 0)
+        some (if o.status.faceDown && o.isOnBattlefield then 2 else bc.toughnessValue.getD 0)
   | .manaValue => some (Int.ofNat (g.staticManaValue o))
   | .loyalty =>
     if o.zone == .battlefield && g.isPlaneswalker o then
@@ -6351,8 +6351,8 @@ private def lkiEventObjectAsGameObject (eo : EventObject) : GameObject :=
       types := eo.types
       subtypes := eo.subtypes.map CardSubtype.englishName
       supertypes := eo.supertypes
-      power := eo.power
-      toughness := eo.toughness
+      power := eo.power.map .fixed
+      toughness := eo.toughness.map .fixed
       loyalty := eo.loyalty.map Int.ofNat
       keywords := kws
       staticAbilities := eo.staticAbilities
@@ -9487,7 +9487,6 @@ def prowessTriggers (g : Game) (o : GameObject) : Array TriggeredAbility :=
     if cnt == 0 then #[]
     else
       Array.replicate cnt (TriggeredAbility.ofPattern .youCastNoncreature
-        "Prowess (Whenever you cast a noncreature spell, this creature gets +1/+1 until end of turn.)"
         (Instruction.pumpFixed .this 1 1))
 
 /-- Number of Iron Fist tap abilities currently granted to `o` in Layer 6. -/
@@ -9549,7 +9548,7 @@ def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
       let morphAb : Array ActivatedAbility :=
         match (g.unmaskedCopiableValues o).morphCost? with
         | some cost =>
-          #[{ effect := { body := .permanent (.turnFaceUp .this), phrase := "Turn this face up." }
+          #[{ effect := { body := .permanent (.turnFaceUp .this) }
               cost := cost }]
         | none => #[]
       morphAb ++ (g.evalLayer6Fast o).activated
@@ -10471,7 +10470,7 @@ private partial def cdaBasePTAux (g : Game) (visited : Array (ObjectId × (Int �
   if o.status.faceDown && o.isOnBattlefield then (2, 2)
   else
     let bc := g.baseCard o
-    let baseBox := (bc.power.getD 0, bc.toughness.getD 0)
+    let baseBox := (bc.powerValue.getD 0, bc.toughnessValue.getD 0)
     if bc.staticAbilities.isEmpty || !g.retainsPrintedAbilities o || visited.any (·.1 == o.id) then
       baseBox
     else
@@ -10615,7 +10614,7 @@ private partial def evalLayer7bAux (g : Game) (visited : Array (ObjectId × (Int
 /-- Cycle-guarded characteristic P/T after Layers 7a and 7b (CR 613.4a–b). -/
 private partial def characteristicBasePTAux (g : Game) (visited : Array (ObjectId × (Int × Int)))
     (o : GameObject) : Int × Int :=
-  if o.isLkiSnapshot then (o.printed.power.getD 0, o.printed.toughness.getD 0)
+  if o.isLkiSnapshot then (o.printed.powerValue.getD 0, o.printed.toughnessValue.getD 0)
   else
     let (cdaP, cdaT) := g.cdaBasePTAux visited o
     let (setP, setT) := g.evalLayer7bAux visited o (cdaP, cdaT)
@@ -10731,7 +10730,7 @@ When `o.id` is already in `visited`, returns `o`'s accumulated P/T from layers a
 effects that do not depend on the static ability currently being evaluated. -/
 private partial def snapshotPTAux (g : Game) (visited : Array (ObjectId × (Int × Int)))
     (o : GameObject) : Int × Int :=
-  if o.isLkiSnapshot then (o.printed.power.getD 0, o.printed.toughness.getD 0)
+  if o.isLkiSnapshot then (o.printed.powerValue.getD 0, o.printed.toughnessValue.getD 0)
   else
     match visited.find? (·.1 == o.id) with
     | some (_, curPT) => curPT
@@ -12363,8 +12362,8 @@ def damageSourceObjectFromLki (eo : EventObject) (prepared : Bool := false) : Ga
         types := eo.types
         subtypes := eo.subtypes.map CardSubtype.englishName
         supertypes := eo.supertypes
-        power := eo.power
-        toughness := eo.toughness
+        power := eo.power.map .fixed
+        toughness := eo.toughness.map .fixed
         keywords := kws
         staticAbilities := eo.staticAbilities
         triggeredAbilities := eo.triggeredAbilities
@@ -12424,7 +12423,7 @@ def triggerStillNeedsTargets (e : StackEntry) (ab : TriggeredAbility) : Bool :=
   match ab.dividedDamage? with
   | some (amount, _) => assignedDividedDamage e < amount
   | none =>
-    if ab.allowsZeroTargets || ab.targetSpec.allowsZero || ab.targetSpec.totalPositions > 1 then
+    if ab.targetSpec.allowsZero || ab.targetSpec.totalPositions > 1 then
       !e.targetsAnnounced
     else ab.requiresTarget && e.targets.isEmpty
 
@@ -12438,11 +12437,11 @@ def triggerNeedingTargets (g : Game) : Option StackEntry :=
       match o.triggeredAbility, o.abilityEffect with
       | some _, some eff =>
         -- A modal trigger whose modes were chosen (CR 603.3c).
-        match eff.dividedDamage with
+        match eff.dividedDamage? with
         | some (amount, _) => assignedDividedDamage e < amount
         | none =>
-          let spec := eff.effectiveTargetSpec
-          if eff.allowsZeroTargets || spec.allowsZero || spec.totalPositions > 1 then
+          let spec := eff.targets
+          if spec.allowsZero || spec.totalPositions > 1 then
             !e.targetsAnnounced
           else eff.requiresTarget && e.targets.isEmpty
       | some ab, none =>
@@ -13476,11 +13475,11 @@ private def extractTargetingInfo (pre : GameSnapshot) (post : Game) (e : GameEve
           let newlyTargeted := (uniquePermTargetsOn post se.targets).filter (fun o => !prevPermIds.contains o.id)
           some (ctrl, some obj, isAbility, newTgts, newlyTargeted)
         else if isAbility then
-          let targeting :=
-            ((obj.abilityEffect.map (·.targeting)).orElse (fun _ =>
-              obj.triggeredAbility.map (·.targeting))).getD (EffectTargeting.of .none)
+          let spec :=
+            ((obj.abilityEffect.map (·.targets)).orElse (fun _ =>
+              obj.triggeredAbility.map (·.targetSpec))).getD .none
           let totalSlots :=
-            if targeting.spec.isMultiSlot then targeting.spec.totalPositions else 0
+            if spec.isMultiSlot then spec.totalPositions else 0
           let prevDone :=
             prevEntry?.any fun pe =>
               pe.targetsAnnounced && !pe.targets.isEmpty &&
@@ -13517,7 +13516,8 @@ private def extractTargetingInfo (pre : GameSnapshot) (post : Game) (e : GameEve
         if !(spellSnap.name.isEmpty && !spellSnap.faceDown) &&
             post.matchTriggerPlayerFilter src srcCtrl caster casterP then
           let castObj := findTriggerEventObj post spellSnap
-          if post.evalTriggerPred src srcCtrl castObj spellPred then
+          if !GameEvent.isUncastStackCopy post.events castObj.id &&
+              post.evalTriggerPred src srcCtrl castObj spellPred then
             let fromOk :=
               fromZ?.all fun zk =>
                 evFrom.kind == zk || (zk == .hand && post.castFromHand castObj.id)
@@ -13824,7 +13824,6 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
             controller := some monarchPl.id, zone := .command }
         let ab : TriggeredAbility :=
           TriggeredAbility.ofPattern .combatDamageToYou
-            "Whenever a creature deals combat damage to the monarch, its controller becomes the monarch."
             (.player (.setStatus (.triggerPlayer .controllerOfSubject) .monarch))
         for (srcObj?, sid?, attCtrl) in attackers do
           waiting := waiting.push
@@ -13864,7 +13863,7 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
                     controller := some dt.controller, zone := .exile }
                 let ab : TriggeredAbility :=
                   TriggeredAbility.mkTrigger .stepEachUpkeep
-                    { phrase := s!"Create {n} 1/1 white Bird Soldier creature token(s) with flying" }
+                    { body := Instruction.createTokensFixed .birdSoldier n }
                 waiting := waiting.push
                   { controller := dt.controller, source := src, ability := ab,
                     pattern := .stepEachUpkeep, eventCause := some dt.cause,
@@ -13881,7 +13880,6 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
                   controller := some monarchPl.id, zone := .command }
               let ab : TriggeredAbility :=
                 TriggeredAbility.ofPattern .stepYourEndStep
-                  "At the beginning of the monarch's end step, that player draws a card."
                   (Instruction.drawFixed 1 .you)
               waiting := waiting.push
                 { controller := monarchPl.id, source := src, ability := ab,
@@ -13901,8 +13899,7 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
                     id := noSourceSentinelId, owner := dt.controller,
                     controller := some dt.controller, zone := .exile }
                 let ab : TriggeredAbility :=
-                  TriggeredAbility.mkTrigger .stepEachEndStep
-                    { phrase := "At the beginning of the next end step" }
+                  TriggeredAbility.mkTrigger .stepEachEndStep { body := .noop }
                 waiting := waiting.push
                   { controller := dt.controller, source := src, ability := ab,
                     pattern := .stepEachEndStep, eventCause := some dt.cause,
@@ -13935,25 +13932,11 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
             queueTriggerAb post post caster castObj .onCastCascade .thisCast
               (w := waiting) (fs := firedSources)
           waiting := w; firedSources := fs
-        -- Photon Blast Barrage copy-self
-        let isUncastCopy := GameEvent.isUncastStackCopy post.events castObj.id
-        let copiesSelf :=
-          match (post.baseCard castObj).spellEffect with
-          | some eff => !isUncastCopy && eff.phrase.startsWith "When you cast this spell, copy it X times."
-          | none => false
-        if copiesSelf then
-          let copySelfAb : TriggeredAbility :=
-            TriggeredAbility.ofPattern .thisCast
-              "When you cast this spell, copy it X times. You may choose new targets for the copies"
-              (.stack (.copyStackObject .this .chosenX true)) (activeZones := #[.stack])
-          let (w, fs) :=
-            queueTriggerAb post post caster castObj copySelfAb .thisCast
-              (w := waiting) (fs := firedSources)
-          waiting := w; firedSources := fs
         -- Ward (CR 702.21a)
         let (w, fs) := queueWardsFor caster castObj uniquePerm waiting firedSources
         waiting := w; firedSources := fs
         -- Delayed spell-copy triggers (Way of the Cryomancer & Loki Laufeyson)
+        let isUncastCopy := GameEvent.isUncastStackCopy post.events castObj.id
         let mvCast := spellSnap.manaValue
         if !isUncastCopy && post.isInstantOrSorcery castObj then
           for dt in post.delayedTriggers do
@@ -13966,7 +13949,7 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
                     controller := some dt.controller, zone := .exile }
                 let ab : TriggeredAbility :=
                   TriggeredAbility.mkTrigger .youCastInstantOrSorcery
-                    { phrase := "Copy that spell. You may choose new targets for the copy" }
+                    { body := .stack (.copyStackObject .triggerSubject (.const 1) true) }
                 waiting := waiting.push
                   { controller := dt.controller, source := src, ability := ab,
                     pattern := .youCastInstantOrSorcery,
@@ -13990,7 +13973,7 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
                       controller := some dt.controller, zone := .exile }
                   let ab : TriggeredAbility :=
                     TriggeredAbility.mkTrigger .youCastInstantOrSorcery
-                      { phrase := "Copy that spell. You may choose new targets for the copy" }
+                      { body := .stack (.copyStackObject .triggerSubject (.const 1) true) }
                   waiting := waiting.push
                     { controller := dt.controller, source := src, ability := ab,
                       pattern := .youCastInstantOrSorcery,

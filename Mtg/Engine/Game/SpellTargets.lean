@@ -44,11 +44,9 @@ def chosenModesOf (g : Game) (o : GameObject) : Array Nat :=
   | some e => ((e.chosenMode.toArray ++ e.extraModes).qsort (· < ·))
   | none => #[]
 
-/-- Effective `TargetSpec` of a single mode incorporating its `allowsZeroTargets`
-and `maxTargets` bounds, so combining modes preserves optionality and upper
-bounds (CR 115.1c / 601.2c / 700.2). -/
+/-- Effective `TargetSpec` of a single mode (CR 115.1c / 601.2c / 700.2). -/
 def modeTargetSpec (m : Effect) : TargetSpec :=
-  m.effectiveTargetSpec
+  m.targets
 
 /-- One effect standing for several chosen modes while targets are
 announced: the instances of “target” of each mode, in printed order. -/
@@ -59,14 +57,10 @@ def combinedModesEffect (modes : Array Effect) : Option Effect :=
   | e :: _ =>
     let targeted := modes.filter (·.requiresTarget)
     match targeted.toList with
-    | [] =>
-      some { e with targeting := .of .none, allowsZeroTargets := false, maxTargets := 0 }
+    | [] => some { e with targets := .none }
     | t0 :: tRest =>
       let spec := tRest.foldl (fun s m => s.append (modeTargetSpec m)) (modeTargetSpec t0)
-      some { e with
-        targeting := .of spec
-        allowsZeroTargets := targeted.all (fun m => m.allowsZeroTargets || m.effectiveTargetSpec.allowsZero)
-        maxTargets := targeted.foldl (fun acc m => acc + m.maxTargetCount) 0 }
+      some { e with targets := spec }
 
 /-- Combine the chosen modes of a modal triggered ability into one effect,
 preserving the targeting shapes of every targeted mode in printed order (CR 700.2). -/
@@ -77,21 +71,15 @@ def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Eff
   | [e] => some e
   | es =>
     let targeted := picked.filter (·.requiresTarget)
-    let targeting : EffectTargeting :=
+    let targets : TargetSpec :=
       match targeted.toList with
-      | [] => .of .none
-      | [t0] =>
-        if es.length == 1 then t0.targeting else .of (modeTargetSpec t0)
+      | [] => .none
+      | [t0] => modeTargetSpec t0
       | t0 :: tRest =>
-        let spec := tRest.foldl (fun s m => s.append (modeTargetSpec m)) (modeTargetSpec t0)
-        .of spec
-    some { es.head! with
-      targeting
-      allowsZeroTargets := !targeted.isEmpty &&
-        targeted.all (fun m => m.allowsZeroTargets || m.effectiveTargetSpec.allowsZero)
-      maxTargets := targeted.foldl (fun acc m => acc + m.maxTargetCount) 0
-      body := .seq (es.toArray.map (·.body))
-      phrase := String.intercalate ". " (es.map (·.phrase)) }
+        tRest.foldl (fun s m => s.append (modeTargetSpec m)) (modeTargetSpec t0)
+    some {
+      targets
+      body := .seq (es.toArray.map (·.body)) }
 
 /-- The targets a kicked spell announces instead (CR 702.33g / 601.2c): The
 Eagles Are Coming! chooses any number of creatures you own, and Galadriel's
@@ -99,12 +87,11 @@ Dismissal targets a player. -/
 def kickedSpellEffect (e : Effect) : Effect :=
   if e.body == Effect.eaglesAreComing.body then
     { e with
-      targeting := .of (.ofDomain
+      targets := .ofDomain
         (.object .battlefield (ObjectPred.andAll #[.hasType .creature, .ownedBy .you]))
-        .anyNumber)
-      allowsZeroTargets := true, maxTargets := 100 }
+        .anyNumber }
   else if e.body == Effect.phaseOutKicker.body then
-    { e with targeting := .of .player }
+    { e with targets := .player }
   else e
 
 /-- True when `c` is a “Choose up to two” graveyard-return modal spell
@@ -117,12 +104,10 @@ def isReturnUpToTwoGyModal (c : CardDef) : Bool :=
 0 = target artifact card, 1 = target creature card,
 2 = target enchantment card, 3 = target land card (in your graveyard). -/
 def returnUpToTwoGyModes : Array Effect :=
-  #[(.artifact, "artifact"), (.creature, "creature"),
-    (.enchantment, "enchantment"), (.land, "land")].map fun (ty, label) =>
+  #[.artifact, .creature, .enchantment, .land].map fun ty =>
     Effect.mkSpell
-      (.of (.ofDomain (.object .yourGraveyard (ObjectPred.andAll #[.isKind .card, .hasType ty]))))
+      (.ofDomain (.object .yourGraveyard (ObjectPred.andAll #[.isKind .card, .hasType ty])))
       (.moveZone .allTargets (.hand .controller) .returnToHand {})
-      s!"Target {label} card"
 
 /-- Modes a modal spell face offers during CR 601.2b announcement. -/
 def effectiveSpellModes (c : CardDef) : Array Effect :=
@@ -211,7 +196,7 @@ def kickedFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef)
     else
       let k := kickedSpellEffect e
       let k' := g.expandEachOpponentEffect p (if tcs.isEmpty then k else TextChange.applyEffect tcs k)
-      !k'.requiresTarget || k'.allowsZeroTargets || k'.effectiveTargetSpec.allowsZero ||
+      !k'.requiresTarget || k'.targets.allowsZero ||
         g.effectHasEnoughTargets p k' sourceId
   | _, _ => false
 
@@ -220,7 +205,7 @@ ones exist (CR 700.2a / 601.2c / 115.3). -/
 def spellModeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
     (sourceId : Option ObjectId := none) : Bool :=
   let e := g.expandEachOpponentEffect p e
-  !e.requiresTarget || e.allowsZeroTargets || e.effectiveTargetSpec.allowsZero ||
+  !e.requiresTarget || e.targets.allowsZero ||
     g.effectHasEnoughTargets p e sourceId
 
 /-- Legal mode indices for a modal spell (CR 700.2a). Untargeted modes stay
@@ -240,7 +225,7 @@ def legalModes (g : Game) (p : PlayerId) (o : GameObject) : Array Nat :=
 /-- True when `e` targets a stack spell an opponent of `p` controls. -/
 def effectHasOppSpellTarget (g : Game) (p : PlayerId) (e : Effect) : Bool :=
   e.targetSpec.targetsStackSpell &&
-    (g.legalTargetsForSpec p e.effectiveTargetSpec).any (g.isOppStackSpellTarget p)
+    (g.legalTargetsForSpec p e.targets).any (g.isOppStackSpellTarget p)
 
 /-- Default mode: a preferred mode if that mode is legal, else the first legal
 mode. Spell-counter modes are skipped unless an opponent's spell is a legal
@@ -257,7 +242,7 @@ def defaultMode (g : Game) (p : PlayerId) (spell : GameObject) : Option Nat :=
   let pool := if usable.isEmpty then legal else usable
   let preferredIdx := pool.find? (fun i =>
     match modeAt? i with
-    | some e => e.preferAsDefaultMode
+    | some e => e.isPreferredDefaultMode
     | none => false)
   match preferredIdx with
   | some i => some i
@@ -276,34 +261,60 @@ def announcingDividedDamage (g : Game) : Bool :=
   | some o => (o.triggeredAbility.bind TriggeredAbility.dividedDamage?).isSome
   | none => false
 
-/-- Targeting shape of the object currently being announced. -/
-def targetingOf (g : Game) (obj : GameObject) : EffectTargeting :=
+/-- Targeting specification of the object currently being announced (CR 601.2c). -/
+def targetSpecOf (g : Game) (obj : GameObject) : TargetSpec :=
   let tcs := g.evalLayer3 obj
-  let fromObj : EffectTargeting :=
+  let fromObj : TargetSpec :=
     match obj.abilityEffect with
     | some e =>
       let e' := if tcs.isEmpty then e else TextChange.applyEffect tcs e
-      { e'.targeting with spec := e'.effectiveTargetSpec }
+      e'.targets
     | none =>
       match obj.triggeredAbility with
       | some ab =>
         let ab' := if tcs.isEmpty then ab else TextChange.applyTriggeredAbility tcs ab
-        { ab'.targeting with
-          spec := ab'.targetSpec.withSlotBounds ab'.allowsZeroTargets ab'.effect.maxTargets }
+        ab'.targetSpec
       | none =>
         match g.currentSpellEffect obj with
-        | some e => { e.targeting with spec := e.effectiveTargetSpec }
+        | some e => e.targets
+        | none =>
+          if g.isAura obj then auraTargetSpec (g.baseCard obj)
+          else .none
+  match g.proposedSpell with
+  | some prop =>
+    if prop.spellId == obj.id then
+      prop.targetSpecOverride.getD fromObj
+    else fromObj
+  | none => fromObj
+
+/-- Targeting preference of the object currently being announced for the
+demonstration agent (computed purely from `(TargetSpec, Instruction)`). -/
+def targetPreferenceOf (g : Game) (obj : GameObject) : TargetPreference :=
+  let tcs := g.evalLayer3 obj
+  let fromObj : TargetPreference :=
+    match obj.abilityEffect with
+    | some e =>
+      let e' := if tcs.isEmpty then e else TextChange.applyEffect tcs e
+      e'.targetPreference
+    | none =>
+      match obj.triggeredAbility with
+      | some ab =>
+        let ab' := if tcs.isEmpty then ab else TextChange.applyTriggeredAbility tcs ab
+        ab'.effect.targetPreference
+      | none =>
+        match g.currentSpellEffect obj with
+        | some e => e.targetPreference
         | none =>
           if g.isAura obj then
             let s := auraTargetSpec (g.baseCard obj)
-            if s == .creature || s == .creatureYouControl then EffectTargeting.of s .own
-            else EffectTargeting.of s
-          else EffectTargeting.of .none
+            if s == .creature || s == .creatureYouControl then .own
+            else s.defaultPreference
+          else .own
   match g.proposedSpell with
   | some prop =>
     if prop.spellId == obj.id then
       match prop.targetSpecOverride with
-      | some ts => EffectTargeting.of ts
+      | some ts => ts.defaultPreference
       | none => fromObj
     else fromObj
   | none => fromObj
@@ -339,7 +350,7 @@ def markTargetsAnnounced (g : Game) (objectId : ObjectId) (done : Bool) : Game :
 
 /-- True when the current instance of “target” is optional (“up to one”). -/
 def canSkipCurrentOptionalSlot (g : Game) (obj : GameObject) : Bool :=
-  let spec := (g.targetingOf obj).spec
+  let spec := g.targetSpecOf obj
   let i := g.currentTargetSlot obj
   spec.isMultiSlot && i < spec.totalPositions && spec.isOptionalPos i
 
@@ -352,7 +363,7 @@ def legalProposedTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Targ
     match g.stackEntry? o.id with
     | some e => (e.targets, e.skippedOptionalSlots)
     | none => (#[], #[])
-  let spec := (g.targetingOf o).spec
+  let spec := g.targetSpecOf o
   let curPos := g.currentTargetSlot o
   let slot := spec.slotAtPos curPos
   let selfSource := o.sourceId.orElse (fun _ => if o.zone == .stack then some o.id else none)
@@ -409,27 +420,19 @@ such as Gaze in Wonder require one target and allow a second; every target
 of that one instance of the word “target” is announced together. -/
 def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
   match g.currentSpellEffect obj with
-  | some e =>
-    let spec := e.effectiveTargetSpec
-    let minN := if e.allowsZeroTargets then 0 else spec.minTargetCount
-    let maxN := max spec.maxTargetCount e.maxTargets
-    (minN, maxN)
+  | some e => (e.targets.minTargetCount, e.targets.maxTargetCount)
   | none =>
     match obj.abilityEffect with
-    | some e =>
-      let spec := e.effectiveTargetSpec
-      let minN := if e.allowsZeroTargets then 0 else spec.minTargetCount
-      let maxN := max spec.maxTargetCount e.maxTargets
-      (minN, maxN)
+    | some e => (e.targets.minTargetCount, e.targets.maxTargetCount)
     | none =>
       match obj.triggeredAbility with
       | some ab =>
-        let spec := ab.targetSpec.withSlotBounds ab.allowsZeroTargets ab.effect.maxTargets
+        let spec := ab.targetSpec
         let lifeTargets := ab.effect == Effect.resourceGainLifePlusOnes
-        let minN := if lifeTargets || ab.allowsZeroTargets then 0 else spec.minTargetCount
+        let minN := if lifeTargets then 0 else spec.minTargetCount
         let maxN :=
           if lifeTargets then ((g.lastKnownPowerOf? obj.id).getD 0).toNat
-          else max spec.maxTargetCount ab.effect.maxTargets
+          else spec.maxTargetCount
         -- “Up to one” is min 0, max the printed count (usually 1).
         -- Heroic Feast’s maximum is the life gained in that event.
         (minN, maxN)
@@ -442,7 +445,7 @@ def canFinishOptionalTargets (g : Game) (obj : GameObject) : Bool :=
   match g.stackEntry? obj.id with
   | none => false
   | some e =>
-    let spec := (g.targetingOf obj).spec
+    let spec := g.targetSpecOf obj
     if !spec.isMultiSlot then false
     else
       let (minN, maxN) := g.announcedTargetBounds obj
@@ -457,7 +460,7 @@ that is not a damage division (e.g. “one or two target creatures”). -/
 def announcingSameWordMultiTargets (g : Game) : Bool :=
   match g.objectAwaitingTargets with
   | some o =>
-    let spec := (g.targetingOf o).spec
+    let spec := g.targetSpecOf o
     if !spec.isMultiSlot then
       (g.announcedTargetBounds o).2 > 1 && !g.announcingDividedDamage
     else
@@ -471,12 +474,12 @@ def modeIsChoosable (g : Game) (p : PlayerId) (e : Effect)
     (sourceId : Option ObjectId := none)
     (stackSelfId : Option ObjectId := none) : Bool :=
   let e := g.expandEachOpponentEffect p e stackSelfId
-  !e.requiresTarget || e.allowsZeroTargets || e.effectiveTargetSpec.allowsZero ||
+  !e.requiresTarget || e.targets.allowsZero ||
     g.effectHasEnoughTargets p e sourceId stackSelfId
 
 /-- Whether this activated ability currently has a legal target, or does not
 require one (CR 702.6 / 601.2c / 702.16b). Subtype- and worthy-restricted Equip
-targets are encoded directly in `ab.effect.targeting.spec`. -/
+targets are encoded directly in `ab.effect.targets`. -/
 def abilityCanChooseTarget (g : Game) (p : PlayerId) (ab : ActivatedAbility)
     (sourceId : Option ObjectId := none) : Bool :=
   if ab.isEquipWorthy && ab.effect.targetSpec == .creatureYouControl then
@@ -506,14 +509,14 @@ def isOppPermanentTarget (g : Game) (p : PlayerId) : Target → Bool
       (g.livingOpponents p).any (fun pl => g.controlledBy o pl.id))
   | _ => false
 
-/-- Default choice among `legal` for this targeting shape (CR 601.2c). -/
-def preferredTarget (g : Game) (p : PlayerId) (targeting : EffectTargeting)
+/-- Default choice among `legal` for this targeting preference (CR 601.2c). -/
+def preferredTarget (g : Game) (p : PlayerId) (prefer : TargetPreference)
     (legal : Array Target) : Option Target :=
   let own := lastLegalTarget legal (fun t =>
     g.isOwnPermanentTarget p t || g.isOwnStackSpellTarget p t)
   let opp := lastLegalTarget legal (fun t =>
     g.isOppPermanentTarget p t || g.isOppStackSpellTarget p t)
-  match targeting.prefer with
+  match prefer with
   | .own => own
   | .opponent => opp
   | .opponentPlayer =>
@@ -540,7 +543,7 @@ def defaultTarget (g : Game) (p : PlayerId) (obj : GameObject) : Option Target :
   let already := (g.stackEntry? obj.id).map (·.targets) |>.getD #[]
   let fresh := legal.filter (fun t => !already.contains t)
   let pool := if fresh.isEmpty then legal else fresh
-  match g.preferredTarget p (g.targetingOf obj) pool with
+  match g.preferredTarget p (g.targetPreferenceOf obj) pool with
   | some t => if legal.contains t then some t else pool[0]?
   | none => pool[0]?
 

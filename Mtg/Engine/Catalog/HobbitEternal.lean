@@ -1294,23 +1294,23 @@ that also appear in other sets. -/
 #guard (elvishArchdruid.summary.splitOn "for each Elf").length > 1
 #guard mirkwoodElk.hasSimpleKeyword .trample
 #guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
-#guard mirkwoodElk.power == some 6
-#guard mirkwoodElk.toughness == some 6
+#guard mirkwoodElk.power == some (.fixed 6)
+#guard mirkwoodElk.toughness == some (.fixed 6)
 #guard (mirkwoodElk.summary.splitOn "trample").length > 1
 #guard (mirkwoodElk.summary.splitOn "Elf card").length > 1
 #guard celebornTheWise.triggeredAbilities ==
   #[.onAttackWithElvesScry 1, .onScryPumpSelfForEachLookedAt]
-#guard celebornTheWise.power == some 3
-#guard celebornTheWise.toughness == some 3
+#guard celebornTheWise.power == some (.fixed 3)
+#guard celebornTheWise.toughness == some (.fixed 3)
 #guard celebornTheWise.subtypes.any (· == "Elf")
 #guard (celebornTheWise.summary.splitOn "one or more Elves").length > 1
 #guard (celebornTheWise.summary.splitOn "looked at").length > 1
 #guard lothlorienLookout.triggeredAbilities == #[.onAttackScry 1]
 #guard (lothlorienLookout.summary.splitOn "scry 1").length > 1
-#guard lothlorienLookout.power == some 1
-#guard lothlorienLookout.toughness == some 3
-#guard galadhrimGuide.power == some 3
-#guard galadhrimGuide.toughness == some 4
+#guard lothlorienLookout.power == some (.fixed 1)
+#guard lothlorienLookout.toughness == some (.fixed 3)
+#guard galadhrimGuide.power == some (.fixed 3)
+#guard galadhrimGuide.toughness == some (.fixed 4)
 #guard goblinCratermaker.activatedAbilities.size == 1
 #guard goblinCratermaker.activatedAbilities[0]!.cost.sacrificeSource
 #guard goblinCratermaker.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
@@ -1336,8 +1336,8 @@ that also appear in other sets. -/
 #guard oliphaunt.activatedAbilities[0]!.cost.discardSource
 #guard oliphaunt.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Mountain"
 #guard oliphaunt.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
-#guard oliphaunt.power == some 6
-#guard oliphaunt.toughness == some 4
+#guard oliphaunt.power == some (.fixed 6)
+#guard oliphaunt.toughness == some (.fixed 4)
 #guard (oliphaunt.summary.splitOn "trample").length > 1
 #guard (oliphaunt.summary.splitOn "+2/+0").length > 1
 #guard (oliphaunt.summary.splitOn "Mountaincycling").length > 1
@@ -1351,13 +1351,13 @@ that also appear in other sets. -/
 #guard infernoTitan.activatedAbilities[0]!.effect == Effect.sourceGets 1 0
 #guard infernoTitan.activatedAbilities[0]!.cost.mana == (ManaCost.ofColor .red)
 #guard infernoTitan.triggeredAbilities == #[.onEnterOrAttackDealDividedDamage 3 3]
-#guard infernoTitan.power == some 6
-#guard infernoTitan.toughness == some 6
+#guard infernoTitan.power == some (.fixed 6)
+#guard infernoTitan.toughness == some (.fixed 6)
 #guard (infernoTitan.summary.splitOn "+1/+0").length > 1
 #guard (infernoTitan.summary.splitOn "divided as you choose").length > 1
 #guard guttersnipe.triggeredAbilities == #[.onCastInstantOrSorceryDealDamageToEachOpponent 2]
-#guard guttersnipe.power == some 2
-#guard guttersnipe.toughness == some 2
+#guard guttersnipe.power == some (.fixed 2)
+#guard guttersnipe.toughness == some (.fixed 2)
 #guard (guttersnipe.summary.splitOn "instant or sorcery").length > 1
 #guard hauntOfTheDeadMarshes.triggeredAbilities == #[.onEnterScry 1]
 #guard hauntOfTheDeadMarshes.activatedAbilities.size == 1

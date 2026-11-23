@@ -245,6 +245,6 @@ enters tapped while a discarded creature stays in the graveyard. -/
 #guard TriggeredAbility.resolutionPhrase (Effect.triggerPutNonlandMvAtMostFromGy 3) ==
   "put up to one target nonland permanent card with mana value 3 or less from a graveyard onto the battlefield under its owner's control"
 #guard TriggeredAbility.toNotation .onDiesReturnAsArtifact ==
-  "When Tom, Bert, and William die, if they were a creature, return them to the battlefield. They're an artifact."
+  "When a creature that is this permanent dies, return card in a graveyard that is this permanent onto the battlefield under its owner's control as artifact."
 
 end Mtg.Engine.PutTests

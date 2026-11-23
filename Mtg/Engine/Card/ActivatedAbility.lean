@@ -181,12 +181,11 @@ def isCycling (ab : ActivatedAbility) : Bool :=
   | some (.cycling _) => true
   | _ =>
     ab.isFromHand && ab.cost.discardSource &&
-      ((ab.printed.toLower).startsWith "cycling " ||
-       match ab.effect.body with
-       | .player (.drawCards .you (.const 1)) => ab.printed.isEmpty
-       | .player (.searchLibrary spec) =>
-         spec.filter != .hasSubtype (.literal .plan) && spec.dest == .hand .controller
-       | _ => false)
+      match ab.effect.body with
+      | .player (.drawCards .you (.const 1)) => ab.cost.items.size <= 2
+      | .player (.searchLibrary spec) =>
+        spec.filter != .hasSubtype (.literal .plan) && spec.dest == .hand .controller
+      | _ => false
 
 def isBoast (ab : ActivatedAbility) : Bool :=
   ab.tag? == some .boast
@@ -241,9 +240,8 @@ def mkModal (cost : CostSpec) (modes : Array Effect)
     (lifetimeLimit? : Option Nat := none)
     (condition? : Option Condition := none)
     (costReductions : Array ActivationCostReduction := #[])
-    (tag? : Option ActivationMechanicTag := none)
-    (printed : String := "") : ActivatedAbility :=
-  { cost, printed, timing, activeZones, turnLimit?, lifetimeLimit?,
+    (tag? : Option ActivationMechanicTag := none) : ActivatedAbility :=
+  { cost, timing, activeZones, turnLimit?, lifetimeLimit?,
     condition?, costReductions, tag?
     effect :=
       match modes.toList with
@@ -262,12 +260,10 @@ def manaAbility (spec : ManaSpec) (cost : CostSpec := CostSpec.tapOnly)
     (riders : Array SpellRiderSpec := #[]) (damageYou : Nat := 0)
     (condition? : Option Condition := none) (turnLimit? : Option Nat := none)
     (lifetimeLimit? : Option Nat := none) (timing : ActivationTiming := .instant)
-    (chooseColorPrefix : Bool := false) (filterPairFormat : Bool := false)
-    (printed : String := "") : ActivatedAbility :=
+    (chooseColorPrefix : Bool := false) (filterPairFormat : Bool := false) : ActivatedAbility :=
   let mp : ManaProductionSpec :=
     { spec, restriction, riders, damageYou, chooseColorPrefix, filterPairFormat }
   { cost
-    printed
     effect := { body := .player (.addMana .you mp) }
     timing
     turnLimit?
@@ -296,11 +292,9 @@ def manaTapChosenColor : ActivatedAbility :=
 /-- The crew ability of a Vehicle with Crew `n` (CR 702.122). -/
 def crewAbility (n : Nat) : ActivatedAbility :=
   { cost := CostSpec.crewCost n
-    printed := s!"Crew {n}"
     effect := {
       body := .installEffect (.applyContinuous .untilEndOfTurn .this
         (.modifyTypes { types := #[.artifact, .creature] }))
-      phrase := "This Vehicle becomes an artifact creature until end of turn"
     }
     tag? := some (.crew n) }
 
@@ -308,90 +302,168 @@ def crewAbility (n : Nat) : ActivatedAbility :=
 creature attacked this turn and only once each turn). -/
 def zemoBoastAbility : ActivatedAbility :=
   { cost := CostSpec.exileBlackManaSymbols 15
-    printed := "Boast — Exile any number of black cards from your graveyard with fifteen or more black mana symbols among their mana costs: Copy those exiled cards. You may cast up to three of the copies without paying their mana costs."
     effect := {
       body := .stack (.mayCastOrPlay .costPaidObjects
         { duration := .untilEndOfTurn, landsAllowed := false, freeCast := true,
           copyAndCast := true, maxCasts? := some 3 })
-      phrase := "Copy those exiled cards. You may cast up to three of the copies without paying their mana costs"
     }
     turnLimit? := some 1
     condition? := some condSourceAttackedThisTurn
     tag? := some .boast }
 
-/-- Canonical Oracle rendering of an `ActivatedAbility` (CR 602.1 / 605). -/
-def toOracle (ctx : PrintCtx) (ab : ActivatedAbility) : String :=
-  let body :=
-    match ab.manaProduction? with
-    | some mp => mp.toOracleSentence ctx
-    | none =>
-      if ab.isModal then
-        let modes := ab.allModes.toList.map Effect.toNotation
-        s!"Choose one — {String.intercalate "; " modes}"
-      else
-        ab.effect.toNotation
-  let prefixTag :=
+/-- Typecycling subtype/type label for canonical `<Type>cycling {cost}` printing (CR 702.29e). -/
+def typecyclingLabel? (ab : ActivatedAbility) : Option String :=
+  if ab.isFromHand && ab.cost.discardSource then
     match ab.tag? with
-    | some .exhaust => "Exhaust — "
-    | some .boast => "Boast — "
-    | _ => ""
-  let clauses : List String := Id.run do
-    let mut clauses : List String := []
-    if ab.timing == .sorcery && !ab.isEquip then
-      clauses := clauses ++ ["Activate only as a sorcery."]
-    if let some cond := ab.condition? then
-      if !ab.isBoast || cond != condSourceAttackedThisTurn then
-        if cond == .isYourTurn then
-          clauses := clauses ++ ["Activate only during your turn."]
-        else if cond == condEnteredThisTurnOrControlBasicLand then
-          clauses := clauses ++ ["Activate only if this land entered this turn or if you control a basic land."]
+    | some (.cycling (some t)) => if t == "Plan" then none else some t
+    | _ =>
+      match ab.effect.body with
+      | .player (.searchLibrary spec) =>
+        match spec.filter with
+        | .hasSubtype (.literal sub) =>
+          if sub.englishName == "Plan" then none else some sub.englishName
+        | .hasSupertype sup => some sup.englishName
+        | .hasType ty => some ty.englishName
+        | .all #[.hasSupertype .basic, .hasType .land] => some "Basic land"
+        | _ => none
+      | _ => none
+  else none
+
+private def renderCostReduction (ctx : PrintCtx) (r : ActivationCostReduction) : String :=
+  match r.amount, r.condition? with
+  | .const n, some (.exists (.inZones .battlefield (.all #[.hasSupertype .legendary, .hasType .creature, .controlledBy .you]))) =>
+    if n > 0 then
+      s!"This ability costs \{{n.toNat}} less to activate if you control a legendary creature."
+    else ""
+  | .aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .controlledBy .you])), none =>
+    "This ability costs {1} less to activate for each Equipment you control."
+  | .binary .mul (.const n) (.aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .controlledBy .you]))), none =>
+    if n > 0 then
+      s!"This ability costs \{{n.toNat}} less to activate for each Equipment you control."
+    else ""
+  | .const n, some (.all #[.exists (.target 0), .forAll (.target 0) (.all #[.hasType .creature, .stat .power .le (.const maxP)])]) =>
+    if n > 0 then
+      s!"This ability costs \{{n.toNat}} less to activate if it targets a creature with power {maxP} or less."
+    else ""
+  | .counterCount (some .plusOnePlusOne) (.target 0), none =>
+    "This ability costs {1} less to activate for each +1/+1 counter on that creature."
+  | amt, none =>
+    s!"This ability costs \{{toOracleStr amt { ctx with capitalize := false }}} less to activate."
+  | amt, some c =>
+    s!"This ability costs \{{toOracleStr amt { ctx with capitalize := false }}} less to activate if {toOracleStr c { ctx with capitalize := false }}."
+
+/-- Canonical Oracle rendering of an `ActivatedAbility` (CR 602.1 / 605 / 606 / 702.6,29,122,142,177,193). -/
+def toOracle (ctx : PrintCtx) (ab : ActivatedAbility) : String :=
+  match ab.tag? with
+  | some (.crew n) => s!"Crew {n}"
+  | _ =>
+  if ab.isEquip then
+    let pay := if ab.cost.payLife != 0 then s!", Pay {ab.cost.payLife} life" else ""
+    let subtype? :=
+      ab.equipSubtype?.orElse fun _ => ab.effect.targetSpec.creatureYouControlSubtype?
+    let worthy := ab.isEquipWorthy || ab.effect.targetSpec.isWorthyCreatureYouControl
+    let base :=
+      match subtype? with
+      | some t => s!"Equip {t} {ab.cost.mana}{pay}"
+      | none =>
+        if worthy then s!"Equip worthy {ab.cost.mana}{pay}"
+        else if pay != "" then s!"Equip—{ab.cost.mana}{pay}"
+        else s!"Equip {ab.cost.mana}"
+    if ab.costReductions.isEmpty then base
+    else
+      let reds := ab.costReductions.toList.map (renderCostReduction ctx) |>.filter (!·.isEmpty)
+      if reds.isEmpty then base else s!"{base}. {String.intercalate " " reds}"
+  else
+  match ab.typecyclingLabel? with
+  | some t => s!"{t}cycling {ab.cost.mana}"
+  | none =>
+    let actCtx : PrintCtx := { ctx with capitalize := true }
+    let fixDeals (s : String) : String :=
+      if s.startsWith "Deals " then s!"{capitalizeAscii ctx.selfRef} deals{s.drop 5}"
+      else s
+    let rawBody0 :=
+      match ab.manaProduction? with
+      | some mp => mp.toOracleSentence ctx
+      | none =>
+        if ab.isModal then
+          let modes := ab.allModes.toList.map fun (m : Effect) =>
+            let s : String := fixDeals (m.toOracle actCtx)
+            let s := if s.endsWith "." then s else s!"{s}."
+            s!"• {s}"
+          s!"Choose one — {String.intercalate " " modes}"
         else
-          clauses := clauses ++ [s!"Activate only if {toOracleStr cond { ctx with capitalize := false }}."]
-    if let some n := ab.turnLimit? then
-      if !ab.isBoast then
-        if n == 1 then clauses := clauses ++ ["Activate only once each turn."]
-        else clauses := clauses ++ [s!"Activate no more than {englishNumber n} times each turn."]
-    if let some n := ab.lifetimeLimit? then
-      if !ab.isExhaust && !ab.isPowerUp then
-        if n == 1 then clauses := clauses ++ ["Activate only once."]
-        else clauses := clauses ++ [s!"Activate no more than {englishNumber n} times."]
-    if ab.activeZones == #[.graveyard] then
-      clauses := clauses ++ ["Activate only from your graveyard."]
-    else if ab.activeZones == #[.hand] && !ab.isCycling then
-      clauses := clauses ++ ["Activate only from your hand."]
-    return clauses
-  let base := s!"{prefixTag}{ab.cost.toNotation}: {body}"
-  if clauses.isEmpty then base
-  else s!"{base} {String.intercalate " " clauses}"
+          let s := fixDeals (ab.effect.toOracle actCtx)
+          if s.isEmpty || s.endsWith "." || s.endsWith "\"" then s else s!"{s}."
+    let rawBody :=
+      if ab.activeZones == #[.graveyard] then
+        let retOwnerHand := s!"Return {ctx.selfRef} to its owner's hand"
+        let retSelf := s!"Return {ctx.selfRef} "
+        let putBf := s!"Put {ctx.selfRef} onto the battlefield"
+        if rawBody0.startsWith retOwnerHand then
+          s!"Return this card from your graveyard to your hand{rawBody0.drop retOwnerHand.length}"
+        else if rawBody0.startsWith retSelf then
+          s!"Return this card from your graveyard {rawBody0.drop retSelf.length}"
+        else if rawBody0.startsWith putBf then
+          s!"Return this card from your graveyard to the battlefield{rawBody0.drop putBf.length}"
+        else
+          rawBody0
+      else
+        rawBody0
+    let prefixTag :=
+      match ab.tag? with
+      | some .exhaust => "Exhaust — "
+      | some .boast => "Boast — "
+      | some .powerUp => "Power-up — "
+      | _ => ""
+    let clauses : List String := Id.run do
+      let mut clauses : List String := []
+      for r in ab.costReductions do
+        let rs := renderCostReduction ctx r
+        if !rs.isEmpty then clauses := clauses ++ [rs]
+      if ab.timing == .sorcery && !ab.isPowerUp then
+        clauses := clauses ++ ["Activate only as a sorcery."]
+      if let some cond := ab.condition? then
+        if !ab.isBoast || cond != condSourceAttackedThisTurn then
+          if cond == .isYourTurn then
+            clauses := clauses ++ ["Activate only during your turn."]
+          else if cond == condEnteredThisTurnOrControlBasicLand then
+            clauses := clauses ++ ["Activate only if this land entered this turn or if you control a basic land."]
+          else if cond == condControlsLegendaryCreature then
+            clauses := clauses ++ ["Activate only if you control a legendary creature."]
+          else if cond == condAttackedWithCreaturesAtLeast 2 then
+            clauses := clauses ++ ["Activate only if you attacked with two or more creatures this turn."]
+          else if cond == condOpponentDealtNoncombatDamageThisTurn then
+            clauses := clauses ++ ["Activate only if an opponent has been dealt noncombat damage this turn."]
+          else if cond == condJaceLoyaltyAtLeast 25 then
+            clauses := clauses ++ ["Activate only if there are twenty-five or more loyalty counters among Jaces you control."]
+          else
+            match cond with
+            | .exists (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you, .stat .toughness .ge (.const n)])) =>
+              clauses := clauses ++ [s!"Activate only if you control a creature with toughness {n.toNat} or greater."]
+            | .cmp .ge (.aggregate .count .one (.inZones .yourGraveyard (.all #[.isCard, .hasType .creature]))) (.const n) =>
+              let cards := if n == 1 then "a creature card" else s!"{n.toNat} or more creature cards"
+              clauses := clauses ++ [s!"Activate only if there are {cards} in your graveyard."]
+            | _ =>
+              clauses := clauses ++ [s!"Activate only if {toOracleStr cond { ctx with capitalize := false }}."]
+      if let some n := ab.turnLimit? then
+        if !ab.isBoast then
+          if n == 1 then clauses := clauses ++ ["Activate only once each turn."]
+          else clauses := clauses ++ [s!"Activate no more than {englishNumber n} times each turn."]
+      if let some n := ab.lifetimeLimit? then
+        if !ab.isExhaust && !ab.isPowerUp then
+          if n == 1 then clauses := clauses ++ ["Activate only once."]
+          else clauses := clauses ++ [s!"Activate no more than {englishNumber n} times."]
+      if ab.activeZones == #[.graveyard] && !ab.cost.exileSourceFromGraveyard && !rawBody.contains "graveyard" then
+        clauses := clauses ++ ["Activate only from your graveyard."]
+      else if ab.activeZones == #[.hand] && !ab.isCycling && !ab.cost.discardSource && !ab.cost.exileSourceFromHand then
+        clauses := clauses ++ ["Activate only from your hand."]
+      return clauses
+    let base := s!"{prefixTag}{ab.cost.toNotation}: {rawBody}"
+    if clauses.isEmpty then base
+    else s!"{base} {String.intercalate " " clauses}"
 
 def toNotation (ab : ActivatedAbility) : String :=
-  if ab.manaProduction?.isSome then
-    ab.toOracle {}
-  else if ab.isBoast && !ab.printed.isEmpty then
-    ab.printed
-  else
-    let timing :=
-      (if ab.timing == .sorcery then " (activate only as a sorcery)" else "") ++
-      (match ab.condition? with
-       | some .isYourTurn => " (activate only during your turn)"
-       | some c =>
-         if ab.isBoast && c == condSourceAttackedThisTurn then ""
-         else s!" (activate only if {toOracleStr c})"
-       | none => "") ++
-      (match ab.turnLimit? with
-       | some 1 => if ab.isBoast then "" else " (activate only once each turn)"
-       | some n => s!" (activate at most {n} times each turn)"
-       | none => "") ++
-      (if ab.activeZones == #[.graveyard] then " (activate only from the graveyard)" else "") ++
-      (if ab.activeZones == #[.hand] then " (activate only from your hand)" else "")
-    let body :=
-      if ab.isModal then
-        let modes := ab.allModes.toList.map Effect.toNotation
-        s!"Choose one — {String.intercalate "; " modes}"
-      else
-        ab.effect.toNotation
-    let prefixTag := if ab.isBoast then "Boast — " else ""
-    s!"{prefixTag}{ab.cost.toNotation}: {body}{timing}"
+  ab.toOracle {}
 
 instance : ToOracle ActivatedAbility where
   toOracle := toOracle

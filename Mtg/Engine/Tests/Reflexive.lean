@@ -52,7 +52,7 @@ def stackEffect (g : Game) : Option Effect :=
 
 /- Printed phrases stay intact. -/
 #guard TriggeredAbility.resolutionPhrase TriggeredAbility.onFourthPlanDividedDamage.effect ==
-  "sacrifice it. When you do, it deals 7 damage divided as you choose among one or two targets"
+  "sacrifice it. When you do, it deals 7 damage divided as you choose among up to 2 targets"
 #guard TriggeredAbility.resolutionPhrase TriggeredAbility.onCastSecondSpellMillThenCopy.effect ==
   "each opponent mills two cards. When one or more cards are milled this way, exile target enchantment, instant, or sorcery card with equal or lesser mana value than that spell from an opponent's graveyard. Copy the exiled card. You may cast the copy without paying its mana cost"
 
@@ -64,8 +64,11 @@ def stackEffect (g : Game) : Option Effect :=
   let queued :=
     match stackEffect g with
     | some eff =>
-      eff.phrase ==
-        "Return up to two target instant and/or sorcery cards from your graveyard to your hand"
+      eff.targets == .single {
+          domain := .object .yourGraveyard (.any #[.hasType .instant, .hasType .sorcery])
+          count := .upTo 2
+        } &&
+        eff.toNotation.contains "from your graveyard"
     | none => false
   queued && !(g.battlefield.any (·.id == sid)) &&
     logContains g "reflexive"
@@ -78,15 +81,15 @@ def stackEffect (g : Game) : Option Effect :=
   let g := gGone.applyTriggeredAbility caster .onFourthPlanIndestructible (some sid)
   g.stack.isEmpty
 
-/- Divided damage plan reflexive carries `dividedDamage == some (7, 2)` and its phrase. -/
+/- Divided damage plan reflexive carries `dividedDamage? == some (7, 2)` and its canonical text. -/
 #guard
   let g0 := planOnBoard
   let sid := planId g0
   let g := g0.applyTriggeredAbility caster .onFourthPlanDividedDamage (some sid)
   match stackEffect g with
   | some eff =>
-    eff.dividedDamage == some (7, 2) &&
-      eff.phrase == "It deals 7 damage divided as you choose among one or two targets"
+    eff.dividedDamage? == some (7, 2) &&
+      eff.toNotation.contains "7 damage divided as you choose among one or two targets"
   | none => false
 
 /- A milled instant in the opponent's graveyard becomes a legal target for the

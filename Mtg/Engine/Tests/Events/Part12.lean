@@ -84,14 +84,13 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
     name := "P46i1 CopyBolt"
     manaCost := ManaCost.ofGeneric 2
     types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)]
-    spellEffect := some { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life." }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 2 }, additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)] }
   }
   let bigCopyDef : CardDef := {
     name := "P46i1 BigCopy"
     manaCost := ManaCost.ofGeneric 3
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.gainLifeFixed 3, phrase := "Gain 3 life." }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 3 } }
   }
   let gFreeCp0 := insertObject (insertObject g4 sacOrPayCopyDef p0 .exile) bigCopyDef p0 .exile
   let cp1Obj := (gFreeCp0.objects.filter (fun o => o.zone == .exile && o.name == sacOrPayCopyDef.name))[0]!
@@ -272,11 +271,10 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
     name := "P46i1 HexBolt"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some {
-      targeting := .of .oppCreature
+    spellAbility := some { effect := {
+      targets := .oppCreature
       body := Instruction.gainLifeFixed 1
-      phrase := "Target creature an opponent controls; gain 1 life."
-    }
+    } }
   }
   let gTgtRev0 := insertObject (addPermanent g4 hero p1 p1) oppTgtSpellDef p0 (.hand p0)
   let tgtHandId := (gTgtRev0.player p0).hand.back!
@@ -423,13 +421,14 @@ private def replayOk46i2 (gs : Array Game) : Bool :=
   -- 2b. `Core.playPermissionEntriesOf`: `.exile -> .stack` (`!(o.isCopy && o.isAdventureSpell)`),
   --     reverse `depIdx?`, `durationActiveAt` (phased-out source), departed-grantee filtering,
   --     and `Turns` `hadPlayable` expiry logs:
-  let advQuestFace : AdventureFace := {
+  let advQuestFace : SubFace := {
+    kind := .adventure
     name := "P46i2 Quest"
     manaCost := ManaCost.empty
     types := #[.instant]
-    spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "Gain 1 life." }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 1 } }
   }
-  let advCreatureDef : CardDef := { bear with name := "P46i2 Adventurer", adventure := some advQuestFace }
+  let advCreatureDef : CardDef := { bear with name := "P46i2 Adventurer", subFaces := #[advQuestFace] }
   let gExStack0 := insertObject gP3Gone advCreatureDef p0 .exile
   let exCardId := (gExStack0.objects.filter (·.zone == .exile))[0]!.id
   let gExStackPerm :=
@@ -493,14 +492,15 @@ private def replayOk46i2 (gs : Array Game) : Bool :=
     manaCost := ManaCost.ofGeneric 3
     types := #[.creature]
     subtypes := #["Knight"]
-    power := some 3
-    toughness := some 3
-    adventure := some {
+    power := some (.fixed 3)
+    toughness := some (.fixed 3)
+    subFaces := #[{
+      kind := .adventure
       name := "P46i2 PaidQuest"
       manaCost := ManaCost.ofGeneric 2
       types := #[.sorcery]
-      spellEffect := some { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life." }
-    }
+      spellAbility := some { effect := { body := Instruction.gainLifeFixed 2 } }
+    }]
   }
   let gMultiGrant0 := insertObject gP3Gone costedAdvDef p0 .exile
   let mgExId := (gMultiGrant0.objects.filter (·.zone == .exile))[0]!.id
@@ -525,12 +525,13 @@ private def replayOk46i2 (gs : Array Game) : Bool :=
   let prepCreatureDef : CardDef := {
     bear with
     name := "P46i2 PrepSquire"
-    prepareFace := some {
+    subFaces := #[{
+      kind := .prepare
       name := "P46i2 Rally"
       manaCost := ManaCost.empty
       types := #[.instant]
-      spellEffect := some { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life." }
-    }
+      spellAbility := some { effect := { body := Instruction.gainLifeFixed 2 } }
+    }]
   }
   let gPrep0 := addPermanent gP3Gone prepCreatureDef p0 p0
   let prepSrcObj := (gPrep0.permanentsOf p0)[0]!
@@ -682,7 +683,7 @@ private def replayOk46i3 (gs : Array Game) : Bool :=
   let tokWatcherDef : CardDef := {
     name := "P46i3 TokWatcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.ofPattern .tokenYouControlEnters "Draw a card." (Instruction.drawFixed 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .tokenYouControlEnters (Instruction.drawFixed 1)]
   }
   let gCreatedStepBase := addPermanent g4 tokWatcherDef p1 p1
   let noCtrlTokId : ObjectId := ⟨gCreatedStepBase.nextObjectId + 15⟩
@@ -852,8 +853,8 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     name := "P46i4 EmeraldSkiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 4
-    toughness := some 4
+    power := some (.fixed 4)
+    toughness := some (.fixed 4)
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGenericAndColor 1 .green), .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 2 }
     ]
@@ -916,8 +917,8 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     name := "P46i4 XSkiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 4
-    toughness := some 4
+    power := some (.fixed 4)
+    toughness := some (.fixed 4)
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.mana { symbols := #[.x] }, .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you])], effect := Effect.gainLife 1 }
     ]
@@ -958,9 +959,9 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     manaCost := ManaCost.empty
     types := #[.creature]
     subtypes := #["Demon"]
-    power := some 3
-    toughness := some 3
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
+    power := some (.fixed 3)
+    toughness := some (.fixed 3)
+    spellAbility := some { additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))], effect := Effect.gainLife 2 }
     ]
@@ -989,9 +990,8 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
       effect := {
-        targeting := .of .player
+        targets := .player
         body := Instruction.addSimpleMana #[.colored .red, .colored .red]
-        phrase := "Target player; add {R}{R}."
       }
     }]
   }
@@ -1002,7 +1002,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
   let gTrStackAb := mustApply (mustApply gTr0 p0 (.activate trId 0)) p0 (.target (.player p0))
   let gTrStackRes := mustApply (mustApply (mustApply gTrStackAb p0 .pass) p1 .pass) p2 .pass
   -- Triggered ability from `stackTreasureDef` put on `.stack`, then `trId` leaves before resolution:
-  let trTrigAb := TriggeredAbility.ofPattern (.gainLife .you) "Add {U}{U}." (Instruction.addSimpleMana #[.colored .blue, .colored .blue])
+  let trTrigAb := TriggeredAbility.ofPattern (.gainLife .you) (Instruction.addSimpleMana #[.colored .blue, .colored .blue])
   let gTrTrigOnStack := gTr0.putTriggeredAbilityOnStack p0 (gTr0.object! trId) trTrigAb "triggers" (eventCause := some testCause)
   let (gTrTrigGone, _) := gTrTrigOnStack.move trId (.graveyard p0) none (cause := some testCause)
   let gTrTrigRes := mustApply (mustApply (mustApply gTrTrigGone p0 .pass) p1 .pass) p2 .pass
@@ -1028,14 +1028,14 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf]
-      effect := { body := Instruction.addMana { spec := .sequence #[(.colored .red, .counterCount (some .charge) .this)] }, phrase := "Add {R} for each charge counter." }
+      effect := { body := Instruction.addMana { spec := .sequence #[(.colored .red, .counterCount (some .charge) .this)] } }
     }]
   }
   let ritual3Def : CardDef := {
     name := "P46i4 Ritual3"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.addSimpleMana #[.colored .red, .colored .red, .colored .red], phrase := "Add {R}{R}{R}." }
+    spellAbility := some { effect := { body := Instruction.addSimpleMana #[.colored .red, .colored .red, .colored .red] } }
   }
   let gDyn0 :=
     let g := addPermanent g3 chargeDynamoDef p0 p0
@@ -1061,7 +1061,6 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
           spec := .oneOf .anyColor (.const 1)
           restriction := some (.subtypeSpellOrSource .goblin)
         }
-        phrase := "Add one mana of any color. Spend this mana only to cast a Goblin spell or to activate an ability of a Goblin source."
       }
     }]
   }
@@ -1070,8 +1069,8 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     manaCost := ManaCost.ofColor .red
     types := #[.creature]
     subtypes := #["Goblin"]
-    power := some 1
-    toughness := some 1
+    power := some (.fixed 1)
+    toughness := some (.fixed 1)
     activatedAbilities := #[
       { cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1)], effect := Effect.gainLife 2 }
     ]
@@ -1127,13 +1126,12 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
     name := "P46i4 DragonRitual"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some {
+    spellAbility := some { effect := {
       body := Instruction.addMana {
         spec := .combination .anyColor (.const 4)
         restriction := some (.subtypeSpell .dragon)
       }
-      phrase := "Add four mana in any combination of colors for Dragon spells."
-    }
+    } }
   }
   let gL3Base :=
     insertObject

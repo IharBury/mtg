@@ -26,13 +26,13 @@ def loseAllWhileSourceInstr (obj : ObjectExpr) : Instruction :=
     (.installEffect (.applyContinuous (.whileOnBattlefield .this) obj .loseAllAbilities))
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, body := loseIndestructibleInstr (.target 0) }
+  TriggeredAbility.mkTrigger .thisEnters { targets := .creature, body := loseIndestructibleInstr (.target 0) }
 
 def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (spec : TargetSpec := .creature) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
@@ -206,7 +206,7 @@ The source leaving before it resolves still taps and leaves the abilities. -/
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, body := indestructible } ==
+    { targets := .creature, body := indestructible } ==
   "target creature loses indestructible until end of turn"
 #guard TriggeredAbility.resolutionPhrase
     { body := loseIndestructibleInstr .this } ==

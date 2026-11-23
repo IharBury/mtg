@@ -3711,12 +3711,10 @@ partial def runPostStep (g : Game) (step : PostStep)
     if nonlandCount == 0 then g
     else
       g.putReflexiveTrigger p sourceId
-        { targeting := .of .creature, maxTargets := nonlandCount
-          allowsZeroTargets := true
+        { targets := TargetSpec.creature.asUpTo nonlandCount
           body := .seq #[
             .permanent (.setTapped .allTargets true),
-            .permanent (.modifyCounters (.put .stun (.const 1)) .allTargets)]
-          phrase := "Tap up to that many target creatures and put a stun counter on each of them" }
+            .permanent (.modifyCounters (.put .stun (.const 1)) .allTargets)] }
         (deferToPriority := true)
   | .nickFuryMayTransformOrBottom p cardId rest cause =>
     if !g.stillInGame p then g
@@ -3942,7 +3940,7 @@ partial def runPostStep (g : Game) (step : PostStep)
         else
           let hasLegal := !(g.legalProposedTargets caster obj).isEmpty
           let allowZero :=
-            (g.targetingOf obj).spec.allowsZero ||
+            (g.targetSpecOf obj).allowsZero ||
             match obj.triggeredAbility with
             | some ab => ab.allowsZeroTargets || obj.abilityEffect.any (·.allowsZeroTargets)
             | none =>
@@ -4013,7 +4011,7 @@ partial def runPostStep (g : Game) (step : PostStep)
           if remaining > 0 && anyChoosableLeft then
             g.change (.pending (.fraChoice p (.upToTriggerModes obj.id remaining validChosen)))
           else if validChosen.isEmpty then
-            let noop : Effect := { body := .noop, phrase := "" }
+            let noop : Effect := { body := .noop }
             let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
             let g := g.changes #[
               .object obj.id (.abilityEffect (some noop)),
@@ -4046,7 +4044,7 @@ partial def runPostStep (g : Game) (step : PostStep)
           else
             let sorted := validChosen.qsort (· < ·)
             let eff : Effect :=
-              if sorted.isEmpty then { body := .noop, phrase := "" }
+              if sorted.isEmpty then { body := .noop }
               else hawkeyeArrowsEffect sorted
             let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
             let g := g.changeObject obj.id (.abilityEffect (some eff))
@@ -6343,7 +6341,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player caster).name} may choose targets (CR 601.2c)"
     let some obj := g.objectAwaitingTargets | throw "No spell is waiting for a target (CR 601.2c)"
     if g.canSkipCurrentOptionalSlot obj then
-      let spec := (g.targetingOf obj).spec
+      let spec := g.targetSpecOf obj
       let curPos := g.currentTargetSlot obj
       let (_, grpEnd) := spec.instanceGroupBounds curPos
       let span := ((List.range grpEnd).drop curPos)
@@ -6364,7 +6362,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       return g.afterTriggerTargetsChosen
     else if g.canFinishOptionalTargets obj then
       let startPos := g.currentTargetSlot obj
-      let totalPos := (g.targetingOf obj).spec.totalPositions
+      let totalPos := (g.targetSpecOf obj).totalPositions
       let g := (List.range (totalPos - startPos)).foldl
         (fun acc _ => acc.skipOptionalTargetSlot obj.id) g
       let g := g.logMsg
@@ -6388,7 +6386,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
         return g.afterTriggerTargetsChosen
       | none =>
         let allowZero :=
-          (g.targetingOf obj).spec.allowsZero ||
+          (g.targetSpecOf obj).allowsZero ||
           match g.currentSpellEffect obj with
           | some e => e.allowsZeroTargets
           | none =>

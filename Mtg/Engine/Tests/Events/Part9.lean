@@ -720,8 +720,8 @@ private def replayOk41i3 (gs : Array Game) : Bool :=
     name := srcDefA.name
     types := srcDefA.types
     subtypes := CardSubtype.ofSubtypes srcDefA.subtypes
-    power := srcDefA.power
-    toughness := srcDefA.toughness
+    power := srcDefA.powerValue
+    toughness := srcDefA.toughnessValue
     printed := some { srcDefA with isToken := true }
     owner := p1
     controller := some p1

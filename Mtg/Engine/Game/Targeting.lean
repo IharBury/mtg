@@ -525,12 +525,10 @@ slots on `e` into one concrete per-seat `TargetSlot` per matching player
 (CR 601.2c / 602.2b). -/
 def expandEachOpponentEffect (g : Game) (p : PlayerId) (e : Effect)
     (stackObjId : Option ObjectId := none) : Effect :=
-  if !e.targeting.spec.slots.any (·.forEach?.isSome) then e
+  if !e.targets.slots.any (·.forEach?.isSome) then e
   else
-    let expandedSpec := g.expandForEachSpec p e.targeting.spec e.allowsZeroTargets stackObjId
-    { e with
-      targeting := .of expandedSpec
-      maxTargets := expandedSpec.totalPositions }
+    let expandedSpec := g.expandForEachSpec p e.targets e.allowsZeroTargets stackObjId
+    { e with targets := expandedSpec }
 
 /-- Whether enough distinct legal targets exist for `e` (CR 115.3 / 115.5 / 601.2c):
 delegates directly to `legalTargetsForSpec` over `e.effectiveTargetSpec` after

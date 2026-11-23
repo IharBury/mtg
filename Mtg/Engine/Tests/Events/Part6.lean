@@ -41,7 +41,7 @@ private def replayOk28i2 (gs : Array Game) : Bool :=
   }
   let gMid1 :=
     (((gMid0.markDamageOn (gMid0.object! p0BearId) 2 "lethal" (cause := some testCause)).putReflexiveTrigger
-      p0 none { targeting := .of .player, body := Instruction.gainLifeFixed 1, phrase := "Target player gains 1 life" }).change
+      p0 none { targets := .player, body := Instruction.gainLifeFixed 1 }).change
       (.pushContinuationFrame {})).changes #[
       .pending (.activateManaAbilities p1),
       .proposedSpell (some propP1)
@@ -59,8 +59,7 @@ private def replayOk28i2 (gs : Array Game) : Bool :=
     name := "P28i2 Free Sac Bolt"
     manaCost := ⟨#[.colored .red]⟩
     types := #[.instant]
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
-    spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 1 }, additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
   }
   let stashedPr : PendingReplacement :=
     .continueInterpreter { ctx := { controller := p0 }, queue := #[Instruction.scryFixed 1], stack := #[] }
@@ -118,7 +117,7 @@ private def replayOk28i3 (gs : Array Game) : Bool :=
   --     by `p2`. While `g.pending == .assignCombatDamage p0 true`, if `p0` leaves via
   --     `playerLeavesGame p0`, surviving teammate `p1` takes over the prompt
   --     (`g.pending == .assignCombatDamage p1 true`):
-  let hillGiant : CardDef := { bear with name := "P28i3 Giant", power := some 3, toughness := some 3 }
+  let hillGiant : CardDef := { bear with name := "P28i3 Giant", power := some (.fixed 3), toughness := some (.fixed 3) }
   let gCombat0 :=
     addPermanent (addPermanent (addPermanent g2hg hillGiant p1 p1) bear p2 p2) bear p2 p2
   let atkId := (gCombat0.permanentsOf p1).find? (·.name == hillGiant.name) |>.get!.id
@@ -270,7 +269,7 @@ private def replayOk28i4 (gs : Array Game) : Bool :=
   let gDmgEqPow :=
     (gBearPumpedDeparted.change
       (.pushContinuationFrame { resolvingAbility := some p0BearId })).applyAbilityEffect
-      p0 { targeting := .of .creature, body := Instruction.dealDamage (.targetSlot 0) (.objectStat .power .this) }
+      p0 { targets := .creature, body := Instruction.dealDamage (.targetSlot 0) (.objectStat .power .this) }
       #[.permanent p1BearId] (some p0BearId)
   let dmgEqSourcePowerLkiOk :=
     (gDmgEqPow.object! p1BearId).status.damage == 4
@@ -350,7 +349,7 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
   --       keeps when `spellId` is still on `.stack`:
   let boltDef : CardDef := {
     name := "P29i1 Bolt", manaCost := ⟨#[.colored .red]⟩, types := #[.instant]
-    spellEffect := some { targeting := .of .player, body := Instruction.dealDamageFixed (.targetSlot 0) 3 }
+    spellAbility := some { effect := { targets := .player, body := Instruction.dealDamageFixed (.targetSlot 0) 3 } }
   }
   let gStack0 :=
     insertObject (insertObject g3 boltDef p0 (.hand p0)) boltDef p1 (.hand p1)
@@ -388,15 +387,15 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
 
   -- 1c. `.crew`, `.zemoBoastExile`, and `.chooseTeamworkCreatures` revalidation in `.restorePending`,
   --     `checkReversal`, `decline`, `pickTeamworkCreatures`, `Game.applyIdle`, and `Agent.choose`:
-  let wall04 : CardDef := { bear with name := "P29i1 Wall 0/4", power := some 0, toughness := some 4 }
+  let wall04 : CardDef := { bear with name := "P29i1 Wall 0/4", power := some (.fixed 0), toughness := some (.fixed 4) }
   let vehicleDef : CardDef := {
     name := "P29i1 Skiff", types := #[.artifact], subtypes := #["Vehicle"]
-    power := some 4, toughness := some 4
+    power := some (.fixed 4), toughness := some (.fixed 4)
   }
   let blackMv15 : CardDef := {
     name := "P29i1 Fifteen Black"
     manaCost := { symbols := Array.replicate 15 (.colored .black) }
-    types := #[.creature], power := some 2, toughness := some 2
+    types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2)
   }
   let gCost0 :=
     insertObject (insertObject (addPermanent (addPermanent (addPermanent afterDraw wall04 p0 p0) bear p0 p0) vehicleDef p0 p0)
@@ -558,7 +557,7 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
   --     `offerVisionModes` preserves `g.chooseModesRest.isSome`):
   let boltDef : CardDef := {
     name := "P29i2 Bolt", manaCost := ⟨#[.colored .red]⟩, types := #[.instant]
-    spellEffect := some { targeting := .of .player, body := Instruction.dealDamageFixed (.targetSlot 0) 3 }
+    spellAbility := some { effect := { targets := .player, body := Instruction.dealDamageFixed (.targetSlot 0) 3 } }
   }
   let gWithStackAndHand :=
     insertObject (insertObject gBase bear p0 (.hand p0)) boltDef p0 (.hand p0)
@@ -577,7 +576,7 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
   let gVision := gBase.beginFraChoice p0 (.visionMode srcId #[0, 1, 2]) "Choose a mode"
   let gWall := gBase.offerMayCreateWall p0
   let gPayRefl := gBase.offerPayForReflexive p0 (some srcId) #[.colored .red]
-    { targeting := .of .anyTarget, body := Instruction.dealDamageFixed (.targetSlot 0) 2 } 1
+    { targets := .anyTarget, body := Instruction.dealDamageFixed (.targetSlot 0) 2 } 1
   let gExCasts := gBase.offerExileCasts p0 #[srcId] 1
   let gEntAtk :=
     gBase.promptEnteringAttackItems #[.token p0 .soldier11white true #[.player p1, .player p2] none]
@@ -640,11 +639,11 @@ private def replayOk29i3 (gs : Array Game) : Bool :=
 
   -- 1a. `Targeting.expandEachOpponentEffect` skips `p1` (`!g.stillInGame p1`) and includes only `p2`:
   let effOpp : Effect := {
-    targeting := .of (.forEachOpponentControlled (.hasType .creature) (.exact 1))
+    targets := (.forEachOpponentControlled (.hasType .creature) (.exact 1))
     body := Instruction.dealDamageFixed (.targetSlot 0) 2
   }
   let expandedEff := gLeft.expandEachOpponentEffect p0 effOpp (some p0BearId)
-  let expandOppOk := expandedEff.maxTargets == 1
+  let expandOppOk := expandedEff.maxTargetCount == 1
 
   -- 1b. `Triggers.putTriggeredAbilityOnStack` and `ResolutionEffects` (`queueFollowupReflexive`,
   --     `putReflexiveTrigger`, `beginMayCastFromLooked`) are no-ops when `!g.stillInGame p1`:
@@ -724,7 +723,7 @@ private def replayOk29i4 (gs : Array Game) : Bool :=
     name := "P29i4 Layer1 Renamed Card"
     manaCost := ⟨#[.generic 2]⟩
     types := #[.creature]
-    power := some 3, toughness := some 3
+    power := some (.fixed 3), toughness := some (.fixed 3)
   }
   let gRenamed :=
     gBase.createEffect
@@ -1253,7 +1252,7 @@ private def replayOk31i2 (gs : Array Game) : Bool :=
     | .ok g => g
     | .error _ => gOr0
   let gUnless0 := gBase.applyEffect p0 {
-    targeting := .of .player
+    targets := .player
     body := .unlessPays (.target 0) (CostSpec.ofGeneric 1) (Instruction.drawFixed 1)
   } #[Target.player p0]
   let gUnless1 := mustApply gUnless0 p0 .decline
@@ -1353,8 +1352,8 @@ private def replayOk31i4 (gs : Array Game) : Bool :=
   let wallDef : CardDef := {
     bear with
     name := "P31 Wall"
-    power := some 1
-    toughness := some 5
+    power := some (.fixed 1)
+    toughness := some (.fixed 5)
   }
   let gWall0 := addPermanent afterDraw wallDef p0 p0
   let wallObj := (gWall0.permanentsOf p0).find? (·.name == "P31 Wall") |>.get!
@@ -1379,8 +1378,8 @@ private def replayOk31i4 (gs : Array Game) : Bool :=
   let goyfDef : CardDef := {
     bear with
     name := "P31 Goyf"
-    power := some 0
-    toughness := some 1
+    power := some (.fixed 0)
+    toughness := some (.fixed 1)
     staticAbilities := #[.powerPerCreatureAndPlaneswalkerCard]
   }
   let gGy0 := insertObject (addPermanent afterDraw goyfDef p0 p0) relicDef p0 (.graveyard p0)
@@ -1426,8 +1425,7 @@ private def replayOk32i1 (gs : Array Game) : Bool :=
   --     before `promptTriggerTargetsIfNeeded` opens `Pending.chooseTargets`:
   let gHkStack :=
     gBase.putReflexiveTrigger p0 (some p0Bear.id)
-      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects }
-        phrase := "Choose up to 1 Trick Arrows mode" }
+      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects } }
       (lastKnownPower := some 1)
   let gHkChoseNet := mustApply gHkStack p0 (.chooseMode 0)
   let emptyFramePoppedBeforeTargetsOk :=
@@ -1530,9 +1528,8 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
           minModes := .const 0
           maxModes := .chosenX
           modes := #[
-            { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-              body := Instruction.destroy (.target 0)
-              phrase := "Destroy target token" }
+            { targets := (.ofDomain (.object .battlefield (.isToken true)))
+              body := Instruction.destroy (.target 0) }
           ] } }
   let tokenOnlyModesDef : CardDef := {
     bear with
@@ -1559,10 +1556,9 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
           minModes := .const 0
           maxModes := .chosenX
           modes := #[
-            { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life" },
-            { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-              body := Instruction.destroy (.target 0)
-              phrase := "Destroy target token" }
+            { body := Instruction.gainLifeFixed 2 },
+            { targets := (.ofDomain (.object .battlefield (.isToken true)))
+              body := Instruction.destroy (.target 0) }
           ] } }
   let twoModesDef : CardDef := {
     bear with
@@ -1601,8 +1597,7 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
   --     (iii) Clears `.hawkeyeModes` when `objId? == none`.
   let gHkReopen0 :=
     gBase.putReflexiveTrigger p0 (some p0Bear.id)
-      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects }
-        phrase := "Choose up to 2 Trick Arrows modes" }
+      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects } }
       (lastKnownPower := some 2)
   let hkObjId1 := gHkReopen0.stack.back!.objectId
   let gHkReopen1 := gHkReopen0.concede p1
@@ -1610,8 +1605,7 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
   let gNoP0Creature := addPermanent g3 hero p1 p1
   let gHkFin0 :=
     gNoP0Creature.putReflexiveTrigger p0 none
-      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects }
-        phrase := "Choose up to 3 Trick Arrows modes" }
+      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects } }
       (lastKnownPower := some 3)
   let hkFinObjId := gHkFin0.stack.back!.objectId
   let gHkPicked12 := mustApply (mustApply gHkFin0 p0 (.chooseMode 1)) p0 (.chooseMode 2)
@@ -1667,7 +1661,7 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
   -- runs `redirectPendingAfterLeave p1` -> `.resumeChooseTargetsAfterLeave p0`, removing `p0`'s targetless
   -- stack trigger (CR 603.3d) rather than short-circuiting to `openPrompt`:
   let oppCreatureTrig : TriggeredAbility :=
-    TriggeredAbility.mkTrigger (.gainLife .you) { targeting := .of .oppCreature, body := Instruction.tap (.target 0), phrase := "Tap target opponent creature" }
+    TriggeredAbility.mkTrigger (.gainLife .you) { targets := .oppCreature, body := Instruction.tap (.target 0) }
   let gTrigOnP1 := gBase.putTriggeredAbilityOnStack p0 p0Bear oppCreatureTrig "triggers" (eventCause := some testCause)
   let trigTargetId := gTrigOnP1.stack.back!.objectId
   let gP1Gone := gTrigOnP1.playerLeavesGame p1
@@ -1956,9 +1950,8 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
   -- 1d. Unified `.mayResolve` departure handling (`.branchOnChoice` decline & illegal targets),
   --     `.chooseCards` `.stashedCause none`, `.orderLibraryBottom`, and `.searchLibrary` (`plusOneAfterSearch`):
   let tapEff : Effect := {
-    targeting := .of .creature
+    targets := .creature
     body := Instruction.may .you none (Instruction.tap (.target 0))
-    phrase := "You may tap target creature"
   }
   let gBeginMayAfterStale :=
     g3Base.applyEffect p0 tapEff #[Target.permanent p1Hero3.id]
@@ -2048,7 +2041,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   -- 2a. Departed-seat `!g.stillInGame p` and controller/caster guards in `Decisions.runPostStep`:
   let gLeftP1 := gBase.playerLeavesGame p1
   let oppTrig : TriggeredAbility :=
-    TriggeredAbility.mkTrigger (.gainLife .you) { targeting := .of .creature, body := Instruction.tap (.target 0), phrase := "Tap target creature" }
+    TriggeredAbility.mkTrigger (.gainLife .you) { targets := .creature, body := Instruction.tap (.target 0) }
   let gP0TrigAwaiting := gLeftP1.putTriggeredAbilityOnStack p0 p0Bear oppTrig "triggers" (eventCause := some testCause)
   let p0TrigId := gP0TrigAwaiting.stack.back!.objectId
   -- Calling `.resumeChooseTargetsAfterLeave p1` (departed) or `.resumeChooseTargetsAfterLeave p2`
@@ -2061,7 +2054,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     name := "P33 Tap Spell"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some { targeting := .of .creature, body := Instruction.tap (.target 0), phrase := "Tap target creature" }
+    spellAbility := some { effect := { targets := .creature, body := Instruction.tap (.target 0) } }
   }
   let gTap0 := insertObject gLeftP1 tapSpellDef p0 (.hand p0)
   let gTapCast := mustApply33i2 gTap0 p0 (.cast (gTap0.player p0).hand.back!)
@@ -2100,9 +2093,8 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   -- (3) No-legal-target trigger (`ceaseToExist` CR 603.3d) alongside own vs other vanished `proposedSpell`:
   let tokOnlyTrig : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you)
-      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-        body := Instruction.tap (.target 0)
-        phrase := "Tap target token" }
+      { targets := (.ofDomain (.object .battlefield (.isToken true)))
+        body := Instruction.tap (.target 0) }
   let gNoLegalTrig0 :=
     ((gLeftP1.putTriggeredAbilityOnStack p0 p0Bear tokOnlyTrig "triggers" (eventCause := some testCause)).change
       (.pending .none)).change (.waitingTriggers #[probeWt])
@@ -2258,17 +2250,16 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     name := "P33 Modal Both"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some {
+    spellAbility := some { effect := {
       body := .chooseModes {
         maxModes := .const 2
         modes := #[
-          { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-            body := Instruction.destroy (.target 0)
-            phrase := "Destroy target token" },
-          { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life" }
+          { targets := (.ofDomain (.object .battlefield (.isToken true)))
+            body := Instruction.destroy (.target 0) },
+          { body := Instruction.gainLifeFixed 2 }
         ]
       }
-    }
+    } }
   }
   let (gModal0, _) := (insertObject g3 modalBothSpell p0 (.hand p0)).createOneToken p1
     { bear with name := "P33 Token", isToken := true } (cause := some testCause)
@@ -2288,12 +2279,11 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   --      Also verify `needed == 0` finalizes `validChosen == #[1]` when `remaining == 0`:
   let chooseTwoTrigAb : TriggeredAbility :=
     TriggeredAbility.mkModal .thisEnters #[
-      { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-        body := Instruction.destroy (.target 0)
-        phrase := "Destroy target token" },
-      { body := Instruction.gainLifeFixed 2, phrase := "Gain 2 life" },
-      { body := Instruction.drawFixed 1, phrase := "Draw a card" }
-    ] (headerPhrase := "Choose two") (minModes := .const 2) (maxModes := .const 2)
+      { targets := (.ofDomain (.object .battlefield (.isToken true)))
+        body := Instruction.destroy (.target 0) },
+      { body := Instruction.gainLifeFixed 2 },
+      { body := Instruction.drawFixed 1 }
+    ] (minModes := .const 2) (maxModes := .const 2)
   let threeModesDef : CardDef := {
     bear with
     name := "P33 Three Modes"
@@ -2326,8 +2316,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gHkNoCreatures := g3
   let gHkStack :=
     gHkNoCreatures.putReflexiveTrigger p0 none
-      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects }
-        phrase := "Choose up to 2 Trick Arrows modes" }
+      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects } }
       (lastKnownPower := some 2)
   let hkObjId := gHkStack.stack.back!.objectId
   -- Mode 0 (`Net — target creature`) is illegal on empty battlefield while mode 2 (`Boomerang`) is legal:
@@ -2455,8 +2444,8 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     manaCost := ManaCost.empty
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 3
-    toughness := some 3
+    power := some (.fixed 3)
+    toughness := some (.fixed 3)
     keywords := #[.crew 2]
   }
   let gStolenVeh0 := addPermanent gBase vehicleDef p1 p0
@@ -2535,15 +2524,15 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     name := "P33 Twin Tap"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some {
+    spellAbility := some { effect := {
       body := .chooseModes {
         maxModes := .const 2
         modes := #[
-          { targeting := .of .creature, body := Instruction.tap (.target 0), phrase := "Tap first creature" },
-          { targeting := .of .creature, body := Instruction.tap (.target 0), phrase := "Tap second creature" }
+          { targets := .creature, body := Instruction.tap (.target 0) },
+          { targets := .creature, body := Instruction.tap (.target 0) }
         ]
       }
-    }
+    } }
   }
   let gTwin0 := insertObject gBase twoTargetSpell p0 (.hand p0)
   let handTwinId := (gTwin0.player p0).hand.back!
@@ -2905,9 +2894,8 @@ private def replayOk34i1 (gs : Array Game) : Bool :=
   -- (ii) `triggerNeedingTargets` is prompted before `waitingTriggers`:
   let targTrigAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you) {
-      targeting := .of .creature
+      targets := .creature
       body := Instruction.tap (.target 0)
-      phrase := "Tap target creature"
     }
   let gUnannouncedTrig :=
     (gBase.putTriggeredAbilityOnStack p0 p0Bear targTrigAb "triggers" (eventCause := some testCause)).changes #[
@@ -3609,7 +3597,6 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
   let pauseTrigAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you) {
       body := Instruction.may .you none (Instruction.drawFixed 1)
-      phrase := "You may draw a card"
     }
   let gTrigStack0 :=
     gBase.putTriggeredAbilityOnStack p0 p0Bear pauseTrigAb "triggers"
@@ -4018,7 +4005,7 @@ private def countFinishConcedeCont : PendingReplacement → Nat
 
   -- 3a(ii). `finishConcedePriority` SBA pass pauses on `.chooseReplacement` (0/0 creature dying with two
   --         replacement choices on `p0` while `savedPending = some (.scry p0 1)` and `popOuter = true`):
-  let zeroDef : CardDef := { bear with name := "P35i3 Zero", power := some 0, toughness := some 0 }
+  let zeroDef : CardDef := { bear with name := "P35i3 Zero", power := some (.fixed 0), toughness := some (.fixed 0) }
   let leyA3 : CardDef := { name := "P35i3 LeyA", types := #[.enchantment] }
   let leyB3 : CardDef := { name := "P35i3 LeyB", types := #[.enchantment] }
   let gSbaRepl0 :=
@@ -4148,7 +4135,7 @@ private def replayOk35i4 (gs : Array Game) : Bool :=
   let auraDef : CardDef := { name := "P35i4 Mind Lease", types := #[.enchantment] }
   let vehicleDef : CardDef := {
     name := "P35i4 Skiff", types := #[.artifact], subtypes := #["Vehicle"]
-    power := some 4, toughness := some 4
+    power := some (.fixed 4), toughness := some (.fixed 4)
   }
   let pwDef : CardDef := {
     name := "P35i4 Walker", types := #[.planeswalker], loyalty := some 3
@@ -4156,7 +4143,7 @@ private def replayOk35i4 (gs : Array Game) : Bool :=
   let blackMv15 : CardDef := {
     name := "P35i4 Fifteen Black"
     manaCost := { symbols := Array.replicate 15 (.colored .black) }
-    types := #[.creature], power := some 2, toughness := some 2
+    types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2)
   }
   let gBase0 :=
     insertObject
@@ -4395,7 +4382,7 @@ private def replayOk35i4 (gs : Array Game) : Bool :=
       .proposedSpell (some morphProp), .pending (.chooseMode p0) ]).runPostStep
       (.resumeChooseModeAfterLeave p0)
 
-  let targEff : Effect := { targeting := .of .player, body := Instruction.gainLifeFixed 1, phrase := "Target player" }
+  let targEff : Effect := { targets := .player, body := Instruction.gainLifeFixed 1 }
   let (gTarg1, targAbObj) := gModeCkpt.putStackAbility p0Bear p0 (abilityEffect := some targEff)
   let targAbProp : ProposedSpell := {
     caster := p0, cost := ManaCost.empty, spellId := targAbObj.id, original := targAbObj

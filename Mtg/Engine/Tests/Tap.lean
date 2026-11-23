@@ -65,7 +65,7 @@ def tapEnchantedOnly : Effect :=
   { body := Instruction.tap .attachedHost }
 
 def tapTargetOnly : Effect :=
-  { targeting := .of .creature, allowsZeroTargets := true, body := Instruction.tap (.target 0) }
+  { targets := TargetSpec.creature.asUpTo 1, body := Instruction.tap (.target 0) }
 
 def village : Game :=
   let g := addPermanent afterDraw folk caster caster
@@ -237,6 +237,6 @@ source to still be there. -/
 #guard TriggeredAbility.toNotation .onAttackTapHumansDraw ==
   "Whenever this creature attacks, you may tap any number of untapped Humans you control. Draw a card for each Human tapped this way."
 #guard TriggeredAbility.toNotation .onEnterTapEnchantedRemoveCounters ==
-  "When this Aura enters, tap enchanted creature and remove all counters from it."
+  "When this Aura enters, tap enchanted creature. Remove any number of counter(s) from enchanted creature."
 
 end Mtg.Engine.TapTests

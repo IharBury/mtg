@@ -786,11 +786,46 @@ def announcedSlotNoun (ts : TargetSpec) (slotIdx : Nat) : String :=
 def announcedPosNoun (ts : TargetSpec) (pos : Nat) : String :=
   ts.announcedSlotNoun (ts.slotIndexOfPos pos)
 
-/-- Apply legacy `(allowsZero, maxTargets)` bounds when `ts` is a single slot. -/
+/-- Apply `(allowsZero, maxTargets)` bounds when `ts` is a single slot. -/
 def withSlotBounds (ts : TargetSpec) (allowsZero : Bool) (maxTargets : Nat) : TargetSpec :=
   if ts.slots.size == 1 then
     { ts with slots := #[ts.slots[0]!.withBounds allowsZero maxTargets] }
   else ts
+
+/-- Refine a single-slot `TargetSpec` to target up to `n` targets (CR 115.1c). -/
+def asUpTo (ts : TargetSpec) (n : Nat := 1) : TargetSpec :=
+  ts.withSlotBounds true n
+
+/-- Refine a single-slot `TargetSpec` to target between `lo` and `hi` targets (CR 115.1c). -/
+def asBetween (ts : TargetSpec) (lo hi : Nat) : TargetSpec :=
+  if ts.slots.size == 1 then
+    { ts with slots := #[{ ts.slots[0]! with count := CountRange.ofBounds lo hi }] }
+  else ts
+
+/-- Refine a single-slot `TargetSpec` to target any number of targets (CR 115.1c). -/
+def asAnyNumber (ts : TargetSpec) : TargetSpec :=
+  if ts.slots.size == 1 then
+    { ts with slots := #[{ ts.slots[0]! with count := .anyNumber }] }
+  else ts
+
+/-- Single-slot divided-damage targeting specification (CR 601.2d):
+`amount` damage divided among one to `maxTargets` targets matching `domain`. -/
+def dividedDamage (domain : TargetDomain) (amount maxTargets : Nat) : TargetSpec :=
+  single {
+    domain
+    count := if maxTargets <= 1 then .exact 1 else .between 1 maxTargets
+    division? := some (.damage, .const (Int.ofNat amount))
+  }
+
+/-- Extract `(amount, maxTargets)` from a divided-damage `TargetSpec`, if any (CR 601.2d). -/
+def dividedDamage? (ts : TargetSpec) : Option (Nat × Nat) :=
+  match ts.slots[0]? with
+  | some slot =>
+    match slot.division? with
+    | some (.damage, .const n) =>
+      if n >= 0 then some (n.toNat, slot.maxCount) else Option.none
+    | _ => Option.none
+  | Option.none => Option.none
 
 /-- If `ts` is a single slot targeting a creature you control with one literal
 subtype (`Equip <Subtype>`, etc.), return that subtype. -/
@@ -1197,48 +1232,21 @@ def forEachPlayerControlled (pred : ObjectPred) (count : CountRange := .upTo 1) 
 
 end TargetSpec
 
-/-! ### `EffectTargeting` and `HasTargeting` -/
+/-! ### `HasTargeting` -/
 
-/-- Targeting specification plus a default-choice hint used by the demonstration agent. -/
-structure EffectTargeting where
-  spec : TargetSpec := .none
-  prefer : TargetPreference := .own
-deriving Repr, Inhabited, BEq
-
-namespace EffectTargeting
-
-/-- Targeting specification; `prefer` defaults structurally from `spec` unless overridden. -/
-def of (spec : TargetSpec)
-    (prefer : TargetPreference := spec.defaultPreference) : EffectTargeting :=
-  { spec, prefer }
-
-/-- How many targets must be announced (CR 601.2c). -/
-def targetCount (t : EffectTargeting) : Nat :=
-  t.spec.targetCount
-
-/-- True when announcing this shape requires choosing a target (CR 115.1). -/
-def requiresTarget (t : EffectTargeting) : Bool :=
-  !t.spec.isEmpty
-
-end EffectTargeting
-
-instance : HasTextChange EffectTargeting where
-  applyTextChanges tcs t :=
-    if tcs.isEmpty then t
-    else { t with spec := HasTextChange.applyTextChanges tcs t.spec }
-
-/-- Types that classify targeting through `EffectTargeting`. `targetSpec`,
-`targetCount`, and `requiresTarget` are derived here so spell, ability, and
-trigger wrappers do not restate them. -/
+/-- Types that carry a `TargetSpec`. `targetCount`, `maxTargetCount`,
+`allowsZeroTargets`, and `requiresTarget` derive here directly so spell,
+ability, and trigger wrappers do not restate them. -/
 class HasTargeting (α : Type) where
-  targeting : α → EffectTargeting
+  targetSpec : α → TargetSpec
 
 namespace HasTargeting
 variable {α : Type} [HasTargeting α]
 
-def targetSpec (e : α) : TargetSpec := targeting e |>.spec
-def targetCount (e : α) : Nat := targeting e |>.targetCount
-def requiresTarget (e : α) : Bool := targeting e |>.requiresTarget
+def targetCount (e : α) : Nat := targetSpec e |>.targetCount
+def maxTargetCount (e : α) : Nat := targetSpec e |>.maxTargetCount
+def allowsZeroTargets (e : α) : Bool := targetSpec e |>.allowsZero
+def requiresTarget (e : α) : Bool := !(targetSpec e).isEmpty
 
 end HasTargeting
 

@@ -151,7 +151,7 @@ inductive StaticPlayerRule where
   | forbidAbilityActivation (who : PlayerFilter) (tag : ActivationMechanicTag)
   /-- Static designation check (e.g. permanent Ascend CR 702.131b / Storied). -/
   | gainDesignation (who : PlayerFilter := .you) (designation : PlayerDesignation)
-  /-- CR 718: you control matching player(s) during their next turn. -/
+  /-- CR 723: you control matching player(s) during their next turn. -/
   | controlPlayer (who : PlayerFilter)
 deriving Repr, Inhabited, BEq
 
@@ -1278,25 +1278,18 @@ inductive Instruction where
   | forEach (iter : ForEachSpec) (var : VarId) (body : Instruction)
 
 /-- Unified one-shot effect shared by spells, activated abilities, Saga chapters,
-and triggered abilities (CR 608). `SpellCastKind` and `AbilityCastKind` are
-computed purely from `targets` and `body`. -/
+and triggered abilities (CR 608). `SpellCastKind`, `AbilityCastKind`, targeting
+preferences, and default-mode hints are computed purely from `targets` and `body`. -/
 structure Effect where
-  targeting : EffectTargeting := .of .none
-  allowsZeroTargets : Bool := false
-  maxTargets : Nat := 0
-  dividedDamage : Option (Nat × Nat) := none
-  preferAsDefaultMode : Bool := false
+  targets : TargetSpec := .none
   /-- Unified one-shot `Instruction` body. -/
   body : Instruction
-  /-- Transitional printed phrase (retired in Phase 10). -/
-  phrase : String := ""
 
 /-- Unified activated ability (CR 113.3b / 602 / 605.1a / 606.2–6 / 305.6).
 Mana production (`PlayerOp.addMana`) and multiple modes (`Instruction.chooseModes`)
 live directly in `effect.body`. -/
 structure ActivatedAbility where
   cost : CostSpec := {}
-  printed : String := ""
   effect : Effect
   timing : ActivationTiming := .instant
   activeZones : Array ZoneKind := #[.battlefield]
@@ -1563,8 +1556,7 @@ private partial def applyTcInstr (tcs : Array TextChange) : Instruction → Inst
     .forEach (HasTextChange.applyTextChanges tcs iter) v (applyTcInstr tcs body)
 
 private partial def applyTcEffect (tcs : Array TextChange) (e : Effect) : Effect :=
-  { e with
-    targeting := HasTextChange.applyTextChanges tcs e.targeting
+  { targets := HasTextChange.applyTextChanges tcs e.targets
     body := applyTcInstr tcs e.body }
 
 private partial def applyTcActivated (tcs : Array TextChange)
@@ -1657,6 +1649,25 @@ instance : HasTextChange ContinuousModification where
   applyTextChanges tcs m := if tcs.isEmpty then m else applyTcContMod tcs m
 instance : HasTextChange StaticAbility where
   applyTextChanges tcs s := if tcs.isEmpty then s else applyTcStatic tcs s
+
+/-- Spell ability on a card or sub-face, uniting the resolving `Effect` with
+spell-level additional/alternative casting costs and cast restrictions
+(CR 113.3a / 118.8–9 / 601.3). -/
+structure SpellAbility where
+  effect : Effect := {}
+  additionalCosts : Array AdditionalCostSpec := #[]
+  alternativeCosts : Array AlternativeCostSpec := #[]
+  castRestrictions : Array Condition := #[]
+deriving Repr, Inhabited, BEq
+
+instance : HasTextChange SpellAbility where
+  applyTextChanges tcs sa :=
+    if tcs.isEmpty then sa
+    else
+      { effect := HasTextChange.applyTextChanges tcs sa.effect
+        additionalCosts := HasTextChange.applyTextChanges tcs sa.additionalCosts
+        alternativeCosts := HasTextChange.applyTextChanges tcs sa.alternativeCosts
+        castRestrictions := HasTextChange.applyTextChanges tcs sa.castRestrictions }
 
 namespace StaticReplacementSpec
 

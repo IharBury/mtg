@@ -29,7 +29,7 @@ def becomeArtifactAndIndestructibleInstr (obj : ObjectExpr) : Instruction :=
 
 def onCreature : TriggeredAbility :=
   TriggeredAbility.mkTrigger .thisEnters {
-    targeting := .of .creature
+    targets := .creature
     body := becomeArtifactAndIndestructibleInstr (.target 0)
   }
 
@@ -37,7 +37,7 @@ def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (spec : TargetSpec := .creature) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
@@ -62,8 +62,8 @@ def bear : CardDef := creature "Bear" ManaCost.empty #[] 2 2
 def golem : CardDef := {
   name := "Golem"
   types := #[.artifact, .creature]
-  power := some 3
-  toughness := some 3
+  power := some (.fixed 3)
+  toughness := some (.fixed 3)
 }
 def land : CardDef := { name := "Field", types := #[.land] }
 def grasp : CardDef := enchantment "Grasp" ManaCost.empty ""
@@ -216,7 +216,7 @@ def whileSourceArtifact : Instruction :=
 
 /- Printed phrases stay with the recipient that produces them. -/
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, body := artifacted } ==
+    { targets := .creature, body := artifacted } ==
   "until end of turn, target creature becomes an artifact in addition to its other types"
 #guard TriggeredAbility.resolutionPhrase
     { body := becomeArtifactInstr .this } ==
@@ -225,7 +225,7 @@ def whileSourceArtifact : Instruction :=
     { body := becomeArtifactInstr .attachedHost } ==
   "until end of turn, enchanted creature becomes an artifact in addition to its other types"
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, body := both } ==
+    { targets := .creature, body := both } ==
   "until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible"
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, until end of turn, target creature becomes an artifact in addition to its other types and gains indestructible."

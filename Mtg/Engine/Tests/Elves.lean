@@ -158,8 +158,8 @@ def agentArchdruidMana : Game :=
 
 #guard mirkwoodElk.triggeredAbilities == #[.onEnterOrAttackReturnElfGainLife]
 #guard KeywordAbility.hasTrample mirkwoodElk.keywords
-#guard mirkwoodElk.power == some 6
-#guard mirkwoodElk.toughness == some 6
+#guard mirkwoodElk.power == some (.fixed 6)
+#guard mirkwoodElk.toughness == some (.fixed 6)
 
 /-- Mirkwood Elk in hand, an Elf in the graveyard, and enough mana to cast it. -/
 def elkSetup : Game :=
@@ -188,7 +188,7 @@ def paidElk : Game := mustApply proposedElk ⟨0⟩ .pay
 /-- The creature enters; the trigger waits for a graveyard Elf (CR 603.3d). -/
 def elkEntered : Game := passBoth paidElk
 
-#guard (namedPermanent elkEntered "Mirkwood Elk").printed.power == some 6
+#guard (namedPermanent elkEntered "Mirkwood Elk").printed.power == some (.fixed 6)
 #guard elkEntered.power (namedPermanent elkEntered "Mirkwood Elk") == 6
 #guard elkEntered.toughness (namedPermanent elkEntered "Mirkwood Elk") == 6
 #guard KeywordAbility.hasTrample (namedPermanent elkEntered "Mirkwood Elk").printed.keywords

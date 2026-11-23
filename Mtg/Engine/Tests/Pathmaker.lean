@@ -219,8 +219,8 @@ def bothTappedForApothecary : Game :=
 zones (CR 208.2a / 604.3). -/
 
 #guard mirkwoodPathmaker.staticAbilities == #[.powerToughnessEqualLandsYouControl]
-#guard mirkwoodPathmaker.power.isNone
-#guard mirkwoodPathmaker.toughness.isNone
+#guard mirkwoodPathmaker.power == some (.star 0)
+#guard mirkwoodPathmaker.toughness == some (.star 0)
 #guard mentions mirkwoodPathmaker.summary "*/*"
 
 #guard pathmakerWithLands.power (namedPermanent pathmakerWithLands "Mirkwood Pathmaker") == 2
@@ -232,7 +232,7 @@ zones (CR 208.2a / 604.3). -/
   (namedPermanent pathmakerWithLands "Mirkwood Pathmaker") == 2
 #guard pathmakerWithLands.snapshotToughness
   (namedPermanent pathmakerWithLands "Mirkwood Pathmaker") == 2
-#guard (namedPermanent pathmakerWithLands "Mirkwood Pathmaker").printed.power.isNone
+#guard (namedPermanent pathmakerWithLands "Mirkwood Pathmaker").printed.power == some (.star 0)
 #guard pathmakerWithLands.landsYouControl ⟨0⟩ == 2
 
 /-- Opponent lands do not count. -/

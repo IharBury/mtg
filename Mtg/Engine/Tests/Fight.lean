@@ -425,8 +425,8 @@ def agentQuarrel : Game :=
 #guard KeywordAbility.hasReach attercop.keywords
 #guard KeywordAbility.hasDeathtouch attercop.keywords
 #guard attercop.triggeredAbilities == #[(.onLandYouControlEntersGets 1 1)]
-#guard attercop.power == some 2
-#guard attercop.toughness == some 1
+#guard attercop.power == some (.fixed 2)
+#guard attercop.toughness == some (.fixed 1)
 
 /-- A flying attacker can be blocked by Attercop (reach) but not by a Gray Ogre. -/
 def flyerVsAttercop : Game :=

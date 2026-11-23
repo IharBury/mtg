@@ -130,7 +130,7 @@ private def replayOk36i1 (gs : Array Game) : Bool :=
   let petalDef : CardDef := { name := "P36i1 Petal", types := #[.artifact], activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor] }
   let greenSpellDef : CardDef := {
     name := "P36i1 Green Instant", manaCost := ManaCost.ofColor .green, types := #[.instant]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let gMana0 :=
     insertObject (addPermanent (addPermanent (addPermanent g4 petalDef p0 p0) leyA p0 p0) leyB p0 p0)
@@ -540,7 +540,7 @@ private def lifeGainsSince36i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   let petal2Def : CardDef := { name := "P36i2 Petal", types := #[.artifact], activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor] }
   let rgSpellDef : CardDef := {
     name := "P36i2 RG Instant", manaCost := ⟨#[.colored .red, .colored .green]⟩, types := #[.instant]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let gPreDep0 :=
     insertObject
@@ -973,7 +973,7 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   -- 4b(i). `CostPick` self-use exclusion (`tapSource`, `sacrificeOrExileSource`, `discardOrExileHandSource`):
   let legArtCreatureDef : CardDef := {
     name := "P36i4 Golem", supertypes := #[.legendary], types := #[.artifact, .creature]
-    power := some 2, toughness := some 2, keywords := #[Keyword.haste]
+    power := some (.fixed 2), toughness := some (.fixed 2), keywords := #[Keyword.haste]
   }
   let gSelf0 :=
     insertObject
@@ -1125,7 +1125,7 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
 
   -- Pre-`completeActivation` `canPayLife` across `.costPicks`, `.crew`, and `.zemoBoastExile`:
   let vehDef4 : CardDef := {
-    name := "P36i4 Skiff", types := #[.artifact], subtypes := #["Vehicle"], power := some 4, toughness := some 4
+    name := "P36i4 Skiff", types := #[.artifact], subtypes := #["Vehicle"], power := some (.fixed 4), toughness := some (.fixed 4)
   }
   let black15Def : CardDef :=
     creature "P36i4 Black15" { symbols := Array.replicate 15 (.colored .black) } #["Horror"] 2 2
@@ -1448,7 +1448,7 @@ private def lifeGainsSince37i1 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   let petalDef : CardDef := { name := "P37i1 Petal", types := #[.artifact], activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor] }
   let rgInstDef : CardDef := {
     name := "P37i1 RG Instant", manaCost := ⟨#[.colored .red, .colored .green]⟩, types := #[.instant]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let p4 : PlayerId := ⟨4⟩
   let g5 := g4.change (.addPlayer { id := p4, name := "Chandra" })
@@ -1915,8 +1915,8 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
   let popP2Second := (gPop0.permanentsOf p2).find? (·.name == bear.name) |>.get!
   let teferiDef : CardDef := {
     name := "P37i3 Protection", manaCost := ManaCost.empty, types := #[.instant]
-    spellEffect := some {
-      targeting := { spec := .player, prefer := .opponent }, maxTargets := 1
+    spellAbility := some { effect := {
+      targets := .player
       body := .seq #[
         .installEffect (.applyRule (.untilNextTurnOf (.target 0))
           (.all #[
@@ -1928,7 +1928,7 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
             .not (.hasType .land)]))
           (some (.target 0))),
         .installEffect (.applyReplacement .untilEndOfTurn .exileOnLeaveStack)]
-    }
+    } }
   }
   let gTef0 :=
     insertObject
@@ -2122,11 +2122,11 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
     effect := Effect.gainLife 5
   }
   let handKeepDef : CardDef := {
-    name := "P37i4 HandChannel", types := #[.creature], power := some 2, toughness := some 2
+    name := "P37i4 HandChannel", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2)
     activatedAbilities := #[keepInHandAb]
   }
   let handMultiDef : CardDef := {
-    name := "P37i4 HandMulti", types := #[.creature], power := some 2, toughness := some 2
+    name := "P37i4 HandMulti", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2)
     activatedAbilities := #[selfDiscMultiAb]
   }
   let gFh0 :=
@@ -3316,8 +3316,7 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
   --     replacement pause aborts and rewinds the proposal cleanly without emitting `spellCast` / `abilityActivated`!):
   let sacBoltDef : CardDef := {
     name := "P38i4 SacBolt", manaCost := ManaCost.empty, types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]
-    spellEffect := some (Effect.dealDamage 3)
+    spellAbility := some { effect := Effect.dealDamage 3, additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature] }
   }
   let sacPingArtDef : CardDef := {
     name := "P38i4 SacCannon", types := #[.artifact]
@@ -3458,7 +3457,7 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
   --     and `.chooseMode` `decline`:
   let vehDef : CardDef := {
     name := "P38i4 Skiff", types := #[.artifact], subtypes := #["Vehicle"]
-    power := some 4, toughness := some 4, keywords := #[.crew 2]
+    power := some (.fixed 4), toughness := some (.fixed 4), keywords := #[.crew 2]
   }
   let blackFuelDef : CardDef := {
     bear with name := "P38i4 BlackFuel", manaCost := { symbols := Array.replicate 15 (.colored .black) }
@@ -3469,7 +3468,7 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
   }
   let twLifeSpellDef : CardDef := {
     name := "P38i4 TeamStrike", manaCost := ManaCost.empty, types := #[.sorcery]
-    keywords := #[.teamwork 2], spellEffect := some (Effect.gainLife 3)
+    keywords := #[.teamwork 2], spellAbility := some { effect := Effect.gainLife 3 }
   }
   let modalRodDef : CardDef := {
     name := "P38i4 ModalRod", types := #[.artifact]

@@ -391,8 +391,8 @@ def oliphauntTargetGone : Game :=
 /- Lothlórien Lookout: attack trigger scries 1 (CR 508.3a / 701.22). -/
 
 #guard lothlorienLookout.triggeredAbilities == #[.onAttackScry 1]
-#guard lothlorienLookout.power == some 1
-#guard lothlorienLookout.toughness == some 3
+#guard lothlorienLookout.power == some (.fixed 1)
+#guard lothlorienLookout.toughness == some (.fixed 3)
 
 def lookoutOnBattlefield : Game :=
   addPermanent started lothlorienLookout ⟨0⟩ ⟨0⟩

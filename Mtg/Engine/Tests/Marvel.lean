@@ -305,7 +305,7 @@ def hiddenLairScientistWithSwamp : Game :=
 def statureInPlay : Game :=
   addPermanent afterDraw statureSizeShifter ⟨0⟩ ⟨0⟩
 
-#guard (namedPermanent statureInPlay "Stature, Size Shifter").printed.power == some 1
+#guard (namedPermanent statureInPlay "Stature, Size Shifter").printed.power == some (.fixed 1)
 #guard statureInPlay.power (namedPermanent statureInPlay "Stature, Size Shifter") == 1
 #guard statureInPlay.hasCantBeBlocked (namedPermanent statureInPlay "Stature, Size Shifter")
 

@@ -200,7 +200,7 @@ def untargetedAmass : Game := started.applyEffect ⟨0⟩ (Effect.amassGoblins 1
 
 /-- Ruling 2: in every zone except the stack-as-Adventure, ignore the
 Adventure face. Bilbo in a graveyard is a blue creature of mana value 2. -/
-def burglarPlot : AdventureFace := bilboLuckwearer.adventure.get!
+def burglarPlot : SubFace := bilboLuckwearer.adventure.get!
 
 #guard bilboLuckwearer.isCreature
 #guard !bilboLuckwearer.isInstant
@@ -3645,7 +3645,6 @@ def testSagaFourChapters : CardDef :=
       TriggeredAbility.sagaChapter 2 (Effect.chapterDraw 1),
       TriggeredAbility.sagaChapter 3 {
         body := Instruction.drawFixed 0
-        phrase := "Return Tom Bombadil from your graveyard to the battlefield."
       }
     ])
 
@@ -4332,7 +4331,7 @@ def lastKnownSacrificePowerOk : Bool :=
   let pw := g.power bear
   let (g, _) := g.move bear.id (.graveyard ⟨0⟩) none
   pw == 2 &&
-    (namedGraveyardCard g ⟨0⟩ "Grizzly Bears").printed.power == some 2 &&
+    (namedGraveyardCard g ⟨0⟩ "Grizzly Bears").printed.power == some (.fixed 2) &&
     (ruling 318).comment.contains "last existed on the battlefield" &&
     (ruling 319).comment.contains "last existed on the battlefield"
 

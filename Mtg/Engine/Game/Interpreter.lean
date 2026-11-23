@@ -3104,8 +3104,8 @@ private def freezeReflexiveTargetEffect (g : Game) (env : EvalEnv) (eff : Effect
           | .object z p => .object z (freezeReflexivePred g env p)
           | d => d) }
     | _ => sl
-  let spec := eff.targeting.spec
-  { eff with targeting := { eff.targeting with spec := { spec with slots := spec.slots.map freezeSlot } } }
+  let spec := eff.targets
+  { eff with targets := { spec with slots := spec.slots.map freezeSlot } }
 
 /-- Resume the unified `Instruction` continuation-stack machine from `st`. -/
 partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
@@ -4358,7 +4358,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
             if !queue.isEmpty then stack := stack.push (.seqRest queue)
             queue := #[]
             stack := stack.push (.chooseBranch (spec.modes.map (·.body)) false)
-            let phrases := String.intercalate " or " (spec.modes.toList.map (·.phrase))
+            let phrases := String.intercalate " or " (spec.modes.toList.map (·.toNotation))
             g := (g.changes #[
               .bindStepOutcome interpChoiceVar {},
               .pending (.chooseTriggerOr ctx.controller)]).logMsg
@@ -4372,7 +4372,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               if !ctx.targets.isEmpty then
                 let combinedSlots := chosenModes.foldl (fun acc mi =>
                   match spec.modes[mi]? with
-                  | some m => acc ++ m.targeting.spec.slots
+                  | some m => acc ++ m.targets.slots
                   | none => acc) #[]
                 if !combinedSlots.isEmpty then
                   let (modeSlots, _) := g.buildLegalTargetSlots ctx.controller
@@ -4389,13 +4389,13 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                   for mi in chosenModes do
                     if let some m := spec.modes[mi]? then
                       acc := acc.push (shiftInstrTargetSlots slotOff m.body)
-                      slotOff := slotOff + m.targeting.spec.slots.size
+                      slotOff := slotOff + m.targets.slots.size
                   return acc
                 if !modeInstrs.isEmpty then
                   if !queue.isEmpty then stack := stack.push (.seqRest queue)
                   queue := modeInstrs
           else if spec.unusedThisTurn && spec.modes.size == 3 then
-            let isVision := spec.modes[0]?.any (·.phrase.startsWith "Solar Beam")
+            let isVision := Instruction.chooseModes spec == Effect.castingVisionModes.body
             if isVision then
               match ctx.sourceId with
               | none => g := g.logMsg "The ability is removed from the stack with no effect"
@@ -4426,7 +4426,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               else
                 g := g.beginFraChoice ctx.controller (.gollumMode src.id available)
                   s!"{(g.player ctx.controller).name} chooses a mode that hasn't been chosen"
-          else if spec.modes.size == 2 && spec.modes[0]?.any (·.phrase.contains "Mister Hyde") then
+          else if Instruction.chooseModes spec == Effect.stepHydeChoose.body then
             g := g.offerHydeChoice ctx.controller ctx.sourceId
           else if spec.maxModes == .chosenX && spec.modes.size == 4 then
             let chosenModes := (ctx.sourceId.map g.modesChosenEver).getD #[]
@@ -4687,11 +4687,11 @@ def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
   -- Heroic Feast (`Effect.resourceGainLifePlusOnes`): cap targets at life gained (CR 608.2b).
   -- Call Damage Control (`Effect.returnUpToTwoGyModal`): validate each target against its chosen mode type.
   let targets :=
-    if !isSpell && effect.targeting == Effect.resourceGainLifePlusOnes.targeting &&
+    if !isSpell && effect.targets == Effect.resourceGainLifePlusOnes.targets &&
         effect.body == Effect.resourceGainLifePlusOnes.body then
       targets.extract 0 (lastKnownPower.getD 0).toNat
     else if effect.body == Effect.returnUpToTwoGyModal.body &&
-        effect.targeting == Effect.returnUpToTwoGyModal.targeting then
+        effect.targets == Effect.returnUpToTwoGyModal.targets then
       match g.resolvingModes with
       | some modes =>
         Id.run do

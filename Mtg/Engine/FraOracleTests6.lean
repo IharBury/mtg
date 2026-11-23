@@ -232,7 +232,7 @@ def cryomancerReady : Game :=
 /-- Ruling 845: the copy has the same value of X. -/
 def testXSorcery : CardDef :=
   { name := "Test X Sorcery", manaCost := { symbols := #[.x, .colored .white] }
-    types := #[.sorcery], spellEffect := some (Effect.createTokens .cadet 1) }
+    types := #[.sorcery], spellAbility := some { effect := Effect.createTokens .cadet 1 } }
 
 #guard
   let g := withWhiteMana (addToHand cryomancerReady testXSorcery ⟨0⟩) ⟨0⟩ 3
@@ -245,7 +245,7 @@ def testXSorcery : CardDef :=
 Each resolution of a create-and-surveil spell surveils on its own. -/
 def testPeerReview : CardDef :=
   { name := "Test Peer Review", manaCost := ManaCost.ofColor .blue
-    types := #[.sorcery], spellEffect := some (Effect.createTokensThenSurveil .cadet 1 1) }
+    types := #[.sorcery], spellAbility := some { effect := Effect.createTokensThenSurveil .cadet 1 1 } }
 
 #guard
   let g := withBlueMana (addToHand cryomancerReady testPeerReview ⟨0⟩) ⟨0⟩ 1

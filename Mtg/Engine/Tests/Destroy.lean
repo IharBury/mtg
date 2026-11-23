@@ -29,7 +29,7 @@ def stepBody (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (spec : TargetSpec := .none) (lastKnownPower : Option Int := none) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     sourceId targets (lastKnownPower := lastKnownPower)
 
 def onBoard (g : Game) (name : String) : Bool :=
@@ -175,7 +175,7 @@ Indestructible still causes its controller to amass. -/
   "When this permanent enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it."
 
 #guard TriggeredAbility.toNotation .onEnterDestroyOtherAmassControllerPower ==
-  "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
+  "When this permanent enters, if there is target, destroy up to one other target creature. Amass Goblins target's power. If target's controller is you, draw a card."
 
 /- Amass reads dynamic counts; zero other creatures still amasses Goblins 0. -/
 #guard

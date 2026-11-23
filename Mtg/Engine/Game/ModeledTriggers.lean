@@ -150,7 +150,7 @@ def commitStagedSpellTargets (g : Game) (spellId : ObjectId) (staged : Array Tar
       let e := g.stack[i]!
       if staged == e.targets then g
       else
-        let spec := (g.targetingOf spell).spec
+        let spec := g.targetSpecOf spell
         if g.validTargetArrayForEntry e spell spec staged (allowUnchangedIllegal := true) then
           g.setStackEntryTargets spellId staged (dividedDamage := e.dividedDamage)
             |>.logMsg "A new target is chosen for the spell"
@@ -184,7 +184,7 @@ def stageSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat)
     if index >= e.targets.size then
       (g.logMsg "That target stays unchanged", base)
     else
-      let spec := (g.targetingOf spell).spec
+      let spec := g.targetSpecOf spell
       let selfSource := spell.sourceId.orElse (fun _ => if spell.zone == .stack then some spell.id else none)
       let selfStackId := if spell.zone == .stack then some spell.id else none
       let totalPos := e.targets.size + e.skippedOptionalSlots.size
@@ -215,7 +215,7 @@ def setSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat) (neu : Target
     | none => g.logMsg "The spell is no longer on the stack"
     | some spell =>
       if index < e.targets.size then
-        let spec := (g.targetingOf spell).spec
+        let spec := g.targetSpecOf spell
         let cand := e.targets.set! index neu
         if cand != e.targets && g.validTargetArrayForEntry e spell spec cand (allowUnchangedIllegal := true) then
           g.setStackEntryTargets spellId cand (dividedDamage := e.dividedDamage)

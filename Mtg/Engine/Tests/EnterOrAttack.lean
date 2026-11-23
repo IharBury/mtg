@@ -102,7 +102,7 @@ def oneSquirrel : Game :=
 #guard
   let tok := named oneSquirrel "Squirrel"
   squirrels oneSquirrel == 1 && tok.printed.isToken && tok.controller == some me &&
-    tok.printed.power == some 1 && tok.printed.toughness == some 1 &&
+    tok.printed.power == some (.fixed 1) && tok.printed.toughness == some (.fixed 1) &&
     (oneSquirrel.subtypes tok).contains .squirrel
 
 def squirrelSourceLeft : Game :=

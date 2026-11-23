@@ -43,7 +43,7 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
     name := "P47i1 Inst"
     manaCost := ManaCost.zero
     types := #[.instant]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let gStackHand := insertObject g4 zeroInstDef p0 (.hand p0)
   let gStackReady := mustApply gStackHand p0 (.cast (gStackHand.player p0).hand.back!)
@@ -81,7 +81,7 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
   let tgtTrigAnchor := (gAnchorBase.permanentsOf p0).back!
   let tgtTrigAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you)
-      { targeting := .of .player, body := Instruction.gainLifeFixed 1 (.target 0), phrase := "Target player gains 1 life." }
+      { targets := .player, body := Instruction.gainLifeFixed 1 (.target 0) }
   let gWithUnannTrig :=
     gAnchorBase.putTriggeredAbilityOnStack p0 tgtTrigAnchor tgtTrigAb "triggers" (eventCause := some testCause)
   let gTrigTargetGranted := gWithUnannTrig.finishAndGrantPriority p2
@@ -158,7 +158,7 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
     name := "P47i1 Sorc3"
     manaCost := ManaCost.ofGeneric 3
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2 }
   }
   let gUnpayable0 := (insertObject (emptyHand g4 p0) sorc3Def p0 (.hand p0)).change (.pendingPriority (some p2))
   let gUnpayableProp := (mustApply gUnpayable0 p0 (.cast (gUnpayable0.player p0).hand.back!)).change (.pending .none)
@@ -274,7 +274,7 @@ private def replayOk47i2 (gs : Array Game) : Bool :=
     name := "P47i2 Sorc3"
     manaCost := ManaCost.ofGeneric 3
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2 }
   }
 
   -- 2a(i). Strict live-exile vs historical `depIdx` `requireSubtype` filtering + `Turns` `hadPlayable` expiry logs:
@@ -306,12 +306,13 @@ private def replayOk47i2 (gs : Array Game) : Bool :=
     bear with
     name := "P47i2 CopyKnight"
     manaCost := ManaCost.ofGeneric 3
-    adventure := some {
+    subFaces := #[{
+      kind := .adventure
       name := "P47i2 CopyQuest"
       manaCost := ManaCost.ofGeneric 2
       types := #[.instant]
-      spellEffect := some (Effect.gainLife 1)
-    }
+      spellAbility := some { effect := Effect.gainLife 1 }
+    }]
   }
   let gCopyAdvHand := insertObject g4 advCardDef p0 (.hand p0)
   let (gCopyAdv0, copyAdvExId) :=
@@ -336,7 +337,7 @@ private def replayOk47i2 (gs : Array Game) : Bool :=
   let prepHostDef : CardDef := {
     bear with
     name := "P47i2 UnprepHost"
-    prepareFace := some { name := "P47i2 Prep", manaCost := ManaCost.zero, types := #[.instant], spellEffect := some (Effect.gainLife 1) }
+    subFaces := #[{ kind := .prepare, name := "P47i2 Prep", manaCost := ManaCost.zero, types := #[.instant], spellAbility := some { effect := Effect.gainLife 1 }}]
   }
   let gNull0 :=
     Id.run do
@@ -346,7 +347,7 @@ private def replayOk47i2 (gs : Array Game) : Bool :=
       return g
   let nullId := (gNull0.permanentsOf p0).find? (·.name == nullSummonerDef.name) |>.get!.id
   let unprepHostId := (gNull0.permanentsOf p0).find? (·.name == prepHostDef.name) |>.get!.id
-  let zeroInstDef2 : CardDef := { name := "P47i2 ZeroBolt", manaCost := ManaCost.zero, types := #[.instant], spellEffect := some (Effect.gainLife 1) }
+  let zeroInstDef2 : CardDef := { name := "P47i2 ZeroBolt", manaCost := ManaCost.zero, types := #[.instant], spellAbility := some { effect := Effect.gainLife 1 }}
   let gNull1 := insertObject gNull0 zeroInstDef2 p0 (.hand p0)
   let handBoltId := (gNull1.player p0).hand.back!
   let (gNull2Raw, nullExId) := gNull1.move handBoltId .exile none (cause := some testCause)
@@ -608,7 +609,7 @@ private def replayOk47i3 (gs : Array Game) : Bool :=
   let gRbDep2 :=
     gRbDep1.record (GameEvent.designation gRbDep1.turnNumber rbOldSnap .ringBearer false (cause := testCause))
 
-  let gSpellRem0 := insertObject g4 ({ name := "P47i3 Inst", manaCost := ManaCost.zero, types := #[.instant], spellEffect := some (Effect.gainLife 1) }) p0 (.hand p0)
+  let gSpellRem0 := insertObject g4 ({ name := "P47i3 Inst", manaCost := ManaCost.zero, types := #[.instant], spellAbility := some { effect := Effect.gainLife 1 }}) p0 (.hand p0)
   let gSpellOnStack := mustApply gSpellRem0 p0 (.cast (gSpellRem0.player p0).hand.back!)
   let stackSpellObj := gSpellOnStack.object! gSpellOnStack.stack.back!.objectId
   let stackSpellSnap := gSpellOnStack.snapshot stackSpellObj
@@ -826,7 +827,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     name := "P47i4 Wave4"
     manaCost := ManaCost.ofGenericAndColor 3 .blue
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let gManyAnyCast :=
     let g := insertObject gManyAny0 uSpell4Def p0 (.hand p0)
@@ -839,8 +840,8 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     name := "P47i4 XSacSkiff"
     types := #[.artifact]
     subtypes := #["Vehicle"]
-    power := some 4
-    toughness := some 4
+    power := some (.fixed 4)
+    toughness := some (.fixed 4)
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana { symbols := #[.x] }, .tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you]), .sacrifice (.exact 1) (.filter (.all #[.otherThan .this, .hasType .creature]))]
       effect := Effect.gainLife 2
@@ -946,7 +947,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     subtypes := #["Treasure"]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
-      effect := { Effect.addAnyColorSpendOnlyArtifactSpell with phrase := "Add one mana of any color for artifact spell." }
+      effect := { Effect.addAnyColorSpendOnlyArtifactSpell with }
     }]
   }
   let gTrRestr0 := addPermanent g3 trRestrDef p0 p0
@@ -992,9 +993,8 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana { symbols := #[.x] }]
       effect := {
-        targeting := .of .player
+        targets := .player
         body := Instruction.addMana { spec := .sequence #[(.colored .red, .chosenX)] }
-        phrase := "Target player; add X {R}."
       }
     }]
   }
@@ -1007,7 +1007,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
   let toughDiesDef : CardDef := {
     creature "P47i4 WallSap" ManaCost.empty #["Plant"] 1 4 with
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisDies { body := Instruction.addMana { spec := .sequence #[(.colored .green, .objectStat .toughness .this)] }, phrase := "Add {G} equal to toughness." }
+      TriggeredAbility.mkTrigger .thisDies { body := Instruction.addMana { spec := .sequence #[(.colored .green, .objectStat .toughness .this)] } }
     ]
   }
   let gTough0 := addPermanent g3 toughDiesDef p0 p0
@@ -1021,7 +1021,7 @@ private def mustStepAgent47 (g : Game) (p : PlayerId) : Game :=
     name := "P47i4 ElfRite"
     manaCost := ManaCost.zero
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.addMana { spec := .sequence #[(.colored .green, .count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))] }, phrase := "Add {G} for each Elf you control." }
+    spellAbility := some { effect := { body := Instruction.addMana { spec := .sequence #[(.colored .green, .count (.inZones .battlefield (.all #[.hasSubtype (.literal .elf), .controlledBy .you])))] } } }
   }
   let dwarfForgeDef : CardDef := {
     name := "P47i4 DwarfForge"

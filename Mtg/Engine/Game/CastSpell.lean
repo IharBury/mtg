@@ -507,7 +507,7 @@ def announceTargetChoices (g : Game) (p : PlayerId)
       if choices.any (fun c => c.2.isSome) then
         throw "That spell or ability does not divide damage (CR 601.2d)"
       let some e := g.stackEntry? obj.id | throw "The ability left the stack"
-      let spec := (g.targetingOf obj).spec
+      let spec := g.targetSpecOf obj
       let (minN, maxN) := g.announcedTargetBounds obj
       let selfSource := obj.sourceId.orElse (fun _ => if obj.zone == .stack then some obj.id else none)
       if !spec.isMultiSlot then

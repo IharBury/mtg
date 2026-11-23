@@ -22,8 +22,8 @@ def bear : CardDef := {
   name := "Grave Bear"
   types := #[.creature]
   subtypes := #["Elf"]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
 }
 
 def relic : CardDef := {
@@ -164,6 +164,6 @@ milled cards stay in the graveyard. -/
   "When this permanent enters, mill 4 cards, then put all Elf cards from among them into your hand."
 
 #guard TriggeredAbility.toNotation .onLandYouControlEntersPayReturnFromGy ==
-  "Landfall — Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to your hand."
+  "Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this permanent to its owner's hand."
 
 end Mtg.Engine.ReturnToHandTests

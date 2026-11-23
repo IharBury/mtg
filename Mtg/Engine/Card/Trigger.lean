@@ -157,7 +157,6 @@ def mkModal (pattern : TriggerPattern) (modes : Array Effect)
     (interveningIf? : Option Condition := none)
     (activeZones : Array ZoneKind := #[.battlefield])
     (limit : TriggerLimit := .unlimited)
-    (headerPhrase : String := "")
     (minModes : ValueExpr := .const 1)
     (maxModes : ValueExpr := .const 1)
     (allowRepeat : Bool := false)
@@ -174,16 +173,11 @@ def mkModal (pattern : TriggerPattern) (modes : Array Effect)
       body := .chooseModes {
         minModes, maxModes, allowRepeat, chooseAtResolution, unusedThisTurn, unusedEver, modes
       }
-      phrase := headerPhrase
     } }
-
-/-- Targeting of this triggered ability. -/
-def targeting (ab : TriggeredAbility) : EffectTargeting :=
-  ab.effect.targeting
 
 /-- Whom this triggered ability may target (CR 115.1 / 603.3d). -/
 def targetSpec (ab : TriggeredAbility) : TargetSpec :=
-  ab.effect.targeting.spec
+  ab.effect.targets
 
 /-- True when putting this ability on the stack requires choosing a target. -/
 def requiresTarget (ab : TriggeredAbility) : Bool :=
@@ -193,13 +187,13 @@ def requiresTarget (ab : TriggeredAbility) : Bool :=
 def allowsZeroTargets (ab : TriggeredAbility) : Bool :=
   ab.effect.allowsZeroTargets
 
-/-- Upper bound on targets for single-slot announcements (`0` = spec default). -/
+/-- Upper bound on targets for announcements. -/
 def maxTargets (ab : TriggeredAbility) : Nat :=
-  ab.effect.maxTargets
+  ab.effect.maxTargetCount
 
 /-- Divided-damage `(amount, maxTargets)`, if any (CR 601.2d). -/
 def dividedDamage? (ab : TriggeredAbility) : Option (Nat × Nat) :=
-  ab.effect.dividedDamage
+  ab.effect.dividedDamage?
 
 /-- True when this ability has `"This ability triggers only once each turn."` (CR 603.2h). -/
 def onceEachTurn (ab : TriggeredAbility) : Bool :=

@@ -32,29 +32,37 @@ rules text. -/
     (toughness : Option Int := none) (keywords : Array KeywordAbility := #[])
     (supertypes : Array Supertype := #[])
     (spellEffect : Option Effect := none)
-    (spellModes : Array Effect := #[])
     (additionalCosts : Array AdditionalCostSpec := #[])
     (isToken : Bool := false)
     (colorIndicator : Option ColorSet := none)
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (adventure : Option AdventureFace := none)
+    (adventure : Option SubFace := none)
     (otherFace : Option CardDef := none) : CardDef :=
   let text :=
-    formatPrintedCard name manaCost supertypes types subtypes power toughness
+    formatPrintedCard name manaCost supertypes types subtypes
+      (power.map .fixed) (toughness.map .fixed)
       colorIndicator isToken oracleText
   let parsed := { parseOracleCard! text with otherFace := otherFace }
   if (oracleText.trimAscii.copy).isEmpty then
+    let spellAbility : Option SpellAbility :=
+      match spellEffect with
+      | some eff => some { effect := eff, additionalCosts }
+      | none =>
+        if additionalCosts.isEmpty then none
+        else some { effect := {}, additionalCosts }
+    let subFaces : Array SubFace :=
+      match adventure with
+      | some adv => #[adv]
+      | none => #[]
     { parsed with
       keywords
-      spellEffect
-      spellModes
-      additionalCosts
+      spellAbility
       staticAbilities
       triggeredAbilities
       activatedAbilities
-      adventure }
+      subFaces }
   else
     parsed
 
@@ -115,7 +123,7 @@ def forest : CardDef :=
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (adventure : Option AdventureFace := none)
+    (adventure : Option SubFace := none)
     (colorIndicator : Option ColorSet := none)
     (isToken : Bool := false)
     (otherFace : Option CardDef := none) : CardDef :=
@@ -134,7 +142,7 @@ def forest : CardDef :=
     (staticAbilities : Array StaticAbility := #[])
     (triggeredAbilities : Array TriggeredAbility := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
-    (adventure : Option AdventureFace := none)
+    (adventure : Option SubFace := none)
     (otherFace : Option CardDef := none) : CardDef :=
   creature name manaCost subtypes power toughness oracleText
     (keywords := keywords)
@@ -143,41 +151,36 @@ def forest : CardDef :=
     (activatedAbilities := activatedAbilities) (adventure := adventure)
     (otherFace := otherFace)
 
-/-- Instant or sorcery with an optional one-shot effect or modal modes. -/
+/-- Instant or sorcery with an optional one-shot effect. -/
 @[irreducible, noinline] def spellCard (cardType : CardType) (name : String) (manaCost : ManaCost)
     (oracleText : String) (spellEffect : Option Effect := none)
-    (spellModes : Array Effect := #[])
     (additionalCosts : Array AdditionalCostSpec := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
     (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   card name #[cardType] manaCost (oracleText := oracleText)
-    (spellEffect := spellEffect) (spellModes := spellModes)
+    (spellEffect := spellEffect)
     (additionalCosts := additionalCosts)
     (activatedAbilities := activatedAbilities)
     (staticAbilities := staticAbilities)
 
-/-- An instant, optionally with a one-shot effect or modal modes. -/
+/-- An instant, optionally with a one-shot effect. -/
 @[irreducible, noinline] def instant (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : Option Effect := none)
-    (spellModes : Array Effect := #[])
     (additionalCosts : Array AdditionalCostSpec := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
     (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   spellCard .instant name manaCost oracleText spellEffect
-    (spellModes := spellModes)
     (additionalCosts := additionalCosts)
     (activatedAbilities := activatedAbilities)
     (staticAbilities := staticAbilities)
 
-/-- A sorcery, optionally with a one-shot effect or modal modes. -/
+/-- A sorcery, optionally with a one-shot effect. -/
 @[irreducible, noinline] def sorcery (name : String) (manaCost : ManaCost) (oracleText : String)
     (spellEffect : Option Effect := none)
-    (spellModes : Array Effect := #[])
     (additionalCosts : Array AdditionalCostSpec := #[])
     (activatedAbilities : Array ActivatedAbility := #[])
     (staticAbilities : Array StaticAbility := #[]) : CardDef :=
   spellCard .sorcery name manaCost oracleText spellEffect
-    (spellModes := spellModes)
     (additionalCosts := additionalCosts)
     (activatedAbilities := activatedAbilities)
     (staticAbilities := staticAbilities)
@@ -190,7 +193,7 @@ def forest : CardDef :=
     (activatedAbilities : Array ActivatedAbility := #[])
     (subtypes : Array Subtype := #[])
     (supertypes : Array Supertype := #[])
-    (adventure : Option AdventureFace := none) : CardDef :=
+    (adventure : Option SubFace := none) : CardDef :=
   card name #[.enchantment] manaCost subtypes oracleText (keywords := keywords)
     (supertypes := supertypes)
     (staticAbilities := staticAbilities) (triggeredAbilities := triggeredAbilities)
@@ -198,8 +201,8 @@ def forest : CardDef :=
     (adventure := adventure)
 
 /-- A catalog Saga chapter `TriggeredAbility` with parsed Roman numerals (CR 714.2). -/
-def chapter (roman effect : String) (e : Effect) : TriggeredAbility :=
-  TriggeredAbility.sagaChapters (parseChapterNumbers roman) { e with phrase := effect }
+def chapter (roman _effect : String) (e : Effect) : TriggeredAbility :=
+  TriggeredAbility.sagaChapters (parseChapterNumbers roman) e
 
 /-- A Saga enchantment (CR 714). Final chapter is the greatest chapter number
 across `chapters` (CR 714.2d). -/
@@ -228,7 +231,7 @@ across `chapters` (CR 714.2d). -/
     (supertypes : Array Supertype := #[])
     (power : Option Int := none)
     (toughness : Option Int := none)
-    (adventure : Option AdventureFace := none) : CardDef :=
+    (adventure : Option SubFace := none) : CardDef :=
   card name #[.artifact] manaCost subtypes oracleText
     (power := power) (toughness := toughness)
     (keywords := keywords)
@@ -417,7 +420,7 @@ def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
     (supertypes : Array Supertype := #[])
     (subtype : Option CardSubtype := none)
     (moreEquips : Array ActivatedAbility := #[])
-    (adventure : Option AdventureFace := none) : CardDef :=
+    (adventure : Option SubFace := none) : CardDef :=
   artifact name manaCost oracleText
     (subtypes := #["Equipment"])
     (keywords := keywords)
@@ -437,10 +440,10 @@ def typecyclingAbility (landType : String) (mana : ManaCost := ManaCost.ofGeneri
 /-- Adventure characteristics used while the card is a spell (CR 715.2). -/
 def adventure (name : String) (manaCost : ManaCost) (_oracleText : String)
     (spellEffect : Effect) (cardType : CardType := .sorcery)
-    (additionalCosts : Array AdditionalCostSpec := #[]) : AdventureFace := {
+    (additionalCosts : Array AdditionalCostSpec := #[]) : SubFace := {
+  kind := .adventure
   name, manaCost, types := #[cardType], subtypes := #["Adventure"],
-  spellEffect := some spellEffect,
-  additionalCosts
+  spellAbility := some { effect := spellEffect, additionalCosts }
 }
 
 /-- A red instant that deals `amount` damage to any target. -/

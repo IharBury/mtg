@@ -28,8 +28,8 @@ def creatureToken (name : String) (subtypes : Array CardSubtype)
   name
   types
   subtypes := subtypes.map CardSubtype.englishName
-  power := some power
-  toughness := some toughness
+  power := some (.fixed power)
+  toughness := some (.fixed toughness)
   colorIndicator := color.map ColorSet.singleton
   keywords
   isToken := true
@@ -549,8 +549,8 @@ def armyToken (subtype : CardSubtype) : CardDef := {
   name := s!"{subtype} Army"
   types := #[.creature]
   subtypes := #[subtype.englishName, "Army"]
-  power := some 0
-  toughness := some 0
+  power := some (.fixed 0)
+  toughness := some (.fixed 0)
   colorIndicator := some (ColorSet.singleton .black)
   isToken := true
 }
@@ -676,7 +676,6 @@ def moloidToken : CardDef :=
   { creatureToken "Moloid" #[.minion] 1 1 (some .green) with
     triggeredAbilities := #[TriggeredAbility.mkTrigger .thisAttacks {
       body := Instruction.may .you none (Instruction.mill (.const 1) .you)
-      phrase := "you may mill a card"
     }] }
 
 /-- A 1/1 red Alien creature token with haste that attacks each combat if able. -/
@@ -684,8 +683,8 @@ def alien11redHasteToken : CardDef := {
   name := "Alien"
   types := #[.creature]
   subtypes := #["Alien"]
-  power := some 1
-  toughness := some 1
+  power := some (.fixed 1)
+  toughness := some (.fixed 1)
   colorIndicator := some (ColorSet.singleton .red)
   keywords := #[Keyword.haste]
   staticAbilities := #[.attacksEachCombatIfAble]
@@ -738,9 +737,9 @@ def jacePlaneswalkerToken : CardDef := {
   isToken := true
   activatedAbilities := #[
     { cost := CostSpec.ofLoyalty (.minus 1)
-      effect := { body := .player (.surveil .you (.const 1)), phrase := "Surveil 1" } },
+      effect := { body := .player (.surveil .you (.const 1)) } },
     { cost := CostSpec.ofLoyalty (.minus 3)
-      effect := { body := Instruction.drawFixed 1 .you, phrase := "Draw a card" } }]
+      effect := { body := Instruction.drawFixed 1 .you } }]
 }
 
 /-- A 1/1 colorless Sculpture Treasure artifact creature token. -/
@@ -755,8 +754,8 @@ def mowuToken : CardDef := {
   types := #[.creature]
   subtypes := #["Dog"]
   supertypes := #[.legendary]
-  power := some 3
-  toughness := some 3
+  power := some (.fixed 3)
+  toughness := some (.fixed 3)
   colorIndicator := some (ColorSet.singleton .green)
   isToken := true
 }
@@ -866,11 +865,11 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
         name := "Phyrexian Token"
         types := #[.artifact, .creature]
         subtypes := #["Phyrexian"]
-        power := some 0
-        toughness := some 0
+        power := some (.fixed 0)
+        toughness := some (.fixed 0)
         isToken := true }
       activatedAbilities := #[
-        { effect := { body := .permanent (.transform .this), phrase := "Transform this token." }
+        { effect := { body := .permanent (.transform .this) }
           cost := CostSpec.ofGeneric 2 } ] }
   | .map => {
       name := "Map"
@@ -879,9 +878,8 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
       isToken := true
       activatedAbilities := #[
         { effect := {
-            targeting := .of .creatureYouControl
+            targets := .creatureYouControl
             body := .player (.explore (.target 0))
-            phrase := "Target creature you control explores."
           }
           cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self]
           timing := .sorcery } ] }
@@ -895,7 +893,6 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
             body := .moveZone (.topOfLibrary .you (.const 1)) .exile .exile {
               grantPlayPerm? := some { duration := .untilEndOfTurn, landsAllowed := true }
             }
-            phrase := "Exile the top card of your library. You may play that card this turn."
           }
           cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
           timing := .sorcery } ] }
@@ -914,9 +911,8 @@ def predefinedTokenPrinted : PredefinedToken → CardDef
       isToken := true
       activatedAbilities := #[
         { effect := {
-            targeting := .of .creature
+            targets := .creature
             body := Instruction.putCounters (.target 0) .plusOnePlusOne (.const 1)
-            phrase := "Put a +1/+1 counter on target creature."
           }
           cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self]
           timing := .sorcery } ] }
@@ -948,8 +944,8 @@ def customTokenPrinted? (s : CustomTokenSpec) (x : Nat := 0) : Option CardDef :=
       supertypes := s.supertypes
       types := s.types
       subtypes := s.subtypes.map CardSubtype.englishName
-      power := pw
-      toughness := tg
+      power := pw.map .fixed
+      toughness := tg.map .fixed
       loyalty := s.loyalty?
       colorIndicator := if s.colors.isColorless then none else some s.colors
       keywords := s.keywords
@@ -969,8 +965,8 @@ def resolveCustomTokenPrinted (g : Game) (env : EvalEnv) (s : CustomTokenSpec) :
     supertypes := s.supertypes
     types := s.types
     subtypes := s.subtypes.map CardSubtype.englishName
-    power := s.power?.map (EvalExpr.evalValue g env)
-    toughness := s.toughness?.map (EvalExpr.evalValue g env)
+    power := (s.power?.map (EvalExpr.evalValue g env)).map .fixed
+    toughness := (s.toughness?.map (EvalExpr.evalValue g env)).map .fixed
     loyalty := s.loyalty?
     colorIndicator := if s.colors.isColorless then none else some s.colors
     keywords := s.keywords
@@ -984,8 +980,8 @@ def applyCopyModification (c : CardDef) (m : CopyModification) : CardDef :=
   | .setName name => { c with name }
   | .setBasePT power toughness =>
     { c with
-      power := some power
-      toughness := some toughness
+      power := some (.fixed power)
+      toughness := some (.fixed toughness)
       staticAbilities := c.staticAbilities.filter (!StaticAbility.isPTDefiningCDA ·) }
   | .addSupertypes sups =>
     let merged := sups.foldl (fun acc s => if acc.contains s then acc else acc.push s) c.supertypes

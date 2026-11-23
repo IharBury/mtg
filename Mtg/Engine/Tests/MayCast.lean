@@ -24,8 +24,8 @@ def wizard : CardDef := {
   types := #[.creature]
   supertypes := #[.legendary]
   subtypes := #["Human", "Wizard"]
-  power := some 1
-  toughness := some 1
+  power := some (.fixed 1)
+  toughness := some (.fixed 1)
 }
 
 def costly : CardDef := {
