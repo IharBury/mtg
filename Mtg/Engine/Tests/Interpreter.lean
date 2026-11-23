@@ -5,9 +5,9 @@ import Mtg.Engine.Catalog.RealityFracture
 import Mtg.Engine.Catalog.RealityFractureCommander
 
 /-!
-# Phase 8 Unified `Instruction` AST, `stepEnv`, & `Interpreter` Runtime Tests
+# Phases 8–9 Unified `Instruction` AST, `stepEnv`, & `Interpreter` Runtime Tests
 
-Comprehensive gameplay `#guard` regression suite for Phase 8 of
+Comprehensive gameplay `#guard` regression suite for Phases 8–9 of
 `ABILITY_ALIGNMENT_PLAN.md` (anchored to the 25 September 2026 CR):
 1. `ContinuationFrame.stepEnv` across `Instruction.bind`, including CR 614.6
    prevented/replaced/doubled events and CR 616.1 `Pending.chooseReplacement`
@@ -31,6 +31,12 @@ Comprehensive gameplay `#guard` regression suite for Phase 8 of
    resolved through `Game/Interpreter.lean`.
 8. Novel Stage-4 `Parser.parseInstructionEffect` spells parsed and executed
    end-to-end through `Interpreter` with full event-log replay fidelity.
+9. `Instruction.forEach` pause/resume with non-zero `VarId` across players and
+   objects, plus `Effect.worldsWithinWorlds` APNAP interactive choice execution.
+10. Phase 9 unified trigger families (watch, step, casting, resource,
+    enterOrAttack, attack, death, modal, reflexive), `CostSpec.bindVar?`
+    cost-to-`stepEnv` binding, and `EvalEnv` copy-token tie prompting
+    (`FraChoice.chooseTokenCopyObject`).
 -/
 
 namespace Mtg.Engine.Tests.InterpreterSuite
