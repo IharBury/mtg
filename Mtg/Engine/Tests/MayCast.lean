@@ -1,11 +1,11 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.mayCast`
+# Unified `StackOp.mayCastOrPlay` triggers
 
 Graveyard casts, hand casts limited by legendary Wizards, hand casts limited
-by last-known damage, and the impulse cast after
-`revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`.
+by last-known damage, and the impulse cast after revealing until an instant or
+sorcery card from the damaged player's library.
 -/
 
 namespace Mtg.Engine.MayCastTests

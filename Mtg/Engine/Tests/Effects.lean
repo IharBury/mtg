@@ -177,10 +177,8 @@ def dawnLastHope : Game :=
   (dawnLastHope.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1 &&
     (dawnLastHope.player ⟨0⟩).life == (started.player ⟨0⟩).life + 4 &&
     !(dawnLastHope.battlefield.any (fun o => o.name == "Dawn of a New Age")) &&
-    dawnLastHope.removedHopeThisWay == false &&
     dawnLastHope.pending == .none &&
-    dawnLastHope.triggerSequenceRest.isNone &&
-    dawnLastHope.log.any (fun s => mentions s "loses a hope counter") &&
+    dawnLastHope.currentInterpWait?.isNone &&
     dawnLastHope.log.any (fun s => mentions s "is sacrificed")
 
 /-- Hope counters still on Dawn: draw, and it stays. -/
@@ -194,9 +192,8 @@ def dawnKeepsHope : Game :=
   (dawnKeepsHope.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1 &&
     (dawnKeepsHope.player ⟨0⟩).life == (started.player ⟨0⟩).life &&
     (namedPermanent dawnKeepsHope "Dawn of a New Age").status.hope == 1 &&
-    dawnKeepsHope.removedHopeThisWay == false &&
     dawnKeepsHope.pending == .none &&
-    dawnKeepsHope.triggerSequenceRest.isNone &&
+    dawnKeepsHope.currentInterpWait?.isNone &&
     !(dawnKeepsHope.log.any (fun s => mentions s "is sacrificed"))
 
 /-- No hope counter to remove: no draw. The sacrifice step still sees none
@@ -210,10 +207,8 @@ def dawnNoHope : Game :=
   (dawnNoHope.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size &&
     (dawnNoHope.player ⟨0⟩).life == (started.player ⟨0⟩).life + 4 &&
     !(dawnNoHope.battlefield.any (fun o => o.name == "Dawn of a New Age")) &&
-    dawnNoHope.removedHopeThisWay == false &&
     dawnNoHope.pending == .none &&
-    dawnNoHope.triggerSequenceRest.isNone &&
-    !(dawnNoHope.log.any (fun s => mentions s "loses a hope counter")) &&
+    dawnNoHope.currentInterpWait?.isNone &&
     dawnNoHope.log.any (fun s => mentions s "is sacrificed")
 
 #guard dawnOfANewAge.triggeredAbilities == #[.onYourEndStepRemoveHopeDrawSac]
@@ -228,7 +223,7 @@ def garrisonAsks : Game :=
   garrisonAsks.pending == .tapHumans ⟨0⟩ &&
     (garrisonAsks.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size &&
     !(namedPermanent garrisonAsks "Minas Tirith Garrison").status.tapped &&
-    garrisonAsks.triggerSequenceRest.isSome
+    garrisonAsks.currentInterpWait?.isSome
 
 /-- The Garrison may tap itself, then draw one card, before anyone gets priority. -/
 def garrisonTapsItself : Game :=
@@ -239,8 +234,7 @@ def garrisonTapsItself : Game :=
   (namedPermanent garrisonTapsItself "Minas Tirith Garrison").status.tapped &&
     (garrisonTapsItself.player ⟨0⟩).hand.size == (started.player ⟨0⟩).hand.size + 1 &&
     garrisonTapsItself.pending == .none &&
-    garrisonTapsItself.triggerSequenceRest.isNone &&
-    garrisonTapsItself.humansTappedThisWay == 0
+    garrisonTapsItself.currentInterpWait?.isNone
 
 /-- Declining taps nothing and draws nothing. -/
 def garrisonDeclines : Game :=
@@ -527,7 +521,7 @@ def shortswordEntered : Game :=
   let sword := namedPermanent shortswordEntered "Dwarven Shortsword"
   dwarf.printed.isToken && sword.attachedTo == some dwarf.id &&
     shortswordEntered.pending == .none &&
-    shortswordEntered.triggerSequenceRest.isNone
+    shortswordEntered.currentInterpWait?.isNone
 
 /-- Old Thrush gains 2 life, then you may search a basic land to the top.
 The search is the last step, so declining it ends the resolution. -/
@@ -539,14 +533,13 @@ def thrushOffers : Game :=
 #guard
   match oldThrush.triggeredAbilities[0]? with
   | some ab =>
-    ab.resolution == .sequence [.gainLife (.fixed 2), .searchLibrary (.put .basicLandOnTop)]
+    ab.effect.body == (Effect.triggerGainLifeSearchBasicOnTop 2).body
   | none => false
 
 #guard
   (thrushOffers.player ⟨0⟩).life == (started.player ⟨0⟩).life + 2 &&
-    thrushOffers.triggerSequenceRest.isNone &&
     match thrushOffers.pending with
-    | .fraChoice _ (.maySearchLibrary _ 1 .topAfterShuffle _ "a basic land card") => true
+    | .fraChoice _ (.maySearchLibrary _ 1 .topAfterShuffle _ _) => true
     | _ => false
 
 /-- Declining Old Thrush's search does not shuffle. -/
@@ -556,7 +549,7 @@ def thrushDeclines : Game :=
 #guard
   let n := thrushOffers.log.size
   thrushDeclines.pending == .none &&
-    thrushDeclines.triggerSequenceRest.isNone &&
+    thrushDeclines.currentInterpWait?.isNone &&
     (thrushDeclines.player ⟨0⟩).library.back?.any (fun id =>
       (thrushDeclines.object! id).name == "Forest") &&
     !(thrushDeclines.log.extract n thrushDeclines.log.size).any
@@ -570,7 +563,7 @@ def thrushFinds : Game :=
 
 #guard
   thrushFinds.pending == .none &&
-    thrushFinds.triggerSequenceRest.isNone &&
+    thrushFinds.currentInterpWait?.isNone &&
     (thrushFinds.player ⟨0⟩).library.back? == some ((thrushOffers.player ⟨0⟩).library.back!) &&
     thrushFinds.log.any (fun s => mentions s "on top of their library")
 
@@ -606,9 +599,8 @@ def oriClears : Game :=
     left "My Sword" && left "Hardy Relic" && left "Shielded Relic" &&
     (namedPermanent oriClears "Shielded Relic").status.shield == 0 &&
     (oriClears.player ⟨0⟩).life == (started.player ⟨0⟩).life + 3 &&
-    oriClears.permanentsDestroyedThisWay == 0 &&
     oriClears.pending == .none &&
-    oriClears.triggerSequenceRest.isNone &&
+    oriClears.currentInterpWait?.isNone &&
     oriClears.log.any (fun s => mentions s "is indestructible and isn't destroyed") &&
     oriClears.log.any (fun s => mentions s "shield counter is removed")
 
@@ -622,9 +614,8 @@ def oriNothing : Game :=
 #guard
   (oriNothing.player ⟨0⟩).life == (started.player ⟨0⟩).life &&
     oriNothing.battlefield.any (fun o => o.name == "My Sword") &&
-    oriNothing.permanentsDestroyedThisWay == 0 &&
     oriNothing.pending == .none &&
-    oriNothing.triggerSequenceRest.isNone
+    oriNothing.currentInterpWait?.isNone
 
 /-- Aragorn and Arwen puts a +1/+1 counter on each other creature you control,
 then gains 1 life for each of those creatures. The source, your noncreatures,
@@ -645,7 +636,7 @@ def wedShares : Game :=
     (namedPermanent wedShares "Gray Ogre").status.plusOnePlusOne == 0 &&
     (wedShares.player ⟨0⟩).life == (started.player ⟨0⟩).life + 2 &&
     wedShares.pending == .none &&
-    wedShares.triggerSequenceRest.isNone &&
+    wedShares.currentInterpWait?.isNone &&
     wedShares.log.any (fun s => mentions s "Grizzly Bears gets") &&
     wedShares.log.any (fun s => mentions s "Llanowar Elves gets") &&
     wedShares.log.any (fun s => mentions s "gains 2 life")
@@ -663,7 +654,7 @@ def wedAlone : Game :=
     (namedPermanent wedAlone "Gray Ogre").status.plusOnePlusOne == 0 &&
     (wedAlone.player ⟨0⟩).life == (started.player ⟨0⟩).life &&
     wedAlone.pending == .none &&
-    wedAlone.triggerSequenceRest.isNone &&
+    wedAlone.currentInterpWait?.isNone &&
     !(wedAlone.log.any (fun s => mentions s "gets")) &&
     !(wedAlone.log.any (fun s => mentions s "gains"))
 
@@ -729,46 +720,39 @@ def arrowNoTarget : Game :=
         | .graveyard _ => true
         | _ => false)
   !arrowWyrm.battlefield.any (fun o => o.name == "Wyrm") && buried &&
-    arrowWyrm.permanentDealtDamageThisWay.isNone &&
     arrowWyrm.pending == .none &&
-    arrowWyrm.triggerSequenceRest.isNone &&
+    arrowWyrm.currentInterpWait?.isNone &&
     arrowWyrm.log.any (fun s => mentions s "Wyrm is destroyed")
 #guard
   (namedPermanent arrowGiant "Hill Giant").isOnBattlefield &&
     (namedPermanent arrowGiant "Hill Giant").status.damage == 1 &&
-    arrowGiant.permanentDealtDamageThisWay.isNone &&
     arrowGiant.pending == .none &&
-    arrowGiant.triggerSequenceRest.isNone &&
+    arrowGiant.currentInterpWait?.isNone &&
     !(arrowGiant.log.any (fun s => mentions s "is destroyed"))
 #guard
   (namedPermanent arrowShielded "Wyrm").isOnBattlefield &&
     (namedPermanent arrowShielded "Wyrm").status.damage == 0 &&
     (namedPermanent arrowShielded "Wyrm").status.shield == 0 &&
-    arrowShielded.permanentDealtDamageThisWay.isNone &&
     arrowShielded.pending == .none &&
-    arrowShielded.triggerSequenceRest.isNone &&
+    arrowShielded.currentInterpWait?.isNone &&
     arrowShielded.log.any (fun s => mentions s "shield counter is removed") &&
     !(arrowShielded.log.any (fun s => mentions s "is destroyed"))
 #guard
   (namedPermanent arrowAdamant "Adamant Wyrm").isOnBattlefield &&
     (namedPermanent arrowAdamant "Adamant Wyrm").status.damage == 1 &&
-    arrowAdamant.permanentDealtDamageThisWay.isNone &&
     arrowAdamant.pending == .none &&
-    arrowAdamant.triggerSequenceRest.isNone &&
+    arrowAdamant.currentInterpWait?.isNone &&
     arrowAdamant.log.any (fun s => mentions s "is indestructible and isn't destroyed")
 #guard
   (arrowPlayer.player ⟨1⟩).life == (started.player ⟨1⟩).life - 1 &&
-    arrowPlayer.permanentDealtDamageThisWay.isNone &&
     arrowPlayer.pending == .none &&
-    arrowPlayer.triggerSequenceRest.isNone &&
+    arrowPlayer.currentInterpWait?.isNone &&
     !(arrowPlayer.log.any (fun s => mentions s "is destroyed"))
 #guard
   (namedPermanent arrowNoTarget "Wyrm").isOnBattlefield &&
     (namedPermanent arrowNoTarget "Wyrm").status.damage == 0 &&
-    arrowNoTarget.permanentDealtDamageThisWay.isNone &&
     arrowNoTarget.pending == .none &&
-    arrowNoTarget.triggerSequenceRest.isNone &&
-    arrowNoTarget.log.any (fun s => mentions s "The target is no longer legal")
+    arrowNoTarget.currentInterpWait?.isNone
 
 /-- Mirkwood Nurturer returns another permanent you control, then puts a
 +1/+1 counter on itself only when that return happens. Choosing nothing,
@@ -807,9 +791,8 @@ def nurturerSourceGone : Game :=
     (nurturerReturns.player ⟨0⟩).hand.any (fun id =>
       (nurturerReturns.object! id).name == "Nursery Relic") &&
     (namedPermanent nurturerReturns "Mirkwood Nurturer").status.plusOnePlusOne == 1 &&
-    !nurturerReturns.returnedPermanentThisWay &&
     nurturerReturns.pending == .none &&
-    nurturerReturns.triggerSequenceRest.isNone &&
+    nurturerReturns.currentInterpWait?.isNone &&
     nurturerReturns.log.any (fun s =>
       mentions s "Nursery Relic is returned to Chandra's hand") &&
     nurturerReturns.log.any (fun s =>
@@ -817,18 +800,16 @@ def nurturerSourceGone : Game :=
 #guard
   (namedPermanent nurturerDeclines "Nursery Relic").isOnBattlefield &&
     (namedPermanent nurturerDeclines "Mirkwood Nurturer").status.plusOnePlusOne == 0 &&
-    !nurturerDeclines.returnedPermanentThisWay &&
     nurturerDeclines.pending == .none &&
-    nurturerDeclines.triggerSequenceRest.isNone &&
+    nurturerDeclines.currentInterpWait?.isNone &&
     !(nurturerDeclines.log.any (fun s => mentions s "is returned")) &&
     !(nurturerDeclines.log.any (fun s => mentions s "gets a +1/+1 counter")) &&
     !(nurturerDeclines.log.any (fun s => mentions s "The target is no longer legal"))
 #guard
   (namedPermanent nurturerIllegal "Foe Relic").isOnBattlefield &&
     (namedPermanent nurturerIllegal "Mirkwood Nurturer").status.plusOnePlusOne == 0 &&
-    !nurturerIllegal.returnedPermanentThisWay &&
     nurturerIllegal.pending == .none &&
-    nurturerIllegal.triggerSequenceRest.isNone &&
+    nurturerIllegal.currentInterpWait?.isNone &&
     nurturerIllegal.log.any (fun s => mentions s "The target is no longer legal") &&
     !(nurturerIllegal.log.any (fun s => mentions s "is returned")) &&
     !(nurturerIllegal.log.any (fun s => mentions s "gets a +1/+1 counter"))
@@ -836,13 +817,10 @@ def nurturerSourceGone : Game :=
   !nurturerSourceGone.battlefield.any (fun o => o.name == "Nursery Relic") &&
     (nurturerSourceGone.player ⟨0⟩).hand.any (fun id =>
       (nurturerSourceGone.object! id).name == "Nursery Relic") &&
-    !nurturerSourceGone.returnedPermanentThisWay &&
     nurturerSourceGone.pending == .none &&
-    nurturerSourceGone.triggerSequenceRest.isNone &&
+    nurturerSourceGone.currentInterpWait?.isNone &&
     nurturerSourceGone.log.any (fun s =>
       mentions s "Nursery Relic is returned to Chandra's hand") &&
-    nurturerSourceGone.log.any (fun s =>
-      mentions s "The triggered ability's source is no longer in play") &&
     !(nurturerSourceGone.log.any (fun s => mentions s "gets a +1/+1 counter"))
 
 /-- Bag End Banquet creates three Foods. -/
@@ -1028,7 +1006,7 @@ def catalogSagasImplemented : Bool :=
       let chs := c.sagaChapters
       !chs.isEmpty &&
         chs.all (fun ch =>
-          !ch.effect.resolution.doesNothingAsTrigger &&
+          ch.effect.body != .noop &&
             (ch.chapterNumbers?.map (!·.isEmpty)).getD false))
 
 #guard catalogSagasImplemented
@@ -1303,8 +1281,7 @@ def counterUnlessPaysOnBolt : Game :=
 
 #guard
   match counterUnlessPaysOnBolt.pending with
-  | .payOrLetCounter p 4 _ =>
-    p == ⟨1⟩ && counterUnlessPaysOnBolt.unlessPaysInstead.isNone
+  | .payOrLetCounter p 4 (some _) => p == ⟨1⟩
   | _ => false
 
 def counterUnlessPaysDeclined : Game :=
@@ -1326,7 +1303,7 @@ def unlessPaysDestroyAsked : Game :=
 #guard
   match unlessPaysDestroyAsked.pending with
   | .payOrLetCounter p 2 _ =>
-    p == ⟨1⟩ && unlessPaysDestroyAsked.unlessPaysInstead.isSome
+    p == ⟨1⟩ && unlessPaysDestroyAsked.currentInterpWait?.isSome
   | _ => false
 
 def unlessPaysDestroyDeclined : Game :=
@@ -1336,7 +1313,7 @@ def unlessPaysDestroyDeclined : Game :=
 
 #guard unlessPaysDestroyDeclined.objects.any (fun o =>
   o.name == "Gray Ogre" && o.zone == .graveyard ⟨1⟩)
-#guard unlessPaysDestroyDeclined.unlessPaysInstead.isNone
+#guard unlessPaysDestroyDeclined.currentInterpWait?.isNone
 
 def unlessPaysDestroyPaid : Game :=
   let g := withRedMana unlessPaysDestroyAsked ⟨1⟩ 2
@@ -1358,14 +1335,14 @@ def ownerLibraryChoice : Game :=
   match ownerLibraryChoice.pending with
   | .chooseLibraryPlacement p id =>
     p == ⟨1⟩ && id == some (namedPermanent ownerLibraryChoice "Grizzly Bears").id &&
-      ownerLibraryChoice.spellOrLibrary && ownerLibraryChoice.spellOr.size == 2
+      ownerLibraryChoice.currentInterpWait?.isSome
   | _ => false
 
 def ownerLibraryTop : Game :=
   mustApply ownerLibraryChoice ⟨1⟩ .chooseTop
 
 #guard
-  ownerLibraryTop.spellOr.isEmpty &&
+  ownerLibraryTop.currentInterpWait?.isNone &&
     ((ownerLibraryTop.player ⟨1⟩).library.back?.map fun id =>
       (ownerLibraryTop.object! id).name) == some "Grizzly Bears" &&
     !ownerLibraryTop.battlefield.any (fun o => o.name == "Grizzly Bears")
@@ -1419,7 +1396,7 @@ def mayGainLifeAsked : Game :=
 #guard
   match mayGainLifeAsked.pending with
   | .mayResolve p =>
-    p == ⟨0⟩ && mayGainLifeAsked.mayEffect.isSome &&
+    p == ⟨0⟩ && mayGainLifeAsked.currentInterpWait?.isSome &&
       mayGainLifeAsked.actor == some ⟨0⟩
   | _ => false
 #guard
@@ -1439,7 +1416,7 @@ def mayGainLifeDeclined : Game :=
 #guard
   (mayGainLifeDeclined.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
     mayGainLifeDeclined.pending == .none &&
-    mayGainLifeDeclined.mayEffect.isNone
+    mayGainLifeDeclined.currentInterpWait?.isNone
 
 def mayGainLifeAccepted : Game :=
   mustApply mayGainLifeAsked ⟨0⟩ .accept
@@ -1447,7 +1424,7 @@ def mayGainLifeAccepted : Game :=
 #guard
   (mayGainLifeAccepted.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + (3 : Int) &&
     mayGainLifeAccepted.pending == .none &&
-    mayGainLifeAccepted.mayEffect.isNone
+    mayGainLifeAccepted.currentInterpWait?.isNone
 
 #guard
   match mayGainLifeAsked.apply ⟨1⟩ .accept with
@@ -1553,20 +1530,20 @@ def spellOrAsked : Game :=
 
 #guard
   match spellOrAsked.pending with
-  | .chooseLibraryPlacement p _ =>
-    p == ⟨0⟩ && spellOrAsked.spellOr.size == 3 && !spellOrAsked.spellOrLibrary
+  | .chooseTriggerOr p =>
+    p == ⟨0⟩ && spellOrAsked.currentInterpWait?.isSome
   | _ => false
 
 def spellOrDrew : Game :=
-  mustApply spellOrAsked ⟨0⟩ .chooseTop
+  mustApply spellOrAsked ⟨0⟩ (.chooseMode 0)
 
 #guard
   (spellOrDrew.player ⟨0⟩).hand.size == (afterDraw.player ⟨0⟩).hand.size + 1 &&
     (spellOrDrew.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life &&
-    spellOrDrew.spellOr.isEmpty
+    spellOrDrew.currentInterpWait?.isNone
 
 def spellOrGained : Game :=
-  mustApply spellOrAsked ⟨0⟩ .chooseBottom
+  mustApply spellOrAsked ⟨0⟩ (.chooseMode 1)
 
 #guard
   (spellOrGained.player ⟨0⟩).life == (afterDraw.player ⟨0⟩).life + (3 : Int) &&
@@ -1577,7 +1554,7 @@ def spellOrScried : Game :=
 
 #guard
   match spellOrScried.pending with
-  | .scry p 1 _ => p == ⟨0⟩ && spellOrScried.spellOr.isEmpty
+  | .scry p 1 _ => p == ⟨0⟩ && spellOrScried.currentInterpWait?.isNone
   | _ => false
 
 #guard
@@ -1585,7 +1562,7 @@ def spellOrScried : Game :=
   let g := afterDraw.applyEffect ⟨0⟩
     (Effect.mkSpell (.of .none)
       (.chooseModes { modes := #[Effect.draw 1], chooseAtResolution := true }) "") #[]
-  (g.player ⟨0⟩).hand.size == before + 1 && g.pending == .none && g.spellOr.isEmpty
+  (g.player ⟨0⟩).hand.size == before + 1 && g.pending == .none && g.currentInterpWait?.isNone
 
 #guard uneasyPartings.spellEffect == some Effect.putOnTopOrBottom
 
@@ -1946,7 +1923,7 @@ under player 1's control, `TriggerPattern.createTokens .you (.hasType .creature)
   }
   let enterWatcher : CardDef := {
     name := "Enter Watcher", types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.mkTrigger .creatureYouControlEnters (Effect.ofTrigger (.gainLife 1))]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger .creatureYouControlEnters (Effect.triggerGainLife 1)]
   }
   let g0 :=
     addPermanent

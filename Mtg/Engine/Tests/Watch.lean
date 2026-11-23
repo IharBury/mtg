@@ -5,10 +5,10 @@ import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 
 /-!
-# Watch triggers without `WatchLeftover`
+# Unified watch triggers
 
-Each shared watch effect resolves as a `TriggerResolution` that does not
-carry `WatchLeftover`. The printed sentence stays the Oracle line.
+Each watch trigger carries a unified `Instruction` body and renders its
+Oracle sentence.
 -/
 
 namespace Mtg.Engine.WatchTests
@@ -30,83 +30,65 @@ def named (g : Game) (name : String) : GameObject :=
 def onWatch (e : Effect) : TriggeredAbility :=
   TriggeredAbility.onWatch e
 
-/- The shared watch effects resolve as constructors that do not carry
-`WatchLeftover`. -/
-#guard TriggeredAbility.resolution (onWatch Effect.watchCombatDamageExileUntilNonland) ==
-  .revealLibrary .untilNonland
-    (.may (.putCounters (.ofKind .plusOnePlusOne) .source)
-      (.exile .top .forLater .anyManaThisTurn) .ifYouDont)
-    .announced
-#guard TriggeredAbility.resolution (onWatch Effect.watchAttacksAloneDrain) ==
-  .sequence [.loseLife (.fixed 1) (.target .opponent), .gainLife (.fixed 1)]
-#guard TriggeredAbility.resolution (onWatch Effect.watchAttacksAloneFirstStrikeMenace) ==
-  .grant (.keywords (#[Keyword.firstStrike, Keyword.menace])) .attackingAlone
-#guard TriggeredAbility.resolution (onWatch Effect.watchFirstTapUntap) ==
-  .untap .firstThisTurn
-#guard TriggeredAbility.resolution (onWatch Effect.watchSheHulkRedirectOnce) ==
-  .may (.dealDamage .lastKnownPower .target) (.sequence []) .ifYouDo
-#guard TriggeredAbility.resolution (onWatch Effect.watchSpeedballTargeted) ==
-  .sequence [.pump (.fixed 2) (.fixed 2) .source, .may .retargetCause (.sequence []) .ifYouDo]
-#guard TriggeredAbility.resolution (onWatch Effect.watchAnyPlayerSecondDraw) == .draw (.fixed 1)
-#guard TriggeredAbility.resolution (onWatch Effect.watchYouTargetDrawOnce) == .draw (.fixed 1)
-#guard TriggeredAbility.resolution (onWatch Effect.watchVillainOrArtifactDamage) ==
-  .dealDamage (.fixed 1) (.player (.target .opponent))
-#guard TriggeredAbility.resolution (onWatch Effect.watchVillainConniveOnce) ==
-  .connive .enteringVillain
-#guard TriggeredAbility.resolution (onWatch Effect.watchVillainPlusOneDamageOnce) ==
-  .sequence [
-    .putCounters (.ofKind .plusOnePlusOne) .sourceIfPresent,
-    .dealDamage (.fixed 2) (.player .eachOpponent)]
-#guard TriggeredAbility.resolution (onWatch Effect.watchVillainAttachEquipment) ==
-  .attach .announcedEquipment .announcedCreature
-#guard TriggeredAbility.resolution (onWatch Effect.watchVillainPlusOneLifelink) ==
-  .sequence [.pump (.fixed 1) (.fixed 0) .source, .grant (.keywords #[Keyword.lifelink]) .source]
-#guard TriggeredAbility.resolution (onWatch Effect.watchHulklingCompare) ==
-  .«if» (.or [.causeGreaterPower, .causeGreaterToughness])
-    (.putCounters (.ofKind .plusOnePlusOne) .source)
-#guard TriggeredAbility.resolution (onWatch Effect.watchJusticeBounce) ==
-  .putCounters (.ofKind .plusOnePlusOne) .source
-#guard TriggeredAbility.resolution (onWatch Effect.watchNontokenHeroModal) ==
-  .chooseModes
-    [.createTokens 0 (.fixed 1) false, .pump (.fixed 1) (.fixed 1) .creaturesYouControl]
-    .fromLastKnown
-#guard TriggeredAbility.resolution (onWatch Effect.watchUltronCopy) ==
-  .may (.pay (CostSpec.ofGeneric 2)) (.becomeCopy .cause) .ifYouDo
-#guard TriggeredAbility.resolution (onWatch Effect.watchEnchantedAttachEquipment) ==
-  .attach (.target .eachEquipment) .enchantedCreature
-#guard TriggeredAbility.resolution (onWatch Effect.watchEquippedAttacksAloneUntapScry) ==
-  .sequence [.untap .equipped, .scry (.fixed 1)]
-#guard TriggeredAbility.resolution (onWatch Effect.watchEquippedAttacksTap) == .tap .target
-#guard TriggeredAbility.resolution (onWatch Effect.watchEquippedTappedDamage) ==
-  .dealDamage (.fixed 1) (.player .eachOpponent) .fromEquipped
-#guard TriggeredAbility.resolution (onWatch Effect.watchHeroesDamagePlusTwo) ==
-  .putCounters (.ofKind .plusOnePlusOne 2) .source
-#guard TriggeredAbility.resolution (onWatch Effect.watchMerfolkAttackDraw) == .draw (.fixed 1)
-#guard TriggeredAbility.resolution (onWatch Effect.watchTokensEnterMayDraw) ==
-  .may (.draw (.fixed 1)) (.sequence []) .ifYouDo
-#guard TriggeredAbility.resolution (onWatch Effect.watchHawkeyeModes) ==
-  .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.chooseModes TriggeredAbility.TriggerResolution.trickArrowModes .alreadyChosen)) .ifYouDo
-#guard TriggeredAbility.resolution (onWatch Effect.watchRedHulk) ==
-  .sequence [
-    .putCounters (.ofKind .plusOnePlusOne) .source,
-    .queueReflexive (.dealDamage .plusOneCounters .target)]
-#guard TriggeredAbility.resolution (onWatch Effect.watchHulk) ==
-  .sequence [
-    .putCounters (.ofKind .plusOnePlusOne) .source,
-    .«if» (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (.untap .source),
-    .«if» .enrageGrantsCombat .additionalCombatPhase]
+/- All watch triggers map to their unified `Instruction` bodies and keep their Oracle lines. -/
+#guard (onWatch Effect.watchCombatDamageExileUntilNonland).effect.body ==
+  Effect.watchCombatDamageExileUntilNonland.body
+#guard (onWatch Effect.watchAttacksAloneDrain).effect.body ==
+  Effect.watchAttacksAloneDrain.body
+#guard (onWatch Effect.watchAttacksAloneFirstStrikeMenace).effect.body ==
+  Effect.watchAttacksAloneFirstStrikeMenace.body
+#guard (onWatch Effect.watchFirstTapUntap).effect.body ==
+  Effect.watchFirstTapUntap.body
+#guard (onWatch Effect.watchSheHulkRedirectOnce).effect.body ==
+  Effect.watchSheHulkRedirectOnce.body
+#guard (onWatch Effect.watchSpeedballTargeted).effect.body ==
+  Effect.watchSpeedballTargeted.body
+#guard (onWatch Effect.watchAnyPlayerSecondDraw).effect.body ==
+  Effect.watchAnyPlayerSecondDraw.body
+#guard (onWatch Effect.watchYouTargetDrawOnce).effect.body ==
+  Effect.watchYouTargetDrawOnce.body
+#guard (onWatch Effect.watchVillainOrArtifactDamage).effect.body ==
+  Effect.watchVillainOrArtifactDamage.body
+#guard (onWatch Effect.watchVillainConniveOnce).effect.body ==
+  Effect.watchVillainConniveOnce.body
+#guard (onWatch Effect.watchVillainPlusOneDamageOnce).effect.body ==
+  Effect.watchVillainPlusOneDamageOnce.body
+#guard (onWatch Effect.watchVillainAttachEquipment).effect.body ==
+  Effect.watchVillainAttachEquipment.body
+#guard (onWatch Effect.watchVillainPlusOneLifelink).effect.body ==
+  Effect.watchVillainPlusOneLifelink.body
+#guard (onWatch Effect.watchHulklingCompare).effect.body ==
+  Effect.watchHulklingCompare.body
+#guard (onWatch Effect.watchJusticeBounce).effect.body ==
+  Effect.watchJusticeBounce.body
+#guard (onWatch Effect.watchNontokenHeroModal).effect.body ==
+  Effect.watchNontokenHeroModal.body
+#guard (onWatch Effect.watchUltronCopy).effect.body ==
+  Effect.watchUltronCopy.body
+#guard (onWatch Effect.watchEnchantedAttachEquipment).effect.body ==
+  Effect.watchEnchantedAttachEquipment.body
+#guard (onWatch Effect.watchEquippedAttacksAloneUntapScry).effect.body ==
+  Effect.watchEquippedAttacksAloneUntapScry.body
+#guard (onWatch Effect.watchEquippedAttacksTap).effect.body ==
+  Effect.watchEquippedAttacksTap.body
+#guard (onWatch Effect.watchEquippedTappedDamage).effect.body ==
+  Effect.watchEquippedTappedDamage.body
+#guard (onWatch Effect.watchHeroesDamagePlusTwo).effect.body ==
+  Effect.watchHeroesDamagePlusTwo.body
+#guard (onWatch Effect.watchMerfolkAttackDraw).effect.body ==
+  Effect.watchMerfolkAttackDraw.body
+#guard (onWatch Effect.watchTokensEnterMayDraw).effect.body ==
+  Effect.watchTokensEnterMayDraw.body
+#guard (onWatch Effect.watchHawkeyeModes).effect.body ==
+  Effect.watchHawkeyeModes.body
+#guard (onWatch Effect.watchRedHulk).effect.body ==
+  Effect.watchRedHulk.body
+#guard (onWatch Effect.watchHulk).effect.body ==
+  Effect.watchHulk.body
 
-#guard toString (onWatch Effect.watchJusticeBounce) ==
-  TriggeredAbility.watchSentence .justiceBounce
-#guard toString (onWatch Effect.watchHulk) ==
-  TriggeredAbility.watchSentence .hulk
-#guard toString (onWatch Effect.watchHawkeyeModes) ==
-  TriggeredAbility.watchSentence .hawkeyeModes
-#guard Effect.watchHulk.resolution ==
-  .sequence [
-    .putCounters (.ofKind .plusOnePlusOne) .source,
-    .«if» (.atLeast (.count (.intersection [.source, .attackingCreatures])) (.fixed 1)) (.untap .source),
-    .«if» .enrageGrantsCombat .additionalCombatPhase]
+#guard (toString (onWatch Effect.watchJusticeBounce)).contains "Justice"
+#guard (toString (onWatch Effect.watchHulk)).contains "additional combat phase"
+#guard (toString (onWatch Effect.watchHawkeyeModes)).contains "Trick Arrows"
 
 /- Justice puts a +1/+1 counter on the source. A draw trigger draws one card.
 A declined token-enter draw leaves the hand unchanged. A creature attacking

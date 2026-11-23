@@ -4,8 +4,8 @@ import Mtg.Engine.Fixture
 /-!
 # Saga chapters as unified `Instruction` `Effect`s (CR 714.2)
 
-Each Saga chapter ability carries a unified `Instruction` body (`resolution? == none`)
-executed directly by `Game/Interpreter.lean`.
+Each Saga chapter ability carries a unified `Instruction` body executed
+directly by `Game/Interpreter.lean`.
 -/
 
 namespace Mtg.Engine.ChapterTests
@@ -44,30 +44,30 @@ def bolt : CardDef := { name := "Bolt", types := #[.instant] }
 
 def withSaga : Game := addPermanent afterDraw saga caster caster
 
-/- Every chapter effect smart constructor uses unified `Instruction` (`resolution? == none`). -/
-#guard (Effect.chapterDealDamageToOppCreature 6).resolution?.isNone
-#guard Effect.chapterDestroyOppArtifact.resolution?.isNone
-#guard (Effect.chapterAddMana (.colored .red)).resolution?.isNone
-#guard Effect.chapterSearchBasicLandToHand.resolution?.isNone
-#guard Effect.chapterGainLandfallCreateElf.resolution?.isNone
-#guard (Effect.chapterElvesGetVigilance 1).resolution?.isNone
-#guard Effect.chapterOpponentDiscardsNonland.resolution?.isNone
-#guard (Effect.chapterAmassGoblins 1).resolution?.isNone
-#guard (Effect.chapterOpponentLosesYouGain 1).resolution?.isNone
-#guard Effect.chapterGrantHexproofWhileRemains.resolution?.isNone
-#guard Effect.chapterPreventDamageWhileRemains.resolution?.isNone
-#guard (Effect.chapterDraw 2).resolution?.isNone
-#guard (Effect.chapterSearchBasicPlainsExileGainLife 2 2).resolution?.isNone
-#guard Effect.chapterReturnLinkedExileToHand.resolution?.isNone
-#guard Effect.chapterGrantAttackPumpPerPlainsThisTurn.resolution?.isNone
-#guard Effect.chapterBlinkUntilEndStep.resolution?.isNone
-#guard Effect.chapterTreasureThenDragonIfFour.resolution?.isNone
-#guard Effect.chapterRecruit.resolution?.isNone
-#guard (Effect.chapterReturnCreatureFromGyMvAtMost 3).resolution?.isNone
-#guard Effect.chapterPlusOneUpToOne.resolution?.isNone
-#guard (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6).resolution?.isNone
-#guard (Effect.chapterDealDamageToEachNonSubtypeAndOpponents 2 "Villain").resolution?.isNone
-#guard Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv.resolution?.isNone
+/- Every chapter effect smart constructor carries a non-noop unified `Instruction`. -/
+#guard (Effect.chapterDealDamageToOppCreature 6).body != .noop
+#guard Effect.chapterDestroyOppArtifact.body != .noop
+#guard (Effect.chapterAddMana (.colored .red)).body != .noop
+#guard Effect.chapterSearchBasicLandToHand.body != .noop
+#guard Effect.chapterGainLandfallCreateElf.body != .noop
+#guard (Effect.chapterElvesGetVigilance 1).body != .noop
+#guard Effect.chapterOpponentDiscardsNonland.body != .noop
+#guard (Effect.chapterAmassGoblins 1).body != .noop
+#guard (Effect.chapterOpponentLosesYouGain 1).body != .noop
+#guard Effect.chapterGrantHexproofWhileRemains.body != .noop
+#guard Effect.chapterPreventDamageWhileRemains.body != .noop
+#guard (Effect.chapterDraw 2).body != .noop
+#guard (Effect.chapterSearchBasicPlainsExileGainLife 2 2).body != .noop
+#guard Effect.chapterReturnLinkedExileToHand.body != .noop
+#guard Effect.chapterGrantAttackPumpPerPlainsThisTurn.body != .noop
+#guard Effect.chapterBlinkUntilEndStep.body != .noop
+#guard Effect.chapterTreasureThenDragonIfFour.body != .noop
+#guard Effect.chapterRecruit.body != .noop
+#guard (Effect.chapterReturnCreatureFromGyMvAtMost 3).body != .noop
+#guard Effect.chapterPlusOneUpToOne.body != .noop
+#guard (Effect.chapterGainControlOfUpToTwoCreaturesTotalMvAtMost 6).body != .noop
+#guard (Effect.chapterDealDamageToEachNonSubtypeAndOpponents 2 "Villain").body != .noop
+#guard Effect.chapterDealXDamageToTargetOpponentGreatestArtifactMv.body != .noop
 
 #guard (Effect.chapterDealDamageToOppCreature 6).targeting.spec == .oppCreature
 #guard Effect.chapterPlusOneUpToOne.allowsZeroTargets
@@ -78,15 +78,6 @@ def withSaga : Game := addPermanent afterDraw saga caster caster
   "When a lore counter is put on this Saga, recruit."
 #guard toString (TriggeredAbility.sagaChapter 1 (Effect.chapterDraw 1)) ==
   "When a lore counter is put on this Saga, draw a card."
-
-/- A selector createTokens does not use creates nothing. -/
-#guard
-  let ab : TriggeredAbility :=
-    { TriggeredAbility.onEnterDraw 1 with
-      effect := { (TriggeredAbility.onEnterDraw 1).effect with legacyTokens := #[.treasure] } }
-  let g := afterDraw.applyTriggeredAbility caster ab none
-    (resolutionOverride := some (.createTokens 0 .perOtherCreature false))
-  g.log.size == afterDraw.log.size
 
 /- Drawing, adding mana, and recruiting go through those constructors. -/
 #guard

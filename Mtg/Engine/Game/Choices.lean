@@ -340,14 +340,14 @@ def finishGrimaDirectCast (g : Game) (controller victim : PlayerId)
 /-- Pause-safe loop exiling cards from the top of `victim`'s library face up
 until an instant or sorcery card is exiled (or the library is empty), following
 each moved card via `followMovedToZone?` across `Pending.chooseReplacement`
-pausing and then finishing via `mode` (`GrimaExileMode`). -/
-partial def exileUntilInstantOrSorceryLoop (g : Game) (victim : PlayerId)
-    (mode : GrimaExileMode) (cause : Option EventCause := none)
+pausing and then casting or bottoming the exiled cards. -/
+partial def exileUntilInstantOrSorceryLoop (g : Game) (victim controller : PlayerId)
+    (castTheCard : Bool) (cause : Option EventCause := none)
     (others : Array ObjectId := #[])
     (pendingFromId : Option ObjectId := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep (.exileUntilInstantOrSorceryLoop victim mode cause others pendingFromId))
+      (.finishPostStep (.exileUntilInstantOrSorceryLoop victim controller castTheCard cause others pendingFromId))
   let mut g := g
   let mut others := others
   let mut found : Option ObjectId := none
@@ -365,44 +365,34 @@ partial def exileUntilInstantOrSorceryLoop (g : Game) (victim : PlayerId)
     g := g'
     if let .chooseReplacement .. := g.pending then
       return g.chainPendingReplacement
-        (.finishPostStep (.exileUntilInstantOrSorceryLoop victim mode cause others (some top)))
+        (.finishPostStep (.exileUntilInstantOrSorceryLoop victim controller castTheCard cause others (some top)))
     if let some moved := g.followMovedToZone? top (· == .exile) then
       g := g.logMsg s!"{(g.player victim).name} exiles {name} face up"
       if g.isInstantOrSorcery moved then
         found := some moved.id
       else
         others := others.push moved.id
-  match mode with
-  | .impulseState =>
-    if g.continuations.isEmpty then
-      g := g.change (.pushContinuationFrame {})
-    return g.changes #[
-      .grimaImpulseReady true,
-      .grimaImpulseVictim (some victim),
-      .grimaImpulseFound found,
-      .grimaImpulseOthers others]
-  | .directCastOrBottom controller castTheCard =>
-    match found with
-    | none =>
-      if !g.stillInGame victim then return g
-      else
-        return g.requestOrderInto others (.library victim)
-          s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
-          (cause := cause)
-    | some instId =>
-      if castTheCard then
-        let (g', _) := g.move instId .stack (some controller)
-          (verb := some .cast) (actor := some controller) (cause := cause)
-        if let .chooseReplacement .. := g'.pending then
-          return g'.chainPendingReplacement
-            (.finishPostStep (.finishGrimaDirectCast controller victim instId others cause))
-        return g'.finishGrimaDirectCast controller victim instId others cause
-      else if !g.stillInGame victim then return g
-      else
-        let (g', _) := g.move instId (.library victim) none (cause := cause)
-        return g'.requestOrderInto others (.library victim)
-          s!"{(g'.player victim).name} puts the remaining exiled cards on the bottom of their library in a random order"
-          (cause := cause)
+  match found with
+  | none =>
+    if !g.stillInGame victim then return g
+    else
+      return g.requestOrderInto others (.library victim)
+        s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
+        (cause := cause)
+  | some instId =>
+    if castTheCard then
+      let (g', _) := g.move instId .stack (some controller)
+        (verb := some .cast) (actor := some controller) (cause := cause)
+      if let .chooseReplacement .. := g'.pending then
+        return g'.chainPendingReplacement
+          (.finishPostStep (.finishGrimaDirectCast controller victim instId others cause))
+      return g'.finishGrimaDirectCast controller victim instId others cause
+    else if !g.stillInGame victim then return g
+    else
+      let (g', _) := g.move instId (.library victim) none (cause := cause)
+      return g'.requestOrderInto others (.library victim)
+        s!"{(g'.player victim).name} puts the remaining exiled cards on the bottom of their library in a random order"
+        (cause := cause)
 
 /-- Exile cards from `victim`'s library until an instant or sorcery, face up.
 An empty library becomes that player's library again. The found card may be
@@ -413,7 +403,7 @@ def grimaExileUntilInstantOrSorcery (g : Game) (controller victim : PlayerId)
   if !g.stillInGame victim then g
   else
     let (g, cause) := g.allocDelayedCause (some controller)
-    g.exileUntilInstantOrSorceryLoop victim (.directCastOrBottom controller castTheCard)
+    g.exileUntilInstantOrSorceryLoop victim controller castTheCard
       (cause := some cause)
 
 /-- True when `p` can pay Saruman's ward (discard an enchantment, instant,
@@ -695,6 +685,16 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
         src.zone == .graveyard src.owner && src.owner == prop.caster) ||
       (fromHandAb && !fromGyAb && !needsBfSource &&
         src.zone == .hand src.owner && src.owner == prop.caster))
+
+/-- Offer `p` the optional explore choice to put the revealed top card `cardId`
+of their library into their graveyard (CR 701.44a / 701.44c). -/
+def offerExploreMayGraveyard (g : Game) (p : PlayerId) (cardId : ObjectId) : Game :=
+  if !g.stillInGame p then g
+  else if (g.player p).library.back? != some cardId then g
+  else
+    let cName := (g.findObject? cardId).map g.name |>.getD "the revealed card"
+    g.beginFraChoice p (.exploreMayGraveyard cardId)
+      s!"{(g.player p).name} may put {cName} into their graveyard"
 
 end Game
 end Mtg.Engine

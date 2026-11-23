@@ -21,19 +21,7 @@ def resolvingDamageSource? (g : Game) : Option GameObject :=
   match (g.resolvingAbility.bind g.findObject?).bind (fun ab => ab.sourceId.bind g.damageSourceById?) with
   | some s => some s
   | none =>
-  match g.triggerSequenceRest.bind (fun r => r.sourceId.bind g.damageSourceById?) with
-  | some s => some s
-  | none =>
-  match g.mayContext.bind (fun r => r.sourceId.bind g.damageSourceById?) with
-  | some s => some s
-  | none =>
-  match g.triggerOr.bind (fun r => r.sourceId.bind g.damageSourceById?) with
-  | some s => some s
-  | none =>
-  match g.chooseModesRest.bind (fun r => r.sourceId.bind g.damageSourceById?) with
-  | some s => some s
-  | none =>
-  match g.fraAfterLook.bind (fun (_, sid?, _) => sid?.bind g.damageSourceById?) with
+  match g.currentInterpWait?.bind (fun st => st.ctx.sourceId.bind g.damageSourceById?) with
   | some s => some s
   | none => none
 
@@ -75,11 +63,7 @@ def refreshOrKeepDamageSnapshot (g : Game) (eo : EventObject) : EventObject :=
 source is no longer at its original `ObjectId`. -/
 private def resolvingDepartedSourceId? (g : Game) : Option ObjectId :=
   (g.resolvingAbility.bind g.findObject?).bind (·.sourceId)
-    |>.orElse (fun _ => g.triggerSequenceRest.bind (·.sourceId))
-    |>.orElse (fun _ => g.mayContext.bind (·.sourceId))
-    |>.orElse (fun _ => g.triggerOr.bind (·.sourceId))
-    |>.orElse (fun _ => g.chooseModesRest.bind (·.sourceId))
-    |>.orElse (fun _ => g.fraAfterLook.bind (fun (_, s, _) => s))
+    |>.orElse (fun _ => g.currentInterpWait?.bind (·.ctx.sourceId))
     |>.orElse (fun _ => g.currentResolvingContext?.bind Prod.fst)
 
 /-- The resolving damage source object, using `lastKnownBefore?` LKI if the

@@ -4,8 +4,7 @@ import Mtg.Engine.Card.Trigger
 /-!
 # Saga-chapter effect constructors (CR 714.2)
 
-All 23 Saga chapter effects lowered directly onto unified Phase 8 `Instruction`
-values (`resolution? := none`, `sharedTrigger := none`).
+All 23 Saga chapter effects lowered directly onto unified `Instruction` values.
 -/
 
 namespace Mtg.Engine

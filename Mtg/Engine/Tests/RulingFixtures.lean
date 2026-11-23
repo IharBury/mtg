@@ -77,6 +77,6 @@ def cosmicCubeSetup : Game :=
 /-- Ruling 708: Cosmic Cube looks at the top six and waits for the controller. -/
 def cosmicCubePending : Game :=
   let cube := namedPermanent cosmicCubeSetup "Cosmic Cube"
-  cosmicCubeSetup.applyModeledTrigger ⟨0⟩ (.onYouAttacking Effect.youAttackingLookSixCast) (some cube.id)
+  cosmicCubeSetup.applyTriggeredAbility ⟨0⟩ (.onYouAttacking Effect.youAttackingLookSixCast) (some cube.id)
 
 end Mtg.Engine.Tests

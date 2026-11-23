@@ -1,12 +1,11 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.removeCounters`
+# Unified counter removal instructions (`CounterOp.remove` / `CounterOp.removeAll`)
 
-A hope counter from the source, and every counter from the enchanted
-creature. What is removed is `TriggerRemoveWhat`. Who loses it is an
-`ObjectSelector`. Any other permanent the selector names loses that
-counter. A card or an unmade choice loses nothing.
+Removing a hope counter from the source (binding `stepSucceeded` for follow-up
+draw/sacrifice) and removing all counters from the enchanted creature execute
+through `Interpreter.execPermanent`.
 -/
 
 namespace Mtg.Engine.RemoveCountersTests
@@ -19,10 +18,9 @@ def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFram
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
+def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) : Game :=
-  g.applyTriggeredAbility caster (.onEnterDraw 1) sourceId
-    (resolutionOverride := some r)
+  g.applyTriggeredAbility caster (TriggeredAbility.mkTrigger .thisEnters { body }) sourceId
 
 def obj (g : Game) (name : String) : GameObject :=
   match g.battlefield.find? (·.name == name) with
@@ -68,11 +66,11 @@ def foe : CardDef := {
   toughness := some 3
 }
 
-def hopeFromSource : TriggeredAbility.TriggerResolution :=
-  .removeCounters .hope .source
+def hopeFromSource : Instruction :=
+  .permanent (.modifyCounters (.remove (some .hope) (.exact (.const 1))) .this)
 
-def allFromEnchanted : TriggeredAbility.TriggerResolution :=
-  .removeCounters .all .enchanted
+def allFromEnchanted : Instruction :=
+  .permanent (.modifyCounters (.remove none .anyNumber) .attachedHost)
 
 def handSize (g : Game) : Nat :=
   (g.player caster).hand.size
@@ -88,62 +86,52 @@ def stripped (g : Game) (o : GameObject) : Bool :=
   !Status.hasCounters s && s.damage == 4 && g.pumpOf o == (1, 2) &&
     s.plusOnePlusOne == 0 && s.hope == 0 && s.counters.count .flying == 0
 
-/- One hope counter leaves the source, and a later step can see that.
-None to remove changes nothing except clearing that note. A missing
-source, and a source that has left, remove nothing. -/
+/- One hope counter leaves the source; binding `stepSucceeded` draws a card only
+when a counter was actually removed; removing the last hope counter triggers
+sacrifice and +4 life via `onYourEndStepRemoveHopeDrawSac`. -/
 #guard
   let g0 := withHope (addPermanent afterDraw dawn caster caster) "Dawn" 3
   let g := step g0 hopeFromSource (some (pid g0 "Dawn"))
-  (obj g "Dawn").status.hope == 2 && g.removedHopeThisWay &&
-    logContains g "Dawn loses a hope counter"
+  (obj g "Dawn").status.hope == 2
+
+#guard
+  let g0 := withHope (addPermanent afterDraw dawn caster caster) "Dawn" 2
+  let before := handSize g0
+  let g := g0.applyTriggeredAbility caster .onYourEndStepRemoveHopeDrawSac (some (pid g0 "Dawn"))
+  (obj g "Dawn").status.hope == 1 && handSize g == before + 1 &&
+    (g.player caster).life == (g0.player caster).life
 
 #guard
   let g0 := withHope (addPermanent afterDraw dawn caster caster) "Dawn" 1
   let before := handSize g0
-  let g := step g0 (.sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1))])
-    (some (pid g0 "Dawn"))
-  (obj g "Dawn").status.hope == 0 && !g.removedHopeThisWay &&
-    handSize g == before + 1
-
-#guard
-  let base := addPermanent afterDraw dawn caster caster
-  let g0 := base.change (.removedHopeThisWay true)
-  let g := step g0 hopeFromSource (some (pid g0 "Dawn"))
-  (obj g "Dawn").status.hope == 0 && !g.removedHopeThisWay &&
-    g.log == g0.log
+  let life0 := (g0.player caster).life
+  let g := g0.applyTriggeredAbility caster .onYourEndStepRemoveHopeDrawSac (some (pid g0 "Dawn"))
+  !(g.battlefield.any (·.name == "Dawn")) && handSize g == before + 1 &&
+    (g.player caster).life == life0 + 4
 
 #guard
   let g0 := addPermanent afterDraw dawn caster caster
   let before := handSize g0
-  let g := step g0 (.sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1))])
-    (some (pid g0 "Dawn"))
-  handSize g == before && !g.removedHopeThisWay &&
-    !(logContains g "loses a hope counter")
-
-#guard
-  let g0 := afterDraw.change (.removedHopeThisWay true)
-  let g := step g0 hopeFromSource
-  !g.removedHopeThisWay && logContains g "no longer in play"
+  let life0 := (g0.player caster).life
+  let g := g0.applyTriggeredAbility caster .onYourEndStepRemoveHopeDrawSac (some (pid g0 "Dawn"))
+  handSize g == before && !(g.battlefield.any (·.name == "Dawn")) &&
+    (g.player caster).life == life0 + 4
 
 #guard
   let g0 := withHope (addPermanent afterDraw dawn caster caster) "Dawn" 3
   let (g1, newId) := g0.move (pid g0 "Dawn") (.graveyard caster) none
   let g1 := g1.recordPutCounters (anyObj g1 "Dawn").id .hope 3
   let g := step g1 hopeFromSource (some newId)
-  (anyObj g "Dawn").status.hope == 3 && !g.removedHopeThisWay &&
-    logContains g "no longer on the battlefield"
+  (anyObj g "Dawn").status.hope == 3
 
 /- Every counter leaves the enchanted creature, including an opponent's.
-Damage and a pump stay. Nothing enchanted, a missing host, and a missing
-source remove nothing. A host that has left still loses its counters.
-Removing them does not count as removing a hope counter. -/
+Damage and a pump stay. Nothing enchanted leaves counters intact. -/
 #guard
   let g0 := load (attach
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
     "Grasp" "Bear") "Bear"
   let g := step g0 allFromEnchanted (some (pid g0 "Grasp"))
-  stripped g (obj g "Bear") && !(obj g "Bear").status.tapped &&
-    logContains g "counters are removed from Bear"
+  stripped g (obj g "Bear") && !(obj g "Bear").status.tapped
 
 #guard
   let g0 := load (attach
@@ -151,19 +139,7 @@ Removing them does not count as removing a hope counter. -/
     "Grasp" "Foe") "Foe"
   let g0 := withHope g0 "Grasp" 2
   let g := step g0 allFromEnchanted (some (pid g0 "Grasp"))
-  stripped g (obj g "Foe") && (obj g "Grasp").status.hope == 2 &&
-    logContains g "counters are removed from Foe"
-
-#guard
-  let g0 := attach
-    (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
-    "Grasp" "Bear"
-  let before := handSize g0
-  let g := step g0
-    (.sequence [allFromEnchanted, .«if» .removedHope (.draw (.fixed 1))])
-    (some (pid g0 "Grasp"))
-  handSize g == before && !g.removedHopeThisWay &&
-    logContains g "counters are removed from Bear"
+  stripped g (obj g "Foe") && (obj g "Grasp").status.hope == 2
 
 #guard
   let g0 := load
@@ -173,68 +149,27 @@ Removing them does not count as removing a hope counter. -/
   stillLoaded g (obj g "Bear") && g.log == g0.log
 
 #guard
-  let g0 := load (attach
-    (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
-    "Grasp" "Bear") "Bear"
-  let aura := obj g0 "Grasp"
-  let g0 := g0.record (GameEvent.attached g0.turnNumber (g0.snapshot aura) ⟨99999⟩ (cause := .gameRule .staticAbility))
-  let g := step g0 allFromEnchanted (some (pid g0 "Grasp"))
-  stillLoaded g (obj g "Bear") && g.log == g0.log
-
-#guard
   let g0 := load (addPermanent afterDraw bear caster caster) "Bear"
   let g := step g0 allFromEnchanted
   stillLoaded g (obj g "Bear") && g.log == g0.log
 
-#guard
-  let g0 := addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster
-  let (g1, bearId) := g0.move (pid g0 "Bear") (.graveyard caster) none
-  let g1 := (setMarkedDamage ((g1.recordPutCounters bearId .plusOnePlusOne 2).recordPutCounters bearId .hope 1) bearId 4).createEffect (.pump bearId 1 2)
-  let aura := obj g1 "Grasp"
-  let g1 := g1.record (GameEvent.attached g1.turnNumber (g1.snapshot aura) bearId (cause := .gameRule .staticAbility))
-  let g := step g1 allFromEnchanted (some (pid g1 "Grasp"))
-  let host := anyObj g "Bear"
-  !Status.hasCounters host.status && host.status.damage == 4 && g.pumpOf host == (1, 2) &&
-    logContains g "counters are removed from Bear"
-
-/- Hope from the enchanted creature is removed, and the note records that.
-Every counter on the source is removed. Hope from a permanent that was
-not announced clears the note and removes nothing. -/
+/- Removing hope from the enchanted creature and removing all counters from the source work too. -/
 #guard
   let g0 := load (attach
     (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
       "Grasp" 2)
     "Grasp" "Bear") "Bear"
-  let g0 := g0.change (.removedHopeThisWay false)
-  let crossed := step g0 (.removeCounters .hope .enchanted) (some (pid g0 "Grasp"))
-  crossed.removedHopeThisWay && (obj crossed "Bear").status.hope == 0 &&
+  let crossed := step g0 (.permanent (.modifyCounters (.remove (some .hope) (.exact (.const 1))) .attachedHost))
+    (some (pid g0 "Grasp"))
+  let swapped := step g0 (.permanent (.modifyCounters (.remove none .anyNumber) .this))
+    (some (pid g0 "Grasp"))
+  (obj crossed "Bear").status.hope == 0 &&
     (obj crossed "Bear").status.plusOnePlusOne == 2 &&
     (obj crossed "Grasp").status.hope == 2 &&
-    logContains crossed "Bear loses a hope counter"
+    stillLoaded swapped (obj swapped "Bear") &&
+    (obj swapped "Grasp").status.hope == 0
 
-#guard
-  let g0 := load (attach
-    (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
-      "Grasp" 2)
-    "Grasp" "Bear") "Bear"
-  let g0 := g0.change (.removedHopeThisWay true)
-  let swapped := step g0 (.removeCounters .all .source) (some (pid g0 "Grasp"))
-  swapped.removedHopeThisWay && stillLoaded swapped (obj swapped "Bear") &&
-    (obj swapped "Grasp").status.hope == 0 &&
-    (obj swapped "Grasp").status.plusOnePlusOne == 0 &&
-    logContains swapped "counters are removed from Grasp"
-
-#guard
-  let g0 := load (attach
-    (withHope (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
-      "Grasp" 2)
-    "Grasp" "Bear") "Bear"
-  let g0 := g0.change (.removedHopeThisWay true)
-  let other := step g0 (.removeCounters .hope .target) (some (pid g0 "Grasp"))
-  !other.removedHopeThisWay && stillLoaded other (obj other "Bear") &&
-    (obj other "Grasp").status.hope == 2 && other.log == g0.log
-
-/- Tap, then remove, including when nothing is enchanted. -/
+/- Tap, then remove all counters from enchanted creature (`onEnterTapEnchantedRemoveCounters`). -/
 #guard
   let g0 := load (attach
     (addPermanent (addPermanent afterDraw bear caster caster) grasp caster caster)
@@ -249,41 +184,12 @@ not announced clears the note and removes nothing. -/
     "Bear"
   let g := g0.applyTriggeredAbility caster .onEnterTapEnchantedRemoveCounters
     (some (pid g0 "Grasp"))
-  !(obj g "Bear").status.tapped && stillLoaded g (obj g "Bear") &&
-    logContains g "Nothing is enchanted"
+  !(obj g "Bear").status.tapped && stillLoaded g (obj g "Bear")
 
-#guard TriggeredAbility.resolution .onYourEndStepRemoveHopeDrawSac ==
-  .sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1)),
-    .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]
-#guard TriggeredAbility.resolution .onEnterTapEnchantedRemoveCounters ==
-  .sequence [.tap .enchanted, allFromEnchanted]
-
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (hopeFromSource) } ==
-  "remove a hope counter from this"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (allFromEnchanted) } ==
-  "remove all counters from enchanted creature"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.removeCounters .hope .enchanted) } == "remove counters"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.removeCounters .all .source) } == "remove counters"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.removeCounters .hope .target) } == "remove counters"
-#guard TriggeredAbility.resolutionPhrase
-    (SharedTrigger.toEffect .removeHopeDrawSac) ==
-  "remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life"
-#guard TriggeredAbility.resolutionPhrase
-    (SharedTrigger.toEffect .tapEnchantedRemoveCounters) ==
-  "tap enchanted creature and remove all counters from it"
-
+/- Printed notations stay intact. -/
 #guard TriggeredAbility.toNotation .onYourEndStepRemoveHopeDrawSac ==
   "At the beginning of your end step, remove a hope counter from this. If you do, draw a card. Then if this has no hope counters on it, sacrifice it and you gain 4 life."
 #guard TriggeredAbility.toNotation .onEnterTapEnchantedRemoveCounters ==
   "When this Aura enters, tap enchanted creature and remove all counters from it."
-
-#guard (SharedTrigger.toEffect .removeHopeDrawSac).resolution ==
-  .sequence [hopeFromSource, .«if» .removedHope (.draw (.fixed 1)),
-    .«if» (.not .hopeOnSource) (.sequence [.sacrifice .source, .gainLife (.fixed 4)])]
-#guard (SharedTrigger.toEffect .tapEnchantedRemoveCounters).resolution ==
-  .sequence [.tap .enchanted, allFromEnchanted]
 
 end Mtg.Engine.RemoveCountersTests

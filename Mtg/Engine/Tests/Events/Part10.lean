@@ -267,28 +267,22 @@ private def replayOk42i1 (gs : Array Game) : Bool :=
   let gManaOuterPrioDone :=
     gManaOuterPrio0.finishActivateManaAbilityPostSac p2 p2Forest.id p2Forest.printed.name
       (gManaOuterPrio0.snapshot p2Forest) #[.colorless] true (some 0) .none 0 false .none (wasPaused := false)
-  -- (iii) Unpaused mana ability with `triggerSequenceRest` (`steps := [.gainLife (.fixed 5)]` for `p1`) and `mayThenResume`:
-  let dummyTrig42 : TriggeredAbility :=
-    TriggeredAbility.mkTrigger .thisDies { body := Instruction.gainLifeFixed 5, phrase := "You gain 5 life." }
-  let trigSeqP1 : TriggerSequenceRest := {
-    controller := p1
-    ability := dummyTrig42
-    sourceId := some p2Forest.id
-    targets := #[]
-    dividedDamage := #[]
-    lastKnownPower := none
-    lastKnownToughness := none
-    sourceName := p2Forest.name
-    cardPower := none
-    steps := [.gainLife (.fixed 5)]
+  -- (iii) Unpaused mana ability with `interpWait?` (`gainLifeFixed 5` for `p1`):
+  let interpWaitP1 : InterpState := {
+    ctx := { controller := p1, sourceId := some p2Forest.id }
+    queue := #[Instruction.gainLifeFixed 5]
+    stack := #[]
   }
   let gManaTrigSeq0 :=
-    gMana0.change (.pushContinuationFrame { triggerSequenceRest := some trigSeqP1 })
+    gMana0.change (.pushContinuationFrame { interpWait? := some interpWaitP1 })
   let gManaTrigSeqDone :=
     gManaTrigSeq0.finishActivateManaAbilityPostSac p2 p2Forest.id p2Forest.printed.name
       (gManaTrigSeq0.snapshot p2Forest) #[.colorless] true (some 0) .none 0 false .none (wasPaused := false)
   let gManaMayRes0 :=
-    gMana0.change (.pushContinuationFrame { mayThenResume := true, triggerSequenceRest := some trigSeqP1 })
+    gMana0.change (.pushContinuationFrame {
+      interpWait? := some { interpWaitP1 with stack := #[.branchOnChoice (Instruction.gainLifeFixed 5) .noop], queue := #[] }
+      stepEnv := #[(⟨999⟩, { succeeded := true })]
+    })
   let gManaMayResDone :=
     gManaMayRes0.finishActivateManaAbilityPostSac p2 p2Forest.id p2Forest.printed.name
       (gManaMayRes0.snapshot p2Forest) #[.colorless] true (some 0) .none 0 false .none (wasPaused := false)
@@ -386,7 +380,7 @@ private def replayOk42i2 (gs : Array Game) : Bool :=
     creature "P42i2 LTBWatcher" ManaCost.empty #["Cleric"] 2 2 with
     triggeredAbilities := #[
       TriggeredAbility.mkTrigger (.permanentLeaves (.all #[.hasType .creature, .controlledBy .you]))
-        { resolution? := some (.gainLife (.fixed 3)), phrase := "You gain 3 life." }
+        { body := Instruction.gainLifeFixed 3, phrase := "You gain 3 life." }
     ]
   }
 
@@ -895,7 +889,7 @@ private def replayOk42i4 (gs : Array Game) : Bool :=
   let gFraAbPrompt :=
     gWithTrigAb.changes #[
       .pushContinuationFrame { resolvingAbility := some trigAb.id },
-      .pending (.fraChoice p0 (.mayPayPickThen .tapUntappedCreature (.gainLife 2) (some dorkObj.id))) ]
+      .pending (.fraChoice p0 (.mayPayPickThen .tapUntappedCreature (Instruction.gainLifeFixed 2) (some dorkObj.id))) ]
   let gFraAbPaid := mustApply gFraAbPrompt p0 (.choosePermanents #[dorkObj.id])
   let abTappedForTrigId :=
     (gFraAbPaid.events.extract preAbTapEvIdx gFraAbPaid.events.size).any fun ev =>
@@ -911,7 +905,7 @@ private def replayOk42i4 (gs : Array Game) : Bool :=
   let gFraSpPrompt :=
     gSpellIns.changes #[
       .pushContinuationFrame { resolvingSpell := some spellObj.id },
-      .pending (.fraChoice p0 (.mayPayPickThen .tapUntappedCreature (.gainLife 2) (some dorkObj.id))) ]
+      .pending (.fraChoice p0 (.mayPayPickThen .tapUntappedCreature (Instruction.gainLifeFixed 2) (some dorkObj.id))) ]
   let gFraSpPaid := mustApply gFraSpPrompt p0 (.choosePermanents #[dorkObj.id])
   let spTappedForSpellId :=
     (gFraSpPaid.events.extract preSpTapEvIdx gFraSpPaid.events.size).any fun ev =>
@@ -1344,7 +1338,7 @@ private def replayOk43i2 (gs : Array Game) : Bool :=
     creature "P43i2 LTBWatcher" ManaCost.empty #["Cleric"] 2 2 with
     triggeredAbilities := #[
       TriggeredAbility.mkTrigger (.permanentLeaves (.all #[.hasType .creature, .controlledBy .you]))
-        { resolution? := some (.gainLife (.fixed 3)), phrase := "You gain 3 life." }
+        { body := Instruction.gainLifeFixed 3, phrase := "You gain 3 life." }
     ]
   }
 

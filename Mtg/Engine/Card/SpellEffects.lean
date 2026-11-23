@@ -8,7 +8,7 @@ import Mtg.Engine.Card.Effect
 `Effect.mkSpell` / `Effect.mkAbility` / `Effect.fraSpell` / `FraCandidates.ab`
 plus the named constructors for every printed spell, activated-ability, and
 Reality Fracture effect the engine models, all lowered directly onto unified
-Phase 8 `Instruction` values (`resolution? := none`, pure computed
+`Instruction` values (pure computed
 `Effect.classifyForAgent` / `Effect.classifyAbilityForAgent`).
 -/
 

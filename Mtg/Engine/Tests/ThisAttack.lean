@@ -6,7 +6,7 @@ import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 
 /-!
-# Attack triggers without `ThisAttackLeftover`
+# Unified attack triggers
 
 Ant-Man and Grim Reaper pay into a reflexive ability. Iron Man draws when
 an artifact entered. Thor blinks a nontoken. Whiplash drains for Equipment.
@@ -32,40 +32,15 @@ def named (g : Game) (name : String) : GameObject :=
 def hand (g : Game) : Nat :=
   (g.player me).hand.size
 
-/- The shared attack effects resolve as constructors that do not carry
-`ThisAttackLeftover`. The printed sentence stays the Oracle line. -/
-#guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackMayPayPlusOne) ==
-  .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.putCounters (.ofKind .plusOnePlusOne) .permanent)) .ifYouDo
-#guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackPayReturnAttacking) ==
-  .may (.pay (CostSpec.ofMana { symbols := #[.generic 3, .colored .black] })) (.queueReflexive (.put .creatureCard .tapped (.entering [.attacking, .counter .finality]))) .ifYouDo
-#guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackIfArtifactEnteredDraw) ==
-  .«if» .artifactEnteredThisTurn (.draw (.fixed 1))
-#guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackBlinkNontoken) ==
-  .exile .target .returnTapped
-#guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackEquippedDrain) ==
-  .«if» .attachedEquipment (.sequence [
-    .loseLife .attachedEquipment .eachOpponent,
-    .gainLife .attachedEquipment])
-#guard TriggeredAbility.resolution (TriggeredAbility.onThisAttack Effect.thisAttackDrawIfPower4) ==
-  .«if» (.atLeast .equalSourcePower (.fixed 4)) (.draw (.fixed 1))
-#guard TriggeredAbility.resolution
-    (TriggeredAbility.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible) ==
-  .sequence [.pump (.fixed 2) (.fixed 0) .source, .grant (.keywords #[Keyword.indestructible]) .source]
-
-#guard toString (TriggeredAbility.onThisAttack Effect.thisAttackMayPayPlusOne) ==
-  TriggeredAbility.thisAttackSentence .mayPayPlusOne
-#guard toString (TriggeredAbility.onThisAttack Effect.thisAttackPayReturnAttacking) ==
-  TriggeredAbility.thisAttackSentence .payReturnAttacking
-#guard toString (TriggeredAbility.onThisAttack Effect.thisAttackIfArtifactEnteredDraw) ==
-  TriggeredAbility.thisAttackSentence .ifArtifactEnteredDraw
-#guard toString (TriggeredAbility.onThisAttack Effect.thisAttackBlinkNontoken) ==
-  TriggeredAbility.thisAttackSentence .blinkNontoken
-#guard toString (TriggeredAbility.onThisAttack Effect.thisAttackEquippedDrain) ==
-  TriggeredAbility.thisAttackSentence .equippedDrain
-#guard toString (TriggeredAbility.onThisAttack Effect.thisAttackDrawIfPower4) ==
-  TriggeredAbility.thisAttackSentence .drawIfPower4
-#guard toString (TriggeredAbility.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible) ==
-  TriggeredAbility.thisAttackSentence .attacksAlonePlus2Indestructible
+/- The attack triggers carry unified `Instruction` bodies and keep their Oracle lines. -/
+#guard (TriggeredAbility.onThisAttack Effect.thisAttackMayPayPlusOne).effect.body == Effect.thisAttackMayPayPlusOne.body
+#guard (TriggeredAbility.onThisAttack Effect.thisAttackPayReturnAttacking).effect.body == Effect.thisAttackPayReturnAttacking.body
+#guard (TriggeredAbility.onThisAttack Effect.thisAttackIfArtifactEnteredDraw).effect.body == Effect.thisAttackIfArtifactEnteredDraw.body
+#guard (TriggeredAbility.onThisAttack Effect.thisAttackBlinkNontoken).effect.body == Effect.thisAttackBlinkNontoken.body
+#guard (TriggeredAbility.onThisAttack Effect.thisAttackEquippedDrain).effect.body == Effect.thisAttackEquippedDrain.body
+#guard (TriggeredAbility.onThisAttack Effect.thisAttackDrawIfPower4).effect.body == Effect.thisAttackDrawIfPower4.body
+#guard (TriggeredAbility.onThisAttack Effect.thisAttackAttacksAlonePlus2Indestructible).effect.body ==
+  Effect.thisAttackAttacksAlonePlus2Indestructible.body
 
 /- Ant-Man may pay {1}. Declining queues nothing. Paying queues the
 +1/+1 counter. -/
@@ -76,8 +51,8 @@ def antManOffer : Game :=
 
 #guard
   match antManOffer.pending with
-  | .fraChoice q (.mayPayManaForReflexive cost _ .plusOne _) =>
-    q == me && cost == #[.generic 1]
+  | .fraChoice q (.mayPayManaForReflexive cost _ eff _) =>
+    q == me && cost == #[.generic 1] && eff.body == Instruction.putPlusOne (.target 0) 1
   | _ => false
 
 def antManDeclines : Game :=
@@ -102,8 +77,9 @@ def reaperOffer : Game :=
 
 #guard
   match reaperOffer.pending with
-  | .fraChoice q (.mayPayManaForReflexive cost _ .returnAttacking _) =>
-    q == me && cost == #[.generic 3, .colored .black]
+  | .fraChoice q (.mayPayManaForReflexive cost _ eff _) =>
+    q == me && cost == #[.generic 3, .colored .black] &&
+      eff.targeting.spec == .creatureCardInYourGraveyard
   | _ => false
 
 /- Iron Man's draw is an intervening if: it does not trigger without an

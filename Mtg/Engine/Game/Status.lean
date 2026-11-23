@@ -23,6 +23,16 @@ inductive AttackTarget where
   | battle (b : ObjectId)            -- non-goal today (508.1b)
 deriving DecidableEq, Repr, Inhabited, BEq
 
+/-- Modifications applied as a permanent enters the battlefield from a non-cast
+effect (CR 614.1c / 508.4 / 611.2 / 122.6). -/
+inductive EnterMod where
+  | loseAllAbilities
+  | keywords (ks : Array KeywordAbility)
+  | additionalSubtype (sub : CardSubtype)
+  | attacking
+  | counter (kind : CounterKind) (n : Nat) (entersWith : Bool := true)
+deriving Repr, Inhabited, BEq
+
 /-- Permanent status (CR 110.5) and designations (CR 400.7 / 701.54b). -/
 structure Status where
   tapped : Bool := false

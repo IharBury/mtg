@@ -56,13 +56,12 @@ partial def continueOpeningShuffles (g : Game) (next : Nat) : Game :=
 
 /-- Pop any trailing empty `ContinuationFrame` (`f == {}`, such as one pushed by
 `promptChooseReplacement` or left after an aborted proposal) when no pending
-decision, replacement continuation, trigger sequence, or `mayThenResume` flag is
-active (CR 800.4a / 800.4i). -/
+decision, replacement continuation, or suspended interpreter wait is active
+(CR 800.4a / 800.4i). -/
 def popEmptyContinuationFrames (g : Game) : Game := Id.run do
   let mut g := g
   while g.pending == .none && g.pendingReplacement.isNone &&
-      g.outerPendingReplacements.isEmpty && g.triggerSequenceRest.isNone &&
-      !g.mayThenResume do
+      g.outerPendingReplacements.isEmpty && g.currentInterpWait?.isNone do
     match g.continuations.back? with
     | some f =>
       if f == {} then
@@ -724,10 +723,10 @@ private def finishPostCastRecipient? (g : Game) (caster : PlayerId)
     let prioTarget := if hadOpenContinuation then g.activePlayer else caster
     if g.over || g.livingPlayers.isEmpty then none
     else if let .chooseReplacement .. := g.pending then
-      if g.triggerSequenceRest.isSome then none
+      if g.currentInterpWait?.isSome then none
       else livingPriorityInstead? g prioTarget
     else if g.pending != Pending.none then none
-    else if g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then none
+    else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome then none
     else if g.afterRandom == .none && g.proposedSpell.isNone &&
         (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
       let g2 := g.reopenDeferredExileCasts
@@ -744,7 +743,7 @@ private def finishPostCastGrantsPriority (g : Game) (caster : PlayerId) : Bool :
     if g.over || g.livingPlayers.isEmpty then false
     else if let .chooseReplacement .. := g.pending then true
     else if g.pending != Pending.none then false
-    else if g.triggerSequenceRest.isSome || g.pendingReplacement.isSome then true
+    else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome then true
     else if g.afterRandom == .none && g.proposedSpell.isNone &&
         (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
       let g2 := g.reopenDeferredExileCasts
@@ -997,14 +996,11 @@ private partial def probeRestorePendingCore (g : Game) (hasQueuedPending : Bool)
           | none => popped
         .delegate gClean queued toRun
       | none =>
-        if gNext.unlessPaysDue && !gNext.sbaPaused && gNext.pending == .none then
-          .paused gNext false true
-        else
-          let settles :=
-            gNext.over || isSelfSettlingPending gNext.pending || gNext.afterRandom != .none ||
-              gNext.pendingReplacement.any
-                (continuationSettlesControlFlow (probeGameForPendingReplacement gNext) queued)
-          .paused gNext (queued || (gNext.pending == .none && gNext.pendingReplacement.isSome)) settles
+        let settles :=
+          gNext.over || isSelfSettlingPending gNext.pending || gNext.afterRandom != .none ||
+            gNext.pendingReplacement.any
+              (continuationSettlesControlFlow (probeGameForPendingReplacement gNext) queued)
+        .paused gNext (queued || (gNext.pending == .none && gNext.pendingReplacement.isSome)) settles
     let reverseOrPopped (gNext : Game) : RestoreProbeOutcome :=
       if gNext.proposedSpell.isSome then
         let prep := prepareReverseInRestorePending gNext curPopped? departed
@@ -1073,10 +1069,7 @@ private partial def probeRestorePendingCore (g : Game) (hasQueuedPending : Bool)
         resumePopped gNext hasQueuedPending
     match curP with
     | .none =>
-      if curPopped?.isNone && gCur.unlessPaysDue && !gCur.sbaPaused && gCur.pending == .none then
-        .paused gCur false true
-      else
-        resumePopped gCur hasQueuedPending
+      resumePopped gCur hasQueuedPending
     | .fraChoice caster (.costPicks ..)
     | .fraChoice caster (.crew ..)
     | .fraChoice caster (.zemoBoastExile ..)
@@ -1342,7 +1335,7 @@ private partial def classifyFinishConcedePriority (g : Game) (wasIdlePriority : 
         (deferRestore := true)
     else
       (g, false, savedPending, popOuter, departed, rewindProposal)
-  if g.over || g.sbaPaused || (g.unlessPaysDue && rewindProposal.isNone) then .settlesPromptOrOver
+  if g.over || g.sbaPaused then .settlesPromptOrOver
   else
     let g : Game :=
       match savedPending with
@@ -1362,7 +1355,7 @@ private partial def classifyFinishConcedePriority (g : Game) (wasIdlePriority : 
           | some popped => (g.change .popOuterPendingReplacement).chainPendingReplacement popped
           | none => g
         else g
-    if g.over || g.unlessPaysDue || wasAssigningCombatDamage.isSome then .settlesPromptOrOver
+    if g.over || wasAssigningCombatDamage.isSome then .settlesPromptOrOver
     else if let .chooseReplacement .. := g.pending then
       match g.firstContinuationPriorityGrant? with
       | some (some q) => .grants (some q)
@@ -1376,7 +1369,7 @@ private partial def classifyFinishConcedePriority (g : Game) (wasIdlePriority : 
       let g := g.popEmptyContinuationFrames
       if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
           !g.outerPendingReplacements.isEmpty ||
-          g.triggerSequenceRest.isSome || g.mayThenResume ||
+          g.currentInterpWait?.isSome ||
           (g.proposedSpell.isNone &&
             (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)) then
         match g.firstContinuationPriorityGrant? with
@@ -1389,12 +1382,12 @@ private partial def classifyFinishConcedePriority (g : Game) (wasIdlePriority : 
             .noGrant
           else if g.afterRandom == .none && g.proposedSpell.isNone &&
               (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) &&
-              g.pendingReplacement.isNone && g.outerPendingReplacements.isEmpty && !g.mayThenResume then
+              g.pendingReplacement.isNone && g.outerPendingReplacements.isEmpty then
             let g2 := g.reopenDeferredExileCasts
             if g2.over || g2.livingPlayers.isEmpty then .settlesPromptOrOver
             else if let .chooseReplacement .. := g2.pending then .implicitFra
             else if g2.pending != Pending.none || g2.afterRandom != .none then .settlesPromptOrOver
-            else if !g2.triggerSequenceRest.isSome && g2.triggerNeedingTargets.isSome &&
+            else if !g2.currentInterpWait?.isSome && g2.triggerNeedingTargets.isSome &&
                 (g2.promptTriggerTargetsIfNeeded).pending != Pending.none then
               .settlesPromptOrOver
             else .implicitFra
@@ -1416,7 +1409,7 @@ private partial def classifyFinishConcedePriority (g : Game) (wasIdlePriority : 
               if g2.over || g2.livingPlayers.isEmpty then .settlesPromptOrOver
               else if let .chooseReplacement .. := g2.pending then .implicitFra
               else if g2.pending != Pending.none || g2.afterRandom != .none then .settlesPromptOrOver
-              else if !g2.triggerSequenceRest.isSome && g2.triggerNeedingTargets.isSome &&
+              else if !g2.currentInterpWait?.isSome && g2.triggerNeedingTargets.isSome &&
                   (g2.promptTriggerTargetsIfNeeded).pending != Pending.none then
                 .settlesPromptOrOver
               else .implicitFra
@@ -1591,8 +1584,6 @@ private partial def classifyConcedePlayersLoop (g : Game) (remaining : Array Pla
   if midResolutionOrBatch then
     if g.sbaPaused then
       return .settlesPromptOrOver
-    else if g.unlessPaysDue && rewindProposal.isNone then
-      return .settlesPromptOrOver
     else
       g :=
         match saved? with
@@ -1612,7 +1603,7 @@ private partial def classifyConcedePlayersLoop (g : Game) (remaining : Array Pla
             | some popped => (g.change .popOuterPendingReplacement).chainPendingReplacement popped
             | none => g
           else g
-      if g.over || g.unlessPaysDue then
+      if g.over then
         return .settlesPromptOrOver
       else if let .chooseReplacement .. := g.pending then
         return if g.anyContinuationSettlesControlFlow then .settlesPromptOrOver else .noGrant
@@ -1623,7 +1614,7 @@ private partial def classifyConcedePlayersLoop (g : Game) (remaining : Array Pla
         let runSba :=
           g.continuations.isEmpty && g.currentBatch.isNone &&
             g.pendingReplacement.isNone && g.outerPendingReplacements.isEmpty &&
-            g.triggerSequenceRest.isNone && !g.mayThenResume
+            g.currentInterpWait?.isNone
         return classifyFinishConcedePriority g wasIdlePriority savedPendingPrio wasAssigningCombatDamage
           none false (runSba := runSba) (departed := departed)
   else if g.sbaPaused then
@@ -1838,13 +1829,9 @@ partial def continuationSettlesControlFlow (g : Game) (hasQueuedPending : Bool :
       | .completeActivation hadOuter _ =>
         if hadOuter then hasQueuedPending
         else g.proposedSpell.isSome && !g.livingPlayers.isEmpty
-      | .finishPostStep (.beginScryOne p) =>
-        g.stillInGame p && !(g.player p).library.isEmpty
       | .finishPostStep (.logInfluenceThenScryTwo sourceId _) =>
         (g.findObject? sourceId).any fun src =>
           src.isOnBattlefield && g.stillInGame (g.you src) && !(g.player (g.you src)).library.isEmpty
-      | .finishPostStep (.beginDiscardThenStun controller _) =>
-        g.stillInGame controller && !(g.player controller).hand.isEmpty
       | _ => false
 
 /-- Explicit priority recipient encoded by a priority-granting pending
@@ -1872,7 +1859,7 @@ partial def priorityRecipientOfContinuation? (g : Game) (hasQueuedPending : Bool
           #[EngineChange.castingFromTop false]
         finishPostCastRecipient? (g.changes clearChanges) caster openCont
     else if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then none
-    else if g.triggerSequenceRest.isSome then none
+    else if g.currentInterpWait?.isSome then none
     else livingPriorityInstead? g (if openCont then g.activePlayer else caster)
   | .finishProposedSpellCosts _ true false openCont =>
     if g.over || g.livingPlayers.isEmpty || hasQueuedPending then none
@@ -1886,7 +1873,7 @@ partial def priorityRecipientOfContinuation? (g : Game) (hasQueuedPending : Bool
               (g.findObject? prop.spellId).any (fun o =>
                 o.isOnBattlefield && o.status.faceDown && g.controlledBy o prop.caster)) then
             none
-          else if g.triggerSequenceRest.isSome then none
+          else if g.currentInterpWait?.isSome then none
           else livingPriorityInstead? g prop.caster
         else
           if !(g.stillInGame prop.caster && (g.findObject? prop.spellId).any (·.zone == .stack)) then
@@ -1901,7 +1888,7 @@ partial def priorityRecipientOfContinuation? (g : Game) (hasQueuedPending : Bool
             finishPostCastRecipient? (g.changes clearChanges) prop.caster openCont
   | .receivePriority p => livingPriorityInstead? g p
   | .completeActivation false openCont =>
-    if g.over || g.livingPlayers.isEmpty || g.triggerSequenceRest.isSome || hasQueuedPending then none
+    if g.over || g.livingPlayers.isEmpty || g.currentInterpWait?.isSome || hasQueuedPending then none
     else
       match g.proposedSpell with
       | none => none
@@ -1910,10 +1897,10 @@ partial def priorityRecipientOfContinuation? (g : Game) (hasQueuedPending : Bool
         else livingPriorityInstead? g (if openCont then g.activePlayer else prop.caster)
   | .finishBecomeActivated caster _ _ _ _ _ _ false openCont
   | .finishPostLoyaltyActivated caster _ _ _ _ _ _ false openCont =>
-    if g.over || g.livingPlayers.isEmpty || g.triggerSequenceRest.isSome || hasQueuedPending || !g.stillInGame caster then none
+    if g.over || g.livingPlayers.isEmpty || g.currentInterpWait?.isSome || hasQueuedPending || !g.stillInGame caster then none
     else livingPriorityInstead? g (if openCont then g.activePlayer else caster)
   | .finishTurnFaceUp caster spellId false =>
-    if g.over || g.livingPlayers.isEmpty || g.triggerSequenceRest.isSome || hasQueuedPending || !g.stillInGame caster then none
+    if g.over || g.livingPlayers.isEmpty || g.currentInterpWait?.isSome || hasQueuedPending || !g.stillInGame caster then none
     else if !(g.findObject? spellId).any (fun o =>
         o.isOnBattlefield && o.status.faceDown && g.controlledBy o caster) &&
         g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
@@ -2063,13 +2050,11 @@ partial def hasImplicitPriorityContinuation (g : Game) : Bool :=
   firstContinuationPriorityGrant? g == some none
 
 /-- Drain queued `g.pendingReplacement` continuations and paused
-`triggerSequenceRest` steps while no interactive `Pending` or `afterRandom`
+`currentInterpWait?` steps while no interactive `Pending` or `afterRandom`
 choice is open. -/
 @[export mtg_game_drain_pending_continuations]
 partial def drainPendingContinuations (g : Game) : Game :=
   if g.over || g.pending != .none || g.afterRandom != .none then g
-  else if g.mayThenResume then
-    g.acceptMayThenCore.drainPendingContinuations
   else
     match g.pendingReplacement with
     | some cont =>
@@ -2079,10 +2064,6 @@ partial def drainPendingContinuations (g : Game) : Game :=
       if g.currentInterpWait?.isSome &&
           !(g.proposedSpell.isNone && (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)) then
         let g := g.resumeInterpWaitIfReady
-        g.drainPendingContinuations
-      else if g.triggerSequenceRest.isSome &&
-          !(g.proposedSpell.isNone && (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)) then
-        let g := g.resumeTriggerSequence
         g.drainPendingContinuations
       else
         match g.outerPendingReplacements.back? with
@@ -2165,10 +2146,10 @@ partial def finishAndGrantPriority (g : Game)
     let g := g.reopenDeferredExileCasts
     if let .chooseReplacement .. := g.pending then
       if g.anyContinuationSettlesControlFlow then g
-      else if g.triggerSequenceRest.isSome || g.currentInterpWait?.isSome then g.chainPendingReplacement .finishFraChoice
+      else if g.currentInterpWait?.isSome then g.chainPendingReplacement .finishFraChoice
       else g.chainPendingReplacement (.receivePriority (g.priorityInstead p))
     else if g.pending != .none then g
-    else if g.triggerSequenceRest.isSome || g.currentInterpWait?.isSome || g.pendingReplacement.isSome ||
+    else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome ||
         !g.outerPendingReplacements.isEmpty then
       g.finishFraChoice
     else if g.triggerNeedingTargets.isSome then
@@ -2185,40 +2166,10 @@ partial def finishAndGrantPriority (g : Game)
 partial def finishAndGrantPriorityExport (g : Game) (prio : PlayerId) : Game :=
   g.finishAndGrantPriority prio
 
-/-- Run trigger-sequence steps and pending continuations, then give priority when
-nothing else is pending. -/
+/-- Run pending continuations and suspended interpreter waits, then give priority
+when nothing else is pending. -/
 partial def resumeSequenceThenPriority (g : Game) : Game :=
   g.finishAndGrantPriority
-
-/-- Clear `mayThen` state when its optional action was performed, running its
-conditional before any outer continuation, or chain `.acceptMayThen` if the
-optional action paused on `Pending.chooseReplacement`. -/
-partial def acceptMayThenCore (g : Game) : Game :=
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement .acceptMayThen
-  else
-    let g :=
-      match g.pendingReplacement with
-      | some outer => g.changes #[.pendingReplacement none, .pushOuterPendingReplacement outer]
-      | none => g
-    let g := g.changes #[
-      .pending .none,
-      .mayThenDrop 0,
-      .mayThenConditional none,
-      .mayThenResume false ]
-    if g.afterRandom == .none && g.triggerSequenceRest.isSome then
-      g.resumeTriggerSequence
-    else g
-
-/-- The optional action of `mayThen` was performed. Run its conditional, or
-defer via `.acceptMayThen` if the optional action paused on `Pending.chooseReplacement`. -/
-partial def acceptMayThen (g : Game) : Game :=
-  g.acceptMayThenCore.resumeSequenceThenPriority
-
-/-- The optional action of `mayThen` was declined. Skip its conditional and
-continue any later sequence steps. -/
-partial def declineMayThen (g : Game) : Game :=
-  g.declineMayThenCore.resumeSequenceThenPriority
 
 /-- Continue a discard chain. When no one is left to discard, put the waiting
 +1/+1 counter (Ninja of the Hand) if any. -/
@@ -2230,8 +2181,8 @@ partial def continueAfterDiscard (g : Game) (players : Array PlayerId)
   else g
 
 /-- Clear a finished Reality Fracture choice and let the game continue. Any
-pending replacement/batch continuation runs first, then a paused trigger
-sequence runs its remaining steps. -/
+pending replacement/batch continuation runs first, then any suspended
+interpreter continuation resumes. -/
 partial def finishFraChoice (g : Game) : Game :=
   if let .chooseReplacement .. := g.pending then
     if g.anyContinuationSettlesControlFlow then g
@@ -2276,7 +2227,7 @@ partial def finishFraChoice (g : Game) : Game :=
           if g.anyContinuationSettlesControlFlow then g
           else g.chainPendingReplacement .finishFraChoice
         else if g.pending != .none then g
-        else if g.triggerSequenceRest.isSome || g.currentInterpWait?.isSome || g.pendingReplacement.isSome ||
+        else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome ||
             !g.outerPendingReplacements.isEmpty then
           g.finishFraChoice
         else if g.triggerNeedingTargets.isSome then
@@ -2305,36 +2256,6 @@ partial def finishWardAndDrain (g : Game)
   if g.over then g.completeActiveResolutions
   else if g.pending == .none && g.afterRandom == .none then g.popEmptyContinuationFrames
   else g
-
-/-- Apply the stashed `unlessPaysInstead` fallback effect when the payer of a
-pending `.payOrLetCounter` leaves the game (CR 800.4a / 800.4f), preserving any
-queued `pendingReplacement` continuation and resuming active continuations via
-`finishAndGrantPriority` (matching `decline` `.payOrLetCounter`). -/
-partial def flushUnlessPays (g : Game) : Game :=
-  if !g.unlessPaysDue then g
-  else
-    let outerCont? := g.pendingReplacement
-    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let instead := g.unlessPaysInstead
-    let caster := g.unlessPaysController
-    let targets := g.unlessPaysTargets
-    let sourceId := g.unlessPaysSource
-    let ctx := g.unlessPaysResCtx
-    let g := g.clearUnlessPays
-    let g :=
-      match instead with
-      | some effect =>
-        g.applyUnified caster effect targets
-          (castFromGraveyard := ctx.castFromGraveyard) (kicked := ctx.kicked)
-          (giftPromised := ctx.giftPromised) (chosenX := ctx.chosenX)
-          (sourceId := sourceId) (lastKnownPower := ctx.lastKnownPower)
-          (lastKnownToughness := ctx.lastKnownToughness)
-      | none => g
-    let g :=
-      match outerCont? with
-      | some outer => g.chainPendingReplacement outer
-      | none => g
-    g.finishAndGrantPriority
 
 /-- Finish an idle-priority or combat-assignment concession after any CR 616.1 /
 704.5j SBA pause inside `playerLeavesGame` or `checkSBA` completes (CR 800.4a /
@@ -2372,14 +2293,6 @@ partial def finishConcedePriority (g : Game) (wasIdlePriority : Bool)
     g.chainPendingReplacement
       (.finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage
         savedPending popOuter departed rewindProposal)
-  else if g.unlessPaysDue && rewindProposal.isNone then
-    let g :=
-      if savedPending.isNone && popOuter then
-        match g.outerPendingReplacements.back? with
-        | some popped => (g.change .popOuterPendingReplacement).chainPendingReplacement popped
-        | none => g
-      else g
-    g.flushUnlessPays
   else
     let g :=
       match savedPending with
@@ -2400,14 +2313,13 @@ partial def finishConcedePriority (g : Game) (wasIdlePriority : Bool)
           | none => g
         else g
     if g.pending != .none then g
-    else if g.unlessPaysDue then g.flushUnlessPays
     else if let some fa := wasAssigningCombatDamage then
       if fa then g.beginCombatDamageAssignment else g.continueBlockerCombatAssignment
     else
       let g := g.popEmptyContinuationFrames
       if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
           !g.outerPendingReplacements.isEmpty ||
-          g.triggerSequenceRest.isSome || g.mayThenResume ||
+          g.currentInterpWait?.isSome ||
           (g.proposedSpell.isNone &&
             (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)) then
         g.finishFraChoice
@@ -2542,7 +2454,7 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
           let alreadySettles := g.anyContinuationSettlesControlFlow
           if !rem.isEmpty || wasPregame || !midResolutionOrBatch || !alreadySettles ||
               wasAssigningCombatDamage.isSome || saved?.isSome || popOuter ||
-              rewindProposal.isSome || g.unlessPaysDue then
+              rewindProposal.isSome then
             g := g.chainPendingReplacement
               (.concedePlayersLoop rem wasPregame midResolutionOrBatch wasIdlePriority
                 savedPendingPrio wasAssigningCombatDamage saved? popOuter departed rewindProposal)
@@ -2597,17 +2509,12 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
     if g.sbaPaused then
       let alreadySettles := g.anyContinuationSettlesControlFlow
       if !alreadySettles || wasAssigningCombatDamage.isSome || saved?.isSome || popOuter ||
-          rewindProposal.isSome || g.unlessPaysDue then
+          rewindProposal.isSome then
         return g.chainPendingReplacement
           (.concedePlayersLoop #[] false true wasIdlePriority
             savedPendingPrio wasAssigningCombatDamage saved? popOuter departed rewindProposal)
       else
         return g
-    else if g.unlessPaysDue && rewindProposal.isNone then
-      if saved?.isNone && popOuter then
-        if let some popped := g.outerPendingReplacements.back? then
-          g := (g.change .popOuterPendingReplacement).chainPendingReplacement popped
-      return g.flushUnlessPays
     else
       g :=
         match saved? with
@@ -2628,13 +2535,12 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
             | none => g
           else g
       if g.pending != .none then return g
-      else if g.unlessPaysDue then return g.flushUnlessPays
       else
         g := g.popEmptyContinuationFrames
         let runSba :=
           g.continuations.isEmpty && g.currentBatch.isNone &&
             g.pendingReplacement.isNone && g.outerPendingReplacements.isEmpty &&
-            g.triggerSequenceRest.isNone && !g.mayThenResume
+            g.currentInterpWait?.isNone
         return g.finishConcedePriority wasIdlePriority savedPendingPrio wasAssigningCombatDamage
           none false (runSba := runSba) (departed := departed)
   else if g.sbaPaused then
@@ -2861,13 +2767,13 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       (extraCounters := extraCounters) (recordRecent := recordRecent) (cause := cause)).1
   | .createTreasureTokens controller n tapped cause =>
     g.createTreasureTokens controller n (tapped := tapped) (cause := cause)
-  | .createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause copyCtx =>
+  | .createKindTokens controller kind n tapped attacking attackingTarget resetRecent cause copyEnv =>
     g.createKindTokens controller kind n (tapped := tapped) (attacking := attacking)
       (attackingTarget := attackingTarget) (resetRecent := resetRecent) (cause := cause)
-      (copyCtx := copyCtx)
-  | .createAndMarkTokensAttacking controller kind n tapped holds sourceId cause copyCtx =>
+      (copyEnv := copyEnv)
+  | .createAndMarkTokensAttacking controller kind n tapped holds sourceId cause copyEnv =>
     g.createAndMarkTokensAttacking controller kind n tapped holds (sourceId := sourceId)
-      (cause := cause) (copyCtx := copyCtx)
+      (cause := cause) (copyEnv := copyEnv)
   | .commitEnteringAttackItems chosen cause resetRecent postEntries preBattlefield =>
     g.commitEnteringAttackItems chosen (cause := cause) (resetRecent := resetRecent)
       (postEntries := postEntries) (preBattlefield := preBattlefield)
@@ -2929,8 +2835,6 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     g.moveCardsToGraveyardLoop ids cause
   | .placeSearchedGraveyardLoop ids cause pendingLog =>
     g.placeSearchedGraveyardLoop ids cause pendingLog
-  | .returnLinkedExileToHandLoop srcId ids pendingItem =>
-    g.returnLinkedExileToHandLoop srcId ids pendingItem
   | .finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage savedPending popOuter departed rewindProposal =>
     g.finishConcedePriority wasIdlePriority savedPendingPrio wasAssigningCombatDamage
       savedPending popOuter (runSba := true) (departed := departed) (rewindProposal := rewindProposal)
@@ -3162,12 +3066,16 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
           else g
       else
         resumePoppedIfNoPrompt g
+    let flushUnlessPaysWait (g : Game) : Game :=
+      if !g.sbaPaused && g.pending == .none &&
+          g.currentInterpWait?.any (fun st =>
+            match st.stack.back? with | some (.unlessPays ..) => true | _ => false) &&
+          (g.currentStepEnv.find? (·.1 == ⟨999⟩)).isSome then
+        g.resumeInterpWaitIfReady
+      else g
     match p with
     | .none =>
-      let g := resumePoppedIfNoPrompt g
-      if g.unlessPaysDue && !g.sbaPaused && g.pending == .none then
-        g.flushUnlessPays
-      else g
+      flushUnlessPaysWait (resumePoppedIfNoPrompt g)
     | .fraChoice caster (.costPicks ..)
     | .fraChoice caster (.crew ..)
     | .fraChoice caster (.zemoBoastExile ..)
@@ -3247,7 +3155,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
           (g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o) then
         openPrompt g
       else
-        let g := g.changes #[.pending .none, .chooseModesRest none]
+        let g := g.change (.pending .none)
         let g :=
           if g.stillInGame q && g.stillInGame caster &&
               !(g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o) then
@@ -3353,10 +3261,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
         if nextP != .none then
           openPromptWith g nextP
         else
-          let g := resumePoppedIfNoPrompt g
-          if g.unlessPaysDue && !g.sbaPaused && g.pending == .none then
-            g.flushUnlessPays
-          else g
+          flushUnlessPaysWait (resumePoppedIfNoPrompt g)
   | .closeBatch batchId startIdx =>
     g.finishOpenBatchAndLinkedExile batchId startIdx
   | .restorePausedBatch batchId startIdx wasDiscard cause objects players effects pending stack closeIfOrphaned queuedLinkedExile =>
@@ -3412,7 +3317,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
         (if g.proposalCheckpoint.isSome then #[EngineChange.clearProposalCheckpoint] else #[])
       let g := if clearChanges.isEmpty then g else g.changes clearChanges
       if g.over || g.pending != .none then g
-      else if !hadOuter && (g.pendingReplacement.isSome || g.triggerSequenceRest.isSome) then
+      else if !hadOuter && (g.pendingReplacement.isSome || g.currentInterpWait?.isSome) then
         resumeAfterBecomeCast (g.chainPendingReplacement .finishFraChoice)
       else if !hadOuter && grantPriority then
         g.receivePriority (g.priorityInstead (if hadOpenCont then g.activePlayer else caster))
@@ -3523,20 +3428,12 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     | none => g
   | .loseLifeAfterDraw p life cause =>
     g.loseLife p life (cause := cause)
-  | .continueUnified controller effect steps targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower lastKnownToughness =>
-    g.runUnifiedSteps controller effect steps targets castFromGraveyard kicked giftPromised chosenX sourceId lastKnownPower lastKnownToughness
-  | .continueUnifiedAbility controller effect steps targets sourceId lastKnownPower chosenX lastKnownToughness =>
-    g.runUnifiedAbilitySteps controller effect steps targets sourceId lastKnownPower chosenX lastKnownToughness
   | .continueInterpreter st =>
     g.withContinuationFrame fun g => g.resumeInterpreter st
   | .continueSpellModes controller modeEffects remainingTargets castFromGraveyard kicked giftPromised chosenX sourceId skippedOptionalSlots lastKnownPower lastKnownToughness =>
     g.runSpellModesAndEmpower controller modeEffects remainingTargets castFromGraveyard kicked giftPromised chosenX sourceId skippedOptionalSlots lastKnownPower lastKnownToughness
   | .empowerJace controller n stage targetId cause =>
     g.empowerJaceStep controller n stage targetId cause
-  | .continueTriggeredSequence controller steps sourceId targets dividedDamage lastKnownPower lastKnownToughness sourceName =>
-    g.runTriggeredSequenceSteps controller steps sourceId targets dividedDamage lastKnownPower lastKnownToughness sourceName
-  | .continueTriggeredModes controller ab remainingModes sourceId targets dividedDamage lastKnownPower lastKnownToughness sourceName =>
-    g.runChosenTriggeredModes controller ab remainingModes sourceId targets dividedDamage lastKnownPower lastKnownToughness sourceName
   | .continueConnives controller remainingIds =>
     g.runConniveObjects controller remainingIds
   | .dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens onlyOpponentsOf source cause startEventIdx suppressLifelink =>
@@ -3584,13 +3481,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
   | .exilePermanentsLoop remainingIds logExile cause logCard =>
     g.exilePermanentsLoop remainingIds (logExile := logExile) (cause := cause)
       (logCard := logCard)
-  | .causeDealsDamageToOpponentsLoop remainingOpps n name causeSrc cause pendingDmg startEventIdx =>
-    g.causeDealsDamageToOpponentsLoop remainingOpps n name causeSrc cause pendingDmg startEventIdx
   | .flickerLoop remainingIds exiledPreIds enteredFromIds logText stage tapped onlyLandTapped clearExileFields cause preBattlefield =>
     g.resumeFlickerLoop remainingIds exiledPreIds enteredFromIds logText stage
       tapped onlyLandTapped clearExileFields cause preBattlefield
-  | .finishMillSubtypeOrEnchantment p preIds subtype =>
-    g.finishMillSubtypeOrEnchantment p preIds subtype
   | .finishMillChooseForHand p preIds types matchedPreIds max mustOne allMatches maxPut cause =>
     if allMatches then
       let pred : GameObject → Bool :=
@@ -3602,17 +3495,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
         if !types.isEmpty then (fun _ o => types.any (g.hasType o ·))
         else (fun preId _ => matchedPreIds.contains preId)
       g.finishMillChooseForHand p preIds pred max mustOne (cause := cause)
-  | .makeFrcLoop p kind remaining x extraCounters cause copyCtx =>
-    g.makeFrcLoop p kind remaining x extraCounters cause copyCtx
-  | .finishFrcRestBottom p rest shuffle cause dackTargets =>
-    g.finishFrcRestBottom p rest shuffle (cause := cause) (dackTargets := dackTargets)
-  | .finishFrcPostStep step =>
-    g.runFrcPostStep step
   | .finishPostStep step =>
     g.runPostStep step (followedByFinishFra := followedByFinishFra)
       (followedByExplicitPriority? := followedByExplicitPriority?)
-  | .acceptMayThen =>
-    g.acceptMayThenCore
   | .setLife p life msg cause =>
     g.setLife p life msg (cause := cause)
   | .logMessage msg =>
@@ -3678,35 +3563,12 @@ partial def runPostStep (g : Game) (step : PostStep)
     (followedByFinishFra : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   match step with
-  | .putArtifactOntoBattlefield p cardId hostId =>
+  | .putArtifactOntoBattlefield p cardId _ =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
       let g := g.logMsg s!"{(g.player p).name} puts {g.name entered} onto the battlefield"
-      let g := g.afterPermanentEnters entered
-      if let some hid := hostId then g.change (.putArtifactThisWay (some (entered.id, hid))) else g
+      g.afterPermanentEnters entered
     | none => g
-  | .copyEnteredArtifact controller artifactId =>
-    g.copyEnteredArtifact controller artifactId
-  | .grantHandSizePower sourceId =>
-    g.grantHandSizePower sourceId
-  | .beginScryOne p =>
-    g.beginScry p 1
-  | .copyCastTriggerSpell p =>
-    g.copyCastTriggerSpell p
-  | .destroyTargetLandThenOfferSearchBasics controller sourceId cardId =>
-    match cardId.bind g.findObject? with
-    | some o =>
-      if o.isOnBattlefield && g.isLand o && g.canBeTargetedBy controller o sourceId then
-        let owner := o.owner
-        let g := g.destroyPermanent o
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement (.finishPostStep (.offerMaySearchBasics owner))
-        else
-          g.offerMaySearchBasics owner
-      else g.logMsg "The target is no longer legal"
-    | none => g.logMsg "The target is no longer legal"
-  | .offerMaySearchBasics owner =>
-    g.offerMaySearchBasics owner
   | .continueDiscardTwo controller rest draws chosen =>
     g.continueDiscardTwo controller rest draws chosen
   | .finishDiscardTwoDraws controller baseDraws oppIds startIdx =>
@@ -3723,33 +3585,6 @@ partial def runPostStep (g : Game) (step : PostStep)
         (cause := cause)
   | .hawkeyeArrows controller modes targets targetIdx sourceId =>
     g.runHawkeyeArrows controller modes targets targetIdx sourceId
-  | .loseLifeForLoggedDraws p beforeDraws =>
-    let drawn := g.loggedDraws p - beforeDraws
-    g.loseLife p drawn
-  | .returnTappedWithEndStepExile controller cardId sourceId cause =>
-    match g.followMovedToZone? cardId (· == .battlefield) with
-    | some entered =>
-      let g := g.logMsg s!"{g.name entered} returns to the battlefield tapped under {(g.player controller).name}'s control"
-      let src := (sourceId.bind g.findObject?).orElse (fun _ => some entered)
-      let g := g.registerDelayedTrigger
-        { controller, source := src, kind := .endStepExile entered.id, cause }
-      g.afterPermanentEnters entered
-    | none => g
-  | .beginDiscardThenStun controller sourceId =>
-    if !g.stillInGame controller then g
-    else
-      let cnt := Nat.min 2 (g.player controller).hand.size
-      if cnt == 0 then g
-      else
-        g.beginFraChoice controller (.discardThenStun cnt sourceId)
-          s!"{(g.player controller).name} discards {cnt} card(s)"
-  | .afterRecentTokensEnter =>
-    g.recentTokenIds.foldl (fun g tid =>
-      match g.findObject? tid with
-      | some entered => if entered.isOnBattlefield then g.afterPermanentEnters entered else g
-      | none => g) g
-  | .drainOpponents controller amount sourceId cause =>
-    g.drainOpponents controller amount (sourceId.bind g.damageSourceById?) (cause := cause)
   | .addPlusOnesForLoggedDiscards p sourceId =>
     if !g.stillInGame p then g
     else
@@ -3757,13 +3592,10 @@ partial def runPostStep (g : Game) (step : PostStep)
       match sourceId.bind (fun id => (g.findObject? id).filter (·.isOnBattlefield)) with
       | some o => if cnt > 0 then g.addPlusOnePlusOneTo o cnt else g
       | none => g
-  | .addRedManaIfPositive p count sourceId =>
-    if count > 0 then g.addManaLogged p #[.colored .red] (source := sourceId) else g
   | .enteredBattlefieldSilent cardId isLand
   | .returnedBattlefieldEndStep cardId isLand
   | .returnedToBattlefield cardId isLand
-  | .returnedToBattlefieldTapped cardId isLand
-  | .enteredBattlefieldTapped cardId isLand =>
+  | .returnedToBattlefieldTapped cardId isLand =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
       let g :=
@@ -3782,37 +3614,11 @@ partial def runPostStep (g : Game) (step : PostStep)
             g.logMsg s!"{g.name entered} returns to the battlefield"
         | .returnedToBattlefieldTapped .. =>
           g.logMsg s!"{g.name entered} returns to the battlefield tapped"
-        | .enteredBattlefieldTapped .. =>
-          g.logMsg s!"{g.name entered} enters the battlefield tapped"
         | _ => g
       if isLand then g.afterLandEnters entered else g.afterPermanentEnters entered
     | none => g
-  | .empowerJaceExcessDamage controller targetId lethal startIdx =>
-    let dealt := g.damageDealtToPermanentSince targetId startIdx
-    let excess := dealt - lethal
-    if excess > 0 then g.empowerJace controller excess else g
   | .searchBasicLandTapped p =>
     g.beginLibrarySearch p isBasicLandCard "a basic land card" (.battlefield true)
-  | .fightTargetOpponentCreature controller sourceId targets =>
-    g.withLegalSpecPermanent controller .oppCreature targets (fun g tgt =>
-      match sourceId.bind g.findObject? with
-      | some src =>
-        if src.isOnBattlefield && tgt.isOnBattlefield && g.isCreature src && g.isCreature tgt then
-          g.fightCreatures src tgt
-        else g.logMsg "The source is no longer in play"
-      | none => g.logMsg "The source is no longer in play")
-      sourceId (some "The target is no longer legal")
-  | .enteredOfferAttachEquipment controller cardId =>
-    match g.followMovedToZone? cardId (· == .battlefield) with
-    | some entered =>
-      let name := g.name entered
-      let g := g.afterPermanentEnters entered
-      if g.pending != .none then g
-      else if (g.permanentsOf controller).any (g.isEquipment ·) then
-        g.change (.pending (.mayAttachEquipment controller entered.id))
-          |>.logMsg s!"{(g.player controller).name} may attach an Equipment to {name}"
-      else g
-    | none => g
   | .putOntoBattlefieldHasteAtFour p cardId x shuffle =>
     let g :=
       match g.followMovedToZone? cardId (· == .battlefield) with
@@ -3828,47 +3634,9 @@ partial def runPostStep (g : Game) (step : PostStep)
   | .shuffleThenGainLife p life =>
     g.withContinuationFrame fun g =>
       (g.requestShuffle p (.gainLife p life)).continueIfShuffled
-  | .offerCreaturesFromHandToBattlefield controller cause =>
-    let creatures := (g.player controller).hand.filter (fun id => (g.findObject? id).any (g.isCreature ·))
-    g.offerCardChoice controller creatures creatures.size .creaturesToBattlefield
-      s!"{(g.player controller).name} may put any number of creature cards from their hand onto the battlefield"
-      (cause := cause)
-  | .enteredAttachedToSource attachmentId hostId =>
-    match g.followMovedToZone? attachmentId (· == .battlefield) with
-    | some entered =>
-      let hostName := ((g.findObject? hostId).map g.name).getD "permanent"
-      let g := g.logMsg s!"{g.name entered} enters the battlefield attached to {hostName}"
-      g.afterPermanentEnters entered
-    | none => g
-  | .treasureThenDragonAfterCreate controller sourceId =>
-    g.treasureThenDragonAfterCreate controller sourceId
-  | .treasureThenDragonCreateDragon controller =>
-    g.treasureThenDragonCreateDragon controller
-  | .logAndEnterRecentTokens =>
-    g.recentTokenIds.foldl (fun g tid =>
-      match g.findObject? tid with
-      | some entered =>
-        if entered.isOnBattlefield then
-          (g.logMsg s!"{g.name entered} enters the battlefield").afterPermanentEnters entered
-        else g
-      | none => g) g
   | .dealDamageToEachOpponent p amount sourceId cause startEventIdx =>
     g.dealDamageToEachOpponent p amount (source := sourceId.bind g.damageSourceById?)
       (cause := cause) (startEventIdx := startEventIdx)
-  | .noteExcessDamageDealt targetId lethal startIdx =>
-    let dealt := g.damageDealtToPermanentSince targetId startIdx
-    g.change (.excessDamageThisWay (dealt - lethal))
-  | .notePermanentDealtDamage targetId startIdx =>
-    let marked := (g.findObject? targetId).any (·.isOnBattlefield) && g.damageDealtToPermanentSince targetId startIdx > 0
-    if marked then g.change (.permanentDealtDamageThisWay (some targetId)) else g
-  | .logTwoNonlegendaryCopyTokens sourceId startEventIdx =>
-    if !(g.tokensCreatedSince startEventIdx).isEmpty then
-      let srcName :=
-        match sourceId.bind g.findObject? with
-        | some src => g.name src
-        | none => ((sourceId.bind g.lastKnownBefore?).map (fun (eo : EventObject) => eo.name)).getD "source"
-      g.logMsg s!"two nonlegendary tokens that are copies of {srcName} are created"
-    else g
   | .discardCleanupIds p remainingIds justDiscarded =>
     let g :=
       match justDiscarded with
@@ -3960,8 +3728,6 @@ partial def runPostStep (g : Game) (step : PostStep)
             s!"{(g.player p).name} may transform {g.name o}"
         else g.putRestOnBottomRandom p rest (cause := cause)
       | none => g.putRestOnBottomRandom p rest (cause := cause)
-  | .noteHandDiscardedCount count sourceId =>
-    g.changes #[.handDiscardedThisWay (some count), .notedSourceThisWay sourceId]
   | .checkDrawThenOpponentsDraw p beforeDraws =>
     if g.loggedDraws p == beforeDraws then g
     else
@@ -3992,8 +3758,6 @@ partial def runPostStep (g : Game) (step : PostStep)
       let milled := tops.filterMap (fun id => g.followMilledPublic? id)
       let mv := milled.foldl (fun acc o => acc + g.objectManaValue o) 0
       g.loseLife p mv (cause := cause)
-  | .eaglesReturnCreaturesLoop controller returnedCount sourceId remainingIds cause targeted pendingReturn =>
-    g.eaglesReturnCreaturesLoop controller returnedCount sourceId remainingIds cause targeted pendingReturn
   | .addPlusOnesToSource sourceId count =>
     match g.findObject? sourceId with
     | some src => if src.isOnBattlefield then g.addPlusOnePlusOneTo src count else g
@@ -4025,92 +3789,8 @@ partial def runPostStep (g : Game) (step : PostStep)
         g.beginScry (g.you src) 2
       else g
     | none => g
-  | .finishPalantirInfluence controller sourceId beforeInfluence targetOpponent =>
-    let after := ((g.findObject? sourceId).map (·.status.influence)).getD beforeInfluence
-    let g :=
-      match g.findObject? sourceId with
-      | some src =>
-        if src.isOnBattlefield && after > beforeInfluence then
-          g.logMsg s!"{g.name src} gets an influence counter"
-        else g
-      | none => g
-    match targetOpponent with
-    | some opp =>
-      if after > beforeInfluence then
-        g.change (.palantirChoiceReady (some (controller, opp, sourceId)))
-      else g
-    | none => g
-  | .noteMilledIds tops =>
-    let milled := tops.filterMap (fun id => (g.followMilledPublic? id).map (·.id))
-    g.change (.milledIdsThisWay milled)
-  | .noteOpponentsMilled opponents startIdx =>
-    g.change (.opponentsMilledThisWay (g.anyOpponentMilledSince opponents startIdx))
   | .logCreatedTokensSummary controller startEventIdx =>
     g.logCreatedTokensSummary controller startEventIdx
-  | .offerWorldsCreatures controller startIdx creatureIds sourceId =>
-    let exiled := creatureIds.filterMap (fun id =>
-      if g.wasPermanentExiled id startIdx then
-        (g.followMovedToZone? id (· == .exile)).map (·.id)
-      else none)
-    let order := let apnap := g.apnapOrder; if apnap.isEmpty then #[controller] else apnap
-    g.offerWorldsCreatures order.toList exiled #[] sourceId
-  | .identityEchoAfterExile controller exiledId sourceId =>
-    let oName := (g.lastKnownBefore? exiledId).map (·.name) |>.getD "The permanent"
-    g.finishIdentityEchoAfterExile controller exiledId sourceId oName
-  | .logShuffleIntoLibrary owner cardId =>
-    let g :=
-      if (g.followMovedToZone? cardId (· == .library owner)).isSome then
-        let oName := (g.lastKnownBefore? cardId).map (·.name) |>.getD "it"
-        g.logMsg s!"{(g.player owner).name} shuffles {oName} into their library"
-      else g
-    if !g.stillInGame owner then g else g.shuffleThen owner .none
-  | .empowerJaceExiledCount controller startIdx creatureIds =>
-    let count := creatureIds.foldl (fun acc id => if g.wasPermanentExiled id startIdx then acc + 1 else acc) 0
-    g.empowerJace controller count
-  | .reflexiveReturnLandTapped controller sourceId =>
-    g.applyEffect controller (fraNextToEffect .reflexiveReturnLandTapped) #[] (sourceId := sourceId)
-  | .offerPutMilledPermanentOrGainLife controller preIds life =>
-    if !g.stillInGame controller then g
-    else
-      let choices := preIds.filterMap (fun id =>
-        match g.followMilledPublic? id with
-        | some o => if g.isPermanentCard o then some o.id else none
-        | none => none)
-      if choices.isEmpty then g.gainLife controller life
-      else
-        g.beginFraChoice controller (.mayPutMilledPermanent choices life)
-          s!"{(g.player controller).name} may put a permanent card milled this way into their hand"
-  | .worldsWithinWorlds exiled chosen sourceId =>
-    g.finishWorldsWithinWorlds exiled chosen sourceId
-  | .millMayPutPermanentGainLife p tops life =>
-    g.finishMillMayPutPermanentGainLife p tops life
-  | .offerSearchBasicsExiledCount p startIdx attackerIds =>
-    let count := attackerIds.foldl (fun acc id => if g.wasPermanentExiled id startIdx then acc + 1 else acc) 0
-    g.offerMaySearchBasics p count
-  | .enteredThenPutRestBottomRandom cardId libraryOwner rest cause =>
-    let g :=
-      match g.followMovedToZone? cardId (· == .battlefield) with
-      | some entered =>
-        (g.logMsg s!"{g.name entered} enters the battlefield").afterPermanentEnters entered
-      | none => g
-    g.putRestOnBottomRandom libraryOwner rest (cause := cause)
-  | .createdTokenNote controller followup startEventIdx =>
-    g.finishCreatedTokenNote controller followup startEventIdx
-  | .noteExiledIds eligible =>
-    let exiled := eligible.filterMap (fun id => (g.followMovedToZone? id (· == .exile)).map (·.id))
-    g.change (.exiledIdsThisWay exiled)
-  | .logReturnsToBattlefieldAndEnter cardId =>
-    match g.followMovedToZone? cardId (· == .battlefield) with
-    | some entered =>
-      (g.logMsg s!"{g.name entered} returns to the battlefield").afterPermanentEnters entered
-    | none => g
-  | .logPutUnderOwnerControlAndEnter cardId =>
-    match g.followMovedToZone? cardId (· == .battlefield) with
-    | some entered =>
-      (g.logMsg s!"{g.name entered} is put onto the battlefield under its owner's control").afterPermanentEnters entered
-    | none => g
-  | .returnNotedLandsStep remaining entered =>
-    g.returnNotedLandsStep remaining entered
   | .putRestOnBottomRandom p rest cause =>
     g.putRestOnBottomRandom p rest (cause := cause)
   | .millSourceInfluenceCount controller sourceId =>
@@ -4118,32 +3798,8 @@ partial def runPostStep (g : Game) (step : PostStep)
       let n := ((g.damageSourceById? sourceId).map (·.status.influence)).getD 0
       g.mill controller n
     else g
-  | .grantCantBeBlockedIfOnBattlefield cardId =>
-    match g.findObject? cardId with
-    | some cur =>
-      if cur.isOnBattlefield then g.grantCantBeBlockedThisTurn cur else g
-    | none => g
-  | .logReturnsAsArtifactAndEnter cardId =>
-    match g.followMovedToZone? cardId (· == .battlefield) with
-    | some entered =>
-      if entered.isOnBattlefield then
-        (g.logMsg s!"{g.name entered} returns as an artifact").afterPermanentEnters entered
-      else g
-    | none => g
-  | .worldsWithinWorldsExileSelf sourceId =>
-    g.finishWorldsWithinWorldsExileSelf sourceId
-  | .notedLandsEntered entered =>
-    g.finishNotedLandsEntered entered
-  | .noteSacrificedSource ids =>
-    let anySac := ids.any (fun id => !(g.findObject? id).any GameObject.isOnBattlefield)
-    if anySac then g.change (.sourceWasSacrificed true) else g
-  | .noteSacrificedPlan ids =>
-    let anySac := ids.any (fun id => !(g.findObject? id).any GameObject.isOnBattlefield)
-    if anySac then g.change (.planWasSacrificed true) else g
   | .continueOpeningBegin remainingIds =>
     g.continueOpeningBegin remainingIds
-  | .worldsReturnExiledLoop remainingIds pendingCard =>
-    g.worldsReturnExiledLoop remainingIds pendingCard
   | .logMovedToExile cardId =>
     match g.followMovedToZone? cardId (· == .exile) with
     | some moved => g.logMsg s!"{g.name moved} is exiled"
@@ -4390,7 +4046,7 @@ partial def runPostStep (g : Game) (step : PostStep)
           else
             let sorted := validChosen.qsort (· < ·)
             let eff : Effect :=
-              if sorted.isEmpty then { resolution? := some (Resolution.hawkeyeArrows []), phrase := "" }
+              if sorted.isEmpty then { body := .noop, phrase := "" }
               else hawkeyeArrowsEffect sorted
             let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
             let g := g.changeObject obj.id (.abilityEffect (some eff))
@@ -4423,13 +4079,6 @@ partial def runPostStep (g : Game) (step : PostStep)
         g.logMsg s!"{g.name cur} gains lifelink until end of turn"
       else g
     | none => g
-  | .grantHasteUntilEotSilent cardId cause =>
-    match g.findObject? cardId with
-    | some cur =>
-      if cur.isOnBattlefield then
-        g.createEffect (.keywordsUntilEot cur.id #[Keyword.haste]) (cause := cause)
-      else g
-    | none => g
   | .endTurnAfterCleanupStepEnded =>
     g.endTurnAfterCleanupStepEnded
   | .startNextTurnAndBegin =>
@@ -4458,14 +4107,6 @@ partial def runPostStep (g : Game) (step : PostStep)
     g.beginStepAfterPhaseBegan st
   | .beginStepBody st =>
     g.beginStepBody st
-  | .tapAndStunTargetsLoop controller remaining sourceId cause =>
-    let spec :=
-      (g.resolvingSpell.bind g.findObject? |>.bind g.currentSpellEffect |>.map (·.targetSpec)).orElse
-        (fun _ =>
-          g.resolvingAbility.bind g.findObject? |>.bind fun o =>
-            (o.abilityEffect.map (·.targetSpec)).orElse (fun _ => o.triggeredAbility.map (·.targetSpec)))
-        |>.getD .creature
-    g.tapAndStunTargetsLoop controller spec remaining sourceId cause
   | .exileZemoBoastCards p abilityId remainingIds =>
     g.exileZemoBoastCards p abilityId remainingIds
   | .grantAdventureExilePermission controller cardId cause =>
@@ -4505,55 +4146,11 @@ partial def runPostStep (g : Game) (step : PostStep)
     g.finishExileTopMayCastUpToOffer caster arrived casts
   | .finishExileUntilNextEndStep controller fromId cause =>
     g.finishExileUntilNextEndStep controller fromId cause
-  | .finishFraExileUntilSourceLeaves sourceId fromId =>
-    g.finishFraExileUntilSourceLeaves sourceId fromId
-  | .uldarosCopiesLoop controller sourceId remainingIds cause pendingFromId =>
-    g.uldarosCopiesLoop controller sourceId remainingIds cause pendingFromId
-  | .finishUldarosCopiesOffer controller cause =>
-    g.finishUldarosCopiesOffer controller cause
-  | .finishExileTopMayCastElseDamage controller fromId damage sourceId =>
-    g.finishExileTopMayCastElseDamage controller fromId damage sourceId
-  | .exileHandDrawLoop p remainingIds cause pendingFromId =>
-    g.exileHandDrawLoop p remainingIds cause pendingFromId
-  | .finishExileHandDrawPlayUntilNext p drawCount cause =>
-    g.finishExileHandDrawPlayUntilNext p drawCount cause
-  | .exileTopXOppPlayForLifeLoop controller fromPlayer remaining cause pendingFromId =>
-    g.exileTopXOppPlayForLifeLoop controller fromPlayer remaining cause pendingFromId
-  | .exileIdsUntilSourceLeavesLoop sourceId remainingIds cause =>
-    g.exileIdsUntilSourceLeavesLoop sourceId remainingIds cause
-  | .exileThenReturnNextEndLoop controller sourceId remainingIds cause justMovedFrom wasNontoken movedName =>
-    g.exileThenReturnNextEndLoop controller sourceId remainingIds cause justMovedFrom wasNontoken movedName
-  | .finishDaredevilExile sourceId cardId =>
-    g.finishDaredevilExile sourceId cardId
-  | .notePlayExiledThisWay cardId =>
-    match g.followMovedToZone? cardId (· == .exile) with
-    | some moved => g.change (.playExiledThisWay (some moved.id))
-    | none => g
-  | .triggerExileLoop controller sourceId mode remainingIds accMovedPreIds cause justMovedFrom matchedPreMove movedName =>
-    g.runTriggerExileLoop controller sourceId mode remainingIds accMovedPreIds cause justMovedFrom matchedPreMove movedName
   | .logDiscardedCount p preDiscards =>
     let discarded := g.loggedDiscards p - preDiscards
     g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
   | .loyaltyOnPlaneswalkersLoop p remainingIds =>
     g.loyaltyOnPwsLoop p remainingIds
-  | .honeControlledEquipmentLoop controller remainingIds =>
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.finishPostStep (.honeControlledEquipmentLoop controller remainingIds))
-    else Id.run do
-      let mut g := g
-      for i in [0:remainingIds.size] do
-        let id := remainingIds[i]!
-        if let some eq := g.findObject? id then
-          if eq.isOnBattlefield && g.isEquipment eq then
-            g := g.putCountersDeferredLog eq.id .hone 1 (some controller) .received
-            if let .chooseReplacement .. := g.pending then
-              let rem := remainingIds.extract (i + 1) remainingIds.size
-              if !rem.isEmpty then
-                g := g.chainPendingReplacement (.finishPostStep (.honeControlledEquipmentLoop controller rem))
-              return g
-      return g
-  | .putDoubleStrikeCounter targetId byPlayer =>
-    g.putCountersDeferredLog targetId .doubleStrike 1 byPlayer .gets
   | .logGiftTreasureGiven recipient =>
     if g.stillInGame recipient then g.logMsg s!"{(g.player recipient).name} is given a Treasure (gift)" else g
   | .logDelayedBirdSoldiersCreated controller startEventIdx =>
@@ -4561,36 +4158,20 @@ partial def runPostStep (g : Game) (step : PostStep)
       let cnt := (g.tokensCreatedSince startEventIdx).size
       g.logMsg s!"{(g.player controller).name}'s delayed triggered ability creates {cnt} Bird Soldier token(s)"
     else g
-  | .copyMissingKeywordsStep srcIds otherId startKw =>
-    g.copyMissingKeywordsStep srcIds otherId startKw
-  | .exileLibraryUntilNonlandLoop pid controller sourceId cause pendingFromId =>
-    g.exileLibraryUntilNonlandLoop pid controller sourceId cause pendingFromId
   | .resolveCascadeLoop p maxMv cause exiled pendingFromId =>
     g.resolveCascadeLoop p maxMv cause exiled pendingFromId
-  | .exileUntilInstantOrSorceryLoop victim mode cause others pendingFromId =>
-    g.exileUntilInstantOrSorceryLoop victim mode cause others pendingFromId
+  | .exileUntilInstantOrSorceryLoop victim controller castTheCard cause others pendingFromId =>
+    g.exileUntilInstantOrSorceryLoop victim controller castTheCard cause others pendingFromId
   | .finishGrimaDirectCast controller victim fromId others cause =>
     g.finishGrimaDirectCast controller victim fromId others cause
   | .sarumanExileCopyMayCast controller fromId cause =>
     g.finishSarumanExileCopyMayCast controller fromId cause
-  | .exileReturnBrieflyAfterExile controller fromId cardName returnable sourceId cause =>
-    g.finishExileReturnBrieflyAfterExile controller fromId cardName returnable sourceId cause
-  | .exileFlickerAfterExile controller fromId cardName sourceId cause =>
-    g.finishExileFlickerAfterExile controller fromId cardName sourceId cause
   | .exileFromRevealedHandAfterMove p victim fromId cardName sourceId =>
     match g.followMovedToZone? fromId (· == .exile) with
     | some ex =>
       let g := g.changeObject ex.id (.exiledBy sourceId)
       g.logMsg s!"{(g.player p).name} exiles {cardName} from {(g.player victim).name}'s hand"
     | none => g
-  | .evilsThrallGrantHaste targetId =>
-    match g.findObject? targetId with
-    | some o => if o.isOnBattlefield then g.grantUntilEotLogged o #[Keyword.haste] else g
-    | none => g
-  | .noteReturnedPermanentIfInHand fromIds =>
-    if fromIds.any (fun fid => (g.followMovedToZone? fid (fun | .hand _ => true | _ => false)).isSome) then
-      g.change (.returnedPermanentThisWay true)
-    else g
   | .logExiledIfInExile fromId msg =>
     if (g.followMovedToZone? fromId (· == .exile)).isSome then g.logMsg msg else g
   | .recordCostSacrificedPower abilityId fromId pw =>
@@ -4623,8 +4204,6 @@ partial def runPostStep (g : Game) (step : PostStep)
       let side := if top then "top" else "bottom"
       g.logMsg (msgOverride.getD s!"{(g.player owner).name} puts {cardName} on the {side} of their library")
     else g
-  | .logDealDamageEachOpposingCreature amount =>
-    g.logMsg s!"deals {amount} damage to each opposing creature"
   | .finishZemoBoastExileLogs p sourceId preIds =>
     let g := if g.proposedSpell.isSome then g.changeProposal (.fraCostPaid true) else g
     let exiledCount := (preIds.filter (fun id => (g.followMovedToZone? id (· == .exile)).isSome)).size
@@ -4639,18 +4218,12 @@ partial def runPostStep (g : Game) (step : PostStep)
       | none => g
   | .markNonManaCostPaid =>
     if g.proposedSpell.isSome then g.changeProposal (.fraCostPaid true) else g
-  | .plusOneOnCreatedTokensLoop controller remainingIds amount =>
-    g.plusOneOnCreatedTokensLoop controller remainingIds amount
   | .moveIdsInOrderLoop ids dest log cause placedCount prevMoved =>
     g.moveIdsInOrderLoop ids dest log cause placedCount prevMoved
-  | .createMerfolkForBlueSymbols controller lastKnownPower =>
-    g.createMerfolkForBlueSymbols controller lastKnownPower
   | .incrementPlanSource controller sourceId =>
     g.incrementPlanSource controller sourceId
   | .millOpponentsOnly opponents n cause =>
     g.millOpponentsOnly opponents n cause
-  | .millOpponentsAndNote opponents allPids n cause =>
-    g.millOpponentsAndNote opponents allPids n cause
   | .conniveTricksterTarget caster connive sourceId =>
     g.conniveTricksterTarget caster connive (sourceId := sourceId)
   | .topOrBottomDamageFollowup fromId owner cardName top damage sourceId =>
@@ -4672,20 +4245,6 @@ partial def runPostStep (g : Game) (step : PostStep)
       (g.record (GameEvent.sheHulkDealtDamage g.turnNumber p))
         |>.logMsg "The Sensational She-Hulk deals damage (only once each turn)"
     else g
-  | .copyNontokenCreaturesAfterEnter startEventIdx =>
-    g.finishCopyNontokenCreaturesAfterEnter startEventIdx
-  | .countersOnCreatureTargetsLoop controller remaining kind n sourceId =>
-    g.countersOnCreatureTargetsLoop controller remaining kind n sourceId
-  | .targetPlayersGainLifeLoop controller remaining n sourceId cause =>
-    g.targetPlayersGainLifeLoop controller remaining n sourceId cause
-  | .twoPlayersDrawSecond controller second sourceId cause =>
-    g.twoPlayersDrawSecond controller second sourceId cause
-  | .twoPlayersEachDrawSecond second cards cause =>
-    g.draw second cards (cause := cause)
-  | .bounceEachTargetLoop controller kind remaining sourceId =>
-    g.bounceEachTargetLoop controller kind remaining sourceId
-  | .untapTargetsLoop controller kind remaining sourceId =>
-    g.untapTargetsLoop controller kind remaining sourceId
   | .damageUpToOneAndPlayerLoop controller kind remaining n srcName sourceId cause startEventIdx =>
     g.damageUpToOneAndPlayerLoop controller kind remaining n srcName sourceId cause startEventIdx
   | .applyAggregatedLifelink startEventIdx cause =>
@@ -4696,73 +4255,10 @@ partial def runPostStep (g : Game) (step : PostStep)
     | none => g
   | .dealDamageToEachNonSubtypeAndOpponents controller n subtype sourceId cause =>
     g.dealDamageToEachNonSubtypeAndOpponents controller n subtype sourceId (cause := cause)
-  | .dealDamageFromPermanentsLoop remainingIds n srcName source cause startEventIdx note pendingTarget =>
-    g.dealDamageFromPermanentsLoop remainingIds n srcName source cause startEventIdx
-      (note := note) (pendingTarget := pendingTarget)
-  | .triggerDividedDamageLoop remaining srcName source cause startEventIdx targetCheck =>
-    g.triggerDividedDamageLoop remaining srcName source cause startEventIdx
-      (targetCheck := targetCheck)
-  | .plusOneOnEachTargetLoop controller kind remaining n sourceId =>
-    g.plusOneOnEachTargetLoop controller kind remaining n sourceId
-  | .minusOnesPerOpponentLoop controller kind remaining x sourceId =>
-    g.minusOnesPerOpponentLoop controller kind remaining x sourceId
-  | .divideSevenDamageLoop controller kind remaining division sourceId startEventIdx =>
-    g.divideSevenDamageLoop controller kind remaining division sourceId startEventIdx
-  | .returnInstantsLoop controller kind remaining sourceId =>
-    g.returnInstantsLoop controller kind remaining sourceId
-  | .putPlusOnesUpToLastKnownLoop controller remaining sourceId =>
-    g.putPlusOnesUpToLastKnownLoop controller remaining sourceId
-  | .attachEquipmentToHostLoop controller kind hostId remaining sourceId =>
-    g.attachEquipmentToHostLoop controller kind hostId remaining sourceId
-  | .copyTokenOfSourceAfterCreate controller cardName startEventIdx =>
-    g.copyTokenOfSourceAfterCreate controller cardName startEventIdx
-  | .fblthpMoveToHandLoop controller remainingIds cause =>
-    g.fblthpMoveToHandLoop controller remainingIds cause
-  | .fblthpShuffleAfterHand controller =>
-    g.shuffleThen controller .none
-  | .putSourceCountersPlusOneAndLog targetId plusOnes byPlayer hadOtherCounters beforeTotal =>
-    let totalCounters (s : Status) : Nat :=
-      s.toCounterBag.foldl (fun acc (_, c) => acc + c) 0
-    match g.findObject? targetId with
-    | none => g
-    | some cur =>
-      let otherPlaced := hadOtherCounters || totalCounters cur.status > beforeTotal
-      if plusOnes > 0 then
-        let beforeNext := totalCounters cur.status
-        let g := g.addPlusOnePlusOneTo cur plusOnes (byPlayer := byPlayer)
-        if let .chooseReplacement .. := g.pending then
-          g.chainPendingReplacement
-            (.finishPostStep (.putSourceCountersPlusOneAndLog cur.id 0 byPlayer otherPlaced beforeNext))
-        else
-          match g.findObject? cur.id with
-          | some cur2 =>
-            if otherPlaced || totalCounters cur2.status > beforeNext then
-              g.logMsg s!"The counters are put on {g.name cur2}"
-            else g
-          | none => g
-      else if otherPlaced then
-        g.logMsg s!"The counters are put on {g.name cur}"
-      else g
-  | .logInvestigateClueCreated controller startEventIdx =>
-    if !(g.tokensCreatedSince startEventIdx).isEmpty then
-      g.logMsg s!"{(g.player controller).name} investigates"
-    else g
-  | .revealUntilCreatureToHandAfterMove controller cardId cardName rest cause =>
-    let g :=
-      if (g.followMovedToZone? cardId (· == .hand controller)).isSome then
-        g.logMsg s!"{cardName} is put into {(g.player controller).name}'s hand"
-      else g
-    g.putRestOnBottomRandom controller rest (cause := some cause)
-  | .logSacrificedIfInGraveyard cardId owner cardName =>
-    if (g.followMovedToZone? cardId (· == .graveyard owner)).isSome then
-      g.logMsg s!"{cardName} is sacrificed"
-    else g
   | .movePublicCardsToHandLoop p remainingIds maxLeft playerPutsStyle cause pendingCard requirePublicZone =>
     g.movePublicCardsToHandLoop p remainingIds maxLeft playerPutsStyle cause pendingCard requirePublicZone
   | .exileOpponentLibrariesLoop remainingOpps curOpp curIds movedAnyForCur pendingId =>
     g.exileOpponentLibrariesLoop remainingOpps curOpp curIds movedAnyForCur pendingId
-  | .worldsWithinWorldsAfterPut exiled validChosen sourceId =>
-    g.finishWorldsWithinWorldsAfterPut exiled validChosen sourceId
   | .logDiscardIfInGraveyard cardId owner msg =>
     if (g.followMovedToZone? cardId (· == .graveyard owner)).isSome then g.logMsg msg else g
   | .chooseCardsToHandLoop p remainingIds cause pendingCard =>
@@ -4846,23 +4342,14 @@ partial def finishLibraryLookCore (g : Game) : Game :=
       .surveilReturnMvAtMost none,
       .surveilReturnNoncreatureNonland false ]
     let g :=
-      match g.fraAfterLook with
-      | some (c, src, next) =>
-        let g := g.change (.fraAfterLook none)
-        if g.stillInGame c then g.applyEffect c (fraNextToEffect next) #[] (sourceId := src) else g
+      match g.pendingDrawAfterScry with
+      | some (q, n) =>
+        let g := g.change (.pendingDrawAfterScry none)
+        if g.stillInGame q then g.draw q n else g
       | none => g
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement .finishLibraryLook
-    else
-      let g :=
-        match g.pendingDrawAfterScry with
-        | some (q, n) =>
-          let g := g.change (.pendingDrawAfterScry none)
-          if g.stillInGame q then g.draw q n else g
-        | none => g
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement .finishLibraryLook
-      else g
+    else g
 
 /-- Clear the finished scry or surveil, draw any follow-up cards, and give the
 active player priority. -/
@@ -5006,25 +4493,11 @@ partial def finishProliferateLoop (g : Game) (p : PlayerId)
 
 /-- Finish the post-discard steps of `.mayDiscardDraw`. -/
 partial def finishDiscardForDrawMay (g : Game) (p : PlayerId) (n : Nat) : Game :=
-  if g.mayThenDrop > 0 then
-    g.acceptMayThenCore
-  else
-    g.draw p n
+  g.draw p n
 
 /-- Finish the post-discard steps of `.chooseDiscardCard`. -/
 partial def finishChooseDiscardCard (g : Game) (p : PlayerId) (card : GameObject)
     (remaining : Array PlayerId) : Game :=
-  let g : Game :=
-    match g.triggerSequenceRest with
-    | some rest =>
-      if rest.steps.any (· == .put .discardedLand (how := .tapped)) then
-        match g.followMovedToZone? card.id (fun
-          | .graveyard _ | .exile | .battlefield | .stack | .command => true
-          | _ => false) with
-        | some moved => g.change (.discardedCardThisWay (some (p, moved.id)))
-        | none => g
-      else g
-    | none => g
   let g := g.finishConniveDiscard card
   if g.thirstDiscardsLeft > 0 then
     let left :=
@@ -5636,7 +5109,7 @@ partial def afterTriggerTargetsChosen (g : Game) : Game :=
         if g.anyContinuationSettlesControlFlow then g
         else g.chainPendingReplacement .finishFraChoice
       else if g.pending != .none || g.afterRandom != .none then g
-      else if g.triggerSequenceRest.isSome || g.mayThenResume ||
+      else if g.currentInterpWait?.isSome ||
           g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty then
         g.finishFraChoice
       else g.afterTriggerTargetsChosen
@@ -6304,7 +5777,6 @@ draw that many cards (CR 701.9). -/
 def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
   match g.pending with
   | .mayDiscardDraw q n =>
-    let inMayThen := g.mayThenDrop > 0
     let outerCont? := g.pendingReplacement
     let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let (g, _) ← g0.discardPendingCard p q id
@@ -6315,24 +5787,19 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
         g.finishDiscardForDrawMay p n
     let g :=
       match outerCont? with
-      | some outer =>
-        if inMayThen then g.change (.pushOuterPendingReplacement outer)
-        else g.chainPendingReplacement outer
+      | some outer => g.chainPendingReplacement outer
       | none => g
     return g.finishAndGrantPriority
   | .maySacArtifactOrDiscard q n =>
-    let inMayThen := g.mayThenDrop > 0
     let outerCont? := g.pendingReplacement
     let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let (g, _) ← g0.discardPendingCard p q id
     let g := g.finishSacArtifactOrDiscardDraw p n
     let g :=
       match outerCont? with
-      | some outer =>
-        if inMayThen then g.change (.pushOuterPendingReplacement outer)
-        else g.chainPendingReplacement outer
+      | some outer => g.chainPendingReplacement outer
       | none => g
-    return if g.mayThenResume then g.acceptMayThen else g.finishAndGrantPriority
+    return g.finishAndGrantPriority
   | .chooseDiscardCard q remaining =>
     let outerCont? := g.pendingReplacement
     let g0 := if outerCont?.isSome then g.change (.pendingReplacement none) else g
@@ -6454,20 +5921,12 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
       g.resolvingAbility <|> g.resolvingSpell <|> (g.currentResolvingContext?.bind Prod.fst)
     let g ← g.payCost p (ManaCost.ofGeneric n) (forObject := forObj)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
-    if g.mayThenDrop > 0 then
-      let g := g.acceptMayThenCore
-      let g :=
-        match outerCont? with
-        | some outer => g.change (.pushOuterPendingReplacement outer)
-        | none => g
-      return g.finishAndGrantPriority
-    else
-      let g := (g.change (.pending .none)).draw p 1
-      let g :=
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer
-        | none => g
-      return g.finishAndGrantPriority
+    let g := (g.change (.pending .none)).draw p 1
+    let g :=
+      match outerCont? with
+      | some outer => g.chainPendingReplacement outer
+      | none => g
+    return g.finishAndGrantPriority
   | .payOrLetCounter q n _ =>
     if p != q then
       throw s!"Only {(g.player q).name} may pay \{{n}}"
@@ -6476,10 +5935,12 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let forObj :=
-      g.resolvingAbility <|> g.resolvingSpell <|> g.unlessPaysSource <|> (g.currentResolvingContext?.bind Prod.fst)
+      g.resolvingAbility <|> g.resolvingSpell <|> (g.currentResolvingContext?.bind Prod.fst)
     let g ← g.payCost p (ManaCost.ofGeneric n) (forObject := forObj)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
-    let g := (g.change (.pending .none)).clearUnlessPays
+    let g := g.changes #[
+      .pending .none,
+      .bindStepOutcome interpChoiceVar { succeeded := true }]
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
@@ -6508,7 +5969,7 @@ def payGeneric (g : Game) (p : PlayerId) : Except String Game := do
     return g.finishWardAndDrain outerCont?
   | _ => throw "Not time to pay generic mana"
 
-/-- Resolve the effect stashed by `SpellResolution.may`. -/
+/-- Accept an optional interpreter choice (`Pending.mayResolve`) and resume. -/
 def acceptMay (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
   | .mayResolve q =>
@@ -6516,96 +5977,102 @@ def acceptMay (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may accept"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    match g.mayOnAccept, g.mayContext with
-    | some action, some _ =>
-      let g := (g.changes #[
-        .pending .none,
-        .mayOnAccept none,
-        .mayOnDecline none,
-        .setTriggerSequenceRestFromMay [action] ]).clearMay
-      let g := g.resumeTriggerSequence
-      let g :=
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer
-        | none => g
-      return g.finishAndGrantPriority
-    | _, _ =>
-      let some effect := g.mayEffect | throw "Nothing to resolve"
-      let controller := g.mayController
-      let targets := g.mayTargets
-      let sourceId := g.maySource
-      let ctx := g.mayResCtx
-      let g := (g.change (.pending .none)).clearMay
-      let g := g.applyUnified controller effect targets
-        (castFromGraveyard := ctx.castFromGraveyard) (kicked := ctx.kicked)
-        (giftPromised := ctx.giftPromised) (chosenX := ctx.chosenX)
-        (sourceId := sourceId) (lastKnownPower := ctx.lastKnownPower)
-        (lastKnownToughness := ctx.lastKnownToughness)
-      let g :=
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer
-        | none => g
-      return g.finishAndGrantPriority
-  | _ => throw "Nothing to accept now"
-
-/-- Apply alternative `idx` of a pending `TriggerResolution.or`, preserving
-outer `PendingReplacement` continuations and resuming via `finishAndGrantPriority`. -/
-def chooseTriggerOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := do
-  match g.pending, g.triggerOr with
-  | .chooseTriggerOr q, some rest =>
-    if p != q then throw s!"Only {(g.player q).name} may choose"
-    match rest.alternatives[idx]? with
-    | none => throw "No such choice"
-    | some r =>
-      let g :=
-        match g.pendingReplacement with
-        | some outer => g.changes #[.pendingReplacement none, .pushOuterPendingReplacement outer]
-        | none => g
-      let g := g.changes #[.pending .none, .triggerOr none]
-      let g := g.applyTriggeredAbility rest.controller rest.ability rest.sourceId
-        rest.targets rest.dividedDamage rest.lastKnownPower rest.lastKnownToughness
-        rest.sourceName (some r) rest.cardPower
-      return g.finishAndGrantPriority
-  | _, _ => throw "Not time to choose"
-
-/-- Apply alternative `idx` of a pending `SpellResolution.or`. -/
-def chooseSpellOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := do
-  match g.pending with
-  | .chooseLibraryPlacement q id? =>
-    if p != q then
-      let what := if g.spellOrLibrary then "top or bottom" else "an effect"
-      throw s!"Only {(g.player q).name} may choose {what}"
-    if idx >= g.spellOr.size then
-      throw "No such choice"
-    if g.spellOrLibrary then
-      let some id := id? | throw "no such object"
-      let some o := g.findObject? id | throw "no such object"
-      if !o.isOnBattlefield then
-        throw s!"{g.name o} is no longer on the battlefield"
-    let outerCont? := g.pendingReplacement
-    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let effect := g.spellOr[idx]!
-    let controller := g.spellOrController
-    let targets := g.spellOrTargets
-    let sourceId := g.spellOrSource
-    let ctx := g.spellOrResCtx
-    let g := (g.change (.pending .none)).clearSpellOr
-    let g := g.applyUnified controller effect targets
-      (castFromGraveyard := ctx.castFromGraveyard) (kicked := ctx.kicked)
-      (giftPromised := ctx.giftPromised) (chosenX := ctx.chosenX)
-      (sourceId := sourceId) (lastKnownPower := ctx.lastKnownPower)
-      (lastKnownToughness := ctx.lastKnownToughness)
+    let g := g.changes #[
+      .pending .none,
+      .bindStepOutcome interpChoiceVar { succeeded := true }]
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
       | none => g
     return g.finishAndGrantPriority
+  | _ => throw "Nothing to accept now"
+
+/-- Apply alternative `idx` of a pending resolution-time `chooseModes` choice
+(`Pending.chooseTriggerOr`), resuming the suspended `InterpCont.chooseBranch`. -/
+def chooseTriggerOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := do
+  match g.pending with
+  | .chooseTriggerOr q =>
+    if p != q then throw s!"Only {(g.player q).name} may choose"
+    let validIdx : Bool :=
+      match g.currentInterpWait? with
+      | some st =>
+        match st.stack.back? with
+        | some (.chooseBranch branches _) => idx < branches.size
+        | _ => false
+      | none => false
+    if !validIdx then throw "No such choice"
+    let g :=
+      match g.pendingReplacement with
+      | some outer => g.changes #[.pendingReplacement none, .pushOuterPendingReplacement outer]
+      | none => g
+    let g := g.changes #[
+      .pending .none,
+      .bindStepOutcome interpChoiceVar { movedCount := idx, succeeded := true }]
+    return g.finishAndGrantPriority
+  | _ => throw "Not time to choose"
+
+/-- Apply alternative `idx` of a pending `Pending.chooseLibraryPlacement` choice
+(either an interpreter `chooseBranch` or direct top=0 / bottom=1 placement). -/
+def chooseSpellOr (g : Game) (p : PlayerId) (idx : Nat) : Except String Game := do
+  match g.pending with
+  | .chooseTriggerOr _ => g.chooseTriggerOr p idx
+  | .chooseLibraryPlacement q id? =>
+    let branch? : Option (Array Instruction × Bool) :=
+      g.currentInterpWait?.bind fun st =>
+        match st.stack.back? with
+        | some (.chooseBranch branches isLib) => some (branches, isLib)
+        | _ => none
+    match branch? with
+    | some (branches, isLib) =>
+      if p != q then
+        let what := if isLib then "top or bottom" else "an effect"
+        throw s!"Only {(g.player q).name} may choose {what}"
+      if idx >= branches.size then
+        throw "No such choice"
+      if isLib then
+        let some id := id? | throw "no such object"
+        let some o := g.findObject? id | throw "no such object"
+        if !o.isOnBattlefield then
+          throw s!"{g.name o} is no longer on the battlefield"
+      let outerCont? := g.pendingReplacement
+      let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+      let g := g.changes #[
+        .pending .none,
+        .bindStepOutcome interpChoiceVar { movedCount := idx, succeeded := true }]
+      let g :=
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
+      return g.finishAndGrantPriority
+    | none =>
+      if p != q then
+        throw s!"Only {(g.player q).name} may choose top or bottom"
+      if idx > 1 then throw "No such choice"
+      let some id := id? | throw "no such object"
+      let some o := g.findObject? id | throw "no such object"
+      if !o.isOnBattlefield then
+        throw s!"{g.name o} is no longer on the battlefield"
+      let outerCont? := g.pendingReplacement
+      let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+      let g := (g.change (.pending .none)).putOnOwnerLibrary o (top := idx == 0)
+      let g :=
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer
+        | none => g
+      return g.finishAndGrantPriority
   | _ => throw "Not time to choose library placement"
 
 /-- Put the pending card on top or bottom of its owner's library.
-When `spellOr` is set, top is the first alternative and bottom the second. -/
+When an interpreter `chooseBranch` is suspended, top is index 0 and bottom is index 1. -/
 def chooseLibrarySide (g : Game) (p : PlayerId) (top : Bool) : Except String Game := do
-  if !g.spellOr.isEmpty then
+  let hasBranch : Bool :=
+    match g.currentInterpWait? with
+    | some st =>
+      match st.stack.back? with
+      | some (.chooseBranch _ _) => true
+      | _ => false
+    | none => false
+  if hasBranch then
     g.chooseSpellOr p (if top then 0 else 1)
   else
     match g.pending with
@@ -6662,7 +6129,7 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       throw "Duplicate card"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let (g, n) ← (g.change (.pending .none)).withBatchExcept none fun g => do
+    let (g, _) ← (g.change (.pending .none)).withBatchExcept none fun g => do
       let mut g := g
       let mut n : Nat := 0
       for id in ids do
@@ -6673,9 +6140,7 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
         g := g.becomeTapped o
         n := n + 1
       return (g, n)
-    let mut g := g.change (.humansTappedThisWay n)
-    g := g.resumeTriggerSequence
-    g :=
+    let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
       | none => g
@@ -6867,8 +6332,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline to discard"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g := g.logMsg s!"{(g.player p).name} declines to discard a card"
-    let g := if g.mayThenDrop > 0 then g.declineMayThenCore else g.change (.pending .none)
+    let g := (g.change (.pending .none)).logMsg s!"{(g.player p).name} declines to discard a card"
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
@@ -6944,8 +6408,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline to pay"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g := g.logMsg s!"{(g.player p).name} declines to pay"
-    let g := if g.mayThenDrop > 0 then g.declineMayThenCore else g.change (.pending .none)
+    let g := (g.change (.pending .none)).logMsg s!"{(g.player p).name} declines to pay"
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
@@ -6957,24 +6420,14 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := g.logMsg s!"{(g.player p).name} does not pay"
-    let instead := g.unlessPaysInstead
-    let caster := g.unlessPaysController
-    let targets := g.unlessPaysTargets
-    let sourceId := g.unlessPaysSource
-    let ctx := g.unlessPaysResCtx
-    let g := (g.change (.pending .none)).clearUnlessPays
+    let caster := (g.currentResolvingContext?.bind Prod.snd).getD (g.opponent p)
+    let g := g.changes #[
+      .pending .none,
+      .bindStepOutcome interpChoiceVar { succeeded := false }]
     let g :=
-      match instead with
-      | some effect =>
-        g.applyUnified caster effect targets
-          (castFromGraveyard := ctx.castFromGraveyard) (kicked := ctx.kicked)
-          (giftPromised := ctx.giftPromised) (chosenX := ctx.chosenX)
-          (sourceId := sourceId) (lastKnownPower := ctx.lastKnownPower)
-          (lastKnownToughness := ctx.lastKnownToughness)
-      | none =>
-        match spellId with
-        | some sid => g.counterStackSpell sid (controller := some caster)
-        | none => g
+      match spellId with
+      | some sid => g.counterStackSpell sid (controller := some caster)
+      | none => g
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
@@ -7008,15 +6461,9 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := g.logMsg s!"{(g.player p).name} declines"
-    let g :=
-      match g.mayOnDecline, g.mayContext with
-      | some follow, some _ =>
-        let g := (g.changes #[
-          .pending .none,
-          .setTriggerSequenceRestFromMay [follow] ]).clearMay
-        g.resumeTriggerSequence
-      | _, _ =>
-        (g.change (.pending .none)).clearMay
+    let g := g.changes #[
+      .pending .none,
+      .bindStepOutcome interpChoiceVar { succeeded := false }]
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
@@ -7027,8 +6474,7 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline to tap Humans"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g := g.logMsg s!"{(g.player p).name} taps no Humans"
-    let g := (g.changes #[.pending .none, .humansTappedThisWay 0]).resumeTriggerSequence
+    let g := (g.change (.pending .none)).logMsg s!"{(g.player p).name} taps no Humans"
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
@@ -7067,9 +6513,8 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g := g.logMsg
+    let g := (g.change (.pending .none)).logMsg
       s!"{(g.player p).name} declines to sacrifice an artifact or discard a card"
-    let g := if g.mayThenDrop > 0 then g.declineMayThenCore else g.change (.pending .none)
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
@@ -7080,9 +6525,8 @@ def decline (g : Game) (p : PlayerId) : Except String Game := do
       throw s!"Only {(g.player q).name} may decline to put an artifact onto the battlefield"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-    let g := g.logMsg
+    let g := (g.change (.pending .none)).logMsg
       s!"{(g.player p).name} declines to put an artifact onto the battlefield"
-    let g := g.changes #[.pending .none, .putArtifactThisWay none]
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer
@@ -7307,7 +6751,7 @@ def putCardsOnBottom (g : Game) (p : PlayerId) (ids : Array ObjectId) : Except S
     let mut g := g
     if g.mulliganToBottom.isEmpty then
       g := g.change (.pending .none)
-      return g.receivePriority g.activePlayer
+      return if g.currentInterpWait?.isSome then g.finishAndGrantPriority else g.receivePriority g.activePlayer
     -- After a mulligan to zero, the player may not take further mulligans.
     if !g.canTakeMulligan p then
       g := g.changePlayer p (.keptOpeningHand true)

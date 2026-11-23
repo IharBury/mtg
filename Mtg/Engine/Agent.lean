@@ -512,15 +512,12 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       | some eq => some (.choosePermanents #[eq.id])
       | none => some .decline
     | .mayResolve _ =>
-      match g.mayEffect with
-      | some e =>
-        match e.body with
+      match g.currentInterpWait?.bind (fun st => st.stack.back?) with
+      | some (.branchOnChoice onYes _) =>
+        match onYes with
         | .life (.lose ..) | .moveZone _ .graveyard .discard _ => some .decline
-        | _ =>
-          match e.resolution? with
-          | some (.loseLife _ _) | some (.discard _) => some .decline
-          | _ => some .accept
-      | none => some .decline
+        | _ => some .accept
+      | _ => some .accept
     | .tapHumans _ =>
       let humans :=
         (g.permanentsOf p).filter (fun o =>

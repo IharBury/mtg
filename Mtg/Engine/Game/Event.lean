@@ -17,64 +17,6 @@ it is recorded; a replaced change is not recorded (CR 614.6).
 
 namespace Mtg.Engine
 
-/-- Later steps of a trigger `sequence`, waiting until the pending choice
-opened by an earlier step finishes. They run before any player receives
-priority, so they stay part of that resolution. -/
-structure TriggerSequenceRest where
-  controller : PlayerId
-  ability : TriggeredAbility
-  sourceId : Option ObjectId := none
-  targets : Array Target := #[]
-  dividedDamage : Array Nat := #[]
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-  sourceName : String := "This creature"
-  cardPower : Option Nat := none
-  steps : List TriggeredAbility.TriggerResolution := []
-deriving Repr, Inhabited, BEq
-
-/-- A pending `TriggerResolution.or`. The controller chooses one alternative,
-then that step resolves with this ability context. -/
-structure TriggerOrRest where
-  controller : PlayerId
-  ability : TriggeredAbility
-  sourceId : Option ObjectId := none
-  targets : Array Target := #[]
-  dividedDamage : Array Nat := #[]
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-  sourceName : String := "This creature"
-  cardPower : Option Nat := none
-  alternatives : Array TriggeredAbility.TriggerResolution := #[]
-deriving Repr, Inhabited, BEq
-
-/-- A pending `TriggerResolution.chooseModes` that asks for one unused mode.
-The chosen index resolves with this ability context. -/
-structure ChooseModesRest where
-  controller : PlayerId
-  ability : TriggeredAbility
-  sourceId : Option ObjectId := none
-  targets : Array Target := #[]
-  dividedDamage : Array Nat := #[]
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-  sourceName : String := "This creature"
-  cardPower : Option Nat := none
-  modes : List TriggeredAbility.TriggerResolution := []
-  how : TriggeredAbility.TriggerModeHow := .oneUnused
-deriving Repr, Inhabited, BEq
-
-/-- Resolution-context flags and LKI preserved across `SpellResolution.may` and
-`SpellResolution.or` prompts (CR 107.3a,m / 608.2h). -/
-structure SpellResolutionCtx where
-  castFromGraveyard : Bool := false
-  kicked : Bool := false
-  giftPromised : Bool := false
-  chosenX : Option Nat := none
-  lastKnownPower : Option Int := none
-  lastKnownToughness : Option Int := none
-deriving Repr, Inhabited, BEq
-
 /-- One non-rules engine metadata change on a `GameObject` (CR 109 / 607). -/
 inductive ObjectChange where
   | abilityEffect (v : Option Effect)
@@ -899,7 +841,7 @@ deriving Repr, Inhabited, BEq
 structure StackTriggerSpec where
   triggeredAbility : Option TriggeredAbility := none
   abilityEffect : Option Effect := none
-  reflexiveResolution : Option TriggeredAbility.TriggerResolution := none
+  isReflexive : Bool := false
   sourceId : Option ObjectId := none
   abilityName : Option String := none
   delayedTrigger : Option (DelayedTriggerKind × EventCause) := none
@@ -1023,92 +965,6 @@ inductive PutCounterLog where
   | received
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Deferred continuation step for FRC effects resumed after a
-CR 616.1 `Pending.chooseReplacement` pause finishes. -/
-inductive FrcPostStep where
-  | putDrawnBackOnTop (p : PlayerId) (count : Nat)
-  | offerMaySearchBasics (owner : PlayerId)
-  | makeHumanToken (owner : PlayerId)
-  | grantControlledCreaturesIndestructible (controller : PlayerId)
-  | destroyNonRecentCreaturesAtFive (x : Nat)
-  | makeMitesThenDestroyAtFive (controller : PlayerId) (x : Nat)
-  | discardBackHandThenCreateSpirits (controller : PlayerId) (x : Nat)
-  | createSpiritTokens (controller : PlayerId) (count : Nat)
-  | incubateForExiledCount (controller : PlayerId) (startIdx : Nat) (ids : Array ObjectId)
-      (cause : Option EventCause)
-  | polymorphRevealCreatures (controller : PlayerId) (startIdx : Nat)
-      (sourceId : Option ObjectId) (ids : Array ObjectId)
-  | registerSyntheticDestinyEndStep (controller : PlayerId) (startIdx : Nat)
-      (sourceId : Option ObjectId) (ids : Array ObjectId) (cause : Option EventCause)
-  | polymorphSingleTargetReveal (owner controller : PlayerId) (sourceId : Option ObjectId)
-  | discardHandThenDrainAndDraw (victim controller : PlayerId)
-  | loseThreeDrawOneGainThree (victim controller : PlayerId)
-  | optionalOncePolymorphReveal (controller : PlayerId) (sourceId : Option ObjectId)
-  | handDiscardToBottom (controller : PlayerId)
-  | revealCreatureOrPlaneswalker (controller : PlayerId) (sourceId : Option ObjectId)
-  | grantRecentTokensLifelinkHaste
-  | discardHand (controller : PlayerId)
-  | currencyReturnCreateToken (controller : PlayerId) (exiledId sourceId : ObjectId)
-      (isLand : Bool)
-  | urSphinxCastNext (controller : PlayerId) (buckets : Array (Array ObjectId))
-  | factOrFictionHandInnerLoop (controller : PlayerId) (handIds : Array ObjectId)
-      (pendingCard : Option ObjectId := none)
-  | factOrFictionGyInnerLoop (controller : PlayerId) (gyIds : Array ObjectId)
-      (pendingCard : Option ObjectId := none)
-  | tamiyoStunLoop (controller : PlayerId) (targetId : ObjectId) (beforeStun : Nat)
-      (remainingIds : Array ObjectId)
-  | factOrFictionGyLoop (controller : PlayerId) (gyIds : Array ObjectId)
-  | swordsGainLife (targetId : ObjectId) (fallbackOwner : PlayerId) (fallbackPower : Nat)
-  | putBackOnTopLoop (p : PlayerId) (remainingIds : Array ObjectId)
-      (movedCount : Nat := 0) (pendingId : Option ObjectId := none)
-  | logHandDiscard (p : PlayerId) (cardId : ObjectId) (destOwner : PlayerId)
-      (cardName : String)
-  | logHandDiscardToBottom (p : PlayerId) (cardId : ObjectId) (destOwner : PlayerId)
-      (cardName : String)
-  | logExploreLandToHand (controller : PlayerId) (cardId : ObjectId) (destOwner : PlayerId)
-      (cardName : String)
-  | offerExploreMayGraveyard (controller : PlayerId) (cardId : ObjectId)
-  | logExploreToGraveyard (controller : PlayerId) (cardId : ObjectId) (destOwner : PlayerId)
-      (cardName : String)
-  | teferiExileSpell
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Exile follow-up mode for `TriggeredAbilities.runTriggerExileLoop`. -/
-inductive TriggerExileMode where
-  | leaveTrigger
-  | untilSourceLeaves
-  | nextEndStep
-  | playUntilNextTurn
-  | playThisTurn
-  | forLater
-  | forLaterLands
-  | forLaterPlayCard
-  | forLaterCopyAndHost
-  | forLaterImpulse
-  | forLaterLinked
-  | forLaterIfHero
-  | forLaterAnyManaThisTurn
-  | mayCastUpTo (casts : Nat)
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Post-creation follow-up for `TriggeredAbilities.applyCreateTokens` /
-`finishCreatedTokenNote`. -/
-inductive CreatedTokenFollowup where
-  | logAxeCreated
-  | attachReflexive
-  | remember
-  | invasion (count : Nat)
-  | logTreasuresDamagedPlayer
-  | logBirdSoldiers
-deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Continuation mode after `exileUntilInstantOrSorceryLoop` finishes exiling
-cards from `victim`'s library. -/
-inductive GrimaExileMode where
-  | impulseState
-  | directCastOrBottom (controller : PlayerId) (castTheCard : Bool)
-deriving DecidableEq, Repr, Inhabited, BEq
-
 /-- Post-entry log mode for `Choices.putToBattlefieldLoop` once arrival on
 `.battlefield` completes. -/
 inductive PutBattlefieldEntryLog where
@@ -1117,26 +973,10 @@ inductive PutBattlefieldEntryLog where
   | entersTapped
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Per-recipient check and follow-up note for `PostStep.dealDamageFromPermanentsLoop`. -/
-inductive PermanentDamageLoopNote where
-  | none
-  | oppCreatureOrPlaneswalker (controller : PlayerId)
-  | excess
-  | markedPermanent
-deriving DecidableEq, Repr, Inhabited, BEq
-
-set_option maxRecDepth 2048 in
 /-- Deferred post-step continuation (`Decisions.runPostStep`) resumed after a CR 616.1
 `Pending.chooseReplacement` pause finishes. -/
 inductive PostStep where
   | putArtifactOntoBattlefield (p : PlayerId) (cardId : ObjectId) (hostId : Option ObjectId)
-  | copyEnteredArtifact (controller : PlayerId) (artifactId : ObjectId)
-  | grantHandSizePower (sourceId : Option ObjectId)
-  | beginScryOne (p : PlayerId)
-  | copyCastTriggerSpell (p : PlayerId)
-  | destroyTargetLandThenOfferSearchBasics (controller : PlayerId)
-      (sourceId cardId : Option ObjectId)
-  | offerMaySearchBasics (owner : PlayerId)
   | continueDiscardTwo (controller : PlayerId) (rest : Array PlayerId) (draws : Nat)
       (chosen : Array (PlayerId × Array ObjectId) := #[])
   | finishDiscardTwoDraws (controller : PlayerId) (baseDraws : Nat)
@@ -1145,40 +985,17 @@ inductive PostStep where
       (rest : Array ObjectId) (cause : Option EventCause)
   | hawkeyeArrows (controller : PlayerId) (modes : Array Nat) (targets : Array Target)
       (targetIdx : Nat) (sourceId : Option ObjectId)
-  | loseLifeForLoggedDraws (p : PlayerId) (beforeDraws : Nat)
-  | returnTappedWithEndStepExile (controller : PlayerId) (cardId : ObjectId)
-      (sourceId : Option ObjectId) (cause : EventCause)
-  | beginDiscardThenStun (controller : PlayerId) (sourceId : Option ObjectId)
-  | afterRecentTokensEnter
-  | drainOpponents (controller : PlayerId) (amount : Nat) (sourceId : Option ObjectId)
-      (cause : Option EventCause)
-  | addPlusOnesForLoggedDiscards (p : PlayerId) (sourceId : Option ObjectId)
-  | addRedManaIfPositive (p : PlayerId) (count : Nat) (sourceId : Option ObjectId)
   | enteredBattlefieldSilent (cardId : ObjectId) (isLand : Bool := false)
   | returnedBattlefieldEndStep (cardId : ObjectId) (isLand : Bool)
   | returnedToBattlefield (cardId : ObjectId) (isLand : Bool)
   | returnedToBattlefieldTapped (cardId : ObjectId) (isLand : Bool)
-  | enteredBattlefieldTapped (cardId : ObjectId) (isLand : Bool)
-  | empowerJaceExcessDamage (controller : PlayerId) (targetId : ObjectId)
-      (lethal startIdx : Nat)
   | searchBasicLandTapped (p : PlayerId)
-  | fightTargetOpponentCreature (controller : PlayerId) (sourceId : Option ObjectId)
-      (targets : Array Target)
-  | enteredOfferAttachEquipment (controller : PlayerId) (cardId : ObjectId)
   | putOntoBattlefieldHasteAtFour (p : PlayerId) (cardId : ObjectId) (x : Nat) (shuffle : Bool)
   | revealPutCreaturesStep (p : PlayerId) (remaining put enteredFromIds : Array ObjectId)
       (cause : Option EventCause)
   | shuffleThenGainLife (p : PlayerId) (life : Nat)
-  | offerCreaturesFromHandToBattlefield (controller : PlayerId) (cause : Option EventCause)
-  | enteredAttachedToSource (attachmentId hostId : ObjectId)
-  | treasureThenDragonAfterCreate (controller : PlayerId) (sourceId : Option ObjectId)
-  | treasureThenDragonCreateDragon (controller : PlayerId)
-  | logAndEnterRecentTokens
   | dealDamageToEachOpponent (p : PlayerId) (amount : Nat) (sourceId : Option ObjectId)
       (cause : Option EventCause) (startEventIdx : Option Nat := none)
-  | noteExcessDamageDealt (targetId : ObjectId) (lethal startIdx : Nat)
-  | notePermanentDealtDamage (targetId : ObjectId) (startIdx : Nat)
-  | logTwoNonlegendaryCopyTokens (sourceId : Option ObjectId) (startEventIdx : Nat := 0)
   | discardCleanupIds (p : PlayerId) (remainingIds : Array ObjectId)
       (justDiscarded : Option (ObjectId × PlayerId) := none)
   | postSbaCleanup (sba : Bool)
@@ -1189,19 +1006,15 @@ inductive PostStep where
   | searchLibraryPlaneswalker (p : PlayerId)
   | searchLibrarySphinx (p : PlayerId)
   | drawOneThenPlusOnesForDiscards (p : PlayerId) (sourceId : Option ObjectId)
+  | addPlusOnesForLoggedDiscards (p : PlayerId) (sourceId : Option ObjectId)
   | queueTapAndStunReflexive (p : PlayerId) (nonlandCount : Nat) (sourceId : Option ObjectId)
   | nickFuryMayTransformOrBottom (p : PlayerId) (cardId : ObjectId) (rest : Array ObjectId)
       (cause : Option EventCause)
-  | noteHandDiscardedCount (count : Nat) (sourceId : Option ObjectId)
   | checkDrawThenOpponentsDraw (p : PlayerId) (beforeDraws : Nat)
   | opponentsDrawOneLoop (drawer : PlayerId) (remainingOpponents : Array PlayerId)
       (cause : Option EventCause)
   | loseLifeForMilledManaValue (p : PlayerId) (tops : Array ObjectId)
       (cause : Option EventCause)
-  | eaglesReturnCreaturesLoop (controller : PlayerId) (returnedCount : Nat)
-      (sourceId : Option ObjectId) (remainingIds : Array ObjectId)
-      (cause : Option EventCause) (targeted : Bool := true)
-      (pendingReturn : Option (ObjectId × PlayerId × String) := none)
   | addPlusOnesToSource (sourceId : ObjectId) (count : Nat)
   | beginDiscardCardsStep (players : Array PlayerId)
   | continueAfterDiscardStep (remaining : Array PlayerId) (samePlayer : Bool := false)
@@ -1212,45 +1025,14 @@ inductive PostStep where
       (cause : Option EventCause)
   | finishPlusOneAfterDiscards
   | closeDiscardBatchStep
+  | finishSurveilHandMove (p : PlayerId) (fromId : ObjectId) (cardName : String)
+      (remainingGy : Array ObjectId) (cause : Option EventCause)
   | logPutsIntoHand (revealer : PlayerId) (fromId : ObjectId) (cardName : String)
   | logInfluenceThenScryTwo (sourceId : ObjectId) (beforeInfluence : Nat)
-  | finishPalantirInfluence (controller : PlayerId) (sourceId : ObjectId)
-      (beforeInfluence : Nat) (targetOpponent : Option PlayerId)
-  | noteMilledIds (tops : Array ObjectId)
-  | noteOpponentsMilled (opponents : Array PlayerId) (startIdx : Nat)
   | logCreatedTokensSummary (controller : PlayerId) (startEventIdx : Nat)
-  | offerWorldsCreatures (controller : PlayerId) (startIdx : Nat)
-      (creatureIds : Array ObjectId) (sourceId : Option ObjectId)
-  | identityEchoAfterExile (controller : PlayerId) (exiledId : ObjectId)
-      (sourceId : Option ObjectId)
-  | logShuffleIntoLibrary (owner : PlayerId) (cardId : ObjectId)
-  | empowerJaceExiledCount (controller : PlayerId) (startIdx : Nat)
-      (creatureIds : Array ObjectId)
-  | reflexiveReturnLandTapped (controller : PlayerId) (sourceId : Option ObjectId)
-  | offerPutMilledPermanentOrGainLife (controller : PlayerId) (preIds : Array ObjectId)
-      (life : Nat)
-  | worldsWithinWorlds (exiled chosen : Array ObjectId) (sourceId : Option ObjectId)
-  | millMayPutPermanentGainLife (p : PlayerId) (tops : Array ObjectId) (life : Nat)
-  | offerSearchBasicsExiledCount (p : PlayerId) (startIdx : Nat) (attackerIds : Array ObjectId)
-  | enteredThenPutRestBottomRandom (cardId : ObjectId) (libraryOwner : PlayerId)
-      (rest : Array ObjectId) (cause : Option EventCause)
-  | createdTokenNote (controller : PlayerId) (followup : CreatedTokenFollowup)
-      (startEventIdx : Nat)
-  | noteExiledIds (eligible : Array ObjectId)
-  | logReturnsToBattlefieldAndEnter (cardId : ObjectId)
-  | logPutUnderOwnerControlAndEnter (cardId : ObjectId)
-  | returnNotedLandsStep (remaining entered : Array ObjectId)
   | putRestOnBottomRandom (p : PlayerId) (rest : Array ObjectId) (cause : Option EventCause)
   | millSourceInfluenceCount (controller : PlayerId) (sourceId : ObjectId)
-  | grantCantBeBlockedIfOnBattlefield (cardId : ObjectId)
-  | logReturnsAsArtifactAndEnter (cardId : ObjectId)
-  | worldsWithinWorldsExileSelf (sourceId : Option ObjectId)
-  | notedLandsEntered (entered : Array ObjectId)
-  | noteSacrificedSource (ids : Array ObjectId)
-  | noteSacrificedPlan (ids : Array ObjectId)
   | continueOpeningBegin (remainingIds : Array ObjectId)
-  | worldsReturnExiledLoop (remainingIds : Array ObjectId)
-      (pendingCard : Option (ObjectId × PlayerId) := none)
   | logMovedToExile (cardId : ObjectId)
   | resumeChooseModeAfterLeave (p : PlayerId)
   | resumeChooseTargetsAfterLeave (p : PlayerId)
@@ -1264,15 +1046,12 @@ inductive PostStep where
   | resumeProposalCostAfterLeave (p : PlayerId) (savedP : Pending)
   | runAfterRandom (after : AfterRandom)
   | grantLifelinkUntilEot (cardId : ObjectId) (cause : Option EventCause)
-  | grantHasteUntilEotSilent (cardId : ObjectId) (cause : Option EventCause)
   | endTurnAfterCleanupStepEnded
   | startNextTurnAndBegin
   | advanceAfterStepEnded
   | recordUntapStepEnded
   | beginStepAfterPhaseBegan (st : Step)
   | beginStepBody (st : Step)
-  | tapAndStunTargetsLoop (controller : PlayerId) (remaining : Array (Nat × Target))
-      (sourceId : Option ObjectId) (cause : Option EventCause)
   | exileZemoBoastCards (p : PlayerId) (abilityId : ObjectId) (remainingIds : Array ObjectId)
   | grantAdventureExilePermission (controller : PlayerId) (cardId : ObjectId)
       (cause : Option EventCause)
@@ -1293,56 +1072,20 @@ inductive PostStep where
       (pendingFromId : Option ObjectId := none)
   | offerMayCastUpToFromExile (caster : PlayerId) (preIds : Array ObjectId) (casts : Nat)
   | finishExileUntilNextEndStep (controller : PlayerId) (fromId : ObjectId) (cause : EventCause)
-  | finishFraExileUntilSourceLeaves (sourceId fromId : ObjectId)
-  | uldarosCopiesLoop (controller : PlayerId) (sourceId : Option ObjectId)
-      (remainingIds : Array ObjectId) (cause : Option EventCause)
-      (pendingFromId : Option ObjectId := none)
-  | finishUldarosCopiesOffer (controller : PlayerId) (cause : Option EventCause)
-  | finishExileTopMayCastElseDamage (controller : PlayerId) (fromId : ObjectId)
-      (damage : Nat) (sourceId : Option ObjectId)
-  | exileHandDrawLoop (p : PlayerId) (remainingIds : Array ObjectId)
-      (cause : Option EventCause) (pendingFromId : Option ObjectId := none)
-  | finishExileHandDrawPlayUntilNext (p : PlayerId) (drawCount : Nat)
-      (cause : Option EventCause)
-  | exileTopXOppPlayForLifeLoop (controller fromPlayer : PlayerId) (remaining : Nat)
-      (cause : Option EventCause) (pendingFromId : Option ObjectId := none)
-  | exileIdsUntilSourceLeavesLoop (sourceId : Option ObjectId) (remainingIds : Array ObjectId)
-      (cause : Option EventCause)
-  | exileThenReturnNextEndLoop (controller : PlayerId) (sourceId : Option ObjectId)
-      (remainingIds : Array ObjectId) (cause : EventCause)
-      (justMovedFrom : Option ObjectId := none) (wasNontoken : Bool := false)
-      (movedName : String := "")
-  | finishDaredevilExile (sourceId cardId : Option ObjectId)
-  | notePlayExiledThisWay (cardId : ObjectId)
-  | triggerExileLoop (controller : PlayerId) (sourceId : Option ObjectId)
-      (mode : TriggerExileMode) (remainingIds accMovedPreIds : Array ObjectId)
-      (cause : Option EventCause) (justMovedFrom : Option ObjectId := none)
-      (matchedPreMove : Bool := false) (movedName : String := "")
   | logDiscardedCount (p : PlayerId) (preDiscards : Nat)
   | loyaltyOnPlaneswalkersLoop (p : PlayerId) (remainingIds : Array ObjectId)
-  | honeControlledEquipmentLoop (controller : PlayerId) (remainingIds : Array ObjectId)
-  | putDoubleStrikeCounter (targetId : ObjectId) (byPlayer : Option PlayerId)
   | logGiftTreasureGiven (recipient : PlayerId)
   | logDelayedBirdSoldiersCreated (controller : PlayerId) (startEventIdx : Nat)
-  | copyMissingKeywordsStep (srcIds : Array ObjectId) (otherId : ObjectId) (startKw : Nat)
-  | exileLibraryUntilNonlandLoop (pid controller : PlayerId) (sourceId : Option ObjectId)
-      (cause : Option EventCause) (pendingFromId : Option ObjectId := none)
   | resolveCascadeLoop (p : PlayerId) (maxMv : Nat) (cause : EventCause)
       (exiled : Array ObjectId := #[]) (pendingFromId : Option ObjectId := none)
-  | exileUntilInstantOrSorceryLoop (victim : PlayerId) (mode : GrimaExileMode)
+  | exileUntilInstantOrSorceryLoop (victim controller : PlayerId) (castTheCard : Bool)
       (cause : Option EventCause) (others : Array ObjectId := #[])
       (pendingFromId : Option ObjectId := none)
   | finishGrimaDirectCast (controller victim : PlayerId) (fromId : ObjectId)
       (others : Array ObjectId) (cause : Option EventCause)
   | sarumanExileCopyMayCast (controller : PlayerId) (fromId : ObjectId) (cause : EventCause)
-  | exileReturnBrieflyAfterExile (controller : PlayerId) (fromId : ObjectId)
-      (cardName : String) (returnable : Bool) (sourceId : Option ObjectId) (cause : EventCause)
-  | exileFlickerAfterExile (controller : PlayerId) (fromId : ObjectId) (cardName : String)
-      (sourceId : Option ObjectId) (cause : EventCause)
   | exileFromRevealedHandAfterMove (p victim : PlayerId) (fromId : ObjectId)
       (cardName : String) (sourceId : Option ObjectId)
-  | evilsThrallGrantHaste (targetId : ObjectId)
-  | noteReturnedPermanentIfInHand (fromIds : Array ObjectId)
   | logExiledIfInExile (fromId : ObjectId) (msg : String)
   | recordCostSacrificedPower (abilityId : Option ObjectId) (fromId : ObjectId) (pw : Int)
   | logReturnedToHand (fromId : ObjectId) (to : PlayerId) (cardName : String)
@@ -1350,23 +1093,15 @@ inductive PostStep where
       (atkTarget : AttackTarget) (cause : Option EventCause)
   | finishMoveToOwnerGraveyardLog (fromId : ObjectId) (fromZone : Zone) (owner : PlayerId)
       (cardName reason : String) (verb : Option ZoneVerb)
-  | finishSurveilHandMove (p : PlayerId) (fromId : ObjectId) (cardName : String)
-      (remainingGy : Array ObjectId) (cause : Option EventCause)
   | logPutOnOwnerLibrary (fromId : ObjectId) (owner : PlayerId) (cardName : String)
       (top : Bool) (msgOverride : Option String := none)
-  | logDealDamageEachOpposingCreature (amount : Nat)
   | finishZemoBoastExileLogs (p : PlayerId) (sourceId : ObjectId) (preIds : Array ObjectId)
   | markNonManaCostPaid
-  | plusOneOnCreatedTokensLoop (controller : PlayerId) (remainingIds : Array ObjectId)
-      (amount : Nat)
   | moveIdsInOrderLoop (ids : Array ObjectId) (dest : Zone) (log : String)
       (cause : Option EventCause) (placedCount : Nat := 0)
       (prevMoved : Option (ObjectId × Zone) := none)
-  | createMerfolkForBlueSymbols (controller : PlayerId) (lastKnownPower : Option Int)
   | incrementPlanSource (controller : PlayerId) (sourceId : Option ObjectId)
   | millOpponentsOnly (opponents : Array PlayerId) (n : Nat) (cause : Option EventCause)
-  | millOpponentsAndNote (opponents allPids : Array PlayerId) (n : Nat)
-      (cause : Option EventCause)
   | conniveTricksterTarget (caster : PlayerId) (connive : Option ObjectId)
       (sourceId : Option ObjectId)
   | topOrBottomDamageFollowup (fromId : ObjectId) (owner : PlayerId) (cardName : String)
@@ -1374,18 +1109,6 @@ inductive PostStep where
   | gainLifePlayer (p : PlayerId) (amount : Nat) (cause : Option EventCause := none)
   | drawCardsPlayer (p : PlayerId) (amount : Nat) (cause : Option EventCause := none)
   | sheHulkAfterDamage (p : PlayerId) (startIdx : Nat)
-  | copyNontokenCreaturesAfterEnter (startEventIdx : Nat)
-  | countersOnCreatureTargetsLoop (controller : PlayerId) (remaining : Array Target)
-      (kind : CounterKind) (n : Nat) (sourceId : Option ObjectId)
-  | targetPlayersGainLifeLoop (controller : PlayerId) (remaining : Array Target)
-      (n : Nat) (sourceId : Option ObjectId) (cause : Option EventCause)
-  | twoPlayersDrawSecond (controller second : PlayerId) (sourceId : Option ObjectId)
-      (cause : Option EventCause)
-  | twoPlayersEachDrawSecond (second : PlayerId) (cards : Nat) (cause : Option EventCause)
-  | bounceEachTargetLoop (controller : PlayerId) (kind : TargetSpec)
-      (remaining : Array (Nat × Target)) (sourceId : Option ObjectId)
-  | untapTargetsLoop (controller : PlayerId) (kind : TargetSpec)
-      (remaining : Array (Nat × Target)) (sourceId : Option ObjectId)
   | damageUpToOneAndPlayerLoop (controller : PlayerId) (kind : TargetSpec)
       (remaining : Array (Nat × Target)) (n : Nat) (srcName : String)
       (sourceId : Option ObjectId) (cause : Option EventCause)
@@ -1394,38 +1117,6 @@ inductive PostStep where
   | dealDamageLoseIndestructibleExileTo (targetId : ObjectId) (n : Nat) (source : EventObject)
   | dealDamageToEachNonSubtypeAndOpponents (controller : PlayerId) (n : Nat)
       (subtype : CardSubtype) (sourceId : Option ObjectId) (cause : Option EventCause)
-  | dealDamageFromPermanentsLoop (remainingIds : Array ObjectId) (n : Nat)
-      (srcName : String) (source : Option EventObject) (cause : Option EventCause)
-      (startEventIdx : Option Nat := none) (note : PermanentDamageLoopNote := .none)
-      (pendingTarget : Option (ObjectId × Nat × Nat) := none)
-  | triggerDividedDamageLoop (remaining : Array (Target × Nat)) (srcName : String)
-      (source : Option EventObject) (cause : Option EventCause)
-      (startEventIdx : Option Nat := none)
-      (targetCheck : Option (PlayerId × TargetSpec × Option ObjectId) := none)
-  | plusOneOnEachTargetLoop (controller : PlayerId) (kind : TargetSpec)
-      (remaining : Array (Nat × Target)) (n : Nat) (sourceId : Option ObjectId)
-  | minusOnesPerOpponentLoop (controller : PlayerId) (kind : TargetSpec)
-      (remaining : Array (Nat × Target)) (x : Nat) (sourceId : Option ObjectId)
-  | divideSevenDamageLoop (controller : PlayerId) (kind : TargetSpec)
-      (remaining : Array (Nat × Target)) (division : Array Nat) (sourceId : Option ObjectId)
-      (startEventIdx : Option Nat := none)
-  | returnInstantsLoop (controller : PlayerId) (kind : TargetSpec)
-      (remaining : Array Target) (sourceId : Option ObjectId)
-  | putPlusOnesUpToLastKnownLoop (controller : PlayerId) (remaining : Array Target)
-      (sourceId : Option ObjectId)
-  | attachEquipmentToHostLoop (controller : PlayerId) (kind : TargetSpec)
-      (hostId : ObjectId) (remaining : Array (Nat × Target)) (sourceId : Option ObjectId)
-  | copyTokenOfSourceAfterCreate (controller : PlayerId) (cardName : String)
-      (startEventIdx : Nat)
-  | fblthpMoveToHandLoop (controller : PlayerId) (remainingIds : Array ObjectId)
-      (cause : EventCause)
-  | fblthpShuffleAfterHand (controller : PlayerId)
-  | putSourceCountersPlusOneAndLog (targetId : ObjectId) (plusOnes : Nat)
-      (byPlayer : Option PlayerId) (hadOtherCounters : Bool) (beforePlusOne : Nat)
-  | logInvestigateClueCreated (controller : PlayerId) (startEventIdx : Nat)
-  | revealUntilCreatureToHandAfterMove (controller : PlayerId) (cardId : ObjectId)
-      (cardName : String) (rest : Array ObjectId) (cause : EventCause)
-  | logSacrificedIfInGraveyard (cardId : ObjectId) (owner : PlayerId) (cardName : String)
   | movePublicCardsToHandLoop (p : PlayerId) (remainingIds : Array ObjectId)
       (maxLeft : Nat) (playerPutsStyle : Bool) (cause : Option EventCause)
       (pendingCard : Option (ObjectId × String) := none)
@@ -1433,13 +1124,11 @@ inductive PostStep where
   | exileOpponentLibrariesLoop (remainingOpps : Array PlayerId)
       (curOpp : Option PlayerId := none) (curIds : Array ObjectId := #[])
       (movedAnyForCur : Bool := false) (pendingId : Option ObjectId := none)
-  | worldsWithinWorldsAfterPut (exiled : Array ObjectId)
-      (validChosen : Array (ObjectId × PlayerId × String)) (sourceId : Option ObjectId)
   /-- Log `msg` only if `cardId` arrived in `owner`'s graveyard (CR 614.6); also
   used for the CR 303.4g stack-Aura graveyard log. -/
   | logDiscardIfInGraveyard (cardId : ObjectId) (owner : PlayerId) (msg : String)
-  /-- Resume `ResolutionCompat.chooseCardsToHandLoop`; `pendingCard` is the card
-  whose owner's-hand arrival (CR 400.3 / 614.6) is still to be logged. -/
+  /-- Resume `chooseCardsToHandLoop`; `pendingCard` is the card whose
+  owner's-hand arrival (CR 400.3 / 614.6) is still to be logged. -/
   | chooseCardsToHandLoop (p : PlayerId) (remainingIds : Array ObjectId)
       (cause : Option EventCause)
       (pendingCard : Option (ObjectId × PlayerId × String) := none)
@@ -1569,14 +1258,73 @@ inductive InterpCont where
   since `startEventIdx` filtered by `stepEffectId`, bind `v`, then run `body`. -/
   | bindClose (v : VarId) (startEventIdx : Nat) (stepEffectId : EffectId)
       (body : Instruction) (extraOverride? : Option StepOutcome := none)
-  /-- Remaining players in `.forEachPlayer` (APNAP order), bound to `v`. -/
+  /-- Remaining players in `.forEach (.eachPlayer ..)` (APNAP order), bound to `v`. -/
   | forEachPlayerRest (v : VarId) (players : Array PlayerId) (body : Instruction)
-  /-- Remaining objects in `.forEachObject`, bound to `v`. -/
+  /-- Remaining objects in `.forEach (.eachObject ..)`, bound to `v`. -/
   | forEachObjectRest (v : VarId) (objects : Array ObjectId) (body : Instruction)
-  /-- Run `onYes` or `onNo` after a `.optional` / `.unlessPays` choice. -/
+  /-- Remaining iterations in `.forEach (.repeatTimes ..)`. -/
+  | repeatRest (remaining : Nat) (body : Instruction)
+  /-- Run `onYes` or `onNo` after a `.optional` choice (reading `choiceVar` from `stepEnv`). -/
   | branchOnChoice (onYes onNo : Instruction)
   /-- Run `body` with `v` bound to the chosen subtype/parity/keywords/objects/players. -/
   | bindChosenAndRun (v : VarId) (body : Instruction)
+  /-- Run the chosen branch after `Pending.chooseLibraryPlacement` or `Pending.chooseTriggerOr`. -/
+  | chooseBranch (branches : Array Instruction) (isLibrary : Bool := false)
+  /-- Run `ifUnpaid` unless `payer` paid in `Pending.payOrLetCounter` (incl. CR 800.4f departure). -/
+  | unlessPays (payer : PlayerId) (ifUnpaid : Instruction)
+  /-- After an optional cost prompt resolves, bind `cost.bindVar?` (if any) from events since
+  `startEventIdx` and run `onYes` (optionally re-offering up to `maxExtra` more times) or `onNo`. -/
+  | afterOptionalCost (who : PlayerExpr) (cost : CostSpec) (onYes onNo : Instruction)
+      (startEventIdx : Nat) (maxExtra : Nat := 0)
+  /-- Re-offer an `.optional` instruction up to `remaining` additional times after `onYes` finishes. -/
+  | repeatOptional (who : PlayerExpr) (cost? : Option CostSpec) (onYes : Instruction)
+      (remaining : Nat)
+  /-- Post-entry follow-up for a single permanent moved onto the battlefield. -/
+  | afterPutToBattlefield (fromId : ObjectId) (fromGyOrExile : Bool)
+      (mods : MoveMods) (cause : EventCause)
+  /-- Post-exile follow-up for exile-and-return-immediately flicker effects. -/
+  | afterExileReturnBriefly (dstP : PlayerId) (fromId : ObjectId) (cardName : String)
+      (returnable : Bool) (cause : EventCause)
+  /-- Post-return follow-up for returning a permanent tapped and exiling it at end step. -/
+  | afterReturnTappedEndStepExile (dstP : PlayerId) (fromId : ObjectId)
+      (cardName : String) (cause : EventCause)
+  /-- Log `msg` if any counter kind on `targetId` increased over `before` (CR 122.1 / 614.6). -/
+  | logIfCountersIncreased (targetId : ObjectId) (before : CounterBag) (msg : String)
+  /-- Apply aggregated lifelink gain for damage dealt since `startEventIdx`. -/
+  | applyAggregatedLifelink (startEventIdx : Nat) (cause : EventCause)
+  /-- Post-move log after Explore puts a revealed land into hand (CR 701.40a). -/
+  | exploreAfterLandMove (controller : PlayerId) (cardId : ObjectId)
+      (destOwner : PlayerId) (cardName : String)
+  /-- Offer the Explore optional graveyard move after putting a +1/+1 counter (CR 701.40a). -/
+  | exploreOfferGraveyard (controller : PlayerId) (cardId : ObjectId)
+  /-- Put non-matching revealed cards on the bottom (and optionally apply Dack hits). -/
+  | afterRevealUntil (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool)
+      (dackTargets : Array ObjectId) (cause : EventCause)
+  /-- Continue moving remaining cards from a distinct-name library search. -/
+  | afterDistinctSearchMove (p : PlayerId) (remainingIds : Array ObjectId) (cause : EventCause)
+  /-- After milling, offer a milled permanent to hand or gain `life`. -/
+  | afterMillOfferPermanentOrGainLife (p : PlayerId) (preIds : Array ObjectId) (life : Nat)
+  /-- After drawing, begin `count` discards followed by stun/counter follow-up. -/
+  | afterDrawBeginDiscardThenStun (p : PlayerId) (count : Nat)
+  /-- After drawing, arm +1/+1 counters per discarded card on `targetId?`. -/
+  | afterDrawAddPlusOnesForDiscards (p : PlayerId) (targetId? : Option ObjectId)
+  /-- Post-entry token modifiers (haste, sacrifice/exile at end step, counters, attach) for
+  tokens created since `startEventIdx`. -/
+  | afterTokensEnter (startEventIdx : Nat) (p : PlayerId) (mods : EnterMods) (cause : EventCause)
+  /-- Worlds Within Worlds: collect each player's chosen exiled creature in turn order. -/
+  | worldsCollectPlayers (exiledVar : VarId) (rest : Array PlayerId) (chosen : Array ObjectId)
+  /-- Worlds Within Worlds: after putting chosen creatures onto the battlefield, return unchosen. -/
+  | worldsAfterPut (exiledVar : VarId) (validChosen : Array (ObjectId × PlayerId × String))
+  /-- Remaining objects in a multi-object zone move loop. -/
+  | afterMoveLoop (remainingIds : Array ObjectId) (dest : DestZoneSpec)
+      (verb : ZoneVerb) (mods : MoveMods) (cause : EventCause)
+  /-- Remaining permanents in a multi-permanent damage loop with aggregated lifelink. -/
+  | afterDamagePermanentsLoop (remainingIds : Array ObjectId) (amt : Nat) (srcName : String)
+      (srcSnap? : Option EventObject) (oppOnlyCtrl? : Option PlayerId)
+      (startEventIdx : Nat) (cause : EventCause)
+  /-- Remaining targets in a divided-damage loop with mid-pause CR 608.2b legality recheck and aggregated lifelink. -/
+  | afterDividedDamageLoop (remaining : Array (Nat × Target × Nat)) (srcName : String)
+      (srcSnap? : Option EventObject) (startEventIdx : Nat) (cause : EventCause)
 deriving Repr, Inhabited, BEq
 
 /-- Complete resumable state of the unified `Instruction` interpreter. -/
@@ -1634,7 +1382,7 @@ inductive PendingReplacement where
       (adventurerCard : Option CardDef := none)
       (summoningSick : Bool := true)
       (attachedTo : Option ObjectId := none)
-      (enterMods : Array TriggeredAbility.TriggerEnterWith := #[])
+      (enterMods : Array EnterMod := #[])
       (cause : Option EventCause)
       (lkiController? : Option PlayerId := none)
       (skipUnattachIds : Array ObjectId := #[])
@@ -1658,20 +1406,20 @@ inductive PendingReplacement where
   | createKindTokens (controller : PlayerId) (kind : TokenSpec) (n : Nat)
       (tapped : Bool) (attacking : Bool) (attackingTarget : Option AttackTarget)
       (resetRecent : Bool) (cause : Option EventCause)
-      (copyCtx : CopyTokenContext := {})
+      (copyEnv : StoredEvalEnv := {})
   | createAndMarkTokensAttacking (controller : PlayerId) (kind : TokenSpec)
       (n : Nat) (tapped holds : Bool) (sourceId : Option ObjectId)
       (cause : Option EventCause := none)
-      (copyCtx : CopyTokenContext := {})
+      (copyEnv : StoredEvalEnv := {})
   | commitEnteringAttackItems (chosen : Array (EnteringAttackItem × Option AttackTarget))
       (cause : Option EventCause) (resetRecent : Bool)
-      (postEntries : Array (ObjectId × PlayerId × String × List TriggeredAbility.TriggerEnterWith × EnteringAttackLog) := #[])
+      (postEntries : Array (ObjectId × PlayerId × String × List EnterMod × EnteringAttackLog) := #[])
       (preBattlefield : Option (Array GameObject) := none)
   | finishEnteringAttackCards
-      (postEntries : Array (ObjectId × PlayerId × String × List TriggeredAbility.TriggerEnterWith × EnteringAttackLog))
+      (postEntries : Array (ObjectId × PlayerId × String × List EnterMod × EnteringAttackLog))
       (cause : Option EventCause)
   | finishEnteringAttackCard (newId : Option ObjectId) (effectController : PlayerId)
-      (cardName : String) (mods : List TriggeredAbility.TriggerEnterWith)
+      (cardName : String) (mods : List EnterMod)
       (logKind : EnteringAttackLog) (cause : Option EventCause)
   | afterLastPermanentEnters (fromId : Option ObjectId := none) (isPlayLand : Bool := false)
       (attachedToHost : Option ObjectId := none)
@@ -1780,7 +1528,7 @@ inductive PendingReplacement where
       (entered : Array (ObjectId × String) := #[])
       (preBattlefield : Option (Array GameObject) := none)
   | finishSearchAfterPlace (p : PlayerId) (fromId : Option ObjectId)
-      (dest : SearchDest) (after : Option FraNext) (fromLibrary : Bool)
+      (dest : SearchDest) (after : Option Instruction) (fromLibrary : Bool)
       (handRest : Array ObjectId := #[]) (cause : Option EventCause := none)
   | surveilMoveLoop (p : PlayerId) (remainingGy : Array ObjectId) (cause : Option EventCause)
   | finishSurveilPostMove (p : PlayerId) (card : GameObject) (fromId : ObjectId)
@@ -1806,17 +1554,6 @@ inductive PendingReplacement where
   | addFinalityTo (targetId : ObjectId) (n : Nat) (byPlayer : Option PlayerId)
       (entersWith : Bool) (cause : Option EventCause)
   | loseLifeAfterDraw (p : PlayerId) (life : Nat) (cause : Option EventCause)
-  | continueUnified (controller : PlayerId) (effect : Effect)
-      (steps : Array Resolution) (targets : Array Target)
-      (castFromGraveyard kicked giftPromised : Bool) (chosenX : Option Nat := none)
-      (sourceId : Option ObjectId := none)
-      (lastKnownPower : Option Int := none)
-      (lastKnownToughness : Option Int := none)
-  | continueUnifiedAbility (controller : PlayerId) (effect : Effect)
-      (steps : Array Resolution) (targets : Array Target)
-      (sourceId : Option ObjectId) (lastKnownPower : Option Int)
-      (chosenX : Option Nat := none)
-      (lastKnownToughness : Option Int := none)
   | continueSpellModes (controller : PlayerId) (modeEffects : Array Effect)
       (remainingTargets : Array Target)
       (castFromGraveyard kicked giftPromised : Bool) (chosenX : Option Nat := none)
@@ -1826,15 +1563,6 @@ inductive PendingReplacement where
       (lastKnownToughness : Option Int := none)
   | empowerJace (controller : PlayerId) (n : Nat) (stage : EmpowerJaceStage := .initial)
       (targetId : Option ObjectId := none) (cause : Option EventCause := none)
-  | continueTriggeredSequence (controller : PlayerId) (steps : Array TriggeredAbility)
-      (sourceId : Option ObjectId) (targets : Array Target)
-      (dividedDamage : Array Nat) (lastKnownPower lastKnownToughness : Option Int)
-      (sourceName : String)
-  | continueTriggeredModes (controller : PlayerId) (ab : TriggeredAbility)
-      (remainingModes : Array (Nat × TriggeredAbility.TriggerResolution))
-      (sourceId : Option ObjectId) (targets : Array Target)
-      (dividedDamage : Array Nat) (lastKnownPower lastKnownToughness : Option Int)
-      (sourceName : String)
   | continueConnives (controller : PlayerId) (remainingIds : Array ObjectId)
   | dealDamageToEachCreatureMatching (remainingIds : Array ObjectId) (n : Nat)
       (onlyNonSubtype : Option CardSubtype := none)
@@ -1878,10 +1606,6 @@ inductive PendingReplacement where
       (logCard : Option String := none) (freshCount : Option Nat := none)
   | exilePermanentsLoop (remainingIds : Array ObjectId) (logExile : Bool := true)
       (cause : Option EventCause := none) (logCard : Option (ObjectId × String) := none)
-  | causeDealsDamageToOpponentsLoop (remainingOpps : Array PlayerId) (n : Nat)
-      (name : String) (causeSrc : Option EventObject) (cause : Option EventCause)
-      (pendingDmg : Option (PlayerId × Nat) := none)
-      (startEventIdx : Option Nat := none)
   | flickerLoop (remainingIds : Array ObjectId)
       (exiledPreIds : Array ObjectId := #[])
       (enteredFromIds : Array ObjectId := #[])
@@ -1889,21 +1613,11 @@ inductive PendingReplacement where
       (stage : FlickerStage := .exileBatch) (tapped : Bool := false) (onlyLandTapped : Bool := false)
       (clearExileFields : Bool := false) (cause : Option EventCause := none)
       (preBattlefield : Option (Array GameObject) := none)
-  | finishMillSubtypeOrEnchantment (p : PlayerId) (preIds : Array ObjectId)
-      (subtype : CardSubtype)
   | finishMillChooseForHand (p : PlayerId) (preIds : Array ObjectId)
       (types : Array CardType) (matchedPreIds : Array ObjectId)
       (max : Nat) (mustOne : Bool) (allMatches : Bool := false)
       (maxPut : Option Nat := none) (cause : Option EventCause := none)
-  | makeFrcLoop (p : PlayerId) (kind : TokenSpec) (remaining : Nat) (x : Nat)
-      (extraCounters : CounterBag) (cause : Option EventCause)
-      (copyCtx : CopyTokenContext := {})
-  | finishFrcRestBottom (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool := false)
-      (cause : Option EventCause := none)
-      (dackTargets : Array ObjectId := #[])
-  | finishFrcPostStep (step : FrcPostStep)
   | finishPostStep (step : PostStep)
-  | acceptMayThen
   | setLife (p : PlayerId) (life : Int) (msg : String) (cause : Option EventCause)
   | logMessage (msg : String)
   | counterStackSpell (spellId : ObjectId) (exilePermanent grantFreeCast : Bool)
@@ -1925,8 +1639,6 @@ inductive PendingReplacement where
   | moveCardsToGraveyardLoop (ids : Array ObjectId) (cause : Option EventCause := none)
   | placeSearchedGraveyardLoop (ids : Array ObjectId) (cause : Option EventCause := none)
       (pendingLog : Option (ObjectId × PlayerId × String) := none)
-  | returnLinkedExileToHandLoop (srcId : ObjectId) (ids : Array ObjectId)
-      (pendingItem : Option (ObjectId × PlayerId × String) := none)
   | finishConcede (wasIdlePriority : Bool) (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
       (savedPending : Option Pending := none) (popOuter : Bool := false)
@@ -1957,29 +1669,23 @@ inductive PendingReplacement where
       (startEventIdx : Option Nat := none)
       (reconcile : Bool := true)
       (allowDirectSingle : Bool := false)
-  /-- Resume the unified Phase-8 `Instruction` interpreter after a CR 616.1
+  /-- Resume the unified `Instruction` interpreter after a CR 616.1
   replacement choice completes (CR 608.2c / 614.6). -/
   | continueInterpreter (state : InterpState)
 deriving Inhabited
 
 /-- One frame of mid-resolution continuation state (CR 608.2). Grouping the
-per-step/per-card registers plus `resolvingContext`, `resolvingSpell`,
-`resolvingAbility`, `resolvingDivision`, `afterRandom`, `resolutionFinish`, and
-`pendingReplacement` into a frame on `Game.continuations` prevents nested
-resolution choices (reflexive triggers, replacement choices,
-cast-during-resolution) from clobbering outer frames. -/
+active resolution registers plus `resolvingContext`, `resolvingSpell`,
+`resolvingAbility`, `resolvingDivision`, `afterRandom`, `resolutionFinish`,
+`pendingReplacement`, `stepEnv`, and `interpWait?` into a frame on
+`Game.continuations` prevents nested resolution choices (reflexive triggers,
+replacement choices, cast-during-resolution) from clobbering outer frames. -/
 structure ContinuationFrame where
   /-- Draw these cards after the current scry finishes (e.g. Hithlain Knots). -/
   pendingDrawAfterScry : Option (PlayerId × Nat) := none
-  /-- Card discarded while a later `.put .discardedLand (how := .tapped)`
-  may put that land onto the battlefield tapped (Silvan Reveler). -/
-  discardedCardThisWay : Option (PlayerId × ObjectId) := none
   /-- Tokens created by the most recent `createKindTokens` call, so a following
-  sequence step can haste them or leave them out of a plus-one. -/
+  step can haste them or exclude them from a counter/pump effect. -/
   recentTokenIds : Array ObjectId := #[]
-  /-- Work left after the pending scry or surveil finishes (Eye of Jace):
-  its controller, source, and what to do. -/
-  fraAfterLook : Option (PlayerId × Option ObjectId × FraNext) := none
   /-- Copies a player may still cast without paying their mana costs as an
   ability resolves, with the mana value left (Uldaros Theorix). -/
   pendingFreeCopies : Option (PlayerId × Array ObjectId × Nat × Nat) := none
@@ -1989,110 +1695,6 @@ structure ContinuationFrame where
   /-- Deferred post-cast cleanup (Cascade / Gríma / Cosmic Cube library bottoming
   or CR 704.5e copy cease-to-exist) run when the proposed cast completes or reverses. -/
   postCastCleanup : Option PostCastCleanup := none
-  /-- Humans chosen for the current “tap any number of Humans” step. -/
-  humansTappedThisWay : Nat := 0
-  /-- Permanents destroyed by `.destroy .oppArtifactsEnchantments (note := .countDestroyed)`. -/
-  permanentsDestroyedThisWay : Nat := 0
-  /-- A hope counter was removed by the current `removeCounters .hope .source` step. -/
-  removedHopeThisWay : Bool := false
-  /-- The permanent marked by the current `dealDamage` step when it notes `.markedPermanent`. -/
-  permanentDealtDamageThisWay : Option ObjectId := none
-  /-- A permanent was returned to its owner's hand by the current `returnToHand` step. -/
-  returnedPermanentThisWay : Bool := false
-  /-- Ordinal recorded by the current `noteResolveThisTurn` step. -/
-  nthResolveThisWay : Option Nat := none
-  /-- The current sequence step asked the rest of the sequence not to run. -/
-  skipTriggerSequenceRest : Bool := false
-  /-- Excess damage noted by `dealDamage` with `.excess` for the following amass step. -/
-  excessDamageThisWay : Nat := 0
-  /-- `.destroy .target (note := .forAmass)` chose a legal target. -/
-  destroyedForAmassThisWay : Bool := false
-  amassAmountThisWay : Nat := 0
-  amassYouControlledThisWay : Bool := false
-  /-- Cards milled by `.mill` when it notes `.milledCards`. -/
-  milledIdsThisWay : Array ObjectId := #[]
-  /-- Cards `revealLibrary` just showed. -/
-  revealedIdsThisWay : Array ObjectId := #[]
-  /-- `.mill` noted `.opponentsMilled`: an opponent milled at least one card. -/
-  opponentsMilledThisWay : Bool := false
-  /-- Palantír finished putting an influence counter; the following step offers
-  the opponent's draw choice. -/
-  palantirChoiceReady : Option (PlayerId × PlayerId × ObjectId) := none
-  /-- `revealLibrary .untilInstantOrSorcery (.exile .top .forLater .impulse) .damagedPlayer`
-  stored the impulse. -/
-  grimaImpulseReady : Bool := false
-  grimaImpulseVictim : Option PlayerId := none
-  grimaImpulseFound : Option ObjectId := none
-  grimaImpulseOthers : Array ObjectId := #[]
-  /-- `sacrifice .you .plan .forReflexive` sacrificed the Plan. -/
-  planWasSacrificed : Bool := false
-  /-- `sacrifice .you .source .noted` sacrificed the source. -/
-  sourceWasSacrificed : Bool := false
-  /-- Lands exiled by `exile .landsYouControl .forLater .lands`. -/
-  exiledIdsThisWay : Array ObjectId := #[]
-  /-- Creature exiled by `exile .target .untilSourceLeaves .copyAndHost`, copied by the next step. -/
-  notedCopyObject : Option GameObject := none
-  notedHostId : Option ObjectId := none
-  /-- Cards discarded by accepting `.discard .hand`. `none` means declined. -/
-  handDiscardedThisWay : Option Nat := none
-  /-- Source of the Balin ability, for the damage step after the discard. -/
-  notedSourceThisWay : Option ObjectId := none
-  /-- Creature that received Equipment from `attach .anyYouControl .target`. -/
-  equipmentAttachedHost : Option ObjectId := none
-  /-- A count captured before a later step could change it. -/
-  notedCountThisWay : Nat := 0
-  /-- Tokens created by the replaced token-creation event for the following attach or counter step (CR 614.6). -/
-  createdTokensThisWay : Array ObjectId := #[]
-  /-- Artifact put from hand by `.put .artifactFromHand (note := .forAttach)`. -/
-  putArtifactThisWay : Option (ObjectId × ObjectId) := none
-  /-- Card exiled by `exile .graveyardCard .forLater .playCard`. -/
-  playExiledThisWay : Option ObjectId := none
-  /-- The following `surveil` returns a card with mana value at most the life gained this turn. -/
-  armSurveilReturn : Bool := false
-  /-- Later steps of a trigger `sequence`, waiting on the pending choice an earlier step opened. -/
-  triggerSequenceRest : Option TriggerSequenceRest := none
-  /-- Flattened steps of the `mayThen` conditional waiting in `triggerSequenceRest`. -/
-  mayThenDrop : Nat := 0
-  /-- After an optional `mayThen` action cannot be performed, the sequence fold skips this many steps. -/
-  mayThenSkip : Nat := 0
-  /-- Conditional of the `mayThen` currently offered. -/
-  mayThenConditional : Option TriggeredAbility.TriggerResolution := none
-  /-- Accepting `Pending.mayResolve` applies this trigger resolution. -/
-  mayOnAccept : Option TriggeredAbility.TriggerResolution := none
-  /-- Declining `Pending.mayResolve` applies this trigger resolution instead of `mayOnAccept`. -/
-  mayOnDecline : Option TriggeredAbility.TriggerResolution := none
-  /-- Ability context for `mayOnAccept` and `mayOnDecline`. -/
-  mayContext : Option TriggerSequenceRest := none
-  /-- Power of the creature sacrificed for `putCounters .plusOneSacrificedPower`. -/
-  sacrificedPowerThisWay : Option Nat := none
-  /-- An artifact-or-discard cost accepted a `mayThen`. -/
-  mayThenResume : Bool := false
-  /-- Alternatives for a pending `TriggerResolution.or`. -/
-  triggerOr : Option TriggerOrRest := none
-  /-- Context for a pending Alliance or Gollum mode choice. -/
-  chooseModesRest : Option ChooseModesRest := none
-  /-- Declining `payOrLetCounter` resolves this effect instead of countering. -/
-  unlessPaysInstead : Option Effect := none
-  unlessPaysController : PlayerId := ⟨0⟩
-  unlessPaysTargets : Array Target := #[]
-  unlessPaysSource : Option ObjectId := none
-  /-- The payer left without paying (CR 800.4f). -/
-  unlessPaysDue : Bool := false
-  unlessPaysResCtx : SpellResolutionCtx := {}
-  /-- Accepting `mayResolve` resolves this effect. -/
-  mayEffect : Option Effect := none
-  mayController : PlayerId := ⟨0⟩
-  mayTargets : Array Target := #[]
-  maySource : Option ObjectId := none
-  mayResCtx : SpellResolutionCtx := {}
-  /-- Alternatives for a pending `SpellResolution.or`. -/
-  spellOr : Array Effect := #[]
-  spellOrController : PlayerId := ⟨0⟩
-  spellOrTargets : Array Target := #[]
-  spellOrSource : Option ObjectId := none
-  /-- `chooseTop` and `chooseBottom` name the library side, not list order. -/
-  spellOrLibrary : Bool := false
-  spellOrResCtx : SpellResolutionCtx := {}
   /-- After the pending surveil, a card with mana value at most this put into the graveyard goes to hand. -/
   surveilReturnMvAtMost : Option Nat := none
   /-- A noncreature, nonland card put into the graveyard by the pending surveil goes to hand. -/
@@ -2147,9 +1749,9 @@ structure ContinuationFrame where
   /-- Deferred `StackObjectEvent.resolved` payload waiting on an ETB replacement
   or as-enters choice opened during `resolutionFinish`. -/
   pendingResolvedEvent : Option (EventObject × PlayerId × EventCause) := none
-  /-- Lexical `stepEnv` bindings from bound `Instruction.bind` steps (CR 608.2c / 614.6). -/
+  /-- Lexical `stepEnv` bindings from bound `Instruction.bind` steps and interactive choices (CR 608.2c / 614.6). -/
   stepEnv : Array (VarId × StepOutcome) := #[]
-  /-- Suspended unified Phase-8 `Instruction` interpreter state waiting on an
+  /-- Suspended unified `Instruction` interpreter state waiting on an
   interactive `Pending` choice or `AfterRandom.continueInterpreter`. -/
   interpWait? : Option InterpState := none
 deriving Inhabited
@@ -2157,75 +1759,10 @@ deriving Inhabited
 /-- Mutations to the top frame of `Game.continuations`. -/
 inductive ContinuationChange where
   | pendingDrawAfterScry (v : Option (PlayerId × Nat))
-  | discardedCardThisWay (v : Option (PlayerId × ObjectId))
   | recentTokenIds (v : Array ObjectId)
-  | fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext))
   | pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat))
   | pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat))
   | postCastCleanup (v : Option PostCastCleanup)
-  | humansTappedThisWay (v : Nat)
-  | permanentsDestroyedThisWay (v : Nat)
-  | removedHopeThisWay (v : Bool)
-  | permanentDealtDamageThisWay (v : Option ObjectId)
-  | returnedPermanentThisWay (v : Bool)
-  | nthResolveThisWay (v : Option Nat)
-  | skipTriggerSequenceRest (v : Bool)
-  | excessDamageThisWay (v : Nat)
-  | destroyedForAmassThisWay (v : Bool)
-  | amassAmountThisWay (v : Nat)
-  | amassYouControlledThisWay (v : Bool)
-  | milledIdsThisWay (v : Array ObjectId)
-  | revealedIdsThisWay (v : Array ObjectId)
-  | opponentsMilledThisWay (v : Bool)
-  | palantirChoiceReady (v : Option (PlayerId × PlayerId × ObjectId))
-  | grimaImpulseReady (v : Bool)
-  | grimaImpulseVictim (v : Option PlayerId)
-  | grimaImpulseFound (v : Option ObjectId)
-  | grimaImpulseOthers (v : Array ObjectId)
-  | planWasSacrificed (v : Bool)
-  | sourceWasSacrificed (v : Bool)
-  | exiledIdsThisWay (v : Array ObjectId)
-  | pushExiledIdThisWay (id : ObjectId)
-  | notedCopyObject (v : Option GameObject)
-  | notedHostId (v : Option ObjectId)
-  | handDiscardedThisWay (v : Option Nat)
-  | notedSourceThisWay (v : Option ObjectId)
-  | equipmentAttachedHost (v : Option ObjectId)
-  | notedCountThisWay (v : Nat)
-  | createdTokensThisWay (v : Array ObjectId)
-  | putArtifactThisWay (v : Option (ObjectId × ObjectId))
-  | playExiledThisWay (v : Option ObjectId)
-  | armSurveilReturn (v : Bool)
-  | triggerSequenceRest (v : Option TriggerSequenceRest)
-  | setTriggerSequenceRestSteps (steps : List TriggeredAbility.TriggerResolution)
-  | setTriggerSequenceRestFromMay (steps : List TriggeredAbility.TriggerResolution)
-  | mayThenDrop (v : Nat)
-  | mayThenSkip (v : Nat)
-  | mayThenConditional (v : Option TriggeredAbility.TriggerResolution)
-  | mayOnAccept (v : Option TriggeredAbility.TriggerResolution)
-  | mayOnDecline (v : Option TriggeredAbility.TriggerResolution)
-  | mayContext (v : Option TriggerSequenceRest)
-  | sacrificedPowerThisWay (v : Option Nat)
-  | mayThenResume (v : Bool)
-  | triggerOr (v : Option TriggerOrRest)
-  | chooseModesRest (v : Option ChooseModesRest)
-  | unlessPaysInstead (v : Option Effect)
-  | unlessPaysController (v : PlayerId)
-  | unlessPaysTargets (v : Array Target)
-  | unlessPaysSource (v : Option ObjectId)
-  | unlessPaysDue (v : Bool)
-  | unlessPaysResCtx (v : SpellResolutionCtx)
-  | mayEffect (v : Option Effect)
-  | mayController (v : PlayerId)
-  | mayTargets (v : Array Target)
-  | maySource (v : Option ObjectId)
-  | mayResCtx (v : SpellResolutionCtx)
-  | spellOr (v : Array Effect)
-  | spellOrController (v : PlayerId)
-  | spellOrTargets (v : Array Target)
-  | spellOrSource (v : Option ObjectId)
-  | spellOrLibrary (v : Bool)
-  | spellOrResCtx (v : SpellResolutionCtx)
   | surveilReturnMvAtMost (v : Option Nat)
   | surveilReturnNoncreatureNonland (v : Bool)
   | pendingReplacement (v : Option PendingReplacement)
@@ -2588,75 +2125,10 @@ def PendingReplacement.dropTargetModDeparted (target : PendingReplacement)
 
 namespace EngineChange
 @[inline] def pendingDrawAfterScry (v : Option (PlayerId × Nat)) : EngineChange := .continuation (.pendingDrawAfterScry v)
-@[inline] def discardedCardThisWay (v : Option (PlayerId × ObjectId)) : EngineChange := .continuation (.discardedCardThisWay v)
 @[inline] def recentTokenIds (v : Array ObjectId) : EngineChange := .continuation (.recentTokenIds v)
-@[inline] def fraAfterLook (v : Option (PlayerId × Option ObjectId × FraNext)) : EngineChange := .continuation (.fraAfterLook v)
 @[inline] def pendingFreeCopies (v : Option (PlayerId × Array ObjectId × Nat × Nat)) : EngineChange := .continuation (.pendingFreeCopies v)
 @[inline] def pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat)) : EngineChange := .continuation (.pendingMayCastFromExile v)
 @[inline] def postCastCleanup (v : Option PostCastCleanup) : EngineChange := .continuation (.postCastCleanup v)
-@[inline] def humansTappedThisWay (v : Nat) : EngineChange := .continuation (.humansTappedThisWay v)
-@[inline] def permanentsDestroyedThisWay (v : Nat) : EngineChange := .continuation (.permanentsDestroyedThisWay v)
-@[inline] def removedHopeThisWay (v : Bool) : EngineChange := .continuation (.removedHopeThisWay v)
-@[inline] def permanentDealtDamageThisWay (v : Option ObjectId) : EngineChange := .continuation (.permanentDealtDamageThisWay v)
-@[inline] def returnedPermanentThisWay (v : Bool) : EngineChange := .continuation (.returnedPermanentThisWay v)
-@[inline] def nthResolveThisWay (v : Option Nat) : EngineChange := .continuation (.nthResolveThisWay v)
-@[inline] def skipTriggerSequenceRest (v : Bool) : EngineChange := .continuation (.skipTriggerSequenceRest v)
-@[inline] def excessDamageThisWay (v : Nat) : EngineChange := .continuation (.excessDamageThisWay v)
-@[inline] def destroyedForAmassThisWay (v : Bool) : EngineChange := .continuation (.destroyedForAmassThisWay v)
-@[inline] def amassAmountThisWay (v : Nat) : EngineChange := .continuation (.amassAmountThisWay v)
-@[inline] def amassYouControlledThisWay (v : Bool) : EngineChange := .continuation (.amassYouControlledThisWay v)
-@[inline] def milledIdsThisWay (v : Array ObjectId) : EngineChange := .continuation (.milledIdsThisWay v)
-@[inline] def revealedIdsThisWay (v : Array ObjectId) : EngineChange := .continuation (.revealedIdsThisWay v)
-@[inline] def opponentsMilledThisWay (v : Bool) : EngineChange := .continuation (.opponentsMilledThisWay v)
-@[inline] def palantirChoiceReady (v : Option (PlayerId × PlayerId × ObjectId)) : EngineChange := .continuation (.palantirChoiceReady v)
-@[inline] def grimaImpulseReady (v : Bool) : EngineChange := .continuation (.grimaImpulseReady v)
-@[inline] def grimaImpulseVictim (v : Option PlayerId) : EngineChange := .continuation (.grimaImpulseVictim v)
-@[inline] def grimaImpulseFound (v : Option ObjectId) : EngineChange := .continuation (.grimaImpulseFound v)
-@[inline] def grimaImpulseOthers (v : Array ObjectId) : EngineChange := .continuation (.grimaImpulseOthers v)
-@[inline] def planWasSacrificed (v : Bool) : EngineChange := .continuation (.planWasSacrificed v)
-@[inline] def sourceWasSacrificed (v : Bool) : EngineChange := .continuation (.sourceWasSacrificed v)
-@[inline] def exiledIdsThisWay (v : Array ObjectId) : EngineChange := .continuation (.exiledIdsThisWay v)
-@[inline] def pushExiledIdThisWay (id : ObjectId) : EngineChange := .continuation (.pushExiledIdThisWay id)
-@[inline] def notedCopyObject (v : Option GameObject) : EngineChange := .continuation (.notedCopyObject v)
-@[inline] def notedHostId (v : Option ObjectId) : EngineChange := .continuation (.notedHostId v)
-@[inline] def handDiscardedThisWay (v : Option Nat) : EngineChange := .continuation (.handDiscardedThisWay v)
-@[inline] def notedSourceThisWay (v : Option ObjectId) : EngineChange := .continuation (.notedSourceThisWay v)
-@[inline] def equipmentAttachedHost (v : Option ObjectId) : EngineChange := .continuation (.equipmentAttachedHost v)
-@[inline] def notedCountThisWay (v : Nat) : EngineChange := .continuation (.notedCountThisWay v)
-@[inline] def createdTokensThisWay (v : Array ObjectId) : EngineChange := .continuation (.createdTokensThisWay v)
-@[inline] def putArtifactThisWay (v : Option (ObjectId × ObjectId)) : EngineChange := .continuation (.putArtifactThisWay v)
-@[inline] def playExiledThisWay (v : Option ObjectId) : EngineChange := .continuation (.playExiledThisWay v)
-@[inline] def armSurveilReturn (v : Bool) : EngineChange := .continuation (.armSurveilReturn v)
-@[inline] def triggerSequenceRest (v : Option TriggerSequenceRest) : EngineChange := .continuation (.triggerSequenceRest v)
-@[inline] def setTriggerSequenceRestSteps (steps : List TriggeredAbility.TriggerResolution) : EngineChange := .continuation (.setTriggerSequenceRestSteps steps)
-@[inline] def setTriggerSequenceRestFromMay (steps : List TriggeredAbility.TriggerResolution) : EngineChange := .continuation (.setTriggerSequenceRestFromMay steps)
-@[inline] def mayThenDrop (v : Nat) : EngineChange := .continuation (.mayThenDrop v)
-@[inline] def mayThenSkip (v : Nat) : EngineChange := .continuation (.mayThenSkip v)
-@[inline] def mayThenConditional (v : Option TriggeredAbility.TriggerResolution) : EngineChange := .continuation (.mayThenConditional v)
-@[inline] def mayOnAccept (v : Option TriggeredAbility.TriggerResolution) : EngineChange := .continuation (.mayOnAccept v)
-@[inline] def mayOnDecline (v : Option TriggeredAbility.TriggerResolution) : EngineChange := .continuation (.mayOnDecline v)
-@[inline] def mayContext (v : Option TriggerSequenceRest) : EngineChange := .continuation (.mayContext v)
-@[inline] def sacrificedPowerThisWay (v : Option Nat) : EngineChange := .continuation (.sacrificedPowerThisWay v)
-@[inline] def mayThenResume (v : Bool) : EngineChange := .continuation (.mayThenResume v)
-@[inline] def triggerOr (v : Option TriggerOrRest) : EngineChange := .continuation (.triggerOr v)
-@[inline] def chooseModesRest (v : Option ChooseModesRest) : EngineChange := .continuation (.chooseModesRest v)
-@[inline] def unlessPaysInstead (v : Option Effect) : EngineChange := .continuation (.unlessPaysInstead v)
-@[inline] def unlessPaysController (v : PlayerId) : EngineChange := .continuation (.unlessPaysController v)
-@[inline] def unlessPaysTargets (v : Array Target) : EngineChange := .continuation (.unlessPaysTargets v)
-@[inline] def unlessPaysSource (v : Option ObjectId) : EngineChange := .continuation (.unlessPaysSource v)
-@[inline] def unlessPaysDue (v : Bool) : EngineChange := .continuation (.unlessPaysDue v)
-@[inline] def unlessPaysResCtx (v : SpellResolutionCtx) : EngineChange := .continuation (.unlessPaysResCtx v)
-@[inline] def mayEffect (v : Option Effect) : EngineChange := .continuation (.mayEffect v)
-@[inline] def mayController (v : PlayerId) : EngineChange := .continuation (.mayController v)
-@[inline] def mayTargets (v : Array Target) : EngineChange := .continuation (.mayTargets v)
-@[inline] def maySource (v : Option ObjectId) : EngineChange := .continuation (.maySource v)
-@[inline] def mayResCtx (v : SpellResolutionCtx) : EngineChange := .continuation (.mayResCtx v)
-@[inline] def spellOr (v : Array Effect) : EngineChange := .continuation (.spellOr v)
-@[inline] def spellOrController (v : PlayerId) : EngineChange := .continuation (.spellOrController v)
-@[inline] def spellOrTargets (v : Array Target) : EngineChange := .continuation (.spellOrTargets v)
-@[inline] def spellOrSource (v : Option ObjectId) : EngineChange := .continuation (.spellOrSource v)
-@[inline] def spellOrLibrary (v : Bool) : EngineChange := .continuation (.spellOrLibrary v)
-@[inline] def spellOrResCtx (v : SpellResolutionCtx) : EngineChange := .continuation (.spellOrResCtx v)
 @[inline] def surveilReturnMvAtMost (v : Option Nat) : EngineChange := .continuation (.surveilReturnMvAtMost v)
 @[inline] def surveilReturnNoncreatureNonland (v : Bool) : EngineChange := .continuation (.surveilReturnNoncreatureNonland v)
 @[inline] def pendingReplacement (v : Option PendingReplacement) : EngineChange := .continuation (.pendingReplacement v)

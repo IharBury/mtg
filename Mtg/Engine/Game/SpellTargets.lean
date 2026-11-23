@@ -91,7 +91,6 @@ def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Eff
         targeted.all (fun m => m.allowsZeroTargets || m.effectiveTargetSpec.allowsZero)
       maxTargets := targeted.foldl (fun acc m => acc + m.maxTargetCount) 0
       body := .seq (es.toArray.map (·.body))
-      resolution? := none
       phrase := String.intercalate ". " (es.map (·.phrase)) }
 
 /-- The targets a kicked spell announces instead (CR 702.33g / 601.2c): The
@@ -426,10 +425,7 @@ def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
       match obj.triggeredAbility with
       | some ab =>
         let spec := ab.targetSpec.withSlotBounds ab.allowsZeroTargets ab.effect.maxTargets
-        let lifeTargets :=
-          match ab.shared with
-          | .resource .gainLifePlusOnes => true
-          | _ => false
+        let lifeTargets := ab.effect == Effect.resourceGainLifePlusOnes
         let minN := if lifeTargets || ab.allowsZeroTargets then 0 else spec.minTargetCount
         let maxN :=
           if lifeTargets then ((g.lastKnownPowerOf? obj.id).getD 0).toNat

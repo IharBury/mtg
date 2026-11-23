@@ -1542,6 +1542,8 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
           "You get the city's blessing for the rest of the game."
         | .player (.gainDesignation _ .enduringStory) =>
           "You get an enduring story for the rest of the game."
+        | .player (.controlPlayer who) =>
+          s!"You control {toOracleStr who { ctx with capitalize := false }}."
         | .play (.lookAtTopOfLibrary _) =>
           "You may look at the top card of your library any time."
         | .play (.mayPlayFrom _ .library (.hasType .creature) false false false false) =>

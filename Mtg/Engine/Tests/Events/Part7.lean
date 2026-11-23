@@ -1900,7 +1900,7 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
     !(gPhInDone.object! p2PhBear.id).status.attacking &&
     (gPhInDone.player p2).ringBearerId.isNone
 
-  -- 3b(i). `phaseOutPermanents`, `phaseOutPermanentsLoop`, and `.teferi` (`FrcPostStep.teferiExileSpell`):
+  -- 3b(i). `phaseOutPermanents`, `phaseOutPermanentsLoop`, and `.exileOnLeaveStack`:
   let gPop0 :=
     addPermanent
       (addPermanent
@@ -1967,7 +1967,7 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
     popPhasedBatches == #[some popPauseBid, some popPauseBid] &&
     gPopLoopResumed.currentBatch.isNone
 
-  -- Also test `FrcPostStep.teferiExileSpell` directly across a paused `.chooseReplacement` so the deferred post-step path is proven:
+  -- Also test `.installEffect (.applyReplacement .untilEndOfTurn .exileOnLeaveStack)` directly across a paused `.chooseReplacement` via `.continueInterpreter`:
   let gTefPause0 :=
     insertObject
       (addPermanent (addPermanent g4 leyADef p0 p0) leyBDef p0 p0)
@@ -1977,6 +1977,11 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
   let tpLeyB := (gTefPause0.permanentsOf p0).find? (·.name == leyBDef.name) |>.get!.id
   let tpRidA : ReplacementId := { kind := .exileOppDeath, object := some tpLeyA }
   let tpRidB : ReplacementId := { kind := .exileOppDeath, object := some tpLeyB }
+  let tefCont : InterpState := {
+    ctx := { controller := p0, sourceId := some tefStackObj.id }
+    queue := #[.installEffect (.applyReplacement .untilEndOfTurn .exileOnLeaveStack)]
+    stack := #[]
+  }
   let gTefPause1 :=
     gTefPause0.changes #[
       .pushStack { objectId := tefStackObj.id, controller := p0, targets := #[.player p2] },
@@ -1985,10 +1990,10 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
         resolutionFinish := some (.spell { objectId := tefStackObj.id, controller := p0, targets := #[.player p2] }
           (gTefPause0.snapshot tefStackObj) false) },
       .pending (.chooseReplacement p0 #[tpRidA, tpRidB]),
-      .pendingReplacement (some (.finishFrcPostStep .teferiExileSpell)) ]
+      .pendingReplacement (some (.continueInterpreter tefCont)) ]
   let gTefPostDone :=
     ((gTefPause1.changes #[.pending Pending.none, .pendingReplacement none]).resumePendingReplacement
-      (.finishFrcPostStep .teferiExileSpell)).completeActiveResolutions
+      (.continueInterpreter tefCont)).completeActiveResolutions
   let teferiPostStepPausedOk :=
     (gTefPostDone.followMovedToZone? tefStackObj.id (· == .exile)).isSome
 

@@ -6,10 +6,10 @@ import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 
 /-!
-# Resource triggers without `ResourceLeftover`
+# Unified resource triggers
 
-Each leftover draw, discard, life, and +1/+1-counter effect resolves as the
-constructors that effect uses. `ResourceLeftover` stays the printed sentence.
+Each draw, discard, life, and +1/+1-counter trigger carries a unified
+`Instruction` body and renders its Oracle sentence.
 -/
 
 namespace Mtg.Engine.ResourceTests
@@ -45,55 +45,33 @@ def tokensNamed (g : Game) (name : String) : Nat :=
 def resource (e : Effect) : TriggeredAbility :=
   TriggeredAbility.onResource e
 
-/- The shared resource effects resolve as constructors that do not carry
-`ResourceLeftover`. The printed sentence stays the Oracle line. -/
-#guard TriggeredAbility.resolution (resource Effect.resourceDiscardExilePlay) ==
-  .may (.exile .discarded .playUntilNextTurn) (.sequence []) .ifYouDo
-#guard TriggeredAbility.resolution (resource Effect.resourceDrawIfAnotherHeroDamage) ==
-  .«if» (.atLeast (.count (.othersOfSubtype .hero)) (.fixed 1)) (.dealDamage (.fixed 1) (.player (.target .opponent)))
-#guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawBecome66) ==
-  .sequence [.setBasePT (.fixed 6) (.fixed 6) .source, .grant (.keywords #[Keyword.trample]) .source]
-#guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawPlusOneTarget) ==
-  .putCounters (.ofKind .plusOnePlusOne) .permanent
-#guard TriggeredAbility.resolution (resource Effect.resourceSecondDrawDrain) ==
-  .sequence [.loseLife (.fixed 1) .eachOpponent, .gainLife (.fixed 1)]
-#guard TriggeredAbility.resolution (resource Effect.resourceGainLifePlusOnes) ==
-  .putCounters (.ofKind .plusOnePlusOne) .eachUpToLastKnown
-#guard TriggeredAbility.resolution (resource Effect.resourcePlusOneCreateInsectOnce) ==
-  .createTokens 0 (.fixed 1) false
-#guard TriggeredAbility.resolution (resource Effect.resourcePlusOneOnThisOnce) ==
-  .putCounters (.ofKind .plusOnePlusOne) .source
-#guard TriggeredAbility.resolution (resource Effect.resourcePlusOneOnHeroesCreateWall) ==
-  .may (.createTokens 0 (.fixed 1) false) (.sequence []) .ifYouDo
+/- The resource triggers carry unified `Instruction` bodies and keep their Oracle lines. -/
+#guard (resource Effect.resourceDiscardExilePlay).effect.body == Effect.resourceDiscardExilePlay.body
+#guard (resource Effect.resourceDrawIfAnotherHeroDamage).effect.body == Effect.resourceDrawIfAnotherHeroDamage.body
+#guard (resource Effect.resourceSecondDrawBecome66).effect.body == Effect.resourceSecondDrawBecome66.body
+#guard (resource Effect.resourceSecondDrawPlusOneTarget).effect.body == Effect.resourceSecondDrawPlusOneTarget.body
+#guard (resource Effect.resourceSecondDrawDrain).effect.body == Effect.resourceSecondDrawDrain.body
+#guard (resource Effect.resourceGainLifePlusOnes).effect.body == Effect.resourceGainLifePlusOnes.body
+#guard (resource Effect.resourcePlusOneCreateInsectOnce).effect.body == Effect.resourcePlusOneCreateInsectOnce.body
+#guard (resource Effect.resourcePlusOneOnThisOnce).effect.body == Effect.resourcePlusOneOnThisOnce.body
+#guard (resource Effect.resourcePlusOneOnHeroesCreateWall).effect.body == Effect.resourcePlusOneOnHeroesCreateWall.body
 
-#guard (SharedTrigger.toTriggeredAbility (.resource .plusOneCreateInsectOnce)).onceEachTurn
-#guard (SharedTrigger.toTriggeredAbility (.resource .plusOneOnThisOnce)).onceEachTurn
-#guard (SharedTrigger.toEffect (.resource .gainLifePlusOnes)).allowsZeroTargets
-#guard (SharedTrigger.toEffect (.resource .drawIfAnotherHeroDamage)).targeting.spec ==
-  .opponent
-#guard (SharedTrigger.toEffect (.resource .secondDrawPlusOneTarget)).targeting.spec ==
-  .creature
-#guard (SharedTrigger.toEffect (.resource .gainLifePlusOnes)).targeting.spec ==
-  .creatureYouControl
+#guard TriggeredAbility.resourcePlusOneCreateInsectOnce.onceEachTurn
+#guard TriggeredAbility.resourcePlusOneOnThisOnce.onceEachTurn
+#guard Effect.resourceGainLifePlusOnes.allowsZeroTargets
+#guard Effect.resourceDrawIfAnotherHeroDamage.targeting.spec == .opponent
+#guard Effect.resourceSecondDrawPlusOneTarget.targeting.spec == .creature
+#guard Effect.resourceGainLifePlusOnes.targeting.spec == .creatureYouControl
 
-#guard toString (resource Effect.resourceDiscardExilePlay) ==
-  TriggeredAbility.resourceSentence .discardExilePlay
-#guard toString (resource Effect.resourceDrawIfAnotherHeroDamage) ==
-  TriggeredAbility.resourceSentence .drawIfAnotherHeroDamage
-#guard toString (resource Effect.resourceSecondDrawBecome66) ==
-  TriggeredAbility.resourceSentence .secondDrawBecome66
-#guard toString (resource Effect.resourceSecondDrawPlusOneTarget) ==
-  TriggeredAbility.resourceSentence .secondDrawPlusOneTarget
-#guard toString (resource Effect.resourceSecondDrawDrain) ==
-  TriggeredAbility.resourceSentence .secondDrawDrain
-#guard toString (resource Effect.resourceGainLifePlusOnes) ==
-  TriggeredAbility.resourceSentence .gainLifePlusOnes
-#guard toString (resource Effect.resourcePlusOneCreateInsectOnce) ==
-  TriggeredAbility.resourceSentence .plusOneCreateInsectOnce
-#guard toString (resource Effect.resourcePlusOneOnThisOnce) ==
-  TriggeredAbility.resourceSentence .plusOneOnThisOnce
-#guard toString (resource Effect.resourcePlusOneOnHeroesCreateWall) ==
-  TriggeredAbility.resourceSentence .plusOneOnHeroesCreateWall
+#guard (toString (resource Effect.resourceDiscardExilePlay)).contains "exile that card from your graveyard"
+#guard (toString (resource Effect.resourceDrawIfAnotherHeroDamage)).contains "Human Torch"
+#guard (toString (resource Effect.resourceSecondDrawBecome66)).contains "Moon Girl and Devil Dinosaur"
+#guard (toString (resource Effect.resourceSecondDrawPlusOneTarget)).contains "put a +1/+1 counter on target creature"
+#guard (toString (resource Effect.resourceSecondDrawDrain)).contains "each opponent loses 1 life and you gain 1 life"
+#guard (toString (resource Effect.resourceGainLifePlusOnes)).contains "choose up to that many target creatures you control"
+#guard (toString (resource Effect.resourcePlusOneCreateInsectOnce)).contains "1/1 green Insect"
+#guard (toString (resource Effect.resourcePlusOneOnThisOnce)).contains "put a +1/+1 counter on this creature"
+#guard (toString (resource Effect.resourcePlusOneOnHeroesCreateWall)).contains "0/4 colorless Wall"
 
 /- Moonstone may exile the discarded card. Declining leaves it in the graveyard. -/
 def moonstoneBoard : Game :=

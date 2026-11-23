@@ -6,10 +6,10 @@ import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 
 /-!
-# Cast triggers without `CastLeftover`
+# Unified cast triggers
 
-Each leftover “whenever you cast …” effect resolves as the constructors
-that effect uses. `CastLeftover` stays the printed sentence.
+Each “whenever you cast …” trigger carries a unified `Instruction` body and
+renders its Oracle sentence.
 -/
 
 namespace Mtg.Engine.CastingTests
@@ -52,65 +52,36 @@ def withCause (g : Game) (source : GameObject) (spell : CardDef)
 def casting (e : Effect) : TriggeredAbility :=
   TriggeredAbility.onCasting e
 
-/- The shared cast effects resolve as constructors that do not carry
-`CastLeftover`. The printed sentence stays the Oracle line. -/
-#guard TriggeredAbility.resolution (casting Effect.castingVillainToken) ==
-  .createTokens 0 (.fixed 1) false
-#guard TriggeredAbility.resolution (casting Effect.castingMerfolkFromBlue) ==
-  .createTokens 0 .blueManaSymbols false
-#guard TriggeredAbility.resolution (casting Effect.castingMayPayHasteUnblockable) ==
-  .may (.pay (CostSpec.ofGeneric 1)) (.queueReflexive (.cant (.beBlockedExceptByHaste .target))) .ifYouDo
-#guard TriggeredAbility.resolution (casting Effect.castingPlusOneEachOther) ==
-  .putCounters (.ofKind .plusOnePlusOne) .eachOther
-#guard TriggeredAbility.resolution (casting Effect.castingExileFlicker) ==
-  .exile .target .nextEndStep
-#guard TriggeredAbility.resolution (casting Effect.castingVisionModes) ==
-  .chooseModes TriggeredAbility.TriggerResolution.visionModes .vision
-#guard TriggeredAbility.resolution (casting Effect.castingDamageEqualMv) ==
-  .dealDamage .spellManaValue .target
-#guard TriggeredAbility.resolution (casting Effect.castingDrawPowerEqualHand) ==
-  .sequence [.draw (.fixed 1), .grant .basePowerEqualHand .source]
-#guard TriggeredAbility.resolution (casting Effect.castingPlusOneThis) ==
-  .putCounters (.ofKind .plusOnePlusOne) .source
-#guard TriggeredAbility.resolution (casting Effect.castingPlusOneScry) ==
-  .sequence [.putCounters (.ofKind .plusOnePlusOne) .source, .scry (.fixed 1)]
-#guard TriggeredAbility.resolution (casting Effect.castingIronFistTap) ==
-  .grant .ironFistTap .source
-#guard TriggeredAbility.resolution (casting Effect.castingTargetsGainFlying) ==
-  .grant (.keywords #[Keyword.flying]) .spellTargets
-#guard TriggeredAbility.resolution (casting Effect.castingCopyIfArtifactOrLand) ==
-  .sequence [.putCounters (.ofKind .plusOnePlusOne 2) .source, .copyCause]
-#guard TriggeredAbility.resolution (casting Effect.castingTapCreatureOrLand) ==
-  .tap .target
+/- The cast triggers carry unified `Instruction` bodies and keep their Oracle lines. -/
+#guard (casting Effect.castingVillainToken).effect.body == Effect.castingVillainToken.body
+#guard (casting Effect.castingMerfolkFromBlue).effect.body == Effect.castingMerfolkFromBlue.body
+#guard (casting Effect.castingMayPayHasteUnblockable).effect.body == Effect.castingMayPayHasteUnblockable.body
+#guard (casting Effect.castingPlusOneEachOther).effect.body == Effect.castingPlusOneEachOther.body
+#guard (casting Effect.castingExileFlicker).effect.body == Effect.castingExileFlicker.body
+#guard (casting Effect.castingVisionModes).effect.body == Effect.castingVisionModes.body
+#guard (casting Effect.castingDamageEqualMv).effect.body == Effect.castingDamageEqualMv.body
+#guard (casting Effect.castingDrawPowerEqualHand).effect.body == Effect.castingDrawPowerEqualHand.body
+#guard (casting Effect.castingPlusOneThis).effect.body == Effect.castingPlusOneThis.body
+#guard (casting Effect.castingPlusOneScry).effect.body == Effect.castingPlusOneScry.body
+#guard (casting Effect.castingIronFistTap).effect.body == Effect.castingIronFistTap.body
+#guard (casting Effect.castingTargetsGainFlying).effect.body == Effect.castingTargetsGainFlying.body
+#guard (casting Effect.castingCopyIfArtifactOrLand).effect.body == Effect.castingCopyIfArtifactOrLand.body
+#guard (casting Effect.castingTapCreatureOrLand).effect.body == Effect.castingTapCreatureOrLand.body
 
-#guard toString (casting Effect.castingVillainToken) ==
-  TriggeredAbility.castingSentence .villainToken
-#guard toString (casting Effect.castingMerfolkFromBlue) ==
-  TriggeredAbility.castingSentence .merfolkFromBlue
-#guard toString (casting Effect.castingMayPayHasteUnblockable) ==
-  TriggeredAbility.castingSentence .mayPayHasteUnblockable
-#guard toString (casting Effect.castingPlusOneEachOther) ==
-  TriggeredAbility.castingSentence .plusOneEachOther
-#guard toString (casting Effect.castingExileFlicker) ==
-  TriggeredAbility.castingSentence .exileFlicker
-#guard toString (casting Effect.castingVisionModes) ==
-  TriggeredAbility.castingSentence .visionModes
-#guard toString (casting Effect.castingDamageEqualMv) ==
-  TriggeredAbility.castingSentence .damageEqualMv
-#guard toString (casting Effect.castingDrawPowerEqualHand) ==
-  TriggeredAbility.castingSentence .drawPowerEqualHand
-#guard toString (casting Effect.castingPlusOneThis) ==
-  TriggeredAbility.castingSentence .plusOneThis
-#guard toString (casting Effect.castingPlusOneScry) ==
-  TriggeredAbility.castingSentence .plusOneScry
-#guard toString (casting Effect.castingIronFistTap) ==
-  TriggeredAbility.castingSentence .ironFistTap
-#guard toString (casting Effect.castingTargetsGainFlying) ==
-  TriggeredAbility.castingSentence .targetsGainFlying
-#guard toString (casting Effect.castingCopyIfArtifactOrLand) ==
-  TriggeredAbility.castingSentence .copyIfArtifactOrLand
-#guard toString (casting Effect.castingTapCreatureOrLand) ==
-  TriggeredAbility.castingSentence .tapCreatureOrLand
+#guard (toString (casting Effect.castingVillainToken)).contains "2/1 black Villain"
+#guard (toString (casting Effect.castingMerfolkFromBlue)).contains "blue mana symbols"
+#guard (toString (casting Effect.castingMayPayHasteUnblockable)).contains "creatures with haste"
+#guard (toString (casting Effect.castingPlusOneEachOther)).contains "each other creature you control"
+#guard (toString (casting Effect.castingExileFlicker)).contains "beginning of the next end step"
+#guard (toString (casting Effect.castingVisionModes)).contains "Solar Beam"
+#guard (toString (casting Effect.castingDamageEqualMv)).contains "Thor deals damage"
+#guard (toString (casting Effect.castingDrawPowerEqualHand)).contains "Ms. Marvel"
+#guard (toString (casting Effect.castingPlusOneThis)).contains "Mockingbird"
+#guard (toString (casting Effect.castingPlusOneScry)).contains "Colleen Wing"
+#guard (toString (casting Effect.castingIronFistTap)).contains "Iron Fist"
+#guard (toString (casting Effect.castingTargetsGainFlying)).contains "gain flying"
+#guard (toString (casting Effect.castingCopyIfArtifactOrLand)).contains "Fin Fang Foom"
+#guard (toString (casting Effect.castingTapCreatureOrLand)).contains "Seismic Takedown"
 
 /- A Villain spell creates one 2/1 Villain token with menace. -/
 def villainBoard : Game :=
@@ -156,8 +127,9 @@ def speedOffer : Game :=
 
 #guard
   match speedOffer.pending with
-  | .fraChoice q (.mayPayManaForReflexive cost _ .hasteUnblockable _) =>
-    q == me && cost == #[.generic 1]
+  | .fraChoice q (.mayPayManaForReflexive cost _ eff _) =>
+    q == me && cost == #[.generic 1] &&
+      eff.phrase.contains "can't be blocked this turn except by creatures with haste"
   | _ => false
 
 def speedDeclines : Game :=

@@ -170,7 +170,7 @@ def unlessPaysLeaveAsked : Game :=
 
 #guard
   match unlessPaysLeaveAsked.pending with
-  | .payOrLetCounter p 3 _ => p == ⟨0⟩ && unlessPaysLeaveAsked.unlessPaysInstead.isSome
+  | .payOrLetCounter p 3 _ => p == ⟨0⟩ && unlessPaysLeaveAsked.currentInterpWait?.isSome
   | _ => false
 
 def unlessPaysLeftUnpaid : Game :=
@@ -194,7 +194,7 @@ def mayLeaveAsked : Game :=
 
 #guard
   match mayLeaveAsked.pending with
-  | .mayResolve p => p == ⟨0⟩ && mayLeaveAsked.mayEffect.isSome
+  | .mayResolve p => p == ⟨0⟩ && mayLeaveAsked.currentInterpWait?.isSome
   | _ => false
 
 def mayLeft : Game :=
@@ -206,7 +206,7 @@ def mayLeft : Game :=
   (mayLeft.player ⟨0⟩).leftTheGame &&
     (mayLeft.player ⟨0⟩).life == 20 &&
     mayLeft.pending == .none &&
-    mayLeft.mayEffect.isNone &&
+    mayLeft.currentInterpWait?.isNone &&
     !mayLeft.over
 
 -- Final discarder leaving during `chooseDiscardCard` clears `conniveSource` and

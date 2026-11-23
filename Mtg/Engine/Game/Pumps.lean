@@ -663,5 +663,40 @@ def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
 def pumpAndGrantTrample (g : Game) (o : GameObject) (p t : Int) : Game :=
   g.pumpPermanent o p t (trample := true)
 
+def grantTypeCostLessThisTurn (g : Game) (p : PlayerId) (ty : CardType) (n : Nat) : Game :=
+  g.createEffect (.typeSpellCostLessThisTurn p ty n)
+    |>.logMsg s!"{ty} spells {(g.player p).name} casts this turn cost \{{n}} less"
+
+def grantSupertypeCostLessThisTurn (g : Game) (p : PlayerId) (s : Supertype) (n : Nat) : Game :=
+  g.createEffect (.supertypeSpellCostLessThisTurn p s n)
+    |>.logMsg s!"{s} spells {(g.player p).name} casts this turn cost \{{n}} less"
+
+partial def finishProliferateEachKind (g : Game) (controller : PlayerId)
+    (targetId : ObjectId) (remainingKinds : Array CounterKind)
+    (hasPlusOne : Bool) (effCause : EventCause) : Game :=
+  if hasPlusOne then
+    let g :=
+      match g.findObject? targetId with
+      | some o => g.addPlusOnePlusOneTo o 1 (byPlayer := some controller) (cause := some effCause)
+      | none => g
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement (.finishProliferateEachKind controller targetId remainingKinds false effCause)
+    else
+      g.finishProliferateEachKind controller targetId remainingKinds false effCause
+  else
+    match remainingKinds[0]? with
+    | some kind =>
+      let restKinds := remainingKinds.extract 1 remainingKinds.size
+      let g := g.recordPutCounters targetId kind 1 (byPlayer := some controller) (cause := some effCause)
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement (.finishProliferateEachKind controller targetId restKinds false effCause)
+      else
+        g.finishProliferateEachKind controller targetId restKinds false effCause
+    | none =>
+      let g := g.syncImpendingNotACreature targetId (cause := some effCause)
+      let oName := ((g.findObject? targetId).map g.name).getD "permanent"
+      (g.record (GameEvent.proliferated g.turnNumber controller (permanents := #[targetId]) (cause := some effCause))).logMsg
+        s!"{oName} gets another counter of each kind"
+
 end Game
 end Mtg.Engine

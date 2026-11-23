@@ -109,9 +109,7 @@ def activated (effect : Effect := {}) (mana : ManaCost := ManaCost.empty)
     else
       match manaProd? with
       | some mp =>
-        { effect with
-          body := .player (.addMana .you mp)
-          resolution? := none }
+        { effect with body := .player (.addMana .you mp) }
       | none => effect
   let finalEff : Effect :=
     if extraModes.isEmpty then baseEff

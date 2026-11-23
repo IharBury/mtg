@@ -162,20 +162,20 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
 #guard
   let (gMaySync, gMayPause, gMayPauseDone, gTrigOrPause, gTrigOrDone, gMorphSacPause, gMorphSacDone, step2ContOk) :=
     let relicDef : CardDef := { name := "Phase16 Relic", manaCost := ManaCost.empty, types := #[.artifact] }
-    -- Sequence `[maySacArtifactOrDiscardDraw, gainLife 3]` so we prove `mayThenResume` (draw 1)
-    -- runs BEFORE the outer sequence step (gain 3 life) and BEFORE frame pop in BOTH sync and paused cases!
-    let seqRes : TriggeredAbility.TriggerResolution :=
-      .sequence [
-        .may (.pay CostSpec.sacrificeArtifactOrDiscardCard)
-          (.draw (.fixed 1)) .ifYouDo,
-        .gainLife (.fixed 3) ]
+    -- Sequence `[may (sacrificeArtifactOrDiscardCard) (drawFixed 1), gainLifeFixed 3]` so we prove
+    -- the optional body (draw 1) runs BEFORE the outer sequence step (gain 3 life) and BEFORE frame pop in BOTH sync and paused cases!
+    let seqAb : TriggeredAbility :=
+      TriggeredAbility.ofPattern .thisEnters "" (.seq #[
+        Instruction.may .you (some CostSpec.sacrificeArtifactOrDiscardCard) (Instruction.drawFixed 1),
+        Instruction.gainLifeFixed 3
+      ])
     let gS0 := addPermanent (addPermanent afterDraw bear me me) relicDef me me
     let srcId := (gS0.battlefield.filter (·.name == bear.name))[0]!.id
     let relId := (gS0.battlefield.filter (·.name == "Phase16 Relic"))[0]!.id
     let handBefore := (gS0.player me).hand.size
-    -- 2a. Synchronous sacrifice inside `resolveTop` of `seqRes`:
-    let gStSync := gS0.putTriggeredAbilityOnStack me (gS0.object! srcId) (.onEnterDraw 1) "enters"
-      (eventCause := some testCause) (reflexiveResolution := some seqRes)
+    -- 2a. Synchronous sacrifice inside `resolveTop` of `seqAb`:
+    let gStSync := gS0.putTriggeredAbilityOnStack me (gS0.object! srcId) seqAb "enters"
+      (eventCause := some testCause)
     let gPromptSync := gStSync.resolveTop
     let gSyncDone := mustApply gPromptSync me (.sacrifice relId)
     let syncMayOk :=
@@ -186,13 +186,13 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
       gSyncDone.continuations.isEmpty &&
       (gSyncDone.player me).hand.size == handBefore + 1 &&
       (gSyncDone.player me).life == 23
-    -- 2b. Paused sacrifice (`.finality` + `.untilEotExileIfDies` -> `Pending.chooseReplacement`) inside `resolveTop` of `seqRes`:
+    -- 2b. Paused sacrifice (`.finality` + `.untilEotExileIfDies` -> `Pending.chooseReplacement`) inside `resolveTop` of `seqAb`:
     let idExRel : ReplacementId := { kind := .untilEotExileIfDies, object := some relId }
     let gP0 := (gS0.createEffect
       (.replacement { id := idExRel, affectedPlayer := me, kind := .exileInsteadOfGraveyard (some relId) false })
       (cause := some testCause)).recordPutCounters relId .finality 1 (some me) (cause := some testCause)
-    let gStP := gP0.putTriggeredAbilityOnStack me (gP0.object! srcId) (.onEnterDraw 1) "enters"
-      (eventCause := some testCause) (reflexiveResolution := some seqRes)
+    let gStP := gP0.putTriggeredAbilityOnStack me (gP0.object! srcId) seqAb "enters"
+      (eventCause := some testCause)
     let gPromptP := gStP.resolveTop
     let gSacPaused := mustApply gPromptP me (.sacrifice relId)
     let gSacDone := mustApply gSacPaused me (.chooseReplacement idExRel)
@@ -207,13 +207,17 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
       (gSacDone.player me).hand.size == handBefore + 1 &&
       (gSacDone.player me).life == 23
 
-    -- 2c. `chooseTriggerOr` preserving outer `PendingReplacement` (sequence step `.gainLife (.fixed 4)`):
-    let orRes : TriggeredAbility.TriggerResolution :=
-      .sequence [
-        .or [.gainLife (.fixed 2), .draw (.fixed 1)],
-        .gainLife (.fixed 4) ]
-    let gOrSt := gS0.putTriggeredAbilityOnStack me (gS0.object! srcId) (.onEnterDraw 1) "enters"
-      (eventCause := some testCause) (reflexiveResolution := some orRes)
+    -- 2c. `chooseTriggerOr` preserving outer sequence step (`gainLifeFixed 4`):
+    let orAb : TriggeredAbility :=
+      TriggeredAbility.ofPattern .thisEnters "" (.seq #[
+        .chooseModes {
+          modes := #[{ body := Instruction.gainLifeFixed 2 }, { body := Instruction.drawFixed 1 }]
+          chooseAtResolution := true
+        },
+        Instruction.gainLifeFixed 4
+      ])
+    let gOrSt := gS0.putTriggeredAbilityOnStack me (gS0.object! srcId) orAb "enters"
+      (eventCause := some testCause)
     let gOrPrompt := gOrSt.resolveTop
     let gOrResolved := mustApply gOrPrompt me (.chooseMode 0)
     let trigOrOk :=
@@ -1031,7 +1035,10 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let gArt0 : Game := insertObject afterDraw oddHeroDef me (.graveyard me)
   let gyHero := (gArt0.player me).graveyard.back!
   let logBeforeArt := gArt0.log.size
-  let gArtPaused : Game := gArt0.applyPut me (.onEnterDraw 1) (some gyHero) #[] .source .asArtifact .none
+  let gArtPaused : Game := gArt0.applyTriggeredAbility me
+    (TriggeredAbility.mkTrigger .thisDies {
+      body := .moveZone .this (.battlefield .owner) .put { enterTypeMod? := some { mode := .set, types := #[.artifact] } }
+    }) (some gyHero)
   let artPausedOk : Bool :=
     (match gArtPaused.pending with | .chooseReplacement p _ => p == me | _ => false) &&
     !(gArtPaused.log.extract logBeforeArt gArtPaused.log.size).any (·.contains "returns as an artifact")
@@ -1071,7 +1078,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
     (gUUDone.object! uuBear).status.stun == 0 &&
     gUUDone.hasCantBeBlocked (gUUDone.object! uuBear)
 
-  -- 3d. `factOrFictionGyLoop` across competing graveyard-exile replacements.
+  -- 3d. `moveCardsToGraveyardLoop` across competing graveyard-exile replacements.
   let gFoF0 : Game := insertObject (insertObject afterDraw bear me (.library me)) hero me (.library me)
   let libFoF := (gFoF0.player me).library
   let fofC1 := libFoF.back!
@@ -1083,7 +1090,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
     (cause := some testCause)).createEffect
     (.replacement { id := idExB, affectedPlayer := me, kind := .exileInsteadOfGraveyard (some fofC1) false })
     (cause := some testCause)
-  let gFoFPaused : Game := gFoF1.factOrFictionGyLoop me #[fofC1, fofC2]
+  let gFoFPaused : Game := gFoF1.moveCardsToGraveyardLoop #[fofC1, fofC2]
   let fofPausedOk : Bool :=
     (match gFoFPaused.pending with | .chooseReplacement p cs => p == me && cs.size == 2 | _ => false) &&
     (gFoFPaused.object! fofC2).zone == .library me
@@ -1137,7 +1144,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   -- 4b. `.oneUnused` (`gollumMode`): announces mode on stack placement, copies preserve announced mode (CR 707.10),
   --     resolves using LKI even after source left `.battlefield` (CR 113.7a), and once all 3 modes are chosen,
   --     a 4th placement removes the ability with `noLegalMode` and WITHOUT `StackObjectEvent.resolved`!
-  let gollumTrigAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.ofTrigger .gollumMode)
+  let gollumTrigAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) Effect.triggerGollumMode
   let gollumTestDef : CardDef := { bear with name := "Phase17 Gollum Test", triggeredAbilities := #[gollumTrigAb] }
   let gGol0 : Game := addPermanent afterDraw gollumTestDef me me
   let golId := (gGol0.battlefield.filter (·.name == "Phase17 Gollum Test"))[0]!.id
@@ -1289,7 +1296,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
     (gJeskaiUpkeep.permanentsOf me).any (fun o => o.printed.isToken && gJeskaiUpkeep.hasSubtype o .goblin)
 
   -- 5e. `copySelfNonlegendary`: nontoken triggers & resolves via LKI even if source left `.battlefield`, while token copy does NOT trigger!
-  let selfCopyAb : TriggeredAbility := SharedTrigger.copySelfNonlegendary.toTriggeredAbility
+  let selfCopyAb : TriggeredAbility := TriggeredAbility.onEnterIfNotTokenCopySelf
   let selfCopyDef : CardDef := { bear with name := "Phase17 Clone Legend", supertypes := #[.legendary], triggeredAbilities := #[selfCopyAb] }
   let gSC0 : Game := insertObject afterDraw selfCopyDef me (.hand me)
   let scHandId := (gSC0.player me).hand.back!
@@ -1521,7 +1528,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let gWWWPrmpt : Game := gWWWCast.resolveTop
   let gWWWDone : Game :=
     match gWWWPrmpt.pending with
-    | .fraChoice p (.worldsPutCreatures _ _ _ _ _) => mustApply gWWWPrmpt p (.choosePermanents #[heroInHand])
+    | .fraChoice p (.worldsPutCreatures _) => mustApply gWWWPrmpt p (.choosePermanents #[heroInHand])
     | _ => gWWWPrmpt
   let wwwSlice := gWWWDone.events.extract preWWWRes gWWWDone.events.size
   let bPutHandToBf := wwwSlice.findSome? fun e =>
@@ -1614,14 +1621,15 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
 
   -- 8a3. `mayThen` departure decline (CR 800.4f): `p2` conceding on `Pending.mayPayGeneric p2 ...` inside a sequence
   --      declines `"If you do"` (so `p1` does NOT lose 5 life)!
-  let maySeq : TriggeredAbility.TriggerResolution :=
-    .sequence [
-      .may (.pay (CostSpec.ofGeneric 1)) (.loseLife (.fixed 5) .eachOpponent) .ifYouDo,
-      .gainLife (.fixed 2) ]
+  let maySeqAb : TriggeredAbility :=
+    TriggeredAbility.ofPattern .thisEnters "" (.seq #[
+      Instruction.may .you (some (CostSpec.ofGeneric 1)) (Instruction.loseLifeFixed 5 .opponents),
+      Instruction.gainLifeFixed 2
+    ])
   let gMay0 : Game := (addPermanent gPreB2 bear p1 p1).addMana p2 .colorless 1 (cause := some testCause)
   let bP1 := (gMay0.battlefield.filter (fun o => o.name == bear.name && o.controller == some p1))[0]!.id
-  let gMaySt : Game := gMay0.putTriggeredAbilityOnStack p2 (gMay0.object! bP1) (.onEnterDraw 1) "enters"
-    (eventCause := some testCause) (reflexiveResolution := some maySeq)
+  let gMaySt : Game := gMay0.putTriggeredAbilityOnStack p2 (gMay0.object! bP1) maySeqAb "enters"
+    (eventCause := some testCause)
   let gMayPrompt : Game := gMaySt.resolveTop
   let p1LifeBefore := (gMayPrompt.player p1).life
   let gMayConceded : Game := gMayPrompt.concede p2
@@ -1743,16 +1751,21 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let exWWWHand := (gHand0.objects.filter (fun o => o.name == bear.name && o.zone == .exile)).back!.id
   let gHand1 : Game := gHand0.changeObject exHeroHand (.returnToZone (some (.hand me)))
   let gDummyPause : Game := gHand1.returnLinkedExileMoves #[exGy1]
-  -- Chain `worldsReturnExiledLoop` behind `gDummyPause`'s `Pending.chooseReplacement`:
+  -- Chain unified `.afterMoveLoop` (returning exiled card to owner's hand) behind `gDummyPause`'s `Pending.chooseReplacement`:
   let logBeforeWWW := gDummyPause.log.size
-  let gWWWPaused : Game := gDummyPause.worldsReturnExiledLoop #[exWWWHand] none
+  let gWWWPaused : Game :=
+    gDummyPause.chainPendingReplacement (.continueInterpreter {
+      ctx := { controller := me }
+      queue := #[]
+      stack := #[.afterMoveLoop #[exWWWHand] (.hand .owner) .returnToHand {} testCause]
+    })
   let wwwNoEarlyLogOk : Bool :=
-    !(gWWWPaused.log.extract logBeforeWWW gWWWPaused.log.size).any (·.contains "returned to its owner's hand")
+    !(gWWWPaused.log.extract logBeforeWWW gWWWPaused.log.size).any (·.contains "returns to")
   let gWWWResumed : Game := mustApply gWWWPaused me (.chooseReplacement idRep1A)
   let wwwPostChoiceLogOk : Bool :=
     wwwNoEarlyLogOk &&
     (gWWWResumed.followMovedToZone? exWWWHand (· == .hand me)).isSome &&
-    (gWWWResumed.log.extract logBeforeWWW gWWWResumed.log.size).any (·.contains "is returned to its owner's hand")
+    (gWWWResumed.log.extract logBeforeWWW gWWWResumed.log.size).any (·.contains "'s hand")
 
   let logBeforeLoopHand := gHand1.log.size
   let gLoopHandPaused : Game := gHand1.withBatch none fun g =>
@@ -1801,8 +1814,10 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let libRevE := (gRevE0.player me).library
   let revAuraE := libRevE.back!
   let revBearE := libRevE[libRevE.size - 2]!
-  let gRevE1 : Game := (gRevE0.change (.pushContinuationFrame { revealedIdsThisWay := #[revBearE, revAuraE] })).applyPut
-    me (.onEnterDraw 0) none #[] .revealed .asPrinted .none
+  let putRevealedEff : Effect := { body := .moveZone (.stepObjects ⟨0⟩) (.battlefield .controller) .put {} }
+  let gRevE1 : Game :=
+    (gRevE0.change (.pushContinuationFrame { stepEnv := #[(⟨0⟩, { objects := #[revBearE, revAuraE], succeeded := true })] })).applyEffect
+      me putRevealedEff #[]
   let revEmptyAuraStaysOk : Bool :=
     (gRevE1.permanentsOf me).any (·.name == bear.name) &&
     !(gRevE1.permanentsOf me).any (·.name == "Phase17 Revealed Aura") &&
@@ -1816,8 +1831,9 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let revAuraH := libRevH.back!
   let revBearH := libRevH[libRevH.size - 2]!
   let preRevHIdx := gRevH0.events.size
-  let gRevH1 : Game := (gRevH0.change (.pushContinuationFrame { revealedIdsThisWay := #[revBearH, revAuraH] })).applyPut
-    me (.onEnterDraw 0) none #[] .revealed .asPrinted .none
+  let gRevH1 : Game :=
+    (gRevH0.change (.pushContinuationFrame { stepEnv := #[(⟨0⟩, { objects := #[revBearH, revAuraH], succeeded := true })] })).applyEffect
+      me putRevealedEff #[]
   let revHBatches := (gRevH1.events.extract preRevHIdx gRevH1.events.size).filterMap fun e =>
     match e.change with
     | .rules (.zone (.moved _ _ (.library _) .battlefield _ _ _ _)) => e.batch
@@ -2044,15 +2060,20 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     (gLk2.permanentsOf me).any (·.name == "Phase18 Linked ETB Bear") &&
     gLk2.waitingTriggers.any (fun wt => wt.source.name == "Phase18 Linked ETB Bear")
 
-  -- 2c. `shuffleSourceIntoLibrary` owner-based shuffle + draw continuation:
+  -- 2c. Unified owner-based shuffle + draw continuation:
   let gSh0 : Game := addPermanent afterDraw bear opp18 me
   let shBear := (gSh0.battlefield.filter (·.name == bear.name))[0]!.id
   let gShDone : Game := gSh0.withBatch (some testCause) fun g =>
-    g.shuffleSourceIntoLibrary (some shBear) (.draw me 1)
+    g.applyAbilityEffect me
+      { body := .seq #[
+          .moveZone .this (.library .owner .shuffledIn) .shuffleIntoLibrary {},
+          Instruction.drawFixed 1 (.ownerOf .this)
+        ] } #[] (some shBear)
+  let gShAfter : Game := mustApply gShDone opp18 (.supplyOrder #[])
   let shuffleOwnerDrawOk : Bool :=
     gShDone.pending == .resolveRandom (.shuffleLibrary opp18) &&
-    gShDone.afterRandom == .draw opp18 1 &&
-    (gShDone.player opp18).library.any (fun id => (gShDone.object! id).name == bear.name)
+    (gShDone.player opp18).library.any (fun id => (gShDone.object! id).name == bear.name) &&
+    (gShAfter.player opp18).hand.size == (gSh0.player opp18).hand.size + 1
 
   -- 2d. Reflexive-sacrifice (`TriggeredAbilities.applySacrifice` + `queueReflexive`) pauses on `chooseReplacement` BEFORE `putReflexiveTrigger`!
   let idDieA : ReplacementId := { kind := .finalityCounterExile, object := some ⟨601⟩ }
@@ -2254,8 +2275,8 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     gCh2_1.pending == .none &&
     (gCh2_1.events.extract preCh2 gCh2_1.events.size).any (fun e => e.cause? == some (.gameRule .noLegalMode))
 
-  -- 4c. `SharedTrigger.tapOrUntapNonland` announces mode + target ON STACK PLACEMENT (`CastEvent.announced`)!
-  let tapUntapAb : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger .tapOrUntapNonland)
+  -- 4c. `TriggeredAbility.onEnterTapOrUntapNonland` announces mode + target ON STACK PLACEMENT (`CastEvent.announced`)!
+  let tapUntapAb : TriggeredAbility := TriggeredAbility.onEnterTapOrUntapNonland
   let tapUntapDef : CardDef := { bear with name := "Phase18 Twiddler", triggeredAbilities := #[tapUntapAb] }
   let gTw0 : Game := addPermanent (addPermanent afterDraw tapUntapDef me me) hero opp18 opp18
   let twSrc := (gTw0.battlefield.filter (·.name == "Phase18 Twiddler"))[0]!
@@ -2271,12 +2292,14 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let gTwRes : Game := gTwTargeted.resolveTop
   let twOk : Bool := twModePromptOnStack && twTargetPromptOnStack && (gTwRes.object! oppHeroId).status.tapped
 
-  -- 4d. Hawkeye Trick Arrows (`Resolution.mshReflexive .trickArrows 2`): prompts `.hawkeyeModes` on stack placement; declining keeps 0-mode ability on stack!
+  -- 4d. Hawkeye Trick Arrows (`Effect.hawkeyeModeEffects` with `maxModes := .eventAmount`, `lastKnownPower := some 2`): prompts `.hawkeyeModes` on stack placement; declining keeps 0-mode ability on stack!
   let gHk0 : Game := addPermanent (addPermanent afterDraw bear me me) hero opp18 opp18
   let hkSrc := (gHk0.battlefield.filter (·.name == bear.name))[0]!
   let gHkStack : Game :=
     gHk0.putReflexiveTrigger me (some hkSrc.id)
-      { resolution? := some (.mshReflexive .trickArrows 2), phrase := "Choose up to 2 Trick Arrows modes" }
+      { body := .chooseModes { minModes := .const 0, maxModes := .eventAmount, modes := Effect.hawkeyeModeEffects }
+        phrase := "Choose up to 2 Trick Arrows modes" }
+      (lastKnownPower := some 2)
   let hkPromptOnStack : Bool :=
     match gHkStack.pending with
     | .fraChoice p (.hawkeyeModes 2 #[] (some _)) => p == me
@@ -2352,7 +2375,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     gEqPhased.attachedEquipmentAtResolution (some wldId) (some 4) == 0
 
   -- 5d. CR 707.2 `.copySelfNonlegendary`: uses `eo.copiable.getD eo.toCardDef` when source became a copy and left `.battlefield`!
-  let selfCopyAb : TriggeredAbility := SharedTrigger.copySelfNonlegendary.toTriggeredAbility
+  let selfCopyAb : TriggeredAbility := TriggeredAbility.onEnterIfNotTokenCopySelf
   let templateHeroDef : CardDef := {
     hero with
     name := "Phase18 Legendary Template"
@@ -2780,7 +2803,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     g2hgMarked.promptEnteringAttackItems #[.token ⟨0⟩ .spirit false (g2hgMarked.legalEnteringAttackTargets ⟨0⟩)] (cause := some testCause)
   let g2hgSacStacked : Game :=
     g2hgPrompted.putTriggeredAbilityOnStack ⟨0⟩ (g2hgPrompted.object! createdTok2hg.id)
-      (TriggeredAbility.mkTrigger .thisAttacks (Effect.ofTrigger .defenderSacsLeastPower)) "attack" (eventCause := some testCause)
+      (TriggeredAbility.mkTrigger .thisAttacks Effect.triggerDefenderSacsLeastPower) "attack" (eventCause := some testCause)
   let g2hgAfterLeastSac : Game := g2hgSacStacked.resolveTop
   let noOppEnteringSafeOk : Bool :=
     g2hgConceded.over &&
@@ -2987,14 +3010,14 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
   let sagaId := (gLk0.battlefield.filter (·.name == "Phase19 Link Saga"))[0]!.id
   let exCardId := (gLk0.objects.filter (fun o => o.name == bear.name && o.zone == .exile))[0]!.id
   let gLk1 : Game := gLk0.change (.object sagaId (.pushLinkedExile exCardId))
-  let gLkReturned : Game := gLk1.returnLinkedExileToHand (some sagaId)
+  let gLkReturned : Game := gLk1.applyEffect me Effect.chapterReturnLinkedExileToHand #[] (sourceId := some sagaId)
   -- Exiled token (`CR 111.8`): `move` leaves it in exile, so `linkedExile` is not falsely cleared or logged returned!
   let (gTokLk0, tokLk) := (addPermanent afterDraw sagaDummy me me).createOneToken me { bear with name := "Phase19 Link Tok" }
     (cause := some testCause)
   let sagaTokId := (gTokLk0.battlefield.filter (·.name == "Phase19 Link Saga"))[0]!.id
   let (gTokLk1, exTokId) := gTokLk0.move tokLk.id .exile none (cause := some testCause)
   let gTokLk2 : Game := gTokLk1.change (.object sagaTokId (.pushLinkedExile exTokId))
-  let gTokLkBlocked : Game := gTokLk2.returnLinkedExileToHand (some sagaTokId)
+  let gTokLkBlocked : Game := gTokLk2.applyEffect me Effect.chapterReturnLinkedExileToHand #[] (sourceId := some sagaTokId)
   let linkedReturnOk : Bool :=
     (gLkReturned.object! sagaId).linkedExile.isEmpty &&
     (gLkReturned.followMovedToZone? exCardId (· == .hand me)).isSome &&
@@ -3173,7 +3196,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     | _, _ => false
   let discId := (afterDraw.player me).hand.back!
   let gSourceless0 : Game :=
-    (afterDraw.change (.pushContinuationFrame {})).offerMayPayPick me none .discardACard "Discard a card?"
+    (afterDraw.change (.pushContinuationFrame {})).beginFraChoice me (.mayPayPickThen .discardACard .noop none) "Discard a card?"
   let preSlIdx := gSourceless0.events.size
   let gSourcelessPaid : Game := mustApply gSourceless0 me (.choosePermanents #[discId])
   let sourcelessForObjOk := (gSourcelessPaid.events.extract preSlIdx gSourcelessPaid.events.size).any fun e =>
@@ -3235,7 +3258,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
 
   -- 5b. Departed-token `.stackTriggerUnusedMode` records `TriggerQueueEvent.modeChosen` even after `ceaseToExist`,
   --     and 0-mode `.chooseUpToXModes` (`chosenX := 0`) + `.upToTriggerModes` `.decline` emit `CastEvent.announced #[]`!
-  let unusedAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.ofTrigger .gollumMode)
+  let unusedAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) Effect.triggerGollumMode
   let (gTokU0, tokU) := afterDraw.createOneToken me { bear with name := "Phase19 Mode Token", triggeredAbilities := #[unusedAb] }
     (cause := some testCause)
   let gTokU1 : Game := gTokU0.ceaseToExist tokU.id (cause := some testCause)
@@ -3285,7 +3308,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     bear with
     name := "Phase19 White Watcher"
     manaCost := ManaCost.ofColor .white
-    triggeredAbilities := #[TriggeredAbility.mkTrigger (.gainLife .you) (Effect.ofTrigger (.resource .gainLifePlusOnes))]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger (.gainLife .you) Effect.resourceGainLifePlusOnes]
   }
   let gPwProt0 : Game := addPermanent (addPermanent afterDraw proWhiteBear me me) whiteWatcher me me
   let pwBearId := (gPwProt0.battlefield.filter (·.name == "Phase19 ProWhite Bear"))[0]!.id
@@ -3742,7 +3765,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     !gSagaGone.battlefield.any (·.name == plains.name)
 
   -- 2b. Departed-source LKI: `returnLinkedExileToHand (some sagaSrcId)` & Currency Converter `.currencyReturn` find exiled cards after source departed!
-  let gHandAfterDepart : Game := gSagaGone.returnLinkedExileToHand (some sagaSrcId)
+  let gHandAfterDepart : Game := gSagaGone.applyEffect me Effect.chapterReturnLinkedExileToHand #[] (sourceId := some sagaSrcId)
   let gCur0 : Game := addPermanent (insertObject afterDraw plains me (.graveyard me)) { name := "Phase20 Currency Box", types := #[.artifact] } me me
   let curSrcId := (gCur0.battlefield.filter (·.name == "Phase20 Currency Box"))[0]!.id
   let gyPlainsId := (gCur0.player me).graveyard.back!
@@ -3939,7 +3962,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let preMpEvs := gMayPay0.events.size
   let gMayPayDone : Game :=
     gMayPay0.withResolvingContext (some mpHeroId) me fun g =>
-      let gPrompt := g.change (.pending (.fraChoice me (.mayPaySymbolsThen #[.colored .red] (.gainLife 1) mpHeroId)))
+      let gPrompt := g.change (.pending (.fraChoice me (.mayPaySymbolsThen #[.colored .red] (Instruction.gainLifeFixed 1) mpHeroId)))
       match gPrompt.answerFraChoice me .accept with
       | .ok g' => g'
       | .error e => panic! e
@@ -4100,8 +4123,9 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let myFighterId := (gFg0.battlefield.filter (fun o => o.name == bear.name && gFg0.controlledBy o me))[0]!.id
   let relicId := (gFg0.battlefield.filter (·.name == "Phase20 Relic"))[0]!.id
   let hexFighterId := (gFg0.battlefield.filter (·.name == "Phase20 Hex Fighter"))[0]!.id
-  let gFgRelic : Game := gFg0.applyFight me (some myFighterId) #[Target.permanent relicId] .source .mutual
-  let gFgHex : Game := gFg0.applyFight me (some myFighterId) #[Target.permanent hexFighterId] .source .mutual
+  let fightEff : Effect := { targeting := .of .creature, body := .damage (.fight .this (.target 0)) }
+  let gFgRelic : Game := gFg0.applyAbilityEffect me fightEff #[Target.permanent relicId] (some myFighterId)
+  let gFgHex : Game := gFg0.applyAbilityEffect me fightEff #[Target.permanent hexFighterId] (some myFighterId)
   let fightLegalityOk : Bool :=
     (gFgRelic.object! myFighterId).status.damage == 0 &&
     gFgRelic.log.back? == some "The target is no longer legal" &&
@@ -4244,7 +4268,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let corId := (g2hWin0.battlefield.filter (·.name == "Phase20 Corrupted Bear"))[0]!.id
   let g2hTryWin : Game :=
     g2hWin0.withResolvingContext none ⟨0⟩ fun g =>
-      g.applyTriggeredAbility ⟨0⟩ (.onEnterDraw 1) none (resolutionOverride := some .winTheGame)
+      g.applyTriggeredAbility ⟨0⟩ (TriggeredAbility.mkTrigger .thisEnters { body := .player (.setStatus .you .winGame) }) none
   let g2hMateSpell0 : Game := (insertObject g2hWin0 freeInstant20 ⟨1⟩ (.hand ⟨1⟩)).change (.priority ⟨1⟩)
   let mateSpId := (g2hMateSpell0.player ⟨1⟩).hand.back!
   let g2hMateCastOk : Game := mustApply g2hMateSpell0 ⟨1⟩ (.cast mateSpId)

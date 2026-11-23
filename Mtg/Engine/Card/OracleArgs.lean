@@ -293,12 +293,6 @@ def takeTargetSpec (ts : TargetSpec) : ArgM TargetSpec := do
 def takeTargeting (t : EffectTargeting) : ArgM EffectTargeting := do
   return { t with spec := ← takeTargetSpec t.spec }
 
-def takeEnter (e : EnterLeftover) : ArgM EnterLeftover := do
-  match e with
-  | .destroy k => return .destroy (← takeWholeTargetSpec k)
-  | .dealDamageUpToOne n => return .dealDamageUpToOne (← takeNat n)
-  | e => return e
-
 private partial def takeTriggerCond (c : Condition) : ArgM Condition := do
   match c with
   | .exists (.inZones zs (.all #[.hasType .creature, .controlledBy pf, .stat .power .ge (.const n)])) =>
@@ -312,10 +306,19 @@ private partial def takeTriggerCond (c : Condition) : ArgM Condition := do
     return .exists (.inZones zs (.hasSubtype (.literal (← takeSubtype s))))
   | .playerPred who (.controls { zones, pred := .hasSubtype (.literal s) } cnt) =>
     return .playerPred who (.controls { zones, pred := .hasSubtype (.literal (← takeSubtype s)) } cnt)
+  | .exists (.filter o (.hasSubtype (.literal s))) =>
+    return .exists (.filter o (.hasSubtype (.literal (← takeSubtype s))))
   | .exists (.filter o (.stat .manaValue .le (.const n))) =>
     return .exists (.filter o (.stat .manaValue .le (.const (Int.ofNat (← takeNat n.toNat)))))
   | .cmp op (.objectStat stat obj) (.const n) =>
     return .cmp op (.objectStat stat obj) (.const (Int.ofNat (← takeNat n.toNat)))
+  | .any #[
+      .turnHistory (.eventOccurredThisTurn pf1 (.attackedWith (.hasSubtype (.literal s)) n)),
+      .turnHistory (.eventOccurredThisTurn pf2 (.permanentEntered (.hasSubtype (.literal _))))] =>
+    let s' ← takeSubtype s
+    return .any #[
+      .turnHistory (.eventOccurredThisTurn pf1 (.attackedWith (.hasSubtype (.literal s')) n)),
+      .turnHistory (.eventOccurredThisTurn pf2 (.permanentEntered (.hasSubtype (.literal s'))))]
   | other => return other
 
 private partial def takeTriggerPattern (p : TriggerPattern) : ArgM TriggerPattern := do
@@ -344,6 +347,8 @@ private partial def takeTriggerPattern (p : TriggerPattern) : ArgM TriggerPatter
         else pure (.all #[.hasSubtype (.literal (← takeSubtype s)), .controlledBy pf])
       | other => pure other
     return .zoneChange subj' fromZ toZ mby? cc?
+  | .attacks subj atkDef alone minC (some n) only =>
+    return .attacks subj atkDef alone minC (some (← takeInt n)) only
   | .damageDealt (.all #[.hasSubtype (.literal s), .controlledBy pf]) recip combat noncombat =>
     return .damageDealt (.all #[.hasSubtype (.literal (← takeSubtype s)), .controlledBy pf]) recip combat noncombat
   | other => return other
@@ -431,113 +436,25 @@ private def takeInstrInspectFilter : ObjectPred → ArgM ObjectPred
     return .any #[.hasType (← takeCardType a), .hasType (← takeCardType b)]
   | .hasType ty => return .hasType (← takeCardType ty)
   | .hasSubtype (.literal s) => return .hasSubtype (.literal (← takeSubtype s))
-  | .any ps => return .any (← takeSubPredArray ps)
+  | .isKind .permanentCard => do
+    let s ← takeStr "permanent"
+    return Effect.typeOrSubtypePred s
+  | .any ps =>
+    let subs := ps.filterMap fun | .hasSubtype (.literal s) => some s | _ => none
+    if !subs.isEmpty && subs.size == ps.size then
+      return .any (← takeSubPredArray ps)
+    else do
+      let ps' ← ps.mapM fun
+        | .hasType ty => return .hasType (← takeCardType ty)
+        | .hasSubtype (.literal s) => return .hasSubtype (.literal (← takeSubtype s))
+        | .isKind .permanentCard => do
+          let s ← takeStr "permanent"
+          return Effect.typeOrSubtypePred s
+        | other => return other
+      return .any ps'
   | other => return other
 
 mutual
-
-partial def takeTrigger (e : SharedTrigger) : ArgM SharedTrigger := do
-  match e with
-  | .scry n => return .scry (← takeNat n)
-  | .draw n => return .draw (← takeNat n)
-  | .createTokens tokIdx n tapped => return .createTokens tokIdx (← takeNat n) tapped
-  | .amass n subtype amount attach =>
-    match amount with
-    | .fixed =>
-      return .amass (← takeNat n) (← takeSubtype subtype) amount attach
-    | .sourcePower | .notedExcess | .notedPower =>
-      return .amass n (← takeSubtype subtype) amount attach
-  | .dividedDamage a b => return .dividedDamage (← takeNat a) (← takeNat b)
-  | .gainLife n => return .gainLife (← takeNat n)
-  | .connive who =>
-    match who with
-    | .source => return .connive who
-    | .target k => return .connive (.target (← takeTargetSpec k))
-    | .enteringVillain => return .connive .enteringVillain
-  | .exileUntilLeaves k => return .exileUntilLeaves (← takeTargetSpec k)
-  | .damageEachOpponent n => return .damageEachOpponent (← takeNat n)
-  | .attachTo k => return .attachTo (← takeTargetSpec k)
-  | .discard n => return .discard (← takeNat n)
-  | .mayTo (.discard _) (.draw n) =>
-    return .mayTo .discard (.draw (← takeNat n))
-  | .mayTo can thenDo => return .mayTo (← takeTrigger can) (← takeTrigger thenDo)
-  | .drawXDiscard n => return .drawXDiscard (← takeNat n)
-  | .may action => return .may (← takeTrigger action)
-  | .opponentDiscards n who =>
-    match who with
-    | .each => return .opponentDiscards n who
-    | .target => return .opponentDiscards (← takeNat n) who
-  | .millPlayer n => return .millPlayer (← takeNat n)
-  | .pumpCause p t => return .pumpCause (← takeInt p) (← takeInt t)
-  | .exileTarget k => return .exileTarget (← takeTargetSpec k)
-  | .becomePT p t => return .becomePT (← takeInt p) (← takeInt t)
-  | .mayDiscardHandDraw n => return .mayDiscardHandDraw (← takeNat n)
-  | .damageBlockers n => return .damageBlockers (← takeNat n)
-  | .gainLifeSearchBasicOnTop n => return .gainLifeSearchBasicOnTop (← takeNat n)
-  | .targetOpponentLosesLife n => return .targetOpponentLosesLife (← takeNat n)
-  | .mayPayGenericDraw n plusOne => return .mayPayGenericDraw (← takeNat n) plusOne
-  | .damageEqualSubtypeToEachOpponent s =>
-    return .damageEqualSubtypeToEachOpponent (← takeSubtype s)
-  | .dealDamageDestroyIfSubtype n s =>
-    return .dealDamageDestroyIfSubtype (← takeNat n) (← takeSubtype s)
-  | .lookAtTopRevealTypes n ts => return .lookAtTopRevealTypes (← takeNat n) (← takeStrs ts)
-  | .putNonlandMvAtMostFromGy n => return .putNonlandMvAtMostFromGy (← takeNat n)
-  | .othersGetAndOppsGet ss p t op ot =>
-    return .othersGetAndOppsGet (← takeSubtypes ss) (← takeInt p) (← takeInt t)
-      (← takeInt op) (← takeInt ot)
-  | .millThenSubtypeToHand n s => return .millThenSubtypeToHand (← takeNat n) (← takeSubtype s)
-  | .untapAttackersExtraCombat n => return .untapAttackersExtraCombat (← takeInt n)
-  | .revealTopPutRandomCreature n => return .revealTopPutRandomCreature (← takeNat n)
-  | .damageTargetOpponent n => return .damageTargetOpponent (← takeNat n)
-  | .drawIfAttackedOrEnteredSubtype s => return .drawIfAttackedOrEnteredSubtype (← takeSubtype s)
-  | .othersOfSubtypeGetEqualSourceToughness s =>
-    return .othersOfSubtypeGetEqualSourceToughness (← takeSubtype s)
-  | .scryAndPlan n => return .scryAndPlan (← takeNat n)
-  | .drainAndPlan n => return .drainAndPlan (← takeNat n)
-  | .planFinishCreateRobots n => return .planFinishCreateRobots (← takeNat n)
-  | .planFinishDividedDamage n => return .planFinishDividedDamage (← takeNat n)
-  | .surveil n => return .surveil (← takeNat n)
-  | .empowerJace n => return .empowerJace (← takeNat n)
-  | .creaturesYouControlGet p t => return .creaturesYouControlGet (← takeInt p) (← takeInt t)
-  | .plusOneEachYouControl which =>
-    match which with
-    | .eachCreature | .citysBlessing => return .plusOneEachYouControl which
-    | .subtype s => return .plusOneEachYouControl (.subtype (← takeSubtype s))
-  | .enter e => return .enter (← takeEnter e)
-  | e => return e
-
-partial def takeResolution (r : Resolution) : ArgM Resolution := do
-  match r with
-  | .draw (.fixed n) who => return .draw (← takeNat n.toNat) who
-  | .discard (.cards n) => return .discard (.cards (← takeNat n))
-  | .mill (.fixed n) who note => return .mill (← takeNat n.toNat) who note
-  | .loseLife (.fixed n) who => return .loseLife (← takeNat n.toNat) who
-  | .gainLife (.fixed n) => return .gainLife (← takeNat n.toNat)
-  | .scry (.fixed n) => return .scry (← takeNat n.toNat)
-  | .surveil (.fixed n) => return .surveil (← takeNat n.toNat)
-  | .amass (.fixed n) subtype => return .amass (← takeNat n.toNat) (← takeSubtype subtype)
-  | .createTokens tokIdx (.fixed n) tapped who note =>
-    return .createTokens tokIdx (← takeNat n.toNat) tapped who note
-  | .createTokens tokIdx (.perSubtype s) tapped who note =>
-    return .createTokens tokIdx (.perSubtype (← takeSubtype s)) tapped who note
-  | .empowerJace (.fixed n) => return .empowerJace (← takeNat n.toNat)
-  | .may r _ _ => return .may (← takeResolution r) (.sequence [])
-  | .«if» cond r =>
-    let r ← takeResolution r
-    match cond with
-    | .subtype s => return .«if» (.subtype (← takeSubtype s)) r
-    | .mvAtMost n => return .«if» (.mvAtMost (← takeNat n)) r
-    | _ => return .«if» cond r
-  | .ifElse cond whenTrue whenFalse =>
-    let whenFalse ← takeResolution whenFalse
-    let cond ← match cond with
-      | .subtype s => pure (.subtype (← takeSubtype s))
-      | .mvAtMost n => pure (.mvAtMost (← takeNat n))
-      | c => pure c
-    let whenTrue ← takeResolution whenTrue
-    return .ifElse cond whenTrue whenFalse
-  | .sequence rs => return .sequence (← rs.mapM takeResolution)
-  | other => return other
 
 partial def takeInstr (instr : Instruction) : ArgM Instruction := do
   match instr with
@@ -554,6 +471,8 @@ partial def takeInstr (instr : Instruction) : ArgM Instruction := do
         pure (.inZones zs (.all #[.hasType .creature, .stat .manaValue .le (.const (Int.ofNat (← takeNat n.toNat)))]))
       | .inZones zs (.hasSubtype (.literal s)) =>
         pure (.inZones zs (.hasSubtype (.literal (← takeSubtype s))))
+      | .filter inner (.hasSubtype (.literal s)) =>
+        pure (.filter inner (.hasSubtype (.literal (← takeSubtype s))))
       | other => pure other
     let mods' ← takeInstrMoveMods mods
     return .moveZone objs' dest verb mods'
@@ -565,17 +484,19 @@ partial def takeInstr (instr : Instruction) : ArgM Instruction := do
         pure (.aggregate .count .one (.inZones zs (.all #[.hasSubtype (.literal (← takeSubtype s)), .controlledBy pf])))
       | other => pure other
     return .create (.tokens who cnt' spec mods)
-  | .permanent (.modifyCounters (.put kind (.const n)) objs) =>
+  | .permanent (.modifyCounters (.put kind (.const n)) objs ch?) =>
     let kind' ← takeCounter kind
     let n' ← takeNat n.toNat
     let objs' ←
       match objs with
       | .inZones zs (.all #[.otherThan .this, .hasSubtype (.literal s), .controlledBy pf]) =>
         pure (.inZones zs (.all #[.otherThan .this, .hasSubtype (.literal (← takeSubtype s)), .controlledBy pf]))
+      | .inZones zs (.all #[.hasSubtype (.literal s), .controlledBy pf]) =>
+        pure (.inZones zs (.all #[.hasSubtype (.literal (← takeSubtype s)), .controlledBy pf]))
       | other => pure other
-    return .permanent (.modifyCounters (.put kind' (.const (Int.ofNat n'))) objs')
-  | .permanent (.modifyCounters (.remove k? (.exact (.const n))) objs) =>
-    return .permanent (.modifyCounters (.remove k? (.exact (.const (Int.ofNat (← takeNat n.toNat))))) objs)
+    return .permanent (.modifyCounters (.put kind' (.const (Int.ofNat n'))) objs' ch?)
+  | .permanent (.modifyCounters (.remove k? (.exact (.const n))) objs ch?) =>
+    return .permanent (.modifyCounters (.remove k? (.exact (.const (Int.ofNat (← takeNat n.toNat))))) objs ch?)
   | .damage (.deal src rec amt fl) =>
     let amt' ←
       match amt with
@@ -583,6 +504,8 @@ partial def takeInstr (instr : Instruction) : ArgM Instruction := do
       | .binary .mul (.const k) rhs =>
         if k == 1 then pure amt
         else pure (.binary .mul (.const (Int.ofNat (← takeNat k.toNat))) rhs)
+      | .aggregate .count .one (.inZones zs (.all #[.hasSubtype (.literal s), .controlledBy pf])) =>
+        pure (.aggregate .count .one (.inZones zs (.all #[.hasSubtype (.literal (← takeSubtype s)), .controlledBy pf])))
       | other => pure other
     let rec' ←
       match rec with
@@ -610,6 +533,8 @@ partial def takeInstr (instr : Instruction) : ArgM Instruction := do
     let n' ← takeNat n.toNat
     let sub' ← takeSubtype sub
     return .player (.amass who sub' (.const (Int.ofNat n')))
+  | .player (.amass who sub (.objectStat .power .this)) =>
+    return .player (.amass who (← takeSubtype sub) (.objectStat .power .this))
   | .player (.empowerPlaneswalker sub (.const n)) =>
     return .player (.empowerPlaneswalker sub (.const (Int.ofNat (← takeNat n.toNat))))
   | .player (.addMana who mp) =>
@@ -639,14 +564,14 @@ partial def takeInstr (instr : Instruction) : ArgM Instruction := do
       | other => pure other
     let action' ←
       match spec.action with
-      | .takeMatching flt cnt dest mods rev =>
+      | .takeMatching flt cnt dest mods rev rand =>
         let cnt' ←
           match cnt with
           | .upTo (.const k) =>
             if k > 1 then pure (.upTo (.const (Int.ofNat (← takeNat k.toNat)))) else pure cnt
           | other => pure other
         let flt' ← takeInstrInspectFilter flt
-        pure (.takeMatching flt' cnt' dest mods rev)
+        pure (.takeMatching flt' cnt' dest mods rev rand)
       | other => pure other
     return .player (.inspectLibrary { spec with source := source', action := action' })
   | .installEffect (.applyContinuous dur objs mod) =>
@@ -654,6 +579,12 @@ partial def takeInstr (instr : Instruction) : ArgM Instruction := do
       match objs with
       | .inZones zs (.all #[.any ps, .controlledBy pf]) =>
         pure (.inZones zs (.all #[.any (← takeSubPredArray ps), .controlledBy pf]))
+      | .inZones zs (.all #[.otherThan .this, .hasType .creature, .hasSubtype (.literal s), .controlledBy pf]) =>
+        pure (.inZones zs (.all #[.otherThan .this, .hasType .creature, .hasSubtype (.literal (← takeSubtype s)), .controlledBy pf]))
+      | .inZones zs (.all #[.otherThan .this, .hasType .creature, .any ps, .controlledBy pf]) =>
+        pure (.inZones zs (.all #[.otherThan .this, .hasType .creature, .any (← takeSubPredArray ps), .controlledBy pf]))
+      | .inZones zs (.all #[.otherThan .this, .hasSubtype (.literal s), .controlledBy pf]) =>
+        pure (.inZones zs (.all #[.otherThan .this, .hasSubtype (.literal (← takeSubtype s)), .controlledBy pf]))
       | other => pure other
     let mod' ← takeInstrContMod mod
     return .installEffect (.applyContinuous dur objs' mod')
@@ -685,10 +616,17 @@ partial def takeInstr (instr : Instruction) : ArgM Instruction := do
       let cond' ← takeTriggerCond cond
       let thenB' ← takeInstr thenB
       return .ifCond cond' thenB' elseB'
-  | .optional who cost? onYes onNo =>
+  | .optional who cost? onYes onNo mt =>
+    let cost?' ←
+      match cost? with
+      | some c =>
+        match c.soleGenericMana? with
+        | some n => pure (some (CostSpec.ofGeneric (← takeNat n)))
+        | none => pure (some c)
+      | none => pure none
     let onYes' ← takeInstr onYes
     let onNo' ← takeInstr onNo
-    return .optional who cost? onYes' onNo'
+    return .optional who cost?' onYes' onNo' mt
   | .unlessPays payer cost ifUnpaid =>
     let ifUnpaid' ← takeInstr ifUnpaid
     let cost' ←
@@ -704,29 +642,24 @@ partial def takeInstr (instr : Instruction) : ArgM Instruction := do
   | other => return other
 
 partial def takeEffect (e : Effect) : ArgM Effect := do
-  match e.sharedTrigger with
-  | some te =>
-    let te ← takeTrigger te
-    let t := te.toEffect
-    return { e with
-      sharedTrigger := some te
-      body := t.body
-      resolution? := t.resolution?
-      legacyTokens := t.legacyTokens }
-  | none =>
-  match e.resolution? with
-  | some r =>
-    let targeting ← takeTargeting e.targeting
-    let r' ← takeResolution r
-    let maxTargets ← if e.maxTargets == 0 then pure e.maxTargets else takeNat e.maxTargets
-    return { e with targeting, resolution? := some r', maxTargets }
-  | none =>
+  match e.dividedDamage, e.body with
+  | some (amt, maxT), .damage (.deal src .allTargets (.const _) fl) =>
+    if fl.divided then
+      let amt' ← takeNat amt
+      let maxT' ← takeNat maxT
+      return { e with
+        dividedDamage := some (amt', maxT')
+        body := .damage (.deal src .allTargets (.const (Int.ofNat amt')) fl) }
+    else takeEffectNonDivided e
+  | _, _ => takeEffectNonDivided e
+where
+  takeEffectNonDivided (e : Effect) : ArgM Effect := do
     if e.body == Instruction.destroy (.target 0) then
       let spec ← takeWholeTargetSpec e.targeting.spec
       return { e with targeting := { e.targeting with spec } }
     else
       match e.body with
-      | .permanent (.modifyCounters (.put .plusOnePlusOne (.const n)) (.target 0)) =>
+      | .permanent (.modifyCounters (.put .plusOnePlusOne (.const n)) (.target 0) none) =>
         if e.targeting.spec == .creatureYouControl ||
             e.targeting.spec.creatureYouControlAnySubtype?.isSome then
           let spec ← takeWholeTargetSpec e.targeting.spec
@@ -736,7 +669,6 @@ partial def takeEffect (e : Effect) : ArgM Effect := do
             body := Instruction.putPlusOne (.target 0) n' }
         else takeEffectRest e
       | _ => takeEffectRest e
-where
   takeEffectRest (e : Effect) : ArgM Effect := do
     let targeting ← takeTargeting e.targeting
     let body ← takeInstr e.body
@@ -1779,18 +1711,6 @@ def splicePhrase (phrase : String) (old new : Array SlotVal) : String :=
 partial def finishEffect (old new : Effect) : Effect :=
   let oldArgs := collectEffect old
   let newArgs := collectEffect new
-  match new.sharedTrigger with
-  | some te =>
-    let t := te.toEffect
-    { new with
-      targeting := t.targeting
-      allowsZeroTargets := t.allowsZeroTargets
-      dividedDamage := t.dividedDamage
-      body := t.body
-      resolution? := t.resolution?
-      legacyTokens := t.legacyTokens
-      phrase := "" }
-  | none =>
   match old.body, new.body with
   | .chooseModes oldSpec, .chooseModes newSpec =>
     let modes := (oldSpec.modes.zip newSpec.modes).map fun (om, nm) => finishEffect om nm
@@ -1798,15 +1718,17 @@ partial def finishEffect (old new : Effect) : Effect :=
       body := .chooseModes { newSpec with modes }
       phrase := splicePhrase old.phrase oldArgs newArgs }
   | _, _ =>
-    if new.resolution?.isNone && new.body == Instruction.destroy (.target 0) then
+    if !old.phrase.isEmpty && new.body == Instruction.destroy (.target 0) then
       Effect.canonicalDestroy new.targeting.spec
     else
-      match new.resolution?, new.body with
-      | none, .permanent (.modifyCounters (.put .plusOnePlusOne (.const n)) (.target 0)) =>
-        match Effect.canonicalPlusOne n.toNat new.targeting.spec with
-        | some e => e
-        | none => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
-      | _, _ => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
+      match new.body with
+      | .permanent (.modifyCounters (.put .plusOnePlusOne (.const n)) (.target 0) none) =>
+        if !old.phrase.isEmpty then
+          match Effect.canonicalPlusOne n.toNat new.targeting.spec with
+          | some e => e
+          | none => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
+        else new
+      | _ => { new with phrase := splicePhrase old.phrase oldArgs newArgs }
 
 def refillEffect (e : Effect) (vals : Array SlotVal) : Effect :=
   finishEffect e (runFill (takeEffect e) vals)

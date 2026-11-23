@@ -585,7 +585,7 @@ def effectLines (cardName : String) (e : Effect) : List String :=
     (spellBody cardName e).splitOn "\n" |>.map (·.trimAscii.copy) |>.filter (· != "")
   match e.body with
   | .seq #[
-      .permanent (.setTapped (.target 0) true),
+      .permanent (.setTapped (.target 0) true _),
       .player (.scry .you (.const scryN)),
       .player (.drawCards .you (.const drawN))
     ] =>
@@ -964,7 +964,6 @@ def joinThenEffects (es : List Effect) : Effect :=
     let targeted := es.find? (·.requiresTarget) |>.getD es.head!
     { targeted with
       body := joinInstructions (es.map (·.body))
-      resolution? := none
       phrase := String.intercalate ", then " (es.map (·.phrase)) }
 
 /-- First spell prototype that matches `text` and whose instruction passes `ok`.
@@ -1427,7 +1426,6 @@ def joinSpellEffects (es : List Effect) : Effect :=
     let targeted := es.find? (·.requiresTarget) |>.getD es.head!
     { targeted with
       body := joinInstructions (es.map (·.body))
-      resolution? := none
       phrase := String.intercalate ". " (es.map (·.phrase)) }
 
 /-- One sentence as a spell prototype, or as draw-then-discard. -/

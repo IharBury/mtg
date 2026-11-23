@@ -952,7 +952,7 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
   let gFraPrompt :=
     gFraTrig0.changes #[
       .pushContinuationFrame { resolvingAbility := some trigAb.id },
-      .pending (.fraChoice p0 (.mayPayPickThen .tapUntappedCreature (.gainLife 2) (some dorkObj.id))) ]
+      .pending (.fraChoice p0 (.mayPayPickThen .tapUntappedCreature (Instruction.gainLifeFixed 2) (some dorkObj.id))) ]
   let gFraPaid := mustApply gFraPrompt p0 (.choosePermanents #[dorkObj.id])
   let priorTapAndFraOk :=
     sinceIdxHelperOk &&

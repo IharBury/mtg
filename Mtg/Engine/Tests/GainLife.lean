@@ -2,13 +2,12 @@ import Mtg.Engine.Catalog
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.gainLife`
+# Unified life gain instructions (`Instruction.gainLife`)
 
-How much life is a `NumberSelector`.
-A fixed amount, life equal to the targeted card's power, one life for each
-permanent an earlier step destroyed, one life for each other creature you
-control, and life for each Equipment attached to the source.
-Any other selector gains nothing.
+How much life is a `ValueExpr`: a fixed amount, life equal to the returned
+card's power, one life for each permanent destroyed this way, and one life
+for each other creature you control. Plus CR 702.15b aggregated lifelink gain
+on divided damage.
 -/
 
 namespace Mtg.Engine.GainLifeTests
@@ -25,11 +24,12 @@ def opp : PlayerId := ⟨1⟩
 def life (g : Game) : Int :=
   (g.player caster).life
 
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
+def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
-    (cardPower : Option Nat := none) (ab : TriggeredAbility := .onEnterDraw 1) : Game :=
-  g.applyTriggeredAbility caster ab sourceId targets
-    (resolutionOverride := some r) (sequencedCardPower := cardPower)
+    (spec : TargetSpec := .none) : Game :=
+  g.applyTriggeredAbility caster
+    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    sourceId targets
 
 def putInGraveyard (g : Game) (card : CardDef) (p : PlayerId) : Game :=
   insertObject g card p (.graveyard p)
@@ -58,64 +58,21 @@ def counters (g : Game) (name : String) : Nat :=
 def elf : CardDef := creature "Lorien Elf" ManaCost.empty #["Elf"] 4 4
 def bear : CardDef := creature "Cave Bear" ManaCost.empty #["Bear"] 2 2
 
-def equalPower : TriggeredAbility.TriggerResolution :=
-  .gainLife .equalToTargetPower
+def perOther : Instruction :=
+  Instruction.gainLife (ValueExpr.count (.inZones .battlefield (.all #[
+    .otherThan .this, .hasType .creature, .controlledBy .you])))
 
-def perDestroyed : TriggeredAbility.TriggerResolution :=
-  .gainLife .forEachDestroyedThisWay
-
-def perOther : TriggeredAbility.TriggerResolution :=
-  .gainLife .perOtherCreature
-
-/- The controller gains the printed amount. Gaining none changes nothing.
-A selector this resolution does not read gains nothing. -/
+/- The controller gains the printed amount. Gaining 0 changes nothing. -/
 #guard
-  let g := step afterDraw (.gainLife (.fixed 4))
+  let g := step afterDraw (Instruction.gainLifeFixed 4)
   life g == life afterDraw + 4 && logContains g "gains 4 life"
 
 #guard
-  let g := step afterDraw (.gainLife (.fixed 0))
+  let g := step afterDraw (Instruction.gainLifeFixed 0)
   life g == life afterDraw && g.log == afterDraw.log
 
-#guard
-  let g := step afterDraw (.gainLife .greatestPower)
-  life g == life afterDraw && g.log == afterDraw.log
-
-/- Life equal to the targeted card's power. The amount noted when a sequence
-starts is used even when that card's current power is different. A missing
-target, and a card that has left the graveyard, gain nothing. -/
-#guard
-  let g0 := putInGraveyard afterDraw elf caster
-  let id := namedIn g0 (g0.player caster).graveyard "Lorien Elf"
-  let g := step g0 equalPower (targets := #[Target.card id])
-    (ab := .onEnterOrAttackReturnElfGainLife)
-  life g == life g0 + 4 && inGraveyard g "Lorien Elf"
-
-#guard
-  let g0 := putInGraveyard afterDraw elf caster
-  let id := namedIn g0 (g0.player caster).graveyard "Lorien Elf"
-  let g := step g0 equalPower (targets := #[Target.card id]) (cardPower := some 9)
-    (ab := .onEnterOrAttackReturnElfGainLife)
-  life g == life g0 + 9
-
-#guard
-  let g := step afterDraw equalPower (cardPower := some 5)
-  life g == life afterDraw + 5
-
-#guard
-  let g := step afterDraw equalPower (ab := .onEnterOrAttackReturnElfGainLife)
-  life g == life afterDraw && logContains g "The target is no longer legal"
-
-#guard
-  let g0 := putInGraveyard afterDraw elf caster
-  let id := namedIn g0 (g0.player caster).graveyard "Lorien Elf"
-  let (g1, _) := g0.move id .exile none
-  let g := step g1 equalPower (targets := #[Target.card id])
-    (ab := .onEnterOrAttackReturnElfGainLife)
-  life g == life g1 && logContains g "no longer in the graveyard"
-
-/- The return-then-gain sequence uses that power, then the card is in hand.
-An illegal graveyard card skips both steps. -/
+/- The return-then-gain sequence uses the returned Elf card's power, then
+the card is in hand. An illegal graveyard card skips both steps. -/
 #guard
   let g0 := putInGraveyard afterDraw elf caster
   let id := namedIn g0 (g0.player caster).graveyard "Lorien Elf"
@@ -131,16 +88,20 @@ An illegal graveyard card skips both steps. -/
   life g == life g0 && inGraveyard g "Cave Bear" && !inHand g "Cave Bear" &&
     logContains g "no longer legal"
 
-/- One life for each permanent an earlier step destroyed. None clears the
-note and gains nothing. -/
 #guard
-  let g0 := afterDraw.change (.permanentsDestroyedThisWay 3)
-  let g := step g0 perDestroyed
-  life g == life g0 + 3 && g.permanentsDestroyedThisWay == 0
+  let g0 := putInGraveyard afterDraw elf caster
+  let id := namedIn g0 (g0.player caster).graveyard "Lorien Elf"
+  let (g1, _) := g0.move id .exile none
+  let g := g1.applyTriggeredAbility caster .onEnterOrAttackReturnElfGainLife none
+    #[Target.card id]
+  life g == life g1
 
+/- One life for each permanent destroyed by the bound destroy step. -/
 #guard
-  let g := step afterDraw perDestroyed
-  life g == life afterDraw && g.permanentsDestroyedThisWay == 0
+  let g0 := addPermanent (addPermanent afterDraw (artifact "A" ManaCost.empty "") opp opp)
+    (enchantment "E" ManaCost.empty "") opp opp
+  let g := g0.applyTriggeredAbility caster .onEnterDestroyOppArtifactsEnchantmentsGainLife none
+  life g == life g0 + 2
 
 /- One life for each other creature the controller controls. The source and
 opposing creatures are not counted. None gains nothing. -/
@@ -171,29 +132,14 @@ opposing creatures are not counted. None gains nothing. -/
   life g == life g0 + 1 && counters g "Ally" == 1 && counters g "Source" == 0 &&
     counters g "Foe" == 0
 
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.gainLife (.fixed 3)) } ==
+#guard TriggeredAbility.resolutionPhrase (Effect.triggerGainLife 3) ==
   "you gain 3 life"
 
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.gainLife .greatestPower) } ==
-  "you gain life"
+#guard TriggeredAbility.resolutionPhrase Effect.triggerDestroyOppArtifactsEnchantmentsGainLife ==
+  "destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way"
 
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (equalPower) } ==
-  "you gain life equal to that card's power"
-
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (perDestroyed) } ==
-  "you gain 1 life for each permanent destroyed this way"
-
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (perOther) } ==
-  "you gain 1 life for each other creature you control"
-
-#guard (SharedTrigger.toEffect .returnElfGainLife).resolution ==
-  .sequence [.returnToHand .graveyardCard, equalPower]
-
-#guard (SharedTrigger.toEffect .destroyOppArtifactsEnchantmentsGainLife).resolution ==
-  .sequence [.destroy .oppArtifactsEnchantments (note := .countDestroyed), perDestroyed]
-
-#guard (SharedTrigger.toEffect .plusOneEachOtherGainLife).resolution ==
-  .sequence [.putCounters (.ofKind .plusOnePlusOne) .eachOther, perOther]
+#guard TriggeredAbility.resolutionPhrase Effect.triggerPlusOneEachOtherGainLife ==
+  "put a +1/+1 counter on each other creature you control. You gain 1 life for each other creature you control"
 
 /- CR 702.15b: divided trigger damage from a lifelink source aggregates life gain
 into a single `LifeEvent.gained` event across multiple recipients. -/
@@ -203,11 +149,10 @@ into a single `LifeEvent.gained` event across multiple recipients. -/
   let g0 := addPermanent (addPermanent afterDraw llSrc caster caster) bear opp opp
   let src := g0.battlefield.find? (·.name == "Divided Lifelinker") |>.get!
   let oppBear := g0.battlefield.find? (·.name == "Cave Bear") |>.get!
-  let ab : TriggeredAbility := .onEnterDraw 1
+  let ab : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters (Effect.triggerDividedDamage 3 2)
   let startIdx := g0.events.size
-  let g1 := g0.applyTriggerDamage caster ab (some src.id)
-    #[Target.player opp, Target.permanent oppBear.id] none "Divided Lifelinker"
-    (.fixed 3) .target .divided
+  let g1 := g0.applyTriggeredAbility caster ab (some src.id)
+    #[Target.player opp, Target.permanent oppBear.id] (dividedDamage := #[2, 1])
   let gains := (g1.events.extract startIdx g1.events.size).filter fun e =>
     match e.change with
     | .rules (.life (.gained _ _)) => true

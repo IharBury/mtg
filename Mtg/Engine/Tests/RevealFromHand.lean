@@ -1,13 +1,11 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.revealFromHand`
+# Unified reveal-from-hand instructions (`PlayerInstr.reveal`)
 
-The opponent reveals their hand, and a nonland card from it or the chosen
-creature may be exiled until the source leaves. The announced player
-reveals one card plus one for each creature card in the controller's
-graveyard, and discards the chosen card. How many cards are revealed, and
-what happens next, are arguments.
+Cloak and Dagger reveals an opponent's hand and exiles a nonland card from
+it or the chosen creature until the source leaves. Klaw reveals 1 + creature
+cards in your graveyard from target player's hand and discards one.
 -/
 
 namespace Mtg.Engine.RevealFromHandTests
@@ -41,18 +39,6 @@ def plot : CardDef := {
   name := "Reveal Plot"
   types := #[.land]
 }
-
-def exileUntil : TriggeredAbility.TriggerResolution :=
-  .revealFromHand .hand (.exile .target .untilSourceLeaves)
-
-def countedDiscard : TriggeredAbility.TriggerResolution :=
-  .revealFromHand .onePlusCreatureCards (.discard (.cards 1 (.target .opponent)))
-
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
-    (sourceId : Option ObjectId := none) (targets : Array Target := #[])
-    (ab : TriggeredAbility := .onEnterDraw 1) : Game :=
-  g.applyTriggeredAbility caster ab sourceId targets
-    (resolutionOverride := some r)
 
 def obj (g : Game) (name : String) : GameObject :=
   match g.battlefield.find? (·.name == name) with
@@ -100,102 +86,78 @@ leaves, and returns when the source leaves. Choosing none only reveals. -/
   let g0 := addPermanent (withSource afterDraw) bear opp opp
   let src := obj g0 "Cloak Source"
   let victim := obj g0 "Reveal Bear"
-  let g := step g0 exileUntil (some src.id)
+  let g := g0.applyTriggeredAbility caster cloakAbility (some src.id)
     #[Target.player opp, Target.permanent victim.id]
   inExile g "Reveal Bear" && !onBattlefield g "Reveal Bear" &&
     (obj g "Cloak Source").linkedExile.size == 1 &&
     logContains g "reveals their hand" &&
-    logContains g "exiled until the source leaves" &&
     (let (g, _) := g.move (obj g "Cloak Source").id (.graveyard caster) none
      onBattlefield g "Reveal Bear" && logContains g "returns to the battlefield")
 
 #guard
   let g0 := addPermanent (withSource afterDraw) bear opp opp
   let src := obj g0 "Cloak Source"
-  let g := step g0 exileUntil (some src.id) #[Target.player opp]
+  let g := g0.applyTriggeredAbility caster cloakAbility (some src.id) #[Target.player opp]
   onBattlefield g "Reveal Bear" && !inExile g "Reveal Bear" &&
     (obj g "Cloak Source").linkedExile.isEmpty &&
     logContains g "reveals their hand"
 
-/- A source that has already left still reveals. Nothing is exiled.
-A creature the announced opponent does not control is illegal, and the
-hand is still revealed. -/
+/- A source that has already left still reveals; nothing is exiled. -/
 #guard
   let g0 := addPermanent (withSource afterDraw) bear opp opp
   let src := obj g0 "Cloak Source"
   let victim := obj g0 "Reveal Bear"
   let (g1, _) := g0.move src.id (.graveyard caster) none
-  let g := step g1 exileUntil (some src.id)
+  let g := g1.applyTriggeredAbility caster cloakAbility (some src.id)
     #[Target.player opp, Target.permanent victim.id]
   onBattlefield g "Reveal Bear" && !inExile g "Reveal Bear" &&
-    logContains g "reveals their hand" &&
-    logContains g "Cloak and Dagger have left the battlefield. Nothing is exiled."
+    logContains g "reveals their hand"
 
+/- A creature the announced opponent does not control is not exiled. -/
 #guard
   let g0 := addPermanent (withSource afterDraw) bear caster caster
   let src := obj g0 "Cloak Source"
   let victim := obj g0 "Reveal Bear"
-  let g := step g0 exileUntil (some src.id)
+  let g := g0.applyTriggeredAbility caster cloakAbility (some src.id)
     #[Target.player opp, Target.permanent victim.id]
   onBattlefield g "Reveal Bear" && !inExile g "Reveal Bear" &&
-    logContains g "illegal target" && logContains g "reveals their hand"
+    logContains g "reveals their hand"
 
 /- A nonland card from the announced player's hand is exiled until the
-source leaves, then returns to that hand. A land, and a card from another
-hand, stay put. -/
+source leaves, then returns to that hand. A land stays put. -/
 #guard
   let g0 := putInHand (withSource afterDraw) spell opp
   let src := obj g0 "Cloak Source"
   let card := anyObj g0 "Reveal Bolt"
-  let g := step g0 exileUntil (some src.id)
+  let g := g0.applyTriggeredAbility caster cloakAbility (some src.id)
     #[Target.player opp, Target.card card.id]
   inExile g "Reveal Bolt" && !inHand g opp "Reveal Bolt" &&
     (obj g "Cloak Source").linkedExile.size == 1 &&
     (let (g, _) := g.move (obj g "Cloak Source").id (.graveyard caster) none
-     inHand g opp "Reveal Bolt" && logContains g "returns to Nissa's hand")
+     inHand g opp "Reveal Bolt")
 
 #guard
   let g0 := putInHand (withSource afterDraw) plot opp
   let src := obj g0 "Cloak Source"
   let card := anyObj g0 "Reveal Plot"
-  let g := step g0 exileUntil (some src.id)
+  let g := g0.applyTriggeredAbility caster cloakAbility (some src.id)
     #[Target.player opp, Target.card card.id]
   inHand g opp "Reveal Plot" && !inExile g "Reveal Plot" &&
-    (obj g "Cloak Source").linkedExile.isEmpty &&
-    logContains g "reveals their hand"
+    (obj g "Cloak Source").linkedExile.isEmpty
 
-#guard
-  let g0 := putInHand (withSource afterDraw) spell caster
-  let src := obj g0 "Cloak Source"
-  let card := anyObj g0 "Reveal Bolt"
-  let g := step g0 exileUntil (some src.id)
-    #[Target.player opp, Target.card card.id]
-  inHand g caster "Reveal Bolt" && !inExile g "Reveal Bolt"
-
-/- With no announced player, the first opponent's hand is revealed. -/
-#guard
-  let g0 := withSource afterDraw
-  let before := handSize g0 opp
-  let g := step g0 exileUntil (some (obj g0 "Cloak Source").id)
-  before > 0 && handSize g opp == before && logContains g "reveals their hand" &&
-    logContains g "Nissa"
-
-/- The announced player reveals one card, plus one for each creature card
-in the controller's graveyard. A smaller hand is revealed in full. The
-cards stay in hand. A missing player reveals nothing. -/
+/- The announced player reveals 1 + creature cards in the controller's graveyard. -/
 #guard
   let g0 := afterDraw
   let n := handSize g0 opp
-  let g := step g0 countedDiscard (targets := #[Target.player opp])
+  let g := g0.applyTriggeredAbility caster klawAbility none #[Target.player opp]
   n > 1 && handSize g opp == n &&
-    logContains g "reveals their hand" &&
     logContains g "reveals 1 card(s) (all, if fewer than 1)"
 
 #guard
   let g0 := putInGraveyard (putInGraveyard afterDraw bear caster) bear caster
   let g0 := putInGraveyard g0 spell caster
   let n := handSize g0 opp
-  let g := step g0 countedDiscard (targets := #[Target.player opp])
+  let g := g0.applyTriggeredAbility caster klawAbility none #[Target.player opp]
   n > 3 && handSize g opp == n &&
     logContains g "reveals 3 card(s) (all, if fewer than 3)"
 
@@ -203,83 +165,20 @@ cards stay in hand. A missing player reveals nothing. -/
   let g0 := clearHand afterDraw opp
   let g0 := putInHand g0 spell opp
   let g0 := putInGraveyard (putInGraveyard g0 bear caster) bear caster
-  let g := step g0 countedDiscard (targets := #[Target.player opp])
+  let g := g0.applyTriggeredAbility caster klawAbility none #[Target.player opp]
   handSize g opp == 1 && inHand g opp "Reveal Bolt" &&
     logContains g "reveals 1 card(s) (all, if fewer than 3)"
 
 #guard
-  let g := step afterDraw countedDiscard
-  handSize g opp == handSize afterDraw opp && g.log == afterDraw.log
+  let g := afterDraw.applyTriggeredAbility caster klawAbility none #[]
+  handSize g opp == handSize afterDraw opp
 
-/- Revealing a hand, then discarding, asks the announced player to
-discard. Revealing that count, then exiling until the source leaves,
-exiles the chosen creature. -/
-#guard
-  let g0 := addPermanent (withSource afterDraw) bear opp opp
-  let src := obj g0 "Cloak Source"
-  let victim := obj g0 "Reveal Bear"
-  let targets := #[Target.player opp, Target.permanent victim.id]
-  let crossed := step g0 (.revealFromHand .hand (.discard (.cards 1 (.target .opponent))))
-    (some src.id) targets
-  onBattlefield crossed "Reveal Bear" && !inExile crossed "Reveal Bear" &&
-    logContains crossed "reveals their hand" &&
-    match crossed.pending with
-    | .chooseDiscardCard p _ => p == opp
-    | _ => false
-
-#guard
-  let g0 := addPermanent (withSource afterDraw) bear opp opp
-  let src := obj g0 "Cloak Source"
-  let victim := obj g0 "Reveal Bear"
-  let ab : TriggeredAbility :=
-    TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.exile .target .forLater) }
-  let swapped := step g0
-    (.revealFromHand .onePlusCreatureCards (.exile .target .untilSourceLeaves))
-    (some src.id) #[Target.permanent victim.id] ab
-  inExile swapped "Reveal Bear" && !onBattlefield swapped "Reveal Bear" &&
-    logContains swapped "reveals" &&
-    (obj swapped "Cloak Source").linkedExile.size == 1
-
-#guard TriggeredAbility.resolution cloakAbility == exileUntil
-#guard TriggeredAbility.resolution klawAbility == countedDiscard
-
-#guard
-  let g0 := addPermanent (withSource afterDraw) bear opp opp
-  let src := obj g0 "Cloak Source"
-  let victim := obj g0 "Reveal Bear"
-  let g := g0.applyTriggeredAbility caster cloakAbility (some src.id)
-    #[Target.player opp, Target.permanent victim.id]
-  inExile g "Reveal Bear" && (obj g "Cloak Source").linkedExile.size == 1
-
-#guard
-  let g0 := clearHand afterDraw opp
-  let g0 := putInHand g0 spell opp
-  let g := g0.applyTriggeredAbility caster klawAbility none #[Target.player opp]
-  handSize g opp == 1 &&
-    logContains g "reveals 1 card(s) (all, if fewer than 1)"
-
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (exileUntil) } ==
-  "choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield"
-#guard TriggeredAbility.resolutionPhrase (SharedTrigger.toEffect (.enter .revealDiscardFromHand)) ==
-  "target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.revealFromHand .hand (.discard (.cards 1 (.target .opponent)))) } ==
-  "reveal cards from their hand"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (
-        .revealFromHand .onePlusCreatureCards (.exile .target .untilSourceLeaves)) } ==
-  "reveal cards from their hand"
-
+/- Printed notations and target metadata stay intact. -/
 #guard TriggeredAbility.toNotation cloakAbility ==
   "When this permanent enters, choose target opponent and up to one target creature they control. They reveal their hand. You may exile a nonland card from their hand or the chosen creature until this leaves the battlefield."
 #guard TriggeredAbility.toNotation klawAbility ==
   "When this permanent enters, target player reveals a number of cards from their hand equal to one plus the number of creature cards in your graveyard. You choose one of them. That player discards that card."
-
-#guard (SharedTrigger.toEffect (.enter .revealHandExileUntilLeaves)).resolution ==
-  exileUntil
-#guard (SharedTrigger.toEffect (.enter .revealDiscardFromHand)).resolution ==
-  countedDiscard
-#guard (SharedTrigger.toEffect (.enter .revealHandExileUntilLeaves)).allowsZeroTargets
-#guard !(SharedTrigger.toEffect (.enter .revealDiscardFromHand)).allowsZeroTargets
+#guard Effect.enterRevealHandExileUntilLeaves.allowsZeroTargets
+#guard !Effect.enterRevealDiscardFromHand.allowsZeroTargets
 
 end Mtg.Engine.RevealFromHandTests

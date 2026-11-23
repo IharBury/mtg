@@ -3803,8 +3803,8 @@ def arwenIllegalTargetNoCountersOk : Bool :=
     match g.payRemoveIndestructibleCounter arwen with
     | .ok g => g
     | .error _ => g
-  let g := g.resolveArwenShare
-    (namedPermanent g "Arwen, Mortal Queen").id none
+  let g := g.applyAbilityEffect ⟨0⟩ Effect.arwenShare #[]
+    (some (namedPermanent g "Arwen, Mortal Queen").id)
   let arwen := namedPermanent g "Arwen, Mortal Queen"
   arwen.status.plusOnePlusOne == 0 &&
     arwen.status.lifelinkCounters == 0 &&
@@ -3822,8 +3822,8 @@ def arwenLegalTargetSharesOk : Bool :=
     match g.payRemoveIndestructibleCounter arwen with
     | .ok g => g
     | .error _ => g
-  let g := g.resolveArwenShare
-    (namedPermanent g "Arwen, Mortal Queen").id (some bear.id)
+  let g := g.applyAbilityEffect ⟨0⟩ Effect.arwenShare #[Target.permanent bear.id]
+    (some (namedPermanent g "Arwen, Mortal Queen").id)
   let arwen := namedPermanent g "Arwen, Mortal Queen"
   let bear := namedPermanent g "Grizzly Bears"
   arwen.status.plusOnePlusOne == 1 &&
@@ -4497,9 +4497,11 @@ def uncastCopyCeasesOk : Bool :=
 #guard uncastCopyCeasesOk
 
 def sarumanReflexiveAfterMillOk : Bool :=
-  let g := (afterDraw.change (.pushContinuationFrame {})).millOpponentsAndNote #[⟨1⟩] #[⟨1⟩] 2
-  g.opponentsMilledThisWay &&
-    (g.player ⟨1⟩).graveyard.size >= 2 &&
+  let zeroBolt : CardDef := { lightningBolt with manaCost := ManaCost.empty }
+  let g := addToLibraryTop afterDraw zeroBolt ⟨1⟩
+  let g := g.applyTriggeredAbility ⟨0⟩ .onCastSecondSpellMillThenCopy none
+  (g.player ⟨1⟩).graveyard.size >= 2 &&
+    !g.stack.isEmpty &&
     (ruling 343).comment.contains "reflexive"
 
 #guard sarumanReflexiveAfterMillOk

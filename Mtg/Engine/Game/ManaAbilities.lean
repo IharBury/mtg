@@ -247,18 +247,7 @@ private def evalActivatedManaMode (g : Game) (o : GameObject) (p : PlayerId)
       restriction := mp.restriction
       riders := mp.allRiders
       damageYou := mp.damageYou }
-  | none =>
-    match mode.resolution? with
-    | some (.addMana ts amt) =>
-      let n : Nat :=
-        match amt with
-        | .fixed k => k.toNat
-        | .perChargeCounter => o.status.charge
-        | .chosenX => chosenX
-        | _ => 0
-      let units := (Array.replicate n ts).foldl (· ++ ·) #[]
-      { effect := mode, output? := some (.fixed units) }
-    | _ => { effect := mode }
+  | none => { effect := mode }
 
 /-- Build a `ManaAbilityDef` from an evaluated Layer-6 `ActivatedAbility`
 satisfying CR 605.1a (`isManaActivation`). Always returns `some` whenever
@@ -578,15 +567,14 @@ private def departedSinceOptionalCkpt (g : Game) (ckpt? : Option ProposalCheckpo
     g.players.foldl (fun acc pl =>
       if pl.leftTheGame && !acc.contains pl.id then acc.push pl.id else acc) seed
 
-/-- True when `f` holds only queued replacement/trigger-sequence continuations
-(`pendingReplacement`, `outerPendingReplacements`, `triggerSequenceRest`,
-`mayThenResume`) rather than an active resolving spell/ability/choice frame. -/
+/-- True when `f` holds only queued replacement/interpreter continuations
+(`pendingReplacement`, `outerPendingReplacements`, `interpWait?`) rather than
+an active resolving spell/ability/choice frame. -/
 private def isCarrierOnlyFrame (f : ContinuationFrame) : Bool :=
   { f with
     pendingReplacement := none
     outerPendingReplacements := #[]
-    triggerSequenceRest := none
-    mayThenResume := false } == {}
+    interpWait? := none } == {}
 
 private def abortDepartedManaAbilityContCore (g : Game) (p : PlayerId) (prevPending : Pending)
     (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game × Bool :=
@@ -635,7 +623,7 @@ private def abortDepartedManaAbilityContCore (g : Game) (p : PlayerId) (prevPend
         if g.continuations.all isCarrierOnlyFrame then
           g := g.finishAndGrantPriorityFwd prio
         else if g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
-            g.triggerSequenceRest.isSome || g.mayThenResume then
+            g.currentInterpWait?.isSome then
           if !g.anyContinuationSettlesControlFlowFwd then
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
@@ -736,7 +724,7 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
         let prio := if g.stillInGame p then g.priorityInstead p else g.priorityInstead g.activePlayer
         if g.continuations.all isCarrierOnlyFrame then
           if g.outerPendingReplacements.isEmpty &&
-              g.triggerSequenceRest.isNone && !g.mayThenResume then
+              g.currentInterpWait?.isNone then
             g := g.chainPendingReplacement (.receivePriority prio)
           else if !g.anyContinuationSettlesControlFlowFwd then
             if g.pendingPriority != some prio then
@@ -746,7 +734,7 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
               g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
         else if !g.outerPendingReplacements.isEmpty ||
-            g.triggerSequenceRest.isSome || g.mayThenResume then
+            g.currentInterpWait?.isSome then
           if !g.anyContinuationSettlesControlFlowFwd then
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
@@ -775,7 +763,7 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
         if g.continuations.all isCarrierOnlyFrame then
           g := g.finishAndGrantPriorityFwd prio
         else if g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
-            g.triggerSequenceRest.isSome || g.mayThenResume then
+            g.currentInterpWait?.isSome then
           if !g.anyContinuationSettlesControlFlowFwd then
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))

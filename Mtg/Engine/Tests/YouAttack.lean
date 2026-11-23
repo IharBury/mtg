@@ -6,7 +6,7 @@ import Mtg.Engine.Tests.Helpers
 import Mtg.Engine.Tests.Turns
 
 /-!
-# Attack triggers without `YouAttackLeftover`
+# Unified “whenever you attack” triggers
 
 The Kingpin may pay 2 life so creatures assign combat damage equal to
 toughness. Daredevil may exile the top card, pump when it is a Hero, and
@@ -38,25 +38,13 @@ def lookedId (g : Game) (name : String) : Option ObjectId :=
 def exiled (g : Game) (name : String) : Option GameObject :=
   g.objects.find? (fun o => o.zone == .exile && o.name == name)
 
-/- The shared “whenever you attack” effects resolve as constructors that
-do not carry `YouAttackLeftover`. The printed sentence stays the Oracle line. -/
-#guard TriggeredAbility.resolution
-    (TriggeredAbility.onYouAttacking Effect.youAttackingPay2LifeToughness) ==
-  .may (.loseLife (.fixed 2))
-    (.grant .assignCombatDamageEqualToughness .creaturesYouControl) .ifYouDo
-#guard TriggeredAbility.resolution
-    (TriggeredAbility.onYouAttacking Effect.youAttackingExileTopHeroPump) ==
-  .may (.exile .top .playThisTurn .ifHero) (.sequence [])
-#guard TriggeredAbility.resolution
-    (TriggeredAbility.onYouAttacking Effect.youAttackingLookSixCast) ==
-  .revealLibrary (.top 6) (.mayCast .looked .greatestAttackingPower .withoutPaying)
-
-#guard toString (TriggeredAbility.onYouAttacking Effect.youAttackingPay2LifeToughness) ==
-  TriggeredAbility.youAttackingSentence .pay2LifeToughness
-#guard toString (TriggeredAbility.onYouAttacking Effect.youAttackingExileTopHeroPump) ==
-  TriggeredAbility.youAttackingSentence .exileTopHeroPump
-#guard toString (TriggeredAbility.onYouAttacking Effect.youAttackingLookSixCast) ==
-  TriggeredAbility.youAttackingSentence .lookSixCast
+/- The “whenever you attack” triggers carry unified `Instruction` bodies and keep their Oracle lines. -/
+#guard TriggeredAbility.youAttackingPay2LifeToughness.effect.body == Effect.youAttackingPay2LifeToughness.body
+#guard TriggeredAbility.youAttackingExileTopHeroPump.effect.body == Effect.youAttackingExileTopHeroPump.body
+#guard TriggeredAbility.youAttackingLookSixCast.effect.body == Effect.youAttackingLookSixCast.body
+#guard TriggeredAbility.youAttackingPay2LifeToughness.toNotation.contains "pay 2 life"
+#guard TriggeredAbility.youAttackingExileTopHeroPump.toNotation.contains "exile the top card"
+#guard TriggeredAbility.youAttackingLookSixCast.toNotation.contains "top six cards"
 
 /- The Kingpin may pay 2 life. Declining and being unable to pay leave
 power and combat damage alone. Paying does not change power; a 1/5 assigns

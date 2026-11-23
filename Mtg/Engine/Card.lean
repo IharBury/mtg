@@ -10,7 +10,6 @@ import Mtg.Engine.Card.Token
 import Mtg.Engine.Card.Targeting
 import Mtg.Engine.Card.SpellResolution
 import Mtg.Engine.Card.AbilityResolution
-import Mtg.Engine.Card.SharedTrigger
 import Mtg.Engine.Card.Ability
 import Mtg.Engine.Card.Effect
 import Mtg.Engine.Card.ActivatedAbility
@@ -58,10 +57,9 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
   `HasTargeting` (CR 115.1).
 - `Parser.SubGrammars`: Stage-4 compositional expression, target, cost,
   keyword, static-ability, trigger-clause, and instruction parsers.
-- `SpellResolution` / `AbilityResolution`: legacy trigger `Resolution` fallback
-  and demo-agent `SpellCastKind`/`AbilityCastKind` classification enums.
-- `SharedTrigger`: reusable trigger payloads (CR 603).
-- `Ability`: unified Phase-8 `Instruction` AST, `Effect`, `ActivatedAbility`,
+- `SpellResolution` / `AbilityResolution`: demo-agent
+  `SpellCastKind`/`AbilityCastKind` classification enums.
+- `Ability`: unified `Instruction` AST, `Effect`, `ActivatedAbility`,
   `TriggeredAbility`, `StaticAbility`, and `GrantedAbility`.
 - `Effect`: `Instruction` smart constructors, `ToOracle`, and pure computed
   agent classifiers (`classifyForAgent` / `classifyAbilityForAgent`).

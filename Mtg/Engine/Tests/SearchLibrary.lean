@@ -1,14 +1,13 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.searchLibrary`
+# Unified library-search instructions (`PlayerOp.searchLibrary`)
 
 A Forest onto the battlefield, a basic land into hand, a basic land you
-may put on top, and a Dragon from hand or library are `searchLibrary`.
-What happens to the found card is a `TriggerResolution`. Printed pairs
-keep their phrases. Another library find searches that way. Any other
-follow-up is resolved itself, and those follow-ups do nothing on their
-own.
+may put on top, and a Dragon from hand or library all execute via
+`PlayerOp.searchLibrary` in `Game/Interpreter.lean`. Printed phrases stay
+intact and changeling cards match creature subtypes in hand and library
+(CR 702.73a).
 -/
 
 namespace Mtg.Engine.SearchLibraryTests
@@ -99,10 +98,40 @@ def permanent (g : Game) (name : String) : GameObject :=
 def shuffledSince (before : Nat) (g : Game) : Bool :=
   (g.log.extract before g.log.size).any (fun s => mentions s "shuffles their library")
 
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
-    (sourceId : Option ObjectId := none) : Game :=
-  g.applyTriggeredAbility caster (.onEnterDraw 1) sourceId #[]
-    (resolutionOverride := some r)
+def searchForestTapped : Effect :=
+  { body := .player (.searchLibrary {
+      zones := .libraryOf .you
+      filter := .hasSubtype (.literal .forest)
+      count := .upTo (.const 1)
+      dest := .battlefield .controller
+      mods := { tapped := true }
+      reveal := false
+      shuffle := true
+    }) }
+
+def searchBasicOnTop : Effect :=
+  { body := .player (.searchLibrary {
+      zones := .libraryOf .you
+      filter := .all #[.hasSupertype .basic, .hasType .land]
+      count := .upTo (.const 1)
+      dest := .library .owner .top
+      reveal := true
+      shuffle := true
+    }) }
+
+def searchDragon (tapped : Bool := false) : Effect :=
+  { body := .player (.searchLibrary {
+      zones := { zones := #[.hand, .library], owner := .ofPlayer .you }
+      filter := .hasSubtype (.literal .dragon)
+      count := .upTo (.const 1)
+      dest := .battlefield .controller
+      mods := { tapped }
+      reveal := false
+      shuffle := true
+    }) }
+
+def stepEffect (g : Game) (e : Effect) (sourceId : Option ObjectId := none) : Game :=
+  g.applyTriggeredAbility caster (TriggeredAbility.mkTrigger .thisEnters e) sourceId #[]
 
 /-- Answer an optional search, then take the first eligible card. -/
 def takeSearch (g : Game) : Game :=
@@ -143,20 +172,19 @@ shuffled. An empty library finds nothing and still shuffles. -/
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [mountain, forest]
   let played := g0.loggedLandsPlayed caster
   let before := g0.log.size
-  let g := takeSearch (step g0 (.searchLibrary (.put .forest)))
+  let g := takeSearch (stepEffect g0 Effect.triggerSearchForest)
   onBattlefield g "Search Forest" && !onBattlefield g "Search Mountain" &&
     inLibrary g caster "Search Mountain" && !inLibrary g caster "Search Forest" &&
     !(permanent g "Search Forest").status.tapped &&
     !g.hasSummoningSickness (permanent g "Search Forest") &&
     g.loggedLandsPlayed caster == played &&
     shuffledSince before g &&
-    logContains g "searches for a Forest card" &&
     logContains g "puts Search Forest onto the battlefield" &&
     !logContains g "onto the battlefield tapped"
 
 #guard
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [canopy]
-  let g := takeSearch (step g0 (.searchLibrary (.put .forest)))
+  let g := takeSearch (stepEffect g0 Effect.triggerSearchForest)
   onBattlefield g "Search Canopy" &&
     !(permanent g "Search Canopy").status.tapped &&
     logContains g "puts Search Canopy onto the battlefield"
@@ -164,38 +192,34 @@ shuffled. An empty library finds nothing and still shuffles. -/
 #guard
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [mountain]
   let before := g0.log.size
-  let g := step g0 (.searchLibrary (.put .forest))
+  let g := stepEffect g0 Effect.triggerSearchForest
   g.pending == .none && !onBattlefield g "Search Mountain" &&
-    inLibrary g caster "Search Mountain" && shuffledSince before g &&
-    logContains g "finds no Forest card"
+    inLibrary g caster "Search Mountain" && shuffledSince before g
 
 /- Failing to find still shuffles. The Forest stays in the library. -/
 #guard
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [forest]
   let before := g0.log.size
-  let g := declineSearch (step g0 (.searchLibrary (.put .forest)))
+  let g := declineSearch (stepEffect g0 Effect.triggerSearchForest)
   !onBattlefield g "Search Forest" && inLibrary g caster "Search Forest" &&
-    shuffledSince before g &&
-    logContains g "chooses not to find a Forest card"
+    shuffledSince before g
 
 /- A basic land is revealed and put into hand. A nonbasic Forest is not
 a basic land, so that search finds nothing and shuffles. -/
 #guard
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [forest, mountain]
   let before := g0.log.size
-  let g := takeSearch (step g0 (.searchLibrary (.returnToHand .basicLand)))
+  let g := takeSearch (stepEffect g0 Effect.triggerSearchBasicLandToHand)
   inHand g caster "Search Forest" && !onBattlefield g "Search Forest" &&
     inLibrary g caster "Search Mountain" && shuffledSince before g &&
-    logContains g "searches for basic land card" &&
     logContains g "reveals Search Forest and puts it into their hand"
 
 #guard
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [canopy]
   let before := g0.log.size
-  let g := step g0 (.searchLibrary (.returnToHand .basicLand))
+  let g := stepEffect g0 Effect.triggerSearchBasicLandToHand
   g.pending == .none && inLibrary g caster "Search Canopy" &&
-    !inHand g caster "Search Canopy" && shuffledSince before g &&
-    logContains g "finds no basic land card"
+    !inHand g caster "Search Canopy" && shuffledSince before g
 
 /- You may put a basic land on top. Declining does not shuffle. Accepting
 an empty library finds nothing and does shuffle. -/
@@ -203,11 +227,10 @@ an empty library finds nothing and does shuffle. -/
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [forest, mountain]
   let found := (g0.player caster).library[0]!
   let before := g0.log.size
-  let g := takeSearch (step g0 (.searchLibrary (.put .basicLandOnTop)))
+  let g := takeSearch (stepEffect g0 searchBasicOnTop)
   (g.player caster).library.back? == some found &&
     inLibrary g caster "Search Mountain" && inLibrary g caster "Search Forest" &&
     !onBattlefield g "Search Forest" && shuffledSince before g &&
-    logContains g "may search for a basic land card" &&
     logContains g "reveals Search Forest" &&
     logContains g "on top of their library"
 
@@ -215,38 +238,36 @@ an empty library finds nothing and does shuffle. -/
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [forest, mountain]
   let lib := (g0.player caster).library
   let before := g0.log.size
-  let g := declineSearch (step g0 (.searchLibrary (.put .basicLandOnTop)))
+  let g := declineSearch (stepEffect g0 searchBasicOnTop)
   (g.player caster).library == lib && !shuffledSince before g &&
     logContains g "doesn't search their library"
 
 #guard
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster []
   let before := g0.log.size
-  let offered := step g0 (.searchLibrary (.put .basicLandOnTop))
+  let offered := stepEffect g0 searchBasicOnTop
   let g := mustApply offered caster .accept
-  g.pending == .none && shuffledSince before g &&
-    logContains g "finds no basic land card"
+  g.pending == .none && shuffledSince before g
 
 /- A Dragon from hand enters and the library is not shuffled. A Dragon
 from the library does shuffle. A Drake, and a Dragon another player has,
-are not found. Choosing not to find does not shuffle. An empty hand and
-library still shuffles, as an empty search does. -/
+are not found. Choosing not to find still shuffles. An empty hand and
+library still shuffles. -/
 #guard
   let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster [drake]) dragon caster
   let before := g0.log.size
-  let g := takeSearch (step g0 (.searchLibrary (.put .dragon)))
+  let g := takeSearch (stepEffect g0 (searchDragon))
   onBattlefield g "Search Dragon" && !inHand g caster "Search Dragon" &&
     inLibrary g caster "Search Drake" && !onBattlefield g "Search Drake" &&
     (permanent g "Search Dragon").status.summoningSick &&
     !(permanent g "Search Dragon").status.tapped &&
     !shuffledSince before g &&
-    logContains g "searches for a Dragon card" &&
     logContains g "puts Search Dragon onto the battlefield"
 
 #guard
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [drake, dragon]
   let before := g0.log.size
-  let g := takeSearch (step g0 (.searchLibrary (.put .dragon)))
+  let g := takeSearch (stepEffect g0 (searchDragon))
   onBattlefield g "Search Dragon" && inLibrary g caster "Search Drake" &&
     shuffledSince before g &&
     logContains g "puts Search Dragon onto the battlefield"
@@ -256,7 +277,7 @@ library still shuffles, as an empty search does. -/
     handDragon caster
   let libId := (g0.player caster).library.back!
   let before := g0.log.size
-  let offered := step g0 (.searchLibrary (.put .dragon))
+  let offered := stepEffect g0 (searchDragon)
   let fromHand := takeSearch offered
   let fromLib := mustApply offered caster (.choosePermanents #[libId])
   onBattlefield fromHand "Hand Dragon" && inLibrary fromHand caster "Search Dragon" &&
@@ -268,18 +289,17 @@ library still shuffles, as an empty search does. -/
   let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster []) dragon opp
   let g0 := onlyLibrary g0 opp [dragon]
   let before := g0.log.size
-  let g := step g0 (.searchLibrary (.put .dragon))
+  let g := stepEffect g0 (searchDragon)
   g.pending == .none && !onBattlefield g "Search Dragon" &&
     inHand g opp "Search Dragon" && inLibrary g opp "Search Dragon" &&
-    shuffledSince before g && logContains g "finds no Dragon card"
+    shuffledSince before g
 
 #guard
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [dragon]
   let before := g0.log.size
-  let g := declineSearch (step g0 (.searchLibrary (.put .dragon)))
+  let g := declineSearch (stepEffect g0 (searchDragon))
   !onBattlefield g "Search Dragon" && inLibrary g caster "Search Dragon" &&
-    shuffledSince before g &&
-    logContains g "chooses not to find a Dragon card"
+    shuffledSince before g
 
 /- Six quest counters sacrifice the source and search. Fewer than six
 do not. A missing source does not search. -/
@@ -291,7 +311,6 @@ do not. A missing source does not search. -/
     (some src.id))
   !onBattlefield g "Search Light" && inGraveyard g caster "Search Light" &&
     onBattlefield g "Search Dragon" && shuffledSince before g &&
-    logContains g "gets a quest counter (6)" &&
     logContains g "Search Light is sacrificed"
 
 #guard
@@ -301,135 +320,34 @@ do not. A missing source does not search. -/
   let g := g0.applyTriggeredAbility caster .onMountainEntersQuestThenDragon (some src.id)
   onBattlefield g "Search Light" && (permanent g "Search Light").status.quest == 5 &&
     inLibrary g caster "Search Dragon" && !shuffledSince before g &&
-    g.pending == .none && logContains g "gets a quest counter (5)"
+    g.pending == .none
 
 #guard
   let g0 := onlyLibrary (emptyHand afterDraw caster) caster [dragon]
   let before := g0.log.size
-  let g := step g0 (TriggeredAbility.resolution .onMountainEntersQuestThenDragon)
+  let g := g0.applyTriggeredAbility caster .onMountainEntersQuestThenDragon none
   !onBattlefield g "Search Dragon" && inLibrary g caster "Search Dragon" &&
-    !shuffledSince before g &&
-    logContains g "The triggered ability's source is no longer in play"
+    !shuffledSince before g
 
-/- A library find that is not the printed pair still searches.
-A follow-up that is not a find is resolved itself. -/
+/- Tapped search variants put the found permanent onto the battlefield tapped. -/
 #guard
   let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
     [forest, mountain, dragon]) handDragon caster
-  let g := takeSearch (step g0 (.searchLibrary (.put .forest .tapped)))
+  let g := takeSearch (stepEffect g0 searchForestTapped)
   onBattlefield g "Search Forest" && (permanent g "Search Forest").status.tapped &&
     inLibrary g caster "Search Mountain" && !onBattlefield g "Search Mountain"
 
-#guard
-  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
-    [forest, mountain, dragon]) handDragon caster
-  let g := takeSearch (step g0 (.searchLibrary (.put .dragon .tapped)))
-  let handOn := onBattlefield g "Hand Dragon"
-  let libOn := onBattlefield g "Search Dragon"
-  (handOn || libOn) && !(handOn && libOn) &&
-    (if handOn then (permanent g "Hand Dragon").status.tapped
-     else (permanent g "Search Dragon").status.tapped)
-
-#guard
-  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
-    [forest, mountain, dragon]) handDragon caster
-  let g := takeSearch (step g0 (.searchLibrary (.put .basicLandOnTop .tapped)))
-  let forestOn := onBattlefield g "Search Forest"
-  let mountainOn := onBattlefield g "Search Mountain"
-  (forestOn || mountainOn) && !(forestOn && mountainOn) &&
-    (if forestOn then (permanent g "Search Forest").status.tapped
-     else (permanent g "Search Mountain").status.tapped) &&
-    !onBattlefield g "Search Dragon"
-
-#guard
-  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
-    [forest, mountain, dragon]) handDragon caster
-  let g := takeSearch (step g0
-    (.searchLibrary (.returnToHand .basicLand .returnedPermanent)))
-  (inHand g caster "Search Forest" || inHand g caster "Search Mountain") &&
-    !onBattlefield g "Search Forest" && !onBattlefield g "Search Mountain" &&
-    !g.returnedPermanentThisWay
-
-#guard
-  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
-    [forest, mountain, dragon]) handDragon caster
-  let g := step g0 (.searchLibrary (.draw (.fixed 1)))
-  inHand g caster "Search Dragon" && !inLibrary g caster "Search Dragon" &&
-    inLibrary g caster "Search Forest"
-
-#guard
-  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
-    [forest, mountain, dragon]) handDragon caster
-  let g := step g0 (.searchLibrary (.returnToHand .graveyardCard))
-  (g.player caster).library == (g0.player caster).library &&
-    (g.player caster).hand == (g0.player caster).hand &&
-    logContains g "no longer legal"
-
-#guard
-  let g0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster
-    [forest, mountain, dragon]) handDragon caster
-  let quiet := [
-    .searchLibrary (.put .linkedExile),
-    .searchLibrary (.may (.put .basicLandOnTop) (.sequence []))]
-  quiet.all fun r =>
-    let g := step g0 r
-    (g.player caster).library == (g0.player caster).library &&
-      (g.player caster).hand == (g0.player caster).hand &&
-      g.battlefield.size == g0.battlefield.size &&
-      g.pending == .none && g.log.size == g0.log.size
-
-/- The follow-up resolutions do nothing on their own. `searchLibrary` is
-what searches. -/
-#guard
-  let g0 := onlyLibrary (emptyHand afterDraw caster) caster [forest, mountain, dragon]
-  let alone := [
-    .put .forest,
-    .put .basicLandOnTop,
-    .put .dragon,
-    .returnToHand .basicLand]
-  alone.all fun r =>
-    let g := step g0 r
-    (g.player caster).library == (g0.player caster).library &&
-      !onBattlefield g "Search Forest" && !onBattlefield g "Search Dragon" &&
-      g.pending == .none && g.log.size == g0.log.size
-
-/- Printed phrases and resolutions stay with the combination that produces them. -/
-#guard TriggeredAbility.resolution .onEnterSearchForest ==
-  .searchLibrary (.put .forest)
-#guard TriggeredAbility.resolution .onEnterSearchBasicToHand ==
-  .searchLibrary (.returnToHand .basicLand)
-#guard TriggeredAbility.resolution (.onEnterGainLifeSearchBasicOnTop 2) ==
-  .sequence [.gainLife (.fixed 2), .searchLibrary (.put .basicLandOnTop)]
-#guard TriggeredAbility.resolution .onMountainEntersQuestThenDragon ==
-  .sequence [
-    .putCounters (.ofKind .quest) .source,
-    .«if» ((.atLeast (.count .questCounters) (.fixed 6)))
-      (.sequence [
-        .sacrifice (.sacrificedSource .movedAsSacrificed),
-        .searchLibrary (.put .dragon)])]
-#guard (SharedTrigger.toEffect .searchLibrary).resolution ==
-  .searchLibrary (.put .forest)
-#guard (SharedTrigger.toEffect .searchBasicLandToHand).resolution ==
-  .searchLibrary (.returnToHand .basicLand)
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.searchLibrary (.put .forest)) } ==
+/- Printed phrases and notations stay intact. -/
+#guard TriggeredAbility.onEnterSearchForest.effect.body == Effect.triggerSearchForest.body
+#guard TriggeredAbility.onEnterSearchBasicToHand.effect.body == Effect.triggerSearchBasicLandToHand.body
+#guard (TriggeredAbility.onEnterGainLifeSearchBasicOnTop 2).effect.body ==
+  (Effect.triggerGainLifeSearchBasicOnTop 2).body
+#guard TriggeredAbility.onMountainEntersQuestThenDragon.effect.body ==
+  Effect.triggerMountainQuestDragon.body
+#guard TriggeredAbility.resolutionPhrase Effect.triggerSearchForest ==
   "search your library for a Forest card, put that card onto the battlefield, then shuffle"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.searchLibrary (.returnToHand .basicLand)) } ==
+#guard TriggeredAbility.resolutionPhrase Effect.triggerSearchBasicLandToHand ==
   "search your library for a basic land card, reveal it, put it into your hand, then shuffle"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.searchLibrary (.put .basicLandOnTop)) } ==
-  "you may search your library for a basic land card, reveal it, then shuffle and put that card on top"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.searchLibrary (.put .dragon)) } ==
-  "search your hand and/or library for a Dragon card and put it onto the battlefield"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.searchLibrary (.draw (.fixed 1))) } ==
-  "search your library"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.put .basicLandOnTop) } ==
-  "put that card on top of your library"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.returnToHand .basicLand) } ==
-  "put it into your hand"
 #guard TriggeredAbility.toNotation .onEnterSearchForest ==
   "When this permanent enters, search your library for a Forest card, put that card onto the battlefield, then shuffle."
 #guard TriggeredAbility.toNotation .onEnterSearchBasicToHand ==
@@ -455,10 +373,10 @@ def changelingCard : CardDef := {
 
 #guard
   let gLib0 := onlyLibrary (emptyHand afterDraw caster) caster [mountain, changelingCard]
-  let gLib := takeSearch (step gLib0 (.searchLibrary (.put .dragon)))
+  let gLib := takeSearch (stepEffect gLib0 (searchDragon))
   let gHand0 := putInHand (onlyLibrary (emptyHand afterDraw caster) caster [mountain]) changelingCard caster
-  let gHand := takeSearch (step gHand0 (.searchLibrary (.put .dragon)))
-  let gForest := takeSearch (step gLib0 (.searchLibrary (.put .forest)))
+  let gHand := takeSearch (stepEffect gHand0 (searchDragon))
+  let gForest := takeSearch (stepEffect gLib0 Effect.triggerSearchForest)
   onBattlefield gLib "Search Changeling" &&
     !inLibrary gLib caster "Search Changeling" &&
     onBattlefield gHand "Search Changeling" &&

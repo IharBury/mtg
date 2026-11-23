@@ -990,7 +990,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
       cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
       effect := {
         targeting := .of .player
-        resolution? := some (.addMana #[.colored .red] (.fixed 2))
+        body := Instruction.addSimpleMana #[.colored .red, .colored .red]
         phrase := "Target player; add {R}{R}."
       }
     }]
@@ -1021,21 +1021,21 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
        (gTrTrigRes.player p0).manaPool.units.all (fun u =>
          u.mana == .colored .blue && u.fromTreasure && u.restriction.isNone))
 
-  -- 4c. `Resolution.addMana` `NumberSelector` (`amount != .fixed 1`), arbitrary-subtype
+  -- 4c. `PlayerOp.addMana` counted mana (`amount != 1`), arbitrary-subtype
   --     `.addAnyColorSpendOnlySubtype` (`abilitySourceSubtypes`), and Layer 3 `TextChange` mana parity:
   let chargeDynamoDef : CardDef := {
     name := "P46i4 ChargeDynamo"
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf]
-      effect := { resolution? := some (.addMana #[.colored .red] .perChargeCounter), phrase := "Add {R} for each charge counter." }
+      effect := { body := Instruction.addMana { spec := .sequence #[(.colored .red, .counterCount (some .charge) .this)] }, phrase := "Add {R} for each charge counter." }
     }]
   }
   let ritual3Def : CardDef := {
     name := "P46i4 Ritual3"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some { resolution? := some (.addMana #[.colored .red] (.fixed 3)), phrase := "Add {R}{R}{R}." }
+    spellEffect := some { body := Instruction.addSimpleMana #[.colored .red, .colored .red, .colored .red], phrase := "Add {R}{R}{R}." }
   }
   let gDyn0 :=
     let g := addPermanent g3 chargeDynamoDef p0 p0

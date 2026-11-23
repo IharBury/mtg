@@ -1,10 +1,10 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.attach`
+# Unified `PermanentOp.attach`
 
-What is attached, and what it attaches to, are `ObjectSelector`s.
-A pair this does not name attaches nothing.
+What is attached, and what it attaches to, are `ObjectExpr`s.
+Attaching an object to itself is a no-op (CR 301.5c).
 -/
 
 namespace Mtg.Engine.AttachTests
@@ -15,12 +15,12 @@ open Mtg.Engine.Tests
 def caster : PlayerId := ⟨0⟩
 
 #guard
-  let g := afterDraw.applyTriggeredAbility caster (.onEnterDraw 1) none
-    (resolutionOverride := some (.attach .source .source))
+  let g := afterDraw.applyTriggeredAbility caster
+    (TriggeredAbility.ofPattern .thisEnters "" (.permanent (.attach .this .this))) none
   g.pending == afterDraw.pending && g.log.size == afterDraw.log.size
 
-#guard (SharedTrigger.toEffect (.createThenAttach .dwarf)).resolution ==
-  .sequence [.createTokens .dwarf (.fixed 1) false, .attach .source .createdToken]
+#guard (Effect.triggerCreateThenAttach .dwarf).body ==
+  .bind ⟨0⟩ (Instruction.createTokensFixed .dwarf 1) (.permanent (.attach .this (.stepObjects ⟨0⟩)))
 
 /- Phase 11: Attaching and re-attaching Equipment records `PermanentEvent.attached`
 with the full Layer 1–7 `attachment : EventObject` snapshot and `previous` host. -/
@@ -36,12 +36,11 @@ with the full Layer 1–7 `attachment : EventObject` snapshot and `previous` hos
   let eqObj := (g0.battlefield.filter (·.name == "Attach Blade"))[0]!
   let hostA := (g0.battlefield.filter (·.name == "Attach Bear A"))[0]!
   let hostB := (g0.battlefield.filter (·.name == "Attach Bear B"))[0]!
-  let g1 := g0.applyTriggeredAbility caster (.onEnterAttachThen (.setBasePT 2 2))
+  let attachAb : TriggeredAbility := .onEnterAttachToCreatureYouControl
+  let g1 := g0.applyTriggeredAbility caster attachAb
     (some eqObj.id) #[Target.permanent hostA.id]
-    (resolutionOverride := some (.attach .source .target))
-  let g2 := g1.applyTriggeredAbility caster (.onEnterAttachThen (.setBasePT 2 2))
+  let g2 := g1.applyTriggeredAbility caster attachAb
     (some eqObj.id) #[Target.permanent hostB.id]
-    (resolutionOverride := some (.attach .source .target))
   let attachedEvents := g2.events.filterMap fun e =>
     match e.change with
     | .rules (.permanent (.attached eo hid prev)) => some (eo, hid, prev)

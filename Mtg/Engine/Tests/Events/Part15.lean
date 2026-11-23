@@ -857,7 +857,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let xEtbLifeDef : CardDef := {
     creature "P49i4 XHydraLifegiver" { symbols := #[.x] } #["Hydra"] 2 2 with
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.gainLife .chosenX), phrase := "When this enters, gain X life." }
+      TriggeredAbility.mkTrigger .thisEnters { body := Instruction.gainLife .chosenX, phrase := "When this enters, gain X life." }
     ]
   }
   let gXEtb0 := (insertObject g3 xEtbLifeDef p0 (.hand p0)).addMana p0 .colorless 4
@@ -888,7 +888,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let gWarriorsX := g3.applyEffect p0 warriorsXEffect #[] (chosenX := some 2)
 
   -- 4b(ii). Unified `Interpreter` (`.chooseModes` singleton/or, `.ifCond`), `beginMay`/`acceptMay`,
-  --         `beginSpellOr`/`chooseSpellOr`, and `ModeledTriggers.applyModeledTrigger`/`offerVisionModes` LKI forwarding:
+  --         `beginSpellOr`/`chooseSpellOr`, and `applyTriggeredAbility` Vision LKI forwarding:
   let rPow : Instruction := Instruction.loseLife (.objectStat .power .this) .opponents
   let rTgh : Instruction := Instruction.loseLife (.objectStat .toughness .this) .opponents
   let rChX : Instruction := Instruction.loseLife .chosenX .opponents
@@ -921,7 +921,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
   let visId := (gVis0.permanentsOf p0)[0]!.id
   let visAb : TriggeredAbility := TriggeredAbility.mkTrigger .youCastSpell Effect.castingVisionModes
   let gVisOffered :=
-    gVis0.applyModeledTrigger p0 visAb (some visId) #[] "Vision"
+    gVis0.applyTriggeredAbility p0 visAb (some visId) #[]
       (lastKnownPower := some 4) (lastKnownToughness := some 6)
 
   -- 4b(iii). `Event.isTreasureSourceInLog` phased-out (`PermanentEvent.phasedOut`) & `.battlefield` `created`,
@@ -958,7 +958,7 @@ private def replayOk49i4 (gs : Array Game) : Bool :=
        (gIfElseGift.player p1).life == 17 &&
        (gMayAccepted.player p1).life == 14 &&
        (gSpellOrChosen.player p1).life == 14 &&
-       gVisOffered.chooseModesRest.any (fun r => r.lastKnownPower == some 4 && r.lastKnownToughness == some 6)) &&
+       gVisOffered.currentInterpWait?.any (fun st => st.ctx.lastKnownPower == some 4 && st.ctx.lastKnownToughness == some 6)) &&
     mustHold49i4 "4b_treasureSourceInLogPhasedOutCreatedAndBfZone"
       (GameEvent.isTreasureSourceInLog gPoTr1.events poTrObj.id &&
        (gPoTrMana.player p0).manaPool.units.all (·.fromTreasure) &&
@@ -1206,7 +1206,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let gCopy0 := addPermanent (addPermanent (addPermanent g0 cdaLegendDef p0 p0) forest p0 p0) forest p0 p0
   let origObj := (gCopy0.permanentsOf p0).find? (·.name == "Multani Test") |>.get!
   let copySpec : TokenSpec :=
-    .copyOf .target #[
+    .copyOf (.target 0) #[
       .setName "Shadow Copy",
       .setBasePT 1 1,
       .removeSupertype .legendary,
@@ -1216,7 +1216,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
       .addKeywords #[Keyword.haste],
       .addAbilities #[.onAttackMayMill 1]
     ]
-  let gCopyReal := gCopy0.createKindTokens p0 copySpec 1 (copyCtx := { targetId := some origObj.id })
+  let gCopyReal := gCopy0.createKindTokens p0 copySpec 1 (copyEnv := { targetSlots := #[#[.permanent origObj.id]] })
   let copyTok? := (gCopyReal.permanentsOf p0).find? (·.name == "Shadow Copy")
   let copyRealOk :=
     match copyTok? with
@@ -1231,11 +1231,11 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
       gCopyReal.power tok == 1 && gCopyReal.toughness tok == 1 &&
       tok.printed.triggeredAbilities.size == 1
   let bfCountBeforeMissing := gCopy0.battlefield.size
-  let gCopyMissing := gCopy0.createKindTokens p0 (.copyOf .target #[]) 2
-  let gCopyBadId := gCopy0.createKindTokens p0 (.copyOf .target #[]) 2 (copyCtx := { targetId := some ⟨999999⟩ })
+  let gCopyMissing := gCopy0.createKindTokens p0 (.copyOf (.target 0) #[]) 2
+  let gCopyBadId := gCopy0.createKindTokens p0 (.copyOf (.target 0) #[]) 2 (copyEnv := { targetSlots := #[#[.permanent ⟨999999⟩]] })
   let copyMissingOk :=
-    (gCopy0.resolveTokenPrinted? (.copyOf .target #[]) 0 {}).isNone &&
-    (Game.tokenPrinted? (.copyOf .target #[])).isNone &&
+    (gCopy0.resolveTokenPrinted? (.copyOf (.target 0) #[]) 0 {}).isNone &&
+    (Game.tokenPrinted? (.copyOf (.target 0) #[])).isNone &&
     gCopyMissing.battlefield.size == bfCountBeforeMissing &&
     gCopyMissing.recentTokenIds.isEmpty &&
     gCopyBadId.battlefield.size == bfCountBeforeMissing &&
@@ -1257,17 +1257,17 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let instId := (gInst0.player p0).graveyard[0]!
   let sorcId := (gInst0.player p0).graveyard[1]!
   let bfBeforeInst := gInst0.battlefield.size
-  let gInstNone := gInst0.createKindTokens p0 (.copyOf .target #[]) 1 (copyCtx := { targetId := some instId })
-  let gSorcNone := gInst0.createKindTokens p0 (.copyOf .target #[]) 1 (copyCtx := { targetId := some sorcId })
+  let gInstNone := gInst0.createKindTokens p0 (.copyOf (.target 0) #[]) 1 (copyEnv := { targetSlots := #[#[.card instId]] })
+  let gSorcNone := gInst0.createKindTokens p0 (.copyOf (.target 0) #[]) 1 (copyEnv := { targetSlots := #[#[.card sorcId]] })
   let gInstWithCreatureNone :=
-    gInst0.createKindTokens p0 (.copyOf .target #[.addTypes #[.creature], .setBasePT 2 2]) 1
-      (copyCtx := { targetId := some instId })
+    gInst0.createKindTokens p0 (.copyOf (.target 0) #[.addTypes #[.creature], .setBasePT 2 2]) 1
+      (copyEnv := { targetSlots := #[#[.card instId]] })
   let gCreatureAddInstNone :=
-    gCopy0.createKindTokens p0 (.copyOf .target #[.addTypes #[.instant]]) 1
-      (copyCtx := { targetId := some origObj.id })
+    gCopy0.createKindTokens p0 (.copyOf (.target 0) #[.addTypes #[.instant]]) 1
+      (copyEnv := { targetSlots := #[#[.permanent origObj.id]] })
   let gCreatureAddSorcNone :=
-    gCopy0.createKindTokens p0 (.copyOf .target #[.addTypes #[.sorcery]]) 1
-      (copyCtx := { targetId := some origObj.id })
+    gCopy0.createKindTokens p0 (.copyOf (.target 0) #[.addTypes #[.sorcery]]) 1
+      (copyEnv := { targetSlots := #[#[.permanent origObj.id]] })
   let customInstSpec : TokenSpec := .custom {
     name? := some "Illegal Instant Token"
     types := #[.instant, .creature]
@@ -1276,14 +1276,14 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   }
   let gCustomInstNone := g0.createKindTokens p0 customInstSpec 1
   let copyInstantSorceryOk :=
-    (gInst0.resolveTokenPrinted? (.copyOf .target #[]) 0 { targetId := some instId }).isNone &&
-    (gInst0.resolveTokenPrinted? (.copyOf .target #[]) 0 { targetId := some sorcId }).isNone &&
-    (gInst0.resolveTokenPrinted? (.copyOf .target #[.addTypes #[.creature], .setBasePT 2 2]) 0
-      { targetId := some instId }).isNone &&
-    (gCopy0.resolveTokenPrinted? (.copyOf .target #[.addTypes #[.instant]]) 0
-      { targetId := some origObj.id }).isNone &&
-    (gCopy0.resolveTokenPrinted? (.copyOf .target #[.addTypes #[.sorcery]]) 0
-      { targetId := some origObj.id }).isNone &&
+    (gInst0.resolveTokenPrinted? (.copyOf (.target 0) #[]) 0 { targetSlots := #[#[.card instId]] }).isNone &&
+    (gInst0.resolveTokenPrinted? (.copyOf (.target 0) #[]) 0 { targetSlots := #[#[.card sorcId]] }).isNone &&
+    (gInst0.resolveTokenPrinted? (.copyOf (.target 0) #[.addTypes #[.creature], .setBasePT 2 2]) 0
+      { targetSlots := #[#[.card instId]] }).isNone &&
+    (gCopy0.resolveTokenPrinted? (.copyOf (.target 0) #[.addTypes #[.instant]]) 0
+      { targetSlots := #[#[.permanent origObj.id]] }).isNone &&
+    (gCopy0.resolveTokenPrinted? (.copyOf (.target 0) #[.addTypes #[.sorcery]]) 0
+      { targetSlots := #[#[.permanent origObj.id]] }).isNone &&
     (g0.resolveTokenPrinted? customInstSpec 0 {}).isNone &&
     gInstNone.battlefield.size == bfBeforeInst && gInstNone.recentTokenIds.isEmpty &&
     gSorcNone.battlefield.size == bfBeforeInst && gSorcNone.recentTokenIds.isEmpty &&
@@ -1319,26 +1319,26 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
     !gCastGy0.restrictionAllowsProposed (some (.notFromZone .graveyard)) fakeProp &&
     gCastGy0.restrictionAllowsProposed (some .notSpellsFromHand) fakeProp
 
-  -- 7. CopyTokenContext propagation across createAndMarkTokensAttacking (both holds arms &
+  -- 7. StoredEvalEnv propagation across createAndMarkTokensAttacking (both holds arms &
   --    across PendingReplacement pause), unified life-gained token creation, and
   --    FraChoice.mayCreateTokens
   let atkCopyNoHolds :=
     gCopy0.createAndMarkTokensAttacking p0 copySpec 1 false false
-      (copyCtx := { targetId := some origObj.id })
+      (copyEnv := { targetSlots := #[#[.permanent origObj.id]] })
   let atkCopyHolds :=
     gCopy0.createAndMarkTokensAttacking p0 copySpec 1 true true
-      (copyCtx := { targetId := some origObj.id })
+      (copyEnv := { targetSlots := #[#[.permanent origObj.id]] })
   let atkCopySubjSpec : TokenSpec := .copyOf .triggerSubject #[.setName "Subject Copy", .setBasePT 2 2]
   let atkCopySubj :=
     gCopy0.createAndMarkTokensAttacking p0 atkCopySubjSpec 1 true true
-      (copyCtx := { triggerSubjectId := some origObj.id })
-  -- Replacement pause inside createAndMarkTokensAttacking preserves copyCtx across both
+      (copyEnv := { triggerSubjectId := some origObj.id })
+  -- Replacement pause inside createAndMarkTokensAttacking preserves copyEnv across both
   -- promptChooseReplacement and chainPendingReplacement:
   let foodCopySpec : TokenSpec :=
-    .copyOf .target #[.setName "Paused Copy", .setBasePT 1 1, .removeSupertype .legendary,
+    .copyOf (.target 0) #[.setName "Paused Copy", .setBasePT 1 1, .removeSupertype .legendary,
       .addTypes #[.artifact], .addSubtypes #[.food]]
   let chainedCopySpec : TokenSpec :=
-    .copyOf .target #[.setName "Chained Copy", .setBasePT 3 3, .removeSupertype .legendary]
+    .copyOf (.target 0) #[.setName "Chained Copy", .setBasePT 3 3, .removeSupertype .legendary]
   let idPauseExtra : ReplacementId := { kind := .foodAlsoCreatesTreasure, player := some p0 }
   let idPauseBecome : ReplacementId := { kind := .artifactTokensBecome, player := some p0 }
   let bonusBearDef : CardDef := { bear with name := "Bonus Food Bear", isToken := true }
@@ -1353,23 +1353,19 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
     })
   let gPause1 :=
     gPause0.createAndMarkTokensAttacking p0 foodCopySpec 1 true true
-      (copyCtx := { targetId := some origObj.id })
+      (copyEnv := { targetSlots := #[#[.permanent origObj.id]] })
   let gPauseChained :=
     gPause1.createAndMarkTokensAttacking p0 chainedCopySpec 1 true true
-      (copyCtx := { targetId := some origObj.id })
+      (copyEnv := { targetSlots := #[#[.permanent origObj.id]] })
   let gPauseDone := mustApply gPauseChained p0 (.chooseReplacement idPauseExtra)
-  -- Triggered sequence caller (`applyTriggeredAbility`) forwards targets into createAndMarkTokensAttacking:
+  -- Triggered caller (`applyTriggeredAbility`) forwards targets into attacking copy token creation:
   let atkSeqAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisAttacks {
       targeting := .of .creature
-      legacyTokens := #[copySpec]
-      resolution? := some (.sequence [
-        .createTokens 0 (.fixed 1) true .you .none,
-        .«if» (.atLeast (.count .creaturesYouControl) (.fixed 1)) .markRecentTokensAttacking
-      ])
+      body := .create (.tokens .you (.const 1) copySpec { tapped := true, attacking := true })
     }
   let gSeqRes := gCopy0.applyTriggeredAbility p0 atkSeqAb none #[.permanent origObj.id]
-  -- Unified `.create (.tokens ...)` with `.lifeGainedThisTurn` forwards copyCtx:
+  -- Unified `.create (.tokens ...)` with `.lifeGainedThisTurn` forwards copyEnv:
   let gLifeGain0 := gCopy0.gainLife p0 2
   let gLifeGainTok :=
     gLifeGain0.applyEffect p0 {
@@ -1377,11 +1373,11 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
       body := .create (.tokens .you (.playerMetric .lifeGainedThisTurn .you) copySpec {})
     } #[.permanent origObj.id]
   let lifeGainCopies := (gLifeGainTok.permanentsOf p0).filter (·.name == "Shadow Copy")
-  -- FraChoice.mayCreateTokens forwards copyCtx:
+  -- FraChoice.mayCreateTokens forwards copyEnv:
   let gMayTok0 :=
-    gCopy0.beginFraChoice p0 (.mayCreateTokens copySpec 1 { targetId := some origObj.id })
+    gCopy0.beginFraChoice p0 (.mayCreateTokens copySpec 1 { targetSlots := #[#[.permanent origObj.id]] })
   let gMayTokAccept := mustApply gMayTok0 p0 .accept
-  let copyCtxSitesOk :=
+  let copyEnvSitesOk :=
     ((atkCopyNoHolds.permanentsOf p0).find? (·.name == "Shadow Copy")).any (fun o => !o.status.attacking) &&
     ((atkCopyHolds.permanentsOf p0).find? (·.name == "Shadow Copy")).any (fun o => o.status.attacking) &&
     ((atkCopySubj.permanentsOf p0).find? (·.name == "Subject Copy")).any (fun o => o.status.attacking) &&
@@ -1413,7 +1409,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   mustHoldP1Rev "5.copyOfMissing" copyMissingOk &&
   mustHoldP1Rev "5b.copyOfInstantSorceryCr1115" copyInstantSorceryOk &&
   mustHoldP1Rev "6.notFromZone" notFromZoneOk &&
-  mustHoldP1Rev "7.copyTokenContextSites" copyCtxSitesOk &&
+  mustHoldP1Rev "7.copyEnvSites" copyEnvSitesOk &&
   mustHoldP1Rev "8.replayEquivalence" replayOk
 
 end Phase1AbilityAlignmentReview

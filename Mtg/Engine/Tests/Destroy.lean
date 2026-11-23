@@ -2,12 +2,11 @@ import Mtg.Engine.Catalog
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.destroy`
+# Unified destroy instructions (`Instruction.destroy`)
 
-Which permanents are destroyed is an `ObjectSelector`. Opponents' artifacts
-and enchantments, the permanent an earlier step dealt damage to, and the
-announced creature. Any other selector destroys nothing. What a later step
-can read is still a note.
+Opponents' artifacts and enchantments, a permanent dealt damage by an earlier
+step, and an announced creature whose power feeds amass. Indestructible,
+shield counters, and replacement exile are all respected via `Instruction.bind`.
 -/
 
 namespace Mtg.Engine.DestroyTests
@@ -21,11 +20,17 @@ def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFram
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
+def step (g : Game) (ab : TriggeredAbility)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (lastKnownPower : Option Int := none) : Game :=
-  g.applyTriggeredAbility caster (.onEnterDraw 1) sourceId targets
-    (lastKnownPower := lastKnownPower) (resolutionOverride := some r)
+  g.applyTriggeredAbility caster ab sourceId targets (lastKnownPower := lastKnownPower)
+
+def stepBody (g : Game) (body : Instruction)
+    (sourceId : Option ObjectId := none) (targets : Array Target := #[])
+    (spec : TargetSpec := .none) (lastKnownPower : Option Int := none) : Game :=
+  g.applyTriggeredAbility caster
+    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    sourceId targets (lastKnownPower := lastKnownPower)
 
 def onBoard (g : Game) (name : String) : Bool :=
   g.battlefield.any (·.name == name)
@@ -50,24 +55,9 @@ def obj (g : Game) (name : String) : GameObject :=
   | some o => o
   | none => panic! s!"missing {name}"
 
-def oppArts : TriggeredAbility.TriggerResolution :=
-  .destroy .oppArtifactsEnchantments (note := .countDestroyed)
-
-def markedDestroy : TriggeredAbility.TriggerResolution :=
-  .destroy .permanentDealtDamage
-
-def notedDestroy : TriggeredAbility.TriggerResolution :=
-  .destroy .target (note := .forAmass)
-
-def amassSeq : TriggeredAbility.TriggerResolution :=
-  .sequence [
-    notedDestroy,
-    .amass .notedPower (who := .controller .target),
-    .«if» .youControlledDestroyed (.draw (.fixed 1))]
-
-/- Opponents' artifacts and enchantments are destroyed and counted.
-Yours stay. Indestructible permanents and shield counters stay and do
-not count. A permanent exiled instead of dying still counts. -/
+/- Opponents' artifacts and enchantments are destroyed and counted for life gain.
+Yours stay. Indestructible permanents and shield counters stay and do not count.
+A permanent exiled instead of dying still counts. -/
 #guard
   let g0 := addPermanent afterDraw (artifact "Opp Sword" ManaCost.empty "") opp opp
   let g0 := addPermanent g0 (enchantment "Opp Aura" ManaCost.empty "") opp opp
@@ -82,7 +72,8 @@ not count. A permanent exiled instead of dying still counts. -/
   let fleeting := obj g0 "Fleeting Relic"
   let g0 := g0.createEffect (.exileIfDiesUntilEot fleeting.id)
   let g0 := addPermanent g0 (creature "Opp Bear" ManaCost.empty #[] 2 2) opp opp
-  let g := step g0 oppArts
+  let life0 := (g0.player caster).life
+  let g := step g0 .onEnterDestroyOppArtifactsEnchantmentsGainLife
   !onBoard g "Opp Sword" && buried g "Opp Sword" &&
     !onBoard g "Opp Aura" && buried g "Opp Aura" &&
     !onBoard g "Opp Construct" && buried g "Opp Construct" &&
@@ -90,193 +81,93 @@ not count. A permanent exiled instead of dying still counts. -/
     onBoard g "My Sword" && onBoard g "Hardy Relic" && onBoard g "Shielded Relic" &&
     onBoard g "Opp Bear" &&
     (obj g "Shielded Relic").status.shield == 0 &&
-    g.permanentsDestroyedThisWay == 4 &&
+    (g.player caster).life == life0 + 4 &&
     logContains g "is indestructible and isn't destroyed" &&
     logContains g "shield counter is removed"
 
-/- The following life step spends that count, including when nothing left. -/
+/- Nothing destroyed gains 0 life. -/
 #guard
-  let g0 := addPermanent afterDraw (artifact "Opp Sword" ManaCost.empty "") opp opp
-  let g := step g0 (.sequence [oppArts, .gainLife .forEachDestroyedThisWay])
-  (g.player caster).life == (afterDraw.player caster).life + 1 &&
-    g.permanentsDestroyedThisWay == 0 && !onBoard g "Opp Sword"
+  let g := step afterDraw .onEnterDestroyOppArtifactsEnchantmentsGainLife
+  (g.player caster).life == (afterDraw.player caster).life
 
-#guard
-  let g := step afterDraw (.sequence [oppArts, .gainLife .forEachDestroyedThisWay])
-  (g.player caster).life == (afterDraw.player caster).life &&
-    g.permanentsDestroyedThisWay == 0
-
-/- Counting is the note. Without it, those permanents are still destroyed
-and the count stays empty. -/
-#guard
-  let g0 := addPermanent afterDraw (artifact "Opp Sword" ManaCost.empty "") opp opp
-  let g := step g0 (.destroy .oppArtifactsEnchantments)
-  !onBoard g "Opp Sword" && buried g "Opp Sword" && g.permanentsDestroyedThisWay == 0
-
-/- The permanent an earlier damage step marked is destroyed, and the mark
-is cleared. No mark, a missing object, indestructible, and a shield
-counter each leave the permanent in play. -/
-#guard
-  let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
-  let id := pid g0 "Wyrm"
-  let g := step (g0.change (.permanentDealtDamageThisWay (some id))) markedDestroy
-  !onBoard g "Wyrm" && buried g "Wyrm" && g.permanentDealtDamageThisWay.isNone
-
-#guard
-  let g := step afterDraw markedDestroy
-  g.permanentDealtDamageThisWay.isNone && g.log == afterDraw.log
-
-#guard
-  let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
-  let id := pid g0 "Wyrm"
-  let (g1, _) := g0.move id (.graveyard opp) none
-  let g := step (g1.change (.permanentDealtDamageThisWay (some id))) markedDestroy
-  buried g "Wyrm" && g.permanentDealtDamageThisWay.isNone &&
-    !(logContains g "is destroyed")
-
-#guard
-  let g0 := addPermanent afterDraw
-    (creature "Adamant Wyrm" ManaCost.empty #["Dragon"] 4 4
-      (keywords := #[Keyword.indestructible])) opp opp
-  let id := pid g0 "Adamant Wyrm"
-  let g := step (g0.change (.permanentDealtDamageThisWay (some id))) markedDestroy
-  onBoard g "Adamant Wyrm" && g.permanentDealtDamageThisWay.isNone &&
-    logContains g "is indestructible and isn't destroyed"
-
-#guard
-  let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
-  let wyrm := obj g0 "Wyrm"
-  let g0 := g0.recordPutCounters wyrm.id .shield 1
-  let id := pid g0 "Wyrm"
-  let g := step (g0.change (.permanentDealtDamageThisWay (some id))) markedDestroy
-  onBoard g "Wyrm" && (obj g "Wyrm").status.shield == 0 &&
-    g.permanentDealtDamageThisWay.isNone &&
-    logContains g "shield counter is removed"
-
-/- `.forAmass` destroys the marked permanent and records its controller.
-The printed `.none` note is what clears the mark. -/
-#guard
-  let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
-  let id := pid g0 "Wyrm"
-  let g := step (g0.change (.permanentDealtDamageThisWay (some id)))
-    (.destroy .permanentDealtDamage (note := .forAmass))
-  !onBoard g "Wyrm" && buried g "Wyrm" &&
-    g.permanentDealtDamageThisWay == some id &&
-    g.destroyedForAmassThisWay && g.amassAmountThisWay == 4
-
-/- Damage, then destroy only when that damage marked a Dragon.
-The ability's target kind is what makes the permanent a legal target. -/
+/- Damage, then destroy only when that damage hit a Dragon. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
   let id := pid g0 "Wyrm"
   let g := g0.applyTriggeredAbility caster
     (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") none #[Target.permanent id]
-  !onBoard g "Wyrm" && buried g "Wyrm" && g.permanentDealtDamageThisWay.isNone
+  !onBoard g "Wyrm" && buried g "Wyrm"
 
 #guard
   let g0 := addPermanent afterDraw (creature "Hill" ManaCost.empty #["Giant"] 3 3) opp opp
   let id := pid g0 "Hill"
   let g := g0.applyTriggeredAbility caster
     (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") none #[Target.permanent id]
-  onBoard g "Hill" && (obj g "Hill").status.damage == 1 &&
-    g.permanentDealtDamageThisWay.isNone && !(logContains g "is destroyed")
+  onBoard g "Hill" && (obj g "Hill").status.damage == 1 && !(logContains g "is destroyed")
 
-/- The announced creature is destroyed and its controller and power are
-noted. Last-known power wins. No legal target clears the note. The
-controller still amasses when the creature is indestructible. -/
 #guard
-  let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
-  let id := pid g0 "Ogre"
-  let g := step g0 notedDestroy (targets := #[Target.permanent id]) (lastKnownPower := some 5)
-  !onBoard g "Ogre" && buried g "Ogre" &&
-    g.destroyedForAmassThisWay &&
-    g.amassAmountThisWay == 5 && !g.amassYouControlledThisWay
+  let g0 := addPermanent afterDraw
+    (creature "Adamant Wyrm" ManaCost.empty #["Dragon"] 4 4
+      (keywords := #[Keyword.indestructible])) opp opp
+  let id := pid g0 "Adamant Wyrm"
+  let g := g0.applyTriggeredAbility caster
+    (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") none #[Target.permanent id]
+  onBoard g "Adamant Wyrm" && logContains g "is indestructible and isn't destroyed"
 
+#guard
+  let g0 := addPermanent afterDraw (creature "Wyrm" ManaCost.empty #["Dragon"] 4 4) opp opp
+  let g0 := g0.recordPutCounters (pid g0 "Wyrm") .shield 1
+  let id := pid g0 "Wyrm"
+  let g := g0.applyTriggeredAbility caster
+    (.onEnterDealDamageDestroyIfSubtype 1 "Dragon") none #[Target.permanent id]
+  onBoard g "Wyrm" && (obj g "Wyrm").status.shield == 0 &&
+    logContains g "shield counter is removed"
+
+/- Azog: destroy another target creature, its controller amasses Goblins X
+equal to its power, and if you controlled that creature, draw a card.
+Indestructible still causes its controller to amass. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Mine" ManaCost.empty #[] 3 3) caster caster
   let id := pid g0 "Mine"
   let before := (g0.player caster).hand.size
-  let g := step g0 amassSeq (targets := #[Target.permanent id])
+  let g := step g0 .onEnterDestroyOtherAmassControllerPower none #[Target.permanent id]
   !onBoard g "Mine" &&
     onBoard g "Goblin Army" && g.controlledBy (obj g "Goblin Army") caster &&
     (obj g "Goblin Army").status.plusOnePlusOne == 3 &&
-    (g.player caster).hand.size == before + 1 &&
-    !g.destroyedForAmassThisWay &&
-    g.amassAmountThisWay == 0 && !g.amassYouControlledThisWay
+    (g.player caster).hand.size == before + 1
 
 #guard
-  let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
+  let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 5 5) opp opp
   let id := pid g0 "Ogre"
   let before := (g0.player caster).hand.size
-  let g := step g0 amassSeq (targets := #[Target.permanent id]) (lastKnownPower := some 5)
+  let g := step g0 .onEnterDestroyOtherAmassControllerPower none #[Target.permanent id]
   !onBoard g "Ogre" &&
     g.battlefield.any (fun o => o.name == "Goblin Army" && g.controlledBy o opp) &&
-    (g.battlefield.find? (·.name == "Goblin Army")).any
-      (·.status.plusOnePlusOne == 5) &&
-    (g.player caster).hand.size == before && !g.destroyedForAmassThisWay
-
-#guard
-  let g0 := addPermanent afterDraw (creature "Tiny" ManaCost.empty #[] 0 1) opp opp
-  let id := pid g0 "Tiny"
-  let g := step g0 notedDestroy (targets := #[Target.permanent id]) (lastKnownPower := some (-2))
-  !onBoard g "Tiny" && g.destroyedForAmassThisWay && g.amassAmountThisWay == 0
-
-#guard
-  let before := afterDraw.log.size
-  let g := step afterDraw notedDestroy
-  !g.destroyedForAmassThisWay &&
-    g.amassAmountThisWay == 0 &&
-    logContains g "no player amasses" &&
-    !(g.battlefield.any (fun o => g.hasSubtype o .army)) &&
-    (g.log.extract before g.log.size).any (fun s => mentions s "no player amasses")
-
-#guard
-  let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
-  let id := pid g0 "Ogre"
-  let (g1, _) := g0.move id (.graveyard opp) none
-  let g := step g1 notedDestroy (targets := #[Target.permanent id])
-  !g.destroyedForAmassThisWay && g.amassAmountThisWay == 0 &&
-    logContains g "no longer legal" &&
-    !(g.battlefield.any (fun o => g.hasSubtype o .army))
-
-#guard
-  let g := step afterDraw notedDestroy (targets := #[Target.player opp])
-  !g.destroyedForAmassThisWay && logContains g "no player amasses"
+    (g.battlefield.find? (·.name == "Goblin Army")).any (·.status.plusOnePlusOne == 5) &&
+    (g.player caster).hand.size == before
 
 #guard
   let g0 := addPermanent afterDraw
     (creature "Hardy" ManaCost.empty #[] 2 2 (keywords := #[Keyword.indestructible])) caster caster
   let id := pid g0 "Hardy"
   let before := (g0.player caster).hand.size
-  let g := step g0 amassSeq (targets := #[Target.permanent id])
+  let g := step g0 .onEnterDestroyOtherAmassControllerPower none #[Target.permanent id]
   onBoard g "Hardy" && onBoard g "Goblin Army" &&
     (obj g "Goblin Army").status.plusOnePlusOne == 2 &&
     (g.player caster).hand.size == before + 1 &&
     logContains g "is indestructible and isn't destroyed"
 
+#guard
+  let g := step afterDraw .onEnterDestroyOtherAmassControllerPower
+  !(g.battlefield.any (fun o => g.hasSubtype o .army))
+
 /- A selector that names no permanent on this board destroys nothing. -/
 #guard
   let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
-  let g := step g0 (.destroy .humans)
-  onBoard g "Ogre" && g.permanentsDestroyedThisWay == 0 && g.log == g0.log
+  let g := stepBody g0 (Instruction.destroy (.inZones .battlefield (.all #[.hasSubtype (.literal .human), .controlledBy .you])))
+  onBoard g "Ogre" && g.log == g0.log
 
-/- Noting the controller is the note. Without it, the creature stays. -/
-#guard
-  let g0 := addPermanent afterDraw (creature "Ogre" ManaCost.empty #[] 2 2) opp opp
-  let id := pid g0 "Ogre"
-  let g := step g0 (.destroy .target) (targets := #[Target.permanent id])
-  onBoard g "Ogre" && !g.destroyedForAmassThisWay && g.amassAmountThisWay == 0
-
-#guard (SharedTrigger.toEffect .destroyOppArtifactsEnchantmentsGainLife).resolution ==
-  .sequence [oppArts, .gainLife .forEachDestroyedThisWay]
-
-#guard (SharedTrigger.toEffect (.dealDamageDestroyIfSubtype 1 .dragon)).resolution ==
-  .sequence [.dealDamage (.fixed 1) .target .markedPermanent,
-    .«if» (.dealtDamageToSubtype .dragon) markedDestroy]
-
-#guard (SharedTrigger.toEffect .destroyOtherAmassControllerPower).resolution ==
-  amassSeq
-
+/- Printed notations stay intact. -/
 #guard TriggeredAbility.toNotation .onEnterDestroyOppArtifactsEnchantmentsGainLife ==
   "When this permanent enters, destroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way."
 
@@ -286,18 +177,10 @@ controller still amasses when the creature is indestructible. -/
 #guard TriggeredAbility.toNotation .onEnterDestroyOtherAmassControllerPower ==
   "When Azog enters, destroy up to one other target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card."
 
-#guard TriggeredAbility.resolutionPhrase
-    (SharedTrigger.toEffect .destroyOtherAmassControllerPower) ==
-  "destroy another target creature. Its controller amasses Goblins X, where X is that creature's power. If you controlled that creature, draw a card"
-
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.destroy .target) } ==
-  "destroy it"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.destroy .humans) } ==
-  "destroy it"
-
-/- Amass reads the count. Zero other creatures still amasses Goblins 0. -/
+/- Amass reads dynamic counts; zero other creatures still amasses Goblins 0. -/
 #guard
-  let g := step afterDraw (.amass .perOtherCreature)
+  let otherCreatures := ValueExpr.count (.inZones .battlefield (.all #[.otherThan .this, .hasType .creature, .controlledBy .you]))
+  let g := stepBody afterDraw (.player (.amass .you .goblin otherCreatures))
   onBoard g "Goblin Army" &&
     (g.battlefield.find? (·.name == "Goblin Army")).any
       (fun o => o.status.plusOnePlusOne == 0 && g.controlledBy o caster) &&

@@ -36,13 +36,16 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   }
   let legBearDef : CardDef := { bear with name := "P48i1 LegBear", supertypes := #[.legendary] }
 
-  -- 1a(i). `Entering.completeActiveResolutions` preserves `continuations` when `mayThenResume`
+  -- 1a(i). `Entering.completeActiveResolutions` preserves `continuations` when `interpWait?.isSome`
   --        or `proposedSpell.isNone && (pendingMayCastFromExile.isSome || pendingFreeCopies.isSome)` holds:
   let gEx0 := insertObject g4 zeroInstDef p0 .exile
   let exCardId := (gEx0.objects.filter (fun (o : GameObject) => o.zone == Zone.exile)).back!.id
   let frameWithCtx : ContinuationFrame := { resolvingContext := some (none, p0) }
   let gMayThenHold :=
-    (gEx0.changes #[.pushContinuationFrame frameWithCtx, .continuation (.mayThenResume true)]).completeActiveResolutions
+    (gEx0.changes #[
+      .pushContinuationFrame frameWithCtx,
+      .interpWait? (some { ctx := { controller := p0 }, queue := #[Instruction.gainLifeFixed 1], stack := #[] })
+    ]).completeActiveResolutions
   let gDefExHold :=
     (gEx0.changes #[
       .pushContinuationFrame frameWithCtx,
@@ -69,7 +72,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   let tgtAnchor := (gAnchorBase.permanentsOf p0).back!
   let tgtTrigAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger (.gainLife .you)
-      { targeting := .of .player, resolution? := some (.gainLife (.fixed 1)), phrase := "Target player gains 1 life." }
+      { targeting := .of .player, body := Instruction.gainLifeFixed 1 (.target 0), phrase := "Target player gains 1 life." }
   let gExAndTrig :=
     gAnchorBase.putTriggeredAbilityOnStack p0 tgtAnchor tgtTrigAb "triggers" (eventCause := some testCause)
 
@@ -109,7 +112,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
     name := "P48i1 Bolt"
     manaCost := ManaCost.zero
     types := #[.instant]
-    spellEffect := some { targeting := .of .creature, resolution? := some (.gainLife (.fixed 1)), phrase := "Target creature." }
+    spellEffect := some { targeting := .of .creature, body := Instruction.gainLifeFixed 1, phrase := "Target creature." }
   }
   let gWard0 := insertObject (addPermanent gEx0 wardPermDef p1 p1) tgtBoltDef p0 (.hand p0)
   let wardCreatureId := (gWard0.permanentsOf p1)[0]!.id
@@ -138,20 +141,18 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
         .continuation (.pendingMayCastFromExile (some (p0, #[exCardId], 1))) ])
       p0 (.chooseMode 0)
 
-  -- 1a(iv). `afterWardResolved` with `triggerSequenceRest.isSome` + `pendingMayCastFromExile.isSome`
+  -- 1a(iv). `afterWardResolved` with `interpWait?.isSome` + `pendingMayCastFromExile.isSome`
   --         reopens `.fraChoice` and parks `.afterWardResolved` on `outerPendingReplacements` instead of looping;
   --         `afterTriggerTargetsChosen` consumes only `.chooseTargets _` and defers reopen while `pending != .none || afterRandom != .none`:
-  let trigSeqP0 : TriggerSequenceRest := {
-    controller := p0
-    ability := TriggeredAbility.mkTrigger .thisDies { resolution? := some (.gainLife (.fixed 4)), phrase := "You gain 4 life." }
-    sourceId := some tgtAnchor.id
-    sourceName := tgtAnchor.name
-    steps := [.gainLife (.fixed 4)]
+  let interpWaitP0 : InterpState := {
+    ctx := { controller := p0, sourceId := some tgtAnchor.id }
+    queue := #[Instruction.gainLifeFixed 4]
+    stack := #[]
   }
   let gWardTrigSeqReopen :=
     mustApply
       (gWardTriggered.change (.pushContinuationFrame {
-        triggerSequenceRest := some trigSeqP0
+        interpWait? := some interpWaitP0
         pendingMayCastFromExile := some (p0, #[exCardId], 1)
       }))
       p0 .decline
@@ -187,7 +188,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
     mustHold48i1 "1a_wardTrigSeqReopenAndAfterTrigIdleGuard"
       (gWardTrigSeqReopen.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
        gWardTrigSeqReopen.pendingMayCastFromExile.isNone &&
-       gWardTrigSeqReopen.triggerSequenceRest.isSome &&
+       gWardTrigSeqReopen.currentInterpWait?.isSome &&
        gWardTrigSeqReopen.outerPendingReplacements == #[.afterWardResolved] &&
        gWardTrigSeqFinished.pending == .none &&
        (gWardTrigSeqFinished.player p0).life == 24 &&
@@ -1196,7 +1197,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
     triggeredAbilities := #[
       TriggeredAbility.mkModal .thisDies #[
         Effect.scry 1,
-        { resolution? := some (.addMana #[.colored .green] .equalSourceToughness), phrase := "Add {G} equal to toughness." }
+        { body := Instruction.addMana { spec := .sequence #[(.colored .green, .objectStat .toughness .this)] }, phrase := "Add {G} equal to toughness." }
       ] (headerPhrase := "Choose two.")
     ]
   }
@@ -1222,7 +1223,7 @@ private def mustStepAgent48 (g : Game) (p : PlayerId) : Game :=
     manaCost := { symbols := #[.x] }
     types := #[.artifact]
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.addMana #[.colored .red] .chosenX), phrase := "When this enters, add X {R}." }
+      TriggeredAbility.mkTrigger .thisEnters { body := Instruction.addMana { spec := .sequence #[(.colored .red, .chosenX)] }, phrase := "When this enters, add X {R}." }
     ]
   }
   let gXPerm0 := (insertObject g3 xPermManaDef p0 (.hand p0)).addMana p0 .colorless 3

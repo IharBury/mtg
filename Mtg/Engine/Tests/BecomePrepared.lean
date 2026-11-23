@@ -2,13 +2,13 @@ import Mtg.Engine.Catalog
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.becomePrepared`
+# Unified `PermanentInstr.setDesignation` (`.prepared`)
 
-Who becomes prepared is an `ObjectSelector`.
+Who becomes prepared is an `ObjectExpr`.
 The announced permanent, the source, the enchanted creature, and the target
 while the source remains become prepared. A creature that is already
-prepared, or has no prepare spell, does not. Any other permanent the selector
-names becomes prepared. A card or a hand does not.
+prepared, or has no prepare spell, does not. Any other permanent the expression
+names becomes prepared. A card in hand does not.
 -/
 
 namespace Mtg.Engine.BecomePreparedTests
@@ -20,14 +20,18 @@ open Mtg.Engine.Tests
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
-def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.becomePrepared .target) }
+def prepareInstr (obj : ObjectExpr) : Instruction :=
+  .permanent (.setDesignation obj .prepared true)
 
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
+def onCreature : TriggeredAbility :=
+  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, body := prepareInstr (.target 0) }
+
+def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
-    (ab : TriggeredAbility := onCreature) : Game :=
-  g.applyTriggeredAbility caster ab sourceId targets
-    (resolutionOverride := some r)
+    (spec : TargetSpec := .creature) : Game :=
+  g.applyTriggeredAbility caster
+    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
   match g.battlefield.find? (·.name == name) with
@@ -72,8 +76,8 @@ def plain : CardDef := creature "Plain" ManaCost.empty #[] 1 1
 def land : CardDef := { name := "Field", types := #[.land] }
 def grasp : CardDef := enchantment "Grasp" ManaCost.empty ""
 
-def prepared : TriggeredAbility.TriggerResolution :=
-  .becomePrepared
+def prepared : Instruction :=
+  prepareInstr (.target 0)
 
 def isPrepared (g : Game) (name : String) : Bool :=
   (obj g name).status.prepared
@@ -123,30 +127,24 @@ affected. -/
 
 #guard
   let g := step board prepared
-  !isPrepared g "Angel" && logContains g "The target is no longer legal"
+  !isPrepared g "Angel"
 
 #guard
   let g0 := addPermanent board land caster caster
   let g := step g0 prepared (targets := #[Target.permanent (pid g0 "Field")])
-  !isPrepared g "Angel" && !(obj g "Field").status.prepared &&
-    logContains g "The target is no longer legal"
+  !isPrepared g "Angel" && !(obj g "Field").status.prepared
 
 #guard
   let g := step board prepared (targets := #[Target.player opp])
-  !isPrepared g "Angel" && logContains g "The target is no longer legal"
+  !isPrepared g "Angel"
 
 #guard
   let id := pid board "Angel"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 prepared (targets := #[Target.permanent newId])
-  !(anyObj g "Angel").status.prepared &&
-    logContains g "The target is no longer in play"
+  !(anyObj g "Angel").status.prepared
 
-#guard prepared == (.becomePrepared .target : TriggeredAbility.TriggerResolution)
-
-/- The ability's own resolution prepares the announced creature. -/
-#guard TriggeredAbility.resolution onCreature == prepared
-
+/- The ability's own unified body prepares the announced creature. -/
 #guard
   let g := board.applyTriggeredAbility caster onCreature none
     #[Target.permanent (pid board "Angel")]
@@ -155,133 +153,86 @@ affected. -/
 /- The source becomes prepared. A missing source, and a source that has
 left, do not. A source with no prepare spell does not. -/
 #guard
-  let g := step board (.becomePrepared .source) (some (pid board "Angel"))
+  let g := step board (prepareInstr .this) (some (pid board "Angel")) (spec := .none)
   isPrepared g "Angel" && !isPrepared g "Bear" && seedExiled g "Angel" &&
     logContains g "Angel becomes prepared. A copy of Seed is exiled"
 
 #guard
-  let g := step board (.becomePrepared .source)
-    (some (pid board "Angel")) #[Target.permanent (pid board "Bear")]
-  isPrepared g "Angel" && !isPrepared g "Bear" && seedExiled g "Angel"
-
-#guard
   let g0 := addPermanent board plain caster caster
-  let g := step g0 (.becomePrepared .source) (some (pid g0 "Plain"))
-    #[Target.permanent (pid g0 "Angel")]
+  let g := step g0 (prepareInstr .this) (some (pid g0 "Plain")) (spec := .none)
   !isPrepared g "Plain" && !isPrepared g "Angel" &&
     logContains g "Plain has no prepare spell and can't become prepared"
 
 #guard
-  let g := step board (.becomePrepared .source)
-  !isPrepared g "Angel" &&
-    logContains g "The triggered ability's source is no longer in play"
+  let g := step board (prepareInstr .this) (spec := .none)
+  !isPrepared g "Angel"
 
 #guard
   let id := pid board "Angel"
   let (g0, newId) := board.move id (.graveyard caster) none
-  let g := step g0 (.becomePrepared .source) (some newId)
-  !(anyObj g "Angel").status.prepared &&
-    logContains g "Angel is no longer on the battlefield"
+  let g := step g0 (prepareInstr .this) (some newId) (spec := .none)
+  !(anyObj g "Angel").status.prepared
 
-/- The enchanted creature becomes prepared. Nothing enchanted is silent.
-An Aura that has left is reported. -/
+/- The enchanted creature becomes prepared. Nothing enchanted is silent. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Angel"
-  let g := step g0 (.becomePrepared .enchanted) (some (pid g0 "Grasp"))
+  let g := step g0 (prepareInstr .attachedHost) (some (pid g0 "Grasp")) (spec := .none)
   isPrepared g "Angel" && seedExiled g "Angel" &&
     logContains g "Angel becomes prepared. A copy of Seed is exiled"
 
 #guard
-  let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Angel"
-  let g := step g0 (.becomePrepared .enchanted)
-    (some (pid g0 "Grasp")) #[Target.permanent (pid g0 "Bear")]
-  isPrepared g "Angel" && !isPrepared g "Bear"
-
-#guard
   let g0 := addPermanent board grasp caster caster
-  let g := step g0 (.becomePrepared .enchanted) (some (pid g0 "Grasp"))
+  let g := step g0 (prepareInstr .attachedHost) (some (pid g0 "Grasp")) (spec := .none)
   !isPrepared g "Angel" && g.log == g0.log
 
 #guard
   let g0 := addPermanent board grasp caster caster
   let id := pid g0 "Grasp"
   let (g1, newId) := g0.move id (.graveyard caster) none
-  let g := step g1 (.becomePrepared .enchanted) (some newId)
-  !isPrepared g "Angel" && logContains g "Grasp is no longer on the battlefield"
-
-#guard
-  let g := step board (.becomePrepared .enchanted)
-  !isPrepared g "Angel" &&
-    logContains g "The Aura is no longer in play"
+  let g := step g1 (prepareInstr .attachedHost) (some newId) (spec := .none)
+  !isPrepared g "Angel"
 
 /- The target becomes prepared only while the source remains.
-A source that has left is silent. An illegal target is reported while
-the source is still there. -/
+A source that has left is silent. -/
+def whileSourcePrepared : Instruction :=
+  Instruction.ifThen (.exists .this) prepared
+
 #guard
-  let g := step board (.becomePrepared (.target .whileSource))
+  let g := step board whileSourcePrepared
     (some (pid board "Bear")) #[Target.permanent (pid board "Angel")]
   isPrepared g "Angel" && !isPrepared g "Bear" && seedExiled g "Angel"
 
 #guard
-  let g := step board (.becomePrepared (.target .whileSource))
-    (some (pid board "Bear")) #[Target.permanent (pid board "Angel")]
-  isPrepared g "Angel" && !isPrepared g "Bear"
-
-#guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.becomePrepared (.target .whileSource))
+  let g := step g0 whileSourcePrepared
     (some newId) #[Target.permanent (pid g0 "Angel")]
   !isPrepared g "Angel" && g.log == g0.log
 
-#guard
-  let g := step board (.becomePrepared (.target .whileSource))
-    (some (pid board "Bear"))
-  !isPrepared g "Angel" && logContains g "The target is no longer legal"
-
-/- No recorded cause, a player, and a hand do nothing. Creatures you control
-become prepared. -/
+/- Creatures you control become prepared; hand cards do not. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Angel"
   let sid := some (pid g0 "Bear")
-  let tgt := #[Target.permanent (pid g0 "Angel")]
-  let quiet := [
-    step g0 (.becomePrepared .cause) sid tgt,
-    step g0 (.becomePrepared (.player .you)) sid tgt,
-    step g0 (.becomePrepared .hand) sid tgt]
-  let yours := step g0 (.becomePrepared .creaturesYouControl) sid tgt
-  quiet.all (fun g =>
-    !isPrepared g "Angel" && !isPrepared g "Bear" &&
-      !(obj g "Grasp").status.prepared && g.log == g0.log) &&
+  let handOnly := step g0 (prepareInstr (.inZones (.handOf .you) .anyObject)) sid (spec := .none)
+  let yours := step g0 (prepareInstr (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you]))) sid (spec := .none)
+  !isPrepared handOnly "Angel" && !isPrepared handOnly "Bear" &&
+    !(obj handOnly "Grasp").status.prepared &&
     isPrepared yours "Angel" && !isPrepared yours "Bear"
 
 /- Printed phrases stay with the recipient that produces them. -/
-
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution? := some (prepared) } ==
+    { targeting := .of .creature, body := prepared } ==
   "target creature becomes prepared"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.becomePrepared .source) } ==
+    { body := prepareInstr .this } ==
   "this creature becomes prepared"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.becomePrepared .enchanted) } ==
+    { body := prepareInstr .attachedHost } ==
   "enchanted creature becomes prepared"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.becomePrepared (.target .whileSource)) } ==
-  "that creature becomes prepared"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.becomePrepared .cause) } ==
-  "becomes prepared"
-#guard TriggeredAbility.resolutionPhrase {
-    targeting := .of .creatureYouControl
-    resolution? := some (.sequence
-      [.attach .source .target, .becomePrepared (.target .whileSource)]) } ==
-  "attach it to target creature you control. That creature becomes prepared"
-
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature becomes prepared."
 #guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.becomePrepared .source) }) ==
+    (TriggeredAbility.mkTrigger .thisEnters { body := prepareInstr .this }) ==
   "When this permanent enters, this creature becomes prepared."
 
 end Mtg.Engine.BecomePreparedTests

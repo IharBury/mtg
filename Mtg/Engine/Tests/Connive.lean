@@ -1,11 +1,11 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.connive`
+# Unified `PlayerInstr.connive`
 
-Who connives is an `ObjectSelector`. The source, the announced target,
-and the entering Villain are the printed recipients. Any other selector
-connives nothing.
+Who connives is an `ObjectExpr`. The source, the announced target,
+and the entering Villain are the printed recipients. A non-battlefield
+selector connives nothing.
 -/
 
 namespace Mtg.Engine.ConniveTests
@@ -16,18 +16,23 @@ open Mtg.Engine.Tests
 def caster : PlayerId := ⟨0⟩
 
 #guard
-  let g := afterDraw.applyTriggeredAbility caster (.onEnterDraw 1) none
-    (resolutionOverride := some (.connive .hand))
-  g.pending == afterDraw.pending && g.log.size == afterDraw.log.size
+  let ab := TriggeredAbility.mkTrigger .thisEnters
+    { body := .player (.connive (.inZones (.handOf .you) .anyObject)) }
+  let g := afterDraw.applyTriggeredAbility caster ab none
+  g.pending == afterDraw.pending
 
-#guard (SharedTrigger.toEffect (.connive (.target .creatureYouControl))).resolution ==
-  .connive .target
+#guard Effect.triggerConniveTarget .creatureYouControl ==
+  { targeting := .of .creatureYouControl, body := .player (.connive (.target 0)) }
 
-#guard (SharedTrigger.toEffect (.connive (.target .creatureYouControl))).targeting.spec ==
+#guard (Effect.triggerConniveTarget .creatureYouControl).targeting.spec ==
   .creatureYouControl
 
-#guard (SharedTrigger.toEffect .connive).resolution == .connive .source
+#guard Effect.triggerConniveSource.body == .player (.connive .this)
 
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.connive .hand) } == "connive"
+#guard TriggeredAbility.toNotation .onEnterConnive ==
+  "When this creature enters, it connives."
+
+#guard TriggeredAbility.toNotation .onCombatTargetYouControlConnives ==
+  "At the beginning of combat on your turn, target creature you control connives."
 
 end Mtg.Engine.ConniveTests

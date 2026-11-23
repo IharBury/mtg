@@ -18,8 +18,8 @@ def searchNoun (kind : String) : String :=
   | none => kind
 
 /-- What still happens after the library is shuffled. -/
-def searchAfter (p : PlayerId) : Option FraNext → AfterRandom
-  | some (.gainLife n) => .gainLife p n
+def searchAfter (p : PlayerId) : Option Instruction → AfterRandom
+  | some (.life (.gain _ (.const n))) => .gainLife p n.toNat
   | _ => .none
 
 /-- Finish the post-untap log and ETB checks once a searched land's untap
@@ -232,13 +232,13 @@ def shuffleThen (g : Game) (p : PlayerId) (onDone : AfterRandom) : Game :=
         g.applySearchAfter
 
 /-- The post-shuffle action, including a +1/+1 counter waiting on this search. -/
-def searchDone (g : Game) (p : PlayerId) (after : Option FraNext) : Game × AfterRandom :=
+def searchDone (g : Game) (p : PlayerId) (after : Option Instruction) : Game × AfterRandom :=
   match g.plusOneAfterSearch with
   | some (id, ctrl, srcId) => (g.change (.plusOneAfterSearch none), .plusOne id ctrl srcId)
   | none => (g, searchAfter p after)
 
 /-- Shuffle, then run the search's after-action. -/
-def shuffleSearch (g : Game) (p : PlayerId) (after : Option FraNext) : Game :=
+def shuffleSearch (g : Game) (p : PlayerId) (after : Option Instruction) : Game :=
   let g := g.change (.untapSearchedIfLands none)
   let (g, done) := g.searchDone p after
   g.shuffleThen p done
@@ -303,7 +303,7 @@ def placeSearchedBatch (g : Game) (p : PlayerId) (ids : Array ObjectId) (tapped 
 /-- Finish the post-`placeSearched` steps (moving remaining cards to hand,
 shuffling, behold-untap, or waiting `+1/+1` counter) of `finishLibrarySearch`. -/
 def finishSearchAfterPlace (g : Game) (p : PlayerId) (fromId : Option ObjectId)
-    (dest : SearchDest) (after : Option FraNext) (fromLibrary : Bool)
+    (dest : SearchDest) (after : Option Instruction) (fromLibrary : Bool)
     (handRest : Array ObjectId := #[]) (cause : Option EventCause := none) : Game :=
   match dest with
   | .battlefield _ =>
@@ -325,7 +325,7 @@ def finishSearchAfterPlace (g : Game) (p : PlayerId) (fromId : Option ObjectId)
 /-- Send the chosen cards to `dest`, shuffle, then do `after`. An empty `ids`
 is "chooses not to find" (CR 701.23b). -/
 def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
-    (dest : SearchDest) (after : Option FraNext) (kind : String) : Game :=
+    (dest : SearchDest) (after : Option Instruction) (kind : String) : Game :=
   let allocSearchStepCause (g : Game) (source : Option ObjectId := none) : Game × EventCause :=
     match g.currentResolvingContext? with
     | some _ => g.allocDelayedCause (some p) source
@@ -428,7 +428,7 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
 The player chooses which, or none (CR 701.23b). `optional` may skip the
 search entirely, and then the library is not shuffled. -/
 def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind : String)
-    (dest : SearchDest) (count : Nat := 1) (after : Option FraNext := none)
+    (dest : SearchDest) (count : Nat := 1) (after : Option Instruction := none)
     (alsoHand : Bool := false) (optional : Bool := false) : Game :=
   if !g.stillInGame p then g
   else

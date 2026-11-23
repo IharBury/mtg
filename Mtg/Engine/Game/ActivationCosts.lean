@@ -484,9 +484,11 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
             | _ =>
               if o.isOnBattlefield then
                 let records :=
-                  g.isCreature o && (abilityId.bind g.findObject?).any (fun ab =>
-                    (ab.abilityEffect.map (·.body)) ==
-                      some Effect.drawEqualSacrificedPowerThenDiscard.body)
+                  g.isCreature o && (
+                    (abilityId.bind g.findObject?).any (fun ab =>
+                      (ab.abilityEffect.map (·.body)) ==
+                        some Effect.drawEqualSacrificedPowerThenDiscard.body) ||
+                    (g.proposedSpell.bind (·.activation)).any (·.cost.bindVar?.isSome))
                 let pw := g.power o
                 let oName := g.name o
                 g := g.sacrificeToGraveyard o s!"{name} sacrifices {oName}"

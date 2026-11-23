@@ -285,7 +285,7 @@ def resolveTop (g : Game) : Game :=
               let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
               g.logMsg s!"{g.name obj} doesn't resolve because all its targets are illegal (CR 608.2b)"
             g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
-          else if obj.reflexiveResolution.isNone &&
+          else if !obj.isReflexive &&
               !g.triggerInterveningHolds entry.controller t obj.sourceId
                 entry.targets entry.lastKnownPower obj.fraCauseId obj.fraCauseStatus then
             let g := g.withResolvingContext ctxSrc entry.controller fun g =>
@@ -332,7 +332,7 @@ def resolveTop (g : Game) : Game :=
             let g := entry.targets.foldl (fun (g : Game) (tg : Target) => g.illegalAbilityTarget tg) g
             g.logMsg s!"{g.name obj} doesn't resolve because all its targets are illegal (CR 608.2b)"
           g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
-        else if obj.reflexiveResolution.isNone &&
+        else if !obj.isReflexive &&
             !g.triggerInterveningHolds entry.controller t obj.sourceId
               entry.targets entry.lastKnownPower obj.fraCauseId obj.fraCauseStatus then
           let g := g.withResolvingContext ctxSrc entry.controller fun g =>
@@ -352,7 +352,6 @@ def resolveTop (g : Game) : Game :=
             resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId sagaChapter) })
           let g := g.applyTriggeredAbility entry.controller t obj.sourceId
             entry.targets entry.dividedDamage entry.lastKnownPower entry.lastKnownToughness srcName
-            (resolutionOverride := obj.reflexiveResolution)
           g.completeActiveResolutions
       else
         -- CR 608.2b / 608.3b: an instant, sorcery, or targeted Aura spell whose
@@ -428,7 +427,7 @@ def resolveTop (g : Game) : Game :=
           let g := g.change (.pushContinuationFrame {
             resolvingContext := some (ctxSrc, entry.controller)
             resolvingSpell := some obj.id
-            resolvingModes := chosenSpellModes
+            resolvingModes := if chosenSpellModes.isEmpty then none else some chosenSpellModes
             resolvingSkippedSlots := entry.skippedOptionalSlots
             resolutionFinish := some (.spell entry snap fromGy) })
           let bc := g.baseCard obj

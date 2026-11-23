@@ -713,23 +713,26 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [choose trigger order (CR 603.3b, {g.player p |>.name})]"
     | .mayPayGeneric p n =>
       s!" [may pay \{{n}} ({g.player p |>.name})]"
-    | .chooseLibraryPlacement p _ =>
-      if g.spellOrLibrary || g.spellOr.isEmpty then
+    | .chooseLibraryPlacement p id? =>
+      let isLib := id?.isSome ||
+        match g.currentInterpWait? with
+        | some st =>
+          match st.stack.back? with
+          | some (.chooseBranch _ isLib) => isLib
+          | _ => true
+        | none => true
+      if isLib then
         s!" [choose top or bottom ({g.player p |>.name})]"
       else
         s!" [choose one ({g.player p |>.name})]"
     | .mayAttachEquipment p .. =>
       s!" [may attach Equipment ({g.player p |>.name})]"
     | .mayResolve p =>
-      let detail :=
-        match g.mayEffect with
-        | some e => if e.phrase.isEmpty then "" else s!" {e.phrase}"
-        | none => ""
-      s!" [may{detail} ({g.player p |>.name}): accept or decline]"
+      s!" [may ({g.player p |>.name}): accept or decline]"
     | .tapHumans p =>
       s!" [tap Humans ({g.player p |>.name})]"
-    | .payOrLetCounter p n _ =>
-      if g.unlessPaysInstead.isSome then
+    | .payOrLetCounter p n spellId? =>
+      if spellId?.isNone then
         s!" [pay \{{n}} or let the effect happen ({g.player p |>.name})]"
       else
         s!" [pay \{{n}} or let the spell be countered ({g.player p |>.name})]"
@@ -772,11 +775,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
     | .mayPutLandFromHand p =>
       s!" [may put a land from hand onto the battlefield tapped ({g.player p |>.name})]"
     | .chooseTriggerOr p =>
-      let (rs, eff) :=
-        match g.triggerOr with
-        | some rest => (rest.alternatives.toList, rest.ability.effect)
-        | none => ([], {})
-      s!" [{triggerOrPendingText rs eff} ({g.player p |>.name})]"
+      s!" [choose one ({g.player p |>.name})]"
     | .maySacArtifactOrDiscard p _ =>
       s!" [may sacrifice an artifact or discard a card ({g.player p |>.name})]"
     | .mayPutArtifactFromHand p _ =>
@@ -823,7 +822,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           s!"choose a mode not yet chosen {available}: 0 +1/+1, 1 each opponent loses 2 and you gain 2, 2 draw"
         | .chooseKeyword _ options =>
           let names : List String :=
-            (List.range options.size).map (fun i => s!"{i} {(options[i]! : KeywordChoice).name}")
+            (List.range options.size).map (fun i => s!"{i} {ToOracle.toOracle {} options[i]!}")
           "choose a keyword: " ++ String.intercalate ", " names
         | .sacrificeCreatureEach .. => "sacrifice a creature"
         | .discardTwo .. => "discard two cards"
@@ -952,7 +951,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           "choose the face-up pile for that player's hand (accept), or the face-down pile (decline)"
         | .palisadeCreatureType types =>
           s!"choose a creature type: {String.intercalate ", " ((List.range types.size).map (fun i => s!"{i} {types[i]!}"))}"
-        | .worldsPutCreatures eligible .. =>
+        | .worldsPutCreatures eligible =>
           s!"may put any number of creature cards from your hand ({eligible.size}): choose <id> ..., or decline"
         | .revealPutCreatures _ creatures anyNumber =>
           if anyNumber then

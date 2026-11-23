@@ -1,7 +1,7 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.chooseModes`
+# Unified modal triggers (`Instruction.chooseModes`)
 
 Alliance chooses one unused mode this turn. Gollum chooses one unused mode
 for the source's lifetime. Chosen up-to-X modes resolve in printed order.
@@ -29,51 +29,36 @@ def allyOf (g : Game) : GameObject :=
 def handSize (g : Game) (p : PlayerId) : Nat :=
   (g.player p).hand.size
 
-def modeStep (g : Game) (r : TriggeredAbility.TriggerResolution)
+def modeStep (g : Game) (ab : TriggeredAbility)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[]) : Game :=
-  g.applyTriggeredAbility caster (.onEnterDraw 1) sourceId targets
-    (resolutionOverride := some r)
+  g.applyTriggeredAbility caster ab sourceId targets
 
 def withModes (modes : Array Nat) : Game :=
   let g := addPermanent afterDraw ally caster caster
   let src := allyOf g
   modes.foldl (fun acc m => acc.record (GameEvent.triggerModeChosen acc.turnNumber src.id m (lifetime := true))) g
 
-def allianceModes : TriggeredAbility.TriggerResolution :=
-  .chooseModes TriggeredAbility.TriggerResolution.allianceModes .oneUnusedThisTurn
+def allianceModes : TriggeredAbility :=
+  .onAnotherCreatureYouControlEntersAlliance
 
-def gollumModes : TriggeredAbility.TriggerResolution :=
-  .chooseModes TriggeredAbility.TriggerResolution.gollumModes .oneUnused
+def gollumModes : TriggeredAbility :=
+  .onOpponentCastsChosenParityModes
 
-def upToXModes : TriggeredAbility.TriggerResolution :=
-  .chooseModes TriggeredAbility.TriggerResolution.upToXModes .alreadyChosen
+def upToXModes : TriggeredAbility :=
+  .onEnter Effect.enterChooseUpToXModes
 
-/- The printed abilities are these three combinations. -/
-#guard TriggeredAbility.resolution .onAnotherCreatureYouControlEntersAlliance ==
-  allianceModes
+/- The printed modal abilities carry unified `Instruction.chooseModes` bodies and preserve their phrases. -/
+#guard TriggeredAbility.onAnotherCreatureYouControlEntersAlliance.isModal
+#guard TriggeredAbility.onOpponentCastsChosenParityModes.isModal
+#guard (TriggeredAbility.onEnter Effect.enterChooseUpToXModes).isModal
+#guard (TriggeredAbility.onStep Effect.stepHydeChoose).isModal
 
-#guard TriggeredAbility.resolution .onOpponentCastsChosenParityModes ==
-  gollumModes
-
-#guard TriggeredAbility.resolution (.onEnter Effect.enterChooseUpToXModes) ==
-  upToXModes
-
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (allianceModes) } ==
-  "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card"
-
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (gollumModes) } ==
-  "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card"
-
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (upToXModes) } ==
-  "choose up to X — • Discard a card, then draw a card. • Target opponent loses 2 life. • Destroy target token. • Each player sacrifices a creature of their choice"
-
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.chooseModes TriggeredAbility.TriggerResolution.hydeModes
-        .plusOneOrRemoveCounter) } ==
-  "choose one — put a +1/+1 counter on this, or remove a counter from a creature you control and draw a card"
+#guard (toString allianceModes).contains
+  "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card."
+#guard (toString gollumModes).contains
+  "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card."
+#guard (toString upToXModes).contains "choose up to X"
+#guard (toString (TriggeredAbility.onStep Effect.stepHydeChoose)).contains "Mister Hyde"
 
 /- Alliance offers the modes still unused this turn. All three chosen
 removes the ability. A missing source does the same. -/

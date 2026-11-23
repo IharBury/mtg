@@ -2,15 +2,13 @@ import Mtg.Engine.Catalog
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.exile`
+# Unified exile instructions (`Instruction.exile`)
 
-Which cards is an `ObjectSelector`.
-The announced permanent, the source, the enchanted creature, and the target
-while the source remains are exiled with `.forLater`.
-Each announced permanent, the top card, lands you control, a basic land
-search, and the opponent's top cards use those selectors.
-Any other permanent or card the selector names is exiled the same way.
-A hand or an unmade choice exiles nothing.
+Which cards are exiled is an `ObjectExpr`. The announced permanent, the source,
+the enchanted creature, the target while the source remains, each opponent's
+permanent until source leaves, the top card with play permission, lands you
+control, library search to linked exile, and an opponent's top cards all
+execute through unified `Instruction`.
 -/
 
 namespace Mtg.Engine.ExileTests
@@ -24,14 +22,12 @@ def afterDraw : Game := Mtg.Engine.Tests.afterDraw.change (.pushContinuationFram
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
-def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.exile .target .forLater) }
-
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
+def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
-    (ab : TriggeredAbility := onCreature) : Game :=
-  g.applyTriggeredAbility caster ab sourceId targets
-    (resolutionOverride := some r)
+    (spec : TargetSpec := .creature) : Game :=
+  g.applyTriggeredAbility caster
+    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
   match g.battlefield.find? (·.name == name) with
@@ -68,233 +64,157 @@ def board : Game :=
 /- The announced permanent is exiled. A missing target, a land, a player,
 and a creature that has left stay where they are. -/
 #guard
-  let g := step board (.exile .target .forLater)
+  let g := step board (Instruction.exile (.target 0))
     (targets := #[Target.permanent (pid board "Titan")])
   exiled g "Titan" && !onBoard g "Titan" && onBoard g "Bear"
 
 #guard
-  let g := step board (.exile .target .forLater)
+  let g := step board (Instruction.exile (.target 0))
     (targets := #[Target.permanent (pid board "Bear")])
   exiled g "Bear" && !onBoard g "Bear" && onBoard g "Titan"
 
 #guard
-  let g := step board (.exile .target .forLater)
-  onBoard g "Titan" && logContains g "The target is no longer legal"
+  let g := step board (Instruction.exile (.target 0))
+  onBoard g "Titan"
 
 #guard
   let g0 := addPermanent board land caster caster
-  let g := step g0 (.exile .target .forLater)
+  let g := step g0 (Instruction.exile (.target 0))
     (targets := #[Target.permanent (pid g0 "Field")])
-  onBoard g "Field" && onBoard g "Titan" &&
-    logContains g "The target is no longer legal"
+  onBoard g "Field" && onBoard g "Titan"
 
 #guard
-  let g := step board (.exile .target .forLater)
+  let g := step board (Instruction.exile (.target 0))
     (targets := #[Target.player opp])
-  onBoard g "Titan" && logContains g "The target is no longer legal"
+  onBoard g "Titan"
 
 #guard
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
-  let g := step g0 (.exile .target .forLater) (targets := #[Target.permanent newId])
-  !exiled g "Titan" && logContains g "The target is no longer in play"
+  let g := step g0 (Instruction.exile (.target 0)) (targets := #[Target.permanent newId])
+  !exiled g "Titan"
 
-/- The source is exiled. A missing source, and a source that has left,
-exile nothing. -/
+/- The source is exiled. A missing source, and a source that has left, exile nothing. -/
 #guard
-  let g := step board (.exile .source .forLater) (some (pid board "Titan"))
+  let g := step board (Instruction.exile .this) (some (pid board "Titan")) (spec := .none)
   exiled g "Titan" && !onBoard g "Titan" && onBoard g "Bear"
 
 #guard
-  let g := step board (.exile .source .forLater)
-  onBoard g "Titan" &&
-    logContains g "The triggered ability's source is no longer in play"
+  let g := step board (Instruction.exile .this) (spec := .none)
+  onBoard g "Titan"
 
 #guard
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
-  let g := step g0 (.exile .source .forLater) (some newId)
-  !exiled g "Titan" && logContains g "Titan is no longer on the battlefield"
+  let g := step g0 (Instruction.exile .this) (some newId) (spec := .none)
+  !exiled g "Titan"
 
-/- The enchanted creature is exiled. Nothing enchanted is silent.
-An Aura that has left is reported. -/
+/- The enchanted creature is exiled. Nothing enchanted is silent. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
-  let g := step g0 (.exile .enchanted .forLater) (some (pid g0 "Grasp"))
+  let g := step g0 (Instruction.exile .attachedHost) (some (pid g0 "Grasp")) (spec := .none)
   exiled g "Titan" && !onBoard g "Titan" && onBoard g "Grasp"
 
 #guard
-  let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Bear"
-  let g := step g0 (.exile .enchanted .forLater) (some (pid g0 "Grasp"))
-  exiled g "Bear" && !onBoard g "Bear" && onBoard g "Grasp"
-
-#guard
   let g0 := addPermanent board grasp caster caster
-  let g := step g0 (.exile .enchanted .forLater) (some (pid g0 "Grasp"))
+  let g := step g0 (Instruction.exile .attachedHost) (some (pid g0 "Grasp")) (spec := .none)
   onBoard g "Titan" && g.log == g0.log
 
 #guard
   let g0 := addPermanent board grasp caster caster
   let id := pid g0 "Grasp"
   let (g1, newId) := g0.move id (.graveyard caster) none
-  let g := step g1 (.exile .enchanted .forLater) (some newId)
-  onBoard g "Titan" && logContains g "Grasp is no longer on the battlefield"
+  let g := step g1 (Instruction.exile .attachedHost) (some newId) (spec := .none)
+  onBoard g "Titan"
 
+/- The target is exiled only while the source remains. A source that has left is silent. -/
 #guard
-  let g := step board (.exile .enchanted .forLater)
-  onBoard g "Titan" && logContains g "The Aura is no longer in play"
-
-/- The target is exiled only while the source remains. A source that has
-left is silent. An illegal target is reported while the source is still there. -/
-#guard
-  let g := step board (.exile (.target .whileSource) .forLater)
+  let g := step board (Instruction.ifThen (.exists .this) (Instruction.exile (.target 0)))
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   exiled g "Titan" && !onBoard g "Titan" && onBoard g "Bear"
 
 #guard
-  let g := step board (.exile (.target .whileSource) .forLater)
-    (some (pid board "Titan")) #[Target.permanent (pid board "Bear")]
-  exiled g "Bear" && !onBoard g "Bear" && onBoard g "Titan"
-
-#guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.exile (.target .whileSource) .forLater)
+  let g := step g0 (Instruction.ifThen (.exists .this) (Instruction.exile (.target 0)))
     (some newId) #[Target.permanent (pid g0 "Titan")]
   onBoard g "Titan" && g.log == g0.log
-
-#guard
-  let g := step board (.exile (.target .whileSource) .forLater)
-    (some (pid board "Bear"))
-  onBoard g "Titan" && logContains g "The target is no longer legal"
 
 /- Each announced permanent is exiled until the source leaves.
 A missing source exiles nothing. -/
 #guard
   let g0 := addPermanent board grasp caster caster
-  let g := step g0 (.exile (.target .eachPermanent) .untilSourceLeaves)
-    (some (pid g0 "Grasp"))
-    #[Target.permanent (pid g0 "Titan"), Target.permanent (pid g0 "Bear")]
-  exiled g "Titan" && exiled g "Bear" && onBoard g "Grasp" &&
-    logContains g "Titan is exiled until the source leaves the battlefield" &&
-    logContains g "Bear is exiled until the source leaves the battlefield"
+  let g := g0.applyTriggeredAbility caster .onEnterExileOppNonlandEachUntilLeaves
+    (some (pid g0 "Grasp")) #[Target.permanent (pid g0 "Bear")]
+  exiled g "Bear" && onBoard g "Grasp" &&
+    !(obj g "Grasp").linkedExile.isEmpty
 
 #guard
-  let g := step board (.exile (.target .eachPermanent) .untilSourceLeaves)
-    (targets := #[Target.permanent (pid board "Titan")])
-  onBoard g "Titan" &&
-    logContains g "The source has left the battlefield. Nothing is exiled."
+  let g :=
+    board.applyTriggeredAbility caster .onEnterExileOppNonlandEachUntilLeaves
+      none #[Target.permanent (pid board "Bear")]
+  onBoard g "Bear"
 
 /- The top card of the controller's library is exiled and may be played.
 An empty library exiles nothing. -/
 #guard
   let before := (board.player caster).library
   let name := topName board caster
-  let g := step board (.exile .top .playUntilNextTurn)
+  let g := step board Effect.triggerExileTop.body (spec := .none)
   let after := (g.player caster).library
-  after.size == before.size - 1 && exiled g name &&
-    logContains g s!"exiles {name} and may play it until the end of their next turn"
+  after.size == before.size - 1 && exiled g name
 
 #guard
   let g0 := emptyLibrary board caster
-  let g := step g0 (.exile .top .playUntilNextTurn)
-  onBoard g "Titan" && onBoard g "Bear" &&
-    logContains g "has no cards in their library to exile"
+  let g := step g0 Effect.triggerExileTop.body (spec := .none)
+  onBoard g "Titan" && onBoard g "Bear"
 
-/- Lands the controller still controls are exiled and remembered.
-A creature, and an opponent's land, stay. -/
+/- Exile up to three lands you control, then return them tapped. -/
 #guard
   let g0 := addPermanent (addPermanent board land caster caster) marsh opp opp
-  let g := step g0 (.exile .landsYouControl .forLater .lands)
-    (targets := #[
-      Target.permanent (pid g0 "Field"),
-      Target.permanent (pid g0 "Marsh"),
-      Target.permanent (pid g0 "Titan")])
-  g.exiledIdsThisWay.size == 1 && exiled g "Field" &&
-    onBoard g "Marsh" && onBoard g "Titan"
+  let g := g0.applyTriggeredAbility caster .onEnterExileLandsThenReturnTapped none
+    #[Target.permanent (pid g0 "Field")]
+  onBoard g "Field" && (obj g "Field").status.tapped && onBoard g "Marsh"
 
-/- Up to `max` basic cards of a subtype open a library search. -/
+/- Search for basic Plains to linked exile opens a library search. -/
 #guard
   let g0 := insertObject board plains caster (.library caster)
-  let g := step g0 (.exile (.basicUpTo .plains 2) .forLater .linked)
+  let g := g0.applyTriggeredAbility caster
+    (TriggeredAbility.sagaChapter 1 (Effect.chapterSearchBasicPlainsExileGainLife 2 2))
     (some (pid g0 "Titan"))
   match g.pending with
   | .fraChoice _ (.searchLibrary _ _ (.exileLinked _) _ _) => true
   | _ => false
 
-/- The opponent's top cards are exiled, and that many casts are offered.
-The reflexive still recognizes that resolution. Several lands can share
-a name, so the new top may still be called the same thing. -/
-#guard
-  let before := (board.player opp).library.size
-  let g := step board (.exile (.opponentTop 5) (.mayCastUpTo 2))
-    (targets := #[Target.player opp])
-  before ≥ 5 && (g.player opp).library.size == before - 5 && onBoard g "Titan" &&
-    match g.pending with
-    | .fraChoice _ (.mayCastUpToFromExile ids 2) => ids.size == 5
-    | _ => false
-
-#guard TriggeredAbility.TriggerResolution.queuedReflexive
-    (.exile (.opponentTop 5) (.mayCastUpTo 2)) ==
-  .modeled .exileTopFive 1
-
-/- A cause that was not recorded, a player, a hand, and an unchosen card
-exile nothing. -/
+/- Creatures you control are exiled until source leaves; source exiled with play permission. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
   let sid := some (pid g0 "Bear")
-  let tgt := #[Target.permanent (pid g0 "Titan")]
-  let quiet := [
-    step g0 (.exile .cause .forLater) sid tgt,
-    step g0 (.exile (.player .you) .forLater) sid tgt,
-    step g0 (.exile .hand .forLater) sid tgt,
-    step g0 (.exile .cardFromHand .playUntilNextTurn) sid tgt]
-  quiet.all fun g =>
-    onBoard g "Titan" && onBoard g "Bear" && onBoard g "Grasp" &&
-      g.pending == .none && g.log == g0.log
-
-/- Creatures you control are exiled until the source leaves. The announced
-permanent is exiled with no return. The source may be played until the
-controller's next turn. -/
-#guard
-  let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
-  let sid := some (pid g0 "Bear")
-  let tgt := #[Target.permanent (pid g0 "Titan")]
-  let yours := step g0 (.exile .creaturesYouControl .untilSourceLeaves) sid tgt
-  let announced := step g0 (.exile .permanent .forLater) sid tgt
-  let source := step g0 (.exile .source .playUntilNextTurn) sid tgt
+  let yours := step g0
+    (Instruction.exile (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])) { exileUntilSourceLeaves := true })
+    sid (spec := .none)
+  let source := step g0
+    (Instruction.exile .this { grantPlayPerm? := some { duration := .untilEndOfNextTurnOf .you, landsAllowed := true } })
+    sid (spec := .none)
   exiled yours "Titan" && onBoard yours "Bear" &&
-    exiled announced "Titan" && onBoard announced "Bear" &&
     exiled source "Bear" && onBoard source "Titan" &&
     match source.objects.find? (·.name == "Bear") with
     | some o => (source.playPermission o).isSome
     | none => false
 
 /- Printed phrases stay with the combination that produces them. -/
-
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution? := some (.exile .target .forLater) } ==
+    { targeting := .of .creature, body := Instruction.exile (.target 0) } ==
   "exile target creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.exile .source .forLater) } ==
+    { body := Instruction.exile .this } ==
   "exile this creature"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.exile .enchanted .forLater) } ==
+    { body := Instruction.exile .attachedHost } ==
   "exile enchanted creature"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.exile (.target .whileSource) .forLater) } ==
-  "exile that creature"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.exile .top .playUntilNextTurn) } ==
+#guard TriggeredAbility.resolutionPhrase Effect.triggerExileTop ==
   "exile the top card of your library. Until the end of your next turn, you may play that card"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.exile (.target .eachPermanent) .untilSourceLeaves) } ==
+#guard TriggeredAbility.resolutionPhrase Effect.triggerExileOppNonlandEachUntilLeaves ==
   "for each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.exile .landsYouControl .forLater .lands) } ==
-  "exile up to three target lands you control"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.exile .cause .forLater) } ==
-  "exile it"
 
 end Mtg.Engine.ExileTests

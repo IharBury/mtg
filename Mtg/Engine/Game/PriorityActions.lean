@@ -284,7 +284,7 @@ def concede (g : Game) (p : PlayerId) : Game :=
       let midResolutionOrBatch :=
         g.currentBatch.isSome || g.pendingReplacement.isSome ||
           !g.outerPendingReplacements.isEmpty ||
-          !g.continuations.isEmpty || g.triggerSequenceRest.isSome
+          !g.continuations.isEmpty || g.currentInterpWait?.isSome
       g.concedePlayersLoop (#[p] ++ mates) wasPregame midResolutionOrBatch
         wasIdlePriority savedPendingPrio wasAssigningCombatDamage
 

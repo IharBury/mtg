@@ -36,7 +36,7 @@ keep working.
 - `Draw`: fixed draws, counted draws, mana spent, and the opponent's draw offer
 - `ReturnToHand`: graveyard cards, permanents, milled subtypes, and the source
 - `Put`: linked exile, a graveyard nonland, the source, noted lands,
-  a discarded land, and cards from hand, as an `ObjectSelector`
+  a discarded land, and cards from hand via unified `ObjectExpr`
 - `AddMana`: printed mana, and {G} for each charge counter on the source
 - `Destroy`: opponents' artifacts and enchantments, a permanent dealt
   damage, and the announced creature noted for amass
@@ -48,7 +48,7 @@ keep working.
   everything when the source was cast
 - `GainLife`: a fixed amount, the targeted card's power, one life per
   permanent destroyed, one life per other creature, and life per attached
-  Equipment, as a `NumberSelector`
+  Equipment via unified `ValueExpr`
 - `LoseLife`: a fixed amount for the controller, the announced opponent,
   or each opponent, and one life per burden counter on the source
 - `Mill`: the controller, the announced player, the player who lost life,
@@ -67,30 +67,30 @@ keep working.
   source remains
 - `Cant`: can't be blocked this turn, and can't untap while you control
   the source
-- `PutOnLibrary`: which card is put on a library, as an `ObjectSelector`
+- `PutOnLibrary`: which card is put on a library via unified `ObjectExpr`
 - `SetBasePT`: a fixed base power and toughness, and another creature's
-  base power and toughness equal to this creature's, as two `NumberSelector`s
-  and an `ObjectSelector`
+  base power and toughness equal to this creature's via unified `ValueExpr`
+  and `ObjectExpr`
 - `Untap`: the announced permanent, the source, the enchanted creature,
   the target while the source remains, and each attacking creature
 - `Modes`: Alliance, Gollum, and chosen up-to-X modes
-- `Chapter`: printed Saga chapters resolved by the other trigger constructors
-- `Count`: `ConditionSelector.atLeast` compares two `NumberSelector`s, including how many objects an `ObjectSelector` names
-- `Step`: upkeep, end-step, and first-main triggers that used to resolve as `step`
-- `Death`: dies triggers that used to resolve as `death`
-- `ThisAttack`: attack triggers that used to resolve as `thisAttack`
-- `EnterOrAttack`: enters-or-attacks triggers that used to resolve as `enterOrAttack`
-- `Watch`: watch triggers that used to resolve as `watch`
-- `YouAttack`: “whenever you attack” triggers that used to resolve as `youAttacking`
-- `Casting`: “whenever you cast …” triggers that used to resolve as `casting`
-- `Resource`: draw, discard, life, and +1/+1-counter triggers that used to resolve as `resource`
+- `Chapter`: printed Saga chapters resolved via unified `Instruction`
+- `Count`: `Condition.cmp` compares two `ValueExpr`s, including how many objects an `ObjectExpr` names
+- `Step`: upkeep, end-step, and first-main triggers
+- `Death`: dies triggers
+- `ThisAttack`: attack triggers
+- `EnterOrAttack`: enters-or-attacks triggers
+- `Watch`: watch triggers
+- `YouAttack`: “whenever you attack” triggers
+- `Casting`: “whenever you cast …” triggers
+- `Resource`: draw, discard, life, and +1/+1-counter triggers
 - `Reflexive`: a reflexive queued now, after the Plan is sacrificed, after a mill, and an attack pump armed for this turn
-- `Pay`: mana, and a sacrificed or discarded object, paid as one `pay`
-- `Sacrifice`: who sacrifices and which permanent, as one `ObjectSelector`
-- `PutCounters`: what is put, as a `CounterSelector`, and who receives it, as an `ObjectSelector`
-- `BecomeArtifact`: who becomes an artifact until end of turn, as an `ObjectSelector`
-- `BecomePrepared`: who becomes prepared, as an `ObjectSelector`
-- `Exile`: which cards are exiled, as an `ObjectSelector`
+- `Pay`: mana, and a sacrificed or discarded object, paid via unified `CostSpec`
+- `Sacrifice`: who sacrifices and which permanent via unified `ObjectExpr`
+- `PutCounters`: what counter is put and who receives it via unified `CounterOp` and `ObjectExpr`
+- `BecomeArtifact`: who becomes an artifact until end of turn via unified `ObjectExpr`
+- `BecomePrepared`: who becomes prepared via unified `ObjectExpr`
+- `Exile`: which cards are exiled via unified `ObjectExpr`
 - `EvalExpr`: Phase 2 pure expression algebra (`Expr`), Stage-4 sub-grammars, live + LKI `EvalExpr`, generalized `TokenSpec`, and `ManaSpec`
 - `CostKeywords`: Phase 4 compositional `CostSpec`, parameterized `KeywordAbility`, CR 122.1b keyword counters, Layer 3 text changes, CR 606.5–6 net loyalty, `StaticAbility.cantBeBlocked`, and compositional `Ward`
 - `ActivatedMana`: Phase 5 unified `ActivatedAbility`, CR 305.6–7 intrinsic basic-land mana & subtype-setting removal, CR 605.1a 4-criteria mana abilities, per-ability Boast/Exhaust/Power-up limits, extended `SpellRiderSpec`, declarative cost reductions, and CR 106.7 Reflecting Pool / Exotic Orchard

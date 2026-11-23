@@ -304,7 +304,8 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
   let gTrigSpec := gCopy1.record (GameEvent.triggerPutOnStack gCopy1.turnNumber trigSpecId
     (gCopy1.snapshot (gCopy1.object! spId)) me
     (spec := {
-      reflexiveResolution := some (.draw (.fixed 2) .you)
+      abilityEffect := some { body := Instruction.drawFixed 2 }
+      isReflexive := true
       fraCauseId := some ⟨71⟩
       fraCauseController := some opp
       fraCausePower := some 4
@@ -397,7 +398,8 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     gCopy1.sneakAttackWhom? copy1Obj.id == some opp &&
     gCopy1.sneakAttackTarget? copy1Obj.id == some (.player opp) &&
     copy1Obj.adventurerCard == some bear &&
-    copyTrigObj.reflexiveResolution == some (.draw (.fixed 2) .you) &&
+    copyTrigObj.abilityEffect == some { body := Instruction.drawFixed 2 } &&
+    copyTrigObj.isReflexive &&
     copyTrigObj.fraCauseId == some ⟨71⟩ &&
     copyTrigObj.fraCauseController == some opp &&
     copyTrigObj.fraCausePower == some 4 &&
@@ -437,7 +439,7 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   --    on `pre` and both trigger.
   let deathWatcherAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .anotherCreatureOrPlaneswalkerYouControlDies
-      { resolution? := some (.gainLife (.fixed 1)), phrase := "You gain 1 life" }
+      { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
   let deathWatcherDef : CardDef :=
     { bear with
       name := "Simultaneous Watcher"
@@ -472,7 +474,7 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   --    creature still sees the death in `pre`.
   let leaveWatcherAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisLeaves
-      { resolution? := some (.gainLife (.fixed 2)), phrase := "You gain 2 life" }
+      { body := Instruction.gainLifeFixed 2, phrase := "You gain 2 life" }
   let phaserDef : CardDef :=
     { bear with
       name := "Phasing Watcher"
@@ -525,8 +527,7 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
   --    `enrageGrantsAdditionalCombat` once per batch, and `thisDealtDamage`
   --    with `.oncePerBatch` sums damage across packets/events in the batch before replicating
   --    `extraTriggerCopies` across distinct abilities.
-  let hulkEnrageAb : TriggeredAbility :=
-    SharedTrigger.watch .hulk |>.toTriggeredAbility
+  let hulkEnrageAb : TriggeredAbility := TriggeredAbility.watchHulk
   let hulkDef : CardDef :=
     { bear with
       name := "Test Hulk"
@@ -548,7 +549,7 @@ triggers from the event log instead of `Status.firedOnceEachTurn`. -/
     gHulkBatch.waitingTriggers[0]!.lastKnownPower == some 3
   let dmgAb1 : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisDealtDamage
-      { resolution? := some (.gainLife (.fixed 1)), phrase := "You gain 1 life" }
+      { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
       (grouping := .oncePerBatch)
   let dmgAb2 : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisDealtDamage
@@ -639,7 +640,7 @@ trigger, and the modified event carries `EventCause.replaced`. -/
   -- 2a. Death replaced by finality counter exile (CR 122.1h / 614.6).
   let diesWatcherAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .thisDies
-      { resolution? := some (.gainLife (.fixed 5)), phrase := "You gain 5 life" }
+      { body := Instruction.gainLifeFixed 5, phrase := "You gain 5 life" }
   let finalityBearDef : CardDef :=
     { bear with
       name := "Finality Bear"
@@ -1318,15 +1319,16 @@ and Arwen + Doc Samson ETB counter replacement. -/
     (gPlEv.player me).citysBlessing &&
     !gPlEv.isNight
   -- ContinuationFrame stack (`g.continuations`): nested frame isolates scratch state and restores outer frame on pop.
-  let gCont0 := (g0.change (.pushContinuationFrame {})).change (.continuation (.notedCountThisWay 7))
-  let gContPushed := (gCont0.change (.pushContinuationFrame {})).change (.continuation (.notedCountThisWay 99))
+  let gCont0 := (g0.change (.pushContinuationFrame {})).change (.bindStepOutcome ⟨0⟩ { chosenNumber := 7, succeeded := true })
+  let gContPushed := (gCont0.change (.pushContinuationFrame {})).change (.bindStepOutcome ⟨0⟩ { chosenNumber := 99, succeeded := true })
+  let readNum (g : Game) : Int := (g.currentStepEnv.find? (·.1 == ⟨0⟩)).map (·.2.chosenNumber) |>.getD 0
   let gContInner :=
-    if gContPushed.notedCountThisWay == 99 then gContPushed.change .popContinuationFrame
-    else (gContPushed.change (.continuation (.notedCountThisWay 0))).change .popContinuationFrame
+    if readNum gContPushed == 99 then gContPushed.change .popContinuationFrame
+    else (gContPushed.change (.bindStepOutcome ⟨0⟩ {})).change .popContinuationFrame
   let contOk :=
-    gCont0.notedCountThisWay == 7 &&
-    gContPushed.notedCountThisWay == 99 &&
-    gContInner.notedCountThisWay == 7 &&
+    readNum gCont0 == 7 &&
+    readNum gContPushed == 99 &&
+    readNum gContInner == 7 &&
     gContInner.continuations.size == gCont0.continuations.size
   layersOk &&
     delayedOk &&
@@ -2591,8 +2593,8 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     gGobStripped.hasSummoningSickness (gGobStripped.object! gobId) &&
     !gPrePhIn.hasSummoningSickness (gPrePhIn.object! preHero.id)
   -- 2. `.creatureYouControlDealtDamage` and `.creatureYouControlTapped` with Layer 2 & Layer 4
-  let dmgWatchAb : TriggeredAbility := SharedTrigger.watch .sheHulkRedirectOnce |>.toTriggeredAbility
-  let tapWatchAb : TriggeredAbility := SharedTrigger.watch .firstTapUntap |>.toTriggeredAbility
+  let dmgWatchAb : TriggeredAbility := TriggeredAbility.watchSheHulkRedirectOnce
+  let tapWatchAb : TriggeredAbility := TriggeredAbility.watchFirstTapUntap
   let watcherDef : CardDef :=
     { name := "Phase9 Damage Tap Watcher"
       manaCost := ManaCost.empty
@@ -3075,7 +3077,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let restBear := (gRestTech0.battlefield.filter (·.name == "Event Bear"))[0]!
   let basicLibId := (gRestTech0.player me).library[0]!
   let gRestMid :=
-    gRestTech0.applyGainLifeSearchBasicPlusOne me #[.player me, .permanent restBear.id] 2
+    gRestTech0.applyEffect me (Effect.gainLifeSearchBasicPlusOne 2) #[.permanent restBear.id, .player me]
   let gRestDone :=
     match gRestMid.answerFraChoice me (.objects #[basicLibId]) with
     | .ok g' => g'
@@ -3179,8 +3181,8 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
     eqAttached[1]!.1.subtypes.contains .equipment &&
     eqAttached[1]!.2.1 == host2.id &&
     eqAttached[1]!.2.2 == some host1.id
-  let abA : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters (Effect.ofTrigger .belladonnaTokenReward)
-  let abB : TriggeredAbility := TriggeredAbility.mkTrigger .stepYourUpkeep (Effect.ofTrigger .belladonnaTokenReward)
+  let abA : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters Effect.triggerBelladonnaTokenReward
+  let abB : TriggeredAbility := TriggeredAbility.mkTrigger .stepYourUpkeep Effect.triggerBelladonnaTokenReward
   let gRes0 := quiet gAb0
   let gRes1 := (gRes0.putTriggeredAbilityOnStack me baseBear abA "enters").resolveTop
   let gRes2 := (gRes1.putTriggeredAbilityOnStack me (gRes1.object! baseBear.id) abB "upkeep").resolveTop

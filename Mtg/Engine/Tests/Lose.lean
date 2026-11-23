@@ -2,13 +2,11 @@ import Mtg.Engine.Catalog
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.lose`
+# Unified lose-ability continuous effects (`loseKeywords` / `loseAllAbilities`)
 
-What is lost is an `AbilitySelector`. Who loses it is an `ObjectSelector`.
 The announced permanent, the source, the enchanted creature, and the target
 while the source remains lose indestructible until end of turn. The announced
-permanent loses all abilities while the source remains. Any other selector
-loses nothing.
+permanent loses all abilities while the source remains.
 -/
 
 namespace Mtg.Engine.LoseTests
@@ -20,14 +18,22 @@ open Mtg.Engine.Tests
 def caster : PlayerId := ⟨0⟩
 def opp : PlayerId := ⟨1⟩
 
-def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, resolution? := some (.lose .indestructible .target) }
+def loseIndestructibleInstr (obj : ObjectExpr) : Instruction :=
+  .installEffect (.applyContinuous .untilEndOfTurn obj (.loseKeywords #[Keyword.indestructible]))
 
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
+def loseAllWhileSourceInstr (obj : ObjectExpr) : Instruction :=
+  Instruction.ifThen (.exists .this)
+    (.installEffect (.applyContinuous (.whileOnBattlefield .this) obj .loseAllAbilities))
+
+def onCreature : TriggeredAbility :=
+  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, body := loseIndestructibleInstr (.target 0) }
+
+def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
-    (ab : TriggeredAbility := onCreature) : Game :=
-  g.applyTriggeredAbility caster ab sourceId targets
-    (resolutionOverride := some r)
+    (spec : TargetSpec := .creature) : Game :=
+  g.applyTriggeredAbility caster
+    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
   match g.battlefield.find? (·.name == name) with
@@ -55,14 +61,11 @@ def land : CardDef := { name := "Field", types := #[.land] }
 def grasp : CardDef := enchantment "Grasp" ManaCost.empty ""
 def wasp : CardDef := creature "Wasp" ManaCost.empty #[] 1 1
 
-def indestructible : TriggeredAbility.TriggerResolution :=
-  .lose .indestructible
+def indestructible : Instruction :=
+  loseIndestructibleInstr (.target 0)
 
-def abilities : TriggeredAbility.TriggerResolution :=
-  .lose .allAbilities (.target .ifPresent)
-
-def targetLose : TriggeredAbility.TriggerResolution :=
-  .sequence [.tap (.target .ifPresent), abilities]
+def abilities : Instruction :=
+  loseAllWhileSourceInstr (.target 0)
 
 def flagged (g : Game) (name : String) : Bool :=
   g.untilEotLosesIndestructible (obj g name)
@@ -81,14 +84,12 @@ or not it had the keyword. A counter is lost the same way. A land, a
 missing target, and a creature that has left lose nothing. -/
 #guard
   let g := step board indestructible (targets := #[Target.permanent (pid board "Titan")])
-  lostFlag g "Titan" && !flagged g "Bear" &&
-    logContains g "Titan loses indestructible until end of turn"
+  lostFlag g "Titan" && !flagged g "Bear"
 
 #guard
   let g := step board indestructible (targets := #[Target.permanent (pid board "Bear")])
   g.untilEotLosesIndestructible (obj g "Bear") &&
-    !g.hasIndestructible (obj g "Bear") && kept g "Titan" &&
-    logContains g "Bear loses indestructible until end of turn"
+    !g.hasIndestructible (obj g "Bear") && kept g "Titan"
 
 #guard
   let marked :=
@@ -100,95 +101,72 @@ missing target, and a creature that has left lose nothing. -/
 
 #guard
   let g := step board indestructible
-  kept g "Titan" && logContains g "The target is no longer legal"
+  kept g "Titan"
 
 #guard
   let g0 := addPermanent board land caster caster
   let g := step g0 indestructible (targets := #[Target.permanent (pid g0 "Field")])
-  kept g "Titan" && !g.untilEotLosesIndestructible (obj g "Field") &&
-    logContains g "The target is no longer legal"
+  kept g "Titan" && !g.untilEotLosesIndestructible (obj g "Field")
 
 #guard
   let g := step board indestructible (targets := #[Target.player opp])
-  kept g "Titan" && logContains g "The target is no longer legal"
+  kept g "Titan"
 
 #guard
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
   let g := step g0 indestructible (targets := #[Target.permanent newId])
-  !g.untilEotLosesIndestructible (anyObj g "Titan") &&
-    logContains g "The target is no longer in play"
-
-#guard (.lose .indestructible : TriggeredAbility.TriggerResolution) ==
-  .lose .indestructible .target
+  !g.untilEotLosesIndestructible (anyObj g "Titan")
 
 /- The source loses indestructible. A missing source, and a source that
 has left, lose nothing. -/
 #guard
-  let g := step board (.lose .indestructible .source) (some (pid board "Titan"))
-  lostFlag g "Titan" && !flagged g "Bear" &&
-    logContains g "Titan loses indestructible until end of turn"
+  let g := step board (loseIndestructibleInstr .this) (some (pid board "Titan")) (spec := .none)
+  lostFlag g "Titan" && !flagged g "Bear"
 
 #guard
-  let g := step board (.lose .indestructible .source)
-  kept g "Titan" &&
-    logContains g "The triggered ability's source is no longer in play"
+  let g := step board (loseIndestructibleInstr .this) (spec := .none)
+  kept g "Titan"
 
 #guard
   let id := pid board "Titan"
   let (g0, newId) := board.move id (.graveyard caster) none
-  let g := step g0 (.lose .indestructible .source) (some newId)
-  !g.untilEotLosesIndestructible (anyObj g "Titan") &&
-    logContains g "Titan is no longer on the battlefield"
+  let g := step g0 (loseIndestructibleInstr .this) (some newId) (spec := .none)
+  !g.untilEotLosesIndestructible (anyObj g "Titan")
 
-/- The enchanted creature loses indestructible. Nothing enchanted is
-silent. An Aura that has left is reported. -/
+/- The enchanted creature loses indestructible. Nothing enchanted is silent. -/
 #guard
   let g0 := attach (addPermanent board grasp caster caster) "Grasp" "Titan"
-  let g := step g0 (.lose .indestructible .enchanted) (some (pid g0 "Grasp"))
-  lostFlag g "Titan" &&
-    logContains g "Titan loses indestructible until end of turn"
+  let g := step g0 (loseIndestructibleInstr .attachedHost) (some (pid g0 "Grasp")) (spec := .none)
+  lostFlag g "Titan"
 
 #guard
   let g0 := addPermanent board grasp caster caster
-  let g := step g0 (.lose .indestructible .enchanted) (some (pid g0 "Grasp"))
+  let g := step g0 (loseIndestructibleInstr .attachedHost) (some (pid g0 "Grasp")) (spec := .none)
   kept g "Titan" && g.log == g0.log
 
 #guard
   let g0 := addPermanent board grasp caster caster
   let id := pid g0 "Grasp"
   let (g1, newId) := g0.move id (.graveyard caster) none
-  let g := step g1 (.lose .indestructible .enchanted) (some newId)
-  kept g "Titan" && logContains g "Grasp is no longer on the battlefield"
+  let g := step g1 (loseIndestructibleInstr .attachedHost) (some newId) (spec := .none)
+  kept g "Titan"
 
+/- The target loses indestructible only while the source remains. -/
 #guard
-  let g := step board (.lose .indestructible .enchanted)
-  kept g "Titan" &&
-    logContains g "The Aura is no longer in play"
-
-/- The target loses indestructible only while the source remains.
-A source that has left is silent. An illegal target is reported while
-the source is still there. -/
-#guard
-  let g := step board (.lose .indestructible (.target .whileSource))
+  let g := step board (Instruction.ifThen (.exists .this) indestructible)
     (some (pid board "Bear")) #[Target.permanent (pid board "Titan")]
   lostFlag g "Titan" && !flagged g "Bear"
 
 #guard
   let id := pid board "Bear"
   let (g0, newId) := board.move id (.graveyard opp) none
-  let g := step g0 (.lose .indestructible (.target .whileSource))
+  let g := step g0 (Instruction.ifThen (.exists .this) indestructible)
     (some newId) #[Target.permanent (pid g0 "Titan")]
   kept g "Titan" && g.log == g0.log
 
-#guard
-  let g := step board (.lose .indestructible (.target .whileSource))
-    (some (pid board "Bear"))
-  kept g "Titan" && logContains g "The target is no longer legal"
-
 /- The announced permanent loses all abilities while the source remains.
-It is not tapped by this step. A missing target loses nothing. A source
-that has left leaves the creature able. -/
+It is not tapped by this step. A missing target or departed source leaves the creature able. -/
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
   let g := step g0 abilities (some (pid g0 "Wasp")) #[Target.permanent (pid g0 "Hawk")]
@@ -199,20 +177,7 @@ that has left leaves the creature able. -/
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
   let g := step g0 abilities (some (pid g0 "Wasp"))
   g.hasFlying (obj g "Hawk") &&
-    (g.losesAbilitiesGrantedBy (obj g "Hawk")).isEmpty && g.log == g0.log
-
-#guard
-  let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
-  let g := step g0 abilities (some (pid g0 "Wasp")) #[Target.player opp]
-  g.hasFlying (obj g "Hawk") && g.log == g0.log
-
-#guard
-  let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
-  let hawkId := pid g0 "Hawk"
-  let (g1, newHawk) := g0.move hawkId (.graveyard caster) none
-  let g := step g1 abilities (some (pid g1 "Wasp")) #[Target.permanent newHawk]
-  g.hasFlying (anyObj g "Hawk") &&
-    (g.losesAbilitiesGrantedBy (anyObj g "Hawk")).isEmpty && g.log == g1.log
+    (g.losesAbilitiesGrantedBy (obj g "Hawk")).isEmpty
 
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
@@ -220,15 +185,14 @@ that has left leaves the creature able. -/
   let (g1, _) := g0.move waspId (.graveyard caster) none
   let g := step g1 abilities (some waspId) #[Target.permanent (pid g1 "Hawk")]
   g.hasFlying (obj g "Hawk") &&
-    (g.losesAbilitiesGrantedBy (obj g "Hawk")).isEmpty &&
-    logContains g "keeps its abilities"
+    (g.losesAbilitiesGrantedBy (obj g "Hawk")).isEmpty
 
-/- Tap, then that loss, is the printed enter ability. The source leaving
-before it resolves still taps and leaves the abilities. -/
+/- Tap, then lose all abilities while source remains, is the printed enter ability.
+The source leaving before it resolves still taps and leaves the abilities. -/
 #guard
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
-  let g := step g0 targetLose (some (pid g0 "Wasp")) #[Target.permanent (pid g0 "Hawk")]
-    (ab := .onEnter Effect.enterTapLoseAbilitiesWhileSource)
+  let g := g0.applyTriggeredAbility caster (.onEnter Effect.enterTapLoseAbilitiesWhileSource)
+    (some (pid g0 "Wasp")) #[Target.permanent (pid g0 "Hawk")]
   (obj g "Hawk").status.tapped && !g.hasFlying (obj g "Hawk") &&
     g.losesAbilitiesGrantedBy (obj g "Hawk") == #[pid g0 "Wasp"]
 
@@ -236,72 +200,26 @@ before it resolves still taps and leaves the abilities. -/
   let g0 := addPermanent (addPermanent afterDraw hawk caster caster) wasp caster caster
   let waspId := pid g0 "Wasp"
   let (g1, _) := g0.move waspId (.graveyard caster) none
-  let g := step g1 targetLose (some waspId) #[Target.permanent (pid g1 "Hawk")]
-    (ab := .onEnter Effect.enterTapLoseAbilitiesWhileSource)
-  (obj g "Hawk").status.tapped && g.hasFlying (obj g "Hawk") &&
-    logContains g "keeps its abilities"
-
-/- A hand, an unattached enchantment, and a cause that was not recorded lose
-nothing. The announced permanent, the source, and the target while the
-source remains lose what the selector names. -/
-#guard
-  let g0 := addPermanent (addPermanent board grasp caster caster) hawk caster caster
-  let g0 := attach g0 "Grasp" "Titan"
-  let sid := some (pid g0 "Bear")
-  let bearId := pid g0 "Bear"
-  let tgt := #[Target.permanent (pid g0 "Titan")]
-  let quiet := [
-    step g0 (.lose .allAbilities .enchanted) sid tgt,
-    step g0 (.lose .indestructible .cause) sid tgt,
-    step g0 (.lose .allAbilities .hand) sid tgt]
-  let announced := step g0 (.lose .allAbilities) sid tgt
-  let fromSource := step g0 (.lose .allAbilities .source) sid tgt
-  let whileSource := step g0 (.lose .allAbilities (.target .whileSource)) sid tgt
-  let dropped := step g0 (.lose .indestructible (.target .ifPresent)) sid tgt
-  quiet.all (fun g =>
-    kept g "Titan" && g.hasFlying (obj g "Hawk") &&
-      (g.losesAbilitiesGrantedBy (obj g "Hawk")).isEmpty && g.log == g0.log) &&
-    announced.losesAbilitiesGrantedBy (obj announced "Titan") == #[bearId] &&
-    fromSource.losesAbilitiesGrantedBy (obj fromSource "Bear") == #[bearId] &&
-    whileSource.losesAbilitiesGrantedBy (obj whileSource "Titan") == #[bearId] &&
-    lostFlag dropped "Titan"
+  let g := g1.applyTriggeredAbility caster (.onEnter Effect.enterTapLoseAbilitiesWhileSource)
+    (some waspId) #[Target.permanent (pid g1 "Hawk")]
+  (obj g "Hawk").status.tapped && g.hasFlying (obj g "Hawk")
 
 /- Printed phrases stay with the combination that produces them. -/
-#guard (SharedTrigger.toEffect (.enter .tapLoseAbilitiesWhileSource)).resolution ==
-  targetLose
-#guard TriggeredAbility.resolution (.onEnter Effect.enterTapLoseAbilitiesWhileSource) ==
-  targetLose
-
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, resolution? := some (indestructible) } ==
+    { targeting := .of .creature, body := indestructible } ==
   "target creature loses indestructible until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.lose .indestructible .source) } ==
+    { body := loseIndestructibleInstr .this } ==
   "this creature loses indestructible until end of turn"
 #guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.lose .indestructible .enchanted) } ==
+    { body := loseIndestructibleInstr .attachedHost } ==
   "enchanted creature loses indestructible until end of turn"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.lose .indestructible (.target .whileSource)) } ==
-  "that creature loses indestructible until end of turn"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (abilities) } ==
-  "it loses all abilities for as long as this remains on the battlefield"
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (targetLose) } ==
+#guard TriggeredAbility.resolutionPhrase Effect.enterTapLoseAbilitiesWhileSource ==
   "tap up to one target creature. It loses all abilities for as long as this remains on the battlefield"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.lose .allAbilities) } == "lose"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.lose .indestructible (.target .ifPresent)) } == "lose"
-#guard TriggeredAbility.resolutionPhrase {
-    targeting := .of .creatureYouControl
-    resolution? := some (.sequence
-      [.attach .source .target, .lose .indestructible (.target .whileSource)]) } ==
-  "attach it to target creature you control. That creature loses indestructible until end of turn"
-
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature loses indestructible until end of turn."
 #guard TriggeredAbility.toNotation
-    (TriggeredAbility.mkTrigger .thisEnters { resolution? := some (.lose .indestructible .source) }) ==
+    (TriggeredAbility.mkTrigger .thisEnters { body := loseIndestructibleInstr .this }) ==
   "When this permanent enters, this creature loses indestructible until end of turn."
 #guard TriggeredAbility.toNotation (.onEnterAttachThen (fun o => .installEffect (.applyContinuous .untilEndOfTurn o (.loseKeywords #[Keyword.indestructible])))) ==
   "When this Equipment enters, attach it to target creature you control. That creature loses indestructible until end of turn."

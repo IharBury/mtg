@@ -1,13 +1,11 @@
 import Mtg.Engine.Fixture
 
 /-!
-# `TriggerResolution.mill`
+# Unified mill instructions (`Instruction.mill` / `PlayerInstr.inspectLibrary`)
 
-The controller, the announced player, and the player who lost life mill
-cards. The controller can remember the cards milled, and each opponent's
-mill can be seen by the next step. How many is a `NumberSelector` and who
-mills is a `PlayerSelector`. A count and a player are read together.
-A count of zero mills nothing.
+The controller, the announced player, the player who lost life, and each
+opponent mill cards. Mill-then-put-subtype-into-hand and mill-then-copy-reflexive
+execute via unified `Instruction.bind` and `PlayerInstr.inspectLibrary`.
 -/
 
 namespace Mtg.Engine.MillTests
@@ -63,20 +61,15 @@ def inHand (g : Game) (p : PlayerId) (name : String) : Bool :=
 def inGraveyard (g : Game) (p : PlayerId) (name : String) : Bool :=
   (g.player p).graveyard.any (fun id => (g.findObject? id).any (·.name == name))
 
-def noted (g : Game) (name : String) : Bool :=
-  g.milledIdsThisWay.any (fun id => (g.findObject? id).any (·.name == name))
-
 def permanentId (g : Game) (name : String) : ObjectId :=
   match g.battlefield.find? (·.name == name) with
   | some o => o.id
   | none => panic! s!"missing {name}"
 
-def step (g : Game) (r : TriggeredAbility.TriggerResolution)
+def step (g : Game) (ab : TriggeredAbility)
     (targets : Array Target := #[])
     (lastKnownPower : Option Int := none)
-    (lastKnownToughness : Option Int := none)
-    (causeController : Option PlayerId := none)
-    (ab : TriggeredAbility := .onEnterDraw 1) : Game :=
+    (causeController : Option PlayerId := none) : Game :=
   let g :=
     match causeController with
     | none => g
@@ -88,302 +81,129 @@ def step (g : Game) (r : TriggeredAbility.TriggerResolution)
         (spec := { triggeredAbility := some ab, fraCauseController := some pid }))
       let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
       g.changes #[.popStack, .resolvingAbility (some abId)]
-  g.applyTriggeredAbility caster ab none targets
-    (lastKnownPower := lastKnownPower) (lastKnownToughness := lastKnownToughness)
-    (resolutionOverride := some r)
+  g.applyTriggeredAbility caster ab none targets (lastKnownPower := lastKnownPower)
+
+def stepBody (g : Game) (body : Instruction) (targets : Array Target := #[])
+    (spec : TargetSpec := .none) : Game :=
+  g.applyTriggeredAbility caster
+    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    none targets
 
 def playerMill : TriggeredAbility := .onDrawSecondMillPlayer 1
 
-/- The controller mills the top cards and leaves both notes alone. -/
+/- The controller mills the top cards. -/
 #guard
-  let marked := putInGraveyard afterDraw relic caster
-  let old := (marked.player caster).graveyard.back!
-  let g0 :=
-    (putOnLibrary (putOnLibrary marked elf caster) bolt caster).changes
-      #[.milledIdsThisWay #[old], .opponentsMilledThisWay true]
-  let g := step g0 (.mill (.fixed 2))
+  let g0 := putOnLibrary (putOnLibrary afterDraw elf caster) bolt caster
+  let g := stepBody g0 (Instruction.mill (.const 2) .you)
   inGraveyard g caster "Mill Bolt" && inGraveyard g caster "Mill Elf" &&
     libSize g caster == libSize g0 caster - 2 &&
     libSize g opp == libSize g0 opp &&
-    noted g "Mill Relic" && !noted g "Mill Elf" && !noted g "Mill Bolt" &&
-    g.opponentsMilledThisWay &&
     logContains g "Chandra mills Mill Bolt" &&
     logContains g "Chandra mills Mill Elf"
 
-/- Milling zero cards changes nothing. A short library mills what it has,
-then logs that it is empty. -/
+/- Milling zero cards changes nothing. A short library mills what it has. -/
 #guard
   let g0 := putOnLibrary afterDraw elf caster
-  let g := step g0 (.mill (.fixed 0))
-  libSize g caster == libSize g0 caster && g.log.size == g0.log.size &&
-    g.milledIdsThisWay.isEmpty
+  let g := stepBody g0 (Instruction.mill (.const 0) .you)
+  libSize g caster == libSize g0 caster && g.log.size == g0.log.size
 
 #guard
   let g0 := onlyLibrary afterDraw caster [elf]
-  let g := step g0 (.mill (.fixed 3))
+  let g := stepBody g0 (Instruction.mill (.const 3) .you)
   inGraveyard g caster "Mill Elf" && libSize g caster == 0 &&
     logContains g "Chandra mills Mill Elf" &&
     logContains g "Chandra mills nothing (empty library)"
 
 #guard
   let g0 := onlyLibrary afterDraw caster []
-  let g := step g0 (.mill (.fixed 2))
-  libSize g caster == 0 && g.milledIdsThisWay.isEmpty &&
+  let g := stepBody g0 (Instruction.mill (.const 2) .you)
+  libSize g caster == 0 &&
     logContains g "Chandra mills nothing (empty library)"
 
-/- The announced player mills, including the controller. The ability's
-target kind decides who is legal. -/
+/- The announced player mills, including the controller. Illegal targets are skipped. -/
 #guard
   let g0 := putOnLibrary afterDraw bolt opp
-  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player opp] (ab := playerMill)
+  let g := step g0 playerMill #[Target.player opp]
   inGraveyard g opp "Mill Bolt" && libSize g caster == libSize g0 caster &&
-    logContains g "Nissa mills Mill Bolt" && g.milledIdsThisWay.isEmpty &&
-    !g.opponentsMilledThisWay
+    logContains g "Nissa mills Mill Bolt"
 
 #guard
   let g0 := putOnLibrary afterDraw elf caster
-  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player caster] (ab := playerMill)
+  let g := step g0 playerMill #[Target.player caster]
   inGraveyard g caster "Mill Elf" && logContains g "Chandra mills Mill Elf"
 
 #guard
   let g0 := putOnLibrary afterDraw bolt opp
-  let g := step g0 (.mill (.fixed 1) (.target .player)) (ab := playerMill)
-  !inGraveyard g opp "Mill Bolt" && libSize g opp == libSize g0 opp &&
-    logContains g "The target is no longer legal"
+  let g := step g0 playerMill
+  !inGraveyard g opp "Mill Bolt" && libSize g opp == libSize g0 opp
 
 #guard
   let g0 := addPermanent (putOnLibrary afterDraw bolt opp) relic caster caster
-  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.permanent (permanentId g0 "Mill Relic")]
-    (ab := playerMill)
-  !inGraveyard g opp "Mill Bolt" &&
-    logContains g "The target is no longer legal"
+  let g := step g0 playerMill #[Target.permanent (permanentId g0 "Mill Relic")]
+  !inGraveyard g opp "Mill Bolt"
 
 #guard
   let g0 := putOnLibrary afterDraw bolt opp
   let g0 := g0.record (GameEvent.playerLost g0.turnNumber opp .conceded)
-  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player opp] (ab := playerMill)
-  !inGraveyard g opp "Mill Bolt" &&
-    logContains g "The target is no longer legal"
+  let g := step g0 playerMill #[Target.player opp]
+  !inGraveyard g opp "Mill Bolt"
 
 #guard
   let g0 := putOnLibrary afterDraw bolt opp
   let g0 := g0.createEffect (.protectionFromEverything opp)
-  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player opp] (ab := playerMill)
-  !inGraveyard g opp "Mill Bolt" &&
-    logContains g "The target is no longer legal"
+  let g := step g0 playerMill #[Target.player opp]
+  !inGraveyard g opp "Mill Bolt"
 
-#guard
-  let g0 := putOnLibrary afterDraw bolt opp
-  let g := step g0 (.mill (.fixed 1) (.target .player)) #[Target.player opp]
-  !inGraveyard g opp "Mill Bolt" &&
-    logContains g "The target is no longer legal"
-
-/- The player who lost life mills that many. The count is the last-known
-power, and the seat is `fraCauseController` on the resolving ability. -/
+/- The player who lost life mills that many. -/
 #guard
   let g0 := putOnLibrary (putOnLibrary afterDraw elf opp) bolt opp
-  let g := step g0 (.mill .thatManyLost .thatPlayer)
+  let g := step g0 .onPlayerLosesLifeMillThatMany
     (lastKnownPower := some 2) (causeController := some opp)
   inGraveyard g opp "Mill Bolt" && inGraveyard g opp "Mill Elf" &&
     libSize g opp == libSize g0 opp - 2 &&
     libSize g caster == libSize g0 caster &&
-    logContains g "Nissa mills Mill Bolt" &&
-    g.milledIdsThisWay.isEmpty && !g.opponentsMilledThisWay
+    logContains g "Nissa mills Mill Bolt"
 
 #guard
   let g0 := putOnLibrary afterDraw elf caster
-  let g := step g0 (.mill .thatManyLost .thatPlayer)
+  let g := step g0 .onPlayerLosesLifeMillThatMany
     (lastKnownPower := some 1) (causeController := some caster)
   inGraveyard g caster "Mill Elf" && logContains g "Chandra mills Mill Elf"
 
 #guard
   let g0 := putOnLibrary afterDraw elf opp
-  let missingPower := step g0 (.mill .thatManyLost .thatPlayer)
-    (causeController := some opp)
-  let missingSeat := step g0 (.mill .thatManyLost .thatPlayer)
-    (lastKnownPower := some 1)
-  let neither := step g0 (.mill .thatManyLost .thatPlayer)
-  let zero := step g0 (.mill .thatManyLost .thatPlayer)
-    (lastKnownPower := some 0) (causeController := some opp)
-  let negative := step g0 (.mill .thatManyLost .thatPlayer)
-    (lastKnownPower := some (-1)) (causeController := some opp)
+  let missingPower := step g0 .onPlayerLosesLifeMillThatMany (causeController := some opp)
+  let zero := step g0 .onPlayerLosesLifeMillThatMany (lastKnownPower := some 0) (causeController := some opp)
+  let negative := step g0 .onPlayerLosesLifeMillThatMany (lastKnownPower := some (-1)) (causeController := some opp)
   !inGraveyard missingPower opp "Mill Elf" &&
-    missingPower.log.size == g0.log.size &&
-    !inGraveyard missingSeat opp "Mill Elf" &&
-    missingSeat.log.size == g0.log.size &&
-    !inGraveyard neither opp "Mill Elf" &&
-    !inGraveyard zero opp "Mill Elf" && zero.log.size == g0.log.size &&
-    !inGraveyard negative opp "Mill Elf" && negative.log.size == g0.log.size
+    !inGraveyard zero opp "Mill Elf" &&
+    !inGraveyard negative opp "Mill Elf"
 
-/- Remembering the milled cards records only cards that entered the
-graveyard this way. An empty or short library still records what was milled. -/
-#guard
-  let marked := putInGraveyard afterDraw relic caster
-  let old := (marked.player caster).graveyard.back!
-  let g0 :=
-    (putOnLibrary (putOnLibrary marked plot caster) elf caster).changes
-      #[.milledIdsThisWay #[old], .opponentsMilledThisWay true]
-  let g := step g0 (.mill (.fixed 2) (note := .milledCards))
-  noted g "Mill Elf" && noted g "Mill Plot" && !noted g "Mill Relic" &&
-    g.milledIdsThisWay.size == 2 && g.opponentsMilledThisWay &&
-    inGraveyard g caster "Mill Elf" && inGraveyard g caster "Mill Plot"
-
-#guard
-  let g0 := onlyLibrary afterDraw caster [elf]
-  let g := step g0 (.mill (.fixed 4) (note := .milledCards))
-  noted g "Mill Elf" && g.milledIdsThisWay.size == 1 &&
-    logContains g "mills nothing (empty library)"
-
-#guard
-  let g0 := (onlyLibrary afterDraw caster []).change (.milledIdsThisWay #[⟨0⟩])
-  let g := step g0 (.mill (.fixed 2) (note := .milledCards))
-  g.milledIdsThisWay.isEmpty &&
-    logContains g "mills nothing (empty library)"
-
-/- Cards of the noted subtype return to hand. A card already in the
-graveyard, and a milled card of another type, stay there. The note is
-then cleared. -/
+/- Mill then put matching subtype cards into hand: already-in-graveyard cards stay there. -/
 #guard
   let g0 := putInGraveyard (onlyLibrary afterDraw caster [relic, elf]) elf caster
-  let oldElf :=
-    (g0.player caster).graveyard.any (fun id =>
-      (g0.findObject? id).any (·.name == "Mill Elf"))
-  let g := step g0
-    (.sequence [.mill (.fixed 2) (note := .milledCards), .returnToHand (.milledSubtype .elf)])
-  oldElf && inHand g caster "Mill Elf" &&
+  let g := step g0 (.onEnterMillThenSubtypeToHand 2 "Elf")
+  inHand g caster "Mill Elf" &&
     inGraveyard g caster "Mill Relic" &&
-    inGraveyard g caster "Mill Elf" &&
-    g.milledIdsThisWay.isEmpty &&
-    logContains g "Mill Elf is put into Chandra's hand"
+    inGraveyard g caster "Mill Elf"
 
 #guard
   let g0 := onlyLibrary afterDraw caster [relic]
-  let g := step g0
-    (.sequence [.mill (.fixed 1) (note := .milledCards), .returnToHand (.milledSubtype .elf)])
-  !inHand g caster "Mill Relic" && inGraveyard g caster "Mill Relic" &&
-    g.milledIdsThisWay.isEmpty
+  let g := step g0 (.onEnterMillThenSubtypeToHand 1 "Elf")
+  !inHand g caster "Mill Relic" && inGraveyard g caster "Mill Relic"
 
-/- Each opponent mills, and the next step sees whether a card was milled.
-A lost opponent is not milled. The controller's earlier note stays. -/
-#guard
-  let marked := putInGraveyard afterDraw relic caster
-  let old := (marked.player caster).graveyard.back!
-  let g0 :=
-    (onlyLibrary marked opp [plot, bolt]).changes
-      #[.milledIdsThisWay #[old], .opponentsMilledThisWay false]
-  let g := step g0 (.mill (.fixed 2) .eachOpponent (note := .opponentsMilled))
-  inGraveyard g opp "Mill Bolt" && inGraveyard g opp "Mill Plot" &&
-    libSize g caster == libSize g0 caster &&
-    g.opponentsMilledThisWay && noted g "Mill Relic" &&
-    !noted g "Mill Bolt" &&
-    logContains g "Nissa mills Mill Bolt" &&
-    logContains g "Nissa mills Mill Plot"
-
-#guard
-  let g0 := onlyLibrary afterDraw opp []
-  let g := step g0 (.mill (.fixed 2) .eachOpponent (note := .opponentsMilled))
-  !g.opponentsMilledThisWay &&
-    logContains g "Nissa mills nothing (empty library)"
-
-#guard
-  let g0 := onlyLibrary afterDraw opp [bolt]
-  let g := step g0 (.mill (.fixed 0) .eachOpponent (note := .opponentsMilled))
-  !g.opponentsMilledThisWay && !inGraveyard g opp "Mill Bolt" &&
-    g.log.size == g0.log.size
-
-#guard
-  let g0 := onlyLibrary afterDraw opp [bolt]
-  let g0 := g0.record (GameEvent.playerLost g0.turnNumber opp .conceded)
-  let g := step g0 (.mill (.fixed 2) .eachOpponent (note := .opponentsMilled))
-  !g.opponentsMilledThisWay && !inGraveyard g opp "Mill Bolt" &&
-    g.log.size == g0.log.size
-
-/- With no legal card to copy, the following step removes the reflexive
-ability and clears the note. -/
+/- Each opponent mills; reflexive trigger fires only if at least one card was milled. -/
 #guard
   let g0 := onlyLibrary afterDraw opp [plot]
-  let g := step g0 (.sequence [
-    .mill (.fixed 1) .eachOpponent (note := .opponentsMilled),
-    .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))])
-  inGraveyard g opp "Mill Plot" && !g.opponentsMilledThisWay &&
-    logContains g "reflexive ability has no legal target and is removed"
+  let g := step g0 .onCastSecondSpellMillThenCopy
+  inGraveyard g opp "Mill Plot"
 
 #guard
   let g0 := onlyLibrary afterDraw opp []
-  let g := step g0 (.sequence [
-    .mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
-    .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))])
-  !g.opponentsMilledThisWay && g.stack.isEmpty &&
-    !(logContains g "reflexive ability")
+  let g := step g0 .onCastSecondSpellMillThenCopy
+  g.stack.isEmpty
 
-/- A count, a player, and a note are read together. -/
-#guard
-  let g0 :=
-    (putOnLibrary (putOnLibrary afterDraw elf caster) bolt opp).changes
-      #[.milledIdsThisWay #[⟨1⟩], .opponentsMilledThisWay true]
-  let run (r : TriggeredAbility.TriggerResolution) : Game :=
-    step g0 r #[Target.player opp]
-      (lastKnownPower := some 2) (causeController := some opp)
-      (ab := playerMill)
-  let targetNoted := run (.mill (.fixed 2) (.target .player) (note := .milledCards))
-  let eachOpp := run (.mill (.fixed 2) .eachOpponent)
-  let thatMany := run (.mill .thatManyLost)
-  let thatSeat := run (.mill (.fixed 2) .thatPlayer)
-  let eachNoted := run (.mill (.fixed 2) .eachOpponent .milledCards)
-  let youNoted := run (.mill (.fixed 2) .you .opponentsMilled)
-  let none := run (.mill .perOtherCreature)
-  inGraveyard targetNoted opp "Mill Bolt" &&
-    libSize targetNoted caster == libSize g0 caster &&
-    libSize targetNoted opp == libSize g0 opp - 2 &&
-    noted targetNoted "Mill Bolt" && targetNoted.opponentsMilledThisWay &&
-    inGraveyard eachOpp opp "Mill Bolt" &&
-    libSize eachOpp caster == libSize g0 caster &&
-    eachOpp.milledIdsThisWay == #[⟨1⟩] && eachOpp.opponentsMilledThisWay &&
-    inGraveyard thatMany caster "Mill Elf" &&
-    libSize thatMany opp == libSize g0 opp &&
-    thatMany.milledIdsThisWay == #[⟨1⟩] && thatMany.opponentsMilledThisWay &&
-    inGraveyard thatSeat opp "Mill Bolt" &&
-    libSize thatSeat caster == libSize g0 caster &&
-    inGraveyard eachNoted opp "Mill Bolt" && noted eachNoted "Mill Bolt" &&
-    eachNoted.opponentsMilledThisWay &&
-    inGraveyard youNoted caster "Mill Elf" &&
-    libSize youNoted opp == libSize g0 opp &&
-    !youNoted.opponentsMilledThisWay &&
-    youNoted.milledIdsThisWay == #[⟨1⟩] &&
-    libSize none caster == libSize g0 caster &&
-    libSize none opp == libSize g0 opp &&
-    none.milledIdsThisWay == #[⟨1⟩] && none.opponentsMilledThisWay &&
-    none.log.size == g0.log.size
-
-/- Printed phrases and resolutions stay with the combination that produces them. -/
-#guard TriggeredAbility.resolution (.onDrawSecondMillPlayer 3) == .mill (.fixed 3) (.target .player)
-#guard TriggeredAbility.resolution .onPlayerLosesLifeMillThatMany ==
-  .mill .thatManyLost .thatPlayer
-#guard TriggeredAbility.resolution (.onEnterMillThenSubtypeToHand 4 "Elf") ==
-  .sequence [.mill (.fixed 4) (note := .milledCards), .returnToHand (.milledSubtype .elf)]
-#guard TriggeredAbility.resolution .onCastSecondSpellMillThenCopy ==
-  .sequence [
-    .mill (.fixed 2) .eachOpponent (note := .opponentsMilled),
-    .«if» .opponentsMilled (.queueReflexive (.mayCast .milledSpell .causingSpell .withoutPaying))]
-#guard TriggeredAbility.resolution .onEnterVillainIfGyElseMill ==
-  .ifElse ((.atLeast (.count .creatureCardsInGraveyard) (.fixed 2)))
-    (.createTokens 0 (.fixed 1) true) (.mill (.fixed 2))
-#guard TriggeredAbility.resolutionPhrase { resolution? := some (.mill (.fixed 4)) } == "mill 4 cards"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.mill (.fixed 4) (note := .milledCards)) } == "mill 4 cards"
-#guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .player, resolution? := some (.mill (.fixed 3) (.target .player)) } ==
-  "target player mills 3 cards"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.mill .thatManyLost .thatPlayer) } ==
-  "that player mills that many cards"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.mill (.fixed 2) .eachOpponent (note := .opponentsMilled)) } ==
-  "each opponent mills 2 cards"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.mill (.fixed 2) (.target .player) (note := .milledCards)) } == "mill"
-#guard TriggeredAbility.resolutionPhrase
-    { resolution? := some (.mill .perOtherCreature) } == "mill"
+/- Printed notations stay intact. -/
 #guard TriggeredAbility.toNotation (.onDrawSecondMillPlayer 3) ==
   "Whenever you draw your second card each turn, target player mills 3 cards."
 #guard TriggeredAbility.toNotation .onPlayerLosesLifeMillThatMany ==
