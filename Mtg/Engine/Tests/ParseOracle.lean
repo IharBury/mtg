@@ -38,19 +38,19 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard parseManaCost "{G/U}" == some (ManaCost.ofHybrid .green .blue)
 #guard (parseTypeLine "Legendary Creature — Dwarf Scout").toOption ==
   some (#[.legendary], #[.creature], #["Dwarf", "Scout"])
-#guard parsePT "2/2" == some ({ number := some 2 }, { number := some 2 })
-#guard parsePT "2/3" == some ({ number := some 2 }, { number := some 3 })
-#guard parsePT "-1/-1" == some ({ number := some (-1) }, { number := some (-1) })
-#guard parsePT "*/*" == some ({ star := true }, { star := true })
-#guard parsePT "1/*" == some ({ number := some 1 }, { star := true })
-#guard parsePT "*/3" == some ({ star := true }, { number := some 3 })
-#guard parsePT "*/4" == some ({ star := true }, { number := some 4 })
-#guard parsePT "1+*/1+*" == some ({ number := some 1, star := true }, { number := some 1, star := true })
+#guard parsePT "2/2" == some (.fixed 2, .fixed 2)
+#guard parsePT "2/3" == some (.fixed 2, .fixed 3)
+#guard parsePT "-1/-1" == some (.fixed (-1), .fixed (-1))
+#guard parsePT "*/*" == some (.star 0, .star 0)
+#guard parsePT "1/*" == some (.fixed 1, .star 0)
+#guard parsePT "*/3" == some (.star 0, .fixed 3)
+#guard parsePT "*/4" == some (.star 0, .fixed 4)
+#guard parsePT "1+*/1+*" == some (.star 1, .star 1)
 #guard parsePT "*+1/*+1" == parsePT "1+*/1+*"
 #guard parsePT "1 + */1 + *" == parsePT "1+*/1+*"
-#guard parsePT "*/1+*" == some ({ star := true }, { number := some 1, star := true })
-#guard parsePT "2+*/2+*" == some ({ number := some 2, star := true }, { number := some 2, star := true })
-#guard parsePT "*-1/*-1" == some ({ number := some (-1), star := true }, { number := some (-1), star := true })
+#guard parsePT "*/1+*" == some (.star 0, .star 1)
+#guard parsePT "2+*/2+*" == some (.star 2, .star 2)
+#guard parsePT "*-1/*-1" == some (.star (-1), .star (-1))
 #guard (parsePT "1+*/1+*").map (fun (p, t) => (p.undetermined, t.undetermined)) == some (1, 1)
 #guard (parsePT "*/*").map (fun (p, t) => (p.undetermined, t.undetermined)) == some (0, 0)
 #guard parsePT "+1/+1" == none
@@ -60,7 +60,7 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard parsePT "*1/*1" == none
 #guard (parseOracleCard "Grizzly Bears\n{1}{G}\nCreature — Bear\n2/2").toOption.map
     (fun c => c.name == "Grizzly Bears" && c.manaCost == ManaCost.ofGenericAndColor 1 .green &&
-      c.power == some 2 && c.toughness == some 2 && !c.powerStar && !c.toughnessStar &&
+      c.power == some (.fixed 2) && c.toughness == some (.fixed 2) &&
       c.isCreature && c.modellingError?.isNone) == some true
 
 -- A line the engine does not recognize is rejected, including when the caller
@@ -78,7 +78,7 @@ def normLineAgrees (cardName line : String) : Bool :=
   let bogus : CardDef := {
     name := "Bogus"
     types := #[.instant]
-    spellEffect := some { body := .noop }
+    spellAbility := some { effect := { body := .noop } }
   }
   match bogus.modellingError? with
   | some e => e.contains "not fully modelled"
@@ -88,33 +88,33 @@ def normLineAgrees (cardName line : String) : Bool :=
 -- Jarkeld is `1+*`. With no chosen player, the star is 0, so the card is 1/1.
 -- `*+1` is that same printed value. A bare star is 0.
 #guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n1+*/1+*\nVigilance").toOption.map
-    (fun c => c.power == some 1 && c.toughness == some 1 && c.powerStar && c.toughnessStar &&
-      c.power.getD 0 == 1 && c.toughness.getD 0 == 1 && c.ptString == "1+*/1+*" &&
+    (fun c => c.power == some (.star 1) && c.toughness == some (.star 1) &&
+      c.powerValue == some 1 && c.toughnessValue == some 1 && c.ptString == "1+*/1+*" &&
       KeywordAbility.hasVigilance c.keywords && c.hasSubtype .human && c.hasSubtype .knight) == some true
 #guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n*+1/*+1").toOption.map
-    (fun c => c.power == some 1 && c.toughness == some 1 && c.powerStar && c.toughnessStar &&
+    (fun c => c.power == some (.star 1) && c.toughness == some (.star 1) &&
       c.ptString == "1+*/1+*") == some true
 #guard (parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n1 + * / 1 + *").toOption.map
-    (fun c => c.ptString == "1+*/1+*" && c.power.getD 0 == 1) == some true
+    (fun c => c.ptString == "1+*/1+*" && c.powerValue == some 1) == some true
 #guard
   match parseOracleCard "Lost Order of Jarkeld\n{3}{W}{U}\nCreature — Human Knight\n1+*/1+*\nVigilance" with
   | .ok c =>
     match parseOracleCard (renderFullOracle c) with
-    | .ok d => d.power == some 1 && d.toughness == some 1 && d.powerStar && d.toughnessStar &&
+    | .ok d => d == c && d.power == some (.star 1) && d.toughness == some (.star 1) &&
         d.ptString == "1+*/1+*" && KeywordAbility.hasVigilance d.keywords
     | .error _ => false
   | .error _ => false
 #guard (parseOracleCard "Tarmogoyf\n{1}{G}\nCreature — Lhurgoyf\n*/1+*").toOption.map
-    (fun c => c.power.isNone && c.powerStar && c.toughness == some 1 && c.toughnessStar &&
-      c.power.getD 0 == 0 && c.toughness.getD 0 == 1 && c.ptString == "*/1+*") == some true
+    (fun c => c.power == some (.star 0) && c.toughness == some (.star 1) &&
+      c.powerValue == some 0 && c.toughnessValue == some 1 && c.ptString == "*/1+*") == some true
 #guard (parseOracleCard "Angry Mob\n{2}{W}{W}\nCreature — Human\n2+*/2+*").toOption.map
-    (fun c => c.power == some 2 && c.toughness == some 2 && c.powerStar && c.toughnessStar &&
-      c.power.getD 0 == 2 && c.ptString == "2+*/2+*") == some true
+    (fun c => c.power == some (.star 2) && c.toughness == some (.star 2) &&
+      c.powerValue == some 2 && c.ptString == "2+*/2+*") == some true
 #guard (parseOracleCard "Maro\n{2}{G}{G}\nCreature — Elemental\n*/*").toOption.map
-    (fun c => c.power.isNone && c.toughness.isNone && c.powerStar && c.toughnessStar &&
-      c.power.getD 0 == 0 && c.toughness.getD 0 == 0 && c.ptString == "*/*") == some true
+    (fun c => c.power == some (.star 0) && c.toughness == some (.star 0) &&
+      c.powerValue == some 0 && c.toughnessValue == some 0 && c.ptString == "*/*") == some true
 #guard (parseOracleCard "Namor the Sub-Mariner\n{1}{U}{U}\nLegendary Creature — Mutant Merfolk Villain\n*/4\nFlying").toOption.map
-    (fun c => c.power.isNone && c.powerStar && c.toughness == some 4 && !c.toughnessStar &&
+    (fun c => c.power == some (.star 0) && c.toughness == some (.fixed 4) &&
       c.ptString == "*/4" && KeywordAbility.hasFlying c.keywords) == some true
 #guard (parseOracleCard "Mountain\nBasic Land — Mountain\n({T}: Add {R}.)").toOption.map
     (fun c => c.isLand && c.hasSupertype .basic && c.hasSubtype .mountain &&
@@ -315,7 +315,7 @@ def normLineAgrees (cardName line : String) : Bool :=
   | .ok c =>
     c.defense == some 4 && KeywordAbility.hasFlying c.keywords &&
     match c.otherFace with
-    | some back => back.isCreature && back.power == some 4 && back.toughness == some 4 &&
+    | some back => back.isCreature && back.power == some (.fixed 4) && back.toughness == some (.fixed 4) &&
         back.defense.isNone && back.loyalty.isNone
     | none => false
   | .error _ => false
@@ -450,7 +450,7 @@ def normLineAgrees (cardName line : String) : Bool :=
       c.typeLine == "Basic Snow Land — Island") == some true
 #guard (parseOracleCard "Glacier\n{1}{U}\nSnow Creature — Elemental\n1/1").toOption.map
     (fun c => c.hasSupertype .snow && c.hasSubtype .elemental &&
-      c.power == some 1 && c.toughness == some 1) == some true
+      c.power == some (.fixed 1) && c.toughness == some (.fixed 1)) == some true
 #guard (parseOracleCard "The Abyss\nWorld Enchantment").toOption.map
     (fun c => c.hasSupertype .world && c.isEnchantment && c.subtypes.isEmpty) == some true
 #guard (parseOracleCard "Urza's Ruinous Blast\n{4}{W}{W}\nLegendary Sorcery").toOption.map
@@ -571,7 +571,7 @@ private def towashiChaosAbility : String :=
 #guard
   match parseOracleCard s!"Towashi\nPlane — Kamigawa\nMenace\n\{CHAOS} {towashiChaosAbility}",
         parseOracleCard s!"Towashi\nPlane — Kamigawa\nMenace\n{towashiChaosAbility}" with
-  | .ok a, .ok b => reprStr a == reprStr b
+  | .ok a, .ok b => a == b
   | .error a, .error b => a == b
   | _, _ => false
 #guard (parseOracleCard "Towashi\nPlane — Kamigawa\n{CHAOS} Menace").toOption.map
@@ -638,7 +638,7 @@ private def roundTripsOracleCard (raw : String) : Bool :=
   match parseOracleCard raw with
   | .ok c =>
     match parseOracleCard (renderFullOracle c) with
-    | .ok d => reprStr d == reprStr c
+    | .ok d => d == c
     | .error _ => false
   | .error _ => false
 
@@ -930,7 +930,7 @@ private def roundTripsOracleCard (raw : String) : Bool :=
         ab.activeZones == #[.stack] &&
         ab.effect.body == Instruction.drawFixed 1 &&
         match parseOracleCard (renderFullOracle c) with
-        | .ok c2 => reprStr c2.triggeredAbilities == reprStr c.triggeredAbilities
+        | .ok c2 => c2 == c
         | .error _ => false
     | _ => false
   | .error _ => false
@@ -1039,5 +1039,89 @@ private def roundTripsOracleCard (raw : String) : Bool :=
         ms.altCountIf?.isSome && ms.modes.size == 2
     | .error _ => false
   empowerOk && bothOk && teamworkOk && subtypeOk
+
+-- Phase 10: Slim 21-field `CardDef`, `PrintedStat` (CR 208.1-2), `DeckLimit` (CR 100.2a),
+-- unified `SubFace` (CR 715 Adventure / Prepare), `SpellAbility` functorial `HasTextChange`,
+-- structural `BEq CardDef`, pure `Effect.targetPreference`, and canonical `ToOracle` regressions.
+#guard
+  let statOk :=
+    PrintedStat.fixed 3 != PrintedStat.star 3 &&
+    (PrintedStat.star 0).undeterminedValue == 0 &&
+    (PrintedStat.star 1).undeterminedValue == 1 &&
+    (PrintedStat.star 0).toOracleStr == "*" &&
+    (PrintedStat.star 2).toOracleStr == "2+*" &&
+    (PrintedStat.fixed (-1)).toOracleStr == "-1"
+  let deckOk :=
+    DeckLimit.unlimited.toOracleLine "Nazgûl" ==
+      "A deck can have any number of cards named Nazgûl." &&
+    (DeckLimit.maxCopies 9).toOracleLine "Nazgûl" ==
+      "A deck can have up to 9 cards named Nazgûl."
+  let sa : SpellAbility := {
+    effect := Effect.draw 1
+    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric .goblin 2)]
+  }
+  let saTc := HasTextChange.applyTextChanges #[.replaceCreatureType .goblin .elf] sa
+  let saOk :=
+    saTc.additionalCosts == #[AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric .elf 2)] &&
+    saTc != sa
+  let prefOk :=
+    (Effect.pump 2 2).targetPreference == .own &&
+    Effect.destroyCreature.targetPreference == .opponent &&
+    (Effect.abilityTargetPlayerDraw 2).targetPreference == .selfPlayer
+  let baseFace : CardDef := { name := "Front", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2) }
+  let backA : CardDef := { name := "BackA", types := #[.creature], power := some (.star 0), toughness := some (.star 0) }
+  let backB : CardDef := { name := "BackB", types := #[.creature], power := some (.star 1), toughness := some (.star 1) }
+  let beqOk :=
+    ({ baseFace with otherFace := some backA } == { baseFace with otherFace := some backA }) &&
+    ({ baseFace with otherFace := some backA } != { baseFace with otherFace := some backB }) &&
+    ({ baseFace with deckLimitOverride := some .unlimited } != { baseFace with deckLimitOverride := some (.maxCopies 7) })
+  statOk && deckOk && saOk && prefOk && beqOk
+
+#guard [
+  "Murmuring Volume\n{3}\nArtifact — Book\n{T}: Add one mana of any color.\n{2}, {T}, Discard a card: Draw a card.",
+  "Jace, Reality Sculptor\n{3}{U}{U}\nLegendary Planeswalker — Jace\n+1: Empower Jace X, where X is the number of Islands you control.\n−3: Until your next turn, whenever a creature attacks you or a planeswalker you control, it gets -5/-0 until end of turn.\n0: Exile all but the bottom card of each opponent's library. Activate only if there are twenty-five or more loyalty counters among Jaces you control.\nLoyalty: 5",
+  "Way of the Deathbringer\n{2}{B}\nLegendary Enchantment\nWhen Way of the Deathbringer enters, empower Jace 5.\nPlaneswalkers you control have \"[−2]: You may sacrifice a creature. If you do, create a 4/4 green Beast creature token with trample.\"",
+  "My Precious\n{3}\nLegendary Artifact — Equipment\nEquipped creature has hexproof and can't be blocked.\nEquip—{2}, Pay 2 life.\n//ADV//\nAllure of Power\n{1}{B}\nInstant — Adventure\nAs an additional cost to cast this spell, sacrifice a creature.\nDraw two cards.",
+  "Five Relics\n{2}\nArtifact\nA deck can have up to five cards named Five Relics.",
+  "Seven Dwarves\n{1}{R}\nCreature — Dwarf\n2/2\nA deck can have up to seven cards named Seven Dwarves.",
+  "Nazgûl\n{2}{B}\nCreature — Wraith Knight\n1/2\nDeathtouch\nA deck can have up to 9 cards named Nazgûl."
+].all roundTripsOracleCard
+
+#guard
+  let volumeOk :=
+    match parseOracleCard
+        "Murmuring Volume\n{3}\nArtifact — Book\n{T}: Add one mana of any color.\n{2}, {T}, Discard a card: Draw a card." with
+    | .ok c =>
+      c.activatedAbilities.size == 2 &&
+      c.activatedAbilities[1]!.cost.items.any (fun | .discard _ .hand => true | _ => false) &&
+      c.activatedAbilities[1]!.toNotation == "{2}, {T}, Discard a card: Draw a card."
+    | .error _ => false
+  let jaceOk :=
+    match parseOracleCard
+        ("Jace, Reality Sculptor\n{3}{U}{U}\nLegendary Planeswalker — Jace\n" ++
+          "0: Exile all but the bottom card of each opponent's library. Activate only if there are twenty-five or more loyalty counters among Jaces you control.\n" ++
+          "Loyalty: 5") with
+    | .ok c =>
+      c.activatedAbilities.size == 1 &&
+      c.activatedAbilities[0]!.toNotation.contains "Exile all but the bottom card of each opponent's library."
+    | .error _ => false
+  let wayOk :=
+    match parseOracleCard
+        ("Way of the Deathbringer\n{2}{B}\nLegendary Enchantment\n" ++
+          "Planeswalkers you control have \"[−2]: You may sacrifice a creature. If you do, create a 4/4 green Beast creature token with trample.\"") with
+    | .ok c =>
+      match (c.staticAbilities[0]? : Option StaticAbility) with
+      | some (.continuous _ _ (.grantActivated abs)) =>
+        abs.size == 1 && abs[0]!.toNotation.contains "You may sacrifice a creature."
+      | _ => false
+    | .error _ => false
+  let maxCopiesOk :=
+    (parseOracleCard "Five Relics\n{2}\nArtifact\nA deck can have up to five cards named Five Relics.").toOption.map
+      (·.deckLimitOverride) == some (some (.maxCopies 5)) &&
+    (parseOracleCard "Seven Dwarves\n{1}{R}\nCreature — Dwarf\n2/2\nA deck can have up to seven cards named Seven Dwarves.").toOption.map
+      (·.deckLimitOverride) == some (some (.maxCopies 7)) &&
+    (parseOracleCard "Nazgûl\n{2}{B}\nCreature — Wraith Knight\n1/2\nDeathtouch\nA deck can have up to 9 cards named Nazgûl.").toOption.map
+      (·.deckLimitOverride) == some (some (.maxCopies 9))
+  volumeOk && jaceOk && wayOk && maxCopiesOk
 
 end Mtg.Engine.Tests

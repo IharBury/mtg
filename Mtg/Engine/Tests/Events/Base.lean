@@ -1193,8 +1193,8 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
     { name := "Test Vehicle"
       types := #[.artifact]
       subtypes := #["Vehicle"]
-      power := some 4
-      toughness := some 4
+      power := some (.fixed 4)
+      toughness := some (.fixed 4)
       keywords := #[.crew 2]
       activatedAbilities := #[ActivatedAbility.crewAbility 2] }
   let gCrew0 := quiet (addPermanent g0 vehicleDef me me)
@@ -1217,8 +1217,8 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
     { name := "Baron Helmut Zemo"
       types := #[.creature]
       subtypes := #["Human", "Villain"]
-      power := some 3
-      toughness := some 3
+      power := some (.fixed 3)
+      toughness := some (.fixed 3)
       activatedAbilities := #[ActivatedAbility.zemoBoastAbility] }
   let (gZemo0, gyCardId) :=
     let g := addPermanent g0 blackCard me me
@@ -1285,13 +1285,13 @@ printed static abilities (CR 702.26b / 702.26f). -/
     { name := "Loyalty Watcher"
       types := #[.enchantment]
       triggeredAbilities :=
-        #[TriggeredAbility.ofPattern (.youActivateLoyaltyAbility 0) "" (Instruction.drawFixed 1),
-          TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (Instruction.drawFixed 1)] }
+        #[TriggeredAbility.ofPattern (.youActivateLoyaltyAbility 0) (Instruction.drawFixed 1),
+          TriggeredAbility.ofPattern .youPutLoyaltyCounters (Instruction.drawFixed 1)] }
   let oppWatcher : CardDef :=
     { name := "Opp Loyalty Watcher"
       types := #[.enchantment]
       triggeredAbilities :=
-        #[TriggeredAbility.ofPattern .opponentActivatesLoyaltyAbility "" (Instruction.drawFixed 1)] }
+        #[TriggeredAbility.ofPattern .opponentActivatesLoyaltyAbility (Instruction.drawFixed 1)] }
   let gPw0 :=
     let g := addPermanent afterDraw pwWithMana me me
     let pw := (g.battlefield.filter (·.name == "Test Planeswalker"))[0]!
@@ -1341,8 +1341,8 @@ printed static abilities (CR 702.26b / 702.26f). -/
         { name := "Phyrexian"
           types := #[.artifact, .creature]
           subtypes := #["Phyrexian"]
-          power := some 0
-          toughness := some 0
+          power := some (.fixed 0)
+          toughness := some (.fixed 0)
           isToken := true } }
   let gInc0 := quiet (addPermanent afterDraw incDef me me)
   let inc := (gInc0.battlefield.filter (·.name == "Incubator Token"))[0]!
@@ -1353,8 +1353,8 @@ printed static abilities (CR 702.26b / 702.26f). -/
   let staticCreature : CardDef :=
     { name := "Static Bear"
       types := #[.creature]
-      power := some 2
-      toughness := some 2
+      power := some (.fixed 2)
+      toughness := some (.fixed 2)
       activatedAbilities := #[ActivatedAbility.zemoBoastAbility] }
   let gPhase0 := quiet (addPermanent (addPermanent afterDraw staticCreature me me) hero me me)
   let sb := (gPhase0.battlefield.filter (·.name == "Static Bear"))[0]!
@@ -1406,8 +1406,8 @@ printed static abilities (CR 702.26b / 702.26f). -/
       | _ => false) &&
     incAfter.status.transformed &&
     incAfter.name == "Phyrexian" &&
-    incAfter.printed.power == some 0 &&
-    incAfter.printed.toughness == some 0 &&
+    incAfter.printed.power == some (.fixed 0) &&
+    incAfter.printed.toughness == some (.fixed 0) &&
     gIncTransformed.events.any (fun e =>
       match e.change, e.cause? with
       | .rules (.permanent (.transformed o true)), some (.oneShotEffect _ (some sid) (some ctrl)) =>
@@ -1482,7 +1482,7 @@ before the next upkeep keep each batch's delayed `.oneShotEffect` cause (CR 603.
     (quiet (g0.markAttacking b.id)).beginStep .cleanup
   -- 5. Multi-permanent phaseOut shares a single .oneShotEffect id
   let gKickedPhase :=
-    (quiet g0).applyUnified me { Effect.phaseOutKicker with targeting := .of .player } #[Target.player me]
+    (quiet g0).applyUnified me { Effect.phaseOutKicker with targets := .player } #[Target.player me]
       (kicked := true) (sourceId := some h.id)
   let kickedPhaseCauses :=
     gKickedPhase.events.filterMap (fun e =>
@@ -1671,7 +1671,7 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
   --    and both delayed end-step sacrifices
   let gVenser :=
     (quiet gWithSrc).withResolvingContext (some s.id) me (fun g =>
-      g.applyAbilityEffect me { venserFerventForger.triggeredAbilities[0]!.modeEffects[1]! with targeting := {} } #[Target.permanent b.id] (some s.id))
+      g.applyAbilityEffect me { venserFerventForger.triggeredAbilities[0]!.modeEffects[1]! with targets := .none } #[Target.permanent b.id] (some s.id))
   let venserCreateCauses :=
     gVenser.events.filterMap (fun e =>
       match e.change with
@@ -1697,7 +1697,7 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
     quiet g
   let gJhoiraPending :=
     gJhoiraSetup.withResolvingContext (some s.id) me (fun g =>
-      g.applyAbilityEffect me { jhoiraWeatherlightCorsair.triggeredAbilities[0]!.effect with targeting := {} } #[Target.player me] (some s.id))
+      g.applyAbilityEffect me { jhoiraWeatherlightCorsair.triggeredAbilities[0]!.effect with targets := .none } #[Target.player me] (some s.id))
   let jhoiraPendingOk :=
     match gJhoiraPending.pending with
     | .resolveRandom (.orderInto ids (.library p) (some _)) => p == me && ids.size == 2
@@ -1746,8 +1746,8 @@ creations, both haste continuous effects, and both delayed end-step sacrifices. 
     gSunfall.waitingTriggers.isEmpty &&
     sunfallIncAfter.status.transformed &&
     sunfallIncAfter.name == "Phyrexian Token" &&
-    sunfallIncAfter.printed.power == some 0 &&
-    sunfallIncAfter.printed.toughness == some 0 &&
+    sunfallIncAfter.printed.power == some (.fixed 0) &&
+    sunfallIncAfter.printed.toughness == some (.fixed 0) &&
     sunfallIncAfter.status.plusOnePlusOne == 2 &&
     polyBfExiles.size == 2 &&
     polyBfExiles[0]! == polyBfExiles[1]! &&
@@ -1786,11 +1786,9 @@ produced by the single one-shot instruction (CR 610.1 / 701.18 / 702.85a). -/
   -- 1. Exiling multiple lands you control shares one cause across all exiled lands
   let gLands :=
     (quiet g0).applyAbilityEffect me
-      { targeting := .of (.single {
+      { targets := (.single {
           domain := .object .battlefield (.all #[.hasType .land, .controlledBy .you])
           count := .upTo 3 })
-        allowsZeroTargets := true
-        maxTargets := 3
         body := Instruction.exile .allTargets { linkToSource := true } }
       #[Target.permanent l1.id, Target.permanent l2.id] (some b.id)
   let landExileCauses :=
@@ -1801,9 +1799,7 @@ produced by the single one-shot instruction (CR 610.1 / 701.18 / 702.85a). -/
   -- 2. Exiling multiple permanents until next end step shares one cause
   let gNextEndTrig :=
     (quiet g0).applyAbilityEffect me
-      { targeting := .of (.single { domain := .object .battlefield .anyObject, count := .upTo 2 })
-        allowsZeroTargets := true
-        maxTargets := 2
+      { targets := (.single { domain := .object .battlefield .anyObject, count := .upTo 2 })
         body := Instruction.exile .allTargets { delayedReturn? := some (.atNextEndStep false .owner) } }
       #[Target.permanent b.id, Target.permanent h.id] (some b.id)
   let nextEndTrigCauses :=
@@ -2012,7 +2008,7 @@ across all constituent moves, transforms, and continuous-effect creations
   -- 4. Generic `inspectLibrary` (`.revealUntil` onto battlefield, rest on bottom random)
   let gTrigRevPending :=
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
-      g.applyTriggeredAbility me (TriggeredAbility.ofPattern .thisEnters ""
+      g.applyTriggeredAbility me (TriggeredAbility.ofPattern .thisEnters
         (.player (.inspectLibrary {
           source := .revealUntil .you (.hasType .creature) (.const 1)
           action := .moveAll (.battlefield .controller) {}
@@ -2174,7 +2170,7 @@ across all constituent moves, transforms, and continuous-effect creations
       | .rules (.life (.lost ..)) => e.cause?
       | _ => none)
   let balinAb : TriggeredAbility :=
-    TriggeredAbility.ofPattern .thisEnters "" Effect.triggerDiscardHandDrawDamageIfStory.body
+    TriggeredAbility.ofPattern .thisEnters Effect.triggerDiscardHandDrawDamageIfStory.body
   let gBalinRaw0 :=
     gLibSetup.change (.pending (.fraChoice me (.mayDiscardHandBalin (some h.id))))
   let gBalinRaw :=
@@ -2549,11 +2545,11 @@ triggers once, while sequential batches fire them once per batch. -/
     { name := "Death Watcher"
       types := #[.enchantment]
       triggeredAbilities := #[
-        TriggeredAbility.ofPattern .otherCreaturesDie "" (Instruction.drawFixed 1) (grouping := .oncePerBatch),
-        TriggeredAbility.ofPattern .nontokenCreatureYouControlDies "" (Instruction.gainLifeFixed 1),
-        TriggeredAbility.ofPattern .creatureCardPutIntoYourGy "" (Instruction.drawFixed 1) (grouping := .oncePerBatch),
-        TriggeredAbility.ofPattern (.createTokens .you (.hasType .creature)) "" (Instruction.drawFixed 1) (grouping := .oncePerBatch),
-        TriggeredAbility.ofPattern .creaturesYouControlBecomeTapped "" (Instruction.drawFixed 1) (grouping := .oncePerBatch)] }
+        TriggeredAbility.ofPattern .otherCreaturesDie (Instruction.drawFixed 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern .nontokenCreatureYouControlDies (Instruction.gainLifeFixed 1),
+        TriggeredAbility.ofPattern .creatureCardPutIntoYourGy (Instruction.drawFixed 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern (.createTokens .you (.hasType .creature)) (Instruction.drawFixed 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern .creaturesYouControlBecomeTapped (Instruction.drawFixed 1) (grouping := .oncePerBatch)] }
   let gBase :=
     let g := addPermanent (addPermanent (addPermanent afterDraw deathWatcher me me) bear me me) hero me me
     let g := addPermanent g bear me me
@@ -2618,7 +2614,7 @@ triggers once, while sequential batches fire them once per batch. -/
   let discardWatcher : CardDef :=
     { name := "Discard Watcher"
       types := #[.enchantment]
-      triggeredAbilities := #[TriggeredAbility.ofPattern (.discard .any) "" (Instruction.drawFixed 1)
+      triggeredAbilities := #[TriggeredAbility.ofPattern (.discard .any) (Instruction.drawFixed 1)
         (grouping := .perPlayerInBatch)] }
   let gDisc0 := quiet (addPermanent afterDraw discardWatcher me me)
   let gDisc1 := gDisc0.discardEntireHand me
@@ -2683,8 +2679,8 @@ triggers once, while sequential batches fire them once per batch. -/
       types := #[.enchantment]
       triggeredAbilities := #[
         TriggeredAbility.watchTokensEnterMayDraw,
-        TriggeredAbility.ofPattern .youPutCountersOnGoblinOrcArmy "" (Instruction.drawFixed 1) (grouping := .oncePerBatch),
-        TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (Instruction.drawFixed 1),
+        TriggeredAbility.ofPattern .youPutCountersOnGoblinOrcArmy (Instruction.drawFixed 1) (grouping := .oncePerBatch),
+        TriggeredAbility.ofPattern .youPutLoyaltyCounters (Instruction.drawFixed 1),
         TriggeredAbility.resourcePlusOneOnHeroesCreateWall] }
   let artifactWalker : CardDef :=
     { name := "Artifact Walker"

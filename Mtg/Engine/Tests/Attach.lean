@@ -16,7 +16,7 @@ def caster : PlayerId := ⟨0⟩
 
 #guard
   let g := afterDraw.applyTriggeredAbility caster
-    (TriggeredAbility.ofPattern .thisEnters "" (.permanent (.attach .this .this))) none
+    (TriggeredAbility.ofPattern .thisEnters (.permanent (.attach .this .this))) none
   g.pending == afterDraw.pending && g.log.size == afterDraw.log.size
 
 #guard (Effect.triggerCreateThenAttach .dwarf).body ==

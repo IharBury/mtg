@@ -661,7 +661,7 @@ def paidGuide : Game := mustApply proposedGuide ⟨0⟩ .pay
 /-- The creature enters; scry waits on the stack (CR 603.6a). -/
 def guideEntered : Game := passBoth paidGuide
 
-#guard (namedPermanent guideEntered "Galadhrim Guide").printed.power == some 3
+#guard (namedPermanent guideEntered "Galadhrim Guide").printed.power == some (.fixed 3)
 #guard guideEntered.power (namedPermanent guideEntered "Galadhrim Guide") == 3
 #guard guideEntered.toughness (namedPermanent guideEntered "Galadhrim Guide") == 4
 #guard guideEntered.stack.size == 1
@@ -758,7 +758,7 @@ def paidVisionary : Game := mustApply proposedVisionary ⟨0⟩ .pay
 /-- The creature enters; draw waits on the stack (CR 603.6a). -/
 def visionaryEntered : Game := passBoth paidVisionary
 
-#guard (namedPermanent visionaryEntered "Elvish Visionary").printed.power == some 1
+#guard (namedPermanent visionaryEntered "Elvish Visionary").printed.power == some (.fixed 1)
 #guard visionaryEntered.power (namedPermanent visionaryEntered "Elvish Visionary") == 1
 #guard visionaryEntered.toughness (namedPermanent visionaryEntered "Elvish Visionary") == 1
 #guard visionaryEntered.stack.size == 1
@@ -853,8 +853,8 @@ def woodElvesSetup : Game :=
 #guard woodElvesSetup.asSorcery? ⟨0⟩
 #guard !KeywordAbility.hasFlash woodElves.keywords
 #guard woodElves.hasSorcerySpeed
-#guard woodElves.power == some 1
-#guard woodElves.toughness == some 1
+#guard woodElves.power == some (.fixed 1)
+#guard woodElves.toughness == some (.fixed 1)
 
 def proposedWoodElves : Game :=
   mustApply woodElvesSetup ⟨0⟩ (.cast (handCardNamed woodElvesSetup ⟨0⟩ "Wood Elves").id)
@@ -871,7 +871,7 @@ def paidWoodElves : Game := mustApply proposedWoodElves ⟨0⟩ .pay
 /-- The creature enters; the search waits on the stack (CR 603.6a). -/
 def woodElvesEntered : Game := passBoth paidWoodElves
 
-#guard (namedPermanent woodElvesEntered "Wood Elves").printed.power == some 1
+#guard (namedPermanent woodElvesEntered "Wood Elves").printed.power == some (.fixed 1)
 #guard woodElvesEntered.power (namedPermanent woodElvesEntered "Wood Elves") == 1
 #guard woodElvesEntered.toughness (namedPermanent woodElvesEntered "Wood Elves") == 1
 #guard woodElvesEntered.stack.size == 1

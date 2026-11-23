@@ -671,7 +671,6 @@ def equippedGetsAndAttackChooseKeyword : StaticAbility :=
     (.all #[
       .modifyPT (.const 2) (.const 0),
       .grantTriggered #[TriggeredAbility.ofPattern .thisAttacks
-        "Whenever this creature attacks, it gains your choice of trample or deathtouch until end of turn."
         (.player (.choose .you (.keyword #[Keyword.trample, Keyword.deathtouch])))]
     ])
 
@@ -681,8 +680,7 @@ def equippedGetsFlyingAndAttackGainLife : StaticAbility :=
     (.all #[
       .modifyPT (.const 1) (.const 0),
       .grantKeywords #[Keyword.flying],
-      .grantTriggered #[TriggeredAbility.ofPattern .thisAttacks
-        "Whenever this creature attacks, you gain 1 life." (Instruction.gainLifeFixed 1)]
+      .grantTriggered #[TriggeredAbility.ofPattern .thisAttacks (Instruction.gainLifeFixed 1)]
     ])
 
 /-- `Equipped creature gets +P/+T and has trample and "Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens."` -/
@@ -692,7 +690,6 @@ def equippedGetsTrampleAndCombatTreasures (power toughness : Int) : StaticAbilit
       .modifyPT (.const power) (.const toughness),
       .grantKeywords #[Keyword.trample],
       .grantTriggered #[TriggeredAbility.ofPattern .thisDealsCombatDamageToPlayerOrPlaneswalker
-        "Whenever this creature deals combat damage to a player or planeswalker, create that many Treasure tokens."
         (Instruction.createTokens .treasure .eventAmount)]
     ])
 

@@ -213,7 +213,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
   let gHex : Game := gVal0.createEffect (.keywordsUntilEot oppBearId #[Keyword.hexproof]) (cause := some testCause)
   let gVenserFizzle : Game := gHex.applyAbilityEffect me venserFerventForger.triggeredAbilities[0]!.modeEffects[1]! #[Target.permanent oppBearId]
   let gAmassFizzle : Game := gHex.applyUnified me {
-    targeting := .of .creature
+    targets := .creature
     body := .bind ⟨0⟩ (Instruction.destroy (.target 0))
       (Instruction.ifThen (.stepSucceeded ⟨0⟩) (Instruction.amassFixed 1 .orc))
   } #[Target.permanent oppBearId]
@@ -268,7 +268,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     !(gSilenceCopy.apply me (.cast exShock)).isOk
 
   -- 4b. `canCast` parity: `PlayPermission.ignoreTiming` allows sorcery on opponent's turn; `castOnlyIfGraveyardAtLeast` excludes self in graveyard!
-  let sorc21 : CardDef := { name := "Phase21 Sorcery", manaCost := ManaCost.empty, types := #[.sorcery], spellEffect := some (Effect.draw 1) }
+  let sorc21 : CardDef := { name := "Phase21 Sorcery", manaCost := ManaCost.empty, types := #[.sorcery], spellAbility := some { effect := Effect.draw 1 }}
   let gyThresholdSorc21 : CardDef := {
     sorc21 with
     name := "Phase21 Threshold Sorc"
@@ -300,7 +300,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     name := "Phase21 Behold Instant"
     manaCost := { symbols := #[.colored .blue, .colored .blue] }
     types := #[.instant]
-    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric .jace 1)]
+    spellAbility := some { additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric .jace 1)] }
   }
   let jaceCard21 : CardDef := {
     name := "Phase21 Hand Jace"
@@ -407,7 +407,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     manaCost := ManaCost.empty
     types := #[.sorcery]
     keywords := #[.teamwork 2]
-    spellEffect := some {
+    spellAbility := some { effect := {
       body := .chooseModes {
         modes := #[
           Effect.canonicalDestroy .creature,
@@ -417,7 +417,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
         maxModes := .const 1
         altCountIf? := some (.castPred (.teamworkPaid .this), .const 2, .const 2)
       }
-    }
+    } }
   }
   let relicTw21 : CardDef := { name := "Phase21 Target Artifact", types := #[.artifact] }
   let gTwOne0 : Game := insertObject (addPermanent afterDraw bear me me) twModalDef21 me (.hand me)
@@ -452,7 +452,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     name := "Phase21 Stack Dummy"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    spellEffect := some (Effect.draw 1)
+    spellAbility := some { effect := Effect.draw 1 }
   }
   let gYtBase : Game :=
     insertObject (insertObject (addPermanent (addPermanent (addPermanent afterDraw watcher21 me me) targeterArt21 me me) bear opp21 opp21) bear me (.graveyard me)) dummySorc21 me (.hand me)
@@ -479,7 +479,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
   let copyImpStackId := gImpCopied.stack.back!.objectId
   let gImpCopyRes : Game := gImpCopied.resolveTop
   let copyImpPerm := (gImpCopyRes.battlefield.filter (·.name == "Phase21 Impending Copy"))[0]!
-  let morphCopyDef21 : CardDef := { bear with name := "Phase21 Morph Copy", power := some 5, toughness := some 5, keywords := #[.morph (CostSpec.ofGeneric 2)] }
+  let morphCopyDef21 : CardDef := { bear with name := "Phase21 Morph Copy", power := some (.fixed 5), toughness := some (.fixed 5), keywords := #[.morph (CostSpec.ofGeneric 2)] }
   let gMph0 : Game := (insertObject afterDraw morphCopyDef21 me (.hand me)).addMana me .colorless 3
   let mphCardId := (gMph0.player me).hand.back!
   let gMphStack : Game := mustApply (mustApply (mustApply gMph0 me (.cast mphCardId)) me (.announceKicker true)) me .pay
@@ -489,8 +489,8 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
   let mphCopyPerm := (gMphCopyRes.battlefield.filter (·.printed.isToken))[0]!
   -- CR 707.12 `createPreparedCopy`: `isCopy == true` in `.exile`, survives SBA while prepared (ruling 736),
   -- casting emits `CastEvent.announced`, and copy ceases to exist after resolving!
-  let prepFace21 : AdventureFace := { name := "Phase21 Prepared Bolt", manaCost := ManaCost.empty, types := #[.instant], spellEffect := some (Effect.draw 1) }
-  let prepHostDef21 : CardDef := { bear with name := "Phase21 Prepared Host", prepareFace := some prepFace21 }
+  let prepFace21 : SubFace := { kind := .prepare, name := "Phase21 Prepared Bolt", manaCost := ManaCost.empty, types := #[.instant], spellAbility := some { effect := Effect.draw 1 } }
+  let prepHostDef21 : CardDef := { bear with name := "Phase21 Prepared Host", subFaces := #[prepFace21] }
   let gPrep0 : Game := addPermanent afterDraw prepHostDef21 me me
   let prepHost := (gPrep0.battlefield.filter (·.name == "Phase21 Prepared Host"))[0]!
   let gPrep1 : Game := gPrep0.becomePrepared prepHost (cause := some testCause)
@@ -660,7 +660,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     let g := addPermanent afterDraw bear opp22 opp22
     let bId := (g.battlefield.filter (·.name == bear.name))[0]!.id
     let g := g.putReflexiveTrigger me none
-      { targeting := .of .anyTarget, body := Instruction.dealDamageFixed (.targetSlot 0) 2 }
+      { targets := .anyTarget, body := Instruction.dealDamageFixed (.targetSlot 0) 2 }
     let g := mustApply g me (.target (Target.permanent bId))
     g.resolveTop
   let bAfterRef2 := (gRef2.battlefield.filter (·.name == bear.name))[0]!
@@ -775,7 +775,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     name := "Phase22 Bolt"
     manaCost := ManaCost.ofGeneric 1
     types := #[.instant]
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let mkPausedGyMove (base : Game) : Game :=
     let g := (base.createEffect
@@ -864,7 +864,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     name := "Phase22 Copy Bolt"
     manaCost := ManaCost.ofGeneric 1
     types := #[.instant]
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   -- 3a. Saruman reflexive exile-copy-may-cast preserves `outerCont?` across both decline and accept:
   let gSar0 : Game :=
@@ -873,7 +873,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     let g := (g.change (.pushContinuationFrame {})).change
       (.continuation (.pendingReplacement (some (.restorePending (.scry me 1) false))))
     let sarEff : Effect := {
-      targeting := .of (.ofDomain (.object .anyGraveyard (.isKind .card)))
+      targets := (.ofDomain (.object .anyGraveyard (.isKind .card)))
       body := .bind ⟨0⟩ (.moveZone (.target 0) .exile .exile {})
         (.stack (.mayCastOrPlay (.stepObjects ⟨0⟩) { copyAndCast := true, freeCast := true, maxCasts? := some 1 }))
     }
@@ -926,7 +926,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     let g := addPermanent afterDraw bear me me
     let bId := (g.battlefield.filter (·.name == bear.name))[0]!.id
     let briefEff : Effect := {
-      targeting := .of .creature
+      targets := .creature
       body := .moveZone (.target 0) .exile .exile {
         delayedReturn? := some (.returnIfThenExileAtEndStep (.stat .manaValue .le (.const 3)) true .controller)
       }
@@ -1001,7 +1001,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   let gSurvReplaced : Game :=
     let g := (gExOnly0.change (.pushContinuationFrame {})).change (.continuation (.surveilReturnMvAtMost (some 10)))
     g.surveilMoveLoop me #[topLibId] (some testCause)
-  let big44 : CardDef := { bear with name := "Phase22 Big 4/4", power := some 4, toughness := some 4 }
+  let big44 : CardDef := { bear with name := "Phase22 Big 4/4", power := some (.fixed 4), toughness := some (.fixed 4) }
   let gSacPow0 : Game :=
     let g := addPermanent (addPermanent gExOnly0 big44 me me) bear me me
     let bigId := (g.battlefield.filter (·.name == "Phase22 Big 4/4"))[0]!.id
@@ -1033,13 +1033,13 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     name := "Phase22 One Instant"
     manaCost := ManaCost.ofGeneric 1
     types := #[.instant]
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let zeroInstant22 : CardDef := {
     name := "Phase22 Zero Instant"
     manaCost := ManaCost.empty
     types := #[.instant]
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let gPropOuterCast : Game :=
     let g := (insertObject afterDraw oneInstant22 me (.hand me)).addMana me (.colored .red) 1
@@ -1059,7 +1059,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     bear with
     name := "Phase22 Sneak Sac"
     manaCost := ManaCost.ofGeneric 4
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
+    spellAbility := some { additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
     keywords := #[.sneak CostSpec.empty]
   }
   let gSneak0 : Game :=
@@ -1398,8 +1398,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
   let gSeqPaused : Game :=
     gSeqTgt0.withBatch (some testCause) fun g =>
       g.applyEffect me {
-        targeting := .of .creature
-        maxTargets := 2
+        targets := TargetSpec.creature.asUpTo 2
         body := Instruction.putCounters .allTargets .plusOnePlusOne (.const 1)
       } #[.permanent t0Id, .permanent t1Id]
   let pausedBeforeSecond : Bool :=
@@ -1591,8 +1590,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     name := "Phase23 Sac Sorcery"
     manaCost := ManaCost.empty
     types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
-    spellEffect := some (Effect.draw 1)
+    spellAbility := some { effect := Effect.draw 1, additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
   }
   let gSacSp0 : Game := insertObject (addPermanent afterDraw bear me me) sacSpellDef23 me (.hand me)
   let sacVictimId := (gSacSp0.battlefield.filter (·.name == bear.name))[0]!.id
@@ -1688,7 +1686,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     manaCost := ManaCost.ofColor .blue
     types := #[.sorcery]
     keywords := #[.morph CostSpec.empty]
-    spellEffect := some (Effect.canonicalDestroy .creature) -- no creatures in play!
+    spellAbility := some { effect := (Effect.canonicalDestroy .creature) } -- no creatures in play!
   }
   let elfLooterDef : CardDef := {
     bear with
@@ -1744,7 +1742,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     bear with
     name := "Phase23 Self Dies"
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .creatureYouControlDies { body := Instruction.gainLifeFixed 2, phrase := "You gain 2 life." }
+      TriggeredAbility.mkTrigger .creatureYouControlDies { body := Instruction.gainLifeFixed 2 }
     ]
   }
   let gSelfDies0 : Game := addPermanent afterDraw selfDiesDef me me
@@ -1950,7 +1948,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     bear with
     name := "Phase23 Watcher"
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .creatureYouControlDies { body := Instruction.gainLifeFixed 1, phrase := "Gain 1." }
+      TriggeredAbility.mkTrigger .creatureYouControlDies { body := Instruction.gainLifeFixed 1 }
     ]
   }
   let g3pSba0 : Game :=
@@ -2373,24 +2371,25 @@ def fbDraw24i2 : CardDef := {
   manaCost := ManaCost.ofGeneric 1
   types := #[.sorcery]
   keywords := #[.flashback (CostSpec.ofGeneric 3)]
-  spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+  spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
 }
 
 def freeDraw24i2 : CardDef := {
   name := "P24i2 Free Draw"
   manaCost := ManaCost.empty
   types := #[.sorcery]
-  spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+  spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
 }
 
 /-- A creature with a `{2}` sorcery Adventure (CR 715.2). -/
 def adventurer24i2 : CardDef := {
   bear with
   name := "P24i2 Adventurer"
-  adventure := some {
+  subFaces := #[{
+    kind := .adventure
     name := "P24i2 Side Quest"
     manaCost := ManaCost.ofGeneric 2
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" } }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }}]
 }
 
 /-- *Galadriel's Dismissal* (HOC; `Mtg.Engine.Catalog.galadrielSDismissal`, not imported
@@ -2401,7 +2400,7 @@ def dismissal24i2 : CardDef := {
   manaCost := ManaCost.ofColor .white
   types := #[.instant]
   keywords := #[.kicker (CostSpec.ofMana (ManaCost.ofGenericAndColor 2 .white))]
-  spellEffect := some Effect.phaseOutKicker
+  spellAbility := some { effect := Effect.phaseOutKicker }
 }
 
 /-- *Iron Hills Stalwart*'s ETB (`Mtg.Engine.Catalog.ironHillsStalwart`, not imported here):
@@ -2479,7 +2478,7 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   -- 1d. `canPayAnnouncedAdditional` honours every CR 106.6 restriction flag for the spell:
   let addl (nm : String) (tys : Array CardType) (subs : Array Subtype) : CardDef :=
     { name := nm, manaCost := ManaCost.ofGeneric 1, types := tys, subtypes := subs
-      additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)] }
+      spellAbility := some { additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 2)] }}
   let instDef := addl "P24i2 Addl Instant" #[.instant] #[]
   let heroDef := addl "P24i2 Addl Hero" #[.creature] #["Hero"]
   let villDef := addl "P24i2 Addl Villain" #[.creature] #["Villain"]
@@ -2564,8 +2563,8 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   --     sacrifice, but accepts a castable one:
   let remDef : CardDef := {
     name := "P24i2 Removal", manaCost := ManaCost.empty, types := #[.sorcery]
-    spellEffect := some { targeting := .of .creature, body := Instruction.destroy (.target 0), phrase := "Destroy target creature" } }
-  let sacDef : CardDef := { freeDraw24i2 with name := "P24i2 Sac Draw", additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
+    spellAbility := some { effect := { targets := .creature, body := Instruction.destroy (.target 0) } }}
+  let sacDef : CardDef := { freeDraw24i2 with name := "P24i2 Sac Draw", spellAbility := some { additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }}
   let gCc0 : Game :=
     insertObject (insertObject (insertObject afterDraw freeDraw24i2 me (.library me)) sacDef me (.library me))
       remDef me (.library me)
@@ -2631,9 +2630,8 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   -- 4c. A single "target" announcing two targets needs two distinct legal targets unless it
   --     allows zero (spell modes and triggers alike):
   let twoEff : Effect := {
-    targeting := .of (.ofDomain .creature (.exact 2))
-    body := Instruction.destroy (.target 0)
-    phrase := "Destroy two target creatures" }
+    targets := (.ofDomain .creature (.exact 2))
+    body := Instruction.destroy (.target 0) }
   let twoTrig : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters twoEff
   let gTc1 : Game := addPermanent afterDraw bear me me
   let gTc2 : Game := addPermanent gTc1 hero opp24i2 opp24i2
@@ -2641,7 +2639,7 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   let targetCountOk :=
     !gTc1.spellModeIsChoosable me twoEff &&
     gTc2.spellModeIsChoosable me twoEff &&
-    gTc1.spellModeIsChoosable me { twoEff with allowsZeroTargets := true } &&
+    gTc1.spellModeIsChoosable me { twoEff with targets := twoEff.targets.asUpTo 2 } &&
     gTc1.triggerHasNoLegalTarget me twoTrig tcSrc &&
     !gTc2.triggerHasNoLegalTarget me twoTrig tcSrc
 
@@ -2900,7 +2898,7 @@ def startThreePlayer24i3 : Game :=
     manaCost := ManaCost.ofGeneric 1
     types := #[.sorcery]
     keywords := #[.flashback (CostSpec.ofGeneric 1)]
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let gFb0 :=
     (addPermanent (insertObject afterDraw fbSpellDef me (.graveyard me)) bear opp24i3 opp24i3).addMana me .colorless 1
@@ -3090,8 +3088,8 @@ def startThreePlayer24i3 : Game :=
     foodToken with
     name := "P24i3 Gingerbread Food"
     types := #[.artifact, .creature]
-    power := some 1
-    toughness := some 1
+    power := some (.fixed 1)
+    toughness := some (.fixed 1)
   }
   let bilboDef : CardDef := { bear with name := "P24i3 Bilbo", staticAbilities := #[.foodAlsoCreatesTreasure] }
   let gRiderCreature0 :=
@@ -3180,7 +3178,7 @@ def startThreePlayer24i3 : Game :=
   -- 5a. Self-fight (`fightCreatures c c` on a 3/10 creature) deals ONE `2 * 3 = 6` damage event:
   --     `+2` noncombat damage yields `6 + 2 = 8` (not `(3 + 2) + (3 + 2) = 10`), and 1 shield counter
   --     prevents all 6 damage:
-  let tough310Def : CardDef := { bear with name := "P24i3 Self Fighter", power := some 3, toughness := some 10 }
+  let tough310Def : CardDef := { bear with name := "P24i3 Self Fighter", power := some (.fixed 3), toughness := some (.fixed 10) }
   let cFight : EventCause := .oneShotEffect (some ⟨24309⟩) none (some me)
   let gSelf0 := addPermanent afterDraw tough310Def me me
   let sfObj := (gSelf0.battlefield.filter (·.name == tough310Def.name))[0]!
@@ -3210,12 +3208,12 @@ def startThreePlayer24i3 : Game :=
   --     still deals its upfront-snapshotted 4 damage to `fighterA`:
   let p1 : PlayerId := ⟨1⟩
   let p2 : PlayerId := ⟨2⟩
-  let fighterADef : CardDef := { bear with name := "P24i3 Fighter A", power := some 2, toughness := some 6 }
+  let fighterADef : CardDef := { bear with name := "P24i3 Fighter A", power := some (.fixed 2), toughness := some (.fixed 6) }
   let fighterBDef : CardDef := {
     bear with
     name := "P24i3 Fighter B"
-    power := some 2
-    toughness := some 10
+    power := some (.fixed 2)
+    toughness := some (.fixed 10)
     staticAbilities := #[.powerPerFatGraveyard 2]
   }
   let gMut0 :=
@@ -3305,7 +3303,7 @@ def startThreePlayer24i3 : Game :=
     youGainLifeQueued gDpCompDone == 1
 
   -- 6b. `dealDamageToEachCreatureMatching` across 2 opponent creatures emits ONE `LifeEvent.gained`:
-  let toughOppDef : CardDef := { bear with name := "P24i3 Tough Target", toughness := some 5 }
+  let toughOppDef : CardDef := { bear with name := "P24i3 Tough Target", toughness := some (.fixed 5) }
   let gDc0 :=
     addPermanent (addPermanent (addPermanent afterDraw lifelinkerDef me me) toughOppDef opp24i3 opp24i3)
       toughOppDef opp24i3 opp24i3
@@ -3324,7 +3322,7 @@ def startThreePlayer24i3 : Game :=
   let gDivDone :=
     gDc0.applyTriggeredAbility me
       { word := .when, pattern := .thisEnters, effect := {
-          targeting := .of .creature, dividedDamage := some (7, 2)
+          targets := TargetSpec.dividedDamage .creature 7 2
           body := Instruction.dealDamage .allTargets (.const 7) .this { divided := true } } }
       (some llSrc2.id) divTargets #[3, 4]
   let divideLifelinkOk :=
@@ -3348,7 +3346,7 @@ def startThreePlayer24i3 : Game :=
     subtypes := #["Saga"]
     keywords := #[Keyword.lifelink]
   }
-  let toughBearDef : CardDef := { bear with name := "P24i3 Non-Dragon", toughness := some 5 }
+  let toughBearDef : CardDef := { bear with name := "P24i3 Non-Dragon", toughness := some (.fixed 5) }
   let gCh0 := addPermanent (addPermanent afterDraw lifelinkSagaDef me me) toughBearDef opp24i3 opp24i3
   let sagaId := (gCh0.battlefield.filter (·.name == lifelinkSagaDef.name))[0]!.id
   let chEff : Effect := Effect.chapterDealDamageToEachNonSubtypeAndOpponents 2 "Dragon"
@@ -3414,8 +3412,7 @@ def startThreePlayer24i3 : Game :=
     bear with
     name := "P24i3 Player Discard Watcher"
     triggeredAbilities := #[
-      TriggeredAbility.ofPattern (.discard .any)
-        "Whenever a player discards one or more cards, draw a card." (Instruction.drawFixed 1)
+      TriggeredAbility.ofPattern (.discard .any) (Instruction.drawFixed 1)
         (grouping := .perPlayerInBatch)
     ]
   }
@@ -3423,8 +3420,7 @@ def startThreePlayer24i3 : Game :=
     bear with
     name := "P24i3 Creature GY Watcher"
     triggeredAbilities := #[
-      TriggeredAbility.ofPattern .creatureCardPutIntoYourGy
-        "Whenever one or more creature cards are put into your graveyard from anywhere, draw a card." (Instruction.drawFixed 1)
+      TriggeredAbility.ofPattern .creatureCardPutIntoYourGy (Instruction.drawFixed 1)
         (grouping := .oncePerBatch)
     ]
   }

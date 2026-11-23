@@ -26,7 +26,7 @@ def cantUntapWhileControlInstr (obj : ObjectExpr) : Instruction :=
     (.applyRule (.game (.cantBecomeUntapped .self))))
 
 def onCreature : TriggeredAbility :=
-  TriggeredAbility.mkTrigger .thisEnters { targeting := .of .creature, body := cantBeBlockedInstr (.target 0) }
+  TriggeredAbility.mkTrigger .thisEnters { targets := .creature, body := cantBeBlockedInstr (.target 0) }
 
 def spider : TriggeredAbility :=
   .onEnter Effect.enterTapOppCantUntapWhileControl
@@ -35,7 +35,7 @@ def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (spec : TargetSpec := .creature) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
@@ -231,7 +231,7 @@ created, a `.whileOnBattlefield` continuous effect does not start at all. -/
 /- Printed phrases stay with the combination that produces them. -/
 #guard spider.effect.body == tapThenFrozen
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, body := unblockable } ==
+    { targets := .creature, body := unblockable } ==
   "target creature can't be blocked this turn"
 #guard TriggeredAbility.resolutionPhrase
     { body := cantBeBlockedInstr .this } ==
@@ -240,7 +240,7 @@ created, a `.whileOnBattlefield` continuous effect does not start at all. -/
     { body := cantBeBlockedInstr .attachedHost } ==
   "enchanted creature can't be blocked this turn"
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .oppCreature, body := tapThenFrozen } ==
+    { targets := .oppCreature, body := tapThenFrozen } ==
   "tap target creature an opponent controls. That creature can't become untapped for as long as you control this creature"
 #guard TriggeredAbility.toNotation onCreature ==
   "When this permanent enters, target creature can't be blocked this turn."

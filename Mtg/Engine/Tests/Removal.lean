@@ -518,7 +518,7 @@ def wolfCount (g : Game) : Nat :=
 /-- Resolve Head of the Hunt's reflexive Wolf trigger, if it is waiting. -/
 def wolvesAfterReflexive (g : Game) : Nat :=
   let waiting := g.waitingTriggers.any (fun w =>
-    w.ability.effect.phrase == "When you do, create a 2/2 green Wolf creature token.")
+    w.ability.effect.toNotation.contains "2/2 green Wolf")
   let g := if waiting then passBoth (g.receivePriority ⟨0⟩) else g
   wolfCount g
 
@@ -644,8 +644,8 @@ def agentSmite : Game :=
 
 #guard KeywordAbility.hasDeathtouch raveningWarg.keywords
 #guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
-#guard raveningWarg.power == some 2
-#guard raveningWarg.toughness == some 2
+#guard raveningWarg.power == some (.fixed 2)
+#guard raveningWarg.toughness == some (.fixed 2)
 #guard withWarg.hasDeathtouch (namedPermanent withWarg "Ravening Warg")
 #guard KeywordAbility.hasDeathtouch (withWarg.effectiveKeywords (namedPermanent withWarg "Ravening Warg"))
 #guard withWarg.power (namedPermanent withWarg "Ravening Warg") == 2

@@ -192,7 +192,7 @@ def castFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef)
 
 /-- Characteristics of a face-down Morph spell on the stack (CR 702.37a / 708.2a). -/
 def morphSpellFace : CardDef :=
-  { name := "", types := #[.creature], power := some 2, toughness := some 2,
+  { name := "", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2),
     manaCost := ManaCost.ofGeneric 3 }
 
 /-- Whether `p` may begin to cast `o` face down via Morph (CR 702.37a,c / 708.2). -/
@@ -2014,7 +2014,7 @@ def retargetStackSpell (g : Game) (spellId : ObjectId) (newTargets : Array Targe
     match g.findObject? spellId with
     | none => g.logMsg "The spell is no longer on the stack"
     | some spell =>
-      let spec := (g.targetingOf spell).spec
+      let spec := g.targetSpecOf spell
       let merged :=
         if newTargets.size == e.targets.size &&
             g.validTargetArrayForEntry e spell spec newTargets (allowUnchangedIllegal := true) then

@@ -234,8 +234,8 @@ def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : Play
     supertypes := face.supertypes
     types := face.types
     subtypes := subs
-    power := face.power
-    toughness := face.toughness
+    power := face.powerValue
+    toughness := face.toughnessValue
     loyalty := face.loyalty.map Int.toNat
     keywords := face.keywords
     toxic := KeywordAbility.toxicTotal face.keywords

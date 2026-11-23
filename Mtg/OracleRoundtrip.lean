@@ -1,10 +1,13 @@
-import Mtg.Engine.Card.ParseOracle
+import Mtg.Engine.Catalog.Supported
 
 /-!
-Smoke-check `parseOracleCard` on full printed cards.
+Smoke-check `parseOracleCard` on full printed cards and verify structural
+`parseOracleCard (renderFullOracle c) == .ok c` round-trips across all 981
+supported catalog cards.
 -/
 
 open Mtg.Engine
+open Mtg.Engine.Catalog
 
 def expect (name : String) (text : String) (ok : CardDef → Bool) : IO Nat := do
   match parseOracleCard text with
@@ -22,7 +25,7 @@ def main : IO UInt32 := do
   let mut fails : Nat := 0
   fails := fails + (← expect "Grizzly Bears"
     "Grizzly Bears\n{1}{G}\nCreature — Bear\n2/2"
-    (fun c => c.name == "Grizzly Bears" && c.power == some 2 && c.toughness == some 2 &&
+    (fun c => c.name == "Grizzly Bears" && c.power == some (.fixed 2) && c.toughness == some (.fixed 2) &&
       c.isCreature))
   fails := fails + (← expect "Shock"
     "Shock\n{R}\nInstant\nShock deals 2 damage to any target."
@@ -62,6 +65,23 @@ def main : IO UInt32 := do
     "Thanos, the Mad Titan\n{R}{W}{B}\nLegendary Creature — Eternal Villain\n4/4\nDeathtouch, lifelink\nPower-up — {C}{W}{U}{B}{R}{G}: Put two +1/+1 counters on Thanos. Choose odd or even. Destroy each other creature with mana value of the chosen quality."
     (fun c => c.activatedAbilities.size == 1 && c.activatedAbilities[0]!.isPowerUp &&
       KeywordAbility.hasDeathtouch c.keywords && KeywordAbility.hasLifelink c.keywords))
+  let mut catalogChecked : Nat := 0
+  let mut catalogFails : Nat := 0
+  for c in supportedCatalogCards do
+    catalogChecked := catalogChecked + 1
+    let rendered := renderFullOracle c
+    match parseOracleCard rendered with
+    | .error e =>
+      catalogFails := catalogFails + 1
+      if catalogFails ≤ 40 then
+        IO.println s!"ROUNDTRIP PARSE FAIL [{c.name}]: {e}\n--- rendered ---\n{rendered}\n---"
+    | .ok parsed =>
+      if !(c == parsed) then
+        catalogFails := catalogFails + 1
+        if catalogFails ≤ 40 then
+          let diff := (oracleRoundtripDiff c parsed).getD "struct mismatch"
+          IO.println s!"ROUNDTRIP DIFF [{c.name}]: {diff}\n--- rendered ---\n{rendered}\n---"
+  fails := fails + catalogFails
   let t1 ← IO.monoMsNow
-  IO.println s!"fails {fails} ms {t1 - t0}"
+  IO.println s!"catalog {catalogChecked} roundtrip_fails {catalogFails} fails {fails} ms {t1 - t0}"
   return if fails == 0 then 0 else 1

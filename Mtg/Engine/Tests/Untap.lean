@@ -21,7 +21,7 @@ def opp : PlayerId := ⟨1⟩
 
 def onCreature : TriggeredAbility :=
   TriggeredAbility.mkTrigger .thisEnters {
-    targeting := .of .creature
+    targets := .creature
     body := Instruction.untap (.target 0)
   }
 
@@ -65,7 +65,7 @@ def land : CardDef := { name := "Field", types := #[.land] }
 def grasp : CardDef := enchantment "Grasp" ManaCost.empty ""
 
 def untapTarget : Effect :=
-  { targeting := .of .creature, body := Instruction.untap (.target 0) }
+  { targets := .creature, body := Instruction.untap (.target 0) }
 
 def untapSource : Effect :=
   { body := Instruction.untap .this }
@@ -74,7 +74,7 @@ def untapEnchanted : Effect :=
   { body := Instruction.untap .attachedHost }
 
 def untapWhileSource : Effect :=
-  { targeting := .of .creature
+  { targets := .creature
     body := Instruction.ifThen (.exists .this) (Instruction.untap (.target 0)) }
 
 def untapAttackers : Effect :=

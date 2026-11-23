@@ -23,7 +23,7 @@ mentions `needle`. -/
 def abIdx (g : Game) (o : GameObject) (needle : String) : Nat :=
   let abs := g.activatedAbilitiesOf o
   ((List.range abs.size).find? (fun i =>
-    mentions abs[i]!.printed needle || mentions abs[i]!.effect.phrase needle)).getD 0
+    mentions abs[i]!.toNotation needle || mentions abs[i]!.effect.toNotation needle)).getD 0
 
 /-- Index of `o`'s loyalty ability with symbol `sym`. -/
 def loyIdx (g : Game) (o : GameObject) (sym : LoyaltySymbol) : Nat :=

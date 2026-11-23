@@ -42,24 +42,24 @@ def dragon : CardDef := {
   name := "Search Dragon"
   types := #[.creature]
   subtypes := #["Dragon"]
-  power := some 4
-  toughness := some 4
+  power := some (.fixed 4)
+  toughness := some (.fixed 4)
 }
 
 def handDragon : CardDef := {
   name := "Hand Dragon"
   types := #[.creature]
   subtypes := #["Dragon"]
-  power := some 3
-  toughness := some 3
+  power := some (.fixed 3)
+  toughness := some (.fixed 3)
 }
 
 def drake : CardDef := {
   name := "Search Drake"
   types := #[.creature]
   subtypes := #["Drake"]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
 }
 
 def light : CardDef := {
@@ -365,8 +365,8 @@ def changelingCard : CardDef := {
   types := #[.creature]
   subtypes := #["Shapeshifter"]
   keywords := #[Keyword.changeling]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
 }
 
 #guard changelingCard.hasSubtype .dragon && !changelingCard.hasSubtype .forest

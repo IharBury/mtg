@@ -20,7 +20,7 @@ def opponent : PlayerId := ⟨1⟩
 
 def pebble : CardDef := { name := "Pebble", types := #[.artifact] }
 def humanDef : CardDef :=
-  { name := "Town Human", types := #[.creature], subtypes := #["Human"], power := some 1, toughness := some 1 }
+  { name := "Town Human", types := #[.creature], subtypes := #["Human"], power := some (.fixed 1), toughness := some (.fixed 1) }
 
 def handSize (g : Game) (p : PlayerId) : Nat :=
   (g.player p).hand.size
@@ -44,7 +44,7 @@ def withSpent (spent : Nat) : Game :=
   g.change (.resolvingAbility (some abId))
 
 def drawStep (g : Game) (i : Instruction) : Game :=
-  g.applyTriggeredAbility caster (TriggeredAbility.ofPattern .thisEnters "" i) none
+  g.applyTriggeredAbility caster (TriggeredAbility.ofPattern .thisEnters i) none
 
 /- The controller draws the printed count. -/
 #guard

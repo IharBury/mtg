@@ -37,38 +37,35 @@ def hawkeyeModeEffects : Array Effect :=
 target slots aligned across combined modes. -/
 def hawkeyeArrowsEffect (modes : Array Nat) : Effect :=
   let sorted := modes.qsort (· < ·)
-  let (spec, steps, names, _) := sorted.foldl (fun (accSpec, accSteps, accNames, nextSlot) m =>
+  let (spec, steps, _) := sorted.foldl (fun (accSpec, accSteps, nextSlot) m =>
     if m == 0 then
       let body := Instruction.installEffect
         (.applyContinuous .untilEndOfTurn (.target nextSlot) (.applyRule (.combat (.cantBlock .self none))))
-      (accSpec.append TargetSpec.creature, accSteps.push body,
-       accNames.push "Net — Target creature can't block this turn", nextSlot + 1)
+      (accSpec.append TargetSpec.creature, accSteps.push body, nextSlot + 1)
     else if m == 1 then
       let body := Instruction.dealDamageFixed (.players (.target nextSlot)) 2
-      (accSpec.append TargetSpec.player, accSteps.push body,
-       accNames.push "Explosive — Hawkeye deals 2 damage to target player", nextSlot + 1)
+      (accSpec.append TargetSpec.player, accSteps.push body, nextSlot + 1)
     else
       let body := Instruction.seq #[Instruction.discardFixed 1, Instruction.drawFixed 1]
-      (accSpec, accSteps.push body,
-       accNames.push "Boomerang — Discard a card, then draw a card", nextSlot))
-    (TargetSpec.none, #[], #[], 0)
+      (accSpec, accSteps.push body, nextSlot))
+    (TargetSpec.none, #[], 0)
   let body :=
     if steps.isEmpty then .noop
     else if steps.size == 1 then steps[0]!
     else .seq steps
-  { targeting := .of spec, body, phrase := String.intercalate ". " names.toList }
+  { targets := spec, body }
 
 /-- Whether `p` may choose this mode of a triggered ability (CR 603.3c / 700.2b / 115.5). -/
 def triggerModeChoosable (g : Game) (p : PlayerId) (obj : GameObject) (e : Effect) : Bool :=
   let e := g.expandEachOpponentEffect p e (some obj.id)
-  let spec := e.effectiveTargetSpec
+  let spec := e.targets
   let stackSelf := if obj.zone == .stack then some obj.id else none
   let divOk :=
-    e.dividedDamage.all (fun (n, _) =>
-      e.allowsZeroTargets || spec.allowsZero ||
+    e.dividedDamage?.all (fun (n, _) =>
+      spec.allowsZero ||
         let legal := g.legalTargetsForSpec p spec obj.sourceId stackSelf
         !legal.isEmpty && e.targetCount ≤ n)
-  divOk && (!e.requiresTarget || e.allowsZeroTargets || spec.allowsZero ||
+  divOk && (!e.requiresTarget || spec.allowsZero ||
     g.effectHasEnoughTargets p e obj.sourceId stackSelf)
 
 /-- Ask for the modes of a modal triggered ability just put on the stack. -/
@@ -104,7 +101,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     -- “For each opponent / player, ...”: expand `forEach?` into one slot per matching player (CR 601.2c).
     let abilityEffect :=
       abilityEffectOverride.orElse fun _ =>
-        if ab.effect.targeting.spec.slots.any (·.forEach?.isSome) then
+        if ab.effect.targets.slots.any (·.forEach?.isSome) then
           some (g.expandEachOpponentEffect controller ab.effect)
         else none
     let srcIdOpt : Option ObjectId :=
@@ -157,7 +154,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
         let choosable := ms.modes.filter (g.triggerModeChoosable controller obj)
         let maxModes := Nat.min paid ms.modes.size
         if maxModes == 0 || choosable.isEmpty then
-          let noop : Effect := { body := .noop, phrase := "" }
+          let noop : Effect := { body := .noop }
           let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
           let g := g.changes #[
             .object obj.id (.abilityEffect (some noop)),
@@ -172,7 +169,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
         let choosable := modes.filter (g.triggerModeChoosable controller obj)
         let maxModes := Nat.min x modes.size
         if maxModes == 0 || choosable.isEmpty then
-          let noop : Effect := { body := .noop, phrase := "" }
+          let noop : Effect := { body := .noop }
           let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
           let g := g.changes #[
             .object obj.id (.abilityEffect (some noop)),
@@ -437,7 +434,7 @@ def promptTriggerTargetsIfNeeded (g : Game) : Game :=
     else
       let msg :=
         match (g.findObject? e.objectId).bind (fun o =>
-            o.abilityEffect.bind (·.dividedDamage) <|>
+            o.abilityEffect.bind (·.dividedDamage?) <|>
               o.triggeredAbility.bind TriggeredAbility.dividedDamage?) with
         | some (n, maxTargets) =>
           s!"{(g.player e.controller).name} must divide {n} damage among one to {maxTargets} targets (CR 603.3d / 601.2d)"

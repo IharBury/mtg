@@ -66,9 +66,8 @@ def equipGeneric (generic : Nat) : GrantedAbility :=
   .activated {
     cost := CostSpec.ofGeneric generic
     effect := {
-      targeting := .of .creatureYouControl
+      targets := .creatureYouControl
       body := .permanent (.attach .this (.target 0))
-      phrase := "Attach to target creature you control"
     }
     timing := .sorcery
     tag? := some (.equip none)
@@ -76,12 +75,8 @@ def equipGeneric (generic : Nat) : GrantedAbility :=
 
 /-- `"{T}, Sacrifice this token: Add <amount> mana of any one color."` -/
 def tapSacrificeAddAnyOneColor (amount : Nat := 1) : GrantedAbility :=
-  let printed :=
-    if amount == 1 then "{T}, Sacrifice this token: Add one mana of any color."
-    else s!"\{T}, Sacrifice this token: Add {englishNumber amount} mana of any one color."
   .activated {
     cost := CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self]
-    printed
     effect := {
       body := .player (.addMana .you { spec := .oneOf .anyColor (.const (Int.ofNat amount)) })
     }
@@ -93,7 +88,6 @@ def tapSacrificeGainLife (generic life : Nat) : GrantedAbility :=
     cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric generic), .tapSelf, .sacrifice (.exact 1) .self]
     effect := {
       body := .life (.gain .you (.const (Int.ofNat life)))
-      phrase := s!"You gain {life} life"
     }
   }
 
@@ -104,7 +98,6 @@ def payGenericCantBeBlockedExceptHaste (generic : Nat) : GrantedAbility :=
     effect := {
       body := .installEffect (.applyContinuous .untilEndOfTurn .this
         (.applyRule (.combat (.cantBeBlockedBy .self (.not (.hasKeyword .haste))))))
-      phrase := "This token can't be blocked this turn except by creatures with haste"
     }
   }
 
@@ -115,7 +108,6 @@ def loyaltyMinusSurveil (cost n : Nat) : GrantedAbility :=
     timing := .loyalty
     effect := {
       body := .player (.surveil .you (.const (Int.ofNat n)))
-      phrase := s!"Surveil {n}"
     }
   }
 
@@ -126,22 +118,17 @@ def loyaltyMinusDraw (cost n : Nat) : GrantedAbility :=
     timing := .loyalty
     effect := {
       body := .player (.drawCards .you (.const (Int.ofNat n)))
-      phrase := s!"Draw {cardPhrase n}"
     }
   }
 
 /-- `"Whenever this token attacks, you may mill n card(s)."` -/
 def onAttackMayMill (n : Nat) : GrantedAbility :=
-  let phrase :=
-    if n == 1 then "Whenever this token attacks, you may mill a card."
-    else s!"Whenever this token attacks, you may mill {n} cards."
   .triggered {
     word := .whenever
     pattern := .thisAttacks
     effect := {
       body := .optional .you none
         (.moveZone (.topOfLibrary .you (.const (Int.ofNat n))) .graveyard .mill) .noop
-      phrase
     }
   }
 
@@ -152,7 +139,6 @@ def onAttackScry (n : Nat) : GrantedAbility :=
     pattern := .thisAttacks
     effect := {
       body := .player (.scry .you (.const (Int.ofNat n)))
-      phrase := s!"scry {n}"
     }
   }
 
@@ -162,23 +148,18 @@ def onAttackDestroyTargetLand : GrantedAbility :=
     word := .whenever
     pattern := .thisAttacks
     effect := {
-      targeting := .of .land
+      targets := .land
       body := .moveZone (.target 0) .graveyard .destroy
-      phrase := "destroy target land"
     }
   }
 
 /-- `"Whenever you gain life, put n +1/+1 counter(s) on this token."` -/
 def onGainLifePutPlusOne (n : Nat := 1) : GrantedAbility :=
-  let phrase :=
-    if n == 1 then "Whenever you gain life, put a +1/+1 counter on this token."
-    else s!"Whenever you gain life, put {plusOnePlusOneCountersPhrase n} on this token."
   .triggered {
     word := .whenever
     pattern := .gainLife .you
     effect := {
       body := .permanent (.modifyCounters (.put .plusOnePlusOne (.const (Int.ofNat n))) .this)
-      phrase
     }
   }
 
@@ -189,7 +170,6 @@ def onLandYouControlEntersPutPlusOne (n : Nat := 1) : GrantedAbility :=
     pattern := .landYouControlEnters
     effect := {
       body := .permanent (.modifyCounters (.put .plusOnePlusOne (.const (Int.ofNat n))) .this)
-      phrase := s!"put {plusOnePlusOneCountersPhrase n} on this token"
     }
   }
 
@@ -197,14 +177,20 @@ def onLandYouControlEntersPutPlusOne (n : Nat := 1) : GrantedAbility :=
 Oracle text writes `with "..."` inline on the token description. -/
 def oracleQuote? : GrantedAbility → Option String
   | .activated ab =>
-    if ab.printed == "{T}, Sacrifice this token: Add one mana of any color." then
-      some ab.printed
+    if ab.cost == CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self] &&
+        ab.effect.body == .player (.addMana .you { spec := .oneOf .anyColor (.const 1) }) then
+      some "{T}, Sacrifice this token: Add one mana of any color."
     else none
   | .triggered ab =>
-    if ab.effect.phrase.startsWith "Whenever this token attacks, you may mill" ||
-        ab.effect.phrase.startsWith "Whenever you gain life, put" then
-      some ab.effect.phrase
-    else none
+    match ab.pattern, ab.effect.body with
+    | .thisAttacks, .optional .you none
+        (.moveZone (.topOfLibrary .you (.const n)) .graveyard .mill _) .noop 1 =>
+      if n == 1 then some "Whenever this token attacks, you may mill a card."
+      else some s!"Whenever this token attacks, you may mill {n.toNat} cards."
+    | .gainLife .you, .permanent (.modifyCounters (.put .plusOnePlusOne (.const n)) .this none) =>
+      if n == 1 then some "Whenever you gain life, put a +1/+1 counter on this token."
+      else some s!"Whenever you gain life, put {plusOnePlusOneCountersPhrase n.toNat} on this token."
+    | _, _ => none
   | _ => none
 
 end GrantedAbility

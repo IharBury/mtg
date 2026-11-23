@@ -115,8 +115,7 @@ def activated (effect : Effect := {}) (mana : ManaCost := ManaCost.empty)
     if extraModes.isEmpty then baseEff
     else
       let modes := #[baseEff] ++ extraModes
-      { body := .chooseModes { modes }
-        phrase := s!"Choose one — {String.intercalate "; " (modes.toList.map Effect.toNotation)}" }
+      { body := .chooseModes { modes } }
   {
     cost := { items, bindVar? := extraCost.bindVar? }
     effect := finalEff

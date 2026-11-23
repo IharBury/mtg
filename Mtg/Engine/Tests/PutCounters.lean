@@ -21,31 +21,31 @@ def opp : PlayerId := ⟨1⟩
 def bear : CardDef := {
   name := "Counter Bear"
   types := #[.creature]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
 }
 
 def other : CardDef := {
   name := "Counter Other"
   types := #[.creature]
   subtypes := #["Goblin"]
-  power := some 1
-  toughness := some 1
+  power := some (.fixed 1)
+  toughness := some (.fixed 1)
 }
 
 def elf : CardDef := {
   name := "Counter Elf"
   types := #[.creature]
   subtypes := #["Elf"]
-  power := some 1
-  toughness := some 1
+  power := some (.fixed 1)
+  toughness := some (.fixed 1)
 }
 
 def foe : CardDef := {
   name := "Counter Foe"
   types := #[.creature]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
 }
 
 def rock : CardDef := {
@@ -63,7 +63,7 @@ def step (g : Game) (body : Instruction)
     (spec : TargetSpec := .none)
     (lastKnownPower : Option Int := none) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     sourceId targets (lastKnownPower := lastKnownPower)
 
 def obj (g : Game) (name : String) : GameObject :=
@@ -189,7 +189,7 @@ in Layer 4 snapshots `.planeswalker` on `PermanentEvent.counters` and triggers
   let loyaltyWatcher : CardDef := {
     name := "Loyalty Watcher"
     types := #[.enchantment]
-    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutLoyaltyCounters "" (Instruction.drawFixed 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .youPutLoyaltyCounters (Instruction.drawFixed 1)]
   }
   let g0 := addPermanent board loyaltyWatcher caster caster
   let rockId := pid g0 "Counter Rock"

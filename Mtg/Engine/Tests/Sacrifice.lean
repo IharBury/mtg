@@ -25,15 +25,15 @@ def relic : CardDef := { name := "Sacrifice Relic", types := #[.artifact] }
 def attacker : CardDef := {
   name := "Sacrifice Attacker"
   types := #[.creature]
-  power := some 3
-  toughness := some 3
+  power := some (.fixed 3)
+  toughness := some (.fixed 3)
 }
 
 def fodder : CardDef := {
   name := "Sacrifice Fodder"
   types := #[.creature]
-  power := some 1
-  toughness := some 1
+  power := some (.fixed 1)
+  toughness := some (.fixed 1)
 }
 
 def planCard : CardDef := { name := "The Plan", types := #[.enchantment] }
@@ -42,7 +42,7 @@ def stepBody (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (spec : TargetSpec := .none) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     sourceId targets
 
 def onBoard (g : Game) (name : String) : Bool :=
@@ -152,6 +152,6 @@ def withRelic : Game := addPermanent afterDraw relic caster caster
 #guard TriggeredAbility.toNotation .onAttackDefenderSacsLeastPower ==
   "Whenever this creature attacks, defending player sacrifices a creature with the least power among creatures they control."
 #guard TriggeredAbility.toNotation .onEnterBolgMaySacrifice ==
-  "When Bolg enters, you may sacrifice another creature. When you do, Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage."
+  "When this permanent enters, you may sacrifice another creature. When you do, deals damage equal to that permanent's power to another target creature. If the excess damage dealt this way is greater than 0, amass Goblins the excess damage dealt this way."
 
 end Mtg.Engine.SacrificeTests

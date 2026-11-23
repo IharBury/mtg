@@ -44,7 +44,7 @@ def exiled (g : Game) (name : String) : Option GameObject :=
 #guard TriggeredAbility.youAttackingLookSixCast.effect.body == Effect.youAttackingLookSixCast.body
 #guard TriggeredAbility.youAttackingPay2LifeToughness.toNotation.contains "pay 2 life"
 #guard TriggeredAbility.youAttackingExileTopHeroPump.toNotation.contains "exile the top card"
-#guard TriggeredAbility.youAttackingLookSixCast.toNotation.contains "top six cards"
+#guard TriggeredAbility.youAttackingLookSixCast.toNotation.contains "top 6 cards"
 
 /- The Kingpin may pay 2 life. Declining and being unable to pay leave
 power and combat damage alone. Paying does not change power; a 1/5 assigns

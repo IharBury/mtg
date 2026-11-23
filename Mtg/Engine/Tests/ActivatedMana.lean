@@ -118,8 +118,8 @@ private def passBothPlayers (g : Game) : Game :=
     name := "P5 Mountain Bear"
     types := #[.creature]
     subtypes := #["Mountain"]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   let g := addPermanent afterDraw notALand p0 p0
   let o := namedPerm g notALand.name
@@ -201,9 +201,8 @@ private def passBothPlayers (g : Game) : Game :=
     activatedAbilities := #[{
       cost := CostSpec.tapOnly
       effect := {
-        targeting := .of TargetSpec.creature
+        targets := TargetSpec.creature
         body := Instruction.addMana { spec := .fixedOne (.colored .green) }
-        phrase := "Target creature gets nothing; add {G}"
       }
     }]
   }
@@ -261,7 +260,6 @@ private def passBothPlayers (g : Game) : Game :=
       cost := CostSpec.tapOnly
       effect := {
         body := .seq #[Instruction.addMana { spec := .fixedOne (.colored .green) }, Instruction.drawFixed 1]
-        phrase := "Add {G}. Draw a card"
       }
     }]
   }
@@ -292,7 +290,7 @@ private def passBothPlayers (g : Game) : Game :=
     manaCost := ManaCost.ofColor .red
     types := #[.instant]
     keywords := #[Keyword.splitSecond]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
   let pureRock : CardDef := {
     name := "P5 Pure Emerald"
@@ -304,7 +302,7 @@ private def passBothPlayers (g : Game) : Game :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.tapOnly
-      effect := { body := .seq #[Instruction.addMana { spec := .fixedOne (.colored .green) }, Instruction.drawFixed 1], phrase := "Add {G}. Draw a card" }
+      effect := { body := .seq #[Instruction.addMana { spec := .fixedOne (.colored .green) }, Instruction.drawFixed 1] }
     }]
   }
   let splitEnabler : CardDef := {
@@ -338,8 +336,8 @@ private def passBothPlayers (g : Game) : Game :=
   let doubleBoast : CardDef := {
     name := "P5 Twin Boaster"
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
     activatedAbilities := #[
       { cost := CostSpec.empty
         effect := Effect.gainLife 1
@@ -415,8 +413,8 @@ private def passBothPlayers (g : Game) : Game :=
     name := "P5 Power Hero"
     manaCost := ManaCost.ofGenericAndColor 1 .blue
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
     activatedAbilities := #[{
       cost := CostSpec.ofMana (ManaCost.ofGenericAndColor 3 .blue)
       effect := Effect.gainLife 1
@@ -486,8 +484,8 @@ private def passBothPlayers (g : Game) : Game :=
     name := "P5 Counter Bear"
     manaCost := ManaCost.ofGenericAndColor 1 .green
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
     staticAbilities := #[.entersWithPlusOneCounters 1]
   }
   let g0 :=
@@ -514,8 +512,8 @@ private def passBothPlayers (g : Game) : Game :=
     manaCost := ManaCost.ofColor .green
     supertypes := #[.legendary]
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   let g0 :=
     insertObject (addPermanent afterDraw delightedHalfling p0 p0) legBear p0 (.hand p0)
@@ -542,8 +540,8 @@ private def passBothPlayers (g : Game) : Game :=
     name := "P5 Legend"
     supertypes := #[.legendary]
     types := #[.creature]
-    power := some 4
-    toughness := some 4
+    power := some (.fixed 4)
+    toughness := some (.fixed 4)
   }
   let abStatic : ActivatedAbility := {
     cost := CostSpec.ofGeneric 5
@@ -555,7 +553,7 @@ private def passBothPlayers (g : Game) : Game :=
   }
   let abTarget : ActivatedAbility := {
     cost := CostSpec.ofGeneric 5
-    effect := { targeting := .of TargetSpec.creature, body := Instruction.gainLifeFixed 1 }
+    effect := { targets := TargetSpec.creature, body := Instruction.gainLifeFixed 1 }
     costReductions := #[
       ActivationCostReduction.ifTargetPowerAtMost 2 2,
       ActivationCostReduction.perPlusOneOnTarget
@@ -646,8 +644,8 @@ private def passBothPlayers (g : Game) : Game :=
     manaCost := ManaCost.ofColor .red
     supertypes := #[.legendary]
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   let gEmpty := addPermanent afterDraw moxAmber p0 p0
   let m0 := namedPerm gEmpty moxAmber.name
@@ -750,7 +748,7 @@ private def passBothPlayers (g : Game) : Game :=
   let badModalTarget : ActivatedAbility :=
     ActivatedAbility.mkModal CostSpec.tapOnly
       #[Effect.addMana #[.colored .green],
-        { targeting := .of TargetSpec.creature, body := Instruction.gainLifeFixed 1 }]
+        { targets := TargetSpec.creature, body := Instruction.gainLifeFixed 1 }]
   let badModalDraw : ActivatedAbility :=
     ActivatedAbility.mkModal CostSpec.tapOnly
       #[Effect.addMana #[.colored .green], Effect.draw 1]
@@ -779,8 +777,8 @@ private def passBothPlayers (g : Game) : Game :=
     name := "P5 Spirit Guide"
     manaCost := ManaCost.ofGenericAndColor 2 .green
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.exile (.exact 1) .yourHand .self]
       activeZones := #[.hand]
@@ -791,14 +789,14 @@ private def passBothPlayers (g : Game) : Game :=
     name := "P5 Tiny Elf"
     manaCost := ManaCost.ofColor .green
     types := #[.creature]
-    power := some 1
-    toughness := some 1
+    power := some (.fixed 1)
+    toughness := some (.fixed 1)
   }
   let discardMana : CardDef := {
     name := "P5 Red Simian"
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.discard (.exact 1) .self]
       activeZones := #[.hand]
@@ -808,8 +806,8 @@ private def passBothPlayers (g : Game) : Game :=
   let gyMana : CardDef := {
     name := "P5 Crypt Spirit"
     types := #[.creature]
-    power := some 1
-    toughness := some 1
+    power := some (.fixed 1)
+    toughness := some (.fixed 1)
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.exile (.exact 1) .yourGraveyard .self]
       activeZones := #[.graveyard]
@@ -849,8 +847,8 @@ private def passBothPlayers (g : Game) : Game :=
   let counterManaCreature : CardDef := {
     name := "P5 Crystalline Crawler"
     types := #[.artifact, .creature]
-    power := some 1
-    toughness := some 1
+    power := some (.fixed 1)
+    toughness := some (.fixed 1)
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.tapSelf, .removeCounters .anyNumber (some .plusOnePlusOne) .self]
       effect := { body := Instruction.addMana { spec := .sequence #[(.colored .green, .chosenX)] } }
@@ -877,8 +875,8 @@ private def passBothPlayers (g : Game) : Game :=
     name := "P5 Dark Ritualist"
     manaCost := { symbols := #[.colored .black, .colored .black] }
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   -- `removeAnyNumberPlusOne`: 3 counters -> remove 2 for `{G}{G}` (leaves 1), reject 4.
   let gCnt0 := addPermanent afterDraw counterManaCreature p0 p0

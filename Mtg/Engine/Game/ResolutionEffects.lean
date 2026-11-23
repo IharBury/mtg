@@ -397,9 +397,8 @@ def redwingToken : CardDef := (tokenPrinted? .redwing).getD default
 def theVoidToken : CardDef := (tokenPrinted? .theVoid).getD default
 
 def galactusAttackTrigger : Effect := {
-  targeting := .of .land
+  targets := .land
   body := Instruction.destroy (.target 0)
-  phrase := "Whenever Galactus attacks, destroy target land."
 }
 
 def galactusToken : CardDef := (tokenPrinted? .galactus).getD default
@@ -1062,11 +1061,11 @@ def becomeCopyOf (g : Game) (o : GameObject) (src : GameObject)
       supertypes
       power :=
         match setPT with
-        | some (p, _) => some p
+        | some (p, _) => some (.fixed p)
         | none => printed0.power
       toughness :=
         match setPT with
-        | some (_, t) => some t
+        | some (_, t) => some (.fixed t)
         | none => printed0.toughness
       keywords :=
         if addVigilance then KeywordAbility.add printed0.keywords Keyword.vigilance

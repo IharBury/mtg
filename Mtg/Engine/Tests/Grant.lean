@@ -125,8 +125,8 @@ nothing is granted. -/
 #guard TriggeredAbility.onEnterIfCastProtectionEverything.effect.body ==
   Effect.triggerProtectionEverything.body
 #guard TriggeredAbility.toNotation .onAttackEquippedGainDoubleStrike ==
-  "Whenever Dáin attacks, each equipped attacking creature gains double strike until end of turn."
+  "Whenever this creature attacks, that creature gains double strike until end of turn."
 #guard TriggeredAbility.toNotation .onEnterIfCastProtectionEverything ==
-  "When The One Ring enters, if you cast it, you gain protection from everything until your next turn."
+  "When this permanent enters, if there is this permanent and every this permanent is permanent that was cast, you has protection from everything until your next turn."
 
 end Mtg.Engine.GrantTests

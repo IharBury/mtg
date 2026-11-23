@@ -54,11 +54,12 @@ def upToXModes : TriggeredAbility :=
 #guard (TriggeredAbility.onStep Effect.stepHydeChoose).isModal
 
 #guard (toString allianceModes).contains
-  "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2, then draw a card."
+  "choose one that hasn't been chosen this turn — • Add {G}{G}{G}. • Put a +1/+1 counter on each creature you control. • Scry 2. Draw a card."
 #guard (toString gollumModes).contains
-  "choose one that hasn't been chosen — • Put a +1/+1 counter on Gollum. • Each opponent loses 2 life and you gain 2 life. • Draw a card."
+  "choose one that hasn't been chosen — • Put a +1/+1 counter on this creature. • Each opponent loses 2 life. You gain 2 life. • Draw a card."
 #guard (toString upToXModes).contains "choose up to X"
-#guard (toString (TriggeredAbility.onStep Effect.stepHydeChoose)).contains "Mister Hyde"
+#guard (toString (TriggeredAbility.onStep Effect.stepHydeChoose)).contains
+  "Put a +1/+1 counter on this creature."
 
 /- Alliance offers the modes still unused this turn. All three chosen
 removes the ability. A missing source does the same. -/

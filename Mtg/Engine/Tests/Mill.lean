@@ -22,8 +22,8 @@ def elf : CardDef := {
   name := "Mill Elf"
   types := #[.creature]
   subtypes := #["Elf"]
-  power := some 1
-  toughness := some 1
+  power := some (.fixed 1)
+  toughness := some (.fixed 1)
 }
 
 def relic : CardDef := {
@@ -86,7 +86,7 @@ def step (g : Game) (ab : TriggeredAbility)
 def stepBody (g : Game) (body : Instruction) (targets : Array Target := #[])
     (spec : TargetSpec := .none) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     none targets
 
 def playerMill : TriggeredAbility := .onDrawSecondMillPlayer 1

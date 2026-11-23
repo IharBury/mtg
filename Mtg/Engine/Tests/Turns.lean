@@ -116,7 +116,7 @@ def attackingGoblin : Game :=
 
 def afterCombatDamage : Game := attackingGoblin.combatDamage
 
-#guard ragingGoblin.power == some 1
+#guard ragingGoblin.power == some (.fixed 1)
 #guard (attackingGoblin.player ⟨1⟩).life == 20
 #guard (afterCombatDamage.player ⟨1⟩).life == 19
 #guard afterCombatDamage.log.any (fun s => mentions s "19 life")

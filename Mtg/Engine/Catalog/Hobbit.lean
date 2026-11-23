@@ -2156,8 +2156,8 @@ that are also in the core catalog. -/
 #guard (woodElves.summary.splitOn "Forest card").length > 1
 #guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
 #guard (galionElvenkingsButler.summary.splitOn "base power and toughness").length > 1
-#guard galionElvenkingsButler.power == some 4
-#guard galionElvenkingsButler.toughness == some 4
+#guard galionElvenkingsButler.power == some (.fixed 4)
+#guard galionElvenkingsButler.toughness == some (.fixed 4)
 #guard woodlandWeavemaster.hasSimpleKeyword .vigilance
 #guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
 #guard woodlandWeavemaster.activatedAbilities[0]?.bind (·.manaProduction?) ==
@@ -2165,8 +2165,8 @@ that are also in the core catalog. -/
          restriction := some (.subtypeSpellOrSource .elf) }
 #guard woodlandWeavemaster.manaAbilities == #[
   .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
-#guard woodlandWeavemaster.power == some 1
-#guard woodlandWeavemaster.toughness == some 2
+#guard woodlandWeavemaster.power == some (.fixed 1)
+#guard woodlandWeavemaster.toughness == some (.fixed 2)
 #guard (woodlandWeavemaster.summary.splitOn "vigilance").length > 1
 #guard (woodlandWeavemaster.summary.splitOn "another Elf").length > 1
 #guard (woodlandWeavemaster.summary.splitOn "any one color").length > 1
@@ -2196,8 +2196,8 @@ that are also in the core catalog. -/
 #guard (beornsHospitality.summary.splitOn "a land you control enters").length > 1
 #guard (beornsHospitality.summary.splitOn "Bear creature").length > 1
 #guard mirkwoodPathmaker.staticAbilities == #[.powerToughnessEqualLandsYouControl]
-#guard mirkwoodPathmaker.power.isNone
-#guard mirkwoodPathmaker.toughness.isNone
+#guard mirkwoodPathmaker.power == some (.star 0)
+#guard mirkwoodPathmaker.toughness == some (.star 0)
 #guard (mirkwoodPathmaker.summary.splitOn "*/*").length > 1
 #guard (mirkwoodPathmaker.summary.splitOn "lands you control").length > 1
 #guard gandalfSparkStarter.hasSimpleKeyword .reach
@@ -2209,21 +2209,21 @@ that are also in the core catalog. -/
 #guard guardianOfTheHalls.activatedAbilities[0]!.effect == Effect.putPlusOnePlusOneOnSource 3
 #guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
   (ManaCost.ofGenericAndColors 5 [.green, .green])
-#guard guardianOfTheHalls.power == some 2
-#guard guardianOfTheHalls.toughness == some 2
+#guard guardianOfTheHalls.power == some (.fixed 2)
+#guard guardianOfTheHalls.toughness == some (.fixed 2)
 #guard (guardianOfTheHalls.summary.splitOn "trample").length > 1
 #guard (guardianOfTheHalls.summary.splitOn "+1/+1").length > 1
 #guard desolationProwler.activatedAbilities.size == 1
 #guard desolationProwler.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
 #guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
 #guard desolationProwler.activatedAbilities[0]!.isOnceEachTurn
-#guard desolationProwler.power == some 2
-#guard desolationProwler.toughness == some 2
+#guard desolationProwler.power == some (.fixed 2)
+#guard desolationProwler.toughness == some (.fixed 2)
 #guard (desolationProwler.summary.splitOn "Pay 2 life").length > 1
 #guard raveningWarg.hasSimpleKeyword .deathtouch
 #guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
-#guard raveningWarg.power == some 2
-#guard raveningWarg.toughness == some 2
+#guard raveningWarg.power == some (.fixed 2)
+#guard raveningWarg.toughness == some (.fixed 2)
 #guard (raveningWarg.summary.splitOn "deathtouch").length > 1
 #guard (raveningWarg.summary.splitOn "while you control a creature with power 4 or greater").length > 1
 #guard (raveningWarg.summary.splitOn "power 4 or greater").length > 1
@@ -2262,8 +2262,8 @@ that are also in the core catalog. -/
   #[Effect.targetPlayerDrawLoseLife 2 2,
     Effect.pumpAndLifelink 2 2]
 #guard stonyVoicedGoblins.triggeredAbilities == #[.onEnterEachOpponentDiscards]
-#guard gollumSilentSlinker.power == some 4
-#guard gollumSilentSlinker.toughness == some 3
+#guard gollumSilentSlinker.power == some (.fixed 4)
+#guard gollumSilentSlinker.toughness == some (.fixed 3)
 #guard gollumSilentSlinker.supertypes.any (· == .legendary)
 #guard !(gollumSilentSlinker.summary.splitOn "can't be blocked except").length > 1
 #guard bilbosDeadlySlice.isInstant
@@ -2272,8 +2272,8 @@ that are also in the core catalog. -/
 #guard smaugTheGreatCalamity.hasSimpleKeyword .flying
 #guard smaugTheGreatCalamity.hasAdventure
 #guard smaugTheGreatCalamity.supertypes.any (· == .legendary)
-#guard smaugTheGreatCalamity.power == some 5
-#guard smaugTheGreatCalamity.toughness == some 5
+#guard smaugTheGreatCalamity.power == some (.fixed 5)
+#guard smaugTheGreatCalamity.toughness == some (.fixed 5)
 #guard
   match smaugTheGreatCalamity.adventure with
   | some adv =>
@@ -2291,8 +2291,8 @@ that are also in the core catalog. -/
 #guard beornReluctantHost.hasSimpleKeyword .trample
 #guard beornReluctantHost.hasAdventure
 #guard beornReluctantHost.supertypes.any (· == .legendary)
-#guard beornReluctantHost.power == some 5
-#guard beornReluctantHost.toughness == some 5
+#guard beornReluctantHost.power == some (.fixed 5)
+#guard beornReluctantHost.toughness == some (.fixed 5)
 #guard
   match beornReluctantHost.adventure with
   | some adv =>

@@ -34,7 +34,7 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     name := "P51i1 ZeroInst"
     manaCost := ManaCost.zero
     types := #[.instant]
-    spellEffect := some (Effect.gainLife 1)
+    spellAbility := some { effect := Effect.gainLife 1 }
   }
 
   -- 1a(i). `Entering.receivePriority` post-`checkSBA` and post-`putTriggerBatch` CR 800.4j `priorityInstead` re-resolution:
@@ -48,7 +48,7 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     name := "P51i1 TgtDiesGerm"
     triggeredAbilities := #[
       TriggeredAbility.mkTrigger .thisDies
-        { targeting := .of .player, body := Instruction.gainLifeFixed 1 (.target 0), phrase := "Target player gains 1 life." }
+        { targets := .player, body := Instruction.gainLifeFixed 1 (.target 0) }
     ]
   }
   let gZeroLifeWithTgtTrig := addPermanent gZeroLife tgtDiesZeroDef p2 p2
@@ -133,13 +133,13 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     name := "P51i1 SelfFatal"
     manaCost := ManaCost.zero
     types := #[.instant]
-    spellEffect := some { body := Instruction.loseLifeFixed 20, phrase := "You lose 20 life." }
+    spellAbility := some { effect := { body := Instruction.loseLifeFixed 20 } }
   }
   let scryInstDef : CardDef := {
     name := "P51i1 ScryInst"
     manaCost := ManaCost.zero
     types := #[.instant]
-    spellEffect := some { body := Instruction.scryFixed 1, phrase := "Scry 1." }
+    spellAbility := some { effect := { body := Instruction.scryFixed 1 } }
   }
   let gTwoStack0 :=
     insertObject (insertObject g4 zeroInstDef p2 (.hand p2)) selfLoseInstDef p0 (.hand p0)
@@ -316,7 +316,7 @@ private def replayOk51i2 (gs : Array Game) : Bool :=
     name := "P51i2 ExBolt"
     manaCost := ManaCost.ofGeneric 1
     types := #[.instant]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2 }
   }
   let mkSimulCtrlExileGame (p1AlsoSeven : Bool) (loseAbilInstead : Bool := false)
       (untilNextTurnP1 : Bool := false) : Game × ObjectId := Id.run do
@@ -922,12 +922,12 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
     name := "P51i4 LookedSorc"
     manaCost := ManaCost.ofGeneric 2
     types := #[.sorcery]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2 }
   }
   let sacLookedSorcDef : CardDef := {
     lookedSorcDef with
     name := "P51i4 LookedSacSorc"
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
+    spellAbility := some { additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
   }
   let gLooked0 := addPermanent (insertObject gBase lookedSorcDef p0 (.library p0)) taxPermDef p1 p1
   let lookedCardId := (gLooked0.player p0).library.back!
@@ -955,8 +955,7 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
     name := "P51i4 SneakSac"
     manaCost := ManaCost.ofGeneric 1
     types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
-    spellEffect := some (Effect.gainLife 2)
+    spellAbility := some { effect := Effect.gainLife 2, additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
   }
   let gSnk0 := addPermanent (insertObject gBase sacCreatureSpellDef p0 (.hand p0)) bear p0 p0
   let snkAtkId := (gSnk0.permanentsOf p0)[0]!.id

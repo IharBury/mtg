@@ -2023,7 +2023,7 @@ def taskmasterCopyOk : Bool :=
     #[Target.permanent giant.id]
   let tm := namedPermanent g "Taskmaster, Mercenary Mimic"
   g.name tm == "Taskmaster, Mercenary Mimic" &&
-    some (g.power tm) == hillGiant.power &&
+    some (g.power tm) == hillGiant.powerValue &&
     g.copyUntilNextTurn tm &&
     (let g2 := addPermanent afterDraw taskmasterMercenaryMimic ⟨0⟩ ⟨0⟩
      let g2 := addPermanent g2 hillGiant ⟨1⟩ ⟨1⟩
@@ -2034,7 +2034,7 @@ def taskmasterCopyOk : Bool :=
      let g2 := g2.applyTriggeredAbility ⟨0⟩ (.onStep Effect.stepCopyTaskmaster)
        (some tm.id) #[Target.card gy.id]
      some (g2.power (namedPermanent g2 "Taskmaster, Mercenary Mimic")) ==
-       hillGiant.power) &&
+       hillGiant.powerValue) &&
     (mshRuling 475).comment.contains "exactly what was printed" &&
     (mshRuling 678).comment.contains "neither entering nor leaving"
 
@@ -2503,7 +2503,7 @@ def mightyThorBlinkOk : Bool :=
   let gTok := addPermanent (addPermanent afterDraw theMightyThorJaneFoster ⟨0⟩ ⟨0⟩)
     { grizzlyBears with isToken := true } ⟨1⟩ ⟨1⟩
   let tok := namedPermanent gTok "Grizzly Bears"
-  let kind := Effect.thisAttackBlinkNontoken.targeting.spec
+  let kind := Effect.thisAttackBlinkNontoken.targets
   let legal := g.legalTargetsForSpec ⟨0⟩ kind (some thor.id)
   legal.contains (Target.permanent bears.id) &&
     legal.contains (Target.permanent stone.id) &&
@@ -2544,7 +2544,7 @@ def superAdaptoidKeywordCountersOk : Bool :=
     Keyword.vigilance, Keyword.indestructible, Keyword.lifelink, Keyword.trample]
   let g := g.createEffect (.keywordsUntilEot bears.id kw)
   let bears := namedPermanent g "Grizzly Bears"
-  let kind := Effect.enterOrAttackCopyKeywords.targeting.spec
+  let kind := Effect.enterOrAttackCopyKeywords.targets
   let legal := g.legalTargetsForSpec ⟨0⟩ kind (some adaptoid.id)
   kind == .anotherCreature &&
     legal.contains (Target.permanent bears.id) &&
@@ -2720,7 +2720,7 @@ def swordsmanAttachTargetsOk : Bool :=
   let sw := namedPermanent g "Swordsman, Sharp Scoundrel"
   let bow := namedPermanent g "Hawkeye's Bow"
   let bears := namedPermanent g "Grizzly Bears"
-  let spec := Effect.watchVillainAttachEquipment.targeting.spec
+  let spec := Effect.watchVillainAttachEquipment.targets
   let equip := g.legalTargetsForSlot ⟨0⟩ (spec.slotAtPos 0) (some sw.id)
   let creatures := g.legalTargetsForSlot ⟨0⟩ (spec.slotAtPos 1) (some sw.id)
   spec == .upToOneEquipmentThenCreatureYouControl &&
@@ -2812,7 +2812,7 @@ def shieldTapsDefendingPlayerOk : Bool :=
   let shield := namedPermanent g "Captain America's Shield"
   let giant := namedPermanent g "Hill Giant"
   let ogre := namedPermanent g "Gray Ogre"
-  let kind := Effect.watchEquippedAttacksTap.targeting.spec
+  let kind := Effect.watchEquippedAttacksTap.targets
   let legal := g.legalTargetsForSpec ⟨0⟩ kind (some shield.id)
   kind == .defendingPlayerCreature &&
     legal.contains (Target.permanent ogre.id) &&
@@ -2992,7 +2992,7 @@ def wiccanAnotherNonlandNontokenOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
   let giant := namedPermanent g "Hill Giant"
-  let kind := Effect.castingExileFlicker.targeting.spec
+  let kind := Effect.castingExileFlicker.targets
   let legal := g.legalTargetsForSpec ⟨0⟩ kind (some wiccan.id)
   legal.contains (Target.permanent bears.id) &&
     !legal.contains (Target.permanent wiccan.id) &&
@@ -3019,7 +3019,7 @@ def quakeTapsCreatureOrLandOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let land := namedPermanent g "Mountain"
   let feast := namedPermanent g "Heroic Feast"
-  let kind := Effect.castingTapCreatureOrLand.targeting.spec
+  let kind := Effect.castingTapCreatureOrLand.targets
   let legal := g.legalTargetsForSpec ⟨0⟩ kind (some quake.id)
   legal.contains (Target.permanent bears.id) &&
     legal.contains (Target.permanent land.id) &&

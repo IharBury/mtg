@@ -26,7 +26,7 @@ def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (spec : TargetSpec := .creature) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
@@ -204,7 +204,7 @@ An empty library exiles nothing. -/
 
 /- Printed phrases stay with the combination that produces them. -/
 #guard TriggeredAbility.resolutionPhrase
-    { targeting := .of .creature, body := Instruction.exile (.target 0) } ==
+    { targets := .creature, body := Instruction.exile (.target 0) } ==
   "exile target creature"
 #guard TriggeredAbility.resolutionPhrase
     { body := Instruction.exile .this } ==

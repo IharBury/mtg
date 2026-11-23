@@ -76,8 +76,7 @@ def triggerRecruit : Effect :=
 
 /-- Deal `amount` damage divided as you choose among one to `maxTargets` targets (CR 601.2d). -/
 def triggerDividedDamage (amount maxTargets : Nat) : Effect :=
-  { targeting := .of .anyTarget
-    dividedDamage := some (amount, maxTargets)
+  { targets := TargetSpec.dividedDamage .anyTarget amount maxTargets
     body := Instruction.dealDamage .allTargets (.const (Int.ofNat amount)) .this { divided := true } }
 
 /-- You gain `n` life. -/
@@ -90,18 +89,17 @@ def triggerConniveSource : Effect :=
 
 /-- Target of `kind` connives (CR 701.50). -/
 def triggerConniveTarget (kind : TargetSpec) : Effect :=
-  { targeting := .of kind
+  { targets := kind
     body := .player (.connive (.target 0)) }
 
 /-- Exile target of `kind` until this permanent leaves the battlefield (CR 610.3). -/
 def triggerExileUntilLeaves (kind : TargetSpec) (allowsZeroTargets : Bool := false) : Effect :=
-  { targeting := .of kind
-    allowsZeroTargets
+  { targets := if allowsZeroTargets then kind.asUpTo 1 else kind
     body := Instruction.exile (.target 0) { exileUntilSourceLeaves := true } }
 
 /-- Deal `n` damage to target opponent. -/
 def triggerDamageTargetOpponent (n : Nat) : Effect :=
-  { targeting := .of .opponent
+  { targets := .opponent
     body := Instruction.dealDamageFixed (.players (.target 0)) n }
 
 /-- Deal `n` damage to each opponent. -/
@@ -110,12 +108,12 @@ def triggerDamageEachOpponent (n : Nat) : Effect :=
 
 /-- Attach this Equipment to target of `kind`. -/
 def triggerAttachTo (kind : TargetSpec) : Effect :=
-  { targeting := .of kind
+  { targets := kind
     body := .permanent (.attach .this (.target 0)) }
 
 /-- Target opponent sacrifices a creature of their choice. -/
 def triggerOpponentSacrificesCreature : Effect :=
-  { targeting := .of .opponent
+  { targets := .opponent
     body := .moveZone (.inZones .battlefield (.all #[.hasType .creature, .controlledBy (.ofExpr (.target 0))]))
       .graveyard .sacrifice
       { choice? := some { chooser := .player (.target 0), count := .exact (.const 1) } } }
@@ -140,12 +138,12 @@ def triggerEachOpponentDiscards (n : Nat := 1) : Effect :=
 
 /-- Target opponent discards `n` card(s). -/
 def triggerTargetOpponentDiscards (n : Nat) : Effect :=
-  { targeting := .of .opponent
+  { targets := .opponent
     body := Instruction.discardFixed n (.target 0) }
 
 /-- Target player mills `n` cards. -/
 def triggerMillPlayer (n : Nat) : Effect :=
-  { targeting := .of .player
+  { targets := .player
     body := Instruction.millFixed n (.target 0) }
 
 /-- Investigate (create a Clue token; CR 701.16). -/
@@ -187,13 +185,12 @@ def triggerEachPlayerSacrificesCreature : Effect :=
 
 /-- Exile target of `kind` (linked to source for leave-the-battlefield return). -/
 def triggerExileTarget (kind : TargetSpec) (allowsZeroTargets : Bool := false) : Effect :=
-  { targeting := .of kind
-    allowsZeroTargets
+  { targets := if allowsZeroTargets then kind.asUpTo 1 else kind
     body := Instruction.exile (.target 0) { linkToSource := true } }
 
 /-- Return target creature card from your graveyard to your hand. -/
 def triggerReturnCreatureFromGyToHand : Effect :=
-  { targeting := .of .creatureCardInYourGraveyard
+  { targets := .creatureCardInYourGraveyard
     body := Instruction.bounce (.target 0) }
 
 /-- Put a +1/+1 counter on each creature you control. -/
@@ -230,7 +227,7 @@ def triggerBecomePT (power toughness : Int) : Effect :=
 /-- Target creature you control gets +1/+1 until end of turn for each Plains you control. -/
 def triggerPumpTargetPerPlains : Effect :=
   let plainsCount := ValueExpr.count (subtypeYouControlExpr .plains)
-  { targeting := .of .creatureYouControl
+  { targets := .creatureYouControl
     body := Instruction.pump (.target 0) plainsCount plainsCount }
 
 /-- You may discard your hand. If you do, draw `n` cards. -/
@@ -289,9 +286,8 @@ def triggerCreateAxe (attach : Bool := false) : Effect :=
             word := .when
             pattern := .thisEnters
             effect := {
-              targeting := .of .creatureYouControl
+              targets := .creatureYouControl
               body := .permanent (.attach .triggerSubject (.target 0))
-              phrase := "Attach it to target creature you control"
             }
           })) }
   else
@@ -301,16 +297,14 @@ def triggerCreateAxe (attach : Bool := false) : Effect :=
 def triggerTapOppOrUntapYours : Effect :=
   { body := .chooseModes {
       modes := #[
-        { targeting := .of .oppCreature, body := Instruction.tap (.target 0)
-          phrase := "Tap target creature an opponent controls" },
-        { targeting := .of .creatureYouControl, body := Instruction.untap (.target 0)
-          phrase := "Untap target creature you control" }
+        { targets := .oppCreature, body := Instruction.tap (.target 0) },
+        { targets := .creatureYouControl, body := Instruction.untap (.target 0) }
       ]
     } }
 
 /-- Gain control of target creature an opponent controls until end of turn. Untap it. It gains haste until end of turn. -/
 def triggerGainControlOppUntilEot : Effect :=
-  { targeting := .of .oppCreature
+  { targets := .oppCreature
     body := .seq #[
       .installEffect (.applyContinuous .untilEndOfTurn (.target 0) (.gainControl .you)),
       Instruction.untap (.target 0),
@@ -325,7 +319,7 @@ def triggerPayReturnFromGy : Effect :=
 
 /-- Target opponent loses `n` life. -/
 def triggerTargetOpponentLosesLife (n : Nat) : Effect :=
-  { targeting := .of .opponent
+  { targets := .opponent
     body := Instruction.loseLifeFixed n (.target 0) }
 
 /-- You may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard `n` cards. -/
@@ -343,19 +337,18 @@ def triggerRingTempts : Effect :=
 
 /-- Choose up to one other target creature you control. Its base P/T become equal to this creature's P/T until end of turn. -/
 def triggerSetOtherBasePT : Effect :=
-  { targeting := .of .anotherCreatureYouControl
-    allowsZeroTargets := true
+  { targets := TargetSpec.anotherCreatureYouControl.asUpTo 1
     body := Instruction.setBasePT (.target 0) (.objectStat .power .this) (.objectStat .toughness .this) }
 
 /-- Return target Elf card from your graveyard to your hand. You gain life equal to that card's power. -/
 def triggerReturnElfGainLife : Effect :=
-  { targeting := .of .elfInYourGraveyard
+  { targets := .elfInYourGraveyard
     body := .bind ⟨0⟩ (Instruction.bounce (.target 0))
       (Instruction.gainLife (.stepMetric .sumPower ⟨0⟩)) }
 
 /-- This creature deals damage equal to its power (LKI) to target creature an opponent controls. -/
 def triggerDamageFromLastKnownPower : Effect :=
-  { targeting := .of .oppCreature
+  { targets := .oppCreature
     body := Instruction.dealDamage (.targetSlot 0) (.objectStat .power .this) }
 
 /-- You may pay `{n}`. If you do, (optionally put a +1/+1 counter on this creature and) draw a card. -/
@@ -405,19 +398,19 @@ def triggerDamageEqualSubtypeToEachOpponent (subtype : CardSubtype) : Effect :=
 
 /-- This creature deals damage equal to the number of Treasures you control to any target. -/
 def triggerDamageEqualTreasures : Effect :=
-  { targeting := .of .anyTarget
+  { targets := .anyTarget
     body := Instruction.dealDamage (.targetSlot 0) (ValueExpr.count (subtypeYouControlExpr .treasure)) }
 
 /-- This creature deals `n` damage to any target. If a `subtype` is dealt damage this way, destroy it. -/
 def triggerDealDamageDestroyIfSubtype (n : Nat) (subtype : CardSubtype) : Effect :=
-  { targeting := .of .anyTarget
+  { targets := .anyTarget
     body := .bind ⟨0⟩ (Instruction.dealDamageFixed (.targetSlot 0) n)
       (Instruction.ifThen (.cmp .gt (.stepMetric .damageDealt ⟨0⟩) (.const 0))
         (Instruction.destroy (.filter (.stepObjects ⟨0⟩) (.hasSubtype (.literal subtype))))) }
 
 /-- Attach target Equipment you control to up to one target creature you control. -/
 def triggerAttachEquipmentToCreature : Effect :=
-  { targeting := .of .equipmentYouControlThenCreatureYouControl
+  { targets := .equipmentYouControlThenCreatureYouControl
     body := .permanent (.attach (.target 0) (.target 1)) }
 
 /-- Defending player sacrifices a creature with the least power among creatures they control. -/
@@ -433,10 +426,9 @@ def triggerDefenderSacsLeastPower : Effect :=
 
 /-- Return up to one other target permanent you control to its owner's hand. If you do, put a +1/+1 counter on this creature. -/
 def triggerReturnOtherPlusOne : Effect :=
-  { targeting := .of (.single {
+  { targets := (.single {
       domain := .object .battlefield (.all #[.otherThan .this, .controlledBy .you])
       count := .upTo 1 })
-    allowsZeroTargets := true
     body := .bind ⟨0⟩ (Instruction.bounce (.target 0))
       (Instruction.ifThen (.stepSucceeded ⟨0⟩) (Instruction.putPlusOne .this 1)) }
 
@@ -460,11 +452,10 @@ def triggerCreateTappedTreasuresEqualOppArtifacts : Effect :=
 
 /-- Put up to one target nonland permanent card with mana value `mv` or less from a graveyard onto the battlefield under its owner's control. -/
 def triggerPutNonlandMvAtMostFromGy (mv : Nat) : Effect :=
-  { targeting := .of (.single {
+  { targets := (.single {
       domain := .object .anyGraveyard (.all #[
         .not (.hasType .land), .isKind .permanentCard, .stat .manaValue .le (.const (Int.ofNat mv))])
       count := .upTo 1 })
-    allowsZeroTargets := true
     body := .moveZone (.target 0) (.battlefield .owner) .put }
 
 /-- Other creatures of `subtypes` you control get +P/+T; creatures opponents control get +oppP/+oppT. -/
@@ -484,18 +475,15 @@ def triggerOthersGetAndOppsGet (subtypes : Array CardSubtype) (power toughness o
 def triggerWolfPlusOneOrTreasure : Effect :=
   { body := .chooseModes {
       modes := #[
-        { targeting := .of (.creatureYouControlAnySubtype #[.wolf])
-          body := Instruction.putPlusOne (.target 0) 1
-          phrase := "Put a +1/+1 counter on target Wolf you control" },
-        { body := Instruction.createTokensFixed .treasure 1
-          phrase := "Create a Treasure token" }
+        { targets := (.creatureYouControlAnySubtype #[.wolf])
+          body := Instruction.putPlusOne (.target 0) 1 },
+        { body := Instruction.createTokensFixed .treasure 1 }
       ]
     } }
 
 /-- Put a trample counter on up to one target creature you control. It becomes a Bear. Then if you control 3+ Bears, draw 2. -/
 def triggerTrampleCounterBecomeBear : Effect :=
-  { targeting := .of .creatureYouControl
-    allowsZeroTargets := true
+  { targets := TargetSpec.creatureYouControl.asUpTo 1
     body := .seq #[
       Instruction.putCounters (.target 0) .trample (.const 1),
       .installEffect (.applyContinuous .indefinite (.target 0) (.modifyTypes { subtypes := #[.bear] })),
@@ -513,13 +501,12 @@ def triggerMillThenSubtypeToHand (n : Nat) (subtype : CardSubtype) : Effect :=
 
 /-- For each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield. -/
 def triggerExileOppNonlandEachUntilLeaves : Effect :=
-  { targeting := .of (.forEachOpponentControlled (.not (.hasType .land)) (.upTo 1))
-    allowsZeroTargets := true
+  { targets := (.forEachOpponentControlled (.not (.hasType .land)) (.upTo 1))
     body := Instruction.exile .allTargets { exileUntilSourceLeaves := true } }
 
 /-- Put X +1/+1 counters on target creature you control, where X is that spell's mana value. -/
 def triggerPlusOneEqualLastKnownMv : Effect :=
-  { targeting := .of .creatureYouControl
+  { targets := .creatureYouControl
     body := Instruction.putCounters (.target 0) .plusOnePlusOne (.objectStat .manaValue .triggerSubject) }
 
 /-- Put a quest counter on this; if 6+, sacrifice it and search hand/library for a Dragon onto the battlefield. -/
@@ -608,7 +595,7 @@ def triggerMillThenCopy : Effect :=
           word := .when
           pattern := .thisEnters
           effect := {
-            targeting := .of (.ofDomain (.object .opponentGraveyard (ObjectPred.andAll #[
+            targets := (.ofDomain (.object .opponentGraveyard (ObjectPred.andAll #[
               .isKind .card,
               .any #[.hasType .enchantment, .hasType .instant, .hasType .sorcery],
               .stat .manaValue .le (.objectStat .manaValue .triggerSubject)
@@ -617,13 +604,12 @@ def triggerMillThenCopy : Effect :=
               (.stack (.mayCastOrPlay (.stepObjects ⟨1⟩) {
                 freeCast := true, landsAllowed := false, copyAndCast := true, castNow := true, maxCasts? := some 1
               }))
-            phrase := "Exile that card. Copy it. You may cast the copy without paying its mana cost"
           }
         })) }
 
 /-- Another target creature you control gets +X/+0 until end of turn, where X is this creature's power. -/
 def triggerPumpTargetBySourcePower : Effect :=
-  { targeting := .of .anotherCreatureYouControl
+  { targets := .anotherCreatureYouControl
     body := Instruction.pump (.target 0) (.objectStat .power .this) (.const 0) }
 
 /-- Create a 1/1 red Alien token, put +1/+1 counters on it equal to invasion counters on this, then put an invasion counter on this. -/
@@ -670,7 +656,7 @@ def triggerBelladonnaTokenReward : Effect :=
 
 /-- Bolg reflexive damage + excess amass Goblins. -/
 def triggerBolgDealSacrificedPower : Effect :=
-  { targeting := .of .anotherCreature
+  { targets := .anotherCreature
     body := .bind ⟨1⟩
       (Instruction.dealDamage (.targetSlot 0) (.objectStat .power .triggerSubject) .this { trackExcess := true })
       (Instruction.ifThen (.cmp .gt (.stepMetric .excessDamage ⟨1⟩) (.const 0))
@@ -683,8 +669,7 @@ def triggerBolgMaySacrifice : Effect :=
       (.queueReflexiveTrigger {
         word := .when
         pattern := .youSacrificeOtherCreature
-        effect := { triggerBolgDealSacrificedPower with
-          phrase := "Bolg deals damage equal to that creature's power to another target creature. If excess damage was dealt this way, amass Goblins X, where X is that excess damage" }
+        effect := triggerBolgDealSacrificedPower
       }) }
 
 /-- Create two tapped 1/1 white Spirit tokens with flying (tapped and attacking if equipped creature is legendary). -/
@@ -701,7 +686,7 @@ def triggerCreateTreasuresEqualDamagedPlayerArtifacts : Effect :=
 
 /-- Deal 1 damage to any target, then amass Orcs 1. -/
 def triggerDeal1ThenAmassOrcs : Effect :=
-  { targeting := .of .anyTarget
+  { targets := .anyTarget
     body := .seq #[Instruction.dealDamageFixed (.targetSlot 0) 1, Instruction.amassFixed 1 .orc] }
 
 /-- Untap all attacking creatures and add an additional combat phase. -/
@@ -720,19 +705,15 @@ def triggerAllianceMode : Effect :=
   { body := .chooseModes {
       unusedThisTurn := true
       modes := #[
-        { body := Instruction.addSimpleMana #[.colored .green, .colored .green, .colored .green]
-          phrase := "Add {G}{G}{G}" },
-        { body := Instruction.putPlusOne creaturesYouControlExpr 1
-          phrase := "Put a +1/+1 counter on each creature you control" },
-        { body := .seq #[Instruction.scryFixed 2, Instruction.drawFixed 1]
-          phrase := "Scry 2, then draw a card" }
+        { body := Instruction.addSimpleMana #[.colored .green, .colored .green, .colored .green] },
+        { body := Instruction.putPlusOne creaturesYouControlExpr 1 },
+        { body := .seq #[Instruction.scryFixed 2, Instruction.drawFixed 1] }
       ]
     } }
 
 /-- Azog: destroy up to one other target creature; its controller amasses Goblins X (its power); if you controlled it, draw. -/
 def triggerDestroyOtherAmassControllerPower : Effect :=
-  { targeting := .of .anotherCreature
-    allowsZeroTargets := true
+  { targets := TargetSpec.anotherCreature.asUpTo 1
     body := Instruction.ifThen (.exists (.target 0))
       (.seq #[
         Instruction.destroy (.target 0),
@@ -746,12 +727,9 @@ def triggerGollumMode : Effect :=
   { body := .chooseModes {
       unusedEver := true
       modes := #[
-        { body := Instruction.putPlusOne .this 1
-          phrase := "Put a +1/+1 counter on Gollum" },
-        { body := .seq #[Instruction.loseLifeFixed 2 .opponents, Instruction.gainLifeFixed 2]
-          phrase := "Each opponent loses 2 life and you gain 2 life" },
-        { body := Instruction.drawFixed 1
-          phrase := "Draw a card" }
+        { body := Instruction.putPlusOne .this 1 },
+        { body := .seq #[Instruction.loseLifeFixed 2 .opponents, Instruction.gainLifeFixed 2] },
+        { body := Instruction.drawFixed 1 }
       ]
     } }
 
@@ -800,7 +778,7 @@ def triggerRevealTopPutRandomCreature (n : Nat) : Effect :=
 
 /-- Another target creature you control gets +3/+0 and gains first strike until end of turn. -/
 def triggerBeginCombatIfDrawnTwoPump : Effect :=
-  { targeting := .of .anotherCreatureYouControl
+  { targets := .anotherCreatureYouControl
     body := .seq #[
       Instruction.pumpFixed (.target 0) 3 0,
       Instruction.grantKeywords (.target 0) #[Keyword.firstStrike]
@@ -808,7 +786,7 @@ def triggerBeginCombatIfDrawnTwoPump : Effect :=
 
 /-- Sting: put a hone counter for each creature target opponent controls, attach to up to one creature you control. -/
 def triggerHonePerOppAttach : Effect :=
-  { targeting := .of (.ofSlots #[.of .opponent, { domain := .creatureYouControl, count := .upTo 1 }])
+  { targets := (.ofSlots #[.of .opponent, { domain := .creatureYouControl, count := .upTo 1 }])
     body := .seq #[
       Instruction.putCounters .this .hone
         (ValueExpr.count (.inZones .battlefield (.all #[.hasType .creature, .controlledBy (.ofExpr (.target 0))]))),
@@ -821,7 +799,7 @@ def triggerCopySelfNonlegendary : Effect :=
 
 /-- Thorin: attach any number of Equipment you control to target creature you control; when 1+ attached, reflexive bite. -/
 def triggerAttachEquipmentThenFight : Effect :=
-  { targeting := .of .creatureYouControl
+  { targets := .creatureYouControl
     body := .bind ⟨0⟩
       (.permanent (.attach (subtypeYouControlExpr .equipment) (.target 0) true))
       (Instruction.ifThen (.stepSucceeded ⟨0⟩)
@@ -829,10 +807,8 @@ def triggerAttachEquipmentThenFight : Effect :=
           word := .when
           pattern := .thisEnters
           effect := {
-            targeting := .of .creature
-            allowsZeroTargets := true
+            targets := TargetSpec.creature.asUpTo 1
             body := .damage (.fight .triggerSubject (.target 0) true)
-            phrase := "That creature deals damage equal to its power to up to one target creature"
           }
         })) }
 
@@ -844,11 +820,9 @@ def triggerReturnAsArtifact : Effect :=
 
 /-- Gandalf: exile up to three target lands you control, then return them tapped under their owners' control. -/
 def triggerExileLandsThenReturnTapped : Effect :=
-  { targeting := .of (.single {
+  { targets := (.single {
       domain := .object .battlefield (.all #[.hasType .land, .controlledBy .you])
       count := .upTo 3 })
-    allowsZeroTargets := true
-    maxTargets := 3
     body := Instruction.exile .allTargets { delayedReturn? := some (.immediately true .owner) } }
 
 /-- Gríma: damaged player exiles until instant/sorcery, you may cast free, rest on bottom random. -/
@@ -868,7 +842,7 @@ def triggerGrimaImpulse : Effect :=
 
 /-- Palantír of Orthanc: influence counter, scry 2, target opponent may have you draw; if not, mill X and lose total MV. -/
 def triggerPalantir : Effect :=
-  { targeting := .of .opponent
+  { targets := .opponent
     body := .seq #[
       Instruction.putCounters .this .influence (.const 1),
       Instruction.scryFixed 2,
@@ -945,7 +919,7 @@ def triggerTreasureTappedAndPlan : Effect :=
 
 /-- Plan counter + put a +1/+1 counter on target creature you control. -/
 def triggerPlusOneOnTargetAndPlan : Effect :=
-  { targeting := .of .creatureYouControl
+  { targets := .creatureYouControl
     body := .seq #[Instruction.putCounters .this .plan (.const 1), Instruction.putPlusOne (.target 0) 1] }
 
 /-- Plan finish: sacrifice this, draw a card, put a +1/+1 counter on each creature you control. -/
@@ -960,18 +934,15 @@ def triggerPlanFinishReturnInstants : Effect :=
           word := .when
           pattern := .thisLeaves
           effect := {
-            targeting := .of (.single {
+            targets := (.single {
               domain := .object .yourGraveyard (.any #[.hasType .instant, .hasType .sorcery])
               count := .upTo 2
             })
-            allowsZeroTargets := true
-            maxTargets := 2
             body := Instruction.bounce .allTargets
-            phrase := "Return up to two target instant and/or sorcery cards from your graveyard to your hand"
           }
         })) }
 
-/-- Plan finish: sacrifice this; when you do, you control target opponent during their next turn (CR 718). -/
+/-- Plan finish: sacrifice this; when you do, you control target opponent during their next turn (CR 723). -/
 def triggerPlanFinishControlOpponent : Effect :=
   { body := .bind ⟨0⟩ (Instruction.sacrifice .this)
       (Instruction.ifThen (.stepSucceeded ⟨0⟩)
@@ -979,10 +950,9 @@ def triggerPlanFinishControlOpponent : Effect :=
           word := .when
           pattern := .thisLeaves
           effect := {
-            targeting := .of .opponent
+            targets := .opponent
             body := .installEffect (.applyRule (.untilNextTurnOf (.target 0))
               (.player (.controlPlayer { relation := .opponent, pred := .matchesExpr (.target 0) })))
-            phrase := "You control target opponent during their next turn"
           }
         })) }
 
@@ -994,12 +964,11 @@ def triggerPlanFinishExileTopCast : Effect :=
           word := .when
           pattern := .thisLeaves
           effect := {
-            targeting := .of .opponent
+            targets := .opponent
             body := .bind ⟨1⟩ (Instruction.exile (.topOfLibrary (.target 0) (.const 5)))
               (.stack (.mayCastOrPlay (.stepObjects ⟨1⟩) {
                 freeCast := true, landsAllowed := false, castNow := true, maxCasts? := some 2
               }))
-            phrase := "Target opponent exiles the top five cards of their library. You may cast up to two spells from among the exiled cards without paying their mana costs"
           }
         })) }
 
@@ -1015,10 +984,8 @@ def triggerPlanFinishDividedDamage (n : Nat) : Effect :=
           word := .when
           pattern := .thisLeaves
           effect := {
-            targeting := .of .anyTarget
-            dividedDamage := some (n, 2)
+            targets := TargetSpec.dividedDamage .anyTarget n 2
             body := Instruction.dealDamage .allTargets (.const (Int.ofNat n)) .this { divided := true }
-            phrase := s!"It deals {n} damage divided as you choose among one or two targets"
           }
         })) }
 
@@ -1030,9 +997,8 @@ def triggerPlanFinishIndestructibleOnTarget : Effect :=
           word := .when
           pattern := .thisLeaves
           effect := {
-            targeting := .of .creatureYouControl
+            targets := .creatureYouControl
             body := Instruction.putCounters (.target 0) .indestructible (.const 1)
-            phrase := "Put an indestructible counter on target creature you control"
           }
         })) }
 
@@ -1058,7 +1024,7 @@ def triggerLoyaltyOnSource : Effect :=
 
 /-- Target permanent you control gains `k`; +1/+1 counter if creature, loyalty counter if planeswalker. -/
 def triggerGrantThenCounterByType (k : Array KeywordAbility) : Effect :=
-  { targeting := .of .permanentYouControl
+  { targets := .permanentYouControl
     body := .seq #[
       Instruction.grantKeywords (.target 0) k,
       Instruction.ifThen (.exists (.filter (.target 0) (.hasType .creature)))
@@ -1069,13 +1035,13 @@ def triggerGrantThenCounterByType (k : Array KeywordAbility) : Effect :=
 
 /-- Destroy target permanent an opponent controls; its controller creates a Treasure token. -/
 def triggerDestroyOppPermanentIfSixLands : Effect :=
-  { targeting := .of .oppPermanent
+  { targets := .oppPermanent
     body := .bind ⟨0⟩ (Instruction.destroy (.target 0))
       (Instruction.createTokensFixed .treasure 1 (.controllerOf (.target 0))) }
 
 /-- Another target creature you control gets +1/+1, or a +1/+1 counter if you've scried or surveilled this turn. -/
 def triggerPumpOrCounterIfScried : Effect :=
-  { targeting := .of .anotherCreatureYouControl
+  { targets := .anotherCreatureYouControl
     body := .ifCond (.any #[.turnHistory (.scriedThisTurn .you), .turnHistory (.surveilledThisTurn .you)])
       (Instruction.putPlusOne (.target 0) 1)
       (Instruction.pumpFixed (.target 0) 1 1) }
@@ -1090,8 +1056,7 @@ def triggerCreaturesYouControlGet (power toughness : Int) : Effect :=
 
 /-- Put this creature's last-known counters on up to one target creature you control. -/
 def triggerPutSourceCountersOnTarget : Effect :=
-  { targeting := .of .creatureYouControl
-    allowsZeroTargets := true
+  { targets := TargetSpec.creatureYouControl.asUpTo 1
     body := .permanent (.modifyCounters (.copyFromLki .this) (.target 0)) }
 
 /-- Put a charge counter on this permanent. -/
@@ -1113,7 +1078,7 @@ def triggerDrawTwoWinIfEmptyShuffleSource : Effect :=
 
 /-- Target creature you control gets +3/+3 until end of turn. -/
 def triggerPumpIfFiveOtherForests : Effect :=
-  { targeting := .of .creatureYouControl
+  { targets := .creatureYouControl
     body := Instruction.pumpFixed (.target 0) 3 3 }
 
 /-- Surveil 1; if a card with MV ≤ life gained this turn is put into your graveyard this way, put it into your hand. -/
@@ -1124,8 +1089,7 @@ def triggerSurveilReturnIfGainedLife : Effect :=
 
 /-- Exile up to one target creature until this Aura leaves; enchanted creature becomes a copy of it until this leaves. -/
 def triggerExileOtherCopyEnchanted : Effect :=
-  { targeting := .of .creature
-    allowsZeroTargets := true
+  { targets := TargetSpec.creature.asUpTo 1
     body := .bind ⟨0⟩ (Instruction.exile (.target 0) { exileUntilSourceLeaves := true })
       (Instruction.ifThen (.stepSucceeded ⟨0⟩)
         (.installEffect (.applyContinuous (.untilLeavesBattlefield .this) .attachedHost
@@ -1133,19 +1097,16 @@ def triggerExileOtherCopyEnchanted : Effect :=
 
 /-- Exile up to one target creature you control; return it at the beginning of the next end step. -/
 def triggerExileUntilNextEndStep : Effect :=
-  { targeting := .of .creatureYouControl
-    allowsZeroTargets := true
+  { targets := TargetSpec.creatureYouControl.asUpTo 1
     body := Instruction.exile (.target 0) { delayedReturn? := some (.atNextEndStep false .owner) } }
 
 /-- Choose one — Tap target nonland permanent; or Untap target nonland permanent. -/
 def triggerTapOrUntapNonland : Effect :=
-  { targeting := .of .nonland
+  { targets := .nonland
     body := .chooseModes {
       modes := #[
-        { targeting := .of .nonland, body := Instruction.tap (.target 0)
-          phrase := "Tap target nonland permanent" },
-        { targeting := .of .nonland, body := Instruction.untap (.target 0)
-          phrase := "Untap target nonland permanent" }
+        { targets := .nonland, body := Instruction.tap (.target 0) },
+        { targets := .nonland, body := Instruction.untap (.target 0) }
       ]
     } }
 
@@ -1154,8 +1115,8 @@ def triggerCreateFoodOrTreasure : Effect :=
   { body := .chooseModes {
       chooseAtResolution := true
       modes := #[
-        { body := Instruction.createTokensFixed .food 1, phrase := "Create a Food token" },
-        { body := Instruction.createTokensFixed .treasure 1, phrase := "Create a Treasure token" }
+        { body := Instruction.createTokensFixed .food 1 },
+        { body := Instruction.createTokensFixed .treasure 1 }
       ]
     } }
 
@@ -1185,7 +1146,7 @@ def triggerDrawGainLifeIfAnotherHero : Effect :=
 
 /-- Put a +1/+1 counter on target creature, or two if that creature is another Hero. -/
 def triggerPlusOneOrTwoIfAnotherHero : Effect :=
-  { targeting := .of .creature
+  { targets := .creature
     body := .ifCond (.exists (.filter (.target 0) (.all #[.otherThan .this, .hasSubtype (.literal .hero)])))
       (Instruction.putPlusOne (.target 0) 2)
       (Instruction.putPlusOne (.target 0) 1) }
@@ -1197,29 +1158,26 @@ def triggerMaySacArtifactOrDiscardDraw : Effect :=
 /-! ### Specialized formerly-leftover trigger effects -/
 
 def enterDestroy (kind : TargetSpec) : Effect :=
-  { targeting := .of kind
+  { targets := kind
     body := Instruction.destroy (.target 0) }
 
 def enterDealDamageUpToOne (n : Nat) : Effect :=
-  { targeting := .of .creature
-    allowsZeroTargets := true
+  { targets := TargetSpec.creature.asUpTo 1
     body := Instruction.dealDamageFixed (.targetSlot 0) n }
 
 def enterFightUpToOne : Effect :=
-  { targeting := .of .anotherCreature
-    allowsZeroTargets := true
+  { targets := TargetSpec.anotherCreature.asUpTo 1
     body := .damage (.fight .this (.target 0)) }
 
 def enterReturnNonlandNontoken : Effect :=
-  { targeting := .of .nonlandNontoken
-    allowsZeroTargets := true
+  { targets := TargetSpec.nonlandNontoken.asUpTo 1
     body := Instruction.bounce (.target 0) }
 
 def enterCreateZabu : Effect :=
   { body := Instruction.createTokensFixed .zabu 1 }
 
 def enterOppCreatesTheVoid : Effect :=
-  { targeting := .of .opponent
+  { targets := .opponent
     body := Instruction.createTokensFixed .theVoid 1 (.target 0) }
 
 def enterCreateSturdyShieldAttach : Effect :=
@@ -1227,17 +1185,17 @@ def enterCreateSturdyShieldAttach : Effect :=
       (.permanent (.attach (.stepObjects ⟨0⟩) .this)) }
 
 def enterExileGyPlayUntilNextTurn : Effect :=
-  { targeting := .of .equipmentInstantOrSorceryInYourGraveyard
+  { targets := .equipmentInstantOrSorceryInYourGraveyard
     body := Instruction.exile (.target 0) {
       grantPlayPerm? := some { duration := .untilEndOfNextTurnOf .you, landsAllowed := true }
     } }
 
 def enterReturnGyPermanentThisTurn : Effect :=
-  { targeting := .of .permanentCardInYourGraveyard
+  { targets := .permanentCardInYourGraveyard
     body := Instruction.bounce (.target 0) }
 
 def enterTapOppCantUntapWhileControl : Effect :=
-  { targeting := .of .oppCreature
+  { targets := .oppCreature
     body := .seq #[
       Instruction.tap (.target 0),
       .installEffect (.applyContinuous (.whileOnBattlefield .this) (.target 0)
@@ -1250,9 +1208,8 @@ def enterMaySacAnotherThenDestroyOppNonland : Effect :=
         word := .when
         pattern := .thisEnters
         effect := {
-          targeting := .of .oppNonland
+          targets := .oppNonland
           body := Instruction.destroy (.target 0)
-          phrase := "Destroy target nonland permanent an opponent controls"
         }
       }) }
 
@@ -1262,15 +1219,13 @@ def enterMaySacOrDiscardNonlandThenDamage : Effect :=
         word := .when
         pattern := .thisEnters
         effect := {
-          targeting := .of .anyTarget
+          targets := .anyTarget
           body := Instruction.dealDamageFixed (.targetSlot 0) 2
-          phrase := "This deals 2 damage to any target"
         }
       }) }
 
 def enterRevealHandExileUntilLeaves : Effect :=
-  { targeting := .of .opponent
-    allowsZeroTargets := true
+  { targets := TargetSpec.opponent.asUpTo 1
     body := .seq #[
       .player (.reveal (.target 0) (.inZones (.handOf (.target 0)) .anyObject)),
       Instruction.ifThen (.exists .this)
@@ -1278,18 +1233,14 @@ def enterRevealHandExileUntilLeaves : Effect :=
     ] }
 
 def enterPlusOnesOrReturnArtEnch : Effect :=
-  { targeting := .of .creature
-    allowsZeroTargets := true
-    maxTargets := 2
+  { targets := TargetSpec.creature.asUpTo 2
     body := .chooseModes {
       chooseAtResolution := true
       modes := #[
-        { targeting := .of .creature, allowsZeroTargets := true, maxTargets := 2
-          body := Instruction.putPlusOne .allTargets 1
-          phrase := "Put a +1/+1 counter on each of up to two target creatures" },
-        { targeting := .of .artEnchCardInYourGraveyard
-          body := Instruction.bounce (.target 0)
-          phrase := "Return target artifact or enchantment card from your graveyard to your hand" }
+        { targets := TargetSpec.creature.asUpTo 2
+          body := Instruction.putPlusOne .allTargets 1 },
+        { targets := .artEnchCardInYourGraveyard
+          body := Instruction.bounce (.target 0) }
       ]
     } }
 
@@ -1298,16 +1249,12 @@ def enterChooseUpToXModes : Effect :=
       minModes := .const 0
       maxModes := .chosenX
       modes := #[
-        { body := .seq #[Instruction.drawFixed 1, Instruction.discardFixed 1]
-          phrase := "Discard a card, then draw a card" },
-        { targeting := .of .opponent
-          body := Instruction.loseLifeFixed 2 (.target 0)
-          phrase := "Target opponent loses 2 life" },
-        { targeting := .of (.ofDomain (.object .battlefield (.isToken true)))
-          body := Instruction.destroy (.target 0)
-          phrase := "Destroy target token" },
-        { body := triggerEachPlayerSacrificesCreature.body
-          phrase := "Each player sacrifices a creature of their choice" }
+        { body := .seq #[Instruction.drawFixed 1, Instruction.discardFixed 1] },
+        { targets := .opponent
+          body := Instruction.loseLifeFixed 2 (.target 0) },
+        { targets := (.ofDomain (.object .battlefield (.isToken true)))
+          body := Instruction.destroy (.target 0) },
+        { body := triggerEachPlayerSacrificesCreature.body }
       ]
     } }
 
@@ -1317,16 +1264,14 @@ def enterMayTapThenGrantIndestructible : Effect :=
         word := .when
         pattern := .thisEnters
         effect := {
-          targeting := .of (.ofDomain (.object .battlefield (.all #[
+          targets := (.ofDomain (.object .battlefield (.all #[
             .otherThan .this, .hasType .creature, .not (.combatRole .attacking), .controlledBy .you])))
           body := Instruction.grantKeywords (.target 0) #[Keyword.indestructible]
-          phrase := "Another target nonattacking creature you control gains indestructible until end of turn"
         }
       }) }
 
 def enterTapLoseAbilitiesWhileSource : Effect :=
-  { targeting := .of .creature
-    allowsZeroTargets := true
+  { targets := TargetSpec.creature.asUpTo 1
     body := .seq #[
       Instruction.tap (.target 0),
       Instruction.ifThen (.exists .this)
@@ -1334,7 +1279,7 @@ def enterTapLoseAbilitiesWhileSource : Effect :=
     ] }
 
 def enterRevealDiscardFromHand : Effect :=
-  { targeting := .of .player
+  { targets := .player
     body := .player (.reveal (.target 0) (.inZones (.handOf (.target 0)) .anyObject)
       (some (.exact (.binary .add (.const 1)
         (ValueExpr.count (.inZones (.graveyardOf .you) (.hasType .creature))))))) }
@@ -1349,14 +1294,12 @@ def stepDrawToTen : Effect :=
   { body := Instruction.draw (.binary .max (.const 0) (.binary .sub (.const 10) (.playerMetric .handSize .you))) }
 
 def stepCopyAbsorbingMan : Effect :=
-  { targeting := .of (.single {
+  { targets := (.single {
       domain := .object .battlefield (.any #[
         .hasType .artifact,
         .all #[.not (.hasSubtype (.literal .aura)), .hasType .enchantment],
         .hasType .land])
       count := .upTo 1 })
-    allowsZeroTargets := true
-    maxTargets := 1
     body := .installEffect (.applyContinuous (.untilNextTurnOf .you) .this
       (.becomeCopyOf (.target 0) #[
         .setName "Absorbing Man",
@@ -1370,21 +1313,17 @@ def stepCopyAbsorbingMan : Effect :=
 def stepHydeChoose : Effect :=
   { body := .chooseModes {
       modes := #[
-        { body := Instruction.putPlusOne .this 1
-          phrase := "Put a +1/+1 counter on Mister Hyde" },
+        { body := Instruction.putPlusOne .this 1 },
         { body := .bind ⟨0⟩
             (.permanent (.modifyCounters (.remove none (.exact (.const 1)))
               (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you, .counterCount none .ge (.const 1)]))
               (choice? := some { chooser := .controller, count := .exact (.const 1) })))
-            (Instruction.ifThen (.stepSucceeded ⟨0⟩) (Instruction.drawFixed 1))
-          phrase := "Remove a counter from a creature you control. If you do, draw a card" }
+            (Instruction.ifThen (.stepSucceeded ⟨0⟩) (Instruction.drawFixed 1)) }
       ]
     } }
 
 def stepCopyTaskmaster : Effect :=
-  { targeting := .of .creatureOrGyCreatureCard
-    allowsZeroTargets := true
-    maxTargets := 1
+  { targets := TargetSpec.creatureOrGyCreatureCard.asUpTo 1
     body := .installEffect (.applyContinuous (.untilNextTurnOf .you) .this
       (.becomeCopyOf (.target 0) #[
         .setName "Taskmaster, Mercenary Mimic",
@@ -1394,11 +1333,9 @@ def stepCopyTaskmaster : Effect :=
       ])) }
 
 def stepHarnessedFlicker : Effect :=
-  { targeting := .of (.single {
+  { targets := (.single {
       domain := .object .battlefield (.all #[.otherThan .this, .not (.hasType .land), .controlledBy .you])
       count := .upTo 1 })
-    allowsZeroTargets := true
-    maxTargets := 1
     body := Instruction.ifThen TriggeredAbility.condSourceHarnessed
       (Instruction.exile (.target 0) { delayedReturn? := some (.immediately false .owner) }) }
 
@@ -1431,9 +1368,8 @@ def thisAttackMayPayPlusOne : Effect :=
         word := .when
         pattern := .thisAttacks
         effect := {
-          targeting := .of .creature
+          targets := .creature
           body := Instruction.putPlusOne (.target 0) 1
-          phrase := "Put a +1/+1 counter on target creature"
         }
       }) }
 
@@ -1444,13 +1380,12 @@ def thisAttackPayReturnAttacking : Effect :=
         word := .when
         pattern := .thisAttacks
         effect := {
-          targeting := .of .creatureCardInYourGraveyard
+          targets := .creatureCardInYourGraveyard
           body := .moveZone (.target 0) (.battlefield .controller) .put {
             tapped := true
             attacking := true
             enterCounters := #[(.finality, .const 1)]
           }
-          phrase := "Return target creature card from your graveyard to the battlefield tapped and attacking with a finality counter on it"
         }
       }) }
 
@@ -1458,11 +1393,9 @@ def thisAttackIfArtifactEnteredDraw : Effect :=
   { body := Instruction.drawFixed 1 }
 
 def thisAttackBlinkNontoken : Effect :=
-  { targeting := .of (.single {
+  { targets := (.single {
       domain := .object .battlefield (.all #[.isToken false, .any #[.hasType .artifact, .hasType .creature]])
       count := .upTo 1 })
-    allowsZeroTargets := true
-    maxTargets := 1
     body := Instruction.exile (.target 0) { delayedReturn? := some (.immediately true .owner) } }
 
 def thisAttackEquippedDrain : Effect :=
@@ -1483,7 +1416,7 @@ def thisAttackAttacksAlonePlus2Indestructible : Effect :=
     ] }
 
 def enterOrAttackCopyKeywords : Effect :=
-  { targeting := .of .anotherCreature
+  { targets := .anotherCreature
     body := .permanent (.modifyCounters (.copyMissingKeywords (.target 0)) .this) }
 
 def enterOrAttackCreateSquirrel : Effect :=
@@ -1505,7 +1438,7 @@ def watchCombatDamageExileUntilNonland : Effect :=
         grantCast) }
 
 def watchAttacksAloneDrain : Effect :=
-  { targeting := .of .opponent
+  { targets := .opponent
     body := .seq #[Instruction.loseLifeFixed 1 (.target 0), Instruction.gainLifeFixed 1] }
 
 def watchAttacksAloneFirstStrikeMenace : Effect :=
@@ -1515,7 +1448,7 @@ def watchFirstTapUntap : Effect :=
   { body := Instruction.untap .triggerSubject }
 
 def watchSheHulkRedirectOnce : Effect :=
-  { targeting := .of .anyTarget
+  { targets := .anyTarget
     body := Instruction.may .you none (Instruction.dealDamage (.targetSlot 0) .eventAmount) }
 
 def watchSpeedballTargeted : Effect :=
@@ -1531,7 +1464,7 @@ def watchYouTargetDrawOnce : Effect :=
   { body := Instruction.drawFixed 1 }
 
 def watchVillainOrArtifactDamage : Effect :=
-  { targeting := .of .opponent
+  { targets := .opponent
     body := Instruction.dealDamageFixed (.players (.target 0)) 1 }
 
 def watchVillainConniveOnce : Effect :=
@@ -1541,7 +1474,7 @@ def watchVillainPlusOneDamageOnce : Effect :=
   { body := .seq #[Instruction.putPlusOne .this 1, Instruction.dealDamageFixed (.players .opponents) 2] }
 
 def watchVillainAttachEquipment : Effect :=
-  { targeting := .of .upToOneEquipmentThenCreatureYouControl
+  { targets := .upToOneEquipmentThenCreatureYouControl
     body := .permanent (.attach (.target 0) (.target 1)) }
 
 def watchVillainPlusOneLifelink : Effect :=
@@ -1551,16 +1484,13 @@ def watchHulklingCompare : Effect :=
   { body := Instruction.putPlusOne .this 1 }
 
 def watchJusticeBounce : Effect :=
-  { body := Instruction.putPlusOne .this 1
-    phrase := "Justice" }
+  { body := Instruction.putPlusOne .this 1 }
 
 def watchNontokenHeroModal : Effect :=
   { body := .chooseModes {
       modes := #[
-        { body := Instruction.createTokensFixed .soldier11white 1
-          phrase := "Create a 1/1 white Soldier creature token" },
-        { body := Instruction.pumpFixed creaturesYouControlExpr 1 1
-          phrase := "Creatures you control get +1/+1 until end of turn" }
+        { body := Instruction.createTokensFixed .soldier11white 1 },
+        { body := Instruction.pumpFixed creaturesYouControlExpr 1 1 }
       ]
     } }
 
@@ -1575,16 +1505,14 @@ def watchUltronCopy : Effect :=
             ]))))) }
 
 def watchEnchantedAttachEquipment : Effect :=
-  { targeting := .of .equipmentYouControl
-    allowsZeroTargets := true
-    maxTargets := 1000
+  { targets := TargetSpec.equipmentYouControl.asAnyNumber
     body := .permanent (.attach .allTargets .attachedHost) }
 
 def watchEquippedAttacksAloneUntapScry : Effect :=
   { body := .seq #[Instruction.untap .attachedHost, Instruction.scryFixed 1] }
 
 def watchEquippedAttacksTap : Effect :=
-  { targeting := .of .defendingPlayerCreature
+  { targets := .defendingPlayerCreature
     body := Instruction.tap (.target 0) }
 
 def watchEquippedTappedDamage : Effect :=
@@ -1601,18 +1529,14 @@ def watchTokensEnterMayDraw : Effect :=
 
 /-- Individual mode effects for Hawkeye's Trick Arrows reflexive trigger (CR 603.3c / 700.2b). -/
 def hawkeyeModeEffects : Array Effect :=
-  #[{ targeting := .of .creature
-      body := .installEffect (.applyContinuous .untilEndOfTurn (.target 0) (.applyRule (.combat (.cantBlock .self none))))
-      phrase := "Net — Target creature can't block this turn" },
-    { targeting := .of .player
-      body := Instruction.dealDamageFixed (.players (.target 0)) 2
-      phrase := "Explosive — Hawkeye deals 2 damage to target player" },
-    { body := .seq #[Instruction.discardFixed 1, Instruction.drawFixed 1]
-      phrase := "Boomerang — Discard a card, then draw a card" }]
+  #[{ targets := .creature
+      body := .installEffect (.applyContinuous .untilEndOfTurn (.target 0) (.applyRule (.combat (.cantBlock .self none)))) },
+    { targets := .player
+      body := Instruction.dealDamageFixed (.players (.target 0)) 2 },
+    { body := .seq #[Instruction.discardFixed 1, Instruction.drawFixed 1] }]
 
 def watchHawkeyeModes : Effect :=
-  { allowsZeroTargets := true
-    body := .optional .you (some (CostSpec.ofGeneric 1))
+  { body := .optional .you (some (CostSpec.ofGeneric 1))
       (.queueReflexiveTrigger {
         word := .when
         pattern := .thisBecomesTapped
@@ -1622,7 +1546,6 @@ def watchHawkeyeModes : Effect :=
             maxModes := .eventAmount
             modes := hawkeyeModeEffects
           }
-          phrase := "Choose up to that many — • Net — Target creature can't block this turn. • Explosive — Hawkeye deals 2 damage to target player. • Boomerang — Discard a card, then draw a card"
         }
       })
       .noop (maxTimes := 3) }
@@ -1634,9 +1557,8 @@ def watchRedHulk : Effect :=
           word := .when
           pattern := .thisDealtDamage
           effect := {
-            targeting := .of .anyOtherTarget
+            targets := .anyOtherTarget
             body := Instruction.dealDamage (.targetSlot 0) (.counterCount (some .plusOnePlusOne) .this)
-            phrase := "He deals damage equal to the number of +1/+1 counters on him to any other target"
           }
         })) }
 
@@ -1691,10 +1613,9 @@ def castingMayPayHasteUnblockable : Effect :=
         word := .when
         pattern := .youCastNoncreature
         effect := {
-          targeting := .of (.ofDomain (.object .battlefield (.all #[.hasType .creature, .hasKeyword .haste])))
+          targets := (.ofDomain (.object .battlefield (.all #[.hasType .creature, .hasKeyword .haste])))
           body := .installEffect (.applyContinuous .untilEndOfTurn (.target 0)
             (.applyRule (.combat (.cantBeBlockedBy .self (.not (.hasKeyword .haste))))))
-          phrase := "Target creature with haste can't be blocked this turn except by creatures with haste"
         }
       }) }
 
@@ -1702,7 +1623,7 @@ def castingPlusOneEachOther : Effect :=
   { body := Instruction.putPlusOne otherCreaturesYouControlExpr 1 }
 
 def castingExileFlicker : Effect :=
-  { targeting := .of (.ofDomain (.object .battlefield (.all #[
+  { targets := (.ofDomain (.object .battlefield (.all #[
       .otherThan .this, .not (.hasType .land), .isToken false])))
     body := Instruction.exile (.target 0) { delayedReturn? := some (.atNextEndStep false .owner) } }
 
@@ -1710,17 +1631,14 @@ def castingVisionModes : Effect :=
   { body := .chooseModes {
       unusedThisTurn := true
       modes := #[
-        { body := Instruction.grantKeywords .this #[Keyword.doubleStrike]
-          phrase := "Solar Beam — The Vision gains double strike until end of turn" },
-        { body := Instruction.grantKeywords .this #[Keyword.indestructible]
-          phrase := "Density Control — The Vision gains indestructible until end of turn" },
-        { body := Instruction.drawFixed 1
-          phrase := "Technopathy — Draw a card" }
+        { body := Instruction.grantKeywords .this #[Keyword.doubleStrike] },
+        { body := Instruction.grantKeywords .this #[Keyword.indestructible] },
+        { body := Instruction.drawFixed 1 }
       ]
     } }
 
 def castingDamageEqualMv : Effect :=
-  { targeting := .of .anyTarget
+  { targets := .anyTarget
     body := Instruction.dealDamage (.targetSlot 0) (.objectStat .manaValue .triggerSubject) }
 
 def castingDrawPowerEqualHand : Effect :=
@@ -1739,11 +1657,9 @@ def castingIronFistTap : Effect :=
   let tapAb : ActivatedAbility := {
     cost := CostSpec.tapOnly
     effect := {
-      targeting := .of .anyOtherTarget
+      targets := .anyOtherTarget
       body := Instruction.dealDamage (.targetSlot 0) (.objectStat .power .this)
-      phrase := "Iron Fist deals damage equal to his power to any other target"
     }
-    printed := "{T}: Iron Fist deals damage equal to his power to any other target."
   }
   { body := .installEffect (.applyContinuous .untilEndOfTurn .this (.grantActivated #[tapAb])) }
 
@@ -1757,7 +1673,7 @@ def castingCopyIfArtifactOrLand : Effect :=
     ] }
 
 def castingTapCreatureOrLand : Effect :=
-  { targeting := .of (.ofDomain (.object .battlefield (.any #[.hasType .creature, .hasType .land])))
+  { targets := (.ofDomain (.object .battlefield (.any #[.hasType .creature, .hasType .land])))
     body := Instruction.tap (.target 0) }
 
 def resourceDiscardExilePlay : Effect :=
@@ -1767,7 +1683,7 @@ def resourceDiscardExilePlay : Effect :=
       }) }
 
 def resourceDrawIfAnotherHeroDamage : Effect :=
-  { targeting := .of .opponent
+  { targets := .opponent
     body := Instruction.dealDamageFixed (.players (.target 0)) 1 }
 
 def resourceSecondDrawBecome66 : Effect :=
@@ -1777,15 +1693,14 @@ def resourceSecondDrawBecome66 : Effect :=
     ] }
 
 def resourceSecondDrawPlusOneTarget : Effect :=
-  { targeting := .of .creature
+  { targets := .creature
     body := Instruction.putPlusOne (.target 0) 1 }
 
 def resourceSecondDrawDrain : Effect :=
   { body := .seq #[Instruction.loseLifeFixed 1 .opponents, Instruction.gainLifeFixed 1] }
 
 def resourceGainLifePlusOnes : Effect :=
-  { targeting := .of .creatureYouControl
-    allowsZeroTargets := true
+  { targets := TargetSpec.creatureYouControl.asAnyNumber
     body := Instruction.putPlusOne .allTargets 1 }
 
 def resourcePlusOneCreateInsectOnce : Effect :=
@@ -1816,7 +1731,7 @@ def seqSourceGetsAndTeamTrample (power : Int) : Effect :=
 
 /-- Put a +1/+1 counter on a target of this kind. It gains lifelink until end of turn. -/
 def seqPlusOneAndLifelink (kind : TargetSpec) : Effect :=
-  { targeting := .of kind
+  { targets := kind
     body := .seq #[
       Instruction.putPlusOne (.target 0) 1,
       Instruction.grantKeywords (.target 0) #[Keyword.lifelink]
@@ -1828,7 +1743,7 @@ def seqPumpAndUnblockable : Effect :=
 
 /-- Put `n` +1/+1 counters on a creature you control. It gains vigilance until end of turn. -/
 def seqPlusOneVigilance (n : Nat) : Effect :=
-  { targeting := .of .creatureYouControl
+  { targets := .creatureYouControl
     body := .seq #[
       Instruction.putPlusOne (.target 0) n,
       Instruction.grantKeywords (.target 0) #[Keyword.vigilance]
@@ -1859,7 +1774,7 @@ def seqPumpAndDamageOpponents (n : Nat) : Effect :=
 /-- Untap another creature you control. If it has `subtype`, put a +1/+1 counter on it. -/
 def seqUntapPlusOneIfSubtype (subtype : String) : Effect :=
   let sub := CardSubtype.ofOracleD subtype
-  { targeting := .of .anotherCreatureYouControl
+  { targets := .anotherCreatureYouControl
     body := .seq #[
       Instruction.untap (.target 0),
       Instruction.ifThen (.exists (.filter (.target 0) (.hasSubtype (.literal sub))))
@@ -1872,8 +1787,7 @@ def seqLoseLifeCreateTreasure : Effect :=
 
 /-- Exile up to one card from an opponent's graveyard. Each opponent loses `life`. -/
 def seqExileOppGyCardOppsLoseLife (life : Nat) : Effect :=
-  { targeting := .of .oppGraveyardCard
-    allowsZeroTargets := true
+  { targets := TargetSpec.oppGraveyardCard.asUpTo 1
     body := .seq #[Instruction.exile (.target 0), Instruction.loseLifeFixed life .opponents] }
 
 end Effect

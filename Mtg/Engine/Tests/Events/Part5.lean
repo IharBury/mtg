@@ -161,7 +161,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
     name := "P24i4 Combat Dmg Watcher"
     triggeredAbilities := #[
       TriggeredAbility.mkTrigger .opponentsDealtCombatDamageYourTurn
-        { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life." }
+        { body := Instruction.gainLifeFixed 1 }
         (grouping := .oncePerBatch)
     ]
   }
@@ -399,7 +399,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
   let legDiesWatcherDef : CardDef := {
     legendaryCreature "P24i4 Dying Legend" ManaCost.empty #["Spirit"] 2 2 with
     triggeredAbilities := #[
-      TriggeredAbility.mkTrigger .thisDies { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life." }
+      TriggeredAbility.mkTrigger .thisDies { body := Instruction.gainLifeFixed 1 }
     ]
   }
   -- 4a. Before `GameEvent.playerLost`: in a 3-player game, `⟨1⟩` at 0 life controls two copies of `⟨0⟩`'s
@@ -729,8 +729,7 @@ def mkThreePlayer25i1 (seed : UInt64 := 251) : Game :=
     bear with
     name := "P25i1 Discard Watcher"
     triggeredAbilities := #[
-      TriggeredAbility.ofPattern (.discard .any)
-        "Whenever a player discards one or more cards, you gain 1 life." (Instruction.gainLifeFixed 1)
+      TriggeredAbility.ofPattern (.discard .any) (Instruction.gainLifeFixed 1)
         (grouping := .perPlayerInBatch)
     ]
   }
@@ -877,18 +876,16 @@ def replayOk25i2 (gs : Array Game) : Bool :=
   let mvCapSpell : CardDef := {
     name := "P25i2 Cap Grab"
     types := #[.sorcery]
-    spellEffect := some {
-      targeting := .of (.upToTwoCreaturesTotalMvAtMost 3)
-      allowsZeroTargets := true
-      maxTargets := 2
+    spellAbility := some {
+      effect := { targets := .upToTwoCreaturesTotalMvAtMost 3 }
     }
   }
   let oneMvCub : CardDef := {
     name := "P25i2 Cub"
     manaCost := { symbols := #[.colored .green] }
     types := #[.creature]
-    power := some 1
-    toughness := some 1
+    power := some (.fixed 1)
+    toughness := some (.fixed 1)
   }
   let g0 := emptyHand afterDraw p0
   let (gMv, mvCapObj) :=
@@ -909,7 +906,7 @@ def replayOk25i2 (gs : Array Game) : Bool :=
   let shareSpell : CardDef := {
     name := "P25i2 Share"
     types := #[.sorcery]
-    spellEffect := some { targeting := .of .twoNonlandsSharingType }
+    spellAbility := some { effect := { targets := .twoNonlandsSharingType } }
   }
   let artA : CardDef := { name := "P25i2 Art A", types := #[.artifact] }
   let artB : CardDef := { name := "P25i2 Art B", types := #[.artifact] }
@@ -938,11 +935,11 @@ def replayOk25i2 (gs : Array Game) : Bool :=
     invalidPairRejected
 
   -- Trigger mode and resolution-cast `effectHasEnoughTargets`:
-  let twoArtEff : Effect := { targeting := .of .twoArtifactsYouControl, phrase := "Tap two target artifacts you control" }
+  let twoArtEff : Effect := { targets := .twoArtifactsYouControl }
   let gOneArt := addPermanent g0 artA p0 p0
   let oneArtObj := (gOneArt.battlefield.filter (·.name == "P25i2 Art A"))[0]!
   let trigNotChoosable := !gOneArt.triggerModeChoosable p0 oneArtObj twoArtEff
-  let twoArtSpell : CardDef := { name := "P25i2 Dual Art", types := #[.sorcery], spellEffect := some twoArtEff }
+  let twoArtSpell : CardDef := { name := "P25i2 Dual Art", types := #[.sorcery], spellAbility := some { effect := twoArtEff }}
   let (gOneArtHand, twoArtCard) := gOneArt.allocObject twoArtSpell p0 (.hand p0)
   let twoArtCardId := twoArtCard.id
   let gResReversed := gOneArtHand.castAsPartOfResolution p0 twoArtCardId
@@ -966,13 +963,13 @@ def replayOk25i2 (gs : Array Game) : Bool :=
     name := "P25i2 X Drain"
     manaCost := { symbols := #[.x, .colored .black] }
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.drawFixed 1 }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let fixedThreeMv : CardDef := {
     name := "P25i2 Three Drop"
     manaCost := { symbols := #[.generic 2, .colored .blue] }
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.drawFixed 1 }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let g0 := emptyHand afterDraw p0
   let (gHand0, xCard) := g0.allocObject xSpell p0 (.hand p0)
@@ -1045,26 +1042,25 @@ def replayOk25i2 (gs : Array Game) : Bool :=
     name := "P25i2 Target Creature Spell"
     manaCost := { symbols := #[.colored .red] }
     types := #[.sorcery]
-    spellEffect := some { targeting := .of .creature, body := Instruction.drawFixed 1 }
+    spellAbility := some { effect := { targets := .creature, body := Instruction.drawFixed 1 } }
   }
   let sacCostSpell : CardDef := {
     name := "P25i2 Sac Creature Spell"
     manaCost := { symbols := #[.colored .black] }
     types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
-    spellEffect := some { body := Instruction.drawFixed 1 }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 }, additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
   }
   let drawSpell : CardDef := {
     name := "P25i2 Clean Draw"
     manaCost := { symbols := #[.colored .blue] }
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.drawFixed 1 }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let samutGrant : CardDef := {
     name := "P25i2 Samut"
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
     staticAbilities := #[.instantSorcerySplitSecond]
   }
   let g0 := emptyHand afterDraw p0
@@ -1091,7 +1087,7 @@ def replayOk25i2 (gs : Array Game) : Bool :=
   let exFreeSpell : CardDef := {
     name := "P25i2 Zero Mana Draw"
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.drawFixed 1 }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let (gEx3, freeEx) := gEx2.allocObject exFreeSpell p0 .exile none
   let exChoice : FraChoice := .mayCastUpToFromExile #[sacEx.id, freeEx.id] 2
@@ -1124,14 +1120,14 @@ def replayOk25i2 (gs : Array Game) : Bool :=
     name := "P25i2 One Mana Sorc"
     manaCost := ManaCost.ofGeneric 1
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.drawFixed 1 }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let artOne : CardDef := {
     name := "P25i2 One Mana Construct"
     manaCost := ManaCost.ofGeneric 1
     types := #[.artifact, .creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   let g0 := emptyHand afterDraw p0
   let (gGy0, sorcGy) := g0.allocObject sorcOne p0 (.graveyard p0) none
@@ -1197,7 +1193,7 @@ private def replayOk25i3 (gs : Array Game) : Bool :=
   let creatorWatcher : CardDef := {
     name := "P25i3 Creator Watcher", types := #[.enchantment]
     triggeredAbilities := #[TriggeredAbility.ofPattern (.createTokens .you (.hasType .creature))
-      "Whenever you create one or more creature tokens, draw a card." (Instruction.drawFixed 1) (grouping := .oncePerBatch)]
+      (Instruction.drawFixed 1) (grouping := .oncePerBatch)]
   }
   let mrFantasticWatcher : CardDef := {
     name := "P25i3 Tokens Enter Watcher", types := #[.enchantment]
@@ -1223,8 +1219,8 @@ private def replayOk25i3 (gs : Array Game) : Bool :=
     name := "Orc Army"
     types := #[.creature, .artifact]
     subtypes := #["Orc", "Army"]
-    power := some 0
-    toughness := some 0
+    power := some (.fixed 0)
+    toughness := some (.fixed 0)
     isToken := true
   }
   let armySnap : EventObject := {
@@ -1397,8 +1393,8 @@ private def replayOk25i3 (gs : Array Game) : Bool :=
   let toughVictimDef : CardDef := {
     bear with
     name := "P25i3 Tough Victim"
-    power := some 1
-    toughness := some 6
+    power := some (.fixed 1)
+    toughness := some (.fixed 6)
   }
   let g3 :=
     match Start.start {
@@ -1496,12 +1492,11 @@ private def replayOk25i3 (gs : Array Game) : Bool :=
 
   -- 3d. Unified `Instruction.dealDamageFixed` to up to one creature/planeswalker and target player:
   let upToOneAndPlEff : Effect := {
-    targeting := .of { slots := #[
+    targets := { slots := #[
       { domain := .creatureOrPlaneswalker, count := .upTo 1 },
       .of .anyPlayer
     ] }
     body := Instruction.dealDamageFixed .allTargets 1
-    phrase := "Deal 1 damage to up to one target creature or planeswalker and 1 damage to target player"
   }
   let gUpTo0 := addTwoDmgReps gBase
   let sUpTo := gUpTo0.events.size
@@ -1808,12 +1803,12 @@ def mkSixSeatThreeTeams25i4 (seed : UInt64 := 2540) : Game :=
   let revengeWatcherDef : CardDef := {
     bear with
     name := "P25i4 Revenge Watcher"
-    triggeredAbilities := #[TriggeredAbility.ofPattern .creatureAttacksYouOrYourPlaneswalker "" (Instruction.gainLifeFixed 1)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .creatureAttacksYouOrYourPlaneswalker (Instruction.gainLifeFixed 1)]
   }
   let garrukWatcherDef : CardDef := {
     bear with
     name := "P25i4 Garruk Watcher"
-    triggeredAbilities := #[TriggeredAbility.ofPattern .creaturesAttackYourOpponent "" (Instruction.pumpAndTrample .triggerSubject 2 2) (grouping := .perPlayerInBatch)]
+    triggeredAbilities := #[TriggeredAbility.ofPattern .creaturesAttackYourOpponent (Instruction.pumpAndTrample .triggerSubject 2 2) (grouping := .perPlayerInBatch)]
   }
   let battleDef : CardDef := {
     name := "P25i4 Siege Battle"
@@ -2006,7 +2001,7 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
     name := "P26i1 RGG Spell"
     manaCost := ⟨#[.colored .red, .colored .green, .colored .green]⟩
     types := #[.instant]
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let painLandDef : CardDef := {
     name := "P26i1 Pain Land"
@@ -2091,13 +2086,13 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
     name := "P26i1 Red Instant"
     manaCost := ⟨#[.colored .red]⟩
     types := #[.instant]
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let freeInstDef : CardDef := {
     name := "P26i1 Free Instant"
     manaCost := ManaCost.empty
     types := #[.instant]
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
 
   -- 2a. Non-owner `proposedSpell` abort (`p0` proposing `p1`'s exiled card) & `.mayCastUpToFromExile` pruning:
@@ -2327,21 +2322,18 @@ def replayOk26i2 (gs : Array Game) : Bool :=
   let p0 : PlayerId := ⟨0⟩
   let p1 : PlayerId := ⟨1⟩
   let zeroMode : Effect := {
-    targeting := .of .creature
+    targets := TargetSpec.creature.asUpTo 1
     body := Instruction.destroy (.target 0)
-    phrase := "Destroy up to one target creature"
-    allowsZeroTargets := true
   }
   let reqElfMode : Effect := {
-    targeting := .of (.ofDomain (.object .battlefield (ObjectPred.andAll #[.hasSubtype (.literal .elf), .hasType .creature])))
+    targets := (.ofDomain (.object .battlefield (ObjectPred.andAll #[.hasSubtype (.literal .elf), .hasType .creature])))
     body := Instruction.putPlusOne (.target 0) 1
-    phrase := "Put a +1/+1 counter on target Elf"
   }
   let modalZeroDef : CardDef := {
     name := "P26i2 Modal Zero"
     manaCost := ManaCost.empty
     types := #[.instant]
-    spellModes := #[zeroMode, reqElfMode]
+    spellAbility := some { effect := { body := .chooseModes { modes := #[zeroMode, reqElfMode] } } }
   }
   let gEmpty := insertObject afterDraw modalZeroDef p0 (.hand p0)
   let zeroSpellId := (gEmpty.player p0).hand.back!
@@ -2387,7 +2379,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     name := "P26i2 X Twobrid"
     manaCost := xTwobridCost
     types := #[.instant]
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let gAny0 := insertObject afterDraw twobridCard p0 .exile
   let exTwobridId := gAny0.objects.back!.id
@@ -2413,8 +2405,8 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     manaCost := ManaCost.ofGeneric 3
     types := #[.creature]
     subtypes := #["Ninja"]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
     keywords := #[.flashback CostSpec.empty, .sneak CostSpec.empty]
   }
   let gSnkSetup : Game :=
@@ -2457,13 +2449,13 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     name := "P26i2 Milled Sorcery"
     manaCost := ManaCost.ofGeneric 4
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.gainLifeFixed 3, phrase := "You gain 3 life" }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 3 } }
   }
   let sorcXDrawDef : CardDef := {
     name := "P26i2 Milled X Sorcery"
     manaCost := ⟨#[.x, .colored .blue]⟩
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.gainLifeFixed 2, phrase := "You gain 2 life" }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 2 } }
   }
   let gUr0 : Game :=
     let g := addPermanent afterDraw { urSphinxDef with keywords := #[Keyword.flying, Keyword.haste] } p0 p0
@@ -2590,10 +2582,9 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     name := "P26i2 Modal EachOpp Rod"
     types := #[.artifact]
     activatedAbilities := #[ActivatedAbility.mkModal CostSpec.empty #[
-      { targeting := .of (.forEachOpponentControlled (.hasType .creature) (.exact 1))
-        body := Instruction.tapAndStun .allTargets
-        phrase := "For each opponent, tap target creature that player controls and put a stun counter on it" },
-      { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
+      { targets := (.forEachOpponentControlled (.hasType .creature) (.exact 1))
+        body := Instruction.tapAndStun .allTargets },
+      { body := Instruction.gainLifeFixed 1 }
     ]]
   }
   let gAct0 : Game :=
@@ -2635,8 +2626,8 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     manaCost := ManaCost.ofGeneric 3
     types := #[.creature]
     subtypes := #["Elf"]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
     keywords := #[.morph (CostSpec.ofGeneric 1)]
   }
   let gMorphBase : Game :=
@@ -2665,7 +2656,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
     name := "P26i2 Taxed Free Sorcery"
     manaCost := ManaCost.ofGeneric 2
     types := #[.sorcery]
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let gUntaxedFree : Game :=
     let g := insertObject (emptyHand afterDraw p0) freeSorcDef p0 .exile
@@ -2837,8 +2828,8 @@ private def replayOk26i3 (gs : Array Game) : Bool :=
   let toughDef : CardDef := {
     bear with
     name := "P26i3 Tough Target"
-    power := some 1
-    toughness := some 8
+    power := some (.fixed 1)
+    toughness := some (.fixed 8)
   }
   let gBase :=
     (addPermanent
@@ -2924,7 +2915,7 @@ private def replayOk26i3 (gs : Array Game) : Bool :=
   let gDiv7Queued :=
     gStep1Paused.applyTriggeredAbility p0
       { word := .when, pattern := .thisEnters, effect := {
-          targeting := .of .anyTarget, dividedDamage := some (1, 1)
+          targets := TargetSpec.dividedDamage .anyTarget 1 1
           body := Instruction.dealDamage .allTargets (.const 1) .this { divided := true } } }
       (some src.id) #[Target.player p2] #[1]
   let gDiv7Done := resolveAllRepChoices gDiv7Queued
@@ -3512,7 +3503,7 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
   let copyCard : CardDef := { bear with name := "Copied Hero" }
   let gRenamed := gBattle0.createEffect (.layered (.objects #[a1]) (.copy copyCard) .untilEndOfTurn)
   let gExiledRenamed :=
-    gRenamed.applyEffect p0 { targeting := .of .creature, body := Instruction.exile (.target 0) } #[.permanent a1]
+    gRenamed.applyEffect p0 { targets := .creature, body := Instruction.exile (.target 0) } #[.permanent a1]
   let renamedLogOk := gExiledRenamed.log.any (· == "Copied Hero is exiled")
 
   -- 4d. Exhaustive `ContinuationFrame` witness (32 unified fields after Phase 9 scratch-field retirement):
@@ -3583,7 +3574,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
     name := "P27i1 RGG Spell"
     manaCost := ⟨#[.colored .red, .colored .green, .colored .green]⟩
     types := #[.instant]
-    spellEffect := some { body := Instruction.drawFixed 1, phrase := "Draw a card" }
+    spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let shockLandDef : CardDef := {
     name := "P27i1 Shock Land"
@@ -3595,12 +3586,13 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
     name := "P27i1 Lotus Petal"
     types := #[.artifact]
     activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor]
-    prepareFace := some {
+    subFaces := #[{
+      kind := .prepare
       name := "P27i1 Prepared Bolt"
       manaCost := ManaCost.empty
       types := #[.instant]
-      spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
-    }
+      spellAbility := some { effect := { body := Instruction.gainLifeFixed 1 } }
+    }]
   }
   let equipDef : CardDef := {
     name := "P27i1 Sword"
@@ -3728,7 +3720,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
     types := #[.artifact]
     activatedAbilities := #[{
       cost := CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)]
-      effect := { body := Instruction.gainLifeFixed 2, phrase := "You gain 2 life" }
+      effect := { body := Instruction.gainLifeFixed 2 }
     }]
   }
   let gLost0 :=
@@ -3819,7 +3811,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
     name := "P27i1 Exiled Bolt"
     manaCost := ⟨#[.colored .red]⟩
     types := #[.instant]
-    spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 1 } }
   }
   let gMayEx0 :=
     insertObject
@@ -3933,8 +3925,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
     name := "P27i1 Red Inst"
     manaCost := ⟨#[.colored .red]⟩
     types := #[.instant]
-    additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature]
-    spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 1 }, additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeCreature] }
   }
   let stashedCont : PendingReplacement := .continueInterpreter { ctx := { controller := p0 }, queue := #[Instruction.scryFixed 1], stack := #[] }
   let gStash0 :=
@@ -3984,27 +3975,24 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
   let p0 : PlayerId := ⟨0⟩
   let p1 : PlayerId := ⟨1⟩
   let optArtMode : Effect := {
-    targeting := .of .artifact
+    targets := TargetSpec.artifact.asUpTo 1
     body := Instruction.destroy (.target 0)
-    phrase := "Destroy up to one target artifact"
-    allowsZeroTargets := true
   }
   let reqCreatureMode : Effect := {
-    targeting := .of .creature
+    targets := .creature
     body := Instruction.putPlusOne (.target 0) 1
-    phrase := "Put a +1/+1 counter on target creature"
   }
   let twoModeSpellDef : CardDef := {
     name := "P27i2 Two Mode Spell"
     manaCost := ManaCost.empty
     types := #[.sorcery]
     keywords := #[.teamwork 2]
-    spellEffect := some {
+    spellAbility := some { effect := {
       body := .chooseModes {
         altCountIf? := some (.castPred (.teamworkPaid .this), .const 2, .const 2)
         modes := #[optArtMode, reqCreatureMode]
       }
-    }
+    } }
   }
   let wardBearDef : CardDef := {
     bear with
@@ -4048,12 +4036,12 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     manaCost := ManaCost.empty
     types := #[.sorcery]
     keywords := #[.teamwork 2]
-    spellEffect := some {
+    spellAbility := some { effect := {
       body := .chooseModes {
         altCountIf? := some (.castPred (.teamworkPaid .this), .const 2, .const 2)
         modes := #[reqCreatureMode, optArtMode]
       }
-    }
+    } }
   }
   let g1 := insertObject gWithHelper reqFirstOptSecondDef p0 (.hand p0)
   let reqOptId := (g1.player p0).hand.back!
@@ -4077,7 +4065,7 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
 
   -- Also verify `beginResolutionCastTargets` allows entering `.chooseTargets` when slot 0 is optional
   -- and has 0 legal targets:
-  let gExTwo := (insertObject gWithHelper { twoModeSpellDef with keywords := #[], spellEffect := some { body := .chooseModes { modes := #[optArtMode, reqCreatureMode] } } } p0 .exile).change (.pushContinuationFrame {})
+  let gExTwo := (insertObject gWithHelper { twoModeSpellDef with keywords := #[], spellAbility := some { effect := { body := .chooseModes { modes := #[optArtMode, reqCreatureMode] } } }} p0 .exile).change (.pushContinuationFrame {})
   let exTwoId := gExTwo.objects.back!.id
   let gAskCasc := gExTwo.change (.pending (.fraChoice p0 (.mayCastCascade exTwoId #[])))
   let gResCast := mustApply (mustApply gAskCasc p0 .accept) p0 (.chooseMode 0)
@@ -4105,10 +4093,8 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
   --     and modal triggered ability with a single optional-target mode (`obj.triggeredAbility.isSome &&
   --     obj.abilityEffect.any (·.allowsZeroTargets)`) allows `.decline` and `Agent.choose`:
   let eachOppOptAb : TriggeredAbility := TriggeredAbility.mkTrigger .thisEnters {
-    targeting := .of (.forEachOpponentControlled (.hasType .artifact) (.upTo 1))
-    allowsZeroTargets := true
+    targets := (.forEachOpponentControlled (.hasType .artifact) (.upTo 1))
     body := Instruction.gainLifeFixed 1
-    phrase := "For each opponent, up to one target artifact that player controls"
   }
   let eachOppPermDef : CardDef := {
     bear with
@@ -4129,23 +4115,19 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     gEoDecl.stack[0]!.targetsAnnounced &&
     gEoDecl.stack[0]!.targets.isEmpty
 
-  -- Modal triggered ability with `modes` where mode 0 has `allowsZeroTargets := true`:
+  -- Modal triggered ability with `modes` where mode 0 has `allowsZeroTargets == true`:
   let modalOptMode0 : Effect := {
-    targeting := .of (.ofDomain (.object .battlefield (ObjectPred.andAll #[.hasSubtype (.literal .elf), .hasType .creature])) (.upTo 1))
-    allowsZeroTargets := true
+    targets := (.ofDomain (.object .battlefield (ObjectPred.andAll #[.hasSubtype (.literal .elf), .hasType .creature])) (.upTo 1))
     body := Instruction.putPlusOne (.target 0) 1
-    phrase := "Put a +1/+1 counter on up to one target Elf"
   }
   let modalUntargetedMode1 : Effect := {
     body := Instruction.gainLifeFixed 2
-    phrase := "You gain 2 life"
   }
   let modalTrigPermDef : CardDef := {
     bear with
     name := "P27i2 Modal Trigger"
     triggeredAbilities := #[
       TriggeredAbility.mkModal .thisEnters #[modalOptMode0, modalUntargetedMode1]
-        (headerPhrase := "Choose one —")
     ]
   }
   let gMt0 := insertObject afterDraw modalTrigPermDef p0 (.hand p0)
@@ -4211,9 +4193,8 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     name := "P27i2 Behold Flashback"
     manaCost := ManaCost.ofGeneric 5
     types := #[.sorcery]
-    additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric .dragon 2)]
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 1 }, additionalCosts := #[AdditionalCostSpec.mandatory (CostSpec.beholdOrPayGeneric .dragon 2)] }
     keywords := #[.flashback CostSpec.empty]
-    spellEffect := some { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" }
   }
   let gBf0 := insertObject (emptyHand afterDraw p0) beholdFlashCard p0 (.graveyard p0)
   let bfGyId := (gBf0.player p0).graveyard.back!
@@ -4230,8 +4211,8 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
     name := "P27i2 Modal Tap Relic"
     types := #[.artifact]
     activatedAbilities := #[ActivatedAbility.mkModal (CostSpec.ofItems #[.tapSelf]) #[
-      { body := Instruction.gainLifeFixed 1, phrase := "You gain 1 life" },
-      { body := Instruction.gainLifeFixed 2, phrase := "You gain 2 life" }
+      { body := Instruction.gainLifeFixed 1 },
+      { body := Instruction.gainLifeFixed 2 }
     ]]
   }
   let gTap0 := addPermanent afterDraw modalTapArtDef p0 p0
@@ -4461,7 +4442,7 @@ private def replayOk27i3 (gs : Array Game) : Bool :=
     name := "P27i3 Cheap 1"
     manaCost := ManaCost.ofGeneric 1
     types := #[.instant]
-    spellEffect := some { body := Instruction.gainLifeFixed 2, phrase := "You gain 2 life" }
+    spellAbility := some { effect := { body := Instruction.gainLifeFixed 2 } }
   }
   let gCasc0 := insertObject (insertObject gBase cheapInstDef p0 (.library p0)) cascadeSpellDef p0 .stack
   let cascSpellId := (gCasc0.objects.filter (·.name == cascadeSpellDef.name))[0]!.id

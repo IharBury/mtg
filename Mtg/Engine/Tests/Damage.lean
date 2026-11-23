@@ -57,7 +57,7 @@ def paidGandalf : Game := mustApply proposedGandalf ⟨0⟩ .pay
 /-- The creature enters; the divided-damage trigger waits for a division (CR 601.2d). -/
 def gandalfEntered : Game := passBoth paidGandalf
 
-#guard (namedPermanent gandalfEntered "Gandalf, Spark Starter").printed.power == some 4
+#guard (namedPermanent gandalfEntered "Gandalf, Spark Starter").printed.power == some (.fixed 4)
 #guard gandalfEntered.power (namedPermanent gandalfEntered "Gandalf, Spark Starter") == 4
 #guard gandalfEntered.toughness (namedPermanent gandalfEntered "Gandalf, Spark Starter") == 3
 #guard KeywordAbility.hasReach (namedPermanent gandalfEntered "Gandalf, Spark Starter").printed.keywords

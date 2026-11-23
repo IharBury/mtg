@@ -352,7 +352,7 @@ copy exceptions on the creature don't change it. A 1/1 green Frog copy of
 the Angel still exiles a sorcery Seed Suture with no power or toughness. -/
 def frogAngel : Game :=
   let frog := { blossomBlessedAngel with
-    subtypes := #["Frog"], power := some 1, toughness := some 1,
+    subtypes := #["Frog"], power := some (.fixed 1), toughness := some (.fixed 1),
     colorIndicator := some (ColorSet.singleton .green) }
   let (g, tok) := afterDraw.createToken ⟨0⟩ frog
   g.becomePrepared tok

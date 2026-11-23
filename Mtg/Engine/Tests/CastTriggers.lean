@@ -51,7 +51,7 @@ def paidTitan : Game := mustApply proposedTitan ⟨0⟩ .pay
 /-- The creature enters; the divided-damage trigger waits for a division (CR 601.2d). -/
 def titanEntered : Game := passBoth paidTitan
 
-#guard (namedPermanent titanEntered "Inferno Titan").printed.power == some 6
+#guard (namedPermanent titanEntered "Inferno Titan").printed.power == some (.fixed 6)
 #guard titanEntered.power (namedPermanent titanEntered "Inferno Titan") == 6
 #guard titanEntered.toughness (namedPermanent titanEntered "Inferno Titan") == 6
 #guard titanEntered.stack.size == 1

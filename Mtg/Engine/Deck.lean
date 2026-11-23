@@ -73,12 +73,21 @@ def validateDeck (fmt : Format) (cards : Array CardDef) : Except DeckError Unit 
   if fmt == .constructed then
     for (name, n) in countNames cards do
       let sample := cards.find? (fun c => c.name == name)
-      let unlimited :=
+      let limit? : Option Nat :=
         match sample with
-        | some c => isBasicLandCard c || c.anyNumberInDeck
-        | none => false
-      if !unlimited && n > 4 then
-        throw (.tooManyCopies name n)
+        | some c =>
+          if isBasicLandCard c then none
+          else
+            match c.deckLimitOverride with
+            | some .unlimited => none
+            | some (.maxCopies k) => some k
+            | none => some 4
+        | none => some 4
+      match limit? with
+      | some maxAllowed =>
+        if n > maxAllowed then
+          throw (.tooManyCopies name n)
+      | none => pure ()
   return ()
 
 def isLegalDeck (fmt : Format) (cards : Array CardDef) : Bool :=

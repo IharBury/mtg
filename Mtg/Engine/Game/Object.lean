@@ -12,45 +12,6 @@ triggered abilities waiting to go on the stack (CR 603.3).
 
 namespace Mtg.Engine
 
--- Split `BEq CardDef` across small `@[noinline]` field groups to keep C codegen fast.
-@[noinline] private def cardDefBeq1 (a b : CardDef) : Bool :=
-  a.name == b.name &&
-  a.manaCost == b.manaCost &&
-  a.types == b.types &&
-  a.subtypes == b.subtypes &&
-  a.supertypes == b.supertypes &&
-  a.power == b.power &&
-  a.toughness == b.toughness &&
-  a.powerStar == b.powerStar &&
-  a.toughnessStar == b.toughnessStar &&
-  a.loyalty == b.loyalty &&
-  a.defense == b.defense &&
-  a.handModifier == b.handModifier &&
-  a.lifeModifier == b.lifeModifier &&
-  a.colorIndicator == b.colorIndicator &&
-  a.keywords == b.keywords &&
-  a.additionalCosts == b.additionalCosts &&
-  a.spellEffect == b.spellEffect
-
-@[noinline] private def cardDefBeq2 (a b : CardDef) : Bool :=
-  a.spellModes == b.spellModes &&
-  a.isToken == b.isToken &&
-  a.anyNumberInDeck == b.anyNumberInDeck &&
-  a.activatedAbilities == b.activatedAbilities &&
-  a.staticAbilities == b.staticAbilities &&
-  a.triggeredAbilities == b.triggeredAbilities &&
-  a.adventure == b.adventure &&
-  a.prepareFace == b.prepareFace
-
-private partial def cardDefBeq (a b : CardDef) : Bool :=
-  cardDefBeq1 a b && cardDefBeq2 a b &&
-    match a.otherFace, b.otherFace with
-    | none, none => true
-    | some x, some y => cardDefBeq x y
-    | _, _ => false
-
-instance : BEq CardDef := ⟨cardDefBeq⟩
-
 /-- Sentinel `ObjectId` used only for source-less waiting triggers (such as
 delayed triggers created by game rules or player actions without a source
 object) outside the object allocation range (CR 603.7). -/
@@ -544,8 +505,8 @@ def toCardDef (e : EventObject) : CardDef :=
       supertypes := e.supertypes
       types := e.types
       subtypes := e.subtypes.map CardSubtype.englishName
-      power := e.power
-      toughness := e.toughness
+      power := e.power.map .fixed
+      toughness := e.toughness.map .fixed
       loyalty := e.loyalty.map Int.ofNat
       keywords := kws
       staticAbilities := e.staticAbilities

@@ -701,7 +701,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           if quietMove || !g.stillInGame p then g
           else
             let ab := TriggeredAbility.ofPattern .thisEnters
-              "When you do, create a 2/2 green Wolf creature token."
               (Instruction.createTokensFixed .wolf 1) (word := .when)
             g.recordReflexiveTrigger {
                 controller := p, source := src, ability := ab,

@@ -129,9 +129,8 @@ def equipActivatedAbility (filter : ObjectPred) (cost : CostSpec) : ActivatedAbi
   let targetDomain : TargetDomain :=
     .object .battlefield (.all #[.hasType .creature, .controlledBy .you, filter])
   { cost
-    effect := { targeting := .of (.ofDomain targetDomain)
-                body := .permanent (.attach .this (.target 0))
-                phrase := "Attach to target creature you control" }
+    effect := { targets := (.ofDomain targetDomain)
+                body := .permanent (.attach .this (.target 0)) }
     timing := .sorcery
     tag? := some (.equip extraPred?) }
 
@@ -141,15 +140,14 @@ def cyclingActivatedAbility (typeFilter? : Option ObjectPred) (cost : CostSpec) 
   let (eff, subLabel?) : Effect × Option String :=
     match typeFilter? with
     | none =>
-      ({ body := Instruction.drawFixed 1, phrase := "Draw a card" }, none)
+      ({ body := Instruction.drawFixed 1 }, none)
     | some (.hasSubtype (.literal sub)) =>
       ({ body := .player (.searchLibrary {
             filter := .hasSubtype (.literal sub)
             count := .upTo (.const 1)
             dest := .hand .controller
             reveal := true
-            shuffle := true })
-         phrase := s!"Search your library for a {sub} card, reveal it, put it into your hand, then shuffle" },
+            shuffle := true }) },
        some sub.englishName)
     | some (.all #[.hasSupertype .basic, .hasType .land]) =>
       ({ body := .player (.searchLibrary {
@@ -157,8 +155,7 @@ def cyclingActivatedAbility (typeFilter? : Option ObjectPred) (cost : CostSpec) 
             count := .upTo (.const 1)
             dest := .hand .controller
             reveal := true
-            shuffle := true })
-         phrase := "Search your library for a basic land card, reveal it, put it into your hand, then shuffle" },
+            shuffle := true }) },
        some "Basic land")
     | some pred =>
       ({ body := .player (.searchLibrary {
@@ -166,8 +163,7 @@ def cyclingActivatedAbility (typeFilter? : Option ObjectPred) (cost : CostSpec) 
             count := .upTo (.const 1)
             dest := .hand .controller
             reveal := true
-            shuffle := true })
-         phrase := "Search your library for a matching card, reveal it, put it into your hand, then shuffle" },
+            shuffle := true }) },
        none)
   { cost := fullCost
     effect := eff
@@ -191,16 +187,14 @@ def expand : KeywordAbility → ExpandedKeyword
             pattern := .stepBegins .endOfCombat (.player .any)
             duration := .untilEndOfCombat
             oneShot := true
-            effect := { body := Instruction.sacrifice .this, phrase := "Sacrifice it" } })
-          phrase := "Sacrifice it at end of combat" } }] }
+            effect := { body := Instruction.sacrifice .this } }) } }] }
   -- CR 702.83a: Exalted
   | .simple .exalted =>
     { triggeredAbilities := #[{
         word := .whenever
         pattern := .attacks (.all #[.hasType .creature, .controlledBy .you]) .any true
         effect := {
-          body := Instruction.pumpFixed .triggerSubject 1 1
-          phrase := "That creature gets +1/+1 until end of turn" } }] }
+          body := Instruction.pumpFixed .triggerSubject 1 1 } }] }
   -- CR 702.73a: Changeling Layer-4 CDA
   | .simple .changeling =>
     { staticAbilities := #[.characteristicDefining .allCreatureTypes] }
@@ -222,8 +216,7 @@ def expand : KeywordAbility → ExpandedKeyword
         word := .whenever
         pattern := .castSpell .you (.not (.hasType .creature))
         effect := {
-          body := Instruction.pumpFixed .this 1 1
-          phrase := "This creature gets +1/+1 until end of turn" } }] }
+          body := Instruction.pumpFixed .this 1 1 } }] }
   -- CR 702.85a: Cascade
   | .simple .cascade =>
     { triggeredAbilities := #[TriggeredAbility.onCastCascade] }
@@ -236,8 +229,7 @@ def expand : KeywordAbility → ExpandedKeyword
           body := .forEach (.eachPlayer .opponent) ⟨0⟩
             (Instruction.may .you none
               (.create (.tokens .you (.const 1) (.copyOf .this #[])
-                { tapped := true, attacking := true, delayedAction? := some .exileAtEndOfCombat })))
-          phrase := "For each opponent other than defending player, you may create a token that's a copy of this creature that's tapped and attacking that player or a planeswalker they control. Exile the tokens at end of combat" } }] }
+                { tapped := true, attacking := true, delayedAction? := some .exileAtEndOfCombat }))) } }] }
   -- CR 702.93a: Undying (CR 603.4 intervening-if: no +1/+1 counters)
   | .simple .undying =>
     { triggeredAbilities := #[{
@@ -246,8 +238,7 @@ def expand : KeywordAbility → ExpandedKeyword
         interveningIf? := some (.cmp .eq (.counterCount (some .plusOnePlusOne) .this) (.const 0))
         effect := {
           body := .moveZone .this (.battlefield .owner) .put
-            { enterCounters := #[(.plusOnePlusOne, .const 1)] }
-          phrase := "Return it to the battlefield under its owner's control with a +1/+1 counter on it" } }] }
+            { enterCounters := #[(.plusOnePlusOne, .const 1)] } } }] }
   -- CR 702.101a: Extort
   | .simple .extort =>
     { triggeredAbilities := #[{
@@ -257,8 +248,7 @@ def expand : KeywordAbility → ExpandedKeyword
           body := Instruction.may .you
             (some (CostSpec.ofMana { symbols := #[.hybrid .white .black] }))
             (.bind ⟨0⟩ (.life (.lose .opponents (.const 1)))
-              (.life (.gain .you (.stepMetric .lifeChanged ⟨0⟩))))
-          phrase := "You may pay {W/B}. If you do, each opponent loses 1 life and you gain that much life" } }] }
+              (.life (.gain .you (.stepMetric .lifeChanged ⟨0⟩)))) } }] }
   -- CR 702.21a: Ward [cost]
   | .ward cost =>
     { triggeredAbilities := #[TriggeredAbility.onWard cost] }
@@ -284,8 +274,7 @@ def expand : KeywordAbility → ExpandedKeyword
         pattern := TriggerPattern.thisEnters
         interveningIf? := some (.castPred (.giftPromised .this))
         effect := {
-          body := giftGrantInstruction kind
-          phrase := "The chosen opponent gets the promised gift" } }]
+          body := giftGrantInstruction kind } }]
       spellInstructions := #[
         Instruction.ifThen (.castPred (.giftPromised .this)) (giftGrantInstruction kind)] }
   -- CR 702.34a: Flashback [cost] (graveyard alternative cost + leave-stack exile replacement)

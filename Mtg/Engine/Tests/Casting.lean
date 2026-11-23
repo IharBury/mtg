@@ -70,18 +70,18 @@ def casting (e : Effect) : TriggeredAbility :=
 
 #guard (toString (casting Effect.castingVillainToken)).contains "2/1 black Villain"
 #guard (toString (casting Effect.castingMerfolkFromBlue)).contains "blue mana symbols"
-#guard (toString (casting Effect.castingMayPayHasteUnblockable)).contains "creatures with haste"
-#guard (toString (casting Effect.castingPlusOneEachOther)).contains "each other creature you control"
-#guard (toString (casting Effect.castingExileFlicker)).contains "beginning of the next end step"
-#guard (toString (casting Effect.castingVisionModes)).contains "Solar Beam"
-#guard (toString (casting Effect.castingDamageEqualMv)).contains "Thor deals damage"
-#guard (toString (casting Effect.castingDrawPowerEqualHand)).contains "Ms. Marvel"
-#guard (toString (casting Effect.castingPlusOneThis)).contains "Mockingbird"
-#guard (toString (casting Effect.castingPlusOneScry)).contains "Colleen Wing"
-#guard (toString (casting Effect.castingIronFistTap)).contains "Iron Fist"
-#guard (toString (casting Effect.castingTargetsGainFlying)).contains "gain flying"
-#guard (toString (casting Effect.castingCopyIfArtifactOrLand)).contains "Fin Fang Foom"
-#guard (toString (casting Effect.castingTapCreatureOrLand)).contains "Seismic Takedown"
+#guard (toString (casting Effect.castingMayPayHasteUnblockable)).contains "creature with haste can't be blocked"
+#guard (toString (casting Effect.castingPlusOneEachOther)).contains "put a +1/+1 counter"
+#guard (toString (casting Effect.castingExileFlicker)).contains "exile another target nonland, nontoken permanent"
+#guard (toString (casting Effect.castingVisionModes)).contains "choose one that hasn't been chosen this turn"
+#guard (toString (casting Effect.castingDamageEqualMv)).contains "mana value damage to any target"
+#guard (toString (casting Effect.castingDrawPowerEqualHand)).contains "base power the number of cards in your hand"
+#guard (toString (casting Effect.castingPlusOneThis)).contains "put a +1/+1 counter on this creature"
+#guard (toString (casting Effect.castingPlusOneScry)).contains "Scry 1"
+#guard (toString (casting Effect.castingIronFistTap)).contains "Deals damage equal to its power to any other target"
+#guard (toString (casting Effect.castingTargetsGainFlying)).contains "gains flying until end of turn"
+#guard (toString (casting Effect.castingCopyIfArtifactOrLand)).contains "Copy that spell"
+#guard (toString (casting Effect.castingTapCreatureOrLand)).contains "tap target creature or land"
 
 /- A Villain spell creates one 2/1 Villain token with menace. -/
 def villainBoard : Game :=
@@ -129,7 +129,7 @@ def speedOffer : Game :=
   match speedOffer.pending with
   | .fraChoice q (.mayPayManaForReflexive cost _ eff _) =>
     q == me && cost == #[.generic 1] &&
-      eff.phrase.contains "can't be blocked this turn except by creatures with haste"
+      eff.toNotation.contains "can't be blocked"
   | _ => false
 
 def speedDeclines : Game :=
@@ -405,8 +405,8 @@ def quakeMisses : Game :=
     name := "RG Morpher"
     manaCost := { symbols := #[.generic 2, .colored .red] }
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
     keywords := #[.morph (CostSpec.ofGeneric 3), .sneak (CostSpec.ofMana { symbols := #[.colored .red] })]
   }
   let flawless : CardDef := {
@@ -424,15 +424,15 @@ def quakeMisses : Game :=
     name := "Test Commander"
     types := #[.creature]
     supertypes := #[.legendary]
-    power := some 3
-    toughness := some 3
+    power := some (.fixed 3)
+    toughness := some (.fixed 3)
   }
   let morphFace : CardDef := {
     name := ""
     manaCost := ManaCost.ofGeneric 3
     types := #[.creature]
-    power := some 2
-    toughness := some 2
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
   }
   let g0 := emptyHand Mtg.Engine.Tests.afterDraw me
   let gOmni := addPermanent (addPermanent g0 omniPerm me me) grizzlyBears me me

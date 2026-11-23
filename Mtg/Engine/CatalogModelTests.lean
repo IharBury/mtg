@@ -376,7 +376,7 @@ legendary permanent you control. -/
 #guard
   let g := addPermanent (addPermanent afterDraw keyToTheSideDoor me me) mistyKnightHeroForHire me me
   let g := addToHand (addToHand g mistyKnightHeroForHire me) roninShadowStalker me
-  let g := activateNamed g "Key to the Side-Door" "Draw two"
+  let g := activateNamed g "Key to the Side-Door" "Draw 2"
   let before := handSize g me
   let g' := resolved (pick g #[(handObj g me "Misty Knight, Hero for Hire").id])
   pickRejected g #[(handObj g me "Ronin, Shadow Stalker").id] &&
@@ -1558,7 +1558,7 @@ copy nothing. -/
   let g := addPermanent (addPermanent afterDraw absorbingMan me me) forest me me
   let g := addPermanent g grizzlyBears me me
   let legal := g.legalTargetsForSpec me
-    Effect.stepCopyAbsorbingMan.targeting.spec (some (idOf g "Absorbing Man"))
+    Effect.stepCopyAbsorbingMan.targets (some (idOf g "Absorbing Man"))
   let forestOk := legal.contains (Target.permanent (idOf g "Forest"))
   let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
   let g := g.applyTriggeredAbility me (.onStep Effect.stepCopyAbsorbingMan)
@@ -1611,7 +1611,7 @@ line is Human Mercenary Villain. -/
     (cause := .oneShotEffect none (some stone.id) (some me)))
   let g := addPermanent (addPermanent g forest me me) grizzlyBears me me
   let legal := g.legalTargetsForSpec me
-    Effect.stepHarnessedFlicker.targeting.spec
+    Effect.stepHarnessedFlicker.targets
     (some (idOf g "The Mind Stone"))
   let bearOk := legal.contains (Target.permanent (idOf g "Grizzly Bears"))
   let landOk := legal.contains (Target.permanent (idOf g "Forest"))

@@ -24,7 +24,7 @@ def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (spec : TargetSpec := .none) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     sourceId targets
 
 def handSize (g : Game) (p : PlayerId) : Nat :=

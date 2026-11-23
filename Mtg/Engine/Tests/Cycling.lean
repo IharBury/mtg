@@ -145,8 +145,8 @@ def trollCycled : Game :=
 /- Gollum, Silent Slinker: menace (CR 702.111 / 509.1b). -/
 
 #guard KeywordAbility.hasMenace gollumSilentSlinker.keywords
-#guard gollumSilentSlinker.power == some 4
-#guard gollumSilentSlinker.toughness == some 3
+#guard gollumSilentSlinker.power == some (.fixed 4)
+#guard gollumSilentSlinker.toughness == some (.fixed 3)
 #guard withGollum.hasMenace (namedPermanent withGollum "Gollum, Silent Slinker")
 #guard KeywordAbility.hasMenace (withGollum.effectiveKeywords (namedPermanent withGollum "Gollum, Silent Slinker"))
 #guard withGollum.legalBlockerCount

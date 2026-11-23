@@ -151,8 +151,8 @@ open Mtg.Engine.Catalog
 #guard mentions mirkwoodPathmaker.summary "lands you control"
 #guard mentions mirkwoodPathmaker.summary "*/*"
 #guard mirkwoodPathmaker.staticAbilities.size == 1
-#guard mirkwoodPathmaker.power.isNone
-#guard mirkwoodPathmaker.toughness.isNone
+#guard mirkwoodPathmaker.power == some (.star 0)
+#guard mirkwoodPathmaker.toughness == some (.star 0)
 #guard mentions ologHaiCrusher.summary "trample"
 #guard mentions ologHaiCrusher.summary "can't block unless"
 #guard KeywordAbility.hasTrample ologHaiCrusher.keywords
@@ -183,8 +183,8 @@ open Mtg.Engine.Catalog
 #guard mentions gollumSilentSlinker.summary "menace"
 #guard !mentions gollumSilentSlinker.summary "can't be blocked except"
 #guard KeywordAbility.hasMenace gollumSilentSlinker.keywords
-#guard gollumSilentSlinker.power == some 4
-#guard gollumSilentSlinker.toughness == some 3
+#guard gollumSilentSlinker.power == some (.fixed 4)
+#guard gollumSilentSlinker.toughness == some (.fixed 3)
 #guard mentions bilbosDeadlySlice.summary "destroy target creature"
 #guard bilbosDeadlySlice.isInstant
 #guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
@@ -305,8 +305,7 @@ open Mtg.Engine.Catalog
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 3)])
   mentions c.abilitiesText "Equipped creature gets +2/+0" &&
     mentions c.abilitiesText "you may discard a card" &&
-    mentions c.abilitiesText "Attach this Equipment" &&
-    mentions c.abilitiesText "activate only as a sorcery"
+    mentions c.abilitiesText "Equip {3}"
 
 #guard
   let c := artifact "Silent Blade" ManaCost.empty ""
@@ -316,8 +315,7 @@ open Mtg.Engine.Catalog
     (activatedAbilities := #[equipAbility (ManaCost.ofGeneric 2)])
   mentions c.abilitiesText "Equipped creature gets +2/+1" &&
     mentions c.abilitiesText "target opponent sacrifices a creature" &&
-    mentions c.abilitiesText "Attach this Equipment" &&
-    mentions c.abilitiesText "activate only as a sorcery"
+    mentions c.abilitiesText "Equip {2}"
 
 #guard
   let c := enchantment "Silent Hospitality" ManaCost.empty ""

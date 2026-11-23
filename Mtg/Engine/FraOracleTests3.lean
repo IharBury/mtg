@@ -64,7 +64,7 @@ def fraCardNamed? (name : String) : Option CardDef :=
 /-- True when `c` keeps an unparsed prepare-face rules line. -/
 def keepsPrintedText (c : CardDef) : Bool :=
   match c.prepareFace with
-  | some face => !face.extraLines.isEmpty || face.spellEffect.isNone
+  | some face => face.spellEffect.isNone
   | none => false
 
 /- Every card an FRA-only ruling names is in the FRA catalog, and every

@@ -154,11 +154,11 @@ private def all15KeywordCounters : Array (CounterKind × KeywordAbility × Keywo
   }
   let bluePing : CardDef := {
     name := "Blue Ping", manaCost := ManaCost.ofColor .blue, types := #[.instant]
-    spellEffect := some (Effect.dealDamage 1)
+    spellAbility := some { effect := Effect.dealDamage 1 }
   }
   let redPing : CardDef := {
     name := "Red Ping", manaCost := ManaCost.ofColor .red, types := #[.instant]
-    spellEffect := some (Effect.dealDamage 1)
+    spellAbility := some { effect := Effect.dealDamage 1 }
   }
   let g0 := addPermanent afterDraw proBlueDef p1 p1
   let kId := (namedPerm g0 "Azure Knight").id

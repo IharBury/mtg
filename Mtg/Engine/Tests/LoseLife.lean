@@ -28,7 +28,7 @@ def step (g : Game) (body : Instruction)
     (sourceId : Option ObjectId := none) (targets : Array Target := #[])
     (spec : TargetSpec := .none) : Game :=
   g.applyTriggeredAbility caster
-    (TriggeredAbility.mkTrigger .thisEnters { targeting := .of spec, body })
+    (TriggeredAbility.mkTrigger .thisEnters { targets := spec, body })
     sourceId targets
 
 def obj (g : Game) (name : String) : GameObject :=
@@ -183,7 +183,7 @@ Losing none changes nothing. -/
 #guard TriggeredAbility.toNotation .onYouSacrificeTokenOppLosesLife ==
   "Whenever you sacrifice a token, target opponent loses 1 life."
 #guard TriggeredAbility.toNotation .onYourUpkeepLoseLifePerBurden ==
-  "At the beginning of your upkeep, you lose 1 life for each burden counter on The One Ring."
+  "At the beginning of your upkeep, you lose the number of burden counters on this permanent life."
 #guard TriggeredAbility.resolutionPhrase (Effect.triggerDrainAndPlan 2) ==
   "each opponent loses 2 life and you gain 2 life. Put a plan counter on this enchantment"
 #guard TriggeredAbility.resolutionPhrase Effect.triggerDrawLoseLifeAndPlan ==

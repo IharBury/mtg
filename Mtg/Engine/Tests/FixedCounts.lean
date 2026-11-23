@@ -18,8 +18,8 @@ def caster : PlayerId := ⟨0⟩
 def bear : CardDef := {
   name := "Count Bear"
   types := #[.creature]
-  power := some 2
-  toughness := some 2
+  power := some (.fixed 2)
+  toughness := some (.fixed 2)
 }
 
 def otherCreaturesExpr : ValueExpr :=
