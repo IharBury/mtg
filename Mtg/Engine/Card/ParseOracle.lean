@@ -653,6 +653,18 @@ def parseStructural (c : CardDef) (line : String) : Option CardDef :=
     Parser.parseKeywordAbility raw |>.map c.withKeyword
   else if low.startsWith "a deck can have any number of cards named" then
     some { c with deckLimitOverride := some .unlimited }
+  else if low.startsWith "a deck can have up to " then
+    let rest := (low.drop "a deck can have up to ".length).trimAscii.copy
+    let countStr? : Option String :=
+      match rest.splitOn " cards named " with
+      | s :: _ :: _ => some s
+      | _ =>
+        match rest.splitOn " card named " with
+        | s :: _ :: _ => some s
+        | _ => none
+    countStr?.bind fun s =>
+      (Parser.parseNatWord? s.trimAscii.copy).map fun n =>
+        { c with deckLimitOverride := some (.maxCopies n) }
   else if low.contains "sacrifice after" && low.contains "lore counter" then
     -- CR 207.2a / 714.2d: Saga reminder text is ignored; final chapter is computed from chapter triggers.
     some c

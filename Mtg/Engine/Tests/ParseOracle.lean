@@ -1081,7 +1081,10 @@ private def roundTripsOracleCard (raw : String) : Bool :=
   "Murmuring Volume\n{3}\nArtifact — Book\n{T}: Add one mana of any color.\n{2}, {T}, Discard a card: Draw a card.",
   "Jace, Reality Sculptor\n{3}{U}{U}\nLegendary Planeswalker — Jace\n+1: Empower Jace X, where X is the number of Islands you control.\n−3: Until your next turn, whenever a creature attacks you or a planeswalker you control, it gets -5/-0 until end of turn.\n0: Exile all but the bottom card of each opponent's library. Activate only if there are twenty-five or more loyalty counters among Jaces you control.\nLoyalty: 5",
   "Way of the Deathbringer\n{2}{B}\nLegendary Enchantment\nWhen Way of the Deathbringer enters, empower Jace 5.\nPlaneswalkers you control have \"[−2]: You may sacrifice a creature. If you do, create a 4/4 green Beast creature token with trample.\"",
-  "My Precious\n{3}\nLegendary Artifact — Equipment\nEquipped creature has hexproof and can't be blocked.\nEquip—{2}, Pay 2 life.\n//ADV//\nAllure of Power\n{1}{B}\nInstant — Adventure\nAs an additional cost to cast this spell, sacrifice a creature.\nDraw two cards."
+  "My Precious\n{3}\nLegendary Artifact — Equipment\nEquipped creature has hexproof and can't be blocked.\nEquip—{2}, Pay 2 life.\n//ADV//\nAllure of Power\n{1}{B}\nInstant — Adventure\nAs an additional cost to cast this spell, sacrifice a creature.\nDraw two cards.",
+  "Five Relics\n{2}\nArtifact\nA deck can have up to five cards named Five Relics.",
+  "Seven Dwarves\n{1}{R}\nCreature — Dwarf\n2/2\nA deck can have up to seven cards named Seven Dwarves.",
+  "Nazgûl\n{2}{B}\nCreature — Wraith Knight\n1/2\nDeathtouch\nA deck can have up to 9 cards named Nazgûl."
 ].all roundTripsOracleCard
 
 #guard
@@ -1112,6 +1115,13 @@ private def roundTripsOracleCard (raw : String) : Bool :=
         abs.size == 1 && abs[0]!.toNotation.contains "You may sacrifice a creature."
       | _ => false
     | .error _ => false
-  volumeOk && jaceOk && wayOk
+  let maxCopiesOk :=
+    (parseOracleCard "Five Relics\n{2}\nArtifact\nA deck can have up to five cards named Five Relics.").toOption.map
+      (·.deckLimitOverride) == some (some (.maxCopies 5)) &&
+    (parseOracleCard "Seven Dwarves\n{1}{R}\nCreature — Dwarf\n2/2\nA deck can have up to seven cards named Seven Dwarves.").toOption.map
+      (·.deckLimitOverride) == some (some (.maxCopies 7)) &&
+    (parseOracleCard "Nazgûl\n{2}{B}\nCreature — Wraith Knight\n1/2\nDeathtouch\nA deck can have up to 9 cards named Nazgûl.").toOption.map
+      (·.deckLimitOverride) == some (some (.maxCopies 9))
+  volumeOk && jaceOk && wayOk && maxCopiesOk
 
 end Mtg.Engine.Tests
