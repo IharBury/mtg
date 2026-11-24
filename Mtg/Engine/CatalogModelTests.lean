@@ -176,7 +176,7 @@ and lets you play it; the idle answer declines. -/
   let g := g.receivePriority me
   let g := applyIdle (applyIdle g)
   match g.pending with
-  | .fraChoice _ (.moonstoneMayExile _) =>
+  | .resolutionChoice _ (.moonstoneMayExile _) =>
     let declined := settle g
     let accepted := mustApply g me .accept
     inGraveyard declined me "Shock" && !inExile declined "Shock" &&
@@ -265,14 +265,14 @@ def pickRejected (g : Game) (ids : Array ObjectId) : Bool :=
 
 def choosingCost (g : Game) : Bool :=
   match g.pending with
-  | .fraChoice q (.costPicks ..) => q == me
+  | .resolutionChoice q (.costPicks ..) => q == me
   | _ => false
 
 def idOf (g : Game) (name : String) : ObjectId := (namedPermanent g name).id
 
 def choosingPick (g : Game) : Bool :=
   match g.pending with
-  | .fraChoice q (.mayPayPickThen ..) => q == me
+  | .resolutionChoice q (.mayPayPickThen ..) => q == me
   | _ => false
 
 /- Kingpin's Enforcers: the player chooses the artifact or creature to
@@ -631,7 +631,7 @@ opponent for 1. -/
   let g := castFra g shock [.target (.player opp)]
   let g := passBoth (stackTriggers g)
   let offered := match g.pending with
-    | .fraChoice _ (.mayPayExtort _) => true
+    | .resolutionChoice _ (.mayPayExtort _) => true
     | _ => false
   let g := settle (mustApply g me .accept)
   offered && life g opp == 17 && life g me == 21
@@ -870,7 +870,7 @@ spell, then discard two. -/
   let g := castFra g shock [.target (.player opp)]
   let g := passBoth (stackTriggers g)
   let offered := match g.pending with
-    | .fraChoice _ (.mayDrawThenDiscard 1 2) => true
+    | .resolutionChoice _ (.mayDrawThenDiscard 1 2) => true
     | _ => false
   offered
 
@@ -879,7 +879,7 @@ def untilFraChoice (g : Game) : Nat → Game
   | 0 => g
   | n + 1 =>
     match g.pending with
-    | .fraChoice .. => g
+    | .resolutionChoice .. => g
     | .chooseTriggerToStack q => untilFraChoice (mustApply g q (.stackTriggers (g.defaultTriggerSourceIds q))) n
     | _ => if g.stack.isEmpty then g else untilFraChoice (passBoth g) n
 
@@ -891,7 +891,7 @@ opponent sacrifice a nontoken creature of their choice. -/
   let g := g.destroyPermanent (namedPermanent g "The Master of Lake-town")
   let g := untilFraChoice (stackTriggers g) 6
   let asked := match g.pending with
-    | .fraChoice q (.sacrificeNontokenEach ..) => q == opp
+    | .resolutionChoice q (.sacrificeNontokenEach ..) => q == opp
     | _ => false
   let g := settle (mustApply g opp (.choosePermanents #[(theirs g "Hill Giant").id]))
   asked && !g.objects.any (fun o => o.name == "Hill Giant" && o.isOnBattlefield) &&
@@ -931,7 +931,7 @@ the copy may get a new target. -/
   let g := castFra g fireOfOrthanc [.target (.permanent (theirs g "Murmuring Volume").id)]
   let g := passBoth (stackTriggers g)
   let offered := match g.pending with
-    | .fraChoice _ (.newTargetsForCopies _) => true
+    | .resolutionChoice _ (.newTargetsForCopies _) => true
     | _ => false
   let g := settle (mustApply g me (.choosePermanents #[(theirs g "Forest").id]))
   offered && counters g "Fin Fang Foom" == 2 &&
@@ -1003,7 +1003,7 @@ really scries, and the counters are put by the counter action. -/
   let g := g.applyTriggeredAbility me .onAnotherCreatureYouControlEntersAlliance (some sid)
   let offered :=
     match g.pending with
-    | .fraChoice _ (.allianceMode _ available) => available == #[0, 1, 2]
+    | .resolutionChoice _ (.allianceMode _ available) => available == #[0, 1, 2]
     | _ => false
   let g := mustApply g me (.chooseMode 0)
   offered && (g.player me).manaPool.green == 3
@@ -1035,7 +1035,7 @@ really scries, and the counters are put by the counter action. -/
     (some (idOf g "Orcrist, Goblin-cleaver"))
   let elf :=
     match g.pending with
-    | .fraChoice _ (.chooseCreatureType types) => types.findIdx? (· == CardSubtype.elf)
+    | .resolutionChoice _ (.chooseCreatureType types) => types.findIdx? (· == CardSubtype.elf)
     | _ => none
   let g := mustApply g me (.chooseMode elf.get!)
   elf.isSome && treasures g me == 1
@@ -1199,7 +1199,7 @@ accepting casts the instant and bottoms only the cards that weren't cast. -/
     (some (idOf g "Gríma, Saruman's Footman"))
   let offered :=
     match g.pending with
-    | .fraChoice p (.mayCastGrima _ _ v) => p == me && v == opp
+    | .resolutionChoice p (.mayCastGrima _ _ v) => p == me && v == opp
     | _ => false
   let g := mustApply g me .decline
   offered &&
@@ -1237,7 +1237,7 @@ mills and loses life equal to the milled cards' mana values. -/
   let g := applyIdle g
   let choosing :=
     match g.pending with
-    | .fraChoice p (.palantirMayDraw c _) => p == opp && c == me
+    | .resolutionChoice p (.palantirMayDraw c _) => p == opp && c == me
     | _ => false
   let g := mustApply g opp .decline
   scried && choosing &&
@@ -1257,7 +1257,7 @@ mills and loses life equal to the milled cards' mana values. -/
   let g := g.applyTriggeredAbility me .onYourEndStepPalantir
     (some (idOf g "Palantír of Orthanc")) #[.player opp]
   match g.pending with
-  | .fraChoice p (.palantirMayDraw c _) =>
+  | .resolutionChoice p (.palantirMayDraw c _) =>
     p == opp && c == me &&
       (namedPermanent g "Palantír of Orthanc").status.influence == 1
   | _ => false
@@ -1276,7 +1276,7 @@ def sarumanMilled : Game :=
     (spec := {
       triggeredAbility := some .onCastSecondSpellMillThenCopy
       sourceId := some sar.id
-      fraCauseId := some causeBoltId }))
+      triggerCauseId := some causeBoltId }))
   passBoth g
 
 def gyNamed? (g : Game) (p : PlayerId) (name : String) : Option ObjectId :=
@@ -1306,7 +1306,7 @@ is optional. -/
     let g := passBoth g
     let offered :=
       match g.pending with
-      | .fraChoice _ (.mayCastCopy _) => true
+      | .resolutionChoice _ (.mayCastCopy _) => true
       | _ => false
     let g := mustApply g me .decline
     offered && inExile g "Lightning Bolt" &&
@@ -1391,7 +1391,7 @@ to you, then the Ring tempts you. -/
     (some (idOf g "Witch-king of Angmar"))
   let choosing :=
     match g.pending with
-    | .fraChoice p (.sacrificeDamager ids _ c _) =>
+    | .resolutionChoice p (.sacrificeDamager ids _ c _) =>
       p == opp && c == me && ids.contains (idOf g "Grizzly Bears") &&
         ids.contains (idOf g "Gray Ogre")
     | _ => false
@@ -1410,7 +1410,7 @@ value is at most twice the legendary Wizards you control. -/
     (some (idOf g "Gandalf, Party Guest"))
   let offered :=
     match g.pending with
-    | .fraChoice _ (.mayCastInstantSorceryFromHand eligible) =>
+    | .resolutionChoice _ (.mayCastInstantSorceryFromHand eligible) =>
       eligible.contains (handObj g me "Shock").id &&
         !eligible.any (fun id => (g.object! id).name == "Confusticate and Bebother")
     | _ => false
@@ -1434,7 +1434,7 @@ combat damage. -/
   let g := g.applyTriggeredAbility me .onEquippedCombatDamageCastInstantSorcery
     (some (idOf g "Glamdring")) (lastKnownPower := some 1)
   match g.pending with
-  | .fraChoice _ (.mayCastInstantSorceryFromHand eligible) =>
+  | .resolutionChoice _ (.mayCastInstantSorceryFromHand eligible) =>
     eligible.contains (handObj g me "Shock").id &&
       !eligible.any (fun id => (g.object! id).name == "Hithlain Knots")
   | _ => false
@@ -1544,7 +1544,7 @@ ability may cast up to two of the exiled cards. -/
   let shock := g.objects.find? (fun o => o.zone == .exile && o.name == "Shock")
   let offered :=
     match shock, g.pending with
-    | some s, .fraChoice _ (.mayCastUpToFromExile eligible left) =>
+    | some s, .resolutionChoice _ (.mayCastUpToFromExile eligible left) =>
       left == 2 && eligible.contains s.id &&
         !eligible.any (fun id => (g.object! id).name == "Mountain")
     | _, _ => false
@@ -1599,7 +1599,7 @@ line is Human Mercenary Villain. -/
     (some (idOf g "Mister Hyde, Monster Within"))
   let choosing :=
     match g.pending with
-    | .fraChoice _ (.hydeMode _) => true
+    | .resolutionChoice _ (.hydeMode _) => true
     | _ => false
   let g := mustApply g me (.chooseMode 0)
   choosing && (namedPermanent g "Mister Hyde, Monster Within").status.plusOnePlusOne == 1
@@ -1691,7 +1691,7 @@ of going to the graveyard. Creatures are not offered. -/
   let shockId := (graveyardObj g me "Shock").id
   let offered :=
     match g.pending with
-    | .fraChoice _ (.mayCastFromGraveyard ids) =>
+    | .resolutionChoice _ (.mayCastFromGraveyard ids) =>
       ids.contains shockId && !ids.any (fun id => (g.object! id).name == "Grizzly Bears")
     | _ => false
   let g := mustApply g me (.cast shockId)
@@ -1830,7 +1830,7 @@ new target. -/
   let g := castFra g photonBlastBarrage [.chooseX 2, tgt g "Grizzly Bears"]
   let g := passBoth g
   let offered := match g.pending with
-    | .fraChoice _ (.newTargetsForCopies cs) => cs.size == 2
+    | .resolutionChoice _ (.newTargetsForCopies cs) => cs.size == 2
     | _ => false
   let g := mustApply g me (.choosePermanents #[(theirs g "Hill Giant").id])
   let g := settle (mustApply g me .decline)

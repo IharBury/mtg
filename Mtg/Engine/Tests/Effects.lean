@@ -538,7 +538,7 @@ def thrushOffers : Game :=
 #guard
   (thrushOffers.player ⟨0⟩).life == (started.player ⟨0⟩).life + 2 &&
     match thrushOffers.pending with
-    | .fraChoice _ (.maySearchLibrary _ 1 .topAfterShuffle _ _) => true
+    | .resolutionChoice _ (.maySearchLibrary _ 1 .topAfterShuffle _ _) => true
     | _ => false
 
 /-- Declining Old Thrush's search does not shuffle. -/
@@ -1776,7 +1776,7 @@ def millOneInstantOrSorcery : Game :=
 
 #guard
   match millOneInstantOrSorcery.pending with
-  | .fraChoice ⟨0⟩ (.chooseCards ids 1 (.toHand true)) => ids.size == 2
+  | .resolutionChoice ⟨0⟩ (.chooseCards ids 1 (.toHand true)) => ids.size == 2
   | _ => false
 
 def millUpToTwoLands : Game :=
@@ -1785,7 +1785,7 @@ def millUpToTwoLands : Game :=
 
 #guard
   match millUpToTwoLands.pending with
-  | .fraChoice ⟨0⟩ (.chooseCards ids 2 (.toHand false)) => ids.size == 2
+  | .resolutionChoice ⟨0⟩ (.chooseCards ids 2 (.toHand false)) => ids.size == 2
   | _ => false
 
 def millAllInstants : Game :=

@@ -56,7 +56,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
       .continuation (.pendingFreeCopies (some (p0, #[exCardId], 3, 1))) ]).completeActiveResolutions
 
   -- 1a(ii). `Leaving.playerLeavesGameCore` `ensureDeferredExileReopen` when `!wasAbortedProposal`
-  --         and outer continuation is non-`finishFraChoice` (`.receivePriority p0`):
+  --         and outer continuation is non-`finishResolutionChoice` (`.receivePriority p0`):
   let gLeaveNonFra0 :=
     gEx0.changes #[
       .pushContinuationFrame {},
@@ -65,7 +65,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
       .pending (.mayPayGeneric p2 1) ]
   let gLeaveNonFraReopened := mustApply gLeaveNonFra0 p2 .concede
 
-  -- 1a(iii). `finishAndGrantPriority`, `finishFraChoice`, `afterWardResolved`, `chooseReplacement`,
+  -- 1a(iii). `finishAndGrantPriority`, `finishResolutionChoice`, `afterWardResolved`, `chooseReplacement`,
   --          `afterTriggerTargetsChosen`, and `receivePriority` reopen deferred exile/copy prompts
   --          AHEAD of `triggerNeedingTargets`, and cease uncast `pendingFreeCopies` (`castsLeft == 0`):
   let gAnchorBase := addPermanent gEx0 ({ name := "P48i1 Anchor", types := #[.artifact] }) p0 p0
@@ -76,7 +76,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   let gExAndTrig :=
     gAnchorBase.putTriggeredAbilityOnStack p0 tgtAnchor tgtTrigAb "triggers" (eventCause := some testCause)
 
-  -- `finishAndGrantPriority` & `finishFraChoice` reopen `pendingMayCastFromExile` BEFORE `triggerNeedingTargets`:
+  -- `finishAndGrantPriority` & `finishResolutionChoice` reopen `pendingMayCastFromExile` BEFORE `triggerNeedingTargets`:
   let gFgpBeforeTrig :=
     (gExAndTrig.changes #[
       .pushContinuationFrame {},
@@ -84,7 +84,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
   let gFfcBeforeTrig :=
     (gExAndTrig.changes #[
       .pushContinuationFrame {},
-      .continuation (.pendingMayCastFromExile (some (p0, #[exCardId], 1))) ]).finishFraChoice
+      .continuation (.pendingMayCastFromExile (some (p0, #[exCardId], 1))) ]).finishResolutionChoice
 
   -- Exhausted `pendingFreeCopies` (`castsLeft == 0` or `budget < mv`) ceases copy in `receivePriority` AND THEN prompts trigger targets:
   let gCopyBase := insertObject gAnchorBase bigSorcDef p0 (.hand p0)
@@ -142,7 +142,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
       p0 (.chooseMode 0)
 
   -- 1a(iv). `afterWardResolved` with `interpWait?.isSome` + `pendingMayCastFromExile.isSome`
-  --         reopens `.fraChoice` and parks `.afterWardResolved` on `outerPendingReplacements` instead of looping;
+  --         reopens `.resolutionChoice` and parks `.afterWardResolved` on `outerPendingReplacements` instead of looping;
   --         `afterTriggerTargetsChosen` consumes only `.chooseTargets _` and defers reopen while `pending != .none || afterRandom != .none`:
   let interpWaitP0 : InterpState := {
     ctx := { controller := p0, sourceId := some tgtAnchor.id }
@@ -173,20 +173,20 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
        gDefExHold.continuations.size == 1 &&
        gDefCopyHold.continuations.size == 1) &&
     mustHold48i1 "1a_leaveNonFraReopen"
-      (gLeaveNonFraReopened.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
+      (gLeaveNonFraReopened.pending == .resolutionChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
        gLeaveNonFraReopened.pendingMayCastFromExile.isNone) &&
     mustHold48i1 "1a_reopenAheadOfTriggerTargetsAndCeaseCopies"
-      (gFgpBeforeTrig.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
+      (gFgpBeforeTrig.pending == .resolutionChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
        gFgpBeforeTrig.pendingPriority == some p2 &&
-       gFfcBeforeTrig.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
+       gFfcBeforeTrig.pending == .resolutionChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
        (gRecvCeaseThenTrig.findObject? copyExId).isNone &&
        gRecvCeaseThenTrig.pending == .chooseTargets p0 &&
        gRecvCeaseThenTrig.pendingPriority == some p2 &&
-       gAfterTrigTgtReopen.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
-       gWardAfterDecline.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
-       gRepReopened.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1)) &&
+       gAfterTrigTgtReopen.pending == .resolutionChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
+       gWardAfterDecline.pending == .resolutionChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
+       gRepReopened.pending == .resolutionChoice p0 (.mayCastUpToFromExile #[exCardId] 1)) &&
     mustHold48i1 "1a_wardTrigSeqReopenAndAfterTrigIdleGuard"
-      (gWardTrigSeqReopen.pending == .fraChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
+      (gWardTrigSeqReopen.pending == .resolutionChoice p0 (.mayCastUpToFromExile #[exCardId] 1) &&
        gWardTrigSeqReopen.pendingMayCastFromExile.isNone &&
        gWardTrigSeqReopen.currentInterpWait?.isSome &&
        gWardTrigSeqReopen.outerPendingReplacements == #[.afterWardResolved] &&
@@ -330,7 +330,7 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
 
   -- 1c(i). `Decisions` `.restorePending` outer-pop threading across nested `.restorePending _ true`
   --        and `.seq a b` (`continuationGrantsPriority`, `priorityRecipientOfContinuation?`,
-  --        `stepCanReverseProposal`, and `resumePendingReplacement` `nextFollowedByFinishFra`):
+  --        `stepCanReverseProposal`, and `resumePendingReplacement` `nextFollowedByFinishChoice`):
   let sorc1Def : CardDef := {
     name := "P48i1 Sorc1"
     manaCost := ManaCost.ofGeneric 1
@@ -371,12 +371,12 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
     gNestedRestoreBase.resumePendingReplacement
       (.seq twoPopsOnly (.gainLife p0 7 (some testCause)))
 
-  -- `nextFollowedByFinishFra`: `.seq revCostStep (.restorePending .none true none #[] none)` where outer top is `.finishFraChoice`
+  -- `nextFollowedByFinishChoice`: `.seq revCostStep (.restorePending .none true none #[] none)` where outer top is `.finishResolutionChoice`
   -- reverses `gUnpayableProp` and grants `pendingPriority == p2` (whereas outer top `.receivePriority p3` grants `p3`):
   let gOuterFraResumed :=
     (gUnpayableProp.changes #[
       .pushContinuationFrame {},
-      .pushOuterPendingReplacement .finishFraChoice ]).resumePendingReplacement
+      .pushOuterPendingReplacement .finishResolutionChoice ]).resumePendingReplacement
       (.seq revCostStep (.restorePending .none true none #[] none))
   let gOuterP3Resumed :=
     (gUnpayableProp.changes #[
@@ -564,7 +564,7 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
       (gMorphSpliceProp.pending == .chooseKicker p0 &&
        gMorphSpliceChosen.proposedSpell.any (fun prop => prop.kicked && prop.cost == ManaCost.ofGeneric 3))
 
-  -- 2b(i). `FraChoices` `.mayCastFromGraveyard`, `defaultFraAction`, and `Agent` `.mayCastExiledElseDamage`
+  -- 2b(i). `ResolutionChoices` `.mayCastFromGraveyard`, `defaultChoiceAction`, and `Agent` `.mayCastExiledElseDamage`
   --        with an unrelated unpayable `payLifeEqualManaValue` permission:
   let gySorcDef : CardDef := {
     name := "P48i2 GyChant"
@@ -579,10 +579,10 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
       (.permission (some p0) (.playFromExile gyCardId { player := p0, payLifeEqualManaValue := true }) .untilEndOfTurn)
       (cause := some testCause)
   let gGyDefaultOk :=
-    match gGyUnpayablePerm.defaultFraAction p0 (.mayCastFromGraveyard #[gyCardId]) with
+    match gGyUnpayablePerm.defaultChoiceAction p0 (.mayCastFromGraveyard #[gyCardId]) with
     | .cast id => id == gyCardId
     | _ => false
-  let gGyPrompt := gGyUnpayablePerm.change (.pending (.fraChoice p0 (.mayCastFromGraveyard #[gyCardId])))
+  let gGyPrompt := gGyUnpayablePerm.change (.pending (.resolutionChoice p0 (.mayCastFromGraveyard #[gyCardId])))
   let gGyCastPaid := mustApply (mustApply gGyPrompt p0 (.cast gyCardId)) p0 .pay
 
   let gChandra0 := ((insertObject g4 gySorcDef p0 .exile).loseLife p0 19).addMana p0 .colorless 2
@@ -600,7 +600,7 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
   let gFreeCopy0 := insertObject g4 morphCreatureDef p0 (.hand p0)
   let (gFreeCopyEx, freeCopyId) :=
     gFreeCopy0.move (gFreeCopy0.player p0).hand.back! .exile none (isCopy := some true) (cause := some testCause)
-  let gFreeCopyPrompt := gFreeCopyEx.change (.pending (.fraChoice p0 (.castCopiesFree #[freeCopyId] 5 1)))
+  let gFreeCopyPrompt := gFreeCopyEx.change (.pending (.resolutionChoice p0 (.castCopiesFree #[freeCopyId] 5 1)))
   let gFreeCopyCast := mustApply gFreeCopyPrompt p0 (.cast freeCopyId)
 
   let modalImpDef : CardDef := {
@@ -716,7 +716,7 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
 
   -- 2c(ii). `Leaving.coDepartingIds` phased-out source-leave guard vs simultaneous EOT control expiry,
   --         `Turns` `pre` `hadPlayable` (including two same-named cards vs two permissions on one `oid`),
-  --         BFS `fraEmblemEntries`, and direct `.command` emblem return-control log:
+  --         BFS `commandEmblemEntries`, and direct `.command` emblem return-control log:
   let srcArtDef : CardDef := { name := "P48i2 CtrlRelic", types := #[.artifact] }
   let gPhSrcPre := addPermanent (addPermanent g4 srcArtDef p0 p0) bear p0 p3
   let ctrlRelicId := (gPhSrcPre.permanentsOf p0).find? (·.name == srcArtDef.name) |>.get!.id
@@ -757,7 +757,7 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
     (gTurnsEot.log.extract preTurnsLog gTurnsEot.log.size).filter
       (· == s!"{gySorcDef.name} can no longer be played from exile")
 
-  -- BFS `fraEmblemEntries` (`srcArt -> parentEmb -> childEmb` even when `childEmb`'s `.fraEmblem` was registered BEFORE `parentEmb`'s)
+  -- BFS `commandEmblemEntries` (`srcArt -> parentEmb -> childEmb` even when `childEmb`'s `.commandEmblem` was registered BEFORE `parentEmb`'s)
   -- AND direct `.command` emblem `ceaseToExist` single-target return-control log:
   let embDef : CardDef := { name := "P48i2 Emblem", types := #[] }
   let gBfs0 :=
@@ -770,9 +770,9 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
   let childEmbId := bfsEmbs[1]!.id
   -- Register `childEmb` FIRST in `activeEffects`, then `parentEmb`:
   let gBfs1 :=
-    (((gBfs0.createEffect (.gameRule (.fraEmblem childEmbId) (.whileInZone parentEmbId .command))
+    (((gBfs0.createEffect (.gameRule (.commandEmblem childEmbId) (.whileInZone parentEmbId .command))
         (cause := some testCause)).createEffect
-       (.gameRule (.fraEmblem parentEmbId) (.whileSourceOnBattlefield bfsSrcId))
+       (.gameRule (.commandEmblem parentEmbId) (.whileSourceOnBattlefield bfsSrcId))
        (cause := some testCause)).createEffect
       (.layered (.objects #[bfsBearId]) (.control p0) (.whileInZone childEmbId .command))
       (cause := some testCause))
@@ -790,7 +790,7 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
       | _ => none
 
   -- `expireUntilNextTurnEffects` forwards the pre-`restoreCopiesUntilNextTurn` `preState?` into
-  -- `expireFraUntilTurnEffects` (matching `beginTurn`, CR 500.4 / 611.2a / 800.4m): an exiled spell
+  -- `expireUntilTurnCommandEffects` (matching `beginTurn`, CR 500.4 / 611.2a / 800.4m): an exiled spell
   -- playable while an `.untilNextTurnOf p2` copy made `bear` an Elf DOES log `"can no longer be played from exile"`!
   let gDepCopy0 := insertObject (addPermanent (mustApply g4 p2 .concede) bear p0 p0) gySorcDef p0 .exile
   let depCopyBearId := (gDepCopy0.permanentsOf p0)[0]!.id

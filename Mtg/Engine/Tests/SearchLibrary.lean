@@ -137,23 +137,23 @@ def stepEffect (g : Game) (e : Effect) (sourceId : Option ObjectId := none) : Ga
 /-- Answer an optional search, then take the first eligible card. -/
 def takeSearch (g : Game) : Game :=
   match g.pending, g.actor with
-  | .fraChoice _ (.maySearchLibrary eligible ..), some p =>
+  | .resolutionChoice _ (.maySearchLibrary eligible ..), some p =>
     if eligible.isEmpty then mustApply g p .decline
     else
       let g := mustApply g p .accept
       match g.pending, g.actor with
-      | .fraChoice _ (.searchLibrary ids n ..), some q =>
+      | .resolutionChoice _ (.searchLibrary ids n ..), some q =>
         if ids.isEmpty then mustApply g q .decline
         else mustApply g q (.choosePermanents (ids.extract 0 n))
       | _, _ => g
-  | .fraChoice _ (.searchLibrary eligible count ..), some p =>
+  | .resolutionChoice _ (.searchLibrary eligible count ..), some p =>
     if eligible.isEmpty then mustApply g p .decline
     else mustApply g p (.choosePermanents (eligible.extract 0 count))
   | _, _ => g
 
 def declineSearch (g : Game) : Game :=
   match g.pending, g.actor with
-  | .fraChoice _ _, some p => mustApply g p .decline
+  | .resolutionChoice _ _, some p => mustApply g p .decline
   | _, _ => g
 
 def withQuest (n : Nat) : Game :=

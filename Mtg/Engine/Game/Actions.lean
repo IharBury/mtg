@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.FraChoices
+import Mtg.Engine.Game.ResolutionChoices
 
 /-!
 # Applying player actions
@@ -25,15 +25,15 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
       let g ← g.choosePutArtifactFromHand p id
       return g.resumeSequenceThenPriority
     | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
-    | .fraChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
-    | .fraChoice _ (.mayCastFromGraveyard _) => g.answerFraChoice p (.objects #[id])
-    | .fraChoice _ (.mayCastCards _ _ _) => g.answerFraChoice p (.objects #[id])
+    | .resolutionChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
+    | .resolutionChoice _ (.mayCastFromGraveyard _) => g.answerResolutionChoice p (.objects #[id])
+    | .resolutionChoice _ (.mayCastCards _ _ _) => g.answerResolutionChoice p (.objects #[id])
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
   | .castWithSneak id attackerId => g.castSpell p id (sneakAttacker := some attackerId)
   | .chooseMode idx =>
     match g.pending with
-    | .fraChoice .. => g.answerFraChoice p (.mode idx)
+    | .resolutionChoice .. => g.answerResolutionChoice p (.mode idx)
     | .chooseReplacement _ choices =>
       if choices.any (fun c => match c.kind with | .asEntersChooseOdd _ => true | _ => false) then
         if idx > 1 then throw "Choose even (0) or odd (1)"
@@ -75,7 +75,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
           g.anyContinuationSettlesControlFlow then
         return g
       else
-        return g.finishFraChoice
+        return g.finishResolutionChoice
     else if wasWard then
       if (match g.pending with | .payWard .. => true | _ => false) then
         return g
@@ -102,7 +102,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
   | .discard id => g.discardForDraw p id
   | .decline =>
     match g.pending with
-    | .fraChoice .. => g.answerFraChoice p .decline
+    | .resolutionChoice .. => g.answerResolutionChoice p .decline
     | .chooseReplacement _ choices =>
       match choices.find? (fun c =>
           match c.kind with
@@ -113,7 +113,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
     | _ => g.decline p
   | .accept =>
     match g.pending with
-    | .fraChoice .. => g.answerFraChoice p .accept
+    | .resolutionChoice .. => g.answerResolutionChoice p .accept
     | .chooseReplacement _ choices =>
       match choices.find? (fun c =>
           match c.kind with
@@ -128,19 +128,19 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
     return g.finishAndGrantPriority
   | .payGeneric =>
     match g.pending with
-    | .fraChoice _ (.mayPayThen ..) => g.answerFraChoice p .accept
+    | .resolutionChoice _ (.mayPayThen ..) => g.answerResolutionChoice p .accept
     | _ => g.payGeneric p
   | .chooseTop =>
     match g.pending with
-    | .fraChoice .. => g.answerFraChoice p .accept
+    | .resolutionChoice .. => g.answerResolutionChoice p .accept
     | _ => g.chooseLibrarySide p true
   | .chooseBottom =>
     match g.pending with
-    | .fraChoice .. => g.answerFraChoice p .decline
+    | .resolutionChoice .. => g.answerResolutionChoice p .decline
     | _ => g.chooseLibrarySide p false
   | .choosePermanents ids =>
     match g.pending with
-    | .fraChoice .. => g.answerFraChoice p (.objects ids)
+    | .resolutionChoice .. => g.answerResolutionChoice p (.objects ids)
     | .chooseReplacement _ choices =>
       match ids with
       | #[tid] =>
@@ -175,8 +175,8 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
           g.chooseReplacement p { promptId with kind := .asEntersChooseCreatureType sub }
         | _ =>
           g.chooseReplacement p { promptId with kind := .asEntersChooseCardName name }
-      | none => g.answerFraChoice p (.name name)
-    | _ => g.answerFraChoice p (.name name)
+      | none => g.answerResolutionChoice p (.name name)
+    | _ => g.answerResolutionChoice p (.name name)
   | .chooseReplacement id => g.chooseReplacement p id
 
 /-- Seat whose turn, priority, or pending prompt is currently active, before
@@ -227,7 +227,7 @@ def rawActor (g : Game) : Option PlayerId :=
     | .mayPutArtifactFromHand p _ => who p
     | .mayHaveVillainConnive p _ _ => who p
     | .chooseProliferate p _ => who p
-    | .fraChoice p _ => who p
+    | .resolutionChoice p _ => who p
     | .chooseReplacement p _ => who p
     | .mayCastExiledElseDamage p .. => who p
     | .resolveRandom req =>

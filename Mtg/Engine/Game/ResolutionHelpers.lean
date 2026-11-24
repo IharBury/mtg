@@ -76,6 +76,45 @@ def withLegalSpecPlayer (g : Game) (controller : PlayerId) (spec : TargetSpec)
     | Target.permanent _ | Target.card _ => g.logMsg "The target is no longer legal")
     sourceId missing
 
+/-- Whether `t` is still a legal target for the `i`th instance of “target”
+of `spec` (CR 608.2b), accounting for `g.resolvingSkippedSlots` when optional
+slots were skipped at announcement. -/
+def targetLegalAt (g : Game) (controller : PlayerId) (spec : TargetSpec) (i : Nat)
+    (t : Target) (sourceId : Option ObjectId) : Bool :=
+  let pos :=
+    if g.resolvingSkippedSlots.isEmpty || !spec.isMultiSlot then i
+    else Id.run do
+      let mut s := 0
+      let mut rem := i
+      let total := spec.totalPositions
+      while s < total do
+        if g.resolvingSkippedSlots.contains s then
+          s := s + 1
+        else if rem == 0 then
+          return s
+        else
+          rem := rem - 1
+          s := s + 1
+      return s
+  let stackSelf := g.resolvingAbility.orElse (fun _ => g.resolvingSpell)
+  (g.legalTargetsForSlot controller (spec.slotAtPos pos) sourceId stackSelf).contains t
+
+/-- The source's name for effect and damage logs. -/
+def effectSourceName (g : Game) (sourceId : Option ObjectId) : String :=
+  match g.resolvingSpell.bind g.findObject? with
+  | some o => g.name o
+  | none =>
+    match sourceId.bind g.findObject? with
+    | some o => g.name o
+    | none =>
+      ((sourceId.bind g.damageSourceById?).map g.name).orElse
+        (fun _ => (sourceId.bind g.lastKnownBefore?).map (·.name))
+        |>.getD "The effect"
+
+/-- The resolving activated or triggered ability's stack object. -/
+def resolvingAbilityObject? (g : Game) : Option GameObject :=
+  g.resolvingAbility.bind g.findObject?
+
 /-- Put `o` on the top (`top`) or bottom of its owner's library, deferring the
 log across `Pending.chooseReplacement` and emitting it only if `o` actually
 arrives in `.library owner`. -/
@@ -832,7 +871,7 @@ def offerCardChoice (g : Game) (p : PlayerId) (ids : Array ObjectId) (max : Nat)
     (purpose : CardChoice) (msg : String) (cause : Option EventCause := none) : Game :=
   if ids.isEmpty || max == 0 then g.finishChooseCards p #[] purpose (cause := cause)
   else
-    let g := g.beginFraChoice p (.chooseCards ids max purpose) msg
+    let g := g.beginResolutionChoice p (.chooseCards ids max purpose) msg
     match cause with
     | some c => g.change (.stashedCause (some c))
     | none => g
@@ -912,7 +951,7 @@ def offerBottomAnyOrder (g : Game) (p : PlayerId) (ids : Array ObjectId)
         (log := s!"{(g.player p).name} puts the rest on the bottom of their library")
     else
       let g :=
-        g.beginFraChoice p (.orderLibraryBottom ids)
+        g.beginResolutionChoice p (.orderLibraryBottom ids)
           s!"{(g.player p).name} puts the rest on the bottom of their library in any order"
       match cause with
       | some c => g.change (.stashedCause (some c))
@@ -940,6 +979,191 @@ def transformPermanent (g : Game) (controller : PlayerId) (sourceId : Option Obj
               (cause := fallback))
           let g := g.logMsg s!"{oldName} transforms into {face.name}"
           reconcileControlAfterTransition pre g (cause := some fallback)
+
+/-- Cards `p` owns outside the game. -/
+def outsideCards (g : Game) (p : PlayerId) : Array GameObject :=
+  g.objects.filter (fun o => o.zone == .outside p)
+
+/-- Give `p`'s sideboard cards object identities outside the game, so an
+effect can reveal or move them (CR 400.11b). -/
+def materializeSideboard (g : Game) (p : PlayerId) : Game :=
+  let side := (g.player p).sideboard
+  let g := g.changePlayer p (.sideboard #[])
+  side.foldl (fun g card => (g.allocObject card p (.outside p)).1) g
+
+/-- Cards named `cardName` in `p`'s graveyard. -/
+def graveyardCardsNamed (g : Game) (p : PlayerId) (cardName : String) : Array ObjectId :=
+  (g.player p).graveyard.filter (fun id =>
+    (g.findObject? id).any (fun o => g.name o == cardName))
+
+/-- Give `p` an emblem or effect object in the command zone (CR 114.1–114.5). -/
+def createCommandObject (g : Game) (p : PlayerId) (card : CardDef)
+    (untilTurnOf : Option PlayerId := none) : Game :=
+  if !g.stillInGame p then g
+  else
+    let (g, obj) := g.allocObject card p .command (some p)
+    match untilTurnOf with
+    | some q =>
+      let effCause :=
+        g.resolveOptionalCause none (fallbackCtrl := some p) (defaultCause := .gameRule .spellCast)
+      g.createEffect (.commandEmblemUntilTurnOf obj.id q) (cause := some effCause)
+    | none => g
+
+/-- Deal `n` damage to each `remaining` target permanent or player one at a
+time, pausing across `Pending.chooseReplacement` before checking subsequent
+targets. -/
+partial def damageUpToOneAndPlayerLoop (g : Game) (controller : PlayerId)
+    (spec : TargetSpec) (remaining : Array (Nat × Target)) (n : Nat)
+    (srcName : String) (sourceId : Option ObjectId)
+    (cause? : Option EventCause)
+    (startEventIdx : Option Nat := none) : Game :=
+  if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement
+      (.finishPostStep (.damageUpToOneAndPlayerLoop controller spec remaining n srcName sourceId cause? startEventIdx))
+  else
+    let sIdx := startEventIdx.getD g.events.size
+    let c := cause?.orElse (fun _ => g.currentBatch.bind (·.2))
+    match remaining[0]? with
+    | none =>
+      g.applyAggregatedLifelinkSince sIdx (cause := c)
+    | some (i, t) =>
+      let rest := remaining.extract 1 remaining.size
+      let src? :=
+        (g.resolvingSpell.bind g.damageSourceById?).orElse (fun _ => sourceId.bind g.damageSourceById?)
+      let g :=
+        match t with
+        | Target.permanent id =>
+          if g.targetLegalAt controller spec i t sourceId then
+            match g.findObject? id with
+            | some o =>
+              g.dealDamageFrom srcName o n (source := src?) (cause := c)
+                (suppressLifelink := true)
+            | none => g
+          else g.illegalAbilityTarget t
+        | Target.player pid =>
+          if g.targetLegalAt controller spec i t sourceId then
+            g.dealDamageToPlayer pid n (source := src?) (cause := c)
+              (suppressLifelink := true)
+          else g.illegalAbilityTarget t
+        | _ => g
+      if let .chooseReplacement .. := g.pending then
+        g.chainPendingReplacement
+          (.finishPostStep (.damageUpToOneAndPlayerLoop controller spec rest n srcName sourceId c (some sIdx)))
+      else
+        g.damageUpToOneAndPlayerLoop controller spec rest n srcName sourceId c (some sIdx)
+
+/-- Exile all but the bottom card of each opponent's library, pausing across
+`Pending.chooseReplacement` and logging per opponent only when at least one
+card arrived in `.exile` (or the library already had at most one card). -/
+partial def exileOpponentLibrariesLoop (g : Game) (remainingOpps : Array PlayerId)
+    (curOpp : Option PlayerId := none) (curIds : Array ObjectId := #[])
+    (movedAnyForCur : Bool := false)
+    (pendingId : Option ObjectId := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.exileOpponentLibrariesLoop remainingOpps curOpp curIds movedAnyForCur pendingId))
+  let mut g := g
+  let mut opps := remainingOpps
+  let mut cOpp := curOpp
+  let mut ids := curIds
+  let mut anyMoved := movedAnyForCur
+  if let some pid := pendingId then
+    if (g.followMovedToZone? pid (· == .exile)).isSome then
+      anyMoved := true
+  while true do
+    match cOpp with
+    | none =>
+      match opps[0]? with
+      | none => return g
+      | some pid =>
+        opps := opps.extract 1 opps.size
+        if g.stillInGame pid then
+          let lib := (g.player pid).library
+          cOpp := some pid
+          ids := lib.extract 1 lib.size
+          anyMoved := ids.isEmpty
+    | some pid =>
+      if !g.stillInGame pid then
+        if anyMoved then
+          g := g.logMsg s!"All but the bottom card of {(g.player pid).name}'s library are exiled"
+        cOpp := none
+      else
+        match ids[0]? with
+        | none =>
+          if anyMoved then
+            g := g.logMsg s!"All but the bottom card of {(g.player pid).name}'s library are exiled"
+          cOpp := none
+        | some cid =>
+          ids := ids.extract 1 ids.size
+          let (g', _) := g.move cid .exile none
+          g := g'
+          if let .chooseReplacement .. := g.pending then
+            return g.chainPendingReplacement
+              (.finishPostStep (.exileOpponentLibrariesLoop opps (some pid) ids anyMoved (some cid)))
+          if (g.followMovedToZone? cid (· == .exile)).isSome then
+            anyMoved := true
+  return g
+
+def destroyCreaturesByManaParity (g : Game) (sourceId : Option ObjectId) (even : Bool) : Game :=
+  let preBf := g.battlefield
+  let ids := (preBf.filter (fun o =>
+    some o.id != sourceId && g.isCreature o &&
+      ((g.objectManaValue o % 2 == 0) == even))).map (·.id)
+  let quality := if even then "even" else "odd"
+  let g := g.logMsg s!"Destroy each other creature with {quality} mana value"
+  g.withBatch none fun g =>
+    g.destroyPermanentsLoop ids (preBattlefield := some preBf)
+
+def returnCreaturesNotOfType (g : Game) (chosen : CardSubtype) : Game :=
+  g.withBatch none fun g =>
+    g.foldBattlefield (fun o => g.isCreature o && !g.hasSubtype o chosen)
+      (fun g o => g.returnToHand o.id o.owner)
+
+def finishRevealPutCreaturesStep (g : Game) (p : PlayerId)
+    (remaining put enteredFromIds : Array ObjectId)
+    (cause : Option EventCause := none) : Game := Id.run do
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.revealPutCreaturesStep p remaining put enteredFromIds cause))
+  let mut g := g
+  let mut entered := enteredFromIds
+  for i in [0:remaining.size] do
+    let id := remaining[i]!
+    match g.findObject? id with
+    | some o =>
+      if put.contains id && g.isCreature o && o.zone == .library p then
+        let (g', _) := g.putOntoBattlefield id p (cause := cause)
+        g := g'
+        entered := entered.push id
+      else if o.zone == .library o.owner then
+        let (g', _) := g.move id (.graveyard o.owner) none (cause := cause)
+        g := g'
+      if let .chooseReplacement .. := g.pending then
+        let rem := remaining.extract (i + 1) remaining.size
+        return g.chainPendingReplacement
+          (.finishPostStep (.revealPutCreaturesStep p rem put entered cause))
+    | none => pure ()
+  for k in [0:entered.size] do
+    let fromId := entered[k]!
+    match g.followMovedToZone? fromId (· == .battlefield) with
+    | some enteredObj =>
+      g := g.logMsg s!"{(g.player p).name} puts {g.name enteredObj} onto the battlefield"
+      g := g.afterPermanentEnters enteredObj
+      if let .chooseReplacement .. := g.pending then
+        let remEntered := entered.extract (k + 1) entered.size
+        return g.chainPendingReplacement
+          (.finishPostStep (.revealPutCreaturesStep p #[] put remEntered cause))
+    | none => pure ()
+  return g
+
+def finishRevealPutCreatures (g : Game) (p : PlayerId) (looked put : Array ObjectId) : Game :=
+  let (g0, cause?) : Game × Option EventCause :=
+    if looked.isEmpty then (g, none)
+    else
+      let (g, c) := g.allocDelayedCause (some p)
+      (g, some c)
+  g0.withBatch cause? fun g =>
+    g.finishRevealPutCreaturesStep p looked put #[] (cause := cause?)
 
 end Game
 end Mtg.Engine

@@ -520,13 +520,13 @@ private def replayOk41i2 (gs : Array Game) : Bool :=
     orphExileLogs.size == 1
   let item2aOk := simSurvivorOk && emptyCtrlOrphExiledOk && dedupQueuesOk
 
-  -- 2b. Unified outer-`pre` `Turns.expireFraUntilTurnEffects` (`skipControl := false`) with command-zone FRA emblem:
+  -- 2b. Unified outer-`pre` `Turns.expireUntilTurnCommandEffects` (`skipControl := false`) with command-zone FRA emblem:
   let gFra0 :=
     insertObject (addPermanent g4 bear p0 p0) embDef p2 .command (some p2)
   let fraBear := (gFra0.permanentsOf p0)[0]!
   let fraEmb := (gFra0.objects.filter (·.zone == .command))[0]!
   let gFra1 :=
-    (((((gFra0.createEffect (.gameRule (.fraEmblem fraEmb.id) (.untilNextTurnOf p0))
+    (((((gFra0.createEffect (.gameRule (.commandEmblem fraEmb.id) (.untilNextTurnOf p0))
       (cause := some testCause)).createEffect
       (.layered (.objects #[fraBear.id]) (.control p2) (.whileInZone fraEmb.id .command))
       (cause := some testCause)).createEffect
@@ -535,7 +535,7 @@ private def replayOk41i2 (gs : Array Game) : Bool :=
       (GameEvent.designation gFra0.turnNumber (gFra0.snapshot fraBear) .ringBearer true (cause := testCause))).record
       (GameEvent.attacked gFra0.turnNumber p0 (gFra0.snapshot fraBear) p1 (cause := testCause)))
   let preFraLogIdx := gFra1.log.size
-  let gFraAfter := gFra1.expireFraUntilTurnEffects p0 (skipControl := false)
+  let gFraAfter := gFra1.expireUntilTurnCommandEffects p0 (skipControl := false)
   let fraLogs := gFraAfter.log.extract preFraLogIdx gFraAfter.log.size
   let item2bOk :=
     (gFraAfter.findObject? fraEmb.id).isNone &&
@@ -862,7 +862,7 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
   let g3 := afterDraw.change (.addPlayer { id := p2, name := "Liliana" })
 
   -- 4a. Proposal/activation `sinceIdx` + `CounterKind`-accurate `ActivationCosts.source*ForCost`
-  --     and `resolvingForObj <|> sourceId` in `FraChoices.mayPayPickThen`:
+  --     and `resolvingForObj <|> sourceId` in `ResolutionChoices.mayPayPickThen`:
   let multiCntAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[
       .removeCounters (.exact 1) (some .story) .self,
@@ -908,7 +908,7 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
     gMcAct.stack.size == 1
 
   -- Prior-turn `{T}` mana ability / cost payment on `sid` (`sinceIdx` bound across standalone `payActivationExtraCosts`,
-  -- standalone `payCostPick`, `.turnFaceUp`, and `FraChoices.mayPayPickThen` `resolvingForObj <|> sourceId`):
+  -- standalone `payCostPick`, `.turnFaceUp`, and `ResolutionChoices.mayPayPickThen` `resolvingForObj <|> sourceId`):
   let dorkManaAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[.tapSelf]
     effect := Effect.addMana #[.colored .green]
@@ -941,7 +941,7 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
     match gUntappedLater.payCostPick p0 none (some dorkObj.id) .tapUntappedCreature #[dorkObj.id] with
     | .ok g => g
     | .error e => panic! e
-  -- (iii) `FraChoices.mayPayPickThen` with `resolvingAbility := some trigAb.id` AND an outer `proposalCheckpoint` from before the tap (`eventsSize == prePriorTapIdx`):
+  -- (iii) `ResolutionChoices.mayPayPickThen` with `resolvingAbility := some trigAb.id` AND an outer `proposalCheckpoint` from before the tap (`eventsSize == prePriorTapIdx`):
   let gWithOldCkpt :=
     setTapped
       (readyControlledForTurn
@@ -952,7 +952,7 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
   let gFraPrompt :=
     gFraTrig0.changes #[
       .pushContinuationFrame { resolvingAbility := some trigAb.id },
-      .pending (.fraChoice p0 (.mayPayPickThen .tapUntappedCreature (Instruction.gainLifeFixed 2) (some dorkObj.id))) ]
+      .pending (.resolutionChoice p0 (.mayPayPickThen .tapUntappedCreature (Instruction.gainLifeFixed 2) (some dorkObj.id))) ]
   let gFraPaid := mustApply gFraPrompt p0 (.choosePermanents #[dorkObj.id])
   let priorTapAndFraOk :=
     sinceIdxHelperOk &&

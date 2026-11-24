@@ -781,12 +781,12 @@ private def testColossus : CardDef := {
   let gPaused := g2.createKindTokens p0 maxPowerCopySpec 1
   let pausedOk :=
     match gPaused.pending with
-    | .fraChoice who (.chooseTokenCopyObject ids _ 1 false false none ..) =>
+    | .resolutionChoice who (.chooseTokenCopyObject ids _ 1 false false none ..) =>
       who == p0 && ids == #[dragonId, colossusId]
     | _ => false
   -- Choose the SECOND tied creature (`colossusId`), proving the player's choice (not board order) wins.
   let chosenOk :=
-    match gPaused.answerFraChoice p0 (.objects #[colossusId]) with
+    match gPaused.answerResolutionChoice p0 (.objects #[colossusId]) with
     | .ok gDone =>
       let tok := lastPermanent gDone
       gDone.pending == .none &&
@@ -802,22 +802,22 @@ private def testColossus : CardDef := {
     (tapped := true) (holds := true)
   let atkTieOk :=
     match gAtkTie.pending with
-    | .fraChoice who (.chooseTokenCopyObject ids _ 2 true true none ..) =>
+    | .resolutionChoice who (.chooseTokenCopyObject ids _ 2 true true none ..) =>
       who == p0 && ids == #[dragonId, colossusId] &&
-      match gAtkTie.answerFraChoice p0 (.objects #[colossusId]) with
+      match gAtkTie.answerResolutionChoice p0 (.objects #[colossusId]) with
       | .ok gNeedAtk1 =>
         match gNeedAtk1.pending with
-        | .fraChoice who1 (.chooseEnteringAttackTarget rem1 _ _) =>
+        | .resolutionChoice who1 (.chooseEnteringAttackTarget rem1 _ _) =>
           who1 == p0 && rem1.size == 2 &&
           rem1[0]!.options.contains (.player p1) &&
           rem1[0]!.options.contains (.planeswalker oppPwId) &&
           -- Send token 1 at opponent's planeswalker, token 2 at opponent player
-          match gNeedAtk1.answerFraChoice p0 (.objects #[oppPwId]) with
+          match gNeedAtk1.answerResolutionChoice p0 (.objects #[oppPwId]) with
           | .ok gNeedAtk2 =>
             match gNeedAtk2.pending with
-            | .fraChoice who2 (.chooseEnteringAttackTarget rem2 _ _) =>
+            | .resolutionChoice who2 (.chooseEnteringAttackTarget rem2 _ _) =>
               who2 == p0 && rem2.size == 1 &&
-              match gNeedAtk2.answerFraChoice p0 (.mode 0) with
+              match gNeedAtk2.answerResolutionChoice p0 (.mode 0) with
               | .ok gDone =>
                 let toks := gDone.objects.filter fun o =>
                   o.isOnBattlefield && o.printed.isToken && o.name == "Test Colossus"

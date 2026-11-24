@@ -37,7 +37,7 @@ open Mtg.Engine.Tests
       & CR 701.17c `ZoneVerb.mill` in public zones (`followMilledPublic?`).
    9. CR 800.4a/h leave-game continuation handling (`.chooseTargets` trigger
       checkpoint safety, `.chooseSacrificeCreature` last-player `finishChosenSacrifices`,
-      multi-player `FraChoice` queue advance, and `.chooseReplacement` transfer).
+      multi-player `ResolutionChoice` queue advance, and `.chooseReplacement` transfer).
    10. CR 702.131a/b/d `citysBlessing` / `enduringStory` batch evaluation in
        `Core.closeBatch` + instant/sorcery `ascend` in `resolveTop`, and
        `Option BatchId` (`none` vs `some ⟨0⟩`) envelope fidelity. -/
@@ -737,10 +737,10 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
     let sacFinishOk :=
       gS2.pending == .none &&
       !(gS2.findObject? b0).any (·.isOnBattlefield)
-    -- 9b. Multi-player `FraChoice` (`.mayWheel 2 #[p2]` on `p1`): `p1` conceding advances prompt to `p2`!
-    let gW1 := g3.change (.pending (.fraChoice p1 (.mayWheel 2 #[p2])))
+    -- 9b. Multi-player `ResolutionChoice` (`.mayWheel 2 #[p2]` on `p1`): `p1` conceding advances prompt to `p2`!
+    let gW1 := g3.change (.pending (.resolutionChoice p1 (.mayWheel 2 #[p2])))
     let gW2 := gW1.concede p1
-    let wheelAdvOk := gW2.pending == .fraChoice p2 (.mayWheel 2 #[])
+    let wheelAdvOk := gW2.pending == .resolutionChoice p2 (.mayWheel 2 #[])
     -- 9c. `.chooseReplacement`: `p1` conceding while `Pending.chooseReplacement p1 ...` is open during `p0`'s effect
     --     resumes `pendingReplacement` (putting counters on `p0`'s Bear) instead of wiping `pendingReplacement := none`!
     let gR0 := addPermanent (addPermanent g3 bear p0 p0) samsonDef16 p1 p1
@@ -788,10 +788,10 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
     let gD1 := gD0.concede p1
     let p2Bears := ((gD1.player p2).hand.filter (fun id => (gD1.object! id).name == bear.name)).extract 0 2
     let gD2 := mustApply gD1 p2 (.choosePermanents p2Bears)
-    let gDLast0 := g3.change (.pending (.fraChoice p1 (.discardTwo p0 #[] 1)))
+    let gDLast0 := g3.change (.pending (.resolutionChoice p1 (.discardTwo p0 #[] 1)))
     let gDLast1 := gDLast0.concede p1
     let discardTwoLeaveOk :=
-      gD1.pending == .fraChoice p2 (.discardTwo p0 #[] 0) &&
+      gD1.pending == .resolutionChoice p2 (.discardTwo p0 #[] 0) &&
       (gD2.player p0).hand.size == p0HandBefore &&
       (gDLast1.player p0).hand.size == (g3.player p0).hand.size + 1 &&
       [gD1, gD2, gDLast1].all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
@@ -1152,7 +1152,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let gGolStack0 : Game := gGol0.putTriggeredAbilityOnStack me (gGol0.object! golId) gollumTrigAb "triggers" (eventCause := some testCause)
   let golPromptedOnStack : Bool :=
     match gGolStack0.pending with
-    | .fraChoice p (.stackTriggerUnusedMode _ (some sid) avail true) => p == me && sid == golId && avail == #[0, 1, 2]
+    | .resolutionChoice p (.stackTriggerUnusedMode _ (some sid) avail true) => p == me && sid == golId && avail == #[0, 1, 2]
     | _ => false
   let gGolChosen0 : Game := mustApply gGolStack0 me (.chooseMode 2)
   let stackAbId := gGolChosen0.stack.back!.objectId
@@ -1186,7 +1186,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let hydeId := (gHyde0.battlefield.filter (·.name == misterHydeDef17.name))[0]!.id
   let hydeAb := misterHydeDef17.triggeredAbilities[0]!
   let gHydeStack : Game := gHyde0.putTriggeredAbilityOnStack me (gHyde0.object! hydeId) hydeAb "combat" (eventCause := some testCause)
-  let hydePromptOk : Bool := gHydeStack.pending == .fraChoice me (.stackHydeMode gHydeStack.stack.back!.objectId)
+  let hydePromptOk : Bool := gHydeStack.pending == .resolutionChoice me (.stackHydeMode gHydeStack.stack.back!.objectId)
   let gHydeMode0 : Game := (mustApply gHydeStack me (.chooseMode 0)).resolveTop
   let hydeResolvedOk : Bool := (gHydeMode0.object! hydeId).status.plusOnePlusOne == 1
 
@@ -1198,7 +1198,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let gCrewEntered : Game := gCrewCast.resolveTop.receivePriority me
   let crewPromptOnStackOk : Bool :=
     match gCrewEntered.pending with
-    | .fraChoice p (.upToTriggerModes _ 2 #[]) => p == me
+    | .resolutionChoice p (.upToTriggerModes _ 2 #[]) => p == me
     | _ => false
   let oppLifeBefore := (gCrewEntered.player opp).life
   -- Mode 1 is `"Target opponent loses 2 life"`, then decline 2nd mode (`choose up to X`) and target `opp`:
@@ -1525,7 +1525,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let gWWWPrmpt : Game := gWWWCast.resolveTop
   let gWWWDone : Game :=
     match gWWWPrmpt.pending with
-    | .fraChoice p (.worldsPutCreatures _) => mustApply gWWWPrmpt p (.choosePermanents #[heroInHand])
+    | .resolutionChoice p (.worldsPutCreatures _) => mustApply gWWWPrmpt p (.choosePermanents #[heroInHand])
     | _ => gWWWPrmpt
   let wwwSlice := gWWWDone.events.extract preWWWRes gWWWDone.events.size
   let bPutHandToBf := wwwSlice.findSome? fun e =>
@@ -1584,7 +1584,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
       while fuel > 0 do
         fuel := fuel - 1
         match g.pending with
-        | .fraChoice q (.mayBeginOnBattlefield _) => g := mustApply g q .accept
+        | .resolutionChoice q (.mayBeginOnBattlefield _) => g := mustApply g q .accept
         | _ => fuel := 0
       return g
   let pregameConcedeMulliganOk : Bool :=
@@ -1597,7 +1597,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let gPreB0 : Game := keepOpeningHands gPre0 20
   let p0PromptedBeginOk : Bool :=
     match gPreB0.pending with
-    | .fraChoice q (.mayBeginOnBattlefield _) => q == p0
+    | .resolutionChoice q (.mayBeginOnBattlefield _) => q == p0
     | _ => false
   let gPreB1 : Game := gPreB0.concede p0
   let gPreB2 : Game :=
@@ -1607,7 +1607,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
       while fuel > 0 do
         fuel := fuel - 1
         match g.pending with
-        | .fraChoice q (.mayBeginOnBattlefield _) => g := mustApply g q .decline
+        | .resolutionChoice q (.mayBeginOnBattlefield _) => g := mustApply g q .decline
         | _ => fuel := 0
       return g
   let pregameConcedeBeginOk : Bool :=
@@ -1794,7 +1794,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   let trOwner : PlayerId := ⟨1⟩
   let gTr1 : Game := addPermanent gTr0 bear trOwner trOwner
   let trBear := (gTr1.battlefield.filter (fun o => o.name == bear.name && o.owner == trOwner))[0]!.id
-  let gTrPrompt : Game := gTr1.change (.pending (.fraChoice trOwner (.tricksterLibrary trCaster trBear none)))
+  let gTrPrompt : Game := gTr1.change (.pending (.resolutionChoice trOwner (.tricksterLibrary trCaster trBear none)))
   let gTrConceded : Game := gTrPrompt.concede trCaster
   let gTrNoopHelper : Game := gTrConceded.applyOwnerPutsLibraryThenConnive trCaster #[Target.permanent trBear]
   let tricksterCasterLeaveOk : Bool :=
@@ -2000,7 +2000,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     (gOutB.addPlusOnePlusOneTo (gOutB.object! outBear) 1 (cause := some testCause)).finishAndGrantPriority me
   let endsCheckOk : Bool :=
     PendingReplacement.endsWithPriorityGrant (.receivePriority opp18) &&
-    PendingReplacement.endsWithPriorityGrant .finishFraChoice &&
+    PendingReplacement.endsWithPriorityGrant .finishResolutionChoice &&
     PendingReplacement.endsWithPriorityGrant (.seq (.gainLife me 1 none) (.receivePriority me)) &&
     !PendingReplacement.endsWithPriorityGrant (.gainLife me 1 none)
   let gOutDone : Game :=
@@ -2233,13 +2233,13 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let (gMod1, _) := gMod0.putOntoBattlefield modH me (cause := some testCause)
   let gModP1 : Game := gMod1.receivePriority me
   let copy0PausedOk : Bool :=
-    (match gModP1.pending with | .fraChoice p (.triggerModes _ 1 #[]) => p == me | _ => false) &&
+    (match gModP1.pending with | .resolutionChoice p (.triggerModes _ 1 #[]) => p == me | _ => false) &&
     gModP1.stack.size == 1 &&
     gModP1.waitingTriggers.size == 1 &&
     gModP1.waitingTriggers[0]!.ordered
   let gModP2 : Game := mustApply gModP1 me (.chooseMode 0)
   let copy1PausedOk : Bool :=
-    (match gModP2.pending with | .fraChoice p (.triggerModes _ 1 #[]) => p == me | _ => false) &&
+    (match gModP2.pending with | .resolutionChoice p (.triggerModes _ 1 #[]) => p == me | _ => false) &&
     gModP2.stack.size == 2 &&
     gModP2.waitingTriggers.isEmpty
   let lifePreMod := (gMod0.player me).life
@@ -2281,7 +2281,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let gTwStack : Game := gTw0.putTriggeredAbilityOnStack me twSrc tapUntapAb "enter" (eventCause := some testCause)
   let twModePromptOnStack : Bool :=
     match gTwStack.pending with
-    | .fraChoice p (.triggerModes _ 1 #[]) => p == me
+    | .resolutionChoice p (.triggerModes _ 1 #[]) => p == me
     | _ => false
   let gTwMode0 : Game := mustApply gTwStack me (.chooseMode 0)
   let twTargetPromptOnStack : Bool := gTwMode0.pending == .chooseTargets me
@@ -2298,7 +2298,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
       (lastKnownPower := some 2)
   let hkPromptOnStack : Bool :=
     match gHkStack.pending with
-    | .fraChoice p (.hawkeyeModes 2 #[] (some _)) => p == me
+    | .resolutionChoice p (.hawkeyeModes 2 #[] (some _)) => p == me
     | _ => false
   let gHkZero : Game := mustApply gHkStack me .decline
   let hkZeroStaysOnStack : Bool :=
@@ -2416,7 +2416,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let gVenPrompt : Game := gRtCast.applyAbilityEffect me venserEff #[Target.card boltStackId]
   let venCopiesPromptOk : Bool :=
     match gVenPrompt.pending with
-    | .fraChoice p (.newTargetsForCopies cs) => p == me && cs.size == 2
+    | .resolutionChoice p (.newTargetsForCopies cs) => p == me && cs.size == 2
     | _ => false
   let gVenRetargeted : Game :=
     let g1 := mustApply gVenPrompt me (.choosePermanents #[tHero])
@@ -2427,12 +2427,12 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let abId : ObjectId := ⟨gRtCast.nextObjectId⟩
   let gCauseStacked : Game :=
     gRtCast.record (GameEvent.triggerPutOnStack gRtCast.turnNumber abId (gRtCast.snapshot (gRtCast.object! tBear)) me
-      (spec := { abilityEffect := some copyCauseEff, sourceId := some tBear, fraCauseId := some boltStackId })
+      (spec := { abilityEffect := some copyCauseEff, sourceId := some tBear, triggerCauseId := some boltStackId })
       (cause := testCause))
   let gCausePrompt : Game := gCauseStacked.resolveTop
   let copyCausePromptOk : Bool :=
     match gCausePrompt.pending with
-    | .fraChoice p (.newTargetsForCopies cs) => p == me && cs.size == 1
+    | .resolutionChoice p (.newTargetsForCopies cs) => p == me && cs.size == 1
     | _ => false
   let gCauseDone : Game := mustApply gCausePrompt me .decline
 
@@ -2460,20 +2460,20 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     mustApply (mustApply gSw0 me (.cast swCard)) me (.targets #[.permanent swBear, .permanent swHero])
   let swSpellId := gSwCast.stack.back!.objectId
   -- Swap `[swBear, swHero]` -> `[swHero, swBear]` via `.newTargetsForCopies`:
-  let gSwPrompt : Game := gSwCast.beginFraChoice me (.newTargetsForCopies #[swSpellId]) "retarget"
+  let gSwPrompt : Game := gSwCast.beginResolutionChoice me (.newTargetsForCopies #[swSpellId]) "retarget"
   let gSwSwapped : Game :=
     mustApply (mustApply gSwPrompt me (.choosePermanents #[swHero])) me (.choosePermanents #[swBear])
   let swapTargetsOk : Bool :=
     (gSwSwapped.stackEntry? swSpellId).map (·.targets) == some #[Target.permanent swHero, Target.permanent swBear]
   -- Incomplete edit: pick `swRel1` (artifact only) for slot 0, then `.decline` slot 1 (`swBear` is creature only) => reverts to `[swHero, swBear]`!
-  let gSwInc0 : Game := gSwSwapped.beginFraChoice me (.newTargetsForCopies #[swSpellId]) "retarget incomplete"
+  let gSwInc0 : Game := gSwSwapped.beginResolutionChoice me (.newTargetsForCopies #[swSpellId]) "retarget incomplete"
   let gSwReverted : Game :=
     mustApply (mustApply gSwInc0 me (.choosePermanents #[swRel1])) me .decline
   let revertIncompleteOk : Bool :=
     (gSwReverted.stackEntry? swSpellId).map (·.targets) == some #[Target.permanent swHero, Target.permanent swBear]
   -- Valid switch to `[swRel1, swRel2]` works:
   let gSwValidArt : Game :=
-    let g1 := gSwReverted.beginFraChoice me (.newTargetsForCopies #[swSpellId]) "retarget artifacts"
+    let g1 := gSwReverted.beginResolutionChoice me (.newTargetsForCopies #[swSpellId]) "retarget artifacts"
     mustApply (mustApply g1 me (.choosePermanents #[swRel1])) me (.choosePermanents #[swRel2])
   let validArtRetargetOk : Bool :=
     (gSwValidArt.stackEntry? swSpellId).map (·.targets) == some #[Target.permanent swRel1, Target.permanent swRel2]
@@ -2688,13 +2688,13 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
 
 -- 9. CR 500.4 `beginTurn` turn-start expiry, CR 611.2a–b / 702.26f `durationActive` & counter/zone expiry, CR 800.4c,i,m phased-out control-expiry exile, & CR 614.12 Arwen `preBfOk`.
 #guard
-  -- 9a. CR 500.4: `.fraEmblemUntilTurnOf` and `goaded` expire in `beginTurn` BEFORE `phaseBegan .beginning`!
+  -- 9a. CR 500.4: `.commandEmblemUntilTurnOf` and `goaded` expire in `beginTurn` BEFORE `phaseBegan .beginning`!
   let embCard : CardDef := { name := "Phase18 Sculptor Emblem", types := #[] }
   let gBt0 : Game := addPermanent (insertObject afterDraw embCard me .command) bear opp18 opp18
   let embId := (gBt0.objects.filter (fun o => o.name == "Phase18 Sculptor Emblem" && o.zone == .command))[0]!.id
   let goadBear := (gBt0.battlefield.filter (·.name == bear.name))[0]!.id
   let gBt1 : Game :=
-    (gBt0.createEffect (.fraEmblemUntilTurnOf embId opp18) (cause := some testCause)).record
+    (gBt0.createEffect (.commandEmblemUntilTurnOf embId opp18) (cause := some testCause)).record
       (GameEvent.designation gBt0.turnNumber (gBt0.snapshot (gBt0.object! goadBear)) (.goaded opp18) true (cause := testCause))
   let preBtIdx := gBt1.events.size
   let gBt2 : Game := gBt1.startNextTurnCore true
@@ -3189,7 +3189,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     | _, _ => false
   let discId := (afterDraw.player me).hand.back!
   let gSourceless0 : Game :=
-    (afterDraw.change (.pushContinuationFrame {})).beginFraChoice me (.mayPayPickThen .discardACard .noop none) "Discard a card?"
+    (afterDraw.change (.pushContinuationFrame {})).beginResolutionChoice me (.mayPayPickThen .discardACard .noop none) "Discard a card?"
   let preSlIdx := gSourceless0.events.size
   let gSourcelessPaid : Game := mustApply gSourceless0 me (.choosePermanents #[discId])
   let sourcelessForObjOk := (gSourcelessPaid.events.extract preSlIdx gSourcelessPaid.events.size).any fun e =>
@@ -3354,7 +3354,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
   let copyGuardsOk : Bool :=
     gCpUntargeted.pending == Pending.none &&
     gCpUntargeted.stack.size == 3 &&
-    (match gCpTPrompt.pending with | .fraChoice p (.newTargetsForCopies _) => p == me | _ => false) &&
+    (match gCpTPrompt.pending with | .resolutionChoice p (.newTargetsForCopies _) => p == me | _ => false) &&
     gCpTDeclined.pending == Pending.none &&
     gCpLost.pending == Pending.none
 
@@ -3948,15 +3948,15 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     !gFlash2hgMateCast.cosmicAwarenessFlash ⟨0⟩ &&
     gFlash3pOppCast.cosmicAwarenessFlash ⟨0⟩
 
-  -- 4c. Optional mana payment in `FraChoices` (`mayPaySymbolsThen`) threads `forObject := some srcId`!
+  -- 4c. Optional mana payment in `ResolutionChoices` (`mayPaySymbolsThen`) threads `forObject := some srcId`!
   let gMayPay0 : Game :=
     (addPermanent afterDraw hero me me).addMana me (.colored .red) 1 (cause := some testCause)
   let mpHeroId := (gMayPay0.battlefield.filter (·.name == hero.name))[0]!.id
   let preMpEvs := gMayPay0.events.size
   let gMayPayDone : Game :=
     gMayPay0.withResolvingContext (some mpHeroId) me fun g =>
-      let gPrompt := g.change (.pending (.fraChoice me (.mayPaySymbolsThen #[.colored .red] (Instruction.gainLifeFixed 1) mpHeroId)))
-      match gPrompt.answerFraChoice me .accept with
+      let gPrompt := g.change (.pending (.resolutionChoice me (.mayPaySymbolsThen #[.colored .red] (Instruction.gainLifeFixed 1) mpHeroId)))
+      match gPrompt.answerResolutionChoice me .accept with
       | .ok g' => g'
       | .error e => panic! e
   let manaSpentForObjOk := (gMayPayDone.events.extract preMpEvs gMayPayDone.events.size).any fun e =>
@@ -4076,7 +4076,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     mustApply (mustApply gPbbTrigRes me (.choosePermanents #[oppHeroId])) me .decline
   let copyXTimesOk : Bool :=
     (match gPbbTrigRes.pending with
-     | .fraChoice p (.newTargetsForCopies cs) => p == me && cs.size == 2
+     | .resolutionChoice p (.newTargetsForCopies cs) => p == me && cs.size == 2
      | _ => false) &&
     gPbbRetargeted.pending == .none &&
     gPbbRetargeted.stack.size == 3
@@ -4104,7 +4104,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
   let gTw1 : Game :=
     (gTw0.putStackEntry me twSpId).record
       (GameEvent.announced gTw0.turnNumber twSpId (costs := #[.teamwork #[⟨10⟩, ⟨11⟩]]))
-  let gTwCopyPrompt : Game := gTw1.change (.pending (.fraChoice me (.newTargetsForCopies #[twSpId])))
+  let gTwCopyPrompt : Game := gTw1.change (.pending (.resolutionChoice me (.newTargetsForCopies #[twSpId])))
   let teamworkIsolationOk : Bool :=
     !gTw1.spellPaidTeamwork &&
     gTwCopyPrompt.spellPaidTeamwork

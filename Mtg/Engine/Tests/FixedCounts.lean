@@ -92,14 +92,14 @@ def lookTopCreatures (n : ValueExpr) : Instruction :=
 #guard
   let g := step afterDraw (lookTopCreatures (.const 1))
   match g.pending with
-  | .fraChoice p _ => p == caster
+  | .resolutionChoice p _ => p == caster
   | _ => false
 
 #guard
   let g0 := addPermanent afterDraw bear caster caster
   let g := step g0 (lookTopCreatures otherCreaturesExpr)
   match g.pending with
-  | .fraChoice p _ => p == caster && logContains g "looks at the top 1"
+  | .resolutionChoice p _ => p == caster && logContains g "looks at the top 1"
   | _ => false
 
 #guard TriggeredAbility.toNotation (.onEnterLookAtTopRevealTypes 4 #["Dwarf", "Equipment"]) ==

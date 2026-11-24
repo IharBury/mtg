@@ -16,7 +16,7 @@ def canAttachEquipmentTo (g : Game) (eq host : GameObject) : Bool :=
   eq.isOnBattlefield && host.isOnBattlefield && eq.id != host.id &&
     g.isEquipment eq && g.isCreature host &&
     !g.isCreature eq && !g.isBattle eq &&
-    !g.frcProtectedFrom host eq
+    !g.protectedFrom host eq
 
 /-- Attach `src` to `host` (CR 301.5 / 303.4 / 701.3a–b). Does nothing if either
 permanent is not phased in on `.battlefield`, `src.id == host.id`, `src` is
@@ -29,7 +29,7 @@ def attachSourceTo (g : Game) (src host : GameObject)
     let legalAttachment :=
       if g.isCreature src || g.isBattle src then false
       else if g.isAura src then g.auraObjCanEnchant host src
-      else if g.isEquipment src then g.isCreature host && !g.frcProtectedFrom host src
+      else if g.isEquipment src then g.isCreature host && !g.protectedFrom host src
       else false
     if !src.isOnBattlefield || !host.isOnBattlefield ||
         src.id == host.id || src.attachedTo == some host.id || !legalAttachment then
@@ -136,10 +136,10 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
   | none =>
     g.record (GameEvent.ceasedToExist g.turnNumber { id := some id } (cause := effCause))
 
-/-- Cease every command-zone object referenced by an active `.gameRule (.fraEmblem id) d`
+/-- Cease every command-zone object referenced by an active `.gameRule (.commandEmblem id) d`
 matching `pred eid d` (plus transitive child emblems), recording `ceasedToExist` before
 `effectExpired` and logging `s!"{embName} ends"` (CR 114.5 / 611.2a). -/
-def ceaseEndingFraEmblemsWhere (g : Game) (pred : EffectId → EffectDuration → Bool)
+def ceaseEndingCommandEmblemsWhere (g : Game) (pred : EffectId → EffectDuration → Bool)
     (cause : Option EventCause := none) (reconcileControl : Bool := false)
     (preState? : Option Game := none)
     (skipLogIds : Array ObjectId := #[]) : Game :=
@@ -147,7 +147,7 @@ def ceaseEndingFraEmblemsWhere (g : Game) (pred : EffectId → EffectDuration �
   let seedIds : Array ObjectId :=
     g.activeEffects.foldl (fun acc (eid, e) =>
       match e with
-      | .gameRule (.fraEmblem id) d =>
+      | .gameRule (.commandEmblem id) d =>
         if pred eid d && !acc.contains id then acc.push id else acc
       | _ => acc) #[]
   let endingIds := g.expandTransitiveCommandEmblems seedIds

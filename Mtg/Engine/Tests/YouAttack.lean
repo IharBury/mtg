@@ -62,7 +62,7 @@ def kingpinOffer : Game :=
 
 #guard
   match kingpinOffer.pending with
-  | .fraChoice q .kingpinMayPay2Life => q == me
+  | .resolutionChoice q .kingpinMayPay2Life => q == me
   | _ => false
 
 def kingpinDeclines : Game :=
@@ -109,7 +109,7 @@ def daredevilOffer (top : CardDef) : Game :=
 
 #guard
   match (daredevilOffer lightningBolt).pending with
-  | .fraChoice q (.daredevilMayExile _) => q == me
+  | .resolutionChoice q (.daredevilMayExile _) => q == me
   | _ => false
 
 def daredevilDeclines : Game :=

@@ -132,7 +132,7 @@ def oppSacrifices : Game :=
 
 #guard
   match oppSacrifices.pending with
-  | .fraChoice q (.sacrificeNontokenEach ..) => q == opp
+  | .resolutionChoice q (.sacrificeNontokenEach ..) => q == opp
   | _ => false
 
 end Mtg.Engine.DeathTests

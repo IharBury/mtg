@@ -37,6 +37,21 @@ def grantUntilEotLogged (g : Game) (o : GameObject) (k : Array KeywordAbility) :
   (g.createEffect (.keywordsUntilEot o.id k))
     |>.logMsg s!"{g.name o} gains {KeywordAbility.joinedAnd k} until end of turn"
 
+/-- Grant `k` to `o` until end of turn, logged. -/
+def grantKeywordsUntilEot (g : Game) (o : GameObject) (k : Array KeywordAbility) : Game :=
+  if k.isEmpty then g else g.grantUntilEotLogged o k
+
+/-- Ask `p` which of `options` the permanent `id` gains until end of turn. -/
+def beginChooseKeyword (g : Game) (p : PlayerId) (id : ObjectId) (options : Array KeywordAbility) : Game :=
+  match g.findObject? id with
+  | some o =>
+    if !o.isOnBattlefield then g
+    else
+      let names := String.intercalate ", " (options.toList.map fun k => ToOracle.toOracle {} k)
+      g.beginResolutionChoice p (.chooseKeyword id options)
+        s!"{(g.player p).name} chooses {names} for {g.name o}"
+  | none => g
+
 /-- Set base P/T, optional creature types, and keywords until end of turn. -/
 def setUntilEotForm (g : Game) (o : GameObject) (pt : Int × Int)
     (kws : Array KeywordAbility) (msg : String)
@@ -512,7 +527,7 @@ def finishFreshAmass (g : Game) (controller : PlayerId) (subtype : CardSubtype)
     let g := g.logMsg s!"the amassed Army entered as a 0/0 creature"
     let ids := freshArmies.map (fun (o : GameObject) => o.id)
     let g :=
-      g.beginFraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))
+      g.beginResolutionChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))
         s!"{(g.player controller).name} chooses an Army to amass"
     match cause with
     | some c => g.change (.stashedCause (some c))
@@ -544,7 +559,7 @@ def amass (g : Game) (controller : PlayerId) (subtype : CardSubtype) (n : Nat)
   if armies.size > 1 then
     let ids := armies.map (fun (o : GameObject) => o.id)
     let g :=
-      g.beginFraChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))
+      g.beginResolutionChoice controller (.chooseCards ids 1 (.amassArmy subtype n attach))
         s!"{(g.player controller).name} chooses an Army to amass"
     match cause with
     | some c => g.change (.stashedCause (some c))

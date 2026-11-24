@@ -331,7 +331,7 @@ private def isAnnounceKicker (a : Option Action) (want : Bool) : Bool :=
   let p2 : PlayerId := ⟨2⟩
   let g3 := afterDraw.change (.addPlayer { id := p2, name := "Liliana" })
 
-  -- 2a. `Turns.expireFraUntilTurnEffects` pre-copy-restore `preState?` snapshot across
+  -- 2a. `Turns.expireUntilTurnCommandEffects` pre-copy-restore `preState?` snapshot across
   --     `expireUntilNextTurnEffects` (`!teamHasLiving`) and `beginTurn` (`isSharedTurnFirstSeat`):
   let nullSummonerCloneDef : CardDef := {
     creature "P50i2 NullSummoner" ManaCost.empty #["Wizard"] 2 3 with
@@ -391,7 +391,7 @@ private def isAnnounceKicker (a : Option Action) (want : Bool) : Bool :=
 
   -- 2b. Impending (`CR 702.176a`) castability & affordability across `Casting.canCastAndPayImpending`,
   --     `Agent` (`chooseCast`, `shouldActivate`, `.mayCastExiledElseDamage`, `.chooseKicker`), and
-  --     paid `FraChoices.defaultFraAction` `.mayCastCards` (both Morph and Impending):
+  --     paid `ResolutionChoices.defaultChoiceAction` `.mayCastCards` (both Morph and Impending):
   let impendingOverlordDef : CardDef := {
     creature "P50i2 MistOverlord" (ManaCost.ofGeneric 6) #["Avatar"] 5 5 with
     types := #[.enchantment, .creature]
@@ -447,18 +447,18 @@ private def isAnnounceKicker (a : Option Action) (want : Bool) : Bool :=
   let agExElse1 := Agent.choose gExElse1 p0
   let agExElse2 := Agent.choose gExElse2 p0
 
-  -- `FraChoices.defaultFraAction` `.mayCastCards` (`withoutPaying := false`) handles both Impending & Morph:
+  -- `ResolutionChoices.defaultChoiceAction` `.mayCastCards` (`withoutPaying := false`) handles both Impending & Morph:
   let gFraImp1 := gExImp0.addMana p0 .colorless 1
   let gFraImp2 := gExImp0.addMana p0 .colorless 2
-  let fraImp1Act := gFraImp1.defaultFraAction p0 (.mayCastCards #[exImpId] false false)
-  let fraImp2Act := gFraImp2.defaultFraAction p0 (.mayCastCards #[exImpId] false false)
+  let fraImp1Act := gFraImp1.defaultChoiceAction p0 (.mayCastCards #[exImpId] false false)
+  let fraImp2Act := gFraImp2.defaultChoiceAction p0 (.mayCastCards #[exImpId] false false)
 
   let gExMorph0 := insertObject gImpBase morphBehemothDef p0 .exile
   let exMorphId := (gExMorph0.objects.filter (fun o => o.zone == .exile)).back!.id
   let gFraMorph2 := gExMorph0.addMana p0 .colorless 2
   let gFraMorph3 := gExMorph0.addMana p0 .colorless 3
-  let fraMorph2Act := gFraMorph2.defaultFraAction p0 (.mayCastCards #[exMorphId] false false)
-  let fraMorph3Act := gFraMorph3.defaultFraAction p0 (.mayCastCards #[exMorphId] false false)
+  let fraMorph2Act := gFraMorph2.defaultChoiceAction p0 (.mayCastCards #[exMorphId] false false)
+  let fraMorph3Act := gFraMorph3.defaultChoiceAction p0 (.mayCastCards #[exMorphId] false false)
 
   let item2bOk :=
     mustHold50i2 "2b_canCastAndPayImpending"
@@ -797,7 +797,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   let effWithForestAllowed :=
     gEffCrewProp2.hasUsableNonPlainManaAbility p0 (prop? := gEffCrewProp2.proposedSpell)
 
-  -- 4a(ii). `FraChoices.defaultFraAction` (`.mayCastCascade`, `.mayCastCards`, `.mayCastFromGraveyard`)
+  -- 4a(ii). `ResolutionChoices.defaultChoiceAction` (`.mayCastCascade`, `.mayCastCards`, `.mayCastFromGraveyard`)
   --         uses `currentKeywords`, `canPaySpellCostFromSources`, and `canPayAnnouncedAdditionalFromSources`:
   let urComboLandDef : CardDef := {
     name := "P50i4 SteamConduit"
@@ -835,8 +835,8 @@ private def isAcceptDirect4 (a : Action) : Bool :=
     gFlash0.createEffect
       (.layered (.objects #[flashExId]) (.abilities { keywords := #[Keyword.flash] } .none) .untilEndOfTurn)
       (cause := some testCause)
-  let flashNoKwAct := gFlash0.defaultFraAction p1 (.mayCastCards #[flashExId] false false)
-  let flashGrantedAct := gFlashGranted.defaultFraAction p1 (.mayCastCards #[flashExId] false false)
+  let flashNoKwAct := gFlash0.defaultChoiceAction p1 (.mayCastCards #[flashExId] false false)
+  let flashGrantedAct := gFlashGranted.defaultChoiceAction p1 (.mayCastCards #[flashExId] false false)
 
   -- `canPayAnnouncedAdditionalFromSources` on `.mayCastCascade`: a spell with
   -- `additionalCostDiscardOrPayGeneric := some 2` when `p0` has an empty hand and `1`
@@ -870,16 +870,16 @@ private def isAcceptDirect4 (a : Action) : Bool :=
        effLoneElfCrewBlocked &&
        effWithForestAllowed) &&
     mustHold50i4 "4a_1_availMana" (!(gComboEx.availableMana p0).canPay urSpellDef.manaCost) &&
-    mustHold50i4 "4a_2_comboEx" (isCastDirect4 (gComboEx.defaultFraAction p0 (.mayCastCards #[comboExId] false false)) comboExId) &&
-    mustHold50i4 "4a_3_comboGy" (isCastDirect4 (gComboGy.defaultFraAction p0 (.mayCastFromGraveyard #[comboGyId])) comboGyId) &&
+    mustHold50i4 "4a_2_comboEx" (isCastDirect4 (gComboEx.defaultChoiceAction p0 (.mayCastCards #[comboExId] false false)) comboExId) &&
+    mustHold50i4 "4a_3_comboGy" (isCastDirect4 (gComboGy.defaultChoiceAction p0 (.mayCastFromGraveyard #[comboGyId])) comboGyId) &&
     mustHold50i4 "4a_4_flashLayer6"
       (isDeclineDirect4 flashNoKwAct &&
        isCastDirect4 flashGrantedAct flashExId) &&
     mustHold50i4 "4a_5_cascComboPayExtra"
-      (isDeclineDirect4 (gCascPay0.defaultFraAction p0 (.mayCastCascade cascPayId #[])) &&
-       isAcceptDirect4 (gCascPayCombo.defaultFraAction p0 (.mayCastCascade cascPayId #[]))) &&
-    mustHold50i4 "4a_6_cascNoSac" (isDeclineDirect4 (gCascNoSac.defaultFraAction p0 (.mayCastCascade cascNoSacId #[]))) &&
-    mustHold50i4 "4a_7_cascWithSac" (isAcceptDirect4 (gCascWithSac.defaultFraAction p0 (.mayCastCascade cascNoSacId #[])))
+      (isDeclineDirect4 (gCascPay0.defaultChoiceAction p0 (.mayCastCascade cascPayId #[])) &&
+       isAcceptDirect4 (gCascPayCombo.defaultChoiceAction p0 (.mayCastCascade cascPayId #[]))) &&
+    mustHold50i4 "4a_6_cascNoSac" (isDeclineDirect4 (gCascNoSac.defaultChoiceAction p0 (.mayCastCascade cascNoSacId #[]))) &&
+    mustHold50i4 "4a_7_cascWithSac" (isAcceptDirect4 (gCascWithSac.defaultChoiceAction p0 (.mayCastCascade cascNoSacId #[])))
 
   -- 4b(i). `InterpCtx` preservation across `.unlessPays` -> `Decisions.decline`
   --        `.payOrLetCounter` AND payer `p2` conceding (CR 800.4a):

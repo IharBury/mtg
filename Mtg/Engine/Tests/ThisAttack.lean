@@ -51,7 +51,7 @@ def antManOffer : Game :=
 
 #guard
   match antManOffer.pending with
-  | .fraChoice q (.mayPayManaForReflexive cost _ eff _) =>
+  | .resolutionChoice q (.mayPayManaForReflexive cost _ eff _) =>
     q == me && cost == #[.generic 1] && eff.body == Instruction.putPlusOne (.target 0) 1
   | _ => false
 
@@ -77,7 +77,7 @@ def reaperOffer : Game :=
 
 #guard
   match reaperOffer.pending with
-  | .fraChoice q (.mayPayManaForReflexive cost _ eff _) =>
+  | .resolutionChoice q (.mayPayManaForReflexive cost _ eff _) =>
     q == me && cost == #[.generic 3, .colored .black] &&
       eff.targets == .creatureCardInYourGraveyard
   | _ => false

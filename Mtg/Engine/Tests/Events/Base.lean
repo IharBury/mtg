@@ -1207,7 +1207,7 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
   let gCrewUnpayable :=
     (gCrewStarted.becomeTapped (gCrewStarted.object! b.id)).becomeTapped (gCrewStarted.object! h.id)
   let gCrewDeclined :=
-    match gCrewUnpayable.answerFraChoice me .decline with
+    match gCrewUnpayable.answerResolutionChoice me .decline with
     | .ok g => g
     | .error _ => gCrewUnpayable
   let blackCard : CardDef :=
@@ -1235,7 +1235,7 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
     | .ok g => g
     | .error _ => gZemo2
   let gZemoAccepted :=
-    match gZemoStarted.answerFraChoice me (.objects #[gyCardId]) with
+    match gZemoStarted.answerResolutionChoice me (.objects #[gyCardId]) with
     | .ok g => g
     | .error _ => gZemoStarted
   linkReturnCause? == some sharedCause &&
@@ -1862,7 +1862,7 @@ produced by the single one-shot instruction (CR 610.1 / 701.18 / 702.85a). -/
   --    exiling from library and returning the exiled cards to the bottom
   let gCascPending := gRevSetup.resolveCascade me 3
   let gCascChoice :=
-    match gCascPending.answerFraChoice me .decline with
+    match gCascPending.answerResolutionChoice me .decline with
     | .ok g' => g'
     | .error _ => gCascPending
   let gCascDone :=
@@ -1935,11 +1935,11 @@ across all constituent moves, transforms, and continuous-effect creations
   let picked := looked3[0]!
   let rest2 := looked3.filter (· != picked)
   let gMayRev1 :=
-    match gMayRev0.answerFraChoice me (.objects #[picked]) with
+    match gMayRev0.answerResolutionChoice me (.objects #[picked]) with
     | .ok g' => g'
     | .error _ => gMayRev0
   let gMayRevDone :=
-    match gMayRev1.answerFraChoice me (.objects rest2.reverse) with
+    match gMayRev1.answerResolutionChoice me (.objects rest2.reverse) with
     | .ok g' => g'
     | .error _ => gMayRev1
   let mayRevCauses :=
@@ -1966,11 +1966,11 @@ across all constituent moves, transforms, and continuous-effect creations
             rest := .bottomRandom }) }
         #[] (some h.id))
   let gNick2 :=
-    match gNick1.answerFraChoice me (.objects #[dfcLibId]) with
+    match gNick1.answerResolutionChoice me (.objects #[dfcLibId]) with
     | .ok g' => g'
     | .error _ => gNick1
   let gNick3 :=
-    match gNick2.answerFraChoice me .accept with
+    match gNick2.answerResolutionChoice me .accept with
     | .ok g' => g'
     | .error _ => gNick2
   let gNickDone :=
@@ -1994,7 +1994,7 @@ across all constituent moves, transforms, and continuous-effect creations
     gGrimaSetup.withResolvingContext (some h.id) me (fun g =>
       g.grimaExileUntilInstantOrSorcery me me true)
   let gGrimaDeclined :=
-    match gGrimaPending.answerFraChoice me .decline with
+    match gGrimaPending.answerResolutionChoice me .decline with
     | .ok g' => g'
     | .error _ => gGrimaPending
   let gGrimaDone :=
@@ -2072,10 +2072,10 @@ across all constituent moves, transforms, and continuous-effect creations
       g.millThenChooseForHand me 4 (fun o => o.printed.isLand) 2 false)
   let offeredIds :=
     match gMillChoose0.pending with
-    | .fraChoice _ (.chooseCards ids _ _) => ids
+    | .resolutionChoice _ (.chooseCards ids _ _) => ids
     | _ => #[]
   let gMillChooseDone :=
-    match gMillChoose0.answerFraChoice me (.objects offeredIds) with
+    match gMillChoose0.answerResolutionChoice me (.objects offeredIds) with
     | .ok g' => g'
     | .error _ => gMillChoose0
   let millChooseCauses :=
@@ -2118,10 +2118,10 @@ across all constituent moves, transforms, and continuous-effect creations
       g.applyEffect me Effect.drawEqualToughnessThenPutCreatures #[] (sourceId := some h.id))
   let lastMarchOffered :=
     match gLastMarch0.pending with
-    | .fraChoice _ (.chooseCards ids _ .creaturesToBattlefield) => ids
+    | .resolutionChoice _ (.chooseCards ids _ .creaturesToBattlefield) => ids
     | _ => #[]
   let gLastMarchDone :=
-    match gLastMarch0.answerFraChoice me (.objects lastMarchOffered) with
+    match gLastMarch0.answerResolutionChoice me (.objects lastMarchOffered) with
     | .ok g' => g'
     | .error _ => gLastMarch0
   let lastMarchCauses :=
@@ -2146,10 +2146,10 @@ across all constituent moves, transforms, and continuous-effect creations
       | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let gPalantir0 :=
-    (gGrimaSetup.recordPutCounters h.id .influence 3).change (.pending (.fraChoice opp (.palantirMayDraw me h.id)))
+    (gGrimaSetup.recordPutCounters h.id .influence 3).change (.pending (.resolutionChoice opp (.palantirMayDraw me h.id)))
       |>.change (.pushContinuationFrame { resolvingContext := some (some h.id, me) })
   let gPalantirDone :=
-    match gPalantir0.answerFraChoice opp .decline with
+    match gPalantir0.answerResolutionChoice opp .decline with
     | .ok g' => g'
     | .error _ => gPalantir0
   let palantirCauses :=
@@ -2159,9 +2159,9 @@ across all constituent moves, transforms, and continuous-effect creations
       | .rules (.life (.lost ..)) => e.cause?
       | _ => none)
   let gPalantirRaw0 :=
-    (gGrimaSetup.recordPutCounters h.id .influence 3).change (.pending (.fraChoice opp (.palantirMayDraw me h.id)))
+    (gGrimaSetup.recordPutCounters h.id .influence 3).change (.pending (.resolutionChoice opp (.palantirMayDraw me h.id)))
   let gPalantirRawDone :=
-    match gPalantirRaw0.answerFraChoice opp .decline with
+    match gPalantirRaw0.answerResolutionChoice opp .decline with
     | .ok g' => g'
     | .error _ => gPalantirRaw0
   let palantirRawCauses :=
@@ -2173,9 +2173,9 @@ across all constituent moves, transforms, and continuous-effect creations
   let balinAb : TriggeredAbility :=
     TriggeredAbility.ofPattern .thisEnters Effect.triggerDiscardHandDrawDamageIfStory.body
   let gBalinRaw0 :=
-    gLibSetup.change (.pending (.fraChoice me (.mayDiscardHandBalin (some h.id))))
+    gLibSetup.change (.pending (.resolutionChoice me (.mayDiscardHandBalin (some h.id))))
   let gBalinRaw :=
-    match gBalinRaw0.answerFraChoice me .accept with
+    match gBalinRaw0.answerResolutionChoice me .accept with
     | .ok g' => g'
     | .error _ => gBalinRaw0
   let balinRawCauses :=
@@ -2187,7 +2187,7 @@ across all constituent moves, transforms, and continuous-effect creations
     gLibSetup.withResolvingContext (some h.id) me (fun g =>
       g.applyTriggeredAbility me balinAb (some h.id))
   let gBalinRes :=
-    match gBalinRes0.answerFraChoice me .accept with
+    match gBalinRes0.answerResolutionChoice me .accept with
     | .ok g' => g'
     | .error _ => gBalinRes0
   let balinResCauses :=
@@ -2196,10 +2196,10 @@ across all constituent moves, transforms, and continuous-effect creations
       | .rules (.zone (.moved ..)) => e.cause?
       | _ => none)
   let gArmorEmpty0 :=
-    (emptyLibrary gLibSetup me).change (.pending (.fraChoice me (.mayDrawThenEachOpponentDraws 1)))
+    (emptyLibrary gLibSetup me).change (.pending (.resolutionChoice me (.mayDrawThenEachOpponentDraws 1)))
       |>.change (.pushContinuationFrame { resolvingContext := some (some h.id, me) })
   let gArmorEmptyDone :=
-    match gArmorEmpty0.answerFraChoice me .accept with
+    match gArmorEmpty0.answerResolutionChoice me .accept with
     | .ok g' => g'
     | .error _ => gArmorEmpty0
   let armorEmptyMoves :=

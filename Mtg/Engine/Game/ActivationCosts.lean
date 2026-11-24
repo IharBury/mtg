@@ -17,7 +17,7 @@ private opaque reverseProposedSpellFwd (g : Game) (resumeContinuation : Bool := 
     (extraLog : Option String := none)
     (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game := g
 
 /-- Forward reference to `ManaAbilities.canTapForPlainMana` (resolved at link time via `@[export]`). -/
@@ -427,7 +427,7 @@ item in `ids` was paid or queued across a replacement pause. -/
 def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
     (pick : CostPick) (ids : Array ObjectId)
     (outerToRestore? : Option PendingReplacement := none)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game × Bool :=
   if let .chooseReplacement .. := g.pending then
     (g.chainPendingReplacement (.payCostPickItems p abilityId sourceId pick ids), true)
@@ -439,7 +439,7 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
           | some outer => g0.chainPendingReplacement outer
           | none => g0
         g1.reverseProposedSpellFwd (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
       else g0
     let itemPayable (g0 : Game) (id : ObjectId) : Bool :=
@@ -533,11 +533,11 @@ chaining `.payCostPickItems` if an earlier move or sacrifice pauses on
 def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
     (pick : CostPick) (ids : Array ObjectId)
     (outerToRestore? : Option PendingReplacement := none)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   (g.payCostPickItemsChecked p abilityId sourceId pick ids
     (outerToRestore? := outerToRestore?)
-    (followedByFinishFra := followedByFinishFra)
+    (followedByFinishChoice := followedByFinishChoice)
     (followedByExplicitPriority? := followedByExplicitPriority?)).1
 
 /-- Pay a combined net loyalty delta `k` on `o` (CR 606.3 / 606.4 / 606.5 / 606.6 / 118.11). -/
@@ -576,7 +576,7 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
     (sacrificeOrExileSource : Bool := false)
     (discardOrExileHandSource : Bool := false)
     (callerOuter? : Option PendingReplacement := none)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Except String Game :=
   g.withProposalActionM .costAction fun g => do
   if ids.size != pick.count || ids.toList.eraseDups.length != ids.size then
@@ -599,7 +599,7 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
         | some outer => g0.chainPendingReplacement outer
         | none => g0
       g1.reverseProposedSpellFwd (resumeContinuation := true)
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
     else
       match outer? with
@@ -728,7 +728,7 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
                     | some outer => g.chainPendingReplacement outer
                     | none => g
   g := g.payCostPickItems p abilityId sourceId pick ids (outerToRestore? := outerForAbort?)
-    (followedByFinishFra := followedByFinishFra)
+    (followedByFinishChoice := followedByFinishChoice)
     (followedByExplicitPriority? := followedByExplicitPriority?)
   if hadProp && g.proposedSpell.isNone then
     return g
@@ -743,7 +743,7 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (stage : ActivationExtraCostStage := .sacrificeAndExile)
     (sinceIdx : Nat := 0)
     (outerToRestore? : Option PendingReplacement := none)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
@@ -755,7 +755,7 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         | some outer => g0.chainPendingReplacement outer
         | none => g0
       g1.reverseProposedSpellFwd (resumeContinuation := true)
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
     else g0
   if g.over || !g.stillInGame p then
@@ -822,7 +822,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (ab : Option ActivatedAbility := none) (removePlusOnes : Nat := 0)
     (forObject? : Option ObjectId := none)
     (callerOuter? : Option PendingReplacement := none)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) :
     Except String Game :=
   g.withProposalActionM .costAction fun g => do
@@ -895,7 +895,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
           | some outer => g.chainPendingReplacement outer
           | none => g
         return g1.reverseProposedSpellFwd (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
       else
         return g
@@ -984,7 +984,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         | some outer => g0.chainPendingReplacement outer
         | none => g0
       g1.reverseProposedSpellFwd (resumeContinuation := true)
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
     else
       match outer? with
@@ -1068,7 +1068,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   | none => pure ()
   g := g.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
     .sacrificeAndExile (sinceIdx := sinceIdx) (outerToRestore? := outerForAbort?)
-    (followedByFinishFra := followedByFinishFra)
+    (followedByFinishChoice := followedByFinishChoice)
     (followedByExplicitPriority? := followedByExplicitPriority?)
   if hadProp && g.proposedSpell.isNone then
     return g

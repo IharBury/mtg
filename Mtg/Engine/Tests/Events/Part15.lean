@@ -41,7 +41,7 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
   }
   let zeroToughDef : CardDef := creature "P49i1 Germ" ManaCost.empty #["Germ"] 0 0
 
-  -- 1a(i). `Decisions.chooseReplacement` invokes `finishFraChoice` when `reopenDeferredExileCasts`
+  -- 1a(i). `Decisions.chooseReplacement` invokes `finishResolutionChoice` when `reopenDeferredExileCasts`
   --        ceases an exhausted/uncastable `pendingFreeCopies` stash (`pending == .none`),
   --        running SBA (`0/0` Germ dies), stacking waiting triggers, and granting priority:
   let gCopy0 := insertObject (addPermanent g4 zeroToughDef p1 p1) bigSorcDef p0 (.hand p0)
@@ -67,7 +67,7 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
         #[.continuation (.pendingFreeCopies (some (p0, #[copyExId], 0, 0)))]))
       p0 (.chooseMode 0)
 
-  -- 1a(ii). `Leaving.playerLeavesGameCore` attaches `.finishFraChoice` onto `outerPendingReplacements`
+  -- 1a(ii). `Leaving.playerLeavesGameCore` attaches `.finishResolutionChoice` onto `outerPendingReplacements`
   --         when departure pauses on a linked-exile return replacement (`oddEvenDef` returning to `p1`
   --         when `p2` concedes) while `p0` holds a surviving `pendingMayCastFromExile` stash:
   let gLink0 := addPermanent (insertObject g4 zeroInstDef p0 .exile) oddEvenDef p1 p1
@@ -85,7 +85,7 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
 
   -- 1a(iii). `Casting.finishPostCast` & `Decisions` probes (`continuationGrantsPriority` /
   --          `priorityRecipientOfContinuation?`) preserve cross-seat `pendingMayCastFromExile`,
-  --          intercept in `receivePriority`, and clear `pendingFreeCopies` before `beginFraChoice`:
+  --          intercept in `receivePriority`, and clear `pendingFreeCopies` before `beginResolutionChoice`:
   let gCross0 := insertObject (insertObject g4 zeroInstDef p0 .exile) zeroInstDef p1 (.hand p1)
   let crossExId := (gCross0.objects.filter (fun (o : GameObject) => o.zone == .exile)).back!.id
   let gCrossP1Prio :=
@@ -114,7 +114,7 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
 
   -- Departed grantee (`!g.stillInGame p2`): `finishPostCast p2 (grantPriority := false)` and
   -- `Decisions` probes clear `p2`'s own `pendingMayCastFromExile` / `pendingFreeCopies` stashes
-  -- and cease leftover exiled copies without opening `.beginFraChoice`, letting `completeActiveResolutions` pop:
+  -- and cease leftover exiled copies without opening `.beginResolutionChoice`, letting `completeActiveResolutions` pop:
   let gDepStash0 := mustApply (insertObject (insertObject g4 zeroInstDef p0 .exile) zeroInstDef p0 (.hand p0)) p2 .concede
   let depExInstId := (gDepStash0.objects.filter (fun (o : GameObject) => o.zone == .exile)).back!.id
   let (gDepStash1, depFreeCopyId) :=
@@ -141,15 +141,15 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
        gRepEmptyDone.pending == .none) &&
     mustHold49i1 "1a_leavingPostBodyReplacementDeferredReopen"
       ((match gLinkPaused.pending with | .chooseReplacement q _ => q == p1 | _ => false) &&
-       gLinkReopened.pending == .fraChoice p0 (.mayCastUpToFromExile #[exInstId] 1)) &&
+       gLinkReopened.pending == .resolutionChoice p0 (.mayCastUpToFromExile #[exInstId] 1)) &&
     mustHold49i1 "1a_crossSeatFinishPostCastAndFreeCopiesClear"
       (!crossGrantsBefore &&
        crossRecipBefore.isNone &&
-       gCrossAfterP1Cast.pending == .fraChoice p0 (.mayCastUpToFromExile #[crossExId] 1) &&
+       gCrossAfterP1Cast.pending == .resolutionChoice p0 (.mayCastUpToFromExile #[crossExId] 1) &&
        gCrossAfterP1Cast.pendingMayCastFromExile.isNone &&
        emptyStashGrants &&
        emptyStashRecip == some p1 &&
-       gAfterP0CastFreeCopy.pending == .fraChoice p0 (.castCopiesFree #[freeCopyId] 5 1) &&
+       gAfterP0CastFreeCopy.pending == .resolutionChoice p0 (.castCopiesFree #[freeCopyId] 5 1) &&
        gAfterP0CastFreeCopy.pendingFreeCopies.isNone &&
        depStashGrants &&
        depStashRecip == some p0 &&
@@ -459,7 +459,7 @@ private def mustStepAgent49i2 (g : Game) (p : PlayerId) : Game :=
       (cause := some testCause)
 
   -- 2b(iii). `Turns.expirePlayFromExileEffect` multi-stage `expireUntilNextTurnEffects` (Stage 1
-  --          `expireFraUntilTurnEffects` emits `.expired` without logging while Stage 2 permission
+  --          `expireUntilTurnCommandEffects` emits `.expired` without logging while Stage 2 permission
   --          is still active; Stage 2 `expirePlayPermissions` then expires the final permission in
   --          the same `pre..g` slice and MUST still emit the log once) & `mayCastExiledBySource` guard:
   let gTwoStage0 := mustApply (insertObject g3 bear p0 .exile) p2 .concede
@@ -1014,7 +1014,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let myBear := (gMap0.permanentsOf p0).find? (·.name == bear.name) |>.get!
   let oppBear := (gMap0.permanentsOf p1).find? (·.name == bear.name) |>.get!
   let mapTok := (gMap0.permanentsOf p0).find? (·.name == "Map") |>.get!
-  -- Nonland on top -> +1/+1 counter on targeted creature BEFORE FraChoice.exploreMayGraveyard
+  -- Nonland on top -> +1/+1 counter on targeted creature BEFORE ResolutionChoice.exploreMayGraveyard
   let gMapNonland0 :=
     let g := addPermanent gMap0 bear p0 p0
     let topId := g.battlefield.back!.id
@@ -1041,7 +1041,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
     mapAb.cost == CostSpec.ofItems #[.mana (ManaCost.ofGeneric 1), .tapSelf, .sacrifice (.exact 1) .self] &&
     mapAb.effect.targetSpec == .creatureYouControl &&
     (gMapNonland.object! myBear.id).status.plusOnePlusOne == 1 &&
-    gMapNonland.pending == .fraChoice p0 (.exploreMayGraveyard topNonlandId) &&
+    gMapNonland.pending == .resolutionChoice p0 (.exploreMayGraveyard topNonlandId) &&
     gMapNonlandAccept.pending == .none &&
     (gMapNonlandAccept.player p0).graveyard.size == gyBeforeMap + 1 &&
     (gMapNonlandAccept.player p0).library.back? != some topNonlandId &&
@@ -1110,12 +1110,12 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let exploreCr70144Ok :=
     !gRelic0.isCreature relicObj &&
     (gRelicExp.object! relicObj.id).status.plusOnePlusOne == 1 &&
-    gRelicExp.pending == .fraChoice p0 (.exploreMayGraveyard relicTopId) &&
+    gRelicExp.pending == .resolutionChoice p0 (.exploreMayGraveyard relicTopId) &&
     (gRelicExpAccept.player p0).graveyard.size == (gRelic0.player p0).graveyard.size + 1 &&
     (gEmptyLib0.player p0).library.isEmpty &&
     (gEmptyExp.object! emptyBear.id).status.plusOnePlusOne == 1 &&
     gEmptyExp.pending == .none &&
-    gDepNonland.pending == .fraChoice p1 (.exploreMayGraveyard p1TopNonland) &&
+    gDepNonland.pending == .resolutionChoice p1 (.exploreMayGraveyard p1TopNonland) &&
     (gDepNonlandAccept.player p1).graveyard.size == p1GyBefore + 1 &&
     (gDepNonlandAccept.player p0).library.size == p0LibSizeBefore &&
     (gDepLand.player p1).hand.size == p1HandBefore + 1 &&
@@ -1148,7 +1148,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let landerAb := landerDef.activatedAbilities[0]!
   let gLander := (g0.createKindTokens p0 .lander 1).applyEffect p0 landerAb.effect #[]
   let landerSearches := match gLander.pending with
-    | .fraChoice q (.searchLibrary _ 1 (.battlefield true) _ _) => q == p0
+    | .resolutionChoice q (.searchLibrary _ 1 (.battlefield true) _ _) => q == p0
     | _ => false
 
   let mutagenDef := Game.predefinedTokenPrinted .mutagen
@@ -1323,7 +1323,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
 
   -- 7. StoredEvalEnv propagation across createAndMarkTokensAttacking (both holds arms &
   --    across PendingReplacement pause), unified life-gained token creation, and
-  --    FraChoice.mayCreateTokens
+  --    ResolutionChoice.mayCreateTokens
   let gCopyAtk0 := gCopy0.beginStep .declareAttackers
   let atkCopyNoHolds :=
     gCopyAtk0.createAndMarkTokensAttacking p0 copySpec 1 false false
@@ -1376,9 +1376,9 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
       body := .create (.tokens .you (.playerMetric .lifeGainedThisTurn .you) copySpec {})
     } #[.permanent origObj.id]
   let lifeGainCopies := (gLifeGainTok.permanentsOf p0).filter (·.name == "Shadow Copy")
-  -- FraChoice.mayCreateTokens forwards copyEnv:
+  -- ResolutionChoice.mayCreateTokens forwards copyEnv:
   let gMayTok0 :=
-    gCopy0.beginFraChoice p0 (.mayCreateTokens copySpec 1 { targetSlots := #[#[.permanent origObj.id]] })
+    gCopy0.beginResolutionChoice p0 (.mayCreateTokens copySpec 1 { targetSlots := #[#[.permanent origObj.id]] })
   let gMayTokAccept := mustApply gMayTok0 p0 .accept
   let copyEnvSitesOk :=
     ((atkCopyNoHolds.permanentsOf p0).find? (·.name == "Shadow Copy")).any (fun o => !o.status.attacking) &&

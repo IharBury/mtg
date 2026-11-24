@@ -470,14 +470,14 @@ private def replayOk42i2 (gs : Array Game) : Bool :=
     !dynLogs.any (fun s => s.contains relicDef.name && s.contains "(CR 800.4c)")
   let item2aOk := preLeaveLkiOk && skipUnattachOk && dynControlAnd8004aOk
 
-  -- 2b. Reachable `"<emblem> ends"` logging and `.fraEmblem` / `.whileInZone` expiry in `Turns.expireFraUntilTurnEffects`:
+  -- 2b. Reachable `"<emblem> ends"` logging and `.commandEmblem` / `.whileInZone` expiry in `Turns.expireUntilTurnCommandEffects`:
   let gEmb0 := insertObject (addPermanent g4 bear p0 p0) embDef p2 .command (some p2)
   let embBear := (gEmb0.permanentsOf p0).find? (·.name == bear.name) |>.get!
   let embObj := (gEmb0.objects.filter (·.zone == .command))[0]!
   let gEmb1 :=
-    (gEmb0.createEffect (.gameRule (.fraEmblem embObj.id) (.untilNextTurnOf p0)) (cause := some testCause)).createEffect
+    (gEmb0.createEffect (.gameRule (.commandEmblem embObj.id) (.untilNextTurnOf p0)) (cause := some testCause)).createEffect
       (.layered (.objects #[embBear.id]) (.ptModify 2 2) (.whileInZone embObj.id .command)) (cause := some testCause)
-  let gEmbAfter := gEmb1.expireFraUntilTurnEffects p0
+  let gEmbAfter := gEmb1.expireUntilTurnCommandEffects p0
   let item2bOk :=
     (gEmbAfter.findObject? embObj.id).isNone &&
     gEmbAfter.activeEffects.isEmpty &&
@@ -873,7 +873,7 @@ private def replayOk42i4 (gs : Array Game) : Bool :=
     g0.sourceStillPayable g0.proposedSpell.get!
 
   -- 4a. Resolving stack-object `abId` (`g.resolvingAbility <|> g.resolvingSpell`) before `resolvingForObj` (`o.sourceId`)
-  --     in `FraChoices` `.mayPayPickThen`:
+  --     in `ResolutionChoices` `.mayPayPickThen`:
   --     Save `proposalCheckpoint`, record a same-checkpoint `.costPayment .tap p0 (some dorkObj.id)`, untap `dorkObj`,
   --     and resolve `.mayPayPickThen .tapUntappedCreature` under `resolvingAbility := some trigAb.id` (whose `o.sourceId == some dorkObj.id`!)
   --     and under `resolvingSpell := some spellObj.id`:
@@ -889,7 +889,7 @@ private def replayOk42i4 (gs : Array Game) : Bool :=
   let gFraAbPrompt :=
     gWithTrigAb.changes #[
       .pushContinuationFrame { resolvingAbility := some trigAb.id },
-      .pending (.fraChoice p0 (.mayPayPickThen .tapUntappedCreature (Instruction.gainLifeFixed 2) (some dorkObj.id))) ]
+      .pending (.resolutionChoice p0 (.mayPayPickThen .tapUntappedCreature (Instruction.gainLifeFixed 2) (some dorkObj.id))) ]
   let gFraAbPaid := mustApply gFraAbPrompt p0 (.choosePermanents #[dorkObj.id])
   let abTappedForTrigId :=
     (gFraAbPaid.events.extract preAbTapEvIdx gFraAbPaid.events.size).any fun ev =>
@@ -905,7 +905,7 @@ private def replayOk42i4 (gs : Array Game) : Bool :=
   let gFraSpPrompt :=
     gSpellIns.changes #[
       .pushContinuationFrame { resolvingSpell := some spellObj.id },
-      .pending (.fraChoice p0 (.mayPayPickThen .tapUntappedCreature (Instruction.gainLifeFixed 2) (some dorkObj.id))) ]
+      .pending (.resolutionChoice p0 (.mayPayPickThen .tapUntappedCreature (Instruction.gainLifeFixed 2) (some dorkObj.id))) ]
   let gFraSpPaid := mustApply gFraSpPrompt p0 (.choosePermanents #[dorkObj.id])
   let spTappedForSpellId :=
     (gFraSpPaid.events.extract preSpTapEvIdx gFraSpPaid.events.size).any fun ev =>
@@ -1263,11 +1263,11 @@ private def replayOk43i1 (gs : Array Game) : Bool :=
     gCumAfterP2.pending == .chooseLegend p0 bear.name cBears &&
     gCumFlushed.pending == .none && gCumFlushed.currentBatch.isNone
 
-  -- 1c. `.finishFraChoice` `pendingPriority` stamping (`Decisions.finishAndGrantPriority` & `ManaAbilities`),
+  -- 1c. `.finishResolutionChoice` `pendingPriority` stamping (`Decisions.finishAndGrantPriority` & `ManaAbilities`),
   --     unpaused non-carrier `ContinuationFrame` draining in `ManaAbilities`, and `prevPending == .none`
   --     outer-continuation stashing + checkpoint-before-clear ordering in `activateManaAbility`:
   -- (i) `finishAndGrantPriority p2` when `outerPendingReplacements` has `.gainLife p0 2` (does NOT grant priority):
-  --     `pendingPriority` is stamped to `some p2` before chaining `.finishFraChoice`, so `p2` (NOT `activePlayer == p0`) receives priority!
+  --     `pendingPriority` is stamped to `some p2` before chaining `.finishResolutionChoice`, so `p2` (NOT `activePlayer == p0`) receives priority!
   let gFgp0 :=
     (g4.change (.priority p2)).changes #[
       .pushContinuationFrame {},
@@ -1446,36 +1446,36 @@ private def replayOk43i2 (gs : Array Game) : Bool :=
     priorLogs.any (fun s => s.contains s!"{eqDef.name} is no longer a copy") &&
     priorUnatt == #[(some survivingEq.id, hero.name)]
 
-  -- 2b. Multi-effect & orphaned `.fraEmblem` expiry in `Turns.expireFraUntilTurnEffects` + cease-first
+  -- 2b. Multi-effect & orphaned `.commandEmblem` expiry in `Turns.expireUntilTurnCommandEffects` + cease-first
   --     `"<embName> ends"` logging across `expireEffectsByDuration` / `clearEOT` / `expireUntilNextTurnEffects`,
   --     and `(reconcileControl := false)` in `expireUntilNextTurnEffects`:
   -- (i) Multi-effect `embShared` referenced by an earlier `.untilNextTurnOf p0` AND a later `.untilNextTurnOf p1`
   --     (which previously shadowed `p0`), plus orphaned `orphanEmbId` (object already absent before expiry):
   --     expiring `p0`'s turn matches the earlier `.untilNextTurnOf p0`, ceases `embShared` BEFORE `effectExpired`,
-  --     logs `"<embName> ends"`, and cleans up `orphanEmbId`'s orphaned `.fraEmblem` effect!
+  --     logs `"<embName> ends"`, and cleans up `orphanEmbId`'s orphaned `.commandEmblem` effect!
   let gMultiEmb0 := insertObject g4 embDef p0 .command (some p0)
   let embShared := (gMultiEmb0.objects.filter (·.zone == .command))[0]!
   let orphanEmbId : ObjectId := ⟨999888⟩
   let gMultiEmb1 :=
-    (((gMultiEmb0.createEffect (.gameRule (.fraEmblem embShared.id) (.untilNextTurnOf p0))
+    (((gMultiEmb0.createEffect (.gameRule (.commandEmblem embShared.id) (.untilNextTurnOf p0))
       (cause := some testCause)).createEffect
-      (.gameRule (.fraEmblem embShared.id) (.untilNextTurnOf p1))
+      (.gameRule (.commandEmblem embShared.id) (.untilNextTurnOf p1))
       (cause := some testCause)).createEffect
-      (.gameRule (.fraEmblem orphanEmbId) (.untilNextTurnOf p0))
+      (.gameRule (.commandEmblem orphanEmbId) (.untilNextTurnOf p0))
       (cause := some testCause))
   let preEmbP0Idx := gMultiEmb1.events.size
-  let gMultiEmbAfterP0 := gMultiEmb1.expireFraUntilTurnEffects p0
+  let gMultiEmbAfterP0 := gMultiEmb1.expireUntilTurnCommandEffects p0
   let embP0Slice := gMultiEmbAfterP0.events.extract preEmbP0Idx gMultiEmbAfterP0.events.size
   let ceasePos? := embP0Slice.findIdx? (fun ev =>
     match ev.change with | .rules (.zone (.ceasedToExist eo)) => eo.id == some embShared.id | _ => false)
   let expPos? := embP0Slice.findIdx? (fun ev =>
     match ev.change with | .rules (.continuousEffect (.expired ..)) => true | _ => false)
 
-  -- (ii) `.fraEmblem` with `.untilEndOfTurn` in `clearEOT` also ceases the command-zone emblem and logs `"<embName> ends"`:
+  -- (ii) `.commandEmblem` with `.untilEndOfTurn` in `clearEOT` also ceases the command-zone emblem and logs `"<embName> ends"`:
   let gEotEmb0 := insertObject g4 embDef p0 .command (some p0)
   let embEot := (gEotEmb0.objects.filter (·.zone == .command))[0]!
   let gEotEmb1 :=
-    (gEotEmb0.createEffect (.gameRule (.fraEmblem embEot.id) .untilEndOfTurn) (cause := some testCause)).clearEOT
+    (gEotEmb0.createEffect (.gameRule (.commandEmblem embEot.id) .untilEndOfTurn) (cause := some testCause)).clearEOT
 
   let item2bOk :=
     (gMultiEmbAfterP0.findObject? embShared.id).isNone &&
@@ -1721,7 +1721,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     g0.sourceStillPayable g0.proposedSpell.get!
 
   -- 4a. Resolving stack-object `forObject` priority (`resolvingAbility` / `resolvingSpell` ahead of permanent `sourceId`
-  --     in `Decisions.payGeneric` / `FraChoices.mayPaySymbolsThen` / `Interpreter` `.nivPay`) AND `spellCast`-bounded
+  --     in `Decisions.payGeneric` / `ResolutionChoices.mayPaySymbolsThen` / `Interpreter` `.nivPay`) AND `spellCast`-bounded
   --     `manaSpentOn`, `treasureManaSpentOn`, `legendaryManaSpentOn`, and `ancestryManaSpentOn`:
   let ancestryLandDef : CardDef := {
     name := "P43i4 PathOfAncestry"
@@ -2274,18 +2274,18 @@ private def replayOk44i1 (gs : Array Game) : Bool :=
     openBatchFallbackValid &&
     emptyPromptInvalid
 
-  -- 1c. `ensureEndsWithFinishFra` `endsWithPriorityGrant` guard, `finishFraChoice` `alreadyGrants`,
+  -- 1c. `ensureEndsWithFinishResolutionChoice` `endsWithPriorityGrant` guard, `finishResolutionChoice` `alreadyGrants`,
   --     left-to-right `firstPriorityGrantRecipient?` / `hasImplicitPriorityContinuation`, and non-stale `pendingPriority` stamping:
   let explicitTail := PendingReplacement.seq (.gainLife p0 1 (some testCause)) (.receivePriority p3)
-  let ensurePreservesExplicit := explicitTail.ensureEndsWithFinishFra == explicitTail
+  let ensurePreservesExplicit := explicitTail.ensureEndsWithFinishResolutionChoice == explicitTail
   let gFraAlready :=
-    (g4.changes #[.pushContinuationFrame {}, .pendingReplacement (some (.receivePriority p3))]).finishFraChoice
+    (g4.changes #[.pushContinuationFrame {}, .pendingReplacement (some (.receivePriority p3))]).finishResolutionChoice
   let gImplicitBeforeExplicit :=
     g4.changes #[
       .pendingPriority (some p1),
       .pushContinuationFrame {},
       .pushOuterPendingReplacement (.receivePriority p2),
-      .pendingReplacement (some .finishFraChoice) ]
+      .pendingReplacement (some .finishResolutionChoice) ]
   let implicitDetected := gImplicitBeforeExplicit.hasImplicitPriorityContinuation
   let gStampedOverStale := gImplicitBeforeExplicit.finishAndGrantPriority p3
   let gManaStale0 :=
@@ -2293,7 +2293,7 @@ private def replayOk44i1 (gs : Array Game) : Bool :=
       .priority p3,
       .pendingPriority (some p1),
       .pushContinuationFrame {},
-      .pushOuterPendingReplacement .finishFraChoice ]
+      .pushOuterPendingReplacement .finishResolutionChoice ]
   let p3LandId := (gManaStale0.permanentsOf p3)[0]!.id
   let gManaStamped := mustApply gManaStale0 p3 (.tapForMana p3LandId (.colored .green))
 
@@ -2393,14 +2393,14 @@ private def replayOk44i2 (gs : Array Game) : Bool :=
     muLogs.any (· == s!"{hero.name} becomes unattached") &&
     !muLogs.any (· == s!"{eqDef.name} becomes unattached")
 
-  -- 2b. Simultaneous `Turns.clearEOT` `preExpire` `.fraEmblem` expiry (preserving `.ringBearer`),
-  --     cease-first `.fraEmblem` expiry in `Core.expireEffectById`, and controlled-not-owned `.command` departure:
+  -- 2b. Simultaneous `Turns.clearEOT` `preExpire` `.commandEmblem` expiry (preserving `.ringBearer`),
+  --     cease-first `.commandEmblem` expiry in `Core.expireEffectById`, and controlled-not-owned `.command` departure:
   let gSimEmb0 := insertObject (addPermanent g4 bear p0 p0) embDef p1 .command (some p1)
   let myRingBear := (gSimEmb0.permanentsOf p0)[0]!
   let simEmb := (gSimEmb0.objects.filter (·.zone == .command))[0]!
   let gSimEmb1 :=
     ((((gSimEmb0.createEffect
-      (.gameRule (.fraEmblem simEmb.id) .untilEndOfTurn) (cause := some testCause)).createEffect
+      (.gameRule (.commandEmblem simEmb.id) .untilEndOfTurn) (cause := some testCause)).createEffect
       (.layered (.objects #[myRingBear.id]) (.control p1) (.whileInZone simEmb.id .command))
       (cause := some testCause)).createEffect
       (.layered (.objects #[myRingBear.id]) (.control p0) .untilEndOfTurn)
@@ -2413,7 +2413,7 @@ private def replayOk44i2 (gs : Array Game) : Bool :=
   let expEmb := (gExpById0.objects.filter (·.zone == .command))[0]!
   let gExpById1 :=
     gExpById0.createEffect
-      (.gameRule (.fraEmblem expEmb.id) (.whileSourceOnBattlefield expAnchor.id))
+      (.gameRule (.commandEmblem expEmb.id) (.whileSourceOnBattlefield expAnchor.id))
       (cause := some testCause)
   let preExpByIdIdx := gExpById1.events.size
   let (gExpByIdAfter, _) := gExpById1.move expAnchor.id .exile none (cause := some testCause)
@@ -2487,7 +2487,7 @@ private def replayOk44i2 (gs : Array Game) : Bool :=
     gPerm1.mayPlayFromExile p0 (gPerm1.object! exImpId) &&
     !gPerm1.mayPlayFromExile p1 (gPerm1.object! exImpId)
   let prePermExpLog := gPerm1.log.size
-  let gPermExpired := gPerm1.expireFraUntilTurnEffects p0
+  let gPermExpired := gPerm1.expireUntilTurnCommandEffects p0
   let permExpLogs := gPermExpired.log.extract prePermExpLog gPermExpired.log.size
 
   -- CR 500.7 `lastRegularTurnSeat`: `p0` on regular turn, `p2` concedes, `p1` takes an extra turn ->
@@ -2753,7 +2753,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
   let gTcStep2 := mustApply gTcStep1 p0 (.target (.permanent skiffPilotId))
   let crewSecond :=
     match gTcStep2.pending with
-    | .fraChoice q (.crew _ vid 2) => q == p0 && vid == skiffId
+    | .resolutionChoice q (.crew _ vid 2) => q == p0 && vid == skiffId
     | _ => false
   let gTcStep3 := mustApply gTcStep2 p0 (.choosePermanents #[skiffPilotId])
 
@@ -2787,7 +2787,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     !gDup1.canActivate p0 dupObj1 abDup (idx? := some 1)
 
   -- 4b. Plain-`{T}` `manaSourcesForProposed` & `Agent` non-`{T}` source usability,
-  --     plus `Agent.chooseActivate` / `defaultFraAction` tap-cost mana-source conflict prevention:
+  --     plus `Agent.chooseActivate` / `defaultChoiceAction` tap-cost mana-source conflict prevention:
   let selfTapSacRelicDef : CardDef := {
     name := "P44i4 Bauble"
     types := #[.artifact]
@@ -2829,7 +2829,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     match Agent.choose gConflictCombat p0 with
     | some (.activate _ _) => false
     | _ => true
-  -- Adding a non-mana `bear` lets `Agent` tap `dork22Def` for `{G}` and `defaultFraAction` crew with `bear`!
+  -- Adding a non-mana `bear` lets `Agent` tap `dork22Def` for `{G}` and `defaultChoiceAction` crew with `bear`!
   let gNoConflict0 := addPermanent gConflictOnly bear p0 p0
   let ncVehId := (gNoConflict0.permanentsOf p0).find? (·.name == crew1ManaVehDef.name) |>.get!.id
   let ncDorkId := (gNoConflict0.permanentsOf p0).find? (·.name == dork22Def.name) |>.get!.id
@@ -2838,7 +2838,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
   let gNc2 := mustApply gNc1 p0 (.tapForMana ncDorkId (.colored .green))
   let gNc3 := mustApply gNc2 p0 .pay
   let defaultPicksNonManaBear :=
-    match gNc3.defaultFraAction p0 (.crew gNc3.proposedSpell.get!.spellId ncVehId 2) with
+    match gNc3.defaultChoiceAction p0 (.crew gNc3.proposedSpell.get!.spellId ncVehId 2) with
     | .choosePermanents ids => ids == #[ncBearId]
     | _ => false
   let gNc4 := mustApply gNc3 p0 (.choosePermanents #[ncBearId])
@@ -2955,7 +2955,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     | .ok g => g
     | .error e => panic! e
 
-  -- Unrelated cost payment (`fraCostPaid`) does not waive `sourceId` battlefield presence or control,
+  -- Unrelated cost payment (`choiceCostPaid`) does not waive `sourceId` battlefield presence or control,
   -- and `tapForMana` rejects tapped, summoning-sick, unaffordable, or proposal-reserved abilities:
   let crewDiscSkiffDef : CardDef := {
     name := "P44i4 CrewDiscSkiff"
@@ -3042,7 +3042,7 @@ private def replayOk44i4 (gs : Array Game) : Bool :=
     gAfterSacOtherMana.stack.isEmpty &&
     (gAfterSacOtherMana.followMovedToZone? sacFodderId (· == .graveyard p0)).isSome &&
     (gAfterSacOtherMana.player p0).manaPool.black == 2 &&
-    gCrewAfterTap.proposedSpell.any (·.fraCostPaid) &&
+    gCrewAfterTap.proposedSpell.any (·.choiceCostPaid) &&
     !gCrewBounced.sourceStillPayable (gCrewBounced.proposedSpell.get!) &&
     (gCrewBounced.payActivationExtraCosts p0 cdSkiffId false false 0 false
       (gCrewBounced.proposedSpell.get!.activation)).isOk == false &&

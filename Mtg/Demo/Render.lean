@@ -788,7 +788,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
       s!" [may cast {name}, or {n} damage to each opponent ({g.player p |>.name})]"
     | .chooseProliferate p n =>
       s!" [proliferate ({n} more, CR 701.34, {g.player p |>.name})]"
-    | .fraChoice p choice =>
+    | .resolutionChoice p choice =>
       let what :=
         match choice with
         | .discardFromRevealedHand v _ => s!"choose a card from {(g.player v).name}'s hand to discard"

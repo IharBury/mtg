@@ -202,7 +202,7 @@ def replaceDamage (g : Game) (n : Int)
       if !unpreventable then
         if let some o := recipientPerm? then
           if let some src := src? then
-            if g.frcProtectedFrom o src then
+            if g.protectedFrom o src then
               items := items.push (.prevention {
                 id := { kind := .protectionPreventDamage, object := some o.id }
                 source := some o.id

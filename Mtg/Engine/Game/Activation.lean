@@ -218,7 +218,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
           g0.completeTurnFaceUp p o.id (hadOuterReplacement := localOuter?.isSome)
         let g :=
           match localOuter? with
-          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         return if callerShouldResume then g.resumeAfterBecomeCastFwd else g
     | none => throw s!"{g.name o} is face down"

@@ -287,9 +287,9 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     let g := insertObject g targetCreatureSorcery me (.hand me)
     let boltH := ((g.player me).hand.filter (fun id => (g.object! id).name == "Lightning Bolt"))[0]!
     let remH := ((g.player me).hand.filter (fun id => (g.object! id).name == "Phase12 Impossible Removal"))[0]!
-    let g := g.change (.pending (.fraChoice me (.mayCastInstantSorceryFromHand #[boltH])))
+    let g := g.change (.pending (.resolutionChoice me (.mayCastInstantSorceryFromHand #[boltH])))
     let gBlocked :=
-      match g.answerFraChoice me (.objects #[boltH]) with
+      match g.answerResolutionChoice me (.objects #[boltH]) with
       | .ok g' => g'
       | .error _ => g
     let clearedOnFail := gBlocked.proposalCheckpoint.isNone
@@ -1056,7 +1056,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     let g := insertObject (insertObject afterDraw modalKickerDef me .exile) freeDrawDef me .exile
     let exSac := (g.objects.filter (fun o => o.name == "Phase13 Modal Kicker" && o.zone == .exile))[0]!.id
     let exDraw := (g.objects.filter (fun o => o.name == "Phase13 Free Draw" && o.zone == .exile))[0]!.id
-    let g := g.beginFraChoice me (.mayCastUpToFromExile #[exSac, exDraw] 2) "cast exiled"
+    let g := g.beginResolutionChoice me (.mayCastUpToFromExile #[exSac, exDraw] 2) "cast exiled"
     let gPaused := mustApply g me (.choosePermanents #[exSac])
     let gMode := mustApply gPaused me (.chooseMode 0)
     let gKick := mustApply gMode me (.announceKicker true)
@@ -1624,7 +1624,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
       | _ => false) &&
     Game.replayEvents gFiltExpired.events == gFiltExpired
 
-  -- Continuation resumption (`finishFraChoice`) across activation cost-pick reversal
+  -- Continuation resumption (`finishResolutionChoice`) across activation cost-pick reversal
   -- (`beginActivationPayment` / `afterTargetsChosen`) and `chooseCastFromLooked`
   -- (`beginResolutionCastTargets` illegal mode/target, synchronous cast, and decline):
   let mkSeqFrame (g : Game) (gain : Nat) : Game :=
@@ -1822,7 +1822,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   -- Activation and spell costs that pause on `Pending.chooseReplacement` chain
   -- `.receivePriority caster` outside open continuations (checking SBAs, putting
   -- waiting triggers on the stack, and preserving non-active activator/caster
-  -- priority per CR 117.3c) and chain `.finishFraChoice` when `interpWait?`,
+  -- priority per CR 117.3c) and chain `.finishResolutionChoice` when `interpWait?`,
   -- `pendingMayCastFromExile`, or an outer `pendingReplacement` is open:
   let headHuntDef : CardDef :=
     { bear with name := "Phase13 Head Hunt", staticAbilities := #[.exileOppDeathCreateWolf] }
@@ -1899,7 +1899,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     let g := insertObject (insertObject g sacSpellDef me .exile) freeDrawDef me .exile
     let exSac := (g.objects.filter (fun o => o.name == "Phase13 Altar Bolt" && o.zone == .exile))[0]!.id
     let exDraw := (g.objects.filter (fun o => o.name == "Phase13 Free Draw" && o.zone == .exile))[0]!.id
-    let g := (mkSeqFrame g 4).change (.pending (.fraChoice me (.mayCastUpToFromExile #[exSac, exDraw] 2)))
+    let g := (mkSeqFrame g 4).change (.pending (.resolutionChoice me (.mayCastUpToFromExile #[exSac, exDraw] 2)))
     let g := mustApply g me (.choosePermanents #[exSac])
     let g := mustApply g me .pay
     let gPaused := mustApply g me (.sacrifice sacBearId)
@@ -2208,7 +2208,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let g := insertObject (insertObject g sacSpellDef me .exile) freeDrawDef me .exile
     let exSac := (g.objects.filter (fun o => o.name == "Phase13 Altar Bolt" && o.zone == .exile))[0]!.id
     let exDraw := (g.objects.filter (fun o => o.name == "Phase13 Free Draw" && o.zone == .exile))[0]!.id
-    let g := (g.change (.pushContinuationFrame {})).change (.pending (.fraChoice me (.mayCastUpToFromExile #[exSac, exDraw] 2)))
+    let g := (g.change (.pushContinuationFrame {})).change (.pending (.resolutionChoice me (.mayCastUpToFromExile #[exSac, exDraw] 2)))
     let g := mustApply g me (.choosePermanents #[exSac])
     let g := mustApply g me .pay
     let g := mustApply g me (.sacrifice sacBearId)
@@ -2224,7 +2224,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let g := insertObject (insertObject g sacSpellDef me .exile) freeDrawDef me .exile
     let cpSac := (g.objects.filter (fun o => o.name == "Phase13 Altar Bolt" && o.zone == .exile))[0]!.id
     let cpDraw := (g.objects.filter (fun o => o.name == "Phase13 Free Draw" && o.zone == .exile))[0]!.id
-    let g := (g.change (.pushContinuationFrame {})).change (.pending (.fraChoice me (.castCopiesFree #[cpSac, cpDraw] 4 2)))
+    let g := (g.change (.pushContinuationFrame {})).change (.pending (.resolutionChoice me (.castCopiesFree #[cpSac, cpDraw] 4 2)))
     let g := mustApply g me (.cast cpSac)
     let g := mustApply g me .pay
     let g := mustApply g me (.sacrifice sacBearId)
@@ -2232,14 +2232,14 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let gDone := mustApply gNext me (.cast cpDraw)
     (gNext, gDone)
   let exileAndCopyOffersAfterCostRepOk :=
-    (match gMayExNext.pending with | .fraChoice p (.mayCastUpToFromExile ids left) => p == me && ids.size == 1 && left == 1 | _ => false) &&
+    (match gMayExNext.pending with | .resolutionChoice p (.mayCastUpToFromExile ids left) => p == me && ids.size == 1 && left == 1 | _ => false) &&
     gMayExDone.pending == Pending.none &&
     gMayExDone.pendingMayCastFromExile.isNone &&
     gMayExDone.continuations.isEmpty &&
     gMayExDone.stack.size == 3 &&
     Game.replayEvents gMayExNext.events == gMayExNext &&
     Game.replayEvents gMayExDone.events == gMayExDone &&
-    (match gCopyNext.pending with | .fraChoice p (.castCopiesFree ids _ left) => p == me && ids.size == 1 && left == 1 | _ => false) &&
+    (match gCopyNext.pending with | .resolutionChoice p (.castCopiesFree ids _ left) => p == me && ids.size == 1 && left == 1 | _ => false) &&
     gCopyDone.pending == Pending.none &&
     gCopyDone.pendingFreeCopies.isNone &&
     gCopyDone.continuations.isEmpty &&
@@ -2958,7 +2958,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let pickFinV : ReplacementId := { kind := .finalityCounterExile, object := some vicId }
     let gDone := mustApply gP2 me (.chooseReplacement pickFinV)
     let ok :=
-      (match gP1.pending with | .fraChoice p (.mayPayPickThen .sacrificeAnotherCreature ..) => p == me | _ => false) &&
+      (match gP1.pending with | .resolutionChoice p (.mayPayPickThen .sacrificeAnotherCreature ..) => p == me | _ => false) &&
       (gP1.player me).hand.size == handPre &&
       (match gP2.pending with | .chooseReplacement p cs => p == me && cs.contains pickFinV | _ => false) &&
       (gP2.player me).hand.size == handPre &&
@@ -3058,7 +3058,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let pId1 := (gMc0.battlefield.filter (·.name == "Plains"))[0]!.id
     let exCardId := (gMc0.objects.filter (fun o => o.name == "Phase15 Paid Draw" && o.zone == .exile))[0]!.id
     let gMc1 := (gMc0.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice me (.mayCastCards #[exCardId] false false)))
+      (.pending (.resolutionChoice me (.mayCastCards #[exCardId] false false)))
     let gMc2 := mustApply gMc1 me (.cast exCardId)
     let gMc3 := mustApply gMc2 me (.tapForMana pId1 (.colored .white))
     let gMc4 := mustApply gMc3 me .pay
@@ -3067,7 +3067,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let pId2 := (gGy0.battlefield.filter (·.name == "Plains"))[0]!.id
     let gyCardId := ((gGy0.player me).graveyard.filter (fun id => (gGy0.object! id).name == "Phase15 Paid Draw"))[0]!
     let gGy1 := (gGy0.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice me (.mayCastFromGraveyard #[gyCardId])))
+      (.pending (.resolutionChoice me (.mayCastFromGraveyard #[gyCardId])))
     let gGy2 := mustApply gGy1 me (.cast gyCardId)
     let gGy3 := mustApply gGy2 me (.tapForMana pId2 (.colored .white))
     let gGy4 := mustApply gGy3 me .pay

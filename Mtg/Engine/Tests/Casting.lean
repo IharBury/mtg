@@ -46,7 +46,7 @@ def withCause (g : Game) (source : GameObject) (spell : CardDef)
     else g.record (GameEvent.targeted g.turnNumber spellObj.id targets)
   let abId : ObjectId := ⟨g.nextObjectId⟩
   let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot source) me
-    (spec := { sourceId := some source.id, fraCauseId := some spellObj.id }))
+    (spec := { sourceId := some source.id, triggerCauseId := some spellObj.id }))
   g.change (.resolvingAbility (some abId))
 
 def casting (e : Effect) : TriggeredAbility :=
@@ -127,7 +127,7 @@ def speedOffer : Game :=
 
 #guard
   match speedOffer.pending with
-  | .fraChoice q (.mayPayManaForReflexive cost _ eff _) =>
+  | .resolutionChoice q (.mayPayManaForReflexive cost _ eff _) =>
     q == me && cost == #[.generic 1] &&
       eff.toNotation.contains "can't be blocked"
   | _ => false
@@ -199,7 +199,7 @@ def visionStrike : Game :=
 
 #guard
   match visionOffer.pending with
-  | .fraChoice _ (.visionMode _ available) => available == #[0, 1, 2]
+  | .resolutionChoice _ (.visionMode _ available) => available == #[0, 1, 2]
   | _ => false
 
 #guard
@@ -359,7 +359,7 @@ def foomCopy : Game :=
 
 #guard
   match foomCopy.pending with
-  | .fraChoice q (.newTargetsForCopies _) =>
+  | .resolutionChoice q (.newTargetsForCopies _) =>
     q == me && (named foomCopy "Fin Fang Foom").status.plusOnePlusOne == 2
   | _ => false
 
@@ -371,7 +371,7 @@ def foomLeft : Game :=
 
 #guard
   match foomLeft.pending with
-  | .fraChoice _ (.newTargetsForCopies _) =>
+  | .resolutionChoice _ (.newTargetsForCopies _) =>
     logContains foomLeft "The triggered ability's source is no longer in play"
   | _ => false
 

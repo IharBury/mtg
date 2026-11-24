@@ -1,5 +1,4 @@
 import Mtg.Engine.Game.CastExtras
-import Mtg.Engine.Game.FraAbilities
 
 /-!
 # Unified `Instruction` Interpreter & `stepEnv` (CR 608 / 614.6 / 616.1)
@@ -28,7 +27,7 @@ namespace Game
 
 /-- Reserved `stepEnv` slot used by interactive prompts (`Pending.mayResolve`,
 `Pending.chooseLibraryPlacement`, `Pending.chooseTriggerOr`, `Pending.payOrLetCounter`,
-`Pending.tapHumans`, `FraChoice.worldsPutCreatures`, optional-cost prompts) to hand
+`Pending.tapHumans`, `ResolutionChoice.worldsPutCreatures`, optional-cost prompts) to hand
 their outcome back to suspended `InterpCont` frames. -/
 def interpChoiceVar : VarId := ⟨999⟩
 
@@ -536,7 +535,7 @@ partial def beginSacDamagers (g : Game) (controller : PlayerId)
     else if ids.size == 1 then
       g.beginSacDamagers controller rest (chosen.push (p, ids[0]!))
     else
-      g.beginFraChoice p (.sacrificeDamager ids rest controller chosen)
+      g.beginResolutionChoice p (.sacrificeDamager ids rest controller chosen)
         s!"{(g.player p).name} chooses a creature that dealt combat damage to sacrifice"
 
 private def moveOneObject (g : Game) (env : EvalEnv) (ctx : InterpCtx) (o : GameObject)
@@ -782,7 +781,7 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
             if (g.revealedHandChoices victim false).isEmpty then
               (g.logMsg s!"{(g.player victim).name} has no nonland card", #[])
             else
-              (g.beginFraChoice chooser (.exileFromRevealedHand victim ctx.sourceId)
+              (g.beginResolutionChoice chooser (.exileFromRevealedHand victim ctx.sourceId)
                 s!"{(g.player chooser).name} chooses a nonland card to exile", #[])
           | none => (g, #[])
         | _, _ =>
@@ -851,7 +850,7 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
                 else g
               | none => g) g, #[])
         else if ch.extremeMetric? == some (false, .stat .power) && lo == 1 && hi == 1 then
-          (g.beginFraChoice chooser (.sacrificeLeastPower (cands.map (·.id)))
+          (g.beginResolutionChoice chooser (.sacrificeLeastPower (cands.map (·.id)))
             s!"{(g.player chooser).name} has creatures tied for least power and chooses one to sacrifice", #[])
         else
           let pick := cands.extract 0 lo
@@ -1038,12 +1037,12 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
             else if gp.maxCasts? == some 1 && gp.maxTotalManaValue?.isNone && copies.size == 1 then
               let copyId := copies[0]!
               let copyName := (g.findObject? copyId).map g.name |>.getD "the card"
-              g.beginFraChoice ctx.controller (.mayCastCopy copyId)
+              g.beginResolutionChoice ctx.controller (.mayCastCopy copyId)
                 s!"{(g.player ctx.controller).name} may cast the copy of {copyName} without paying its mana cost"
             else
               let maxMv := gp.maxTotalManaValue?.map (fun v => (EvalExpr.evalValue g env v).toNat) |>.getD 1000
               let maxCasts := gp.maxCasts?.getD copies.size
-              g.beginFraChoice ctx.controller (.castCopiesFree copies maxMv maxCasts)
+              g.beginResolutionChoice ctx.controller (.castCopiesFree copies maxMv maxCasts)
                 s!"{(g.player ctx.controller).name} may cast copies without paying their mana costs"
           (g, #[])
         | none => (g, #[])
@@ -1113,7 +1112,7 @@ private def execCreate (g : Game) (ctx : InterpCtx) (op : CreateOp) : Game × Ar
       (g, conts)
   | .emblem whoExpr emb =>
     let pids := EvalExpr.evalPlayer g env whoExpr
-    let srcName := g.fraSourceName ctx.sourceId
+    let srcName := g.effectSourceName ctx.sourceId
     let emblemCard : CardDef := {
       name := s!"{srcName} Emblem"
       types := #[]
@@ -1293,7 +1292,7 @@ private def execPermanent (g : Game) (ctx : InterpCtx) (op : PermanentOp) : Game
                 | .copyFromLki fromExpr =>
                   let bag? : Option CounterBag :=
                     if fromExpr == .triggerSubject then
-                      (g.resolvingAbilityObject?.bind (·.fraCauseStatus)).map (·.toCounterBag)
+                      (g.resolvingAbilityObject?.bind (·.triggerCauseStatus)).map (·.toCounterBag)
                         |>.orElse fun _ =>
                           (EvalExpr.evalObjects g env fromExpr)[0]?.map fun
                             | .live fo => fo.status.toCounterBag
@@ -1355,7 +1354,7 @@ private def execPermanent (g : Game) (ctx : InterpCtx) (op : PermanentOp) : Game
         if atts.isEmpty then g
         else if attExpr == .inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .controlledBy .you]) &&
             toExpr == .target 0 then
-          g.beginFraChoice ctx.controller (.attachAnyEquipment host.id (atts.map (·.id)))
+          g.beginResolutionChoice ctx.controller (.attachAnyEquipment host.id (atts.map (·.id)))
             s!"{(g.player ctx.controller).name} may attach any number of Equipment to {g.name host}"
         else
           g.change (.pending (.mayAttachEquipment ctx.controller host.id ctx.sourceId))
@@ -1685,7 +1684,7 @@ private def execLife (g : Game) (ctx : InterpCtx) (op : LifeOp) : Game :=
     if n == 0 then
       match amtExpr with
       | .aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .attachedTo .this])) =>
-        g.logMsg s!"{g.fraSourceName ctx.sourceId} isn't equipped"
+        g.logMsg s!"{g.effectSourceName ctx.sourceId} isn't equipped"
       | _ => g
     else (EvalExpr.evalPlayer g env whoExpr).foldl (fun g p => g.loseLife p n (cause := some cause)) g
   | .set whoExpr amtExpr =>
@@ -1855,7 +1854,7 @@ private def execInspectLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
                   if anyOrder then (g.offerBottomAnyOrder p looked (cause := some cause), none, #[])
                   else (g.putRestOnBottomRandom p looked (cause := some cause), none, #[])
                 else
-                  (g.beginFraChoice chooser (.mayRevealToHand looked eligible anyOrder)
+                  (g.beginResolutionChoice chooser (.mayRevealToHand looked eligible anyOrder)
                     s!"{(g.player chooser).name} may reveal a card from among them and put it into their hand",
                    none, #[])
               else
@@ -1885,14 +1884,14 @@ private def execInspectLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
                 let anyNum := hi ≥ 100
                 if eligible.isEmpty then (g.finishRevealPutCreatures p looked #[], none, #[])
                 else
-                  (g.beginFraChoice chooser (.revealPutCreatures looked eligible anyNum)
+                  (g.beginResolutionChoice chooser (.revealPutCreatures looked eligible anyNum)
                     (if anyNum then s!"{(g.player chooser).name} may put any number of matching cards onto the battlefield"
                      else s!"{(g.player chooser).name} may put a creature card from among them onto the battlefield"),
                    none, #[])
               else if spec.rest == .bottomRandom && hi == 1 && mods.mayTransformOnEnter then
                 if eligible.isEmpty then (g.putRestOnBottomRandom p looked (cause := some cause), none, #[])
                 else
-                  (g.beginFraChoice chooser (.nickFuryPut looked eligible)
+                  (g.beginResolutionChoice chooser (.nickFuryPut looked eligible)
                     s!"{(g.player chooser).name} may put a card from among them onto the battlefield",
                    none, #[])
               else
@@ -1927,7 +1926,7 @@ private def execInspectLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
               (g, none, #[])
         | .splitIntoPiles splitterExpr _ _ _ _ _ =>
           if splitterExpr == .you then
-            (g.beginFraChoice p (.riddlesSplit looked)
+            (g.beginResolutionChoice p (.riddlesSplit looked)
               s!"{(g.player p).name} separates {looked.size} cards into a face-up pile and a face-down pile",
              none, #[])
           else
@@ -1958,7 +1957,7 @@ private def execInspectLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
     match p? with
     | none =>
       let g :=
-        if exileWhileRevealing then g.logMsg s!"{g.fraSourceName ctx.sourceId} didn't deal combat damage"
+        if exileWhileRevealing then g.logMsg s!"{g.effectSourceName ctx.sourceId} didn't deal combat damage"
         else g
       (g, some { objects := #[], succeeded := false }, #[])
     | some p =>
@@ -2221,7 +2220,7 @@ private def execPlayer (g : Game) (ctx : InterpCtx) (op : PlayerOp) :
         | some p =>
           if !g.stillInGame p then (g, none, #[])
           else
-            (g.beginFraChoice p (.addManaColors n rest)
+            (g.beginResolutionChoice p (.addManaColors n rest)
               s!"{(g.player p).name} chooses the colors of {englishNumber n} mana ({rest.label})",
              none, #[])
         | none => (g, none, #[])
@@ -2331,10 +2330,10 @@ private def execPlayer (g : Game) (ctx : InterpCtx) (op : PlayerOp) :
     | .creatureType =>
       let pref := g.chooseCreatureTypeFor chooser
       let types := #[pref] ++ g.battlefieldCreatureTypes.filter (· != pref)
-      (g.beginFraChoice chooser (.chooseCreatureType types)
+      (g.beginResolutionChoice chooser (.chooseCreatureType types)
         s!"{(g.player chooser).name} chooses a creature type", none, #[])
     | .oddOrEven =>
-      (g.beginFraChoice chooser (.oddOrEvenDestroy ctx.sourceId)
+      (g.beginResolutionChoice chooser (.oddOrEvenDestroy ctx.sourceId)
         s!"{(g.player chooser).name} chooses odd or even", none, #[])
     | .keyword options =>
       match ctx.sourceId.bind g.findObject? with
@@ -2413,7 +2412,7 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
             ((g.stackEntry? cid).map (!·.targets.isEmpty)).getD false
           if !mayNewTargets || copies.isEmpty || !targeted then g
           else
-            g.beginFraChoice ctx.controller (.newTargetsForCopies copies)
+            g.beginResolutionChoice ctx.controller (.newTargetsForCopies copies)
               s!"{(g.player ctx.controller).name} may choose new targets for the copies") g
   | .chooseNewTargets objsExpr _ =>
     let objs := resolveLiveObjects g env objsExpr
@@ -2478,19 +2477,19 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
       else if permSpec.maxCasts? == some 1 && permSpec.maxTotalManaValue?.isNone && copies.size == 1 then
         let copyId := copies[0]!
         let copyName := (g.findObject? copyId).map g.name |>.getD "the card"
-        g.beginFraChoice ctx.controller (.mayCastCopy copyId)
+        g.beginResolutionChoice ctx.controller (.mayCastCopy copyId)
           s!"{(g.player ctx.controller).name} may cast the copy of {copyName} without paying its mana cost"
       else
         let maxMv := maxMv?.getD 1000
         let maxCasts := permSpec.maxCasts?.getD copies.size
-        g.beginFraChoice ctx.controller (.castCopiesFree copies maxMv maxCasts)
+        g.beginResolutionChoice ctx.controller (.castCopiesFree copies maxMv maxCasts)
           s!"{(g.player ctx.controller).name} may cast copies without paying their mana costs"
     else if permSpec.castNow then
       if !permSpec.freeCast && permSpec.exileOnResolveInstead then
         if eligible.isEmpty then
           g.logMsg s!"{(g.player ctx.controller).name} has no artifact, instant, or sorcery card in their graveyard to cast"
         else
-          g.beginFraChoice ctx.controller (.mayCastFromGraveyard eligible)
+          g.beginResolutionChoice ctx.controller (.mayCastFromGraveyard eligible)
             s!"{(g.player ctx.controller).name} may cast an artifact, instant, or sorcery card from their graveyard"
       else if permSpec.freeCast then
         match permSpec.maxCasts? with
@@ -2499,7 +2498,7 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
             if eligible.isEmpty then g else g.offerExileCasts ctx.controller eligible k
           else if eligible.isEmpty then g
           else
-            g.beginFraChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead)
+            g.beginResolutionChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead)
               s!"{(g.player ctx.controller).name} may cast a spell without paying its mana cost"
         | none =>
           match objsExpr with
@@ -2508,17 +2507,17 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
             if eligible.isEmpty then
               g.logMsg s!"{(g.player ctx.controller).name} has no instant or sorcery with mana value {maxMv} or less"
             else
-              g.beginFraChoice ctx.controller (.mayCastInstantSorceryFromHand eligible)
+              g.beginResolutionChoice ctx.controller (.mayCastInstantSorceryFromHand eligible)
                 s!"{(g.player ctx.controller).name} may cast an instant or sorcery spell with mana value {maxMv} or less without paying its mana cost"
           | _ =>
             if eligible.isEmpty then g
             else
-              g.beginFraChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead)
+              g.beginResolutionChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead)
                 s!"{(g.player ctx.controller).name} may cast a spell without paying its mana cost"
       else
         if eligible.isEmpty then g
         else
-          g.beginFraChoice ctx.controller (.mayCastCards eligible false permSpec.exileOnResolveInstead)
+          g.beginResolutionChoice ctx.controller (.mayCastCards eligible false permSpec.exileOnResolveInstead)
             s!"{(g.player ctx.controller).name} may cast a spell"
     else if !permSpec.freeCast && permSpec.anyManaColor then
       g.grantWidowCast ctx.controller eligible[0]? (cause := some cause)
@@ -2534,7 +2533,7 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
         let g := eligible.foldl (fun g id =>
           g.createEffect (.playPermission id perm (turnEnds := turnEnds) (d := dur)) (cause := some cause)) g
         if permSpec.freeCast && !eligible.isEmpty then
-          g.beginFraChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead)
+          g.beginResolutionChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead)
             s!"{(g.player ctx.controller).name} may cast a spell without paying its mana cost"
         else g
 
@@ -2798,7 +2797,7 @@ private def execInstallEffect (g : Game) (ctx : InterpCtx) (op : InstallEffectOp
     | none =>
       match mod with
       | .gainControl _ =>
-        g.logMsg s!"{g.fraSourceName ctx.sourceId} has left the battlefield. You won't gain control."
+        g.logMsg s!"{g.effectSourceName ctx.sourceId} has left the battlefield. You won't gain control."
       | _ => g
     | some dur =>
       let durStillValid : Bool :=
@@ -2809,7 +2808,7 @@ private def execInstallEffect (g : Game) (ctx : InterpCtx) (op : InstallEffectOp
       if !durStillValid then
         match mod with
         | .gainControl _ =>
-          g.logMsg s!"{g.fraSourceName ctx.sourceId} has left the battlefield. You won't gain control."
+          g.logMsg s!"{g.effectSourceName ctx.sourceId} has left the battlefield. You won't gain control."
         | _ => g
       else
         let live :=
@@ -2951,7 +2950,7 @@ private def execInstallEffect (g : Game) (ctx : InterpCtx) (op : InstallEffectOp
         }
         let dur := (EvalExpr.evalDuration g env spec.duration).getD .untilEndOfTurn
         (g.createEffect (.layered (.objects #[sid]) (.abilities { triggeredAbilities := #[trigAb] } .none) dur)
-          (cause := some cause)).logMsg s!"{g.fraSourceName ctx.sourceId} gains a triggered ability"
+          (cause := some cause)).logMsg s!"{g.effectSourceName ctx.sourceId} gains a triggered ability"
       | none => g
     | _ =>
       -- Generic delayed trigger materialized as a temporary command-zone object
@@ -2963,7 +2962,7 @@ private def execInstallEffect (g : Game) (ctx : InterpCtx) (op : InstallEffectOp
         effect := spec.effect
       }
       let effectCard : CardDef := {
-        name := s!"{g.fraSourceName ctx.sourceId} effect", types := #[]
+        name := s!"{g.effectSourceName ctx.sourceId} effect", types := #[]
         triggeredAbilities := #[trigAb]
       }
       let untilTurnOf :=
@@ -2980,7 +2979,7 @@ private def pauseIfNeeded (g : Game) (st : InterpState) (pendingBefore : Pending
   else if st.queue.isEmpty && st.stack.isEmpty then
     if g.pending != pendingBefore || g.afterRandom != randomBefore then
       match g.pending with
-      | .fraChoice _ (.visionMode ..) => (g.change (.interpWait? (some st)), true)
+      | .resolutionChoice _ (.visionMode ..) => (g.change (.interpWait? (some st)), true)
       | _ => (g, true)
     else (g, false)
   else if let .chooseReplacement .. := g.pending then
@@ -3255,12 +3254,12 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
             if choices.isEmpty then
               g := g.gainLife p life
             else
-              g := g.beginFraChoice p (.mayPutMilledPermanent choices life)
+              g := g.beginResolutionChoice p (.mayPutMilledPermanent choices life)
                 s!"{(g.player p).name} may put a permanent card milled this way into their hand"
         | .afterDrawBeginDiscardThenStun p count =>
           let cnt := Nat.min count (g.player p).hand.size
           if cnt > 0 then
-            g := g.beginFraChoice p (.discardThenStun cnt ctx.sourceId)
+            g := g.beginResolutionChoice p (.discardThenStun cnt ctx.sourceId)
               s!"{(g.player p).name} discards {cnt} card(s)"
         | .afterDrawAddPlusOnesForDiscards p targetId? =>
           let n := g.loggedDiscards p
@@ -3283,7 +3282,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               let eligible := (g.player pid).hand.filter fun id => (g.findObject? id).any g.isCreature
               if !eligible.isEmpty then
                 stack := stack.push (.worldsCollectPlayers exiledVar rem allChosen)
-                g := g.beginFraChoice pid (.worldsPutCreatures eligible)
+                g := g.beginResolutionChoice pid (.worldsPutCreatures eligible)
                   s!"{(g.player pid).name} may put any number of creature cards from their hand onto the battlefield"
                 prompted := true
           if !prompted then
@@ -3357,7 +3356,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               if choices.isEmpty then
                 g := g.gainLife ctx.controller life
               else
-                g := g.beginFraChoice ctx.controller (.mayPutMilledPermanent choices life)
+                g := g.beginResolutionChoice ctx.controller (.mayPutMilledPermanent choices life)
                   s!"{(g.player ctx.controller).name} may put a permanent card milled this way into their hand"
             let (g', paused) := pauseIfNeeded g { ctx, queue, stack } pendingBefore randomBefore
             if paused then return g'
@@ -3369,7 +3368,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
             match (resolveLiveObjects g env (.target 0))[0]? with
             | some o =>
               if o.isOnBattlefield then
-                g := g.beginFraChoice o.owner (.tricksterLibrary ctx.controller o.id connive? ctx.sourceId)
+                g := g.beginResolutionChoice o.owner (.tricksterLibrary ctx.controller o.id connive? ctx.sourceId)
                   s!"{(g.player o.owner).name} puts {g.name o} second from the top or on the bottom of their library"
               else if let some cid := connive? then
                 g := g.applyConnive ctx.controller (some cid)
@@ -3408,7 +3407,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
             else
               let cnt := Nat.min 2 (g.player ctx.controller).hand.size
               if cnt > 0 then
-                g := g.beginFraChoice ctx.controller (.discardThenStun cnt ctx.sourceId)
+                g := g.beginResolutionChoice ctx.controller (.discardThenStun cnt ctx.sourceId)
                   s!"{(g.player ctx.controller).name} discards {cnt} card(s)"
             let (g', paused) := pauseIfNeeded g { ctx, queue, stack } pendingBefore randomBefore
             if paused then return g'
@@ -3422,7 +3421,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               if (g.revealedHandChoices victim false).isEmpty then
                 g := g.logMsg s!"{(g.player victim).name} has no nonland card"
               else
-                g := g.beginFraChoice ctx.controller (.exileFromRevealedHand victim ctx.sourceId)
+                g := g.beginResolutionChoice ctx.controller (.exileFromRevealedHand victim ctx.sourceId)
                   s!"{(g.player ctx.controller).name} chooses a nonland card to exile"
             | none => pure ()
             let (g', paused) := pauseIfNeeded g { ctx, queue, stack } pendingBefore randomBefore
@@ -3495,7 +3494,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 | some o => if o.isOnBattlefield && n > 0 then g := g.addPlusOnePlusOneTo o n
                 | none => pure ()
             else
-              g := g.beginFraChoice ctx.controller
+              g := g.beginResolutionChoice ctx.controller
                 (.discardThen afterDiscard ctx.sourceId ctx.triggerSubjectId)
                 s!"{(g.player ctx.controller).name} discards a card"
             let (g', paused) := pauseIfNeeded g { ctx, queue, stack } pendingBefore randomBefore
@@ -3594,7 +3593,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                   if types.isEmpty then
                     g.logMsg s!"{(g.player chooser).name} has no creature type to choose"
                   else
-                    g.beginFraChoice chooser (.palisadeCreatureType types)
+                    g.beginResolutionChoice chooser (.palisadeCreatureType types)
                       s!"{(g.player chooser).name} chooses a creature type"
                 (true, g1, none)
               else (false, g, none)
@@ -3612,7 +3611,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                       | [] => g
                       | [pid] => g.applyBlackGateUnblockable o.id pid
                       | _ =>
-                        g.beginFraChoice chooser (.blackGatePlayer o.id tied)
+                        g.beginResolutionChoice chooser (.blackGatePlayer o.id tied)
                           s!"{(g.player chooser).name} chooses a player with the most life"
                     else g.logMsg "The target is no longer legal"
                   | none => g.logMsg "The target is no longer legal"
@@ -3684,7 +3683,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                               s!"{(g.player victim).name} randomizes the exiled cards; they become that player's library"
                               (cause := some exCause)
                         | some cid =>
-                          return g.beginFraChoice ctx.controller (.mayCastGrima cid others victim)
+                          return g.beginResolutionChoice ctx.controller (.mayCastGrima cid others victim)
                             s!"{(g.player ctx.controller).name} may cast {g.name (g.object! cid)} without paying its mana cost"
                 (true, g1, none)
               else (false, g, none)
@@ -3722,7 +3721,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 let g1 :=
                   if eligible.isEmpty then g.draw ctx.controller 1
                   else
-                    g.beginFraChoice ctx.controller (.mayPutHeroFromHandOrDraw eligible)
+                    g.beginResolutionChoice ctx.controller (.mayPutHeroFromHandOrDraw eligible)
                       s!"{(g.player ctx.controller).name} may put a Hero creature card from their hand onto the battlefield"
                 (true, g1, none)
               else (false, g, none)
@@ -3866,7 +3865,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 let psLiving := ps.filter g.stillInGame
                 match psLiving[0]? with
                 | some next =>
-                  g := g.beginFraChoice next (.mayWheel n (psLiving.extract 1 psLiving.size) #[])
+                  g := g.beginResolutionChoice next (.mayWheel n (psLiving.extract 1 psLiving.size) #[])
                     s!"{(g.player next).name} may discard their hand and draw {n} cards"
                 | none => pure ()
                 queue := #[]
@@ -3940,7 +3939,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
           | some cost =>
             if cost == CostSpec.ofMana { symbols := #[.hybrid .white .black] } then
               -- CR 702.101a Extort
-              g := g.beginFraChoice chooser (.mayPayExtort ctx.sourceId)
+              g := g.beginResolutionChoice chooser (.mayPayExtort ctx.sourceId)
                 s!"{(g.player chooser).name} may pay \{W/B} (extort)"
             else if cost == CostSpec.sacrificeArtifactOrDiscardCard then
               let n := match onYes with | .player (.drawCards _ (.const k)) => k.toNat | _ => 1
@@ -3951,20 +3950,20 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               let hasNonland := (g.player chooser).hand.any fun id =>
                 (g.findObject? id).any (fun o => !g.isLand o)
               if hasArt || hasNonland then
-                g := g.beginFraChoice chooser (.mayPayPickThen .sacrificeArtifactOrDiscardNonland onYes ctx.sourceId)
+                g := g.beginResolutionChoice chooser (.mayPayPickThen .sacrificeArtifactOrDiscardNonland onYes ctx.sourceId)
                   s!"{(g.player chooser).name} may sacrifice an artifact or discard a nonland card"
             else if cost == CostSpec.sacrificeAnotherCreatureOrArtifactSpec then
               if let some sid := ctx.sourceId then
                 let hasOther := (g.permanentsOf chooser).any fun o =>
                   o.id != sid && (g.isCreature o || g.isArtifact o)
                 if hasOther then
-                  g := g.beginFraChoice chooser (.maySacrificeAnotherForDrawTreasure sid)
+                  g := g.beginResolutionChoice chooser (.maySacrificeAnotherForDrawTreasure sid)
                     s!"{(g.player chooser).name} may sacrifice another creature or artifact"
             else if cost == CostSpec.tapOnly then
               if let some sid := ctx.sourceId then
                 if (g.findObject? sid).any (fun o => o.isOnBattlefield && !o.status.tapped) then
-                  g := g.beginFraChoice chooser (.mayTapSourceThen onYes sid)
-                    s!"{(g.player chooser).name} may tap {g.fraSourceName (some sid)}"
+                  g := g.beginResolutionChoice chooser (.mayTapSourceThen onYes sid)
+                    s!"{(g.player chooser).name} may tap {g.effectSourceName (some sid)}"
             else if cost.items == #[.sacrifice (.count (.const 1)) (.filter (.all #[.otherThan .this, .hasType .creature]))] then
               let hasOther := (g.creaturesControlledBy chooser).any fun o => some o.id != ctx.sourceId
               if hasOther then
@@ -3975,14 +3974,14 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                       g := (g.change (.pending (.maySacrificeAnotherBolg chooser sid))).logMsg
                         s!"{(g.player chooser).name} may sacrifice another creature"
                   else
-                    g := g.beginFraChoice chooser (.mayPayPickThen .sacrificeAnotherCreature onYes ctx.sourceId)
+                    g := g.beginResolutionChoice chooser (.mayPayPickThen .sacrificeAnotherCreature onYes ctx.sourceId)
                       s!"{(g.player chooser).name} may sacrifice another creature"
                 | .permanent (.modifyCounters (.put .plusOnePlusOne (.stepMetric .sumPower _)) .this _) =>
                   if let some sid := ctx.sourceId then
-                    g := g.beginFraChoice chooser (.maySacrificeAnotherCreatureForPower sid)
+                    g := g.beginResolutionChoice chooser (.maySacrificeAnotherCreatureForPower sid)
                       s!"{(g.player chooser).name} may sacrifice another creature"
                 | _ =>
-                  g := g.beginFraChoice chooser (.mayPayPickThen .sacrificeAnotherCreature onYes ctx.sourceId)
+                  g := g.beginResolutionChoice chooser (.mayPayPickThen .sacrificeAnotherCreature onYes ctx.sourceId)
                     s!"{(g.player chooser).name} may sacrifice another creature"
             else
               match (cost.items[0]? : Option CostItem) with
@@ -3990,7 +3989,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 let need := CostPick.count (.custom item)
                 if need > 1 then
                   if (g.player chooser).hand.size ≥ need then
-                    g := g.beginFraChoice chooser (.mayPayPickThen (.custom item) onYes ctx.sourceId)
+                    g := g.beginResolutionChoice chooser (.mayPayPickThen (.custom item) onYes ctx.sourceId)
                       s!"{(g.player chooser).name} may discard {need} cards"
                 else
                   match onYes with
@@ -3998,7 +3997,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                     g := g.beginMayDiscardDraw chooser n.toNat
                   | _ =>
                     if !(g.player chooser).hand.isEmpty then
-                      g := g.beginFraChoice chooser (.mayDiscardThen onYes ctx.sourceId)
+                      g := g.beginResolutionChoice chooser (.mayDiscardThen onYes ctx.sourceId)
                         s!"{(g.player chooser).name} may discard a card"
               | some (.mana mc) =>
                 let gen := mc.genericCount
@@ -4014,27 +4013,27 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                         | some (Target.permanent id) => some id
                         | _ => none
                     if let some artId := artId? then
-                      g := g.beginFraChoice chooser (.ultronMayPay artId)
+                      g := g.beginResolutionChoice chooser (.ultronMayPay artId)
                         s!"{(g.player chooser).name} may pay \{2} to create a token copy"
                   else if pureGeneric then
-                    g := g.beginFraChoice chooser (.mayPayThen gen onYes ctx.sourceId)
+                    g := g.beginResolutionChoice chooser (.mayPayThen gen onYes ctx.sourceId)
                       s!"{(g.player chooser).name} may pay \{{gen}}"
                   else if let some sid := ctx.sourceId then
-                    g := g.beginFraChoice chooser (.mayPaySymbolsThen mc.symbols onYes sid)
+                    g := g.beginResolutionChoice chooser (.mayPaySymbolsThen mc.symbols onYes sid)
                       s!"{(g.player chooser).name} may pay {mc}"
                 | .player (.drawCards .you (.const 1)) =>
                   if pureGeneric then
                     g := (g.change (.pending (.mayPayGeneric chooser gen))).logMsg
                       s!"{(g.player chooser).name} may pay \{{gen}} to draw a card"
                   else if let some sid := ctx.sourceId then
-                    g := g.beginFraChoice chooser (.mayPaySymbolsThen mc.symbols onYes sid)
+                    g := g.beginResolutionChoice chooser (.mayPaySymbolsThen mc.symbols onYes sid)
                       s!"{(g.player chooser).name} may pay {mc}"
                 | _ =>
                   if pureGeneric then
-                    g := g.beginFraChoice chooser (.mayPayThen gen onYes ctx.sourceId)
+                    g := g.beginResolutionChoice chooser (.mayPayThen gen onYes ctx.sourceId)
                       s!"{(g.player chooser).name} may pay \{{gen}}"
                   else if let some sid := ctx.sourceId then
-                    g := g.beginFraChoice chooser (.mayPaySymbolsThen mc.symbols onYes sid)
+                    g := g.beginResolutionChoice chooser (.mayPaySymbolsThen mc.symbols onYes sid)
                       s!"{(g.player chooser).name} may pay {mc}"
                   else
                     if !queue.isEmpty then stack := stack.push (.seqRest queue)
@@ -4054,25 +4053,25 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 let eligible := (g.permanentsOf chooser).filter fun o => EvalExpr.evalObjectPred g env (.live o) pred
                 if need > 1 then
                   if eligible.size ≥ need then
-                    g := g.beginFraChoice chooser (.mayPayPickThen (.custom item) onYes ctx.sourceId)
+                    g := g.beginResolutionChoice chooser (.mayPayPickThen (.custom item) onYes ctx.sourceId)
                       s!"{(g.player chooser).name} may sacrifice {need} permanents"
                 else if !eligible.isEmpty then
                   match onYes with
                   | .player (.searchLibrary sp) =>
                     if pred == .hasType .planeswalker && sp.filter == .hasType .planeswalker then
-                      g := g.beginFraChoice chooser .maySacrificePlaneswalker
+                      g := g.beginResolutionChoice chooser .maySacrificePlaneswalker
                         s!"{(g.player chooser).name} may sacrifice a planeswalker"
                     else
-                      g := g.beginFraChoice chooser (.maySacrificeThen types onYes ctx.sourceId)
+                      g := g.beginResolutionChoice chooser (.maySacrificeThen types onYes ctx.sourceId)
                         s!"{(g.player chooser).name} may sacrifice a permanent"
                   | _ =>
-                    g := g.beginFraChoice chooser (.maySacrificeThen types onYes ctx.sourceId)
+                    g := g.beginResolutionChoice chooser (.maySacrificeThen types onYes ctx.sourceId)
                       s!"{(g.player chooser).name} may sacrifice a permanent"
               | some (.removeCounters _ (some .plusOnePlusOne) .self) =>
                 match ctx.sourceId.bind g.findObject? with
                 | some src =>
                   if src.isOnBattlefield && src.status.plusOnePlusOne > 0 then
-                    g := g.beginFraChoice chooser (.mayMovePlusOne src.id)
+                    g := g.beginResolutionChoice chooser (.mayMovePlusOne src.id)
                       s!"{(g.player chooser).name} may remove a +1/+1 counter from {g.name src}"
                 | none => pure ()
               | some (.payLife amtExpr) =>
@@ -4111,8 +4110,8 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 match g.resolvingSpell.bind g.findObject? with
                 | some spell =>
                   if spell.zone == .stack && !spell.isCopy &&
-                      (g.sphinxsApproachesInGraveyard chooser).size ≥ 4 then
-                    g := g.beginFraChoice chooser (.sphinxsApproach spell.id)
+                      (g.graveyardCardsNamed chooser "Sphinx's Approach").size ≥ 4 then
+                    g := g.beginResolutionChoice chooser (.sphinxsApproach spell.id)
                       s!"{(g.player chooser).name} may exile Sphinx's Approach and four cards named Sphinx's Approach"
                 | none => pure ()
               | _ =>
@@ -4141,7 +4140,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 if o.isOnBattlefield then
                   let dmg := (EvalExpr.evalValue g env dmgExpr).toNat
                   let sid := ctx.sourceId.orElse (fun _ => g.resolvingSpell)
-                  g := g.beginFraChoice o.owner (.topOrBottomDamage o.id dmg sid)
+                  g := g.beginResolutionChoice o.owner (.topOrBottomDamage o.id dmg sid)
                     s!"{(g.player o.owner).name} may put {g.name o} on top of their library"
               | none => pure ()
             | none =>
@@ -4149,7 +4148,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               | .permanent (.modifyCounters (.put .plusOnePlusOne (.const 1)) .this _),
                 .stack (.mayCastOrPlay objsExpr { anyManaColor := true, .. }) =>
                 let nonland? := (resolveObjectIds g env objsExpr)[0]?
-                g := g.beginFraChoice chooser (.widowMayCounter ctx.sourceId nonland?)
+                g := g.beginResolutionChoice chooser (.widowMayCounter ctx.sourceId nonland?)
                   "You may put a +1/+1 counter on Black Widow"
               | .player (.drawCards .you (.const 1)),
                 .bind _ (.moveZone (.topOfLibrary _ (.counterCount (some .influence) .this)) .graveyard .mill _) _ =>
@@ -4159,17 +4158,17 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                     let n := ((g.damageSourceById? sid).map (·.status.influence)).getD 0
                     g := g.mill ctx.controller n
                   else
-                    g := g.beginFraChoice chooser (.palantirMayDraw ctx.controller sid)
+                    g := g.beginResolutionChoice chooser (.palantirMayDraw ctx.controller sid)
                       s!"{(g.player chooser).name} may have {(g.player ctx.controller).name} draw a card"
               | .bind _ (.moveZone (.inZones (.handOf .you) .anyObject) .graveyard .discard _)
                   (.seq #[.player (.drawCards .you (.stepMetric .movedCount _)), .ifCond _ (.damage ..) .noop]),
                 .noop =>
-                g := g.beginFraChoice chooser (.mayDiscardHandBalin ctx.sourceId)
+                g := g.beginResolutionChoice chooser (.mayDiscardHandBalin ctx.sourceId)
                   s!"{(g.player chooser).name} may discard their hand"
               | .bind _ (.moveZone (.inZones (.handOf .you) .anyObject) .graveyard .discard _)
                   (.player (.drawCards .you (.const n))),
                 .noop =>
-                g := g.beginFraChoice chooser (.mayDiscardHandDrawFixed n.toNat)
+                g := g.beginResolutionChoice chooser (.mayDiscardHandDrawFixed n.toNat)
                   s!"{(g.player chooser).name} may discard their hand and draw {n.toNat} cards"
               | .seq #[.player (.drawCards .you amtExpr), .player (.drawCards .opponents (.const 1))],
                 .noop =>
@@ -4177,7 +4176,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 if n == 0 then
                   g := g.logMsg s!"{(g.player chooser).name} controls no artifacts"
                 else
-                  g := g.beginFraChoice chooser (.mayDrawThenEachOpponentDraws n)
+                  g := g.beginResolutionChoice chooser (.mayDrawThenEachOpponentDraws n)
                     s!"{(g.player chooser).name} may draw {n} cards; if they do, each opponent draws a card"
               | .seq #[.player (.drawCards .you (.manaSpent .triggerSubject)),
                        .ifCond _ (.moveZone _ .graveyard .discard { choice? := some { count := .exact (.const n), .. }, .. }) .noop],
@@ -4190,7 +4189,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                   g := g.logMsg "No mana was spent to cast that spell"
                 else
                   let disc := if n == 2 then "two" else toString n
-                  g := g.beginFraChoice chooser (.mayDrawThenDiscard spent n.toNat)
+                  g := g.beginResolutionChoice chooser (.mayDrawThenDiscard spent n.toNat)
                     s!"{(g.player chooser).name} may draw {spent} cards, then discard {disc}"
               | .bind v (.moveZone (.inZones (.handOf .you) (.hasType .artifact)) (.battlefield .controller) .put _) body,
                 .noop =>
@@ -4217,8 +4216,8 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 else if let some tgt := ctx.targets[0]? then
                   let amt := env.eventAmount
                   if amt > 0 then
-                    g := g.beginFraChoice chooser (.sheHulkMayDamage amt tgt ctx.sourceId)
-                      s!"{(g.player chooser).name} may have {g.fraSourceName ctx.sourceId} deal {amt} damage"
+                    g := g.beginResolutionChoice chooser (.sheHulkMayDamage amt tgt ctx.sourceId)
+                      s!"{(g.player chooser).name} may have {g.effectSourceName ctx.sourceId} deal {amt} damage"
               | .player (.connive .triggerSubject), .noop =>
                 match ctx.sourceId with
                 | some sid =>
@@ -4239,7 +4238,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                   g.followMovedToZone? id (fun | .graveyard q => q == chooser | _ => false)
                 match card? with
                 | some card =>
-                  g := g.beginFraChoice chooser (.moonstoneMayExile card.id)
+                  g := g.beginResolutionChoice chooser (.moonstoneMayExile card.id)
                     s!"You may exile {g.name card} from your graveyard"
                 | none =>
                   if ctx.triggerSubjectId.isSome then
@@ -4253,7 +4252,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                     let tokPhrase :=
                       if spec == .wall04defender && n == 1 then "a 0/4 Wall creature token with defender"
                       else spec.createdTokensPhrase n false
-                    g := g.beginFraChoice chooser (.mayCreateTokens spec n env.toStored)
+                    g := g.beginResolutionChoice chooser (.mayCreateTokens spec n env.toStored)
                       s!"{(g.player chooser).name} may create {tokPhrase}"
                 else
                   if !queue.isEmpty then stack := stack.push (.seqRest queue)
@@ -4268,7 +4267,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                   if o.isOnBattlefield then
                     let pVal := EvalExpr.evalValue g env pExpr
                     let tVal := EvalExpr.evalValue g env tExpr
-                    g := g.beginFraChoice chooser (.mayBecomeBasePT o.id pVal tVal)
+                    g := g.beginResolutionChoice chooser (.mayBecomeBasePT o.id pVal tVal)
                       s!"{(g.player chooser).name} may have {g.name o}'s base power and toughness become {pVal}/{tVal} until end of turn"
               | .permanent (.attach _ hostExpr true), .noop =>
                 if let some host := (resolveLiveObjects g env hostExpr)[0]? then
@@ -4279,7 +4278,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 match ctx.sourceId.bind g.findObject?, (resolveLiveObjects g env (.target 0))[0]? with
                 | some src, some tgt =>
                   if src.isOnBattlefield && src.status.hasCounters && tgt.isOnBattlefield then
-                    g := g.beginFraChoice chooser (.mayMoveAllCounters src.id tgt.id)
+                    g := g.beginResolutionChoice chooser (.mayMoveAllCounters src.id tgt.id)
                       s!"{(g.player chooser).name} may move all counters from {g.name src} onto {g.name tgt}"
                 | _, _ => pure ()
               | .player (.searchLibrary sp), .noop =>
@@ -4289,7 +4288,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 else if sp.filter == .hasType .land && sp.mods.tapped && sp.count == .upTo .eventAmount then
                   let (_, hi) := evalInterpCountRange g env sp.count
                   if hi > 0 then
-                    g := g.beginFraChoice chooser (.mayThen onYes ctx.sourceId)
+                    g := g.beginResolutionChoice chooser (.mayThen onYes ctx.sourceId)
                       s!"{(g.player chooser).name} may search for up to {hi} land cards"
                 else
                   if !queue.isEmpty then stack := stack.push (.seqRest queue)
@@ -4307,7 +4306,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 if names.size < 2 then
                   g := g1.logMsg s!"{(g1.player chooser).name} has no two cards with different names outside the game"
                 else
-                  g := g1.beginFraChoice chooser .extrapolateReveal
+                  g := g1.beginResolutionChoice chooser .extrapolateReveal
                     s!"{(g1.player chooser).name} may reveal two cards with different names from outside the game"
               | .moveZone (.inZones zs (.all ps)) (.battlefield .controller) .put _,
                 .player (.drawCards .you (.const 1)) =>
@@ -4327,7 +4326,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                   g :=
                     if eligible.isEmpty then g.draw ctx.controller 1
                     else
-                      g.beginFraChoice ctx.controller (.mayPutHeroFromHandOrDraw eligible)
+                      g.beginResolutionChoice ctx.controller (.mayPutHeroFromHandOrDraw eligible)
                         s!"{(g.player ctx.controller).name} may put a Hero creature card from their hand onto the battlefield"
                 | _, _ =>
                   if !queue.isEmpty then stack := stack.push (.seqRest queue)
@@ -4356,9 +4355,9 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
           if ifUnpaid == Instruction.counter .triggerSubject then
             -- CR 702.21a: Ward trigger opens `Pending.payWard` against the targeting stack object.
             let abObj? := g.resolvingAbilityObject?
-            let causeId? := abObj?.bind (·.fraCauseId)
+            let causeId? := abObj?.bind (·.triggerCauseId)
             let payer? :=
-              (abObj?.bind (·.fraCauseController)).orElse (fun _ =>
+              (abObj?.bind (·.triggerCauseController)).orElse (fun _ =>
                 causeId?.bind (fun cid => (g.stackEntry? cid).map (·.controller)))
             match causeId?, payer? with
             | some spellId, some payer =>
@@ -4469,7 +4468,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 if available.isEmpty then
                   g := g.logMsg "The Vision's ability is removed from the stack with no effect"
                 else
-                  g := g.beginFraChoice ctx.controller (.visionMode sid available)
+                  g := g.beginResolutionChoice ctx.controller (.visionMode sid available)
                     "Choose one that hasn't been chosen this turn"
             else
               match ctx.sourceId.bind g.findObject? with
@@ -4479,7 +4478,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 if available.isEmpty then
                   g := g.logMsg "all three modes have been chosen this turn. The ability is removed from the stack with no effect"
                 else
-                  g := g.beginFraChoice ctx.controller (.allianceMode src.id available)
+                  g := g.beginResolutionChoice ctx.controller (.allianceMode src.id available)
                     s!"{(g.player ctx.controller).name} chooses an Alliance mode that hasn't been chosen this turn"
           else if spec.unusedEver && spec.modes.size == 3 then
             match ctx.sourceId.bind g.findObject? with
@@ -4489,7 +4488,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               if available.isEmpty then
                 g := g.logMsg "all three modes have been chosen. The ability is removed from the stack with no effect"
               else
-                g := g.beginFraChoice ctx.controller (.gollumMode src.id available)
+                g := g.beginResolutionChoice ctx.controller (.gollumMode src.id available)
                   s!"{(g.player ctx.controller).name} chooses a mode that hasn't been chosen"
           else if Instruction.chooseModes spec == stepHydeChooseBody then
             g := g.offerHydeChoice ctx.controller ctx.sourceId
@@ -4820,12 +4819,12 @@ def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
           (sourceId := srcId?) (ability := ab?)
           (cause := some (.gameRule .abilityFinishedResolving)))
         if n > 3 then
-          g.logMsg s!"{g.fraSourceName srcId?}'s ability has no effect (resolved {n} times this turn)"
+          g.logMsg s!"{g.effectSourceName srcId?}'s ability has no effect (resolved {n} times this turn)"
         else g
       else g
-    let trigSubj? := g.resolvingAbilityObject?.bind (·.fraCauseId)
-    let trigSubjs := (g.resolvingAbilityObject?.map (·.fraCauseIds)).getD #[]
-    let trigCtrl? := g.resolvingAbilityObject?.bind (·.fraCauseController)
+    let trigSubj? := g.resolvingAbilityObject?.bind (·.triggerCauseId)
+    let trigSubjs := (g.resolvingAbilityObject?.map (·.triggerCauseIds)).getD #[]
+    let trigCtrl? := g.resolvingAbilityObject?.bind (·.triggerCauseController)
     let trigSubjCtrl? :=
       ((trigSubj?.bind g.findObject?).bind fun o =>
         if o.isOnBattlefield then g.controllerOf o else none)

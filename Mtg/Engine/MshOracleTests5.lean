@@ -215,7 +215,7 @@ def castAsResolvesOk : Bool :=
   let giant := cosmicCubeLookedNamed g "Hill Giant"
   let land := cosmicCubeLookedNamed g "Mountain"
   let (gEx, card) := afterDraw.allocObject nightsWhisper ⟨1⟩ .exile none
-  let gEx := gEx.beginFraChoice ⟨0⟩ (.mayCastUpToFromExile #[card.id] 1) "cast exiled"
+  let gEx := gEx.beginResolutionChoice ⟨0⟩ (.mayCastUpToFromExile #[card.id] 1) "cast exiled"
   let gEx := mustApply gEx ⟨0⟩ (.choosePermanents #[card.id])
   match g.pending with
   | .mayCastFromLooked p ids maxMv =>

@@ -352,7 +352,7 @@ partial def reopenDeferredExileCasts (g : Game) : Game :=
         let g := g.change (.pendingMayCastFromExile none)
         if !g.stillInGame q || alive.isEmpty || left == 0 then g
         else
-          g.beginFraChoice q (.mayCastUpToFromExile alive left)
+          g.beginResolutionChoice q (.mayCastUpToFromExile alive left)
             s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
     | none => g
   match g.pendingFreeCopies with
@@ -371,7 +371,7 @@ partial def reopenDeferredExileCasts (g : Game) : Game :=
                 g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
         g.change (.pendingFreeCopies none)
       else
-        (g.change (.pendingFreeCopies none)).beginFraChoice q (.castCopiesFree alive budget castsLeft)
+        (g.change (.pendingFreeCopies none)).beginResolutionChoice q (.castCopiesFree alive budget castsLeft)
   | none => g
 
 /-- Drain completed `ContinuationFrame`s once all `Pending`, `afterRandom`, and

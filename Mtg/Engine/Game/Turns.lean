@@ -110,7 +110,7 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
   let endingEmbIds0 : Array ObjectId :=
     g.activeEffects.foldl (fun acc (eid, e) =>
       match e with
-      | .gameRule (.fraEmblem id) d =>
+      | .gameRule (.commandEmblem id) d =>
         if pred eid d && !acc.contains id then acc.push id else acc
       | _ => acc) #[]
   let endingEmbIds := g.expandTransitiveCommandEmblems endingEmbIds0
@@ -135,7 +135,7 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
                   acc2.logMsg s!"{acc2.name o} is no longer a copy of {topCard.name}"
                 else acc2
               | none => acc2) g1
-          g1.ceaseEndingFraEmblemsWhere pred (cause := cause) (reconcileControl := false)
+          g1.ceaseEndingCommandEmblemsWhere pred (cause := cause) (reconcileControl := false)
             (preState? := some pre) (skipLogIds := skipIds))
   let g :=
     g.activeEffects.foldl (fun acc (eid, e) =>
@@ -308,9 +308,9 @@ def clearEOT (g : Game) : Game :=
         let endingEmbIds0 : Array ObjectId :=
           g.activeEffects.foldl (fun acc (eid, e) =>
             match e with
-            | .gameRule (.fraEmblem id) .untilEndOfTurn =>
+            | .gameRule (.commandEmblem id) .untilEndOfTurn =>
               if !acc.contains id then acc.push id else acc
-            | .gameRule (.fraEmblem id) (.untilEndOfNextTurnOf q) =>
+            | .gameRule (.commandEmblem id) (.untilEndOfNextTurnOf q) =>
               if (q == g.activePlayer || g.areTeammates q g.activePlayer) &&
                   g.isSharedTurnFinalSeat && g.hasTurnBegunSince eid q &&
                   !acc.contains id then
@@ -326,7 +326,7 @@ def clearEOT (g : Game) : Game :=
           (extraSkipIds := skipIds)
           (preExpire := fun g0 =>
             let g0 := g0.restoreCopiesUntilEot (reconcileControl := false) (skipLogIds := skipIds)
-            let g0 := g0.ceaseEndingFraEmblemsWhere
+            let g0 := g0.ceaseEndingCommandEmblemsWhere
               (fun eid d =>
                 match d with
                 | .untilEndOfNextTurnOf q =>
@@ -335,7 +335,7 @@ def clearEOT (g : Game) : Game :=
                 | _ => false)
               (cause := cause) (reconcileControl := false) (preState? := some pre)
               (skipLogIds := skipIds)
-            g0.ceaseEndingFraEmblemsWhere (fun _ d => d == .untilEndOfTurn)
+            g0.ceaseEndingCommandEmblemsWhere (fun _ d => d == .untilEndOfTurn)
               (cause := cause) (reconcileControl := false) (preState? := some pre)
               (skipLogIds := skipIds))
           (preState? := some pre)
@@ -430,10 +430,12 @@ def expireGoadedFor (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
       acc.record (GameEvent.designation acc.turnNumber (acc.snapshot (acc.object! o.id)) (.goaded q) false
         (cause := .turnBased .expireAtStepBegin))) g) g
 
-/-- End Reality Fracture effects that last until `p`'s next turn: Garruk,
-Veiled Butcher's toughness and power reduction and the command-zone effects of Jace, Reality Sculptor
-and Garruk, Curse Breaker (CR 611.2a / 805.4 / 810.2). -/
-def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
+/-- Expire active effects whose duration is `.untilNextTurnOf` `p` (or teammates
+when `includeTeammates`): command emblems (via `ceaseEndingCommandEmblemsWhere`),
+control-change effects (unless `skipControl`), non-adventure play-from-exile
+permissions, and remaining `.untilNextTurnOf` effects, skipping copies,
+`.protectionFromEverything`, and `.lifeCantChange` (CR 611.2a / 805.4 / 810.2). -/
+def expireUntilTurnCommandEffects (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
     (skipControl : Bool := false) (skipLogIds : Array ObjectId := #[])
     (preState? : Option Game := none)
     (deferLogs : Bool := false) : Game :=
@@ -453,7 +455,7 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool
   let endingEmbIds0 : Array ObjectId :=
     g.activeEffects.foldl (fun acc (_, e) =>
       match e with
-      | .gameRule (.fraEmblem id) (.untilNextTurnOf q) =>
+      | .gameRule (.commandEmblem id) (.untilNextTurnOf q) =>
         if matchesTurnOf q && !acc.contains id then acc.push id else acc
       | _ => acc) #[]
   let endingEmbIds := g.expandTransitiveCommandEmblems endingEmbIds0
@@ -464,7 +466,7 @@ def expireFraUntilTurnEffects (g : Game) (p : PlayerId) (includeTeammates : Bool
     skipLogIds.foldl (fun acc id => if acc.contains id then acc else acc.push id) base
   let expireNonControl (g0 : Game) : Game :=
     let g0 :=
-      g0.ceaseEndingFraEmblemsWhere
+      g0.ceaseEndingCommandEmblemsWhere
         (fun _ d => match d with | .untilNextTurnOf q => matchesTurnOf q | _ => false)
         (cause := cause) (reconcileControl := false) (preState? := some pre)
         (skipLogIds := effSkipIds)
@@ -523,8 +525,8 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
         let endingEmbIds0 : Array ObjectId :=
           g.activeEffects.foldl (fun acc (_, e) =>
             match e with
-            | .gameRule (.fraEmblem id) (.untilNextTurnOf q)
-            | .gameRule (.fraEmblem id) (.untilEndOfNextTurnOf q) =>
+            | .gameRule (.commandEmblem id) (.untilNextTurnOf q)
+            | .gameRule (.commandEmblem id) (.untilEndOfNextTurnOf q) =>
               if matchesDeparted q && !acc.contains id then acc.push id else acc
             | _ => acc) #[]
         let endingEmbIds := g.expandTransitiveCommandEmblems endingEmbIds0
@@ -533,11 +535,11 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
         let expireNonControl (g0 : Game) : Game :=
           let g0 := g0.restoreCopiesUntilNextTurn p (departed := true) (reconcileControl := false)
             (skipLogIds := skipIds)
-          let g0 := g0.expireFraUntilTurnEffects p
+          let g0 := g0.expireUntilTurnCommandEffects p
             (includeTeammates := !teamHasLiving) (skipControl := true)
             (skipLogIds := skipIds) (preState? := some pre) (deferLogs := true)
           let g0 :=
-            g0.ceaseEndingFraEmblemsWhere
+            g0.ceaseEndingCommandEmblemsWhere
               (fun _ d => match d with | .untilEndOfNextTurnOf q => matchesDeparted q | _ => false)
               (cause := cause) (reconcileControl := false) (preState? := some pre)
               (skipLogIds := skipIds)
@@ -1226,7 +1228,7 @@ partial def beginTurn (g : Game) : Game :=
           let endingEmbIds0 : Array ObjectId :=
             g.activeEffects.foldl (fun acc (_, e) =>
               match e with
-              | .gameRule (.fraEmblem id) (.untilNextTurnOf q) =>
+              | .gameRule (.commandEmblem id) (.untilNextTurnOf q) =>
                 if (q == p || g.areTeammates q p) && !acc.contains id then acc.push id else acc
               | _ => acc) #[]
           let endingEmbIds := g.expandTransitiveCommandEmblems endingEmbIds0
@@ -1239,7 +1241,7 @@ partial def beginTurn (g : Game) : Game :=
             (preExpire := fun g0 =>
               let g0 := g0.restoreCopiesUntilNextTurn p (reconcileControl := false)
                 (skipLogIds := skipIds)
-              g0.expireFraUntilTurnEffects p (includeTeammates := true) (skipControl := true)
+              g0.expireUntilTurnCommandEffects p (includeTeammates := true) (skipControl := true)
                 (skipLogIds := skipIds) (preState? := some g0) (deferLogs := true))
           let g := emitExpiredPlayFromExileLogs preTurnExp g fromIdx
           let paused :=

@@ -110,7 +110,7 @@ def beginTriggerModeChoice (g : Game) (p : PlayerId) (obj : GameObject) (count :
     g.logMsg s!"{objName} {detail} and is removed from the stack (CR 603.3c / 700.2b)"
   else
     let what := if count == 2 then "two modes" else "a mode"
-    g.beginFraChoice p (.triggerModes obj.id count #[])
+    g.beginResolutionChoice p (.triggerModes obj.id count #[])
       s!"{(g.player p).name} chooses {what} for {g.name obj} (CR 603.3c)"
 
 /-- Put a triggered ability of `source` onto the stack (CR 603.3). A modal
@@ -158,13 +158,13 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       delayedTrigger := delayedTrigger
       lastKnownPower := lastKnownPower
       lastKnownToughness := lastKnownToughness
-      fraCauseId := (cause.map (·.id)).orElse (fun _ => causeId)
-      fraCauseIds := causeIds
-      fraCauseController := causeController.orElse (fun _ => cause.bind g.controllerOf)
-      fraCausePower := cause.bind (fun c =>
+      triggerCauseId := (cause.map (·.id)).orElse (fun _ => causeId)
+      triggerCauseIds := causeIds
+      triggerCauseController := causeController.orElse (fun _ => cause.bind g.controllerOf)
+      triggerCausePower := cause.bind (fun c =>
         if (g.findObject? c.id).any (·.isOnBattlefield) then some (g.power (g.object! c.id))
         else (g.lastKnownPowerOf? c.id).orElse (fun _ => some (g.power c)))
-      fraCauseStatus := cause.map (·.status)
+      triggerCauseStatus := cause.map (·.status)
     }
     let g := g.record (GameEvent.triggerPutOnStack g.turnNumber newId srcSnap controller
       (spec := spec) (cause := eventCause))
@@ -190,7 +190,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
             .stackEntry obj.id (.targetsAnnounced true)]
           g.logMsg s!"{(g.player controller).name} chooses 0 modes for {g.name obj} (CR 603.3c)"
         else
-          g.beginFraChoice controller (.hawkeyeModes maxModes #[] (some obj.id))
+          g.beginResolutionChoice controller (.hawkeyeModes maxModes #[] (some obj.id))
             s!"{(g.player controller).name} chooses up to {maxModes} Trick Arrows modes (CR 603.3c)"
       else if ms.maxModes == .chosenX then
         let x := (source.chosenX.orElse (fun _ => g.chosenXOf? source.id)).getD 0
@@ -205,7 +205,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
             .stackEntry obj.id (.targetsAnnounced true)]
           g.logMsg s!"{(g.player controller).name} chooses 0 modes for {g.name obj} (CR 603.3c)"
         else
-          g.beginFraChoice controller (.upToTriggerModes obj.id maxModes #[])
+          g.beginResolutionChoice controller (.upToTriggerModes obj.id maxModes #[])
             s!"{(g.player controller).name} chooses up to {maxModes} mode(s) for {g.name obj} (CR 603.3c)"
       else if ms.unusedThisTurn || ms.unusedEver then
         let lifetime := ms.unusedEver
@@ -233,10 +233,10 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
               "Choose one that hasn't been chosen this turn (CR 603.3c)"
             else
               s!"{(g.player controller).name} chooses an Alliance mode that hasn't been chosen this turn (CR 603.3c)"
-          g.beginFraChoice controller (.stackTriggerUnusedMode obj.id srcIdOpt available lifetime)
+          g.beginResolutionChoice controller (.stackTriggerUnusedMode obj.id srcIdOpt available lifetime)
             prompt
       else if ab.effect.body == stepHydeChooseBody then
-        g.beginFraChoice controller (.stackHydeMode obj.id)
+        g.beginResolutionChoice controller (.stackHydeMode obj.id)
           s!"{(g.player controller).name} chooses a mode for {g.name obj} — 0 put a +1/+1 counter, 1 remove a counter and draw (CR 603.3c)"
       else
         let n := (ms.minModes.evalConst?.getD 1).toNat

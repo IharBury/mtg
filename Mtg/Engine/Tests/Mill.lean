@@ -79,7 +79,7 @@ def step (g : Game) (ab : TriggeredAbility)
       let srcSnap : EventObject := {
         owner := caster, controller := some caster, name := "Mill Source", zone := .battlefield }
       let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId srcSnap caster
-        (spec := { triggeredAbility := some ab, fraCauseController := some pid }))
+        (spec := { triggeredAbility := some ab, triggerCauseController := some pid }))
       let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
       g.changes #[.popStack, .resolvingAbility (some abId)]
   g.applyTriggeredAbility caster ab none targets (lastKnownPower := lastKnownPower)

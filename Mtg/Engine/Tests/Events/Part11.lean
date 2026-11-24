@@ -232,7 +232,7 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
   let p2ExId := (gMayEx0.objects.filter (fun o => o.zone == .exile && o.owner == p2))[0]!.id
   let p0ExId := (gMayEx0.objects.filter (fun o => o.zone == .exile && o.owner == p0))[0]!.id
   let gMayExPrompt :=
-    gMayEx0.change (.pending (.fraChoice p0 (.mayCastUpToFromExile #[p2ExId, p0ExId] 2)))
+    gMayEx0.change (.pending (.resolutionChoice p0 (.mayCastUpToFromExile #[p2ExId, p0ExId] 2)))
   let gMayExProposed := mustApply gMayExPrompt p0 (.choosePermanents #[p2ExId])
   let gMayExAfterP2 := mustApply gMayExProposed p2 .concede
 
@@ -254,7 +254,7 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
   let gCp2 :=
     gCp0.changes #[
       .pushContinuationFrame {},
-      .pending (.fraChoice p0 (.castCopiesFree #[cpP2Id, cpP0Id] 5 1)) ]
+      .pending (.resolutionChoice p0 (.castCopiesFree #[cpP2Id, cpP0Id] 5 1)) ]
   let gCpProposed := mustApply gCp2 p0 (.cast cpP2Id)
   let gCpAfterP2 := mustApply gCpProposed p2 .concede
 
@@ -272,11 +272,11 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
        freshResSkipOk) &&
     mustHold45i1 "1a_v_mayEx"
       (gMayExProposed.pendingMayCastFromExile == some (p0, #[p0ExId], 1) &&
-       gMayExAfterP2.pending == .fraChoice p0 (.mayCastUpToFromExile #[p0ExId] 2) &&
+       gMayExAfterP2.pending == .resolutionChoice p0 (.mayCastUpToFromExile #[p0ExId] 2) &&
        gNoStashMayAfterP2.pending == .none) &&
     mustHold45i1 "1a_v_freeCp"
       ((gCpAfterP2.findObject? cpP0Id).any (·.zone == .exile) &&
-       gCpAfterP2.pending == .fraChoice p0 (.castCopiesFree #[cpP2Id, cpP0Id] 5 1) &&
+       gCpAfterP2.pending == .resolutionChoice p0 (.castCopiesFree #[cpP2Id, cpP0Id] 5 1) &&
        gNoStashCpAfterP2.pending == .none)
 
   -- 1b. `Leaving.preBatchLegendSnapshotValid`:
@@ -352,7 +352,7 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
        !gMultiAfterP2.preBatchLegendSnapshotValid)
 
   -- 1c. Explicit priority preservation across `finishAndGrantPriority`, `resumePendingReplacementCore`
-  --     (`.finishPostCast` & `reverseOrResumePopped`), `finishFraChoice`, and `Actions.applyAction` sacrifice:
+  --     (`.finishPostCast` & `reverseOrResumePopped`), `finishResolutionChoice`, and `Actions.applyAction` sacrifice:
   let gEntryExp0 :=
     (addPermanent (addPermanent g4 legBearDef p0 p0) legBearDef p0 p0).changes #[
       .pushContinuationFrame {},
@@ -392,11 +392,11 @@ private def replayOk45i1 (gs : Array Game) : Bool :=
       (.seq (.restorePending (.sacrificePermanent p0 revStackId) false)
         (.seq (.gainLife p0 9 (some testCause)) (.receivePriority p3)))
 
-  -- `finishFraChoice` & resolution-cast sacrifice respecting `outerPendingReplacements` `.receivePriority p3`:
+  -- `finishResolutionChoice` & resolution-cast sacrifice respecting `outerPendingReplacements` `.receivePriority p3`:
   let gOuterFra :=
     (g4.changes #[
       .pushContinuationFrame {},
-      .pushOuterPendingReplacement (.receivePriority p3) ]).finishFraChoice
+      .pushOuterPendingReplacement (.receivePriority p3) ]).finishResolutionChoice
   let sacCastDef : CardDef := {
     name := "P45i1 AltarRite"
     manaCost := ManaCost.empty
@@ -512,8 +512,8 @@ private def replayOk45i2 (gs : Array Game) : Bool :=
     gBackExtra.activePlayer == ⟨0⟩ &&
     gBackExtra.power (gBackExtra.object! backBearId) == 2
 
-  -- 2b. Cease-first `Core.expireWhileSourceEffects` `.fraEmblem` ordering & `skipLogIds`,
-  --     `pre.name` in `Attachments.ceaseEndingFraEmblemsWhere`, and emblem-chain + exile-path `coDepartingIds`:
+  -- 2b. Cease-first `Core.expireWhileSourceEffects` `.commandEmblem` ordering & `skipLogIds`,
+  --     `pre.name` in `Attachments.ceaseEndingCommandEmblemsWhere`, and emblem-chain + exile-path `coDepartingIds`:
   let eqDef2 : CardDef := { name := "P45i2 Eq", types := #[.artifact], subtypes := #["Equipment"] }
   let embDef2 : CardDef := { name := "P45i2 RawEmblem", types := #[] }
   let maskedEmbDef2 : CardDef := { name := "P45i2 MaskedEmblem", types := #[] }
@@ -524,7 +524,7 @@ private def replayOk45i2 (gs : Array Game) : Bool :=
   let cfEmb := (gCeaseFirst0.objects.filter (·.zone == .command))[0]!
   let gCeaseFirst1 :=
     ((gCeaseFirst0.createEffect
-      (.gameRule (.fraEmblem cfEmb.id) (.whileSourceOnBattlefield cfAnchor.id))
+      (.gameRule (.commandEmblem cfEmb.id) (.whileSourceOnBattlefield cfAnchor.id))
       (cause := some testCause)).createEffect
       (.layered (.objects #[cfStolen.id]) (.control p0) (.whileSourceOnBattlefield cfAnchor.id))
       (cause := some testCause))
@@ -542,14 +542,14 @@ private def replayOk45i2 (gs : Array Game) : Bool :=
   let pnEmb := (gPreName0.objects.filter (·.zone == .command))[0]!
   let gPreName1 :=
     ((gPreName0.createEffect
-      (.gameRule (.fraEmblem pnEmb.id) .untilEndOfTurn) (cause := some testCause)).createEffect
+      (.gameRule (.commandEmblem pnEmb.id) .untilEndOfTurn) (cause := some testCause)).createEffect
       (.layered (.objects #[pnEmb.id]) (.copy maskedEmbDef2) .untilEndOfTurn)
       (cause := some testCause))
   let prePnLog := gPreName1.log.size
   let gPreNameAfter := gPreName1.clearEOT
   let pnLogs := gPreNameAfter.log.extract prePnLog gPreNameAfter.log.size
 
-  -- Emblem-chain + exile-path `coDepartingIds`: `srcB` -> `.fraEmblem embChain` -> `.whileInZone embChain .command` on `coEqC`:
+  -- Emblem-chain + exile-path `coDepartingIds`: `srcB` -> `.commandEmblem embChain` -> `.whileInZone embChain .command` on `coEqC`:
   let gP3Gone2 := mustApply g4 p3 .concede
   let anchorBDef : CardDef := { name := "P45i2 SrcHost", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2) }
   let gChain0 :=
@@ -563,7 +563,7 @@ private def replayOk45i2 (gs : Array Game) : Bool :=
     (((((gChain0.createEffect
         (.layered (.objects #[srcB.id]) (.control p0) .untilEndOfTurn)
         (cause := some testCause)).createEffect
-        (.gameRule (.fraEmblem embChain.id) (.whileSourceOnBattlefield srcB.id))
+        (.gameRule (.commandEmblem embChain.id) (.whileSourceOnBattlefield srcB.id))
         (cause := some testCause)).createEffect
         (.layered (.objects #[coEqC.id]) (.control p0) (.whileInZone embChain.id .command))
         (cause := some testCause)).record
@@ -629,7 +629,7 @@ private def replayOk45i2 (gs : Array Game) : Bool :=
   let gMultiPermAfterEot := gMultiPerm1.clearEOT
   let eotPermLogs := gMultiPermAfterEot.log.extract preEotPermLog gMultiPermAfterEot.log.size
   let preNextTurnPermLog := gMultiPermAfterEot.log.size
-  let gMultiPermAllExpired := gMultiPermAfterEot.expireFraUntilTurnEffects p0
+  let gMultiPermAllExpired := gMultiPermAfterEot.expireUntilTurnCommandEffects p0
   let nextTurnPermLogs := gMultiPermAllExpired.log.extract preNextTurnPermLog gMultiPermAllExpired.log.size
 
   -- Off-zone `(g.findObject? id).isNone` fallback excludes `.expired` permission entries:
@@ -918,7 +918,7 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
   let sickDork := spDorks[1]!
   let gSickCrewProp := mustApply gSickPart0 p0 (.activate spVehId 1)
   let defaultPicksSickDork :=
-    match gSickCrewProp.defaultFraAction p0 (.crew gSickCrewProp.proposedSpell.get!.spellId spVehId 2) with
+    match gSickCrewProp.defaultChoiceAction p0 (.crew gSickCrewProp.proposedSpell.get!.spellId spVehId 2) with
     | .choosePermanents ids => ids == #[sickDork.id]
     | _ => false
   let gSickCrewDone := mustApply gSickCrewProp p0 (.choosePermanents #[sickDork.id])
@@ -1132,7 +1132,7 @@ private def replayOk45i4 (gs : Array Game) : Bool :=
   let spareId := (gArmedSpare.permanentsOf p0).find? (·.name == loneArtDef.name) |>.get!.id
   let gArmedAb1Step1 := mustApply gArmedSpare p0 (.activate armedObj0.id 1)
   let defaultPicksSpare :=
-    match gArmedAb1Step1.defaultFraAction p0 (.costPicks armedObj0.id #[.sacrificeArtifact, .sacrificeEquipmentAttachedToSource] false) with
+    match gArmedAb1Step1.defaultChoiceAction p0 (.costPicks armedObj0.id #[.sacrificeArtifact, .sacrificeEquipmentAttachedToSource] false) with
     | .choosePermanents ids => ids == #[spareId]
     | _ => false
   let gArmedAb1Done :=

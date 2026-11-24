@@ -290,11 +290,11 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
   let gHum := g2.createEffect (.losesAbilitiesUntilEot emObj.id) (cause := some testCause)
   -- Before Humility: player p0 and Bear are protected from Instant, Relic is NOT.
   !(g2.playerCanBeTargetedBy p1 p0 (some boltObj.id)) &&
-    g2.frcProtectedFrom (g2.object! bid) bolt &&
-    !(g2.frcProtectedFrom (g2.object! rid) bolt) &&
+    g2.protectedFrom (g2.object! bid) bolt &&
+    !(g2.protectedFrom (g2.object! rid) bolt) &&
     -- After Humility on emissary: neither player nor Bear is protected.
     gHum.playerCanBeTargetedBy p1 p0 (some boltObj.id) &&
-    !(gHum.frcProtectedFrom (gHum.object! bid) bolt)
+    !(gHum.protectedFrom (gHum.object! bid) bolt)
 
 /-! ### 3. CR 707.9d P/T CDA Stripping on Token Copy with `setBasePT` -/
 

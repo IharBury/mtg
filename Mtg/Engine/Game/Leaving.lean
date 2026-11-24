@@ -82,7 +82,7 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId)
       |>.logMsg s!"{(g.player p).name} gains control of {g.name o}"
 
 /-- Compute the transitive closure of `seedIds` under CR 800.4a / 800.4c control-loss
-exile (including `.gameRule (.fraEmblem embId)` -> `.whileInZone embId .command` emblem
+exile (including `.gameRule (.commandEmblem embId)` -> `.whileInZone embId .command` emblem
 chains), so co-departing permanents suppress spurious copy/control-reversion and
 unattach logs before they are exiled (CR 114.5 / 611.2a / 702.26b,d / 800.4a,c).
 `includePhasedOut` defaults to `false` to match `reconcileControlAfterTransition`
@@ -102,7 +102,7 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
     for _ in [0:effs.size] do
       let prevSize := out.size
       for (_, e) in effs do
-        if let .gameRule (.fraEmblem embId) d := e then
+        if let .gameRule (.commandEmblem embId) d := e then
           let matchesSrc :=
             match d with
             | .whileSourceOnBattlefield src
@@ -123,10 +123,10 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
       !dropEids.contains eid &&
         !(allSrcs.any (fun sid => effectObject? e == some sid)) &&
         match e with
-        | .gameRule (.fraEmblem _) (.whileSourceOnBattlefield src)
-        | .gameRule (.fraEmblem _) (.untilSourceLeaves src)
-        | .gameRule (.fraEmblem _) (.whileSourceHasCounter src _)
-        | .gameRule (.fraEmblem _) (.whileInZone src _)
+        | .gameRule (.commandEmblem _) (.whileSourceOnBattlefield src)
+        | .gameRule (.commandEmblem _) (.untilSourceLeaves src)
+        | .gameRule (.commandEmblem _) (.whileSourceHasCounter src _)
+        | .gameRule (.commandEmblem _) (.whileInZone src _)
         | .layered _ (.control _) (.whileSourceOnBattlefield src)
         | .layered _ (.control _) (.untilSourceLeaves src)
         | .layered _ (.control _) (.whileSourceHasCounter src _)
@@ -703,7 +703,7 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
           match e with
           | .layered _ (.control _) (.whileSourceHasCounter src k)
           | .layered _ (.copy _) (.whileSourceHasCounter src k)
-          | .gameRule (.fraEmblem _) (.whileSourceHasCounter src k) =>
+          | .gameRule (.commandEmblem _) (.whileSourceHasCounter src k) =>
             src == id && zeroedKinds.contains k
           | _ => false
       let ctrlEids := g.activeEffects.filterMap fun (eid, e) =>
@@ -714,7 +714,7 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
       let endingEmbIds : Array ObjectId :=
         g.activeEffects.foldl (fun acc (_, e) =>
           match e with
-          | .gameRule (.fraEmblem embId) (.whileSourceHasCounter src k) =>
+          | .gameRule (.commandEmblem embId) (.whileSourceHasCounter src k) =>
             if src == id && zeroedKinds.contains k && !acc.contains embId then acc.push embId
             else acc
           | _ => acc) #[]
@@ -729,7 +729,7 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
               | _ => false)
             (cause := expCause) (reconcileControl := false) (skipLogIds := skipIds)
         let g2 :=
-          g1.ceaseEndingFraEmblemsWhere
+          g1.ceaseEndingCommandEmblemsWhere
             (fun _ d =>
               match d with
               | .whileSourceHasCounter src k => src == id && zeroedKinds.contains k
@@ -921,7 +921,7 @@ def sacrificeLeastPowerCreature (g : Game) (p : PlayerId)
           s!"{(g.player p).name} sacrifices {g.name o} (least power)"
       | none =>
         let ids : Array ObjectId := tied.map (fun (o : GameObject) => o.id)
-        g.beginFraChoice p (.sacrificeLeastPower ids)
+        g.beginResolutionChoice p (.sacrificeLeastPower ids)
           s!"{(g.player p).name} chooses one of the creatures tied for least power to sacrifice"
 
 /-- End every control-changing effect applying to `o`, each under its own
@@ -1107,7 +1107,7 @@ private partial def advanceSacDamagersAfterLeave (g : Game) (controller : Player
       advanceSacDamagersAfterLeave g controller rest (chosen.push (r, ids[0]!))
     else
       (g.logMsg s!"{(g.player r).name} chooses a creature that dealt combat damage to sacrifice",
-       .fraChoice r (.sacrificeDamager ids rest controller chosen))
+       .resolutionChoice r (.sacrificeDamager ids rest controller chosen))
 
 /-- True when departing player `p` is the proposer of `g.proposedSpell`, owns
 the card being proposed as a spell / turned face up, or causes `prop.caster` to
@@ -1176,8 +1176,8 @@ def isProposalPromptFor (caster : PlayerId) : Pending → Bool
   | .chooseAdditionalCost q | .chooseKicker q | .chooseGift q
   | .chooseTeamwork q | .chooseTeamworkCreatures q _
   | .sacrificePermanent q _ | .discardForAdditionalCost q
-  | .fraChoice q (.costPicks ..) | .fraChoice q (.crew ..)
-  | .fraChoice q (.zemoBoastExile ..) => q == caster
+  | .resolutionChoice q (.costPicks ..) | .resolutionChoice q (.crew ..)
+  | .resolutionChoice q (.zemoBoastExile ..) => q == caster
   | _ => false
 
 private def isProposalBoundaryStep (caster : PlayerId) : PendingReplacement → Bool
@@ -1966,7 +1966,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         g.withOuterContStashed fun g =>
           (clearPending g).chainPendingReplacement (.finishPostStep (.resumeProposalCostAfterLeave q pending))
       (g, .none)
-  | .fraChoice q choice =>
+  | .resolutionChoice q choice =>
     match choice with
     | .costPicks .. | .crew .. | .zemoBoastExile .. =>
       if q == p || abortedProp then
@@ -1989,14 +1989,14 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           let g := declineInterpChoice (clearPending g)
           (g, .none)
         else if liveIds != ids then
-          (g, .fraChoice q (.mayCastUpToFromExile liveIds left))
+          (g, .resolutionChoice q (.mayCastUpToFromExile liveIds left))
         else (g, pending)
     | .mayWheel n rest accepted =>
       let living := rest.filter g.stillInGame
       let acceptedLiving := accepted.filter g.stillInGame
       if q != p then
         if living != rest || acceptedLiving != accepted then
-          (g, .fraChoice q (.mayWheel n living acceptedLiving))
+          (g, .resolutionChoice q (.mayWheel n living acceptedLiving))
         else (g, pending)
       else
         let g := if clearProp.isEmpty then g else g.changes clearProp
@@ -2011,17 +2011,17 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           (g, .none)
         | some next =>
           (g.logMsg s!"{(g.player next).name} may discard their hand and draw {n} cards",
-           .fraChoice next (.mayWheel n (living.extract 1 living.size) acceptedLiving))
+           .resolutionChoice next (.mayWheel n (living.extract 1 living.size) acceptedLiving))
     | .sacrificeCreatureEach controller rest chosen =>
       let living := rest.filter (fun r => g.stillInGame r && !(g.creaturesControlledBy r).isEmpty)
       if q != p && !(g.creaturesControlledBy q).isEmpty then
-        if living != rest then (g, .fraChoice q (.sacrificeCreatureEach controller living chosen)) else (g, pending)
+        if living != rest then (g, .resolutionChoice q (.sacrificeCreatureEach controller living chosen)) else (g, pending)
       else
         let g := if q == p && !clearProp.isEmpty then g.changes clearProp else g
         match living[0]? with
         | some next =>
           (g.logMsg s!"{(g.player next).name} sacrifices a creature",
-           .fraChoice next (.sacrificeCreatureEach controller (living.extract 1 living.size) chosen))
+           .resolutionChoice next (.sacrificeCreatureEach controller (living.extract 1 living.size) chosen))
         | none =>
           let youSacrificed :=
             g.stillInGame controller &&
@@ -2043,13 +2043,13 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         g.stillInGame r && (g.permanentsOf r).any (fun o => g.isCreature o && !o.printed.isToken)
       let living := rest.filter hasNontoken
       if q != p && hasNontoken q then
-        if living != rest then (g, .fraChoice q (.sacrificeNontokenEach living chosen)) else (g, pending)
+        if living != rest then (g, .resolutionChoice q (.sacrificeNontokenEach living chosen)) else (g, pending)
       else
         let g := if q == p && !clearProp.isEmpty then g.changes clearProp else g
         match living[0]? with
         | some next =>
           (g.logMsg s!"{(g.player next).name} sacrifices a nontoken creature",
-           .fraChoice next (.sacrificeNontokenEach (living.extract 1 living.size) chosen))
+           .resolutionChoice next (.sacrificeNontokenEach (living.extract 1 living.size) chosen))
         | none =>
           let pairs := chosen.filterMap (fun id =>
             match g.findObject? id with
@@ -2068,7 +2068,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         (g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o && g.controlledBy o q))
       if q != p && liveIds.size > 1 then
         if liveIds == ids && living == rest then (g, pending)
-        else (g, .fraChoice q (.sacrificeDamager liveIds living controller chosen))
+        else (g, .resolutionChoice q (.sacrificeDamager liveIds living controller chosen))
       else
         let g := clearPendingAnd g (if q == p then clearProp else #[])
         let g :=
@@ -2084,7 +2084,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       let chosenLiving := chosen.filter (fun (r, _) => g.stillInGame r)
       if q != p then
         if living != rest || chosenLiving != chosen then
-          (g, .fraChoice q (.discardTwo controller living draws chosenLiving))
+          (g, .resolutionChoice q (.discardTwo controller living draws chosenLiving))
         else (g, pending)
       else
         let g := clearPendingAnd g clearProp
@@ -2092,7 +2092,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         | some next =>
           if (g.player next).hand.size > 2 then
             (g.logMsg s!"{(g.player next).name} discards two cards",
-             .fraChoice next (.discardTwo controller (living.extract 1 living.size) draws chosenLiving))
+             .resolutionChoice next (.discardTwo controller (living.extract 1 living.size) draws chosenLiving))
           else
             let g :=
               g.withOuterContStashed fun g =>
@@ -2145,7 +2145,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           (g, .none)
         else if restAfter != remaining || chosen' != chosen then
           let nextCtrl := restAfter[0]!.controller
-          (g, .fraChoice nextCtrl (.chooseEnteringAttackTarget restAfter chosen' cause))
+          (g, .resolutionChoice nextCtrl (.chooseEnteringAttackTarget restAfter chosen' cause))
         else (g, pending)
       else
         let remTail := (remaining.extract 1 remaining.size).filterMap (sanitizeEnteringAttackItem g)
@@ -2156,7 +2156,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           let nextCtrl := nextItem.controller
           let nextNm := g.enteringAttackItemName nextItem
           (g.logMsg s!"{(g.player nextCtrl).name} chooses what {nextNm} enters attacking",
-           .fraChoice nextCtrl (.chooseEnteringAttackTarget restAfter chosen' cause))
+           .resolutionChoice nextCtrl (.chooseEnteringAttackTarget restAfter chosen' cause))
         | none =>
           let g :=
             g.withOuterContStashed fun g =>
@@ -2175,7 +2175,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         match (g.livingOpponents revealer)[0]? with
         | some opp =>
           (g.logMsg s!"{opp.name} chooses one of them (CR 800.4h)",
-           .fraChoice opp.id (.extrapolatePick revealer ids))
+           .resolutionChoice opp.id (.extrapolatePick revealer ids))
         | none =>
           let g := clearPending g
           match ids.find? (fun id => (g.findObject? id).isSome) with
@@ -2200,7 +2200,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         match (g.livingOpponents controller)[0]? with
         | some opp =>
           (g.logMsg s!"{opp.name} chooses a pile (CR 800.4h)",
-           .fraChoice opp.id (.riddlesChoosePile controller faceUp faceDown))
+           .resolutionChoice opp.id (.riddlesChoosePile controller faceUp faceDown))
         | none =>
           let outerCont? := g.pendingReplacement
           let g :=
@@ -2283,9 +2283,9 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         if q == p then
           let g := (if clearProp.isEmpty then g else g.changes clearProp).logMsg
             s!"{(g.player nextOwner).name} may begin the game with {g.name firstObj} on the battlefield"
-          (g, .fraChoice nextOwner (.mayBeginOnBattlefield liveCards))
+          (g, .resolutionChoice nextOwner (.mayBeginOnBattlefield liveCards))
         else if liveCards != cards then
-          (g, .fraChoice nextOwner (.mayBeginOnBattlefield liveCards))
+          (g, .resolutionChoice nextOwner (.mayBeginOnBattlefield liveCards))
         else (g, pending)
     | .triggerModes objId remaining chosen =>
       if q == p then
@@ -2336,7 +2336,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       else if players'.size == 1 then
         ((clearPending g).applyBlackGateUnblockable oid players'[0]!, .none)
       else if players' != players then
-        (g, .fraChoice q (.blackGatePlayer oid players'))
+        (g, .resolutionChoice q (.blackGatePlayer oid players'))
       else (g, pending)
     | .mayCastCards ids withoutPaying exileInstead =>
       if q == p then
@@ -2349,7 +2349,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
                     let g := declineInterpChoice (clearPending g)
           (g, .none)
         else if ids' != ids then
-          (g, .fraChoice q (.mayCastCards ids' withoutPaying exileInstead))
+          (g, .resolutionChoice q (.mayCastCards ids' withoutPaying exileInstead))
         else (g, pending)
     | .mayChangeSpellTarget spellId index staged =>
       if q == p then
@@ -2362,7 +2362,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       else
         let staged' := g.revertGoneStagedTargets (g.stackEntry? spellId) staged
         if staged' != staged then
-          (g, .fraChoice q (.mayChangeSpellTarget spellId index staged'))
+          (g, .resolutionChoice q (.mayChangeSpellTarget spellId index staged'))
         else (g, pending)
     | .newTargetsForCopies copies | .newTargetsForCopySlot copies _ _ =>
       if q == p then
@@ -2375,17 +2375,17 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
                     let g := declineInterpChoice (clearPending g)
           (g, .none)
         else if live[0]? != copies[0]? then
-          (g, .fraChoice q (.newTargetsForCopies live))
+          (g, .resolutionChoice q (.newTargetsForCopies live))
         else
           match choice with
           | .newTargetsForCopySlot _ s st =>
             let st' := g.revertGoneStagedTargets (copies[0]?.bind g.stackEntry?) st
             if live != copies || st' != st then
-              (g, .fraChoice q (.newTargetsForCopySlot live s st'))
+              (g, .resolutionChoice q (.newTargetsForCopySlot live s st'))
             else (g, pending)
           | _ =>
             if live != copies then
-              (g, .fraChoice q (.newTargetsForCopies live))
+              (g, .resolutionChoice q (.newTargetsForCopies live))
             else (g, pending)
     | .chooseTokenCopyObject ids mods count tapped attacking attackingTarget extraCounters cause sourceId =>
       if q == p then
@@ -2417,7 +2417,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
                   (recordRecent := true) (cause := cause) (count := count)).1
             (g, g.pending)
         else if liveIds != ids then
-          (g, .fraChoice q (.chooseTokenCopyObject liveIds mods count tapped attacking attackingTarget extraCounters cause sourceId))
+          (g, .resolutionChoice q (.chooseTokenCopyObject liveIds mods count tapped attacking attackingTarget extraCounters cause sourceId))
         else (g, pending)
     | .sacrificeLeastPower ids =>
       if q == p then
@@ -2431,7 +2431,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
             (clearPending g).sacrificeLeastPowerCreature q
           (g, g.pending)
         else if liveTied != ids then
-          (g, .fraChoice q (.sacrificeLeastPower liveTied))
+          (g, .resolutionChoice q (.sacrificeLeastPower liveTied))
         else (g, pending)
     | .hydeRemoveCounter ids =>
       if q == p then
@@ -2446,7 +2446,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
             (clearPending g).applyHydeMode q none 1 targets
           (g, g.pending)
         else if live != ids then
-          (g, .fraChoice q (.hydeRemoveCounter live))
+          (g, .resolutionChoice q (.hydeRemoveCounter live))
         else (g, pending)
     | .chooseCards ids max purpose =>
       if q == p then
@@ -2472,7 +2472,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
               g.finishAmassOn q liveIds[0]! subtype n attach (cause := cause)
             (g, g.pending)
           else if liveIds != ids then
-            (g, .fraChoice q (.chooseCards liveIds max purpose))
+            (g, .resolutionChoice q (.chooseCards liveIds max purpose))
           else (g, pending)
         | .keepDestroyRest =>
           let liveIds := (g.battlefield.filter (g.isCreature ·)).map (·.id)
@@ -2481,7 +2481,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
               (clearPending g).finishChooseCards q liveIds .keepDestroyRest
             (g, g.pending)
           else if liveIds != ids then
-            (g, .fraChoice q (.chooseCards liveIds max .keepDestroyRest))
+            (g, .resolutionChoice q (.chooseCards liveIds max .keepDestroyRest))
           else (g, pending)
         | _ =>
           let liveIds := ids.filter (fun id => (g.findObject? id).isSome)
@@ -2490,7 +2490,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
             let g := declineInterpChoice (clearPending g)
             (g, .none)
           else if liveIds != ids then
-            (g, .fraChoice q (.chooseCards liveIds max purpose))
+            (g, .resolutionChoice q (.chooseCards liveIds max purpose))
           else (g, pending)
     | .attachAnyEquipment hostId eligible =>
       if q == p then
@@ -2506,7 +2506,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
                     let g := declineInterpChoice (clearPending g)
           (g, .none)
         else if liveEligible != eligible then
-          (g, .fraChoice q (.attachAnyEquipment hostId liveEligible))
+          (g, .resolutionChoice q (.attachAnyEquipment hostId liveEligible))
         else (g, pending)
     | .maySacrificeAnotherCreatureForPower sid =>
       if q == p then
@@ -2542,7 +2542,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           let g := declineInterpChoice (clearPending g)
           (g, .none)
         else if liveIds != ids then
-          (g, .fraChoice q (.maySacrificeThese n liveIds))
+          (g, .resolutionChoice q (.maySacrificeThese n liveIds))
         else (g, pending)
     | .sheHulkMayDamage _ target sourceId =>
       if q == p then
@@ -2564,7 +2564,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           (clearPending g).grantWidowCast q exiled
         (g, g.pending)
       else if exiled.any (fun id => (g.findObject? id).isNone) then
-        (g, .fraChoice q (.widowMayCounter sourceId none))
+        (g, .resolutionChoice q (.widowMayCounter sourceId none))
       else (g, pending)
     | .topOrBottomDamage id _ _ =>
       if q == p then
@@ -2645,7 +2645,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
             else g
           (g, g.pending)
         else if liveIds != ids then
-          (g, .fraChoice q (.orderLibraryBottom liveIds))
+          (g, .resolutionChoice q (.orderLibraryBottom liveIds))
         else (g, pending)
     | .searchLibrary eligible count dest after kind
     | .maySearchLibrary eligible count dest after kind =>
@@ -2657,7 +2657,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         let liveEligible := eligible.filter (fun id => (g.findObject? id).isSome)
         (g,
           if liveEligible != eligible then
-            .fraChoice q (match choice with
+            .resolutionChoice q (match choice with
               | .searchLibrary .. => .searchLibrary liveEligible count dest after kind
               | _ => .maySearchLibrary liveEligible count dest after kind)
           else pending)
@@ -2688,7 +2688,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
           let g := declineInterpChoice (clearPending g)
           (g, .none)
         else if alive != ids then
-          (g, .fraChoice q (.castCopiesFree alive budget castsLeft))
+          (g, .resolutionChoice q (.castCopiesFree alive budget castsLeft))
         else (g, pending)
     | .mayCastCopy copyId =>
       if q == p then
@@ -2727,7 +2727,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
                   (cause := cause)
           (g, g.pending)
         else if liveOthers != others then
-          (g, .fraChoice q (.mayCastCascade cardId liveOthers))
+          (g, .resolutionChoice q (.mayCastCascade cardId liveOthers))
         else (g, pending)
     | _ =>
       if q == p then
@@ -3710,7 +3710,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               if alive.isEmpty || left == 0 then
                 (g.change (.pendingMayCastFromExile none), curPending)
               else if wasAbortedProposal && curPending == Pending.none then
-                let nextP := Pending.fraChoice q (.mayCastUpToFromExile alive left)
+                let nextP := Pending.resolutionChoice q (.mayCastUpToFromExile alive left)
                 let g :=
                   (g.change (.pendingMayCastFromExile none)).logMsg
                     s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
@@ -3744,7 +3744,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                       g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
               (g.change (.pendingFreeCopies none), curPending)
             else if curPending == Pending.none then
-              let nextP := Pending.fraChoice q (.castCopiesFree alive budget castsLeft)
+              let nextP := Pending.resolutionChoice q (.castCopiesFree alive budget castsLeft)
               let g := g.change (.pendingFreeCopies none)
               (g, nextP)
             else if alive != ids then
@@ -3785,16 +3785,16 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           (if wasAbortedProposal then !rewindAbortedProposal else gCur.proposedSpell.isNone) &&
             (gCur.pendingMayCastFromExile.isSome || gCur.pendingFreeCopies.isSome)
         if canReopen && (hasActivePrompt || preBodyPending != .none || outer?.isSome) then
-          let rec appendFinishFraIfNeeded (pr : PendingReplacement) : PendingReplacement :=
-            if !pr.endsWithPriorityGrant then pr.ensureEndsWithFinishFra
+          let rec appendFinishChoiceIfNeeded (pr : PendingReplacement) : PendingReplacement :=
+            if !pr.endsWithPriorityGrant then pr.ensureEndsWithFinishResolutionChoice
             else
               match pr with
-              | .seq a b => .seq a (appendFinishFraIfNeeded b)
-              | .finishTurnFaceUp _ _ true => .seq pr .finishFraChoice
+              | .seq a b => .seq a (appendFinishChoiceIfNeeded b)
+              | .finishTurnFaceUp _ _ true => .seq pr .finishResolutionChoice
               | _ => pr
           match outer? with
-          | some outer => some (appendFinishFraIfNeeded outer)
-          | none => some .finishFraChoice
+          | some outer => some (appendFinishChoiceIfNeeded outer)
+          | none => some .finishResolutionChoice
         else
           outer?
       match preBodyPending with
@@ -4031,7 +4031,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           (if wasAbortedProposal then !rewindAbortedProposal else g.proposedSpell.isNone) &&
           (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
         let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
-        (g.change (.pushOuterPendingReplacement .finishFraChoice), some .finishFraChoice)
+        (g.change (.pushOuterPendingReplacement .finishResolutionChoice), some .finishResolutionChoice)
       else (g, pushedOuterCont?)
     let (g, savedPreLeavePending?, pushedOuterCont?, deferredRewind) :=
       if shouldRewindProposal then

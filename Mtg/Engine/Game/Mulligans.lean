@@ -85,7 +85,7 @@ partial def continueOpeningBegin (g : Game) (rest : Array ObjectId) : Game :=
       if !g.stillInGame o.owner || o.zone != .hand o.owner then
         g.continueOpeningBegin (rest.extract 1 rest.size)
       else
-        g.change (.pending (.fraChoice o.owner (.mayBeginOnBattlefield rest)))
+        g.change (.pending (.resolutionChoice o.owner (.mayBeginOnBattlefield rest)))
           |>.logMsg s!"{(g.player o.owner).name} may begin the game with {g.name o} on the battlefield"
     | none => g.continueOpeningBegin (rest.extract 1 rest.size)
 

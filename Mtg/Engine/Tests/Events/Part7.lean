@@ -438,11 +438,11 @@ private def lifeGainsSince36i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
     gRevPopDone.proposalCheckpoint.isNone &&
     lifeGainsSince36i2 gRevPopDone revPopStartIdx p0 == #[3, 7]
 
-  -- `reverseOrResumePopped` with `sbaPaused == true` and `followedByFinishFra := true`:
+  -- `reverseOrResumePopped` with `sbaPaused == true` and `followedByFinishChoice := true`:
   -- (i) open `.chooseReplacement` left by `reverseToProposalCheckpoint?` (`flushQueuedLinkedExile`) AND
   -- (ii) open `.chooseLegend` where `ckpt`'s continuation remains in `pendingReplacement`:
   -- neither resumes early while paused, and answering sequences `popped (+3)` BEFORE restored `ckpt (+7)`
-  -- and then `.finishFraChoice` (`+2` from `ckpt`'s `outerPendingReplacements`) -> `#[3, 7, 2]`:
+  -- and then `.finishResolutionChoice` (`+2` from `ckpt`'s `outerPendingReplacements`) -> `#[3, 7, 2]`:
   let revSrcDef := creature "P36i2 RevSrc" ManaCost.empty #["Bear"] 2 2
   let gRr0 :=
     addPermanent
@@ -485,7 +485,7 @@ private def lifeGainsSince36i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
       (.pushOuterPendingReplacement (.gainLife p0 3 (some testCause)))
   let gRrMid :=
     gRrTapped.resumePendingReplacement
-      (.seq (.restorePending (.chooseX p0) true none #[p1] none) .finishFraChoice)
+      (.seq (.restorePending (.chooseX p0) true none #[p1] none) .finishResolutionChoice)
   let gRrDone := mustApply gRrMid p0 (.chooseReplacement rrRidA)
   let reverseOrResumePoppedReplOk :=
     gRrMid.sbaPaused &&
@@ -524,7 +524,7 @@ private def lifeGainsSince36i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
       (.pushOuterPendingReplacement (.gainLife p0 3 (some testCause)))
   let gLegMid :=
     gLegTapped.resumePendingReplacement
-      (.seq (.restorePending (.chooseX p0) true none #[p1] none) .finishFraChoice)
+      (.seq (.restorePending (.chooseX p0) true none #[p1] none) .finishResolutionChoice)
   let gLegDone := mustApply gLegMid p0 (.keepLegend leg1.id)
   let reverseOrResumePoppedLegendOk :=
     gLegMid.sbaPaused &&
@@ -1039,13 +1039,13 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   let preTapSacIdx := gTapSac0.events.size
   let gTapSacStarted := mustApply gTapSac0 p0 (.activate censer.id 0)
   let gTapSacAfterPick0 :=
-    match gTapSacStarted.answerFraChoice p0 (.objects #[censer.id]) with
+    match gTapSacStarted.answerResolutionChoice p0 (.objects #[censer.id]) with
     | .ok g => g
     | .error e => panic! e
   let midPromptPayable :=
     gTapSacAfterPick0.proposalCostPromptStillPayable p0 gTapSacAfterPick0.pending
   let gTapSacFinished :=
-    match gTapSacAfterPick0.answerFraChoice p0 (.objects #[helperBear.id]) with
+    match gTapSacAfterPick0.answerResolutionChoice p0 (.objects #[helperBear.id]) with
     | .ok g => g
     | .error e => panic! e
   let tapBeforeSacEvents (g : Game) (startIdx : Nat) (oid : ObjectId) : Bool :=
@@ -1079,7 +1079,7 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
     tapBeforeSacEvents gManaTapSacDone preManaTapSacIdx manaCenser.id &&
     (gManaTapSacDone.player p0).manaPool.colorless == 1
 
-  -- 4b(iii). Multi-pick disjointness (`costPicksPayable`, `firstPayableCostPickSlice?`, `answerFraChoice`)
+  -- 4b(iii). Multi-pick disjointness (`costPicksPayable`, `firstPayableCostPickSlice?`, `answerResolutionChoice`)
   --          and pre-`completeActivation` `canPayLife` on `.costPicks`, `.crew`, `.zemoBoastExile`:
   let disjointAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[.sacrifice (.exact 1) (.filter (.any #[.hasType .artifact, .hasType .creature])), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
@@ -1107,7 +1107,7 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   let picks2 : Array CostPick := #[.sacrificeArtifactOrCreature, .tapUntappedCreature]
   let gDisjStarted := mustApply gDisjTwo p0 (.activate altarTwo.id 0)
   let gDisjGreedy :=
-    match gDisjStarted.answerFraChoice p0 (.objects #[crTokObj.id]) with
+    match gDisjStarted.answerResolutionChoice p0 (.objects #[crTokObj.id]) with
     | .ok g => g
     | .error e => panic! e
   let greedyStarves :=
@@ -1115,11 +1115,11 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
     gDisjGreedy.stack.isEmpty &&
     (gDisjGreedy.permanentsOf p0).any (·.id == crTokObj.id)
   let gDisjPick0Ok :=
-    match gDisjStarted.answerFraChoice p0 (.objects #[plainArtObj.id]) with
+    match gDisjStarted.answerResolutionChoice p0 (.objects #[plainArtObj.id]) with
     | .ok g => g
     | .error e => panic! e
   let gDisjDone :=
-    match gDisjPick0Ok.answerFraChoice p0 (.objects #[crTokObj.id]) with
+    match gDisjPick0Ok.answerResolutionChoice p0 (.objects #[crTokObj.id]) with
     | .ok g => g
     | .error e => panic! e
 
@@ -1149,9 +1149,9 @@ private def replayOk36i4 (gs : Array Game) : Bool :=
   let gBearLife4 := (gBearLife20.loseLife p0 16 (cause := some testCause))
   let gVehLife20 := gLife2.change (.proposedSpell (some vehLife5Prop))
   let gVehLife4 := (gVehLife20.loseLife p0 16 (cause := some testCause))
-  let cpPrompt4 : Pending := .fraChoice p0 (.costPicks lBear.id #[.discardACard] false)
-  let crewPrompt4 : Pending := .fraChoice p0 (.crew lVehAb.id lVeh.id 2)
-  let zemoPrompt4 : Pending := .fraChoice p0 (.zemoBoastExile lBearAb.id lBear.id)
+  let cpPrompt4 : Pending := .resolutionChoice p0 (.costPicks lBear.id #[.discardACard] false)
+  let crewPrompt4 : Pending := .resolutionChoice p0 (.crew lVehAb.id lVeh.id 2)
+  let zemoPrompt4 : Pending := .resolutionChoice p0 (.zemoBoastExile lBearAb.id lBear.id)
   let disjointAndCanPayLifeOk :=
     !gDisjOne.costPicksPayable p0 (some altarOne.id) picks2 &&
     (gDisjOne.validateActivation p0 altarOne disjointAb).toOption.isNone &&
@@ -1302,7 +1302,7 @@ private def lifeGainsSince37i1 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   let gChrStarted := mustApply gChrSync1 p0 (.activate p2Altar2.id 0)
   let ckptSyncIdx := gChrStarted.proposalCheckpoint.get!.eventsSize
   let gChrAfterPick0 :=
-    match gChrStarted.answerFraChoice p0 (.objects #[p1Cage.id]) with
+    match gChrStarted.answerResolutionChoice p0 (.objects #[p1Cage.id]) with
     | .ok g => g
     | .error e => panic! e
   let gChrAfterP1 := mustApply gChrAfterPick0 p1 .concede
@@ -1415,7 +1415,7 @@ private def lifeGainsSince37i1 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   let (gClean0, cOther2) := gClean0b.move p0Bears[2]!.id .exile (cause := some testCause)
   let p3CleanBear := (gClean0.permanentsOf p3)[0]!
   let p1CleanAura := (gClean0.permanentsOf p1)[0]!
-  let outerPrompt : Pending := .fraChoice p0 (.mayCastCards #[cOuterCard.id] true false)
+  let outerPrompt : Pending := .resolutionChoice p0 (.mayCastCards #[cOuterCard.id] true false)
   let gClean1 :=
     (gClean0.createEffect (.layered (.objects #[p3CleanBear.id]) (.control p0) (.whileSourceOnBattlefield p1CleanAura.id))
       (cause := some testCause)).changes #[
@@ -1537,7 +1537,7 @@ private def lifeGainsSince37i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   let gRr0 := setFaceDown gRr00 rrMorphInitId true
   let rrMorph := gRr0.object! rrMorphInitId
   let rrExCard := (gRr0.objects.filter (fun o => o.zone == .exile && o.owner == p0))[0]!
-  let rrOuterPrompt : Pending := .fraChoice p0 (.mayCastCards #[rrExCard.id] true false)
+  let rrOuterPrompt : Pending := .resolutionChoice p0 (.mayCastCards #[rrExCard.id] true false)
   let gRr1 :=
     gRr0.changes #[
       .pushContinuationFrame {},
@@ -1554,7 +1554,7 @@ private def lifeGainsSince37i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   let gRr3 :=
     ((gRr1.record (GameEvent.playerLeftGame gRr1.turnNumber p1 (cause := some (.gameRule .playerLeftGame)))).changes #[
       .proposedSpell (some rrProp),
-      .pending (.fraChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)),
+      .pending (.resolutionChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)),
       -- Earlier non-aborting departure `p1` pushed `+3` onto `outerPendingReplacements`:
       .pushOuterPendingReplacement (.gainLife p0 3 (some testCause)),
       -- Current departure `p2` pushed `popped = +4` on top of `outerPendingReplacements`,
@@ -1565,7 +1565,7 @@ private def lifeGainsSince37i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   let gRrResumed :=
     (gRrStolen.resumePendingReplacement
       (.seq
-        (.restorePending (.fraChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)) true none #[p1, p2] none)
+        (.restorePending (.resolutionChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)) true none #[p1, p2] none)
         (.gainLife p0 88 (some testCause)))).drainPendingContinuations
   -- `popped (+4)` ran BEFORE `rrOuterPrompt` reopened; `extraDepartureOuters (+3)` waits behind `rrOuterPrompt`;
   -- and neither consumed `+99` nor aborted proposal-tail `+88` ran!
@@ -1591,13 +1591,13 @@ private def lifeGainsSince37i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
   let gRrUnconsStolen :=
     (((gRrUncons1.changes #[
       .proposedSpell (some rrUnconsProp),
-      .pending (.fraChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)),
+      .pending (.resolutionChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)),
       .pushOuterPendingReplacement (.gainLife p0 4 (some testCause)) ]).record
       (GameEvent.playerLeftGame gRrUncons1.turnNumber p2 (cause := some (.gameRule .playerLeftGame)))).createEffect
       (.control rrMorph.id p2) (cause := some testCause))
   let gRrUnconsResumed :=
     (gRrUnconsStolen.resumePendingReplacement
-      (.restorePending (.fraChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)) true none #[p2] none)).drainPendingContinuations
+      (.restorePending (.resolutionChoice p0 (.costPicks rrMorph.id #[.tapUntappedCreature] false)) true none #[p2] none)).drainPendingContinuations
   let gRrUnconsFinished := (mustApply gRrUnconsResumed p0 .decline).drainPendingContinuations
   let reverseOrResumeSomeOk :=
     rrBeforeDeclineOk &&
@@ -1632,7 +1632,7 @@ private def lifeGainsSince37i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
       .pushOuterPendingReplacement (.gainLife p0 5 (some testCause)) ])
   let gRnDone :=
     (gRn3.resumePendingReplacement
-      (.restorePending (.fraChoice p0 (.costPicks rnMorph.id #[.tapUntappedCreature] false)) false none #[p1] none)).drainPendingContinuations
+      (.restorePending (.resolutionChoice p0 (.costPicks rnMorph.id #[.tapUntappedCreature] false)) false none #[p1] none)).drainPendingContinuations
   let reverseOrResumeNoneOk :=
     gRnDone.proposedSpell.isNone &&
     lifeGainsSince37i2 gRnDone 0 p0 == #[5]
@@ -1837,7 +1837,7 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
   let p0Tok := (gBase0.permanentsOf p0).find? (·.name == tokDef.name) |>.get!
 
   -- 3a(i). `Attachments.ceaseToExist` (token outside `.battlefield` whose `.whileInZone` control effect kept
-  --        `p1Bear0` on `.battlefield`) + `.fraEmblem` expiry reconcile CR 800.4c exile, CR 506.4, and `.ringBearer`:
+  --        `p1Bear0` on `.battlefield`) + `.commandEmblem` expiry reconcile CR 800.4c exile, CR 506.4, and `.ringBearer`:
   let gTokAnchored :=
     (gBase0.createEffect (.layered (.objects #[p1Bear0.id]) (.control p0) (.whileSourceOnBattlefield p0Anchor.id))
       (cause := some testCause)).concede p1
@@ -1861,7 +1861,7 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
       | .rules (.combat (.removedFromCombat eo)) => eo.id == some p1Bear0.id
       | _ => false)
 
-  -- Temporary `.fraEmblem` expiry reconciling CR 800.4c exile:
+  -- Temporary `.commandEmblem` expiry reconciling CR 800.4c exile:
   let embDef : CardDef := { name := "P37i3 Emblem", types := #[] }
   let gEmb0 := insertObject (gBase0.createEffect
     (.layered (.objects #[p1Bear0.id]) (.control p0) (.whileSourceOnBattlefield p0Anchor.id))
@@ -1869,7 +1869,7 @@ private def replayOk37i3 (gs : Array Game) : Bool :=
   let embId := (gEmb0.objects.filter (fun o => o.zone == .command && o.name == embDef.name))[0]!.id
   let embEffId : EffectId := ⟨1500⟩
   let gEmb1 :=
-    (gEmb0.record (GameEvent.effectCreated gEmb0.turnNumber embEffId (.fraEmblemUntilTurnOf embId p2) testCause)).createEffect
+    (gEmb0.record (GameEvent.effectCreated gEmb0.turnNumber embEffId (.commandEmblemUntilTurnOf embId p2) testCause)).createEffect
       (.layered (.objects #[p1Bear0.id]) (.control p0) (.whileInZone embId .command))
       (cause := some testCause)
   let (gEmb2, _) := gEmb1.move p0Anchor.id .exile (cause := some testCause)
@@ -2139,11 +2139,11 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
   let gFhKeepActivated := mustApply gFh0 p0 (.activate fhKeepId 0)
   let gFhMultiStarted := mustApply gFh0 p0 (.activate fhMultiId 0)
   let gFhMultiPick0 :=
-    match gFhMultiStarted.answerFraChoice p0 (.objects #[fhMultiId]) with
+    match gFhMultiStarted.answerResolutionChoice p0 (.objects #[fhMultiId]) with
     | .ok g => g
     | .error e => panic! e
   let gFhMultiDone :=
-    match gFhMultiPick0.answerFraChoice p0 (.objects #[fhBear.id]) with
+    match gFhMultiPick0.answerResolutionChoice p0 (.objects #[fhBear.id]) with
     | .ok g => g
     | .error e => panic! e
   let activateFromHandOk :=
@@ -2243,7 +2243,7 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
     gAmReversed.proposedSpell.isNone &&
     gAmReversed.stack.isEmpty
 
-  -- (ii) Multi-pick `CostPick` reverses on lost `canPayLife` before pick 1, AND `FraAnswer.decline` on `paid := true`
+  -- (ii) Multi-pick `CostPick` reverses on lost `canPayLife` before pick 1, AND `ChoiceAnswer.decline` on `paid := true`
   --      reverses when `!proposalCostPromptStillPayable`:
   let lifeMultiAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[.payLife (.const 5), .sacrifice (.exact 1) (.filter (.hasType .artifact)), .tapObjects (.exact 1) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
@@ -2260,16 +2260,16 @@ private def replayOk37i4 (gs : Array Game) : Bool :=
   let gLmStarted := mustApply gLm0 p0 (.activate lmArtId 0)
   -- Pay pick 0 (`sacrificeArtifact` on `lmBaubleId`, setting `paid := true`):
   let gLmPick0 :=
-    match gLmStarted.answerFraChoice p0 (.objects #[lmBaubleId]) with
+    match gLmStarted.answerResolutionChoice p0 (.objects #[lmBaubleId]) with
     | .ok g => g
     | .error e => panic! e
   let gLmLowLife := gLmPick0.loseLife p0 17 (cause := some testCause)
   let gLmPick1Reversed :=
-    match gLmLowLife.answerFraChoice p0 (.objects #[lmBearId]) with
+    match gLmLowLife.answerResolutionChoice p0 (.objects #[lmBearId]) with
     | .ok g => g
     | .error e => panic! e
   let gLmDeclineReversed :=
-    match gLmLowLife.answerFraChoice p0 .decline with
+    match gLmLowLife.answerResolutionChoice p0 .decline with
     | .ok g => g
     | .error e => panic! e
   let costPickAndDeclineOk :=
@@ -2777,7 +2777,7 @@ private def lifeGainsSince38i2 (g : Game) (startIdx : Nat) (p : PlayerId) : Arra
       .pushOuterPendingReplacement (.gainLife p0 4 (some testCause)) ]
   let gPopRewound :=
     (gPopSteal.resumePendingReplacement
-      (.restorePending (.fraChoice p0 (.costPicks ordMorph.id #[.tapUntappedCreature] false)) true none #[p3] none)).drainPendingContinuations
+      (.restorePending (.resolutionChoice p0 (.costPicks ordMorph.id #[.tapUntappedCreature] false)) true none #[p3] none)).drainPendingContinuations
   let popBeforeDeclineOk :=
     mustHold38i2 s!"2a.ii.prePend:{reprStr gPopRewound.pending}" (gPopRewound.pending == ordOuterPrompt) &&
     mustHold38i2 s!"2a.ii.preLife:{reprStr (lifeGainsSince38i2 gPopRewound ordStartIdx p0)}"
@@ -3497,7 +3497,7 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
     originalSnapshot := gCrStack.snapshot crAb, kind := .activatedAbility, sourceId := some skiffId
   }
   let gCrStolen :=
-    (gCrStack.changes #[.proposedSpell (some crProp), .pending (.fraChoice p0 (.crew crAb.id skiffId 2))]).createEffect
+    (gCrStack.changes #[.proposedSpell (some crProp), .pending (.resolutionChoice p0 (.crew crAb.id skiffId 2))]).createEffect
       (.control skiffId p2) (cause := some testCause)
   let gCrReversed := mustApply gCrStolen p0 (.choosePermanents #[crewBearId])
 
@@ -3510,7 +3510,7 @@ private def replayOk38i4 (gs : Array Game) : Bool :=
     sourceId := some zemoId, activation := some ActivatedAbility.zemoBoastAbility
   }
   let gZmStolen :=
-    (gZmStack.changes #[.proposedSpell (some zmProp), .pending (.fraChoice p0 (.zemoBoastExile zmAb.id zemoId))]).createEffect
+    (gZmStack.changes #[.proposedSpell (some zmProp), .pending (.resolutionChoice p0 (.zemoBoastExile zmAb.id zemoId))]).createEffect
       (.control zemoId p2) (cause := some testCause)
   let gZmReversed := mustApply gZmStolen p0 (.choosePermanents #[fuelGyId])
 

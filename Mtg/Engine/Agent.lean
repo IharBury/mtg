@@ -250,7 +250,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                     prop.activation.any (fun ab =>
                       ab.cost.discardSource || ab.cost.exileSourceFromHand)
                 let cr? : Option Nat :=
-                  if prop.fraCostPaid then none
+                  if prop.choiceCostPaid then none
                   else
                     prop.activation.bind (fun ab => ab.cost.crewPower?)
                 (prop.sourceId, picks, sSrc, dSrc, #[], cr?)
@@ -748,8 +748,8 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
               | _, _, _ => false
             frontOk || morphOk || impendingOk)
         some (if affordable then .cast cardId else .decline)
-    | .fraChoice _ choice =>
-      some (g.defaultFraAction p choice)
+    | .resolutionChoice _ choice =>
+      some (g.defaultChoiceAction p choice)
     | .chooseReplacement _ choices =>
       (g.defaultReplacementId p choices (payLifeIfSafe := true)).map Action.chooseReplacement
     | .chooseProliferate _ _ =>

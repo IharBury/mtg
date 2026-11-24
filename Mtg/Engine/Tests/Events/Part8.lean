@@ -491,8 +491,8 @@ private def replayOk39i3 (gs : Array Game) : Bool :=
 
   -- 3a. (i) `0 -> n'` `.whileSourceHasCounter` control reconciliation across `addFinalityTo`,
   --         `addIndestructibleCounter`, `addLifelinkCounter`, `addBurdenCounter`, `addCounters`,
-  --         and `Triggers.addLoreCounters`, plus `FraAbilities` `.putCauseCountersOnSource` safety
-  --         when `putCountersExceptPlusOne` exiles `o` via CR 800.4c before `st.plusOnePlusOne > 0` runs:
+  --         and `Triggers.addLoreCounters`, plus `Interpreter` `.copyFromLki` reconciling control
+  --         when `.charge` activates `.whileSourceHasCounter` flying copy and exiles `fraSrc` via CR 800.4c:
   let gCntBase := addPermanent (addPermanent (addPermanent g4 bear p2 p2) hostDef p0 p0) sagaDef p0 p0
   let cntAtk := (gCntBase.permanentsOf p2)[0]!
   let cntHost := (gCntBase.permanentsOf p0).find? (·.name == hostDef.name) |>.get!
@@ -523,8 +523,8 @@ private def replayOk39i3 (gs : Array Game) : Bool :=
     (gFra1.record (GameEvent.triggerPutOnStack gFra1.turnNumber fraAbId (gFra1.snapshot (gFra1.object! fraSrc.id)) p0
       (spec := {
         sourceId := some fraSrc.id
-        fraCauseId := some cntHost.id
-        fraCauseStatus := some { counters := #[(.charge, 1), (.plusOnePlusOne, 2)] } }))).changes
+        triggerCauseId := some cntHost.id
+        triggerCauseStatus := some { counters := #[(.charge, 1), (.plusOnePlusOne, 2)] } }))).changes
       #[.pushContinuationFrame {}, .resolvingAbility (some fraAbId)]
   let gFraPostExile :=
     gFra2.applyUnifiedAbility p0 { body := .permanent (.modifyCounters (.copyFromLki .triggerSubject) .this) } #[] (some fraSrc.id)
@@ -1402,7 +1402,7 @@ private def replayOk40i2 (gs : Array Game) : Bool :=
   }
 
   -- 2a. Simultaneous outer-`pre` control snapshots across `removeAllCountersFrom`, CR 704.5q (`+1/+1`/`-1/-1` SBA),
-  --     `expireWhileSourceEffects` (via `move` & `ceaseToExist`), and `expireFraUntilTurnEffects`:
+  --     `expireWhileSourceEffects` (via `move` & `ceaseToExist`), and `expireUntilTurnCommandEffects`:
   let gBase := addPermanent (addPermanent g3 bear p0 p0) srcDef p0 p0
   let rbBear := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!
   let srcPerm := (gBase.permanentsOf p0).find? (·.name == srcDef.name) |>.get!
@@ -1448,8 +1448,8 @@ private def replayOk40i2 (gs : Array Game) : Bool :=
       (.layered (.objects #[rbBear.id]) (.control p2) (.untilNextTurnOf p0)) (cause := some testCause)).createEffect
       (.layered (.objects #[rbBear.id]) (.control p0) (.untilNextTurnOf p0)) (cause := some testCause))
   let gFraTurn0 := gFraTurn0a.record (GameEvent.designation gFraTurn0a.turnNumber (gFraTurn0a.snapshot (gFraTurn0a.object! rbBear.id)) .ringBearer true (cause := testCause))
-  let gFraSkip := gFraTurn0.expireFraUntilTurnEffects p0 (skipControl := true)
-  let gFraFull := gFraTurn0.expireFraUntilTurnEffects p0 (skipControl := false)
+  let gFraSkip := gFraTurn0.expireUntilTurnCommandEffects p0 (skipControl := true)
+  let gFraFull := gFraTurn0.expireUntilTurnCommandEffects p0 (skipControl := false)
   let fraTurnOk :=
     gFraSkip.activeEffects.size == 2 &&
     gFraFull.activeEffects.isEmpty &&

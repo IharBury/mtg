@@ -923,7 +923,7 @@ partial def checkSBACounted (g : Game)
               let legal :=
                 match g.findObject? hostId with
                 | some host =>
-                  host.isOnBattlefield && g.isCreature host && !g.frcProtectedFrom host o
+                  host.isOnBattlefield && g.isCreature host && !g.protectedFrom host o
                 | none => false
               if !legal then some (o.id, hostId) else none)
       let illegalCreatureAtts : Array (ObjectId × ObjectId) :=

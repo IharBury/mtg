@@ -275,7 +275,7 @@ def applyChange (p : ProposedSpell) (c : ProposalChange) : ProposedSpell :=
   | .payLife v => { p with payLife := v }
   | .alternativeCost v => { p with alternativeCost := v }
   | .loyaltyPaid v => { p with loyaltyPaid := v }
-  | .fraCostPaid v => { p with fraCostPaid := v }
+  | .choiceCostPaid v => { p with choiceCostPaid := v }
 
 end ProposedSpell
 
@@ -913,11 +913,11 @@ def applyTriggerQueueEvent (g : Game) (e : TriggerQueueEvent) : Game :=
           triggeredAbility := spec.triggeredAbility
           isReflexive := spec.isReflexive
           sourceId := spec.sourceId.orElse (fun _ => source.id)
-          fraCauseId := spec.fraCauseId
-          fraCauseIds := spec.fraCauseIds
-          fraCauseController := spec.fraCauseController
-          fraCausePower := spec.fraCausePower
-          fraCauseStatus := spec.fraCauseStatus }
+          triggerCauseId := spec.triggerCauseId
+          triggerCauseIds := spec.triggerCauseIds
+          triggerCauseController := spec.triggerCauseController
+          triggerCausePower := spec.triggerCausePower
+          triggerCauseStatus := spec.triggerCauseStatus }
       let se : StackEntry :=
         { objectId := stackObj
           controller := controller
@@ -1060,11 +1060,11 @@ def applyStackObjectEvent (g : Game) (e : StackObjectEvent) : Game :=
           triggeredAbility := orig.triggeredAbility
           isReflexive := orig.isReflexive
           sourceId := orig.sourceId
-          fraCauseId := orig.fraCauseId
-          fraCauseIds := orig.fraCauseIds
-          fraCauseController := orig.fraCauseController
-          fraCausePower := orig.fraCausePower
-          fraCauseStatus := orig.fraCauseStatus }
+          triggerCauseId := orig.triggerCauseId
+          triggerCauseIds := orig.triggerCauseIds
+          triggerCauseController := orig.triggerCauseController
+          triggerCausePower := orig.triggerCausePower
+          triggerCauseStatus := orig.triggerCauseStatus }
       | none =>
         { id := newId
           printed := printed
@@ -1864,9 +1864,9 @@ private def gameObjAnyObjId (pred : ObjectId → Bool) (o : GameObject) : Bool :
     checkValidOptObjId pred o.attachedTo ||
     checkValidObjIds pred o.linkedExile ||
     checkValidObjIds pred o.leaveTriggerExile ||
-    checkValidOptObjId pred o.fraCauseId ||
-    o.fraCauseStatus.any (statusAnyObjId pred) ||
-    checkValidObjIds pred o.fraCauseIds ||
+    checkValidOptObjId pred o.triggerCauseId ||
+    o.triggerCauseStatus.any (statusAnyObjId pred) ||
+    checkValidObjIds pred o.triggerCauseIds ||
     checkValidOptObjId pred o.exiledBy
 
 private def eventObjAnyObjId (pred : ObjectId → Bool) (eo : EventObject) : Bool :=
@@ -1991,7 +1991,7 @@ private def specAnyObjId (spec : ContinuousEffectSpec) (pred : ObjectId → Bool
    | .gameRule (.cantBeBlockedExceptByHaste id) _
    | .gameRule (.cantBlock id) _
    | .gameRule (.uncounterable id) _
-   | .gameRule (.fraEmblem id) _ => checkValidObjId pred id
+   | .gameRule (.commandEmblem id) _ => checkValidObjId pred id
    | .replacement r _ =>
      repIdAnyObjId pred r.id prospectivePred ||
        checkValidOptObjId pred r.source ||
@@ -2122,7 +2122,7 @@ private def interpStateAnyObjId (st : InterpState) (pred : ObjectId → Bool)
     st.ctx.triggerSubjectSnapshot.any (eventObjAnyObjId pred) ||
     st.stack.any (interpContAnyObjId · pred prospectivePred etbCostProspective?)
 
-private def fraChoiceAnyObjId (fc : FraChoice) (pred : ObjectId → Bool)
+private def resolutionChoiceAnyObjId (fc : ResolutionChoice) (pred : ObjectId → Bool)
     (prospectivePred : ObjectId → Bool := pred)
     (etbCostProspective? : CostKind → ObjectId → Bool := fun _ _ => false) : Bool :=
   match fc with
@@ -2247,7 +2247,7 @@ private def pendingAnyObjId (p : Pending) (pred : ObjectId → Bool)
   | .mayCastExiledElseDamage _ cid _ sid =>
     checkValidObjId pred cid || checkValidOptObjId pred sid
   | .chooseReplacement _ rids => rids.any (repIdAnyObjId pred · prospectivePred)
-  | .fraChoice _ fc => fraChoiceAnyObjId fc pred prospectivePred etbCostProspective?
+  | .resolutionChoice _ fc => resolutionChoiceAnyObjId fc pred prospectivePred etbCostProspective?
   | .resolveRandom (.orderInto ids _ c) =>
     checkValidObjIds pred ids || c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .resolveRandom (.chooseObject ids) => checkValidObjIds pred ids
@@ -2776,9 +2776,9 @@ private partial def gameChangeAnyObjId (ch : GameChange) (pred : ObjectId → Bo
     checkValidObjId pred stObj ||
       eventObjAnyObjId pred src ||
       checkValidOptObjId pred spec.sourceId ||
-      checkValidOptObjId pred spec.fraCauseId ||
-      checkValidObjIds pred spec.fraCauseIds ||
-      spec.fraCauseStatus.any (statusAnyObjId pred) ||
+      checkValidOptObjId pred spec.triggerCauseId ||
+      checkValidObjIds pred spec.triggerCauseIds ||
+      spec.triggerCauseStatus.any (statusAnyObjId pred) ||
       spec.delayedTrigger.any (fun (k, c) =>
         delayedKindAnyObjId pred k || eventCauseAnyObjId c pred prospectivePred etbCostProspective?)
   | .rules (.triggerQueue (.modeChosen src ..)) => checkValidObjId pred src
@@ -4640,7 +4640,7 @@ def hasFlashbackPermission (g : Game) (o : GameObject) : Bool :=
 for its flashback cost (`GameEvent.castWithFlashback`, `CastWay.alternative "flashback"`)
 or carrying the active flashback permission `castSpell` re-creates on the stack spell
 itself. A graveyard cast through any other permission — *Bilbo, Thief in the Night*'s
-`FraChoice.mayCastFromGraveyard` (`CastWay.normal`), a free-cast permission — is not a
+`ResolutionChoice.mayCastFromGraveyard` (`CastWay.normal`), a free-cast permission — is not a
 Flashback cast even when the card has (or was granted) flashback, so neither the
 flashback cost nor the "exile instead" replacement applies to it. Copies are never
 cast via Flashback (CR 707.10). -/
@@ -4815,10 +4815,10 @@ def cardsInHandPowerUntilEot (g : Game) (o : GameObject) : Bool :=
       id == o.id && g.durationActive d
     | _ => false
 
-def fraEffectUntilTurnOf (g : Game) (o : GameObject) : Option PlayerId :=
+def commandEffectUntilTurnOf (g : Game) (o : GameObject) : Option PlayerId :=
   g.activeEffects.foldl (fun acc (_, s) =>
     match s with
-    | .gameRule (.fraEmblem id) (.untilNextTurnOf p) => if id == o.id then some p else acc
+    | .gameRule (.commandEmblem id) (.untilNextTurnOf p) => if id == o.id then some p else acc
     | _ => acc) none
 
 def controlUntilEot (g : Game) (o : GameObject) : Bool :=
@@ -11498,7 +11498,7 @@ private def selfEntersTapped (g : Game) (p : PlayerId) (o : GameObject)
           | _ => false
 
 /-- Protection from the source's colors or from its card type (CR 702.16 / 613.1c–f). -/
-def frcProtectedFrom (g : Game) (o src : GameObject) : Bool :=
+def protectedFrom (g : Game) (o src : GameObject) : Bool :=
   let srcColors := g.colors src
   let kwBlock :=
     (g.effectiveKeywords o).any fun
@@ -11532,7 +11532,7 @@ Layer 6 evaluation, including protection and CR 303.4a `enchantRestriction`
 def auraObjCanEnchant (g : Game) (host auraObj : GameObject) : Bool :=
   let statics := g.staticAbilities auraObj
   let auraCtrl := g.you auraObj
-  host.isOnBattlefield && !g.frcProtectedFrom host auraObj &&
+  host.isOnBattlefield && !g.protectedFrom host auraObj &&
     match statics.findSome? StaticAbility.enchantRestriction? with
     | none => g.isCreature host
     | some slot =>
@@ -14870,7 +14870,7 @@ opaque runPostCastCleanupFwd (g : Game) : Game := g
 /-- Forward reference to `Decisions.resumePendingReplacement` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_resume_pending_replacement"]
 opaque resumePendingReplacementFwd (g : Game) (pr : PendingReplacement)
-    (followedByFinishFra : Bool := false) : Game := g
+    (followedByFinishChoice : Bool := false) : Game := g
 
 /-- Forward reference to `Movement.flushQueuedLinkedExile` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_flush_queued_linked_exile"]
@@ -14960,9 +14960,9 @@ private def remapProposalGameObjNoId (ro : ObjectId → ObjectId) (o : GameObjec
     attachedTo := o.attachedTo.map ro
     linkedExile := o.linkedExile.map ro
     leaveTriggerExile := o.leaveTriggerExile.map ro
-    fraCauseId := o.fraCauseId.map ro
-    fraCauseStatus := o.fraCauseStatus.map (remapProposalStatus ro)
-    fraCauseIds := o.fraCauseIds.map ro
+    triggerCauseId := o.triggerCauseId.map ro
+    triggerCauseStatus := o.triggerCauseStatus.map (remapProposalStatus ro)
+    triggerCauseIds := o.triggerCauseIds.map ro
     exiledBy := o.exiledBy.map ro }
 
 private def remapProposalGameObj (ro : ObjectId → ObjectId) (o : GameObject) : GameObject :=
@@ -15043,7 +15043,7 @@ private def remapProposalGameRule (ro : ObjectId → ObjectId) : GameRule → Ga
   | .cantBeBlockedExceptByHaste o => .cantBeBlockedExceptByHaste (ro o)
   | .cantBlock o => .cantBlock (ro o)
   | .uncounterable o => .uncounterable (ro o)
-  | .fraEmblem o => .fraEmblem (ro o)
+  | .commandEmblem o => .commandEmblem (ro o)
   | r => r
 
 private def remapProposalPlayPermSpec (ro : ObjectId → ObjectId) :
@@ -15241,7 +15241,7 @@ each `runBatch` and stopping only when `Pending.chooseReplacement` or
     | .gameRule (.cantBeBlockedExceptByHaste id) _
     | .gameRule (.cantBlock id) _
     | .gameRule (.uncounterable id) _
-    | .gameRule (.fraEmblem id) _ => some id
+    | .gameRule (.commandEmblem id) _ => some id
     | .replacement r _ => r.id.object
     | .prevention p _ => p.id.object
     | _ => none
@@ -15361,9 +15361,9 @@ each `runBatch` and stopping only when `Pending.chooseReplacement` or
       { sp with
         sourceId := sp.sourceId.map ro
         delayedTrigger := dt'
-        fraCauseId := sp.fraCauseId.map ro
-        fraCauseIds := sp.fraCauseIds.map ro
-        fraCauseStatus := sp.fraCauseStatus.map (remapProposalStatus ro) },
+        triggerCauseId := sp.triggerCauseId.map ro
+        triggerCauseIds := sp.triggerCauseIds.map ro
+        triggerCauseStatus := sp.triggerCauseStatus.map (remapProposalStatus ro) },
       effRev1)
   let ensureDelayedTrigger (ro : ObjectId → ObjectId) (g0 : Game)
       (effRev : Array (EffectId × EffectId)) (dt : DelayedTrigger) :
@@ -16712,7 +16712,7 @@ def effectObject? : ContinuousEffectSpec → Option ObjectId
   | .gameRule (.cantBeBlockedExceptByHaste id) _
   | .gameRule (.cantBlock id) _
   | .gameRule (.uncounterable id) _
-  | .gameRule (.fraEmblem id) _ => some id
+  | .gameRule (.commandEmblem id) _ => some id
   | .replacement r _ => r.id.object
   | .prevention p _ => p.id.object
   | _ => none
@@ -16905,7 +16905,7 @@ def effectExpiresWithLeavingObj (g : Game) (oid : ObjectId) (z : Zone)
         ids.all (fun xid => xid == oid || coLeavingIds.contains xid || (g.findObject? xid).isNone)
     | _ => false
 
-/-- Expand `seedIds` transitively across active `.gameRule (.fraEmblem childId)`
+/-- Expand `seedIds` transitively across active `.gameRule (.commandEmblem childId)`
 effects that expire when an emblem in the set ceases to exist in `.command` (CR 114.5 / 611.2a). -/
 def expandTransitiveCommandEmblems (g : Game) (seedIds : Array ObjectId) : Array ObjectId := Id.run do
   let mut result : Array ObjectId := #[]
@@ -16917,7 +16917,7 @@ def expandTransitiveCommandEmblems (g : Game) (seedIds : Array ObjectId) : Array
     changed := false
     for (_, s) in g.activeEffects do
       match s with
-      | .gameRule (.fraEmblem childId) _ =>
+      | .gameRule (.commandEmblem childId) _ =>
         if !result.contains childId &&
             result.any (fun pid => g.effectExpiresWithLeavingObj pid .command result s) then
           result := result.push childId
@@ -16942,7 +16942,7 @@ partial def expireEffectById (g : Game) (eid : EffectId)
     let expCause :=
       g.resolveOptionalCause cause (defaultCause := .gameRule .continuousEffect)
     match eff with
-    | .gameRule (.fraEmblem id) _ =>
+    | .gameRule (.commandEmblem id) _ =>
       match g.findObject? id with
       | some old =>
         if old.zone == .command then
@@ -17420,28 +17420,28 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
   let seedEmbIds : Array ObjectId :=
     g.activeEffects.foldl (fun acc (_, s) =>
       match s with
-      | .gameRule (.fraEmblem embId) d =>
+      | .gameRule (.commandEmblem embId) d =>
         if matchesSrcDuration d && !acc.contains embId then acc.push embId else acc
       | _ => acc) #[]
   let allEmbCands := g.expandTransitiveCommandEmblems seedEmbIds
   let emblemIds : Array ObjectId :=
     allEmbCands.filter (fun embId => (g.findObject? embId).any (·.zone == .command))
-  let bfsFraEmblems : Array (EffectId × ObjectId) :=
+  let bfsCommandEmblems : Array (EffectId × ObjectId) :=
     emblemIds.foldl (fun acc embId =>
       g.activeEffects.foldl (fun a (eid, s) =>
         match s with
-        | .gameRule (.fraEmblem eidEmb) _ =>
+        | .gameRule (.commandEmblem eidEmb) _ =>
           if eidEmb == embId && !a.any (·.1 == eid) then a.push (eid, embId) else a
         | _ => a) acc) #[]
-  let directFraEmblems : Array (EffectId × ObjectId) :=
+  let directCommandEmblems : Array (EffectId × ObjectId) :=
     g.activeEffects.foldl (fun acc (eid, s) =>
       match s with
-      | .gameRule (.fraEmblem embId) d =>
+      | .gameRule (.commandEmblem embId) d =>
         if matchesSrcDuration d && !emblemIds.contains embId && !acc.any (·.1 == eid) then
           acc.push (eid, embId)
         else acc
       | _ => acc) #[]
-  let fraEmblemEntries : Array (EffectId × ObjectId) := bfsFraEmblems ++ directFraEmblems
+  let commandEmblemEntries : Array (EffectId × ObjectId) := bfsCommandEmblems ++ directCommandEmblems
   let expiresWithEmblem (embId : ObjectId) (e : ContinuousEffect) : Bool :=
     g.effectExpiresWithLeavingObj embId .command emblemIds e
   let (hadEmbControl, embControlSingles) :=
@@ -17474,7 +17474,7 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
         (cause := cause) (reconcileControl := false) (suppressLog := false)
         (skipLogIds := skipLogIds) (preState? := some preRef)
   let g :=
-    fraEmblemEntries.foldl (fun acc (eid, _) =>
+    commandEmblemEntries.foldl (fun acc (eid, _) =>
       acc.expireEffectById eid (cause := cause) (reconcileControl := false)
         (preState? := some preRef) (suppressEmblemLog := suppressEmblemLog)
         (suppressReturnLog := true) (skipLogIds := skipLogIds)) g
@@ -17485,7 +17485,7 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
   let g := g.expireMatching (fun s => matchesSrcDuration s.duration)
     (cause := cause) (preState? := some preRef) (reconcileControl := reconcileControl)
     (suppressEmblemLog := suppressEmblemLog)
-  if !fraEmblemEntries.isEmpty && reconcileControl then
+  if !commandEmblemEntries.isEmpty && reconcileControl then
     let resolvedCause := g.resolveOptionalCause cause (defaultCause := .gameRule .leavingZone)
     reconcileControlAfterTransitionFwd preRef g (cause := some resolvedCause)
   else g
@@ -17565,12 +17565,12 @@ def putCountersExceptPlusOne (g : Game) (id : ObjectId) («from» : Status)
           g := g.recordPutCounters id kind (cnt + extra) (byPlayer := byPlayer) (cause := cause)
       return g).flushQueuedLinkedExileFwd
 
-/-- Begin a `FraChoice` for `p`, opening a `ContinuationFrame` if none is active. -/
-def beginFraChoice (g : Game) (p : PlayerId) (choice : FraChoice) (msg : String := "") : Game :=
+/-- Begin a `ResolutionChoice` for `p`, opening a `ContinuationFrame` if none is active. -/
+def beginResolutionChoice (g : Game) (p : PlayerId) (choice : ResolutionChoice) (msg : String := "") : Game :=
   let g :=
     if g.continuations.isEmpty then g.change (.pushContinuationFrame {})
     else g
-  let g := g.change (.pending (.fraChoice p choice))
+  let g := g.change (.pending (.resolutionChoice p choice))
   if msg.isEmpty then g else g.logMsg msg
 
 /-- Append departed player `p` to any `.restorePending`, `.leavePlayersWhoLost`,

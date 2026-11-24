@@ -35,8 +35,6 @@ import Mtg.Engine.Game.LibrarySearch
 import Mtg.Engine.Game.ResolutionHelpers
 import Mtg.Engine.Game.ResolutionEffects
 import Mtg.Engine.Game.ModeledTriggers
-import Mtg.Engine.Game.FraHelpers
-import Mtg.Engine.Game.FraAbilities
 import Mtg.Engine.Game.CastExtras
 import Mtg.Engine.Game.Interpreter
 import Mtg.Engine.Game.TriggeredAbilities
@@ -48,7 +46,7 @@ import Mtg.Engine.Game.Decisions
 import Mtg.Engine.Game.CastSpell
 import Mtg.Engine.Game.Activation
 import Mtg.Engine.Game.PriorityActions
-import Mtg.Engine.Game.FraChoices
+import Mtg.Engine.Game.ResolutionChoices
 import Mtg.Engine.Game.Actions
 import Mtg.Engine.Game.Start
 
@@ -324,8 +322,8 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     mustApply g actor .decline
   | .chooseProliferate _ _, some actor =>
     mustApply g actor (.targets #[])
-  | .fraChoice _ choice, some actor =>
-    mustApply g actor (g.defaultFraAction p choice)
+  | .resolutionChoice _ choice, some actor =>
+    mustApply g actor (g.defaultChoiceAction p choice)
   | .chooseReplacement seat choices, some actor =>
     let chosen := (g.defaultReplacementId seat choices).getD choices[0]!
     mustApply g actor (.chooseReplacement chosen)

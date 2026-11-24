@@ -55,7 +55,7 @@ inductive ProposalChange where
   | payLife (n : Nat)
   | alternativeCost (v : Bool)
   | loyaltyPaid (v : Bool)
-  | fraCostPaid (v : Bool)
+  | choiceCostPaid (v : Bool)
 deriving Repr, Inhabited, BEq
 
 /-- The kind of replacement effect (CR 614 / 616.1a–e). -/
@@ -314,7 +314,7 @@ inductive GameRule where
   | cantBeBlockedExceptByHaste (object : ObjectId)
   | cantBlock (object : ObjectId)
   | uncounterable (object : ObjectId)
-  | fraEmblem (object : ObjectId)
+  | commandEmblem (object : ObjectId)
 deriving Repr, Inhabited, BEq
 
 /-- Continuous permission to play or cast an object or spend mana on it (CR 611.2 / 701.18). -/
@@ -495,8 +495,8 @@ namespace ContinuousEffectSpec
   .permission (some perm.player) (.playFromExile object perm) d
 
 /-- `object` (an emblem) lasts until `player`'s next turn (CR 611.2). -/
-@[inline] def fraEmblemUntilTurnOf (object : ObjectId) (player : PlayerId) : ContinuousEffectSpec :=
-  .gameRule (.fraEmblem object) (.untilNextTurnOf player)
+@[inline] def commandEmblemUntilTurnOf (object : ObjectId) (player : PlayerId) : ContinuousEffectSpec :=
+  .gameRule (.commandEmblem object) (.untilNextTurnOf player)
 
 /-- `object` becomes a copy with `printed` characteristics (CR 611.2, 707 / 613.1a). -/
 @[inline] def copy (object : ObjectId) (printed : CardDef)
@@ -847,11 +847,11 @@ structure StackTriggerSpec where
   delayedTrigger : Option (DelayedTriggerKind × EventCause) := none
   lastKnownPower : Option Int := none
   lastKnownToughness : Option Int := none
-  fraCauseId : Option ObjectId := none
-  fraCauseIds : Array ObjectId := #[]
-  fraCauseController : Option PlayerId := none
-  fraCausePower : Option Int := none
-  fraCauseStatus : Option Status := none
+  triggerCauseId : Option ObjectId := none
+  triggerCauseIds : Array ObjectId := #[]
+  triggerCauseController : Option PlayerId := none
+  triggerCausePower : Option Int := none
+  triggerCauseStatus : Option Status := none
 deriving Repr, Inhabited, BEq
 
 /-- Triggered ability queueing and stack placement events (CR 603.2 / 603.3). -/
@@ -1413,7 +1413,7 @@ inductive PendingReplacement where
   | afterLastPermanentEnters (fromId : Option ObjectId := none) (isPlayLand : Bool := false)
       (attachedToHost : Option ObjectId := none)
   | addExtraCombatDamageStep
-  | finishFraChoice
+  | finishResolutionChoice
   | shuffleThen (player : PlayerId) (onDone : AfterRandom)
   | draw (p : PlayerId) (n : Nat) (cause : Option EventCause)
   | drawOne (p : PlayerId) (applied : Array ReplacementId) (drawStepFirst : Bool)
@@ -1857,10 +1857,10 @@ instance : BEq EngineChange := ⟨instBEqPendingReplacement.beq_4⟩
 instance : BEq GameChange := ⟨instBEqPendingReplacement.beq_5⟩
 instance : BEq GameEvent := ⟨instBEqPendingReplacement.beq_6⟩
 
-/-- Whether a `PendingReplacement` continuation ends with `.finishFraChoice`. -/
-def PendingReplacement.endsWithFinishFra : PendingReplacement → Bool
-  | .finishFraChoice => true
-  | .seq _ b => b.endsWithFinishFra
+/-- Whether a `PendingReplacement` continuation ends with `.finishResolutionChoice`. -/
+def PendingReplacement.endsWithFinishResolutionChoice : PendingReplacement → Bool
+  | .finishResolutionChoice => true
+  | .seq _ b => b.endsWithFinishResolutionChoice
   | _ => false
 
 /-- Whether a `PendingReplacement` continuation contains a suppressed checkpoint replay. -/
@@ -1887,7 +1887,7 @@ state: clears to `false` on draining leaves and preserves on neutral leaves. -/
 def PendingReplacement.nextQueuedPending (hasQueuedPending : Bool := false) :
     PendingReplacement → Bool
   | .seq a1 a2 => a2.nextQueuedPending (a1.nextQueuedPending hasQueuedPending)
-  | .receivePriority _ | .finishFraChoice | .afterWardResolved
+  | .receivePriority _ | .finishResolutionChoice | .afterWardResolved
   | .runPostCastCleanup _
   | .beginTurnAfterStartExpiry
   | .finishCleanupAfterClearEot
@@ -1913,12 +1913,12 @@ def PendingReplacement.nextQueuedPending (hasQueuedPending : Bool := false) :
   | _ => hasQueuedPending
 
 /-- Whether a `PendingReplacement` continuation already ends by granting
-priority (`.receivePriority` / `.finishFraChoice` / `.finishPostCast` /
+priority (`.receivePriority` / `.finishResolutionChoice` / `.finishPostCast` /
 `.finishBecomeCast` with `grantPriority == true` / `.finishConcede`). -/
 def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
     (hasQueuedPending : Bool := false) : Bool :=
   match pr with
-  | .receivePriority _ | .finishFraChoice | .afterWardResolved
+  | .receivePriority _ | .finishResolutionChoice | .afterWardResolved
   | .beginTurnAfterStartExpiry
   | .finishCleanupAfterClearEot
   | .finishPostStep .startNextTurnAndBegin
@@ -1945,12 +1945,12 @@ def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
   | _ => false
 
 /-- Whether a `PendingReplacement` continuation ends with a non-proposal priority
-grant (`.receivePriority`, `.finishFraChoice`, `.finishConcede`,
+grant (`.receivePriority`, `.finishResolutionChoice`, `.finishConcede`,
 `.afterWardResolved`, an idle `.concedePlayersLoop`, or an unconditionally
 priority-granting step/turn/cleanup continuation), excluding
 proposal-completion continuations. -/
 def PendingReplacement.endsWithNonProposalPriorityGrant : PendingReplacement → Bool
-  | .receivePriority _ | .finishFraChoice | .afterWardResolved
+  | .receivePriority _ | .finishResolutionChoice | .afterWardResolved
   | .beginTurnAfterStartExpiry
   | .finishCleanupAfterClearEot
   | .finishPostStep .startNextTurnAndBegin
@@ -1967,14 +1967,14 @@ def PendingReplacement.endsWithNonProposalPriorityGrant : PendingReplacement →
   | _ => false
 
 /-- Ensure a `PendingReplacement` continuation ends with a priority grant
-without appending `.finishFraChoice` onto a continuation that already grants priority. -/
-def PendingReplacement.ensureEndsWithFinishFra (pr : PendingReplacement) : PendingReplacement :=
+without appending `.finishResolutionChoice` onto a continuation that already grants priority. -/
+def PendingReplacement.ensureEndsWithFinishResolutionChoice (pr : PendingReplacement) : PendingReplacement :=
   if pr.endsWithPriorityGrant then pr
   else
     match pr with
-    | .finishFraChoice => .finishFraChoice
-    | .seq a b => .seq a b.ensureEndsWithFinishFra
-    | other => .seq other .finishFraChoice
+    | .finishResolutionChoice => .finishResolutionChoice
+    | .seq a b => .seq a b.ensureEndsWithFinishResolutionChoice
+    | other => .seq other .finishResolutionChoice
 
 /-- Record that `p` left the game on any nested `.restorePending`,
 `.leavePlayersWhoLost`, `.finishConcede`, or `.concedePlayersLoop`
@@ -2041,7 +2041,7 @@ private def PendingReplacement.containsSubtreeBase (targetBase : PendingReplacem
   | other => other.withoutDeparted == targetBase
 
 /-- Whether `cur` contains `target` modulo `withoutDeparted` (including across
-`.seq` reassociation such as `ensureEndsWithFinishFra`). -/
+`.seq` reassociation such as `ensureEndsWithFinishResolutionChoice`). -/
 def PendingReplacement.containsModDeparted (target : PendingReplacement)
     (cur : PendingReplacement) : Bool :=
   let targetBase := target.withoutDeparted

@@ -211,7 +211,7 @@ private def replayOk28i4 (gs : Array Game) : Bool :=
       palId (.graveyard p0) none (cause := some testCause)
   let gPalOffered := (gPalDeparted.change (.pushContinuationFrame {})).offerPalantirChoice p0 p1 palId
   let palOfferLogOk :=
-    gPalOffered.pending == .fraChoice p1 (.palantirMayDraw p0 palId) &&
+    gPalOffered.pending == .resolutionChoice p1 (.palantirMayDraw p0 palId) &&
     gPalOffered.log.any (·.contains "may have")
   let libBefore := (gPalOffered.player p0).library.size
   let gPalDeclined := mustApply gPalOffered p1 .decline
@@ -359,31 +359,31 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
   let (gStack2, p1SpellId) := gStack1.move p1HandBolt .stack (some p1) (cause := some testCause)
   let gRetargetStale :=
     ((gStack2.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.mayChangeSpellTarget p1SpellId 0 #[.player p0])))).playerLeavesGame p1
+      (.pending (.resolutionChoice p0 (.mayChangeSpellTarget p1SpellId 0 #[.player p0])))).playerLeavesGame p1
   let gRetargetLive :=
     ((gStack2.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.mayChangeSpellTarget p0SpellId 0 #[.player p0])))).playerLeavesGame p1
+      (.pending (.resolutionChoice p0 (.mayChangeSpellTarget p0SpellId 0 #[.player p0])))).playerLeavesGame p1
   --     * `.newTargetsForCopySlot`:
   --       - all copies gone -> clears `.pending`;
   --       - `copies[0]` (`p1SpellId`) gone while `copies[1]` (`p0SpellId`) still on `.stack` ->
-  --         resets to `.fraChoice p0 (.newTargetsForCopies #[p0SpellId])`;
+  --         resets to `.resolutionChoice p0 (.newTargetsForCopies #[p0SpellId])`;
   --       - `copies[0]` (`p0SpellId`) still on `.stack` while `copies[1]` (`p1SpellId`) gone ->
-  --         preserves `.fraChoice p0 (.newTargetsForCopySlot #[p0SpellId] 1 #[.player p0])`:
+  --         preserves `.resolutionChoice p0 (.newTargetsForCopySlot #[p0SpellId] 1 #[.player p0])`:
   let gCopiesAllGone :=
     ((gStack2.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.newTargetsForCopies #[p1SpellId])))).playerLeavesGame p1
+      (.pending (.resolutionChoice p0 (.newTargetsForCopies #[p1SpellId])))).playerLeavesGame p1
   let gCopiesFirstGone :=
     ((gStack2.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.newTargetsForCopySlot #[p1SpellId, p0SpellId] 1 #[.player p0])))).playerLeavesGame p1
+      (.pending (.resolutionChoice p0 (.newTargetsForCopySlot #[p1SpellId, p0SpellId] 1 #[.player p0])))).playerLeavesGame p1
   let gCopiesSecondGone :=
     ((gStack2.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.newTargetsForCopySlot #[p0SpellId, p1SpellId] 1 #[.player p0])))).playerLeavesGame p1
+      (.pending (.resolutionChoice p0 (.newTargetsForCopySlot #[p0SpellId, p1SpellId] 1 #[.player p0])))).playerLeavesGame p1
   let retargetAfterLeaveOk :=
     gRetargetStale.pending == .none &&
-    gRetargetLive.pending == .fraChoice p0 (.mayChangeSpellTarget p0SpellId 0 #[.player p0]) &&
+    gRetargetLive.pending == .resolutionChoice p0 (.mayChangeSpellTarget p0SpellId 0 #[.player p0]) &&
     gCopiesAllGone.pending == .none &&
-    gCopiesFirstGone.pending == .fraChoice p0 (.newTargetsForCopies #[p0SpellId]) &&
-    gCopiesSecondGone.pending == .fraChoice p0 (.newTargetsForCopySlot #[p0SpellId] 1 #[.player p0])
+    gCopiesFirstGone.pending == .resolutionChoice p0 (.newTargetsForCopies #[p0SpellId]) &&
+    gCopiesSecondGone.pending == .resolutionChoice p0 (.newTargetsForCopySlot #[p0SpellId] 1 #[.player p0])
 
   -- 1c. `.crew`, `.zemoBoastExile`, and `.chooseTeamworkCreatures` revalidation in `.restorePending`,
   --     `checkReversal`, `decline`, `pickTeamworkCreatures`, `Game.applyIdle`, and `Agent.choose`:
@@ -420,17 +420,17 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
   -- opens the prompt!
   let gCrewFailSeq :=
     gWithProp.resumePendingReplacement
-      (.seq (.restorePending (.fraChoice p0 (.crew vehId vehId 3)) false)
+      (.seq (.restorePending (.resolutionChoice p0 (.crew vehId vehId 3)) false)
             scryP0Pr)
   let gCrewOk :=
-    gWithProp.resumePendingReplacement (.restorePending (.fraChoice p0 (.crew vehId vehId 2)) false)
+    gWithProp.resumePendingReplacement (.restorePending (.resolutionChoice p0 (.crew vehId vehId 2)) false)
   let gZemoOk :=
-    gWithProp.resumePendingReplacement (.restorePending (.fraChoice p0 (.zemoBoastExile bearId bearId)) false)
+    gWithProp.resumePendingReplacement (.restorePending (.resolutionChoice p0 (.zemoBoastExile bearId bearId)) false)
   let gZemoFailSeq :=
     let gyId := (gWithProp.player p0).graveyard.back!
     let (gNoGy, _) := gWithProp.move gyId .exile none (cause := some testCause)
     gNoGy.resumePendingReplacement
-      (.seq (.restorePending (.fraChoice p0 (.zemoBoastExile bearId bearId)) false)
+      (.seq (.restorePending (.resolutionChoice p0 (.zemoBoastExile bearId bearId)) false)
             scryP0Pr)
   let gTwFailSeq :=
     gWithProp.resumePendingReplacement
@@ -440,8 +440,8 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
     gWithProp.resumePendingReplacement (.restorePending (.chooseTeamworkCreatures p0 2) false)
   let restoreCostRevalOk :=
     gCrewFailSeq.proposedSpell.isNone && gCrewFailSeq.pending == .none &&
-    gCrewOk.proposedSpell.isSome && gCrewOk.pending == .fraChoice p0 (.crew vehId vehId 2) &&
-    gZemoOk.proposedSpell.isSome && gZemoOk.pending == .fraChoice p0 (.zemoBoastExile bearId bearId) &&
+    gCrewOk.proposedSpell.isSome && gCrewOk.pending == .resolutionChoice p0 (.crew vehId vehId 2) &&
+    gZemoOk.proposedSpell.isSome && gZemoOk.pending == .resolutionChoice p0 (.zemoBoastExile bearId bearId) &&
     gZemoFailSeq.proposedSpell.isNone && gZemoFailSeq.pending == .none &&
     gTwFailSeq.proposedSpell.isNone && gTwFailSeq.pending == .none &&
     gTwOk.proposedSpell.isSome && gTwOk.pending == .chooseTeamworkCreatures p0 2
@@ -500,8 +500,8 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
 
 -- 1. `Library.moveIdsInOrder` and `ResolutionEffects.offerBottomAnyOrder` allocate a `.oneShotEffect`
 --    `EventCause` from `currentResolvingContext?` via `allocDelayedCause`, `offerCardChoice` writes
---    `stashedCause` onto the `ContinuationFrame` pushed by `beginFraChoice`, and `beginLibrarySearch`,
---    `ModeledTriggers`, and `ResolutionEffects` push a `ContinuationFrame` via `beginFraChoice`
+--    `stashedCause` onto the `ContinuationFrame` pushed by `beginResolutionChoice`, and `beginLibrarySearch`,
+--    `ModeledTriggers`, and `ResolutionEffects` push a `ContinuationFrame` via `beginResolutionChoice`
 --    (CR 608.2c / 701.20 / 701.23).
 #guard
   let p0 : PlayerId := ⟨0⟩
@@ -537,23 +537,23 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
   let topTwo := gMovedInOrder.scryLookedIds p0 2
   let gOfferBottom := gMovedInOrder.offerBottomAnyOrder p0 topTwo (cause := none)
   let offerBottomCauseOk :=
-    gOfferBottom.pending == .fraChoice p0 (.orderLibraryBottom topTwo) &&
+    gOfferBottom.pending == .resolutionChoice p0 (.orderLibraryBottom topTwo) &&
     match gOfferBottom.stashedCause with
     | some (.oneShotEffect (some eid) s c) =>
       s == some srcId && c == some p0 && eid.raw + 1 == gOfferBottom.nextEffectId
     | _ => false
 
-  -- 1c. `ResolutionEffects.offerCardChoice` with `g.continuations == #[]` calls `beginFraChoice`
+  -- 1c. `ResolutionEffects.offerCardChoice` with `g.continuations == #[]` calls `beginResolutionChoice`
   --     BEFORE `.change (.stashedCause (some testCause))` so `g.stashedCause == some testCause`:
   let gCardChoice :=
     gBase.offerCardChoice p0 topTwo 1 (.toHand false) "Choose a card" (cause := some testCause)
   let offerCardChoiceCauseOk :=
     !gCardChoice.continuations.isEmpty &&
-    gCardChoice.pending == .fraChoice p0 (.chooseCards topTwo 1 (.toHand false)) &&
+    gCardChoice.pending == .resolutionChoice p0 (.chooseCards topTwo 1 (.toHand false)) &&
     gCardChoice.stashedCause == some testCause
 
   -- 1d. `LibrarySearch.beginLibrarySearch`, `ModeledTriggers`, and `ResolutionEffects` push a
-  --     `ContinuationFrame` via `beginFraChoice` when `g.continuations` is empty (and
+  --     `ContinuationFrame` via `beginResolutionChoice` when `g.continuations` is empty (and
   --     `offerVisionModes` preserves `g.chooseModesRest.isSome`):
   let boltDef : CardDef := {
     name := "P29i2 Bolt", manaCost := ⟨#[.colored .red]⟩, types := #[.instant]
@@ -573,21 +573,21 @@ private def replayOk29i2 (gs : Array Game) : Bool :=
   let gHyde := gBase.offerHydeChoice p0 (some srcId)
   let gDaredevil := gBase.offerExileTopHeroPump p0 (some srcId)
   let gKingpin := gBase.offerPay2LifeToughness p0
-  let gVision := gBase.beginFraChoice p0 (.visionMode srcId #[0, 1, 2]) "Choose a mode"
+  let gVision := gBase.beginResolutionChoice p0 (.visionMode srcId #[0, 1, 2]) "Choose a mode"
   let gWall := gBase.offerMayCreateWall p0
   let gPayRefl := gBase.offerPayForReflexive p0 (some srcId) #[.colored .red]
     { targets := .anyTarget, body := Instruction.dealDamageFixed (.targetSlot 0) 2 } 1
   let gExCasts := gBase.offerExileCasts p0 #[srcId] 1
   let gEntAtk :=
     gBase.promptEnteringAttackItems #[.token p0 .soldier11white true #[.player p1, .player p2] none]
-  let gWorlds := gStack.beginFraChoice p0 (.worldsPutCreatures #[srcId]) "put creatures"
+  let gWorlds := gStack.beginResolutionChoice p0 (.worldsPutCreatures #[srcId]) "put creatures"
 
   let allFraPushFrameOk :=
     #[gLibSearch, gLibMaySearch, gSacNontoken, gRetarget, gHyde,
       gDaredevil, gKingpin, gVision, gWall, gPayRefl, gExCasts, gEntAtk, gWorlds].all (fun g =>
       !g.continuations.isEmpty &&
       match g.pending with
-      | .fraChoice .. => true
+      | .resolutionChoice .. => true
       | _ => false)
 
   mustHold29i2 "1a.moveIdsInOrderCauseOk" moveIdsInOrderCauseOk &&
@@ -696,7 +696,7 @@ private def replayOk29i4 (gs : Array Game) : Bool :=
 
 -- 1. `ResolutionEffects.sourcePTAtResolution` falls back to `lastKnownPowerOf?` /
 --    `lastKnownToughnessOf?` and `snapshotPower` / `snapshotToughness` (CR 608.2h), and
---    `Decisions`, `Triggers`, `ResolutionEffects`, `Casting`, `FraChoices`, `Movement`, and
+--    `Decisions`, `Triggers`, `ResolutionEffects`, `Casting`, `ResolutionChoices`, `Movement`, and
 --    `TriggeredAbilities` read Layer 1–6 characteristics (`g.name`, `g.isCreature`,
 --    `g.isInstantOrSorcery`, `!g.isLand`, `g.objectManaValue`, CR 613.1a,d,f).
 #guard
@@ -802,52 +802,52 @@ private def replayOk30i1 (gs : Array Game) : Bool :=
     gAfterChooseSacLeave.pending != Pending.chooseSacrificeCreature p0 #[] #[] &&
     gAfterChooseSacLeave.continuations.isEmpty
 
-  -- 1b. `.fraChoice p0 (.sacrificeCreatureEach p0 #[p1] #[])` and `.sacrificeNontokenEach #[p1] #[]`:
+  -- 1b. `.resolutionChoice p0 (.sacrificeCreatureEach p0 #[p1] #[])` and `.sacrificeNontokenEach #[p1] #[]`:
   --     when `p1` leaves while `p0` (`q != leaver`) has no sacrificeable creatures (`gNoP0Bear`),
   --     `redirectPendingAfterLeave` filters `p1` from `rest` and runs `finishChosenSacrifices`:
   let gPendSacEach :=
-    gNoP0Bear.beginFraChoice p0 (.sacrificeCreatureEach p0 #[p1] #[])
+    gNoP0Bear.beginResolutionChoice p0 (.sacrificeCreatureEach p0 #[p1] #[])
   let gAfterSacEachLeave := gPendSacEach.concede p1
   let gPendSacNontoken :=
-    gNoP0Bear.beginFraChoice p0 (.sacrificeNontokenEach #[p1] #[])
+    gNoP0Bear.beginResolutionChoice p0 (.sacrificeNontokenEach #[p1] #[])
   let gAfterSacNontokenLeave := gPendSacNontoken.concede p1
   let sacEachNonLeaverOk :=
-    gAfterSacEachLeave.pending != Pending.fraChoice p0 (.sacrificeCreatureEach p0 #[] #[]) &&
+    gAfterSacEachLeave.pending != Pending.resolutionChoice p0 (.sacrificeCreatureEach p0 #[] #[]) &&
     gAfterSacEachLeave.continuations.isEmpty &&
-    gAfterSacNontokenLeave.pending != Pending.fraChoice p0 (.sacrificeNontokenEach #[] #[]) &&
+    gAfterSacNontokenLeave.pending != Pending.resolutionChoice p0 (.sacrificeNontokenEach #[] #[]) &&
     gAfterSacNontokenLeave.continuations.isEmpty
 
-  -- 1c. `.fraChoice p0 (.sacrificeDamager #[p1BearId] #[] p0 #[])` and
-  --     `.fraChoice p0 (.tricksterLibrary p0 p1BearId none)`:
+  -- 1c. `.resolutionChoice p0 (.sacrificeDamager #[p1BearId] #[] p0 #[])` and
+  --     `.resolutionChoice p0 (.tricksterLibrary p0 p1BearId none)`:
   --     when `p1` leaves and `p1BearId` leaves the battlefield with `p1`, `redirectPendingAfterLeave`
-  --     finishes the stale `fraChoice` for `p0`:
-  let gPendDamager := gBase.beginFraChoice p0 (.sacrificeDamager #[p1BearId] #[] p0 #[])
+  --     finishes the stale `resolutionChoice` for `p0`:
+  let gPendDamager := gBase.beginResolutionChoice p0 (.sacrificeDamager #[p1BearId] #[] p0 #[])
   let gAfterDamagerLeave := gPendDamager.concede p1
-  let gPendTrickster := gBase.beginFraChoice p0 (.tricksterLibrary p0 p1BearId none)
+  let gPendTrickster := gBase.beginResolutionChoice p0 (.tricksterLibrary p0 p1BearId none)
   let gAfterTricksterLeave := gPendTrickster.concede p1
   let damagerAndTricksterLeaveOk :=
-    gAfterDamagerLeave.pending != Pending.fraChoice p0 (.sacrificeDamager #[] #[] p0 #[]) &&
+    gAfterDamagerLeave.pending != Pending.resolutionChoice p0 (.sacrificeDamager #[] #[] p0 #[]) &&
     gAfterDamagerLeave.continuations.isEmpty &&
-    gAfterTricksterLeave.pending != Pending.fraChoice p0 (.tricksterLibrary p0 p1BearId none) &&
+    gAfterTricksterLeave.pending != Pending.resolutionChoice p0 (.tricksterLibrary p0 p1BearId none) &&
     gAfterTricksterLeave.continuations.isEmpty
 
-  -- 1d. `.fraChoice p0 (.sacrificeLeastPower #[p0BearId, p1BearId])`: when `p1` (`q != leaver`)
+  -- 1d. `.resolutionChoice p0 (.sacrificeLeastPower #[p0BearId, p1BearId])`: when `p1` (`q != leaver`)
   --     leaves and only `p0BearId` remains tied for least power under `p0`'s control
   --     (`liveTied.size <= 1`), `redirectPendingAfterLeave` delegates to
   --     `sacrificeLeastPowerCreature p0` via `clearPending` inside `withOuterContStashed`,
   --     sacrificing `p0BearId` without journaling `.chooseModesRest none`:
-  let gPendLeastPower := gBase.beginFraChoice p0 (.sacrificeLeastPower #[p0BearId, p1BearId])
+  let gPendLeastPower := gBase.beginResolutionChoice p0 (.sacrificeLeastPower #[p0BearId, p1BearId])
   let gAfterLeastPowerLeave := gPendLeastPower.concede p1
   let leastPowerLeaveOk :=
     (gAfterLeastPowerLeave.followMovedToZone? p0BearId (· == .graveyard p0)).isSome &&
     gAfterLeastPowerLeave.continuations.isEmpty
 
-  -- 1e. `.fraChoice p0 (.hydeRemoveCounter #[p0BearId, p1BearId])`: when `p1` (`q != leaver`)
+  -- 1e. `.resolutionChoice p0 (.hydeRemoveCounter #[p0BearId, p1BearId])`: when `p1` (`q != leaver`)
   --     leaves while `p0BearId` has a `+1/+1` counter (`live.size == 1 <= 1`),
   --     `redirectPendingAfterLeave` runs `(clearPending g).applyHydeMode p0 none 1 #[Target.permanent p0BearId]`
   --     inside `withOuterContStashed`:
   let gWithCounter := gBase.addPlusOnePlusOneTo (gBase.object! p0BearId) 1 (cause := some testCause)
-  let gPendHyde := gWithCounter.beginFraChoice p0 (.hydeRemoveCounter #[p0BearId, p1BearId])
+  let gPendHyde := gWithCounter.beginResolutionChoice p0 (.hydeRemoveCounter #[p0BearId, p1BearId])
   let gAfterHydeLeave := gPendHyde.concede p1
   let hydeLeaveOk :=
     (gAfterHydeLeave.object! p0BearId).status.plusOnePlusOne == 0 &&
@@ -863,16 +863,16 @@ private def replayOk30i1 (gs : Array Game) : Bool :=
 
   -- 1g. `Decisions.resumePendingReplacement` `.restorePending` for `.assignCombatDamage p0 true`
   --     (when no combat damage assignment is needed) and
-  --     `.fraChoice p0 (.tricksterLibrary p0 p1BearId none)` (when `p1BearId` left the battlefield):
+  --     `.resolutionChoice p0 (.tricksterLibrary p0 p1BearId none)` (when `p1BearId` left the battlefield):
   let (gBlockersGone, _) := gBase.move p1BearId (.graveyard p1) none (cause := some testCause)
   let gRestoreCombat :=
     gBlockersGone.resumePendingReplacement (.restorePending (.assignCombatDamage p0 true) false)
   let gRestoreTrickster :=
     gBlockersGone.resumePendingReplacement
-      (.restorePending (.fraChoice p0 (.tricksterLibrary p0 p1BearId none)) false)
+      (.restorePending (.resolutionChoice p0 (.tricksterLibrary p0 p1BearId none)) false)
   let restorePendingOk :=
     gRestoreCombat.pending != Pending.assignCombatDamage p0 true &&
-    gRestoreTrickster.pending != Pending.fraChoice p0 (.tricksterLibrary p0 p1BearId none) &&
+    gRestoreTrickster.pending != Pending.resolutionChoice p0 (.tricksterLibrary p0 p1BearId none) &&
     gRestoreTrickster.log.back? == some "The target is no longer legal"
 
   mustHold30i1 "1a.chooseSacNonLeaverOk" chooseSacNonLeaverOk &&
@@ -889,7 +889,7 @@ private def replayOk30i1 (gs : Array Game) : Bool :=
 
 end Phase30Item1EventAlignment
 
-/-! ### Phase 30 Item 2: `Core.beginFraChoice` frame-push invariant across all `.fraChoice` writers -/
+/-! ### Phase 30 Item 2: `Core.beginResolutionChoice` frame-push invariant across all `.resolutionChoice` writers -/
 section Phase30Item2EventAlignment
 
 private def mustHold30i2 (label : String) (ok : Bool) : Bool :=
@@ -904,27 +904,27 @@ private def replayOk30i2 (gs : Array Game) : Bool :=
   let gBase := addPermanent (addPermanent afterDraw bear p0 p0) bear p1 p1
   let p0BearId := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
 
-  -- 1a. `g.beginFraChoice p choice` (default `msg := ""`) pushes a continuation frame when
+  -- 1a. `g.beginResolutionChoice p choice` (default `msg := ""`) pushes a continuation frame when
   --     `g.continuations.isEmpty` and does not log an empty message:
   let logSize0 := gBase.log.size
-  let gSilentChoice := gBase.beginFraChoice p0 (.hydeRemoveCounter #[p0BearId])
-  let gSilentFinished := (gSilentChoice.change (.pending .none)).finishFraChoice
+  let gSilentChoice := gBase.beginResolutionChoice p0 (.hydeRemoveCounter #[p0BearId])
+  let gSilentFinished := (gSilentChoice.change (.pending .none)).finishResolutionChoice
   let silentBeginFraChoiceOk :=
     gBase.continuations.isEmpty &&
     gSilentChoice.continuations.size == 1 &&
     gSilentChoice.log.size == logSize0 &&
-    gSilentChoice.pending == Pending.fraChoice p0 (.hydeRemoveCounter #[p0BearId]) &&
+    gSilentChoice.pending == Pending.resolutionChoice p0 (.hydeRemoveCounter #[p0BearId]) &&
     gSilentFinished.continuations.isEmpty &&
     gSilentFinished.pending == .none
 
   -- 1b. Direct calls to `ResolutionEffects.offerBottomAnyOrder`
-  --     when `g.continuations.isEmpty` push a frame via `beginFraChoice`:
+  --     when `g.continuations.isEmpty` push a frame via `beginResolutionChoice`:
   let gLib2 := insertObject (insertObject gBase bear p0 (.library p0)) bear p0 (.library p0)
   let topTwo := (gLib2.player p0).library.extract ((gLib2.player p0).library.size - 2) (gLib2.player p0).library.size
   let gBottomChoice := gLib2.offerBottomAnyOrder p0 topTwo
   let directWritersPushFrameOk :=
     gBottomChoice.continuations.size == 1 &&
-    gBottomChoice.pending == Pending.fraChoice p0 (.orderLibraryBottom topTwo)
+    gBottomChoice.pending == Pending.resolutionChoice p0 (.orderLibraryBottom topTwo)
 
   mustHold30i2 "1a.silentBeginFraChoiceOk" silentBeginFraChoiceOk &&
   mustHold30i2 "1b.directWritersPushFrameOk" directWritersPushFrameOk &&
@@ -1108,7 +1108,7 @@ private def replayOk31i1 (gs : Array Game) : Bool :=
     gAfterMayBolg.pending != Pending.maySacrificeAnotherBolg p0 p0BearId &&
     gAfterLibPlace.pending != Pending.chooseLibraryPlacement p0 (some p1BearId)
 
-  -- 1b. `redirectPendingAfterLeave` (`q != p`) on `.fraChoice p0`:
+  -- 1b. `redirectPendingAfterLeave` (`q != p`) on `.resolutionChoice p0`:
   --     `.chooseCards (.amassArmy ...)`, `.attachAnyEquipment`, `.maySacrificeAnotherCreatureForPower`,
   --     `.maySacrificeAnotherForDrawTreasure`, `.maySacrificeThese`, `.sheHulkMayDamage`,
   --     `.widowMayCounter`, and `.sacrificeLeastPower`:
@@ -1121,45 +1121,45 @@ private def replayOk31i1 (gs : Array Game) : Bool :=
   let p1ArmyId := (gTwoArmies.battlefield.filter (fun o => o.owner == p1 && o.name == "P31 Army"))[0]!.id
   let gPendAmass :=
     (gTwoArmies.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.chooseCards #[p0ArmyId, p1ArmyId] 1 (.amassArmy .orc 2 none))))
+      (.pending (.resolutionChoice p0 (.chooseCards #[p0ArmyId, p1ArmyId] 1 (.amassArmy .orc 2 none))))
   let gAfterAmassLeave := gPendAmass.concede p1
   let gPendAttachAny :=
     (gWithEq.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.attachAnyEquipment p1BearId #[eqId])))
+      (.pending (.resolutionChoice p0 (.attachAnyEquipment p1BearId #[eqId])))
   let gAfterAttachAnyLeave := gPendAttachAny.concede p1
   let gPendSacPow :=
     (gP0ControlsP1Bear.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.maySacrificeAnotherCreatureForPower p1BearId)))
+      (.pending (.resolutionChoice p0 (.maySacrificeAnotherCreatureForPower p1BearId)))
   let gAfterSacPowLeave := gPendSacPow.concede p1
   let gPendSacDraw :=
     (gP0ControlsP1Bear.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.maySacrificeAnotherForDrawTreasure p1BearId)))
+      (.pending (.resolutionChoice p0 (.maySacrificeAnotherForDrawTreasure p1BearId)))
   let gAfterSacDrawLeave := gPendSacDraw.concede p1
   let gPendSacThese :=
     (gP0ControlsP1Bear.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.maySacrificeThese 1 #[p1BearId])))
+      (.pending (.resolutionChoice p0 (.maySacrificeThese 1 #[p1BearId])))
   let gAfterSacTheseLeave := gPendSacThese.concede p1
   let gPendSheHulk :=
     (gBase.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.sheHulkMayDamage 2 (.permanent p1BearId) (some p0BearId))))
+      (.pending (.resolutionChoice p0 (.sheHulkMayDamage 2 (.permanent p1BearId) (some p0BearId))))
   let gAfterSheHulkLeave := gPendSheHulk.concede p1
   let gPendWidow :=
     (gBase.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.widowMayCounter (some p1BearId) none)))
+      (.pending (.resolutionChoice p0 (.widowMayCounter (some p1BearId) none)))
   let gAfterWidowLeave := gPendWidow.concede p1
   let gPendLeastPow :=
     (gBase.giveControlUntilEot (gBase.object! p1BearId) p0).change
-      (.pending (.fraChoice p0 (.sacrificeLeastPower #[p0BearId, p1BearId])))
+      (.pending (.resolutionChoice p0 (.sacrificeLeastPower #[p0BearId, p1BearId])))
   let gAfterLeastPowLeave := gPendLeastPow.concede p1
 
   let fraChoiceLeaveRevalOk :=
     (gAfterAmassLeave.object! p0ArmyId).status.plusOnePlusOne == 2 &&
-    gAfterAttachAnyLeave.pending != Pending.fraChoice p0 (.attachAnyEquipment p1BearId #[eqId]) &&
-    gAfterSacPowLeave.pending != Pending.fraChoice p0 (.maySacrificeAnotherCreatureForPower p1BearId) &&
-    gAfterSacDrawLeave.pending != Pending.fraChoice p0 (.maySacrificeAnotherForDrawTreasure p1BearId) &&
-    gAfterSacTheseLeave.pending != Pending.fraChoice p0 (.maySacrificeThese 1 #[p1BearId]) &&
-    gAfterSheHulkLeave.pending != Pending.fraChoice p0 (.sheHulkMayDamage 2 (.permanent p1BearId) (some p0BearId)) &&
-    gAfterWidowLeave.pending != Pending.fraChoice p0 (.widowMayCounter (some p1BearId) none) &&
+    gAfterAttachAnyLeave.pending != Pending.resolutionChoice p0 (.attachAnyEquipment p1BearId #[eqId]) &&
+    gAfterSacPowLeave.pending != Pending.resolutionChoice p0 (.maySacrificeAnotherCreatureForPower p1BearId) &&
+    gAfterSacDrawLeave.pending != Pending.resolutionChoice p0 (.maySacrificeAnotherForDrawTreasure p1BearId) &&
+    gAfterSacTheseLeave.pending != Pending.resolutionChoice p0 (.maySacrificeThese 1 #[p1BearId]) &&
+    gAfterSheHulkLeave.pending != Pending.resolutionChoice p0 (.sheHulkMayDamage 2 (.permanent p1BearId) (some p0BearId)) &&
+    gAfterWidowLeave.pending != Pending.resolutionChoice p0 (.widowMayCounter (some p1BearId) none) &&
     (gAfterLeastPowLeave.followMovedToZone? p0BearId (· == .graveyard p0)).isSome
 
   -- 1c. `interpWait?` `.branchOnChoice` in `redirectPendingAfterLeave` declines cleanly
@@ -1415,7 +1415,7 @@ private def replayOk32i1 (gs : Array Game) : Bool :=
   let gBase := addPermanent (addPermanent afterDraw bear p0 p0) hero p1 p1
   let p0Bear := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!
 
-  -- 1a. `finishFraChoice` pops an empty `ContinuationFrame {}` pushed by `beginFraChoice`
+  -- 1a. `finishResolutionChoice` pops an empty `ContinuationFrame {}` pushed by `beginResolutionChoice`
   --     before `promptTriggerTargetsIfNeeded` opens `Pending.chooseTargets`:
   let gHkStack :=
     gBase.putReflexiveTrigger p0 (some p0Bear.id)
@@ -1425,11 +1425,11 @@ private def replayOk32i1 (gs : Array Game) : Bool :=
   let emptyFramePoppedBeforeTargetsOk :=
     gBase.continuations.isEmpty &&
     gHkStack.continuations.size == 1 &&
-    (match gHkStack.pending with | .fraChoice q (.hawkeyeModes 1 #[] (some _)) => q == p0 | _ => false) &&
+    (match gHkStack.pending with | .resolutionChoice q (.hawkeyeModes 1 #[] (some _)) => q == p0 | _ => false) &&
     gHkChoseNet.pending == .chooseTargets p0 &&
     gHkChoseNet.continuations.isEmpty
 
-  -- 1b. `finishFraChoice` and `finishAndGrantPriority` tear down active resolving stack entries
+  -- 1b. `finishResolutionChoice` and `finishAndGrantPriority` tear down active resolving stack entries
   --     and pop all `ContinuationFrame`s when `g.over` becomes true during `drainPendingContinuations`:
   let simpleAb : TriggeredAbility := TriggeredAbility.mkTrigger (.gainLife .you) (Effect.gainLife 1)
   let gWithAbOnStack := gBase.putTriggeredAbilityOnStack p0 p0Bear simpleAb "triggers" (eventCause := some testCause)
@@ -1440,7 +1440,7 @@ private def replayOk32i1 (gs : Array Game) : Bool :=
       (.pushContinuationFrame {
         resolutionFinish := some (.ability abObjId abSnap p0 (some p0Bear.id) none)
       })).change (.pushContinuationFrame {})).change (.pendingReplacement (some .checkSBA))
-  let gFraGameOver := gResolvingLethal.finishFraChoice
+  let gFraGameOver := gResolvingLethal.finishResolutionChoice
   let gPrioGameOver := gResolvingLethal.finishAndGrantPriority p0
   let gameOverTeardownOk :=
     gFraGameOver.over &&
@@ -1574,7 +1574,7 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
       | _ => false
 
   let upToModesLeaveOk :=
-    gUpToReopen1.pending == .fraChoice p0 (.upToTriggerModes upToObjId1 2 #[]) &&
+    gUpToReopen1.pending == .resolutionChoice p0 (.upToTriggerModes upToObjId1 2 #[]) &&
     gUpToLeaverConcede.pending == .none &&
     gUpToEmptyAfterLeave.pending == .none &&
     emptyFinalizedAnnounced &&
@@ -1612,10 +1612,10 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
       | _ => false
   let gHkNoneObj :=
     ((gBase.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.hawkeyeModes 2 #[] none)))).concede p1
+      (.pending (.resolutionChoice p0 (.hawkeyeModes 2 #[] none)))).concede p1
 
   let hawkeyeLeaveOk :=
-    gHkReopen1.pending == .fraChoice p0 (.hawkeyeModes 2 #[] (some hkObjId1)) &&
+    gHkReopen1.pending == .resolutionChoice p0 (.hawkeyeModes 2 #[] (some hkObjId1)) &&
     hkFinalizedAnnounced &&
     gHkAfterP1Leave.pending == .chooseTargets p0 &&
     gHkAfterP1Leave.continuations.isEmpty &&
@@ -1629,10 +1629,10 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
   let gUnusedGone := (gUnused0.ceaseToExist unusedObjId (cause := some testCause)).concede p1
   let gHydeOnStack :=
     ((gBase.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.stackHydeMode unusedObjId))))
+      (.pending (.resolutionChoice p0 (.stackHydeMode unusedObjId))))
   let gHydeGone := gHydeOnStack.concede p1
   let stackHydeAndUnusedOk :=
-    (match gUnusedKeep.pending with | .fraChoice q (.stackTriggerUnusedMode oid ..) => q == p0 && oid == unusedObjId | _ => false) &&
+    (match gUnusedKeep.pending with | .resolutionChoice q (.stackTriggerUnusedMode oid ..) => q == p0 && oid == unusedObjId | _ => false) &&
     gUnusedGone.pending == .none &&
     gHydeGone.pending == .none
 
@@ -1692,7 +1692,7 @@ private def replayOk32i2 (gs : Array Game) : Bool :=
 
 end Phase32Item2EventAlignment
 
-/-! ### Phase 32 Item 3: `redirectPendingAfterLeave` `q != p` `.mayCastExiledElseDamage` & object-referencing `FraChoice` revalidation, and `stillInGame` entry guards -/
+/-! ### Phase 32 Item 3: `redirectPendingAfterLeave` `q != p` `.mayCastExiledElseDamage` & object-referencing `ResolutionChoice` revalidation, and `stillInGame` entry guards -/
 section Phase32Item3EventAlignment
 
 private def mustHold32i3 (label : String) (ok : Bool) : Bool :=
@@ -1752,24 +1752,24 @@ private def replayOk32i3 (gs : Array Game) : Bool :=
     (gCastExSelfLeave.player p0).life == (gWithP0Exiled.player p0).life - 2 &&
     (gCastExSelfLeave.player p2).life == (gWithP0Exiled.player p2).life - 2
 
-  -- 3b. Object-referencing `FraChoice` prompts on `q != p` when `p1`'s permanent leaves with `p1`:
-  let gTopBot := (gBase.beginFraChoice p0 (.topOrBottomDamage p1BearId 2 none)).concede p1
-  let gChooseKw := (gBase.beginFraChoice p0 (.chooseKeyword p1BearId #[Keyword.trample, Keyword.deathtouch])).concede p1
-  let gBecomePT := (gBase.beginFraChoice p0 (.mayBecomeBasePT p1BearId 4 4)).concede p1
+  -- 3b. Object-referencing `ResolutionChoice` prompts on `q != p` when `p1`'s permanent leaves with `p1`:
+  let gTopBot := (gBase.beginResolutionChoice p0 (.topOrBottomDamage p1BearId 2 none)).concede p1
+  let gChooseKw := (gBase.beginResolutionChoice p0 (.chooseKeyword p1BearId #[Keyword.trample, Keyword.deathtouch])).concede p1
+  let gBecomePT := (gBase.beginResolutionChoice p0 (.mayBecomeBasePT p1BearId 4 4)).concede p1
   let gPlusOne :=
-    ((gBase.addPlusOnePlusOneTo (gBase.object! p1BearId) 1 (cause := some testCause)).beginFraChoice
+    ((gBase.addPlusOnePlusOneTo (gBase.object! p1BearId) 1 (cause := some testCause)).beginResolutionChoice
       p0 (.mayMovePlusOne p1BearId)).concede p1
-  let gMoveAll := (gBase.beginFraChoice p0 (.mayMoveAllCounters p0BearId p1BearId)).concede p1
-  let gTapSrc := (gBase.beginFraChoice p0 (.mayTapSourceThen (Instruction.gainLifeFixed 2) p1BearId)).concede p1
+  let gMoveAll := (gBase.beginResolutionChoice p0 (.mayMoveAllCounters p0BearId p1BearId)).concede p1
+  let gTapSrc := (gBase.beginResolutionChoice p0 (.mayTapSourceThen (Instruction.gainLifeFixed 2) p1BearId)).concede p1
 
   let gWithRestCard := insertObject gBase hero p0 .exile
   let restCardId := (gWithRestCard.objects.filter (fun o => o.owner == p0 && o.zone == .exile && o.name == hero.name))[0]!.id
   let gNickFury :=
-    (gWithRestCard.beginFraChoice p0 (.nickFuryMayTransform p1DfcId #[restCardId])).concede p1
+    (gWithRestCard.beginResolutionChoice p0 (.nickFuryMayTransform p1DfcId #[restCardId])).concede p1
   let gWithTwoRestCards := insertObject gWithRestCard forest p0 .exile
   let restCard2Id := (gWithTwoRestCards.objects.filter (fun o => o.owner == p0 && o.zone == .exile && o.name == forest.name))[0]!.id
   let gNickFuryTwoRest :=
-    (gWithTwoRestCards.beginFraChoice p0 (.nickFuryMayTransform p1DfcId #[restCardId, restCard2Id])).concede p1
+    (gWithTwoRestCards.beginResolutionChoice p0 (.nickFuryMayTransform p1DfcId #[restCardId, restCard2Id])).concede p1
   let nickFuryTwoRestRandomOk :=
     match gNickFuryTwoRest.pending with
     | .resolveRandom (.orderInto ids (.library q) _) =>
@@ -1899,18 +1899,18 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
     isTornDown gHostRandomOver
 
   -- 1b. `popEmptyTopContinuationFrames` in `drainPendingContinuations` and `.restorePending`
-  --     (and `openPromptWith` frame push for `.fraChoice`):
+  --     (and `openPromptWith` frame push for `.resolutionChoice`):
   let gEmptyFrameBeforeTargets :=
     ((gBase.change (.pushContinuationFrame {})).change
       (.pendingReplacement (some (.restorePending (.chooseTargets p0))))).drainPendingContinuations
   let gRestoreFraPushesFrame :=
     ((gBase.change (.pushContinuationFrame {})).change
-      (.pendingReplacement (some (.restorePending (.fraChoice p0 (.mayCreateTokens .treasure 1)))))).drainPendingContinuations
+      (.pendingReplacement (some (.restorePending (.resolutionChoice p0 (.mayCreateTokens .treasure 1)))))).drainPendingContinuations
   let emptyTopFrameOk :=
     gBase.continuations.isEmpty &&
     gEmptyFrameBeforeTargets.pending == .chooseTargets p0 &&
     gEmptyFrameBeforeTargets.continuations.isEmpty &&
-    gRestoreFraPushesFrame.pending == .fraChoice p0 (.mayCreateTokens .treasure 1) &&
+    gRestoreFraPushesFrame.pending == .resolutionChoice p0 (.mayCreateTokens .treasure 1) &&
     gRestoreFraPushesFrame.continuations.size == 1
 
   -- 1c. Ward `outerCont?` ordering (`finishWardAndDrain`, `sacrificeForActivation` `.payWard`,
@@ -1962,20 +1962,20 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
   -- `.chooseCards` (`q == p`) clears `.stashedCause none`:
   let gChooseCardsLeave :=
     ((g3Base.change (.pushContinuationFrame { stashedCause := some testCause })).change
-      (.pending (.fraChoice p1 (.chooseCards #[] 1 (.toHand false))))).concede p1
+      (.pending (.resolutionChoice p1 (.chooseCards #[] 1 (.toHand false))))).concede p1
   -- `.orderLibraryBottom` (`q != p` with `liveIds.size == 1` moves remaining card to bottom):
   let p0TopId := (g3Base.player p0).library.back!
   let p1TopId := (g3Base.player p1).library.back!
   let gOrderBotSingle :=
     ((g3Base.change (.pushContinuationFrame { stashedCause := some testCause })).change
-      (.pending (.fraChoice p0 (.orderLibraryBottom #[p0TopId, p1TopId])))).concede p1
+      (.pending (.resolutionChoice p0 (.orderLibraryBottom #[p0TopId, p1TopId])))).concede p1
   -- `.searchLibrary` (`q == p` clears pending and frame; and `q != p` filters vanished `eligible` cards):
   let gSearchTargetLeaves :=
     ((g3Base.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p1 (.searchLibrary #[p1TopId] 1 .hand none "a card")))).concede p1
+      (.pending (.resolutionChoice p1 (.searchLibrary #[p1TopId] 1 .hand none "a card")))).concede p1
   let gSearchOtherLeaves :=
     ((g3Base.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.maySearchLibrary #[p0TopId, p1TopId] 1 .hand none "a card")))).concede p1
+      (.pending (.resolutionChoice p0 (.maySearchLibrary #[p0TopId, p1TopId] 1 .hand none "a card")))).concede p1
 
   let mayAndScratchCleanupOk :=
     gMayTargetGone.pending == .none &&
@@ -1992,7 +1992,7 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
     (gOrderBotSingle.player p0).library[0]? == (gOrderBotSingle.followMovedToZone? p0TopId (· == .library p0)).map (·.id) &&
     gSearchTargetLeaves.pending == .none &&
     gSearchTargetLeaves.continuations.isEmpty &&
-    gSearchOtherLeaves.pending == .fraChoice p0 (.maySearchLibrary #[p0TopId] 1 .hand none "a card")
+    gSearchOtherLeaves.pending == .resolutionChoice p0 (.maySearchLibrary #[p0TopId] 1 .hand none "a card")
 
   mustHold33i1 "1a.gameOverTeardownOk" gameOverTeardownOk &&
   mustHold33i1 "1b.emptyTopFrameOk" emptyTopFrameOk &&
@@ -2290,7 +2290,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
     (gTrigModesAfterLeave.change (.pending .none)).runPostStep
       (.resumeTriggerModesAfterLeave p0 trigModesObjId 0 #[1, 2])
   let trigModesRevalOk :=
-    gTrigModesAfterLeave.pending == .fraChoice p0 (.triggerModes trigModesObjId 2 #[]) &&
+    gTrigModesAfterLeave.pending == .resolutionChoice p0 (.triggerModes trigModesObjId 2 #[]) &&
     gTrigModesFinalize0.pending == .none &&
     (gTrigModesFinalize0.stack.find? (·.objectId == trigModesObjId)).any (·.targetsAnnounced)
 
@@ -2313,7 +2313,7 @@ private def mustApply33i2 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gHkFiltered :=
     (gHkStack.change (.pending .none)).runPostStep (.resumeHawkeyeModesAfterLeave p0 hkObjId 1 #[0, 2])
   let upToAndHkFilterOk :=
-    gUpToReopen.pending == .fraChoice p0 (.upToTriggerModes trigModesObjId 1 #[1]) &&
+    gUpToReopen.pending == .resolutionChoice p0 (.upToTriggerModes trigModesObjId 1 #[1]) &&
     gUpToFilter.pending == .none &&
     gUpToFilter.chosenModesOf (gUpToFilter.object! trigModesObjId) == #[1, 2] &&
     gHkFiltered.pending == .none &&
@@ -2426,7 +2426,7 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let p2Bear := (gBase.permanentsOf p2).find? (·.name == bear.name) |>.get!
 
   -- 3a. `redirectPendingAfterLeave` `q != p` proposal-cost revalidation (`.crew` / `.chooseTeamworkCreatures`):
-  --     `p0` steals `p1`'s Vehicle (`crew := some 2`) and activates Crew; while `Pending.fraChoice p0 (.crew ...)`
+  --     `p0` steals `p1`'s Vehicle (`crew := some 2`) and activates Crew; while `Pending.resolutionChoice p0 (.crew ...)`
   --     is open, `p1` concedes, removing the Vehicle! `resumeProposalCostAfterLeave` reverses `p0`'s proposal!
   --     Conversely, if `p0` owns the Vehicle and still controls `p0Bear` (power 2), `p1` conceding keeps `.crew` open!
   let vehicleDef : CardDef := {
@@ -2464,7 +2464,7 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gCrewOwnAfterLeave := gCrewOwn.concede p1
 
   let proposalCostLeaveOk :=
-    (match gCrewStolen.pending with | .fraChoice q (.crew _ vid 2) => q == p0 && vid == stolenVehId | _ => false) &&
+    (match gCrewStolen.pending with | .resolutionChoice q (.crew _ vid 2) => q == p0 && vid == stolenVehId | _ => false) &&
     gCrewStolenAfterLeave.pending == .none &&
     gCrewStolenAfterLeave.proposedSpell.isNone &&
     gCrewStolenAfterLeave.stack.isEmpty &&
@@ -2472,7 +2472,7 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     (gCrewCkptAfterLeave.player p0).life == p0LifeBeforeCrew + 3 &&
     gCrewSeqTail.proposedSpell.isNone &&
     (gCrewSeqTail.player p0).life == p0LifeBeforeCrew &&
-    (match gCrewOwnAfterLeave.pending with | .fraChoice q (.crew _ vid 2) => q == p0 && vid == ownVehId | _ => false) &&
+    (match gCrewOwnAfterLeave.pending with | .resolutionChoice q (.crew _ vid 2) => q == p0 && vid == ownVehId | _ => false) &&
     gCrewOwnAfterLeave.proposedSpell.isSome
 
   -- 3b. `.mayAttachEquipment`, `.payWard`, and multi-slot staged target reversion (`q != p`):
@@ -2539,10 +2539,10 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let stagedBefore := #[Target.permanent p1Hero.id, Target.permanent p2Bear.id]
   let gRetargetAfterLeave :=
     ((gTwinOnStack.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.mayChangeSpellTarget twinId 1 stagedBefore)))).concede p1
+      (.pending (.resolutionChoice p0 (.mayChangeSpellTarget twinId 1 stagedBefore)))).concede p1
   let gCopySlotAfterLeave :=
     ((gTwinOnStack.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.newTargetsForCopySlot #[twinId] 1 stagedBefore)))).concede p1
+      (.pending (.resolutionChoice p0 (.newTargetsForCopySlot #[twinId] 1 stagedBefore)))).concede p1
 
   let equipWardAndRetargetOk :=
     gEquipStolenGone.pending == .none && gEquipStolenGone.continuations.isEmpty &&
@@ -2551,9 +2551,9 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gWardPartialUnpayable.pending == .none &&
     (gWardPartialUnpayable.findObject? p0AbId).isNone &&
     gWardPartialUnpayable.log.any (·.endsWith "cannot finish paying ward") &&
-    gRetargetAfterLeave.pending == .fraChoice p0
+    gRetargetAfterLeave.pending == .resolutionChoice p0
       (.mayChangeSpellTarget twinId 1 #[Target.permanent p0Bear.id, Target.permanent p2Bear.id]) &&
-    gCopySlotAfterLeave.pending == .fraChoice p0
+    gCopySlotAfterLeave.pending == .resolutionChoice p0
       (.newTargetsForCopySlot #[twinId] 1 #[Target.permanent p0Bear.id, Target.permanent p2Bear.id])
 
   -- 3c. `AfterRandom.player?`, `--norandom` `.resolveRandom` (`PostStep.runAfterRandom` &
@@ -2696,8 +2696,8 @@ private def mustApply33i4 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gBase.canPayLife p1 0 &&
     !gP1Departed.canPayLife p1 0
 
-  -- 4b. Layer 1 `g.name` / `pr.originalSnapshot.name` queries in `FraHelpers`, `CastExtras`,
-  --     `ResolutionHelpers`, `StateBasedActions`, and `FraChoices`:
+  -- 4b. Layer 1 `g.name` / `pr.originalSnapshot.name` queries in `ResolutionHelpers`,
+  --     `CastExtras`, `StateBasedActions`, and `ResolutionChoices`:
   let sphinxCopyDef : CardDef := { bear with name := "Sphinx's Approach" }
   let cloneCardDef : CardDef := { bear with name := "Cloned Illusion" }
   let gGy0 := insertObject gBase bear p0 (.graveyard p0)
@@ -2730,7 +2730,7 @@ private def mustApply33i4 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gTokGyCopied := gTokGy.createEffect (ContinuousEffectSpec.copy tokGyId cloneCardDef) (cause := some testCause)
   let gAfterSba := gTokGyCopied.checkSBA
 
-  -- `FraChoices` `.zemoBoastExile`: when `sourceId` left the battlefield before choosing exiled cards,
+  -- `ResolutionChoices` `.zemoBoastExile`: when `sourceId` left the battlefield before choosing exiled cards,
   -- `pr.originalSnapshot.name` supplies the Layer 1 name (`"Cloned Zemo"`) to the activated ability log!
   let blackCardDef : CardDef := {
     bear with
@@ -2766,13 +2766,13 @@ private def mustApply33i4 (g : Game) (p : PlayerId) (a : Action) : Game :=
     (gZemoStack.change (.pushContinuationFrame {})).changes #[
       .saveProposalCheckpoint,
       .proposedSpell (some zemoProp),
-      .pending (.fraChoice p0 (.zemoBoastExile abId zemoSrc.id)) ]
+      .pending (.resolutionChoice p0 (.zemoBoastExile abId zemoSrc.id)) ]
   let gZemoActivated := mustApply33i4 gZemoPrompt p0 (.choosePermanents #[blackGyId])
 
   let layeredNameReadsOk :=
-    gGy0.sphinxsApproachesInGraveyard p0 == #[] &&
-    gGySphinx.sphinxsApproachesInGraveyard p0 == #[gyId] &&
-    gSrcCopied.fraSourceName (some p0BearId) == "Cloned Illusion" &&
+    gGy0.graveyardCardsNamed p0 "Sphinx's Approach" == #[] &&
+    gGySphinx.graveyardCardsNamed p0 "Sphinx's Approach" == #[gyId] &&
+    gSrcCopied.effectSourceName (some p0BearId) == "Cloned Illusion" &&
     gDiscRevealed.log.any (fun s => mentions s "Cloned Illusion") &&
     gMilled.log.any (·.endsWith "mills Cloned Illusion") &&
     gMovedToHand.log.any (·.endsWith "puts Cloned Illusion into their hand") &&
@@ -2787,7 +2787,7 @@ private def mustApply33i4 (g : Game) (p : PlayerId) (a : Action) : Game :=
 
 end Phase33Item4EventAlignment
 
-/-! ### Phase 34 Item 1: `reverseToProposalCheckpointCore?` non-proposal modal trigger preservation, `finishFraChoice` / `finishAndGrantPriority` / `afterWardResolved` proposal reversal & `interpWait?` ordering -/
+/-! ### Phase 34 Item 1: `reverseToProposalCheckpointCore?` non-proposal modal trigger preservation, `finishResolutionChoice` / `finishAndGrantPriority` / `afterWardResolved` proposal reversal & `interpWait?` ordering -/
 section Phase34Item1EventAlignment
 
 private def mustHold34i1 (label : String) (ok : Bool) : Bool :=
@@ -2873,14 +2873,14 @@ private def replayOk34i1 (gs : Array Game) : Bool :=
       .proposedSpell (some boltProp),
       .pending (.activateManaAbilities p0) ]
 
-  -- 1b. `finishFraChoice` and `finishAndGrantPriority`:
+  -- 1b. `finishResolutionChoice` and `finishAndGrantPriority`:
   -- (i) Game-over (`g.over`) with an orphaned `proposedSpell` reverses the proposal to hand BEFORE
   --     `completeActiveResolutions.clearTransientPromptsOnGameOver`:
   let (gVanishedProp0, _) := gWithProp.move stackBoltId (.graveyard p0) none (cause := some testCause)
   let gVanishedProp := (gVanishedProp0.change (.removeStackEntry stackBoltId)).change (.pending .none)
   let gOverWithProp :=
     gVanishedProp.record (GameEvent.gameEnded gVanishedProp.turnNumber (.won p0))
-  let gFinishFraOver := gOverWithProp.finishFraChoice
+  let gFinishFraOver := gOverWithProp.finishResolutionChoice
   let gFinishGrantOver := gOverWithProp.finishAndGrantPriority p0
   -- (ii) `triggerNeedingTargets` is prompted before `waitingTriggers`:
   let targTrigAb : TriggeredAbility :=
@@ -2894,12 +2894,12 @@ private def replayOk34i1 (gs : Array Game) : Bool :=
                          { controller := p0, source := p0Bear, ability := simpleTrigAb }],
       .pushContinuationFrame {},
       .pending .none ]
-  let gFraPromptsTarg := gUnannouncedTrig.finishFraChoice
+  let gFraPromptsTarg := gUnannouncedTrig.finishResolutionChoice
   let gGrantPromptsTarg := gUnannouncedTrig.finishAndGrantPriority p0
   -- (iii) Vanished `proposedSpell` (`spellId` no longer on `.stack`) is reversed by both
-  --       `finishFraChoice` and `finishAndGrantPriority` (and live `proposedSpell` in
+  --       `finishResolutionChoice` and `finishAndGrantPriority` (and live `proposedSpell` in
   --       `finishAndGrantPriority` pops empty top continuation frames without granting idle priority):
-  let gFraRevVanished := gVanishedProp.finishFraChoice
+  let gFraRevVanished := gVanishedProp.finishResolutionChoice
   let gGrantRevVanished := gVanishedProp.finishAndGrantPriority p0
   let gLivePropGrant :=
     ((gWithProp.change (.pushContinuationFrame {})).change (.pending .none)).finishAndGrantPriority p0
@@ -3056,7 +3056,7 @@ private def replayOk34i2 (gs : Array Game) : Bool :=
   --     `.resumeTriggerModesAfterLeave`, `.resumeUpToTriggerModesAfterLeave`,
   --     `.resumeHawkeyeModesAfterLeave`, and `.resumeProposalCostAfterLeave`):
   --     - Game-over (`g.over`) reverses any orphaned `proposedSpell` before `completeActiveResolutions`;
-  --     - Departed `p1` tears down via `finishFraChoice` without re-opening `.fraChoice` or emitting
+  --     - Departed `p1` tears down via `finishResolutionChoice` without re-opening `.resolutionChoice` or emitting
   --       post-departure announcements or stack removals;
   --     - Living `p0` with vanished `proposedSpell` reverses in `.resumeChooseModeAfterLeave`,
   --       `.resumeChooseTargetsAfterLeave`, and `.resumeProposalCostAfterLeave`.
@@ -3092,7 +3092,7 @@ private def replayOk34i2 (gs : Array Game) : Bool :=
         (fun g => g.over && g.proposedSpell.isNone && (g.player p0).hand.contains handBoltId)) &&
     mustHold34i2 "2c.departedTrigModes"
       ((#[gDepartedTrigModes, gDepartedUpToModes, gDepartedHkModes]).all
-        (fun g => g.pending == .none && g.continuations.isEmpty && g == gP1TrigLeft.finishFraChoice)) &&
+        (fun g => g.pending == .none && g.continuations.isEmpty && g == gP1TrigLeft.finishResolutionChoice)) &&
     mustHold34i2 "2c.vanishedPostSteps"
       ((#[gVanishedModePost, gVanishedTargPost, gVanishedCostPost]).all
         (fun g => g.proposedSpell.isNone && (g.player p0).hand.contains handBoltId))
@@ -3419,20 +3419,20 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
   let gCopiesFreeP1Leaves :=
     ((gCopy0.change (.pushContinuationFrame {
       pendingFreeCopies := some (p1, #[exCopyId1], 3, 1)
-    })).change (.pending (.fraChoice p1 (.castCopiesFree #[exCopyId1] 3 1)))).concede p1
+    })).change (.pending (.resolutionChoice p1 (.castCopiesFree #[exCopyId1] 3 1)))).concede p1
   let gCopiesFreeUnpayable :=
     ((gCopy0.change (.pushContinuationFrame {
       pendingFreeCopies := some (p0, #[exCopyId1], 0, 0)
-    })).change (.pending (.fraChoice p0 (.castCopiesFree #[exCopyId1] 0 0)))).concede p1
+    })).change (.pending (.resolutionChoice p0 (.castCopiesFree #[exCopyId1] 0 0)))).concede p1
   let gMayCastCopyP1Leaves :=
-    ((gCopy0.change (.pushContinuationFrame {})).change (.pending (.fraChoice p1 (.mayCastCopy exCopyId1)))).concede p1
+    ((gCopy0.change (.pushContinuationFrame {})).change (.pending (.resolutionChoice p1 (.mayCastCopy exCopyId1)))).concede p1
   let gMayCastCopyGone :=
-    ((gBase.change (.pushContinuationFrame {})).change (.pending (.fraChoice p0 (.mayCastCopy handBoltId)))).concede p1
+    ((gBase.change (.pushContinuationFrame {})).change (.pending (.resolutionChoice p0 (.mayCastCopy handBoltId)))).concede p1
   let p0TopLibId := (gBase.player p0).library.back!
   let (gCasc0, exOtherId) := gBase.move p0TopLibId .exile none (cause := some testCause)
   let gCascadeCardGone :=
     ((gCasc0.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p0 (.mayCastCascade handBoltId #[exOtherId, p1Hero.id])))).concede p1
+      (.pending (.resolutionChoice p0 (.mayCastCascade handBoltId #[exOtherId, p1Hero.id])))).concede p1
 
   -- (iii) `.chooseTriggerOr`, `.tapHumans`, and `.mayPutArtifactFromHand`:
   let gTrigOrP1Leaves :=
@@ -4266,7 +4266,7 @@ private def replayOk35i4 (gs : Array Game) : Bool :=
   --       while checking loyalty payability (`controlledBy`, `!loyaltyActivatedThisTurn`, counter count / `minusX`).
   let gCostPicksOk := gAb0.change (.proposedSpell (some { storyProp with activation := none, tapSource := true }))
   let gCostPicksTapped := gCostPicksOk.becomeTapped (gCostPicksOk.object! p0Bear.id) (cause := some testCause)
-  let costPicksPrompt : Pending := .fraChoice p0 (.costPicks p0Bear.id #[.discardACard] false)
+  let costPicksPrompt : Pending := .resolutionChoice p0 (.costPicks p0Bear.id #[.discardACard] false)
 
   let (gCrew0, crewAbObj) := gBase.putStackAbility p0Veh p0 (abilityEffect := some (Effect.gainLife 1))
   let crewProp : ProposedSpell := {
@@ -4275,9 +4275,9 @@ private def replayOk35i4 (gs : Array Game) : Bool :=
   }
   let gCrewOk := gCrew0.change (.proposedSpell (some crewProp))
   let gCrewStolen := gCrewOk.createEffect (.control p0Veh.id p2) (cause := some testCause)
-  let crewPrompt : Pending := .fraChoice p0 (.crew crewAbObj.id p0Veh.id 2)
+  let crewPrompt : Pending := .resolutionChoice p0 (.crew crewAbObj.id p0Veh.id 2)
 
-  let zemoPrompt : Pending := .fraChoice p0 (.zemoBoastExile ab0.id p0Bear.id)
+  let zemoPrompt : Pending := .resolutionChoice p0 (.zemoBoastExile ab0.id p0Bear.id)
   let gZemoOk := gAb0.change (.proposedSpell (some { storyProp with activation := none }))
   let gZemoStolen := gZemoOk.createEffect (.control p0Bear.id p2) (cause := some testCause)
 

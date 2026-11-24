@@ -91,7 +91,7 @@ def pathed : Game :=
 #guard pathed.objects.any (fun o => o.name == "Gray Ogre" && o.zone == .exile)
 #guard
   match pathed.pending with
-  | .fraChoice _ (.maySearchLibrary ..) => true
+  | .resolutionChoice _ (.maySearchLibrary ..) => true
   | _ => false
 
 def swordsLife : Game :=

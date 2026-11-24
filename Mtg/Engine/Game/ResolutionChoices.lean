@@ -1,10 +1,9 @@
 import Mtg.Engine.Game.PriorityActions
-import Mtg.Engine.Game.FraHelpers
 
 /-!
-# Reality Fracture choices
+# Interactive resolution choices
 
-Answers to `Pending.fraChoice`: cards or permanents chosen with
+Answers to `Pending.resolutionChoice`: cards or permanents chosen with
 `Action.choosePermanents`, `Action.accept` / `Action.decline` for optional
 actions, `Action.chooseTop` / `Action.chooseBottom` for library placement,
 and `Action.chooseMode` for the modes of a modal triggered ability
@@ -14,8 +13,8 @@ and `Action.chooseMode` for the modes of a modal triggered ability
 namespace Mtg.Engine
 namespace Game
 
-/-- An answer to a `FraChoice`. -/
-inductive FraAnswer where
+/-- An answer to a `ResolutionChoice`. -/
+inductive ChoiceAnswer where
   | accept
   | decline
   | objects (ids : Array ObjectId)
@@ -46,7 +45,7 @@ private def bindInterpChoiceOverride? (g : Game) (ov : StepOutcome) : Option Gam
 /-- Cast one of the copies of a pending “cast copies without paying their mana
 costs” choice (Uldaros Theorix). X is 0 (ruling 806). -/
 def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := do
-  let .fraChoice q (.castCopiesFree ids budget castsLeft) := g.pending | throw "No copy may be cast now"
+  let .resolutionChoice q (.castCopiesFree ids budget castsLeft) := g.pending | throw "No copy may be cast now"
   if p != q then throw s!"Only {(g.player q).name} may cast the copies"
   if !ids.contains id then throw "That isn't one of the copies"
   let some card := g.findObject? id | throw "no such object"
@@ -106,7 +105,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
     alternativeCost := true, resolutionCast := true }
   let g' := g.beginResolutionCastTargets p prop
   return if g'.pending == .none && (g'.findObject? newId).any (·.zone == .stack) then
-    g'.finishFraChoice
+    g'.finishResolutionChoice
   else g'
 
 /-- Reveal the face-up pile, then let an opponent choose which pile goes to hand. -/
@@ -123,13 +122,13 @@ def continueRiddlesSplit (g : Game) (controller : PlayerId)
       | none => acc) g
   match (g.livingOpponents controller)[0]? with
   | some opp =>
-    g.beginFraChoice opp.id (.riddlesChoosePile controller faceUp faceDown)
+    g.beginResolutionChoice opp.id (.riddlesChoosePile controller faceUp faceDown)
       s!"{opp.name} chooses which pile goes to {(g.player controller).name}'s hand"
   | none =>
     g.applyRiddlesPiles controller faceUp faceDown false (alreadyRevealed := true)
 
-/-- Convert a retargeting `FraAnswer` (`.objects #[id]` or `.mode playerIdx`) to a `Target`. -/
-private def retargetAnswerToTarget? (g : Game) : FraAnswer → Option Target
+/-- Convert a retargeting `ChoiceAnswer` (`.objects #[id]` or `.mode playerIdx`) to a `Target`. -/
+private def retargetAnswerToTarget? (g : Game) : ChoiceAnswer → Option Target
   | .objects #[id] =>
     match g.findObject? id with
     | some o => some (if o.isOnBattlefield then Target.permanent id else Target.card id)
@@ -144,7 +143,7 @@ have been answered (CR 707.10c / 115.3 / 115.7d). -/
 private def advanceCopyRetarget (g : Game) (p : PlayerId) (copies : Array ObjectId)
     (slotIdx slotCount : Nat) (staged : Array Target) : Game :=
   if slotIdx + 1 < slotCount then
-    g.change (.pending (.fraChoice p (.newTargetsForCopySlot copies (slotIdx + 1) staged)))
+    g.change (.pending (.resolutionChoice p (.newTargetsForCopySlot copies (slotIdx + 1) staged)))
   else
     let g :=
       match copies[0]? with
@@ -161,14 +160,14 @@ private def advanceCopyRetarget (g : Game) (p : PlayerId) (copies : Array Object
         | _, _ => g
       | none => g
     let rest := copies.extract 1 copies.size
-    if rest.isEmpty then g.finishFraChoice
-    else g.change (.pending (.fraChoice p (.newTargetsForCopies rest)))
+    if rest.isEmpty then g.finishResolutionChoice
+    else g.change (.pending (.resolutionChoice p (.newTargetsForCopies rest)))
 
 /-- Handle `.newTargetsForCopies` (`slotIdx = 0`) and `.newTargetsForCopySlot` (`slotIdx > 0`)
 per-slot retargeting (CR 707.10c / 115.3 / 115.7d). -/
 private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectId)
-    (slotIdx : Nat) (staged : Array Target) (answer : FraAnswer) : Except String Game := do
-  let some c := copies[0]? | return g.finishFraChoice
+    (slotIdx : Nat) (staged : Array Target) (answer : ChoiceAnswer) : Except String Game := do
+  let some c := copies[0]? | return g.finishResolutionChoice
   let curTargets := (g.stackEntry? c).map (fun e => e.targets) |>.getD #[]
   let baseStaged := if staged.isEmpty then curTargets else staged
   match answer with
@@ -190,8 +189,8 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
       let g := g.setStackEntryTargets c cand (dividedDamage := e.dividedDamage)
       let g := g.logMsg s!"{(g.player p).name} chooses new targets for the copy"
       let rest := copies.extract 1 copies.size
-      if rest.isEmpty then return g.finishFraChoice
-      return g.change (.pending (.fraChoice p (.newTargetsForCopies rest)))
+      if rest.isEmpty then return g.finishResolutionChoice
+      return g.change (.pending (.resolutionChoice p (.newTargetsForCopies rest)))
     else
       let some t := retargetAnswerToTarget? g answer
         | throw "Choose a new target for the copy, or decline to keep it"
@@ -239,8 +238,8 @@ private def retargetCopyAtSlot (g : Game) (p : PlayerId) (copies : Array ObjectI
     return advanceCopyRetarget g p copies slotIdx e.targets.size nextStaged
   | _ => throw "Choose a new target for the copy, or decline to keep it"
 
-def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except String Game := do
-  let .fraChoice q choice := g.pending | throw "Nothing to choose now"
+def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : Except String Game := do
+  let .resolutionChoice q choice := g.pending | throw "Nothing to choose now"
   if p != q then
     throw s!"Only {(g.player q).name} may choose"
   let isProposalOrAcceptCast : Bool :=
@@ -267,7 +266,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .discardFromRevealedHand victim permanentOnly, .objects #[id] =>
     if !(g.revealedHandChoices victim permanentOnly).contains id then
       throw "That card can't be chosen"
-    return (g.discardFromHand victim id (chooser := some p)).finishFraChoice
+    return (g.discardFromHand victim id (chooser := some p)).finishResolutionChoice
   | .discardFromRevealedHand .., _ => throw "Choose one card from the revealed hand"
   | .mayWheel n rest accepted, .accept | .mayWheel n rest accepted, .decline =>
     let accepted' := if answer == .accept then accepted.push p else accepted
@@ -275,7 +274,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       if answer == .decline then g.logMsg s!"{(g.player p).name} keeps their hand"
       else g
     let g := g.runPostStep (.wheelOfferNext n rest accepted')
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayWheel .., _ => throw "Answer accept or decline"
   | .maySacrificePlaneswalker, .objects #[id] =>
     let some pw := g.findObject? id | throw "no such object"
@@ -287,15 +286,15 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.chainPendingReplacement (.finishPostStep (.searchLibraryPlaneswalker p))
       else
         g.runPostStep (.searchLibraryPlaneswalker p)
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .maySacrificePlaneswalker, .decline =>
-    return (g.logMsg s!"{(g.player p).name} doesn't sacrifice a planeswalker").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} doesn't sacrifice a planeswalker").finishResolutionChoice
   | .maySacrificePlaneswalker, _ => throw "Choose a planeswalker to sacrifice, or decline"
   | .topOrBottomDamage id damage sid, .accept | .topOrBottomDamage id damage sid, .decline =>
     match g.findObject? id with
-    | none => return g.finishFraChoice
+    | none => return g.finishResolutionChoice
     | some o =>
-      if !o.isOnBattlefield then return g.finishFraChoice
+      if !o.isOnBattlefield then return g.finishResolutionChoice
       else
         let owner := o.owner
         let oName := g.name o
@@ -304,7 +303,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         let (g, _) := g.move id (.library owner) none (libraryPosition := some pos)
         if let .chooseReplacement .. := g.pending then
           return (g.chainPendingReplacement
-            (.finishPostStep (.topOrBottomDamageFollowup id owner oName top damage sid))).finishFraChoice
+            (.finishPostStep (.topOrBottomDamageFollowup id owner oName top damage sid))).finishResolutionChoice
         else
           let arrived := (g.followMovedToZone? id (· == .library owner)).isSome
           let g :=
@@ -316,16 +315,16 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
             if arrived && top && damage > 0 then
               g.dealDamageToPlayer owner damage (source := sid.bind g.damageSourceById?)
             else g
-          return g.finishFraChoice
+          return g.finishResolutionChoice
   | .topOrBottomDamage .., _ => throw "Choose top or bottom"
   | .sphinxsApproach spellId, .accept =>
     let onStack := (g.findObject? spellId).any (fun o => o.zone == .stack && !o.isCopy)
-    let approaches := g.sphinxsApproachesInGraveyard p
+    let approaches := g.graveyardCardsNamed p "Sphinx's Approach"
     let toExile : Array ObjectId :=
       if onStack then #[spellId] ++ approaches.extract 0 4
       else approaches.extract 0 5
     if toExile.size < 5 then
-      return (g.logMsg "There aren't five cards named Sphinx's Approach to exile").finishFraChoice
+      return (g.logMsg "There aren't five cards named Sphinx's Approach to exile").finishResolutionChoice
     let g := g.withBatch none fun g =>
       toExile.foldl (fun g id =>
         let (g, _) := g.move id .exile none
@@ -336,8 +335,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.chainPendingReplacement (.finishPostStep (.searchLibrarySphinx p))
       else
         g.runPostStep (.searchLibrarySphinx p)
-    return g.finishFraChoice
-  | .sphinxsApproach _, .decline => return g.finishFraChoice
+    return g.finishResolutionChoice
+  | .sphinxsApproach _, .decline => return g.finishResolutionChoice
   | .sphinxsApproach _, _ => throw "Answer accept or decline"
   | .extrapolateReveal, .objects #[a, b] =>
     let ok (id : ObjectId) := (g.findObject? id).any (·.zone == .outside p)
@@ -348,11 +347,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       (cause := some (g.resolvingOrRuleCause p)))
     let g := g.logMsg s!"{(g.player p).name} reveals {g.name (g.object! a)} and {g.name (g.object! b)}"
     match (g.livingOpponents p)[0]? with
-    | none => return g.finishFraChoice
+    | none => return g.finishResolutionChoice
     | some opp =>
-      return g.beginFraChoice opp.id (.extrapolatePick p #[a, b])
+      return g.beginResolutionChoice opp.id (.extrapolatePick p #[a, b])
         s!"{opp.name} chooses one of them"
-  | .extrapolateReveal, .decline => return g.finishFraChoice
+  | .extrapolateReveal, .decline => return g.finishResolutionChoice
   | .extrapolateReveal, _ => throw "Choose two cards from outside the game, or decline"
   | .extrapolatePick revealer ids, .objects #[id] =>
     if !ids.contains id then throw "Choose one of the revealed cards"
@@ -364,7 +363,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       else if (g.followMovedToZone? id (· == Zone.hand revealer)).isSome then
         g.logMsg s!"{(g.player revealer).name} puts {name} into their hand"
       else g
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .extrapolatePick .., _ => throw "Choose one of the revealed cards"
   | .mayPutMilledPermanent ids life, .objects #[id] =>
     if !ids.contains id then throw "Choose a permanent card milled this way"
@@ -376,13 +375,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.chainPendingReplacement (.finishPostStep (.gainLifePlayer p life))
       else
         g.gainLife p life
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayPutMilledPermanent _ life, .decline =>
-    return (g.gainLife p life).finishFraChoice
+    return (g.gainLife p life).finishResolutionChoice
   | .mayPutMilledPermanent .., _ => throw "Choose a milled permanent card, or decline"
   | .mayThen next sourceId, .accept =>
-    return (applyOrChainInstr g p next sourceId).finishFraChoice
-  | .mayThen .., .decline => return g.finishFraChoice
+    return (applyOrChainInstr g p next sourceId).finishResolutionChoice
+  | .mayThen .., .decline => return g.finishResolutionChoice
   | .mayThen .., _ => throw "Answer accept or decline"
   | .mayPayThen n next sourceId, .accept =>
     if !(g.player p).manaPool.canPay (ManaCost.ofGeneric n) then
@@ -390,15 +389,15 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g ← g.payCost p (ManaCost.ofGeneric n)
       (forObject := resolvingForObj <|> sourceId)
     let g := g.logMsg s!"{(g.player p).name} pays \{{n}}"
-    return (applyOrChainInstr g p next sourceId).finishFraChoice
-  | .mayPayThen .., .decline => return g.finishFraChoice
+    return (applyOrChainInstr g p next sourceId).finishResolutionChoice
+  | .mayPayThen .., .decline => return g.finishResolutionChoice
   | .mayPayThen .., _ => throw "Pay or decline"
   | .mayDiscardThen next sourceId, .objects #[id] =>
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
     let g := g.discardFromHand p id
     let g := applyOrChainInstr g p next sourceId
-    return g.finishFraChoice
-  | .mayDiscardThen .., .decline => return g.finishFraChoice
+    return g.finishResolutionChoice
+  | .mayDiscardThen .., .decline => return g.finishResolutionChoice
   | .mayDiscardThen .., _ => throw "Choose a card to discard, or decline"
   | .discardThen _ _ causeId, .objects #[id] =>
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
@@ -408,7 +407,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.chainPendingReplacement (.finishPostStep (.drawOneThenPlusOnesForDiscards p causeId))
       else
         g.runPostStep (.drawOneThenPlusOnesForDiscards p causeId)
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .discardThen .., _ => throw "Choose a card to discard"
   | .discardThenStun n sourceId, .objects ids =>
     let need := Nat.min n (g.player p).hand.size
@@ -423,7 +422,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.chainPendingReplacement (.finishPostStep (.queueTapAndStunReflexive p nonland sourceId))
       else
         g.runPostStep (.queueTapAndStunReflexive p nonland sourceId)
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .discardThenStun .., _ => throw "Choose the cards to discard"
   | .maySacrificeThen types next sourceId, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
@@ -431,8 +430,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !ok then throw s!"Can't sacrifice {g.name o}"
     let g := g.sacrificeToGraveyard o s!"{(g.player p).name} sacrifices {g.name o}"
     let g := applyOrChainInstr g p next sourceId
-    return g.finishFraChoice
-  | .maySacrificeThen .., .decline => return g.finishFraChoice
+    return g.finishResolutionChoice
+  | .maySacrificeThen .., .decline => return g.finishResolutionChoice
   | .maySacrificeThen .., _ => throw "Choose a permanent to sacrifice, or decline"
   | .mayMovePlusOne sourceId, .accept =>
     match g.findObject? sourceId with
@@ -444,10 +443,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
             s!"A +1/+1 counter is removed from {oName}"
           (g.creaturesControlledBy p).foldl (fun g c =>
             if c.id == o.id then g else g.addPlusOnePlusOneTo (g.object! c.id) 1) g
-        return g.finishFraChoice
-      else return g.finishFraChoice
-    | none => return g.finishFraChoice
-  | .mayMovePlusOne _, .decline => return g.finishFraChoice
+        return g.finishResolutionChoice
+      else return g.finishResolutionChoice
+    | none => return g.finishResolutionChoice
+  | .mayMovePlusOne _, .decline => return g.finishResolutionChoice
   | .mayMovePlusOne _, _ => throw "Answer accept or decline"
   | .exileFromRevealedHand victim sourceId, .objects #[id] =>
     if !(g.revealedHandChoices victim false).contains id then throw "Choose a nonland card"
@@ -459,7 +458,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           (.finishPostStep (.exileFromRevealedHandAfterMove p victim id name sourceId))
       else
         g.runPostStep (.exileFromRevealedHandAfterMove p victim id name sourceId)
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .exileFromRevealedHand .., _ => throw "Choose a nonland card from the revealed hand"
   | .castCopiesFree ids _ _, .decline =>
     let g := g.withBatch none fun g =>
@@ -467,18 +466,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         if (g.findObject? id).any (·.zone == .exile) then
           g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))
         else g) g
-    return (g.change (.pendingFreeCopies none)).finishFraChoice
+    return (g.change (.pendingFreeCopies none)).finishResolutionChoice
   | .castCopiesFree .., _ => throw "Cast a copy, or decline"
   | .allianceMode sourceId available, .mode idx =>
     if !available.contains idx then throw "That Alliance mode has already been chosen this turn"
-    return (g.applyAllianceMode sourceId idx).finishFraChoice
+    return (g.applyAllianceMode sourceId idx).finishResolutionChoice
   | .allianceMode .., _ => throw "Choose an Alliance mode"
   | .gollumMode sourceId available, .mode idx =>
     if !available.contains idx then throw "That mode has already been chosen"
-    return (g.applyGollumMode sourceId idx).finishFraChoice
+    return (g.applyGollumMode sourceId idx).finishResolutionChoice
   | .gollumMode .., _ => throw "Choose a mode"
   | .triggerModes objId remaining chosen, .mode idx =>
-    let some obj := g.findObject? objId | return g.finishFraChoice
+    let some obj := g.findObject? objId | return g.finishResolutionChoice
     let modes := g.triggerModesOf obj
     let some e := modes[idx]? | throw "No such mode (CR 700.2)"
     if chosen.contains idx then throw "That mode was already chosen (CR 700.2d)"
@@ -495,19 +494,19 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         let g := g.ceaseToExist objId (cause := some (.gameRule .noLegalMode))
         let g := g.logMsg
           s!"{g.name obj} has fewer than {chosen.size + left} modes that can be chosen and is removed from the stack (CR 603.3c / 700.2b)"
-        return g.finishFraChoice
-      return g.change (.pending (.fraChoice p (.triggerModes objId left chosen)))
+        return g.finishResolutionChoice
+      return g.change (.pending (.resolutionChoice p (.triggerModes objId left chosen)))
     let sorted := chosen.qsort (· < ·)
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
     match combineTriggerModes (modes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
-    | none => return g.finishFraChoice
+    | none => return g.finishResolutionChoice
     | some eff =>
       let g := g.changeObject obj.id (.abilityEffect (some eff))
       let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
-      return g.finishFraChoice
+      return g.finishResolutionChoice
   | .triggerModes .., _ => throw "Choose a mode"
   | .upToTriggerModes objId remaining chosen, .mode idx =>
-    let some obj := g.findObject? objId | return g.finishFraChoice
+    let some obj := g.findObject? objId | return g.finishResolutionChoice
     let modes := g.triggerModesOf obj
     let some e := modes[idx]? | throw "No such mode (CR 700.2)"
     if chosen.contains idx then throw "That mode was already chosen (CR 700.2d)"
@@ -519,17 +518,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let anyLeft := (List.range modes.size).any (fun i =>
       !chosen.contains i && (modes[i]?.any (g.triggerModeChoosable p obj)))
     if left > 0 && anyLeft then
-      return g.change (.pending (.fraChoice p (.upToTriggerModes objId left chosen)))
+      return g.change (.pending (.resolutionChoice p (.upToTriggerModes objId left chosen)))
     let sorted := chosen.qsort (· < ·)
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
     match combineTriggerModes (modes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
-    | none => return g.finishFraChoice
+    | none => return g.finishResolutionChoice
     | some eff =>
       let g := g.changeObject obj.id (.abilityEffect (some eff))
       let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
-      return g.finishFraChoice
+      return g.finishResolutionChoice
   | .upToTriggerModes objId _ chosen, .decline =>
-    let some obj := g.findObject? objId | return g.finishFraChoice
+    let some obj := g.findObject? objId | return g.finishResolutionChoice
     let modes := g.triggerModesOf obj
     if chosen.isEmpty then
       let noop : Effect := { body := .noop }
@@ -537,15 +536,15 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g := g.changes #[
         .object obj.id (.abilityEffect (some noop)),
         .stackEntry obj.id (.targetsAnnounced true)]
-      return g.finishFraChoice
+      return g.finishResolutionChoice
     let sorted := chosen.qsort (· < ·)
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
     match combineTriggerModes (modes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
-    | none => return g.finishFraChoice
+    | none => return g.finishResolutionChoice
     | some eff =>
       let g := g.changeObject obj.id (.abilityEffect (some eff))
       let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
-      return g.finishFraChoice
+      return g.finishResolutionChoice
   | .upToTriggerModes .., _ => throw "Choose a mode, or decline to finish"
   | .stackTriggerUnusedMode objId srcIdOpt available lifetime, .mode idx =>
     if !available.contains idx then
@@ -561,14 +560,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.record (GameEvent.announced g.turnNumber objId (modes := #[idx]))
       else g
     let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1}"
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .stackTriggerUnusedMode .., _ => throw "Choose an unused mode"
   | .stackHydeMode objId, .mode idx =>
     if idx > 1 then throw "Choose mode 0 or 1 (CR 700.2)"
-    let some obj := g.findObject? objId | return g.finishFraChoice
+    let some obj := g.findObject? objId | return g.finishResolutionChoice
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[idx]))
     let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1}"
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .stackHydeMode .., _ => throw "Choose mode 0 or 1"
   | .chooseKeyword id options, .mode idx =>
     let some choice := options[idx]? | throw "No such choice"
@@ -576,28 +575,28 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | some o =>
       if o.isOnBattlefield then
         let g := g.logMsg s!"{(g.player p).name} chooses {ToOracle.toOracle {} choice}"
-        return (g.grantKeywordsUntilEot o #[choice]).finishFraChoice
-      else return g.finishFraChoice
-    | none => return g.finishFraChoice
+        return (g.grantKeywordsUntilEot o #[choice]).finishResolutionChoice
+      else return g.finishResolutionChoice
+    | none => return g.finishResolutionChoice
   | .chooseKeyword .., _ => throw "Choose one of the keywords"
   | .sacrificeCreatureEach controller rest chosen, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
     if !o.isOnBattlefield || !g.isCreature o || !g.controlledBy o p then
       throw "Choose a creature you control"
     let g := g.logMsg s!"{(g.player p).name} chooses {g.name o}"
-    return (g.continueSacrificeEach controller rest (chosen.push id)).finishFraChoice
+    return (g.continueSacrificeEach controller rest (chosen.push id)).finishResolutionChoice
   | .sacrificeCreatureEach .., _ => throw "Choose a creature to sacrifice"
   | .discardTwo controller rest draws chosen, .objects ids =>
     let hand := (g.player p).hand
     if ids.size != 2 || ids[0]! == ids[1]! || !ids.all hand.contains then
       throw "Choose two different cards from your hand"
     let g := g.continueDiscardTwo controller rest draws (chosen.push (p, ids))
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .discardTwo .., _ => throw "Choose two cards to discard"
   | .mayMoveAllCounters fromId toId, .accept =>
     match g.findObject? fromId, g.findObject? toId with
     | some src, some dst =>
-      if !src.isOnBattlefield || !dst.isOnBattlefield then return g.finishFraChoice
+      if !src.isOnBattlefield || !dst.isOnBattlefield then return g.finishResolutionChoice
       else
         let g := g.withBatch none fun g =>
           let moved := src.status
@@ -623,9 +622,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
                 g.chainPendingReplacement (.finishPostStep (.logIfCountersIncreased toId dstBefore msg))
               else
                 g.logIfCountersIncreased toId dstBefore msg
-        return g.finishFraChoice
-    | _, _ => return g.finishFraChoice
-  | .mayMoveAllCounters .., .decline => return g.finishFraChoice
+        return g.finishResolutionChoice
+    | _, _ => return g.finishResolutionChoice
+  | .mayMoveAllCounters .., .decline => return g.finishResolutionChoice
   | .mayMoveAllCounters .., _ => throw "Answer accept or decline"
   | .crew abilityId vehicleId n, .objects ids =>
     if !gPre.proposalCostPromptStillPayable p gPre.pending then
@@ -663,7 +662,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       if paused then
         g.chainPendingReplacement (.finishPostStep .markNonManaCostPaid)
       else if g.proposedSpell.isSome then
-        g.changeProposal (.fraCostPaid true)
+        g.changeProposal (.choiceCostPaid true)
       else g
     let g := g.logMsg s!"{(g.player p).name} crews {vName}"
     match g.proposedSpell.filter (fun pr => g.propHasRemainingExtraCosts pr) with
@@ -691,7 +690,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         let g :=
           match outerCont? with
           | some outer =>
-            let nextOuter := if picks.isEmpty then outer.ensureEndsWithFinishFra else outer
+            let nextOuter := if picks.isEmpty then outer.ensureEndsWithFinishResolutionChoice else outer
             g.chainPendingReplacement nextOuter
           | none => g
         return g.resumeAfterBecomeCast
@@ -717,7 +716,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g :=
         if paused then
           match outerCont? with
-          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         else g
       return g.resumeAfterBecomeCast
@@ -788,7 +787,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g :=
         if pausedBeforeContinue then
           match outerCont? with
-          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         else g
       return g.resumeAfterBecomeCast
@@ -812,7 +811,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g :=
         match outerCont? with
         | some outer =>
-          let nextOuter := if restPicks.isEmpty then outer.ensureEndsWithFinishFra else outer
+          let nextOuter := if restPicks.isEmpty then outer.ensureEndsWithFinishResolutionChoice else outer
           g.chainPendingReplacement nextOuter
         | none => g
       return g.resumeAfterBecomeCast
@@ -842,18 +841,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let some sub := types[idx]? | throw "No such creature type"
     let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
     match bindInterpChoiceOverride? g { chosenSubtype? := some sub, succeeded := true } with
-    | some g' => return g'.finishFraChoice
+    | some g' => return g'.finishResolutionChoice
     | none =>
       let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o sub)).size
-      return (g.createTreasureTokens p n).finishFraChoice
+      return (g.createTreasureTokens p n).finishResolutionChoice
   | .chooseCreatureType _, .name t =>
     let some sub := CardSubtype.ofOracle? t | throw "Choose a creature type"
     let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
     match bindInterpChoiceOverride? g { chosenSubtype? := some sub, succeeded := true } with
-    | some g' => return g'.finishFraChoice
+    | some g' => return g'.finishResolutionChoice
     | none =>
       let n := ((g.creaturesControlledBy p).filter (fun o => g.hasSubtype o sub)).size
-      return (g.createTreasureTokens p n).finishFraChoice
+      return (g.createTreasureTokens p n).finishResolutionChoice
   | .chooseCreatureType _, _ => throw "Choose a creature type"
   | .maySacrificeAnotherCreatureForPower sourceId, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
@@ -866,9 +865,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.chainPendingReplacement (.finishPostStep (.addPlusOnesToSource sourceId pw))
       else
         g.runPostStep (.addPlusOnesToSource sourceId pw)
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .maySacrificeAnotherCreatureForPower _, .decline =>
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .maySacrificeAnotherCreatureForPower _, _ => throw "Choose a creature to sacrifice, or decline"
   | .maySacrificeAnotherForDrawTreasure sourceId, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
@@ -879,9 +878,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let drawnBody : Instruction := .seq #[
       Instruction.drawFixed 1 .you,
       Instruction.createTokensFixed .treasure 1]
-    return (applyOrChainInstr g p drawnBody (some sourceId)).finishFraChoice
+    return (applyOrChainInstr g p drawnBody (some sourceId)).finishResolutionChoice
   | .maySacrificeAnotherForDrawTreasure _, .decline =>
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .maySacrificeAnotherForDrawTreasure _, _ => throw "Choose a creature or artifact to sacrifice, or decline"
   | .maySacrificeThese n ids, .objects chosen =>
     if chosen.size != n || chosen.toList.eraseDups.length != chosen.size ||
@@ -894,9 +893,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let preBf := g.battlefield
     let g := g.withBatch none fun g =>
       g.sacrificePermanentsLoop (chosen.map ((p, ·))) (preBattlefield := some preBf)
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .maySacrificeThese _ _, .decline =>
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .maySacrificeThese n _, _ => throw s!"Choose {n} to sacrifice, or decline"
   | .mayPaySymbolsThen symbols next sourceId, .accept =>
     let cost : ManaCost := { symbols := symbols }
@@ -904,14 +903,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw s!"{(g.player p).name} cannot pay that cost; add mana first"
     let g ← g.payCost p cost
       (forObject := resolvingForObj <|> some sourceId)
-    return (applyOrChainInstr g p next (some sourceId)).finishFraChoice
+    return (applyOrChainInstr g p next (some sourceId)).finishResolutionChoice
   | .mayPaySymbolsThen .., .decline =>
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayPaySymbolsThen .., _ => throw "Pay (accept), or decline"
   | .attachAnyEquipment hostId eligible, .objects ids =>
     if !ids.all (eligible.contains ·) || ids.toList.eraseDups.length != ids.size then
       throw "Choose Equipment you control"
-    let some _ := g.findObject? hostId | return g.finishFraChoice
+    let some _ := g.findObject? hostId | return g.finishResolutionChoice
     let g := g.withBatch none fun g => Id.run do
       let mut g := g
       for id in ids do
@@ -921,20 +920,20 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
             g := g.attachSourceTo eq host
         | _, _ => pure ()
       return g
-    return g.finishFraChoice
-  | .attachAnyEquipment .., .decline => return g.finishFraChoice
+    return g.finishResolutionChoice
+  | .attachAnyEquipment .., .decline => return g.finishResolutionChoice
   | .attachAnyEquipment .., _ => throw "Choose Equipment to attach, or decline"
   | .sacrificeLeastPower ids, .objects #[id] =>
     if !ids.contains id then throw "Choose a creature tied for the least power"
-    return (g.sacrificeLeastPowerCreature p (some id)).finishFraChoice
+    return (g.sacrificeLeastPowerCreature p (some id)).finishResolutionChoice
   | .sacrificeLeastPower _, _ => throw "Choose a creature tied for the least power"
   | .mayPayPickThen pick next sourceId, .objects ids =>
     let abId := resolvingForObj <|> sourceId
     let g ← g.payCostPick p abId sourceId pick ids
     let g := applyOrChainInstr g p next sourceId
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayPayPickThen .., .decline =>
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayPayPickThen pick .., _ => throw s!"Choose what to {pick.phrase}, or decline"
   | .addManaColors left use, .mode idx =>
     let some c := Color.all[idx]? | throw "Choose white, blue, black, red, or green (0-4)"
@@ -942,8 +941,8 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       (source := g.currentResolvingContext?.bind Prod.fst)
       (restriction := some use)
     let g := g.logMsg s!"{(g.player p).name} adds {ManaType.colored c} ({use.label})"
-    if left > 1 then return g.change (.pending (.fraChoice p (.addManaColors (left - 1) use)))
-    return g.finishFraChoice
+    if left > 1 then return g.change (.pending (.resolutionChoice p (.addManaColors (left - 1) use)))
+    return g.finishResolutionChoice
   | .addManaColors .., _ => throw "Choose a color for the mana"
   | .mayPayExtort sourceId, .accept =>
     let cost : ManaCost := { symbols := #[.hybrid .white .black] }
@@ -951,32 +950,32 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       throw s!"{(g.player p).name} cannot pay \{W/B}; add mana first"
     let g ← g.payCost p cost
       (forObject := resolvingForObj <|> sourceId)
-    return (g.extortDrain p).finishFraChoice
-  | .mayPayExtort _, .decline => return (g.logMsg "Extort is not paid").finishFraChoice
+    return (g.extortDrain p).finishResolutionChoice
+  | .mayPayExtort _, .decline => return (g.logMsg "Extort is not paid").finishResolutionChoice
   | .mayPayExtort _, _ => throw "Pay {W/B} (accept), or decline"
   | .mayDrawThenDiscard n k, .accept =>
-    return (g.drawThenBeginDiscard p n (discardRounds := k)).finishFraChoice
-  | .mayDrawThenDiscard .., .decline => return g.finishFraChoice
+    return (g.drawThenBeginDiscard p n (discardRounds := k)).finishResolutionChoice
+  | .mayDrawThenDiscard .., .decline => return g.finishResolutionChoice
   | .mayDrawThenDiscard .., _ => throw "Answer accept or decline"
   | .sacrificeNontokenEach rest chosen, .objects #[id] =>
     let some o := g.findObject? id | throw "no such object"
     if !o.isOnBattlefield || !g.isCreature o || o.printed.isToken || !g.controlledBy o p then
       throw "Choose a nontoken creature you control"
-    return (g.continueNontokenSacrifices rest (chosen.push id)).finishFraChoice
+    return (g.continueNontokenSacrifices rest (chosen.push id)).finishResolutionChoice
   | .sacrificeNontokenEach .., _ => throw "Choose a nontoken creature to sacrifice"
   | .mayCreateTokens kind n copyEnv, .accept =>
-    return (g.createKindTokens p kind n (copyEnv := copyEnv)).finishFraChoice
-  | .mayCreateTokens .., .decline => return g.finishFraChoice
+    return (g.createKindTokens p kind n (copyEnv := copyEnv)).finishResolutionChoice
+  | .mayCreateTokens .., .decline => return g.finishResolutionChoice
   | .mayCreateTokens .., _ => throw "Answer accept or decline"
   | .mayBecomeBasePT id pw tw, .accept =>
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
         let g := g.createEffect (.setBasePTUntilEot o.id (pw, tw))
-        return (g.logMsg s!"{g.name o}'s base power and toughness become {pw}/{tw} until end of turn").finishFraChoice
-      else return g.finishFraChoice
-    | none => return g.finishFraChoice
-  | .mayBecomeBasePT .., .decline => return g.finishFraChoice
+        return (g.logMsg s!"{g.name o}'s base power and toughness become {pw}/{tw} until end of turn").finishResolutionChoice
+      else return g.finishResolutionChoice
+    | none => return g.finishResolutionChoice
+  | .mayBecomeBasePT .., .decline => return g.finishResolutionChoice
   | .mayBecomeBasePT .., _ => throw "Answer accept or decline"
   | .mayRevealToHand looked eligible anyOrder, .objects #[id] =>
     if !eligible.contains id then throw "Choose one of the eligible cards"
@@ -991,13 +990,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       else g.requestOrderInto rest (.library p)
         s!"{(g.player p).name} puts the rest on the bottom of their library in a random order"
         (cause := some cause)
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayRevealToHand looked _ anyOrder, .decline =>
     let g :=
       if anyOrder then g.offerBottomAnyOrder p looked
       else g.requestOrderInto looked (.library p)
         s!"{(g.player p).name} puts the cards on the bottom of their library in a random order"
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayRevealToHand .., _ => throw "Choose a card to reveal, or decline"
   | .nickFuryPut looked eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be put onto the battlefield"
@@ -1009,17 +1008,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.chainPendingReplacement (.finishPostStep (.nickFuryMayTransformOrBottom p id rest (some cause)))
       else
         g.runPostStep (.nickFuryMayTransformOrBottom p id rest (some cause))
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .nickFuryPut looked _, .decline =>
-    return (g.putRestOnBottomRandom p looked).finishFraChoice
+    return (g.putRestOnBottomRandom p looked).finishResolutionChoice
   | .nickFuryPut .., _ => throw "Put a card onto the battlefield, or decline"
   | .nickFuryMayTransform id rest, .accept =>
     let cause := g.lastMoveCauseOf? id
     let g := g.transformPermanent p (some id) (cause := cause)
-    return (g.putRestOnBottomRandom p rest (cause := cause)).finishFraChoice
+    return (g.putRestOnBottomRandom p rest (cause := cause)).finishResolutionChoice
   | .nickFuryMayTransform id rest, .decline =>
     let cause := g.lastMoveCauseOf? id
-    return (g.putRestOnBottomRandom p rest (cause := cause)).finishFraChoice
+    return (g.putRestOnBottomRandom p rest (cause := cause)).finishResolutionChoice
   | .nickFuryMayTransform .., _ => throw "Transform it (accept), or decline"
   | .orderLibraryBottom ids, .objects ordered =>
     if ordered.size != ids.size || ordered.toList.eraseDups.length != ordered.size ||
@@ -1028,17 +1027,17 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
     let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
     return (g.moveIdsInOrder ordered (.library p) (cause := cause)
-      (log := s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order")).finishFraChoice
+      (log := s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order")).finishResolutionChoice
   | .orderLibraryBottom ids, .decline =>
     let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
     let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
     return (g.moveIdsInOrder ids (.library p) (cause := cause)
-      (log := s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order")).finishFraChoice
+      (log := s!"{(g.player p).name} puts the rest on the bottom of their library in the chosen order")).finishResolutionChoice
   | .orderLibraryBottom _, _ => throw "Choose the order for the bottom of your library"
   | .mayPayManaForReflexive cost maxTimes reflexive sourceId, .accept
   | .mayPayManaForReflexive cost maxTimes reflexive sourceId, .mode _ =>
     let times := match answer with | .mode n => n | _ => 1
-    if times == 0 then return g.finishFraChoice
+    if times == 0 then return g.finishResolutionChoice
     if times > maxTimes then throw s!"Pay at most {maxTimes} times"
     let total : ManaCost := { symbols := (List.replicate times cost.toList).flatten.toArray }
     if !(g.player p).manaPool.canPay total then
@@ -1047,27 +1046,27 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       (forObject := resolvingForObj <|> sourceId)
     let g := g.logMsg s!"{(g.player p).name} pays {total}"
     return (g.putReflexiveTrigger p sourceId reflexive
-      (lastKnownPower := some (Int.ofNat times))).finishFraChoice
+      (lastKnownPower := some (Int.ofNat times))).finishResolutionChoice
   | .mayPayManaForReflexive .., .decline =>
     let g := g.logMsg "The cost isn't paid. The reflexive ability doesn't trigger."
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayPayManaForReflexive .., _ => throw "Pay (accept, or a number of times), or decline"
   | .mayTapSourceThen next sourceId, .accept =>
     match g.findObject? sourceId with
     | some o =>
       if o.isOnBattlefield && !o.status.tapped then
         let g := g.becomeTapped o
-        return (applyOrChainInstr g p next (some sourceId)).finishFraChoice
+        return (applyOrChainInstr g p next (some sourceId)).finishResolutionChoice
       else throw s!"{g.name o} can't be tapped"
     | none => throw "The source is gone"
   | .mayTapSourceThen .., .decline =>
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayTapSourceThen .., _ => throw "Answer accept or decline"
   | .hawkeyeModes left chosen objId?, .mode idx =>
     let some e := hawkeyeModeEffects[idx]? | throw "Choose Net (0), Explosive (1), or Boomerang (2)"
     if chosen.contains idx then throw "That mode was already chosen (CR 700.2d)"
-    let some objId := objId? | return g.finishFraChoice
-    let some obj := g.findObject? objId | return g.finishFraChoice
+    let some objId := objId? | return g.finishResolutionChoice
+    let some obj := g.findObject? objId | return g.finishResolutionChoice
     if !g.triggerModeChoosable p obj e then
       throw "That mode has no legal target (CR 603.3c / 700.2b)"
     let g := g.logMsg s!"{(g.player p).name} chooses {e.toNotation}"
@@ -1075,16 +1074,16 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let anyMoreChoosable := (List.range hawkeyeModeEffects.size).any (fun i =>
       !chosen.contains i && (hawkeyeModeEffects[i]?.any (g.triggerModeChoosable p obj)))
     if chosen.size < left && anyMoreChoosable then
-      return g.change (.pending (.fraChoice p (.hawkeyeModes left chosen (some objId))))
+      return g.change (.pending (.resolutionChoice p (.hawkeyeModes left chosen (some objId))))
     let sorted := chosen.qsort (· < ·)
     let eff := hawkeyeArrowsEffect sorted
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
     let g := g.changeObject obj.id (.abilityEffect (some eff))
     let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .hawkeyeModes _ chosen objId?, .decline =>
-    let some objId := objId? | return g.finishFraChoice
-    let some obj := g.findObject? objId | return g.finishFraChoice
+    let some objId := objId? | return g.finishResolutionChoice
+    let some obj := g.findObject? objId | return g.finishResolutionChoice
     let sorted := chosen.qsort (· < ·)
     let eff : Effect :=
       if sorted.isEmpty then { body := .noop }
@@ -1092,7 +1091,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
     let g := g.changeObject obj.id (.abilityEffect (some eff))
     let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .hawkeyeModes .., _ => throw "Choose a mode, or decline to stop"
   | .discardThenDraw, .objects #[id] =>
     if !(g.player p).hand.contains id then throw "That card is not in your hand"
@@ -1102,7 +1101,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.chainPendingReplacement (.finishPostStep (.drawCardsPlayer p 1))
       else
         g.draw p 1
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .discardThenDraw, _ => throw "Choose a card to discard"
   | .zemoBoastExile abilityId sourceId, .objects ids =>
     if !gPre.proposalCostPromptStillPayable p gPre.pending then
@@ -1153,7 +1152,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         let g :=
           match outerCont? with
           | some outer =>
-            let nextOuter := if picks.isEmpty then outer.ensureEndsWithFinishFra else outer
+            let nextOuter := if picks.isEmpty then outer.ensureEndsWithFinishResolutionChoice else outer
             g.chainPendingReplacement nextOuter
           | none => g
         return g.resumeAfterBecomeCast
@@ -1182,7 +1181,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let g :=
         if paused then
           match outerCont? with
-          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         else g
       return g.resumeAfterBecomeCast
@@ -1218,14 +1217,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return g
     else if g.proposedSpell.isNone && g.postCastCleanup.isSome then
       let g := g.runPostCastCleanup
-      return if g.pending != .none then g else g.finishFraChoice
+      return if g.pending != .none then g else g.finishResolutionChoice
     else
-      return g.finishFraChoice
+      return g.finishResolutionChoice
   | .mayCastCascade cardId others, .decline =>
     let cause := g.lastMoveCauseOf? cardId
     return (g.requestOrderInto (others.push cardId) (.library p)
       s!"{(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
-      (cause := cause)).finishFraChoice
+      (cause := cause)).finishResolutionChoice
   | .mayCastCascade .., _ => throw "Cast it (accept), or decline"
   | .mayCastGrima cardId others victim, .accept =>
     let g := gPre.change .saveProposalCheckpoint
@@ -1244,14 +1243,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return g
     else if g.proposedSpell.isNone && g.postCastCleanup.isSome then
       let g := g.runPostCastCleanup
-      return if g.pending != .none then g else g.finishFraChoice
+      return if g.pending != .none then g else g.finishResolutionChoice
     else
-      return g.finishFraChoice
+      return g.finishResolutionChoice
   | .mayCastGrima cardId others victim, .decline =>
     let cause := g.lastMoveCauseOf? cardId
     return (g.requestOrderInto (others.push cardId) (.library victim)
       s!"{(g.player victim).name} puts the exiled cards on the bottom of their library in a random order"
-      (cause := cause)).finishFraChoice
+      (cause := cause)).finishResolutionChoice
   | .mayCastGrima .., _ => throw "Cast it (accept), or decline"
   | .mayCastCopy copyId, .accept =>
     let g := gPre.change .saveProposalCheckpoint
@@ -1270,9 +1269,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       return g
     else if g.proposedSpell.isNone && g.postCastCleanup.isSome then
       let g := g.runPostCastCleanup
-      return if g.pending != .none then g else g.finishFraChoice
+      return if g.pending != .none then g else g.finishResolutionChoice
     else
-      return g.finishFraChoice
+      return g.finishResolutionChoice
   | .mayCastCopy copyId, .decline =>
     let g :=
       match g.findObject? copyId with
@@ -1281,7 +1280,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         (g.ceaseToExist o.id (cause := some (.stateBased .copyOutsideStackOrBf))).logMsg
           s!"The copy of {objName} ceases to exist"
       | none => g
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayCastCopy _, _ => throw "Cast the copy (accept), or decline"
   | .mayDiscardHandBalin sourceId, .accept =>
     let n := (g.player p).hand.size
@@ -1292,14 +1291,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         (.damage (.deal .this (.players .opponents) (.const (Int.ofNat n))))
         .noop]
     let g := if n == 0 then g else applyOrChainInstr g p follow sourceId
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayDiscardHandBalin _, .decline =>
-    return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishResolutionChoice
   | .mayDiscardHandBalin _, _ => throw "Discard your hand (accept), or decline"
   | .mayDiscardHandDrawFixed n, .accept =>
-    return (g.discardHandThenDraw p n).finishFraChoice
+    return (g.discardHandThenDraw p n).finishResolutionChoice
   | .mayDiscardHandDrawFixed _, .decline =>
-    return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} does not discard their hand").finishResolutionChoice
   | .mayDiscardHandDrawFixed _, _ => throw "Discard your hand (accept), or decline"
   | .sacrificeDamager ids rest controller chosen, .objects #[id] =>
     if !ids.contains id then throw "Choose a creature that dealt combat damage"
@@ -1307,7 +1306,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     if !o.isOnBattlefield || !g.isCreature o || !g.controlledBy o p then
       throw s!"Can't sacrifice {g.name o}"
     let g := g.logMsg s!"{(g.player p).name} chooses {g.name o}"
-    return (g.beginSacDamagers controller rest (chosen.push (p, id))).finishFraChoice
+    return (g.beginSacDamagers controller rest (chosen.push (p, id))).finishResolutionChoice
   | .sacrificeDamager .., _ => throw "Choose a creature that dealt combat damage"
   | .mayCastInstantSorceryFromHand eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
@@ -1348,9 +1347,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       | none => g
     let g := g.change (.pending .none)
     let g' := g.castAsPartOfResolution p id (callerCheckpoint := true)
-    return if g'.pending == .none then g'.finishFraChoice else g'
+    return if g'.pending == .none then g'.finishResolutionChoice else g'
   | .mayCastInstantSorceryFromHand _, .decline =>
-    return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishResolutionChoice
   | .mayCastInstantSorceryFromHand _, _ => throw "Choose a spell to cast, or decline"
   | .mayCastUpToFromExile eligible left, .objects #[id] =>
     if left == 0 || !eligible.contains id then throw "That card can't be cast this way"
@@ -1400,22 +1399,22 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           (g.followMovedToZone? id (· == .stack)).isNone then
         g.change (.pendingMayCastFromExile none)
       else g
-    return if g.pending == .none then g.finishFraChoice else g
+    return if g.pending == .none then g.finishResolutionChoice else g
   | .mayCastUpToFromExile _ _, .decline =>
     return ((g.change (.pendingMayCastFromExile none))
-      |>.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
+      |>.logMsg s!"{(g.player p).name} declines to cast a spell").finishResolutionChoice
   | .mayCastUpToFromExile .., _ => throw "Choose a spell to cast, or decline"
   | .hydeMode sourceId, .mode 0 =>
-    return (g.applyHydeMode p sourceId 0 #[]).finishFraChoice
+    return (g.applyHydeMode p sourceId 0 #[]).finishResolutionChoice
   | .hydeMode sourceId, .mode 1 =>
     let ids :=
       ((g.creaturesControlledBy p).filter (·.status.hasCounters)).map (·.id)
     if ids.isEmpty then
-      return (g.applyHydeMode p sourceId 1 #[]).finishFraChoice
+      return (g.applyHydeMode p sourceId 1 #[]).finishResolutionChoice
     else if ids.size == 1 then
-      return (g.applyHydeMode p sourceId 1 #[Target.permanent ids[0]!]).finishFraChoice
+      return (g.applyHydeMode p sourceId 1 #[Target.permanent ids[0]!]).finishResolutionChoice
     else
-      return g.change (.pending (.fraChoice p (.hydeRemoveCounter ids)))
+      return g.change (.pending (.resolutionChoice p (.hydeRemoveCounter ids)))
   | .hydeMode _, _ => throw "Choose mode 0 or 1"
   | .hydeRemoveCounter ids, .objects #[id] =>
     if !ids.contains id then throw "Choose a creature with a counter"
@@ -1434,24 +1433,24 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
             let cause := EventCause.oneShotEffect (some st.ctx.oneShotEffectId) st.ctx.sourceId (some p)
             let g := (g.recordRemoveCounters o.id kind 1 (byPlayer := some p) (cause := some cause))
               |>.logMsg s!"A counter is removed from {nm}"
-            return g.finishFraChoice
-          | none => return g.finishFraChoice
-        else return g.finishFraChoice
-      | none => return g.finishFraChoice
+            return g.finishResolutionChoice
+          | none => return g.finishResolutionChoice
+        else return g.finishResolutionChoice
+      | none => return g.finishResolutionChoice
     | none =>
-      return (g.applyHydeMode p none 1 #[Target.permanent id]).finishFraChoice
+      return (g.applyHydeMode p none 1 #[Target.permanent id]).finishResolutionChoice
   | .hydeRemoveCounter _, _ => throw "Choose a creature with a counter"
   | .widowMayCounter sourceId exiled, .accept =>
     match sourceId.bind g.findObject? with
     | some o =>
       if o.isOnBattlefield then
-        return (g.addPlusOnePlusOneTo o 1).finishFraChoice
+        return (g.addPlusOnePlusOneTo o 1).finishResolutionChoice
       else
-        return (g.grantWidowCast p exiled).finishFraChoice
+        return (g.grantWidowCast p exiled).finishResolutionChoice
     | none =>
-      return (g.grantWidowCast p exiled).finishFraChoice
+      return (g.grantWidowCast p exiled).finishResolutionChoice
   | .widowMayCounter _ exiled, .decline =>
-    return (g.grantWidowCast p exiled).finishFraChoice
+    return (g.grantWidowCast p exiled).finishResolutionChoice
   | .widowMayCounter .., _ =>
     throw "Put a +1/+1 counter on Black Widow (accept), or decline"
   | .ultronMayPay artifactId, .accept =>
@@ -1494,13 +1493,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           if pushedFrame && g.pending == Pending.none && g.pendingReplacement.isNone then
             g.change .popContinuationFrame
           else g
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .ultronMayPay _, .decline =>
-    return (g.logMsg s!"{(g.player p).name} doesn't pay {2}").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} doesn't pay {2}").finishResolutionChoice
   | .ultronMayPay _, _ => throw "Pay {2} (accept), or decline"
   | .visionMode sourceId available, .mode m =>
     if !available.contains m then throw "That mode was already chosen this turn"
-    return (g.applyVisionMode p sourceId m).finishFraChoice
+    return (g.applyVisionMode p sourceId m).finishResolutionChoice
   | .visionMode .., _ => throw "Choose a mode that hasn't been chosen this turn"
   | .moonstoneMayExile cardId, .accept =>
     match g.findObject? cardId with
@@ -1520,10 +1519,10 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
               (cause := some cause))
               |>.logMsg s!"{g.name moved} is exiled. {(g.player p).name} may play it until the end of their next turn"
           | none => g
-      return g.finishFraChoice
-    | none => return g.finishFraChoice
+      return g.finishResolutionChoice
+    | none => return g.finishResolutionChoice
   | .moonstoneMayExile _, .decline =>
-    return (g.logMsg s!"{(g.player p).name} doesn't exile the discarded card").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} doesn't exile the discarded card").finishResolutionChoice
   | .moonstoneMayExile _, _ => throw "Exile the discarded card (accept), or decline"
   | .tricksterLibrary caster id connive sourceId, .accept
   | .tricksterLibrary caster id connive sourceId, .decline =>
@@ -1545,7 +1544,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           (.finishPostStep (.conniveTricksterTarget caster connive sourceId))
       else
         g.conniveTricksterTarget caster connive (sourceId := sourceId)
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .tricksterLibrary .., _ =>
     throw "Put the creature second from the top (choose top), or on the bottom (choose bottom)"
   | .mayDrawThenEachOpponentDraws n, .accept =>
@@ -1556,9 +1555,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.chainPendingReplacement (.finishPostStep (.checkDrawThenOpponentsDraw p before))
       else
         g.runPostStep (.checkDrawThenOpponentsDraw p before)
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayDrawThenEachOpponentDraws _, .decline =>
-    return (g.logMsg s!"{(g.player p).name} doesn't draw").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} doesn't draw").finishResolutionChoice
   | .mayDrawThenEachOpponentDraws _, _ => throw "Draw (accept), or decline"
   | .mayPutHeroFromHandOrDraw ids, .objects #[id] =>
     if !ids.contains id then throw "That card can't be put onto the battlefield"
@@ -1571,44 +1570,44 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         g.chainPendingReplacement (.finishPostStep (.enteredBattlefieldSilent id))
       else
         g.runPostStep (.enteredBattlefieldSilent id)
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayPutHeroFromHandOrDraw _, .decline =>
-    return (g.draw p 1).finishFraChoice
+    return (g.draw p 1).finishResolutionChoice
   | .mayPutHeroFromHandOrDraw _, _ => throw "Put a Hero onto the battlefield, or decline to draw"
   | .oddOrEvenDestroy sourceId, .mode m =>
     if m > 1 then throw "Choose 0 for even or 1 for odd"
     match bindInterpChoiceOverride? g { chosenParity? := some (m == 1), succeeded := true } with
     | some g' =>
       let g' := g'.logMsg s!"{(g'.player p).name} chooses {if m == 0 then "even" else "odd"}"
-      return g'.finishFraChoice
+      return g'.finishResolutionChoice
     | none =>
-      return (g.destroyCreaturesByManaParity sourceId (m == 0)).finishFraChoice
+      return (g.destroyCreaturesByManaParity sourceId (m == 0)).finishResolutionChoice
   | .oddOrEvenDestroy _, _ => throw "Choose even (0) or odd (1)"
   | .visionQuestZones lib gy x, .accept =>
-    return g.change (.pending (.fraChoice p (.visionQuestPick (lib ++ gy) x true)))
+    return g.change (.pending (.resolutionChoice p (.visionQuestPick (lib ++ gy) x true)))
   | .visionQuestZones _ gy x, .decline =>
     if gy.isEmpty then
-      return (g.logMsg s!"{(g.player p).name} finds no artifact creature card").finishFraChoice
+      return (g.logMsg s!"{(g.player p).name} finds no artifact creature card").finishResolutionChoice
     else
-      return g.change (.pending (.fraChoice p (.visionQuestPick gy x false)))
+      return g.change (.pending (.resolutionChoice p (.visionQuestPick gy x false)))
   | .visionQuestZones .., _ => throw "Search your library as well (accept), or only your graveyard (decline)"
   | .visionQuestPick ids x shuffle, .objects #[id] =>
     if !ids.contains id then throw "That card can't be found"
-    return (g.finishVisionQuest p (some id) x shuffle).finishFraChoice
+    return (g.finishVisionQuest p (some id) x shuffle).finishResolutionChoice
   | .visionQuestPick _ x shuffle, .decline =>
-    return (g.finishVisionQuest p none x shuffle).finishFraChoice
+    return (g.finishVisionQuest p none x shuffle).finishResolutionChoice
   | .visionQuestPick .., _ => throw "Choose an artifact creature, or decline to find nothing"
   | .kingpinMayPay2Life, .accept =>
     let g ← g.payLifeCost p 2 (forObject := resolvingForObj)
     return ((g.createEffect (.assignCombatDamageEqualToughnessUntilEot p))
-      |>.logMsg "Creatures you control assign combat damage equal to their toughness").finishFraChoice
+      |>.logMsg "Creatures you control assign combat damage equal to their toughness").finishResolutionChoice
   | .kingpinMayPay2Life, .decline =>
-    return (g.logMsg "The Kingpin's cost wasn't paid").finishFraChoice
+    return (g.logMsg "The Kingpin's cost wasn't paid").finishResolutionChoice
   | .kingpinMayPay2Life, _ => throw "Pay 2 life (accept), or decline"
   | .daredevilMayExile sourceId, .accept =>
-    return (g.applyDaredevilExile p sourceId).finishFraChoice
+    return (g.applyDaredevilExile p sourceId).finishResolutionChoice
   | .daredevilMayExile _, .decline =>
-    return (g.logMsg s!"{(g.player p).name} doesn't exile the top card").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} doesn't exile the top card").finishResolutionChoice
   | .daredevilMayExile _, _ => throw "Exile the top card (accept), or decline"
   | .exploreMayGraveyard cardId, .accept =>
     let pl := g.player p
@@ -1623,18 +1622,18 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       let (g, _) := g.move cardId (.graveyard destOwner) none
       if let .chooseReplacement .. := g.pending then
         return (g.chainPendingReplacement
-          (.finishPostStep (.logDiscardIfInGraveyard cardId destOwner msg))).finishFraChoice
+          (.finishPostStep (.logDiscardIfInGraveyard cardId destOwner msg))).finishResolutionChoice
       else
         let g :=
           if (g.followMovedToZone? cardId (· == .graveyard destOwner)).isSome then
             g.logMsg msg
           else g
-        return g.finishFraChoice
+        return g.finishResolutionChoice
     else
-      return g.finishFraChoice
+      return g.finishResolutionChoice
   | .exploreMayGraveyard cardId, .decline =>
     let cName := (g.findObject? cardId).map g.name |>.getD "the revealed card"
-    return (g.logMsg s!"{(g.player p).name} leaves {cName} on top of their library").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} leaves {cName} on top of their library").finishResolutionChoice
   | .exploreMayGraveyard _, _ => throw "Put the revealed card into your graveyard (accept), or decline"
   | .mayChangeSpellTarget spellId index staged, .objects #[id] =>
     let tgt : Target :=
@@ -1642,13 +1641,13 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       | some o => if o.isOnBattlefield then Target.permanent id else Target.card id
       | none => Target.permanent id
     let (g, nextStaged) := g.stageSpellTargetAt spellId index tgt staged
-    return (g.offerSpellRetarget p spellId (index + 1) nextStaged).finishFraChoice
+    return (g.offerSpellRetarget p spellId (index + 1) nextStaged).finishResolutionChoice
   | .mayChangeSpellTarget spellId index staged, .mode pIdx =>
     if pIdx >= g.players.size then throw "Illegal target (CR 601.2c)"
     let (g, nextStaged) := g.stageSpellTargetAt spellId index (Target.player ⟨pIdx⟩) staged
-    return (g.offerSpellRetarget p spellId (index + 1) nextStaged).finishFraChoice
+    return (g.offerSpellRetarget p spellId (index + 1) nextStaged).finishResolutionChoice
   | .mayChangeSpellTarget spellId index staged, .decline =>
-    return (g.offerSpellRetarget p spellId (index + 1) staged).finishFraChoice
+    return (g.offerSpellRetarget p spellId (index + 1) staged).finishResolutionChoice
   | .mayChangeSpellTarget .., _ => throw "Choose a new target, or decline to keep it"
   | .sheHulkMayDamage amount target sourceId, .accept =>
     let startIdx := g.events.size
@@ -1658,7 +1657,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         sourceId none
     if let .chooseReplacement .. := g.pending then
       return (g.chainPendingReplacement
-        (.finishPostStep (.sheHulkAfterDamage p startIdx))).finishFraChoice
+        (.finishPostStep (.sheHulkAfterDamage p startIdx))).finishResolutionChoice
     else
       let g :=
         if g.damageDealtSince startIdx > 0 then
@@ -1668,12 +1667,12 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
             | none => g
           g.logMsg "The Sensational She-Hulk deals damage (only once each turn)"
         else g
-      return g.finishFraChoice
+      return g.finishResolutionChoice
   | .sheHulkMayDamage .., .decline =>
-    return (g.logMsg s!"{(g.player p).name} declines to have The Sensational She-Hulk deal damage").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} declines to have The Sensational She-Hulk deal damage").finishResolutionChoice
   | .sheHulkMayDamage .., _ => throw "Have She-Hulk deal damage (accept), or decline"
   | .palantirMayDraw controller _, .accept =>
-    return (g.draw controller 1).finishFraChoice
+    return (g.draw controller 1).finishResolutionChoice
   | .palantirMayDraw controller sourceId, .decline =>
     let n := ((g.damageSourceById? sourceId).map (·.status.influence)).getD 0
     let lib := (g.player controller).library
@@ -1694,7 +1693,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           (.finishPostStep (.loseLifeForMilledManaValue p tops cause?))
       else
         g.runPostStep (.loseLifeForMilledManaValue p tops cause?)
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
   | .mayCastCards eligible withoutPaying exileInstead, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
@@ -1740,9 +1739,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.change (.pending .none)
     let g' := g.castAsPartOfResolution p id (withoutManaCost := withoutPaying)
       (exileInstantSorceryInstead := exileInstead) (callerCheckpoint := true)
-    return if g'.pending == .none then g'.finishFraChoice else g'
+    return if g'.pending == .none then g'.finishResolutionChoice else g'
   | .mayCastCards _ _ _, .decline =>
-    return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishResolutionChoice
   | .mayCastCards _ _ _, _ => throw "Choose a spell to cast, or decline"
   | .mayCastFromGraveyard eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
@@ -1790,9 +1789,9 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     let g := g.change (.pending .none)
     let g' := g.castAsPartOfResolution p id (withoutManaCost := false)
       (exileInstantSorceryInstead := true) (callerCheckpoint := true)
-    return if g'.pending == .none then g'.finishFraChoice else g'
+    return if g'.pending == .none then g'.finishResolutionChoice else g'
   | .mayCastFromGraveyard _, .decline =>
-    return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishResolutionChoice
   | .mayCastFromGraveyard _, _ => throw "Choose a card to cast, or decline"
   | .maySearchLibrary eligible count dest after kind, .accept =>
     if eligible.isEmpty then
@@ -1800,60 +1799,60 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         (cause := some (g.resolvingOrRuleCause p)))
       let g :=
         (g.logMsg s!"{(g.player p).name} finds no {searchNoun kind}").shuffleSearch p after
-      return g.finishFraChoice
+      return g.finishResolutionChoice
     else
-      return g.change (.pending (.fraChoice p (.searchLibrary eligible count dest after kind)))
+      return g.change (.pending (.resolutionChoice p (.searchLibrary eligible count dest after kind)))
   | .maySearchLibrary .., .decline =>
-    return (g.logMsg s!"{(g.player p).name} doesn't search their library").finishFraChoice
+    return (g.logMsg s!"{(g.player p).name} doesn't search their library").finishResolutionChoice
   | .maySearchLibrary .., _ => throw "Search (accept), or decline"
   | .searchLibrary eligible count dest after kind, .objects ids =>
     if ids.size > count then throw s!"Choose at most {count} card(s)"
     if ids.toList.eraseDups.length != ids.size then throw "Choose each card only once"
     if !ids.all (eligible.contains ·) then throw "That card can't be found"
-    return (g.finishLibrarySearch p ids dest after kind).finishFraChoice
+    return (g.finishLibrarySearch p ids dest after kind).finishResolutionChoice
   | .searchLibrary _ _ dest after kind, .decline =>
-    return (g.finishLibrarySearch p #[] dest after kind).finishFraChoice
+    return (g.finishLibrarySearch p #[] dest after kind).finishResolutionChoice
   | .searchLibrary .., _ => throw "Choose cards from the search, or decline to find nothing"
   | .riddlesSplit looked, .objects ids =>
     if ids.toList.eraseDups.length != ids.size then throw "Choose each card only once"
     if !ids.all (looked.contains ·) then throw "That card isn't among the cards you looked at"
     let faceDown := looked.filter (!ids.contains ·)
-    return (g.continueRiddlesSplit p ids faceDown).finishFraChoice
+    return (g.continueRiddlesSplit p ids faceDown).finishResolutionChoice
   | .riddlesSplit looked, .decline =>
-    return (g.continueRiddlesSplit p #[] looked).finishFraChoice
+    return (g.continueRiddlesSplit p #[] looked).finishResolutionChoice
   | .riddlesSplit _, _ => throw "Choose the face-up pile, or decline for all face-down"
   | .riddlesChoosePile controller faceUp faceDown, .accept =>
-    return (g.applyRiddlesPiles controller faceUp faceDown false (alreadyRevealed := true)).finishFraChoice
+    return (g.applyRiddlesPiles controller faceUp faceDown false (alreadyRevealed := true)).finishResolutionChoice
   | .riddlesChoosePile controller faceUp faceDown, .decline =>
-    return (g.applyRiddlesPiles controller faceUp faceDown true (alreadyRevealed := true)).finishFraChoice
+    return (g.applyRiddlesPiles controller faceUp faceDown true (alreadyRevealed := true)).finishResolutionChoice
   | .riddlesChoosePile .., _ => throw "Choose the face-up pile (accept) or the face-down pile (decline)"
   | .palisadeCreatureType types, .mode idx =>
     let some sub := types[idx]? | throw "No such creature type"
     let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
-    return (g.returnCreaturesNotOfType sub).finishFraChoice
+    return (g.returnCreaturesNotOfType sub).finishResolutionChoice
   | .palisadeCreatureType types, .name t =>
     let some sub := CardSubtype.ofOracle? t | throw "Choose an existing creature type"
     if !types.contains sub then throw "Choose an existing creature type"
     let g := g.logMsg s!"{(g.player p).name} chooses {sub}"
-    return (g.returnCreaturesNotOfType sub).finishFraChoice
+    return (g.returnCreaturesNotOfType sub).finishResolutionChoice
   | .palisadeCreatureType _, _ => throw "Choose a creature type"
   | .worldsPutCreatures eligible, .objects ids =>
     if ids.toList.eraseDups.length != ids.size then throw "Choose each card only once"
     if !ids.all (eligible.contains ·) then throw "That card isn't a creature card in your hand"
     let g := g.change (.bindStepOutcome interpChoiceVar
       { objects := ids, movedCount := ids.size, succeeded := !ids.isEmpty })
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .worldsPutCreatures _, .decline =>
     let g := g.change (.bindStepOutcome interpChoiceVar {})
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .worldsPutCreatures _, _ => throw "Choose creature cards from your hand, or decline"
   | .revealPutCreatures looked creatures anyNumber, .objects ids =>
     if ids.toList.eraseDups.length != ids.size then throw "Choose each card only once"
     if !ids.all (creatures.contains ·) then throw "That card isn't a revealed creature card"
     if !anyNumber && ids.size > 1 then throw "Choose at most one creature card"
-    return (g.finishRevealPutCreatures p looked ids).finishFraChoice
+    return (g.finishRevealPutCreatures p looked ids).finishResolutionChoice
   | .revealPutCreatures looked _ _, .decline =>
-    return (g.finishRevealPutCreatures p looked #[]).finishFraChoice
+    return (g.finishRevealPutCreatures p looked #[]).finishResolutionChoice
   | .revealPutCreatures .., _ => throw "Choose creature cards to put onto the battlefield, or decline"
   | .chooseCards ids max purpose, .objects chosen =>
     if chosen.size > max then throw s!"Choose at most {max} card(s)"
@@ -1867,7 +1866,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | _ => pure ()
     let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
     let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
-    return (g.finishChooseCards p chosen purpose (cause := cause)).finishFraChoice
+    return (g.finishChooseCards p chosen purpose (cause := cause)).finishResolutionChoice
   | .chooseCards ids _ purpose, .decline =>
     match purpose with
     | .toHand true =>
@@ -1876,11 +1875,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | _ => pure ()
     let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
     let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
-    return (g.finishChooseCards p #[] purpose (cause := cause)).finishFraChoice
+    return (g.finishChooseCards p #[] purpose (cause := cause)).finishResolutionChoice
   | .chooseCards .., _ => throw "Choose cards, or decline"
   | .blackGatePlayer creature players, .mode idx =>
     let some pid := players[idx]? | throw "No such player"
-    return (g.applyBlackGateUnblockable creature pid).finishFraChoice
+    return (g.applyBlackGateUnblockable creature pid).finishResolutionChoice
   | .blackGatePlayer .., _ => throw "Choose a player with the most life"
   | .newTargetsForCopies copies, ans =>
     retargetCopyAtSlot g p copies 0 #[] ans
@@ -1888,7 +1887,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     retargetCopyAtSlot g p copies slotIdx staged ans
   | .chooseEnteringAttackTarget remaining chosen cause, ans =>
     let some item := remaining[0]?
-      | return (g.commitEnteringAttackItems chosen cause).finishFraChoice
+      | return (g.commitEnteringAttackItems chosen cause).finishResolutionChoice
     let options := item.options
     let chosen? : Option AttackTarget :=
       match ans with
@@ -1913,11 +1912,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     | some nextItem =>
       let nextCtrl := nextItem.controller
       let nextNm := g.enteringAttackItemName nextItem
-      return (g.change (.pending (.fraChoice nextCtrl (.chooseEnteringAttackTarget restAfter chosen' cause)))).logMsg
+      return (g.change (.pending (.resolutionChoice nextCtrl (.chooseEnteringAttackTarget restAfter chosen' cause)))).logMsg
         s!"{(g.player nextCtrl).name} chooses what {nextNm} enters attacking"
     | none =>
       let g := g.commitEnteringAttackItems chosen' cause
-      return g.finishFraChoice
+      return g.finishResolutionChoice
   | .chooseTokenCopyObject ids mods count tapped attacking attackingTarget extraCounters cause sourceId, ans =>
     let chosen? : Option ObjectId :=
       match ans with
@@ -1940,7 +1939,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
           (g.createToken p printed (tapped := tapped) (attacking := isAttacking)
             (attackingTarget := resolvedTarget) (extraCounters := extraCounters)
             (recordRecent := true) (cause := cause) (count := count)).1
-    return g.finishFraChoice
+    return g.finishResolutionChoice
   | .mayBeginOnBattlefield ids, .accept =>
     let wasAwaiting := g.awaitingOpeningBegin
     let rest := ids.extract 1 ids.size
@@ -1950,22 +1949,22 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
       | some o =>
         if o.zone != .hand o.owner then
           let g := g.continueOpeningBegin rest
-          return if wasAwaiting then g else g.finishFraChoice
+          return if wasAwaiting then g else g.finishResolutionChoice
         else
           let (g, _) := g.move id .battlefield (some o.owner)
             (cause := some (.gameRule .staticAbility))
           if let .chooseReplacement .. := g.pending then
             let g := g.chainPendingReplacement (.finishBeginOnBattlefield id rest)
-            return if wasAwaiting then g else g.chainPendingReplacement .finishFraChoice
+            return if wasAwaiting then g else g.chainPendingReplacement .finishResolutionChoice
           else
             let g := g.finishBeginOnBattlefield id rest
-            return if wasAwaiting then g else g.finishFraChoice
+            return if wasAwaiting then g else g.finishResolutionChoice
       | none =>
         let g := g.continueOpeningBegin rest
-        return if wasAwaiting then g else g.finishFraChoice
+        return if wasAwaiting then g else g.finishResolutionChoice
     | none =>
       let g := g.continueOpeningBegin rest
-      return if wasAwaiting then g else g.finishFraChoice
+      return if wasAwaiting then g else g.finishResolutionChoice
   | .mayBeginOnBattlefield ids, .decline =>
     let wasAwaiting := g.awaitingOpeningBegin
     let g :=
@@ -1976,14 +1975,14 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
         | none => g
       | none => g
     let g := g.continueOpeningBegin (ids.extract 1 ids.size)
-    return if wasAwaiting then g else g.finishFraChoice
+    return if wasAwaiting then g else g.finishResolutionChoice
   | .mayBeginOnBattlefield _, _ =>
     throw "Begin the game with it on the battlefield (accept), or decline"
 
 
 /-- A legal default answer to `choice` for `p`: the first card or mode,
 accepting only Sphinx's Approach and declining other optional actions. -/
-def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
+def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : Action :=
   match choice with
   | .discardFromRevealedHand victim permanentOnly =>
     .choosePermanents ((g.revealedHandChoices victim permanentOnly).extract 0 1)
