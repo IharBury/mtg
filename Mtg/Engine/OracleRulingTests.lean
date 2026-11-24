@@ -2233,7 +2233,7 @@ def xInGraveyardIsZeroOk : Bool :=
 /-- Ruling 85: Mithril Coat's enters attachment is not an equip activation. -/
 def mithrilEtbAttachOk : Bool :=
   mithrilCoat.triggeredAbilities == #[.onEnterAttachToLegendary] &&
-    mithrilCoat.activatedAbilities.any (fun ab =>
+    mithrilCoat.allActivatedAbilities.any (fun ab =>
       ab.cost.mana == ManaCost.ofGeneric 3) &&
     (ruling 85).comment.contains "isn't the same as using its equip ability"
 

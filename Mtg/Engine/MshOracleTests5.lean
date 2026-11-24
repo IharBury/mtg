@@ -82,7 +82,7 @@ def moleManPlayLandOk : Bool :=
      !gLate.canPlayLand ⟨0⟩) &&
     (let gCyc := addToGraveyard afterDraw kreeSentinel ⟨0⟩
      let cyc := namedGraveyardCard gCyc ⟨0⟩ "Kree Sentinel"
-     let ab := cyc.printed.activatedAbilities[0]!
+     let ab := cyc.printed.allActivatedAbilities[0]!
      !gCyc.canActivate ⟨0⟩ cyc ab) &&
     (mshRuling 605).comment.contains "doesn't allow you to activate" &&
     (mshRuling 606).comment.contains "only one land per turn"

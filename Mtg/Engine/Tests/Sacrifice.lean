@@ -152,6 +152,6 @@ def withRelic : Game := addPermanent afterDraw relic caster caster
 #guard TriggeredAbility.toNotation .onAttackDefenderSacsLeastPower ==
   "Whenever this creature attacks, defending player sacrifices a creature with the least power among creatures they control."
 #guard TriggeredAbility.toNotation .onEnterBolgMaySacrifice ==
-  "When this permanent enters, you may sacrifice another creature. When you do, deals damage equal to that permanent's power to another target creature. If the excess damage dealt this way is greater than 0, amass Goblins the excess damage dealt this way."
+  "When this permanent enters, you may sacrifice another creature. When you do, deals damage equal to that permanent's power to another target creature; if the excess damage dealt this way is greater than 0, amass Goblins the excess damage dealt this way."
 
 end Mtg.Engine.SacrificeTests

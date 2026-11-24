@@ -169,7 +169,7 @@ def chapterGainControlOfUpToTwoCreaturesTotalMvAtMost (n : Nat) : Effect :=
 def chapterDealDamageToEachNonSubtypeAndOpponents (n : Nat) (subtype : String) : Effect :=
   let sub := CardSubtype.ofOracleD subtype
   let nonSubCreatures : ObjectExpr :=
-    .inZones .battlefield (.all #[.hasType .creature, .not (.hasSubtype (.literal sub))])
+    .inZones .battlefield (.all #[.not (.hasSubtype (.literal sub)), .hasType .creature])
   { body := Instruction.dealDamageFixed (.both nonSubCreatures .opponents) n }
 
 /-- Chapter: `"This Saga deals X damage to target opponent, where X is the greatest mana value among artifacts you control"`. -/

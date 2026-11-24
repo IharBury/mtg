@@ -175,7 +175,7 @@ Indestructible still causes its controller to amass. -/
   "When this permanent enters, it deals 1 damage to any target. If a Dragon is dealt damage this way, destroy it."
 
 #guard TriggeredAbility.toNotation .onEnterDestroyOtherAmassControllerPower ==
-  "When this permanent enters, if there is target, destroy up to one other target creature. Amass Goblins target's power. If target's controller is you, draw a card."
+  "When this permanent enters, if there is target, destroy up to one other target creature; its controller amasses Goblins target's power; if target's controller is you, draw a card."
 
 /- Amass reads dynamic counts; zero other creatures still amasses Goblins 0. -/
 #guard

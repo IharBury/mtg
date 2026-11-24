@@ -486,6 +486,7 @@ def toOracleStr (ctx : PrintCtx) (kw : KeywordAbility) : String :=
     | .equip pred cost =>
       let qual :=
         if pred == ObjectPred.all #[.hasType .creature, .controlledBy .you] || pred == .hasType .creature then ""
+        else if pred == ObjectPred.worthy then " worthy"
         else
           match pred with
           | .all #[.hasType .creature, .hasSubtype (.literal sub), .controlledBy .you]
@@ -503,9 +504,10 @@ def toOracleStr (ctx : PrintCtx) (kw : KeywordAbility) : String :=
     | .cycling (some pred) cost =>
       let prefix_ :=
         match pred with
-        | .hasSubtype (.literal sub) => sub.englishName.toLower
+        | .hasSubtype (.literal sub) => sub.englishName
         | .all #[.hasSupertype .basic, .hasType .land] => "basic land"
         | .hasSupertype s => s.englishName.toLower
+        | .hasType t => t.englishName.toLower
         | other => ToOracle.toOracle { ctx with capitalize := false } other
       if cost.isManaOnly && !cost.isEmpty then s!"{prefix_}cycling {cost.manaCost}"
       else s!"{prefix_}cycling—{cost.toNotation}."

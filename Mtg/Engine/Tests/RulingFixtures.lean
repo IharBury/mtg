@@ -21,7 +21,7 @@ open Mtg.Engine
 open Mtg.Engine.Catalog
 
 def oliphauntCycleAbility : ActivatedAbility :=
-  oliphaunt.activatedAbilities[0]!
+  oliphaunt.allActivatedAbilities[0]!
 
 /-- Isolated library so the search finds a known card. -/
 def withOnlyLibrary (g : Game) (p : PlayerId) (cards : Array CardDef) : Game :=

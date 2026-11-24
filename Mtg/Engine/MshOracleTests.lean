@@ -867,12 +867,12 @@ def sneakWrongStepOk : Bool :=
 
 def equipWorthyOk : Bool :=
   mjLnirHammerOfThor.hasEquipWorthy &&
-    mjLnirHammerOfThor.activatedAbilities[0]!.isEquipWorthy &&
+    mjLnirHammerOfThor.allActivatedAbilities[1]!.isEquipWorthy &&
     captainAmericaSuperSoldier.isWorthy &&
     !elektraDaughterOfTheHand.isWorthy &&
     !lokiGodOfMischief.isWorthy &&
     !grizzlyBears.isWorthy &&
-    (let ab := mjLnirHammerOfThor.activatedAbilities[0]!
+    (let ab := mjLnirHammerOfThor.allActivatedAbilities[1]!
      let gCap := addPermanent afterDraw mjLnirHammerOfThor ⟨0⟩ ⟨0⟩
      let gCap := addPermanent gCap captainAmericaSuperSoldier ⟨0⟩ ⟨0⟩
      let gCap := withRedMana gCap ⟨0⟩ 1
@@ -888,7 +888,7 @@ def equipWorthyOk : Bool :=
         let hammer := namedPermanent g "Mjölnir, Hammer of Thor"
         let cap := namedPermanent g "Captain America, Super-Soldier"
         let loki := namedPermanent g "Loki, God of Mischief"
-        let gEq := mustApply g ⟨0⟩ (.activate hammer.id 0)
+        let gEq := mustApply g ⟨0⟩ (.activate hammer.id 1)
         match gEq.pending, gEq.objectAwaitingTargets with
         | .chooseTargets ⟨0⟩, some awaiting =>
           let legal := gEq.legalProposedTargets ⟨0⟩ awaiting

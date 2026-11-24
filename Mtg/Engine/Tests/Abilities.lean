@@ -464,7 +464,7 @@ def abandonedReturnedToHand : Game :=
   let src := namedGraveyardCard g ⟨0⟩ "Gollum the Abandoned"
   let g := mustApply g ⟨0⟩ (.activate src.id 0)
   let g := mustApply g ⟨0⟩ .pay
-  let g := mustApply g ⟨0⟩ (.sacrifice (namedPermanent g "Raging Goblin").id)
+  let g := mustApply g ⟨0⟩ (.choosePermanents #[(namedPermanent g "Raging Goblin").id])
   passBoth g
 
 #guard (abandonedReturnedToHand.handObjects ⟨0⟩).any (fun o =>

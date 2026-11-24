@@ -135,7 +135,7 @@ def spearReadyToEquip : Game :=
   withRedMana g ⟨0⟩ 3
 
 def spearEquipAbility : ActivatedAbility :=
-  raggedShortSpear.activatedAbilities[0]!
+  raggedShortSpear.allActivatedAbilities[0]!
 
 #guard spearReadyToEquip.canActivate ⟨0⟩
   (namedPermanent spearReadyToEquip "Ragged Short Spear") spearEquipAbility
@@ -522,7 +522,7 @@ def bladeReadyToEquip : Game :=
   withBlackMana g ⟨0⟩ 2
 
 def bladeEquipAbility : ActivatedAbility :=
-  crudeBentBlade.activatedAbilities[0]!
+  crudeBentBlade.allActivatedAbilities[0]!
 
 #guard bladeReadyToEquip.canActivate ⟨0⟩
   (namedPermanent bladeReadyToEquip "Crude Bent Blade") bladeEquipAbility
@@ -660,10 +660,10 @@ def vowMayAttachNoGear : Game :=
   | _ => false
 
 def dunedainEquipHuman : ActivatedAbility :=
-  dunedainBlade.activatedAbilities[0]!
+  dunedainBlade.allActivatedAbilities[0]!
 
 def dunedainEquip : ActivatedAbility :=
-  dunedainBlade.activatedAbilities[1]!
+  dunedainBlade.allActivatedAbilities[1]!
 
 /-- Dúnedain Blade with a Human, a Bear, and {3} so either Equip can be paid. -/
 def dunedainReady : Game :=
@@ -673,7 +673,7 @@ def dunedainReady : Game :=
   let g := g.recordLandPlayed ⟨0⟩
   withWhiteMana g ⟨0⟩ 3
 
-#guard dunedainBlade.activatedAbilities.size == 2
+#guard dunedainBlade.allActivatedAbilities.size == 2
 #guard dunedainReady.canActivate ⟨0⟩
   (namedPermanent dunedainReady "Dúnedain Blade") dunedainEquipHuman
 #guard dunedainReady.canActivate ⟨0⟩

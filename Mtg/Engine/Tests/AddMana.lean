@@ -91,7 +91,7 @@ def perOtherCreatureRed : Instruction :=
   "At the beginning of your first main phase, add {R}{R}."
 
 #guard TriggeredAbility.toNotation .onYourFirstMainAddGreenPerCharge ==
-  "At the beginning of your first main phase, add {G}."
+  "At the beginning of your first main phase, add the number of charge counters on this permanent {G}."
 
 /- Adding a type twice repeats it. Zero times adds nothing.
 A count of other creatures adds that many. -/

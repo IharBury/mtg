@@ -1140,7 +1140,7 @@ where
     let creature := (playable.filter g.isCreature ++ morphOnlyPlayable)[0]?
     let artifact := playable.find? (fun o =>
       g.isArtifact o &&
-        (!(g.baseCard o).activatedAbilities.isEmpty || g.isEquipment o))
+        (!(g.baseCard o).allActivatedAbilities.isEmpty || g.isEquipment o))
     let pump :=
       if ownCreature.isSome then
         playable.find? (fun o =>

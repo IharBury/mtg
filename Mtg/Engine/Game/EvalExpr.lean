@@ -398,7 +398,7 @@ def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
           (st.controllerOf o).any fun p =>
             (st.permanentsOf p).any fun em =>
               hasProtChosenStatic (st.staticAbilities em) && em.status.chosenCardType.isSome
-      | .param .equip => retains && bc.activatedAbilities.any (·.isEquip)
+      | .param .equip => retains && bc.allActivatedAbilities.any (·.isEquip)
       | _ => false
   | .lki eo =>
     if KeywordAbility.hasTag eo.keywords kw then true
@@ -409,7 +409,7 @@ def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
       | .changeling => eo.changeling
       | .toxic => eo.toxic > 0
       | .protection => hasProtChosenStatic sas
-      | .param .equip => bc?.any (fun c => c.activatedAbilities.any (·.isEquip))
+      | .param .equip => bc?.any (fun c => c.allActivatedAbilities.any (·.isEquip))
       | _ => false
 
 def viewHasDesignation (st : Game) (v : ObjectView) (tag : PermanentDesignationTag) : Bool :=

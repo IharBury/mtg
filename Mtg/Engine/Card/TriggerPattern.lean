@@ -979,13 +979,20 @@ def renderClause (ctx : PrintCtx) (grouping : BatchGrouping := .perOccurrence)
       s!"the {ord} plan counter is put on this enchantment"
     | _ =>
       let cnt :=
-        match kind? with
-        | some k => s!"one or more {k.oracleName} counters"
-        | none => "one or more counters"
+        if grouping == .perOccurrence then
+          match kind? with
+          | some k => s!"{indArt k.oracleName} {k.oracleName} counter"
+          | none => "a counter"
+        else
+          match kind? with
+          | some k => s!"one or more {k.oracleName} counters"
+          | none => "one or more counters"
       match putter? with
       | some w =>
         s!"{playerClause ctx w} {pluralVerb w "puts" "put"} {cnt} on {subjPhrase ctx subj}"
-      | none => s!"{cnt} are put on {subjPhrase ctx subj}"
+      | none =>
+        let cop := if grouping == .perOccurrence then "is" else "are"
+        s!"{cnt} {cop} put on {subjPhrase ctx subj}"
   | .attacks att tgt alone minAtt minPow? _ =>
     match minPow? with
     | some p => s!"you attack with creatures with total power {p} or greater"
@@ -1040,7 +1047,7 @@ def renderClause (ctx : PrintCtx) (grouping : BatchGrouping := .perOccurrence)
         s!"{who} are dealt {dmg}{turnS}"
       else s!"{playerClause ctx pf} is dealt {dmg}{turnS}"
     | _, _ =>
-      let batch := grouping == .oncePerBatch
+      let batch := grouping == .oncePerBatch || grouping == .perPlayerInBatch
       let s :=
         if batch then s!"one or more {subjPhrase ctx src (plural := true)}"
         else if src == .sameAs .attachedHost then "equipped creature"
@@ -1127,7 +1134,9 @@ def renderClause (ctx : PrintCtx) (grouping : BatchGrouping := .perOccurrence)
     let w := playerClause ctx act
     let v := pluralVerb act "activates" "activate"
     match kind with
-    | .loyalty _ => s!"{w} {v} a loyalty ability"
+    | .loyalty minRem =>
+      if minRem == 0 then s!"{w} {v} a loyalty ability"
+      else s!"{w} {v} a loyalty ability, if you removed {minRem} or more loyalty counters to activate it"
     | .manaAbility =>
       if src == .anyObject then s!"{w} {v} a mana ability"
       else s!"{w} {v} a mana ability of {subjPhrase ctx src}"

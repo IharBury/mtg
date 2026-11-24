@@ -92,11 +92,21 @@ def kickedSpellEffect (e : Effect) : Effect :=
         .anyNumber }
   else if e.body == Effect.phaseOutKicker.body then
     { e with targets := .player }
-  else e
+  else
+    match e.targets.slots[0]?.bind (·.altDomainIf?) with
+    | some (Condition.castPred (.wasKicked .this), altDom) =>
+      let slot0 := e.targets.slots[0]!
+      let altCount : CountRange :=
+        if altDom == slot0.domain then .anyNumber else slot0.count
+      { e with
+        targets := { e.targets with
+          slots := e.targets.slots.set! 0
+            { slot0 with domain := altDom, count := altCount, altDomainIf? := none } } }
+    | _ => e
 
 /-- True when `c` is a “Choose up to two” graveyard-return modal spell
 (*Call Damage Control*, whose printed representation uses
-`Effect.returnUpToTwoGyModal` so `OracleCandidates` round-trips cleanly). -/
+`Effect.returnUpToTwoGyModal` so its multi-clause choice round-trips cleanly). -/
 def isReturnUpToTwoGyModal (c : CardDef) : Bool :=
   c.spellEffect.any (·.body == Effect.returnUpToTwoGyModal.body)
 

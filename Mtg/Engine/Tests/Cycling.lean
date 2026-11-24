@@ -25,7 +25,7 @@ open Mtg.Engine.Catalog
 (CR 702.29). -/
 
 def trollCycleAbility : ActivatedAbility :=
-  trollOfKhazadDum.activatedAbilities[0]!
+  trollOfKhazadDum.allActivatedAbilities[0]!
 
 /-- Nonbasic land with the Mountain type; Mountaincycling can find it (CR 305.7). -/
 def stompingGround : CardDef :=

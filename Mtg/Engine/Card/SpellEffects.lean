@@ -63,7 +63,7 @@ def plusOnePlusOneTrampleHexproof : Effect :=
   mkSpell .creatureYouControl
     (.seq #[
       Instruction.putPlusOne (.target 0) 1,
-      Instruction.grantKeywords (.target 0) #[Keyword.trample, Keyword.hexproof]
+      Instruction.grantKeywords (.target 0) #[Keyword.hexproof, Keyword.trample]
     ])
 
 def dealDamageToCreature (amount : Nat) : Effect :=
@@ -106,7 +106,6 @@ def destroyTargetCreatureControllerLosesLife (life : Nat) : Effect :=
       Instruction.loseLifeFixed life (.controllerOf (.target 0))
     ])
    
-
 def allCreaturesGet (power toughness : Int) : Effect :=
   mkSpell .none
     (Instruction.pumpFixed allCreaturesExpr power toughness)
@@ -127,10 +126,8 @@ def creaturesTargetPlayerGet (power toughness : Int) : Effect :=
 
 def pumpAndLifelink (power toughness : Int) : Effect :=
   mkSpell .creature
-    (.seq #[
-      Instruction.pumpFixed (.target 0) power toughness,
-      Instruction.grantKeywords (.target 0) #[Keyword.lifelink]
-    ])
+    (.installEffect (.applyContinuous .untilEndOfTurn (.target 0)
+      (.all #[.modifyPT (.const power) (.const toughness), .grantKeywords #[Keyword.lifelink]])))
 
 /-- Until-end-of-turn +P/+T. If the creature would die this turn, exile it instead. -/
 def pumpAndExileIfDies (power toughness : Int) : Effect :=
@@ -140,10 +137,9 @@ def pumpAndExileIfDies (power toughness : Int) : Effect :=
       Instruction.exileIfDiesThisTurn (.target 0)
     ])
    
-
 def exileGraveyardCreaturesGrantCast : Effect :=
   mkSpell .player
-    (.moveZone (.inZones (.graveyardOf (.target 0)) (.hasType .creature)) .exile .exile {
+    (.moveZone (.inZones (.graveyardOf (.target 0)) (.all #[.hasType .creature, .isKind .card])) .exile .exile {
       grantPlayPerm? := some {
         duration := .whileInZone .this .exile
         landsAllowed := false
@@ -154,11 +150,6 @@ def exileGraveyardCreaturesGrantCast : Effect :=
 def draw (n : Nat) : Effect :=
   mkSpell .none
     (Instruction.drawFixed n)
-
-/-- Discard `n` cards. The Oracle parser joins this with `draw` on “, then”,
-so “draw N cards, then discard a card” is not its own prototype. -/
-def discardCards (n : Nat) : Effect :=
-  { body := Instruction.discardFixed n }
 
 def drawThenDiscard (n : Nat) : Effect :=
   mkSpell .none
@@ -183,10 +174,6 @@ def tapOneOrTwoCreatures : Effect :=
   mkSpell (TargetSpec.creature.asBetween 1 2)
     (Instruction.tap .allTargets)
 
-def grantHexproofIndestructible : Effect :=
-  mkSpell .artifactOrCreatureYouControl
-    (Instruction.grantKeywords (.target 0) #[Keyword.hexproof, Keyword.indestructible])
-
 /-- Put `counters` of `kind` on up to one target creature, then the targeted
 player gains `life`. Defaults are one +1/+1 counter (Meager Meal). -/
 def plusOneUpToOneAndPlayerGainsLife (life : Nat)
@@ -205,15 +192,6 @@ def counterSpell : Effect :=
 def counterUnlessPays (n : Nat) : Effect :=
   mkSpell .spell
     (.unlessPays (.controllerOf (.target 0)) (CostSpec.ofGeneric n) (Instruction.counter (.target 0)))
-
-def counterCreatureSpellPTAtMost (n : Nat) : Effect :=
-  let spec := TargetSpec.creatureSpellPTAtMost n
-  mkSpell spec
-    (Instruction.counter (.target 0))
-
-def counterExilePermanentMayCast : Effect :=
-  mkSpell .spell
-    (Instruction.counter (.target 0) (exileInstead := true) (ifPermanentMayCastFree := true))
 
 /-- The owner puts the targeted creature on the top or bottom of their library. -/
 def putOnTopOrBottom : Effect :=
@@ -246,20 +224,6 @@ def creaturesYouControlGet (power toughness : Int) : Effect :=
 def destroyArtifactOrEnchantmentGainLife (life : Nat) : Effect :=
   mkSpell .artifactOrEnchantment
     (.seq #[Instruction.destroy (.target 0), Instruction.gainLifeFixed life])
-
-def destroyCreaturePowerAtLeast (n : Int) : Effect :=
-  destroyTarget (.creaturePowerAtLeast n)
-
-def becomeArtifactGainIndestructible : Effect :=
-  mkSpell .creature
-    (Instruction.becomeArtifactIndestructible (.target 0))
-
-def pumpAndGrantKeywords (power toughness : Int) (k : Array KeywordAbility) : Effect :=
-  mkSpell .creature
-    (.seq #[
-      Instruction.pumpFixed (.target 0) power toughness,
-      Instruction.grantKeywords (.target 0) k
-    ])
 
 def amassGoblins (n : Nat) : Effect :=
   mkSpell .none
@@ -317,17 +281,6 @@ def amassGoblinsOrFromGy (n fromGy : Nat) : Effect :=
     (.ifCond (.castPred (.castFrom .graveyard .this))
       (Instruction.amassFixed fromGy .goblin) (Instruction.amassFixed n .goblin))
 
-def searchLegendaryCreatureToHand : Effect :=
-  mkSpell .none
-    (.player (.searchLibrary {
-      zones := .libraryOf .you
-      filter := .all #[.hasSupertype .legendary, .hasType .creature]
-      count := .upTo (.const 1)
-      dest := .hand .controller
-      reveal := true
-      shuffle := true
-    }))
-
 def dealDamageToEachOppCreature (n : Nat) : Effect :=
   mkSpell .none
     (Instruction.dealDamageFixed (.objects oppCreaturesExpr) n)
@@ -345,17 +298,6 @@ def dealDamageToCreatureExileIfDies (n : Nat) : Effect :=
       Instruction.exileIfDiesThisTurn (.target 0),
       Instruction.dealDamageFixed (.targetSlot 0) n
     ])
-
-def destroyArtifactToken : Effect :=
-  destroyTarget .artifactToken
-
-def addRedPerOppArtifacts : Effect :=
-  let oppArtifacts : ObjectExpr :=
-    .inZones .battlefield (.all #[.hasType .artifact, .controlledBy .opponent])
-  mkSpell .none
-    (Instruction.addMana {
-      spec := .sequence #[(.colored .red, .aggregate .count .one oppArtifacts)]
-    })
 
 def dealDamageToEachNonDragon (n : Nat) : Effect :=
   let nonDragons : ObjectExpr :=
@@ -403,18 +345,6 @@ def exileThenReturnYouControl : Effect :=
       delayedReturn? := some (.immediately false .owner)
     })
 
-def dealDamageToEachNonDragonThenAddDragonMana (n : Nat) : Effect :=
-  let nonDragons : ObjectExpr :=
-    .inZones .battlefield (.all #[.hasType .creature, .not (.hasSubtype (.literal .dragon))])
-  mkSpell .none
-    (.seq #[
-      Instruction.dealDamageFixed (.objects nonDragons) n,
-      Instruction.addMana {
-        spec := .combination .anyColor (.const 4)
-        restriction := some (.subtypeSpell .dragon)
-      }
-    ])
-
 def millThenPutAllInstantsOrSorceries (n : Nat) : Effect :=
   mkSpell .none
     (.player (.inspectLibrary {
@@ -427,7 +357,7 @@ def millThenPutAllInstantsOrSorceries (n : Nat) : Effect :=
 def exileAttackersSearchBasics : Effect :=
   let targetPlayerAttackers : ObjectExpr :=
     .inZones .battlefield (.all #[
-      .hasType .creature, .combatRole .attacking, .controlledBy (.ofExpr (.target 0))
+      .combatRole .attacking, .hasType .creature, .controlledBy (.ofExpr (.target 0))
     ])
   mkSpell .player
     (.bind ⟨0⟩ (Instruction.exile targetPlayerAttackers)
@@ -460,14 +390,6 @@ def exileTopPlayIfYouControlSubtype (n : Nat) (subtype : String) : Effect :=
         ])))
       }
     })
-
-def returnSpellCantCastIfGift : Effect :=
-  mkSpell .spell
-    (.seq #[
-      Instruction.bounce (.target 0),
-      Instruction.ifThen (.castPred (.giftPromised .this))
-        (.installEffect (.applyRule .untilEndOfTurn (.player (.cantCastSpells .any .anyObject))))
-    ])
 
 def exileTopXOppPlayForLife : Effect :=
   mkSpell .opponent
@@ -519,10 +441,6 @@ def lookAtTopLandsGainLife (n life : Nat) : Effect :=
       Instruction.gainLifeFixed life
     ])
 
-def gainControlOppArtifacts : Effect :=
-  mkSpell (.forEachOpponentControlled (.hasType .artifact) (.upTo 1))
-    (.installEffect (.applyContinuous .indefinite .allTargets (.gainControl .you)))
-
 def damageOppCreaturesEqualOtherSpellsMv : Effect :=
   mkSpell .none
     (Instruction.dealDamage (.objects oppCreaturesExpr)
@@ -531,16 +449,13 @@ def damageOppCreaturesEqualOtherSpellsMv : Effect :=
 def phaseOutKicker : Effect :=
   let targetCtrlCreatures : ObjectExpr :=
     .inZones .battlefield (.all #[.hasType .creature, .controlledBy (.ofExpr (.target 0))])
-  mkSpell .creature
+  mkSpell { slots := #[{
+      domain := .object .battlefield (.hasType .creature)
+      altDomainIf? := some (.castPred (.wasKicked .this), .player .any)
+    }] }
     (.ifCond (.castPred (.wasKicked .this))
       (.permanent (.phaseOut targetCtrlCreatures none))
       (.permanent (.phaseOut (.target 0) none)))
-
-def dealDamageToAttackerOrBlocker (n teamworkN : Nat) : Effect :=
-  mkSpell .attackingOrBlockingCreature
-    (.ifCond (.castPred (.teamworkPaid .this))
-      (Instruction.dealDamageFixed (.targetSlot 0) teamworkN)
-      (Instruction.dealDamageFixed (.targetSlot 0) n))
 
 def dealDamageThenControllerIfTeamwork (n extra : Nat) : Effect :=
   mkSpell .creature
@@ -549,20 +464,6 @@ def dealDamageThenControllerIfTeamwork (n extra : Nat) : Effect :=
       Instruction.ifThen (.castPred (.teamworkPaid .this))
         (Instruction.dealDamageFixed (.players (.controllerOf (.target 0))) extra)
     ])
-
-def grantDoubleStrikeTeamworkTrample : Effect :=
-  mkSpell .creature
-    (.seq #[
-      Instruction.grantKeywords (.target 0) #[Keyword.doubleStrike],
-      Instruction.ifThen (.castPred (.teamworkPaid .this))
-        (Instruction.grantKeywords (.target 0) #[Keyword.trample])
-    ])
-
-def counterUnlessPaysTeamwork (n teamworkN : Nat) : Effect :=
-  mkSpell .spell
-    (.ifCond (.castPred (.teamworkPaid .this))
-      (.unlessPays (.controllerOf (.target 0)) (CostSpec.ofGeneric teamworkN) (Instruction.counter (.target 0)))
-      (.unlessPays (.controllerOf (.target 0)) (CostSpec.ofGeneric n) (Instruction.counter (.target 0))))
 
 def exileCreatureMvAtMostOrAnyIfTeamwork (n life : Nat) : Effect :=
   mkSpell (.creatureMvAtMostOrAnyIfTeamwork n)
@@ -597,25 +498,9 @@ def exileCreatureToughnessAtLeast (n : Int) : Effect :=
   mkSpell spec
     (Instruction.exile (.target 0))
 
-def exileEnchantmentMvAtLeast (n : Nat) : Effect :=
-  let spec := TargetSpec.enchantmentMvAtLeast n
-  mkSpell spec
-    (Instruction.exile (.target 0))
-
 def returnOneOrTwoNonlands : Effect :=
   mkSpell (TargetSpec.nonland.asBetween 1 2)
     (Instruction.bounce .allTargets)
-
-def grantDeathtouch : Effect :=
-  mkSpell .creature
-    (Instruction.grantKeywords (.target 0) #[Keyword.deathtouch])
-
-def destroyNoncreatureArtifact : Effect :=
-  destroyTarget .noncreatureArtifact
-
-def plusOneOnCreature : Effect :=
-  mkSpell .creature
-    (Instruction.putPlusOne (.target 0) 1)
 
 def targetPlayerCreatesTokens (kind : TokenSpec) (n : Nat) : Effect :=
   mkSpell .player
@@ -713,14 +598,6 @@ def fightUpToOne : Effect :=
   mkSpell (.ofSlots #[.of .creatureYouControl, { domain := .anotherCreature, count := .upTo 1 }])
     (.damage (.fight (.target 0) (.target 1) false))
 
-def plusOneOnEachYouControl : Effect :=
-  mkSpell .none
-    (Instruction.putPlusOne creaturesYouControlExpr 1)
-
-def plusOneOnCreatureN (n : Nat) : Effect :=
-  mkSpell .creatureYouControl
-    (Instruction.putPlusOne (.target 0) n)
-
 def pumpThenDraw (power toughness : Int) : Effect :=
   mkSpell .creature
     (.seq #[Instruction.pumpFixed (.target 0) power toughness, Instruction.drawFixed 1])
@@ -748,23 +625,12 @@ def createTokensThenTeamPump (kind : TokenSpec) (n : Nat) (power toughness : Int
       Instruction.pumpFixed creaturesYouControlExpr power toughness
     ])
 
-def createTokensPerSubtype (kind : TokenSpec) (subtype : String) : Effect :=
-  let sub := CardSubtype.ofOracleD subtype
-  let cnt : ValueExpr :=
-    .aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal sub), .controlledBy .you]))
-  mkSpell .none
-    (Instruction.createTokens kind cnt)
-
 def creaturesYouControlGetAndGrant (power toughness : Int) (k : Array KeywordAbility) : Effect :=
   mkSpell .none
     (.seq #[
       Instruction.pumpFixed creaturesYouControlExpr power toughness,
       Instruction.grantKeywords creaturesYouControlExpr k
     ])
-
-def destroyUpToOneNonland : Effect :=
-  mkSpell (TargetSpec.nonland.asUpTo 1)
-    (Instruction.destroy (.target 0))
 
 def createGalactus : Effect :=
   mkSpell .none
@@ -813,31 +679,6 @@ def gainControlUntilEotOrNextIfVillain : Effect :=
       Instruction.grantKeywords (.target 0) #[Keyword.haste]
     ])
 
-def millThenPutPermanentGainLife (n life : Nat) : Effect :=
-  mkSpell .none
-    (.seq #[
-      .player (.inspectLibrary {
-        source := .millCards .you (.const (Int.ofNat n))
-        action := .takeMatching (.isKind .permanentCard) (.upTo (.const 1)) (.hand .controller)
-        rest := .leaveInPlace
-      }),
-      Instruction.gainLifeFixed life
-    ])
-
-def searchLibraryOrGyArtifactCreatureX : Effect :=
-  mkSpell .none
-    (.bind ⟨0⟩ (.player (.searchLibrary {
-        zones := { zones := #[.library, .graveyard], owner := .ofPlayer .you }
-        filter := .all #[.hasType .artifact, .hasType .creature, .stat .manaValue .le .chosenX]
-        count := .upTo (.const 1)
-        dest := .battlefield .controller
-        mods := { enterCounters := #[(.plusOnePlusOne, .chosenX)] }
-        reveal := false
-        shuffle := true
-      }))
-      (Instruction.ifThen (.cmp .ge .chosenX (.const 4))
-        (Instruction.grantKeywords (.stepObjects ⟨0⟩) #[Keyword.haste])))
-
 def gainLifeSearchBasicPlusOne (life : Nat) : Effect :=
   mkSpell .upToOneCreatureThenPlayer
     (.seq #[
@@ -872,7 +713,6 @@ def ownerPutsLibraryThenConnive : Effect :=
       .player (.connive (.target 1))
     ])
 
-
 def mayDrawPerArtifactOppsDraw : Effect :=
   let artifactsCount : ValueExpr :=
     .aggregate .count .one (.inZones .battlefield (.all #[.hasType .artifact, .controlledBy .you]))
@@ -883,29 +723,10 @@ def mayDrawPerArtifactOppsDraw : Effect :=
         Instruction.drawFixed 1 .opponents
       ]))
 
-def mayPutHeroMvOrDraw (n : Nat) : Effect :=
-  mkSpell .none
-    (.bind ⟨0⟩ (Instruction.may .you none
-        (.moveZone (.inZones (.handOf .you) (.all #[
-            .hasSubtype (.literal .hero),
-            .hasType .creature,
-            .stat .manaValue .le (.const (Int.ofNat n))
-          ])) (.battlefield .controller) .put {
-            choice? := some { chooser := .controller, count := .exact (.const 1) }
-          }))
-      (Instruction.ifThen (.not (.stepSucceeded ⟨0⟩)) (Instruction.drawFixed 1)))
-
 def maySacArtifactOrDiscardDraw (cards : Nat) : Effect :=
   mkSpell .none
     (Instruction.may .you (some CostSpec.sacrificeArtifactOrDiscardCard)
       (Instruction.drawFixed cards))
-
-def chooseTargetDoubleAndTrample : Effect :=
-  mkSpell .creatureYouControl
-    (.seq #[
-      Instruction.doublePT (.target 0),
-      Instruction.grantKeywords (.target 0) #[Keyword.trample]
-    ])
 
 def returnUpToTwoGyModal : Effect :=
   mkSpell (.single {
@@ -1025,10 +846,6 @@ def returnFromGraveyardToHand : Effect :=
 def destroyTargetArtifactOrEnchantment : Effect :=
   destroyTarget .artifactOrEnchantment
 
-def millPlayer (n : Nat) : Effect :=
-  mkAbility .player
-    (Instruction.millFixed n (.target 0))
-
 def addAnyColor : Effect :=
   mkAbility .none
     (Instruction.addMana { spec := .oneOf .anyColor (.const 1) })
@@ -1070,17 +887,6 @@ def returnFromGyAttachPowerAtMost (n : Int) : Effect :=
 def addMana (types : Array ManaType) : Effect :=
   mkAbility .none
     (Instruction.addSimpleMana types)
-
-def searchBasicLandToHand : Effect :=
-  mkAbility .none
-    (.player (.searchLibrary {
-      zones := .libraryOf .you
-      filter := .all #[.hasSupertype .basic, .hasType .land]
-      count := .upTo (.const 1)
-      dest := .hand .controller
-      reveal := true
-      shuffle := true
-    }))
 
 def searchTwoBasicsSplit : Effect :=
   mkAbility .none
@@ -1140,14 +946,6 @@ def twoPlayersDraw : Effect :=
   mkAbility .twoPlayers
     (.seq #[Instruction.drawFixed 1 (.target 0), Instruction.drawFixed 1 (.target 1)])
 
-def discardLegendarySameNameDraw : Effect :=
-  mkAbility .none
-    (Instruction.drawFixed 2)
-
-def dealDamageToAny (n : Nat) : Effect :=
-  mkAbility .anyTarget
-    (Instruction.dealDamageFixed (.targetSlot 0) n)
-
 def drawEqualSacrificedPowerThenDiscard : Effect :=
   mkAbility .none
     (.seq #[
@@ -1165,15 +963,6 @@ def arwenShare : Effect :=
       Instruction.putCounters .this .lifelink
     ])
 
-def grantCombatDamageCreateTreasure : Effect :=
-  let trig : TriggeredAbility := {
-    word := .whenever
-    pattern := .thisDealsCombatDamageToPlayer
-    effect := { body := Instruction.createTokensFixed .treasure 1 }
-  }
-  mkAbility .creature
-    (.installEffect (.applyContinuous .untilEndOfTurn (.target 0) (.grantTriggered #[trig])))
-
 def putShadowCounter : Effect :=
   mkAbility .creature
     (.seq #[
@@ -1181,10 +970,6 @@ def putShadowCounter : Effect :=
       .installEffect (.applyContinuous (.whileHasCounter (.target 0) .shadow) (.target 0)
         (.modifyTypes { subtypes := #[.wraith] }))
     ])
-
-def damageEachOpponent (n : Nat) : Effect :=
-  mkAbility .none
-    (Instruction.dealDamageFixed (.players .opponents) n)
 
 def chooseTwoDestroyRest : Effect :=
   mkAbility .none
@@ -1212,9 +997,6 @@ def burdenThenDraw : Effect :=
 def teamGain (k : Array KeywordAbility) : Effect :=
   mkAbility .none
     (Instruction.grantKeywords creaturesYouControlExpr k)
-
-def teamGainDoubleStrike : Effect :=
-  teamGain #[Keyword.doubleStrike]
 
 def sourceGainsIndestructibleTap : Effect :=
   mkAbility .none
@@ -1273,16 +1055,9 @@ def lookAtTopPutTypes (n : Nat) (types : Array String) : Effect :=
       })
     ])
 
-def lookAtTopPutHeroEquipVehicle (n : Nat) : Effect :=
-  lookAtTopPutTypes n #["Hero", "Equipment", "Vehicle"]
-
 def transform : Effect :=
   mkAbility .none
     (.permanent (.transform .this))
-
-def drawX : Effect :=
-  mkAbility .none
-    (Instruction.draw .chosenX)
 
 def lookAtTopRevealArtifact (n : Nat) : Effect :=
   mkAbility .none
@@ -1337,10 +1112,6 @@ def addAnyColorEqualToSourcePower : Effect :=
       spec := .oneOf .anyColor (.objectStat .power .this)
     })
 
-def addFourAnyCombination : Effect :=
-  mkAbility .none
-    (Instruction.addMana { spec := .combination .anyColor (.const 4) })
-
 def addTwoAnyColorEquipment : Effect :=
   mkAbility .none
     (Instruction.addMana {
@@ -1351,10 +1122,6 @@ def addTwoAnyColorEquipment : Effect :=
 def drawPerDiscardedThisTurn : Effect :=
   mkAbility .none
     (Instruction.draw (.playerMetric .cardsDiscardedThisTurn .you))
-
-def createTokensEqualRemovedPlusOnes (kind : TokenSpec) : Effect :=
-  mkAbility .none
-    (Instruction.createTokens kind .eventAmount)
 
 def exileTopXPlayThisTurn : Effect :=
   mkAbility .none
@@ -1380,10 +1147,6 @@ def createTappedTokens (kind : TokenSpec) (n : Nat) : Effect :=
 def destroyUpToOneThenPlusOne : Effect :=
   mkAbility (TargetSpec.artifactOrEnchantment.asUpTo 1)
     (.seq #[Instruction.destroy (.target 0), Instruction.putPlusOne .this 1])
-
-def proliferateEachKind : Effect :=
-  mkAbility .permanentOrPlayer
-    (.player (.proliferate .you (.const 1) (some (.target 0))))
 
 def equipmentBecomesConstructHero : Effect :=
   let artifactsCount : ValueExpr :=
@@ -1416,9 +1179,6 @@ def millThenPutSubtypeOrEnchantment (n : Nat) (subtype : String) : Effect :=
         (.upTo (.const 1)) (.hand .controller)
       rest := .leaveInPlace
     }))
-
-def millThenPutHeroOrEnchantment (n : Nat) : Effect :=
-  millThenPutSubtypeOrEnchantment n "Hero"
 
 def plusOneAndDoubleStrikeCounter : Effect :=
   mkAbility .none
@@ -1516,26 +1276,6 @@ def harnessInfinityStone : Effect :=
 def destroyTargetNoncreatureArtOrEnch : Effect :=
   destroyTarget .noncreatureArtifactOrEnchantment
 
-def targetSubtypeConnives (subtype : String) : Effect :=
-  let sub := CardSubtype.ofOracleD subtype
-  mkAbility (.creatureYouControlSubtype sub)
-    (.player (.connive (.target 0)))
-
-def anotherYouControlGetsAndGrant (p t : Int) (k : Array KeywordAbility) : Effect :=
-  mkAbility .anotherCreatureYouControl
-    (.seq #[
-      Instruction.pumpFixed (.target 0) p t,
-      Instruction.grantKeywords (.target 0) k
-    ])
-
-def tapTargetCreature : Effect :=
-  mkAbility .creature
-    (Instruction.tap (.target 0))
-
-def targetGets (p t : Int) : Effect :=
-  mkAbility .creature
-    (Instruction.pumpFixed (.target 0) p t)
-
 /-! ### Ability-Phrased Factories for Names That Overlap Spells -/
 
 def abilityCreateTokens (kind : TokenSpec) (n : Nat) : Effect :=
@@ -1546,14 +1286,6 @@ def abilityCreateTokensX (kind : TokenSpec) : Effect :=
   mkAbility .none
     (Instruction.createTokens kind .chosenX)
 
-def abilityCreaturesYouControlGet (power toughness : Int) : Effect :=
-  mkAbility .none
-    (Instruction.pumpFixed creaturesYouControlExpr power toughness)
-
-def abilityDealDamageToEachCreature (n : Nat) : Effect :=
-  mkAbility .none
-    (Instruction.dealDamageFixed (.objects allCreaturesExpr) n)
-
 def abilityDraw (n : Nat) : Effect :=
   mkAbility .none
     (Instruction.drawFixed n)
@@ -1562,23 +1294,11 @@ def abilityDrawThenDiscard (n : Nat) : Effect :=
   mkAbility .none
     (.seq #[Instruction.drawFixed n, Instruction.discardFixed 1])
 
-def abilityScry (n : Nat) : Effect :=
-  mkAbility .none
-    (Instruction.scryFixed n)
-
 def abilityTargetPlayerDraw (n : Nat) : Effect :=
   mkAbility .player
     (Instruction.drawFixed n (.target 0))
 
 /-! ### Reality Fracture Ability & Spell Effects -/
-
-def abilityEmpowerJace (n : Nat) : Effect :=
-  mkAbility .none
-    (Instruction.empowerJace n)
-
-def abilitySurveil (n : Nat) : Effect :=
-  mkAbility .none
-    (Instruction.surveilFixed n)
 
 def targetCreatureBecomesPrepared : Effect :=
   mkAbility .creature
@@ -1587,18 +1307,6 @@ def targetCreatureBecomesPrepared : Effect :=
 def eachCreatureYouControlBecomesPrepared : Effect :=
   mkAbility .none
     (Instruction.becomePrepared creaturesYouControlExpr)
-
-def plusOneThenGainLife (n life : Nat) : Effect :=
-  mkAbility .creature
-    (.seq #[Instruction.putPlusOne (.target 0) n, Instruction.gainLifeFixed life])
-
-def damageTargetOpponent (n : Nat) : Effect :=
-  mkAbility .opponent
-    (Instruction.dealDamageFixed (.targetSlot 0) n)
-
-def millSelf (n : Nat) : Effect :=
-  mkAbility .none
-    (Instruction.millFixed n)
 
 def mayDiscardDraw (n : Nat) : Effect :=
   mkAbility .none
@@ -1609,52 +1317,14 @@ def createTokensThenSurveil (kind : TokenSpec) (n s : Nat) : Effect :=
   mkAbility .none
     (.seq #[Instruction.createTokensFixed kind n, Instruction.surveilFixed s])
 
-def createTokensLifeGained (kind : TokenSpec) : Effect :=
-  mkAbility .none
-    (Instruction.createTokens kind (.playerMetric .lifeGainedThisTurn .you))
-
 def setBasePT (power toughness : Int) : Effect :=
   mkAbility .creature
     (Instruction.setBasePTFixed (.target 0) power toughness)
-
-def oppSacrificesGreatestMvGainLife (life : Nat) : Effect :=
-  let oppCreaturesOrWalkers : ObjectExpr :=
-    .inZones .battlefield (.all #[
-      .any #[.hasType .creature, .hasType .planeswalker],
-      .controlledBy (.ofExpr (.target 0))
-    ])
-  mkAbility .opponent
-    (.seq #[
-      .moveZone oppCreaturesOrWalkers .graveyard .sacrifice {
-        choice? := some {
-          chooser := .player (.target 0)
-          count := .exact (.const 1)
-          extremeMetric? := some (true, .stat .manaValue)
-        }
-      },
-      Instruction.gainLifeFixed life
-    ])
-
-def damageThenEmpowerExcess (n : Nat) : Effect :=
-  mkAbility .creatureOrPlaneswalker
-    (.bind ⟨0⟩ (.damage (.deal .this (.targetSlot 0) (.const (Int.ofNat n)) { trackExcess := true }))
-      (Instruction.ifThen (.cmp .gt (.stepMetric .excessDamage ⟨0⟩) (.const 0))
-        (Instruction.empower .jace (.stepMetric .excessDamage ⟨0⟩))))
 
 def jaceLoyaltyAtInstantSpeed : Effect :=
   mkAbility .none
     (.installEffect (.applyRule .untilEndOfTurn
       (.play (.activateLoyaltyAsInstant .you (.hasSubtype (.literal .jace))))))
-
-def exileTopMayCastElseDamageOpponents (n : Nat) : Effect :=
-  mkAbility .none
-    (.bind ⟨0⟩ (.moveZone (.topOfLibrary .you (.const 1)) .exile .exile {})
-      (.bind ⟨1⟩ (.stack (.mayCastOrPlay (.stepObjects ⟨0⟩) {
-          duration := .untilEndOfTurn
-          landsAllowed := false
-        }))
-        (Instruction.ifThen (.not (.stepSucceeded ⟨1⟩))
-          (Instruction.dealDamageFixed (.players .opponents) n))))
 
 def emblemCastSpellDamage (n : Nat) : Effect :=
   mkAbility .none
@@ -1669,24 +1339,6 @@ def emblemCastSpellDamage (n : Nat) : Effect :=
       }]
     }))
 
-def returnFromGyWithFinality : Effect :=
-  mkAbility .none
-    (.moveZone .this (.battlefield .controller) .put {
-      enterCounters := #[(.finality, .const 1)]
-    })
-
-def firstDealsStatDamageToSecond (useLoyalty : Bool) : Effect :=
-  let spec : TargetSpec :=
-    if useLoyalty then .planeswalkerYouControlThenOppCreatureOrPlaneswalker
-    else .creatureYouControlThenOppCreatureOrPlaneswalker
-  let stat : StatKind := if useLoyalty then .loyalty else .power
-  mkAbility spec
-    (Instruction.dealDamage (.targetSlot 1) (.objectStat stat (.target 0)) (.target 0))
-
-def tapAndStunTargetCreature : Effect :=
-  mkAbility .creature
-    (Instruction.tapAndStun (.target 0))
-
 def copyNextInstantSorceryThisTurn : Effect :=
   mkAbility .none
     (.installEffect (.createDelayedTrigger {
@@ -1695,12 +1347,6 @@ def copyNextInstantSorceryThisTurn : Effect :=
       oneShot := true
       effect := { body := .stack (.copyStackObject .triggerSubject (.const 1) true) }
     }))
-
-def proliferatePlaneswalkerTypesTimes : Effect :=
-  let pwTypesCount : ValueExpr :=
-    .subtypeCount .planeswalker (.inZones .battlefield (.all #[.hasType .planeswalker, .controlledBy .you]))
-  mkAbility .none
-    (.player (.proliferate .you pwTypesCount none))
 
 def copyEachCreatureOfTargetPlayer : Effect :=
   let targetPlayerCreatures : ObjectExpr :=
@@ -1720,31 +1366,6 @@ def copyEachCreatureOfTargetPlayer : Effect :=
         .addKeywords #[Keyword.haste],
         .addAbilities #[sacEndStep]
       ])))
-
-def cantBeBlockedAnotherPowerAtMost (n : Int) : Effect :=
-  let spec := TargetSpec.anotherCreatureYouControlPowerAtMost n
-  mkAbility spec
-    (Instruction.cantBeBlocked (.target 0))
-
-/-- The printed “put N +1/+1 counters on” effect for `spec`.
-`creature` is the pump spell; a creature you control, including a subtype
-list, is the activated ability. -/
-def canonicalPlusOne (n : Nat) (spec : TargetSpec) : Option Effect :=
-  if spec == .creature then
-    some (mkSpell .creature (Instruction.putPlusOne (.target 0) n))
-  else if spec == .creatureYouControl then
-    some (plusOneOnTarget n)
-  else match spec.creatureYouControlAnySubtype? with
-    | some ss =>
-      some (if ss.isEmpty then plusOneOnTarget n else plusOneOnTarget n (ss.map CardSubtype.englishName))
-    | none => none
-
-def becomeCopyLegendRuleOff : Effect :=
-  mkAbility .creatureYouControl
-    (.seq #[
-      .installEffect (.applyContinuous .untilEndOfTurn .this (.becomeCopyOf (.target 0) #[])),
-      .installEffect (.applyRule .untilEndOfTurn (.game (.legendRuleDisabled .you)))
-    ])
 
 /-! ### Reality Fracture Named Spell Effects (Unified `Instruction`) -/
 
@@ -1808,14 +1429,6 @@ def returnToTheLightRealms : Effect :=
     (.moveZone (.inZones (.graveyardOf .you) (.all #[.isKind .permanentCard, .not (.hasType .land)]))
       (.battlefield .controller) .put {})
 
-def surgicalPrecisionDestroy : Effect :=
-  fraSpell (.creatureToughnessAtLeast 4)
-    (.seq #[Instruction.destroy (.target 0), Instruction.gainLifeFixed 1])
-
-def drawAndGainLife (cards life : Nat) : Effect :=
-  fraUntargeted
-    (.seq #[Instruction.drawFixed cards, Instruction.gainLifeFixed life])
-
 def yourFateEndsHere : Effect :=
   fraSpellOn (.object .battlefield (.all #[
       .any #[.hasType .creature, .hasType .planeswalker],
@@ -1824,21 +1437,9 @@ def yourFateEndsHere : Effect :=
 
 /-! ## Blue -/
 
-def counterTargetSpell : Effect :=
-  fraSpell .spell (Instruction.counter (.target 0))
-
 def cruelCalculations : Effect :=
   fraSpell .player
     (Instruction.draw (.playerMetric .cardsMilledThisTurn (.target 0)))
-
-def icyReceptionCounter : Effect :=
-  fraSpellOn (.object .stack (.all #[
-      .any #[.hasType .creature, .hasSupertype .legendary],
-      .isKind .spell]))
-    (.unlessPays (.controllerOf (.target 0)) (CostSpec.ofGeneric 3) (Instruction.counter (.target 0)))
-
-def targetCreatureGets (p t : Int) : Effect :=
-  fraSpell .creature (Instruction.pumpFixed (.target 0) p t)
 
 def preciseRedaction : Effect :=
   fraSpellOn (.object .stack (.all #[
@@ -1918,14 +1519,6 @@ def rewriteRegrets : Effect :=
       .stat .manaValue .le (.const 6)]))
     (.moveZone (.target 0) (.battlefield .controller) .put {})
 
-def riseDraw : Effect :=
-  fraUntargeted
-    (.bind ⟨0⟩ (Instruction.draw (.aggregate .max (.stat .power) creaturesYouControlExpr))
-      (Instruction.loseLife (.stepMetric .movedCount ⟨0⟩)))
-
-def destroyTargetCreatureOrPlaneswalker : Effect :=
-  fraSpell .creatureOrPlaneswalker (Instruction.destroy (.target 0))
-
 def solveForDisappointment : Effect :=
   fraSpell .opponent
     (.moveZone (.inZones (.handOf (.target 0)) (.all #[.isKind .permanentCard, .not (.hasType .land)]))
@@ -1938,14 +1531,6 @@ def terminalCriticism : Effect :=
       .any #[.hasType .creature, .hasType .planeswalker],
       .any #[.hasColor (.literal .blue), .hasColor (.literal .red)]]))
     (.seq #[Instruction.destroy (.target 0), Instruction.gainLifeFixed 1])
-
-def vraskasMercyDestroy : Effect :=
-  fraSpell .creatureOrPlaneswalker
-    (.seq #[Instruction.loseLifeFixed 2, Instruction.destroy (.target 0)])
-
-def vraskasMercyEmpower : Effect :=
-  fraUntargeted
-    (.seq #[Instruction.loseLifeFixed 2, Instruction.empowerJace 6])
 
 /-! ## Red -/
 
@@ -1978,19 +1563,6 @@ def essenceBurn : Effect :=
       Instruction.exileIfDiesThisTurn (.target 0),
       Instruction.dealDamageFixed (.targetSlot 0) 5
     ])
-
-def fulminousForteSweep : Effect :=
-  let oppCreaturesAndWalkers : ObjectExpr :=
-    .inZones .battlefield (.all #[
-      .any #[.hasType .creature, .hasType .planeswalker],
-      .controlledBy .opponent
-    ])
-  fraUntargeted
-    (Instruction.dealDamageFixed (.objects oppCreaturesAndWalkers) 1)
-
-def damageToCreatureOrPlaneswalker (n : Nat) : Effect :=
-  fraSpell .creatureOrPlaneswalker
-    (Instruction.dealDamageFixed (.targetSlot 0) n)
 
 def moltenTide : Effect :=
   fraUntargeted
@@ -2054,18 +1626,6 @@ def tethermagesAdvantage : Effect :=
 
 /-! ## Multicolor -/
 
-def creaturesYouControlGetUntilEot (p t : Int) : Effect :=
-  fraUntargeted
-    (Instruction.pumpFixed creaturesYouControlExpr p t)
-
-def chargeTheSanctumPump : Effect :=
-  fraSpell .creature
-    (.seq #[
-      Instruction.pumpFixed (.target 0) 2 0,
-      Instruction.grantKeywords (.target 0) #[Keyword.firstStrike],
-      Instruction.putPlusOne (.target 0) 1
-    ])
-
 def clashOfElements : Effect :=
   fraSpell .nonland
     (.optional (.ownerOf (.target 0)) none
@@ -2088,26 +1648,11 @@ def entrustTheSpark : Effect :=
         shuffle := true
       })))
 
-def drawThenEmpower (cards n : Nat) : Effect :=
-  fraUntargeted
-    (.seq #[Instruction.drawFixed cards, Instruction.empowerJace n])
-
-def bounceSpellOrCreature : Effect :=
-  fraSpell .spellOrCreature (Instruction.bounce (.target 0))
-
-def damageToCreatureWithFlying (n : Nat) : Effect :=
-  fraSpell .creatureWithFlying
-    (Instruction.dealDamageFixed (.targetSlot 0) n)
-
 def plusOneThenGrant (n : Nat) (k : Array KeywordAbility) (upToOne := false) : Effect :=
   let spec : TargetSpec :=
     if upToOne then .single { domain := .creature, count := .upTo 1 } else .creature
   fraSpell spec
     (.seq #[Instruction.putPlusOne (.target 0) n, Instruction.grantKeywords (.target 0) k])
-
-def addColorless (n : Nat) : Effect :=
-  fraUntargeted
-    (Instruction.addSimpleMana (Array.replicate n .colorless))
 
 def recursiveRecruitment : Effect :=
   fraUntargeted
@@ -2115,13 +1660,6 @@ def recursiveRecruitment : Effect :=
       (Instruction.ifThen (.castPred (.castFrom .graveyard .this))
         (Instruction.putCounters (.stepObjects ⟨0⟩) .plusOnePlusOne
           (.binary .divFloor (.playerMetric .graveyardSize .you) (.const 3)))))
-
-def targetCreatureGains (k : Array KeywordAbility) : Effect :=
-  fraSpell .creature (Instruction.grantKeywords (.target 0) k)
-
-def cadetWithHaste : Effect :=
-  fraUntargeted
-    (.create (.tokens .you (.const 1) .cadet { grantKeywordsUntilEot := #[Keyword.haste] }))
 
 def stingingVitriol : Effect :=
   fraSpell .opponent
@@ -2131,14 +1669,6 @@ def stingingVitriol : Effect :=
         choice? := some { chooser := .controller, count := .exact (.const 1), revealFirst := true }
       }
     ])
-
-def theorixCounter : Effect :=
-  fraSpellOn (.object .stack (.all #[.not (.hasType .creature), .isKind .spell]))
-    (.unlessPays (.controllerOf (.target 0)) (CostSpec.ofGeneric 2) (Instruction.counter (.target 0)))
-
-def millThenDraw (m d : Nat) : Effect :=
-  fraUntargeted
-    (.seq #[Instruction.millFixed m, Instruction.drawFixed d])
 
 def twinnedVision : Effect :=
   fraUntargeted
@@ -2154,9 +1684,6 @@ def twistedFates : Effect :=
       Instruction.putPlusOne targetPlayerCreatures 1
     ])
 
-def permanentYouControlGains (k : Array KeywordAbility) : Effect :=
-  fraSpell .permanentYouControl (Instruction.grantKeywords (.target 0) k)
-
 def vindictiveTriumph : Effect :=
   fraSpell .creatureOrPlaneswalker
     (.moveZone (.target 0) .exile .exile {
@@ -2166,50 +1693,6 @@ def vindictiveTriumph : Effect :=
 def tamsResistance : Effect := plusOneThenGrant 1 #[Keyword.vigilance] (upToOne := true)
 
 /-! ## Modes of modal triggered abilities -/
-
-def returnLegendaryCardToHand : Effect :=
-  fraSpellOn (.object .yourGraveyard (.all #[.hasSupertype .legendary, .isKind .card]))
-    (.moveZone (.target 0) (.hand .controller) .returnToHand {})
-
-def plusOneVigilanceIndestructible : Effect :=
-  fraSpell .creature
-    (.seq #[
-      Instruction.putPlusOne (.target 0) 1,
-      Instruction.grantKeywords (.target 0) #[Keyword.vigilance, Keyword.indestructible]
-    ])
-
-def fraTapTargetCreature : Effect :=
-  fraSpell .creature (Instruction.tap (.target 0))
-
-def untapTargetCreature : Effect :=
-  fraSpell .creature (Instruction.untap (.target 0))
-
-def drawThenDiscardOne : Effect :=
-  fraUntargeted (.seq #[Instruction.drawFixed 1, Instruction.discardFixed 1])
-
-def destroyNoncreatureNonland : Effect :=
-  fraSpellOn (.object .battlefield (.all #[.not (.hasType .creature), .not (.hasType .land)]))
-    (Instruction.destroy (.target 0))
-
-def gainLifeMode (n : Nat) : Effect :=
-  fraUntargeted (Instruction.gainLifeFixed n)
-
-def minusPowerPerGraveyard : Effect :=
-  fraSpell .creature
-    (Instruction.pump (.target 0)
-      (.binary .sub (.const 0) (.playerMetric .graveyardSize .you)) (.const 0))
-
-def surveilMode (n : Nat) : Effect :=
-  fraUntargeted (Instruction.surveilFixed n)
-
-def sourceDealsDamageToCreatureOrPlaneswalker (n : Nat) : Effect :=
-  fraSpell .creatureOrPlaneswalker
-    (Instruction.dealDamageFixed (.targetSlot 0) n)
-
-def createCadetMode : Effect :=
-  fraUntargeted (Instruction.createTokensFixed .cadet 1)
-
-def drawMode : Effect := fraUntargeted (Instruction.drawFixed 1)
 
 end Effect
 

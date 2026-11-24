@@ -2130,7 +2130,8 @@ private def execPlayer (g : Game) (ctx : InterpCtx) (op : PlayerOp) :
     else
       let n :=
         match amtExpr with
-        | .aggregate .sum (.stat .power) .costPaidObjects =>
+        | .aggregate .sum (.stat .power) .costPaidObjects
+        | .objectStat .power .costPaidObjects =>
           if env.costPaidObjects.isEmpty then env.eventAmount.toNat
           else (EvalExpr.evalValue g env amtExpr).toNat
         | _ => (EvalExpr.evalValue g env amtExpr).toNat
@@ -2938,6 +2939,20 @@ private def execInstallEffect (g : Game) (ctx : InterpCtx) (op : InstallEffectOp
     | .activateAbility _ _ .manaAbility =>
       g.createEffect (.mountainExtraRedThisTurn ctx.controller 1) (cause := some cause)
         |>.logMsg s!"Until end of turn, whenever {(g.player ctx.controller).name} taps a Mountain for mana, add an additional \{R}"
+    | .damageDealt (.sameAs .this) .. =>
+      match ctx.sourceId with
+      | some sid =>
+        let trigAb : TriggeredAbility := {
+          word := .whenever
+          pattern := spec.pattern
+          grouping := spec.grouping
+          interveningIf? := spec.interveningIf?
+          effect := spec.effect
+        }
+        let dur := (EvalExpr.evalDuration g env spec.duration).getD .untilEndOfTurn
+        (g.createEffect (.layered (.objects #[sid]) (.abilities { triggeredAbilities := #[trigAb] } .none) dur)
+          (cause := some cause)).logMsg s!"{g.fraSourceName ctx.sourceId} gains a triggered ability"
+      | none => g
     | _ =>
       -- Generic delayed trigger materialized as a temporary command-zone object
       let trigAb : TriggeredAbility := {
@@ -3446,6 +3461,16 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
             let (g', paused) := pauseIfNeeded g { ctx, queue, stack } pendingBefore randomBefore
             if paused then return g'
             g := g'
+          | [exileStep@(.moveZone _ .exile .exile _),
+             inspStep@(.player (.inspectLibrary _))] =>
+            if !queue.isEmpty then stack := stack.push (.seqRest queue)
+            let (g1, eid) : Game × EffectId :=
+              let id : EffectId := ⟨max 1 g.nextEffectId⟩
+              (g.change (.nextEffectId (id.raw + 1)), id)
+            g := g1
+            stack := stack.push (.bindClose ⟨999⟩ g.events.size eid inspStep none)
+            ctx := { ctx with oneShotEffectId := eid }
+            queue := #[exileStep]
           | [planStep@(.permanent (.modifyCounters (.put .plan (.const 1)) .this none)),
              loseStep@(.life (.lose ..)),
              gainStep@(.life (.gain ..))] =>
@@ -3482,7 +3507,9 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
             if paused then return g'
             g := g'
           | [.stack (.mayCastOrPlay .this { duration := .whileInZone .this .exile, landsAllowed := false, .. }),
-             .installEffect (.applyContinuous (.whileInZone .this .exile) (.target 0) (.grantActivated _))] =>
+             .installEffect (.applyContinuous (.whileInZone .this .exile) (.target 0) (.grantActivated _))]
+          | [.installEffect (.applyContinuous (.whileInZone .this .exile) (.target 0) (.grantActivated _)),
+             .stack (.mayCastOrPlay .this { duration := .whileInZone .this .exile, landsAllowed := false, .. })] =>
             match ctx.sourceId.bind (fun id => g.followMovedToZone? id (· == Zone.exile)) with
             | none => pure ()
             | some card =>
@@ -3760,11 +3787,17 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
           match iter with
           | .eachPlayer pf =>
             let ps := EvalExpr.evalPlayerFilter g env pf
+            let isWorldsMove (m : Instruction) : Bool :=
+              match m with
+              | .moveZone (.inZones (.handOf (.stepPlayers v2)) pred)
+                  (.battlefield (.player (.stepPlayers v3))) .put { choice? := some { count := .anyNumber, .. }, .. } =>
+                v == v2 && v == v3 &&
+                  (pred == .hasType .creature || pred == .all #[.hasType .creature, .isKind .card])
+              | _ => false
             let isWorldsSimultaneous : Bool :=
               match pf, body with
-              | .any, .moveZone (.inZones (.handOf (.stepPlayers v2)) (.hasType .creature))
-                  (.battlefield (.player (.stepPlayers v3))) .put { choice? := some { count := .anyNumber, .. }, .. } =>
-                v == v2 && v == v3
+              | .any, .optional (.stepPlayers v1) none inner .noop _ => v == v1 && isWorldsMove inner
+              | .any, inner => isWorldsMove inner
               | _, _ => false
             let isSacEachCreature : Bool :=
               match pf, body with
@@ -3779,6 +3812,9 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               match pf, body with
               | .opponent, .moveZone (.inZones .battlefield (.all #[
                   .hasType .creature, .isToken false, .controlledBy (.ofExpr (.stepPlayers v2))]))
+                  .graveyard .sacrifice { choice? := some _, .. }
+              | .opponent, .moveZone (.inZones .battlefield (.all #[
+                  .isToken false, .hasType .creature, .controlledBy (.ofExpr (.stepPlayers v2))]))
                   .graveyard .sacrifice { choice? := some _, .. } => v == v2
               | _, _ => false
             let isSacDamagersEach : Bool :=
@@ -4150,6 +4186,9 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                     s!"{(g.player chooser).name} may draw {n} cards; if they do, each opponent draws a card"
               | .seq #[.player (.drawCards .you (.manaSpent .triggerSubject)),
                        .ifCond _ (.moveZone _ .graveyard .discard { choice? := some { count := .exact (.const n), .. }, .. }) .noop],
+                .noop
+              | .seq #[.player (.drawCards .you (.manaSpent .triggerSubject)),
+                       .moveZone _ .graveyard .discard { choice? := some { count := .exact (.const n), .. }, .. }],
                 .noop =>
                 let spent := (EvalExpr.evalValue g env (.manaSpent .triggerSubject)).toNat
                 if spent == 0 then
@@ -4197,6 +4236,9 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 .noop =>
                 g := g.offerExileTopHeroPump chooser ctx.sourceId
               | .moveZone .triggerSubject .exile .exile { grantPlayPerm? := some { duration := .untilEndOfNextTurnOf .you, .. }, .. },
+                .noop
+              | .bind _ (.moveZone .triggerSubject .exile .exile _)
+                  (.stack (.mayCastOrPlay (.stepObjects _) { duration := .untilEndOfNextTurnOf .you, .. })),
                 .noop =>
                 let card? := ctx.triggerSubjectId.bind fun id =>
                   g.followMovedToZone? id (fun | .graveyard q => q == chooser | _ => false)
@@ -4272,6 +4314,34 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 else
                   g := g1.beginFraChoice chooser .extrapolateReveal
                     s!"{(g1.player chooser).name} may reveal two cards with different names from outside the game"
+              | .moveZone (.inZones zs (.all ps)) (.battlefield .controller) .put _,
+                .player (.drawCards .you (.const 1)) =>
+                let isHeroHand :=
+                  (zs == .yourHand || zs == .handOf .you) &&
+                  ps.contains (.hasSubtype (.literal .hero)) &&
+                  ps.contains (.hasType .creature)
+                let mvExpr? := ps.findSome? fun
+                  | .stat .manaValue .le e => some e
+                  | _ => none
+                match isHeroHand, mvExpr? with
+                | true, some mvExpr =>
+                  let maxMv := (EvalExpr.evalValue g env mvExpr).toNat
+                  let eligible := (g.player ctx.controller).hand.filter fun id =>
+                    (g.findObject? id).any fun o =>
+                      g.hasSubtype o .hero && g.isCreature o && g.objectManaValue o ≤ maxMv
+                  g :=
+                    if eligible.isEmpty then g.draw ctx.controller 1
+                    else
+                      g.beginFraChoice ctx.controller (.mayPutHeroFromHandOrDraw eligible)
+                        s!"{(g.player ctx.controller).name} may put a Hero creature card from their hand onto the battlefield"
+                | _, _ =>
+                  if !queue.isEmpty then stack := stack.push (.seqRest queue)
+                  queue := #[]
+                  stack := stack.push (.branchOnChoice onYes onNo)
+                  g := (g.changes #[
+                    .bindStepOutcome interpChoiceVar {},
+                    .pending (.mayResolve chooser)]).logMsg
+                    s!"{(g.player chooser).name} may choose whether to resolve the optional effect"
               | _, _ =>
                 if !queue.isEmpty then stack := stack.push (.seqRest queue)
                 queue := #[]

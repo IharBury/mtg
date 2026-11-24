@@ -1,4 +1,5 @@
 import Mtg.Engine.Card.ParseOracle
+import Mtg.Engine.Catalog.Supported
 
 /-!
 # Oracle parser checks
@@ -12,9 +13,6 @@ namespace Mtg.Engine.Tests
 
 open Mtg.Engine
 open OracleNorm
-open OracleActivate
-open OracleArgs
-open OracleCandidates
 
 /-- A stored line's cached normal forms equal normalizing it for the card,
 whether or not the card's name occurs in the line. -/
@@ -134,32 +132,20 @@ def normLineAgrees (cardName line : String) : Bool :=
       "Target creature gets -4/-0 until end of turn.\nDraw a card.")).toOption.bind
     (fun c => c.spellEffect.map (·.body)) ==
     some (.seq #[Instruction.pumpFixed (.target 0) (-4) 0, Instruction.drawFixed 1])
-#guard (parseOracleCard "Wander\n{G}\nInstant\nForestcycling {2}").toOption.bind
-    (fun c => c.activatedAbilities[0]?) ==
-    some (typecyclingAbility "Forest" (ManaCost.ofGeneric 2))
-#guard (parseOracleCard "Sword\n{2}\nArtifact — Equipment\nEquip {5}").toOption.bind
-    (fun c => c.activatedAbilities[0]?) == some (equipAbility (ManaCost.ofGeneric 5))
+#guard (parseOracleCard "Wander\n{G}\nInstant\nForestcycling {2}").toOption.map
+    (fun c =>
+      c.keywords == #[.cycling (some (.hasSubtype (.literal .forest))) (CostSpec.ofMana (ManaCost.ofGeneric 2))] &&
+      c.allActivatedAbilities[0]? ==
+        some (Catalog.typecyclingAbility "Forest" (ManaCost.ofGeneric 2))) == some true
+#guard (parseOracleCard "Sword\n{2}\nArtifact — Equipment\nEquip {5}").toOption.map
+    (fun c =>
+      c.keywords == #[.equip (.all #[.hasType .creature, .controlledBy .you]) (CostSpec.ofMana (ManaCost.ofGeneric 5))] &&
+      c.allActivatedAbilities[0]? == some (Catalog.equipAbility (ManaCost.ofGeneric 5))) == some true
 #guard (parseOracleCard "Warren Chief\n{1}{R}\nCreature — Goblin\n2/2\nOther Goblin creatures you control get +2/+2.").toOption.bind
     (fun c => c.staticAbilities[0]?) == some (.otherCreaturesGet #[.goblin] 2 2)
 #guard (parseOracleCard "Test Saga\n{2}{R}\nEnchantment — Saga\nI — Draw seven cards.").toOption.bind
     (fun c => (c.sagaChapters[0]?).map (·.effect.body)) ==
     some (Instruction.drawFixed 7)
-#guard (indexedAbilities.get).any fun item =>
-  match item.ability with
-  | .spell e => e == Effect.draw 1
-  | _ => false
-#guard !(indexedAbilities.get).any fun item =>
-  match item.ability with
-  | .spell e => e == Effect.draw 2 || e == Effect.dealDamage 2
-  | _ => false
-#guard !(indexedAbilities.get).any fun item =>
-  match item.ability with
-  | .activated a => a == equipAbility (ManaCost.ofGeneric 1) || a == equipAbility (ManaCost.ofGeneric 2)
-  | _ => false
-#guard (indexedAbilities.get).any fun item =>
-  match item.ability with
-  | .activated a => a == equipAbility (ManaCost.ofGeneric 3)
-  | _ => false
 
 #guard CardType.all.all fun t =>
   (parseTypeLine t.englishName).toOption == some (#[], #[t], #[])
@@ -474,12 +460,16 @@ def normLineAgrees (cardName line : String) : Bool :=
       some (.installEffect (.applyRule .untilEndOfTurn
         (.costMod (.spells .you (.hasSupertype s)) (.reduceGeneric (.const 3)))))
   | .error _ => false
-#guard (parseOracleCard "Walk\n{G}\nInstant\nSnowcycling {2}").toOption.bind
-    (fun c => c.activatedAbilities[0]?) ==
-    some (typecyclingAbility "Snow" (ManaCost.ofGeneric 2))
-#guard (parseOracleCard "Walk\n{G}\nInstant\nBasic landcycling {2}").toOption.bind
-    (fun c => c.activatedAbilities[0]?) ==
-    some (typecyclingAbility "Basic land" (ManaCost.ofGeneric 2))
+#guard (parseOracleCard "Walk\n{G}\nInstant\nSnowcycling {2}").toOption.map
+    (fun c =>
+      c.keywords == #[.cycling (some (.hasSupertype .snow)) (CostSpec.ofMana (ManaCost.ofGeneric 2))] &&
+      c.allActivatedAbilities[0]? ==
+        some (Catalog.typecyclingAbility "Snow" (ManaCost.ofGeneric 2))) == some true
+#guard (parseOracleCard "Walk\n{G}\nInstant\nBasic landcycling {2}").toOption.map
+    (fun c =>
+      c.keywords == #[.cycling (some (.all #[.hasSupertype .basic, .hasType .land])) (CostSpec.ofMana (ManaCost.ofGeneric 2))] &&
+      c.allActivatedAbilities[0]? ==
+        some (Catalog.typecyclingAbility "Basic land" (ManaCost.ofGeneric 2))) == some true
 #guard (parseOracleCard "Helm\n{1}\nArtifact\nVillain spells you cast cost {1} less to cast.").toOption.bind
     (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess .villain 1)
 #guard (parseOracleCard "Surge\n{R}\nSorcery\nPlaneswalker spells you cast this turn cost {2} less to cast.").toOption.bind
@@ -518,14 +508,16 @@ def normLineAgrees (cardName line : String) : Bool :=
 #guard (parseOracleCard "Pack\n{1}{G}\nCreature — Mouse\n1/1\nOther Mice and Time Lords you control have trample.").toOption.bind
     (fun c => c.staticAbilities[0]?) ==
     some (.otherCreaturesHaveTrample #[.mouse, .timeLord])
-#guard (parseOracleCard "Worker\n{3}\nArtifact Creature — Assembly-Worker\n2/2\nAssembly-Workercycling {4}").toOption.bind
+#guard (parseOracleCard "Worker\n{3}\nArtifact Creature — Assembly-Worker\n2/2\nAssembly-Workercycling {4}").toOption.map
     (fun c => c.subtypes == #["Assembly-Worker"] &&
-      c.activatedAbilities[0]? ==
-        some (typecyclingAbility "Assembly-Worker" (ManaCost.ofGeneric 4))) == some true
-#guard (parseOracleCard "Doctor\n{U}\nCreature — Time Lord Doctor\n1/1\nTime Lordcycling {2}").toOption.bind
+      c.keywords == #[.cycling (some (.hasSubtype (.literal .assemblyWorker))) (CostSpec.ofMana (ManaCost.ofGeneric 4))] &&
+      c.allActivatedAbilities[0]? ==
+        some (Catalog.typecyclingAbility "Assembly-Worker" (ManaCost.ofGeneric 4))) == some true
+#guard (parseOracleCard "Doctor\n{U}\nCreature — Time Lord Doctor\n1/1\nTime Lordcycling {2}").toOption.map
     (fun c => c.subtypes == #["Time Lord", "Doctor"] &&
-      c.activatedAbilities[0]? ==
-        some (typecyclingAbility "Time Lord" (ManaCost.ofGeneric 2))) == some true
+      c.keywords == #[.cycling (some (.hasSubtype (.literal .timeLord))) (CostSpec.ofMana (ManaCost.ofGeneric 2))] &&
+      c.allActivatedAbilities[0]? ==
+        some (Catalog.typecyclingAbility "Time Lord" (ManaCost.ofGeneric 2))) == some true
 #guard (parseOracleCard "Helm\n{1}\nArtifact\nC'tan spells you cast cost {1} less to cast.").toOption.bind
     (fun c => c.staticAbilities[0]?) == some (.subtypeSpellsCostLess .ctan 1)
 #guard (parseOracleCard "Walk\n{G}\nSorcery\nSearch your library for a Power-Plant card, reveal it, put it into your hand, then shuffle.").toOption.bind
@@ -1123,5 +1115,239 @@ private def roundTripsOracleCard (raw : String) : Bool :=
     (parseOracleCard "Nazgûl\n{2}{B}\nCreature — Wraith Knight\n1/2\nDeathtouch\nA deck can have up to 9 cards named Nazgûl.").toOption.map
       (·.deckLimitOverride) == some (some (.maxCopies 9))
   volumeOk && jaceOk && wayOk && maxCopiesOk
+
+-- Preserved regression `#guard`s migrated from legacy `ParseOracle.lean`:
+#guard
+  match parseOracleCard
+      "Snack\n{B}\nSorcery\nPut a stun counter on up to one target creature. Target player gains 2 life." with
+  | .ok c =>
+    match c.spellEffect with
+    | some e => e.body == (Effect.plusOneUpToOneAndPlayerGainsLife 2 .stun).body
+    | none => false
+  | .error _ => false
+
+#guard
+  match parseOracleCard
+      "Snack\n{B}\nSorcery\nPut two first strike counters on up to one target creature. Target player gains 3 life." with
+  | .ok c =>
+    match c.spellEffect with
+    | some e =>
+      e.body == (Effect.plusOneUpToOneAndPlayerGainsLife 3 .firstStrike 2).body
+    | none => false
+  | .error _ => false
+
+#guard
+  match parseOracleCard
+      "Tidings of War\n{R}\nSorcery\nAmass Goblins 1. If this spell was cast from a graveyard, amass Goblins 3 instead. (To amass Goblins X, put X +1/+1 counters on an Army you control. It's also a Goblin. If you don't control an Army, create a 0/0 black Goblin Army creature token first.)\nFlashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)" with
+  | .ok c =>
+    c.flashback == some (ManaCost.ofGenericAndColor 3 .red) &&
+      match c.spellEffect with
+      | some e => e == Effect.amassGoblinsOrFromGy 1 3
+      | none => false
+  | .error _ => false
+
+-- Phase 11: Full 981-card catalog structural `BEq CardDef` round-trip verification
+-- (explicitly including `Catalog.realityFractureCommanderCards` and all 5 supported sets).
+#guard supportedCatalogCards.size == 981
+#guard !Catalog.realityFractureCommanderCards.isEmpty &&
+  Catalog.realityFractureCommanderCards.all fun c =>
+    (parseOracleCard (renderFullOracle c)).toOption == some c
+#guard supportedCatalogCards.all fun c =>
+  (parseOracleCard (renderFullOracle c)).toOption == some c
+
+-- Phase 11: Open-ended compositional parser `#guard` tests across novel unseen
+-- combinations of triggers, conditions, targets, instructions, recursive quoted
+-- abilities, Equip/Cycling keyword expansion, CR 611.2a durations, and CR 608.2g
+-- immediate cast permissions.
+#guard [
+  -- Novel cross-product trigger + condition + target + multi-sentence discourse:
+  "Frostblade Sentinel\n{2}{U}{W}\nCreature — Elf Knight\n3/3\nWhenever an artifact you control enters, if you control a Plains, tap target creature an opponent controls and put a stun counter on it. Draw a card.",
+  -- Novel trigger + optional cost + reflexive trigger (CR 603.12):
+  "Cinder Archivist\n{1}{R}\nCreature — Dwarf Wizard\n2/1\nWhenever another creature you control dies, you may pay {1}{R}. When you do, exile target card from a graveyard and draw a card.",
+  -- Novel CR 614.6 post-replacement discourse binding (`this way` / `that many`):
+  "Ashen Reckoning\n{3}{B}{B}\nSorcery\nDestroy all artifacts and enchantments your opponents control. You gain 1 life for each permanent destroyed this way.",
+  -- Novel CR 611.2a indefinite continuous modification vs. EOT pump:
+  "Eternal Wingcraft\n{2}{W}\nSorcery\nTarget creature you control gains flying and vigilance.",
+  "Fleet Blessing\n{1}{W}\nInstant\nTarget creature you control gets +2/+2 and gains flying and lifelink until end of turn.",
+  -- Novel recursive quoted `"..."` ability granted by a static ability:
+  "Runic Forge\n{3}\nArtifact\nOther artifacts you control have \"{T}: Add {C}.\"",
+  -- Novel Equip + Cycling unified onto `CardDef.keywords` + `allActivatedAbilities`:
+  "Skyrunner Blade\n{2}\nArtifact — Equipment\nEquipped creature gets +2/+1 and has flying.\nEquip Elf {1}\nIslandcycling {2}",
+  -- Novel multi-mode spell combining unseen modes + static cost modifier:
+  "Arcane Synthesis\n{3}{U}\nInstant\nThis spell costs {1} less to cast if you control a Wizard.\nChoose one —\n• Scry 3, then draw a card.\n• Counter target noncreature spell.\n• Return target creature an opponent controls to its owner's hand."
+].all roundTripsOracleCard
+
+#guard
+  -- Verify Equip & Typecycling live on `keywords` and expand into `allActivatedAbilities`:
+  let eqCycOk :=
+    match parseOracleCard
+        "Skyrunner Blade\n{2}\nArtifact — Equipment\nEquipped creature gets +2/+1 and has flying.\nEquip Elf {1}\nIslandcycling {2}" with
+    | .ok c =>
+      c.activatedAbilities.isEmpty &&
+      c.keywords.size == 2 &&
+      c.allActivatedAbilities.size == 2 &&
+      c.allActivatedAbilities.any (·.isEquip) &&
+      c.allActivatedAbilities.any (·.isCycling)
+    | .error _ => false
+  -- Verify CR 611.2a indefinite duration (no `"until end of turn"`) vs. EOT duration:
+  let durOk :=
+    let indefOk :=
+      match parseOracleCard "Eternal Wingcraft\n{2}{W}\nSorcery\nTarget creature you control gains flying and vigilance." with
+      | .ok c =>
+        match (c.spellEffect.map (·.body) : Option Instruction) with
+        | some (.installEffect (.applyContinuous .indefinite (.target 0) (.grantKeywords ks))) =>
+          ks == #[Keyword.vigilance, Keyword.flying]
+        | _ => false
+      | .error _ => false
+    let eotOk :=
+      match parseOracleCard "Fleet Blessing\n{1}{W}\nInstant\nTarget creature you control gets +2/+2 and gains flying and lifelink until end of turn." with
+      | .ok c =>
+        match (c.spellEffect.map (·.body) : Option Instruction) with
+        | some (.installEffect (.applyContinuous .untilEndOfTurn (.target 0) (.all _))) => true
+        | _ => false
+      | .error _ => false
+    indefOk && eotOk
+  -- Verify CR 608.2g immediate `castNow := true` when no duration is stated vs. `castNow := false` when timed:
+  let castNowOk :=
+    let nowOk :=
+      match parseOracleCard "Spontaneous Spark\n{2}{R}\nSorcery\nExile the top card of your library. You may cast it without paying its mana cost." with
+      | .ok c =>
+        match (c.spellEffect.map (·.body) : Option Instruction) with
+        | some (.moveZone _ .exile .exile { grantPlayPerm? := some gpp, .. }) => gpp.castNow && gpp.freeCast
+        | some (.bind _ _ (.stack (.mayCastOrPlay _ gpp))) => gpp.castNow && gpp.freeCast
+        | _ => false
+      | .error _ => false
+    let timedOk :=
+      match parseOracleCard "Measured Spark\n{1}{R}\nSorcery\nExile the top card of your library. Until end of turn, you may play it." with
+      | .ok c =>
+        match (c.spellEffect.map (·.body) : Option Instruction) with
+        | some (.moveZone _ .exile .exile { grantPlayPerm? := some gpp, .. }) =>
+          !gpp.castNow && gpp.duration == .untilEndOfTurn && gpp.landsAllowed
+        | some (.bind _ _ (.stack (.mayCastOrPlay _ gpp))) =>
+          !gpp.castNow && gpp.duration == .untilEndOfTurn && gpp.landsAllowed
+        | _ => false
+      | .error _ => false
+    nowOk && timedOk
+  -- Verify recursive quoted activated ability inside static grant:
+  let quotedOk :=
+    match parseOracleCard "Runic Forge\n{3}\nArtifact\nOther artifacts you control have \"{T}: Add {C}.\"" with
+    | .ok c =>
+      match (c.staticAbilities[0]? : Option StaticAbility) with
+      | some (.continuous none _ (.grantActivated abs)) =>
+        abs.size == 1 && abs[0]!.isManaAbility
+      | _ => false
+    | .error _ => false
+  eqCycOk && durOk && castNowOk && quotedOk
+
+-- Phase 11: Stage 1–5 unit & semantic-regression `#guard` coverage.
+-- Stage 1 (`FrameSplit`): mana costs, type lines, P/T `PrintedStat`, color indicators, sub-faces, loyalty/defense.
+#guard parseManaCost "{2}{W/U}{2/B}{X}{C}" == some { symbols := #[.generic 2, .hybrid .white .blue, .twobrid .black, .x, .colorless] }
+#guard parsePT "3/4" == some (.fixed 3, .fixed 4)
+#guard parsePT "*/*" == some (.star 0, .star 0)
+#guard parsePT "1+*/2+*" == some (.star 1, .star 2)
+#guard parsePT "*/1+*" == some (.star 0, .star 1)
+#guard parseColorIndicator "Color indicator: Blue, Black" == some { blue := true, black := true }
+#guard parseChapterHeader "I, II — Draw a card." == some ("I, II", "Draw a card.")
+#guard parseChapterHeader "III — Destroy all creatures." == some ("III", "Destroy all creatures.")
+#guard parseLoyaltyAbilityLine "[+1]: Draw a card." == some (.plus 1, "Draw a card.")
+#guard parseLoyaltyAbilityLine "[-X]: Deal X damage to any target." == some (.minusX, "Deal X damage to any target.")
+#guard parseHandLifeLine "Hand modifier: +1, Life modifier: -2" == some (1, -2)
+#guard parseBareModifierPair "+0, +3" == some (0, 3)
+
+-- Stage 2 (`Lexer`): reminder-text stripping, `{CHAOS}` stripping, mechanic labels, and quote-aware lexing.
+#guard Parser.extractLeadingLabel "Power-up — {2}: Put a +1/+1 counter on this creature." == (some .powerUp, "{2}: Put a +1/+1 counter on this creature.")
+#guard Parser.extractLeadingLabel "Exhaust — {4}{G}: Create two 1/1 green Elf tokens." == (some .exhaust, "{4}{G}: Create two 1/1 green Elf tokens.")
+#guard Parser.extractLeadingLabel "Boast — {1}{R}: This creature deals 2 damage to any target." == (some .boast, "{1}{R}: This creature deals 2 damage to any target.")
+#guard Parser.extractLeadingLabel "Eminence — Whenever you cast a Wizard spell, draw a card." == (some .eminence, "Whenever you cast a Wizard spell, draw a card.")
+#guard Parser.extractLeadingLabel "Landfall — Whenever a land you control enters, gain 1 life." == (none, "Whenever a land you control enters, gain 1 life.")
+#guard Parser.extractQuotedSpans "Other creatures have \"{T}: Add {G}.\" and vigilance." == #["{T}: Add {G}."]
+#guard Parser.hasTopLevelColon "{2}, {T}: Draw a card."
+#guard !(Parser.hasTopLevelColon "Other creatures you control have \"{T}: Add {G}.\"")
+#guard Parser.splitTopLevelSentences "Target creature has \"{T}: Draw a card. Discard a card.\" Draw a card." ==
+  #["Target creature has \"{T}: Draw a card. Discard a card.\"", "Draw a card"]
+
+-- Stage 3 (`ParagraphClass`): deterministic paragraph classification and `DeckLimit` parsing.
+#guard match parseOracleCard "Relentless Construct\n{2}\nArtifact Creature — Construct\n2/2\nA deck can have any number of cards named Relentless Construct." with
+  | .ok c => c.deckLimitOverride == some .unlimited
+  | .error _ => false
+#guard match parseOracleCard "Sevenfold Mystic\n{1}{U}\nCreature — Wizard\n1/2\nA deck can have up to seven cards named Sevenfold Mystic." with
+  | .ok c => c.deckLimitOverride == some (.maxCopies 7)
+  | .error _ => false
+#guard match parseOracleCard "Basic Grove\nBasic Land — Forest\n({T}: Add {G}.)" with
+  | .ok c => c.activatedAbilities.isEmpty && c.hasSubtype .forest
+  | .error _ => false
+#guard match parseOracleCard "Split Blade\n{1}{W}\nCreature — Elf\n2/2\n//ADV//\nQuick Slash\n{W}\nInstant — Adventure\nTarget creature gets +1/+1 until end of turn." with
+  | .ok c => c.subFaces.size == 1 && c.subFaces[0]!.kind == .adventure && c.subFaces[0]!.spellAbility.isSome
+  | .error _ => false
+#guard match parseOracleCard "Dual Aspect\n{1}{W}\nCreature — Human\n2/2\nVigilance\n//\nDark Aspect\nCreature — Zombie\n3/3\nColor indicator: Black\nMenace" with
+  | .ok c => c.otherFace.isSome && c.otherFace.get!.name == "Dark Aspect" && c.otherFace.get!.colorIndicator == some { black := true } && c.otherFace.get!.keywords.contains (.simple .menace)
+  | .error _ => false
+#guard match parseOracleCard "Saga of Dawn\n{2}{W}\nEnchantment — Saga\nI, II — Create a 1/1 white Soldier creature token.\nIII — Creatures you control get +2/+2 until end of turn." with
+  | .ok c => c.hasSagaChapters && c.triggeredAbilities.size == 2
+  | .error _ => false
+
+-- Stage 4 & 5 (`SubGrammars`, `TokenEmblemGrammar`, `InspectSearchGrammar`, `InstructionGrammar`, `AbilityGrammar`, `DiscourseBind`):
+-- Unseen compositional combinations & semantic regressions.
+#guard roundTripsOracleCard "Aether Tutor\n{2}{U}\nSorcery\nSearch your library for an instant or sorcery card, reveal it, put it into your hand, then shuffle."
+#guard roundTripsOracleCard "Tidecaller's Decree\n{3}{U}{U}\nInstant\nCounter target spell. If a permanent spell is countered this way, exile it instead of putting it into its owner's graveyard. You may cast that card without paying its mana cost for as long as it remains exiled."
+#guard roundTripsOracleCard "Emblem Architect\n{2}{W}{W}\nLegendary Planeswalker — Elspeth\n4\n[+1]: Create a 1/1 white Soldier creature token.\n[-2]: Exile target tapped creature.\n[-6]: You get an emblem with \"Creatures you control get +2/+2 and have flying.\""
+#guard roundTripsOracleCard "Gilded Hoarder\n{3}{R}\nCreature — Dragon\n4/4\nFlying\nWhenever you cast a spell, if mana from a Treasure was spent to cast it, draw a card and lose 1 life."
+#guard roundTripsOracleCard "Graveyard Siphon\n{2}{B}\nCreature — Warlock\n2/3\n{1}, Sacrifice another creature: Draw cards equal to the sacrificed creature's power, then discard a card."
+#guard roundTripsOracleCard "Tempest Channeler\n{2}{U}{W}\nCreature — Wizard\n3/3\nWhenever you cast a spell that targets one or more creatures, those creatures gain flying until end of turn."
+#guard roundTripsOracleCard "Arcane Scribe\n{2}{U}\nEnchantment\nWhenever you cast a noncreature spell, you may draw X cards, where X is the amount of mana spent to cast that spell. If you do, discard two cards."
+#guard roundTripsOracleCard "Bounty Hunter\n{2}{B}\nCreature — Assassin\n3/2\nWhen Bounty Hunter enters, you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls."
+#guard roundTripsOracleCard "Gale Recall\n{1}{W}\nInstant\nKicker {2}{W}\nChoose target creature you own. If this spell was kicked, instead choose any number of target creatures you own. Return each chosen creature to your hand."
+
+-- Semantic AST checks on tricky Stage 4/5 bindings:
+-- 1. `Thranduil's Decree` folds `ifPermanentMayCastFree := true` onto `StackOp.counterStack`.
+#guard match Catalog.thranduilsDecree.spellEffect with
+  | some e => e.body == .stack (.counterStack (.target 0) true true)
+  | none => false
+-- 2. `Smaug, Wicked Worm` folds `manaSpent? := some .fromTreasure` onto `TriggerPattern.castSpell`.
+#guard Catalog.smaugWickedWorm.triggeredAbilities.any fun ab =>
+  match ab.pattern with
+  | .castSpell _ _ _ (some .fromTreasure) _ _ _ => ab.interveningIf?.isNone
+  | _ => false
+-- 3. `Tom, Bert, and William` binds `cost.bindVar?` when effect references `ObjectExpr.costPaidObjects`.
+#guard Catalog.tomBertAndWilliam.activatedAbilities.any fun ab =>
+  ab.cost.bindVar?.isSome
+-- 4. `Storm, Windrider` resolves `"those creatures"` to `.filter (.targetsOf .triggerSubject) (.hasType .creature)`.
+#guard Catalog.stormWindrider.triggeredAbilities.any fun ab =>
+  match ab.effect.body with
+  | .installEffect (.applyContinuous .untilEndOfTurn (.filter (.targetsOf .triggerSubject) (.hasType .creature)) _) => true
+  | _ => false
+-- 5. `Uncover the Moon-Letters` uses `ValueExpr.manaSpent .triggerSubject` (not `.eventAmount`).
+#guard Catalog.uncoverTheMoonLetters.triggeredAbilities.any fun ab =>
+  match ab.effect.body with
+  | .optional .you none (.seq #[.player (.drawCards .you (.manaSpent .triggerSubject)), _]) .noop _ => true
+  | _ => false
+-- 6. `Killmonger, Scourge of Wakanda` uses standard `.thisEnters` reflexive marker (not Bolg's `.sacrifice`).
+#guard Catalog.killmongerScourgeOfWakanda.triggeredAbilities.any fun ab =>
+  match ab.effect.body with
+  | .optional .you (some _) (.queueReflexiveTrigger refl) .noop _ => refl.pattern == .thisEnters
+  | _ => false
+-- 7. `Bolg of the North` preserves `.sacrifice` reflexive trigger with `cost.bindVar?`.
+#guard Catalog.bolgOfTheNorth.triggeredAbilities.any fun ab =>
+  match ab.effect.body with
+  | .optional .you (some cost) (.queueReflexiveTrigger refl) .noop _ =>
+    cost.bindVar?.isSome && match refl.pattern with | .sacrifice .. => true | _ => false
+  | _ => false
+-- 8. `The Eagles Are Coming!` encodes kicked target override via `altDomainIf?`.
+#guard match Catalog.theEaglesAreComing.spellEffect with
+  | some e =>
+    match e.targets.slots[0]?.bind (·.altDomainIf?) with
+    | some (Condition.castPred (.wasKicked .this), _) => true
+    | _ => false
+  | none => false
+-- 9. `Moonstone, Harsh Mistress` preserves optional exile + play-until-end-of-next-turn binding.
+#guard Catalog.moonstoneHarshMistress.triggeredAbilities.any fun ab =>
+  match ab.effect.body with
+  | .optional .you none (.bind _ (.moveZone .triggerSubject .exile .exile _) (.stack (.mayCastOrPlay (.stepObjects _) _))) .noop _ => true
+  | _ => false
+-- 10. `The Serpent Society` produces `forEach (.eachPlayer .opponent)` nontoken creature sacrifice.
+#guard Catalog.theSerpentSociety.triggeredAbilities.any fun ab =>
+  match ab.effect.body with
+  | .forEach (.eachPlayer .opponent) _ (.moveZone _ .graveyard .sacrifice _) => true
+  | _ => false
 
 end Mtg.Engine.Tests

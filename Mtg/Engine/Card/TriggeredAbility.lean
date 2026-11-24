@@ -45,33 +45,13 @@ def onCastColorScry (c : Color) (n : Nat) : TriggeredAbility :=
   mkTrigger (.youCastColor c) (Effect.triggerScry n)
 def onEnterDraw (n : Nat) : TriggeredAbility := mkTrigger .thisEnters (Effect.triggerDraw n)
 def onDiesDraw (n : Nat) : TriggeredAbility := mkTrigger .thisDies (Effect.triggerDraw n)
-def onYouAttackDraw : TriggeredAbility :=
-  mkTrigger .youAttack (Effect.triggerDraw 1) (grouping := .oncePerBatch)
-def onYourEndStepDraw : TriggeredAbility := mkTrigger .stepYourEndStep (Effect.triggerDraw 1)
-def onBecomesTargetDraw : TriggeredAbility :=
-  mkTrigger .thisBecomesTargetByOpponent (Effect.triggerDraw 1)
-def onArtifactYouControlEntersDraw : TriggeredAbility :=
-  mkTrigger .artifactYouControlEnters (Effect.triggerDraw 1)
 def onTheRingTemptsYouDraw (n : Nat) : TriggeredAbility :=
   mkTrigger .theRingTemptsYou (Effect.triggerDraw n)
 def onChooseRingBearerDraw : TriggeredAbility :=
   mkTrigger .youChooseRingBearer (Effect.triggerDraw 1)
-def onCombatDamageDraw (n : Nat) : TriggeredAbility :=
-  mkTrigger .thisDealsCombatDamageToPlayer (Effect.triggerDraw n)
-def onEachOpponentDrawStepDraw : TriggeredAbility :=
-  mkTrigger .stepEachOpponentDrawStep (Effect.triggerDraw 1)
 def onEnterCreateTokens (kind : TokenSpec) (n : Nat) (tapped : Bool := false) :
     TriggeredAbility :=
   mkTrigger .thisEnters (Effect.triggerCreateTokens kind n tapped)
-def onYourUpkeepCreateTokens (kind : TokenSpec) (n : Nat) : TriggeredAbility :=
-  mkTrigger .stepYourUpkeep (Effect.triggerCreateTokens kind n)
-def onLandYouControlEntersCreateTokens (kind : TokenSpec) (n : Nat) :
-    TriggeredAbility :=
-  mkTrigger .landYouControlEnters (Effect.triggerCreateTokens kind n)
-def onDiesCreateTokens (kind : TokenSpec) (n : Nat) : TriggeredAbility :=
-  mkTrigger .thisDies (Effect.triggerCreateTokens kind n)
-def onYouDrawSecondCreateTokens (kind : TokenSpec) : TriggeredAbility :=
-  mkTrigger (.drawCard .you) (Effect.triggerCreateTokens kind 1) (limit := .nthEachTurn 2)
 def onCastColorCreateTokens (c : Color) (kind : TokenSpec) (n : Nat) :
     TriggeredAbility :=
   mkTrigger (.youCastColor c) (Effect.triggerCreateTokens kind n)
@@ -79,35 +59,19 @@ def onEnterOrAttackCreateWall : TriggeredAbility :=
   mkTrigger .enterOrAttack (Effect.triggerCreateTokens .wall 1)
 def onEnterAmassGoblins (n : Nat) : TriggeredAbility :=
   mkTrigger .thisEnters (Effect.triggerAmass n .goblin)
-def onDiesAmassGoblins (n : Nat) : TriggeredAbility :=
-  mkTrigger .thisDies (Effect.triggerAmass n .goblin)
-def onYouAttackAmassGoblins (n : Nat) : TriggeredAbility :=
-  mkTrigger .youAttack (Effect.triggerAmass n .goblin) (grouping := .oncePerBatch)
-def onCastNoncreatureAmassGoblins (n : Nat) : TriggeredAbility :=
-  mkTrigger .youCastNoncreature (Effect.triggerAmass n .goblin)
-def onEnterOrAttackAmassGoblins (n : Nat) : TriggeredAbility :=
-  mkTrigger .enterOrAttack (Effect.triggerAmass n .goblin)
-def onCreatureCardLeavesYourGyAmassGoblins (n : Nat) : TriggeredAbility :=
-  mkTrigger .creatureCardLeavesYourGy (Effect.triggerAmass n .goblin)
 def onEnterRecruit : TriggeredAbility := mkTrigger .thisEnters Effect.triggerRecruit
-def onDiesRecruit : TriggeredAbility := mkTrigger .thisDies Effect.triggerRecruit
-def onEnterOrAttackRecruit : TriggeredAbility := mkTrigger .enterOrAttack Effect.triggerRecruit
 def onYouAttackRecruit : TriggeredAbility :=
   mkTrigger .youAttack Effect.triggerRecruit (grouping := .oncePerBatch)
 def onEnterDealDividedDamage (amount maxTargets : Nat) : TriggeredAbility :=
   mkTrigger .thisEnters (Effect.triggerDividedDamage amount maxTargets)
 def onEnterOrAttackDealDividedDamage (amount maxTargets : Nat) : TriggeredAbility :=
   mkTrigger .enterOrAttack (Effect.triggerDividedDamage amount maxTargets)
-def onEnterPlusOneOnCreature : TriggeredAbility :=
-  mkTrigger .thisEnters { targets := .creature, body := Instruction.putPlusOne (.target 0) 1 }
 def onEnterOrAttackPlusOneOnCreature : TriggeredAbility :=
   mkTrigger .enterOrAttack { targets := .creature, body := Instruction.putPlusOne (.target 0) 1 }
 def onLandYouControlEntersPlusOnePlusOne : TriggeredAbility :=
   mkTrigger .landYouControlEnters { targets := .creatureYouControl, body := Instruction.putPlusOne (.target 0) 1 }
 def onCombatPlusOneOnCreatureYouControl : TriggeredAbility :=
   mkTrigger .stepYourBeginCombat { targets := .creatureYouControl, body := Instruction.putPlusOne (.target 0) 1 }
-def onEnterAttachToSubtype (subtype : String) : TriggeredAbility :=
-  mkTrigger .thisEnters (Effect.triggerAttachTo (.creatureYouControlSubtype (CardSubtype.ofOracleD subtype)))
 def onEnterAttachToLegendary : TriggeredAbility :=
   mkTrigger .thisEnters (Effect.triggerAttachTo .legendaryCreatureYouControl)
 def onEnterAttachToCreatureYouControl : TriggeredAbility :=
@@ -118,12 +82,8 @@ def onEnterTargetOpponentSacrifices : TriggeredAbility :=
   onEnterTargetOpponentSacrificesCreature
 def onDrawSecondPlusOne : TriggeredAbility :=
   mkTrigger (.drawCard .you) { body := Instruction.putPlusOne .this 1 } (limit := .nthEachTurn 2)
-def onDrawPlusOne : TriggeredAbility :=
-  mkTrigger (.drawCard .you) { body := Instruction.putPlusOne .this 1 }
 def onGainLifePlusOne : TriggeredAbility :=
   mkTrigger (.gainLife .you) { body := Instruction.putPlusOne .this 1 }
-def onAnotherArtifactEntersPlusOne : TriggeredAbility :=
-  mkTrigger .anotherArtifactYouControlEnters { body := Instruction.putPlusOne .this 1 }
 /-- CR 603.4 intervening-if Ferocious trigger at beginning of combat (rechecked on resolution). -/
 def onYourBeginCombatFerociousPlusOne : TriggeredAbility :=
   mkTrigger .stepYourBeginCombat { body := Instruction.putPlusOne .this 1 }
@@ -139,11 +99,6 @@ def onCastWithTreasureDrawLoseLife : TriggeredAbility :=
 def onYourEndStepDrawLoseLife : TriggeredAbility :=
   mkTrigger .stepYourEndStep Effect.seqDrawAndLoseLife
 def onEnterConnive : TriggeredAbility := mkTrigger .thisEnters Effect.triggerConniveSource
-def onAttackConnive : TriggeredAbility := mkTrigger .thisAttacks Effect.triggerConniveSource
-def onYouCastColorFromHandConnive (color : Color) : TriggeredAbility :=
-  mkTrigger (.youCastColorFromHand color) Effect.triggerConniveSource
-def onEquippedCreatureYouControlAttacksConnive : TriggeredAbility :=
-  mkTrigger .equippedCreatureYouControlAttacks Effect.triggerConniveSource
 def onCombatTargetYouControlConnives : TriggeredAbility :=
   mkTrigger .stepYourBeginCombat (Effect.triggerConniveTarget .creatureYouControl)
 def onEnterExileOppNonlandUntilLeaves : TriggeredAbility :=
@@ -151,15 +106,13 @@ def onEnterExileOppNonlandUntilLeaves : TriggeredAbility :=
 def onEnterExileOppTappedUntilLeaves : TriggeredAbility :=
   mkTrigger .thisEnters (Effect.triggerExileUntilLeaves .oppTappedCreature)
 def onAttackMayExileDefenderUntilLeaves : TriggeredAbility :=
-  mkTrigger .thisAttacks (Effect.triggerExileUntilLeaves .defendingPlayerCreature (allowsZeroTargets := true))
+  mkTrigger .thisAttacks
+    { targets := .defendingPlayerCreature
+      body := Instruction.may .you none (Instruction.exile (.target 0) { exileUntilSourceLeaves := true }) }
 def onEnterGainLife (n : Nat) : TriggeredAbility := mkTrigger .thisEnters (Effect.triggerGainLife n)
 /-- CR 603.2 `"while you control..."` attack trigger (checked at trigger time, not on resolution). -/
 def onAttackFerociousGainLife (n : Nat) : TriggeredAbility :=
   mkTrigger (.whenCond .thisAttacks (condControlCreaturePowerAtLeast 4)) (Effect.triggerGainLife n)
-def onLandYouControlEntersGainLife (n : Nat) : TriggeredAbility :=
-  mkTrigger .landYouControlEnters (Effect.triggerGainLife n)
-def onEnterTargetGets (power toughness : Int) : TriggeredAbility :=
-  mkTrigger .thisEnters { targets := .creature, body := Instruction.pumpFixed (.target 0) power toughness }
 def onDiesOppCreatureGets (power toughness : Int) : TriggeredAbility :=
   mkTrigger .thisDies { targets := .oppCreature, body := Instruction.pumpFixed (.target 0) power toughness }
 def onCastColorPump (color : Color) (power toughness : Int) : TriggeredAbility :=
@@ -175,15 +128,9 @@ def onArtifactYouControlEntersDrawOnce : TriggeredAbility :=
   mkTrigger .artifactYouControlEnters (Effect.triggerDraw 1) (limit := .onceEachTurn)
 def onActivateCreatureAbilityDrawOnce : TriggeredAbility :=
   mkTrigger .youActivateCreatureAbility (Effect.triggerDraw 1) (limit := .onceEachTurn)
-def onAnotherSubtypeOrEquipmentEntersDrawOnce (subtype : String) : TriggeredAbility :=
-  mkTrigger (.anotherSubtypeOrEquipmentYouControlEnters (CardSubtype.ofOracleD subtype))
-    (Effect.triggerDraw 1) (limit := .onceEachTurn)
 def onEachEndStepDrawIfGainedLife (n : Nat) : TriggeredAbility :=
-  mkTrigger .stepEachEndStep (Effect.triggerDraw 1) (interveningIf? := some (condGainedLifeAtLeast n))
-def onThisOrNontokenSubtypeEntersCreateTokens (subtype : String) (kind : TokenSpec)
-    (n : Nat) : TriggeredAbility :=
-  mkTrigger (.thisOrNontokenSubtypeYouControlEnters (CardSubtype.ofOracleD subtype))
-    (Effect.triggerCreateTokens kind n)
+  mkTrigger .stepEachEndStep (Effect.triggerDraw 1)
+    (interveningIf? := some (.turnHistory (.eventOccurredThisTurn .you (.gainedLife n))))
 def onThisOrAnotherSubtypeEntersCreateTokens (subtype : String) (kind : TokenSpec)
     (n : Nat) : TriggeredAbility :=
   mkTrigger (.thisOrAnotherSubtypeYouControlEnters (CardSubtype.ofOracleD subtype))
@@ -197,14 +144,10 @@ def onSubtypeYouControlCombatDamageCreateTokens (subtype : String) (kind : Token
       (.playerOrObject .any { zones := .battlefield, pred := .hasType .battle })
       (combatOnly := true))
     (Effect.triggerCreateTokens kind n)
-def onOpponentDrawsSecondCreateTreasure : TriggeredAbility :=
-  mkTrigger (.drawCard .opponent) (Effect.triggerCreateTokens .treasure 1) (limit := .nthEachTurn 2)
 def onOpponentCastsFirstNoncreatureRecruit : TriggeredAbility :=
   mkTrigger .opponentCastsFirstNoncreature Effect.triggerRecruit
 def onCastColorDamageOpponent (color : Color) (n : Nat) : TriggeredAbility :=
   mkTrigger (.youCastColor color) (Effect.triggerDamageTargetOpponent n)
-def onCastGreenOrForestEntersPlusOne : TriggeredAbility :=
-  mkTrigger .castGreenOrForestEnters { targets := .creatureYouControl, body := Instruction.putPlusOne (.target 0) 1 }
 def onAttackOtherGets2AndTrample : TriggeredAbility :=
   mkTrigger .thisAttacks { targets := .anotherCreatureYouControl, body := Instruction.pumpAndTrample (.target 0) 2 0 }
 def onEnterMayDiscardDraw (n : Nat) : TriggeredAbility :=
@@ -214,22 +157,12 @@ def onCastInstantOrSorceryDealDamageToEachOpponent (amount : Nat) : TriggeredAbi
 def onEnterEachOpponentDiscards : TriggeredAbility :=
   mkTrigger .thisEnters (Effect.triggerEachOpponentDiscards 1)
 def onEnterExileTop : TriggeredAbility := mkTrigger .thisEnters Effect.triggerExileTop
-def onAttackTargetGainsKeywords (k : Array KeywordAbility) : TriggeredAbility :=
-  mkTrigger .thisAttacks { targets := .attackingCreature, body := Instruction.grantKeywords (.target 0) k }
 def onDrawSecondMillPlayer (n : Nat) : TriggeredAbility :=
   mkTrigger (.drawCard .you) (Effect.triggerMillPlayer n) (limit := .nthEachTurn 2)
-def onAnotherGoblinOrcArmyDiesExileTop : TriggeredAbility :=
-  mkTrigger .anotherGoblinOrcArmyYouControlDies Effect.triggerExileTop
-def onAnotherSubtypeEntersPlusOneOnSource (subtype : String) (n : Nat) :
-    TriggeredAbility :=
-  mkTrigger (.anotherSubtypeYouControlEnters (CardSubtype.ofOracleD subtype))
-    { body := Instruction.putPlusOne .this n }
 def onOpponentCastsAmassOrcs (n : Nat) : TriggeredAbility :=
   mkTrigger .opponentCastsSpell (Effect.triggerAmass n .orc)
 def onCreatureYouControlAttacksAloneInvestigate : TriggeredAbility :=
   mkTrigger .creatureYouControlAttacksAlone Effect.triggerInvestigate
-def onCreatureYouControlAttacksAlonePump (power toughness : Int) : TriggeredAbility :=
-  mkTrigger .creatureYouControlAttacksAlone (Effect.triggerPumpCause power toughness)
 def onEnterTargetOpponentDiscards (n : Nat) : TriggeredAbility :=
   mkTrigger .thisEnters (Effect.triggerTargetOpponentDiscards n)
 def onEquipmentYouControlEntersDraw : TriggeredAbility :=
@@ -255,8 +188,6 @@ def onEnterOrAttackHoneEachEquipment : TriggeredAbility :=
   mkTrigger .enterOrAttack Effect.triggerHoneEachEquipment
 def onEnterOrAttackPlusOneEachOtherGainLife : TriggeredAbility :=
   mkTrigger .enterOrAttack Effect.triggerPlusOneEachOtherGainLife
-def onLandYouControlEntersBecomePT (power toughness : Int) : TriggeredAbility :=
-  mkTrigger .landYouControlEnters (Effect.triggerBecomePT power toughness)
 def onCastNoncreaturePumpAndDamageOpponents (n : Nat) : TriggeredAbility :=
   mkTrigger .youCastNoncreature (Effect.seqPumpAndDamageOpponents n)
 def onDrawSecondPlusOneLifelink : TriggeredAbility :=
@@ -279,8 +210,6 @@ def onAttackPumpByGreatestPower : TriggeredAbility :=
   mkTrigger .thisAttacks Effect.triggerPumpGreatestPower
 def onBecomesBlockedDeal1ToBlockers : TriggeredAbility :=
   mkTrigger .thisBecomesBlocked (Effect.triggerDamageBlockers 1)
-def onAttackPumpForEachOtherCreature : TriggeredAbility :=
-  mkTrigger .thisAttacks Effect.triggerPumpForEachOtherCreature
 def onAttackWithTwoOrMoreGrantFlying : TriggeredAbility :=
   mkTrigger .youAttackWithTwoOrMoreToPlayer
     { targets := .attackingCreatureWithoutFlying, body := Instruction.grantKeywords (.target 0) #[Keyword.flying] }
@@ -298,8 +227,6 @@ def onEnterCreateAxe : TriggeredAbility :=
   mkTrigger .thisEnters (Effect.triggerCreateAxe false)
 def onLandYouControlEntersTapOrUntap : TriggeredAbility :=
   mkTrigger .landYouControlEnters Effect.triggerTapOppOrUntapYours
-def onEnterGainControlOppUntilEot : TriggeredAbility :=
-  mkTrigger .thisEnters Effect.triggerGainControlOppUntilEot
 def onEnterCreateAxeAttach : TriggeredAbility :=
   mkTrigger .thisEnters (Effect.triggerCreateAxe true)
 def onDiesAmassGoblinsEqualPower : TriggeredAbility :=
@@ -458,10 +385,6 @@ def onDiesRevealTopPutRandomCreature (n : Nat) : TriggeredAbility :=
 def onYourBeginCombatIfDrawnTwoPumpFirstStrike : TriggeredAbility :=
   mkTrigger .stepYourBeginCombat Effect.triggerBeginCombatIfDrawnTwoPump
     (interveningIf? := some (condDrawnAtLeast 2))
-def onEnterHonePerOppCreaturesAttach : TriggeredAbility :=
-  mkTrigger .thisEnters Effect.triggerHonePerOppAttach
-def onPutCountersOnGoblinOrcArmyDamageOpp : TriggeredAbility :=
-  mkTrigger .youPutCountersOnGoblinOrcArmy (Effect.triggerDamageTargetOpponent 2) (grouping := .oncePerBatch)
 def onEnterIfNotTokenCopySelf : TriggeredAbility :=
   mkTrigger .thisEnters Effect.triggerCopySelfNonlegendary (interveningIf? := some condSourceNotToken)
 def onEnterAttachEquipmentThenFight : TriggeredAbility :=
@@ -474,8 +397,6 @@ def onCombatDamageImpulseInstantSorcery : TriggeredAbility :=
   mkTrigger .thisDealsCombatDamageToPlayer Effect.triggerGrimaImpulse
 def onYourEndStepPalantir : TriggeredAbility :=
   mkTrigger .stepYourEndStep Effect.triggerPalantir
-def onDealtNoncombatDamageCreateTreasures : TriggeredAbility :=
-  mkTrigger .thisDealtNoncombatDamage Effect.triggerTreasuresEqualLastKnown (grouping := .oncePerBatch)
 def onEnterIfCastProtectionEverything : TriggeredAbility :=
   mkTrigger .thisEnters Effect.triggerProtectionEverything (interveningIf? := some condSourceWasCast)
 def onYourUpkeepLoseLifePerBurden : TriggeredAbility :=
@@ -504,16 +425,10 @@ def onAttackOthersOfSubtypeGetEqualToughness (subtype : String) : TriggeredAbili
     (Effect.triggerOthersOfSubtypeGetEqualSourceToughness (CardSubtype.ofOracleD subtype .hero))
 def onCreatureYouControlEntersScryAndPlan (n : Nat) : TriggeredAbility :=
   mkTrigger .creatureYouControlEnters (Effect.triggerScryAndPlan n)
-def onCreaturesYouControlBecomeTappedLootAndPlan : TriggeredAbility :=
-  mkTrigger .creaturesYouControlBecomeTapped Effect.triggerLootAndPlan (grouping := .oncePerBatch)
-def onYouDrawSecondCreateVillainAndPlan : TriggeredAbility :=
-  mkTrigger (.drawCard .you) Effect.triggerCreateVillainAndPlan (limit := .nthEachTurn 2)
 def onVillainYouControlEntersDrainAndPlan (n : Nat) : TriggeredAbility :=
   mkTrigger (.subtypeYouControlEnters .villain) (Effect.triggerDrainAndPlan n)
 def onCreatureCardsToGyDrawLoseLifeAndPlan : TriggeredAbility :=
   mkTrigger .creatureCardPutIntoYourGy Effect.triggerDrawLoseLifeAndPlan (grouping := .oncePerBatch)
-def onCastNoncreatureTreasureAndPlan : TriggeredAbility :=
-  mkTrigger .youCastNoncreature Effect.triggerTreasureTappedAndPlan
 def onLandYouControlEntersPlusOneAndPlan : TriggeredAbility :=
   mkTrigger .landYouControlEnters Effect.triggerPlusOneOnTargetAndPlan
 def onNthPlanCounter (n : Nat) (eff : Effect) : TriggeredAbility :=
@@ -568,22 +483,10 @@ def onEnterMaySacArtifactOrDiscardDraw : TriggeredAbility :=
 
 /-! ### Additional Reality Fracture & MSH named triggered-ability constructors -/
 
-def onEnterEmpowerJace (n : Nat) : TriggeredAbility :=
-  mkTrigger .thisEnters (Effect.triggerEmpowerJace n)
-def onLandYouControlEntersEmpowerJace (n : Nat) : TriggeredAbility :=
-  mkTrigger .landYouControlEnters (Effect.triggerEmpowerJace n)
-def onCastFirstNoncreatureEmpowerJace (n : Nat) : TriggeredAbility :=
-  mkTrigger .youCastFirstNoncreature (Effect.triggerEmpowerJace n)
 def onYourUpkeepPrepareSource : TriggeredAbility :=
   mkTrigger .stepYourUpkeep Effect.triggerPrepareSource (interveningIf? := some condSourceNotPrepared)
 def onEachEndStepPrepareIfThreeDied : TriggeredAbility :=
   mkTrigger .stepEachEndStep Effect.triggerPrepareSource (interveningIf? := some (condCreaturesDiedThisTurn 3))
-def onActivateLoyaltyDrawIfRemovedTwo : TriggeredAbility :=
-  mkTrigger (.youActivateLoyaltyAbility 2) Effect.triggerDrawIfRemovedTwoLoyalty
-def onGainLifePlusOneEachSubtype (sub : CardSubtype) : TriggeredAbility :=
-  mkTrigger (.gainLife .you) (Effect.triggerPlusOneEachSubtypeYouControl sub)
-def onGainLifeLoyaltyOnSource : TriggeredAbility :=
-  mkTrigger (.gainLife .you) Effect.triggerLoyaltyOnSource
 def onEnterGrantThenCounterByType (k : Array KeywordAbility) : TriggeredAbility :=
   mkTrigger .thisEnters (Effect.triggerGrantThenCounterByType k)
 def onEnterDestroyOppPermanentIfSixLands : TriggeredAbility :=
@@ -591,25 +494,12 @@ def onEnterDestroyOppPermanentIfSixLands : TriggeredAbility :=
     (interveningIf? := some (condControlLandsAtLeast 6))
 def onYourBeginCombatPumpOrCounterIfScried : TriggeredAbility :=
   mkTrigger .stepYourBeginCombat Effect.triggerPumpOrCounterIfScried
-def onEachEndStepSacrificeIfNoPlaneswalker : TriggeredAbility :=
-  mkTrigger .stepEachEndStep Effect.triggerSacrificeSource (interveningIf? := some condControlNoPlaneswalker)
-def onCastNoncreatureCreaturesGet (power toughness : Int) : TriggeredAbility :=
-  mkTrigger .youCastNoncreature (Effect.triggerCreaturesYouControlGet power toughness)
-def onDiesPutSourceCountersOnTarget : TriggeredAbility :=
-  mkTrigger .thisDies Effect.triggerPutSourceCountersOnTarget
-def onCreatureYouControlDiesChargeCounter : TriggeredAbility :=
-  mkTrigger .creatureYouControlDies Effect.triggerChargeCounterOnSource
 def onYourFirstMainAddGreenPerCharge : TriggeredAbility :=
   mkTrigger .stepYourFirstMain Effect.triggerAddGreenPerChargeCounter
 def onScryOrSurveilMayPayDraw (n : Nat) : TriggeredAbility :=
   mkTrigger .youScryOrSurveil (Effect.triggerMayPayGenericDraw n (plusOneOnSource := true))
-def onScryOrSurveilCreaturesGetOnce (power toughness : Int) : TriggeredAbility :=
-  mkTrigger .youScryOrSurveil (Effect.triggerCreaturesYouControlGet power toughness) (limit := .onceEachTurn)
 def onOpponentsDealtCombatDamageDrawTwoWin : TriggeredAbility :=
   mkTrigger .opponentsDealtCombatDamageYourTurn Effect.triggerDrawTwoWinIfEmptyShuffleSource (word := .when) (grouping := .oncePerBatch)
-def onForestYouControlEntersPumpIfFiveOther : TriggeredAbility :=
-  mkTrigger .forestYouControlEnters Effect.triggerPumpIfFiveOtherForests
-    (interveningIf? := some condFiveOtherForests)
 def onYourEndStepSurveilReturnIfGainedLife : TriggeredAbility :=
   mkTrigger .stepYourEndStep Effect.triggerSurveilReturnIfGainedLife (interveningIf? := some (condGainedLifeAtLeast 1))
 
@@ -876,6 +766,8 @@ private def eventPrefixPattern (word : TriggerWord) (grouping : BatchGrouping)
   | .whenCond inner (.exists (.inZones .battlefield (.all #[.hasType .creature, .controlledBy _, .stat .power .ge (.const n)]))) =>
     let base := eventPrefixPattern word grouping limit inner
     s!"{base} while you control a creature with power {n} or greater"
+  | .whenCond inner (.all #[.exists .this, .forAll .this (.hasDesignation .harnessed)]) =>
+    s!"∞ — {eventPrefixPattern word grouping limit inner}"
   | p =>
     let ctx : PrintCtx :=
       match p with
@@ -904,7 +796,7 @@ def interveningClause (ab : TriggeredAbility) : String :=
   | some cond =>
     match cond with
     | .exists (.inZones .battlefield (.all #[.hasType .creature, .controlledBy _, .stat .power .ge (.const n)])) =>
-      s!" while you control a creature with power {n} or greater"
+      s!", if you control a creature with power {n} or greater"
     | .cmp .ge (.playerMetric .lifeGainedThisTurn .you) (.const n) =>
       s!", if you gained {n} or more life this turn"
     | .cmp .ge (.aggregate .count .one (.inZones .battlefield (.all #[
@@ -925,17 +817,18 @@ def interveningClause (ab : TriggeredAbility) : String :=
 def counterOn (noun : String) (kind : CounterKind) (n : Nat) : String :=
   match kind with
   | .plusOnePlusOne => s!"put {plusOnePlusOneCountersPhrase n} on {noun}"
-  | .indestructible | .doubleStrike | .burden | .stun | .trample
-  | .hone | .plan | .loyalty | .charge | .quest | .influence | .invasion =>
-    s!"put {kind.countersPhrase n} on {noun}"
-  | _ => "put counters"
+  | k => s!"put {k.countersPhrase n} on {noun}"
 
 private def instrObjNoun (noun : String) : ObjectExpr → String
   | .this => "this creature"
   | .attachedHost => "enchanted creature"
   | .triggerSubject => "that creature"
   | .target 0 => if noun.isEmpty then "that creature" else noun
-  | _ => if noun.isEmpty then "that creature" else noun
+  | .inZones zs pred =>
+    let s := ToOracle.toOracle { plural := false, capitalize := false } (ObjectExpr.inZones zs pred)
+    let s := if s.startsWith "another " then "other " ++ (s.drop 8).copy else s
+    s!"each {s}"
+  | o => if noun.isEmpty then ToOracle.toOracle { capitalize := false } o else noun
 
 private def extractSubtypesFromPred : ObjectPred → Option (Array CardSubtype)
   | .hasSubtype (.literal s) => some #[s]
@@ -982,7 +875,13 @@ private partial def instrTriggerPhrase (e : Effect) (body : Instruction) (noun :
       "create Zabu, a legendary 2/2 green Cat creature token with \"Landfall — Whenever a land you control enters, put a +1/+1 counter on Zabu.\""
     else if kind == .redwing && n == 1 && !mods.tapped then
       "create Redwing, a legendary 1/1 blue Bird Scout creature token with flying and \"Whenever Redwing attacks, surveil 1.\""
-    else TokenSpec.createPhrase kind n.toNat (tapped := mods.tapped)
+    else
+      let isCopy := match kind with | .copyOf .. => true | _ => false
+      let hasExtraMods := mods != {} && mods != { tapped := true }
+      if isCopy || hasExtraMods then
+        Instruction.toOracleWith { capitalize := false } e.targets body
+      else
+        TokenSpec.createPhrase kind n.toNat (tapped := mods.tapped)
   | .create (.tokens (.target 0) (.const 1) kind _) =>
     if kind == .theVoid then
       s!"{noun} creates The Void, a legendary 5/5 black Horror Villain creature token with flying, indestructible, and \"The Void attacks each combat if able.\""
@@ -1019,10 +918,16 @@ private partial def instrTriggerPhrase (e : Effect) (body : Instruction) (noun :
     let syms :=
       match mp.spec with
       | .sequence pairs =>
-        String.join (pairs.toList.map fun (p : ManaType × ValueExpr) =>
-          String.join (List.replicate (p.2.evalConst?.getD 1).toNat (manaSym p.1)))
+        if pairs.all (fun p => p.2.evalConst?.isSome) then
+          String.join (pairs.toList.map fun (p : ManaType × ValueExpr) =>
+            String.join (List.replicate (p.2.evalConst?.getD 1).toNat (manaSym p.1)))
+        else ""
       | _ => ""
-    if syms.isEmpty then mp.toOracleSentence {} else s!"add {syms}"
+    if syms.isEmpty then
+      let rawS := mp.toOracleSentence {}
+      let noDot := if rawS.endsWith "." then (rawS.dropEnd 1).copy else rawS
+      if noDot.startsWith "Add " then "add " ++ (noDot.drop 4).copy else noDot
+    else s!"add {syms}"
   | .player (.searchLibrary spec) =>
     if spec.filter == .hasSubtype (.literal .forest) then
       "search your library for a Forest card, put that card onto the battlefield, then shuffle"
@@ -1068,7 +973,7 @@ private partial def instrTriggerPhrase (e : Effect) (body : Instruction) (noun :
       Instruction.toOracleWith { capitalize := false } e.targets body
   | .damage (.deal .this (.players (.target 0)) (.const n) _) =>
     s!"this creature deals {n.toNat} damage to {noun}"
-  | .damage (.deal .this (.players _) (.const n) _) =>
+  | .damage (.deal .this (.players (.matching .opponent .any)) (.const n) _) =>
     s!"this creature deals {n.toNat} damage to each opponent"
   | .damage (.deal .this (.players _) (.aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal sub), .controlledBy _]))) _) =>
     s!"it deals damage equal to the number of {pluralSubtype sub} you control to each opponent"
@@ -1090,7 +995,7 @@ private partial def instrTriggerPhrase (e : Effect) (body : Instruction) (noun :
   | .permanent (.attach .this (.target 0) false) =>
     s!"attach it to {noun}"
   | .permanent (.attach (.target 0) (.target 1) false) =>
-    "attach target Equipment you control to up to one target creature you control"
+    Instruction.toOracleWith { capitalize := false } e.targets body
   | .permanent (.modifyCounters (.put kind (.const n)) obj _) =>
     match obj with
     | .inZones .battlefield (.all #[.hasType .creature, .controlledBy _]) =>
@@ -1169,9 +1074,7 @@ private partial def instrTriggerPhrase (e : Effect) (body : Instruction) (noun :
     s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
   | .moveZone (.target 0) .exile .exile { exileUntilSourceLeaves := true, .. } =>
     if e.allowsZeroTargets then
-      if e.targets == TargetSpec.defendingPlayerCreature then
-        s!"you may exile {noun} until this leaves the battlefield"
-      else s!"you may exile {noun}"
+      s!"you may exile {noun} until this leaves the battlefield"
     else s!"exile {noun} until this leaves the battlefield"
   | .moveZone .allTargets .exile .exile { exileUntilSourceLeaves := true, .. } =>
     "for each opponent, exile up to one target nonland permanent that player controls until this leaves the battlefield"
@@ -1209,8 +1112,9 @@ private partial def instrTriggerPhrase (e : Effect) (body : Instruction) (noun :
     s!"{instrObjNoun noun obj}'s owner puts it on the bottom of their library"
   | .moveZone obj .graveyard .destroy _ =>
     s!"destroy {instrObjNoun noun obj}"
-  | .moveZone obj .exile .exile _ =>
-    s!"exile {instrObjNoun noun obj}"
+  | .moveZone obj .exile .exile m =>
+    if m == {} then s!"exile {instrObjNoun noun obj}"
+    else Instruction.toOracleWith { capitalize := false } e.targets body
   | .optional .you (some cs) (.player (.drawCards .you (.const n))) .noop _ =>
     if cs == CostSpec.discardCard then
       s!"you may discard a card. If you do, draw {cardPhrase n.toNat}"
@@ -1228,14 +1132,15 @@ private partial def instrTriggerPhrase (e : Effect) (body : Instruction) (noun :
   | .optional .you (some _) (.seq #[.player (.drawCards .you (.const 1)), .create (.tokens .you (.const 1) .treasure _)]) .noop _ =>
     "you may sacrifice another creature or artifact. If you do, draw a card and create a Treasure token"
   | .optional .you (some cs) (.queueReflexiveTrigger ab) .noop _ =>
-    if cs == CostSpec.sacrificeAnotherCreature then
+    if cs == CostSpec.sacrificeAnotherCreature && ab.effect.body == Instruction.destroy (.target 0) then
       "you may sacrifice another creature. When you do, destroy target nonland permanent an opponent controls"
     else if cs == CostSpec.sacrificeArtifactOrDiscardNonland then
       "you may sacrifice an artifact or discard a nonland card. When you do, this deals 2 damage to any target"
     else if cs == CostSpec.tapOnly then
       "you may tap this creature. When you do, another target nonattacking creature you control gains indestructible until end of turn"
     else
-      s!"you may {cs.toInlinePhrase}. When you do, {instrTriggerPhrase ab.effect ab.effect.body ab.effect.targets.noun}"
+      let reflS := Instruction.toOracleWith { capitalize := false } .none (.queueReflexiveTrigger ab)
+      s!"you may {cs.toInlinePhrase}. {capitalizeAscii reflS}"
   | .optional .you none (.bind ⟨0⟩ (.moveZone (.inZones (.handOf .you) .anyObject) .graveyard .discard _) (.player (.drawCards .you (.const n)))) .noop _ =>
     s!"you may discard your hand. If you do, draw {cardPhrase n.toNat}"
   | .optional .you none (.seq #[.player (.drawCards .you (.manaSpent .triggerSubject)), .ifCond _ (.moveZone _ .graveyard .discard { choice? := some { count := .exact (.const n), .. }, .. }) .noop]) .noop _ =>
@@ -1278,6 +1183,7 @@ private partial def instrTriggerPhrase (e : Effect) (body : Instruction) (noun :
            .permanent (.setTapped (.target 0) false _),
            .installEffect (.applyContinuous .untilEndOfTurn (.target 0) (.grantKeywords _))] =>
     s!"gain control of {noun} until end of turn. Untap it. It gains haste until end of turn"
+  | .seq #[.player (.drawCards .you (.const 1)), .ifCond (.not _) (.moveZone (.inZones .yourHand .anyObject) (.library .owner .bottom false) .put _) .noop]
   | .seq #[.player (.drawCards .you (.const 1)), .ifCond (.not _) (.moveZone (.inZones (.handOf .you) .anyObject) (.library .owner .bottom false) .put _) .noop] =>
     "draw a card. Then if you don't control a legendary creature, put a card from your hand on the bottom of your library"
   | .seq #[.bind ⟨0⟩ (.permanent (.modifyCounters (.remove (some .hope) _) .this _)) _, .ifCond _ (.seq #[.moveZone .this .graveyard .sacrifice _, .life (.gain .you (.const 4))]) .noop] =>
@@ -1434,6 +1340,7 @@ def toNotation (ab : TriggeredAbility) : String :=
           s!"• {txt}"
         let hdr :=
           if spec.minModes == ValueExpr.const 0 && spec.maxModes == ValueExpr.chosenX then "choose up to X"
+          else if spec.minModes == ValueExpr.const 0 && spec.maxModes == ValueExpr.eventAmount then "choose up to that many"
           else if spec.minModes == ValueExpr.const 2 && spec.maxModes == ValueExpr.const 2 then "choose two"
           else if spec.unusedThisTurn then "choose one that hasn't been chosen this turn"
           else if spec.unusedEver then "choose one that hasn't been chosen"
@@ -1449,7 +1356,7 @@ def toNotation (ab : TriggeredAbility) : String :=
     let p := ab.pattern
     match ab.effect.body with
     | .create (.tokens .you (.const n) k _) =>
-      if p == .stepEachUpkeep then
+      if p == .stepEachUpkeep && ab.interveningIf?.isNone then
         s!"At the beginning of each player's upkeep, you {TokenSpec.createPhrase k n.toNat}."
       else if p == .drawCard .opponent && ab.limit == .nthEachTurn 2 && n == 1 then
         "Whenever an opponent draws their second card each turn, you create a Treasure token."
@@ -1528,7 +1435,18 @@ def toNotation (ab : TriggeredAbility) : String :=
           if ab.onceEachTurn then " This ability triggers only once each turn."
           else if ab.optionalOnceEachTurn then " Do this only once each turn."
           else ""
-        let clause := (sequenceClause ab.effect).getD (resolutionPhrase ab.effect)
+        let clause0 :=
+          match ab.interveningIf?, ab.effect.body with
+          | none, .ifCond cond t .noop =>
+            let tS := Instruction.toOracleWith { capitalize := false } ab.effect.targets t
+            let cS := ToOracle.toOracle { selfRef := "this permanent", capitalize := false } cond
+            if !tS.isEmpty && !tS.contains '.' then s!"{tS} if {cS}"
+            else (sequenceClause ab.effect).getD (resolutionPhrase ab.effect)
+          | _, _ => (sequenceClause ab.effect).getD (resolutionPhrase ab.effect)
+        let clause :=
+          if ab.activeZones == #[.graveyard] && !(clause0.map Char.toLower).contains "graveyard" then
+            clause0.replace "return this permanent " "return this card from your graveyard "
+          else clause0
         let inter :=
           if (clause.map Char.toLower).startsWith "if " then ""
           else interveningClause ab
