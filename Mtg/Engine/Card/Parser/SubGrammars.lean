@@ -4,6 +4,7 @@ import Mtg.Engine.Card.Expr
 import Mtg.Engine.Card.Keywords
 import Mtg.Engine.Card.ManaSpec
 import Mtg.Engine.Card.OracleNorm
+import Mtg.Engine.Card.Parser.Lexer
 import Mtg.Engine.Card.StaticAbility
 import Mtg.Engine.Card.Targeting
 
@@ -121,8 +122,32 @@ def parseNatWord? (raw : String) : Option Nat :=
   | "eighteen" => some 18
   | "nineteen" => some 19
   | "twenty" => some 20
+  | "thirty" => some 30
+  | "forty" => some 40
+  | "fifty" => some 50
+  | "sixty" => some 60
+  | "seventy" => some 70
+  | "eighty" => some 80
+  | "ninety" => some 90
   | s =>
-    if !s.isEmpty && s.all Char.isDigit then s.toNat? else none
+    if !s.isEmpty && s.all Char.isDigit then s.toNat?
+    else
+      match s.splitOn "-" with
+      | [tensStr, onesStr] =>
+        let tens? : Option Nat :=
+          match tensStr with
+          | "twenty" => some 20 | "thirty" => some 30 | "forty" => some 40
+          | "fifty" => some 50 | "sixty" => some 60 | "seventy" => some 70
+          | "eighty" => some 80 | "ninety" => some 90 | _ => none
+        let ones? : Option Nat :=
+          match onesStr with
+          | "one" => some 1 | "two" => some 2 | "three" => some 3
+          | "four" => some 4 | "five" => some 5 | "six" => some 6
+          | "seven" => some 7 | "eight" => some 8 | "nine" => some 9 | _ => none
+        match tens?, ones? with
+        | some t, some o => some (t + o)
+        | _, _ => none
+      | _ => none
 
 /-- Parse a signed integer word or ASCII numeral. -/
 def parseIntWord? (raw : String) : Option Int :=
@@ -422,6 +447,10 @@ private partial def parseCmpBound? (raw : String) : Option (CmpOp × ValueExpr) 
     (parseValueExpr pre).map (.le, ·)
   else if let some pre := dropSuffixCI? s " or fewer" then
     (parseValueExpr pre).map (.le, ·)
+  else if let some rest := dropPrefixCI? s "greater than or equal to " then
+    (parseValueExpr rest).map (.ge, ·)
+  else if let some rest := dropPrefixCI? s "less than or equal to " then
+    (parseValueExpr rest).map (.le, ·)
   else if let some rest := dropPrefixCI? s "greater than " then
     (parseValueExpr rest).map (.gt, ·)
   else if let some rest := dropPrefixCI? s "more than " then
@@ -462,6 +491,8 @@ private partial def parseWithClauseAtom? (raw : String) : Option ObjectPred :=
   else if let some rest := dropPrefixCI? s "power or toughness " then
     (parseCmpBound? rest).map fun (op, v) =>
       .any #[.stat .power op v, .stat .toughness op v]
+  else if low == "equal or lesser mana value than that spell" || low == "mana value less than or equal to that spell's mana value" then
+    some (.stat .manaValue .le (.objectStat .manaValue .triggerSubject))
   else if let some rest := dropPrefixCI? s "mana value " then
     (parseCmpBound? rest).map fun (op, v) => .stat .manaValue op v
   else if let some rest := dropPrefixCI? s "power " then
@@ -528,6 +559,16 @@ private partial def parseThatClause? (raw : String) : Option ObjectPred :=
   let s := cleanClause raw
   let low := lower s
   if low == "was cast" || low == "were cast" then some .wasCast
+  else if low == "is this permanent" || low == "is this creature" || low == "is this" then
+    some (.sameAs .this)
+  else if low == "is that object" || low == "is that creature" || low == "is that permanent" then
+    some (.sameAs .triggerSubject)
+  else if low == "was put there from the battlefield this turn" ||
+      low == "were put there from the battlefield this turn" then
+    some .putIntoGraveyardFromBattlefieldThisTurn
+  else if low == "was put there from anywhere this turn" ||
+      low == "were put there from anywhere this turn" then
+    some .anyObject
   else if let some zStr := (dropPrefixCI? s "was cast from ").orElse (fun _ => dropPrefixCI? s "were cast from ") then
     (parseZoneKind? zStr).map ObjectPred.castFrom
   else if low == "entered this turn" || low == "entered the battlefield this turn" then
@@ -537,9 +578,13 @@ private partial def parseThatClause? (raw : String) : Option ObjectPred :=
   else if low == "'s attacking alone" || low == "is attacking alone" then
     some (.combatRole .attackingAlone)
   else if low == "dealt damage this turn" then
-    some (.dealtDamageThisTurn false none)
+    some (.dealtDamageThisTurn false none true)
+  else if low == "dealt damage" then
+    some (.dealtDamageThisTurn false none false)
   else if low == "dealt combat damage this turn" then
-    some (.dealtDamageThisTurn true none)
+    some (.dealtDamageThisTurn true none true)
+  else if low == "dealt combat damage" then
+    some (.dealtDamageThisTurn true none false)
   else if let some recStr := dropPrefixCI? s "dealt combat damage to " then
     if let some recCore := dropSuffixCI? recStr " this turn" then
       match parsePlayerFilter? recCore with
@@ -590,6 +635,10 @@ private partial def parseObjectExpr? (raw : String) : Option ObjectExpr :=
   let s := cleanClause raw
   if let some obj := parseSimpleObjectExpr? s then
     some obj
+  else if let some (baseStr, predStr) := splitFirstCI? s " matching " then
+    match parseObjectExpr? baseStr, parseNounPhrase predStr with
+    | some b, some np => some (.filter b np.filter.pred)
+    | _, _ => none
   else if let some rest := dropPrefixCI? s "the top card of " then
     if let some whoStr := dropSuffixCI? rest " library" then
       let whoStr := (dropSuffixCI? whoStr "'s").getD whoStr
@@ -641,12 +690,16 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
           extraPreds := #[p] ++ extraPreds; s := lhs; progress := true
     if !progress then
       if let some (lhs, rhs) := splitLastCI? s " attached to " then
-        if let some host := parseObjectExpr? rhs then
-          extraPreds := #[.attachedTo host] ++ extraPreds; s := lhs; progress := true
+        if !(lower rhs == "it" && (lower lhs).contains " with ") then
+          if let some host := parseObjectExpr? rhs then
+            extraPreds := #[.attachedTo host] ++ extraPreds; s := lhs; progress := true
     if !progress then
       if let some (lhs, rhs) := splitLastCI? s " named " then
         if !rhs.isEmpty then
           extraPreds := #[.named (.literal rhs)] ++ extraPreds; s := lhs; progress := true
+    if !progress then
+      if let some pre := dropSuffixCI? s " other than enchanted creature" then
+        extraPreds := #[.otherThan .attachedHost] ++ extraPreds; s := pre; progress := true
     if !progress then
       if let some pre := dropSuffixCI? s " of the chosen type" then
         extraPreds := #[.hasSubtype .chosenOnSource] ++ extraPreds; s := pre; progress := true
@@ -721,10 +774,12 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
             (fun _ => (dropSuffixCI? s " in an opponents graveyard").orElse
               (fun _ => dropSuffixCI? s " from an opponents graveyard"))) then
         zones := .opponentGraveyard; explicitZone := true; s := pre; progress := true
-      else if let some pre := (dropSuffixCI? s " in opponents' graveyards").orElse
-          (fun _ => (dropSuffixCI? s " from opponents' graveyards").orElse
-            (fun _ => (dropSuffixCI? s " in opponents graveyards").orElse
-              (fun _ => dropSuffixCI? s " from opponents graveyards"))) then
+      else if let some pre := (dropSuffixCI? s " in your opponents' graveyards").orElse
+          (fun _ => (dropSuffixCI? s " from your opponents' graveyards").orElse
+            (fun _ => (dropSuffixCI? s " in opponents' graveyards").orElse
+              (fun _ => (dropSuffixCI? s " from opponents' graveyards").orElse
+                (fun _ => (dropSuffixCI? s " in opponents graveyards").orElse
+                  (fun _ => dropSuffixCI? s " from opponents graveyards"))))) then
         zones := .opponentGraveyard; explicitZone := true; s := pre; progress := true
       else if let some pre := (dropSuffixCI? s " in that player's graveyard").orElse
           (fun _ => dropSuffixCI? s " from that player's graveyard") then
@@ -744,6 +799,10 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
           (fun _ => dropSuffixCI? s " from an opponent's hand") then
         zones := { zones := #[.hand], owner := .matching .opponent }
         explicitZone := true; s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " in their hand").orElse
+          (fun _ => dropSuffixCI? s " from their hand") then
+        zones := { zones := #[.hand], owner := .matching .thatPlayer }
+        explicitZone := true; s := pre; progress := true
       else if let some pre := (dropSuffixCI? s " in your library").orElse
           (fun _ => dropSuffixCI? s " from your library") then
         zones := .yourLibrary; explicitZone := true; s := pre; progress := true
@@ -756,6 +815,12 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
             else if let some pe := parsePlayerExpr? ownerStr then
               zones := { zones := #[zk], owner := .ofPlayer pe }
               explicitZone := true; s := lhs; progress := true
+    -- Suffixes: `"whose chosen option is <X>"`, `"of their choice"`
+    if !progress then
+      if let some (lhs, anchor) := splitLastCI? s " whose chosen option is " then
+        extraPreds := extraPreds.push (.chosenAnchorIs (cleanClause anchor)); s := lhs; progress := true
+      else if let some pre := dropSuffixCI? s " of their choice" then
+        s := pre; progress := true
     -- Controller / owner suffixes (`you control`, `an opponent controls`, `defending player controls`, ...)
     if !progress && ctrlPreds.isEmpty then
       if let some pre := dropSuffixCI? s " you own and control" then
@@ -771,7 +836,16 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
       else if let some pre := (dropSuffixCI? s " the defending player controls").orElse
           (fun _ => dropSuffixCI? s " defending player controls") then
         ctrlPreds := ctrlPreds.push (.controlledBy .defendingPlayer); s := pre; progress := true
+      else if let some pre := (dropSuffixCI? s " the active player controls").orElse
+          (fun _ => dropSuffixCI? s " active player controls") then
+        ctrlPreds := ctrlPreds.push (.controlledBy { relation := .anyPlayer, pred := .matchesExpr .activePlayer }); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " target player controls" then
+        ctrlPreds := ctrlPreds.push (.controlledBy { relation := .anyPlayer, pred := .matchesExpr (.target 0) }); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " target opponent controls" then
+        ctrlPreds := ctrlPreds.push (.controlledBy { relation := .anyPlayer, pred := .matchesExpr (.target 0) }); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " that player controls" then
+        ctrlPreds := ctrlPreds.push (.controlledBy .thatPlayer); s := pre; progress := true
+      else if let some pre := dropSuffixCI? s " they control" then
         ctrlPreds := ctrlPreds.push (.controlledBy .thatPlayer); s := pre; progress := true
       else if let some pre := dropSuffixCI? s " a teammate controls" then
         ctrlPreds := ctrlPreds.push (.controlledBy .teammate); s := pre; progress := true
@@ -787,7 +861,8 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
         ctrlPreds := ctrlPreds.push (.ownedBy .thatPlayer); s := pre; progress := true
 
   -- 2. Parse leading quantifier, optional `another`/`other`, and optional `target`.
-  let mut toks := splitWords s
+  s := (dropPrefixCI? s "each of ").getD s
+  let mut toks := (splitWords s).map fun w => if w.endsWith "," then (w.dropEnd 1).copy else w
   if toks.isEmpty then return none
   let mut idx : Nat := 0
   let mut quant : NounQuantifier := .singular
@@ -795,6 +870,8 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
   let w0 := lower toks[0]!
   if w0 == "any" && toks.size ≥ 3 && lower toks[1]! == "number" && lower toks[2]! == "of" then
     quant := .anyNumber; hasExplicitQuant := true; idx := 3
+  else if w0 == "up" && toks.size ≥ 4 && lower toks[1]! == "to" && lower toks[2]! == "that" && lower toks[3]! == "many" then
+    quant := .anyNumber; hasExplicitQuant := true; idx := 4
   else if w0 == "up" && toks.size ≥ 3 && lower toks[1]! == "to" then
     match parseNatWord? toks[2]! with
     | some n => quant := .upTo n; hasExplicitQuant := true; idx := 3
@@ -851,7 +928,10 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
   let nextIsOr (toks : Array String) (i : Nat) : Bool :=
     i < toks.size &&
       (toks[i]!.endsWith "," ||
-        (i + 1 < toks.size && (lower toks[i + 1]! == "or" || lower toks[i + 1]! == "and/or")))
+        (i + 1 < toks.size && (lower toks[i + 1]! == "or" || lower toks[i + 1]! == "and/or" ||
+          (lower toks[i + 1]! == "and" && i + 2 < toks.size &&
+            ((CardType.ofOracle? (stripTrailingComma toks[i + 2]!)).isSome ||
+             (CardSubtype.ofOracle? (stripTrailingComma toks[i + 2]!)).isSome)))))
 
   -- Look ahead across comma-stripped Oxford `or`-lists (e.g. normalized `"bear spider or wolf"`,
   -- `"equipment instant or sorcery"`, `"white blue or black"`).
@@ -886,7 +966,7 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
     while k < toks.size do
       let w := stripTrailingComma toks[k]!
       let wl := lower w
-      if wl == "or" || wl == "and/or" then
+      if wl == "or" || wl == "and/or" || wl == "and" then
         if k + 1 >= toks.size then return false
         let nxt := stripTrailingComma toks[k + 1]!
         return isHeadListWord toks (k + 1) > 0 ||
@@ -897,13 +977,17 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
       else
         let step := isHeadListWord toks k
         if step > 0 then k := k + step
+        else if ((parseNonSubtype? w).isSome || (parseNonCardType? w).isSome) &&
+            k + 1 < toks.size && (CardType.ofOracle? (stripTrailingComma toks[k + 1]!)).isSome then
+          k := k + 2
         else return false
     return false
 
   while idx < toks.size do
     let rawTok := stripTrailingComma toks[idx]!
     let tok := lower rawTok
-    if tok == "or" || tok == "and/or" then
+    if tok == "or" || tok == "and/or" ||
+        (tok == "and" && !headChoices.isEmpty && isHeadListWord toks (idx + 1) > 0) then
       inOrChain := true
       idx := idx + 1
     else if let some c := parseColorWord? rawTok then
@@ -978,7 +1062,10 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
         (CardSubtype.ofOracle? rawTok).isSome ||
         (idx + 1 < toks.size &&
           (CardSubtype.ofOracle? s!"{rawTok} {stripTrailingComma toks[idx + 1]!}").isSome)
-      if !isSubtypeHere then
+      let isOrChainMod :=
+        (inOrChain || headContinuesOr toks idx) &&
+          ((parseNonSubtype? rawTok).isSome || (parseNonCardType? rawTok).isSome)
+      if !isSubtypeHere && !isOrChainMod then
         (preds, headChoices) := flushHeads preds headChoices
       if tok == "another" then
         preds := preds.push (.otherThan .this); sawAnyNounOrMod := true; idx := idx + 1
@@ -990,6 +1077,12 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
         preds := preds.push (.tapped false); sawAnyNounOrMod := true; idx := idx + 1
       else if tok == "attacking" then
         preds := preds.push (.combatRole .attacking); sawAnyNounOrMod := true; idx := idx + 1
+      else if tok == "nonattacking" then
+        preds := preds.push (.not (.combatRole .attacking)); sawAnyNounOrMod := true; idx := idx + 1
+      else if tok == "equipped" then
+        preds := preds.push (.hasAttachment { zones := .battlefield, pred := .hasSubtype (.literal .equipment) }); sawAnyNounOrMod := true; idx := idx + 1
+      else if tok == "enchanted" then
+        preds := preds.push (.hasAttachment { zones := .battlefield, pred := .hasSubtype (.literal .aura) }); sawAnyNounOrMod := true; idx := idx + 1
       else if tok == "blocking" then
         preds := preds.push (.combatRole .blocking); sawAnyNounOrMod := true; idx := idx + 1
       else if tok == "blocked" then
@@ -1065,6 +1158,24 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
       else if let some sub := parseNonSubtype? rawTok then
         preds := preds.push (.not (.hasSubtype (.literal sub))); sawAnyNounOrMod := true; idx := idx + 1
       else
+        let threeWord? : Option CardSubtype :=
+          if idx + 2 < toks.size then
+            CardSubtype.ofOracle? s!"{rawTok} {toks[idx + 1]!} {stripTrailingComma toks[idx + 2]!}"
+          else none
+        match threeWord? with
+        | some sub =>
+          let threeRaw := lower s!"{rawTok} {toks[idx + 1]!} {stripTrailingComma toks[idx + 2]!}"
+          if threeRaw == lower sub.pluralName && threeRaw != lower sub.englishName then
+            sawPluralHead := true
+          let hasMore := headContinuesOr toks (idx + 2)
+          if inOrChain || hasMore || !headChoices.isEmpty then
+            headChoices := headChoices.push (.hasSubtype (.literal sub))
+            if !hasMore then
+              (preds, headChoices) := flushHeads preds headChoices
+          else
+            preds := preds.push (.hasSubtype (.literal sub))
+          inOrChain := false; sawAnyNounOrMod := true; idx := idx + 3
+        | none =>
         let twoWord? : Option CardSubtype :=
           if idx + 1 < toks.size then
             CardSubtype.ofOracle? s!"{rawTok} {stripTrailingComma toks[idx + 1]!}"
@@ -1108,7 +1219,48 @@ partial def parseNounPhrase (raw : String) : Option ParsedNounPhrase := Id.run d
   else if !explicitZone && sawCardHead && ctrlPreds.isEmpty then
     zones := .battlefield
 
-  let allPreds := preds ++ ctrlPreds ++ extraPreds
+  let predRank (p : ObjectPred) : Nat :=
+    if p == ObjectPred.worthy then 8
+    else if p == ObjectPred.historic then 7
+    else
+      match p with
+      | .otherThan .this => 1
+      | .tapped _ | .combatRole .attacking | .combatRole .blocking
+      | .combatRole .blocked | .combatRole .unblocked
+      | .isFaceDown _ | .isCommander
+      | .hasDesignation .goaded | .hasDesignation .prepared | .hasDesignation .harnessed => 2
+      | .any #[.combatRole .attacking, .combatRole .blocking] => 2
+      | .colorCount .eq 0 | .colorCount .eq 1 | .colorCount .ge 2 => 3
+      | .not (.hasType _) => 4
+      | .isToken false => 5
+      | .hasColor (.literal _) | .not (.hasColor (.literal _)) => 6
+      | .any xs =>
+        if !xs.isEmpty && xs.all (fun | .hasColor (.literal _) => true | _ => false) then 6
+        else if !xs.isEmpty && xs.all (fun | .hasSubtype (.literal _) => true | _ => false) then 8
+        else if xs.size == 2 &&
+            (match xs[0]!, xs[1]! with
+             | .stat .power _ _, .stat .toughness _ _ => true
+             | _, _ => false) then 12
+        else 9
+      | .hasSupertype _ | .not (.hasSupertype _) => 7
+      | .hasSubtype (.literal _) | .not (.hasSubtype (.literal _)) => 8
+      | .hasType _ => 9
+      | .isKind _ | .isToken true => 10
+      | .controlledBy _ | .ownedBy _ => 11
+      | .hasKeyword _ | .stat _ _ _ | .statParity _ _
+      | .counterCount _ _ _ | .hasAttachment _ => 12
+      | .not (.hasKeyword _) => 13
+      | _ => 14
+  let rawAllPreds := preds ++ ctrlPreds ++ extraPreds
+  let allPreds : Array ObjectPred := Id.run do
+    let mut out : Array ObjectPred := #[]
+    for item in rawAllPreds do
+      let r := predRank item
+      let mut pos := out.size
+      while pos > 0 && predRank out[pos - 1]! > r do
+        pos := pos - 1
+      out := out.insertIdx! pos item
+    return out
   let finalQuant :=
     if !hasExplicitQuant && sawPluralHead then .plural else quant
   return some {
@@ -1172,13 +1324,15 @@ partial def parseValueExpr (raw : String) : Option ValueExpr := Id.run do
     | _, _ => pure ()
 
   -- Step-outcome phrases (`the number of cards moved this way`, etc.).
-  if low == "the number of cards moved this way" then
+  if low == "the number of cards moved this way" || low == "the number of cards drawn this way" ||
+      low == "the number of creatures returned to your hand this way" ||
+      low == "the number of cards exiled this way" then
     return some (.stepMetric .movedCount ⟨0⟩)
   if low == "the number of tokens created this way" then
     return some (.stepMetric .createdCount ⟨0⟩)
   if low == "the amount of damage dealt this way" then
     return some (.stepMetric .damageDealt ⟨0⟩)
-  if low == "the excess damage dealt this way" then
+  if low == "the excess damage dealt this way" || low == "that excess damage" then
     return some (.stepMetric .excessDamage ⟨0⟩)
   if low == "that much life" then
     return some (.stepMetric .lifeChanged ⟨0⟩)
@@ -1199,6 +1353,11 @@ partial def parseValueExpr (raw : String) : Option ValueExpr := Id.run do
     let whoStr := (dropSuffixCI? pre "'s").getD pre
     if let some who := parsePlayerExpr? whoStr then
       return some (.playerMetric .life who)
+  if let some rest := (dropPrefixCI? s "the number of cards that were put into ").orElse
+      (fun _ => dropPrefixCI? s "the number of cards put into ") then
+    if let some (whoPre, _) := splitFirstCI? rest "'s graveyard from " then
+      if let some who := parsePlayerExpr? whoPre then
+        return some (.playerMetric .cardsMilledThisTurn who)
   if let some rest := dropPrefixCI? s "the number of cards in " then
     if let some whoPre := dropSuffixCI? rest " hand" then
       let whoStr := (dropSuffixCI? whoPre "'s").getD whoPre
@@ -1228,7 +1387,8 @@ partial def parseValueExpr (raw : String) : Option ValueExpr := Id.run do
     return some (.playerMetric .poisonCounters .you)
   if low == "the number of opponents you have" then
     return some (.playerMetric .opponentsCount .you)
-  if let some rest := dropPrefixCI? s "the amount of life " then
+  if let some rest := (dropPrefixCI? s "the amount of life ").orElse
+      (fun _ => dropPrefixCI? s "the life ") then
     if let some whoStr := dropSuffixCI? rest " gained this turn" then
       if let some who := parsePlayerExpr? whoStr then
         return some (.playerMetric .lifeGainedThisTurn who)
@@ -1315,13 +1475,22 @@ private partial def parseTurnHistory? (raw : String) : Option EventHistoryPred :
   if let some pre := dropSuffixCI? s " surveilled this turn" then
     if let some pf := parsePlayerFilter? pre then return some (.surveilledThisTurn pf)
 
-  let (body, isLastTurn) ←
+  let (body0, isLastTurn) ←
     match dropSuffixCI? s " last turn" with
     | some b => (b, true)
     | none =>
       match dropSuffixCI? s " this turn" with
       | some b => (b, false)
       | none => return none
+  let body :=
+    let b1 :=
+      match dropPrefixCI? body0 "you've " with
+      | some r => "you " ++ r
+      | none =>
+        match dropPrefixCI? body0 "you have " with
+        | some r => "you " ++ r
+        | none => body0
+    b1.replace " drawn " " drew "
   let wrap (who : PlayerFilter) (pat : EventPattern) : EventHistoryPred :=
     if isLastTurn then .eventOccurredLastTurn who pat else .eventOccurredThisTurn who pat
 
@@ -1364,7 +1533,12 @@ private partial def parseTurnHistory? (raw : String) : Option EventHistoryPred :
 
   if let some (whoStr, npStr) := splitFirstCI? body " cast " then
     match parsePlayerFilter? whoStr, parseNounPhrase npStr with
-    | some pf, some np => return some (wrap pf (.castSpell np.filter.pred))
+    | some pf, some np =>
+      let sp := match np.filter.pred with
+        | .isKind .spell => .anyObject
+        | .all ps => ObjectPred.andAll (ps.filter (· != .isKind .spell))
+        | other => other
+      return some (wrap pf (.castSpell sp))
     | _, _ => pure ()
 
   if let some (whoStr, rest) := splitFirstCI? body " drew " then
@@ -1479,7 +1653,7 @@ partial def parseCondition (raw : String) : Option Condition := Id.run do
 
   let low := lower s
 
-  -- Self entered this turn / attacked this turn.
+  -- Self entered this turn / attacked this turn / prepared / token / equipped / attacking.
   if low == "this land entered this turn" || low == "this permanent entered this turn" ||
       low == "this creature entered this turn" || low == "this entered this turn" ||
       low == "~ entered this turn" then
@@ -1487,6 +1661,35 @@ partial def parseCondition (raw : String) : Option Condition := Id.run do
   if low == "this creature attacked this turn" || low == "it attacked this turn" ||
       low == "~ attacked this turn" then
     return some ActivatedAbility.condSourceAttackedThisTurn
+  if low == "this creature isn't prepared" || low == "this permanent isn't prepared" ||
+      low == "it isn't prepared" then
+    return some (.not (.exists (.filter .this (.hasDesignation .prepared))))
+  if low == "it isn't a token" || low == "they're not a token" ||
+      low == "this creature isn't a token" || low == "this permanent isn't a token" then
+    return some (.not (.exists (.filter .this .isToken)))
+  if low == "it's equipped" || low == "this creature is equipped" || low == "this permanent is equipped" then
+    return some (.exists (.filter .this (.hasAttachment { zones := .battlefield, pred := .hasSubtype (.literal .equipment) })))
+  if low == "it's attacking" || low == "this creature is attacking" || low == "this permanent is attacking" then
+    return some (.exists (.filter .this (.combatRole .attacking)))
+  if low == "it had counters on it" then
+    return some (Condition.triggerSubjectMatches (.counterCount none .ge (.const 1)))
+  if low == "this permanent has counters on it" || low == "this artifact has counters on it" ||
+      low == "this creature has counters on it" then
+    return some (Condition.thisMatches (.counterCount none .ge (.const 1)))
+  if low == "your library has no cards in it" then
+    return some (.cmp .eq (.playerMetric .librarySize .you) (.const 0))
+  if low == "you didn't cast a spell this turn" then
+    return some (.not (.turnHistory (.eventOccurredThisTurn .you (.castSpell .anyObject))))
+  if low == "it has greater power or toughness than this permanent" ||
+      low == "it has greater power or toughness than this creature" then
+    return some (.all #[.exists .triggerSubject, .any #[
+      .cmp .gt (.objectStat .power .triggerSubject) (.objectStat .power .this),
+      .cmp .gt (.objectStat .toughness .triggerSubject) (.objectStat .toughness .this)
+    ]])
+  if let some rest := dropPrefixCI? s "you have fewer than " then
+    if let some nStr := (dropSuffixCI? rest " cards in hand").orElse (fun _ => dropSuffixCI? rest " cards in your hand") then
+      if let some n := parseNatWord? nStr then
+        return some (.cmp .lt (.playerMetric .handSize .you) (.const (Int.ofNat n)))
 
   -- Turn / step / phase / day-night.
   if low == "it's your turn" || low == "it is your turn" then return some .isYourTurn
@@ -1520,13 +1723,20 @@ partial def parseCondition (raw : String) : Option Condition := Id.run do
     return some (.playerPred .you .isMonarch)
 
   -- Cast context (CR 400.7d).
+  if low == "you cast it" || low == "you cast this spell" || low == "you cast this permanent" ||
+      low == "you cast this creature" then
+    return some (.all #[.exists .this, .forAll .this .wasCast])
+  if low == "they were a creature" || low == "it was a creature" ||
+      low == "this permanent was a creature" || low == "this creature was a creature" then
+    return some (.exists (.filter .this (.hasType .creature)))
   if low == "this spell was kicked" || low == "it was kicked" then
     return some (.castPred (.wasKicked .this))
   if low == "the gift was promised" || low == "its gift was promised" then
     return some (.castPred (.giftPromised .this))
   if low == "its impending cost was paid" || low == "this permanent's impending cost was paid" then
     return some (.castPred (.impendingPaid .this))
-  if low == "its teamwork cost was paid" || low == "teamwork was paid" then
+  if low == "its teamwork cost was paid" || low == "teamwork was paid" ||
+      low == "this spell was cast using teamwork" || low == "it was cast using teamwork" then
     return some (.castPred (.teamworkPaid .this))
   if low == "its sneak cost was paid" || low == "sneak was paid" then
     return some (.castPred (.sneakPaid .this))
@@ -1538,12 +1748,17 @@ partial def parseCondition (raw : String) : Option Condition := Id.run do
   if let some pre := dropSuffixCI? s " mana was spent to cast this spell" then
     if let some c := parseColorWord? pre then
       return some (.castPred (.manaSpentMatches (.ofColor c) .this))
-  if let some zStr := dropPrefixCI? s "this spell was cast from " then
+  if let some zStr0 := (dropPrefixCI? s "this spell was cast from ").orElse
+      (fun _ => dropPrefixCI? s "it was cast from ") then
+    let zStr :=
+      (dropPrefixCI? zStr0 "a ").orElse (fun _ =>
+      (dropPrefixCI? zStr0 "an ").orElse (fun _ =>
+      (dropPrefixCI? zStr0 "your ").orElse (fun _ =>
+      dropPrefixCI? zStr0 "the "))) |>.getD zStr0
     if let some z := parseZoneKind? zStr then
       return some (.castPred (.castFrom z .this))
-  if let some zStr := dropPrefixCI? s "it was cast from " then
-    if let some z := parseZoneKind? zStr then
-      return some (.castPred (.castFrom z .this))
+  if low == "this spell wasn't cast from your hand" || low == "it wasn't cast from your hand" then
+    return some (.not (.castPred (.castFrom .hand .this)))
 
   -- Turn history (`... this turn` / `... last turn`).
   if let some hp := parseTurnHistory? s then
@@ -1557,6 +1772,13 @@ partial def parseCondition (raw : String) : Option Condition := Id.run do
     if let some np := parseNounPhrase s!"{rest} you control" then
       return some (.not (.exists np.filter.toExpr))
   if let some rest := dropPrefixCI? s "you control " then
+    if let some atLeastRest := dropPrefixCI? rest "at least " then
+      let aws := splitWords atLeastRest
+      if aws.size >= 2 then
+        if let some v := parseValueExpr aws[0]! then
+          let npStr := String.intercalate " " (aws.extract 1 aws.size).toList
+          if let some np := parseNounPhrase s!"{npStr} you control" then
+            return some (.cmp .ge (.aggregate .count .one np.filter.toExpr) v)
     if let some (cntStr, npStr) := splitFirstCI? rest " or more " then
       match parseValueExpr cntStr, parseNounPhrase s!"{npStr} you control" with
       | some v, some np => return some (.cmp .ge (.aggregate .count .one np.filter.toExpr) v)
@@ -1577,18 +1799,50 @@ partial def parseCondition (raw : String) : Option Condition := Id.run do
             return some (.cmp .ge (.aggregate .sum (.counterCount (some k)) objs) v)
         | _, _, _ => pure ()
       match parseValueExpr cntStr, parseNounPhrase tail with
-      | some v, some np => return some (.cmp .ge (.aggregate .count .one np.filter.toExpr) v)
+      | some v, some np =>
+        if np.filter.zones == .yourGraveyard &&
+            (np.filter.pred == .isKind .card || np.filter.pred == .anyObject) then
+          return some (.cmp .ge (.playerMetric .graveyardSize .you) v)
+        return some (.cmp .ge (.aggregate .count .one np.filter.toExpr) v)
       | _, _ => pure ()
     if let some np := parseNounPhrase rest then
       return some (.exists np.filter.toExpr)
   if let some rest := dropPrefixCI? s "there is " then
-    if let some np := parseNounPhrase rest then
+    let restNorm := (dropPrefixCI? rest "an another ").map ("another " ++ ·) |>.getD rest
+    if let some oe := parseObjectExpr? restNorm then
+      return some (.exists oe)
+    if let some np := parseNounPhrase restNorm then
       return some (.exists np.filter.toExpr)
   if let some rest := dropPrefixCI? s "every " then
     if let some (objStr, predStr) := splitFirstCI? rest " is " then
       match parseObjectExpr? objStr, parseNounPhrase predStr with
       | some objs, some np => return some (.forAll objs np.filter.pred)
       | _, _ => pure ()
+  -- `"not (<cond>)"` from canonical `Expr.toOracle`
+  if let some inner := dropPrefixCI? s "not (" then
+    if let some core := dropSuffixCI? inner ")" then
+      if let some c := parseCondition core then
+        return some (.not c)
+  -- `"<obj> has no <k> counters on it"` / `"<obj> has N or more <k> counters on it"`
+  if let some (objStr, ctrRest) := splitFirstCI? s " has " then
+    if let some core := (dropSuffixCI? ctrRest " on it").orElse (fun _ => some ctrRest) then
+      let ol := lower objStr
+      let isSelfOrIt := ol == "this" || ol == "it" || ol.startsWith "this "
+      if let some noRest := dropPrefixCI? core "no " then
+        let cWords := (splitWords ((dropSuffixCI? noRest " counters").orElse (fun _ => dropSuffixCI? noRest " counter") |>.getD noRest)).toList.map lower
+        let kind? := (CounterKind.ofPrefix cWords).map Prod.fst
+        let obj? := if isSelfOrIt then some ObjectExpr.this else parseObjectExpr? objStr
+        if let some obj := obj? then
+          if obj == .this && kind?.isSome then
+            return some (.all #[.exists .this, .cmp .eq (.counterCount kind? .this) (.const 0)])
+          return some (.cmp .eq (.counterCount kind? obj) (.const 0))
+      if let some (nStr, kRest) := splitFirstCI? core " or more " then
+        if let some n := parseNatWord? nStr then
+          let cWords := (splitWords ((dropSuffixCI? kRest " counters").orElse (fun _ => dropSuffixCI? kRest " counter") |>.getD kRest)).toList.map lower
+          let kind? := (CounterKind.ofPrefix cWords).map Prod.fst
+          let obj? := if isSelfOrIt then some ObjectExpr.this else parseObjectExpr? objStr
+          if let some obj := obj? then
+            return some (.cmp .ge (.counterCount kind? obj) (.const (Int.ofNat n)))
 
   -- Player shortcuts (`you have N or less life`, `you have N or more cards in your graveyard/hand`).
   if let some rest := dropPrefixCI? s "you have " then
@@ -1711,6 +1965,9 @@ private def stripTargetQuantPrefix (s : String) : CountRange × String × Bool :
   let w0 := lower toks[0]!
   if w0 == "any" && toks.size >= 3 && lower toks[1]! == "number" && lower toks[2]! == "of" then
     let rest := String.intercalate " " (toks.toList.drop 3)
+    return (.anyNumber, rest, true)
+  if w0 == "up" && toks.size >= 4 && lower toks[1]! == "to" && lower toks[2]! == "that" && lower toks[3]! == "many" then
+    let rest := String.intercalate " " (toks.toList.drop 4)
     return (.anyNumber, rest, true)
   if w0 == "up" && toks.size >= 3 && lower toks[1]! == "to" then
     if let some n := parseNatWord? toks[2]! then
@@ -1846,8 +2103,13 @@ partial def parseTargetSlot (raw : String) : Option TargetSlot := Id.run do
     gc? := some .distinctNames; s := pre
   else if let some pre := dropSuffixCI? s " of each card type" then
     gc? := some .distinctCardTypes; s := pre
+  else if let some (a, b) := splitFirstCI? s " of each card type " then
+    gc? := some .distinctCardTypes; s := a ++ " " ++ b
 
   let mkSlot (domain : TargetDomain) (count : CountRange) : TargetSlot :=
+    let count :=
+      if gc? == some .distinctCardTypes && count == .upTo 1 then .upTo 8
+      else count
     let domain :=
       match forEach? with
       | some pf =>
@@ -1887,7 +2149,8 @@ partial def parseTargetSlot (raw : String) : Option TargetSlot := Id.run do
     if atLow == "permanent or player" || atLow == "permanents or players" then
       return some (mkSlot TargetDomain.permanentOrPlayer qCount)
     if atLow == "creature or creature card in a graveyard" ||
-        atLow == "creature or creature card from a graveyard" then
+        atLow == "creature or creature card from a graveyard" ||
+        atLow == "creature on the battlefield or creature card in a graveyard" then
       return some (mkSlot TargetDomain.creatureOrGyCreatureCard qCount)
     if let some (lhs, rhs) := splitLastCI? afterTarget " or " then
       if let some pd := parseTargetPlayerDomain? rhs then
@@ -1966,19 +2229,38 @@ def parseTargetSpecPrefix (toks : List String) : Option (TargetSpec × Nat) := I
 
 /-! ### Stage-4 Compositional Cost & Keyword Sub-Grammars (CR 118, 606.2–6, 702) -/
 
-/-- Strip balanced parenthetical reminder text `(...)` from an Oracle string. -/
+/-- Strip balanced parenthetical CR 207.2a reminder text `(...)` (whose first non-space
+char is uppercase, `{`, or empty) while preserving lowercase semantic annotations emitted
+by `ToOracle` (`not (you do)`, `(chosen)`, `(move the rest)`, `(reveal first)`, `(s)`). -/
 def stripReminderText (s : String) : String := Id.run do
-  let mut out : List Char := []
-  let mut depth : Nat := 0
-  for c in s.toList do
-    if c == '(' then
-      depth := depth + 1
-    else if c == ')' then
-      if depth > 0 then depth := depth - 1
-    else if depth == 0 then
-      out := c :: out
+  let cs := s.toList.toArray
+  let mut out : Array Char := #[]
+  let mut i : Nat := 0
+  while i < cs.size do
+    if cs[i]! == '(' then
+      let mut j := i + 1
+      let mut depth : Nat := 1
+      let mut firstNonSpace? : Option Char := none
+      while j < cs.size && depth > 0 do
+        let ch := cs[j]!
+        if firstNonSpace?.isNone && ch != ' ' then
+          firstNonSpace? := some ch
+        if ch == '(' then depth := depth + 1
+        else if ch == ')' then depth := depth - 1
+        j := j + 1
+      let isSemanticLower :=
+        match firstNonSpace? with
+        | some ch => ch.isLower
+        | none => false
+      if isSemanticLower then
+        for k in [i : j] do
+          out := out.push cs[k]!
+      i := j
+    else
+      out := out.push cs[i]!
+      i := i + 1
   -- Collapse redundant spaces introduced around stripped parentheses.
-  let raw := (String.ofList out.reverse).trimAscii.copy
+  let raw := (String.ofList out.toList).trimAscii.copy
   let mut prevSpace := false
   let mut collapsed : List Char := []
   for c in raw.toList do
@@ -2235,6 +2517,8 @@ partial def parseCostItem (raw : String) : Option CostItem := Id.run do
     if let some mc := parseManaCost? rest then
       return some (.mana mc)
     if let some amtStr := dropSuffixCI? rest " life" then
+      if lower amtStr == "that amount" || lower amtStr == "that much" then
+        return some (.payLife .eventAmount)
       if let some v := parseValueExpr amtStr then
         return some (.payLife v)
 
@@ -2306,6 +2590,17 @@ partial def parseCostItem (raw : String) : Option CostItem := Id.run do
   -- 10. Exile
   if let some rest := dropPrefixCI? s "exile " then
     let lowRest := lower rest
+    if lowRest == "this spell" then
+      return some (.exile (.exact 1) .stack .self false)
+    -- `"exile <N> card(s)/permanent(s) named <Name> from your graveyard"` (e.g. *Sphinx's Approach*)
+    if let some preGy := dropSuffixCI? rest " from your graveyard" then
+      if let some (headStr, nameStr) := splitFirstCI? preGy " named " then
+        let hws := (headStr.splitOn " ").filter (!·.isEmpty)
+        if hws.length == 2 then
+          let nounLow := lower hws[1]!
+          if nounLow == "card" || nounLow == "cards" || nounLow == "permanent" || nounLow == "permanents" then
+            if let some n := parseNatWord? hws[0]! then
+              return some (.exile (.count (.const n)) .yourGraveyard (.filter (.named (.literal nameStr.trimAscii.copy))) false)
     -- `"exile this card from your graveyard"` / `"exile ~ from your graveyard"`
     if let some obj := dropSuffixCI? lowRest " from your graveyard" then
       if isSelfObjectPhrase obj then
@@ -2317,8 +2612,11 @@ partial def parseCostItem (raw : String) : Option CostItem := Id.run do
     if let some obj := dropSuffixCI? lowRest " from your hand" then
       if isSelfObjectPhrase obj then
         return some (.exile (.exact 1) .yourHand .self false)
-    -- `"exile any number of <color> cards from your graveyard with N or more <color> mana symbols among their mana costs"`
-    if let some (lhs, rhs) := splitFirstCI? rest " with " then
+    -- `"exile any number of <color> card(s) [from your graveyard] with N or more <color> mana symbols among their mana costs [from your graveyard]"`
+    if let some (_, rhs0) := splitFirstCI? rest " with " then
+      let rhs :=
+        ((dropSuffixCI? rhs0 " from your graveyard").orElse fun _ =>
+          (dropSuffixCI? rhs0 " from your hand").orElse fun _ => some rhs0) |>.getD rhs0
       if let some symPart := dropSuffixCI? rhs " mana symbols among their mana costs" then
         if let some (nStr, colStr) := splitFirstCI? symPart " or more " then
           if let some n := parseNatWord? nStr then
@@ -2327,9 +2625,10 @@ partial def parseCostItem (raw : String) : Option CostItem := Id.run do
               match col? with
               | some col => ObjectPred.all #[.hasColor (.literal col), .isKind .card]
               | none => .isKind .card
+            let fullLow := lower rest
             let zones : ZoneSetSpec :=
-              if (lower lhs).contains "graveyard" then .yourGraveyard
-              else if (lower lhs).contains "hand" then .yourHand
+              if fullLow.contains "graveyard" then .yourGraveyard
+              else if fullLow.contains "hand" then .yourHand
               else .battlefield
             return some (.exile (.totalManaSymbolsAtLeast col? (.const n)) zones (.filter pred) false)
     if isSelfObjectPhrase rest then
@@ -2412,6 +2711,13 @@ partial def parseCostSpec (raw : String) : Option CostSpec := Id.run do
       if let some (cnt1, w1) := parseSacrificePhrase? lhs then
         if let some (cnt2, w2) := parseSacrificePhrase? rhs then
           return some (CostSpec.ofItems #[.sacrifice cnt1 w1, .sacrifice cnt2 w2])
+
+  -- 3b. Merged `"exile <a> and <b>"` (e.g. `"exile this spell and four cards named Sphinx's Approach from your graveyard"`).
+  if let some rest := dropPrefixCI? s "exile " then
+    if let some (lhs, rhs) := splitFirstCI? rest " and " then
+      if let some c1 := parseCostItem ("exile " ++ lhs) then
+        if let some c2 := parseCostItem ("exile " ++ rhs) then
+          return some (CostSpec.ofItems #[c1, c2])
 
   -- 4. Comma-separated cost items (`"{1}{B}, {T}, Sacrifice a creature"`).
   let parts := (s.splitOn ",").map (fun p => p.trimAscii.copy) |>.filter (!·.isEmpty)
@@ -2593,6 +2899,8 @@ def parseKeywordAbility (raw : String) : Option KeywordAbility := Id.run do
             some (.all #[.hasSupertype .basic, .hasType .land])
           else if let some sub := CardSubtype.ofOracle? qual then
             some (.hasSubtype (.literal sub))
+          else if let some sup := Supertype.ofOracle? (lower qual) then
+            some (.hasSupertype sup)
           else if let some ct := CardType.ofOracle? (lower qual) then
             some (.hasType ct)
           else none
@@ -2607,7 +2915,7 @@ def parseKeywordAbility (raw : String) : Option KeywordAbility := Id.run do
     if let some cost := parseCostSpec rest then
       return some (.equip (.all #[.hasType .creature, .controlledBy .you]) cost)
     -- `"equip <subtype/quality> <cost>"` or `"equip <subtype/quality>—<cost>"`
-    -- (e.g. `"Equip Soldier {1}"`, `"Equip legendary creature {2}"`, `"Equip Soldier—Pay 2 life."`)
+    -- (e.g. `"Equip Soldier {1}"`, `"Equip worthy {1}"`, `"Equip legendary creature {2}"`, `"Equip Soldier—Pay 2 life."`)
     let qualAndCost? : Option (String × String) :=
       match (splitFirstCI? rest "—").orElse (fun _ => splitFirstCI? rest " - ") with
       | some (q, c) => some (q, c)
@@ -2628,6 +2936,8 @@ def parseKeywordAbility (raw : String) : Option KeywordAbility := Id.run do
         else none
     if let some (qualStr, costStr) := qualAndCost? then
       if let some cost := parseCostSpec costStr then
+        if lower qualStr == "worthy" then
+          return some (.equip ObjectPred.worthy cost)
         if let some sub := CardSubtype.ofOracle? qualStr then
           return some (.equip (.all #[.hasType .creature, .hasSubtype (.literal sub), .controlledBy .you]) cost)
         if let some np := parseNounPhrase qualStr then
@@ -2740,14 +3050,7 @@ private def parseFilterPairList? (raw : String) : Option (Array ManaType) := Id.
 /-- Normalize full and legendary-shortened self-references (`"Doc Samson, Super Psychiatrist"`
 or `"Doc Samson"`) to `replacement` (CR 201.5c). -/
 private def replaceSelfName (raw cardName replacement : String) : String :=
-  if cardName.isEmpty then raw
-  else
-    let s1 := raw.replace cardName replacement
-    match cardName.splitOn "," with
-    | short :: _ :: _ =>
-      let short := short.trimAscii.copy
-      if short.isEmpty then s1 else s1.replace short replacement
-    | _ => s1
+  replaceCardNameOutsideQuotes raw cardName replacement
 
 /-- Parse the object phrase following `"Add "` into a declarative `ManaSpec`
 (CR 106.1 / 106.7 / 605). Returns `(spec, filterPairFormat)`. -/
@@ -2761,9 +3064,17 @@ def parseManaSpecWithFormat (raw : String) (cardName : String := "") : Option (M
   if let some pair := parseFilterPairList? s then
     return some (.combination (.explicit pair) (.const 2), true)
 
-  -- 2. Scaled fixed mana: `"{G} for each Elf you control"`, `"{C} for each Food you control"`, etc.
+  -- 2. Scaled fixed mana: `"{G} for each Elf you control"`, `"{G} for each charge counter on this enchantment"`, etc.
   if let some (symStr, objsStr) := splitFirstCI? s " for each " then
     if let some ts := parseManaTypeSeq? symStr then
+      if let some (ctrStr, hostStr) := (splitFirstCI? objsStr " counter on ").orElse
+          (fun _ => splitFirstCI? objsStr " counters on ") then
+        let ws := (splitWords ctrStr).toList.map lower
+        match CounterKind.ofPrefix ws, parseObjectExpr? hostStr with
+        | some (k, n), some host =>
+          if n == ws.length then
+            return some (.sequence (ts.map fun t => (t, .counterCount (some k) host)), false)
+        | _, _ => pure ()
       let objs? : Option ObjectExpr :=
         if let some subStr := dropSuffixCI? objsStr " you control" then
           match CardSubtype.ofOracle? subStr with
@@ -2772,6 +3083,14 @@ def parseManaSpecWithFormat (raw : String) (cardName : String := "") : Option (M
         else parseObjectExpr? objsStr
       if let some objs := objs? then
         return some (.sequence (ts.map fun t => (t, ValueExpr.count objs)), false)
+
+  -- 2b. Dynamic count prefix format from `ManaSpec.toOracle`: `"the number of charge counters on this permanent {G}"`
+  if s.endsWith "}" then
+    if let some (valStr, symTail) := splitLastCI? s " {" then
+      let symStr := "{" ++ symTail
+      if let some ts := parseManaTypeSeq? symStr then
+        if let some v := parseValueExpr valStr then
+          return some (.sequence (ts.map fun t => (t, v)), false)
 
   -- 3. CR 106.7 `"could produce"` palettes (Exotic Orchard / Reflecting Pool / general).
   if let some tail := dropPrefixCI? s "one mana of any color that " then
@@ -3133,7 +3452,7 @@ private def parseGrantedKeywordsList? (raw : String) : Option (Array KeywordAbil
     match parseKeywordAbility part with
     | some k => out := out.push k
     | none => return none
-  return some out
+  return some (out.qsort (fun a b => a.displayOrder < b.displayOrder))
 
 /-- Parse `"a <sub1> or a <sub2>..."` subtype list (for check-lands / unless-control clauses). -/
 private def parseOrSubtypes? (raw : String) : Option (Array CardSubtype) := Id.run do
@@ -3378,6 +3697,8 @@ def parseStaticAbilityLine (raw : String) (cardName : String := "") : Option (Ar
     return some #[StaticAbility.negativePowerAssignsAsPositive]
   if selfLow == "during combat, players can't cast spells or activate abilities that aren't mana abilities" then
     return some #[StaticAbility.noSpellsOrAbilitiesDuringCombat]
+  if selfLow == "spells with the chosen name can't be cast" then
+    return some #[StaticAbility.chosenNameSpellsCantBeCast]
   if selfLow.contains "power is equal to the number of card types among cards in all graveyards" &&
       selfLow.contains "toughness is equal to that number plus 1" then
     return some #[StaticAbility.ptEqualGraveyardCardTypes]
@@ -3622,7 +3943,14 @@ deriving Repr, Inhabited, BEq
 
 private def parseTriggerSubjectPred? (raw : String) (cardName : String) :
     Option (ObjectPred × Bool) := Id.run do
-  let s := cleanClause (replaceSelfName raw cardName "this permanent")
+  let s0 := cleanClause (replaceSelfName raw cardName "this permanent")
+  -- Normalize canonical `Expr.toOracle` `"a permanent permanent that is this permanent or <rest>"`
+  let s :=
+    if let some r := dropPrefixCI? s0 "a permanent permanent that is this permanent or " then
+      "this or " ++ r
+    else if let some r := dropPrefixCI? s0 "a permanent that is this permanent or " then
+      "this or " ++ r
+    else s0
   let (rest, isBatch) : String × Bool :=
     match dropPrefixCI? s "one or more " with
     | some r => (r, true)
@@ -3632,6 +3960,13 @@ private def parseTriggerSubjectPred? (raw : String) (cardName : String) :
     return some (.sameAs .this, isBatch)
   if rLow == "enchanted creature" || rLow == "enchanted permanent" || rLow == "equipped creature" then
     return some (.sameAs .attachedHost, isBatch)
+  -- `"this or another <rest>"` / `"this or <rest>"` (`Fíli`, `Balin`, `Thorin`, `Mabel`, `Proctor`)
+  if let some rhs := (dropPrefixCI? rest "this or another ").orElse
+      (fun _ => (dropPrefixCI? rest "this permanent or another ").orElse
+        (fun _ => (dropPrefixCI? rest "this creature or another ").orElse
+          (fun _ => dropPrefixCI? rest "this or "))) then
+    if let some np := parseNounPhrase rhs then
+      return some (.any #[.sameAs .this, np.filter.pred], isBatch)
   -- Strip leading `"a "` / `"an "` / `"another "` cleanly via `parseNounPhrase`.
   if let some np := parseNounPhrase rest then
     return some (np.filter.pred, isBatch)
@@ -3644,6 +3979,8 @@ private def parseStepClause? (clause : String) : Option TriggerPattern := Id.run
   if rest == "each upkeep" || rest == "each player's upkeep" then return some .stepEachUpkeep
   if rest == "each opponent's upkeep" || rest == "an opponent's upkeep" then
     return some (.stepBegins .upkeep (.player .opponent))
+  if rest == "the next upkeep" || rest == "each upkeep" || rest == "each player's upkeep" then
+    return some .stepEachUpkeep
   if rest == "the upkeep of enchanted creature's controller" then
     return some .stepEnchantedControllerUpkeep
   if rest == "your draw step" then return some (.stepBegins .draw (.player .you))
@@ -3663,6 +4000,20 @@ private def parseStepClause? (clause : String) : Option TriggerPattern := Id.run
     return some (.stepBegins .end (.player .opponent))
   return none
 
+private def parseOrdinalWord? (w : String) : Option Nat :=
+  match lower w with
+  | "first" | "1st" => some 1
+  | "second" | "2nd" => some 2
+  | "third" | "3rd" => some 3
+  | "fourth" | "4th" => some 4
+  | "fifth" | "5th" => some 5
+  | "sixth" | "6th" => some 6
+  | "seventh" | "7th" => some 7
+  | "eighth" | "8th" => some 8
+  | "ninth" | "9th" => some 9
+  | "tenth" | "10th" => some 10
+  | _ => none
+
 private partial def parseAtomicTriggerEvent? (clause : String) (cardName : String) :
     Option (TriggerPattern × BatchGrouping × TriggerLimit × Array ZoneKind) := Id.run do
   let s := cleanClause (replaceSelfName clause cardName "this permanent")
@@ -3672,16 +4023,53 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
   if let some sp := parseStepClause? s then
     return some (sp, .perOccurrence, .unlimited, #[.battlefield])
 
-  -- `"<A> and whenever <B>"` / `"<A> and when <B>"` disjunctions:
-  -- only merge into one `TriggeredAbility` when both clauses share identical
-  -- `BatchGrouping`, `TriggerLimit`, and `activeZones`; heterogeneous clauses
-  -- are split into independent abilities by `parseTriggerClauses`.
+  -- `"the Ring tempts you"` / `"you choose a creature as your Ring-bearer"` (CR 701.52)
+  if l == "the ring tempts you" then
+    return some (.playerAction .you .ringTempts, .perOccurrence, .unlimited, #[.battlefield])
+  if l == "you choose a creature as your ring-bearer" then
+    return some (.playerAction .you .chooseRingBearer, .perOccurrence, .unlimited, #[.battlefield])
+
+  -- `"the final chapter ability of a Saga you control resolves"` (`Tom Bombadil`)
+  if l == "the final chapter ability of a saga you control resolves" then
+    return some (.stackObjectResolves (.all #[.hasSubtype (.literal .saga), .controlledBy .you]) true,
+      .perOccurrence, .unlimited, #[.battlefield])
+
+  -- `"that mana is spent to cast a creature spell that shares a creature type with your commander"` (`Path of Ancestry`)
+  if l.startsWith "that mana is spent to cast " then
+    let castRest := (dropPrefixCI? s "that mana is spent to cast ").getD ""
+    if (lower castRest).contains "shares a creature type with your commander" then
+      let allZones : ZoneSetSpec :=
+        { zones := #[.library, .hand, .battlefield, .graveyard, .stack, .exile, .command], owner := .any }
+      let pred : ObjectPred := .all #[.hasType .creature, .shares .creatureType (.inZones allZones (.all #[.isCommander, .ownedBy .you]))]
+      return some (.castSpell .you pred (manaSpent? := some .fromSource), .perOccurrence, .unlimited, #[.battlefield])
+
+  -- `"the <ordinal> <counter> counter is put on <subj>"` (Plan / counter-threshold triggers, CR 714.2b)
+  if let some restThe := dropPrefixCI? s "the " then
+    if let some (ordCtr, onSubj) := splitFirstCI? restThe " counter is put on " then
+      let ws := splitWords ordCtr
+      if ws.size >= 2 then
+        if let some ord := parseOrdinalWord? ws[0]! then
+          let kWords := (ws.extract 1 ws.size).toList.map lower
+          if let some (k, _) := CounterKind.ofPrefix kWords then
+            if let some (pred, _) := parseTriggerSubjectPred? onSubj cardName then
+              return some (.putCounters none (some k) pred, .counterThreshold k #[ord], .unlimited, #[.battlefield])
+
+  -- `"<A> and whenever <B>"` / `"<A> and when <B>"` / `"<A> or <B>"` disjunctions:
   if let some (lhs, rhs) := (splitFirstCI? s " and whenever ").orElse
       (fun _ => splitFirstCI? s " and when ") then
     if let (some (p1, g1, l1, z1), some (p2, g2, l2, z2)) :=
         (parseAtomicTriggerEvent? lhs cardName, parseAtomicTriggerEvent? rhs cardName) then
       if g1 == g2 && l1 == l2 && z1 == z2 then
         return some (.or p1 p2, g1, l1, z1)
+
+  -- Homogeneous `"<ev1> or <ev2>"` (`Orcish Bowmasters`: `"this permanent enters or an opponent draws ..."`, `Danitha`: `"you cast an Equipment spell or you cast a spell that targets ..."`)
+  for sep in #[" or an opponent ", " or you ", " or a player "] do
+    if let some (lhs, rhsTail) := splitFirstCI? s sep then
+      let rhs := ((dropPrefixCI? sep " or ").getD "") ++ " " ++ rhsTail
+      if let (some (p1, g1, l1, z1), some (p2, g2, l2, z2)) :=
+          (parseAtomicTriggerEvent? lhs cardName, parseAtomicTriggerEvent? rhs cardName) then
+        if g1 == g2 && l1 == l2 && z1 == z2 then
+          return some (.or p1 p2, g1, l1, z1)
 
   -- Self/subject compound verbs: `"<subj> enters or attacks"` / `"enters or dies"` / `"attacks or blocks"`
   for (sfx, mkPat) in [
@@ -3709,14 +4097,55 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
     if let some rest := dropPrefixCI? s pfx then
       let rLow := lower rest
       -- Cast spell
-      if let some castBody := (dropPrefixCI? rest "cast ").orElse (fun _ => dropPrefixCI? rest "casts ") then
+      if let some castBody0 := (dropPrefixCI? rest "cast ").orElse (fun _ => dropPrefixCI? rest "casts ") then
+        -- Disjunctive cast trigger (`"an Equipment spell or a spell that targets <recip>"`, `Danitha`)
+        if let some (cLhs, cRhs) := splitFirstCI? castBody0 " or a spell that targets " then
+          let pfxVerb := pfx ++ "cast "
+          match parseAtomicTriggerEvent? (pfxVerb ++ cLhs) cardName,
+                parseAtomicTriggerEvent? (pfxVerb ++ "a spell that targets " ++ cRhs) cardName with
+          | some (p1, g1, l1, z1), some (p2, _, _, _) =>
+            return some (.or p1 p2, g1, l1, z1)
+          | _, _ => pure ()
+        -- Strip optional `"with one or more <color> mana symbols in its mana cost"` (`Namor`)
+        let castBody :=
+          match splitFirstCI? castBody0 " with one or more " with
+          | some (preSym, symTail) =>
+            if (lower symTail).contains "mana symbol" then preSym else castBody0
+          | none => castBody0
         let cLow := lower castBody
         if cLow == "this spell" || cLow == "this card" || cLow == "this permanent" then
           return some (.castSpell who (.sameAs .this), .perOccurrence, .unlimited, #[.stack])
-        if cLow == "your second spell each turn" || cLow == "their second spell each turn" then
-          return some (.castSpell who .anyObject (nthOfFilter? := some 2), .perOccurrence, .unlimited, #[.battlefield])
+        -- `"a spell that targets <recip>"` (`Danitha`, `Iron Fist`, `Ms. Marvel`)
+        if let some tgtPart := dropPrefixCI? castBody "a spell that targets " then
+          let tLow := lower tgtPart
+          let recip? : Option RecipientFilter :=
+            if tLow == "an opponent or a creature an opponent controls" then
+              some (.playerOrObject .opponent { zones := .battlefield, pred := .all #[.hasType .creature, .controlledBy .opponent] })
+            else if let some pf := parsePlayerFilter? tgtPart then
+              some (.player pf)
+            else if let some np := parseNounPhrase tgtPart then
+              some (.object np.filter)
+            else none
+          if let some recip := recip? then
+            return some (.castSpell who .anyObject (targets? := some recip), .perOccurrence, .unlimited, #[.battlefield])
+        -- `"your/their <ordinal> [<filter>] spell each turn"` (`The Queen of Dale`, `Saruman`)
+        if let some coreTurn := dropSuffixCI? castBody " each turn" then
+          let afterPoss? := (dropPrefixCI? coreTurn "your ").orElse (fun _ => dropPrefixCI? coreTurn "their ")
+          if let some afterPoss := afterPoss? then
+            let cws := splitWords afterPoss
+            if cws.size >= 2 then
+              if let some ord := parseOrdinalWord? cws[0]! then
+                let tailW := String.intercalate " " (cws.extract 1 cws.size).toList
+                let tailCore := (dropSuffixCI? tailW " spell").getD tailW
+                let pred : ObjectPred :=
+                  if lower tailCore == "spell" || tailCore.isEmpty then .anyObject
+                  else if lower tailCore == "noncreature" then .not (.hasType .creature)
+                  else (parseNounPhrase ("a " ++ tailCore)).map (·.filter.pred) |>.getD .anyObject
+                return some (.castSpell who pred (nthOfFilter? := some ord), .perOccurrence, .unlimited, #[.battlefield])
         if cLow == "a spell" then
           return some (.castSpell who .anyObject, .perOccurrence, .unlimited, #[.battlefield])
+        if cLow == "a prepared spell" then
+          return some (.castSpell who .anyObject (mustBePrepared := true), .perOccurrence, .unlimited, #[.battlefield])
         let (spellCore, fromZ?) : String × Option ZoneKind :=
           match dropSuffixCI? castBody " from your hand" with
           | some pre => (pre, some .hand)
@@ -3729,11 +4158,18 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
           return some (.castSpell who (.not (.hasType .creature)) (fromZone? := fromZ?),
             .perOccurrence, .unlimited, #[.battlefield])
         if let some np := parseNounPhrase spellCore then
-          return some (.castSpell who np.filter.pred (fromZone? := fromZ?),
+          let sp := match np.filter.pred with
+            | .isKind .spell => .anyObject
+            | .all ps => ObjectPred.andAll (ps.filter (· != .isKind .spell))
+            | other => other
+          return some (.castSpell who sp (fromZone? := fromZ?),
             .perOccurrence, .unlimited, #[.battlefield])
       -- Draw card
       if rLow == "draw a card" || rLow == "draws a card" then
         return some (.drawCard who, .perOccurrence, .unlimited, #[.battlefield])
+      if rLow == "draw a card except the first one they draw in each of their draw steps" ||
+          rLow == "draws a card except the first one they draw in each of their draw steps" then
+        return some (.drawCard who (exceptFirstDrawStep := true), .perOccurrence, .unlimited, #[.battlefield])
       if rLow == "draw your second card each turn" || rLow == "draws their second card each turn" then
         return some (.drawCard who, .perOccurrence, .nthEachTurn 2, #[.battlefield])
       -- Gain / lose life
@@ -3769,19 +4205,51 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
           return some (.sacrifice who pred, grp, .unlimited, #[.battlefield])
       -- Create tokens
       if let some tokStr := (dropPrefixCI? rest "create ").orElse (fun _ => dropPrefixCI? rest "creates ") then
-        if let some (pred, isBatch) := parseTriggerSubjectPred? tokStr cardName then
+        let tokCore := ((dropSuffixCI? tokStr " tokens").orElse fun _ => dropSuffixCI? tokStr " token") |>.getD tokStr
+        if let some (pred, isBatch) := parseTriggerSubjectPred? tokCore cardName then
           let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
           return some (.createTokens who pred, grp, .unlimited, #[.battlefield])
-      -- Activate loyalty / mana ability
+      -- Activate loyalty / mana / general ability
       if rLow == "activate a loyalty ability" || rLow == "activates a loyalty ability" then
         return some (.activateAbility who .anyObject (.loyalty 0), .perOccurrence, .unlimited, #[.battlefield])
       if rLow == "tap a permanent for mana" || rLow == "taps a permanent for mana" then
         return some (.activateAbility who .anyObject .manaAbility, .perOccurrence, .unlimited, #[.battlefield])
-      -- Attack (player-level `"Whenever you attack"`)
+      if let some tapBody := (dropPrefixCI? rest "tap ").orElse (fun _ => dropPrefixCI? rest "taps ") then
+        if let some permStr := dropSuffixCI? tapBody " for mana" then
+          if let some (pred, _) := parseTriggerSubjectPred? permStr cardName then
+            let fullPred :=
+              if (lower permStr).contains "control" then pred
+              else ObjectPred.andAll #[pred, .controlledBy who]
+            return some (.activateAbility who fullPred .manaAbility, .perOccurrence, .unlimited, #[.battlefield])
+      if let some srcStr := (dropPrefixCI? rest "activate a mana ability of ").orElse
+          (fun _ => dropPrefixCI? rest "activates a mana ability of ") then
+        if let some (pred, _) := parseTriggerSubjectPred? srcStr cardName then
+          return some (.activateAbility who pred .manaAbility, .perOccurrence, .unlimited, #[.battlefield])
+      if let some srcStr := (dropPrefixCI? rest "activate an ability of ").orElse
+          (fun _ => dropPrefixCI? rest "activates an ability of ") then
+        if let some (pred, _) := parseTriggerSubjectPred? srcStr cardName then
+          return some (.activateAbility who pred .any, .perOccurrence, .unlimited, #[.battlefield])
+      -- Attack (`"Whenever you attack"`, `"Whenever you attack with one or more <Sub>"`, `"Whenever you attack with creatures with total power N or greater [for the first time each turn]"`)
       if rLow == "attack" || rLow == "attacks" then
         return some (.attacks (.all #[.hasType .creature, .controlledBy who]),
           .oncePerBatch, .unlimited, #[.battlefield])
-      -- Put counters (`"you put one or more +1/+1 counters on <subj>"`)
+      if let some atkRest0 := (dropPrefixCI? rest "attack with ").orElse (fun _ => dropPrefixCI? rest "attacks with ") then
+        let (atkRest, firstTimeLimit) : String × TriggerLimit :=
+          match dropSuffixCI? atkRest0 " for the first time each turn" with
+          | some pre => (pre, .onceEachTurn)
+          | none => (atkRest0, .unlimited)
+        if let some (_, powPart) := splitFirstCI? atkRest " with total power " then
+          if let some nStr := dropSuffixCI? powPart " or greater" then
+            if let some n := parseNatWord? nStr then
+              return some (.attacks (.all #[.hasType .creature, .controlledBy who]) .any false 1 (some (Int.ofNat n)),
+                .oncePerBatch, firstTimeLimit, #[.battlefield])
+        if let some (pred, _) := parseTriggerSubjectPred? atkRest cardName then
+          let fullPred :=
+            match pred with
+            | .all ps => .all (ps.push (.controlledBy who))
+            | p => .all #[p, .controlledBy who]
+          return some (.attacks fullPred, .oncePerBatch, firstTimeLimit, #[.battlefield])
+      -- Put counters (`"you put one or more [+1/+1] counters on <subj>"`)
       if let some putRest := (dropPrefixCI? rest "put ").orElse (fun _ => dropPrefixCI? rest "puts ") then
         if let some (ctrPart, subjPart) := splitFirstCI? putRest " on " then
           let ctrLow := lower ctrPart
@@ -3797,7 +4265,36 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
             let grp := if isBatch || subjBatch then BatchGrouping.oncePerBatch else .perOccurrence
             return some (.putCounters (some who) kind? pred, grp, .unlimited, #[.battlefield])
 
-  -- Player dealt damage (`"you are dealt ..."`, `"an opponent is dealt ..."`, `"one or more opponents are dealt ..."`)
+  -- Counter threshold trigger (`"the fifth plan counter is put on this enchantment"`, `"the Nth <kind> counter is put on <subj>"`)
+  if let some rest := dropPrefixCI? s "the " then
+    if let some (ctrSpec, subjStr) := splitFirstCI? rest " counter is put on " then
+      let ws := splitWords ctrSpec
+      if ws.size >= 2 then
+        let ord? : Option Nat :=
+          match lower ws[0]! with
+          | "first" | "1st" => some 1
+          | "second" | "2nd" => some 2
+          | "third" | "3rd" => some 3
+          | "fourth" | "4th" => some 4
+          | "fifth" | "5th" => some 5
+          | "sixth" | "6th" => some 6
+          | "seventh" | "7th" => some 7
+          | "eighth" | "8th" => some 8
+          | "ninth" | "9th" => some 9
+          | "tenth" | "10th" => some 10
+          | _ => none
+        let kindWords := (ws.extract 1 ws.size).toList.map lower
+        match ord?, CounterKind.ofPrefix kindWords, parseTriggerSubjectPred? subjStr cardName with
+        | some n, some (k, consumed), some (pred, _) =>
+          if consumed == kindWords.length then
+            return some (.putCounters none (some k) pred, .counterThreshold k #[n], .unlimited, #[.battlefield])
+        | _, _, _ => pure ()
+
+  -- Player dealt damage (`"you are dealt ..."`, `"an opponent is dealt ..."`, `"one or more [of your] opponents are dealt ... [during your turn]"`)
+  let (sNoTurn, duringYourTurn) : String × Bool :=
+    match dropSuffixCI? s " during your turn" with
+    | some pre => (pre, true)
+    | none => (s, false)
   for (dmgSfx, combatOnly, noncombatOnly) in [
       (" is dealt combat damage", true, false),
       (" are dealt combat damage", true, false),
@@ -3806,20 +4303,23 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
       (" is dealt damage", false, false),
       (" are dealt damage", false, false)
     ] do
-    if let some whoStr := dropSuffixCI? s dmgSfx then
+    if let some whoStr := dropSuffixCI? sNoTurn dmgSfx then
       let wLow := lower whoStr
-      if wLow == "one or more opponents" then
-        return some (.damageDealt .anyObject (.player .opponent) combatOnly noncombatOnly,
+      if wLow == "one or more opponents" || wLow == "one or more of your opponents" then
+        return some (.damageDealt .anyObject (.player .opponent) combatOnly noncombatOnly duringYourTurn,
           .oncePerBatch, .unlimited, #[.battlefield])
       if let some pf := parsePlayerFilter? whoStr then
-        return some (.damageDealt .anyObject (.player pf) combatOnly noncombatOnly,
+        return some (.damageDealt .anyObject (.player pf) combatOnly noncombatOnly duringYourTurn,
           .perOccurrence, .unlimited, #[.battlefield])
       if let some (pred, isBatch) := parseTriggerSubjectPred? whoStr cardName then
-        let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
-        return some (.damageDealt .anyObject (.object { zones := .battlefield, pred }) combatOnly noncombatOnly,
+        let grp :=
+          if isBatch || pred == .sameAs .this then BatchGrouping.oncePerBatch
+          else if !combatOnly && !noncombatOnly then .perSourceInBatch
+          else .perOccurrence
+        return some (.damageDealt .anyObject (.object { zones := .battlefield, pred }) combatOnly noncombatOnly duringYourTurn,
           grp, .unlimited, #[.battlefield])
 
-  -- Subject deals damage (`"<subj> deals combat damage to a player [or planeswalker/battle]"`)
+  -- Subject deals damage (`"<subj> deals combat damage to a player [or planeswalker/battle] / to you"`)
   for (sfx, recip, combatOnly) in [
       (" deals combat damage to a player or planeswalker",
         RecipientFilter.playerOrObject .any { zones := .battlefield, pred := .hasType .planeswalker }, true),
@@ -3829,39 +4329,63 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
         RecipientFilter.playerOrObject .any { zones := .battlefield, pred := .hasType .battle }, true),
       (" deal combat damage to a player or battle",
         RecipientFilter.playerOrObject .any { zones := .battlefield, pred := .hasType .battle }, true),
+      (" deals combat damage to you", RecipientFilter.player .you, true),
+      (" deal combat damage to you", RecipientFilter.player .you, true),
       (" deals combat damage to a player", RecipientFilter.player .any, true),
       (" deal combat damage to a player", RecipientFilter.player .any, true),
+      (" deals damage to you", RecipientFilter.player .you, false),
+      (" deal damage to you", RecipientFilter.player .you, false),
       (" deals damage to a player", RecipientFilter.player .any, false),
       (" deal damage to a player", RecipientFilter.player .any, false)
     ] do
     if let some subjStr := dropSuffixCI? s sfx then
       if let some (pred, isBatch) := parseTriggerSubjectPred? subjStr cardName then
-        let grp := if isBatch then BatchGrouping.perPlayerInBatch else .perOccurrence
+        let grp := if isBatch then (if recip == .player .you then BatchGrouping.oncePerBatch else .perPlayerInBatch) else .perOccurrence
         return some (.damageDealt pred recip combatOnly, grp, .unlimited, #[.battlefield])
 
-  -- Combat declarations (`attacks alone`, `attacks a player`, `attacks`, `blocks`, `becomes blocked`)
+  -- Combat declarations (`attacks alone`, `attacks a player`, `attacks an opponent`, `attacks you or a planeswalker you control`, `N or more ... attack ...`, `attacks`, `blocks`, `becomes blocked`)
   for (sfx, mkPat) in [
-      (" attacks a player alone", fun p => TriggerPattern.attacks p (.player .any) (alone := true)),
-      (" attacks alone", fun p => TriggerPattern.attacks p .any (alone := true)),
-      (" attacks a player", fun p => TriggerPattern.attacks p (.player .any)),
-      (" attack a player", fun p => TriggerPattern.attacks p (.player .any)),
-      (" attacks", fun p => TriggerPattern.attacks p),
-      (" attack", fun p => TriggerPattern.attacks p),
-      (" blocks", fun p => TriggerPattern.blocks p),
-      (" block", fun p => TriggerPattern.blocks p),
-      (" becomes blocked", fun p => TriggerPattern.becomesBlocked p)
+      (" attacks a player alone", fun p n => TriggerPattern.attacks p (.player .any) (alone := true) (minAttackers := n)),
+      (" attacks alone", fun p n => TriggerPattern.attacks p .any (alone := true) (minAttackers := n)),
+      (" attacks you or a planeswalker you control", fun p n => TriggerPattern.attacks p (.playerOrPlaneswalker .you) (minAttackers := n)),
+      (" attack you or a planeswalker you control", fun p n => TriggerPattern.attacks p (.playerOrPlaneswalker .you) (minAttackers := n)),
+      (" attacks one of your opponents", fun p n => TriggerPattern.attacks p (.player .opponent) (minAttackers := n)),
+      (" attack one of your opponents", fun p n => TriggerPattern.attacks p (.player .opponent) (minAttackers := n)),
+      (" attacks an opponent", fun p n => TriggerPattern.attacks p (.player .opponent) (minAttackers := n)),
+      (" attack an opponent", fun p n => TriggerPattern.attacks p (.player .opponent) (minAttackers := n)),
+      (" attacks a player", fun p n => TriggerPattern.attacks p (.player .any) (minAttackers := n)),
+      (" attack a player", fun p n => TriggerPattern.attacks p (.player .any) (minAttackers := n)),
+      (" attacks", fun p n => TriggerPattern.attacks p (minAttackers := n)),
+      (" attack", fun p n => TriggerPattern.attacks p (minAttackers := n)),
+      (" blocks", fun p _ => TriggerPattern.blocks p),
+      (" block", fun p _ => TriggerPattern.blocks p),
+      (" becomes blocked", fun p _ => TriggerPattern.becomesBlocked p)
     ] do
-    if let some subjStr := dropSuffixCI? s sfx then
+    if let some subjStr0 := dropSuffixCI? s sfx then
+      let (subjStr, minN, forceBatch) : String × Nat × Bool :=
+        match splitFirstCI? subjStr0 " or more " with
+        | some (nStr, restS) =>
+          match parseNatWord? nStr with
+          | some n => (restS, n, true)
+          | none => (subjStr0, 1, false)
+        | none => (subjStr0, 1, false)
       if let some (pred, isBatch) := parseTriggerSubjectPred? subjStr cardName then
-        let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
-        return some (mkPat pred, grp, .unlimited, #[.battlefield])
+        let pat := mkPat pred minN
+        let grp :=
+          if isBatch || forceBatch then
+            match pat with
+            | .attacks _ (.player _) _ _ _ _ => BatchGrouping.perPlayerInBatch
+            | _ => .oncePerBatch
+          else .perOccurrence
+        return some (pat, grp, .unlimited, #[.battlefield])
 
   -- Targeting (`"<subj> becomes the target of ..."`)
   for (sfx, byCtrl, srcKind) in [
       (" becomes the target of a spell or ability an opponent controls", PlayerFilter.opponent, TargetingSourceKind.spellOrAbility),
       (" becomes the target of an ability you control", PlayerFilter.you, TargetingSourceKind.ability),
       (" becomes the target of a spell you control", PlayerFilter.you, TargetingSourceKind.spell),
-      (" becomes the target of a spell or ability", PlayerFilter.any, TargetingSourceKind.spellOrAbility)
+      (" becomes the target of a spell or ability", PlayerFilter.any, TargetingSourceKind.spellOrAbility),
+      (" becomes the target of a spell", PlayerFilter.any, TargetingSourceKind.spell)
     ] do
     if let some subjStr := dropSuffixCI? s sfx then
       if lower subjStr == "a player or permanent" then
@@ -3870,7 +4394,13 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
         return some (.becomesTarget (.object pred) byCtrl srcKind, .perOccurrence, .unlimited, #[.battlefield])
 
   -- Tap / untap / phase out / unattach (CR 603.2e / 603.10b–c)
+  if let some subjStr := dropSuffixCI? s " becomes tapped to pay a teamwork cost" then
+    if let some (pred, isBatch) := parseTriggerSubjectPred? subjStr cardName then
+      let grp := if isBatch then BatchGrouping.oncePerBatch else .perOccurrence
+      return some (.becomesTapped pred false false (some .teamwork), grp, .unlimited, #[.battlefield])
   for (sfx, mkPat) in [
+      (" becomes tapped during your turn", fun p => TriggerPattern.becomesTapped p true),
+      (" become tapped during your turn", fun p => TriggerPattern.becomesTapped p true),
       (" becomes tapped", fun p => TriggerPattern.becomesTapped p),
       (" become tapped", fun p => TriggerPattern.becomesTapped p),
       (" becomes untapped", fun p => TriggerPattern.becomesUntapped p),
@@ -3894,10 +4424,19 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
       (" die", fun p => TriggerPattern.permanentDies p),
       (" leaves the battlefield", fun p => TriggerPattern.permanentLeaves p),
       (" leave the battlefield", fun p => TriggerPattern.permanentLeaves p),
+      (" leaves your graveyard", fun p => TriggerPattern.zoneChange p (.inZones .yourGraveyard) (.notIn .graveyard)),
+      (" leave your graveyard", fun p => TriggerPattern.zoneChange p (.inZones .yourGraveyard) (.notIn .graveyard)),
+      (" leaves a graveyard", fun p => TriggerPattern.zoneChange p (.inZones .anyGraveyard) (.notIn .graveyard)),
+      (" leave a graveyard", fun p => TriggerPattern.zoneChange p (.inZones .anyGraveyard) (.notIn .graveyard)),
       (" is put into a graveyard from the battlefield", fun p => TriggerPattern.permanentDies p),
+      (" are put into a graveyard from the battlefield", fun p => TriggerPattern.permanentDies p),
       (" is put into your graveyard from anywhere",
         fun p => TriggerPattern.zoneChange p .any (.inZones .yourGraveyard)),
+      (" are put into your graveyard from anywhere",
+        fun p => TriggerPattern.zoneChange p .any (.inZones .yourGraveyard)),
       (" is put into a graveyard from anywhere",
+        fun p => TriggerPattern.zoneChange p .any (.inZones .anyGraveyard)),
+      (" are put into a graveyard from anywhere",
         fun p => TriggerPattern.zoneChange p .any (.inZones .anyGraveyard)),
       (" is returned to its owner's hand",
         fun p => TriggerPattern.zoneChange p (.inZones .battlefield)
@@ -3941,8 +4480,9 @@ header; heterogeneous clauses split into separate headers when `trailingLimit` i
 `.unlimited` so each clause preserves its own `BatchGrouping`, `TriggerLimit`,
 and `activeZones`. -/
 def parseTriggerClauses (raw : String) (cardName : String := "") : Array ParsedTriggerHeader := Id.run do
-  let cleaned := cleanClause (stripReminderText raw)
-  if cleaned.isEmpty then return #[]
+  let cleaned0 := cleanClause (stripReminderText raw)
+  if cleaned0.isEmpty then return #[]
+  let cleaned := if cardName.contains ',' then replaceSelfName cleaned0 cardName "this permanent" else cleaned0
 
   -- Peel trailing turn-limit sentences
   let (withoutLimit, trailingLimit) : String × TriggerLimit :=
@@ -3968,69 +4508,154 @@ def parseTriggerClauses (raw : String) (cardName : String := "") : Array ParsedT
     else
       return #[]
 
-  -- Split event clause from effect/intervening-if at the first `", "`
-  let some (eventRaw, afterComma) := splitFirstCI? afterWord ", " | return #[]
+  -- Try each comma split point in `afterWord` so Oxford commas inside the trigger event
+  -- (e.g. `"a Goblin, Orc, or Army you control, this creature deals 2 damage..."`) don't split prematurely.
+  let commaSplits := splitAllCI afterWord ", "
+  if commaSplits.isEmpty then return #[]
 
-  -- Peel CR 603.4 intervening `"if <cond>, <effect>"` at the start of `afterComma`
-  let (interveningIf?, effectText) : Option Condition × String :=
-    if let some ifRest := dropPrefixCI? afterComma "if " then
-      match splitFirstCI? ifRest ", " with
-      | some (condStr, restEff) =>
+  for (eventRaw, afterComma) in commaSplits.reverse do
+    -- Peel special trigger-pattern refinements disguised as intervening-if:
+    -- `"if it's the first time that creature has become tapped this turn, "` -> `firstTimeThisTurn := true`
+    -- `"if that amount is N or greater, "` -> `ActivatedTriggerKind.loyalty N`
+    let mut firstTimeTap := false
+    let mut loyaltyMin? : Option Nat := none
+    let mut afterComma1 := afterComma
+    if let some rest1 := dropPrefixCI? afterComma1 "if it's the first time that creature has become tapped this turn, " then
+      firstTimeTap := true
+      afterComma1 := rest1
+    else if let some rest1 := dropPrefixCI? afterComma1 "if that amount is " then
+      if let some (nStr, rest2) := splitFirstCI? rest1 " or greater, " then
+        if let some n := parseNatWord? nStr then
+          loyaltyMin? := some n
+          afterComma1 := rest2
+    else if let some rest1 := dropPrefixCI? afterComma1 "if you removed " then
+      if let some (nStr, rest2) := splitFirstCI? rest1 " or more loyalty counters to activate it, " then
+        if let some n := parseNatWord? nStr then
+          loyaltyMin? := some n
+          afterComma1 := rest2
+
+    -- Peel CR 603.4 intervening `"if <cond>, <effect>"` at the start of `afterComma1`
+    let (interveningIf?, effectText) : Option Condition × String :=
+      if let some ifRest := dropPrefixCI? afterComma1 "if " then
+        -- Don't steal `"if <cond>, <then>. Otherwise, <else>"` which is an effect-level `Instruction.ifCond`!
+        if (lower ifRest).contains ". otherwise," then
+          (none, afterComma1.trimAscii.copy)
+        else
+          match splitFirstCI? ifRest ", " with
+          | some (condStr, restEff) =>
+            let cond? := (parseStaticCondition? condStr cardName).orElse (fun _ => parseCondition condStr)
+            match cond? with
+            | some c => (some c, restEff.trimAscii.copy)
+            | none => (none, afterComma1.trimAscii.copy)
+          | none => (none, afterComma1.trimAscii.copy)
+      else (none, afterComma1.trimAscii.copy)
+
+    if effectText.isEmpty then continue
+
+    let effLow := lower effectText
+    let refinePat (p : TriggerPattern) : TriggerPattern :=
+      let p1 :=
+        if firstTimeTap then
+          match p with
+          | .becomesTapped subj d _ ck => .becomesTapped subj d true ck
+          | other => other
+        else p
+      let p2 :=
+        match loyaltyMin? with
+        | some n =>
+          match p1 with
+          | .activateAbility act src (.loyalty _) => .activateAbility act src (.loyalty n)
+          | other => other
+        | none => p1
+      if effLow.contains "that many" || effLow.contains "that amount" || effLow.contains "that much" then
+        match p2 with
+        | .attacks subj tgt alone minAtk minPow _ => .attacks subj tgt alone minAtk minPow true
+        | other => other
+      else p2
+    let inferZones (baseZones : Array ZoneKind) : Array ZoneKind :=
+      if baseZones == #[.battlefield] && effLow.contains "from your graveyard" &&
+          (effLow.contains "return this card" || effLow.contains s!"return {lower cardName}") then
+        #[.graveyard]
+      else baseZones
+
+    let peelWhile (ev : String) : String × Option Condition :=
+      match splitFirstCI? ev " while " with
+      | some (evPart, condStr) =>
         let cond? := (parseStaticCondition? condStr cardName).orElse (fun _ => parseCondition condStr)
         match cond? with
-        | some c => (some c, restEff.trimAscii.copy)
-        | none => (none, afterComma.trimAscii.copy)
-      | none => (none, afterComma.trimAscii.copy)
-    else (none, afterComma.trimAscii.copy)
-
-  if effectText.isEmpty then return #[]
-
-  let effLow := lower effectText
-  let inferZones (baseZones : Array ZoneKind) : Array ZoneKind :=
-    -- Infer graveyard active zone when the effect returns this card from your graveyard (CR 113.6m)
-    if baseZones == #[.battlefield] && effLow.contains "from your graveyard" &&
-        (effLow.contains "return this card" || effLow.contains s!"return {lower cardName}") then
-      #[.graveyard]
-    else baseZones
-
-  let peelWhile (ev : String) : String × Option Condition :=
-    match splitFirstCI? ev " while " with
-    | some (evPart, condStr) =>
-      let cond? := (parseStaticCondition? condStr cardName).orElse (fun _ => parseCondition condStr)
-      match cond? with
-      | some c => (evPart, some c)
+        | some c => (evPart, some c)
+        | none => (ev, none)
       | none => (ev, none)
-    | none => (ev, none)
 
-  -- Fast path: single atomic event or homogeneous `"and when/whenever"` `.or`
-  let (eventCore, whileCond?) := peelWhile eventRaw
-  if let some (basePat, grouping, patLimit, baseZones) := parseAtomicTriggerEvent? eventCore cardName then
-    let pattern := match whileCond? with | some c => .whenCond basePat c | none => basePat
-    let limit := if trailingLimit != .unlimited then trailingLimit else patLimit
-    return #[{ word, pattern, grouping, interveningIf?, activeZones := inferZones baseZones, limit, effectText }]
+    -- In `"Whenever a Forest you control enters, if you control at least five other Forests, ..."`,
+    -- `"other"` in the intervening `"if"` refers to the entering object (`.triggerSubject`),
+    -- not `this` permanent (CR 603.4, e.g. *Roiling Canopy*).
+    let predHasThis (p : ObjectPred) : Bool :=
+      let rec go : ObjectPred → Bool
+        | .sameAs .this => true
+        | .all xs | .any xs => xs.attach.any fun ⟨x, _⟩ => go x
+        | _ => false
+      go p
+    let rec replaceOtherThisPred : ObjectPred → ObjectPred
+      | .otherThan .this => .otherThan .triggerSubject
+      | .all xs => .all (xs.attach.map fun ⟨x, _⟩ => replaceOtherThisPred x)
+      | .any xs => .any (xs.attach.map fun ⟨x, _⟩ => replaceOtherThisPred x)
+      | .not p => .not (replaceOtherThisPred p)
+      | other => other
+    let refineInterv (pat : TriggerPattern) (cond? : Option Condition) : Option Condition :=
+      match pat, cond? with
+      | .zoneChange subjPred _ _ _ _, some (.cmp op (.aggregate agg m (.inZones zs pred)) rhs) =>
+        if !predHasThis subjPred then
+          some (.cmp op (.aggregate agg m (.inZones zs (replaceOtherThisPred pred))) rhs)
+        else cond?
+      | _, _ => cond?
 
-  -- Heterogeneous `"<A> and when/whenever <B>"`: split into independent headers
-  -- when no shared trailing once-per-turn cap couples them.
-  if trailingLimit != .unlimited then return #[]
-  let parts := splitTriggerDisjunctClauses word eventCore
-  if parts.size < 2 then return #[]
-  let mut out : Array ParsedTriggerHeader := #[]
-  for (wPart, rawPart) in parts do
-    let (corePart, partWhile?) := peelWhile rawPart
-    let some (basePat, grouping, patLimit, baseZones) := parseAtomicTriggerEvent? corePart cardName
-      | return #[]
-    let pat1 := match partWhile? with | some c => .whenCond basePat c | none => basePat
-    let pattern := match whileCond? with | some c => .whenCond pat1 c | none => pat1
-    out := out.push {
-      word := wPart
-      pattern
-      grouping
-      interveningIf?
-      activeZones := inferZones baseZones
-      limit := patLimit
-      effectText
-    }
-  return out
+    let canPrintManaSpent : ManaSpentPred → Bool
+      | .fromTreasure | .fromSource | .ofColor _ => true
+      | _ => false
+    let foldManaSpent (pat : TriggerPattern) (cond? : Option Condition) : TriggerPattern × Option Condition :=
+      match pat, cond? with
+      | .castSpell caster sp fromZ? none prep nth? tgt?, some (.castPred (.manaSpentMatches ms .this)) =>
+        if canPrintManaSpent ms then
+          (.castSpell caster sp fromZ? (some ms) prep nth? tgt?, none)
+        else (pat, cond?)
+      | _, _ => (pat, cond?)
+
+    -- Fast path: single atomic event or homogeneous `"and when/whenever"` `.or`
+    let (eventCore, whileCond?) := peelWhile eventRaw
+    if let some (basePat0, grouping, patLimit, baseZones) := parseAtomicTriggerEvent? eventCore cardName then
+      let (basePat, interv?) := foldManaSpent (refinePat basePat0) (refineInterv basePat0 interveningIf?)
+      let pattern := match whileCond? with | some c => .whenCond basePat c | none => basePat
+      let limit := if trailingLimit != .unlimited then trailingLimit else patLimit
+      return #[{ word, pattern, grouping, interveningIf? := interv?, activeZones := inferZones baseZones, limit, effectText }]
+
+    -- Heterogeneous `"<A> and when/whenever <B>"`: split into independent headers
+    -- when no shared trailing once-per-turn cap couples them.
+    if trailingLimit == .unlimited then
+      let parts := splitTriggerDisjunctClauses word eventCore
+      if parts.size >= 2 then
+        let mut out : Array ParsedTriggerHeader := #[]
+        let mut allOk := true
+        for (wPart, rawPart) in parts do
+          let (corePart, partWhile?) := peelWhile rawPart
+          match parseAtomicTriggerEvent? corePart cardName with
+          | none => allOk := false; break
+          | some (basePat0, grouping, patLimit, baseZones) =>
+            let (basePat, interv?) := foldManaSpent (refinePat basePat0) (refineInterv basePat0 interveningIf?)
+            let pat1 := match partWhile? with | some c => .whenCond basePat c | none => basePat
+            let pattern := match whileCond? with | some c => .whenCond pat1 c | none => pat1
+            out := out.push {
+              word := wPart
+              pattern
+              grouping
+              interveningIf? := interv?
+              activeZones := inferZones baseZones
+              limit := patLimit
+              effectText
+            }
+        if allOk && !out.isEmpty then
+          return out
+  return #[]
 
 /-- Single-header convenience wrapper around `parseTriggerClauses`. Returns `none`
 when the line splits into multiple heterogeneous triggers. -/

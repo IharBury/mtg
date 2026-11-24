@@ -380,36 +380,92 @@ def activated (effect : Effect) (mana : ManaCost := ManaCost.empty)
     (putStunCounterOnSource : Bool := false)
     (sacrificeEquipmentAttachedToSource : Bool := false) :
     ActivatedAbility :=
-  OracleActivate.activated effect mana
-    (tap := tap) (sacrificeSource := sacrificeSource)
-    (sacrificeAnotherCreatureOrArtifact := sacrificeAnotherCreatureOrArtifact)
-    (timing := timing) (activeZones := activeZones)
-    (turnLimit? := turnLimit?) (lifetimeLimit? := lifetimeLimit?)
-    (condition? := condition?) (costReductions := costReductions) (tag? := tag?)
-    (extraModes := extraModes) (payLife := payLife)
-    (discardSource := discardSource)
-    (sacrificeAnotherSubtype := sacrificeAnotherSubtype)
-    (sacrificeAnotherCreature := sacrificeAnotherCreature)
-    (discardACard := discardACard)
-    (tapAnUntappedCreatureYouControl := tapAnUntappedCreatureYouControl)
-    (removeIndestructibleCounter := removeIndestructibleCounter)
-    (sacrificeLegendaryArtifact := sacrificeLegendaryArtifact)
-    (discardLegendarySameName := discardLegendarySameName)
-    (sacrificeArtifact := sacrificeArtifact)
-    (sacrificeArtifactOrCreature := sacrificeArtifactOrCreature)
-    (sacrificeArtifactOrDiscardNonland := sacrificeArtifactOrDiscardNonland)
-    (removeAnyNumberPlusOne := removeAnyNumberPlusOne)
-    (putStunCounterOnSource := putStunCounterOnSource)
-    (sacrificeEquipmentAttachedToSource := sacrificeEquipmentAttachedToSource)
+  let items : Array CostItem := Id.run do
+    let mut out : Array CostItem := #[]
+    if !mana.symbols.isEmpty then out := out.push (.mana mana)
+    if tap then out := out.push .tapSelf
+    if payLife != 0 then out := out.push (.payLife (.const payLife))
+    if discardSource then out := out.push (.discard (.exact 1) .self)
+    if sacrificeSource then out := out.push (.sacrifice (.exact 1) .self)
+    if sacrificeAnotherCreatureOrArtifact then
+      out := out ++ CostSpec.sacrificeAnotherCreatureOrArtifactSpec.items
+    if sacrificeArtifact && !(sacrificeSource && sacrificeLegendaryArtifact) then
+      out := out ++ CostSpec.sacrificeArtifact.items
+    if let some t := sacrificeAnotherSubtype then
+      out := out ++ (CostSpec.sacrificeAnotherSubtype t).items
+    if sacrificeAnotherCreature then
+      out := out ++ CostSpec.sacrificeAnotherCreature.items
+    if discardACard then out := out ++ CostSpec.discardCard.items
+    if sacrificeArtifactOrCreature then
+      out := out ++ CostSpec.sacrificeArtifactOrCreature.items
+    if sacrificeArtifactOrDiscardNonland then
+      out := out ++ CostSpec.sacrificeArtifactOrDiscardNonland.items
+    if removeAnyNumberPlusOne then
+      out := out.push (.removeCounters .anyNumber (some .plusOnePlusOne) .self)
+    if putStunCounterOnSource then
+      out := out.push (.putCounters (.const 1) .stun .self)
+    if sacrificeEquipmentAttachedToSource then
+      out := out ++ CostSpec.sacrificeEquipmentAttached.items
+    if tapAnUntappedCreatureYouControl then
+      out := out ++ CostSpec.tapUntappedCreature.items
+    if removeIndestructibleCounter then
+      out := out.push (.removeCounters (.exact 1) (some .indestructible) .self)
+    if sacrificeLegendaryArtifact then
+      out := out ++ CostSpec.sacrificeLegendaryArtifactSpec.items
+    if discardLegendarySameName then
+      out := out ++ CostSpec.discardLegendarySameName.items
+    return out
+  let equipSub? : Option CardSubtype :=
+    match tag? with
+    | some (.equip (some (.hasSubtype (.literal sub)))) => some sub
+    | _ => none
+  let isWorthyEquip : Bool :=
+    match tag? with
+    | some (.equip (some pred)) => pred == ObjectPred.worthy
+    | _ => false
+  let effLifetime :=
+    match lifetimeLimit?, tag? with
+    | some n, _ => some n
+    | none, some .powerUp | none, some .exhaust => some 1
+    | none, _ => none
+  let effTurnLimit :=
+    match turnLimit?, tag? with
+    | some n, _ => some n
+    | none, some .boast => some 1
+    | none, _ => none
+  let effCond :=
+    if tag? == some .boast then
+      Condition.andOpt condition? (some ActivatedAbility.condSourceAttackedThisTurn)
+    else condition?
+  let baseEff : Effect :=
+    if effect == Effect.attachToTargetCreatureYouControl && (equipSub?.isSome || isWorthyEquip) then
+      Effect.equipEffect equipSub? isWorthyEquip
+    else effect
+  let finalEff : Effect :=
+    if extraModes.isEmpty then baseEff
+    else { body := .chooseModes { modes := #[baseEff] ++ extraModes } }
+  { cost := { items }
+    effect := finalEff
+    timing
+    activeZones
+    turnLimit? := effTurnLimit
+    lifetimeLimit? := effLifetime
+    condition? := effCond
+    costReductions
+    tag? }
 
 /-- Equip `mana`: attach to target creature you control, only as a sorcery.
 `subtype` restricts Equip to that creature type (e.g. Equip Human). -/
 def equipAbility (mana : ManaCost) (subtype : Option CardSubtype := none) : ActivatedAbility :=
-  OracleActivate.equipAbility mana (subtype := subtype)
+  activated (Effect.equipEffect subtype false) mana
+    (timing := .sorcery)
+    (tag? := some (.equip (subtype.map fun s => .hasSubtype (.literal s))))
 
 /-- Equip worthy `mana` (MSH): attach only to a worthy creature. -/
 def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
-  OracleActivate.equipWorthyAbility mana
+  activated (Effect.equipEffect none true) mana
+    (timing := .sorcery)
+    (tag? := some (.equip (some ObjectPred.worthy)))
 
 /-- Equipment with a standard Equip cost (CR 301.5 / 702.6). -/
 @[irreducible, noinline] def equipment (name : String) (manaCost : ManaCost) (oracleText : String)
@@ -435,7 +491,10 @@ def equipWorthyAbility (mana : ManaCost) : ActivatedAbility :=
 card, put it into your hand, then shuffle (CR 702.29). -/
 def typecyclingAbility (landType : String) (mana : ManaCost := ManaCost.ofGeneric 1) :
     ActivatedAbility :=
-  OracleActivate.typecyclingAbility landType mana
+  activated (Effect.searchLandTypeToHand landType) mana
+    (activeZones := #[.hand])
+    (tag? := some (.cycling (some landType)))
+    (discardSource := true)
 
 /-- Adventure characteristics used while the card is a spell (CR 715.2). -/
 def adventure (name : String) (manaCost : ManaCost) (_oracleText : String)
@@ -567,7 +626,7 @@ def copies (n : Nat) (c : CardDef) : Array CardDef :=
 the source entered this turn). -/
 def powerUpAbility (effect : Effect) (mana : ManaCost)
     (tap : Bool := false) : ActivatedAbility :=
-  OracleActivate.powerUpAbility effect mana (tap := tap)
+  activated effect mana (tap := tap) (lifetimeLimit? := some 1) (tag? := some .powerUp)
 
 /-- `{T}: Add {A} or {B}.` for a dual land's two colors. -/
 def dualAddClause (a b : Color) : String :=

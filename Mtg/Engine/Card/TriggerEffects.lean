@@ -124,10 +124,6 @@ def triggerExileTop : Effect :=
       grantPlayPerm? := some { duration := .untilEndOfNextTurnOf .you, landsAllowed := true }
     } }
 
-/-- Discard `n` cards. -/
-def triggerDiscard (n : Nat := 1) : Effect :=
-  { body := Instruction.discardFixed n }
-
 /-- You may discard a card. If you do, draw `n` card(s). -/
 def triggerMayDiscardDraw (n : Nat) : Effect :=
   { body := Instruction.may .you (some CostSpec.discardCard) (Instruction.drawFixed n) }
@@ -149,10 +145,6 @@ def triggerMillPlayer (n : Nat) : Effect :=
 /-- Investigate (create a Clue token; CR 701.16). -/
 def triggerInvestigate : Effect :=
   { body := Instruction.createTokensFixed .clue 1 }
-
-/-- The triggering creature gets +P/+T until end of turn. -/
-def triggerPumpCause (power toughness : Int) : Effect :=
-  { body := Instruction.pumpFixed .triggerSubject power toughness }
 
 /-- Search your library for a Forest card, put it onto the battlefield, then shuffle. -/
 def triggerSearchForest : Effect :=
@@ -197,10 +189,6 @@ def triggerReturnCreatureFromGyToHand : Effect :=
 def triggerPlusOneEachYouControl : Effect :=
   { body := Instruction.putPlusOne creaturesYouControlExpr 1 }
 
-/-- Put a +1/+1 counter on each permanent of `subtype` you control. -/
-def triggerPlusOneEachSubtypeYouControl (subtype : CardSubtype) : Effect :=
-  { body := Instruction.putPlusOne (subtypeYouControlExpr subtype) 1 }
-
 /-- Put a +1/+1 counter on each creature you control, or two if you have the city's blessing. -/
 def triggerPlusOneEachCitysBlessing : Effect :=
   { body := .ifCond (.playerPred .you (.hasDesignation .citysBlessing))
@@ -243,11 +231,6 @@ def triggerPumpByLookedAt : Effect :=
 /-- This creature gets +X/+0 until end of turn, where X is the greatest power among creatures you control. -/
 def triggerPumpGreatestPower : Effect :=
   { body := Instruction.pump .this (.aggregate .max (.stat .power) creaturesYouControlExpr) (.const 0) }
-
-/-- This creature gets +1/+1 until end of turn for each other creature you control. -/
-def triggerPumpForEachOtherCreature : Effect :=
-  let otherCount := ValueExpr.count otherCreaturesYouControlExpr
-  { body := Instruction.pump .this otherCount otherCount }
 
 /-- This creature deals `n` damage to each creature blocking it. -/
 def triggerDamageBlockers (n : Nat) : Effect :=
@@ -302,15 +285,6 @@ def triggerTapOppOrUntapYours : Effect :=
       ]
     } }
 
-/-- Gain control of target creature an opponent controls until end of turn. Untap it. It gains haste until end of turn. -/
-def triggerGainControlOppUntilEot : Effect :=
-  { targets := .oppCreature
-    body := .seq #[
-      .installEffect (.applyContinuous .untilEndOfTurn (.target 0) (.gainControl .you)),
-      Instruction.untap (.target 0),
-      Instruction.grantKeywords (.target 0) #[Keyword.haste]
-    ] }
-
 /-- You may pay `{1}{G}{U}`. If you do, return this card from your graveyard to your hand. -/
 def triggerPayReturnFromGy : Effect :=
   { body := Instruction.may .you
@@ -363,7 +337,7 @@ def triggerDrawThenBottomIfNoLegendary : Effect :=
       Instruction.drawFixed 1,
       Instruction.ifThen
         (.not (.exists (.inZones .battlefield (.all #[.hasSupertype .legendary, .hasType .creature, .controlledBy .you]))))
-        (.moveZone (.inZones (.handOf .you) .anyObject) (.library .owner .bottom) .put {
+        (.moveZone (.inZones .yourHand .anyObject) (.library .owner .bottom) .put {
           choice? := some { chooser := .controller, count := .exact (.const 1) }
         })
     ] }
@@ -381,7 +355,7 @@ def triggerRemoveHopeDrawSac : Effect :=
 def triggerTapHumansDraw : Effect :=
   { body := .bind ⟨0⟩
       (.permanent (.setTapped
-        (.inZones .battlefield (.all #[.hasSubtype (.literal .human), .controlledBy .you, .tapped false]))
+        (.inZones .battlefield (.all #[.tapped false, .hasSubtype (.literal .human), .controlledBy .you]))
         true (choice? := some { chooser := .controller, count := .anyNumber })))
       (Instruction.draw (.stepMetric .movedCount ⟨0⟩)) }
 
@@ -657,10 +631,10 @@ def triggerBelladonnaTokenReward : Effect :=
 /-- Bolg reflexive damage + excess amass Goblins. -/
 def triggerBolgDealSacrificedPower : Effect :=
   { targets := .anotherCreature
-    body := .bind ⟨1⟩
+    body := .bind ⟨0⟩
       (Instruction.dealDamage (.targetSlot 0) (.objectStat .power .triggerSubject) .this { trackExcess := true })
-      (Instruction.ifThen (.cmp .gt (.stepMetric .excessDamage ⟨1⟩) (.const 0))
-        (Instruction.amass (.stepMetric .excessDamage ⟨1⟩) .goblin)) }
+      (Instruction.ifThen (.cmp .gt (.stepMetric .excessDamage ⟨0⟩) (.const 0))
+        (Instruction.amass (.stepMetric .excessDamage ⟨0⟩) .goblin)) }
 
 /-- Bolg enters: you may sacrifice another creature; when you do, deal its power to another creature and amass excess. -/
 def triggerBolgMaySacrifice : Effect :=
@@ -674,7 +648,7 @@ def triggerBolgMaySacrifice : Effect :=
 
 /-- Create two tapped 1/1 white Spirit tokens with flying (tapped and attacking if equipped creature is legendary). -/
 def triggerCreateSpiritsForEquipped : Effect :=
-  { body := .ifCond (.exists (.filter .attachedHost (.all #[.hasSupertype .legendary, .hasType .creature, .controlledBy .you])))
+  { body := .ifCond (.exists (.filter .attachedHost (.hasSupertype .legendary)))
       (Instruction.createTokens .spirit (.const 2) .you { tapped := true, attacking := true })
       (Instruction.createTokens .spirit (.const 2) .you { tapped := true }) }
 
@@ -695,10 +669,6 @@ def triggerUntapAttackersExtraCombat : Effect :=
       Instruction.untap (.inZones .battlefield (.all #[.hasType .creature, .combatRole .attacking])),
       .turn (.extraPhase .combat true)
     ] }
-
-/-- Create X 1/1 white Bird Soldier tokens, where X is the recorded last-known count. -/
-def triggerEaglesCreateBirds : Effect :=
-  { body := Instruction.createTokens .birdSoldier .eventAmount }
 
 /-- Alliance modal trigger (one unused this turn): add {G}{G}{G}, +1/+1 each creature, or scry 2 then draw. -/
 def triggerAllianceMode : Effect :=
@@ -784,15 +754,6 @@ def triggerBeginCombatIfDrawnTwoPump : Effect :=
       Instruction.grantKeywords (.target 0) #[Keyword.firstStrike]
     ] }
 
-/-- Sting: put a hone counter for each creature target opponent controls, attach to up to one creature you control. -/
-def triggerHonePerOppAttach : Effect :=
-  { targets := (.ofSlots #[.of .opponent, { domain := .creatureYouControl, count := .upTo 1 }])
-    body := .seq #[
-      Instruction.putCounters .this .hone
-        (ValueExpr.count (.inZones .battlefield (.all #[.hasType .creature, .controlledBy (.ofExpr (.target 0))]))),
-      .permanent (.attach .this (.target 1))
-    ] }
-
 /-- Create two nonlegendary token copies of this permanent. -/
 def triggerCopySelfNonlegendary : Effect :=
   { body := Instruction.createTokens (.copyOf .this #[.removeSupertype .legendary]) (.const 2) }
@@ -852,10 +813,6 @@ def triggerPalantir : Effect :=
           (.life (.lose (.target 0) (.aggregate .sum (.stat .manaValue) (.stepObjects ⟨0⟩)))))
     ] }
 
-/-- Create Treasures equal to the event amount (e.g. noncombat damage dealt). -/
-def triggerTreasuresEqualLastKnown : Effect :=
-  { body := Instruction.createTokens .treasure .eventAmount }
-
 /-- You gain protection from everything until your next turn. -/
 def triggerProtectionEverything : Effect :=
   { body := .installEffect (.applyRule (.untilNextTurnOf .you) (.player (.protectionFrom .you .everything))) }
@@ -893,14 +850,6 @@ def triggerOthersOfSubtypeGetEqualSourceToughness (subtype : CardSubtype) : Effe
 def triggerScryAndPlan (n : Nat) : Effect :=
   { body := .seq #[Instruction.putCounters .this .plan (.const 1), Instruction.scryFixed n] }
 
-/-- Plan counter + draw 1, discard 1. -/
-def triggerLootAndPlan : Effect :=
-  { body := .seq #[Instruction.putCounters .this .plan (.const 1), Instruction.drawFixed 1, Instruction.discardFixed 1] }
-
-/-- Plan counter + create 2/1 black Villain with menace. -/
-def triggerCreateVillainAndPlan : Effect :=
-  { body := .seq #[Instruction.putCounters .this .plan (.const 1), Instruction.createTokensFixed .villain21menace 1] }
-
 /-- Plan counter + each opponent loses `n` life and you gain `n` life. -/
 def triggerDrainAndPlan (n : Nat) : Effect :=
   { body := .seq #[
@@ -912,10 +861,6 @@ def triggerDrainAndPlan (n : Nat) : Effect :=
 /-- Plan counter + draw 1, lose 1 life. -/
 def triggerDrawLoseLifeAndPlan : Effect :=
   { body := .seq #[Instruction.putCounters .this .plan (.const 1), Instruction.drawFixed 1, Instruction.loseLifeFixed 1] }
-
-/-- Plan counter + create tapped Treasure. -/
-def triggerTreasureTappedAndPlan : Effect :=
-  { body := .seq #[Instruction.putCounters .this .plan (.const 1), Instruction.createTokensFixed .treasure 1 .you true] }
 
 /-- Plan counter + put a +1/+1 counter on target creature you control. -/
 def triggerPlusOneOnTargetAndPlan : Effect :=
@@ -1014,14 +959,6 @@ def triggerEmpowerJace (n : Nat) : Effect :=
 def triggerPrepareSource : Effect :=
   { body := Instruction.becomePrepared .this }
 
-/-- If you removed two or more loyalty counters to activate it, draw a card. -/
-def triggerDrawIfRemovedTwoLoyalty : Effect :=
-  { body := Instruction.ifThen (.cmp .ge .eventAmount (.const 2)) (Instruction.drawFixed 1) }
-
-/-- Put a loyalty counter on this permanent. -/
-def triggerLoyaltyOnSource : Effect :=
-  { body := Instruction.putCounters .this .loyalty (.const 1) }
-
 /-- Target permanent you control gains `k`; +1/+1 counter if creature, loyalty counter if planeswalker. -/
 def triggerGrantThenCounterByType (k : Array KeywordAbility) : Effect :=
   { targets := .permanentYouControl
@@ -1046,23 +983,6 @@ def triggerPumpOrCounterIfScried : Effect :=
       (Instruction.putPlusOne (.target 0) 1)
       (Instruction.pumpFixed (.target 0) 1 1) }
 
-/-- Sacrifice this creature. -/
-def triggerSacrificeSource : Effect :=
-  { body := Instruction.sacrifice .this }
-
-/-- Creatures you control get +P/+T until end of turn. -/
-def triggerCreaturesYouControlGet (power toughness : Int) : Effect :=
-  { body := Instruction.pumpFixed creaturesYouControlExpr power toughness }
-
-/-- Put this creature's last-known counters on up to one target creature you control. -/
-def triggerPutSourceCountersOnTarget : Effect :=
-  { targets := TargetSpec.creatureYouControl.asUpTo 1
-    body := .permanent (.modifyCounters (.copyFromLki .this) (.target 0)) }
-
-/-- Put a charge counter on this permanent. -/
-def triggerChargeCounterOnSource : Effect :=
-  { body := Instruction.putCounters .this .charge (.const 1) }
-
 /-- Add `{G}` for each charge counter on this permanent. -/
 def triggerAddGreenPerChargeCounter : Effect :=
   { body := Instruction.addMana { spec := .sequence #[(.colored .green, .counterCount (some .charge) .this)] } }
@@ -1075,11 +995,6 @@ def triggerDrawTwoWinIfEmptyShuffleSource : Effect :=
         (.player (.setStatus .you .winGame))
         (.moveZone .this (.library .owner .shuffledIn) .put)
     ] }
-
-/-- Target creature you control gets +3/+3 until end of turn. -/
-def triggerPumpIfFiveOtherForests : Effect :=
-  { targets := .creatureYouControl
-    body := Instruction.pumpFixed (.target 0) 3 3 }
 
 /-- Surveil 1; if a card with MV ≤ life gained this turn is put into your graveyard this way, put it into your hand. -/
 def triggerSurveilReturnIfGainedLife : Effect :=
@@ -1283,9 +1198,6 @@ def enterRevealDiscardFromHand : Effect :=
     body := .player (.reveal (.target 0) (.inZones (.handOf (.target 0)) .anyObject)
       (some (.exact (.binary .add (.const 1)
         (ValueExpr.count (.inZones (.graveyardOf .you) (.hasType .creature))))))) }
-
-def enterCreateRedwing : Effect :=
-  { body := Instruction.createTokensFixed .redwing 1 }
 
 def stepEnchantedControllerDraws : Effect :=
   { body := Instruction.drawFixed 1 (.controllerOf .attachedHost) }

@@ -2233,7 +2233,7 @@ def xInGraveyardIsZeroOk : Bool :=
 /-- Ruling 85: Mithril Coat's enters attachment is not an equip activation. -/
 def mithrilEtbAttachOk : Bool :=
   mithrilCoat.triggeredAbilities == #[.onEnterAttachToLegendary] &&
-    mithrilCoat.activatedAbilities.any (fun ab =>
+    mithrilCoat.allActivatedAbilities.any (fun ab =>
       ab.cost.mana == ManaCost.ofGeneric 3) &&
     (ruling 85).comment.contains "isn't the same as using its equip ability"
 
@@ -2844,7 +2844,8 @@ def gleamingTwoDifferentPlayersOk : Bool :=
 -/
 
 def andurilOnOppLegend : Game :=
-  let g := addPermanent afterDraw andurilFlameOfTheWest ⟨0⟩ ⟨0⟩
+  let g := (afterDraw.record (GameEvent.turnBegan (afterDraw.turnNumber + 1) ⟨1⟩)).beginStep .declareAttackers
+  let g := addPermanent g andurilFlameOfTheWest ⟨0⟩ ⟨0⟩
   let g := addPermanent g tomBombadil ⟨1⟩ ⟨1⟩
   let g := g.attachSourceTo (namedPermanent g "Andúril, Flame of the West")
     (namedPermanent g "Tom Bombadil")
@@ -2875,7 +2876,8 @@ def andurilOppSpiritsOk : Bool :=
 #guard andurilOppSpiritsOk
 
 def andurilOnOwnLegend : Game :=
-  let g := addPermanent afterDraw andurilFlameOfTheWest ⟨0⟩ ⟨0⟩
+  let g := afterDraw.beginStep .declareAttackers
+  let g := addPermanent g andurilFlameOfTheWest ⟨0⟩ ⟨0⟩
   let g := addPermanent g tomBombadil ⟨0⟩ ⟨0⟩
   let g := g.attachSourceTo (namedPermanent g "Andúril, Flame of the West")
     (namedPermanent g "Tom Bombadil")
@@ -2892,6 +2894,56 @@ def andurilOnOwnLegendOk : Bool :=
     (ruling 181).comment.contains "Andúril's controller chooses"
 
 #guard andurilOnOwnLegendOk
+
+/-- CR 506.2 / 506.3b / 805.10a: entering attacking requires the combat phase and an
+attacking player (active player or active team), independent of `attackersDeclared`. -/
+def cr506_3b_enteringAttackingOk : Bool :=
+  -- 1. Beginning of combat (before any attackers are declared):
+  --    active player IS an attacking player (CR 506.2), non-active opponent is NOT (CR 506.3b).
+  let gBoc := afterDraw.beginStep .beginningOfCombat
+  let (_, activeBocTok) := gBoc.createOneToken ⟨0⟩ grizzlyBears (attacking := true)
+  let (_, nonActiveBocTok) := gBoc.createOneToken ⟨1⟩ grizzlyBears (attacking := true)
+  -- 2. Postcombat main phase AFTER attackers were declared earlier this turn:
+  --    nobody is an attacking player outside combat, so even active player enters not attacking.
+  let gPostMain :=
+    let g := addPermanent (afterDraw.beginStep .declareAttackers) grizzlyBears ⟨0⟩ ⟨0⟩
+    let bear := namedPermanent g "Grizzly Bears"
+    let g := g.record (GameEvent.attackersDeclared g.turnNumber ⟨0⟩ #[(g.snapshot bear, .player ⟨1⟩)])
+    g.beginStep .postcombatMain
+  let (_, postMainTok) := gPostMain.createOneToken ⟨0⟩ grizzlyBears (attacking := true)
+  -- 3. Two-Headed Giant shared team turn (CR 805.10a): active player's teammate IS an attacking
+  --    player during combat and NOT outside combat; defending team players are NOT.
+  let g2hgMain : Game :=
+    match Start.start {
+      seats := #[
+        { name := "Chandra", deck := testRedDeck, teammate := some ⟨1⟩ },
+        { name := "Nissa", deck := testGreenDeck, teammate := some ⟨0⟩ },
+        { name := "Liliana", deck := testRedDeck, teammate := some ⟨3⟩ },
+        { name := "Jace", deck := testGreenDeck, teammate := some ⟨2⟩ }
+      ]
+      format := .constructed
+      seed := 506
+      startingPlayer := some 0
+    } with
+    | .ok g => (keepOpeningHands g 30).beginStep .precombatMain
+    | .error e => panic! e
+  let g2hgBoc := g2hgMain.beginStep .beginningOfCombat
+  let (_, teammateBocTok) := g2hgBoc.createOneToken ⟨1⟩ grizzlyBears (attacking := true)
+  let (_, oppTeamBocTok) := g2hgBoc.createOneToken ⟨2⟩ grizzlyBears (attacking := true)
+  let (_, teammateMainTok) := g2hgMain.createOneToken ⟨1⟩ grizzlyBears (attacking := true)
+  activeBocTok.status.attacking &&
+    !nonActiveBocTok.status.attacking &&
+    !postMainTok.status.attacking &&
+    (gBoc.legalEnteringAttackTargets ⟨1⟩).isEmpty &&
+    (gPostMain.legalEnteringAttackTargets ⟨0⟩).isEmpty &&
+    teammateBocTok.status.attacking &&
+    !(g2hgBoc.legalEnteringAttackTargets ⟨1⟩).isEmpty &&
+    !oppTeamBocTok.status.attacking &&
+    (g2hgBoc.legalEnteringAttackTargets ⟨2⟩).isEmpty &&
+    !teammateMainTok.status.attacking &&
+    (g2hgMain.legalEnteringAttackTargets ⟨1⟩).isEmpty
+
+#guard cr506_3b_enteringAttackingOk
 
 /-!
 ## 150 — Queen of Dale misses a prior first noncreature

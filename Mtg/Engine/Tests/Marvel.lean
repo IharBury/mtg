@@ -1052,7 +1052,7 @@ def hawkeyeBowEquippedViaEquip : Game :=
   (namedPermanent hawkeyeBowEquippedViaEquip "Grizzly Bears")
 #guard hawkeyeBowReadyToEquip.canActivate ⟨0⟩
   (namedPermanent hawkeyeBowReadyToEquip "Hawkeye's Bow")
-  hawkeyeSBow.activatedAbilities[0]!
+  hawkeyeSBow.allActivatedAbilities[0]!
 
 -- Equip is sorcery-speed only (CR 702.6a).
 #guard
@@ -1062,6 +1062,6 @@ def hawkeyeBowEquippedViaEquip : Game :=
   let g := withRedMana g ⟨0⟩ 1
   !g.asSorcery? ⟨0⟩ &&
     !g.canActivate ⟨0⟩ (namedPermanent g "Hawkeye's Bow")
-      hawkeyeSBow.activatedAbilities[0]!
+      hawkeyeSBow.allActivatedAbilities[0]!
 
 end Mtg.Engine.Tests

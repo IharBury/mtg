@@ -82,7 +82,7 @@ def moleManPlayLandOk : Bool :=
      !gLate.canPlayLand ⟨0⟩) &&
     (let gCyc := addToGraveyard afterDraw kreeSentinel ⟨0⟩
      let cyc := namedGraveyardCard gCyc ⟨0⟩ "Kree Sentinel"
-     let ab := cyc.printed.activatedAbilities[0]!
+     let ab := cyc.printed.allActivatedAbilities[0]!
      !gCyc.canActivate ⟨0⟩ cyc ab) &&
     (mshRuling 605).comment.contains "doesn't allow you to activate" &&
     (mshRuling 606).comment.contains "only one land per turn"
@@ -188,7 +188,7 @@ def worldWarHulkNextOnlyOk : Bool :=
 
 /-- Ruling 707: Grim Reaper's return can attack a different player. -/
 def grimReaperOtherDestinationOk : Bool :=
-  let g := addPermanent afterDraw grimReaperLethalLegionnaire ⟨0⟩ ⟨0⟩
+  let g := addPermanent (afterDraw.beginStep .beginningOfCombat) grimReaperLethalLegionnaire ⟨0⟩ ⟨0⟩
   let g := addToGraveyard g grizzlyBears ⟨0⟩
   let gy := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
   let g := g.returnFromGyTappedAttackingFinality ⟨0⟩ gy.id (attackingTarget := some (.player ⟨1⟩))

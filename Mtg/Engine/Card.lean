@@ -22,7 +22,16 @@ import Mtg.Engine.Card.TriggeredAbility
 import Mtg.Engine.Card.StaticAbility
 import Mtg.Engine.Card.KeywordExpand
 import Mtg.Engine.Card.CardDef
+import Mtg.Engine.Card.OracleNorm
+import Mtg.Engine.Card.Parser.FrameSplit
+import Mtg.Engine.Card.Parser.Lexer
 import Mtg.Engine.Card.Parser.SubGrammars
+import Mtg.Engine.Card.Parser.DiscourseBind
+import Mtg.Engine.Card.Parser.TokenEmblemGrammar
+import Mtg.Engine.Card.Parser.InspectSearchGrammar
+import Mtg.Engine.Card.Parser.InstructionGrammar
+import Mtg.Engine.Card.Parser.AbilityGrammar
+import Mtg.Engine.Card.Parser.ParagraphClass
 import Mtg.Engine.Card.ParseOracle
 import Mtg.Engine.Card.Guards
 
@@ -55,8 +64,11 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
   and `ObjectExpr`.
 - `Targeting`: unified `TargetSpec` / `TargetSlot` / `TargetDomain` and
   `HasTargeting` (CR 115.1).
-- `Parser.SubGrammars`: Stage-4 compositional expression, target, cost,
-  keyword, static-ability, trigger-clause, and instruction parsers.
+- `Parser.{FrameSplit, Lexer, SubGrammars, DiscourseBind, TokenEmblemGrammar,
+  InspectSearchGrammar, InstructionGrammar, AbilityGrammar, ParagraphClass}`:
+  five-stage compositional Oracle parser (CR 113.3 / 201–212 / 602–616 / 702).
+- `ParseOracle`: public entry points (`parseOracleCard`, `renderFullOracle`,
+  `formatPrintedCard`, `oracleRoundtripDiff`).
 - `SpellResolution` / `AbilityResolution`: demo-agent
   `SpellCastKind`/`AbilityCastKind` classification enums.
 - `Ability`: unified `Instruction` AST, `Effect`, `ActivatedAbility`,

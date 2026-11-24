@@ -1324,15 +1324,16 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   -- 7. StoredEvalEnv propagation across createAndMarkTokensAttacking (both holds arms &
   --    across PendingReplacement pause), unified life-gained token creation, and
   --    FraChoice.mayCreateTokens
+  let gCopyAtk0 := gCopy0.beginStep .declareAttackers
   let atkCopyNoHolds :=
-    gCopy0.createAndMarkTokensAttacking p0 copySpec 1 false false
+    gCopyAtk0.createAndMarkTokensAttacking p0 copySpec 1 false false
       (copyEnv := { targetSlots := #[#[.permanent origObj.id]] })
   let atkCopyHolds :=
-    gCopy0.createAndMarkTokensAttacking p0 copySpec 1 true true
+    gCopyAtk0.createAndMarkTokensAttacking p0 copySpec 1 true true
       (copyEnv := { targetSlots := #[#[.permanent origObj.id]] })
   let atkCopySubjSpec : TokenSpec := .copyOf .triggerSubject #[.setName "Subject Copy", .setBasePT 2 2]
   let atkCopySubj :=
-    gCopy0.createAndMarkTokensAttacking p0 atkCopySubjSpec 1 true true
+    gCopyAtk0.createAndMarkTokensAttacking p0 atkCopySubjSpec 1 true true
       (copyEnv := { triggerSubjectId := some origObj.id })
   -- Replacement pause inside createAndMarkTokensAttacking preserves copyEnv across both
   -- promptChooseReplacement and chainPendingReplacement:
@@ -1346,7 +1347,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
   let bonusBearDef : CardDef := { bear with name := "Bonus Food Bear", isToken := true }
   let replacedArtDef : CardDef := { bear with name := "Replaced Artifact", isToken := true }
   let gPause0 :=
-    (gCopy0.createEffect (.replacement {
+    (gCopyAtk0.createEffect (.replacement {
       id := idPauseExtra, affectedPlayer := p0,
       kind := .createExtraTokenWithFood p0 bonusBearDef
     })).createEffect (.replacement {
@@ -1366,7 +1367,7 @@ private def mustHoldP1Rev (label : String) (ok : Bool) : Bool :=
       targets := .creature
       body := .create (.tokens .you (.const 1) copySpec { tapped := true, attacking := true })
     }
-  let gSeqRes := gCopy0.applyTriggeredAbility p0 atkSeqAb none #[.permanent origObj.id]
+  let gSeqRes := gCopyAtk0.applyTriggeredAbility p0 atkSeqAb none #[.permanent origObj.id]
   -- Unified `.create (.tokens ...)` with `.lifeGainedThisTurn` forwards copyEnv:
   let gLifeGain0 := gCopy0.gainLife p0 2
   let gLifeGainTok :=

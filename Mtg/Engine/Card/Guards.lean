@@ -295,7 +295,7 @@ namespace CardDef
 #guard (Effect.plusOneThenFight 2).body ==
   .seq #[Instruction.putPlusOne (.target 0) 2, .damage (.fight (.target 0) (.target 1) false)]
 #guard (Effect.plusOneThenFight 2).toNotation ==
-  "put 2 +1/+1 counters on target creature you control. Target creature you control fights target creature an opponent controls"
+  "put 2 +1/+1 counters on target creature you control. It fights target creature an opponent controls"
 #guard Effect.plusOneThenEachOtherIfFromGy.toNotation ==
   "put a +1/+1 counter on target creature you control. If this spell was cast from a graveyard, put a +1/+1 counter on each other creature you control"
 #guard (Effect.drawIfFromGy 1 2).body ==

@@ -51,12 +51,16 @@ def main : IO UInt32 := do
     (fun c => c.spellEffect == some (Effect.draw 7) && c.isSorcery))
   fails := fails + (← expect "Forestcycling"
     "Wander\n{G}\nInstant\nForestcycling {2}"
-    (fun c => c.activatedAbilities[0]? ==
-      some (OracleActivate.typecyclingAbility "Forest" (ManaCost.ofGeneric 2))))
+    (fun c =>
+      c.keywords == #[.cycling (some (.hasSubtype (.literal .forest))) (CostSpec.ofMana (ManaCost.ofGeneric 2))] &&
+      c.allActivatedAbilities[0]? ==
+        some (Catalog.typecyclingAbility "Forest" (ManaCost.ofGeneric 2))))
   fails := fails + (← expect "Equip five"
     "Sword\n{2}\nArtifact — Equipment\nEquip {5}"
-    (fun c => c.activatedAbilities[0]? ==
-      some (OracleActivate.equipAbility (ManaCost.ofGeneric 5))))
+    (fun c =>
+      c.keywords == #[.equip (.all #[.hasType .creature, .controlledBy .you]) (CostSpec.ofMana (ManaCost.ofGeneric 5))] &&
+      c.allActivatedAbilities[0]? ==
+        some (Catalog.equipAbility (ManaCost.ofGeneric 5))))
   fails := fails + (← expect "Goblin lord"
     "Warren Chief\n{1}{R}\nCreature — Goblin\n2/2\nOther Goblin creatures you control get +2/+2."
     (fun c => c.staticAbilities[0]? ==

@@ -973,7 +973,7 @@ writers of the objects they install (preserving full `printed` `CardDef`,
 `wasCast`, and stack-copy metadata), with zero `EngineChange.setObject`
 events. -/
 #guard
-  let g0 := insertObject (quiet afterDraw) bear me (.hand me)
+  let g0 := insertObject (quiet (afterDraw.beginStep .declareAttackers)) bear me (.hand me)
   let cid := ((g0.player me).hand.filter (fun id => (g0.object! id).name == "Event Bear"))[0]!
   let (g1, permId) := (quiet g0).putOntoBattlefield cid me
     (tapped := true) (summoningSick := false)

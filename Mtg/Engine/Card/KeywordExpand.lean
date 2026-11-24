@@ -124,12 +124,41 @@ def giftGrantInstruction (kind : GiftKind) : Instruction :=
 
 /-- Construct the CR 702.6a sorcery-speed Equip activated ability. -/
 def equipActivatedAbility (filter : ObjectPred) (cost : CostSpec) : ActivatedAbility :=
-  let extraPred? : Option ObjectPred :=
-    if filter == .anyObject then none else some filter
-  let targetDomain : TargetDomain :=
-    .object .battlefield (.all #[.hasType .creature, .controlledBy .you, filter])
+  let isDefault :=
+    filter == .anyObject || filter == .hasType .creature ||
+      filter == .all #[.hasType .creature, .controlledBy .you]
+  let subtype? : Option CardSubtype :=
+    match filter with
+    | .hasSubtype (.literal sub) => some sub
+    | .all #[.hasType .creature, .hasSubtype (.literal sub), .controlledBy .you] => some sub
+    | _ => none
+  let isWorthy :=
+    filter == ObjectPred.worthy ||
+      match filter with
+      | .all ps => ps.contains ObjectPred.worthy
+      | _ => false
+  let (extraPred?, spec) : Option ObjectPred × TargetSpec :=
+    if isDefault then
+      (none, .creatureYouControl)
+    else if isWorthy then
+      (some ObjectPred.worthy, Effect.equipEffect none true |>.targets)
+    else
+      match subtype? with
+      | some sub =>
+        (some (.hasSubtype (.literal sub)), (Effect.equipEffect (some sub) false).targets)
+      | none =>
+        let basePred : ObjectPred :=
+          match filter with
+          | .all ps =>
+            let hasC := ps.contains (.hasType .creature)
+            let hasY := ps.contains (.controlledBy .you)
+            let ps := if hasC then ps else #[.hasType .creature] ++ ps
+            let ps := if hasY then ps else ps.push (.controlledBy .you)
+            .all ps
+          | other => .all #[.hasType .creature, other, .controlledBy .you]
+        (some filter, .ofDomain (.object .battlefield basePred))
   { cost
-    effect := { targets := (.ofDomain targetDomain)
+    effect := { targets := spec
                 body := .permanent (.attach .this (.target 0)) }
     timing := .sorcery
     tag? := some (.equip extraPred?) }
@@ -143,6 +172,7 @@ def cyclingActivatedAbility (typeFilter? : Option ObjectPred) (cost : CostSpec) 
       ({ body := Instruction.drawFixed 1 }, none)
     | some (.hasSubtype (.literal sub)) =>
       ({ body := .player (.searchLibrary {
+            zones := .libraryOf .you
             filter := .hasSubtype (.literal sub)
             count := .upTo (.const 1)
             dest := .hand .controller
@@ -151,14 +181,34 @@ def cyclingActivatedAbility (typeFilter? : Option ObjectPred) (cost : CostSpec) 
        some sub.englishName)
     | some (.all #[.hasSupertype .basic, .hasType .land]) =>
       ({ body := .player (.searchLibrary {
+            zones := .libraryOf .you
             filter := .all #[.hasSupertype .basic, .hasType .land]
             count := .upTo (.const 1)
             dest := .hand .controller
             reveal := true
             shuffle := true }) },
        some "Basic land")
+    | some (.hasSupertype sup) =>
+      ({ body := .player (.searchLibrary {
+            zones := .libraryOf .you
+            filter := .hasSupertype sup
+            count := .upTo (.const 1)
+            dest := .hand .controller
+            reveal := true
+            shuffle := true }) },
+       some sup.englishName)
+    | some (.hasType ty) =>
+      ({ body := .player (.searchLibrary {
+            zones := .libraryOf .you
+            filter := .hasType ty
+            count := .upTo (.const 1)
+            dest := .hand .controller
+            reveal := true
+            shuffle := true }) },
+       some ty.englishName)
     | some pred =>
       ({ body := .player (.searchLibrary {
+            zones := .libraryOf .you
             filter := pred
             count := .upTo (.const 1)
             dest := .hand .controller

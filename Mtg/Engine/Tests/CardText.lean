@@ -57,28 +57,28 @@ open Mtg.Engine.Catalog
 #guard giftOfStrands.staticAbilities.size == 1
 #guard giftOfStrands.triggeredAbilities.size == 1
 #guard mentions raggedShortSpear.summary "Equipped creature"
-#guard mentions raggedShortSpear.summary "Equip"
+#guard mentions raggedShortSpear.summary "equip"
 #guard raggedShortSpear.isEquipment
 #guard hawkeyeSBow.isEquipment
 #guard hawkeyeSBow.staticAbilities == #[.equippedCreatureGetsAndHas 1 0 #[Keyword.reach]]
 #guard hawkeyeSBow.triggeredAbilities == #[.onWatch Effect.watchEquippedTappedDamage]
-#guard hawkeyeSBow.activatedAbilities.size == 1
-#guard hawkeyeSBow.activatedAbilities[0]!.timing == .sorcery
-#guard hawkeyeSBow.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
-#guard hawkeyeSBow.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
+#guard hawkeyeSBow.allActivatedAbilities.size == 1
+#guard hawkeyeSBow.allActivatedAbilities[0]!.timing == .sorcery
+#guard hawkeyeSBow.allActivatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
+#guard hawkeyeSBow.allActivatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard mentions hawkeyeSBow.summary "Equipped creature"
 #guard mentions hawkeyeSBow.summary "becomes tapped"
-#guard mentions hawkeyeSBow.summary "Equip"
+#guard mentions hawkeyeSBow.summary "equip"
 #guard raggedShortSpear.staticAbilities.size == 1
 #guard raggedShortSpear.triggeredAbilities.size == 1
-#guard raggedShortSpear.activatedAbilities.size == 1
+#guard raggedShortSpear.allActivatedAbilities.size == 1
 #guard mentions crudeBentBlade.summary "Equipped creature"
-#guard mentions crudeBentBlade.summary "Equip"
+#guard mentions crudeBentBlade.summary "equip"
 #guard mentions crudeBentBlade.summary "target opponent"
 #guard crudeBentBlade.isEquipment
 #guard crudeBentBlade.staticAbilities.size == 1
 #guard crudeBentBlade.triggeredAbilities.size == 1
-#guard crudeBentBlade.activatedAbilities.size == 1
+#guard crudeBentBlade.allActivatedAbilities.size == 1
 #guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
 #guard mentions galadhrimGuide.summary "scry 2"
 #guard galadhrimGuide.triggeredAbilities.size == 1
@@ -135,8 +135,8 @@ open Mtg.Engine.Catalog
 #guard KeywordAbility.hasTrample oliphaunt.keywords
 #guard oliphaunt.triggeredAbilities.size == 1
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
-#guard oliphaunt.activatedAbilities.size == 1
-#guard oliphaunt.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Mountain"
+#guard oliphaunt.allActivatedAbilities.size == 1
+#guard oliphaunt.allActivatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Mountain"
 #guard mentions wargTactics.summary "Choose one"
 #guard mentions wargTactics.summary "hexproof"
 #guard wargTactics.isModal

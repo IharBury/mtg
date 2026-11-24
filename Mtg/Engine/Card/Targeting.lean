@@ -243,10 +243,10 @@ private def objPredHasAtom (pred : ObjectPred) (p : ObjectPred → Bool) : Bool 
 
 private def splitOtherThan (pred : ObjectPred) : Bool × ObjectPred :=
   let atoms := objPredAtoms pred
-  let hasOther := atoms.any (fun | .otherThan _ => true | _ => false)
+  let hasOther := atoms.any (fun | .otherThan .this => true | _ => false)
   if !hasOther then (false, pred)
   else
-    let rest := atoms.filter (fun | .otherThan _ => false | _ => true)
+    let rest := atoms.filter (fun | .otherThan .this => false | _ => true)
     (true, ObjectPred.andAll rest.toArray)
 
 private def isControlledBy (pf : PlayerFilter) : ObjectPred → Bool

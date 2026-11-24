@@ -200,6 +200,13 @@ def withKeywords (c : CardDef) (ks : Array KeywordAbility) : CardDef :=
 def expandedKeywords (c : CardDef) : ExpandedKeyword :=
   KeywordAbility.expandAll c.keywords
 
+/-- All printed activated abilities on `c`, including CR 702.1 keyword-expanded
+activated abilities (Equip CR 702.6, Cycling/Typecycling CR 702.29, Crew CR 702.122). -/
+def allActivatedAbilities (c : CardDef) : Array ActivatedAbility :=
+  let kwAct := (KeywordAbility.expandAll c.keywords).activatedAbilities.filter fun ab =>
+    !c.activatedAbilities.contains ab
+  c.activatedAbilities ++ kwAct
+
 /-- True when `c.keywords` contains `.simple s`. -/
 @[inline] def hasSimpleKeyword (c : CardDef) (s : SimpleKeyword) : Bool :=
   KeywordAbility.hasSimple c.keywords s
@@ -621,8 +628,11 @@ def modalHeader (ms : ModalSpec) : String :=
   match ms.altCountIf? with
   | some (.castPred (.teamworkPaid .this), _, _) =>
     "Choose one. If this spell was cast using teamwork, choose both instead —"
-  | some (.playerPred .you (.controls { zones := .battlefield, pred := .hasSubtype (.literal sub) } (.const 1)), _, _) =>
+  | some (.playerPred .you (.controls { zones := .battlefield, pred := .hasSubtype (.literal sub) } (.const 1)), _, _)
+  | some (.exists (.inZones { zones := #[.battlefield], .. } (.all #[.hasSubtype (.literal sub), .controlledBy _])), _, _) =>
     s!"Choose one. If you control a {sub}, you may choose two instead —"
+  | some (cond, _, .const 2) =>
+    s!"Choose one. If {ToOracle.toOracle { capitalize := false } cond}, you may choose two instead —"
   | _ =>
     if ms.minModes == .const 1 && ms.maxModes == .const 2 then
       "Choose one or both —"
@@ -932,7 +942,7 @@ def isWorthy (c : CardDef) : Bool :=
 
 /-- Equip worthy keyword on this Equipment (MSH). -/
 def hasEquipWorthy (c : CardDef) : Bool :=
-  c.activatedAbilities.any (·.isEquipWorthy)
+  c.allActivatedAbilities.any (·.isEquipWorthy)
 
 /-- True when this face has any printed Saga chapter triggered abilities (CR 714.2). -/
 def hasSagaChapters (c : CardDef) : Bool :=

@@ -418,6 +418,7 @@ partial def renderCostItem (ctx : PrintCtx) (item : CostItem) : String :=
     | .exile _ zones .self _ =>
       if zones.zones == #[.graveyard] then "exile this card from your graveyard"
       else if zones.zones == #[.hand] then "exile this card from your hand"
+      else if zones.zones == #[.stack] then "exile this spell"
       else "exile this permanent"
     | .exile cnt zones (.filter pred) isCollectEvidence =>
       if isCollectEvidence then

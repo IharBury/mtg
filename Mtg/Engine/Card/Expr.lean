@@ -1540,6 +1540,8 @@ private partial def printObjectPredParts (ctx : PrintCtx) (pred : ObjectPred)
     match a with
     | .otherThan .this =>
       preMods := preMods ++ [if ctx.plural then "other" else "another"]
+    | .otherThan .attachedHost =>
+      thatClauses := thatClauses ++ ["other than enchanted creature"]
     | .otherThan _ =>
       preMods := preMods ++ [if ctx.plural then "other" else "another"]
     | .tapped true => preMods := preMods ++ ["tapped"]

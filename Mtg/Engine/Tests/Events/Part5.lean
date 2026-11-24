@@ -696,7 +696,7 @@ def mkThreePlayer25i1 (seed : UInt64 := 251) : Game :=
     name := "P25i1 Entering Attacker"
     staticAbilities := #[.entersTappedUnlessPayLife 2]
   }
-  let gAtk0 := insertObject gBase colorCardDef p0 (.graveyard p0)
+  let gAtk0 := insertObject (gBase.beginStep .beginningOfCombat) colorCardDef p0 (.graveyard p0)
   let atkCardId := (gAtk0.player p0).graveyard.back!
   let atkLifeBefore := (gAtk0.player p0).life
   let atkItem : EnteringAttackItem :=

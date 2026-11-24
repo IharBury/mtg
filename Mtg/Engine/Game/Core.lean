@@ -5150,7 +5150,8 @@ def evalLayer4Full (g : Game) (o : GameObject) : Layer4Result :=
               let condOk : Bool :=
                 match cond? with
                 | none => true
-                | some (.cmp .ge (.aggregate .count .one (.inZones .yourGraveyard (.all #[.isCard, .hasType .creature]))) (.const min)) =>
+                | some (.cmp .ge (.aggregate .count .one (.inZones .yourGraveyard (.all #[.isCard, .hasType .creature]))) (.const min))
+                | some (.cmp .ge (.aggregate .count .one (.inZones .yourGraveyard (.all #[.hasType .creature, .isCard]))) (.const min)) =>
                   match g.controllerOf o with
                   | some p => decide (gyCreatureCardsFwd g p >= min.toNat)
                   | none => false
@@ -7410,6 +7411,7 @@ private def extractContinuousL6 (g : Game) (src : GameObject) (srcCtrl : PlayerI
             else
               { acc with
                 addKw := KeywordAbility.merge acc.addKw effKs
+                addActivated := if kwOnly then acc.addActivated else acc.addActivated ++ (KeywordAbility.expandAll effKs).activatedAbilities
                 addWards := if kwOnly then acc.addWards else acc.addWards ++ KeywordAbility.wardCosts effKs
                 addProwess := if kwOnly then acc.addProwess else acc.addProwess + KeywordAbility.prowessCount effKs }
           | .grantStatic sas =>
@@ -7443,7 +7445,7 @@ private def extractContinuousL6 (g : Game) (src : GameObject) (srcCtrl : PlayerI
             if kwOnly || !target.isOnBattlefield then acc
             else
               let copied := (g.evalStaticObjsL5 src srcCtrl filter.toExpr (fun _ => true) none peerKwOf?).foldl
-                (fun a card => a ++ (g.baseCard card).activatedAbilities) #[]
+                (fun a card => a ++ (g.baseCard card).allActivatedAbilities) #[]
               if copied.isEmpty then acc
               else { acc with addActivated := acc.addActivated ++ copied }
           | _ => acc) ({ kwDepCheck? := kwDep } : Layer6Delta)
@@ -7691,9 +7693,9 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
           let ownAct : Array ActivatedAbility :=
             if oTcs.isEmpty then bc.activatedAbilities
             else bc.activatedAbilities.map (TextChange.applyActivatedAbility oTcs)
-          let expandedCrew : Array ActivatedAbility :=
+          let expandedKwAct : Array ActivatedAbility :=
             (KeywordAbility.expandAll printedKw).activatedAbilities.filter fun ab =>
-              ab.cost.crewPower?.isSome
+              !ownAct.contains ab
           let dedupIntrinsicLandMana : Array ActivatedAbility :=
             intrinsicLandMana.filter fun ab => !ownAct.contains ab
           let impTrig : Array TriggeredAbility :=
@@ -7717,7 +7719,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                 impTrig ++ ownUncondDelta.addTriggers
             activated :=
               ownAct ++
-                expandedCrew ++
+                expandedKwAct ++
                 dedupIntrinsicLandMana ++
                 ownUncondDelta.addActivated
             wards := KeywordAbility.wardCosts printedKw ++ ownUncondDelta.addWards
@@ -7919,7 +7921,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
                 })
             else
               let grantedTrigs := add.triggeredAbilities ++ grantedDelta.addTriggers
-              let addAct := grantedDelta.addActivated
+              let addAct := (KeywordAbility.expandAll add.keywords).activatedAbilities ++ grantedDelta.addActivated
               let addWards := KeywordAbility.wardCosts add.keywords ++ grantedDelta.addWards
               let addProw := KeywordAbility.prowessCount add.keywords + grantedDelta.addProwess
               let allGrantedStatics := grantedStatics ++ grantedDelta.addStatics
@@ -9537,11 +9539,17 @@ def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
               !g.objects.any fun att =>
                 att.isOnBattlefield && att.attachedTo == some o.id && att.id != o.id))
       if canUseFastPath then
-        if bc.activatedAbilities.isEmpty then #[]
+        let baseAct := bc.allActivatedAbilities
+        if baseAct.isEmpty then #[]
         else
           let tcs := g.evalLayer3 o
-          if tcs.isEmpty then bc.activatedAbilities
-          else bc.activatedAbilities.map (TextChange.applyActivatedAbility tcs)
+          if tcs.isEmpty then baseAct
+          else
+            let ownAct := bc.activatedAbilities.map (TextChange.applyActivatedAbility tcs)
+            let kwAct :=
+              (KeywordAbility.expandAll (HasTextChange.applyTextChanges tcs bc.keywords)).activatedAbilities.filter
+                fun ab => !ownAct.contains ab
+            ownAct ++ kwAct
       else
         (g.evalLayer6Fast o).activated
     else
@@ -9611,7 +9619,7 @@ def applyCastEvent (g : Game) (e : CastEvent) : Game :=
             match source.id.bind (fun sid => g.objects.find? (·.id == sid)) with
             | some liveSrc => (g.activatedAbilitiesOf liveSrc)[idx]?
             | none =>
-              (source.copiable.orElse (fun _ => source.printed)).bind (fun c => c.activatedAbilities[idx]?)
+              (source.copiable.orElse (fun _ => source.printed)).bind (fun c => c.allActivatedAbilities[idx]?)
           | none => none
         let abilityEffect : Option Effect :=
           match ab? with
@@ -10312,20 +10320,22 @@ def selectNextReplacementStep (g : Game) (candidates : Array ReplacementCandidat
 
 /-- Legal players, planeswalkers, and battles that a creature put onto the
 battlefield attacking under `controller`'s control may be chosen to attack
-(CR 508.4 / 810.7). -/
+(CR 506.2 / 506.3b / 508.4 / 805.10a / 810.7). -/
 def legalEnteringAttackTargets (g : Game) (controller : PlayerId) : Array AttackTarget :=
-  let opps := g.livingOpponents controller
-  let playerTargets : Array AttackTarget := opps.map (fun pl => .player pl.id)
-  let permanentTargets : Array AttackTarget :=
-    g.battlefield.filterMap fun o =>
-      if !opps.any (fun pl => g.controlledBy o pl.id) then none
-      else if g.isPlaneswalker o then
-        if g.cantAttackJace controller o then none
-        else some (.planeswalker o.id)
-      else if g.hasType o .battle then
-        some (.battle o.id)
-      else none
-  playerTargets ++ permanentTargets
+  if g.step.phase != .combat || !g.isOnActiveTeam controller then #[]
+  else
+    let opps := g.livingOpponents controller
+    let playerTargets : Array AttackTarget := opps.map (fun pl => .player pl.id)
+    let permanentTargets : Array AttackTarget :=
+      g.battlefield.filterMap fun o =>
+        if !opps.any (fun pl => g.controlledBy o pl.id) then none
+        else if g.isPlaneswalker o then
+          if g.cantAttackJace controller o then none
+          else some (.planeswalker o.id)
+        else if g.hasType o .battle then
+          some (.battle o.id)
+        else none
+    playerTargets ++ permanentTargets
 
 /-- Default defending opponent for a creature entering attacking or made
 attacking under `controller`'s control, or `none` when no living opponent
@@ -10337,10 +10347,13 @@ def defaultAttackOpponent? (g : Game) (controller : PlayerId) : Option PlayerId 
 
 /-- Resolve the `AttackTarget` for a creature entering the battlefield attacking
 or made attacking under `controller`'s control, returning `none` when no legal
-target exists so the permanent is not attacking (CR 508.4c / 810.7). -/
+target exists or `controller` isn't an attacking player during combat so the
+permanent is not attacking (CR 506.2 / 506.3b / 508.4c / 805.10a / 810.7). -/
 def resolveEnteringAttackTarget? (g : Game) (controller : PlayerId)
     (attacking : Bool) (attackingTarget : Option AttackTarget) : Option AttackTarget :=
   if !(attacking || attackingTarget.isSome) then none
+  else if g.step.phase != .combat || !g.isOnActiveTeam controller then
+    none
   else
     match attackingTarget with
     | some (.player p) =>

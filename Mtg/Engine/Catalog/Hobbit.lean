@@ -2136,20 +2136,20 @@ that are also in the core catalog. -/
 #guard !raggedShortSpear.requiresTarget
 #guard raggedShortSpear.staticAbilities == #[.equippedCreatureGets 2 0]
 #guard raggedShortSpear.triggeredAbilities == #[.onEnterMayDiscardDraw 2]
-#guard raggedShortSpear.activatedAbilities.size == 1
-#guard raggedShortSpear.activatedAbilities[0]!.isSorcerySpeed
-#guard raggedShortSpear.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
-#guard raggedShortSpear.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 3)
+#guard raggedShortSpear.allActivatedAbilities.size == 1
+#guard raggedShortSpear.allActivatedAbilities[0]!.isSorcerySpeed
+#guard raggedShortSpear.allActivatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
+#guard raggedShortSpear.allActivatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 3)
 #guard (raggedShortSpear.summary.splitOn "Equipped creature").length > 1
 #guard crudeBentBlade.isEquipment
 #guard !crudeBentBlade.isAura
 #guard !crudeBentBlade.requiresTarget
 #guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
 #guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
-#guard crudeBentBlade.activatedAbilities.size == 1
-#guard crudeBentBlade.activatedAbilities[0]!.isSorcerySpeed
-#guard crudeBentBlade.activatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
-#guard crudeBentBlade.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 2)
+#guard crudeBentBlade.allActivatedAbilities.size == 1
+#guard crudeBentBlade.allActivatedAbilities[0]!.isSorcerySpeed
+#guard crudeBentBlade.allActivatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
+#guard crudeBentBlade.allActivatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 2)
 #guard (crudeBentBlade.summary.splitOn "Equipped creature").length > 1
 #guard (crudeBentBlade.summary.splitOn "target opponent").length > 1
 #guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
@@ -2245,7 +2245,7 @@ that are also in the core catalog. -/
 #guard crudeBentBlade.isEquipment
 #guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
 #guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
-#guard crudeBentBlade.activatedAbilities.size == 1
+#guard crudeBentBlade.allActivatedAbilities.size == 1
 #guard gollumTheAbandoned.staticAbilities == #[.cantBlockUnlessYouControl #[]]
 #guard gollumTheAbandoned.triggeredAbilities == #[.onEnterExileOppGyCardOppsLoseLife 2]
 #guard littleBear.triggeredAbilities == #[.onEnterUntapOtherPlusOneIfSubtype "Bear"]

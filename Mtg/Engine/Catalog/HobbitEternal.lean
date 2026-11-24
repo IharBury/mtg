@@ -1274,11 +1274,11 @@ that also appear in other sets. -/
 #guard giftOfStrands.requiresTarget
 #guard giftOfStrands.staticAbilities == #[.enchantedCreatureGets 3 3]
 #guard giftOfStrands.triggeredAbilities == #[.onEnterScry 2]
-#guard dunedainBlade.activatedAbilities.size == 2
-#guard dunedainBlade.activatedAbilities[0]!.equipSubtype? == some .human
-#guard dunedainBlade.activatedAbilities[1]!.equipSubtype? == none
-#guard dunedainBlade.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
-#guard dunedainBlade.activatedAbilities[1]!.cost.mana == (ManaCost.ofGeneric 3)
+#guard dunedainBlade.allActivatedAbilities.size == 2
+#guard dunedainBlade.allActivatedAbilities[0]!.equipSubtype? == some .human
+#guard dunedainBlade.allActivatedAbilities[1]!.equipSubtype? == none
+#guard dunedainBlade.allActivatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
+#guard dunedainBlade.allActivatedAbilities[1]!.cost.mana == (ManaCost.ofGeneric 3)
 #guard (giftOfStrands.summary.splitOn "flash").length > 1
 #guard (giftOfStrands.summary.splitOn "Enchanted creature").length > 1
 #guard galadhrimGuide.triggeredAbilities == #[.onEnterScry 2]
@@ -1331,11 +1331,11 @@ that also appear in other sets. -/
 #guard (ologHaiCrusher.summary.splitOn "can't block unless").length > 1
 #guard oliphaunt.hasSimpleKeyword .trample
 #guard oliphaunt.triggeredAbilities == #[.onAttackOtherGets2AndTrample]
-#guard oliphaunt.activatedAbilities.size == 1
-#guard oliphaunt.activatedAbilities[0]!.isFromHand
-#guard oliphaunt.activatedAbilities[0]!.cost.discardSource
-#guard oliphaunt.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Mountain"
-#guard oliphaunt.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
+#guard oliphaunt.allActivatedAbilities.size == 1
+#guard oliphaunt.allActivatedAbilities[0]!.isFromHand
+#guard oliphaunt.allActivatedAbilities[0]!.cost.discardSource
+#guard oliphaunt.allActivatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Mountain"
+#guard oliphaunt.allActivatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard oliphaunt.power == some (.fixed 6)
 #guard oliphaunt.toughness == some (.fixed 4)
 #guard (oliphaunt.summary.splitOn "trample").length > 1
@@ -1370,11 +1370,11 @@ that also appear in other sets. -/
 #guard shadowOfTheEnemy.requiresTarget
 #guard trollOfKhazadDum.staticAbilities == #[.cantBeBlockedExceptBy 3]
 #guard (trollOfKhazadDum.summary.splitOn "three or more").length > 1
-#guard trollOfKhazadDum.activatedAbilities.size == 1
-#guard trollOfKhazadDum.activatedAbilities[0]!.isFromHand
-#guard trollOfKhazadDum.activatedAbilities[0]!.cost.discardSource
-#guard trollOfKhazadDum.activatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Swamp"
-#guard trollOfKhazadDum.activatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
+#guard trollOfKhazadDum.allActivatedAbilities.size == 1
+#guard trollOfKhazadDum.allActivatedAbilities[0]!.isFromHand
+#guard trollOfKhazadDum.allActivatedAbilities[0]!.cost.discardSource
+#guard trollOfKhazadDum.allActivatedAbilities[0]!.effect == Effect.searchLandTypeToHand "Swamp"
+#guard trollOfKhazadDum.allActivatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 1)
 #guard mercilessExecutioner.triggeredAbilities == #[.onEnterEachPlayerSacrificesCreature]
 #guard bitterDownfall.spellEffect == some (Effect.destroyTargetCreatureControllerLosesLife 2)
 #guard bitterDownfall.staticAbilities.contains (.costReductionIfTargetDamaged 3)

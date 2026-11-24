@@ -241,11 +241,11 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
   let handManaObjs :=
     (g.player p).hand.filterMap fun id =>
       (g.findObject? id).bind fun o =>
-        if !(g.baseCard o).activatedAbilities.isEmpty then some o else none
+        if !(g.baseCard o).allActivatedAbilities.isEmpty then some o else none
   let gyManaObjs :=
     (g.player p).graveyard.filterMap fun id =>
       (g.findObject? id).bind fun o =>
-        if !(g.baseCard o).activatedAbilities.isEmpty then some o else none
+        if !(g.baseCard o).allActivatedAbilities.isEmpty then some o else none
   let manaObjs := perms ++ handManaObjs ++ gyManaObjs
   let plainManaSrcs := g.manaSources p
   let propTapReservedIds : Array ObjectId :=

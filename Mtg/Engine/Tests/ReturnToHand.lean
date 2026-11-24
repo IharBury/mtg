@@ -164,6 +164,6 @@ milled cards stay in the graveyard. -/
   "When this permanent enters, mill 4 cards, then put all Elf cards from among them into your hand."
 
 #guard TriggeredAbility.toNotation .onLandYouControlEntersPayReturnFromGy ==
-  "Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this permanent to its owner's hand."
+  "Whenever a land you control enters, you may pay {1}{G}{U}. If you do, return this card from your graveyard to its owner's hand."
 
 end Mtg.Engine.ReturnToHandTests

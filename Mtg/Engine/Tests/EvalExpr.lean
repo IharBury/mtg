@@ -795,8 +795,8 @@ private def testColossus : CardDef := {
     | .error _ => false
   -- Tied attacking copies (`count := 2`) with an opponent planeswalker must offer per-token
   -- CR 508.4 `chooseEnteringAttackTarget` prompts after choosing which tied creature to copy.
-  let gWithOppPw := insertObject g2 testPw p1 .battlefield (controller := some p1)
-    (status := { counters := #[(.loyalty, 4)] })
+  let gWithOppPw := (insertObject g2 testPw p1 .battlefield (controller := some p1)
+    (status := { counters := #[(.loyalty, 4)] })).beginStep .declareAttackers
   let oppPwId := (lastPermanent gWithOppPw).id
   let gAtkTie := gWithOppPw.createAndMarkTokensAttacking p0 maxPowerCopySpec 2
     (tapped := true) (holds := true)

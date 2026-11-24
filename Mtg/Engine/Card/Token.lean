@@ -142,6 +142,16 @@ def onAttackScry (n : Nat) : GrantedAbility :=
     }
   }
 
+/-- `"Whenever this token attacks, surveil n."` -/
+def onAttackSurveil (n : Nat) : GrantedAbility :=
+  .triggered {
+    word := .whenever
+    pattern := .thisAttacks
+    effect := {
+      body := .player (.surveil .you (.const (Int.ofNat n)))
+    }
+  }
+
 /-- `"Whenever this token attacks, destroy target land."` -/
 def onAttackDestroyTargetLand : GrantedAbility :=
   .triggered {
@@ -180,6 +190,13 @@ def oracleQuote? : GrantedAbility → Option String
     if ab.cost == CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self] &&
         ab.effect.body == .player (.addMana .you { spec := .oneOf .anyColor (.const 1) }) then
       some "{T}, Sacrifice this token: Add one mana of any color."
+    else if ab.cost == CostSpec.ofItems #[.tapSelf, .sacrifice (.exact 1) .self] then
+      match ab.effect.body with
+      | .player (.addMana .you { spec := .oneOf .anyColor (.const n), .. }) =>
+        some s!"\{T}, Sacrifice this token: Add {englishNumber n.toNat} mana of any one color."
+      | _ => none
+    else if ab.tag? == some (.equip none) then
+      some s!"Equip {ab.cost.mana}"
     else none
   | .triggered ab =>
     match ab.pattern, ab.effect.body with
@@ -187,13 +204,75 @@ def oracleQuote? : GrantedAbility → Option String
         (.moveZone (.topOfLibrary .you (.const n)) .graveyard .mill _) .noop 1 =>
       if n == 1 then some "Whenever this token attacks, you may mill a card."
       else some s!"Whenever this token attacks, you may mill {n.toNat} cards."
+    | .thisAttacks, .player (.scry .you (.const n)) =>
+      some s!"Whenever this token attacks, scry {n.toNat}."
+    | .thisAttacks, .player (.surveil .you (.const n)) =>
+      some s!"Whenever this token attacks, surveil {n.toNat}."
+    | .thisAttacks, .moveZone (.target 0) .graveyard .destroy _ =>
+      if ab.effect.targets == .land then
+        some "Whenever this token attacks, destroy target land."
+      else none
     | .gainLife .you, .permanent (.modifyCounters (.put .plusOnePlusOne (.const n)) .this none) =>
       if n == 1 then some "Whenever you gain life, put a +1/+1 counter on this token."
       else some s!"Whenever you gain life, put {plusOnePlusOneCountersPhrase n.toNat} on this token."
+    | .landYouControlEnters, .permanent (.modifyCounters (.put .plusOnePlusOne (.const n)) .this none) =>
+      if n == 1 then some "Whenever a land you control enters, put a +1/+1 counter on this token."
+      else some s!"Whenever a land you control enters, put {plusOnePlusOneCountersPhrase n.toNat} on this token."
+    | .stepBegins .end (.player .any), .moveZone .this .graveyard .sacrifice _ =>
+      match ab.interveningIf? with
+      | some c => some s!"At the beginning of the end step, if {toOracleStr c { capitalize := false }}, sacrifice this creature."
+      | none => some "At the beginning of the end step, sacrifice this creature."
     | _, _ => none
+  | .static sa =>
+    match sa with
+    | .ruleModifying none (.combat (.cantBlock .self none)) =>
+      some "This token can't block."
+    | .ruleModifying none (.combat (.attacksEachCombatIfAble .self)) =>
+      some "This token attacks each combat if able."
+    | .ruleModifying none (.combat (.maxBlockers .self n)) =>
+      let w := if n == 1 then "one creature" else s!"{englishNumber n} creatures"
+      some s!"This token can't be blocked by more than {w}."
+    | .continuous none _ (.modifyPT (.const p) (.const t)) =>
+      let ps := if p >= 0 then s!"+{p}" else s!"{p}"
+      let ts := if t >= 0 then s!"+{t}" else s!"{t}"
+      some s!"Equipped creature gets {ps}/{ts}"
+    | _ => none
   | _ => none
 
 end GrantedAbility
+
+namespace CopyModification
+
+/-- Render one `CopyModification` as an Oracle exception phrase (CR 707.9). -/
+def toOraclePhrase? : CopyModification → Option String
+  | .setName name => some s!"its name is {name}"
+  | .setBasePT p t => some s!"it's {p}/{t}"
+  | .addSupertypes sups =>
+    if sups.isEmpty then none
+    else some s!"it's {String.intercalate " " (sups.toList.map Supertype.oracleWord)}"
+  | .addTypes tys =>
+    if tys.isEmpty then none
+    else some s!"it's {String.intercalate " " (tys.toList.map CardType.oracleWord)} in addition to its other types"
+  | .addSubtypes subs =>
+    if subs.isEmpty then none
+    else some s!"it's a {String.intercalate " " (subs.toList.map CardSubtype.englishName)} in addition to its other types"
+  | .replaceCreatureSubtypes subs =>
+    if subs.isEmpty then none
+    else some s!"its creature types are {String.intercalate " " (subs.toList.map CardSubtype.englishName)}"
+  | .addColors cols =>
+    let cs := cols.toList.map Color.englishName
+    if cs.isEmpty then none
+    else some s!"it's {String.intercalate " and " cs} in addition to its other colors"
+  | .removeSupertype s => some s!"it isn't {s.oracleWord}"
+  | .addKeywords kws =>
+    if kws.isEmpty then none
+    else some s!"it has {KeywordAbility.joinedAnd kws}"
+  | .addAbilities abs =>
+    let qs := abs.toList.filterMap GrantedAbility.oracleQuote?
+    if qs.isEmpty then none
+    else some s!"it has {String.intercalate " and " (qs.map fun q => s!"\"{q}\"")}"
+
+end CopyModification
 
 namespace TokenSpec
 
@@ -365,7 +444,7 @@ def theVoid : TokenSpec :=
 def redwing : TokenSpec :=
   creature #[.bird, .scout] 1 1 (ColorSet.singleton .blue) #[Keyword.flying]
     (supertypes := #[.legendary]) (name? := some "Redwing")
-    (abilities := #[.onAttackScry 1])
+    (abilities := #[.onAttackSurveil 1])
 
 def alien : TokenSpec :=
   creature #[.alien] 1 1 (ColorSet.singleton .red) #[Keyword.haste]
@@ -495,7 +574,8 @@ def customOracleNoun (s : CustomTokenSpec) : String :=
       else [String.intercalate " and " (s.colors.toList.map Color.englishName)]
     let subtypeParts := s.subtypes.toList.map CardSubtype.englishName
     let typeParts := s.types.toList.map cardTypeLower
-    let kwList := KeywordAbility.toOracleList s.keywords
+    let extraKws := s.abilities.filterMap fun | .keyword k => some k | _ => none
+    let kwList := KeywordAbility.toOracleList (s.keywords ++ extraKws)
     let kwSuffix :=
       if kwList.isEmpty then []
       else ["with " ++ String.intercalate " and " kwList]
@@ -516,7 +596,11 @@ def customOracleNoun (s : CustomTokenSpec) : String :=
 def oracleNoun : TokenSpec → String
   | .predefined p => p.oracleNoun
   | .custom s => customOracleNoun s
-  | .copyOf _ _ => "token that's a copy"
+  | .copyOf ref mods =>
+    let refS := toOracleStr ref { capitalize := false }
+    let modParts := mods.toList.filterMap CopyModification.toOraclePhrase?
+    if modParts.isEmpty then s!"token that's a copy of {refS}"
+    else s!"token that's a copy of {refS}, except {String.intercalate ", " modParts}"
 
 instance : ToOracle TokenSpec where
   toOracle ctx t :=
