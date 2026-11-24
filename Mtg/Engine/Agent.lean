@@ -200,7 +200,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                 | some _, some sc => { baseFace with manaCost := sc }
                 | _, _ => baseFace
               let upcomingAddGen : Nat :=
-                if prop.resolutionCast || !baseFace.announcesAdditionalCost ||
+                if !baseFace.announcesAdditionalCost ||
                     prop.additionalGeneric > 0 || prop.needsBehold.isSome ||
                     prop.needsSacrificeOther || prop.needsDiscardCard ||
                     !g.additionalCostChoosesGeneric p prop then
@@ -258,7 +258,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                 let spellObj := (g.findObject? prop.spellId).getD prop.original
                 let spellFace := g.baseCard spellObj
                 let unchosenAdd :=
-                  !prop.resolutionCast && spellFace.announcesAdditionalCost &&
+                  spellFace.announcesAdditionalCost &&
                     prop.additionalGeneric == 0 && prop.needsBehold.isNone &&
                     !prop.needsSacrificeOther && !prop.needsDiscardCard &&
                     !g.additionalCostChoosesGeneric p prop
@@ -579,11 +579,20 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
           match g.proposedSpell with
           | some prop =>
             let spell := (g.findObject? prop.spellId).getD prop.original
+            let preSpell : GameObject :=
+              { spell with
+                id := prop.original.id
+                zone := prop.original.zone
+                exiledBy := prop.original.exiledBy
+                controller := some p }
             let face := { g.baseCard spell with keywords := g.currentKeywords spell }
             if (face.morph.isSome || face.impending.isSome) && face.kicker.isNone then
+              let unpaidSneak? :=
+                if !g.sneakPaid prop.spellId then prop.sneakAttacker else none
               let spellSacOk :=
                 !prop.needsSacrificeOther ||
-                  !(g.sacrificeCreatureOrArtifactChoices p (prop.sourceId.getD prop.spellId)).isEmpty
+                  (g.sacrificeCreatureOrArtifactChoices p (prop.sourceId.getD prop.spellId)).any
+                    (fun o => unpaidSneak? != some o.id)
               let spellDiscardOk :=
                 !prop.needsDiscardCard || (g.player p).hand.any (· != prop.spellId)
               let spellBeholdOk :=
@@ -595,12 +604,13 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                       (g.findObject? id).any (g.hasSubtype · st))
               let frontAdditionalOk :=
                 if face.morph.isSome then
-                  g.canPayAnnouncedAdditionalFromSources p spell
+                  g.canPayAnnouncedAdditionalFromSources p preSpell
                     (origPerm := prop.origPerm)
                     (explicitAltCost := prop.sneakAttacker.isSome)
                     (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
                     (useImplicitPermissions := false)
                     (fromHand := prop.original.zone == .hand p)
+                    (faceOverride? := some face)
                     (castFromZone := some prop.original.zone.kind)
                 else
                   spellSacOk && spellDiscardOk && spellBeholdOk
@@ -617,10 +627,13 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                   | none => true
                   | some propAlt =>
                     let spellAlt := (gAlt.findObject? propAlt.spellId).getD propAlt.original
+                    let altUnpaidSneak? :=
+                      if !gAlt.sneakPaid propAlt.spellId then propAlt.sneakAttacker else none
                     let altSacOk :=
                       !propAlt.needsSacrificeOther ||
-                        !(gAlt.sacrificeCreatureOrArtifactChoices p
-                          (propAlt.sourceId.getD propAlt.spellId)).isEmpty
+                        (gAlt.sacrificeCreatureOrArtifactChoices p
+                          (propAlt.sourceId.getD propAlt.spellId)).any
+                            (fun o => altUnpaidSneak? != some o.id)
                     let altDiscardOk :=
                       !propAlt.needsDiscardCard || (gAlt.player p).hand.any (· != propAlt.spellId)
                     let altBeholdOk :=

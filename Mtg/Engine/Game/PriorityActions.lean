@@ -112,8 +112,11 @@ def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell
   | none => true
   | some spell =>
     let face := g.baseCard spell
+    let unpaidSneak? := prop.sneakAttacker.filter (fun _ => !g.sneakPaid prop.spellId)
+    let hasSacChoice :=
+      (g.sacrificeCreatureOrArtifactChoices p prop.spellId).any (fun o => some o.id != unpaidSneak?)
     match g.additionalChoiceCostFor? spell face with
-    | none => (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
+    | none => !hasSacChoice
     | some branches =>
       let behold? := branches.findSome? fun cs =>
         cs.items.findSome? fun | .behold q => some q | _ => none
@@ -128,7 +131,7 @@ def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell
         !(hasPerm || hasHand)
       | none =>
         if hasDiscard then (g.player p).hand.isEmpty
-        else (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
+        else !hasSacChoice
 
 /-- Announce whether to pay extra generic mana or the non-mana option
 (sacrifice an artifact or creature, or discard a card) as an additional
@@ -200,7 +203,9 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
         return g.afterAdditionalCostAnnounced
       | none =>
         if hasSac then
-          if (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
+          let unpaidSneak? := prop.sneakAttacker.filter (fun _ => !g.sneakPaid prop.spellId)
+          if !(g.sacrificeCreatureOrArtifactChoices p prop.spellId).any
+              (fun o => some o.id != unpaidSneak?) then
             throw s!"{g.name spell} requires sacrificing an artifact or creature"
           let g := g.changeProposals #[
             .additionalGeneric 0,

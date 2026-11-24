@@ -1097,5 +1097,139 @@ the creature spell's material rider outcome, whereas for a noncreature spell it 
   mustHoldCheck9 "p5_ctrOnlyUnique" (hasUniqueManaPayment gCtrOnlyProp) &&
   mustHoldCheck9 "p5_ctrInstUnique" (hasUniqueManaPayment gCtrInstProp)
 
+/- Phase 52 Item 4a: `Demo.hasUniqueManaPayment` Treasure & *Path of Ancestry* provenance,
+`ManaOutput.combination` color order with floating pool, and multi-source rider flips! -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := afterDraw
+  let oneInstDef : CardDef := {
+    name := "P52 Check9 OneInst"
+    manaCost := ManaCost.ofGeneric 1
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let twoArtDef : CardDef := {
+    name := "P52 Check9 TwoArt"
+    manaCost := ManaCost.ofGeneric 2
+    types := #[.artifact]
+  }
+  let smaugTrigDef : CardDef := {
+    creature "P52 Check9 SmaugWatch" ManaCost.empty #["Dragon"] 4 4 with
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger
+        (.castSpell .you .anyObject (manaSpent? := some .fromTreasure))
+        (Effect.gainLife 2)
+    ]
+  }
+  -- 1. Treasure provenance (non-plain Treasure token + floating `{1}`):
+  --    With Smaug trigger on battlefield -> NOT unique (player may sacrifice Treasure for trigger)!
+  --    Without Smaug trigger -> UNIQUE!
+  let gTrSmaug0 :=
+    (insertObject (addPermanent (addPermanent gMain smaugTrigDef p0 p0) Catalog.treasureToken p0 p0)
+      oneInstDef p0 (.hand p0)).addMana p0 .colorless 1
+  let gTrSmaugProp := mustApply gTrSmaug0 p0 (.cast (gTrSmaug0.player p0).hand.back!)
+  let gTrNoSmaug0 :=
+    (insertObject (addPermanent gMain Catalog.treasureToken p0 p0)
+      oneInstDef p0 (.hand p0)).addMana p0 .colorless 1
+  let gTrNoSmaugProp := mustApply gTrNoSmaug0 p0 (.cast (gTrNoSmaug0.player p0).hand.back!)
+
+  -- Plain `{T}` Treasure land + floating `{1}` with Smaug -> NOT unique!
+  let trPlainLandDef : CardDef := {
+    name := "P52 Check9 PlainTreasureLand"
+    types := #[.artifact, .land]
+    subtypes := #["Treasure"]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.fixedOne .colorless)]
+  }
+  let gTrPlainSmaug0 :=
+    (insertObject (addPermanent (addPermanent gMain smaugTrigDef p0 p0) trPlainLandDef p0 p0)
+      oneInstDef p0 (.hand p0)).addMana p0 .colorless 1
+  let gTrPlainSmaugProp := mustApply gTrPlainSmaug0 p0 (.cast (gTrPlainSmaug0.player p0).hand.back!)
+
+  -- 2. *Path of Ancestry* provenance:
+  --    White/Green Elf commander + `{W}` *Path of Ancestry* + floating `{G}` on `{1}` creature:
+  --    `{W}` precedes `{G}` in `ManaPool.spendAnyUnit?` (`W < G`), so tapping *Path of Ancestry*
+  --    flips `ancestryScry` from `false` to `true` on an Elf (`!hasUniqueManaPayment`), while on a Bear
+  --    (no shared creature type with the Elf commander) it stays unique (`hasUniqueManaPayment`)!
+  let poaDef : CardDef := {
+    name := "P52 Check9 PathOfAncestry"
+    types := #[.land]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.fixedOne (.colored .white))]
+    triggeredAbilities := #[TriggeredAbility.onManaSpentCastCommanderTypeScry]
+  }
+  let elfCmdrDef : CardDef := {
+    creature "P52 Check9 ElfCmdr" ⟨#[.colored .white, .colored .green]⟩ #["Elf"] 2 2 with
+    supertypes := #[.legendary]
+  }
+  let elfSpellDef : CardDef := creature "P52 Check9 ElfSpell" (ManaCost.ofGeneric 1) #["Elf"] 2 2
+  let bearSpellDef : CardDef := creature "P52 Check9 BearSpell" (ManaCost.ofGeneric 1) #["Bear"] 2 2
+  let cmdCfg : StartConfig := {
+    seats := #[
+      { name := "P0", deck := testGreenDeck, commanders := #[elfCmdrDef] },
+      { name := "P1", deck := testRedDeck }
+    ]
+    format := .constructed
+    seed := 529
+    startingPlayer := some 0
+  }
+  let gCmdBase : Game :=
+    match Start.start cmdCfg with
+    | .ok g => (keepOpeningHands g 20).advanceStep
+    | .error e => panic! e
+  let gPoaElf0 :=
+    (insertObject (addPermanent gCmdBase poaDef p0 p0) elfSpellDef p0 (.hand p0)).addMana p0 (.colored .green) 1
+  let gPoaElfProp := mustApply gPoaElf0 p0 (.cast (gPoaElf0.player p0).hand.back!)
+  let gPoaBear0 :=
+    (insertObject (addPermanent gCmdBase poaDef p0 p0) bearSpellDef p0 (.hand p0)).addMana p0 (.colored .green) 1
+  let gPoaBearProp := mustApply gPoaBear0 p0 (.cast (gPoaBear0.player p0).hand.back!)
+
+  -- 3. `ManaOutput.combination #[W, U, R] 2` on `{2}` with floating `{B}`:
+  --    `[W, U]` leaves `[{B}]` while `[R, R]` leaves `[{R}]`, so NOT unique!
+  let comboWurDef : CardDef := {
+    name := "P52 Check9 WurCombo"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility
+        (.combination (.explicit #[.colored .white, .colored .blue, .colored .red]) (.const 2))
+    ]
+  }
+  let gComboWur0 :=
+    (insertObject (addPermanent gMain comboWurDef p0 p0) twoArtDef p0 (.hand p0)).addMana p0 (.colored .black) 1
+  let gComboWurProp := mustApply gComboWur0 p0 (.cast (gComboWur0.player p0).hand.back!)
+
+  -- 4. Multi-source rider flip: floating `[{R}, {G, .cantBeCountered}]` + TWO artifact-only `{C}` sources
+  --    on `{2}` artifact spell -> tapping BOTH flips `cantBeCountered` from `true` to `false` (NOT unique!),
+  --    whereas with only ONE such source `cantBeCountered` stays `true` (UNIQUE)!
+  let artOnlyRockDef : CardDef := {
+    name := "P52 Check9 ArtRock"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.fixedOne .colorless)
+        (restriction := some (.onlyForSpells (.hasType .artifact)))
+    ]
+  }
+  let addFloatRider (g : Game) : Game :=
+    g.addManaUnits p0 #[
+      { mana := .colored .red },
+      { mana := .colored .green, riders := #[.cantBeCountered] }
+    ]
+  let gMultiTwo0 :=
+    addFloatRider (insertObject (addPermanent (addPermanent gMain artOnlyRockDef p0 p0) artOnlyRockDef p0 p0)
+      twoArtDef p0 (.hand p0))
+  let gMultiTwoProp := mustApply gMultiTwo0 p0 (.cast (gMultiTwo0.player p0).hand.back!)
+  let gMultiOne0 :=
+    addFloatRider (insertObject (addPermanent gMain artOnlyRockDef p0 p0)
+      twoArtDef p0 (.hand p0))
+  let gMultiOneProp := mustApply gMultiOne0 p0 (.cast (gMultiOne0.player p0).hand.back!)
+
+  mustHoldCheck9 "p52_treasureNonPlainSmaugNotUnique" (!hasUniqueManaPayment gTrSmaugProp) &&
+  mustHoldCheck9 "p52_treasureNonPlainNoSmaugUnique" (hasUniqueManaPayment gTrNoSmaugProp) &&
+  mustHoldCheck9 "p52_treasurePlainSmaugNotUnique" (!hasUniqueManaPayment gTrPlainSmaugProp) &&
+  mustHoldCheck9 "p52_poaMatchingCreatureNotUnique" (!hasUniqueManaPayment gPoaElfProp) &&
+  mustHoldCheck9 "p52_poaNonMatchingCreatureUnique" (hasUniqueManaPayment gPoaBearProp) &&
+  mustHoldCheck9 "p52_comboWurFloatingBlackNotUnique" (!hasUniqueManaPayment gComboWurProp) &&
+  mustHoldCheck9 "p52_multiSourceTwoRocksFlipNotUnique" (!hasUniqueManaPayment gMultiTwoProp) &&
+  mustHoldCheck9 "p52_multiSourceOneRockStaysUnique" (hasUniqueManaPayment gMultiOneProp)
+
+
 
 

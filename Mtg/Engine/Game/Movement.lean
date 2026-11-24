@@ -517,8 +517,10 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         if finalityExile then
           g.logMsg s!"A finality counter exiles {oldName} instead of putting it into a graveyard"
         else g
+      let hasLeavingEffect :=
+        g.activeEffects.any fun (_, e) => g.effectExpiresWithLeavingObj old.id old.zone #[] e
       let effSkipIds : Array ObjectId :=
-        if old.isBattlefieldObject || old.zone == .command then
+        if old.isBattlefieldObject || old.zone == .command || hasLeavingEffect then
           (coDepartingIdsFwd g #[old.id]).foldl
             (fun acc cid => if acc.contains cid then acc else acc.push cid) skipUnattachIds
         else skipUnattachIds
@@ -617,12 +619,13 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           g.record (GameEvent.becameAttacking g.turnNumber (g.snapshot (g.object! newId)) tgt
             (cause := baseHappenedCause))
         | none => g
-      let g := g.expireEffectsOnLeavingObject old (reconcileControl := false)
-        (preState? := some preMove) (skipLogIds := effSkipIds)
+      let moveExpFromIdx := g.events.size
+      let g := g.expireLeavingObjectEffectsWithLogs old (preState? := some preMove)
+        (skipLogIds := effSkipIds)
       let g :=
         if old.zone == .battlefield then
           g.expireWhileSourceEffects old.id (preState? := some preMove) (reconcileControl := false)
-            (skipLogIds := effSkipIds)
+            (skipLogIds := effSkipIds) (deferPlayFromExileLogs := true)
         else g
       let g :=
         match g.findObject? newId with
@@ -682,6 +685,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           g.logMsg s!"{g.nameWithToken (g.object! newId)} enters with {weaverBonus} additional +1/+1 counter(s)"
         else g
       let g := reconcileControlAfterTransitionFwd preMove g (cause := some baseHappenedCause)
+      let g := emitExpiredPlayFromExileLogs preMove g moveExpFromIdx
       (g, (newId, headSource, true))
   if !didMove then (g, newId)
   else

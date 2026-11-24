@@ -417,28 +417,16 @@ in its battlefield-departure batch, falling back to `lastKnownPower` for
 synthetic unit tests that invoke resolution directly without departure events. -/
 def attachedEquipmentAtResolution (g : Game) (sourceId : Option ObjectId)
     (lastKnownPower : Option Int := none) : Nat :=
-  let departedCount? (sid : ObjectId) : Option Nat :=
-    match g.events.findSomeRev? (fun e =>
-      match e.change with
-      | .rules (.zone (.moved before _ .battlefield _ _ _ _ _)) =>
-        if before.id == some sid then some e.batch else none
-      | _ => none) with
-    | none => none
-    | some depBatch =>
-      some <| g.events.foldl (fun acc e =>
-        if e.batch == depBatch && e.cause? == some (.gameRule .unattachOnHostLeave) then
-          match e.change with
-          | .rules (.permanent (.unattached att hostId)) =>
-            if hostId == sid && att.subtypes.contains .equipment then acc + 1 else acc
-          | _ => acc
-        else acc) 0
+  let departedOrPhasedCount? (sid : ObjectId) : Option Nat :=
+    (g.departedOrPhasedOutAttachments? sid).map fun atts =>
+      (atts.filter (fun att => att.subtypes.contains .equipment)).size
   match sourceId with
   | some sid =>
-    match g.findObject? sid with
+    match g.findLiveSourceObject? sid with
     | some o =>
-      if o.zone == .battlefield then g.attachedEquipmentCount o
-      else (departedCount? sid).getD (lastKnownPower.getD (0 : Int)).toNat
-    | none => (departedCount? sid).getD (lastKnownPower.getD (0 : Int)).toNat
+      if o.isOnBattlefield then g.attachedEquipmentCount o
+      else (departedOrPhasedCount? sid).getD (lastKnownPower.getD (0 : Int)).toNat
+    | none => (departedOrPhasedCount? sid).getD (lastKnownPower.getD (0 : Int)).toNat
   | none => (lastKnownPower.getD (0 : Int)).toNat
 
 /-- Current P/T of `sourceId` if it is still on the battlefield; otherwise

@@ -92,6 +92,7 @@ callers that feed `endControlEffectsSimultaneously` (`isBattlefieldObject`,
 CR 702.26d / 800.4c) pass `includePhasedOut := true`. -/
 def coDepartingIds (g : Game) (seedIds : Array ObjectId)
     (endingCtrlEids : Array EffectId := #[])
+    (endingCopyEids : Array EffectId := #[])
     (departingPlayer? : Option PlayerId := none)
     (includePhasedOut : Bool := false) : Array ObjectId := Id.run do
   let pushUnique (arr : Array ObjectId) (oid : ObjectId) : Array ObjectId :=
@@ -130,9 +131,14 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
         | .layered _ (.control _) (.whileSourceOnBattlefield src)
         | .layered _ (.control _) (.untilSourceLeaves src)
         | .layered _ (.control _) (.whileSourceHasCounter src _)
-        | .layered _ (.control _) (.whileInZone src _) =>
+        | .layered _ (.control _) (.whileInZone src _)
+        | .layered _ (.copy _) (.whileSourceOnBattlefield src)
+        | .layered _ (.copy _) (.untilSourceLeaves src)
+        | .layered _ (.copy _) (.whileSourceHasCounter src _)
+        | .layered _ (.copy _) (.whileInZone src _) =>
           !allSrcs.contains src
-        | .layered (.objects ids) (.control _) _ =>
+        | .layered (.objects ids) (.control _) _
+        | .layered (.objects ids) (.copy _) _ =>
           !(ids.any allSrcs.contains &&
             ids.all (fun id => allSrcs.contains id || !(nextObjs.any (·.id == id))))
         | _ => true
@@ -149,15 +155,38 @@ def coDepartingIds (g : Game) (seedIds : Array ObjectId)
         match e with
         | .layered _ (.control _) (.whileSourceOnBattlefield src)
         | .layered _ (.control _) (.untilSourceLeaves src)
-        | .layered _ (.control _) (.whileSourceHasCounter src _)
-        | .layered _ (.control _) (.whileInZone src _) =>
+        | .layered _ (.control _) (.whileSourceHasCounter src _) =>
           if cmdInitSeeds.contains src then some eid else none
+        | .layered _ (.control _) (.whileInZone src dz) =>
+          if cmdInitSeeds.contains src ||
+              (initSeeds.contains src && (g.findObject? src).any (·.zone == dz)) then
+            some eid
+          else none
         | _ => none
+  let simultaneousEndCopyEids : Array EffectId :=
+    g.activeEffects.filterMap fun (eid, e) =>
+      if endingCopyEids.contains eid then some eid
+      else
+        match e with
+        | .layered _ (.copy _) (.whileSourceOnBattlefield src)
+        | .layered _ (.copy _) (.untilSourceLeaves src)
+        | .layered _ (.copy _) (.whileSourceHasCounter src _) =>
+          if cmdInitSeeds.contains src then some eid else none
+        | .layered _ (.copy _) (.whileInZone src dz) =>
+          if cmdInitSeeds.contains src ||
+              (initSeeds.contains src && (g.findObject? src).any (·.zone == dz)) then
+            some eid
+          else none
+        | _ => none
+  let gAfterInitSimul : Game :=
+    { g with
+      activeEffects := g.activeEffects.filter fun (eid, _) =>
+        !simultaneousEndCtrlEids.contains eid && !simultaneousEndCopyEids.contains eid }
   let phasedOutExpiringSimultaneously (o : GameObject) : Bool :=
     includePhasedOut &&
       let applied := g.appliedControlEffectIds o
-      !applied.isEmpty && applied.all simultaneousEndCtrlEids.contains
-  let (cur0, expanded0) := filterAfterSources g initSeeds endingCtrlEids
+      !applied.isEmpty && (gAfterInitSimul.appliedControlEffectIds o).isEmpty
+  let (cur0, expanded0) := filterAfterSources g initSeeds (endingCtrlEids ++ endingCopyEids)
   let mut cur := cur0
   let mut result := expanded0.foldl pushUnique initSeeds
   for _ in [0:cur.objects.size] do
@@ -711,6 +740,11 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
         | .layered _ (.control _) (.whileSourceHasCounter src k) =>
           if src == id && zeroedKinds.contains k then some eid else none
         | _ => none
+      let copyEids := g.activeEffects.filterMap fun (eid, e) =>
+        match e with
+        | .layered _ (.copy _) (.whileSourceHasCounter src k) =>
+          if src == id && zeroedKinds.contains k then some eid else none
+        | _ => none
       let endingEmbIds : Array ObjectId :=
         g.activeEffects.foldl (fun acc (_, e) =>
           match e with
@@ -719,7 +753,9 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
             else acc
           | _ => acc) #[]
       let skipIds :=
-        g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids) (includePhasedOut := true)
+        pre.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
+          (endingCopyEids := copyEids) (includePhasedOut := true)
+      let fromIdx := g.events.size
       let preExpire (g0 : Game) : Game :=
         let g1 :=
           g0.restoreCopiesWhere
@@ -728,6 +764,7 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
               | .whileSourceHasCounter src k => src == id && zeroedKinds.contains k
               | _ => false)
             (cause := expCause) (reconcileControl := false) (skipLogIds := skipIds)
+            (preState? := some pre)
         let g2 :=
           g1.ceaseEndingCommandEmblemsWhere
             (fun _ d =>
@@ -735,7 +772,7 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
               | .whileSourceHasCounter src k => src == id && zeroedKinds.contains k
               | _ => false)
             (cause := expCause) (reconcileControl := false) (preState? := some pre)
-            (skipLogIds := skipIds)
+            (skipLogIds := skipIds) (deferPlayFromExileLogs := true)
         g2.expireMatching
           (fun s =>
             match s with
@@ -745,11 +782,13 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
               | .whileSourceHasCounter src k => src == id && zeroedKinds.contains k
               | _ => false)
           (cause := expCause) (reconcileControl := false) (preState? := some pre)
-      if !ctrlEids.isEmpty || hadWhileCounterCtrlOrCopy then
-        return g.endControlEffectsSimultaneously ctrlEids (cause := expCause)
-          (preExpire := preExpire) (preState? := some pre) (extraSkipIds := skipIds)
-      else
-        return preExpire g
+      let gOut :=
+        if !ctrlEids.isEmpty || hadWhileCounterCtrlOrCopy then
+          g.endControlEffectsSimultaneously ctrlEids (cause := expCause)
+            (preExpire := preExpire) (preState? := some pre) (extraSkipIds := skipIds)
+        else
+          preExpire g
+      return emitExpiredPlayFromExileLogs pre gOut fromIdx
 
 /-- Record removing up to `n` counters of `kind` from `id` via
 `PermanentEvent.counters` (CR 122.1). Clamps to the current counter count,
@@ -3493,6 +3532,47 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           (endingCtrlEids := ctrlEids) (departingPlayer? := some p)
           (includePhasedOut := true)
       let preExpireLeave (g0 : Game) : Game :=
+        let stackCmdCeaseObjs :=
+          g0.objects.filter (fun o => stackCmdCeaseIds.contains o.id)
+        let allLeavingObjs := owned ++ stackCmdCeaseObjs
+        let seedEmbs : Array ObjectId :=
+          let fromObjs :=
+            allLeavingObjs.filterMap (fun o => if o.zone == .command then some o.id else none)
+          g0.activeEffects.foldl (fun acc (_, s) =>
+            match s with
+            | .gameRule (.commandEmblem embId) d =>
+              let matchesAny :=
+                allLeavingObjs.any fun o =>
+                  (o.zone == .battlefield &&
+                    match d with
+                    | .whileSourceOnBattlefield src | .untilSourceLeaves src
+                    | .whileSourceHasCounter src _ => src == o.id
+                    | _ => false) ||
+                  g0.effectExpiresWithLeavingObj o.id o.zone (ownedIds ++ stackCmdCeaseIds) s
+              if matchesAny && !acc.contains embId then acc.push embId else acc
+            | _ => acc) fromObjs
+        let allEmbs := g0.expandTransitiveCommandEmblems seedEmbs
+        let allCoLeaving :=
+          allEmbs.foldl (fun acc id => if acc.contains id then acc else acc.push id)
+            (ownedIds ++ stackCmdCeaseIds)
+        let g0 :=
+          g0.restoreCopiesWhere
+            (fun acc eid _ d =>
+              allLeavingObjs.any (fun o =>
+                (o.zone == .battlefield &&
+                  match d with
+                  | .whileSourceOnBattlefield src | .untilSourceLeaves src
+                  | .whileSourceHasCounter src _ => src == o.id
+                  | _ => false) ||
+                match acc.activeEffect? eid with
+                | some ce => acc.effectExpiresWithLeavingObj o.id o.zone allCoLeaving ce
+                | none => false) ||
+              (!allEmbs.isEmpty &&
+                match acc.activeEffect? eid with
+                | some ce => allEmbs.any (acc.effectExpiresWithLeavingObj · .command allEmbs ce)
+                | none => false))
+            (cause := cause) (reconcileControl := false)
+            (skipLogIds := coDepartingIds) (preState? := some preLeave)
         let g1 :=
           owned.foldl (fun acc o =>
             match acc.findObject? o.id with

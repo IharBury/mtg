@@ -165,7 +165,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       !fromGraveyard && g.canCastMorphFaceDown p card
   let origPerm :=
     if (origPerm.bind (·.prepareSource)).isSome && morphCandidateOk &&
-        !(g.validateFrontFaceCast p card face (sneakCost := sneakCost) (origPermOverride := origPerm)).isOk then
+        !(g.validateFrontFaceCast p card face (sneakCost := sneakCost) (sneakAttacker := sneakAttacker) (origPermOverride := origPerm)).isOk then
       let morphClean :=
         cleanPerms.filter (fun pm => pm.ignoreTiming || g.timingAllowsCast p morphSpellFace)
       morphClean.foldl (fun best? pm =>
@@ -179,7 +179,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let hasMorphChoice :=
     morphCandidateOk && (origPerm.bind (·.prepareSource)).isNone
   if !hasMorphChoice then
-    g.validateFrontFaceCast p card face (sneakCost := sneakCost) (origPermOverride := origPerm)
+    g.validateFrontFaceCast p card face (sneakCost := sneakCost) (sneakAttacker := sneakAttacker) (origPermOverride := origPerm)
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be

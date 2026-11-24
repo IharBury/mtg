@@ -2091,7 +2091,7 @@ private def execSearchLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
       let pred (c : CardDef) : Bool :=
         let fake : GameObject := {
           printed := c
-          id := ⟨0⟩
+          id := noSourceSentinelId
           owner := searcher
           controller := some searcher
           zone := .library searcher

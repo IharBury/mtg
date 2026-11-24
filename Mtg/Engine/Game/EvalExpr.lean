@@ -110,7 +110,7 @@ to explicit LKI snapshots in `env` (`sourceSnapshot`, `triggerSubjectSnapshot`,
 CR 603.10 pre-event board. -/
 def resolveObjectView? (g : Game) (env : EvalEnv) (oid : ObjectId) : Option ObjectView :=
   let st := boardState g env
-  match st.findObject? oid with
+  match st.findLiveSourceObject? oid with
   | some o => some (.live o)
   | none =>
     match env.lkiOf? oid with
@@ -398,18 +398,24 @@ def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
           (st.controllerOf o).any fun p =>
             (st.permanentsOf p).any fun em =>
               hasProtChosenStatic (st.staticAbilities em) && em.status.chosenCardType.isSome
-      | .param .equip => retains && bc.allActivatedAbilities.any (·.isEquip)
+      | .param .equip =>
+        (retains && bc.allActivatedAbilities.any (·.isEquip)) ||
+          (st.activatedAbilitiesOf o).any (·.isEquip)
       | _ => false
   | .lki eo =>
     if KeywordAbility.hasTag eo.keywords kw then true
     else
+      let retains := eo.retainsPrintedAbilities.getD (!eo.faceDown)
       let bc? := if eo.faceDown then none else eo.copiable.orElse (fun _ => eo.printed)
       let sas := eo.staticAbilities
       match kw with
       | .changeling => eo.changeling
       | .toxic => eo.toxic > 0
+      | .ward => !eo.wardCosts.isEmpty
       | .protection => hasProtChosenStatic sas
-      | .param .equip => bc?.any (fun c => c.allActivatedAbilities.any (·.isEquip))
+      | .param .equip =>
+        (retains && bc?.any (fun c => c.allActivatedAbilities.any (·.isEquip))) ||
+          (eo.activatedAbilities.getD #[]).any (·.isEquip)
       | _ => false
 
 def viewHasDesignation (st : Game) (v : ObjectView) (tag : PermanentDesignationTag) : Bool :=
@@ -629,6 +635,9 @@ private def lkiCombatWindow (events : Array GameEvent) (oid : ObjectId)
       | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
         if toZ != .battlefield && before.id == some oid && before.attacking then
           atkDepart := some (i, e.batch)
+      | .rules (.permanent (.phasedOut before _)) =>
+        if before.id == some oid && before.attacking then
+          atkDepart := some (i, e.batch)
       | .rules (.combat (.removedFromCombat eo)) =>
         if eo.id == some oid then
           atkDepart := some (i, e.batch)
@@ -700,6 +709,9 @@ private def lkiAttackingAlone (st : Game) (env : EvalEnv) (events : Array GameEv
           | .rules (.combat (.removedFromCombat obj)) =>
             if let some rid := obj.id then
               active := active.filter (· != rid)
+          | .rules (.permanent (.phasedOut before _)) =>
+            if let some pid := before.id then
+              active := active.filter (· != pid)
           | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
             if toZ != .battlefield then
               if let some lid := before.id then
@@ -772,18 +784,23 @@ partial def evalPlayerPred (g : Game) (env : EvalEnv) (p : PlayerId) (pred : Pla
     | .isMonarch => pl.isMonarch
     | .isActivePlayer => st.activePlayer == p
     | .isDefendingPlayer =>
+      let defOfView (v : ObjectView) : Option PlayerId :=
+        match v with
+        | .live o => if o.isOnBattlefield && o.status.attacking then some (st.defendingPlayerOf o) else none
+        | .lki eo =>
+          if !eo.attacking then none
+          else
+            match eo.attackingTarget with
+            | some (.player dp) => some dp
+            | some (.planeswalker pwId) | some (.battle pwId) =>
+              ((st.findLiveSourceObject? pwId).bind st.controllerOf).orElse
+                (fun _ => (st.lastKnownBefore? pwId).bind (·.controller))
+            | none => some (st.defendingPlayerOf (Game.damageSourceObjectFromLki eo))
       let attackerDef? : Option PlayerId :=
-        env.sourceId.bind fun sid =>
-          match st.findObject? sid with
-          | some src =>
-            let fromHost :=
-              src.attachedTo.bind fun hid =>
-                match st.findObject? hid with
-                | some host => if host.status.attacking then some (st.defendingPlayerOf host) else none
-                | none => none
-            let fromSelf := if src.status.attacking then some (st.defendingPlayerOf src) else none
-            fromHost.orElse fun _ => fromSelf
-          | none => none
+        (env.sourceId.bind (resolveObjectView? g env)).bind fun srcView =>
+          let fromHost :=
+            (viewAttachedTo? srcView).bind (resolveObjectView? g env) |>.bind defOfView
+          fromHost.orElse fun _ => defOfView srcView
       match attackerDef? with
       | some dp => dp == p
       | none =>
@@ -826,18 +843,23 @@ partial def evalPlayer (g : Game) (env : EvalEnv) (expr : PlayerExpr) : Array Pl
   | .you => if st.stillInGame env.controller then #[env.controller] else #[]
   | .activePlayer => if st.stillInGame st.activePlayer then #[st.activePlayer] else #[]
   | .defendingPlayer =>
+    let defOfView (v : ObjectView) : Option PlayerId :=
+      match v with
+      | .live o => if o.isOnBattlefield && o.status.attacking then some (st.defendingPlayerOf o) else none
+      | .lki eo =>
+        if !eo.attacking then none
+        else
+          match eo.attackingTarget with
+          | some (.player dp) => some dp
+          | some (.planeswalker pwId) | some (.battle pwId) =>
+            ((st.findLiveSourceObject? pwId).bind st.controllerOf).orElse
+              (fun _ => (st.lastKnownBefore? pwId).bind (·.controller))
+          | none => some (st.defendingPlayerOf (Game.damageSourceObjectFromLki eo))
     let attackerDef? : Option PlayerId :=
-      env.sourceId.bind fun sid =>
-        match st.findObject? sid with
-        | some src =>
-          let fromHost :=
-            src.attachedTo.bind fun hid =>
-              match st.findObject? hid with
-              | some host => if host.status.attacking then some (st.defendingPlayerOf host) else none
-              | none => none
-          let fromSelf := if src.status.attacking then some (st.defendingPlayerOf src) else none
-          fromHost.orElse fun _ => fromSelf
-        | none => none
+      (env.sourceId.bind (resolveObjectView? g env)).bind fun srcView =>
+        let fromHost :=
+          (viewAttachedTo? srcView).bind (resolveObjectView? g env) |>.bind defOfView
+        fromHost.orElse fun _ => defOfView srcView
     match attackerDef? with
     | some dp => if st.stillInGame dp then #[dp] else #[]
     | none =>
@@ -1020,35 +1042,22 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
       | none => false
       | some attId =>
         hostIds.any fun hid =>
-          !(g.findObject? hid).any (·.zone == .battlefield) &&
-            g.events.any fun ev =>
-              match ev.change, ev.cause? with
-              | .rules (.permanent (.unattached att fromHost)), some (.gameRule .unattachOnHostLeave) =>
-                fromHost == hid && att.id == some attId
-              | _, _ => false
+          !(g.findObject? hid).any (·.isOnBattlefield) &&
+            (g.departedOrPhasedOutAttachments? hid).any (fun atts =>
+              atts.any (·.id == some attId))
   | .hasAttachment attFilter =>
     match v.id? with
     | none => false
     | some oid =>
       if (evalObjects g env attFilter.toExpr).any (fun att => viewAttachedTo? att == some oid) then
         true
-      else if (g.findObject? oid).any (·.zone == .battlefield) then
+      else if (g.findObject? oid).any (·.isOnBattlefield) then
         false
       else
-        let depBatch? := g.events.reverse.findSome? fun ev =>
-          match ev.change with
-          | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
-            if toZ != .battlefield && before.id == some oid then ev.batch else none
-          | _ => none
-        match depBatch? with
+        match g.departedOrPhasedOutAttachments? oid with
         | none => false
-        | some bid =>
-          g.events.any fun ev =>
-            ev.batch == some bid &&
-              match ev.change, ev.cause? with
-              | .rules (.permanent (.unattached att fromHost)), some (.gameRule .unattachOnHostLeave) =>
-                fromHost == oid && evalObjectPred g env (.lki att) attFilter.pred
-              | _, _ => false
+        | some atts =>
+          atts.any fun att => evalObjectPred g env (.lki att) attFilter.pred
   | .targets tgtExpr =>
     match v.id? with
     | none => false
@@ -1219,6 +1228,10 @@ partial def evalObjects (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Array O
       | .matching pf => evalPlayerFilter g env pf
       | .ofPlayer pe => evalPlayer g env pe
     let ownerOk (o : GameObject) : Bool := !restrictOwner || owners.contains o.owner
+    let rec attachedToHostExprs : ObjectPred → Array ObjectExpr
+      | .attachedTo h => #[h]
+      | .all ps => ps.foldl (fun a p => a ++ attachedToHostExprs p) #[]
+      | _ => #[]
     let candidates : Array ObjectView := Id.run do
       let mut acc : Array ObjectView := #[]
       for zk in zs.zones do
@@ -1227,6 +1240,16 @@ partial def evalObjects (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Array O
           for o in st.objects do
             if o.zone == .battlefield && ownerOk o && (allowPhased || !o.status.phasedOut) then
               acc := acc.push (.live o)
+          if !allowPhased then
+            for hostExpr in attachedToHostExprs pred do
+              let hostIds := (evalObjects g env hostExpr).filterMap ObjectView.id?
+              for hid in hostIds do
+                if !(st.findObject? hid).any (·.isOnBattlefield) then
+                  if let some atts := g.departedOrPhasedOutAttachments? hid then
+                    for att in atts do
+                      if (!restrictOwner || owners.contains att.owner) &&
+                          !acc.any (fun v => v.id? == att.id && att.id.isSome) then
+                        acc := acc.push (.lki att)
         | .stack =>
           for o in st.objects do
             if o.zone == .stack && ownerOk o then acc := acc.push (.live o)

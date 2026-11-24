@@ -102,10 +102,10 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none)
           g.resolveOptionalCause cause (fallbackCtrl := fallbackCtrl)
             (defaultCause := .turnBased .phaseInOut)
         let pairs := g.indirectPhaseOutPairs live.id
+        let oSnap := snapWithStatus g live
+        let oName := (preSnapOf? live.id).map (·.name) |>.getD (g.name live)
         let g := g.removeFromCombat live (cause := some (stepCause g))
-        let o := g.object! live.id
-        let oName := (preSnapOf? o.id).map (·.name) |>.getD (g.name o)
-        let g := g.record (GameEvent.phasedOut g.turnNumber (snapWithStatus g o) false (cause := stepCause g))
+        let g := g.record (GameEvent.phasedOut g.turnNumber oSnap false (cause := stepCause g))
         let g := g.logMsg s!"{oName} phases out"
         let g :=
           pairs.foldl (fun acc (attId, hostId) =>
@@ -117,10 +117,10 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none)
                 let hostName :=
                   (preSnapOf? hostId).map (·.name) |>.getD
                     ((acc.findObject? hostId).map acc.name |>.getD oName)
-                let acc := acc.removeFromCombat att (cause := some (stepCause acc))
-                let att := acc.object! att.id
+                let attSnap := snapWithStatus acc att
                 let attName := (preSnapOf? att.id).map (·.name) |>.getD (acc.name att)
-                acc.record (GameEvent.phasedOut acc.turnNumber (snapWithStatus acc att) true (cause := stepCause acc))
+                let acc := acc.removeFromCombat att (cause := some (stepCause acc))
+                acc.record (GameEvent.phasedOut acc.turnNumber attSnap true (cause := stepCause acc))
                   |>.logMsg s!"{attName} phases out attached to {hostName}") g
         if reconcile && hadOpenBatch then
           reconcileControlAfterTransitionFwd pre g (cause := some (stepCause g))
@@ -859,7 +859,7 @@ def phaseInControlled (g : Game) (p : PlayerId) (includeTeammates : Bool := fals
           let shouldPhaseIn :=
             ctrl?.any (fun c => c == p || (includeTeammates && g.areTeammates c p)) ||
               match ctrl? with
-              | some dep => !g.stillInGame dep && departedNextTurnWouldHaveBegunSince g dep sinceIdx?
+              | some dep => !(g.teamMembers dep).any g.stillInGame && departedNextTurnWouldHaveBegunSince g dep sinceIdx?
               | none => false
           if shouldPhaseIn then some o.id else none
         else none

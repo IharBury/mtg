@@ -137,7 +137,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       if source.id == noSourceSentinelId then none
       else some source.id
     let srcSnap : EventObject :=
-      match srcIdOpt.bind g.findObject? with
+      match srcIdOpt.bind g.findLiveSourceObject? with
       | some cur => g.snapshot cur
       | none =>
         match srcIdOpt.bind g.lastKnownBefore? with
@@ -539,7 +539,7 @@ def putWaitingTrigger (g : Game) (wt : WaitingTrigger) (pattern : TriggerPattern
             id := none
             controller := wt.source.controller.orElse (fun _ => some wt.controller) }
         else
-          match g.findObject? wt.source.id with
+          match g.findLiveSourceObject? wt.source.id with
           | some cur => g.snapshot cur
           | none => (g.lastKnownBefore? wt.source.id).getD (g.snapshot wt.source)
       let copies := g.extraTriggerCopies wt.controller wt.source + 1

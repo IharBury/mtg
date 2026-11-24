@@ -32,7 +32,7 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
     (ignorePending : Bool := false)
     (card? : Option GameObject := none) : Bool :=
   let dummy : GameObject :=
-    card?.getD { id := ⟨0⟩, owner := p, controller := some p, zone := .hand p, printed := face }
+    card?.getD { id := noSourceSentinelId, owner := p, controller := some p, zone := .hand p, printed := face }
   let tcs := match card? with | some c => g.evalLayer3 c | none => #[]
   let faceStatics :=
     if tcs.isEmpty then face.staticAbilities
@@ -155,13 +155,15 @@ def castRestrictionError? (g : Game) (p : PlayerId) (cardId : ObjectId) (face : 
 /-- Why a mandatory sacrifice additional cost of `face` cannot be paid, if it cannot
 (CR 601.2b / 601.2h / 601.3). -/
 def mandatorySacrificeError? (g : Game) (p : PlayerId) (checkId : ObjectId)
-    (face : CardDef) (displayName : String := face.name) : Option String :=
+    (face : CardDef) (displayName : String := face.name)
+    (excludeExtra? : Option ObjectId := none) : Option String :=
   match g.mandatorySacrificeFilterForId? checkId face with
   | none => none
   | some pred =>
     let env : EvalEnv := { controller := p, sourceId := some checkId }
     if (g.permanentsOf p).any (fun perm =>
-        perm.id != checkId && EvalExpr.evalObjectPred g env (.live perm) pred) then
+        perm.id != checkId && excludeExtra? != some perm.id &&
+          EvalExpr.evalObjectPred g env (.live perm) pred) then
       none
     else
       let phrase := (CostSpec.ofItem (.sacrifice (.exact 1) (.filter pred))).toInlinePhrase
@@ -620,6 +622,7 @@ choosing the printed cost instead of Morph at `announceKicker`; CR 601.2b–c /
 601.3 / 702.37a). -/
 def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : CardDef)
     (sneakCost : Option ManaCost := none)
+    (sneakAttacker : Option ObjectId := none)
     (origPermOverride : Option PlayPermission := none)
     (excludeIdOverride : Option ObjectId := none) : Except String Unit := do
   let checkId := excludeIdOverride.getD card.id
@@ -657,7 +660,7 @@ def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : 
     if reqTarget && !face.allowsZeroTargets &&
         !g.castFaceHasLegalTarget p face tcs (some checkId) then
       throw s!"{face.name} requires a target"
-  if let some err := g.mandatorySacrificeError? p checkId face then
+  if let some err := g.mandatorySacrificeError? p checkId face (excludeExtra? := sneakAttacker) then
     throw err
 
 /-- Whether `p` may begin to cast `o` as an Adventure (CR 715.3). -/
@@ -833,61 +836,70 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
           id != prop.spellId &&
             (g.findObject? id).any (fun card => g.hasSubtype card quality))
   if !teamworkOk || !beholdOk then false
-  else if prop.kind != .activatedAbility then
-    let excludeId := prop.sourceId.getD prop.spellId
-    let sneakPendingId? : Option ObjectId :=
-      match prop.sneakAttacker with
-      | some aid => if !g.sneakPaid prop.spellId then some aid else none
-      | none => none
-    let sacOk :=
-      !prop.needsSacrificeOther ||
-        (g.sacrificeCreatureOrArtifactChoices p excludeId).any (fun o =>
-          some o.id != sneakPendingId?)
-    let discardOk :=
-      !prop.needsDiscardCard || (g.player p).hand.any (· != prop.spellId)
-    sacOk && discardOk
   else
-    match prop.sourceId, prop.activation with
-    | some sid, some ab =>
-      let basePicks := costPicksOf ab
-      let allPicks := costPicksWithSacrificeOther basePicks
-        (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
-      let sacSrc :=
-        prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield
-      let discSrc :=
-        prop.discardSource || ab.cost.discardSource || ab.cost.exileSourceFromHand
-      let zemoOk : Bool :=
-        if !prop.choiceCostPaid && ab.cost.exileManaSymbols?.isSome then
-          let col :=
-            match g.findObject? sid <|> some prop.original with
-            | some src => TextChange.applyColor (g.evalLayer3 src) .black
-            | none => .black
-          let allCands := (g.player p).graveyard.filter (fun id =>
-            (g.findObject? id).any (fun card => (g.colors card).contains col))
-          g.canPayZemoBoast p allCands col
-        else true
-      if !zemoOk then false
-      else
-        let crewN? : Option Nat :=
-          if !prop.choiceCostPaid then ab.cost.crewPower? else none
-        match crewN? with
-        | some n =>
-          (g.firstPayableCrewSelection? p sid n allPicks
-            (tapSource := prop.tapSource)
-            (sacrificeOrExileSource := sacSrc)
-            (discardOrExileHandSource := discSrc)
-            (preTappedIds := preTappedIds)).isSome
-        | none =>
-          allPicks.isEmpty ||
-            g.costPicksPayable p (some sid) allPicks
+    let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
+    let tapSourceOk :=
+      !prop.tapSource ||
+        match prop.sourceId with
+        | none => true
+        | some sid =>
+          g.sourceTappedForCost sid (some prop.spellId) sinceIdx || !preTappedIds.contains sid
+    if !tapSourceOk then false
+    else if prop.kind != .activatedAbility then
+      let excludeId := prop.sourceId.getD prop.spellId
+      let sneakPendingId? : Option ObjectId :=
+        match prop.sneakAttacker with
+        | some aid => if !g.sneakPaid prop.spellId then some aid else none
+        | none => none
+      let sacOk :=
+        !prop.needsSacrificeOther ||
+          (g.sacrificeCreatureOrArtifactChoices p excludeId).any (fun o =>
+            some o.id != sneakPendingId?)
+      let discardOk :=
+        !prop.needsDiscardCard || (g.player p).hand.any (· != prop.spellId)
+      sacOk && discardOk
+    else
+      match prop.sourceId, prop.activation with
+      | some sid, some ab =>
+        let basePicks := costPicksOf ab
+        let allPicks := costPicksWithSacrificeOther basePicks
+          (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
+        let sacSrc :=
+          prop.sacrificeSource || ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield
+        let discSrc :=
+          prop.discardSource || ab.cost.discardSource || ab.cost.exileSourceFromHand
+        let zemoOk : Bool :=
+          if !prop.choiceCostPaid && ab.cost.exileManaSymbols?.isSome then
+            let col :=
+              match g.findObject? sid <|> some prop.original with
+              | some src => TextChange.applyColor (g.evalLayer3 src) .black
+              | none => .black
+            let allCands := (g.player p).graveyard.filter (fun id =>
+              (g.findObject? id).any (fun card => (g.colors card).contains col))
+            g.canPayZemoBoast p allCands col
+          else true
+        if !zemoOk then false
+        else
+          let crewN? : Option Nat :=
+            if !prop.choiceCostPaid then ab.cost.crewPower? else none
+          match crewN? with
+          | some n =>
+            (g.firstPayableCrewSelection? p sid n allPicks
               (tapSource := prop.tapSource)
               (sacrificeOrExileSource := sacSrc)
               (discardOrExileHandSource := discSrc)
-              (preTappedIds := preTappedIds)
-    | _, _ =>
-      let excludeId := prop.sourceId.getD prop.spellId
-      (!prop.needsSacrificeOther || !(g.sacrificeCreatureOrArtifactChoices p excludeId).isEmpty) &&
-        (!prop.needsDiscardCard || !(g.player p).hand.isEmpty)
+              (preTappedIds := preTappedIds)).isSome
+          | none =>
+            allPicks.isEmpty ||
+              g.costPicksPayable p (some sid) allPicks
+                (tapSource := prop.tapSource)
+                (sacrificeOrExileSource := sacSrc)
+                (discardOrExileHandSource := discSrc)
+                (preTappedIds := preTappedIds)
+      | _, _ =>
+        let excludeId := prop.sourceId.getD prop.spellId
+        (!prop.needsSacrificeOther || !(g.sacrificeCreatureOrArtifactChoices p excludeId).isEmpty) &&
+          (!prop.needsDiscardCard || !(g.player p).hand.isEmpty)
 
 /-- Whether some subset of `sources` (combined with `preTappedIds` and `pool`)
 pays `cost` while preserving `prop?`'s unpaid post-mana `.crew` and tap
@@ -899,16 +911,19 @@ def hasCostPreservingPaymentSubset (g : Game) (pool : ManaPool) (cost : ManaCost
     (prop? : Option (PlayerId × ProposedSpell) := none)
     (preTappedIds : Array ObjectId := #[]) : Bool :=
   let activeProp? := prop?.map (·.2)
+  let usableSources :=
+    sources.filter fun (o, ts) =>
+      !(g.tapChoicesForSource o ts cost
+        (dedupSingleTypes := fun xs => dedupZeroReqManaTypes g o xs cost activeProp?)
+        (prop? := activeProp?)).isEmpty
   match prop? with
   | none =>
-    g.canPayFromSources pool cost sources.toList spend none
+    g.canPayFromSources pool cost usableSources.toList spend none
   | some (p, prop) =>
     if !g.tapPreservesPostManaCosts p prop preTappedIds then false
-    else if g.tapPreservesPostManaCosts p prop (preTappedIds ++ sources.map (·.1.id)) then
-      g.canPayFromSources pool cost sources.toList spend (some prop)
+    else if g.tapPreservesPostManaCosts p prop (preTappedIds ++ usableSources.map (·.1.id)) then
+      g.canPayFromSources pool cost usableSources.toList spend (some prop)
     else
-      let freeOthers := (sources.filter (fun (o, _) => !g.isCreature o && !g.isArtifact o)).toList
-      let critRem := (sources.filter (fun (o, _) => g.isCreature o || g.isArtifact o)).toList
       let allPicks : Array CostPick :=
         if prop.kind != .activatedAbility then #[]
         else
@@ -923,6 +938,20 @@ def hasCostPreservingPaymentSubset (g : Game) (pool : ManaPool) (cost : ManaCost
       let discSrc :=
         prop.discardSource ||
           prop.activation.any (fun ab => ab.cost.discardSource || ab.cost.exileSourceFromHand)
+      let isCrit (o : GameObject) : Bool :=
+        g.isCreature o || g.isArtifact o ||
+          (prop.tapSource && prop.sourceId == some o.id) ||
+          prop.teamworkCreatures.contains o.id ||
+          allPicks.any fun pk =>
+            match pk with
+            | .custom (.tapObjects ..) | .custom (.or _) =>
+              g.costPickAllows p prop.sourceId pk o
+                (tapSource := prop.tapSource)
+                (sacrificeOrExileSource := sacSrc)
+                (discardOrExileHandSource := discSrc)
+            | _ => false
+      let freeOthers := (usableSources.filter (fun (o, _) => !isCrit o)).toList
+      let critRem := (usableSources.filter (fun (o, _) => isCrit o)).toList
       let equivKey (o : GameObject) (choices : Array TapManaChoice) :=
         let pickMask :=
           allPicks.map fun pk =>
@@ -931,10 +960,11 @@ def hasCostPreservingPaymentSubset (g : Game) (pool : ManaPool) (cost : ManaCost
               (sacrificeOrExileSource := sacSrc)
               (discardOrExileHandSource := discSrc)
         (some o.id == prop.sourceId, o.attachedTo == prop.sourceId,
+          prop.teamworkCreatures.contains o.id,
           g.isCreature o, g.isArtifact o, g.power o, pickMask,
           choices.map (fun (ch : TapManaChoice) => (ch.baseAdded, ch.extraRed, ch.restriction, ch.riders)))
       let rec go (curPool : ManaPool) (chosenIds : Array ObjectId)
-          (skippedKeys : Array (Bool × Bool × Bool × Bool × Int × Array Bool ×
+          (skippedKeys : Array (Bool × Bool × Bool × Bool × Bool × Int × Array Bool ×
             Array (Array ManaType × Array ManaType × Option ManaSpendRestriction × Array SpellRiderSpec)))
           (rem : List (GameObject × Array ManaType)) : Bool :=
         if !g.tapPreservesPostManaCosts p prop chosenIds then false
