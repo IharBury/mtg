@@ -1087,6 +1087,57 @@ private def containsFinishTurnFaceUp : PendingReplacement → Bool
   | .seq a b => containsFinishTurnFaceUp a || containsFinishTurnFaceUp b
   | _ => false
 
+private def containsTurnFaceUpOrProposalCost : PendingReplacement → Bool
+  | .finishTurnFaceUp .. | .finishProposedSpellCosts .. => true
+  | .seq a b => containsTurnFaceUpOrProposalCost a || containsTurnFaceUpOrProposalCost b
+  | _ => false
+
+private def prefixBeforeFinishTurnFaceUp (caster : PlayerId) (spellId : ObjectId)
+    (hadOuter : Bool) : PendingReplacement → Option PendingReplacement × Bool
+  | .finishTurnFaceUp c sid ho =>
+    if c == caster && sid == spellId && ho == hadOuter then (none, true)
+    else (some (.finishTurnFaceUp c sid ho), false)
+  | .seq a b =>
+    let (preA?, foundA) := prefixBeforeFinishTurnFaceUp caster spellId hadOuter a
+    if foundA then (preA?, true)
+    else
+      let (preB?, foundB) := prefixBeforeFinishTurnFaceUp caster spellId hadOuter b
+      if foundB then (seqOptPendingReplacement preA? preB?, true)
+      else (some (.seq a b), false)
+  | pr => (some pr, false)
+
+/-- Prepare `g` for probing `.finishTurnFaceUp caster spellId hadOuter` without
+re-entering `Casting.completeTurnFaceUp`'s open-`.chooseReplacement` deferral
+(`Casting.lean:1818-1819`). Returns `none` if draining the open replacement
+ends the game, opens a non-replacement prompt, or leaves an unrelated nested
+`.finishTurnFaceUp` ahead of this leaf. -/
+private def prepareGameForTurnFaceUpProbe (g : Game) (caster : PlayerId)
+    (spellId : ObjectId) (hadOuter : Bool) : Option Game :=
+  if g.over || g.livingPlayers.isEmpty then none
+  else if let .chooseReplacement .. := g.pending then
+    let gD := drainProbePausedStep g
+    if gD.over || gD.livingPlayers.isEmpty then none
+    else
+      let gClean? : Option Game :=
+        if gD.pending == .none && gD.afterRandom == .none then some gD
+        else if let .chooseReplacement .. := gD.pending then
+          some ((recordProbeFirstReplacement gD).change (.pending .none))
+        else none
+      match gClean? with
+      | none => none
+      | some gClean =>
+        if gClean.over || gClean.livingPlayers.isEmpty then none
+        else
+          let stripped? : Option PendingReplacement :=
+            gClean.pendingReplacement.bind fun pr =>
+              (prefixBeforeFinishTurnFaceUp caster spellId hadOuter pr).1
+          let gClean :=
+            if stripped? == gClean.pendingReplacement then gClean
+            else gClean.change (.pendingReplacement stripped?)
+          if gClean.pendingReplacement.any containsFinishTurnFaceUp then none
+          else some gClean
+  else some g
+
 mutual
 private partial def pausedPromptSettles (gCur : Game) (hq : Bool) (pOpened : Pending) : Bool :=
   gCur.over || isSelfSettlingPending pOpened || gCur.afterRandom != .none ||
@@ -1609,22 +1660,24 @@ private partial def advanceProbeOnResume (g : Game) (hasQueuedPending : Bool) :
         (g.change (.pending (.discardForAdditionalCost prop.caster)), true)
       else if prop.needsDiscardCard then reverseOut
       else if prop.kind == .turnFaceUp then
-        if let .chooseReplacement .. := g.pending then
-          (g.change (.consecutivePasses 0), true)
-        else if g.stillInGame prop.caster &&
+        if g.stillInGame prop.caster &&
             (g.findObject? prop.spellId).any (fun o =>
               o.isOnBattlefield && o.status.faceDown && g.controlledBy o prop.caster) then
-          let localOuter? := g.pendingReplacement
+          let localOuter? :=
+            g.pendingReplacement.filter (fun pr => !containsTurnFaceUpOrProposalCost pr)
           let effHadOuter := hadOuter || localOuter?.isSome
-          let g0 := if localOuter?.isSome then g.change (.pendingReplacement none) else g
+          let g0 :=
+            let g0 := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
+            g0.changes #[.pending .none, .consecutivePasses 0]
           let (g1, callerShouldResume) :=
             g0.completeTurnFaceUp prop.caster prop.spellId (hadOuterReplacement := effHadOuter)
           let g1 :=
             match localOuter? with
             | some outer => g1.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
             | none => g1
+          let paused := match g1.pending with | .chooseReplacement .. => true | _ => false
           let g1 :=
-            if !hadOuter && (callerShouldResume ||
+            if !paused && !hadOuter && (callerShouldResume ||
                 (g1.pending == .none && !g1.over && localOuter?.isSome)) then
               g1.resumeAfterBecomeCastFwd
             else g1
@@ -1662,21 +1715,22 @@ private partial def advanceProbeOnResume (g : Game) (hasQueuedPending : Bool) :
       (if g.proposalCheckpoint.isSome then #[.clearProposalCheckpoint] else #[])
     (g.changes clearChanges, if hadOuter then hasQueuedPending else false)
   | .finishTurnFaceUp caster spellId hadOuter =>
-    if let .chooseReplacement .. := g.pending then
-      (g, true)
-    else if g.stillInGame caster &&
-        (g.findObject? spellId).any (fun o =>
-          o.isOnBattlefield && o.status.faceDown && g.controlledBy o caster) then
-      let (g1, callerShouldResume) := g.completeTurnFaceUp caster spellId (hadOuterReplacement := hadOuter)
-      let g1 := if callerShouldResume && !hadOuter then g1.resumeAfterBecomeCastFwd else g1
-      (g1, if g1.pending != .none || g1.afterRandom != .none then true else if hadOuter then hasQueuedPending else false)
-    else if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
-      let gR := g.reverseProposedSpell (resumeContinuation := true) (followedByFinishChoice := hadOuter)
-      (gR, if gR.pending != .none || gR.afterRandom != .none then true else hasQueuedPending)
-    else
-      let (g1, callerShouldResume) := g.completeTurnFaceUp caster spellId (hadOuterReplacement := hadOuter)
-      let g1 := if callerShouldResume && !hadOuter then g1.resumeAfterBecomeCastFwd else g1
-      (g1, if g1.pending != .none || g1.afterRandom != .none then true else if hadOuter then hasQueuedPending else false)
+    match prepareGameForTurnFaceUpProbe g caster spellId hadOuter with
+    | none => (g, true)
+    | some gClean =>
+      if gClean.stillInGame caster &&
+          (gClean.findObject? spellId).any (fun o =>
+            o.isOnBattlefield && o.status.faceDown && gClean.controlledBy o caster) then
+        let (g1, callerShouldResume) := gClean.completeTurnFaceUp caster spellId (hadOuterReplacement := hadOuter)
+        let g1 := if callerShouldResume && !hadOuter then g1.resumeAfterBecomeCastFwd else g1
+        (g1, if g1.pending != .none || g1.afterRandom != .none then true else if hadOuter then hasQueuedPending else false)
+      else if gClean.proposedSpell.isSome && gClean.proposalCheckpoint.isSome then
+        let gR := gClean.reverseProposedSpell (resumeContinuation := true) (followedByFinishChoice := hadOuter)
+        (gR, if gR.pending != .none || gR.afterRandom != .none then true else hasQueuedPending)
+      else
+        let (g1, callerShouldResume) := gClean.completeTurnFaceUp caster spellId (hadOuterReplacement := hadOuter)
+        let g1 := if callerShouldResume && !hadOuter then g1.resumeAfterBecomeCastFwd else g1
+        (g1, if g1.pending != .none || g1.afterRandom != .none then true else if hadOuter then hasQueuedPending else false)
   | .continueStartNextTurn nextP remainingDeparted runBeginTurn alreadyExpired =>
     if (continueStartNextTurnRecipient? (drainProbePausedStep g) nextP remainingDeparted runBeginTurn alreadyExpired).isSome then
       (g, false)
@@ -2285,13 +2339,6 @@ private partial def probeCompleteTurnFaceUpClean (g : Game) (caster : PlayerId)
         receivePriorityOutcome gC (gC.priorityInstead caster) (recheckSba := true)
       else .noGrant
   else
-    let hadPreReconcileCont := g.currentInterpWait?.isSome || g.pendingReplacement.isSome
-    let preExplicitGrant? : Option PlayerId :=
-      if hadPreReconcileCont && !hadOuter then
-        match g.firstContinuationPriorityGrant? with
-        | some (some q) => some q
-        | _ => none
-      else none
     let (g1, callerShouldResume) := g.completeTurnFaceUp caster spellId (hadOuterReplacement := hadOuter)
     let g1 := if callerShouldResume && !hadOuter then g1.resumeAfterBecomeCastFwd else g1
     if g1.over || g1.livingPlayers.isEmpty then .settlesPromptOrOver
@@ -2323,10 +2370,7 @@ private partial def probeCompleteTurnFaceUpClean (g : Game) (caster : PlayerId)
             else if g1.anyContinuationSettlesControlFlow then .settlesPromptOrOver
             else .noGrant
       else .noGrant
-    else if hadPreReconcileCont then
-      match preExplicitGrant? with
-      | some q => .grants (some q)
-      | none => .implicitResolutionChoice
+    else if g1.proposedSpell.isSome then .noGrant
     else
       match livingPriorityInstead? g1 g1.priority with
       | some q => .grants (some q)
@@ -2335,30 +2379,18 @@ private partial def probeCompleteTurnFaceUpClean (g : Game) (caster : PlayerId)
 private partial def probeCompleteTurnFaceUpOutcome (g : Game) (caster : PlayerId)
     (spellId : ObjectId) (hadOuter : Bool) : ConcedePriorityOutcome :=
   if g.over || g.livingPlayers.isEmpty then .settlesPromptOrOver
-  else if let .chooseReplacement .. := g.pending then
-    -- Never call `completeTurnFaceUp` while `g.pending` is already `.chooseReplacement`:
-    -- `Casting.completeTurnFaceUp` (`Casting.lean:1818-1819`) would defer another
-    -- `.finishTurnFaceUp` onto `g.pendingReplacement` and recurse.
-    let gD := drainProbePausedStep g
-    if gD.over || gD.livingPlayers.isEmpty then .settlesPromptOrOver
-    else
-      let gClean? : Option Game :=
-        if gD.pending == .none && gD.afterRandom == .none then some gD
-        else if let .chooseReplacement .. := gD.pending then
-          some ((recordProbeFirstReplacement gD).change (.pending .none))
-        else none
-      match gClean? with
-      | none => .settlesPromptOrOver
-      | some gClean =>
-        if gClean.over || gClean.livingPlayers.isEmpty then .settlesPromptOrOver
-        else if gClean.pendingReplacement == some (.finishTurnFaceUp caster spellId hadOuter) then
-          probeCompleteTurnFaceUpClean (gClean.change (.pendingReplacement none)) caster spellId hadOuter
-        else if gClean.pendingReplacement.any containsFinishTurnFaceUp then
-          if hadOuter then .noGrant else .settlesPromptOrOver
-        else
-          probeCompleteTurnFaceUpClean gClean caster spellId hadOuter
   else
-    probeCompleteTurnFaceUpClean g caster spellId hadOuter
+    match prepareGameForTurnFaceUpProbe g caster spellId hadOuter with
+    | some gClean => probeCompleteTurnFaceUpClean gClean caster spellId hadOuter
+    | none =>
+      if let .chooseReplacement .. := g.pending then
+        let gD := drainProbePausedStep g
+        if gD.over || gD.livingPlayers.isEmpty ||
+            (gD.pending != .none && (match gD.pending with | .chooseReplacement .. => false | _ => true)) ||
+            gD.afterRandom != .none then
+          .settlesPromptOrOver
+        else if hadOuter then .noGrant else .settlesPromptOrOver
+      else .settlesPromptOrOver
 
 private partial def classifyFinishProposedSpellCosts (g : Game)
     (stage : ProposedSpellCostStage) (grantPriority hadOuter openCont : Bool) :
@@ -2379,15 +2411,59 @@ private partial def classifyFinishProposedSpellCosts (g : Game)
       else if prop.needsDiscardCard then
         classifyProposedSpellReversal g prop
       else if prop.kind == .turnFaceUp then
-        if (match g.pending with | .chooseReplacement .. => false | _ => true) &&
-            !(g.stillInGame prop.caster &&
-              (g.findObject? prop.spellId).any (fun o =>
-                o.isOnBattlefield && o.status.faceDown && g.controlledBy o prop.caster)) then
+        if !(g.stillInGame prop.caster &&
+            (g.findObject? prop.spellId).any (fun o =>
+              o.isOnBattlefield && o.status.faceDown && g.controlledBy o prop.caster)) then
           classifyProposedSpellReversal g prop
         else if !hadOuter && !grantPriority then
           .noGrant
         else
-          probeCompleteTurnFaceUpOutcome g prop.caster prop.spellId hadOuter
+          -- Mirror `Decisions.lean:5547-5562`: clear `pending` and `consecutivePasses`
+          -- before `completeTurnFaceUp` (and preserve non-self-referential `localOuter?`).
+          let localOuter? :=
+            g.pendingReplacement.filter (fun pr => !containsTurnFaceUpOrProposalCost pr)
+          let effHadOuter := hadOuter || localOuter?.isSome
+          let g0 :=
+            let g0 := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
+            g0.changes #[.pending .none, .consecutivePasses 0]
+          match localOuter? with
+          | none =>
+            probeCompleteTurnFaceUpClean g0 prop.caster prop.spellId hadOuter
+          | some outer =>
+            let (g1, callerShouldResume) :=
+              g0.completeTurnFaceUp prop.caster prop.spellId (hadOuterReplacement := effHadOuter)
+            let g1 := g1.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+            let paused := match g1.pending with | .chooseReplacement .. => true | _ => false
+            let g1 :=
+              if !paused && !hadOuter && (callerShouldResume ||
+                  (g1.pending == .none && !g1.over)) then
+                g1.resumeAfterBecomeCastFwd
+              else g1
+            if g1.over || g1.livingPlayers.isEmpty then .settlesPromptOrOver
+            else if let .chooseReplacement .. := g1.pending then
+              if g1.pendingReplacement.any containsTurnFaceUpOrProposalCost then
+                if hadOuter then .noGrant else .settlesPromptOrOver
+              else if g1.anyContinuationSettlesControlFlow then
+                match g1.firstContinuationPriorityGrant? with
+                | some (some q) => .grants (some q)
+                | some none => .implicitResolutionChoice
+                | none => if g1.anyContinuationGrantsPriority then .grants none else .settlesPromptOrOver
+              else if hadOuter then .noGrant
+              else .settlesPromptOrOver
+            else if g1.pending != .none || g1.afterRandom != .none then .settlesPromptOrOver
+            else if hadOuter then
+              match g1.firstContinuationPriorityGrant? with
+              | some (some q) => .grants (some q)
+              | some none => .implicitResolutionChoice
+              | none =>
+                if g1.anyContinuationGrantsPriority then .grants none
+                else if g1.anyContinuationSettlesControlFlow then .settlesPromptOrOver
+                else .noGrant
+            else if g1.proposedSpell.isSome then .noGrant
+            else
+              match livingPriorityInstead? g1 g1.priority with
+              | some q => .grants (some q)
+              | none => .settlesPromptOrOver
       else if g.stillInGame prop.caster && (g.findObject? prop.spellId).any (·.zone == .stack) then
         if hadOuter then
           finishPostCastOutcome g prop.caster openCont false (some prop.spellId)
