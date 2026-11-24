@@ -276,9 +276,9 @@ deriving BEq, Inhabited
 
 /-- Pure probe classifying `Entering.receivePriority g p recheckSba`
 (`Entering.lean:455-555`) into a priority grant, implicit resolution-choice
-grant, or prompt/game-over settlement. When `recheckSba == false` (used on
-cleanup paths probing past an already-drained `.chooseLegend`), SBAs are never
-re-run even after emptying `waitingTriggers`. -/
+grant, or prompt/game-over settlement. Matches runtime: when `waitingTriggers`
+is empty and `runSbaNow == false`, recurses with `runSbaNow := true` to re-check
+SBAs before granting priority (CR 704.3 / 117.5). -/
 private def receivePriorityOutcome (g : Game) (p : PlayerId)
     (recheckSba : Bool := true) (fuel : Nat := 16) : ConcedePriorityOutcome :=
   let rec go (g : Game) (p : PlayerId) (runSbaNow : Bool) : Nat → ConcedePriorityOutcome
@@ -350,7 +350,7 @@ private def receivePriorityOutcome (g : Game) (p : PlayerId)
               match g.nextTriggerStackingPlayer? with
               | none =>
                 if g.waitingTriggers.isEmpty then
-                  if runSbaNow || !recheckSba then
+                  if runSbaNow then
                     match livingPriorityInstead? g p with
                     | some q => .grants (some q)
                     | none => .settlesPromptOrOver
@@ -362,7 +362,7 @@ private def receivePriorityOutcome (g : Game) (p : PlayerId)
                   if g.over || g.livingPlayers.isEmpty || g.pending != .none then
                     .settlesPromptOrOver
                   else
-                    go g p recheckSba fuel
+                    go g p true fuel
               | some q =>
                 let mine := g.waitingTriggersOf q
                 let allIdentical :=
@@ -418,7 +418,8 @@ private partial def continueStartNextTurnRecipient? (g : Game) (nextP : PlayerId
           (match gExp0.pending with | .chooseLegend .. => true | _ => false) then
         return none
       g := drainProbePausedStep gExp0
-      if g.over || g.pending != .none then
+      if g.over || g.livingPlayers.isEmpty || g.pending != .none ||
+          g.pendingReplacement.isSome then
         return none
   let (seats, seatsExtra) := g.currentSharedTurnState
   let midRegularShared := !seatsExtra && !g.isSharedTurnFinalSeat
@@ -541,7 +542,8 @@ private partial def continueStartNextTurnRecipient? (g : Game) (nextP : PlayerId
       return none
     else
       let gStart := drainProbePausedStep gStart0
-      if gStart.over || gStart.livingPlayers.isEmpty || gStart.pending != .none then
+      if gStart.over || gStart.livingPlayers.isEmpty || gStart.pending != .none ||
+          gStart.pendingReplacement.isSome then
         return none
       else
         return beginTurnAfterStartExpiryRecipient? gStart
@@ -553,23 +555,26 @@ private partial def startNextTurnAndBeginRecipient? (g : Game) : Option PlayerId
   else
     let (g1, nextP, departed) := g.prepareStartNextTurn
     let g1 := drainProbePausedStep g1
-    if g1.over || g1.livingPlayers.isEmpty || g1.pending != .none then none
+    if g1.over || g1.livingPlayers.isEmpty || g1.pending != .none ||
+        g1.pendingReplacement.isSome then none
     else continueStartNextTurnRecipient? g1 nextP departed true #[]
 
 private partial def endTurnAfterCleanupStepEndedRecipient? (g : Game) : Option PlayerId :=
   if g.over || g.livingPlayers.isEmpty then none
   else
     let g1 := drainProbePausedStep (g.recordPhaseEnded .ending)
-    if g1.over || g1.livingPlayers.isEmpty || g1.pending != .none then none
+    if g1.over || g1.livingPlayers.isEmpty || g1.pending != .none ||
+        g1.pendingReplacement.isSome then none
     else startNextTurnAndBeginRecipient? g1
 
 private partial def postSbaCleanupRecipient? (g : Game) (sba : Bool) : Option PlayerId :=
   if g.over || g.livingPlayers.isEmpty then none
   else if sba || g.hasWaitingTriggers then
-    receivePriorityRecipient? g g.activePlayer (recheckSba := false)
+    receivePriorityRecipient? g g.activePlayer (recheckSba := true)
   else
     let g1 := drainProbePausedStep (g.emptyManaPools.recordStepEnded .cleanup)
-    if g1.over || g1.livingPlayers.isEmpty || g1.pending != .none then none
+    if g1.over || g1.livingPlayers.isEmpty || g1.pending != .none ||
+        g1.pendingReplacement.isSome then none
     else endTurnAfterCleanupStepEndedRecipient? g1
 
 private partial def finishCleanupAfterClearEotRecipient? (g : Game) : Option PlayerId :=
@@ -582,7 +587,8 @@ private partial def finishCleanupAfterClearEotRecipient? (g : Game) : Option Pla
       | .chooseLegend .. => none
       | .chooseReplacement .. =>
         let g2 := drainProbePausedStep g1
-        if g2.over || g2.livingPlayers.isEmpty || g2.pending != .none then none
+        if g2.over || g2.livingPlayers.isEmpty || g2.pending != .none ||
+            g2.pendingReplacement.isSome then none
         else postSbaCleanupRecipient? g2 sba
       | .none =>
         postSbaCleanupRecipient? g1 sba
@@ -592,7 +598,8 @@ private partial def cleanupStepAfterDiscardRecipient? (g : Game) : Option Player
   if g.over || g.livingPlayers.isEmpty then none
   else
     let gClean := drainProbePausedStep g.clearEOT
-    if gClean.over || gClean.livingPlayers.isEmpty then none
+    if gClean.over || gClean.livingPlayers.isEmpty || gClean.pending != .none ||
+        gClean.pendingReplacement.isSome then none
     else finishCleanupAfterClearEotRecipient? gClean
 
 private partial def stepPriorityRecipient? (g : Game) (st : Step) : Option PlayerId :=
@@ -603,7 +610,8 @@ private partial def stepPriorityRecipient? (g : Game) (st : Step) : Option Playe
     | .draw =>
       if g.skipsFirstDraw then
         let gClean := drainProbePausedStep (g.recordPhaseEnded .beginning)
-        if gClean.over || gClean.livingPlayers.isEmpty then none
+        if gClean.over || gClean.livingPlayers.isEmpty || gClean.pending != .none ||
+            gClean.pendingReplacement.isSome then none
         else beginStepContRecipient? gClean .precombatMain
       else livingPriorityInstead? g g.activePlayer
     | .declareAttackers =>
@@ -647,11 +655,13 @@ private partial def stepPriorityRecipient? (g : Game) (st : Step) : Option Playe
         else livingPriorityInstead? gCd gCd.activePlayer
     | .cleanup =>
       let gClean := drainProbePausedStep g.discardToMaxHandSize
-      if gClean.over || gClean.livingPlayers.isEmpty then none
+      if gClean.over || gClean.livingPlayers.isEmpty || gClean.pending != .none ||
+          gClean.pendingReplacement.isSome then none
       else cleanupStepAfterDiscardRecipient? gClean
     | .precombatMain =>
       let gLore := drainProbePausedStep g.addLoreAfterDrawStep
-      if gLore.over || gLore.livingPlayers.isEmpty || gLore.pending != .none then none
+      if gLore.over || gLore.livingPlayers.isEmpty || gLore.pending != .none ||
+          gLore.pendingReplacement.isSome then none
       else receivePriorityRecipient? gLore gLore.activePlayer (recheckSba := true)
     | .upkeep | .beginningOfCombat | .end | .endOfCombat | .postcombatMain =>
       receivePriorityRecipient? g g.activePlayer (recheckSba := true)
@@ -661,7 +671,9 @@ private partial def beginStepAfterPhaseBeganRecipient? (g : Game) (st : Step) : 
   else
     let g1 := if st == .draw && g.skipsFirstDraw then g else g.recordStepBegan st
     let gClean := drainProbePausedStep g1
-    stepPriorityRecipient? gClean st
+    if gClean.over || gClean.livingPlayers.isEmpty || gClean.pending != .none ||
+        gClean.pendingReplacement.isSome then none
+    else stepPriorityRecipient? gClean st
 
 private partial def beginStepContRecipient? (g : Game) (st : Step) : Option PlayerId :=
   if g.over || g.livingPlayers.isEmpty then none
@@ -681,11 +693,14 @@ private partial def beginStepContRecipient? (g : Game) (st : Step) : Option Play
       else if isPhaseStart then g.recordPhaseBegan st.phase
       else g
     let gClean := drainProbePausedStep g1
-    beginStepAfterPhaseBeganRecipient? gClean st
+    if gClean.over || gClean.livingPlayers.isEmpty || gClean.pending != .none ||
+        gClean.pendingReplacement.isSome then none
+    else beginStepAfterPhaseBeganRecipient? gClean st
 
 private partial def beginTurnAfterStartExpiryRecipient? (g : Game) : Option PlayerId :=
   let g := drainProbePausedStep g
-  if g.over || g.livingPlayers.isEmpty then none
+  if g.over || g.livingPlayers.isEmpty || g.pending != .none ||
+      g.pendingReplacement.isSome then none
   else
     let p := g.activePlayer
     let needDeferred :=
@@ -695,9 +710,12 @@ private partial def beginTurnAfterStartExpiryRecipient? (g : Game) : Option Play
             s == .lifeCantChange q || s == .protectionFromEverything q))
     let g :=
       if needDeferred then
-        drainProbePausedStep (g.withBatch none (fun g => g.expireTurnStartProtectionAndLife p))
+        let g0 := g.withBatch none (fun g => g.expireTurnStartProtectionAndLife p)
+        if g0.over || g0.livingPlayers.isEmpty || g0.legendChoicePending? then g0
+        else drainProbePausedStep g0
       else g
-    if g.over || g.livingPlayers.isEmpty then none
+    if g.over || g.livingPlayers.isEmpty || g.pending != .none ||
+        g.pendingReplacement.isSome then none
     else
       let g := Id.run do
         let mut g := g
@@ -710,19 +728,28 @@ private partial def beginTurnAfterStartExpiryRecipient? (g : Game) : Option Play
         .cleanupGivesPriority false,
         .proposedSpell none ]
       let g := drainProbePausedStep (g.recordPhaseBegan .beginning)
-      if g.over || g.livingPlayers.isEmpty then none
+      if g.over || g.livingPlayers.isEmpty || g.pending != .none ||
+          g.pendingReplacement.isSome then none
       else
         let g := drainProbePausedStep (g.recordStepBegan .untap)
-        if g.over || g.livingPlayers.isEmpty then none
+        if g.over || g.livingPlayers.isEmpty || g.pending != .none ||
+            g.pendingReplacement.isSome then none
         else
           let g :=
             if g.isSharedTurnFirstSeat then
-              drainProbePausedStep (g.phaseInControlled g.activePlayer (includeTeammates := true))
+              let g0 := g.phaseInControlled g.activePlayer (includeTeammates := true)
+              if g0.over || g0.livingPlayers.isEmpty || g0.legendChoicePending? then g0
+              else drainProbePausedStep g0
             else g
-          if g.over || g.livingPlayers.isEmpty then none
+          if g.over || g.livingPlayers.isEmpty || g.pending != .none ||
+              g.pendingReplacement.isSome then none
           else
-            let g := drainProbePausedStep g.runUntapStepAfterPhaseIn
-            if g.over || g.livingPlayers.isEmpty then none
+            let g0 := g.runUntapStepAfterPhaseIn
+            let g :=
+              if g0.over || g0.livingPlayers.isEmpty || g0.legendChoicePending? then g0
+              else drainProbePausedStep g0
+            if g.over || g.livingPlayers.isEmpty || g.pending != .none ||
+                g.pendingReplacement.isSome then none
             else
               beginStepContRecipient? g .upkeep
 end
@@ -731,7 +758,8 @@ private partial def advanceAfterStepEndedRecipient? (g : Game) : Option PlayerId
   if g.over || g.livingPlayers.isEmpty then none
   else if g.step == .endOfCombat && g.additionalCombatPhases > 0 then
     let gClean := drainProbePausedStep (g.recordPhaseEnded .combat)
-    if gClean.over || gClean.livingPlayers.isEmpty then none
+    if gClean.over || gClean.livingPlayers.isEmpty || gClean.pending != .none ||
+        gClean.pendingReplacement.isSome then none
     else beginStepContRecipient? gClean .beginningOfCombat
   else
     match g.step.next? with
@@ -740,7 +768,8 @@ private partial def advanceAfterStepEndedRecipient? (g : Game) : Option PlayerId
         if g.step.phase != st.phase then
           drainProbePausedStep (g.recordPhaseEnded g.step.phase)
         else g
-      if gClean.over || gClean.livingPlayers.isEmpty then none
+      if gClean.over || gClean.livingPlayers.isEmpty || gClean.pending != .none ||
+          gClean.pendingReplacement.isSome then none
       else beginStepContRecipient? gClean st
     | none => none
 
@@ -748,7 +777,8 @@ private partial def advanceStepRecipient? (g : Game) : Option PlayerId :=
   if g.over || g.livingPlayers.isEmpty then none
   else
     let g := drainProbePausedStep g.emptyManaPools
-    if g.over || g.livingPlayers.isEmpty then none
+    if g.over || g.livingPlayers.isEmpty || g.pending != .none ||
+        g.pendingReplacement.isSome then none
     else
       match g.step.next? with
       | some _ =>
@@ -786,28 +816,34 @@ private partial def advanceStepRecipient? (g : Game) : Option PlayerId :=
                 | _ => false
         if g.step == .declareAttackers && !hadAttackersThisCombat then
           let gClean := drainProbePausedStep (g.recordStepEnded g.step)
-          if gClean.over || gClean.livingPlayers.isEmpty then none
+          if gClean.over || gClean.livingPlayers.isEmpty || gClean.pending != .none ||
+              gClean.pendingReplacement.isSome then none
           else beginStepContRecipient? gClean .endOfCombat
         else if g.step == .combatDamage && g.pendingRegularCombatDamage then
           let gClean := drainProbePausedStep (g.recordStepEnded .combatDamage)
-          if gClean.over || gClean.livingPlayers.isEmpty then none
+          if gClean.over || gClean.livingPlayers.isEmpty || gClean.pending != .none ||
+              gClean.pendingReplacement.isSome then none
           else beginStepContRecipient? gClean .combatDamage
         else if g.step == .endOfCombat && g.additionalCombatPhases > 0 then
           let g1 := drainProbePausedStep (g.recordStepEnded .endOfCombat)
-          if g1.over || g1.livingPlayers.isEmpty then none
+          if g1.over || g1.livingPlayers.isEmpty || g1.pending != .none ||
+              g1.pendingReplacement.isSome then none
           else advanceAfterStepEndedRecipient? g1
         else
           let g1 := drainProbePausedStep (g.recordStepEnded g.step)
-          if g1.over || g1.livingPlayers.isEmpty then none
+          if g1.over || g1.livingPlayers.isEmpty || g1.pending != .none ||
+              g1.pendingReplacement.isSome then none
           else advanceAfterStepEndedRecipient? g1
       | none =>
         let gClean := drainProbePausedStep (g.recordStepEnded .cleanup)
-        if gClean.over || gClean.livingPlayers.isEmpty then none
+        if gClean.over || gClean.livingPlayers.isEmpty || gClean.pending != .none ||
+            gClean.pendingReplacement.isSome then none
         else if gClean.cleanupGivesPriority then
           beginStepContRecipient? gClean .cleanup
         else
           let gEnd := drainProbePausedStep (gClean.recordPhaseEnded .ending)
-          if gEnd.over || gEnd.livingPlayers.isEmpty || gEnd.pending != .none then none
+          if gEnd.over || gEnd.livingPlayers.isEmpty || gEnd.pending != .none ||
+              gEnd.pendingReplacement.isSome then none
           else startNextTurnAndBeginRecipient? gEnd
 
 private def seqOptPendingReplacement (a? b? : Option PendingReplacement) : Option PendingReplacement :=
@@ -997,7 +1033,14 @@ private def hasAvailableDiscardForProposed (g : Game) (prop : ProposedSpell)
     (stage : ProposedSpellCostStage) : Bool :=
   !(g.player prop.caster).hand.isEmpty ||
     (unpaidSneakAttacker? g prop stage).any (fun aid =>
-      (g.findObject? aid).any (·.owner == prop.caster))
+      (g.findObject? aid).any (fun o =>
+        !o.printed.isToken && o.owner == prop.caster &&
+          let gProbe := g.changes #[.pending .none, .pendingReplacement none, .replacementOrder #[]]
+          let (gRet, _) :=
+            gProbe.move aid (.hand o.owner) none (verb := some .returnToHand)
+              (cause := some (.costPayment .returnToHand prop.caster (some prop.spellId)))
+          let gRet := drainProbePausedStep gRet
+          !(gRet.player prop.caster).hand.isEmpty))
 
 private def finishResolutionChoiceGrantsPriority (g : Game) : Bool :=
   if g.over || g.livingPlayers.isEmpty then false

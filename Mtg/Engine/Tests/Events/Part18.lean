@@ -168,6 +168,57 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
   let gSneakSoleSacNoCkpt := gSneakSoleSac0.change .clearProposalCheckpoint
   let gSneakWithExtraSac := addPermanent gSneakSoleSac0 hero p0 p0
 
+  -- PR #700 review regressions:
+  -- (1) `postSbaCleanupRecipient?` runs `receivePriority` with `recheckSba := true` (checking SBAs even on `.postSbaCleanup true`
+  --     and before stacking waiting triggers per CR 704.3):
+  let gCleanupLegWithTrig :=
+    let wt : WaitingTrigger := {
+      controller := p1
+      source := (gCleanupLeg0.permanentsOf p0)[0]!
+      ability := TriggeredAbility.mkTrigger .thisDies (Effect.gainLife 1)
+      pattern := .thisDies
+    }
+    gCleanupLeg0.change (.waitingTriggers #[wt])
+  -- (2) `beginTurnAfterStartExpiryRecipient?` stops with `none` when `drainProbePausedStep` leaves `.chooseReplacement`
+  --     (`alreadyOrderedCycle`) or `pendingReplacement.isSome` (instead of letting `beginStepContRecipient?` clear `.pending`):
+  let repCycleId : ReplacementId := { kind := .replaceDraw, player := some p0 }
+  let gTurnCycle :=
+    g4.changes #[
+      .replacementOrder #[repCycleId],
+      .pending (.chooseReplacement p0 #[repCycleId]) ]
+  let gTurnPendingRep :=
+    g4.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.receivePriority p0)) ]
+  -- (3) `hasAvailableDiscardForProposed` rejects token and opponent-owned unpaid Sneak attackers on an empty hand
+  --     while accepting a non-token card owned by `p0` that actually returns to `p0`'s hand:
+  let tokBearDef : CardDef := { bear with name := "P52i1 TokBear", isToken := true, keywords := #[Keyword.haste] }
+  let mkSneakDiscardProbe (atkDef : CardDef) (atkOwner : PlayerId) : Game :=
+    let g := addPermanent (insertObject (emptyHand g4 p0) zeroInstDef p0 (.hand p0)) atkDef atkOwner p0
+    let atkId := (g.permanentsOf p0)[0]!.id
+    let g := g.beginStep .declareAttackers
+    let g := mustApply g p0 (.declareAttackers #[atkId] none #[] #[])
+    let g := g.advanceStep
+    let g := mustApply g p1 (.declareBlockers #[])
+    let spId := (g.player p0).hand.back!
+    let orig := g.object! spId
+    let g := g.change .saveProposalCheckpoint
+    let (g, stId) := g.move spId .stack (some p0) (verb := some .cast) (actor := some p0)
+    g.change (.proposedSpell (some {
+      caster := p0
+      spellId := stId
+      original := orig
+      originalSnapshot := g.snapshot orig
+      cost := ManaCost.empty
+      sneakAttacker := some atkId
+      needsDiscardCard := true
+    }))
+  let gSneakTokDisc0 := mkSneakDiscardProbe tokBearDef p0
+  let gSneakTokDiscNoCkpt := gSneakTokDisc0.change .clearProposalCheckpoint
+  let gSneakOppDisc0 := mkSneakDiscardProbe bear p1
+  let gSneakOppDiscNoCkpt := gSneakOppDisc0.change .clearProposalCheckpoint
+  let gSneakCardDisc0 := mkSneakDiscardProbe bear p0
+
   let item1aOk :=
     mustHold52i1 "1a_receivePriorityChooseReplacementGuards"
       (gRepAfterRecvSettling.pendingReplacement == gRepSettling.pendingReplacement &&
@@ -182,6 +233,11 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
       (!gCleanupLeg0.continuationGrantsPriority false .finishCleanupAfterClearEot &&
        gCleanupLeg0.priorityRecipientOfContinuation? false .finishCleanupAfterClearEot == none &&
        gCleanupLeg0.continuationSettlesControlFlow false .finishCleanupAfterClearEot) &&
+    mustHold52i1 "1a_postSbaCleanupChecksSba"
+      (!gCleanupLeg0.continuationGrantsPriority false (.finishPostStep (.postSbaCleanup true)) &&
+       gCleanupLeg0.priorityRecipientOfContinuation? false (.finishPostStep (.postSbaCleanup true)) == none &&
+       !gCleanupLegWithTrig.continuationGrantsPriority false (.finishPostStep (.postSbaCleanup true)) &&
+       gCleanupLegWithTrig.priorityRecipientOfContinuation? false (.finishPostStep (.postSbaCleanup true)) == none) &&
     mustHold52i1 "1a_postSbaCleanupTriggers"
       (!gCleanupTgt1.continuationGrantsPriority false (.finishPostStep (.postSbaCleanup true)) &&
        gCleanupTgt1.continuationSettlesControlFlow false (.finishPostStep (.postSbaCleanup true)) &&
@@ -197,7 +253,12 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
        gNextLegPhased.priorityRecipientOfContinuation? false (.finishPostStep .startNextTurnAndBegin) == none &&
        gNextLegPhased.continuationSettlesControlFlow false (.finishPostStep .startNextTurnAndBegin) &&
        !gNextLegPhased.continuationGrantsPriority false (.continueStartNextTurn p1 #[] true) &&
-       gNextLegPhased.continuationSettlesControlFlow false (.continueStartNextTurn p1 #[] true))
+       gNextLegPhased.continuationSettlesControlFlow false (.continueStartNextTurn p1 #[] true)) &&
+    mustHold52i1 "1a_beginTurnAfterStartExpiryStopsOnPrompt"
+      (!gTurnCycle.continuationGrantsPriority false .beginTurnAfterStartExpiry &&
+       gTurnCycle.priorityRecipientOfContinuation? false .beginTurnAfterStartExpiry == none &&
+       !gTurnPendingRep.continuationGrantsPriority false .beginTurnAfterStartExpiry &&
+       gTurnPendingRep.priorityRecipientOfContinuation? false .beginTurnAfterStartExpiry == none)
 
   let item1bOk :=
     mustHold52i1 "1b_finishResolutionChoiceSplit"
@@ -229,7 +290,17 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
        !gSneakSoleSacNoCkpt.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
        !gSneakSoleSacNoCkpt.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false) &&
        !gSneakWithExtraSac.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
-       gSneakWithExtraSac.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false))
+       gSneakWithExtraSac.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false)) &&
+    mustHold52i1 "1b_sneakDiscardTokenVsCard"
+      (gSneakTokDisc0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
+       gSneakTokDisc0.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false) &&
+       gSneakTokDisc0.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .sneak true false false) == none &&
+       !gSneakTokDiscNoCkpt.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
+       !gSneakTokDiscNoCkpt.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false) &&
+       gSneakOppDisc0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
+       !gSneakOppDiscNoCkpt.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
+       !gSneakCardDisc0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
+       gSneakCardDisc0.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false))
 
   mustHold52i1 "1a.priorityAndTurnCleanupProbes" item1aOk &&
   mustHold52i1 "1b.resolutionCastAndStageProbes" item1bOk &&
@@ -237,7 +308,8 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
     (replayOk52i1 #[
       gRepAfterRecvSettling, gRepAfterRecvImplicit, gRepAfterRecvNonSettling,
       gStackLegAllPassed, gCleanupLeg0, gCleanupTgt1, gCleanupOrder1, gNextLegPhased,
-      gFrcOpensExile, gResPropClean, gResPropWithExile, gTwTapped, gSneakSoleSac0, gSneakWithExtraSac ])
+      gFrcOpensExile, gResPropClean, gResPropWithExile, gTwTapped, gSneakSoleSac0, gSneakWithExtraSac,
+      gSneakTokDisc0, gSneakOppDisc0, gSneakCardDisc0 ])
 
 end Phase52Item1EventAlignment
 
