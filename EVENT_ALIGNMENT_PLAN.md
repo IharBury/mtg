@@ -20843,21 +20843,22 @@ soundness).
 
 3. **`isLkiSnapshot` face-down / stack `{X}` / Layer-6 ability fidelity & synthetic `ObjectId ⟨0⟩` cleanup, `.phasedIn` & `!before.phasedOut` LKI boundaries, trigger-queue source snapshots, and `EvalExpr` / `Core` / `Phasing` phased-out attachment & combat LKI**
    (`Casting.lean:35`,
-   `Core.lean:3637–3662, 6348–6354, 6384–6434, 6472–6475, 6707–6726, 6753–6778, 6912–6915, 8102–8125, 9463–9609, 10170, 10530, 11165–11170, 12404–12462, 12628–12685, 14498–14500, 14524–14526`,
+   `Core.lean:3637–3662, 6348–6354, 6384–6434, 6472–6475, 6707–6726, 6753–6778, 6912–6915, 8102–8125, 9463–9609, 9916–9917, 10170, 10530, 11165–11170, 12404–12462, 12628–12685, 14498–14500, 14524–14526`,
    `EvalExpr.lean:111–149, 392–413, 775–786, 829–840, 890–930, 1014–1051, 1213–1259, 1366–1369`,
-   `Event.lean:3389–3418, 3868–3877`,
+   `Event.lean:3389–3418, 3832–3849, 3868–3877`,
    `Interpreter.lean:279–280, 1149–1372, 2091–2099`,
-   `Object.lean:442–514`,
+   `Object.lean:161–162, 442–514`,
    `Phasing.lean:74–124, 296, 310`,
    `Pumps.lean:311`,
    `ResolutionEffects.lean:418–442`,
    `Triggers.lean:140–150, 542–544`,
    `Tests/Events/Part3.lean:2362–2371`;
-   **CR 107.3a / 113.7a / 202.3,3e / 506.4 / 603.3,6c,10 / 608.2h / 613.1a,f / 702.16b,e / 702.21a / 702.26b,g / 702.34a / 702.108a / 707.2 / 708.2,2a / 714.2b**):
+   **CR 107.3a / 113.7a / 202.3,3e / 506.4 / 603.3,6c,10 / 608.2h / 613.1a,f / 702.16b,e / 702.21a / 702.26b,g / 702.34a / 702.37c / 702.108a / 707.2 / 708.2,2a / 714.2b**):
    - **`isLkiSnapshot` stack `{X}` mana value, `eo.faceDown` masking, Layer-6 ability-loss / granted-ability fidelity, and post-refactor synthetic `ObjectId ⟨0⟩` cleanup**
      (`Casting.lean:35`,
-     `Core.lean:3637–3662, 6348–6354, 6384–6434, 8102–8125, 9463–9609, 10530, 11165–11170, 12404–12457, 12628–12685`,
-     `EvalExpr.lean:392–413`, `Interpreter.lean:2091–2099`, `Object.lean:442–514`, `Pumps.lean:311`):
+     `Core.lean:3637–3662, 6348–6354, 6384–6434, 8102–8125, 9463–9609, 9916–9917, 10530, 11165–11170, 12404–12457, 12628–12685`,
+     `EvalExpr.lean:392–413`, `Event.lean:3832–3849`, `Interpreter.lean:2091–2099`, `Object.lean:161–162, 442–514`,
+     `Pumps.lean:311`):
      - Three `isLkiSnapshot` characteristic / Layer-6 ability bugs (plus four post-refactor synthetic `ObjectId ⟨0⟩` probes)
        remain after Phase 51 and the ability refactor:
        (i) `Core.snapshot` (`Core.lean:12649`) already folds stack `chosenX` into `eo.manaValue` via `g.objectManaValue o`,
@@ -20866,14 +20867,17 @@ soundness).
        `printed.manaCost` with `ManaCost.ofGeneric eo.manaValue` whenever `basePrinted.manaValue != eo.manaValue` (also
        erasing colored mana symbols) while keeping `zone := eo.zone` (`.stack`) and `chosenX := eo.chosenX`, so
        `Core.objectManaValue` (`11165–11170`) adds `chosenX` a second time (violating CR 107.3a / 202.3e); meanwhile,
-       `Core.staticManaValue` (`6348–6354`) returns raw `o.printed.manaValue` on `o.isLkiSnapshot` (neither zeroing face-down
-       battlefield/stack LKI nor adding stack `o.chosenX`), while `Core.objectManaValue` (`11166`) only zeroes
-       `o.isOnBattlefield && o.status.faceDown` (leaving face-down stack LKI and phased-out face-down battlefield LKI to fall
-       through to `(g.copiableValues o).manaValue` and stack `chosenX`, violating CR 708.2a) — and four synthetic probes
-       introduced in the ability refactor (`Core.lkiEventObjectAsGameObject` `6406`, `Casting.timingAllowsCast` `35`,
-       `Pumps.spellHasImprovise` `311`, and `Interpreter.execPlayer` `.searchLibrary` `2094`) use `id := ⟨0⟩` instead of
-       `noSourceSentinelId`, risking Layer-3/continuous-effect collision with real `ObjectId ⟨0⟩` (e.g. `EvalExpr.spellFaceView`
-       at `EvalExpr.lean:218` calls `g.evalLayer3 card`);
+       `Core.staticManaValue` (`6348–6354`) returns raw `o.printed.manaValue` on `o.isLkiSnapshot` (`6349`, neither zeroing
+       face-down battlefield/stack LKI nor adding stack `{X}`), while `Core.objectManaValue` (`11166`) only zeroes
+       `o.isOnBattlefield && o.status.faceDown` (`Object.lean:161–162`, `zone == .battlefield && !status.phasedOut`) — so a
+       phased-out face-down battlefield LKI falls through to `11168–11169` and returns `(g.copiableValues o).manaValue`
+       (the unmasked front-face `o.printed.manaValue` via `Core.lean:3648`, without adding `{X}` when `!includeLkiX`) and a
+       face-down stack LKI falls through to `11168, 11170` and returns `(g.copiableValues o).manaValue + (o.chosenX.orElse
+       (fun _ => g.chosenXOf? o.id)).getD 0` (violating CR 702.37c / 708.2a) — and four synthetic probes introduced in the
+       ability refactor (`Core.lkiEventObjectAsGameObject` `6406`, `Casting.timingAllowsCast` `35`, `Pumps.spellHasImprovise`
+       `311`, and `Interpreter.execPlayer` `.searchLibrary` `2094`) use `id := ⟨0⟩` instead of `noSourceSentinelId`, risking
+       Layer-3/continuous-effect collision with real `ObjectId ⟨0⟩` (e.g. `EvalExpr.spellFaceView` at `EvalExpr.lean:218`
+       calls `g.evalLayer3 card`);
        (ii) when `eo.faceDown == true`, `damageSourceObjectFromLki` (`12405–12426`) and `lkiEventObjectAsGameObject`
        (`6385–6404`) populate `printed` from unmasked `eo.toCardDef` (`Object.lean:495–514`), while `copiableValuesWithTs`
        (`3638`), `copiableValues` (`3648`), and `baseCard` (`3661–3662`) short-circuit `o.isLkiSnapshot` before
@@ -20899,14 +20903,17 @@ soundness).
          `lkiEventObjectAsGameObject` (`6391–6393`) when `!eo.faceDown && (eo.copiable.isSome || eo.printed.isSome)`
          (subtracting stack `eo.chosenX.getD 0` on the synthetic `eo.copiable.isNone && eo.printed.isNone` fallback),
          short-circuit `if o.status.faceDown && (o.zone == .battlefield || o.zone == .stack) then 0` first in **both**
-         `Core.staticManaValue` (`6348–6354`) and `Core.objectManaValue` (`11165–11170`, matching CR 708.2a on live,
-         phased-out, and LKI face-down objects) and on non-face-down `o.isLkiSnapshot` add `(if o.zone == .stack then
-         o.chosenX.getD 0 else 0)` to `o.printed.manaValue` in `Core.staticManaValue` (`6349`, matching `Core.objectManaValue`
-         `11168–11170` where face-up `copiableValues` is `o.printed`), and replace `id := ⟨0⟩` with `noSourceSentinelId`
-         across `Core.lkiEventObjectAsGameObject` (`6406`), `Casting.timingAllowsCast` (`35`), `Pumps.spellHasImprovise`
-         (`311`), and `Interpreter.execPlayer` `.searchLibrary` (`2094`); mask hidden front-face characteristics when
-         `eo.faceDown && (eo.zone == .battlefield || eo.zone == .stack)` to the CR 708.2a face-down 2/2 nameless creature
-         `CardDef` (`{ name := "", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2) }`, matching
+         `Core.staticManaValue` (`6348–6354`) and `Core.objectManaValue` (`11165–11170`, matching CR 702.37c / 708.2a on live,
+         phased-out, and LKI face-down objects) and remove `Core.staticManaValue`'s separate `if o.isLkiSnapshot` early return
+         (`6349`) so face-up LKI flows through `(g.copiableValues o).manaValue` (`o.printed.manaValue` via `3648`) plus the
+         same stack `{X}` fallback `(o.chosenX.orElse (fun _ => g.chosenXOf? o.id)).getD 0` (`Core.lean:9916–9917`,
+         `Event.lean:3832–3849` — moving/sharing `chosenXOf?` or using `o.chosenX.orElse (fun _ => ((g.findObject? o.id).bind
+         (·.chosenX)).orElse (fun _ => GameEvent.chosenXOf? g.events o.id))` at `6354` so `staticManaValue` matches
+         `objectManaValue` `11168–11170` identically), and replace `id := ⟨0⟩` with `noSourceSentinelId` across
+         `Core.lkiEventObjectAsGameObject` (`6406`), `Casting.timingAllowsCast` (`35`), `Pumps.spellHasImprovise` (`311`), and
+         `Interpreter.execPlayer` `.searchLibrary` (`2094`); mask hidden front-face characteristics when `eo.faceDown &&
+         (eo.zone == .battlefield || eo.zone == .stack)` to the CR 708.2a face-down 2/2 nameless creature `CardDef`
+         (`{ name := "", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2) }`, matching
          `Core.lean:3640, 3650`) in both `damageSourceObjectFromLki` (`12405–12426`) and `lkiEventObjectAsGameObject`
          (`6385–6404`) and handle `o.status.faceDown` before `o.isLkiSnapshot` in `copiableValuesWithTs` / `copiableValues`
          (`3637–3652`); and capture evaluated Layer-6 `retainsPrintedAbilities` and effective Layer-6 abilities/counts
