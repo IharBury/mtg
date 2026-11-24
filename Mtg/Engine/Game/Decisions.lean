@@ -1645,66 +1645,68 @@ private partial def advanceProbeOnResume (g : Game) (hasQueuedPending : Bool) :
     match g.proposedSpell with
     | none => (g, hasQueuedPending)
     | some prop =>
-      let clearChanges : Array EngineChange :=
-        #[.proposedSpell none] ++
-        (if g.proposalCheckpoint.isSome then #[.clearProposalCheckpoint] else #[]) ++
-        #[.castingFromTop false]
-      let reverseOut : Game × Bool :=
-        if g.proposalCheckpoint.isSome then
-          let gR := g.reverseProposedSpell (resumeContinuation := true) (followedByFinishChoice := hadOuter)
-          (gR, if gR.pending != .none || gR.afterRandom != .none then true else hasQueuedPending)
-        else (g, hasQueuedPending)
-      if proposedSpellCostStageFails g prop stage then reverseOut
-      else if prop.needsSacrificeOther && hasAvailableSacrificeForProposed g prop stage then
-        let excludeId := prop.sourceId.getD prop.spellId
-        (g.change (.pending (.sacrificePermanent prop.caster excludeId)), true)
-      else if prop.needsSacrificeOther then reverseOut
-      else if prop.needsDiscardCard && hasAvailableDiscardForProposed g prop stage then
-        (g.change (.pending (.discardForAdditionalCost prop.caster)), true)
-      else if prop.needsDiscardCard then reverseOut
-      else if prop.kind == .turnFaceUp then
-        if !(g.stillInGame prop.caster &&
-            (g.findObject? prop.spellId).any (fun o =>
-              o.isOnBattlefield && o.status.faceDown && g.controlledBy o prop.caster)) then
-          reverseOut
-        else if let .chooseReplacement .. := g.pending then
-          -- `finishProposedSpellCosts` (`Decisions.lean:5511-5513`) re-queues itself
-          -- while `.chooseReplacement` is open without clearing `pending` or flipping.
-          (g.change (.consecutivePasses 0), true)
-        else
-          let selfLeaf : PendingReplacement :=
-            .finishProposedSpellCosts stage grantPriority hadOuter openCont
-          let localOuter? :=
-            g.pendingReplacement.bind (removeExactPendingReplacement selfLeaf)
-          let effHadOuter := hadOuter || localOuter?.isSome
-          let g0 :=
-            let g0 := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
-            g0.changes #[.pending .none, .consecutivePasses 0]
-          let (g1, callerShouldResume) :=
-            g0.completeTurnFaceUp prop.caster prop.spellId (hadOuterReplacement := effHadOuter)
+      if let .chooseReplacement .. := g.pending then
+        -- `finishProposedSpellCosts` (`Decisions.lean:5526-5528`) returns immediately
+        -- while `.chooseReplacement` is open (for every stage) without inspecting
+        -- stage failures, sacrifice/discard costs, or permanent status.
+        (g.change (.consecutivePasses 0), true)
+      else
+        let clearChanges : Array EngineChange :=
+          #[.proposedSpell none] ++
+          (if g.proposalCheckpoint.isSome then #[.clearProposalCheckpoint] else #[]) ++
+          #[.castingFromTop false]
+        let reverseOut : Game × Bool :=
+          if g.proposalCheckpoint.isSome then
+            let gR := g.reverseProposedSpell (resumeContinuation := true) (followedByFinishChoice := hadOuter)
+            (gR, if gR.pending != .none || gR.afterRandom != .none then true else hasQueuedPending)
+          else (g, hasQueuedPending)
+        if proposedSpellCostStageFails g prop stage then reverseOut
+        else if prop.needsSacrificeOther && hasAvailableSacrificeForProposed g prop stage then
+          let excludeId := prop.sourceId.getD prop.spellId
+          (g.change (.pending (.sacrificePermanent prop.caster excludeId)), true)
+        else if prop.needsSacrificeOther then reverseOut
+        else if prop.needsDiscardCard && hasAvailableDiscardForProposed g prop stage then
+          (g.change (.pending (.discardForAdditionalCost prop.caster)), true)
+        else if prop.needsDiscardCard then reverseOut
+        else if prop.kind == .turnFaceUp then
+          if !(g.stillInGame prop.caster &&
+              (g.findObject? prop.spellId).any (fun o =>
+                o.isOnBattlefield && o.status.faceDown && g.controlledBy o prop.caster)) then
+            reverseOut
+          else
+            let selfLeaf : PendingReplacement :=
+              .finishProposedSpellCosts stage grantPriority hadOuter openCont
+            let localOuter? :=
+              g.pendingReplacement.bind (removeExactPendingReplacement selfLeaf)
+            let effHadOuter := hadOuter || localOuter?.isSome
+            let g0 :=
+              let g0 := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
+              g0.changes #[.pending .none, .consecutivePasses 0]
+            let (g1, callerShouldResume) :=
+              g0.completeTurnFaceUp prop.caster prop.spellId (hadOuterReplacement := effHadOuter)
+            let g1 :=
+              match localOuter? with
+              | some outer => g1.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+              | none => g1
+            let paused := match g1.pending with | .chooseReplacement .. => true | _ => false
+            let g1 :=
+              if !paused && !hadOuter && (callerShouldResume ||
+                  (g1.pending == .none && !g1.over && localOuter?.isSome)) then
+                g1.resumeAfterBecomeCastFwd
+              else g1
+            (g1, if g1.pending != .none || g1.afterRandom != .none then true else if hadOuter then hasQueuedPending else false)
+        else if g.stillInGame prop.caster && (g.findObject? prop.spellId).any (·.zone == .stack) then
+          let g1 := g.changes clearChanges
           let g1 :=
-            match localOuter? with
-            | some outer => g1.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+            match g1.findObject? prop.spellId with
+            | some sp => g1.putCastTriggersOnStack prop.caster sp
             | none => g1
-          let paused := match g1.pending with | .chooseReplacement .. => true | _ => false
-          let g1 :=
-            if !paused && !hadOuter && (callerShouldResume ||
-                (g1.pending == .none && !g1.over && localOuter?.isSome)) then
-              g1.resumeAfterBecomeCastFwd
-            else g1
-          (g1, if g1.pending != .none || g1.afterRandom != .none then true else if hadOuter then hasQueuedPending else false)
-      else if g.stillInGame prop.caster && (g.findObject? prop.spellId).any (·.zone == .stack) then
-        let g1 := g.changes clearChanges
-        let g1 :=
-          match g1.findObject? prop.spellId with
-          | some sp => g1.putCastTriggersOnStack prop.caster sp
-          | none => g1
-        if g1.over || g1.pending != .none || g1.afterRandom != .none then (g1, true)
-        else if spellOpensAncestryScry g1 prop.caster prop.spellId then (g1.beginScry prop.caster 1, true)
-        else
-          let g2 := simulateFinishPostCastBody g1 prop.caster
-          (g2, if g2.pending != .none || g2.afterRandom != .none then true else if hadOuter then hasQueuedPending else false)
-      else reverseOut
+          if g1.over || g1.pending != .none || g1.afterRandom != .none then (g1, true)
+          else if spellOpensAncestryScry g1 prop.caster prop.spellId then (g1.beginScry prop.caster 1, true)
+          else
+            let g2 := simulateFinishPostCastBody g1 prop.caster
+            (g2, if g2.pending != .none || g2.afterRandom != .none then true else if hadOuter then hasQueuedPending else false)
+        else reverseOut
   | .completeActivation hadOuter _ =>
     let clearChanges : Array EngineChange :=
       (if g.proposedSpell.isSome then #[.proposedSpell none] else #[]) ++
@@ -2410,7 +2412,12 @@ private partial def classifyFinishProposedSpellCosts (g : Game)
     match g.proposedSpell with
     | none => .noGrant
     | some prop =>
-      if proposedSpellCostStageFails g prop stage then
+      if let .chooseReplacement .. := g.pending then
+        -- `finishProposedSpellCosts` (`Decisions.lean:5526-5528`) returns immediately
+        -- while `.chooseReplacement` is open (for every stage) without inspecting
+        -- stage failures, sacrifice/discard costs, or permanent status.
+        if hadOuter then .noGrant else .settlesPromptOrOver
+      else if proposedSpellCostStageFails g prop stage then
         classifyProposedSpellReversal g prop
       else if prop.needsSacrificeOther && hasAvailableSacrificeForProposed g prop stage then
         .settlesPromptOrOver
@@ -2425,14 +2432,8 @@ private partial def classifyFinishProposedSpellCosts (g : Game)
             (g.findObject? prop.spellId).any (fun o =>
               o.isOnBattlefield && o.status.faceDown && g.controlledBy o prop.caster)) then
           classifyProposedSpellReversal g prop
-        else if let .chooseReplacement .. := g.pending then
-          -- `finishProposedSpellCosts` (`Decisions.lean:5511-5513`) re-queues itself
-          -- while `.chooseReplacement` is open without clearing `pending` or flipping.
-          if hadOuter then .noGrant else .settlesPromptOrOver
-        else if !hadOuter && !grantPriority then
-          .noGrant
         else
-          -- Mirror `Decisions.lean:5623-5638`: `pending` is not `.chooseReplacement`, so
+          -- Mirror `Decisions.lean:5638-5653`: `pending` is not `.chooseReplacement`, so
           -- clear `pending` and `consecutivePasses` before `completeTurnFaceUp` and keep
           -- all non-self-referential prefix/suffix nodes in `localOuter?`.
           let selfLeaf : PendingReplacement :=
