@@ -2697,7 +2697,7 @@ private def mustApply33i4 (g : Game) (p : PlayerId) (a : Action) : Game :=
     !gP1Departed.canPayLife p1 0
 
   -- 4b. Layer 1 `g.name` / `pr.originalSnapshot.name` queries in `ResolutionHelpers`,
-  --     `ResolutionEffects`, `CastExtras`, `StateBasedActions`, and `ResolutionChoices`:
+  --     `CastExtras`, `StateBasedActions`, and `ResolutionChoices`:
   let sphinxCopyDef : CardDef := { bear with name := "Sphinx's Approach" }
   let cloneCardDef : CardDef := { bear with name := "Cloned Illusion" }
   let gGy0 := insertObject gBase bear p0 (.graveyard p0)
