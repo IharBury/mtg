@@ -3042,7 +3042,7 @@ def startThreePlayer24i3 : Game :=
     kind := .createExtraTokenWithFood me bonusBearTokDef
   }
   let gAtk3p0 :=
-    (startThreePlayer24i3.createEffect (.replacement specExtraBear) (cause := some cTok)).createEffect
+    ((startThreePlayer24i3.beginStep .beginningOfCombat).createEffect (.replacement specExtraBear) (cause := some cTok)).createEffect
       (.replacement specAsDragon) (cause := some cTok)
   let gAtkRepPaused := gAtk3p0.createAndMarkTokensAttacking me .food 1 false true (cause := some cTok)
   -- Choosing `idExtraBear` first turns 1 Food into (Food + Bonus Bear) -> (Dragon Token + Bonus Bear):
@@ -3092,18 +3092,19 @@ def startThreePlayer24i3 : Game :=
     toughness := some (.fixed 1)
   }
   let bilboDef : CardDef := { bear with name := "P24i3 Bilbo", staticAbilities := #[.foodAlsoCreatesTreasure] }
+  let afterDrawCombat := afterDraw.beginStep .beginningOfCombat
   let gRiderCreature0 :=
-    (afterDraw.createEffect (.replacement specExtraBear) (cause := some cTok)).change
+    (afterDrawCombat.createEffect (.replacement specExtraBear) (cause := some cTok)).change
       (.pushContinuationFrame {})
   let (gRiderCreature1, primaryFoodObj) :=
     gRiderCreature0.createToken me creatureFoodDef
       (tapped := true) (attacking := true) (attackingTarget := some (.player opp24i3))
       (extraCounters := #[(.shield, 1)]) (recordRecent := true) (cause := some cTok)
   let bonusBearObj := (gRiderCreature1.battlefield.filter (·.name == bonusBearTokDef.name))[0]!
-  let gRiderTreasure0 := addPermanent startThreePlayer24i3 bilboDef me me
+  let gRiderTreasure0 := addPermanent (startThreePlayer24i3.beginStep .beginningOfCombat) bilboDef me me
   let gRiderTreasureAtk := gRiderTreasure0.createAndMarkTokensAttacking me .food 1 true true (cause := some cTok)
   let (gRiderTreasure1, _) :=
-    ((addPermanent afterDraw bilboDef me me).change (.pushContinuationFrame {})).createToken me creatureFoodDef
+    ((addPermanent afterDrawCombat bilboDef me me).change (.pushContinuationFrame {})).createToken me creatureFoodDef
       (tapped := true) (attacking := true) (attackingTarget := some (.player opp24i3))
       (extraCounters := #[(.shield, 1)]) (recordRecent := true) (cause := some cTok)
   let bonusTreasureObj := (gRiderTreasure1.battlefield.filter (·.name == treasureToken.name))[0]!
@@ -3130,7 +3131,7 @@ def startThreePlayer24i3 : Game :=
 
   -- 4d. Standard Andúril 2-Spirit creation, unstaged fallback, and ETB replacement-pause continuation
   --     all log the actual created token summary via `logCreatedTokensSummary`:
-  let gSpiritStd := afterDraw.createAndMarkTokensAttacking me .spirit 2 true true (cause := some cTok)
+  let gSpiritStd := afterDrawCombat.createAndMarkTokensAttacking me .spirit 2 true true (cause := some cTok)
   let prismDragonTokDef : CardDef := {
     bear with
     name := "P24i3 Prism Dragon"
@@ -3142,7 +3143,7 @@ def startThreePlayer24i3 : Game :=
     id := idAsDragon, source := none, controller := some me, affectedPlayer := me,
     kind := .artifactTokensBecome me prismDragonTokDef
   }
-  let gPrism0 := afterDraw.createEffect (.replacement specAsPrismDragon) (cause := some cTok)
+  let gPrism0 := afterDrawCombat.createEffect (.replacement specAsPrismDragon) (cause := some cTok)
   let prismCandId : ObjectId := ⟨gPrism0.nextObjectId⟩
   let gPrismPaused := gPrism0.createAndMarkTokensAttacking me .food 1 false true (cause := some cTok)
   let idPrismRed : ReplacementId := {
@@ -3150,7 +3151,7 @@ def startThreePlayer24i3 : Game :=
   }
   let gPrismDone := mustApply gPrismPaused me (.chooseReplacement idPrismRed)
   let gUnstagedFallback :=
-    (afterDraw.createEffect (.replacement specAsDragon) (cause := some cTok)).promptEnteringAttackItems
+    (afterDrawCombat.createEffect (.replacement specAsDragon) (cause := some cTok)).promptEnteringAttackItems
       #[.token me .food false #[.player opp24i3]] (cause := some cTok)
   let summaryLogsOk :=
     gSpiritStd.log.any (·.contains "creates two tapped and attacking Spirit tokens") &&

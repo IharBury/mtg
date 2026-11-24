@@ -188,7 +188,7 @@ def worldWarHulkNextOnlyOk : Bool :=
 
 /-- Ruling 707: Grim Reaper's return can attack a different player. -/
 def grimReaperOtherDestinationOk : Bool :=
-  let g := addPermanent afterDraw grimReaperLethalLegionnaire ⟨0⟩ ⟨0⟩
+  let g := addPermanent (afterDraw.beginStep .beginningOfCombat) grimReaperLethalLegionnaire ⟨0⟩ ⟨0⟩
   let g := addToGraveyard g grizzlyBears ⟨0⟩
   let gy := namedGraveyardCard g ⟨0⟩ "Grizzly Bears"
   let g := g.returnFromGyTappedAttackingFinality ⟨0⟩ gy.id (attackingTarget := some (.player ⟨1⟩))

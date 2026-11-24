@@ -10320,20 +10320,22 @@ def selectNextReplacementStep (g : Game) (candidates : Array ReplacementCandidat
 
 /-- Legal players, planeswalkers, and battles that a creature put onto the
 battlefield attacking under `controller`'s control may be chosen to attack
-(CR 508.4 / 810.7). -/
+(CR 506.2 / 506.3b / 508.4 / 805.10a / 810.7). -/
 def legalEnteringAttackTargets (g : Game) (controller : PlayerId) : Array AttackTarget :=
-  let opps := g.livingOpponents controller
-  let playerTargets : Array AttackTarget := opps.map (fun pl => .player pl.id)
-  let permanentTargets : Array AttackTarget :=
-    g.battlefield.filterMap fun o =>
-      if !opps.any (fun pl => g.controlledBy o pl.id) then none
-      else if g.isPlaneswalker o then
-        if g.cantAttackJace controller o then none
-        else some (.planeswalker o.id)
-      else if g.hasType o .battle then
-        some (.battle o.id)
-      else none
-  playerTargets ++ permanentTargets
+  if g.step.phase != .combat || !g.isOnActiveTeam controller then #[]
+  else
+    let opps := g.livingOpponents controller
+    let playerTargets : Array AttackTarget := opps.map (fun pl => .player pl.id)
+    let permanentTargets : Array AttackTarget :=
+      g.battlefield.filterMap fun o =>
+        if !opps.any (fun pl => g.controlledBy o pl.id) then none
+        else if g.isPlaneswalker o then
+          if g.cantAttackJace controller o then none
+          else some (.planeswalker o.id)
+        else if g.hasType o .battle then
+          some (.battle o.id)
+        else none
+    playerTargets ++ permanentTargets
 
 /-- Default defending opponent for a creature entering attacking or made
 attacking under `controller`'s control, or `none` when no living opponent
@@ -10345,24 +10347,14 @@ def defaultAttackOpponent? (g : Game) (controller : PlayerId) : Option PlayerId 
 
 /-- Resolve the `AttackTarget` for a creature entering the battlefield attacking
 or made attacking under `controller`'s control, returning `none` when no legal
-target exists so the permanent is not attacking (CR 508.4c / 810.7). -/
+target exists or `controller` isn't an attacking player during combat so the
+permanent is not attacking (CR 506.2 / 506.3b / 508.4c / 805.10a / 810.7). -/
 def resolveEnteringAttackTarget? (g : Game) (controller : PlayerId)
     (attacking : Bool) (attackingTarget : Option AttackTarget) : Option AttackTarget :=
   if !(attacking || attackingTarget.isSome) then none
+  else if g.step.phase != .combat || !g.isOnActiveTeam controller then
+    none
   else
-    -- CR 506.3b: a creature controlled by a player who isn't an attacking player
-    -- can't enter the battlefield attacking.
-    let attackingPlayer? : Option PlayerId :=
-      g.events.findSomeRev? (fun e =>
-        if e.turn != g.turnNumber then none
-        else
-          match e.change with
-          | .rules (.combat (.attackersDeclared p _)) => some p
-          | _ => none)
-    match attackingPlayer?.map (fun atkPlayer =>
-        !(controller == atkPlayer || g.areTeammates controller atkPlayer)) with
-    | some true => none
-    | _ =>
     match attackingTarget with
     | some (.player p) =>
       if g.isLivingOpponentOf controller p then some (.player p)

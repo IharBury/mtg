@@ -95,7 +95,7 @@ def doomReignsSupremeReflexiveOk : Bool :=
 /-- Ruling 715: Grim Reaper's pay is the first ability; the return is
 reflexive. -/
 def grimReaperReflexiveOk : Bool :=
-  let g := addPermanent afterDraw grimReaperLethalLegionnaire ⟨0⟩ ⟨0⟩
+  let g := addPermanent (afterDraw.beginStep .beginningOfCombat) grimReaperLethalLegionnaire ⟨0⟩ ⟨0⟩
   let g := addToGraveyard g grizzlyBears ⟨0⟩
   let grim := namedPermanent g "Grim Reaper, Lethal Legionnaire"
   let unpaid :=
