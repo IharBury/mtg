@@ -1087,10 +1087,13 @@ private def containsFinishTurnFaceUp : PendingReplacement → Bool
   | .seq a b => containsFinishTurnFaceUp a || containsFinishTurnFaceUp b
   | _ => false
 
-private def containsTurnFaceUpOrProposalCost : PendingReplacement → Bool
-  | .finishTurnFaceUp .. | .finishProposedSpellCosts .. => true
-  | .seq a b => containsTurnFaceUpOrProposalCost a || containsTurnFaceUpOrProposalCost b
-  | _ => false
+private def removeExactPendingReplacement (target : PendingReplacement) :
+    PendingReplacement → Option PendingReplacement
+  | .seq a b =>
+    seqOptPendingReplacement
+      (removeExactPendingReplacement target a)
+      (removeExactPendingReplacement target b)
+  | pr => if pr == target then none else some pr
 
 private def prefixBeforeFinishTurnFaceUp (caster : PlayerId) (spellId : ObjectId)
     (hadOuter : Bool) : PendingReplacement → Option PendingReplacement × Bool
@@ -1638,7 +1641,7 @@ private partial def advanceProbeOnResume (g : Game) (hasQueuedPending : Bool) :
       (gR, if gR.pending != .none || gR.afterRandom != .none then true else hasQueuedPending)
     else
       (g.changes clearChanges, if hadOuter then hasQueuedPending else false)
-  | .finishProposedSpellCosts stage _grantPriority hadOuter _ =>
+  | .finishProposedSpellCosts stage grantPriority hadOuter openCont =>
     match g.proposedSpell with
     | none => (g, hasQueuedPending)
     | some prop =>
@@ -1660,11 +1663,19 @@ private partial def advanceProbeOnResume (g : Game) (hasQueuedPending : Bool) :
         (g.change (.pending (.discardForAdditionalCost prop.caster)), true)
       else if prop.needsDiscardCard then reverseOut
       else if prop.kind == .turnFaceUp then
-        if g.stillInGame prop.caster &&
+        if !(g.stillInGame prop.caster &&
             (g.findObject? prop.spellId).any (fun o =>
-              o.isOnBattlefield && o.status.faceDown && g.controlledBy o prop.caster) then
+              o.isOnBattlefield && o.status.faceDown && g.controlledBy o prop.caster)) then
+          reverseOut
+        else if let .chooseReplacement .. := g.pending then
+          -- `finishProposedSpellCosts` (`Decisions.lean:5511-5513`) re-queues itself
+          -- while `.chooseReplacement` is open without clearing `pending` or flipping.
+          (g.change (.consecutivePasses 0), true)
+        else
+          let selfLeaf : PendingReplacement :=
+            .finishProposedSpellCosts stage grantPriority hadOuter openCont
           let localOuter? :=
-            g.pendingReplacement.filter (fun pr => !containsTurnFaceUpOrProposalCost pr)
+            g.pendingReplacement.bind (removeExactPendingReplacement selfLeaf)
           let effHadOuter := hadOuter || localOuter?.isSome
           let g0 :=
             let g0 := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
@@ -1682,7 +1693,6 @@ private partial def advanceProbeOnResume (g : Game) (hasQueuedPending : Bool) :
               g1.resumeAfterBecomeCastFwd
             else g1
           (g1, if g1.pending != .none || g1.afterRandom != .none then true else if hadOuter then hasQueuedPending else false)
-        else reverseOut
       else if g.stillInGame prop.caster && (g.findObject? prop.spellId).any (·.zone == .stack) then
         let g1 := g.changes clearChanges
         let g1 :=
@@ -2415,13 +2425,20 @@ private partial def classifyFinishProposedSpellCosts (g : Game)
             (g.findObject? prop.spellId).any (fun o =>
               o.isOnBattlefield && o.status.faceDown && g.controlledBy o prop.caster)) then
           classifyProposedSpellReversal g prop
+        else if let .chooseReplacement .. := g.pending then
+          -- `finishProposedSpellCosts` (`Decisions.lean:5511-5513`) re-queues itself
+          -- while `.chooseReplacement` is open without clearing `pending` or flipping.
+          if hadOuter then .noGrant else .settlesPromptOrOver
         else if !hadOuter && !grantPriority then
           .noGrant
         else
-          -- Mirror `Decisions.lean:5547-5562`: clear `pending` and `consecutivePasses`
-          -- before `completeTurnFaceUp` (and preserve non-self-referential `localOuter?`).
+          -- Mirror `Decisions.lean:5623-5638`: `pending` is not `.chooseReplacement`, so
+          -- clear `pending` and `consecutivePasses` before `completeTurnFaceUp` and keep
+          -- all non-self-referential prefix/suffix nodes in `localOuter?`.
+          let selfLeaf : PendingReplacement :=
+            .finishProposedSpellCosts stage grantPriority hadOuter openCont
           let localOuter? :=
-            g.pendingReplacement.filter (fun pr => !containsTurnFaceUpOrProposalCost pr)
+            g.pendingReplacement.bind (removeExactPendingReplacement selfLeaf)
           let effHadOuter := hadOuter || localOuter?.isSome
           let g0 :=
             let g0 := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
@@ -2441,9 +2458,7 @@ private partial def classifyFinishProposedSpellCosts (g : Game)
               else g1
             if g1.over || g1.livingPlayers.isEmpty then .settlesPromptOrOver
             else if let .chooseReplacement .. := g1.pending then
-              if g1.pendingReplacement.any containsTurnFaceUpOrProposalCost then
-                if hadOuter then .noGrant else .settlesPromptOrOver
-              else if g1.anyContinuationSettlesControlFlow then
+              if g1.anyContinuationSettlesControlFlow then
                 match g1.firstContinuationPriorityGrant? with
                 | some (some q) => .grants (some q)
                 | some none => .implicitResolutionChoice

@@ -322,9 +322,13 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
       .pending (.chooseReplacement p0 #[])
     ]
 
-  -- `.finishProposedSpellCosts` (`.turnFaceUp`) under an already-open `.chooseReplacement`:
-  -- (a) legendary morph flips during `advanceProbeOnResume`, so trailing `.finishResolutionChoice` sees legend rule;
-  -- (b) departed morph reverses immediately rather than probing turn-face-up.
+  -- `.finishProposedSpellCosts` (`.turnFaceUp`):
+  -- (a) while `.chooseReplacement` is open (`Decisions.lean:5511-5513`), resuming the leaf leaves
+  --     `.chooseReplacement` open and the morph face down (deferred, no flip);
+  -- (b) once `.chooseReplacement` is resolved (via `anyContinuation*` / `probeGameForPendingReplacement`)
+  --     or when `pending` is a non-replacement prompt (`.activateManaAbilities`), the `Decisions.lean:5623` path clears
+  --     `pending`, flips, and preserves non-self prefix/suffix nodes in `localOuter?`;
+  -- (c) departed morph reverses immediately rather than probing turn-face-up.
   let morphLegProp : ProposedSpell := {
     caster := p1
     cost := ManaCost.empty
@@ -336,8 +340,51 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
   }
   let gMorphLegPropOpen :=
     gMorphLeg.changes #[.saveProposalCheckpoint, .proposedSpell (some morphLegProp), .pending (.chooseReplacement p0 #[])]
+  let gMorphLegPropOpenRun :=
+    gMorphLegPropOpen.resumePendingReplacement (.finishProposedSpellCosts .finalize true false false)
+  let gMorphLegPropQueued :=
+    gMorphLegPropOpen.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.seq (.finishProposedSpellCosts .finalize true true false) .finishResolutionChoice))
+    ]
   let gMorphCleanPropOpen :=
     gMorphCleanProp.change (.pending (.chooseReplacement p0 #[]))
+  let gMorphCleanPropOpenRun :=
+    gMorphCleanPropOpen.resumePendingReplacement (.finishProposedSpellCosts .finalize true false false)
+  let gMorphCleanPropQueued :=
+    gMorphCleanPropOpen.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.finishProposedSpellCosts .finalize true false false))
+    ]
+  let gMorphCleanPropPayMana :=
+    gMorphCleanProp.change (.pending (.activateManaAbilities p1))
+  let gMorphPropPrefixSelf :=
+    gMorphCleanProp.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.seq (.receivePriority p2) (.finishProposedSpellCosts .finalize true false false)))
+    ]
+  let gMorphPropPrefixSelfRun :=
+    match gMorphPropPrefixSelf.finishProposedSpellCosts .finalize true false false with
+    | .ok g => g
+    | .error e => panic! s!"gMorphPropPrefixSelfRun failed: {e}"
+  let gMorphPropPrefixOtherFaceUp :=
+    gMorphCleanProp.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.seq (.receivePriority p2) (.finishTurnFaceUp p1 morphCleanId true)))
+    ]
+  let gMorphPropPrefixOtherFaceUpRun :=
+    match gMorphPropPrefixOtherFaceUp.finishProposedSpellCosts .finalize true false false with
+    | .ok g => g
+    | .error e => panic! s!"gMorphPropPrefixOtherFaceUpRun failed: {e}"
+  let gMorphPropOtherFaceUpThenRecv :=
+    gMorphCleanProp.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.seq (.finishTurnFaceUp p1 morphCleanId true) (.receivePriority p2)))
+    ]
+  let gMorphPropOtherFaceUpThenRecvRun :=
+    match gMorphPropOtherFaceUpThenRecv.finishProposedSpellCosts .finalize true false false with
+    | .ok g => g
+    | .error e => panic! s!"gMorphPropOtherFaceUpThenRecvRun failed: {e}"
   let gMorphGoneOpenRep :=
     ((gMorphCleanProp.move morphCleanId (.graveyard p1) none (verb := some .destroy) (cause := some testCause)).1).change
       (.pending (.chooseReplacement p0 #[]))
@@ -478,13 +525,36 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
        !gMorphOpenTrue.anyContinuationSettlesControlFlow &&
        !gMorphOpenTrue.anyContinuationGrantsPriority &&
        !gMorphOpenTrue.continuationSettlesControlFlow false (.finishTurnFaceUp p1 morphCleanId true) &&
-       -- `.finishProposedSpellCosts` (`.turnFaceUp`) under open `.chooseReplacement`:
+       -- `.finishProposedSpellCosts` (`.turnFaceUp`) deferred while `.chooseReplacement` is open (`Decisions.lean:5511-5513`):
+       gMorphLegPropOpenRun.pending == .chooseReplacement p0 #[] &&
+       (gMorphLegPropOpenRun.object! morphLegId).status.faceDown &&
+       !gMorphLegPropOpen.continuationGrantsPriority false (.finishProposedSpellCosts .finalize true false false) &&
+       gMorphLegPropOpen.continuationSettlesControlFlow false (.finishProposedSpellCosts .finalize true false false) &&
        !gMorphLegPropOpen.continuationGrantsPriority false (.seq (.finishProposedSpellCosts .finalize true false false) .finishResolutionChoice) &&
        gMorphLegPropOpen.continuationSettlesControlFlow false (.seq (.finishProposedSpellCosts .finalize true false false) .finishResolutionChoice) &&
        !gMorphLegPropOpen.continuationGrantsPriority false (.seq (.finishProposedSpellCosts .finalize true true false) .finishResolutionChoice) &&
-       gMorphLegPropOpen.continuationSettlesControlFlow false (.seq (.finishProposedSpellCosts .finalize true true false) .finishResolutionChoice) &&
-       gMorphCleanPropOpen.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p1 &&
-       gMorphCleanPropOpen.priorityRecipientOfContinuation? false (.seq (.finishProposedSpellCosts .finalize true true false) (.receivePriority p2)) == some p2 &&
+       gMorphCleanPropOpenRun.pending == .chooseReplacement p0 #[] &&
+       (gMorphCleanPropOpenRun.object! morphCleanId).status.faceDown &&
+       !gMorphCleanPropOpen.continuationGrantsPriority false (.finishProposedSpellCosts .finalize true false false) &&
+       gMorphCleanPropOpen.continuationSettlesControlFlow false (.finishProposedSpellCosts .finalize true false false) &&
+       gMorphCleanPropOpen.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == none &&
+       -- Once `.chooseReplacement` is resolved (via `anyContinuation*`) or on non-replacement `.activateManaAbilities` (`Decisions.lean:5623`):
+       !gMorphLegPropQueued.anyContinuationGrantsPriority &&
+       gMorphLegPropQueued.anyContinuationSettlesControlFlow &&
+       gMorphCleanPropQueued.anyContinuationGrantsPriority &&
+       gMorphCleanPropQueued.firstContinuationPriorityGrant? == some (some p1) &&
+       gMorphCleanPropPayMana.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p1 &&
+       gMorphCleanPropPayMana.priorityRecipientOfContinuation? false (.seq (.finishProposedSpellCosts .finalize true true false) (.receivePriority p2)) == some p2 &&
+       -- Non-self prefix/suffix preservation in `localOuter?` (`removeExactPendingReplacement`):
+       gMorphPropPrefixSelfRun.pending == .none &&
+       gMorphPropPrefixSelfRun.priority == p2 &&
+       gMorphPropPrefixSelf.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p2 &&
+       gMorphPropPrefixOtherFaceUpRun.pending == .none &&
+       gMorphPropPrefixOtherFaceUpRun.priority == p0 &&
+       gMorphPropPrefixOtherFaceUp.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p0 &&
+       gMorphPropOtherFaceUpThenRecvRun.pending == .none &&
+       gMorphPropOtherFaceUpThenRecvRun.priority == p2 &&
+       gMorphPropOtherFaceUpThenRecv.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p2 &&
        -- Departed morph under open `.chooseReplacement` classifies as proposal reversal:
        gMorphGoneOpenRep.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p1 &&
        gMorphGoneOpenRep.continuationGrantsPriority false (.finishProposedSpellCosts .finalize false false false) &&
@@ -522,7 +592,8 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
       gStalePropSeq, gFinalizeSacPrompt, gFrcRand, gFrcOuterPrompt, gFrcOuterExplicit, gFrcLegend,
       gDrawEmpty2, gDrawEmpty4, gDrawSkip, gCbtLethal, gCbtTrig, gBlkDone, gSnkOpp0, gSnkOwn0,
       gMorphCleanRun, gMorphLegRun, gMorphFlushRun, gMorphFlushOuterRun, gMorphSacPaused, gMorphSacDone,
-      gMorphPreRecvRun, gMorphPreOuterRun, gMorphOnlyOuterRun ])
+      gMorphLegPropOpenRun, gMorphCleanPropOpenRun, gMorphPropPrefixSelfRun, gMorphPropPrefixOtherFaceUpRun,
+      gMorphPropOtherFaceUpThenRecvRun, gMorphPreRecvRun, gMorphPreOuterRun, gMorphOnlyOuterRun ])
 
 end Phase53Item1EventAlignment
 
