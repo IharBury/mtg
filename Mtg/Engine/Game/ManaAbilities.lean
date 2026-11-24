@@ -631,8 +631,7 @@ private def abortDepartedManaAbilityContCore (g : Game) (p : PlayerId) (prevPend
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishResolutionChoice
-          else if g.anyContinuationGrantsPriorityFwd &&
-              g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
+          else if g.hasImplicitPendingPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
           g := g.drainPendingContinuationsFwd
     return (g, false)
@@ -733,8 +732,7 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishResolutionChoice
-          else if g.anyContinuationGrantsPriorityFwd &&
-              g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
+          else if g.hasImplicitPendingPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
         else if !g.outerPendingReplacements.isEmpty ||
             g.currentInterpWait?.isSome then
@@ -742,11 +740,9 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishResolutionChoice
-          else if g.anyContinuationGrantsPriorityFwd &&
-              g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
+          else if g.hasImplicitPendingPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
-        else if g.anyContinuationGrantsPriorityFwd &&
-            g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
+        else if g.hasImplicitPendingPriorityContinuationFwd && g.pendingPriority != some prio then
           g := g.change (.pendingPriority (some prio))
     else
       g := g.chainPendingReplacement (.restorePending prevPending false none allDeparted none)
@@ -771,8 +767,7 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishResolutionChoice
-          else if g.anyContinuationGrantsPriorityFwd &&
-              g.hasImplicitPriorityContinuationFwd && g.pendingPriority != some prio then
+          else if g.hasImplicitPendingPriorityContinuationFwd && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
           g := g.drainPendingContinuationsFwd
     else if wasPaused then

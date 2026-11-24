@@ -230,12 +230,12 @@ def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   g.mayPlay p o &&
   g.graveyardCastThresholdMet p o.id bc &&
   (if perms.isEmpty then
-    g.timingAllowsCast p bc
+    g.timingAllowsCast p bc (card? := some o)
    else
     perms.any (fun perm =>
-      (perm.ignoreTiming || g.timingAllowsCast p bc) &&
+      (perm.ignoreTiming || g.timingAllowsCast p bc (card? := some o)) &&
         (!perm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o))) ||
-      (g.mayCastExiledBySource p o && g.timingAllowsCast p bc)) &&
+      (g.mayCastExiledBySource p o && g.timingAllowsCast p bc (card? := some o))) &&
   (g.mandatorySacrificeError? p o.id bc).isNone &&
   (!(isFlashbackCast && bc.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
   -- Untargeted permanents, and untargeted instants/sorceries with a modeled
@@ -289,7 +289,7 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
         | .behold quality =>
           (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality) ||
             (g.player p).hand.any (fun id =>
-              (g.findObject? id).any (fun card => g.hasSubtype card quality))
+              id != o.id && (g.findObject? id).any (fun card => g.hasSubtype card quality))
         | .sacrifice _ (.filter pred) =>
           (g.permanentsOf p).any (fun perm =>
             perm.id != o.id && EvalExpr.evalObjectPred g env (.live perm) pred)
@@ -353,7 +353,7 @@ def canPayAnnouncedAdditionalFromSources (g : Game) (p : PlayerId) (o : GameObje
         | .behold quality =>
           (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality) ||
             (g.player p).hand.any (fun id =>
-              (g.findObject? id).any (fun card => g.hasSubtype card quality))
+              id != o.id && (g.findObject? id).any (fun card => g.hasSubtype card quality))
         | .sacrifice _ (.filter pred) =>
           (g.permanentsOf p).any (fun perm =>
             perm.id != o.id && EvalExpr.evalObjectPred g env (.live perm) pred)
@@ -452,16 +452,16 @@ def canCastAndPayImpending (g : Game) (p : PlayerId) (o : GameObject)
       let perms := g.playPermissionsFor p o
       let hasNullSummoner := o.zone == .exile && g.mayCastExiledBySource p o
       if perms.isEmpty && !hasNullSummoner then
-        g.timingAllowsCast p impFace && payImpending none
+        g.timingAllowsCast p impFace (card? := some o) && payImpending none
       else
         let cleanPerms :=
           perms.filter fun pm =>
             !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone &&
-              (pm.ignoreTiming || g.timingAllowsCast p impFace)
+              (pm.ignoreTiming || g.timingAllowsCast p impFace (card? := some o))
         let nullPerm : Option PlayPermission :=
           if hasNullSummoner then some { player := p, anyMana := true } else none
         cleanPerms.any (fun pm => payImpending (some pm)) ||
-          (hasNullSummoner && g.timingAllowsCast p impFace && payImpending nullPerm)
+          (hasNullSummoner && g.timingAllowsCast p impFace (card? := some o) && payImpending nullPerm)
   | _, _, _ => false
 
 /-- True when the CR 715.3d exile permission forbids recasting as an Adventure. -/
@@ -503,7 +503,7 @@ def paidResolutionOrigPerm? (g : Game) (p : PlayerId) (o : GameObject)
     match face? with
     | some fc => if !isAdv && fc == g.baseCard o then g.objectManaValue o else fc.manaCost.manaValue
     | none => g.objectManaValue o
-  let timingOk := g.timingAllowsCast p f (ignorePending := true)
+  let timingOk := g.timingAllowsCast p f (ignorePending := true) (card? := some o)
   let nullPerm? : Option PlayPermission :=
     if o.zone == .exile && g.mayCastExiledBySource p o && timingOk then
       some { player := p, anyMana := true }
@@ -561,7 +561,7 @@ def proposalAltCleanPerm? (g : Game) (prop : ProposedSpell) (altFace : CardDef) 
         exiledBy := prop.original.exiledBy
         controller := some p }
       let baseAltTimingOk :=
-        g.timingAllowsCast p altFace (excludeStackId := some prop.spellId)
+        g.timingAllowsCast p altFace (excludeStackId := some prop.spellId) (card? := some spell)
       let allExilePerms := g.playPermissionsFor p preSpell
       let contClean :=
         allExilePerms.filter fun pm =>
@@ -686,12 +686,12 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     g.mayPlay p o &&
     g.graveyardCastThresholdMet p o.id face &&
     (if perms.isEmpty then
-      g.timingAllowsCast p face
+      g.timingAllowsCast p face (card? := some o)
      else
       advPerms.any (fun perm =>
-        (perm.ignoreTiming || g.timingAllowsCast p face) &&
+        (perm.ignoreTiming || g.timingAllowsCast p face (card? := some o)) &&
           (!perm.payLifeEqualManaValue || g.canPayLife p face.manaValue)) ||
-        (g.mayCastExiledBySource p o && g.timingAllowsCast p face)) &&
+        (g.mayCastExiledBySource p o && g.timingAllowsCast p face (card? := some o))) &&
     (g.mandatorySacrificeError? p o.id face).isNone &&
     (!(isFlashbackCast && face.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
     let tcs := g.evalLayer3 o
@@ -846,17 +846,13 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
           g.sourceTappedForCost sid (some prop.spellId) sinceIdx || !preTappedIds.contains sid
     if !tapSourceOk then false
     else if prop.kind != .activatedAbility then
+      let gSneak := g.probeAfterUnpaidSneak prop
       let excludeId := prop.sourceId.getD prop.spellId
-      let sneakPendingId? : Option ObjectId :=
-        match prop.sneakAttacker with
-        | some aid => if !g.sneakPaid prop.spellId then some aid else none
-        | none => none
       let sacOk :=
         !prop.needsSacrificeOther ||
-          (g.sacrificeCreatureOrArtifactChoices p excludeId).any (fun o =>
-            some o.id != sneakPendingId?)
+          !(gSneak.sacrificeCreatureOrArtifactChoices p excludeId).isEmpty
       let discardOk :=
-        !prop.needsDiscardCard || (g.player p).hand.any (· != prop.spellId)
+        !prop.needsDiscardCard || (gSneak.player p).hand.any (· != prop.spellId)
       sacOk && discardOk
     else
       match prop.sourceId, prop.activation with
@@ -1561,18 +1557,34 @@ def finishPostCast (g : Game) (p : PlayerId)
         else
           (g.change (.pendingFreeCopies none)).beginResolutionChoice q (.castCopiesFree alive budget castsLeft)
     | none => g
-  if !grantPriority then g
+  let prio := if hadOpenContinuation then g.activePlayer else p
+  if !grantPriority || hadOuterReplacement then g
   else if let .chooseReplacement .. := g.pending then
-    if g.currentInterpWait?.isSome || hadOuterReplacement then
+    if g.anyContinuationSettlesControlFlowFwd then
+      if g.hasImplicitPendingPriorityContinuationFwd && g.pendingPriority.isNone then
+        g.change (.pendingPriority (some (g.priorityInstead prio)))
+      else g
+    else if g.currentInterpWait?.isSome then
+      let g :=
+        if g.pendingPriority.isNone then
+          g.change (.pendingPriority (some (g.priorityInstead prio)))
+        else g
       g.chainPendingReplacement .finishResolutionChoice
     else
-      g.chainPendingReplacement (.receivePriority (if hadOpenContinuation then g.activePlayer else p))
+      g.chainPendingReplacement (.receivePriority prio)
   else if g.pending != .none then g
-  else if hadOuterReplacement && g.pendingReplacement.isNone then
-    g
   else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome then
-    g.chainPendingReplacement .finishResolutionChoice
-  else g.receivePriority (if hadOpenContinuation then g.activePlayer else p)
+    if g.anyContinuationSettlesControlFlowFwd then
+      if g.hasImplicitPendingPriorityContinuationFwd && g.pendingPriority.isNone then
+        g.change (.pendingPriority (some (g.priorityInstead prio)))
+      else g
+    else
+      let g :=
+        if g.pendingPriority.isNone then
+          g.change (.pendingPriority (some (g.priorityInstead prio)))
+        else g
+      g.chainPendingReplacement .finishResolutionChoice
+  else g.receivePriority prio
 
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
     (grantPriority : Bool := true)

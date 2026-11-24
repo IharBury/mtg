@@ -2280,14 +2280,24 @@ private def replayOk44i1 (gs : Array Game) : Bool :=
   let ensurePreservesExplicit := explicitTail.ensureEndsWithFinishResolutionChoice == explicitTail
   let gFraAlready :=
     (g4.changes #[.pushContinuationFrame {}, .pendingReplacement (some (.receivePriority p3))]).finishResolutionChoice
-  let gImplicitBeforeExplicit :=
+  let gExplicitOuterThroughFrc :=
     g4.changes #[
       .pendingPriority (some p1),
       .pushContinuationFrame {},
       .pushOuterPendingReplacement (.receivePriority p2),
       .pendingReplacement (some .finishResolutionChoice) ]
-  let implicitDetected := gImplicitBeforeExplicit.hasImplicitPriorityContinuation
-  let gStampedOverStale := gImplicitBeforeExplicit.finishAndGrantPriority p3
+  let explicitThroughFrcDetected :=
+    !gExplicitOuterThroughFrc.hasImplicitPriorityContinuation &&
+    gExplicitOuterThroughFrc.firstContinuationPriorityGrant? == some (some p2)
+  let gExplicitDrained := gExplicitOuterThroughFrc.finishAndGrantPriority p3
+  let gImplicitWithStale :=
+    g4.changes #[
+      .pendingPriority (some p1),
+      .pushContinuationFrame {},
+      .pushOuterPendingReplacement (.gainLife p0 0 (some testCause)),
+      .pendingReplacement (some .finishResolutionChoice) ]
+  let implicitDetected := gImplicitWithStale.hasImplicitPriorityContinuation
+  let gStampedOverStale := gImplicitWithStale.finishAndGrantPriority p3
   let gManaStale0 :=
     (addPermanent g4 p3LandDef p3 p3).changes #[
       .priority p3,
@@ -2300,8 +2310,10 @@ private def replayOk44i1 (gs : Array Game) : Bool :=
   let item1cOk :=
     ensurePreservesExplicit &&
     gFraAlready.priority == p3 &&
+    explicitThroughFrcDetected &&
+    gExplicitDrained.priority == p2 &&
     implicitDetected &&
-    gStampedOverStale.priority == p2 &&
+    gStampedOverStale.priority == p3 &&
     (gStampedOverStale.events.any fun ev =>
       ev.change == .engine (.pendingPriority (some p3))) &&
     gManaStamped.priority == p3 &&
@@ -2313,7 +2325,7 @@ private def replayOk44i1 (gs : Array Game) : Bool :=
   mustHold44i1 "1c.priorityContinuationGuards" item1cOk &&
   mustHold44i1 "1.replay"
     (replayOk44i1 #[gRepMid1, gRepDrained, gPreBPausedOnDep, gPreBResolved,
-      gLegAfterP2, gStashedLegendBatch, gFraAlready, gStampedOverStale, gManaStamped])
+      gLegAfterP2, gStashedLegendBatch, gFraAlready, gExplicitDrained, gStampedOverStale, gManaStamped])
 
 end Phase44Item1EventAlignment
 

@@ -291,14 +291,14 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
     mustHold52i1 "1b_preFinalizeStageAndUnpaidSneakAttacker"
       (gTwTapped.continuationGrantsPriority false (.finishProposedSpellCosts .teamwork true false false) &&
        gTwTapped.continuationSettlesControlFlow false (.finishProposedSpellCosts .teamwork true false false) &&
-       gTwTapped.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .teamwork true false false) == none &&
+       gTwTapped.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .teamwork true false false) == some p0 &&
        !gTwTappedNoCkpt.continuationGrantsPriority false (.finishProposedSpellCosts .teamwork true false false) &&
        !gTwTappedNoCkpt.continuationSettlesControlFlow false (.finishProposedSpellCosts .teamwork true false false) &&
        gBeholdMissing.continuationGrantsPriority false (.finishProposedSpellCosts .behold true false false) &&
-       gBeholdMissing.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .behold true false false) == none &&
+       gBeholdMissing.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .behold true false false) == some p0 &&
        !gBeholdMissingNoCkpt.continuationGrantsPriority false (.finishProposedSpellCosts .behold true false false) &&
        gSneakBlocked.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
-       gSneakBlocked.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .sneak true false false) == none &&
+       gSneakBlocked.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .sneak true false false) == some p0 &&
        gSneakSoleSac0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
        !gSneakSoleSacNoCkpt.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
        !gSneakSoleSacNoCkpt.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false) &&
@@ -312,7 +312,7 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
        gSneakOppDiscRun.proposedSpell.isNone &&
        gSneakOppDisc0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
        gSneakOppDisc0.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false) &&
-       gSneakOppDisc0.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .sneak true false false) == none &&
+       gSneakOppDisc0.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .sneak true false false) == some p0 &&
        !gSneakOppDiscNoCkpt.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
        !gSneakOppDiscNoCkpt.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false) &&
        gSneakCardDiscRun.pending == .discardForAdditionalCost p0 &&

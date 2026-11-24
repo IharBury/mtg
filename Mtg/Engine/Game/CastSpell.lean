@@ -250,9 +250,9 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       !asAdventure && sneakCost.isNone && !isFlashbackCast &&
         (origPerm.bind (·.prepareSource)).isNone &&
         (if !allPerms.isEmpty then
-          cleanPerms.any (fun pm => pm.ignoreTiming || g.timingAllowsCast p impFace (excludeStackId := some newId))
+          cleanPerms.any (fun pm => pm.ignoreTiming || g.timingAllowsCast p impFace (excludeStackId := some newId) (card? := some spellObj))
          else
-          g.timingAllowsCast p impFace (excludeStackId := some newId))
+          g.timingAllowsCast p impFace (excludeStackId := some newId) (card? := some spellObj))
     | _, _ => false
   let needsKicker :=
     face.kicker.isSome || hasMorphChoice || impPermOk

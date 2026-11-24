@@ -12,6 +12,18 @@ namespace Mtg.Engine.Agent
 open Mtg.Engine
 open Mtg.Engine.Game
 
+private def isTapCostPick : CostPick → Bool
+  | .tapUntappedCreature | .tapTwoUntappedArtifacts | .custom (.tapObjects ..) => true
+  | _ => false
+
+private def isBfSacCostPick : CostPick → Bool
+  | .tapUntappedCreature | .tapTwoUntappedArtifacts
+  | .discardACard | .discardNonland | .discardLegendaryCard | .discardLegendarySameName
+  | .exileAnotherCreatureCardFromGraveyard
+  | .custom (.tapObjects ..) | .custom (.discard ..) => false
+  | .custom (.exile _ zones _ _) => zones.zones.contains .battlefield
+  | _ => true
+
 /-- During CR 601.2g, tap sources until the locked-in cost is payable, then pay.
 Only mana that can be spent on the pending payment is considered (CR 106.6).
 Noncreatures are tapped before creatures when both help. Colorless is
@@ -299,12 +311,13 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
             if allPicks.isEmpty && crewN?.isNone then
               some upperX
             else
+              let gPicks := if prop.kind == .spell then g.probeAfterUnpaidSneak prop else g
               let greedyPicksForCrew (crewExcl : Array ObjectId) : Option (Array ObjectId) := Id.run do
                 let mut usedPicks : Array ObjectId := #[]
                 let mut tExcl : Array ObjectId := #[]
                 for i in [0:allPicks.size] do
                   let pick := allPicks[i]!
-                  match g.firstPayableCostPickSlice? p sid? (allPicks.extract i allPicks.size)
+                  match gPicks.firstPayableCostPickSlice? p sid? (allPicks.extract i allPicks.size)
                       (tapSource := prop.tapSource)
                       (sacrificeOrExileSource := sacSrc)
                       (discardOrExileHandSource := discSrc)
@@ -315,7 +328,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                     if chosen.size != pick.count then
                       return none
                     usedPicks := usedPicks ++ chosen
-                    if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
+                    if isTapCostPick pick then
                       tExcl := tExcl ++ chosen
                   | none =>
                     return none
@@ -348,10 +361,9 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                   if !canBeatBest best? (crewExcl ++ tapExcl) then best?
                   else
                     let rem := (pick :: restPicks).toArray
-                    let remHasTap :=
-                      rem.any (fun pk => pk == .tapUntappedCreature || pk == .tapTwoUntappedArtifacts)
+                    let remHasTap := rem.any isTapCostPick
                     if !remHasTap then
-                      if g.costPicksPayable p sid? rem
+                      if gPicks.costPicksPayable p sid? rem
                           (tapSource := prop.tapSource)
                           (sacrificeOrExileSource := sacSrc)
                           (discardOrExileHandSource := discSrc)
@@ -361,18 +373,12 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                         updateBest best? (xForExtraExcl (crewExcl ++ tapExcl))
                       else best?
                     else
-                      let isTapPick :=
-                        pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts
-                      let isBfSacPick : Bool :=
-                        match pick with
-                        | .tapUntappedCreature | .tapTwoUntappedArtifacts
-                        | .discardACard | .discardNonland | .discardLegendaryCard | .discardLegendarySameName
-                        | .exileAnotherCreatureCardFromGraveyard => false
-                        | _ => true
+                      let isTapPick := isTapCostPick pick
+                      let isBfSacPick := isBfSacCostPick pick
                       let laterSacAttachedEquip :=
                         isBfSacPick && restPicks.contains .sacrificeEquipmentAttachedToSource
                       let cands :=
-                        (g.costPickCandidates p sid? pick
+                        (gPicks.costPickCandidates p sid? pick
                           (tapSource := prop.tapSource)
                           (sacrificeOrExileSource := sacSrc || laterSacAttachedEquip)
                           (discardOrExileHandSource := discSrc)).filter fun cid =>
@@ -587,14 +593,12 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                 controller := some p }
             let face := { g.baseCard spell with keywords := g.currentKeywords spell }
             if (face.morph.isSome || face.impending.isSome) && face.kicker.isNone then
-              let unpaidSneak? :=
-                if !g.sneakPaid prop.spellId then prop.sneakAttacker else none
+              let gSneak := g.probeAfterUnpaidSneak prop
               let spellSacOk :=
                 !prop.needsSacrificeOther ||
-                  (g.sacrificeCreatureOrArtifactChoices p (prop.sourceId.getD prop.spellId)).any
-                    (fun o => unpaidSneak? != some o.id)
+                  !(gSneak.sacrificeCreatureOrArtifactChoices p (prop.sourceId.getD prop.spellId)).isEmpty
               let spellDiscardOk :=
-                !prop.needsDiscardCard || (g.player p).hand.any (· != prop.spellId)
+                !prop.needsDiscardCard || (gSneak.player p).hand.any (· != prop.spellId)
               let spellBeholdOk :=
                 match prop.needsBehold with
                 | none => true
@@ -627,15 +631,13 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                   | none => true
                   | some propAlt =>
                     let spellAlt := (gAlt.findObject? propAlt.spellId).getD propAlt.original
-                    let altUnpaidSneak? :=
-                      if !gAlt.sneakPaid propAlt.spellId then propAlt.sneakAttacker else none
+                    let gAltSneak := gAlt.probeAfterUnpaidSneak propAlt
                     let altSacOk :=
                       !propAlt.needsSacrificeOther ||
-                        (gAlt.sacrificeCreatureOrArtifactChoices p
-                          (propAlt.sourceId.getD propAlt.spellId)).any
-                            (fun o => altUnpaidSneak? != some o.id)
+                        !(gAltSneak.sacrificeCreatureOrArtifactChoices p
+                          (propAlt.sourceId.getD propAlt.spellId)).isEmpty
                     let altDiscardOk :=
-                      !propAlt.needsDiscardCard || (gAlt.player p).hand.any (· != propAlt.spellId)
+                      !propAlt.needsDiscardCard || (gAltSneak.player p).hand.any (· != propAlt.spellId)
                     let altBeholdOk :=
                       match propAlt.needsBehold with
                       | none => true
@@ -923,7 +925,7 @@ where
             if chosen.size != pick.count then
               return none
             usedPicks := usedPicks ++ chosen
-            if pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts then
+            if isTapCostPick pick then
               tapExcl := tapExcl ++ chosen
           | none =>
             return none
@@ -940,8 +942,7 @@ where
           manaOkForExcl (selfExcl ++ crewExcl ++ tapExcl)
         | pick :: restPicks, usedPicks, tapExcl, crewExcl =>
           let rem := (pick :: restPicks).toArray
-          let remHasTap :=
-            rem.any (fun pk => pk == .tapUntappedCreature || pk == .tapTwoUntappedArtifacts)
+          let remHasTap := rem.any isTapCostPick
           if !remHasTap then
             g.costPicksPayable p (some o.id) rem
               (tapSource := ab.cost.tap)
@@ -951,14 +952,8 @@ where
               (preTappedIds := crewExcl ++ tapExcl) &&
             manaOkForExcl (selfExcl ++ crewExcl ++ tapExcl)
           else
-            let isTapPick :=
-              pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts
-            let isBfSacPick : Bool :=
-              match pick with
-              | .tapUntappedCreature | .tapTwoUntappedArtifacts
-              | .discardACard | .discardNonland | .discardLegendaryCard | .discardLegendarySameName
-              | .exileAnotherCreatureCardFromGraveyard => false
-              | _ => true
+            let isTapPick := isTapCostPick pick
+            let isBfSacPick := isBfSacCostPick pick
             let laterSacAttachedEquip :=
               isBfSacPick && restPicks.contains .sacrificeEquipmentAttachedToSource
             let cands :=
@@ -1065,7 +1060,7 @@ where
             #[{ player := p, anyMana := true }]
            else #[])
       let p1 := if asAdventure then raw.filter (!·.fromAdventure) else raw
-      let baseTimingOk := g.timingAllowsCast p face
+      let baseTimingOk := g.timingAllowsCast p face (card? := some o)
       let cands :=
         if !baseTimingOk && p1.any (·.ignoreTiming) then p1.filter (·.ignoreTiming)
         else p1

@@ -247,8 +247,12 @@ def thorDamage (spell : Option CardDef := none) (x : Option Nat := none)
   resolve g (casting Effect.castingDamageEqualMv) (some src.id)
     #[Target.player opp] lastKnown
 
+def xSpellForThor : CardDef :=
+  { secretInvasion with manaCost := ⟨#[.x, .generic 1, .colored .blue, .colored .blue]⟩ }
+
 #guard ((thorDamage (some secretInvasion)).player opp).life == 17 &&
-  ((thorDamage (some secretInvasion) (x := some 2)).player opp).life == 15 &&
+  ((thorDamage (some secretInvasion) (x := some 2)).player opp).life == 17 &&
+  ((thorDamage (some xSpellForThor) (x := some 2)).player opp).life == 15 &&
   ((thorDamage (lastKnown := some 4)).player opp).life == 16
 
 /- Ms. Marvel draws, then her base power is the number of cards in hand.

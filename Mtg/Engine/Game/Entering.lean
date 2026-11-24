@@ -460,7 +460,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
   let hadEntryPending := g.pending != .none
   let chainOrKeepReplacement (g : Game) (prio : PlayerId) : Game :=
     if g.anyContinuationSettlesControlFlowFwd then
-      if g.anyContinuationGrantsPriorityFwd && g.hasImplicitPriorityContinuationFwd &&
+      if g.hasImplicitPendingPriorityContinuationFwd &&
           (!hadEntryPending || g.pendingPriority.isNone) then
         savePendingP g prio
       else g

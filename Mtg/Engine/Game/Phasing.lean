@@ -104,21 +104,32 @@ def phaseOut (g : Game) (o : GameObject) (cause : Option EventCause := none)
         let pairs := g.indirectPhaseOutPairs live.id
         let oSnap := snapWithStatus g live
         let oName := (preSnapOf? live.id).map (·.name) |>.getD (g.name live)
+        -- CR 702.26g: Capture indirect attachments' pre-phase-out snapshots and host
+        -- names before phasing out the host so host static abilities and
+        -- `.whileSourceOnBattlefield host.id` effects remain reflected in `attSnap`.
+        let preIndirect : Array (ObjectId × EventObject × String × String) :=
+          pairs.filterMap fun (attId, hostId) =>
+            match g.findObject? attId with
+            | some att =>
+              if !att.isOnBattlefield then none
+              else
+                let hostName :=
+                  (preSnapOf? hostId).map (·.name) |>.getD
+                    ((g.findObject? hostId).map g.name |>.getD oName)
+                let attSnap := snapWithStatus g att
+                let attName := (preSnapOf? att.id).map (·.name) |>.getD (g.name att)
+                some (attId, attSnap, attName, hostName)
+            | none => none
         let g := g.removeFromCombat live (cause := some (stepCause g))
         let g := g.record (GameEvent.phasedOut g.turnNumber oSnap false (cause := stepCause g))
         let g := g.logMsg s!"{oName} phases out"
         let g :=
-          pairs.foldl (fun acc (attId, hostId) =>
+          preIndirect.foldl (fun acc (attId, attSnap, attName, hostName) =>
             match acc.findObject? attId with
             | none => acc
             | some att =>
               if !att.isOnBattlefield then acc
               else
-                let hostName :=
-                  (preSnapOf? hostId).map (·.name) |>.getD
-                    ((acc.findObject? hostId).map acc.name |>.getD oName)
-                let attSnap := snapWithStatus acc att
-                let attName := (preSnapOf? att.id).map (·.name) |>.getD (acc.name att)
                 let acc := acc.removeFromCombat att (cause := some (stepCause acc))
                 acc.record (GameEvent.phasedOut acc.turnNumber attSnap true (cause := stepCause acc))
                   |>.logMsg s!"{attName} phases out attached to {hostName}") g
@@ -790,9 +801,7 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
               else
                 return depSkipped
           return depSkipped
-        let depSharedTurnBegan :=
-          !sameShared && (player == dep || g.areTeammates player dep)
-        if skipped.any (fun q => q == dep || g.areTeammates q dep) || depSharedTurnBegan then
+        if skipped.any (fun q => q == dep || g.areTeammates q dep) then
           return true
       let dropLost (xs : Array PlayerId) : Array PlayerId :=
         (xs.toList.dropWhile (fun q => !isAlive alive q)).toArray
@@ -819,7 +828,8 @@ private def departedNextTurnWouldHaveBegunSince (g : Game) (dep : PlayerId)
 
 /-- Phase in every phased-out permanent `p` controlled when it phased out, plus
 any phased-out permanent whose phase-out controller has left the game and whose
-next turn would have begun since it phased out (CR 502.1 / 702.26m,n / 703.4a). -/
+next turn would have begun since it phased out (or since an indirectly
+phased-out attachment became orphaned, CR 502.1 / 702.26g–h,m,n / 703.4a). -/
 def phaseInControlled (g : Game) (p : PlayerId) (includeTeammates : Bool := false) : Game :=
   if sbaPausedOnPhasing g then
     g.chainPendingReplacement (.phaseInControlled p includeTeammates)
@@ -855,7 +865,33 @@ def phaseInControlled (g : Game) (p : PlayerId) (includeTeammates : Bool := fals
     let targetIds :=
       g.objects.filterMap fun o =>
         if o.zone == .battlefield && o.status.phasedOut && g.canPhaseInDirectly o then
-          let (ctrl?, sinceIdx?) := phaseOutControllerOf o
+          let (ctrl?, rawSinceIdx?) := phaseOutControllerOf o
+          let sinceIdx? : Option Nat :=
+            match o.status.phasedWith with
+            | some hostId =>
+              -- CR 702.26h: Indirectly phased-out attachments phase in on their controller's
+              -- next untap step *after* becoming unattached or their host leaving the battlefield.
+              let startAt := match rawSinceIdx? with | some poIdx => poIdx + 1 | none => 0
+              Id.run do
+                let mut orphanIdx? : Option Nat := none
+                for i in [startAt:g.events.size] do
+                  match g.events[i]!.change with
+                  | .rules (.permanent (.attached att newHost _)) =>
+                    if att.id == some o.id then
+                      if newHost == hostId then orphanIdx? := none
+                      else if orphanIdx?.isNone then orphanIdx? := some i
+                  | .rules (.permanent (.unattached att fromHost)) =>
+                    if att.id == some o.id && fromHost == hostId && orphanIdx?.isNone then
+                      orphanIdx? := some i
+                  | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
+                    if toZ != .battlefield && before.id == some hostId && orphanIdx?.isNone then
+                      orphanIdx? := some i
+                  | .rules (.zone (.ceasedToExist eo)) =>
+                    if eo.id == some hostId && orphanIdx?.isNone then
+                      orphanIdx? := some i
+                  | _ => pure ()
+                return orphanIdx?.orElse fun _ => rawSinceIdx?
+            | none => rawSinceIdx?
           let shouldPhaseIn :=
             ctrl?.any (fun c => c == p || (includeTeammates && g.areTeammates c p)) ||
               match ctrl? with

@@ -101,10 +101,10 @@ def targetLegalAt (g : Game) (controller : PlayerId) (spec : TargetSpec) (i : Na
 
 /-- The source's name for effect and damage logs. -/
 def effectSourceName (g : Game) (sourceId : Option ObjectId) : String :=
-  match g.resolvingSpell.bind g.findObject? with
+  match g.resolvingSpell.bind g.findLiveSourceObject? with
   | some o => g.name o
   | none =>
-    match sourceId.bind g.findObject? with
+    match sourceId.bind g.findLiveSourceObject? with
     | some o => g.name o
     | none =>
       ((sourceId.bind g.damageSourceById?).map g.name).orElse

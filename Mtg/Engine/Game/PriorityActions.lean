@@ -20,11 +20,12 @@ def finishProposedSpell (g : Game) : Except String Game := do
       !g.sourceStillPayable prop ||
       !g.canPayLife prop.caster prop.payLife then
     return (← g.reverseProposedSpell? (resumeContinuation := true))
+  let gSneak := if prop.kind == .spell then g.probeAfterUnpaidSneak prop else g
   if prop.needsSacrificeOther then
     let excludeId := prop.sourceId.getD prop.spellId
-    if (g.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
+    if (gSneak.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
       return (← g.reverseProposedSpell? (resumeContinuation := true))
-  if prop.needsDiscardCard && (g.player prop.caster).hand.isEmpty then
+  if prop.needsDiscardCard && (gSneak.player prop.caster).hand.isEmpty then
     return (← g.reverseProposedSpell? (resumeContinuation := true))
   if prop.teamworkPaid && !prop.teamworkCreatures.isEmpty then
     let teamworkOk := prop.teamworkCreatures.all fun id =>
@@ -112,9 +113,9 @@ def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell
   | none => true
   | some spell =>
     let face := g.baseCard spell
-    let unpaidSneak? := prop.sneakAttacker.filter (fun _ => !g.sneakPaid prop.spellId)
+    let gSneak := g.probeAfterUnpaidSneak prop
     let hasSacChoice :=
-      (g.sacrificeCreatureOrArtifactChoices p prop.spellId).any (fun o => some o.id != unpaidSneak?)
+      !(gSneak.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
     match g.additionalChoiceCostFor? spell face with
     | none => !hasSacChoice
     | some branches =>
@@ -130,7 +131,7 @@ def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell
             (g.findObject? id).any (fun card => g.hasSubtype card quality))
         !(hasPerm || hasHand)
       | none =>
-        if hasDiscard then (g.player p).hand.isEmpty
+        if hasDiscard then (gSneak.player p).hand.isEmpty
         else !hasSacChoice
 
 /-- Announce whether to pay extra generic mana or the non-mana option
@@ -202,10 +203,9 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
           s!"{(g.player p).name} chooses to behold a {quality} as an additional cost (CR 601.2b)"
         return g.afterAdditionalCostAnnounced
       | none =>
+        let gSneak := g.probeAfterUnpaidSneak prop
         if hasSac then
-          let unpaidSneak? := prop.sneakAttacker.filter (fun _ => !g.sneakPaid prop.spellId)
-          if !(g.sacrificeCreatureOrArtifactChoices p prop.spellId).any
-              (fun o => some o.id != unpaidSneak?) then
+          if (gSneak.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty then
             throw s!"{g.name spell} requires sacrificing an artifact or creature"
           let g := g.changeProposals #[
             .additionalGeneric 0,
@@ -216,7 +216,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
             s!"{(g.player p).name} chooses to sacrifice an artifact or creature (CR 601.2b)"
           return g.afterAdditionalCostAnnounced
         else if hasDisc then
-          if (g.player p).hand.isEmpty then
+          if (gSneak.player p).hand.isEmpty then
             throw s!"{g.name spell} requires discarding a card"
           let g := g.changeProposals #[
             .additionalGeneric 0,

@@ -30,10 +30,25 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
     .concedePlayersLoop #[p2] false false true (some p1) none none false #[] none
   let cplCombatDmg : PendingReplacement :=
     .concedePlayersLoop #[p2] false false false none (some true) none false #[] none
+  let gAtkReady := addPermanent g4 bear p0 p0
+  let atkId := (gAtkReady.permanentsOf p0)[0]!.id
+  let gWithAttacker :=
+    gAtkReady.record (GameEvent.attacked gAtkReady.turnNumber p0 (gAtkReady.snapshot (gAtkReady.object! atkId)) p1)
+  let gMultiBlocked0 := addPermanent (addPermanent gWithAttacker bear p1 p1) hero p1 p1
+  let p1BlkIds := (gMultiBlocked0.permanentsOf p1).map (·.id)
+  let gMultiBlocked :=
+    (gMultiBlocked0.record
+      (GameEvent.blockersDeclared gMultiBlocked0.turnNumber p1
+        #[(gMultiBlocked0.snapshot (gMultiBlocked0.object! p1BlkIds[0]!), atkId),
+          (gMultiBlocked0.snapshot (gMultiBlocked0.object! p1BlkIds[1]!), atkId)]
+        (cause := some (.turnBased .declareBlockers)))).record
+      (GameEvent.becameBlocked gMultiBlocked0.turnNumber
+        (gMultiBlocked0.snapshot (gMultiBlocked0.object! atkId)) p1BlkIds
+        (cause := some (.turnBased .declareBlockers)))
   let gCplGrant :=
     g4.changes #[.pushContinuationFrame {}, .pendingReplacement (some cplGrantsP1)]
   let gCplNoGrant :=
-    g4.changes #[.pushContinuationFrame {}, .pendingReplacement (some cplCombatDmg)]
+    gMultiBlocked.changes #[.pushContinuationFrame {}, .pendingReplacement (some cplCombatDmg)]
 
   -- 1a(ii). `continuationGrantsPriority` vs `firstPriorityGrantRecipient?` `some none` separation:
   --         All-passed non-empty stack (`resolveTop`) grants priority (`continuationGrantsPriority == true`),
@@ -127,9 +142,12 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
       (gCsntLeg0.createEffect (.layered (.objects #[csntLeg2Id]) (.control p2) (.untilNextTurnOf p2))
         (cause := some testCause))
       p2 .concede
+  let gCsntLeg1Clean := gCsntLeg1.change (.pendingReplacement none)
   let csntLegendPauseOk :=
-    gCsntLeg1.continuationGrantsPriority false (.continueStartNextTurn p1 #[p2] true) &&
-    gCsntLeg1.priorityRecipientOfContinuation? false (.continueStartNextTurn p1 #[p2] true) == some p1
+    gCsntLeg1Clean.continuationGrantsPriority false (.continueStartNextTurn p1 #[p2] true) &&
+    gCsntLeg1Clean.priorityRecipientOfContinuation? false (.continueStartNextTurn p1 #[p2] true) == some p1 &&
+    !gCsntLeg1.continuationGrantsPriority false (.continueStartNextTurn p1 #[p2] true) &&
+    gCsntLeg1.priorityRecipientOfContinuation? false (.continueStartNextTurn p1 #[p2] true) == none
   -- Turn 1 2-player upkeep (`started`) skips `.draw` -> `.precombatMain` grants priority to `p0`:
   let skippedDrawOk :=
     started.continuationGrantsPriority false (.beginStepCont .draw) &&
