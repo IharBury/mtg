@@ -401,4 +401,101 @@ private def triggerWardPrompt (wardKws : Array KeywordAbility) : Game × ObjectI
     expCycling.activatedAbilities.size == 1 && expCycling.activatedAbilities[0]!.isFromHand &&
     expTeamwork.additionalCosts.size == 1 && expTeamwork.additionalCosts[0]!.keywordTag? == some .teamwork
 
+/-! ### 7. Layer 3 Text-Changing Effects on `SpellAbility.additionalCosts` (CR 612 / 613.1c) -/
+
+-- 7a. Mandatory subtype sacrifice additional cost (`sacrifice a Dragon`) is rewritten
+-- by Layer 3 `TextChange.replaceCreatureType .dragon .goblin` across
+-- `additionalCostsFor`, `mandatorySacrificeError?`, `sacrificeCreatureOrArtifactChoices`,
+-- and `spellSacrificeCostPredFor?`.
+#guard
+  let sacDragonSpell : CardDef := {
+    name := "Draconic Offering"
+    manaCost := ManaCost.ofColor .red
+    types := #[.sorcery]
+    spellAbility := some {
+      additionalCosts := #[{
+        cost := CostSpec.ofItem (.sacrifice (.exact 1) (.filter (.hasSubtype (.literal .dragon))))
+      }]
+      effect := Effect.draw 2
+    }
+  }
+  let goblinDef : CardDef := creature "Test Goblin" ManaCost.empty #["Goblin"] 1 1
+  let g0 := addPermanent afterDraw goblinDef p0 p0
+  let gobId := (namedPerm g0 "Test Goblin").id
+  let g1 := insertObject g0 sacDragonSpell p0 (.hand p0)
+  let handSpId := (g1.player p0).hand.back!
+  let handSpObj := g1.object! handSpId
+  let gStack := insertObject g1 sacDragonSpell p0 .stack (some p0)
+  let stackSpId := (gStack.objects.find? (fun o => o.zone == .stack && o.name == "Draconic Offering")).get!.id
+  let tcHand := ContinuousEffectSpec.layered (.objects #[handSpId])
+    (.text (.replaceCreatureType .dragon .goblin)) .untilEndOfTurn
+  let tcStack := ContinuousEffectSpec.layered (.objects #[stackSpId])
+    (.text (.replaceCreatureType .dragon .goblin)) .untilEndOfTurn
+  let gTc := (gStack.createEffect tcHand (cause := some testCause)).createEffect tcStack (cause := some testCause)
+  let handSpObjTc := gTc.object! handSpId
+  -- Before Layer 3 text change: requires Dragon, Goblin is ineligible.
+  (gStack.mandatorySacrificeError? p0 handSpId (gStack.baseCard handSpObj)).isSome &&
+    (gStack.sacrificeCreatureOrArtifactChoices p0 stackSpId).isEmpty &&
+    gStack.spellSacrificeCostPredFor? handSpObj (gStack.baseCard handSpObj) == some (.hasSubtype (.literal .dragon)) &&
+  -- After Layer 3 Dragon -> Goblin text change: Goblin satisfies sacrifice cost!
+    (gTc.mandatorySacrificeError? p0 handSpId (gTc.baseCard handSpObjTc)).isNone &&
+    (gTc.sacrificeCreatureOrArtifactChoices p0 stackSpId).map (·.id) == #[gobId] &&
+    gTc.spellSacrificeCostPredFor? handSpObjTc (gTc.baseCard handSpObjTc) == some (.hasSubtype (.literal .goblin))
+
+-- 7b. Choice additional cost (`behold a Dragon or pay {2}`) is rewritten by Layer 3
+-- `TextChange.replaceCreatureType .dragon .goblin` across `additionalChoiceCostFor?`,
+-- `canPayAnnouncedAdditional`, and stack-time `chooseAdditionalCost` -> `needsBehold = some .goblin`.
+#guard
+  let beholdOrPaySpell : CardDef := {
+    name := "Draconic Command"
+    manaCost := ManaCost.ofColor .red
+    types := #[.instant]
+    spellAbility := some {
+      additionalCosts := #[{
+        cost := CostSpec.ofItem (.or #[
+          CostSpec.ofItem (.behold .dragon),
+          CostSpec.ofGeneric 2
+        ])
+      }]
+      effect := Effect.draw 1
+    }
+  }
+  let goblinDef : CardDef := creature "Behold Goblin" ManaCost.empty #["Goblin"] 1 1
+  let g0 := (addPermanent afterDraw goblinDef p0 p0).addMana p0 (.colored .red) 1
+  let g1 := insertObject g0 beholdOrPaySpell p0 (.hand p0)
+  let handId := (g1.player p0).hand.back!
+  let handObj := g1.object! handId
+  let tcHand := ContinuousEffectSpec.layered (.objects #[handId])
+    (.text (.replaceCreatureType .dragon .goblin)) .untilEndOfTurn
+  let gTcHand := g1.createEffect tcHand (cause := some testCause)
+  let handObjTc := gTcHand.object! handId
+  -- Before text change: cannot pay `{R}` + `{2}` and has no Dragon to behold.
+  let beforeUnpayable :=
+    !g1.canPayAnnouncedAdditional p0 handObj (g1.player p0).manaPool &&
+    g1.additionalChoiceCostFor? handObj (g1.baseCard handObj) ==
+      some #[CostSpec.ofItem (.behold .dragon), CostSpec.ofGeneric 2]
+  -- After text change: `behold a Goblin` is payable with the battlefield Goblin!
+  let afterPayable :=
+    gTcHand.canPayAnnouncedAdditional p0 handObjTc (gTcHand.player p0).manaPool &&
+    gTcHand.additionalChoiceCostFor? handObjTc (gTcHand.baseCard handObjTc) ==
+      some #[CostSpec.ofItem (.behold .goblin), CostSpec.ofGeneric 2]
+  -- On the stack during `.chooseAdditionalCost`, Layer 3 rewrites the required behold subtype
+  -- to `.goblin` so `p0` can choose `.chooseAdditionalCost false` and cast without spending `{2}`:
+  let gFunded := g1.addMana p0 .colorless 2
+  let gAsked := mustApply gFunded p0 (.cast handId)
+  let stackSpellId := gAsked.proposedSpell.get!.spellId
+  let rejectedBeforeTc := (gAsked.apply p0 (.chooseAdditionalCost false)).toOption.isNone
+  let tcStack := ContinuousEffectSpec.layered (.objects #[stackSpellId])
+    (.text (.replaceCreatureType .dragon .goblin)) .untilEndOfTurn
+  let gAskedTc := gAsked.createEffect tcStack (cause := some testCause)
+  let gChoseBehold := mustApply gAskedTc p0 (.chooseAdditionalCost false)
+  let gCast := mustApply gChoseBehold p0 .pay
+  let stackFlowOk :=
+    rejectedBeforeTc &&
+    gChoseBehold.proposedSpell.bind (·.needsBehold) == some .goblin &&
+    gChoseBehold.pending == .activateManaAbilities p0 &&
+    gCast.stack.any (·.objectId == stackSpellId) &&
+    (gCast.player p0).manaPool.total == 2
+  beforeUnpayable && afterPayable && stackFlowOk
+
 end Mtg.Engine.Tests.CostKeywordsSuite

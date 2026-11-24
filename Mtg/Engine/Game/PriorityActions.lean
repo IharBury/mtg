@@ -112,7 +112,7 @@ def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell
   | none => true
   | some spell =>
     let face := g.baseCard spell
-    match face.additionalChoiceCost? with
+    match g.additionalChoiceCostFor? spell face with
     | none => (g.sacrificeCreatureOrArtifactChoices p prop.spellId).isEmpty
     | some branches =>
       let behold? := branches.findSome? fun cs =>
@@ -169,7 +169,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
         .needsDiscardCard false ]
         |>.logMsg
           s!"{(g.player p).name} chooses to pay \{{n}} as an additional cost (CR 601.2b)"
-    let some branches := baseFace.additionalChoiceCost?
+    let some branches := g.additionalChoiceCostFor? spell baseFace
       | throw "That spell has no alternative additional cost"
     let genericN : Nat :=
       (branches.findSome? CostSpec.soleGenericMana?).getD 0

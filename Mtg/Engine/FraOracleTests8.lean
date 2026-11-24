@@ -24,7 +24,7 @@ open Mtg.Engine.FraCardTests2
 open Mtg.Engine.FraCardTests3
 
 def meddlingMage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Meddling Mage",
     "{W}{U}",
     "Creature — Human Wizard",
@@ -34,7 +34,7 @@ def meddlingMage : CardDef :=
   ]
 
 def theOzolith : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "The Ozolith",
     "{1}",
     "Legendary Artifact",
@@ -43,7 +43,7 @@ def theOzolith : CardDef :=
   ]
 
 def ezuriStalkerOfSpheres : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ezuri, Stalker of Spheres",
     "{2}{G}{U}",
     "Legendary Creature — Phyrexian Elf Warrior",

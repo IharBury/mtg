@@ -482,11 +482,15 @@ def wellWornSpatula : CardDef :=
   ]
 
 /-- Dual land: enters tapped; `{T}: Add {A} or {B}`; tap, pay, and sacrifice
-for two +1/+1 counters on a typed creature you control. One type or several
-types both use `plusOneOnTarget`. The Oracle text is reconstructed from the
-colors and creature types. -/
+for two +1/+1 counters on a typed creature you control. The Oracle text is
+reconstructed from the colors and creature types. -/
 def hobbitDualLand (name : String) (a b : Color) (creatureTypes : Array String) :
     CardDef :=
+  let plusTwoEffect : Effect :=
+    let spec : TargetSpec :=
+      if creatureTypes.isEmpty then .creatureYouControl
+      else .creatureYouControlAnySubtype (CardSubtype.ofSubtypes creatureTypes)
+    Effect.mkAbility spec (Instruction.putPlusOne (.target 0) 2)
   land name
     (s!"This land enters tapped.\n{dualAddClause a b}\n" ++
       s!"\{2}{manaSymbolsText #[.colored a, .colored b]}, \{T}, Sacrifice this land: " ++
@@ -496,7 +500,7 @@ def hobbitDualLand (name : String) (a b : Color) (creatureTypes : Array String) 
       ActivatedAbility.manaAbility
         (.oneOf (.explicit #[.colored a, .colored b]) (.const 1)),
       activated
-        (Effect.plusOneOnTarget 2 creatureTypes)
+        plusTwoEffect
         (ManaCost.ofGenericAndColors 2 [a, b])
         (tap := true) (sacrificeSource := true) (timing := .sorcery)])
 
@@ -2124,194 +2128,5 @@ that are also in the core catalog. -/
   uncoverTheMoonLetters,
   wizardSStaff
 ]
-
-#guard bofurReliableGuardian.colors.isMonocolored
-#guard (attercop.summary.splitOn "a land you control enters").length > 1
-#guard (attercop.summary.splitOn "reach").length > 1
-#guard attercop.hasSimpleKeyword .reach
-#guard attercop.hasSimpleKeyword .deathtouch
-#guard attercop.triggeredAbilities == #[.onLandYouControlEntersGets 1 1]
-#guard raggedShortSpear.isEquipment
-#guard !raggedShortSpear.isAura
-#guard !raggedShortSpear.requiresTarget
-#guard raggedShortSpear.staticAbilities == #[.equippedCreatureGets 2 0]
-#guard raggedShortSpear.triggeredAbilities == #[.onEnterMayDiscardDraw 2]
-#guard raggedShortSpear.allActivatedAbilities.size == 1
-#guard raggedShortSpear.allActivatedAbilities[0]!.isSorcerySpeed
-#guard raggedShortSpear.allActivatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
-#guard raggedShortSpear.allActivatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 3)
-#guard (raggedShortSpear.summary.splitOn "Equipped creature").length > 1
-#guard crudeBentBlade.isEquipment
-#guard !crudeBentBlade.isAura
-#guard !crudeBentBlade.requiresTarget
-#guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
-#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
-#guard crudeBentBlade.allActivatedAbilities.size == 1
-#guard crudeBentBlade.allActivatedAbilities[0]!.isSorcerySpeed
-#guard crudeBentBlade.allActivatedAbilities[0]!.effect == Effect.attachToTargetCreatureYouControl
-#guard crudeBentBlade.allActivatedAbilities[0]!.cost.mana == (ManaCost.ofGeneric 2)
-#guard (crudeBentBlade.summary.splitOn "Equipped creature").length > 1
-#guard (crudeBentBlade.summary.splitOn "target opponent").length > 1
-#guard woodElves.triggeredAbilities == #[.onEnterSearchForest]
-#guard (woodElves.summary.splitOn "Forest card").length > 1
-#guard galionElvenkingsButler.triggeredAbilities == #[.onAttackSetOtherBasePT]
-#guard (galionElvenkingsButler.summary.splitOn "base power and toughness").length > 1
-#guard galionElvenkingsButler.power == some (.fixed 4)
-#guard galionElvenkingsButler.toughness == some (.fixed 4)
-#guard woodlandWeavemaster.hasSimpleKeyword .vigilance
-#guard woodlandWeavemaster.triggeredAbilities == #[.onAnotherElfYouControlEntersGets1]
-#guard woodlandWeavemaster.activatedAbilities[0]?.bind (·.manaProduction?) ==
-  some { spec := .oneOf .anyColor (.objectStat .power .this)
-         restriction := some (.subtypeSpellOrSource .elf) }
-#guard woodlandWeavemaster.manaAbilities == #[
-  .colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]
-#guard woodlandWeavemaster.power == some (.fixed 1)
-#guard woodlandWeavemaster.toughness == some (.fixed 2)
-#guard (woodlandWeavemaster.summary.splitOn "vigilance").length > 1
-#guard (woodlandWeavemaster.summary.splitOn "another Elf").length > 1
-#guard (woodlandWeavemaster.summary.splitOn "any one color").length > 1
-#guard quarrel.isInstant
-#guard quarrel.spellEffect == some (Effect.creatureYouControlDealsPowerToOppCreature)
-#guard soundTheTrumpets.isInstant
-#guard soundTheTrumpets.spellEffect == some (Effect.counterThenRecruitIfMvAtMost 2)
-#guard soundTheTrumpets.hasCastKind .counter
-#guard quarrel.requiresTarget
-#guard Effect.creatureYouControlDealsPowerToOppCreature.targetCount == 2
-#guard (quarrel.summary.splitOn "deals damage equal to its power").length > 1
-#guard wargTactics.isInstant
-#guard wargTactics.isModal
-#guard wargTactics.requiresTarget
-#guard wargTactics.modes == #[
-  Effect.destroyCreatureWithFlying,
-  Effect.plusOnePlusOneTrampleHexproof]
-#guard (wargTactics.summary.splitOn "Choose one").length > 1
-#guard (wargTactics.summary.splitOn "hexproof").length > 1
-#guard beornsHospitality.isEnchantment
-#guard !beornsHospitality.isCreature
-#guard beornsHospitality.triggeredAbilities == #[.onLandYouControlEntersPlusOnePlusOne]
-#guard beornsHospitality.activatedAbilities.size == 1
-#guard beornsHospitality.activatedAbilities[0]!.effect == Effect.becomeSubtypeWithLandsPT "Bear"
-#guard beornsHospitality.activatedAbilities[0]!.cost.mana ==
-  (ManaCost.ofGenericAndColors 5 [.green, .green])
-#guard (beornsHospitality.summary.splitOn "a land you control enters").length > 1
-#guard (beornsHospitality.summary.splitOn "Bear creature").length > 1
-#guard mirkwoodPathmaker.staticAbilities == #[.powerToughnessEqualLandsYouControl]
-#guard mirkwoodPathmaker.power == some (.star 0)
-#guard mirkwoodPathmaker.toughness == some (.star 0)
-#guard (mirkwoodPathmaker.summary.splitOn "*/*").length > 1
-#guard (mirkwoodPathmaker.summary.splitOn "lands you control").length > 1
-#guard gandalfSparkStarter.hasSimpleKeyword .reach
-#guard gandalfSparkStarter.triggeredAbilities == #[.onEnterDealDividedDamage 3 3]
-#guard (gandalfSparkStarter.summary.splitOn "divided as you choose").length > 1
-#guard (gandalfSparkStarter.summary.splitOn "reach").length > 1
-#guard guardianOfTheHalls.hasSimpleKeyword .trample
-#guard guardianOfTheHalls.activatedAbilities.size == 1
-#guard guardianOfTheHalls.activatedAbilities[0]!.effect == Effect.putPlusOnePlusOneOnSource 3
-#guard guardianOfTheHalls.activatedAbilities[0]!.cost.mana ==
-  (ManaCost.ofGenericAndColors 5 [.green, .green])
-#guard guardianOfTheHalls.power == some (.fixed 2)
-#guard guardianOfTheHalls.toughness == some (.fixed 2)
-#guard (guardianOfTheHalls.summary.splitOn "trample").length > 1
-#guard (guardianOfTheHalls.summary.splitOn "+1/+1").length > 1
-#guard desolationProwler.activatedAbilities.size == 1
-#guard desolationProwler.activatedAbilities[0]!.effect == Effect.sourceGets 2 2
-#guard desolationProwler.activatedAbilities[0]!.cost.payLife == 2
-#guard desolationProwler.activatedAbilities[0]!.isOnceEachTurn
-#guard desolationProwler.power == some (.fixed 2)
-#guard desolationProwler.toughness == some (.fixed 2)
-#guard (desolationProwler.summary.splitOn "Pay 2 life").length > 1
-#guard raveningWarg.hasSimpleKeyword .deathtouch
-#guard raveningWarg.triggeredAbilities == #[.onAttackFerociousGainLife 2]
-#guard raveningWarg.power == some (.fixed 2)
-#guard raveningWarg.toughness == some (.fixed 2)
-#guard (raveningWarg.summary.splitOn "deathtouch").length > 1
-#guard (raveningWarg.summary.splitOn "while you control a creature with power 4 or greater").length > 1
-#guard (raveningWarg.summary.splitOn "power 4 or greater").length > 1
-#guard (raveningWarg.summary.splitOn "gain 2 life").length > 1
-#guard frontPorchSentries.triggeredAbilities == #[.onDiesOppCreatureGets (-1) (-1)]
-#guard (frontPorchSentries.summary.splitOn "-1/-1").length > 1
-#guard greatFierceBee.hasSimpleKeyword .flying
-#guard greatFierceBee.triggeredAbilities == #[.onOneOrMoreOtherCreaturesDieScry 1]
-#guard (greatFierceBee.summary.splitOn "other creatures die").length > 1
-#guard stirUpTrouble.spellEffect == some (Effect.destroyCreature)
-#guard stirUpTrouble.additionalCosts == #[AdditionalCostSpec.mandatory (CostSpec.sacrificeArtifactOrCreatureOrPayGeneric 4)]
-#guard gollumSilentSlinker.hasSimpleKeyword .menace
-#guard (gollumSilentSlinker.summary.splitOn "menace").length > 1
-#guard bilbosDeadlySlice.spellEffect == some (Effect.destroyCreature)
-#guard bilbosDeadlySlice.requiresTarget
-#guard dreadedBatCloud.staticAbilities.contains (.costReductionIfCreatureDied 3)
-#guard dreadedBatCloud.hasSimpleKeyword .flying
-#guard dreadedBatCloud.hasSimpleKeyword .deathtouch
-#guard crudeBentBlade.isEquipment
-#guard crudeBentBlade.staticAbilities == #[.equippedCreatureGets 2 1]
-#guard crudeBentBlade.triggeredAbilities == #[.onEnterTargetOpponentSacrificesCreature]
-#guard crudeBentBlade.allActivatedAbilities.size == 1
-#guard gollumTheAbandoned.staticAbilities == #[.cantBlockUnlessYouControl #[]]
-#guard gollumTheAbandoned.triggeredAbilities == #[.onEnterExileOppGyCardOppsLoseLife 2]
-#guard littleBear.triggeredAbilities == #[.onEnterUntapOtherPlusOneIfSubtype "Bear"]
-#guard gandalfGoblinsBane.triggeredAbilities == #[.onCastNoncreaturePumpAndDamageOpponents 1]
-#guard gollumTheAbandoned.activatedAbilities[0]!.isFromGraveyard
-#guard gollumTheAbandoned.activatedAbilities[0]!.isSorcerySpeed
-#guard gollumTheAbandoned.activatedAbilities[0]!.effect == Effect.returnFromGraveyardToHand
-#guard gnashingOfTeeth.isModal
-#guard gnashingOfTeeth.modes ==
-  #[Effect.pumpAndExileIfDies (-5) (-5),
-    Effect.creaturesTargetPlayerGet (-1) (-1)]
-#guard reverentHowl.isModal
-#guard reverentHowl.modes ==
-  #[Effect.targetPlayerDrawLoseLife 2 2,
-    Effect.pumpAndLifelink 2 2]
-#guard stonyVoicedGoblins.triggeredAbilities == #[.onEnterEachOpponentDiscards]
-#guard gollumSilentSlinker.power == some (.fixed 4)
-#guard gollumSilentSlinker.toughness == some (.fixed 3)
-#guard gollumSilentSlinker.supertypes.any (· == .legendary)
-#guard !(gollumSilentSlinker.summary.splitOn "can't be blocked except").length > 1
-#guard bilbosDeadlySlice.isInstant
-#guard bilbosDeadlySlice.hasCastKind .destroyCreature
-#guard (bilbosDeadlySlice.summary.splitOn "destroy target creature").length > 1
-#guard smaugTheGreatCalamity.hasSimpleKeyword .flying
-#guard smaugTheGreatCalamity.hasAdventure
-#guard smaugTheGreatCalamity.supertypes.any (· == .legendary)
-#guard smaugTheGreatCalamity.power == some (.fixed 5)
-#guard smaugTheGreatCalamity.toughness == some (.fixed 5)
-#guard
-  match smaugTheGreatCalamity.adventure with
-  | some adv =>
-    adv.name == "Spew Flame" &&
-      adv.manaCost == (ManaCost.ofGenericAndColor 4 .red) &&
-      adv.types == #[.sorcery] &&
-      adv.subtypes.any (· == "Adventure") &&
-      adv.spellEffect == some (Effect.dealDamageToCreature 5)
-  | none => false
-#guard (smaugTheGreatCalamity.summary.splitOn "//ADV//").length == 1
-#guard !smaugTheGreatCalamity.leftoverOracleLines.any (· == "//ADV//")
-#guard (smaugTheGreatCalamity.summary.splitOn "//ADV//").length == 1
-#guard (smaugTheGreatCalamity.summary.splitOn "Spew Flame {4}{R}").length > 1
-#guard (smaugTheGreatCalamity.summary.splitOn "flying").length > 1
-#guard beornReluctantHost.hasSimpleKeyword .trample
-#guard beornReluctantHost.hasAdventure
-#guard beornReluctantHost.supertypes.any (· == .legendary)
-#guard beornReluctantHost.power == some (.fixed 5)
-#guard beornReluctantHost.toughness == some (.fixed 5)
-#guard
-  match beornReluctantHost.adventure with
-  | some adv =>
-    adv.name == "Till and Tend" &&
-      adv.manaCost == (ManaCost.ofGenericAndColor 1 .green) &&
-      adv.types == #[.sorcery] &&
-      adv.subtypes.any (· == "Adventure") &&
-      adv.spellEffect == some (Effect.playAdditionalLandThisTurn) &&
-      !adv.toCardDef.requiresTarget
-  | none => false
-#guard (beornReluctantHost.summary.splitOn "//ADV//").length == 1
-#guard !beornReluctantHost.leftoverOracleLines.any (· == "//ADV//")
-#guard (beornReluctantHost.summary.splitOn "Till and Tend {1}{G}").length > 1
-#guard (beornReluctantHost.summary.splitOn "trample").length > 1
-#guard (beornReluctantHost.summary.splitOn "additional land").length > 1
-#guard (bofurReliableGuardian.summary.splitOn "Concerted Care {1}{W}").length > 1
-#guard (velvetwingButterflies.summary.splitOn "Gaze in Wonder {1}{W}").length > 1
-#guard (bilboBagginsBurglar.summary.splitOn "Take a Glance {U}").length > 1
-#guard (bilboLuckwearer.summary.splitOn "Burglar's Plot {4}{U}").length > 1
-#guard (gollumSilentSlinker.summary.splitOn "Meager Meal {B}").length > 1
 
 end Mtg.Engine.Catalog

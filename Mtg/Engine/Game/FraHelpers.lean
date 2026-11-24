@@ -33,15 +33,6 @@ def targetLegalAt (g : Game) (controller : PlayerId) (spec : TargetSpec) (i : Na
   let stackSelf := g.resolvingAbility.orElse (fun _ => g.resolvingSpell)
   (g.legalTargetsForSlot controller (spec.slotAtPos pos) sourceId stackSelf).contains t
 
-/-- The permanent announced as the `i`th target, if it is still legal. -/
-def legalPermanentAt? (g : Game) (controller : PlayerId) (spec : TargetSpec)
-    (targets : Array Target) (i : Nat) (sourceId : Option ObjectId) : Option GameObject :=
-  match targets[i]? with
-  | some (Target.permanent id) =>
-    if g.targetLegalAt controller spec i (Target.permanent id) sourceId then g.findObject? id
-    else none
-  | _ => none
-
 /-- The source's name for damage logs. -/
 def fraSourceName (g : Game) (sourceId : Option ObjectId) : String :=
   match g.resolvingSpell.bind g.findObject? with
@@ -53,22 +44,6 @@ def fraSourceName (g : Game) (sourceId : Option ObjectId) : String :=
       ((sourceId.bind g.damageSourceById?).map g.name).orElse
         (fun _ => (sourceId.bind g.lastKnownBefore?).map (·.name))
         |>.getD "The effect"
-
-/-- Deal `n` damage to each opponent of `controller`, then `controller` gains
-`n` life. -/
-def drainOpponents (g : Game) (controller : PlayerId) (n : Nat)
-    (source : Option GameObject := none)
-    (cause : Option EventCause := none) : Game :=
-  let defaultCause :=
-    cause.orElse (fun _ =>
-      if n == 0 then none
-      else g.currentResolvingContext?.map fun (src, ctrl) =>
-        .oneShotEffect none
-          (src.orElse (fun _ => source.map (·.id)))
-          (ctrl.orElse (fun _ => some controller)))
-  g.withBatch defaultCause fun g =>
-    let g := g.dealDamageToEachOpponent controller n (source := source) (cause := cause)
-    g.gainLife controller n (cause := cause)
 
 /-- Grant `k` to `o` until end of turn, logged. -/
 def grantKeywordsUntilEot (g : Game) (o : GameObject) (k : Array KeywordAbility) : Game :=
@@ -124,97 +99,9 @@ def sphinxsApproachesInGraveyard (g : Game) (p : PlayerId) : Array ObjectId :=
   (g.player p).graveyard.filter (fun id =>
     (g.findObject? id).any (fun o => g.name o == "Sphinx's Approach"))
 
-/-- Next player after `p` in turn order among `ps`, starting with the active
-player (CR 101.4). -/
-def apnapFrom (g : Game) : Array PlayerId := g.apnapOrder
-
-/-- Put `id` from a graveyard onto the battlefield under `controller`'s
-control with `plusOnes` +1/+1 counters, logging arrival only when synchronous
-entry onto `.battlefield` succeeded (CR 800.4b / 616.1). -/
-def returnCardToBattlefield (g : Game) (controller : PlayerId) (id : ObjectId)
-    (plusOnes : Nat := 0) (tapped := false) : Game × ObjectId :=
-  let name := g.name (g.object! id)
-  let (g, newId) := g.putOntoBattlefield id controller (tapped := tapped)
-    (extraEntersWith := if plusOnes > 0 then #[(.plusOnePlusOne, plusOnes)] else #[])
-  let paused := match g.pending with | .chooseReplacement .. => true | _ => false
-  let g :=
-    if !paused && (g.findObject? newId).any (·.isOnBattlefield) then
-      g.logMsg s!"{name} returns to the battlefield"
-    else g
-  (g, newId)
-
-/-- Remove up to `n` counters from `o` (Mabel, Bitter Recluse). The controller
-of the ability removes counters that help an opponent's permanent (loyalty,
-then +1/+1, then other kinds) or hurt their own (stun, then minus-one counters). -/
-def removeUpToCountersFrom (g : Game) (controller : PlayerId) (o : GameObject) (n : Nat) : Game :=
-  let take (have_ left : Nat) : Nat × Nat := (Nat.min have_ left, left - Nat.min have_ left)
-  let s := o.status
-  let removals : Array (CounterKind × Nat) :=
-    if g.controlledBy o controller then
-      let (a, left) := take s.stun n
-      let (b, _) := take s.minusOneMinusOne left
-      #[(.stun, a), (.minusOneMinusOne, b)]
-    else
-      let (a, left) := take s.loyaltyCounters n
-      let (b, left) := take s.plusOnePlusOne left
-      let (c, left) := take s.shield left
-      let (d, _) := take s.indestructibleCounters left
-      #[(.loyalty, a), (.plusOnePlusOne, b), (.shield, c), (.indestructible, d)]
-  let g := g.withBatch none fun g =>
-    removals.foldl (fun g (k, amt) =>
-      g.recordRemoveCounters o.id k amt (byPlayer := some controller)) g
-  g.logMsg s!"Counters are removed from {g.name o}"
-
 /-- The resolving activated or triggered ability's stack object. -/
 def resolvingAbilityObject? (g : Game) : Option GameObject :=
   g.resolvingAbility.bind g.findObject?
-
-/-- The object that caused the resolving triggered ability, if still at its
-recorded `ObjectId` (CR 400.7). -/
-def fraCause? (g : Game) : Option GameObject :=
-  (g.resolvingAbilityObject?.bind (·.fraCauseId)).bind g.findObject?
-
-/-- The controller of the object that caused the resolving triggered ability,
-as it last existed. -/
-def fraCauseController? (g : Game) : Option PlayerId :=
-  g.resolvingAbilityObject?.bind (·.fraCauseController)
-
-/-- “For each opponent, up to one target creature or planeswalker that
-player controls”: one optional instance per opponent. -/
-def perOpponentSpec (g : Game) (controller : PlayerId) (domain : TargetDomain) : TargetSpec :=
-  let slots : Array TargetSlot := (g.livingOpponents controller).map fun pl =>
-    { domain := domain.substituteOpponent (.seat pl.id.idx), count := .upTo 1 }
-  TargetSpec.ofSlots slots
-
-/-- Put `n` +1/+1 counters on each creature `p` controls. -/
-def plusOneOnEachCreatureOf (g : Game) (p : PlayerId) (n : Nat := 1) : Game :=
-  g.withBatch none fun g =>
-    (g.creaturesControlledBy p).foldl (fun g o => g.addPlusOnePlusOneTo (g.object! o.id) n) g
-
-/-- Pause-safe loop placing a loyalty counter on each planeswalker in `ids`. -/
-def loyaltyOnPwsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
-    return g.chainPendingReplacement (.finishPostStep (.loyaltyOnPlaneswalkersLoop p ids))
-  let mut g := g
-  for i in [0:ids.size] do
-    let id := ids[i]!
-    if let some o := g.findObject? id then
-      if o.isOnBattlefield && g.isPlaneswalker o then
-        g := g.putCountersDeferredLog o.id .loyalty 1 (some p) .isPutOn
-        if let .chooseReplacement .. := g.pending then
-          let rem := ids.extract (i + 1) ids.size
-          if !rem.isEmpty then
-            g := g.chainPendingReplacement (.finishPostStep (.loyaltyOnPlaneswalkersLoop p rem))
-          return g
-  return g
-
-/-- Put a loyalty counter on each planeswalker `p` controls. -/
-def loyaltyOnEachPlaneswalkerOf (g : Game) (p : PlayerId) : Game :=
-  let pws := (g.permanentsOf p).filter (g.isPlaneswalker ·) |>.map (·.id)
-  if pws.isEmpty then g
-  else
-    g.withBatch none fun g =>
-      g.loyaltyOnPwsLoop p pws
 
 end Game
 end Mtg.Engine

@@ -156,7 +156,7 @@ def castRestrictionError? (g : Game) (p : PlayerId) (cardId : ObjectId) (face : 
 (CR 601.2b / 601.2h / 601.3). -/
 def mandatorySacrificeError? (g : Game) (p : PlayerId) (checkId : ObjectId)
     (face : CardDef) (displayName : String := face.name) : Option String :=
-  match face.mandatorySacrificeFilter? with
+  match g.mandatorySacrificeFilterForId? checkId face with
   | none => none
   | some pred =>
     let env : EvalEnv := { controller := p, sourceId := some checkId }
@@ -273,7 +273,7 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
       supertypes := g.supertypes o, types := g.types o, subtypes := g.subtypes o }
   let canPay (cost : ManaCost) : Bool :=
     available.canPay cost spend
-  match bc.additionalChoiceCost? with
+  match g.additionalChoiceCostFor? o bc with
   | none => true
   | some branches =>
     let env : EvalEnv := { controller := p, sourceId := some o.id }
@@ -334,7 +334,7 @@ def canPayAnnouncedAdditionalFromSources (g : Game) (p : PlayerId) (o : GameObje
     faceOverride?.getD
       (if o.printed.adventure.any (fun adv => adv.name == rawBc.name) then rawBc
        else { rawBc with keywords := g.currentKeywords o })
-  match bc.additionalChoiceCost? with
+  match g.additionalChoiceCostFor? o bc with
   | none => true
   | some branches =>
     let env : EvalEnv := { controller := p, sourceId := some o.id }
@@ -803,7 +803,7 @@ def sacrificeCreatureOrArtifactChoices (g : Game) (p : PlayerId) (sourceId : Obj
   let isSpellSource (s : GameObject) : Bool :=
     s.zone == .stack && g.proposedSpell.all (fun pr => pr.spellId != sourceId || pr.kind == .spell)
   let pred? := src.bind fun s =>
-    if isSpellSource s then spellSacrificeCostPred? (g.baseCard s) else none
+    if isSpellSource s then g.spellSacrificeCostPredFor? s (g.baseCard s) else none
   match pred? with
   | some pred =>
     let env : EvalEnv := { controller := p, sourceId := some sourceId }

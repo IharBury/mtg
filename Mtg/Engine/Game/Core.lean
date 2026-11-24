@@ -187,19 +187,15 @@ namespace Game
 @[inline] def pendingMayCastFromExile (g : Game) := g.topFrame.pendingMayCastFromExile
 @[inline] def postCastCleanup (g : Game) := g.topFrame.postCastCleanup
 @[inline] def surveilReturnMvAtMost (g : Game) := g.topFrame.surveilReturnMvAtMost
-@[inline] def surveilReturnNoncreatureNonland (g : Game) := g.topFrame.surveilReturnNoncreatureNonland
 @[inline] def pendingReplacement (g : Game) := g.topFrame.pendingReplacement
 @[inline] def outerPendingReplacements (g : Game) := g.topFrame.outerPendingReplacements
 @[inline] def conniveSource (g : Game) := g.topFrame.conniveSource
-@[inline] def plusOneAfterDiscards (g : Game) := g.topFrame.plusOneAfterDiscards
-@[inline] def plusOneAfterSearch (g : Game) := g.topFrame.plusOneAfterSearch
 @[inline] def thirstDiscardsLeft (g : Game) := g.topFrame.thirstDiscardsLeft
 @[inline] def thirstDiscardType (g : Game) := g.topFrame.thirstDiscardType
 @[inline] def pendingDiscardsLeft (g : Game) := g.topFrame.pendingDiscardsLeft
 @[inline] def discardCountPerPlayer (g : Game) := g.topFrame.discardCountPerPlayer
 @[inline] def discardBatch (g : Game) := g.topFrame.discardBatch
 @[inline] def stagedAttackTokenBatches (g : Game) := g.topFrame.stagedAttackTokenBatches
-@[inline] def untapSearchedIfLands (g : Game) := g.topFrame.untapSearchedIfLands
 @[inline] def resolvingContext (g : Game) := g.topFrame.resolvingContext
 @[inline] def stashedCause (g : Game) := g.topFrame.stashedCause
 @[inline] def resolvingSpell (g : Game) : Option ObjectId :=
@@ -2058,7 +2054,6 @@ private def afterRandomAnyObjId (ar : AfterRandom) (pred : ObjectId → Bool) : 
   match ar with
   | .revealRandomCreatureThenBottom _ ids | .putOnTop _ ids => checkValidObjIds pred ids
   | .beholdUntap _ lid _ => checkValidObjId pred lid
-  | .plusOne id _ sid => checkValidObjId pred id || checkValidOptObjId pred sid
   | _ => false
 
 private def postCastCleanupAnyObjId (pc : PostCastCleanup) (pred : ObjectId → Bool) : Bool :=
@@ -2157,7 +2152,6 @@ private def fraChoiceAnyObjId (fc : FraChoice) (pred : ObjectId → Bool)
   | .castCopiesFree ids _ _
   | .sacrificeCreatureEach _ _ ids
   | .maySacrificeThese _ ids
-  | .mayDiscardThese _ ids
   | .sacrificeLeastPower ids
   | .sacrificeNontokenEach _ ids
   | .orderLibraryBottom ids
@@ -2166,7 +2160,6 @@ private def fraChoiceAnyObjId (fc : FraChoice) (pred : ObjectId → Bool)
   | .mayCastInstantSorceryFromHand ids
   | .mayCastUpToFromExile ids _
   | .hydeRemoveCounter ids
-  | .mayTakeMilled ids _
   | .mayPutHeroFromHandOrDraw ids
   | .visionQuestPick ids _ _
   | .newTargetsForCopies ids
@@ -2269,13 +2262,11 @@ private def postStepAnyObjId (st : PostStep) (pred : ObjectId → Bool)
   | .enteredBattlefieldSilent id _
   | .returnedBattlefieldEndStep id _
   | .returnedToBattlefield id _
-  | .returnedToBattlefieldTapped id _
   | .putOntoBattlefieldHasteAtFour _ id _ _
   | .addPlusOnesToSource id _
   | .logPutsIntoHand _ id _
   | .logInfluenceThenScryTwo id _
   | .millSourceInfluenceCount _ id
-  | .logMovedToExile id
   | .resumeTriggerModesAfterLeave _ id _ _
   | .resumeUpToTriggerModesAfterLeave _ id _ _
   | .resumeHawkeyeModesAfterLeave _ id _ _
@@ -2322,9 +2313,7 @@ private def postStepAnyObjId (st : PostStep) (pred : ObjectId → Bool)
     rem.any (fun (_, id) => checkValidObjId pred id) ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .continueOpeningBegin ids
-  | .offerMayCastUpToFromExile _ ids _
-  | .loyaltyOnPlaneswalkersLoop _ ids => checkValidObjIds pred ids
-  | .applyPlusOneAfterSearch eid _ sid
+  | .offerMayCastUpToFromExile _ ids _ => checkValidObjIds pred ids
   | .exileFromRevealedHandAfterMove _ _ eid _ sid
   | .topOrBottomDamageFollowup eid _ _ _ _ sid =>
     checkValidObjId pred eid || checkValidOptObjId pred sid
@@ -2335,8 +2324,7 @@ private def postStepAnyObjId (st : PostStep) (pred : ObjectId → Bool)
   | .grantAdventureExilePermission _ id c
   | .grantPlayUntilEndOfNextTurn _ id c =>
     checkValidObjId pred id || c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
-  | .finishExileUntilNextEndStep _ id c
-  | .sarumanExileCopyMayCast _ id c =>
+  | .finishExileUntilNextEndStep _ id c =>
     checkValidObjId pred id || eventCauseAnyObjId c pred prospectivePred etbCostProspective?
   | .damageUpToOneAndPlayerLoop _ _ rem _ _ sid c _ =>
     rem.any (fun (_, t) => targetAnyObjId pred t) ||
@@ -2346,7 +2334,6 @@ private def postStepAnyObjId (st : PostStep) (pred : ObjectId → Bool)
   | .exileSearchedLinkedLoop _ rem sid c pf =>
     checkValidObjIds pred rem || checkValidOptObjId pred sid ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?) || checkValidOptObjId pred pf
-  | .exileCreaturesFromGraveyardLoop _ rem c pf
   | .exileUntilInstantOrSorceryLoop _ _ _ c rem pf =>
     checkValidObjIds pred rem || c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?) ||
       checkValidOptObjId pred pf
@@ -2435,7 +2422,6 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
   | .finishPutLandFromHand tid
   | .putShadowCounter tid
   | .finishShadowCounter tid _
-  | .finishSearchedUntap _ tid _
   | .returnStackSpell tid _ _ _
   | .finishTurnFaceUp _ tid _
   | .finishBecomeCast _ tid _ _ _ => checkValidObjId pred tid
@@ -2614,15 +2600,12 @@ private partial def continuationChangeAnyObjId (cc : ContinuationChange)
   | .pendingMayCastFromExile v => v.any (fun (_, ids, _) => checkValidObjIds pred ids)
   | .postCastCleanup v => v.any (postCastCleanupAnyObjId · pred)
   | .conniveSource v
-  | .plusOneAfterDiscards v
   | .resolvingSpell v
   | .resolvingAbility v => checkValidOptObjId pred v
   | .pendingReplacement v =>
     v.any (pendingReplacementAnyObjId · pred prospectivePred etbCostProspective?)
   | .pushOuterPendingReplacement v =>
     pendingReplacementAnyObjId v pred prospectivePred etbCostProspective?
-  | .plusOneAfterSearch v =>
-    v.any (fun (id, _, sid) => checkValidObjId pred id || checkValidOptObjId pred sid)
   | .stagedAttackTokenBatches v =>
     v.any (fun b =>
       b.attackingTarget.any (attackTargetAnyObjId pred) ||
@@ -2653,9 +2636,6 @@ private partial def continuationFrameAnyObjId (f : ContinuationFrame)
     f.pendingReplacement.any (pendingReplacementAnyObjId · pred prospectivePred etbCostProspective?) ||
     f.outerPendingReplacements.any (pendingReplacementAnyObjId · pred prospectivePred etbCostProspective?) ||
     checkValidOptObjId pred f.conniveSource ||
-    checkValidOptObjId pred f.plusOneAfterDiscards ||
-    f.plusOneAfterSearch.any (fun (id, _, sid) =>
-      checkValidObjId pred id || checkValidOptObjId pred sid) ||
     f.stagedAttackTokenBatches.any (fun b =>
       b.attackingTarget.any (attackTargetAnyObjId pred) ||
         b.cause.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)) ||
@@ -4175,20 +4155,16 @@ def ckptPendingReplacementUntouchedBeforeLeave (g : Game) (ckpt : ProposalCheckp
   | .pendingMayCastFromExile v => { f with pendingMayCastFromExile := v }
   | .postCastCleanup v => { f with postCastCleanup := v }
   | .surveilReturnMvAtMost v => { f with surveilReturnMvAtMost := v }
-  | .surveilReturnNoncreatureNonland v => { f with surveilReturnNoncreatureNonland := v }
   | .pendingReplacement v => { f with pendingReplacement := v }
   | .pushOuterPendingReplacement v => { f with outerPendingReplacements := f.outerPendingReplacements.push v }
   | .popOuterPendingReplacement => { f with outerPendingReplacements := f.outerPendingReplacements.pop }
   | .conniveSource v => { f with conniveSource := v }
-  | .plusOneAfterDiscards v => { f with plusOneAfterDiscards := v }
-  | .plusOneAfterSearch v => { f with plusOneAfterSearch := v }
   | .thirstDiscardsLeft v => { f with thirstDiscardsLeft := v }
   | .thirstDiscardType v => { f with thirstDiscardType := v }
   | .pendingDiscardsLeft v => { f with pendingDiscardsLeft := v }
   | .discardCountPerPlayer v => { f with discardCountPerPlayer := v }
   | .discardBatch v => { f with discardBatch := v }
   | .stagedAttackTokenBatches v => { f with stagedAttackTokenBatches := v }
-  | .untapSearchedIfLands v => { f with untapSearchedIfLands := v }
   | .stashedCause v => { f with stashedCause := v }
   | .resolvingSpell v => { f with resolvingSpell := v }
   | .resolvingAbility v => { f with resolvingAbility := v }
@@ -5019,6 +4995,73 @@ def evalLayer3 (g : Game) (o : GameObject) : Array TextChange :=
           cur := cur.push chosen.tc
           rem := rem.filter (fun e => e.idx != chosen.idx)
         return cur
+
+/-- Apply Layer 3 text changes to an `AdditionalCostSpec` (CR 612.2 / 613.1c). -/
+@[inline] def TextChange.applyAdditionalCost (tcs : Array TextChange)
+    (ac : AdditionalCostSpec) : AdditionalCostSpec :=
+  HasTextChange.applyTextChanges tcs ac
+
+/-- Apply Layer 3 text changes to a `SpellAbility` (CR 612.2 / 613.1c). -/
+@[inline] def TextChange.applySpellAbility (tcs : Array TextChange)
+    (sa : SpellAbility) : SpellAbility :=
+  HasTextChange.applyTextChanges tcs sa
+
+/-- Additional casting costs on `face` after Layer 3 text-changing effects on `o`
+(CR 118.8 / 612 / 613.1c). -/
+def additionalCostsFor (g : Game) (o : GameObject) (face : CardDef) :
+    Array AdditionalCostSpec :=
+  let tcs := g.evalLayer3 o
+  if tcs.isEmpty then face.additionalCosts
+  else HasTextChange.applyTextChanges tcs face.additionalCosts
+
+/-- Additional casting costs on `face` after Layer 3 text-changing effects on
+`id` when present (CR 118.8 / 612 / 613.1c). -/
+def additionalCostsForId (g : Game) (id : ObjectId) (face : CardDef) :
+    Array AdditionalCostSpec :=
+  match g.findObject? id with
+  | some o => g.additionalCostsFor o face
+  | none => face.additionalCosts
+
+/-- Mandatory non-choice single-object sacrifice additional-cost predicate on
+`face` after Layer 3 text changes on `o` (CR 118.8 / 612 / 613.1c). -/
+def mandatorySacrificeFilterFor? (g : Game) (o : GameObject) (face : CardDef) :
+    Option ObjectPred :=
+  (g.additionalCostsFor o face).findSome? fun a =>
+    if a.optional then none
+    else a.cost.items.findSome? fun
+      | .sacrifice _ (.filter pred) => some pred
+      | _ => none
+
+/-- `mandatorySacrificeFilterFor?` keyed by `ObjectId` (CR 118.8 / 612 / 613.1c). -/
+def mandatorySacrificeFilterForId? (g : Game) (id : ObjectId) (face : CardDef) :
+    Option ObjectPred :=
+  (g.additionalCostsForId id face).findSome? fun a =>
+    if a.optional then none
+    else a.cost.items.findSome? fun
+      | .sacrifice _ (.filter pred) => some pred
+      | _ => none
+
+/-- Mandatory choice additional-cost branches (`"A or B"`) on `face` after
+Layer 3 text changes on `o` (CR 118.8 / 601.2b / 612 / 613.1c). -/
+def additionalChoiceCostFor? (g : Game) (o : GameObject) (face : CardDef) :
+    Option (Array CostSpec) :=
+  (g.additionalCostsFor o face).findSome? fun a =>
+    if a.optional then none
+    else a.cost.items.findSome? fun
+      | .or choices => some choices
+      | _ => none
+
+/-- Object predicate for a spell's additional-cost sacrifice (mandatory or chosen
+from an `"or pay {N}"` additional cost) after Layer 3 text changes on `o`
+(CR 118.8 / 601.2b,h / 612 / 613.1c). -/
+def spellSacrificeCostPredFor? (g : Game) (o : GameObject) (face : CardDef) :
+    Option ObjectPred :=
+  (g.mandatorySacrificeFilterFor? o face).orElse fun _ =>
+    (g.additionalChoiceCostFor? o face).bind fun branches =>
+      branches.findSome? fun cs =>
+        cs.items.findSome? fun
+          | .sacrifice _ (.filter pred) => some pred
+          | _ => none
 
 @[extern "mtg_game_gy_creature_cards"]
 private opaque gyCreatureCardsFwd (g : Game) (p : PlayerId) : Nat
@@ -13855,7 +13898,15 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
           match (post.findObject? bolgId).map (post, ·) |>.orElse (fun _ => (pre.findObject? bolgId).map (pre, ·)) with
           | some (bolgBoard, bolg) =>
             if let some c := bolgBoard.controllerOf bolg then
-              let ab := TriggeredAbility.onBolgDealSacrificedPower
+              let ab : TriggeredAbility :=
+                TriggeredAbility.mkTrigger .youSacrificeOtherCreature
+                  { targets := .anotherCreature
+                    body := .bind ⟨0⟩
+                      (Instruction.dealDamage (.targetSlot 0) (.objectStat .power .triggerSubject)
+                        .this { trackExcess := true })
+                      (Instruction.ifThen (.cmp .gt (.stepMetric .excessDamage ⟨0⟩) (.const 0))
+                        (Instruction.amass (.stepMetric .excessDamage ⟨0⟩) .goblin)) }
+                  (word := .when)
               let (w, fs) :=
                 queueTriggerAb post pre c bolg ab ab.pattern (lastKnownPower := lkp)
                   (w := waiting) (fs := firedSources)
@@ -13929,9 +13980,16 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
                 let src := dt.source.getD
                   { printed := { name := "Roads Go Ever, Ever On", types := #[.enchantment], subtypes := #["Saga"] }
                     id := noSourceSentinelId, owner := m, controller := some m, zone := .graveyard m }
+                let plainsCount :=
+                  ValueExpr.count (.inZones .battlefield (.all #[.hasSubtype (.literal .plains), .controlledBy .you]))
+                let ab : TriggeredAbility :=
+                  TriggeredAbility.mkTrigger .youAttack
+                    { targets := .creatureYouControl
+                      body := Instruction.pump (.target 0) plainsCount plainsCount }
+                    (grouping := .oncePerBatch)
                 waiting := waiting.push
                   { controller := m, source := src,
-                    ability := .onYouAttackPumpTargetPerPlains, pattern := .youAttack,
+                    ability := ab, pattern := .youAttack,
                     eventCause := some dt.cause,
                     delayedTrigger := some (dt.kind, dt.cause), checked := true }
     | .rules (.cast (.spellCast spellSnap caster _)) =>
@@ -15111,8 +15169,6 @@ private def remapProposalContinuationChange (ro : ObjectId → ObjectId) (re : E
       | .copyCeaseToExist cid => .copyCeaseToExist (ro cid)
       | .lookedBottom c id os => .lookedBottom c (ro id) (os.map ro))
   | .conniveSource v => .conniveSource (v.map ro)
-  | .plusOneAfterDiscards v => .plusOneAfterDiscards (v.map ro)
-  | .plusOneAfterSearch v => .plusOneAfterSearch (v.map (fun (id, p, sid) => (ro id, p, sid.map ro)))
   | .stagedAttackTokenBatches v => .stagedAttackTokenBatches (v.map (fun b =>
       { b with
         attackingTarget := b.attackingTarget.map (remapProposalAttackTarget ro)
@@ -15124,7 +15180,6 @@ private def remapProposalContinuationChange (ro : ObjectId → ObjectId) (re : E
       | .revealRandomCreatureThenBottom c rev => .revealRandomCreatureThenBottom c (rev.map ro)
       | .putOnTop p ids => .putOnTop p (ids.map ro)
       | .beholdUntap p lid sub => .beholdUntap p (ro lid) sub
-      | .plusOne id c sid => .plusOne (ro id) c (sid.map ro)
       | ar => ar)
   | .resolutionFinish v => .resolutionFinish (v.map fun
       | .ability oid snap ctrl sid sc =>

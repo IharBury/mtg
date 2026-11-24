@@ -123,7 +123,7 @@ instance : HasTextChange StaticSubject where
       | .matching f => .matching (HasTextChange.applyTextChanges tcs f)
 
 /-- Rule-modifying static abilities affecting players (CR 104 / 119.7–8 / 305.2 /
-402.3 / 601.2 / 602.5 / 702.11c / 702.16j / 702.131b / 718; 14 constructors). -/
+402.3 / 601.2 / 602.5 / 702.11c / 702.16j / 702.131b / 723; 14 constructors). -/
 inductive StaticPlayerRule where
   /-- Maximum hand size: `none` = no maximum hand size; `some n` = `n` (CR 402.3). -/
   | maxHandSize (who : PlayerFilter := .you) (limit? : Option Nat)
@@ -1651,13 +1651,13 @@ instance : HasTextChange StaticAbility where
   applyTextChanges tcs s := if tcs.isEmpty then s else applyTcStatic tcs s
 
 /-- Spell ability on a card or sub-face, uniting the resolving `Effect` with
-spell-level additional/alternative casting costs and cast restrictions
-(CR 113.3a / 118.8–9 / 601.3). -/
+spell-level additional casting costs (CR 113.3a / 118.8). Spell-casting
+restrictions and free-cast cost modifiers live on `StaticAbility`
+(`.ruleModifying` / `.costModifier`, CR 113.3d / 604.2) while keyword
+alternative costs expand via `KeywordAbility.expand` (`ExpandedKeyword.alternativeCosts`). -/
 structure SpellAbility where
   effect : Effect := {}
   additionalCosts : Array AdditionalCostSpec := #[]
-  alternativeCosts : Array AlternativeCostSpec := #[]
-  castRestrictions : Array Condition := #[]
 deriving Repr, Inhabited, BEq
 
 instance : HasTextChange SpellAbility where
@@ -1665,9 +1665,7 @@ instance : HasTextChange SpellAbility where
     if tcs.isEmpty then sa
     else
       { effect := HasTextChange.applyTextChanges tcs sa.effect
-        additionalCosts := HasTextChange.applyTextChanges tcs sa.additionalCosts
-        alternativeCosts := HasTextChange.applyTextChanges tcs sa.alternativeCosts
-        castRestrictions := HasTextChange.applyTextChanges tcs sa.castRestrictions }
+        additionalCosts := HasTextChange.applyTextChanges tcs sa.additionalCosts }
 
 namespace StaticReplacementSpec
 

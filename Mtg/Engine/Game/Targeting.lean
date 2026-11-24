@@ -35,23 +35,6 @@ def legalPermanentTargets (g : Game) (caster : PlayerId) (pred : GameObject → 
   g.battlefield.filter (fun o => pred o && g.canBeTargetedBy caster o sourceId)
     |>.map (fun o => Target.permanent o.id)
 
-/-- Battlefield creatures matching `pred` that `caster` may target. -/
-def legalCreatureTargets (g : Game) (caster : PlayerId) (pred : GameObject → Bool)
-    (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalPermanentTargets caster (fun o => g.isCreature o && pred o) sourceId
-
-/-- Creatures `caster` controls that they may target (CR 115.1). -/
-def legalCreatureYouControlTargets (g : Game) (caster : PlayerId)
-    (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalCreatureTargets caster (fun o => g.controlledBy o caster) sourceId
-
-/-- Creatures an opponent of `caster` controls that `caster` may target. -/
-def legalOppCreatureTargets (g : Game) (caster : PlayerId)
-    (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalCreatureTargets caster
-    (fun o => (g.livingOpponents caster).any (fun pl => g.controlledBy o pl.id))
-    sourceId
-
 /-- Cards in `p`'s graveyard matching `pred` (CR 404 / 115.1). Hexproof does
 not apply off the battlefield (CR 702.11b). -/
 def legalGraveyardCardTargets (g : Game) (p : PlayerId) (pred : GameObject → Bool) :
@@ -76,24 +59,6 @@ def legalStackSpellTargets (g : Game) (pred : GameObject → Bool)
   let selfId := excludeId.orElse (fun _ => g.proposedSpell.map (·.spellId))
   g.stackSpells (fun o => some o.id != selfId && pred o) |>.map (fun o => Target.card o.id)
 
-/-- Stack abilities `caster` controls whose source matches `sourcePred` (CR 115.5).
-Used for Echo and Scientist Supreme (MSH 74 / 87). -/
-def legalStackAbilityTargets (g : Game) (caster : PlayerId)
-    (sourcePred : GameObject → Bool)
-    (excludeId : Option ObjectId := none) : Array Target :=
-  let selfId := excludeId.orElse (fun _ => g.proposedSpell.map (·.spellId))
-  g.stack.filterMap (fun e =>
-    match g.findObject? e.objectId with
-    | none => none
-    | some o =>
-      if o.zone == .stack && some o.id != selfId && g.controlledBy o caster &&
-          (o.abilityEffect.isSome || o.triggeredAbility.isSome) then
-        match o.sourceId.bind g.damageSourceById? with
-        | some src =>
-          if sourcePred src then some (Target.card o.id) else none
-        | none => none
-      else none)
-
 /-- Whether this target is a spell on the stack that `p` controls. -/
 def isOwnStackSpellTarget (g : Game) (p : PlayerId) : Target → Bool
   | .card oid =>
@@ -106,13 +71,6 @@ def isOppStackSpellTarget (g : Game) (p : PlayerId) : Target → Bool
     (g.findObject? oid).any (fun o =>
       o.zone == .stack && (g.livingOpponents p).any (fun pl => g.controlledBy o pl.id))
   | _ => false
-
-/-- Equip worthy may attach only to a legendary non-Villain red or white
-creature (CR 613.1d / 613.1e / 702.6c). -/
-def isWorthyPermanent (g : Game) (o : GameObject) : Bool :=
-  o.isOnBattlefield && g.isCreature o && g.isLegendary o &&
-    !g.hasSubtype o .villain &&
-    ((g.colors o).contains .red || (g.colors o).contains .white)
 
 /-- Whether `o` has card type `t`, counting type-changing effects on
 permanents. -/

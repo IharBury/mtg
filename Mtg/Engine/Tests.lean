@@ -1,3 +1,5 @@
+import Mtg.Engine.Tests.CardGuards
+import Mtg.Engine.Tests.CatalogHobbitGuards
 import Mtg.Engine.Tests.Fixtures
 import Mtg.Engine.Tests.Events
 
@@ -8,6 +10,8 @@ This module re-exports the `Mtg.Engine.Tests.*` files. Declarations stay in
 `namespace Mtg.Engine.Tests`, so `import Mtg.Engine.Tests` and `Tests.started`
 keep working.
 
+- `CardGuards`: cross-abstraction `Mtg.Engine.Card` `#guard` regression tests (relocated out of precompiled `Mtg.Engine.Card`)
+- `CatalogHobbitGuards`: `Catalog/Hobbit.lean` & `Catalog/HobbitEternal.lean` parse `#guard`s (relocated so `Catalog/` has zero dependency on `Tests/Builders`)
 - `Helpers`: fixtures, start-of-game setup, and idle-action helpers
 - `CardText`: catalog summary and printed-text smoke tests
 - `Turns`: turn structure, cleanup, and basic combat or bolt smoke tests

@@ -588,37 +588,9 @@ def bearToken : CardDef :=
 def elfToken : CardDef :=
   creatureToken "Elf" #[.elf] 1 1 (some .green)
 
-/-- A 1/1 white Spirit creature token with flying. -/
-def spiritToken : CardDef :=
-  creatureToken "Spirit" #[.spirit] 1 1 (some .white) #[Keyword.flying]
-
-/-- A 4/4 white Bird Soldier creature token with flying. -/
-def birdSoldierToken : CardDef :=
-  creatureToken "Bird Soldier" #[.bird, .soldier] 4 4 (some .white) #[Keyword.flying]
-
 /-- A 6/6 red Dragon creature token with flying. -/
 def dragonToken : CardDef :=
   creatureToken "Dragon" #[.dragon] 6 6 (some .red) #[Keyword.flying]
-
-/-- A 3/1 colorless Wall artifact creature token with defender. -/
-def wallToken : CardDef :=
-  creatureToken "Stone Boulder" #[.wall] 3 1 none #[Keyword.defender]
-    (types := #[.artifact, .creature])
-
-/-- A colorless Equipment artifact token named Axe. -/
-def axeToken : CardDef := {
-  name := "Axe"
-  types := #[.artifact]
-  subtypes := #["Equipment"]
-  staticAbilities := #[.equippedCreatureGets 1 0]
-  activatedAbilities := #[
-    { cost := CostSpec.ofGeneric 2
-      effect := Effect.attachToTargetCreatureYouControl
-      timing := .sorcery
-      tag? := some (.equip none) }
-  ]
-  isToken := true
-}
 
 /-- A Clue artifact token (CR 111.10f). -/
 def clueToken : CardDef := {
@@ -632,64 +604,9 @@ def clueToken : CardDef := {
   isToken := true
 }
 
-/-- A 3/2 white Hero creature token with vigilance. -/
-def hero32vigilanceToken : CardDef :=
-  creatureToken "Hero" #[.hero] 3 2 (some .white) #[Keyword.vigilance]
-
-/-- A 2/1 black Villain creature token with menace. -/
-def villain21menaceToken : CardDef :=
-  creatureToken "Villain" #[.villain] 2 1 (some .black) #[Keyword.menace]
-
-/-- A 2/2 colorless Robot Villain artifact creature token. -/
-def robotVillain22Token : CardDef :=
-  creatureToken "Robot Villain" #[.robot, .villain] 2 2 none
-    (types := #[.artifact, .creature])
-
-/-- A 6/5 blue Leviathan creature token with hexproof. -/
-def leviathan65hexproofToken : CardDef :=
-  creatureToken "Leviathan" #[.leviathan] 6 5 (some .blue) #[Keyword.hexproof]
-
 /-- A 1/1 white Soldier creature token. -/
 def soldier11whiteToken : CardDef :=
   creatureToken "Soldier" #[.soldier] 1 1 (some .white)
-
-/-- A 1/1 green Squirrel creature token. -/
-def squirrel11greenToken : CardDef :=
-  creatureToken "Squirrel" #[.squirrel] 1 1 (some .green)
-
-/-- A 0/4 colorless Wall creature token with defender. -/
-def wall04defenderToken : CardDef :=
-  creatureToken "Wall" #[.wall] 0 4 none #[Keyword.defender]
-
-/-- A 3/3 colorless Robot Villain artifact creature token named Doombot. -/
-def doombotToken : CardDef :=
-  creatureToken "Doombot" #[.robot, .villain] 3 3 none
-    (types := #[.artifact, .creature])
-
-/-- A 1/1 green Insect creature token. -/
-def insect11greenToken : CardDef :=
-  creatureToken "Insect" #[.insect] 1 1 (some .green)
-
-/-- A 1/1 green Minion creature token named Moloid with
-"Whenever this token attacks, you may mill a card." -/
-def moloidToken : CardDef :=
-  { creatureToken "Moloid" #[.minion] 1 1 (some .green) with
-    triggeredAbilities := #[TriggeredAbility.mkTrigger .thisAttacks {
-      body := Instruction.may .you none (Instruction.mill (.const 1) .you)
-    }] }
-
-/-- A 1/1 red Alien creature token with haste that attacks each combat if able. -/
-def alien11redHasteToken : CardDef := {
-  name := "Alien"
-  types := #[.creature]
-  subtypes := #["Alien"]
-  power := some (.fixed 1)
-  toughness := some (.fixed 1)
-  colorIndicator := some (ColorSet.singleton .red)
-  keywords := #[Keyword.haste]
-  staticAbilities := #[.attacksEachCombatIfAble]
-  isToken := true
-}
 
 /-- A predefined Vibranium artifact token (MSH). Indestructible; `{T}: Add {C}`
 that cannot be spent to cast a nonartifact spell. -/
@@ -702,10 +619,6 @@ def vibraniumToken : CardDef := {
   isToken := true
 }
 
-/-- A 2/2 colorless Wizard Soldier creature token named Cadet (FRA). -/
-def cadetToken : CardDef :=
-  creatureToken "Cadet" #[.wizard, .soldier] 2 2 none
-
 /-- A red and green Heartwood artifact token. `{T}: Add {R} or {G}`. -/
 def heartwoodToken : CardDef := {
   name := "Heartwood"
@@ -715,15 +628,6 @@ def heartwoodToken : CardDef := {
   activatedAbilities := #[ActivatedAbility.manaAbility
     (.oneOf (.explicit #[.colored .red, .colored .green]) (.const 1))]
   isToken := true
-}
-
-/-- A colorless Lotus artifact token. `{T}`, sacrifice: add three mana of any
-one color. -/
-def lotusToken : CardDef := {
-  name := "Lotus"
-  types := #[.artifact]
-  isToken := true
-  activatedAbilities := #[ActivatedAbility.manaTapSacrificeThreeOfOneColor]
 }
 
 /-- A blue Jace planeswalker token with loyalty 0, `[-1]: Surveil 1`, and
@@ -748,32 +652,10 @@ def sculptureToken : CardDef :=
       (types := #[.artifact, .creature]) with
     activatedAbilities := #[ActivatedAbility.manaTapSacrificeAnyColor] }
 
-/-- A legendary 3/3 green Dog creature token named Mowu. -/
-def mowuToken : CardDef := {
-  name := "Mowu"
-  types := #[.creature]
-  subtypes := #["Dog"]
-  supertypes := #[.legendary]
-  power := some (.fixed 3)
-  toughness := some (.fixed 3)
-  colorIndicator := some (ColorSet.singleton .green)
-  isToken := true
-}
-
 /-- A 2/2 white Cat Soldier creature token named Ajani's Pridemate. -/
 def pridemateToken : CardDef :=
   { creatureToken "Ajani's Pridemate" #[.cat, .soldier] 2 2 (some .white) with
     triggeredAbilities := #[TriggeredAbility.onGainLifePlusOne] }
-
-/-- A 3/3 green Forest Tentacle land creature token. It isn't basic (ruling
-802); the Forest type gives it `{T}: Add {G}`. -/
-def forestTentacleToken : CardDef :=
-  creatureToken "Forest Tentacle" #[.forest, .tentacle] 3 3 (some .green)
-    (types := #[.land, .creature])
-
-/-- A 4/4 green Beast creature token with trample. -/
-def beast44trampleToken : CardDef :=
-  creatureToken "Beast" #[.beast] 4 4 (some .green) (keywords := #[Keyword.trample])
 
 /-- Jace planeswalker tokens `controller` controls. Nontoken Jace
 planeswalkers don't count, but a token copy of one does (ruling 733). -/
@@ -1010,22 +892,6 @@ def applyCopyModification (c : CardDef) (m : CopyModification) : CardDef :=
     { c with keywords := KeywordAbility.merge c.keywords kw }
   | .addAbilities abs =>
     abs.foldl applyGrantedAbility c
-
-/-- Build a serializable `StoredEvalEnv` from effect resolution references
-(CR 707.2 / 707.9 / 111.12). -/
-def storedEvalEnvOf (g : Game) (controller : PlayerId := ⟨0⟩)
-    (sourceId : Option ObjectId := none)
-    (targets : Array Target := #[])
-    (triggerSubjectId : Option ObjectId := none)
-    (chosenX : Nat := 0) : StoredEvalEnv :=
-  let subjId := triggerSubjectId.orElse (fun _ =>
-    (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId))
-  { controller
-    sourceId
-    targetSlots := targets.map fun t => #[t]
-    triggerSubjectId := subjId
-    chosenX
-    stepEnv := g.currentStepEnv }
 
 /-- Hydrate a live `EvalEnv` from a serializable `StoredEvalEnv`, defaulting
 `controller`, `chosenX`, `triggerSubjectId`, and `stepEnv` from the current game

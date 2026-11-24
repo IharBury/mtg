@@ -4106,7 +4106,7 @@ def ninjaEachOpponentDiscardsOk : Bool :=
          let g2 := mustApply g ⟨1⟩ (.discard card)
          (namedPermanent g2 "Ninja of the Hand").status.plusOnePlusOne == 1 &&
            (g2.player ⟨1⟩).hand.size == hand1 - 1 &&
-           g2.plusOneAfterDiscards.isNone)
+           g2.currentInterpWait?.isNone)
     | _ => false
 
 #guard ninjaEachOpponentDiscardsOk

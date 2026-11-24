@@ -98,7 +98,7 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   let cost := g.playManaCost { card with controller := some p } face
     (origPerm := origPerm) (flashback := some false)
     (explicitAltCost := false) (useImplicitPermissions := false)
-  let needsSacrifice := face.mandatorySacrificeFilter?.isSome
+  let needsSacrifice := (g.mandatorySacrificeFilterFor? card face).isSome
   let prop : ProposedSpell := {
     caster := p, cost, spellId := newId, original := card
     originalSnapshot := origSnap, origPerm
@@ -471,13 +471,11 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .castCopiesFree .., _ => throw "Cast a copy, or decline"
   | .allianceMode sourceId available, .mode idx =>
     if !available.contains idx then throw "That Alliance mode has already been chosen this turn"
-    return (g.answerChooseMode sourceId idx
-      (fun g => g.applyAllianceMode sourceId idx)).finishFraChoice
+    return (g.applyAllianceMode sourceId idx).finishFraChoice
   | .allianceMode .., _ => throw "Choose an Alliance mode"
   | .gollumMode sourceId available, .mode idx =>
     if !available.contains idx then throw "That mode has already been chosen"
-    return (g.answerChooseMode sourceId idx
-      (fun g => g.applyGollumMode sourceId idx)).finishFraChoice
+    return (g.applyGollumMode sourceId idx).finishFraChoice
   | .gollumMode .., _ => throw "Choose a mode"
   | .triggerModes objId remaining chosen, .mode idx =>
     let some obj := g.findObject? objId | return g.finishFraChoice
@@ -900,20 +898,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .maySacrificeThese _ _, .decline =>
     return g.finishFraChoice
   | .maySacrificeThese n _, _ => throw s!"Choose {n} to sacrifice, or decline"
-  | .mayDiscardThese n ids, .objects chosen =>
-    if chosen.size != n || chosen.toList.eraseDups.length != chosen.size ||
-        !chosen.all (ids.contains ·) then
-      throw s!"Choose {n} to discard, or decline"
-    for id in chosen do
-      let some o := g.findObject? id | throw "no such object"
-      if o.owner != p || o.zone != .hand p then
-        throw s!"Can't discard {g.name o}"
-    let g := g.withBatch none fun g =>
-      g.discardHandIdsLoop p chosen (logEach := true)
-    return g.finishFraChoice
-  | .mayDiscardThese _ _, .decline =>
-    return g.finishFraChoice
-  | .mayDiscardThese n _, _ => throw s!"Choose {n} to discard, or decline"
   | .mayPaySymbolsThen symbols next sourceId, .accept =>
     let cost : ManaCost := { symbols := symbols }
     if !(g.player p).manaPool.canPay cost then
@@ -1516,8 +1500,7 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
   | .ultronMayPay _, _ => throw "Pay {2} (accept), or decline"
   | .visionMode sourceId available, .mode m =>
     if !available.contains m then throw "That mode was already chosen this turn"
-    return (g.answerChooseMode sourceId m
-      (fun g => g.applyVisionMode p sourceId m)).finishFraChoice
+    return (g.applyVisionMode p sourceId m).finishFraChoice
   | .visionMode .., _ => throw "Choose a mode that hasn't been chosen this turn"
   | .moonstoneMayExile cardId, .accept =>
     match g.findObject? cardId with
@@ -1565,20 +1548,6 @@ def answerFraChoice (g : Game) (p : PlayerId) (answer : FraAnswer) : Except Stri
     return g.finishFraChoice
   | .tricksterLibrary .., _ =>
     throw "Put the creature second from the top (choose top), or on the bottom (choose bottom)"
-  | .mayTakeMilled ids life, .objects #[id] =>
-    if !ids.contains id then throw "That card wasn't milled"
-    let some o := g.findObject? id | throw "no such object"
-    if !isPublicZone o.zone then throw s!"{g.name o} is no longer in a public zone"
-    let g := g.returnToHand o.id p
-    let g :=
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishPostStep (.gainLifePlayer p life))
-      else
-        g.gainLife p life
-    return g.finishFraChoice
-  | .mayTakeMilled _ life, .decline =>
-    return (g.gainLife p life).finishFraChoice
-  | .mayTakeMilled .., _ => throw "Put a milled card into your hand, or decline"
   | .mayDrawThenEachOpponentDraws n, .accept =>
     let before := g.loggedDraws p
     let g := g.draw p n
@@ -2124,7 +2093,6 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
   | .maySacrificeAnotherCreatureForPower _ => .decline
   | .maySacrificeAnotherForDrawTreasure _ => .decline
   | .maySacrificeThese _ _ => .decline
-  | .mayDiscardThese _ _ => .decline
   | .mayPaySymbolsThen symbols .. =>
     if (g.player p).manaPool.canPay { symbols := symbols } then .accept else .decline
   | .attachAnyEquipment hostId eligible =>
@@ -2235,7 +2203,6 @@ def defaultFraAction (g : Game) (p : PlayerId) (choice : FraChoice) : Action :=
     | none => .decline
   | .moonstoneMayExile _ => .decline
   | .tricksterLibrary .. => .chooseTop
-  | .mayTakeMilled _ _ => .decline
   | .mayDrawThenEachOpponentDraws _ => .decline
   | .mayPutHeroFromHandOrDraw _ => .decline
   | .oddOrEvenDestroy _ => .chooseMode 0

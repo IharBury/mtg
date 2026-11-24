@@ -111,11 +111,6 @@ partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Arr
       g.beginFraChoice p (.discardTwo controller rest.toArray draws chosen)
         s!"{(g.player p).name} discards two cards"
 
-/-- Creatures attacking `p` directly (not a planeswalker). -/
-def creaturesAttackingPlayer (g : Game) (p : PlayerId) : Array GameObject :=
-  g.battlefield.filter (fun o =>
-    g.isCreature o && o.status.attacking && o.status.attackingTarget == some (.player p))
-
 /-- Run Hawkeye's Trick Arrows modes starting at `targetIdx`, pausing on
 `Pending.chooseReplacement` so mode 2's choice or later modes do not clobber it. -/
 def runHawkeyeArrows (g : Game) (controller : PlayerId) (modes : Array Nat)
@@ -150,96 +145,6 @@ def runHawkeyeArrows (g : Game) (controller : PlayerId) (modes : Array Nat)
           (.finishPostStep (.hawkeyeArrows controller rem targets idx sourceId))
       return g
   return g
-
-/-- Finish `.sarumanExileCopyMayCast` after `fromId`'s exile move (and any
-CR 616.1 replacement choice) completes, creating a card-copy and opening
-`.mayCastCopy` only if `fromId` actually arrived in `.exile` (CR 614.6 / 707.12). -/
-def finishSarumanExileCopyMayCast (g : Game) (controller : PlayerId) (fromId : ObjectId)
-    (cause : EventCause) : Game :=
-  match g.followMovedToZone? fromId (· == .exile) with
-  | none => g
-  | some card =>
-    let name := g.name card
-    let g := g.logMsg s!"{name} is exiled"
-    if !g.stillInGame controller then g
-    else
-      let base := g.copiableValues card
-      let copyId : ObjectId := ⟨g.nextObjectId⟩
-      let copyTs := g.timestamp + 1
-      let copyObj : GameObject := {
-        id := copyId
-        printed := { base with
-          isToken := false
-          otherFace := base.otherFace.map (fun f => { f with isToken := false }) }
-        owner := controller
-        controller := some controller
-        zone := .exile
-        timestamp := copyTs
-        isCopy := true
-      }
-      let g := g.record (GameEvent.created g.turnNumber controller (g.snapshot copyObj)
-        (cause := cause))
-      g.beginFraChoice controller (.mayCastCopy copyId)
-        s!"{(g.player controller).name} may cast the copy of {name} without paying its mana cost"
-
-/-- Run the library-reveal, put-onto-battlefield, and bottoming tail of
-`.identityEcho` once the target permanent's exile completes. -/
-def finishIdentityEchoAfterExile (g : Game) (controller : PlayerId)
-    (exiledId : ObjectId) (sourceId : Option ObjectId) (oName : String) : Game :=
-  let g :=
-    if (g.followMovedToZone? exiledId (· == .exile)).isSome then
-      g.logMsg s!"{oName} is exiled"
-    else g
-  if !g.stillInGame controller then g
-  else
-  let lib := (g.player controller).library
-  let (revealed, hit) := Id.run do
-    let mut revealed : Array ObjectId := #[]
-    for i in [0:lib.size] do
-      let id := lib[lib.size - 1 - i]!
-      let c := g.object! id
-      if g.isCreature c || g.isPlaneswalker c then
-        return (revealed, some id)
-      revealed := revealed.push id
-    return (revealed, none)
-  let allRevealed := revealed ++ hit.toArray
-  let (g, revealCause?) : Game × Option EventCause :=
-    if !allRevealed.isEmpty then
-      let (g, c) := g.allocDelayedCause (some controller) sourceId
-      (g, some c)
-    else (g, none)
-  let g :=
-    if allRevealed.isEmpty then g
-    else g.record (GameEvent.revealed g.turnNumber controller allRevealed (cause := revealCause?))
-  let g := allRevealed.foldl (fun g id =>
-    g.logMsg s!"{(g.player controller).name} reveals {g.name (g.object! id)}") g
-  match hit with
-  | some id =>
-    let (g, newId) := g.putOntoBattlefield id controller (cause := revealCause?)
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement
-        (.finishPostStep (.enteredBattlefieldPutRestBottomRandom controller id revealed revealCause?))
-    else
-      let g :=
-        match g.findObject? newId with
-        | some entered =>
-          if entered.isOnBattlefield then
-            let g := g.logMsg s!"{g.name entered} enters the battlefield"
-            g.afterPermanentEnters entered
-          else g
-        | none => g
-      if revealed.isEmpty then g
-      else
-        g.requestOrderInto revealed (.library controller)
-          s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
-          (cause := revealCause?)
-  | none =>
-    let g := g.logMsg "No creature or planeswalker card is revealed"
-    if revealed.isEmpty then g
-    else
-      g.requestOrderInto revealed (.library controller)
-        s!"{(g.player controller).name} puts the rest on the bottom of their library in a random order"
-        (cause := revealCause?)
 
 /-- Deal `n` damage to each `remaining` target permanent or player one at a
 time, pausing across `Pending.chooseReplacement` before checking subsequent

@@ -184,7 +184,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
   -- cast as its Adventure.
-  let needsSacrifice := face.mandatorySacrificeFilter?.isSome
+  let needsSacrifice := (g.mandatorySacrificeFilterFor? card face).isSome
   let original := card
   let origSnap := g.snapshot original
   let fromTop :=

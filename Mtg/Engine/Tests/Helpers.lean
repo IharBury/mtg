@@ -1,3 +1,4 @@
+import Mtg.Engine.Tests.Builders
 import Mtg.Engine.Agent
 import Mtg.Engine.Catalog
 import Mtg.Engine.Catalog.Hobbit

@@ -1005,7 +1005,7 @@ def applySacrifice (g : Game) (p : PlayerId) (tokens : List String) : Except Str
   | [] =>
     match g.pending, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
     | .chooseAdditionalCost _, some spell =>
-      let hasSac := ((g.baseCard spell).additionalChoiceCost?.getD #[]).any fun cs =>
+      let hasSac := ((g.additionalChoiceCostFor? spell (g.baseCard spell)).getD #[]).any fun cs =>
         cs.items.any fun | .sacrifice .. => true | _ => false
       if hasSac then
         g.apply p (.chooseAdditionalCost false)
@@ -1242,7 +1242,7 @@ def applyDiscard (g : Game) (p : PlayerId) (tokens : List String) : Except Strin
   | [] =>
     match g.pending, g.proposedSpell.bind (fun prop => g.findObject? prop.spellId) with
     | .chooseAdditionalCost _, some spell =>
-      let hasDisc := ((g.baseCard spell).additionalChoiceCost?.getD #[]).any fun cs =>
+      let hasDisc := ((g.additionalChoiceCostFor? spell (g.baseCard spell)).getD #[]).any fun cs =>
         cs.items.any fun | .discard .. => true | _ => false
       if hasDisc then
         g.apply p (.chooseAdditionalCost false)

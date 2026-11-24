@@ -31,12 +31,6 @@ def beginSacrificeCreature (g : Game) (p : PlayerId) : Game :=
     g.change (.pending (.sacrificeCreature p))
       |>.logMsg s!"{(g.player p).name} must sacrifice a creature of their choice"
 
-/-- Apply `f` if the trigger's source is still on the battlefield. -/
-def withTriggerSource (g : Game) (sourceId : Option ObjectId)
-    (f : Game → GameObject → Game) : Game :=
-  g.withSourceOnBattlefield sourceId f
-    "The triggered ability's source is no longer in play"
-
 /-- As the Ring tempts `p`: get The Ring emblem if needed, gain its next
 ability, then choose a Ring-bearer if `p` controls a creature. Re-choosing
 the same creature still counts as choosing it. -/
@@ -267,14 +261,6 @@ def pickTeamworkCreatures (g : Game) (p : PlayerId) (need : Nat) : Array ObjectI
         if o.status.tapped || g.power o ≤ 0 then pick rest acc total
         else pick rest (acc.push o.id) (total + g.power o)
   pick (g.creaturesControlledBy p).toList #[] 0
-
-/-- Search for up to `max` basic Plains, exile them linked to `sourceId`,
-shuffle, and gain `life`. -/
-def resolveSearchBasicPlainsExile (g : Game) (p : PlayerId)
-    (sourceId : Option ObjectId) (max life : Nat) : Game :=
-  g.beginLibrarySearch p (fun c => isBasicLandCard c && c.hasSubtype .plains)
-    "a basic Plains card" (.exileLinked sourceId) (count := max)
-    (after := some (Instruction.gainLifeFixed life))
 
 /-- Target opponent reveals their hand; you discard a nonland of your choice. -/
 def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=

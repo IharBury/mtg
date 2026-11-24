@@ -16,7 +16,7 @@ Stages 1–5 exclusively (zero prototype tables, zero legacy fallback matchers):
    plus Equip-with-cost-reduction).
 4. CR 603 triggered abilities (`When` / `Whenever` / `At` after optional mechanic/ability word).
 5. CR 702 keywords (`parseKeywordLine`, including `Equip` and `Cycling` directly on
-   `CardDef.keywords` with `isKeywordLineEligible` retired).
+   `CardDef.keywords`).
 6. CR 113.3a spell abilities on Instants / Sorceries / `SubFace`s (`additionalCosts`,
    spell-modifying `StaticAbility`s, and one-shot `Effect` bodies).
 7. CR 113.3d static abilities (`Enchant`, CDAs, continuous, rule-modifying, cost-modifying,

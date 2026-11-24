@@ -199,13 +199,17 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       !g.triggerInterveningHolds controller ab sourceId targets lastKnownPower
         (g.resolvingAbilityObject?.bind (·.fraCauseId))
         (g.resolvingAbilityObject?.bind (·.fraCauseStatus)) then
-    if ab.effect.body == Effect.resourceDrawIfAnotherHeroDamage.body then
+    let equipCount : ValueExpr :=
+      ValueExpr.count (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .attachedTo .this]))
+    if ab.effect.body == Instruction.dealDamageFixed (.players (.target 0)) 1 then
       g.logMsg "Human Torch's ability has no effect"
-    else if ab.effect.body == Effect.thisAttackIfArtifactEnteredDraw.body then
+    else if ab.effect.body == Instruction.drawFixed 1 then
       g.logMsg "No artifact entered under your control this turn. Iron Man's ability doesn't trigger."
-    else if ab.effect.body == Effect.stepDrawToTen.body then
+    else if ab.effect.body ==
+        Instruction.draw (.binary .max (.const 0) (.binary .sub (.const 10) (.playerMetric .handSize .you))) then
       g.logMsg "You already have ten or more cards in hand"
-    else if ab.effect.body == Effect.thisAttackEquippedDrain.body then
+    else if ab.effect.body ==
+        .seq #[Instruction.loseLife equipCount .opponents, Instruction.gainLife equipCount] then
       g.logMsg s!"{g.fraSourceName sourceId} isn't equipped"
     else g
   else
@@ -219,11 +223,6 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
         run g
     else
       run g
-
-/-- Dispatch an Alliance, Gollum, or Vision mode choice via `fallback`. -/
-def answerChooseMode (g : Game) (_sourceId : ObjectId) (_idx : Nat)
-    (fallback : Game → Game) : Game :=
-  fallback g
 
 end Game
 end Mtg.Engine

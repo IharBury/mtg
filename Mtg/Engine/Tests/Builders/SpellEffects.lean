@@ -27,14 +27,6 @@ private def allCreaturesExpr : ObjectExpr :=
 private def oppCreaturesExpr : ObjectExpr :=
   .inZones .battlefield (.all #[.hasType .creature, .controlledBy .opponent])
 
-/-- Build a spell-shaped `Effect` from targeting and unified `Instruction` body. -/
-def mkSpell (targets : TargetSpec) (body : Instruction) : Effect :=
-  { targets, body }
-
-/-- Build an activated-ability `Effect` from targeting and unified `Instruction` body. -/
-def mkAbility (targets : TargetSpec) (body : Instruction) : Effect :=
-  { targets, body }
-
 /-- Destroy one target of `spec`. -/
 def destroyTarget (spec : TargetSpec) : Effect :=
   { targets := spec, body := Instruction.destroy (.target 0) }
@@ -44,14 +36,6 @@ def canonicalDestroy (spec : TargetSpec) : Effect :=
   destroyTarget spec
 
 /-! ### Printed Spell Effect Constructors -/
-
-def dealDamage (amount : Nat) : Effect :=
-  mkSpell .anyTarget
-    (Instruction.dealDamageFixed (.targetSlot 0) amount)
-
-def pump (power toughness : Int) : Effect :=
-  mkSpell .creature
-    (Instruction.pumpFixed (.target 0) power toughness)
 
 def destroyCreatureWithFlying : Effect :=
   destroyTarget .creatureWithFlying
@@ -65,10 +49,6 @@ def plusOnePlusOneTrampleHexproof : Effect :=
       Instruction.putPlusOne (.target 0) 1,
       Instruction.grantKeywords (.target 0) #[Keyword.hexproof, Keyword.trample]
     ])
-
-def dealDamageToCreature (amount : Nat) : Effect :=
-  mkSpell .creature
-    (Instruction.dealDamageFixed (.targetSlot 0) amount)
 
 /-- Deal `amount` damage. The creature loses indestructible until end of turn.
 If it would die this turn, exile it instead. -/
@@ -146,10 +126,6 @@ def exileGraveyardCreaturesGrantCast : Effect :=
         anyManaColor := true
       }
     })
-
-def draw (n : Nat) : Effect :=
-  mkSpell .none
-    (Instruction.drawFixed n)
 
 def drawThenDiscard (n : Nat) : Effect :=
   mkSpell .none
@@ -748,40 +724,6 @@ def supertypeSpellsCostLessThisTurn (n : Nat) : Effect :=
 
 /-! ### Printed Activated-Ability Effect Constructors -/
 
-def searchBasicLandTapped : Effect :=
-  mkAbility .none
-    (.player (.searchLibrary {
-      zones := .libraryOf .you
-      filter := .all #[.hasSupertype .basic, .hasType .land]
-      count := .upTo (.const 1)
-      dest := .battlefield .controller
-      mods := { tapped := true }
-      reveal := false
-      shuffle := true
-    }))
-
-def searchLandTypeFilter (landType : String) : ObjectPred :=
-  if landType == "Basic land" || landType == "basic land" then
-    .all #[.hasSupertype .basic, .hasType .land]
-  else
-    match Supertype.ofOracle? landType with
-    | some sup => .hasSupertype sup
-    | none =>
-      match CardType.ofOracle? landType with
-      | some ty => .hasType ty
-      | none => .hasSubtype (.literal (CardSubtype.ofOracleD landType))
-
-def searchLandTypeToHand (landType : String) : Effect :=
-  mkAbility .none
-    (.player (.searchLibrary {
-      zones := .libraryOf .you
-      filter := searchLandTypeFilter landType
-      count := .upTo (.const 1)
-      dest := .hand .controller
-      reveal := true
-      shuffle := true
-    }))
-
 def exileTopPlayUntilEndOfNextTurn : Effect :=
   mkAbility .none
     (.moveZone (.topOfLibrary .you (.const 1)) .exile .exile {
@@ -794,20 +736,6 @@ def dealDamageToTargetCreature (amount : Nat) : Effect :=
 
 def destroyTargetColorlessNonland : Effect :=
   destroyTarget .colorlessNonland
-
-def attachToTargetCreatureYouControl : Effect :=
-  mkAbility .creatureYouControl
-    (.permanent (.attach .this (.target 0)))
-
-/-- Equip effect with optional subtype or worthy target restriction (CR 702.6c). -/
-def equipEffect (subtype : Option CardSubtype := none) (worthy : Bool := false) : Effect :=
-  let spec : TargetSpec :=
-    if worthy then .worthyCreatureYouControl
-    else match subtype with
-      | some s => .creatureYouControlSubtype s
-      | none => .creatureYouControl
-  mkAbility spec
-    (.permanent (.attach .this (.target 0)))
 
 def becomeSubtypeWithLandsPT (subtype : String) : Effect :=
   let sub := CardSubtype.ofOracleD subtype
@@ -822,18 +750,6 @@ def becomeSubtypeWithLandsPT (subtype : String) : Effect :=
 
 def becomeBearCreatureWithLandsPT : Effect :=
   becomeSubtypeWithLandsPT "Bear"
-
-def sourceGets (power toughness : Int) : Effect :=
-  mkAbility .none
-    (Instruction.pumpFixed .this power toughness)
-
-def putPlusOnePlusOneOnSource (n : Nat) : Effect :=
-  mkAbility .none
-    (Instruction.putPlusOne .this n)
-
-def targetCantBeBlockedThisTurn : Effect :=
-  mkAbility .creature
-    (Instruction.cantBeBlocked (.target 0))
 
 def returnFromGraveyardTapped : Effect :=
   mkAbility .none
@@ -868,10 +784,6 @@ def targetCantBeBlockedPowerAtMost (n : Int) : Effect :=
 def recruit : Effect :=
   mkAbility .none
     Instruction.recruit
-
-def gainLife (n : Nat) : Effect :=
-  mkAbility .none
-    (Instruction.gainLifeFixed n)
 
 def ownerShuffleSourceDraw (n : Nat) : Effect :=
   mkAbility .none
@@ -1029,10 +941,6 @@ def plusOneAndExtraTurn : Effect :=
       Instruction.putPlusOne .this 1,
       .turn (.extraTurn .you (some (.player (.forbidAbilityActivation .any .powerUp))))
     ])
-
-def plusOneX : Effect :=
-  mkAbility .none
-    (Instruction.putCounters .this .plusOnePlusOne .chosenX)
 
 def eachOppDiscardThenPlusOne : Effect :=
   mkAbility .none
@@ -1285,10 +1193,6 @@ def abilityCreateTokens (kind : TokenSpec) (n : Nat) : Effect :=
 def abilityCreateTokensX (kind : TokenSpec) : Effect :=
   mkAbility .none
     (Instruction.createTokens kind .chosenX)
-
-def abilityDraw (n : Nat) : Effect :=
-  mkAbility .none
-    (Instruction.drawFixed n)
 
 def abilityDrawThenDiscard (n : Nat) : Effect :=
   mkAbility .none

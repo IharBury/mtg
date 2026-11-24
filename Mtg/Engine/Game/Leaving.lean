@@ -574,10 +574,10 @@ def endControlEffectsSimultaneously (g : Game) (eids : Array EffectId)
   else g
 
 /-- Reconcile game-over finality, departed Layer 2 `.control` effects, departed
-CR 718.6 `.controlsPlayer` effects, departed non-card `.stack` / `.command`
-objects, and unqueued CR 800.4c orphan battlefield permanents after checkpoint
-replay completes on either synchronous or resumed paths (CR 104.2a / 506.4 /
-701.54a / 718.6 / 800.4a,c). -/
+CR 723 `.controlsPlayer` effects (ended under CR 800.4a), departed non-card
+`.stack` / `.command` objects, and unqueued CR 800.4c orphan battlefield
+permanents after checkpoint replay completes on either synchronous or resumed
+paths (CR 104.2a / 506.4 / 701.54a / 723 / 800.4a,c). -/
 @[export mtg_game_reconcile_post_replay_departures]
 def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := false) : Game :=
   let g := (g.decideGameIfFinished).getD g
@@ -1835,11 +1835,6 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
               g.finishOpenBatchAndLinkedExile dbBid dbStartIdx
             else g
           | none => g
-        let g :=
-          if g.plusOneAfterDiscards.isSome then
-            g.withOuterContStashed fun g =>
-              g.chainPendingReplacement (.finishPostStep .finishPlusOneAfterDiscards)
-          else g
         (g, g.pending)
       | some (np, rest) =>
         let prefixIdx := livingRem.findIdx? (· == np) |>.getD 0
@@ -2655,25 +2650,10 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
     | .searchLibrary eligible count dest after kind
     | .maySearchLibrary eligible count dest after kind =>
       if q == p then
-        let waitingPlusOne := g.plusOneAfterSearch
-        let g := g.changes (#[
-          .untapSearchedIfLands none,
-          .plusOneAfterSearch none] ++ clearProp)
+        let g := if clearProp.isEmpty then g else g.changes clearProp
         let g := declineInterpChoice (clearPending g)
-        let g :=
-          match waitingPlusOne with
-          | some (cid, ctrl, srcId) =>
-            if ctrl != p && g.stillInGame ctrl then
-              g.withOuterContStashed fun g =>
-                g.chainPendingReplacement (.finishPostStep (.applyPlusOneAfterSearch cid ctrl srcId))
-            else g
-          | none => g
         (g, .none)
       else
-        let g :=
-          if g.plusOneAfterSearch.any (fun (_, ctrl, _) => ctrl == p || !g.stillInGame ctrl) then
-            g.change (.plusOneAfterSearch none)
-          else g
         let liveEligible := eligible.filter (fun id => (g.findObject? id).isSome)
         (g,
           if liveEligible != eligible then
@@ -2763,9 +2743,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
     else (g, pending)
   | .scry q .. | .surveil q .. =>
     if q == p then
-      let g := g.changes (#[
-        .surveilReturnMvAtMost none,
-        .surveilReturnNoncreatureNonland false] ++ clearProp)
+      let g := g.changes (#[.surveilReturnMvAtMost none] ++ clearProp)
       let g := declineInterpChoice (clearPending g)
       let g :=
         g.withOuterContStashed fun g =>

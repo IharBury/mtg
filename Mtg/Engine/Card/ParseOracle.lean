@@ -91,14 +91,8 @@ and life modifier (lower right) are `+N`, `-N`, or `0`, labeled or bare,
 before or after the rules text (CR 211.1 / 212.1). A line that is exactly
 `//` starts the back face. An Adventure is introduced by `//ADV//`.
 A prepare spell is introduced by `//PREP//`. -/
-@[irreducible, noinline] def parseOracleCard (text : String)
-    (keepUnrecognized : Bool := false) : Except String CardDef :=
-  let _ := keepUnrecognized
+@[irreducible, noinline] def parseOracleCard (text : String) : Except String CardDef :=
   Parser.parseOracleCardCompositional text
-
-/-- Parse a card; unrecognized rules lines are rejected. -/
-@[irreducible, noinline] def parseOracleCardKeeping (text : String) : Except String CardDef :=
-  parseOracleCard text (keepUnrecognized := true)
 
 /-- `parseOracleCard`, panicking with the line that was not recognized. -/
 @[irreducible, noinline] def parseOracleCard! (text : String) : CardDef :=

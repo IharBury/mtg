@@ -2171,14 +2171,10 @@ when nothing else is pending. -/
 partial def resumeSequenceThenPriority (g : Game) : Game :=
   g.finishAndGrantPriority
 
-/-- Continue a discard chain. When no one is left to discard, put the waiting
-+1/+1 counter (Ninja of the Hand) if any. -/
+/-- Continue a discard chain. -/
 partial def continueAfterDiscard (g : Game) (players : Array PlayerId)
     (samePlayer : Bool := false) (count : Nat := 1) : Game :=
-  let g := g.beginDiscardCards players (count := count) (samePlayer := samePlayer) (resuming := true)
-  if g.pending != .none then g
-  else if g.plusOneAfterDiscards.isSome then g.finishPlusOneAfterDiscards
-  else g
+  g.beginDiscardCards players (count := count) (samePlayer := samePlayer) (resuming := true)
 
 /-- Clear a finished Reality Fracture choice and let the game continue. Any
 pending replacement/batch continuation runs first, then any suspended
@@ -3388,10 +3384,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     g.finishFreshAmass controller subtype n attach (cause := cause) (startEventIdx := startEventIdx)
   | .finishDealDamageLoseIndestructibleExile targetId targetName n cause =>
     g.finishDealDamageLoseIndestructibleExile targetId targetName n cause
-  | .finishPlaceSearched p fromId name tapped cause =>
-    g.finishPlaceSearched p fromId name tapped (cause := cause)
-  | .finishSearchedUntap p landId name =>
-    g.finishSearchedUntap p landId name
+  | .finishPlaceSearched p fromId name tapped _ =>
+    g.finishPlaceSearched p fromId name tapped
   | .placeSearchedBatch p remainingIds tapped cause entered preBattlefield =>
     g.placeSearchedBatch p remainingIds tapped (cause := cause)
       (entered := entered) (preBattlefield := preBattlefield)
@@ -3594,8 +3588,7 @@ partial def runPostStep (g : Game) (step : PostStep)
       | none => g
   | .enteredBattlefieldSilent cardId isLand
   | .returnedBattlefieldEndStep cardId isLand
-  | .returnedToBattlefield cardId isLand
-  | .returnedToBattlefieldTapped cardId isLand =>
+  | .returnedToBattlefield cardId isLand =>
     match g.followMovedToZone? cardId (· == .battlefield) with
     | some entered =>
       let g :=
@@ -3612,13 +3605,9 @@ partial def runPostStep (g : Game) (step : PostStep)
             g.logMsg s!"{g.name entered} returns to the battlefield attached to {g.name host}"
           | none =>
             g.logMsg s!"{g.name entered} returns to the battlefield"
-        | .returnedToBattlefieldTapped .. =>
-          g.logMsg s!"{g.name entered} returns to the battlefield tapped"
         | _ => g
       if isLand then g.afterLandEnters entered else g.afterPermanentEnters entered
     | none => g
-  | .searchBasicLandTapped p =>
-    g.beginLibrarySearch p isBasicLandCard "a basic land card" (.battlefield true)
   | .putOntoBattlefieldHasteAtFour p cardId x shuffle =>
     let g :=
       match g.followMovedToZone? cardId (· == .battlefield) with
@@ -3768,8 +3757,6 @@ partial def runPostStep (g : Game) (step : PostStep)
     g.discardHandIdsLoop p ids (logEach := logEach) (cause := cause)
   | .discardMultiHandIdsLoop remaining logEach cause =>
     g.discardMultiHandIdsLoop remaining (logEach := logEach) (cause := cause)
-  | .finishPlusOneAfterDiscards =>
-    g.finishPlusOneAfterDiscards
   | .closeDiscardBatchStep =>
     g.closeCurrentDiscardBatch
   | .logPutsIntoHand revealer fromId cardName =>
@@ -3798,10 +3785,6 @@ partial def runPostStep (g : Game) (step : PostStep)
     else g
   | .continueOpeningBegin remainingIds =>
     g.continueOpeningBegin remainingIds
-  | .logMovedToExile cardId =>
-    match g.followMovedToZone? cardId (· == .exile) with
-    | some moved => g.logMsg s!"{g.name moved} is exiled"
-    | none => g
   | .resumeChooseModeAfterLeave p =>
     let promptIfTriggersNeedTargets (g : Game) : Game :=
       if !g.over && g.pending == .none && g.continuations.isEmpty &&
@@ -4051,8 +4034,6 @@ partial def runPostStep (g : Game) (step : PostStep)
             let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
             g.finishFraChoice
       | none => g.finishFraChoice
-  | .applyPlusOneAfterSearch id controller sourceId =>
-    g.addPlusOneIfStillCreature id controller sourceId
   | .resumeProposalCostAfterLeave p savedP =>
     if g.proposalCostPromptStillPayable p savedP then
       g.change (.pending savedP)
@@ -4127,8 +4108,6 @@ partial def runPostStep (g : Game) (step : PostStep)
         (g.createEffect (.playPermission moved.id { player := p } (turnEnds := 2)) (cause := cause))
           |>.logMsg s!"{(g.player p).name} exiles {g.name moved} and may play it until the end of their next turn"
     | none => g
-  | .exileCreaturesFromGraveyardLoop controller remainingIds cause pendingFromId =>
-    g.exileCreaturesFromGraveyardLoop controller remainingIds cause pendingFromId
   | .finishExileUntilSourceLeaves sourceId fromId =>
     g.finishExileUntilSourceLeaves sourceId fromId
   | .finishExileForLeaveTrigger sourceId fromId =>
@@ -4147,8 +4126,6 @@ partial def runPostStep (g : Game) (step : PostStep)
   | .logDiscardedCount p preDiscards =>
     let discarded := g.loggedDiscards p - preDiscards
     g.logMsg s!"{(g.player p).name} discards {discarded} card(s)"
-  | .loyaltyOnPlaneswalkersLoop p remainingIds =>
-    g.loyaltyOnPwsLoop p remainingIds
   | .logGiftTreasureGiven recipient =>
     if g.stillInGame recipient then g.logMsg s!"{(g.player recipient).name} is given a Treasure (gift)" else g
   | .logDelayedBirdSoldiersCreated controller startEventIdx =>
@@ -4162,8 +4139,6 @@ partial def runPostStep (g : Game) (step : PostStep)
     g.exileUntilInstantOrSorceryLoop victim controller castTheCard cause others pendingFromId
   | .finishGrimaDirectCast controller victim fromId others cause =>
     g.finishGrimaDirectCast controller victim fromId others cause
-  | .sarumanExileCopyMayCast controller fromId cause =>
-    g.finishSarumanExileCopyMayCast controller fromId cause
   | .exileFromRevealedHandAfterMove p victim fromId cardName sourceId =>
     match g.followMovedToZone? fromId (· == .exile) with
     | some ex =>
@@ -4337,8 +4312,7 @@ partial def finishLibraryLookCore (g : Game) : Game :=
   else
     let g := g.changes #[
       .pending .none,
-      .surveilReturnMvAtMost none,
-      .surveilReturnNoncreatureNonland false ]
+      .surveilReturnMvAtMost none ]
     let g :=
       match g.pendingDrawAfterScry with
       | some (q, n) =>
@@ -4386,7 +4360,7 @@ partial def finishSurveilPostMove (g : Game) (p : PlayerId) (card : GameObject)
       let returnToHand : Bool :=
         match g.surveilReturnMvAtMost with
         | some n => g.objectManaValue card ≤ n
-        | none => g.surveilReturnNoncreatureNonland && !g.isCreature card && !g.isLand card
+        | none => false
       if returnToHand then
         let (g', _) := g.move gyObj.id (.hand p) none (cause := cause)
         if let .chooseReplacement .. := g'.pending then
@@ -4997,7 +4971,7 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
         if !withoutManaCost && origPerm.any (·.payLifeEqualManaValue) then
           g.objectManaValue spellObj
         else 0
-      let needsSacrifice := stackFace.mandatorySacrificeFilter?.isSome
+      let needsSacrifice := (g.mandatorySacrificeFilterFor? spellObj stackFace).isSome
       g.beginResolutionCastTargets p {
         caster := p
         cost
@@ -5328,7 +5302,6 @@ partial def runInGameAfterRandom (g : Game) (after : AfterRandom)
   | .revealRandomCreatureThenBottom _ _ => g
   | .putOnTop p ids => g.putIdsOnTop p ids
   | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
-  | .plusOne id ctrl srcId => g.addPlusOneIfStillCreature id ctrl srcId
   | .discardRandom p =>
     if guardDeparted && !g.stillInGame p then g
     else
@@ -6174,19 +6147,19 @@ def choosePermanents (g : Game) (p : PlayerId) (ids : Array ObjectId) :
         let g := g.discardMultiHandIdsLoop pairs (logEach := true)
         if let .chooseReplacement .. := g.pending then
           let g := g.chainPendingReplacement (.finishPostStep .closeDiscardBatchStep)
-          if !remaining.isEmpty || g.plusOneAfterDiscards.isSome then
+          if !remaining.isEmpty then
             g.chainPendingReplacement
               (.finishPostStep (.continueAfterDiscardStep remaining false (max 1 g.discardCountPerPlayer)))
           else g
         else
           let g := g.closeCurrentDiscardBatch
-          if !remaining.isEmpty || g.plusOneAfterDiscards.isSome then
+          if !remaining.isEmpty then
             g.continueAfterDiscard remaining (samePlayer := false) (count := max 1 g.discardCountPerPlayer)
           else g
       else
         let g := g.withBatch none fun g =>
           g.discardMultiHandIdsLoop pairs (logEach := true)
-        if !remaining.isEmpty || g.plusOneAfterDiscards.isSome then
+        if !remaining.isEmpty then
           if let .chooseReplacement .. := g.pending then
             g.chainPendingReplacement
               (.finishPostStep (.continueAfterDiscardStep remaining false (max 1 g.discardCountPerPlayer)))
@@ -6274,7 +6247,7 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
       (useImplicitPermissions := false)
     let lifeInstead :=
       if origPerm.any (·.payLifeEqualManaValue) then g.objectManaValue spellObj else 0
-    let needsSacrifice := stackFace.mandatorySacrificeFilter?.isSome
+    let needsSacrifice := (g.mandatorySacrificeFilterFor? spellObj stackFace).isSome
     let prop : ProposedSpell := {
       caster := p
       cost

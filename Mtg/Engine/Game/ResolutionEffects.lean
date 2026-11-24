@@ -207,18 +207,6 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
       | none => g
   | _ => throw "Not time to put an artifact from your hand"
 
-/-- True when at least one card was milled by a player in `opponents` in
-`g.events[startIdx:]` (CR 701.17a / 701.17c, including zone-redirected mills). -/
-def anyOpponentMilledSince (g : Game) (opponents : Array PlayerId) (startIdx : Nat) : Bool :=
-  Id.run do
-    for i in [startIdx : g.events.size] do
-      match g.events[i]!.change with
-      | .rules (.zone (.moved _ after (.library pid) toZone .mill _ _ _)) =>
-        if opponents.contains pid && toZone != .library pid && after.owner == pid then
-          return true
-      | _ => pure ()
-    return false
-
 /-- Mill opponents without returning a reflexive-trigger flag, deferring across
 any open `Pending.chooseReplacement` pause. -/
 def millOpponentsOnly (g : Game) (opponents : Array PlayerId) (n : Nat)
@@ -391,30 +379,8 @@ def returnLinkedExile (g : Game) (source : GameObject) : Game :=
   g.withBatch none fun g =>
     g.returnLinkedExileLoop (source.leaveTriggerExile ++ source.linkedExile)
 
-/-- Named MSH tokens that carry extra rules text (backed by `TokenSpec`). -/
-def zabuToken : CardDef := (tokenPrinted? .zabu).getD default
-def redwingToken : CardDef := (tokenPrinted? .redwing).getD default
+/-- Named MSH token that carries extra rules text (backed by `TokenSpec`). -/
 def theVoidToken : CardDef := (tokenPrinted? .theVoid).getD default
-
-def galactusAttackTrigger : Effect := {
-  targets := .land
-  body := Instruction.destroy (.target 0)
-}
-
-def galactusToken : CardDef := (tokenPrinted? .galactus).getD default
-def tigerGodToken : CardDef := (tokenPrinted? .tigerGod).getD default
-def sturdyShieldToken : CardDef := (tokenPrinted? .sturdyShield).getD default
-
-def createNamedToken (g : Game) (controller : PlayerId) (printed : CardDef) : Game :=
-  let (g, _) := g.createToken controller printed
-  g
-
-/-- Run `f` if the source is still on the battlefield; otherwise log the same
-`missing` message whether the source is gone or was never found. -/
-def withSourceStillOnBattlefield (g : Game) (sourceId : Option ObjectId)
-    (f : Game → GameObject → Game)
-    (missing := "The source has left the battlefield. Nothing is exiled.") : Game :=
-  g.withSourceOnBattlefield sourceId f missing (leftMsg := some missing)
 
 /-- Increment the source's plan counter if still on the battlefield, deferring
 across any open `Pending.chooseReplacement` pause. -/
@@ -474,11 +440,6 @@ def attachedEquipmentAtResolution (g : Game) (sourceId : Option ObjectId)
       else (departedCount? sid).getD (lastKnownPower.getD (0 : Int)).toNat
     | none => (departedCount? sid).getD (lastKnownPower.getD (0 : Int)).toNat
   | none => (lastKnownPower.getD (0 : Int)).toNat
-
-/-- `sourcePowerAtResolution` as a `Nat`. -/
-def sourcePowerNatAtResolution (g : Game) (sourceId : Option ObjectId)
-    (lastKnownPower : Option Int := none) : Nat :=
-  (g.sourcePowerAtResolution sourceId lastKnownPower).toNat
 
 /-- Current P/T of `sourceId` if it is still on the battlefield; otherwise
 last-known values, falling back to the object's current P/T. -/
@@ -748,31 +709,6 @@ def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat
   else
     let arrived := preIds.filterMap (fun pid => (g.followMovedToZone? pid (· == .exile)).map (·.id))
     g.finishExileTopMayCastUpToOffer caster arrived casts
-
-/-- True when `mods` strips abilities and grants haste, as Hellcat returns. -/
-def losesAbilitiesAndHaste (mods : List EnterMod) : Bool :=
-  mods.any (· == .loseAllAbilities) &&
-    mods.any (fun m =>
-      match m with
-      | .keywords k => KeywordAbility.hasHaste k
-      | _ => false)
-
-/-- Extra enters-with counters specified by `mods`. -/
-def enterModsExtraCounters (mods : List EnterMod) : CounterBag :=
-  mods.foldl (fun acc m =>
-    match m with
-    | .counter .finality n _ => acc.add .finality n
-    | .counter kind n true => acc.add kind n
-    | _ => acc) #[]
-
-/-- Legal attack targets specified by `mods` as the permanent enters under
-`enteringController`'s control (CR 508.4), or `#[]` when `.attacking` is not
-in `mods`. -/
-def enterModsAttackOptions (g : Game) (enteringController : PlayerId)
-    (mods : List EnterMod) : Array AttackTarget :=
-  if mods.any (· == .attacking) then
-    g.legalEnteringAttackTargets enteringController
-  else #[]
 
 /-- Apply one post-entry counter change to the permanent `id` (enters-with
 effects and counters were already pre-seeded and recorded on arrival by
