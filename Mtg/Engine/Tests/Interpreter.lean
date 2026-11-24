@@ -5,10 +5,11 @@ import Mtg.Engine.Catalog.RealityFracture
 import Mtg.Engine.Catalog.RealityFractureCommander
 
 /-!
-# Phases 8–9 Unified `Instruction` AST, `stepEnv`, & `Interpreter` Runtime Tests
+# Unified `Instruction` AST, `stepEnv`, & `Interpreter` Runtime Tests
 
-Comprehensive gameplay `#guard` regression suite for Phases 8–9 of
-`ABILITY_ALIGNMENT_PLAN.md` (anchored to the 25 September 2026 CR):
+Comprehensive gameplay `#guard` regression suite for the unified `Instruction`
+AST and resumable interpreter (see `docs/card-and-ability-model.md` and
+`docs/game-evaluation.md`, anchored to the 25 September 2026 CR):
 1. `ContinuationFrame.stepEnv` across `Instruction.bind`, including CR 614.6
    prevented/replaced/doubled events and CR 616.1 `Pending.chooseReplacement`
    pause & resume.

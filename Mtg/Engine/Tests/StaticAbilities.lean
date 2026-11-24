@@ -4,10 +4,11 @@ import Mtg.Engine.Catalog.RealityFracture
 import Mtg.Engine.Catalog.RealityFractureCommander
 
 /-!
-# Phase 6 Stratified `StaticAbility` Runtime Tests (CR 604 / 613 / 614–616)
+# Stratified `StaticAbility` Runtime Tests (CR 604 / 613 / 614–616)
 
-Comprehensive gameplay `#guard` regression suite for Phase 6 of
-`ABILITY_ALIGNMENT_PLAN.md` (anchored to the 25 September 2026 CR):
+Comprehensive gameplay `#guard` regression suite for stratified static abilities
+(see `docs/card-and-ability-model.md` and `docs/game-evaluation.md`, anchored
+to the 25 September 2026 CR):
 1. Layer 3 text changes (`TextChange.replaceCreatureType`) on previously-bypassed
    static abilities: `costReductionIfYouControl`, `flashIfYouControlSubtype`,
    `entersTappedUnlessBehold`, `extraLandIfOtherSubtype`, command-zone

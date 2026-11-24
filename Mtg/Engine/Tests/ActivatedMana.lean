@@ -3,10 +3,11 @@ import Mtg.Engine.Catalog.MarvelSuperHeroes
 import Mtg.Engine.Catalog.RealityFractureCommander
 
 /-!
-# Phase 5 Unified `ActivatedAbility` & CR 605.1a / 305.6–7 Mana Ability Runtime Tests
+# Unified `ActivatedAbility` & CR 605.1a / 305.6–7 Mana Ability Runtime Tests
 
-Comprehensive gameplay `#guard` regression suite for Phase 5 of
-`ABILITY_ALIGNMENT_PLAN.md` (anchored to the 25 September 2026 CR):
+Comprehensive gameplay `#guard` regression suite for unified activated and mana
+abilities (see `docs/card-and-ability-model.md` and `docs/game-evaluation.md`,
+anchored to the 25 September 2026 CR):
 1. CR 305.6 intrinsic basic-land mana synthesis (including Layer 3 text change
    `Mountain → Island`, Yavimaya-style Layer 4 `.addDedup` preserving rules text,
    and non-land basic-subtype negative check).

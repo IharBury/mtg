@@ -5,10 +5,11 @@ import Mtg.Engine.Catalog.RealityFracture
 import Mtg.Engine.Catalog.RealityFractureCommander
 
 /-!
-# Phase 7 Unified `TriggerPattern` & Pattern-Driven `matchTriggers` Runtime Tests
+# Unified `TriggerPattern` & Pattern-Driven `matchTriggers` Runtime Tests
 
-Comprehensive gameplay `#guard` regression suite for Phase 7 of
-`ABILITY_ALIGNMENT_PLAN.md` (anchored to the 25 September 2026 CR):
+Comprehensive gameplay `#guard` regression suite for `TriggerPattern` and
+pattern-driven trigger matching (see `docs/card-and-ability-model.md` and
+`docs/game-evaluation.md`, anchored to the 25 September 2026 CR):
 1. Pattern-driven `Core.matchTriggers` across zone changes, combat, damage/life,
    casts, counters, steps, player actions, and novel parsed triggered abilities.
 2. Exact CR 603.10a–f look-back (`pre`) vs. non-look-back (`post`), including
