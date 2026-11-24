@@ -1,9 +1,11 @@
 import Mtg.Engine.Tests.Helpers
 
 /-!
-# Phase 2 Expression Algebra, Stage-4 Sub-Grammars, and `EvalExpr` Tests
+# Expression Algebra, Stage-4 Sub-Grammars, and `EvalExpr` Tests
 
-Comprehensive `#guard` regression suite for Phase 2 of `ABILITY_ALIGNMENT_PLAN.md`:
+Comprehensive `#guard` regression suite for the expression algebra and evaluator
+(see `docs/card-and-ability-model.md`, `docs/oracle-parser.md`, and
+`docs/game-evaluation.md`):
 1. Stage-4 expression parsers (`parseNounPhrase`, `parseValueExpr`,
    `parseCondition`, `parseDuration`) and canonical `ToOracle` round-trips.
 2. Live Layer 1–7d evaluation in `Game/EvalExpr.lean` (`PlayerFilter`/`PlayerExpr`,

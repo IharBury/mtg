@@ -115,6 +115,7 @@ player view. With `--interactive`, that player is the first named player; with
 
 | Path | Purpose |
 | --- | --- |
+| `docs/` | Architecture documentation covering the system overview, card/ability AST, compositional Oracle parser, and runtime evaluation. |
 | `lakefile.toml` | Lake package (`Mtg.Engine` library with the precompiled `Mtg.Engine.Card`, `Mtg.Engine.Game`, and `Mtg.Engine.Fixture` plugins, `MtgDemo` demo library, `mtg-demo` and `oracle-roundtrip` executables). |
 | `lean-toolchain` | Pinned Lean toolchain version. |
 | `Mtg/Engine.lean`, `Mtg/Engine/` | The `Mtg.Engine` library. |
@@ -123,6 +124,13 @@ player view. With `--interactive`, that player is the first named player; with
 | `Mtg/Engine/Tests/` | Compile-time engine smoke tests, card-model guards, test builders, and regression suites. |
 | `Mtg/Demo.lean`, `Mtg/Demo/` | Console demonstration, text rendering, Welcome Deck lists, and deck-list file parsing. |
 | `Mtg/OracleRoundtrip.lean` | `lake exe oracle-roundtrip`: verifies 100% structural `BEq CardDef` round-trip (`renderFullOracle` → `parseOracleCard`) across all 981 catalog cards. |
+
+## Architecture documentation
+
+- [`docs/architecture.md`](docs/architecture.md) — system overview, Comprehensive Rules (25 September 2026) mapping, Lake plugin hierarchy, Lean 4 build invariants, verification gates, and non-goals
+- [`docs/card-and-ability-model.md`](docs/card-and-ability-model.md) — layered `Mtg.Engine.Card` AST (`Primitives`, `Expr`, `Targeting`, `Cost`, `ManaSpec`, `TokenSpec`, `Instruction`, CR 113.3 abilities, `KeywordAbility`, and 21-field `CardDef`)
+- [`docs/oracle-parser.md`](docs/oracle-parser.md) — five-stage compositional Oracle parser (`Mtg/Engine/Card/Parser/*`), recursive quoted-ability parsing, discourse/anaphora binding, canonical `ToOracle` rendering, and 981-card round-trip verification
+- [`docs/game-evaluation.md`](docs/game-evaluation.md) — runtime evaluation in `Mtg.Engine.Game` (`EvalExpr` & LKI, CR 613 layers, targeting legality, resumable `Instruction` interpreter & `stepEnv`, two-pass trigger matching, and mana/cost/replacement/Demo/Agent integration)
 
 ## Current coverage
 

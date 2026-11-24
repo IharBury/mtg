@@ -1,10 +1,11 @@
 import Mtg.Engine.Tests.Helpers
 
 /-!
-# Phase 4 Compositional `CostSpec` & Parameterized `KeywordAbility` Runtime Tests
+# Compositional `CostSpec` & Parameterized `KeywordAbility` Runtime Tests
 
-Comprehensive gameplay `#guard` regression suite for Phase 4 of
-`ABILITY_ALIGNMENT_PLAN.md` (anchored to the 25 September 2026 CR):
+Comprehensive gameplay `#guard` regression suite for compositional costs and
+parameterized keywords (see `docs/card-and-ability-model.md` and
+`docs/game-evaluation.md`, anchored to the 25 September 2026 CR):
 1. All 15 CR 122.1b keyword counters in Layer 6 gameplay (including `.decayed`,
    `.exalted`, `.hexproof`, CR 702.4b/702.7b `firstStrike` vs `doubleStrike`,
    and CR 613.7c timestamp ordering with `losesAbilitiesUntilEot`).
