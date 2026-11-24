@@ -308,7 +308,7 @@ def improviseReduce (cost : ManaCost) (n : Nat) : ManaCost :=
 (CR 702.126 / 613.1f). -/
 def spellHasImprovise (g : Game) (face : CardDef) (caster : PlayerId) : Bool :=
   face.hasImprovise ||
-    let dummy : GameObject := { id := ⟨0⟩, owner := caster, controller := some caster, zone := .stack, printed := face }
+    let dummy : GameObject := { id := noSourceSentinelId, owner := caster, controller := some caster, zone := .stack, printed := face }
     let spellView := EvalExpr.spellFaceView g dummy face caster face.manaValue
     g.battlefield.any (fun o =>
       let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }

@@ -2359,7 +2359,8 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     gLkiGone.evalTriggerCond me (some snapWithCounter) none TriggeredAbility.condSourceHasCounters &&
     !gLkiGone.evalTriggerCond me (some (gLki0.object! lkiId)) none TriggeredAbility.condSourceHasCounters
 
-  -- 5c. CR 702.26b: `attachedEquipmentAtResolution` returns `0` when the creature is phased out on `.battlefield` (not `lastKnownPower` 4)!
+  -- 5c. CR 608.2h / 702.26b,g: `attachedEquipmentAtResolution` returns `1` via co-phased
+  -- `PermanentEvent.phasedOut` LKI when the creature and its attached Equipment phase out together (not `lastKnownPower` 4)!
   let eqDef18 : CardDef := { name := "Phase18 Blade", manaCost := ManaCost.empty, types := #[.artifact], subtypes := #["Equipment"] }
   let gEq0 : Game := addPermanent (addPermanent afterDraw { bear with name := "Phase18 Wielder", power := some (.fixed 4) } me me) eqDef18 me me
   let wldId := (gEq0.battlefield.filter (·.name == "Phase18 Wielder"))[0]!.id
@@ -2368,7 +2369,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let gEqPhased : Game := gEq1.phaseOut (gEq1.object! wldId) (cause := some testCause)
   let eqPhasedZeroOk : Bool :=
     gEq1.attachedEquipmentAtResolution (some wldId) (some 4) == 1 &&
-    gEqPhased.attachedEquipmentAtResolution (some wldId) (some 4) == 0
+    gEqPhased.attachedEquipmentAtResolution (some wldId) (some 4) == 1
 
   -- 5d. CR 707.2 `.copySelfNonlegendary`: uses `eo.copiable.getD eo.toCardDef` when source became a copy and left `.battlefield`!
   let selfCopyAb : TriggeredAbility := TriggeredAbility.onEnterIfNotTokenCopySelf

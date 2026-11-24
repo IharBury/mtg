@@ -47,15 +47,19 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
     (reconcileControl : Bool := true) (suppressReturnLog : Bool := false)
     (preState? : Option Game := none)
     (skipLogIds : Array ObjectId := #[])
-    (suppressEmblemLog : Bool := false) : Game :=
+    (suppressEmblemLog : Bool := false)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   let effCause :=
     g.resolveOptionalCause cause (fallbackSrc := some id)
       (defaultCause := .gameRule .leavingZone)
   match g.findObject? id with
   | some old =>
     let pre := preState?.getD g
+    let fromIdx := g.events.size
+    let hasLeavingEffect :=
+      g.activeEffects.any fun (_, e) => g.effectExpiresWithLeavingObj old.id old.zone #[] e
     let effSkipLogIds : Array ObjectId :=
-      if old.isBattlefieldObject || old.zone == .command then
+      if old.isBattlefieldObject || old.zone == .command || hasLeavingEffect then
         (coDepartingIdsFwd g #[old.id]).foldl
           (fun acc cid => if acc.contains cid then acc else acc.push cid) skipLogIds
       else skipLogIds
@@ -66,73 +70,22 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
     let g := g.record (GameEvent.ceasedToExist g.turnNumber snap (cause := effCause))
     let expCause := cause.orElse (fun _ => some (.gameRule .leavingZone))
     let allEmbIds := if old.zone == .command then g.expandTransitiveCommandEmblems #[id] else #[]
-    let cmdControlSingles : Array (ObjectId × GameObject) :=
-      if old.zone != .command || suppressReturnLog then #[]
-      else
-        g.activeEffects.foldl (fun singles (_, e) =>
-          if !allEmbIds.any (fun embId => g.effectExpiresWithLeavingObj embId .command allEmbIds e) then
-            singles
-          else
-            match e with
-            | .layered (.objects #[tid]) (.control _) _ =>
-              if singles.any (·.1 == tid) then singles
-              else
-                match g.findObject? tid with
-                | some o =>
-                  let preObj := (pre.findObject? tid).getD o
-                  singles.push (tid, preObj)
-                | none => singles
-            | _ => singles) #[]
-    let g :=
-      if old.zone == .command then
-        g.restoreCopiesWhere
-          (fun acc cEid _ _ =>
-            match acc.activeEffect? cEid with
-            | some ce =>
-              allEmbIds.any (fun embId => acc.effectExpiresWithLeavingObj embId .command allEmbIds ce)
-            | none => false)
-          (cause := expCause) (reconcileControl := false) (skipLogIds := effSkipLogIds)
-      else g
-    let g := g.expireEffectsOnLeavingObject old (cause := expCause) (reconcileControl := false)
+    let g := g.expireLeavingObjectEffectsWithLogs old (cause := expCause)
       (preState? := some pre) (suppressEmblemLog := suppressEmblemLog)
-      (suppressReturnLog := if old.zone == .command then true else suppressReturnLog)
-      (skipLogIds := effSkipLogIds)
+      (suppressReturnLog := suppressReturnLog) (skipLogIds := effSkipLogIds)
       (coLeavingIds := allEmbIds)
-    let g :=
-      if old.zone == .command && !suppressReturnLog then
-        cmdControlSingles.foldl (fun acc (tid, o) =>
-          if effSkipLogIds.contains tid then acc
-          else
-            match acc.findObject? tid with
-            | none => acc
-            | some cur =>
-              let prevCtrl := pre.controllerOf ((pre.findObject? tid).getD o)
-              let curCtrl := acc.controllerOf cur
-              if curCtrl == prevCtrl then acc
-              else
-                let objName := acc.name cur
-                let p := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
-                let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
-                if othersRemain then
-                  match curCtrl with
-                  | some q =>
-                    if (acc.player q).leftTheGame then acc
-                    else acc.logMsg s!"{objName} returns to {(acc.player q).name}'s control"
-                  | none => acc
-                else if (acc.player p).leftTheGame then
-                  acc
-                else
-                  acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control") g
-      else g
     let g :=
       if old.zone == .battlefield then
         g.expireWhileSourceEffects id (cause := expCause) (preState? := some pre)
           (reconcileControl := false) (suppressReturnLog := suppressReturnLog)
           (skipLogIds := effSkipLogIds) (suppressEmblemLog := suppressEmblemLog)
+          (deferPlayFromExileLogs := true)
       else g
-    if reconcileControl then
-      reconcileControlAfterTransitionFwd pre g (cause := expCause)
-    else g
+    let g :=
+      if reconcileControl then
+        reconcileControlAfterTransitionFwd pre g (cause := expCause)
+      else g
+    if deferPlayFromExileLogs then g else emitExpiredPlayFromExileLogs pre g fromIdx
   | none =>
     g.record (GameEvent.ceasedToExist g.turnNumber { id := some id } (cause := effCause))
 
@@ -142,8 +95,10 @@ matching `pred eid d` (plus transitive child emblems), recording `ceasedToExist`
 def ceaseEndingCommandEmblemsWhere (g : Game) (pred : EffectId → EffectDuration → Bool)
     (cause : Option EventCause := none) (reconcileControl : Bool := false)
     (preState? : Option Game := none)
-    (skipLogIds : Array ObjectId := #[]) : Game :=
+    (skipLogIds : Array ObjectId := #[])
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   let pre := preState?.getD g
+  let fromIdx := g.events.size
   let seedIds : Array ObjectId :=
     g.activeEffects.foldl (fun acc (eid, e) =>
       match e with
@@ -167,9 +122,11 @@ def ceaseEndingCommandEmblemsWhere (g : Game) (pred : EffectId → EffectDuratio
           acc.ceaseToExist o.id (cause := cause) (reconcileControl := reconcileControl)
             (suppressReturnLog := true) (preState? := some pre)
             (skipLogIds := skipLogIds) (suppressEmblemLog := true)
+            (deferPlayFromExileLogs := true)
         else acc
       | none => acc) g
-  embEntries.foldl (fun acc (_, embName) => acc.logMsg s!"{embName} ends") g
+  let g := embEntries.foldl (fun acc (_, embName) => acc.logMsg s!"{embName} ends") g
+  if deferPlayFromExileLogs then g else emitExpiredPlayFromExileLogs pre g fromIdx
 
 /-- Move an object to a new zone, assigning a new object identity (CR 400.7).
 Auras and Equipment attached to a permanent that leaves the battlefield

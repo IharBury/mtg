@@ -66,6 +66,16 @@ structure PlayPermission where
   payLifeEqualManaValue : Bool := false
 deriving Repr, Inhabited, BEq
 
+/-- Frozen Layer-6 ability-retention and evaluated ability/count snapshot carried
+on transient `isLkiSnapshot` `GameObject`s (CR 113.7a / 608.2h / 613.1f). -/
+structure LkiLayer6 where
+  retainsPrintedAbilities : Bool := true
+  prowessCount : Nat := 0
+  ironFistTapGrants : Nat := 0
+  wardCosts : Array CostSpec := #[]
+  activatedAbilities : Array ActivatedAbility := #[]
+deriving Repr, Inhabited, BEq
+
 /-- An object currently in the game (CR 109). -/
 structure GameObject where
   id : ObjectId
@@ -121,10 +131,13 @@ structure GameObject where
   Off the stack, `{X}` is 0. -/
   chosenX : Option Nat := none
   /-- Transient marker set only on synthetic `GameObject`s reconstructed from an
-  `EventObject` snapshot (`damageSourceObjectFromLki` / `makeEventObjFromSnapshot`)
+  `EventObject` snapshot (`damageSourceObjectFromLki` / `lkiEventObjectAsGameObject`)
   so Layer 1–7 evaluators return the frozen snapshot characteristics without
   re-applying post-departure continuous effects or counter deltas (CR 113.7a / 608.2h). -/
   isLkiSnapshot : Bool := false
+  /-- Frozen Layer-6 ability-retention and evaluated ability/count snapshot on
+  `isLkiSnapshot` objects (CR 113.7a / 613.1f). -/
+  lkiLayer6 : Option LkiLayer6 := none
 deriving Repr, Inhabited, BEq
 
 /-- How one attacking or blocking creature assigns its combat damage (CR 510.1). -/
@@ -487,6 +500,12 @@ structure EventObject where
   copiable           : Option CardDef              := none
   adventurerCard     : Option CardDef              := none
   chosenX            : Option Nat                  := none
+  -- Evaluated Layer-6 ability retention and effective abilities/counts (CR 613.1f).
+  retainsPrintedAbilities : Option Bool            := none
+  prowessCount       : Nat                         := 0
+  ironFistTapGrants  : Nat                         := 0
+  wardCosts          : Array CostSpec              := #[]
+  activatedAbilities : Option (Array ActivatedAbility) := none
 deriving Repr, Inhabited, BEq
 
 namespace EventObject

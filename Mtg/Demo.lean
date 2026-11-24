@@ -2157,6 +2157,17 @@ def canPayTappingAll (g : Game) (pool : ManaPool) (cost : ManaCost)
     (spend : ManaSpend := {}) (prop? : Option ProposedSpell := none) : Bool :=
   g.canPayFromSources pool cost sources spend (prop? := prop?)
 
+/-- Material spell-mana outcome tracked by `hasUniqueManaPayment`:
+`SpellRiderSpec` riders plus Treasure-spent and *Path of Ancestry* scry
+provenance (CR 106.6 / 614.1c). -/
+structure SpellManaOutcome where
+  cantBeCountered : Bool := false
+  gainsHaste : Bool := false
+  extraPlusOneCounters : Nat := 0
+  fromTreasure : Bool := false
+  ancestryScry : Bool := false
+deriving BEq, Repr, Inhabited
+
 /-- Whether spending mana with a `.cantBeCountered` rider changes the outcome of
 paying for `prop?` by granting `.uncounterableThisCast` (CR 106.6). -/
 def cantBeCounteredRiderMatters (g : Game) (spend : ManaSpend)
@@ -2178,40 +2189,154 @@ def creatureSpellRiderMatters (g : Game) (spend : ManaSpend)
     | some prop =>
       prop.kind == .spell && (g.findObject? prop.spellId).any g.isCreature
 
-/-- Material spell-rider outcome `(cantBeCountered, gainsHaste, extraPlusOneCounters)`
-produced by spending `spentUnits` on `prop?` (CR 106.6 / 614.1c). -/
-def spellRiderOutcome (g : Game) (spend : ManaSpend)
-    (prop? : Option ProposedSpell) (spentUnits : Array ManaUnit) :
-    Bool × Bool × Nat :=
+private partial def condMentionsFromTreasure : Condition → Bool
+  | .castPred (.manaSpentMatches .fromTreasure _) => true
+  | .all cs | .any cs => cs.any condMentionsFromTreasure
+  | .not c => condMentionsFromTreasure c
+  | _ => false
+
+private partial def instrMentionsFromTreasure : Instruction → Bool
+  | .seq steps => steps.any instrMentionsFromTreasure
+  | .bind _ step cont => instrMentionsFromTreasure step || instrMentionsFromTreasure cont
+  | .ifCond cond t e =>
+    condMentionsFromTreasure cond || instrMentionsFromTreasure t || instrMentionsFromTreasure e
+  | .optional _ _ y n _ => instrMentionsFromTreasure y || instrMentionsFromTreasure n
+  | .unlessPays _ _ u => instrMentionsFromTreasure u
+  | .chooseModes spec => spec.modes.any (fun m => instrMentionsFromTreasure m.body)
+  | .forEach _ _ body => instrMentionsFromTreasure body
+  | .queueReflexiveTrigger ab =>
+    ab.interveningIf?.any condMentionsFromTreasure || instrMentionsFromTreasure ab.effect.body
+  | _ => false
+
+private def trigMentionsFromTreasure (ab : TriggeredAbility) : Bool :=
+  (match ab.pattern with
+   | .castSpell _ _ _ (some .fromTreasure) _ _ _ => true
+   | _ => false) ||
+  ab.interveningIf?.any condMentionsFromTreasure ||
+  instrMentionsFromTreasure ab.effect.body
+
+private def staticMentionsFromTreasure : StaticAbility → Bool
+  | .continuous cond? _ _
+  | .ruleModifying cond? _
+  | .costModifier cond? _ _
+  | .replacement cond? _ => cond?.any condMentionsFromTreasure
+  | _ => false
+
+/-- Whether spending mana from a Treasure changes the outcome of paying for
+`prop?` (CR 106.6 / 111.10a). -/
+def treasureManaMatters (g : Game) (spend : ManaSpend)
+    (prop? : Option ProposedSpell := none) : Bool :=
+  spend.spell &&
+    match prop? with
+    | none => true
+    | some prop =>
+      prop.kind == .spell &&
+        let spellCares :=
+          (g.findObject? prop.spellId).any fun spell =>
+            let bc := g.baseCard spell
+            bc.spellEffect.any (fun e => instrMentionsFromTreasure e.body) ||
+              bc.triggeredAbilities.any trigMentionsFromTreasure ||
+              (g.triggeredAbilities spell).any trigMentionsFromTreasure ||
+              bc.staticAbilities.any staticMentionsFromTreasure ||
+              (g.staticAbilities spell).any staticMentionsFromTreasure
+        let bfCares :=
+          g.battlefield.any fun o =>
+            (g.triggeredAbilities o).any trigMentionsFromTreasure ||
+              (g.staticAbilities o).any staticMentionsFromTreasure
+        let cmdCares :=
+          g.objects.any fun o =>
+            o.zone == .command &&
+              ((g.triggeredAbilities o).any trigMentionsFromTreasure ||
+                (g.staticAbilities o).any staticMentionsFromTreasure)
+        spellCares || bfCares || cmdCares
+
+/-- Whether `srcId` has *Path of Ancestry*'s mana-spent scry trigger, mirroring
+`Core.ancestryManaSpentOn` (CR 106.6 / 608.2h / 702.26d). -/
+def isAncestrySourceId (g : Game) (srcId : ObjectId) : Bool :=
+  let fromBattlefieldLki : Bool :=
+    (g.lastKnownBefore? srcId).any (fun snap =>
+      snap.zone == .battlefield && snap.triggeredAbilities.any (·.isManaSpentCastScry))
+  match g.findObject? srcId with
+  | some l =>
+    if l.isOnBattlefield then
+      (g.triggeredAbilities l).any (·.isManaSpentCastScry)
+    else if l.isBattlefieldObject then
+      g.retainsPrintedAbilities l && (g.baseCard l).triggeredAbilities.any (·.isManaSpentCastScry)
+    else
+      fromBattlefieldLki
+  | none => fromBattlefieldLki
+
+/-- Whether spending mana from a *Path of Ancestry* source changes the outcome
+of paying for `prop?` by triggering its scry 1 (CR 106.6). -/
+def ancestryManaMatters (g : Game) (spend : ManaSpend)
+    (prop? : Option ProposedSpell := none) : Bool :=
+  spend.spell && spend.hasType .creature &&
+    match prop? with
+    | none => true
+    | some prop =>
+      prop.kind == .spell &&
+        match g.findObject? prop.spellId with
+        | none => false
+        | some spell =>
+          let liveCmds := g.objects.filter (fun o => o.owner == prop.caster && o.isCommander)
+          let cmdTypes :=
+            if !liveCmds.isEmpty then
+              liveCmds.foldl (fun acc o => acc ++ (g.subtypes o).filter CardSubtype.isCreatureType) #[]
+            else
+              (g.player prop.caster).commanderCreatureTypes
+          g.isCreature spell &&
+            !g.ancestryManaSpentOn spell.id &&
+            (g.subtypes spell).any (fun sub => sub.isCreatureType && cmdTypes.contains sub)
+
+/-- Material spell-mana outcome produced by spending `spentUnits` on `prop?`
+(CR 106.6 / 614.1c). -/
+def spellManaOutcome (g : Game) (spend : ManaSpend)
+    (prop? : Option ProposedSpell) (spentUnits : Array ManaUnit) : SpellManaOutcome :=
   let cbcMatters := cantBeCounteredRiderMatters g spend prop?
   let crMatters := creatureSpellRiderMatters g spend prop?
-  let cbc := cbcMatters && spentUnits.any (·.hasRider .cantBeCountered)
-  let haste := crMatters && spentUnits.any (·.hasRider .gainsHaste)
-  let counters :=
-    if !crMatters then 0
-    else
-      spentUnits.foldl (fun acc u =>
-        acc + u.allRiders.foldl (fun s r =>
-          match r with
-          | .entersWithPlusOneCounters n => s + n
-          | _ => s) 0) 0
-  (cbc, haste, counters)
+  let trMatters := treasureManaMatters g spend prop?
+  let ancMatters := ancestryManaMatters g spend prop?
+  { cantBeCountered := cbcMatters && spentUnits.any (·.hasRider .cantBeCountered)
+    gainsHaste := crMatters && spentUnits.any (·.hasRider .gainsHaste)
+    extraPlusOneCounters :=
+      if !crMatters then 0
+      else
+        spentUnits.foldl (fun acc u =>
+          acc + u.allRiders.foldl (fun s r =>
+            match r with
+            | .entersWithPlusOneCounters n => s + n
+            | _ => s) 0) 0
+    fromTreasure := trMatters && spentUnits.any (·.fromTreasure)
+    ancestryScry := ancMatters && spentUnits.any (fun u => u.source.any (isAncestrySourceId g)) }
 
-/-- Whether any rider on `d` can change the material rider outcome relative to
-`outcome0` for `prop` (CR 106.6 / 614.1c). -/
-def manaAbilityDefCanChangeRiderOutcome (g : Game) (spend : ManaSpend)
-    (prop : ProposedSpell) (d : ManaAbilityDef)
-    (outcome0 : Bool × Bool × Nat) : Bool :=
+/-- Whether activating non-plain mana ability `d` on `o` can change the material
+spell-mana outcome relative to `outcome0` for `prop` (CR 106.6 / 614.1c). -/
+def manaAbilityDefCanChangeOutcome (g : Game) (spend : ManaSpend)
+    (prop : ProposedSpell) (o : GameObject) (d : ManaAbilityDef)
+    (outcome0 : SpellManaOutcome) : Bool :=
   g.restrictionAllowsProposed d.restriction prop &&
     let allRiders : Array SpellRiderSpec :=
       let fromRestr := match d.restriction with | some r => r.riders | none => #[]
       d.riders.foldl (fun acc r => if acc.contains r then acc else acc.push r) fromRestr
-    let (cbc0, haste0, _) := outcome0
-    allRiders.any fun r =>
-      match r with
-      | .cantBeCountered => !cbc0 && cantBeCounteredRiderMatters g spend (some prop)
-      | .gainsHaste => !haste0 && creatureSpellRiderMatters g spend (some prop)
-      | .entersWithPlusOneCounters n => n > 0 && creatureSpellRiderMatters g spend (some prop)
+    let hasCbc := allRiders.contains .cantBeCountered
+    let hasHaste := allRiders.contains .gainsHaste
+    let hasCounters := allRiders.any (fun | .entersWithPlusOneCounters n => n > 0 | _ => false)
+    let isTr := g.hasSubtype o .treasure
+    let isAnc := isAncestrySourceId g o.id
+    let addsAttr :=
+      (hasCbc && !outcome0.cantBeCountered && cantBeCounteredRiderMatters g spend (some prop)) ||
+      (hasHaste && !outcome0.gainsHaste && creatureSpellRiderMatters g spend (some prop)) ||
+      (hasCounters && creatureSpellRiderMatters g spend (some prop)) ||
+      (isTr && !outcome0.fromTreasure && treasureManaMatters g spend (some prop)) ||
+      (isAnc && !outcome0.ancestryScry && ancestryManaMatters g spend (some prop))
+    let displacesAttr :=
+      prop.cost.includesManaPayment &&
+        ((outcome0.cantBeCountered && !hasCbc && d.restriction.isSome) ||
+         (outcome0.gainsHaste && !hasHaste && (d.restriction.isSome || !allRiders.isEmpty)) ||
+         (outcome0.extraPlusOneCounters > 0 && !hasCounters && (d.restriction.isSome || !allRiders.isEmpty)) ||
+         (outcome0.fromTreasure && !isTr && (d.restriction.isSome || !allRiders.isEmpty)) ||
+         (outcome0.ancestryScry && !isAnc))
+    addsAttr || displacesAttr
 
 /-- Compare two post-payment leftover `ManaPool`s as multisets of `ManaUnit`s
 (CR 106.4 / 106.6). -/
@@ -2223,9 +2348,9 @@ private def sameLeftoverPool (a b : ManaPool) : Bool :=
 
 /-- Enumerate plain `{T}` mana choices across all usable plain `{T}` abilities
 on `o`, keeping up to `maxZeroReps` zero-requirement colored representatives per
-ability so `ManaOutput.combination` / multi-mana leftover differences and
-coexisting plain vs rider/restricted abilities on one permanent are preserved
-without exponential branching. -/
+ability (`0` retains all colors) so `ManaOutput.combination` / multi-mana
+leftover differences and coexisting plain vs rider/restricted abilities on one
+permanent are preserved without exponential branching. -/
 private def plainTapChoicesForUniqueness (g : Game) (o : GameObject) (types : Array ManaType)
     (cost : ManaCost) (maxZeroReps : Nat) (prop? : Option ProposedSpell := none) :
     Array TapManaChoice :=
@@ -2245,6 +2370,7 @@ private def plainTapChoicesForUniqueness (g : Game) (o : GameObject) (types : Ar
   if !tapPrereqOk then
     g.tapChoicesForSource o types cost (prop? := prop?)
   else Id.run do
+    let isTreasure := g.hasSubtype o .treasure
     let mut out : Array TapManaChoice := #[]
     for i in [0 : defs.size] do
       let d := defs[i]!
@@ -2293,26 +2419,169 @@ private def plainTapChoicesForUniqueness (g : Game) (o : GameObject) (types : Ar
                   extraRed := extra
                   restriction := d.restriction
                   riders := d.riders
+                  source := some o.id
+                  fromTreasure := isTreasure
                 }
     return out
 
-/-- Whether tapping `minSub` yields a single `(leftoverPool, riderOutcome)`
-outcome and no additional cost-preserving source in `allSources` can change any
-material `SpellRiderSpec` outcome on `cost` (CR 106.4 / 106.6 / 614.1c). -/
-private def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : ManaCost)
+/-- Whether tapping one or more cost-preserving extra plain sources in
+`allSources \ baseIds` on top of `basePool` can change `SpellManaOutcome` away
+from `outcome0` (handling both single-source flips and multi-source rider /
+Treasure / *Path of Ancestry* additions or displacements; CR 106.6). -/
+private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : ManaPool)
+    (cost : ManaCost) (allSources : Array (GameObject × Array ManaType))
+    (baseIds : Array ObjectId) (spend : ManaSpend)
+    (prop? : Option (PlayerId × ProposedSpell)) (outcome0 : SpellManaOutcome) : Bool :=
+  let activeProp? := prop?.map (·.2)
+  let cbcMatters := cantBeCounteredRiderMatters g spend activeProp?
+  let crMatters := creatureSpellRiderMatters g spend activeProp?
+  let trMatters := treasureManaMatters g spend activeProp?
+  let ancMatters := ancestryManaMatters g spend activeProp?
+  let extraEntries : Array (GameObject × Array TapManaChoice) :=
+    allSources.filterMap fun (src, types) =>
+      if baseIds.contains src.id then none
+      else if !prop?.all (fun (p, prop) => g.tapPreservesPostManaCosts p prop (baseIds.push src.id)) then
+        none
+      else
+        let cs := plainTapChoicesForUniqueness g src types cost 1 activeProp?
+        if cs.isEmpty then none else some (src, cs)
+  if extraEntries.isEmpty then false
+  else
+    let flips (pool : ManaPool) : Bool :=
+      match pool.payUnits? cost spend with
+      | some (_, units) => spellManaOutcome g spend activeProp? units != outcome0
+      | none => false
+    -- 1. Fast exact single-source check.
+    let singleFlips :=
+      extraEntries.any fun (_, cs) => cs.any fun ch => flips (ch.applyToPool basePool)
+    if singleFlips then true
+    else
+      -- Choice helpers for greedy multi-source boost/displace passes.
+      let choiceRiders (ch : TapManaChoice) : Array SpellRiderSpec :=
+        let fromRestr := match ch.restriction with | some r => r.riders | none => #[]
+        ch.riders.foldl (fun acc r => if acc.contains r then acc else acc.push r) fromRestr
+      let choiceHasCbc (ch : TapManaChoice) : Bool := (choiceRiders ch).contains .cantBeCountered
+      let choiceHasHaste (ch : TapManaChoice) : Bool := (choiceRiders ch).contains .gainsHaste
+      let choiceHasCounters (ch : TapManaChoice) : Bool :=
+        (choiceRiders ch).any (fun | .entersWithPlusOneCounters n => n > 0 | _ => false)
+      let choiceIsAnc (ch : TapManaChoice) : Bool := ch.source.any (isAncestrySourceId g)
+      let manaOrderRank : ManaType → Nat
+        | .colorless => 6
+        | .colored .white => 5
+        | .colored .blue => 4
+        | .colored .black => 3
+        | .colored .red => 2
+        | .colored .green => 1
+      let neededTypesInit : Array ManaType :=
+        cost.symbols.foldl (fun acc sym =>
+          match sym with
+          | .colored c => acc.push (.colored c)
+          | .colorless => acc.push .colorless
+          | .hybrid a b => acc.push (.colored a) |>.push (.colored b)
+          | .twobrid c => acc.push (.colored c)
+          | .generic _ | .x => acc) #[]
+      let greedyPass (keepChoice : TapManaChoice → Bool) : Bool := Id.run do
+        let mut remNeeded := neededTypesInit
+        let scoreChoice (ch : TapManaChoice) : Nat :=
+          let restrScore :=
+            match ch.restriction with
+            | some r => if r.isNarrow then 4000 else 3000
+            | none => 0
+          let needHits :=
+            ch.baseAdded.foldl (fun acc t => if remNeeded.contains t then acc + 1 else acc) 0
+          let orderBonus :=
+            ch.baseAdded.foldl (fun acc t => max acc (manaOrderRank t)) 0
+          restrScore + needHits * 100 + ch.totalSize * 10 + orderBonus
+        let mut cands : Array (Nat × GameObject × TapManaChoice) := #[]
+        for (src, cs) in extraEntries do
+          let mut best? : Option (Nat × TapManaChoice) := none
+          for ch in cs do
+            if keepChoice ch then
+              let sc := scoreChoice ch
+              match best? with
+              | none => best? := some (sc, ch)
+              | some (bestSc, _) => if sc > bestSc then best? := some (sc, ch)
+          if let some (sc, ch) := best? then
+            cands := cands.push (sc, src, ch)
+        let sorted := cands.qsort (fun a b => a.1 > b.1)
+        let mut curPool := basePool
+        let mut usedIds := baseIds
+        for (_, src, ch0) in sorted do
+          let mut chosen := ch0
+          if let some (_, cs) := extraEntries.find? (fun e => e.1.id == src.id) then
+            let mut bestSc := scoreChoice ch0
+            for ch in cs do
+              if keepChoice ch then
+                let sc := scoreChoice ch
+                if sc > bestSc then
+                  bestSc := sc
+                  chosen := ch
+          let nextIds := usedIds.push src.id
+          if prop?.all (fun (p, prop) => g.tapPreservesPostManaCosts p prop nextIds) then
+            usedIds := nextIds
+            curPool := chosen.applyToPool curPool
+            for t in chosen.baseAdded do
+              if let some idx := remNeeded.findIdx? (· == t) then
+                remNeeded := remNeeded.eraseIdxIfInBounds idx
+            if flips curPool then
+              return true
+        return false
+      let greedyFlips : Bool :=
+        (outcome0.cantBeCountered && greedyPass (fun ch => !choiceHasCbc ch)) ||
+        (outcome0.gainsHaste && greedyPass (fun ch => !choiceHasHaste ch)) ||
+        (outcome0.extraPlusOneCounters > 0 && greedyPass (fun ch => !choiceHasCounters ch)) ||
+        (outcome0.fromTreasure && greedyPass (fun ch => !ch.fromTreasure)) ||
+        (outcome0.ancestryScry && greedyPass (fun ch => !choiceIsAnc ch)) ||
+        (cbcMatters && !outcome0.cantBeCountered && greedyPass choiceHasCbc) ||
+        (crMatters && !outcome0.gainsHaste && greedyPass choiceHasHaste) ||
+        (crMatters && greedyPass choiceHasCounters) ||
+        (trMatters && !outcome0.fromTreasure && greedyPass (fun ch => ch.fromTreasure)) ||
+        (ancMatters && !outcome0.ancestryScry && greedyPass choiceIsAnc)
+      if greedyFlips then true
+      else
+        -- 3. Bounded DFS over extra-source combinations for subtle multi-source interactions.
+        let maxDepth := min extraEntries.size (max 2 (Game.minManaUnitsForCost cost))
+        let rec dfs (idx depth : Nat) (curPool : ManaPool) (usedIds : Array ObjectId)
+            (budget : Nat) : Bool × Nat :=
+          if budget == 0 then (false, 0)
+          else if depth ≥ maxDepth || idx ≥ extraEntries.size then (false, budget)
+          else
+            let (src, cs) := extraEntries[idx]!
+            let nextIds := usedIds.push src.id
+            let (hitTake, remBudget) :=
+              if prop?.all (fun (p, prop) => g.tapPreservesPostManaCosts p prop nextIds) then
+                cs.foldl (fun (found, b) ch =>
+                  if found || b == 0 then (found, b)
+                  else
+                    let p' := ch.applyToPool curPool
+                    if flips p' then (true, b - 1)
+                    else dfs (idx + 1) (depth + 1) p' nextIds (b - 1)) (false, budget)
+              else (false, budget)
+            if hitTake || remBudget == 0 then (hitTake, remBudget)
+            else dfs (idx + 1) depth curPool usedIds remBudget
+        (dfs 0 0 basePool baseIds 256).1
+
+/-- Whether tapping `minSub` yields a single `(leftoverPool, spellManaOutcome)`
+outcome and no additional cost-preserving source subset in `allSources` can
+change any material `SpellManaOutcome` attribute on `cost`
+(CR 106.4 / 106.6 / 614.1c). -/
+private partial def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : ManaCost)
     (allSources minSub : Array (GameObject × Array ManaType))
     (spend : ManaSpend := {})
     (prop? : Option (PlayerId × ProposedSpell) := none) : Bool :=
   let activeProp? := prop?.map (·.2)
-  let anyRiderMatters :=
+  let anyOutcomeMatters :=
     cantBeCounteredRiderMatters g spend activeProp? ||
-      creatureSpellRiderMatters g spend activeProp?
+      creatureSpellRiderMatters g spend activeProp? ||
+      treasureManaMatters g spend activeProp? ||
+      ancestryManaMatters g spend activeProp?
   let minUnits := Game.minManaUnitsForCost cost
   let roughMaxAdded : Nat :=
     minSub.foldl (fun acc (src, types) =>
       let cs := plainTapChoicesForUniqueness g src types cost 1 activeProp?
       acc + cs.foldl (fun m (ch : TapManaChoice) => max m ch.totalSize) 0) 0
-  let maxZeroReps : Nat := if pool.total + roughMaxAdded > minUnits then 2 else 1
+  let maxZeroReps : Nat :=
+    if !pool.units.isEmpty || pool.total + roughMaxAdded > minUnits then 0 else 1
   let srcArr : Array (GameObject × Array TapManaChoice × Nat) := minSub.map fun (src, types) =>
     let cs := plainTapChoicesForUniqueness g src types cost maxZeroReps activeProp?
     let maxOut := cs.foldl (fun m (ch : TapManaChoice) => max m ch.totalSize) 0
@@ -2325,42 +2594,43 @@ private def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : Ma
       out := out.set! i (srcArr[i]!.2.2 + out[i + 1]!)
     return out
   let rec collect (curPool : ManaPool) (idx : Nat)
-      (outcomes : Array (ManaPool × Bool × Bool × Nat)) (repPool? : Option ManaPool) :
-      Array (ManaPool × Bool × Bool × Nat) × Option ManaPool :=
-    if outcomes.size ≥ 2 then (outcomes, repPool?)
+      (outcomes : Array (ManaPool × SpellManaOutcome)) (repPools : Array ManaPool)
+      (budget : Nat) :
+      Array (ManaPool × SpellManaOutcome) × Array ManaPool × Nat :=
+    if outcomes.size ≥ 2 || budget == 0 then (outcomes, repPools, budget)
     else if idx ≥ srcArr.size then
       match curPool.payUnits? cost spend with
-      | none => (outcomes, repPool?)
+      | none => (outcomes, repPools, budget - 1)
       | some (leftPool, spentUnits) =>
-        let rOut := spellRiderOutcome g spend activeProp? spentUnits
-        let repPool? := repPool? <|> some curPool
+        let rOut := spellManaOutcome g spend activeProp? spentUnits
+        let repPools :=
+          if repPools.size < 4 && !repPools.any (sameLeftoverPool · curPool) then
+            repPools.push curPool
+          else repPools
         if outcomes.any (fun (lp, ro) => ro == rOut && sameLeftoverPool lp leftPool) then
-          (outcomes, repPool?)
+          (outcomes, repPools, budget - 1)
         else
-          (outcomes.push (leftPool, rOut), repPool?)
+          (outcomes.push (leftPool, rOut), repPools, budget - 1)
     else if curPool.total + sufMax[idx]! < minUnits then
-      (outcomes, repPool?)
+      (outcomes, repPools, budget)
     else
       let (_, cs, _) := srcArr[idx]!
-      cs.foldl (fun (acc, rep?) (ch : TapManaChoice) =>
-        if acc.size ≥ 2 then (acc, rep?)
-        else collect (ch.applyToPool curPool) (idx + 1) acc rep?) (outcomes, repPool?)
-  let (outcomes, repPool?) := collect pool 0 #[] none
-  match outcomes, repPool? with
-  | #[(_, outcome0)], some basePool =>
-    if !anyRiderMatters then true
-    else
-      let minSubIds := minSub.map (·.1.id)
-      !allSources.any fun (extraSrc, extraTypes) =>
-        !minSubIds.contains extraSrc.id &&
-          prop?.all (fun (p, prop) =>
-            g.tapPreservesPostManaCosts p prop (minSubIds.push extraSrc.id)) &&
-          (plainTapChoicesForUniqueness g extraSrc extraTypes cost 1 activeProp?).any fun (ch : TapManaChoice) =>
-            match (ch.applyToPool basePool).payUnits? cost spend with
-            | some (_, units) =>
-              spellRiderOutcome g spend activeProp? units != outcome0
-            | none => false
-  | _, _ => false
+      cs.foldl (fun (acc, reps, b) (ch : TapManaChoice) =>
+        if acc.size ≥ 2 || b == 0 then (acc, reps, b)
+        else collect (ch.applyToPool curPool) (idx + 1) acc reps b) (outcomes, repPools, budget)
+  let (outcomes, repPools, remBudget) := collect pool 0 #[] #[] 4096
+  if remBudget == 0 then false
+  else
+    match outcomes with
+    | #[(_, outcome0)] =>
+      if repPools.isEmpty then false
+      else if !anyOutcomeMatters then true
+      else
+        let minSubIds := minSub.map (·.1.id)
+        !repPools.any fun basePool =>
+          canExtraPlainSourcesChangeOutcome g basePool cost allSources minSubIds
+            spend prop? outcome0
+    | _ => false
 
 /-- Unique source set that can pay when there are too many sources to
 enumerate every subset. Recognizes a single sufficient source, or that
@@ -2462,28 +2732,25 @@ def hasUniqueManaPayment (g : Game) : Bool :=
         let sources := g.manaSourcesForProposed p prop
         match pool.payUnits? prop.cost spend with
         | some (_, spent0) =>
-          let anyRiderMatters :=
+          let anyOutcomeMatters :=
             cantBeCounteredRiderMatters g spend (some prop) ||
-              creatureSpellRiderMatters g spend (some prop)
-          if !anyRiderMatters then true
+              creatureSpellRiderMatters g spend (some prop) ||
+              treasureManaMatters g spend (some prop) ||
+              ancestryManaMatters g spend (some prop)
+          if !anyOutcomeMatters then true
           else
-            let outcome0 := spellRiderOutcome g spend (some prop) spent0
+            let outcome0 := spellManaOutcome g spend (some prop) spent0
             let plainFlips :=
-              sources.any fun (src, types) =>
-                g.tapPreservesPostManaCosts p prop #[src.id] &&
-                  (plainTapChoicesForUniqueness g src types prop.cost 1 (some prop)).any fun ch =>
-                    match (ch.applyToPool pool).payUnits? prop.cost spend with
-                    | some (_, units) =>
-                      spellRiderOutcome g spend (some prop) units != outcome0
-                    | none => false
-            let nonPlainRider :=
+              canExtraPlainSourcesChangeOutcome g pool prop.cost sources #[]
+                spend (some (p, prop)) outcome0
+            let nonPlainFlips :=
               g.hasUsableNonPlainManaAbility p (some prop) &&
                 (g.permanentsOf p).any (fun o =>
                   (g.manaAbilityDefs o).any (fun d =>
                     !g.isPlainTapManaAbilityDef p o d &&
                       g.manaAbilityDefUsable p o d &&
-                      manaAbilityDefCanChangeRiderOutcome g spend prop d outcome0))
-            !plainFlips && !nonPlainRider
+                      manaAbilityDefCanChangeOutcome g spend prop o d outcome0))
+            !plainFlips && !nonPlainFlips
         | none =>
           !g.hasUsableNonPlainManaAbility p (some prop) &&
             (uniquePayingSourceSet g pool prop.cost sources spend (some (p, prop))).isSome

@@ -1052,9 +1052,12 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     gPropOuterCast.pending == .scry me 1 &&
     gPropOuterCast.stack.size == 1
 
-  -- 5b. Sneak + `additionalCostSacrificeCreature` when the unblocked attacker is `me`'s ONLY creature:
-  --     `paySneak` returns that attacker to hand, leaving 0 creatures to sacrifice, so `.finalize`
-  --     reverses the entire proposed spell per CR 733.1 (attacker is back on `.battlefield`, sneak spell in `.hand`!):
+  -- 5b. Sneak + `additionalCostSacrificeCreature`:
+  --     (i) when the unblocked attacker is `me`'s ONLY creature, `castWithSneak` rejects upfront
+  --         (Phase 52: `validateFrontFaceCast` excludes `sneakAttacker` from `mandatorySacrificeError?`);
+  --     (ii) when a second creature is present at proposal time but leaves before `.pay`, `paySneak`
+  --         returns the attacker to hand leaving 0 creatures to sacrifice, so `.finalize` reverses
+  --         the entire proposed spell per CR 733.1 (attacker back on `.battlefield`, sneak spell in `.hand`!):
   let sneakSacCreature22 : CardDef := {
     bear with
     name := "Phase22 Sneak Sac"
@@ -1071,8 +1074,16 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   let gSneakUnblocked : Game := mustApply gSneak0 opp22 (.declareBlockers #[])
   let sneakCardId := ((gSneakUnblocked.player me).hand.filter (fun id => (gSneakUnblocked.object! id).name == "Phase22 Sneak Sac"))[0]!
   let atkBearId := (gSneakUnblocked.battlefield.filter (·.name == bear.name))[0]!.id
+  let sneakRejectedUpfront : Bool :=
+    !(gSneakUnblocked.apply me (.castWithSneak sneakCardId atkBearId)).isOk
+  let gSneakProposedThenSole : Game :=
+    let g := addPermanent gSneakUnblocked hero me me
+    let heroId := (g.battlefield.filter (·.name == hero.name))[0]!.id
+    let g := mustApply g me (.castWithSneak sneakCardId atkBearId)
+    (g.move heroId .exile none (cause := some testCause)).1
   let sneakReversedOrRejected : Bool :=
-    match (gSneakUnblocked.apply me (.castWithSneak sneakCardId atkBearId)).bind (fun g => g.apply me .pay) with
+    sneakRejectedUpfront &&
+    match gSneakProposedThenSole.apply me .pay with
     | .error _ => false
     | .ok gAfter =>
       gAfter.proposedSpell.isNone &&

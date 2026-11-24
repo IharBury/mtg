@@ -453,8 +453,11 @@ def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
 
 /-- Add `mana` to `p`'s pool with `r` and `riders` (CR 106.4 / 106.6 / 106.12). -/
 def addRestrictedMana (pool : ManaPool) (mana : Array ManaType)
-    (r : Option ManaSpendRestriction) (riders : Array SpellRiderSpec := #[]) : ManaPool :=
-  mana.foldl (fun pool t => pool.add t (restriction := r) (riders := riders)) pool
+    (r : Option ManaSpendRestriction) (riders : Array SpellRiderSpec := #[])
+    (source : Option ObjectId := none) (fromTreasure : Bool := false) : ManaPool :=
+  mana.foldl (fun pool t =>
+    pool.add t (restriction := r) (source := source) (fromTreasure := fromTreasure)
+      (riders := riders)) pool
 
 /-- `p` may activate abilities of creatures they control as though those
 creatures had haste (Shang-Chi, Master of Kung Fu; MSH 280). -/
@@ -1561,7 +1564,10 @@ def addTapManaToPool (g : Game) (pool : ManaPool) (o : GameObject) (mana : ManaT
   let r := g.tapRestrictionOf o mana (prop? := prop?)
   let riders := g.tapRidersOf o mana (prop? := prop?)
   let extra := g.extraMountainRedFromTap o base
-  addRestrictedMana (addRestrictedMana pool base r riders) extra none
+  let isTreasure := g.hasSubtype o .treasure
+  addRestrictedMana
+    (addRestrictedMana pool base r riders (source := some o.id) (fromTreasure := isTreasure))
+    extra none
 
 /-- Concrete plain `{T}` mana activation choice on a permanent, supporting both
 single-type `.tapForMana` choices and mixed-color `.combination` tuples via
@@ -1572,6 +1578,8 @@ structure TapManaChoice where
   extraRed : Array ManaType := #[]
   restriction : Option ManaSpendRestriction := none
   riders : Array SpellRiderSpec := #[]
+  source : Option ObjectId := none
+  fromTreasure : Bool := false
   /-- `some t` when `.tapForMana o.id t` executes this exact choice; `none` when
   `.activateManaAbility o.id abilityIdx baseAdded #[]` is required (e.g. a
   mixed-color `.combination` tuple). -/
@@ -1585,7 +1593,10 @@ def TapManaChoice.primaryType (ch : TapManaChoice) : ManaType :=
   ch.singleTapType?.getD (ch.baseAdded[0]?.getD .colorless)
 
 def TapManaChoice.applyToPool (ch : TapManaChoice) (pool : ManaPool) : ManaPool :=
-  addRestrictedMana (addRestrictedMana pool ch.baseAdded ch.restriction ch.riders) ch.extraRed none
+  addRestrictedMana
+    (addRestrictedMana pool ch.baseAdded ch.restriction ch.riders
+      (source := ch.source) (fromTreasure := ch.fromTreasure))
+    ch.extraRed none
 
 /-- Distinct plain `{T}` mana activation choices for `(o, types)` toward `cost`,
 including mixed-color `.combination ts n` tuples (with zero-requirement colors
@@ -1597,6 +1608,7 @@ def tapChoicesForSource (g : Game) (o : GameObject) (types : Array ManaType)
   let defs := g.manaAbilityDefs o
   let activeProp? := prop? <|> g.proposedSpell
   let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
+  let isTreasure := g.hasSubtype o .treasure
   let singleTs := dedupSingleTypes types
   let singleChoices : Array TapManaChoice :=
     singleTs.filterMap fun t =>
@@ -1615,6 +1627,8 @@ def tapChoicesForSource (g : Game) (o : GameObject) (types : Array ManaType)
               extraRed := g.extraMountainRedFromTap o base
               restriction := d.restriction
               riders := d.riders
+              source := some o.id
+              fromTreasure := isTreasure
               singleTapType? := some t
             }
   let tapPrereqOk : Bool :=
@@ -1669,6 +1683,8 @@ def tapChoicesForSource (g : Game) (o : GameObject) (types : Array ManaType)
                       extraRed := g.extraMountainRedFromTap o tup
                       restriction := d.restriction
                       riders := d.riders
+                      source := some o.id
+                      fromTreasure := isTreasure
                       singleTapType? := none
                     }
     return out

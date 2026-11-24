@@ -458,6 +458,14 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
     let target := g.priorityInstead prio
     if g.pendingPriority == some target then g else g.change (.pendingPriority (some target))
   let hadEntryPending := g.pending != .none
+  let chainOrKeepReplacement (g : Game) (prio : PlayerId) : Game :=
+    if g.anyContinuationSettlesControlFlowFwd then
+      if g.anyContinuationGrantsPriorityFwd && g.hasImplicitPriorityContinuationFwd &&
+          (!hadEntryPending || g.pendingPriority.isNone) then
+        savePendingP g prio
+      else g
+    else
+      g.chainPendingReplacement (.receivePriority prio)
   if !g.over && g.pending == .none && g.afterRandom == .none &&
       g.proposedSpell.isNone &&
       (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
@@ -465,7 +473,11 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
     let g := (savePendingP g p).reopenDeferredExileCasts
     let p := g.priorityInstead p
     if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.receivePriority p)
+      let g := chainOrKeepReplacement g p
+      if g.anyContinuationSettlesControlFlowFwd &&
+          g.pendingPriority == some oldP && oldP != p then
+        savePendingP g p
+      else g
     else if g.pending != .none || g.afterRandom != .none then
       if g.pendingPriority == some oldP && oldP != p then savePendingP g p else g
     else if g.currentInterpWait?.isSome ||
@@ -483,7 +495,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
     else if g.legendChoicePending? then
       if hadEntryPending then g else savePendingP g p
     else if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.receivePriority p)
+      chainOrKeepReplacement g p
     else if g.pending != .none then
       if hadEntryPending then g else savePendingP g p
     else
@@ -494,7 +506,7 @@ partial def receivePriority (g : Game) (p : PlayerId) (recheckSba := true) : Gam
       -- the SBA. Do not put triggers on the stack or grant priority yet.
       else if g.legendChoicePending? then savePendingP g p
       else if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.receivePriority p)
+        chainOrKeepReplacement g p
       else if g.pending != .none then savePendingP g p
       else
         match g.nextTriggerStackingPlayer? with

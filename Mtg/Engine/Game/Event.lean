@@ -1078,6 +1078,7 @@ inductive PostStep where
   | exileFromRevealedHandAfterMove (p victim : PlayerId) (fromId : ObjectId)
       (cardName : String) (sourceId : Option ObjectId)
   | logExiledIfInExile (fromId : ObjectId) (msg : String)
+  | logExpiredPlayFromExile (ids : Array ObjectId)
   | recordCostSacrificedPower (abilityId : Option ObjectId) (fromId : ObjectId) (pw : Int)
   | logReturnedToHand (fromId : ObjectId) (to : PlayerId) (cardName : String)
   | finishPaySneak (p : PlayerId) (spellId attackerId : ObjectId)
@@ -3387,35 +3388,63 @@ def manaSpentOn (events : Array GameEvent) (spell : ObjectId) : Nat :=
 
 /-- Whether `srcId` was recorded as a Treasure permanent at its latest battlefield snapshot, departure, activation, or trigger (CR 109.2 / 608.2h / 702.26b). -/
 def isTreasureSourceInLog (events : Array GameEvent) (srcId : ObjectId) : Bool := Id.run do
+  let mut phasedOutFallback : Option Bool := none
   let mut i := events.size
   while i > 0 do
     i := i - 1
     match events[i]!.change with
+    | .rules (.permanent (.phasedIn snap _)) =>
+      if snap.id == some srcId then
+        return phasedOutFallback.getD false
     | .rules (.permanent (.phasedOut snap _)) =>
       if snap.zone == .battlefield && snap.id == some srcId then
-        return snap.subtypes.contains .treasure
+        if !snap.phasedOut then
+          return snap.subtypes.contains .treasure
+        else
+          phasedOutFallback := phasedOutFallback.orElse (fun _ => some (snap.subtypes.contains .treasure))
     | .rules (.zone (.moved before after fromZ toZ ..)) =>
       if fromZ == .battlefield && before.id == some srcId then
-        return before.subtypes.contains .treasure
+        if !before.phasedOut then
+          return before.subtypes.contains .treasure
+        else
+          phasedOutFallback := phasedOutFallback.orElse (fun _ => some (before.subtypes.contains .treasure))
       if toZ == .battlefield && after.zone == .battlefield && after.id == some srcId then
-        return after.subtypes.contains .treasure
+        if !after.phasedOut then
+          return after.subtypes.contains .treasure
+        else
+          phasedOutFallback := phasedOutFallback.orElse (fun _ => some (after.subtypes.contains .treasure))
     | .rules (.zone (.ceasedToExist snap)) =>
       if snap.zone == .battlefield && snap.id == some srcId then
-        return snap.subtypes.contains .treasure
+        if !snap.phasedOut then
+          return snap.subtypes.contains .treasure
+        else
+          phasedOutFallback := phasedOutFallback.orElse (fun _ => some (snap.subtypes.contains .treasure))
     | .rules (.zone (.created snap _)) =>
       if snap.zone == .battlefield && snap.id == some srcId then
-        return snap.subtypes.contains .treasure
+        if !snap.phasedOut then
+          return snap.subtypes.contains .treasure
+        else
+          phasedOutFallback := phasedOutFallback.orElse (fun _ => some (snap.subtypes.contains .treasure))
     | .rules (.cast (.abilityActivated id snap _ _)) =>
       if snap.zone == .battlefield && (id == srcId || snap.id == some srcId) then
-        return snap.subtypes.contains .treasure
+        if !snap.phasedOut then
+          return snap.subtypes.contains .treasure
+        else
+          phasedOutFallback := phasedOutFallback.orElse (fun _ => some (snap.subtypes.contains .treasure))
     | .rules (.triggerQueue (.triggered snap _ _ _)) =>
       if snap.zone == .battlefield && snap.id == some srcId then
-        return snap.subtypes.contains .treasure
+        if !snap.phasedOut then
+          return snap.subtypes.contains .treasure
+        else
+          phasedOutFallback := phasedOutFallback.orElse (fun _ => some (snap.subtypes.contains .treasure))
     | .rules (.triggerQueue (.putOnStack _ snap _ spec)) =>
       if snap.zone == .battlefield && (snap.id == some srcId || spec.sourceId == some srcId) then
-        return snap.subtypes.contains .treasure
+        if !snap.phasedOut then
+          return snap.subtypes.contains .treasure
+        else
+          phasedOutFallback := phasedOutFallback.orElse (fun _ => some (snap.subtypes.contains .treasure))
     | _ => pure ()
-  return false
+  return phasedOutFallback.getD false
 
 /-- Whether `u` came from a Treasure source (CR 111.10a provenance). -/
 private def isTreasureManaUnit (u : ManaUnit) : Bool :=
@@ -3863,18 +3892,41 @@ def boastExiledOf (events : Array GameEvent) (abilityId : ObjectId) : Array Obje
 
 /-- Last-known `before` snapshot for `id` from `ZoneEvent.moved`,
 `ZoneEvent.ceasedToExist`, or `PermanentEvent.phasedOut` (CR 113.7a / 608.2h /
-702.26b). Matches `before.id == some id` only so post-departure moves under a
-new `ObjectId` never overwrite an earlier life's departure snapshot (CR 400.7). -/
-def lastKnownBefore? (events : Array GameEvent) (id : ObjectId) : Option EventObject :=
-  events.findSomeRev? fun e =>
-    match e.change with
+702.26b). Stops at `PermanentEvent.phasedIn` (so stale pre-phase-out LKI is
+never returned after phasing back in), prefers a prior `!before.phasedOut`
+`PermanentEvent.phasedOut` snapshot over a phased-out `.moved`/`.ceasedToExist`
+`before` snapshot, and matches `before.id == some id` only so post-departure
+moves under a new `ObjectId` never overwrite an earlier life's departure
+snapshot (CR 400.7). -/
+def lastKnownBefore? (events : Array GameEvent) (id : ObjectId) : Option EventObject := Id.run do
+  let mut phasedOutFallback? : Option EventObject := none
+  let mut i := events.size
+  while i > 0 do
+    i := i - 1
+    match events[i]!.change with
+    | .rules (.permanent (.phasedIn eo _)) =>
+      if eo.id == some id then
+        return phasedOutFallback?
     | .rules (.zone (.moved before _ ..)) =>
-      if before.id == some id then some before else none
+      if before.id == some id then
+        if before.zone == .battlefield && before.phasedOut then
+          phasedOutFallback? := phasedOutFallback?.orElse (fun _ => some before)
+        else
+          return some before
     | .rules (.zone (.ceasedToExist before)) =>
-      if before.id == some id then some before else none
+      if before.id == some id then
+        if before.zone == .battlefield && before.phasedOut then
+          phasedOutFallback? := phasedOutFallback?.orElse (fun _ => some before)
+        else
+          return some before
     | .rules (.permanent (.phasedOut before _)) =>
-      if before.id == some id then some before else none
-    | _ => none
+      if before.id == some id then
+        if !before.phasedOut then
+          return some before
+        else
+          phasedOutFallback? := phasedOutFallback?.orElse (fun _ => some before)
+    | _ => pure ()
+  return phasedOutFallback?
 
 /-- `id` entered from a spell cast for its impending cost (or a copy of one on
 the stack, CR 702.176 / 707.10, ruling 970). -/
