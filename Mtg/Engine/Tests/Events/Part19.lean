@@ -229,6 +229,99 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
   }
   let gSnkOwnAfterProbe := gSnkOwn0.probeAfterUnpaidSneak snkOwnProp
 
+  -- 1b(vi). Turn-face-up (`probeCompleteTurnFaceUpOutcome` / `advanceProbeOnResume`) `hadOuter := false`
+  --         runtime parity (explicit `caster` grant, legend-rule SBA prompt, `flushQueuedLinkedExile`
+  --         `.chooseReplacement` pause with `receivePriority caster` vs `hadOuter := true` `.finishResolutionChoice`,
+  --         non-recursive classification under an already-open `.chooseReplacement`, and `.seq` tail propagation):
+  let morphCleanDef : CardDef := {
+    creature "P53i1 MorphClean" ManaCost.empty #["Human"] 3 3 with
+    keywords := #[.morph CostSpec.empty]
+  }
+  let morphLegDef : CardDef := {
+    creature "P53i1 MorphLeg" ManaCost.empty #["Human"] 3 3 with
+    supertypes := #[.legendary]
+    keywords := #[.morph CostSpec.empty]
+  }
+  let gMorphClean0 := addPermanent g4 morphCleanDef p1 p1
+  let morphCleanId := (gMorphClean0.permanentsOf p1)[0]!.id
+  let gMorphClean := setFaceDown gMorphClean0 morphCleanId true
+  let gMorphCleanRun := gMorphClean.resumePendingReplacement (.finishTurnFaceUp p1 morphCleanId false)
+  let morphCleanProp : ProposedSpell := {
+    caster := p1
+    cost := ManaCost.empty
+    spellId := morphCleanId
+    sourceId := some morphCleanId
+    original := gMorphClean.object! morphCleanId
+    originalSnapshot := gMorphClean.snapshot (gMorphClean.object! morphCleanId)
+    kind := .turnFaceUp
+  }
+  let gMorphCleanProp := gMorphClean.changes #[.saveProposalCheckpoint, .proposedSpell (some morphCleanProp)]
+
+  let gMorphLeg0 := addPermanent (addPermanent g4 morphLegDef p1 p1) morphLegDef p1 p1
+  let morphLegId := (gMorphLeg0.permanentsOf p1)[1]!.id
+  let gMorphLeg := setFaceDown gMorphLeg0 morphLegId true
+  let gMorphLegRun := gMorphLeg.resumePendingReplacement (.finishTurnFaceUp p1 morphLegId false)
+
+  let leyADef : CardDef := { name := "P53i1 LeyA", types := #[.enchantment] }
+  let leyBDef : CardDef := { name := "P53i1 LeyB", types := #[.enchantment] }
+  let gMorphFlush0 :=
+    insertObject
+      (addPermanent (addPermanent (addPermanent g4 morphCleanDef p1 p1) leyADef p0 p0) leyBDef p0 p0)
+      bear p0 .exile
+  let morphFlushId := (gMorphFlush0.permanentsOf p1)[0]!.id
+  let leyAId := (gMorphFlush0.permanentsOf p0).find? (·.name == leyADef.name) |>.get!.id
+  let leyBId := (gMorphFlush0.permanentsOf p0).find? (·.name == leyBDef.name) |>.get!.id
+  let exiledRetId := (gMorphFlush0.objects.filter (·.zone == .exile)).back!.id
+  let ridA : ReplacementId := { kind := .entersWithExtraCounters, object := some leyAId, counterKind := some .plusOnePlusOne }
+  let ridB : ReplacementId := { kind := .entersWithExtraCounters, object := some leyBId, counterKind := some .plusOnePlusOne }
+  let gMorphFlush :=
+    ((((setFaceDown gMorphFlush0 morphFlushId true).createEffect
+      (.replacement {
+        id := ridA, source := some leyAId, controller := some p0, affectedPlayer := p0,
+        kind := .entersWithExtraCounters none .plusOnePlusOne 1 }) (cause := some testCause)).createEffect
+      (.replacement {
+        id := ridB, source := some leyBId, controller := some p0, affectedPlayer := p0,
+        kind := .entersWithExtraCounters none .plusOnePlusOne 2 }) (cause := some testCause)).change
+      (.queueLinkedExile #[exiledRetId]))
+  let gMorphFlushRun := gMorphFlush.resumePendingReplacement (.finishTurnFaceUp p1 morphFlushId false)
+  let gMorphFlushOuterRun := gMorphFlush.resumePendingReplacement (.finishTurnFaceUp p1 morphFlushId true)
+
+  -- Face-up waiting under an already-open `.chooseReplacement` (both real sacrifice deferral and direct `.chooseReplacement`):
+  let gMorphSac0 := addPermanent (addPermanent g4 morphCleanDef p1 p1) bear p1 p1
+  let morphSacId := (gMorphSac0.permanentsOf p1).find? (·.name == morphCleanDef.name) |>.get!.id
+  let morphFodId := (gMorphSac0.permanentsOf p1).find? (·.name == bear.name) |>.get!.id
+  let idExMorphFod : ReplacementId := { kind := .untilEotExileIfDies, object := some morphFodId }
+  let gMorphSac1 :=
+    ((setFaceDown gMorphSac0 morphSacId true).createEffect
+      (.replacement { id := idExMorphFod, affectedPlayer := p1, kind := .exileInsteadOfGraveyard (some morphFodId) false })
+      (cause := some testCause)).recordPutCounters morphFodId .finality 1 (some p1) (cause := some testCause)
+  let morphSacProp : ProposedSpell := {
+    caster := p1
+    cost := ManaCost.empty
+    spellId := morphSacId
+    sourceId := some morphSacId
+    original := gMorphSac1.object! morphSacId
+    originalSnapshot := gMorphSac1.snapshot (gMorphSac1.object! morphSacId)
+    kind := .turnFaceUp
+    needsSacrificeOther := true
+  }
+  let gMorphSacPrompt :=
+    gMorphSac1.changes #[.saveProposalCheckpoint, .proposedSpell (some morphSacProp), .pending (.sacrificePermanent p1 morphSacId)]
+  let gMorphSacPaused := mustApply gMorphSacPrompt p1 (.sacrifice morphFodId)
+  let gMorphSacDone := mustApply gMorphSacPaused p1 (.chooseReplacement idExMorphFod)
+  let gMorphOpenFalse :=
+    gMorphClean.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.finishTurnFaceUp p1 morphCleanId false)),
+      .pending (.chooseReplacement p0 #[])
+    ]
+  let gMorphOpenTrue :=
+    gMorphClean.changes #[
+      .pushContinuationFrame {},
+      .pendingReplacement (some (.finishTurnFaceUp p1 morphCleanId true)),
+      .pending (.chooseReplacement p0 #[])
+    ]
+
   let item1aOk :=
     mustHold53i1 "1a_receivePriorityPreservesPendingPriorityOnPromptSettle"
       (gAfterRecvPrompt.pendingPriority == some p2 &&
@@ -272,7 +365,51 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
       ((gSnkAfterOppProbe.player p0).hand.isEmpty && -- opp's attacker went to opp's hand, NOT p0's!
        !(gSnkAfterOppProbe.permanentsOf p0).isEmpty && -- linkedExile bear returned to p0!
        (gSnkOwnAfterProbe.player p0).hand.size == 1 && -- caster-owned attacker returned to p0's hand!
-       !gSnkOppWithProp.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false))
+       !gSnkOppWithProp.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false)) &&
+    mustHold53i1 "1b_turnFaceUpHadOuterAndOpenReplacementProbes"
+      (gMorphClean.continuationGrantsPriority false (.finishTurnFaceUp p1 morphCleanId false) &&
+       gMorphClean.continuationSettlesControlFlow false (.finishTurnFaceUp p1 morphCleanId false) &&
+       gMorphClean.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphCleanId false) == some p1 &&
+       gMorphClean.firstPriorityGrantRecipient? false (.finishTurnFaceUp p1 morphCleanId false) == some (some p1) &&
+       gMorphCleanRun.pending == .none &&
+       gMorphCleanRun.priority == p1 &&
+       !(gMorphCleanRun.object! morphCleanId).status.faceDown &&
+       gMorphCleanProp.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p1 &&
+       !gMorphLeg.continuationGrantsPriority false (.finishTurnFaceUp p1 morphLegId false) &&
+       gMorphLeg.continuationSettlesControlFlow false (.finishTurnFaceUp p1 morphLegId false) &&
+       gMorphLeg.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphLegId false) == none &&
+       (match gMorphLegRun.pending with | .chooseLegend q _ _ => q == p1 | _ => false) &&
+       !gMorphLeg.continuationGrantsPriority false (.seq (.finishTurnFaceUp p1 morphLegId false) .finishResolutionChoice) &&
+       gMorphLeg.continuationSettlesControlFlow false (.seq (.finishTurnFaceUp p1 morphLegId false) .finishResolutionChoice) &&
+       gMorphClean.priorityRecipientOfContinuation? false (.seq (.finishTurnFaceUp p1 morphCleanId true) (.receivePriority p2)) == some p2 &&
+       gMorphFlush.continuationGrantsPriority false (.finishTurnFaceUp p1 morphFlushId false) &&
+       gMorphFlush.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphFlushId false) == some p1 &&
+       gMorphFlush.firstPriorityGrantRecipient? false (.finishTurnFaceUp p1 morphFlushId false) == some (some p1) &&
+       (match gMorphFlushRun.pending with | .chooseReplacement q cs => q == p0 && cs.size == 2 | _ => false) &&
+       gMorphFlushRun.firstContinuationPriorityGrant? == some (some p1) &&
+       gMorphFlush.continuationGrantsPriority false (.finishTurnFaceUp p1 morphFlushId true) &&
+       gMorphFlush.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphFlushId true) == none &&
+       gMorphFlush.firstPriorityGrantRecipient? false (.finishTurnFaceUp p1 morphFlushId true) == some none &&
+       (match gMorphFlushOuterRun.pending with | .chooseReplacement q cs => q == p0 && cs.size == 2 | _ => false) &&
+       gMorphFlushOuterRun.firstContinuationPriorityGrant? == some none &&
+       (match gMorphSacPaused.pending with | .chooseReplacement q cs => q == p1 && cs.size == 2 | _ => false) &&
+       gMorphSacPaused.anyContinuationSettlesControlFlow &&
+       gMorphSacPaused.anyContinuationGrantsPriority &&
+       gMorphSacPaused.firstContinuationPriorityGrant? == some (some p1) &&
+       gMorphSacPaused.continuationSettlesControlFlow false (.finishTurnFaceUp p1 morphSacId false) &&
+       gMorphSacPaused.continuationGrantsPriority false (.finishTurnFaceUp p1 morphSacId false) &&
+       (gMorphSacPaused.change (.pendingReplacement none)).priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphSacId false) == some p1 &&
+       gMorphSacDone.pending == .none &&
+       gMorphSacDone.priority == p1 &&
+       !(gMorphSacDone.object! morphSacId).status.faceDown &&
+       gMorphOpenFalse.anyContinuationSettlesControlFlow &&
+       gMorphOpenFalse.anyContinuationGrantsPriority &&
+       gMorphOpenFalse.firstContinuationPriorityGrant? == some (some p1) &&
+       gMorphOpenFalse.continuationSettlesControlFlow false (.finishTurnFaceUp p1 morphCleanId false) &&
+       gMorphOpenFalse.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphCleanId false) == some p1 &&
+       !gMorphOpenTrue.anyContinuationSettlesControlFlow &&
+       !gMorphOpenTrue.anyContinuationGrantsPriority &&
+       !gMorphOpenTrue.continuationSettlesControlFlow false (.finishTurnFaceUp p1 morphCleanId true))
 
   mustHold53i1 "1a" item1aOk &&
   mustHold53i1 "1b" item1bOk &&
@@ -280,7 +417,8 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
     (replayOk53i1 #[
       gAfterRecvPrompt, gAfterFinishGrantPrompt, gPostCastOuter1, gPostCastSettling1,
       gStalePropSeq, gFinalizeSacPrompt, gFrcRand, gFrcOuterPrompt, gFrcOuterExplicit, gFrcLegend,
-      gDrawEmpty2, gDrawEmpty4, gDrawSkip, gCbtLethal, gCbtTrig, gBlkDone, gSnkOpp0, gSnkOwn0 ])
+      gDrawEmpty2, gDrawEmpty4, gDrawSkip, gCbtLethal, gCbtTrig, gBlkDone, gSnkOpp0, gSnkOwn0,
+      gMorphCleanRun, gMorphLegRun, gMorphFlushRun, gMorphFlushOuterRun, gMorphSacPaused, gMorphSacDone ])
 
 end Phase53Item1EventAlignment
 
