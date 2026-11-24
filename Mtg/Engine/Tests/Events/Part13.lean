@@ -378,7 +378,7 @@ private def replayOk47i2 (gs : Array Game) : Bool :=
     mustHold47i2 "2a_mayCastExiledBySourceSkipsStalePrep"
       (gNullCastOk.stack.size == 1)
 
-  -- 2b. One-shot paid resolution casts (`paidResolutionOrigPerm?`, `FraChoices` `.mayCastCards`)
+  -- 2b. One-shot paid resolution casts (`paidResolutionOrigPerm?`, `ResolutionChoices` `.mayCastCards`)
   --     vs unpayable `payLifeEqualManaValue`, plus `Impending` under clean `.playFromExile` & `Adventure` exile permissions:
   let gPaidRes0 := ((insertObject g4 sorc3Def p0 .exile).loseLife p0 18).addMana p0 .colorless 3
   let paidResExId := (gPaidRes0.objects.filter (fun (o : GameObject) => o.zone == Zone.exile)).back!.id

@@ -2176,9 +2176,9 @@ partial def continueAfterDiscard (g : Game) (players : Array PlayerId)
     (samePlayer : Bool := false) (count : Nat := 1) : Game :=
   g.beginDiscardCards players (count := count) (samePlayer := samePlayer) (resuming := true)
 
-/-- Clear a finished Reality Fracture choice and let the game continue. Any
-pending replacement/batch continuation runs first, then any suspended
-interpreter continuation resumes. -/
+/-- Finish a `Pending.resolutionChoice` and let the game continue: chain
+`.finishResolutionChoice` through an open replacement, return while any other
+prompt is open, then drain continuations and resume interpreter waits / priority. -/
 partial def finishResolutionChoice (g : Game) : Game :=
   if let .chooseReplacement .. := g.pending then
     if g.anyContinuationSettlesControlFlow then g

@@ -696,7 +696,7 @@ private def replayOk29i4 (gs : Array Game) : Bool :=
 
 -- 1. `ResolutionEffects.sourcePTAtResolution` falls back to `lastKnownPowerOf?` /
 --    `lastKnownToughnessOf?` and `snapshotPower` / `snapshotToughness` (CR 608.2h), and
---    `Decisions`, `Triggers`, `ResolutionEffects`, `Casting`, `FraChoices`, `Movement`, and
+--    `Decisions`, `Triggers`, `ResolutionEffects`, `Casting`, `ResolutionChoices`, `Movement`, and
 --    `TriggeredAbilities` read Layer 1–6 characteristics (`g.name`, `g.isCreature`,
 --    `g.isInstantOrSorcery`, `!g.isLand`, `g.objectManaValue`, CR 613.1a,d,f).
 #guard
@@ -2696,8 +2696,8 @@ private def mustApply33i4 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gBase.canPayLife p1 0 &&
     !gP1Departed.canPayLife p1 0
 
-  -- 4b. Layer 1 `g.name` / `pr.originalSnapshot.name` queries in `FraHelpers`, `CastExtras`,
-  --     `ResolutionHelpers`, `StateBasedActions`, and `FraChoices`:
+  -- 4b. Layer 1 `g.name` / `pr.originalSnapshot.name` queries in `ResolutionHelpers`,
+  --     `ResolutionEffects`, `CastExtras`, `StateBasedActions`, and `ResolutionChoices`:
   let sphinxCopyDef : CardDef := { bear with name := "Sphinx's Approach" }
   let cloneCardDef : CardDef := { bear with name := "Cloned Illusion" }
   let gGy0 := insertObject gBase bear p0 (.graveyard p0)
@@ -2730,7 +2730,7 @@ private def mustApply33i4 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gTokGyCopied := gTokGy.createEffect (ContinuousEffectSpec.copy tokGyId cloneCardDef) (cause := some testCause)
   let gAfterSba := gTokGyCopied.checkSBA
 
-  -- `FraChoices` `.zemoBoastExile`: when `sourceId` left the battlefield before choosing exiled cards,
+  -- `ResolutionChoices` `.zemoBoastExile`: when `sourceId` left the battlefield before choosing exiled cards,
   -- `pr.originalSnapshot.name` supplies the Layer 1 name (`"Cloned Zemo"`) to the activated ability log!
   let blackCardDef : CardDef := {
     bear with

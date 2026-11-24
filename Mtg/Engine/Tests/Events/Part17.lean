@@ -869,7 +869,7 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
   let resWithFlash : Game :=
     gResFlashGranted.castAsPartOfResolution p1 resExBearId (withoutManaCost := true) (ignoreTiming := false)
 
-  -- 4a(ii). `FraChoices.defaultChoiceAction` `.mayCastFromGraveyard`:
+  -- 4a(ii). `ResolutionChoices.defaultChoiceAction` `.mayCastFromGraveyard`:
   --         (a) Zone precondition (`o.zone == .graveyard o.owner`) and type precondition (`isArtifact || isInstantOrSorcery`);
   --         (b) Impending fallback (`impending := some (4, {2})`, front `{6}`) on an artifact creature in graveyard!
   let zeroArtDef : CardDef := { name := "P51i4 ZeroRelic", manaCost := ManaCost.zero, types := #[.artifact] }

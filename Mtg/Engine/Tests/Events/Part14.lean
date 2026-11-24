@@ -564,7 +564,7 @@ private def replayOk48i2 (gs : Array Game) : Bool :=
       (gMorphSpliceProp.pending == .chooseKicker p0 &&
        gMorphSpliceChosen.proposedSpell.any (fun prop => prop.kicked && prop.cost == ManaCost.ofGeneric 3))
 
-  -- 2b(i). `FraChoices` `.mayCastFromGraveyard`, `defaultChoiceAction`, and `Agent` `.mayCastExiledElseDamage`
+  -- 2b(i). `ResolutionChoices` `.mayCastFromGraveyard`, `defaultChoiceAction`, and `Agent` `.mayCastExiledElseDamage`
   --        with an unrelated unpayable `payLifeEqualManaValue` permission:
   let gySorcDef : CardDef := {
     name := "P48i2 GyChant"

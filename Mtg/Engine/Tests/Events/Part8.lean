@@ -491,7 +491,7 @@ private def replayOk39i3 (gs : Array Game) : Bool :=
 
   -- 3a. (i) `0 -> n'` `.whileSourceHasCounter` control reconciliation across `addFinalityTo`,
   --         `addIndestructibleCounter`, `addLifelinkCounter`, `addBurdenCounter`, `addCounters`,
-  --         and `Triggers.addLoreCounters`, plus `FraAbilities` `.putCauseCountersOnSource` safety
+  --         and `Triggers.addLoreCounters`, plus `Interpreter` `.copyFromLki` safety
   --         when `putCountersExceptPlusOne` exiles `o` via CR 800.4c before `st.plusOnePlusOne > 0` runs:
   let gCntBase := addPermanent (addPermanent (addPermanent g4 bear p2 p2) hostDef p0 p0) sagaDef p0 p0
   let cntAtk := (gCntBase.permanentsOf p2)[0]!

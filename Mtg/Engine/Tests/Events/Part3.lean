@@ -3948,7 +3948,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     !gFlash2hgMateCast.cosmicAwarenessFlash ⟨0⟩ &&
     gFlash3pOppCast.cosmicAwarenessFlash ⟨0⟩
 
-  -- 4c. Optional mana payment in `FraChoices` (`mayPaySymbolsThen`) threads `forObject := some srcId`!
+  -- 4c. Optional mana payment in `ResolutionChoices` (`mayPaySymbolsThen`) threads `forObject := some srcId`!
   let gMayPay0 : Game :=
     (addPermanent afterDraw hero me me).addMana me (.colored .red) 1 (cause := some testCause)
   let mpHeroId := (gMayPay0.battlefield.filter (·.name == hero.name))[0]!.id

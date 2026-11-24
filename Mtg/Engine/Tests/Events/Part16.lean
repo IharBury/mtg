@@ -391,7 +391,7 @@ private def isAnnounceKicker (a : Option Action) (want : Bool) : Bool :=
 
   -- 2b. Impending (`CR 702.176a`) castability & affordability across `Casting.canCastAndPayImpending`,
   --     `Agent` (`chooseCast`, `shouldActivate`, `.mayCastExiledElseDamage`, `.chooseKicker`), and
-  --     paid `FraChoices.defaultChoiceAction` `.mayCastCards` (both Morph and Impending):
+  --     paid `ResolutionChoices.defaultChoiceAction` `.mayCastCards` (both Morph and Impending):
   let impendingOverlordDef : CardDef := {
     creature "P50i2 MistOverlord" (ManaCost.ofGeneric 6) #["Avatar"] 5 5 with
     types := #[.enchantment, .creature]
@@ -447,7 +447,7 @@ private def isAnnounceKicker (a : Option Action) (want : Bool) : Bool :=
   let agExElse1 := Agent.choose gExElse1 p0
   let agExElse2 := Agent.choose gExElse2 p0
 
-  -- `FraChoices.defaultChoiceAction` `.mayCastCards` (`withoutPaying := false`) handles both Impending & Morph:
+  -- `ResolutionChoices.defaultChoiceAction` `.mayCastCards` (`withoutPaying := false`) handles both Impending & Morph:
   let gFraImp1 := gExImp0.addMana p0 .colorless 1
   let gFraImp2 := gExImp0.addMana p0 .colorless 2
   let fraImp1Act := gFraImp1.defaultChoiceAction p0 (.mayCastCards #[exImpId] false false)
@@ -797,7 +797,7 @@ private def isAcceptDirect4 (a : Action) : Bool :=
   let effWithForestAllowed :=
     gEffCrewProp2.hasUsableNonPlainManaAbility p0 (prop? := gEffCrewProp2.proposedSpell)
 
-  -- 4a(ii). `FraChoices.defaultChoiceAction` (`.mayCastCascade`, `.mayCastCards`, `.mayCastFromGraveyard`)
+  -- 4a(ii). `ResolutionChoices.defaultChoiceAction` (`.mayCastCascade`, `.mayCastCards`, `.mayCastFromGraveyard`)
   --         uses `currentKeywords`, `canPaySpellCostFromSources`, and `canPayAnnouncedAdditionalFromSources`:
   let urComboLandDef : CardDef := {
     name := "P50i4 SteamConduit"

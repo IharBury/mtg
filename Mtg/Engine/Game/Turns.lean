@@ -430,9 +430,11 @@ def expireGoadedFor (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
       acc.record (GameEvent.designation acc.turnNumber (acc.snapshot (acc.object! o.id)) (.goaded q) false
         (cause := .turnBased .expireAtStepBegin))) g) g
 
-/-- End Reality Fracture effects that last until `p`'s next turn: Garruk,
-Veiled Butcher's toughness and power reduction and the command-zone effects of Jace, Reality Sculptor
-and Garruk, Curse Breaker (CR 611.2a / 805.4 / 810.2). -/
+/-- Expire active effects whose duration is `.untilNextTurnOf` `p` (or teammates
+when `includeTeammates`): command emblems (via `ceaseEndingCommandEmblemsWhere`),
+control-change effects (unless `skipControl`), non-adventure play-from-exile
+permissions, and remaining `.untilNextTurnOf` effects, skipping copies,
+`.protectionFromEverything`, and `.lifeCantChange` (CR 611.2a / 805.4 / 810.2). -/
 def expireUntilTurnCommandEffects (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
     (skipControl : Bool := false) (skipLogIds : Array ObjectId := #[])
     (preState? : Option Game := none)

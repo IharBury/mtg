@@ -3542,7 +3542,7 @@ end Phase26Item4EventAlignment
 
 /-! ### Phase 27 Item 1: Non-replacement `inDepSpan` & `cleanupRemappedLeavingId`,
 multi-departure `popOuter` accumulation, stack-ability `representedByCard` ownership,
-`!g.stillInGame` CR 800.4 guards, and `FraChoices` accept-cast `outerPendingReplacements` stashing -/
+`!g.stillInGame` CR 800.4 guards, and `ResolutionChoices` accept-cast `outerPendingReplacements` stashing -/
 section Phase27Item1EventAlignment
 
 private def mustHold27i1 (label : String) (ok : Bool) : Bool :=
@@ -3863,7 +3863,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
 
 -- 3. CR 608.2g / 701.22 / 701.23 / 701.25 / 800.4a,c–d:
 --    `beginLibrarySearch` / `beginScry` / `beginSurveil` & `!g.stillInGame` guards on a player
---    with `leftTheGame == true` (even if `lost == false`), plus `FraChoices.answerResolutionChoice`
+--    with `leftTheGame == true` (even if `lost == false`), plus `ResolutionChoices.answerResolutionChoice`
 --    stashing `pendingReplacement` onto `outerPendingReplacements` across accept-cast branches.
 #guard
   let p0 : PlayerId := ⟨0⟩
@@ -3909,7 +3909,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
     (gEndGyRet.object! exBearId).zone == .exile &&
     (gEndGyRet.object! gyBearId).zone == .graveyard p1
 
-  -- `FraChoices.answerResolutionChoice` stashes `g.pendingReplacement` onto `outerPendingReplacements`
+  -- `ResolutionChoices.answerResolutionChoice` stashes `g.pendingReplacement` onto `outerPendingReplacements`
   -- when accepting `.mayCastCascade`, `.mayCastGrima`, `.mayCastCopy`, `.mayCastInstantSorceryFromHand`,
   -- `.mayCastUpToFromExile`, and `.mayCastFromGraveyard`:
   let rSpellDef : CardDef := {

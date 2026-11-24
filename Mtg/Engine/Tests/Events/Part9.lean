@@ -862,7 +862,7 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
   let g3 := afterDraw.change (.addPlayer { id := p2, name := "Liliana" })
 
   -- 4a. Proposal/activation `sinceIdx` + `CounterKind`-accurate `ActivationCosts.source*ForCost`
-  --     and `resolvingForObj <|> sourceId` in `FraChoices.mayPayPickThen`:
+  --     and `resolvingForObj <|> sourceId` in `ResolutionChoices.mayPayPickThen`:
   let multiCntAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[
       .removeCounters (.exact 1) (some .story) .self,
@@ -908,7 +908,7 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
     gMcAct.stack.size == 1
 
   -- Prior-turn `{T}` mana ability / cost payment on `sid` (`sinceIdx` bound across standalone `payActivationExtraCosts`,
-  -- standalone `payCostPick`, `.turnFaceUp`, and `FraChoices.mayPayPickThen` `resolvingForObj <|> sourceId`):
+  -- standalone `payCostPick`, `.turnFaceUp`, and `ResolutionChoices.mayPayPickThen` `resolvingForObj <|> sourceId`):
   let dorkManaAb : ActivatedAbility := {
     cost := CostSpec.ofItems #[.tapSelf]
     effect := Effect.addMana #[.colored .green]
@@ -941,7 +941,7 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
     match gUntappedLater.payCostPick p0 none (some dorkObj.id) .tapUntappedCreature #[dorkObj.id] with
     | .ok g => g
     | .error e => panic! e
-  -- (iii) `FraChoices.mayPayPickThen` with `resolvingAbility := some trigAb.id` AND an outer `proposalCheckpoint` from before the tap (`eventsSize == prePriorTapIdx`):
+  -- (iii) `ResolutionChoices.mayPayPickThen` with `resolvingAbility := some trigAb.id` AND an outer `proposalCheckpoint` from before the tap (`eventsSize == prePriorTapIdx`):
   let gWithOldCkpt :=
     setTapped
       (readyControlledForTurn

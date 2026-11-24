@@ -873,7 +873,7 @@ private def replayOk42i4 (gs : Array Game) : Bool :=
     g0.sourceStillPayable g0.proposedSpell.get!
 
   -- 4a. Resolving stack-object `abId` (`g.resolvingAbility <|> g.resolvingSpell`) before `resolvingForObj` (`o.sourceId`)
-  --     in `FraChoices` `.mayPayPickThen`:
+  --     in `ResolutionChoices` `.mayPayPickThen`:
   --     Save `proposalCheckpoint`, record a same-checkpoint `.costPayment .tap p0 (some dorkObj.id)`, untap `dorkObj`,
   --     and resolve `.mayPayPickThen .tapUntappedCreature` under `resolvingAbility := some trigAb.id` (whose `o.sourceId == some dorkObj.id`!)
   --     and under `resolvingSpell := some spellObj.id`:
@@ -1721,7 +1721,7 @@ private def replayOk43i4 (gs : Array Game) : Bool :=
     g0.sourceStillPayable g0.proposedSpell.get!
 
   -- 4a. Resolving stack-object `forObject` priority (`resolvingAbility` / `resolvingSpell` ahead of permanent `sourceId`
-  --     in `Decisions.payGeneric` / `FraChoices.mayPaySymbolsThen` / `Interpreter` `.nivPay`) AND `spellCast`-bounded
+  --     in `Decisions.payGeneric` / `ResolutionChoices.mayPaySymbolsThen` / `Interpreter` `.nivPay`) AND `spellCast`-bounded
   --     `manaSpentOn`, `treasureManaSpentOn`, `legendaryManaSpentOn`, and `ancestryManaSpentOn`:
   let ancestryLandDef : CardDef := {
     name := "P43i4 PathOfAncestry"
