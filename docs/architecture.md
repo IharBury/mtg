@@ -95,7 +95,7 @@ Every change is verified against three gates:
    ```
    [`scripts/ci-lake-build.sh`](../scripts/ci-lake-build.sh) fails on any warning (`--wfail`) and aborts or rejects any runtime `PANIC at` diagnostic—including cached replays—covering all **10,608** start-of-line `#guard` assertions across `Mtg/`:
    - `Mtg/Engine/Tests/*` (104 files): **7,056** `#guard`s
-   - Top-level engine ruling, oracle, and card-model test suites (`OracleRulingTests.lean`, `MshOracleTests*.lean`, `FraOracleTests*.lean`, `FraCardTests*.lean`, `FrcOracleTests.lean`, `CatalogModelTests.lean`, imported via the `OracleRulings.lean` facade and checked against the **1,057**-entry [`uniqueOracleRulingCount`](../Mtg/Engine/OracleData.lean#L3228) table in `OracleData.lean`): **1,769** `#guard`s
+   - Top-level test modules imported via the [`OracleRulings.lean`](../Mtg/Engine/OracleRulings.lean) facade (21 test modules): **1,769** `#guard`s total—comprising the ruling suites (`OracleRulingTests.lean`, `MshOracleTests*.lean`, `FraOracleTests*.lean`, `FrcOracleTests.lean`, checking the **1,057**-entry [`uniqueOracleRulingCount`](../Mtg/Engine/OracleData.lean#L3228) table in `OracleData.lean`) alongside the card and model test modules (`FraCardTests*.lean`, `CatalogModelTests.lean`)
    - `Mtg/Demo/Check0.lean`–`Check9.lean`: **775** `#guard`s
    - `Mtg/Demo/RenderTests.lean`: **534** `#guard`s
    - In-module `#guard`s across `Mtg/Engine/Card/` (**169**) and remaining engine/demo modules (`TypeLine.lean`, `Catalog.lean`, `Mana.lean`, `OracleData.lean`, `Demo/DeckList.lean`, `Demo/WelcomeDecks.lean`, etc.): **474** `#guard`s
