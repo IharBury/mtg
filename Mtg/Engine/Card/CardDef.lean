@@ -136,8 +136,8 @@ structure CardDef where
   /-- Parameterized CR 702 keyword abilities, retaining multiplicity for
   cumulative keywords (Prowess, Cascade, Ward, Toxic, Affinity, Exalted). -/
   keywords : Array KeywordAbility := #[]
-  /-- Spell ability (CR 113.3a), carrying resolution effect, additional costs,
-  alternative costs, and cast restrictions. -/
+  /-- Spell ability (CR 113.3a), carrying the resolution `effect` and any
+  printed `additionalCosts`. -/
   spellAbility : Option SpellAbility := none
   /-- Printed activated abilities (CR 602), including mana abilities (CR 605.1a)
   and loyalty abilities (CR 606.2). Basic-land intrinsic mana abilities are
