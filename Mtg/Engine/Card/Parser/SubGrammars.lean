@@ -2206,9 +2206,8 @@ partial def parseTargetSpec (raw : String) : Option TargetSpec := Id.run do
 
   return none
 
-/-- Longest prefix of normalized Oracle tokens that parses as a `TargetSpec`.
-Replaces `OracleArgs.fromNounPrefix`'s hardcoded tables with the compositional
-Stage-4 target grammar. -/
+/-- Longest prefix of normalized Oracle tokens that parses as a `TargetSpec`
+via the compositional Stage-4 target grammar. -/
 def parseTargetSpecPrefix (toks : List String) : Option (TargetSpec × Nat) := Id.run do
   let t0 :: _ := toks | return none
   let w0 := lower t0

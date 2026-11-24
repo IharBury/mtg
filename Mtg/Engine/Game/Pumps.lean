@@ -25,19 +25,6 @@ def pumpPermanent (g : Game) (o : GameObject) (p t : Int) (trample := false) : G
   let gain := if trample then " and gains trample" else ""
   g.logMsg s!"{g.name o} gets {signedStat p}/{signedStat t}{gain} until end of turn"
 
-/-- Until-end-of-turn +P/+T on each creature `p` controls. -/
-def pumpControlledCreatures (g : Game) (p : PlayerId) (pw tw : Int) : Game :=
-  g.forEachControlledCreature p (fun g o => g.pumpPermanent o pw tw)
-
-/-- Grant `kw` until end of turn to each creature `p` controls that matches `pred`. -/
-def grantUntilEotToControlledCreatures (g : Game) (p : PlayerId) (kw : Array KeywordAbility)
-    (label : String) (pred : Game → GameObject → Bool := fun _ _ => true) : Game :=
-  g.forEachControlledCreature p fun g o =>
-    if pred g o then
-      (g.createEffect (.keywordsUntilEot o.id kw))
-        |>.logMsg s!"{g.name o} gains {label} until end of turn"
-    else g
-
 /-- Grant each keyword in `kws` until end of turn, re-reading `o` after each. -/
 def grantUntilEotKeywords (g : Game) (o : GameObject) (kws : List KeywordAbility) : Game :=
   g.withBatch none fun g =>
@@ -340,16 +327,6 @@ def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
       g := g.becomeTapped o (cause := cause)
     return g
   return g.logMsg s!"{(g.player p).name} taps {ids.size} artifact(s) for improvise"
-
-/-- Put a +1/+1 counter on `id` when it is still a legal creature target (CR 608.2b). -/
-def addPlusOneIfStillCreature (g : Game) (id : ObjectId) (controller : PlayerId)
-    (sourceId : Option ObjectId := none) : Game :=
-  match g.findObject? id with
-  | some o =>
-    if o.isOnBattlefield && g.isCreature o && g.canBeTargetedBy controller o sourceId then
-      g.addPlusOnePlusOneTo o 1
-    else g.logMsg "The target is no longer legal"
-  | none => g.logMsg "The target is no longer legal"
 
 /-- Put an indestructible counter on `o`. -/
 def addIndestructibleCounter (g : Game) (o : GameObject) (n : Nat := 1)
@@ -658,10 +635,6 @@ def dealDamageLoseIndestructibleExileTo (g : Game) (o : GameObject) (n : Nat)
 def grantCantBeBlockedThisTurn (g : Game) (o : GameObject) : Game :=
   let g := g.createEffect (.cantBeBlockedUntilEot o.id)
   g.logMsg s!"{g.name o} can't be blocked this turn"
-
-/-- Until-end-of-turn +P/+T and trample (e.g. Oliphaunt). -/
-def pumpAndGrantTrample (g : Game) (o : GameObject) (p t : Int) : Game :=
-  g.pumpPermanent o p t (trample := true)
 
 def grantTypeCostLessThisTurn (g : Game) (p : PlayerId) (ty : CardType) (n : Nat) : Game :=
   g.createEffect (.typeSpellCostLessThisTurn p ty n)

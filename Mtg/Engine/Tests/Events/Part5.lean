@@ -657,26 +657,23 @@ def mkThreePlayer25i1 (seed : UInt64 := 251) : Game :=
 
 -- 2. CR 400.3 / 608.2c / 614.6 / 616.1 / 701.50 / 800.4a,f–h:
 --    Outer `g.pendingReplacement` preservation across `redirectPendingAfterLeave` & `commitEnteringAttackItems`,
---    `.chooseDiscardCard` departure cleanup (`conniveSource` + `plusOneAfterDiscards`), and arrival-gated `.extrapolatePick`.
+--    `.chooseDiscardCard` departure cleanup (`conniveSource`), and arrival-gated `.extrapolatePick`.
 #guard
   let p0 : PlayerId := ⟨0⟩
   let p1 : PlayerId := ⟨1⟩
   let gBase := mkThreePlayer25i1
 
-  -- 2a. `.chooseDiscardCard` final-discarder departure clears `conniveSource` and runs `finishPlusOneAfterDiscards`:
+  -- 2a. `.chooseDiscardCard` final-discarder departure clears `conniveSource`:
   let gConn0 := addPermanent gBase bear p0 p0
   let connBearId := (gConn0.battlefield.filter (·.name == bear.name))[0]!.id
   let gConnAsk :=
     ((gConn0.change (.pushContinuationFrame {})).changes #[
       .conniveSource (some connBearId),
-      .plusOneAfterDiscards (some connBearId),
       .pending (.chooseDiscardCard p1 #[])])
   let gConnLeft := mustApply gConnAsk p1 .concede
   let discardCleanupOk :=
     gConnLeft.pending == .none &&
     gConnLeft.conniveSource.isNone &&
-    gConnLeft.plusOneAfterDiscards.isNone &&
-    (gConnLeft.object! connBearId).status.plusOnePlusOne == 1 &&
     gConnLeft.log.any (·.contains "No card is discarded; the conniving creature does not receive a +1/+1 counter")
 
   -- 2b. Outer `g.pendingReplacement` preserved across `redirectPendingAfterLeave` (`.palantirMayDraw`)
@@ -2271,7 +2268,6 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
   let gSurvAsk :=
     ((gBase.change (.pushContinuationFrame {})).changes #[
       .surveilReturnMvAtMost (some 3),
-      .surveilReturnNoncreatureNonland true,
       .continuation (.pendingDrawAfterScry (some (p0, 1))),
       .pending (.surveil p1 1 1)
     ])
@@ -2279,7 +2275,6 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
   let surveilLeaveOk :=
     gSurvLeft.pending == .none &&
     gSurvLeft.surveilReturnMvAtMost.isNone &&
-    !gSurvLeft.surveilReturnNoncreatureNonland &&
     (gSurvLeft.player p0).hand.size == p0HandBeforeSurv + 1
 
   let gDiscBase := mustApply (insertObject (insertObject gBase bear p2 (.hand p2)) hero p2 (.hand p2)) p1 .concede
@@ -2437,7 +2432,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
   --     (`withoutPaying := true`, sorcery timing ignored, `X = 0`) while the trigger is still on the stack,
   --     and no residual graveyard cast permission persists once the trigger finishes resolving:
   let urSphinxDef : CardDef :=
-    fromOracleKeeping [
+    fromOracle [
       "The Ur-Sphinx",
       "{6}{W}{U}{B}",
       "Legendary Creature — Sphinx Avatar",
@@ -3053,7 +3048,7 @@ private def replayOk26i3 (gs : Array Game) : Bool :=
   --     both normal sacrifice AND pre-check departure deal 2 LKI damage to `p1` (+2 lifelink)
   --     and gain 2 life (`+4` total for `p0`):
   let eyeBase : CardDef :=
-    fromOracleKeeping [
+    fromOracle [
       "Eye of Jace",
       "{1}",
       "Artifact",
@@ -3506,27 +3501,23 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
     gRenamed.applyEffect p0 { targets := .creature, body := Instruction.exile (.target 0) } #[.permanent a1]
   let renamedLogOk := gExiledRenamed.log.any (· == "Copied Hero is exiled")
 
-  -- 4d. Exhaustive `ContinuationFrame` witness (32 unified fields after Phase 9 scratch-field retirement):
-  let cf32 : ContinuationFrame := {
+  -- 4d. Exhaustive `ContinuationFrame` witness (27 unified fields after Phase 12 dead-field retirement):
+  let cf27 : ContinuationFrame := {
     pendingDrawAfterScry := none
     recentTokenIds := #[]
     pendingFreeCopies := none
     pendingMayCastFromExile := none
     postCastCleanup := none
     surveilReturnMvAtMost := none
-    surveilReturnNoncreatureNonland := false
     pendingReplacement := none
     outerPendingReplacements := #[]
     conniveSource := none
-    plusOneAfterDiscards := none
-    plusOneAfterSearch := none
     thirstDiscardsLeft := 0
     thirstDiscardType := .artifact
     pendingDiscardsLeft := 0
     discardCountPerPlayer := 0
     discardBatch := none
     stagedAttackTokenBatches := #[]
-    untapSearchedIfLands := none
     resolvingContext := none
     stashedCause := none
     resolvingSpell := none
@@ -3544,7 +3535,7 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
   mustHold26i4 "4a.battleAndTwoPlayersOk" (battleExcludedOk && splitAloneOk && twoPlayersOk) &&
   mustHold26i4 "4b.eqAloneOk" eqAloneOk &&
   mustHold26i4 "4c.renamedLogOk" renamedLogOk &&
-  mustHold26i4 "4d.cf32Ok" (cf32 == {}) &&
+  mustHold26i4 "4d.cf27Ok" (cf27 == {}) &&
   mustHold26i4 "4.replay" (replayOk26i4 #[gAtkBattle, gAtkSplit, gAtkTwoPlayers, gEqAlone, gExiledRenamed])
 
 end Phase26Item4EventAlignment

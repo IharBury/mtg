@@ -31,7 +31,36 @@ def triggerModesOf (g : Game) (obj : GameObject) : Array Effect :=
 
 /-- Individual mode effects for Hawkeye's Trick Arrows reflexive trigger (CR 603.3c / 700.2b). -/
 def hawkeyeModeEffects : Array Effect :=
-  Effect.hawkeyeModeEffects
+  #[{ targets := .creature
+      body := .installEffect (.applyContinuous .untilEndOfTurn (.target 0)
+        (.applyRule (.combat (.cantBlock .self none)))) },
+    { targets := .player
+      body := Instruction.dealDamageFixed (.players (.target 0)) 2 },
+    { body := .seq #[Instruction.discardFixed 1, Instruction.drawFixed 1] }]
+
+/-- Modal body for once-per-turn unused-mode combat/draw triggers (e.g. The Vision). -/
+def castingVisionModesBody : Instruction :=
+  .chooseModes {
+    unusedThisTurn := true
+    modes := #[
+      { body := Instruction.grantKeywords .this #[Keyword.doubleStrike] },
+      { body := Instruction.grantKeywords .this #[Keyword.indestructible] },
+      { body := Instruction.drawFixed 1 }
+    ]
+  }
+
+/-- Modal body for +1/+1 counter vs. remove-counter-and-draw choice triggers (e.g. Mr. Hyde). -/
+def stepHydeChooseBody : Instruction :=
+  .chooseModes {
+    modes := #[
+      { body := Instruction.putPlusOne .this 1 },
+      { body := .bind ⟨0⟩
+          (.permanent (.modifyCounters (.remove none (.exact (.const 1)))
+            (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you, .counterCount none .ge (.const 1)]))
+            (choice? := some { chooser := .controller, count := .exact (.const 1) })))
+          (Instruction.ifThen (.stepSucceeded ⟨0⟩) (Instruction.drawFixed 1)) }
+    ]
+  }
 
 /-- Hawkeye's Trick Arrows with the chosen modes, in printed order, with
 target slots aligned across combined modes. -/
@@ -191,7 +220,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
           let msg :=
             if lifetime then
               s!"all three modes have been chosen. {objName} is removed from the stack (CR 603.3c)"
-            else if ab.effect.body == Effect.castingVisionModes.body then
+            else if ab.effect.body == castingVisionModesBody then
               s!"{objName} has no unused mode and is removed from the stack (CR 603.3c)"
             else
               s!"all three modes have been chosen this turn. {objName} is removed from the stack (CR 603.3c)"
@@ -200,13 +229,13 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
           let prompt :=
             if lifetime then
               s!"{(g.player controller).name} chooses a mode that hasn't been chosen (CR 603.3c)"
-            else if ab.effect.body == Effect.castingVisionModes.body then
+            else if ab.effect.body == castingVisionModesBody then
               "Choose one that hasn't been chosen this turn (CR 603.3c)"
             else
               s!"{(g.player controller).name} chooses an Alliance mode that hasn't been chosen this turn (CR 603.3c)"
           g.beginFraChoice controller (.stackTriggerUnusedMode obj.id srcIdOpt available lifetime)
             prompt
-      else if ab.effect.body == Effect.stepHydeChoose.body then
+      else if ab.effect.body == stepHydeChooseBody then
         g.beginFraChoice controller (.stackHydeMode obj.id)
           s!"{(g.player controller).name} chooses a mode for {g.name obj} — 0 put a +1/+1 counter, 1 remove a counter and draw (CR 603.3c)"
       else

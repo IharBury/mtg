@@ -48,10 +48,6 @@ def triggerScry (n : Nat) : Effect :=
 def triggerDraw (n : Nat) : Effect :=
   { body := Instruction.drawFixed n }
 
-/-- Create `n` tokens of `kind` (`tapped`). -/
-def triggerCreateTokens (kind : TokenSpec) (n : Nat) (tapped : Bool := false) : Effect :=
-  { body := Instruction.createTokensFixed kind n .you tapped }
-
 /-- Create one `kind` token, then attach this source to it. -/
 def triggerCreateThenAttach (kind : TokenSpec) : Effect :=
   { body := .bind ⟨0⟩ (Instruction.createTokensFixed kind 1)
@@ -78,10 +74,6 @@ def triggerRecruit : Effect :=
 def triggerDividedDamage (amount maxTargets : Nat) : Effect :=
   { targets := TargetSpec.dividedDamage .anyTarget amount maxTargets
     body := Instruction.dealDamage .allTargets (.const (Int.ofNat amount)) .this { divided := true } }
-
-/-- You gain `n` life. -/
-def triggerGainLife (n : Nat) : Effect :=
-  { body := Instruction.gainLifeFixed n }
 
 /-- This permanent connives (CR 701.50). -/
 def triggerConniveSource : Effect :=
@@ -602,23 +594,6 @@ def triggerMayPutArtifactAttachEquipment : Effect :=
         })
         (Instruction.ifThen (.exists (.filter (.stepObjects ⟨0⟩) (.hasSubtype (.literal .equipment))))
           (.permanent (.attach (.stepObjects ⟨0⟩) .this)))) }
-
-/-- Cascade (CR 702.85a). -/
-def triggerCascade : Effect :=
-  let cheaperNonland : ObjectPred :=
-    .all #[.not (.hasType .land), .stat .manaValue .lt (.objectStat .manaValue .this)]
-  { body := .bind ⟨0⟩ (.player (.inspectLibrary {
-        source := .revealUntil .you cheaperNonland (.const 1) (exileWhileRevealing := true)
-        action := .none
-        rest := .leaveInPlace
-      }))
-      (.seq #[
-        .stack (.mayCastOrPlay (.filter (.stepObjects ⟨0⟩) cheaperNonland) {
-          freeCast := true, landsAllowed := false, castNow := true
-          maxTotalManaValue? := some (.binary .sub (.objectStat .manaValue .this) (.const 1))
-        }),
-        .moveZone (.stepObjects ⟨0⟩) (.library .owner .bottomRandom) .put
-      ]) }
 
 /-- Belladonna Took: 1st resolve gain 1 life, 2nd draw 1, 3rd +1/+1 on each creature you control. -/
 def triggerBelladonnaTokenReward : Effect :=

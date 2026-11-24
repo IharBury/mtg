@@ -1039,26 +1039,20 @@ private def replayOk30i4 (gs : Array Game) : Bool :=
     gCopiedLeg.costPickAllows p0 none .discardLegendaryCard handObj &&
     gCopiedLeg.costPickAllows p0 none .discardLegendarySameName handObj
 
-  -- 1b. `Costs.returnToHand`, `ResolutionEffects.revealHand`, and `Decisions` `.logMovedToExile`
+  -- 1b. `Costs.returnToHand`, `ResolutionEffects.revealHand`, and `ResolutionHelpers.exilePermanentsLoop`
   --     log `g.name` (Layer 1 copy name):
   let gRevealed := gCopiedLeg.revealHand p0
   let gReturned := gCopiedLeg.returnToHand p0BearId p0 (cause := some testCause)
-  let (gMovedEx, _) := gCopiedLeg.move p0BearId .exile none (cause := some testCause)
-  let exId := (gMovedEx.followMovedToZone? p0BearId (· == .exile)).get!.id
-  let gExCopied :=
-    gMovedEx.createEffect
-      (.layered (.objects #[exId]) (.copy legBearDef) .indefinite)
-      (cause := some testCause)
-  let gLogMovedEx := gExCopied.runPostStep (.logMovedToExile p0BearId)
+  let gExiled := gCopiedLeg.exilePermanentsLoop #[p0BearId] (cause := some testCause)
   let layer1NamesOk :=
     (gRevealed.log.back?.getD "").endsWith s!"{legBearDef.name})" &&
     gReturned.log.back? == some s!"{legBearDef.name} is returned to {(gReturned.player p0).name}'s hand" &&
-    gLogMovedEx.log.back? == some s!"{legBearDef.name} is exiled"
+    gExiled.log.back? == some s!"{legBearDef.name} is exiled"
 
   mustHold30i4 "1a.costPickLayerOk" costPickLayerOk &&
   mustHold30i4 "1b.layer1NamesOk" layer1NamesOk &&
   mustHold30i4 "1.replay"
-    (replayOk30i4 #[gCopiedLeg, gRevealed, gReturned, gMovedEx, gExCopied, gLogMovedEx])
+    (replayOk30i4 #[gCopiedLeg, gRevealed, gReturned, gExiled])
 
 end Phase30Item4EventAlignment
 
@@ -1847,7 +1841,6 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gBase := addPermanent (addPermanent afterDraw bear p0 p0) hero p1 p1
   let p0Bear := (gBase.permanentsOf p0).find? (·.name == bear.name) |>.get!
   let g3Base := addPermanent (addPermanent (addPermanent g3 bear p0 p0) hero p1 p1) bear p2 p2
-  let p0Bear3 := (g3Base.permanentsOf p0).find? (·.name == bear.name) |>.get!
   let p1Hero3 := (g3Base.permanentsOf p1).find? (·.name == hero.name) |>.get!
 
   -- 1a. Game-over active-resolution & transient prompt/proposal/continuation teardown across
@@ -1976,16 +1969,13 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gOrderBotSingle :=
     ((g3Base.change (.pushContinuationFrame { stashedCause := some testCause })).change
       (.pending (.fraChoice p0 (.orderLibraryBottom #[p0TopId, p1TopId])))).concede p1
-  -- `.searchLibrary` (`q == p` with `plusOneAfterSearch` for surviving `p0` places +1/+1 on `p0Bear3`;
-  -- and `q != p` filters vanished `eligible` cards and drops departed `plusOneAfterSearch`):
+  -- `.searchLibrary` (`q == p` clears pending and frame; and `q != p` filters vanished `eligible` cards):
   let gSearchTargetLeaves :=
-    ((g3Base.change (.pushContinuationFrame {
-      plusOneAfterSearch := some (p0Bear3.id, p0, none)
-    })).change (.pending (.fraChoice p1 (.searchLibrary #[p1TopId] 1 .hand none "a card")))).concede p1
+    ((g3Base.change (.pushContinuationFrame {})).change
+      (.pending (.fraChoice p1 (.searchLibrary #[p1TopId] 1 .hand none "a card")))).concede p1
   let gSearchOtherLeaves :=
-    ((g3Base.change (.pushContinuationFrame {
-      plusOneAfterSearch := some (p1Hero3.id, p1, none)
-    })).change (.pending (.fraChoice p0 (.maySearchLibrary #[p0TopId, p1TopId] 1 .hand none "a card")))).concede p1
+    ((g3Base.change (.pushContinuationFrame {})).change
+      (.pending (.fraChoice p0 (.maySearchLibrary #[p0TopId, p1TopId] 1 .hand none "a card")))).concede p1
 
   let mayAndScratchCleanupOk :=
     gMayTargetGone.pending == .none &&
@@ -2000,8 +1990,8 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gOrderBotSingle.pending == .none &&
     gOrderBotSingle.continuations.isEmpty &&
     (gOrderBotSingle.player p0).library[0]? == (gOrderBotSingle.followMovedToZone? p0TopId (· == .library p0)).map (·.id) &&
-    (gSearchTargetLeaves.object! p0Bear3.id).status.plusOnePlusOne == 1 &&
-    gSearchOtherLeaves.plusOneAfterSearch.isNone &&
+    gSearchTargetLeaves.pending == .none &&
+    gSearchTargetLeaves.continuations.isEmpty &&
     gSearchOtherLeaves.pending == .fraChoice p0 (.maySearchLibrary #[p0TopId] 1 .hand none "a card")
 
   mustHold33i1 "1a.gameOverTeardownOk" gameOverTeardownOk &&
@@ -2455,17 +2445,18 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
   -- When `.resumeProposalCostAfterLeave` reverses a living caster's proposal inside `.seq first rest`,
   -- `checkReversal` stops un-checkpointed proposal tails (`gCrewSeqTail`), while a pre-proposal
   -- continuation saved in `proposalCheckpoint` (`gCrewCkptAfterLeave`) runs once via `reverseProposedSpell`:
+  let p0LifeBeforeCrew := (gStolenVeh0.player p0).life
   let gStolenVehWithCont :=
     gStolenVeh0.changes #[
       .pushContinuationFrame {},
-      .pendingReplacement (some (.finishPostStep (.applyPlusOneAfterSearch p0Bear.id p0 none))) ]
+      .pendingReplacement (some (.finishPostStep (.gainLifePlayer p0 3))) ]
   let gCrewCkptAfterLeave := (mustApply33i3 gStolenVehWithCont p0 (.activate stolenVehId 0)).concede p1
   let savedCrewPending := gCrewStolen.pending
   let (gCrewVehGone, _) := (gCrewStolen.change (.pending .none)).move stolenVehId .exile none (cause := some testCause)
   let gCrewSeqTail :=
     gCrewVehGone.resumePendingReplacement
       (.seq (.finishPostStep (.resumeProposalCostAfterLeave p0 savedCrewPending))
-            (.finishPostStep (.applyPlusOneAfterSearch p0Bear.id p0 none)))
+            (.finishPostStep (.gainLifePlayer p0 3)))
 
   let gOwnVeh0 := addPermanent gBase vehicleDef p0 p0
   let ownVehId := (gOwnVeh0.permanentsOf p0).find? (·.name == "P33 Skiff") |>.get!.id
@@ -2478,9 +2469,9 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     gCrewStolenAfterLeave.proposedSpell.isNone &&
     gCrewStolenAfterLeave.stack.isEmpty &&
     gCrewCkptAfterLeave.proposedSpell.isNone &&
-    (gCrewCkptAfterLeave.object! p0Bear.id).status.plusOnePlusOne == 1 &&
+    (gCrewCkptAfterLeave.player p0).life == p0LifeBeforeCrew + 3 &&
     gCrewSeqTail.proposedSpell.isNone &&
-    (gCrewSeqTail.object! p0Bear.id).status.plusOnePlusOne == 0 &&
+    (gCrewSeqTail.player p0).life == p0LifeBeforeCrew &&
     (match gCrewOwnAfterLeave.pending with | .fraChoice q (.crew _ vid 2) => q == p0 && vid == ownVehId | _ => false) &&
     gCrewOwnAfterLeave.proposedSpell.isSome
 
@@ -2574,14 +2565,14 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     (AfterRandom.revealRandomCreatureThenBottom p0 #[]).player? == some p0 &&
     (AfterRandom.putOnTop p1 #[]).player? == some p1 &&
     (AfterRandom.beholdUntap p0 p0Bear.id .elf).player? == some p0 &&
-    (AfterRandom.plusOne p0Bear.id p2 none).player? == some p2 &&
     (AfterRandom.discardRandom p1).player? == some p1
-  -- `.shuffleLibrary p1` with `afterRandom == .plusOne p0Bear.id p0 none`: when `p1` concedes (`q == p`),
-  -- `PostStep.runAfterRandom` runs `.plusOne` so `p0Bear` gets `+1/+1` and `afterRandom == .none`!
+  -- `.shuffleLibrary p1` with `afterRandom == .gainLife p0 3`: when `p1` concedes (`q == p`),
+  -- `PostStep.runAfterRandom` runs `.gainLife p0 3` so surviving `p0` gains 3 life and `afterRandom == .none`!
+  let p0LifeBeforeShuf := (gBase.player p0).life
   let gShufRunAfter :=
     ((gBase.change (.pushContinuationFrame {})).changes #[
       .pending (.resolveRandom (.shuffleLibrary p1)),
-      .afterRandom (.plusOne p0Bear.id p0 none) ]).concede p1
+      .afterRandom (.gainLife p0 3) ]).concede p1
   -- `.shuffleLibrary p0` with `afterRandom == .draw p1 1`: when `p1` concedes (`q != p`),
   -- `afterRandom` is cleared to `.none` while `shuffleLibrary p0` stays open:
   let gShufDropAfter :=
@@ -2601,14 +2592,14 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let p1LibTop := (gBase.player p1).library.back!
   let gLeftP1 := gBase.playerLeavesGame p1
   let gRevealFiltered := gLeftP1.resolveRandomCreatureReveal p0 #[p0Bear.id, p0LibTop, p1LibTop] p0Bear.id
-  -- Surviving creature (`p0Bear`) still gets its `.plusOne` counter when former controller `p1` left,
-  -- in both `finishAfterRandom` and `PostStep.runAfterRandom`, while `PostStep.runAfterRandom` skips
-  -- `.gainLife` for departed `p1`:
-  let gFinishPlusOneDeparted :=
+  -- `finishAfterRandom` and `PostStep.runAfterRandom` run `.gainLife` for surviving `p0` and
+  -- skip `.gainLife` for departed `p1`:
+  let p0LifeBeforeFinish := (gLeftP1.player p0).life
+  let gFinishGainSurviving :=
     ((gLeftP1.change (.pushContinuationFrame {})).change
-      (.afterRandom (.plusOne p0Bear.id p1 none))).finishAfterRandom false
-  let gPostRunPlusOneDeparted :=
-    gLeftP1.runPostStep (.runAfterRandom (.plusOne p0Bear.id p1 none))
+      (.afterRandom (.gainLife p0 3))).finishAfterRandom false
+  let gPostRunGainSurviving :=
+    gLeftP1.runPostStep (.runAfterRandom (.gainLife p0 3))
   let p1LifeDeadBefore := (gLeftP1.player p1).life
   let gPostRunGainDeparted :=
     gLeftP1.runPostStep (.runAfterRandom (.gainLife p1 5))
@@ -2619,9 +2610,9 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     afterRandomPlayerOk &&
     gShufRunAfter.pending == .none &&
     gShufRunAfter.afterRandom == .none &&
-    (gShufRunAfter.object! p0Bear.id).status.plusOnePlusOne == 1 &&
-    (gFinishPlusOneDeparted.object! p0Bear.id).status.plusOnePlusOne == 1 &&
-    (gPostRunPlusOneDeparted.object! p0Bear.id).status.plusOnePlusOne == 1 &&
+    (gShufRunAfter.player p0).life == p0LifeBeforeShuf + 3 &&
+    (gFinishGainSurviving.player p0).life == p0LifeBeforeFinish + 3 &&
+    (gPostRunGainSurviving.player p0).life == p0LifeBeforeFinish + 3 &&
     (gPostRunGainDeparted.player p1).life == p1LifeDeadBefore &&
     gShufDropAfter.pending == .resolveRandom (.shuffleLibrary p0) &&
     gShufDropAfter.afterRandom == .none &&
@@ -2638,7 +2629,7 @@ private def mustApply33i3 (g : Game) (p : PlayerId) (a : Action) : Game :=
     (replayOk33i3 #[gCrewStolen, gCrewStolenAfterLeave, gCrewCkptAfterLeave, gCrewSeqTail, gCrewOwn, gCrewOwnAfterLeave,
       gEquipStolenGone, gEquipOwnKept, gWardSpellGone, gWardPartialUnpayable,
       gTwinOnStack, gRetargetAfterLeave, gCopySlotAfterLeave,
-      gShufRunAfter, gFinishPlusOneDeparted, gPostRunPlusOneDeparted, gPostRunGainDeparted,
+      gShufRunAfter, gFinishGainSurviving, gPostRunGainSurviving, gPostRunGainDeparted,
       gShufDropAfter, gChooseObjAuto, gRevealFiltered, gOrderOutside])
 
 end Phase33Item3EventAlignment
@@ -3532,8 +3523,9 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
   let gCtrlTargetDead := gLeftP1.setPlayerControl p1 p0
   let gCtrlByDead := gLeftP1.setPlayerControl p0 p1
   -- `shuffleThen` on departed `p1` skips `shuffleLibrary p1` and runs `PostStep.runAfterRandom`
-  -- so `p0Bear` receives its `+1/+1` counter without opening `.resolveRandom (.shuffleLibrary p1)`:
-  let gShuffleThenDead := gLeftP1.shuffleThen p1 (.plusOne p0Bear.id p0 none)
+  -- so surviving `p0` gains 3 life without opening `.resolveRandom (.shuffleLibrary p1)`:
+  let p0LifeBeforeShufDead := (gLeftP1.player p0).life
+  let gShuffleThenDead := gLeftP1.shuffleThen p1 (.gainLife p0 3)
   let gFblthpDead :=
     gLeftP1.applyAbilityEffect p1 fblthpKnowsTheWay.triggeredAbilities[0]!.effect #[] (some p0Bear.id)
 
@@ -3548,7 +3540,7 @@ private def replayOk34i4 (gs : Array Game) : Bool :=
     mustHold34i4 "4a.ctrlTarget" (gCtrlTargetDead == gLeftP1) &&
     mustHold34i4 "4a.ctrlBy" (gCtrlByDead == gLeftP1) &&
     mustHold34i4 "4a.shufflePending" (gShuffleThenDead.pending == .none) &&
-    mustHold34i4 "4a.shuffleCounter" ((gShuffleThenDead.object! p0Bear.id).status.plusOnePlusOne == 1) &&
+    mustHold34i4 "4a.shuffleLife" ((gShuffleThenDead.player p0).life == p0LifeBeforeShufDead + 3) &&
     mustHold34i4 "4a.fblthp" (gFblthpDead.objects == gLeftP1.objects && gFblthpDead.log == gLeftP1.log && gFblthpDead.pending == .none)
 
   -- 4b. Layer 1–6 characteristic queries in `Interpreter`, `Turns`, and `SpellResolution`:

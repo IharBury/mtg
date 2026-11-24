@@ -3194,11 +3194,6 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
           let ok := (g.currentStepEnv.find? (·.1 == interpChoiceVar)).any (·.2.succeeded)
           g := g.change (.bindStepOutcome interpChoiceVar {})
           queue := #[if ok then onYes else onNo]
-        | .bindChosenAndRun v body =>
-          let chosen := (g.currentStepEnv.find? (·.1 == interpChoiceVar)).map Prod.snd |>.getD {}
-          g := g.change (.bindStepOutcome interpChoiceVar {})
-          g := g.change (.bindStepOutcome v chosen)
-          queue := #[body]
         | .chooseBranch branches _ =>
           let idx := (g.currentStepEnv.find? (·.1 == interpChoiceVar)).map (·.2.movedCount) |>.getD 0
           g := g.change (.bindStepOutcome interpChoiceVar {})
@@ -4436,7 +4431,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
           else if let some chosenModes := g.resolvingModes then
             if chosenModes.isEmpty then
               pure ()
-            else if spec.modes == Effect.hawkeyeModeEffects then
+            else if spec.modes == hawkeyeModeEffects then
               g := g.runHawkeyeArrows ctx.controller chosenModes ctx.targets 0 ctx.sourceId
             else
               if !ctx.targets.isEmpty then
@@ -4465,7 +4460,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                   if !queue.isEmpty then stack := stack.push (.seqRest queue)
                   queue := modeInstrs
           else if spec.unusedThisTurn && spec.modes.size == 3 then
-            let isVision := Instruction.chooseModes spec == Effect.castingVisionModes.body
+            let isVision := Instruction.chooseModes spec == castingVisionModesBody
             if isVision then
               match ctx.sourceId with
               | none => g := g.logMsg "The ability is removed from the stack with no effect"
@@ -4496,7 +4491,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               else
                 g := g.beginFraChoice ctx.controller (.gollumMode src.id available)
                   s!"{(g.player ctx.controller).name} chooses a mode that hasn't been chosen"
-          else if Instruction.chooseModes spec == Effect.stepHydeChoose.body then
+          else if Instruction.chooseModes spec == stepHydeChooseBody then
             g := g.offerHydeChoice ctx.controller ctx.sourceId
           else if spec.maxModes == .chosenX && spec.modes.size == 4 then
             let chosenModes := (ctx.sourceId.map g.modesChosenEver).getD #[]
@@ -4754,14 +4749,14 @@ def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
     | _ => false
   if missingWhileSource then g
   else
-  -- Heroic Feast (`Effect.resourceGainLifePlusOnes`): cap targets at life gained (CR 608.2b).
-  -- Call Damage Control (`Effect.returnUpToTwoGyModal`): validate each target against its chosen mode type.
+  -- Heroic Feast (`resourceGainLifePlusOnesEffect`): cap targets at life gained (CR 608.2b).
+  -- Call Damage Control (`returnUpToTwoGyModalEffect`): validate each target against its chosen mode type.
   let targets :=
-    if !isSpell && effect.targets == Effect.resourceGainLifePlusOnes.targets &&
-        effect.body == Effect.resourceGainLifePlusOnes.body then
+    if !isSpell && effect.targets == resourceGainLifePlusOnesEffect.targets &&
+        effect.body == resourceGainLifePlusOnesEffect.body then
       targets.extract 0 (lastKnownPower.getD 0).toNat
-    else if effect.body == Effect.returnUpToTwoGyModal.body &&
-        effect.targets == Effect.returnUpToTwoGyModal.targets then
+    else if effect.body == returnUpToTwoGyModalEffect.body &&
+        effect.targets == returnUpToTwoGyModalEffect.targets then
       match g.resolvingModes with
       | some modes =>
         Id.run do
@@ -4794,10 +4789,15 @@ def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
         | _ => false
   if !hasSyntheticStackCardTarget && g.sequenceAllTargetsIllegal controller effect targets sourceId then
     let g := g.logIllegalSequenceTargets targets
+    let isAbsorbingManCopy : Bool :=
+      match effect.body with
+      | .installEffect (.applyContinuous (.untilNextTurnOf .you) .this (.becomeCopyOf (.target 0) mods)) =>
+        mods.contains (.setName "Absorbing Man")
+      | _ => false
     let g :=
-      if effect.body == Effect.stepCopyAbsorbingMan.body && !targets.isEmpty then
+      if isAbsorbingManCopy && !targets.isEmpty then
         g.logMsg "The target isn't an artifact, non-Aura enchantment, or land"
-      else if effect.body == Effect.watchVillainAttachEquipment.body then
+      else if effect.body == .permanent (.attach (.target 0) (.target 1)) then
         g.logMsg "The Equipment won't move"
       else g
     if isSpell then g.logMsg "The spell doesn't resolve" else g
@@ -4866,7 +4866,7 @@ def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       |>.orElse fun _ =>
         g.resolvingSpell.bind fun sid =>
           (g.findObject? sid).bind fun sObj =>
-            sObj.printed.additionalCosts.findSome? fun ac => ac.cost.bindVar?
+            (g.additionalCostsFor sObj (g.baseCard sObj)).findSome? fun ac => ac.cost.bindVar?
     g.withContinuationFrame fun g =>
       let g :=
         match costBindVar? with

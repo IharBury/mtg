@@ -1,21 +1,22 @@
 import Mtg.Engine.Card.OracleNorm
 
 /-!
-# Stage-2 Compositional Oracle Lexer & Quote-Aware Normalizer (CR 207.2a, 207.2c, 207.4)
+# Stage-2 Compositional Oracle Normalizer & Quote-Aware Splitter (CR 207.2a, 207.2c, 207.4)
 
-Linear `Array Char` lexer for printed Oracle paragraphs:
+Linear `Array Char` preprocessing and quote-aware splitting helpers for printed
+Oracle paragraphs:
 - Strips balanced reminder text `(...)` (CR 207.2a) and leading `{CHAOS}` headers
   (CR 207.4) while preserving in-text `{CHAOS}` symbols.
 - Recognizes mechanic-carrying em-dash labels (`Power-up —`, `Exhaust —`,
   `Boast —`, `Eminence —`, `Corrupted —`, `Threshold —`, `Teamwork —`,
-  `Jeskai —`, `Mardu —`) as `MechanicLabel` / `OrbTok.label` tokens before
+  `Infinity —`, modal anchors) via `MechanicLabel` / `extractLeadingLabel` before
   discarding pure CR 207.2c ability words and CR 207.2d flavor words.
-- Lexes `"..."` substrings into `OrbTok.quoted (Array OrbTok) String` *before*
-  splitting on `:` or `.`, so granted abilities (`have "{T}: Add ..."`,
-  `Planeswalkers you control have "[-2]: ..."`, token abilities, and emblems)
-  are recursively parsed by Stages 3–5.
-- Aliases card self-references (`<FullCardName>`, `<LegendShortName>`,
-  `"this <type>"`) to `OrbTok.selfRef` outside quoted sub-abilities.
+- Splits `"..."` quoted spans (`extractQuotedSpans`, `splitTopLevelColon`,
+  `splitTopLevelSentences`) *before* splitting on `:` or `.`, so granted abilities
+  (`have "{T}: Add ..."`, `Planeswalkers you control have "[-2]: ..."`, token
+  abilities, and emblems) are recursively parsed by Stages 3–5.
+- Aliases card self-references (`<FullCardName>`, `<LegendShortName>`) outside
+  quoted sub-abilities via `replaceCardNameOutsideQuotes`.
 -/
 
 namespace Mtg.Engine.Parser
@@ -35,21 +36,6 @@ inductive MechanicLabel where
   | infinity
   | anchor (name : String)
 deriving DecidableEq, Repr, Inhabited, BEq
-
-/-- Stage-2 lexical token for an Oracle rules paragraph. -/
-inductive OrbTok where
-  | word (raw : String)
-  | symbol (sym : String)
-  | label (name : String)
-  | quoted (inner : Array OrbTok) (raw : String)
-  | selfRef (possessive : Bool)
-  | colon
-  | comma
-  | period
-  | semicolon
-  | emDash
-  | bullet
-deriving Repr, Inhabited, BEq
 
 /-- Normalize curly quotes, typographic apostrophes, and Unicode minus signs in a single linear pass. -/
 def normalizeTypography (s : String) : String :=
@@ -525,115 +511,6 @@ def replaceCardNameOutsideQuotes (s cardName : String) (replacement : String := 
       out := out ++ "\"" ++ String.ofList cur.toList
     else
       out := out ++ replaceSegment (String.ofList cur.toList)
-  return out
-
-/-- Linear Stage-2 tokenizer scanning `s` into `Array OrbTok`, recursively lexing
-`"..."` quoted abilities into `OrbTok.quoted` and recognizing `{...}` symbols,
-punctuation, and leading em-dash labels. -/
-partial def lexRaw (s : String) : Array OrbTok := Id.run do
-  let cs := s.toList.toArray
-  let mut out : Array OrbTok := #[]
-  let mut i : Nat := 0
-  while i < cs.size do
-    let c := cs[i]!
-    if c == ' ' || c == '\t' || c == '\n' then
-      i := i + 1
-    else if c == ':' then
-      out := out.push .colon; i := i + 1
-    else if c == ',' then
-      out := out.push .comma; i := i + 1
-    else if c == '.' then
-      out := out.push .period; i := i + 1
-    else if c == ';' then
-      out := out.push .semicolon; i := i + 1
-    else if c == '—' then
-      out := out.push .emDash; i := i + 1
-    else if c == '•' then
-      out := out.push .bullet; i := i + 1
-    else if c == '{' then
-      let start := i
-      i := i + 1
-      while i < cs.size && cs[i]! != '}' do
-        i := i + 1
-      if i < cs.size then i := i + 1
-      out := out.push (.symbol (String.ofList (cs.extract start i).toList))
-    else if c == '"' then
-      let start := i + 1
-      i := i + 1
-      while i < cs.size && cs[i]! != '"' do
-        i := i + 1
-      let rawInner := (String.ofList (cs.extract start i).toList).trimAscii.copy
-      if i < cs.size then i := i + 1
-      out := out.push (.quoted (lexRaw rawInner) rawInner)
-    else
-      let start := i
-      while i < cs.size do
-        let ch := cs[i]!
-        if ch == ' ' || ch == '\t' || ch == '\n' || ch == ':' || ch == ',' ||
-            ch == ';' || ch == '—' || ch == '•' || ch == '{' || ch == '"' then
-          break
-        if ch == '.' && (i + 1 >= cs.size || cs[i + 1]! == ' ' || cs[i + 1]! == '"' || cs[i + 1]! == '\n') then
-          break
-        i := i + 1
-      let w := String.ofList (cs.extract start i).toList
-      if !w.isEmpty then out := out.push (.word w)
-  return out
-
-private def isSelfRefTypeWord (w : String) : Bool :=
-  match lowerAscii w with
-  | "creature" | "permanent" | "card" | "spell" | "artifact" | "enchantment"
-  | "equipment" | "aura" | "land" | "planeswalker" | "vehicle" | "saga"
-  | "token" | "emblem" => true
-  | _ => false
-
-/-- Lex an Oracle line for `cardName` into `Array OrbTok`: preprocesses reminder
-text / `{CHAOS}`, folds a leading em-dash label into `OrbTok.label`, and folds
-self-references (`<cardName>`, `"this <type>"`, `"this <type>'s"`) outside quotes
-into `OrbTok.selfRef`. -/
-def lexLine (cardName line : String) : Array OrbTok := Id.run do
-  let pre := preprocessOracleLine line
-  let (lbl?, body) :=
-    match pre.splitOn "—" with
-    | head :: rest =>
-      if !rest.isEmpty && !head.contains '"' && !head.contains ':' && !isRulesEmDashPrefix head then
-        let h := head.trimAscii.copy
-        if (classifyMechanicLabel? h).isSome || stripAbilityWord pre != pre then
-          (some h, (String.intercalate "—" rest).trimAscii.copy)
-        else (none, pre)
-      else (none, pre)
-    | [] => (none, pre)
-  let body := replaceCardNameOutsideQuotes body cardName "this permanent"
-  let rawToks := lexRaw body
-  let mut out : Array OrbTok := #[]
-  if let some h := lbl? then
-    out := out.push (.label h)
-  let mut i : Nat := 0
-  while i < rawToks.size do
-    match rawToks[i]? with
-    | some (.word w) =>
-      if lowerAscii w == "this" then
-        match rawToks[i + 1]? with
-        | some (.word w2) =>
-          let l2 := lowerAscii w2
-          if l2.endsWith "'s" && isSelfRefTypeWord (l2.dropEnd 2).copy then
-            out := out.push (.selfRef true)
-            i := i + 2
-          else if isSelfRefTypeWord l2 then
-            out := out.push (.selfRef false)
-            i := i + 2
-          else
-            out := out.push (.word w)
-            i := i + 1
-        | _ =>
-          out := out.push (.word w)
-          i := i + 1
-      else
-        out := out.push (.word w)
-        i := i + 1
-    | some tok =>
-      out := out.push tok
-      i := i + 1
-    | none => break
   return out
 
 end Mtg.Engine.Parser

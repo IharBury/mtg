@@ -15,7 +15,7 @@ namespace Mtg.Engine.Catalog
 open Mtg.Engine
 
 def akromaAngelOfFury : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Akroma, Angel of Fury",
     "{5}{R}{R}{R}",
     "Legendary Creature — Angel",
@@ -27,7 +27,7 @@ def akromaAngelOfFury : CardDef :=
   ]
 
 def archfiendOfDespair : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Archfiend of Despair",
     "{6}{B}{B}",
     "Creature — Demon",
@@ -38,7 +38,7 @@ def archfiendOfDespair : CardDef :=
   ]
 
 def archonOfCruelty : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Archon of Cruelty",
     "{6}{B}{B}",
     "Creature — Archon",
@@ -48,7 +48,7 @@ def archonOfCruelty : CardDef :=
   ]
 
 def avacynAngelOfHorror : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Avacyn, Angel of Horror",
     "{5}{B}{B}{B}",
     "Legendary Creature — Angel",
@@ -58,7 +58,7 @@ def avacynAngelOfHorror : CardDef :=
   ]
 
 def azoriusSignet : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Azorius Signet",
     "{2}",
     "Artifact",
@@ -66,7 +66,7 @@ def azoriusSignet : CardDef :=
   ]
 
 def battlefieldForge : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Battlefield Forge",
     "Land",
     "{T}: Add {C}.",
@@ -74,7 +74,7 @@ def battlefieldForge : CardDef :=
   ]
 
 def brainstorm : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Brainstorm",
     "{U}",
     "Instant",
@@ -82,7 +82,7 @@ def brainstorm : CardDef :=
   ]
 
 def brainsurge : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Brainsurge",
     "{2}{U}",
     "Instant",
@@ -90,7 +90,7 @@ def brainsurge : CardDef :=
   ]
 
 def cavesOfKoilos : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Caves of Koilos",
     "Land",
     "{T}: Add {C}.",
@@ -98,7 +98,7 @@ def cavesOfKoilos : CardDef :=
   ]
 
 def chromaticLantern : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Chromatic Lantern",
     "{3}",
     "Artifact",
@@ -107,7 +107,7 @@ def chromaticLantern : CardDef :=
   ]
 
 def clifftopRetreat : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Clifftop Retreat",
     "Land",
     "This land enters tapped unless you control a Mountain or a Plains.",
@@ -115,14 +115,14 @@ def clifftopRetreat : CardDef :=
   ]
 
 def commandTower : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Command Tower",
     "Land",
     "{T}: Add one mana of any color in your commander's color identity."
   ]
 
 def contaminatedLandscape : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Contaminated Landscape",
     "Land",
     "{T}: Add {C}.",
@@ -131,7 +131,7 @@ def contaminatedLandscape : CardDef :=
   ]
 
 def currencyConverter : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Currency Converter",
     "{1}",
     "Artifact",
@@ -141,7 +141,7 @@ def currencyConverter : CardDef :=
   ]
 
 def cursedMirror : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Cursed Mirror",
     "{2}{R}",
     "Artifact",
@@ -150,7 +150,7 @@ def cursedMirror : CardDef :=
   ]
 
 def dackFaydenHelpingHand : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Dack Fayden, Helping Hand",
     "{4}{W}{W}",
     "Legendary Creature — Human Advisor",
@@ -159,7 +159,7 @@ def dackFaydenHelpingHand : CardDef :=
   ]
 
 def darksteelAngel : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Darksteel Angel",
     "{9}",
     "Artifact Creature — Angel",
@@ -170,7 +170,7 @@ def darksteelAngel : CardDef :=
   ]
 
 def despark : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Despark",
     "{W}{B}",
     "Instant",
@@ -178,7 +178,7 @@ def despark : CardDef :=
   ]
 
 def dimirSignet : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Dimir Signet",
     "{2}",
     "Artifact",
@@ -186,7 +186,7 @@ def dimirSignet : CardDef :=
   ]
 
 def dreadhordeInvasion : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Dreadhorde Invasion",
     "{1}{B}",
     "Enchantment",
@@ -195,7 +195,7 @@ def dreadhordeInvasion : CardDef :=
   ]
 
 def drownedCatacomb : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Drowned Catacomb",
     "Land",
     "This land enters tapped unless you control an Island or a Swamp.",
@@ -203,7 +203,7 @@ def drownedCatacomb : CardDef :=
   ]
 
 def elspethSunsChampion : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Elspeth, Sun's Champion",
     "{4}{W}{W}",
     "Legendary Planeswalker — Elspeth",
@@ -214,21 +214,21 @@ def elspethSunsChampion : CardDef :=
   ]
 
 def exoticOrchard : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Exotic Orchard",
     "Land",
     "{T}: Add one mana of any color that a land an opponent controls could produce."
   ]
 
 def fabledPassage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Fabled Passage",
     "Land",
     "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. Then if you control four or more lands, untap that land."
   ]
 
 def factOrFiction : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Fact or Fiction",
     "{3}{U}",
     "Instant",
@@ -236,7 +236,7 @@ def factOrFiction : CardDef :=
   ]
 
 def fellwarStone : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Fellwar Stone",
     "{2}",
     "Artifact",
@@ -244,7 +244,7 @@ def fellwarStone : CardDef :=
   ]
 
 def fetidHeath : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Fetid Heath",
     "Land",
     "{T}: Add {C}.",
@@ -252,7 +252,7 @@ def fetidHeath : CardDef :=
   ]
 
 def flawlessManeuver : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Flawless Maneuver",
     "{2}{W}",
     "Instant",
@@ -261,7 +261,7 @@ def flawlessManeuver : CardDef :=
   ]
 
 def gingerQueenOfSweets : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ginger, Queen of Sweets",
     "{6}",
     "Legendary Artifact Creature — Food Noble",
@@ -272,7 +272,7 @@ def gingerQueenOfSweets : CardDef :=
   ]
 
 def glacialFortress : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Glacial Fortress",
     "Land",
     "This land enters tapped unless you control a Plains or an Island.",
@@ -280,7 +280,7 @@ def glacialFortress : CardDef :=
   ]
 
 def grandCrescendo : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Grand Crescendo",
     "{X}{W}{W}",
     "Instant",
@@ -288,7 +288,7 @@ def grandCrescendo : CardDef :=
   ]
 
 def isolatedChapel : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Isolated Chapel",
     "Land",
     "This land enters tapped unless you control a Plains or a Swamp.",
@@ -296,7 +296,7 @@ def isolatedChapel : CardDef :=
   ]
 
 def izzetSignet : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Izzet Signet",
     "{2}",
     "Artifact",
@@ -304,7 +304,7 @@ def izzetSignet : CardDef :=
   ]
 
 def jaceMultiverseArchitect : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Jace, Multiverse Architect",
     "{1}{W}{U}{B}{R}",
     "Legendary Planeswalker — Jace",
@@ -316,7 +316,7 @@ def jaceMultiverseArchitect : CardDef :=
   ]
 
 def jhoiraWeatherlightCorsair : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Jhoira, Weatherlight Corsair",
     "{4}{B}{B}",
     "Legendary Creature — Human Pirate",
@@ -325,7 +325,7 @@ def jhoiraWeatherlightCorsair : CardDef :=
   ]
 
 def kherKeep : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Kher Keep",
     "Legendary Land",
     "{T}: Add {C}.",
@@ -333,7 +333,7 @@ def kherKeep : CardDef :=
   ]
 
 def lingeringSouls : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Lingering Souls",
     "{2}{W}",
     "Sorcery",
@@ -342,7 +342,7 @@ def lingeringSouls : CardDef :=
   ]
 
 def martialCoup : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Martial Coup",
     "{X}{W}{W}",
     "Sorcery",
@@ -350,7 +350,7 @@ def martialCoup : CardDef :=
   ]
 
 def massPolymorph : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Mass Polymorph",
     "{5}{U}",
     "Sorcery",
@@ -358,7 +358,7 @@ def massPolymorph : CardDef :=
   ]
 
 def memnarchTheWarden : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Memnarch, the Warden",
     "{10}",
     "Legendary Artifact Creature — Wizard",
@@ -369,7 +369,7 @@ def memnarchTheWarden : CardDef :=
   ]
 
 def mysticGate : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Mystic Gate",
     "Land",
     "{T}: Add {C}.",
@@ -377,7 +377,7 @@ def mysticGate : CardDef :=
   ]
 
 def nissaLeylineTamer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Nissa, Leyline Tamer",
     "{3}{W}{U}{B}{R}",
     "Legendary Creature — Elf Wizard",
@@ -387,7 +387,7 @@ def nissaLeylineTamer : CardDef :=
   ]
 
 def nivMizzetGhostCounsel : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Niv-Mizzet, Ghost Counsel",
     "{2}{W}{W}{B}{B}",
     "Legendary Creature — Spirit Dragon",
@@ -398,7 +398,7 @@ def nivMizzetGhostCounsel : CardDef :=
   ]
 
 def obNixilisTheAscended : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ob Nixilis, the Ascended",
     "{5}{W}{W}",
     "Legendary Creature — Angel",
@@ -409,7 +409,7 @@ def obNixilisTheAscended : CardDef :=
   ]
 
 def occultEpiphany : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Occult Epiphany",
     "{X}{U}",
     "Instant",
@@ -417,7 +417,7 @@ def occultEpiphany : CardDef :=
   ]
 
 def omnathLocusOfTheVoid : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Omnath, Locus of the Void",
     "{7}",
     "Legendary Creature — Elemental",
@@ -428,7 +428,7 @@ def omnathLocusOfTheVoid : CardDef :=
   ]
 
 def overlordOfTheMistmoors : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Overlord of the Mistmoors",
     "{5}{W}{W}",
     "Enchantment Creature — Avatar Horror",
@@ -438,7 +438,7 @@ def overlordOfTheMistmoors : CardDef :=
   ]
 
 def pathOfAncestry : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Path of Ancestry",
     "Land",
     "This land enters tapped.",
@@ -446,7 +446,7 @@ def pathOfAncestry : CardDef :=
   ]
 
 def pathToExile : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Path to Exile",
     "{W}",
     "Instant",
@@ -454,7 +454,7 @@ def pathToExile : CardDef :=
   ]
 
 def perilousLandscape : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Perilous Landscape",
     "Land",
     "{T}: Add {C}.",
@@ -463,7 +463,7 @@ def perilousLandscape : CardDef :=
   ]
 
 def prairieStream : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Prairie Stream",
     "Land — Plains Island",
     "({T}: Add {W} or {U}.)",
@@ -471,7 +471,7 @@ def prairieStream : CardDef :=
   ]
 
 def proteusStaff : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Proteus Staff",
     "{3}",
     "Artifact",
@@ -479,7 +479,7 @@ def proteusStaff : CardDef :=
   ]
 
 def radiantSummit : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Radiant Summit",
     "Land — Mountain Plains",
     "({T}: Add {R} or {W}.)",
@@ -487,7 +487,7 @@ def radiantSummit : CardDef :=
   ]
 
 def rakdosSignet : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Rakdos Signet",
     "{2}",
     "Artifact",
@@ -495,14 +495,14 @@ def rakdosSignet : CardDef :=
   ]
 
 def reflectingPool : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Reflecting Pool",
     "Land",
     "{T}: Add one mana of any type that a land you control could produce."
   ]
 
 def restlessAnchorage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Restless Anchorage",
     "Land",
     "This land enters tapped.",
@@ -512,7 +512,7 @@ def restlessAnchorage : CardDef :=
   ]
 
 def restlessSpire : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Restless Spire",
     "Land",
     "This land enters tapped.",
@@ -522,7 +522,7 @@ def restlessSpire : CardDef :=
   ]
 
 def secureTheWastes : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Secure the Wastes",
     "{X}{W}",
     "Instant",
@@ -530,7 +530,7 @@ def secureTheWastes : CardDef :=
   ]
 
 def serrasEmissary : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Serra's Emissary",
     "{4}{W}{W}{W}",
     "Creature — Angel",
@@ -541,7 +541,7 @@ def serrasEmissary : CardDef :=
   ]
 
 def sharkTyphoon : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Shark Typhoon",
     "{5}{U}",
     "Enchantment",
@@ -551,7 +551,7 @@ def sharkTyphoon : CardDef :=
   ]
 
 def shivanReef : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Shivan Reef",
     "Land",
     "{T}: Add {C}.",
@@ -559,7 +559,7 @@ def shivanReef : CardDef :=
   ]
 
 def skrelvsHive : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Skrelv's Hive",
     "{1}{W}",
     "Enchantment",
@@ -568,7 +568,7 @@ def skrelvsHive : CardDef :=
   ]
 
 def solRing : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Sol Ring",
     "{1}",
     "Artifact",
@@ -576,7 +576,7 @@ def solRing : CardDef :=
   ]
 
 def staffOfTheStoryteller : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Staff of the Storyteller",
     "{1}{W}",
     "Artifact",
@@ -586,7 +586,7 @@ def staffOfTheStoryteller : CardDef :=
   ]
 
 def strokeOfMidnight : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Stroke of Midnight",
     "{2}{W}",
     "Instant",
@@ -594,7 +594,7 @@ def strokeOfMidnight : CardDef :=
   ]
 
 def sulfurFalls : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Sulfur Falls",
     "Land",
     "This land enters tapped unless you control an Island or a Mountain.",
@@ -602,7 +602,7 @@ def sulfurFalls : CardDef :=
   ]
 
 def sulfurousSprings : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Sulfurous Springs",
     "Land",
     "{T}: Add {C}.",
@@ -610,7 +610,7 @@ def sulfurousSprings : CardDef :=
   ]
 
 def sunfall : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Sunfall",
     "{3}{W}{W}",
     "Sorcery",
@@ -618,7 +618,7 @@ def sunfall : CardDef :=
   ]
 
 def sunkenRuins : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Sunken Ruins",
     "Land",
     "{T}: Add {C}.",
@@ -626,7 +626,7 @@ def sunkenRuins : CardDef :=
   ]
 
 def swordsToPlowshares : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Swords to Plowshares",
     "{W}",
     "Instant",
@@ -634,7 +634,7 @@ def swordsToPlowshares : CardDef :=
   ]
 
 def syntheticDestiny : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Synthetic Destiny",
     "{4}{U}{U}",
     "Instant",
@@ -642,7 +642,7 @@ def syntheticDestiny : CardDef :=
   ]
 
 def talismanOfCreativity : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Talisman of Creativity",
     "{2}",
     "Artifact",
@@ -651,7 +651,7 @@ def talismanOfCreativity : CardDef :=
   ]
 
 def talismanOfDominance : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Talisman of Dominance",
     "{2}",
     "Artifact",
@@ -660,7 +660,7 @@ def talismanOfDominance : CardDef :=
   ]
 
 def talismanOfIndulgence : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Talisman of Indulgence",
     "{2}",
     "Artifact",
@@ -669,7 +669,7 @@ def talismanOfIndulgence : CardDef :=
   ]
 
 def talismanOfProgress : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Talisman of Progress",
     "{2}",
     "Artifact",
@@ -678,7 +678,7 @@ def talismanOfProgress : CardDef :=
   ]
 
 def tamiyoUpriserCrowned : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tamiyo, Upriser Crowned",
     "{4}{R}{W}",
     "Legendary Creature — Moonfolk Warrior",
@@ -689,7 +689,7 @@ def tamiyoUpriserCrowned : CardDef :=
   ]
 
 def teferisReproach : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Teferi's Reproach",
     "{2}{W}",
     "Instant",
@@ -698,7 +698,7 @@ def teferisReproach : CardDef :=
   ]
 
 def theUrSphinx : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "The Ur-Sphinx",
     "{6}{W}{U}{B}",
     "Legendary Creature — Sphinx Avatar",
@@ -709,7 +709,7 @@ def theUrSphinx : CardDef :=
   ]
 
 def turbulentCrater : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Turbulent Crater",
     "Land — Swamp Mountain",
     "({T}: Add {B} or {R}.)",
@@ -717,7 +717,7 @@ def turbulentCrater : CardDef :=
   ]
 
 def turbulentShore : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Turbulent Shore",
     "Land — Plains Island",
     "({T}: Add {W} or {U}.)",
@@ -725,7 +725,7 @@ def turbulentShore : CardDef :=
   ]
 
 def turbulentWetlands : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Turbulent Wetlands",
     "Land — Island Swamp",
     "({T}: Add {U} or {B}.)",
@@ -733,7 +733,7 @@ def turbulentWetlands : CardDef :=
   ]
 
 def undergroundRiver : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Underground River",
     "Land",
     "{T}: Add {C}.",
@@ -741,7 +741,7 @@ def undergroundRiver : CardDef :=
   ]
 
 def venserFerventForger : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Venser, Fervent Forger",
     "{4}{R}{R}",
     "Legendary Creature — Human Sorcerer",
@@ -753,7 +753,7 @@ def venserFerventForger : CardDef :=
   ]
 
 def whirlwindOfThought : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Whirlwind of Thought",
     "{1}{U}{R}{W}",
     "Enchantment",
@@ -761,7 +761,7 @@ def whirlwindOfThought : CardDef :=
   ]
 
 def whiteSunsTwilight : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "White Sun's Twilight",
     "{X}{W}{W}",
     "Sorcery",
@@ -769,7 +769,7 @@ def whiteSunsTwilight : CardDef :=
   ]
 
 def windcragSiege : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Windcrag Siege",
     "{1}{R}{W}",
     "Enchantment",

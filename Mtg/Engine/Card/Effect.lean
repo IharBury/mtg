@@ -2194,6 +2194,139 @@ instance : HasTargeting Effect where
 instance : ToString Effect where
   toString := toNotation
 
+/-! ### Core Generic Effect Constructors (Card / Game / Catalog) -/
+
+/-- Build a spell-shaped `Effect` from targeting and unified `Instruction` body. -/
+def mkSpell (targets : TargetSpec) (body : Instruction) : Effect :=
+  { targets, body }
+
+/-- Build an activated-ability `Effect` from targeting and unified `Instruction` body. -/
+def mkAbility (targets : TargetSpec) (body : Instruction) : Effect :=
+  { targets, body }
+
+/-- True when `i` references `.costPaidObjects` anywhere inside its expressions. -/
+def usesCostPaidObjects (i : Instruction) : Bool :=
+  instrHasCostPaid i
+where
+  objHasCostPaid : ObjectExpr → Bool
+    | .costPaidObjects => true
+    | .filter o _ | .targetsOf o | .linkedExile o | .extremum _ _ o => objHasCostPaid o
+    | .union xs => xs.attach.any fun ⟨x, _⟩ => objHasCostPaid x
+    | .diff a b => objHasCostPaid a || objHasCostPaid b
+    | _ => false
+  valHasCostPaid : ValueExpr → Bool
+    | .objectStat _ o | .counterCount _ o | .manaSpent o | .colorCountAmong o | .aggregate _ _ o =>
+      objHasCostPaid o
+    | .binary _ a b => valHasCostPaid a || valHasCostPaid b
+    | _ => false
+  instrHasCostPaid : Instruction → Bool
+    | .player (.drawCards _ v) | .player (.scry _ v) | .player (.surveil _ v) => valHasCostPaid v
+    | .life (.gain _ v) | .life (.lose _ v) | .life (.set _ v) => valHasCostPaid v
+    | .damage (.deal s _ v _) => objHasCostPaid s || valHasCostPaid v
+    | .moveZone o _ _ _ => objHasCostPaid o
+    | .seq xs => xs.attach.any fun ⟨x, _⟩ => instrHasCostPaid x
+    | .bind _ a b => instrHasCostPaid a || instrHasCostPaid b
+    | .ifCond _ a b | .optional _ _ a b _ => instrHasCostPaid a || instrHasCostPaid b
+    | .forEach _ _ b => instrHasCostPaid b
+    | _ => false
+
+def dealDamage (amount : Nat) : Effect :=
+  mkSpell .anyTarget (Instruction.dealDamageFixed (.targetSlot 0) amount)
+
+def pump (power toughness : Int) : Effect :=
+  mkSpell .creature (Instruction.pumpFixed (.target 0) power toughness)
+
+def dealDamageToCreature (amount : Nat) : Effect :=
+  mkSpell .creature (Instruction.dealDamageFixed (.targetSlot 0) amount)
+
+def draw (n : Nat) : Effect :=
+  mkSpell .none (Instruction.drawFixed n)
+
+def gainLife (n : Nat) : Effect :=
+  mkAbility .none (Instruction.gainLifeFixed n)
+
+def abilityDraw (n : Nat) : Effect :=
+  mkAbility .none (Instruction.drawFixed n)
+
+def searchBasicLandTapped : Effect :=
+  mkAbility .none
+    (.player (.searchLibrary {
+      zones := .libraryOf .you
+      filter := .all #[.hasSupertype .basic, .hasType .land]
+      count := .upTo (.const 1)
+      dest := .battlefield .controller
+      mods := { tapped := true }
+      reveal := false
+      shuffle := true
+    }))
+
+def searchLandTypeFilter (landType : String) : ObjectPred :=
+  if landType == "Basic land" || landType == "basic land" then
+    .all #[.hasSupertype .basic, .hasType .land]
+  else
+    match Supertype.ofOracle? landType with
+    | some sup => .hasSupertype sup
+    | none =>
+      match CardType.ofOracle? landType with
+      | some ty => .hasType ty
+      | none => .hasSubtype (.literal (CardSubtype.ofOracleD landType))
+
+def searchLandTypeToHand (landType : String) : Effect :=
+  mkAbility .none
+    (.player (.searchLibrary {
+      zones := .libraryOf .you
+      filter := searchLandTypeFilter landType
+      count := .upTo (.const 1)
+      dest := .hand .controller
+      reveal := true
+      shuffle := true
+    }))
+
+def attachToTargetCreatureYouControl : Effect :=
+  mkAbility .creatureYouControl (.permanent (.attach .this (.target 0)))
+
+def equipEffect (subtype : Option CardSubtype := none) (worthy : Bool := false) : Effect :=
+  let spec : TargetSpec :=
+    if worthy then .worthyCreatureYouControl
+    else match subtype with
+      | some s => .creatureYouControlSubtype s
+      | none => .creatureYouControl
+  mkAbility spec (.permanent (.attach .this (.target 0)))
+
+def sourceGets (power toughness : Int) : Effect :=
+  mkAbility .none (Instruction.pumpFixed .this power toughness)
+
+def putPlusOnePlusOneOnSource (n : Nat) : Effect :=
+  mkAbility .none (Instruction.putPlusOne .this n)
+
+def targetCantBeBlockedThisTurn : Effect :=
+  mkAbility .creature (Instruction.cantBeBlocked (.target 0))
+
+def plusOneX : Effect :=
+  mkAbility .none (Instruction.putCounters .this .plusOnePlusOne .chosenX)
+
+def triggerCreateTokens (kind : TokenSpec) (n : Nat) (tapped : Bool := false) : Effect :=
+  { body := Instruction.createTokensFixed kind n .you tapped }
+
+def triggerGainLife (n : Nat) : Effect :=
+  { body := Instruction.gainLifeFixed n }
+
+def triggerCascade : Effect :=
+  let cheaperNonland : ObjectPred :=
+    .all #[.not (.hasType .land), .stat .manaValue .lt (.objectStat .manaValue .this)]
+  { body := .bind ⟨0⟩ (.player (.inspectLibrary {
+        source := .revealUntil .you cheaperNonland (.const 1) (exileWhileRevealing := true)
+        action := .none
+        rest := .leaveInPlace
+      }))
+      (.seq #[
+        .stack (.mayCastOrPlay (.filter (.stepObjects ⟨0⟩) cheaperNonland) {
+          freeCast := true, landsAllowed := false, castNow := true
+          maxTotalManaValue? := some (.binary .sub (.objectStat .manaValue .this) (.const 1))
+        }),
+        .moveZone (.stepObjects ⟨0⟩) (.library .owner .bottomRandom) .put
+      ]) }
+
 end Effect
 
 end Mtg.Engine

@@ -988,8 +988,6 @@ inductive PostStep where
   | enteredBattlefieldSilent (cardId : ObjectId) (isLand : Bool := false)
   | returnedBattlefieldEndStep (cardId : ObjectId) (isLand : Bool)
   | returnedToBattlefield (cardId : ObjectId) (isLand : Bool)
-  | returnedToBattlefieldTapped (cardId : ObjectId) (isLand : Bool)
-  | searchBasicLandTapped (p : PlayerId)
   | putOntoBattlefieldHasteAtFour (p : PlayerId) (cardId : ObjectId) (x : Nat) (shuffle : Bool)
   | revealPutCreaturesStep (p : PlayerId) (remaining put enteredFromIds : Array ObjectId)
       (cause : Option EventCause)
@@ -1023,7 +1021,6 @@ inductive PostStep where
       (cause : Option EventCause)
   | discardMultiHandIdsLoop (remaining : Array (PlayerId × ObjectId)) (logEach : Bool)
       (cause : Option EventCause)
-  | finishPlusOneAfterDiscards
   | closeDiscardBatchStep
   | finishSurveilHandMove (p : PlayerId) (fromId : ObjectId) (cardName : String)
       (remainingGy : Array ObjectId) (cause : Option EventCause)
@@ -1033,7 +1030,6 @@ inductive PostStep where
   | putRestOnBottomRandom (p : PlayerId) (rest : Array ObjectId) (cause : Option EventCause)
   | millSourceInfluenceCount (controller : PlayerId) (sourceId : ObjectId)
   | continueOpeningBegin (remainingIds : Array ObjectId)
-  | logMovedToExile (cardId : ObjectId)
   | resumeChooseModeAfterLeave (p : PlayerId)
   | resumeChooseTargetsAfterLeave (p : PlayerId)
   | resumeTriggerModesAfterLeave (p : PlayerId) (objectId : ObjectId) (remaining : Nat)
@@ -1042,7 +1038,6 @@ inductive PostStep where
       (chosen : Array Nat)
   | resumeHawkeyeModesAfterLeave (p : PlayerId) (objectId : ObjectId) (left : Nat)
       (chosen : Array Nat)
-  | applyPlusOneAfterSearch (id : ObjectId) (controller : PlayerId) (sourceId : Option ObjectId)
   | resumeProposalCostAfterLeave (p : PlayerId) (savedP : Pending)
   | runAfterRandom (after : AfterRandom)
   | grantLifelinkUntilEot (cardId : ObjectId) (cause : Option EventCause)
@@ -1059,8 +1054,6 @@ inductive PostStep where
       (sourceId : Option ObjectId) (cause : Option EventCause)
       (pendingFromId : Option ObjectId := none)
   | grantPlayUntilEndOfNextTurn (p : PlayerId) (cardId : ObjectId) (cause : Option EventCause)
-  | exileCreaturesFromGraveyardLoop (controller : PlayerId) (remainingIds : Array ObjectId)
-      (cause : Option EventCause) (pendingFromId : Option ObjectId := none)
   | finishExileUntilSourceLeaves (sourceId : Option ObjectId) (fromId : ObjectId)
   | finishExileForLeaveTrigger (sourceId : Option ObjectId) (fromId : ObjectId)
   | exileTopForPlayLoop (fromPlayer caster : PlayerId) (remaining : Nat) (mayCastStyle : Bool)
@@ -1073,7 +1066,6 @@ inductive PostStep where
   | offerMayCastUpToFromExile (caster : PlayerId) (preIds : Array ObjectId) (casts : Nat)
   | finishExileUntilNextEndStep (controller : PlayerId) (fromId : ObjectId) (cause : EventCause)
   | logDiscardedCount (p : PlayerId) (preDiscards : Nat)
-  | loyaltyOnPlaneswalkersLoop (p : PlayerId) (remainingIds : Array ObjectId)
   | logGiftTreasureGiven (recipient : PlayerId)
   | logDelayedBirdSoldiersCreated (controller : PlayerId) (startEventIdx : Nat)
   | resolveCascadeLoop (p : PlayerId) (maxMv : Nat) (cause : EventCause)
@@ -1083,7 +1075,6 @@ inductive PostStep where
       (pendingFromId : Option ObjectId := none)
   | finishGrimaDirectCast (controller victim : PlayerId) (fromId : ObjectId)
       (others : Array ObjectId) (cause : Option EventCause)
-  | sarumanExileCopyMayCast (controller : PlayerId) (fromId : ObjectId) (cause : EventCause)
   | exileFromRevealedHandAfterMove (p victim : PlayerId) (fromId : ObjectId)
       (cardName : String) (sourceId : Option ObjectId)
   | logExiledIfInExile (fromId : ObjectId) (msg : String)
@@ -1266,8 +1257,6 @@ inductive InterpCont where
   | repeatRest (remaining : Nat) (body : Instruction)
   /-- Run `onYes` or `onNo` after a `.optional` choice (reading `choiceVar` from `stepEnv`). -/
   | branchOnChoice (onYes onNo : Instruction)
-  /-- Run `body` with `v` bound to the chosen subtype/parity/keywords/objects/players. -/
-  | bindChosenAndRun (v : VarId) (body : Instruction)
   /-- Run the chosen branch after `Pending.chooseLibraryPlacement` or `Pending.chooseTriggerOr`. -/
   | chooseBranch (branches : Array Instruction) (isLibrary : Bool := false)
   /-- Run `ifUnpaid` unless `payer` paid in `Pending.payOrLetCounter` (incl. CR 800.4f departure). -/
@@ -1522,7 +1511,6 @@ inductive PendingReplacement where
       (n : Nat) (cause : EventCause)
   | finishPlaceSearched (p : PlayerId) (fromId : ObjectId) (name : String)
       (tapped : Bool) (cause : Option EventCause)
-  | finishSearchedUntap (p : PlayerId) (landId : ObjectId) (name : String)
   | placeSearchedBatch (p : PlayerId) (remainingIds : Array ObjectId) (tapped : Bool)
       (cause : Option EventCause)
       (entered : Array (ObjectId × String) := #[])
@@ -1697,8 +1685,6 @@ structure ContinuationFrame where
   postCastCleanup : Option PostCastCleanup := none
   /-- After the pending surveil, a card with mana value at most this put into the graveyard goes to hand. -/
   surveilReturnMvAtMost : Option Nat := none
-  /-- A noncreature, nonland card put into the graveyard by the pending surveil goes to hand. -/
-  surveilReturnNoncreatureNonland : Bool := false
   /-- Continuation for an event paused on `Pending.chooseReplacement` (CR 616.1). -/
   pendingReplacement : Option PendingReplacement := none
   /-- Outer `pendingReplacement` continuations saved while an interactive choice
@@ -1706,10 +1692,6 @@ structure ContinuationFrame where
   outerPendingReplacements : Array PendingReplacement := #[]
   /-- Source of the current connive action, if any (MSH / CR 701.50). -/
   conniveSource : Option ObjectId := none
-  /-- Put a +1/+1 counter on this permanent after the current discard choices finish. -/
-  plusOneAfterDiscards : Option ObjectId := none
-  /-- After the current library search shuffles, put a +1/+1 counter on this creature. -/
-  plusOneAfterSearch : Option (ObjectId × PlayerId × Option ObjectId) := none
   /-- Remaining discards for Thirst for Knowledge (MSH 344). -/
   thirstDiscardsLeft : Nat := 0
   /-- Discarding a card of this type finishes `thirstDiscardsLeft` early. -/
@@ -1724,8 +1706,6 @@ structure ContinuationFrame where
   /-- Pre-replaced single-token `ProposedTokenBatch`es staged across entering-attacking
   target choices (`createAndMarkTokensAttacking` -> `commitEnteringAttackItems`). -/
   stagedAttackTokenBatches : Array ProposedTokenBatch := #[]
-  /-- After the current search, untap the land if its controller has this many lands. -/
-  untapSearchedIfLands : Option Nat := none
   /-- Active resolving source object id and controller across pending resolution
   choices and delayed triggered abilities (CR 608 / 610.1). -/
   resolvingContext : Option (Option ObjectId × PlayerId) := none
@@ -1764,20 +1744,16 @@ inductive ContinuationChange where
   | pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat))
   | postCastCleanup (v : Option PostCastCleanup)
   | surveilReturnMvAtMost (v : Option Nat)
-  | surveilReturnNoncreatureNonland (v : Bool)
   | pendingReplacement (v : Option PendingReplacement)
   | pushOuterPendingReplacement (v : PendingReplacement)
   | popOuterPendingReplacement
   | conniveSource (v : Option ObjectId)
-  | plusOneAfterDiscards (v : Option ObjectId)
-  | plusOneAfterSearch (v : Option (ObjectId × PlayerId × Option ObjectId))
   | thirstDiscardsLeft (v : Nat)
   | thirstDiscardType (v : CardType)
   | pendingDiscardsLeft (v : Nat)
   | discardCountPerPlayer (v : Nat)
   | discardBatch (v : Option (BatchId × Nat))
   | stagedAttackTokenBatches (v : Array ProposedTokenBatch)
-  | untapSearchedIfLands (v : Option Nat)
   | stashedCause (v : Option EventCause)
   | resolvingSpell (v : Option ObjectId)
   | resolvingAbility (v : Option ObjectId)
@@ -2130,20 +2106,16 @@ namespace EngineChange
 @[inline] def pendingMayCastFromExile (v : Option (PlayerId × Array ObjectId × Nat)) : EngineChange := .continuation (.pendingMayCastFromExile v)
 @[inline] def postCastCleanup (v : Option PostCastCleanup) : EngineChange := .continuation (.postCastCleanup v)
 @[inline] def surveilReturnMvAtMost (v : Option Nat) : EngineChange := .continuation (.surveilReturnMvAtMost v)
-@[inline] def surveilReturnNoncreatureNonland (v : Bool) : EngineChange := .continuation (.surveilReturnNoncreatureNonland v)
 @[inline] def pendingReplacement (v : Option PendingReplacement) : EngineChange := .continuation (.pendingReplacement v)
 @[inline] def pushOuterPendingReplacement (v : PendingReplacement) : EngineChange := .continuation (.pushOuterPendingReplacement v)
 @[inline] def popOuterPendingReplacement : EngineChange := .continuation .popOuterPendingReplacement
 @[inline] def conniveSource (v : Option ObjectId) : EngineChange := .continuation (.conniveSource v)
-@[inline] def plusOneAfterDiscards (v : Option ObjectId) : EngineChange := .continuation (.plusOneAfterDiscards v)
-@[inline] def plusOneAfterSearch (v : Option (ObjectId × PlayerId × Option ObjectId)) : EngineChange := .continuation (.plusOneAfterSearch v)
 @[inline] def thirstDiscardsLeft (v : Nat) : EngineChange := .continuation (.thirstDiscardsLeft v)
 @[inline] def thirstDiscardType (v : CardType) : EngineChange := .continuation (.thirstDiscardType v)
 @[inline] def pendingDiscardsLeft (v : Nat) : EngineChange := .continuation (.pendingDiscardsLeft v)
 @[inline] def discardCountPerPlayer (v : Nat) : EngineChange := .continuation (.discardCountPerPlayer v)
 @[inline] def discardBatch (v : Option (BatchId × Nat)) : EngineChange := .continuation (.discardBatch v)
 @[inline] def stagedAttackTokenBatches (v : Array ProposedTokenBatch) : EngineChange := .continuation (.stagedAttackTokenBatches v)
-@[inline] def untapSearchedIfLands (v : Option Nat) : EngineChange := .continuation (.untapSearchedIfLands v)
 @[inline] def stashedCause (v : Option EventCause) : EngineChange := .continuation (.stashedCause v)
 @[inline] def resolvingSpell (v : Option ObjectId) : EngineChange := .continuation (.resolvingSpell v)
 @[inline] def resolvingAbility (v : Option ObjectId) : EngineChange := .continuation (.resolvingAbility v)

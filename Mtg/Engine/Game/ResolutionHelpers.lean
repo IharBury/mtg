@@ -76,100 +76,6 @@ def withLegalSpecPlayer (g : Game) (controller : PlayerId) (spec : TargetSpec)
     | Target.permanent _ | Target.card _ => g.logMsg "The target is no longer legal")
     sourceId missing
 
-/-- Apply `f` when the announced trigger target is still legal (CR 608.2b). -/
-def withLegalTriggerTarget (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target)
-    (f : Game → Target → Game) (noneMsg : String := "The target is no longer legal") : Game :=
-  g.withLegalSpecTarget controller ab.targetSpec targets f sourceId (some noneMsg)
-
-/-- Apply `f` to a still-legal permanent target of a triggered ability. -/
-def withLegalTriggerPermanent (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target)
-    (f : Game → GameObject → Game) (noneMsg : String := "The target is no longer legal") : Game :=
-  g.withLegalSpecPermanent controller ab.targetSpec targets f sourceId (some noneMsg)
-
-/-- Apply `f` to a still-legal player target of a triggered ability. -/
-def withLegalTriggerPlayer (g : Game) (controller : PlayerId) (ab : TriggeredAbility)
-    (sourceId : Option ObjectId) (targets : Array Target)
-    (f : Game → PlayerId → Game) : Game :=
-  g.withLegalTriggerTarget controller ab sourceId targets (fun g t =>
-    match t with
-    | Target.player pid => f g pid
-    | _ => g.logMsg "The target is no longer legal")
-
-/-- Deal `n` damage to a still-legal target of `spec`. -/
-def applyDamageToSpecTarget (g : Game) (controller : PlayerId) (spec : TargetSpec)
-    (targets : Array Target) (n : Nat) (sourceId : Option ObjectId := none)
-    (missing : Option String := none)
-    (cause : Option EventCause := none) : Game :=
-  g.withLegalSpecTarget controller spec targets
-    (fun g t => g.dealDamageToTarget t n (source := sourceId.bind g.damageSourceById?) (cause := cause))
-    sourceId missing
-
-/-- Sequential pause-safe loop for `exileCreaturesFromGraveyard`. -/
-def exileCreaturesFromGraveyardLoop (g : Game) (controller : PlayerId)
-    (ids : Array ObjectId) (cause : Option EventCause)
-    (pendingFromId : Option ObjectId := none) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
-    return g.chainPendingReplacement
-      (.finishPostStep (.exileCreaturesFromGraveyardLoop controller ids cause pendingFromId))
-  let mut g := g
-  if let some fid := pendingFromId then
-    if let some moved := g.followMovedToZone? fid (· == .exile) then
-      if g.stillInGame controller then
-        g := g.createEffect (.playPermission moved.id {
-          player := controller
-          whileExiled := true
-          anyMana := true }) (cause := cause)
-        g := g.logMsg
-          s!"{g.name moved} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
-      else
-        g := g.logMsg s!"{g.name moved} is exiled"
-  if !g.stillInGame controller then
-    return g
-  for i in [0:ids.size] do
-    let id := ids[i]!
-    match g.findObject? id with
-    | none => pure ()
-    | some o =>
-      let name := g.name o
-      let (g', _) := g.move id .exile none (cause := cause)
-      g := g'
-      if let .chooseReplacement .. := g.pending then
-        let rem := ids.extract (i + 1) ids.size
-        return g.chainPendingReplacement
-          (.finishPostStep (.exileCreaturesFromGraveyardLoop controller rem cause (some id)))
-      if let some moved := g.followMovedToZone? id (· == .exile) then
-        if g.stillInGame controller then
-          g := g.createEffect (.playPermission moved.id {
-            player := controller
-            whileExiled := true
-            anyMana := true }) (cause := cause)
-          g := g.logMsg
-            s!"{name} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled"
-        else
-          g := g.logMsg s!"{name} is exiled"
-      if !g.stillInGame controller then
-        return g
-  return g
-
-/-- Exile creature cards from `fromPlayer`'s graveyard and grant `controller`
-permission to cast them, spending mana as though it were any type (CR 610.1 / 701.18). -/
-def exileCreaturesFromGraveyard (g : Game) (controller fromPlayer : PlayerId)
-    (ty : CardType := .creature) : Game :=
-  if !g.stillInGame fromPlayer && !g.stillInGame controller then g
-  else
-    let ids :=
-      (g.player fromPlayer).graveyard.filter (fun id =>
-        match g.findObject? id with
-        | some o => g.hasType o ty
-        | none => false)
-    if ids.isEmpty then g
-    else
-      let (g, cause) := g.allocDelayedCause (some controller)
-      g.withBatch (some cause) fun g =>
-        g.exileCreaturesFromGraveyardLoop controller ids (some cause)
-
 /-- Put `o` on the top (`top`) or bottom of its owner's library, deferring the
 log across `Pending.chooseReplacement` and emitting it only if `o` actually
 arrives in `.library owner`. -/
@@ -204,23 +110,10 @@ def untapPermanentLogged (g : Game) (o : GameObject)
         (defaultCause := .turnBased .untapAll)
     g.untapPermanent o (cause := some baseCause)
 
-/-- Put a double strike counter on `o` with deferred logging across replacements. -/
-def addDoubleStrikeCounter (g : Game) (o : GameObject)
-    (sourceId : Option ObjectId := none) : Game :=
-  let cause := g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
-  g.putCountersDeferredLog o.id .doubleStrike 1 (g.controllerOf o) .gets (cause := some cause)
-
 /-- Make `o` lose indestructible until end of turn. -/
 def loseIndestructibleUntilEot (g : Game) (o : GameObject) : Game :=
   let g := g.createEffect (.loseIndestructibleUntilEot o.id)
   g.logMsg s!"{g.name o} loses indestructible until end of turn"
-
-/-- Make `o` become an artifact and gain indestructible until end of turn. -/
-def becomeArtifactIndestructibleUntilEot (g : Game) (o : GameObject) : Game :=
-  let g := g.createEffects #[
-    .additionalArtifactUntilEot o.id,
-    .keywordsUntilEot o.id #[Keyword.indestructible]]
-  g.logMsg s!"{g.name o} becomes an artifact and gains indestructible until end of turn"
 
 /-- Tap `o` and put a stun counter on it (Ruling 764: an already tapped permanent
 still receives the stun counter). -/
@@ -580,20 +473,6 @@ def destroyPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
   if let some msg := logMsgAfter then
     g := g.logMsg msg
   return g
-
-/-- True when permanent `id` was actually exiled from the battlefield by the
-effect since `startIdx` (excluding CR 800.4c control-loss departures). -/
-def wasPermanentExiled (g : Game) (id : ObjectId) (startIdx : Nat := 0) : Bool :=
-  Id.run do
-    for i in [startIdx : g.events.size] do
-      let idx := g.events.size - 1 - (i - startIdx)
-      let e := g.events[idx]!
-      match e.change with
-      | .rules (.zone (.moved before _ .battlefield toZone _ _ _ _)) =>
-        if before.id == some id then
-          return toZone == .exile && e.cause? != some (.gameRule .playerLeftGame)
-      | _ => pure ()
-    return false
 
 /-- Exile each still-present permanent in `remainingIds` sequentially inside an
 open or standalone batch, pausing on `Pending.chooseReplacement` and logging
@@ -1038,16 +917,6 @@ def offerBottomAnyOrder (g : Game) (p : PlayerId) (ids : Array ObjectId)
       match cause with
       | some c => g.change (.stashedCause (some c))
       | none => g
-
-def finishPlusOneAfterDiscards (g : Game) : Game :=
-  match g.plusOneAfterDiscards with
-  | none => g
-  | some id =>
-    let g := g.change (.plusOneAfterDiscards none)
-    match g.findObject? id with
-    | some o =>
-      if o.isOnBattlefield then g.addPlusOnePlusOneTo o 1 else g
-    | none => g
 
 def transformPermanent (g : Game) (controller : PlayerId) (sourceId : Option ObjectId)
     (cause : Option EventCause := none) : Game :=

@@ -1,3 +1,4 @@
+import Mtg.Engine.Tests.Builders
 import Mtg.Engine.Card.CardDef
 import Mtg.Engine.Card.ManaSpec
 import Mtg.Engine.Card.Parser.SubGrammars

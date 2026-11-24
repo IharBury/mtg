@@ -841,8 +841,6 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           "may sacrifice another creature or artifact: choose <id>, or decline"
         | .maySacrificeThese n _ =>
           s!"may sacrifice {n}: choose <id> ..., or decline"
-        | .mayDiscardThese n _ =>
-          s!"may discard {n}: choose <id> ..., or decline"
         | .mayPaySymbolsThen .. => "may pay the cost (accept), or decline"
         | .attachAnyEquipment _ eligible =>
           s!"attach any number of Equipment ({eligible.size}): choose <id> ..., or decline"
@@ -916,8 +914,6 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           "may exile the discarded card and play it until the end of your next turn (accept), or decline"
         | .tricksterLibrary .. =>
           "put that creature second from the top of your library (top), or on the bottom (bottom)"
-        | .mayTakeMilled ids _ =>
-          s!"may put one of {ids.size} milled card(s) into your hand: choose <id>, or decline"
         | .mayDrawThenEachOpponentDraws n =>
           s!"may draw {n} (accept); if you do, each opponent draws a card"
         | .mayPutHeroFromHandOrDraw ids =>

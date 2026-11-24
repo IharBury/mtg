@@ -650,28 +650,8 @@ partial def parseActivatedAbilityComp (raw : String) (cardName : String := "") :
       parseCompositionalEffect qp effBodyText cardName false
   let some eff := eff? | return none
 
-  let rec objHasCostPaid : ObjectExpr → Bool
-    | .costPaidObjects => true
-    | .filter o _ | .targetsOf o | .linkedExile o | .extremum _ _ o => objHasCostPaid o
-    | .union xs => xs.attach.any fun ⟨x, _⟩ => objHasCostPaid x
-    | .diff a b => objHasCostPaid a || objHasCostPaid b
-    | _ => false
-  let rec valHasCostPaid : ValueExpr → Bool
-    | .objectStat _ o | .counterCount _ o | .manaSpent o | .colorCountAmong o | .aggregate _ _ o => objHasCostPaid o
-    | .binary _ a b => valHasCostPaid a || valHasCostPaid b
-    | _ => false
-  let rec instrHasCostPaid : Instruction → Bool
-    | .player (.drawCards _ v) | .player (.scry _ v) | .player (.surveil _ v) => valHasCostPaid v
-    | .life (.gain _ v) | .life (.lose _ v) | .life (.set _ v) => valHasCostPaid v
-    | .damage (.deal s _ v _) => objHasCostPaid s || valHasCostPaid v
-    | .moveZone o _ _ _ => objHasCostPaid o
-    | .seq xs => xs.attach.any fun ⟨x, _⟩ => instrHasCostPaid x
-    | .bind _ a b => instrHasCostPaid a || instrHasCostPaid b
-    | .ifCond _ a b | .optional _ _ a b _ => instrHasCostPaid a || instrHasCostPaid b
-    | .forEach _ _ b => instrHasCostPaid b
-    | _ => false
   let cost : CostSpec :=
-    if cost0.bindVar?.isNone && instrHasCostPaid eff.body then
+    if cost0.bindVar?.isNone && Effect.usesCostPaidObjects eff.body then
       { cost0 with bindVar? := some ⟨0⟩ }
     else cost0
 

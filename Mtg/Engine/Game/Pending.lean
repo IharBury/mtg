@@ -109,8 +109,6 @@ inductive AfterRandom where
   | putOnTop (p : PlayerId) (ids : Array ObjectId)
   /-- Behold `subtype`; if you do, untap `landId` (Elven Passage). -/
   | beholdUntap (p : PlayerId) (landId : ObjectId) (subtype : CardSubtype)
-  /-- Put a +1/+1 counter on this creature after the shuffle (Restorative Technique). -/
-  | plusOne (id : ObjectId) (controller : PlayerId) (sourceId : Option ObjectId := none)
 /-- Discard a card at random after the shuffle (Curse-Marred Demon). -/
   | discardRandom (p : PlayerId)
   /-- Resume the unified `Instruction` interpreter stashed on `ContinuationFrame.interpWait?`. -/
@@ -123,7 +121,6 @@ def AfterRandom.player? : AfterRandom → Option PlayerId
   | .none => Option.none
   | .draw q _ | .gainLife q _ | .revealRandomCreatureThenBottom q _
   | .putOnTop q _ | .beholdUntap q _ _ | .discardRandom q | .continueInterpreter q => some q
-  | .plusOne _ ctrl _ => some ctrl
 
 /-- Where cards found by a library search go (CR 701.23). -/
 inductive SearchDest where
@@ -429,8 +426,6 @@ inductive FraChoice where
   | maySacrificeAnotherForDrawTreasure (sourceId : ObjectId)
   /-- You may sacrifice `n` of `ids`. Declining pays nothing. -/
   | maySacrificeThese (n : Nat) (ids : Array ObjectId)
-  /-- You may discard `n` of `ids`. Declining pays nothing. -/
-  | mayDiscardThese (n : Nat) (ids : Array ObjectId)
   /-- You may pay `symbols`. If you do, do `next` (Silvan Reveler). -/
   | mayPaySymbolsThen (symbols : Array ManaSymbol) (next : Instruction) (sourceId : ObjectId)
   /-- Choose any number of Equipment to attach to `hostId`. Declining
@@ -550,9 +545,6 @@ inductive FraChoice where
   `connive` (Trickster's Stratagem). -/
   | tricksterLibrary (caster : PlayerId) (creatureId : ObjectId)
       (connive : Option ObjectId) (sourceId : Option ObjectId := none)
-  /-- You may put one of these milled cards into your hand, then gain `lifeAfter`
-  life (Rapid Rescue, Rick Jones). Declining still gains the life. -/
-  | mayTakeMilled (ids : Array ObjectId) (lifeAfter : Nat)
   /-- You may draw `n` cards. If you do, each opponent draws a card (Armor Wars). -/
   | mayDrawThenEachOpponentDraws (n : Nat)
   /-- You may put one of these Hero cards from your hand onto the battlefield.

@@ -81,17 +81,44 @@ def combineTriggerModes (modes : Array Effect) (chosen : Array Nat) : Option Eff
       targets
       body := .seq (es.toArray.map (·.body)) }
 
+/-- Structural body matching *The Eagles Are Coming!* (kicker widens its
+target count from 1 to any number, CR 702.33g / 601.2c). -/
+private def eaglesAreComingBody : Instruction :=
+  .bind ⟨0⟩ (Instruction.bounce .allTargets)
+    (.installEffect (.createDelayedTrigger {
+      pattern := .stepEachUpkeep
+      duration := .indefinite
+      oneShot := true
+      effect := {
+        body := Instruction.createTokens .birdSoldier (.stepMetric .movedCount ⟨0⟩)
+      }
+    }))
+
+/-- Structural `Effect` matching *Call Damage Control* (multi-clause graveyard
+return represented as a single up-to-2 `TargetSpec` for round-trip printing). -/
+def returnUpToTwoGyModalEffect : Effect :=
+  Effect.mkSpell (.single {
+      domain := .object .yourGraveyard (.all #[
+        .any #[.hasType .artifact, .hasType .creature, .hasType .enchantment, .hasType .land],
+        .isKind .card])
+      count := .upTo 2 })
+    (.moveZone .allTargets (.hand .controller) .returnToHand {})
+
+/-- Structural `Effect` matching `"put a +1/+1 counter on each of up to X target
+creatures you control"` where X is the life gained in the triggering event. -/
+def resourceGainLifePlusOnesEffect : Effect :=
+  { targets := TargetSpec.creatureYouControl.asAnyNumber
+    body := Instruction.putPlusOne .allTargets 1 }
+
 /-- The targets a kicked spell announces instead (CR 702.33g / 601.2c): The
-Eagles Are Coming! chooses any number of creatures you own, and Galadriel's
-Dismissal targets a player. -/
+Eagles Are Coming! chooses any number of creatures you own, and target-replacing
+kickers (e.g. Galadriel's Dismissal) switch via `altDomainIf?`. -/
 def kickedSpellEffect (e : Effect) : Effect :=
-  if e.body == Effect.eaglesAreComing.body then
+  if e.body == eaglesAreComingBody then
     { e with
       targets := .ofDomain
         (.object .battlefield (ObjectPred.andAll #[.hasType .creature, .ownedBy .you]))
         .anyNumber }
-  else if e.body == Effect.phaseOutKicker.body then
-    { e with targets := .player }
   else
     match e.targets.slots[0]?.bind (·.altDomainIf?) with
     | some (Condition.castPred (.wasKicked .this), altDom) =>
@@ -106,9 +133,9 @@ def kickedSpellEffect (e : Effect) : Effect :=
 
 /-- True when `c` is a “Choose up to two” graveyard-return modal spell
 (*Call Damage Control*, whose printed representation uses
-`Effect.returnUpToTwoGyModal` so its multi-clause choice round-trips cleanly). -/
+`returnUpToTwoGyModalEffect` so its multi-clause choice round-trips cleanly). -/
 def isReturnUpToTwoGyModal (c : CardDef) : Bool :=
-  c.spellEffect.any (·.body == Effect.returnUpToTwoGyModal.body)
+  c.spellEffect.any (·.body == returnUpToTwoGyModalEffect.body)
 
 /-- The four CR 700.2 modes of *Call Damage Control* in printed order:
 0 = target artifact card, 1 = target creature card,
@@ -438,7 +465,7 @@ def announcedTargetBounds (g : Game) (obj : GameObject) : Nat × Nat :=
       match obj.triggeredAbility with
       | some ab =>
         let spec := ab.targetSpec
-        let lifeTargets := ab.effect == Effect.resourceGainLifePlusOnes
+        let lifeTargets := ab.effect == resourceGainLifePlusOnesEffect
         let minN := if lifeTargets then 0 else spec.minTargetCount
         let maxN :=
           if lifeTargets then ((g.lastKnownPowerOf? obj.id).getD 0).toNat

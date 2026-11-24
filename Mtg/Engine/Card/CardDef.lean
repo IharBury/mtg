@@ -358,8 +358,7 @@ def spellEffect (c : CardDef) : Option Effect :=
   match c.spellAbility with
   | none => none
   | some sa =>
-    if sa.effect.body == .noop && !c.isInstantOrSorcery &&
-        (!sa.additionalCosts.isEmpty || !sa.alternativeCosts.isEmpty || !sa.castRestrictions.isEmpty) then
+    if sa.effect.body == .noop && !c.isInstantOrSorcery && !sa.additionalCosts.isEmpty then
       none
     else some sa.effect
 
@@ -367,16 +366,8 @@ def spellEffect (c : CardDef) : Option Effect :=
 def additionalCosts (c : CardDef) : Array AdditionalCostSpec :=
   (c.spellAbility.map (·.additionalCosts)).getD #[]
 
-/-- Alternative casting costs carried by `c.spellAbility` (CR 118.9). -/
-def alternativeCosts (c : CardDef) : Array AlternativeCostSpec :=
-  (c.spellAbility.map (·.alternativeCosts)).getD #[]
-
-/-- Cast restrictions carried by `c.spellAbility` (CR 601.3). -/
-def castRestrictions (c : CardDef) : Array Condition :=
-  (c.spellAbility.map (·.castRestrictions)).getD #[]
-
 /-- Set or replace the resolving spell `Effect` on `c.spellAbility`, preserving
-any existing additional/alternative costs and cast restrictions. -/
+any existing additional costs. -/
 def withSpellEffect (c : CardDef) (e : Effect) : CardDef :=
   let sa : SpellAbility :=
     match c.spellAbility with

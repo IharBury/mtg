@@ -219,16 +219,6 @@ def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
       choices.any (fun (ch : TapManaChoice) => go (ch.applyToPool curPool) (idx + 1))
   go pool 0
 
-/-- Object predicate for a spell's additional-cost sacrifice (mandatory or chosen
-from an `"or pay {N}"` additional cost; CR 118.8 / 601.2b,h). -/
-def spellSacrificeCostPred? (c : CardDef) : Option ObjectPred :=
-  c.mandatorySacrificeFilter?.orElse fun _ =>
-    c.additionalChoiceCost?.bind fun branches =>
-      branches.findSome? fun cs =>
-        cs.items.findSome? fun
-          | .sacrifice _ (.filter pred) => some pred
-          | _ => none
-
 /-- Whether `p` currently controls a usable non-plain CR 605 mana ability
 (`!isPlainTapManaAbilityDef`, such as Treasures, life/mana filter lands, or
 counter-removal mana abilities). When `prop? = some prop`, also requires that
@@ -307,7 +297,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         let isSpellSrc (s : GameObject) : Bool :=
           s.zone == .stack && (prop.spellId != excludeId || prop.kind == .spell)
         let pred? := src.bind fun s =>
-          if isSpellSrc s then spellSacrificeCostPred? (g.baseCard s) else none
+          if isSpellSrc s then g.spellSacrificeCostPredFor? s (g.baseCard s) else none
         let sacOk :=
           !prop.needsSacrificeOther ||
             match pred? with

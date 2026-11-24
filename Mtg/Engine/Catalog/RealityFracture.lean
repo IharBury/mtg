@@ -17,7 +17,7 @@ namespace Mtg.Engine.Catalog
 open Mtg.Engine
 
 def emrakulTheExigentDoom : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Emrakul, the Exigent Doom",
     "{10}",
     "Legendary Creature — Eldrazi",
@@ -29,7 +29,7 @@ def emrakulTheExigentDoom : CardDef :=
   ]
 
 def academicAscent : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Academic Ascent",
     "{1}{W}",
     "Instant",
@@ -38,7 +38,7 @@ def academicAscent : CardDef :=
   ]
 
 def blossomBlessedAngel : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Blossom-Blessed Angel",
     "{3}{W}",
     "Creature — Angel Cleric",
@@ -53,7 +53,7 @@ def blossomBlessedAngel : CardDef :=
   ]
 
 def campusCrier : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Campus Crier",
     "{1}{W}",
     "Creature — Human Advisor",
@@ -62,7 +62,7 @@ def campusCrier : CardDef :=
   ]
 
 def enlightenedConfidant : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Enlightened Confidant",
     "{1}{W}",
     "Creature — Kor Cleric",
@@ -72,7 +72,7 @@ def enlightenedConfidant : CardDef :=
   ]
 
 def fateshaperAspirant : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Fateshaper Aspirant",
     "{4}{W}",
     "Creature — Rhino Cleric",
@@ -83,7 +83,7 @@ def fateshaperAspirant : CardDef :=
   ]
 
 def flickeringHound : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Flickering Hound",
     "{3}{W}",
     "Creature — Dog",
@@ -92,7 +92,7 @@ def flickeringHound : CardDef :=
   ]
 
 def generousRevival : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Generous Revival",
     "{2}{W}",
     "Sorcery",
@@ -101,7 +101,7 @@ def generousRevival : CardDef :=
   ]
 
 def germinateRecruits : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Germinate Recruits",
     "{2}{W}",
     "Instant",
@@ -109,7 +109,7 @@ def germinateRecruits : CardDef :=
   ]
 
 def graftSurgeon : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Graft Surgeon",
     "{2}{W}",
     "Creature — Human Cleric",
@@ -119,7 +119,7 @@ def graftSurgeon : CardDef :=
   ]
 
 def guidingHydra : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Guiding Hydra",
     "{X}{W}",
     "Creature — Hydra Horror",
@@ -129,7 +129,7 @@ def guidingHydra : CardDef :=
   ]
 
 def hexhavenBattalion : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Hexhaven Battalion",
     "{4}{W}{W}",
     "Sorcery",
@@ -138,7 +138,7 @@ def hexhavenBattalion : CardDef :=
   ]
 
 def kindredJudgment : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Kindred Judgment",
     "{5}{W}{W}",
     "Sorcery",
@@ -146,7 +146,7 @@ def kindredJudgment : CardDef :=
   ]
 
 def loyalTutor : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Loyal Tutor",
     "{W}",
     "Instant",
@@ -154,7 +154,7 @@ def loyalTutor : CardDef :=
   ]
 
 def memoryTrap : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Memory Trap",
     "{2}{W}",
     "Enchantment",
@@ -162,7 +162,7 @@ def memoryTrap : CardDef :=
   ]
 
 def predictivePreparations : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Predictive Preparations",
     "{1}{W}",
     "Sorcery",
@@ -171,7 +171,7 @@ def predictivePreparations : CardDef :=
   ]
 
 def prophesiedEnd : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Prophesied End",
     "{1}{W}",
     "Instant",
@@ -179,7 +179,7 @@ def prophesiedEnd : CardDef :=
   ]
 
 def refuteDestiny : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Refute Destiny",
     "{1}{W}",
     "Sorcery",
@@ -187,7 +187,7 @@ def refuteDestiny : CardDef :=
   ]
 
 def repurposedEnforcer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Repurposed Enforcer",
     "{1}{W}",
     "Creature — Human Soldier",
@@ -196,7 +196,7 @@ def repurposedEnforcer : CardDef :=
   ]
 
 def returnToTheLightRealms : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Return to the Light Realms",
     "{7}{W}{W}",
     "Sorcery",
@@ -204,7 +204,7 @@ def returnToTheLightRealms : CardDef :=
   ]
 
 def shatterwingPegasus : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Shatterwing Pegasus",
     "{2}{W}",
     "Creature — Pegasus",
@@ -214,7 +214,7 @@ def shatterwingPegasus : CardDef :=
   ]
 
 def surgicalPrecision : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Surgical Precision",
     "{1}{W}",
     "Sorcery",
@@ -224,7 +224,7 @@ def surgicalPrecision : CardDef :=
   ]
 
 def unflinchingHortimancer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Unflinching Hortimancer",
     "{1}{W}",
     "Creature — Human Cleric",
@@ -234,7 +234,7 @@ def unflinchingHortimancer : CardDef :=
   ]
 
 def yourFateEndsHere : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Your Fate Ends Here",
     "{2}{W}",
     "Instant",
@@ -242,7 +242,7 @@ def yourFateEndsHere : CardDef :=
   ]
 
 def countersculpt : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Countersculpt",
     "{U}{U}",
     "Instant",
@@ -251,7 +251,7 @@ def countersculpt : CardDef :=
   ]
 
 def cruelCalculations : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Cruel Calculations",
     "{2}{U}",
     "Sorcery",
@@ -259,7 +259,7 @@ def cruelCalculations : CardDef :=
   ]
 
 def cryotheoryAdept : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Cryotheory Adept",
     "{1}{U}",
     "Creature — Human Wizard",
@@ -269,7 +269,7 @@ def cryotheoryAdept : CardDef :=
   ]
 
 def divinerOfVictory : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Diviner of Victory",
     "{U}",
     "Creature — Dwarf Wizard",
@@ -284,7 +284,7 @@ def divinerOfVictory : CardDef :=
   ]
 
 def diviningDuelist : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Divining Duelist",
     "{2}{U}",
     "Creature — Merfolk Wizard",
@@ -297,7 +297,7 @@ def diviningDuelist : CardDef :=
   ]
 
 def icyReception : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Icy Reception",
     "{1}{U}",
     "Instant",
@@ -307,7 +307,7 @@ def icyReception : CardDef :=
   ]
 
 def infiniteCoursework : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Infinite Coursework",
     "{2}{U}",
     "Enchantment — Aura",
@@ -317,7 +317,7 @@ def infiniteCoursework : CardDef :=
   ]
 
 def jacesMachinations : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Jace's Machinations",
     "{2}{U}",
     "Instant",
@@ -326,7 +326,7 @@ def jacesMachinations : CardDef :=
   ]
 
 def mindseekerOculus : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Mindseeker Oculus",
     "{2}{U}",
     "Creature — Homunculus",
@@ -335,7 +335,7 @@ def mindseekerOculus : CardDef :=
   ]
 
 def perfectedTheory : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Perfected Theory",
     "{U}",
     "Instant",
@@ -345,7 +345,7 @@ def perfectedTheory : CardDef :=
   ]
 
 def planForAllOutcomes : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Plan for All Outcomes",
     "{3}{U}",
     "Enchantment",
@@ -354,7 +354,7 @@ def planForAllOutcomes : CardDef :=
   ]
 
 def preciseRedaction : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Precise Redaction",
     "{1}{U}",
     "Instant",
@@ -362,7 +362,7 @@ def preciseRedaction : CardDef :=
   ]
 
 def protegesAwakening : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Protege's Awakening",
     "{3}{U}",
     "Sorcery",
@@ -371,7 +371,7 @@ def protegesAwakening : CardDef :=
   ]
 
 def seasonedCryomancer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Seasoned Cryomancer",
     "{1}{U}{U}",
     "Creature — Human Wizard",
@@ -381,7 +381,7 @@ def seasonedCryomancer : CardDef :=
   ]
 
 def semesterForeseer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Semester Foreseer",
     "{3}{U}",
     "Creature — Human Wizard",
@@ -396,7 +396,7 @@ def semesterForeseer : CardDef :=
   ]
 
 def sphinxOfFalseConclusions : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Sphinx of False Conclusions",
     "{2}{U}{U}",
     "Creature — Sphinx Illusion",
@@ -408,7 +408,7 @@ def sphinxOfFalseConclusions : CardDef :=
   ]
 
 def sphinxsApproach : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Sphinx's Approach",
     "{1}{U}{U}",
     "Instant",
@@ -417,7 +417,7 @@ def sphinxsApproach : CardDef :=
   ]
 
 def surveillancePhantasm : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Surveillance Phantasm",
     "{1}{U}",
     "Creature — Bird Illusion",
@@ -428,7 +428,7 @@ def surveillancePhantasm : CardDef :=
   ]
 
 def theTheoristJaceBeleren : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "The Theorist, Jace Beleren",
     "{2}{U}{U}",
     "Legendary Planeswalker — Jace",
@@ -440,7 +440,7 @@ def theTheoristJaceBeleren : CardDef :=
   ]
 
 def theoristsProxy : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Theorist's Proxy",
     "{1}{U}",
     "Creature — Illusion",
@@ -451,7 +451,7 @@ def theoristsProxy : CardDef :=
   ]
 
 def undulatingWitness : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Undulating Witness",
     "{4}{U}",
     "Creature — Serpent",
@@ -462,7 +462,7 @@ def undulatingWitness : CardDef :=
   ]
 
 def unsummon : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Unsummon",
     "{U}",
     "Instant",
@@ -470,7 +470,7 @@ def unsummon : CardDef :=
   ]
 
 def variableChaser : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Variable Chaser",
     "{2}{U}",
     "Creature — Human Wizard",
@@ -485,7 +485,7 @@ def variableChaser : CardDef :=
   ]
 
 def apexWitchstalker : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Apex Witchstalker",
     "{4}{B}{B}",
     "Creature — Wolf",
@@ -496,7 +496,7 @@ def apexWitchstalker : CardDef :=
   ]
 
 def bloodlineRecollector : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Bloodline Recollector",
     "{1}{B}",
     "Creature — Vampire Warlock",
@@ -510,7 +510,7 @@ def bloodlineRecollector : CardDef :=
   ]
 
 def breakUnderPressure : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Break Under Pressure",
     "{2}{B}",
     "Instant",
@@ -518,7 +518,7 @@ def breakUnderPressure : CardDef :=
   ]
 
 def castAwayDoubt : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Cast Away Doubt",
     "{2}{B}",
     "Sorcery",
@@ -526,7 +526,7 @@ def castAwayDoubt : CardDef :=
   ]
 
 def darkMatterManipulator : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Dark Matter Manipulator",
     "{B}",
     "Creature — Human Warlock",
@@ -536,7 +536,7 @@ def darkMatterManipulator : CardDef :=
   ]
 
 def darklightPhoenix : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Darklight Phoenix",
     "{3}{B}",
     "Creature — Phoenix",
@@ -546,7 +546,7 @@ def darklightPhoenix : CardDef :=
   ]
 
 def extendedAbsence : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Extended Absence",
     "{3}{B}",
     "Instant",
@@ -554,7 +554,7 @@ def extendedAbsence : CardDef :=
   ]
 
 def extrapolateTheImpossible : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Extrapolate the Impossible",
     "{1}{B}",
     "Sorcery",
@@ -562,7 +562,7 @@ def extrapolateTheImpossible : CardDef :=
   ]
 
 def lastGasp : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Last Gasp",
     "{1}{B}",
     "Instant",
@@ -570,7 +570,7 @@ def lastGasp : CardDef :=
   ]
 
 def lichsRelic : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Lich's Relic",
     "{B}",
     "Artifact — Equipment",
@@ -580,7 +580,7 @@ def lichsRelic : CardDef :=
   ]
 
 def multiplyByZero : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Multiply by Zero",
     "{1}{B}",
     "Instant",
@@ -588,7 +588,7 @@ def multiplyByZero : CardDef :=
   ]
 
 def overwriteTheMultiverse : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Overwrite the Multiverse",
     "{4}{B}{B}",
     "Sorcery",
@@ -596,7 +596,7 @@ def overwriteTheMultiverse : CardDef :=
   ]
 
 def rampartHunter : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Rampart Hunter",
     "{3}{B}",
     "Creature — Horror",
@@ -606,7 +606,7 @@ def rampartHunter : CardDef :=
   ]
 
 def rankRat : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Rank Rat",
     "{1}{B}",
     "Creature — Zombie Rat",
@@ -615,7 +615,7 @@ def rankRat : CardDef :=
   ]
 
 def rewriteRegrets : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Rewrite Regrets",
     "{3}{B}",
     "Sorcery",
@@ -624,7 +624,7 @@ def rewriteRegrets : CardDef :=
   ]
 
 def riseOfTheDeathbringer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Rise of the Deathbringer",
     "{4}{B}",
     "Instant",
@@ -634,7 +634,7 @@ def riseOfTheDeathbringer : CardDef :=
   ]
 
 def sanctumLurker : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Sanctum Lurker",
     "{2}{B}",
     "Creature — Horror",
@@ -645,7 +645,7 @@ def sanctumLurker : CardDef :=
   ]
 
 def screechingSoulbreaker : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Screeching Soulbreaker",
     "{2}{B}",
     "Creature — Siren Bard",
@@ -655,7 +655,7 @@ def screechingSoulbreaker : CardDef :=
   ]
 
 def silenceTheEcho : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Silence the Echo",
     "{1}{B}",
     "Sorcery",
@@ -664,7 +664,7 @@ def silenceTheEcho : CardDef :=
   ]
 
 def solveForDisappointment : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Solve for Disappointment",
     "{1}{B}",
     "Sorcery",
@@ -673,7 +673,7 @@ def solveForDisappointment : CardDef :=
   ]
 
 def terminalCriticism : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Terminal Criticism",
     "{1}{B}",
     "Instant",
@@ -681,7 +681,7 @@ def terminalCriticism : CardDef :=
   ]
 
 def theoreticalNecromancer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Theoretical Necromancer",
     "{2}{B}",
     "Creature — Vampire Warlock",
@@ -690,7 +690,7 @@ def theoreticalNecromancer : CardDef :=
   ]
 
 def voidExtrapolator : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Void Extrapolator",
     "{1}{B}",
     "Creature — Aetherborn Warlock",
@@ -705,7 +705,7 @@ def voidExtrapolator : CardDef :=
   ]
 
 def vraskasFinalMercy : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Vraska's Final Mercy",
     "{B}{B}",
     "Sorcery",
@@ -715,7 +715,7 @@ def vraskasFinalMercy : CardDef :=
   ]
 
 def ajanisAnguish : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ajani's Anguish",
     "{X}{R}",
     "Enchantment",
@@ -724,7 +724,7 @@ def ajanisAnguish : CardDef :=
   ]
 
 def artifistAcumen : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Artifist Acumen",
     "{R}",
     "Sorcery",
@@ -733,7 +733,7 @@ def artifistAcumen : CardDef :=
   ]
 
 def awakenTheInferno : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Awaken the Inferno",
     "{4}{R}",
     "Sorcery",
@@ -742,7 +742,7 @@ def awakenTheInferno : CardDef :=
   ]
 
 def realityFractureBlazingCrescendo : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Blazing Crescendo",
     "{1}{R}",
     "Instant",
@@ -751,7 +751,7 @@ def realityFractureBlazingCrescendo : CardDef :=
   ]
 
 def chandrasEmberling : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Chandra's Emberling",
     "{2}{R}",
     "Creature — Gremlin Elemental",
@@ -761,7 +761,7 @@ def chandrasEmberling : CardDef :=
   ]
 
 def commandTheStage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Command the Stage",
     "{2}{R}",
     "Sorcery",
@@ -770,7 +770,7 @@ def commandTheStage : CardDef :=
   ]
 
 def craterclawColossus : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Craterclaw Colossus",
     "{4}{R}{R}{R}",
     "Artifact Creature — Beast Construct",
@@ -780,7 +780,7 @@ def craterclawColossus : CardDef :=
   ]
 
 def curseMarredDemon : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Curse-Marred Demon",
     "{2}{R}{R}",
     "Creature — Demon",
@@ -790,7 +790,7 @@ def curseMarredDemon : CardDef :=
   ]
 
 def draconicVisitor : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Draconic Visitor",
     "{3}{R}{R}",
     "Creature — Dragon",
@@ -800,7 +800,7 @@ def draconicVisitor : CardDef :=
   ]
 
 def eardrumRattler : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Eardrum Rattler",
     "{1}{R}",
     "Creature — Human Bard",
@@ -809,7 +809,7 @@ def eardrumRattler : CardDef :=
   ]
 
 def essenceBurn : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Essence Burn",
     "{1}{R}",
     "Instant",
@@ -817,7 +817,7 @@ def essenceBurn : CardDef :=
   ]
 
 def faceYourself : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Face Yourself",
     "{5}{R}{R}",
     "Sorcery",
@@ -825,7 +825,7 @@ def faceYourself : CardDef :=
   ]
 
 def fulminousForte : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Fulminous Forte",
     "{2}{R}",
     "Instant",
@@ -835,7 +835,7 @@ def fulminousForte : CardDef :=
   ]
 
 def hallwayHeckler : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Hallway Heckler",
     "{2}{R}",
     "Creature — Elemental Sorcerer",
@@ -850,7 +850,7 @@ def hallwayHeckler : CardDef :=
   ]
 
 def heartstringPuller : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Heartstring Puller",
     "{3}{R}",
     "Creature — Elf Sorcerer",
@@ -860,7 +860,7 @@ def heartstringPuller : CardDef :=
   ]
 
 def identityEcho : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Identity Echo",
     "{2}{R}",
     "Enchantment",
@@ -868,7 +868,7 @@ def identityEcho : CardDef :=
   ]
 
 def masterOfBarbs : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Master of Barbs",
     "{1}{R}",
     "Creature — Lizard Bard",
@@ -878,7 +878,7 @@ def masterOfBarbs : CardDef :=
   ]
 
 def noAdmittance : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "No Admittance",
     "{1}{R}",
     "Sorcery",
@@ -887,7 +887,7 @@ def noAdmittance : CardDef :=
   ]
 
 def pompousBattlemage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Pompous Battlemage",
     "{R}",
     "Creature — Goblin Sorcerer",
@@ -902,7 +902,7 @@ def pompousBattlemage : CardDef :=
   ]
 
 def pyreRhymer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Pyre Rhymer",
     "{1}{R}{R}",
     "Creature — Elemental Sorcerer",
@@ -917,7 +917,7 @@ def pyreRhymer : CardDef :=
   ]
 
 def skilledBattlecarver : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Skilled Battlecarver",
     "{1}{R}",
     "Creature — Human Warrior",
@@ -927,7 +927,7 @@ def skilledBattlecarver : CardDef :=
   ]
 
 def stingcasterMage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Stingcaster Mage",
     "{1}{R}",
     "Creature — Human Wizard",
@@ -937,7 +937,7 @@ def stingcasterMage : CardDef :=
   ]
 
 def tetherTechnician : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tether Technician",
     "{4}{R}",
     "Creature — Minotaur Artificer",
@@ -947,7 +947,7 @@ def tetherTechnician : CardDef :=
   ]
 
 def violentEchoes : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Violent Echoes",
     "{2}{R}{R}",
     "Instant",
@@ -955,7 +955,7 @@ def violentEchoes : CardDef :=
   ]
 
 def wrathOfTheBloodmane : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Wrath of the Bloodmane",
     "{2}{R}",
     "Instant",
@@ -964,7 +964,7 @@ def wrathOfTheBloodmane : CardDef :=
   ]
 
 def arcaneAmphisbaena : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Arcane Amphisbaena",
     "{1}{G}",
     "Creature — Snake",
@@ -974,7 +974,7 @@ def arcaneAmphisbaena : CardDef :=
   ]
 
 def bestialIncursion : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Bestial Incursion",
     "{3}{G}",
     "Sorcery",
@@ -983,7 +983,7 @@ def bestialIncursion : CardDef :=
   ]
 
 def buddingInsurgent : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Budding Insurgent",
     "{2}{G}",
     "Creature — Dryad Scout",
@@ -993,7 +993,7 @@ def buddingInsurgent : CardDef :=
   ]
 
 def carnivorousCultivator : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Carnivorous Cultivator",
     "{1}{G}",
     "Creature — Elf Warlock",
@@ -1009,7 +1009,7 @@ def carnivorousCultivator : CardDef :=
   ]
 
 def compelBrutality : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Compel Brutality",
     "{1}{G}",
     "Instant",
@@ -1019,7 +1019,7 @@ def compelBrutality : CardDef :=
   ]
 
 def flourishingGrapple : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Flourishing Grapple",
     "{G}",
     "Instant",
@@ -1027,7 +1027,7 @@ def flourishingGrapple : CardDef :=
   ]
 
 def gardenize : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Gardenize",
     "{1}{G}{G}",
     "Enchantment",
@@ -1036,7 +1036,7 @@ def gardenize : CardDef :=
   ]
 
 def greenhousePropagator : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Greenhouse Propagator",
     "{2}{G}",
     "Creature — Cat Druid",
@@ -1046,7 +1046,7 @@ def greenhousePropagator : CardDef :=
   ]
 
 def heartwoodCrafter : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Heartwood Crafter",
     "{G}",
     "Creature — Elf Artificer",
@@ -1061,7 +1061,7 @@ def heartwoodCrafter : CardDef :=
   ]
 
 def hexhavenInvigorator : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Hexhaven Invigorator",
     "{G}{G}{G}{G}",
     "Creature — Chimera Horror",
@@ -1071,7 +1071,7 @@ def hexhavenInvigorator : CardDef :=
   ]
 
 def hungeringPuppetbeast : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Hungering Puppetbeast",
     "{3}{G}{G}",
     "Artifact Creature — Beast Construct",
@@ -1081,7 +1081,7 @@ def hungeringPuppetbeast : CardDef :=
   ]
 
 def huntersAxe : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Hunter's Axe",
     "{G}",
     "Artifact — Equipment",
@@ -1090,7 +1090,7 @@ def huntersAxe : CardDef :=
   ]
 
 def inspiredTethermage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Inspired Tethermage",
     "{2}{G}",
     "Creature — Elf Warrior",
@@ -1100,7 +1100,7 @@ def inspiredTethermage : CardDef :=
   ]
 
 def omnipresence : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Omnipresence",
     "{5}{G}{G}{G}",
     "Enchantment",
@@ -1108,7 +1108,7 @@ def omnipresence : CardDef :=
   ]
 
 def puppetCrafting : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Puppet Crafting",
     "{1}{G}",
     "Enchantment — Aura",
@@ -1118,7 +1118,7 @@ def puppetCrafting : CardDef :=
   ]
 
 def restoreWithEmpathy : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Restore with Empathy",
     "{2}{G}",
     "Instant",
@@ -1126,7 +1126,7 @@ def restoreWithEmpathy : CardDef :=
   ]
 
 def simulacrumShaper : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Simulacrum Shaper",
     "{1}{G}{G}",
     "Creature — Elf Druid",
@@ -1136,7 +1136,7 @@ def simulacrumShaper : CardDef :=
   ]
 
 def somethingWorthSaving : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Something Worth Saving",
     "{1}{G}",
     "Instant",
@@ -1144,7 +1144,7 @@ def somethingWorthSaving : CardDef :=
   ]
 
 def sureshotSower : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Sureshot Sower",
     "{1}{G}",
     "Creature — Human Archer",
@@ -1154,7 +1154,7 @@ def sureshotSower : CardDef :=
   ]
 
 def tarmogoyf : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tarmogoyf",
     "{1}{G}",
     "Creature — Lhurgoyf",
@@ -1163,7 +1163,7 @@ def tarmogoyf : CardDef :=
   ]
 
 def tethermagesAdvantage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tethermage's Advantage",
     "{G}",
     "Instant",
@@ -1171,7 +1171,7 @@ def tethermagesAdvantage : CardDef :=
   ]
 
 def verdantKraken : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Verdant Kraken",
     "{4}{G}{G}{G}",
     "Creature — Plant Kraken",
@@ -1180,7 +1180,7 @@ def verdantKraken : CardDef :=
   ]
 
 def vinelasherAdept : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Vinelasher Adept",
     "{4}{G}{G}",
     "Creature — Rhino Soldier",
@@ -1191,7 +1191,7 @@ def vinelasherAdept : CardDef :=
   ]
 
 def wreckingGecko : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Wrecking Gecko",
     "{4}{G}",
     "Artifact Creature — Lizard Construct",
@@ -1201,7 +1201,7 @@ def wreckingGecko : CardDef :=
   ]
 
 def aeridKonstrari : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Aerid Konstrari",
     "{1}{R}{G}{G}",
     "Legendary Creature — Elder Sphinx",
@@ -1212,7 +1212,7 @@ def aeridKonstrari : CardDef :=
   ]
 
 def avatarOfBurgeoningEchoes : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Avatar of Burgeoning Echoes",
     "{G}{U}",
     "Creature — Avatar",
@@ -1222,7 +1222,7 @@ def avatarOfBurgeoningEchoes : CardDef :=
   ]
 
 def blessedGhoul : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Blessed Ghoul",
     "{W/B}",
     "Creature — Zombie Cleric",
@@ -1232,7 +1232,7 @@ def blessedGhoul : CardDef :=
   ]
 
 def bloombrute : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Bloombrute",
     "{2}{G}{W}",
     "Creature — Plant Elemental",
@@ -1242,7 +1242,7 @@ def bloombrute : CardDef :=
   ]
 
 def chargeTheSanctum : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Charge the Sanctum",
     "{2}{R/W}",
     "Instant",
@@ -1252,7 +1252,7 @@ def chargeTheSanctum : CardDef :=
   ]
 
 def clashOfElements : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Clash of Elements",
     "{1}{U}{R}",
     "Instant",
@@ -1260,7 +1260,7 @@ def clashOfElements : CardDef :=
   ]
 
 def craftworkCrusher : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Craftwork Crusher",
     "{3}{R}{R}{G}{G}",
     "Artifact Creature — Boar Construct",
@@ -1273,7 +1273,7 @@ def craftworkCrusher : CardDef :=
   ]
 
 def denziloreFatehold : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Denzilore Fatehold",
     "{1}{W}{U}{U}",
     "Legendary Creature — Elder Sphinx",
@@ -1284,7 +1284,7 @@ def denziloreFatehold : CardDef :=
   ]
 
 def desperateFuturescribe : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Desperate Futurescribe",
     "{2}{W}{U}",
     "Creature — Kor Scout",
@@ -1294,7 +1294,7 @@ def desperateFuturescribe : CardDef :=
   ]
 
 def emergencyPhytomedic : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Emergency Phytomedic",
     "{G/W}",
     "Creature — Dryad Cleric",
@@ -1308,7 +1308,7 @@ def emergencyPhytomedic : CardDef :=
   ]
 
 def entrustTheSpark : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Entrust the Spark",
     "{3}{G}{U}",
     "Sorcery",
@@ -1316,7 +1316,7 @@ def entrustTheSpark : CardDef :=
   ]
 
 def fateholdCharm : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Fatehold Charm",
     "{W}{U}",
     "Instant",
@@ -1327,7 +1327,7 @@ def fateholdCharm : CardDef :=
   ]
 
 def fateholdChronologist : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Fatehold Chronologist",
     "{1}{W/U}",
     "Creature — Bird Wizard",
@@ -1342,7 +1342,7 @@ def fateholdChronologist : CardDef :=
   ]
 
 def ferocityOfTheHunt : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ferocity of the Hunt",
     "{1}{B/G}",
     "Enchantment — Aura",
@@ -1353,7 +1353,7 @@ def ferocityOfTheHunt : CardDef :=
   ]
 
 def frostbitePyromental : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Frostbite Pyromental",
     "{U}{R}{R}",
     "Creature — Elemental",
@@ -1364,7 +1364,7 @@ def frostbitePyromental : CardDef :=
   ]
 
 def grimRepriser : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Grim Repriser",
     "{B}{R}",
     "Creature — Zombie Bard",
@@ -1374,7 +1374,7 @@ def grimRepriser : CardDef :=
   ]
 
 def ingrisStingerquill : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ingris Stingerquill",
     "{B}{R}{R}",
     "Legendary Creature — Elder Sphinx",
@@ -1385,7 +1385,7 @@ def ingrisStingerquill : CardDef :=
   ]
 
 def konstrariCharm : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Konstrari Charm",
     "{R}{G}",
     "Instant",
@@ -1396,7 +1396,7 @@ def konstrariCharm : CardDef :=
   ]
 
 def konstrariImproviser : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Konstrari Improviser",
     "{1}{R/G}",
     "Creature — Human Artificer",
@@ -1410,7 +1410,7 @@ def konstrariImproviser : CardDef :=
   ]
 
 def kwiaVigorbloom : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Kwia Vigorbloom",
     "{3}{G}{W}{W}",
     "Legendary Creature — Elder Sphinx",
@@ -1420,7 +1420,7 @@ def kwiaVigorbloom : CardDef :=
   ]
 
 def mindMeanderer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Mind Meanderer",
     "{3}{G}{U}{U}",
     "Creature — Bird Fish Illusion",
@@ -1431,7 +1431,7 @@ def mindMeanderer : CardDef :=
   ]
 
 def nullSummoner : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Null Summoner",
     "{2}{U}{B}",
     "Creature — Human Warlock",
@@ -1441,7 +1441,7 @@ def nullSummoner : CardDef :=
   ]
 
 def paradoxShaper : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Paradox Shaper",
     "{1}{U/B}",
     "Creature — Octopus Wizard",
@@ -1456,7 +1456,7 @@ def paradoxShaper : CardDef :=
   ]
 
 def primalWitchstalker : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Primal Witchstalker",
     "{1}{B}{G}",
     "Creature — Wolf",
@@ -1466,7 +1466,7 @@ def primalWitchstalker : CardDef :=
   ]
 
 def proctorOfPotential : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Proctor of Potential",
     "{W}{U}",
     "Creature — Human Cleric",
@@ -1476,7 +1476,7 @@ def proctorOfPotential : CardDef :=
   ]
 
 def prudentFateseer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Prudent Fateseer",
     "{1}{W/U}{W/U}",
     "Creature — Dwarf Wizard",
@@ -1491,7 +1491,7 @@ def prudentFateseer : CardDef :=
   ]
 
 def recursiveRecruitment : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Recursive Recruitment",
     "{2}{U}{B}",
     "Sorcery",
@@ -1500,7 +1500,7 @@ def recursiveRecruitment : CardDef :=
   ]
 
 def solariumSentry : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Solarium Sentry",
     "{G}{W}",
     "Creature — Cat Soldier",
@@ -1509,7 +1509,7 @@ def solariumSentry : CardDef :=
   ]
 
 def solitaryCell : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Solitary Cell",
     "{R}{W}",
     "Artifact",
@@ -1518,7 +1518,7 @@ def solitaryCell : CardDef :=
   ]
 
 def stingerquillCharm : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Stingerquill Charm",
     "{B}{R}",
     "Instant",
@@ -1529,7 +1529,7 @@ def stingerquillCharm : CardDef :=
   ]
 
 def stingerquillVoxmancer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Stingerquill Voxmancer",
     "{B/R}",
     "Creature — Goblin Sorcerer",
@@ -1543,7 +1543,7 @@ def stingerquillVoxmancer : CardDef :=
   ]
 
 def stingingVitriol : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Stinging Vitriol",
     "{B}{R}",
     "Sorcery",
@@ -1551,7 +1551,7 @@ def stingingVitriol : CardDef :=
   ]
 
 def tamsResistance : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tam's Resistance",
     "{1}{G/U}",
     "Sorcery",
@@ -1560,7 +1560,7 @@ def tamsResistance : CardDef :=
   ]
 
 def tenuredTethermage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tenured Tethermage",
     "{1}{R}{G}",
     "Creature — Human Artificer",
@@ -1570,7 +1570,7 @@ def tenuredTethermage : CardDef :=
   ]
 
 def theorixCharm : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Theorix Charm",
     "{U}{B}",
     "Instant",
@@ -1581,7 +1581,7 @@ def theorixCharm : CardDef :=
   ]
 
 def theorixMetamage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Theorix Metamage",
     "{2}{U/B}",
     "Creature — Shade Wizard",
@@ -1596,7 +1596,7 @@ def theorixMetamage : CardDef :=
   ]
 
 def twinnedVision : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Twinned Vision",
     "{1}{U/R}",
     "Instant",
@@ -1605,7 +1605,7 @@ def twinnedVision : CardDef :=
   ]
 
 def twistedFates : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Twisted Fates",
     "{2}{W}{W}{B}",
     "Sorcery",
@@ -1613,7 +1613,7 @@ def twistedFates : CardDef :=
   ]
 
 def uldarosTheorix : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Uldaros Theorix",
     "{3}{U}{B}{B}",
     "Legendary Creature — Elder Sphinx",
@@ -1623,7 +1623,7 @@ def uldarosTheorix : CardDef :=
   ]
 
 def vigorbloomCharm : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Vigorbloom Charm",
     "{G}{W}",
     "Instant",
@@ -1634,7 +1634,7 @@ def vigorbloomCharm : CardDef :=
   ]
 
 def vigorbloomVanguard : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Vigorbloom Vanguard",
     "{1}{G/W}",
     "Creature — Troll Druid",
@@ -1649,7 +1649,7 @@ def vigorbloomVanguard : CardDef :=
   ]
 
 def vindictiveTriumph : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Vindictive Triumph",
     "{W}{B}{B}",
     "Instant",
@@ -1657,7 +1657,7 @@ def vindictiveTriumph : CardDef :=
   ]
 
 def warriorsBlades : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Warrior's Blades",
     "{2}{R}{W}",
     "Artifact — Equipment",
@@ -1667,7 +1667,7 @@ def warriorsBlades : CardDef :=
   ]
 
 def whiplashWordsmith : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Whiplash Wordsmith",
     "{3}{B/R}",
     "Creature — Vampire Sorcerer",
@@ -1682,7 +1682,7 @@ def whiplashWordsmith : CardDef :=
   ]
 
 def woodworkProdigy : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Woodwork Prodigy",
     "{2}{R/G}",
     "Creature — Cat Druid",
@@ -1696,7 +1696,7 @@ def woodworkProdigy : CardDef :=
   ]
 
 def afterthoughtSentry : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Afterthought Sentry",
     "{2}",
     "Artifact Creature — Gargoyle",
@@ -1706,7 +1706,7 @@ def afterthoughtSentry : CardDef :=
   ]
 
 def archiveArbiter : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Archive Arbiter",
     "{6}",
     "Artifact Creature — Sphinx",
@@ -1718,7 +1718,7 @@ def archiveArbiter : CardDef :=
   ]
 
 def codieRavenousCodex : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Codie, Ravenous Codex",
     "{3}",
     "Legendary Artifact Creature — Book Construct",
@@ -1728,7 +1728,7 @@ def codieRavenousCodex : CardDef :=
   ]
 
 def theEchoverseFulcrum : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "The Echoverse Fulcrum",
     "{2}",
     "Legendary Artifact",
@@ -1737,7 +1737,7 @@ def theEchoverseFulcrum : CardDef :=
   ]
 
 def eyeOfJace : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Eye of Jace",
     "{1}",
     "Artifact",
@@ -1745,7 +1745,7 @@ def eyeOfJace : CardDef :=
   ]
 
 def keeperOfTheQuietHour : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Keeper of the Quiet Hour",
     "{3}",
     "Artifact Creature — Chimera",
@@ -1754,7 +1754,7 @@ def keeperOfTheQuietHour : CardDef :=
   ]
 
 def livingLibrary : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Living Library",
     "{2}",
     "Artifact Creature — Book Illusion",
@@ -1763,7 +1763,7 @@ def livingLibrary : CardDef :=
   ]
 
 def medicsKitesail : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Medic's Kitesail",
     "{2}",
     "Artifact — Equipment",
@@ -1772,7 +1772,7 @@ def medicsKitesail : CardDef :=
   ]
 
 def murmuringVolume : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Murmuring Volume",
     "{3}",
     "Artifact — Book",
@@ -1781,7 +1781,7 @@ def murmuringVolume : CardDef :=
   ]
 
 def dedicatedCommons : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Dedicated Commons",
     "Land",
     "This land enters tapped unless you control a planeswalker.",
@@ -1789,7 +1789,7 @@ def dedicatedCommons : CardDef :=
   ]
 
 def desertedBeach : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Deserted Beach",
     "Land",
     "This land enters tapped unless you control two or more other lands.",
@@ -1797,7 +1797,7 @@ def desertedBeach : CardDef :=
   ]
 
 def fateholdAnnex : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Fatehold Annex",
     "Land",
     "This land enters tapped unless you control a planeswalker.",
@@ -1805,7 +1805,7 @@ def fateholdAnnex : CardDef :=
   ]
 
 def formidableCommons : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Formidable Commons",
     "Land",
     "This land enters tapped unless you control a planeswalker.",
@@ -1813,7 +1813,7 @@ def formidableCommons : CardDef :=
   ]
 
 def hallOfEchoes : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Hall of Echoes",
     "Land",
     "{T}: Add {C}.",
@@ -1821,7 +1821,7 @@ def hallOfEchoes : CardDef :=
   ]
 
 def hauntedRidge : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Haunted Ridge",
     "Land",
     "This land enters tapped unless you control two or more other lands.",
@@ -1829,7 +1829,7 @@ def hauntedRidge : CardDef :=
   ]
 
 def hexhavenDuelingArena : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Hexhaven Dueling Arena",
     "Land",
     "{T}: Add {C}.",
@@ -1838,7 +1838,7 @@ def hexhavenDuelingArena : CardDef :=
   ]
 
 def innovativeCommons : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Innovative Commons",
     "Land",
     "This land enters tapped unless you control a planeswalker.",
@@ -1846,7 +1846,7 @@ def innovativeCommons : CardDef :=
   ]
 
 def konstrariAnnex : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Konstrari Annex",
     "Land",
     "This land enters tapped unless you control a planeswalker.",
@@ -1854,7 +1854,7 @@ def konstrariAnnex : CardDef :=
   ]
 
 def meticulousCommons : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Meticulous Commons",
     "Land",
     "This land enters tapped unless you control a planeswalker.",
@@ -1862,7 +1862,7 @@ def meticulousCommons : CardDef :=
   ]
 
 def overgrownFarmland : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Overgrown Farmland",
     "Land",
     "This land enters tapped unless you control two or more other lands.",
@@ -1870,7 +1870,7 @@ def overgrownFarmland : CardDef :=
   ]
 
 def rockfallVale : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Rockfall Vale",
     "Land",
     "This land enters tapped unless you control two or more other lands.",
@@ -1878,7 +1878,7 @@ def rockfallVale : CardDef :=
   ]
 
 def roilingCanopy : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Roiling Canopy",
     "Land",
     "This land enters tapped.",
@@ -1887,7 +1887,7 @@ def roilingCanopy : CardDef :=
   ]
 
 def roomOfRefuge : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Room of Refuge",
     "Land",
     "This land enters tapped. As it enters, choose a color.",
@@ -1896,7 +1896,7 @@ def roomOfRefuge : CardDef :=
   ]
 
 def shipwreckMarsh : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Shipwreck Marsh",
     "Land",
     "This land enters tapped unless you control two or more other lands.",
@@ -1904,7 +1904,7 @@ def shipwreckMarsh : CardDef :=
   ]
 
 def stingerquillAnnex : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Stingerquill Annex",
     "Land",
     "This land enters tapped unless you control a planeswalker.",
@@ -1912,7 +1912,7 @@ def stingerquillAnnex : CardDef :=
   ]
 
 def theoristsSanctum : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Theorist's Sanctum",
     "Land — Island",
     "({T}: Add {U}.)",
@@ -1921,7 +1921,7 @@ def theoristsSanctum : CardDef :=
   ]
 
 def theorixAnnex : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Theorix Annex",
     "Land",
     "This land enters tapped unless you control a planeswalker.",
@@ -1929,7 +1929,7 @@ def theorixAnnex : CardDef :=
   ]
 
 def transformativeCommons : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Transformative Commons",
     "Land",
     "This land enters tapped unless you control a planeswalker.",
@@ -1937,7 +1937,7 @@ def transformativeCommons : CardDef :=
   ]
 
 def vigorbloomAnnex : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Vigorbloom Annex",
     "Land",
     "This land enters tapped unless you control a planeswalker.",
@@ -1945,7 +1945,7 @@ def vigorbloomAnnex : CardDef :=
   ]
 
 def ajaniResolute : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ajani Resolute",
     "{1}{W}",
     "Legendary Planeswalker — Ajani",
@@ -1957,7 +1957,7 @@ def ajaniResolute : CardDef :=
   ]
 
 def danithaSwordOfHope : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Danitha, Sword of Hope",
     "{2}{W}",
     "Legendary Creature — Human Knight",
@@ -1967,7 +1967,7 @@ def danithaSwordOfHope : CardDef :=
   ]
 
 def ghaltaTheImmovable : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ghalta the Immovable",
     "{8}{W}",
     "Legendary Creature — Elder Dinosaur",
@@ -1978,7 +1978,7 @@ def ghaltaTheImmovable : CardDef :=
   ]
 
 def gideonsMemorial : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Gideon's Memorial",
     "{1}{W}",
     "Legendary Artifact",
@@ -1988,7 +1988,7 @@ def gideonsMemorial : CardDef :=
   ]
 
 def kothOfTheHomestead : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Koth of the Homestead",
     "{2}{W}",
     "Legendary Creature — Human Citizen",
@@ -1998,7 +1998,7 @@ def kothOfTheHomestead : CardDef :=
   ]
 
 def lilianaTheFaultless : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Liliana the Faultless",
     "{W}",
     "Legendary Creature — Human Cleric",
@@ -2008,7 +2008,7 @@ def lilianaTheFaultless : CardDef :=
   ]
 
 def lyraArchangelOfDawn : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Lyra, Archangel of Dawn",
     "{2}{W}",
     "Legendary Creature — Angel Knight",
@@ -2018,7 +2018,7 @@ def lyraArchangelOfDawn : CardDef :=
   ]
 
 def rescueGirlFirstResponder : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Rescue Girl, First Responder",
     "{2}{W}",
     "Legendary Creature — Human Cleric",
@@ -2028,7 +2028,7 @@ def rescueGirlFirstResponder : CardDef :=
   ]
 
 def saheeliConsulOfOversight : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Saheeli, Consul of Oversight",
     "{3}{W}{W}",
     "Legendary Creature — Human Advisor",
@@ -2038,7 +2038,7 @@ def saheeliConsulOfOversight : CardDef :=
   ]
 
 def teyoLightshieldExpert : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Teyo, Lightshield Expert",
     "{1}{W}",
     "Legendary Creature — Human Cleric",
@@ -2048,7 +2048,7 @@ def teyoLightshieldExpert : CardDef :=
   ]
 
 def thaliaTheSurvivor : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Thalia, the Survivor",
     "{3}{W}",
     "Legendary Creature — Human Soldier",
@@ -2058,7 +2058,7 @@ def thaliaTheSurvivor : CardDef :=
   ]
 
 def tomikOrzhovLawmage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tomik, Orzhov Lawmage",
     "{1}{W}",
     "Legendary Creature — Human Advisor",
@@ -2069,7 +2069,7 @@ def tomikOrzhovLawmage : CardDef :=
   ]
 
 def wayOfTheHealer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Way of the Healer",
     "{3}{W}",
     "Legendary Enchantment",
@@ -2078,7 +2078,7 @@ def wayOfTheHealer : CardDef :=
   ]
 
 def wayOfTheMentor : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Way of the Mentor",
     "{2}{W}",
     "Legendary Enchantment",
@@ -2087,7 +2087,7 @@ def wayOfTheMentor : CardDef :=
   ]
 
 def yoshimaruBelovedCompanion : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Yoshimaru, Beloved Companion",
     "{2}{W}",
     "Legendary Creature — Dog",
@@ -2097,7 +2097,7 @@ def yoshimaruBelovedCompanion : CardDef :=
   ]
 
 def yurikoBladeOfTheMighty : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Yuriko, Blade of the Mighty",
     "{3}{W}",
     "Legendary Creature — Human Samurai",
@@ -2107,7 +2107,7 @@ def yurikoBladeOfTheMighty : CardDef :=
   ]
 
 def arniHumbleScribe : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Arni, Humble Scribe",
     "{2}{U}",
     "Legendary Creature — Human Wizard",
@@ -2117,7 +2117,7 @@ def arniHumbleScribe : CardDef :=
   ]
 
 def chandraChillOfCompliance : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Chandra, Chill of Compliance",
     "{1}{U}{U}",
     "Legendary Planeswalker — Chandra",
@@ -2129,7 +2129,7 @@ def chandraChillOfCompliance : CardDef :=
   ]
 
 def fblthpImpossiblyLost : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Fblthp, Impossibly Lost",
     "{1}{U}",
     "Legendary Creature — Homunculus",
@@ -2138,7 +2138,7 @@ def fblthpImpossiblyLost : CardDef :=
   ]
 
 def geistOfSaintThalia : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Geist of Saint Thalia",
     "{1}{U}",
     "Legendary Creature — Spirit Cleric",
@@ -2148,7 +2148,7 @@ def geistOfSaintThalia : CardDef :=
   ]
 
 def hapatraTheDesertFrost : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Hapatra, the Desert Frost",
     "{3}{U}",
     "Legendary Creature — Human Wizard",
@@ -2158,7 +2158,7 @@ def hapatraTheDesertFrost : CardDef :=
   ]
 
 def jaceRealitySculptor : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Jace, Reality Sculptor",
     "{3}{U}{U}",
     "Legendary Planeswalker — Jace",
@@ -2169,7 +2169,7 @@ def jaceRealitySculptor : CardDef :=
   ]
 
 def lyraTolarianArchangel : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Lyra, Tolarian Archangel",
     "{1}{U}{U}",
     "Legendary Creature — Angel Wizard",
@@ -2180,7 +2180,7 @@ def lyraTolarianArchangel : CardDef :=
   ]
 
 def proftConsultingDetective : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Proft, Consulting Detective",
     "{1}{U}",
     "Legendary Creature — Human Detective",
@@ -2189,7 +2189,7 @@ def proftConsultingDetective : CardDef :=
   ]
 
 def ruricTharBiomagus : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ruric Thar, Biomagus",
     "{4}{U}{U}",
     "Legendary Creature — Ogre Crab Wizard",
@@ -2200,7 +2200,7 @@ def ruricTharBiomagus : CardDef :=
   ]
 
 def samutTyrantOfNaktamun : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Samut, Tyrant of Naktamun",
     "{1}{U}",
     "Legendary Creature — Human Wizard",
@@ -2209,7 +2209,7 @@ def samutTyrantOfNaktamun : CardDef :=
   ]
 
 def tetsukoUmezawaFugitive : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tetsuko Umezawa, Fugitive",
     "{1}{U}",
     "Legendary Creature — Human Rogue",
@@ -2218,7 +2218,7 @@ def tetsukoUmezawaFugitive : CardDef :=
   ]
 
 def traxosAcademyGuardian : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Traxos, Academy Guardian",
     "{3}{U}",
     "Legendary Artifact Creature — Dragon Construct",
@@ -2229,7 +2229,7 @@ def traxosAcademyGuardian : CardDef :=
   ]
 
 def wayOfTheCryomancer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Way of the Cryomancer",
     "{2}{U}",
     "Legendary Enchantment",
@@ -2238,7 +2238,7 @@ def wayOfTheCryomancer : CardDef :=
   ]
 
 def wayOfTheMindSculptor : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Way of the Mind Sculptor",
     "{4}{U}",
     "Legendary Enchantment",
@@ -2247,7 +2247,7 @@ def wayOfTheMindSculptor : CardDef :=
   ]
 
 def yargleGoliathOfOtaria : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Yargle, Goliath of Otaria",
     "{4}{U}",
     "Legendary Creature — Frog Spirit",
@@ -2255,7 +2255,7 @@ def yargleGoliathOfOtaria : CardDef :=
   ]
 
 def yurikoHopeFromTheShadows : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Yuriko, Hope from the Shadows",
     "{U}",
     "Legendary Creature — Human Ninja",
@@ -2267,7 +2267,7 @@ def yurikoHopeFromTheShadows : CardDef :=
   ]
 
 def danithaSpearOfAgony : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Danitha, Spear of Agony",
     "{2}{B}",
     "Legendary Creature — Human Knight",
@@ -2277,7 +2277,7 @@ def danithaSpearOfAgony : CardDef :=
   ]
 
 def galliaTragicHost : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Gallia, Tragic Host",
     "{1}{B}",
     "Legendary Creature — Zombie Satyr",
@@ -2287,7 +2287,7 @@ def galliaTragicHost : CardDef :=
   ]
 
 def garrukVeiledButcher : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Garruk, Veiled Butcher",
     "{3}{B}{B}",
     "Legendary Planeswalker — Garruk",
@@ -2299,7 +2299,7 @@ def garrukVeiledButcher : CardDef :=
   ]
 
 def gideonTheOathless : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Gideon the Oathless",
     "{2}{B}",
     "Legendary Creature — Human Mercenary",
@@ -2310,7 +2310,7 @@ def gideonTheOathless : CardDef :=
   ]
 
 def lilianaTheRepentant : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Liliana the Repentant",
     "{1}{B}",
     "Legendary Creature — Human Warlock",
@@ -2320,7 +2320,7 @@ def lilianaTheRepentant : CardDef :=
   ]
 
 def lootTheAnomaly : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Loot, the Anomaly",
     "{2}{B}",
     "Legendary Creature — Beast Horror",
@@ -2330,7 +2330,7 @@ def lootTheAnomaly : CardDef :=
   ]
 
 def mabelBitterRecluse : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Mabel, Bitter Recluse",
     "{B}",
     "Legendary Creature — Mouse Warlock",
@@ -2340,7 +2340,7 @@ def mabelBitterRecluse : CardDef :=
   ]
 
 def massacreGirlMostWanted : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Massacre Girl, Most Wanted",
     "{4}{B}",
     "Legendary Creature — Human Assassin",
@@ -2350,7 +2350,7 @@ def massacreGirlMostWanted : CardDef :=
   ]
 
 def proftSinisterMastermind : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Proft, Sinister Mastermind",
     "{2}{B}",
     "Legendary Creature — Human Rogue",
@@ -2361,7 +2361,7 @@ def proftSinisterMastermind : CardDef :=
   ]
 
 def teyoDiamondbladeMage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Teyo, Diamondblade Mage",
     "{3}{B}",
     "Legendary Creature — Human Warlock",
@@ -2371,7 +2371,7 @@ def teyoDiamondbladeMage : CardDef :=
   ]
 
 def tinybonesPocketNuisance : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tinybones, Pocket Nuisance",
     "{2}{B}",
     "Legendary Creature — Skeleton Rogue",
@@ -2381,7 +2381,7 @@ def tinybonesPocketNuisance : CardDef :=
   ]
 
 def wayOfTheDeathbringer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Way of the Deathbringer",
     "{2}{B}",
     "Legendary Enchantment",
@@ -2390,7 +2390,7 @@ def wayOfTheDeathbringer : CardDef :=
   ]
 
 def wayOfTheNecromancer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Way of the Necromancer",
     "{1}{B}",
     "Legendary Enchantment",
@@ -2399,7 +2399,7 @@ def wayOfTheNecromancer : CardDef :=
   ]
 
 def winterTormentedLoner : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Winter, Tormented Loner",
     "{2}{B}",
     "Legendary Creature — Human Warlock",
@@ -2409,7 +2409,7 @@ def winterTormentedLoner : CardDef :=
   ]
 
 def yargleGluttonOfUrborg : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Yargle, Glutton of Urborg",
     "{4}{B}",
     "Legendary Creature — Frog Spirit",
@@ -2417,7 +2417,7 @@ def yargleGluttonOfUrborg : CardDef :=
   ]
 
 def ajaniUnrelenting : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ajani Unrelenting",
     "{4}{R}{R}",
     "Legendary Planeswalker — Ajani",
@@ -2429,7 +2429,7 @@ def ajaniUnrelenting : CardDef :=
   ]
 
 def arniRenownedChampion : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Arni, Renowned Champion",
     "{3}{R}",
     "Legendary Creature — Human Berserker",
@@ -2439,7 +2439,7 @@ def arniRenownedChampion : CardDef :=
   ]
 
 def chandraTorchOfDefiance : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Chandra, Torch of Defiance",
     "{2}{R}{R}",
     "Legendary Planeswalker — Chandra",
@@ -2451,7 +2451,7 @@ def chandraTorchOfDefiance : CardDef :=
   ]
 
 def galliaTheMerrymaker : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Gallia, the Merrymaker",
     "{1}{R}",
     "Legendary Creature — Satyr",
@@ -2462,7 +2462,7 @@ def galliaTheMerrymaker : CardDef :=
   ]
 
 def jiangYangguAlone : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Jiang Yanggu, Alone",
     "{4}{R}",
     "Legendary Creature — Human Berserker",
@@ -2472,7 +2472,7 @@ def jiangYangguAlone : CardDef :=
   ]
 
 def kioraOfFireAndAshes : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Kiora of Fire and Ashes",
     "{4}{R}{R}",
     "Legendary Creature — Merfolk Noble",
@@ -2482,7 +2482,7 @@ def kioraOfFireAndAshes : CardDef :=
   ]
 
 def kothTheGeomancer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Koth, the Geomancer",
     "{2}{R}",
     "Legendary Creature — Human Warrior",
@@ -2492,7 +2492,7 @@ def kothTheGeomancer : CardDef :=
   ]
 
 def marwynTheClearcutter : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Marwyn, the Clearcutter",
     "{R}",
     "Legendary Creature — Elf Warrior",
@@ -2501,7 +2501,7 @@ def marwynTheClearcutter : CardDef :=
   ]
 
 def piaDeterminedRebuilder : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Pia, Determined Rebuilder",
     "{2}{R}",
     "Legendary Creature — Human Artificer",
@@ -2511,7 +2511,7 @@ def piaDeterminedRebuilder : CardDef :=
   ]
 
 def samutHazoretsChampion : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Samut, Hazoret's Champion",
     "{1}{R}",
     "Legendary Creature — Human Warrior Cleric",
@@ -2520,7 +2520,7 @@ def samutHazoretsChampion : CardDef :=
   ]
 
 def tetsukoUmezawaPursuer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tetsuko Umezawa, Pursuer",
     "{3}{R}",
     "Legendary Creature — Human Mercenary",
@@ -2531,7 +2531,7 @@ def tetsukoUmezawaPursuer : CardDef :=
   ]
 
 def tomikIzzetSparkmage : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tomik, Izzet Sparkmage",
     "{1}{R}",
     "Legendary Creature — Human Wizard",
@@ -2541,7 +2541,7 @@ def tomikIzzetSparkmage : CardDef :=
   ]
 
 def wayOfThePyromancer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Way of the Pyromancer",
     "{1}{R}",
     "Legendary Enchantment",
@@ -2550,7 +2550,7 @@ def wayOfThePyromancer : CardDef :=
   ]
 
 def wayOfTheWarlord : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Way of the Warlord",
     "{2}{R}",
     "Legendary Enchantment",
@@ -2559,7 +2559,7 @@ def wayOfTheWarlord : CardDef :=
   ]
 
 def winterTeamPlayer : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Winter, Team Player",
     "{4}{R}",
     "Legendary Creature — Human Warrior",
@@ -2569,7 +2569,7 @@ def winterTeamPlayer : CardDef :=
   ]
 
 def edgarMoonlitSovereign : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Edgar, Moonlit Sovereign",
     "{3}{G}{G}",
     "Legendary Creature — Werewolf Noble",
@@ -2580,7 +2580,7 @@ def edgarMoonlitSovereign : CardDef :=
   ]
 
 def fblthpKnowsTheWay : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Fblthp, Knows the Way",
     "{X}{G}{G}",
     "Legendary Creature — Homunculus Scout",
@@ -2590,7 +2590,7 @@ def fblthpKnowsTheWay : CardDef :=
   ]
 
 def garrukCurseBreaker : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Garruk, Curse Breaker",
     "{3}{G}{G}",
     "Legendary Planeswalker — Garruk",
@@ -2602,7 +2602,7 @@ def garrukCurseBreaker : CardDef :=
   ]
 
 def ghaltaTheUnstoppable : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ghalta the Unstoppable",
     "{8}{G}",
     "Legendary Creature — Elder Dinosaur",
@@ -2613,7 +2613,7 @@ def ghaltaTheUnstoppable : CardDef :=
   ]
 
 def jiangYangguNeverAlone : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Jiang Yanggu, Never Alone",
     "{3}{G}",
     "Legendary Creature — Human Druid",
@@ -2623,7 +2623,7 @@ def jiangYangguNeverAlone : CardDef :=
   ]
 
 def lootTheNexus : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Loot, the Nexus",
     "{2}{G}",
     "Legendary Creature — Beast Noble",
@@ -2632,7 +2632,7 @@ def lootTheNexus : CardDef :=
   ]
 
 def marwynThePreserver : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Marwyn, the Preserver",
     "{1}{G}",
     "Legendary Creature — Elf Druid",
@@ -2642,7 +2642,7 @@ def marwynThePreserver : CardDef :=
   ]
 
 def piaAetherAscetic : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Pia, Aether Ascetic",
     "{2}{G}",
     "Legendary Creature — Human Druid",
@@ -2651,7 +2651,7 @@ def piaAetherAscetic : CardDef :=
   ]
 
 def ruricTharMagecrusher : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Ruric Thar, Magecrusher",
     "{5}{G}{G}",
     "Legendary Creature — Ogre Warrior",
@@ -2662,7 +2662,7 @@ def ruricTharMagecrusher : CardDef :=
   ]
 
 def titanbonesToweringHeart : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Titanbones, Towering Heart",
     "{3}{G}",
     "Legendary Creature — Skeleton Druid",
@@ -2673,7 +2673,7 @@ def titanbonesToweringHeart : CardDef :=
   ]
 
 def wayOfTheParadox : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Way of the Paradox",
     "{2}{G}",
     "Legendary Enchantment",
@@ -2682,7 +2682,7 @@ def wayOfTheParadox : CardDef :=
   ]
 
 def wayOfTheWildspeaker : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Way of the Wildspeaker",
     "{4}{G}",
     "Legendary Enchantment",
@@ -2691,7 +2691,7 @@ def wayOfTheWildspeaker : CardDef :=
   ]
 
 def yoshimaruScrappyStray : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Yoshimaru, Scrappy Stray",
     "{1}{G}",
     "Legendary Creature — Dog",
@@ -2701,7 +2701,7 @@ def yoshimaruScrappyStray : CardDef :=
   ]
 
 def edgarAncientBloodlord : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Edgar, Ancient Bloodlord",
     "{W}{B}",
     "Legendary Creature — Vampire Noble",
@@ -2711,7 +2711,7 @@ def edgarAncientBloodlord : CardDef :=
   ]
 
 def hapatraTheDesertFang : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Hapatra, the Desert Fang",
     "{2}{B}{B}{G}",
     "Legendary Creature — Human Cleric",
@@ -2720,7 +2720,7 @@ def hapatraTheDesertFang : CardDef :=
   ]
 
 def karnGildedGuardian : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Karn, Gilded Guardian",
     "{2/W}{2/U}{2/B}{2/R}{2/G}",
     "Legendary Artifact Creature — Golem",
@@ -2730,7 +2730,7 @@ def karnGildedGuardian : CardDef :=
   ]
 
 def kioraOfSaltAndSand : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Kiora of Salt and Sand",
     "{1}{G}{U}",
     "Legendary Creature — Merfolk Noble",
@@ -2740,7 +2740,7 @@ def kioraOfSaltAndSand : CardDef :=
   ]
 
 def mabelValleyHero : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Mabel, Valley Hero",
     "{1}{R}{W}",
     "Legendary Creature — Mouse Soldier",
@@ -2749,7 +2749,7 @@ def mabelValleyHero : CardDef :=
   ]
 
 def saheeliJewelOfAvishkar : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Saheeli, Jewel of Avishkar",
     "{2}{U}{R}",
     "Legendary Creature — Human Artificer",
@@ -2759,7 +2759,7 @@ def saheeliJewelOfAvishkar : CardDef :=
   ]
 
 def tamThePossibility : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Tam, the Possibility",
     "{1}{G}{U}",
     "Legendary Creature — Gorgon Wizard",
@@ -2769,7 +2769,7 @@ def tamThePossibility : CardDef :=
   ]
 
 def vraskaSoulOfStone : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Vraska, Soul of Stone",
     "{U}{R}{W}",
     "Legendary Creature — Gorgon Wizard",
@@ -2779,7 +2779,7 @@ def vraskaSoulOfStone : CardDef :=
   ]
 
 def vraskaTheCuttingGlare : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Vraska, the Cutting Glare",
     "{B}{B}{G}",
     "Legendary Creature — Gorgon Assassin",
@@ -2789,7 +2789,7 @@ def vraskaTheCuttingGlare : CardDef :=
   ]
 
 def karnArgentDefender : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Karn, Argent Defender",
     "{2}",
     "Legendary Artifact Creature — Golem",
@@ -2798,7 +2798,7 @@ def karnArgentDefender : CardDef :=
   ]
 
 def traxosScourgeEternal : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Traxos, Scourge Eternal",
     "{4}",
     "Legendary Artifact Creature — Dragon Construct",
@@ -2809,35 +2809,35 @@ def traxosScourgeEternal : CardDef :=
   ]
 
 def realityFracturePlains : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Plains",
     "Basic Land — Plains",
     "({T}: Add {W}.)"
   ]
 
 def realityFractureIsland : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Island",
     "Basic Land — Island",
     "({T}: Add {U}.)"
   ]
 
 def realityFractureSwamp : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Swamp",
     "Basic Land — Swamp",
     "({T}: Add {B}.)"
   ]
 
 def realityFractureMountain : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Mountain",
     "Basic Land — Mountain",
     "({T}: Add {R}.)"
   ]
 
 def realityFractureForest : CardDef :=
-  fromOracleKeeping [
+  fromOracle [
     "Forest",
     "Basic Land — Forest",
     "({T}: Add {G}.)"

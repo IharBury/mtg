@@ -1,3 +1,4 @@
+import Mtg.Engine.Tests.Builders
 import Mtg.Engine.Card.ParseOracle
 import Mtg.Engine.Catalog.Supported
 
@@ -61,16 +62,11 @@ def normLineAgrees (cardName line : String) : Bool :=
       c.power == some (.fixed 2) && c.toughness == some (.fixed 2) &&
       c.isCreature && c.modellingError?.isNone) == some true
 
--- A line the engine does not recognize is rejected, including when the caller
--- asks to keep unrecognized text. An effect that would not resolve is rejected
--- even if the line was stored.
+-- A line the engine does not recognize is rejected, and an effect that would
+-- not resolve is rejected by `modellingError?`.
 #guard
   match parseOracleCard "Bogus\n{R}\nInstant\nFrobnicate the widget." with
   | .error e => e.contains "unrecognized" || e.contains "unparsed" || e.contains "not fully modelled"
-  | .ok _ => false
-#guard
-  match parseOracleCardKeeping "Bogus\n{R}\nInstant\nFrobnicate the widget." with
-  | .error e => e.contains "unparsed" || e.contains "unrecognized" || e.contains "not fully modelled"
   | .ok _ => false
 #guard
   let bogus : CardDef := {

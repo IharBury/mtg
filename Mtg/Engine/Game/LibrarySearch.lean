@@ -22,53 +22,21 @@ def searchAfter (p : PlayerId) : Option Instruction → AfterRandom
   | some (.life (.gain _ (.const n))) => .gainLife p n.toNat
   | _ => .none
 
-/-- Finish the post-untap log and ETB checks once a searched land's untap
-replacement choice (e.g. stun counters, CR 122.1d / 616.1) finishes. -/
-def finishSearchedUntap (g : Game) (_p : PlayerId) (landId : ObjectId) (_name : String) : Game :=
-  match g.findObject? landId with
+/-- Finish the post-entry ETB trigger checks of `placeSearched`. -/
+def finishPlaceSearched (g : Game) (p : PlayerId) (fromId : ObjectId)
+    (name : String) (tapped : Bool) (_cause : Option EventCause := none) : Game :=
+  match g.followMovedToZone? fromId (· == .battlefield) with
   | none => g
-  | some cur =>
-    let g :=
-      if !cur.status.tapped then g.logMsg s!"{g.name cur} is untapped" else g
-    match g.findObject? landId with
+  | some entered =>
+    let phrase := if tapped then " onto the battlefield tapped" else " onto the battlefield"
+    let g := g.logMsg s!"{(g.player p).name} puts {name}{phrase}"
+    match g.findObject? entered.id with
     | some cur =>
       if cur.isOnBattlefield then
         if g.isLand cur then g.afterLandEnters cur
         else g.afterPermanentEnters cur
       else g
     | none => g
-
-/-- Finish the post-entry untap and ETB trigger checks of `placeSearched`. -/
-def finishPlaceSearched (g : Game) (p : PlayerId) (fromId : ObjectId)
-    (name : String) (tapped : Bool) (cause : Option EventCause := none) : Game :=
-  match g.followMovedToZone? fromId (· == .battlefield) with
-  | none => g
-  | some entered =>
-    let phrase := if tapped then " onto the battlefield tapped" else " onto the battlefield"
-    let g := g.logMsg s!"{(g.player p).name} puts {name}{phrase}"
-    let untapTriggered :=
-      match g.untapSearchedIfLands with
-      | some n =>
-        let landCount := (g.permanentsOf p).foldl (fun acc (o : GameObject) =>
-          if g.isLand o then acc + 1 else acc) 0
-        tapped && g.isLand entered && landCount >= n
-      | none => false
-    if untapTriggered then
-      let g := g.change (.untapSearchedIfLands none)
-      let untapCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
-      let g := g.untapPermanent entered (logUntap := false) (cause := some untapCause)
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.finishSearchedUntap p entered.id name)
-      else
-        g.finishSearchedUntap p entered.id name
-    else
-      match g.findObject? entered.id with
-      | some cur =>
-        if cur.isOnBattlefield then
-          if g.isLand cur then g.afterLandEnters cur
-          else g.afterPermanentEnters cur
-        else g
-      | none => g
 
 /-- Put `id` onto the battlefield under `p`. Lands can tap immediately. -/
 def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool)
@@ -200,7 +168,6 @@ def applySearchAfter (g : Game) : Game :=
   match after with
   | .putOnTop p ids => g.putIdsOnTop p ids
   | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
-  | .plusOne id ctrl srcId => g.addPlusOneIfStillCreature id ctrl srcId
   | .discardRandom p =>
     let hand := (g.player p).hand
     if hand.isEmpty then g
@@ -231,24 +198,9 @@ def shuffleThen (g : Game) (p : PlayerId) (onDone : AfterRandom) : Game :=
         let g := g.continueIfShuffled
         g.applySearchAfter
 
-/-- The post-shuffle action, including a +1/+1 counter waiting on this search. -/
-def searchDone (g : Game) (p : PlayerId) (after : Option Instruction) : Game × AfterRandom :=
-  match g.plusOneAfterSearch with
-  | some (id, ctrl, srcId) => (g.change (.plusOneAfterSearch none), .plusOne id ctrl srcId)
-  | none => (g, searchAfter p after)
-
 /-- Shuffle, then run the search's after-action. -/
 def shuffleSearch (g : Game) (p : PlayerId) (after : Option Instruction) : Game :=
-  let g := g.change (.untapSearchedIfLands none)
-  let (g, done) := g.searchDone p after
-  g.shuffleThen p done
-
-/-- Put the waiting post-search counter when this search does not shuffle. -/
-def applyWaitingPlusOne (g : Game) : Game :=
-  match g.plusOneAfterSearch with
-  | none => g
-  | some (id, ctrl, srcId) =>
-    addPlusOneIfStillCreature (g.change (.plusOneAfterSearch none)) id ctrl srcId
+  g.shuffleThen p (searchAfter p after)
 
 /-- Two-pass simultaneous battlefield placement for `placeSearchedBatch`:
 first move every searched card in `remainingIds` onto `.battlefield` using
@@ -319,7 +271,7 @@ def finishSearchAfterPlace (g : Game) (p : PlayerId) (fromId : Option ObjectId)
     | some o => g.shuffleThen p (.beholdUntap p o.id subtype)
     | none => g.shuffleSearch p after
   | .battlefieldFromHandOrLibrary =>
-    if fromLibrary then g.shuffleSearch p after else g.applyWaitingPlusOne
+    if fromLibrary then g.shuffleSearch p after else g
   | _ => g.shuffleSearch p after
 
 /-- Send the chosen cards to `dest`, shuffle, then do `after`. An empty `ids`
@@ -466,30 +418,10 @@ def resolveSearchLibrary (g : Game) (p : PlayerId) (pred : CardDef → Bool)
     (tapped : Bool) (kind : String) : Game :=
   g.beginLibrarySearch p pred kind (.battlefield tapped)
 
-/-- Search `p`'s library for a basic land card, put it onto the battlefield
-tapped, then shuffle (CR 701.23). -/
-def resolveSearchBasicLandTapped (g : Game) (p : PlayerId) : Game :=
-  g.resolveSearchLibrary p isBasicLandCard true "a basic land card"
-
 /-- Search `p`'s library for a Forest card, put it onto the battlefield, then
 shuffle (CR 701.23 / 305.7). -/
 def resolveSearchForest (g : Game) (p : PlayerId) : Game :=
   g.resolveSearchLibrary p isForestCard false "a Forest card"
-
-/-- Search `p`'s library for a card matching `pred`, reveal it, put it into
-their hand, then shuffle. -/
-def resolveLibrarySearchToHand (g : Game) (p : PlayerId)
-    (pred : CardDef → Bool) (kind : String) : Game :=
-  g.beginLibrarySearch p pred kind .hand
-
-/-- Search `p`'s library for a card with land type `landType`, reveal it, put
-it into their hand, then shuffle (CR 701.23 / 702.29). -/
-def resolveSearchLandTypeToHand (g : Game) (p : PlayerId) (landType : CardSubtype) : Game :=
-  g.resolveLibrarySearchToHand p (fun c => c.hasSubtype landType) s!"{landType} card"
-
-/-- Search `p`'s library for a basic land, put it into their hand, then shuffle. -/
-def resolveSearchBasicLandToHand (g : Game) (p : PlayerId) : Game :=
-  g.resolveLibrarySearchToHand p isBasicLandCard "basic land card"
 
 /-- Exile the top card of `p`'s library and grant permission to play it until
 the end of that player's next turn (CR 701.18). -/

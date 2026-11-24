@@ -206,7 +206,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                     !g.additionalCostChoosesGeneric p prop then
                   0
                 else
-                  match baseFace.additionalChoiceCost? with
+                  match g.additionalChoiceCostFor? spell baseFace with
                   | some branches => (branches.findSome? CostSpec.soleGenericMana?).getD 0
                   | none => 0
               let extraCost :=
@@ -255,13 +255,14 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                     prop.activation.bind (fun ab => ab.cost.crewPower?)
                 (prop.sourceId, picks, sSrc, dSrc, #[], cr?)
               | .spell =>
-                let spellFace := g.baseCard ((g.findObject? prop.spellId).getD prop.original)
+                let spellObj := (g.findObject? prop.spellId).getD prop.original
+                let spellFace := g.baseCard spellObj
                 let unchosenAdd :=
                   !prop.resolutionCast && spellFace.announcesAdditionalCost &&
                     prop.additionalGeneric == 0 && prop.needsBehold.isNone &&
                     !prop.needsSacrificeOther && !prop.needsDiscardCard &&
                     !g.additionalCostChoosesGeneric p prop
-                let choiceBranches := spellFace.additionalChoiceCost?.getD #[]
+                let choiceBranches := (g.additionalChoiceCostFor? spellObj spellFace).getD #[]
                 let choiceHasBehold := choiceBranches.any fun cs =>
                   cs.items.any fun | .behold _ => true | _ => false
                 let choiceHasSac := choiceBranches.any fun cs =>
@@ -277,7 +278,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                 let sacPick : Array CostPick :=
                   if !willSacOther then #[]
                   else
-                    match Game.spellSacrificeCostPred? spellFace with
+                    match g.spellSacrificeCostPredFor? spellObj spellFace with
                     | some (.hasType .creature) => #[.sacrificeAnotherCreature]
                     | some (.any #[.hasType .creature, .hasType .planeswalker])
                     | some (.any #[.hasType .planeswalker, .hasType .creature]) =>
