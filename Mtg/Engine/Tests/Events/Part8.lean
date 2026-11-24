@@ -491,8 +491,8 @@ private def replayOk39i3 (gs : Array Game) : Bool :=
 
   -- 3a. (i) `0 -> n'` `.whileSourceHasCounter` control reconciliation across `addFinalityTo`,
   --         `addIndestructibleCounter`, `addLifelinkCounter`, `addBurdenCounter`, `addCounters`,
-  --         and `Triggers.addLoreCounters`, plus `Interpreter` `.copyFromLki` skipping
-  --         later `recordPutCounters` steps once an earlier counter exiles `cur` via CR 800.4c:
+  --         and `Triggers.addLoreCounters`, plus `Interpreter` `.copyFromLki` reconciling control
+  --         when `.charge` activates `.whileSourceHasCounter` flying copy and exiles `fraSrc` via CR 800.4c:
   let gCntBase := addPermanent (addPermanent (addPermanent g4 bear p2 p2) hostDef p0 p0) sagaDef p0 p0
   let cntAtk := (gCntBase.permanentsOf p2)[0]!
   let cntHost := (gCntBase.permanentsOf p0).find? (·.name == hostDef.name) |>.get!
