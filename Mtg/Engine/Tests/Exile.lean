@@ -184,7 +184,7 @@ An empty library exiles nothing. -/
     (TriggeredAbility.sagaChapter 1 (Effect.chapterSearchBasicPlainsExileGainLife 2 2))
     (some (pid g0 "Titan"))
   match g.pending with
-  | .fraChoice _ (.searchLibrary _ _ (.exileLinked _) _ _) => true
+  | .resolutionChoice _ (.searchLibrary _ _ (.exileLinked _) _ _) => true
   | _ => false
 
 /- Creatures you control are exiled until source leaves; source exiled with play permission. -/

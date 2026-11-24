@@ -260,7 +260,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
   let hShock := (gSilence0.player me).hand.back!
   let exShock := (gSilence0.objects.filter (fun o => o.name == "Phase21 Free Shock" && o.zone == .exile))[0]!.id
   let gSilenceEx : Game := gSilence0.change (.pending (.mayCastExiledElseDamage me exShock 2 none))
-  let gSilenceCopy : Game := gSilence0.change (.pending (.fraChoice me (.castCopiesFree #[exShock] 1 1)))
+  let gSilenceCopy : Game := gSilence0.change (.pending (.resolutionChoice me (.castCopiesFree #[exShock] 1 1)))
   let silenceBlocksAllOk : Bool :=
     !gSilence0.canCast me (gSilence0.object! hShock) &&
     !(gSilence0.castSpell me hShock).isOk &&
@@ -652,10 +652,10 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   if ok then true else panic! s!"Phase 22 guard failed: {label}"
 
 -- 1. Reflexive damage triggers, `KeywordAbility` choices, non-smuggled
---    `fraCauseId` / `fraCauseController` / `chosenMode` trigger reads, and sentinel-free
+--    `triggerCauseId` / `triggerCauseController` / `chosenMode` trigger reads, and sentinel-free
 --    `Option ObjectId := none` prompts.
 #guard
-  -- 1a. Reflexive damage trigger (`putReflexiveTrigger`) & `FraChoice.chooseKeyword` (`KeywordAbility`):
+  -- 1a. Reflexive damage trigger (`putReflexiveTrigger`) & `ResolutionChoice.chooseKeyword` (`KeywordAbility`):
   let gRef2 : Game :=
     let g := addPermanent afterDraw bear opp22 opp22
     let bId := (g.battlefield.filter (·.name == bear.name))[0]!.id
@@ -667,7 +667,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   let gKw0 : Game :=
     let g := addPermanent afterDraw bear me me
     let bId := (g.battlefield.filter (·.name == bear.name))[0]!.id
-    g.change (.pending (.fraChoice me (.chooseKeyword bId #[Keyword.trample, Keyword.hexproof])))
+    g.change (.pending (.resolutionChoice me (.chooseKeyword bId #[Keyword.trample, Keyword.hexproof])))
   let gKw1 : Game := mustApply gKw0 me (.chooseMode 0)
   let kwBear := (gKw1.battlefield.filter (·.name == bear.name))[0]!
   let typedKindKwOk : Bool :=
@@ -676,7 +676,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     KeywordAbility.hasTrample (gKw1.effectiveKeywords kwBear) &&
     !KeywordAbility.hasHexproof (gKw1.effectiveKeywords kwBear)
 
-  -- 1b. Non-smuggled `fraCauseController`, `fraCauseId` (`otherThan .triggerSubject`, `villainConniveTarget?`),
+  -- 1b. Non-smuggled `triggerCauseController`, `triggerCauseId` (`otherThan .triggerSubject`, `villainConniveTarget?`),
   --     and `StackEntry.chosenMode` (`resolvingModes` on `.stepHydeChoose`):
   let gMillCtrl : Game :=
     let g := afterDraw
@@ -684,7 +684,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     let snap : EventObject := { owner := me, controller := some me, name := "Phase22 Mill Src", zone := .battlefield }
     let ab : TriggeredAbility := .onPlayerLosesLifeMillThatMany
     let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId snap me
-      (spec := { triggeredAbility := some ab, lastKnownPower := some 2, fraCauseController := some opp22 }))
+      (spec := { triggeredAbility := some ab, lastKnownPower := some 2, triggerCauseController := some opp22 }))
     let preLib := (g.player opp22).library.size
     let g := g.resolveTop
     if (g.player opp22).library.size == preLib - 2 then g else panic! "mill count mismatch"
@@ -694,7 +694,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   let abForId : ObjectId := ⟨gFor0.nextObjectId⟩
   let gFor1 : Game :=
     let g := gFor0.record (GameEvent.triggerPutOnStack gFor0.turnNumber abForId (gFor0.snapshot (gFor0.object! fIds[0]!)) me
-      (spec := { sourceId := some fIds[0]!, fraCauseId := some fIds[0]! }))
+      (spec := { sourceId := some fIds[0]!, triggerCauseId := some fIds[0]! }))
     g.changes #[.popStack, .pushContinuationFrame { resolvingAbility := some abForId }]
   let otherForestsExpr : ObjectExpr :=
     .inZones .battlefield (.all #[.hasSubtype (.literal .forest), .controlledBy .you, .otherThan .triggerSubject])
@@ -710,7 +710,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   let abVilId : ObjectId := ⟨gVil0.nextObjectId⟩
   let gVil1 : Game :=
     let g := gVil0.record (GameEvent.triggerPutOnStack gVil0.turnNumber abVilId (gVil0.snapshot (gVil0.object! srcBearId)) me
-      (spec := { sourceId := some srcBearId, fraCauseId := some vilId }))
+      (spec := { sourceId := some srcBearId, triggerCauseId := some vilId }))
     g.changes #[.popStack, .pushContinuationFrame { resolvingAbility := some abVilId }]
   let vilTargetOk : Bool := gVil1.villainConniveTarget? me srcBearId #[] == some vilId
   let hydeAb : TriggeredAbility := .onStep Effect.stepHydeChoose
@@ -744,11 +744,11 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     g.change (.pending (.mayPutArtifactFromHand me none))
   let gPutArt1 : Game := mustApply gPutArt0 me .decline
   let gHydeNone0 : Game :=
-    afterDraw.change (.pending (.fraChoice me (.hydeMode none)))
+    afterDraw.change (.pending (.resolutionChoice me (.hydeMode none)))
   let gHydeNone1 : Game := mustApply gHydeNone0 me (.chooseMode 0)
   let gPickNone0 : Game :=
     let g := addPermanent afterDraw art22 me me
-    g.change (.pending (.fraChoice me (.mayPayPickThen .sacrificeAnotherArtifact (Instruction.drawFixed 1) none)))
+    g.change (.pending (.resolutionChoice me (.mayPayPickThen .sacrificeAnotherArtifact (Instruction.drawFixed 1) none)))
   let artPermId := (gPickNone0.battlefield.filter (·.name == "Phase22 Art"))[0]!.id
   let gPickNone1 : Game := mustApply gPickNone0 me (.choosePermanents #[artPermId])
   let sentinelFreeOk : Bool :=
@@ -816,7 +816,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   let gCas2 : Game := mustApply gCas1 me .decline
   let cascadeDoneOk : Bool :=
     casPaused &&
-    (match gCas1.pending with | .fraChoice _ (.mayCastCascade ..) => true | _ => false) &&
+    (match gCas1.pending with | .resolutionChoice _ (.mayCastCascade ..) => true | _ => false) &&
     gCas2.pending == .none &&
     (gCas2.player me).library.size == 2
 
@@ -942,7 +942,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     let g := addPermanent (insertObject afterDraw boltDraw22 opp22 (.hand opp22)) bear me me
     let srcId := (g.battlefield.filter (·.name == bear.name))[0]!.id
     let hId := (g.player opp22).hand.back!
-    let g := g.change (.pending (.fraChoice me (.exileFromRevealedHand opp22 (some srcId))))
+    let g := g.change (.pending (.resolutionChoice me (.exileFromRevealedHand opp22 (some srcId))))
     mustApply g me (.choosePermanents #[hId])
   let revSrcId := (gRevHand0.battlefield.filter (·.name == bear.name))[0]!.id
   let exiledHandBolt? := gRevHand0.objects.find? (fun o => o.name == "Phase22 Copy Bolt" && o.zone == .exile)
@@ -1007,7 +1007,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
     let bigId := (g.battlefield.filter (·.name == "Phase22 Big 4/4"))[0]!.id
     let srcId := (g.battlefield.filter (·.name == bear.name))[0]!.id
     let g := (g.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice me (.maySacrificeAnotherCreatureForPower srcId)))
+      (.pending (.resolutionChoice me (.maySacrificeAnotherCreatureForPower srcId)))
     mustApply g me (.choosePermanents #[bigId])
   let deferredAndArrivalOk : Bool :=
     !gMoveGyReplaced.log.any (fun s => s.contains "owner's graveyard") &&
@@ -1208,7 +1208,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   let gAmass0 : Game := (addPermanent afterDraw doubler22 me me).amassGoblins me 3
   let amassPromptIds : Array ObjectId :=
     match gAmass0.pending with
-    | .fraChoice q (.chooseCards ids 1 (.amassArmy .goblin 3 none)) =>
+    | .resolutionChoice q (.chooseCards ids 1 (.amassArmy .goblin 3 none)) =>
       if q == me && ids.size == 2 then ids else #[]
     | _ => #[]
   let chosenArmyId := amassPromptIds[1]!
@@ -1454,7 +1454,7 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
     let bid := (g.battlefield.filter (·.name == bear.name))[0]!.id
     let exId := (g.objects.filter (fun o => o.name == "Phase23 Clash Linked Shock" && o.zone == .exile))[0]!.id
     let g := (g.change (.object bid (.pushLinkedExile exId))).change (.pushContinuationFrame {})
-    let g := g.change (.pending (.fraChoice opp23 (.topOrBottomDamage bid 2 none)))
+    let g := g.change (.pending (.resolutionChoice opp23 (.topOrBottomDamage bid 2 none)))
     mustApply g opp23 .chooseTop
   let gTopPausedDone : Game :=
     match gTopPaused0.pending with
@@ -2107,8 +2107,8 @@ def replayOk24i1 (gs : Array Game) : Bool :=
     let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot (g.object! srcId)) me
       (spec := {
         sourceId := some srcId
-        fraCauseId := some ⟨1990⟩
-        fraCauseStatus := some { counters := #[(.plusOnePlusOne, 2)] } }))
+        triggerCauseId := some ⟨1990⟩
+        triggerCauseStatus := some { counters := #[(.plusOnePlusOne, 2)] } }))
     g.changes #[.pushContinuationFrame {}, .resolvingAbility (some abId)]
   let gPC0 : Game := addPermanent afterDraw bear me me
   let pcSrcId := (gPC0.battlefield.filter (·.name == bear.name))[0]!.id
@@ -2141,7 +2141,7 @@ def replayOk24i1 (gs : Array Game) : Bool :=
   let mvSrcId := (gMv0.battlefield.filter (·.name == bear.name))[0]!.id
   let mvDstId := (gMv0.battlefield.filter (·.name == hero.name))[0]!.id
   let askMove (g : Game) : Game :=
-    g.changes #[.pushContinuationFrame {}, .pending (.fraChoice me (.mayMoveAllCounters mvSrcId mvDstId))]
+    g.changes #[.pushContinuationFrame {}, .pending (.resolutionChoice me (.mayMoveAllCounters mvSrcId mvDstId))]
   let gMvZero0 : Game := askMove (withCounterReps24i1 gMv0 mvDstId .plusOnePlusOne false)
   let gMvZero1 : Game := mustApply gMvZero0 me .accept
   let gMvPause0 : Game := askMove (withCounterReps24i1 gMv0 mvDstId .plusOnePlusOne true)
@@ -2187,9 +2187,9 @@ def replayOk24i1 (gs : Array Game) : Bool :=
   let (gC1, gC2, counterOk) := run (.payOrLetCounter opp24i1 2 (some spId)) spId
   let (gW1, gW2, wardOk) := run (.payWard opp24i1 spId CostSpec.discardCard) spId
   let (gS1, gS2, chooseSacOk) := run (.chooseSacrificeCreature opp24i1 #[bearId] #[]) bearId
-  let (gE1, gE2, eachOk) := run (.fraChoice opp24i1 (.sacrificeCreatureEach me #[] #[bearId])) bearId
-  let (gN1, gN2, nontokenOk) := run (.fraChoice opp24i1 (.sacrificeNontokenEach #[] #[bearId])) bearId
-  let (gD1, gD2, damagerOk) := run (.fraChoice opp24i1 (.sacrificeDamager #[] #[] me #[(me, bearId)])) bearId
+  let (gE1, gE2, eachOk) := run (.resolutionChoice opp24i1 (.sacrificeCreatureEach me #[] #[bearId])) bearId
+  let (gN1, gN2, nontokenOk) := run (.resolutionChoice opp24i1 (.sacrificeNontokenEach #[] #[bearId])) bearId
+  let (gD1, gD2, damagerOk) := run (.resolutionChoice opp24i1 (.sacrificeDamager #[] #[] me #[(me, bearId)])) bearId
   mustHold24i1 "2.payOrLetCounter" counterOk &&
   mustHold24i1 "2.payWard" wardOk &&
   mustHold24i1 "2.chooseSacrificeCreature" chooseSacOk &&
@@ -2447,7 +2447,7 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   let gBb0 : Game := (insertObject afterDraw fbDraw24i2 me (.graveyard me)).addMana me .colorless 1
   let bbGyId := gyId24i2 gBb0 fbDraw24i2.name
   let gBb1 : Game := (gBb0.change (.pushContinuationFrame {})).change
-    (.pending (.fraChoice me (.mayCastFromGraveyard #[bbGyId])))
+    (.pending (.resolutionChoice me (.mayCastFromGraveyard #[bbGyId])))
   let gBbProp : Game := mustApply gBb1 me (.cast bbGyId)
   let gBbCast : Game := mustApply gBbProp me .pay
   let bbSpId := stackId24i2 gBbCast fbDraw24i2.name
@@ -3061,8 +3061,8 @@ def startThreePlayer24i3 : Game :=
     | _ => false)
   let enteringAttackUnifiedOk :=
     gAtkRepPaused.pending == .chooseReplacement me #[idExtraBear, idAsDragon] &&
-    (match gAtkChoose1.pending with | .fraChoice p (.chooseEnteringAttackTarget ..) => p == me | _ => false) &&
-    (match gAtkChoose2.pending with | .fraChoice p (.chooseEnteringAttackTarget ..) => p == me | _ => false) &&
+    (match gAtkChoose1.pending with | .resolutionChoice p (.chooseEnteringAttackTarget ..) => p == me | _ => false) &&
+    (match gAtkChoose2.pending with | .resolutionChoice p (.chooseEnteringAttackTarget ..) => p == me | _ => false) &&
     gAtkChoose1.log.any (·.contains "chooses what P24i3 Dragon Token enters attacking") &&
     !gAtkChoose1.log.any (·.contains "chooses what Food enters attacking") &&
     gAtkChoose2.log.any (·.contains "chooses P1 for P24i3 Dragon Token to attack") &&

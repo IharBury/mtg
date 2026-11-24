@@ -60,12 +60,12 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
     !(gAllPassedAfterGrant.events.extract preAllPassedLen gAllPassedAfterGrant.events.size).any fun ev =>
       ev.change == .engine (.pendingPriority (some p0))
 
-  -- Conversely, `finishConcede` popping an implicit `.finishFraChoice` returns `some none` (`hasImplicitPriorityContinuation == true`):
+  -- Conversely, `finishConcede` popping an implicit `.finishResolutionChoice` returns `some none` (`hasImplicitPriorityContinuation == true`):
   let fcPopImplicit : PendingReplacement := .finishConcede false none none none true #[] none
   let gFcImplicit0 :=
     g4.changes #[
       .pushContinuationFrame {},
-      .pushOuterPendingReplacement .finishFraChoice,
+      .pushOuterPendingReplacement .finishResolutionChoice,
       .pendingReplacement (some fcPopImplicit) ]
   let gFcImplicitGranted := gFcImplicit0.finishAndGrantPriority p3
 
@@ -152,7 +152,7 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
     gCleanupDrainPaused.continuationGrantsPriority false (.finishPostStep .cleanupStepAfterDiscard) &&
     gCleanupDrainPaused.priorityRecipientOfContinuation? false (.finishPostStep .cleanupStepAfterDiscard) == some p0
 
-  -- 1b(ii). Associative `.seq` first-grant `.finishFraChoice` & reversal forwarding across cost/activation leaves,
+  -- 1b(ii). Associative `.seq` first-grant `.finishResolutionChoice` & reversal forwarding across cost/activation leaves,
   --         plus `.restorePending _ (popOuter := true) (rewindProposal := none)`:
   let sorc3Def : CardDef := {
     name := "P47i1 Sorc3"
@@ -164,21 +164,21 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
   let gUnpayableProp := (mustApply gUnpayable0 p0 (.cast (gUnpayable0.player p0).hand.back!)).change (.pending .none)
   let revCostStep : PendingReplacement :=
     .finishPostStep (.resumeProposalCostAfterLeave p0 (.discardForAdditionalCost p0))
-  -- Both left-associated and right-associated `.seq` with `.finishFraChoice` ahead of `.receivePriority p3`
+  -- Both left-associated and right-associated `.seq` with `.finishResolutionChoice` ahead of `.receivePriority p3`
   -- reverse `gUnpayableProp` and grant `pendingPriority == p2`, whereas `.receivePriority p3` first grants `p3`:
   let gSeqFinishFraLeft :=
-    gUnpayableProp.resumePendingReplacement (.seq (.seq revCostStep .finishFraChoice) (.receivePriority p3))
+    gUnpayableProp.resumePendingReplacement (.seq (.seq revCostStep .finishResolutionChoice) (.receivePriority p3))
   let gSeqFinishFraRight :=
-    gUnpayableProp.resumePendingReplacement (.seq revCostStep (.seq .finishFraChoice (.receivePriority p3)))
+    gUnpayableProp.resumePendingReplacement (.seq revCostStep (.seq .finishResolutionChoice (.receivePriority p3)))
   let gSeqExplicitP3 :=
-    gUnpayableProp.resumePendingReplacement (.seq revCostStep (.seq (.receivePriority p3) .finishFraChoice))
+    gUnpayableProp.resumePendingReplacement (.seq revCostStep (.seq (.receivePriority p3) .finishResolutionChoice))
   -- Non-cost-prompt `.restorePending .none true none #[] none` whose outer `outerPendingReplacements.back?` reverses:
   -- `stepCanReverseProposal` detects reversal so `.seq` stops before `.receivePriority p3`!
   let gRestorePopRev :=
     (gUnpayableProp.changes #[
       .pushContinuationFrame {},
       .pushOuterPendingReplacement revCostStep ]).resumePendingReplacement
-      (.seq (.restorePending .none true none #[] none) (.seq .finishFraChoice (.receivePriority p3)))
+      (.seq (.restorePending .none true none #[] none) (.seq .finishResolutionChoice (.receivePriority p3)))
 
   let g2pOver := mustApply started p0 .concede
   let item1bOk :=
@@ -241,7 +241,7 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
        (gMergeDone.player p2).leftTheGame &&
        (gMergeDone.player p3).leftTheGame) &&
     mustHold47i1 "1c_reopenDeferredExileStash"
-      (gStashReopened.pending == .fraChoice p0 (.mayCastUpToFromExile #[stashExId] 1) &&
+      (gStashReopened.pending == .resolutionChoice p0 (.mayCastUpToFromExile #[stashExId] 1) &&
        gStashReopened.pendingMayCastFromExile.isNone)
 
   mustHold47i1 "1a.concedeTerminationAndPriorityGrants" item1aOk &&
@@ -387,7 +387,7 @@ private def replayOk47i2 (gs : Array Game) : Bool :=
       (.permission (some p0) (.playFromExile paidResExId { player := p0, payLifeEqualManaValue := true }) .untilEndOfTurn)
       (cause := some testCause)
   let gMayCastCardsPrompt :=
-    gPaidResUnpayableLife.change (.pending (.fraChoice p0 (.mayCastCards #[paidResExId] false false)))
+    gPaidResUnpayableLife.change (.pending (.resolutionChoice p0 (.mayCastCards #[paidResExId] false false)))
   let gMayCastCardsProposed := mustApply gMayCastCardsPrompt p0 (.cast paidResExId)
   let gMayCastCardsPaid := mustApply gMayCastCardsProposed p0 .pay
   -- Conversely, when `p0` has 20 life, `paidResolutionOrigPerm?` DOES select `payLifeEqualManaValue`:
@@ -461,7 +461,7 @@ private def replayOk47i2 (gs : Array Game) : Bool :=
        agentCleanCastsAdv)
 
   -- 2c. Phased-out `coDepartingIds` (`isBattlefieldObject`), copy-before-emblem in `beginTurn`,
-  --     emblem-scoped `.copy`, transitive `.fraEmblem`, and multi-object `.copy` restoration logs:
+  --     emblem-scoped `.copy`, transitive `.commandEmblem`, and multi-object `.copy` restoration logs:
   let embDef : CardDef := { name := "P47i2 Emblem", types := #[] }
   -- Phased-out permanent owned by living `p2` with underlying `.control p3 .indefinite` (departed `p3`, CR 800.4c)
   -- and `.control p0 .untilEndOfTurn` does NOT depart on `clearEOT`, so its copy-restoration log IS emitted!
@@ -485,12 +485,12 @@ private def replayOk47i2 (gs : Array Game) : Bool :=
   let gCbE1 :=
     ((gCbE0.createEffect (.layered (.objects #[cbeBearId]) (.copy hero) (.untilNextTurnOf p1))
         (cause := some testCause)).createEffect
-      (.gameRule (.fraEmblem cbeEmbId) (.untilNextTurnOf p1)) (cause := some testCause))
+      (.gameRule (.commandEmblem cbeEmbId) (.untilNextTurnOf p1)) (cause := some testCause))
   let preCbELog := gCbE1.log.size
   let gCbEAfter := gCbE1.startNextTurnAndBegin
   let cbeLogs := gCbEAfter.log.extract preCbELog gCbEAfter.log.size
 
-  -- Emblem-scoped `.copy` (`emb1` vs `emb2`), transitive `.fraEmblem`, and multi-object `.copy`:
+  -- Emblem-scoped `.copy` (`emb1` vs `emb2`), transitive `.commandEmblem`, and multi-object `.copy`:
   let gTwoEmb0 :=
     insertObject (insertObject (addPermanent (addPermanent g4 bear p0 p0) ({ bear with name := "P47i2 BearTwo" }) p0 p0)
       embDef p0 .command (some p0)) embDef p0 .command (some p0)
@@ -515,7 +515,7 @@ private def replayOk47i2 (gs : Array Game) : Bool :=
   let transBearId := ((gTrans0.permanentsOf p0).find? (fun (o : GameObject) => o.name == bear.name)).get!.id
   let transEmbId := (gTrans0.objects.filter (fun (o : GameObject) => o.zone == Zone.command))[0]!.id
   let gTrans1 :=
-    ((gTrans0.createEffect (.gameRule (.fraEmblem transEmbId) (.whileSourceOnBattlefield transSrcId))
+    ((gTrans0.createEffect (.gameRule (.commandEmblem transEmbId) (.whileSourceOnBattlefield transSrcId))
         (cause := some testCause)).createEffect
       (.layered (.objects #[transBearId]) (.copy hero) (.whileInZone transEmbId .command))
       (cause := some testCause))

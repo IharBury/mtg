@@ -685,7 +685,7 @@ def mkThreePlayer25i1 (seed : UInt64 := 251) : Game :=
   let p0LibBefore := (gPal0.player p0).library.size
   let gPalAsk :=
     (gPal0.chainPendingReplacement (.finishPostStep (.gainLifePlayer p0 5))).change
-      (.pending (.fraChoice p1 (.palantirMayDraw p0 palId)))
+      (.pending (.resolutionChoice p1 (.palantirMayDraw p0 palId)))
   let gPalLeft := mustApply gPalAsk p1 .concede
 
   let colorCardDef : CardDef := {
@@ -1028,9 +1028,9 @@ def replayOk25i2 (gs : Array Game) : Bool :=
   ])
 
 -- 3. CR 733.1 proposal-checkpoint ordering & upfront `mayCast*` checks:
---    - reversing an unpayable/targetless Cascade cast restores `Pending.fraChoice p0 (.mayCastCascade ...)`
+--    - reversing an unpayable/targetless Cascade cast restores `Pending.resolutionChoice p0 (.mayCastCascade ...)`
 --      with `postCastCleanup == none` and card still in `.exile`;
---    - `defaultFraAction` declines uncastable Cascade hits cleanly;
+--    - `defaultChoiceAction` declines uncastable Cascade hits cleanly;
 --    - `mayCastFromLookedError` rejects under `splitSecondOnStack` (CR 702.61a);
 --    - `.mayCastUpToFromExile` preserves `left` on an illegal pick (mandatory sacrifice unpayable / prohibited).
 #guard
@@ -1065,16 +1065,16 @@ def replayOk25i2 (gs : Array Game) : Bool :=
   let (gEx1, otherEx) := gEx0.allocObject drawSpell p0 .exile none
   let (gEx2, sacEx) := gEx1.allocObject sacCostSpell p0 .exile none
 
-  -- 3a. `.mayCastCascade` on targetless `hitCard`: `defaultFraAction` declines, and accepting reverses cleanly to `.mayCastCascade`!
-  let cascChoice : FraChoice := .mayCastCascade hitCard.id #[otherEx.id]
-  let gCascPrompt := gEx2.change (.pending (.fraChoice p0 cascChoice))
+  -- 3a. `.mayCastCascade` on targetless `hitCard`: `defaultChoiceAction` declines, and accepting reverses cleanly to `.mayCastCascade`!
+  let cascChoice : ResolutionChoice := .mayCastCascade hitCard.id #[otherEx.id]
+  let gCascPrompt := gEx2.change (.pending (.resolutionChoice p0 cascChoice))
   let defaultDeclines :=
-    match gCascPrompt.defaultFraAction p0 cascChoice with
+    match gCascPrompt.defaultChoiceAction p0 cascChoice with
     | .decline => true
     | _ => false
   let gCascAccepted := mustApply gCascPrompt p0 .accept
   let cascReversedCleanly :=
-    gCascAccepted.pending == Pending.fraChoice p0 cascChoice &&
+    gCascAccepted.pending == Pending.resolutionChoice p0 cascChoice &&
     gCascAccepted.postCastCleanup.isNone &&
     gCascAccepted.continuations.isEmpty &&
     (gCascAccepted.object! hitCard.id).zone == Zone.exile
@@ -1087,13 +1087,13 @@ def replayOk25i2 (gs : Array Game) : Bool :=
     spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
   }
   let (gEx3, freeEx) := gEx2.allocObject exFreeSpell p0 .exile none
-  let exChoice : FraChoice := .mayCastUpToFromExile #[sacEx.id, freeEx.id] 2
-  let gUpToPrompt := (gEx3.change (.pushContinuationFrame {})).change (.pending (.fraChoice p0 exChoice))
+  let exChoice : ResolutionChoice := .mayCastUpToFromExile #[sacEx.id, freeEx.id] 2
+  let gUpToPrompt := (gEx3.change (.pushContinuationFrame {})).change (.pending (.resolutionChoice p0 exChoice))
   let sacPickRejected := (gUpToPrompt.apply p0 (.choosePermanents #[sacEx.id])).toOption.isNone
   let gUpToValid := mustApply gUpToPrompt p0 (.choosePermanents #[freeEx.id])
   let upToPreservedOk :=
     sacPickRejected &&
-    gUpToValid.pending == Pending.fraChoice p0 (.mayCastUpToFromExile #[sacEx.id] 1)
+    gUpToValid.pending == Pending.resolutionChoice p0 (.mayCastUpToFromExile #[sacEx.id] 1)
 
   -- 3c. `mayCastFromLookedError` rejects when a spell with split second is on the stack (CR 702.61a):
   let gSamut := addPermanent g0 samutGrant p0 p0
@@ -1108,7 +1108,7 @@ def replayOk25i2 (gs : Array Game) : Bool :=
   mustHold25i2 "3c.splitSecLookedRejected" splitSecLookedRejected &&
   mustHold25i2 "3.replay" (replayOk25i2 #[gCascPrompt, gCascAccepted, gUpToPrompt, gUpToValid, gLibSs])
 
--- 4. CR 106.6 agent/default mana restrictions across `defaultFraAction` and `Agent`:
+-- 4. CR 106.6 agent/default mana restrictions across `defaultChoiceAction` and `Agent`:
 --    `.cantNonartifact` mana cannot pay for a nonartifact sorcery in `.mayCastFromGraveyard` / `Agent.choose`,
 --    while paying cleanly for an artifact card!
 #guard
@@ -1130,14 +1130,14 @@ def replayOk25i2 (gs : Array Game) : Bool :=
   let (gGy0, sorcGy) := g0.allocObject sorcOne p0 (.graveyard p0) none
   let (gGy1, artGy) := gGy0.allocObject artOne p0 (.graveyard p0) none
   let gRestrictedPool := gGy1.addMana p0 .colorless 1 (restriction := some .cantNonartifact) (cause := some testCause)
-  let gySorcOnly : FraChoice := .mayCastFromGraveyard #[sorcGy.id]
-  let gyBoth : FraChoice := .mayCastFromGraveyard #[sorcGy.id, artGy.id]
+  let gySorcOnly : ResolutionChoice := .mayCastFromGraveyard #[sorcGy.id]
+  let gyBoth : ResolutionChoice := .mayCastFromGraveyard #[sorcGy.id, artGy.id]
   let defaultSorcDeclines :=
-    match gRestrictedPool.defaultFraAction p0 gySorcOnly with
+    match gRestrictedPool.defaultChoiceAction p0 gySorcOnly with
     | .decline => true
     | _ => false
   let defaultPicksArt :=
-    match gRestrictedPool.defaultFraAction p0 gyBoth with
+    match gRestrictedPool.defaultChoiceAction p0 gyBoth with
     | .cast cid => cid == artGy.id
     | _ => false
 
@@ -2100,13 +2100,13 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
   let gExPerm :=
     (gEx0.createEffect (.permission p0 (.playFromExile p1ExId { player := p0 }) .untilEndOfTurn) (cause := some testCause)).createEffect
       (.permission p0 (.playFromExile p2ExId { player := p0 }) .untilEndOfTurn) (cause := some testCause)
-  let gPrunePrompt := gExPerm.change (.pending (.fraChoice p0 (.mayCastUpToFromExile #[p1ExId, p2ExId] 2)))
+  let gPrunePrompt := gExPerm.change (.pending (.resolutionChoice p0 (.mayCastUpToFromExile #[p1ExId, p2ExId] 2)))
   let gPruned := mustApply gPrunePrompt p1 .concede
   let prunePromptOk :=
     (gPruned.player p1).leftTheGame &&
     (gPruned.findObject? p1ExId).isNone &&
     (match gPruned.pending with
-     | .fraChoice q (.mayCastUpToFromExile ids left) => q == p0 && ids == #[p2ExId] && left == 2
+     | .resolutionChoice q (.mayCastUpToFromExile ids left) => q == p0 && ids == #[p2ExId] && left == 2
      | _ => false)
 
   -- `p0` proposes `p1ExId` (paused at `.activateManaAbilities p0`) with `pendingMayCastFromExile` waiting;
@@ -2123,7 +2123,7 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
     gNonOwnerAborted.proposalCheckpoint.isNone &&
     (gNonOwnerAborted.findObject? p1ExId).isNone &&
     (match gNonOwnerAborted.pending with
-     | .fraChoice q (.mayCastUpToFromExile ids left) => q == p0 && ids == #[p2ExId] && left == 1
+     | .resolutionChoice q (.mayCastUpToFromExile ids left) => q == p0 && ids == #[p2ExId] && left == 1
      | _ => false)
 
   -- 2b. 6-seat (3-team) 2HG `concedePlayersLoop` proposal abort when teammate `⟨0⟩` concedes
@@ -2238,7 +2238,7 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
       (.layered (.objects #[dstBearId]) (.control p0) (.whileSourceHasCounter srcBearId .plusOnePlusOne))
       (cause := some testCause)
   let gMvP1Left := mustApply gMvCtrl p1 .concede
-  let gMvAsk := gMvP1Left.change (.pending (.fraChoice p0 (.mayMoveAllCounters srcBearId dstBearId)))
+  let gMvAsk := gMvP1Left.change (.pending (.resolutionChoice p0 (.mayMoveAllCounters srcBearId dstBearId)))
   let gMvAccepted := mustApply gMvAsk p0 .accept
   let gSurveilStale := gBase.surveilMoveLoop p0 #[⟨999999⟩] none
   let staleIdSafetyOk :=
@@ -2256,7 +2256,7 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
   let conniveBearId := (gTr0.battlefield.filter (·.controller == some p0))[0]!.id
   let targetBearId := (gTr0.battlefield.filter (·.controller == some p1))[0]!.id
   let p0HandBeforeTr := (gTr0.player p0).hand.size
-  let gTrAsk := gTr0.change (.pending (.fraChoice p1 (.tricksterLibrary p0 targetBearId (some conniveBearId) none)))
+  let gTrAsk := gTr0.change (.pending (.resolutionChoice p1 (.tricksterLibrary p0 targetBearId (some conniveBearId) none)))
   let gTrLeft := mustApply gTrAsk p1 .concede
   -- `p0` drew a card into hand and is now prompted to discard for connive!
   let tricksterConniveTailOk :=
@@ -2464,7 +2464,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
   -- Trigger is STILL on the stack while `p0` is prompted to cast from `p0`'s milled bucket:
   let bucket0Id :=
     match gUrTrigRes.pending with
-    | .fraChoice q (.mayCastCards ids true false) => if q == p0 && ids.size == 1 then ids[0]! else ⟨0⟩
+    | .resolutionChoice q (.mayCastCards ids true false) => if q == p0 && ids.size == 1 then ids[0]! else ⟨0⟩
     | _ => ⟨0⟩
   let triggerOnStackDuringBucket0 :=
     bucket0Id != ⟨0⟩ && !gUrTrigRes.stack.isEmpty && gUrTrigRes.resolvingAbility.isSome
@@ -2472,7 +2472,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
   let gAfterBucket0 := mustApply gUrTrigRes p0 (.cast bucket0Id)
   let bucket1Id :=
     match gAfterBucket0.pending with
-    | .fraChoice q (.mayCastCards ids true false) => if q == p0 && ids.size == 1 then ids[0]! else ⟨0⟩
+    | .resolutionChoice q (.mayCastCards ids true false) => if q == p0 && ids.size == 1 then ids[0]! else ⟨0⟩
     | _ => ⟨0⟩
   let triggerStillOnStackDuringBucket1 :=
     bucket1Id != ⟨0⟩ && gAfterBucket0.stack.size == 2 && gAfterBucket0.resolvingAbility.isSome
@@ -3795,7 +3795,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
     (gAfterCascLeave.followMovedToZone? cCard1 (· == .library p0)).isSome
 
   -- 2d. When an aborted proposal (`wasAbortedProposal == true`, including from `.chooseReplacement`)
-  --     activates `pendingMayCastFromExile`, `.pending (.fraChoice ...)` is restored via
+  --     activates `pendingMayCastFromExile`, `.pending (.resolutionChoice ...)` is restored via
   --     `savedPreLeavePending?` AFTER `runEndControlExileLoop` so control-loss exiles remain inside
   --     `inDepSpan`:
   let nonLandSpellDef : CardDef := {
@@ -3817,7 +3817,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
       .pendingMayCastFromExile (some (p0, #[exBoltId], 1))
     ]
   let gAfterMayExLeave := gMayEx1.playerLeavesGame p1
-  let expectedFra := Pending.fraChoice p0 (.mayCastUpToFromExile #[exBoltId] 1)
+  let expectedFra := Pending.resolutionChoice p0 (.mayCastUpToFromExile #[exBoltId] 1)
   let exileIdx? := gAfterMayExLeave.events.findIdx? (fun ev =>
     match ev with
     | .rules _ (.zone (.moved _ _ .battlefield .exile ..)) _ _ => true
@@ -3863,7 +3863,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
 
 -- 3. CR 608.2g / 701.22 / 701.23 / 701.25 / 800.4a,c–d:
 --    `beginLibrarySearch` / `beginScry` / `beginSurveil` & `!g.stillInGame` guards on a player
---    with `leftTheGame == true` (even if `lost == false`), plus `FraChoices.answerFraChoice`
+--    with `leftTheGame == true` (even if `lost == false`), plus `FraChoices.answerResolutionChoice`
 --    stashing `pendingReplacement` onto `outerPendingReplacements` across accept-cast branches.
 #guard
   let p0 : PlayerId := ⟨0⟩
@@ -3909,7 +3909,7 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
     (gEndGyRet.object! exBearId).zone == .exile &&
     (gEndGyRet.object! gyBearId).zone == .graveyard p1
 
-  -- `FraChoices.answerFraChoice` stashes `g.pendingReplacement` onto `outerPendingReplacements`
+  -- `FraChoices.answerResolutionChoice` stashes `g.pendingReplacement` onto `outerPendingReplacements`
   -- when accepting `.mayCastCascade`, `.mayCastGrima`, `.mayCastCopy`, `.mayCastInstantSorceryFromHand`,
   -- `.mayCastUpToFromExile`, and `.mayCastFromGraveyard`:
   let rSpellDef : CardDef := {
@@ -3926,8 +3926,8 @@ private def replayOk27i1 (gs : Array Game) : Bool :=
   let exId := (gStash0.objects.filter (fun o => o.zone == .exile && o.name == rSpellDef.name))[0]!.id
   let handId := (gStash0.player p0).hand.back!
   let gyId := (gStash0.player p0).graveyard.back!
-  let checkStashed (fc : FraChoice) (act : Action) : Bool :=
-    let gAsk := gStash0.change (.pending (.fraChoice p0 fc))
+  let checkStashed (fc : ResolutionChoice) (act : Action) : Bool :=
+    let gAsk := gStash0.change (.pending (.resolutionChoice p0 fc))
     let gAcc := mustApply gAsk p0 act
     gAcc.pendingReplacement.isNone &&
       gAcc.outerPendingReplacements.back? == some stashedCont &&
@@ -4058,7 +4058,7 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
   -- and has 0 legal targets:
   let gExTwo := (insertObject gWithHelper { twoModeSpellDef with keywords := #[], spellAbility := some { effect := { body := .chooseModes { modes := #[optArtMode, reqCreatureMode] } } }} p0 .exile).change (.pushContinuationFrame {})
   let exTwoId := gExTwo.objects.back!.id
-  let gAskCasc := gExTwo.change (.pending (.fraChoice p0 (.mayCastCascade exTwoId #[])))
+  let gAskCasc := gExTwo.change (.pending (.resolutionChoice p0 (.mayCastCascade exTwoId #[])))
   let gResCast := mustApply (mustApply gAskCasc p0 .accept) p0 (.chooseMode 0)
   let gResDecl := mustApply gResCast p0 .decline
   let resCastZeroOk :=
@@ -4191,10 +4191,10 @@ private def replayOk27i2 (gs : Array Game) : Bool :=
   let bfGyId := (gBf0.player p0).graveyard.back!
   -- With 0 mana and no Dragon to behold, `flashback := none` would inspect `flashback := some 0`
   -- in graveyard, whereas `flashback := some false` (`withoutPaying := false` on `.mayCastCards`)
-  -- sees `{5} + {2}` and returns `false`, so `defaultFraAction` declines!
+  -- sees `{5} + {2}` and returns `false`, so `defaultChoiceAction` declines!
   let canPayFlashbackFalseOk :=
     !gBf0.canPayAnnouncedAdditional p0 (gBf0.object! bfGyId) (gBf0.availableMana p0) (flashback := some false) &&
-    (match gBf0.defaultFraAction p0 (.mayCastCards #[bfGyId] false false) with | .decline => true | _ => false)
+    (match gBf0.defaultChoiceAction p0 (.mayCastCards #[bfGyId] false false) with | .decline => true | _ => false)
 
   -- `enterProposalWindow` for a non-mana activated ability (`tap := true, mana := empty`) after
   -- choosing a mode skips `.activateManaAbilities` and activates directly onto `.stack`:
@@ -4442,7 +4442,7 @@ private def replayOk27i3 (gs : Array Game) : Bool :=
     gCascDeparted.applyTriggeredAbility p0 TriggeredAbility.onCastCascade (some cascSpellId)
   let cascadeLkiOk :=
     match gCascResolved.pending with
-    | .fraChoice q (.mayCastCascade hitId _) =>
+    | .resolutionChoice q (.mayCastCascade hitId _) =>
       q == p0 && (gCascResolved.object! hitId).name == cheapInstDef.name
     | _ => false
 
@@ -4739,7 +4739,7 @@ private def replayOk28i1 (gs : Array Game) : Bool :=
     gDiscLastAfterLeave.pending == .scry p0 1
 
   -- 2b. `redirectPendingAfterLeave` `.mayCastGrima`: when `p1` leaves while prompted with
-  --     `.fraChoice p1 (.mayCastGrima cardId #[ex1, ex2] p0)`, the exiled cards open
+  --     `.resolutionChoice p1 (.mayCastGrima cardId #[ex1, ex2] p0)`, the exiled cards open
   --     `.resolveRandom (.orderInto #[ex1, ex2, grimaCardId] (.library p0) (some testCause))`:
   let gGrimaHand :=
     insertObject (insertObject (insertObject g3 bear p0 (.hand p0)) bear p0 (.hand p0)) bear p0 (.hand p0)
@@ -4749,7 +4749,7 @@ private def replayOk28i1 (gs : Array Game) : Bool :=
   let (gGrima0, ex2) := gGrimaM2.move hIds[2]! .exile none (cause := some testCause)
   let gGrima1 :=
     (gGrima0.change (.pushContinuationFrame {})).change
-      (.pending (.fraChoice p1 (.mayCastGrima grimaCardId #[ex1, ex2] p0)))
+      (.pending (.resolutionChoice p1 (.mayCastGrima grimaCardId #[ex1, ex2] p0)))
   let gGrimaAfterLeave := gGrima1.playerLeavesGame p1
   let grimaOrderRandomOk :=
     gGrimaAfterLeave.pending ==

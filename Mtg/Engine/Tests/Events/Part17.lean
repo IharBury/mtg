@@ -173,7 +173,7 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     gTrick0.recordPutCounters trickBearId .finality 1 (some p0) (cause := some testCause)
   let gPausedRepl :=
     gTrickFin.moveToOwnerGraveyard (gTrickFin.object! trickBearId) "dies" (cause := some testCause)
-  let trickPending : Pending := .fraChoice p2 (.tricksterLibrary p0 trickBearId (some trickBearId))
+  let trickPending : Pending := .resolutionChoice p2 (.tricksterLibrary p0 trickBearId (some trickBearId))
   let fcOverOdd : PendingReplacement :=
     .finishConcede false none none (some gPausedRepl.pending) false #[] none
   let gFcGrantsNoneProbe :=
@@ -226,7 +226,7 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
       (gFcGrantsNoneProbe.firstPriorityGrantRecipient? false (.seq fcOverOdd (.receivePriority p3)) == some none)
 
   -- 1b. Non-priority prompt-opening continuation guards (`!g.anyContinuationSettlesControlFlow`)
-  --     across `Decisions` (`finishAndGrantPriority`, `finishFraChoice`, `chooseReplacement`),
+  --     across `Decisions` (`finishAndGrantPriority`, `finishResolutionChoice`, `chooseReplacement`),
   --     `ManaAbilities`, and `Actions`:
   let gPauseClean0 := insertObject g4 oddEvenDef p0 (.hand p0)
   let (gPausedOddClean, _) :=
@@ -239,7 +239,7 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     !gSettlingPaused.anyContinuationGrantsPriority &&
     gSettlingPaused.anyContinuationSettlesControlFlow
   let gAfterFagp := gSettlingPaused.finishAndGrantPriority p2
-  let gAfterFfc := gSettlingPaused.finishFraChoice
+  let gAfterFfc := gSettlingPaused.finishResolutionChoice
   let gAfterChooseMode := mustApply gAfterFagp p0 (.chooseMode 0)
   -- Also verify `Actions.activateAbility` / `ManaAbilities` guard: activating a plain mana ability
   -- that itself pauses or runs while a prompt-settling outer continuation is queued does not append `.receivePriority`:
@@ -479,16 +479,16 @@ private def replayOk51i2 (gs : Array Game) : Bool :=
   let gTeamBHalfPhased := gTeamBBegan.phaseOut (gTeamBBegan.object! b0PermId) (cause := some testCause)
   let gTeamBSecondSeat := gTeamBHalfPhased.startNextTurnAndBegin
 
-  -- `beginTurn` post-copy-restore `preState? := some g0` in `expireFraUntilTurnEffects`:
+  -- `beginTurn` post-copy-restore `preState? := some g0` in `expireUntilTurnCommandEffects`:
   -- `copyTargetId` has older `.copy copy1Def` tied to `.command` emblem `embBT` (`.untilNextTurnOf p0`)
   -- and newer `.copy copy2Def` (`.untilNextTurnOf p0`). `restoreCopiesUntilNextTurn p0` removes `copy2Def`
-  -- first, so `expireFraUntilTurnEffects` (`preState? := some g0`) sees `copy1Def` as top remaining copy
+  -- first, so `expireUntilTurnCommandEffects` (`preState? := some g0`) sees `copy1Def` as top remaining copy
   -- when `embBT` ceases and emits `"{bear.name} is no longer a copy of {copy1Def.name}"`:
   let embBTDef : CardDef := { name := "P51i2 TurnEmb", types := #[.enchantment] }
   let gBtCopy0 := insertObject gStackCopy0 embBTDef p1 .command (some p1)
   let embBTId := (gBtCopy0.objects.filter (·.zone == .command)).back!.id
   let gBtCopy1 :=
-    (((gBtCopy0.createEffect (.gameRule (.fraEmblem embBTId) (.untilNextTurnOf p0))
+    (((gBtCopy0.createEffect (.gameRule (.commandEmblem embBTId) (.untilNextTurnOf p0))
         (cause := some testCause)).createEffect
       (.layered (.objects #[copyTargetId]) (.copy copy1Def) (.whileInZone embBTId .command))
       (cause := some testCause)).createEffect
@@ -521,7 +521,7 @@ private def replayOk51i2 (gs : Array Game) : Bool :=
 
   let gLiveCeaseSetup :=
     mustApply
-      (((gPhSkip0.createEffect (.gameRule (.fraEmblem ceaseEmbId) .indefinite)
+      (((gPhSkip0.createEffect (.gameRule (.commandEmblem ceaseEmbId) .indefinite)
           (cause := some testCause)).createEffect
           (.layered (.objects #[phDepId]) (.control p2) (.whileInZone ceaseEmbId .command))
           (cause := some testCause)).createEffect
@@ -869,7 +869,7 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
   let resWithFlash : Game :=
     gResFlashGranted.castAsPartOfResolution p1 resExBearId (withoutManaCost := true) (ignoreTiming := false)
 
-  -- 4a(ii). `FraChoices.defaultFraAction` `.mayCastFromGraveyard`:
+  -- 4a(ii). `FraChoices.defaultChoiceAction` `.mayCastFromGraveyard`:
   --         (a) Zone precondition (`o.zone == .graveyard o.owner`) and type precondition (`isArtifact || isInstantOrSorcery`);
   --         (b) Impending fallback (`impending := some (4, {2})`, front `{6}`) on an artifact creature in graveyard!
   let zeroArtDef : CardDef := { name := "P51i4 ZeroRelic", manaCost := ManaCost.zero, types := #[.artifact] }
@@ -995,11 +995,11 @@ private def isOptAnnounceKickerTrue51 (a? : Option Action) : Bool :=
       (resNoFlash.stack.isEmpty &&
        resWithFlash.stack.size == 1) &&
     mustHold51i4 "4a_mayCastFromGraveyardZoneTypeAndImpending"
-      (isCastDirect51 (gGy0.defaultFraAction p0 (.mayCastFromGraveyard #[gyArtId])) gyArtId &&
-       isDeclineDirect51 (gGyMovedToExile.defaultFraAction p0 (.mayCastFromGraveyard #[movedExId])) &&
-       isDeclineDirect51 (gGyNonArt.defaultFraAction p0 (.mayCastFromGraveyard #[gyNonArtId])) &&
-       isDeclineDirect51 (gGyImp1.defaultFraAction p0 (.mayCastFromGraveyard #[gyImpId])) &&
-       isCastDirect51 (gGyImp2.defaultFraAction p0 (.mayCastFromGraveyard #[gyImpId])) gyImpId) &&
+      (isCastDirect51 (gGy0.defaultChoiceAction p0 (.mayCastFromGraveyard #[gyArtId])) gyArtId &&
+       isDeclineDirect51 (gGyMovedToExile.defaultChoiceAction p0 (.mayCastFromGraveyard #[movedExId])) &&
+       isDeclineDirect51 (gGyNonArt.defaultChoiceAction p0 (.mayCastFromGraveyard #[gyNonArtId])) &&
+       isDeclineDirect51 (gGyImp1.defaultChoiceAction p0 (.mayCastFromGraveyard #[gyImpId])) &&
+       isCastDirect51 (gGyImp2.defaultChoiceAction p0 (.mayCastFromGraveyard #[gyImpId])) gyImpId) &&
     mustHold51i4 "4a_agentChooseKickerAltCostAndMayCastFromLooked"
       (gAltMorphProposed.proposedSpell.any (·.alternativeCost) &&
        isOptAnnounceKickerTrue51 agAltMorphChoice &&

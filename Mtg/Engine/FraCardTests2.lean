@@ -27,9 +27,9 @@ def stackTriggers (g : Game) : Game := g.receivePriority g.activePlayer
 /-- Resolve the top of the stack. -/
 def resolveTop (g : Game) : Game := passBoth g
 
-def pendingFra (g : Game) : Option FraChoice :=
+def pendingFra (g : Game) : Option ResolutionChoice :=
   match g.pending with
-  | .fraChoice _ c => some c
+  | .resolutionChoice _ c => some c
   | _ => none
 
 def tapped (g : Game) (name : String) : Game :=

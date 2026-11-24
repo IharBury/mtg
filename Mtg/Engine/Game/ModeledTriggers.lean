@@ -27,7 +27,7 @@ def attachedHost? (g : Game) (sourceId : Option ObjectId) : Option GameObject :=
 
 /-- The spell that caused the resolving cast trigger, if still on the stack. -/
 def castTriggerSpell? (g : Game) : Option GameObject :=
-  ((g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId)).bind
+  ((g.resolvingAbility.bind g.findObject?).bind (·.triggerCauseId)).bind
     (fun id => (g.findObject? id).filter (·.zone == .stack))
 
 /-- Ask the next player in `players` with a nontoken creature to choose one
@@ -37,7 +37,7 @@ def continueNontokenSacrifices (g : Game) (players : Array PlayerId) (chosen : A
   let hasOne (p : PlayerId) := (g.permanentsOf p).any (fun o => g.isCreature o && !o.printed.isToken)
   match (players.filter hasOne).toList with
   | p :: rest =>
-    g.beginFraChoice p (.sacrificeNontokenEach rest.toArray chosen)
+    g.beginResolutionChoice p (.sacrificeNontokenEach rest.toArray chosen)
       s!"{(g.player p).name} sacrifices a nontoken creature"
   | [] =>
     let pairs := chosen.filterMap (fun id =>
@@ -155,7 +155,7 @@ def offerSpellRetarget (g : Game) (controller : PlayerId) (spellId : ObjectId)
   | some e =>
     if index < e.targets.size then
       let curStaged := if staged.isEmpty then e.targets else staged
-      g.beginFraChoice controller (.mayChangeSpellTarget spellId index curStaged)
+      g.beginResolutionChoice controller (.mayChangeSpellTarget spellId index curStaged)
         "You may choose a new target for the spell"
     else
       g.commitStagedSpellTargets spellId staged
@@ -216,21 +216,21 @@ def setSpellTargetAt (g : Game) (spellId : ObjectId) (index : Nat) (neu : Target
 /-- Ask the controller to put a +1/+1 counter on the source, or to remove a
 counter from a creature they control and draw. -/
 def offerHydeChoice (g : Game) (controller : PlayerId) (sourceId : Option ObjectId) : Game :=
-  g.beginFraChoice controller (.hydeMode sourceId)
+  g.beginResolutionChoice controller (.hydeMode sourceId)
     s!"{(g.player controller).name} chooses one — 0 put a +1/+1 counter, 1 remove a counter and draw"
 
 /-- You may exile the top card of your library. A Hero card gives the source
 +2/+1 until end of turn, and the card may be played this turn (Daredevil). -/
 def offerExileTopHeroPump (g : Game) (controller : PlayerId)
     (sourceId : Option ObjectId) : Game :=
-  g.beginFraChoice controller (.daredevilMayExile sourceId)
+  g.beginResolutionChoice controller (.daredevilMayExile sourceId)
     "You may exile the top card of your library"
 
 /-- You may pay 2 life. If you do, creatures you control assign combat damage
 equal to their toughness this turn (The Kingpin of Crime). -/
 def offerPay2LifeToughness (g : Game) (controller : PlayerId) : Game :=
   if g.canPayLife controller 2 then
-    g.beginFraChoice controller .kingpinMayPay2Life "You may pay 2 life"
+    g.beginResolutionChoice controller .kingpinMayPay2Life "You may pay 2 life"
   else
     g.logMsg "The Kingpin's cost wasn't paid"
 
@@ -245,7 +245,7 @@ def copyCastTriggerSpell (g : Game) (controller : PlayerId) : Game :=
       match copyId? with
       | some copyId =>
         if (g.stackEntry? copyId).any (!·.targets.isEmpty) then
-          g.beginFraChoice controller (.newTargetsForCopies #[copyId])
+          g.beginResolutionChoice controller (.newTargetsForCopies #[copyId])
             s!"{(g.player controller).name} may choose new targets for the copy"
         else g
       | none => g
@@ -253,7 +253,7 @@ def copyCastTriggerSpell (g : Game) (controller : PlayerId) : Game :=
 
 /-- You may create a 0/4 Wall creature token with defender. -/
 def offerMayCreateWall (g : Game) (controller : PlayerId) : Game :=
-  g.beginFraChoice controller (.mayCreateTokens .wall04defender 1)
+  g.beginResolutionChoice controller (.mayCreateTokens .wall04defender 1)
     s!"{(g.player controller).name} may create a 0/4 Wall creature token with defender"
 
 /-- Put the targeted creature into its owner's library, second from the top

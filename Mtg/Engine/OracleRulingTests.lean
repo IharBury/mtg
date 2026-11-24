@@ -1119,7 +1119,7 @@ def cascadeResultTooExpensive : Bool :=
   let g := g.resolveCascade ⟨0⟩ 8
   -- The 9-mana card is exiled and passed over; nothing may be cast.
   (match g.pending with
-   | .fraChoice _ (.mayCastCascade id _) => (g.object! id).name != "Costly Beast"
+   | .resolutionChoice _ (.mayCastCascade id _) => (g.object! id).name != "Costly Beast"
    | _ => true) &&
     !g.objects.any (fun o => o.name == "Costly Beast" && o.zone == .stack)
 
@@ -1369,7 +1369,7 @@ the other dies as a 0/0. -/
 def bardAmass : Game :=
   let g := withBard.amassGoblins ⟨0⟩ 3
   match g.pending with
-  | .fraChoice ⟨0⟩ (.chooseCards ids 1 purpose) =>
+  | .resolutionChoice ⟨0⟩ (.chooseCards ids 1 purpose) =>
     let cause := g.stashedCause
     let g := (g.change (.pending .none)).change (.stashedCause none)
     g.finishChooseCards ⟨0⟩ #[ids[1]!] purpose (cause := cause)

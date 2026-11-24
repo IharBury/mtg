@@ -430,7 +430,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       if prop.resolutionCast then
         let g' := (g.change (.pending .none)).beginResolutionCastTargets p prop
         return if g'.pending == .none && (g'.findObject? prop.spellId).any (·.zone == .stack) then
-          g'.finishFraChoice
+          g'.finishResolutionChoice
         else g'
       else
         let spell := g.object! prop.spellId

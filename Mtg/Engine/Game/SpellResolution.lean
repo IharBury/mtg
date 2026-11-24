@@ -254,7 +254,7 @@ def resolveTop (g : Game) : Game :=
             resolvingModes := resolvingModes?
             resolutionFinish := some (.ability obj.id snap entry.controller obj.sourceId) })
           let g := g.withBatch (some dtCause) (fun g =>
-            g.resolveDelayedTrigger entry.controller dtKind dtCause obj.fraCauseId obj.sourceId entry.targets)
+            g.resolveDelayedTrigger entry.controller dtKind dtCause obj.triggerCauseId obj.sourceId entry.targets)
           g.completeActiveResolutions
       else if let some rawE := obj.abilityEffect then
         let tcs := g.evalLayer3 obj
@@ -287,7 +287,7 @@ def resolveTop (g : Game) : Game :=
             g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
           else if !obj.isReflexive &&
               !g.triggerInterveningHolds entry.controller t obj.sourceId
-                entry.targets entry.lastKnownPower obj.fraCauseId obj.fraCauseStatus then
+                entry.targets entry.lastKnownPower obj.triggerCauseId obj.triggerCauseStatus then
             let g := g.withResolvingContext ctxSrc entry.controller fun g =>
               let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
               g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."
@@ -334,7 +334,7 @@ def resolveTop (g : Game) : Game :=
           g.ceaseToExist obj.id (cause := some (.gameRule .abilityFinishedResolving))
         else if !obj.isReflexive &&
             !g.triggerInterveningHolds entry.controller t obj.sourceId
-              entry.targets entry.lastKnownPower obj.fraCauseId obj.fraCauseStatus then
+              entry.targets entry.lastKnownPower obj.triggerCauseId obj.triggerCauseStatus then
           let g := g.withResolvingContext ctxSrc entry.controller fun g =>
             let g := g.record (GameEvent.removedOnResolution g.turnNumber (g.snapshot obj))
             g.logMsg "The intervening condition is no longer true. The ability doesn't resolve."

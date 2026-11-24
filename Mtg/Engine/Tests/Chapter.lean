@@ -268,7 +268,7 @@ Choosing no creature for prevention changes nothing. -/
 #guard
   let g := step afterDraw Effect.chapterSearchBasicLandToHand
   match g.pending with
-  | .fraChoice _ (.searchLibrary _ _ .hand _ _) => true
+  | .resolutionChoice _ (.searchLibrary _ _ .hand _ _) => true
   | _ => false
 
 #guard
@@ -276,7 +276,7 @@ Choosing no creature for prevention changes nothing. -/
   let g := step g0 (Effect.chapterSearchBasicPlainsExileGainLife 2 2)
     (sourceId := some (pid g0 "Saga"))
   match g.pending with
-  | .fraChoice _ (.searchLibrary _ _ (.exileLinked _) _ _) => true
+  | .resolutionChoice _ (.searchLibrary _ _ (.exileLinked _) _ _) => true
   | _ => false
 
 end Mtg.Engine.ChapterTests

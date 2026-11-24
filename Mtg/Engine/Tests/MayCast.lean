@@ -82,7 +82,7 @@ mana value 4 sorcery is not. Declining leaves both in hand. -/
   let shockId := namedId g (g.player caster).hand "Shock"
   let offered :=
     match shockId, g.pending with
-    | some id, .fraChoice _ (.mayCastInstantSorceryFromHand eligible) =>
+    | some id, .resolutionChoice _ (.mayCastInstantSorceryFromHand eligible) =>
       eligible.contains id &&
         !eligible.any (fun i => (g.object! i).name == "Costly Sorcery")
     | _, _ => false
@@ -110,7 +110,7 @@ mana value 4 sorcery is not. Declining leaves both in hand. -/
   let g := g.applyTriggeredAbility caster .onEquippedCombatDamageCastInstantSorcery
     none (lastKnownPower := some 1)
   match namedId g (g.player caster).hand "Shock", g.pending with
-  | some id, .fraChoice _ (.mayCastInstantSorceryFromHand eligible) =>
+  | some id, .resolutionChoice _ (.mayCastInstantSorceryFromHand eligible) =>
     eligible.contains id &&
       !eligible.any (fun i => (g.object! i).name == "Costly Sorcery") &&
       g.log.any (fun s => mentions s "mana value 1 or less")
@@ -125,7 +125,7 @@ mana value 4 sorcery is not. Declining leaves both in hand. -/
   | some shockId =>
     let offered :=
       match g.pending with
-      | .fraChoice _ (.mayCastFromGraveyard ids) =>
+      | .resolutionChoice _ (.mayCastFromGraveyard ids) =>
         ids.contains shockId &&
           !ids.any (fun i => (g.object! i).name == "Grizzly Bears")
       | _ => false
@@ -165,7 +165,7 @@ instant and bottoms only the cards that were not cast. -/
   let g := g.applyTriggeredAbility caster .onCombatDamageImpulseInstantSorcery none
   let offered :=
     match g.pending with
-    | .fraChoice p (.mayCastGrima _ _ v) => p == caster && v == victim
+    | .resolutionChoice p (.mayCastGrima _ _ v) => p == caster && v == victim
     | _ => false
   let g := mustApply g caster .decline
   offered &&

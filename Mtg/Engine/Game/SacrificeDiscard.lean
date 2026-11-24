@@ -237,14 +237,14 @@ def finishConniveDiscard (g : Game) (discarded : GameObject) : Game :=
         g.logMsg "The conniving creature has left the battlefield; no +1/+1 counter is put"
 
 /-- Villain that would connive for Baron Strucker: an announced target, the
-causing object's id stored in `fraCauseId`, or the newest other Villain
+causing object's id stored in `triggerCauseId`, or the newest other Villain
 that entered this turn. -/
 def villainConniveTarget? (g : Game) (controller : PlayerId) (sourceId : ObjectId)
     (targets : Array Target) : Option ObjectId :=
   match targets[0]? with
   | some (Target.permanent id) => some id
   | _ =>
-    match (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId) with
+    match (g.resolvingAbility.bind g.findObject?).bind (·.triggerCauseId) with
     | some cid => some cid
     | none =>
       let cands :=
@@ -391,7 +391,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let g :=
       if paused then
         match outerCont? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
         | none => g
       else g
     return if callerShouldResume then g.resumeAfterBecomeCastFwd else g
@@ -530,6 +530,83 @@ def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option 
 /-- `p` discards `id`, chosen at random (CR 701.9). -/
 def discardFromHandRandomly (g : Game) (p : PlayerId) (id : ObjectId) : Game :=
   g.discardFromHand p id (atRandom := true)
+
+/-- Ask the next player in `players` to sacrifice a creature, or sacrifice the
+chosen creatures simultaneously in one batch and finish. -/
+def continueSacrificeEach (g : Game) (controller : PlayerId) (players : Array PlayerId)
+    (chosen : Array ObjectId) : Game :=
+  match (players.filter (fun p => !(g.creaturesControlledBy p).isEmpty)).toList with
+  | p :: rest =>
+    g.beginResolutionChoice p (.sacrificeCreatureEach controller rest.toArray chosen)
+      s!"{(g.player p).name} sacrifices a creature"
+  | [] =>
+    let youSacrificed := chosen.any (fun id =>
+      (g.findObject? id).any (fun o => o.isOnBattlefield && g.controlledBy o controller))
+    let pairs := chosen.filterMap (fun id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield then some ((g.controllerOf o).getD o.owner, id)
+        else none
+      | none => none)
+    let preBf := g.battlefield
+    g.withBatch none fun g =>
+      g.sacrificePermanentsLoop pairs (preBattlefield := some preBf)
+        (createBeastFor := if youSacrificed then some controller else none)
+
+/-- Count nonland cards actually discarded by each opponent in `oppIds` since
+`startIdx` (CR 701.9c: face-up nonland cards moved from that opponent's hand to
+a different public zone with `.discard`) and draw `baseDraws + shortCount`
+cards for `controller` (CR 101.4 / 603.2c / 614.6 / 701.9b–c). -/
+def finishDiscardTwoDraws (g : Game) (controller : PlayerId) (baseDraws : Nat)
+    (oppIds : Array PlayerId) (startIdx : Nat) : Game :=
+  let nonlandDiscardedBy (opp : PlayerId) : Nat :=
+    (g.events.extract startIdx g.events.size).foldl (fun acc e =>
+      match e.change with
+      | .rules (.zone (.moved _ after (.hand q) toZone .discard _ _ _)) =>
+        if q == opp && toZone != .hand q && isPublicZone toZone &&
+            !after.faceDown && !after.types.contains .land then
+          acc + 1
+        else acc
+      | _ => acc) 0
+  let shortCount := (oppIds.filter (fun opp => g.stillInGame opp && nonlandDiscardedBy opp < 2)).size
+  let totalDraws := baseDraws + shortCount
+  if g.stillInGame controller && totalDraws > 0 then
+    g.draw controller totalDraws
+  else g
+
+/-- Collect each living opponent's two-card discard choice in APNAP order, then
+discard all chosen cards simultaneously inside one shared batch and draw a card
+for each opponent who didn't discard two nonland cards
+(CR 101.4 / 603.2c / 614.6 / 701.9b–c). -/
+partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Array PlayerId)
+    (draws : Nat) (chosen : Array (PlayerId × Array ObjectId) := #[]) : Game :=
+  let living := players.filter g.stillInGame
+  match living.toList with
+  | [] =>
+    let livingChosen := chosen.filter (fun (p, _) => g.stillInGame p)
+    let oppIds := livingChosen.map Prod.fst
+    let pairs := livingChosen.foldl (fun acc (p, ids) =>
+      acc ++ ids.map (fun id => (p, id))) #[]
+    let startIdx := g.events.size
+    let g :=
+      if pairs.isEmpty then g
+      else
+        g.withBatch none fun g =>
+          g.discardMultiHandIdsLoop pairs (logEach := true)
+    if let .chooseReplacement .. := g.pending then
+      g.chainPendingReplacement
+        (.finishPostStep (.finishDiscardTwoDraws controller draws oppIds startIdx))
+    else
+      g.finishDiscardTwoDraws controller draws oppIds startIdx
+  | p :: rest =>
+    let hand := (g.player p).hand
+    if hand.size ≤ 2 then
+      let g :=
+        if hand.isEmpty then g.logMsg s!"{(g.player p).name} has no cards to discard" else g
+      g.continueDiscardTwo controller rest.toArray draws (chosen.push (p, hand))
+    else
+      g.beginResolutionChoice p (.discardTwo controller rest.toArray draws chosen)
+        s!"{(g.player p).name} discards two cards"
 
 end Game
 end Mtg.Engine

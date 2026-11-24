@@ -69,7 +69,7 @@ removes the ability. A missing source does the same. -/
   let src := allyOf g0
   let g := modeStep g0 (allianceModes) (some src.id)
   match g.pending with
-  | .fraChoice p (.allianceMode sid available) =>
+  | .resolutionChoice p (.allianceMode sid available) =>
     p == caster && sid == src.id && available == #[0, 1, 2]
   | _ => false
 
@@ -125,7 +125,7 @@ lifetime, and spending every mode leaves the source on the battlefield. -/
   let src := allyOf g0
   let g := modeStep g0 (gollumModes) (some src.id)
   match g.pending with
-  | .fraChoice p (.gollumMode sid available) =>
+  | .resolutionChoice p (.gollumMode sid available) =>
     p == caster && sid == src.id && available == #[0, 1, 2]
   | _ => false
 
@@ -198,7 +198,7 @@ means the sacrifice mode finds it already gone. -/
   let g := g0.applyTriggeredAbility caster
     .onAnotherCreatureYouControlEntersAlliance (some (allyOf g0).id)
   match g.pending with
-  | .fraChoice _ (.allianceMode _ available) => available == #[0, 1, 2]
+  | .resolutionChoice _ (.allianceMode _ available) => available == #[0, 1, 2]
   | _ => false
 
 #guard
@@ -206,7 +206,7 @@ means the sacrifice mode finds it already gone. -/
   let g := g0.applyTriggeredAbility caster .onOpponentCastsChosenParityModes
     (some (allyOf g0).id)
   match g.pending with
-  | .fraChoice _ (.gollumMode _ available) => available == #[0, 1, 2]
+  | .resolutionChoice _ (.gollumMode _ available) => available == #[0, 1, 2]
   | _ => false
 
 #guard

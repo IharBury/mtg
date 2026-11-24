@@ -182,7 +182,7 @@ def hydeAsks : Game :=
 
 #guard
   match hydeAsks.pending with
-  | .fraChoice _ (.hydeMode _) => true
+  | .resolutionChoice _ (.hydeMode _) => true
   | _ => false
 
 def hydePlusOne : Game :=

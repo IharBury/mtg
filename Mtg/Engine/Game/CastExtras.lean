@@ -1,4 +1,4 @@
-import Mtg.Engine.Game.FraHelpers
+import Mtg.Engine.Game.ModeledTriggers
 
 /-!
 # Optional costs, cascade, and the Ring
@@ -100,7 +100,7 @@ partial def resolveCascadeLoop (g : Game) (p : PlayerId) (maxMv : Nat)
         if !g.isLand card && g.objectManaValue card < maxMv then
           let g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
           let others := exiled.filter (· != card.id)
-          g.beginFraChoice p (.mayCastCascade card.id others)
+          g.beginResolutionChoice p (.mayCastCascade card.id others)
             s!"{(g.player p).name} may cast {g.name card} without paying its mana cost (cascade)"
         else
           g.resolveCascadeLoop p maxMv cause exiled none

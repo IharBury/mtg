@@ -2112,7 +2112,7 @@ def sheHulkDamageOnceOk : Bool :=
        (some she.id) #[Target.permanent giant.id]
        #[] (some 3)
      match g.pending with
-     | .fraChoice _ (.sheHulkMayDamage ..) =>
+     | .resolutionChoice _ (.sheHulkMayDamage ..) =>
        let g := mustApply g ⟨0⟩ .accept
        let giant := namedPermanent g "Hill Giant"
        giant.status.damage == 3 &&
@@ -2167,11 +2167,11 @@ def worldsWithinWorldsOk : Bool :=
   let (g, spell) := g.allocObject worldsWithinWorlds ⟨0⟩ .stack (some ⟨0⟩)
   let g := g.applyEffect ⟨0⟩ worldsWithinWorlds.spellEffect.get! #[] (sourceId := some spell.id)
   match g.pending with
-  | .fraChoice ⟨0⟩ (.worldsPutCreatures eligible) =>
+  | .resolutionChoice ⟨0⟩ (.worldsPutCreatures eligible) =>
     eligible.contains doom.id &&
       (let g1 := mustApply g ⟨0⟩ (.choosePermanents #[doom.id])
        match g1.pending with
-       | .fraChoice ⟨1⟩ (.worldsPutCreatures ogres) =>
+       | .resolutionChoice ⟨1⟩ (.worldsPutCreatures ogres) =>
          ogres.any (fun id => (g1.object! id).name == "Gray Ogre") &&
            (let g2 := mustApply g1 ⟨1⟩ .decline
             g2.pending == .none &&
@@ -2465,7 +2465,7 @@ def sheHulkMayDeclineOk : Bool :=
     (some she.id) #[Target.permanent giant.id]
     #[] (some 1)
   match g.pending with
-  | .fraChoice _ (.sheHulkMayDamage ..) =>
+  | .resolutionChoice _ (.sheHulkMayDamage ..) =>
     let declined := mustApply g ⟨0⟩ .decline
     let n := (declined.waitingTriggers.filter (fun t =>
       t.source.name == "The Sensational She-Hulk")).size
@@ -2592,14 +2592,14 @@ def hulklingComparesCauseOk : Bool :=
   (namedPermanent noCause "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0 &&
     (let abId : ObjectId := ⟨g.nextObjectId⟩
      let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot hulkling) ⟨0⟩
-       (spec := { sourceId := some hulkling.id, fraCauseId := some bot.id }))
+       (spec := { sourceId := some hulkling.id, triggerCauseId := some bot.id }))
      let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
      let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
      (namedPermanent g "Hulkling, Burgeoning Bruiser").status.plusOnePlusOne == 0) &&
     (let abId : ObjectId := ⟨g.nextObjectId⟩
      let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot hulkling) ⟨0⟩
-       (spec := { sourceId := some hulkling.id, fraCauseId := some giant.id }))
+       (spec := { sourceId := some hulkling.id, triggerCauseId := some giant.id }))
      let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
      let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
        (some hulkling.id) #[]
@@ -2612,7 +2612,7 @@ def hulklingComparesCauseOk : Bool :=
        (g.lastKnownPowerOf? gy.id).isNone &&
        (let abId : ObjectId := ⟨g.nextObjectId⟩
         let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot hulkling) ⟨0⟩
-          (spec := { sourceId := some hulkling.id, fraCauseId := some giantId }))
+          (spec := { sourceId := some hulkling.id, triggerCauseId := some giantId }))
         let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
         let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchHulklingCompare)
           (some hulkling.id) #[]
@@ -2643,7 +2643,7 @@ def capUntapsTriggeringCreatureOk : Bool :=
   let cap := namedPermanent g "Captain America, Living Legend"
   let abId : ObjectId := ⟨g.nextObjectId⟩
   let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot cap) ⟨0⟩
-    (spec := { sourceId := some cap.id, fraCauseId := some bears.id }))
+    (spec := { sourceId := some cap.id, triggerCauseId := some bears.id }))
   let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchFirstTapUntap)
     (some cap.id) #[]
@@ -2671,7 +2671,7 @@ def blackWidowChoiceOk : Bool :=
         (.onWatch Effect.watchCombatDamageExileUntilNonland)
         (some widow.id) #[Target.player ⟨1⟩]
      match g.pending with
-     | .fraChoice _ (.widowMayCounter _ (some _)) =>
+     | .resolutionChoice _ (.widowMayCounter _ (some _)) =>
        let accepted := mustApply g ⟨0⟩ .accept
        let declined := mustApply g ⟨0⟩ .decline
        (namedPermanent accepted "Black Widow, Super Spy").status.plusOnePlusOne == 1 &&
@@ -2687,12 +2687,12 @@ def blackWidowChoiceOk : Bool :=
        (spec := {
          triggeredAbility := some (.onWatch Effect.watchCombatDamageExileUntilNonland)
          sourceId := some widow.id
-         fraCauseController := some ⟨1⟩ }))
+         triggerCauseController := some ⟨1⟩ }))
      let g := g.changes #[.popStack, .pushContinuationFrame { resolvingAbility := some abId }]
      let g := g.applyTriggeredAbility ⟨0⟩
        (.onWatch Effect.watchCombatDamageExileUntilNonland) (some widow.id) #[]
      match g.pending with
-     | .fraChoice _ (.widowMayCounter ..) => (g.player ⟨1⟩).library.size == 1
+     | .resolutionChoice _ (.widowMayCounter ..) => (g.player ⟨1⟩).library.size == 1
      | _ => false)
 
 #guard blackWidowChoiceOk
@@ -2755,14 +2755,14 @@ def ultronMayPayCopyOk : Bool :=
   let stone := namedPermanent g "The Mind Stone"
   let abId : ObjectId := ⟨g.nextObjectId⟩
   let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot ultron) ⟨0⟩
-    (spec := { sourceId := some ultron.id, fraCauseId := some stone.id }))
+    (spec := { sourceId := some ultron.id, triggerCauseId := some stone.id }))
   let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
   let g := g.applyTriggeredAbility ⟨0⟩ (.onWatch Effect.watchUltronCopy)
     (some ultron.id) #[]
   let tokens (g : Game) :=
     (g.battlefield.filter (fun o => o.printed.isToken && o.name == "The Mind Stone")).size
   match g.pending with
-  | .fraChoice _ (.ultronMayPay _) =>
+  | .resolutionChoice _ (.ultronMayPay _) =>
     let declined := mustApply g ⟨0⟩ .decline
     tokens declined == 0 &&
       (let paid := mustApply g ⟨0⟩ .accept
@@ -2785,7 +2785,7 @@ def blackPantherModeOk : Bool :=
   let soldiers (g : Game) :=
     (g.battlefield.filter (fun o => o.printed.isToken && g.hasSubtype o .soldier)).size
   match g.pending with
-  | .fraChoice _ (.triggerModes _ 1 _) =>
+  | .resolutionChoice _ (.triggerModes _ 1 _) =>
     let soldier := (mustApply g ⟨0⟩ (.chooseMode 0)).resolveTop
     let pumped := (mustApply g ⟨0⟩ (.chooseMode 1)).resolveTop
     soldiers soldier == 1 &&
@@ -2846,7 +2846,7 @@ def speedballMayRetargetOk : Bool :=
     | some e => e.targets[0]?
     | none => none
   match g.pending with
-  | .fraChoice _ (.mayChangeSpellTarget _ 0 _) =>
+  | .resolutionChoice _ (.mayChangeSpellTarget _ 0 _) =>
     let kept := mustApply g ⟨0⟩ .decline
     target0 kept == some (Target.permanent speed.id) &&
       (let changed := mustApply g ⟨0⟩ (.choosePermanents #[bears.id])
@@ -2867,7 +2867,7 @@ def daredevilMayDeclineOk : Bool :=
   let g := g.applyTriggeredAbility ⟨0⟩ (.onYouAttacking Effect.youAttackingExileTopHeroPump)
     (some dd.id)
   match g.pending with
-  | .fraChoice _ (.daredevilMayExile _) =>
+  | .resolutionChoice _ (.daredevilMayExile _) =>
     let g := mustApply g ⟨0⟩ .decline
     (g.player ⟨0⟩).library.size == top &&
       g.pumpOf (namedPermanent g "Daredevil, Man Without Fear") == (0, 0)
@@ -2882,14 +2882,14 @@ def visionModeChoiceOk : Bool :=
   let vis := namedPermanent g "The Vision"
   let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingVisionModes) (some vis.id)
   match g.pending with
-  | .fraChoice _ (.visionMode _ available) =>
+  | .resolutionChoice _ (.visionMode _ available) =>
     available == #[0, 1, 2] &&
       (let g := mustApply g ⟨0⟩ (.chooseMode 0)
        let vis := namedPermanent g "The Vision"
        g.hasDoubleStrike vis && g.modesChosenThisTurn vis.id == #[0] &&
          (let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingVisionModes) (some vis.id)
           match g.pending with
-          | .fraChoice _ (.visionMode _ available) =>
+          | .resolutionChoice _ (.visionMode _ available) =>
             available == #[1, 2] &&
               (let g := mustApply g ⟨0⟩ (.chooseMode 1)
                let vis := namedPermanent g "The Vision"
@@ -2899,7 +2899,7 @@ def visionModeChoiceOk : Bool :=
                     (let g := g.applyTriggeredAbility ⟨0⟩
                        (.onCasting Effect.castingVisionModes) (some vis.id)
                      match g.pending with
-                     | .fraChoice _ (.visionMode _ available) => available == #[0, 1, 2]
+                     | .resolutionChoice _ (.visionMode _ available) => available == #[0, 1, 2]
                      | _ => false)))
           | _ => false))
   | _ => false
@@ -2934,7 +2934,7 @@ def thorSpellManaValueOk : Bool :=
   let g := g.putStackEntry ⟨0⟩ bolt.id
   let abId : ObjectId := ⟨g.nextObjectId⟩
   let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot thor) ⟨0⟩
-    (spec := { sourceId := some thor.id, fraCauseId := some spell.id }))
+    (spec := { sourceId := some thor.id, triggerCauseId := some spell.id }))
   let g := g.change (.pushContinuationFrame { resolvingAbility := some abId })
   let life0 := (g.player ⟨1⟩).life
   let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
@@ -2945,7 +2945,7 @@ def thorSpellManaValueOk : Bool :=
      g.chosenXOf? gy.id == some 3 &&
        (let ab2Id : ObjectId := ⟨g.nextObjectId⟩
         let g := g.record (GameEvent.triggerPutOnStack g.turnNumber ab2Id (g.snapshot thor) ⟨0⟩
-          (spec := { sourceId := some thor.id, fraCauseId := some spell.id }))
+          (spec := { sourceId := some thor.id, triggerCauseId := some spell.id }))
         let g := g.change (.pushContinuationFrame { resolvingAbility := some ab2Id })
         let life1 := (g.player ⟨1⟩).life
         let g := g.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingDamageEqualMv)
@@ -2967,14 +2967,14 @@ def namorTriggeringSpellOk : Bool :=
     (g.battlefield.filter (fun o => o.printed.isToken && g.hasSubtype o .merfolk)).size
   let abBlueId : ObjectId := ⟨g.nextObjectId⟩
   let gBlue := g.record (GameEvent.triggerPutOnStack g.turnNumber abBlueId (g.snapshot namor) ⟨0⟩
-    (spec := { sourceId := some namor.id, fraCauseId := some aura.id }))
+    (spec := { sourceId := some namor.id, triggerCauseId := some aura.id }))
   let gBlue := gBlue.change (.pushContinuationFrame { resolvingAbility := some abBlueId })
   let gBlue := gBlue.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
     (some namor.id)
   merfolk gBlue == 2 &&
     (let abRedId : ObjectId := ⟨g.nextObjectId⟩
      let gRed := g.record (GameEvent.triggerPutOnStack g.turnNumber abRedId (g.snapshot namor) ⟨0⟩
-       (spec := { sourceId := some namor.id, fraCauseId := some bolt.id }))
+       (spec := { sourceId := some namor.id, triggerCauseId := some bolt.id }))
      let gRed := gRed.change (.pushContinuationFrame { resolvingAbility := some abRedId })
      let gRed := gRed.applyTriggeredAbility ⟨0⟩ (.onCasting Effect.castingMerfolkFromBlue)
        (some namor.id)
@@ -3045,12 +3045,12 @@ def moonstoneMayExileOk : Bool :=
     (spec := {
       triggeredAbility := some (.onResource Effect.resourceDiscardExilePlay)
       sourceId := some moon.id
-      fraCauseId := some bolt.id }))
+      triggerCauseId := some bolt.id }))
   let g := g.changes #[.popStack, .pushContinuationFrame { resolvingAbility := some abId }]
   let g := g.applyTriggeredAbility ⟨0⟩ (.onResource Effect.resourceDiscardExilePlay)
     (some moon.id) #[]
   match g.pending with
-  | .fraChoice _ (.moonstoneMayExile _) =>
+  | .resolutionChoice _ (.moonstoneMayExile _) =>
     let kept := mustApply g ⟨0⟩ .decline
     (kept.objects.any (fun o => o.name == "Lightning Bolt" && o.zone == .graveyard ⟨0⟩)) &&
       (let exiled := mustApply g ⟨0⟩ .accept
@@ -3160,7 +3160,7 @@ def rapidRescueMayReturnOk : Bool :=
   let g := addToLibraryTop (addToLibraryTop afterDraw lightningBolt ⟨0⟩) forest ⟨0⟩
   let g := g.applyEffect ⟨0⟩ rapidRescue.spellEffect.get! #[]
   match g.pending with
-  | .fraChoice _ (.mayPutMilledPermanent ids _) =>
+  | .resolutionChoice _ (.mayPutMilledPermanent ids _) =>
     ids.size == 1 &&
       (let declined := mustApply g ⟨0⟩ .decline
        (declined.player ⟨0⟩).life == 22 &&
@@ -3183,7 +3183,7 @@ def restorativeTechniqueOk : Bool :=
     #[Target.permanent bear.id, Target.player ⟨1⟩]
   (g.player ⟨1⟩).life == 22 &&
     match g.pending with
-    | .fraChoice _ (.searchLibrary _ _ _ _ _) =>
+    | .resolutionChoice _ (.searchLibrary _ _ _ _ _) =>
       let g := mustApply g ⟨1⟩ .decline
       (namedPermanent g "Grizzly Bears").status.plusOnePlusOne == 1 &&
         logContains g "shuffles"
@@ -3200,7 +3200,7 @@ def armorWarsChaptersOk : Bool :=
   let theirs := (g.player ⟨1⟩).hand.size
   let g := g.applyEffect ⟨0⟩ Effect.mayDrawPerArtifactOppsDraw #[]
   match g.pending with
-  | .fraChoice _ (.mayDrawThenEachOpponentDraws 1) =>
+  | .resolutionChoice _ (.mayDrawThenEachOpponentDraws 1) =>
     let declined := mustApply g ⟨0⟩ .decline
     (declined.player ⟨0⟩).hand.size == mine &&
       (declined.player ⟨1⟩).hand.size == theirs &&
@@ -3236,7 +3236,7 @@ def originHeroOrDrawOk : Bool :=
   let before := (g.player ⟨0⟩).hand.size
   let g := g.applyAbilityEffect ⟨0⟩ originOfTheAvengers.sagaChapters[1]!.effect #[]
   match g.pending with
-  | .fraChoice _ (.mayPutHeroFromHandOrDraw ids) =>
+  | .resolutionChoice _ (.mayPutHeroFromHandOrDraw ids) =>
     ids.contains reptil.id &&
       (let declined := mustApply g ⟨0⟩ .decline
        (declined.player ⟨0⟩).hand.size == before + 1 &&
@@ -3347,10 +3347,10 @@ def visionQuestOk : Bool :=
     (gSmall.player ⟨0⟩).library.any (fun id => (gSmall.object! id).name == "War Machine, Legacy of Iron") &&
     (let g := g.beginVisionQuest ⟨0⟩ 4
      match g.pending with
-     | .fraChoice _ (.visionQuestZones _ _ 4) =>
+     | .resolutionChoice _ (.visionQuestZones _ _ 4) =>
        let g := mustApply g ⟨0⟩ .accept
        match g.pending with
-       | .fraChoice _ (.visionQuestPick ids 4 true) =>
+       | .resolutionChoice _ (.visionQuestPick ids 4 true) =>
          ids.contains top &&
            (let g := mustApply g ⟨0⟩ (.choosePermanents #[top])
             let machine := namedPermanent g "War Machine, Legacy of Iron"
@@ -3394,7 +3394,7 @@ def thanosOddEvenOk : Bool :=
   let g := g.applyUnifiedAbility ⟨0⟩ Effect.plusTwoThenOddEvenDestroy #[] (some thanos.id)
   (namedPermanent g "Thanos, the Mad Titan").status.plusOnePlusOne == 2 &&
     match g.pending with
-    | .fraChoice _ (.oddOrEvenDestroy _) =>
+    | .resolutionChoice _ (.oddOrEvenDestroy _) =>
       let g := mustApply g ⟨0⟩ (.chooseMode 0)
       !g.battlefield.any (fun o => o.name == "Grizzly Bears") &&
         g.battlefield.any (fun o => o.name == "Reptil, Dinomorpher") &&
@@ -3474,7 +3474,7 @@ def rickJonesMillOk : Bool :=
     })
   } #[]
   match g.pending with
-  | .fraChoice _ (.chooseCards ids _ (.toHand _)) =>
+  | .resolutionChoice _ (.chooseCards ids _ (.toHand _)) =>
     ids.size == 1 &&
       (let g := mustApply g ⟨0⟩ (.choosePermanents ids)
        (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Reptil, Dinomorpher") &&
@@ -3506,10 +3506,10 @@ def settleSearchOk : Bool :=
   let g := g.applyEffect ⟨0⟩ Effect.exileAttackersSearchBasics #[Target.player ⟨1⟩]
   !g.battlefield.any (fun o => o.status.attacking) &&
     match g.pending with
-    | .fraChoice ⟨1⟩ (.maySearchLibrary _ 2 _ _ _) =>
+    | .resolutionChoice ⟨1⟩ (.maySearchLibrary _ 2 _ _ _) =>
       let g := mustApply g ⟨1⟩ .accept
       match g.pending with
-      | .fraChoice _ (.searchLibrary eligible _ _ _ _) =>
+      | .resolutionChoice _ (.searchLibrary eligible _ _ _ _) =>
         let lands := eligible.filter (fun id => (g.object! id).printed.isLand)
         let pick := lands.extract 0 2
         pick.size == 2 &&
@@ -3529,7 +3529,7 @@ def avengersLandSearchOk : Bool :=
   let g := g.applyEffect ⟨0⟩ Effect.destroyLandSearchBasic #[Target.permanent land.id]
   !g.battlefield.any (fun o => o.name == "Forest" && !o.printed.isToken) &&
     match g.pending with
-    | .fraChoice ⟨1⟩ (.maySearchLibrary _ 1 _ _ _) =>
+    | .resolutionChoice ⟨1⟩ (.maySearchLibrary _ 1 _ _ _) =>
       let kept := addPermanent afterDraw forest ⟨1⟩ ⟨1⟩
       let land := namedPermanent kept "Forest"
       let kept := kept.recordPutCounters land.id .indestructible 1
@@ -3537,7 +3537,7 @@ def avengersLandSearchOk : Bool :=
         #[Target.permanent (namedPermanent kept "Forest").id]
       kept.battlefield.any (fun o => o.name == "Forest") &&
         match kept.pending with
-        | .fraChoice ⟨1⟩ (.maySearchLibrary _ 1 _ _ _) => true
+        | .resolutionChoice ⟨1⟩ (.maySearchLibrary _ 1 _ _ _) => true
         | _ => false
     | _ => false
 
@@ -3598,7 +3598,7 @@ def tricksterChoiceAndConniveOk : Bool :=
   let g := g.applyEffect ⟨0⟩ Effect.ownerPutsLibraryThenConnive
     #[Target.permanent ogre.id, Target.permanent bears.id]
   match g.pending with
-  | .fraChoice ⟨1⟩ (.tricksterLibrary _ _ (some connive) ..) =>
+  | .resolutionChoice ⟨1⟩ (.tricksterLibrary _ _ (some connive) ..) =>
     connive == bears.id &&
       (let gTop := mustApply g ⟨1⟩ .chooseTop
        let lib := (gTop.player ⟨1⟩).library
@@ -3780,11 +3780,11 @@ def riddlesPileChoiceOk : Bool :=
   let hand0 := (g.player ⟨0⟩).hand.size
   let g := g.applyEffect ⟨0⟩ Effect.riddlesInTheDark #[]
   match g.pending with
-  | .fraChoice ⟨0⟩ (.riddlesSplit looked) =>
+  | .resolutionChoice ⟨0⟩ (.riddlesSplit looked) =>
     looked.size == 4 &&
       (let allDown := mustApply g ⟨0⟩ .decline
        match allDown.pending with
-       | .fraChoice ⟨1⟩ (.riddlesChoosePile _ faceUp faceDown) =>
+       | .resolutionChoice ⟨1⟩ (.riddlesChoosePile _ faceUp faceDown) =>
          faceUp.isEmpty && faceDown.size == 4 &&
            (let gHand := mustApply allDown ⟨1⟩ .decline
             (gHand.player ⟨0⟩).hand.size == hand0 + 4 &&
@@ -3796,7 +3796,7 @@ def riddlesPileChoiceOk : Bool :=
        let gUp := mustApply g ⟨0⟩ (.choosePermanents #[top])
        logContains gUp "reveals" &&
          match gUp.pending with
-         | .fraChoice ⟨1⟩ (.riddlesChoosePile ..) =>
+         | .resolutionChoice ⟨1⟩ (.riddlesChoosePile ..) =>
            let gHand := mustApply gUp ⟨1⟩ .accept
            (gHand.player ⟨0⟩).hand.any (fun id => (gHand.object! id).name == "Mountain") &&
              gHand.objects.any (fun o => o.name == "Shock" && o.zone == .graveyard ⟨0⟩) &&
@@ -3812,7 +3812,7 @@ def palisadeChoosesCreatureTypeOk : Bool :=
   let g := addPermanent g hillGiant ⟨1⟩ ⟨1⟩
   let g := g.applyEffect ⟨0⟩ Effect.chooseTypeReturnOthers #[]
   match g.pending with
-  | .fraChoice ⟨0⟩ (.palisadeCreatureType types) =>
+  | .resolutionChoice ⟨0⟩ (.palisadeCreatureType types) =>
     types.contains .bear && types.contains .giant && !types.contains .elf &&
       (match g.apply ⟨0⟩ (.chooseName "Elf") with
        | .error _ => true
@@ -3838,7 +3838,7 @@ def earthsMightiestChoosesOk : Bool :=
   let base := addToLibraryTop base grizzlyBears ⟨0⟩
   let g := base.applyEffect ⟨0⟩ (Effect.revealTopPutCreatures 8) #[]
   match g.pending with
-  | .fraChoice ⟨0⟩ (.revealPutCreatures _ creatures false) =>
+  | .resolutionChoice ⟨0⟩ (.revealPutCreatures _ creatures false) =>
     creatures.size == 1 && logContains g "reveals" &&
       (let gPut := mustApply g ⟨0⟩ (.choosePermanents creatures)
        gPut.loggedEntered (namedPermanent gPut "Grizzly Bears").id &&
@@ -3849,7 +3849,7 @@ def earthsMightiestChoosesOk : Bool :=
       (let two := addToLibraryTop base hillGiant ⟨0⟩
        let gTwo := two.applyEffect ⟨0⟩ (Effect.revealTopPutCreatures 8) #[]
        match gTwo.pending with
-       | .fraChoice ⟨0⟩ (.revealPutCreatures _ both false) =>
+       | .resolutionChoice ⟨0⟩ (.revealPutCreatures _ both false) =>
          both.size == 2 &&
            (match gTwo.apply ⟨0⟩ (.choosePermanents both) with
             | .error _ => true
@@ -3861,7 +3861,7 @@ def earthsMightiestChoosesOk : Bool :=
        let two := two.change (.pushContinuationFrame { resolvingSpell := some spell.id })
        let gTeam := two.applyEffect ⟨0⟩ (Effect.revealTopPutCreatures 8) #[]
        match gTeam.pending with
-       | .fraChoice ⟨0⟩ (.revealPutCreatures _ both true) =>
+       | .resolutionChoice ⟨0⟩ (.revealPutCreatures _ both true) =>
          both.size == 2 &&
            (let gPut := mustApply gTeam ⟨0⟩ (.choosePermanents both)
             gPut.loggedEntered (namedPermanent gPut "Grizzly Bears").id &&
@@ -4009,7 +4009,7 @@ def nickFuryLookPutOk : Bool :=
     (Effect.lookAtTopPutTypes 7 #["Hero", "Equipment", "Vehicle"]) #[] (some nick.id)
   (namedPermanent g "Nick Fury, Agent of S.H.I.E.L.D.").status.plusOnePlusOne == 2 &&
     match g.pending with
-    | .fraChoice ⟨0⟩ (.nickFuryPut looked eligible) =>
+    | .resolutionChoice ⟨0⟩ (.nickFuryPut looked eligible) =>
       looked.size == 3 &&
         match eligible.find? (fun id => (g.object! id).name == "Tony Stark"),
             eligible.find? (fun id => (g.object! id).name == "White Tiger, Ava Ayala") with
@@ -4021,7 +4021,7 @@ def nickFuryLookPutOk : Bool :=
                !gTiger.battlefield.any (fun o => o.name == "Tony Stark")) &&
             (let gTony := mustApply g ⟨0⟩ (.choosePermanents #[tony])
              match gTony.pending with
-             | .fraChoice ⟨0⟩ (.nickFuryMayTransform _ _) =>
+             | .resolutionChoice ⟨0⟩ (.nickFuryMayTransform _ _) =>
                (let gIron := mustApply gTony ⟨0⟩ .accept
                 gIron.battlefield.any (fun o => o.name == "The Invincible Iron Man")) &&
                  (let gStay := mustApply gTony ⟨0⟩ .decline
@@ -4046,7 +4046,7 @@ def tonyStarkRevealArtifactOk : Bool :=
   let src := namedPermanent g "Tony Stark"
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.lookAtTopRevealArtifact 4) #[] (some src.id)
   match g.pending with
-  | .fraChoice ⟨0⟩ (.mayRevealToHand _ eligible false) =>
+  | .resolutionChoice ⟨0⟩ (.mayRevealToHand _ eligible false) =>
     eligible.size == 1 &&
       (let gHand := mustApply g ⟨0⟩ (.choosePermanents eligible)
        (gHand.player ⟨0⟩).hand.any (fun id => (gHand.object! id).name == "Super Suit") &&
@@ -4068,13 +4068,13 @@ def avengersTowerHeroOrderOk : Bool :=
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.lookAtTopRevealSubtype 3 "Hero") #[]
     (some tower.id)
   match g.pending with
-  | .fraChoice ⟨0⟩ (.mayRevealToHand _ eligible true) =>
+  | .resolutionChoice ⟨0⟩ (.mayRevealToHand _ eligible true) =>
     match eligible[0]? with
     | some hero =>
       (g.object! hero).name == "White Tiger, Ava Ayala" &&
         (let g1 := mustApply g ⟨0⟩ (.choosePermanents #[hero])
          match g1.pending with
-         | .fraChoice ⟨0⟩ (.orderLibraryBottom ids) =>
+         | .resolutionChoice ⟨0⟩ (.orderLibraryBottom ids) =>
            match ids.find? (fun id => (g1.object! id).name == "Shock"),
                ids.find? (fun id => (g1.object! id).name == "Mountain") with
            | some s, some m =>
@@ -4125,7 +4125,7 @@ def echoCopyNewTargetOk : Bool :=
   let g := g.applyAbilityEffect ⟨0⟩ (Effect.copyControlledAbility .creature)
     #[Target.card ab.id] (some echo.id)
   match g.pending with
-  | .fraChoice ⟨0⟩ (.newTargetsForCopies #[copyId]) =>
+  | .resolutionChoice ⟨0⟩ (.newTargetsForCopies #[copyId]) =>
     match g.stack.find? (fun e => e.objectId == copyId) with
     | some e =>
       e.targets == #[Target.permanent bears.id] &&
@@ -4183,7 +4183,7 @@ def speakSecretsChoosesOk : Bool :=
   let g := addToLibraryTop g lightningBolt ⟨0⟩
   let g := g.applyEffect ⟨0⟩ (Effect.millThenPutInstantOrSorcery 4) #[]
   match g.pending with
-  | .fraChoice ⟨0⟩ (.chooseCards ids 1 (.toHand true)) =>
+  | .resolutionChoice ⟨0⟩ (.chooseCards ids 1 (.toHand true)) =>
     ids.size == 2 &&
       match ids.find? (fun id => (g.object! id).name == "Lightning Bolt") with
       | some bolt =>
@@ -4203,7 +4203,7 @@ def silvanRallyUpToTwoOk : Bool :=
   let g := addToLibraryTop g shock ⟨0⟩
   let g := g.applyEffect ⟨0⟩ (Effect.millThenPutLands 4 2) #[]
   match g.pending with
-  | .fraChoice ⟨0⟩ (.chooseCards ids 2 (.toHand false)) =>
+  | .resolutionChoice ⟨0⟩ (.chooseCards ids 2 (.toHand false)) =>
     ids.size == 2 &&
       (let before := (g.player ⟨0⟩).hand.size
        let gNo := mustApply g ⟨0⟩ .decline
@@ -4220,7 +4220,7 @@ def lastMarchChoosesCreaturesOk : Bool :=
   let tiger := handCardNamed g ⟨0⟩ "White Tiger, Ava Ayala"
   let g := g.applyEffect ⟨0⟩ Effect.drawEqualToughnessThenPutCreatures #[]
   match g.pending with
-  | .fraChoice ⟨0⟩ (.chooseCards ids _ .creaturesToBattlefield) =>
+  | .resolutionChoice ⟨0⟩ (.chooseCards ids _ .creaturesToBattlefield) =>
     ids.contains tiger.id &&
       (let gPut := mustApply g ⟨0⟩ (.choosePermanents #[tiger.id])
        gPut.loggedEntered (namedPermanent gPut "White Tiger, Ava Ayala").id) &&
@@ -4239,7 +4239,7 @@ def forestGateChoosesLandsOk : Bool :=
   let life0 := (g.player ⟨0⟩).life
   let g := g.applyEffect ⟨0⟩ (Effect.lookAtTopLandsGainLife 20 8) #[]
   match g.pending with
-  | .fraChoice ⟨0⟩ (.chooseCards ids _ (.landsTappedGainLife 8)) =>
+  | .resolutionChoice ⟨0⟩ (.chooseCards ids _ (.landsTappedGainLife 8)) =>
     ids.size == 1 &&
       (let gPut := mustApply g ⟨0⟩ (.choosePermanents ids)
        let land := namedPermanent gPut "Mountain"
@@ -4258,7 +4258,7 @@ def blackGateTieChoosesPlayerOk : Bool :=
   let g := g.applyAbilityEffect ⟨0⟩ Effect.blackGateUnblockable
     #[Target.permanent bears.id]
   match g.pending with
-  | .fraChoice ⟨0⟩ (.blackGatePlayer id players) =>
+  | .resolutionChoice ⟨0⟩ (.blackGatePlayer id players) =>
     id == bears.id && players.size == 2 &&
       (let g0 := mustApply g ⟨0⟩ (.chooseMode 1)
        g0.cantBeBlockedByPlayer (namedPermanent g0 "Grizzly Bears") == some ⟨1⟩)
@@ -4273,7 +4273,7 @@ def mountDoomChoosesKeepersOk : Bool :=
   let bears := namedPermanent g "Grizzly Bears"
   let g := g.applyAbilityEffect ⟨0⟩ Effect.chooseTwoDestroyRest #[]
   match g.pending with
-  | .fraChoice ⟨0⟩ (.chooseCards _ 2 .keepDestroyRest) =>
+  | .resolutionChoice ⟨0⟩ (.chooseCards _ 2 .keepDestroyRest) =>
     Effect.chooseTwoDestroyRest.targetSpec == .none &&
       (let gKeep := mustApply g ⟨0⟩ (.choosePermanents #[bears.id])
        gKeep.battlefield.any (fun o => o.name == "Grizzly Bears") &&
@@ -4290,7 +4290,7 @@ def amassChoosesArmyOk : Bool :=
   let before := first.status.plusOnePlusOne
   let g := g.amassGoblins ⟨0⟩ 1
   match g.pending with
-  | .fraChoice ⟨0⟩ (.chooseCards ids 1 (.amassArmy .goblin 1 _)) =>
+  | .resolutionChoice ⟨0⟩ (.chooseCards ids 1 (.amassArmy .goblin 1 _)) =>
     ids.size == 2 &&
       (let g2 := mustApply g ⟨0⟩ (.choosePermanents #[first.id])
        (g2.battlefield.filter (fun o => o.name == "Goblin Army" &&
@@ -4609,7 +4609,7 @@ def quicksilverMayStayInHandOk : Bool :=
   let g := addToHand afterDraw quicksilverBrashBlur ⟨0⟩
   let g := g.applyOpeningHandActions
   match g.pending with
-  | .fraChoice ⟨0⟩ (.mayBeginOnBattlefield _) =>
+  | .resolutionChoice ⟨0⟩ (.mayBeginOnBattlefield _) =>
     let g := mustApply g ⟨0⟩ .decline
     (g.player ⟨0⟩).hand.any (fun id => (g.object! id).name == "Quicksilver, Brash Blur") &&
       !g.battlefield.any (fun o => o.name == "Quicksilver, Brash Blur")

@@ -35,7 +35,7 @@ globs = ["Mtg.Engine.Catalog"]
 # The rules engine is one plugin, so `#guard` runs compiled game code.
 # Catalog card bodies stay out of this library.
 # Override the package `-O1` to `-O0` here: `Mtg.Engine.Game` emits tens of
-# megabytes of generated C (`Core.c`, `Event.c`, `Decisions.c`, `FraChoices.c`)
+# megabytes of generated C (`Core.c`, `Event.c`, `Decisions.c`, `ResolutionChoices.c`)
 # on the serial critical path, so `-O0` cuts C compilation ~10x (~4 min saved on
 # CI) while keeping `Mtg.Engine.Card` (`parseOracleCard`) at `-O1`.
 [[lean_lib]]

@@ -620,7 +620,7 @@ def offerPayForReflexive (g : Game) (controller : PlayerId) (sourceId : Option O
     (maxTimes : Nat := 1) : Game :=
   let shown := String.join (cost.toList.map toString)
   let times := if maxTimes > 1 then s!" up to {maxTimes} times" else ""
-  g.beginFraChoice controller (.mayPayManaForReflexive cost maxTimes reflexive sourceId)
+  g.beginResolutionChoice controller (.mayPayManaForReflexive cost maxTimes reflexive sourceId)
     s!"{(g.player controller).name} may pay {shown}{times}"
 
 /-- Sacrifice the Plan if it is still on the battlefield. `gone` is logged
@@ -640,7 +640,7 @@ def offerExileCasts (g : Game) (caster : PlayerId) (spells : Array ObjectId)
     (casts : Nat) : Game :=
   if !g.stillInGame caster then g
   else
-    g.beginFraChoice caster (.mayCastUpToFromExile spells casts)
+    g.beginResolutionChoice caster (.mayCastUpToFromExile spells casts)
       s!"{(g.player caster).name} may cast up to {casts} spells from among the exiled cards without paying their mana costs"
 
 /-- Pause-safe loop for `exileTopMayCastUpTo`, running inside an open batch and
@@ -925,7 +925,7 @@ def promptEnteringAttackItems (g : Game) (items : Array EnteringAttackItem)
     | some first =>
       let ctrl := first.controller
       let nm := g.enteringAttackItemName first
-      g.beginFraChoice ctrl (.chooseEnteringAttackTarget rest chosen cause)
+      g.beginResolutionChoice ctrl (.chooseEnteringAttackTarget rest chosen cause)
         s!"{(g.player ctrl).name} chooses what {nm} enters attacking"
     | none =>
       g.commitEnteringAttackItems chosen cause
@@ -1055,6 +1055,24 @@ def revealHand (g : Game) (p : PlayerId) (recordEvent : Bool := true) : Game :=
       | none => acc) ""
   g.logMsg s!"{(g.player p).name} reveals their hand ({names})"
 
+/-- Cards in `p`'s hand that a “reveal your hand, you choose” effect may pick. -/
+def revealedHandChoices (g : Game) (p : PlayerId) (permanentOnly : Bool) : Array ObjectId :=
+  (g.player p).hand.filter (fun id =>
+    match g.findObject? id with
+    | some o =>
+      !g.isLand o && (!permanentOnly || g.isPermanentCard o)
+    | none => false)
+
+/-- `victim` reveals their hand and `chooser` picks a card for them to discard. -/
+def beginRevealDiscard (g : Game) (chooser victim : PlayerId) (permanentOnly : Bool) : Game :=
+  let g := g.revealHand victim
+  if (g.revealedHandChoices victim permanentOnly).isEmpty then
+    let what := if permanentOnly then "nonland permanent card" else "nonland card"
+    g.logMsg s!"{(g.player victim).name} has no {what} to discard"
+  else
+    g.beginResolutionChoice chooser (.discardFromRevealedHand victim permanentOnly)
+      s!"{(g.player chooser).name} chooses a card from {(g.player victim).name}'s hand"
+
 /-- Whenever the controller attacks this turn, a creature they control
 gets +1/+1 for each Plains they control. -/
 def attackPumpPerPlains (g : Game) (controller : PlayerId) : Game :=
@@ -1072,14 +1090,14 @@ resolution before pushing `resolutionFinish`. -/
 def triggerInterveningHolds (g : Game) (controller : PlayerId)
     (ab : TriggeredAbility) (sourceId : Option ObjectId)
     (targets : Array Target := #[]) (_lastKnownPower : Option Int := none)
-    (fraCauseId : Option ObjectId := none)
-    (fraCauseStatus : Option Status := none) : Bool :=
+    (triggerCauseId : Option ObjectId := none)
+    (triggerCauseStatus : Option Status := none) : Bool :=
   match ab.interveningIf? with
   | none => true
   | some cond =>
     let src := sourceId.bind g.damageSourceById?
     let cid? :=
-      fraCauseId.orElse fun _ =>
+      triggerCauseId.orElse fun _ =>
         match targets[0]? with
         | some (Target.permanent id) | some (Target.card id) => some id
         | _ => none
@@ -1089,7 +1107,7 @@ def triggerInterveningHolds (g : Game) (controller : PlayerId)
       | some cid =>
         match g.damageSourceById? cid with
         | some o =>
-          match fraCauseStatus with
+          match triggerCauseStatus with
           | some st =>
             if o.isOnBattlefield then some o else some { o with status := st }
           | none => some o
@@ -1104,6 +1122,118 @@ def applyOneDelayedSynthetic (g : Game) (who : PlayerId) (n : Nat) (cause : Even
     g.chainPendingReplacement (.shuffleThen who .none)
   else
     g.restBottomCards who rest true (cause := some cause)
+
+/-- Run Hawkeye's Trick Arrows modes starting at `targetIdx`, pausing on
+`Pending.chooseReplacement` so mode 2's choice or later modes do not clobber it. -/
+def runHawkeyeArrows (g : Game) (controller : PlayerId) (modes : Array Nat)
+    (targets : Array Target) (targetIdx : Nat) (sourceId : Option ObjectId) : Game := Id.run do
+  let src := sourceId.bind g.damageSourceById?
+  let illegal := some "The target is no longer legal"
+  let mut g := g
+  let mut idx := targetIdx
+  for k in [0:modes.size] do
+    let m := modes[k]!
+    let slice := targets.extract idx (idx + 1)
+    match m with
+    | 0 =>
+      g := g.withLegalSpecPermanent controller .creature slice (fun g o =>
+        (g.createEffect (.cantBlockUntilEot o.id)).logMsg
+          s!"{g.name o} can't block this turn") sourceId illegal
+      idx := idx + 1
+    | 1 =>
+      g := g.withLegalSpecPlayer controller .player slice
+        (fun g pid => g.dealDamageToPlayer pid 2 (source := src)) sourceId illegal
+      idx := idx + 1
+    | _ =>
+      if (g.player controller).hand.isEmpty then
+        g := g.draw controller 1
+      else
+        g := g.beginResolutionChoice controller .discardThenDraw
+          s!"{(g.player controller).name} discards a card, then draws a card"
+    if let .chooseReplacement .. := g.pending then
+      let rem := modes.extract (k + 1) modes.size
+      if !rem.isEmpty then
+        g := g.chainPendingReplacement
+          (.finishPostStep (.hawkeyeArrows controller rem targets idx sourceId))
+      return g
+  return g
+
+def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
+    (x : Nat) (shuffle : Bool) : Game :=
+  let g :=
+    if shuffle then
+      let foundFromLib :=
+        match id? with
+        | some id =>
+          if (g.findObject? id).any (fun o =>
+              o.zone == .library p && g.isArtifact o && g.isCreature o &&
+                g.objectManaValue o ≤ x) then #[id]
+          else #[]
+        | none => #[]
+      g.record (GameEvent.searched g.turnNumber p p foundFromLib
+        (cause := some (g.resolvingOrRuleCause p)))
+    else g
+  match id? with
+  | none =>
+    let g := g.logMsg s!"{(g.player p).name} finds no artifact creature card"
+    if shuffle then g.shuffleThen p .none else g
+  | some id =>
+    match g.findObject? id with
+    | some o =>
+      if (o.zone == .library p || o.zone == .graveyard p) &&
+          g.isArtifact o && g.isCreature o &&
+          g.objectManaValue o ≤ x then
+        let (g, newId) := g.putOntoBattlefield id p
+          (extraEntersWith := if x > 0 then #[(.plusOnePlusOne, x)] else #[])
+        if let .chooseReplacement .. := g.pending then
+          g.chainPendingReplacement (.finishPostStep (.putOntoBattlefieldHasteAtFour p id x shuffle))
+        else
+          let entered := g.object! newId
+          let g :=
+            if entered.isOnBattlefield then
+              let name := g.name entered
+              let g := g.afterPermanentEnters entered
+              let g :=
+                if x ≥ 4 then g.grantUntilEotLogged (g.object! newId) #[Keyword.haste] else g
+              g.logMsg s!"{name} is put onto the battlefield"
+            else g
+          if shuffle then g.shuffleThen p .none else g
+      else
+        let g := g.logMsg "That card can't be found"
+        if shuffle then g.shuffleThen p .none else g
+    | none =>
+      let g := g.logMsg "That card can't be found"
+      if shuffle then g.shuffleThen p .none else g
+
+def beginVisionQuest (g : Game) (p : PlayerId) (x : Nat) : Game :=
+  if !g.stillInGame p then g
+  else
+    let ok (o : GameObject) : Bool :=
+      g.isArtifact o && g.isCreature o && g.objectManaValue o ≤ x
+    let lib := (g.player p).library.filter (fun id => (g.findObject? id).any ok)
+    let gy := (g.player p).graveyard.filter (fun id => (g.findObject? id).any ok)
+    if lib.isEmpty && gy.isEmpty then
+      let g := g.record (GameEvent.searched g.turnNumber p p #[]
+        (cause := some (g.resolvingOrRuleCause p)))
+      (g.logMsg s!"{(g.player p).name} finds no artifact creature card").shuffleThen p .none
+    else
+      g.beginResolutionChoice p (.visionQuestZones lib gy x)
+        s!"{(g.player p).name} may search their library and their graveyard"
+
+def conniveTricksterTarget (g : Game) (controller : PlayerId) (id? : Option ObjectId)
+    (sourceId : Option ObjectId := none) : Game :=
+  if !g.stillInGame controller then g
+  else
+    match id? with
+    | none => g
+    | some id =>
+      match g.findObject? id with
+      | some o =>
+        if o.isOnBattlefield && g.isCreature o && g.controlledBy o controller &&
+            g.canBeTargetedBy controller o sourceId then
+          g.applyConnive controller (some id)
+        else g.logMsg "The target is no longer legal"
+      | none => g.logMsg "The target is no longer legal"
 
 end Game
 end Mtg.Engine

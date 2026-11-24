@@ -857,7 +857,7 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
       let discSrc :=
         prop.discardSource || ab.cost.discardSource || ab.cost.exileSourceFromHand
       let zemoOk : Bool :=
-        if !prop.fraCostPaid && ab.cost.exileManaSymbols?.isSome then
+        if !prop.choiceCostPaid && ab.cost.exileManaSymbols?.isSome then
           let col :=
             match g.findObject? sid <|> some prop.original with
             | some src => TextChange.applyColor (g.evalLayer3 src) .black
@@ -869,7 +869,7 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
       if !zemoOk then false
       else
         let crewN? : Option Nat :=
-          if !prop.fraCostPaid then ab.cost.crewPower? else none
+          if !prop.choiceCostPaid then ab.cost.crewPower? else none
         match crewN? with
         | some n =>
           (g.firstPayableCrewSelection? p sid n allPicks
@@ -1116,13 +1116,13 @@ def runPostCastCleanup (g : Game) : Game :=
 
 /-- Core proposal reversal: restores `proposalCheckpoint`, reapplies CR 733.1
 irreversible library actions, runs deferred `postCastCleanup`, and reports
-whether `Decisions.finishFraChoice` should resume an active continuation
+whether `Decisions.finishResolutionChoice` should resume an active continuation
 (CR 601.2 / 602.2 / 733.1–733.2). -/
 def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none)
     (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Except String (Game × Bool) := do
   match g.proposedSpell with
   | none => return (g, false)
@@ -1292,21 +1292,21 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
     if quiet || g.suppressInteractiveReplay then
       return (g, false)
     let explicitPrio? : Option PlayerId :=
-      if followedByFinishFra then none else followedByExplicitPriority?
+      if followedByFinishChoice then none else followedByExplicitPriority?
     let prio := g.priorityInstead (explicitPrio?.getD prop.caster)
     let stashPendingPrio (g : Game) : Game :=
       if g.pendingPriority == some prio then g
       else g.change (.pendingPriority (some prio))
     if g.over then
       return (g.receivePriority prio, false)
-    if followedByFinishFra && g.sbaPaused then
+    if followedByFinishChoice && g.sbaPaused then
       let g :=
         if let some cur := g.pendingReplacement then
-          let next := cur.ensureEndsWithFinishFra
+          let next := cur.ensureEndsWithFinishResolutionChoice
           if next == cur then g else g.change (.pendingReplacement (some next))
         else
           let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
-          g.change (.pendingReplacement (some .finishFraChoice))
+          g.change (.pendingReplacement (some .finishResolutionChoice))
       return (g, false)
     if explicitPrio?.isSome then
       if g.sbaPaused then
@@ -1326,11 +1326,11 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       else
         return (g.receivePriority prio, false)
     let g :=
-      if g.pending == .none && g.continuations.isEmpty && !followedByFinishFra &&
+      if g.pending == .none && g.continuations.isEmpty && !followedByFinishChoice &&
           g.priority != prio then
         g.change (.priority prio)
       else g
-    if followedByFinishFra && !g.sbaPaused then
+    if followedByFinishChoice && !g.sbaPaused then
       return (g, true)
     else if (resumeContinuation || (doReconcileDep && g.pending == .none && g.afterRandom == .none)) &&
         (!g.continuations.isEmpty || g.pendingReplacement.isSome) then
@@ -1362,7 +1362,7 @@ private opaque drainPendingContinuations (g : Game) : Game := g
 private opaque reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none) (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game := g
 
 @[extern "mtg_game_proposal_cost_prompt_still_payable"]
@@ -1372,7 +1372,7 @@ opaque proposalCostPromptStillPayableFwd (g : Game) (caster : PlayerId) (p : Pen
 opaque reverseProposedSpellExceptFwd (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none) (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) :
     Except String Game := .ok g
 
@@ -1508,7 +1508,7 @@ def finishPostCast (g : Game) (p : PlayerId)
         let g := g.change (.pendingMayCastFromExile none)
         if !g.stillInGame q || alive.isEmpty || left == 0 then g
         else
-          g.beginFraChoice q (.mayCastUpToFromExile alive left)
+          g.beginResolutionChoice q (.mayCastUpToFromExile alive left)
             s!"{(g.player q).name} may cast up to {left} more spells from among the exiled cards without paying their mana costs"
     | none => g
   -- Uldaros Theorix: offer the remaining copies until none can be cast.
@@ -1529,19 +1529,19 @@ def finishPostCast (g : Game) (p : PlayerId)
                   g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
           g.change (.pendingFreeCopies none)
         else
-          (g.change (.pendingFreeCopies none)).beginFraChoice q (.castCopiesFree alive budget castsLeft)
+          (g.change (.pendingFreeCopies none)).beginResolutionChoice q (.castCopiesFree alive budget castsLeft)
     | none => g
   if !grantPriority then g
   else if let .chooseReplacement .. := g.pending then
     if g.currentInterpWait?.isSome || hadOuterReplacement then
-      g.chainPendingReplacement .finishFraChoice
+      g.chainPendingReplacement .finishResolutionChoice
     else
       g.chainPendingReplacement (.receivePriority (if hadOpenContinuation then g.activePlayer else p))
   else if g.pending != .none then g
   else if hadOuterReplacement && g.pendingReplacement.isNone then
     g
   else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome then
-    g.chainPendingReplacement .finishFraChoice
+    g.chainPendingReplacement .finishResolutionChoice
   else g.receivePriority (if hadOpenContinuation then g.activePlayer else p)
 
 def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
@@ -1596,7 +1596,7 @@ def becomeCast (g : Game) (p : PlayerId) (spell : GameObject)
         let g := g.chainPendingReplacement
           (.finishPostCast p grantPriority (hadOuterReplacement || existingOuter?.isSome) openCont)
         match existingOuter? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
         | none => g
       else g
     else
@@ -1682,14 +1682,14 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
     (srcObj? : Option GameObject := none)
     (hadOuterReplacement : Bool := false)
     (openCont : Bool := false)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   if g.over || !g.stillInGame p ||
       !abilityId.all (fun aid =>
         sourceId == some aid || (g.findObject? aid).any (·.zone == .stack)) then
     if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
       g.reverseProposedSpell (resumeContinuation := true)
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
     else
       let clearProp := if g.proposedSpell.isSome then #[EngineChange.proposedSpell none] else #[]
@@ -1700,7 +1700,7 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
         g.receivePriority (g.priorityInstead (if openCont then g.activePlayer else p))
       else if !g.over && !hadOuterReplacement && g.pending == .none &&
           (g.pendingReplacement.isSome || g.currentInterpWait?.isSome) then
-        g.chainPendingReplacement .finishFraChoice
+        g.chainPendingReplacement .finishResolutionChoice
       else g
   else
     let chosenX :=
@@ -1740,7 +1740,7 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
     else if hadOuterReplacement && g.pendingReplacement.isNone then
       g
     else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome then
-      g.chainPendingReplacement .finishFraChoice
+      g.chainPendingReplacement .finishResolutionChoice
     else g.receivePriority (if openCont then g.activePlayer else p)
 
 /-- Finish turning a face-down permanent face up once all morph/megamorph/disguise
@@ -1748,12 +1748,12 @@ costs have been paid, deferring `GameEvent.turnedFaceUp`, clearing proposal stat
 and granting priority across `Pending.chooseReplacement` (CR 116.2b / 708.8). -/
 def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
     (hadOuterReplacement : Bool := false)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game × Bool :=
   if g.over || !g.stillInGame caster then
     if !g.over && g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
       (g.reverseProposedSpell (resumeContinuation := true)
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?), false)
     else if g.over then
       (g, false)
@@ -1768,7 +1768,7 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
       let g := if changes.isEmpty then g else g.changes changes
       if g.over || g.pending != .none then (g, false)
       else if !hadOuterReplacement && (g.pendingReplacement.isSome || g.currentInterpWait?.isSome) then
-        (g.chainPendingReplacement .finishFraChoice, true)
+        (g.chainPendingReplacement .finishResolutionChoice, true)
       else if !hadOuterReplacement && g.continuations.isEmpty then
         (g.receivePriority (g.priorityInstead caster), false)
       else
@@ -1781,7 +1781,7 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
     | none =>
       if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
         (g.reverseProposedSpell (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?), false)
       else
         let wasIdle := g.pending == .none || isProposalPromptFor caster g.pending
@@ -1796,7 +1796,7 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
             g.receivePriority (g.priorityInstead caster)
           else if !g.over && !hadOuterReplacement && g.pending == .none &&
               (g.pendingReplacement.isSome || g.currentInterpWait?.isSome) then
-            g.chainPendingReplacement .finishFraChoice
+            g.chainPendingReplacement .finishResolutionChoice
           else g
         (g, !g.over && g.pending == .none)
     | some o =>
@@ -1816,12 +1816,12 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
         (reconcileControlAfterTransition pre g (cause := some (.specialAction .turnFaceUp caster)))
           |>.flushQueuedLinkedExile
       let skipTail := g.over || (hadOuterReplacement && g.pendingReplacement.isNone)
-      let chainFinishFra :=
+      let chainFinishChoice :=
         !skipTail && (hadPreReconcileCont || (hadOuterReplacement && g.pendingReplacement.isSome))
       let g :=
         if skipTail then g
-        else if chainFinishFra then
-          g.chainPendingReplacement .finishFraChoice
+        else if chainFinishChoice then
+          g.chainPendingReplacement .finishResolutionChoice
         else
           g.receivePriority caster
       if hadOuterReplacement then (g, !g.over && g.pending == .none)
@@ -1835,7 +1835,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     (sourceOriginal : Option GameObject := none)
     (hadOuterReplacement : Bool := false)
     (hadOpenContinuation : Option Bool := none)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   let openCont := g.proposalHadOpenContinuation hadOpenContinuation
   let activation := activation <|> g.proposedSpell.bind (·.activation)
@@ -1870,7 +1870,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
     if unpaidLoyaltyUnpayable then
       if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
         g.reverseProposedSpell (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
       else
         let clearProp := if g.proposedSpell.isSome then #[EngineChange.proposedSpell none] else #[]
@@ -1899,7 +1899,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
         let g := g.chainPendingReplacement (.finishPostLoyaltyActivated p sourceName sourceId
           activation abilityId sourceSnap srcObj? hadOuter openCont)
         match localOuter? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
         | none => g
       else
         let g :=
@@ -1908,7 +1908,7 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
           | none => g
         g.finishPostLoyaltyActivated p sourceName sourceId activation abilityId sourceSnap
           srcObj? hadOuter openCont
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
 
 /-- Finish paying the proposed activation once its mana is paid and every
@@ -1917,7 +1917,7 @@ the stack (CR 601.2h–i / 602.2b). -/
 def completeActivation (g : Game) (prop : ProposedSpell)
     (hadOuterReplacement : Bool := false)
     (hadOpenContinuation : Option Bool := none)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Except String Game := do
   let openCont := g.proposalHadOpenContinuation hadOpenContinuation
   if let .chooseReplacement .. := g.pending then
@@ -1936,7 +1936,7 @@ def completeActivation (g : Game) (prop : ProposedSpell)
   let g ← g0.payActivationExtraCosts prop.caster sid prop.tapSource prop.sacrificeSource
     prop.payLife prop.discardSource prop.activation (if prop.removePlusOneX then x else 0)
     (callerOuter? := localOuter?)
-    (followedByFinishFra := followedByFinishFra)
+    (followedByFinishChoice := followedByFinishChoice)
     (followedByExplicitPriority? := followedByExplicitPriority?)
   if g.proposedSpell.isNone then
     return g
@@ -1973,12 +1973,12 @@ def completeActivation (g : Game) (prop : ProposedSpell)
     (sourceOriginal := some prop.original)
     (hadOuterReplacement := hadOuter)
     (hadOpenContinuation := some openCont)
-    (followedByFinishFra := followedByFinishFra)
+    (followedByFinishChoice := followedByFinishChoice)
     (followedByExplicitPriority? := followedByExplicitPriority?)
   let g :=
     if paused then
       match localOuter? with
-      | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+      | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
       | none => g
     else g
   return g

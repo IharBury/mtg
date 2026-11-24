@@ -388,7 +388,7 @@ def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind
     let pl := g.player p
     let eligible := (if alsoHand then pl.hand.filter keep else #[]) ++ pl.library.filter keep
     if optional then
-      g.beginFraChoice p (.maySearchLibrary eligible count dest after kind)
+      g.beginResolutionChoice p (.maySearchLibrary eligible count dest after kind)
         s!"{pl.name} may search for {kind}"
     else if eligible.isEmpty then
       let g := g.record (GameEvent.searched g.turnNumber p p #[] (cause := some (g.resolvingOrRuleCause p)))
@@ -397,7 +397,7 @@ def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind
       | .handThenDiscardRandom => g.shuffleThen p (.discardRandom p)
       | _ => g.shuffleSearch p after
     else
-      g.beginFraChoice p (.searchLibrary eligible count dest after kind)
+      g.beginResolutionChoice p (.searchLibrary eligible count dest after kind)
         s!"{pl.name} searches for {kind}"
 
 /-- `p` may search for `count` basic land cards and put them onto the

@@ -32,7 +32,7 @@ def resolve (g : Game) (ab : TriggeredAbility) (sourceId : Option ObjectId := no
       let srcSnap : EventObject := {
         owner := me, controller := some me, name := "Resource Source", zone := .battlefield }
       let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId srcSnap me
-        (spec := { triggeredAbility := some ab, fraCauseId := some cid }))
+        (spec := { triggeredAbility := some ab, triggerCauseId := some cid }))
       g.changes #[.popStack, .pushContinuationFrame { resolvingAbility := some abId }]
   g.applyTriggeredAbility me ab sourceId targets (lastKnownPower := lastKnownPower)
 
@@ -100,7 +100,7 @@ def moonstoneLeft : Game :=
 
 #guard
   match moonstoneOffer.pending with
-  | .fraChoice _ (.moonstoneMayExile _) =>
+  | .resolutionChoice _ (.moonstoneMayExile _) =>
     logContains moonstoneOffer "You may exile Lightning Bolt"
   | _ => false
 #guard moonstoneKept.objects.any (fun o =>
@@ -288,7 +288,7 @@ def sueWall : Game :=
 
 #guard
   match sueOffer.pending with
-  | .fraChoice _ (.mayCreateTokens .wall04defender 1 _) =>
+  | .resolutionChoice _ (.mayCreateTokens .wall04defender 1 _) =>
     logContains sueOffer "may create a 0/4 Wall"
   | _ => false
 #guard tokensNamed sueDeclined "Wall" == 0

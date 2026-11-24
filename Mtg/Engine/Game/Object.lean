@@ -102,14 +102,14 @@ structure GameObject where
   leaveTriggerExile : Array ObjectId := #[]
   /-- For a triggered ability on the stack: the object whose event caused it,
   that object's controller, and its power as the ability triggered. -/
-  fraCauseId : Option ObjectId := none
-  fraCauseController : Option PlayerId := none
-  fraCausePower : Option Int := none
+  triggerCauseId : Option ObjectId := none
+  triggerCauseController : Option PlayerId := none
+  triggerCausePower : Option Int := none
   /-- The causing object's status (its counters) as it last existed. -/
-  fraCauseStatus : Option Status := none
+  triggerCauseStatus : Option Status := none
   /-- All causing object IDs when a batch-level trigger tracks multiple causing
   objects (e.g. Tamiyo, Upriser Crowned's combat-damage stun trigger). -/
-  fraCauseIds : Array ObjectId := #[]
+  triggerCauseIds : Array ObjectId := #[]
   /-- The permanent that exiled this card, for permissions tied to it (Null
   Summoner). -/
   exiledBy : Option ObjectId := none

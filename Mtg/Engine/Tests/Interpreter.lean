@@ -36,7 +36,7 @@ Comprehensive gameplay `#guard` regression suite for Phases 8–9 of
 10. Phase 9 unified trigger families (watch, step, casting, resource,
     enterOrAttack, attack, death, modal, reflexive), `CostSpec.bindVar?`
     cost-to-`stepEnv` binding, and `EvalEnv` copy-token tie prompting
-    (`FraChoice.chooseTokenCopyObject`).
+    (`ResolutionChoice.chooseTokenCopyObject`).
 -/
 
 namespace Mtg.Engine.Tests.InterpreterSuite
@@ -250,7 +250,7 @@ private def basicIsland : CardDef :=
   let gNonlandAccept := mustApply gNonlandAsk p0 .accept
   let gNonlandDecline := mustApply gNonlandAsk p0 .decline
   let nonlandOk :=
-    (match gNonlandAsk.pending with | .fraChoice q (.exploreMayGraveyard _) => q == p0 | _ => false) &&
+    (match gNonlandAsk.pending with | .resolutionChoice q (.exploreMayGraveyard _) => q == p0 | _ => false) &&
     (gNonlandAsk.object! bid).status.plusOnePlusOne == 1 &&
     (gNonlandAccept.player p0).graveyard.any (fun id => (gNonlandAccept.object! id).name == bearDef.name) &&
     (gNonlandDecline.player p0).library.any (fun id => (gNonlandDecline.object! id).name == bearDef.name)
@@ -460,7 +460,7 @@ private def basicIsland : CardDef :=
     (gObj1.permanentsOf p1).all (fun o => !gObj1.isCreature o || o.status.plusOnePlusOne == 1)
 
   -- 9c. `Effect.worldsWithinWorlds` resolved directly via `applyEffect` opens APNAP
-  --     `FraChoice.worldsPutCreatures` prompts, enters chosen creatures simultaneously,
+  --     `ResolutionChoice.worldsPutCreatures` prompts, enters chosen creatures simultaneously,
   --     and returns the initially exiled battlefield creature to its owner's hand.
   let gW0 :=
     insertObject (insertObject
@@ -469,12 +469,12 @@ private def basicIsland : CardDef :=
       elfDef p1 (.hand p1)
   let gWAsk0 := gW0.applyEffect p0 Effect.worldsWithinWorlds #[]
   let wAsk0Ok := match gWAsk0.pending with
-    | .fraChoice q (.worldsPutCreatures ..) => q == p0
+    | .resolutionChoice q (.worldsPutCreatures ..) => q == p0
     | _ => false
   let p0Elf := (gWAsk0.player p0).hand[0]!
   let gWAsk1 := mustApply gWAsk0 p0 (.choosePermanents #[p0Elf])
   let wAsk1Ok := match gWAsk1.pending with
-    | .fraChoice q (.worldsPutCreatures ..) => q == p1
+    | .resolutionChoice q (.worldsPutCreatures ..) => q == p1
     | _ => false
   let p1Elf := (gWAsk1.player p1).hand[0]!
   let gWDone := mustApply gWAsk1 p1 (.choosePermanents #[p1Elf])
@@ -522,7 +522,7 @@ private def basicIsland : CardDef :=
   let attackOk := (gAtkSmall.player p0).hand.isEmpty && (gAtkBig.player p0).hand.size == 1
   -- Death trigger: `deathDeathtouchOppSac` opens nontoken sacrifice choice for opponent.
   let gDeath := g0.applyTriggeredAbility p0 (.onDeath Effect.deathDeathtouchOppSac) (some bearId)
-  let deathOk := match gDeath.pending with | .fraChoice q (.sacrificeNontokenEach _ _) => q == p1 | _ => false
+  let deathOk := match gDeath.pending with | .resolutionChoice q (.sacrificeNontokenEach _ _) => q == p1 | _ => false
   -- Modal trigger: `triggerWolfPlusOneOrTreasure` resolves mode 1 (create Treasure token).
   let gMod0 := g0.change (.pushContinuationFrame { resolvingModes := some #[1] })
   let gMod1 := gMod0.applyTriggeredAbility p0 .onCombatDamageWolfPlusOneOrTreasure (some bearId)
@@ -561,7 +561,7 @@ private def basicIsland : CardDef :=
     (gRes.player p0).life == 25 &&
     replayOk #[gAct, gPaid, gRes]
 
-  -- 10c. `EvalEnv` copy-token tie prompting (`FraChoice.chooseTokenCopyObject`):
+  -- 10c. `EvalEnv` copy-token tie prompting (`ResolutionChoice.chooseTokenCopyObject`):
   --      Copying the creature you control with the greatest power when two 2/2 creatures tie
   --      pauses on `chooseTokenCopyObject` and creates a copy of the player's chosen creature.
   let bearA : CardDef := { bearDef with name := "Tied Bear Alpha" }
@@ -576,7 +576,7 @@ private def basicIsland : CardDef :=
   let idB := (gTie0.permanentsOf p0).find? (·.name == "Tied Bear Beta") |>.get!.id
   let gTieAsk := gTie0.applyEffect p0 copyGreatest #[]
   let tieAskOk := match gTieAsk.pending with
-    | .fraChoice q (.chooseTokenCopyObject ids ..) => q == p0 && ids.size == 2
+    | .resolutionChoice q (.chooseTokenCopyObject ids ..) => q == p0 && ids.size == 2
     | _ => false
   let gTieDone := mustApply gTieAsk p0 (.choosePermanents #[idB])
   let betaCount := ((gTieDone.permanentsOf p0).filter (·.name == "Tied Bear Beta")).size

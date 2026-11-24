@@ -480,7 +480,7 @@ def meagerMealNoCreatureAfterSkip : Game :=
     | .error e => panic! e
   -- 2. Copying `ab1` on the stack (CR 707.10c) keeps `sourceId = some echoId`,
   --    yet the copy (`copyId`) cannot target itself via `validTargetArrayForEntry`
-  --    or `answerFraChoice (.newTargetsForCopies #[copyId])`, while `ab0`/`ab1` are legal.
+  --    or `answerResolutionChoice (.newTargetsForCopies #[copyId])`, while `ab0`/`ab1` are legal.
   let (gCopied, copyId?) := gAnnounced.copyStackAbilityWithId (gAnnounced.object! ab1Id) p0
   let copyId := copyId?.get!
   let copyObj := gCopied.object! copyId
@@ -490,10 +490,10 @@ def meagerMealNoCreatureAfterSkip : Game :=
     !gCopied.validTargetArrayForEntry copyEntry copyObj copySpec #[.card copyId] (allowUnchangedIllegal := true) &&
     gCopied.validTargetArrayForEntry copyEntry copyObj copySpec #[.card ab0.id] (allowUnchangedIllegal := true) &&
     gCopied.validTargetArrayForEntry copyEntry copyObj copySpec #[.card ab1Id] (allowUnchangedIllegal := true)
-  let gPrompt := gCopied.beginFraChoice p0 (.newTargetsForCopies #[copyId]) "Choose new target"
+  let gPrompt := gCopied.beginResolutionChoice p0 (.newTargetsForCopies #[copyId]) "Choose new target"
   let copyRetargetChoiceOk :=
-    !(gPrompt.answerFraChoice p0 (.objects #[copyId])).isOk &&
-    (gPrompt.answerFraChoice p0 (.objects #[ab1Id])).isOk
+    !(gPrompt.answerResolutionChoice p0 (.objects #[copyId])).isOk &&
+    (gPrompt.answerResolutionChoice p0 (.objects #[ab1Id])).isOk
   -- 3. `sourceId` is still preserved for `"another"` when activating ability 1 (`anotherCreature`).
   let gAnother :=
     match g2.activateAbility p0 echoId 1 with

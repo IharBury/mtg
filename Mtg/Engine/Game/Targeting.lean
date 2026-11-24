@@ -18,7 +18,7 @@ def canBeTargetedBy (g : Game) (caster : PlayerId) (o : GameObject)
     (sourceId : Option ObjectId := none) : Bool :=
   let srcBlocked :=
     match g.targetingSourceObject? sourceId with
-    | some src => g.frcProtectedFrom o src
+    | some src => g.protectedFrom o src
     | none => false
   (!g.hasHexproof o || g.controlledBy o caster ||
       (g.controllerOf o).any (g.areTeammates · caster)) && !srcBlocked
@@ -87,8 +87,8 @@ def spellPaidTeamwork (g : Game) : Bool :=
   | none =>
     let copyTargetId? : Option ObjectId :=
       match g.pending with
-      | .fraChoice _ (.newTargetsForCopies copies)
-      | .fraChoice _ (.newTargetsForCopySlot copies ..) => copies[0]?
+      | .resolutionChoice _ (.newTargetsForCopies copies)
+      | .resolutionChoice _ (.newTargetsForCopySlot copies ..) => copies[0]?
       | _ => none
     match copyTargetId?.orElse (fun _ => g.resolvingSpell) with
     | some id => g.teamworkPaid id
@@ -108,8 +108,8 @@ def effectiveSlotDomain (g : Game) (caster : PlayerId) (slot : TargetSlot)
   | some (cond, altDomain) =>
     let copyTargetId? : Option ObjectId :=
       match g.pending with
-      | .fraChoice _ (.newTargetsForCopies copies)
-      | .fraChoice _ (.newTargetsForCopySlot copies ..) => copies[0]?
+      | .resolutionChoice _ (.newTargetsForCopies copies)
+      | .resolutionChoice _ (.newTargetsForCopySlot copies ..) => copies[0]?
       | _ => none
     let effSource :=
       sourceId.orElse fun _ =>

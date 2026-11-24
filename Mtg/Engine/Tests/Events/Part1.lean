@@ -306,10 +306,10 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     (spec := {
       abilityEffect := some { body := Instruction.drawFixed 2 }
       isReflexive := true
-      fraCauseId := some ⟨71⟩
-      fraCauseController := some opp
-      fraCausePower := some 4
-      fraCauseStatus := some { counters := #[(.plusOnePlusOne, 2)] }
+      triggerCauseId := some ⟨71⟩
+      triggerCauseController := some opp
+      triggerCausePower := some 4
+      triggerCauseStatus := some { counters := #[(.plusOnePlusOne, 2)] }
       lastKnownPower := some 5
       lastKnownToughness := some 6 }))
   let gCopyTrig := gTrigSpec.copyStackSpell (gTrigSpec.object! trigSpecId) me
@@ -400,10 +400,10 @@ copies `StackEntry` decisions (`targets`, `targetsAnnounced`, `chosenMode`,
     copy1Obj.adventurerCard == some bear &&
     copyTrigObj.abilityEffect == some { body := Instruction.drawFixed 2 } &&
     copyTrigObj.isReflexive &&
-    copyTrigObj.fraCauseId == some ⟨71⟩ &&
-    copyTrigObj.fraCauseController == some opp &&
-    copyTrigObj.fraCausePower == some 4 &&
-    copyTrigObj.fraCauseStatus == some { counters := #[(.plusOnePlusOne, 2)] } &&
+    copyTrigObj.triggerCauseId == some ⟨71⟩ &&
+    copyTrigObj.triggerCauseController == some opp &&
+    copyTrigObj.triggerCausePower == some 4 &&
+    copyTrigObj.triggerCauseStatus == some { counters := #[(.plusOnePlusOne, 2)] } &&
     gCopyTrig.lastKnownPowerOf? copyTrigObj.id == some 5 &&
     gCopyTrig.lastKnownToughnessOf? copyTrigObj.id == some 6 &&
     gCopy1.lastKnownPowerOf? copy1Obj.id == some 5 &&
@@ -1122,7 +1122,7 @@ and Arwen + Doc Samson ETB counter replacement. -/
     (gDrwSubPaused.player me).hand.size - handBeforeDrwSub == 1 &&
     gDrwSubDone.pending == .none &&
     (gDrwSubDone.player me).hand.size - handBeforeDrwSub == 7
-  -- `commitEnteringAttackItems` pauses on an as-enters `.fraChoice` (`asEntersChooseOddEven`) before putting the second card onto the battlefield, keeping both in one batch.
+  -- `commitEnteringAttackItems` pauses on an as-enters `.resolutionChoice` (`asEntersChooseOddEven`) before putting the second card onto the battlefield, keeping both in one batch.
   let oddEvenDef1 : CardDef := { bear with name := "Parity Striker 1", staticAbilities := #[.asEntersChooseOddEven] }
   let oddEvenDef2 : CardDef := { bear with name := "Parity Striker 2", staticAbilities := #[.asEntersChooseOddEven] }
   let gFraEnt0 :=
@@ -2548,8 +2548,8 @@ substitutions vs mana-derived colors):
   let critTargets := gTxt.legalSpellTargets me (gTxt.object! crit.id)
   let textColorOk :=
     gTxt.colors (gTxt.object! u.id) == ColorSet.singleton .blue &&
-    gTxt.frcProtectedFrom (gTxt.object! u.id) (gTxt.object! rSrc.id) &&
-    !gTxt.frcProtectedFrom (gTxt.object! u.id) (gTxt.object! bSrc.id) &&
+    gTxt.protectedFrom (gTxt.object! u.id) (gTxt.object! rSrc.id) &&
+    !gTxt.protectedFrom (gTxt.object! u.id) (gTxt.object! bSrc.id) &&
     gTxt.triggeredAbilities (gTxt.object! u.id) == #[.onCastColorScry .red 2] &&
     gTxt.colors (gTxt.object! crit.id) == ColorSet.singleton .black &&
     critTargets.contains (.permanent wSrc.id) &&
@@ -2647,7 +2647,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
 2. `shuffleLibrary` emits `PlayerEvent.shuffled` even on 0-card and 1-card
    libraries (CR 701.24e), and `closeBatch` emits `PlayerEvent.gainedDesignation`
    inside the closing batch.
-3. `.fraEmblem` expiration emits `ZoneEvent.ceasedToExist` alongside a pure
+3. `.commandEmblem` expiration emits `ZoneEvent.ceasedToExist` alongside a pure
    `applyContinuousEffectEvent` table update, and `ringBearerId` is the single
    stored Ring-bearer source of truth.
 4. `DelayedTriggerEvent` (`created`, one-shot `consumed`, duration `expired`)
@@ -2728,13 +2728,13 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
       match e.change with
       | .rules (.player (.gainedDesignation p .enduringStory)) => p == me && e.batch.any (·.raw > 0)
       | _ => false)
-  -- 3. `.fraEmblem` expiration (`ZoneEvent.ceasedToExist` + pure `applyContinuousEffectEvent`) & `ringBearerId`
+  -- 3. `.commandEmblem` expiration (`ZoneEvent.ceasedToExist` + pure `applyContinuousEffectEvent`) & `ringBearerId`
   let (gEmb0, embObj) := (quiet afterDraw).allocObject
     { name := "Phase10 Emblem", types := #[] } me .command (some me)
   let embEffId : EffectId := ⟨1050⟩
   let gEmbCreated :=
     gEmb0.record (GameEvent.effectCreated gEmb0.turnNumber embEffId
-      (.fraEmblemUntilTurnOf embObj.id opp) p10Cause)
+      (.commandEmblemUntilTurnOf embObj.id opp) p10Cause)
   let gEmbPureApplier :=
     gEmbCreated.applyChange (.rules (.continuousEffect (.expired embEffId)))
   let gEmbExpired := gEmbCreated.expireEffectById embEffId (cause := some (.turnBased .expireAtStepBegin))
@@ -3079,7 +3079,7 @@ continuity, plus `post.snapshot` in `.creatureYouControlDealtDamage` and
   let gRestMid :=
     gRestTech0.applyEffect me (Effect.gainLifeSearchBasicPlusOne 2) #[.permanent restBear.id, .player me]
   let gRestDone :=
-    match gRestMid.answerFraChoice me (.objects #[basicLibId]) with
+    match gRestMid.answerResolutionChoice me (.objects #[basicLibId]) with
     | .ok g' => g'
     | .error _ => gRestMid
   let round2ContinuationOk :=

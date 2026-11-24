@@ -46,7 +46,7 @@ def withSpent (spent : Nat) : Game :=
     { id := some causeId, controller := some caster, owner := caster } (.hand caster))
   let abId : ObjectId := ⟨g.nextObjectId⟩
   let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot src) caster
-    (spec := { sourceId := some src.id, fraCauseId := some causeId, fraCauseStatus := some {} }))
+    (spec := { sourceId := some src.id, triggerCauseId := some causeId, triggerCauseStatus := some {} }))
   g.change (.resolvingAbility (some abId))
 
 /- The controller discards the printed count. One card leaves the hand.
@@ -82,7 +82,7 @@ An empty hand skips the choice. -/
   let g := step afterDraw (Effect.triggerMayDiscardDraw 2).body
   match g.pending with
   | .mayDiscardDraw p n => p == caster && n == 2
-  | .fraChoice p _ => p == caster
+  | .resolutionChoice p _ => p == caster
   | _ => false
 
 #guard

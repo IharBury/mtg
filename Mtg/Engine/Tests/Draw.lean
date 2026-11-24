@@ -41,7 +41,7 @@ def withSpent (spent : Nat) : Game :=
     { id := some causeId, controller := some caster, owner := caster } (.hand caster))
   let abId : ObjectId := ⟨g.nextObjectId⟩
   let g := g.record (GameEvent.triggerPutOnStack g.turnNumber abId (g.snapshot src) caster
-    (spec := { sourceId := some src.id, fraCauseId := some causeId, fraCauseStatus := some {} }))
+    (spec := { sourceId := some src.id, triggerCauseId := some causeId, triggerCauseStatus := some {} }))
   g.change (.resolvingAbility (some abId))
 
 def drawStep (g : Game) (i : Instruction) : Game :=
@@ -115,7 +115,7 @@ def drawStep (g : Game) (i : Instruction) : Game :=
   let top2 := #[lib[lib.size - 1]!, lib[lib.size - 2]!]
   let g2 := mustApply g1 caster (.scry top2 #[])
   match g2.pending with
-  | .fraChoice p (.palantirMayDraw c id) => p == opponent && c == caster && id == sid
+  | .resolutionChoice p (.palantirMayDraw c id) => p == opponent && c == caster && id == sid
   | _ => false
 
 /- You may draw X and discard two when mana was spent. -/
@@ -123,7 +123,7 @@ def drawStep (g : Game) (i : Instruction) : Game :=
   let g := (withSpent 4).applyTriggeredAbility caster
     .onCastNoncreatureMayDrawXDiscard2 none
   match g.pending with
-  | .fraChoice p (.mayDrawThenDiscard 4 2) => p == caster
+  | .resolutionChoice p (.mayDrawThenDiscard 4 2) => p == caster
   | _ => false
 
 #guard

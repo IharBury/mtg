@@ -169,13 +169,13 @@ private def all15KeywordCounters : Array (CounterKind × KeywordAbility × Keywo
     (.text (.replaceColorWord .blue .red)) .untilEndOfTurn
   let gTc := g1.createEffect tc (cause := some testCause)
   -- Before text change: protected from blue, vulnerable to red.
-  g1.frcProtectedFrom (g1.object! kId) blueObj &&
-  !g1.frcProtectedFrom (g1.object! kId) redObj &&
+  g1.protectedFrom (g1.object! kId) blueObj &&
+  !g1.protectedFrom (g1.object! kId) redObj &&
   !g1.canBeTargetedBy p0 (g1.object! kId) (some blueObj.id) &&
   g1.canBeTargetedBy p0 (g1.object! kId) (some redObj.id) &&
   -- After blue → red text change: vulnerable to blue, protected from red!
-  !gTc.frcProtectedFrom (gTc.object! kId) blueObj &&
-  gTc.frcProtectedFrom (gTc.object! kId) redObj &&
+  !gTc.protectedFrom (gTc.object! kId) blueObj &&
+  gTc.protectedFrom (gTc.object! kId) redObj &&
   gTc.canBeTargetedBy p0 (gTc.object! kId) (some blueObj.id) &&
   !gTc.canBeTargetedBy p0 (gTc.object! kId) (some redObj.id)
 

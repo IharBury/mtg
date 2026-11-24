@@ -332,7 +332,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
             costPicksWithSacrificeOther (costPicksOf ab)
               (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
           let zemoOk :=
-            prop.fraCostPaid || ab.cost.exileManaSymbols?.isNone ||
+            prop.choiceCostPaid || ab.cost.exileManaSymbols?.isNone ||
               (let col :=
                  match (g.findObject? sid).map g.evalLayer3 with
                  | some tcs => TextChange.applyColor tcs .black
@@ -343,7 +343,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                      (g.findObject? id).any (fun o => (g.colors o).contains col))
                g.canPayZemoBoast p remGy col)
           let crewOrPicksOk :=
-            if !prop.fraCostPaid then
+            if !prop.choiceCostPaid then
               match ab.cost.crewPower? with
               | some n =>
                 (g.firstPayableCrewSelection? p sid n allPicks

@@ -93,7 +93,7 @@ def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) 
           if prop.kind == .turnFaceUp then o.isOnBattlefield else o.zone == .stack) &&
         (prop.kind == .activatedAbility || g.sourceStillPayable prop) &&
         match p with
-        | .fraChoice q (.costPicks sid picks _) =>
+        | .resolutionChoice q (.costPicks sid picks _) =>
           let sacSrc :=
             prop.sacrificeSource ||
               prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
@@ -107,7 +107,7 @@ def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) 
                 (tapSource := prop.tapSource)
                 (sacrificeOrExileSource := sacSrc)
                 (discardOrExileHandSource := discSrc))
-        | .fraChoice q (.crew _ vehicleId n) =>
+        | .resolutionChoice q (.crew _ vehicleId n) =>
           let sacSrc :=
             prop.sacrificeSource ||
               prop.activation.any (fun a => a.cost.sacrificeSource || a.cost.exileSourceFromBattlefield)
@@ -122,7 +122,7 @@ def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) 
               (tapSource := prop.tapSource)
               (sacrificeOrExileSource := sacSrc)
               (discardOrExileHandSource := discSrc)).isSome
-        | .fraChoice q (.zemoBoastExile _ sourceId) =>
+        | .resolutionChoice q (.zemoBoastExile _ sourceId) =>
           q == caster && g.sourceStillPayable prop && g.canPayLife caster prop.payLife &&
             let col :=
               match g.findObject? sourceId <|> some prop.original with
@@ -692,7 +692,7 @@ private def simulateFinishPostCastBody (g : Game) (caster : PlayerId) : Game :=
         let g := g.change (.pendingMayCastFromExile none)
         if !g.stillInGame q || alive.isEmpty || left == 0 then g
         else
-          g.beginFraChoice q (.mayCastUpToFromExile alive left) ""
+          g.beginResolutionChoice q (.mayCastUpToFromExile alive left) ""
     | none => g
   let g : Game :=
     match g.pendingFreeCopies with
@@ -711,7 +711,7 @@ private def simulateFinishPostCastBody (g : Game) (caster : PlayerId) : Game :=
                   g.ceaseToExist id (cause := some (.stateBased .copyOutsideStackOrBf))) g
           g.change (.pendingFreeCopies none)
         else
-          (g.change (.pendingFreeCopies none)).beginFraChoice q (.castCopiesFree alive budget castsLeft) ""
+          (g.change (.pendingFreeCopies none)).beginResolutionChoice q (.castCopiesFree alive budget castsLeft) ""
     | none => g
   g
 
@@ -774,7 +774,7 @@ opaque firstContinuationPriorityGrantFwd? (g : Game) : Option (Option PlayerId) 
 private inductive ConcedePriorityOutcome where
   | noGrant
   | settlesPromptOrOver
-  | implicitFra
+  | implicitResolutionChoice
   | grants (explicit? : Option PlayerId)
 deriving BEq, Inhabited
 
@@ -1058,9 +1058,9 @@ private partial def probeRestorePendingCore (g : Game) (hasQueuedPending : Bool)
             .paused gAfter (hasQueuedPending || gAfter.pendingReplacement.isSome) true
           else if let some comb := gAfter.pendingReplacement then
             let gClean := (gAfter.change (.pendingReplacement none)).popEmptyTopContinuationFrames
-            .delegate gClean hasQueuedPending comb.ensureEndsWithFinishFra
+            .delegate gClean hasQueuedPending comb.ensureEndsWithFinishResolutionChoice
           else if !gAfter.continuations.isEmpty then
-            .delegate gAfter hasQueuedPending .finishFraChoice
+            .delegate gAfter hasQueuedPending .finishResolutionChoice
           else if prep.hadConsumedOrig then
             .delegate gAfter hasQueuedPending (.receivePriority (gAfter.priorityInstead prep.caster))
           else
@@ -1070,9 +1070,9 @@ private partial def probeRestorePendingCore (g : Game) (hasQueuedPending : Bool)
     match curP with
     | .none =>
       resumePopped gCur hasQueuedPending
-    | .fraChoice caster (.costPicks ..)
-    | .fraChoice caster (.crew ..)
-    | .fraChoice caster (.zemoBoastExile ..)
+    | .resolutionChoice caster (.costPicks ..)
+    | .resolutionChoice caster (.crew ..)
+    | .resolutionChoice caster (.zemoBoastExile ..)
     | .chooseTeamworkCreatures caster _
     | .sacrificePermanent caster _
     | .discardForAdditionalCost caster =>
@@ -1125,7 +1125,7 @@ private partial def probeRestorePendingCore (g : Game) (hasQueuedPending : Bool)
           .paused gCur hasQueuedPending true
         else
           resumePopped gCur hasQueuedPending
-    | .fraChoice q (.tricksterLibrary caster id connive _) =>
+    | .resolutionChoice q (.tricksterLibrary caster id connive _) =>
       if gCur.stillInGame q && gCur.stillInGame caster &&
           (gCur.findObject? id).any (fun o => o.isOnBattlefield && gCur.isCreature o) then
         .paused gCur hasQueuedPending true
@@ -1242,7 +1242,7 @@ private partial def advanceProbeOnResume (g : Game) (hasQueuedPending : Bool) :
     match probeRestorePendingCore g hasQueuedPending pr with
     | .paused g' q' _ => (g', q')
     | .delegate g' q' nextPr => advanceProbeOnResume g' q' nextPr
-  | .finishFraChoice | .receivePriority _ =>
+  | .finishResolutionChoice | .receivePriority _ =>
     (g, if g.afterRandom == .none then false else hasQueuedPending)
   | .finishPostCast _ grantPriority false _ =>
     (g, if !grantPriority && g.afterRandom != .none then hasQueuedPending else false)
@@ -1359,7 +1359,7 @@ private partial def classifyFinishConcedePriority (g : Game) (wasIdlePriority : 
     else if let .chooseReplacement .. := g.pending then
       match g.firstContinuationPriorityGrant? with
       | some (some q) => .grants (some q)
-      | some none => .implicitFra
+      | some none => .implicitResolutionChoice
       | none =>
         if g.anyContinuationGrantsPriority then .grants none
         else if g.anyContinuationSettlesControlFlow then .settlesPromptOrOver
@@ -1374,7 +1374,7 @@ private partial def classifyFinishConcedePriority (g : Game) (wasIdlePriority : 
             (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)) then
         match g.firstContinuationPriorityGrant? with
         | some (some q) => .grants (some q)
-        | some none => .implicitFra
+        | some none => .implicitResolutionChoice
         | none =>
           if g.anyContinuationSettlesControlFlow then .settlesPromptOrOver
           else if g.proposedSpell.any (fun prop =>
@@ -1385,19 +1385,19 @@ private partial def classifyFinishConcedePriority (g : Game) (wasIdlePriority : 
               g.pendingReplacement.isNone && g.outerPendingReplacements.isEmpty then
             let g2 := g.reopenDeferredExileCasts
             if g2.over || g2.livingPlayers.isEmpty then .settlesPromptOrOver
-            else if let .chooseReplacement .. := g2.pending then .implicitFra
+            else if let .chooseReplacement .. := g2.pending then .implicitResolutionChoice
             else if g2.pending != Pending.none || g2.afterRandom != .none then .settlesPromptOrOver
             else if !g2.currentInterpWait?.isSome && g2.triggerNeedingTargets.isSome &&
                 (g2.promptTriggerTargetsIfNeeded).pending != Pending.none then
               .settlesPromptOrOver
-            else .implicitFra
+            else .implicitResolutionChoice
           else
             let gDrained := g.drainPendingContinuations
             if gDrained.over || gDrained.livingPlayers.isEmpty then .settlesPromptOrOver
             else if let .chooseReplacement .. := gDrained.pending then
               if gDrained.anyContinuationSettlesControlFlow && !gDrained.anyContinuationGrantsPriority then
                 .settlesPromptOrOver
-              else .implicitFra
+              else .implicitResolutionChoice
             else if gDrained.pending != Pending.none || gDrained.afterRandom != .none then
               .settlesPromptOrOver
             else if gDrained.proposedSpell.any (fun prop =>
@@ -1407,16 +1407,16 @@ private partial def classifyFinishConcedePriority (g : Game) (wasIdlePriority : 
                 (gDrained.pendingMayCastFromExile.isSome || gDrained.pendingFreeCopies.isSome) then
               let g2 := gDrained.reopenDeferredExileCasts
               if g2.over || g2.livingPlayers.isEmpty then .settlesPromptOrOver
-              else if let .chooseReplacement .. := g2.pending then .implicitFra
+              else if let .chooseReplacement .. := g2.pending then .implicitResolutionChoice
               else if g2.pending != Pending.none || g2.afterRandom != .none then .settlesPromptOrOver
               else if !g2.currentInterpWait?.isSome && g2.triggerNeedingTargets.isSome &&
                   (g2.promptTriggerTargetsIfNeeded).pending != Pending.none then
                 .settlesPromptOrOver
-              else .implicitFra
+              else .implicitResolutionChoice
             else if gDrained.triggerNeedingTargets.isSome &&
                 (gDrained.promptTriggerTargetsIfNeeded).pending != Pending.none then
               .settlesPromptOrOver
-            else .implicitFra
+            else .implicitResolutionChoice
       else if wasIdlePriority && g.playersReceivePriority && !g.hasWaitingTriggers &&
           g.consecutivePasses ≥ g.livingPlayers.size then
         let g0 := g.change (.consecutivePasses 0)
@@ -1426,7 +1426,7 @@ private partial def classifyFinishConcedePriority (g : Game) (wasIdlePriority : 
           else if let .chooseReplacement .. := g1.pending then
             match g1.firstContinuationPriorityGrant? with
             | some (some q) => .grants (some q)
-            | some none => .implicitFra
+            | some none => .implicitResolutionChoice
             | none =>
               if g1.anyContinuationGrantsPriority then .grants none
               else if g1.anyContinuationSettlesControlFlow then .settlesPromptOrOver
@@ -1646,7 +1646,7 @@ partial def continuationGrantsPriority (g : Game) (hasQueuedPending : Bool := fa
     let (gAfterA, qAfterA) := advanceProbeOnResume g hasQueuedPending a
     continuationGrantsPriority gAfterA qAfterA b
   | .receivePriority _ => !g.over && !g.livingPlayers.isEmpty
-  | .finishFraChoice =>
+  | .finishResolutionChoice =>
     !g.over && !g.livingPlayers.isEmpty &&
       !g.proposedSpell.any (fun prop =>
         g.stillInGame prop.caster && (g.findObject? prop.spellId).isSome)
@@ -1693,14 +1693,14 @@ partial def continuationGrantsPriority (g : Game) (hasQueuedPending : Bool := fa
     match classifyFinishConcedePriority g wasIdlePriority savedPendingPrio
         wasAssigningCombatDamage savedPending popOuter (runSba := true)
         (departed := departed) (rewindProposal := rewindProposal) with
-    | .implicitFra | .grants _ => true
+    | .implicitResolutionChoice | .grants _ => true
     | _ => false
   | .concedePlayersLoop remaining wp mid wasIdlePriority savedPendingPrio wasAssigningCombatDamage savedPending popOuter departed rewindProposal =>
     !wp && !mid &&
       match classifyConcedePlayersLoop g remaining wasIdlePriority savedPendingPrio
           wasAssigningCombatDamage savedPending popOuter
           (departedIn := departed) (rewindProposalIn := rewindProposal) with
-      | .implicitFra | .grants _ => true
+      | .implicitResolutionChoice | .grants _ => true
       | _ => false
   | .continueStartNextTurn nextP remainingDeparted runBeginTurn alreadyExpired =>
     (continueStartNextTurnRecipient? (drainProbePausedStep g) nextP remainingDeparted runBeginTurn alreadyExpired).isSome
@@ -1970,7 +1970,7 @@ private partial def firstPriorityGrantLeaf? (g : Game) (hasQueuedPending : Bool 
       | none =>
         let isImplicitGrant : Bool :=
           match pr with
-          | .finishFraChoice | .afterWardResolved => true
+          | .finishResolutionChoice | .afterWardResolved => true
           | .finishPostCast _ true false _
           | .finishBecomeCast _ _ true false _
           | .finishProposedSpellCosts _ true false _
@@ -1982,20 +1982,20 @@ private partial def firstPriorityGrantLeaf? (g : Game) (hasQueuedPending : Bool 
             match classifyFinishConcedePriority g wasIdlePriority savedPendingPrio
                 wasAssigningCombatDamage savedPending popOuter (runSba := true)
                 (departed := departed) (rewindProposal := rewindProposal) with
-            | .implicitFra | .grants _ => true
+            | .implicitResolutionChoice | .grants _ => true
             | _ => false
           | .concedePlayersLoop remaining false false wasIdlePriority savedPendingPrio wasAssigningCombatDamage savedPending popOuter departed rewindProposal =>
             match classifyConcedePlayersLoop g remaining wasIdlePriority savedPendingPrio
                 wasAssigningCombatDamage savedPending popOuter
                 (departedIn := departed) (rewindProposalIn := rewindProposal) with
-            | .implicitFra | .grants _ => true
+            | .implicitResolutionChoice | .grants _ => true
             | _ => false
           | _ => false
         if isImplicitGrant then some (pr, none) else none
 
 /-- Resolve the first priority-granting continuation leaf in execution order
 (left-to-right across `.seq a b`), returning `some (some q)` for an explicit
-recipient `q`, `some none` for an implicit grant (such as `.finishFraChoice`),
+recipient `q`, `some none` for an implicit grant (such as `.finishResolutionChoice`),
 or `none` when no leaf grants priority (CR 117.3c / 605.3b / 616.1). -/
 partial def firstPriorityGrantRecipient? (g : Game) (hasQueuedPending : Bool := false)
     (pr : PendingReplacement) : Option (Option PlayerId) :=
@@ -2043,7 +2043,7 @@ partial def anyContinuationSettlesControlFlow (g : Game) : Bool :=
       return false
 
 /-- Whether the first priority-granting continuation in execution order is
-implicit (e.g. `.finishFraChoice`, which reads
+implicit (e.g. `.finishResolutionChoice`, which reads
 `g.pendingPriority.getD g.activePlayer`, CR 117.3c / 605.3b). -/
 @[export mtg_game_has_implicit_priority_continuation]
 partial def hasImplicitPriorityContinuation (g : Game) : Bool :=
@@ -2146,12 +2146,12 @@ partial def finishAndGrantPriority (g : Game)
     let g := g.reopenDeferredExileCasts
     if let .chooseReplacement .. := g.pending then
       if g.anyContinuationSettlesControlFlow then g
-      else if g.currentInterpWait?.isSome then g.chainPendingReplacement .finishFraChoice
+      else if g.currentInterpWait?.isSome then g.chainPendingReplacement .finishResolutionChoice
       else g.chainPendingReplacement (.receivePriority (g.priorityInstead p))
     else if g.pending != .none then g
     else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome ||
         !g.outerPendingReplacements.isEmpty then
-      g.finishFraChoice
+      g.finishResolutionChoice
     else if g.triggerNeedingTargets.isSome then
       (g.popEmptyContinuationFrames).promptTriggerTargetsIfNeeded
     else
@@ -2179,10 +2179,10 @@ partial def continueAfterDiscard (g : Game) (players : Array PlayerId)
 /-- Clear a finished Reality Fracture choice and let the game continue. Any
 pending replacement/batch continuation runs first, then any suspended
 interpreter continuation resumes. -/
-partial def finishFraChoice (g : Game) : Game :=
+partial def finishResolutionChoice (g : Game) : Game :=
   if let .chooseReplacement .. := g.pending then
     if g.anyContinuationSettlesControlFlow then g
-    else g.chainPendingReplacement .finishFraChoice
+    else g.chainPendingReplacement .finishResolutionChoice
   else if g.pending != .none then g
   else
     let alreadyGrants : Bool :=
@@ -2198,7 +2198,7 @@ partial def finishFraChoice (g : Game) : Game :=
       (g.popEmptyContinuationFrames).completeActiveResolutions
     else if let .chooseReplacement .. := g.pending then
       if g.anyContinuationSettlesControlFlow then g
-      else g.chainPendingReplacement .finishFraChoice
+      else g.chainPendingReplacement .finishResolutionChoice
     else if g.pending != .none || g.afterRandom != .none then g
     else
       let g := g.popEmptyContinuationFrames
@@ -2210,7 +2210,7 @@ partial def finishFraChoice (g : Game) : Game :=
         if !g.over && g.pending == .none && g.afterRandom == .none &&
             g.proposedSpell.isNone &&
             (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
-          g.finishFraChoice
+          g.finishResolutionChoice
         else if !g.over && g.pending == .none && g.continuations.isEmpty &&
             g.triggerNeedingTargets.isSome then
           g.promptTriggerTargetsIfNeeded
@@ -2221,11 +2221,11 @@ partial def finishFraChoice (g : Game) : Game :=
         let g := g.reopenDeferredExileCasts
         if let .chooseReplacement .. := g.pending then
           if g.anyContinuationSettlesControlFlow then g
-          else g.chainPendingReplacement .finishFraChoice
+          else g.chainPendingReplacement .finishResolutionChoice
         else if g.pending != .none then g
         else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome ||
             !g.outerPendingReplacements.isEmpty then
-          g.finishFraChoice
+          g.finishResolutionChoice
         else if g.triggerNeedingTargets.isSome then
           (g.popEmptyContinuationFrames).promptTriggerTargetsIfNeeded
         else if alreadyGrants then g.popEmptyContinuationFrames
@@ -2318,7 +2318,7 @@ partial def finishConcedePriority (g : Game) (wasIdlePriority : Bool)
           g.currentInterpWait?.isSome ||
           (g.proposedSpell.isNone &&
             (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome)) then
-        g.finishFraChoice
+        g.finishResolutionChoice
       else if wasIdlePriority && g.playersReceivePriority && !g.hasWaitingTriggers &&
           g.consecutivePasses ≥ g.livingPlayers.size then
         let g := g.change (.consecutivePasses 0)
@@ -2550,13 +2550,13 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
 /-- Resume the rules event that paused on `Pending.chooseReplacement` (CR 616.1). -/
 @[export mtg_game_resume_pending_replacement]
 partial def resumePendingReplacement (g : Game) (pr : PendingReplacement)
-    (followedByFinishFra : Bool := false) : Game :=
-  g.resumePendingReplacementCore pr (followedByFinishFra := followedByFinishFra)
+    (followedByFinishChoice : Bool := false) : Game :=
+  g.resumePendingReplacementCore pr (followedByFinishChoice := followedByFinishChoice)
 
 /-- Internal core for `resumePendingReplacement` carrying `hasFollowingSeq` so
 steps inside `.seq first rest` know when an un-queued `rest` waits after them. -/
 partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
-    (followedByFinishFra : Bool := false) (hasFollowingSeq : Bool := false)
+    (followedByFinishChoice : Bool := false) (hasFollowingSeq : Bool := false)
     (followedByNonProposalPriorityGrant : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   match pr with
@@ -2566,9 +2566,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       | .seq a b =>
         let (canA, depthAfterA) := stepCanReverseProposal outerDepth a
         if canA then (true, depthAfterA) else stepCanReverseProposal depthAfterA b
-      | .restorePending (.fraChoice _ (.costPicks ..)) popOuter ..
-      | .restorePending (.fraChoice _ (.crew ..)) popOuter ..
-      | .restorePending (.fraChoice _ (.zemoBoastExile ..)) popOuter ..
+      | .restorePending (.resolutionChoice _ (.costPicks ..)) popOuter ..
+      | .restorePending (.resolutionChoice _ (.crew ..)) popOuter ..
+      | .restorePending (.resolutionChoice _ (.zemoBoastExile ..)) popOuter ..
       | .restorePending (.chooseTeamworkCreatures ..) popOuter ..
       | .restorePending (.sacrificePermanent ..) popOuter ..
       | .restorePending (.discardForAdditionalCost ..) popOuter ..
@@ -2614,14 +2614,14 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     let gProbeRest :=
       if gProbeAfterFirst.proposedSpell.isSome then gProbeAfterFirst.change (.proposedSpell none)
       else gProbeAfterFirst
-    let (nextFollowedByFinishFra, nextFollowedByExplicit?) :=
+    let (nextFollowedByFinishChoice, nextFollowedByExplicit?) :=
       match firstPriorityGrantLeaf? gProbeRest qAfterFirst rest with
-      | some (leaf, explicit?) => (leaf.endsWithFinishFra, explicit?)
-      | none => (followedByFinishFra || rest.endsWithFinishFra, followedByExplicitPriority?)
+      | some (leaf, explicit?) => (leaf.endsWithFinishResolutionChoice, explicit?)
+      | none => (followedByFinishChoice || rest.endsWithFinishResolutionChoice, followedByExplicitPriority?)
     let nextFollowedByNonProposal :=
       followedByNonProposalPriorityGrant || rest.endsWithNonProposalPriorityGrant
     let g := g.resumePendingReplacementCore first
-      (followedByFinishFra := nextFollowedByFinishFra)
+      (followedByFinishChoice := nextFollowedByFinishChoice)
       (hasFollowingSeq := true)
       (followedByNonProposalPriorityGrant := nextFollowedByNonProposal)
       (followedByExplicitPriority? := nextFollowedByExplicit?)
@@ -2652,19 +2652,19 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       | some inner =>
         let g := (g.change (.pendingReplacement none)).popEmptyTopContinuationFrames
         g.resumePendingReplacementCore (.seq inner rest)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (hasFollowingSeq := hasFollowingSeq)
           (followedByNonProposalPriorityGrant := followedByNonProposalPriorityGrant)
           (followedByExplicitPriority? := followedByExplicitPriority?)
       | none =>
         g.resumePendingReplacementCore rest
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (hasFollowingSeq := hasFollowingSeq)
           (followedByNonProposalPriorityGrant := followedByNonProposalPriorityGrant)
           (followedByExplicitPriority? := followedByExplicitPriority?)
     else
       g.resumePendingReplacementCore rest
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (hasFollowingSeq := hasFollowingSeq)
         (followedByNonProposalPriorityGrant := followedByNonProposalPriorityGrant)
         (followedByExplicitPriority? := followedByExplicitPriority?)
@@ -2796,8 +2796,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
   | .addExtraCombatDamageStep =>
     g.record (GameEvent.extraStepAdded g.turnNumber .combatDamage .afterCurrent
       (cause := .gameRule .stepAdvance))
-  | .finishFraChoice =>
-    g.finishFraChoice
+  | .finishResolutionChoice =>
+    g.finishResolutionChoice
   | .draw p n cause =>
     g.draw p n (cause := cause)
   | .drawOne p applied drawStepFirst cause =>
@@ -2889,7 +2889,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
               (g, .seq closePrefix tailRestore)
           let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
           return g.resumePendingReplacementCore splitCont
-            (followedByFinishFra := followedByFinishFra)
+            (followedByFinishChoice := followedByFinishChoice)
             (hasFollowingSeq := hasFollowingSeq)
             (followedByNonProposalPriorityGrant := followedByNonProposalPriorityGrant)
             (followedByExplicitPriority? := followedByExplicitPriority?)
@@ -2951,7 +2951,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
         | none => g
       let g :=
         if g.continuations.isEmpty &&
-            (match p' with | .fraChoice .. | .chooseReplacement .. => true | _ => false) then
+            (match p' with | .resolutionChoice .. | .chooseReplacement .. => true | _ => false) then
           g.change (.pushContinuationFrame {})
         else g
       let g := g.change (.pending p')
@@ -2969,7 +2969,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
           | some prior => .seq prior popped
           | none => popped
         g.resumePendingReplacementCore toRun
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (hasFollowingSeq := hasFollowingSeq)
           (followedByNonProposalPriorityGrant := followedByNonProposalPriorityGrant)
           (followedByExplicitPriority? := followedByExplicitPriority?)
@@ -2989,7 +2989,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
         match poppedTail? with
         | some tailSeq =>
           let afterPrompt : PendingReplacement :=
-            if followedByFinishFra then tailSeq.ensureEndsWithFinishFra
+            if followedByFinishChoice then tailSeq.ensureEndsWithFinishResolutionChoice
             else
               match followedByExplicitPriority? with
               | some prio => .seq tailSeq (.receivePriority prio)
@@ -3006,7 +3006,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
             let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
             let g := g.popEmptyTopContinuationFrames
             g.resumePendingReplacementCore toRun
-              (followedByFinishFra := followedByFinishFra)
+              (followedByFinishChoice := followedByFinishChoice)
               (hasFollowingSeq := hasFollowingSeq)
               (followedByNonProposalPriorityGrant := followedByNonProposalPriorityGrant)
               (followedByExplicitPriority? := followedByExplicitPriority?)
@@ -3039,14 +3039,14 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
               | none =>
                 let g := if g.pendingReplacement.isSome then g.change (.pendingReplacement none) else g
                 if g.pending == .none && g.afterRandom == .none then g.popEmptyTopContinuationFrames else g
-          if followedByFinishFra && g.sbaPaused then
+          if followedByFinishChoice && g.sbaPaused then
             if let some cur := g.pendingReplacement then
-              let next := cur.ensureEndsWithFinishFra
+              let next := cur.ensureEndsWithFinishResolutionChoice
               if next == cur then g else g.change (.pendingReplacement (some next))
             else
               let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
-              g.change (.pendingReplacement (some .finishFraChoice))
-          else if let some prio := (if !followedByFinishFra then followedByExplicitPriority? else none) then
+              g.change (.pendingReplacement (some .finishResolutionChoice))
+          else if let some prio := (if !followedByFinishChoice then followedByExplicitPriority? else none) then
             if g.sbaPaused then
               let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
               g.chainPendingReplacement (.receivePriority prio)
@@ -3054,8 +3054,8 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
               g.finishAndGrantPriority prio
             else g
           else if !g.over && !g.sbaPaused &&
-              (!g.continuations.isEmpty || g.pendingReplacement.isSome || followedByFinishFra) then
-            g.finishFraChoice
+              (!g.continuations.isEmpty || g.pendingReplacement.isSome || followedByFinishChoice) then
+            g.finishResolutionChoice
           else if hadConsumedOrig && !g.over && !g.sbaPaused &&
               g.pending == .none && g.afterRandom == .none && g.continuations.isEmpty then
             g.finishAndGrantPriority (g.priorityInstead caster)
@@ -3072,9 +3072,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     match p with
     | .none =>
       flushUnlessPaysWait (resumePoppedIfNoPrompt g)
-    | .fraChoice caster (.costPicks ..)
-    | .fraChoice caster (.crew ..)
-    | .fraChoice caster (.zemoBoastExile ..)
+    | .resolutionChoice caster (.costPicks ..)
+    | .resolutionChoice caster (.crew ..)
+    | .resolutionChoice caster (.zemoBoastExile ..)
     | .chooseTeamworkCreatures caster _
     | .sacrificePermanent caster _
     | .discardForAdditionalCost caster =>
@@ -3146,7 +3146,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
         | none =>
           let g := if g.pending == .none then g else g.change (.pending .none)
           resumePoppedIfNoPrompt g
-    | .fraChoice q (.tricksterLibrary caster id connive sourceId) =>
+    | .resolutionChoice q (.tricksterLibrary caster id connive sourceId) =>
       if g.stillInGame q && g.stillInGame caster &&
           (g.findObject? id).any (fun o => o.isOnBattlefield && g.isCreature o) then
         openPrompt g
@@ -3274,13 +3274,13 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       match g.completeActivation prop
           (hadOuterReplacement := hadOuter)
           (hadOpenContinuation := some hadOpenCont)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?) with
       | .ok g' =>
         if hadOuter then g' else resumeAfterBecomeCast g'
       | .error _ =>
         g.reverseProposedSpell (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
   | .finishBecomeActivated caster srcName srcId act abId srcSnap srcOrig hadOuter hadOpenCont =>
     let g := g.becomeActivated caster srcName srcId act
@@ -3289,7 +3289,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       (sourceOriginal := srcOrig)
       (hadOuterReplacement := hadOuter)
       (hadOpenContinuation := some hadOpenCont)
-      (followedByFinishFra := followedByFinishFra)
+      (followedByFinishChoice := followedByFinishChoice)
       (followedByExplicitPriority? := followedByExplicitPriority?)
     if hadOuter then g else resumeAfterBecomeCast g
   | .finishBecomeCast caster spellId grantPriority hadOuter hadOpenCont =>
@@ -3305,7 +3305,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       if hadOuter then g else resumeAfterBecomeCast g
     else if g.proposedSpell.isSome && g.proposalCheckpoint.isSome then
       g.reverseProposedSpell (resumeContinuation := true)
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
     else
       let clearChanges : Array EngineChange :=
@@ -3314,7 +3314,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       let g := if clearChanges.isEmpty then g else g.changes clearChanges
       if g.over || g.pending != .none then g
       else if !hadOuter && (g.pendingReplacement.isSome || g.currentInterpWait?.isSome) then
-        resumeAfterBecomeCast (g.chainPendingReplacement .finishFraChoice)
+        resumeAfterBecomeCast (g.chainPendingReplacement .finishResolutionChoice)
       else if !hadOuter && grantPriority then
         g.receivePriority (g.priorityInstead (if hadOpenCont then g.activePlayer else caster))
       else g
@@ -3324,22 +3324,22 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
       (hadOuterReplacement := hadOuter)
       (hadOpenContinuation := hadOpenCont)
     if hadOuter then g
-    else if !grantPriority && !followedByFinishFra && !followedByNonProposalPriorityGrant then
-      g.finishFraChoice
+    else if !grantPriority && !followedByFinishChoice && !followedByNonProposalPriorityGrant then
+      g.finishResolutionChoice
     else resumeAfterBecomeCast g
   | .finishProposedSpellCosts stage grantPriority hadOuter hadOpenCont =>
     match g.finishProposedSpellCosts stage grantPriority hadOuter hadOpenCont
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?) with
     | .ok g' =>
       if hadOuter then g' else resumeAfterBecomeCast g'
     | .error _ =>
       g.reverseProposedSpell (resumeContinuation := true)
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
   | .finishTurnFaceUp caster spellId hadOuter =>
     let (g, callerShouldResume) := g.completeTurnFaceUp caster spellId (hadOuterReplacement := hadOuter)
-      (followedByFinishFra := followedByFinishFra)
+      (followedByFinishChoice := followedByFinishChoice)
       (followedByExplicitPriority? := followedByExplicitPriority?)
     if callerShouldResume && !hadOuter then resumeAfterBecomeCast g else g
   | .endProposalAction clearCkpt =>
@@ -3347,16 +3347,16 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     if g.proposalCheckpoint.isSome then g.change .endProposalAction else g
   | .payCostPickItems p abilityId sourceId pick remainingIds =>
     g.payCostPickItems p abilityId sourceId pick remainingIds
-      (followedByFinishFra := followedByFinishFra)
+      (followedByFinishChoice := followedByFinishChoice)
       (followedByExplicitPriority? := followedByExplicitPriority?)
   | .finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx =>
     g.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage
       (sinceIdx := sinceIdx)
-      (followedByFinishFra := followedByFinishFra)
+      (followedByFinishChoice := followedByFinishChoice)
       (followedByExplicitPriority? := followedByExplicitPriority?)
   | .finishPostLoyaltyActivated caster srcName srcId act abId srcSnap srcOrig hadOuter hadOpenCont =>
     let g := g.finishPostLoyaltyActivated caster srcName srcId act abId srcSnap srcOrig hadOuter hadOpenCont
-      (followedByFinishFra := followedByFinishFra)
+      (followedByFinishChoice := followedByFinishChoice)
       (followedByExplicitPriority? := followedByExplicitPriority?)
     if hadOuter then g else resumeAfterBecomeCast g
   | .finishActivateManaAbilityPicks p id oname mana remainingPicks remainingCostIds tap sacrificeSelf activatedIdx restriction damageYou isMountain prevPending exileSelf powerUp exhaust riders exileFromZone? discardSelf exileSymIds extraEffect? =>
@@ -3490,7 +3490,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
         else (fun preId _ => matchedPreIds.contains preId)
       g.finishMillChooseForHand p preIds pred max mustOne (cause := cause)
   | .finishPostStep step =>
-    g.runPostStep step (followedByFinishFra := followedByFinishFra)
+    g.runPostStep step (followedByFinishChoice := followedByFinishChoice)
       (followedByExplicitPriority? := followedByExplicitPriority?)
   | .setLife p life msg cause =>
     g.setLife p life msg (cause := cause)
@@ -3554,7 +3554,7 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
 /-- Execute a deferred `PostStep` continuation after a CR 616.1
 `Pending.chooseReplacement` pause finishes. -/
 partial def runPostStep (g : Game) (step : PostStep)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   match step with
   | .putArtifactOntoBattlefield p cardId _ =>
@@ -3654,7 +3654,7 @@ partial def runPostStep (g : Game) (step : PostStep)
     let restLiving := rest.filter g.stillInGame
     match restLiving[0]? with
     | some next =>
-      g.beginFraChoice next (.mayWheel cards (restLiving.extract 1 restLiving.size) accepted)
+      g.beginResolutionChoice next (.mayWheel cards (restLiving.extract 1 restLiving.size) accepted)
         s!"{(g.player next).name} may discard their hand and draw {cards} cards"
     | none =>
       let acceptedLiving := accepted.filter g.stillInGame
@@ -3711,7 +3711,7 @@ partial def runPostStep (g : Game) (step : PostStep)
       match g.followMovedToZone? cardId (· == .battlefield) with
       | some o =>
         if (g.baseCard o).otherFace.isSome && !g.cantTransform o then
-          g.beginFraChoice p (.nickFuryMayTransform o.id rest)
+          g.beginResolutionChoice p (.nickFuryMayTransform o.id rest)
             s!"{(g.player p).name} may transform {g.name o}"
         else g.putRestOnBottomRandom p rest (cause := cause)
       | none => g.putRestOnBottomRandom p rest (cause := cause)
@@ -3797,7 +3797,7 @@ partial def runPostStep (g : Game) (step : PostStep)
             !g.stillInGame prop.caster || (g.findObject? prop.spellId).isNone) then
           (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
             (resumeContinuation := true) (alwaysGrantPriority := true)
-            (followedByFinishFra := followedByFinishFra)
+            (followedByFinishChoice := followedByFinishChoice)
             (followedByExplicitPriority? := followedByExplicitPriority?)
         else g
       g.completeActiveResolutions
@@ -3805,7 +3805,7 @@ partial def runPostStep (g : Game) (step : PostStep)
       if g.proposedSpell.any (·.caster == p) then
         promptIfTriggersNeedTargets
           (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
-            (followedByFinishFra := followedByFinishFra)
+            (followedByFinishChoice := followedByFinishChoice)
             (followedByExplicitPriority? := followedByExplicitPriority?))
       else g
     else
@@ -3823,20 +3823,20 @@ partial def runPostStep (g : Game) (step : PostStep)
             else
               promptIfTriggersNeedTargets
                 (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
-                  (followedByFinishFra := followedByFinishFra)
+                  (followedByFinishChoice := followedByFinishChoice)
                   (followedByExplicitPriority? := followedByExplicitPriority?))
           | .spell =>
             match g.findObject? prop.spellId with
             | none =>
               promptIfTriggersNeedTargets
                 (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
-                  (followedByFinishFra := followedByFinishFra)
+                  (followedByFinishChoice := followedByFinishChoice)
                   (followedByExplicitPriority? := followedByExplicitPriority?))
             | some spell =>
               if spell.zone != .stack || !g.sourceStillPayable prop then
                 promptIfTriggersNeedTargets
                   (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
-                    (followedByFinishFra := followedByFinishFra)
+                    (followedByFinishChoice := followedByFinishChoice)
                     (followedByExplicitPriority? := followedByExplicitPriority?))
               else
               let face := g.baseCard spell
@@ -3861,14 +3861,14 @@ partial def runPostStep (g : Game) (step : PostStep)
               else
                 promptIfTriggersNeedTargets
                   (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
-                    (followedByFinishFra := followedByFinishFra)
+                    (followedByFinishChoice := followedByFinishChoice)
                     (followedByExplicitPriority? := followedByExplicitPriority?))
           | .turnFaceUp =>
             if g.sourceStillPayable prop && (g.findObject? prop.spellId).any (·.isOnBattlefield) then g
             else
               promptIfTriggersNeedTargets
                 (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
-                  (followedByFinishFra := followedByFinishFra)
+                  (followedByFinishChoice := followedByFinishChoice)
                   (followedByExplicitPriority? := followedByExplicitPriority?))
   | .resumeChooseTargetsAfterLeave p =>
     let promptIfTriggersNeedTargets (g : Game) : Game :=
@@ -3884,7 +3884,7 @@ partial def runPostStep (g : Game) (step : PostStep)
       if ownPropNeedsReverse then
         (if g.pending == .none then g else g.change (.pending .none)).reverseProposedSpell
           (resumeContinuation := true) (alwaysGrantPriority := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
       else g
     let pendingBlocksTargets :=
@@ -3916,7 +3916,7 @@ partial def runPostStep (g : Game) (step : PostStep)
           if isPropSpell then
             promptIfTriggersNeedTargets
               (g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
-                (followedByFinishFra := followedByFinishFra)
+                (followedByFinishChoice := followedByFinishChoice)
                 (followedByExplicitPriority? := followedByExplicitPriority?))
           else
             (g.ceaseToExist obj.id (cause := some (.gameRule .triggeredAbility))).afterTriggerTargetsChosen
@@ -3940,7 +3940,7 @@ partial def runPostStep (g : Game) (step : PostStep)
               (g.reverseProposedSpell (resumeContinuation := true)
                 (extraLog := some s!"{g.name obj} has no legal target and can't be cast")
                 (alwaysGrantPriority := true)
-                (followedByFinishFra := followedByFinishFra)
+                (followedByFinishChoice := followedByFinishChoice)
                 (followedByExplicitPriority? := followedByExplicitPriority?))
           else
             let objName := g.name obj
@@ -3948,11 +3948,11 @@ partial def runPostStep (g : Game) (step : PostStep)
               |>.logMsg s!"{objName}'s triggered ability has no legal target and is removed from the stack (CR 603.3d)"
             g.afterTriggerTargetsChosen
   | .resumeTriggerModesAfterLeave p objectId remaining chosen =>
-    if g.over || !g.stillInGame p then g.finishFraChoice
+    if g.over || !g.stillInGame p then g.finishResolutionChoice
     else
       match g.findObject? objectId with
       | some obj =>
-        if obj.zone != .stack then g.finishFraChoice
+        if obj.zone != .stack then g.finishResolutionChoice
         else
           let tModes := g.triggerModesOf obj
           let validChosen := chosen.filter (fun i =>
@@ -3965,24 +3965,24 @@ partial def runPostStep (g : Game) (step : PostStep)
             let sorted := validChosen.qsort (· < ·)
             let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
             match combineTriggerModes (tModes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
-            | none => g.finishFraChoice
+            | none => g.finishResolutionChoice
             | some eff =>
               let g := g.changeObject obj.id (.abilityEffect (some eff))
               let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
-              g.finishFraChoice
+              g.finishResolutionChoice
           else if choosableLeft < needed then
             let objName := g.name obj
             (g.ceaseToExist obj.id (cause := some (.gameRule .noLegalMode))
-              |>.logMsg s!"{objName}'s triggered ability has too few legal modes and is removed from the stack (CR 603.3c)").finishFraChoice
+              |>.logMsg s!"{objName}'s triggered ability has too few legal modes and is removed from the stack (CR 603.3c)").finishResolutionChoice
           else
-            g.change (.pending (.fraChoice p (.triggerModes obj.id needed validChosen)))
-      | none => g.finishFraChoice
+            g.change (.pending (.resolutionChoice p (.triggerModes obj.id needed validChosen)))
+      | none => g.finishResolutionChoice
   | .resumeUpToTriggerModesAfterLeave p objectId remaining chosen =>
-    if g.over || !g.stillInGame p then g.finishFraChoice
+    if g.over || !g.stillInGame p then g.finishResolutionChoice
     else
       match g.findObject? objectId with
       | some obj =>
-        if obj.zone != .stack then g.finishFraChoice
+        if obj.zone != .stack then g.finishResolutionChoice
         else
           let modes := g.triggerModesOf obj
           let validChosen := chosen.filter (fun i =>
@@ -3992,30 +3992,30 @@ partial def runPostStep (g : Game) (step : PostStep)
             (List.range modes.size).any (fun i =>
               !validChosen.contains i && (modes[i]?.any (g.triggerModeChoosable p obj)))
           if remaining > 0 && anyChoosableLeft then
-            g.change (.pending (.fraChoice p (.upToTriggerModes obj.id remaining validChosen)))
+            g.change (.pending (.resolutionChoice p (.upToTriggerModes obj.id remaining validChosen)))
           else if validChosen.isEmpty then
             let noop : Effect := { body := .noop }
             let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := #[]))
             let g := g.changes #[
               .object obj.id (.abilityEffect (some noop)),
               .stackEntry obj.id (.targetsAnnounced true)]
-            g.finishFraChoice
+            g.finishResolutionChoice
           else
             let sorted := validChosen.qsort (· < ·)
             let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
             match combineTriggerModes (modes.map (fun m => g.expandEachOpponentEffect p m (some obj.id))) sorted with
-            | none => g.finishFraChoice
+            | none => g.finishResolutionChoice
             | some eff =>
               let g := g.changeObject obj.id (.abilityEffect (some eff))
               let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
-              g.finishFraChoice
-      | none => g.finishFraChoice
+              g.finishResolutionChoice
+      | none => g.finishResolutionChoice
   | .resumeHawkeyeModesAfterLeave p objectId left chosen =>
-    if g.over || !g.stillInGame p then g.finishFraChoice
+    if g.over || !g.stillInGame p then g.finishResolutionChoice
     else
       match g.findObject? objectId with
       | some obj =>
-        if obj.zone != .stack then g.finishFraChoice
+        if obj.zone != .stack then g.finishResolutionChoice
         else
           let validChosen := chosen.filter (fun i =>
             hawkeyeModeEffects[i]?.any (g.triggerModeChoosable p obj))
@@ -4023,7 +4023,7 @@ partial def runPostStep (g : Game) (step : PostStep)
             (List.range hawkeyeModeEffects.size).any (fun i =>
               !validChosen.contains i && (hawkeyeModeEffects[i]?.any (g.triggerModeChoosable p obj)))
           if validChosen.size < left && anyMoreChoosable then
-            g.change (.pending (.fraChoice p (.hawkeyeModes left validChosen (some obj.id))))
+            g.change (.pending (.resolutionChoice p (.hawkeyeModes left validChosen (some obj.id))))
           else
             let sorted := validChosen.qsort (· < ·)
             let eff : Effect :=
@@ -4032,14 +4032,14 @@ partial def runPostStep (g : Game) (step : PostStep)
             let g := g.record (GameEvent.announced g.turnNumber obj.id (modes := sorted))
             let g := g.changeObject obj.id (.abilityEffect (some eff))
             let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
-            g.finishFraChoice
-      | none => g.finishFraChoice
+            g.finishResolutionChoice
+      | none => g.finishResolutionChoice
   | .resumeProposalCostAfterLeave p savedP =>
     if g.proposalCostPromptStillPayable p savedP then
       g.change (.pending savedP)
     else if g.proposedSpell.any (·.caster == p) then
       let g := g.reverseProposedSpell (resumeContinuation := true) (alwaysGrantPriority := true)
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
       if !g.over && g.pending == .none && g.continuations.isEmpty &&
           g.triggerNeedingTargets.isSome then
@@ -4178,7 +4178,7 @@ partial def runPostStep (g : Game) (step : PostStep)
       g.logMsg (msgOverride.getD s!"{(g.player owner).name} puts {cardName} on the {side} of their library")
     else g
   | .finishZemoBoastExileLogs p sourceId preIds =>
-    let g := if g.proposedSpell.isSome then g.changeProposal (.fraCostPaid true) else g
+    let g := if g.proposedSpell.isSome then g.changeProposal (.choiceCostPaid true) else g
     let exiledCount := (preIds.filter (fun id => (g.followMovedToZone? id (· == .exile)).isSome)).size
     let g :=
       if exiledCount > 0 then
@@ -4190,7 +4190,7 @@ partial def runPostStep (g : Game) (step : PostStep)
       | some src => g.logMsg s!"{g.name src}'s boast ability is activated"
       | none => g
   | .markNonManaCostPaid =>
-    if g.proposedSpell.isSome then g.changeProposal (.fraCostPaid true) else g
+    if g.proposedSpell.isSome then g.changeProposal (.choiceCostPaid true) else g
   | .moveIdsInOrderLoop ids dest log cause placedCount prevMoved =>
     g.moveIdsInOrderLoop ids dest log cause placedCount prevMoved
   | .incrementPlanSource controller sourceId =>
@@ -4253,7 +4253,7 @@ partial def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array C
   match picks[0]?, prop.sourceId with
   | some pick, some sid =>
     if let .chooseReplacement .. := g.pending then
-      let nextPending := Pending.fraChoice prop.caster (.costPicks sid picks paid)
+      let nextPending := Pending.resolutionChoice prop.caster (.costPicks sid picks paid)
       return (g.change (.consecutivePasses 0)).chainPendingReplacement
         (.restorePending nextPending
           (promptLog := some s!"{(g.player prop.caster).name} chooses how to {pick.phrase}"))
@@ -4269,7 +4269,7 @@ partial def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array C
               prop.activation.any (fun a => a.cost.discardSource || a.cost.exileSourceFromHand)) then
       g.reverseProposedSpell? (resumeContinuation := true)
     else
-      let g := g.changes #[.pending (.fraChoice prop.caster (.costPicks sid picks paid)), .consecutivePasses 0]
+      let g := g.changes #[.pending (.resolutionChoice prop.caster (.costPicks sid picks paid)), .consecutivePasses 0]
       return g.logMsg s!"{(g.player prop.caster).name} chooses how to {pick.phrase}"
   | _, _ =>
     if prop.kind == .turnFaceUp then
@@ -4288,7 +4288,7 @@ partial def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array C
           g0.completeTurnFaceUp prop.caster prop.spellId (hadOuterReplacement := hadOuter)
         let g :=
           match localOuter? with
-          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         return if !hadOuterReplacement && (callerShouldResume ||
             (g.pending == .none && !g.over && localOuter?.isSome)) then
@@ -4551,28 +4551,28 @@ partial def payBeholdForProposed (g : Game) (prop : ProposedSpell) :
 
 /-- Reverse a proposed spell or activated ability to its pre-proposal checkpoint,
 preserving CR 733.1 irreversible library actions, running any deferred post-cast
-cleanup, and resuming an active continuation via `finishFraChoice` when
+cleanup, and resuming an active continuation via `finishResolutionChoice` when
 `resumeContinuation == true` (CR 601.2 / 602.2 / 733.1–733.2). -/
 @[export mtg_game_reverse_proposed_spell_except]
 partial def reverseProposedSpell? (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none)
     (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Except String Game := do
   let hadProposal := g.proposedSpell.isSome
   let (g, needsFinish) ← g.reverseProposedSpellCore?
     (resumeContinuation := resumeContinuation) (extraLog := extraLog)
     (alwaysGrantPriority := alwaysGrantPriority)
     (skipDepartureReconcile := skipDepartureReconcile)
-    (followedByFinishFra := followedByFinishFra)
+    (followedByFinishChoice := followedByFinishChoice)
     (followedByExplicitPriority? := followedByExplicitPriority?)
   if !needsFinish then
     return g
   else
-    match (if !followedByFinishFra && hadProposal then followedByExplicitPriority? else none) with
+    match (if !followedByFinishChoice && hadProposal then followedByExplicitPriority? else none) with
     | some prio => return g.finishAndGrantPriority (g.priorityInstead prio)
-    | none => return g.finishFraChoice
+    | none => return g.finishResolutionChoice
 
 /-- Non-monadic wrapper around `reverseProposedSpell?`. -/
 @[export mtg_game_reverse_proposed_spell]
@@ -4580,12 +4580,12 @@ partial def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none)
     (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game :=
   match g.reverseProposedSpell? (resumeContinuation := resumeContinuation)
       (extraLog := extraLog) (alwaysGrantPriority := alwaysGrantPriority)
       (skipDepartureReconcile := skipDepartureReconcile)
-      (followedByFinishFra := followedByFinishFra)
+      (followedByFinishChoice := followedByFinishChoice)
       (followedByExplicitPriority? := followedByExplicitPriority?) with
   | .ok g' => g'
   | .error msg => g.logMsg msg
@@ -4596,7 +4596,7 @@ partial def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
 continuation without shadowing or duplicating it (CR 601.2h / 616.1 / 733.1). -/
 partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
     (grantPriority hadOuterReplacement openCont : Bool)
-    (followedByFinishFra : Bool := false)
+    (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Except String Game := do
   let some prop := g.proposedSpell | return g
   if let .chooseReplacement .. := g.pending then
@@ -4614,22 +4614,22 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
           let g := g.chainPendingReplacement
             (.finishProposedSpellCosts .behold grantPriority hadOuter openCont)
           return match localOuter? with
-            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
             | none => g
         else
           let g := match localOuter? with
             | some outer => g.chainPendingReplacement outer
             | none => g
           g.finishProposedSpellCosts .behold grantPriority hadOuterReplacement openCont
-            (followedByFinishFra := followedByFinishFra)
+            (followedByFinishChoice := followedByFinishChoice)
             (followedByExplicitPriority? := followedByExplicitPriority?)
       | .error _ =>
         g.reverseProposedSpell? (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
     else
       g.finishProposedSpellCosts .behold grantPriority hadOuterReplacement openCont
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
   | .behold =>
     if prop.needsBehold.isSome then
@@ -4639,22 +4639,22 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
           let g := g.chainPendingReplacement
             (.finishProposedSpellCosts .sneak grantPriority hadOuter openCont)
           return match localOuter? with
-            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
             | none => g
         else
           let g := match localOuter? with
             | some outer => g.chainPendingReplacement outer
             | none => g
           g.finishProposedSpellCosts .sneak grantPriority hadOuterReplacement openCont
-            (followedByFinishFra := followedByFinishFra)
+            (followedByFinishChoice := followedByFinishChoice)
             (followedByExplicitPriority? := followedByExplicitPriority?)
       | .error _ =>
         g.reverseProposedSpell? (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
     else
       g.finishProposedSpellCosts .sneak grantPriority hadOuterReplacement openCont
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
   | .sneak =>
     match prop.sneakAttacker with
@@ -4665,29 +4665,29 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
           let g := g.chainPendingReplacement
             (.finishProposedSpellCosts .finalize grantPriority hadOuter openCont)
           return match localOuter? with
-            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
             | none => g
         else
           let g := match localOuter? with
             | some outer => g.chainPendingReplacement outer
             | none => g
           g.finishProposedSpellCosts .finalize grantPriority hadOuterReplacement openCont
-            (followedByFinishFra := followedByFinishFra)
+            (followedByFinishChoice := followedByFinishChoice)
             (followedByExplicitPriority? := followedByExplicitPriority?)
       | .error _ =>
         g.reverseProposedSpell? (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
     | none =>
       g.finishProposedSpellCosts .finalize grantPriority hadOuterReplacement openCont
-        (followedByFinishFra := followedByFinishFra)
+        (followedByFinishChoice := followedByFinishChoice)
         (followedByExplicitPriority? := followedByExplicitPriority?)
   | .finalize =>
     if prop.needsSacrificeOther then
       let excludeId := prop.sourceId.getD prop.spellId
       if (g0.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
         return (← g.reverseProposedSpell? (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?))
       let g := match localOuter? with
         | some outer => g0.chainPendingReplacement outer
@@ -4697,7 +4697,7 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
     else if prop.needsDiscardCard then
       if (g0.player prop.caster).hand.isEmpty then
         return (← g.reverseProposedSpell? (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?))
       let g := match localOuter? with
         | some outer => g0.chainPendingReplacement outer
@@ -4709,16 +4709,16 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
           (g0.findObject? prop.spellId).any (fun o =>
             o.isOnBattlefield && o.status.faceDown && g0.controlledBy o prop.caster)) then
         return (← g.reverseProposedSpell? (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?))
       let g := g0.changes #[.pending .none, .consecutivePasses 0]
       let (g, callerShouldResume) :=
         g.completeTurnFaceUp prop.caster prop.spellId (hadOuterReplacement := hadOuter)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
       let g :=
         match localOuter? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
         | none => g
       let paused := match g.pending with | .chooseReplacement .. => true | _ => false
       if paused || hadOuterReplacement then
@@ -4730,7 +4730,7 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
     else
       if !(g0.stillInGame prop.caster && (g0.findObject? prop.spellId).any (·.zone == .stack)) then
         return (← g.reverseProposedSpell? (resumeContinuation := true)
-          (followedByFinishFra := followedByFinishFra)
+          (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?))
       let isResCast := prop.resolutionCast
       let g := g0.changes #[.pending .none, .consecutivePasses 0]
@@ -4742,16 +4742,16 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
       if paused then
         let g :=
           match localOuter? with
-          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none =>
             if isResCast && !hadOuterReplacement && !g.anyContinuationSettlesControlFlow then
-              g.chainPendingReplacement .finishFraChoice
+              g.chainPendingReplacement .finishResolutionChoice
             else g
         return g
       else
         let g :=
           match localOuter? with
-          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         if hadOuterReplacement then
           return g
@@ -4760,7 +4760,7 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
               g.anyContinuationSettlesControlFlow then
             return g
           else
-            return g.finishFraChoice
+            return g.finishResolutionChoice
         else
           return g.resumeAfterBecomeCast
 
@@ -4839,7 +4839,7 @@ partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : Propose
         let g1 := g1.chainPendingReplacement
           (.finishProposedSpellCosts .behold false outerCont?.isSome openCont)
         match outerCont? with
-        | some outer => g1.chainPendingReplacement outer.ensureEndsWithFinishFra
+        | some outer => g1.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
         | none => g1
       else
         match g1.payBeholdForProposed prop with
@@ -4850,15 +4850,15 @@ partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : Propose
           let g := g.becomeCast p (g.object! prop.spellId) (grantPriority := false)
             (hadOuterReplacement := outerCont?.isSome)
             (hadOpenContinuation := some openCont)
-          let isFraPrompt := match g.pending with | .fraChoice .. => true | _ => false
+          let isResolutionChoicePrompt := match g.pending with | .resolutionChoice .. => true | _ => false
           if g.pending != .none || g.afterRandom != .none then
             match outerCont? with
             | some outer =>
-              if isFraPrompt then g.chainPendingReplacement outer
-              else g.chainPendingReplacement outer.ensureEndsWithFinishFra
+              if isResolutionChoicePrompt then g.chainPendingReplacement outer
+              else g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
             | none =>
-              if openCont && !isFraPrompt && !g.anyContinuationSettlesControlFlow then
-                g.chainPendingReplacement .finishFraChoice
+              if openCont && !isResolutionChoicePrompt && !g.anyContinuationSettlesControlFlow then
+                g.chainPendingReplacement .finishResolutionChoice
               else g
           else
             match outerCont? with
@@ -4986,7 +4986,7 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
         resolutionIgnoreTiming := ignoreTiming
       }
 
-/-- Resume any deferred `PendingReplacement` (such as `.finishFraChoice`) queued
+/-- Resume any deferred `PendingReplacement` (such as `.finishResolutionChoice`) queued
 by `becomeCast` or `becomeActivated` once the spell or ability finishes going
 onto the stack without opening a new `Pending`. -/
 @[export mtg_game_resume_after_become_cast]
@@ -5021,7 +5021,7 @@ partial def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option Obje
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
         | none => g
-      return if g.pending != .none then g else g.finishFraChoice
+      return if g.pending != .none then g else g.finishResolutionChoice
     | some id =>
       match g.mayCastFromLookedError p ids maxMv id with
       | some err => throw err
@@ -5046,9 +5046,9 @@ partial def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option Obje
           return g
         else if g.proposedSpell.isNone && g.postCastCleanup.isSome then
           let g := g.runPostCastCleanup
-          return if g.pending != .none then g else g.finishFraChoice
+          return if g.pending != .none then g else g.finishResolutionChoice
         else if (g.followMovedToZone? id (· == .stack)).isSome then
-          return g.finishFraChoice
+          return g.finishResolutionChoice
         else
           return g
   | _ => throw "Not time to choose a spell from among looked-at cards"
@@ -5079,11 +5079,11 @@ partial def afterTriggerTargetsChosen (g : Game) : Game :=
       let g := g.reopenDeferredExileCasts
       if let .chooseReplacement .. := g.pending then
         if g.anyContinuationSettlesControlFlow then g
-        else g.chainPendingReplacement .finishFraChoice
+        else g.chainPendingReplacement .finishResolutionChoice
       else if g.pending != .none || g.afterRandom != .none then g
       else if g.currentInterpWait?.isSome ||
           g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty then
-        g.finishFraChoice
+        g.finishResolutionChoice
       else g.afterTriggerTargetsChosen
     else
       match g.triggerNeedingTargets with
@@ -5128,7 +5128,7 @@ partial def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except St
           (sacrificeOrExileSource := sacSrc)
           (discardOrExileHandSource := discSrc)
     | none => true
-  if !prop.fraCostPaid then
+  if !prop.choiceCostPaid then
     match prop.sourceId with
     | some sid =>
       if prop.activation.any (·.cost.exileManaSymbols?.isSome) then
@@ -5143,10 +5143,10 @@ partial def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except St
         let prompt := s!"{(g.player prop.caster).name} chooses black cards to exile from their graveyard"
         if let .chooseReplacement .. := g.pending then
           return (g.change (.consecutivePasses 0)).chainPendingReplacement
-            (.restorePending (.fraChoice prop.caster (.zemoBoastExile prop.spellId sid))
+            (.restorePending (.resolutionChoice prop.caster (.zemoBoastExile prop.spellId sid))
               (promptLog := some prompt))
         let g := g.changes #[
-          .pending (.fraChoice prop.caster (.zemoBoastExile prop.spellId sid)),
+          .pending (.resolutionChoice prop.caster (.zemoBoastExile prop.spellId sid)),
           .consecutivePasses 0]
         return g.logMsg prompt
       else if let some n := prop.activation.bind (·.cost.crewPower?) then
@@ -5165,15 +5165,15 @@ partial def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except St
           s!"{(g.player prop.caster).name} chooses untapped creatures with total power {n} or more to crew {vName}"
         if let .chooseReplacement .. := g.pending then
           return (g.change (.consecutivePasses 0)).chainPendingReplacement
-            (.restorePending (.fraChoice prop.caster (.crew prop.spellId sid n))
+            (.restorePending (.resolutionChoice prop.caster (.crew prop.spellId sid n))
               (promptLog := some prompt))
         let g := g.changes #[
-          .pending (.fraChoice prop.caster (.crew prop.spellId sid n)),
+          .pending (.resolutionChoice prop.caster (.crew prop.spellId sid n)),
           .consecutivePasses 0]
         return g.logMsg prompt
     | none => pure ()
   if !payable then return (← g.reverseProposedSpell? (resumeContinuation := true))
-  let g ← g.continueCostPicks prop picks (prop.cost.includesManaPayment || prop.fraCostPaid)
+  let g ← g.continueCostPicks prop picks (prop.cost.includesManaPayment || prop.choiceCostPaid)
   if g.proposedSpell.isNone && !(g.findObject? prop.spellId).any (fun o => o.zone == .stack) then
     return g
   return g.resumeAfterBecomeCast
@@ -5704,7 +5704,7 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
         | none => g
-      return if remaining > 1 then g else g.finishFraChoice
+      return if remaining > 1 then g else g.finishResolutionChoice
     else if remaining > 1 then
       let g := g.change (.pending (.chooseProliferate p (remaining - 1)))
       return match outerCont? with
@@ -5715,7 +5715,7 @@ def finishProliferate (g : Game) (p : PlayerId) (chosen : Array Target) :
         match outerCont? with
         | some outer => g.chainPendingReplacement outer
         | none => g
-      return g.finishFraChoice
+      return g.finishResolutionChoice
   | _ => throw "Not time to proliferate (CR 701.34)"
 
 /-- Shared pending-discard core (CR 701.9): `p` must be the pending player
@@ -5828,7 +5828,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
       let g :=
         if paused then
           match outerCont? with
-          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         else g
       return if callerShouldResume then g.resumeAfterBecomeCast else g
@@ -5842,10 +5842,10 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
     let g :=
       if paused then
         match outerCont? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishFra
+        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
         | none =>
           if isResCast && !g.anyContinuationSettlesControlFlow then
-            g.chainPendingReplacement .finishFraChoice
+            g.chainPendingReplacement .finishResolutionChoice
           else g
       else g
     if isResCast then
@@ -5853,7 +5853,7 @@ def discardForDraw (g : Game) (p : PlayerId) (id : ObjectId) : Except String Gam
           g.anyContinuationSettlesControlFlow then
         return g
       else
-        return g.finishFraChoice
+        return g.finishResolutionChoice
     else
       return g.resumeAfterBecomeCast
   | .payWard q spellId cost _ =>
@@ -6263,7 +6263,7 @@ def castExiledAsAbilityResolves (g : Game) (p : PlayerId) (id : ObjectId) :
     }
     let g' := g.beginResolutionCastTargets p prop
     return if g'.pending == .none && (g'.findObject? newId).any (·.zone == .stack) then
-      g'.finishFraChoice
+      g'.finishResolutionChoice
     else g'
   | _ => throw "No exiled card may be cast now"
 
@@ -6930,9 +6930,9 @@ def chooseReplacement (g : Game) (p : PlayerId) (id : ReplacementId) : Except St
         let g := g.reopenDeferredExileCasts
         if let .chooseReplacement .. := g.pending then
           if g.anyContinuationSettlesControlFlow then g
-          else g.chainPendingReplacement .finishFraChoice
+          else g.chainPendingReplacement .finishResolutionChoice
         else if !g.over && g.pending == .none && g.afterRandom == .none then
-          g.finishFraChoice
+          g.finishResolutionChoice
         else g
       else g
     let g :=

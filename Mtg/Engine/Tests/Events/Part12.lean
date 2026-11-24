@@ -98,7 +98,7 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
   let gFreeCpPrompt :=
     gFreeCp0.changes #[
       .pushContinuationFrame {},
-      .pending (.fraChoice p0 (.castCopiesFree #[cp1Obj.id, cp2Obj.id] 2 1)) ]
+      .pending (.resolutionChoice p0 (.castCopiesFree #[cp1Obj.id, cp2Obj.id] 2 1)) ]
   -- `p0` proposes `cp1Obj`: `pendingFreeCopies` now holds `(p0, #[cp2Obj.id], 0, 0)` while `p0` is at `.chooseAdditionalCost p0`:
   let gFreeCpProposed := mustApply gFreeCpPrompt p0 (.cast cp1Obj.id)
   let gFreeCpAfterP2 := mustApply gFreeCpProposed p2 .concede
@@ -125,7 +125,7 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
       (gFreeCpProposed.pendingFreeCopies == some (p0, #[cp2Obj.id], 0, 0) &&
        gFreeCpAfterP2.pendingFreeCopies == some (p0, #[cp2Obj.id], 0, 0) &&
        (gFreeCpAfterP2.findObject? cp2Obj.id).any (·.zone == .exile) &&
-       gFreeCpReversed.pending == .fraChoice p0 (.castCopiesFree #[cp1Obj.id, cp2Obj.id] 2 1) &&
+       gFreeCpReversed.pending == .resolutionChoice p0 (.castCopiesFree #[cp1Obj.id, cp2Obj.id] 2 1) &&
        (gFreeCpReversed.findObject? cp1Obj.id).any (·.zone == .exile) &&
        (gFreeCpReversed.findObject? cp2Obj.id).any (·.zone == .exile) &&
        gFreeCpCastDone.stack.size == 1 &&
@@ -187,7 +187,7 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
         (cause := some (.turnBased .declareBlockers)))
 
   let tricksterRestore : PendingReplacement :=
-    .seq (.restorePending (.fraChoice p1 (.tricksterLibrary p0 ⟨99999⟩ (some ⟨99998⟩) none)) true)
+    .seq (.restorePending (.resolutionChoice p1 (.tricksterLibrary p0 ⟨99999⟩ (some ⟨99998⟩) none)) true)
       (.gainLife p0 0 none)
   let gFcQueuedViaRestore :=
     gP1Gone.changes #[
@@ -287,12 +287,12 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
     gTgtHeroGone.resumePendingReplacement
       (.seq (.finishPostStep (.resumeChooseTargetsAfterLeave p0))
         (.seq (.gainLife p0 9 (some testCause)) (.receivePriority p3)))
-  -- Nested `.seq`: inner `.finishFraChoice` (`firstPriorityGrantRecipient? == some none`) clears outer
+  -- Nested `.seq`: inner `.finishResolutionChoice` (`firstPriorityGrantRecipient? == some none`) clears outer
   -- `followedByExplicitPriority? == some p3` so active-player priority (`p0`) is granted instead of `p3`:
   let gImplicitClearsOuter :=
     gTgtHeroGone.resumePendingReplacement
       (.seq
-        (.seq (.finishPostStep (.resumeChooseTargetsAfterLeave p0)) .finishFraChoice)
+        (.seq (.finishPostStep (.resumeChooseTargetsAfterLeave p0)) .finishResolutionChoice)
         (.receivePriority p3))
 
   let item1cOk :=
@@ -336,7 +336,7 @@ private def replayOk46i2 (gs : Array Game) : Bool :=
   let embCmd := (gEmbCopy0.objects.filter (·.zone == .command))[0]!
   let gEmbCopy1 :=
     (gEmbCopy0.createEffect
-      (.gameRule (.fraEmblem embCmd.id) .untilEndOfTurn) (cause := some testCause)).createEffect
+      (.gameRule (.commandEmblem embCmd.id) .untilEndOfTurn) (cause := some testCause)).createEffect
       (.layered (.objects #[liveBearId]) (.copy hero) (.whileInZone embCmd.id .command))
       (cause := some testCause)
   let embRuleEid := gEmbCopy1.activeEffects[0]!.1
@@ -465,7 +465,7 @@ private def replayOk46i2 (gs : Array Game) : Bool :=
   let gDeadGrAfterEot := gDeadGranteeBoth.clearEOT
   let deadGrEotLogs := gDeadGrAfterEot.log.extract preDeadGrEotLog gDeadGrAfterEot.log.size
   let preDeadGrTurnLog := gDeadGrAfterEot.log.size
-  let gDeadGrAfterTurn := gDeadGrAfterEot.expireFraUntilTurnEffects p1
+  let gDeadGrAfterTurn := gDeadGrAfterEot.expireUntilTurnCommandEffects p1
   let deadGrTurnLogs := gDeadGrAfterTurn.log.extract preDeadGrTurnLog gDeadGrAfterTurn.log.size
 
   let item2bOk :=
@@ -1189,7 +1189,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
        (gPchanTapped.player p0).manaPool.restrictedEntries ==
          #[(.colored .red, .subtypeSpellOrSource .goblin), (.colored .red, .subtypeSpellOrSource .goblin)] &&
        (gL3ShrineTapped.player p0).manaPool.restrictedEntries == #[(.colored .blue, .subtypeSpellOrSource .wizard)] &&
-       gHoardResPrompt.pending == .fraChoice p0 (.addManaColors 4 (.subtypeSpell .goblin)))
+       gHoardResPrompt.pending == .resolutionChoice p0 (.addManaColors 4 (.subtypeSpell .goblin)))
 
   mustHold46i4 "4a.multiTapSubsetAndChooseX" item4aOk &&
   mustHold46i4 "4b.spellScopedSacAndTreasureProvenance" item4bOk &&

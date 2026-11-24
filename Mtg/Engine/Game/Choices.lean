@@ -60,6 +60,30 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
 def qualityWasBeheld (g : Game) (p : PlayerId) (quality : CardSubtype) : Bool :=
   (g.beheldQualities p).contains quality
 
+/-- The creature type `p` chooses for “choose a creature type”: the type most
+common among creatures they control. -/
+def chooseCreatureTypeFor (g : Game) (p : PlayerId) : CardSubtype :=
+  let counts : Array (CardSubtype × Nat) :=
+    (g.creaturesControlledBy p).foldl (fun acc o =>
+      (g.subtypes o).foldl (fun acc t =>
+        if !t.isCreatureType then acc
+        else
+          match acc.findIdx? (·.1 == t) with
+          | some i => acc.modify i (fun (s, n) => (s, n + 1))
+          | none => acc.push (t, 1)) acc) #[]
+  (counts.foldl (fun best c =>
+    match best with
+    | none => some c
+    | some b => if c.2 > b.2 then some c else best) none).map (·.1) |>.getD .human
+
+/-- Distinct creature types currently on the battlefield. -/
+def battlefieldCreatureTypes (g : Game) : Array CardSubtype :=
+  g.battlefield.foldl (fun acc o =>
+    if !g.isCreature o then acc
+    else
+      (g.subtypes o).foldl (fun acc t =>
+        if t.isCreatureType && !acc.contains t then acc.push t else acc) acc) #[]
+
 /-- Draw one card for each graveyard with seven or more cards. -/
 def drawPerSevenCardGraveyard (g : Game) (p : PlayerId) : Game :=
   if !g.stillInGame p then g
@@ -693,7 +717,7 @@ def offerExploreMayGraveyard (g : Game) (p : PlayerId) (cardId : ObjectId) : Gam
   else if (g.player p).library.back? != some cardId then g
   else
     let cName := (g.findObject? cardId).map g.name |>.getD "the revealed card"
-    g.beginFraChoice p (.exploreMayGraveyard cardId)
+    g.beginResolutionChoice p (.exploreMayGraveyard cardId)
       s!"{(g.player p).name} may put {cName} into their graveyard"
 
 end Game

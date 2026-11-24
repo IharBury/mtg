@@ -900,7 +900,7 @@ private def hydrateCopyEnv (g : Game) (copyEnv : StoredEvalEnv) (x : Nat)
     (controller : PlayerId) : EvalEnv :=
   let effectiveSubjId :=
     copyEnv.triggerSubjectId.orElse (fun _ =>
-      (g.resolvingAbility.bind g.findObject?).bind (·.fraCauseId))
+      (g.resolvingAbility.bind g.findObject?).bind (·.triggerCauseId))
   let evalCtrl := if copyEnv == {} then controller else copyEnv.controller
   { copyEnv.toEvalEnv with
     controller := evalCtrl
@@ -1097,7 +1097,7 @@ def logCreatedTokensSummary (g : Game) (controller : PlayerId) (startEventIdx : 
 
 /-- Create `n` tokens specified by `kind` (CR 111 / 707.9 / 111.12). When
 `kind` is `.copyOf` and multiple candidate objects tie (e.g. tied
-`ObjectExpr.extremum`), pauses on `FraChoice.chooseTokenCopyObject` so
+`ObjectExpr.extremum`), pauses on `ResolutionChoice.chooseTokenCopyObject` so
 `controller` chooses which object to copy. -/
 def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenSpec)
     (n : Nat) (tapped := false) (attacking := false)
@@ -1137,7 +1137,7 @@ def createKindTokens (g : Game) (controller : PlayerId) (kind : TokenSpec)
         else if cands.size > 1 then
           let ids := cands.filterMap Prod.fst
           if ids.size > 1 then
-            g.beginFraChoice controller
+            g.beginResolutionChoice controller
               (.chooseTokenCopyObject ids mods n tapped attacking attackingTarget extraCounters cause envWithX.sourceId)
               s!"{(g.player controller).name} chooses an object to copy"
           else

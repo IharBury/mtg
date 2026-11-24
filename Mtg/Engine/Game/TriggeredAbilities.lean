@@ -22,7 +22,7 @@ def offerPalantirChoice (g : Game) (controller opp : PlayerId) (sid : ObjectId) 
     let n := ((g.damageSourceById? sid).map (·.status.influence)).getD 0
     g.mill controller n
   else
-    g.beginFraChoice opp (.palantirMayDraw controller sid)
+    g.beginResolutionChoice opp (.palantirMayDraw controller sid)
       s!"{(g.player opp).name} may have {(g.player controller).name} draw a card"
 
 /-- Apply one Alliance mode of `sourceId` if it has not been chosen this turn.
@@ -124,7 +124,7 @@ def createAndMarkTokensAttacking (g : Game) (controller : PlayerId)
       let g := g.change (.recentTokenIds #[])
       if n == 0 then g
       else
-        g.beginFraChoice controller
+        g.beginResolutionChoice controller
           (.chooseTokenCopyObject ids mods n tapped true none #[] cause sourceId)
           s!"{(g.player controller).name} chooses an object to copy"
     | none =>
@@ -197,8 +197,8 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
     g.logMsg "The optional ability was already chosen this turn. This instance has no effect."
   else if ab.interveningIf?.isSome &&
       !g.triggerInterveningHolds controller ab sourceId targets lastKnownPower
-        (g.resolvingAbilityObject?.bind (·.fraCauseId))
-        (g.resolvingAbilityObject?.bind (·.fraCauseStatus)) then
+        (g.resolvingAbilityObject?.bind (·.triggerCauseId))
+        (g.resolvingAbilityObject?.bind (·.triggerCauseStatus)) then
     let equipCount : ValueExpr :=
       ValueExpr.count (.inZones .battlefield (.all #[.hasSubtype (.literal .equipment), .attachedTo .this]))
     if ab.effect.body == Instruction.dealDamageFixed (.players (.target 0)) 1 then
@@ -210,7 +210,7 @@ def applyTriggeredAbility (g : Game) (controller : PlayerId) (ab : TriggeredAbil
       g.logMsg "You already have ten or more cards in hand"
     else if ab.effect.body ==
         .seq #[Instruction.loseLife equipCount .opponents, Instruction.gainLife equipCount] then
-      g.logMsg s!"{g.fraSourceName sourceId} isn't equipped"
+      g.logMsg s!"{g.effectSourceName sourceId} isn't equipped"
     else g
   else
     let chosenX := g.resolvingAbility.bind g.chosenXOf? <|> sourceId.bind g.chosenXOf?

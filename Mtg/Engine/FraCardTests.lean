@@ -231,7 +231,7 @@ def approachGraveyard : Game :=
   let before := handSize approachGraveyard me
   let g := passBoth (castFra approachGraveyard sphinxsApproach)
   handSize g me == before + 2 &&
-    (match g.pending with | .fraChoice _ (.sphinxsApproach _) => true | _ => false)
+    (match g.pending with | .resolutionChoice _ (.sphinxsApproach _) => true | _ => false)
 #guard
   let g := passBoth (castFra approachGraveyard sphinxsApproach)
   let g := mustApply g me .accept
@@ -285,7 +285,7 @@ def withSideboard : Game :=
   let outside := (g.objects.filter (·.zone == .outside me)).map (·.id)
   let g := mustApply g me (.choosePermanents outside)
   match g.pending with
-  | .fraChoice q (.extrapolatePick _ ids) =>
+  | .resolutionChoice q (.extrapolatePick _ ids) =>
     q == opp &&
       let g := mustApply g opp (.choosePermanents (ids.extract 0 1))
       inHand g me "Hill Giant" && (g.objects.any (fun o => o.zone == .outside me && o.name == "Craw Wurm"))
@@ -460,7 +460,7 @@ to it. -/
   let g := addToLibraryTop afterDraw grizzlyBears me
   let g := passBoth (castFra g somethingWorthSaving)
   match g.pending with
-  | .fraChoice _ (.mayPutMilledPermanent ids 1) =>
+  | .resolutionChoice _ (.mayPutMilledPermanent ids 1) =>
     let bears := ids.find? (fun id => (g.object! id).name == "Grizzly Bears")
     let g := mustApply g me (.choosePermanents #[bears.get!])
     inHand g me "Grizzly Bears" && life g me == 21

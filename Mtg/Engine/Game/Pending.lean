@@ -319,10 +319,10 @@ def options : EnteringAttackItem → Array AttackTarget
 
 end EnteringAttackItem
 
-/-- A choice made while a Reality Fracture effect resolves. The player answers
-with `Action.choosePermanents` (cards or permanents), `Action.accept`, or
+/-- A choice made while an effect resolves. The player answers with
+`Action.choosePermanents` (cards or permanents), `Action.accept`, or
 `Action.decline`. -/
-inductive FraChoice where
+inductive ResolutionChoice where
   /-- Choose a card from `target`'s revealed hand for them to discard: a
   nonland permanent card if `permanentOnly`, else a nonland card. -/
   | discardFromRevealedHand (target : PlayerId) (permanentOnly : Bool)
@@ -732,8 +732,8 @@ inductive Pending where
   /-- Choose any number of permanents and players with counters to
   proliferate, `remaining` more times (CR 701.34; Tam, the Possibility). -/
   | chooseProliferate (player : PlayerId) (remaining : Nat)
-  /-- A Reality Fracture choice made while an effect resolves. -/
-  | fraChoice (player : PlayerId) (choice : FraChoice)
+  /-- An interactive choice made while an effect resolves. -/
+  | resolutionChoice (player : PlayerId) (choice : ResolutionChoice)
   /-- Choose which applicable replacement or prevention effect to apply next
   (CR 616.1). -/
   | chooseReplacement (player : PlayerId) (choices : Array ReplacementId)
@@ -785,7 +785,7 @@ def Pending.promptPlayer? : Pending → Option PlayerId
   | .mayHaveVillainConnive q ..
   | .mayCastExiledElseDamage q ..
   | .chooseProliferate q _
-  | .fraChoice q _
+  | .resolutionChoice q _
   | .chooseReplacement q _ => some q
   | .resolveRandom (.shuffleLibrary q) => some q
   | .resolveRandom (.orderInto _ (.library q) _)

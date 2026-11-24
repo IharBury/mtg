@@ -122,7 +122,7 @@ def withRelic : Game := addPermanent afterDraw relic caster caster
   let g := g0.applyTriggeredAbility caster .onAttackDefenderSacsLeastPower none
   onBoard g "Sacrifice Fodder" && onBoard g "Tied Fodder" &&
     match g.pending with
-    | .fraChoice p (.sacrificeLeastPower _) => p == opp
+    | .resolutionChoice p (.sacrificeLeastPower _) => p == opp
     | _ => false
 
 /- Each opponent chooses a nontoken creature (`deathDeathtouchOppSac`). -/
@@ -131,7 +131,7 @@ def withRelic : Game := addPermanent afterDraw relic caster caster
     (.onDeath Effect.deathDeathtouchOppSac) none
   onBoard g "Sacrifice Fodder" &&
     match g.pending with
-    | .fraChoice p (.sacrificeNontokenEach _ _) => p == opp
+    | .resolutionChoice p (.sacrificeNontokenEach _ _) => p == opp
     | _ => false
 
 #guard
