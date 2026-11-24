@@ -21099,14 +21099,14 @@ resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker` mandatory-
 1. **`Entering.receivePriority` / `Decisions.finishAndGrantPriority` / `Casting.finishPostCast` `.chooseReplacement` & `pendingPriority` guards, `Decisions.advanceProbeOnResume` / `finishResolutionChoiceGrantsPriority` / `.finishProposedSpellCosts` parity, and `.draw` / `.combatDamage` / `drainProbeNonPriorityCont` / `wasAssigningCombatDamage` probes**
    (`Casting.lean:1151–1386, 1524–1633, 1779–1859`,
    `Combat.lean:521–584`,
-   `Costs.lean:31–52`,
+   `Costs.lean:16–52`,
    `Decisions.lean:213–260, 305–318, 336–347, 583–592, 610–667, 928–963, 1025–1065, 1520–1579, 1644, 1669–1723, 1939–1972, 2057–2060, 2110–2133, 2169–2196, 2286–2287, 2410–2417, 2489–2548, 2619–2638, 4915–5075, 5147–5152, 5344, 5416`,
    `Entering.lean:461–488`,
-   `Movement.lean:626–629, 692–696`,
+   `Movement.lean:626–629, 692–696, 772–807, 836–848`,
    `StateBasedActions.lean:153–250`,
    `Triggers.lean:348, 405–418`,
-   `Turns.lean:1098–1116, 1146–1147, 1163–1169`;
-   **CR 104.2a / 104.3c / 117.3a–c / 504.1–2 / 510.1–3 / 601.2h–i / 603.3b,d / 610.3 / 614.1c / 616.1 / 704.3 / 704.5a,b,g,j / 714.3b / 733.1 / 800.4a**):
+   `Turns.lean:1099–1116, 1146–1147, 1163–1169`;
+   **CR 103.8a / 104.2a / 104.3c / 117.3a–c / 504.1–2 / 510.1–3 / 601.2h–i / 603.3b,d / 610.3 / 614.1c / 616.1 / 704.3 / 704.5a,b,g,j / 714.3b / 733.1 / 800.4a**):
    - **`Entering.receivePriority` / `Decisions.finishAndGrantPriority` prompt-settling `pendingPriority` preservation, `Casting.finishPostCast` `.chooseReplacement` ordering, `Decisions.advanceProbeOnResume` `proposedSpell` clearing, and `Decisions.finishResolutionChoiceGrantsPriority` runtime alignment**
      (`Casting.lean:1564–1575`,
      `Decisions.lean:1044–1065, 1520–1579, 1669–1705, 1939–1972, 2057–2060, 2110–2133, 2410–2417, 2489–2548, 4922–4927, 4947–4952, 4973–4978, 4995–5015, 5046–5058, 5147–5152, 5416`,
@@ -21127,7 +21127,8 @@ resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker` mandatory-
        `.finishBecomeActivated`, `.finishPostLoyaltyActivated`, `.finishTurnFaceUp`), so on
        `.seq (<proposalLeaf hadOuter:=true>) outer.ensureEndsWithFinishResolutionChoice` (`4922–4927, 4947–4952, 4973–4978, 5147–5152`),
        the tail `.finishResolutionChoice` sees stale `proposedSpell` (`1046–1048, 2057–2060`) and returns `false` while
-       `hadOuter == true` returns `hasQueuedPending` (`1940, 2111`) — and `continuationSettlesControlFlow` (`2111`) also ignores
+       `hadOuter == true` returns `false` in `continuationGrantsPriority` (`1940`) and returns `hasQueuedPending` in
+       `continuationSettlesControlFlow` (`2111`) — and `continuationSettlesControlFlow` (`2111`) also ignores
        that `.finalize` opens `.sacrificePermanent` / `.discardForAdditionalCost` and failures reverse regardless of
        `hadOuterReplacement` (`4995–5015`); and
        (iv) `Decisions.finishResolutionChoiceGrantsPriority` (`Decisions.lean:1044–1065`) diverges from runtime
@@ -21147,16 +21148,18 @@ resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker` mandatory-
          (`2489–2548`) across `afterRandom`, orphaned `proposedSpell`, drained outer/inner continuations, `currentInterpWait?`,
          and final `receivePriorityOutcome`.
    - **`Decisions` `.draw` / `.combatDamage` step probes, `drainProbeNonPriorityCont` completeness, `receivePriorityOutcome` / `wasAssigningCombatDamage` probes, and `.finishProposedSpellCosts` reversal / Sneak / cast-trigger probes**
-     (`Casting.lean:1151–1386, 1524–1633, 1779–1859`, `Combat.lean:521–584`, `Costs.lean:31–52`,
+     (`Casting.lean:1151–1386, 1524–1633, 1779–1859`, `Combat.lean:521–584`, `Costs.lean:16–52`,
      `Decisions.lean:213–260, 305–318, 336–347, 583–592, 610–667, 928–963, 1025–1042, 1644, 1710–1723, 1939–1972, 2169–2196, 2286–2287, 2619–2638, 4968–5075, 5344`,
-     `Entering.lean:483–485`, `Movement.lean:626–629, 692–696`, `StateBasedActions.lean:153–250`,
-     `Triggers.lean:348, 405–418`, `Turns.lean:1098–1116, 1146–1147, 1163–1169`):
+     `Entering.lean:483–485`, `Movement.lean:626–629, 692–696, 772–807, 836–848`, `StateBasedActions.lean:153–250`,
+     `Triggers.lean:348, 405–418`, `Turns.lean:1099–1116, 1146–1147, 1163–1169`):
      - Four remaining probe-vs-runtime divergences exist in `Decisions.lean`:
-       (i) `stepPriorityRecipient?` `.draw` (`Decisions.lean:610–616`) and `.combatDamage` (`639–655`) return
-       `livingPriorityInstead?` directly without simulating `g.draw g.activePlayer 1` (`Turns.lean:1098–1116`) or
-       `g.beginCombatDamageAssignment` (`Turns.lean:1146–1147`, `Combat.lean:521–584`) and `receivePriorityRecipient?`, missing
-       empty-library losses / CR 800.4a next living recipient (CR 704.5b), lethal combat damage (CR 704.5a), and draw /
-       combat-damage / dies triggers or legend-rule SBAs;
+       (i) in `stepPriorityRecipient?`, the non-skip `else` branch of `.draw` (`Decisions.lean:616`, after `611–615` already
+       handle `g.skipsFirstDraw` per CR 103.8a matching `Turns.lean:1099–1109`) and the non-prompt branches of `.combatDamage`
+       (`643, 655`, after `645` and `654` return `none` when an assignment prompt is required) return `livingPriorityInstead?`
+       directly without simulating `g.draw g.activePlayer 1` (`Turns.lean:1112–1116`) or `g.beginCombatDamageAssignment`
+       (`Turns.lean:1146–1147`, `Combat.lean:521–584`) and `receivePriorityRecipient?`, missing empty-library losses / CR 800.4a
+       next living recipient (CR 704.5b), lethal combat damage (CR 704.5a), and draw / combat-damage / dies triggers or
+       legend-rule SBAs;
        (ii) `drainProbeNonPriorityCont` (`Decisions.lean:213–236`) falls through to `| _ => g` (`236`) after
        `drainProbePausedStep` (`254–258`) has already cleared `pending` and `pendingReplacement`, silently dropping
        `.addLoreCounters`, `.finishSbaSweep`, `.checkSBA`, `.afterLastPermanentEnters`, `.draw` / `.drawOne` / `.drawSubDraws`,
@@ -21171,14 +21174,18 @@ resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker` mandatory-
        `Combat.lean:573–584`); and
        (iv) `.finishProposedSpellCosts` probes (`928–963, 1025–1042, 1939–1972, 2169–2196, 2286–2287`) classify every reversal
        as an implicit priority grant whenever `g.proposalCheckpoint.isSome` (missing blocking `ckpt.pending` such as
-       `.mayCastFromLooked` at `5344` and explicit `g.priorityInstead prop.caster` at `Casting.lean:1326, 1360, 1377`), treat a
-       `linkedExile`-return `.chooseReplacement` (`Movement.lean:694`) during `hasAvailableDiscardForProposed` (`1032–1042`) on
-       an opponent-owned Sneak attacker as a discard prompt, ignore `paySneak` board mutations (`linkedExile` returns and
+       `.mayCastFromLooked` at `5344` and explicit `g.priorityInstead prop.caster` at `Casting.lean:1326, 1360, 1377`), treat any
+       `Costs.returnToHand` (`Costs.lean:23–24`) `.chooseReplacement` pause — including a `linkedExile`-return choice
+       opened/observed in `Movement.runLinkedExileBatch` (`Movement.lean:772, 783, 796, 803–807`, reached via
+       `Movement.move:694` / `returnLinkedExileMoves:836–848`) — during `hasAvailableDiscardForProposed` (`1032–1042`) on an
+       opponent-owned Sneak attacker as discard availability, ignore `paySneak` board mutations (`linkedExile` returns and
        `.whileSourceOnBattlefield` control expiry) in `hasAvailableSacrificeForProposed` (`1025–1030`), and omit cast/flip
        triggers and SBAs in `finishPostCastGrantsPriority` / `finishPostCastRecipient?` (`928–963`) and `.turnFaceUp`
        (`1956–1962, 2178–2185`):
-       - Simulate `draw` / `beginCombatDamageAssignment` + `receivePriorityRecipient?` in `stepPriorityRecipient?` `.draw` /
-         `.combatDamage` (`610–616, 639–655`); handle `.addLoreCounters`, `.finishSbaSweep`, `.checkSBA`,
+       - Preserve `stepPriorityRecipient?` `.draw`'s `g.skipsFirstDraw` branch (`611–615`) and simulate `draw` +
+         `receivePriorityRecipient?` on the non-skip branch (`616`), and simulate `beginCombatDamageAssignment` +
+         `receivePriorityRecipient?` on the non-prompt `.combatDamage` branches (`643, 655`, keeping the `645`/`654` assignment
+         prompt checks); handle `.addLoreCounters`, `.finishSbaSweep`, `.checkSBA`,
          `.afterLastPermanentEnters`, and `.draw` / `.drawOne` / `.drawSubDraws` in `drainProbeNonPriorityCont` (`213–236`, and
          stop with `pending != .none` / `none` rather than silently dropping any unhandled continuation leaf); drain continuations
          and check SBAs/triggers in `receivePriorityOutcome` (`305–316`) and probe `beginCombatDamageAssignment` in
@@ -21190,19 +21197,20 @@ resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker` mandatory-
    (`Attachments.lean:70–90, 116–129`,
    `Core.lean:17118–17155, 17308–17449, 17686–17695`,
    `Decisions.lean:4457–4458`,
-   `Leaving.lean:147–189, 544–561, 646–668, 1024–1036, 3489–3490, 3530–3620`,
+   `Leaving.lean:147–189, 252–285, 544–561, 646–668, 1024–1036, 3489–3490, 3530–3620`,
    `Movement.lean:622–629, 687–688`,
    `Phasing.lean:793–796, 831–865`,
    `Turns.lean:49–68`;
    **CR 114.5 / 400.7 / 502.1 / 514.2 / 611.2a–b / 613.7 / 613.8 / 702.26d,g–h / 707.2 / 800.4a,c / 805.4**):
    - **`.playFromExile` expiry log deduplication / outer leave-game deferral, `Core.expireLeavingObjectEffectsWithLogs` `.whileInZone` emblem regression, and scoped / CR 613.8 dependent `.copy` logs**
      (`Attachments.lean:70–90, 116–129`, `Core.lean:17118–17155, 17308–17449, 17686–17695`, `Decisions.lean:4457–4458`,
-     `Leaving.lean:646–668, 1024–1036, 3489–3490, 3577–3620`, `Movement.lean:622–629, 687–688`, `Turns.lean:49–68`):
+     `Leaving.lean:252–285, 646–668, 1024–1036, 3489–3490, 3577–3620`, `Movement.lean:622–629, 687–688`, `Turns.lean:49–68`):
      - Four expiry-logging bugs (including one direct Phase 52 regression) remain after Phase 52:
        (i) `Core.logExpiredPlayFromExileIds` (`Core.lean:17308–17317`, called by `Decisions.runPostStep` at `Decisions.lean:4457–4458`)
-       unconditionally logs `"can no longer be played from exile"` without checking whether a resumed `endControlExileLoop`
-       (`Movement.move` at `Movement.lean:688`) already expired a second `.playFromExile` effect on the same exiled card and
-       emitted that log — producing duplicate logs;
+       unconditionally logs `"can no longer be played from exile"` without checking whether a resumed
+       `Leaving.runEndControlExileLoop` (`Leaving.lean:252`, calling `Movement.move` at `Leaving.lean:277`) already expired a
+       second `.playFromExile` effect on the same exiled card and emitted that log via `emitExpiredPlayFromExileLogs` at
+       `Movement.lean:688` — producing duplicate logs;
        (ii) `Core.emitExpiredPlayFromExileLogs`'s `alreadyLoggedBefore` (`Core.lean:17328–17339`) checks only `prevSlice[j + 1]?`,
        missing a log emitted after an intervening `.expired` event, while `Leaving.playerLeavesGameCore` (`Leaving.lean:1026,
        1034, 3577–3620`) and `Leaving.reconcilePostReplayDepartures` (`Leaving.lean:647–668`) call `objectLeavesTheGame` /
@@ -21342,7 +21350,8 @@ resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker` mandatory-
          `Tokens.tokenBatchProbe` (`Tokens.lean:233`) with `noSourceSentinelId`.
 
 4. **`Demo.hasUniqueManaPayment` `ManaSpentPred` / multi-color / non-plain / `treasureManaMatters` completeness, `LandsAndMana.hasUsableNonPlainManaAbility` `.tapObjects` & Crew coupling, Sneak-to-hand discard parity, `timingAllowsCast (card? := some o)`, `.behold` self-exclusion, and `Agent` `.tapObjects` exclusion**
-   (`Agent.lean:289–296, 316–322, 350–373, 594–600, 635–641, 924–930, 942–963, 1065–1071`,
+   (`ActivationCosts.lean:309–316`,
+   `Agent.lean:307–322, 350–373, 594–600, 635–641, 924–930, 942–963, 1065–1071`,
    `Casting.lean:30–60, 230–242, 288–302, 352–366, 504–510, 561–567, 687–696, 856–862`,
    `Decisions.lean:1032–1042, 4968–5015, 5216`,
    `Demo.lean:2162–2269, 2314–2339, 2444–2450, 2572–2611, 2734–2756`,
@@ -21356,10 +21365,12 @@ resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker` mandatory-
      `Mana.lean:505–563`, `ManaAbilities.lean:292–302, 755–756`):
      - Five mana-uniqueness and non-plain availability soundness gaps remain after Phase 52:
        (i) `Demo.SpellManaOutcome` and `anyOutcomeMatters` (`Demo.lean:2163–2190, 2573–2577, 2735–2739`) omit four of the six
-       `ManaSpentPred` constructors (`Expr.lean:469–476`, evaluated at `Core.lean:6629–6646, 13631–13633, 14351` and
-       `EvalExpr.lean:1529–1546`: `.ofColor`, `.colorCount`, general non-PoA `.fromSource`, `.amount`, plus explicit `.withRider`
-       conditions on already-uncounterable or noncreature spells) and `ValueExpr.manaSpent` (*Uncover the Moon-Letters*,
-       `Hobbit.lean:1920`, under twobrid `{2/R}`);
+       `ManaSpentPred` constructors (`Expr.lean:469–476`, evaluated at `Core.lean:6629–6646` via `.manaSpentMatches` —
+       dispatched from `Core.lean:13631–13633` into `evalStaticCastPred` — and `EvalExpr.lean:1529–1546`: `.ofColor`,
+       `.colorCount`, general non-PoA `.fromSource`, `.amount`, plus explicit `.withRider` conditions on already-uncounterable
+       or noncreature spells) and `ValueExpr.manaSpent` (`Expr.lean:674`, e.g. *Uncover the Moon-Letters* at `Hobbit.lean:1920`,
+       which triggers whenever you cast a noncreature spell and draws cards equal to the amount of mana spent — varying on
+       twobrid noncreature spells depending on whether colored mana or `{2}` is paid);
        (ii) `canExtraPlainSourcesChangeOutcome` (`Demo.lean:2446`) hardcodes `maxZeroReps := 1` (dropping `{W}` / `{U}` on
        non-WUBRG duals such as Boros `{R}/{W}`, Selesnya `{G}/{W}`, and Simic `{G}/{U}` that outrank floating `{B}` in
        `ManaPool.spendAnyUnit?` at `Mana.lean:505`), while `uniqueSubsetHasUniqueOutcome` (`Demo.lean:2583–2584, 2607`) uses
@@ -21385,20 +21396,23 @@ resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker` mandatory-
          `treasureManaMatters` AST/zone traversal (`2192–2251`); and mirror `Casting.hasCostPreservingPaymentSubset`'s `.tapObjects`
          `critRem` partitioning and Crew coupling inside `LandsAndMana.hasUsableNonPlainManaAbility` (`434–480`).
    - **Sneak-to-hand discard parity, `timingAllowsCast (card? := some o)`, `.behold` self-exclusion, and `Agent` `.tapObjects` exclusion**
-     (`Agent.lean:289–296, 316–322, 350–373, 594–600, 635–641, 924–930, 942–963, 1065–1071`,
+     (`ActivationCosts.lean:309–316`,
+     `Agent.lean:307–322, 350–373, 594–600, 635–641, 924–930, 942–963, 1065–1071`,
      `Casting.lean:30–60, 230–242, 288–302, 352–366, 504–510, 561–567, 687–696, 856–862`,
      `Decisions.lean:1032–1042, 4968–5015, 5216`, `LandsAndMana.lean:314–321`,
      `PriorityActions.lean:23–28, 130–136, 217–223`):
      - Four casting, timing, and `Agent` cost-planning divergences remain after Phase 52:
        (i) `Decisions.finishProposedSpellCosts` runs `.sneak` (`paySneak`) before `.finalize` checks `prop.needsDiscardCard`
        (`Decisions.lean:4968–5015`, matched by `hasAvailableDiscardForProposed` at `1032–1042`), yet six sites still check only
-       the current `(g.player p).hand` (via `hand.isEmpty`, `hand.any`, or `costPicksPayable` on `.discardACard`) without
+       the current pre-sneak `(g.player p).hand` (via `hand.isEmpty`, `hand.any`, or `ActivationCosts.assignDisjointPicks` at
+       `ActivationCosts.lean:309–316`, where `sacReservedIds` only excludes battlefield sacrifice candidates at `315`) without
        accounting for an unpaid owned `sneakAttacker` returning to hand —
        `PriorityActions.finishProposedSpell` (`PriorityActions.lean:27–28`, which also misses unpaid `sneakAttacker` exclusion in
        the sacrifice guard at `23–26`), `PriorityActions.announceAdditionalCost` (`219–220`),
        `PriorityActions.additionalCostChoosesGeneric` (`133`), `Casting.tapPreservesPostManaCosts` (`Casting.lean:858–859`),
-       `LandsAndMana.hasUsableNonPlainManaAbility` (`LandsAndMana.lean:315–318`), and `Agent.choose` `.chooseX` / `.chooseKicker`
-       (`Agent.lean:291–293, 596–597, 637–638`) — rejecting or reversing legal Sneak + discard casts from an empty hand;
+       `LandsAndMana.hasUsableNonPlainManaAbility` (`LandsAndMana.lean:315–318`), and `Agent.choose` `.chooseX`
+       (`firstPayableCostPickSlice?` / `costPicksPayable` at `Agent.lean:307–313, 354–360`) / `.chooseKicker` (`Agent.lean:596–597,
+       637–638`) — rejecting or reversing legal Sneak + discard casts from an empty hand;
        (ii) `timingAllowsCast` (`Casting.lean:30–60`) omits `(card? := some o)` across `Decisions.castAsPartOfResolution`
        (`Decisions.lean:5216`), `Casting.paidResolutionOrigPerm?` (`Casting.lean:506`), `Casting.proposalAltCleanPerm?` (`564`),
        `Casting.canCastFrontFace` (`233, 236, 238`), `Casting.canCastAdventure` (`689, 692, 694`), and `Agent.selectBestPerm`
@@ -21414,7 +21428,7 @@ resolution-cast & `preSpell` affordability, and Sneak `sneakAttacker` mandatory-
        - Share a helper accounting for unpaid owned `sneakAttacker` returning to hand (matching `hasAvailableDiscardForProposed`)
          across `PriorityActions` (`23–28, 133, 219–220`, also excluding unpaid `sneakAttacker` at `23–26`),
          `Casting.tapPreservesPostManaCosts` (`858–859`), `LandsAndMana.hasUsableNonPlainManaAbility` (`315–318`), and
-         `Agent.choose` `.chooseX` / `.chooseKicker` (`291–293, 596–597, 637–638`); thread `(card? := some o)` into
+         `Agent.choose` `.chooseX` (`307–313, 354–360`) / `.chooseKicker` (`596–597, 637–638`); thread `(card? := some o)` into
          `timingAllowsCast` at all six call sites above; exclude `o.id` from hand `.behold` checks in `Casting` (`289–292,
          353–356`); and include `.custom (.tapObjects ..)` in tap-pick exclusion and fix `isBfSacPick` in `Agent.lean`
          (`318, 352, 365–371, 926, 944, 955–961`).
