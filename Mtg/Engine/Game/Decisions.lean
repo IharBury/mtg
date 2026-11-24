@@ -1034,12 +1034,11 @@ private def hasAvailableDiscardForProposed (g : Game) (prop : ProposedSpell)
   !(g.player prop.caster).hand.isEmpty ||
     (unpaidSneakAttacker? g prop stage).any (fun aid =>
       (g.findObject? aid).any (fun o =>
-        !o.printed.isToken && o.owner == prop.caster &&
-          let gProbe := g.changes #[.pending .none, .pendingReplacement none, .replacementOrder #[]]
-          let (gRet, _) :=
-            gProbe.move aid (.hand o.owner) none (verb := some .returnToHand)
-              (cause := some (.costPayment .returnToHand prop.caster (some prop.spellId)))
-          let gRet := drainProbePausedStep gRet
+        let gProbe := g.changes #[.pending .none, .pendingReplacement none]
+        let gRet :=
+          gProbe.returnToHand aid o.owner
+            (cause := some (.costPayment .returnToHand prop.caster (some prop.spellId)))
+        (match gRet.pending with | .chooseReplacement .. => true | _ => false) ||
           !(gRet.player prop.caster).hand.isEmpty))
 
 private def finishResolutionChoiceGrantsPriority (g : Game) : Bool :=

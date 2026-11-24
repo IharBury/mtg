@@ -190,8 +190,10 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
     g4.changes #[
       .pushContinuationFrame {},
       .pendingReplacement (some (.receivePriority p0)) ]
-  -- (3) `hasAvailableDiscardForProposed` rejects token and opponent-owned unpaid Sneak attackers on an empty hand
-  --     while accepting a non-token card owned by `p0` that actually returns to `p0`'s hand:
+  -- (3) `hasAvailableDiscardForProposed` matches runtime `finishProposedSpellCosts .finalize` after `paySneak`:
+  --     an owned token returned to hand by `paySneak` remains in hand until CR 704.5d SBAs so `.finalize` opens
+  --     `.discardForAdditionalCost` (just like an owned card), whereas an opponent-owned attacker leaves `p0`'s hand
+  --     empty and reverses under CR 733.1:
   let tokBearDef : CardDef := { bear with name := "P52i1 TokBear", isToken := true, keywords := #[Keyword.haste] }
   let mkSneakDiscardProbe (atkDef : CardDef) (atkOwner : PlayerId) : Game :=
     let g := addPermanent (insertObject (emptyHand g4 p0) zeroInstDef p0 (.hand p0)) atkDef atkOwner p0
@@ -214,10 +216,21 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
       needsDiscardCard := true
     }))
   let gSneakTokDisc0 := mkSneakDiscardProbe tokBearDef p0
-  let gSneakTokDiscNoCkpt := gSneakTokDisc0.change .clearProposalCheckpoint
+  let gSneakTokDiscRun :=
+    match gSneakTokDisc0.finishProposedSpellCosts .sneak true false false with
+    | .ok g => g
+    | .error e => panic! s!"gSneakTokDiscRun failed: {e}"
   let gSneakOppDisc0 := mkSneakDiscardProbe bear p1
   let gSneakOppDiscNoCkpt := gSneakOppDisc0.change .clearProposalCheckpoint
+  let gSneakOppDiscRun :=
+    match gSneakOppDisc0.finishProposedSpellCosts .sneak true false false with
+    | .ok g => g
+    | .error e => panic! s!"gSneakOppDiscRun failed: {e}"
   let gSneakCardDisc0 := mkSneakDiscardProbe bear p0
+  let gSneakCardDiscRun :=
+    match gSneakCardDisc0.finishProposedSpellCosts .sneak true false false with
+    | .ok g => g
+    | .error e => panic! s!"gSneakCardDiscRun failed: {e}"
 
   let item1aOk :=
     mustHold52i1 "1a_receivePriorityChooseReplacementGuards"
@@ -292,13 +305,17 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
        !gSneakWithExtraSac.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
        gSneakWithExtraSac.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false)) &&
     mustHold52i1 "1b_sneakDiscardTokenVsCard"
-      (gSneakTokDisc0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
+      (gSneakTokDiscRun.pending == .discardForAdditionalCost p0 &&
+       !gSneakTokDisc0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
        gSneakTokDisc0.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false) &&
-       gSneakTokDisc0.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .sneak true false false) == none &&
-       !gSneakTokDiscNoCkpt.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
-       !gSneakTokDiscNoCkpt.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false) &&
+       gSneakOppDiscRun.pending == .none &&
+       gSneakOppDiscRun.proposedSpell.isNone &&
        gSneakOppDisc0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
+       gSneakOppDisc0.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false) &&
+       gSneakOppDisc0.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .sneak true false false) == none &&
        !gSneakOppDiscNoCkpt.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
+       !gSneakOppDiscNoCkpt.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false) &&
+       gSneakCardDiscRun.pending == .discardForAdditionalCost p0 &&
        !gSneakCardDisc0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
        gSneakCardDisc0.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false))
 
@@ -309,7 +326,7 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
       gRepAfterRecvSettling, gRepAfterRecvImplicit, gRepAfterRecvNonSettling,
       gStackLegAllPassed, gCleanupLeg0, gCleanupTgt1, gCleanupOrder1, gNextLegPhased,
       gFrcOpensExile, gResPropClean, gResPropWithExile, gTwTapped, gSneakSoleSac0, gSneakWithExtraSac,
-      gSneakTokDisc0, gSneakOppDisc0, gSneakCardDisc0 ])
+      gSneakTokDiscRun, gSneakOppDiscRun, gSneakCardDiscRun ])
 
 end Phase52Item1EventAlignment
 
