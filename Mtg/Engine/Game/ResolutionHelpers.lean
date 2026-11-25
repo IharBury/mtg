@@ -131,7 +131,7 @@ def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
   else g
 
 /-- Untap permanent `o` during resolution, respecting replacement pauses and
-"can't become untapped" restrictions (CR 701.21). -/
+"can't become untapped" restrictions (CR 701.26). -/
 def untapPermanentLogged (g : Game) (o : GameObject)
     (sourceId : Option ObjectId := none) : Game :=
   if let .chooseReplacement .. := g.pending then

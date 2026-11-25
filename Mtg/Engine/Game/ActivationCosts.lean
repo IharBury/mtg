@@ -200,7 +200,7 @@ private partial def costItemAllowsObject (g : Game) (p : PlayerId) (sourceId : O
     inHand && (!discardOrExileHandSource || other) && EvalExpr.evalObjectPred g env (.live o) pred
   | .exile _ zones (.filter pred) _ =>
     let inZone :=
-      (zones.zones.contains .graveyard && o.owner == p && o.zone == .graveyard p) ||
+      (zones.zones.contains .graveyard && o.owner == p && o.zone == .graveyard p && isDiscardableCard o) ||
       (zones.zones.contains .hand && inHand && (!discardOrExileHandSource || other)) ||
       (zones.zones.contains .battlefield && perm && (!sacrificeOrExileSource || other))
     inZone && EvalExpr.evalObjectPred g env (.live o) pred
@@ -253,7 +253,7 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick 
     inHand && (!discardOrExileHandSource || other) && g.isLegendary o &&
       (g.permanentsOf p).any (fun x => g.isLegendary x && g.name x == g.name o)
   | .exileAnotherCreatureCardFromGraveyard =>
-    other && o.owner == p && o.zone == .graveyard p && g.isCreature o
+    other && o.owner == p && o.zone == .graveyard p && isDiscardableCard o && g.isCreature o
   | .tapUntappedCreature => perm && (!tapSource || other) && g.isCreature o && !o.status.tapped
   | .tapTwoUntappedArtifacts => perm && (!tapSource || other) && artifact && !o.status.tapped
   | .custom item =>
@@ -870,7 +870,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       return (← g.payLifeCost p payLife (forObject := forObject))
     throw "The source is no longer in play"
   if ab.any (·.cost.exileSourceFromHand) then
-    if !(src.zone == .hand src.owner && src.owner == p) then
+    if !(src.zone == .hand src.owner && src.owner == p && isDiscardableCard src) then
       throw s!"{g.name src} is not in your hand"
     let g ← g.payLifeCost p payLife (forObject := forObject)
     let outer? := g.pendingReplacement
@@ -885,7 +885,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
       else g
     return match outer? with | some outer => g.chainPendingReplacement outer | none => g
   if discardSource then
-    if !(src.zone == .hand src.owner && src.owner == p) then
+    if !(src.zone == .hand src.owner && src.owner == p && isDiscardableCard src) then
       throw s!"{g.name src} is not in your hand"
     let g ← g.payLifeCost p payLife (forObject := forObject)
     let some src := g.findObject? sourceId | do
@@ -914,7 +914,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     return match outer? with | some outer => g.chainPendingReplacement outer | none => g
   let fromGraveyardAb := rawFromGy && !rawFromHand && !needsBfSource
   if fromGraveyardAb then
-    if !(src.zone == .graveyard src.owner && src.owner == p) then
+    if !(src.zone == .graveyard src.owner && src.owner == p && isDiscardableCard src) then
       throw s!"{g.name src} is not in your graveyard"
     let g ← g.payLifeCost p payLife (forObject := forObject)
     if ab.any (·.cost.exileSourceFromGraveyard) then
@@ -934,7 +934,7 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     !discardSource && !ab.any (·.cost.exileSourceFromHand) &&
       ab.any (·.isFromHand) && !rawFromGy && !needsBfSource
   if fromHandAb && !alreadyDiscardedFromHandForCost then
-    if !(src.zone == .hand src.owner && src.owner == p) then
+    if !(src.zone == .hand src.owner && src.owner == p && isDiscardableCard src) then
       throw s!"{g.name src} is not in your hand"
     if !g.canPayLife p payLife then
       throw s!"{(g.player p).name} cannot pay {payLife} life"
@@ -1091,7 +1091,7 @@ def canPayZemoBoast (g : Game) (p : PlayerId) (ids : Array ObjectId) (col : Colo
     ids.all (fun id =>
       match g.findObject? id with
       | some o =>
-        o.zone == .graveyard p && (g.colors o).contains col
+        o.zone == .graveyard p && isDiscardableCard o && (g.colors o).contains col
       | none => false) &&
     g.zemoBoastBlackSymbols ids col >= 15
 

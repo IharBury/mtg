@@ -337,7 +337,7 @@ def manaSymbolsCountFor (g : Game) (card : GameObject) (col? : Option Color) : N
 /-- Whether `card` in `p`'s graveyard satisfies an `exileManaSymbols?` cost predicate. -/
 def exileManaSymbolsCardOk (g : Game) (p : PlayerId) (srcId : ObjectId)
     (col? : Option Color) (pred : ObjectPred) (card : GameObject) : Bool :=
-  card.zone == .graveyard p &&
+  card.zone == .graveyard p && isDiscardableCard card &&
     EvalExpr.evalObjectPred g { controller := p, sourceId := some srcId } (.live card) pred &&
     (match col? with
      | some c => (g.colors card).contains c
@@ -363,8 +363,8 @@ def canPayExileManaSymbols (g : Game) (p : PlayerId) (srcId : ObjectId)
 def manaAbilitySourceZoneOk (g : Game) (p : PlayerId) (o : GameObject) (d : ManaAbilityDef) : Bool :=
   if d.fromHand && d.fromGraveyard then false
   else if (d.fromHand || d.fromGraveyard) && d.sourceAbility.any (·.needsBattlefieldSource) then false
-  else if d.fromGraveyard then o.zone == .graveyard o.owner && o.owner == p
-  else if d.fromHand then o.zone == .hand o.owner && o.owner == p
+  else if d.fromGraveyard then o.zone == .graveyard o.owner && o.owner == p && isDiscardableCard o
+  else if d.fromHand then o.zone == .hand o.owner && o.owner == p && isDiscardableCard o
   else o.isOnBattlefield && g.controlledBy o p
 
 /-- Whether `d` can be activated by tapping alone, without sacrificing/exiling
@@ -796,11 +796,11 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
       let needTap := tap && !tapPrePaid
       if discOrExileHand then
         match g.findObject? id with
-        | some cur => cur.zone == .hand cur.owner && cur.owner == p
+        | some cur => cur.zone == .hand cur.owner && cur.owner == p && isDiscardableCard cur
         | none => false
       else if exileFromZone? == some .graveyard then
         match g.findObject? id with
-        | some cur => cur.zone == .graveyard cur.owner && cur.owner == p
+        | some cur => cur.zone == .graveyard cur.owner && cur.owner == p && isDiscardableCard cur
         | none => false
       else if !needTap && !sacOrExileSelf then true
       else
@@ -829,7 +829,7 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
     for cid in exileSymIds do
       match g.findObject? cid with
       | some co =>
-        if co.zone != .graveyard p then
+        if co.zone != .graveyard p || !isDiscardableCard co then
           return abortNow g
       | none => return abortNow g
   let mut g := g
@@ -877,7 +877,7 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
     let cid := exileSymIds[j]!
     match g.findObject? cid with
     | some card =>
-      if card.zone != .graveyard p then
+      if card.zone != .graveyard p || !isDiscardableCard card then
         return abortNow g
       let msg := s!"{(g.player p).name} exiles {g.name card} from their graveyard"
       g := (g.move cid .exile none (cause := some (.costPayment .exile p (some id)))).1
@@ -942,7 +942,7 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
   else if exileFromZone? == some .hand then
     match g.findObject? id with
     | some src =>
-      if !(src.zone == .hand src.owner && src.owner == p) then
+      if !(src.zone == .hand src.owner && src.owner == p && isDiscardableCard src) then
         return abortNow g
       let msg := s!"{(g.player p).name} exiles {g.name src} from their hand"
       g := (g.move id .exile none (cause := some (.costPayment .exile p (some id)))).1
@@ -959,7 +959,7 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
   else if exileFromZone? == some .graveyard then
     match g.findObject? id with
     | some src =>
-      if !(src.zone == .graveyard src.owner && src.owner == p) then
+      if !(src.zone == .graveyard src.owner && src.owner == p && isDiscardableCard src) then
         return abortNow g
       let msg := s!"{(g.player p).name} exiles {g.name src} from their graveyard"
       g := (g.move id .exile none (cause := some (.costPayment .exile p (some id)))).1
@@ -976,7 +976,7 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
   else if discardSelf then
     match g.findObject? id with
     | some src =>
-      if !(src.zone == .hand src.owner && src.owner == p) then
+      if !(src.zone == .hand src.owner && src.owner == p && isDiscardableCard src) then
         return abortNow g
       let msg := s!"{(g.player p).name} discards {g.name src}"
       g := (g.move id (.graveyard src.owner) none (verb := some .discard)
@@ -1029,10 +1029,10 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   if (d.fromHand || d.fromGraveyard) && d.sourceAbility.any (·.needsBattlefieldSource) then
     throw s!"{oname}'s ability has a battlefield cost that can't be paid from that zone"
   if d.fromGraveyard then
-    if !(o.zone == .graveyard o.owner && o.owner == p) then
+    if !(o.zone == .graveyard o.owner && o.owner == p && isDiscardableCard o) then
       throw s!"{oname}'s ability can be activated only from the graveyard"
   else if d.fromHand then
-    if !(o.zone == .hand o.owner && o.owner == p) then
+    if !(o.zone == .hand o.owner && o.owner == p && isDiscardableCard o) then
       throw s!"{oname}'s ability can be activated only from your hand"
   else
     if !g.controlledBy o p || !o.isOnBattlefield then

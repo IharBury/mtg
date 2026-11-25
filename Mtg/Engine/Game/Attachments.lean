@@ -79,7 +79,7 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
       (coLeavingIds := allEmbIds) (includeWhileSource := old.zone == .battlefield)
     let g :=
       if reconcileControl then
-        reconcileControlAfterTransitionFwd pre g (cause := expCause)
+        reconcileControlAfterTransitionFwd pre g (cause := expCause) (deferPlayFromExileLogs := true)
       else g
     if deferPlayFromExileLogs then g else emitExpiredPlayFromExileLogs pre g fromIdx
   | none =>
@@ -135,7 +135,7 @@ def ceaseEndingCommandEmblemsWhere (g : Game) (pred : EffectId → EffectDuratio
           (coLeavingIds := endingIds)) g
     let g :=
       if reconcileControl then
-        reconcileControlAfterTransitionFwd pre g (cause := expCause)
+        reconcileControlAfterTransitionFwd pre g (cause := expCause) (deferPlayFromExileLogs := true)
       else g
     let g := embEntries.foldl (fun acc (_, embName) => acc.logMsg s!"{embName} ends") g
     if deferPlayFromExileLogs then g else emitExpiredPlayFromExileLogs pre g fromIdx

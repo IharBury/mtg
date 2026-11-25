@@ -393,14 +393,14 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
   | .mayPayThen .., .decline => return g.finishResolutionChoice
   | .mayPayThen .., _ => throw "Pay or decline"
   | .mayDiscardThen next sourceId, .objects #[id] =>
-    if !(g.player p).hand.contains id then throw "That card is not in your hand"
+    if !(g.discardableHandIds p).contains id then throw "That card is not in your hand"
     let g := g.discardFromHand p id
     let g := applyOrChainInstr g p next sourceId
     return g.finishResolutionChoice
   | .mayDiscardThen .., .decline => return g.finishResolutionChoice
   | .mayDiscardThen .., _ => throw "Choose a card to discard, or decline"
   | .discardThen _ _ causeId, .objects #[id] =>
-    if !(g.player p).hand.contains id then throw "That card is not in your hand"
+    if !(g.discardableHandIds p).contains id then throw "That card is not in your hand"
     let g := g.discardFromHand p id
     let g :=
       if let .chooseReplacement .. := g.pending then
@@ -410,8 +410,9 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     return g.finishResolutionChoice
   | .discardThen .., _ => throw "Choose a card to discard"
   | .discardThenStun n sourceId, .objects ids =>
-    let need := Nat.min n (g.player p).hand.size
-    if ids.size != need || !ids.all ((g.player p).hand.contains ·) ||
+    let hand := g.discardableHandIds p
+    let need := Nat.min n hand.size
+    if ids.size != need || !ids.all (hand.contains ·) ||
         ids.toList.eraseDups.length != ids.size then
       throw s!"Choose {need} different cards from your hand"
     let nonland := (ids.filter (fun id => !g.isLand (g.object! id))).size
@@ -587,7 +588,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     return (g.continueSacrificeEach controller rest (chosen.push id)).finishResolutionChoice
   | .sacrificeCreatureEach .., _ => throw "Choose a creature to sacrifice"
   | .discardTwo controller rest draws chosen, .objects ids =>
-    let hand := (g.player p).hand
+    let hand := g.discardableHandIds p
     if ids.size != 2 || ids[0]! == ids[1]! || !ids.all hand.contains then
       throw "Choose two different cards from your hand"
     let g := g.continueDiscardTwo controller rest draws (chosen.push (p, ids))
@@ -1094,7 +1095,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     return g.finishResolutionChoice
   | .hawkeyeModes .., _ => throw "Choose a mode, or decline to stop"
   | .discardThenDraw, .objects #[id] =>
-    if !(g.player p).hand.contains id then throw "That card is not in your hand"
+    if !(g.discardableHandIds p).contains id then throw "That card is not in your hand"
     let g := g.discardFromHand p id
     let g :=
       if let .chooseReplacement .. := g.pending then
@@ -2000,8 +2001,8 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
   | .mayPayThen n .. =>
     if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then .accept else .decline
   | .mayDiscardThen .. => .decline
-  | .discardThen .. => .choosePermanents ((g.player p).hand.extract 0 1)
-  | .discardThenStun n _ => .choosePermanents ((g.player p).hand.extract 0 n)
+  | .discardThen .. => .choosePermanents ((g.discardableHandIds p).extract 0 1)
+  | .discardThenStun n _ => .choosePermanents ((g.discardableHandIds p).extract 0 n)
   | .maySacrificeThen .. => .decline
   | .mayMovePlusOne _ => .decline
   | .exileFromRevealedHand victim _ =>
@@ -2041,7 +2042,7 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
   | .chooseKeyword .. => .chooseMode 0
   | .sacrificeCreatureEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).map (·.id)).extract 0 1)
-  | .discardTwo .. => .choosePermanents ((g.player p).hand.extract 0 2)
+  | .discardTwo .. => .choosePermanents ((g.discardableHandIds p).extract 0 2)
   | .mayMoveAllCounters .. => .accept
   | .crew _ vehicleId n =>
     let tapSrc := g.proposedSpell.any (·.tapSource)
@@ -2150,7 +2151,7 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
     match [1, 0, 2].find? ok with
     | some m => .chooseMode m
     | none => .decline
-  | .discardThenDraw => .choosePermanents ((g.player p).hand.extract 0 1)
+  | .discardThenDraw => .choosePermanents ((g.discardableHandIds p).extract 0 1)
   | .mayCastCascade cardId _ =>
     if g.cantCastSpellsThisTurn p || g.splitSecondOnStack || g.combatLocksNonManaAbilities ||
         g.opponentsCantCastOnActiveTurn p then

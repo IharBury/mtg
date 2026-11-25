@@ -185,7 +185,7 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
     let some o := g.findObject? cardId | throw "no such object"
     if o.zone != .hand p then
       throw s!"{g.name o} is not in your hand"
-    if !g.isArtifact o then
+    if !isDiscardableCard o || !g.isArtifact o then
       throw s!"{g.name o} is not an artifact card"
     let name := g.name o
     let outerCont? := g.pendingReplacement
@@ -1048,7 +1048,7 @@ def revealedHandChoices (g : Game) (p : PlayerId) (permanentOnly : Bool) : Array
   (g.player p).hand.filter (fun id =>
     match g.findObject? id with
     | some o =>
-      !g.isLand o && (!permanentOnly || g.isPermanentCard o)
+      isDiscardableCard o && !g.isLand o && (!permanentOnly || g.isPermanentCard o)
     | none => false)
 
 /-- `victim` reveals their hand and `chooser` picks a card for them to discard. -/
@@ -1133,7 +1133,7 @@ def runHawkeyeArrows (g : Game) (controller : PlayerId) (modes : Array Nat)
         (fun g pid => g.dealDamageToPlayer pid 2 (source := src)) sourceId illegal
       idx := idx + 1
     | _ =>
-      if (g.player controller).hand.isEmpty then
+      if (g.discardableHandIds controller).isEmpty then
         g := g.draw controller 1
       else
         g := g.beginResolutionChoice controller .discardThenDraw

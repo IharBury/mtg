@@ -169,7 +169,7 @@ def applySearchAfter (g : Game) : Game :=
   | .putOnTop p ids => g.putIdsOnTop p ids
   | .beholdUntap p landId subtype => g.beholdAndMaybeUntap p landId subtype
   | .discardRandom p =>
-    let hand := (g.player p).hand
+    let hand := g.discardableHandIds p
     if hand.isEmpty then g
     else if hand.size == 1 then g.discardFromHandRandomly p hand[0]!
     else g.changes #[.pending (.resolveRandom (.chooseObject hand)), .afterRandom (.discardRandom p)]

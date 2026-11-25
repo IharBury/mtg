@@ -173,14 +173,14 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
     gTrick0.recordPutCounters trickBearId .finality 1 (some p0) (cause := some testCause)
   let gPausedRepl :=
     gTrickFin.moveToOwnerGraveyard (gTrickFin.object! trickBearId) "dies" (cause := some testCause)
-  let trickPending : Pending := .resolutionChoice p2 (.tricksterLibrary p0 trickBearId (some trickBearId))
   let fcOverOdd : PendingReplacement :=
     .finishConcede false none none (some gPausedRepl.pending) false #[] none
   let gFcGrantsNoneProbe :=
     gPausedRepl.changes #[
+      .afterRandom (.gainLife p0 1),
       .pushContinuationFrame {},
-      .pushOuterPendingReplacement (.beginStepCont .untap),
-      .pendingReplacement (some (.restorePending trickPending true)) ]
+      .pendingReplacement
+        (some (.seq (.continueConnives p0 #[trickBearId, trickBearId]) (.beginStepCont .untap))) ]
 
   let item1aOk :=
     mustHold51i1 "1a_receivePriorityPostSbaAndPutTriggerBatch"

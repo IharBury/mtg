@@ -605,7 +605,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                 | some st =>
                   (g.permanentsOf p).any (g.hasSubtype · st) ||
                     (g.player p).hand.any (fun id =>
-                      (g.findObject? id).any (g.hasSubtype · st))
+                      (g.findObject? id).any (fun card => isDiscardableCard card && g.hasSubtype card st))
               let frontAdditionalOk :=
                 if face.morph.isSome then
                   g.canPayAnnouncedAdditionalFromSources p preSpell
@@ -644,7 +644,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                       | some st =>
                         (gAlt.permanentsOf p).any (gAlt.hasSubtype · st) ||
                           (gAlt.player p).hand.any (fun id =>
-                            (gAlt.findObject? id).any (gAlt.hasSubtype · st))
+                            (gAlt.findObject? id).any (fun card => isDiscardableCard card && gAlt.hasSubtype card st))
                     altSacOk && altDiscardOk && altBeholdOk &&
                       gAlt.canPaySpellCostFromSources p spellAlt propAlt.cost
                         (fromHand := propAlt.original.zone == .hand p) (prop? := some propAlt)
@@ -683,7 +683,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
     | .mayPutLandFromHand _ =>
       match (g.player p).hand.findSome? (fun id =>
         match g.findObject? id with
-        | some o => if g.isLand o then some id else none
+        | some o => if isDiscardableCard o && g.isLand o then some id else none
         | none => none) with
       | some id => some (.cast id)
       | none => some .decline
@@ -694,7 +694,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       | some o => some (.sacrifice o.id)
       | none => discardBackOrDecline g p
     | .mayPutArtifactFromHand _ _ =>
-      match (g.handObjects p).find? (fun o => g.isArtifact o) with
+      match (g.handObjects p).find? (fun o => isDiscardableCard o && g.isArtifact o) with
       | some o => some (.cast o.id)
       | none => some .decline
     | .mayHaveVillainConnive _ _ _ =>

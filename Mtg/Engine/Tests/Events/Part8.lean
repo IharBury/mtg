@@ -444,6 +444,9 @@ private def replayOk39i2 (gs : Array Game) : Bool :=
           (.seq (.restorePending (.chooseLegend p0 bear.name legIds) true none #[] none)
             (.finishTurnFaceUp p2 ⟨999998⟩ true)))) ]
   let gPredDone := gPred0.finishAndGrantPriority p0
+  let gPredOuterP2 :=
+    ((gPred0.change .popOuterPendingReplacement).change
+      (.pushOuterPendingReplacement (.receivePriority p2))).finishAndGrantPriority p0
   let crossBatchLegendOk :=
     validBeforeExpiry &&
     invalidAfterExpiry &&
@@ -452,7 +455,10 @@ private def replayOk39i2 (gs : Array Game) : Bool :=
     gKeepClosed.pending == Pending.none &&
     (gKeepClosed.permanentsOf p0).size == 2 &&
     gPredDone.currentBatch.isNone &&
-    gPredDone.priority == p1
+    gPredDone.outerPendingReplacements.isEmpty &&
+    gPredDone.priority == p0 &&
+    gPredOuterP2.currentBatch.isNone &&
+    gPredOuterP2.priority == p2
 
   mustHold39i2 "2a.consumedNotRerun" consumedNotRerunOk &&
   mustHold39i2 "2b.randomOrderAndDrain" randomOrderAndDrainOk &&

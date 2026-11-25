@@ -40,7 +40,7 @@ def beholdQuality (g : Game) (p : PlayerId) (quality : CardSubtype)
     let handMatch? :=
       (g.player p).hand.find? (fun id =>
         match g.findObject? id with
-        | some o => g.hasSubtype o quality
+        | some o => isDiscardableCard o && g.hasSubtype o quality
         | none => false)
     if hasPerm || handMatch?.isSome then
       let effCause := g.resolveOptionalCause cause (fallbackCtrl := some p)
@@ -106,7 +106,7 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     match g.findObject? id with
     | none => pure ()
     | some o =>
-      if o.zone == .hand p then
+      if o.zone == .hand p && isDiscardableCard o then
         let msg := s!"{(g.player p).name} discards {g.name o}"
         let owner := o.owner
         let (g', _) := g.move id (.graveyard owner) none (verb := some .discard)
@@ -137,7 +137,7 @@ def discardMultiHandIdsLoop (g : Game) (remaining : Array (PlayerId × ObjectId)
     match g.findObject? id with
     | none => pure ()
     | some o =>
-      if g.stillInGame p && o.zone == .hand p then
+      if g.stillInGame p && o.zone == .hand p && isDiscardableCard o then
         let msg := s!"{(g.player p).name} discards {g.name o}"
         let owner := o.owner
         let (g', _) := g.move id (.graveyard owner) none (verb := some .discard)
@@ -160,7 +160,7 @@ logged (Sauron, the Dark Lord). -/
 def discardEntireHand (g : Game) (p : PlayerId) (cause : Option EventCause := none) : Game :=
   if !g.stillInGame p then g
   else
-    let ids := (g.player p).hand
+    let ids := g.discardableHandIds p
     let preDiscards := g.loggedDiscards p
     let (g, cause?) : Game × Option EventCause :=
       match cause with
@@ -188,7 +188,7 @@ def mayDiscardHandDrawThatMany (g : Game) (p : PlayerId) (doDiscard : Bool) : Ga
   else if !doDiscard then
     g.logMsg s!"{(g.player p).name} does not discard their hand"
   else
-    let n := (g.player p).hand.size
+    let n := (g.discardableHandIds p).size
     let g := g.discardEntireHand p
     if n == 0 then g
     else if let .chooseReplacement .. := g.pending then

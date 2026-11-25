@@ -4022,7 +4022,7 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
   if let some sp := parseStepClause? s then
     return some (sp, .perOccurrence, .unlimited, #[.battlefield])
 
-  -- `"the Ring tempts you"` / `"you choose a creature as your Ring-bearer"` (CR 701.52)
+  -- `"the Ring tempts you"` / `"you choose a creature as your Ring-bearer"` (CR 701.54)
   if l == "the ring tempts you" then
     return some (.playerAction .you .ringTempts, .perOccurrence, .unlimited, #[.battlefield])
   if l == "you choose a creature as your ring-bearer" then

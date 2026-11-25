@@ -651,16 +651,16 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
        gMorphCleanOpenSeqTrue.firstContinuationPriorityGrant? == some (some p2) &&
        -- Post-resume `g1.priority` with pre-existing `pendingReplacement` vs `outerPendingReplacements`:
        gMorphPreRecvRun.pending == .none &&
-       gMorphPreRecvRun.priority == p0 &&
+       gMorphPreRecvRun.priority == p2 &&
        gMorphPreRecv.continuationGrantsPriority false (.finishTurnFaceUp p1 morphCleanId false) &&
-       gMorphPreRecv.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphCleanId false) == none &&
-       gMorphPreRecv.firstPriorityGrantRecipient? false (.finishTurnFaceUp p1 morphCleanId false) == some none &&
+       gMorphPreRecv.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphCleanId false) == some p2 &&
+       gMorphPreRecv.firstPriorityGrantRecipient? false (.finishTurnFaceUp p1 morphCleanId false) == some (some p2) &&
        gMorphPreOuterRun.pending == .none &&
        gMorphPreOuterRun.priority == p2 &&
        gMorphPreOuter.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphCleanId false) == some p2 &&
        gMorphOnlyOuterRun.pending == .none &&
-       gMorphOnlyOuterRun.priority == p1 &&
-       gMorphOnlyOuter.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphCleanId false) == some p1)
+       gMorphOnlyOuterRun.priority == p2 &&
+       gMorphOnlyOuter.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphCleanId false) == some p2)
 
   mustHold53i1 "1a" item1aOk &&
   mustHold53i1 "1b" item1bOk &&

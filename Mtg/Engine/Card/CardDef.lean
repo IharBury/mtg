@@ -868,14 +868,22 @@ def entersWithIndestructibleCounter (c : CardDef) : Bool :=
       | .entersWithCounters .self .indestructible (.const n) false => n > 0
       | _ => false
 
-/-- True when this card has a printed static ability granting protection from the chosen card type.
+/-- True when this card has printed protection from the chosen card type or a printed static
+ability granting protection from the chosen card type.
 Checked at Layer 1 in Layer-4 fast paths to avoid Layer 4↔Layer 6 recursion. -/
 def hasProtectionFromChosenCardType (c : CardDef) : Bool :=
+  c.keywords.contains (.protection .chosenCardType) ||
   c.staticAbilities.any fun ab =>
-    ab.anyRule fun _ r =>
+    ab.anyRule (fun _ r =>
       match r with
       | .player (.protectionFrom _ .chosenCardType) => true
-      | _ => false
+      | _ => false) ||
+    match ab with
+    | .continuous _ _ mod =>
+      mod.flatten.any fun
+        | .grantKeywords ks => ks.contains (.protection .chosenCardType)
+        | _ => false
+    | _ => false
 
 /-- True when this card has `"As this enters, choose Mardu or Jeskai."` (Layer 1 anchor check). -/
 def isMarduOrJeskaiChoice (c : CardDef) : Bool :=

@@ -2430,7 +2430,7 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
     checkValidObjId pred id || atgt.any (attackTargetAnyObjId pred) ||
       pb.any (·.any (gameObjAnyObjId pred)) || checkValidOptObjId pred att ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?) || checkValidObjIds pred skip
-  | .moveSimultaneousToGraveyard ids pb c =>
+  | .moveSimultaneousToGraveyard ids pb c _ _ =>
     checkValidObjIds pred ids || pb.any (·.any (gameObjAnyObjId pred)) ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .createToken _ _ _ _ atgt _ _ _ c _ =>
@@ -2466,7 +2466,7 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
     app.any (repIdAnyObjId pred · prospectivePred) ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .connive _ sid => checkValidOptObjId pred sid
-  | .finishSbaSweep moves pb _ pwm sm tok cop ia ie ica lg =>
+  | .finishSbaSweep moves pb _ pwm sm tok cop ia ie ica lg _ =>
     (moves ++ pwm ++ sm).any (fun m => checkValidObjId pred m.objectId) ||
       pb.any (gameObjAnyObjId pred) || checkValidObjIds pred tok ||
       checkValidObjIds pred cop || checkValidObjIds pred ia ||
@@ -2525,7 +2525,7 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
   | .requestOrderInto ids _ _ c
   | .untapPermanentsLoop ids c
   | .millCardsLoop _ ids _ c _ _
-  | .moveCardsToGraveyardLoop ids c
+  | .moveCardsToGraveyardLoop ids c _
   | .phaseInControlledLoop ids c _ _ _ =>
     checkValidObjIds pred ids || c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .finishProliferateTarget _ tid _ _ rtgts pids _ _ _ c =>
@@ -2569,9 +2569,9 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
     checkValidObjIds pred p || checkValidObjIds pred m ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .finishPostStep st => postStepAnyObjId st pred prospectivePred etbCostProspective?
-  | .leavePlayersWhoLost sp _ _ _
-  | .finishConcede _ _ _ sp _ _ _
-  | .concedePlayersLoop _ _ _ _ _ _ sp _ _ _ =>
+  | .leavePlayersWhoLost sp _ _ _ _
+  | .finishConcede _ _ _ sp _ _ _ _
+  | .concedePlayersLoop _ _ _ _ _ _ sp _ _ _ _ =>
     sp.any (pendingAnyObjId · pred prospectivePred etbCostProspective?)
   | .endControlExileLoop rem c pl extra _ =>
     rem.any (fun (id, _, _) => checkValidObjId pred id) ||
@@ -2830,7 +2830,7 @@ private partial def pendingReplacementMaxTs (pr : PendingReplacement) : Nat :=
   match pr with
   | .seq a b => max (pendingReplacementMaxTs a) (pendingReplacementMaxTs b)
   | .move _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ pb ..
-  | .moveSimultaneousToGraveyard _ pb _
+  | .moveSimultaneousToGraveyard _ pb ..
   | .destroyPermanent _ _ pb _
   | .commitEnteringAttackItems _ _ _ _ pb
   | .placeSearchedBatch _ _ _ _ _ pb
@@ -5564,7 +5564,17 @@ def colors (g : Game) (o : GameObject) : ColorSet :=
   else if o.status.faceDown then ColorSet.empty
   else
     let bc := g.baseCard o
-    let initCols := bc.colors
+    let oTcs := g.evalLayer3 o
+    let mappedOwnL5 :=
+      if bc.staticAbilities.isEmpty then #[]
+      else if oTcs.isEmpty then bc.staticAbilities
+      else bc.staticAbilities.map (TextChange.applyStaticAbility oTcs)
+    -- CR 604.3 / 613.1e / 613.3: Color-defining CDAs function in all zones and apply first in Layer 5.
+    let initCols :=
+      mappedOwnL5.foldl (fun cols ab =>
+        match ab with
+        | .characteristicDefining (.setColors cs) => cs
+        | _ => cols) bc.colors
     if !o.isOnBattlefield then initCols
     else
       let hasCol := g.activeEffects.any fun (_, s) =>
@@ -6153,17 +6163,40 @@ def defendingPlayers (g : Game) : Array PlayerId :=
 
 /-! ### Layer-1–5 Recursion-Safe Static Expression Helpers (CR 604 / 613) -/
 
+/-- Resolve source-bound protection keywords (`.protection .chosenCardType`,
+`.protection (.color .chosenOnSource)`, `.protection (.subtype .chosenOnSource)`)
+concretely against `src.status` in Layer 6 (CR 613.1f / 702.16). When `dropUnchosen`
+is `true` (static grants from a grantor permanent), unchosen protection entries are
+omitted so they never leak onto the recipient's own `status`. -/
+private def resolveProtectionKeywords (src : GameObject) (ks : Array KeywordAbility)
+    (dropUnchosen : Bool := true) : Array KeywordAbility :=
+  ks.filterMap fun
+    | .protection .chosenCardType =>
+      match src.status.chosenCardType with
+      | some t => some (.protection (.cardType t))
+      | none => if dropUnchosen then none else some (.protection .chosenCardType)
+    | .protection (.color .chosenOnSource) =>
+      match src.status.chosenColor with
+      | some c => some (.protection (.color (.literal c)))
+      | none => if dropUnchosen then none else some (.protection (.color .chosenOnSource))
+    | .protection (.subtype .chosenOnSource) =>
+      match src.status.chosenCreatureType with
+      | some ty => some (.protection (.subtype (.literal ty)))
+      | none => if dropUnchosen then none else some (.protection (.subtype .chosenOnSource))
+    | k => some k
+
 /-- Printed keywords (after Layer 3 text changes) plus CR 122.1b keyword counters on `o`.
 Used only as a recursion-safe fallback when Layer 6 peer fuel reaches 0. -/
 private def baseKeywordsWithCounters (g : Game) (o : GameObject) : Array KeywordAbility :=
-  if o.isLkiSnapshot then o.printed.keywords
+  if o.isLkiSnapshot then resolveProtectionKeywords o o.printed.keywords (dropUnchosen := false)
   else if o.status.faceDown then #[]
   else
     let bc := g.baseCard o
     let oTcs := g.evalLayer3 o
-    let printedKw :=
+    let rawKw :=
       if oTcs.isEmpty then bc.keywords
       else HasTextChange.applyTextChanges oTcs bc.keywords
+    let printedKw := resolveProtectionKeywords o rawKw (dropUnchosen := false)
     if o.status.counters.isEmpty then printedKw
     else
       CounterKind.keywordCounters.foldl (fun acc (k, kw) =>
@@ -6393,15 +6426,33 @@ private def evalStaticPlayerMetricSingle (g : Game) (m : PlayerMetric) (p : Play
         | _ => n
       else n) 0)
   | .otherSpellsManaValueThisTurn =>
-    Int.ofNat (g.events.foldl (fun n e =>
-      if e.turn == g.turnNumber then
-        match e.change with
-        | .rules (.cast (.spellCast spellSnap q _)) =>
-          if q == p && (excludeObjId?.isNone || spellSnap.id != excludeObjId?) then
-            n + spellSnap.manaValue
-          else n
-        | _ => n
-      else n) 0)
+    let (sumOther, matchedSelf, hasUnidentified) :=
+      g.events.foldl (fun (acc, matched, unid) e =>
+        if e.turn == g.turnNumber then
+          match e.change with
+          | .rules (.cast (.spellCast spellSnap q _)) =>
+            if q == p then
+              if excludeObjId?.isSome && spellSnap.id == excludeObjId? then
+                (acc, true, unid)
+              else
+                (acc + spellSnap.manaValue, matched, unid || spellSnap.id.isNone)
+            else (acc, matched, unid)
+          | _ => (acc, matched, unid)
+        else (acc, matched, unid)) (0, false, false)
+    let ownFallback :=
+      if !matchedSelf && hasUnidentified then
+        match excludeObjId?.bind g.findObject? with
+        | some spell =>
+          if spell.zone == .stack && !spell.isCopy && g.controllerOf spell == some p then
+            if spell.status.faceDown then 0
+            else
+              let mc := (g.copiableValues spell).manaCost
+              let x := (spell.chosenX.orElse (fun _ => GameEvent.chosenXOf? g.events spell.id)).getD 0
+              (mc.substituteX x).manaValue
+          else 0
+        | none => 0
+      else 0
+    Int.ofNat (sumOther - ownFallback)
   | .lifeGainedThisTurn => Int.ofNat (GameEvent.lifeGained g.events g.turnNumber p)
   | .lifeLostThisTurn => Int.ofNat (GameEvent.lifeLost g.events g.turnNumber p)
   | .unspentMana => Int.ofNat pl.manaPool.total
@@ -6534,7 +6585,7 @@ def combatPhaseEndAfter (events : Array GameEvent) (oid : ObjectId)
         | .rules (.turn (.phaseBegan .combat))
         | .rules (.turn (.stepBegan .beginningOfCombat _)) => endIdx := i
         | .rules (.combat (.removedFromCombat eo)) =>
-          if eo.id == some oid then endIdx := i
+          if eo.id == some oid && eo.attacking then endIdx := i
         | .rules (.permanent (.phasedOut before _)) =>
           if before.id == some oid then endIdx := i
         | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
@@ -6547,13 +6598,24 @@ def combatPhaseEndAfter (events : Array GameEvent) (oid : ObjectId)
 /-- Combat-phase event window `(windowTurn, combatStartIdx, atkEndIdx, blockEndIdx)`
 for LKI object `oid`: when `eventIdx?` points to an event for `oid`, anchors directly on
 that event; otherwise locates `oid`'s last attacking battlefield departure, phase-out, or
-`removedFromCombat` event on any turn `≤ defaultTurn` (or its last combat event if it
-did not depart while attacking), and opens the combat window on **that event's turn**.
-For `.phasedOut` batches, `blockEndIdx` is `bStart` so the same-batch `removedFromCombat`
-emitted by `Phasing.phaseOut` right before `phasedOut` does not erase `becameBlocked`
-(CR 509.1h / 608.2h / 702.26b / 800.4a). -/
+`removedFromCombat` event on any turn `≤ defaultTurn` (bounded at `eventIdx?` when
+provided, or its last combat event if it did not depart while attacking), and opens the
+combat window on **that event's turn**. For `.phasedOut` batches, `blockEndIdx` is `bStart`
+so the same-batch `removedFromCombat` emitted by `Phasing.phaseOut` right before `phasedOut`
+does not erase `becameBlocked` (CR 509.1h / 608.2h / 702.26b / 800.4a). -/
 def lkiCombatWindow (events : Array GameEvent) (oid : ObjectId)
     (defaultTurn : Nat) (eventIdx? : Option Nat := none) : Nat × Nat × Nat × Nat := Id.run do
+  let unbatchedAtkEnd (wTurn eIdx : Nat) : Nat := Id.run do
+    let mut j := eIdx + 1
+    while j < events.size && events[j]!.turn == wTurn do
+      match events[j]!.change with
+      | .rules (.combat (.becameAttacking atk _)) =>
+        if atk.id == some oid then return j + 1
+        return eIdx + 1
+      | .rules (.continuousEffect (.created ..)) | .engine _ =>
+        j := j + 1
+      | _ => return eIdx + 1
+    return eIdx + 1
   if let some eIdx := eventIdx? then
     if h : eIdx < events.size then
       let e := events[eIdx]
@@ -6570,6 +6632,8 @@ def lkiCombatWindow (events : Array GameEvent) (oid : ObjectId)
             while atkEnd < events.size &&
                 events[atkEnd]!.turn == wTurn && events[atkEnd]!.batch == some bid do
               atkEnd := atkEnd + 1
+          else
+            atkEnd := unbatchedAtkEnd wTurn eIdx
           let blkEnd := combatPhaseEndAfter events oid wTurn eIdx
           return (wTurn, startIdx, atkEnd, blkEnd)
       | .rules (.zone (.ceasedToExist before)) =>
@@ -6581,7 +6645,7 @@ def lkiCombatWindow (events : Array GameEvent) (oid : ObjectId)
           let bStart := batchStartAt events wTurn startIdx eIdx e.batch
           return (wTurn, startIdx, bStart, bStart)
       | .rules (.combat (.removedFromCombat eo)) =>
-        if eo.id == some oid then
+        if eo.id == some oid && eo.attacking then
           let bStart := batchStartAt events wTurn startIdx eIdx e.batch
           return (wTurn, startIdx, bStart, eIdx)
       | .rules (.combat (.attackersDeclared _ decls)) =>
@@ -6599,6 +6663,8 @@ def lkiCombatWindow (events : Array GameEvent) (oid : ObjectId)
             while atkEnd < events.size &&
                 events[atkEnd]!.turn == wTurn && events[atkEnd]!.batch == some bid do
               atkEnd := atkEnd + 1
+          else
+            atkEnd := unbatchedAtkEnd wTurn eIdx
           let blkEnd := combatPhaseEndAfter events oid wTurn eIdx
           return (wTurn, startIdx, atkEnd, blkEnd)
       | _ => pure ()
@@ -6606,9 +6672,13 @@ def lkiCombatWindow (events : Array GameEvent) (oid : ObjectId)
     match eventIdx?.bind (events[·]?) with
     | some e => min defaultTurn e.turn
     | none => defaultTurn
+  let scanEnd :=
+    match eventIdx? with
+    | some eIdx => min events.size (eIdx + 1)
+    | none => events.size
   let mut atkDepart : Option (Nat × Option BatchId × Bool) := none
   let mut lastCombatIdx : Option Nat := none
-  for i in [0:events.size] do
+  for i in [0:scanEnd] do
     let e := events[i]!
     if e.turn ≤ maxTurn then
       match e.change with
@@ -6622,7 +6692,7 @@ def lkiCombatWindow (events : Array GameEvent) (oid : ObjectId)
         if before.id == some oid && before.attacking then
           atkDepart := some (i, e.batch, true)
       | .rules (.combat (.removedFromCombat eo)) =>
-        if eo.id == some oid then
+        if eo.id == some oid && eo.attacking then
           atkDepart := some (i, e.batch, false)
       | .rules (.combat (.attackersDeclared _ decls)) =>
         if decls.any (·.1.id == some oid) then lastCombatIdx := some i
@@ -6645,11 +6715,15 @@ def lkiCombatWindow (events : Array GameEvent) (oid : ObjectId)
     | some cIdx =>
       let wTurn := events[cIdx]!.turn
       let startIdx := combatPhaseStartIdxAtOrBefore events wTurn (cIdx + 1)
-      let blkEnd := combatPhaseEndAfter events oid wTurn cIdx
-      return (wTurn, startIdx, cIdx + 1, blkEnd)
+      let phaseEnd := combatPhaseEndAfter events oid wTurn cIdx
+      let blkEnd := if eventIdx?.isSome then min phaseEnd scanEnd else phaseEnd
+      let atkEnd :=
+        if eventIdx?.isSome && wTurn == maxTurn then min phaseEnd scanEnd
+        else cIdx + 1
+      return (wTurn, startIdx, atkEnd, blkEnd)
     | none =>
-      let startIdx := combatPhaseStartIdxAtOrBefore events maxTurn events.size
-      return (maxTurn, startIdx, events.size, events.size)
+      let startIdx := combatPhaseStartIdxAtOrBefore events maxTurn scanEnd
+      return (maxTurn, startIdx, scanEnd, scanEnd)
 
 /-- Whether an LKI attacking creature was attacking alone when it left combat
 (CR 506.5 / 608.2h). -/
@@ -7289,11 +7363,7 @@ private partial def evalStaticPredL5 (g : Game) (src : GameObject) (srcCtrl : Pl
       | some entry => some entry.targets
       | none =>
         if target.id == noSourceSentinelId then none
-        else
-          g.events.findSomeRev? fun e =>
-            match e.change with
-            | .rules (.cast (.targeted tid ts _ _)) => if tid == target.id then some ts else none
-            | _ => none
+        else GameEvent.lastKnownTargetsOf? g.events target.id
     match tgts? with
     | none => false
     | some tgts =>
@@ -7580,11 +7650,7 @@ private partial def evalStaticObjsL5 (g : Game) (src : GameObject) (srcCtrl : Pl
         | some entry => entry.targets
         | none =>
           if s.id == noSourceSentinelId then #[]
-          else
-            (g.events.findSomeRev? fun e =>
-              match e.change with
-              | .rules (.cast (.targeted tid ts _ _)) => if tid == s.id then some ts else none
-              | _ => none).getD #[]
+          else (GameEvent.lastKnownTargetsOf? g.events s.id).getD #[]
       tgts.foldl (fun a t =>
         match t with
         | .permanent tid | .card tid =>
@@ -7799,6 +7865,9 @@ private partial def evalStaticCondL5 (g : Game) (src : GameObject) (srcCtrl : Pl
             match e.change with
             | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
               toZ != .battlefield && !before.phasedOut &&
+                matchesCtrl before.controller && lkiMatches before pred (some i)
+            | .rules (.zone (.ceasedToExist before)) =>
+              before.zone == .battlefield && !before.phasedOut &&
                 matchesCtrl before.controller && lkiMatches before pred (some i)
             | _ => false
         | .attackedWith pred minCount =>
@@ -8026,9 +8095,7 @@ private def extractContinuousL6 (g : Game) (src : GameObject) (srcCtrl : PlayerI
           match m with
           | .loseAllAbilities => { acc with rem := .all }
           | .grantKeywords ks =>
-            let effKs := ks.filter fun
-              | .protection .chosenCardType => src.status.chosenCardType.isSome
-              | _ => true
+            let effKs := resolveProtectionKeywords src ks (dropUnchosen := true)
             if effKs.isEmpty then acc
             else
               { acc with
@@ -8253,7 +8320,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
         | some l6 => l6.activatedAbilities
         | none => if o.status.faceDown then #[] else o.printed.allActivatedAbilities
       { retainsBase := retains
-        kw := o.printed.keywords
+        kw := resolveProtectionKeywords o o.printed.keywords (dropUnchosen := false)
         staticsWithTs := if kwOnly then #[] else o.printed.staticAbilities.map (·, ts)
         triggers := if kwOnly then #[] else o.printed.triggeredAbilities
         activated := if kwOnly then #[] else acts
@@ -8272,7 +8339,7 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
       | none, x | x, none => x
       | some f, some h => some (fun kws => f kws && h kws)
     let peerKwOf (x : GameObject) : Array KeywordAbility :=
-      if x.isLkiSnapshot then x.printed.keywords
+      if x.isLkiSnapshot then resolveProtectionKeywords x x.printed.keywords (dropUnchosen := false)
       else match peerFuel with
         | fuel' + 1 => (evalLayer6Aux g false true fuel' x).kw
         | 0 => g.baseKeywordsWithCounters x
@@ -8325,8 +8392,10 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
         else { activated := intrinsicLandMana }
       else
         let printedKw : Array KeywordAbility :=
-          if oTcs.isEmpty then bc.keywords
-          else HasTextChange.applyTextChanges oTcs bc.keywords
+          let rawKw :=
+            if oTcs.isEmpty then bc.keywords
+            else HasTextChange.applyTextChanges oTcs bc.keywords
+          resolveProtectionKeywords o rawKw (dropUnchosen := false)
         let initKw := KeywordAbility.merge printedKw ownUncondDelta.addKw
         if kwOnly then
           { retainsBase := true, kw := initKw }
@@ -8721,7 +8790,7 @@ def retainsPrintedAbilities (g : Game) (o : GameObject) : Bool :=
 /-- Evaluated keywords of `o` in Layer 6 (CR 613.1f / 613.7 / 613.8). -/
 def currentKeywords (g : Game) (o : GameObject) : Array KeywordAbility :=
   if o.isLkiSnapshot then
-    o.printed.keywords
+    resolveProtectionKeywords o o.printed.keywords (dropUnchosen := false)
   else if !o.isOnBattlefield && o.zone != .stack && o.status.counters.isEmpty &&
       !g.activeEffects.any (fun (_, s) =>
         match s with | .layered _ (.abilities ..) d => g.durationActive d | _ => false) then
@@ -8729,8 +8798,10 @@ def currentKeywords (g : Game) (o : GameObject) : Array KeywordAbility :=
     else
       let bc := g.baseCard o
       let oTcs := g.evalLayer3 o
-      if oTcs.isEmpty then bc.keywords
-      else HasTextChange.applyTextChanges oTcs bc.keywords
+      let kws :=
+        if oTcs.isEmpty then bc.keywords
+        else HasTextChange.applyTextChanges oTcs bc.keywords
+      resolveProtectionKeywords o kws (dropUnchosen := false)
   else
     (evalLayer6Aux g false true 1 o).kw
 
@@ -11107,6 +11178,16 @@ private structure Layer7cDepEntry where
   ptExprs : Array (ValueExpr × ValueExpr)
 deriving Inhabited
 
+/-- Layer-6 keyword checks beyond `currentKeywords` for live objects (ward costs
+and Equip activated abilities; CR 702.6a / 702.21). -/
+private def liveObjectHasExtraKeyword (g : Game) (target : GameObject) (kw : KeywordTag) : Bool :=
+  match kw with
+  | .ward => !(g.wardCostsOn target).isEmpty
+  | .param .equip =>
+    (g.retainsPrintedAbilities target && (g.baseCard target).allActivatedAbilities.any (·.isEquip)) ||
+      (g.activatedAbilitiesOf target).any (·.isEquip)
+  | _ => false
+
 mutual
 
 /-- Cycle-guarded Layer 7a power and toughness of `o` (CR 604.3 / 613.4a). -/
@@ -11127,11 +11208,12 @@ private partial def cdaBasePTAux (g : Game) (visited : Array (ObjectId × (Int �
       let nextVis := visited.push (o.id, baseBox)
       let ptOf := some (fun x => g.snapshotPTAux nextVis x)
       let kwOf := some g.currentKeywords
+      let kwExtra := some g.liveObjectHasExtraKeyword
       printedStatics.foldl (fun (pw, tg) ab =>
         match ab with
         | .characteristicDefining (.setPT p? t?) =>
-          let pw' := match p? with | some v => g.evalStaticValL5 o youP v (fun _ => true) ptOf kwOf | none => pw
-          let tg' := match t? with | some v => g.evalStaticValL5 o youP v (fun _ => true) ptOf kwOf | none => tg
+          let pw' := match p? with | some v => g.evalStaticValL5 o youP v (fun _ => true) ptOf kwOf (hasKwExtra? := kwExtra) | none => pw
+          let tg' := match t? with | some v => g.evalStaticValL5 o youP v (fun _ => true) ptOf kwOf (hasKwExtra? := kwExtra) | none => tg
           (pw', tg')
         | _ => (pw, tg)) baseBox
 
@@ -11169,6 +11251,7 @@ private partial def evalLayer7bAux (g : Game) (visited : Array (ObjectId × (Int
       let nextVis := visited.push (o.id, base7a)
       let ptOf := some (fun x => g.snapshotPTAux nextVis x)
       let kwOf := some g.currentKeywords
+      let kwExtra := some g.liveObjectHasExtraKeyword
       let applyStep (cur : Option Int × Option Int) (e : Layer7bEntry) : Option Int × Option Int :=
         (e.setP.orElse (fun _ => cur.1), e.setT.orElse (fun _ => cur.2))
       Id.run do
@@ -11183,8 +11266,8 @@ private partial def evalLayer7bAux (g : Game) (visited : Array (ObjectId × (Int
               for (ab, abTs) in attL6.staticsWithTs do
                 match ab with
                 | .continuous cond? sc mod =>
-                  if g.matchesStaticScopeL5 att attCtrl o sc ptOf kwOf &&
-                      cond?.all (fun c => g.evalStaticCondL5 att attCtrl c (fun _ => true) ptOf kwOf) then
+                  if g.matchesStaticScopeL5 att attCtrl o sc ptOf kwOf (hasKwExtra? := kwExtra) &&
+                      cond?.all (fun c => g.evalStaticCondL5 att attCtrl c (fun _ => true) ptOf kwOf (hasKwExtra? := kwExtra)) then
                     for m in mod.flatten do
                       match m with
                       | .setBasePT p? t? =>
@@ -11193,8 +11276,8 @@ private partial def evalLayer7bAux (g : Game) (visited : Array (ObjectId × (Int
                             idx := raw.size
                             ts := maxTs attAttachTs abTs
                             scope := .objects #[o.id]
-                            setP := p?.map (fun v => g.evalStaticValL5 att attCtrl v (fun _ => true) ptOf kwOf)
-                            setT := t?.map (fun v => g.evalStaticValL5 att attCtrl v (fun _ => true) ptOf kwOf)
+                            setP := p?.map (fun v => g.evalStaticValL5 att attCtrl v (fun _ => true) ptOf kwOf (hasKwExtra? := kwExtra))
+                            setT := t?.map (fun v => g.evalStaticValL5 att attCtrl v (fun _ => true) ptOf kwOf (hasKwExtra? := kwExtra))
                           }
                       | _ => pure ()
                 | _ => pure ()
@@ -11211,8 +11294,8 @@ private partial def evalLayer7bAux (g : Game) (visited : Array (ObjectId × (Int
                 idx := raw.size
                 ts := abTs
                 scope := .objects #[o.id]
-                setP := p?.map (fun v => g.evalStaticValL5 o youP v (fun _ => true) ptOf kwOf)
-                setT := t?.map (fun v => g.evalStaticValL5 o youP v (fun _ => true) ptOf kwOf)
+                setP := p?.map (fun v => g.evalStaticValL5 o youP v (fun _ => true) ptOf kwOf (hasKwExtra? := kwExtra))
+                setT := t?.map (fun v => g.evalStaticValL5 o youP v (fun _ => true) ptOf kwOf (hasKwExtra? := kwExtra))
               }
           | _ => pure ()
         -- 3. Active `.ptSet` and `.ptCda .cardsInHandPower` effects.
@@ -11276,6 +11359,7 @@ private partial def staticContinuousPTBonusAux (g : Game)
   if !o.isOnBattlefield || visited.any (·.1 == o.id) then (0, 0)
   else
     let kwOf := some g.currentKeywords
+    let kwExtra := some g.liveObjectHasExtraKeyword
     let untilTurn := g.activeEffects.foldl (fun acc (eid, s) =>
       match s with
       | .layered scope (.ptModify pw tg) (.untilNextTurnOf p) =>
@@ -11307,12 +11391,12 @@ private partial def staticContinuousPTBonusAux (g : Game)
                     predReadsPT sc.pred || cond?.any condReadsPT ||
                       ptExprs.any (fun (p, t) => valExprReadsPT p || valExprReadsPT t)
                   if !readsPT then
-                    if g.matchesStaticScopeL5 src srcCtrl o sc none kwOf &&
-                        cond?.all (fun c => g.evalStaticCondL5 src srcCtrl c (fun _ => true) none kwOf) then
+                    if g.matchesStaticScopeL5 src srcCtrl o sc none kwOf (hasKwExtra? := kwExtra) &&
+                        cond?.all (fun c => g.evalStaticCondL5 src srcCtrl c (fun _ => true) none kwOf (hasKwExtra? := kwExtra)) then
                       for (pExpr, tExpr) in ptExprs do
                         indepBonus := addStats indepBonus
-                          (g.evalStaticValL5 src srcCtrl pExpr (fun _ => true) none kwOf,
-                           g.evalStaticValL5 src srcCtrl tExpr (fun _ => true) none kwOf)
+                          (g.evalStaticValL5 src srcCtrl pExpr (fun _ => true) none kwOf (hasKwExtra? := kwExtra),
+                           g.evalStaticValL5 src srcCtrl tExpr (fun _ => true) none kwOf (hasKwExtra? := kwExtra))
                   else
                     let ts : Nat × Nat :=
                       if isEmblem then g.objectEntryTimestamp src
@@ -11340,12 +11424,12 @@ private partial def staticContinuousPTBonusAux (g : Game)
       let evalEntry (pt : Int × Int) (e : Layer7cDepEntry) : Int × Int :=
         let vis := visited.push (o.id, pt)
         let ptOf := some (fun x => g.snapshotPTAux vis x)
-        if g.matchesStaticScopeL5 e.src e.srcCtrl o e.sc ptOf kwOf &&
-            e.cond?.all (fun c => g.evalStaticCondL5 e.src e.srcCtrl c (fun _ => true) ptOf kwOf) then
+        if g.matchesStaticScopeL5 e.src e.srcCtrl o e.sc ptOf kwOf (hasKwExtra? := kwExtra) &&
+            e.cond?.all (fun c => g.evalStaticCondL5 e.src e.srcCtrl c (fun _ => true) ptOf kwOf (hasKwExtra? := kwExtra)) then
           e.ptExprs.foldl (fun a (pExpr, tExpr) =>
             addStats a
-              (g.evalStaticValL5 e.src e.srcCtrl pExpr (fun _ => true) ptOf kwOf,
-               g.evalStaticValL5 e.src e.srcCtrl tExpr (fun _ => true) ptOf kwOf)) (0, 0)
+              (g.evalStaticValL5 e.src e.srcCtrl pExpr (fun _ => true) ptOf kwOf (hasKwExtra? := kwExtra),
+               g.evalStaticValL5 e.src e.srcCtrl tExpr (fun _ => true) ptOf kwOf (hasKwExtra? := kwExtra))) (0, 0)
         else (0, 0)
       let mut curBonus := indepBonus
       let mut curPT := addStats baseBeforeStatics indepBonus
@@ -11467,16 +11551,6 @@ def snapshotToughness (g : Game) (o : GameObject) : Int :=
 
 /-! ### Full Post-Layer-7 Static Expression Evaluators (CR 604 / 613 / 614) -/
 
-/-- Layer-6 keyword checks beyond `currentKeywords` for live objects (ward costs
-and Equip activated abilities; CR 702.6a / 702.21). -/
-private def liveObjectHasExtraKeyword (g : Game) (target : GameObject) (kw : KeywordTag) : Bool :=
-  match kw with
-  | .ward => !(g.wardCostsOn target).isEmpty
-  | .param .equip =>
-    (g.retainsPrintedAbilities target && (g.baseCard target).allActivatedAbilities.any (·.isEquip)) ||
-      (g.activatedAbilitiesOf target).any (·.isEquip)
-  | _ => false
-
 private def matchStaticPlayerFilterFull (g : Game) (src : GameObject) (srcCtrl : PlayerId)
     (pf : PlayerFilter) (p : PlayerId) (ok : GameObject → Bool := fun _ => true) : Bool :=
   g.matchStaticPlayerFilterL5 src srcCtrl pf p ok (some g.snapshotPT) (some g.currentKeywords)
@@ -11527,12 +11601,13 @@ def evalTriggerCond (g : Game) (controller : PlayerId) (source : Option GameObje
   let srcObj : GameObject :=
     match source with
     | some o =>
-      match g.findLiveSourceObject? o.id with
-      | some cur => cur
-      | none =>
-        if !o.isLkiSnapshot then
-          ((g.lastKnownBefore? o.id).map lkiEventObjectAsGameObject).getD o
-        else o
+      if o.isLkiSnapshot then o
+      else
+        match g.findLiveSourceObject? o.id with
+        | some cur => cur
+        | none =>
+          ((g.lastKnownBefore? o.id).map (fun eo =>
+            lkiEventObjectAsGameObject eo (prepared := g.wasPreparedAtDeparture o.id))).getD o
     | none =>
       { printed := { name := "", types := #[] }, id := noSourceSentinelId, owner := controller,
         controller := some controller, zone := .command }
@@ -11923,10 +11998,40 @@ private def coreSorceryTimingOk (g : Game) (p : PlayerId) (o : GameObject) (face
       ab.anyRule fun cond? r =>
         cond?.all (fun c => g.evalStaticCondFull o p c) &&
           match r with
-          | .play (.castAsThoughFlash who _ true none) =>
+          | .play (.castAsThoughFlash who _ true _) =>
             g.matchStaticPlayerFilterFull o p who p
           | _ => false
-  let spellObj : GameObject := { o with printed := face, zone := .stack, controller := some p }
+  let bc := g.baseCard o
+  let actualPrintedMc? : Option ManaCost :=
+    if o.status.faceDown || face.name == "" then none
+    else
+      match bc.adventure.filter (·.name == face.name) with
+      | some adv => some adv.manaCost
+      | none =>
+        match bc.prepareFace.filter (·.name == face.name) with
+        | some pf => some pf.manaCost
+        | none =>
+          match bc.otherFace with
+          | some of =>
+            if of.name == face.name then some of.manaCost
+            else
+              match of.adventure.filter (·.name == face.name) with
+              | some adv => some adv.manaCost
+              | none =>
+                match of.prepareFace.filter (·.name == face.name) with
+                | some pf => some pf.manaCost
+                | none => some bc.manaCost
+          | none => some bc.manaCost
+  let actualFace : CardDef :=
+    match actualPrintedMc? with
+    | some mc => { face with manaCost := mc }
+    | none => { face with manaCost := { symbols := #[] } }
+  let spellObj : GameObject :=
+    { o with
+      printed := actualFace
+      zone := .stack
+      controller := some p
+      status := if face.name == "" then { o.status with faceDown := true } else o.status }
   let peerFlash :=
     g.battlefield.any fun perm =>
       let permCtrl := (g.controllerOf perm).getD perm.owner
@@ -11939,15 +12044,26 @@ private def coreSorceryTimingOk (g : Game) (p : PlayerId) (o : GameObject) (face
               let predOk :=
                 match spellPred with
                 | .anyObject => true
-                | .hasType t => face.types.contains t
                 | pred => g.evalStaticPredFull perm permCtrl spellObj pred
               let nthOk :=
                 match nth? with
                 | none => true
                 | some n =>
                   let prev :=
-                    if spellPred == .hasType .creature then g.loggedCreatureSpells p
-                    else g.loggedSpellsCast p
+                    match spellPred with
+                    | .anyObject => g.loggedSpellsCast p
+                    | .hasType .creature => g.loggedCreatureSpells p
+                    | _ =>
+                      g.events.foldl (fun acc e =>
+                        if e.turn != g.turnNumber then acc
+                        else
+                          match e.change with
+                          | .rules (.cast (.spellCast snap q _)) =>
+                            if q == p &&
+                                g.evalStaticPredFull perm permCtrl (lkiEventObjectAsGameObject snap) spellPred then
+                              acc + 1
+                            else acc
+                          | _ => acc) 0
                   prev + 1 == n
               whoOk && predOk && nthOk
             | _ => false
@@ -12124,35 +12240,43 @@ private def selfEntersTapped (g : Game) (p : PlayerId) (o : GameObject)
             | some u => !(g.evalStaticCondFull oBf p u ok)
           | _ => false
 
-/-- Protection from the source's colors or from its card type (CR 702.16 / 613.1c–f). -/
-def protectedFrom (g : Game) (o src : GameObject) : Bool :=
-  let srcColors := g.colors src
-  let effKw := g.effectiveKeywords o
-  let kwBlock :=
-    effKw.any fun
-      | .protection (.color (.literal c)) => srcColors.contains c
-      | .protection (.color .chosenOnSource) =>
-        match o.status.chosenColor with
-        | some c => srcColors.contains c
-        | none => false
-      | .protection (.cardType ct) => g.hasType src ct
-      | .protection .everything => true
-      | _ => false
-  let typeMatch (em : GameObject) : Bool :=
-    match em.status.chosenCardType with
+/-- Whether `src` matches `ProtectionQuality` `q` as evaluated on `holder`
+(CR 702.16b,e,f,j). -/
+def matchesProtectionQuality (g : Game) (holder src : GameObject) (q : ProtectionQuality) : Bool :=
+  match q with
+  | .color (.literal c) => (g.colors src).contains c
+  | .color .chosenOnSource =>
+    match holder.status.chosenColor with
+    | some c => (g.colors src).contains c
     | none => false
-    | some t =>
-      g.hasType src t &&
-        let emCtrl := g.you em
-        (g.staticAbilities em).any fun
-          | .continuous cond? sc mod =>
-            cond?.all (fun c => g.evalStaticCondFull em emCtrl c) &&
-              g.matchesStaticScopeFull em emCtrl o sc &&
-              mod.flatten.any fun
-                | .grantKeywords ks => ks.contains (.protection .chosenCardType)
-                | _ => false
-          | _ => false
-  kwBlock || (effKw.contains (.protection .chosenCardType) && g.battlefield.any typeMatch)
+  | .color .commanderIdentity =>
+    let pl := g.player (g.you holder)
+    if !pl.hasCommander then false
+    else
+      let cols := g.colors src
+      Color.all.any fun c => pl.commanderColorIdentity.contains c && cols.contains c
+  | .cardType ct => g.hasType src ct
+  | .chosenCardType =>
+    match holder.status.chosenCardType with
+    | some t => g.hasType src t
+    | none => false
+  | .subtype (.literal s) => g.hasSubtype src s
+  | .subtype .chosenOnSource =>
+    match holder.status.chosenCreatureType with
+    | some ty => g.hasSubtype src ty
+    | none => false
+  | .subtype (.fromStep _) => false
+  | .quality pred => g.evalStaticPredFull holder (g.you holder) src pred
+  | .everything => true
+  | .allColors => !(g.colors src).isColorless
+  | .colorless => (g.colors src).isColorless
+
+/-- Protection from the source's colors, card type, subtype, quality, or everything
+(CR 702.16 / 613.1c–f). -/
+def protectedFrom (g : Game) (o src : GameObject) : Bool :=
+  (g.effectiveKeywords o).any fun
+    | .protection q => g.matchesProtectionQuality o src q
+    | _ => false
 
 /-- Whether battlefield Aura `auraObj` may enchant `host` after Layer 4 and
 Layer 6 evaluation, including protection and CR 303.4a `enchantRestriction`
@@ -12952,7 +13076,7 @@ def isLandwalkUnblockable (g : Game) (attacker : GameObject) (defender : PlayerI
     | _ => false
 
 /-- Whether `blocker` may be assigned to `attacker` as one creature in a
-declaration (CR 509.1b / 702.14 / 702.147a / 805.10d–e / 810.7). Menace is not a pairwise restriction. -/
+declaration (CR 509.1b / 702.14 / 702.16f / 702.147a / 805.10d–e / 810.7). Menace is not a pairwise restriction. -/
 def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   let defender := g.defendingPlayerOf attacker
   let atkCtrl := g.controllerOf attacker |>.getD attacker.owner
@@ -12976,6 +13100,7 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   !g.enchantedCantAttackOrBlock blocker &&
   (!g.creaturesWithoutFlyingCantBlock || g.hasFlying blocker) &&
   attacker.status.attacking &&
+  !g.protectedFrom attacker blocker &&
   !g.hasCantBeBlocked attacker &&
   !landwalkUnblockable &&
   !blockedByStaticRule &&
@@ -13096,35 +13221,35 @@ def targetingSourceObject? (g : Game) (sourceId : Option ObjectId := none) : Opt
               | none => none
             | _ => none
 
+/-- Whether battlefield permanent `em` grants `target` player protection from `src?`
+via a `.player (.protectionFrom who q)` static ability (CR 702.16b,e,j). When `src?`
+is `none`, only `.everything` matches. -/
+def permanentGrantsPlayerProtectionFrom (g : Game) (em : GameObject) (target : PlayerId)
+    (src? : Option GameObject) : Bool :=
+  let emCtrl := g.you em
+  (g.staticAbilities em).any fun ab =>
+    ab.anyRule fun cond? r =>
+      cond?.all (fun c => g.evalStaticCondFull em emCtrl c) &&
+        match r with
+        | .player (.protectionFrom who q) =>
+          g.matchStaticPlayerFilterFull em emCtrl who target &&
+            match src? with
+            | some src => g.matchesProtectionQuality em src q
+            | none => q == .everything
+        | _ => false
+
+/-- Whether `target` has protection from `src?` granted by any battlefield permanent's
+`.player (.protectionFrom ..)` static ability (CR 702.16b,e,j). -/
+def playerProtectedFromStatic (g : Game) (target : PlayerId) (src? : Option GameObject) : Bool :=
+  g.battlefield.any fun em => g.permanentGrantsPlayerProtectionFrom em target src?
+
 /-- Hexproof and player protection stop targeting a player (CR 702.11c / 702.16j). -/
 def playerCanBeTargetedBy (g : Game) (caster target : PlayerId)
     (sourceId : Option ObjectId := none) : Bool :=
   let protBlock :=
     match g.targetingSourceObject? sourceId with
     | none => false
-    | some src =>
-      g.battlefield.any fun em =>
-        let emCtrl := g.you em
-        (g.staticAbilities em).any fun ab =>
-          ab.anyRule fun cond? r =>
-            cond?.all (fun c => g.evalStaticCondFull em emCtrl c) &&
-              match r with
-              | .player (.protectionFrom who q) =>
-                g.matchStaticPlayerFilterFull em emCtrl who target &&
-                  match q with
-                  | .chosenCardType =>
-                    match em.status.chosenCardType with
-                    | some t => g.hasType src t
-                    | none => false
-                  | .color (.literal c) => (g.colors src).contains c
-                  | .color .chosenOnSource =>
-                    match em.status.chosenColor with
-                    | some c => (g.colors src).contains c
-                    | none => false
-                  | .cardType ct => g.hasType src ct
-                  | .everything => true
-                  | _ => false
-              | _ => false
+    | some src => g.playerProtectedFromStatic target (some src)
   g.stillInGame target &&
     (caster == target || g.areTeammates caster target || !g.playerHasHexproof target) &&
     !(g.protectionFromEverything target) && !protBlock
@@ -17339,7 +17464,7 @@ def removeFromCombatOnControlChange (pre post : Game)
 /-- Forward reference to `Leaving.reconcileControlAfterTransition` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_reconcile_control_after_transition"]
 opaque reconcileControlAfterTransitionFwd (pre post : Game)
-    (cause : Option EventCause := none) : Game := post
+    (cause : Option EventCause := none) (deferPlayFromExileLogs : Bool := false) : Game := post
 
 /-- Forward reference to `Leaving.coDepartingIdsExport` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_co_departing_ids"]
@@ -17521,7 +17646,8 @@ purely from `g.activeEffects`. -/
 partial def expireEffectById (g : Game) (eid : EffectId)
     (cause : Option EventCause := none) (reconcileControl : Bool := true)
     (preState? : Option Game := none) (suppressEmblemLog : Bool := false)
-    (suppressReturnLog : Bool := false) (skipLogIds : Array ObjectId := #[]) : Game :=
+    (suppressReturnLog : Bool := false) (skipLogIds : Array ObjectId := #[])
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   match g.activeEffect? eid with
   | none => g
   | some eff =>
@@ -17571,7 +17697,8 @@ partial def expireEffectById (g : Game) (eid : EffectId)
             let mCause := if mEid == eid then some expCause else some embCause
             expireEffectById acc mEid (cause := mCause) (reconcileControl := false)
               (preState? := some pre) (suppressEmblemLog := true)
-              (suppressReturnLog := true) (skipLogIds := skipLogIds)) g
+              (suppressReturnLog := true) (skipLogIds := skipLogIds)
+              (deferPlayFromExileLogs := deferPlayFromExileLogs)) g
           let g :=
             if (g.activeEffect? eid).isSome then
               g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := expCause))
@@ -17607,6 +17734,7 @@ partial def expireEffectById (g : Game) (eid : EffectId)
                       else acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control") g
           if reconcileControl then
             reconcileControlAfterTransitionFwd pre g (cause := some embCause)
+              (deferPlayFromExileLogs := deferPlayFromExileLogs)
           else g
         else
           g.record (GameEvent.effectExpired g.turnNumber eid eff (cause := expCause))
@@ -17617,11 +17745,13 @@ partial def expireEffectById (g : Game) (eid : EffectId)
       match eff with
       | .layered _ (.control _) _ =>
         if reconcileControl then
-          removeFromCombatOnControlChange pre g (cause := some expCause)
+          reconcileControlAfterTransitionFwd pre g (cause := some expCause)
+            (deferPlayFromExileLogs := deferPlayFromExileLogs)
         else g
       | .layered _ (.copy _) _ =>
         if reconcileControl then
           reconcileControlAfterTransitionFwd pre g (cause := some expCause)
+            (deferPlayFromExileLogs := deferPlayFromExileLogs)
         else g
       | _ => g
 
@@ -17877,8 +18007,11 @@ private def hasPlayFromExileLoggedInSlice (g : Game) (oid : ObjectId)
       o.zone == .exile && st.name o == cardName &&
         (st.activePlayPermissions o).isEmpty &&
         !st.livingPlayers.any (fun pl => st.mayCastExiledBySource pl.id o)
+  let matchesCardName (st : Game) (cid : ObjectId) : Bool :=
+    (st.findObject? cid).any (fun o => st.name o == cardName) ||
+      (g.findObject? cid).any (fun o => g.name o == cardName)
   let mut pending : Array ObjectId := #[]
-  let mut loggedExact : Array ObjectId := #[]
+  let mut loggedInSlice : Array ObjectId := #[]
   let mut ambigLogs : Nat := 0
   let mut ambigGroup : Array ObjectId := #[]
   let mut curG? : Option Game := none
@@ -17887,14 +18020,14 @@ private def hasPlayFromExileLoggedInSlice (g : Game) (oid : ObjectId)
     match events[i]! with
     | .rules _ (.continuousEffect (.expired _ (some (.permission _ (.playFromExile oid' perm) _)))) _ _ =>
       if !perm.fromAdventure && !perm.whileExiled then
-        if !pending.contains oid' && !loggedExact.contains oid' then
+        if !pending.contains oid' && (i < startIdx || !loggedInSlice.contains oid') then
           pending := pending.push oid'
     | .rules _ (.continuousEffect (.created _ (.permission _ (.playFromExile oid' _) _))) _ _ =>
       pending := pending.filter (· != oid')
-      loggedExact := loggedExact.filter (· != oid')
-      if oid' == oid then
-        ambigLogs := 0
-        ambigGroup := #[]
+      loggedInSlice := loggedInSlice.filter (· != oid')
+      if ambigGroup.contains oid' then
+        ambigGroup := ambigGroup.filter (· != oid')
+        if ambigGroup.isEmpty then ambigLogs := 0
     | .engine _ (.logMsg m) _ =>
       if m == targetMsg && !pending.isEmpty then
         let curG :=
@@ -17903,25 +18036,42 @@ private def hasPlayFromExileLoggedInSlice (g : Game) (oid : ObjectId)
           | some prev => (events.extract curIdx i).foldl Game.replayEvent prev
         curG? := some curG
         curIdx := i
-        let elig := pending.filter (isUnplayableAt curG)
+        let elig0 := pending.filter (isUnplayableAt curG)
+        let elig :=
+          if !elig0.isEmpty then elig0
+          else
+            let histG := g.mkHistoricalGameAt i
+            let eligHist := pending.filter (isUnplayableAt histG)
+            if !eligHist.isEmpty then eligHist
+            else pending.filter (matchesCardName histG)
         if elig.size == 1 then
           let x := elig[0]!
-          if !loggedExact.contains x then
-            loggedExact := loggedExact.push x
+          if i ≥ startIdx && !loggedInSlice.contains x then
+            loggedInSlice := loggedInSlice.push x
           pending := pending.filter (· != x)
+          if ambigGroup.contains x then
+            ambigGroup := ambigGroup.filter (· != x)
+            if ambigGroup.isEmpty then ambigLogs := 0
         else if elig.size ≥ 2 then
-          if i ≥ startIdx && elig.contains oid then
-            ambigLogs := ambigLogs + 1
-            for x in elig do
-              if !ambigGroup.contains x then
-                ambigGroup := ambigGroup.push x
-        else if i ≥ startIdx && pending.contains oid then
+          ambigGroup := ambigGroup.filter (pending.contains ·)
+          if !elig.any (ambigGroup.contains ·) then
+            ambigGroup := #[]
+            ambigLogs := 0
           ambigLogs := ambigLogs + 1
-          for x in pending do
+          for x in elig do
             if !ambigGroup.contains x then
               ambigGroup := ambigGroup.push x
+          if ambigLogs ≥ ambigGroup.size then
+            let satisfied := ambigGroup
+            pending := pending.filter (fun x => !satisfied.contains x)
+            if i ≥ startIdx then
+              for x in satisfied do
+                if !loggedInSlice.contains x then
+                  loggedInSlice := loggedInSlice.push x
+            ambigGroup := #[]
+            ambigLogs := 0
     | _ => pure ()
-  return loggedExact.contains oid || (ambigLogs > 0 && ambigLogs ≥ ambigGroup.size)
+  return loggedInSlice.contains oid
 
 /-- Emit `"{name} can no longer be played from exile"` for each exiled card in
 `ids` that now has neither an active play permission nor a living
@@ -17950,7 +18100,9 @@ have ended, checking `hadPlayable` on `pre` and post-expiry permissions /
 CR 616.1 / 704.5j choice (such as a paused `endControlExileLoop` that has not
 yet exiled a `mayCastExiledBySource` source, including one stashed in
 `outerPendingReplacements`), cards that are still playable before that loop
-finishes are deferred via `.finishPostStep (.logExpiredPlayFromExile _ _)`. -/
+finishes are deferred via `.finishPostStep (.logExpiredPlayFromExile _ _)`,
+inserted ahead of any pure trailing priority-grant leaf so expiry logs emit
+before `PriorityEvent.received`. -/
 def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
   let slice := g.events.extract fromEventIdx g.events.size
   let checkStartIdx := min pre.events.size fromEventIdx
@@ -17991,6 +18143,12 @@ def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
   else
     let deferCont : PendingReplacement :=
       .finishPostStep (.logExpiredPlayFromExile deferredIds checkStartIdx)
+    let insertIntoPending (gIn : Game) : Game :=
+      match gIn.pendingReplacement with
+      | some cur =>
+        let g1 := if gIn.continuations.isEmpty then gIn.change (.pushContinuationFrame {}) else gIn
+        g1.change (.pendingReplacement (some (cur.insertBeforeTrailingPriorityGrant deferCont)))
+      | none => gIn.chainPendingReplacement deferCont
     let gOutChoicePaused : Bool :=
       match gOut.pending with
       | .chooseReplacement .. | .chooseLegend .. => true
@@ -17998,10 +18156,11 @@ def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
     if !gOutChoicePaused && gOut.pendingReplacement.isNone && !gOut.outerPendingReplacements.isEmpty then
       match gOut.outerPendingReplacements.back? with
       | some outer =>
-        gOut.changes #[.popOuterPendingReplacement, .pushOuterPendingReplacement (.seq outer deferCont)]
-      | none => gOut.chainPendingReplacement deferCont
+        gOut.changes #[.popOuterPendingReplacement,
+          .pushOuterPendingReplacement (outer.insertBeforeTrailingPriorityGrant deferCont)]
+      | none => insertIntoPending gOut
     else
-      gOut.chainPendingReplacement deferCont
+      insertIntoPending gOut
 
 /-- Route `.whileInZone old.id old.zone` (and optionally `.whileSource* old.id`
 when `includeWhileSource` is true, plus transitive command emblems and
@@ -18208,7 +18367,8 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
     (suppressReturnLog : Bool := false)
     (skipLogIds : Array ObjectId := #[])
     (extraSingleTargets : Array (ObjectId × GameObject) := #[])
-    (forceReconcile : Bool := false) : Game :=
+    (forceReconcile : Bool := false)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   let preRef := preState?.getD g
   let (matchingEids, controlTargets) :=
     g.activeEffects.foldl (fun (eids, targets) (eid, e) =>
@@ -18231,36 +18391,37 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
         acc.expireEffectById eid (cause := cause) (reconcileControl := false)
           (preState? := some preRef)) g
     let g :=
-      if reconcileControl then
-        reconcileControlAfterTransitionFwd preRef g (cause := some resolvedCause)
-      else g
-    if suppressReturnLog then g
-    else
-      controlTargets.foldl (fun acc (id, o) =>
-        if skipLogIds.contains id then acc
-        else
-          match acc.findObject? id with
-          | none => acc
-          | some cur =>
-            if !cur.isBattlefieldObject then acc
-            else
-              let prevCtrl := preRef.controllerOf ((preRef.findObject? id).getD o)
-              let curCtrl := acc.controllerOf cur
-              if curCtrl == prevCtrl then acc
+      if suppressReturnLog then g
+      else
+        controlTargets.foldl (fun acc (id, o) =>
+          if skipLogIds.contains id then acc
+          else
+            match acc.findObject? id with
+            | none => acc
+            | some cur =>
+              if !cur.isBattlefieldObject then acc
               else
-                let objName := acc.name cur
-                let p := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
-                let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
-                if othersRemain then
-                  match curCtrl with
-                  | some q =>
-                    if (acc.player q).leftTheGame then acc
-                    else acc.logMsg s!"{objName} returns to {(acc.player q).name}'s control"
-                  | none => acc
-                else if (acc.player p).leftTheGame then
-                  acc
+                let prevCtrl := preRef.controllerOf ((preRef.findObject? id).getD o)
+                let curCtrl := acc.controllerOf cur
+                if curCtrl == prevCtrl then acc
                 else
-                  acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control") g
+                  let objName := acc.name cur
+                  let p := (cur.defaultController.orElse (fun _ => cur.controller)).getD cur.owner
+                  let othersRemain := !(acc.appliedControlEffectIds cur).isEmpty
+                  if othersRemain then
+                    match curCtrl with
+                    | some q =>
+                      if (acc.player q).leftTheGame then acc
+                      else acc.logMsg s!"{objName} returns to {(acc.player q).name}'s control"
+                    | none => acc
+                  else if (acc.player p).leftTheGame then
+                    acc
+                  else
+                    acc.logMsg s!"{objName} returns to {(acc.player p).name}'s control") g
+    if reconcileControl then
+      reconcileControlAfterTransitionFwd preRef g (cause := some resolvedCause)
+        (deferPlayFromExileLogs := deferPlayFromExileLogs)
+    else g
 
 /-- Expire all continuous effects that last for as long as `srcId` remains on
 the battlefield or until `srcId` leaves the battlefield (CR 611.2a / 611.2b),
@@ -18275,6 +18436,9 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
     (deferPlayFromExileLogs : Bool := false) : Game :=
   let preRef := preState?.getD g
   let fromIdx := g.events.size
+  let effSkipLogIds : Array ObjectId :=
+    (coDepartingIdsFwd g #[srcId]).foldl
+      (fun acc cid => if acc.contains cid then acc else acc.push cid) skipLogIds
   let matchesSrcDuration (d : EffectDuration) : Bool :=
     match d with
     | .whileSourceOnBattlefield src | .untilSourceLeaves src | .whileSourceHasCounter src _ =>
@@ -18335,25 +18499,26 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
             | some e => emblemIds.any (acc.effectExpiresWithLeavingObj · .command emblemIds e)
             | none => false))
       (cause := cause) (reconcileControl := false) (suppressLog := false)
-      (skipLogIds := skipLogIds) (preState? := some preRef)
+      (skipLogIds := effSkipLogIds) (preState? := some preRef)
   let expiredAnyCopy := g.events.size > preCopyEvents
   let g :=
     commandEmblemEntries.foldl (fun acc (eid, _) =>
       acc.expireEffectById eid (cause := cause) (reconcileControl := false)
         (preState? := some preRef) (suppressEmblemLog := suppressEmblemLog)
-        (suppressReturnLog := true) (skipLogIds := skipLogIds)) g
+        (suppressReturnLog := true) (skipLogIds := effSkipLogIds)) g
   let g := g.restoreControlUntilSourceLeaves srcId (cause := cause) (preState? := some preRef)
-    (reconcileControl := reconcileControl) (suppressReturnLog := suppressReturnLog)
-    (skipLogIds := skipLogIds) (extraSingleTargets := embControlTargets)
+    (reconcileControl := false) (suppressReturnLog := suppressReturnLog)
+    (skipLogIds := effSkipLogIds) (extraSingleTargets := embControlTargets)
     (forceReconcile := hadEmbControl)
   let g := g.expireMatching (fun s => matchesSrcDuration s.duration)
-    (cause := cause) (preState? := some preRef) (reconcileControl := reconcileControl)
+    (cause := cause) (preState? := some preRef) (reconcileControl := false)
     (suppressEmblemLog := suppressEmblemLog)
   let g :=
     if (!commandEmblemEntries.isEmpty || expiredAnyCopy || hadEmbControl || hadDirectControl) &&
         reconcileControl then
       let resolvedCause := g.resolveOptionalCause cause (defaultCause := .gameRule .leavingZone)
       reconcileControlAfterTransitionFwd preRef g (cause := some resolvedCause)
+        (deferPlayFromExileLogs := true)
     else g
   if deferPlayFromExileLogs then g else emitExpiredPlayFromExileLogs preRef g fromIdx
 

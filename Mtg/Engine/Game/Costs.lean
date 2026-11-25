@@ -74,7 +74,21 @@ def actualPrintedManaCost? (g : Game) (card : GameObject) (face : CardDef) : Opt
     let bc := g.baseCard card
     match bc.adventure.filter (·.name == face.name) with
     | some adv => some adv.manaCost
-    | none => some bc.manaCost
+    | none =>
+      match bc.prepareFace.filter (·.name == face.name) with
+      | some pf => some pf.manaCost
+      | none =>
+        match bc.otherFace with
+        | some of =>
+          if of.name == face.name then some of.manaCost
+          else
+            match of.adventure.filter (·.name == face.name) with
+            | some adv => some adv.manaCost
+            | none =>
+              match of.prepareFace.filter (·.name == face.name) with
+              | some pf => some pf.manaCost
+              | none => some bc.manaCost
+        | none => some bc.manaCost
 
 /-- Actual spell mana value of `card` cast as `face` (CR 118.9c / 202.3e / 702.37c). -/
 def actualCastManaValue (g : Game) (card : GameObject) (face : CardDef) : Nat :=
