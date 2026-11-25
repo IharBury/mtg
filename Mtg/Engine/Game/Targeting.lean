@@ -19,7 +19,7 @@ def canBeTargetedBy (g : Game) (caster : PlayerId) (o : GameObject)
   let srcBlocked :=
     match g.targetingSourceObject? sourceId with
     | some src => g.protectedFrom o src
-    | none => false
+    | none => (g.effectiveKeywords o).contains (.protection .everything)
   (!g.hasHexproof o || g.controlledBy o caster ||
       (g.controllerOf o).any (g.areTeammates · caster)) && !srcBlocked
 
@@ -41,7 +41,7 @@ def legalGraveyardCardTargets (g : Game) (p : PlayerId) (pred : GameObject → B
     Array Target :=
   (g.player p).graveyard.filterMap (fun id =>
     match g.findObject? id with
-    | some o => if pred o then some (Target.card o.id) else none
+    | some o => if isDiscardableCard o && pred o then some (Target.card o.id) else none
     | none => none)
 
 /-- Spells on the stack matching `pred` (not activated or triggered abilities). -/
@@ -210,13 +210,19 @@ partial def legalTargetsForDomain (g : Game) (caster : PlayerId) (domain : Targe
         matchingOwners.foldl (fun acc pid =>
           acc ++ (g.player pid).hand.filterMap fun id =>
             match g.findObject? id with
-            | some o => if EvalExpr.evalObjectPred g env (.live o) pred then some (Target.card o.id) else none
+            | some o =>
+              if isDiscardableCard o && EvalExpr.evalObjectPred g env (.live o) pred then
+                some (Target.card o.id)
+              else none
             | none => none) #[]
       | .library =>
         matchingOwners.foldl (fun acc pid =>
           acc ++ (g.player pid).library.filterMap fun id =>
             match g.findObject? id with
-            | some o => if EvalExpr.evalObjectPred g env (.live o) pred then some (Target.card o.id) else none
+            | some o =>
+              if isDiscardableCard o && EvalExpr.evalObjectPred g env (.live o) pred then
+                some (Target.card o.id)
+              else none
             | none => none) #[]
       | .exile =>
         g.objects.filterMap fun o =>

@@ -281,7 +281,7 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
         s!"{(g.player victim).name} reveals {String.intercalate ", " names.toList}"
   match (g.player victim).hand.findSome? (fun id =>
       match g.findObject? id with
-      | some o => if !g.isLand o then some o else none
+      | some o => if isDiscardableCard o && !g.isLand o then some o else none
       | none => none) with
   | none => g.logMsg s!"{(g.player victim).name} has no nonland card to discard"
   | some o =>

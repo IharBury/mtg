@@ -163,7 +163,7 @@ def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
           | _ => false
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  o.zone == .graveyard p && o.owner == p &&
+  o.zone == .graveyard p && o.owner == p && isDiscardableCard o &&
     ((g.baseCard o).flashback.isSome || g.flashbackUntilEot o ||
       (g.isLand o && g.controlsPlayLandsFromGraveyard p))
 
@@ -217,8 +217,9 @@ def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
       (g.isLand o && g.controlsPlayLandsFromTop p))
 
 def mayPlay (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  (g.player p).hand.contains o.id || g.mayPlayFromExile p o || g.mayCastExiledBySource p o ||
-    g.mayPlayFromGraveyard p o || g.mayPlayFromLibraryTop p o
+  isCastableObject o &&
+    ((g.player p).hand.contains o.id || g.mayPlayFromExile p o || g.mayCastExiledBySource p o ||
+      g.mayPlayFromGraveyard p o || g.mayPlayFromLibraryTop p o)
 
 def playZoneError (g : Game) (p : PlayerId) (o : GameObject) : String :=
   if o.zone == .exile && !g.mayPlayFromExile p o && !g.mayCastExiledBySource p o then

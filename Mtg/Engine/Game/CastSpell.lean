@@ -196,6 +196,8 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     (overridePrinted := if asAdventure then some face else none)
     (adventurerCard := if asAdventure then some original.printed else none)
     (cause := some (.gameRule .spellCast))
+  let some spellObj := (g.findObject? newId).filter (·.zone == .stack)
+    | throw s!"{original.printed.name} cannot be moved to the stack"
   let g :=
     if hadFlashbackPerm then
       g.createEffect (.flashbackUntilEot newId) (cause := some (.gameRule .spellCast))
@@ -238,7 +240,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     else .normal
   let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
   let needsMode := isModalSpellFace face
-  let spellObj := g.object! newId
+  let spellObj := (g.findObject? newId).getD spellObj
   let needsTarget :=
     !needsMode &&
       ((g.currentSpellEffect spellObj).any (·.requiresTarget) || g.isAura spellObj)

@@ -2099,7 +2099,18 @@ private partial def canPaySpellCostWithConvokeImprovise (g : Game) (p : PlayerId
       (fromHand := fromHand) (excludeIds := excludeIds) (castFromZone := castFromZone) then
     true
   else
-    let hasConvoke := KeywordAbility.hasConvoke face.keywords
+    let stackDummy : GameObject :=
+      { spellObj with
+        id := noSourceSentinelId
+        zone := .stack
+        controller := some p
+        printed := face
+        status :=
+          if face.name == "" then { spellObj.status with faceDown := true }
+          else { spellObj.status with faceDown := false } }
+    let hasConvoke :=
+      KeywordAbility.hasConvoke face.keywords ||
+        KeywordAbility.hasConvoke (g.currentKeywords stackDummy)
     let hasImprovise := g.spellHasImprovise face p
     if !hasConvoke && !hasImprovise then false
     else
@@ -2143,7 +2154,8 @@ private partial def canPaySpellCostWithConvokeImprovise (g : Game) (p : PlayerId
             else if isManaSrc || stepCosts.isEmpty then
               dfs (idx + 1) curCost curExcl remBudget
             else (false, remBudget)
-        (dfs 0 cost excludeIds 256).1
+        let (hit, rem) := dfs 0 cost excludeIds 256
+        hit || rem == 0
 
 /-- Maximum generic cost reduction a legal target of spell `face` can provide
 (mirroring `Casting.applyTargetCostReductions`, CR 601.2c,f). -/
@@ -2373,7 +2385,76 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
                       canPayAnnouncedAdditionalForPriority gSneak p o sneakFace targetRed
                         (origPerm := perm?) (explicitAltCost := true) (flashback := some false)
                         (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind)
-      frontOk || sneakOk || g.canCastAndPayMorphFaceDown p o || g.canCastAndPayImpending p o)
+      let morphOk :=
+        let bc := g.baseCard o
+        let preparedBlocksMorph :=
+          o.zone == .exile &&
+            ((g.playPermissionFor? p o (face? := some face)).bind (·.prepareSource)).isSome &&
+            g.canCastFrontFace p o
+        bc.kicker.isNone && !preparedBlocksMorph && g.canCastMorphFaceDown p o &&
+          let morphObj :=
+            { o with
+              controller := some p
+              printed := morphSpellFace
+              adventurerCard := none
+              status := { o.status with faceDown := true } }
+          let targetRed := maxSpellTargetGenericReduction g p morphObj morphSpellFace
+          let payMorph (perm? : Option PlayPermission) : Bool :=
+            let cost :=
+              (g.playManaCost casterObj morphSpellFace
+                (origPerm := perm?) (flashback := some false)
+                (explicitAltCost := true) (useImplicitPermissions := false)).reduceGeneric targetRed
+            canPaySpellCostWithConvokeImprovise g p morphObj morphSpellFace cost
+              (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind)
+          if o.zone == .exile then
+            let perms := g.playPermissionsFor p o
+            let cleanPerms :=
+              perms.filter fun pm =>
+                !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone &&
+                  (pm.ignoreTiming || g.timingAllowsCast p morphSpellFace)
+            let nullPerm : Option PlayPermission :=
+              if g.mayCastExiledBySource p o then some { player := p, anyMana := true } else none
+            cleanPerms.any (fun pm => payMorph (some pm)) ||
+              ((perms.isEmpty || g.mayCastExiledBySource p o) &&
+                g.timingAllowsCast p morphSpellFace && payMorph nullPerm)
+          else
+            payMorph none
+      let impendingOk :=
+        match face.morph, face.impending, face.kicker with
+        | none, some (_, alt), none =>
+          let fromGraveyard := o.zone == .graveyard o.owner
+          let isFlashbackCast := fromGraveyard && (face.flashback.isSome || g.flashbackUntilEot o)
+          let preparedBlocksImpending :=
+            o.zone == .exile &&
+              ((g.playPermissionFor? p o (face? := some face)).bind (·.prepareSource)).isSome
+          !isFlashbackCast && !preparedBlocksImpending && g.canCastFrontFace p o &&
+            let impFace := { face with manaCost := alt }
+            let targetRed := maxSpellTargetGenericReduction g p o impFace
+            let payImpending (perm? : Option PlayPermission) : Bool :=
+              let cost :=
+                (g.playManaCost casterObj impFace
+                  (origPerm := perm?) (flashback := some false)
+                  (explicitAltCost := true) (useImplicitPermissions := false)).reduceGeneric targetRed
+              canPaySpellCostWithConvokeImprovise g p o impFace cost
+                (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind) &&
+                canPayAnnouncedAdditionalForPriority g p o impFace targetRed
+                  (origPerm := perm?) (explicitAltCost := true) (flashback := some false)
+                  (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind)
+            let perms := g.playPermissionsFor p o
+            let hasNullSummoner := o.zone == .exile && g.mayCastExiledBySource p o
+            if perms.isEmpty && !hasNullSummoner then
+              g.timingAllowsCast p impFace (card? := some o) && payImpending none
+            else
+              let cleanPerms :=
+                perms.filter fun pm =>
+                  !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone &&
+                    (pm.ignoreTiming || g.timingAllowsCast p impFace (card? := some o))
+              let nullPerm : Option PlayPermission :=
+                if hasNullSummoner then some { player := p, anyMana := true } else none
+              cleanPerms.any (fun pm => payImpending (some pm)) ||
+                (hasNullSummoner && g.timingAllowsCast p impFace (card? := some o) && payImpending nullPerm)
+        | _, _, _ => false
+      frontOk || sneakOk || morphOk || impendingOk)
     let canCastAdventure := playable.any (fun o =>
       g.canCastAdventure p o &&
         match (g.baseCard o).adventure with
@@ -2416,7 +2497,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
           g.canPayAbilityCostFromSources p o ab manaCost
             (isTurnFaceUp := isTurnFaceUp) (excludeIds := excludeIds)))
     canPlayLand || !(g.manaSources p).isEmpty || g.hasUsableNonPlainManaAbility p ||
-      canCast || canCastAdventure || canActivate
+      g.hasUsableZeroOutputTapManaAbility p || canCast || canCastAdventure || canActivate
 
 /-- Whether bit `i` of `mask` is set. -/
 def maskBit (mask i : Nat) : Bool :=
@@ -2534,115 +2615,721 @@ private partial def valExprInterest (owner? : Option ObjectId) : ValueExpr → M
   | .subtypeCount _ oe
   | .colorCountAmong oe
   | .manaSymbols _ oe => objExprInterest owner? oe
-  | .maxControlled _ pred => objPredInterest owner? pred
-  | .const _ | .chosenX | .eventAmount | .playerMetric _ _ | .stepMetric _ _ => {}
+  | .playerMetric _ who => playerExprInterest owner? who
+  | .maxControlled who pred =>
+    ManaSpentInterest.merge (playerFilterInterest owner? who) (objPredInterest owner? pred)
+  | .const _ | .chosenX | .eventAmount | .stepMetric _ _ => {}
+
+private partial def playerFilterInterest (owner? : Option ObjectId) (pf : PlayerFilter) :
+    ManaSpentInterest :=
+  playerPredInterest owner? pf.pred
+
+private partial def playerPredInterest (owner? : Option ObjectId) : PlayerPred → ManaSpentInterest
+  | .all ps | .anyOf ps => ps.foldl (fun acc p => acc.merge (playerPredInterest owner? p)) {}
+  | .not p => playerPredInterest owner? p
+  | .metric _ _ rhs => valExprInterest owner? rhs
+  | .controls f minCnt =>
+    ManaSpentInterest.merge (objFilterInterest owner? f) (valExprInterest owner? minCnt)
+  | .matchesExpr who => playerExprInterest owner? who
+  | .any | .hasDesignation _ | .isMonarch | .isActivePlayer | .isDefendingPlayer
+  | .isSeat _ | .thatPlayer => {}
+
+private partial def playerExprInterest (owner? : Option ObjectId) : PlayerExpr → ManaSpentInterest
+  | .controllerOf oe | .ownerOf oe => objExprInterest owner? oe
+  | .matching _ pred => playerPredInterest owner? pred
+  | .chosenBy chooser _ filter =>
+    ManaSpentInterest.merge (playerExprInterest owner? chooser) (playerFilterInterest owner? filter)
+  | .you | .activePlayer | .defendingPlayer | .monarch | .target _
+  | .triggerPlayer _ | .stepPlayers _ => {}
+
+private partial def zoneOwnerInterest (owner? : Option ObjectId) : ZoneOwnerSpec → ManaSpentInterest
+  | .any => {}
+  | .matching pf => playerFilterInterest owner? pf
+  | .ofPlayer who => playerExprInterest owner? who
+
+private partial def zoneSetInterest (owner? : Option ObjectId) (zs : ZoneSetSpec) :
+    ManaSpentInterest :=
+  zoneOwnerInterest owner? zs.owner
+
+private partial def objFilterInterest (owner? : Option ObjectId) (f : ObjectFilter) :
+    ManaSpentInterest :=
+  ManaSpentInterest.merge (zoneSetInterest owner? f.zones) (objPredInterest owner? f.pred)
+
+private partial def combatRoleInterest (owner? : Option ObjectId) : CombatRolePred → ManaSpentInterest
+  | .attackingPlayer who => playerExprInterest owner? who
+  | .blockingObject att => objExprInterest owner? att
+  | .attacking | .attackingAlone | .blocking | .blocked | .unblocked => {}
+
+private partial def objOrPlayerInterest (owner? : Option ObjectId) :
+    ObjectOrPlayerExpr → ManaSpentInterest
+  | .object oe => objExprInterest owner? oe
+  | .player who => playerExprInterest owner? who
+  | .either oe who => ManaSpentInterest.merge (objExprInterest owner? oe) (playerExprInterest owner? who)
+
+private partial def recipFilterInterest (owner? : Option ObjectId) :
+    RecipientFilter → ManaSpentInterest
+  | .player pf => playerFilterInterest owner? pf
+  | .object f => objFilterInterest owner? f
+  | .playerOrObject pf f =>
+    ManaSpentInterest.merge (playerFilterInterest owner? pf) (objFilterInterest owner? f)
+  | .any => {}
 
 private partial def objExprInterest (owner? : Option ObjectId) : ObjectExpr → ManaSpentInterest
-  | .topOfLibrary _ cnt => valExprInterest owner? cnt
-  | .inZones _ pred => objPredInterest owner? pred
+  | .topOfLibrary who cnt =>
+    ManaSpentInterest.merge (playerExprInterest owner? who) (valExprInterest owner? cnt)
+  | .inZones zs pred =>
+    ManaSpentInterest.merge (zoneSetInterest owner? zs) (objPredInterest owner? pred)
   | .filter oe pred => ManaSpentInterest.merge (objExprInterest owner? oe) (objPredInterest owner? pred)
   | .extremum _ _ oe | .targetsOf oe | .linkedExile oe => objExprInterest owner? oe
   | .union oes => oes.foldl (fun acc oe => acc.merge (objExprInterest owner? oe)) {}
   | .diff a b => ManaSpentInterest.merge (objExprInterest owner? a) (objExprInterest owner? b)
-  | _ => {}
+  | .this | .target _ | .allTargets | .attachedHost | .triggerSubject
+  | .stepObjects _ | .costPaidObjects => {}
 
 private partial def objPredInterest (owner? : Option ObjectId) : ObjectPred → ManaSpentInterest
   | .all ps | .any ps => ps.foldl (fun acc p => acc.merge (objPredInterest owner? p)) {}
   | .not p => objPredInterest owner? p
   | .stat _ _ rhs | .counterCount _ _ rhs => valExprInterest owner? rhs
+  | .combatRole role => combatRoleInterest owner? role
+  | .controlledBy pf | .ownedBy pf => playerFilterInterest owner? pf
   | .attachedTo oe | .shares _ oe => objExprInterest owner? oe
-  | .hasAttachment f => objPredInterest owner? f.pred
-  | .targets (.object oe) => objExprInterest owner? oe
-  | _ => {}
+  | .hasAttachment f => objFilterInterest owner? f
+  | .targets tgt => objOrPlayerInterest owner? tgt
+  | .dealtDamageThisTurn _ recip? _ => recip?.map (recipFilterInterest owner?) |>.getD {}
+  | .receivedCounterThisTurn _ byP? => byP?.map (playerFilterInterest owner?) |>.getD {}
+  | .hasType _ | .hasSupertype _ | .hasSubtype _ | .hasColor _ | .colorCount _ _
+  | .named _ | .hasKeyword _ | .statParity _ _ | .isToken _ | .isFaceDown _ | .isCopy _
+  | .isCommander | .isKind _ | .tapped _ | .phasedOut _ | .hasDesignation _
+  | .sameAs _ | .otherThan _ | .wasCast | .castFrom _ | .enteredThisTurn
+  | .attackedThisTurn | .wasDealtDamageThisTurn | .putIntoGraveyardFromBattlefieldThisTurn
+  | .chosenAnchorIs _ => {}
+end
 
-private partial def countRangeInterest (owner? : Option ObjectId) : ExprCountRange → ManaSpentInterest
+private def countRangeInterest (owner? : Option ObjectId) : ExprCountRange → ManaSpentInterest
   | .exact n | .upTo n => valExprInterest owner? n
   | .between lo hi => ManaSpentInterest.merge (valExprInterest owner? lo) (valExprInterest owner? hi)
   | .anyNumber => {}
 
+private def eventPatInterest (owner? : Option ObjectId) : EventPattern → ManaSpentInterest
+  | .permanentEntered p | .permanentDied p _ | .permanentLeftBattlefield p
+  | .attackedWith p _ | .castSpell p | .discardedCard p => objPredInterest owner? p
+  | .drewCard _ | .milledCard _ | .gainedLife _ | .lostLife _
+  | .dealtDamage _ _ | .activatedLoyalty | .beheld _ | .proliferated => {}
+
+private def eventHistoryInterest (owner? : Option ObjectId) : EventHistoryPred → ManaSpentInterest
+  | .scriedThisTurn who | .surveilledThisTurn who => playerFilterInterest owner? who
+  | .eventOccurredThisTurn who pat | .eventOccurredLastTurn who pat =>
+    ManaSpentInterest.merge (playerFilterInterest owner? who) (eventPatInterest owner? pat)
+  | .firstResolutionThisTurn | .nthResolutionThisTurn _ | .optionalOnceUnusedThisTurn => {}
+
+private def durInterest (owner? : Option ObjectId) : DurationExpr → ManaSpentInterest
+  | .untilNextTurnOf who | .untilEndOfNextTurnOf who => playerExprInterest owner? who
+  | .whileOnBattlefield oe | .untilLeavesBattlefield oe
+  | .whileHasCounter oe _ | .whileInZone oe _ => objExprInterest owner? oe
+  | .untilEndOfTurn | .untilEndOfCombat | .untilEndOfStepOrPhase _
+  | .untilStepOrPhase _ | .indefinite => {}
+
 private partial def condInterest (owner? : Option ObjectId) : Condition → ManaSpentInterest
   | .castPred (.manaSpentMatches mp _) => manaSpentPredInterest owner? mp
+  | .castPred _ => {}
   | .cmp _ lhs rhs => ManaSpentInterest.merge (valExprInterest owner? lhs) (valExprInterest owner? rhs)
   | .exists oe => objExprInterest owner? oe
   | .forAll oe pred => ManaSpentInterest.merge (objExprInterest owner? oe) (objPredInterest owner? pred)
+  | .playerPred who pred =>
+    ManaSpentInterest.merge (playerExprInterest owner? who) (playerPredInterest owner? pred)
+  | .turnHistory hp => eventHistoryInterest owner? hp
   | .all cs | .any cs => cs.foldl (fun acc c => acc.merge (condInterest owner? c)) {}
   | .not c => condInterest owner? c
-  | _ => {}
+  | .stepSucceeded _ | .duringStep _ | .duringPhase _ | .isYourTurn | .isNight => {}
+
+private def costCountInterest (owner? : Option ObjectId) : CostCountSpec → ManaSpentInterest
+  | .count n | .totalPowerAtLeast n | .totalManaValueAtLeast n
+  | .totalManaSymbolsAtLeast _ n => valExprInterest owner? n
+  | .anyNumber => {}
+
+private def selfOrFilterInterest (owner? : Option ObjectId) : SelfOrFilter → ManaSpentInterest
+  | .self => {}
+  | .filter pred => objPredInterest owner? pred
+
+private def discardTargetInterest (owner? : Option ObjectId) : DiscardCostTarget → ManaSpentInterest
+  | .matching pred => objPredInterest owner? pred
+  | .self | .hand | .random => {}
+
+private def counterTargetInterest (owner? : Option ObjectId) : CounterCostTarget → ManaSpentInterest
+  | .filter pred => objPredInterest owner? pred
+  | .self | .payer => {}
+
+mutual
+private partial def costItemInterest (owner? : Option ObjectId) : CostItem → ManaSpentInterest
+  | .tapObjects cnt f =>
+    ManaSpentInterest.merge (costCountInterest owner? cnt) (objPredInterest owner? f)
+  | .payLife amt | .waterbend amt => valExprInterest owner? amt
+  | .sacrifice cnt what | .removeCounters cnt _ what | .returnToHand cnt what =>
+    ManaSpentInterest.merge (costCountInterest owner? cnt) (selfOrFilterInterest owner? what)
+  | .discard cnt what =>
+    ManaSpentInterest.merge (costCountInterest owner? cnt) (discardTargetInterest owner? what)
+  | .exile cnt zs what _ =>
+    (costCountInterest owner? cnt)
+      |>.merge (zoneSetInterest owner? zs)
+      |>.merge (selfOrFilterInterest owner? what)
+  | .putCounters cnt _ tgt =>
+    ManaSpentInterest.merge (valExprInterest owner? cnt) (counterTargetInterest owner? tgt)
+  | .or choices => choices.foldl (fun acc c => acc.merge (costSpecInterest owner? c)) {}
+  | .mana _ | .loyalty _ | .tapSelf | .untapSelf | .behold _ => {}
+
+private partial def costSpecInterest (owner? : Option ObjectId) (cs : CostSpec) :
+    ManaSpentInterest :=
+  cs.items.foldl (fun acc item => acc.merge (costItemInterest owner? item)) {}
+end
+
+private def groupConstraintInterest (owner? : Option ObjectId) :
+    GroupTargetConstraint → ManaSpentInterest
+  | .totalManaValueAtMost cap => valExprInterest owner? cap
+  | .shareCharacteristic _ | .distinctControllers | .distinctNames | .distinctCardTypes => {}
+
+private def recipPredInterest (owner? : Option ObjectId) : RecipientPred → ManaSpentInterest
+  | .filtered op pf =>
+    ManaSpentInterest.merge (objPredInterest owner? op) (playerFilterInterest owner? pf)
+  | .any | .otherThan _ => {}
+
+private partial def targetDomainInterest (owner? : Option ObjectId) :
+    TargetDomain → ManaSpentInterest
+  | .object zs pred =>
+    ManaSpentInterest.merge (zoneSetInterest owner? zs) (objPredInterest owner? pred)
+  | .player pf => playerFilterInterest owner? pf
+  | .anyTarget rp => recipPredInterest owner? rp
+  | .stackAbility ctrl sp =>
+    ManaSpentInterest.merge (playerFilterInterest owner? ctrl) (objPredInterest owner? sp)
+  | .anyOf ds => ds.foldl (fun acc d => acc.merge (targetDomainInterest owner? d)) {}
+
+private def targetSlotInterest (owner? : Option ObjectId) (s : TargetSlot) : ManaSpentInterest :=
+  (targetDomainInterest owner? s.domain)
+    |>.merge (s.division?.map (fun (_, v) => valExprInterest owner? v) |>.getD {})
+    |>.merge (s.groupConstraint?.map (groupConstraintInterest owner?) |>.getD {})
+    |>.merge (s.forEach?.map (playerFilterInterest owner?) |>.getD {})
+    |>.merge (s.altDomainIf?.map (fun (c, d) =>
+      ManaSpentInterest.merge (condInterest owner? c) (targetDomainInterest owner? d)) |>.getD {})
+
+private def targetSpecInterest (owner? : Option ObjectId) (ts : TargetSpec) : ManaSpentInterest :=
+  let sI := ts.slots.foldl (fun acc s => acc.merge (targetSlotInterest owner? s)) {}
+  ts.crossSlotConstraints.foldl (fun acc c =>
+    match c.relation with
+    | .distinct => acc
+    | .group gc => acc.merge (groupConstraintInterest owner? gc)) sI
+
+private def qualityFilterInterest (owner? : Option ObjectId) : QualityFilter → ManaSpentInterest
+  | .objectPred p => objPredInterest owner? p
+  | .color _ | .cardType _ | .subtype _ | .multicolored => {}
+
+private def protQualityInterest (owner? : Option ObjectId) : ProtectionQuality → ManaSpentInterest
+  | .quality p => objPredInterest owner? p
+  | .color _ | .cardType _ | .chosenCardType | .subtype _
+  | .everything | .allColors | .colorless => {}
+
+private def kwInterest (owner? : Option ObjectId) : KeywordAbility → ManaSpentInterest
+  | .hexproof fq? => fq?.map (qualityFilterInterest owner?) |>.getD {}
+  | .ward c | .kicker c | .flashback c | .morph c | .impending _ c | .sneak c =>
+    costSpecInterest owner? c
+  | .protection pq => protQualityInterest owner? pq
+  | .landwalk p => objPredInterest owner? p
+  | .affinity f => objFilterInterest owner? f
+  | .equip f c => ManaSpentInterest.merge (objPredInterest owner? f) (costSpecInterest owner? c)
+  | .cycling f? c =>
+    ManaSpentInterest.merge (f?.map (objPredInterest owner?) |>.getD {}) (costSpecInterest owner? c)
+  | .simple _ | .toxic _ | .gift _ | .crew _ | .teamwork _ => {}
+
+private def turnOwnerInterest (owner? : Option ObjectId) : TurnOwnerSpec → ManaSpentInterest
+  | .player who => playerFilterInterest owner? who
+  | .controllerOf oe => objExprInterest owner? oe
+
+private def attackTargetInterest (owner? : Option ObjectId) : AttackTargetFilter → ManaSpentInterest
+  | .any => {}
+  | .player who | .playerOrPlaneswalker who => playerFilterInterest owner? who
+
+private def targetSubjInterest (owner? : Option ObjectId) : TargetSubjectFilter → ManaSpentInterest
+  | .object p => objPredInterest owner? p
+  | .playerOrPermanent => {}
+
+private def zoneEndpointInterest (owner? : Option ObjectId) : ZoneEndpointSpec → ManaSpentInterest
+  | .inZones zs => zoneSetInterest owner? zs
+  | .any | .notIn _ => {}
 
 private partial def trigPatInterest (owner? : Option ObjectId) : TriggerPattern → ManaSpentInterest
-  | .castSpell _ sp _ manaSpent? _ _ _ =>
-    let base := manaSpent?.map (manaSpentPredInterest owner?) |>.getD {}
-    base.merge (objPredInterest owner? sp)
-  | .whenCond inner cond => ManaSpentInterest.merge (trigPatInterest owner? inner) (condInterest owner? cond)
+  | .zoneChange subj fz tz _ act? =>
+    (objPredInterest owner? subj)
+      |>.merge (zoneEndpointInterest owner? fz)
+      |>.merge (zoneEndpointInterest owner? tz)
+      |>.merge (act?.map (playerFilterInterest owner?) |>.getD {})
+  | .createTokens who tp =>
+    ManaSpentInterest.merge (playerFilterInterest owner? who) (objPredInterest owner? tp)
+  | .sacrifice who subj =>
+    ManaSpentInterest.merge (playerFilterInterest owner? who) (objPredInterest owner? subj)
+  | .drawCard who _ | .gainLife who | .loseLife who | .playerAction who _ =>
+    playerFilterInterest owner? who
+  | .discard who cp _ =>
+    ManaSpentInterest.merge (playerFilterInterest owner? who) (objPredInterest owner? cp)
+  | .becomesTapped subj _ _ _ | .becomesUntapped subj | .phasesOut subj
+  | .blocks subj | .becomesBlocked subj | .spellCountered subj
+  | .stackObjectResolves subj _ | .abilityTriggers subj =>
+    objPredInterest owner? subj
+  | .becomesUnattached att host =>
+    ManaSpentInterest.merge (objPredInterest owner? att) (objPredInterest owner? host)
+  | .controlLost subj fc =>
+    ManaSpentInterest.merge (objPredInterest owner? subj) (playerFilterInterest owner? fc)
+  | .putCounters putter? _ subj =>
+    ManaSpentInterest.merge (putter?.map (playerFilterInterest owner?) |>.getD {})
+      (objPredInterest owner? subj)
+  | .attacks att tgt _ _ _ _ =>
+    ManaSpentInterest.merge (objPredInterest owner? att) (attackTargetInterest owner? tgt)
+  | .damageDealt src recip _ _ _ =>
+    ManaSpentInterest.merge (objPredInterest owner? src) (recipFilterInterest owner? recip)
+  | .castSpell caster sp _ manaSpent? _ _ tgt? =>
+    (playerFilterInterest owner? caster)
+      |>.merge (objPredInterest owner? sp)
+      |>.merge (manaSpent?.map (manaSpentPredInterest owner?) |>.getD {})
+      |>.merge (tgt?.map (recipFilterInterest owner?) |>.getD {})
+  | .activateAbility act src _ =>
+    ManaSpentInterest.merge (playerFilterInterest owner? act) (objPredInterest owner? src)
+  | .becomesTarget subj byC _ =>
+    ManaSpentInterest.merge (targetSubjInterest owner? subj) (playerFilterInterest owner? byC)
+  | .stepBegins _ whoseTurn => turnOwnerInterest owner? whoseTurn
+  | .whenCond inner cond =>
+    ManaSpentInterest.merge (trigPatInterest owner? inner) (condInterest owner? cond)
   | .or a b => ManaSpentInterest.merge (trigPatInterest owner? a) (trigPatInterest owner? b)
-  | _ => {}
 
-private partial def staticRepInterest (owner? : Option ObjectId) : StaticReplacementSpec → ManaSpentInterest
-  | .entersTapped _ unlessCond? => unlessCond?.map (condInterest owner?) |>.getD {}
-  | .entersWithCounters _ _ cnt _ => valExprInterest owner? cnt
-  | .preventDamage _ amt? => amt?.map (valExprInterest owner?) |>.getD {}
-  | .modifyDamage _ _ _ _ addAmt => valExprInterest owner? addAmt
-  | .all specs => specs.foldl (fun acc s => acc.merge (staticRepInterest owner? s)) {}
-  | _ => {}
+private def staticSubjInterest (owner? : Option ObjectId) : StaticSubject → ManaSpentInterest
+  | .self => {}
+  | .matching f => objFilterInterest owner? f
+
+private def tagInterest (owner? : Option ObjectId) : ActivationMechanicTag → ManaSpentInterest
+  | .equip (some p) => objPredInterest owner? p
+  | .equip none | .cycling _ | .boast | .powerUp | .exhaust | .crew _ => {}
+
+private def staticPlayerRuleInterest (owner? : Option ObjectId) :
+    StaticPlayerRule → ManaSpentInterest
+  | .maxHandSize w _ | .additionalLands w _ | .cantGainLife w
+  | .cantLoseGame w | .cantWinGame w | .lifeTotalCantChange w
+  | .gainDesignation w _ | .controlPlayer w => playerFilterInterest owner? w
+  | .hexproof w fq? =>
+    ManaSpentInterest.merge (playerFilterInterest owner? w)
+      (fq?.map (qualityFilterInterest owner?) |>.getD {})
+  | .protectionFrom w q =>
+    ManaSpentInterest.merge (playerFilterInterest owner? w) (protQualityInterest owner? q)
+  | .cantCastSpells w sp =>
+    ManaSpentInterest.merge (playerFilterInterest owner? w) (objPredInterest owner? sp)
+  | .activateAsThoughHaste w sc =>
+    ManaSpentInterest.merge (playerFilterInterest owner? w) (objFilterInterest owner? sc)
+  | .extraAbilityActivation tag sc _ =>
+    ManaSpentInterest.merge (tagInterest owner? tag) (objFilterInterest owner? sc)
+  | .forbidAbilityActivation w tag =>
+    ManaSpentInterest.merge (playerFilterInterest owner? w) (tagInterest owner? tag)
+
+private def staticPlayRuleInterest (owner? : Option ObjectId) : StaticPlayRule → ManaSpentInterest
+  | .lookAtTopOfLibrary w => playerFilterInterest owner? w
+  | .mayPlayFrom w _ p _ _ _ _ | .castAsThoughFlash w p _ _
+  | .nextSpellCantBeCountered w p | .activateLoyaltyAsInstant w p =>
+    ManaSpentInterest.merge (playerFilterInterest owner? w) (objPredInterest owner? p)
+  | .spellCantBeCountered p? => p?.map (objPredInterest owner?) |>.getD {}
+  | .castRestriction c => condInterest owner? c
+  | .mayBeginOnBattlefield | .canBeCommander => {}
+
+private def staticCombatRuleInterest (owner? : Option ObjectId) :
+    StaticCombatRule → ManaSpentInterest
+  | .cantAttack s | .attacksEachCombatIfAble s | .attackDespiteDefender s
+  | .maxAttackersPerPermanent s _ | .cantBeBlocked s
+  | .minBlockers s _ | .maxBlockers s _ | .assignNegativePowerAsPositive s =>
+    staticSubjInterest owner? s
+  | .cantAttackUnless s c =>
+    ManaSpentInterest.merge (staticSubjInterest owner? s) (condInterest owner? c)
+  | .attackTax ap df cs =>
+    (objPredInterest owner? ap)
+      |>.merge (playerFilterInterest owner? df)
+      |>.merge (costSpecInterest owner? cs)
+  | .attackPlaneswalkerTax ap pp cs =>
+    (objPredInterest owner? ap)
+      |>.merge (objPredInterest owner? pp)
+      |>.merge (costSpecInterest owner? cs)
+  | .cantAttackPlayer ap df pw? =>
+    (objPredInterest owner? ap)
+      |>.merge (playerFilterInterest owner? df)
+      |>.merge (pw?.map (objPredInterest owner?) |>.getD {})
+  | .cantBlock s c? =>
+    ManaSpentInterest.merge (staticSubjInterest owner? s) (c?.map (condInterest owner?) |>.getD {})
+  | .cantBlockMatching bp ap =>
+    ManaSpentInterest.merge (objPredInterest owner? bp) (objPredInterest owner? ap)
+  | .cantBeBlockedBy s bp =>
+    ManaSpentInterest.merge (staticSubjInterest owner? s) (objPredInterest owner? bp)
+  | .assignCombatDamageByToughness sc _ => objFilterInterest owner? sc
+
+private def staticTriggerRuleInterest (owner? : Option ObjectId) :
+    StaticTriggerRule → ManaSpentInterest
+  | .extraTrigger sc _ | .suppressEnteringTriggers sc => objFilterInterest owner? sc
+
+private def staticGameRuleInterest (owner? : Option ObjectId) : StaticGameRule → ManaSpentInterest
+  | .doesntUntapDuringUntapStep s c? =>
+    ManaSpentInterest.merge (staticSubjInterest owner? s) (c?.map (condInterest owner?) |>.getD {})
+  | .cantBecomeUntapped s => staticSubjInterest owner? s
+  | .lockNonManaDuringPhase _ w | .legendRuleDisabled w => playerFilterInterest owner? w
+  | .planeswalkersSurviveZeroLoyalty sc | .cantHaveCountersPutOn sc _ =>
+    objFilterInterest owner? sc
+
+private def costTargetInterest (owner? : Option ObjectId) : CostTargetSpec → ManaSpentInterest
+  | .thisSpell => {}
+  | .spells caster pred _ _ _ =>
+    ManaSpentInterest.merge (playerFilterInterest owner? caster) (objPredInterest owner? pred)
+  | .abilities act tag? sc tgt? _ =>
+    (playerFilterInterest owner? act)
+      |>.merge (tag?.map (tagInterest owner?) |>.getD {})
+      |>.merge (objFilterInterest owner? sc)
+      |>.merge (tgt?.map (objPredInterest owner?) |>.getD {})
+
+private def costModInterest (owner? : Option ObjectId) : CostModification → ManaSpentInterest
+  | .reduceGeneric v | .increaseGeneric v => valExprInterest owner? v
+  | .alternativeFree => {}
 
 private partial def ruleModInterest (owner? : Option ObjectId) : RuleModification → ManaSpentInterest
-  | .play (.castRestriction c) => condInterest owner? c
-  | .combat (.cantAttackUnless _ c) => condInterest owner? c
-  | .combat (.cantBlock _ c?) => c?.map (condInterest owner?) |>.getD {}
-  | .game (.doesntUntapDuringUntapStep _ c?) => c?.map (condInterest owner?) |>.getD {}
-  | .costMod _ (.reduceGeneric v) _ | .costMod _ (.increaseGeneric v) _ => valExprInterest owner? v
+  | .player r => staticPlayerRuleInterest owner? r
+  | .play r => staticPlayRuleInterest owner? r
+  | .combat r => staticCombatRuleInterest owner? r
+  | .trigger r => staticTriggerRuleInterest owner? r
+  | .game r => staticGameRuleInterest owner? r
+  | .costMod tgt mod _ =>
+    ManaSpentInterest.merge (costTargetInterest owner? tgt) (costModInterest owner? mod)
   | .all rules => rules.foldl (fun acc r => acc.merge (ruleModInterest owner? r)) {}
-  | _ => {}
 
-private partial def contModInterest (owner? : Option ObjectId) : ContinuousModification → ManaSpentInterest
+private def destOwnerInterest (owner? : Option ObjectId) : DestOwnerSpec → ManaSpentInterest
+  | .player who => playerExprInterest owner? who
+  | .controller | .owner => {}
+
+private def destZoneInterest (owner? : Option ObjectId) : DestZoneSpec → ManaSpentInterest
+  | .battlefield u | .hand u => destOwnerInterest owner? u
+  | .library u pos _ =>
+    let posI := match pos with | .fromTop off => valExprInterest owner? off | _ => {}
+    ManaSpentInterest.merge (destOwnerInterest owner? u) posI
+  | .graveyard | .exile => {}
+
+private def grantPlayPermInterest (owner? : Option ObjectId) (gp : GrantPlayPermSpec) :
+    ManaSpentInterest :=
+  (durInterest owner? gp.duration)
+    |>.merge (gp.maxTotalManaValue?.map (valExprInterest owner?) |>.getD {})
+    |>.merge (gp.condition?.map (condInterest owner?) |>.getD {})
+    |>.merge (gp.filter?.map (objPredInterest owner?) |>.getD {})
+
+private def delayedReturnInterest (owner? : Option ObjectId) : DelayedReturnSpec → ManaSpentInterest
+  | .immediately _ u | .atNextEndStep _ u | .returnThenExileAtEndStep _ u =>
+    destOwnerInterest owner? u
+  | .returnIfThenExileAtEndStep p _ u =>
+    ManaSpentInterest.merge (objPredInterest owner? p) (destOwnerInterest owner? u)
+
+private def moveChoiceInterest (owner? : Option ObjectId) (ch : MoveChoiceSpec) :
+    ManaSpentInterest :=
+  let chooserI := match ch.chooser with | .player w => playerExprInterest owner? w | _ => {}
+  chooserI
+    |>.merge (countRangeInterest owner? ch.count)
+    |>.merge (ch.filter?.map (objPredInterest owner?) |>.getD {})
+    |>.merge (ch.groupConstraint?.map (groupConstraintInterest owner?) |>.getD {})
+    |>.merge (ch.unlessMatching?.map (objPredInterest owner?) |>.getD {})
+
+private def moveModsInterest (owner? : Option ObjectId) (mods : MoveMods) : ManaSpentInterest :=
+  let base :=
+    (mods.attachTo?.map (objExprInterest owner?) |>.getD {})
+      |>.merge (mods.delayedReturn?.map (delayedReturnInterest owner?) |>.getD {})
+      |>.merge (mods.grantPlayPerm?.map (grantPlayPermInterest owner?) |>.getD {})
+      |>.merge (mods.choice?.map (moveChoiceInterest owner?) |>.getD {})
+  let withCnt := mods.enterCounters.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) base
+  mods.enterKeywords.foldl (fun acc kw => acc.merge (kwInterest owner? kw)) withCnt
+
+private def enterModsInterest (owner? : Option ObjectId) (mods : EnterMods) : ManaSpentInterest :=
+  let delayedI :=
+    match mods.delayedAction? with
+    | some (.sacrificeAtEndStepUnless cond) => condInterest owner? cond
+    | _ => {}
+  let base :=
+    (mods.attachTo?.map (objExprInterest owner?) |>.getD {})
+      |>.merge delayedI
+  let withCnt := mods.counters.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) base
+  mods.grantKeywordsUntilEot.foldl (fun acc kw => acc.merge (kwInterest owner? kw)) withCnt
+
+private def recipExprInterest (owner? : Option ObjectId) : RecipientExpr → ManaSpentInterest
+  | .objects oe => objExprInterest owner? oe
+  | .players who => playerExprInterest owner? who
+  | .both oe who => ManaSpentInterest.merge (objExprInterest owner? oe) (playerExprInterest owner? who)
+  | .targetSlot _ | .allTargets => {}
+
+private def damageOpInterest (owner? : Option ObjectId) : DamageOp → ManaSpentInterest
+  | .deal src to amt _ =>
+    (objExprInterest owner? src)
+      |>.merge (recipExprInterest owner? to)
+      |>.merge (valExprInterest owner? amt)
+  | .fight a b _ =>
+    ManaSpentInterest.merge (objExprInterest owner? a) (objExprInterest owner? b)
+
+private def lifeOpInterest (owner? : Option ObjectId) : LifeOp → ManaSpentInterest
+  | .gain w a | .lose w a | .set w a =>
+    ManaSpentInterest.merge (playerExprInterest owner? w) (valExprInterest owner? a)
+
+private def counterModeInterest (owner? : Option ObjectId) : CounterModifyMode → ManaSpentInterest
+  | .put _ cnt => valExprInterest owner? cnt
+  | .remove _ cnt => countRangeInterest owner? cnt
+  | .moveAll fromObj _ | .moveOne fromObj _
+  | .copyFromLki fromObj | .copyMissingKeywords fromObj => objExprInterest owner? fromObj
+  | .double _ => {}
+
+private def permOpInterest (owner? : Option ObjectId) : PermanentOp → ManaSpentInterest
+  | .modifyCounters mode oe ch? =>
+    (counterModeInterest owner? mode)
+      |>.merge (objExprInterest owner? oe)
+      |>.merge (ch?.map (moveChoiceInterest owner?) |>.getD {})
+  | .setTapped oe _ ch? =>
+    ManaSpentInterest.merge (objExprInterest owner? oe)
+      (ch?.map (moveChoiceInterest owner?) |>.getD {})
+  | .attach a b _ => ManaSpentInterest.merge (objExprInterest owner? a) (objExprInterest owner? b)
+  | .phaseOut oe p? =>
+    ManaSpentInterest.merge (objExprInterest owner? oe)
+      (p?.map (playerExprInterest owner?) |>.getD {})
+  | .transform oe | .turnFaceUp oe | .setDesignation oe _ _ => objExprInterest owner? oe
+
+private def manaPaletteInterest (owner? : Option ObjectId) : ManaPoolPalette → ManaSpentInterest
+  | .commanderColorIdentity who => playerExprInterest owner? who
+  | .colorsAmong oe | .typesLandsCouldProduce oe => objExprInterest owner? oe
+  | .explicit _ | .anyColor | .chosenColorOnSource => {}
+
+private def manaProdInterest (owner? : Option ObjectId) (prod : ManaProductionSpec) :
+    ManaSpentInterest :=
+  match prod.spec with
+  | .sequence items =>
+    items.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) {}
+  | .oneOf pal amt | .combination pal amt =>
+    ManaSpentInterest.merge (manaPaletteInterest owner? pal) (valExprInterest owner? amt)
+  | .colorAmong pal _ => manaPaletteInterest owner? pal
+
+private def playerOpInterest (owner? : Option ObjectId) : PlayerOp → ManaSpentInterest
+  | .drawCards w amt | .scry w amt | .surveil w amt | .amass w _ amt =>
+    ManaSpentInterest.merge (playerExprInterest owner? w) (valExprInterest owner? amt)
+  | .empowerPlaneswalker _ amt => valExprInterest owner? amt
+  | .proliferate w amt tgt? =>
+    (playerExprInterest owner? w)
+      |>.merge (valExprInterest owner? amt)
+      |>.merge (tgt?.map (objExprInterest owner?) |>.getD {})
+  | .addMana w prod =>
+    ManaSpentInterest.merge (playerExprInterest owner? w) (manaProdInterest owner? prod)
+  | .explore oe | .connive oe => objExprInterest owner? oe
+  | .shuffle w | .temptWithRing w => playerExprInterest owner? w
+  | .setStatus w _ cond? =>
+    ManaSpentInterest.merge (playerExprInterest owner? w)
+      (cond?.map (condInterest owner?) |>.getD {})
+  | .choose w kind =>
+    let kI := match kind with
+      | .keyword ks => ks.foldl (fun acc kw => acc.merge (kwInterest owner? kw)) {}
+      | .creatureType | .oddOrEven | .playerWithMostLife => {}
+    ManaSpentInterest.merge (playerExprInterest owner? w) kI
+  | .inspectLibrary spec =>
+    let srcI := match spec.source with
+      | .topCards w cnt _ | .millCards w cnt =>
+        ManaSpentInterest.merge (playerExprInterest owner? w) (valExprInterest owner? cnt)
+      | .revealUntil w pred cnt _ =>
+        (playerExprInterest owner? w)
+          |>.merge (objPredInterest owner? pred)
+          |>.merge (valExprInterest owner? cnt)
+      | .allButBottom w | .outsideTheGame w _ => playerExprInterest owner? w
+    let actI := match spec.action with
+      | .takeMatching pred cnt dest mods _ _ =>
+        (objPredInterest owner? pred)
+          |>.merge (countRangeInterest owner? cnt)
+          |>.merge (destZoneInterest owner? dest)
+          |>.merge (moveModsInterest owner? mods)
+      | .splitIntoPiles sp ch _ d1 d2 _ =>
+        (playerExprInterest owner? sp)
+          |>.merge (playerExprInterest owner? ch)
+          |>.merge (destZoneInterest owner? d1)
+          |>.merge (destZoneInterest owner? d2)
+      | .distributeEachOpponent dest mods | .moveAll dest mods =>
+        ManaSpentInterest.merge (destZoneInterest owner? dest) (moveModsInterest owner? mods)
+      | .none => {}
+    (playerExprInterest owner? spec.chooser).merge srcI |>.merge actI
+  | .searchLibrary spec =>
+    let secI :=
+      match spec.secondDest? with
+      | none => {}
+      | some (d2, m2) =>
+        ManaSpentInterest.merge (destZoneInterest owner? d2) (moveModsInterest owner? m2)
+    (playerExprInterest owner? spec.searcher)
+      |>.merge (zoneSetInterest owner? spec.zones)
+      |>.merge (objPredInterest owner? spec.filter)
+      |>.merge (countRangeInterest owner? spec.count)
+      |>.merge (spec.groupConstraint?.map (groupConstraintInterest owner?) |>.getD {})
+      |>.merge (destZoneInterest owner? spec.dest)
+      |>.merge (moveModsInterest owner? spec.mods)
+      |>.merge secI
+      |>.merge (spec.untapIf?.map (condInterest owner?) |>.getD {})
+  | .reveal w oe cnt? =>
+    (playerExprInterest owner? w)
+      |>.merge (objExprInterest owner? oe)
+      |>.merge (cnt?.map (countRangeInterest owner?) |>.getD {})
+
+private def turnOpInterest (owner? : Option ObjectId) : TurnOp → ManaSpentInterest
+  | .extraTurn w rule? =>
+    ManaSpentInterest.merge (playerExprInterest owner? w)
+      (rule?.map (ruleModInterest owner?) |>.getD {})
+  | .extraPhase _ _ | .extraStep _ _ => {}
+
+private def stackOpInterest (owner? : Option ObjectId) : StackOp → ManaSpentInterest
+  | .counterStack oe _ _ | .chooseNewTargets oe _ => objExprInterest owner? oe
+  | .copyStackObject oe copies _ =>
+    ManaSpentInterest.merge (objExprInterest owner? oe) (valExprInterest owner? copies)
+  | .mayCastOrPlay oe perm =>
+    ManaSpentInterest.merge (objExprInterest owner? oe) (grantPlayPermInterest owner? perm)
+
+private def forEachInterest (owner? : Option ObjectId) : ForEachSpec → ManaSpentInterest
+  | .eachPlayer pf => playerFilterInterest owner? pf
+  | .eachObject oe => objExprInterest owner? oe
+  | .repeatTimes cnt => valExprInterest owner? cnt
+  | .eachTargetSlot => {}
+
+mutual
+private partial def copyModInterest (owner? : Option ObjectId) :
+    CopyModification → ManaSpentInterest
+  | .addKeywords ks => ks.foldl (fun acc kw => acc.merge (kwInterest owner? kw)) {}
+  | .addAbilities gas => gas.foldl (fun acc ga => acc.merge (grantedAbilityInterest owner? ga)) {}
+  | .setName _ | .setBasePT _ _ | .addSupertypes _ | .addTypes _
+  | .addSubtypes _ | .replaceCreatureSubtypes _ | .addColors _ | .removeSupertype _ => {}
+
+private partial def tokenSpecInterest (owner? : Option ObjectId) : TokenSpec → ManaSpentInterest
+  | .predefined _ => {}
+  | .custom cs =>
+    let base :=
+      (cs.power?.map (valExprInterest owner?) |>.getD {})
+        |>.merge (cs.toughness?.map (valExprInterest owner?) |>.getD {})
+    let withKw := cs.keywords.foldl (fun acc kw => acc.merge (kwInterest owner? kw)) base
+    cs.abilities.foldl (fun acc ga => acc.merge (grantedAbilityInterest owner? ga)) withKw
+  | .copyOf oe cmods =>
+    cmods.foldl (fun acc cm => acc.merge (copyModInterest owner? cm)) (objExprInterest owner? oe)
+
+private partial def staticRepInterest (owner? : Option ObjectId) :
+    StaticReplacementSpec → ManaSpentInterest
+  | .entersTapped subj unlessCond? =>
+    ManaSpentInterest.merge (staticSubjInterest owner? subj)
+      (unlessCond?.map (condInterest owner?) |>.getD {})
+  | .entersTappedUnlessPay cost => costSpecInterest owner? cost
+  | .entersWithCounters subj _ cnt _ =>
+    ManaSpentInterest.merge (staticSubjInterest owner? subj) (valExprInterest owner? cnt)
+  | .asEntersMayCopy f dur mods =>
+    let base := ManaSpentInterest.merge (objFilterInterest owner? f) (durInterest owner? dur)
+    mods.foldl (fun acc cm => acc.merge (copyModInterest owner? cm)) base
+  | .exileInsteadOfDying sc bt? =>
+    ManaSpentInterest.merge (objFilterInterest owner? sc)
+      (bt?.map (tokenSpecInterest owner?) |>.getD {})
+  | .multiplyTokens who _ | .extraDraw who _ _ | .unspentManaBecomesColorless who =>
+    playerFilterInterest owner? who
+  | .extraTokenWith who tp tok _ | .replaceTokens who tp tok =>
+    (playerFilterInterest owner? who)
+      |>.merge (objPredInterest owner? tp)
+      |>.merge (tokenSpecInterest owner? tok)
+  | .extraDrawOnConnive who sc _ =>
+    ManaSpentInterest.merge (playerFilterInterest owner? who) (objFilterInterest owner? sc)
+  | .modifyCountersPut sc _ byP? _ =>
+    ManaSpentInterest.merge (objFilterInterest owner? sc)
+      (byP?.map (playerFilterInterest owner?) |>.getD {})
+  | .preventDamage subj amt? =>
+    ManaSpentInterest.merge (staticSubjInterest owner? subj)
+      (amt?.map (valExprInterest owner?) |>.getD {})
+  | .modifyDamage sc _ recip _ addAmt =>
+    (objFilterInterest owner? sc)
+      |>.merge (recipFilterInterest owner? recip)
+      |>.merge (valExprInterest owner? addAmt)
+  | .healOtherDamageWhenDealt subj => staticSubjInterest owner? subj
+  | .all specs => specs.foldl (fun acc s => acc.merge (staticRepInterest owner? s)) {}
+  | .entersWithDesignation _ | .asEntersChoose _
+  | .exileOnLeaveStack | .entersTappedAndAttackingSameDefender => {}
+
+private partial def contModInterest (owner? : Option ObjectId) :
+    ContinuousModification → ManaSpentInterest
+  | .grantKeywords ks | .loseKeywords ks =>
+    ks.foldl (fun acc kw => acc.merge (kwInterest owner? kw)) {}
+  | .grantActivated abs => abs.foldl (fun acc ab => acc.merge (actInterest owner? ab)) {}
   | .grantTriggered abs => abs.foldl (fun acc ab => acc.merge (trigInterest owner? ab)) {}
   | .grantStatic sas => sas.foldl (fun acc sa => acc.merge (staticInterest owner? sa)) {}
+  | .copyActivatedFrom sc => objFilterInterest owner? sc
   | .setBasePT p? t? =>
     ManaSpentInterest.merge (p?.map (valExprInterest owner?) |>.getD {})
       (t?.map (valExprInterest owner?) |>.getD {})
   | .modifyPT p t => ManaSpentInterest.merge (valExprInterest owner? p) (valExprInterest owner? t)
+  | .gainControl who => playerExprInterest owner? who
+  | .exchangeControl oe => objExprInterest owner? oe
+  | .becomeCopyOf oe mods =>
+    mods.foldl (fun acc cm => acc.merge (copyModInterest owner? cm)) (objExprInterest owner? oe)
   | .applyRule rule => ruleModInterest owner? rule
   | .all mods => mods.foldl (fun acc m => acc.merge (contModInterest owner? m)) {}
-  | _ => {}
+  | .modifyTypes _ | .addAllCreatureTypes | .modifyColors _ | .loseAllAbilities => {}
 
 private partial def staticInterest (owner? : Option ObjectId) : StaticAbility → ManaSpentInterest
   | .characteristicDefining (.setPT p? t?) =>
     ManaSpentInterest.merge (p?.map (valExprInterest owner?) |>.getD {})
       (t?.map (valExprInterest owner?) |>.getD {})
-  | .continuous cond? _ mod =>
-    ManaSpentInterest.merge (cond?.map (condInterest owner?) |>.getD {}) (contModInterest owner? mod)
+  | .characteristicDefining _ => {}
+  | .continuous cond? sc mod =>
+    (cond?.map (condInterest owner?) |>.getD {})
+      |>.merge (objFilterInterest owner? sc)
+      |>.merge (contModInterest owner? mod)
   | .ruleModifying cond? rule =>
-    ManaSpentInterest.merge (cond?.map (condInterest owner?) |>.getD {}) (ruleModInterest owner? rule)
-  | .costModifier cond? _ mod =>
-    let modI := match mod with
-      | .reduceGeneric v | .increaseGeneric v => valExprInterest owner? v
-      | _ => {}
-    ManaSpentInterest.merge (cond?.map (condInterest owner?) |>.getD {}) modI
+    ManaSpentInterest.merge (cond?.map (condInterest owner?) |>.getD {})
+      (ruleModInterest owner? rule)
+  | .costModifier cond? appliesTo mod =>
+    (cond?.map (condInterest owner?) |>.getD {})
+      |>.merge (costTargetInterest owner? appliesTo)
+      |>.merge (costModInterest owner? mod)
   | .replacement cond? spec =>
-    ManaSpentInterest.merge (cond?.map (condInterest owner?) |>.getD {}) (staticRepInterest owner? spec)
-  | _ => {}
+    ManaSpentInterest.merge (cond?.map (condInterest owner?) |>.getD {})
+      (staticRepInterest owner? spec)
+  | .enchantRestriction slot => targetSlotInterest owner? slot
 
-private partial def trigInterest (owner? : Option ObjectId) (ab : TriggeredAbility) : ManaSpentInterest :=
+private partial def effectInterest (owner? : Option ObjectId) (eff : Effect) : ManaSpentInterest :=
+  ManaSpentInterest.merge (targetSpecInterest owner? eff.targets) (instrInterest owner? eff.body)
+
+private partial def actInterest (owner? : Option ObjectId) (ab : ActivatedAbility) :
+    ManaSpentInterest :=
+  let base :=
+    (costSpecInterest owner? ab.cost)
+      |>.merge (effectInterest owner? ab.effect)
+      |>.merge (ab.condition?.map (condInterest owner?) |>.getD {})
+      |>.merge (ab.tag?.map (tagInterest owner?) |>.getD {})
+  ab.costReductions.foldl (fun acc r =>
+    acc
+      |>.merge (valExprInterest owner? r.amount)
+      |>.merge (r.condition?.map (condInterest owner?) |>.getD {})) base
+
+private partial def trigInterest (owner? : Option ObjectId) (ab : TriggeredAbility) :
+    ManaSpentInterest :=
   if ab.isManaSpentCastScry then {}
   else
     (trigPatInterest owner? ab.pattern)
       |>.merge (ab.interveningIf?.map (condInterest owner?) |>.getD {})
-      |>.merge (instrInterest owner? ab.effect.body)
+      |>.merge (effectInterest owner? ab.effect)
 
-private partial def grantedAbilityInterest (owner? : Option ObjectId) : GrantedAbility → ManaSpentInterest
+private partial def grantedAbilityInterest (owner? : Option ObjectId) :
+    GrantedAbility → ManaSpentInterest
+  | .keyword kw => kwInterest owner? kw
+  | .activated ab => actInterest owner? ab
   | .triggered ab => trigInterest owner? ab
   | .static sa => staticInterest owner? sa
-  | _ => {}
 
 private partial def instrInterest (owner? : Option ObjectId) : Instruction → ManaSpentInterest
+  | .noop => {}
   | .seq steps => steps.foldl (fun acc s => acc.merge (instrInterest owner? s)) {}
   | .bind _ step cont => ManaSpentInterest.merge (instrInterest owner? step) (instrInterest owner? cont)
   | .ifCond cond t e =>
     (condInterest owner? cond)
       |>.merge (instrInterest owner? t)
       |>.merge (instrInterest owner? e)
-  | .optional _ _ y n _ => ManaSpentInterest.merge (instrInterest owner? y) (instrInterest owner? n)
-  | .unlessPays _ _ u => instrInterest owner? u
+  | .optional who cost? y n _ =>
+    (playerExprInterest owner? who)
+      |>.merge (cost?.map (costSpecInterest owner?) |>.getD {})
+      |>.merge (instrInterest owner? y)
+      |>.merge (instrInterest owner? n)
+  | .unlessPays payer cost u =>
+    (playerExprInterest owner? payer)
+      |>.merge (costSpecInterest owner? cost)
+      |>.merge (instrInterest owner? u)
   | .chooseModes spec =>
     let base :=
       (valExprInterest owner? spec.minModes)
@@ -2651,154 +3338,53 @@ private partial def instrInterest (owner? : Option ObjectId) : Instruction → M
           (condInterest owner? c)
             |>.merge (valExprInterest owner? lo)
             |>.merge (valExprInterest owner? hi)) |>.getD {})
-    spec.modes.foldl (fun acc m => acc.merge (instrInterest owner? m.body)) base
+    spec.modes.foldl (fun acc m => acc.merge (effectInterest owner? m)) base
   | .forEach iter _ body =>
-    let iterI := match iter with
-      | .repeatTimes cnt => valExprInterest owner? cnt
-      | .eachObject oe => objExprInterest owner? oe
-      | _ => {}
-    iterI.merge (instrInterest owner? body)
+    ManaSpentInterest.merge (forEachInterest owner? iter) (instrInterest owner? body)
   | .queueReflexiveTrigger ab => trigInterest owner? ab
   | .installEffect op =>
     match op with
-    | .applyContinuous _ oe mod =>
-      ManaSpentInterest.merge (objExprInterest owner? oe) (contModInterest owner? mod)
-    | .applyRule _ rule => ruleModInterest owner? rule
-    | .applyReplacement _ spec => staticRepInterest owner? spec
+    | .applyContinuous dur oe mod =>
+      (durInterest owner? dur)
+        |>.merge (objExprInterest owner? oe)
+        |>.merge (contModInterest owner? mod)
+    | .applyRule dur rule =>
+      ManaSpentInterest.merge (durInterest owner? dur) (ruleModInterest owner? rule)
+    | .applyReplacement dur spec =>
+      ManaSpentInterest.merge (durInterest owner? dur) (staticRepInterest owner? spec)
     | .createDelayedTrigger spec =>
       (trigPatInterest owner? spec.pattern)
+        |>.merge (durInterest owner? spec.duration)
         |>.merge (spec.interveningIf?.map (condInterest owner?) |>.getD {})
-        |>.merge (instrInterest owner? spec.effect.body)
+        |>.merge (effectInterest owner? spec.effect)
   | .moveZone oe dest _ mods =>
-    let choiceI (ch? : Option MoveChoiceSpec) : ManaSpentInterest :=
-      match ch? with
-      | none => {}
-      | some ch =>
-        (countRangeInterest owner? ch.count)
-          |>.merge (ch.filter?.map (objPredInterest owner?) |>.getD {})
-          |>.merge (ch.unlessMatching?.map (objPredInterest owner?) |>.getD {})
-    let destI : ManaSpentInterest :=
-      match dest with
-      | .library _ (.fromTop offset) _ => valExprInterest owner? offset
-      | _ => {}
-    let base :=
-      (objExprInterest owner? oe)
-        |>.merge destI
-        |>.merge (mods.attachTo?.map (objExprInterest owner?) |>.getD {})
-        |>.merge (choiceI mods.choice?)
-    mods.enterCounters.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) base
+    (objExprInterest owner? oe)
+      |>.merge (destZoneInterest owner? dest)
+      |>.merge (moveModsInterest owner? mods)
   | .create op =>
     match op with
-    | .tokens _ cnt spec mods =>
-      let delayedI : ManaSpentInterest :=
-        match mods.delayedAction? with
-        | some (.sacrificeAtEndStepUnless cond) => condInterest owner? cond
-        | _ => {}
-      let base :=
-        (valExprInterest owner? cnt)
-          |>.merge (mods.attachTo?.map (objExprInterest owner?) |>.getD {})
-          |>.merge delayedI
-      let withMods := mods.counters.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) base
-      match spec with
-      | .custom cs =>
-        let withPT :=
-          withMods
-            |>.merge (cs.power?.map (valExprInterest owner?) |>.getD {})
-            |>.merge (cs.toughness?.map (valExprInterest owner?) |>.getD {})
-        cs.abilities.foldl (fun acc ga => acc.merge (grantedAbilityInterest owner? ga)) withPT
-      | .copyOf oe cmods =>
-        let withOe := withMods.merge (objExprInterest owner? oe)
-        cmods.foldl (fun acc cm =>
-          match cm with
-          | .addAbilities gas => gas.foldl (fun a ga => a.merge (grantedAbilityInterest owner? ga)) acc
-          | _ => acc) withOe
-      | .predefined _ => withMods
-    | .emblem _ emb =>
-      let sI := emb.staticAbilities.foldl (fun acc sa => acc.merge (staticInterest owner? sa)) {}
-      emb.triggeredAbilities.foldl (fun acc ab => acc.merge (trigInterest owner? ab)) sI
-  | .permanent op =>
-    let choiceI (ch? : Option MoveChoiceSpec) : ManaSpentInterest :=
-      match ch? with
-      | none => {}
-      | some ch =>
-        (countRangeInterest owner? ch.count)
-          |>.merge (ch.filter?.map (objPredInterest owner?) |>.getD {})
-          |>.merge (ch.unlessMatching?.map (objPredInterest owner?) |>.getD {})
-    match op with
-    | .modifyCounters mode oe ch? =>
-      let mI := match mode with
-        | .put _ cnt => valExprInterest owner? cnt
-        | .remove _ cnt => countRangeInterest owner? cnt
-        | _ => {}
-      (mI.merge (objExprInterest owner? oe)).merge (choiceI ch?)
-    | .setTapped oe _ ch? =>
-      (objExprInterest owner? oe).merge (choiceI ch?)
-    | .attach a b _ =>
-      ManaSpentInterest.merge (objExprInterest owner? a) (objExprInterest owner? b)
-    | .transform oe | .turnFaceUp oe | .phaseOut oe _ | .setDesignation oe _ _ =>
-      objExprInterest owner? oe
-  | .damage (.deal src _ amt _) =>
-    ManaSpentInterest.merge (objExprInterest owner? src) (valExprInterest owner? amt)
-  | .life (.gain _ amt) | .life (.lose _ amt) | .life (.set _ amt) => valExprInterest owner? amt
-  | .player op =>
-    let paletteI : ManaPoolPalette → ManaSpentInterest
-      | .colorsAmong oe | .typesLandsCouldProduce oe => objExprInterest owner? oe
-      | _ => {}
-    let moveModsI (mods : MoveMods) : ManaSpentInterest :=
-      let chI :=
-        match mods.choice? with
-        | none => {}
-        | some ch =>
-          (countRangeInterest owner? ch.count)
-            |>.merge (ch.filter?.map (objPredInterest owner?) |>.getD {})
-            |>.merge (ch.unlessMatching?.map (objPredInterest owner?) |>.getD {})
-      let base := (mods.attachTo?.map (objExprInterest owner?) |>.getD {}).merge chI
-      mods.enterCounters.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) base
-    match op with
-    | .drawCards _ amt | .scry _ amt | .surveil _ amt
-    | .amass _ _ amt | .empowerPlaneswalker _ amt =>
-      valExprInterest owner? amt
-    | .proliferate _ amt tgt? =>
-      (valExprInterest owner? amt).merge (tgt?.map (objExprInterest owner?) |>.getD {})
-    | .addMana _ prod =>
-      match prod.spec with
-      | .sequence items =>
-        items.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) {}
-      | .oneOf pal amt | .combination pal amt =>
-        (paletteI pal).merge (valExprInterest owner? amt)
-      | .colorAmong pal _ => paletteI pal
-    | .explore oe | .connive oe => objExprInterest owner? oe
-    | .setStatus _ _ cond? => cond?.map (condInterest owner?) |>.getD {}
-    | .inspectLibrary spec =>
-      let srcI := match spec.source with
-        | .topCards _ cnt _ | .millCards _ cnt => valExprInterest owner? cnt
-        | .revealUntil _ pred cnt _ =>
-          ManaSpentInterest.merge (objPredInterest owner? pred) (valExprInterest owner? cnt)
-        | _ => {}
-      let actI := match spec.action with
-        | .takeMatching pred cnt _ mods _ _ =>
-          (objPredInterest owner? pred)
-            |>.merge (countRangeInterest owner? cnt)
-            |>.merge (moveModsI mods)
-        | .distributeEachOpponent _ mods | .moveAll _ mods => moveModsI mods
-        | _ => {}
-      srcI.merge actI
-    | .searchLibrary spec =>
-      (objPredInterest owner? spec.filter)
-        |>.merge (countRangeInterest owner? spec.count)
-        |>.merge (spec.untapIf?.map (condInterest owner?) |>.getD {})
-        |>.merge (moveModsI spec.mods)
-    | .reveal _ oe cnt? =>
-      ManaSpentInterest.merge (objExprInterest owner? oe) (cnt?.map (countRangeInterest owner?) |>.getD {})
-    | _ => {}
-  | .stack (.copyStackObject oe copies _) =>
-    ManaSpentInterest.merge (objExprInterest owner? oe) (valExprInterest owner? copies)
-  | _ => {}
+    | .tokens who cnt spec mods =>
+      (playerExprInterest owner? who)
+        |>.merge (valExprInterest owner? cnt)
+        |>.merge (tokenSpecInterest owner? spec)
+        |>.merge (enterModsInterest owner? mods)
+    | .emblem who emb =>
+      let sI := emb.staticAbilities.foldl (fun acc sa => acc.merge (staticInterest owner? sa))
+        (playerExprInterest owner? who)
+      let tI := emb.triggeredAbilities.foldl (fun acc ab => acc.merge (trigInterest owner? ab)) sI
+      emb.activatedAbilities.foldl (fun acc ab => acc.merge (actInterest owner? ab)) tI
+  | .permanent op => permOpInterest owner? op
+  | .damage op => damageOpInterest owner? op
+  | .life op => lifeOpInterest owner? op
+  | .player op => playerOpInterest owner? op
+  | .turn op => turnOpInterest owner? op
+  | .stack op => stackOpInterest owner? op
 end
 
 /-- Aggregate all `ManaSpentPred` and `ValueExpr.manaSpent` interests across the
 proposed spell, all live objects in active zones (battlefield, command, stack,
-hand, graveyard, exile, library), and `g.delayedTriggers` (CR 106.6 / 400.7d). -/
+hand, graveyard, exile, library), waiting triggers, and `g.delayedTriggers`
+(CR 106.6 / 400.7d). -/
 def spellManaSpentInterest (g : Game) (spend : ManaSpend)
     (prop? : Option ProposedSpell := none) : ManaSpentInterest :=
   if !spend.spell then {}
@@ -2813,10 +3399,20 @@ def spellManaSpentInterest (g : Game) (spend : ManaSpend)
         let bc := g.baseCard spell
         let oid := some spell.id
         if let some eff := g.currentSpellEffect spell then
-          acc := acc.merge (instrInterest oid eff.body)
+          acc := acc.merge (effectInterest oid eff)
         else if isModalSpellFace bc then
           for m in g.evalSpellModes prop.caster spell do
-            acc := acc.merge (instrInterest oid m.body)
+            acc := acc.merge (effectInterest oid m)
+        for ac in g.additionalCostsFor spell bc do
+          acc := acc.merge (costSpecInterest oid ac.cost)
+        for kw in bc.keywords do
+          acc := acc.merge (kwInterest oid kw)
+        for kw in g.currentKeywords spell do
+          acc := acc.merge (kwInterest oid kw)
+        for ab in bc.allActivatedAbilities do
+          acc := acc.merge (actInterest oid ab)
+        for ab in g.activatedAbilitiesOf spell do
+          acc := acc.merge (actInterest oid ab)
         for ab in bc.triggeredAbilities do
           acc := acc.merge (trigInterest oid ab)
         for ab in g.triggeredAbilities spell do
@@ -2829,12 +3425,22 @@ def spellManaSpentInterest (g : Game) (spend : ManaSpend)
       if !o.status.phasedOut then
         let oid := some o.id
         if o.isOnBattlefield || o.zone == .command then
+          for kw in g.currentKeywords o do
+            acc := acc.merge (kwInterest oid kw)
+          for ab in g.activatedAbilitiesOf o do
+            acc := acc.merge (actInterest oid ab)
           for ab in g.triggeredAbilities o do
             acc := acc.merge (trigInterest oid ab)
           for sa in g.staticAbilities o do
             acc := acc.merge (staticInterest oid sa)
         else
           let zk := o.zone.kind
+          for ab in g.activatedAbilitiesOf o do
+            if ab.activeZones.contains zk then
+              acc := acc.merge (actInterest oid ab)
+          for ab in (g.baseCard o).allActivatedAbilities do
+            if ab.activeZones.contains zk then
+              acc := acc.merge (actInterest oid ab)
           for ab in g.triggeredAbilities o do
             if ab.activeZones.contains zk then
               acc := acc.merge (trigInterest oid ab)
@@ -2842,8 +3448,22 @@ def spellManaSpentInterest (g : Game) (spend : ManaSpend)
             if ab.activeZones.contains zk then
               acc := acc.merge (trigInterest oid ab)
           if o.zone == .stack then
+            let srcOid := o.sourceId.orElse fun () => oid
+            if let some eff := o.abilityEffect then
+              acc := acc.merge (effectInterest srcOid eff)
+            if let some tab := o.triggeredAbility then
+              acc := acc.merge (trigInterest srcOid tab)
+            if let some eff := g.currentSpellEffect o then
+              acc := acc.merge (effectInterest oid eff)
+            for kw in g.currentKeywords o do
+              acc := acc.merge (kwInterest oid kw)
             for sa in g.staticAbilities o do
               acc := acc.merge (staticInterest oid sa)
+    for w in g.waitingTriggers do
+      let srcOid := some w.source.id
+      acc := acc.merge (trigInterest srcOid w.ability)
+      if let some eff := w.abilityEffect then
+        acc := acc.merge (effectInterest srcOid eff)
     for dt in g.delayedTriggers do
       if let some instr := dt.instruction? then
         acc := acc.merge (instrInterest (dt.source.map (·.id)) instr)
@@ -2931,6 +3551,10 @@ def manaAbilityDefCanChangeOutcome (g : Game) (spend : ManaSpend)
   let hasTwobrid := prop.cost.symbols.any (fun | .twobrid _ => true | _ => false)
   let p := (g.controllerOf o).getD o.owner
   let spendsPoolMana := (g.manaAbilityEffectiveCost p o d).includesManaPayment
+  let anyOutcomeMatters := cbcMatters || crMatters || ancMatters || !interest.isEmpty
+  if spendsPoolMana && anyOutcomeMatters && !(g.player p).manaPool.units.isEmpty then
+    true
+  else
   let checkVariant (prodTypes : Array ManaType) (restr : Option ManaSpendRestriction)
       (riders : Array SpellRiderSpec) (srcId? : Option ObjectId) (isTr : Bool) : Bool :=
     !prodTypes.isEmpty && g.restrictionAllowsProposed restr prop &&
@@ -3082,12 +3706,12 @@ private def plainTapChoicesForUniqueness (g : Game) (o : GameObject) (types : Ar
     return out
 
 /-- Whether tapping one or more cost-preserving extra plain sources in
-`allSources \ baseIds` alongside `minSubAdded` on top of `initPool` can change
-`SpellManaOutcome` away from `outcome0` (handling both extra-after-`minSub` and
-extra-before-`minSub` tap orders, as well as single-source and multi-source rider
-/ Treasure / *Path of Ancestry* additions or displacements; CR 106.6). -/
+`allSources \ baseIds` alongside `minSubBlocks` on top of `initPool` can change
+`SpellManaOutcome` away from `outcome0` (handling permuted `minSub` orders,
+interleaved extra positions, and single-source / multi-source rider / Treasure /
+*Path of Ancestry* additions or displacements; CR 106.6). -/
 private partial def canExtraPlainSourcesChangeOutcome (g : Game) (initPool : ManaPool)
-    (minSubAdded : Array ManaUnit) (cost : ManaCost)
+    (minSubBlocks : Array (Array ManaUnit)) (cost : ManaCost)
     (allSources : Array (GameObject × Array ManaType))
     (baseIds : Array ObjectId) (spend : ManaSpend)
     (prop? : Option (PlayerId × ProposedSpell)) (outcome0 : SpellManaOutcome) : Bool :=
@@ -3107,16 +3731,57 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (initPool : Man
         if cs.isEmpty then none else some (src, cs)
   if extraEntries.isEmpty then false
   else
-    let flips (extraAdded : Array ManaUnit) : Bool :=
-      let check (units : Array ManaUnit) : Bool :=
+    let flips (extraBlocks : Array (Array ManaUnit)) : Bool :=
+      let checkBlocks (blocks : Array (Array ManaUnit)) : Bool :=
+        let units := blocks.foldl (fun acc blk => acc ++ blk) initPool.units
         match ({ units } : ManaPool).payUnits? cost spend with
-        | some (_, units) => spellManaOutcome g spend activeProp? units != outcome0
+        | some (_, spent) => spellManaOutcome g spend activeProp? spent != outcome0
         | none => false
-      check (initPool.units ++ minSubAdded ++ extraAdded) ||
-        (!minSubAdded.isEmpty && check (initPool.units ++ extraAdded ++ minSubAdded))
-    -- 1. Fast exact single-source check (both after and before `minSub`).
+      let testBaseWithExtra (base : Array (Array ManaUnit)) (extra : Array (Array ManaUnit)) : Bool :=
+        if base.isEmpty then checkBlocks extra
+        else
+          let k := base.size
+          let contiguousAt (ex : Array (Array ManaUnit)) : Bool :=
+            (List.range (k + 1)).any fun pos =>
+              checkBlocks (base.extract 0 pos ++ ex ++ base.extract pos k)
+          contiguousAt extra ||
+            (extra.size ≥ 2 &&
+              (contiguousAt extra.reverse ||
+                (List.range (k + 1)).any fun pos =>
+                  checkBlocks (extra.extract 0 1 ++ base.extract 0 pos ++
+                    extra.extract 1 extra.size ++ base.extract pos k)))
+      let testBase (base : Array (Array ManaUnit)) : Bool :=
+        testBaseWithExtra base extraBlocks
+      let k := minSubBlocks.size
+      if k ≤ 1 then
+        testBase minSubBlocks
+      else if k ≤ 4 then
+        let rec permTest (chosen : Array (Array ManaUnit)) (usedMask : Nat) : Bool :=
+          if chosen.size == k then
+            testBase chosen
+          else
+            (List.range k).any fun i =>
+              if maskBit usedMask i then false
+              else permTest (chosen.push minSubBlocks[i]!) (usedMask ||| (1 <<< i))
+        permTest #[] 0
+      else Id.run do
+        if testBase minSubBlocks || testBase minSubBlocks.reverse then return true
+        for j in [0:k] do
+          let bj := minSubBlocks[j]!
+          let rest := minSubBlocks.extract 0 j ++ minSubBlocks.extract (j + 1) k
+          if j > 0 && testBase (#[bj] ++ rest) then return true
+          if j + 1 < k && testBase (rest.push bj) then return true
+        let mut swaps := 0
+        for i in [0:k] do
+          for j in [i + 1:k] do
+            if minSubBlocks[i]! != minSubBlocks[j]! && swaps < 32 then
+              swaps := swaps + 1
+              let swapped := (minSubBlocks.set! i minSubBlocks[j]!).set! j minSubBlocks[i]!
+              if testBase swapped then return true
+        return false
+    -- 1. Fast exact single-source check (across `minSub` orders and interleaved slots).
     let singleFlips :=
-      extraEntries.any fun (_, cs) => cs.any fun ch => flips (ch.applyToPool {}).units
+      extraEntries.any fun (_, cs) => cs.any fun ch => flips #[(ch.applyToPool {}).units]
     if singleFlips then true
     else
       -- Choice helpers for greedy multi-source boost/displace passes.
@@ -3176,7 +3841,7 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (initPool : Man
           if let some (sc, ch) := best? then
             cands := cands.push (sc, src, ch)
         let sorted := cands.qsort (fun a b => a.1 > b.1)
-        let mut extraPool : ManaPool := {}
+        let mut extraBlocks : Array (Array ManaUnit) := #[]
         let mut usedIds := baseIds
         for (_, src, ch0) in sorted do
           let mut chosen := ch0
@@ -3191,11 +3856,11 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (initPool : Man
           let nextIds := usedIds.push src.id
           if prop?.all (fun (p, prop) => g.tapPreservesPostManaCosts p prop nextIds) then
             usedIds := nextIds
-            extraPool := chosen.applyToPool extraPool
+            extraBlocks := extraBlocks.push (chosen.applyToPool {}).units
             for t in chosen.baseAdded do
               if let some idx := remNeeded.findIdx? (· == t) then
                 remNeeded := remNeeded.eraseIdxIfInBounds idx
-            if flips extraPool.units then
+            if flips extraBlocks then
               return true
         return false
       let greedyFlips : Bool :=
@@ -3234,8 +3899,8 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (initPool : Man
       else
         -- 3. Bounded DFS over extra-source combinations for subtle multi-source interactions.
         let maxDepth := min extraEntries.size (max 2 cost.manaValue)
-        let rec dfs (idx depth : Nat) (curExtra : ManaPool) (usedIds : Array ObjectId)
-            (budget : Nat) : Bool × Nat :=
+        let rec dfs (idx depth : Nat) (curExtra : Array (Array ManaUnit))
+            (usedIds : Array ObjectId) (budget : Nat) : Bool × Nat :=
           if budget == 0 then (false, 0)
           else if depth ≥ maxDepth || idx ≥ extraEntries.size then (false, budget)
           else
@@ -3246,13 +3911,13 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (initPool : Man
                 cs.foldl (fun (found, b) ch =>
                   if found || b == 0 then (found, b)
                   else
-                    let p' := ch.applyToPool curExtra
-                    if flips p'.units then (true, b - 1)
-                    else dfs (idx + 1) (depth + 1) p' nextIds (b - 1)) (false, budget)
+                    let nextExtra := curExtra.push (ch.applyToPool {}).units
+                    if flips nextExtra then (true, b - 1)
+                    else dfs (idx + 1) (depth + 1) nextExtra nextIds (b - 1)) (false, budget)
               else (false, budget)
             if hitTake || remBudget == 0 then (hitTake, remBudget)
             else dfs (idx + 1) depth curExtra usedIds remBudget
-        let (hit, remBudget) := dfs 0 0 {} baseIds 256
+        let (hit, remBudget) := dfs 0 0 #[] baseIds 256
         hit || remBudget == 0
 
 /-- Whether tapping `minSub` in an alternative order can change either the
@@ -3336,10 +4001,14 @@ private partial def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (c
       i := i - 1
       out := out.set! i (srcArr[i]!.2.2 + out[i + 1]!)
     return out
+  let sameBlockSeq (a b : Array (Array ManaUnit)) : Bool :=
+    a.size == b.size &&
+      (List.range a.size).all fun i =>
+        sameLeftoverPool { units := a[i]! } { units := b[i]! }
   let rec collect (curPool : ManaPool) (addedBlocks : Array (Array ManaUnit)) (idx : Nat)
-      (outcomes : Array (ManaPool × SpellManaOutcome)) (repAdded : Array (Array ManaUnit))
+      (outcomes : Array (ManaPool × SpellManaOutcome)) (repAdded : Array (Array (Array ManaUnit)))
       (repOverflow : Bool) (budget : Nat) :
-      Array (ManaPool × SpellManaOutcome) × Array (Array ManaUnit) × Bool × Nat :=
+      Array (ManaPool × SpellManaOutcome) × Array (Array (Array ManaUnit)) × Bool × Nat :=
     if outcomes.size ≥ 2 || repOverflow || budget == 0 then
       (outcomes, repAdded, repOverflow, budget)
     else if idx ≥ srcArr.size then
@@ -3351,12 +4020,11 @@ private partial def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (c
             minSubOrderFlips g pool addedBlocks cost spend activeProp? leftPool rOut then
           (outcomes, repAdded, true, budget - 1)
         else
-          let curAdded := addedBlocks.foldl (fun acc blk => acc ++ blk) #[]
           let (repAdded, repOverflow) :=
-            if !needReps || repAdded.any (fun a => sameLeftoverPool { units := a } { units := curAdded }) then
+            if !needReps || repAdded.any (fun a => sameBlockSeq a addedBlocks) then
               (repAdded, repOverflow)
             else if repAdded.size < 64 then
-              (repAdded.push curAdded, repOverflow)
+              (repAdded.push addedBlocks, repOverflow)
             else
               (repAdded, true)
           if outcomes.any (fun (lp, ro) => ro == rOut && sameLeftoverPool lp leftPool) then
@@ -3381,8 +4049,8 @@ private partial def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (c
       if !needReps then true
       else if repAdded.isEmpty then false
       else
-        !repAdded.any fun minSubAdded =>
-          canExtraPlainSourcesChangeOutcome g pool minSubAdded cost allSources minSubIds
+        !repAdded.any fun minSubBlocks =>
+          canExtraPlainSourcesChangeOutcome g pool minSubBlocks cost allSources minSubIds
             spend prop? outcome0
     | _ => false
 
@@ -3484,14 +4152,15 @@ def hasUniqueManaPayment (g : Game) : Bool :=
         let pool := (g.player p).manaPool
         let spend := g.proposedManaSpend prop
         let sources := g.manaSourcesForProposed p prop
+        let interest := spellManaSpentInterest g spend (some prop)
+        let anyOutcomeMatters :=
+          cantBeCounteredRiderMatters g spend (some prop) ||
+            creatureSpellRiderMatters g spend (some prop) ||
+            ancestryManaMatters g spend (some prop) ||
+            !interest.isEmpty
+        let includePoolSpend := anyOutcomeMatters && !pool.units.isEmpty
         match pool.payUnits? prop.cost spend with
         | some (_, spent0) =>
-          let interest := spellManaSpentInterest g spend (some prop)
-          let anyOutcomeMatters :=
-            cantBeCounteredRiderMatters g spend (some prop) ||
-              creatureSpellRiderMatters g spend (some prop) ||
-              ancestryManaMatters g spend (some prop) ||
-              !interest.isEmpty
           if !anyOutcomeMatters then true
           else
             let outcome0 := spellManaOutcome g spend (some prop) spent0
@@ -3508,7 +4177,7 @@ def hasUniqueManaPayment (g : Game) : Bool :=
                   if !(g.baseCard o).allActivatedAbilities.isEmpty then some o else none
             let manaObjs := g.permanentsOf p ++ handManaObjs ++ gyManaObjs
             let nonPlainFlips :=
-              g.hasUsableNonPlainManaAbility p (some prop) &&
+              g.hasUsableNonPlainManaAbility p (some prop) (includePoolSpending := includePoolSpend) &&
                 manaObjs.any (fun o =>
                   (g.manaAbilityDefs o).any (fun d =>
                     !g.isPlainTapManaAbilityDef p o d &&
@@ -3516,7 +4185,7 @@ def hasUniqueManaPayment (g : Game) : Bool :=
                       manaAbilityDefCanChangeOutcome g spend prop o d outcome0))
             !plainFlips && !nonPlainFlips
         | none =>
-          !g.hasUsableNonPlainManaAbility p (some prop) &&
+          !g.hasUsableNonPlainManaAbility p (some prop) (includePoolSpending := includePoolSpend) &&
             (uniquePayingSourceSet g pool prop.cost sources spend (some (p, prop))).isSome
   | _, _ => false
 

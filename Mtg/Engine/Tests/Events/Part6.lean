@@ -3935,7 +3935,7 @@ private def replayOk35i3 (gs : Array Game) : Bool :=
   gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
 
 private def hasLeaveOrCheckSbaCont : PendingReplacement → Bool
-  | .leavePlayersWhoLost .. | .checkSBA => true
+  | .leavePlayersWhoLost .. | .checkSBA .. => true
   | .seq a b => hasLeaveOrCheckSbaCont a || hasLeaveOrCheckSbaCont b
   | _ => false
 

@@ -66,30 +66,6 @@ def playCostStart (g : Game) (card : GameObject) (face : CardDef)
     face.flashback.getD face.manaCost
   else face.manaCost
 
-/-- Un-substituted printed mana cost of `card` when cast as `face` (`none` when
-cast face-down via Morph, whose mana value is `0` per CR 702.37c / 708.2a). -/
-def actualPrintedManaCost? (g : Game) (card : GameObject) (face : CardDef) : Option ManaCost :=
-  if card.status.faceDown || face.name == "" then none
-  else
-    let bc := g.baseCard card
-    match bc.adventure.filter (·.name == face.name) with
-    | some adv => some adv.manaCost
-    | none =>
-      match bc.prepareFace.filter (·.name == face.name) with
-      | some pf => some pf.manaCost
-      | none =>
-        match bc.otherFace with
-        | some of =>
-          if of.name == face.name then some of.manaCost
-          else
-            match of.adventure.filter (·.name == face.name) with
-            | some adv => some adv.manaCost
-            | none =>
-              match of.prepareFace.filter (·.name == face.name) with
-              | some pf => some pf.manaCost
-              | none => some bc.manaCost
-        | none => some bc.manaCost
-
 /-- Actual spell mana value of `card` cast as `face` (CR 118.9c / 202.3e / 702.37c). -/
 def actualCastManaValue (g : Game) (card : GameObject) (face : CardDef) : Nat :=
   match g.actualPrintedManaCost? card face with
@@ -170,11 +146,12 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     match face.affinityForSubtype with
     | some t => g.countSubtype caster t
     | none => 0
+  let (faceTypes, faceSups, _) := g.faceCdaCharacteristics card face
   let thisTurnLess :=
     ((g.typeSpellCostLessThisTurn caster).foldl (fun acc (ty, n) =>
-      if face.hasType ty then acc + n else acc) 0) +
+      if faceTypes.contains ty then acc + n else acc) 0) +
     ((g.supertypeSpellCostLessThisTurn caster).foldl (fun acc (s, n) =>
-      if face.hasSupertype s then acc + n else acc) 0)
+      if faceSups.contains s then acc + n else acc) 0)
   start.reduceGeneric (statRed + affRed + thisTurnLess)
 
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
@@ -217,12 +194,13 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   let start := g.playCostStart card face flashback
   let afterIncrease := start.addCost increase
   let afterEquip := g.applyCastCostReductions card face afterIncrease
+  let (faceTypes, _, faceCols) := g.faceCdaCharacteristics card face
   let freeRG :=
     !usedAltCost &&
       match g.pendingFreeRGCreature with
       | some p =>
-        caster == p && face.isCreature &&
-          (face.colors.contains .red || face.colors.contains .green)
+        caster == p && faceTypes.contains .creature &&
+          (faceCols.contains .red || faceCols.contains .green)
       | none => false
   let cost :=
     if freeRG then

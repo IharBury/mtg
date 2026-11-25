@@ -90,6 +90,8 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
     | none => g
   let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
     (isCopy := some true) (cause := some (.gameRule .spellCast))
+  if !(g.findObject? newId).any (·.zone == .stack) then
+    throw s!"{face.name} cannot be moved to the stack"
   let g := g.putStackEntry p newId
   let g := g.record (GameEvent.proposed g.turnNumber newId p card.zone (.alternative "free copy"))
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
@@ -1192,7 +1194,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       | some src => TextChange.applyColor (gPre.evalLayer3 src) .black
       | none => .black
     let allCands := (gPre.player p).graveyard.filter (fun id =>
-      (gPre.findObject? id).any (fun card => (gPre.colors card).contains col))
+      (gPre.findObject? id).any (fun card => isDiscardableCard card && (gPre.colors card).contains col))
     if !gPre.canPayZemoBoast p allCands col || !gPre.proposalCostPromptStillPayable p gPre.pending then
       gPre.reverseProposedSpell? (resumeContinuation := true)
         (extraLog := if !gPre.canPayZemoBoast p allCands col then some s!"{(gPre.player p).name} doesn't boast" else none)
@@ -1284,7 +1286,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     return g.finishResolutionChoice
   | .mayCastCopy _, _ => throw "Cast the copy (accept), or decline"
   | .mayDiscardHandBalin sourceId, .accept =>
-    let n := (g.player p).hand.size
+    let n := (g.discardableHandIds p).size
     let g := g.discardEntireHand p
     let follow : Instruction := .seq #[
       .player (.drawCards .you (.const (Int.ofNat n))),
@@ -1320,7 +1322,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     if g.opponentsCantCastOnActiveTurn p then
       throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
-    if o.zone != .hand p || !g.isInstantOrSorcery o then
+    if !isDiscardableCard o || o.zone != .hand p || !g.isInstantOrSorcery o then
       throw s!"{g.name o} is no longer an instant or sorcery in your hand"
     let face := g.baseCard o
     if g.spellNameForbidden face.name then
@@ -1563,7 +1565,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
   | .mayPutHeroFromHandOrDraw ids, .objects #[id] =>
     if !ids.contains id then throw "That card can't be put onto the battlefield"
     let some o := g.findObject? id | throw "no such object"
-    if o.zone != .hand p || !g.isCreature o || !g.hasSubtype o .hero then
+    if !isDiscardableCard o || o.zone != .hand p || !g.isCreature o || !g.hasSubtype o .hero then
       throw s!"{g.name o} is not a Hero creature card in your hand"
     let (g, _) := g.putOntoBattlefield id p
     let g :=
@@ -1707,7 +1709,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     if g.opponentsCantCastOnActiveTurn p then
       throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
-    if g.isLand o then throw s!"{g.name o} can't be cast this way"
+    if !isCastableObject o || g.isLand o then throw s!"{g.name o} can't be cast this way"
     let face := g.baseCard o
     let canMorph :=
       !withoutPaying && face.morph.isSome && face.kicker.isNone &&
@@ -1755,7 +1757,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     if g.opponentsCantCastOnActiveTurn p then
       throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
-    if o.zone != .graveyard o.owner then throw s!"{g.name o} is no longer in the graveyard"
+    if !isDiscardableCard o || o.zone != .graveyard o.owner then throw s!"{g.name o} is no longer in the graveyard"
     if !(g.isArtifact o || g.isInstantOrSorcery o) then
       throw s!"{g.name o} is not an artifact, instant, or sorcery"
     if g.isLand o then throw s!"{g.name o} can't be cast this way"
@@ -2376,7 +2378,7 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
       | some src => TextChange.applyColor (g.evalLayer3 src) .black
       | none => .black
     let cands := (g.player p).graveyard.filter (fun id =>
-      (g.findObject? id).any (fun card => (g.colors card).contains col))
+      (g.findObject? id).any (fun card => isDiscardableCard card && (g.colors card).contains col))
     if g.canPayZemoBoast p cands col then .choosePermanents cands else .decline
   | .chooseEnteringAttackTarget .. => .chooseMode 0
   | .chooseTokenCopyObject ids .. =>

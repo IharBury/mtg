@@ -483,7 +483,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
     | .declareMulligan _ =>
       some .keep
     | .putOnBottom _ n =>
-      some (.putOnBottom ((g.player p).hand.extract 0 n))
+      some (.putOnBottom ((g.discardableHandIds p).extract 0 n))
     | .scry _ n _ =>
       some (.scry (g.scryLookedIds p n) #[])
     | .surveil _ n _ =>

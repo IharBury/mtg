@@ -305,7 +305,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
         extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
         isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause
-        lkiController? skipUnattachIds),
+        lkiController? skipUnattachIds deferPlayFromExileLogs),
      id)
   else
   match g.findObject? id with
@@ -473,7 +473,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             isAttacking resolvedAttackTarget nightBack returnedAsArtifact onlyFoodArtifact
             extraEntersWith libraryPosition fromStackTime applyHope preBattlefield
             isCopy overridePrinted adventurerCard summoningSick attachedTo enterMods cause
-            lkiController? skipUnattachIds),
+            lkiController? skipUnattachIds deferPlayFromExileLogs),
          (id, none, false))
       | none =>
       if preCheckStayNoAuraHost then
@@ -959,12 +959,10 @@ def moveSimultaneousToGraveyard (g : Game) (ids : Array ObjectId)
           (deferPlayFromExileLogs := true)
         if let .chooseReplacement .. := g.pending then
           let rem := ids.extract (i + 1) ids.size
-          if !rem.isEmpty then
+          if !rem.isEmpty || !deferPlayFromExileLogs then
             g := g.chainPendingReplacement
               (.moveSimultaneousToGraveyard rem (some preBf) batchCause
                 deferPlayFromExileLogs (some batchFromIdx))
-          else if !deferPlayFromExileLogs then
-            g := emitExpiredPlayFromExileLogs preBatch g batchFromIdx
           return g
     if !deferPlayFromExileLogs then
       g := emitExpiredPlayFromExileLogs preBatch g batchFromIdx
@@ -1067,10 +1065,12 @@ def counterStackSpell (g : Game) (spellId : ObjectId) (exilePermanent := false)
 /-- Sacrifice `o` to its owner's graveyard (CR 701.21a). -/
 def sacrificeToGraveyard (g : Game) (o : GameObject) (reason : String)
     (cause : Option EventCause := none)
-    (preBattlefield : Option (Array GameObject) := none) : Game :=
+    (preBattlefield : Option (Array GameObject) := none)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   let actor := (g.controllerOf o).getD o.owner
   g.moveToOwnerGraveyard o reason (verb := some .sacrifice) (actor := some actor)
     (preBattlefield := preBattlefield) (cause := cause)
+    (deferPlayFromExileLogs := deferPlayFromExileLogs)
 
 /-- First player in `players` who satisfies `pred`, plus those after them. -/
 def nextActorWhere (_g : Game) (players : Array PlayerId) (pred : PlayerId → Bool) :
@@ -1101,10 +1101,16 @@ def sacrificePermanentsLoop (g : Game) (remaining : Array (PlayerId × ObjectId)
     (preBattlefield : Option (Array GameObject) := none)
     (cause : Option EventCause := none)
     (createBeastFor : Option PlayerId := none)
-    (passiveLog : Bool := false) : Game := Id.run do
+    (passiveLog : Bool := false)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.sacrificePermanentsLoop remaining preBattlefield cause createBeastFor passiveLog)
+      (.sacrificePermanentsLoop remaining preBattlefield cause createBeastFor passiveLog fromEventIdx?)
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   let mut g := g
   let preBf := preBattlefield.getD g.battlefield
   for i in [0:remaining.size] do
@@ -1117,13 +1123,14 @@ def sacrificePermanentsLoop (g : Game) (remaining : Array (PlayerId × ObjectId)
           else s!"{(g.player who).name} sacrifices {g.name o}"
         g := g.sacrificeToGraveyard o msg
           (cause := cause) (preBattlefield := some preBf)
+          (deferPlayFromExileLogs := true)
         if let .chooseReplacement .. := g.pending then
           let rem := remaining.extract (i + 1) remaining.size
-          if !rem.isEmpty || createBeastFor.isSome then
-            g := g.chainPendingReplacement
-              (.sacrificePermanentsLoop rem (some preBf) cause createBeastFor passiveLog)
+          g := g.chainPendingReplacement
+            (.sacrificePermanentsLoop rem (some preBf) cause createBeastFor passiveLog (some loopFromIdx))
           return g
     | none => pure ()
+  g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
   if let some ctrl := createBeastFor then
     g := g.createKindTokens ctrl .beast44trample 1 (cause := cause)
   return g
@@ -1175,7 +1182,7 @@ via `PendingReplacement.moveCardsToGraveyardLoop` if any card opens a CR 616.1
 def moveCardsToGraveyardLoop (g : Game) (ids : Array ObjectId)
     (cause : Option EventCause := none)
     (fromEventIdx? : Option Nat := none) : Game :=
-  if ids.isEmpty then g
+  if ids.isEmpty && fromEventIdx?.isNone then g
   else if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.moveCardsToGraveyardLoop ids cause fromEventIdx?)
   else
@@ -1193,10 +1200,7 @@ def moveCardsToGraveyardLoop (g : Game) (ids : Array ObjectId)
             (deferPlayFromExileLogs := true)).1
           if let .chooseReplacement .. := g.pending then
             let rem := ids.extract (i + 1) ids.size
-            if !rem.isEmpty then
-              g := g.chainPendingReplacement (.moveCardsToGraveyardLoop rem cause (some loopFromIdx))
-            else
-              g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+            g := g.chainPendingReplacement (.moveCardsToGraveyardLoop rem cause (some loopFromIdx))
             return g
       return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 

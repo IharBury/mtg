@@ -219,13 +219,31 @@ def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
       choices.any (fun (ch : TapManaChoice) => go (ch.applyToPool curPool) (idx + 1))
   go pool 0
 
+private def manaAbilityAllowsZeroOutput (d : ManaAbilityDef) : Bool :=
+  d.extraEffect?.isSome ||
+    (if d.modeChoices.isEmpty then d.output.allows #[]
+     else d.modeChoices.any (fun m => m.output?.isNone || m.output?.any (·.allows #[])))
+
+private def zeroOutputManaAbilityChangesState (o : GameObject) (d : ManaAbilityDef)
+    (effCost : ManaCost) : Bool :=
+  d.tap || d.removesSource || d.payLife > 0 || d.damageYou > 0 ||
+    d.modeChoices.any (fun m => (m.output?.isNone || m.output?.any (·.allows #[])) && m.damageYou > 0) ||
+    d.removeStoryCounter || d.removeIndestructibleCounter || d.putStunCounterOnSource ||
+    !d.picks.isEmpty || d.crewPower?.isSome || d.exileManaSymbols?.isSome ||
+    d.extraEffect?.isSome || d.modeChoices.any (·.output?.isNone) ||
+    effCost.includesManaPayment || d.turnLimit?.isSome || d.lifetimeLimit?.isSome ||
+    d.isBoast || d.isExhaust || d.isPowerUp ||
+    (d.removeAnyNumberPlusOne && o.status.plusOnePlusOne > 0)
+
 /-- Whether `p` currently controls a usable non-plain CR 605 mana ability
 (`!isPlainTapManaAbilityDef`, such as Treasures, life/mana filter lands, or
 counter-removal mana abilities). When `prop? = some prop`, also requires that
 the source is not reserved for `prop`'s non-mana costs and that the ability can
-produce mana covering `prop.cost` (or another usable mana ability's mana cost). -/
+produce mana covering `prop.cost` (or another usable mana ability's mana cost),
+or spend pool mana when `includePoolSpending` is true. -/
 def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
-    (prop? : Option ProposedSpell := none) : Bool :=
+    (prop? : Option ProposedSpell := none)
+    (includePoolSpending : Bool := false) : Bool :=
   let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   let perms := g.permanentsOf p
   let handManaObjs :=
@@ -342,7 +360,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                let remGy :=
                  (g.player p).graveyard.filter (fun id =>
                    !removedIds.contains id &&
-                     (g.findObject? id).any (fun o => (g.colors o).contains col))
+                     (g.findObject? id).any (fun o => isDiscardableCard o && (g.colors o).contains col))
                g.canPayZemoBoast p remGy col)
           let crewOrPicksOk :=
             if !prop.choiceCostPaid then
@@ -547,18 +565,22 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                   searchEff rest (ch.applyToPool curPool) (tappedIds.push s.id) || tryChoices chs
               tryChoices choices.toList || searchEff rest curPool tappedIds
         searchEff critRem (g.player p).manaPool #[]
-  let hasProducibleChoice (d : ManaAbilityDef) : Bool :=
+  let hasProducibleChoice (o : GameObject) (d : ManaAbilityDef) (effCost : ManaCost) : Bool :=
     !(d.allChoicesFor (fun ts => if ts.size > 1 then #[ts[0]!] else ts)).isEmpty ||
-      d.extraEffect?.isSome
+      d.extraEffect?.isSome ||
+      (prop?.isNone && manaAbilityAllowsZeroOutput d && zeroOutputManaAbilityChangesState o d effCost) ||
+      (includePoolSpending && effCost.includesManaPayment &&
+        !(g.player p).manaPool.units.isEmpty && manaAbilityAllowsZeroOutput d)
   let usableAbilityOn (o : GameObject) (d : ManaAbilityDef) (requireNonPlain : Bool) : Bool :=
+    let effCost := g.manaAbilityEffectiveCost p o d
     (!requireNonPlain || !g.isPlainTapManaAbilityDef p o d) &&
       g.manaAbilityDefUsable p o d &&
-      hasProducibleChoice d &&
+      hasProducibleChoice o d effCost &&
       (!d.tap ||
         (!o.status.tapped &&
           !(g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p)))) &&
       respectsPropReservations o d &&
-      canPayEffCost o d (g.manaAbilityEffectiveCost p o d)
+      canPayEffCost o d effCost
   match prop? with
   | none =>
     manaObjs.any (fun o => (g.manaAbilityDefs o).any (fun d => usableAbilityOn o d true))
@@ -571,7 +593,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
           (g.manaAbilityDefs o2).foldl (fun acc d2 =>
             let eff2 := g.manaAbilityEffectiveCost p o2 d2
             if eff2.includesManaPayment && g.manaAbilityDefUsable p o2 d2 &&
-                hasProducibleChoice d2 &&
+                hasProducibleChoice o2 d2 eff2 &&
                 (!d2.tap ||
                   (!o2.status.tapped &&
                     !(g.hasSummoningSickness o2 && !(g.isCreature o2 && g.activatesAsThoughHaste p)))) &&
@@ -580,8 +602,11 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
             else acc) acc) #[]
       manaObjs.any fun o =>
         (g.manaAbilityDefs o).any fun d =>
+          let effCost := g.manaAbilityEffectiveCost p o d
+          let poolSpendLaunder :=
+            includePoolSpending && effCost.includesManaPayment && !(g.player p).manaPool.units.isEmpty
           usableAbilityOn o d true &&
-            (d.extraEffect?.isSome ||
+            (poolSpendLaunder || d.extraEffect?.isSome ||
               let dedupForProp (ts : Array ManaType) : Array ManaType :=
                 if ts.size ≤ 1 then ts
                 else Id.run do
@@ -610,6 +635,18 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                     o2.id != o.id &&
                       simPool.coveredMana eff2
                         (ManaSpend.forAbility (g.types o2) (g.supertypes o2) (g.subtypes o2)) > 0))
+
+/-- Whether `p` controls an untapped plain `{T}` mana ability whose output currently
+produces 0 mana (`d.output.types.isEmpty && d.output.allows #[]`) and can still be
+legally activated to tap the permanent (CR 605.3a–b). -/
+def hasUsableZeroOutputTapManaAbility (g : Game) (p : PlayerId) : Bool :=
+  (g.permanentsOf p).any fun o =>
+    (g.manaAbilityDefs o).any fun d =>
+      g.isPlainTapManaAbilityDef p o d &&
+        g.manaAbilityDefUsable p o d &&
+        d.output.types.isEmpty && d.output.allows #[] &&
+        !o.status.tapped &&
+        !(g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p))
 
 end Game
 end Mtg.Engine

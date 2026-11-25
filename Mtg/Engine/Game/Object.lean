@@ -74,6 +74,7 @@ structure LkiLayer6 where
   ironFistTapGrants : Nat := 0
   wardCosts : Array CostSpec := #[]
   activatedAbilities : Array ActivatedAbility := #[]
+  ringBearer : Bool := false
 deriving Repr, Inhabited, BEq
 
 /-- An object currently in the game (CR 109). -/
@@ -480,6 +481,10 @@ structure EventObject where
   phasedOut       : Bool                 := false
   faceDown        : Bool                 := false
   transformed     : Bool                 := false
+  prepared        : Bool                 := false
+  harnessed       : Bool                 := false
+  goaded          : Bool                 := false
+  ringBearer      : Bool                 := false
   attachedTo      : Option ObjectId      := none
   counters        : CounterBag           := #[]
   token              : Bool                        := false
