@@ -2355,9 +2355,12 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   let gLki1 : Game := gLki0.recordPutCounters lkiId .plusOnePlusOne 1 (some me) (cause := some testCause)
   let snapWithCounter := gLki1.object! lkiId
   let (gLkiGone, _) := gLki1.move lkiId (.graveyard me) none (verb := some .destroy) (cause := some testCause)
+  let (gLkiGoneNoCtr, _) := gLki0.move lkiId (.graveyard me) none (verb := some .destroy) (cause := some testCause)
   let lkiCondOk : Bool :=
     gLkiGone.evalTriggerCond me (some snapWithCounter) none TriggeredAbility.condSourceHasCounters &&
-    !gLkiGone.evalTriggerCond me (some (gLki0.object! lkiId)) none TriggeredAbility.condSourceHasCounters
+    gLkiGone.evalTriggerCond me (some (gLki0.object! lkiId)) none TriggeredAbility.condSourceHasCounters &&
+    !gLkiGone.evalTriggerCond me (some { gLki0.object! lkiId with isLkiSnapshot := true }) none TriggeredAbility.condSourceHasCounters &&
+    !gLkiGoneNoCtr.evalTriggerCond me (some (gLki0.object! lkiId)) none TriggeredAbility.condSourceHasCounters
 
   -- 5c. CR 608.2h / 702.26b,g: `attachedEquipmentAtResolution` returns `1` via co-phased
   -- `PermanentEvent.phasedOut` LKI when the creature and its attached Equipment phase out together (not `lastKnownPower` 4)!

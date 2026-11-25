@@ -3096,8 +3096,8 @@ private partial def freezeReflexivePred (g : Game) (env : EvalEnv) : ObjectPred 
     let mv : Int :=
       match env.triggerSubjectId with
       | some cid =>
-        match g.findObject? cid with
-        | some spell => Int.ofNat (g.objectManaValue spell (includeLkiX := true))
+        match g.findLiveSourceObject? cid with
+        | some spell => Int.ofNat (g.objectManaValue spell (includeLkiX := spell.zone == .stack))
         | none =>
           match g.lastKnownBefore? cid with
           | some eo => Int.ofNat eo.manaValue
@@ -4859,7 +4859,7 @@ def applyUnified (g : Game) (controller : PlayerId) (effect : Effect)
       (g.resolvingAbility.bind fun aid =>
         (g.findObject? aid).bind fun aObj =>
           aObj.sourceId.bind fun sid =>
-            (g.findObject? sid).bind fun srcObj =>
+            (g.damageSourceById? sid).bind fun srcObj =>
               (g.activatedAbilitiesOf srcObj).findSome? fun ab =>
                 if ab.effect == effect then ab.cost.bindVar? else none)
       |>.orElse fun _ =>

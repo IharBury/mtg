@@ -1078,7 +1078,7 @@ inductive PostStep where
   | exileFromRevealedHandAfterMove (p victim : PlayerId) (fromId : ObjectId)
       (cardName : String) (sourceId : Option ObjectId)
   | logExiledIfInExile (fromId : ObjectId) (msg : String)
-  | logExpiredPlayFromExile (ids : Array ObjectId)
+  | logExpiredPlayFromExile (ids : Array ObjectId) (startEventIdx : Nat := 0)
   | recordCostSacrificedPower (abilityId : Option ObjectId) (fromId : ObjectId) (pw : Int)
   | logReturnedToHand (fromId : ObjectId) (to : PlayerId) (cardName : String)
   | finishPaySneak (p : PlayerId) (spellId attackerId : ObjectId)
@@ -1976,6 +1976,13 @@ def PendingReplacement.ensureEndsWithFinishResolutionChoice (pr : PendingReplace
     | .finishResolutionChoice => .finishResolutionChoice
     | .seq a b => .seq a b.ensureEndsWithFinishResolutionChoice
     | other => .seq other .finishResolutionChoice
+
+/-- Whether `pr` already contains a deferred `.finishPostStep (.logExpiredPlayFromExile ids _)`
+covering `oid`. -/
+def PendingReplacement.containsDeferredPlayFromExile (oid : ObjectId) : PendingReplacement → Bool
+  | .finishPostStep (.logExpiredPlayFromExile ids _) => ids.contains oid
+  | .seq a b => a.containsDeferredPlayFromExile oid || b.containsDeferredPlayFromExile oid
+  | _ => false
 
 /-- Record that `p` left the game on any nested `.restorePending`,
 `.leavePlayersWhoLost`, `.finishConcede`, or `.concedePlayersLoop`

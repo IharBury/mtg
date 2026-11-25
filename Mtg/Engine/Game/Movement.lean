@@ -1177,5 +1177,33 @@ def moveCardsToGraveyardLoop (g : Game) (ids : Array ObjectId)
             return g
       return g
 
+/-- Read-only board projection after paying an unpaid Sneak attacker return
+(`prop.sneakAttacker`, CR 702.49 / 733.1) without opening interactive choices,
+capturing `linkedExile` returns, `.whileSourceOnBattlefield` control expiry, and
+the returned attacker entering its owner's hand. -/
+def probeAfterUnpaidSneak (g : Game) (prop : ProposedSpell)
+    (includeSneak : Bool := true) : Game :=
+  if !includeSneak || g.sneakPaid prop.spellId then g
+  else
+    match prop.sneakAttacker with
+    | none => g
+    | some aid =>
+      match g.findObject? aid with
+      | none => g
+      | some o =>
+        if !o.isOnBattlefield then g
+        else
+          let gProbe : Game :=
+            { g with
+              pending := .none
+              continuations := #[]
+              currentBatch := none
+              queuedLinkedExile := #[] }
+          let cause := some (EventCause.costPayment .returnToHand prop.caster (some prop.spellId))
+          let (gAfter, _) :=
+            gProbe.move aid (.hand o.owner) none (verb := some .returnToHand)
+              (cause := cause) (suppressInteractive := true)
+          gAfter
+
 end Game
 end Mtg.Engine

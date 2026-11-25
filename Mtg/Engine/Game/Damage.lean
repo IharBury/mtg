@@ -302,7 +302,9 @@ def replaceDamage (g : Game) (n : Int)
                         else if StaticAbility.isScopeSelf sourceScope then
                           src.id == o.id
                         else
-                          EvalExpr.evalObjectPred g env (.live src) sourceScope.pred
+                          let srcView : ObjectView :=
+                            if src.isLkiSnapshot then .lki (g.snapshot src) else .live src
+                          EvalExpr.evalObjectPred g env srcView sourceScope.pred
                       let recMatches : Bool :=
                         match recipient with
                         | .any => true

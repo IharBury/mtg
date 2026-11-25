@@ -230,7 +230,7 @@ def tokenBatchProbe (g : Game) (controller : PlayerId) (printed : CardDef) : Gam
           else cur
         | _ => cur
     | _ => cur) initPrinted
-  { id := ⟨g.nextObjectId⟩
+  { id := noSourceSentinelId
     printed := effPrinted
     owner := controller
     zone := .command }
@@ -939,7 +939,7 @@ honoring CR 111.5 / 304.4 / 307.4 / 111.12 / 707.9d. -/
 def resolveCopyTokenForObject? (g : Game) (oid : ObjectId)
     (mods : Array CopyModification := #[]) : Option CardDef :=
   let cv? : Option CardDef :=
-    match g.findObject? oid with
+    match g.findLiveSourceObject? oid with
     | some src => some (g.copiableValues src)
     | none => (g.lastKnownBefore? oid).map (fun eo => eo.copiable.getD eo.toCardDef)
   cv?.bind (finalizeCopyTokenPrinted · mods)
@@ -957,7 +957,7 @@ def resolveCopyTokenCandidates (g : Game) (ref : ObjectExpr)
   let singleWithLki (oid? : Option ObjectId) (preferBfOrStack : Bool) :
       Array (Option ObjectId × CardDef) :=
     let cv? : Option CardDef :=
-      match oid?.bind g.findObject? with
+      match oid?.bind g.findLiveSourceObject? with
       | some src =>
         if !preferBfOrStack || src.isOnBattlefield || src.zone == .stack then
           some (g.copiableValues src)
@@ -973,10 +973,11 @@ def resolveCopyTokenCandidates (g : Game) (ref : ObjectExpr)
   | .this => singleWithLki env.sourceId true
   | .triggerSubject => singleWithLki env.triggerSubjectId true
   | .target slot =>
-    let oids := (env.targetSlots[slot]?.getD #[]).filterMap fun
-      | .permanent id | .card id => some id
-      | .player _ => none
-    oids.foldl (fun acc oid => acc ++ singleWithLki (some oid) false) #[]
+    (env.targetSlots[slot]?.getD #[]).foldl (fun acc t =>
+      match t with
+      | .permanent id => acc ++ singleWithLki (some id) true
+      | .card id => acc ++ singleWithLki (some id) false
+      | .player _ => acc) #[]
   | other =>
     (EvalExpr.evalObjects g env other).filterMap fun view =>
       let cv :=

@@ -47,25 +47,33 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
     | .layered _ (.copy _) d => if pred eid d then some eid else none
     | _ => none
   let copyCandLogs : Array (ObjectId × CardDef) :=
-    let candIds : Array ObjectId :=
-      g.activeEffects.foldl (fun idsAcc (eid, e) =>
-        if !expCopyEids.contains eid then idsAcc
-        else
-          match e with
-          | .layered (.objects ids) (.copy _) _ =>
-            ids.foldl (fun a id =>
-              if a.contains id then a
-              else if (g.findObject? id).any (fun o => o.zone == .battlefield) then a.push id
-              else a) idsAcc
-          | _ => idsAcc) #[]
-    candIds.filterMap fun oid =>
-      match pre.findObject? oid with
-      | none => none
-      | some preObj =>
-        match (pre.activeLayer1CopyChain preObj (ignoreDurationFor := expCopyEids)).back? with
-        | some (topEid, topCard) =>
-          if expCopyEids.contains topEid then some (oid, topCard) else none
+    if expCopyEids.isEmpty then #[]
+    else
+      let candIds0 : Array ObjectId :=
+        g.activeEffects.foldl (fun idsAcc (eid, e) =>
+          if !expCopyEids.contains eid then idsAcc
+          else
+            match e with
+            | .layered (.objects ids) (.copy _) _ =>
+              ids.foldl (fun a id =>
+                if a.contains id then a
+                else if (g.findObject? id).any (fun o => o.zone == .battlefield) then a.push id
+                else a) idsAcc
+            | _ => idsAcc) #[]
+      let candIds : Array ObjectId :=
+        g.objects.foldl (fun a o =>
+          if o.zone == .battlefield && !a.contains o.id then a.push o.id else a) candIds0
+      let postCopyG : Game :=
+        { pre with activeEffects := pre.activeEffects.filter (fun (eid, _) => !expCopyEids.contains eid) }
+      candIds.filterMap fun oid =>
+        match pre.findObject? oid with
         | none => none
+        | some preObj =>
+          match (pre.activeLayer1CopyChain preObj (ignoreDurationFor := expCopyEids)).back? with
+          | some (topEid, topCard) =>
+            let postTopEid? := (postCopyG.activeLayer1CopyChain preObj).back?.map Prod.fst
+            if postTopEid? != some topEid then some (oid, topCard) else none
+          | none => none
   let endingEmbIds0 : Array ObjectId :=
     g.activeEffects.foldl (fun acc (eid, e) =>
       match e with

@@ -292,29 +292,31 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                 (g.findObject? id).any (fun card => g.hasSubtype card quality))
       if !beholdOk then false
       else if prop.kind != .activatedAbility then
+        let gSneak := g.probeAfterUnpaidSneak prop
+        let sneakPerms := gSneak.permanentsOf p
         let excludeId := prop.sourceId.getD prop.spellId
-        let src := g.findObject? excludeId
+        let src := gSneak.findObject? excludeId
         let isSpellSrc (s : GameObject) : Bool :=
           s.zone == .stack && (prop.spellId != excludeId || prop.kind == .spell)
         let pred? := src.bind fun s =>
-          if isSpellSrc s then g.spellSacrificeCostPredFor? s (g.baseCard s) else none
+          if isSpellSrc s then gSneak.spellSacrificeCostPredFor? s (gSneak.baseCard s) else none
         let sacOk :=
           !prop.needsSacrificeOther ||
             match pred? with
             | some pred =>
               let env : EvalEnv := { controller := p, sourceId := some excludeId }
-              perms.any fun perm =>
+              sneakPerms.any fun perm =>
                 perm.id != excludeId && !removedIds.contains perm.id &&
                   !propBfSacReservedIds.contains perm.id &&
-                  EvalExpr.evalObjectPred g env (.live perm) pred
+                  EvalExpr.evalObjectPred gSneak env (.live perm) pred
             | none =>
-              perms.any fun perm =>
+              sneakPerms.any fun perm =>
                 perm.id != excludeId && !removedIds.contains perm.id &&
                   !propBfSacReservedIds.contains perm.id &&
-                  (g.isCreature perm || g.isArtifact perm)
+                  (gSneak.isCreature perm || gSneak.isArtifact perm)
         let discardOk :=
           !prop.needsDiscardCard ||
-            (g.player p).hand.any (fun id =>
+            (gSneak.player p).hand.any (fun id =>
               id != prop.spellId && !removedIds.contains id)
         sacOk && discardOk
       else
@@ -413,6 +415,41 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
             (if isTapPick then dTap ++ picked else dTap)
             (if isTapPick then dRem else dRem ++ picked)
             extraEffTapped
+  let existsValidDCrewAndPicks (o : GameObject) (d : ManaAbilityDef)
+      (extraEffTapped : Array ObjectId) : Bool :=
+    match d.crewPower? with
+    | none => existsValidDPicks o d d.picks.toList #[] #[] #[] extraEffTapped
+    | some crewN =>
+      if !o.isOnBattlefield then false
+      else
+        let cands :=
+          (g.creaturesControlledBy p).filter fun c =>
+            c.id != o.id && !c.status.tapped &&
+              !propTapReservedIds.contains c.id && !extraEffTapped.contains c.id
+        let okAfterCrew (picked : Array ObjectId) : Bool :=
+          existsValidDPicks o d d.picks.toList #[] picked #[] (extraEffTapped ++ picked)
+        if crewN == 0 then okAfterCrew #[]
+        else
+          let sufPow : Array Nat := Id.run do
+            let mut out := Array.replicate (cands.size + 1) 0
+            let mut i := cands.size
+            while i > 0 do
+              i := i - 1
+              out := out.set! i (out[i + 1]! + (g.power cands[i]!).toNat)
+            return out
+          let rec searchCrew (idx : Nat) (curPow : Nat) (picked : Array ObjectId) : Bool :=
+            if curPow ≥ crewN then okAfterCrew picked
+            else if h : idx ≥ cands.size then false
+            else if curPow + sufPow[idx]! < crewN then false
+            else
+              let c := cands[idx]!
+              let pwr := (g.power c).toNat
+              if pwr == 0 then searchCrew (idx + 1) curPow picked
+              else
+                searchCrew (idx + 1) (curPow + pwr) (picked.push c.id) ||
+                  searchCrew (idx + 1) curPow picked
+          termination_by cands.size - idx
+          searchCrew 0 0 #[]
   let respectsPropReservations (o : GameObject) (d : ManaAbilityDef) : Bool :=
     match prop? with
     | none => true
@@ -431,17 +468,10 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeIndestructibleCounter) &&
           !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .indestructible) sinceIdx &&
           o.status.indestructibleCounters ≤ 1)) &&
-      d.crewPower?.all (fun n =>
-        o.isOnBattlefield &&
-          (g.firstPayableCrewSelection? p o.id n d.picks
-            (tapSource := d.tap)
-            (sacrificeOrExileSource := d.sacrificeSelf || d.exileSelf)
-            (discardOrExileHandSource := d.discardSelf || d.exileSelfFromHand)
-            (preTappedIds := propTapReservedIds)).isSome) &&
       d.exileManaSymbols?.all (fun (col?, minSyms, pred) =>
         g.canPayExileManaSymbols p o.id col? minSyms pred
           (excludedIds := propRemoveReservedIds ++ (if d.exileSelfFromGraveyard then #[o.id] else #[]))) &&
-      existsValidDPicks o d d.picks.toList #[] #[] #[] #[]
+      existsValidDCrewAndPicks o d #[]
   let canPayEffCost (o : GameObject) (d : ManaAbilityDef) (effCost : ManaCost) : Bool :=
     if !effCost.includesManaPayment then true
     else
@@ -450,14 +480,53 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         plainManaSrcs.filter fun (src, _) =>
           !(d.tap && src.id == o.id) && !propTapReservedIds.contains src.id
       let picksOkWith (extraTapped : Array ObjectId) : Bool :=
-        existsValidDPicks o d d.picks.toList #[] #[] #[] extraTapped
+        existsValidDCrewAndPicks o d extraTapped
       if picksOkWith (effSrcs.map (·.1.id)) then
         g.canPayFromSources (g.player p).manaPool effCost effSrcs.toList spendEff none
       else
-        let freeOthers :=
-          (effSrcs.filter (fun (s, _) => !g.isCreature s && !g.isArtifact s)).toList
-        let critRem :=
-          (effSrcs.filter (fun (s, _) => g.isCreature s || g.isArtifact s)).toList
+        let propAllPicks : Array CostPick :=
+          match prop? with
+          | some prop =>
+            if prop.kind != .activatedAbility then #[]
+            else
+              match prop.activation with
+              | some ab =>
+                costPicksWithSacrificeOther (costPicksOf ab)
+                  (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
+              | none => #[]
+          | none => #[]
+        let propSacSrc :=
+          prop?.any fun prop =>
+            prop.sacrificeSource ||
+              prop.activation.any (fun ab => ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield)
+        let propDiscSrc :=
+          prop?.any fun prop =>
+            prop.discardSource ||
+              prop.activation.any (fun ab => ab.cost.discardSource || ab.cost.exileSourceFromHand)
+        let isCrit (s : GameObject) : Bool :=
+          g.isCreature s || g.isArtifact s ||
+            (d.tap && s.id == o.id) ||
+            d.picks.any (fun pk =>
+              match pk with
+              | .custom (.tapObjects ..) | .custom (.or _) =>
+                g.costPickAllows p (some o.id) pk s
+                  (tapSource := d.tap)
+                  (sacrificeOrExileSource := d.sacrificeSelf || d.exileSelf)
+                  (discardOrExileHandSource := d.discardSelf || d.exileSelfFromHand)
+              | _ => false) ||
+            prop?.any (fun prop =>
+              (prop.tapSource && prop.sourceId == some s.id) ||
+                prop.teamworkCreatures.contains s.id ||
+                propAllPicks.any fun pk =>
+                  match pk with
+                  | .custom (.tapObjects ..) | .custom (.or _) =>
+                    g.costPickAllows p prop.sourceId pk s
+                      (tapSource := prop.tapSource)
+                      (sacrificeOrExileSource := propSacSrc)
+                      (discardOrExileHandSource := propDiscSrc)
+                  | _ => false)
+        let freeOthers := (effSrcs.filter (fun (s, _) => !isCrit s)).toList
+        let critRem := (effSrcs.filter (fun (s, _) => isCrit s)).toList
         let rec searchEff :
             List (GameObject × Array ManaType) → ManaPool → Array ObjectId → Bool
           | [], curPool, tappedIds =>

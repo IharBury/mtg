@@ -208,7 +208,7 @@ def viewSubtypes (st : Game) : ObjectView → Array CardSubtype
 def viewHasSubtype (st : Game) (v : ObjectView) (sub : CardSubtype) : Bool :=
   match v with
   | .live o => st.hasSubtype o sub
-  | .lki eo => eo.subtypes.contains sub || (eo.changeling && sub.isCreatureType)
+  | .lki eo => eo.subtypes.contains sub
 
 /-- Synthesize an `ObjectView` for evaluating spell predicates against a card face
 (`face`, which may be an Adventure, MDFC back face, or prepare face) with its
@@ -216,7 +216,7 @@ Layer-3 text changes and computed `manaValue` (CR 601.2f / 613.1c). -/
 def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : PlayerId)
     (manaValue : Nat) : ObjectView :=
   let tcs := g.evalLayer3 card
-  let subs :=
+  let rawSubs :=
     (CardSubtype.ofSubtypes face.subtypes).map fun s =>
       if tcs.isEmpty then s else HasTextChange.applyTextChanges tcs s
   let sas :=
@@ -224,6 +224,11 @@ def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : Play
     else HasTextChange.applyTextChanges tcs face.staticAbilities
   let isChangeling := face.hasSimpleKeyword .changeling ||
     sas.any fun | .characteristicDefining .allCreatureTypes => true | _ => false
+  let subs :=
+    if isChangeling && (face.types.contains .creature || face.types.contains .kindred) then
+      CardSubtype.allCreatureSubtypes.foldl
+        (fun acc s => if acc.contains s then acc else acc.push s) rawSubs
+    else rawSubs
   .lki {
     id := some card.id
     controller := some caster
@@ -530,228 +535,18 @@ def evalPlayerMetricSingle (g : Game) (env : EvalEnv) (m : PlayerMetric) (p : Pl
   | .opponentsCount => Int.ofNat (st.livingOpponents p).size
   | .one => 1
 
-/-- Index of the last combat-phase start (`phaseBegan .combat` or
-`stepBegan .beginningOfCombat`) on `turn` at or before `limit` in `events`
-(or `0` if none was logged at or before `limit`). -/
-private def combatPhaseStartIdxAtOrBefore (events : Array GameEvent) (turn limit : Nat) : Nat := Id.run do
-  let hi := min limit events.size
-  let mut start := 0
-  for i in [0:hi] do
-    let e := events[i]!
-    if e.turn == turn then
-      match e.change with
-      | .rules (.turn (.phaseBegan .combat))
-      | .rules (.turn (.stepBegan .beginningOfCombat _)) => start := i
-      | _ => pure ()
-  return start
-
-/-- Locate the start index of `batch` within `[startIdx, idx]` on `wTurn`. -/
-private def batchStartAt (events : Array GameEvent) (wTurn startIdx idx : Nat)
-    (batch : Option BatchId) : Nat :=
-  match batch with
-  | none => idx
-  | some bid => Id.run do
-    let mut s := idx
-    while s > startIdx && s ≤ events.size &&
-        events[s - 1]!.turn == wTurn && events[s - 1]!.batch == some bid do
-      s := s - 1
-    return s
-
-/-- Locate the exclusive end index of the combat phase containing `anchorIdx` on `wTurn`,
-stopping before any turn change, subsequent combat phase, or `oid`'s departure/removal. -/
-private def combatPhaseEndAfter (events : Array GameEvent) (oid : ObjectId)
-    (wTurn anchorIdx : Nat) : Nat := Id.run do
-  let mut endIdx := events.size
-  for i in [(anchorIdx + 1):events.size] do
-    if endIdx == events.size then
-      let e := events[i]!
-      if e.turn != wTurn then
-        endIdx := i
-      else
-        match e.change with
-        | .rules (.turn (.phaseBegan .combat))
-        | .rules (.turn (.stepBegan .beginningOfCombat _)) => endIdx := i
-        | .rules (.combat (.removedFromCombat eo)) =>
-          if eo.id == some oid then endIdx := i
-        | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
-          if toZ != .battlefield && before.id == some oid then endIdx := i
-        | _ => pure ()
-  return endIdx
-
-/-- Combat-phase event window `(windowTurn, combatStartIdx, atkEndIdx, blockEndIdx)`
-for LKI object `oid`: when `eventIdx?` points to an event for `oid`, anchors directly on
-that event; otherwise locates `oid`'s last attacking battlefield departure or
-`removedFromCombat` event on any turn `≤ defaultTurn` (or its last combat event if it
-did not depart while attacking), and opens the combat window on **that event's turn**
-(combat-phase start at or before the anchor). This ensures both extra combats on the same
-turn and earlier-turn history queries (`.eventOccurredLastTurn`) reconstruct
-`attackingAlone` and `blocked`/`unblocked` from the exact combat phase the creature
-participated in. -/
-private def lkiCombatWindow (events : Array GameEvent) (oid : ObjectId)
-    (defaultTurn : Nat) (eventIdx? : Option Nat := none) : Nat × Nat × Nat × Nat := Id.run do
-  -- Direct event-index anchor when `evalEventPatternOnTurn` evaluates a specific event.
-  if let some eIdx := eventIdx? then
-    if h : eIdx < events.size then
-      let e := events[eIdx]
-      let wTurn := e.turn
-      let startIdx := combatPhaseStartIdxAtOrBefore events wTurn (eIdx + 1)
-      match e.change with
-      | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
-        if toZ != .battlefield && before.id == some oid then
-          let bStart := batchStartAt events wTurn startIdx eIdx e.batch
-          return (wTurn, startIdx, bStart, eIdx)
-      | .rules (.combat (.removedFromCombat eo)) =>
-        if eo.id == some oid then
-          let bStart := batchStartAt events wTurn startIdx eIdx e.batch
-          return (wTurn, startIdx, bStart, eIdx)
-      | .rules (.combat (.attackersDeclared _ decls)) =>
-        if decls.any (·.1.id == some oid) then
-          let blkEnd := combatPhaseEndAfter events oid wTurn eIdx
-          return (wTurn, startIdx, eIdx + 1, blkEnd)
-      | .rules (.combat (.becameAttacking atk _)) =>
-        if atk.id == some oid then
-          let blkEnd := combatPhaseEndAfter events oid wTurn eIdx
-          return (wTurn, startIdx, eIdx + 1, blkEnd)
-      | .rules (.zone (.created obj _)) =>
-        if obj.id == some oid then
-          let mut atkEnd := eIdx + 1
-          if let some bid := e.batch then
-            while atkEnd < events.size &&
-                events[atkEnd]!.turn == wTurn && events[atkEnd]!.batch == some bid do
-              atkEnd := atkEnd + 1
-          let blkEnd := combatPhaseEndAfter events oid wTurn eIdx
-          return (wTurn, startIdx, atkEnd, blkEnd)
-      | _ => pure ()
-  let maxTurn :=
-    match eventIdx?.bind (events[·]?) with
-    | some e => min defaultTurn e.turn
-    | none => defaultTurn
-  let mut atkDepart : Option (Nat × Option BatchId) := none
-  let mut lastCombatIdx : Option Nat := none
-  for i in [0:events.size] do
-    let e := events[i]!
-    if e.turn ≤ maxTurn then
-      match e.change with
-      | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
-        if toZ != .battlefield && before.id == some oid && before.attacking then
-          atkDepart := some (i, e.batch)
-      | .rules (.permanent (.phasedOut before _)) =>
-        if before.id == some oid && before.attacking then
-          atkDepart := some (i, e.batch)
-      | .rules (.combat (.removedFromCombat eo)) =>
-        if eo.id == some oid then
-          atkDepart := some (i, e.batch)
-      | .rules (.combat (.attackersDeclared _ decls)) =>
-        if decls.any (·.1.id == some oid) then lastCombatIdx := some i
-      | .rules (.combat (.becameAttacking atk _)) =>
-        if atk.id == some oid then lastCombatIdx := some i
-      | .rules (.combat (.becameBlocked atk _)) =>
-        if atk.id == some oid then lastCombatIdx := some i
-      | .rules (.combat (.remainedUnblocked atk)) =>
-        if atk.id == some oid then lastCombatIdx := some i
-      | _ => pure ()
-  match atkDepart with
-  | some (idx, departBatch) =>
-    let wTurn := events[idx]!.turn
-    let startIdx := combatPhaseStartIdxAtOrBefore events wTurn (idx + 1)
-    let bStart := batchStartAt events wTurn startIdx idx departBatch
-    return (wTurn, startIdx, bStart, idx)
-  | none =>
-    match lastCombatIdx with
-    | some cIdx =>
-      let wTurn := events[cIdx]!.turn
-      let startIdx := combatPhaseStartIdxAtOrBefore events wTurn (cIdx + 1)
-      let blkEnd := combatPhaseEndAfter events oid wTurn cIdx
-      return (wTurn, startIdx, cIdx + 1, blkEnd)
-    | none =>
-      let startIdx := combatPhaseStartIdxAtOrBefore events maxTurn events.size
-      return (maxTurn, startIdx, events.size, events.size)
-
 /-- Whether an LKI attacking creature `eo` was attacking alone when it left combat
-(CR 506.5 / 608.2h): reconstructs the set of attacking creatures controlled by
-`eo.controller` in the combat phase (and turn) containing `eo`'s departure up to
-`eo`'s departure batch (`attackersDeclared` / `becameAttacking` minus earlier
-departures/removals). -/
+(CR 506.5 / 608.2h). Delegates to `Core.lkiAttackingAlone`. -/
 private def lkiAttackingAlone (st : Game) (env : EvalEnv) (events : Array GameEvent)
     (eo : EventObject) : Bool :=
-  if !eo.attacking then false
-  else
-    let defaultTurn := st.turnNumber
-    let (wTurn, startIdx, endIdx) : Nat × Nat × Nat :=
-      match eo.id with
-      | some oid =>
-        let (wt, s, atkEnd, _) := lkiCombatWindow events oid defaultTurn env.eventIdx?
-        (wt, s, atkEnd)
-      | none =>
-        let wt :=
-          match env.eventIdx?.bind (events[·]?) with
-          | some e => e.turn
-          | none => defaultTurn
-        (wt, combatPhaseStartIdxAtOrBefore events wt events.size, events.size)
-    let (attackers, sawSelf) : Array ObjectId × Bool := Id.run do
-      let mut active : Array ObjectId := #[]
-      let mut foundSelf := false
-      for i in [startIdx:endIdx] do
-        let e := events[i]!
-        if e.turn == wTurn then
-          match e.change with
-          | .rules (.combat (.attackersDeclared p decls)) =>
-            if some p == eo.controller then
-              for (atk, _) in decls do
-                if let some aid := atk.id then
-                  active := pushUnique active aid
-                  if eo.id == some aid then foundSelf := true
-          | .rules (.combat (.becameAttacking atk _)) =>
-            if atk.controller == eo.controller then
-              if let some aid := atk.id then
-                active := pushUnique active aid
-                if eo.id == some aid then foundSelf := true
-          | .rules (.combat (.removedFromCombat obj)) =>
-            if let some rid := obj.id then
-              active := active.filter (· != rid)
-          | .rules (.permanent (.phasedOut before _)) =>
-            if let some pid := before.id then
-              active := active.filter (· != pid)
-          | .rules (.zone (.moved before _ .battlefield toZ _ _ _ _)) =>
-            if toZ != .battlefield then
-              if let some lid := before.id then
-                active := active.filter (· != lid)
-          | _ => pure ()
-      return (active, foundSelf)
-    if sawSelf then
-      attackers.size == 1
-    else
-      -- Fallback when no `attackersDeclared`/`becameAttacking` event logged `eo.id`.
-      let liveOthers :=
-        if wTurn == st.turnNumber then
-          st.battlefield.filter fun x =>
-            x.status.attacking && st.controllerOf x == eo.controller && some x.id != eo.id
-        else #[]
-      liveOthers.isEmpty && (attackers.filter fun id => some id != eo.id).isEmpty
+  st.lkiAttackingAlone events eo.attacking eo.id eo.controller env.eventIdx?
 
 /-- Whether an LKI attacking creature `eo` became blocked in the combat phase
-(and turn) containing its departure (CR 509.1h / 608.2h), reconstructed from
-`CombatEvent.becameBlocked`. -/
+containing its departure or phasing out (CR 509.1h / 608.2h / 702.26b).
+Delegates to `Core.lkiWasBlocked`. -/
 private def lkiWasBlocked (st : Game) (env : EvalEnv) (events : Array GameEvent)
     (eo : EventObject) : Bool :=
-  if !eo.attacking then false
-  else
-    match eo.id with
-    | none => false
-    | some oid =>
-      let (wTurn, startIdx, _, endIdx) := lkiCombatWindow events oid st.turnNumber env.eventIdx?
-      Id.run do
-        let mut blocked := false
-        for i in [startIdx:endIdx] do
-          let e := events[i]!
-          if e.turn == wTurn then
-            match e.change with
-            | .rules (.combat (.becameBlocked atk _)) =>
-              if atk.id == some oid then blocked := true
-            | .rules (.combat (.removedFromCombat obj)) =>
-              if obj.id == some oid then blocked := false
-            | _ => pure ()
-        return blocked
+  st.lkiWasBlocked events eo.attacking eo.id env.eventIdx?
 
 /-! ### Core Mutual Evaluators -/
 

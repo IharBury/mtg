@@ -1231,5 +1231,380 @@ the creature spell's material rider outcome, whereas for a noncreature spell it 
   mustHoldCheck9 "p52_multiSourceOneRockStaysUnique" (hasUniqueManaPayment gMultiOneProp)
 
 
+/- Phase 53 Item 4a: `Demo.hasUniqueManaPayment` completeness across all `ManaSpentPred`
+constructors & `ValueExpr.manaSpent`, non-WUBRG dual / combination-land `repPools`,
+all 5 `manaAbilityDefCanChangeOutcome` / `nonPlainFlips` cases, and full
+`treasureManaMatters` AST & zone coverage! -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := afterDraw
+  let oneInstDef : CardDef := {
+    name := "P53 Check9 OneInst"
+    manaCost := ManaCost.ofGeneric 1
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let twoInstDef : CardDef := {
+    name := "P53 Check9 TwoInst"
+    manaCost := ManaCost.ofGeneric 2
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let twobridInstDef : CardDef := {
+    name := "P53 Check9 TwobridInst"
+    manaCost := ⟨#[.twobrid .blue]⟩
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let hybridWgInstDef : CardDef := {
+    name := "P53 Check9 HybridWgInst"
+    manaCost := ⟨#[.hybrid .white .green]⟩
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let uncounterableInstDef : CardDef := {
+    oneInstDef with
+    name := "P53 Check9 UncInst"
+    staticAbilities := #[.spellCantBeCountered]
+  }
+  let mountainDef : CardDef := {
+    name := "P53 Check9 Mountain"
+    types := #[.land]
+    subtypes := #["Mountain"]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.fixedOne (.colored .red))]
+  }
+  let islandDef : CardDef := {
+    name := "P53 Check9 Island"
+    types := #[.land]
+    subtypes := #["Island"]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.fixedOne (.colored .blue))]
+  }
+  let borosDualDef : CardDef := {
+    name := "P53 Check9 BorosDual"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility
+        (.oneOf (.explicit #[.colored .red, .colored .white]) (.const 1))
+    ]
+  }
 
+  -- 1. All remaining `ManaSpentPred` constructors + `ValueExpr.manaSpent`:
+  -- (a) `.ofColor .red`: floating `{G}` + untapped Mountain on `{1}` -> NOT unique!
+  let ofColorRedWatchDef : CardDef := {
+    name := "P53 Check9 RedWatch"
+    types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger
+        (.castSpell .you .anyObject (manaSpent? := some (.ofColor .red)))
+        (Effect.gainLife 1)
+    ]
+  }
+  let gOfColor0 :=
+    (insertObject (addPermanent (addPermanent gMain ofColorRedWatchDef p0 p0) mountainDef p0 p0)
+      oneInstDef p0 (.hand p0)).addMana p0 (.colored .green) 1
+  let gOfColorProp := mustApply gOfColor0 p0 (.cast (gOfColor0.player p0).hand.back!)
 
+  -- (b) `.colorCount .ge 2`: Boros `{R}/{W}` + Mountain on `{2}` -> `{R}{R}` (1 color) vs `{W}{R}` (2 colors) -> NOT unique!
+  let colorCountWatchDef : CardDef := {
+    name := "P53 Check9 ColorCountWatch"
+    types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger
+        (.castSpell .you .anyObject (manaSpent? := some (.colorCount .ge 2)))
+        (Effect.gainLife 1)
+    ]
+  }
+  let gColorCnt0 :=
+    insertObject
+      (addPermanent (addPermanent (addPermanent gMain colorCountWatchDef p0 p0) borosDualDef p0 p0) mountainDef p0 p0)
+      twoInstDef p0 (.hand p0)
+  let gColorCntProp := mustApply gColorCnt0 p0 (.cast (gColorCnt0.player p0).hand.back!)
+
+  -- (c) General non-PoA `.fromSource`: permanent with `.fromSource` trigger + floating `{G}` on `{1}` -> NOT unique!
+  let fromSourceLandDef : CardDef := {
+    name := "P53 Check9 FromSourceLand"
+    types := #[.land]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.fixedOne (.colored .white))]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger
+        (.castSpell .you .anyObject (manaSpent? := some .fromSource))
+        (Effect.gainLife 1)
+    ]
+  }
+  let gFromSrc0 :=
+    (insertObject (addPermanent gMain fromSourceLandDef p0 p0) oneInstDef p0 (.hand p0)).addMana p0 (.colored .green) 1
+  let gFromSrcProp := mustApply gFromSrc0 p0 (.cast (gFromSrc0.player p0).hand.back!)
+
+  -- (d) `ValueExpr.manaSpent` (Moon-Letters style) on twobrid `{2/U}` noncreature spell:
+  --     floating `{C}{C}` + untapped Island -> `{2}` (2 mana spent) vs `{U}` (1 mana spent) -> NOT unique!
+  let moonLettersWatchDef : CardDef := {
+    name := "P53 Check9 MoonLettersWatch"
+    types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger
+        (.castSpell .you (.not (.hasType .creature)))
+        { body := .player (.drawCards .you (.manaSpent .triggerSubject)) }
+    ]
+  }
+  let gManaSpentAmt0 :=
+    (insertObject (addPermanent (addPermanent gMain moonLettersWatchDef p0 p0) islandDef p0 p0)
+      twobridInstDef p0 (.hand p0)).addMana p0 .colorless 2
+  let gManaSpentAmtProp := mustApply gManaSpentAmt0 p0 (.cast (gManaSpentAmt0.player p0).hand.back!)
+
+  -- (e) Explicit `.withRider .cantBeCountered` on an ALREADY uncounterable noncreature spell -> NOT unique!
+  let explicitRiderWatchDef : CardDef := {
+    name := "P53 Check9 RiderWatch"
+    types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger
+        (.castSpell .you .anyObject (manaSpent? := some (.withRider .cantBeCountered)))
+        (Effect.gainLife 1)
+    ]
+  }
+  let cbcPlainLandDef : CardDef := {
+    name := "P53 Check9 CbcLand"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.fixedOne (.colored .white)) (riders := #[.cantBeCountered])
+    ]
+  }
+  let gExplicitRider0 :=
+    (insertObject (addPermanent (addPermanent gMain explicitRiderWatchDef p0 p0) cbcPlainLandDef p0 p0)
+      uncounterableInstDef p0 (.hand p0)).addMana p0 (.colored .green) 1
+  let gExplicitRiderProp := mustApply gExplicitRider0 p0 (.cast (gExplicitRider0.player p0).hand.back!)
+
+  -- 2. Non-WUBRG dual (`{R}/{W}` Boros dual) in `canExtraPlainSourcesChangeOutcome`:
+  --    Floating `{B}` with `.ofColor .black` trigger + untapped `{R}/{W}` Boros dual on `{1}`:
+  --    `{W}` outranks `{B}` in `ManaPool.spendAnyUnit?` (`W > B > R`), so NOT unique!
+  let ofColorBlackWatchDef : CardDef := {
+    name := "P53 Check9 BlackWatch"
+    types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger
+        (.castSpell .you .anyObject (manaSpent? := some (.ofColor .black)))
+        (Effect.gainLife 1)
+    ]
+  }
+  let gBorosDisplace0 :=
+    (insertObject (addPermanent (addPermanent gMain ofColorBlackWatchDef p0 p0) borosDualDef p0 p0)
+      oneInstDef p0 (.hand p0)).addMana p0 (.colored .black) 1
+  let gBorosDisplaceProp := mustApply gBorosDisplace0 p0 (.cast (gBorosDisplace0.player p0).hand.back!)
+
+  -- 3. Combination-land `repPools` (>4 distinct pre-spend pools):
+  --    5-color combination land `#[W, U, B, R, G] 2` (15 pools; index 4 is `[W, G]`) + extra *Path of Ancestry* `{R}`
+  --    on `{2}` Elf creature matching Elf commander: `{R}` beats `{G}` on `[W, G]`, flipping `ancestryScry` -> NOT unique!
+  let combo5Def : CardDef := {
+    name := "P53 Check9 FiveColorCombo"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility
+        (.combination (.explicit #[.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]) (.const 2))
+    ]
+  }
+  let poaRedDef : CardDef := {
+    name := "P53 Check9 PoaRed"
+    types := #[.land]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.fixedOne (.colored .red))]
+    triggeredAbilities := #[TriggeredAbility.onManaSpentCastCommanderTypeScry]
+  }
+  let elfCmdrDef : CardDef := {
+    creature "P53 Check9 ElfCmdr" ⟨#[.colored .red, .colored .green]⟩ #["Elf"] 2 2 with
+    supertypes := #[.legendary]
+  }
+  let twoElfSpellDef : CardDef := creature "P53 Check9 TwoElf" (ManaCost.ofGeneric 2) #["Elf"] 2 2
+  let cmdCfg53 : StartConfig := {
+    seats := #[
+      { name := "P0", deck := testGreenDeck, commanders := #[elfCmdrDef] },
+      { name := "P1", deck := testRedDeck }
+    ]
+    format := .constructed
+    seed := 539
+    startingPlayer := some 0
+  }
+  let gCmd53 : Game :=
+    match Start.start cmdCfg53 with
+    | .ok g => (keepOpeningHands g 20).advanceStep
+    | .error e => panic! e
+  let gComboRep0 :=
+    insertObject (addPermanent (addPermanent gCmd53 combo5Def p0 p0) poaRedDef p0 p0)
+      twoElfSpellDef p0 (.hand p0)
+  let gComboRepProp := mustApply gComboRep0 p0 (.cast (gComboRep0.player p0).hand.back!)
+
+  -- 4. All five `manaAbilityDefCanChangeOutcome` / `nonPlainFlips` cases:
+  -- (a) Modal non-plain mana ability (`d.modeChoices` with `.cantBeCountered` on mode 2):
+  let modalNonPlainDef : CardDef := {
+    name := "P53 Check9 ModalLotus"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := { items := #[.tapSelf, .sacrifice (.exact 1) .self] }
+      effect := {
+        body := .chooseModes {
+          modes := #[
+            { body := .player (.addMana .you { spec := .fixedOne .colorless }) },
+            { body := .player (.addMana .you { spec := .fixedOne (.colored .white), riders := #[.cantBeCountered] }) }
+          ]
+        }
+      }
+    }]
+  }
+  let gModalFlip0 :=
+    (insertObject (addPermanent gMain modalNonPlainDef p0 p0) oneInstDef p0 (.hand p0)).addMana p0 (.colored .green) 1
+  let gModalFlipProp := mustApply gModalFlip0 p0 (.cast (gModalFlip0.player p0).hand.back!)
+
+  -- (b) Hybrid `{W/G}` displacement by unrestricted no-rider non-plain `{W}`:
+  let sacWhiteDef : CardDef := {
+    name := "P53 Check9 SacWhite"
+    types := #[.artifact]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.fixedOne (.colored .white)) (cost := { items := #[.sacrifice (.exact 1) .self] })
+    ]
+  }
+  let gHybridFlip0 :=
+    (insertObject (addPermanent gMain sacWhiteDef p0 p0) hybridWgInstDef p0 (.hand p0)).addManaUnits p0
+      #[{ mana := .colored .green, riders := #[.cantBeCountered] }]
+  let gHybridFlipProp := mustApply gHybridFlip0 p0 (.cast (gHybridFlip0.player p0).hand.back!)
+
+  -- (c) Tier-3 cross-rider displacement of `outcome0.cantBeCountered`:
+  --     Floating `{G}` with `.cantBeCountered` + non-plain sacrifice-self `{W}` with `.gainsHaste` on `{1}` -> NOT unique!
+  let sacWhiteHasteDef : CardDef := {
+    name := "P53 Check9 SacWhiteHaste"
+    types := #[.artifact]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.fixedOne (.colored .white))
+        (cost := { items := #[.sacrifice (.exact 1) .self] }) (riders := #[.gainsHaste])
+    ]
+  }
+  let gTier3Flip0 :=
+    (insertObject (addPermanent gMain sacWhiteHasteDef p0 p0) oneInstDef p0 (.hand p0)).addManaUnits p0
+      #[{ mana := .colored .green, riders := #[.cantBeCountered] }]
+  let gTier3FlipProp := mustApply gTier3Flip0 p0 (.cast (gTier3Flip0.player p0).hand.back!)
+
+  -- (d) Hand non-plain mana ability (`exileSelfFromHand`) flipping outcome:
+  let spiritGuideRedDef : CardDef := {
+    creature "P53 Check9 SpiritGuide" (ManaCost.ofGeneric 3) #["Spirit"] 2 2 with
+    activatedAbilities := #[{
+      cost := { items := #[.exile (.exact 1) { zones := #[.hand], owner := .ofPlayer .you } .self] }
+      activeZones := #[.hand]
+      effect := { body := .player (.addMana .you { spec := .fixedOne (.colored .red) }) }
+    }]
+  }
+  let gHandFlip0 :=
+    (insertObject (insertObject (addPermanent gMain ofColorRedWatchDef p0 p0) spiritGuideRedDef p0 (.hand p0))
+      oneInstDef p0 (.hand p0)).addMana p0 (.colored .green) 1
+  let gHandFlipProp := mustApply gHandFlip0 p0 (.cast (gHandFlip0.player p0).hand.back!)
+
+  -- (e) `.mountainExtraRed` on a restricted non-plain Mountain:
+  let restrMtnDef : CardDef := {
+    name := "P53 Check9 RestrMtn"
+    types := #[.land]
+    subtypes := #["Mountain"]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.fixedOne (.colored .green))
+        (cost := { items := #[.tapSelf, .payLife (.const 1)] })
+        (restriction := some (.onlyForSpells (.hasSubtype .dragon)))
+    ]
+  }
+  let gMtnExtra0 :=
+    (insertObject (addPermanent (addPermanent gMain ofColorRedWatchDef p0 p0) restrMtnDef p0 p0)
+      oneInstDef p0 (.hand p0)).addMana p0 (.colored .green) 1
+      |>.createEffect (.playerRule p0 (.mountainExtraRed 1) .untilEndOfTurn) (cause := some (.gameRule .staticAbility))
+  let gMtnExtraProp := mustApply gMtnExtra0 p0 (.cast (gMtnExtra0.player p0).hand.back!)
+
+  -- 5. Complete `treasureManaMatters` AST & zone walker:
+  let trCond : Condition := .castPred (.manaSpentMatches .fromTreasure .triggerSubject)
+  let trCastPat : TriggerPattern := .castSpell .you .anyObject (manaSpent? := some .fromTreasure)
+  let mkTrCheckGame (setup : Game → Game) (spell : CardDef := oneInstDef) : Game :=
+    let g0 := (insertObject (setup (addPermanent gMain Catalog.treasureToken p0 p0)) spell p0 (.hand p0)).addMana p0 .colorless 1
+    mustApply g0 p0 (.cast (g0.player p0).hand.back!)
+  -- (a) `TriggerPattern.or`
+  let trigOrDef : CardDef := {
+    name := "P53 Check9 TrigOr", types := #[.enchantment]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger (.or .thisEnters trCastPat) (Effect.gainLife 1)]
+  }
+  let gTrOrProp := mkTrCheckGame (fun g => addPermanent g trigOrDef p0 p0)
+  -- (b) `TriggerPattern.whenCond`
+  let trigWhenDef : CardDef := {
+    name := "P53 Check9 TrigWhen", types := #[.enchantment]
+    triggeredAbilities := #[TriggeredAbility.mkTrigger (.whenCond (.castSpell .you .anyObject) trCond) (Effect.gainLife 1)]
+  }
+  let gTrWhenProp := mkTrCheckGame (fun g => addPermanent g trigWhenDef p0 p0)
+  -- (c) `StaticReplacementSpec.entersTapped` & `.all`
+  let staticEntTapDef : CardDef := {
+    creature "P53 Check9 EntTap" (ManaCost.ofGeneric 1) #["Elf"] 2 2 with
+    staticAbilities := #[.replacement none (.all #[.entersTapped .self (some (.castPred (.manaSpentMatches .fromTreasure .this)))])]
+  }
+  let gTrEntTapProp := mkTrCheckGame id staticEntTapDef
+  -- (d) `ContinuousModification.grantTriggered` & `.grantStatic` & `.all`
+  let grantTrigDef : CardDef := {
+    name := "P53 Check9 GrantTrig", types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none { zones := { zones := #[.battlefield], owner := .ofPlayer .you }, pred := .hasType .creature }
+        (.all #[.grantTriggered #[TriggeredAbility.mkTrigger trCastPat (Effect.gainLife 1)]])
+    ]
+  }
+  let gTrGrantProp := mkTrCheckGame (fun g => addPermanent g grantTrigDef p0 p0)
+  -- (e) `ModalSpec.altCountIf?`
+  let modalAltSpellDef : CardDef := {
+    oneInstDef with
+    name := "P53 Check9 ModalAlt"
+    spellAbility := some {
+      effect := {
+        body := .chooseModes {
+          altCountIf? := some (.castPred (.manaSpentMatches .fromTreasure .this), .const 2, .const 2)
+          chooseAtResolution := true
+          modes := #[Effect.gainLife 1, Effect.gainLife 2]
+        }
+      }
+    }
+  }
+  let gTrModalAltProp := mkTrCheckGame id modalAltSpellDef
+  -- (f) `Instruction.installEffect`
+  let installEffSpellDef : CardDef := {
+    oneInstDef with
+    name := "P53 Check9 InstallEff"
+    spellAbility := some {
+      effect := {
+        body := .installEffect (.applyReplacement .untilEndOfTurn
+          (.entersTapped .self (some (.castPred (.manaSpentMatches .fromTreasure .this)))))
+      }
+    }
+  }
+  let gTrInstallProp := mkTrCheckGame id installEffSpellDef
+  -- (g) `g.delayedTriggers`
+  let gTrDelayedProp := mkTrCheckGame (fun g =>
+    g.registerDelayedTrigger {
+      controller := p0
+      kind := .copyNextInstantSorceryThisTurn
+      cause := .gameRule .staticAbility
+      instruction? := some (.ifCond trCond (Instruction.gainLifeFixed 1 .you) .noop)
+    })
+  -- (h) Non-battlefield `activeZones` (graveyard trigger)
+  let gyTrigDef : CardDef := {
+    name := "P53 Check9 GyTrig", types := #[.enchantment]
+    triggeredAbilities := #[{
+      TriggeredAbility.mkTrigger trCastPat (Effect.gainLife 1) with
+      activeZones := #[.graveyard]
+    }]
+  }
+  let gTrGyProp := mkTrCheckGame (fun g => insertObject g gyTrigDef p0 (.graveyard p0))
+
+  mustHoldCheck9 "p53_ofColorRedNotUnique" (!hasUniqueManaPayment gOfColorProp) &&
+  mustHoldCheck9 "p53_colorCountNotUnique" (!hasUniqueManaPayment gColorCntProp) &&
+  mustHoldCheck9 "p53_fromSourceNotUnique" (!hasUniqueManaPayment gFromSrcProp) &&
+  mustHoldCheck9 "p53_valueExprManaSpentTwobridNotUnique" (!hasUniqueManaPayment gManaSpentAmtProp) &&
+  mustHoldCheck9 "p53_explicitWithRiderUncounterableNotUnique" (!hasUniqueManaPayment gExplicitRiderProp) &&
+  mustHoldCheck9 "p53_borosDualDisplacesBlackNotUnique" (!hasUniqueManaPayment gBorosDisplaceProp) &&
+  mustHoldCheck9 "p53_combo5RepPoolsPoaFlipNotUnique" (!hasUniqueManaPayment gComboRepProp) &&
+  mustHoldCheck9 "p53_modalNonPlainModeChoicesNotUnique" (!hasUniqueManaPayment gModalFlipProp) &&
+  mustHoldCheck9 "p53_hybridDisplacedByPlainNonPlainNotUnique" (!hasUniqueManaPayment gHybridFlipProp) &&
+  mustHoldCheck9 "p53_tier3CrossRiderDisplacesCbcNotUnique" (!hasUniqueManaPayment gTier3FlipProp) &&
+  mustHoldCheck9 "p53_handNonPlainManaAbilityNotUnique" (!hasUniqueManaPayment gHandFlipProp) &&
+  mustHoldCheck9 "p53_restrictedMountainExtraRedNotUnique" (!hasUniqueManaPayment gMtnExtraProp) &&
+  mustHoldCheck9 "p53_treasureTriggerOrNotUnique" (!hasUniqueManaPayment gTrOrProp) &&
+  mustHoldCheck9 "p53_treasureTriggerWhenCondNotUnique" (!hasUniqueManaPayment gTrWhenProp) &&
+  mustHoldCheck9 "p53_treasureEntersTappedAllNotUnique" (!hasUniqueManaPayment gTrEntTapProp) &&
+  mustHoldCheck9 "p53_treasureGrantTriggeredAllNotUnique" (!hasUniqueManaPayment gTrGrantProp) &&
+  mustHoldCheck9 "p53_treasureModalAltCountIfNotUnique" (!hasUniqueManaPayment gTrModalAltProp) &&
+  mustHoldCheck9 "p53_treasureInstallEffectNotUnique" (!hasUniqueManaPayment gTrInstallProp) &&
+  mustHoldCheck9 "p53_treasureDelayedTriggerNotUnique" (!hasUniqueManaPayment gTrDelayedProp) &&
+  mustHoldCheck9 "p53_treasureGraveyardActiveZoneNotUnique" (!hasUniqueManaPayment gTrGyProp)

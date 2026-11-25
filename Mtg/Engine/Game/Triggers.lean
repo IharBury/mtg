@@ -154,7 +154,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
       abilityEffect := abilityEffect
       isReflexive := isReflexive || abilityEffectOverride.isSome
       sourceId := srcIdOpt
-      abilityName := some s!"{g.name source}'s ability"
+      abilityName := some s!"{if srcIdOpt.isSome then srcSnap.name else g.name source}'s ability"
       delayedTrigger := delayedTrigger
       lastKnownPower := lastKnownPower
       lastKnownToughness := lastKnownToughness
@@ -169,7 +169,7 @@ def putTriggeredAbilityOnStack (g : Game) (controller : PlayerId) (source : Game
     let g := g.record (GameEvent.triggerPutOnStack g.turnNumber newId srcSnap controller
       (spec := spec) (cause := eventCause))
     let obj := g.object! newId
-    let srcLabel := if srcIdOpt.isNone then source.name else g.name source
+    let srcLabel := if srcIdOpt.isNone then source.name else srcSnap.name
     let g := g.logMsg s!"{srcLabel}'s {event} is put on the stack"
     let modal? := (obj.abilityEffect.bind (·.modalSpec?)).orElse (fun _ =>
       if abilityEffectOverride.isSome then none else ab.modalSpec?)
