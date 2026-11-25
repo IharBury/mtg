@@ -1172,7 +1172,7 @@ private def replayOk43i1 (gs : Array Game) : Bool :=
     (gPreLostDone.player p1).leftTheGame &&
     (gPreLostDone.player p0).life == (g4.player p0).life + 4 &&
     peelSbaDid &&
-    (match gPeelSba1.pendingReplacement with | some (.seq .checkSBA _) => true | _ => false) &&
+    (match gPeelSba1.pendingReplacement with | some (.seq (.checkSBA _) _) => true | _ => false) &&
     (gPeelSbaDone.player p0).life == (g4.player p0).life + 6 &&
     ordGains == #[2, 3, 5]
   let item1aOk := concedeFlushOk && queuedRepauseOk && rechainingAndOrderOk

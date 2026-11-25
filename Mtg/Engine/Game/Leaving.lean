@@ -271,7 +271,7 @@ def runEndControlExileLoop (g : Game)
   if remaining.isEmpty && pendingLog.isNone && fromEventIdx?.isNone then g
   else if !quiet && g.sbaPaused then
     g.chainPendingReplacement
-      (.endControlExileLoop remaining cause pendingLog extraSkipIds fromEventIdx?)
+      (.endControlExileLoop remaining cause pendingLog extraSkipIds fromEventIdx? deferPlayFromExileLogs)
   else
     let preLoop :=
       match fromEventIdx? with
@@ -301,7 +301,7 @@ def runEndControlExileLoop (g : Game)
             if !nowQuiet && g.sbaPaused then
               let rem := remaining.extract (i + 1) remaining.size
               g := g.chainPendingReplacement
-                (.endControlExileLoop rem cause (some (oid, logLine)) skipIds (some loopFromIdx))
+                (.endControlExileLoop rem cause (some (oid, logLine)) skipIds (some loopFromIdx) deferPlayFromExileLogs)
               return g
             if (g.followMovedToZone? oid (· == .exile)).isSome then
               g := g.logMsg logLine
@@ -313,15 +313,20 @@ def runEndControlExileLoop (g : Game)
           (suppressInteractive := suppressInteractive)
       else
         runLoop g
+    let rec hasPendingEndControlLoop : PendingReplacement → Bool
+      | .endControlExileLoop .. => true
+      | .seq a b => hasPendingEndControlLoop a || hasPendingEndControlLoop b
+      | _ => false
+    let pausedSelf := g.pendingReplacement.any hasPendingEndControlLoop
     let g :=
       match priorCont? with
       | some prior => g.chainPendingReplacement prior
       | none => g
-    if deferPlayFromExileLogs then g
+    if deferPlayFromExileLogs || pausedSelf then g
     else emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 private def inActiveEndControlExile (oid : ObjectId) : PendingReplacement → Bool
-  | .endControlExileLoop remaining _ pendingLog _ _ =>
+  | .endControlExileLoop remaining _ pendingLog _ _ _ =>
     pendingLog.any (·.1 == oid) || remaining.any (·.1 == oid)
   | .seq a b => inActiveEndControlExile oid a || inActiveEndControlExile oid b
   | _ => false
@@ -1331,21 +1336,21 @@ private def hasProposalBoundaryStep (caster : PlayerId) : PendingReplacement →
 private def clearAbortedSavedInCont (caster : PlayerId) :
     PendingReplacement → PendingReplacement
   | .seq a b => .seq (clearAbortedSavedInCont caster a) (clearAbortedSavedInCont caster b)
-  | .concedePlayersLoop rem wp mrb wip spp wacd (some sp) po dep rw =>
+  | .concedePlayersLoop rem wp mrb wip spp wacd (some sp) po dep rw fromIdx? =>
     if isProposalPromptFor caster sp then
-      .concedePlayersLoop rem wp mrb wip spp wacd none po dep rw
+      .concedePlayersLoop rem wp mrb wip spp wacd none po dep rw fromIdx?
     else
-      .concedePlayersLoop rem wp mrb wip spp wacd (some sp) po dep rw
-  | .finishConcede wip spp wacd (some sp) po dep rw =>
+      .concedePlayersLoop rem wp mrb wip spp wacd (some sp) po dep rw fromIdx?
+  | .finishConcede wip spp wacd (some sp) po dep rw fromIdx? =>
     if isProposalPromptFor caster sp then
-      .finishConcede wip spp wacd none po dep rw
+      .finishConcede wip spp wacd none po dep rw fromIdx?
     else
-      .finishConcede wip spp wacd (some sp) po dep rw
-  | .leavePlayersWhoLost (some sp) po dep rw =>
+      .finishConcede wip spp wacd (some sp) po dep rw fromIdx?
+  | .leavePlayersWhoLost (some sp) po dep rw fromIdx? =>
     if isProposalPromptFor caster sp then
-      .leavePlayersWhoLost none po dep rw
+      .leavePlayersWhoLost none po dep rw fromIdx?
     else
-      .leavePlayersWhoLost (some sp) po dep rw
+      .leavePlayersWhoLost (some sp) po dep rw fromIdx?
   | .restorePending rp po log dep rw =>
     if isProposalPromptFor caster rp then
       .restorePending .none po none dep rw

@@ -868,12 +868,15 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
         (g.offerCardChoice chooser ids hi .keepDestroyRest
           s!"{(g.player chooser).name} chooses up to {hi} creatures to keep" (cause := some cause), #[])
       else if dest == .battlefield .controller && cands.all (fun o => o.zone == .hand chooser && g.isCreature o) then
-        (g.offerCardChoice chooser (cands.map (·.id)) hi .creaturesToBattlefield
-          s!"{(g.player chooser).name} may put creature cards from their hand onto the battlefield"
-          (cause := some cause), #[])
+        let cardIds := (cands.filter isDiscardableCard).map (·.id)
+        if cardIds.isEmpty then (g, #[])
+        else
+          (g.offerCardChoice chooser cardIds hi .creaturesToBattlefield
+            s!"{(g.player chooser).name} may put creature cards from their hand onto the battlefield"
+            (cause := some cause), #[])
       else if dest == .library .owner .bottom && verb == .put &&
           cands.all (fun o => o.zone == .hand chooser) then
-        let cnt := min hi (g.player chooser).hand.size
+        let cnt := min hi (g.discardableHandIds chooser).size
         if cnt == 0 then (g, #[])
         else
           ((g.change (.pending (.putOnBottom chooser cnt))).logMsg
@@ -2437,15 +2440,18 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
     let maxMv? := permSpec.maxTotalManaValue?.map (fun v => (EvalExpr.evalValue g env v).toNat)
     let eligible := ids.filter fun id =>
       (g.findObject? id).any fun o =>
-        (!g.isLand o || permSpec.landsAllowed) &&
+        isCastableObject o &&
+          (!g.isLand o || permSpec.landsAllowed) &&
           permSpec.filter?.all (EvalExpr.evalObjectPred g env (.live o)) &&
           maxMv?.all (fun m => g.objectManaValue o ≤ m)
     if permSpec.asFlashback then
       ids.foldl (fun g id =>
         match g.findObject? id with
         | some o =>
-          (g.createEffect (.flashbackUntilEot o.id) (cause := some cause)).logMsg
-            s!"{g.name o} gains flashback until end of turn"
+          if !isDiscardableCard o then g
+          else
+            (g.createEffect (.flashbackUntilEot o.id) (cause := some cause)).logMsg
+              s!"{g.name o} gains flashback until end of turn"
         | none => g) g
     else if permSpec.copyAndCast then
       let (g, copies) := g.withBatchReturn (some cause) fun g =>
@@ -2581,11 +2587,25 @@ private partial def applyContinuousModToObj (g : Game) (env : EvalEnv) (ctx : In
       (g.createEffect (.layered (.objects #[o.id]) (.ptSet pw tw) dur) (cause := some cause)).logMsg
         s!"{g.name o} has base power and toughness {pw}/{tw}"
   | .grantKeywords ks =>
-    match dur with
-    | .untilEndOfTurn => g.grantUntilEotLogged o ks
-    | _ =>
-      (g.createEffect (.layered (.objects #[o.id]) (.abilities { keywords := ks } .none) dur) (cause := some cause)).logMsg
-        s!"{g.name o} gains {KeywordAbility.joinedAnd ks}"
+    let srcObj? : Option GameObject :=
+      (ctx.sourceId.bind g.damageSourceById?).orElse (fun _ =>
+        ctx.sourceSnapshot.map Game.damageSourceObjectFromLki)
+    let effKs :=
+      match srcObj? with
+      | some src => Game.resolveProtectionKeywords src ks (dropUnchosen := true)
+      | none =>
+        ks.filter fun
+          | .protection .chosenCardType
+          | .protection (.color .chosenOnSource)
+          | .protection (.subtype .chosenOnSource) => false
+          | _ => true
+    if effKs.isEmpty then g
+    else
+      match dur with
+      | .untilEndOfTurn => g.grantUntilEotLogged o effKs
+      | _ =>
+        (g.createEffect (.layered (.objects #[o.id]) (.abilities { keywords := effKs } .none) dur) (cause := some cause)).logMsg
+          s!"{g.name o} gains {KeywordAbility.joinedAnd effKs}"
   | .loseKeywords ks =>
     if ks.contains Keyword.indestructible && dur == .untilEndOfTurn then
       g.loseIndestructibleUntilEot o
@@ -3448,7 +3468,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                     g := g.logMsg "The creature is an illegal target. The ability may still resolve."
                 | some (Target.card id) =>
                   if let some o := g.findObject? id then
-                    if o.zone == .hand victim && !g.isLand o then
+                    if isDiscardableCard o && o.zone == .hand victim && !g.isLand o then
                       g := g.exileUntilSourceLeaves ctx.sourceId o (cause := some (interpCause g ctx))
                 | _ => pure ()
               else
@@ -3719,7 +3739,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 let maxMv := (EvalExpr.evalValue g env mvExpr).toNat
                 let eligible := (g.player ctx.controller).hand.filter fun id =>
                   (g.findObject? id).any fun o =>
-                    g.hasSubtype o .hero && g.isCreature o && g.objectManaValue o ≤ maxMv
+                    isDiscardableCard o && g.hasSubtype o .hero && g.isCreature o && g.objectManaValue o ≤ maxMv
                 let g1 :=
                   if eligible.isEmpty then g.draw ctx.controller 1
                   else
@@ -4326,7 +4346,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                   let maxMv := (EvalExpr.evalValue g env mvExpr).toNat
                   let eligible := (g.player ctx.controller).hand.filter fun id =>
                     (g.findObject? id).any fun o =>
-                      g.hasSubtype o .hero && g.isCreature o && g.objectManaValue o ≤ maxMv
+                      isDiscardableCard o && g.hasSubtype o .hero && g.isCreature o && g.objectManaValue o ≤ maxMv
                   g :=
                     if eligible.isEmpty then g.draw ctx.controller 1
                     else

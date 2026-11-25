@@ -43,7 +43,8 @@ def isRingBearer (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 
 /-- Whether `o` is any player's Ring-bearer (CR 701.54a). -/
 def isAnyRingBearer (g : Game) (o : GameObject) : Bool :=
-  o.isOnBattlefield && g.players.any (fun pl => g.isRingBearer pl.id o)
+  if o.isLkiSnapshot then (o.lkiLayer6.map (·.ringBearer)).getD false
+  else o.isOnBattlefield && g.players.any (fun pl => g.isRingBearer pl.id o)
 
 /-- Creatures `p` controls that can be chosen as Ring-bearer. -/
 def ringBearerChoices (g : Game) (p : PlayerId) : Array GameObject :=

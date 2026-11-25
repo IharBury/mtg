@@ -375,7 +375,9 @@ def ManaAbilityDef.isPlainTap (d : ManaAbilityDef) : Bool :=
     !d.removesSource && !d.hasExtraInteractiveCost &&
     !d.removeStoryCounter && !d.removeIndestructibleCounter && !d.putStunCounterOnSource &&
     d.picks.isEmpty && d.modeChoices.isEmpty && d.extraEffect?.isNone &&
-    !d.cost.includesManaPayment && d.payLife == 0
+    !d.cost.includesManaPayment && d.payLife == 0 && d.damageYou == 0 &&
+    d.turnLimit?.isNone && d.lifetimeLimit?.isNone &&
+    !d.isExhaust && !d.isPowerUp && !d.isBoast
 
 /-- Whether `d` is a plain `{T}` mana ability after `activationManaCost`
 reductions on `o` for `p`. -/
@@ -384,7 +386,9 @@ def isPlainTapManaAbilityDef (g : Game) (p : PlayerId) (o : GameObject) (d : Man
     !d.removesSource && !d.hasExtraInteractiveCost &&
     !d.removeStoryCounter && !d.removeIndestructibleCounter && !d.putStunCounterOnSource &&
     d.picks.isEmpty && d.modeChoices.isEmpty && d.extraEffect?.isNone &&
-    !(g.manaAbilityEffectiveCost p o d).includesManaPayment && d.payLife == 0
+    !(g.manaAbilityEffectiveCost p o d).includesManaPayment && d.payLife == 0 && d.damageYou == 0 &&
+    d.turnLimit?.isNone && d.lifetimeLimit?.isNone &&
+    !d.isExhaust && !d.isPowerUp && !d.isBoast
 
 /-- Whether mana ability `d` of object `o` currently satisfies its zone, timing,
 frequency, condition, life, counter, crew, exile-symbol, and choice-cost

@@ -366,18 +366,13 @@ def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
 def viewHasDesignation (st : Game) (v : ObjectView) (tag : PermanentDesignationTag) : Bool :=
   match v, tag with
   | .live o, .ringBearer => st.isAnyRingBearer o
-  | .lki eo, .ringBearer =>
-    match eo.id with
-    | some oid =>
-      eo.zone == .battlefield && !eo.phasedOut &&
-        st.players.any (fun pl => pl.ringBearerId == some oid && eo.controller == some pl.id)
-    | none => false
+  | .lki eo, .ringBearer => eo.ringBearer
   | .live o, .goaded => o.status.goaded || !o.status.goadedBy.isEmpty
-  | .lki _, .goaded => false
+  | .lki eo, .goaded => eo.goaded
   | .live o, .prepared => o.status.prepared
-  | .lki eo, .prepared => eo.id.any st.wasPreparedAtDeparture
+  | .lki eo, .prepared => eo.prepared
   | .live o, .harnessed => o.status.harnessed
-  | .lki _, .harnessed => false
+  | .lki eo, .harnessed => eo.harnessed
 
 /-- Source permanent/object view for `.chosenOnSource` references (CR 614.12). -/
 private def sourceView? (g : Game) (env : EvalEnv) : Option ObjectView :=
@@ -432,18 +427,18 @@ def evalPlayerMetricSingle (g : Game) (env : EvalEnv) (m : PlayerMetric) (p : Pl
   | .handSize => Int.ofNat pl.hand.size
   | .librarySize => Int.ofNat pl.library.size
   | .graveyardSize => Int.ofNat pl.graveyard.size
-  | .landsPlayedThisTurn => Int.ofNat (GameEvent.landsPlayed g.events st.turnNumber p)
-  | .spellsCastThisTurn => Int.ofNat (GameEvent.spellsCast g.events st.turnNumber p)
-  | .cardsDrawnThisTurn => Int.ofNat (GameEvent.draws g.events st.turnNumber p)
+  | .landsPlayedThisTurn => Int.ofNat (GameEvent.landsPlayed st.events st.turnNumber p)
+  | .spellsCastThisTurn => Int.ofNat (GameEvent.spellsCast st.events st.turnNumber p)
+  | .cardsDrawnThisTurn => Int.ofNat (GameEvent.draws st.events st.turnNumber p)
   | .cardsDiscardedThisTurn =>
-    Int.ofNat (g.events.foldl (fun n e =>
+    Int.ofNat (st.events.foldl (fun n e =>
       if e.turn == st.turnNumber then
         match e.change with
         | .rules (.zone (.moved _ _ (.hand q) _ .discard _ _ _)) => if q == p then n + 1 else n
         | _ => n
       else n) 0)
   | .cardsMilledThisTurn =>
-    Int.ofNat (g.events.foldl (fun n e =>
+    Int.ofNat (st.events.foldl (fun n e =>
       if e.turn == st.turnNumber then
         match e.change with
         | .rules (.zone (.moved _ _ (.library q) _ .mill _ _ _)) => if q == p then n + 1 else n
@@ -452,9 +447,9 @@ def evalPlayerMetricSingle (g : Game) (env : EvalEnv) (m : PlayerMetric) (p : Pl
   | .otherSpellsManaValueThisTurn =>
     let selfSpellId? :=
       ((env.sourceId.orElse (fun _ => env.sourceSnapshot.bind (·.id))).map
-        (GameEvent.stackSpellIdOf g.events)).orElse (fun _ => g.resolvingSpell)
+        (GameEvent.stackSpellIdOf st.events)).orElse (fun _ => st.resolvingSpell)
     let (sumOther, matchedSelf, hasUnidentified) :=
-      g.events.foldl (fun (acc, matched, unid) e =>
+      st.events.foldl (fun (acc, matched, unid) e =>
         if e.turn == st.turnNumber then
           match e.change with
           | .rules (.cast (.spellCast spellSnap q _)) =>
@@ -470,14 +465,15 @@ def evalPlayerMetricSingle (g : Game) (env : EvalEnv) (m : PlayerMetric) (p : Pl
       if !matchedSelf && hasUnidentified then
         match selfSpellId?.bind st.findObject? with
         | some spell =>
-          if spell.zone == .stack && !spell.isCopy && st.controllerOf spell == some p then
+          if spell.zone == .stack && !spell.isCopy && st.controllerOf spell == some p &&
+              !st.proposedSpell.any (·.spellId == spell.id) then
             st.objectManaValue spell
           else 0
         | none => 0
       else 0
     Int.ofNat (sumOther - ownFallback)
-  | .lifeGainedThisTurn => Int.ofNat (GameEvent.lifeGained g.events st.turnNumber p)
-  | .lifeLostThisTurn => Int.ofNat (GameEvent.lifeLost g.events st.turnNumber p)
+  | .lifeGainedThisTurn => Int.ofNat (GameEvent.lifeGained st.events st.turnNumber p)
+  | .lifeLostThisTurn => Int.ofNat (GameEvent.lifeLost st.events st.turnNumber p)
   | .unspentMana => Int.ofNat pl.manaPool.total
   | .poisonCounters => Int.ofNat pl.poison
   | .opponentsCount => Int.ofNat (st.livingOpponents p).size
@@ -686,13 +682,13 @@ private partial def evalCombatRole (g : Game) (env : EvalEnv) (v : ObjectView)
         match eo.attackingTarget with
         | some (.player p) => ps.contains p
         | _ => false
-    | .attackingAlone => lkiAttackingAlone st env g.events eo
+    | .attackingAlone => lkiAttackingAlone st env st.events eo
     | .blocking => eo.blocking
     | .blockingObject atkExpr =>
       let atkIds := (evalObjects g env atkExpr).filterMap ObjectView.id?
       eo.blockingIds.any atkIds.contains
-    | .blocked => eo.attacking && lkiWasBlocked st env g.events eo
-    | .unblocked => eo.attacking && !lkiWasBlocked st env g.events eo
+    | .blocked => eo.attacking && lkiWasBlocked st env st.events eo
+    | .unblocked => eo.attacking && !lkiWasBlocked st env st.events eo
 
 /-- Evaluate `ObjectPred` on an `ObjectView` (live or LKI). -/
 partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : ObjectPred) : Bool :=
@@ -1338,8 +1334,8 @@ def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
       | some p => pids.contains p
       | none => anyPlayer
     let anyEventOnTurn (f : Nat → GameEvent → Bool) : Bool := Id.run do
-      for i in [0:g.events.size] do
-        let e := g.events[i]!
+      for i in [0:st.events.size] do
+        let e := st.events[i]!
         if e.turn == targetTurn && f i e then
           return true
       return false
@@ -1360,8 +1356,8 @@ def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
     | .permanentDied pred minCount =>
       let count : Nat := Id.run do
         let mut n := 0
-        for i in [0:g.events.size] do
-          let e := g.events[i]!
+        for i in [0:st.events.size] do
+          let e := st.events[i]!
           if e.turn == targetTurn then
             match e.change with
             | .rules (.zone (.moved before _ .battlefield (.graveyard _) _ _ _ _)) =>
@@ -1386,8 +1382,8 @@ def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
     | .attackedWith pred minCount =>
       pids.any fun p => Id.run do
         let mut count : Nat := 0
-        for i in [0:g.events.size] do
-          let e := g.events[i]!
+        for i in [0:st.events.size] do
+          let e := st.events[i]!
           if e.turn == targetTurn then
             match e.change with
             | .rules (.combat (.attackersDeclared q decls)) =>
@@ -1404,7 +1400,7 @@ def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
           pids.contains q && evalObjectPred g { env with eventIdx? := some i } (.lki eo) pred
         | _ => false
     | .drewCard minCount =>
-      pids.any fun p => GameEvent.draws g.events targetTurn p ≥ minCount
+      pids.any fun p => GameEvent.draws st.events targetTurn p ≥ minCount
     | .discardedCard pred =>
       anyEventOnTurn fun i e =>
         match e.change with
@@ -1413,13 +1409,13 @@ def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
             evalObjectPred g { env with eventIdx? := some i } (.lki before) pred
         | _ => false
     | .milledCard minCount =>
-      pids.any fun p => GameEvent.milled g.events targetTurn p ≥ minCount
+      pids.any fun p => GameEvent.milled st.events targetTurn p ≥ minCount
     | .gainedLife minAmount =>
-      pids.any fun p => GameEvent.lifeGained g.events targetTurn p ≥ minAmount
+      pids.any fun p => GameEvent.lifeGained st.events targetTurn p ≥ minAmount
     | .lostLife minAmount =>
-      pids.any fun p => GameEvent.lifeLost g.events targetTurn p ≥ minAmount
+      pids.any fun p => GameEvent.lifeLost st.events targetTurn p ≥ minAmount
     | .dealtDamage combatOnly noncombatOnly =>
-      g.events.any fun e =>
+      st.events.any fun e =>
         e.turn == targetTurn &&
           match e.change with
           | .rules (.damage (.dealt pkts)) =>
@@ -1434,28 +1430,29 @@ def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
               (!combatOnly || isCombat) && (!noncombatOnly || !isCombat)
           | _ => false
     | .activatedLoyalty =>
-      pids.any fun p => GameEvent.activatedLoyalty g.events targetTurn p
+      pids.any fun p => GameEvent.activatedLoyalty st.events targetTurn p
     | .beheld sub =>
-      g.events.any fun e =>
+      st.events.any fun e =>
         e.turn == targetTurn &&
           match e.change with
           | .rules (.player (.beheld q s)) => pids.contains q && s == sub
           | _ => false
     | .proliferated =>
-      g.events.any fun e =>
+      st.events.any fun e =>
         e.turn == targetTurn &&
           match e.change with
           | .rules (.player (.proliferated q _ _)) => pids.contains q
           | _ => false
 
-/-- Evaluate an `EventHistoryPred` against `g.events`. -/
+/-- Evaluate an `EventHistoryPred` against `st.events` (`boardState g env`). -/
 def evalEventHistory (g : Game) (env : EvalEnv) (hp : EventHistoryPred) : Bool :=
-  let turn := (boardState g env).turnNumber
+  let st := boardState g env
+  let turn := st.turnNumber
   match hp with
   | .scriedThisTurn who =>
-    (evalPlayerFilter g env who).any fun p => GameEvent.scried g.events turn p
+    (evalPlayerFilter g env who).any fun p => GameEvent.scried st.events turn p
   | .surveilledThisTurn who =>
-    (evalPlayerFilter g env who).any fun p => GameEvent.surveilled g.events turn p
+    (evalPlayerFilter g env who).any fun p => GameEvent.surveilled st.events turn p
   | .eventOccurredThisTurn who pat =>
     evalEventPatternOnTurn g env turn who pat
   | .eventOccurredLastTurn who pat =>
@@ -1465,20 +1462,20 @@ def evalEventHistory (g : Game) (env : EvalEnv) (hp : EventHistoryPred) : Bool :
     match env.sourceId with
     | none => true
     | some sid =>
-      !g.events.any fun e =>
+      !st.events.any fun e =>
         e.turn == turn &&
           match e.change with
           | .rules (.stackObject (.resolved _ nth srcId? _)) => nth > 0 && srcId? == some sid
           | .rules (.player (.optionalOnceActed _ s)) => s == sid
           | _ => false
   | .nthResolutionThisTurn n =>
-    let ab? := (boardState g env).resolvingAbility.bind fun id =>
-      ((boardState g env).findObject? id).bind (·.triggeredAbility)
-    GameEvent.resolutions g.events turn env.controller env.sourceId ab? == n
+    let ab? := st.resolvingAbility.bind fun id =>
+      (st.findObject? id).bind (·.triggeredAbility)
+    GameEvent.resolutions st.events turn env.controller env.sourceId ab? == n
   | .optionalOnceUnusedThisTurn =>
     match env.sourceId with
     | none => true
-    | some sid => !(boardState g env).optionalOnceUsedThisTurn sid
+    | some sid => !st.optionalOnceUsedThisTurn sid
 
 /-- Evaluate a pure `Condition` over `(g, env)` (CR 603.4 / 608.2 / 611). -/
 partial def evalCondition (g : Game) (env : EvalEnv) (cond : Condition) : Bool :=

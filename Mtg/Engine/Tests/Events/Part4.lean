@@ -1314,9 +1314,9 @@ def mustHold23 (label : String) (ok : Bool) : Bool :=
   let gWardPsn : Game := mustApply gWardPsn0 me .pay
   let wardOrderOk : Bool :=
     gWardDisc.pending == .scry me 1 &&
-    gWardDisc.pendingReplacement == some .afterWardResolved &&
+    gWardDisc.pendingReplacement == none &&
     gWardPsn.pending == .scry me 1 &&
-    gWardPsn.pendingReplacement == some .afterWardResolved &&
+    gWardPsn.pendingReplacement == none &&
     (gWardPsn.player me).poison == 5
 
   -- 1c. `beginResolutionCastTargets`: 0-mana untargeted exiled creature cast via `.mayCastExiledElseDamage`

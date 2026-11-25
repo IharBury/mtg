@@ -2139,3 +2139,262 @@ traversals (`MoveMods.choice?`, `ManaSpec`, `DelayedTokenAction`). -/
     (!hasUniqueManaPayment gMoveChoiceProp &&
      !hasUniqueManaPayment gManaSpecProp &&
      !hasUniqueManaPayment gDelayedTokProp)
+
+/- Phase 56 Item 4: `Demo.hasGameStatePriorityAction` stack-granted Convoke,
+Morph & Impending Convoke/Improvise/target-reduction, zero-output mana abilities,
+and `Demo.hasUniqueManaPayment` `minSub`-interleaved `extra`, non-covering
+`spendsPoolMana` laundering across both branches, pain-land `damageYou`, and
+remaining `spellManaSpentInterest` AST nodes. -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := emptyHand afterDraw p0
+
+  -- 1. `hasGameStatePriorityAction`: stack-granted Layer-6 Convoke:
+  --    `"Creature spells you cast have convoke"` makes a `{3}` creature affordable with 3 creatures and 0 lands!
+  let convokeLordDef : CardDef := {
+    name := "P56 Check9 ConvokeLord"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none { zones := .stack, pred := .all #[.hasType .creature, .controlledBy .you] }
+        (.grantKeywords #[Keyword.convoke])
+    ]
+  }
+  let bear3Def : CardDef := creature "P56 Check9 Bear3" (ManaCost.ofGeneric 3) #["Bear"] 3 3
+  let gStackConv0 :=
+    insertObject (addPermanent (addPermanent (addPermanent gMain grizzlyBears p0 p0) grizzlyBears p0 p0) grizzlyBears p0 p0)
+      bear3Def p0 (.hand p0)
+  let gStackConv1 := addPermanent gStackConv0 convokeLordDef p0 p0
+
+  -- 2. `hasGameStatePriorityAction`: Morph with stack-granted Convoke, Impending with Improvise,
+  --    and zero-output tap mana ability (`{T}: Add {R} for each charge counter on ~` at 0 counters):
+  let morphDef : CardDef := {
+    creature "P56 Check9 MorphCr" (ManaCost.ofGeneric 6) #["Human"] 5 5 with
+    keywords := #[.morph (CostSpec.ofGeneric 4)]
+  }
+  let gMorphConv0 :=
+    insertObject (addPermanent (addPermanent (addPermanent gMain grizzlyBears p0 p0) grizzlyBears p0 p0) grizzlyBears p0 p0)
+      morphDef p0 (.hand p0)
+  let gMorphConv1 := addPermanent gMorphConv0 convokeLordDef p0 p0
+  let impImpDef : CardDef := {
+    creature "P56 Check9 ImpImp" (ManaCost.ofGeneric 6) #["Avatar"] 5 5 with
+    keywords := #[Keyword.improvise, .impending 3 (CostSpec.ofGeneric 2)]
+  }
+  let art0Def : CardDef := { name := "P56 Check9 Relic", types := #[.artifact] }
+  let gImpImp0 := insertObject gMain impImpDef p0 (.hand p0)
+  let gImpImp1 := addPermanent (addPermanent gImpImp0 art0Def p0 p0) art0Def p0 p0
+  let zeroOutManaDef : CardDef := {
+    name := "P56 Check9 ChargeRock"
+    types := #[.artifact]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.sequence #[(.colored .red, .counterCount (some .charge) .this)])
+    ]
+  }
+  let gZeroOut := addPermanent gMain zeroOutManaDef p0 p0
+
+  -- 3. `hasUniqueManaPayment`: `minSub`-interleaved `extra` (`S0: {W}{G}(+2)`, `S1: {U}{G}(+1)`, `E: {G}(+1)`
+  --    paying `{W}{U}{2}` where `S1, E, S0` spends 5 counters vs 6 in `S0, S1, E` and `E, S0, S1`):
+  let s0Def : CardDef := {
+    name := "P56 Check9 S0"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.sequence #[(.colored .white, .const 1), (.colored .green, .const 1)])
+        (riders := #[.entersWithPlusOneCounters 2])
+    ]
+  }
+  let s1Def : CardDef := {
+    name := "P56 Check9 S1"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.sequence #[(.colored .blue, .const 1), (.colored .green, .const 1)])
+        (riders := #[.entersWithPlusOneCounters 1])
+    ]
+  }
+  let eDef : CardDef := {
+    name := "P56 Check9 E"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.sequence #[(.colored .green, .const 1)])
+        (riders := #[.entersWithPlusOneCounters 1])
+    ]
+  }
+  let wu2CreatureDef : CardDef :=
+    creature "P56 Check9 WU2" { symbols := #[.generic 2, .colored .white, .colored .blue] } #["Beast"] 2 2
+  let gInterleave0 :=
+    insertObject (addPermanent (addPermanent (addPermanent gMain s0Def p0 p0) s1Def p0 p0) eDef p0 p0)
+      wu2CreatureDef p0 (.hand p0)
+  let gInterleaveProp := mustApply gInterleave0 p0 (.cast (gInterleave0.player p0).hand.back!)
+
+  -- 4. `hasUniqueManaPayment`: non-covering `spendsPoolMana` filter (`{R}: Add {G}`) in BOTH branches
+  --    (`| some =>` pool already covers `{R}`, AND `| none =>` pool partially covers `{R}{U}`):
+  let filterRtoGDef : CardDef := {
+    name := "P56 Check9 RtoG"
+    types := #[.artifact]
+    activatedAbilities := #[
+      { ActivatedAbility.manaAbility (.sequence #[(.colored .green, .const 1)])
+          (CostSpec.ofMana { symbols := #[.colored .red] }) with }
+    ]
+  }
+  let trWatchDef : CardDef := {
+    name := "P56 Check9 TrWatch"
+    types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger
+        (.castSpell .you .anyObject none (some .fromTreasure)) (Effect.gainLife 1)
+    ]
+  }
+  let rSpellDef : CardDef := {
+    name := "P56 Check9 RSpell", manaCost := { symbols := #[.colored .red] }, types := #[.instant],
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let ruSpellDef : CardDef := {
+    name := "P56 Check9 RUSpell", manaCost := { symbols := #[.colored .red, .colored .blue] }, types := #[.instant],
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let gLaunderSome0 :=
+    let g := insertObject
+      (addPermanent (addPermanent (addPermanent gMain trWatchDef p0 p0) filterRtoGDef p0 p0) mountain p0 p0)
+      rSpellDef p0 (.hand p0)
+    g.record (GameEvent.manaAdded g.turnNumber p0 #[{ mana := .colored .red, fromTreasure := true }])
+  let gLaunderSomeProp := mustApply gLaunderSome0 p0 (.cast (gLaunderSome0.player p0).hand.back!)
+  let gLaunderNone0 :=
+    let g := insertObject
+      (addPermanent (addPermanent (addPermanent gMain trWatchDef p0 p0) filterRtoGDef p0 p0) island p0 p0)
+      ruSpellDef p0 (.hand p0)
+    g.record (GameEvent.manaAdded g.turnNumber p0 #[{ mana := .colored .red, fromTreasure := true }])
+  let gLaunderNoneProp := mustApply gLaunderNone0 p0 (.cast (gLaunderNone0.player p0).hand.back!)
+
+  -- 5. `hasUniqueManaPayment`: pain land (`damageYou := 1`) paying `{1}` is NOT collapsed as unique:
+  let painLandDef : CardDef := {
+    name := "P56 Check9 PainLand"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.sequence #[(.colorless, .const 1)]),
+      ActivatedAbility.manaAbility (.oneOf (.explicit #[.colored .red, .colored .white]) (.const 1)) (damageYou := 1)
+    ]
+  }
+  let cost1SpellDef : CardDef := {
+    name := "P56 Check9 Cost1", manaCost := ManaCost.ofGeneric 1, types := #[.instant],
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let gPain0 := insertObject (addPermanent gMain painLandDef p0 p0) cost1SpellDef p0 (.hand p0)
+  let gPainProp := mustApply gPain0 p0 (.cast (gPain0.player p0).hand.back!)
+
+  -- 6. `hasUniqueManaPayment`: remaining AST nodes in `spellManaSpentInterest`:
+  --    (a) `.stack (.mayCastOrPlay ..)` (`GrantPlayPermSpec.maxTotalManaValue?`),
+  --    (b) `Instruction.optional` `CostSpec`,
+  --    (c) `Condition.playerPred`,
+  --    (d) `ActivatedAbility.condition?` on a battlefield permanent!
+  let twoWhiteCost : ManaCost := ⟨#[.twobrid .white]⟩
+  let stackMayCastSpellDef : CardDef := {
+    name := "P56 Check9 StackMayCast"
+    manaCost := twoWhiteCost
+    types := #[.sorcery]
+    spellAbility := some {
+      effect := {
+        body := .stack (.mayCastOrPlay (.inZones { zones := #[.exile], owner := .ofPlayer .you } .anyObject)
+          { maxTotalManaValue? := some (.manaSpent .this) })
+      }
+    }
+  }
+  let optCostSpellDef : CardDef := {
+    name := "P56 Check9 OptCost"
+    manaCost := twoWhiteCost
+    types := #[.sorcery]
+    spellAbility := some {
+      effect := {
+        body := .optional .you (some (CostSpec.ofItems #[.payLife (.manaSpent .this)]))
+          (Effect.gainLife 1).body .noop
+      }
+    }
+  }
+  let playerPredSpellDef : CardDef := {
+    name := "P56 Check9 PlayerPred"
+    manaCost := twoWhiteCost
+    types := #[.sorcery]
+    spellAbility := some {
+      effect := {
+        body := .ifCond (.playerPred .you (.metric .life .ge (.manaSpent .this)))
+          (Effect.gainLife 1).body .noop
+      }
+    }
+  }
+  let actCondPermDef : CardDef := {
+    name := "P56 Check9 ActCondPerm"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.tapSelf]
+      effect := Effect.gainLife 1
+      condition? := some (.castPred (.manaSpentMatches (.ofColor .red) .this))
+    }]
+  }
+  let gAst1 :=
+    (insertObject (addPermanent gMain plains p0 p0) stackMayCastSpellDef p0 (.hand p0)).addMana p0 .colorless 2
+  let gAst1Prop := mustApply gAst1 p0 (.cast (gAst1.player p0).hand.back!)
+  let gAst2 :=
+    (insertObject (addPermanent gMain plains p0 p0) optCostSpellDef p0 (.hand p0)).addMana p0 .colorless 2
+  let gAst2Prop := mustApply gAst2 p0 (.cast (gAst2.player p0).hand.back!)
+  let gAst3 :=
+    (insertObject (addPermanent gMain plains p0 p0) playerPredSpellDef p0 (.hand p0)).addMana p0 .colorless 2
+  let gAst3Prop := mustApply gAst3 p0 (.cast (gAst3.player p0).hand.back!)
+  let gAst4 :=
+    (insertObject (addPermanent (addPermanent gMain actCondPermDef p0 p0) mountain p0 p0)
+      cost1SpellDef p0 (.hand p0)).addMana p0 (.colored .green) 1
+  let gAst4Prop := mustApply gAst4 p0 (.cast (gAst4.player p0).hand.back!)
+
+  -- 4b(i) k >= 5 distinct `minSub` blocks + extra plain source:
+  --       With 5+ distinct rider/mana blocks in `minSub`, `canExtraPlainSourcesChangeOutcome`
+  --       either exhaustively finds a non-sampled order (such as a 3-cycle) or fails closed
+  --       when the permutation budget is exhausted, never falsely autopaying!
+  let bigRiderSpellDef : CardDef :=
+    creature "P56 Check9 BigRider"
+      { symbols := #[.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green, .generic 1] }
+      #["Human"] 5 5
+  let mkDistinctRiderLand (nm : String) (m : ManaType) (n : Nat) : CardDef := {
+    name := nm
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.sequence #[(m, .const 1)])
+        (riders := #[.entersWithPlusOneCounters n])
+    ]
+  }
+  let gPerm6_0 :=
+    insertObject
+      (addPermanent
+        (addPermanent
+          (addPermanent
+            (addPermanent
+              (addPermanent
+                (addPermanent
+                  (addPermanent gMain (mkDistinctRiderLand "P56 L1" (.colored .white) 1) p0 p0)
+                  (mkDistinctRiderLand "P56 L2" (.colored .blue) 2) p0 p0)
+                (mkDistinctRiderLand "P56 L3" (.colored .black) 3) p0 p0)
+              (mkDistinctRiderLand "P56 L4" (.colored .red) 4) p0 p0)
+            (mkDistinctRiderLand "P56 L5" (.colored .green) 5) p0 p0)
+          (mkDistinctRiderLand "P56 L6" .colorless 6) p0 p0)
+        (mkDistinctRiderLand "P56 LExtra" .colorless 7) p0 p0)
+      bigRiderSpellDef p0 (.hand p0)
+  let gPerm6Prop := mustApply gPerm6_0 p0 (.cast (gPerm6_0.player p0).hand.back!)
+
+  mustHoldCheck9 "p56_prioStackConvoke"
+    (!hasGameStatePriorityAction gStackConv0 p0 &&
+     hasGameStatePriorityAction gStackConv1 p0) &&
+  mustHoldCheck9 "p56_prioMorphConvokeImpendingImproviseZeroOut"
+    (!hasGameStatePriorityAction gMorphConv0 p0 &&
+     hasGameStatePriorityAction gMorphConv1 p0 &&
+     !hasGameStatePriorityAction gImpImp0 p0 &&
+     hasGameStatePriorityAction gImpImp1 p0 &&
+     hasGameStatePriorityAction gZeroOut p0) &&
+  mustHoldCheck9 "p56_uniqueManaInterleavedExtra"
+    (!hasUniqueManaPayment gInterleaveProp &&
+     !hasUniqueManaPayment gPerm6Prop) &&
+  mustHoldCheck9 "p56_uniqueManaNonCoveringPoolSpendBothBranches"
+    (!hasUniqueManaPayment gLaunderSomeProp &&
+     !hasUniqueManaPayment gLaunderNoneProp) &&
+  mustHoldCheck9 "p56_uniqueManaPainLand"
+    (!hasUniqueManaPayment gPainProp) &&
+  mustHoldCheck9 "p56_uniqueManaRemainingAstNodes"
+    (!hasUniqueManaPayment gAst1Prop &&
+     !hasUniqueManaPayment gAst2Prop &&
+     !hasUniqueManaPayment gAst3Prop &&
+     !hasUniqueManaPayment gAst4Prop)
+

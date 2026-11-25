@@ -384,7 +384,7 @@ def beginLibrarySearch (g : Game) (p : PlayerId) (pred : CardDef → Bool) (kind
     (alsoHand : Bool := false) (optional : Bool := false) : Game :=
   if !g.stillInGame p then g
   else
-    let keep (id : ObjectId) := (g.findObject? id).any (fun o => pred (g.baseCard o))
+    let keep (id : ObjectId) := (g.findObject? id).any (fun o => isDiscardableCard o && pred (g.baseCard o))
     let pl := g.player p
     let eligible := (if alsoHand then pl.hand.filter keep else #[]) ++ pl.library.filter keep
     if optional then

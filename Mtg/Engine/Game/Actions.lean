@@ -71,11 +71,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
     let isTurnFaceUpSac := wasProp && g.proposedSpell.any (fun prop => prop.kind == ProposalKind.turnFaceUp)
     let g ← g.sacrificeForActivation p id
     if isResCastSac then
-      if (match g.pending with | .chooseReplacement .. => true | _ => false) &&
-          g.anyContinuationSettlesControlFlow then
-        return g
-      else
-        return g.finishResolutionChoice
+      return if g.over then g.completeActiveResolutions else g
     else if wasWard then
       if (match g.pending with | .payWard .. => true | _ => false) then
         return g

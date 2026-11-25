@@ -375,15 +375,22 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
                 (hadOuterReplacement := outerCont?.isSome)
                 (hadOpenContinuation := some openCont)
               let nowPaused := match g.pending with | .chooseReplacement .. => true | _ => false
-              let g :=
-                match outerCont? with
-                | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
-                | none =>
-                  if isResCast && !g.over &&
-                      (nowPaused || g.pending == .none) && !g.anyContinuationSettlesControlFlowFwd then
-                    g.chainPendingReplacement .finishResolutionChoice
-                  else g
-              pure (g, !g.over && g.pending == .none && (outerCont?.isSome || g.pendingReplacement.isSome))
+              match outerCont? with
+              | some outer =>
+                let g := g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+                pure (g, !g.over && g.pending == .none)
+              | none =>
+                if isResCast then
+                  if nowPaused then
+                    let g :=
+                      if !g.over && !g.anyContinuationSettlesControlFlowFwd then
+                        g.chainPendingReplacement .finishResolutionChoice
+                      else g
+                    pure (g, false)
+                  else
+                    pure (g.resumePendingReplacementFwd .finishResolutionChoice, false)
+                else
+                  pure (g, !g.over && g.pending == .none && g.pendingReplacement.isSome)
             | none =>
               let g ← g.reverseProposedSpellExceptFwd (resumeContinuation := true)
               return g

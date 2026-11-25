@@ -1936,9 +1936,9 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gWardPaidSac := mustApply33i1 gWardSacSetup p0 (.sacrifice p0Bear.id)
   let wardOuterOrderOk :=
     gWardPaidMana.pending == .mayDiscardDraw p0 1 &&
-    gWardPaidMana.pendingReplacement == some .afterWardResolved &&
+    gWardPaidMana.pendingReplacement == none &&
     gWardPaidSac.pending == .mayDiscardDraw p0 1 &&
-    gWardPaidSac.pendingReplacement == some .afterWardResolved
+    gWardPaidSac.pendingReplacement == none
 
   -- 1d. Unified `.mayResolve` departure handling (`.branchOnChoice` decline & illegal targets),
   --     `.chooseCards` `.stashedCause none`, `.orderLibraryBottom`, and `.searchLibrary` (`plusOneAfterSearch`):
@@ -3935,7 +3935,7 @@ private def replayOk35i3 (gs : Array Game) : Bool :=
   gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
 
 private def hasLeaveOrCheckSbaCont : PendingReplacement → Bool
-  | .leavePlayersWhoLost .. | .checkSBA => true
+  | .leavePlayersWhoLost .. | .checkSBA .. => true
   | .seq a b => hasLeaveOrCheckSbaCont a || hasLeaveOrCheckSbaCont b
   | _ => false
 

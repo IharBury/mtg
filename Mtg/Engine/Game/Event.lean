@@ -1376,6 +1376,7 @@ inductive PendingReplacement where
       (cause : Option EventCause)
       (lkiController? : Option PlayerId := none)
       (skipUnattachIds : Array ObjectId := #[])
+      (deferPlayFromExileLogs : Bool := false)
   | moveSimultaneousToGraveyard (ids : Array ObjectId)
       (preBattlefield : Option (Array GameObject))
       (cause : Option EventCause)
@@ -1384,6 +1385,7 @@ inductive PendingReplacement where
   | destroyPermanent (targetId : ObjectId) (cause : Option EventCause)
       (preBattlefield : Option (Array GameObject) := none)
       (reason : Option String := none)
+      (deferPlayFromExileLogs : Bool := false)
   | createToken (controller : PlayerId) (card : CardDef) (tapped : Bool)
       (attacking : Bool) (attackingTarget : Option AttackTarget)
       (applyFoodBonus : Bool) (extraCounters : CounterBag)
@@ -1454,7 +1456,7 @@ inductive PendingReplacement where
       (players : Array Player) (effects : Array (EffectId × ContinuousEffectSpec))
       (pending : Pending) (stack : Array StackEntry := #[])
       (closeIfOrphaned : Bool := true) (queuedLinkedExile : Array ObjectId := #[])
-  | checkSBA
+  | checkSBA (fromEventIdx? : Option Nat := none)
   | receivePriority (p : PlayerId)
   | completeActivation (hadOuterReplacement hadOpenContinuation : Bool)
   | finishBecomeActivated (caster : PlayerId) (sourceName : String)
@@ -1573,6 +1575,7 @@ inductive PendingReplacement where
       (cause : Option EventCause := none)
       (createBeastFor : Option PlayerId := none)
       (passiveLog : Bool := false)
+      (fromEventIdx? : Option Nat := none)
   | putToBattlefieldLoop (controller : PlayerId) (remainingIds : Array ObjectId)
       (enteredFromIds : Array ObjectId := #[]) (useCardOwner : Bool := false)
       (haste : Bool := false) (tapped : Bool := false)
@@ -1625,6 +1628,7 @@ inductive PendingReplacement where
       (pendingLog : Option (ObjectId × String) := none)
       (extraSkipIds : Array ObjectId := #[])
       (fromEventIdx? : Option Nat := none)
+      (deferPlayFromExileLogs : Bool := false)
   | beginStepCont (step : Step)
   | finishCleanupAfterClearEot
   | continueStartNextTurn (nextP : PlayerId) (remainingDeparted : Array PlayerId)
@@ -1998,33 +2002,58 @@ def PendingReplacement.endsWithNonProposalPriorityGrant : PendingReplacement →
     else b.endsWithNonProposalPriorityGrant
   | _ => false
 
-/-- Whether `pr` is a pure trailing priority-granting leaf before which deferred
-`.logExpiredPlayFromExile` post-steps should be inserted so expiry logs emit
-before `PriorityEvent.received` (CR 117.3 / 611.2). -/
+/-- Whether `pr` is a pure trailing priority-granting leaf (performing no
+board/cleanup/concede mutations that could expire or exile sources) before
+which deferred `.logExpiredPlayFromExile` post-steps should be inserted so
+expiry logs emit before `PriorityEvent.received` (CR 117.3 / 611.2). -/
 def PendingReplacement.isPurePriorityGrantLeaf : PendingReplacement → Bool
-  | .receivePriority _ | .finishResolutionChoice | .afterWardResolved
-  | .beginTurnAfterStartExpiry
-  | .finishCleanupAfterClearEot
+  | .receivePriority _ | .afterWardResolved
   | .finishPostStep .startNextTurnAndBegin
-  | .finishPostStep .endTurnAfterCleanupStepEnded
-  | .finishPostStep .cleanupStepAfterDiscard
-  | .finishPostStep (.postSbaCleanup _) => true
-  | .finishConcede _ _ wc .. => wc.isNone
+  | .finishPostStep .endTurnAfterCleanupStepEnded => true
   | .beginStepCont st
   | .finishPostStep (.beginStepBody st)
   | .finishPostStep (.beginStepAfterPhaseBegan st) =>
-    stepAlwaysGrantsPriority st
-  | .concedePlayersLoop _ wp mid _ _ wc .. => !wp && !mid && wc.isNone
+    stepAlwaysGrantsPriority st && st != .cleanup
   | _ => false
 
-/-- Insert `postStep` immediately before any trailing pure priority-grant leaf
-(or before a pure post-log tail sitting after one) in `pr`, or at the end of
-`pr` when `pr` does not end with a pure priority-grant leaf. -/
+/-- Whether every leaf in `pr` is either a pure priority-grant leaf or a pure
+post-log leaf (performing no mutations). -/
+def PendingReplacement.isPurePriorityGrantOrPostLog : PendingReplacement → Bool
+  | .seq a b => a.isPurePriorityGrantOrPostLog && b.isPurePriorityGrantOrPostLog
+  | leaf => leaf.isPurePriorityGrantLeaf || leaf.isPurePostLog
+
+/-- Whether `pr` contains any non-priority, non-post-log mutating work. -/
+def PendingReplacement.hasNonPriorityWork (pr : PendingReplacement) : Bool :=
+  !pr.isPurePriorityGrantOrPostLog
+
+/-- Whether the leftmost leaf of `pr` is a pure priority-grant leaf. -/
+def PendingReplacement.startsWithPurePriorityGrant : PendingReplacement → Bool
+  | .seq a _ => a.startsWithPurePriorityGrant
+  | leaf => leaf.isPurePriorityGrantLeaf
+
+/-- Whether `pr` ends with a pure priority-grant leaf (ignoring pure post-log tails). -/
+def PendingReplacement.endsWithPurePriorityGrant : PendingReplacement → Bool
+  | .seq a b =>
+    if b.isPurePostLog then a.endsWithPurePriorityGrant
+    else b.endsWithPurePriorityGrant
+  | leaf => leaf.isPurePriorityGrantLeaf
+
+/-- Whether `pr` is a pure trailing priority-grant tail (starting with a pure
+priority-grant leaf and containing only pure priority-grant or pure post-log
+leaves). -/
+def PendingReplacement.isPurePriorityGrantTail (pr : PendingReplacement) : Bool :=
+  pr.startsWithPurePriorityGrant && pr.isPurePriorityGrantOrPostLog
+
+/-- Insert `postStep` immediately before any trailing pure priority-grant tail
+(or before a pure post-log tail sitting after a pure priority-grant leaf) in
+`pr`, or at the end of `pr` when `pr` does not end with a pure priority-grant
+leaf. -/
 def PendingReplacement.insertBeforeTrailingPriorityGrant
     (pr postStep : PendingReplacement) : PendingReplacement :=
   match pr with
   | .seq a b =>
-    if b.isPurePriorityGrantLeaf || (b.isPurePostLog && a.endsWithNonProposalPriorityGrant) then
+    if b.isPurePriorityGrantTail ||
+        (b.isPurePriorityGrantOrPostLog && a.endsWithPurePriorityGrant) then
       .seq (a.insertBeforeTrailingPriorityGrant postStep) b
     else
       .seq a (b.insertBeforeTrailingPriorityGrant postStep)

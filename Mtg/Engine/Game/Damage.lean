@@ -46,7 +46,8 @@ LKI `GameObject` via `damageSourceObjectFromLki` without calling `followMoved`
 def damageSourceFromSnapshot (g : Game) (eo : EventObject) : GameObject :=
   match eo.id.bind g.findLiveSourceObject? with
   | some live => live
-  | none => damageSourceObjectFromLki eo
+  | none =>
+    damageSourceObjectFromLki eo (prepared := eo.id.any g.wasPreparedAtDeparture)
 
 /-- Optional wrapper around `damageSourceFromSnapshot`. -/
 def damageSourceObjFromSnapshot? (g : Game) (source : Option EventObject) : Option GameObject :=
@@ -191,6 +192,11 @@ def replaceDamage (g : Game) (n : Int)
         shieldRemoved := true
         shieldRemoveCause := g.wrapReplacedCause sid curCause (g.controllerOf o)
         curCause := shieldRemoveCause
+  let effSrc? : Option GameObject :=
+    src?.orElse (fun _ =>
+      srcEvent?.map (fun eo =>
+        Game.damageSourceObjectFromLki eo
+          (prepared := eo.id.any g.wasPreparedAtDeparture)))
   let mut fuel := 32
   while fuel > 0 do
     fuel := fuel - 1
@@ -201,7 +207,8 @@ def replaceDamage (g : Game) (n : Int)
       -- 1. Preventions (when damage is preventable)
       if !unpreventable then
         if let some o := recipientPerm? then
-          if let some src := src? then
+          match effSrc? with
+          | some src =>
             if g.protectedFrom o src then
               items := items.push (.prevention {
                 id := { kind := .protectionPreventDamage, object := some o.id }
@@ -209,6 +216,15 @@ def replaceDamage (g : Game) (n : Int)
                 controller := g.controllerOf o
                 affectedPlayer := affected
                 kind := .protectionPreventDamage o.id src.id
+              })
+          | none =>
+            if (g.effectiveKeywords o).contains (.protection .everything) then
+              items := items.push (.prevention {
+                id := { kind := .protectionPreventDamage, object := some o.id }
+                source := some o.id
+                controller := g.controllerOf o
+                affectedPlayer := affected
+                kind := .protectionPreventDamage o.id noSourceSentinelId
               })
           let oSelfPrevent :=
             let oEnv : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
@@ -262,13 +278,9 @@ def replaceDamage (g : Game) (n : Int)
               affectedPlayer := pid
               kind := .protectionFromEverythingPlayer pid
             })
-          let effSrc? : Option GameObject :=
-            src?.orElse (fun _ =>
-              srcEvent?.map (fun eo =>
-                Game.damageSourceObjectFromLki eo
-                  (prepared := eo.id.any g.wasPreparedAtDeparture)))
-          for em in g.battlefield do
-            if g.permanentGrantsPlayerProtectionFrom em pid effSrc? then
+          for em in g.objects do
+            if (em.isOnBattlefield || (em.zone == .command && (g.baseCard em).types.isEmpty)) &&
+                g.permanentGrantsPlayerProtectionFrom em pid effSrc? then
               items := items.push (.prevention {
                 id := { kind := .protectionPreventDamage, grantor := some em.id, player := some pid }
                 source := some em.id
@@ -285,9 +297,10 @@ def replaceDamage (g : Game) (n : Int)
                 | .preventAllDamageToPermanent tid =>
                   recipientPerm?.any (·.id == tid)
                 | .preventAllDamageFromSource sid =>
-                  src?.any (·.id == sid)
+                  effSrc?.any (fun s => s.id != noSourceSentinelId && s.id == sid)
                 | .protectionPreventDamage tid sid =>
-                  recipientPerm?.any (·.id == tid) && src?.any (·.id == sid)
+                  recipientPerm?.any (·.id == tid) &&
+                    effSrc?.any (fun s => s.id != noSourceSentinelId && s.id == sid)
                 | .protectionFromEverythingPlayer pid =>
                   recipientPlayer? == some pid
                 | .shieldCounterPreventDamage tid =>
@@ -298,7 +311,7 @@ def replaceDamage (g : Game) (n : Int)
                 items := items.push (.prevention { spec with controller := ctrl, affectedPlayer := affected })
           | _ => pure ()
       -- 2. Damage-increasing and damage-multiplying replacements (CR 614.1a / 616.1)
-      if let some src := src? then
+      if let some src := effSrc? then
         for o in g.battlefield do
           let srcCtrl := (g.controllerOf o).getD o.owner
           let env : EvalEnv := { controller := srcCtrl, sourceId := some o.id }

@@ -44,8 +44,10 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
     faceStatics.any fun ab =>
       ab.anyRule fun cond? r =>
         match r with
-        | .play (.castAsThoughFlash who _ true _) =>
-          EvalExpr.matchesPlayerFilter g selfEnv who p && cond?.all (EvalExpr.evalCondition g selfEnv)
+        | .play (.castAsThoughFlash who spellPred true nth?) =>
+          EvalExpr.matchesPlayerFilter g selfEnv who p &&
+            cond?.all (EvalExpr.evalCondition g selfEnv) &&
+            nth?.all (fun n => g.countMatchingSpellsCastThisTurn p selfEnv spellPred + 1 == n)
         | _ => false
   let spellView := EvalExpr.spellFaceView g dummy face p (g.actualCastManaValue dummy face)
   let hasPeerFlash :=
@@ -74,8 +76,12 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
         !g.over && g.stack.isEmpty &&
           g.step.isMainPhase && g.activePlayer == p && g.priority == p
       else g.asSorcery? p
+  let (faceTypes, _, _) := g.faceCdaCharacteristics dummy face
+  let faceHasSorcerySpeed :=
+    !faceTypes.contains .instant && !faceTypes.contains .land &&
+      !KeywordAbility.hasFlash face.keywords
   prioOk &&
-  (if face.hasSorcerySpeed && !hasSelfFlash && !hasPeerFlash then
+  (if faceHasSorcerySpeed && !hasSelfFlash && !hasPeerFlash then
     sorceryOk else true)
 
 /-- Every card face the game knows: each object's card, its other face,
@@ -877,7 +883,7 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
               | some src => TextChange.applyColor (g.evalLayer3 src) .black
               | none => .black
             let allCands := (g.player p).graveyard.filter (fun id =>
-              (g.findObject? id).any (fun card => (g.colors card).contains col))
+              (g.findObject? id).any (fun card => isDiscardableCard card && (g.colors card).contains col))
             g.canPayZemoBoast p allCands col
           else true
         if !zemoOk then false
@@ -1429,17 +1435,20 @@ partial def afterWardResolved (g : Game) : Game :=
     (nextOuters.map EngineChange.pushOuterPendingReplacement).foldl Game.change g
   let rec finishWardTail (g : Game) : Game :=
     if g.sbaPaused || g.pendingReplacement.isSome then
-      g.chainPendingReplacement .afterWardResolved
+      if g.anyContinuationSettlesControlFlowFwd then g
+      else g.chainPendingReplacement .afterWardResolved
     else if let some outer := g.outerPendingReplacements.back? then
       let g := g.changes #[.popOuterPendingReplacement, .pendingReplacement (some outer)]
-      g.chainPendingReplacement .afterWardResolved
+      if g.anyContinuationSettlesControlFlowFwd then g
+      else g.chainPendingReplacement .afterWardResolved
     else if g.pending != .none || g.afterRandom != .none then
       g
     else if !g.over && g.proposedSpell.isNone &&
         (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
       let g := g.reopenDeferredExileCasts
       if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement .afterWardResolved
+        if g.anyContinuationSettlesControlFlowFwd then g
+        else g.chainPendingReplacement .afterWardResolved
       else if g.over || g.pending != .none || g.afterRandom != .none then
         g
       else
@@ -1473,8 +1482,10 @@ partial def afterWardResolved (g : Game) : Game :=
     reverseOrphanedIfOver g
   else if (g.currentInterpWait?.isSome) &&
       (g.pending != .none || g.afterRandom != .none) then
-    let existing := g.outerPendingReplacements
-    replaceTopOuters g existing.size (#[.afterWardResolved] ++ existing)
+    if g.anyContinuationSettlesControlFlowFwd then g
+    else
+      let existing := g.outerPendingReplacements
+      replaceTopOuters g existing.size (#[.afterWardResolved] ++ existing)
   else if g.currentInterpWait?.isSome then
     let stashedPending := g.pendingReplacement
     let stashedOuters := g.outerPendingReplacements
@@ -1498,11 +1509,19 @@ partial def afterWardResolved (g : Game) : Game :=
         if g.pending != .none || g.afterRandom != .none then g.outerPendingReplacements
         else #[]
       if g.currentInterpWait?.isSome then
-        let wardCont :=
+        let gRestored :=
           match stashedPending with
-          | some c => .seq c .afterWardResolved
-          | none => .afterWardResolved
-        replaceTopOuters g drainSuffix.size ((stashedOuters.push wardCont) ++ drainSuffix)
+          | some c => replaceTopOuters g drainSuffix.size ((stashedOuters.push c) ++ drainSuffix)
+          | none =>
+            if stashedOuters.isEmpty then g
+            else replaceTopOuters g drainSuffix.size (stashedOuters ++ drainSuffix)
+        if gRestored.anyContinuationSettlesControlFlowFwd then gRestored
+        else
+          let wardCont :=
+            match stashedPending with
+            | some c => .seq c .afterWardResolved
+            | none => .afterWardResolved
+          replaceTopOuters g drainSuffix.size ((stashedOuters.push wardCont) ++ drainSuffix)
       else
         let g :=
           match stashedPending with
@@ -1875,8 +1894,16 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
       let g :=
         if skipTail then g
         else if chainFinishChoice then
-          if g.anyContinuationSettlesControlFlowFwd then g
-          else g.chainPendingReplacement .finishResolutionChoice
+          if g.anyContinuationSettlesControlFlowFwd then
+            if g.hasImplicitPendingPriorityContinuationFwd && g.pendingPriority.isNone then
+              g.change (.pendingPriority (some (g.priorityInstead caster)))
+            else g
+          else
+            let g :=
+              if g.pendingPriority.isNone then
+                g.change (.pendingPriority (some (g.priorityInstead caster)))
+              else g
+            g.chainPendingReplacement .finishResolutionChoice
         else
           g.receivePriority caster
       if hadOuterReplacement then (g, !g.over && g.pending == .none)

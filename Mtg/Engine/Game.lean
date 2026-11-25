@@ -210,7 +210,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
   | .declareMulligan _, some actor =>
     mustApply g actor .keep
   | .putOnBottom _ n, some actor =>
-    mustApply g actor (.putOnBottom ((g.player p).hand.extract 0 n))
+    mustApply g actor (.putOnBottom ((g.discardableHandIds p).extract 0 n))
   | .scry _ n _, some actor =>
     mustApply g actor (.scry (g.scryLookedIds p n) #[])
   | .surveil _ n _, some actor =>
@@ -233,7 +233,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     | none => mustApply g actor .decline
     | some sac => mustApply g actor (.sacrifice sac.id)
   | .discardForAdditionalCost seat, some actor =>
-    match (g.player seat).hand.back? with
+    match (g.discardableHandIds seat).back? with
     | none => mustApply g actor .decline
     | some id => mustApply g actor (.discard id)
   | .chooseSacrificeCreature seat _ _, some actor =>
@@ -241,7 +241,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
     | none => panic! "no creature to sacrifice"
     | some o => mustApply g actor (.sacrifice o.id)
   | .chooseDiscardCard seat _, some actor =>
-    match (g.player seat).hand.back? with
+    match (g.discardableHandIds seat).back? with
     | none => panic! "no card to discard"
     | some id => mustApply g actor (.discard id)
   | .sacrificeCreature _, some actor =>
@@ -301,7 +301,7 @@ def mustApply (g : Game) (p : PlayerId) (a : Action) : Game :=
       | _ => mustApply g actor .decline
     else mustApply g actor .decline
   | .recruitDiscard _, some actor =>
-    match (g.player p).hand.back? with
+    match (g.discardableHandIds p).back? with
     | none => panic! "no card to discard for recruit"
     | some id => mustApply g actor (.discard id)
   | .maySacrificeAnotherBolg _ _, some actor =>

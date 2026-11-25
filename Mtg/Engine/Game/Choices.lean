@@ -435,7 +435,7 @@ or sorcery card). -/
 def canPaySarumanWard (g : Game) (p : PlayerId) : Bool :=
   (g.player p).hand.any (fun id =>
     match g.findObject? id with
-    | some o => g.isEnchantment o || g.isInstantOrSorcery o
+    | some o => isDiscardableCard o && (g.isEnchantment o || g.isInstantOrSorcery o)
     | none => false)
 
 /-- Legendary artifacts and creatures `p` may sacrifice to Sauron's ward. -/
@@ -706,8 +706,10 @@ def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
         !fromGyAb && !fromHandAb &&
         (!prop.tapSource || !src.status.tapped || g.sourceTappedForCost sid forObj sinceIdx)) ||
       (fromGyAb && !fromHandAb && !needsBfSource &&
+        isDiscardableCard src &&
         src.zone == .graveyard src.owner && src.owner == prop.caster) ||
       (fromHandAb && !fromGyAb && !needsBfSource &&
+        isDiscardableCard src &&
         src.zone == .hand src.owner && src.owner == prop.caster))
 
 /-- Offer `p` the optional explore choice to put the revealed top card `cardId`
