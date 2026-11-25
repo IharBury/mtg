@@ -284,7 +284,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
     (cause : Option EventCause := none)
     (suppressInteractive : Bool := false)
     (lkiController? : Option PlayerId := none)
-    (skipUnattachIds : Array ObjectId := #[]) : Game × ObjectId :=
+    (skipUnattachIds : Array ObjectId := #[])
+    (deferPlayFromExileLogs : Bool := false) : Game × ObjectId :=
   let quietMove :=
     suppressInteractive || g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay
   if !quietMove && (match g.pending with | .chooseReplacement .. => true | _ => false) then
@@ -621,12 +622,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         | none => g
       let moveExpFromIdx := g.events.size
       let g := g.expireLeavingObjectEffectsWithLogs old (preState? := some preMove)
-        (skipLogIds := effSkipIds)
-      let g :=
-        if old.zone == .battlefield then
-          g.expireWhileSourceEffects old.id (preState? := some preMove) (reconcileControl := false)
-            (skipLogIds := effSkipIds) (deferPlayFromExileLogs := true)
-        else g
+        (skipLogIds := effSkipIds) (includeWhileSource := old.zone == .battlefield)
       let g :=
         match g.findObject? newId with
         | some _ =>
@@ -685,7 +681,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           g.logMsg s!"{g.nameWithToken (g.object! newId)} enters with {weaverBonus} additional +1/+1 counter(s)"
         else g
       let g := reconcileControlAfterTransitionFwd preMove g (cause := some baseHappenedCause)
-      let g := emitExpiredPlayFromExileLogs preMove g moveExpFromIdx
+      let g :=
+        if deferPlayFromExileLogs then g
+        else emitExpiredPlayFromExileLogs preMove g moveExpFromIdx
       (g, (newId, headSource, true))
   if !didMove then (g, newId)
   else
@@ -1177,33 +1175,45 @@ def moveCardsToGraveyardLoop (g : Game) (ids : Array ObjectId)
             return g
       return g
 
-/-- Read-only board projection after paying an unpaid Sneak attacker return
-(`prop.sneakAttacker`, CR 702.49 / 733.1) without opening interactive choices,
+/-- Read-only board projection after returning a Sneak attacker (`attackerId`,
+CR 702.190 / 733.1) to its owner's hand without opening interactive choices,
 capturing `linkedExile` returns, `.whileSourceOnBattlefield` control expiry, and
 the returned attacker entering its owner's hand. -/
+def probeAfterSneakReturn (g : Game) (caster : PlayerId) (spellId : ObjectId)
+    (attackerId : ObjectId) : Game :=
+  match g.findObject? attackerId with
+  | none => g
+  | some o =>
+    if !o.isOnBattlefield then g
+    else
+      let gPre :=
+        if o.linkedExile.contains spellId then
+          { g with objects := g.objects.map fun obj =>
+              if obj.id == attackerId then
+                { obj with linkedExile := obj.linkedExile.filter (· != spellId) }
+              else obj }
+        else g
+      let gProbe : Game :=
+        { gPre with
+          pending := .none
+          continuations := #[]
+          currentBatch := none
+          queuedLinkedExile := #[] }
+      let cause := some (EventCause.costPayment .returnToHand caster (some spellId))
+      let (gAfter, _) :=
+        gProbe.move attackerId (.hand o.owner) none (verb := some .returnToHand)
+          (cause := cause) (suppressInteractive := true)
+      gAfter
+
+/-- Read-only board projection after paying an unpaid Sneak attacker return
+(`prop.sneakAttacker`, CR 702.190 / 733.1) without opening interactive choices. -/
 def probeAfterUnpaidSneak (g : Game) (prop : ProposedSpell)
     (includeSneak : Bool := true) : Game :=
   if !includeSneak || g.sneakPaid prop.spellId then g
   else
     match prop.sneakAttacker with
     | none => g
-    | some aid =>
-      match g.findObject? aid with
-      | none => g
-      | some o =>
-        if !o.isOnBattlefield then g
-        else
-          let gProbe : Game :=
-            { g with
-              pending := .none
-              continuations := #[]
-              currentBatch := none
-              queuedLinkedExile := #[] }
-          let cause := some (EventCause.costPayment .returnToHand prop.caster (some prop.spellId))
-          let (gAfter, _) :=
-            gProbe.move aid (.hand o.owner) none (verb := some .returnToHand)
-              (cause := cause) (suppressInteractive := true)
-          gAfter
+    | some aid => g.probeAfterSneakReturn prop.caster prop.spellId aid
 
 end Game
 end Mtg.Engine

@@ -191,9 +191,9 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
       .pushContinuationFrame {},
       .pendingReplacement (some (.receivePriority p0)) ]
   -- (3) `hasAvailableDiscardForProposed` matches runtime `finishProposedSpellCosts .finalize` after `paySneak`:
-  --     an owned token returned to hand by `paySneak` remains in hand until CR 704.5d SBAs so `.finalize` opens
-  --     `.discardForAdditionalCost` (just like an owned card), whereas an opponent-owned attacker leaves `p0`'s hand
-  --     empty and reverses under CR 733.1:
+  --     an owned card returned to hand by `paySneak` opens `.discardForAdditionalCost`, whereas both an owned token
+  --     (not a card under CR 108.2b / 111.8) and an opponent-owned attacker leave `p0` with no discardable card and
+  --     reverse under CR 733.1:
   let tokBearDef : CardDef := { bear with name := "P52i1 TokBear", isToken := true, keywords := #[Keyword.haste] }
   let mkSneakDiscardProbe (atkDef : CardDef) (atkOwner : PlayerId) : Game :=
     let g := addPermanent (insertObject (emptyHand g4 p0) zeroInstDef p0 (.hand p0)) atkDef atkOwner p0
@@ -305,9 +305,11 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
        !gSneakWithExtraSac.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
        gSneakWithExtraSac.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false)) &&
     mustHold52i1 "1b_sneakDiscardTokenVsCard"
-      (gSneakTokDiscRun.pending == .discardForAdditionalCost p0 &&
-       !gSneakTokDisc0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
+      (gSneakTokDiscRun.pending == .none &&
+       gSneakTokDiscRun.proposedSpell.isNone &&
+       gSneakTokDisc0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&
        gSneakTokDisc0.continuationSettlesControlFlow false (.finishProposedSpellCosts .sneak true false false) &&
+       gSneakTokDisc0.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .sneak true false false) == some p0 &&
        gSneakOppDiscRun.pending == .none &&
        gSneakOppDiscRun.proposedSpell.isNone &&
        gSneakOppDisc0.continuationGrantsPriority false (.finishProposedSpellCosts .sneak true false false) &&

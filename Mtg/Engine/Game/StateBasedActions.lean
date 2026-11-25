@@ -1048,7 +1048,8 @@ partial def checkSBACountedWithLeavesCore (g : Game)
     (departedIn : Array PlayerId := #[])
     (rewindProposalIn : Option Bool := none)
     (deferRestore : Bool := false)
-    (outerAfterIn? : Option PendingReplacement := none) :
+    (outerAfterIn? : Option PendingReplacement := none)
+    (deferPlayFromExileLogs : Bool := deferRestore) :
     Game × Bool × Option Pending × Bool × Array PlayerId × Option Bool :=
   let rec contHasSbaOrLeave : PendingReplacement → Bool
     | .checkSBA | .leavePlayersWhoLost .. => true
@@ -1056,6 +1057,8 @@ partial def checkSBACountedWithLeavesCore (g : Game)
     | _ => false
   if g.over then (g, false, none, false, departedIn, none)
   else
+  let preSba := g
+  let sbaFromIdx := preSba.events.size
   let (g, popOuterIn, outerAfterIn?) :=
     if outerAfterIn?.isSome && (deferRestore || savedIn.isSome || popOuterIn || rewindProposalIn.isSome) then
       let (gf, pof) := combineOuterContinuations g popOuterIn outerAfterIn? false
@@ -1181,6 +1184,7 @@ partial def checkSBACountedWithLeavesCore (g : Game)
         let (g', s', po') := gFolded.applyDeferredProposalRewind savedIn poFolded departedIn hadPreBodyCont
         let (g'', didMore, savedOut, poOut, depOut, rwOut) :=
           g'.checkSBACountedWithLeavesCore s' po' departedIn none (deferRestore := deferRestore)
+            (deferPlayFromExileLogs := true)
         (some (g'', clearedInvalidLegend || didMore, savedOut, poOut, depOut, rwOut), none)
       else (none, outerAfter?)
     | none => (none, outerAfter?)
@@ -1223,7 +1227,7 @@ partial def checkSBACountedWithLeavesCore (g : Game)
         let leftBefore := (g.players.filter (·.leftTheGame)).size
         let (g, saved?, popOuter, departed, rewindProposal) :=
           g.leavePlayersWhoLostCore savedIn popOuterIn departedIn rewindProposalIn
-            (flushDismissed := false)
+            (flushDismissed := false) (deferPlayFromExileLogs := true)
         let anyLeft := (g.players.filter (·.leftTheGame)).size > leftBefore
         if g.over then (g, didAny || anyLeft, none, false, departed, none, none)
         else
@@ -1253,6 +1257,7 @@ partial def checkSBACountedWithLeavesCore (g : Game)
           let (g', didMore, saved'?, popOuter', departed', rewindProposal') :=
             g.checkSBACountedWithLeavesCore saved? popOuter departed rewindProposal
               (deferRestore := deferRestore) (outerAfterIn? := outerAfter?)
+              (deferPlayFromExileLogs := true)
           (g', didAny || anyLeft || didMore, saved'?, popOuter', departed', rewindProposal', none)
         else if deferRestore then
           (g, didAny, saved?, popOuter, departed, rewindProposal, outerAfter?)
@@ -1266,6 +1271,9 @@ partial def checkSBACountedWithLeavesCore (g : Game)
       match outerAfter? with
       | some outer => gOut.chainPendingReplacement outer
       | none => gOut
+  let gOut :=
+    if deferPlayFromExileLogs || gOut.over then gOut
+    else emitExpiredPlayFromExileLogs preSba gOut sbaFromIdx
   (gOut, didOut, sOut, poOut, depOut, rwOut)
 
 /-- Repeat `checkSBACounted` and `leavePlayersWhoLostCore` until neither performs

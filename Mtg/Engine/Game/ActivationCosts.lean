@@ -188,7 +188,7 @@ private partial def costItemAllowsObject (g : Game) (p : PlayerId) (sourceId : O
     (item : CostItem) (o : GameObject)
     (tapSource sacrificeOrExileSource discardOrExileHandSource : Bool) : Bool :=
   let perm := o.isOnBattlefield && g.controlledBy o p
-  let inHand := o.owner == p && o.zone == .hand p
+  let inHand := o.owner == p && o.zone == .hand p && isDiscardableCard o
   let other := sourceId.all (o.id != ·)
   let env : EvalEnv := { controller := p, sourceId }
   match item with
@@ -221,7 +221,7 @@ def costPickAllows (g : Game) (p : PlayerId) (sourceId : Option ObjectId) (pick 
     (sacrificeOrExileSource : Bool := false)
     (discardOrExileHandSource : Bool := false) : Bool :=
   let perm := o.isOnBattlefield && g.controlledBy o p
-  let inHand := o.owner == p && o.zone == .hand p
+  let inHand := o.owner == p && o.zone == .hand p && isDiscardableCard o
   let other := sourceId.all (o.id != ·)
   let artifact := g.isArtifact o
   match pick with

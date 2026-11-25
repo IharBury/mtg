@@ -1608,3 +1608,189 @@ all 5 `manaAbilityDefCanChangeOutcome` / `nonPlainFlips` cases, and full
   mustHoldCheck9 "p53_treasureInstallEffectNotUnique" (!hasUniqueManaPayment gTrInstallProp) &&
   mustHoldCheck9 "p53_treasureDelayedTriggerNotUnique" (!hasUniqueManaPayment gTrDelayedProp) &&
   mustHoldCheck9 "p53_treasureGraveyardActiveZoneNotUnique" (!hasUniqueManaPayment gTrGyProp)
+
+
+/- Phase 54 Item 4: `Demo.hasGameStatePriorityAction` exile Layer-3 self-flash `timingAllowsCast (card? := some o)`
+(front face and Adventure), `Demo.uniqueDiscardCommand` filtering bounced creature tokens (CR 108.2b / 111.8), and
+all four `Demo.hasUniqueManaPayment` soundness fixes (plain Mountain `.mountainExtraRed` `fromSource` attribution,
+chained `.hybrid` + `.twobrid` `anyAmount` displacement, Layer-3 color-word `spellManaSpentInterest`, and
+conservative `canExtraPlainSourcesChangeOutcome` DFS budget exhaustion for `anyColorCount`). -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let gMain := emptyHand afterDraw p0
+
+  -- 1. `Demo.hasGameStatePriorityAction` exile Layer-3 text-changed self-flash (front face & Adventure):
+  --    Exiled creature (with `.playFromExile` permission) has "You may cast this spell as though it had flash if you
+  --    control a Swamp"; Layer-3 text change swaps Swamp -> Forest while `p0` controls a Forest on `p1`'s turn!
+  let exileSelfFlashDef : CardDef := {
+    creature "P54 Check9 ExSwampFlash" ManaCost.zero #["Beast"] 2 2 with
+    staticAbilities := #[
+      .ruleModifying (some (.exists (.inZones { zones := #[.battlefield], owner := .ofPlayer .you } (.hasSubtype (.literal .swamp)))))
+        (.play (.castAsThoughFlash .you .anyObject true none))
+    ]
+  }
+  let exileAdvFlashDef : CardDef := {
+    creature "P54 Check9 ExAdvHost" (ManaCost.ofGeneric 5) #["Beast"] 4 4 with
+    subFaces := #[{
+      kind := .adventure
+      name := "P54 Check9 ExAdvSorc"
+      manaCost := ManaCost.zero
+      types := #[.sorcery]
+      staticAbilities := #[
+        .ruleModifying (some (.exists (.inZones { zones := #[.battlefield], owner := .ofPlayer .you } (.hasSubtype (.literal .swamp)))))
+          (.play (.castAsThoughFlash .you .anyObject true none))
+      ]
+      spellAbility := some { effect := Effect.gainLife 1 }
+    }]
+  }
+  let gWithTappedForest :=
+    (gMain.allocObject forest p0 .battlefield (some p0) { tapped := true }).1
+  let gExFlash0 :=
+    ((insertObject gWithTappedForest exileSelfFlashDef p0 .exile).record
+      (GameEvent.turnBegan 2 p1)).change (.priority p0)
+  let exFlashId := (gExFlash0.objects.filter (·.zone == .exile)).back!.id
+  let gExFlashPerm :=
+    gExFlash0.createEffect (.permission (some p0) (.playFromExile exFlashId { player := p0 }) .untilEndOfTurn)
+      (cause := some (.gameRule .staticAbility))
+  let gExFlashChanged :=
+    gExFlashPerm.createEffect
+      (.layered (.objects #[exFlashId]) (.text (.replaceCreatureType .swamp .forest)) .untilEndOfTurn)
+      (cause := some (.gameRule .staticAbility))
+  let gExAdv0 :=
+    ((insertObject gWithTappedForest exileAdvFlashDef p0 .exile).record
+      (GameEvent.turnBegan 2 p1)).change (.priority p0)
+  let exAdvId := (gExAdv0.objects.filter (·.zone == .exile)).back!.id
+  let gExAdvPerm :=
+    gExAdv0.createEffect (.permission (some p0) (.playFromExile exAdvId { player := p0 }) .untilEndOfTurn)
+      (cause := some (.gameRule .staticAbility))
+  let gExAdvChanged :=
+    gExAdvPerm.createEffect
+      (.layered (.objects #[exAdvId]) (.text (.replaceCreatureType .swamp .forest)) .untilEndOfTurn)
+      (cause := some (.gameRule .staticAbility))
+
+  -- 2. `Demo.uniqueDiscardCommand` filters bounced creature tokens in hand (CR 108.2b / 111.8):
+  let tokBearDef : CardDef := { grizzlyBears with name := "P54 Check9 TokBear", isToken := true }
+  let gDiscOnlyTok :=
+    (insertObject gMain tokBearDef p0 (.hand p0)).change (.pending (.discardForAdditionalCost p0))
+  let gDiscTokPlusCard :=
+    (insertObject gDiscOnlyTok grizzlyBears p0 (.hand p0))
+  let realCardHandId := (gDiscTokPlusCard.player p0).hand.back!
+
+  -- 3. `hasUniqueManaPayment` plain Mountain `.mountainExtraRed` `fromSource` attribution:
+  --    `mtnBoostDef` has a `.fromSource` cast trigger AND grants `.mountainExtraRed 1` (`source := some boostId`);
+  --    `p0` has floating `{G}{G}` and an untapped plain Mountain; on `{2}` spell, tapping the plain Mountain adds
+  --    `{R}` (`source := some mountainId`) + `{R}` (`source := some boostId`), so paying `{2}` with `{R}{R}`
+  --    triggers `mtnBoostDef`'s `.fromSource` -> NOT unique!
+  let mtnBoostWatchDef : CardDef := {
+    name := "P54 Check9 MtnBoostWatch", types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger (.castSpell .you .anyObject (manaSpent? := some .fromSource)) (Effect.gainLife 1)
+    ]
+  }
+  let twoInstDef : CardDef := {
+    name := "P54 Check9 TwoInst", manaCost := ManaCost.ofGeneric 2, types := #[.instant],
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let gMtnFromSrc0 :=
+    (insertObject (addPermanent (addPermanent gMain mtnBoostWatchDef p0 p0) mountain p0 p0)
+      twoInstDef p0 (.hand p0)).addMana p0 (.colored .green) 2
+  let boostId := (gMtnFromSrc0.permanentsOf p0).find? (·.name == mtnBoostWatchDef.name) |>.get!.id
+  let gMtnFromSrc1 :=
+    gMtnFromSrc0.createEffect (.playerRule p0 (.mountainExtraRed 1) .untilEndOfTurn)
+      (cause := some (.oneShotEffect none (some boostId) (some p0)))
+  let gMtnFromSrcProp := mustApply gMtnFromSrc1 p0 (.cast (gMtnFromSrc1.player p0).hand.back!)
+
+  -- 4. `hasUniqueManaPayment` chained `.hybrid` + `.twobrid` `anyAmount` displacement:
+  --    Spell costs `{W/U}{2/U}` + watcher cares about `ValueExpr.manaSpent`;
+  --    floating `{U}{C}{C}` pays `{W/U}` with `{U}` and `{2/U}` with `{C}{C}` (3 mana spent);
+  --    untapped non-plain sacrifice-self `{W}` artifact pays `{W/U}` with `{W}`, freeing `{U}` to pay `{2/U}` (2 mana spent) -> NOT unique!
+  let chainSpellDef : CardDef := {
+    name := "P54 Check9 ChainHybTwo"
+    manaCost := ⟨#[.hybrid .white .blue, .twobrid .blue]⟩
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let sacWhiteArtDef : CardDef := {
+    name := "P54 Check9 SacWhite", types := #[.artifact]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.fixedOne (.colored .white)) (cost := { items := #[.sacrifice (.exact 1) .self] })
+    ]
+  }
+  let amtWatchDef : CardDef := {
+    name := "P54 Check9 AmtWatch", types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger (.castSpell .you .anyObject)
+        { body := .player (.drawCards .you (.manaSpent .triggerSubject)) }
+    ]
+  }
+  let gChain0 :=
+    (insertObject (addPermanent (addPermanent gMain amtWatchDef p0 p0) sacWhiteArtDef p0 p0)
+      chainSpellDef p0 (.hand p0)).addMana p0 (.colored .blue) 1 |>.addMana p0 .colorless 2
+  let gChainProp := mustApply gChain0 p0 (.cast (gChain0.player p0).hand.back!)
+
+  -- 5. `hasUniqueManaPayment` Layer-3 color-word `spellManaSpentInterest`:
+  --    Spell effect checks `.manaSpentMatches (.ofColor .blue) .this`; Layer-3 text change swaps blue -> red;
+  --    with floating `{G}` and untapped Mountain, spending `{R}` changes the spell's effect -> NOT unique!
+  let blueCheckSpellDef : CardDef := {
+    name := "P54 Check9 BlueCheck"
+    manaCost := ManaCost.ofGeneric 1
+    types := #[.instant]
+    spellAbility := some {
+      effect := {
+        body := .ifCond (.castPred (.manaSpentMatches (.ofColor .blue) .this))
+          (Instruction.gainLifeFixed 5 .you) .noop
+      }
+    }
+  }
+  let gL3Mana0 :=
+    (insertObject (addPermanent gMain mountain p0 p0) blueCheckSpellDef p0 (.hand p0)).addMana p0 (.colored .green) 1
+  let gL3ManaProp0 := mustApply gL3Mana0 p0 (.cast (gL3Mana0.player p0).hand.back!)
+  let l3SpellId := gL3ManaProp0.proposedSpell.get!.spellId
+  let gL3ManaProp :=
+    gL3ManaProp0.createEffect
+      (.layered (.objects #[l3SpellId]) (.text (.replaceColorWord .blue .red)) .untilEndOfTurn)
+      (cause := some (.gameRule .staticAbility))
+
+  -- 6. `hasUniqueManaPayment` conservative `canExtraPlainSourcesChangeOutcome` DFS budget exhaustion:
+  --    With many 5-color plain lands and `interest.anyColorCount` (`.colorCount .ge 4`) on `{4}` with `{C}{C}{C}{C}` floating,
+  --    exhausting DFS budget (or finding a distinct-color assignment) refuses autopay (`hasUniqueManaPayment == false`)!
+  let fiveColorLandDef : CardDef := {
+    name := "P54 Check9 CityOfBrass", types := #[.land]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.oneOf (.explicit #[.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green]) (.const 1))]
+  }
+  let fourColorWatchDef : CardDef := {
+    name := "P54 Check9 FourColorWatch", types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger (.castSpell .you .anyObject (manaSpent? := some (.colorCount .ge 4)))
+        (Effect.gainLife 1)
+    ]
+  }
+  let fourInstDef : CardDef := {
+    name := "P54 Check9 FourInst", manaCost := ManaCost.ofGeneric 4, types := #[.instant],
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let gBudget0 :=
+    Id.run do
+      let mut g := addPermanent gMain fourColorWatchDef p0 p0
+      for _ in [0:10] do
+        g := addPermanent g fiveColorLandDef p0 p0
+      g := insertObject g fourInstDef p0 (.hand p0)
+      return g.addMana p0 .colorless 4
+  let gBudgetProp := mustApply gBudget0 p0 (.cast (gBudget0.player p0).hand.back!)
+
+  mustHoldCheck9 "p54_exileLayer3SelfFlashFrontFace"
+    (!hasGameStatePriorityAction gExFlashPerm p0 && hasGameStatePriorityAction gExFlashChanged p0) &&
+  mustHoldCheck9 "p54_exileLayer3SelfFlashAdventure"
+    (!hasGameStatePriorityAction gExAdvPerm p0 && hasGameStatePriorityAction gExAdvChanged p0) &&
+  mustHoldCheck9 "p54_uniqueDiscardCommandFiltersToken"
+    (uniqueDiscardCommand gDiscOnlyTok == none &&
+     uniqueDiscardCommand gDiscTokPlusCard == some s!"discard {realCardHandId}") &&
+  mustHoldCheck9 "p54_plainMountainExtraRedFromSourceNotUnique"
+    (!hasUniqueManaPayment gMtnFromSrcProp) &&
+  mustHoldCheck9 "p54_chainedHybridTwobridAnyAmountNotUnique"
+    (!hasUniqueManaPayment gChainProp) &&
+  mustHoldCheck9 "p54_layer3ColorWordSpellManaSpentInterestNotUnique"
+    (!hasUniqueManaPayment gL3ManaProp) &&
+  mustHoldCheck9 "p54_manyFiveColorLandsAnyColorCountNotUnique"
+    (!hasUniqueManaPayment gBudgetProp)

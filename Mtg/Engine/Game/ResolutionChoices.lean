@@ -673,7 +673,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       if picks.isEmpty && !paused then
         let g :=
           match outerCont? with
-          | some outer => g.chainPendingReplacement outer
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         let g ← g.continueCostPicks curProp picks true
           (hadOuterReplacement := outerCont?.isSome)
@@ -698,7 +698,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       let g :=
         if !paused then
           match outerCont? with
-          | some outer => g.chainPendingReplacement outer
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         else g
       let actName := ((g.findObject? vehicleId).map g.name).getD vName
@@ -768,7 +768,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       let g :=
         if !pausedBeforeContinue then
           match outerCont? with
-          | some outer => g.chainPendingReplacement outer
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         else g
       let fallbackName :=
@@ -794,7 +794,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     else if restPicks.isEmpty && !pausedBeforeContinue then
       let g :=
         match outerCont? with
-        | some outer => g.chainPendingReplacement outer
+        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
         | none => g
       let g ← g.continueCostPicks prop restPicks true
         (hadOuterReplacement := outerCont?.isSome)
@@ -1135,7 +1135,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       if picks.isEmpty && !paused then
         let g :=
           match outerCont? with
-          | some outer => g.chainPendingReplacement outer
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         let g ← g.continueCostPicks curProp picks true
           (hadOuterReplacement := outerCont?.isSome)
@@ -1160,7 +1160,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       let g :=
         if !paused then
           match outerCont? with
-          | some outer => g.chainPendingReplacement outer
+          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
           | none => g
         else g
       let name := ((g.findObject? sourceId).map g.name).getD

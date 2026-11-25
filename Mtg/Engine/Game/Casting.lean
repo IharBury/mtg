@@ -32,7 +32,9 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
     (ignorePending : Bool := false)
     (card? : Option GameObject := none) : Bool :=
   let dummy : GameObject :=
-    card?.getD { id := noSourceSentinelId, owner := p, controller := some p, zone := .hand p, printed := face }
+    card?.getD
+      { id := noSourceSentinelId, owner := p, controller := some p, zone := .hand p,
+        printed := face, status := if face.name == "" then { faceDown := true } else {} }
   let tcs := match card? with | some c => g.evalLayer3 c | none => #[]
   let faceStatics :=
     if tcs.isEmpty then face.staticAbilities
@@ -45,7 +47,7 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
         | .play (.castAsThoughFlash who _ true _) =>
           EvalExpr.matchesPlayerFilter g selfEnv who p && cond?.all (EvalExpr.evalCondition g selfEnv)
         | _ => false
-  let spellView := EvalExpr.spellFaceView g dummy face p face.manaValue
+  let spellView := EvalExpr.spellFaceView g dummy face p (g.actualCastManaValue dummy face)
   let hasPeerFlash :=
     g.battlefield.any fun o =>
       let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
@@ -237,7 +239,7 @@ def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
         (!perm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o))) ||
       (g.mayCastExiledBySource p o && g.timingAllowsCast p bc (card? := some o))) &&
   (g.mandatorySacrificeError? p o.id bc).isNone &&
-  (!(isFlashbackCast && bc.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
+  (!(isFlashbackCast && bc.flashbackDiscard) || (g.discardableHandIds p).any (· != o.id)) &&
   -- Untargeted permanents, and untargeted instants/sorceries with a modeled
   -- effect (e.g. Night's Whisper), may be proposed (CR 601.3).
   if isModalSpellFace bc then
@@ -294,9 +296,9 @@ def canPayAnnouncedAdditional (g : Game) (p : PlayerId) (o : GameObject)
           (g.permanentsOf p).any (fun perm =>
             perm.id != o.id && EvalExpr.evalObjectPred g env (.live perm) pred)
         | .discard _ .hand =>
-          (g.player p).hand.any (fun id => id != o.id)
+          (g.discardableHandIds p).any (fun id => id != o.id)
         | .discard _ (.matching pred) =>
-          (g.player p).hand.any (fun id =>
+          (g.discardableHandIds p).any (fun id =>
             id != o.id && (g.findObject? id).any (fun c => EvalExpr.evalObjectPred g env (.live c) pred))
         | _ => true
 
@@ -358,9 +360,9 @@ def canPayAnnouncedAdditionalFromSources (g : Game) (p : PlayerId) (o : GameObje
           (g.permanentsOf p).any (fun perm =>
             perm.id != o.id && EvalExpr.evalObjectPred g env (.live perm) pred)
         | .discard _ .hand =>
-          (g.player p).hand.any (fun id => id != o.id)
+          (g.discardableHandIds p).any (fun id => id != o.id)
         | .discard _ (.matching pred) =>
-          (g.player p).hand.any (fun id =>
+          (g.discardableHandIds p).any (fun id =>
             id != o.id && (g.findObject? id).any (fun c => EvalExpr.evalObjectPred g env (.live c) pred))
         | _ => true
 
@@ -660,7 +662,11 @@ def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : 
     if reqTarget && !face.allowsZeroTargets &&
         !g.castFaceHasLegalTarget p face tcs (some checkId) then
       throw s!"{face.name} requires a target"
-  if let some err := g.mandatorySacrificeError? p checkId face (excludeExtra? := sneakAttacker) then
+  let gSac :=
+    match sneakAttacker with
+    | some aid => g.probeAfterSneakReturn p checkId aid
+    | none => g
+  if let some err := gSac.mandatorySacrificeError? p checkId face then
     throw err
 
 /-- Whether `p` may begin to cast `o` as an Adventure (CR 715.3). -/
@@ -693,7 +699,7 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
           (!perm.payLifeEqualManaValue || g.canPayLife p face.manaValue)) ||
         (g.mayCastExiledBySource p o && g.timingAllowsCast p face (card? := some o))) &&
     (g.mandatorySacrificeError? p o.id face).isNone &&
-    (!(isFlashbackCast && face.flashbackDiscard) || (g.player p).hand.any (· != o.id)) &&
+    (!(isFlashbackCast && face.flashbackDiscard) || (g.discardableHandIds p).any (· != o.id)) &&
     let tcs := g.evalLayer3 o
     if isModalSpellFace face then
       (effectiveSpellModes face).any (fun e =>
@@ -852,7 +858,7 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
         !prop.needsSacrificeOther ||
           !(gSneak.sacrificeCreatureOrArtifactChoices p excludeId).isEmpty
       let discardOk :=
-        !prop.needsDiscardCard || (gSneak.player p).hand.any (· != prop.spellId)
+        !prop.needsDiscardCard || (gSneak.discardableHandIds p).any (· != prop.spellId)
       sacOk && discardOk
     else
       match prop.sourceId, prop.activation with
@@ -895,7 +901,7 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
       | _, _ =>
         let excludeId := prop.sourceId.getD prop.spellId
         (!prop.needsSacrificeOther || !(g.sacrificeCreatureOrArtifactChoices p excludeId).isEmpty) &&
-          (!prop.needsDiscardCard || !(g.player p).hand.isEmpty)
+          (!prop.needsDiscardCard || !(g.discardableHandIds p).isEmpty)
 
 /-- Whether some subset of `sources` (combined with `preTappedIds` and `pool`)
 pays `cost` while preserving `prop?`'s unpaid post-mana `.crew` and tap
@@ -961,7 +967,7 @@ def hasCostPreservingPaymentSubset (g : Game) (pool : ManaPool) (cost : ManaCost
           choices.map (fun (ch : TapManaChoice) => (ch.baseAdded, ch.extraRed, ch.restriction, ch.riders)))
       let rec go (curPool : ManaPool) (chosenIds : Array ObjectId)
           (skippedKeys : Array (Bool × Bool × Bool × Bool × Bool × Int × Array Bool ×
-            Array (Array ManaType × Array ManaType × Option ManaSpendRestriction × Array SpellRiderSpec)))
+            Array (Array ManaType × Array ManaUnit × Option ManaSpendRestriction × Array SpellRiderSpec)))
           (rem : List (GameObject × Array ManaType)) : Bool :=
         if !g.tapPreservesPostManaCosts p prop chosenIds then false
         else if g.canPayFromSources curPool cost freeOthers spend activeProp? then true
@@ -1757,7 +1763,7 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
             types := #[.artifact], subtypes := #[.equipment] }
         else
           { id := sourceId, name := sourceName, controller := some p, owner := p }
-    let abilityObjId := abilityId.getD ⟨g.nextObjectId⟩
+    let abilityObjId := abilityId.orElse (fun _ => sourceId) |>.getD noSourceSentinelId
     let loyaltyDelta : Option Int :=
       activation.bind (·.cost.netLoyaltyDelta chosenX)
     let isPowerUp : Bool :=
@@ -1779,7 +1785,7 @@ def finishPostLoyaltyActivated (g : Game) (p : PlayerId) (sourceName : String)
       (.nonMana loyaltyDelta isEquip isPowerUp isBoast abilityIdx isExhaust))
     let g := g.logMsg s!"{(g.player p).name} activates {sourceName}"
     if g.pending != .none then g
-    else if hadOuterReplacement && g.pendingReplacement.isNone then
+    else if hadOuterReplacement then
       g
     else if g.currentInterpWait?.isSome || g.pendingReplacement.isSome then
       g.chainPendingReplacement .finishResolutionChoice
@@ -1857,9 +1863,8 @@ def completeTurnFaceUp (g : Game) (caster : PlayerId) (spellId : ObjectId)
       let g :=
         (reconcileControlAfterTransition pre g (cause := some (.specialAction .turnFaceUp caster)))
           |>.flushQueuedLinkedExile
-      let skipTail := g.over || (hadOuterReplacement && g.pendingReplacement.isNone)
-      let chainFinishChoice :=
-        !skipTail && (hadPreReconcileCont || (hadOuterReplacement && g.pendingReplacement.isSome))
+      let skipTail := g.over || hadOuterReplacement
+      let chainFinishChoice := !skipTail && hadPreReconcileCont
       let g :=
         if skipTail then g
         else if chainFinishChoice then
@@ -1937,16 +1942,18 @@ def becomeActivated (g : Game) (p : PlayerId) (sourceName : String)
             else g
           | none => g
         | none => g
+      let wrapOuter (outer : PendingReplacement) : PendingReplacement :=
+        if hadOuterReplacement then outer else outer.ensureEndsWithFinishResolutionChoice
       if let .chooseReplacement .. := g.pending then
         let g := g.chainPendingReplacement (.finishPostLoyaltyActivated p sourceName sourceId
           activation abilityId sourceSnap srcObj? hadOuter openCont)
         match localOuter? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+        | some outer => g.chainPendingReplacement (wrapOuter outer)
         | none => g
       else
         let g :=
           match localOuter? with
-          | some outer => g.chainPendingReplacement outer
+          | some outer => g.chainPendingReplacement (wrapOuter outer)
           | none => g
         g.finishPostLoyaltyActivated p sourceName sourceId activation abilityId sourceSnap
           srcObj? hadOuter openCont
@@ -2000,10 +2007,12 @@ def completeActivation (g : Game) (prop : ProposedSpell)
       let g := g.changes #[.pending (.sacrificePermanent prop.caster sid), .consecutivePasses 0]
       return g.logMsg prompt
   let paused := match g.pending with | .chooseReplacement .. => true | _ => false
+  let wrapOuter (outer : PendingReplacement) : PendingReplacement :=
+    if hadOuterReplacement then outer else outer.ensureEndsWithFinishResolutionChoice
   let g :=
     if !paused then
       match localOuter? with
-      | some outer => g.chainPendingReplacement outer
+      | some outer => g.chainPendingReplacement (wrapOuter outer)
       | none => g
     else g
   let clearPending : Array EngineChange :=
@@ -2020,7 +2029,7 @@ def completeActivation (g : Game) (prop : ProposedSpell)
   let g :=
     if paused then
       match localOuter? with
-      | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+      | some outer => g.chainPendingReplacement (wrapOuter outer)
       | none => g
     else g
   return g

@@ -381,13 +381,6 @@ def viewManaCost (st : Game) : ObjectView → ManaCost
 /-- Whether `v` currently has keyword `kw` (Layer 6 for live objects, snapshot for LKI;
 CR 613.1f / 702). -/
 def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
-  let hasProtChosenStatic (sas : Array StaticAbility) : Bool :=
-    sas.any fun
-      | .continuous _ _ mod =>
-        mod.flatten.any fun
-          | .grantKeywords ks => ks.contains (.protection .chosenCardType)
-          | _ => false
-      | _ => false
   match v with
   | .live o =>
     let curKw := st.currentKeywords o
@@ -395,14 +388,8 @@ def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
     else
       let bc := st.baseCard o
       let retains := st.retainsPrintedAbilities o
-      let sas := st.staticAbilities o
       match kw with
       | .ward => !(st.wardCostsOn o).isEmpty
-      | .protection =>
-        hasProtChosenStatic sas ||
-          (st.controllerOf o).any fun p =>
-            (st.permanentsOf p).any fun em =>
-              hasProtChosenStatic (st.staticAbilities em) && em.status.chosenCardType.isSome
       | .param .equip =>
         (retains && bc.allActivatedAbilities.any (·.isEquip)) ||
           (st.activatedAbilitiesOf o).any (·.isEquip)
@@ -412,12 +399,10 @@ def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
     else
       let retains := eo.retainsPrintedAbilities.getD (!eo.faceDown)
       let bc? := if eo.faceDown then none else eo.copiable.orElse (fun _ => eo.printed)
-      let sas := eo.staticAbilities
       match kw with
       | .changeling => eo.changeling
       | .toxic => eo.toxic > 0
       | .ward => !eo.wardCosts.isEmpty
-      | .protection => hasProtChosenStatic sas
       | .param .equip =>
         (retains && bc?.any (fun c => c.allActivatedAbilities.any (·.isEquip))) ||
           (eo.activatedAbilities.getD #[]).any (·.isEquip)
@@ -510,24 +495,29 @@ def evalPlayerMetricSingle (g : Game) (env : EvalEnv) (m : PlayerMetric) (p : Pl
         | _ => n
       else n) 0)
   | .otherSpellsManaValueThisTurn =>
-    let total := g.events.foldl (fun n e =>
-      if e.turn == st.turnNumber then
-        match e.change with
-        | .rules (.cast (.spellCast spellSnap q _)) =>
-          if q == p then n + spellSnap.manaValue else n
-        | _ => n
-      else n) 0
     let selfSpellId? :=
-      g.resolvingSpell.orElse (fun _ => env.sourceId.map (GameEvent.stackSpellIdOf g.events))
-    let own :=
-      match selfSpellId?.bind st.findObject? with
-      | some spell =>
-        if spell.zone == .stack && !GameEvent.isUncastStackCopy g.events spell.id &&
-            st.controllerOf spell == some p then
-          st.objectManaValue spell
-        else 0
-      | none => 0
-    Int.ofNat (total - own)
+      ((env.sourceId.orElse (fun _ => env.sourceSnapshot.bind (·.id))).map
+        (GameEvent.stackSpellIdOf g.events)).orElse (fun _ => g.resolvingSpell)
+    let (sumOther, matchedSelf, hasUnidentified) :=
+      g.events.foldl (fun (acc, matched, unid) e =>
+        if e.turn == st.turnNumber then
+          match e.change with
+          | .rules (.cast (.spellCast spellSnap q _)) =>
+            if q == p then
+              if selfSpellId?.isSome && spellSnap.id == selfSpellId? then
+                (acc, true, unid)
+              else
+                (acc + spellSnap.manaValue, matched, unid || spellSnap.id.isNone)
+            else (acc, matched, unid)
+          | _ => (acc, matched, unid)
+        else (acc, matched, unid)) (0, false, false)
+    let ownFallback :=
+      if !matchedSelf && hasUnidentified then
+        match selfSpellId?.bind st.findObject? with
+        | some spell => if spell.zone == .stack && !spell.isCopy then st.objectManaValue spell else 0
+        | none => 0
+      else 0
+    Int.ofNat (sumOther - ownFallback)
   | .lifeGainedThisTurn => Int.ofNat (GameEvent.lifeGained g.events st.turnNumber p)
   | .lifeLostThisTurn => Int.ofNat (GameEvent.lifeLost g.events st.turnNumber p)
   | .unspentMana => Int.ofNat pl.manaPool.total
@@ -833,41 +823,62 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
     match viewAttachedTo? v with
     | some hid => hostIds.contains hid
     | none =>
-      match v.id? with
-      | none => false
-      | some attId =>
-        hostIds.any fun hid =>
-          !(g.findObject? hid).any (·.isOnBattlefield) &&
-            (g.departedOrPhasedOutAttachments? hid).any (fun atts =>
-              atts.any (·.id == some attId))
+      match v with
+      | .live _ => false
+      | .lki eo =>
+        match eo.id with
+        | none => false
+        | some attId =>
+          hostIds.any fun hid =>
+            !(st.findObject? hid).any (·.isOnBattlefield) &&
+              (st.departedOrPhasedOutAttachments? hid).any (fun atts =>
+                atts.any (·.id == some attId))
   | .hasAttachment attFilter =>
     match v.id? with
     | none => false
     | some oid =>
       if (evalObjects g env attFilter.toExpr).any (fun att => viewAttachedTo? att == some oid) then
         true
-      else if (g.findObject? oid).any (·.isOnBattlefield) then
+      else if (st.findObject? oid).any (·.isOnBattlefield) then
+        false
+      else if !attFilter.zones.zones.contains .battlefield then
         false
       else
-        match g.departedOrPhasedOutAttachments? oid with
+        match st.departedOrPhasedOutAttachments? oid with
         | none => false
         | some atts =>
-          atts.any fun att => evalObjectPred g env (.lki att) attFilter.pred
+          let restrictOwner := attFilter.zones.owner != .any
+          let owners : Array PlayerId :=
+            match attFilter.zones.owner with
+            | .any => #[]
+            | .matching pf => evalPlayerFilter g env pf
+            | .ofPlayer pe => evalPlayer g env pe
+          atts.any fun att =>
+            (!restrictOwner || owners.contains att.owner) &&
+              evalObjectPred g env (.lki att) attFilter.pred
   | .targets tgtExpr =>
     match v.id? with
     | none => false
     | some oid =>
-      match st.stack.find? (·.objectId == oid) with
+      let tgts? : Option (Array Target) :=
+        match st.stack.find? (·.objectId == oid) with
+        | some entry => some entry.targets
+        | none =>
+          st.events.findSomeRev? fun e =>
+            match e.change with
+            | .rules (.cast (.targeted tid ts _ _)) => if tid == oid then some ts else none
+            | _ => none
+      match tgts? with
       | none => false
-      | some entry =>
+      | some tgts =>
         let matchObj (oe : ObjectExpr) : Bool :=
           let ids := (evalObjects g env oe).filterMap ObjectView.id?
-          entry.targets.any fun
+          tgts.any fun
             | .permanent id | .card id => ids.contains id
             | .player _ => false
         let matchPl (pe : PlayerExpr) : Bool :=
           let pids := evalPlayer g env pe
-          entry.targets.any fun
+          tgts.any fun
             | .player p => pids.contains p
             | .permanent _ | .card _ => false
         match tgtExpr with
@@ -1032,19 +1043,30 @@ partial def evalObjects (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Array O
       for zk in zs.zones do
         match zk with
         | .battlefield =>
+          let (lkiAtts, lkiAttIds) : Array EventObject × Array ObjectId :=
+            if allowPhased then (#[], #[])
+            else Id.run do
+              let mut attsOut : Array EventObject := #[]
+              let mut idsOut : Array ObjectId := #[]
+              for hostExpr in attachedToHostExprs pred do
+                let hostIds := (evalObjects g env hostExpr).filterMap ObjectView.id?
+                for hid in hostIds do
+                  if !(st.findObject? hid).any (·.isOnBattlefield) then
+                    if let some atts := st.departedOrPhasedOutAttachments? hid then
+                      for att in atts do
+                        if !restrictOwner || owners.contains att.owner then
+                          if !attsOut.any (fun prev => prev.id == att.id && att.id.isSome) then
+                            attsOut := attsOut.push att
+                          if let some aid := att.id then
+                            if !idsOut.contains aid then
+                              idsOut := idsOut.push aid
+              return (attsOut, idsOut)
           for o in st.objects do
-            if o.zone == .battlefield && ownerOk o && (allowPhased || !o.status.phasedOut) then
+            if o.zone == .battlefield && ownerOk o && (allowPhased || !o.status.phasedOut) &&
+                !(o.attachedTo.isNone && lkiAttIds.contains o.id) then
               acc := acc.push (.live o)
-          if !allowPhased then
-            for hostExpr in attachedToHostExprs pred do
-              let hostIds := (evalObjects g env hostExpr).filterMap ObjectView.id?
-              for hid in hostIds do
-                if !(st.findObject? hid).any (·.isOnBattlefield) then
-                  if let some atts := g.departedOrPhasedOutAttachments? hid then
-                    for att in atts do
-                      if (!restrictOwner || owners.contains att.owner) &&
-                          !acc.any (fun v => v.id? == att.id && att.id.isSome) then
-                        acc := acc.push (.lki att)
+          for att in lkiAtts do
+            acc := acc.push (.lki att)
         | .stack =>
           for o in st.objects do
             if o.zone == .stack && ownerOk o then acc := acc.push (.live o)

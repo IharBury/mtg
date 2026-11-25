@@ -479,11 +479,11 @@ private def replayOk51i2 (gs : Array Game) : Bool :=
   let gTeamBHalfPhased := gTeamBBegan.phaseOut (gTeamBBegan.object! b0PermId) (cause := some testCause)
   let gTeamBSecondSeat := gTeamBHalfPhased.startNextTurnAndBegin
 
-  -- `beginTurn` post-copy-restore `preState? := some g0` in `expireUntilTurnCommandEffects`:
+  -- `beginTurn` simultaneous direct + command-emblem `.copy` collapse (Phase 54):
   -- `copyTargetId` has older `.copy copy1Def` tied to `.command` emblem `embBT` (`.untilNextTurnOf p0`)
-  -- and newer `.copy copy2Def` (`.untilNextTurnOf p0`). `restoreCopiesUntilNextTurn p0` removes `copy2Def`
-  -- first, so `expireUntilTurnCommandEffects` (`preState? := some g0`) sees `copy1Def` as top remaining copy
-  -- when `embBT` ceases and emits `"{bear.name} is no longer a copy of {copy1Def.name}"`:
+  -- and newer `.copy copy2Def` (`.untilNextTurnOf p0`). Both expire simultaneously in `beginTurn`,
+  -- collapsing into a single `"{bear.name} is no longer a copy of {copy2Def.name}"` log without
+  -- mentioning the intermediate `copy1Def.name`:
   let embBTDef : CardDef := { name := "P51i2 TurnEmb", types := #[.enchantment] }
   let gBtCopy0 := insertObject gStackCopy0 embBTDef p1 .command (some p1)
   let embBTId := (gBtCopy0.objects.filter (·.zone == .command)).back!.id
@@ -570,8 +570,8 @@ private def replayOk51i2 (gs : Array Game) : Bool :=
        !survivingTopLogs.any (·.contains "is no longer a copy of") &&
        (rwLogs.filter (· == s!"{bear.name} is no longer a copy of {copy2Def.name}")).size == 1 &&
        !rwLogs.any (·.contains copy1Def.name) &&
-       btCopyLogs.any (· == s!"{copy1Def.name} is no longer a copy of {copy2Def.name}") &&
-       btCopyLogs.any (· == s!"{bear.name} is no longer a copy of {copy1Def.name}")) &&
+       (btCopyLogs.filter (· == s!"{bear.name} is no longer a copy of {copy2Def.name}")).size == 1 &&
+       !btCopyLogs.any (·.contains copy1Def.name)) &&
     mustHold51i2 "2a_commanderCoDepartingIdsAndLogSuppression"
       (coDepsForP2.contains cmdBfId &&
        coDepsForP2.contains depHostId &&

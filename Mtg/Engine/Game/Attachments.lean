@@ -76,14 +76,7 @@ def ceaseToExist (g : Game) (id : ObjectId) (cause : Option EventCause := none)
     let g := g.expireLeavingObjectEffectsWithLogs old (cause := expCause)
       (preState? := some pre) (suppressEmblemLog := suppressEmblemLog)
       (suppressReturnLog := suppressReturnLog) (skipLogIds := effSkipLogIds)
-      (coLeavingIds := allEmbIds)
-    let g :=
-      if old.zone == .battlefield then
-        g.expireWhileSourceEffects id (cause := expCause) (preState? := some pre)
-          (reconcileControl := false) (suppressReturnLog := suppressReturnLog)
-          (skipLogIds := effSkipLogIds) (suppressEmblemLog := suppressEmblemLog)
-          (deferPlayFromExileLogs := true)
-      else g
+      (coLeavingIds := allEmbIds) (includeWhileSource := old.zone == .battlefield)
     let g :=
       if reconcileControl then
         reconcileControlAfterTransitionFwd pre g (cause := expCause)

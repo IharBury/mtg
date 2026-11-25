@@ -260,7 +260,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsTeamwork := face.teamwork.isSome
   -- CR 702.34a: a flashback cost that includes discarding a card.
   let needsFlashbackDiscard := isFlashbackCast && face.flashbackDiscard
-  if needsFlashbackDiscard && (g.player p).hand.isEmpty then
+  if needsFlashbackDiscard && (g.discardableHandIds p).isEmpty then
     throw s!"{face.name}'s flashback cost requires discarding a card"
   -- CR 118.9 / 202.3 / 715.3a–b: "pay life equal to its mana value" (Inside Information)
   -- reads the spell on the stack, so an Adventure pays its Adventure's mana value.

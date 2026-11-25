@@ -316,7 +316,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                   (gSneak.isCreature perm || gSneak.isArtifact perm)
         let discardOk :=
           !prop.needsDiscardCard ||
-            (gSneak.player p).hand.any (fun id =>
+            (gSneak.discardableHandIds p).any (fun id =>
               id != prop.spellId && !removedIds.contains id)
         sacOk && discardOk
       else
