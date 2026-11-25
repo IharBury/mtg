@@ -69,7 +69,7 @@ def playCostStart (g : Game) (card : GameObject) (face : CardDef)
 /-- Un-substituted printed mana cost of `card` when cast as `face` (`none` when
 cast face-down via Morph, whose mana value is `0` per CR 702.37c / 708.2a). -/
 def actualPrintedManaCost? (g : Game) (card : GameObject) (face : CardDef) : Option ManaCost :=
-  if card.status.faceDown || (face.name == "" && card.printed.name != "") then none
+  if card.status.faceDown || face.name == "" then none
   else
     let bc := g.baseCard card
     match bc.adventure.filter (·.name == face.name) with

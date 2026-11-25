@@ -2080,12 +2080,12 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
              let nullPerm : Option PlayPermission :=
                if g.mayCastExiledBySource p o then some { player := p, anyMana := true } else none
              perms.any (fun pm =>
-               (pm.ignoreTiming || g.timingAllowsCast p face) &&
+               (pm.ignoreTiming || g.timingAllowsCast p face (card? := some o)) &&
                  (!pm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o)) &&
                  payOk (g.playManaCost casterObj face (origPerm := some pm)
                    (useImplicitPermissions := false)) (some pm)) ||
                ((perms.isEmpty || g.mayCastExiledBySource p o) &&
-                 g.timingAllowsCast p face &&
+                 g.timingAllowsCast p face (card? := some o) &&
                  payOk (g.playManaCost casterObj face (origPerm := nullPerm)
                    (useImplicitPermissions := false)) nullPerm)
            else
@@ -2107,12 +2107,12 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
             let nullPerm : Option PlayPermission :=
               if g.mayCastExiledBySource p o then some { player := p, anyMana := true } else none
             advPerms.any (fun pm =>
-              (pm.ignoreTiming || g.timingAllowsCast p face) &&
+              (pm.ignoreTiming || g.timingAllowsCast p face (card? := some o)) &&
                 (!pm.payLifeEqualManaValue || g.canPayLife p face.manaValue) &&
                 payAdv (g.playManaCost casterObj face (origPerm := some pm)
                   (useImplicitPermissions := false)) (some pm)) ||
               ((advPerms.isEmpty || g.mayCastExiledBySource p o) &&
-                g.timingAllowsCast p face &&
+                g.timingAllowsCast p face (card? := some o) &&
                 payAdv (g.playManaCost casterObj face (origPerm := nullPerm)
                   (useImplicitPermissions := false)) nullPerm)
           else
@@ -2466,8 +2466,11 @@ def spellManaSpentInterest (g : Game) (spend : ManaSpend)
       if let some spell := g.findObject? prop.spellId then
         let bc := g.baseCard spell
         let oid := some spell.id
-        if let some eff := bc.spellEffect then
+        if let some eff := g.currentSpellEffect spell then
           acc := acc.merge (instrInterest oid eff.body)
+        else if isModalSpellFace bc then
+          for m in g.evalSpellModes prop.caster spell do
+            acc := acc.merge (instrInterest oid m.body)
         for ab in bc.triggeredAbilities do
           acc := acc.merge (trigInterest oid ab)
         for ab in g.triggeredAbilities spell do
@@ -2579,6 +2582,7 @@ def manaAbilityDefCanChangeOutcome (g : Game) (spend : ManaSpend)
   let cbcMatters := cantBeCounteredRiderMatters g spend (some prop)
   let crMatters := creatureSpellRiderMatters g spend (some prop)
   let ancMatters := ancestryManaMatters g spend (some prop)
+  let hasTwobrid := prop.cost.symbols.any (fun | .twobrid _ => true | _ => false)
   let checkVariant (prodTypes : Array ManaType) (restr : Option ManaSpendRestriction)
       (riders : Array SpellRiderSpec) (srcId? : Option ObjectId) (isTr : Bool) : Bool :=
     !prodTypes.isEmpty && g.restrictionAllowsProposed restr prop &&
@@ -2607,8 +2611,7 @@ def manaAbilityDefCanChangeOutcome (g : Game) (spend : ManaSpend)
           !outcome0.spentColors.contains c && prodTypes.contains (.colored c)) ||
         (interest.anyColorCount &&
           prodTypes.any (fun | .colored _ => true | .colorless => false)) ||
-        (interest.anyAmount &&
-          prop.cost.symbols.any (fun | .twobrid c => prodTypes.contains (.colored c) | _ => false)) ||
+        (interest.anyAmount && hasTwobrid && hasHybridOrTwobridDisplace) ||
         interest.riders.any (fun r =>
           allRiders.contains r && !outcome0.explicitRiders.contains r)
       let displacesAttr :=
@@ -2621,8 +2624,7 @@ def manaAbilityDefCanChangeOutcome (g : Game) (spend : ManaSpend)
            outcome0.fromSources.any (fun sid => srcId? != some sid) ||
            outcome0.spentColors.any (fun c => prodTypes.any (· != .colored c)) ||
            (interest.anyColorCount && outcome0.spentColorCount > 0) ||
-           (interest.anyAmount &&
-             prop.cost.symbols.any (fun | .twobrid c => prodTypes.contains (.colored c) | _ => false)) ||
+           (interest.anyAmount && hasTwobrid && hasHybridOrTwobridDisplace) ||
            outcome0.explicitRiders.any (fun r =>
              !allRiders.contains r && canDisplaceRiderTier))
       addsAttr || displacesAttr
@@ -2714,7 +2716,7 @@ private def plainTapChoicesForUniqueness (g : Game) (o : GameObject) (types : Ar
             | other => other.allChoices dedupTs
           for tup in tuples do
             if !tup.isEmpty then
-              let extra := g.extraMountainRedFromTap o tup
+              let extra := g.extraMountainRedUnitsFromTap o tup
               let dup :=
                 out.any (fun ch =>
                   ch.baseAdded == tup && ch.extraRed == extra &&
@@ -2772,11 +2774,16 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : Man
       let choiceHasHaste (ch : TapManaChoice) : Bool := (choiceRiders ch).contains .gainsHaste
       let choiceHasCounters (ch : TapManaChoice) : Bool :=
         (choiceRiders ch).any (fun | .entersWithPlusOneCounters n => n > 0 | _ => false)
-      let choiceIsAnc (ch : TapManaChoice) : Bool := ch.source.any g.isAncestrySourceId
+      let choiceHasSource (ch : TapManaChoice) (sid : ObjectId) : Bool :=
+        ch.source == some sid || ch.extraRed.any (·.source == some sid)
+      let choiceIsAnc (ch : TapManaChoice) : Bool :=
+        ch.source.any g.isAncestrySourceId ||
+          ch.extraRed.any (fun u => u.source.any g.isAncestrySourceId)
       let choiceHasColor (ch : TapManaChoice) (c : Color) : Bool :=
-        ch.baseAdded.contains (.colored c) || ch.extraRed.contains (.colored c)
+        ch.baseAdded.contains (.colored c) || ch.extraRed.any (·.mana == .colored c)
       let choiceHasColored (ch : TapManaChoice) : Bool :=
-        ch.baseAdded.any (fun | .colored _ => true | .colorless => false) || !ch.extraRed.isEmpty
+        ch.baseAdded.any (fun | .colored _ => true | .colorless => false) ||
+          ch.extraRed.any (fun u => match u.mana with | .colored _ => true | .colorless => false)
       let manaOrderRank : ManaType → Nat
         | .colorless => 6
         | .colored .white => 5
@@ -2850,8 +2857,8 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : Man
         (trMatters && !outcome0.fromTreasure && greedyPass (fun ch => ch.fromTreasure)) ||
         (ancMatters && !outcome0.ancestryScry && greedyPass choiceIsAnc) ||
         interest.fromSourceIds.any (fun sid =>
-          if outcome0.fromSources.contains sid then greedyPass (fun ch => ch.source != some sid)
-          else greedyPass (fun ch => ch.source == some sid)) ||
+          if outcome0.fromSources.contains sid then greedyPass (fun ch => !choiceHasSource ch sid)
+          else greedyPass (fun ch => choiceHasSource ch sid)) ||
         interest.colors.any (fun c =>
           if outcome0.spentColors.contains c then greedyPass (fun ch => !choiceHasColor ch c)
           else greedyPass (fun ch => choiceHasColor ch c)) ||
@@ -2860,8 +2867,10 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : Man
            greedyPass (fun ch => ch.baseAdded.contains .colorless) ||
            Color.all.any (fun c => greedyPass (fun ch => choiceHasColor ch c)))) ||
         (interest.anyAmount &&
+          cost.symbols.any (fun | .twobrid _ => true | _ => false) &&
           cost.symbols.any (fun
             | .twobrid c => greedyPass (fun ch => choiceHasColor ch c)
+            | .hybrid a _ => greedyPass (fun ch => choiceHasColor ch a)
             | _ => false)) ||
         interest.riders.any (fun r =>
           if outcome0.explicitRiders.contains r then
@@ -2871,7 +2880,7 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : Man
       if greedyFlips then true
       else
         -- 3. Bounded DFS over extra-source combinations for subtle multi-source interactions.
-        let maxDepth := min extraEntries.size (max 2 (Game.minManaUnitsForCost cost))
+        let maxDepth := min extraEntries.size (max 2 cost.manaValue)
         let rec dfs (idx depth : Nat) (curPool : ManaPool) (usedIds : Array ObjectId)
             (budget : Nat) : Bool × Nat :=
           if budget == 0 then (false, 0)
@@ -2890,7 +2899,8 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : Man
               else (false, budget)
             if hitTake || remBudget == 0 then (hitTake, remBudget)
             else dfs (idx + 1) depth curPool usedIds remBudget
-        (dfs 0 0 basePool baseIds 256).1
+        let (hit, remBudget) := dfs 0 0 basePool baseIds 256
+        hit || remBudget == 0
 
 /-- Whether tapping `minSub` yields a single `(leftoverPool, spellManaOutcome)`
 outcome and no additional cost-preserving source subset in `allSources` can
@@ -3123,7 +3133,7 @@ def uniqueSacrificeCommand (g : Game) : Option String :=
 def uniqueDiscardCommand (g : Game) : Option String :=
   match g.pending with
   | .discardForAdditionalCost p =>
-    let hand := (g.player p).hand
+    let hand := g.discardableHandIds p
     match hand[0]? with
     | some id => if hand.size == 1 then some s!"discard {id}" else none
     | none => none

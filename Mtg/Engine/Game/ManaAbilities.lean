@@ -1521,6 +1521,18 @@ def extraMountainRedFromTap (g : Game) (o : GameObject) (baseAdded : Array ManaT
   if baseAdded.isEmpty || !g.hasSubtype o .mountain || !g.stillInGame p then #[]
   else Array.replicate (g.mountainExtraRedThisTurn p) (.colored .red)
 
+/-- Extra unrestricted `{R}` `ManaUnit`s (preserving per-entry `source`
+attribution from `g.mountainExtraRedEntriesThisTurn`) added by
+`.mountainExtraRed` when `o` is tapped for non-empty `baseAdded` mana
+(CR 106.1 / 106.6 / 605.4a). -/
+def extraMountainRedUnitsFromTap (g : Game) (o : GameObject) (baseAdded : Array ManaType) :
+    Array ManaUnit :=
+  let p := (g.controllerOf o).getD o.owner
+  if baseAdded.isEmpty || !g.hasSubtype o .mountain || !g.stillInGame p then #[]
+  else
+    (g.mountainExtraRedEntriesThisTurn p).foldl (fun acc (n, src?) =>
+      acc ++ Array.replicate n ({ mana := .colored .red, source := src? } : ManaUnit)) #[]
+
 /-- Mana types `o` adds when tapped for `mana` with a plain `{T}` ability
 (including mixed-type `.fixed` outputs such as `{U}{R}` and `.mountainExtraRed`
 extra `{R}`, CR 106.1 / 605.3b / 605.4a). -/
@@ -1552,17 +1564,17 @@ def tapRidersOf (g : Game) (o : GameObject) (mana : ManaType)
 
 /-- Add the mana produced by tapping `o` for `mana` to `pool`, applying `o`'s
 ability restriction and riders only to `baseManaTypesFromTap` and leaving
-`extraMountainRedFromTap` unrestricted (CR 106.1 / 106.6 / 605.4a). -/
+`extraMountainRedUnitsFromTap` unrestricted with per-entry source attribution
+(CR 106.1 / 106.6 / 605.4a). -/
 def addTapManaToPool (g : Game) (pool : ManaPool) (o : GameObject) (mana : ManaType)
     (prop? : Option ProposedSpell := none) : ManaPool :=
   let base := g.baseManaTypesFromTap o mana (prop? := prop?)
   let r := g.tapRestrictionOf o mana (prop? := prop?)
   let riders := g.tapRidersOf o mana (prop? := prop?)
-  let extra := g.extraMountainRedFromTap o base
+  let extra := g.extraMountainRedUnitsFromTap o base
   let isTreasure := g.hasSubtype o .treasure
-  addRestrictedMana
-    (addRestrictedMana pool base r riders (source := some o.id) (fromTreasure := isTreasure))
-    extra none
+  (addRestrictedMana pool base r riders (source := some o.id) (fromTreasure := isTreasure)).addUnits
+    extra
 
 /-- Concrete plain `{T}` mana activation choice on a permanent, supporting both
 single-type `.tapForMana` choices and mixed-color `.combination` tuples via
@@ -1570,7 +1582,7 @@ single-type `.tapForMana` choices and mixed-color `.combination` tuples via
 structure TapManaChoice where
   abilityIdx : Nat
   baseAdded : Array ManaType
-  extraRed : Array ManaType := #[]
+  extraRed : Array ManaUnit := #[]
   restriction : Option ManaSpendRestriction := none
   riders : Array SpellRiderSpec := #[]
   source : Option ObjectId := none
@@ -1588,10 +1600,8 @@ def TapManaChoice.primaryType (ch : TapManaChoice) : ManaType :=
   ch.singleTapType?.getD (ch.baseAdded[0]?.getD .colorless)
 
 def TapManaChoice.applyToPool (ch : TapManaChoice) (pool : ManaPool) : ManaPool :=
-  addRestrictedMana
-    (addRestrictedMana pool ch.baseAdded ch.restriction ch.riders
-      (source := ch.source) (fromTreasure := ch.fromTreasure))
-    ch.extraRed none
+  (addRestrictedMana pool ch.baseAdded ch.restriction ch.riders
+    (source := ch.source) (fromTreasure := ch.fromTreasure)).addUnits ch.extraRed
 
 /-- Distinct plain `{T}` mana activation choices for `(o, types)` toward `cost`,
 including mixed-color `.combination ts n` tuples (with zero-requirement colors
@@ -1619,7 +1629,7 @@ def tapChoicesForSource (g : Game) (o : GameObject) (types : Array ManaType)
             some {
               abilityIdx := i
               baseAdded := base
-              extraRed := g.extraMountainRedFromTap o base
+              extraRed := g.extraMountainRedUnitsFromTap o base
               restriction := d.restriction
               riders := d.riders
               source := some o.id
@@ -1675,7 +1685,7 @@ def tapChoicesForSource (g : Game) (o : GameObject) (types : Array ManaType)
                     out := out.push {
                       abilityIdx := i
                       baseAdded := tup
-                      extraRed := g.extraMountainRedFromTap o tup
+                      extraRed := g.extraMountainRedUnitsFromTap o tup
                       restriction := d.restriction
                       riders := d.riders
                       source := some o.id

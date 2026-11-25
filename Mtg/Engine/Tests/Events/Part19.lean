@@ -526,11 +526,11 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
        gMorphFlush.firstPriorityGrantRecipient? false (.finishTurnFaceUp p1 morphFlushId false) == some (some p1) &&
        (match gMorphFlushRun.pending with | .chooseReplacement q cs => q == p0 && cs.size == 2 | _ => false) &&
        gMorphFlushRun.firstContinuationPriorityGrant? == some (some p1) &&
-       gMorphFlush.continuationGrantsPriority false (.finishTurnFaceUp p1 morphFlushId true) &&
+       !gMorphFlush.continuationGrantsPriority false (.finishTurnFaceUp p1 morphFlushId true) &&
        gMorphFlush.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphFlushId true) == none &&
-       gMorphFlush.firstPriorityGrantRecipient? false (.finishTurnFaceUp p1 morphFlushId true) == some none &&
+       gMorphFlush.firstPriorityGrantRecipient? false (.finishTurnFaceUp p1 morphFlushId true) == none &&
        (match gMorphFlushOuterRun.pending with | .chooseReplacement q cs => q == p0 && cs.size == 2 | _ => false) &&
-       gMorphFlushOuterRun.firstContinuationPriorityGrant? == some none &&
+       gMorphFlushOuterRun.firstContinuationPriorityGrant? == none &&
        (match gMorphSacPaused.pending with | .chooseReplacement q cs => q == p1 && cs.size == 2 | _ => false) &&
        gMorphSacPaused.anyContinuationSettlesControlFlow &&
        gMorphSacPaused.anyContinuationGrantsPriority &&
@@ -589,7 +589,9 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
        gMorphPropPrefixSelf.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p2 &&
        gMorphPropPrefixOtherFaceUpRun.pending == .none &&
        gMorphPropPrefixOtherFaceUpRun.priority == p0 &&
-       gMorphPropPrefixOtherFaceUp.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p0 &&
+       gMorphPropPrefixOtherFaceUp.continuationGrantsPriority false (.finishProposedSpellCosts .finalize true false false) &&
+       gMorphPropPrefixOtherFaceUp.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == none &&
+       gMorphPropPrefixOtherFaceUp.firstPriorityGrantRecipient? false (.finishProposedSpellCosts .finalize true false false) == some none &&
        gMorphPropOtherFaceUpThenRecvRun.pending == .none &&
        gMorphPropOtherFaceUpThenRecvRun.priority == p2 &&
        gMorphPropOtherFaceUpThenRecv.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p2 &&
@@ -650,7 +652,9 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
        -- Post-resume `g1.priority` with pre-existing `pendingReplacement` vs `outerPendingReplacements`:
        gMorphPreRecvRun.pending == .none &&
        gMorphPreRecvRun.priority == p0 &&
-       gMorphPreRecv.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphCleanId false) == some p0 &&
+       gMorphPreRecv.continuationGrantsPriority false (.finishTurnFaceUp p1 morphCleanId false) &&
+       gMorphPreRecv.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphCleanId false) == none &&
+       gMorphPreRecv.firstPriorityGrantRecipient? false (.finishTurnFaceUp p1 morphCleanId false) == some none &&
        gMorphPreOuterRun.pending == .none &&
        gMorphPreOuterRun.priority == p2 &&
        gMorphPreOuter.priorityRecipientOfContinuation? false (.finishTurnFaceUp p1 morphCleanId false) == some p2 &&

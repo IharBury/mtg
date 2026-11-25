@@ -1282,10 +1282,10 @@ inductive InterpCont where
   | logIfCountersIncreased (targetId : ObjectId) (before : CounterBag) (msg : String)
   /-- Apply aggregated lifelink gain for damage dealt since `startEventIdx`. -/
   | applyAggregatedLifelink (startEventIdx : Nat) (cause : EventCause)
-  /-- Post-move log after Explore puts a revealed land into hand (CR 701.40a). -/
+  /-- Post-move log after Explore puts a revealed land into hand (CR 701.44a). -/
   | exploreAfterLandMove (controller : PlayerId) (cardId : ObjectId)
       (destOwner : PlayerId) (cardName : String)
-  /-- Offer the Explore optional graveyard move after putting a +1/+1 counter (CR 701.40a). -/
+  /-- Offer the Explore optional graveyard move after putting a +1/+1 counter (CR 701.44a). -/
   | exploreOfferGraveyard (controller : PlayerId) (cardId : ObjectId)
   /-- Put non-matching revealed cards on the bottom (and optionally apply Dack hits). -/
   | afterRevealUntil (p : PlayerId) (rest : Array ObjectId) (shuffle : Bool)
@@ -1620,6 +1620,7 @@ inductive PendingReplacement where
       (cause : Option EventCause := none)
       (pendingLog : Option (ObjectId × String) := none)
       (extraSkipIds : Array ObjectId := #[])
+      (fromEventIdx? : Option Nat := none)
   | beginStepCont (step : Step)
   | finishCleanupAfterClearEot
   | continueStartNextTurn (nextP : PlayerId) (remainingDeparted : Array PlayerId)
@@ -1911,11 +1912,15 @@ def PendingReplacement.nextQueuedPending (hasQueuedPending : Bool := false) :
   | .finishPostLoyaltyActivated _ _ _ _ _ _ _ hadOuter _
   | .finishTurnFaceUp _ _ hadOuter =>
     if !hadOuter then false else hasQueuedPending
+  | .finishActivateManaAbilityPicks _ _ _ _ _ _ _ _ _ _ _ _ prevPending ..
+  | .finishActivateManaAbilityPostSac _ _ _ _ _ _ _ _ _ _ prevPending .. =>
+    if prevPending == .none then false else hasQueuedPending
   | _ => hasQueuedPending
 
 /-- Whether a `PendingReplacement` continuation already ends by granting
 priority (`.receivePriority` / `.finishResolutionChoice` / `.finishPostCast` /
-`.finishBecomeCast` with `grantPriority == true` / `.finishConcede`). -/
+`.finishBecomeCast` with `grantPriority == true` / `.finishConcede` /
+mana-ability completions with `prevPending == .none`). -/
 def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
     (hasQueuedPending : Bool := false) : Bool :=
   match pr with
@@ -1932,7 +1937,7 @@ def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
   | .finishPostStep (.beginStepAfterPhaseBegan st) =>
     stepAlwaysGrantsPriority st
   | .concedePlayersLoop _ wp mid _ _ wc .. => !wp && !mid && wc.isNone
-  | .finishPostCast _ grantPriority hadOuter _ => grantPriority && !hadOuter
+  | .finishPostCast _ _ hadOuter _ => !hadOuter
   | .finishBecomeCast _ _ grantPriority hadOuter _ =>
     grantPriority && !hadOuter
   | .finishProposedSpellCosts _ grantPriority hadOuter _ =>
@@ -1942,6 +1947,9 @@ def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
   | .finishPostLoyaltyActivated _ _ _ _ _ _ _ hadOuter _
   | .finishTurnFaceUp _ _ hadOuter =>
     !hadOuter || hasQueuedPending
+  | .finishActivateManaAbilityPicks _ _ _ _ _ _ _ _ _ _ _ _ prevPending ..
+  | .finishActivateManaAbilityPostSac _ _ _ _ _ _ _ _ _ _ prevPending .. =>
+    prevPending == .none
   | .seq a b => b.endsWithPriorityGrant (a.nextQueuedPending hasQueuedPending)
   | _ => false
 

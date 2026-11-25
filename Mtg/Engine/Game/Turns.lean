@@ -46,34 +46,6 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
     match e with
     | .layered _ (.copy _) d => if pred eid d then some eid else none
     | _ => none
-  let copyCandLogs : Array (ObjectId × CardDef) :=
-    if expCopyEids.isEmpty then #[]
-    else
-      let candIds0 : Array ObjectId :=
-        g.activeEffects.foldl (fun idsAcc (eid, e) =>
-          if !expCopyEids.contains eid then idsAcc
-          else
-            match e with
-            | .layered (.objects ids) (.copy _) _ =>
-              ids.foldl (fun a id =>
-                if a.contains id then a
-                else if (g.findObject? id).any (fun o => o.zone == .battlefield) then a.push id
-                else a) idsAcc
-            | _ => idsAcc) #[]
-      let candIds : Array ObjectId :=
-        g.objects.foldl (fun a o =>
-          if o.zone == .battlefield && !a.contains o.id then a.push o.id else a) candIds0
-      let postCopyG : Game :=
-        { pre with activeEffects := pre.activeEffects.filter (fun (eid, _) => !expCopyEids.contains eid) }
-      candIds.filterMap fun oid =>
-        match pre.findObject? oid with
-        | none => none
-        | some preObj =>
-          match (pre.activeLayer1CopyChain preObj (ignoreDurationFor := expCopyEids)).back? with
-          | some (topEid, topCard) =>
-            let postTopEid? := (postCopyG.activeLayer1CopyChain preObj).back?.map Prod.fst
-            if postTopEid? != some topEid then some (oid, topCard) else none
-          | none => none
   let endingEmbIds0 : Array ObjectId :=
     g.activeEffects.foldl (fun acc (eid, e) =>
       match e with
@@ -92,17 +64,16 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
         (preState? := some pre) (extraSkipIds := skipIds)
         (preExpire := fun g0 =>
           let g1 :=
-            expCopyEids.foldl (fun acc eid =>
-              acc.expireEffectById eid (cause := cause) (reconcileControl := false)
-                (preState? := some pre) (skipLogIds := skipIds)) g0
-          let g1 :=
-            copyCandLogs.foldl (fun acc2 (id, topCard) =>
-              match acc2.findObject? id with
-              | some o =>
-                if o.zone == .battlefield && !skipIds.contains id then
-                  acc2.logMsg s!"{acc2.name o} is no longer a copy of {topCard.name}"
-                else acc2
-              | none => acc2) g1
+            g0.restoreCopiesWhere
+              (fun acc eid _ d =>
+                pred eid d ||
+                  (!endingEmbIds.isEmpty &&
+                    match acc.activeEffect? eid with
+                    | some ce =>
+                      endingEmbIds.any (acc.effectExpiresWithLeavingObj · .command endingEmbIds ce)
+                    | none => false))
+              (cause := cause) (reconcileControl := false)
+              (skipLogIds := skipIds) (preState? := some pre)
           g1.ceaseEndingCommandEmblemsWhere pred (cause := cause) (reconcileControl := false)
             (preState? := some pre) (skipLogIds := skipIds) (deferPlayFromExileLogs := true))
   let g :=
@@ -300,20 +271,28 @@ def clearEOT (g : Game) : Game :=
         let skipIds :=
           g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
             (endingCopyEids := copyEids) (includePhasedOut := true)
+        let endsAtEot (eid : EffectId) (d : EffectDuration) : Bool :=
+          d == .untilEndOfTurn ||
+            match d with
+            | .untilEndOfNextTurnOf q =>
+              (q == pre.activePlayer || pre.areTeammates q pre.activePlayer) &&
+                pre.isSharedTurnFinalSeat && pre.hasTurnBegunSince eid q
+            | _ => false
         g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds)
           (preExpire := fun g0 =>
-            let g0 := g0.restoreCopiesUntilEot (reconcileControl := false) (skipLogIds := skipIds)
-            let g0 := g0.ceaseEndingCommandEmblemsWhere
-              (fun eid d =>
-                match d with
-                | .untilEndOfNextTurnOf q =>
-                  (q == pre.activePlayer || pre.areTeammates q pre.activePlayer) &&
-                    pre.isSharedTurnFinalSeat && pre.hasTurnBegunSince eid q
-                | _ => false)
-              (cause := cause) (reconcileControl := false) (preState? := some pre)
-              (skipLogIds := skipIds) (deferPlayFromExileLogs := true)
-            g0.ceaseEndingCommandEmblemsWhere (fun _ d => d == .untilEndOfTurn)
+            let g0 :=
+              g0.restoreCopiesWhere
+                (fun acc eid _ d =>
+                  endsAtEot eid d ||
+                    (!endingEmbIds.isEmpty &&
+                      match acc.activeEffect? eid with
+                      | some ce =>
+                        endingEmbIds.any (acc.effectExpiresWithLeavingObj · .command endingEmbIds ce)
+                      | none => false))
+                (cause := cause) (reconcileControl := false)
+                (skipLogIds := skipIds) (preState? := some pre)
+            g0.ceaseEndingCommandEmblemsWhere endsAtEot
               (cause := cause) (reconcileControl := false) (preState? := some pre)
               (skipLogIds := skipIds) (deferPlayFromExileLogs := true))
           (preState? := some pre)
@@ -517,17 +496,29 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
         let skipIds :=
           g.coDepartingIds endingEmbIds (endingCtrlEids := ctrlEids)
             (endingCopyEids := copyEids) (includePhasedOut := true)
+        let endsForDeparted (_ : EffectId) (d : EffectDuration) : Bool :=
+          match d with
+          | .untilNextTurnOf q | .untilEndOfNextTurnOf q => matchesDeparted q
+          | _ => false
         let expireNonControl (g0 : Game) : Game :=
-          let g0 := g0.restoreCopiesUntilNextTurn p (departed := true) (reconcileControl := false)
-            (skipLogIds := skipIds)
+          let g0 :=
+            g0.restoreCopiesWhere
+              (fun acc eid _ d =>
+                endsForDeparted eid d ||
+                  (!endingEmbIds.isEmpty &&
+                    match acc.activeEffect? eid with
+                    | some ce =>
+                      endingEmbIds.any (acc.effectExpiresWithLeavingObj · .command endingEmbIds ce)
+                    | none => false))
+              (cause := cause) (reconcileControl := false)
+              (skipLogIds := skipIds) (preState? := some pre)
+          let g0 :=
+            g0.ceaseEndingCommandEmblemsWhere endsForDeparted
+              (cause := cause) (reconcileControl := false) (preState? := some pre)
+              (skipLogIds := skipIds) (deferPlayFromExileLogs := true)
           let g0 := g0.expireUntilTurnCommandEffects p
             (includeTeammates := !teamHasLiving) (skipControl := true)
             (skipLogIds := skipIds) (preState? := some pre) (deferLogs := true)
-          let g0 :=
-            g0.ceaseEndingCommandEmblemsWhere
-              (fun _ d => match d with | .untilEndOfNextTurnOf q => matchesDeparted q | _ => false)
-              (cause := cause) (reconcileControl := false) (preState? := some pre)
-              (skipLogIds := skipIds) (deferPlayFromExileLogs := true)
           let g0 := g0.expireMatching (fun
             | .layered _ (.copy ..) _ | .layered _ (.control _) _
             | .permission _ (.playFromExile ..) _ => false
@@ -853,8 +844,19 @@ def beginTurnStartExpiryPrefix (g : Game) : Game :=
         let g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds) (preState? := some preTurnExp)
           (preExpire := fun g0 =>
-            let g0 := g0.restoreCopiesUntilNextTurn p (reconcileControl := false)
-              (skipLogIds := skipIds)
+            let g0 :=
+              g0.restoreCopiesWhere
+                (fun acc eid _ d =>
+                  (match d with
+                   | .untilNextTurnOf q => q == p || preTurnExp.areTeammates q p
+                   | _ => false) ||
+                  (!endingEmbIds.isEmpty &&
+                    match acc.activeEffect? eid with
+                    | some ce =>
+                      endingEmbIds.any (acc.effectExpiresWithLeavingObj · .command endingEmbIds ce)
+                    | none => false))
+                (cause := cause) (reconcileControl := false)
+                (skipLogIds := skipIds) (preState? := some preTurnExp)
             g0.expireUntilTurnCommandEffects p (includeTeammates := true) (skipControl := true)
               (skipLogIds := skipIds) (preState? := some preTurnExp) (deferLogs := true))
         let g := emitExpiredPlayFromExileLogs preTurnExp g fromIdx

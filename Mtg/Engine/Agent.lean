@@ -47,7 +47,7 @@ def chooseManaPayment (g : Game) (p : PlayerId) : Option Action :=
 
 /-- Discard the newest card in hand, or decline with an empty hand. -/
 def discardBackOrDecline (g : Game) (p : PlayerId) : Option Action :=
-  match (g.player p).hand.back? with
+  match (g.discardableHandIds p).back? with
   | some id => some (.discard id)
   | none => some .decline
 
@@ -473,7 +473,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       | some sac => some (.sacrifice sac.id)
       | none => some .decline
     | .discardForAdditionalCost _ =>
-      match (g.player p).hand.back? with
+      match (g.discardableHandIds p).back? with
       | some id => some (.discard id)
       | none => some .decline
     | .sacrificeCreature _ =>
@@ -537,9 +537,9 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       let env : EvalEnv := { controller := p }
       let pickDiscard? (zone : DiscardCostTarget) : Option Action :=
         match zone with
-        | .hand => (g.player p).hand.back?.map .discard
+        | .hand => (g.discardableHandIds p).back?.map .discard
         | .matching pred =>
-          ((g.player p).hand.find? fun id =>
+          ((g.discardableHandIds p).find? fun id =>
             (g.findObject? id).any fun o => EvalExpr.evalObjectPred g env (.live o) pred).map .discard
         | _ => none
       let pickSingle (c : CostSpec) : Option Action :=
@@ -598,7 +598,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                 !prop.needsSacrificeOther ||
                   !(gSneak.sacrificeCreatureOrArtifactChoices p (prop.sourceId.getD prop.spellId)).isEmpty
               let spellDiscardOk :=
-                !prop.needsDiscardCard || (gSneak.player p).hand.any (· != prop.spellId)
+                !prop.needsDiscardCard || (gSneak.discardableHandIds p).any (· != prop.spellId)
               let spellBeholdOk :=
                 match prop.needsBehold with
                 | none => true
@@ -637,7 +637,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                         !(gAltSneak.sacrificeCreatureOrArtifactChoices p
                           (propAlt.sourceId.getD propAlt.spellId)).isEmpty
                     let altDiscardOk :=
-                      !propAlt.needsDiscardCard || (gAltSneak.player p).hand.any (· != propAlt.spellId)
+                      !propAlt.needsDiscardCard || (gAltSneak.discardableHandIds p).any (· != propAlt.spellId)
                     let altBeholdOk :=
                       match propAlt.needsBehold with
                       | none => true

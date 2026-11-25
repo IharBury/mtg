@@ -323,17 +323,17 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
           (cause := some (.costPayment .sacrifice p (some sid))))
       | none => g
     let paused := match g.pending with | .chooseReplacement .. => true | _ => false
-    let g :=
-      if !paused then
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer
-        | none => g
-      else g
     let clearPending : Array EngineChange :=
       if paused then #[] else #[.pending .none]
     if let some prop := g.proposedSpell then
       if prop.needsDiscardCard then
-        if !paused && (g.player prop.caster).hand.isEmpty then
+        let g :=
+          if !paused then
+            match outerCont? with
+            | some outer => g.chainPendingReplacement outer
+            | none => g
+          else g
+        if !paused && (g.discardableHandIds prop.caster).isEmpty then
           return (← g.reverseProposedSpellExceptFwd (resumeContinuation := true))
         let prompt := s!"{(g.player prop.caster).name} must discard a card"
         if paused then
@@ -345,12 +345,25 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
         else
           let g := g.changes #[.pending (.discardForAdditionalCost prop.caster), .consecutivePasses 0]
           return g.logMsg prompt
+    let isTurnFaceUp := g.proposedSpell.any (·.kind == ProposalKind.turnFaceUp)
+    let g :=
+      if !paused && !isTurnFaceUp then
+        match outerCont? with
+        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+        | none => g
+      else g
     let (g, callerShouldResume) : Game × Bool ←
       match g.proposedSpell with
       | some prop =>
         if prop.kind == ProposalKind.turnFaceUp then
-          pure (g.completeTurnFaceUp prop.caster prop.spellId
-            (hadOuterReplacement := outerCont?.isSome))
+          let (g, shouldRes) :=
+            g.completeTurnFaceUp prop.caster prop.spellId
+              (hadOuterReplacement := outerCont?.isSome)
+          let g :=
+            match outerCont? with
+            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+            | none => g
+          pure (g, shouldRes || (!g.over && g.pending == .none && outerCont?.isSome))
         else
           let isResCast := prop.resolutionCast
           match prop.kind with
@@ -389,7 +402,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
             else g
           pure (g, false)
     let g :=
-      if paused then
+      if paused && !isTurnFaceUp then
         match outerCont? with
         | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
         | none => g

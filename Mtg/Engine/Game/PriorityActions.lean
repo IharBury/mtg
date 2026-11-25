@@ -25,7 +25,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
     let excludeId := prop.sourceId.getD prop.spellId
     if (gSneak.sacrificeCreatureOrArtifactChoices prop.caster excludeId).isEmpty then
       return (← g.reverseProposedSpell? (resumeContinuation := true))
-  if prop.needsDiscardCard && (gSneak.player prop.caster).hand.isEmpty then
+  if prop.needsDiscardCard && (gSneak.discardableHandIds prop.caster).isEmpty then
     return (← g.reverseProposedSpell? (resumeContinuation := true))
   if prop.teamworkPaid && !prop.teamworkCreatures.isEmpty then
     let teamworkOk := prop.teamworkCreatures.all fun id =>
@@ -131,7 +131,7 @@ def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell
             (g.findObject? id).any (fun card => g.hasSubtype card quality))
         !(hasPerm || hasHand)
       | none =>
-        if hasDiscard then (gSneak.player p).hand.isEmpty
+        if hasDiscard then (gSneak.discardableHandIds p).isEmpty
         else !hasSacChoice
 
 /-- Announce whether to pay extra generic mana or the non-mana option
@@ -216,7 +216,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
             s!"{(g.player p).name} chooses to sacrifice an artifact or creature (CR 601.2b)"
           return g.afterAdditionalCostAnnounced
         else if hasDisc then
-          if (gSneak.player p).hand.isEmpty then
+          if (gSneak.discardableHandIds p).isEmpty then
             throw s!"{g.name spell} requires discarding a card"
           let g := g.changeProposals #[
             .additionalGeneric 0,
