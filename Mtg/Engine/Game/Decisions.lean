@@ -3417,25 +3417,16 @@ private partial def classifyFinishProposedSpellCosts (g : Game)
                   followedByFinishChoice followedByExplicitPriority?
               | some outer =>
                 let wrappedOuter := wrapOuter outer
-                let preExplicitGrant? : Option PlayerId :=
-                  if !hadOuter then
-                    let gPre := if g0.proposedSpell.isSome then g0.change (.proposedSpell none) else g0
-                    if outer.endsWithPriorityGrant && continuationGrantsPriority gPre false outer then
-                      priorityRecipientOfContinuation? gPre false outer
-                    else
-                      match gPre.firstContinuationPriorityGrant? with
-                      | some (some q) => some q
-                      | _ => none
-                  else none
-                let (g1, callerShouldResume) :=
+                let appendedFinishChoice := !hadOuter && !outer.endsWithPriorityGrant
+                let (gTurned, callerShouldResume) :=
                   g0.completeTurnFaceUp prop.caster prop.spellId (hadOuterReplacement := effHadOuter)
-                let g1 := g1.chainPendingReplacement wrappedOuter
-                let paused := match g1.pending with | .chooseReplacement .. => true | _ => false
+                let g1Raw := gTurned.chainPendingReplacement wrappedOuter
+                let paused := match g1Raw.pending with | .chooseReplacement .. => true | _ => false
                 let g1 :=
                   if !paused && !hadOuter && (callerShouldResume ||
-                      (g1.pending == .none && !g1.over)) then
-                    g1.resumeAfterBecomeCastFwd
-                  else g1
+                      (g1Raw.pending == .none && !g1Raw.over)) then
+                    g1Raw.resumeAfterBecomeCastFwd
+                  else g1Raw
                 if g1.over || g1.livingPlayers.isEmpty then .settlesPromptOrOver
                 else if let .chooseReplacement .. := g1.pending then
                   if g1.anyContinuationSettlesControlFlow then
@@ -3459,13 +3450,45 @@ private partial def classifyFinishProposedSpellCosts (g : Game)
                       else .noGrant
                   | none => .noGrant
                 else if g1.proposedSpell.isSome then .noGrant
+                else if appendedFinishChoice then
+                  -- `wrapOuter` appended `.finishResolutionChoice` after `outer`: execute `outer`
+                  -- alone to get `gMid` and classify the trailing `.finishResolutionChoice` on `gMid`
+                  -- (honoring both dynamic `pendingPriority` written by `outer` and queued grants).
+                  let gMid0 := gTurned.chainPendingReplacement outer
+                  let gMid :=
+                    if !paused && (callerShouldResume || (gMid0.pending == .none && !gMid0.over)) then
+                      gMid0.resumeAfterBecomeCastFwd
+                    else gMid0
+                  if gMid.over || gMid.livingPlayers.isEmpty ||
+                      gMid.pending != .none || gMid.afterRandom != .none then
+                    .settlesPromptOrOver
+                  else
+                    match classifyFinishResolutionChoice gMid with
+                    | .implicitResolutionChoice =>
+                      if g0.pendingPriority.isNone then
+                        match gMid.pendingPriority with
+                        | some q =>
+                          match livingPriorityInstead? gMid q with
+                          | some q' => .grants (some q')
+                          | none => .settlesPromptOrOver
+                        | none => .implicitResolutionChoice
+                      else .implicitResolutionChoice
+                    | other => other
                 else
-                  match preExplicitGrant? with
-                  | some q =>
+                  let gPre := if g0.proposedSpell.isSome then g0.change (.proposedSpell none) else g0
+                  match firstPriorityGrantRecipient? gPre false outer with
+                  | some (some q) =>
                     match livingPriorityInstead? g1 q with
                     | some q' => .grants (some q')
                     | none => .settlesPromptOrOver
-                  | none => .implicitResolutionChoice
+                  | some none => .implicitResolutionChoice
+                  | none =>
+                    match priorityRecipientOfContinuation? gPre false outer with
+                    | some q =>
+                      match livingPriorityInstead? g1 q with
+                      | some q' => .grants (some q')
+                      | none => .settlesPromptOrOver
+                    | none => .implicitResolutionChoice
           else if gFin.stillInGame prop.caster && (gFin.findObject? prop.spellId).any (·.zone == .stack) then
             let selfLeaf : PendingReplacement :=
               .finishProposedSpellCosts .finalize grantPriority hadOuter openCont

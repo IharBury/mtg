@@ -1936,9 +1936,9 @@ private def mustApply33i1 (g : Game) (p : PlayerId) (a : Action) : Game :=
   let gWardPaidSac := mustApply33i1 gWardSacSetup p0 (.sacrifice p0Bear.id)
   let wardOuterOrderOk :=
     gWardPaidMana.pending == .mayDiscardDraw p0 1 &&
-    gWardPaidMana.pendingReplacement == some .afterWardResolved &&
+    gWardPaidMana.pendingReplacement == none &&
     gWardPaidSac.pending == .mayDiscardDraw p0 1 &&
-    gWardPaidSac.pendingReplacement == some .afterWardResolved
+    gWardPaidSac.pendingReplacement == none
 
   -- 1d. Unified `.mayResolve` departure handling (`.branchOnChoice` decline & illegal targets),
   --     `.chooseCards` `.stashedCause none`, `.orderLibraryBottom`, and `.searchLibrary` (`plusOneAfterSearch`):

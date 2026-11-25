@@ -1433,17 +1433,13 @@ partial def afterWardResolved (g : Game) : Game :=
     let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
     let g := (Array.replicate popCount EngineChange.popOuterPendingReplacement).foldl Game.change g
     (nextOuters.map EngineChange.pushOuterPendingReplacement).foldl Game.change g
-  let alreadyGrantsPriority (gIn : Game) : Bool :=
-    gIn.anyContinuationGrantsPriorityFwd ||
-      gIn.pendingReplacement.any (·.endsWithPriorityGrant) ||
-      gIn.outerPendingReplacements.any (·.endsWithPriorityGrant)
   let rec finishWardTail (g : Game) : Game :=
     if g.sbaPaused || g.pendingReplacement.isSome then
-      if alreadyGrantsPriority g then g
+      if g.anyContinuationSettlesControlFlowFwd then g
       else g.chainPendingReplacement .afterWardResolved
     else if let some outer := g.outerPendingReplacements.back? then
       let g := g.changes #[.popOuterPendingReplacement, .pendingReplacement (some outer)]
-      if alreadyGrantsPriority g then g
+      if g.anyContinuationSettlesControlFlowFwd then g
       else g.chainPendingReplacement .afterWardResolved
     else if g.pending != .none || g.afterRandom != .none then
       g
@@ -1451,7 +1447,7 @@ partial def afterWardResolved (g : Game) : Game :=
         (g.pendingMayCastFromExile.isSome || g.pendingFreeCopies.isSome) then
       let g := g.reopenDeferredExileCasts
       if let .chooseReplacement .. := g.pending then
-        if alreadyGrantsPriority g then g
+        if g.anyContinuationSettlesControlFlowFwd then g
         else g.chainPendingReplacement .afterWardResolved
       else if g.over || g.pending != .none || g.afterRandom != .none then
         g
@@ -1486,7 +1482,7 @@ partial def afterWardResolved (g : Game) : Game :=
     reverseOrphanedIfOver g
   else if (g.currentInterpWait?.isSome) &&
       (g.pending != .none || g.afterRandom != .none) then
-    if alreadyGrantsPriority g then g
+    if g.anyContinuationSettlesControlFlowFwd then g
     else
       let existing := g.outerPendingReplacements
       replaceTopOuters g existing.size (#[.afterWardResolved] ++ existing)
@@ -1519,7 +1515,7 @@ partial def afterWardResolved (g : Game) : Game :=
           | none =>
             if stashedOuters.isEmpty then g
             else replaceTopOuters g drainSuffix.size (stashedOuters ++ drainSuffix)
-        if alreadyGrantsPriority gRestored then gRestored
+        if gRestored.anyContinuationSettlesControlFlowFwd then gRestored
         else
           let wardCont :=
             match stashedPending with

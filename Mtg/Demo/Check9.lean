@@ -2341,6 +2341,40 @@ remaining `spellManaSpentInterest` AST nodes. -/
       cost1SpellDef p0 (.hand p0)).addMana p0 (.colored .green) 1
   let gAst4Prop := mustApply gAst4 p0 (.cast (gAst4.player p0).hand.back!)
 
+  -- 4b(i) k >= 5 distinct `minSub` blocks + extra plain source:
+  --       With 5+ distinct rider/mana blocks in `minSub`, `canExtraPlainSourcesChangeOutcome`
+  --       either exhaustively finds a non-sampled order (such as a 3-cycle) or fails closed
+  --       when the permutation budget is exhausted, never falsely autopaying!
+  let bigRiderSpellDef : CardDef :=
+    creature "P56 Check9 BigRider"
+      { symbols := #[.colored .white, .colored .blue, .colored .black, .colored .red, .colored .green, .generic 1] }
+      #["Human"] 5 5
+  let mkDistinctRiderLand (nm : String) (m : ManaType) (n : Nat) : CardDef := {
+    name := nm
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.sequence #[(m, .const 1)])
+        (riders := #[.entersWithPlusOneCounters n])
+    ]
+  }
+  let gPerm6_0 :=
+    insertObject
+      (addPermanent
+        (addPermanent
+          (addPermanent
+            (addPermanent
+              (addPermanent
+                (addPermanent
+                  (addPermanent gMain (mkDistinctRiderLand "P56 L1" (.colored .white) 1) p0 p0)
+                  (mkDistinctRiderLand "P56 L2" (.colored .blue) 2) p0 p0)
+                (mkDistinctRiderLand "P56 L3" (.colored .black) 3) p0 p0)
+              (mkDistinctRiderLand "P56 L4" (.colored .red) 4) p0 p0)
+            (mkDistinctRiderLand "P56 L5" (.colored .green) 5) p0 p0)
+          (mkDistinctRiderLand "P56 L6" .colorless 6) p0 p0)
+        (mkDistinctRiderLand "P56 LExtra" .colorless 7) p0 p0)
+      bigRiderSpellDef p0 (.hand p0)
+  let gPerm6Prop := mustApply gPerm6_0 p0 (.cast (gPerm6_0.player p0).hand.back!)
+
   mustHoldCheck9 "p56_prioStackConvoke"
     (!hasGameStatePriorityAction gStackConv0 p0 &&
      hasGameStatePriorityAction gStackConv1 p0) &&
@@ -2351,7 +2385,8 @@ remaining `spellManaSpentInterest` AST nodes. -/
      hasGameStatePriorityAction gImpImp1 p0 &&
      hasGameStatePriorityAction gZeroOut p0) &&
   mustHoldCheck9 "p56_uniqueManaInterleavedExtra"
-    (!hasUniqueManaPayment gInterleaveProp) &&
+    (!hasUniqueManaPayment gInterleaveProp &&
+     !hasUniqueManaPayment gPerm6Prop) &&
   mustHoldCheck9 "p56_uniqueManaNonCoveringPoolSpendBothBranches"
     (!hasUniqueManaPayment gLaunderSomeProp &&
      !hasUniqueManaPayment gLaunderNoneProp) &&

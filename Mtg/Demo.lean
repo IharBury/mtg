@@ -3737,48 +3737,44 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (initPool : Man
         match ({ units } : ManaPool).payUnits? cost spend with
         | some (_, spent) => spellManaOutcome g spend activeProp? spent != outcome0
         | none => false
-      let testBaseWithExtra (base : Array (Array ManaUnit)) (extra : Array (Array ManaUnit)) : Bool :=
-        if base.isEmpty then checkBlocks extra
+      let testBaseWithSingleExtra (base : Array (Array ManaUnit)) (ex : Array ManaUnit) : Bool :=
+        if base.isEmpty then checkBlocks #[ex]
         else
           let k := base.size
-          let contiguousAt (ex : Array (Array ManaUnit)) : Bool :=
-            (List.range (k + 1)).any fun pos =>
-              checkBlocks (base.extract 0 pos ++ ex ++ base.extract pos k)
-          contiguousAt extra ||
-            (extra.size ≥ 2 &&
-              (contiguousAt extra.reverse ||
-                (List.range (k + 1)).any fun pos =>
-                  checkBlocks (extra.extract 0 1 ++ base.extract 0 pos ++
-                    extra.extract 1 extra.size ++ base.extract pos k)))
-      let testBase (base : Array (Array ManaUnit)) : Bool :=
-        testBaseWithExtra base extraBlocks
-      let k := minSubBlocks.size
-      if k ≤ 1 then
-        testBase minSubBlocks
-      else if k ≤ 4 then
-        let rec permTest (chosen : Array (Array ManaUnit)) (usedMask : Nat) : Bool :=
-          if chosen.size == k then
-            testBase chosen
-          else
-            (List.range k).any fun i =>
-              if maskBit usedMask i then false
-              else permTest (chosen.push minSubBlocks[i]!) (usedMask ||| (1 <<< i))
-        permTest #[] 0
-      else Id.run do
-        if testBase minSubBlocks || testBase minSubBlocks.reverse then return true
-        for j in [0:k] do
-          let bj := minSubBlocks[j]!
-          let rest := minSubBlocks.extract 0 j ++ minSubBlocks.extract (j + 1) k
-          if j > 0 && testBase (#[bj] ++ rest) then return true
-          if j + 1 < k && testBase (rest.push bj) then return true
-        let mut swaps := 0
-        for i in [0:k] do
-          for j in [i + 1:k] do
-            if minSubBlocks[i]! != minSubBlocks[j]! && swaps < 32 then
-              swaps := swaps + 1
-              let swapped := (minSubBlocks.set! i minSubBlocks[j]!).set! j minSubBlocks[i]!
-              if testBase swapped then return true
-        return false
+          (List.range (k + 1)).any fun pos =>
+            checkBlocks (base.extract 0 pos ++ #[ex] ++ base.extract pos k)
+      -- Deduplicated multiset-permutation DFS over `blocks`, calling `onPerm` on each distinct
+      -- ordering. Fails closed (`true`) if `budget` is exhausted before all distinct orderings
+      -- are checked so `hasUniqueManaPayment` never autopays across an unsampled order.
+      let anyDistinctPermWithinBudget (blocks : Array (Array ManaUnit)) (budget : Nat)
+          (onPerm : Array (Array ManaUnit) → Bool) : Bool :=
+        let n := blocks.size
+        let rec go (chosen : Array (Array ManaUnit)) (usedMask : Nat) (rem : Nat) : Bool × Nat :=
+          if rem == 0 then
+            (true, 0)
+          else if chosen.size == n then
+            (onPerm chosen, rem - 1)
+          else Id.run do
+            let mut r := rem
+            let mut tried : Array (Array ManaUnit) := #[]
+            for i in [0:n] do
+              if !maskBit usedMask i then
+                let blk := blocks[i]!
+                if !tried.contains blk then
+                  tried := tried.push blk
+                  let (hit, r') := go (chosen.push blk) (usedMask ||| (1 <<< i)) r
+                  if hit then return (true, r')
+                  r := r'
+            return (false, r)
+        (go #[] 0 budget).1
+      if extraBlocks.size == 1 then
+        let ex := extraBlocks[0]!
+        if minSubBlocks.size ≤ 1 then
+          testBaseWithSingleExtra minSubBlocks ex
+        else
+          anyDistinctPermWithinBudget minSubBlocks 128 (fun base => testBaseWithSingleExtra base ex)
+      else
+        anyDistinctPermWithinBudget (minSubBlocks ++ extraBlocks) 128 checkBlocks
     -- 1. Fast exact single-source check (across `minSub` orders and interleaved slots).
     let singleFlips :=
       extraEntries.any fun (_, cs) => cs.any fun ch => flips #[(ch.applyToPool {}).units]

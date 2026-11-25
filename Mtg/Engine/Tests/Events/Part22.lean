@@ -149,7 +149,15 @@ private def replayOk56i1 (gs : Array Game) : Bool :=
   let afterWardNoDupOk :=
     gWardPrio1.pendingReplacement == some (.receivePriority p2) &&
     gWardPrioDone.priority == p2 &&
-    prioEvs.size == 1
+    prioEvs.size == 1 &&
+    ((g4.changes #[
+      .pushContinuationFrame { pendingReplacement := some (.finishDrawThenBeginDiscard p0 1) },
+      .pending (.payWard p1 ⟨999⟩ CostSpec.discardCard)
+    ]).afterWardResolved).pendingReplacement == some (.finishDrawThenBeginDiscard p0 1) &&
+    ((g4.changes #[
+      .pushContinuationFrame { pendingReplacement := some (.finishBeginRecruit p0) },
+      .pending (.payWard p1 ⟨999⟩ CostSpec.discardCard)
+    ]).afterWardResolved).pendingReplacement == some (.finishBeginRecruit p0)
 
   -- 1a(v). `drainProbeNonPriorityCont` resumes `.logMessage` and `.finishPostStep .markNonManaCostPaid`
   --        (no longer leaving them stuck in `pendingReplacement`):
@@ -171,7 +179,7 @@ private def replayOk56i1 (gs : Array Game) : Bool :=
   --          when `pendingPriority.isNone` and a settling continuation / `.finishResolutionChoice` exists;
   --        - `finishPostCastOutcome` maps implicit `some none` to `caster` when `pendingPriority.isNone`;
   --        - `classifyFinishProposedSpellCosts` finds dynamic explicit grant in `outerPendingReplacements`
-  --          even when `localOuter?.endsWithPriorityGrant == false`!
+  --          and in non-`endsWithPriorityGrant` `localOuter?` writing `pendingPriority` / chaining grants!
   let morphDef : CardDef := {
     creature "P56i1 Morph" ManaCost.empty #["Human"] 3 3 with
     keywords := #[.morph CostSpec.empty]
@@ -201,6 +209,33 @@ private def replayOk56i1 (gs : Array Game) : Bool :=
     match gFpscDyn0.finishProposedSpellCosts .finalize true false false with
     | .ok g => g
     | .error e => panic! s!"gFpscDynRun failed: {e}"
+  -- Non-`endsWithPriorityGrant` `localOuter?` leaves (`.finishTurnFaceUp _ _ true` and `.completeActivation true _`):
+  let gFpscLocalDyn0 :=
+    (setFaceDown gTfu0 tfuId true).changes #[
+      .saveProposalCheckpoint,
+      .proposedSpell (some tfuProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.receivePriority p2]
+        pendingReplacement := some (.finishTurnFaceUp p1 tfuId true)
+      }
+    ]
+  let gFpscLocalDynRun :=
+    match gFpscLocalDyn0.finishProposedSpellCosts .finalize true false false with
+    | .ok g => g
+    | .error e => panic! s!"gFpscLocalDynRun failed: {e}"
+  let gFpscActDyn0 :=
+    (setFaceDown gTfu0 tfuId true).changes #[
+      .saveProposalCheckpoint,
+      .proposedSpell (some tfuProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.receivePriority p3]
+        pendingReplacement := some (.completeActivation true false)
+      }
+    ]
+  let gFpscActDynRun :=
+    match gFpscActDyn0.finishProposedSpellCosts .finalize true false false with
+    | .ok g => g
+    | .error e => panic! s!"gFpscActDynRun failed: {e}"
   let gPostCastImp0 :=
     g4.changes #[
       .pushContinuationFrame { pendingReplacement := some .finishResolutionChoice }
@@ -213,6 +248,12 @@ private def replayOk56i1 (gs : Array Game) : Bool :=
     gTfuDone.priority == p1 &&
     gFpscDynRun.priority == p2 &&
     gFpscDyn0.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p2 &&
+    !PendingReplacement.endsWithPriorityGrant (.finishTurnFaceUp p1 tfuId true) &&
+    gFpscLocalDynRun.priority == p2 &&
+    gFpscLocalDyn0.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p2 &&
+    !PendingReplacement.endsWithPriorityGrant (.completeActivation true false) &&
+    gFpscActDynRun.priority == p3 &&
+    gFpscActDyn0.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p3 &&
     gPostCastImp0.priorityRecipientOfContinuation? false (.finishPostCast p1 true false false) == some p1 &&
     gManaImp0.priorityRecipientOfContinuation? false manaPicksLeaf == some p1
 
@@ -416,9 +457,18 @@ private def replayOk56i2 (gs : Array Game) : Bool :=
   let gAmb3 := gAmb2.createEffect (.permission (some p0) (.playFromExile a1 { player := p0 }) .untilEndOfTurn)
     (cause := some testCause)
   let gAmb4 := gAmb1.emitExpiredPlayFromExileLogs gAmb3 ambStart
+  -- Unambiguous `elig.size == 1` log for `a1` while `{a2, a3}` temporarily regain playability via
+  -- `mayCastExiledBySource` decrements `ambigLogs` from 2 to 1 (< 2) instead of retiring `{a2, a3}`:
+  let gAmbSingleBase := addPermanent gAmb2 mayCastFromExileDef p0 p0
+  let ambSrcId := (gAmbSingleBase.permanentsOf p0).back!.id
+  let gAmbSingle1 :=
+    (((gAmbSingleBase.changeObject a2 (.exiledBy (some ambSrcId))).changeObject a3 (.exiledBy (some ambSrcId))).logMsg
+      bearExpMsg).move ambSrcId (.graveyard p0) none (cause := some testCause) |>.1
+  let gAmbSingle2 := gAmb1.emitExpiredPlayFromExileLogs gAmbSingle1 ambStart
   let hasLoggedGhostAndClampOk :=
     countBearExpLogs gGhost4 == 1 &&
-    countBearExpLogs gAmb4 == 3
+    countBearExpLogs gAmb4 == 3 &&
+    countBearExpLogs gAmbSingle2 ≥ 4
 
   -- 2a(iii). `Core.emitExpiredPlayFromExileLogs` places `deferCont` onto the BOTTOMMOST outer frame
   --          containing pending non-priority work even while paused on `.chooseReplacement`:

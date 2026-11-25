@@ -18512,7 +18512,9 @@ private def hasPlayFromExileLoggedInSlice (g : Game) (oid : ObjectId)
           lastPreStartExpIdx := lastPreStartExpIdx.filter (·.1 != x)
           if ambigGroup.contains x then
             ambigGroup := ambigGroup.filter (· != x)
-            if ambigGroup.isEmpty then
+            ambigLogs := ambigLogs - 1
+            if ambigGroup.isEmpty || ambigLogs == 0 then
+              ambigGroup := #[]
               ambigLogs := 0
               ambigInSlice := false
             else if ambigLogs ≥ ambigGroup.size then
