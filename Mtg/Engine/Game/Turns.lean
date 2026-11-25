@@ -62,6 +62,7 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
     else
       g.endControlEffectsSimultaneously ctrlEids (cause := cause)
         (preState? := some pre) (extraSkipIds := skipIds)
+        (deferPlayFromExileLogs := true)
         (preExpire := fun g0 =>
           let g1 :=
             g0.restoreCopiesWhere
@@ -85,7 +86,8 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
           if perm.fromAdventure || perm.whileExiled then acc
           else expirePlayFromExileEffect pre acc eid oid cause (deferLogs := true)
         | _ =>
-          acc.expireEffectById eid (cause := cause) (preState? := some pre)) g
+          acc.expireEffectById eid (cause := cause) (preState? := some pre)
+            (deferPlayFromExileLogs := true)) g
   emitExpiredPlayFromExileLogs pre g fromIdx
 
 /-- Expire effects lasting until the end of `st` (CR 500.5). -/
@@ -279,7 +281,7 @@ def clearEOT (g : Game) : Game :=
                 pre.isSharedTurnFinalSeat && pre.hasTurnBegunSince eid q
             | _ => false
         g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
-          (extraSkipIds := skipIds)
+          (extraSkipIds := skipIds) (deferPlayFromExileLogs := true)
           (preExpire := fun g0 =>
             let g0 :=
               g0.restoreCopiesWhere
@@ -451,6 +453,7 @@ def expireUntilTurnCommandEffects (g : Game) (p : PlayerId) (includeTeammates : 
       g.endControlEffectsSimultaneously ctrlEids (cause := cause)
         (extraSkipIds := effSkipIds)
         (preExpire := expireNonControl) (preState? := some pre)
+        (deferPlayFromExileLogs := true)
   if deferLogs then g else emitExpiredPlayFromExileLogs pre g fromIdx
 
 /-- Expire effects that last until `p`'s next turn (CR 800.4m) and clear
@@ -539,6 +542,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
         g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds)
           (preExpire := expireNonControl) (preState? := some pre)
+          (deferPlayFromExileLogs := true)
     let g := targets.foldl (fun acc t =>
       acc.expirePlayPermissions t (cause := cause) (preState? := some pre) (deferLogs := true)) g
     let g := g.expireMatching (fun
@@ -843,6 +847,7 @@ def beginTurnStartExpiryPrefix (g : Game) : Game :=
         let fromIdx := preTurnExp.events.size
         let g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds) (preState? := some preTurnExp)
+          (deferPlayFromExileLogs := true)
           (preExpire := fun g0 =>
             let g0 :=
               g0.restoreCopiesWhere

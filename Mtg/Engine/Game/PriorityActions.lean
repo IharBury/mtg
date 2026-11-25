@@ -37,7 +37,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
     let hasPerm := (g.permanentsOf prop.caster).any (fun o => g.hasSubtype o quality)
     let hasHand :=
       (g.player prop.caster).hand.any (fun id =>
-        (g.findObject? id).any (fun card => g.hasSubtype card quality))
+        (g.findObject? id).any (fun card => isDiscardableCard card && g.hasSubtype card quality))
     if !(hasPerm || hasHand) then
       return (← g.reverseProposedSpell? (resumeContinuation := true))
   let countCantBeCountered (g : Game) :=
@@ -57,8 +57,24 @@ def finishProposedSpell (g : Game) : Except String Game := do
         else paid
       | _, _ => paid
   if prop.kind == .turnFaceUp && !prop.needsSacrificeOther && !prop.needsDiscardCard then
-    let (g, callerShouldResume) := g.completeTurnFaceUp prop.caster prop.spellId
-    return if callerShouldResume then g.resumeAfterBecomeCast else g
+    let localOuter? := g.pendingReplacement
+    let g0 := if localOuter?.isSome then g.change (.pendingReplacement none) else g
+    let paused0 := match g0.pending with | .chooseReplacement .. => true | _ => false
+    let willReverse := !paused0 && !g0.over && g0.proposedSpell.isSome && g0.proposalCheckpoint.isSome &&
+      !(g0.stillInGame prop.caster &&
+        (g0.findObject? prop.spellId).any (fun cur =>
+          cur.isOnBattlefield && cur.status.faceDown && g0.controlledBy cur prop.caster))
+    let (g, callerShouldResume) :=
+      g0.completeTurnFaceUp prop.caster prop.spellId (hadOuterReplacement := localOuter?.isSome)
+    let g :=
+      if willReverse then g
+      else
+        match localOuter? with
+        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+        | none => g
+    return if !willReverse && (callerShouldResume || (!g.over && g.pending == .none && localOuter?.isSome)) then
+      g.resumeAfterBecomeCast
+    else g
   if prop.kind == .activatedAbility then
     return (← g.beginActivationPayment prop)
   let openCont := g.proposalHadOpenContinuation
@@ -128,7 +144,7 @@ def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell
         let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
         let hasHand :=
           (g.player p).hand.any (fun id =>
-            (g.findObject? id).any (fun card => g.hasSubtype card quality))
+            (g.findObject? id).any (fun card => isDiscardableCard card && g.hasSubtype card quality))
         !(hasPerm || hasHand)
       | none =>
         if hasDiscard then (gSneak.discardableHandIds p).isEmpty
@@ -191,7 +207,7 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
         let hasPerm := (g.permanentsOf p).any (fun o => g.hasSubtype o quality)
         let hasHand :=
           (g.player p).hand.any (fun id =>
-            (g.findObject? id).any (fun card => g.hasSubtype card quality))
+            (g.findObject? id).any (fun card => isDiscardableCard card && g.hasSubtype card quality))
         if !(hasPerm || hasHand) then
           throw s!"{g.name spell} requires beholding a {quality}"
         let g := g.changeProposals #[

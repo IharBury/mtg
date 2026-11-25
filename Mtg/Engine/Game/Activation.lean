@@ -20,14 +20,16 @@ def canPayActivationNonManaCost (g : Game) (p : PlayerId) (o : GameObject) (ab :
   let sacOrExileSrc := ab.cost.sacrificeSource || ab.cost.exileSourceFromBattlefield
   let discOrExileHandSrc := ab.cost.discardSource || ab.cost.exileSourceFromHand
   let allPicks := costPicksWithSacrificeOther (costPicksOf ab) ab.cost.sacrificeAnotherCreatureOrArtifact
-  let handOk := !ab.cost.exileSourceFromHand || o.zone == .hand o.owner
+  let handOk :=
+    (!ab.cost.exileSourceFromHand || (o.zone == .hand o.owner && isDiscardableCard o)) &&
+      (!ab.cost.discardSource || (o.zone == .hand o.owner && isDiscardableCard o))
   let bfOk := !ab.cost.exileSourceFromBattlefield || o.isOnBattlefield
   let zemoOk :=
     ab.cost.exileManaSymbols?.isNone ||
       (o.isOnBattlefield &&
         let col := TextChange.applyColor (g.evalLayer3 o) .black
         g.canPayZemoBoast p ((g.player p).graveyard.filter (fun id =>
-          (g.findObject? id).any (fun card => (g.colors card).contains col))) col)
+          (g.findObject? id).any (fun card => isDiscardableCard card && (g.colors card).contains col))) col)
   let crewOrPicksOk :=
     match ab.cost.crewPower? with
     | some n =>
@@ -64,10 +66,10 @@ def validateActivation (g : Game) (p : PlayerId) (o : GameObject) (ab : Activate
   if (fromGy || fromHand) && ab.needsBattlefieldSource then
     throw s!"{g.name o}'s ability has a battlefield cost that can't be paid from that zone"
   if fromGy then
-    if !(o.zone == .graveyard o.owner && o.owner == p) then
+    if !(o.zone == .graveyard o.owner && o.owner == p && isDiscardableCard o) then
       throw s!"{g.name o}'s ability can be activated only from the graveyard"
   else if fromHand then
-    if !(o.zone == .hand o.owner && o.owner == p) then
+    if !(o.zone == .hand o.owner && o.owner == p && isDiscardableCard o) then
       throw s!"{g.name o}'s ability can be activated only from your hand"
   else
     if !o.isOnBattlefield then
@@ -214,13 +216,22 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
       else
         let localOuter? := g.pendingReplacement
         let g0 := if localOuter?.isSome then g.change (.pendingReplacement none) else g
+        let paused0 := match g0.pending with | .chooseReplacement .. => true | _ => false
+        let willReverse := !paused0 && !g0.over && g0.proposedSpell.isSome && g0.proposalCheckpoint.isSome &&
+          !(g0.stillInGame p &&
+            (g0.findObject? o.id).any (fun cur =>
+              cur.isOnBattlefield && cur.status.faceDown && g0.controlledBy cur p))
         let (g, callerShouldResume) :=
           g0.completeTurnFaceUp p o.id (hadOuterReplacement := localOuter?.isSome)
         let g :=
-          match localOuter? with
-          | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
-          | none => g
-        return if callerShouldResume then g.resumeAfterBecomeCastFwd else g
+          if willReverse then g
+          else
+            match localOuter? with
+            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+            | none => g
+        return if !willReverse && (callerShouldResume || (!g.over && g.pending == .none && localOuter?.isSome)) then
+          g.resumeAfterBecomeCastFwd
+        else g
     | none => throw s!"{g.name o} is face down"
   let defs := g.manaAbilityDefs o
   if let some i := (List.range defs.size).find? (fun i => defs[i]!.activatedIdx == some abilityIdx) then

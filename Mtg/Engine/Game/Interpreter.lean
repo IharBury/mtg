@@ -797,6 +797,7 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
           (g.withBatch (some cause) fun g =>
             execMoveLoopStep g env ctx (pick.map (·.id)) dest verb { mods with choice? := none } cause, #[])
       else if verb == .discard && !ch.invertSelection then
+        let cands := cands.filter isDiscardableCard
         let choosers : Array PlayerId :=
           match ch.chooser with
           | .controller | .owner => #[ctx.controller]
@@ -3257,7 +3258,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               g := g.beginResolutionChoice p (.mayPutMilledPermanent choices life)
                 s!"{(g.player p).name} may put a permanent card milled this way into their hand"
         | .afterDrawBeginDiscardThenStun p count =>
-          let cnt := Nat.min count (g.player p).hand.size
+          let cnt := Nat.min count (g.discardableHandIds p).size
           if cnt > 0 then
             g := g.beginResolutionChoice p (.discardThenStun cnt ctx.sourceId)
               s!"{(g.player p).name} discards {cnt} card(s)"
@@ -3279,7 +3280,8 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
             let pid := rem[0]!
             rem := rem.extract 1 rem.size
             if g.stillInGame pid then
-              let eligible := (g.player pid).hand.filter fun id => (g.findObject? id).any g.isCreature
+              let eligible := (g.player pid).hand.filter fun id =>
+                (g.findObject? id).any (fun o => isDiscardableCard o && g.isCreature o)
               if !eligible.isEmpty then
                 stack := stack.push (.worldsCollectPlayers exiledVar rem allChosen)
                 g := g.beginResolutionChoice pid (.worldsPutCreatures eligible)
@@ -3289,7 +3291,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
             let validChosen : Array (ObjectId × PlayerId × String) := allChosen.filterMap fun id =>
               match g.findObject? id with
               | some o =>
-                if o.zone == .hand o.owner && g.isCreature o then some (id, o.owner, g.name o) else none
+                if o.zone == .hand o.owner && isDiscardableCard o && g.isCreature o then some (id, o.owner, g.name o) else none
               | none => none
             let validIds := validChosen.map (·.1)
             let cause := interpCause g ctx
@@ -3405,7 +3407,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               g := g.chainPendingReplacement (.continueInterpreter {
                 ctx, queue := #[], stack := #[.afterDrawBeginDiscardThenStun ctx.controller 2] })
             else
-              let cnt := Nat.min 2 (g.player ctx.controller).hand.size
+              let cnt := Nat.min 2 (g.discardableHandIds ctx.controller).size
               if cnt > 0 then
                 g := g.beginResolutionChoice ctx.controller (.discardThenStun cnt ctx.sourceId)
                   s!"{(g.player ctx.controller).name} discards {cnt} card(s)"
@@ -3483,7 +3485,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               Instruction.drawFixed 1,
               .permanent (.modifyCounters (.put .plusOnePlusOne (.playerMetric .cardsDiscardedThisTurn .you)) .triggerSubject)
             ]
-            if (g.player ctx.controller).hand.isEmpty then
+            if (g.discardableHandIds ctx.controller).isEmpty then
               g := g.draw ctx.controller 1
               if let .chooseReplacement .. := g.pending then
                 g := g.chainPendingReplacement (.continueInterpreter {
@@ -3948,7 +3950,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
             else if cost == CostSpec.sacrificeArtifactOrDiscardNonland then
               let hasArt := (g.permanentsOf chooser).any g.isArtifact
               let hasNonland := (g.player chooser).hand.any fun id =>
-                (g.findObject? id).any (fun o => !g.isLand o)
+                (g.findObject? id).any (fun o => isDiscardableCard o && !g.isLand o)
               if hasArt || hasNonland then
                 g := g.beginResolutionChoice chooser (.mayPayPickThen .sacrificeArtifactOrDiscardNonland onYes ctx.sourceId)
                   s!"{(g.player chooser).name} may sacrifice an artifact or discard a nonland card"
@@ -3988,7 +3990,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               | some (item@(.discard _ _)) =>
                 let need := CostPick.count (.custom item)
                 if need > 1 then
-                  if (g.player chooser).hand.size ≥ need then
+                  if (g.discardableHandIds chooser).size ≥ need then
                     g := g.beginResolutionChoice chooser (.mayPayPickThen (.custom item) onYes ctx.sourceId)
                       s!"{(g.player chooser).name} may discard {need} cards"
                 else
@@ -3996,7 +3998,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                   | .player (.drawCards _ (.const n)) =>
                     g := g.beginMayDiscardDraw chooser n.toNat
                   | _ =>
-                    if !(g.player chooser).hand.isEmpty then
+                    if !(g.discardableHandIds chooser).isEmpty then
                       g := g.beginResolutionChoice chooser (.mayDiscardThen onYes ctx.sourceId)
                         s!"{(g.player chooser).name} may discard a card"
               | some (.mana mc) =>
@@ -4193,7 +4195,8 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                     s!"{(g.player chooser).name} may draw {spent} cards, then discard {disc}"
               | .bind v (.moveZone (.inZones (.handOf .you) (.hasType .artifact)) (.battlefield .controller) .put _) body,
                 .noop =>
-                let hasArt := (g.player chooser).hand.any fun id => (g.findObject? id).any g.isArtifact
+                let hasArt := (g.player chooser).hand.any fun id =>
+                  (g.findObject? id).any (fun o => isDiscardableCard o && g.isArtifact o)
                 if hasArt then
                   let id : EffectId := ⟨max 1 g.nextEffectId⟩
                   g := g.change (.nextEffectId (id.raw + 1))
@@ -4206,7 +4209,8 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                     s!"{(g.player chooser).name} may put an artifact card from their hand onto the battlefield"
               | .moveZone (.inZones (.handOf .you) (.hasType .land)) (.battlefield .controller) .put { tapped := true, .. },
                 .noop =>
-                let hasLand := (g.player chooser).hand.any fun id => (g.findObject? id).any g.isLand
+                let hasLand := (g.player chooser).hand.any fun id =>
+                  (g.findObject? id).any (fun o => isDiscardableCard o && g.isLand o)
                 if hasLand then
                   g := (g.change (.pending (.mayPutLandFromHand chooser))).logMsg
                     s!"{(g.player chooser).name} may put a land card from their hand onto the battlefield tapped"

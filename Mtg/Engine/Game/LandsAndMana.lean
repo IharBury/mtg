@@ -289,7 +289,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
             !removedIds.contains perm.id && g.hasSubtype perm quality) ||
             (g.player p).hand.any (fun id =>
               !removedIds.contains id &&
-                (g.findObject? id).any (fun card => g.hasSubtype card quality))
+                (g.findObject? id).any (fun card => isDiscardableCard card && g.hasSubtype card quality))
       if !beholdOk then false
       else if prop.kind != .activatedAbility then
         let gSneak := g.probeAfterUnpaidSneak prop

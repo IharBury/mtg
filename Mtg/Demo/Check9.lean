@@ -1794,3 +1794,348 @@ conservative `canExtraPlainSourcesChangeOutcome` DFS budget exhaustion for `anyC
     (!hasUniqueManaPayment gL3ManaProp) &&
   mustHoldCheck9 "p54_manyFiveColorLandsAnyColorCountNotUnique"
     (!hasUniqueManaPayment gBudgetProp)
+
+
+/- Phase 55 Item 4b: `Demo.hasGameStatePriorityAction` graveyard/library-top
+playables, Sneak, Convoke/Improvise, and target-reduced costs, plus
+`Demo.hasUniqueManaPayment` `extra`-before-`minSub` & `minSub` tap-order flips,
+filter-land/signet `spendsPoolMana` laundering, and `instrInterest` AST
+traversals (`MoveMods.choice?`, `ManaSpec`, `DelayedTokenAction`). -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let gMain := emptyHand afterDraw p0
+
+  -- 1. `hasGameStatePriorityAction` graveyard Flashback & Mole Man graveyard land:
+  let fbSorcDef : CardDef := {
+    name := "P55 Check9 FlashbackSpark"
+    manaCost := ManaCost.ofGeneric 4
+    types := #[.sorcery]
+    keywords := #[.flashback (CostSpec.ofItems #[.mana (ManaCost.ofGenericAndColor 1 .red)])]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let gFb0 := insertObject gMain fbSorcDef p0 (.graveyard p0)
+  let gFb1 := gFb0.addMana p0 (.colored .red) 1
+  let gFb2 := gFb1.addMana p0 .colorless 1
+  let moleManLikeDef : CardDef := {
+    grizzlyBears with
+    name := "P55 Check9 MoleMan"
+    staticAbilities := #[.ruleModifying none (.play (.mayPlayFrom .you .graveyard (.hasType .land) true false))]
+  }
+  let inertLandDef : CardDef := { name := "P55 Check9 InertLand", types := #[.land] }
+  let gGyLandNoPerm := insertObject gMain mountain p0 (.graveyard p0)
+  let gGyLandWithPerm := addPermanent gGyLandNoPerm moleManLikeDef p0 p0
+  let gGyLandPlayed :=
+    let gWithHandLand := insertObject gGyLandWithPerm inertLandDef p0 (.hand p0)
+    mustApply gWithHandLand p0 (.playLand (gWithHandLand.player p0).hand.back!)
+
+  -- 2. `hasGameStatePriorityAction` library-top creature/Morph (Elven Chorus) & library-top land:
+  let elvenChorusLikeDef : CardDef := {
+    name := "P55 Check9 ElvenChorus"
+    types := #[.enchantment]
+    staticAbilities := #[.ruleModifying none (.play (.mayPlayFrom .you .library (.hasType .creature) false false))]
+  }
+  let libLandPermDef : CardDef := {
+    name := "P55 Check9 Courser"
+    types := #[.enchantment]
+    staticAbilities := #[.ruleModifying none (.play (.mayPlayFrom .you .library (.hasType .land) true false))]
+  }
+  let topMorphDef : CardDef := {
+    grizzlyBears with
+    name := "P55 Check9 TopMorph"
+    manaCost := ManaCost.ofGeneric 6
+    keywords := #[.morph (CostSpec.ofGeneric 2)]
+  }
+  let gTopCr0 :=
+    (insertObject (addPermanent gMain elvenChorusLikeDef p0 p0) grizzlyBears p0 (.library p0))
+  let gTopCrPay := gTopCr0.addMana p0 (.colored .green) 1 |>.addMana p0 .colorless 1
+  let gTopMorph0 :=
+    (insertObject (addPermanent gMain elvenChorusLikeDef p0 p0) topMorphDef p0 (.library p0))
+  let gTopMorphPay := gTopMorph0.addMana p0 .colorless 3
+  let gTopLandNoPerm := insertObject gMain forest p0 (.library p0)
+  let gTopLandWithPerm := addPermanent gTopLandNoPerm libLandPermDef p0 p0
+
+  -- 3. `hasGameStatePriorityAction` Sneak casting (CR 702.190a):
+  let sneakNinjaDef : CardDef := {
+    grizzlyBears with
+    name := "P55 Check9 SneakNinja"
+    manaCost := ManaCost.ofGenericAndColor 4 .black
+    keywords := #[.sneak (CostSpec.ofItems #[.mana { symbols := #[.colored .black] }])]
+  }
+  let sneakSacNinjaDef : CardDef := {
+    sneakNinjaDef with
+    name := "P55 Check9 SneakSacNinja"
+    spellAbility := some {
+      effect := { body := .noop }
+      additionalCosts := #[AdditionalCostSpec.mandatory CostSpec.sacrificeArtifactOrCreature]
+    }
+  }
+  let gBlk0 :=
+    (addPermanent (addPermanent gMain grizzlyBears p0 p0) grizzlyBears p1 p1).record
+      (GameEvent.stepBegan gMain.turnNumber .declareBlockers p0 (cause := some (.turnBased .declareBlockers)))
+    |>.change (.priority p0)
+  let atkObj := (gBlk0.permanentsOf p0)[0]!
+  let blkObj := (gBlk0.permanentsOf p1)[0]!
+  let gBlkUnblocked :=
+    gBlk0.record (GameEvent.attackersDeclared gBlk0.turnNumber p0 #[(gBlk0.snapshot atkObj, .player p1)])
+  let gBlkBlocked :=
+    gBlkUnblocked.record (GameEvent.becameBlocked gBlkUnblocked.turnNumber (gBlkUnblocked.snapshot atkObj) #[blkObj.id])
+  let gSnkUnblkPay :=
+    (insertObject gBlkUnblocked sneakNinjaDef p0 (.hand p0)).addMana p0 (.colored .black) 1
+  let gSnkUnblkNoMana := insertObject gBlkUnblocked sneakNinjaDef p0 (.hand p0)
+  let gSnkBlockedPay :=
+    (insertObject gBlkBlocked sneakNinjaDef p0 (.hand p0)).addMana p0 (.colored .black) 1
+  -- Mandatory sacrifice fails after `probeAfterSneakReturn` bounces the sole creature:
+  let gSnkSacOnlyAtk :=
+    (insertObject gBlkUnblocked sneakSacNinjaDef p0 (.hand p0)).addMana p0 (.colored .black) 1
+  let gSnkSacExtraCr := addPermanent gSnkSacOnlyAtk grizzlyBears p0 p0
+
+  -- 4. `hasGameStatePriorityAction` Convoke (CR 702.51a) & Improvise (CR 702.126a):
+  let convSpellDef : CardDef := {
+    name := "P55 Check9 ConvokeSpell"
+    manaCost := ManaCost.ofGenericAndColor 2 .green
+    types := #[.sorcery]
+    keywords := #[Keyword.convoke]
+    spellAbility := some { effect := Effect.gainLife 2 }
+  }
+  let impSpellDef : CardDef := {
+    name := "P55 Check9 ImproviseSpell"
+    manaCost := ManaCost.ofGenericAndColor 2 .blue
+    types := #[.sorcery]
+    keywords := #[.simple .improvise]
+    spellAbility := some { effect := Effect.gainLife 2 }
+  }
+  let inertCogDef : CardDef := { name := "P55 Check9 Cog", types := #[.artifact] }
+  let gConvShort :=
+    insertObject
+      (addPermanent (addPermanent gMain grizzlyBears p0 p0) grizzlyBears p0 p0)
+      convSpellDef p0 (.hand p0)
+  let gConvEnough := addPermanent gConvShort grizzlyBears p0 p0
+  let gImpShort :=
+    (insertObject (addPermanent gMain inertCogDef p0 p0) impSpellDef p0 (.hand p0)).addMana
+      p0 (.colored .blue) 1
+  let gImpEnough := addPermanent gImpShort inertCogDef p0 p0
+
+  -- 5. `hasGameStatePriorityAction` target-reduced spell (`mentionsTarget`) & equip (`nEquip`) costs:
+  let goblinDef : CardDef := {
+    grizzlyBears with
+    name := "P55 Check9 Goblin"
+    subtypes := #["Goblin"]
+  }
+  let tgtRedSpellDef : CardDef := {
+    name := "P55 Check9 GoblinBolt"
+    manaCost := ManaCost.ofGenericAndColor 4 .red
+    types := #[.instant]
+    staticAbilities := #[
+      .costModifier (some (.forAll (.target 0) (.hasSubtype (.literal .goblin)))) .thisSpell (.reduceGeneric (.const 3))
+    ]
+    spellAbility := some {
+      effect := {
+        targets := TargetSpec.creature
+        body := .damage (.deal .this (.targetSlot 0) (.const 2))
+      }
+    }
+  }
+  let gTgtNoGob :=
+    (insertObject (addPermanent gMain grizzlyBears p0 p0) tgtRedSpellDef p0 (.hand p0)).addMana
+      p0 (.colored .red) 1 |>.addMana p0 .colorless 1
+  let gTgtWithGob := addPermanent gTgtNoGob goblinDef p0 p0
+  let equip4Def : CardDef := {
+    name := "P55 Check9 HeavySword"
+    types := #[.artifact]
+    subtypes := #["Equipment"]
+    keywords := #[.equip (.hasType .creature) (CostSpec.ofGeneric 4)]
+  }
+  let cheapEquipBearerDef : CardDef := {
+    grizzlyBears with
+    name := "P55 Check9 Squire"
+    staticAbilities := #[
+      .costModifier none (.abilities .you (some (.equip none)) { zones := .battlefield, pred := .anyObject } (some (.sameAs .this)) none)
+        (.reduceGeneric (.const 3))
+    ]
+  }
+  let gEquipNoDisc :=
+    (addPermanent (addPermanent gMain equip4Def p0 p0) grizzlyBears p0 p0).addMana p0 .colorless 1
+  let gEquipWithDisc := addPermanent gEquipNoDisc cheapEquipBearerDef p0 p0
+
+  -- 6. `hasUniqueManaPayment` `extra`-before-`minSub` tap order:
+  --    Commander is a Red Goblin; `p0` casts a `{R}` Goblin creature spell with an untapped Mountain
+  --    (`minSub` = #[Mountain]) and an extra untapped *Path of Ancestry* (also producing `{R}`).
+  --    Tapping Path of Ancestry *before* Mountain spends Ancestry `{R}` -> scry 1 (`ancestryScry = true`)!
+  let redGobCmdDef : CardDef := {
+    grizzlyBears with
+    name := "P55 Check9 CmdGoblin"
+    manaCost := { symbols := #[.colored .red] }
+    supertypes := #[.legendary]
+    subtypes := #["Goblin"]
+  }
+  let redGobSpellDef : CardDef := {
+    grizzlyBears with
+    name := "P55 Check9 GobSpell"
+    manaCost := { symbols := #[.colored .red] }
+    subtypes := #["Goblin"]
+  }
+  let ancDeck := Array.replicate 60 mountain
+  let gAncStart : Game :=
+    match Start.start {
+      seats := #[
+        { name := "Alice", deck := ancDeck, commanders := #[redGobCmdDef] },
+        { name := "Bob", deck := ancDeck }
+      ]
+      format := .constructed
+      seed := 1
+      startingPlayer := some 0
+    } with
+    | .ok g =>
+      let g1 := mustApply g p0 .keep
+      let g2 := mustApply g1 p1 .keep
+      -- Advance from upkeep to precombat main:
+      let g3 := mustApply g2 p0 .pass
+      let g4 := mustApply g3 p1 .pass
+      emptyHand g4 p0
+    | .error e => panic! s!"gAncStart failed: {e}"
+  let gAncLands :=
+    insertObject
+      (addPermanent (addPermanent gAncStart mountain p0 p0) pathOfAncestry p0 p0)
+      redGobSpellDef p0 (.hand p0)
+  let gAncProp := mustApply gAncLands p0 (.cast (gAncLands.player p0).hand.back!)
+
+  -- 7. `hasUniqueManaPayment` `minSub` tap-order flip when `!leftPool.units.isEmpty`:
+  --    Two plain `{R}{R}` sources (`srcA`, `srcB`) paying `{R}{R}{R}`: both are required (`minSub`),
+  --    leaving 1 `{R}` in `leftPool` whose `ManaUnit.source` depends on tap order!
+  let doubleRedLandDef : CardDef := {
+    name := "P55 Check9 DoubleRedLand"
+    types := #[.land]
+    activatedAbilities := #[ActivatedAbility.manaAbility (.sequence #[(.colored .red, .const 2)])]
+  }
+  let rrrSpellDef : CardDef := {
+    name := "P55 Check9 TripleRed"
+    manaCost := { symbols := #[.colored .red, .colored .red, .colored .red] }
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let gMinOrder0 :=
+    insertObject
+      (addPermanent (addPermanent gMain doubleRedLandDef p0 p0) doubleRedLandDef p0 p0)
+      rrrSpellDef p0 (.hand p0)
+  let gMinOrderProp := mustApply gMinOrder0 p0 (.cast (gMinOrder0.player p0).hand.back!)
+
+  -- 8. `hasUniqueManaPayment` filter-land `spendsPoolMana` laundering:
+  --    Floating `{R}` from a Treasure token pays `{R}` (`outcome0.fromTreasure = true`),
+  --    while an untapped filter land `{R}, {T}: Add {R}{R}` launders the Treasure mana into
+  --    plain `{R}{R}`, flipping `fromTreasure` to `false`!
+  let trWatchDef : CardDef := {
+    name := "P55 Check9 TrWatch"
+    types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger (.castSpell .you .anyObject (manaSpent? := some .fromTreasure))
+        (Effect.gainLife 1)
+    ]
+  }
+  let filterRtoRRDef : CardDef := {
+    name := "P55 Check9 FilterRtoRR"
+    types := #[.land]
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.mana { symbols := #[.colored .red] }, .tapSelf]
+      effect := Effect.addMana #[.colored .red, .colored .red]
+    }]
+  }
+  let rInstDef : CardDef := {
+    name := "P55 Check9 RedInst"
+    manaCost := { symbols := #[.colored .red] }
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let gFilterLaunder0 :=
+    let g0 :=
+      insertObject
+        (addPermanent (addPermanent gMain trWatchDef p0 p0) filterRtoRRDef p0 p0)
+        rInstDef p0 (.hand p0)
+    g0.record (GameEvent.manaAdded g0.turnNumber p0 #[{ mana := .colored .red, fromTreasure := true }])
+  let gFilterLaunderProp := mustApply gFilterLaunder0 p0 (.cast (gFilterLaunder0.player p0).hand.back!)
+
+  -- 9. `hasUniqueManaPayment` `instrInterest` AST traversals (`MoveMods.choice?`, `ManaSpec`, `DelayedTokenAction`):
+  let twoWhiteCost : ManaCost := ⟨#[.twobrid .white]⟩
+  let moveChoiceSpellDef : CardDef := {
+    name := "P55 Check9 MoveChoiceMana"
+    manaCost := twoWhiteCost
+    types := #[.sorcery]
+    spellAbility := some {
+      effect := {
+        body := .moveZone (.inZones { zones := #[.hand], owner := .ofPlayer .you } .anyObject) .graveyard .discard
+          { choice? := some { count := .exact (.manaSpent .this) } }
+      }
+    }
+  }
+  let addManaSpecSpellDef : CardDef := {
+    name := "P55 Check9 AddManaSpec"
+    manaCost := twoWhiteCost
+    types := #[.sorcery]
+    spellAbility := some {
+      effect := {
+        body := .player (.addMana .you { spec := .sequence #[(.colored .red, .manaSpent .this)] })
+      }
+    }
+  }
+  let delayedTokSpellDef : CardDef := {
+    name := "P55 Check9 DelayedTokMana"
+    manaCost := ManaCost.ofGeneric 1
+    types := #[.sorcery]
+    spellAbility := some {
+      effect := {
+        body := .create (.tokens .you (.const 1) (.predefined .treasure)
+          { delayedAction? := some (.sacrificeAtEndStepUnless
+              (.castPred (.manaSpentMatches (.ofColor .red) .this))) })
+      }
+    }
+  }
+  let gMoveChoice0 :=
+    (insertObject (addPermanent gMain plains p0 p0) moveChoiceSpellDef p0 (.hand p0)).addMana p0 .colorless 2
+  let gMoveChoiceProp := mustApply gMoveChoice0 p0 (.cast (gMoveChoice0.player p0).hand.back!)
+  let gManaSpec0 :=
+    (insertObject (addPermanent gMain plains p0 p0) addManaSpecSpellDef p0 (.hand p0)).addMana p0 .colorless 2
+  let gManaSpecProp := mustApply gManaSpec0 p0 (.cast (gManaSpec0.player p0).hand.back!)
+  let gDelayedTok0 :=
+    (insertObject (addPermanent gMain mountain p0 p0) delayedTokSpellDef p0 (.hand p0)).addMana p0 (.colored .green) 1
+  let gDelayedTokProp := mustApply gDelayedTok0 p0 (.cast (gDelayedTok0.player p0).hand.back!)
+
+  mustHoldCheck9 "p55_prioFlashbackAndGyLand"
+    (!hasGameStatePriorityAction gFb0 p0 &&
+     !hasGameStatePriorityAction gFb1 p0 &&
+     hasGameStatePriorityAction gFb2 p0 &&
+     !hasGameStatePriorityAction gGyLandNoPerm p0 &&
+     hasGameStatePriorityAction gGyLandWithPerm p0 &&
+     !hasGameStatePriorityAction gGyLandPlayed p0) &&
+  mustHoldCheck9 "p55_prioLibraryTopCreatureMorphLand"
+    (!hasGameStatePriorityAction gTopCr0 p0 &&
+     hasGameStatePriorityAction gTopCrPay p0 &&
+     !hasGameStatePriorityAction gTopMorph0 p0 &&
+     hasGameStatePriorityAction gTopMorphPay p0 &&
+     !hasGameStatePriorityAction gTopLandNoPerm p0 &&
+     hasGameStatePriorityAction gTopLandWithPerm p0) &&
+  mustHoldCheck9 "p55_prioSneak"
+    (hasGameStatePriorityAction gSnkUnblkPay p0 &&
+     !hasGameStatePriorityAction gSnkUnblkNoMana p0 &&
+     !hasGameStatePriorityAction gSnkBlockedPay p0 &&
+     !hasGameStatePriorityAction gSnkSacOnlyAtk p0 &&
+     hasGameStatePriorityAction gSnkSacExtraCr p0) &&
+  mustHoldCheck9 "p55_prioConvokeAndImprovise"
+    (!hasGameStatePriorityAction gConvShort p0 &&
+     hasGameStatePriorityAction gConvEnough p0 &&
+     !hasGameStatePriorityAction gImpShort p0 &&
+     hasGameStatePriorityAction gImpEnough p0) &&
+  mustHoldCheck9 "p55_prioTargetReducedSpellAndEquip"
+    (!hasGameStatePriorityAction gTgtNoGob p0 &&
+     hasGameStatePriorityAction gTgtWithGob p0 &&
+     !hasGameStatePriorityAction gEquipNoDisc p0 &&
+     hasGameStatePriorityAction gEquipWithDisc p0) &&
+  mustHoldCheck9 "p55_uniqueManaExtraBeforeMinSub"
+    (!hasUniqueManaPayment gAncProp) &&
+  mustHoldCheck9 "p55_uniqueManaMinSubTapOrder"
+    (!hasUniqueManaPayment gMinOrderProp) &&
+  mustHoldCheck9 "p55_uniqueManaFilterLandSpendsPoolMana"
+    (!hasUniqueManaPayment gFilterLaunderProp) &&
+  mustHoldCheck9 "p55_uniqueManaInstrInterestAst"
+    (!hasUniqueManaPayment gMoveChoiceProp &&
+     !hasUniqueManaPayment gManaSpecProp &&
+     !hasUniqueManaPayment gDelayedTokProp)

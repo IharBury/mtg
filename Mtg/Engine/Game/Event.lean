@@ -1379,6 +1379,8 @@ inductive PendingReplacement where
   | moveSimultaneousToGraveyard (ids : Array ObjectId)
       (preBattlefield : Option (Array GameObject))
       (cause : Option EventCause)
+      (deferPlayFromExileLogs : Bool := false)
+      (fromEventIdx? : Option Nat := none)
   | destroyPermanent (targetId : ObjectId) (cause : Option EventCause)
       (preBattlefield : Option (Array GameObject) := none)
       (reason : Option String := none)
@@ -1431,6 +1433,7 @@ inductive PendingReplacement where
       (illegalEquips : Array (ObjectId × ObjectId) := #[])
       (illegalCreatureAtts : Array (ObjectId × ObjectId) := #[])
       (legendGroups : Array (PlayerId × String × Array ObjectId) := #[])
+      (deferPlayFromExileLogs : Bool := false)
   | untapPermanent (targetId : ObjectId) (duringUntapStep : Bool := false)
       (logUntap : Bool := true) (cause : Option EventCause := none)
   | untapStepPermanents (ids : Array ObjectId)
@@ -1616,6 +1619,7 @@ inductive PendingReplacement where
       (postMove : Bool := false)
   | leavePlayersWhoLost (savedPending : Option Pending := none) (popOuter : Bool := false)
       (departed : Array PlayerId := #[]) (rewindProposal : Option Bool := none)
+      (fromEventIdx? : Option Nat := none)
   | endControlExileLoop (remaining : Array (ObjectId × String × Option PlayerId))
       (cause : Option EventCause := none)
       (pendingLog : Option (ObjectId × String) := none)
@@ -1627,18 +1631,21 @@ inductive PendingReplacement where
       (runBeginTurn : Bool := false) (alreadyExpired : Array PlayerId := #[])
   | beginTurnAfterStartExpiry
   | moveCardsToGraveyardLoop (ids : Array ObjectId) (cause : Option EventCause := none)
+      (fromEventIdx? : Option Nat := none)
   | placeSearchedGraveyardLoop (ids : Array ObjectId) (cause : Option EventCause := none)
       (pendingLog : Option (ObjectId × PlayerId × String) := none)
   | finishConcede (wasIdlePriority : Bool) (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
       (savedPending : Option Pending := none) (popOuter : Bool := false)
       (departed : Array PlayerId := #[]) (rewindProposal : Option Bool := none)
+      (fromEventIdx? : Option Nat := none)
   | concedePlayersLoop (remaining : Array PlayerId)
       (wasPregame midResolutionOrBatch wasIdlePriority : Bool)
       (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
       (savedPending : Option Pending := none) (popOuter : Bool := false)
       (departed : Array PlayerId := #[]) (rewindProposal : Option Bool := none)
+      (fromEventIdx? : Option Nat := none)
   | afterWardResolved
   | runPostCastCleanup (cleanup : PostCastCleanup)
   | continueCheckpointReplay (remainingStream fullKeptStream : Array (Bool × GameEvent))
@@ -1859,10 +1866,22 @@ instance : BEq EngineChange := ⟨instBEqPendingReplacement.beq_4⟩
 instance : BEq GameChange := ⟨instBEqPendingReplacement.beq_5⟩
 instance : BEq GameEvent := ⟨instBEqPendingReplacement.beq_6⟩
 
-/-- Whether a `PendingReplacement` continuation ends with `.finishResolutionChoice`. -/
+/-- Whether `pr` is a pure post-log continuation (emitting only log messages
+without altering prompts, priority, or control flow) that is transparent to
+trailing priority-grant checks. -/
+def PendingReplacement.isPurePostLog : PendingReplacement → Bool
+  | .finishPostStep (.logExpiredPlayFromExile ..)
+  | .logMessage _ => true
+  | .seq a b => a.isPurePostLog && b.isPurePostLog
+  | _ => false
+
+/-- Whether a `PendingReplacement` continuation ends with `.finishResolutionChoice`
+(ignoring pure post-log tails). -/
 def PendingReplacement.endsWithFinishResolutionChoice : PendingReplacement → Bool
   | .finishResolutionChoice => true
-  | .seq _ b => b.endsWithFinishResolutionChoice
+  | .seq a b =>
+    if b.isPurePostLog then a.endsWithFinishResolutionChoice
+    else b.endsWithFinishResolutionChoice
   | _ => false
 
 /-- Whether a `PendingReplacement` continuation contains a suppressed checkpoint replay. -/
@@ -1920,7 +1939,7 @@ def PendingReplacement.nextQueuedPending (hasQueuedPending : Bool := false) :
 /-- Whether a `PendingReplacement` continuation already ends by granting
 priority (`.receivePriority` / `.finishResolutionChoice` / `.finishPostCast` /
 `.finishBecomeCast` with `grantPriority == true` / `.finishConcede` /
-mana-ability completions with `prevPending == .none`). -/
+mana-ability completions with `prevPending == .none`), ignoring pure post-log tails. -/
 def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
     (hasQueuedPending : Bool := false) : Bool :=
   match pr with
@@ -1950,14 +1969,16 @@ def PendingReplacement.endsWithPriorityGrant (pr : PendingReplacement)
   | .finishActivateManaAbilityPicks _ _ _ _ _ _ _ _ _ _ _ _ prevPending ..
   | .finishActivateManaAbilityPostSac _ _ _ _ _ _ _ _ _ _ prevPending .. =>
     prevPending == .none
-  | .seq a b => b.endsWithPriorityGrant (a.nextQueuedPending hasQueuedPending)
+  | .seq a b =>
+    if b.isPurePostLog then a.endsWithPriorityGrant hasQueuedPending
+    else b.endsWithPriorityGrant (a.nextQueuedPending hasQueuedPending)
   | _ => false
 
 /-- Whether a `PendingReplacement` continuation ends with a non-proposal priority
 grant (`.receivePriority`, `.finishResolutionChoice`, `.finishConcede`,
 `.afterWardResolved`, an idle `.concedePlayersLoop`, or an unconditionally
 priority-granting step/turn/cleanup continuation), excluding
-proposal-completion continuations. -/
+proposal-completion continuations and ignoring pure post-log tails. -/
 def PendingReplacement.endsWithNonProposalPriorityGrant : PendingReplacement → Bool
   | .receivePriority _ | .finishResolutionChoice | .afterWardResolved
   | .beginTurnAfterStartExpiry
@@ -1972,8 +1993,44 @@ def PendingReplacement.endsWithNonProposalPriorityGrant : PendingReplacement →
   | .finishPostStep (.beginStepAfterPhaseBegan st) =>
     stepAlwaysGrantsPriority st
   | .concedePlayersLoop _ wp mid _ _ wc .. => !wp && !mid && wc.isNone
-  | .seq _ b => b.endsWithNonProposalPriorityGrant
+  | .seq a b =>
+    if b.isPurePostLog then a.endsWithNonProposalPriorityGrant
+    else b.endsWithNonProposalPriorityGrant
   | _ => false
+
+/-- Whether `pr` is a pure trailing priority-granting leaf before which deferred
+`.logExpiredPlayFromExile` post-steps should be inserted so expiry logs emit
+before `PriorityEvent.received` (CR 117.3 / 611.2). -/
+def PendingReplacement.isPurePriorityGrantLeaf : PendingReplacement → Bool
+  | .receivePriority _ | .finishResolutionChoice | .afterWardResolved
+  | .beginTurnAfterStartExpiry
+  | .finishCleanupAfterClearEot
+  | .finishPostStep .startNextTurnAndBegin
+  | .finishPostStep .endTurnAfterCleanupStepEnded
+  | .finishPostStep .cleanupStepAfterDiscard
+  | .finishPostStep (.postSbaCleanup _) => true
+  | .finishConcede _ _ wc .. => wc.isNone
+  | .beginStepCont st
+  | .finishPostStep (.beginStepBody st)
+  | .finishPostStep (.beginStepAfterPhaseBegan st) =>
+    stepAlwaysGrantsPriority st
+  | .concedePlayersLoop _ wp mid _ _ wc .. => !wp && !mid && wc.isNone
+  | _ => false
+
+/-- Insert `postStep` immediately before any trailing pure priority-grant leaf
+(or before a pure post-log tail sitting after one) in `pr`, or at the end of
+`pr` when `pr` does not end with a pure priority-grant leaf. -/
+def PendingReplacement.insertBeforeTrailingPriorityGrant
+    (pr postStep : PendingReplacement) : PendingReplacement :=
+  match pr with
+  | .seq a b =>
+    if b.isPurePriorityGrantLeaf || (b.isPurePostLog && a.endsWithNonProposalPriorityGrant) then
+      .seq (a.insertBeforeTrailingPriorityGrant postStep) b
+    else
+      .seq a (b.insertBeforeTrailingPriorityGrant postStep)
+  | leaf =>
+    if leaf.isPurePriorityGrantLeaf then .seq postStep leaf
+    else .seq leaf postStep
 
 /-- Ensure a `PendingReplacement` continuation ends with a priority grant
 without appending `.finishResolutionChoice` onto a continuation that already grants priority. -/
@@ -1999,13 +2056,13 @@ once the replacement pause finishes (CR 616.1 / 800.4). -/
 def PendingReplacement.appendDeparted (p : PlayerId) : PendingReplacement → PendingReplacement
   | .restorePending pend popOuter promptLog dep rw =>
     .restorePending pend popOuter promptLog (if dep.contains p then dep else dep.push p) rw
-  | .leavePlayersWhoLost saved popOuter dep rw =>
-    .leavePlayersWhoLost saved popOuter (if dep.contains p then dep else dep.push p) rw
-  | .finishConcede wasIdle prio wasCombat saved popOuter dep rw =>
-    .finishConcede wasIdle prio wasCombat saved popOuter (if dep.contains p then dep else dep.push p) rw
-  | .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter dep rw =>
+  | .leavePlayersWhoLost saved popOuter dep rw fromIdx? =>
+    .leavePlayersWhoLost saved popOuter (if dep.contains p then dep else dep.push p) rw fromIdx?
+  | .finishConcede wasIdle prio wasCombat saved popOuter dep rw fromIdx? =>
+    .finishConcede wasIdle prio wasCombat saved popOuter (if dep.contains p then dep else dep.push p) rw fromIdx?
+  | .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter dep rw fromIdx? =>
     .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter
-      (if dep.contains p then dep else dep.push p) rw
+      (if dep.contains p then dep else dep.push p) rw fromIdx?
   | .seq a b => .seq (a.appendDeparted p) (b.appendDeparted p)
   | other => other
 
@@ -2016,9 +2073,9 @@ def PendingReplacement.appendDepartedMany (dep : Array PlayerId) (cont : Pending
 /-- Collect any departed players already recorded on a `PendingReplacement` tree. -/
 def PendingReplacement.collectDeparted : PendingReplacement → Array PlayerId
   | .restorePending _ _ _ dep _ => dep
-  | .leavePlayersWhoLost _ _ dep _ => dep
-  | .finishConcede _ _ _ _ _ dep _ => dep
-  | .concedePlayersLoop _ _ _ _ _ _ _ _ dep _ => dep
+  | .leavePlayersWhoLost _ _ dep _ _ => dep
+  | .finishConcede _ _ _ _ _ dep _ _ => dep
+  | .concedePlayersLoop _ _ _ _ _ _ _ _ dep _ _ => dep
   | .seq a b =>
     b.collectDeparted.foldl (fun acc p => if acc.contains p then acc else acc.push p) a.collectDeparted
   | _ => #[]
@@ -2028,12 +2085,12 @@ checkpoint continuations can be compared modulo post-checkpoint departures. -/
 def PendingReplacement.withoutDeparted : PendingReplacement → PendingReplacement
   | .restorePending pend popOuter promptLog _ rw =>
     .restorePending pend popOuter promptLog #[] rw
-  | .leavePlayersWhoLost saved popOuter _ rw =>
-    .leavePlayersWhoLost saved popOuter #[] rw
-  | .finishConcede wasIdle prio wasCombat saved popOuter _ rw =>
-    .finishConcede wasIdle prio wasCombat saved popOuter #[] rw
-  | .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter _ rw =>
-    .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter #[] rw
+  | .leavePlayersWhoLost saved popOuter _ rw fromIdx? =>
+    .leavePlayersWhoLost saved popOuter #[] rw fromIdx?
+  | .finishConcede wasIdle prio wasCombat saved popOuter _ rw fromIdx? =>
+    .finishConcede wasIdle prio wasCombat saved popOuter #[] rw fromIdx?
+  | .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter _ rw fromIdx? =>
+    .concedePlayersLoop rem wp mid wasIdle prio wasCombat saved popOuter #[] rw fromIdx?
   | .seq a b => .seq a.withoutDeparted b.withoutDeparted
   | other => other
 
@@ -3731,6 +3788,25 @@ def rootCopiedSpellId (events : Array GameEvent) (spell : ObjectId) : ObjectId :
     | .rules (.stackObject (.copied original copy _)) =>
       if copy.id == some cur then original else cur
     | _ => cur) sid
+
+/-- Last known targets of stack object `oid` from `events`, walking backward through
+`CastEvent.targeted` and `StackObjectEvent.copied` ancestry so copied stack spells
+retain their inherited (or retargeted) targets after leaving the stack
+(CR 608.2h / 707.10c). -/
+def lastKnownTargetsOf? (events : Array GameEvent) (oid : ObjectId) : Option (Array Target) :=
+  if oid == noSourceSentinelId then none
+  else Id.run do
+    let mut curId := oid
+    for revIdx in [0:events.size] do
+      let idx := events.size - 1 - revIdx
+      match events[idx]!.change with
+      | .rules (.cast (.targeted tid ts _ _)) =>
+        if tid == curId then return some ts
+      | .rules (.stackObject (.copied original copy _)) =>
+        if copy.id == some curId then
+          curId := original
+      | _ => pure ()
+    return none
 
 /-- Whether `id` (or the spell `id` resolved from, CR 400.7d) is an uncast stack
 copy created directly on `.stack` via `StackObjectEvent.copied` (CR 707.10), as

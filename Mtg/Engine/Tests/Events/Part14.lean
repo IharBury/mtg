@@ -414,6 +414,18 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
       .pushOuterPendingReplacement (.gainLife p0 2 (some testCause)),
       .pushOuterPendingReplacement (.receivePriority p1),
       .pushOuterPendingReplacement (.restorePending .none true none #[] none) ]
+  let gAssignTwoNonPrio :=
+    g4.changes #[
+      .pushContinuationFrame {},
+      .pushOuterPendingReplacement (.gainLife p0 2 (some testCause)),
+      .pushOuterPendingReplacement (.gainLife p0 1 (some testCause)),
+      .pushOuterPendingReplacement (.restorePending .none true none #[] none) ]
+  let gAssignBottomPrio :=
+    g4.changes #[
+      .pushContinuationFrame {},
+      .pushOuterPendingReplacement (.receivePriority p2),
+      .pushOuterPendingReplacement (.gainLife p0 1 (some testCause)),
+      .pushOuterPendingReplacement (.restorePending .none true none #[] none) ]
   let assignThenPop : PendingReplacement :=
     .seq (.restorePending (.assignCombatDamage p0 true) true none #[] none)
          (.restorePending .none true none #[] none)
@@ -423,6 +435,9 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
       .pushOuterPendingReplacement (.gainLife p0 2 (some testCause)) ]
   let depTargetThenComplete : PendingReplacement :=
     .seq (.restorePending (.chooseTargets p0) true none #[p2] none)
+         (.completeActivation true false)
+  let depModeThenComplete : PendingReplacement :=
+    .seq (.restorePending (.chooseMode p0) true none #[p2] none)
          (.completeActivation true false)
 
   let item1cOk :=
@@ -435,8 +450,13 @@ private def replayOk48i1 (gs : Array Game) : Bool :=
        gOuterFraResumed.priority == p2 &&
        gOuterP3Resumed.proposedSpell.isNone &&
        gOuterP3Resumed.priority == p3 &&
-       !gAssignProbeBase.continuationGrantsPriority false assignThenPop &&
-       !gDepPriorBase.continuationGrantsPriority false depTargetThenComplete) &&
+       gAssignProbeBase.continuationGrantsPriority false assignThenPop &&
+       gAssignProbeBase.priorityRecipientOfContinuation? false assignThenPop == some p1 &&
+       !gAssignTwoNonPrio.continuationGrantsPriority false assignThenPop &&
+       gAssignBottomPrio.priorityRecipientOfContinuation? false assignThenPop == some p2 &&
+       gDepPriorBase.continuationGrantsPriority false depTargetThenComplete &&
+       gDepPriorBase.firstPriorityGrantRecipient? false depTargetThenComplete == some none &&
+       !gDepPriorBase.continuationGrantsPriority false depModeThenComplete) &&
     mustHold48i1 "1c_drainProbeLinkedExileSba"
       (gProbeLinked.firstContinuationPriorityGrant? == some (some p0) &&
        gProbeEmptyLinked.firstContinuationPriorityGrant? == some (some p1))

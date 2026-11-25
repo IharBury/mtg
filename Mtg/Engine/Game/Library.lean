@@ -180,7 +180,7 @@ def draw (g : Game) (p : PlayerId) (n : Nat := 1)
 /-- Finish the post-draw discard prompt of `beginRecruit`. -/
 def finishBeginRecruit (g : Game) (p : PlayerId) : Game :=
   if !g.stillInGame p then g
-  else if (g.player p).hand.isEmpty then
+  else if (g.discardableHandIds p).isEmpty then
     g.logMsg s!"{(g.player p).name} has no card to discard"
   else
     g.change (.pending (.recruitDiscard p)) |>.logMsg

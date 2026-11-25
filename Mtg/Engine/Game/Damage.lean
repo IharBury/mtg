@@ -262,6 +262,20 @@ def replaceDamage (g : Game) (n : Int)
               affectedPlayer := pid
               kind := .protectionFromEverythingPlayer pid
             })
+          let effSrc? : Option GameObject :=
+            src?.orElse (fun _ =>
+              srcEvent?.map (fun eo =>
+                Game.damageSourceObjectFromLki eo
+                  (prepared := eo.id.any g.wasPreparedAtDeparture)))
+          for em in g.battlefield do
+            if g.permanentGrantsPlayerProtectionFrom em pid effSrc? then
+              items := items.push (.prevention {
+                id := { kind := .protectionPreventDamage, grantor := some em.id, player := some pid }
+                source := some em.id
+                controller := g.controllerOf em
+                affectedPlayer := pid
+                kind := .protectionFromEverythingPlayer pid
+              })
         for (_, eff) in g.activeEffects do
           match eff with
           | .prevention spec d =>
@@ -815,9 +829,17 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
       g.record (GameEvent.damagePrevented g.turnNumber srcEvent (.player pid)
         rep.preventedAmount prevCause)
     else g
+  let effSrc? : Option GameObject :=
+    source.orElse (fun _ =>
+      srcSnap.map (fun eo =>
+        Game.damageSourceObjectFromLki eo
+          (prepared := eo.id.any g.wasPreparedAtDeparture)))
   if rep.prevented && preventable && g.protectionFromEverything pid &&
       !(source.any (fun src => (g.preventDamageGrantedBy src).any g.grantorStillInPlay)) then
     (recordPlayerPrevented g).logMsg s!"damage to {pl.name} is prevented (protection from everything)"
+  else if rep.prevented && preventable && g.playerProtectedFromStatic pid effSrc? &&
+      !(source.any (fun src => (g.preventDamageGrantedBy src).any g.grantorStillInPlay)) then
+    (recordPlayerPrevented g).logMsg s!"damage to {pl.name} is prevented (protection)"
   else if (rep.prevented || rep.amount == 0) && source.isSome then
     (recordPlayerPrevented g).logMsg s!"damage from the source is prevented"
   else if rep.prevented then

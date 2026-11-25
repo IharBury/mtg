@@ -10,7 +10,7 @@ import Mtg.Engine.Card.Parser.TokenEmblemGrammar
 Compositional sub-grammars for:
 - `DiscourseCtx`-aware object, player, recipient, destination-zone, and `MoveChoiceSpec` /
   `MoveMods` / `GrantPlayPermSpec` parsing (CR 115 / 608.2c / 610.3).
-- `SearchLibrarySpec` (`"search your library [and/or graveyard] for ..."`, CR 701.19).
+- `SearchLibrarySpec` (`"search your library [and/or graveyard] for ..."`, CR 701.23).
 - `InspectLibrarySpec` (`"look at the top N"`, `"reveal the top N"`, `"reveal/exile cards
   from the top of ... until ..."`, `"mill N cards. Put ... from among them ..."`,
   `"separate them into two piles"`, `"exile all but the bottom card"`, `"choose N cards from
@@ -764,7 +764,7 @@ def parseGrantPlayPermClause? (ctx : DiscourseCtx) (raw : String) :
     filter?
   }, ctx')
 
-/-! ### `SearchLibrarySpec` Parser (CR 701.19) -/
+/-! ### `SearchLibrarySpec` Parser (CR 701.23) -/
 
 /-- Parse a `"search <zones> for <count> <filter> card(s) ..."` clause (plus optional
 following `"If <cond>, untap it."` or `"If you search your library this way, shuffle."`

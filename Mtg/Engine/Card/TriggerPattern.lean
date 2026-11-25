@@ -253,7 +253,7 @@ inductive TriggerPattern where
   /-- An object moves between zones (CR 603.6a, 603.6c, 603.10a, 700.4). -/
   | zoneChange (subject : ObjectPred) (fromZone toZone : ZoneEndpointSpec)
       (verb? : Option ZoneVerb := none) (actor? : Option PlayerFilter := none)
-  /-- A player creates one or more matching tokens (CR 111 / 701.6). -/
+  /-- A player creates one or more matching tokens (CR 111 / 701.7). -/
   | createTokens (who : PlayerFilter) (tokenPred : ObjectPred := .anyObject)
   /-- A player sacrifices a matching permanent (CR 603.10a / 701.21). -/
   | sacrifice (who : PlayerFilter) (subject : ObjectPred)

@@ -143,9 +143,13 @@ private def replayOk47i1 (gs : Array Game) : Bool :=
         (cause := some testCause))
       p2 .concede
   let gCsntLeg1Clean := gCsntLeg1.change (.pendingReplacement none)
+  let gCsntLeg1Queued :=
+    gCsntLeg1Clean.change (.pendingReplacement (some (.continueStartNextTurn p1 #[p2] true)))
   let csntLegendPauseOk :=
-    gCsntLeg1Clean.continuationGrantsPriority false (.continueStartNextTurn p1 #[p2] true) &&
-    gCsntLeg1Clean.priorityRecipientOfContinuation? false (.continueStartNextTurn p1 #[p2] true) == some p1 &&
+    gCsntLeg1Queued.anyContinuationGrantsPriority &&
+    gCsntLeg1Queued.firstContinuationPriorityGrant? == some (some p1) &&
+    !gCsntLeg1Clean.continuationGrantsPriority false (.continueStartNextTurn p1 #[p2] true) &&
+    gCsntLeg1Clean.priorityRecipientOfContinuation? false (.continueStartNextTurn p1 #[p2] true) == none &&
     !gCsntLeg1.continuationGrantsPriority false (.continueStartNextTurn p1 #[p2] true) &&
     gCsntLeg1.priorityRecipientOfContinuation? false (.continueStartNextTurn p1 #[p2] true) == none
   -- Turn 1 2-player upkeep (`started`) skips `.draw` -> `.precombatMain` grants priority to `p0`:

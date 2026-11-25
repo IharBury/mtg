@@ -2057,24 +2057,265 @@ def recordInputFlags (output : Option IO.FS.Handle) (sameFile : Bool)
     for line in flags do
       recordCommand output line
 
+/-- Remove one symbol from `cost` using a single convoke (`colors? = some cols`)
+or improvise (`colors? = none`) tap, returning all distinct single-symbol
+reductions a player can achieve (CR 702.51a / 702.126a). -/
+private def convokeImproviseStepCosts (cost : ManaCost) (colors? : Option ColorSet) :
+    Array ManaCost := Id.run do
+  let syms := cost.symbols
+  let without (i : Nat) : Array ManaSymbol :=
+    syms.extract 0 i ++ syms.extract (i + 1) syms.size
+  let mut out : Array ManaCost := #[]
+  if let some colors := colors? then
+    let mut seenSyms : Array ManaSymbol := #[]
+    for i in [0:syms.size] do
+      let s := syms[i]!
+      let matchesCol :=
+        match s with
+        | .colored c => colors.contains c
+        | .hybrid a b => colors.contains a || colors.contains b
+        | .twobrid c => colors.contains c
+        | _ => false
+      if matchesCol && !seenSyms.contains s then
+        seenSyms := seenSyms.push s
+        out := out.push { symbols := without i }
+  if let some i := syms.findIdx? (fun | .generic n => n > 0 | _ => false) then
+    if let .generic n := syms[i]! then
+      let reduced : ManaCost :=
+        if n == 1 then { symbols := without i }
+        else { symbols := syms.set! i (.generic (n - 1)) }
+      out := out.push reduced
+  return out
+
+/-- Whether `p` can pay `cost` for spell `spellObj` (`face`) using pool + plain
+mana sources plus Convoke (untapped creatures, CR 702.51a) and/or Improvise
+(untapped artifacts, CR 702.126a). -/
+private partial def canPaySpellCostWithConvokeImprovise (g : Game) (p : PlayerId)
+    (spellObj : GameObject) (face : CardDef) (cost : ManaCost)
+    (fromHand : Bool := spellObj.zone == .hand p)
+    (excludeIds : Array ObjectId := #[])
+    (castFromZone : Option ZoneKind := none) : Bool :=
+  if g.canPaySpellCostFromSources p spellObj cost
+      (fromHand := fromHand) (excludeIds := excludeIds) (castFromZone := castFromZone) then
+    true
+  else
+    let hasConvoke := KeywordAbility.hasConvoke face.keywords
+    let hasImprovise := g.spellHasImprovise face p
+    if !hasConvoke && !hasImprovise then false
+    else
+      let manaSrcIds : Array ObjectId := (g.manaSources p).map (·.1.id)
+      let rawHelpers : Array (ObjectId × Option ColorSet × Bool) :=
+        g.objects.filterMap fun o =>
+          if o.isOnBattlefield && !o.status.tapped && !excludeIds.contains o.id &&
+              g.controlledBy o p then
+            let isConv := hasConvoke && g.isCreature o
+            let isImp := hasImprovise && g.isArtifact o
+            if isConv then some (o.id, some (g.colors o), manaSrcIds.contains o.id)
+            else if isImp then some (o.id, none, manaSrcIds.contains o.id)
+            else none
+          else none
+      if rawHelpers.isEmpty then false
+      else
+        -- Put constrained colored convokers first and pure-generic helpers last.
+        let helperRank (h : ObjectId × Option ColorSet × Bool) : Nat :=
+          match h.2.1 with
+          | none => 100
+          | some cs =>
+            let n := Color.all.foldl (fun acc c => if cs.contains c then acc + 1 else acc) 0
+            if n == 0 then 90 else n
+        let helpers := rawHelpers.qsort (fun a b => helperRank a < helperRank b)
+        let rec dfs (idx : Nat) (curCost : ManaCost) (curExcl : Array ObjectId)
+            (budget : Nat) : Bool × Nat :=
+          if g.canPaySpellCostFromSources p spellObj curCost
+              (fromHand := fromHand) (excludeIds := curExcl) (castFromZone := castFromZone) then
+            (true, budget)
+          else if idx ≥ helpers.size || budget == 0 then
+            (false, budget)
+          else
+            let (oid, cols?, isManaSrc) := helpers[idx]!
+            let nextExcl := if isManaSrc then curExcl.push oid else curExcl
+            let stepCosts := convokeImproviseStepCosts curCost cols?
+            let (hitTap, remBudget) :=
+              stepCosts.foldl (fun (found, b) c' =>
+                if found || b == 0 then (found, b)
+                else dfs (idx + 1) c' nextExcl (b - 1)) (false, budget)
+            if hitTap || remBudget == 0 then (hitTap, remBudget)
+            else if isManaSrc || stepCosts.isEmpty then
+              dfs (idx + 1) curCost curExcl remBudget
+            else (false, remBudget)
+        (dfs 0 cost excludeIds 256).1
+
+/-- Maximum generic cost reduction a legal target of spell `face` can provide
+(mirroring `Casting.applyTargetCostReductions`, CR 601.2c,f). -/
+private def maxSpellTargetGenericReduction (g : Game) (p : PlayerId) (o : GameObject)
+    (face : CardDef) : Nat :=
+  let tcs := g.evalLayer3 o
+  let faceStatics :=
+    if tcs.isEmpty then face.staticAbilities
+    else HasTextChange.applyTextChanges tcs face.staticAbilities
+  let hasTargetRed := faceStatics.any fun
+    | .costModifier cond? .thisSpell (.reduceGeneric amt) =>
+      cond?.any Condition.mentionsTarget || amt.mentionsTarget
+    | _ => false
+  if !hasTargetRed then 0
+  else
+    let tgts : Array Target :=
+      if isModalSpellFace face then
+        (effectiveSpellModes face).foldl (fun acc e =>
+          let m := g.expandEachOpponentEffect p (if tcs.isEmpty then e else TextChange.applyEffect tcs e)
+          if g.spellModeIsChoosable p m (some o.id) then
+            acc ++ g.legalEffectTargets p m (some o.id)
+          else acc) #[]
+      else
+        g.legalTargetsForFace p face none tcs (some o.id)
+    tgts.foldl (fun best tgt =>
+      match tgt with
+      | .permanent _ =>
+        let spellEnv : EvalEnv :=
+          { controller := p
+            sourceId := some o.id
+            targetSlots := #[#[tgt]] }
+        let red := faceStatics.foldl (fun acc ab =>
+          match ab with
+          | .costModifier cond? .thisSpell (.reduceGeneric amt) =>
+            if (cond?.any Condition.mentionsTarget || amt.mentionsTarget) &&
+                cond?.all (EvalExpr.evalCondition g spellEnv) then
+              acc + (EvalExpr.evalValue g spellEnv amt).toNat
+            else acc
+          | _ => acc) 0
+        max best red
+      | _ => best) 0
+
+/-- Maximum generic cost reduction a legal target of activated ability `ab` on `o`
+can provide (`nActTarget + nEquip`, mirroring `Casting.applyTargetCostReductions`,
+CR 602.2b / 601.2c,f). -/
+private def maxAbilityTargetGenericReduction (g : Game) (p : PlayerId) (o : GameObject)
+    (ab : ActivatedAbility) : Nat :=
+  let targetReds := ab.costReductions.filter (·.mentionsTarget)
+  let anyEquipTargetRed := g.battlefield.any fun perm =>
+    (g.staticAbilities perm).any fun
+      | .costModifier _ (.abilities _ _ _ (some _) none) (.reduceGeneric _) => true
+      | _ => false
+  if targetReds.isEmpty && !anyEquipTargetRed then 0
+  else
+    let legalTgts : Array Target :=
+      if ab.isEquipWorthy && ab.effect.targetSpec == .creatureYouControl then
+        g.legalTargetsForSpec p .worthyCreatureYouControl (some o.id)
+      else
+        match ab.equipSubtype? with
+        | some t =>
+          if ab.effect.targetSpec == .creatureYouControl then
+            g.legalTargetsForSpec p (.creatureYouControlSubtype t) (some o.id)
+          else
+            ab.allModes.foldl (fun acc m =>
+              if g.modeIsChoosable p m (some o.id) then
+                acc ++ g.legalEffectTargets p (g.expandEachOpponentEffect p m) (some o.id)
+              else acc) #[]
+        | none =>
+          ab.allModes.foldl (fun acc m =>
+            if g.modeIsChoosable p m (some o.id) then
+              acc ++ g.legalEffectTargets p (g.expandEachOpponentEffect p m) (some o.id)
+            else acc) #[]
+    legalTgts.foldl (fun best tgt =>
+      match tgt with
+      | .permanent oid =>
+        match g.findObject? oid with
+        | some tgtO =>
+          let nActTarget :=
+            if targetReds.isEmpty then 0
+            else EvalExpr.evalActivationCostReductions g p (some o.id) targetReds #[tgt]
+          let oEnv : EvalEnv :=
+            { controller := (g.controllerOf tgtO).getD tgtO.owner, sourceId := some tgtO.id }
+          let nEquip :=
+            (g.staticAbilities tgtO).foldl (fun acc sab =>
+              match sab with
+              | .costModifier cond? (.abilities act tag? sc (some tgtPred) none) (.reduceGeneric amt) =>
+                let tagOk := match tag? with
+                  | none => true
+                  | some t => ab.tag? == some t || (match t with | .equip _ => ab.isEquip | _ => false)
+                let srcOk := EvalExpr.evalObjectPred g oEnv (.live o) sc.pred
+                if tagOk && srcOk &&
+                    EvalExpr.matchesPlayerFilter g oEnv act p &&
+                    cond?.all (EvalExpr.evalCondition g oEnv) &&
+                    EvalExpr.evalObjectPred g oEnv (.live tgtO) tgtPred then
+                  acc + (EvalExpr.evalValue g oEnv amt).toNat
+                else acc
+              | _ => acc) 0
+          max best (nActTarget + nEquip)
+        | none => best
+      | _ => best) 0
+
+/-- Announced-additional-cost affordability helper for `hasGameStatePriorityAction`
+accounting for Convoke/Improvise and target-dependent generic cost reductions. -/
+private def canPayAnnouncedAdditionalForPriority (g : Game) (p : PlayerId)
+    (spellObj : GameObject) (face : CardDef) (targetRed : Nat)
+    (origPerm : Option PlayPermission := none)
+    (explicitAltCost : Bool := false) (flashback : Option Bool := none)
+    (fromHand : Bool := spellObj.zone == .hand p)
+    (castFromZone : Option ZoneKind := none) : Bool :=
+  match g.additionalChoiceCostFor? spellObj face with
+  | none => true
+  | some branches =>
+    let env : EvalEnv := { controller := p, sourceId := some spellObj.id }
+    branches.any fun branch =>
+      branch.items.all fun item =>
+        match item with
+        | .mana m =>
+          let cost :=
+            (g.playManaCost { spellObj with controller := some p } face m
+              (origPerm := origPerm) (flashback := flashback)
+              (explicitAltCost := explicitAltCost)
+              (useImplicitPermissions := false)).reduceGeneric targetRed
+          canPaySpellCostWithConvokeImprovise g p spellObj face cost
+            (fromHand := fromHand) (castFromZone := castFromZone)
+        | .behold quality =>
+          (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality) ||
+            (g.player p).hand.any (fun id =>
+              id != spellObj.id &&
+                (g.findObject? id).any (fun card => isDiscardableCard card && g.hasSubtype card quality))
+        | .sacrifice _ (.filter pred) =>
+          (g.permanentsOf p).any (fun perm =>
+            perm.id != spellObj.id && EvalExpr.evalObjectPred g env (.live perm) pred)
+        | .discard _ .hand =>
+          (g.discardableHandIds p).any (fun id => id != spellObj.id)
+        | .discard _ (.matching pred) =>
+          (g.discardableHandIds p).any (fun id =>
+            id != spellObj.id && (g.findObject? id).any (fun c => EvalExpr.evalObjectPred g env (.live c) pred))
+        | _ => true
+
 /-- Whether a player with priority has a legal action that affects the game
 other than passing or conceding. Mana abilities count even when their mana
 would not currently be useful, since tapping their source changes the game. -/
 def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
   if !g.hasPriority p then false
   else
-    let playable := g.handObjects p ++ g.exiledPlayable p
+    let gyPlayable : Array GameObject :=
+      (g.player p).graveyard.filterMap fun id =>
+        (g.findObject? id).bind fun o => if g.mayPlayFromGraveyard p o then some o else none
+    let libTopPlayable : Array GameObject :=
+      match (g.player p).library.back?.bind g.findObject? with
+      | some o => if g.mayPlayFromLibraryTop p o then #[o] else #[]
+      | none => #[]
+    let playable := g.handObjects p ++ g.exiledPlayable p ++ gyPlayable ++ libTopPlayable
     let canPlayLand :=
       g.canPlayLand p && playable.any g.isLand
+    let unblockedAttackers : Array GameObject :=
+      if g.canCastForSneak p then
+        g.objects.filter fun att =>
+          att.isOnBattlefield && g.isCreature att && g.controlledBy att p &&
+            att.status.attacking && !att.status.blocked
+      else #[]
     let canCast := playable.any (fun o =>
+      let face := { g.baseCard o with keywords := g.currentKeywords o }
+      let casterObj := { o with controller := some p }
       let frontOk :=
         g.canCastFrontFace p o &&
-          (let face := { g.baseCard o with keywords := g.currentKeywords o }
-           let casterObj := { o with controller := some p }
+          (let targetRed := maxSpellTargetGenericReduction g p o face
            let payOk (cost : ManaCost) (perm? : Option PlayPermission := none) : Bool :=
-             g.canPaySpellCostFromSources p o cost &&
-               g.canPayAnnouncedAdditionalFromSources p o (origPerm := perm?)
-                 (useImplicitPermissions := false)
+             canPaySpellCostWithConvokeImprovise g p o face (cost.reduceGeneric targetRed)
+               (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind) &&
+               canPayAnnouncedAdditionalForPriority g p o face targetRed (origPerm := perm?)
+                 (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind)
            if o.zone == .exile then
              let perms := g.playPermissionsFor p o
              let nullPerm : Option PlayPermission :=
@@ -2090,7 +2331,49 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
                    (useImplicitPermissions := false)) nullPerm)
            else
              payOk (g.playManaCost casterObj face (useImplicitPermissions := false)))
-      frontOk || g.canCastAndPayMorphFaceDown p o || g.canCastAndPayImpending p o)
+      let sneakOk :=
+        if unblockedAttackers.isEmpty || g.splitSecondOnStack || g.combatLocksNonManaAbilities ||
+            g.opponentsCantCastOnActiveTurn p || g.cantCastSpellsThisTurn p then
+          false
+        else
+          match face.sneakCost with
+          | none => false
+          | some sc =>
+            let fromGy := o.zone == .graveyard o.owner
+            let isFb := fromGy && (face.flashback.isSome || g.flashbackUntilEot o)
+            if isFb || !g.mayPlay p o || !g.graveyardCastThresholdMet p o.id face then false
+            else
+              let sneakPerms : Array (Option PlayPermission) :=
+                if o.zone == .exile then
+                  let clean := (g.playPermissionsFor p o).filter fun pm =>
+                    !pm.withoutManaCost && !pm.payLifeEqualManaValue &&
+                      pm.prepareSource.all fun src =>
+                        (g.findObject? src).any fun perm =>
+                          perm.isOnBattlefield && perm.status.prepared && g.controlledBy perm p
+                  let base := clean.map some
+                  if g.mayCastExiledBySource p o then
+                    base.push (some { player := p, anyMana := true })
+                  else if base.isEmpty && (g.playPermissionsFor p o).isEmpty then #[none]
+                  else base
+                else #[none]
+              let sneakFace := { face with manaCost := sc }
+              unblockedAttackers.any fun att =>
+                sneakPerms.any fun perm? =>
+                  (g.validateFrontFaceCast p o face
+                    (sneakCost := some sc) (sneakAttacker := some att.id)
+                    (origPermOverride := perm?)).isOk &&
+                    let gSneak := g.probeAfterSneakReturn p o.id att.id
+                    let targetRed := maxSpellTargetGenericReduction gSneak p o sneakFace
+                    let cost :=
+                      (gSneak.playManaCost casterObj sneakFace (origPerm := perm?)
+                        (flashback := some false) (explicitAltCost := true)
+                        (useImplicitPermissions := false)).reduceGeneric targetRed
+                    canPaySpellCostWithConvokeImprovise gSneak p o sneakFace cost
+                      (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind) &&
+                      canPayAnnouncedAdditionalForPriority gSneak p o sneakFace targetRed
+                        (origPerm := perm?) (explicitAltCost := true) (flashback := some false)
+                        (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind)
+      frontOk || sneakOk || g.canCastAndPayMorphFaceDown p o || g.canCastAndPayImpending p o)
     let canCastAdventure := playable.any (fun o =>
       g.canCastAdventure p o &&
         match (g.baseCard o).adventure with
@@ -2098,10 +2381,12 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
           let face := adv.toCardDef
           let advObj := { o with controller := some p, printed := face, adventurerCard := some o.printed }
           let casterObj := { o with controller := some p }
+          let targetRed := maxSpellTargetGenericReduction g p advObj face
           let payAdv (cost : ManaCost) (perm? : Option PlayPermission := none) : Bool :=
-            g.canPaySpellCostFromSources p advObj cost (fromHand := o.zone == .hand p) &&
-              g.canPayAnnouncedAdditionalFromSources p advObj (origPerm := perm?)
-                (useImplicitPermissions := false) (fromHand := o.zone == .hand p)
+            canPaySpellCostWithConvokeImprovise g p advObj face (cost.reduceGeneric targetRed)
+              (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind) &&
+              canPayAnnouncedAdditionalForPriority g p advObj face targetRed (origPerm := perm?)
+                (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind)
           if o.zone == .exile then
             let advPerms := (g.playPermissionsFor p o).filter (!·.fromAdventure)
             let nullPerm : Option PlayPermission :=
@@ -2123,7 +2408,9 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
       (List.range abs.size).any (fun idx =>
         let ab := abs[idx]!
         let isTurnFaceUp := o.status.faceDown && ab.isTurnFaceUp
-        let manaCost := if isTurnFaceUp then ab.cost.mana else g.activationManaCost p ab (some o)
+        let rawManaCost := if isTurnFaceUp then ab.cost.mana else g.activationManaCost p ab (some o)
+        let targetRed := if isTurnFaceUp then 0 else maxAbilityTargetGenericReduction g p o ab
+        let manaCost := rawManaCost.reduceGeneric targetRed
         let excludeIds := if !isTurnFaceUp && ab.cost.tap then #[o.id] else #[]
         g.canActivate p o ab (idx? := some idx) &&
           g.canPayAbilityCostFromSources p o ab manaCost
@@ -2382,13 +2669,35 @@ private partial def instrInterest (owner? : Option ObjectId) : Instruction → M
       (trigPatInterest owner? spec.pattern)
         |>.merge (spec.interveningIf?.map (condInterest owner?) |>.getD {})
         |>.merge (instrInterest owner? spec.effect.body)
-  | .moveZone oe _ _ mods =>
-    let base := objExprInterest owner? oe
+  | .moveZone oe dest _ mods =>
+    let choiceI (ch? : Option MoveChoiceSpec) : ManaSpentInterest :=
+      match ch? with
+      | none => {}
+      | some ch =>
+        (countRangeInterest owner? ch.count)
+          |>.merge (ch.filter?.map (objPredInterest owner?) |>.getD {})
+          |>.merge (ch.unlessMatching?.map (objPredInterest owner?) |>.getD {})
+    let destI : ManaSpentInterest :=
+      match dest with
+      | .library _ (.fromTop offset) _ => valExprInterest owner? offset
+      | _ => {}
+    let base :=
+      (objExprInterest owner? oe)
+        |>.merge destI
+        |>.merge (mods.attachTo?.map (objExprInterest owner?) |>.getD {})
+        |>.merge (choiceI mods.choice?)
     mods.enterCounters.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) base
   | .create op =>
     match op with
     | .tokens _ cnt spec mods =>
-      let base := valExprInterest owner? cnt
+      let delayedI : ManaSpentInterest :=
+        match mods.delayedAction? with
+        | some (.sacrificeAtEndStepUnless cond) => condInterest owner? cond
+        | _ => {}
+      let base :=
+        (valExprInterest owner? cnt)
+          |>.merge (mods.attachTo?.map (objExprInterest owner?) |>.getD {})
+          |>.merge delayedI
       let withMods := mods.counters.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) base
       match spec with
       | .custom cs =>
@@ -2407,20 +2716,58 @@ private partial def instrInterest (owner? : Option ObjectId) : Instruction → M
     | .emblem _ emb =>
       let sI := emb.staticAbilities.foldl (fun acc sa => acc.merge (staticInterest owner? sa)) {}
       emb.triggeredAbilities.foldl (fun acc ab => acc.merge (trigInterest owner? ab)) sI
-  | .permanent (.modifyCounters mode oe _) =>
-    let mI := match mode with
-      | .put _ cnt => valExprInterest owner? cnt
-      | .remove _ cnt => countRangeInterest owner? cnt
-      | _ => {}
-    mI.merge (objExprInterest owner? oe)
+  | .permanent op =>
+    let choiceI (ch? : Option MoveChoiceSpec) : ManaSpentInterest :=
+      match ch? with
+      | none => {}
+      | some ch =>
+        (countRangeInterest owner? ch.count)
+          |>.merge (ch.filter?.map (objPredInterest owner?) |>.getD {})
+          |>.merge (ch.unlessMatching?.map (objPredInterest owner?) |>.getD {})
+    match op with
+    | .modifyCounters mode oe ch? =>
+      let mI := match mode with
+        | .put _ cnt => valExprInterest owner? cnt
+        | .remove _ cnt => countRangeInterest owner? cnt
+        | _ => {}
+      (mI.merge (objExprInterest owner? oe)).merge (choiceI ch?)
+    | .setTapped oe _ ch? =>
+      (objExprInterest owner? oe).merge (choiceI ch?)
+    | .attach a b _ =>
+      ManaSpentInterest.merge (objExprInterest owner? a) (objExprInterest owner? b)
+    | .transform oe | .turnFaceUp oe | .phaseOut oe _ | .setDesignation oe _ _ =>
+      objExprInterest owner? oe
   | .damage (.deal src _ amt _) =>
     ManaSpentInterest.merge (objExprInterest owner? src) (valExprInterest owner? amt)
   | .life (.gain _ amt) | .life (.lose _ amt) | .life (.set _ amt) => valExprInterest owner? amt
   | .player op =>
+    let paletteI : ManaPoolPalette → ManaSpentInterest
+      | .colorsAmong oe | .typesLandsCouldProduce oe => objExprInterest owner? oe
+      | _ => {}
+    let moveModsI (mods : MoveMods) : ManaSpentInterest :=
+      let chI :=
+        match mods.choice? with
+        | none => {}
+        | some ch =>
+          (countRangeInterest owner? ch.count)
+            |>.merge (ch.filter?.map (objPredInterest owner?) |>.getD {})
+            |>.merge (ch.unlessMatching?.map (objPredInterest owner?) |>.getD {})
+      let base := (mods.attachTo?.map (objExprInterest owner?) |>.getD {}).merge chI
+      mods.enterCounters.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) base
     match op with
     | .drawCards _ amt | .scry _ amt | .surveil _ amt
-    | .proliferate _ amt _ | .amass _ _ amt | .empowerPlaneswalker _ amt =>
+    | .amass _ _ amt | .empowerPlaneswalker _ amt =>
       valExprInterest owner? amt
+    | .proliferate _ amt tgt? =>
+      (valExprInterest owner? amt).merge (tgt?.map (objExprInterest owner?) |>.getD {})
+    | .addMana _ prod =>
+      match prod.spec with
+      | .sequence items =>
+        items.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) {}
+      | .oneOf pal amt | .combination pal amt =>
+        (paletteI pal).merge (valExprInterest owner? amt)
+      | .colorAmong pal _ => paletteI pal
+    | .explore oe | .connive oe => objExprInterest owner? oe
     | .setStatus _ _ cond? => cond?.map (condInterest owner?) |>.getD {}
     | .inspectLibrary spec =>
       let srcI := match spec.source with
@@ -2430,18 +2777,17 @@ private partial def instrInterest (owner? : Option ObjectId) : Instruction → M
         | _ => {}
       let actI := match spec.action with
         | .takeMatching pred cnt _ mods _ _ =>
-          let b := ManaSpentInterest.merge (objPredInterest owner? pred) (countRangeInterest owner? cnt)
-          mods.enterCounters.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) b
-        | .distributeEachOpponent _ mods | .moveAll _ mods =>
-          mods.enterCounters.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) {}
+          (objPredInterest owner? pred)
+            |>.merge (countRangeInterest owner? cnt)
+            |>.merge (moveModsI mods)
+        | .distributeEachOpponent _ mods | .moveAll _ mods => moveModsI mods
         | _ => {}
       srcI.merge actI
     | .searchLibrary spec =>
-      let b :=
-        (objPredInterest owner? spec.filter)
-          |>.merge (countRangeInterest owner? spec.count)
-          |>.merge (spec.untapIf?.map (condInterest owner?) |>.getD {})
-      spec.mods.enterCounters.foldl (fun acc (_, v) => acc.merge (valExprInterest owner? v)) b
+      (objPredInterest owner? spec.filter)
+        |>.merge (countRangeInterest owner? spec.count)
+        |>.merge (spec.untapIf?.map (condInterest owner?) |>.getD {})
+        |>.merge (moveModsI spec.mods)
     | .reveal _ oe cnt? =>
       ManaSpentInterest.merge (objExprInterest owner? oe) (cnt?.map (countRangeInterest owner?) |>.getD {})
     | _ => {}
@@ -2583,6 +2929,8 @@ def manaAbilityDefCanChangeOutcome (g : Game) (spend : ManaSpend)
   let crMatters := creatureSpellRiderMatters g spend (some prop)
   let ancMatters := ancestryManaMatters g spend (some prop)
   let hasTwobrid := prop.cost.symbols.any (fun | .twobrid _ => true | _ => false)
+  let p := (g.controllerOf o).getD o.owner
+  let spendsPoolMana := (g.manaAbilityEffectiveCost p o d).includesManaPayment
   let checkVariant (prodTypes : Array ManaType) (restr : Option ManaSpendRestriction)
       (riders : Array SpellRiderSpec) (srcId? : Option ObjectId) (isTr : Bool) : Bool :=
     !prodTypes.isEmpty && g.restrictionAllowsProposed restr prop &&
@@ -2598,7 +2946,8 @@ def manaAbilityDefCanChangeOutcome (g : Game) (spend : ManaSpend)
           | .hybrid a _ => prodTypes.contains (.colored a)
           | .twobrid c => prodTypes.contains (.colored c)
           | _ => false
-      let canDisplaceRiderTier := restr.isSome || !allRiders.isEmpty || hasHybridOrTwobridDisplace
+      let canDisplaceRiderTier :=
+        restr.isSome || !allRiders.isEmpty || hasHybridOrTwobridDisplace || spendsPoolMana
       let addsAttr :=
         (hasCbc && !outcome0.cantBeCountered && cbcMatters) ||
         (hasHaste && !outcome0.gainsHaste && crMatters) ||
@@ -2624,7 +2973,7 @@ def manaAbilityDefCanChangeOutcome (g : Game) (spend : ManaSpend)
            outcome0.fromSources.any (fun sid => srcId? != some sid) ||
            outcome0.spentColors.any (fun c => prodTypes.any (· != .colored c)) ||
            (interest.anyColorCount && outcome0.spentColorCount > 0) ||
-           (interest.anyAmount && hasTwobrid && hasHybridOrTwobridDisplace) ||
+           (interest.anyAmount && hasTwobrid && (hasHybridOrTwobridDisplace || spendsPoolMana)) ||
            outcome0.explicitRiders.any (fun r =>
              !allRiders.contains r && canDisplaceRiderTier))
       addsAttr || displacesAttr
@@ -2642,7 +2991,6 @@ def manaAbilityDefCanChangeOutcome (g : Game) (spend : ManaSpend)
   else
     let producesAny := variants.any (fun (pts, _, _) => !pts.isEmpty)
     if o.isOnBattlefield && g.hasSubtype o .mountain && d.tap && producesAny then
-      let p := (g.controllerOf o).getD o.owner
       (g.mountainExtraRedEntriesThisTurn p).any fun (n, src?) =>
         n > 0 && checkVariant #[.colored .red] none #[] src? false
     else false
@@ -2734,11 +3082,13 @@ private def plainTapChoicesForUniqueness (g : Game) (o : GameObject) (types : Ar
     return out
 
 /-- Whether tapping one or more cost-preserving extra plain sources in
-`allSources \ baseIds` on top of `basePool` can change `SpellManaOutcome` away
-from `outcome0` (handling both single-source flips and multi-source rider /
-Treasure / *Path of Ancestry* additions or displacements; CR 106.6). -/
-private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : ManaPool)
-    (cost : ManaCost) (allSources : Array (GameObject × Array ManaType))
+`allSources \ baseIds` alongside `minSubAdded` on top of `initPool` can change
+`SpellManaOutcome` away from `outcome0` (handling both extra-after-`minSub` and
+extra-before-`minSub` tap orders, as well as single-source and multi-source rider
+/ Treasure / *Path of Ancestry* additions or displacements; CR 106.6). -/
+private partial def canExtraPlainSourcesChangeOutcome (g : Game) (initPool : ManaPool)
+    (minSubAdded : Array ManaUnit) (cost : ManaCost)
+    (allSources : Array (GameObject × Array ManaType))
     (baseIds : Array ObjectId) (spend : ManaSpend)
     (prop? : Option (PlayerId × ProposedSpell)) (outcome0 : SpellManaOutcome) : Bool :=
   let activeProp? := prop?.map (·.2)
@@ -2757,13 +3107,16 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : Man
         if cs.isEmpty then none else some (src, cs)
   if extraEntries.isEmpty then false
   else
-    let flips (pool : ManaPool) : Bool :=
-      match pool.payUnits? cost spend with
-      | some (_, units) => spellManaOutcome g spend activeProp? units != outcome0
-      | none => false
-    -- 1. Fast exact single-source check.
+    let flips (extraAdded : Array ManaUnit) : Bool :=
+      let check (units : Array ManaUnit) : Bool :=
+        match ({ units } : ManaPool).payUnits? cost spend with
+        | some (_, units) => spellManaOutcome g spend activeProp? units != outcome0
+        | none => false
+      check (initPool.units ++ minSubAdded ++ extraAdded) ||
+        (!minSubAdded.isEmpty && check (initPool.units ++ extraAdded ++ minSubAdded))
+    -- 1. Fast exact single-source check (both after and before `minSub`).
     let singleFlips :=
-      extraEntries.any fun (_, cs) => cs.any fun ch => flips (ch.applyToPool basePool)
+      extraEntries.any fun (_, cs) => cs.any fun ch => flips (ch.applyToPool {}).units
     if singleFlips then true
     else
       -- Choice helpers for greedy multi-source boost/displace passes.
@@ -2823,7 +3176,7 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : Man
           if let some (sc, ch) := best? then
             cands := cands.push (sc, src, ch)
         let sorted := cands.qsort (fun a b => a.1 > b.1)
-        let mut curPool := basePool
+        let mut extraPool : ManaPool := {}
         let mut usedIds := baseIds
         for (_, src, ch0) in sorted do
           let mut chosen := ch0
@@ -2838,11 +3191,11 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : Man
           let nextIds := usedIds.push src.id
           if prop?.all (fun (p, prop) => g.tapPreservesPostManaCosts p prop nextIds) then
             usedIds := nextIds
-            curPool := chosen.applyToPool curPool
+            extraPool := chosen.applyToPool extraPool
             for t in chosen.baseAdded do
               if let some idx := remNeeded.findIdx? (· == t) then
                 remNeeded := remNeeded.eraseIdxIfInBounds idx
-            if flips curPool then
+            if flips extraPool.units then
               return true
         return false
       let greedyFlips : Bool :=
@@ -2881,7 +3234,7 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : Man
       else
         -- 3. Bounded DFS over extra-source combinations for subtle multi-source interactions.
         let maxDepth := min extraEntries.size (max 2 cost.manaValue)
-        let rec dfs (idx depth : Nat) (curPool : ManaPool) (usedIds : Array ObjectId)
+        let rec dfs (idx depth : Nat) (curExtra : ManaPool) (usedIds : Array ObjectId)
             (budget : Nat) : Bool × Nat :=
           if budget == 0 then (false, 0)
           else if depth ≥ maxDepth || idx ≥ extraEntries.size then (false, budget)
@@ -2893,19 +3246,60 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (basePool : Man
                 cs.foldl (fun (found, b) ch =>
                   if found || b == 0 then (found, b)
                   else
-                    let p' := ch.applyToPool curPool
-                    if flips p' then (true, b - 1)
+                    let p' := ch.applyToPool curExtra
+                    if flips p'.units then (true, b - 1)
                     else dfs (idx + 1) (depth + 1) p' nextIds (b - 1)) (false, budget)
               else (false, budget)
             if hitTake || remBudget == 0 then (hitTake, remBudget)
-            else dfs (idx + 1) depth curPool usedIds remBudget
-        let (hit, remBudget) := dfs 0 0 basePool baseIds 256
+            else dfs (idx + 1) depth curExtra usedIds remBudget
+        let (hit, remBudget) := dfs 0 0 {} baseIds 256
         hit || remBudget == 0
 
+/-- Whether tapping `minSub` in an alternative order can change either the
+leftover `ManaPool` or `SpellManaOutcome` relative to `(left0, out0)` when
+`blocks.size ≥ 2` and `!left0.units.isEmpty` (CR 106.4 / 106.6). -/
+private partial def minSubOrderFlips (g : Game) (initPool : ManaPool)
+    (blocks : Array (Array ManaUnit)) (cost : ManaCost) (spend : ManaSpend)
+    (activeProp? : Option ProposedSpell) (left0 : ManaPool)
+    (out0 : SpellManaOutcome) : Bool :=
+  let testOrder (perm : Array (Array ManaUnit)) : Bool :=
+    let u := perm.foldl (fun acc blk => acc ++ blk) initPool.units
+    match ({ units := u } : ManaPool).payUnits? cost spend with
+    | none => true
+    | some (lp', su') =>
+      let ro' := spellManaOutcome g spend activeProp? su'
+      ro' != out0 || !sameLeftoverPool lp' left0
+  let k := blocks.size
+  if k < 2 || left0.units.isEmpty then false
+  else if k ≤ 4 then
+    let rec permSearch (chosen : Array (Array ManaUnit)) (usedMask : Nat) : Bool :=
+      if chosen.size == k then
+        testOrder chosen
+      else
+        (List.range k).any fun i =>
+          if maskBit usedMask i then false
+          else permSearch (chosen.push blocks[i]!) (usedMask ||| (1 <<< i))
+    permSearch #[] 0
+  else Id.run do
+    if testOrder blocks.reverse then return true
+    for j in [0:k] do
+      let bj := blocks[j]!
+      let rest := blocks.extract 0 j ++ blocks.extract (j + 1) k
+      if j > 0 && testOrder (#[bj] ++ rest) then return true
+      if j + 1 < k && testOrder (rest.push bj) then return true
+    let mut swaps := 0
+    for i in [0:k] do
+      for j in [i + 1:k] do
+        if blocks[i]! != blocks[j]! && swaps < 64 then
+          swaps := swaps + 1
+          let swapped := (blocks.set! i blocks[j]!).set! j blocks[i]!
+          if testOrder swapped then return true
+    return false
+
 /-- Whether tapping `minSub` yields a single `(leftoverPool, spellManaOutcome)`
-outcome and no additional cost-preserving source subset in `allSources` can
-change any material `SpellManaOutcome` attribute on `cost`
-(CR 106.4 / 106.6 / 614.1c). -/
+outcome across tap orders and choices, and no additional cost-preserving source
+subset in `allSources` can change any material `SpellManaOutcome` attribute on
+`cost` (CR 106.4 / 106.6 / 614.1c). -/
 private partial def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (cost : ManaCost)
     (allSources minSub : Array (GameObject × Array ManaType))
     (spend : ManaSpend := {})
@@ -2942,46 +3336,53 @@ private partial def uniqueSubsetHasUniqueOutcome (g : Game) (pool : ManaPool) (c
       i := i - 1
       out := out.set! i (srcArr[i]!.2.2 + out[i + 1]!)
     return out
-  let rec collect (curPool : ManaPool) (idx : Nat)
-      (outcomes : Array (ManaPool × SpellManaOutcome)) (repPools : Array ManaPool)
+  let rec collect (curPool : ManaPool) (addedBlocks : Array (Array ManaUnit)) (idx : Nat)
+      (outcomes : Array (ManaPool × SpellManaOutcome)) (repAdded : Array (Array ManaUnit))
       (repOverflow : Bool) (budget : Nat) :
-      Array (ManaPool × SpellManaOutcome) × Array ManaPool × Bool × Nat :=
+      Array (ManaPool × SpellManaOutcome) × Array (Array ManaUnit) × Bool × Nat :=
     if outcomes.size ≥ 2 || repOverflow || budget == 0 then
-      (outcomes, repPools, repOverflow, budget)
+      (outcomes, repAdded, repOverflow, budget)
     else if idx ≥ srcArr.size then
       match curPool.payUnits? cost spend with
-      | none => (outcomes, repPools, repOverflow, budget - 1)
+      | none => (outcomes, repAdded, repOverflow, budget - 1)
       | some (leftPool, spentUnits) =>
         let rOut := spellManaOutcome g spend activeProp? spentUnits
-        let (repPools, repOverflow) :=
-          if !needReps || repPools.any (sameLeftoverPool · curPool) then
-            (repPools, repOverflow)
-          else if repPools.size < 64 then
-            (repPools.push curPool, repOverflow)
-          else
-            (repPools, true)
-        if outcomes.any (fun (lp, ro) => ro == rOut && sameLeftoverPool lp leftPool) then
-          (outcomes, repPools, repOverflow, budget - 1)
+        if addedBlocks.size ≥ 2 && !leftPool.units.isEmpty &&
+            minSubOrderFlips g pool addedBlocks cost spend activeProp? leftPool rOut then
+          (outcomes, repAdded, true, budget - 1)
         else
-          (outcomes.push (leftPool, rOut), repPools, repOverflow, budget - 1)
+          let curAdded := addedBlocks.foldl (fun acc blk => acc ++ blk) #[]
+          let (repAdded, repOverflow) :=
+            if !needReps || repAdded.any (fun a => sameLeftoverPool { units := a } { units := curAdded }) then
+              (repAdded, repOverflow)
+            else if repAdded.size < 64 then
+              (repAdded.push curAdded, repOverflow)
+            else
+              (repAdded, true)
+          if outcomes.any (fun (lp, ro) => ro == rOut && sameLeftoverPool lp leftPool) then
+            (outcomes, repAdded, repOverflow, budget - 1)
+          else
+            (outcomes.push (leftPool, rOut), repAdded, repOverflow, budget - 1)
     else if curPool.total + sufMax[idx]! < minUnits then
-      (outcomes, repPools, repOverflow, budget)
+      (outcomes, repAdded, repOverflow, budget)
     else
       let (_, cs, _) := srcArr[idx]!
       cs.foldl (fun (acc, reps, ov, b) (ch : TapManaChoice) =>
         if acc.size ≥ 2 || ov || b == 0 then (acc, reps, ov, b)
-        else collect (ch.applyToPool curPool) (idx + 1) acc reps ov b)
-        (outcomes, repPools, repOverflow, budget)
-  let (outcomes, repPools, repOverflow, remBudget) := collect pool 0 #[] #[] false 4096
+        else
+          let blk := (ch.applyToPool {}).units
+          collect (ch.applyToPool curPool) (addedBlocks.push blk) (idx + 1) acc reps ov b)
+        (outcomes, repAdded, repOverflow, budget)
+  let (outcomes, repAdded, repOverflow, remBudget) := collect pool #[] 0 #[] #[] false 4096
   if remBudget == 0 || repOverflow then false
   else
     match outcomes with
     | #[(_, outcome0)] =>
       if !needReps then true
-      else if repPools.isEmpty then false
+      else if repAdded.isEmpty then false
       else
-        !repPools.any fun basePool =>
-          canExtraPlainSourcesChangeOutcome g basePool cost allSources minSubIds
+        !repAdded.any fun minSubAdded =>
+          canExtraPlainSourcesChangeOutcome g pool minSubAdded cost allSources minSubIds
             spend prop? outcome0
     | _ => false
 
@@ -3095,7 +3496,7 @@ def hasUniqueManaPayment (g : Game) : Bool :=
           else
             let outcome0 := spellManaOutcome g spend (some prop) spent0
             let plainFlips :=
-              canExtraPlainSourcesChangeOutcome g pool prop.cost sources #[]
+              canExtraPlainSourcesChangeOutcome g pool #[] prop.cost sources #[]
                 spend (some (p, prop)) outcome0
             let handManaObjs :=
               (g.player p).hand.filterMap fun id =>

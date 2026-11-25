@@ -199,9 +199,9 @@ inductive StaticPlayRule where
   they had flash (CR 601.3b). -/
   | castAsThoughFlash (who : PlayerFilter := .you) (spellPred : ObjectPred := .anyObject)
       (thisSpell : Bool := false) (nthEachTurn? : Option Nat := none)
-  /-- This spell (`spellPred := none`) or matching spells can't be countered (CR 101.2 / 701.5). -/
+  /-- This spell (`spellPred := none`) or matching spells can't be countered (CR 101.2 / 701.6). -/
   | spellCantBeCountered (spellPred : Option ObjectPred := none)
-  /-- The next matching spell cast by `who` can't be countered (CR 101.2 / 701.5). -/
+  /-- The next matching spell cast by `who` can't be countered (CR 101.2 / 701.6). -/
   | nextSpellCantBeCountered (who : PlayerFilter := .you) (spellPred : ObjectPred := .anyObject)
   /-- This spell can't be cast unless `unlessCond` holds (CR 601.2 / 101.2). -/
   | castRestriction (unlessCond : Condition)
@@ -943,7 +943,7 @@ instance : HasTextChange InspectLibrarySpec where
         rest := s.rest
         chooser := HasTextChange.applyTextChanges tcs s.chooser }
 
-/-- Declarative library (or library + graveyard/hand) search specification (CR 701.19). -/
+/-- Declarative library (or library + graveyard/hand) search specification (CR 701.23). -/
 structure SearchLibrarySpec where
   searcher : PlayerExpr := .you
   zones : ZoneSetSpec := .yourLibrary

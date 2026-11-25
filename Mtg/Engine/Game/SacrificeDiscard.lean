@@ -49,7 +49,7 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1)
   else
     match g.nextActorWithHandCard players with
     | none =>
-      let skipped := players.filter (fun p => g.stillInGame p && (g.player p).hand.isEmpty)
+      let skipped := players.filter (fun p => g.stillInGame p && (g.discardableHandIds p).isEmpty)
       let g := g.logForPlayers skipped (fun p =>
         s!"{(g.player p).name} has no card to discard")
       let g :=
@@ -64,7 +64,7 @@ def beginDiscardCards (g : Game) (players : Array PlayerId) (count : Nat := 1)
     | some (p, rest) =>
       let prefixIdx := players.findIdx? (· == p) |>.getD 0
       let skipped := (players.extract 0 prefixIdx).filter (fun q =>
-        g.stillInGame q && (g.player q).hand.isEmpty)
+        g.stillInGame q && (g.discardableHandIds q).isEmpty)
       let g := g.logForPlayers skipped (fun q =>
         s!"{(g.player q).name} has no card to discard")
       let keptSamePlayer := resuming && samePlayer && players[0]? == some p
@@ -133,7 +133,7 @@ def finishConniveDraws (g : Game) (controller : PlayerId)
     if let .chooseReplacement .. := g.pending then
       return g.chainPendingReplacement
         (.finishConniveDraws controller #[] conniveDrawCause .discardOnly)
-  if (g.player controller).hand.isEmpty then
+  if (g.discardableHandIds controller).isEmpty then
     g := g.change (.conniveSource none)
     return g.logMsg "No card is discarded; the conniving creature does not receive a +1/+1 counter"
   else
@@ -345,25 +345,24 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
         else
           let g := g.changes #[.pending (.discardForAdditionalCost prop.caster), .consecutivePasses 0]
           return g.logMsg prompt
-    let isTurnFaceUp := g.proposedSpell.any (·.kind == ProposalKind.turnFaceUp)
-    let g :=
-      if !paused && !isTurnFaceUp then
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
-        | none => g
-      else g
     let (g, callerShouldResume) : Game × Bool ←
       match g.proposedSpell with
       | some prop =>
         if prop.kind == ProposalKind.turnFaceUp then
+          let willReverse := !paused && !g.over && g.proposalCheckpoint.isSome &&
+            !(g.stillInGame prop.caster &&
+              (g.findObject? prop.spellId).any (fun o =>
+                o.isOnBattlefield && o.status.faceDown && g.controlledBy o prop.caster))
           let (g, shouldRes) :=
             g.completeTurnFaceUp prop.caster prop.spellId
               (hadOuterReplacement := outerCont?.isSome)
           let g :=
-            match outerCont? with
-            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
-            | none => g
-          pure (g, shouldRes || (!g.over && g.pending == .none && outerCont?.isSome))
+            if willReverse then g
+            else
+              match outerCont? with
+              | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+              | none => g
+          pure (g, !willReverse && (shouldRes || (!g.over && g.pending == .none && outerCont?.isSome)))
         else
           let isResCast := prop.resolutionCast
           match prop.kind with
@@ -371,42 +370,65 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
             match g.findObject? prop.spellId with
             | some spellObj =>
               let g := g.changes (clearPending ++ #[EngineChange.consecutivePasses 0])
-              pure (g.becomeCast prop.caster spellObj
+              let g := g.becomeCast prop.caster spellObj
                 (grantPriority := !isResCast)
                 (hadOuterReplacement := outerCont?.isSome)
-                (hadOpenContinuation := some openCont), false)
+                (hadOpenContinuation := some openCont)
+              let nowPaused := match g.pending with | .chooseReplacement .. => true | _ => false
+              let g :=
+                match outerCont? with
+                | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+                | none =>
+                  if isResCast && !g.over &&
+                      (nowPaused || g.pending == .none) && !g.anyContinuationSettlesControlFlowFwd then
+                    g.chainPendingReplacement .finishResolutionChoice
+                  else g
+              pure (g, !g.over && g.pending == .none && (outerCont?.isSome || g.pendingReplacement.isSome))
             | none =>
               let g ← g.reverseProposedSpellExceptFwd (resumeContinuation := true)
               return g
           | .activatedAbility =>
+            let hadPropCkpt := !paused && g.proposalCheckpoint.isSome
             let g := g.changes (clearPending ++ #[EngineChange.consecutivePasses 0])
-            pure (g.becomeActivated p prop.originalSnapshot.name prop.sourceId prop.activation
+            let g := g.becomeActivated p prop.originalSnapshot.name prop.sourceId prop.activation
               (abilityId := some prop.spellId)
               (sourceSnapshot := some prop.originalSnapshot)
               (sourceOriginal := some prop.original)
               (hadOuterReplacement := outerCont?.isSome)
-              (hadOpenContinuation := some openCont), false)
+              (hadOpenContinuation := some openCont)
+            let didRev := hadPropCkpt && g.proposedSpell.isNone &&
+              !g.stack.any (·.objectId == prop.spellId)
+            let g :=
+              if didRev then g
+              else
+                match outerCont? with
+                | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+                | none => g
+            pure (g, !didRev && !g.over && g.pending == .none &&
+              (outerCont?.isSome || g.pendingReplacement.isSome))
           | .turnFaceUp => pure (g, false)
       | none =>
         let g := g.changes (clearPending ++ #[EngineChange.proposedSpell none, EngineChange.consecutivePasses 0])
         match g.findObject? sourceId with
         | some srcObj =>
-          pure (g.becomeActivated p (g.name srcObj) (some sourceId)
+          let g := g.becomeActivated p (g.name srcObj) (some sourceId)
             (hadOuterReplacement := outerCont?.isSome)
-            (hadOpenContinuation := some openCont), false)
+            (hadOpenContinuation := some openCont)
+          let g :=
+            match outerCont? with
+            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+            | none => g
+          pure (g, !g.over && g.pending == .none && (outerCont?.isSome || g.pendingReplacement.isSome))
         | none =>
           let g :=
-            if !paused && !g.over && outerCont?.isNone && g.pending == .none &&
-                g.pendingReplacement.isNone && g.currentInterpWait?.isNone then
-              g.receivePriority (g.priorityInstead p)
-            else g
-          pure (g, false)
-    let g :=
-      if paused && !isTurnFaceUp then
-        match outerCont? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
-        | none => g
-      else g
+            match outerCont? with
+            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+            | none =>
+              if !paused && !g.over && g.pending == .none &&
+                  g.pendingReplacement.isNone && g.currentInterpWait?.isNone then
+                g.receivePriority (g.priorityInstead p)
+              else g
+          pure (g, !g.over && g.pending == .none && outerCont?.isSome)
     return if callerShouldResume then g.resumeAfterBecomeCastFwd else g
   | .chooseSacrificeCreature q chosen remaining =>
     if q != p then
@@ -520,25 +542,29 @@ arrives in its owner's graveyard (CR 614.6 / 701.9a). -/
 def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option PlayerId := none)
     (cause : Option EventCause := none) (atRandom : Bool := false) :
     Game :=
-  let card := g.object! id
-  let owner := card.owner
-  let msg :=
-    match chooser with
-    | some c => s!"{(g.player c).name} chooses {g.name card}. {(g.player p).name} discards it"
-    | none => s!"{(g.player p).name} discards {g.name card}"
-  let randomMsg := s!"{(g.player p).name} discards a card at random"
-  let (g, _) := g.move id (.graveyard owner) none (verb := some .discard)
-    (actor := some p) (cause := cause)
-  if let .chooseReplacement .. := g.pending then
-    let g :=
-      if atRandom then
-        g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner randomMsg))
+  match g.findObject? id with
+  | none => g
+  | some card =>
+    if card.zone != .hand p || !isDiscardableCard card then g
+    else
+      let owner := card.owner
+      let msg :=
+        match chooser with
+        | some c => s!"{(g.player c).name} chooses {g.name card}. {(g.player p).name} discards it"
+        | none => s!"{(g.player p).name} discards {g.name card}"
+      let randomMsg := s!"{(g.player p).name} discards a card at random"
+      let (g, _) := g.move id (.graveyard owner) none (verb := some .discard)
+        (actor := some p) (cause := cause)
+      if let .chooseReplacement .. := g.pending then
+        let g :=
+          if atRandom then
+            g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner randomMsg))
+          else g
+        g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
+      else if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
+        let g := if atRandom then g.logMsg randomMsg else g
+        g.logMsg msg
       else g
-    g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
-  else if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
-    let g := if atRandom then g.logMsg randomMsg else g
-    g.logMsg msg
-  else g
 
 /-- `p` discards `id`, chosen at random (CR 701.9). -/
 def discardFromHandRandomly (g : Game) (p : PlayerId) (id : ObjectId) : Game :=
@@ -612,7 +638,7 @@ partial def continueDiscardTwo (g : Game) (controller : PlayerId) (players : Arr
     else
       g.finishDiscardTwoDraws controller draws oppIds startIdx
   | p :: rest =>
-    let hand := (g.player p).hand
+    let hand := g.discardableHandIds p
     if hand.size ≤ 2 then
       let g :=
         if hand.isEmpty then g.logMsg s!"{(g.player p).name} has no cards to discard" else g

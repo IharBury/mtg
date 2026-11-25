@@ -16,7 +16,7 @@ def beginMayDiscardDraw (g : Game) (p : PlayerId) (n : Nat) : Game :=
   if !g.stillInGame p then g
   else
     let pl := g.player p
-    if pl.hand.isEmpty then
+    if (g.discardableHandIds p).isEmpty then
       g.logMsg s!"{pl.name} has no card to discard"
     else
       g.change (.pending (.mayDiscardDraw p n))
@@ -331,7 +331,7 @@ def putLandFromHandTapped (g : Game) (p : PlayerId) (id : ObjectId) :
     if !pl.hand.contains id then
       throw "That card is not in your hand"
     let some land := g.findObject? id | throw "no such object"
-    if !g.isLand land then
+    if !isDiscardableCard land || !g.isLand land then
       throw s!"{g.name land} is not a land card"
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
