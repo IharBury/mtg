@@ -22,6 +22,7 @@ import Mtg.Engine.Tests.Events.Part20
 import Mtg.Engine.Tests.Events.Part21
 import Mtg.Engine.Tests.Events.Part22
 import Mtg.Engine.Tests.Events.Part23
+import Mtg.Engine.Tests.Events.Part24
 
 /-!
 # Game events

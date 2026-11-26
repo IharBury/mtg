@@ -96,10 +96,17 @@ def drawPerSevenCardGraveyard (g : Game) (p : PlayerId) : Game :=
 
 /-- Pause-safe loop discarding `ids` from `p`'s hand inside an open batch. -/
 def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
-    (logEach : Bool := false) (cause : Option EventCause := none) : Game := Id.run do
+    (logEach : Bool := false) (cause : Option EventCause := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let deferPfe := ids.size > 1 || fromEventIdx?.isSome
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep (.discardHandIdsLoop p ids logEach cause))
+      (.finishPostStep (.discardHandIdsLoop p ids logEach cause (if deferPfe then some loopFromIdx else none)))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let mut g := g
   for i in [0:ids.size] do
     let id := ids[i]!
@@ -110,27 +117,34 @@ def discardHandIdsLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
         let msg := s!"{(g.player p).name} discards {g.name o}"
         let owner := o.owner
         let (g', _) := g.move id (.graveyard owner) none (verb := some .discard)
-          (actor := some p) (cause := cause)
+          (actor := some p) (cause := cause) (deferPlayFromExileLogs := deferPfe)
         g := g'
         if let .chooseReplacement .. := g.pending then
           if logEach then
             g := g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
           let rem := ids.extract (i + 1) ids.size
-          if !rem.isEmpty then
+          if !rem.isEmpty || deferPfe then
             g := g.chainPendingReplacement
-              (.finishPostStep (.discardHandIdsLoop p rem logEach cause))
+              (.finishPostStep (.discardHandIdsLoop p rem logEach cause (if deferPfe then some loopFromIdx else none)))
           return g
         if logEach && (g.followMovedToZone? id (· == .graveyard owner)).isSome then
           g := g.logMsg msg
-  return g
+  return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
 
 /-- Pause-safe loop discarding `(p, id)` pairs across multiple players inside a
 single shared open batch (CR 101.4 / 603.2c / 701.9b). -/
 def discardMultiHandIdsLoop (g : Game) (remaining : Array (PlayerId × ObjectId))
-    (logEach : Bool := false) (cause : Option EventCause := none) : Game := Id.run do
+    (logEach : Bool := false) (cause : Option EventCause := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let deferPfe := remaining.size > 1 || fromEventIdx?.isSome
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep (.discardMultiHandIdsLoop remaining logEach cause))
+      (.finishPostStep (.discardMultiHandIdsLoop remaining logEach cause (if deferPfe then some loopFromIdx else none)))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let mut g := g
   for i in [0:remaining.size] do
     let (p, id) := remaining[i]!
@@ -141,19 +155,19 @@ def discardMultiHandIdsLoop (g : Game) (remaining : Array (PlayerId × ObjectId)
         let msg := s!"{(g.player p).name} discards {g.name o}"
         let owner := o.owner
         let (g', _) := g.move id (.graveyard owner) none (verb := some .discard)
-          (actor := some p) (cause := cause)
+          (actor := some p) (cause := cause) (deferPlayFromExileLogs := deferPfe)
         g := g'
         if let .chooseReplacement .. := g.pending then
           if logEach then
             g := g.chainPendingReplacement (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
           let rem := remaining.extract (i + 1) remaining.size
-          if !rem.isEmpty then
+          if !rem.isEmpty || deferPfe then
             g := g.chainPendingReplacement
-              (.finishPostStep (.discardMultiHandIdsLoop rem logEach cause))
+              (.finishPostStep (.discardMultiHandIdsLoop rem logEach cause (if deferPfe then some loopFromIdx else none)))
           return g
         if logEach && (g.followMovedToZone? id (· == .graveyard owner)).isSome then
           g := g.logMsg msg
-  return g
+  return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
 
 /-- Discard every card in `p`'s hand. Zero cards is a legal discard and is
 logged (Sauron, the Dark Lord). -/
@@ -220,11 +234,19 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
     (onlyFoodArtifact : Bool := false)
     (entryLog : PutBattlefieldEntryLog := .none)
     (cause : Option EventCause := none)
-    (preBattlefield : Option (Array GameObject) := none) : Game := Id.run do
+    (preBattlefield : Option (Array GameObject) := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let deferPfe := remainingIds.size > 1 || fromEventIdx?.isSome
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.putToBattlefieldLoop controller remainingIds enteredFromIds
-        useCardOwner haste tapped isLandEnters onlyFoodArtifact entryLog cause preBattlefield)
+        useCardOwner haste tapped isLandEnters onlyFoodArtifact entryLog cause preBattlefield
+        (if deferPfe then some loopFromIdx else none))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let preBf := preBattlefield.getD g.battlefield
   let mut g := g
   let mut entered := enteredFromIds
@@ -242,16 +264,21 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
             g.move id .battlefield (some ctrl)
               (summoningSick := true) (applyHope := false)
               (onlyFoodArtifact := true) (preBattlefield := some preBf) (cause := cause)
+              (deferPlayFromExileLogs := deferPfe)
           else
             g.putOntoBattlefield id ctrl (tapped := tapped)
               (preBattlefield := some preBf) (cause := cause)
+              (deferPlayFromExileLogs := deferPfe)
         g := g'
         entered := entered.push id
         if let .chooseReplacement .. := g.pending then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           return g.chainPendingReplacement
             (.putToBattlefieldLoop controller rem entered
-              useCardOwner haste tapped isLandEnters onlyFoodArtifact entryLog cause (some preBf))
+              useCardOwner haste tapped isLandEnters onlyFoodArtifact entryLog cause (some preBf)
+              (if deferPfe then some loopFromIdx else none))
+  if deferPfe then
+    g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
   for j in [0:entered.size] do
     let fromId := entered[j]!
     match g.followMovedToZone? fromId (· == .battlefield) with
@@ -274,7 +301,7 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
         if !remEntered.isEmpty then
           g := g.chainPendingReplacement
             (.putToBattlefieldLoop controller #[] remEntered
-              useCardOwner haste tapped isLandEnters onlyFoodArtifact entryLog cause (some preBf))
+              useCardOwner haste tapped isLandEnters onlyFoodArtifact entryLog cause (some preBf) none)
         return g
   return g
 

@@ -254,6 +254,13 @@ private def prePhaseOutLkiCtrl? (pre : Game) (preObj : GameObject)
       |>.orElse (fun _ => poSnapCtrl?)
       |>.orElse (fun _ => some fallback)
 
+private def interpWaitEmitsPfe (idx : Nat) (w : InterpState) : Bool :=
+  w.stack.any fun
+    | .afterMoveLoop _ _ _ _ _ (some fi)
+    | .afterCounterOpLoop _ _ _ (some fi)
+    | .afterCopyAndCastExileLoop _ _ _ _ _ (some fi) => fi ≤ idx
+    | _ => false
+
 /-- Returns `(emitsBeforeBoundary, hitBoundary)` for whether `pr` emits
 `emitExpiredPlayFromExileLogs` covering `idx..` before any priority/reversal
 boundary. -/
@@ -265,16 +272,33 @@ private def contEmitsPfeBeforeBoundary (idx : Nat) : PendingReplacement → Bool
     else contEmitsPfeBeforeBoundary idx b
   | .leavePlayersWhoLost _ _ _ _ (some fi)
   | .finishConcede _ _ _ _ _ _ _ (some fi)
-  | .concedePlayersLoop _ _ _ _ _ _ _ _ _ _ (some fi) =>
+  | .concedePlayersLoop _ _ _ _ _ _ _ _ _ _ (some fi)
+  | .payCostPickItems _ _ _ _ _ (some fi) =>
     (fi ≤ idx, fi > idx)
+  | .continueInterpreter w => (interpWaitEmitsPfe idx w, false)
   | .endControlExileLoop _ _ _ _ (some fi) false
-  | .moveSimultaneousToGraveyard _ _ _ _ (some fi)
+  | .moveSimultaneousToGraveyard _ _ _ false (some fi)
   | .moveCardsToGraveyardLoop _ _ (some fi)
   | .sacrificePermanentsLoop _ _ _ _ _ (some fi)
   | .destroyPermanentsLoop _ _ _ _ _ _ _ (some fi)
   | .exilePermanentsLoop _ _ _ _ (some fi)
   | .flickerLoop _ _ _ _ _ _ _ _ _ _ (some fi)
+  | .untapStepPermanents _ (some fi)
+  | .millCardsLoop _ _ _ _ _ _ (some fi)
+  | .putToBattlefieldLoop _ _ _ _ _ _ _ _ _ _ _ (some fi)
+  | .finishLinkedExileMove _ _ _ _ (some fi)
+  | .returnLinkedExileLoop _ _ _ _ _ (some fi)
+  | .commitEnteringAttackItems _ _ _ _ _ (some fi)
+  | .finishEnteringAttackCards _ _ (some fi)
   | .finishPostStep (.returnToHandLoop _ _ (some fi))
+  | .finishPostStep (.discardCleanupIds _ _ _ (some fi))
+  | .finishPostStep (.discardHandIdsLoop _ _ _ _ (some fi))
+  | .finishPostStep (.discardMultiHandIdsLoop _ _ _ (some fi))
+  | .finishPostStep (.chooseCardsToHandLoop _ _ _ _ (some fi))
+  | .finishPostStep (.movePublicCardsToHandLoop _ _ _ _ _ _ _ (some fi))
+  | .finishPostStep (.exileOpponentLibrariesLoop _ _ _ _ _ (some fi))
+  | .finishPostStep (.revealPutCreaturesStep _ _ _ _ _ (some fi))
+  | .finishPostStep (.exileTopForPlayLoop _ _ _ _ _ _ (some fi))
   | .checkSBA (some fi) => (fi ≤ idx, false)
   | pr => (false, pr.startsWithPlayFromExileDeferBoundary)
 
@@ -301,7 +325,7 @@ private def hasQueuedPfeEmitterAfter (g : Game) (afterHere? : Option PendingRepl
         if em then return true
         if hit then return false
     if let some w := frame.interpWait? then
-      if w.stack.any (fun | .afterMoveLoop _ _ _ _ _ (some fi) => fi ≤ idx | _ => false) then
+      if interpWaitEmitsPfe idx w then
         return true
     for oOff in [0:frame.outerPendingReplacements.size] do
       let oi := frame.outerPendingReplacements.size - 1 - oOff
@@ -934,6 +958,7 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
               | .whileSourceHasCounter src k => src == id && zeroedKinds.contains k
               | _ => false)
           (cause := expCause) (reconcileControl := false) (preState? := some pre)
+          (deferPlayFromExileLogs := true)
       let gOut :=
         if !ctrlEids.isEmpty || hadWhileCounterCtrlOrCopy then
           g.endControlEffectsSimultaneously ctrlEids (cause := expCause)
@@ -4106,13 +4131,15 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                 let redirP := postCleanupPending
                 let redirC? := g.pendingReplacement
                 let g := g.changes #[.pending bp, .pendingReplacement bodyExileCont?]
+                let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
+                  (fromEventIdx? := some preLeave.events.size) (deferPlayFromExileLogs := true)
                 let g := g.chainPendingReplacement (.restorePending redirP false (departed := departed))
                 match redirC? with
                 | some rc => g.chainPendingReplacement rc
                 | none => g
-              | none => g
-            let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
-              (fromEventIdx? := some preLeave.events.size) (deferPlayFromExileLogs := true)
+              | none =>
+                g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
+                  (fromEventIdx? := some preLeave.events.size) (deferPlayFromExileLogs := true)
             (g, (none, preBodyContReopen?, hadPreBodyCont))
           else
             let savedPreLeavePending0? : Option Pending :=
@@ -4196,16 +4223,18 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           let g :=
             match bodyExilePending? with
             | some bp =>
-                let redirP := postRedirPending
-                let redirC? := g.pendingReplacement
-                let g := g.changes #[.pending bp, .pendingReplacement bodyExileCont?]
-                let g := g.chainPendingReplacement (.restorePending redirP false (departed := departed))
-                match redirC? with
-                | some rc => g.chainPendingReplacement rc
-                | none => g
-            | none => g
-          let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
-            (fromEventIdx? := some preLeave.events.size) (deferPlayFromExileLogs := true)
+              let redirP := postRedirPending
+              let redirC? := g.pendingReplacement
+              let g := g.changes #[.pending bp, .pendingReplacement bodyExileCont?]
+              let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
+                (fromEventIdx? := some preLeave.events.size) (deferPlayFromExileLogs := true)
+              let g := g.chainPendingReplacement (.restorePending redirP false (departed := departed))
+              match redirC? with
+              | some rc => g.chainPendingReplacement rc
+              | none => g
+            | none =>
+              g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
+                (fromEventIdx? := some preLeave.events.size) (deferPlayFromExileLogs := true)
           (g, (none, preBodyContReopen?, hadPreBodyCont))
         else
           let savedPreLeavePending0? : Option Pending :=

@@ -678,10 +678,10 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       if picks.isEmpty && !paused then
         let g :=
           match outerCont? with
-          | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
+          | some outer => g.chainPendingReplacement outer
           | none => g
         let g ← g.continueCostPicks curProp picks true
-          (hadOuterReplacement := outerCont?.isSome)
+          (hadOuterReplacement := false)
           (hadOpenContinuation := some openCont)
         if g.proposedSpell.isNone && !completedAfterContinue g then
           return g
@@ -799,10 +799,10 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     else if restPicks.isEmpty && !pausedBeforeContinue then
       let g :=
         match outerCont? with
-        | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
+        | some outer => g.chainPendingReplacement outer
         | none => g
       let g ← g.continueCostPicks prop restPicks true
-        (hadOuterReplacement := outerCont?.isSome)
+        (hadOuterReplacement := false)
         (hadOpenContinuation := some openCont)
       if g.proposedSpell.isNone && !completedAfterContinue g then
         return g
@@ -1140,10 +1140,10 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       if picks.isEmpty && !paused then
         let g :=
           match outerCont? with
-          | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
+          | some outer => g.chainPendingReplacement outer
           | none => g
         let g ← g.continueCostPicks curProp picks true
-          (hadOuterReplacement := outerCont?.isSome)
+          (hadOuterReplacement := false)
           (hadOpenContinuation := some openCont)
         if g.proposedSpell.isNone && !completedAfterContinue g then
           return g
@@ -1998,9 +1998,11 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
   | .extrapolateReveal =>
     let picks := (g.outsideCards p).foldl (fun (acc : Array GameObject) o =>
       if acc.size < 2 && !acc.any (fun a => g.name a == g.name o) then acc.push o else acc) #[]
-    .choosePermanents (picks.map (·.id))
+    if picks.size < 2 then .decline else .choosePermanents (picks.map (·.id))
   | .extrapolatePick _ ids => .choosePermanents (ids.extract 0 1)
-  | .mayPutMilledPermanent ids _ => .choosePermanents (ids.extract 0 1)
+  | .mayPutMilledPermanent ids _ =>
+    let valid := ids.filter fun id => (g.findObject? id).any (fun o => isPublicZone o.zone)
+    if valid.isEmpty then .decline else .choosePermanents (valid.extract 0 1)
   | .mayThen .. => .accept
   | .mayPayThen n .. =>
     if (g.player p).manaPool.canPay (ManaCost.ofGeneric n) then .accept else .decline
@@ -2144,7 +2146,9 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
     .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
   | .mayPayManaForReflexive cost _ _ _ =>
     if (g.player p).manaPool.canPay { symbols := cost } then .accept else .decline
-  | .mayTapSourceThen .. => .accept
+  | .mayTapSourceThen _ sourceId =>
+    if (g.findObject? sourceId).any (fun o => o.isOnBattlefield && !o.status.tapped) then .accept
+    else .decline
   | .hawkeyeModes _ chosen objId? =>
     let obj? := objId?.bind g.findObject?
     let ok (m : Nat) : Bool :=

@@ -2264,7 +2264,8 @@ private def canPayAnnouncedAdditionalForPriority (g : Game) (p : PlayerId)
     (origPerm : Option PlayPermission := none)
     (explicitAltCost : Bool := false) (flashback : Option Bool := none)
     (fromHand : Bool := spellObj.zone == .hand p)
-    (castFromZone : Option ZoneKind := none) : Bool :=
+    (castFromZone : Option ZoneKind := none)
+    (payObj : GameObject := spellObj) : Bool :=
   match g.additionalChoiceCostFor? spellObj face with
   | none => true
   | some branches =>
@@ -2278,7 +2279,7 @@ private def canPayAnnouncedAdditionalForPriority (g : Game) (p : PlayerId)
               (origPerm := origPerm) (flashback := flashback)
               (explicitAltCost := explicitAltCost)
               (useImplicitPermissions := false)).reduceGeneric targetRed
-          canPaySpellCostWithConvokeImprovise g p spellObj face cost
+          canPaySpellCostWithConvokeImprovise g p payObj face cost
             (fromHand := fromHand) (castFromZone := castFromZone)
         | .behold quality =>
           (g.permanentsOf p).any (fun perm => g.hasSubtype perm quality) ||
@@ -2310,7 +2311,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
       | none => #[]
     let playable := g.handObjects p ++ g.exiledPlayable p ++ gyPlayable ++ libTopPlayable
     let canPlayLand :=
-      g.canPlayLand p && playable.any g.isLand
+      g.canPlayLand p && playable.any (g.mayPlayLand p)
     let unblockedAttackers : Array GameObject :=
       if g.canCastForSneak p then
         g.objects.filter fun att =>
@@ -2460,14 +2461,21 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
         match (g.baseCard o).adventure with
         | some adv =>
           let face := adv.toCardDef
-          let advObj := { o with controller := some p, printed := face, adventurerCard := some o.printed }
+          let advObj :=
+            { o with
+              id := noSourceSentinelId
+              controller := some p
+              printed := face
+              adventurerCard := some o.printed
+              status := { o.status with faceDown := false } }
           let casterObj := { o with controller := some p }
-          let targetRed := maxSpellTargetGenericReduction g p advObj face
+          let targetRed := maxSpellTargetGenericReduction g p casterObj face
           let payAdv (cost : ManaCost) (perm? : Option PlayPermission := none) : Bool :=
             canPaySpellCostWithConvokeImprovise g p advObj face (cost.reduceGeneric targetRed)
               (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind) &&
-              canPayAnnouncedAdditionalForPriority g p advObj face targetRed (origPerm := perm?)
+              canPayAnnouncedAdditionalForPriority g p o face targetRed (origPerm := perm?)
                 (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind)
+                (payObj := advObj)
           if o.zone == .exile then
             let advPerms := (g.playPermissionsFor p o).filter (!·.fromAdventure)
             let nullPerm : Option PlayPermission :=
@@ -3390,6 +3398,21 @@ def spellManaSpentInterest (g : Game) (spend : ManaSpend)
   if !spend.spell then {}
   else Id.run do
     let mut acc : ManaSpentInterest := {}
+    let cardFaceInterest (oid : Option ObjectId) (cd : CardDef) : ManaSpentInterest := Id.run do
+      let mut res : ManaSpentInterest := {}
+      if let some sa := cd.spellAbility then
+        res := res.merge (effectInterest oid sa.effect)
+        for ac in sa.additionalCosts do
+          res := res.merge (costSpecInterest oid ac.cost)
+      for kw in cd.keywords do
+        res := res.merge (kwInterest oid kw)
+      for ab in cd.allActivatedAbilities do
+        res := res.merge (actInterest oid ab)
+      for ab in cd.triggeredAbilities do
+        res := res.merge (trigInterest oid ab)
+      for sa in cd.staticAbilities do
+        res := res.merge (staticInterest oid sa)
+      return res
     match prop? with
     | none =>
       acc := { acc with fromTreasure := true }
@@ -3421,6 +3444,8 @@ def spellManaSpentInterest (g : Game) (spend : ManaSpend)
           acc := acc.merge (staticInterest oid sa)
         for sa in g.staticAbilities spell do
           acc := acc.merge (staticInterest oid sa)
+        if let some back := bc.otherFace then
+          acc := acc.merge (cardFaceInterest oid back)
     for o in g.objects do
       if !o.status.phasedOut then
         let oid := some o.id
@@ -3478,6 +3503,12 @@ def spellManaSpentInterest (g : Game) (spend : ManaSpend)
             acc := acc.merge (staticInterest srcOid? sa)
           for ab in add.triggeredAbilities do
             acc := acc.merge (trigInterest srcOid? ab)
+      | .layered sc (.copy card) d =>
+        if g.durationActive d then
+          let srcOid? := match sc with | .objects #[oid] => some oid | _ => none
+          acc := acc.merge (cardFaceInterest srcOid? card)
+          if let some back := card.otherFace then
+            acc := acc.merge (cardFaceInterest srcOid? back)
       | _ => pure ()
     return acc
 

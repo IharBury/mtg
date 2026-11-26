@@ -346,9 +346,17 @@ def clearEOT (g : Game) : Game :=
 /-- Discard `ids` during cleanup (CR 514.1), pausing and chaining
 `.finishPostStep .discardCleanupIds` if a discard replacement opens
 `Pending.chooseReplacement`. -/
-def discardCleanupIds (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game := Id.run do
+def discardCleanupIds (g : Game) (p : PlayerId) (ids : Array ObjectId)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let deferPfe := ids.size > 1 || fromEventIdx?.isSome
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   if let .chooseReplacement .. := g.pending then
-    return g.chainPendingReplacement (.finishPostStep (.discardCleanupIds p ids))
+    return g.chainPendingReplacement
+      (.finishPostStep (.discardCleanupIds p ids none (if deferPfe then some loopFromIdx else none)))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let mut g := g
   for i in [0:ids.size] do
     let id := ids[i]!
@@ -359,14 +367,17 @@ def discardCleanupIds (g : Game) (p : PlayerId) (ids : Array ObjectId) : Game :=
       let owner := card.owner
       let (g', _) := g.move id (.graveyard owner) none (verb := some .discard) (actor := some p)
         (cause := some (.turnBased .cleanupDiscard))
+        (deferPlayFromExileLogs := deferPfe)
       g := g'
       if let .chooseReplacement .. := g.pending then
         let rem := ids.extract (i + 1) ids.size
-        g := g.chainPendingReplacement (.finishPostStep (.discardCleanupIds p rem (some (id, owner))))
+        g := g.chainPendingReplacement
+          (.finishPostStep (.discardCleanupIds p rem (some (id, owner))
+            (if deferPfe then some loopFromIdx else none)))
         return g
       if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
         g := g.logMsg s!"{pl.name} discards {name} (cleanup)"
-  return g
+  return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
 
 /-- Discard down to maximum hand size (CR 514.1). This turn-based action does
 not use the stack; the engine discards from the back of the hand array. -/
@@ -396,7 +407,8 @@ def expireGoadedFor (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
 when `includeTeammates`): command emblems (via `ceaseEndingCommandEmblemsWhere`),
 control-change effects (unless `skipControl`), non-adventure play-from-exile
 permissions, and remaining `.untilNextTurnOf` effects, skipping copies,
-`.protectionFromEverything`, and `.lifeCantChange` (CR 611.2a / 805.4 / 810.2). -/
+`.protectionFromEverything`, self-`.protectionFrom`, and `.lifeCantChange`
+(CR 611.2a / 805.4 / 810.2). -/
 def expireUntilTurnCommandEffects (g : Game) (p : PlayerId) (includeTeammates : Bool := false)
     (skipControl : Bool := false) (skipLogIds : Array ObjectId := #[])
     (preState? : Option Game := none)
@@ -436,11 +448,12 @@ def expireUntilTurnCommandEffects (g : Game) (p : PlayerId) (includeTeammates : 
       match e with
       | .layered _ (.copy ..) _ | .layered _ (.control _) _
       | .playerRule _ .lifeCantChange _ => acc
-      | .playerRule q .protectionFromEverything (.untilNextTurnOf q') =>
+      | .playerRule q .protectionFromEverything (.untilNextTurnOf q')
+      | .playerRule q (.protectionFrom _ _ _) (.untilNextTurnOf q') =>
         if q == q' then acc
         else if matchesTurnOf q' then
           acc.expireEffectById eid (cause := cause) (reconcileControl := false)
-            (preState? := some pre)
+            (preState? := some pre) (deferPlayFromExileLogs := true)
         else acc
       | .permission _ (.playFromExile oid perm) (.untilNextTurnOf q) =>
         if perm.fromAdventure || perm.whileExiled || !matchesTurnOf q then acc
@@ -451,7 +464,7 @@ def expireUntilTurnCommandEffects (g : Game) (p : PlayerId) (includeTeammates : 
         | .untilNextTurnOf q =>
           if matchesTurnOf q then
             acc.expireEffectById eid (cause := cause) (reconcileControl := false)
-              (preState? := some pre)
+              (preState? := some pre) (deferPlayFromExileLogs := true)
           else acc
         | _ => acc) g0
   let g :=
@@ -537,16 +550,31 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
               match effectDuration e with
               | .untilEndOfNextTurnOf q => matchesDeparted q
               | _ => false) (cause := cause) (reconcileControl := false) (preState? := some pre)
+              (deferPlayFromExileLogs := true)
           targets.foldl (fun acc t =>
+            let isSelfProt (s : ContinuousEffectSpec) : Bool :=
+              match s with
+              | .playerRule r (.protectionFrom _ _ _) (.untilNextTurnOf r') => r == t && r' == t
+              | _ => false
             let acc :=
               if acc.hasActiveEffect (.protectionFromEverything t) then
                 acc.expireMatching (· == .protectionFromEverything t) (cause := cause)
                   (reconcileControl := false) (preState? := some pre)
+                  (deferPlayFromExileLogs := true)
                   |>.logMsg
                     s!"{(acc.player t).name}'s protection from everything ends (CR 800.4m)"
               else acc
+            let acc :=
+              if acc.activeEffects.any (fun (_, s) => isSelfProt s) then
+                acc.expireMatching isSelfProt (cause := cause)
+                  (reconcileControl := false) (preState? := some pre)
+                  (deferPlayFromExileLogs := true)
+                  |>.logMsg
+                    s!"{(acc.player t).name}'s protection ends (CR 800.4m)"
+              else acc
             acc.expireMatching (· == .lifeCantChange t) (cause := cause)
-              (reconcileControl := false) (preState? := some pre)) g0
+              (reconcileControl := false) (preState? := some pre)
+              (deferPlayFromExileLogs := true)) g0
         g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds)
           (preExpire := expireNonControl) (preState? := some pre)
@@ -570,7 +598,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
         matchesDeparted q || ((them == p || g.areTeammates them p) && !teamHasLiving)
       | .playerRule q (.controlsPlayer them true) _ =>
         matchesDeparted q || ((them == p || g.areTeammates them p) && !teamHasLiving)
-      | _ => false) (cause := cause)
+      | _ => false) (cause := cause) (deferPlayFromExileLogs := true)
     let g := emitExpiredPlayFromExileLogs pre g fromIdx
     let expiredDt := g.delayedTriggers.filter (fun dt =>
       (match dt.kind with
@@ -635,8 +663,19 @@ private def isPhaseStartStep : Step → Bool
 
 /-- Untap each remaining permanent in `ids` during the active player's untap step
 (CR 502.3), pausing on `Pending.chooseReplacement` (`PendingReplacement.untapStepPermanents`)
-when competing `.stunCounterUntap` replacement effects tie (CR 122.1d / 616.1). -/
-def untapStepPermanents (g : Game) (ids : Array ObjectId) : Game :=
+when competing `.stunCounterUntap` replacement effects tie (CR 122.1d / 616.1) or
+when removing a stun counter opens a CR 800.4c pause. -/
+def untapStepPermanents (g : Game) (ids : Array ObjectId)
+    (fromEventIdx? : Option Nat := none) : Game :=
+  if ids.isEmpty && fromEventIdx?.isNone then g
+  else if let .chooseReplacement .. := g.pending then
+    g.chainPendingReplacement (.untapStepPermanents ids fromEventIdx?)
+  else
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   let ap := g.activePlayer
   let apName := (g.player ap).name
   let baseCause := EventCause.turnBased .untapAll
@@ -683,8 +722,8 @@ def untapStepPermanents (g : Game) (ids : Array ObjectId) : Game :=
           match choice? with
           | some (chooser, choices) =>
             let rest := ids.extract (idx - 1) ids.size
-            g := g.promptChooseReplacement chooser choices (.untapStepPermanents rest)
-            idx := ids.size
+            g := g.promptChooseReplacement chooser choices (.untapStepPermanents rest (some loopFromIdx))
+            return g
           | none =>
             g := g.consumeReplacementOrder applied
             if stunned then
@@ -692,11 +731,16 @@ def untapStepPermanents (g : Game) (ids : Array ObjectId) : Game :=
               g := g.logMsg s!"A stun counter is removed from {oName} instead of untapping it"
               g := g.recordRemoveCounters o.id .stun 1 (byPlayer := some ap)
                 (cause := some (cause'.getD baseCause))
+                (deferPlayFromExileLogs := true)
+              if g.sbaPaused then
+                let rest := ids.extract idx ids.size
+                g := g.chainPendingReplacement (.untapStepPermanents rest (some loopFromIdx))
+                return g
             else
               g := g.logMsg s!"{apName} untaps {g.name o}"
               if untap.watches .wouldUntap then
                 g := g.record untap
-    return g
+    return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 def expireFinishedNextTurnPlayerControl (g : Game) : Game :=
   let cause := some (EventCause.turnBased .expireAtStepBegin)

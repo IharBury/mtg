@@ -47,7 +47,8 @@ def damageSourceFromSnapshot (g : Game) (eo : EventObject) : GameObject :=
   match eo.id.bind g.findLiveSourceObject? with
   | some live => live
   | none =>
-    damageSourceObjectFromLki eo (prepared := eo.id.map g.wasPreparedAtDeparture)
+    damageSourceObjectFromLki eo
+      (prepared := if eo.copiable.isSome then none else eo.id.bind g.wasPreparedAtDeparture?)
 
 /-- Optional wrapper around `damageSourceFromSnapshot`. -/
 def damageSourceObjFromSnapshot? (g : Game) (source : Option EventObject) : Option GameObject :=
@@ -288,7 +289,7 @@ def replaceDamage (g : Game) (n : Int)
           for (_, eff) in g.activeEffects do
             match eff with
             | .playerRule p (.protectionFrom q srcId? ctrl?) d =>
-              if p == pid && g.durationActive d &&
+              if p == pid && q != .everything && g.durationActive d &&
                   g.playerProtectionRuleMatches pid q srcId? ctrl? effSrc? then
                 items := items.push (.prevention {
                   id := { kind := .protectionPreventDamage, grantor := srcId?, player := some pid }

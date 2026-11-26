@@ -428,10 +428,20 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
     (pick : CostPick) (ids : Array ObjectId)
     (outerToRestore? : Option PendingReplacement := none)
     (followedByFinishChoice : Bool := false)
-    (followedByExplicitPriority? : Option PlayerId := none) : Game × Bool :=
+    (followedByExplicitPriority? : Option PlayerId := none)
+    (fromEventIdx? : Option Nat := none) : Game × Bool :=
+  let deferPfe := ids.size > 1 || fromEventIdx?.isSome
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   if let .chooseReplacement .. := g.pending then
-    (g.chainPendingReplacement (.payCostPickItems p abilityId sourceId pick ids), true)
+    (g.chainPendingReplacement
+      (.payCostPickItems p abilityId sourceId pick ids (if deferPfe then some loopFromIdx else none)), true)
   else
+    let preLoop :=
+      match fromEventIdx? with
+      | some idx => g.mkHistoricalGameAt idx
+      | none => g
+    let finishDeferredPfe (g0 : Game) : Game :=
+      if deferPfe then emitExpiredPlayFromExileLogs preLoop g0 loopFromIdx else g0
     let abortOrNoop (g0 : Game) : Game :=
       if !g0.hasActiveManaProposalCheckpoint && g0.proposedSpell.isSome then
         let g1 :=
@@ -441,7 +451,7 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
         g1.reverseProposedSpellFwd (resumeContinuation := true)
           (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?)
-      else g0
+      else finishDeferredPfe g0
     let itemPayable (g0 : Game) (id : ObjectId) : Bool :=
       match g0.findObject? id with
       | some o => g0.costPickAllows p sourceId pick o
@@ -472,14 +482,16 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
               let msg :=
                 if o.zone == .graveyard o.owner then s!"{name} exiles {g.name o} from their graveyard"
                 else s!"{name} exiles {g.name o}"
-              g := (g.move id .exile none (cause := some (.costPayment .exile p forObj))).1
+              g := (g.move id .exile none (cause := some (.costPayment .exile p forObj))
+                (deferPlayFromExileLogs := deferPfe)).1
               if let .chooseReplacement .. := g.pending then
                 g := g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id msg))
               else if (g.followMovedToZone? id (· == .exile)).isSome then
                 g := g.logMsg msg
             | .custom (.returnToHand ..) =>
               let oName := g.name o
-              g := (g.move id (.hand o.owner) none (cause := some (.costPayment .returnToHand p forObj))).1
+              g := (g.move id (.hand o.owner) none (cause := some (.costPayment .returnToHand p forObj))
+                (deferPlayFromExileLogs := deferPfe)).1
               g := g.logMsg s!"{name} returns {oName} to its owner's hand"
             | _ =>
               if o.isOnBattlefield then
@@ -492,6 +504,7 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
                 let oName := g.name o
                 g := g.sacrificeToGraveyard o s!"{name} sacrifices {oName}"
                   (cause := some (.costPayment .sacrifice p forObj))
+                  (deferPlayFromExileLogs := deferPfe)
                 if records then
                   if let .chooseReplacement .. := g.pending then
                     g := g.chainPendingReplacement
@@ -504,7 +517,8 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
                 let msg := s!"{name} discards {g.name o}"
                 let owner := o.owner
                 g := (g.move id (.graveyard owner) none (verb := some .discard) (actor := some p)
-                  (cause := some (.costPayment .discard p forObj))).1
+                  (cause := some (.costPayment .discard p forObj))
+                  (deferPlayFromExileLogs := deferPfe)).1
                 -- CR 614.6 / 701.9a: log the discard only once the card reaches
                 -- its owner's graveyard.
                 if let .chooseReplacement .. := g.pending then
@@ -514,10 +528,11 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
                   g := g.logMsg msg
             if let .chooseReplacement .. := g.pending then
               let rem := ids.extract (i + 1) ids.size
-              if !rem.isEmpty then
-                g := g.chainPendingReplacement (.payCostPickItems p abilityId sourceId pick rem)
+              if !rem.isEmpty || deferPfe then
+                g := g.chainPendingReplacement
+                  (.payCostPickItems p abilityId sourceId pick rem (if deferPfe then some loopFromIdx else none))
               return (g, true)
-        return (g, true)
+        return (finishDeferredPfe g, true)
       match pick with
       | .tapTwoUntappedArtifacts | .custom (.tapObjects ..) =>
         if g.currentBatch.isSome || ids.size ≤ 1 then run g
@@ -534,11 +549,13 @@ def payCostPickItems (g : Game) (p : PlayerId) (abilityId sourceId : Option Obje
     (pick : CostPick) (ids : Array ObjectId)
     (outerToRestore? : Option PendingReplacement := none)
     (followedByFinishChoice : Bool := false)
-    (followedByExplicitPriority? : Option PlayerId := none) : Game :=
+    (followedByExplicitPriority? : Option PlayerId := none)
+    (fromEventIdx? : Option Nat := none) : Game :=
   (g.payCostPickItemsChecked p abilityId sourceId pick ids
     (outerToRestore? := outerToRestore?)
     (followedByFinishChoice := followedByFinishChoice)
-    (followedByExplicitPriority? := followedByExplicitPriority?)).1
+    (followedByExplicitPriority? := followedByExplicitPriority?)
+    (fromEventIdx? := fromEventIdx?)).1
 
 /-- Pay a combined net loyalty delta `k` on `o` (CR 606.3 / 606.4 / 606.5 / 606.6 / 118.11). -/
 def payLoyaltyDelta (g : Game) (p : PlayerId) (o : GameObject) (k : Int)

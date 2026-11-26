@@ -16,11 +16,12 @@ namespace Game
 /-- Whether `caster` may target `o` (CR 115.1, 702.11b, 702.16b, 810.5). -/
 def canBeTargetedBy (g : Game) (caster : PlayerId) (o : GameObject)
     (sourceId : Option ObjectId := none) : Bool :=
+  let src? := g.targetingSourceObject? sourceId
   let srcBlocked :=
-    match g.targetingSourceObject? sourceId with
+    match src? with
     | some src => g.protectedFrom o src
     | none => (g.effectiveKeywords o).contains (.protection .everything)
-  (!g.hasHexproof o || g.controlledBy o caster ||
+  (!g.hasHexproofFrom o src? || g.controlledBy o caster ||
       (g.controllerOf o).any (g.areTeammates · caster)) && !srcBlocked
 
 /-- Player targets `caster` may choose. A player with hexproof or protection is

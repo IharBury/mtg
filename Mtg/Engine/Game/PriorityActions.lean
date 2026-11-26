@@ -64,13 +64,14 @@ def finishProposedSpell (g : Game) : Except String Game := do
       !(g0.stillInGame prop.caster &&
         (g0.findObject? prop.spellId).any (fun cur =>
           cur.isOnBattlefield && cur.status.faceDown && g0.controlledBy cur prop.caster))
+    let openCont := g0.proposalHadOpenContinuation
     let (g, callerShouldResume) :=
       g0.completeTurnFaceUp prop.caster prop.spellId (hadOuterReplacement := localOuter?.isSome)
     let g :=
       if willReverse then g
       else
         match localOuter? with
-        | some outer => g.chainProposalOuterCont prop.caster outer
+        | some outer => g.chainProposalOuterCont prop.caster outer (openCont := openCont)
         | none => g
     return if !willReverse && (callerShouldResume || (!g.over && g.pending == .none && localOuter?.isSome)) then
       g.resumeAfterBecomeCast

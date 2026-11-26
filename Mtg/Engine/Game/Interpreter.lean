@@ -737,6 +737,81 @@ private partial def execMoveLoopStep (g : Game) (env : EvalEnv) (ctx : InterpCtx
         return g
   return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
+private def finishCopyAndCastCopies (g : Game) (env : EvalEnv) (ctx : InterpCtx)
+    (exiledIds : Array ObjectId) (gp : GrantPlayPermSpec) (cause : EventCause) : Game :=
+  let (g, copies) := g.withBatchReturn (some cause) fun g =>
+    exiledIds.foldl (fun (acc : Game × Array ObjectId) id =>
+      let (g, cs) := acc
+      match g.findObject? id with
+      | some card =>
+        if card.zone != .exile || card.printed.isToken then (g, cs)
+        else
+          let base := g.copiableValues card
+          let copyId : ObjectId := ⟨g.nextObjectId⟩
+          let copyObj : GameObject := {
+            id := copyId
+            printed := { base with
+              isToken := false
+              otherFace := base.otherFace.map (fun f => { f with isToken := false }) }
+            owner := ctx.controller
+            controller := some ctx.controller
+            zone := .exile
+            timestamp := g.timestamp + 1
+            isCopy := true
+          }
+          let g := g.record (GameEvent.created g.turnNumber ctx.controller (g.snapshot copyObj) (cause := cause))
+          let g := g.createEffect (.playPermission copyId {
+            player := ctx.controller, whileExiled := true,
+            withoutManaCost := gp.freeCast, ignoreTiming := true }) (cause := some cause)
+          (g, cs.push copyId)
+      | none => (g, cs)) (g, #[])
+  if copies.isEmpty then g
+  else if gp.maxCasts? == some 1 && gp.maxTotalManaValue?.isNone && copies.size == 1 then
+    let copyId := copies[0]!
+    let copyName := (g.findObject? copyId).map g.name |>.getD "the card"
+    g.beginResolutionChoice ctx.controller (.mayCastCopy copyId)
+      s!"{(g.player ctx.controller).name} may cast the copy of {copyName} without paying its mana cost"
+  else
+    let maxMv := gp.maxTotalManaValue?.map (fun v => (EvalExpr.evalValue g env v).toNat) |>.getD 1000
+    let maxCasts := gp.maxCasts?.getD copies.size
+    g.beginResolutionChoice ctx.controller (.castCopiesFree copies maxMv maxCasts)
+      s!"{(g.player ctx.controller).name} may cast copies without paying their mana costs"
+
+private def execCopyAndCastExileOnly (g : Game) (ctx : InterpCtx)
+    (remainingIds : Array ObjectId) (exiledIds : Array ObjectId)
+    (gp : GrantPlayPermSpec) (cause : EventCause)
+    (pendingFrom? : Option (ObjectId × String) := none)
+    (fromEventIdx? : Option Nat := none) : Game × Array ObjectId := Id.run do
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  let mut g := g
+  let mut xs := exiledIds
+  if let some (fid, fName) := pendingFrom? then
+    if let some moved := g.followMovedToZone? fid (· == .exile) then
+      g := g.logMsg s!"{fName} is exiled"
+      xs := xs.push moved.id
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | none => pure ()
+    | some cur =>
+      let oName := g.name cur
+      let (g1, _) := g.move cur.id .exile none (cause := some cause) (deferPlayFromExileLogs := true)
+      g := g1
+      if let .chooseReplacement .. := g.pending then
+        let rem := remainingIds.extract (i + 1) remainingIds.size
+        g := g.chainPendingReplacement (.continueInterpreter {
+          ctx, queue := #[],
+          stack := #[.afterCopyAndCastExileLoop rem xs gp cause (some (cur.id, oName)) (some loopFromIdx)] })
+        return (g, xs)
+      if let some moved := g.followMovedToZone? cur.id (· == .exile) then
+        g := g.logMsg s!"{oName} is exiled"
+        xs := xs.push moved.id
+  return (emitExpiredPlayFromExileLogs preLoop g loopFromIdx, xs)
+
 private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest : DestZoneSpec)
     (verb : ZoneVerb) (mods : MoveMods) : Game × Array InterpCont :=
   let env := interpEnv g ctx
@@ -849,10 +924,7 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
           (g.logMsg s!"{(g.player chooser).name} has no card to discard", #[])
         else if cands.size ≤ lo then
           (g.withBatch (some cause) fun g =>
-            cands.foldl (fun g o =>
-              match g.findObject? o.id with
-              | some cur => g.discardFromHand chooser cur.id (cause := some cause)
-              | none => g) g, #[])
+            g.discardHandIdsLoop chooser (cands.map (·.id)) (logEach := true) (cause := some cause), #[])
         else
           (g.beginDiscardCards choosers lo, #[])
       else if verb == .sacrifice && !ch.invertSelection then
@@ -869,27 +941,18 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
         else if ch.extremeMetric?.isNone && lo == 1 && hi == 1 && cands.all (g.isCreature ·) then
           (g.beginSacrificeCreature chooser, #[])
         else if cands.size ≤ lo then
+          let preBf := g.battlefield
+          let pairs := cands.map fun o => (chooser, o.id)
           (g.withBatch (some cause) fun g =>
-            cands.foldl (fun g o =>
-              match g.findObject? o.id with
-              | some cur =>
-                if cur.isOnBattlefield then
-                  g.sacrificeToGraveyard cur s!"{(g.player chooser).name} sacrifices {g.name cur}" (cause := some cause)
-                else g
-              | none => g) g, #[])
+            g.sacrificePermanentsLoop pairs (preBattlefield := some preBf) (cause := some cause), #[])
         else if ch.extremeMetric? == some (false, .stat .power) && lo == 1 && hi == 1 then
           (g.beginResolutionChoice chooser (.sacrificeLeastPower (cands.map (·.id)))
             s!"{(g.player chooser).name} has creatures tied for least power and chooses one to sacrifice", #[])
         else
-          let pick := cands.extract 0 lo
+          let preBf := g.battlefield
+          let pairs := (cands.extract 0 lo).map fun o => (chooser, o.id)
           (g.withBatch (some cause) fun g =>
-            pick.foldl (fun g o =>
-              match g.findObject? o.id with
-              | some cur =>
-                if cur.isOnBattlefield then
-                  g.sacrificeToGraveyard cur s!"{(g.player chooser).name} sacrifices {g.name cur}" (cause := some cause)
-                else g
-              | none => g) g, #[])
+            g.sacrificePermanentsLoop pairs (preBattlefield := some preBf) (cause := some cause), #[])
       else if ch.invertSelection && verb == .destroy then
         let ids := cands.map (·.id)
         (g.offerCardChoice chooser ids hi .keepDestroyRest
@@ -1029,55 +1092,9 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
         match mods.grantPlayPerm? with
         | some gp =>
           let (g, exiledIds) := g.withBatchReturn (some cause) fun g =>
-            targets.foldl (fun (acc : Game × Array ObjectId) o =>
-              let (g, xs) := acc
-              match g.findObject? o.id with
-              | some cur =>
-                let oName := g.name cur
-                let (g, _) := g.move cur.id .exile none (cause := some cause)
-                match g.followMovedToZone? cur.id (· == .exile) with
-                | some moved => (g.logMsg s!"{oName} is exiled", xs.push moved.id)
-                | none => (g, xs)
-              | none => (g, xs)) (g, #[])
-          let (g, copies) := g.withBatchReturn (some cause) fun g =>
-            exiledIds.foldl (fun (acc : Game × Array ObjectId) id =>
-              let (g, cs) := acc
-              match g.findObject? id with
-              | some card =>
-                if card.zone != .exile then (g, cs)
-                else
-                  let base := g.copiableValues card
-                  let copyId : ObjectId := ⟨g.nextObjectId⟩
-                  let copyObj : GameObject := {
-                    id := copyId
-                    printed := { base with
-                      isToken := false
-                      otherFace := base.otherFace.map (fun f => { f with isToken := false }) }
-                    owner := ctx.controller
-                    controller := some ctx.controller
-                    zone := .exile
-                    timestamp := g.timestamp + 1
-                    isCopy := true
-                  }
-                  let g := g.record (GameEvent.created g.turnNumber ctx.controller (g.snapshot copyObj) (cause := cause))
-                  let g := g.createEffect (.playPermission copyId {
-                    player := ctx.controller, whileExiled := true,
-                    withoutManaCost := gp.freeCast, ignoreTiming := true }) (cause := some cause)
-                  (g, cs.push copyId)
-              | none => (g, cs)) (g, #[])
-          let g :=
-            if copies.isEmpty then g
-            else if gp.maxCasts? == some 1 && gp.maxTotalManaValue?.isNone && copies.size == 1 then
-              let copyId := copies[0]!
-              let copyName := (g.findObject? copyId).map g.name |>.getD "the card"
-              g.beginResolutionChoice ctx.controller (.mayCastCopy copyId)
-                s!"{(g.player ctx.controller).name} may cast the copy of {copyName} without paying its mana cost"
-            else
-              let maxMv := gp.maxTotalManaValue?.map (fun v => (EvalExpr.evalValue g env v).toNat) |>.getD 1000
-              let maxCasts := gp.maxCasts?.getD copies.size
-              g.beginResolutionChoice ctx.controller (.castCopiesFree copies maxMv maxCasts)
-                s!"{(g.player ctx.controller).name} may cast copies without paying their mana costs"
-          (g, #[])
+            execCopyAndCastExileOnly g ctx (targets.map (·.id)) #[] gp cause
+          if let .chooseReplacement .. := g.pending then (g, #[])
+          else (finishCopyAndCastCopies g env ctx exiledIds gp cause, #[])
         | none => (g, #[])
       else if targets.size == 1 then
         let o := targets[0]!
@@ -1175,6 +1192,141 @@ private def interpKeywordCounterSpecs : Array ((Game → GameObject → Bool) ×
   (Game.hasVigilance, .vigilance)
 ]
 
+private def execCounterOpStep (g : Game) (ctx : InterpCtx)
+    (ids : Array ObjectId) (mode : CounterModifyMode)
+    (cause : EventCause) (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  if ids.isEmpty && fromEventIdx?.isNone then
+    return g
+  let modeHasRemoval : Bool :=
+    match mode with
+    | .remove .. | .moveAll .. | .moveOne .. => true
+    | _ => false
+  let deferPfe := modeHasRemoval || fromEventIdx?.isSome
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  let mut g := g
+  for i in [0:ids.size] do
+    let id := ids[i]!
+    match g.findObject? id with
+    | none => pure ()
+    | some cur =>
+      if cur.isOnBattlefield then
+        let env := interpEnv g ctx
+        match mode with
+        | .put kind countExpr =>
+          let n := (EvalExpr.evalValue g env countExpr).toNat
+          if n > 0 then
+            if kind == .plusOnePlusOne then
+              g := g.addPlusOnePlusOneTo cur n (byPlayer := some ctx.controller) (cause := some cause)
+            else
+              g := g.putCountersDeferredLog cur.id kind n (some ctx.controller) .isPutOn (cause := some cause)
+        | .remove kind? range =>
+          let (_, hi) := evalInterpCountRange g env range
+          if hi > 0 then
+            match kind? with
+            | some k =>
+              let haveN := cur.status.counters.count k
+              let rem := min hi haveN
+              if rem > 0 then
+                g := g.recordRemoveCounters cur.id k rem (cause := some cause)
+                  (deferPlayFromExileLogs := true)
+            | none =>
+              let bag := cur.status.toCounterBag
+              let (removals, _) :=
+                bag.foldl (fun (acc : Array (CounterKind × Nat) × Nat) (k, cnt) =>
+                  if acc.2 == 0 then acc
+                  else
+                    let take := min acc.2 cnt
+                    (if take > 0 then acc.1.push (k, take) else acc.1, acc.2 - take)) (#[], hi)
+              if !removals.isEmpty then
+                g := g.recordRemoveCountersMulti cur.id removals (cause := some cause)
+                  (deferPlayFromExileLogs := true)
+        | .moveAll fromExpr kind? =>
+          if let some src := (resolveLiveObjects g env fromExpr)[0]? then
+            if src.isOnBattlefield && src.status.hasCounters then
+              let bag := src.status.toCounterBag.filter fun (k, _) => kind?.all (· == k)
+              if !bag.isEmpty then
+                g := g.recordRemoveCountersMulti src.id bag (cause := some cause)
+                  (deferPlayFromExileLogs := true)
+                if !g.sbaPaused then
+                  for (k, cnt) in bag do
+                    if cnt > 0 && !g.sbaPaused &&
+                        (match g.pending with | .chooseReplacement .. => false | _ => true) then
+                      if k == .plusOnePlusOne then
+                        if let some liveCur := g.findObject? cur.id then
+                          if liveCur.isOnBattlefield then
+                            g := g.addPlusOnePlusOneTo liveCur cnt (byPlayer := some ctx.controller) (cause := some cause)
+                      else if (g.findObject? cur.id).any (·.isOnBattlefield) then
+                        g := g.putCountersDeferredLog cur.id k cnt (some ctx.controller) .isPutOn (cause := some cause)
+        | .moveOne fromExpr kind =>
+          if let some src := (resolveLiveObjects g env fromExpr)[0]? then
+            if src.isOnBattlefield && src.status.counters.count kind > 0 then
+              g := g.recordRemoveCounters src.id kind 1 (cause := some cause)
+                (deferPlayFromExileLogs := true)
+              if !g.sbaPaused then
+                if kind == .plusOnePlusOne then
+                  if let some liveCur := g.findObject? cur.id then
+                    if liveCur.isOnBattlefield then
+                      g := g.addPlusOnePlusOneTo liveCur 1 (byPlayer := some ctx.controller) (cause := some cause)
+                else if (g.findObject? cur.id).any (·.isOnBattlefield) then
+                  g := g.putCountersDeferredLog cur.id kind 1 (some ctx.controller) .isPutOn (cause := some cause)
+        | .copyFromLki fromExpr =>
+          let bag? : Option CounterBag :=
+            if fromExpr == .triggerSubject then
+              (g.resolvingAbilityObject?.bind (·.triggerCauseStatus)).map (·.toCounterBag)
+                |>.orElse fun _ =>
+                  (EvalExpr.evalObjects g env fromExpr)[0]?.map fun
+                    | .live fo => fo.status.toCounterBag
+                    | .lki eo => eo.counters
+            else
+              (EvalExpr.evalObjects g env fromExpr)[0]?.map fun
+                | .live fo => fo.status.toCounterBag
+                | .lki eo => eo.counters
+          if let some bag := bag? then
+            let dstBefore := cur.status.toCounterBag
+            let dstName := g.name cur
+            g := bag.foldl (fun g (k, cnt) =>
+              if cnt == 0 then g
+              else if !(g.findObject? cur.id).any (·.isOnBattlefield) then g
+              else g.recordPutCounters cur.id k cnt (byPlayer := some ctx.controller) (cause := some cause)) g
+            let msg := s!"Counters are put on {dstName}"
+            if let .chooseReplacement .. := g.pending then
+              g := g.chainPendingReplacement (.continueInterpreter {
+                ctx, queue := #[], stack := #[.logIfCountersIncreased cur.id dstBefore msg] })
+            else
+              g := g.logIfCountersIncreased cur.id dstBefore msg
+        | .copyMissingKeywords fromExpr =>
+          if let some other := (resolveLiveObjects g env fromExpr)[0]? then
+            if other.isOnBattlefield then
+              g := interpKeywordCounterSpecs.foldl (fun g (has, kind) =>
+                match g.findObject? cur.id, g.findObject? other.id with
+                | some liveCur, some liveOther =>
+                  if liveCur.isOnBattlefield && has g liveOther && !has g liveCur then
+                    g.putCountersDeferredLog liveCur.id kind 1 (g.controllerOf liveCur) .gets (cause := some cause)
+                  else g
+                | _, _ => g) g
+        | .double kind? =>
+          let bag := cur.status.toCounterBag.filter fun (k, _) => kind?.all (· == k)
+          g := bag.foldl (fun g (k, cnt) =>
+            if cnt == 0 then g
+            else if k == .plusOnePlusOne then
+              match g.findObject? cur.id with
+              | some liveCur => g.addPlusOnePlusOneTo liveCur cnt (byPlayer := some ctx.controller) (cause := some cause)
+              | none => g
+            else
+              g.putCountersDeferredLog cur.id k cnt (some ctx.controller) .isPutOn (cause := some cause)) g
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+          let rem := ids.extract (i + 1) ids.size
+          if !rem.isEmpty || deferPfe then
+            g := g.chainPendingReplacement (.continueInterpreter {
+              ctx, queue := #[],
+              stack := #[.afterCounterOpLoop rem mode cause (if deferPfe then some loopFromIdx else none)] })
+          return g
+  return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
+
 private def execPermanent (g : Game) (ctx : InterpCtx) (op : PermanentOp) : Game :=
   let env := interpEnv g ctx
   let cause := interpCause g ctx
@@ -1263,115 +1415,7 @@ private def execPermanent (g : Game) (ctx : InterpCtx) (op : PermanentOp) : Game
         if objs == .this then g.logMsg "The triggered ability's source is no longer in play. No counter is put." else g
       else
         g.withBatch (some cause) fun g =>
-          live.foldl (fun g o =>
-            match g.findObject? o.id with
-            | none => g
-            | some cur =>
-              if !cur.isOnBattlefield then g
-              else
-                match mode with
-                | .put kind countExpr =>
-                  let n := (EvalExpr.evalValue g env countExpr).toNat
-                  if n == 0 then g
-                  else if kind == .plusOnePlusOne then
-                    g.addPlusOnePlusOneTo cur n (byPlayer := some ctx.controller) (cause := some cause)
-                  else
-                    g.putCountersDeferredLog cur.id kind n (some ctx.controller) .isPutOn (cause := some cause)
-                | .remove kind? range =>
-                  let (_, hi) := evalInterpCountRange g env range
-                  if hi == 0 then g
-                  else
-                    match kind? with
-                    | some k =>
-                      let haveN := cur.status.counters.count k
-                      let rem := min hi haveN
-                      if rem == 0 then g
-                      else g.recordRemoveCounters cur.id k rem (cause := some cause)
-                    | none =>
-                      let bag := cur.status.toCounterBag
-                      (bag.foldl (fun (acc : Game × Nat) (k, cnt) =>
-                        if acc.2 == 0 then acc
-                        else
-                          let take := min acc.2 cnt
-                          (acc.1.recordRemoveCounters cur.id k take (cause := some cause), acc.2 - take)) (g, hi)).1
-                | .moveAll fromExpr kind? =>
-                  match (resolveLiveObjects g env fromExpr)[0]? with
-                  | none => g
-                  | some src =>
-                    if !src.isOnBattlefield || !src.status.hasCounters then g
-                    else
-                      let bag := src.status.toCounterBag.filter fun (k, _) => kind?.all (· == k)
-                      bag.foldl (fun g (k, cnt) =>
-                        let g := g.recordRemoveCounters src.id k cnt (cause := some cause)
-                        if k == .plusOnePlusOne then
-                          match g.findObject? cur.id with
-                          | some liveCur => g.addPlusOnePlusOneTo liveCur cnt (byPlayer := some ctx.controller) (cause := some cause)
-                          | none => g
-                        else
-                          g.putCountersDeferredLog cur.id k cnt (some ctx.controller) .isPutOn (cause := some cause)) g
-                | .moveOne fromExpr kind =>
-                  match (resolveLiveObjects g env fromExpr)[0]? with
-                  | none => g
-                  | some src =>
-                    if !src.isOnBattlefield || src.status.counters.count kind == 0 then g
-                    else
-                      let g := g.recordRemoveCounters src.id kind 1 (cause := some cause)
-                      if kind == .plusOnePlusOne then
-                        match g.findObject? cur.id with
-                        | some liveCur => g.addPlusOnePlusOneTo liveCur 1 (byPlayer := some ctx.controller) (cause := some cause)
-                        | none => g
-                      else
-                        g.putCountersDeferredLog cur.id kind 1 (some ctx.controller) .isPutOn (cause := some cause)
-                | .copyFromLki fromExpr =>
-                  let bag? : Option CounterBag :=
-                    if fromExpr == .triggerSubject then
-                      (g.resolvingAbilityObject?.bind (·.triggerCauseStatus)).map (·.toCounterBag)
-                        |>.orElse fun _ =>
-                          (EvalExpr.evalObjects g env fromExpr)[0]?.map fun
-                            | .live fo => fo.status.toCounterBag
-                            | .lki eo => eo.counters
-                    else
-                      (EvalExpr.evalObjects g env fromExpr)[0]?.map fun
-                        | .live fo => fo.status.toCounterBag
-                        | .lki eo => eo.counters
-                  match bag? with
-                  | none => g
-                  | some bag =>
-                    let dstBefore := cur.status.toCounterBag
-                    let dstName := g.name cur
-                    let g := bag.foldl (fun g (k, cnt) =>
-                      if cnt == 0 then g
-                      else if !(g.findObject? cur.id).any (·.isOnBattlefield) then g
-                      else g.recordPutCounters cur.id k cnt (byPlayer := some ctx.controller) (cause := some cause)) g
-                    let msg := s!"Counters are put on {dstName}"
-                    if let .chooseReplacement .. := g.pending then
-                      g.chainPendingReplacement (.continueInterpreter {
-                        ctx, queue := #[], stack := #[.logIfCountersIncreased cur.id dstBefore msg] })
-                    else
-                      g.logIfCountersIncreased cur.id dstBefore msg
-                | .copyMissingKeywords fromExpr =>
-                  match (resolveLiveObjects g env fromExpr)[0]? with
-                  | none => g
-                  | some other =>
-                    if !other.isOnBattlefield then g
-                    else
-                      interpKeywordCounterSpecs.foldl (fun g (has, kind) =>
-                        match g.findObject? cur.id, g.findObject? other.id with
-                        | some liveCur, some liveOther =>
-                          if liveCur.isOnBattlefield && has g liveOther && !has g liveCur then
-                            g.putCountersDeferredLog liveCur.id kind 1 (g.controllerOf liveCur) .gets (cause := some cause)
-                          else g
-                        | _, _ => g) g
-                | .double kind? =>
-                  let bag := cur.status.toCounterBag.filter fun (k, _) => kind?.all (· == k)
-                  bag.foldl (fun g (k, cnt) =>
-                    if cnt == 0 then g
-                    else if k == .plusOnePlusOne then
-                      match g.findObject? cur.id with
-                      | some liveCur => g.addPlusOnePlusOneTo liveCur cnt (byPlayer := some ctx.controller) (cause := some cause)
-                      | none => g
-                    else
-                      g.putCountersDeferredLog cur.id k cnt (some ctx.controller) .isPutOn (cause := some cause)) g) g
+          execCounterOpStep g ctx (live.map (·.id)) mode cause
   | .attach attExpr toExpr chooseFromPool =>
     let hosts := (resolveLiveObjects g env toExpr).filter (·.isOnBattlefield)
     match hosts[0]? with
@@ -2226,7 +2270,10 @@ private def execPlayer (g : Game) (ctx : InterpCtx) (op : PlayerOp) :
           let g := g.revealHand p
           (g, some { objects := hand, succeeded := !hand.isEmpty }, #[])
         | _, _ =>
-          let rawIds := resolveObjectIds g env objsExpr
+          let rawIds := (resolveObjectIds g env objsExpr).filter fun id =>
+            match g.findObject? id with
+            | some o => o.isOnBattlefield || isDiscardableCard o
+            | none => false
           let ids :=
             match count? with
             | some cr =>
@@ -2772,12 +2819,19 @@ private partial def applyRuleMod (g : Game) (env : EvalEnv) (ctx : InterpCtx)
         (g.createEffect (.playerRule p r dur) (cause := some cause)).logMsg
           s!"{(g.player p).name}'s life total can't change") g
     | .protectionFrom who q =>
+      let resolvedQ : ProtectionQuality :=
+        match q with
+        | .subtype (.fromStep sv) =>
+          match (env.stepOutcome? sv).bind (·.chosenSubtype?) with
+          | some sub => .subtype (.literal sub)
+          | none => q
+        | _ => q
       (EvalExpr.evalPlayerFilter g env who).foldl (fun g p =>
         let eff :=
-          if q == .everything then
+          if resolvedQ == .everything then
             ContinuousEffectSpec.playerRule p .protectionFromEverything dur
           else
-            ContinuousEffectSpec.playerRule p (.protectionFrom q env.sourceId (some ctx.controller)) dur
+            ContinuousEffectSpec.playerRule p (.protectionFrom resolvedQ env.sourceId (some ctx.controller)) dur
         let durText :=
           match dur with
           | .untilEndOfTurn => " until end of turn"
@@ -2785,7 +2839,7 @@ private partial def applyRuleMod (g : Game) (env : EvalEnv) (ctx : InterpCtx)
             if q' == p then " until their next turn" else " until that player's next turn"
           | _ => ""
         (g.createEffect eff (cause := some cause)).logMsg
-          s!"{(g.player p).name} has protection from {q.toOraclePhrase {}}{durText}") g
+          s!"{(g.player p).name} has protection from {resolvedQ.toOraclePhrase {}}{durText}") g
     | .forbidAbilityActivation _ .powerUp =>
       g.createEffect (.gameRule .powerUpsForbidden dur) (cause := some cause)
     | .controlPlayer who =>
@@ -3377,6 +3431,23 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
           g := dealDamagePermanentsStep g ctx remainingIds amt srcName srcSnap? oppOnlyCtrl? startEventIdx cause
         | .afterDividedDamageLoop remaining srcName srcSnap? startEventIdx cause =>
           g := dealDividedDamageStep g ctx remaining srcName srcSnap? startEventIdx cause
+        | .afterCounterOpLoop remainingIds mode cause fromEventIdx? =>
+          if g.currentBatch.isSome then
+            g := execCounterOpStep g ctx remainingIds mode cause fromEventIdx?
+          else
+            g := g.withBatch (some cause) fun g =>
+              execCounterOpStep g ctx remainingIds mode cause fromEventIdx?
+        | .afterCopyAndCastExileLoop remainingIds exiledIds gp cause pendingFrom? fromEventIdx? =>
+          let env := interpEnv g ctx
+          let (g1, finalXs) :=
+            if g.currentBatch.isSome then
+              execCopyAndCastExileOnly g ctx remainingIds exiledIds gp cause pendingFrom? fromEventIdx?
+            else
+              g.withBatchReturn (some cause) fun g =>
+                execCopyAndCastExileOnly g ctx remainingIds exiledIds gp cause pendingFrom? fromEventIdx?
+          g :=
+            if let .chooseReplacement .. := g1.pending then g1
+            else finishCopyAndCastCopies g1 env ctx finalXs gp cause
     | some instr =>
       let restQueue := queue.extract 1 queue.size
       queue := restQueue
@@ -3633,7 +3704,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 let dmg := (EvalExpr.evalValue g env amtExpr).toNat
                 let exiledNonland? := (resolveObjectIds g env objsExpr).findSome? fun cid =>
                   match g.findObject? cid with
-                  | some o => if o.zone == .exile && !g.isLand o then some o else none
+                  | some o => if o.zone == .exile && isCastableObject o && !g.isLand o then some o else none
                   | none => none
                 let g1 :=
                   match exiledNonland? with
