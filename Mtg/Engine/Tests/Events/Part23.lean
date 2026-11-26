@@ -320,16 +320,13 @@ private def replayOk57i2 (gs : Array Game) : Bool :=
   }
 
   -- 2a(i). Paused `.endControlExileLoop` clears `deferPlayFromExileLogs := false` when pausing
-  --        on `.chooseReplacement` so the expired `.playFromExile` log is emitted on resume:
+  --        on `.chooseReplacement` under a synchronous caller (`ceaseToExist` with
+  --        `deferPlayFromExileLogs := true`), and only keeps `true` when an already-queued
+  --        continuation owns `loopFromIdx..` without an intervening priority/reversal boundary:
   let gEndCtrl0 :=
     insertObject (addPermanent g3 mayCastFromExileDef p1 p1) bear p0 .exile
   let ecSrcId := (gEndCtrl0.permanentsOf p1)[0]!.id
   let ecExId := (gEndCtrl0.objects.filter (·.zone == .exile)).back!.id
-  -- Give `p0` a `.control` effect over `ecSrcId` until `p1` leaves, plus `.playFromExile` on `ecExId`
-  -- while `ecSrcId` is on the battlefield, plus two zone-leave replacement effects on `ecSrcId`?
-  -- Even simpler: invoke `runEndControlExileLoop` with `deferPlayFromExileLogs := true`, two
-  -- replacement effects on `ecSrcId` moving to exile (using a commander or two exile replacements),
-  -- or verify directly via `runEndControlExileLoop` with `deferOnPause := false`:
   let gEndCtrl1 :=
     ((gEndCtrl0.changeObject ecExId (.exiledBy (some ecSrcId))).createEffect
       (.permission (some p0) (.playFromExile ecExId { player := p0 }) (.whileSourceOnBattlefield ecSrcId))
@@ -337,19 +334,66 @@ private def replayOk57i2 (gs : Array Game) : Bool :=
   let ecStart := gEndCtrl1.events.size
   let gEndCtrlRes :=
     gEndCtrl1.runEndControlExileLoop #[(ecSrcId, "exiled (CR 800.4c)", some p0)] testCause
-      (fromEventIdx? := some ecStart) (deferPlayFromExileLogs := true) (deferOnPause := false)
+      (fromEventIdx? := some ecStart) (deferPlayFromExileLogs := true)
   -- Synchronous completion with `deferPlayFromExileLogs := true` defers to caller (`0` logs yet),
   -- then caller's `emitExpiredPlayFromExileLogs` emits `1`:
   let gEndCtrlEmitted := gEndCtrl1.emitExpiredPlayFromExileLogs gEndCtrlRes ecStart
-  -- And when `PendingReplacement.endControlExileLoop` itself resumes with `deferPlayFromExileLogs := false`,
-  -- it emits the log directly:
-  let gEndCtrlContRun :=
-    gEndCtrl1.resumePendingReplacement
-      (.endControlExileLoop #[(ecSrcId, "exiled (CR 800.4c)", some p0)] testCause none #[] (some ecStart) false)
+  -- Real `.chooseReplacement` pause reached via `ceaseToExist` (`deferPlayFromExileLogs := true`,
+  -- matching `reconcilePostReplayDepartures` / `recordRemoveCountersMulti` / `move`):
+  let ecEmbCard : CardDef := { name := "P57i2 PauseEmblem" }
+  let gEcPause0 :=
+    insertObject (insertObject (addPermanent g3 mayCastFromExileDef p0 p2) ecEmbCard p1 .command (some p1))
+      bear p0 .exile
+  let ecPausePermId := (gEcPause0.permanentsOf p2)[0]!.id
+  let ecPauseEmbId := (gEcPause0.objects.filter (·.zone == .command)).back!.id
+  let ecPauseExId := (gEcPause0.objects.filter (·.zone == .exile)).back!.id
+  let ecRepA : ReplacementId := { kind := .addNoncombatDamage, object := some ecPausePermId }
+  let ecRepB : ReplacementId := { kind := .multiplyDamage, object := some ecPausePermId }
+  let gEcPause1 :=
+    ((((((gEcPause0.changeObject ecPauseExId (.exiledBy (some ecPausePermId))).createEffect
+      (.layered (.objects #[ecPausePermId]) (.control p1) (.whileInZone ecPauseEmbId .command))
+      (cause := some testCause)).createEffect
+      (.permission (some p0) (.playFromExile ecPauseExId { player := p0 }) (.whileSourceOnBattlefield ecPausePermId))
+      (cause := some testCause)).createEffect
+      (.replacement { id := ecRepA, affectedPlayer := p0, kind := .addNoncombatDamage none 1 })
+      (cause := some testCause)).createEffect
+      (.replacement { id := ecRepB, affectedPlayer := p0, kind := .multiplyDamage none 2 })
+      (cause := some testCause)).playerLeavesGame p2)
+  -- Open a real `.chooseReplacement` prompt before calling `ceaseToExist (deferPlayFromExileLogs := true)`:
+  let gEcWithChoice := gEcPause1.dealDamageToPlayer p0 1 (cause := some testCause)
+  let ecPauseStart := gEcWithChoice.events.size
+  let gEcCeased :=
+    gEcWithChoice.ceaseToExist ecPauseEmbId (cause := some testCause)
+      (reconcileControl := true) (deferPlayFromExileLogs := true)
+  -- Synchronous caller emits on return (before the paused exile has occurred -> 0 logs):
+  let gEcSyncEmit := gEcWithChoice.emitExpiredPlayFromExileLogs gEcCeased ecPauseStart
+  let rec hasNonDeferredEndCtrl : PendingReplacement → Bool
+    | .endControlExileLoop _ _ _ _ _ false => true
+    | .seq a b => hasNonDeferredEndCtrl a || hasNonDeferredEndCtrl b
+    | _ => false
+  let rec hasDeferredEndCtrl : PendingReplacement → Bool
+    | .endControlExileLoop _ _ _ _ _ true => true
+    | .seq a b => hasDeferredEndCtrl a || hasDeferredEndCtrl b
+    | _ => false
+  -- Answering the open `.chooseReplacement` resumes damage and then `.endControlExileLoop`,
+  -- exiling `ecPausePermId` and emitting the `.playFromExile` expiry log ONCE!
+  let gEcResumed := mustApply gEcSyncEmit p0 (.chooseReplacement ecRepA)
+  -- Conversely, when an already-queued `.checkSBA (some ecPauseStart)` owns `ecPauseStart..`
+  -- ahead of any priority/reversal boundary, paused `runEndControlExileLoop` keeps `defer := true`:
+  let gEcOwned :=
+    (gEcWithChoice.changes #[
+      .pushContinuationFrame { outerPendingReplacements := #[.checkSBA (some ecPauseStart)] }
+    ]).runEndControlExileLoop #[(ecPausePermId, "exiled (CR 800.4c)", some p1)] testCause
+      (fromEventIdx? := some ecPauseStart) (deferPlayFromExileLogs := true)
   let endCtrlDeferOk :=
     countBearExpLogs gEndCtrlRes == 0 &&
     countBearExpLogs gEndCtrlEmitted == 1 &&
-    countBearExpLogs gEndCtrlContRun == 1
+    (match gEcCeased.pending with | .chooseReplacement .. => true | _ => false) &&
+    gEcCeased.pendingReplacement.any hasNonDeferredEndCtrl &&
+    countBearExpLogs gEcSyncEmit == 0 &&
+    countBearExpLogs gEcResumed == 1 &&
+    (gEcResumed.findObject? (gEcResumed.followMoved ecPausePermId)).any (·.zone == .exile) &&
+    gEcOwned.pendingReplacement.any hasDeferredEndCtrl
 
   -- 2a(ii). CR 704.5q counter annihilation removes `+1/+1` and `-1/-1` counters cleanly via
   --         `finishSbaSweep` `.counterAnnihilation` stage:
@@ -493,7 +537,7 @@ private def replayOk57i2 (gs : Array Game) : Bool :=
   mustHold57i2 "2b_ctrlRevLog" ctrlRevLogOk &&
   mustHold57i2 "2b_embExileLog" embExileLogOk &&
   mustHold57i2 "2.replay"
-    (replayOk57i2 #[gEndCtrlEmitted, gEndCtrlContRun, gAnnih2, gSimDestroy, gSimExile,
+    (replayOk57i2 #[gEndCtrlEmitted, gEcResumed, gAnnih2, gSimDestroy, gSimExile,
       gSimFlicker, gSimReturn, gSimInterp, gPoison3, gPreAmb4, gCtrlRev2, gEmb2])
 
 end Phase57Item2EventAlignment
@@ -565,7 +609,7 @@ private def replayOk57i3 (gs : Array Game) : Bool :=
   -- 3a(ii). Source-less `dealDamageFrom` protection, `replaceDamage` `effSrc?`, and general
   --         `(q, dur)` player protection via `Interpreter.applyRule`:
   let protColorlessDef : CardDef := {
-    creature "P57i3 ProtColorless" ManaCost.empty #["Knight"] 3 3 with
+    creature "P57i3 ProtColorless" ManaCost.empty #["Knight"] 3 5 with
     keywords := #[.protection .colorless]
   }
   let protAllDef : CardDef := {
@@ -576,9 +620,50 @@ private def replayOk57i3 (gs : Array Game) : Bool :=
   let pColObj := (gProt0.permanentsOf p0).find? (·.name == protColorlessDef.name) |>.get!
   let pAllObj := (gProt0.permanentsOf p0).find? (·.name == protAllDef.name) |>.get!
   -- Source-less (`source := none`, `sourceSnap := none`) damage IS dealt to `.protection .colorless`
-  -- and IS prevented by `.protection .everything`:
+  -- and IS prevented by `.protection .everything` — including when interrupted by `.chooseReplacement`
+  -- (both opening a replacement choice itself AND entering while `.chooseReplacement` is already open)!
   let gProt1 := gProt0.dealDamageFrom "Nameless" pColObj 2 (source := none) (sourceSnap := none) (cause := some testCause)
   let gProt2 := gProt1.dealDamageFrom "Nameless" pAllObj 2 (source := none) (sourceSnap := none) (cause := some testCause)
+  let protRepA : ReplacementId := { kind := .addNoncombatDamage, object := some pColObj.id }
+  let protRepB : ReplacementId := { kind := .multiplyDamage, object := some pColObj.id }
+  let gProtRep0 :=
+    (gProt0.createEffect
+      (.replacement { id := protRepA, affectedPlayer := p0, kind := .addNoncombatDamage none 1 })
+      (cause := some testCause)).createEffect
+      (.replacement { id := protRepB, affectedPlayer := p0, kind := .multiplyDamage none 2 })
+      (cause := some testCause)
+  -- (a) Source-less `dealDamageFrom` itself opens `.chooseReplacement` on `pColObj`:
+  let gProtPauseCol :=
+    gProtRep0.dealDamageFrom "Nameless" pColObj 1 (source := none) (sourceSnap := none) (cause := some testCause)
+  let pauseColSrcNone :=
+    match gProtPauseCol.pendingReplacement with
+    | some (.dealDamageFrom _ none tid _ _ _ _) => tid == pColObj.id
+    | _ => false
+  let gProtPauseColDone := mustApply gProtPauseCol p0 (.chooseReplacement protRepA)
+  -- Same replacement-paused call on `pAllObj` (`.protection .everything`) is prevented (`0` damage):
+  let gProtPauseAll :=
+    gProtRep0.dealDamageFrom "Nameless" pAllObj 1 (source := none) (sourceSnap := none) (cause := some testCause)
+  let gProtPauseAllDone : Game :=
+    match gProtPauseAll.pending with
+    | .chooseReplacement .. => mustApply gProtPauseAll p0 (.chooseReplacement protRepA)
+    | _ => gProtPauseAll
+  -- (b) Source-less `dealDamageFrom` entered while an unrelated `.chooseReplacement` is ALREADY open:
+  let openRepA : ReplacementId := { kind := .addNoncombatDamage, object := some pAllObj.id }
+  let openRepB : ReplacementId := { kind := .multiplyDamage, object := some pAllObj.id }
+  let gProtOpen0 :=
+    (gProt0.createEffect
+      (.replacement { id := openRepA, affectedPlayer := p1, kind := .addNoncombatDamage none 1 })
+      (cause := some testCause)).createEffect
+      (.replacement { id := openRepB, affectedPlayer := p1, kind := .multiplyDamage none 2 })
+      (cause := some testCause)
+  let gProtOpen1 := gProtOpen0.dealDamageToPlayer p1 1 (cause := some testCause)
+  let gProtOpen2 :=
+    gProtOpen1.dealDamageFrom "Nameless" pColObj 2 (source := none) (sourceSnap := none) (cause := some testCause)
+  let rec hasSrcLessDealFrom (tid : ObjectId) : PendingReplacement → Bool
+    | .dealDamageFrom _ none id _ _ _ _ => id == tid
+    | .seq a b => hasSrcLessDealFrom tid a || hasSrcLessDealFrom tid b
+    | _ => false
+  let gProtOpenDone := mustApply gProtOpen2 p1 (.chooseReplacement openRepA)
   -- Active `.replacement` `multiplyDamage` with `some redSrcObj.id` matches `effSrc?` from `srcEvent?`
   -- even when `source := none` (e.g. departed LKI source):
   let redSrcDef : CardDef := {
@@ -613,6 +698,11 @@ private def replayOk57i3 (gs : Array Game) : Bool :=
   let protCompleteOk :=
     (gProt2.object! pColObj.id).status.damage == 2 &&
     (gProt2.object! pAllObj.id).status.damage == 0 &&
+    pauseColSrcNone &&
+    (gProtPauseColDone.object! pColObj.id).status.damage == 4 &&
+    (gProtPauseAllDone.object! pAllObj.id).status.damage == 0 &&
+    gProtOpen2.pendingReplacement.any (hasSrcLessDealFrom pColObj.id) &&
+    (gProtOpenDone.object! pColObj.id).status.damage == 2 &&
     (gRepSrc3.object! tgtBear.id).status.damage == 2 &&
     gPlProt1.playerProtectedFrom p0 (some p1RedSrc) &&
     (gPlProt2.player p0).life == lifeBeforeProt &&
@@ -735,8 +825,8 @@ private def replayOk57i3 (gs : Array Game) : Bool :=
   mustHold57i3 "3b_historyAndLb" historyAndLbOk &&
   mustHold57i3 "3b_timingAndCosts" timingAndCostsOk &&
   mustHold57i3 "3.replay"
-    (replayOk57i3 #[gCopyPrep2, gProt2, gRepSrc3, gPlProt2, gPlProtAfterEot, gHandCol1,
-      gBloodMoon1, gLb1, gFlashGranted, gAffL3])
+    (replayOk57i3 #[gCopyPrep2, gProt2, gProtPauseColDone, gProtPauseAllDone, gProtOpenDone,
+      gRepSrc3, gPlProt2, gPlProtAfterEot, gHandCol1, gBloodMoon1, gLb1, gFlashGranted, gAffL3])
 
 end Phase57Item3EventAlignment
 

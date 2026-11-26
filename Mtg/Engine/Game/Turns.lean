@@ -63,7 +63,6 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
       g.endControlEffectsSimultaneously ctrlEids (cause := cause)
         (preState? := some pre) (extraSkipIds := skipIds)
         (deferPlayFromExileLogs := true) (fromEventIdx? := some fromIdx)
-        (deferOnPause := false)
         (preExpire := fun g0 =>
           let g1 :=
             g0.restoreCopiesWhere
@@ -285,7 +284,7 @@ def clearEOT (g : Game) : Game :=
             | _ => false
         g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds) (deferPlayFromExileLogs := true)
-          (fromEventIdx? := some fromIdx) (deferOnPause := false)
+          (fromEventIdx? := some fromIdx)
           (preExpire := fun g0 =>
             let g0 :=
               g0.restoreCopiesWhere
@@ -463,7 +462,6 @@ def expireUntilTurnCommandEffects (g : Game) (p : PlayerId) (includeTeammates : 
         (extraSkipIds := effSkipIds)
         (preExpire := expireNonControl) (preState? := some pre)
         (deferPlayFromExileLogs := true) (fromEventIdx? := some fromIdx)
-        (deferOnPause := deferLogs)
   if deferLogs then g else emitExpiredPlayFromExileLogs pre g fromIdx
 
 /-- Expire effects that last until `p`'s next turn (CR 800.4m) and clear
@@ -553,7 +551,6 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
           (extraSkipIds := skipIds)
           (preExpire := expireNonControl) (preState? := some pre)
           (deferPlayFromExileLogs := true) (fromEventIdx? := some fromIdx)
-          (deferOnPause := false)
     let g := targets.foldl (fun acc t =>
       acc.expirePlayPermissions t (cause := cause) (preState? := some pre) (deferLogs := true)) g
     let g := g.expireMatching (fun
@@ -869,7 +866,6 @@ def beginTurnStartExpiryPrefix (g : Game) : Game :=
         let g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds) (preState? := some preTurnExp)
           (deferPlayFromExileLogs := true) (fromEventIdx? := some fromIdx)
-          (deferOnPause := false)
           (preExpire := fun g0 =>
             let g0 :=
               g0.restoreCopiesWhere

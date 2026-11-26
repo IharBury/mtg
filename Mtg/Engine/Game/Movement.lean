@@ -682,7 +682,6 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         else g
       let g := reconcileControlAfterTransitionFwd preMove g (cause := some baseHappenedCause)
         (deferPlayFromExileLogs := true) (fromEventIdx? := some moveExpFromIdx)
-        (deferOnPause := deferPlayFromExileLogs)
       let g :=
         if deferPlayFromExileLogs then g
         else emitExpiredPlayFromExileLogs preMove g moveExpFromIdx

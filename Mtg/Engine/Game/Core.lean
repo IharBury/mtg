@@ -2395,7 +2395,7 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
   | .dealDamageToPlayers _ _ src c _ _ =>
     src.any (eventObjAnyObjId pred) || c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .dealDamageFrom _ src tid _ _ c _ =>
-    eventObjAnyObjId pred src || checkValidObjId pred tid ||
+    src.any (eventObjAnyObjId pred) || checkValidObjId pred tid ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .dealFightDamage sid tid c _ =>
     checkValidObjId pred sid || checkValidObjId pred tid ||
@@ -18124,7 +18124,7 @@ def removeFromCombatOnControlChange (pre post : Game)
 @[extern "mtg_game_reconcile_control_after_transition"]
 opaque reconcileControlAfterTransitionFwd (pre post : Game)
     (cause : Option EventCause := none) (deferPlayFromExileLogs : Bool := false)
-    (fromEventIdx? : Option Nat := none) (deferOnPause : Bool := false) : Game := post
+    (fromEventIdx? : Option Nat := none) : Game := post
 
 /-- Forward reference to `Leaving.coDepartingIdsExport` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_co_departing_ids"]
@@ -18351,7 +18351,7 @@ private def hasPlayFromExileLoggedInSlice (g : Game) (oid : ObjectId)
   let rec contHasFromIdxAtMost (expIdx : Nat) : PendingReplacement → Bool
     | .seq a b => contHasFromIdxAtMost expIdx a || contHasFromIdxAtMost expIdx b
     | .leavePlayersWhoLost _ _ _ _ (some fi)
-    | .endControlExileLoop _ _ _ _ (some fi) _
+    | .endControlExileLoop _ _ _ _ (some fi) false
     | .finishConcede _ _ _ _ _ _ _ (some fi)
     | .concedePlayersLoop _ _ _ _ _ _ _ _ _ _ (some fi)
     | .moveSimultaneousToGraveyard _ _ _ _ (some fi)
@@ -18868,7 +18868,6 @@ partial def expireEffectById (g : Game) (eid : EffectId)
             if reconcileControl then
               reconcileControlAfterTransitionFwd pre g (cause := some embCause)
                 (deferPlayFromExileLogs := true) (fromEventIdx? := some fromIdx)
-                (deferOnPause := deferPlayFromExileLogs)
             else g
           if deferPlayFromExileLogs then g else emitExpiredPlayFromExileLogs pre g fromIdx
         else
@@ -19375,7 +19374,6 @@ def restoreControlUntilSourceLeaves (g : Game) (srcId : ObjectId)
     if reconcileControl then
       reconcileControlAfterTransitionFwd preRef g (cause := some resolvedCause)
         (deferPlayFromExileLogs := deferPlayFromExileLogs)
-        (deferOnPause := deferPlayFromExileLogs)
     else g
 
 /-- Expire all continuous effects that last for as long as `srcId` remains on
@@ -19476,7 +19474,6 @@ def expireWhileSourceEffects (g : Game) (srcId : ObjectId)
       let resolvedCause := g.resolveOptionalCause cause (defaultCause := .gameRule .leavingZone)
       reconcileControlAfterTransitionFwd preRef g (cause := some resolvedCause)
         (deferPlayFromExileLogs := true) (fromEventIdx? := some fromIdx)
-        (deferOnPause := deferPlayFromExileLogs)
     else g
   if deferPlayFromExileLogs then g else emitExpiredPlayFromExileLogs preRef g fromIdx
 

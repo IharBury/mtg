@@ -707,12 +707,11 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     source.orElse (fun _ => g.damageSourceObjFromSnapshot? sourceSnap)
       |>.orElse (fun _ => g.resolvingMovedDamageSource?)
   if let .chooseReplacement .. := g.pending then
-    let srcEvent :=
+    let srcEvent? :=
       (sourceSnap.map g.refreshOrKeepDamageSnapshot)
         |>.orElse (fun _ => resolvedSrc?.map g.snapshotDamageSource)
-        |>.getD default
     g.chainPendingReplacement
-      (.dealDamageFrom sourceName srcEvent o.id n.toNat deathtouch cause suppressLifelink)
+      (.dealDamageFrom sourceName srcEvent? o.id n.toNat deathtouch cause suppressLifelink)
   else
   match resolvedSrc? with
   | some src =>
@@ -724,7 +723,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     match rep.choice? with
     | some (chooser, choices) =>
       g.promptChooseReplacement chooser choices
-        (.dealDamageFrom sourceName srcSnap o.id n.toNat deathtouch cause suppressLifelink)
+        (.dealDamageFrom sourceName (some srcSnap) o.id n.toNat deathtouch cause suppressLifelink)
     | none =>
       let g := g.consumeReplacementOrder rep.applied
       if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
@@ -788,28 +787,28 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
           | none => g
   | none =>
     let srcEvent? := sourceSnap.map g.refreshOrKeepDamageSnapshot
-    let srcSnap := srcEvent?.getD default
     let rep := g.replaceDamage n (srcEvent? := srcEvent?) (recipientPerm? := some o) (cause := cause)
     match rep.choice? with
     | some (chooser, choices) =>
       g.promptChooseReplacement chooser choices
-        (.dealDamageFrom sourceName srcSnap o.id n.toNat deathtouch cause suppressLifelink)
+        (.dealDamageFrom sourceName srcEvent? o.id n.toNat deathtouch cause suppressLifelink)
     | none =>
       let g := g.consumeReplacementOrder rep.applied
       if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
         let g :=
           if rep.preventedAmount > 0 then
+            let prevSrc := srcEvent?.getD default
             let prevCause :=
-              g.resolveOptionalCause rep.cause (fallbackSrc := srcSnap.id)
-                (fallbackCtrl := srcSnap.controller.orElse (fun _ => g.controllerOf o))
-            g.record (GameEvent.damagePrevented g.turnNumber srcSnap (.permanent (g.snapshot o))
+              g.resolveOptionalCause rep.cause (fallbackSrc := srcEvent?.bind (·.id))
+                (fallbackCtrl := (srcEvent?.bind (·.controller)).orElse (fun _ => g.controllerOf o))
+            g.record (GameEvent.damagePrevented g.turnNumber prevSrc (.permanent (g.snapshot o))
               rep.preventedAmount prevCause)
           else g
         g.logMsg s!"damage from {sourceName} is prevented"
       else
         let dealtAmt := rep.amount
         g.markDamageOn o n s!"{sourceName} deals {dealtAmt} damage to {g.name o}" deathtouch
-          (source := some srcSnap) (replaced := some rep) (consumeOrder := false) (cause := rep.cause)
+          (source := srcEvent?) (replaced := some rep) (consumeOrder := false) (cause := rep.cause)
 
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)

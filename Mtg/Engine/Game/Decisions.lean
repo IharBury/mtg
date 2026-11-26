@@ -230,8 +230,7 @@ private partial def drainProbeNonPriorityCont (g : Game) : PendingReplacement â†
     drainProbePausedStep (g.runEndControlExileLoop remaining (cause := cause)
       (pendingLog := pendingLog) (extraSkipIds := extraSkipIds)
       (fromEventIdx? := fromEventIdx?)
-      (deferPlayFromExileLogs := deferPlayFromExileLogs)
-      (deferOnPause := deferPlayFromExileLogs))
+      (deferPlayFromExileLogs := deferPlayFromExileLogs))
   | .leavePlayersWhoLost savedPending popOuter departed rewindProposal fromEventIdx? =>
     let g := clearProbeReplacement g
     let (g', _, sOut, poOut, depOut, rwOut, effFromIdx?) :=
@@ -6744,9 +6743,9 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
   | .dealDamageFrom sourceName source targetId n deathtouch cause suppressLifelink =>
     match g.findObject? targetId with
     | some tgt =>
-      let src := g.damageSourceFromSnapshot source
+      let srcObj? := g.damageSourceObjFromSnapshot? source
       g.dealDamageFrom sourceName tgt (Int.ofNat n) (deathtouch := deathtouch)
-        (source := some src) (sourceSnap := some source) (cause := cause)
+        (source := srcObj?) (sourceSnap := source) (cause := cause)
         (suppressLifelink := suppressLifelink)
     | none => g
   | .dealFightDamage sourceId targetId cause amount =>
@@ -7592,7 +7591,6 @@ partial def resumePendingReplacementCore (g : Game) (pr : PendingReplacement)
     g.runEndControlExileLoop remaining (cause := cause) (pendingLog := pendingLog)
       (extraSkipIds := extraSkipIds) (fromEventIdx? := fromEventIdx?)
       (deferPlayFromExileLogs := deferPlayFromExileLogs)
-      (deferOnPause := deferPlayFromExileLogs)
   | .beginStepCont st =>
     g.beginStepCont st
   | .finishCleanupAfterClearEot =>

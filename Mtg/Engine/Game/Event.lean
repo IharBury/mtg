@@ -1342,7 +1342,7 @@ inductive PendingReplacement where
   | dealDamageToPlayers (players : Array PlayerId) (n : Nat)
       (source : Option EventObject) (cause : Option EventCause)
       (startEventIdx : Option Nat := none) (suppressLifelink : Bool := false)
-  | dealDamageFrom (sourceName : String) (source : EventObject) (targetId : ObjectId)
+  | dealDamageFrom (sourceName : String) (source : Option EventObject) (targetId : ObjectId)
       (n : Nat) (deathtouch : Bool)
       (cause : Option EventCause) (suppressLifelink : Bool := false)
   | dealFightDamage (sourceId targetId : ObjectId) (cause : Option EventCause)
