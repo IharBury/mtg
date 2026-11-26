@@ -616,6 +616,40 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
       }
     ]
   let gClosePopBare1 := emitExpiredPlayFromExileLogs gEmb2Two gClosePopBare0 preIdxEmbTwo
+  -- (f) PR #712 round-3 regressions (reversing or non-restore suffix after a transparent pop):
+  --     - `.seq (.restorePending .none true) .finishResolutionChoice` over `[MOVE]` puts deferred id on `MOVE`;
+  --     - `.seq CLOSE (.seq (.restorePending .none true) .finishResolutionChoice)` over `[.seq MOVE .finishResolutionChoice]`
+  --       puts deferred id after `MOVE` and before `.finishResolutionChoice`;
+  --     - `.seq twoPopsOnly (.logMessage "GAIN_LIFE")` over `[revCostStep, MOVE]` puts deferred id on `MOVE`.
+  let gPopThenFinish0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.logMessage "MOVE"]
+        pendingReplacement := some (.seq (.restorePending .none true none #[] none) .finishResolutionChoice)
+      }
+    ]
+  let gPopThenFinish1 := emitExpiredPlayFromExileLogs gEmb2Two gPopThenFinish0 preIdxEmbTwo
+  let gClosePopThenFinish0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.seq (.logMessage "MOVE") .finishResolutionChoice]
+        pendingReplacement := some (.seq (.logMessage "CLOSE")
+          (.seq (.restorePending .none true none #[] none) .finishResolutionChoice))
+      }
+    ]
+  let gClosePopThenFinish1 := emitExpiredPlayFromExileLogs gEmb2Two gClosePopThenFinish0 preIdxEmbTwo
+  let gTwoPopsSuffix0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.finishTurnFaceUp p0 srcAId false, .logMessage "MOVE"]
+        pendingReplacement := some (.seq (.seq (.restorePending .none true none #[] none)
+          (.restorePending .none true none #[] none)) (.logMessage "GAIN_LIFE"))
+      }
+    ]
+  let gTwoPopsSuffix1 := emitExpiredPlayFromExileLogs gEmb2Two gTwoPopsSuffix0 preIdxEmbTwo
   let boundaryStopOk :=
     gBound1.outerPendingReplacements[0]? == some (.logMessage "LATER") &&
     (gBound1.outerPendingReplacements[1]?.any (·.containsDeferredPlayFromExile exCardId)) &&
@@ -650,7 +684,17 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
     (match gClosePopBare1.pendingReplacement with
      | some (.seq (.seq (.logMessage "CLOSE_PREFIX") d) (.restorePending .none true none #[] none)) =>
        d.containsDeferredPlayFromExile exCardId
-     | _ => false)
+     | _ => false) &&
+    !(gPopThenFinish1.pendingReplacement.any (·.containsDeferredPlayFromExile exCardId)) &&
+    (gPopThenFinish1.outerPendingReplacements[0]?.any (·.containsDeferredPlayFromExile exCardId)) &&
+    !(gClosePopThenFinish1.pendingReplacement.any (·.containsDeferredPlayFromExile exCardId)) &&
+    (match (gClosePopThenFinish1.outerPendingReplacements[0]? : Option PendingReplacement) with
+     | some (.seq (.seq (.logMessage "MOVE") d) .finishResolutionChoice) =>
+       d.containsDeferredPlayFromExile exCardId
+     | _ => false) &&
+    !(gTwoPopsSuffix1.pendingReplacement.any (·.containsDeferredPlayFromExile exCardId)) &&
+    (gTwoPopsSuffix1.outerPendingReplacements[1]?.any (·.containsDeferredPlayFromExile exCardId)) &&
+    gTwoPopsSuffix1.outerPendingReplacements[0]? == some (.finishTurnFaceUp p0 srcAId false)
 
   -- 2a(ii). `hasPlayFromExileLoggedInSlice` unbatched multi-event + interleaved `.engine`/`.life`
   --         and bipartite `resolveSaturated` (two overlapping `.playFromExile` expirations on two
@@ -787,7 +831,8 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
   mustHold58i2 "2.replay"
     (replayOk58i2 #[gEmbDeferred, gEmbEmitted, gBound1, gRestNoRev1, gRestPopNoRev1,
       gRestPopRev1, gRestPauseRev1, gBarePrioTop1, gBareRecvTop1, gRestPopSeq1,
-      gTwoPops1, gClosePopSeq1, gClosePopBare1, gSlice3, gCtrl1,
+      gTwoPops1, gClosePopSeq1, gClosePopBare1, gPopThenFinish1, gClosePopThenFinish1,
+      gTwoPopsSuffix1, gSlice3, gCtrl1,
       gLeave1, gSbaAfter, gUntapDone, gCtrOp1, gDiscLoop1, gMillLoop1])
 
 end Phase58Item2EventAlignment
