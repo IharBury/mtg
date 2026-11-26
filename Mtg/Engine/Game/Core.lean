@@ -19082,18 +19082,58 @@ def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
           let oi := nOut - 1 - oStep
           acc := acc.push (fi, some oi, fr.outerPendingReplacements[oi]!)
       return acc
+    -- Whether `pr` consists solely of transparent `.restorePending .none _ _ _ none` leaves
+    -- (including chained pops like `twoPopsOnly`).
+    let rec isPureRestoreNone : PendingReplacement → Bool
+      | .restorePending .none _ _ _ none => true
+      | .seq a b => isPureRestoreNone a && isPureRestoreNone b
+      | _ => false
+    -- Whether `pr` contains any defer-boundary leaf other than transparent `.restorePending .none _ _ _ none`.
+    let rec hasNonRestoreNoneBoundary : PendingReplacement → Bool
+      | .seq a b => hasNonRestoreNoneBoundary a || hasNonRestoreNoneBoundary b
+      | .restorePending .none _ _ _ none => false
+      | leaf => leaf.isPlayFromExileDeferBoundaryLeaf
+    -- Returns `(hasPopRestoreNone, hasNonRestoreNoneWorkAfterPop)` for `pr`.
+    let rec hasWorkAfterPopRestore : PendingReplacement → Bool × Bool
+      | .seq a b =>
+        let (popA, badA) := hasWorkAfterPopRestore a
+        let (popB, badB) := hasWorkAfterPopRestore b
+        (popA || popB, badA || badB || (popA && !isPureRestoreNone b))
+      | .restorePending .none true _ _ none => (true, false)
+      | _ => (false, false)
+    -- Non-boundary work optionally ending in transparent `.restorePending .none _ _ _ none`
+    -- (e.g. `.seq closePrefix (.restorePending .none true ...)`), with no real boundary and
+    -- no non-restore work after a `popOuter` restore.
+    let isTransparentNonBoundaryPrefix (pr : PendingReplacement) : Bool :=
+      !isPureRestoreNone pr && !hasNonRestoreNoneBoundary pr && !(hasWorkAfterPopRestore pr).2
     -- Stop before any CR 733.1 proposal-reversing continuation when a proposal is active
-    -- (since reversal drops trailing continuations), matching `Decisions.stepCanReverseProposal`.
+    -- (since reversal drops trailing continuations), matching `Decisions.stepCanReverseProposal`,
+    -- while keeping transparent `.restorePending .none _ _ _ none` tails open so `searchSlots`
+    -- inspects the popped outer slot(s) directly in execution order.
     let rec containsProposalReversal (outers : Array PendingReplacement)
-        (origPr : PendingReplacement) (outerDepth : Nat) (curPr : PendingReplacement) :
-        Nat → Bool × Nat
+        (origPr : PendingReplacement) (outerDepth : Nat) (curPr : PendingReplacement)
+        (stopOnPopRestoreNone : Bool) : Nat → Bool × Nat
       | 0 => (false, outerDepth)
       | fuel' + 1 =>
         match curPr with
         | .seq a b =>
-          let (canA, depthAfterA) := containsProposalReversal outers origPr outerDepth a fuel'
+          let (canA, depthAfterA) :=
+            containsProposalReversal outers origPr outerDepth a stopOnPopRestoreNone fuel'
           if canA then (true, depthAfterA)
-          else containsProposalReversal outers origPr depthAfterA b fuel'
+          else containsProposalReversal outers origPr depthAfterA b stopOnPopRestoreNone fuel'
+        | .restorePending .none false _ _ none =>
+          (false, outerDepth)
+        | .restorePending .none true _ _ none =>
+          if !stopOnPopRestoreNone then
+            (false, if outerDepth > 0 then outerDepth - 1 else 0)
+          else if outerDepth == 0 then (false, 0)
+          else
+            let nextDepth := outerDepth - 1
+            match outers[nextDepth]? with
+            | none => (false, nextDepth)
+            | some outer =>
+              if outer == origPr || outer == curPr then (false, nextDepth)
+              else containsProposalReversal outers origPr nextDepth outer true fuel'
         | .restorePending (.resolutionChoice _ (.costPicks ..)) popOuter _ _ rewindProposal
         | .restorePending (.resolutionChoice _ (.crew ..)) popOuter _ _ rewindProposal
         | .restorePending (.resolutionChoice _ (.zemoBoastExile ..)) popOuter _ _ rewindProposal
@@ -19120,7 +19160,7 @@ def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
               | none => (false, nextDepth)
               | some outer =>
                 if outer == origPr || outer == curPr then (false, nextDepth)
-                else containsProposalReversal outers origPr nextDepth outer fuel'
+                else containsProposalReversal outers origPr nextDepth outer true fuel'
         | .finishPostStep (.resumeProposalCostAfterLeave ..)
         | .finishPostStep (.resumeChooseModeAfterLeave ..)
         | .finishPostStep (.resumeChooseTargetsAfterLeave ..)
@@ -19140,9 +19180,6 @@ def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
     let isBarePriorityChoice : PendingReplacement → Bool
       | .receivePriority _ | .finishResolutionChoice => true
       | _ => false
-    let isTransparentRestoreNone : PendingReplacement → Bool
-      | .restorePending .none _ _ _ none => true
-      | _ => false
     let topFi := gOut.continuations.size - 1
     let searchSlots : Array (Nat × Option Nat × PendingReplacement) := Id.run do
       if gOut.proposedSpell.isNone then return slots
@@ -19153,17 +19190,14 @@ def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
         if sawBarePriorityOnTop && fi != topFi then
           break
         acc := acc.push slot
-        let outers := gOut.continuations[fi]!.outerPendingReplacements
-        let depth := match oi? with | none => outers.size | some oi => oi
-        if fi == topFi &&
-            (isBarePriorityChoice pr ||
-              (match pr with
-               | .restorePending .none true _ _ none =>
-                 depth > 0 && (outers[depth - 1]?.any isBarePriorityChoice)
-               | _ => false)) then
+        if fi == topFi && isBarePriorityChoice pr then
           sawBarePriorityOnTop := true
-        else if (containsProposalReversal outers pr depth pr 16).1 then
-          break
+        else
+          let outers := gOut.continuations[fi]!.outerPendingReplacements
+          let depth := match oi? with | none => outers.size | some oi => oi
+          let stopOnPop := (hasWorkAfterPopRestore pr).2
+          if (containsProposalReversal outers pr depth pr stopOnPop 16).1 then
+            break
       return acc
     -- Pick the bottommost (last-executing) reachable slot containing non-boundary work before
     -- the first defer-boundary slot, allowing only same-top-frame bare `.receivePriority _` /
@@ -19176,8 +19210,10 @@ def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
       for (fi, oi?, pr) in searchSlots do
         if sawBarePriorityOnTop && fi != topFi then
           break
-        if isTransparentRestoreNone pr then
+        if isPureRestoreNone pr then
           continue
+        else if isTransparentNonBoundaryPrefix pr then
+          bottomNonBoundary? := some (fi, oi?, pr)
         else if pr.containsPlayFromExileDeferBoundary then
           if !pr.startsWithPlayFromExileDeferBoundary then
             bottomNonBoundary? := some (fi, oi?, pr)

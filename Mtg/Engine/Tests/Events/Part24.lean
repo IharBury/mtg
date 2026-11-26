@@ -572,6 +572,50 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
       }
     ]
   let gBareRecvTop1 := emitExpiredPlayFromExileLogs gEmb2Two gBareRecvTop0 preIdxEmbTwo
+  -- (e) PR #712 round-2 regressions:
+  --     - `.restorePending .none true` over `.seq (.logMessage "MOVE") .finishResolutionChoice` splices
+  --       inside the popped seq (after `"MOVE"` and before `.finishResolutionChoice`), NOT onto the restore;
+  --     - `twoPopsOnly` over `[.finishTurnFaceUp .., .logMessage "MOVE"]` splices onto `"MOVE"`;
+  --     - `.seq (.logMessage "CLOSE_PREFIX") (.restorePending .none true)` splices inside popped
+  --       `.seq (.logMessage "MOVE") .finishResolutionChoice`, while over a bare reversing outer it
+  --       splices after `"CLOSE_PREFIX"` and before `.restorePending .none true`.
+  let gRestPopSeq0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.seq (.logMessage "MOVE") .finishResolutionChoice]
+        pendingReplacement := some (.restorePending .none true none #[] none)
+      }
+    ]
+  let gRestPopSeq1 := emitExpiredPlayFromExileLogs gEmb2Two gRestPopSeq0 preIdxEmbTwo
+  let gTwoPops0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.finishTurnFaceUp p0 srcAId false, .logMessage "MOVE"]
+        pendingReplacement := some (.seq (.restorePending .none true none #[] none)
+          (.restorePending .none true none #[] none))
+      }
+    ]
+  let gTwoPops1 := emitExpiredPlayFromExileLogs gEmb2Two gTwoPops0 preIdxEmbTwo
+  let gClosePopSeq0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.seq (.logMessage "MOVE") .finishResolutionChoice]
+        pendingReplacement := some (.seq (.logMessage "CLOSE_PREFIX") (.restorePending .none true none #[] none))
+      }
+    ]
+  let gClosePopSeq1 := emitExpiredPlayFromExileLogs gEmb2Two gClosePopSeq0 preIdxEmbTwo
+  let gClosePopBare0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.finishTurnFaceUp p0 srcAId false]
+        pendingReplacement := some (.seq (.logMessage "CLOSE_PREFIX") (.restorePending .none true none #[] none))
+      }
+    ]
+  let gClosePopBare1 := emitExpiredPlayFromExileLogs gEmb2Two gClosePopBare0 preIdxEmbTwo
   let boundaryStopOk :=
     gBound1.outerPendingReplacements[0]? == some (.logMessage "LATER") &&
     (gBound1.outerPendingReplacements[1]?.any (·.containsDeferredPlayFromExile exCardId)) &&
@@ -589,7 +633,24 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
     (gBarePrioTop1.outerPendingReplacements[0]?.any (·.containsDeferredPlayFromExile exCardId)) &&
     gBarePrioTop1.continuations[0]!.pendingReplacement == some (.logMessage "LOWER_FRAME") &&
     (gBareRecvTop1.outerPendingReplacements[2]?.any (·.containsDeferredPlayFromExile exCardId)) &&
-    gBareRecvTop1.outerPendingReplacements[0]? == some (.logMessage "AFTER_REV")
+    gBareRecvTop1.outerPendingReplacements[0]? == some (.logMessage "AFTER_REV") &&
+    !(gRestPopSeq1.pendingReplacement.any (·.containsDeferredPlayFromExile exCardId)) &&
+    (match (gRestPopSeq1.outerPendingReplacements[0]? : Option PendingReplacement) with
+     | some (.seq (.seq (.logMessage "MOVE") d) .finishResolutionChoice) =>
+       d.containsDeferredPlayFromExile exCardId
+     | _ => false) &&
+    !(gTwoPops1.pendingReplacement.any (·.containsDeferredPlayFromExile exCardId)) &&
+    (gTwoPops1.outerPendingReplacements[1]?.any (·.containsDeferredPlayFromExile exCardId)) &&
+    gTwoPops1.outerPendingReplacements[0]? == some (.finishTurnFaceUp p0 srcAId false) &&
+    !(gClosePopSeq1.pendingReplacement.any (·.containsDeferredPlayFromExile exCardId)) &&
+    (match (gClosePopSeq1.outerPendingReplacements[0]? : Option PendingReplacement) with
+     | some (.seq (.seq (.logMessage "MOVE") d) .finishResolutionChoice) =>
+       d.containsDeferredPlayFromExile exCardId
+     | _ => false) &&
+    (match gClosePopBare1.pendingReplacement with
+     | some (.seq (.seq (.logMessage "CLOSE_PREFIX") d) (.restorePending .none true none #[] none)) =>
+       d.containsDeferredPlayFromExile exCardId
+     | _ => false)
 
   -- 2a(ii). `hasPlayFromExileLoggedInSlice` unbatched multi-event + interleaved `.engine`/`.life`
   --         and bipartite `resolveSaturated` (two overlapping `.playFromExile` expirations on two
@@ -725,7 +786,8 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
   mustHold58i2 "2b_simLoops" simLoopsOk &&
   mustHold58i2 "2.replay"
     (replayOk58i2 #[gEmbDeferred, gEmbEmitted, gBound1, gRestNoRev1, gRestPopNoRev1,
-      gRestPopRev1, gRestPauseRev1, gBarePrioTop1, gBareRecvTop1, gSlice3, gCtrl1,
+      gRestPopRev1, gRestPauseRev1, gBarePrioTop1, gBareRecvTop1, gRestPopSeq1,
+      gTwoPops1, gClosePopSeq1, gClosePopBare1, gSlice3, gCtrl1,
       gLeave1, gSbaAfter, gUntapDone, gCtrOp1, gDiscLoop1, gMillLoop1])
 
 end Phase58Item2EventAlignment
