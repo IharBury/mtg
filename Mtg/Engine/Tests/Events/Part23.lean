@@ -378,11 +378,41 @@ private def replayOk57i2 (gs : Array Game) : Bool :=
   -- Answering the open `.chooseReplacement` resumes damage and then `.endControlExileLoop`,
   -- exiling `ecPausePermId` and emitting the `.playFromExile` expiry log ONCE!
   let gEcResumed := mustApply gEcSyncEmit p0 (.chooseReplacement ecRepA)
-  -- Conversely, when an already-queued `.checkSBA (some ecPauseStart)` owns `ecPauseStart..`
-  -- ahead of any priority/reversal boundary, paused `runEndControlExileLoop` keeps `defer := true`:
+  -- Conversely, when an already-queued `.checkSBA (some ecPauseStart)` or covering
+  -- `.leavePlayersWhoLost ... (some ecPauseStart)` owns `ecPauseStart..` ahead of any boundary,
+  -- paused `runEndControlExileLoop` keeps `defer := true`; when a NON-covering concede/leave
+  -- (`fi > ecPauseStart`) sits ahead of `.checkSBA (some ecPauseStart)`, search MUST stop at
+  -- that boundary and clear `defer := false`!
   let gEcOwned :=
     (gEcWithChoice.changes #[
       .pushContinuationFrame { outerPendingReplacements := #[.checkSBA (some ecPauseStart)] }
+    ]).runEndControlExileLoop #[(ecPausePermId, "exiled (CR 800.4c)", some p1)] testCause
+      (fromEventIdx? := some ecPauseStart) (deferPlayFromExileLogs := true)
+  let gEcCoveredByLeave :=
+    (gEcWithChoice.changes #[
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.leavePlayersWhoLost none false #[] none (some ecPauseStart)]
+      }
+    ]).runEndControlExileLoop #[(ecPausePermId, "exiled (CR 800.4c)", some p1)] testCause
+      (fromEventIdx? := some ecPauseStart) (deferPlayFromExileLogs := true)
+  let gEcBlockedByLeave :=
+    (gEcWithChoice.changes #[
+      .pushContinuationFrame {
+        outerPendingReplacements := #[
+          .checkSBA (some ecPauseStart),
+          .leavePlayersWhoLost none false #[] none (some (ecPauseStart + 1))
+        ]
+      }
+    ]).runEndControlExileLoop #[(ecPausePermId, "exiled (CR 800.4c)", some p1)] testCause
+      (fromEventIdx? := some ecPauseStart) (deferPlayFromExileLogs := true)
+  let gEcBlockedByConcedeSeq :=
+    (gEcWithChoice.changes #[
+      .pushContinuationFrame {
+        outerPendingReplacements := #[
+          .seq (.finishConcede false none none none false #[] none (some (ecPauseStart + 1)))
+               (.checkSBA (some ecPauseStart))
+        ]
+      }
     ]).runEndControlExileLoop #[(ecPausePermId, "exiled (CR 800.4c)", some p1)] testCause
       (fromEventIdx? := some ecPauseStart) (deferPlayFromExileLogs := true)
   let endCtrlDeferOk :=
@@ -393,7 +423,10 @@ private def replayOk57i2 (gs : Array Game) : Bool :=
     countBearExpLogs gEcSyncEmit == 0 &&
     countBearExpLogs gEcResumed == 1 &&
     (gEcResumed.findObject? (gEcResumed.followMoved ecPausePermId)).any (·.zone == .exile) &&
-    gEcOwned.pendingReplacement.any hasDeferredEndCtrl
+    gEcOwned.pendingReplacement.any hasDeferredEndCtrl &&
+    gEcCoveredByLeave.pendingReplacement.any hasDeferredEndCtrl &&
+    gEcBlockedByLeave.pendingReplacement.any hasNonDeferredEndCtrl &&
+    gEcBlockedByConcedeSeq.pendingReplacement.any hasNonDeferredEndCtrl
 
   -- 2a(ii). CR 704.5q counter annihilation removes `+1/+1` and `-1/-1` counters cleanly via
   --         `finishSbaSweep` `.counterAnnihilation` stage:

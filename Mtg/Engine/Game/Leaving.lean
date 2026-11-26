@@ -264,9 +264,10 @@ private def contEmitsPfeBeforeBoundary (idx : Nat) : PendingReplacement → Bool
     else if hitA then (false, true)
     else contEmitsPfeBeforeBoundary idx b
   | .leavePlayersWhoLost _ _ _ _ (some fi)
-  | .endControlExileLoop _ _ _ _ (some fi) false
   | .finishConcede _ _ _ _ _ _ _ (some fi)
-  | .concedePlayersLoop _ _ _ _ _ _ _ _ _ _ (some fi)
+  | .concedePlayersLoop _ _ _ _ _ _ _ _ _ _ (some fi) =>
+    (fi ≤ idx, fi > idx)
+  | .endControlExileLoop _ _ _ _ (some fi) false
   | .moveSimultaneousToGraveyard _ _ _ _ (some fi)
   | .moveCardsToGraveyardLoop _ _ (some fi)
   | .sacrificePermanentsLoop _ _ _ _ _ (some fi)
