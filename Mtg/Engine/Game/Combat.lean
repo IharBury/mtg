@@ -463,7 +463,7 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0) : Game :=
                     (fallbackCtrl := (g.controllerOf src).orElse (fun _ => some defn))
                 g := g.record (GameEvent.damagePrevented g.turnNumber srcEvent (.player defn)
                   rep.preventedAmount prevCause)
-              if g.protectionFromEverything defn || g.playerProtectedFromStatic defn (some src) then
+              if g.playerProtectedFrom defn (some src) then
                 g := g.logMsg s!"combat damage to {pl.name} is prevented"
               else
                 g := g.logMsg s!"combat damage from {g.name src} is prevented"

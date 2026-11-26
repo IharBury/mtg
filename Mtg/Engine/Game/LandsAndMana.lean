@@ -192,14 +192,15 @@ def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
     (sources : List (GameObject × Array ManaType))
     (spend : ManaSpend := {}) (prop? : Option ProposedSpell := none) : Bool :=
   let minUnits := minManaUnitsForCost cost
-  let srcArr := sources.toArray.map fun (src, types) =>
+  let srcArr := sources.toArray.filterMap fun (src, types) =>
     let choices :=
       g.tapChoicesForSource src types cost
         (dedupSingleTypes := fun ts => dedupZeroReqManaTypes g src ts cost prop?)
         (prop? := prop?)
-    let maxOut := choices.foldl (fun m (ch : TapManaChoice) => max m ch.totalSize) 0
-    (src, choices, maxOut)
-  let allNonEmpty := srcArr.all (!·.2.1.isEmpty)
+    if choices.isEmpty then none
+    else
+      let maxOut := choices.foldl (fun m (ch : TapManaChoice) => max m ch.totalSize) 0
+      some (src, choices, maxOut)
   let sufMax : Array Nat := Id.run do
     let mut out := Array.replicate (srcArr.size + 1) 0
     let mut i := srcArr.size
@@ -208,10 +209,10 @@ def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
       out := out.set! i (srcArr[i]!.2.2 + out[i + 1]!)
     return out
   let rec go (curPool : ManaPool) (idx : Nat) : Bool :=
-    if allNonEmpty && curPool.canPay cost spend then
+    if curPool.canPay cost spend then
       true
     else if idx ≥ srcArr.size then
-      curPool.canPay cost spend
+      false
     else if curPool.total + sufMax[idx]! < minUnits then
       false
     else
@@ -567,10 +568,11 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         searchEff critRem (g.player p).manaPool #[]
   let hasProducibleChoice (o : GameObject) (d : ManaAbilityDef) (effCost : ManaCost) : Bool :=
     !(d.allChoicesFor (fun ts => if ts.size > 1 then #[ts[0]!] else ts)).isEmpty ||
-      d.extraEffect?.isSome ||
+      d.extraEffect?.isSome || d.modeChoices.any (·.output?.isNone) ||
       (prop?.isNone && manaAbilityAllowsZeroOutput d && zeroOutputManaAbilityChangesState o d effCost) ||
       (includePoolSpending && effCost.includesManaPayment &&
-        !(g.player p).manaPool.units.isEmpty && manaAbilityAllowsZeroOutput d)
+        (!(g.player p).manaPool.units.isEmpty || canPayEffCost o d effCost) &&
+        manaAbilityAllowsZeroOutput d)
   let usableAbilityOn (o : GameObject) (d : ManaAbilityDef) (requireNonPlain : Bool) : Bool :=
     let effCost := g.manaAbilityEffectiveCost p o d
     (!requireNonPlain || !g.isPlainTapManaAbilityDef p o d) &&
@@ -604,9 +606,10 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         (g.manaAbilityDefs o).any fun d =>
           let effCost := g.manaAbilityEffectiveCost p o d
           let poolSpendLaunder :=
-            includePoolSpending && effCost.includesManaPayment && !(g.player p).manaPool.units.isEmpty
+            includePoolSpending && effCost.includesManaPayment &&
+              (!(g.player p).manaPool.units.isEmpty || canPayEffCost o d effCost)
           usableAbilityOn o d true &&
-            (poolSpendLaunder || d.extraEffect?.isSome ||
+            (poolSpendLaunder || d.extraEffect?.isSome || d.modeChoices.any (·.output?.isNone) ||
               let dedupForProp (ts : Array ManaType) : Array ManaType :=
                 if ts.size ≤ 1 then ts
                 else Id.run do
@@ -637,14 +640,14 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                         (ManaSpend.forAbility (g.types o2) (g.supertypes o2) (g.subtypes o2)) > 0))
 
 /-- Whether `p` controls an untapped plain `{T}` mana ability whose output currently
-produces 0 mana (`d.output.types.isEmpty && d.output.allows #[]`) and can still be
+produces 0 mana (`d.output.producibleTypes.isEmpty && d.output.allows #[]`) and can still be
 legally activated to tap the permanent (CR 605.3a–b). -/
 def hasUsableZeroOutputTapManaAbility (g : Game) (p : PlayerId) : Bool :=
   (g.permanentsOf p).any fun o =>
     (g.manaAbilityDefs o).any fun d =>
       g.isPlainTapManaAbilityDef p o d &&
         g.manaAbilityDefUsable p o d &&
-        d.output.types.isEmpty && d.output.allows #[] &&
+        d.output.producibleTypes.isEmpty && d.output.allows #[] &&
         !o.status.tapped &&
         !(g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p))
 

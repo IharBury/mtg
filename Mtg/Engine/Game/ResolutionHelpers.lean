@@ -477,11 +477,17 @@ def destroyPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
     (obGainLifeFor : Option PlayerId := none)
     (logMsgAfter : Option String := none)
     (preBattlefield : Option (Array GameObject) := none)
-    (cause : Option EventCause := none) : Game := Id.run do
+    (cause : Option EventCause := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.destroyPermanentsLoop remainingIds allCandidates countNote
-        obGainLifeFor logMsgAfter preBattlefield cause)
+        obGainLifeFor logMsgAfter preBattlefield cause fromEventIdx?)
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   let mut g := g
   let preBf := preBattlefield.getD g.battlefield
   let allCands :=
@@ -493,14 +499,15 @@ def destroyPermanentsLoop (g : Game) (remainingIds : Array ObjectId)
     | some o =>
       if o.isOnBattlefield then
         g := g.destroyPermanent o (cause := cause) (preBattlefield := some preBf)
+          (deferPlayFromExileLogs := true)
         if let .chooseReplacement .. := g.pending then
           let rem := remainingIds.extract (i + 1) remainingIds.size
-          if !rem.isEmpty || countNote || obGainLifeFor.isSome || logMsgAfter.isSome then
-            g := g.chainPendingReplacement
-              (.destroyPermanentsLoop rem allCands countNote
-                obGainLifeFor logMsgAfter (some preBf) cause)
+          g := g.chainPendingReplacement
+            (.destroyPermanentsLoop rem allCands countNote
+              obGainLifeFor logMsgAfter (some preBf) cause (some loopFromIdx))
           return g
     | none => pure ()
+  g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
   let destroyedCount :=
     if obGainLifeFor.isSome then
       allCands.foldl (fun acc id =>
@@ -518,10 +525,16 @@ open or standalone batch, pausing on `Pending.chooseReplacement` and logging
 exile only if the object arrives in `.exile` (CR 614.6). -/
 def exilePermanentsLoop (g : Game) (remainingIds : Array ObjectId)
     (logExile : Bool := true) (cause : Option EventCause := none)
-    (logCard : Option (ObjectId × String) := none) : Game := Id.run do
+    (logCard : Option (ObjectId × String) := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.exilePermanentsLoop remainingIds logExile cause logCard)
+      (.exilePermanentsLoop remainingIds logExile cause logCard fromEventIdx?)
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   let mut g := g
   if let some (oid, name) := logCard then
     if logExile && (g.followMovedToZone? oid (· == .exile)).isSome then
@@ -532,18 +545,17 @@ def exilePermanentsLoop (g : Game) (remainingIds : Array ObjectId)
     | some o =>
       if o.isOnBattlefield then
         let name := g.name o
-        let (g', _) := g.move id .exile none (cause := cause)
+        let (g', _) := g.move id .exile none (cause := cause) (deferPlayFromExileLogs := true)
         g := g'
         if let .chooseReplacement .. := g.pending then
           let rem := remainingIds.extract (i + 1) remainingIds.size
-          if !rem.isEmpty || logExile then
-            g := g.chainPendingReplacement
-              (.exilePermanentsLoop rem logExile cause (if logExile then some (id, name) else none))
+          g := g.chainPendingReplacement
+            (.exilePermanentsLoop rem logExile cause (if logExile then some (id, name) else none) (some loopFromIdx))
           return g
         if logExile && (g.followMovedToZone? id (· == .exile)).isSome then
           g := g.logMsg s!"{name} is exiled"
     | none => pure ()
-  return g
+  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Post-return stage of `flickerPermanents`: log and run `afterPermanentEnters`
 for each exiled card in `enteredFromIds` that returned to the battlefield. -/
@@ -621,23 +633,28 @@ target in `remainingIds` to `.exile`. -/
 private def flickerExileBatchLoop (g : Game) (remainingIds : Array ObjectId)
     (exiledPreIds : Array ObjectId) (logText : String) (tapped : Bool)
     (onlyLandTapped : Bool) (clearExileFields : Bool)
-    (cause : Option EventCause) : Game := Id.run do
+    (cause : Option EventCause)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   let mut g := g
   for i in [0:remainingIds.size] do
     let id := remainingIds[i]!
     match g.findObject? id with
     | some o =>
       if o.zone != .exile then
-        let (g', _) := g.move id .exile none (cause := cause)
+        let (g', _) := g.move id .exile none (cause := cause) (deferPlayFromExileLogs := true)
         g := g'
         if let .chooseReplacement .. := g.pending then
           let rem := remainingIds.extract (i + 1) remainingIds.size
-          if !rem.isEmpty then
-            g := g.chainPendingReplacement
-              (.flickerLoop rem exiledPreIds #[] logText .exileBatch tapped onlyLandTapped clearExileFields cause)
+          g := g.chainPendingReplacement
+            (.flickerLoop rem exiledPreIds #[] logText .exileBatch tapped onlyLandTapped clearExileFields cause none (some loopFromIdx))
           return g
     | none => pure ()
-  return g
+  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Exile all permanents in `targetIds` in one simultaneous batch, then return
 all exiled nontoken cards to the battlefield under their owners' control in a
@@ -676,13 +693,14 @@ def resumeFlickerLoop (g : Game) (remainingIds : Array ObjectId)
     (logText : String := "is exiled, then returned to the battlefield")
     (stage : FlickerStage := .exileBatch) (tapped : Bool := false) (onlyLandTapped : Bool := false)
     (clearExileFields : Bool := false) (cause : Option EventCause := none)
-    (preBattlefield : Option (Array GameObject) := none) : Game :=
+    (preBattlefield : Option (Array GameObject) := none)
+    (fromEventIdx? : Option Nat := none) : Game :=
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.flickerLoop remainingIds exiledPreIds enteredFromIds logText stage tapped onlyLandTapped clearExileFields cause preBattlefield)
+      (.flickerLoop remainingIds exiledPreIds enteredFromIds logText stage tapped onlyLandTapped clearExileFields cause preBattlefield fromEventIdx?)
   else
     match stage with
-    | .exileBatch => g.flickerExileBatchLoop remainingIds exiledPreIds logText tapped onlyLandTapped clearExileFields cause
+    | .exileBatch => g.flickerExileBatchLoop remainingIds exiledPreIds logText tapped onlyLandTapped clearExileFields cause fromEventIdx?
     | .startReturnBatch => g.flickerStartReturnBatch exiledPreIds logText tapped onlyLandTapped clearExileFields cause
     | .returnBatch => g.flickerReturnBatchLoop remainingIds exiledPreIds enteredFromIds logText tapped onlyLandTapped clearExileFields cause preBattlefield
     | .postReturn => g.flickerPostReturn enteredFromIds logText
@@ -823,7 +841,7 @@ def finishChooseCards (g : Game) (p : PlayerId) (chosen : Array ObjectId)
     g.withBatch cause? fun g => g.chooseCardsToHandLoop p chosen cause?
   | .creaturesToBattlefield =>
     let valid := chosen.filter fun id =>
-      (g.findObject? id).any (fun o => o.zone == .hand o.owner && g.isCreature o)
+      (g.findObject? id).any (fun o => o.zone == .hand o.owner && isDiscardableCard o && g.isCreature o)
     let (g, cause?) : Game × Option EventCause :=
       if valid.isEmpty then (g, none)
       else
@@ -1114,10 +1132,44 @@ def destroyCreaturesByManaParity (g : Game) (sourceId : Option ObjectId) (even :
   g.withBatch none fun g =>
     g.destroyPermanentsLoop ids (preBattlefield := some preBf)
 
+/-- Return each still-present permanent in `remainingIds` to its owner's hand
+sequentially inside an open or standalone batch, pausing on
+`Pending.chooseReplacement` and deferring `.playFromExile` expiry logs until
+all simultaneous returns complete (CR 611.2 / 616.1). -/
+def returnPermanentsToHandLoop (g : Game) (remainingIds : Array ObjectId)
+    (cause : Option EventCause := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  if remainingIds.isEmpty && fromEventIdx?.isNone then
+    return g
+  if let .chooseReplacement .. := g.pending then
+    return g.chainPendingReplacement
+      (.finishPostStep (.returnToHandLoop remainingIds cause fromEventIdx?))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  let mut g := g
+  for i in [0:remainingIds.size] do
+    let id := remainingIds[i]!
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        g := g.returnToHand o.id o.owner (cause := cause) (deferPlayFromExileLogs := true)
+        if let .chooseReplacement .. := g.pending then
+          let rem := remainingIds.extract (i + 1) remainingIds.size
+          g := g.chainPendingReplacement
+            (.finishPostStep (.returnToHandLoop rem cause (some loopFromIdx)))
+          return g
+    | none => pure ()
+  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+
 def returnCreaturesNotOfType (g : Game) (chosen : CardSubtype) : Game :=
-  g.withBatch none fun g =>
-    g.foldBattlefield (fun o => g.isCreature o && !g.hasSubtype o chosen)
-      (fun g o => g.returnToHand o.id o.owner)
+  let ids := (g.battlefield.filter (fun o => g.isCreature o && !g.hasSubtype o chosen)).map (·.id)
+  if ids.isEmpty then g
+  else
+    g.withBatch none fun g =>
+      g.returnPermanentsToHandLoop ids
 
 def finishRevealPutCreaturesStep (g : Game) (p : PlayerId)
     (remaining put enteredFromIds : Array ObjectId)

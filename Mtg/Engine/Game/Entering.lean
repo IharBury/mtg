@@ -348,7 +348,7 @@ partial def reopenDeferredExileCasts (g : Game) : Game :=
       else
         let alive := ids.filter (fun id =>
           (g.findObject? id).any (fun (o : GameObject) =>
-            o.zone == Zone.exile && !g.isLand o))
+            o.zone == Zone.exile && isCastableObject o && !g.isLand o))
         let g := g.change (.pendingMayCastFromExile none)
         if !g.stillInGame q || alive.isEmpty || left == 0 then g
         else

@@ -3467,6 +3467,18 @@ def spellManaSpentInterest (g : Game) (spend : ManaSpend)
     for dt in g.delayedTriggers do
       if let some instr := dt.instruction? then
         acc := acc.merge (instrInterest (dt.source.map (·.id)) instr)
+    for (_, eff) in g.activeEffects do
+      match eff with
+      | .layered sc (.abilities add _) d =>
+        if g.durationActive d then
+          let srcOid? := match sc with | .objects #[oid] => some oid | _ => none
+          for kw in add.keywords do
+            acc := acc.merge (kwInterest srcOid? kw)
+          for sa in add.staticAbilities do
+            acc := acc.merge (staticInterest srcOid? sa)
+          for ab in add.triggeredAbilities do
+            acc := acc.merge (trigInterest srcOid? ab)
+      | _ => pure ()
     return acc
 
 /-- Whether spending mana from a Treasure changes the outcome of paying for
@@ -3544,6 +3556,9 @@ spell-mana outcome relative to `outcome0` for `prop` (CR 106.6 / 614.1c). -/
 def manaAbilityDefCanChangeOutcome (g : Game) (spend : ManaSpend)
     (prop : ProposedSpell) (o : GameObject) (d : ManaAbilityDef)
     (outcome0 : SpellManaOutcome) : Bool :=
+  if d.extraEffect?.isSome || d.modeChoices.any (·.output?.isNone) then
+    true
+  else
   let interest := spellManaSpentInterest g spend (some prop)
   let cbcMatters := cantBeCounteredRiderMatters g spend (some prop)
   let crMatters := creatureSpellRiderMatters g spend (some prop)
@@ -4154,30 +4169,42 @@ def hasUniqueManaPayment (g : Game) : Bool :=
             creatureSpellRiderMatters g spend (some prop) ||
             ancestryManaMatters g spend (some prop) ||
             !interest.isEmpty
-        let includePoolSpend := anyOutcomeMatters && !pool.units.isEmpty
+        let includePoolSpend := anyOutcomeMatters
         match pool.payUnits? prop.cost spend with
         | some (_, spent0) =>
-          if !anyOutcomeMatters then true
+          let handManaObjs :=
+            (g.player p).hand.filterMap fun id =>
+              (g.findObject? id).bind fun o =>
+                if !(g.baseCard o).allActivatedAbilities.isEmpty then some o else none
+          let gyManaObjs :=
+            (g.player p).graveyard.filterMap fun id =>
+              (g.findObject? id).bind fun o =>
+                if !(g.baseCard o).allActivatedAbilities.isEmpty then some o else none
+          let manaObjs := g.permanentsOf p ++ handManaObjs ++ gyManaObjs
+          let tapReady (o : GameObject) (d : ManaAbilityDef) : Bool :=
+            !d.tap ||
+              (!o.status.tapped &&
+                !(g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p)))
+          if !anyOutcomeMatters then
+            !(g.hasUsableNonPlainManaAbility p (some prop) (includePoolSpending := false) &&
+              manaObjs.any (fun o =>
+                (g.manaAbilityDefs o).any (fun d =>
+                  !g.isPlainTapManaAbilityDef p o d &&
+                    g.manaAbilityDefUsable p o d &&
+                    tapReady o d &&
+                    (d.extraEffect?.isSome || d.modeChoices.any (·.output?.isNone)))))
           else
             let outcome0 := spellManaOutcome g spend (some prop) spent0
             let plainFlips :=
               canExtraPlainSourcesChangeOutcome g pool #[] prop.cost sources #[]
                 spend (some (p, prop)) outcome0
-            let handManaObjs :=
-              (g.player p).hand.filterMap fun id =>
-                (g.findObject? id).bind fun o =>
-                  if !(g.baseCard o).allActivatedAbilities.isEmpty then some o else none
-            let gyManaObjs :=
-              (g.player p).graveyard.filterMap fun id =>
-                (g.findObject? id).bind fun o =>
-                  if !(g.baseCard o).allActivatedAbilities.isEmpty then some o else none
-            let manaObjs := g.permanentsOf p ++ handManaObjs ++ gyManaObjs
             let nonPlainFlips :=
               g.hasUsableNonPlainManaAbility p (some prop) (includePoolSpending := includePoolSpend) &&
                 manaObjs.any (fun o =>
                   (g.manaAbilityDefs o).any (fun d =>
                     !g.isPlainTapManaAbilityDef p o d &&
                       g.manaAbilityDefUsable p o d &&
+                      tapReady o d &&
                       manaAbilityDefCanChangeOutcome g spend prop o d outcome0))
             !plainFlips && !nonPlainFlips
         | none =>

@@ -138,7 +138,7 @@ def destroyPermanent (g : Game) (o : GameObject)
     let finalCause := g.resolveOptionalCause cause' (fallbackCtrl := ctrl)
     let oName := g.name o
     let g := g.recordRemoveCounters o.id .shield 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
-      (cause := some finalCause)
+      (cause := some finalCause) (deferPlayFromExileLogs := deferPlayFromExileLogs)
     g.logMsg s!"A shield counter is removed from {oName} instead of destroying it"
   | .none =>
     g.moveToOwnerGraveyard o (reason.getD s!"{g.name o} is destroyed") (verb := some .destroy)
@@ -168,7 +168,30 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
     Game × (Bool × Bool) := Id.run do
   let mut g := g
   let mut changed := changedIn
-  if stage == .dyingCreatures then
+  let isCounterStage := match stage with | .counterAnnihilation _ => true | _ => false
+  if let .counterAnnihilation startIdx := stage then
+    -- CR 704.5q: +1/+1 and -1/-1 counters on one permanent are removed in pairs.
+    for i in [startIdx:preBf.size] do
+      let o := preBf[i]!
+      let curBefore := g.findObject? o.id |>.getD o
+      let k := Nat.min curBefore.status.plusOnePlusOne curBefore.status.minusOneMinusOne
+      if k > 0 then
+        let oName0 := g.name curBefore
+        let cause := EventCause.stateBased .counterAnnihilation
+        g := g.recordRemoveCountersMulti o.id #[(.plusOnePlusOne, k), (.minusOneMinusOne, k)]
+          (noActor := true) (cause := some cause)
+          (deferPlayFromExileLogs := deferPlayFromExileLogs)
+        let oName :=
+          match g.findObject? o.id with
+          | some cur => if cur.isOnBattlefield then g.name cur else oName0
+          | none => oName0
+        g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {oName}"
+        changed := true
+        if g.sbaPaused then
+          return (g.chainPendingReplacement (.finishSbaSweep moves preBf (.counterAnnihilation (i + 1))
+            pwMoves sagaMoves tokensOutsideBf copiesOutside illegalAuras
+            illegalEquips illegalCreatureAtts legendGroups deferPlayFromExileLogs), (true, true))
+  if isCounterStage || stage == .dyingCreatures then
     for i in [0:moves.size] do
       let m := moves[i]!
       match g.findObject? m.objectId with
@@ -191,7 +214,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
               illegalEquips illegalCreatureAtts legendGroups deferPlayFromExileLogs), (true, true))
       | none => pure ()
     g := g.change .sbaChecked
-  if stage == .dyingCreatures || stage == .planeswalkersAndLegend then
+  if isCounterStage || stage == .dyingCreatures || stage == .planeswalkersAndLegend then
     -- Planeswalkers with 0 loyalty captured at start of pass (CR 704.5i).
     let pwList : Array SbaGraveyardMove :=
       if stage == .planeswalkersAndLegend then moves else pwMoves
@@ -1062,23 +1085,7 @@ partial def checkSBACounted (g : Game)
       match g.decideGameIfFinished with
       | some finished => return (finished, (true, true))
       | none => pure ()
-      -- CR 704.5q: +1/+1 and -1/-1 counters on one permanent are removed in
-      -- pairs.
-      for o in preBf do
-        let curBefore := g.findObject? o.id |>.getD o
-        let k := Nat.min curBefore.status.plusOnePlusOne curBefore.status.minusOneMinusOne
-        if k > 0 then
-          let oName0 := g.name curBefore
-          let cause := EventCause.stateBased .counterAnnihilation
-          g := g.recordRemoveCountersMulti o.id #[(.plusOnePlusOne, k), (.minusOneMinusOne, k)]
-            (noActor := true) (cause := some cause)
-          let oName :=
-            match g.findObject? o.id with
-            | some cur => if cur.isOnBattlefield then g.name cur else oName0
-            | none => oName0
-          g := g.logMsg s!"{k} +1/+1 and -1/-1 counter pair(s) are removed from {oName}"
-          changed := true
-      return g.finishSbaSweep victims preBf .dyingCreatures pwMoves sagaMoves tokensOutsideBf
+      return g.finishSbaSweep victims preBf (.counterAnnihilation 0) pwMoves sagaMoves tokensOutsideBf
         copiesOutside illegalAuras illegalEquips illegalCreatureAtts legendGroups
         (changedIn := changed) (deferPlayFromExileLogs := deferPlayFromExileLogs)
     let (g, didOut) :=
@@ -1266,7 +1273,8 @@ partial def checkSBACountedWithLeavesCoreWithIdx (g : Game)
         let (g', s', po') := gFolded.applyDeferredProposalRewind savedIn poFolded departedIn hadPreBodyCont
         let (g'', didMore, savedOut, poOut, depOut, rwOut, fiOut) :=
           g'.checkSBACountedWithLeavesCoreWithIdx s' po' departedIn none (deferRestore := deferRestore)
-            (deferPlayFromExileLogs := true)
+            (fromEventIdx? := if deferPlayFromExileLogs then carriedOutIdx? else some effFromIdx)
+            (deferPlayFromExileLogs := deferPlayFromExileLogs)
         (some (g'', clearedInvalidLegend || didMore, savedOut, poOut, depOut, rwOut, fiOut), none)
       else (none, outerAfter?)
     | none => (none, outerAfter?)
@@ -1274,11 +1282,7 @@ partial def checkSBACountedWithLeavesCoreWithIdx (g : Game)
       Game × Bool × Option Pending × Bool × Array PlayerId × Option Bool × Option PendingReplacement × Bool × Option Nat :=
     if let some (gR, dR, sR, pR, depR, rwR, fiR) := reenterAfterRewind? then
       let mergedFi := mergeFromEventIdx carriedOutIdx? fiR
-      if gR.sbaPaused && !deferRestore && pfeIdxOpt.isSome then
-        (chainOrMergeSba gR (fromEventIdx? := mergeFromEventIdx pfeIdxOpt fiR),
-         dR, sR, pR, depR, rwR, outerAfter?, true, mergedFi)
-      else
-        (gR, dR, sR, pR, depR, rwR, outerAfter?, false, mergedFi)
+      (gR, dR, sR, pR, depR, rwR, outerAfter?, !deferPlayFromExileLogs, mergedFi)
     else
       let wasPaused := g.sbaPaused
       let hasPendingLosers :=
@@ -1349,13 +1353,11 @@ partial def checkSBACountedWithLeavesCoreWithIdx (g : Game)
           let (g', didMore, saved'?, popOuter', departed', rewindProposal', fi') :=
             g.checkSBACountedWithLeavesCoreWithIdx saved? popOuter departed rewindProposal
               (deferRestore := deferRestore) (outerAfterIn? := outerAfter?)
-              (deferPlayFromExileLogs := true)
+              (fromEventIdx? := if deferPlayFromExileLogs then carriedOutIdx? else some effFromIdx)
+              (deferPlayFromExileLogs := deferPlayFromExileLogs)
           let mergedFi := mergeFromEventIdx carriedOutIdx? fi'
-          if g'.sbaPaused && !deferRestore && pfeIdxOpt.isSome then
-            (chainOrMergeSba g' (fromEventIdx? := mergeFromEventIdx pfeIdxOpt fi'),
-             didAny || anyLeft || didMore, saved'?, popOuter', departed', rewindProposal', none, true, mergedFi)
-          else
-            (g', didAny || anyLeft || didMore, saved'?, popOuter', departed', rewindProposal', none, false, mergedFi)
+          (g', didAny || anyLeft || didMore, saved'?, popOuter', departed', rewindProposal',
+            none, !deferPlayFromExileLogs, mergedFi)
         else if deferRestore then
           (g, didAny, saved?, popOuter, departed, rewindProposal, outerAfter?, false, carriedOutIdx?)
         else

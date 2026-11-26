@@ -227,7 +227,7 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
           if willReverse then g
           else
             match localOuter? with
-            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+            | some outer => g.chainProposalOuterCont p outer
             | none => g
         return if !willReverse && (callerShouldResume || (!g.over && g.pending == .none && localOuter?.isSome)) then
           g.resumeAfterBecomeCastFwd

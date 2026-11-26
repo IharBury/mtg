@@ -371,7 +371,12 @@ def manaAbilitySourceZoneOk (g : Game) (p : PlayerId) (o : GameObject) (d : Mana
 the source, removing counters, choosing other objects, paying life, or paying
 mana (the `tap` shortcut and automatic payment). -/
 def ManaAbilityDef.isPlainTap (d : ManaAbilityDef) : Bool :=
-  d.tap && !d.fromHand && !d.fromGraveyard &&
+  let onlyTapOrMana :=
+    d.sourceAbility.all fun ab =>
+      ab.cost.items.all fun
+        | .tapSelf | .mana _ => true
+        | _ => false
+  d.tap && onlyTapOrMana && !d.fromHand && !d.fromGraveyard &&
     !d.removesSource && !d.hasExtraInteractiveCost &&
     !d.removeStoryCounter && !d.removeIndestructibleCounter && !d.putStunCounterOnSource &&
     d.picks.isEmpty && d.modeChoices.isEmpty && d.extraEffect?.isNone &&
@@ -382,7 +387,12 @@ def ManaAbilityDef.isPlainTap (d : ManaAbilityDef) : Bool :=
 /-- Whether `d` is a plain `{T}` mana ability after `activationManaCost`
 reductions on `o` for `p`. -/
 def isPlainTapManaAbilityDef (g : Game) (p : PlayerId) (o : GameObject) (d : ManaAbilityDef) : Bool :=
-  d.tap && !d.fromHand && !d.fromGraveyard &&
+  let onlyTapOrMana :=
+    d.sourceAbility.all fun ab =>
+      ab.cost.items.all fun
+        | .tapSelf | .mana _ => true
+        | _ => false
+  d.tap && onlyTapOrMana && !d.fromHand && !d.fromGraveyard &&
     !d.removesSource && !d.hasExtraInteractiveCost &&
     !d.removeStoryCounter && !d.removeIndestructibleCounter && !d.putStunCounterOnSource &&
     d.picks.isEmpty && d.modeChoices.isEmpty && d.extraEffect?.isNone &&
@@ -452,7 +462,7 @@ def manaAbilitiesOf (g : Game) (o : GameObject) : Array ManaType :=
   let p := (g.controllerOf o).getD o.owner
   (g.manaAbilityDefs o).foldl (fun acc d =>
     if g.isPlainTapManaAbilityDef p o d && g.manaAbilityDefUsable p o d then
-      d.output.types.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc
+      d.output.producibleTypes.foldl (fun acc t => if acc.contains t then acc else acc.push t) acc
     else acc) #[]
 
 /-- Add `mana` to `p`'s pool with `r` and `riders` (CR 106.4 / 106.6 / 106.12). -/

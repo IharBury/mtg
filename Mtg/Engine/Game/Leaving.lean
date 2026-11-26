@@ -254,6 +254,63 @@ private def prePhaseOutLkiCtrl? (pre : Game) (preObj : GameObject)
       |>.orElse (fun _ => poSnapCtrl?)
       |>.orElse (fun _ => some fallback)
 
+/-- Returns `(emitsBeforeBoundary, hitBoundary)` for whether `pr` emits
+`emitExpiredPlayFromExileLogs` covering `idx..` before any priority/reversal
+boundary. -/
+private def contEmitsPfeBeforeBoundary (idx : Nat) : PendingReplacement → Bool × Bool
+  | .seq a b =>
+    let (emA, hitA) := contEmitsPfeBeforeBoundary idx a
+    if emA then (true, false)
+    else if hitA then (false, true)
+    else contEmitsPfeBeforeBoundary idx b
+  | .leavePlayersWhoLost _ _ _ _ (some fi)
+  | .finishConcede _ _ _ _ _ _ _ (some fi)
+  | .concedePlayersLoop _ _ _ _ _ _ _ _ _ _ (some fi) =>
+    (fi ≤ idx, fi > idx)
+  | .endControlExileLoop _ _ _ _ (some fi) false
+  | .moveSimultaneousToGraveyard _ _ _ _ (some fi)
+  | .moveCardsToGraveyardLoop _ _ (some fi)
+  | .sacrificePermanentsLoop _ _ _ _ _ (some fi)
+  | .destroyPermanentsLoop _ _ _ _ _ _ _ (some fi)
+  | .exilePermanentsLoop _ _ _ _ (some fi)
+  | .flickerLoop _ _ _ _ _ _ _ _ _ _ (some fi)
+  | .finishPostStep (.returnToHandLoop _ _ (some fi))
+  | .checkSBA (some fi) => (fi ≤ idx, false)
+  | pr => (false, pr.startsWithPlayFromExileDeferBoundary)
+
+/-- Whether an already-queued continuation that executes after the paused
+`.endControlExileLoop` (without an intervening priority/reversal boundary) will
+emit `emitExpiredPlayFromExileLogs` covering `idx..`. Synchronous callers that
+emit on return do not qualify, so paused `.endControlExileLoop` clears
+`deferPlayFromExileLogs := false` unless such a queued owner exists. -/
+private def hasQueuedPfeEmitterAfter (g : Game) (afterHere? : Option PendingReplacement)
+    (idx : Nat) : Bool := Id.run do
+  if let some pr := afterHere? then
+    let (em, hit) := contEmitsPfeBeforeBoundary idx pr
+    if em then return true
+    if hit then return false
+  if g.continuations.isEmpty then return false
+  for off in [0:g.continuations.size] do
+    let fi := g.continuations.size - 1 - off
+    let frame := g.continuations[fi]!
+    -- On the top frame (`off == 0`), `frame.pendingReplacement` runs BEFORE our newly
+    -- chained continuation (or was popped into `afterHere?`), so only check lower frames.
+    if off > 0 then
+      if let some pr := frame.pendingReplacement then
+        let (em, hit) := contEmitsPfeBeforeBoundary idx pr
+        if em then return true
+        if hit then return false
+    if let some w := frame.interpWait? then
+      if w.stack.any (fun | .afterMoveLoop _ _ _ _ _ (some fi) => fi ≤ idx | _ => false) then
+        return true
+    for oOff in [0:frame.outerPendingReplacements.size] do
+      let oi := frame.outerPendingReplacements.size - 1 - oOff
+      let outer := frame.outerPendingReplacements[oi]!
+      let (em, hit) := contEmitsPfeBeforeBoundary idx outer
+      if em then return true
+      if hit then return false
+  return false
+
 /-- Exile each `(oid, logLine, prevCtrl)` in `remaining` sequentially (CR 800.4a /
 800.4c), pausing and chaining `.endControlExileLoop` if a CR 616.1 replacement
 choice opens and emitting `logLine` only once the permanent has arrived in
@@ -268,16 +325,17 @@ def runEndControlExileLoop (g : Game)
     (deferPlayFromExileLogs : Bool := false) : Game :=
   let quiet :=
     suppressInteractive || g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   if remaining.isEmpty && pendingLog.isNone && fromEventIdx?.isNone then g
   else if !quiet && g.sbaPaused then
+    let pauseDefer := deferPlayFromExileLogs && hasQueuedPfeEmitterAfter g none loopFromIdx
     g.chainPendingReplacement
-      (.endControlExileLoop remaining cause pendingLog extraSkipIds fromEventIdx? deferPlayFromExileLogs)
+      (.endControlExileLoop remaining cause pendingLog extraSkipIds (some loopFromIdx) pauseDefer)
   else
     let preLoop :=
       match fromEventIdx? with
       | some idx => if idx < g.events.size then g.mkHistoricalGameAt idx else g
       | none => g
-    let loopFromIdx := fromEventIdx?.getD g.events.size
     let priorCont? := g.pendingReplacement
     let g := if priorCont?.isSome then g.change (.pendingReplacement none) else g
     let runLoop (g : Game) : Game := Id.run do
@@ -300,8 +358,10 @@ def runEndControlExileLoop (g : Game)
               suppressInteractive || g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay
             if !nowQuiet && g.sbaPaused then
               let rem := remaining.extract (i + 1) remaining.size
+              let pauseDefer :=
+                deferPlayFromExileLogs && hasQueuedPfeEmitterAfter g priorCont? loopFromIdx
               g := g.chainPendingReplacement
-                (.endControlExileLoop rem cause (some (oid, logLine)) skipIds (some loopFromIdx) deferPlayFromExileLogs)
+                (.endControlExileLoop rem cause (some (oid, logLine)) skipIds (some loopFromIdx) pauseDefer)
               return g
             if (g.followMovedToZone? oid (· == .exile)).isSome then
               g := g.logMsg logLine
@@ -408,7 +468,8 @@ CR 800.4c control-ending exile across `pre -> post` for battlefield permanents
 (CR 506.4 / 613.1a–b / 800.4c). -/
 @[export mtg_game_reconcile_control_after_transition]
 def reconcileControlAfterTransition (pre post : Game)
-    (cause : Option EventCause := none) (deferPlayFromExileLogs : Bool := false) : Game :=
+    (cause : Option EventCause := none) (deferPlayFromExileLogs : Bool := false)
+    (fromEventIdx? : Option Nat := none) : Game :=
   let alreadyQueuedForExile (g : Game) (oid : ObjectId) : Bool :=
     g.pendingReplacement.any (inActiveEndControlExile oid) ||
       g.outerPendingReplacements.any (inActiveEndControlExile oid)
@@ -493,7 +554,9 @@ def reconcileControlAfterTransition (pre post : Game)
   else
     let skipIds := g.coDepartingIds (exileQueue.map (·.1))
     g.runEndControlExileLoop exileQueue (cause := some (.gameRule .playerLeftGame))
-      (extraSkipIds := skipIds) (deferPlayFromExileLogs := deferPlayFromExileLogs)
+      (extraSkipIds := skipIds)
+      (fromEventIdx? := fromEventIdx?.orElse (fun _ => some pre.events.size))
+      (deferPlayFromExileLogs := deferPlayFromExileLogs)
 
 /-- Expire a simultaneous group of `.copy` (`preExpire`, run with
 `reconcileControl := false`) and `.control` (`eids`) continuous effects against
@@ -508,7 +571,8 @@ def endControlEffectsSimultaneously (g : Game) (eids : Array EffectId)
     (preState? : Option Game := none)
     (extraSkipIds : Array ObjectId := #[])
     (suppressInteractive : Bool := false)
-    (deferPlayFromExileLogs : Bool := false) : Game :=
+    (deferPlayFromExileLogs : Bool := false)
+    (fromEventIdx? : Option Nat := none) : Game :=
   let hadOpenBatch := g.currentBatch.isSome
   let pre := preState?.getD g
   let alreadyQueuedForExile (g0 : Game) (oid : ObjectId) : Bool :=
@@ -633,6 +697,7 @@ def endControlEffectsSimultaneously (g : Game) (eids : Array EffectId)
       let skipIds := g.coDepartingIds (exileQueue.map (·.1) ++ extraSkipIds)
       g.runEndControlExileLoop exileQueue (cause := some (.gameRule .playerLeftGame))
         (extraSkipIds := skipIds) (suppressInteractive := suppressInteractive)
+        (fromEventIdx? := fromEventIdx?.orElse (fun _ => some pre.events.size))
         (deferPlayFromExileLogs := deferPlayFromExileLogs)
   if !hadOpenBatch then
     g.flushQueuedLinkedExile (suppressInteractive := suppressInteractive)
@@ -734,6 +799,7 @@ def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := fals
           (preState? := some pre) (extraSkipIds := skipPreIds)
           (suppressInteractive := suppressInteractive)
           (deferPlayFromExileLogs := true)
+          (fromEventIdx? := some pre.events.size)
     let alreadyQueued (oid : ObjectId) : Bool :=
       g.pendingReplacement.any (inActiveEndControlExile oid) ||
         g.outerPendingReplacements.any (inActiveEndControlExile oid)
@@ -756,7 +822,7 @@ def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := fals
         let skipIds := g.coDepartingIds (orphanExiles.map (·.1))
         let g := g.runEndControlExileLoop orphanExiles (cause := leaveCause)
           (extraSkipIds := skipIds) (suppressInteractive := suppressInteractive)
-          (deferPlayFromExileLogs := true)
+          (fromEventIdx? := some pre.events.size) (deferPlayFromExileLogs := true)
         if g.currentBatch.isNone then
           g.flushQueuedLinkedExile (suppressInteractive := suppressInteractive)
         else g
@@ -769,7 +835,7 @@ pre-removal snapshot `pre` (CR 122.1 / 611.2a / 704.5q / 800.4c). -/
 def recordRemoveCountersMulti (g : Game) (id : ObjectId)
     (removals : Array (CounterKind × Nat))
     (byPlayer : Option PlayerId := none) (cause : Option EventCause := none)
-    (noActor : Bool := false) : Game :=
+    (noActor : Bool := false) (deferPlayFromExileLogs : Bool := false) : Game :=
   match g.findObject? id with
   | none => g
   | some o0 =>
@@ -872,10 +938,11 @@ def recordRemoveCountersMulti (g : Game) (id : ObjectId)
         if !ctrlEids.isEmpty || hadWhileCounterCtrlOrCopy then
           g.endControlEffectsSimultaneously ctrlEids (cause := expCause)
             (preExpire := preExpire) (preState? := some pre) (extraSkipIds := skipIds)
-            (deferPlayFromExileLogs := true)
+            (deferPlayFromExileLogs := true) (fromEventIdx? := some fromIdx)
         else
           preExpire g
-      return emitExpiredPlayFromExileLogs pre gOut fromIdx
+      if deferPlayFromExileLogs then return gOut
+      else return emitExpiredPlayFromExileLogs pre gOut fromIdx
 
 /-- Record removing up to `n` counters of `kind` from `id` via
 `PermanentEvent.counters` (CR 122.1). Clamps to the current counter count,
@@ -884,9 +951,9 @@ effects immediately when `kind` reaches `0` simultaneously against the pre-remov
 snapshot (CR 611.2a / 800.4c). -/
 def recordRemoveCounters (g : Game) (id : ObjectId) (kind : CounterKind) (n : Nat := 1)
     (byPlayer : Option PlayerId := none) (cause : Option EventCause := none)
-    (noActor : Bool := false) : Game :=
+    (noActor : Bool := false) (deferPlayFromExileLogs : Bool := false) : Game :=
   g.recordRemoveCountersMulti id #[(kind, n)] (byPlayer := byPlayer)
-    (cause := cause) (noActor := noActor)
+    (cause := cause) (noActor := noActor) (deferPlayFromExileLogs := deferPlayFromExileLogs)
 
 /-- Remove all counters currently on `id`, emitting one `PermanentEvent.counters`
 removal per non-zero counter kind in a single batch before expiring matching
@@ -1107,6 +1174,7 @@ def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId)
         removeFromCombatOnControlChange pre post (cause := cause)
       else
         reconcileControlAfterTransition pre post (cause := cause)
+          (deferPlayFromExileLogs := deferPlayFromExileLogs)
     let pre := preState?.getD g
     if o.zone == .battlefield then
       let g := g.withBatch cause fun g =>
@@ -1944,7 +2012,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
     else
       match g.nextActorWithHandCard livingRem with
       | none =>
-        let skipped := livingRem.filter (fun r => (g.player r).hand.isEmpty)
+        let skipped := livingRem.filter (fun r => (g.discardableHandIds r).isEmpty)
         let g := g.logForPlayers skipped (fun r =>
           s!"{(g.player r).name} has no card to discard")
         let g :=
@@ -1966,7 +2034,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         (g, g.pending)
       | some (np, rest) =>
         let prefixIdx := livingRem.findIdx? (· == np) |>.getD 0
-        let skipped := (livingRem.extract 0 prefixIdx).filter (fun r => (g.player r).hand.isEmpty)
+        let skipped := (livingRem.extract 0 prefixIdx).filter (fun r => (g.discardableHandIds r).isEmpty)
         let g := g.logForPlayers skipped (fun r =>
           s!"{(g.player r).name} has no card to discard")
         let nextLeft := if g.discardCountPerPlayer > 1 then g.discardCountPerPlayer else 0
@@ -2111,7 +2179,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         (g, .none)
       else
         let liveIds := ids.filter fun id =>
-          (g.findObject? id).any (fun o => o.zone == .exile && !g.isLand o)
+          (g.findObject? id).any (fun o => o.zone == .exile && !o.printed.isToken && !g.isLand o)
         if liveIds.isEmpty || left == 0 then
           let g := g.changes #[.pendingMayCastFromExile none]
           let g := declineInterpChoice (clearPending g)
@@ -2218,7 +2286,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
         let g := clearPendingAnd g clearProp
         match living[0]? with
         | some next =>
-          if (g.player next).hand.size > 2 then
+          if (g.discardableHandIds next).size > 2 then
             (g.logMsg s!"{(g.player next).name} discards two cards",
              .resolutionChoice next (.discardTwo controller (living.extract 1 living.size) draws chosenLiving))
           else
@@ -3695,6 +3763,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
         g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (preExpire := preExpireLeave) (preState? := some preLeave)
           (extraSkipIds := coDepartingIds) (deferPlayFromExileLogs := true)
+          (fromEventIdx? := some preLeave.events.size)
       let bodyExilePending? := if g.pending != .none then some g.pending else none
       let bodyExileCont? := g.pendingReplacement
       let g :=
@@ -3880,7 +3949,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
           match g.pendingMayCastFromExile with
           | some (q, ids, left) =>
             let alive := ids.filter (fun id =>
-              (g.findObject? id).any (fun (o : GameObject) => o.zone == Zone.exile && !g.isLand o))
+              (g.findObject? id).any (fun (o : GameObject) => o.zone == Zone.exile && !o.printed.isToken && !g.isLand o))
             if q == p || !g.stillInGame q then
               (g.change (.pendingMayCastFromExile none), curPending)
             else if !(wasAbortedProposal && rewindAbortedProposal) then
@@ -4013,7 +4082,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               | none => g
             | none => g
           let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
-            (deferPlayFromExileLogs := true)
+            (fromEventIdx? := some preLeave.events.size) (deferPlayFromExileLogs := true)
           let choicesStillValid := g.replacementChoiceValid q choices (allowLost := true)
           let savedPreLeavePending? : Option Pending :=
             if choicesStillValid then some preBodyPending else deferredPost?
@@ -4043,7 +4112,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                 | none => g
               | none => g
             let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
-              (deferPlayFromExileLogs := true)
+              (fromEventIdx? := some preLeave.events.size) (deferPlayFromExileLogs := true)
             (g, (none, preBodyContReopen?, hadPreBodyCont))
           else
             let savedPreLeavePending0? : Option Pending :=
@@ -4074,7 +4143,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                 | none => g
               | none => g
             let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
-              (deferPlayFromExileLogs := true)
+              (fromEventIdx? := some preLeave.events.size) (deferPlayFromExileLogs := true)
             (g, (savedPreLeavePending?, combinedOuter?, hadPreBodyCont))
       | _ =>
         let preRedirEvSize := g.events.size
@@ -4136,7 +4205,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
                 | none => g
             | none => g
           let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
-            (deferPlayFromExileLogs := true)
+            (fromEventIdx? := some preLeave.events.size) (deferPlayFromExileLogs := true)
           (g, (none, preBodyContReopen?, hadPreBodyCont))
         else
           let savedPreLeavePending0? : Option Pending :=
@@ -4168,7 +4237,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
               | none => g
             | none => g
           let g := g.runEndControlExileLoop exileQueue (cause := cause) (extraSkipIds := coDepartingIds)
-            (deferPlayFromExileLogs := true)
+            (fromEventIdx? := some preLeave.events.size) (deferPlayFromExileLogs := true)
           (g, (savedPreLeavePending?, combinedOuter?, hadPreBodyCont))
     let allLinked := linkedExileIds ++ g.queuedLinkedExile
     let g := if g.queuedLinkedExile.isEmpty then g else g.change .clearQueuedLinkedExile

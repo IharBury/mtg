@@ -1886,7 +1886,8 @@ private def replayOk40i4 (gs : Array Game) : Bool :=
       (.seq
         (.finishActivateManaAbilityPostSac p0 altarObj.id altarObj.printed.name
           (gMana0.snapshot altarObj) #[.colorless] false (some 0) .none 0 false .none)
-        (.finishPostStep (.logExiledIfInExile markerFromId "after-mana-abort-seq")))
+        (.seq (.gainLife p2 1 (some testCause))
+          (.finishPostStep (.logExiledIfInExile markerFromId "after-mana-abort-seq"))))
   let hasFollowingSeqOk :=
     gSeqAborted.priority == p2 &&
     (gSeqAborted.log.filter (·.endsWith "after-mana-abort-seq")).size == 1

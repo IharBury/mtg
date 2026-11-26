@@ -1001,7 +1001,8 @@ private def replayOk41i4 (gs : Array Game) : Bool :=
       (.seq
         (.finishActivateManaAbilityPostSac p0 pmObj.id pmObj.printed.name
           (gPmSeq0.snapshot pmObj) #[.colored .red] true (some 0) .none 1 false .none)
-        (.finishPostStep (.logExiledIfInExile markerBear.id "after-pain-mana-seq")))
+        (.seq (.gainLife p2 1 (some testCause))
+          (.finishPostStep (.logExiledIfInExile markerBear.id "after-pain-mana-seq"))))
   let gPmSeqResumed := mustApply gPmSeqPaused p0 (.chooseReplacement dRidA)
   -- Standalone (`hasFollowingSeq == false`) pain-mana activation DOES chain `.receivePriority p0`:
   let pmIdx := (gPmReady.manaAbilityDefs (gPmReady.object! pmObj.id)).findIdx? (fun d => d.damageYou > 0) |>.get!
