@@ -73,15 +73,18 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
       throw s!"{g.name card} has no Adventure"
     if g.adventureExileForbidsRecast card (some p) then
       throw "You may not cast that card as an Adventure this way (CR 715.3d)"
-  let face :=
+  let rawFace :=
     match asAdventure, bc.adventure with
     | true, some adv => adv.toCardDef
-    | _, _ => { bc with keywords := g.currentKeywords card }
+    | _, _ => bc
+  let kwFace :=
+    if asAdventure then rawFace
+    else { bc with keywords := g.currentKeywords card }
   let pl := g.player p
   let sneakCost ← match sneakAttacker with
     | none => pure none
     | some a =>
-      let some c := face.sneakCost | throw s!"{face.name} has no sneak cost"
+      let some c := kwFace.sneakCost | throw s!"{rawFace.name} has no sneak cost"
       if !g.canCastForSneak p then
         throw "Sneak can be paid only during the declare blockers step on your turn"
       let some att := g.findObject? a | throw "no such object"
@@ -104,15 +107,15 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
         let nonAlt := p1.filter (fun pm => !pm.withoutManaCost && !pm.payLifeEqualManaValue)
         if nonAlt.isEmpty then p1 else nonAlt
       else p1
-    let baseTimingOk := g.timingAllowsCast p face (card? := some card) || sneakCost.isSome
+    let baseTimingOk := g.timingAllowsCast p rawFace (card? := some card) || sneakCost.isSome
     let p3 :=
       if !baseTimingOk && p2.any (·.ignoreTiming) then p2.filter (·.ignoreTiming) else p2
-    let mv := if asAdventure then face.manaValue else g.objectManaValue card
+    let mv := if asAdventure then rawFace.manaValue else g.objectManaValue card
     let p4 :=
       let lifeOk := p3.filter (fun pm => !pm.payLifeEqualManaValue || g.canPayLife p mv)
       if lifeOk.isEmpty then p3 else lifeOk
     p4
-  let mvForRank := if asAdventure then face.manaValue else g.objectManaValue card
+  let mvForRank := if asAdventure then rawFace.manaValue else g.objectManaValue card
   let rankPerm (pm : PlayPermission) : Nat :=
     (if pm.withoutManaCost then 16 else 0) +
       (if pm.payLifeEqualManaValue && g.canPayLife p mvForRank then 8 else 0) +
@@ -145,7 +148,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   | none => pure ()
   let fromGraveyard := card.zone == .graveyard card.owner
   let hadFlashbackPerm := fromGraveyard && g.flashbackUntilEot card
-  let isFlashbackCast := fromGraveyard && (face.flashback.isSome || hadFlashbackPerm)
+  let isFlashbackCast := fromGraveyard && (kwFace.flashback.isSome || hadFlashbackPerm)
   if sneakCost.isSome &&
       (isFlashbackCast ||
         (origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue) &&
@@ -161,11 +164,11 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     allPerms.isEmpty || !cleanPerms.isEmpty || g.mayCastExiledBySource p card
   let morphCandidateOk :=
     !asAdventure && sneakCost.isNone && !isFlashbackCast && morphPermOk &&
-      face.morph.isSome && face.kicker.isNone &&
+      kwFace.morph.isSome && kwFace.kicker.isNone &&
       !fromGraveyard && g.canCastMorphFaceDown p card
   let origPerm :=
     if (origPerm.bind (·.prepareSource)).isSome && morphCandidateOk &&
-        !(g.validateFrontFaceCast p card face (sneakCost := sneakCost) (sneakAttacker := sneakAttacker) (origPermOverride := origPerm)).isOk then
+        !(g.validateFrontFaceCast p card rawFace (sneakCost := sneakCost) (sneakAttacker := sneakAttacker) (origPermOverride := origPerm)).isOk then
       let morphClean :=
         cleanPerms.filter (fun pm => pm.ignoreTiming || g.timingAllowsCast p morphSpellFace)
       morphClean.foldl (fun best? pm =>
@@ -179,12 +182,12 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let hasMorphChoice :=
     morphCandidateOk && (origPerm.bind (·.prepareSource)).isNone
   if !hasMorphChoice then
-    g.validateFrontFaceCast p card face (sneakCost := sneakCost) (sneakAttacker := sneakAttacker) (origPermOverride := origPerm)
+    g.validateFrontFaceCast p card rawFace (sneakCost := sneakCost) (sneakAttacker := sneakAttacker) (origPermOverride := origPerm)
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
   -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
   -- cast as its Adventure.
-  let needsSacrifice := (g.mandatorySacrificeFilterFor? card face).isSome
+  let needsSacrifice := (g.mandatorySacrificeFilterFor? card rawFace).isSome
   let original := card
   let origSnap := g.snapshot original
   let fromTop :=
@@ -193,7 +196,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let g := g.change .saveProposalCheckpoint
   let (g, newId) := g.move id .stack (some p) (verb := some .cast) (actor := some p)
     (isCopy := if prepSrc.isSome then some true else none)
-    (overridePrinted := if asAdventure then some face else none)
+    (overridePrinted := if asAdventure then some rawFace else none)
     (adventurerCard := if asAdventure then some original.printed else none)
     (cause := some (.gameRule .spellCast))
   let some spellObj := (g.findObject? newId).filter (·.zone == .stack)
@@ -207,11 +210,11 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let casterCard := { original with controller := some p }
   let cost :=
     match sneakCost with
-    | some c => g.playManaCost casterCard { face with manaCost := c }
+    | some c => g.playManaCost casterCard { rawFace with manaCost := c }
         (origPerm := origPerm)
         (flashback := some isFlashbackCast) (explicitAltCost := true)
         (useImplicitPermissions := false)
-    | none => g.playManaCost casterCard face
+    | none => g.playManaCost casterCard rawFace
         (origPerm := origPerm)
         (flashback := some isFlashbackCast) (explicitAltCost := false)
         (useImplicitPermissions := false)
@@ -239,16 +242,16 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     else if origPerm.isSome then .alternative "permission"
     else .normal
   let g := g.record (GameEvent.proposed g.turnNumber newId p original.zone way)
-  let needsMode := isModalSpellFace face
+  let needsMode := isModalSpellFace rawFace
   let spellObj := (g.findObject? newId).getD spellObj
   let needsTarget :=
     !needsMode &&
       ((g.currentSpellEffect spellObj).any (·.requiresTarget) || g.isAura spellObj)
-  let needsAdditionalCostChoice := face.announcesAdditionalCost
+  let needsAdditionalCostChoice := rawFace.announcesAdditionalCost
   let impPermOk :=
-    match face.impending, face.kicker with
+    match kwFace.impending, kwFace.kicker with
     | some (_, alt), none =>
-      let impFace := { face with manaCost := alt }
+      let impFace := { rawFace with manaCost := alt }
       !asAdventure && sneakCost.isNone && !isFlashbackCast &&
         (origPerm.bind (·.prepareSource)).isNone &&
         (if !allPerms.isEmpty then
@@ -257,13 +260,13 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
           g.timingAllowsCast p impFace (excludeStackId := some newId) (card? := some spellObj))
     | _, _ => false
   let needsKicker :=
-    face.kicker.isSome || hasMorphChoice || impPermOk
-  let needsGift := face.hasGift
-  let needsTeamwork := face.teamwork.isSome
+    kwFace.kicker.isSome || hasMorphChoice || impPermOk
+  let needsGift := kwFace.hasGift
+  let needsTeamwork := kwFace.teamwork.isSome
   -- CR 702.34a: a flashback cost that includes discarding a card.
-  let needsFlashbackDiscard := isFlashbackCast && face.flashbackDiscard
+  let needsFlashbackDiscard := isFlashbackCast && kwFace.flashbackDiscard
   if needsFlashbackDiscard && (g.discardableHandIds p).isEmpty then
-    throw s!"{face.name}'s flashback cost requires discarding a card"
+    throw s!"{rawFace.name}'s flashback cost requires discarding a card"
   -- CR 118.9 / 202.3 / 715.3a–b: "pay life equal to its mana value" (Inside Information)
   -- reads the spell on the stack, so an Adventure pays its Adventure's mana value.
   let lifeInstead :=
@@ -293,7 +296,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     sneakAttacker
     alternativeCost := altCost
   }
-  let g := g.logMsg s!"{pl.name} begins casting {face.name}"
+  let g := g.logMsg s!"{pl.name} begins casting {rawFace.name}"
   return g.enterProposalWindow p pl prop needsMode needsTarget "CR 601.2b / 700.2"
     (needsAdditionalCost := needsAdditionalCostChoice)
     (needsKicker := needsKicker) (needsGift := needsGift)

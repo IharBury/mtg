@@ -367,7 +367,10 @@ def viewHasDesignation (st : Game) (v : ObjectView) (tag : PermanentDesignationT
   | .live o, .goaded => o.status.goaded || !o.status.goadedBy.isEmpty
   | .lki eo, .goaded => eo.goaded
   | .live o, .prepared => o.status.prepared
-  | .lki eo, .prepared => eo.prepared
+  | .lki eo, .prepared =>
+    match if eo.copiable.isSome then none else eo.id.bind st.wasPreparedAtDeparture? with
+    | some p => p
+    | none => eo.prepared
   | .live o, .harnessed => o.status.harnessed
   | .lki eo, .harnessed => eo.harnessed
 
@@ -1627,6 +1630,8 @@ def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : Play
       controller := some caster
       status := { card.status with faceDown := isFaceDown } }
   let effColors := g.colors spellObj
+  let kws := g.currentKeywords spellObj
+  let evalSas := g.staticAbilities spellObj
   if isFaceDown then
     .lki {
       id := some card.id
@@ -1641,9 +1646,9 @@ def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : Play
       power := some 2
       toughness := some 2
       loyalty := none
-      keywords := #[]
-      toxic := 0
-      staticAbilities := #[]
+      keywords := kws
+      toxic := KeywordAbility.toxicTotal kws
+      staticAbilities := evalSas
       zone := .stack
       faceDown := true
       token := face.isToken
@@ -1662,7 +1667,6 @@ def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : Play
     let sas :=
       if tcs.isEmpty then face.staticAbilities
       else HasTextChange.applyTextChanges tcs face.staticAbilities
-    let kws := g.currentKeywords spellObj
     let (cdaTypes, cdaSubs0, cdaSups) :=
       sas.foldl (fun (ts, subs, sups) ab =>
         match ab with
@@ -1704,7 +1708,7 @@ def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : Play
       loyalty := face.loyalty.map Int.toNat
       keywords := kws
       toxic := KeywordAbility.toxicTotal kws
-      staticAbilities := sas
+      staticAbilities := evalSas
       zone := .stack
       faceDown := false
       token := face.isToken

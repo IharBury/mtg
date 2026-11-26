@@ -221,6 +221,7 @@ def mayPlayLandFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
     (g.playPermissionsFor p o).any fun perm =>
       perm.player == p &&
+        perm.landsAllowed &&
         !perm.fromAdventure &&
         !perm.withoutManaCost &&
         !perm.payLifeEqualManaValue &&

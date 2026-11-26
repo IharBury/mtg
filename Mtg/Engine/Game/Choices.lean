@@ -88,7 +88,8 @@ def battlefieldCreatureTypes (g : Game) : Array CardSubtype :=
 def drawPerSevenCardGraveyard (g : Game) (p : PlayerId) : Game :=
   if !g.stillInGame p then g
   else
-    let n := g.players.filter (fun pl => pl.graveyard.size >= 7) |>.size
+    let n := g.players.filter (fun pl =>
+      (pl.graveyard.filter (fun id => (g.findObject? id).any isDiscardableCard)).size >= 7) |>.size
     if n == 0 then
       g.logMsg s!"{(g.player p).name} draws no cards (no graveyard has seven cards)"
     else
@@ -315,10 +316,18 @@ def supperForSpidersReturn (g : Game) (controller : PlayerId)
 /-- Pause-safe loop for `exileTopPlayIfYouControlSubtype`. -/
 def exileTopPlayIfYouControlSubtypeLoop (g : Game) (p : PlayerId)
     (subtype : CardSubtype) (remaining : Nat) (cause? : Option EventCause)
-    (movedId? : Option ObjectId := none) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
+    (movedId? : Option ObjectId := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let deferPfe := remaining > 0 || fromEventIdx?.isSome
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     return g.chainPendingReplacement
-      (.finishPostStep (.exileTopPlayIfYouControlSubtypeLoop p subtype remaining cause? movedId?))
+      (.finishPostStep (.exileTopPlayIfYouControlSubtypeLoop p subtype remaining cause? movedId?
+        (if deferPfe then some loopFromIdx else none)))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let mut g := g
   if let some fid := movedId? then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
@@ -331,21 +340,21 @@ def exileTopPlayIfYouControlSubtypeLoop (g : Game) (p : PlayerId)
           (cause := cause?)
       g := g.logMsg s!"{(g.player p).name} exiles a card face down"
   if !g.stillInGame p then
-    return g
+    return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
   for i in [0:remaining] do
     if !g.stillInGame p then
-      return g
+      return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
     let pl := g.player p
     if pl.library.isEmpty then
       g := g.logMsg s!"{pl.name} has no cards in their library to exile"
     else
       let top := pl.library.back!
-      let (g', _) := g.move top .exile none (cause := cause?)
+      let (g', _) := g.move top .exile none (cause := cause?) (deferPlayFromExileLogs := true)
       g := g'
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
         let rem := remaining - (i + 1)
         return g.chainPendingReplacement
-          (.finishPostStep (.exileTopPlayIfYouControlSubtypeLoop p subtype rem cause? (some top)))
+          (.finishPostStep (.exileTopPlayIfYouControlSubtypeLoop p subtype rem cause? (some top) (some loopFromIdx)))
       if let some moved := g.followMovedToZone? top (· == .exile) then
         if g.stillInGame p then
           g := g.createEffect (.playPermission moved.id {
@@ -355,6 +364,8 @@ def exileTopPlayIfYouControlSubtypeLoop (g : Game) (p : PlayerId)
               faceDown := true })
             (cause := cause?)
         g := g.logMsg s!"{pl.name} exiles a card face down"
+  if deferPfe then
+    g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
   return g
 
 /-- Exile the top `n` cards face down. They may be played while exiled if you
@@ -395,13 +406,20 @@ pausing and then casting or bottoming the exiled cards. -/
 partial def exileUntilInstantOrSorceryLoop (g : Game) (victim controller : PlayerId)
     (castTheCard : Bool) (cause : Option EventCause := none)
     (others : Array ObjectId := #[])
-    (pendingFromId : Option ObjectId := none) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
+    (pendingFromId : Option ObjectId := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     return g.chainPendingReplacement
-      (.finishPostStep (.exileUntilInstantOrSorceryLoop victim controller castTheCard cause others pendingFromId))
+      (.finishPostStep (.exileUntilInstantOrSorceryLoop victim controller castTheCard cause others pendingFromId (some loopFromIdx)))
   let mut g := g
   let mut others := others
   let mut found : Option ObjectId := none
+  let mut movedAny := fromEventIdx?.isSome
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
       g := g.logMsg s!"{(g.player victim).name} exiles {g.name moved} face up"
@@ -412,17 +430,20 @@ partial def exileUntilInstantOrSorceryLoop (g : Game) (victim controller : Playe
   while found.isNone && g.stillInGame victim && !(g.player victim).library.isEmpty do
     let top := (g.player victim).library.back!
     let name := g.name (g.object! top)
-    let (g', _) := g.move top .exile none (cause := cause)
+    let (g', _) := g.move top .exile none (cause := cause) (deferPlayFromExileLogs := true)
     g := g'
-    if let .chooseReplacement .. := g.pending then
+    movedAny := true
+    if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
       return g.chainPendingReplacement
-        (.finishPostStep (.exileUntilInstantOrSorceryLoop victim controller castTheCard cause others (some top)))
+        (.finishPostStep (.exileUntilInstantOrSorceryLoop victim controller castTheCard cause others (some top) (some loopFromIdx)))
     if let some moved := g.followMovedToZone? top (· == .exile) then
       g := g.logMsg s!"{(g.player victim).name} exiles {name} face up"
       if g.isInstantOrSorcery moved then
         found := some moved.id
       else
         others := others.push moved.id
+  if movedAny then
+    g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
   match found with
   | none =>
     if !g.stillInGame victim then return g
@@ -470,6 +491,70 @@ def legendaryWardSacrificeChoices (g : Game) (p : PlayerId) : Array GameObject :
   (g.permanentsOf p).filter (fun o =>
     g.isLegendary o && (g.isCreature o || g.isArtifact o))
 
+/-- Pause-safe loop moving the chosen Riddles pile to `p`'s hand before moving
+the other pile to the graveyard, deferring `.playFromExile` expiry logs across
+the batch (CR 616.1 / 704.3). -/
+def applyRiddlesToHandLoop (g : Game) (p : PlayerId)
+    (remainingHand toGy : Array ObjectId)
+    (fromEventIdx? : Option Nat := none) : Game :=
+  if remainingHand.isEmpty && fromEventIdx?.isNone then
+    g.withBatch none fun g =>
+      g.moveCardsToGraveyardLoop toGy
+  else
+    let loopFromIdx := fromEventIdx?.getD g.events.size
+    if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+      g.chainPendingReplacement
+        (.finishPostStep (.applyRiddlesToHandLoop p remainingHand toGy (some loopFromIdx)))
+    else
+      let preLoop :=
+        match fromEventIdx? with
+        | some idx => g.mkHistoricalGameAt idx
+        | none => g
+      let (g1, paused) := g.withBatchReturn none fun g => Id.run do
+        let mut g := g
+        for i in [0:remainingHand.size] do
+          let id := remainingHand[i]!
+          g := (g.move id (.hand p) none (deferPlayFromExileLogs := true)).1
+          if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+            let rem := remainingHand.extract (i + 1) remainingHand.size
+            return (g.chainPendingReplacement
+              (.finishPostStep (.applyRiddlesToHandLoop p rem toGy (some loopFromIdx))), true)
+        g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+        return (g, false)
+      if paused then g1
+      else
+        g1.withBatch none fun g =>
+          g.moveCardsToGraveyardLoop toGy
+
+/-- Move each card in `ids` sequentially into `.exile`, deferring `.playFromExile`
+expiry logs across the batch and pausing via `PostStep.exileCardsLoop` on
+`Pending.chooseReplacement` / `sbaPaused` (CR 616.1 / 704.3). -/
+def exileCardsLoop (g : Game) (ids : Array ObjectId)
+    (cause : Option EventCause := none)
+    (fromEventIdx? : Option Nat := none) : Game :=
+  if ids.isEmpty && fromEventIdx?.isNone then g
+  else if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+    g.chainPendingReplacement (.finishPostStep (.exileCardsLoop ids cause fromEventIdx?))
+  else
+    Id.run do
+      let preLoop :=
+        match fromEventIdx? with
+        | some idx => g.mkHistoricalGameAt idx
+        | none => g
+      let loopFromIdx := fromEventIdx?.getD g.events.size
+      let mut g := g
+      for i in [0:ids.size] do
+        let id := ids[i]!
+        if g.findObject? id |>.isSome then
+          g := (g.move id .exile none (cause := cause)
+            (deferPlayFromExileLogs := true)).1
+          if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+            let rem := ids.extract (i + 1) ids.size
+            g := g.chainPendingReplacement
+              (.finishPostStep (.exileCardsLoop rem cause (some loopFromIdx)))
+            return g
+      return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+
 /-- Put one Riddles pile into `p`'s hand and the other into the graveyard.
 The face-down pile is not revealed when it is the one that goes to hand. -/
 def applyRiddlesPiles (g : Game) (p : PlayerId) (faceUp faceDown : Array ObjectId)
@@ -494,11 +579,7 @@ def applyRiddlesPiles (g : Game) (p : PlayerId) (faceUp faceDown : Array ObjectI
       g.logMsg "The face-up pile is put into hand"
   let outerCont? := g.pendingReplacement
   let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
-  let g := g.withBatch none fun g =>
-    toHand.foldl (fun acc id =>
-      (acc.move id (.hand p) none).1) g
-  let g := g.withBatch none fun g =>
-    g.moveCardsToGraveyardLoop toGy
+  let g := g.applyRiddlesToHandLoop p toHand toGy
   match outerCont? with
   | some outer => g.chainPendingReplacement outer
   | none => g

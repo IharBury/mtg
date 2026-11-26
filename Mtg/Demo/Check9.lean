@@ -2730,5 +2730,111 @@ mana soundness. -/
   mustHoldCheck9 "p58_advLayer1Copy" advLayer1CopyOk &&
   mustHoldCheck9 "p58_manaDemo58" manaDemo58Ok
 
+/- Phase 59: `Demo.manaAbilityDefCanChangeOutcome` & `canExtraPlainSourcesChangeOutcome`
+`.hybrid` color-`b` check (no false-unique auto-pay on `{2/W}{W/U}`), Layer-6 Improvise
+in `Demo`, `PlayPermission.landsAllowed := false`, and synthetic `morphObj` Layer-5
+color immunity in `Demo`/`Agent`. -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := emptyHand afterDraw p0
+  let cause59 : EventCause := .oneShotEffect (some ⟨1⟩) none (some p0)
+
+  -- 1. `Demo.hasUniqueManaPayment` checks hybrid color `b`:
+  --    Cost `{2/W}{W/U}` with mana spent amount interest (e.g. a trigger watching mana spent),
+  --    pool `{W}{W}`, and an untapped `{U}` source: paying `{W}{W}` spends 2, whereas tapping
+  --    `{U}` and paying `{2/W}` with `{W}` + `{W/U}` with `{U}` vs `{2/W}` with 2 + `{U}`
+  --    flips spent outcome when `{W}` has a rider (`cantBeCountered`) or `{2/W}` uses `{W}` vs `{2}`!
+  let hybridRiderSpell59 : CardDef := {
+    name := "P59 Check9 HybridRider"
+    manaCost := { symbols := #[.twobrid .white, .hybrid .white .blue] }
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let watchAmt59 : CardDef := {
+    name := "P59 Check9 WatchAmt"
+    types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger
+        (.castSpell .you (.not (.hasType .creature)))
+        { body := .player (.drawCards .you (.manaSpent .triggerSubject)) }
+    ]
+  }
+  let gHyb0 :=
+    (insertObject (addPermanent (addPermanent gMain watchAmt59 p0 p0) island p0 p0)
+      hybridRiderSpell59 p0 (.hand p0)).record
+      (GameEvent.manaAdded gMain.turnNumber p0
+        #[{ mana := .colored .white }, { mana := .colorless }, { mana := .colorless }])
+  let gHybProp := mustApply gHyb0 p0 (.cast (gHyb0.player p0).hand.back!)
+  -- Pool `{W}{C}{C}` pays `{2/W}{W/U}` spending 3 (`{C}{C}` for `{2/W}` + `{W}` for `{W/U}`),
+  -- while tapping Island for `{U}` lets `{W}` pay `{2/W}` + `{U}` pay `{W/U}` spending 2!
+  let hybridColorBOk := !hasUniqueManaPayment gHybProp
+
+  -- 2. `PlayPermission.landsAllowed := false` suppresses `playLand` in `Demo` and `Agent`:
+  let gExLand0 := insertObject gMain forest p0 .exile
+  let exLandId := (gExLand0.objects.find? (fun o => o.zone == .exile && o.name == forest.name)).get!.id
+  let gCastOnlyEx :=
+    gExLand0.createEffect
+      (.permission (some p0) (.playFromExile exLandId { player := p0, landsAllowed := false })
+        .untilEndOfTurn)
+      (cause := some cause59)
+  let landsAllowedDemoOk :=
+    !hasGameStatePriorityAction gCastOnlyEx p0 &&
+    !(match Agent.choose gCastOnlyEx p0 with | some (.playLand _) => true | _ => false)
+
+  -- 3. Layer-6 Improvise recognized by `Demo.hasUniqueManaPayment` and `hasGameStatePriorityAction`:
+  let impAura59 : CardDef := {
+    name := "P59 Check9 ImpStatic"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none { zones := .stack, pred := .controlledBy .you }
+        (.grantKeywords #[Keyword.improvise])
+    ]
+  }
+  let plainArt59 : CardDef := { name := "P59 Check9 Relic", types := #[.artifact] }
+  let plainInst59 : CardDef := {
+    name := "P59 Check9 TwoInst"
+    manaCost := ManaCost.ofGeneric 2
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let gImp0 :=
+    (insertObject (addPermanent (addPermanent gMain impAura59 p0 p0) plainArt59 p0 p0)
+      plainInst59 p0 (.hand p0)).record
+      (GameEvent.manaAdded gMain.turnNumber p0 #[{ mana := .colorless }, { mana := .colorless }])
+  let gImpProp := mustApply gImp0 p0 (.cast (gImp0.player p0).hand.back!)
+  let improviseDemoOk := !hasUniqueManaPayment gImpProp
+
+  -- 4. Synthetic `morphObj` ignores Layer-5 color effects on `o.id` in `Demo.hasGameStatePriorityAction`:
+  --    A red-spell tax static (+{5}) must NOT tax a colorless face-down Morph spell even if `o.id`
+  --    in hand carries a Layer-5 `.colors .set {red}` effect!
+  let redTax59 : CardDef := {
+    name := "P59 Check9 RedTax"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .costModifier none (.spells .any (.hasColor (.literal .red)))
+        (.increaseGeneric (.const 5))
+    ]
+  }
+  let morphDef59 : CardDef := {
+    creature "P59 Check9 MorphCreature" { symbols := #[.generic 5, .colored .green] } #["Beast"] 4 4 with
+    keywords := #[.morph (CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)])]
+  }
+  let gMorph0 :=
+    (insertObject (addPermanent gMain redTax59 p0 p0) morphDef59 p0 (.hand p0)).record
+      (GameEvent.manaAdded gMain.turnNumber p0
+        #[{ mana := .colorless }, { mana := .colorless }, { mana := .colorless }])
+  let morphHandId := (gMorph0.player p0).hand.back!
+  let gMorphColored :=
+    gMorph0.createEffect
+      (.layered (.objects #[morphHandId]) (.colors .set (ColorSet.ofList [.red])) .indefinite)
+      (cause := some cause59)
+  let morphColorImmuneOk := hasGameStatePriorityAction gMorphColored p0
+
+  mustHoldCheck9 "p59_hybridColorB" hybridColorBOk &&
+  mustHoldCheck9 "p59_landsAllowedDemo" landsAllowedDemoOk &&
+  mustHoldCheck9 "p59_improviseDemo" improviseDemoOk &&
+  mustHoldCheck9 "p59_morphColorImmune" morphColorImmuneOk
+
+
 
 

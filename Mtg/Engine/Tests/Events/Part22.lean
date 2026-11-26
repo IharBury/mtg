@@ -431,9 +431,12 @@ private def replayOk56i2 (gs : Array Game) : Bool :=
   let gEidA := gGhost1.activeEffects[gGhost1.activeEffects.size - 2]!.1
   let gEidB := gGhost1.activeEffects[gGhost1.activeEffects.size - 1]!.1
   -- Expire `idA` without logging, move `idA` out of exile to hand, then expire & log `idB`:
-  let gGhost2 := (gGhost1.expireEffectById gEidA (cause := some testCause)).move gIdA (.hand p0) none (cause := some testCause) |>.1
+  let gGhost2 :=
+    (gGhost1.expireEffectById gEidA (cause := some testCause) (deferPlayFromExileLogs := true)).move
+      gIdA (.hand p0) none (cause := some testCause) |>.1
   let ghostSlice := gGhost2.events.size
-  let gGhost3 := (gGhost2.expireEffectById gEidB (cause := some testCause)).logMsg bearExpMsg
+  let gGhost3 :=
+    (gGhost2.expireEffectById gEidB (cause := some testCause) (deferPlayFromExileLogs := true)).logMsg bearExpMsg
   let gGhost4 := gGhost2.emitExpiredPlayFromExileLogs gGhost3 ghostSlice
   -- Ambiguous shrink clamp:
   let gAmb0 := insertObject (insertObject (insertObject g4 bear p0 .exile) bear p0 .exile) bear p0 .exile
@@ -451,15 +454,16 @@ private def replayOk56i2 (gs : Array Game) : Bool :=
   let ae3 := gAmb1.activeEffects[gAmb1.activeEffects.size - 1]!.1
   let ambStart := gAmb1.events.size
   let gAmb2 :=
-    ((((gAmb1.expireEffectById ae1 (cause := some testCause)).expireEffectById ae2 (cause := some testCause)).expireEffectById
-      ae3 (cause := some testCause)).logMsg bearExpMsg).logMsg bearExpMsg
+    ((((gAmb1.expireEffectById ae1 (cause := some testCause) (deferPlayFromExileLogs := true)).expireEffectById
+        ae2 (cause := some testCause) (deferPlayFromExileLogs := true)).expireEffectById
+      ae3 (cause := some testCause) (deferPlayFromExileLogs := true)).logMsg bearExpMsg).logMsg bearExpMsg
   -- Reactivating `a1` shrinks `ambigGroup` from 3 to 2 and decrements `ambigLogs` from 2 to 1 (< 2),
   -- so calling `emitExpiredPlayFromExileLogs` for `a2`/`a3` still logs the missing 3rd card:
   let gAmb3 := gAmb2.createEffect (.permission (some p0) (.playFromExile a1 { player := p0 }) .untilEndOfTurn)
     (cause := some testCause)
   let gAmb4 := gAmb1.emitExpiredPlayFromExileLogs gAmb3 ambStart
-  -- Unambiguous `elig.size == 1` log for `a1` while `{a2, a3}` temporarily regain playability via
-  -- `mayCastExiledBySource` decrements `ambigLogs` from 2 to 1 (< 2) instead of retiring `{a2, a3}`:
+  -- Phase 59: Unambiguous `elig.size == 1` log #3 for `a1` while `{a2, a3}` temporarily regain playability via
+  -- `mayCastExiledBySource` proves logs #1–#2 belonged to `{a2, a3}` (all 3 cards accounted for, no 4th duplicate log):
   let gAmbSingleBase := addPermanent gAmb2 mayCastFromExileDef p0 p0
   let ambSrcId := (gAmbSingleBase.permanentsOf p0).back!.id
   let gAmbSingle1 :=
@@ -469,7 +473,7 @@ private def replayOk56i2 (gs : Array Game) : Bool :=
   let hasLoggedGhostAndClampOk :=
     countBearExpLogs gGhost4 == 1 &&
     countBearExpLogs gAmb4 == 3 &&
-    countBearExpLogs gAmbSingle2 ≥ 4
+    countBearExpLogs gAmbSingle2 == 3
 
   -- 2a(iii). `Core.emitExpiredPlayFromExileLogs` places `deferCont` onto the BOTTOMMOST outer frame
   --          containing pending non-priority work even while paused on `.chooseReplacement`:

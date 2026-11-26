@@ -102,17 +102,8 @@ private def evalSpellCostMods (g : Game) (card : GameObject) (face : CardDef) (c
       zone := .stack
       controller := some caster
       status := { card.status with faceDown := isFaceDown } }
-  let tcs := g.evalLayer3 spellObj
-  let faceKws :=
-    if isFaceDown then #[]
-    else if tcs.isEmpty then face.keywords
-    else HasTextChange.applyTextChanges tcs face.keywords
-  let faceStatics :=
-    if isFaceDown then #[]
-    else
-      (if tcs.isEmpty then face.staticAbilities
-       else HasTextChange.applyTextChanges tcs face.staticAbilities) ++
-      (KeywordAbility.expandAll faceKws).staticAbilities
+  let faceKws := g.currentKeywords spellObj
+  let faceStatics := g.staticAbilities spellObj ++ (KeywordAbility.expandAll faceKws).staticAbilities
   let extractAmt (env : EvalEnv) : CostModification → Option Nat
     | .reduceGeneric amt => if !wantIncrease && !amt.mentionsTarget then some (EvalExpr.evalValue g env amt).toNat else none
     | .increaseGeneric amt => if wantIncrease && !amt.mentionsTarget then some (EvalExpr.evalValue g env amt).toNat else none
@@ -263,10 +254,14 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   -- Self free alternative cost (e.g. Flawless Maneuver: if you control a commander, CR 118.9a).
   let selfEnv : EvalEnv :=
     { controller := caster, sourceId := some card.id, chosenX := card.chosenX.getD 0 }
-  let tcs := g.evalLayer3 card
-  let faceStatics :=
-    if tcs.isEmpty then face.staticAbilities
-    else HasTextChange.applyTextChanges tcs face.staticAbilities
+  let isFaceDown := face.name == "" || (card.zone != .exile && card.status.faceDown)
+  let spellObj : GameObject :=
+    { card with
+      printed := face
+      zone := .stack
+      controller := some caster
+      status := { card.status with faceDown := isFaceDown } }
+  let faceStatics := g.staticAbilities spellObj
   let freeSelf :=
     !usedAltCost && !freeRG && !omnipresent &&
       faceStatics.any fun ab =>
@@ -280,7 +275,11 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
         (caster? := some caster)
       if hasAnyMana then c.asAnyMana else c
     else cost
-  ManaCost.afterReduction face.manaCost cost
+  let origCost :=
+    if face.manaCost.symbols.isEmpty && (usedAltCost || freeRG || omnipresent || freeSelf) then
+      ManaCost.zero
+    else face.manaCost
+  ManaCost.afterReduction origCost cost
 
 /-- True when `face` has a mana cost that would not be paid to play `card`. -/
 def playsWithoutPayingManaCost (g : Game) (card : GameObject)

@@ -330,12 +330,10 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     if toExile.size < 5 then
       return (g.logMsg "There aren't five cards named Sphinx's Approach to exile").finishResolutionChoice
     let g := g.withBatch none fun g =>
-      toExile.foldl (fun g id =>
-        let (g, _) := g.move id .exile none
-        g) g
+      g.exileCardsLoop toExile
     let g := g.logMsg s!"{(g.player p).name} exiles five cards named Sphinx's Approach"
     let g :=
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
         g.chainPendingReplacement (.finishPostStep (.searchLibrarySphinx p))
       else
         g.runPostStep (.searchLibrarySphinx p)
@@ -509,6 +507,19 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       let g := g.changeObject obj.id (.abilityEffect (some eff))
       let g := if !eff.requiresTarget then g.change (.stackEntry obj.id (.targetsAnnounced true)) else g
       return g.finishResolutionChoice
+  | .triggerModes objId _ chosen, .decline =>
+    match g.findObject? objId with
+    | none => return g.finishResolutionChoice
+    | some obj =>
+      let modes := g.triggerModesOf obj
+      let anyChoosable := (List.range modes.size).any fun i =>
+        !chosen.contains i && (modes[i]?.any (g.triggerModeChoosable p obj))
+      if anyChoosable then throw "Choose a mode"
+      else
+        let g := g.ceaseToExist objId (cause := some (.gameRule .noLegalMode))
+        let g := g.logMsg
+          s!"{g.name obj} has no remaining choosable modes and is removed from the stack (CR 603.3c / 700.2b)"
+        return g.finishResolutionChoice
   | .triggerModes .., _ => throw "Choose a mode"
   | .upToTriggerModes objId remaining chosen, .mode idx =>
     let some obj := g.findObject? objId | return g.finishResolutionChoice
@@ -695,7 +706,8 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
         let g :=
           match outerCont? with
           | some outer =>
-            if picks.isEmpty then g.chainProposalOuterCont p outer (openCont := openCont)
+            if picks.isEmpty && !curProp.needsSacrificeOther then
+              g.chainProposalOuterCont p outer (openCont := openCont)
             else g.chainPendingReplacement outer
           | none => g
         return g.resumeAfterBecomeCast
@@ -816,7 +828,8 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       let g :=
         match outerCont? with
         | some outer =>
-          if restPicks.isEmpty then g.chainProposalOuterCont p outer (openCont := openCont)
+          if restPicks.isEmpty && !prop.needsSacrificeOther then
+            g.chainProposalOuterCont p outer (openCont := openCont)
           else g.chainPendingReplacement outer
         | none => g
       return g.resumeAfterBecomeCast
@@ -1157,7 +1170,8 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
         let g :=
           match outerCont? with
           | some outer =>
-            if picks.isEmpty then g.chainProposalOuterCont p outer (openCont := openCont)
+            if picks.isEmpty && !curProp.needsSacrificeOther then
+              g.chainProposalOuterCont p outer (openCont := openCont)
             else g.chainPendingReplacement outer
           | none => g
         return g.resumeAfterBecomeCast
@@ -1711,28 +1725,30 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     if g.opponentsCantCastOnActiveTurn p then
       throw "Opponents can't cast spells during that player's turn"
     let some o := g.findObject? id | throw "no such object"
-    if !isCastableObject o || g.isLand o then throw s!"{g.name o} can't be cast this way"
-    let face := g.baseCard o
+    let rawFace := g.baseCard o
+    let kwFace := { rawFace with keywords := g.currentKeywords o }
     let canMorph :=
-      !withoutPaying && face.morph.isSome && face.kicker.isNone &&
+      !withoutPaying && kwFace.morph.isSome && kwFace.kicker.isNone &&
         o.zone != .graveyard o.owner &&
         !g.spellNameForbidden ""
+    if !isCastableObject o || (g.isLand o && !canMorph) then
+      throw s!"{g.name o} can't be cast this way"
     if !canMorph then
-      if g.spellNameForbidden face.name then
-        throw s!"Spells named {face.name} can't be cast"
-      if let some err := g.castRestrictionError? p o.id face then
+      if g.spellNameForbidden rawFace.name then
+        throw s!"Spells named {rawFace.name} can't be cast"
+      if let some err := g.castRestrictionError? p o.id rawFace then
         throw err
       let tcs := g.evalLayer3 o
-      if isModalSpellFace face &&
-          !(effectiveSpellModes face).any (fun e =>
+      if isModalSpellFace rawFace &&
+          !(effectiveSpellModes rawFace).any (fun e =>
             let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
             g.spellModeIsChoosable p m (some o.id)) &&
-          !isReturnUpToTwoGyModal face && !face.allowsZeroTargets then
-        throw s!"{face.name} has no mode with a legal target"
-      if !isModalSpellFace face && (face.requiresTarget || face.isAura) &&
-          !g.castFaceHasLegalTarget p face tcs (some o.id) && !face.allowsZeroTargets then
-        throw s!"{face.name} has no legal target"
-      if let some err := g.mandatorySacrificeError? p o.id face then
+          !isReturnUpToTwoGyModal rawFace && !rawFace.allowsZeroTargets then
+        throw s!"{rawFace.name} has no mode with a legal target"
+      if !isModalSpellFace rawFace && (rawFace.requiresTarget || rawFace.isAura) &&
+          !g.castFaceHasLegalTarget p rawFace tcs (some o.id) && !rawFace.allowsZeroTargets then
+        throw s!"{rawFace.name} has no legal target"
+      if let some err := g.mandatorySacrificeError? p o.id rawFace then
         throw err
     let g := gPre.change .saveProposalCheckpoint
     let g :=
@@ -2024,7 +2040,7 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
     | none => .decline
   | .triggerModes objId _ chosen =>
     match g.findObject? objId with
-    | none => .decline
+    | none => .chooseMode 0
     | some obj =>
       let modes := g.triggerModesOf obj
       match (List.range modes.size).find? (fun i =>
@@ -2136,7 +2152,7 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
     | .toHand true =>
       if ids.isEmpty then .decline else .choosePermanents (ids.extract 0 1)
     | .toHand false => .choosePermanents (ids.extract 0 max)
-    | .creaturesToBattlefield | .landsTappedGainLife _ => .choosePermanents ids
+    | .creaturesToBattlefield | .landsTappedGainLife _ => .choosePermanents (ids.extract 0 max)
     | .keepDestroyRest =>
       let yours := ids.filter (fun id => (g.findObject? id).any (g.controlledBy · p))
       let pick := if yours.isEmpty then ids else yours
@@ -2169,23 +2185,23 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
       let castable :=
         (g.findObject? cardId).any (fun o =>
           isCastableObject o &&
-          (let face := { g.baseCard o with keywords := g.currentKeywords o }
+          (let rawFace := g.baseCard o
            let tcs := g.evalLayer3 o
            let hasTargets :=
-             if isModalSpellFace face then
-               (effectiveSpellModes face).any (fun e =>
+             if isModalSpellFace rawFace then
+               (effectiveSpellModes rawFace).any (fun e =>
                  let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
                  g.spellModeIsChoosable p m (some o.id)) ||
-                 isReturnUpToTwoGyModal face || face.allowsZeroTargets
-             else if face.requiresTarget || face.isAura then
-               g.castFaceHasLegalTarget p face tcs (some o.id) || face.allowsZeroTargets
+                 isReturnUpToTwoGyModal rawFace || rawFace.allowsZeroTargets
+             else if rawFace.requiresTarget || rawFace.isAura then
+               g.castFaceHasLegalTarget p rawFace tcs (some o.id) || rawFace.allowsZeroTargets
              else true
-           !g.isLand o && !g.spellNameForbidden face.name &&
-             g.graveyardCastThresholdMet p o.id face &&
-             (g.mandatorySacrificeError? p o.id face).isNone &&
+           !g.isLand o && !g.spellNameForbidden rawFace.name &&
+             g.graveyardCastThresholdMet p o.id rawFace &&
+             (g.mandatorySacrificeError? p o.id rawFace).isNone &&
              hasTargets &&
              g.canPaySpellCostFromSources p o
-               (g.playManaCost { o with controller := some p } face
+               (g.playManaCost { o with controller := some p } rawFace
                  (origPerm := origPerm) (flashback := some false)
                  (useImplicitPermissions := false))
                (fromHand := o.zone == .hand p) &&
@@ -2245,17 +2261,18 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
       match eligible.find? (fun id =>
         (g.findObject? id).any (fun o =>
           isCastableObject o &&
-          (let face := { g.baseCard o with keywords := g.currentKeywords o }
+          (let rawFace := g.baseCard o
+           let kwFace := { rawFace with keywords := g.currentKeywords o }
            let origPerm : Option PlayPermission :=
              if withoutPaying then some { player := p, withoutManaCost := true, ignoreTiming := true }
              else
-               some ((g.paidResolutionOrigPerm? p o (face? := some face)).getD
+               some ((g.paidResolutionOrigPerm? p o (face? := some rawFace)).getD
                  { player := p, ignoreTiming := true })
            let frontOk :=
-             hasTargets o face &&
+             hasTargets o rawFace &&
                (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
                g.canPaySpellCostFromSources p o
-                 (g.playManaCost { o with controller := some p } face
+                 (g.playManaCost { o with controller := some p } rawFace
                    (origPerm := origPerm) (flashback := some false) (explicitAltCost := false)
                    (useImplicitPermissions := false))
                  (fromHand := o.zone == .hand p) &&
@@ -2263,10 +2280,11 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
                  (flashback := some false) (useImplicitPermissions := false)
                  (fromHand := o.zone == .hand p)
            let morphOk :=
-             !withoutPaying && face.morph.isSome && face.kicker.isNone &&
+             !withoutPaying && kwFace.morph.isSome && kwFace.kicker.isNone &&
                o.zone != .graveyard o.owner && !g.spellNameForbidden "" &&
                (let morphObj :=
                   { o with
+                    id := noSourceSentinelId
                     controller := some p
                     printed := morphSpellFace
                     adventurerCard := none
@@ -2277,16 +2295,16 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
                       !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone)
                     |>.getD { player := p, ignoreTiming := true })
                 let morphCost :=
-                  g.playManaCost { o with controller := some p } morphSpellFace
+                  g.playManaCost morphObj morphSpellFace
                     (origPerm := morphPerm) (flashback := some false)
                     (explicitAltCost := true) (useImplicitPermissions := false)
                 g.canPaySpellCostFromSources p morphObj morphCost (fromHand := o.zone == .hand p))
            let impendingOk :=
              !withoutPaying &&
-               match face.morph, face.impending, face.kicker with
+               match kwFace.morph, kwFace.impending, kwFace.kicker with
                | none, some (_, alt), none =>
-                 hasTargets o face &&
-                   (let impFace := { face with manaCost := alt }
+                 hasTargets o rawFace &&
+                   (let impFace := { rawFace with manaCost := alt }
                     let impPerm : Option PlayPermission :=
                       some ((g.paidResolutionOrigPerm? p o (face? := some impFace))
                         |>.filter (fun pm =>
@@ -2314,31 +2332,32 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
         (g.findObject? id).any (fun o =>
           o.zone == .graveyard o.owner && isCastableObject o &&
             (g.isArtifact o || g.isInstantOrSorcery o) &&
-            (let face := { g.baseCard o with keywords := g.currentKeywords o }
+            (let rawFace := g.baseCard o
+             let kwFace := { rawFace with keywords := g.currentKeywords o }
              let tcs := g.evalLayer3 o
-             let rawPerm := g.paidResolutionOrigPerm? p o (face? := some face)
+             let rawPerm := g.paidResolutionOrigPerm? p o (face? := some rawFace)
              let origPerm : Option PlayPermission :=
                some (rawPerm.getD { player := p, ignoreTiming := true })
              let forcedPerm :=
                rawPerm.any (fun pm =>
                  pm.withoutManaCost || pm.payLifeEqualManaValue || pm.prepareSource.isSome)
              let hasTargets :=
-               !g.isLand o && !g.spellNameForbidden face.name &&
-                 g.graveyardCastThresholdMet p o.id face &&
-                 (g.mandatorySacrificeError? p o.id face).isNone &&
-                 if isModalSpellFace face then
-                   (effectiveSpellModes face).any (fun e =>
+               !g.isLand o && !g.spellNameForbidden rawFace.name &&
+                 g.graveyardCastThresholdMet p o.id rawFace &&
+                 (g.mandatorySacrificeError? p o.id rawFace).isNone &&
+                 if isModalSpellFace rawFace then
+                   (effectiveSpellModes rawFace).any (fun e =>
                      let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
                      g.spellModeIsChoosable p m (some o.id)) ||
-                     isReturnUpToTwoGyModal face || face.allowsZeroTargets
-                 else if face.requiresTarget || face.isAura then
-                   g.castFaceHasLegalTarget p face tcs (some o.id) || face.allowsZeroTargets
+                     isReturnUpToTwoGyModal rawFace || rawFace.allowsZeroTargets
+                 else if rawFace.requiresTarget || rawFace.isAura then
+                   g.castFaceHasLegalTarget p rawFace tcs (some o.id) || rawFace.allowsZeroTargets
                  else true
              let frontOk :=
                hasTargets &&
                  (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
                  g.canPaySpellCostFromSources p o
-                   (g.playManaCost { o with controller := some p } face
+                   (g.playManaCost { o with controller := some p } rawFace
                      (origPerm := origPerm) (flashback := some false) (explicitAltCost := false)
                      (useImplicitPermissions := false))
                    (fromHand := o.zone == .hand p) &&
@@ -2347,10 +2366,10 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
                    (fromHand := o.zone == .hand p)
              let impendingOk :=
                !forcedPerm &&
-                 match face.morph, face.impending, face.kicker with
+                 match kwFace.morph, kwFace.impending, kwFace.kicker with
                  | none, some (_, alt), none =>
                    hasTargets &&
-                     (let impFace := { face with manaCost := alt }
+                     (let impFace := { rawFace with manaCost := alt }
                       let impPerm : Option PlayPermission :=
                         some ((g.paidResolutionOrigPerm? p o (face? := some impFace))
                           |>.filter (fun pm =>

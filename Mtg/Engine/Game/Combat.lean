@@ -154,10 +154,12 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
   if ids.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not attack"
   g := g.change (.pending .none)
-  g := g.promptTriggerTargetsIfNeeded
-  if g.pending != .none then
-    return g
-  return g.receivePriority p
+  if g.pendingReplacement.isNone && g.outerPendingReplacements.isEmpty &&
+      g.currentInterpWait?.isNone then
+    g := g.promptTriggerTargetsIfNeeded
+    if g.pending != .none then
+      return g
+  return g.finishAndGrantPriorityFwd p
 
 def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × ObjectId)) :
     Except String Game := do
@@ -217,7 +219,7 @@ def declareBlockers (g : Game) (p : PlayerId) (assignments : Array (ObjectId × 
   if assignments.isEmpty then
     g := g.logMsg s!"{g.player p |>.name} does not block"
   if rest.isEmpty then
-    return g.changes #[.pending .none, .blockersQueue #[]] |>.receivePriority g.activePlayer
+    return g.changes #[.pending .none, .blockersQueue #[]] |>.finishAndGrantPriorityFwd g.activePlayer
   else
     return g.changes #[.pending .declareBlockers, .blockersQueue rest]
 
@@ -390,10 +392,18 @@ private def buildCombatDamageSteps (asgns : Array CreatureCombatAssignment) : Ar
     return steps ++ lifelinkSteps
 
 /-- Apply assigned combat damage simultaneously (CR 510.2 / 702.15b). -/
-def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0) : Game :=
+def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0)
+    (fromEventIdx? : Option Nat := none)
+    (outerCont? : Option PendingReplacement := none)
+    (isResume : Bool := false) : Game :=
   let fs := (g.combatHasFirstStrike || g.hasFirstStrikeAssignmentInCurrentStep) && !g.firstStrikeDamageDone
   let combatCause := some (EventCause.turnBased (.dealCombatDamage fs))
-  let isOuterCall := g.currentBatch.isNone
+  let isOuterCall := g.currentBatch.isNone && !isResume
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let steps := buildCombatDamageSteps g.assignedCombatDamage
   let g := g.withBatch combatCause fun g => Id.run do
     let mut g := g
@@ -418,15 +428,16 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0) : Game :=
           let rep := g.replaceDamage amt (src? := some src) (srcEvent? := some srcEvent)
             (recipientPerm? := some t) (combat := true) (cause := combatCause)
           if let some (chooser, choices) := rep.choice? then
-            return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage k)
+            return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage k (some loopFromIdx))
           let dealtAmt := rep.amount
           g := g.markDamageOn t amt
             s!"{g.name src} deals {dealtAmt} combat damage to {g.name t}"
             (deathtouch := g.hasDeathtouch src) (combat := true)
             (source := some srcEvent) (sourceObj := some src)
             (replaced := some rep) (consumeOrder := true) (cause := rep.cause)
-          if let .chooseReplacement .. := g.pending then
-            return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1))
+            (deferPlayFromExileLogs := true)
+          if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+            return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1) (some loopFromIdx))
       | .toPlayerOrPw srcId amt =>
         if let some src := (g.findObject? srcId).filter (·.isOnBattlefield) then
           let srcEvent := g.snapshot src
@@ -440,20 +451,21 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0) : Game :=
                 let rep := g.replaceDamage amt (src? := some src) (srcEvent? := some srcEvent)
                   (recipientPerm? := some pw) (combat := true) (cause := combatCause)
                 if let some (chooser, choices) := rep.choice? then
-                  return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage k)
+                  return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage k (some loopFromIdx))
                 let dealtAmt := rep.amount
                 g := g.markDamageOn pw amt s!"{g.name src} deals {dealtAmt} combat damage to {g.name pw}"
                   (deathtouch := g.hasDeathtouch src) (combat := true)
                   (source := some srcEvent) (sourceObj := some src)
                   (replaced := some rep) (consumeOrder := true) (cause := rep.cause)
-                if let .chooseReplacement .. := g.pending then
-                  return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1))
+                  (deferPlayFromExileLogs := true)
+                if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+                  return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1) (some loopFromIdx))
             | none => pure ()
           else if g.isLivingOpponentOf ((g.controllerOf src).getD g.activePlayer) defn then
             let rep := g.replaceDamage amt (src? := some src) (srcEvent? := some srcEvent)
               (recipientPlayer? := some defn) (combat := true) (cause := combatCause)
             if let some (chooser, choices) := rep.choice? then
-              return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage k)
+              return g.promptChooseReplacement chooser choices (.dealAssignedCombatDamage k (some loopFromIdx))
             g := g.consumeReplacementOrder rep.applied
             let pl := g.player defn
             if rep.prevented then
@@ -514,23 +526,27 @@ def dealAssignedCombatDamage (g : Game) (startIdx : Nat := 0) : Game :=
           | some pid =>
             if g.stillInGame pid then
               g := g.gainLife pid totalDealt (cause := combatCause)
-              if let .chooseReplacement .. := g.pending then
-                return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1))
+              if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+                return g.chainPendingReplacement (.dealAssignedCombatDamage (k + 1) (some loopFromIdx))
           | none => pure ()
-    g.change (.pending .none)
-  if let .chooseReplacement .. := g.pending then
+    g := g.change (.pending .none)
+    return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     if isOuterCall then
       let g := if fs then g.chainPendingReplacement .addExtraCombatDamageStep else g
-      g.chainPendingReplacement (.receivePriority g.activePlayer)
-    else g
+      let g := g.reattachOuterCont outerCont?
+      if g.anyContinuationSettlesControlFlowFwd then g
+      else g.chainPendingReplacement (.receivePriority g.activePlayer)
+    else g.reattachOuterCont outerCont?
   else if isOuterCall then
     let g :=
       if fs then
         g.record (GameEvent.extraStepAdded g.turnNumber .combatDamage .afterCurrent
           (cause := .gameRule .stepAdvance))
       else g
-    g.receivePriority g.activePlayer
-  else g
+    let g := g.reattachOuterCont outerCont?
+    g.finishAndGrantPriorityFwd g.activePlayer
+  else g.reattachOuterCont outerCont?
 
 /-- Record a legal assignment batch and append it for later dealing. -/
 def storeCombatAssignments (g : Game) (forAttackers : Bool)
@@ -543,7 +559,8 @@ def storeCombatAssignments (g : Game) (forAttackers : Bool)
 /-- Prompt the next defending player in APNAP order who controls a multi-attacker
 blocking creature, or finalize blocker assignments and deal combat damage once
 all defending players have chosen (CR 510.1d / 802.5). -/
-def continueBlockerCombatAssignment (g : Game) : Game :=
+def continueBlockerCombatAssignment (g : Game)
+    (outerCont? : Option PendingReplacement := none) : Game :=
   let already := g.pendingBlockerAssignments.map (·.source)
   let assigning := g.creaturesAssigningCombatDamage false
   let nextP? := g.apnapOrder.find? (fun p =>
@@ -553,35 +570,38 @@ def continueBlockerCombatAssignment (g : Game) : Game :=
           (g.legalCombatDamageRecipients o false).size ≥ 2 && g.combatDamageAmount o > 0))
   match nextP? with
   | some nextP =>
-    g.change (.pending (.assignCombatDamage nextP false))
-      |>.logMsg s!"{(g.player nextP).name} assigns combat damage (CR 510.1d)"
+    (g.change (.pending (.assignCombatDamage nextP false))
+      |>.logMsg s!"{(g.player nextP).name} assigns combat damage (CR 510.1d)").reattachOuterCont outerCont?
   | none =>
     let accum := g.pendingBlockerAssignments.filter (fun a =>
       assigning.any (·.id == a.source))
     let g := g.change (.pendingBlockerAssignments #[])
     match g.storeCombatAssignments false accum with
-    | .ok g' => g'.dealAssignedCombatDamage
-    | .error e => g.logMsg s!"Combat damage assignment failed: {e}"
+    | .ok g' => g'.dealAssignedCombatDamage (outerCont? := outerCont?)
+    | .error e => (g.logMsg s!"Combat damage assignment failed: {e}").reattachOuterCont outerCont?
 
 /-- After attackers have assigned, each defending player in APNAP order assigns
 blocking creatures (CR 510.1d / 802.5) or damage is dealt if none have a
 division to announce. -/
-def finishAttackerCombatAssignment (g : Game) : Game :=
-  (g.change (.pendingBlockerAssignments #[])).continueBlockerCombatAssignment
+def finishAttackerCombatAssignment (g : Game)
+    (outerCont? : Option PendingReplacement := none) : Game :=
+  (g.change (.pendingBlockerAssignments #[])).continueBlockerCombatAssignment (outerCont? := outerCont?)
 
 /-- Start CR 510.1: the active player assigns attacking creatures first. -/
 def beginCombatDamageAssignment (g : Game) : Game :=
   let g := g.changes #[.pending .none, .pendingBlockerAssignments #[]]
   if (g.creaturesAssigningCombatDamage true).isEmpty &&
       (g.creaturesAssigningCombatDamage false).isEmpty then
-    g.receivePriority g.activePlayer
+    g.finishAndGrantPriorityFwd g.activePlayer
   else if g.needsCombatDamageChoice true then
     g.change (.pending (.assignCombatDamage g.activePlayer true))
       |>.logMsg s!"{(g.player g.activePlayer).name} assigns combat damage (CR 510.1c)"
   else
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     match g.storeCombatAssignments true #[] with
-    | .ok g' => g'.finishAttackerCombatAssignment
-    | .error e => g.logMsg s!"Combat damage assignment failed: {e}"
+    | .ok g' => g'.finishAttackerCombatAssignment (outerCont? := outerCont?)
+    | .error e => (g.logMsg s!"Combat damage assignment failed: {e}").reattachOuterCont outerCont?
 
 /-- Assign and deal combat damage (CR 510.1–510.2). -/
 def combatDamage (g : Game) : Game :=
@@ -594,9 +614,11 @@ def announceCombatDamage (g : Game) (p : PlayerId)
   | .assignCombatDamage q forAttackers =>
     if p != q then
       throw s!"Only {(g.player q).name} may assign combat damage (CR 510.1)"
+    let outerCont? := g.pendingReplacement
+    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     if forAttackers then
       let g ← g.storeCombatAssignments true listed
-      return g.finishAttackerCombatAssignment
+      return g.finishAttackerCombatAssignment (outerCont? := outerCont?)
     else
       let assigning := g.creaturesAssigningCombatDamage false
       let mine := assigning.filter (g.controlledBy · p)
@@ -622,7 +644,7 @@ def announceCombatDamage (g : Game) (p : PlayerId)
         if mine.any (·.id == a.source) then
           let _ ← checkCombatAssignment g a false acc
       let g := g.change (.pendingBlockerAssignments acc)
-      return g.continueBlockerCombatAssignment
+      return g.continueBlockerCombatAssignment (outerCont? := outerCont?)
   | _ => throw "Not time to assign combat damage (CR 510.1)"
 
 def clearCombat (g : Game) : Game :=

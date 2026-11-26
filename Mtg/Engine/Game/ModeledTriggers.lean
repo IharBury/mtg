@@ -63,7 +63,8 @@ def grantWidowCast (g : Game) (controller : PlayerId) (exiled : Option ObjectId)
       let cause := cause.orElse (fun _ => g.lastMoveCauseOf? o.id)
       g.createEffect (.playPermission o.id {
         player := controller
-        anyMana := true }) (cause := cause)
+        anyMana := true
+        landsAllowed := false }) (cause := cause)
         |>.logMsg s!"{(g.player controller).name} may cast {g.name o} until end of turn"
 
 /-- Finish entering and animating token(s) recorded in `recentTokenIds` for

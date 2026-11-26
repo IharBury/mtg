@@ -221,9 +221,10 @@ def replaceUntap (g : Game) (o : GameObject)
 CR 616.1 untap replacements compete (CR 122.1d / 616.1). -/
 def untapPermanent (g : Game) (o : GameObject)
     (duringUntapStep : Bool := false) (logUntap : Bool := true)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.untapPermanent o.id duringUntapStep logUntap cause)
+    g.chainPendingReplacement (.untapPermanent o.id duringUntapStep logUntap cause deferPlayFromExileLogs)
   else if !o.isOnBattlefield || !o.status.tapped || g.hostCantBecomeUntapped o then g
   else
     let defaultCause : EventCause :=
@@ -238,7 +239,7 @@ def untapPermanent (g : Game) (o : GameObject)
       match choice? with
       | some (chooser, choices) =>
         g.promptChooseReplacement chooser choices
-          (.untapPermanent o.id duringUntapStep logUntap (some defaultCause))
+          (.untapPermanent o.id duringUntapStep logUntap (some defaultCause) deferPlayFromExileLogs)
       | none =>
         let g := g.consumeReplacementOrder applied
         if stunned then
@@ -246,31 +247,53 @@ def untapPermanent (g : Game) (o : GameObject)
           let ctrl := g.controllerOf o
           let g := g.recordRemoveCounters o.id .stun 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
             (cause := some (cause'.getD defaultCause))
+            (deferPlayFromExileLogs := deferPlayFromExileLogs)
           g.logMsg s!"A stun counter is removed from {oName} instead of untapping it (CR 122.1d)"
         else
           let g := g.record untap
           if logUntap then g.logMsg s!"{g.name o} untaps" else g
 
 /-- Untap each permanent in `ids` sequentially inside an open or standalone
-batch, pausing on `Pending.chooseReplacement` when stun-counter replacements tie. -/
+batch, pausing on `Pending.chooseReplacement` or `sbaPaused` when stun-counter
+replacements tie or remove a counter-dependent effect, and emitting expired
+`.playFromExile` logs once at batch exit. -/
 def untapPermanentsLoop (g : Game) (ids : Array ObjectId)
-    (cause : Option EventCause := none) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
-    return g.chainPendingReplacement (.untapPermanentsLoop ids cause)
+    (cause : Option EventCause := none)
+    (logged : Bool := false) (sourceId : Option ObjectId := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+    return g.chainPendingReplacement
+      (.untapPermanentsLoop ids cause logged sourceId (some loopFromIdx))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let mut g := g
   for i in [0:ids.size] do
     let id := ids[i]!
     match g.findObject? id with
     | some o =>
       if o.isOnBattlefield then
-        g := g.untapPermanent o (cause := cause)
-        if let .chooseReplacement .. := g.pending then
+        if logged then
+          if g.hostCantBecomeUntapped o then
+            g := g.logMsg s!"{g.name o} can't become untapped"
+          else if !o.status.tapped then
+            g := g.logMsg s!"{g.name o} is already untapped"
+          else
+            let baseCause :=
+              cause.getD (g.resolveOptionalCause none (fallbackSrc := sourceId)
+                (fallbackCtrl := g.controllerOf o) (defaultCause := .turnBased .untapAll))
+            g := g.untapPermanent o (cause := some baseCause) (deferPlayFromExileLogs := true)
+        else
+          g := g.untapPermanent o (cause := cause) (deferPlayFromExileLogs := true)
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
           let rem := ids.extract (i + 1) ids.size
-          if !rem.isEmpty then
-            g := g.chainPendingReplacement (.untapPermanentsLoop rem cause)
+          g := g.chainPendingReplacement
+            (.untapPermanentsLoop rem cause logged sourceId (some loopFromIdx))
           return g
     | none => pure ()
-  return g
+  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Timestamp-ordered maximum hand size (CR 613.7a; MSH 184 / 376). `none` is "no maximum". -/
 def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=
@@ -304,24 +327,28 @@ def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=
 def improviseReduce (cost : ManaCost) (n : Nat) : ManaCost :=
   cost.reduceGeneric n
 
-/-- Whether `face` has improvise, including from a Layer-6 continuous grant
-(CR 702.126 / 613.1f). -/
-def spellHasImprovise (g : Game) (face : CardDef) (caster : PlayerId) : Bool :=
-  face.hasImprovise ||
-    let dummy : GameObject := { id := noSourceSentinelId, owner := caster, controller := some caster, zone := .stack, printed := face }
-    let spellView := EvalExpr.spellFaceView g dummy face caster face.manaValue
-    g.battlefield.any (fun o =>
-      let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
-      (g.staticAbilities o).any fun ab =>
-        match ab with
-        | .continuous cond? sc mod =>
-          sc.zones.zones.contains .stack &&
-            cond?.all (EvalExpr.evalCondition g env) &&
-            EvalExpr.evalObjectPred g env spellView sc.pred &&
-            mod.flatten.any fun
-              | .grantKeywords ks => KeywordAbility.hasSimple ks .improvise
-              | _ => false
-        | _ => false)
+/-- Whether `face` (or `spellObj?` on the stack) has improvise after Layer 6
+continuous grants/removals (CR 702.126 / 613.1f). -/
+def spellHasImprovise (g : Game) (face : CardDef) (caster : PlayerId)
+    (spellObj? : Option GameObject := none) : Bool :=
+  let spellObj : GameObject :=
+    match spellObj? with
+    | some obj =>
+      let isFaceDown := face.name == "" || (obj.zone != .exile && obj.status.faceDown)
+      { obj with
+        printed := face
+        zone := .stack
+        controller := some caster
+        status := { obj.status with faceDown := isFaceDown } }
+    | none =>
+      let isFaceDown := face.name == ""
+      { id := noSourceSentinelId
+        owner := caster
+        controller := some caster
+        zone := .stack
+        printed := face
+        status := { faceDown := isFaceDown } }
+  KeywordAbility.hasSimple (g.currentKeywords spellObj) .improvise
 
 /-- Tap untapped artifacts you control for improvise. Each pays {1}. -/
 def tapArtifactsForImprovise (g : Game) (p : PlayerId) (ids : Array ObjectId) :
