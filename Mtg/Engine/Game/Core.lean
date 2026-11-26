@@ -19084,49 +19084,101 @@ def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
       return acc
     -- Stop before any CR 733.1 proposal-reversing continuation when a proposal is active
     -- (since reversal drops trailing continuations), matching `Decisions.stepCanReverseProposal`.
-    let rec containsProposalReversal : PendingReplacement → Bool
-      | .seq a b => containsProposalReversal a || containsProposalReversal b
-      | .restorePending _ _ _ _ none
-      | .finishPostStep (.resumeProposalCostAfterLeave ..)
-      | .finishPostStep (.resumeChooseModeAfterLeave ..)
-      | .finishPostStep (.resumeChooseTargetsAfterLeave ..)
-      | .finishPostStep .afterTriggerTargetsChosen
-      | .finishResolutionChoice
-      | .receivePriority _
-      | .afterWardResolved
-      | .payCostPickItems ..
-      | .finishActivationExtraCosts ..
-      | .finishBecomeCast ..
-      | .finishTurnFaceUp ..
-      | .finishBecomeActivated ..
-      | .finishPostLoyaltyActivated ..
-      | .completeActivation ..
-      | .finishProposedSpellCosts .. => true
+    let rec containsProposalReversal (outers : Array PendingReplacement)
+        (origPr : PendingReplacement) (outerDepth : Nat) (curPr : PendingReplacement) :
+        Nat → Bool × Nat
+      | 0 => (false, outerDepth)
+      | fuel' + 1 =>
+        match curPr with
+        | .seq a b =>
+          let (canA, depthAfterA) := containsProposalReversal outers origPr outerDepth a fuel'
+          if canA then (true, depthAfterA)
+          else containsProposalReversal outers origPr depthAfterA b fuel'
+        | .restorePending (.resolutionChoice _ (.costPicks ..)) popOuter _ _ rewindProposal
+        | .restorePending (.resolutionChoice _ (.crew ..)) popOuter _ _ rewindProposal
+        | .restorePending (.resolutionChoice _ (.zemoBoastExile ..)) popOuter _ _ rewindProposal
+        | .restorePending (.chooseTeamworkCreatures ..) popOuter _ _ rewindProposal
+        | .restorePending (.sacrificePermanent ..) popOuter _ _ rewindProposal
+        | .restorePending (.discardForAdditionalCost ..) popOuter _ _ rewindProposal
+        | .restorePending (.activateManaAbilities ..) popOuter _ _ rewindProposal
+        | .restorePending (.chooseX ..) popOuter _ _ rewindProposal
+        | .restorePending (.chooseAdditionalCost ..) popOuter _ _ rewindProposal
+        | .restorePending (.chooseKicker ..) popOuter _ _ rewindProposal
+        | .restorePending (.chooseGift ..) popOuter _ _ rewindProposal
+        | .restorePending (.chooseTeamwork ..) popOuter _ _ rewindProposal
+        | .restorePending (.chooseMode ..) popOuter _ _ rewindProposal
+        | .restorePending (.chooseTargets ..) popOuter _ _ rewindProposal =>
+          (rewindProposal.isNone, if popOuter then outerDepth - 1 else outerDepth)
+        | .restorePending _ popOuter _ _ rewindProposal =>
+          if !popOuter then (false, outerDepth)
+          else if outerDepth == 0 then (false, 0)
+          else
+            let nextDepth := outerDepth - 1
+            if rewindProposal.isSome then (false, nextDepth)
+            else
+              match outers[nextDepth]? with
+              | none => (false, nextDepth)
+              | some outer =>
+                if outer == origPr || outer == curPr then (false, nextDepth)
+                else containsProposalReversal outers origPr nextDepth outer fuel'
+        | .finishPostStep (.resumeProposalCostAfterLeave ..)
+        | .finishPostStep (.resumeChooseModeAfterLeave ..)
+        | .finishPostStep (.resumeChooseTargetsAfterLeave ..)
+        | .finishPostStep .afterTriggerTargetsChosen
+        | .finishResolutionChoice
+        | .receivePriority _
+        | .afterWardResolved
+        | .payCostPickItems ..
+        | .finishActivationExtraCosts ..
+        | .finishBecomeCast ..
+        | .finishTurnFaceUp ..
+        | .finishBecomeActivated ..
+        | .finishPostLoyaltyActivated ..
+        | .completeActivation ..
+        | .finishProposedSpellCosts .. => (true, outerDepth)
+        | _ => (false, outerDepth)
+    let isBarePriorityChoice : PendingReplacement → Bool
+      | .receivePriority _ | .finishResolutionChoice => true
       | _ => false
+    let isTransparentRestoreNone : PendingReplacement → Bool
+      | .restorePending .none _ _ _ none => true
+      | _ => false
+    let topFi := gOut.continuations.size - 1
     let searchSlots : Array (Nat × Option Nat × PendingReplacement) := Id.run do
       if gOut.proposedSpell.isNone then return slots
       let mut acc : Array (Nat × Option Nat × PendingReplacement) := #[]
+      let mut sawBarePriorityOnTop := false
       for slot in slots do
+        let (fi, oi?, pr) := slot
+        if sawBarePriorityOnTop && fi != topFi then
+          break
         acc := acc.push slot
-        if containsProposalReversal slot.2.2 then
+        let outers := gOut.continuations[fi]!.outerPendingReplacements
+        let depth := match oi? with | none => outers.size | some oi => oi
+        if fi == topFi &&
+            (isBarePriorityChoice pr ||
+              (match pr with
+               | .restorePending .none true _ _ none =>
+                 depth > 0 && (outers[depth - 1]?.any isBarePriorityChoice)
+               | _ => false)) then
+          sawBarePriorityOnTop := true
+        else if (containsProposalReversal outers pr depth pr 16).1 then
           break
       return acc
     -- Pick the bottommost (last-executing) reachable slot containing non-boundary work before
     -- the first defer-boundary slot, allowing only same-top-frame bare `.receivePriority _` /
     -- `.finishResolutionChoice` above lower top-frame non-boundary work (because
-    -- `finishAndGrantPriority` drains remaining top-frame `outerPendingReplacements` before
-    -- granting priority, without crossing to lower continuation frames).
-    let isBarePriorityChoice : PendingReplacement → Bool
-      | .receivePriority _ | .finishResolutionChoice => true
-      | _ => false
+    -- `finishAndGrantPriority` / `finishResolutionChoice` drain remaining top-frame
+    -- `outerPendingReplacements` before granting priority, without crossing to lower frames).
     let targetUpdate? : Option (Nat × Option Nat × PendingReplacement) := Id.run do
-      let topFi := gOut.continuations.size - 1
       let mut bottomNonBoundary? : Option (Nat × Option Nat × PendingReplacement) := none
       let mut sawBarePriorityOnTop := false
       for (fi, oi?, pr) in searchSlots do
         if sawBarePriorityOnTop && fi != topFi then
           break
-        if pr.containsPlayFromExileDeferBoundary then
+        if isTransparentRestoreNone pr then
+          continue
+        else if pr.containsPlayFromExileDeferBoundary then
           if !pr.startsWithPlayFromExileDeferBoundary then
             bottomNonBoundary? := some (fi, oi?, pr)
             break

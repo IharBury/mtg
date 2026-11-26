@@ -2109,6 +2109,7 @@ completion, turn/cleanup/concede/leave/proposal completion, or proposal-reversin
 must be placed so expiry logs emit before `PriorityEvent.received` and are never
 dropped by CR 733.1 proposal reversal (CR 117.3 / 611.2 / 733.1). -/
 def PendingReplacement.isPlayFromExileDeferBoundaryLeaf : PendingReplacement → Bool
+  | .restorePending .none false _ _ none => false
   | .receivePriority _
   | .finishResolutionChoice
   | .afterWardResolved

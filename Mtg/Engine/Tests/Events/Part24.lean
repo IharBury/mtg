@@ -508,6 +508,70 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
     match g.pendingReplacement with
     | some (.endControlExileLoop _ _ _ _ _ d) => some d
     | _ => none
+  -- PR #712 review regressions:
+  -- (c) Non-reversing `.restorePending .none false` and `.restorePending .none true` over a
+  --     non-reversing outer do NOT cut off later non-boundary slots while `proposedSpell.isSome`;
+  --     whereas `.restorePending .none true` over a reversing outer or a proposal-pause payload
+  --     (`.activateManaAbilities`) with `rewindProposal := none` DOES stop before later slots.
+  let gRestNoRev0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.logMessage "NON_BOUNDARY_OUTER"]
+        pendingReplacement := some (.restorePending .none false none #[] none)
+      }
+    ]
+  let gRestNoRev1 := emitExpiredPlayFromExileLogs gEmb2Two gRestNoRev0 preIdxEmbTwo
+  let gRestPopNoRev0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.logMessage "NON_BOUNDARY_OUTER"]
+        pendingReplacement := some (.restorePending .none true none #[] none)
+      }
+    ]
+  let gRestPopNoRev1 := emitExpiredPlayFromExileLogs gEmb2Two gRestPopNoRev0 preIdxEmbTwo
+  let gRestPopRev0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.logMessage "AFTER_REV", .finishTurnFaceUp p0 srcAId false]
+        pendingReplacement := some (.restorePending .none true none #[] none)
+      }
+    ]
+  let gRestPopRev1 := emitExpiredPlayFromExileLogs gEmb2Two gRestPopRev0 preIdxEmbTwo
+  let gRestPauseRev0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.logMessage "AFTER_PAUSE_REV"]
+        pendingReplacement := some (.restorePending (.activateManaAbilities p0) false none #[] none)
+      }
+    ]
+  let gRestPauseRev1 := emitExpiredPlayFromExileLogs gEmb2Two gRestPauseRev0 preIdxEmbTwo
+  -- (d) Bare `.finishResolutionChoice` / `.receivePriority _` on the top frame keeps same-top-frame
+  --     non-boundary outers in `searchSlots` while `proposedSpell.isSome`, without crossing to lower frames!
+  let gBarePrioTop0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        pendingReplacement := some (.logMessage "LOWER_FRAME")
+      },
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.logMessage "TOP_NON_BOUNDARY"]
+        pendingReplacement := some .finishResolutionChoice
+      }
+    ]
+  let gBarePrioTop1 := emitExpiredPlayFromExileLogs gEmb2Two gBarePrioTop0 preIdxEmbTwo
+  let gBareRecvTop0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.logMessage "AFTER_REV", .finishTurnFaceUp p0 srcAId false, .logMessage "BEFORE_REV"]
+        pendingReplacement := some (.receivePriority p0)
+      }
+    ]
+  let gBareRecvTop1 := emitExpiredPlayFromExileLogs gEmb2Two gBareRecvTop0 preIdxEmbTwo
   let boundaryStopOk :=
     gBound1.outerPendingReplacements[0]? == some (.logMessage "LATER") &&
     (gBound1.outerPendingReplacements[1]?.any (·.containsDeferredPlayFromExile exCardId)) &&
@@ -515,7 +579,17 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
     (gBoundRev1.outerPendingReplacements[1]?.any (·.containsDeferredPlayFromExile exCardId)) &&
     isDeferredEndCtrl gMoveSimEmit1 == some true &&
     isDeferredEndCtrl gMoveSimDefer1 == some false &&
-    isDeferredEndCtrl gInterpLoopEmit1 == some true
+    isDeferredEndCtrl gInterpLoopEmit1 == some true &&
+    (gRestNoRev1.outerPendingReplacements[0]?.any (·.containsDeferredPlayFromExile exCardId)) &&
+    (gRestPopNoRev1.outerPendingReplacements[0]?.any (·.containsDeferredPlayFromExile exCardId)) &&
+    (gRestPopRev1.pendingReplacement.any (·.containsDeferredPlayFromExile exCardId)) &&
+    gRestPopRev1.outerPendingReplacements[0]? == some (.logMessage "AFTER_REV") &&
+    (gRestPauseRev1.pendingReplacement.any (·.containsDeferredPlayFromExile exCardId)) &&
+    gRestPauseRev1.outerPendingReplacements[0]? == some (.logMessage "AFTER_PAUSE_REV") &&
+    (gBarePrioTop1.outerPendingReplacements[0]?.any (·.containsDeferredPlayFromExile exCardId)) &&
+    gBarePrioTop1.continuations[0]!.pendingReplacement == some (.logMessage "LOWER_FRAME") &&
+    (gBareRecvTop1.outerPendingReplacements[2]?.any (·.containsDeferredPlayFromExile exCardId)) &&
+    gBareRecvTop1.outerPendingReplacements[0]? == some (.logMessage "AFTER_REV")
 
   -- 2a(ii). `hasPlayFromExileLoggedInSlice` unbatched multi-event + interleaved `.engine`/`.life`
   --         and bipartite `resolveSaturated` (two overlapping `.playFromExile` expirations on two
@@ -650,8 +724,9 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
   mustHold58i2 "2b_ctrOp" ctrOpOk &&
   mustHold58i2 "2b_simLoops" simLoopsOk &&
   mustHold58i2 "2.replay"
-    (replayOk58i2 #[gEmbDeferred, gEmbEmitted, gBound1, gSlice3, gCtrl1, gLeave1,
-      gSbaAfter, gUntapDone, gCtrOp1, gDiscLoop1, gMillLoop1])
+    (replayOk58i2 #[gEmbDeferred, gEmbEmitted, gBound1, gRestNoRev1, gRestPopNoRev1,
+      gRestPopRev1, gRestPauseRev1, gBarePrioTop1, gBareRecvTop1, gSlice3, gCtrl1,
+      gLeave1, gSbaAfter, gUntapDone, gCtrOp1, gDiscLoop1, gMillLoop1])
 
 end Phase58Item2EventAlignment
 
