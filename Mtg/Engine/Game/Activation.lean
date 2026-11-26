@@ -221,13 +221,14 @@ def activateAbility (g : Game) (p : PlayerId) (id : ObjectId) (abilityIdx : Nat)
           !(g0.stillInGame p &&
             (g0.findObject? o.id).any (fun cur =>
               cur.isOnBattlefield && cur.status.faceDown && g0.controlledBy cur p))
+        let openCont := g0.proposalHadOpenContinuation
         let (g, callerShouldResume) :=
           g0.completeTurnFaceUp p o.id (hadOuterReplacement := localOuter?.isSome)
         let g :=
           if willReverse then g
           else
             match localOuter? with
-            | some outer => g.chainProposalOuterCont p outer
+            | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
             | none => g
         return if !willReverse && (callerShouldResume || (!g.over && g.pending == .none && localOuter?.isSome)) then
           g.resumeAfterBecomeCastFwd

@@ -264,7 +264,7 @@ def pickTeamworkCreatures (g : Game) (p : PlayerId) (need : Nat) : Array ObjectI
 
 /-- Target opponent reveals their hand; you discard a nonland of your choice. -/
 def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
-  let handIds := (g.player victim).hand
+  let handIds := g.discardableHandIds victim
   let names :=
     handIds.filterMap (fun id =>
       (g.findObject? id).map g.name)
@@ -279,7 +279,7 @@ def discardNonlandFrom (g : Game) (controller victim : PlayerId) : Game :=
     else
       g.logMsg
         s!"{(g.player victim).name} reveals {String.intercalate ", " names.toList}"
-  match (g.player victim).hand.findSome? (fun id =>
+  match handIds.findSome? (fun id =>
       match g.findObject? id with
       | some o => if isDiscardableCard o && !g.isLand o then some o else none
       | none => none) with

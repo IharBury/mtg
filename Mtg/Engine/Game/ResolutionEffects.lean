@@ -302,10 +302,18 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
     (cause : Option EventCause := none)
     (enteredFromIds : Array ObjectId := #[])
     (preBattlefield : Option (Array GameObject) := none)
-    (pendingLog : Option (ObjectId × Zone) := none) : Game := Id.run do
+    (pendingLog : Option (ObjectId × Zone) := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let deferPfe := remainingIds.size > 1 || fromEventIdx?.isSome
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.returnLinkedExileLoop remainingIds cause enteredFromIds preBattlefield pendingLog)
+      (.returnLinkedExileLoop remainingIds cause enteredFromIds preBattlefield pendingLog
+        (if deferPfe then some loopFromIdx else none))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let preBf := preBattlefield.getD g.battlefield
   let mut g := g
   if let some (fromId, dest) := pendingLog then
@@ -324,34 +332,39 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
         let owner := o.owner
         match o.returnToZone with
         | some (.hand p) =>
-          let (g', _) := g.move id (.hand p) none (cause := cause)
+          let (g', _) := g.move id (.hand p) none (cause := cause) (deferPlayFromExileLogs := deferPfe)
           if let .chooseReplacement .. := g'.pending then
             let rem := remainingIds.extract (i + 1) remainingIds.size
             return g'.chainPendingReplacement
-              (.returnLinkedExileLoop rem cause entered (some preBf) (some (id, .hand p)))
+              (.returnLinkedExileLoop rem cause entered (some preBf) (some (id, .hand p))
+                (if deferPfe then some loopFromIdx else none))
           if let some moved := g'.followMovedToZone? id (· == .hand p) then
             g := g'.logMsg s!"{g'.name moved} returns to {(g'.player p).name}'s hand"
           else
             g := g'
         | some (.graveyard p) =>
-          let (g', _) := g.move id (.graveyard p) none (cause := cause)
+          let (g', _) := g.move id (.graveyard p) none (cause := cause) (deferPlayFromExileLogs := deferPfe)
           if let .chooseReplacement .. := g'.pending then
             let rem := remainingIds.extract (i + 1) remainingIds.size
             return g'.chainPendingReplacement
-              (.returnLinkedExileLoop rem cause entered (some preBf) (some (id, .graveyard p)))
+              (.returnLinkedExileLoop rem cause entered (some preBf) (some (id, .graveyard p))
+                (if deferPfe then some loopFromIdx else none))
           if let some moved := g'.followMovedToZone? id (· == .graveyard p) then
             g := g'.logMsg s!"{g'.name moved} returns to {(g'.player p).name}'s graveyard"
           else
             g := g'
         | _ =>
           let (g', _) := g.move id .battlefield (some owner)
-            (preBattlefield := some preBf) (cause := cause)
+            (preBattlefield := some preBf) (cause := cause) (deferPlayFromExileLogs := deferPfe)
           g := g'
           entered := entered.push id
           if let .chooseReplacement .. := g.pending then
             let rem := remainingIds.extract (i + 1) remainingIds.size
             return g.chainPendingReplacement
-              (.returnLinkedExileLoop rem cause entered (some preBf) none)
+              (.returnLinkedExileLoop rem cause entered (some preBf) none
+                (if deferPfe then some loopFromIdx else none))
+  if deferPfe then
+    g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
   for j in [0:entered.size] do
     let fromId := entered[j]!
     if let some enteredObj := g.followMovedToZone? fromId (· == .battlefield) then
@@ -365,7 +378,7 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
         let remEntered := entered.extract (j + 1) entered.size
         if !remEntered.isEmpty then
           g := g.chainPendingReplacement
-            (.returnLinkedExileLoop #[] cause remEntered (some preBf) none)
+            (.returnLinkedExileLoop #[] cause remEntered (some preBf) none none)
         return g
   return g
 
@@ -462,7 +475,8 @@ def logLookAtTop (g : Game) (p : PlayerId) (n : Nat)
 /-- Pause-safe loop for `exileTopPlayThisTurn` / `exileTopForPlay`. -/
 def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
     (remaining : Nat) (mayCastStyle : Bool) (cause? : Option EventCause)
-    (pendingFromId : Option ObjectId := none) : Game := Id.run do
+    (pendingFromId : Option ObjectId := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let fmtMsg (g : Game) (ownerName cardName : String) : String :=
     if mayCastStyle then
       s!"{ownerName} exiles {cardName}; {(g.player caster).name} may cast it"
@@ -470,7 +484,12 @@ def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
       s!"{ownerName} exiles {cardName} and may play it this turn"
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
-      (.finishPostStep (.exileTopForPlayLoop fromPlayer caster remaining mayCastStyle cause? pendingFromId))
+      (.finishPostStep (.exileTopForPlayLoop fromPlayer caster remaining mayCastStyle cause? pendingFromId fromEventIdx?))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let loopFromIdx := fromEventIdx?.getD g.events.size
   let mut g := g
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
@@ -478,27 +497,27 @@ def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
         g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
       g := g.logMsg (fmtMsg g (g.player fromPlayer).name (g.name moved))
   if !g.stillInGame fromPlayer || !g.stillInGame caster then
-    return g
+    return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
   for i in [0:remaining] do
     if !g.stillInGame fromPlayer || !g.stillInGame caster then
-      return g
+      return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
     let pl := g.player fromPlayer
     if pl.library.isEmpty then
       g := g.logMsg s!"{pl.name} has no cards in their library to exile"
     else
       let top := pl.library.back!
       let cardName := g.name (g.object! top)
-      let (g', _) := g.move top .exile none (cause := cause?)
+      let (g', _) := g.move top .exile none (cause := cause?) (deferPlayFromExileLogs := true)
       g := g'
       if let .chooseReplacement .. := g.pending then
         let rem := remaining - (i + 1)
         return g.chainPendingReplacement
-          (.finishPostStep (.exileTopForPlayLoop fromPlayer caster rem mayCastStyle cause? (some top)))
+          (.finishPostStep (.exileTopForPlayLoop fromPlayer caster rem mayCastStyle cause? (some top) (some loopFromIdx)))
       if let some moved := g.followMovedToZone? top (· == .exile) then
         if g.stillInGame caster then
           g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
         g := g.logMsg (fmtMsg g pl.name cardName)
-  return g
+  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
 them this turn. `logAfter ownerName cardName` is the per-card message. -/
@@ -766,20 +785,25 @@ def finishEnteringAttackCard (g : Game) (newId : ObjectId)
 cards that entered the battlefield simultaneously in `commitEnteringAttackItems`. -/
 partial def finishEnteringAttackCards (g : Game)
     (postEntries : Array (ObjectId × PlayerId × String × List EnterMod × EnteringAttackLog))
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (fromEventIdx? : Option Nat := none) : Game :=
+  let g :=
+    match fromEventIdx? with
+    | some idx => emitExpiredPlayFromExileLogs (g.mkHistoricalGameAt idx) g idx
+    | none => g
   match postEntries[0]? with
   | none => g
   | some (fromId, effectController, cardName, mods, logKind) =>
     let rest := postEntries.extract 1 postEntries.size
     match g.followMovedToZone? fromId (· == .battlefield) with
-    | none => g.finishEnteringAttackCards rest cause
+    | none => g.finishEnteringAttackCards rest cause none
     | some enteredObj =>
       let g := g.finishEnteringAttackCard enteredObj.id effectController cardName mods logKind (cause := cause)
       if rest.isEmpty then g
       else if g.pending != .none then
-        g.chainPendingReplacement (.finishEnteringAttackCards rest cause)
+        g.chainPendingReplacement (.finishEnteringAttackCards rest cause none)
       else
-        g.finishEnteringAttackCards rest cause
+        g.finishEnteringAttackCards rest cause none
 
 /-- Create the tokens or put the cards in `chosen` onto the battlefield with
 their chosen `AttackTarget`s in a single batch, moving all cards onto
@@ -790,7 +814,8 @@ def commitEnteringAttackItems (g : Game)
     (cause : Option EventCause := none)
     (resetRecent : Bool := true)
     (postEntries : Array (ObjectId × PlayerId × String × List EnterMod × EnteringAttackLog) := #[])
-    (preBattlefield : Option (Array GameObject) := none) : Game :=
+    (preBattlefield : Option (Array GameObject) := none)
+    (fromEventIdx? : Option Nat := none) : Game :=
   let hasTokens := chosen.any (fun | (.token .., _) => true | _ => false)
   if hasTokens then
     match chosen[0]? with
@@ -865,6 +890,8 @@ def commitEnteringAttackItems (g : Game)
   else
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+    let deferPfe := chosen.size > 1 || fromEventIdx?.isSome
+    let loopFromIdx := fromEventIdx?.getD g.events.size
     let g :=
       g.withBatch cause fun g => Id.run do
         let preBf := preBattlefield.getD g.battlefield
@@ -883,17 +910,20 @@ def commitEnteringAttackItems (g : Game)
                 (enterMods := mods.toArray)
                 (preBattlefield := some preBf)
                 (cause := cause)
+                (deferPlayFromExileLogs := deferPfe)
               g := g'
               entries := entries.push (o.id, effectController, g.name o, mods, logKind)
               if let .chooseReplacement .. := g.pending then
                 let rem := chosen.extract (i + 1) chosen.size
                 if !rem.isEmpty then
                   g := g.chainPendingReplacement
-                    (.commitEnteringAttackItems rem cause false entries (some preBf))
+                    (.commitEnteringAttackItems rem cause false entries (some preBf)
+                      (if deferPfe then some loopFromIdx else none))
                 else
-                  g := g.chainPendingReplacement (.finishEnteringAttackCards entries cause)
+                  g := g.chainPendingReplacement
+                    (.finishEnteringAttackCards entries cause (if deferPfe then some loopFromIdx else none))
                 return g
-        return g.finishEnteringAttackCards entries cause
+        return g.finishEnteringAttackCards entries cause (if deferPfe then some loopFromIdx else none)
     let g :=
       match outerCont? with
       | some outer => g.chainPendingReplacement outer

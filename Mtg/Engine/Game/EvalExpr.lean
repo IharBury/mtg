@@ -1446,11 +1446,23 @@ def evalEventPatternOnTurn (g : Game) (env : EvalEnv) (targetTurn : Nat)
 def evalEventHistory (g : Game) (env : EvalEnv) (hp : EventHistoryPred) : Bool :=
   let st := boardState g env
   let turn := st.turnNumber
+  let histPlayers (who : PlayerFilter) : Array PlayerId :=
+    if who.pred == .any then
+      -- CR 800.4 / Ruling 226: historical turn events still recognize players who later left the game.
+      st.players.filterMap fun pl =>
+        let relOk :=
+          match who.relation with
+          | .you => pl.id == env.controller
+          | .opponent => pl.id != env.controller && !st.areTeammates env.controller pl.id
+          | .teammate => st.areTeammates env.controller pl.id
+          | .anyPlayer => true
+        if relOk then some pl.id else none
+    else evalPlayerFilter g env who
   match hp with
   | .scriedThisTurn who =>
-    (evalPlayerFilter g env who).any fun p => GameEvent.scried st.events turn p
+    (histPlayers who).any fun p => GameEvent.scried st.events turn p
   | .surveilledThisTurn who =>
-    (evalPlayerFilter g env who).any fun p => GameEvent.surveilled st.events turn p
+    (histPlayers who).any fun p => GameEvent.surveilled st.events turn p
   | .eventOccurredThisTurn who pat =>
     evalEventPatternOnTurn g env turn who pat
   | .eventOccurredLastTurn who pat =>
@@ -1468,7 +1480,8 @@ def evalEventHistory (g : Game) (env : EvalEnv) (hp : EventHistoryPred) : Bool :
           | _ => false
   | .nthResolutionThisTurn n =>
     let ab? := st.resolvingAbility.bind fun id =>
-      (st.findObject? id).bind (·.triggeredAbility)
+      (st.findObject? id).bind fun abObj =>
+        if abObj.sourceId == env.sourceId then abObj.triggeredAbility else none
     GameEvent.resolutions st.events turn env.controller env.sourceId ab? == n
   | .optionalOnceUnusedThisTurn =>
     match env.sourceId with
@@ -1631,7 +1644,7 @@ def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : Play
       keywords := #[]
       toxic := 0
       staticAbilities := #[]
-      zone := card.zone
+      zone := .stack
       faceDown := true
       token := face.isToken
       isCopy := card.isCopy
@@ -1642,16 +1655,14 @@ def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : Play
       chosenX := card.chosenX
     }
   else
-    let tcs := g.evalLayer3 card
+    let tcs := g.evalLayer3 spellObj
     let rawSubs :=
       (CardSubtype.ofSubtypes face.subtypes).map fun s =>
         if tcs.isEmpty then s else HasTextChange.applyTextChanges tcs s
     let sas :=
       if tcs.isEmpty then face.staticAbilities
       else HasTextChange.applyTextChanges tcs face.staticAbilities
-    let kws :=
-      if tcs.isEmpty then face.keywords
-      else HasTextChange.applyTextChanges tcs face.keywords
+    let kws := g.currentKeywords spellObj
     let (cdaTypes, cdaSubs0, cdaSups) :=
       sas.foldl (fun (ts, subs, sups) ab =>
         match ab with
@@ -1694,7 +1705,7 @@ def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : Play
       keywords := kws
       toxic := KeywordAbility.toxicTotal kws
       staticAbilities := sas
-      zone := card.zone
+      zone := .stack
       faceDown := false
       token := face.isToken
       isCopy := card.isCopy

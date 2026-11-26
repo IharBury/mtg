@@ -175,6 +175,7 @@ private def replayOk49i1 (gs : Array Game) : Bool :=
   let onePermId := (gOnePerm.permanentsOf p0)[0]!.id
   let gProbeRandomSingle :=
     gOnePerm.changes #[
+      .pending (.chooseReplacement p0 #[]),
       .pushContinuationFrame {
         afterRandom := .gainLife p0 1
         pendingReplacement := some (.restorePending (.resolveRandom (.chooseObject #[onePermId, ⟨999001⟩])) true none #[] none)

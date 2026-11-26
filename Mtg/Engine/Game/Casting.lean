@@ -358,7 +358,16 @@ def canPayAnnouncedAdditionalFromSources (g : Game) (p : PlayerId) (o : GameObje
       branch.items.all fun item =>
         match item with
         | .mana m =>
-          g.canPaySpellCostFromSources p o
+          let payObj :=
+            match faceOverride? with
+            | some f =>
+              { o with
+                id := noSourceSentinelId
+                controller := some p
+                printed := f
+                status := { o.status with faceDown := false } }
+            | none => o
+          g.canPaySpellCostFromSources p payObj
             (g.playManaCost { o with controller := some p } bc m
               (origPerm := origPerm) (flashback := flashback)
               (explicitAltCost := explicitAltCost)
@@ -781,7 +790,7 @@ def preferredManaChoice (g : Game) (p : PlayerId) (src : GameObject)
     (others : List (GameObject × Array ManaType) := []) (spend : ManaSpend := {})
     (prop? : Option ProposedSpell := none) : Option TapManaChoice :=
   let pool := (g.player p).manaPool
-  let allChoices := g.tapChoicesForSource src types cost (prop? := prop?)
+  let allChoices := g.tapChoicesForSource src types cost (prop? := prop?) (spend := spend)
   let helpful := allChoices.filter (fun (ch : TapManaChoice) =>
     choiceHelpsPay pool ch cost spend)
   let payable :=
@@ -883,15 +892,13 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
         let discSrc :=
           prop.discardSource || ab.cost.discardSource || ab.cost.exileSourceFromHand
         let zemoOk : Bool :=
-          if !prop.choiceCostPaid && ab.cost.exileManaSymbols?.isSome then
-            let col :=
-              match g.findObject? sid <|> some prop.original with
-              | some src => TextChange.applyColor (g.evalLayer3 src) .black
-              | none => .black
-            let allCands := (g.player p).graveyard.filter (fun id =>
-              (g.findObject? id).any (fun card => isDiscardableCard card && (g.colors card).contains col))
-            g.canPayZemoBoast p allCands col
-          else true
+          if prop.choiceCostPaid then true
+          else
+            match ab.cost.exileManaSymbols? with
+            | none => true
+            | some (col?, minSyms, pred) =>
+              g.canPayExileManaSymbols p sid col? minSyms pred
+                (excludedIds := if ab.cost.exileSourceFromGraveyard then #[sid] else #[])
         if !zemoOk then false
         else
           let crewN? : Option Nat :=
@@ -928,8 +935,9 @@ def hasCostPreservingPaymentSubset (g : Game) (pool : ManaPool) (cost : ManaCost
   let usableSources :=
     sources.filter fun (o, ts) =>
       !(g.tapChoicesForSource o ts cost
-        (dedupSingleTypes := fun xs => dedupZeroReqManaTypes g o xs cost activeProp?)
-        (prop? := activeProp?)).isEmpty
+        (dedupSingleTypes := fun xs => dedupZeroReqManaTypes g o xs cost activeProp? spend)
+        (prop? := activeProp?)
+        (spend := spend)).isEmpty
   match prop? with
   | none =>
     g.canPayFromSources pool cost usableSources.toList spend none
@@ -990,8 +998,9 @@ def hasCostPreservingPaymentSubset (g : Game) (pool : ManaPool) (cost : ManaCost
           | (o, ts) :: rest =>
             let choices :=
               g.tapChoicesForSource o ts cost
-                (dedupSingleTypes := fun xs => dedupZeroReqManaTypes g o xs cost activeProp?)
+                (dedupSingleTypes := fun xs => dedupZeroReqManaTypes g o xs cost activeProp? spend)
                 (prop? := activeProp?)
+                (spend := spend)
             let k := equivKey o choices
             let tryTap :=
               !skippedKeys.contains k &&
@@ -1017,7 +1026,7 @@ def preferredManaTapChoice (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     if !allPay then none
     else
       sources.foldl (fun acc (src, types) =>
-        let choices := g.tapChoicesForSource src types prop.cost (prop? := some prop)
+        let choices := g.tapChoicesForSource src types prop.cost (prop? := some prop) (spend := spend)
         let helpful := choices.filter (fun (ch : TapManaChoice) =>
           choiceHelpsPay pool ch prop.cost spend)
         if helpful.isEmpty then acc
@@ -1356,8 +1365,16 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       if g.sbaPaused then
         let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
         let g :=
-          if g.pendingReplacement.any (·.endsWithPriorityGrant) then g
-          else g.chainPendingReplacement (.receivePriority prio)
+          if g.pendingReplacement.any (·.endsWithPriorityGrant) then
+            if g.pendingReplacement.any g.continuationUsesImplicitPendingPriorityFwd then
+              stashPendingPrio g
+            else g
+          else
+            let g :=
+              if g.pendingReplacement.any g.continuationUsesImplicitPendingPriorityFwd then
+                stashPendingPrio g
+              else g
+            g.chainPendingReplacement (.receivePriority prio)
         return (g, false)
       else if g.pending != .none || g.afterRandom != .none then
         return (stashPendingPrio g, false)
@@ -1490,11 +1507,16 @@ partial def afterWardResolved (g : Game) : Game :=
     match g.pending with
     | .payWard .. => g.change (.pending .none)
     | _ => g
+  let postPromptSettles (gCur : Game) : Bool :=
+    let cs : Array EngineChange :=
+      (if !gCur.sbaPaused && gCur.pending != .none then #[EngineChange.pending .none] else #[]) ++
+      (if gCur.afterRandom != .none then #[EngineChange.afterRandom .none] else #[])
+    (if cs.isEmpty then gCur else gCur.changes cs).anyContinuationSettlesControlFlowFwd
   if g.over then
     reverseOrphanedIfOver g
   else if (g.currentInterpWait?.isSome) &&
       (g.pending != .none || g.afterRandom != .none) then
-    if g.anyContinuationSettlesControlFlowFwd then g
+    if postPromptSettles g then g
     else
       let existing := g.outerPendingReplacements
       replaceTopOuters g existing.size (#[.afterWardResolved] ++ existing)
@@ -1527,7 +1549,7 @@ partial def afterWardResolved (g : Game) : Game :=
           | none =>
             if stashedOuters.isEmpty then g
             else replaceTopOuters g drainSuffix.size (stashedOuters ++ drainSuffix)
-        if gRestored.anyContinuationSettlesControlFlowFwd then gRestored
+        if postPromptSettles gRestored then gRestored
         else
           let wardCont :=
             match stashedPending with

@@ -216,6 +216,40 @@ def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     (((g.isCreature o || (g.baseCard o).morph.isSome) && g.controlsCastCreaturesFromTop p) ||
       (g.isLand o && g.controlsPlayLandsFromTop p))
 
+/-- Whether `p` may play `o` as a land from exile under a non-cast-only permission (CR 305.9). -/
+def mayPlayLandFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  o.zone == .exile &&
+    (g.playPermissionsFor p o).any fun perm =>
+      perm.player == p &&
+        !perm.fromAdventure &&
+        !perm.withoutManaCost &&
+        !perm.payLifeEqualManaValue &&
+        perm.prepareSource.isNone &&
+        match perm.requireSubtype with
+        | none => true
+        | some t => g.controlsAnySubtype p #[t]
+
+/-- Whether `p` may play `o` as a land from their graveyard (CR 305.9). Excludes flashback. -/
+def mayPlayLandFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  o.zone == .graveyard p && o.owner == p && isDiscardableCard o &&
+    g.isLand o && g.controlsPlayLandsFromGraveyard p
+
+/-- Whether `p` may play `o` as a land from the top of their library (CR 305.9).
+Excludes cast-only creature permissions such as Elven Chorus. -/
+def mayPlayLandFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  o.zone == .library p &&
+    (g.player p).library.back? == some o.id &&
+    g.isLand o && g.controlsPlayLandsFromTop p
+
+/-- Whether `p` may play `o` as a land from its current zone (CR 305.9), excluding
+cast-only permissions (Elven Chorus creature-only library top, flashback,
+`mayCastExiledBySource`, and exile permissions that only allow casting such as
+`withoutManaCost`, `payLifeEqualManaValue`, `prepareSource`, or `fromAdventure`). -/
+def mayPlayLand (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
+  isDiscardableCard o && g.isLand o &&
+    ((g.player p).hand.contains o.id || g.mayPlayLandFromExile p o ||
+      g.mayPlayLandFromGraveyard p o || g.mayPlayLandFromLibraryTop p o)
+
 def mayPlay (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   isCastableObject o &&
     ((g.player p).hand.contains o.id || g.mayPlayFromExile p o || g.mayCastExiledBySource p o ||
@@ -227,6 +261,16 @@ def playZoneError (g : Game) (p : PlayerId) (o : GameObject) : String :=
   else if o.zone == .graveyard p && !g.mayPlayFromGraveyard p o then
     "You may not play that card from your graveyard"
   else if o.zone == .library p && !g.mayPlayFromLibraryTop p o then
+    "You may not play that card from the top of your library"
+  else
+    "That card is not in your hand"
+
+def playLandZoneError (g : Game) (p : PlayerId) (o : GameObject) : String :=
+  if o.zone == .exile && !g.mayPlayLandFromExile p o then
+    "You may not play that card from exile"
+  else if o.zone == .graveyard p && !g.mayPlayLandFromGraveyard p o then
+    "You may not play that card from your graveyard"
+  else if o.zone == .library p && !g.mayPlayLandFromLibraryTop p o then
     "You may not play that card from the top of your library"
   else
     "That card is not in your hand"

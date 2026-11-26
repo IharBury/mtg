@@ -2572,4 +2572,163 @@ modal `m.output? = none` modes, unprojected `CostItem` rejection in `isPlainTap`
     (actEffInterestOk &&
      !hasUniqueManaPayment gActEffProp)
 
+/- Phase 58: `mayPlayLand` cast-only exclusion in `Demo.hasGameStatePriorityAction` and
+`Agent.choose`, `Demo.spellManaSpentInterest` `bc.otherFace` & active `.copy` effects,
+`advObj` Layer-1 `.copy` immunity in `Demo.hasGameStatePriorityAction` & `Agent.choose`,
+and hybrid/twobrid + `{X}` + multi-ability `tapChoicesForSource` + unprojected `CostItem`
+mana soundness. -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := emptyHand afterDraw p0
+  let cause58 : EventCause := .oneShotEffect (some ⟨1⟩) none (some p0)
+
+  -- 1. `mayPlayLand` cast-only exclusion in `Demo.hasGameStatePriorityAction` and `Agent.choose`:
+  let elven58Def : CardDef := {
+    name := "P58 Check9 ElvenPerm"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .ruleModifying none (.play (.mayPlayFrom .you .library (.hasType .creature) false false false false))
+    ]
+  }
+  let dryad58Def : CardDef := {
+    name := "P58 Check9 DryadArbor"
+    types := #[.land, .creature]
+    subtypes := #["Forest", "Dryad"]
+    power := some (.fixed 1)
+    toughness := some (.fixed 1)
+  }
+  let gCastOnlyLib :=
+    insertObject (addPermanent gMain elven58Def p0 p0) dryad58Def p0 (.library p0)
+  let gCastOnlyEx0 := insertObject gMain forest p0 .exile
+  let exLandId := (gCastOnlyEx0.objects.find? (fun o => o.zone == .exile && o.name == forest.name)).get!.id
+  let gCastOnlyEx :=
+    gCastOnlyEx0.createEffect
+      (.permission (some p0) (.playFromExile exLandId { player := p0, withoutManaCost := true })
+        .untilEndOfTurn)
+      (cause := some cause58)
+  let gPlayableEx :=
+    gCastOnlyEx0.createEffect
+      (.permission (some p0) (.playFromExile exLandId { player := p0 }) .untilEndOfTurn)
+      (cause := some cause58)
+  let mayPlayLandDemoOk :=
+    !hasGameStatePriorityAction gCastOnlyLib p0 &&
+    !(match Agent.choose gCastOnlyLib p0 with | some (.playLand _) => true | _ => false) &&
+    !hasGameStatePriorityAction gCastOnlyEx p0 &&
+    !(match Agent.choose gCastOnlyEx p0 with | some (.playLand _) => true | _ => false) &&
+    hasGameStatePriorityAction gPlayableEx p0 &&
+    (match Agent.choose gPlayableEx p0 with | some (.playLand id) => id == exLandId | _ => false)
+
+  -- 2. `Demo.spellManaSpentInterest` merges `bc.otherFace` AND active `.layered _ (.copy card) d`:
+  let backWatchesTreasureDef : CardDef := {
+    creature "P58 Check9 NightWolf" ManaCost.empty #["Wolf"] 3 3 with
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger
+        (.castSpell .you .anyObject none (some .fromTreasure)) (Effect.gainLife 1)
+    ]
+  }
+  let dfcFront58Def : CardDef := {
+    creature "P58 Check9 DayWolf" { symbols := #[.colored .green] } #["Wolf"] 2 2 with
+    otherFace := some backWatchesTreasureDef
+  }
+  let gDfc0 :=
+    (insertObject (addPermanent gMain Catalog.treasureToken p0 p0) dfcFront58Def p0 (.hand p0)).record
+      (GameEvent.manaAdded gMain.turnNumber p0 #[{ mana := .colored .green }])
+  let gDfcProp := mustApply gDfc0 p0 (.cast (gDfc0.player p0).hand.back!)
+  let dfcInterestOk :=
+    match gDfcProp.proposedSpell with
+    | some prop => (spellManaSpentInterest gDfcProp (gDfcProp.proposedManaSpend prop) (some prop)).fromTreasure
+    | none => false
+  let plainGSpell58Def : CardDef := {
+    name := "P58 Check9 PlainGSpell"
+    manaCost := { symbols := #[.colored .green] }
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let gCopyEff0 :=
+    ((insertObject (addPermanent gMain Catalog.treasureToken p0 p0) plainGSpell58Def p0 (.hand p0)).createEffect
+      (.layered (.creaturesControlledBy p0) (.copy backWatchesTreasureDef) .untilEndOfTurn)
+      (cause := some cause58)).record
+      (GameEvent.manaAdded gMain.turnNumber p0 #[{ mana := .colored .green }])
+  let gCopyEffProp := mustApply gCopyEff0 p0 (.cast (gCopyEff0.player p0).hand.back!)
+  let copyEffInterestOk :=
+    match gCopyEffProp.proposedSpell with
+    | some prop => (spellManaSpentInterest gCopyEffProp (gCopyEffProp.proposedManaSpend prop) (some prop)).fromTreasure
+    | none => false
+
+  -- 3. `advObj` Layer-1 `.copy` immunity in `Demo.hasGameStatePriorityAction` & `Agent.choose`:
+  --    Creature with `{R}` Instant Adventure + Layer-1 `.copy` on `o.id` overwriting it with the
+  --    same Creature face + instant/sorcery-only `{R}` mana in pool -> MUST still see the Adventure
+  --    as castable (no false auto-pass)!
+  let advSub : SubFace := {
+    kind := .adventure
+    name := "P58 Check9 QuickSpark"
+    manaCost := { symbols := #[.colored .red] }
+    types := #[.instant]
+    subtypes := #["Adventure"]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let advCard58Def : CardDef := {
+    creature "P58 Check9 SparkKnight" { symbols := #[.generic 4, .colored .red] } #["Knight"] 3 3 with
+    subFaces := #[advSub]
+  }
+  let gAdv0 :=
+    (insertObject gMain advCard58Def p0 (.hand p0)).record
+      (GameEvent.manaAdded gMain.turnNumber p0
+        #[{ mana := .colored .red, restriction := some ManaSpendRestriction.instantOrSorcery }])
+  let advId := (gAdv0.player p0).hand.back!
+  let gAdvCopied :=
+    gAdv0.createEffect (.layered (.objects #[advId]) (.copy advCard58Def) .indefinite) (cause := some cause58)
+  let advLayer1CopyOk :=
+    hasGameStatePriorityAction gAdvCopied p0 &&
+    (match Agent.choose gAdvCopied p0 with | some (.castAdventure id) => id == advId | _ => false)
+
+  -- 4. Hybrid/twobrid, `{X}` mana ability, and multi-ability plain `{T}` permanent in `Demo`:
+  let hybridSpell58Def : CardDef := {
+    name := "P58 Check9 HybridBG_B"
+    manaCost := { symbols := #[.hybrid .black .green, .colored .black] }
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let gHybrid58 :=
+    (insertObject gMain hybridSpell58Def p0 (.hand p0)).record
+      (GameEvent.manaAdded gMain.turnNumber p0
+        #[{ mana := .colored .black }, { mana := .colored .green }])
+  let xMana58Def : CardDef := {
+    name := "P58 Check9 XMana"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.mana { symbols := #[.x] }, .tapSelf]
+      effect := Effect.addMana #[.colored .green]
+    }]
+  }
+  let gXMana58 := addPermanent gMain xMana58Def p0 p0
+  let multiTap58Def : CardDef := {
+    name := "P58 Check9 MultiTap"
+    types := #[.artifact]
+    activatedAbilities := #[
+      { cost := CostSpec.ofItems #[.tapSelf]
+        effect := Effect.addMana #[.colored .green] },
+      { cost := CostSpec.ofItems #[.tapSelf]
+        effect := { body := .player (.addMana .you {
+          spec := ManaSpec.fixed #[.colored .green, .colored .green]
+          restriction := some (.onlyForSpells (.hasType .creature))
+        }) } }
+    ]
+  }
+  let ggCreat58Def : CardDef :=
+    creature "P58 Check9 GGCreat" { symbols := #[.colored .green, .colored .green] } #["Beast"] 2 2
+  let gMultiTap58 := insertObject (addPermanent gMain multiTap58Def p0 p0) ggCreat58Def p0 (.hand p0)
+  let manaDemo58Ok :=
+    hasGameStatePriorityAction gHybrid58 p0 &&
+    !hasGameStatePriorityAction gXMana58 p0 &&
+    hasGameStatePriorityAction gMultiTap58 p0
+
+  mustHoldCheck9 "p58_mayPlayLandDemo" mayPlayLandDemoOk &&
+  mustHoldCheck9 "p58_dfcAndCopyInterest"
+    (dfcInterestOk && !hasUniqueManaPayment gDfcProp &&
+     copyEffInterestOk && !hasUniqueManaPayment gCopyEffProp) &&
+  mustHoldCheck9 "p58_advLayer1Copy" advLayer1CopyOk &&
+  mustHoldCheck9 "p58_manaDemo58" manaDemo58Ok
+
+
 

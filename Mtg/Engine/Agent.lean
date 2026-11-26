@@ -777,10 +777,14 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       -- Random results are supplied by the host (`--norandom`), never the heuristic.
       none
     | .none =>
-      -- Play a land if possible (from hand or from exile under a permission).
+      -- Play a land if possible (from hand, exile, graveyard, or library top under a land-play permission, CR 305.9).
+      let gyObjs := (g.player p).graveyard.filterMap g.findObject?
+      let libTopObjs :=
+        match (g.player p).library.back?.bind g.findObject? with
+        | some o => #[o]
+        | none => #[]
       let lands :=
-        (g.handObjects p).filter g.isLand ++
-        (g.exiledPlayable p).filter g.isLand
+        (g.handObjects p ++ g.exiledPlayable p ++ gyObjs ++ libTopObjs).filter (g.mayPlayLand p)
       if g.canPlayLand p then
         match lands[0]? with
         | some land => some (.playLand land.id)
@@ -1096,15 +1100,22 @@ where
         match (g.baseCard o).adventure with
         | some adv =>
           let face := adv.toCardDef
-          let advObj := { o with controller := some p, printed := face, adventurerCard := some o.printed }
+          let advObj :=
+            { o with
+              id := noSourceSentinelId
+              controller := some p
+              printed := face
+              adventurerCard := some o.printed
+              status := { o.status with faceDown := false } }
           let perm? := selectBestPerm o face face.manaValue (asAdventure := true)
           (!perm?.any (·.payLifeEqualManaValue) || g.canPayLife p face.manaValue) &&
           g.canPaySpellCostFromSources p advObj
             (g.playManaCost { o with controller := some p } face
               (origPerm := perm?) (useImplicitPermissions := false))
             (fromHand := o.zone == .hand p) &&
-          g.canPayAnnouncedAdditionalFromSources p advObj (origPerm := perm?)
+          g.canPayAnnouncedAdditionalFromSources p o (origPerm := perm?)
             (useImplicitPermissions := false) (fromHand := o.zone == .hand p)
+            (faceOverride? := some face)
         | none => false)
     let oppHasCreature := !(g.creaturesControlledBy (g.opponent p)).isEmpty
     let ownCreature := (g.creaturesControlledBy p).back?

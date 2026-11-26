@@ -741,13 +741,19 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
     (preBattlefield : Option (Array GameObject) := none)
     (pendingLog : Option (ObjectId × Zone) := none)
     (enteredFromIds : Array ObjectId := #[])
-    (suppressInteractive : Bool := false) : Game :=
+    (suppressInteractive : Bool := false)
+    (fromEventIdx? : Option Nat := none) : Game :=
   let quiet := suppressInteractive || g.openBatchSuppressInteractive || g.over || g.suppressInteractiveReplay
-  if ids.isEmpty && pendingLog.isNone && enteredFromIds.isEmpty then g
+  if ids.isEmpty && pendingLog.isNone && enteredFromIds.isEmpty && fromEventIdx?.isNone then g
   else if !quiet && (match g.pending with | .chooseReplacement .. | .chooseLegend .. => true | _ => false) then
-    g.chainPendingReplacement (.finishLinkedExileMove ids preBattlefield pendingLog enteredFromIds)
+    g.chainPendingReplacement (.finishLinkedExileMove ids preBattlefield pendingLog enteredFromIds fromEventIdx?)
   else Id.run do
     let preBf := preBattlefield.getD g.battlefield
+    let loopFromIdx := fromEventIdx?.getD g.events.size
+    let preLoop :=
+      match fromEventIdx? with
+      | some idx => g.mkHistoricalGameAt idx
+      | none => g
     let mut g := g
     let mut entered := enteredFromIds
     if let some (fromId, dest) := pendingLog then
@@ -766,6 +772,7 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
                 (g.logMsg s!"{name} remains in its current zone (CR 800.4a)", none)
               else
                 let (g', _) := g.move o.id (.hand p) none (cause := linkCause)
+                  (deferPlayFromExileLogs := true)
                 let movedDest? :=
                   if (g'.followMovedToZone? o.id (· == .hand p)).isSome ||
                       (match g'.pending with | .chooseReplacement .. => true | _ => false) then
@@ -777,6 +784,7 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
                 (g.logMsg s!"{name} remains in its current zone (CR 800.4a)", none)
               else
                 let (g', _) := g.move o.id (.graveyard p) none (cause := linkCause)
+                  (deferPlayFromExileLogs := true)
                 let movedDest? :=
                   if (g'.followMovedToZone? o.id (· == .graveyard p)).isSome ||
                       (match g'.pending with | .chooseReplacement .. => true | _ => false) then
@@ -789,7 +797,7 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
               else
                 let (g', _) :=
                   g.move o.id .battlefield (some o.owner) (preBattlefield := some preBf)
-                    (cause := linkCause)
+                    (cause := linkCause) (deferPlayFromExileLogs := true)
                 let movedDest? :=
                   if (g'.followMovedToZone? o.id (· == .battlefield)).isSome ||
                       (match g'.pending with | .chooseReplacement .. => true | _ => false) then
@@ -802,12 +810,13 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
           if !quiet && (match g.pending with | .chooseReplacement .. | .chooseLegend .. => true | _ => false) then
             let rem := ids.extract (i + 1) ids.size
             let logItem := movedDest?.map (fun d => (o.id, d))
-            if !rem.isEmpty || logItem.isSome || !entered.isEmpty then
-              g := g.chainPendingReplacement (.finishLinkedExileMove rem (some preBf) logItem entered)
+            g := g.chainPendingReplacement (.finishLinkedExileMove rem (some preBf) logItem entered (some loopFromIdx))
             return g
           if let some dest := movedDest? then
             g := logLinkedExileReturn g o.id dest
       | none => pure ()
+    if !ids.isEmpty || fromEventIdx?.isSome then
+      g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
     for k in [0:entered.size] do
       let fromId := entered[k]!
       if let some enteredObj := g.followMovedToZone? fromId (· == .battlefield) then
@@ -815,7 +824,7 @@ partial def runLinkedExileBatch (g : Game) (ids : Array ObjectId)
         if !quiet && (match g.pending with | .chooseReplacement .. | .chooseLegend .. => true | _ => false) then
           let remEntered := entered.extract (k + 1) entered.size
           if !remEntered.isEmpty then
-            g := g.chainPendingReplacement (.finishLinkedExileMove #[] (some preBf) none remEntered)
+            g := g.chainPendingReplacement (.finishLinkedExileMove #[] (some preBf) none remEntered none)
           return g
     return g
 

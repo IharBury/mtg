@@ -163,6 +163,9 @@ structure ManaAbilityDef where
   modeChoices : Array ManaAbilityMode := #[]
   /-- Optional non-pure-mana effect resolved directly without using the stack. -/
   extraEffect? : Option Effect := none
+  /-- True when the source `CostSpec` contains a `CostItem` (or duplicate
+  single-slot item) not projected and executed by `activateManaAbility`. -/
+  hasUnmodeledCostItem : Bool := false
 deriving Inhabited
 
 /-- Whether paying `d`'s cost moves its source out of its current zone. -/
@@ -196,6 +199,64 @@ def ManaAbilityDef.allChoicesFor (d : ManaAbilityDef)
 
 private def uniqMana (ts : Array ManaType) : Array ManaType :=
   ts.foldl (fun acc t => if acc.contains t then acc else acc.push t) #[]
+
+/-- True when `item` is projected onto `ManaAbilityDef` and enforced/executed
+by `manaAbilityDefUsable` and `activateManaAbility`. -/
+private def manaAbilityCostItemModeled : CostItem → Bool
+  | .mana _ => true
+  | .tapSelf => true
+  | .payLife (.const n) => n ≥ 0
+  | .sacrifice (.count (.const 1)) .self => true
+  | .sacrifice (.count (.const n)) (.filter _) => n > 0
+  | .discard (.count (.const 1)) .self => true
+  | .discard (.count (.const n)) .hand => n > 0
+  | .discard (.count (.const n)) (.matching _) => n > 0
+  | .exile (.count (.const 1)) zones .self false =>
+    zones.zones.size == 1 &&
+      (zones.zones.contains .battlefield || zones.zones.contains .hand || zones.zones.contains .graveyard)
+  | .exile (.totalManaSymbolsAtLeast _ (.const n)) zones (.filter _) false =>
+    n ≥ 0 && zones.zones == #[.graveyard]
+  | .exile (.count (.const n)) zones (.filter _) false =>
+    n > 0 && !zones.zones.isEmpty &&
+      zones.zones.all (fun z => z == .graveyard || z == .hand || z == .battlefield)
+  | .tapObjects (.count (.const n)) _ => n > 0
+  | .tapObjects (.totalPowerAtLeast (.const n)) pred =>
+    n ≥ 0 &&
+      (pred == .all #[.hasType .creature, .tapped false, .controlledBy .you] ||
+        pred == .all #[.otherThan .this, .hasType .creature, .tapped false, .controlledBy .you] ||
+        pred == .all #[.hasType .creature, .otherThan .this, .tapped false, .controlledBy .you])
+  | .removeCounters (.count (.const 1)) (some .story) .self => true
+  | .removeCounters (.count (.const 1)) (some .indestructible) .self => true
+  | .removeCounters .anyNumber (some .plusOnePlusOne) .self => true
+  | .putCounters (.const 1) .stun .self => true
+  | .returnToHand (.count (.const n)) (.filter _) => n > 0
+  | .or choices =>
+    !choices.isEmpty &&
+      choices.all fun cs =>
+        match cs.items.toList with
+        | [.sacrifice (.count (.const 1)) (.filter _)] => true
+        | [.discard (.count (.const 1)) .hand] => true
+        | [.discard (.count (.const 1)) (.matching _)] => true
+        | _ => false
+  | _ => false
+
+/-- True when `c` contains any unmodeled `CostItem` or duplicate single-slot
+cost item that `ManaAbilityDef` / `activateManaAbility` cannot execute. -/
+private def manaAbilityCostHasUnmodeledItems (c : CostSpec) : Bool :=
+  if c.items.any (fun item => !manaAbilityCostItemModeled item) then true
+  else
+    let cnt (p : CostItem → Bool) : Nat := (c.items.filter p).size
+    let isSacOtherCreatArt : CostItem → Bool
+      | .sacrifice (.count (.const 1)) (.filter (.all #[.otherThan .this, .any #[.hasType .creature, .hasType .artifact]]))
+      | .sacrifice (.count (.const 1)) (.filter (.all #[.otherThan .this, .any #[.hasType .artifact, .hasType .creature]])) => true
+      | _ => false
+    cnt (fun | .tapObjects (.totalPowerAtLeast _) _ => true | _ => false) > 1 ||
+      cnt (fun | .exile (.totalManaSymbolsAtLeast _ _) _ _ _ => true | _ => false) > 1 ||
+      cnt (fun | .removeCounters (.count (.const 1)) (some .story) .self => true | _ => false) > 1 ||
+      cnt (fun | .removeCounters (.count (.const 1)) (some .indestructible) .self => true | _ => false) > 1 ||
+      cnt (fun | .removeCounters .anyNumber (some .plusOnePlusOne) .self => true | _ => false) > 1 ||
+      cnt (fun | .putCounters (.const 1) .stun .self => true | _ => false) > 1 ||
+      cnt isSacOtherCreatArt > 1
 
 /-- Mana a land can produce from its evaluated Layer-6 battlefield mana abilities
 (CR 106.7 / 305.6 / 305.7 / 605.1a / 613.1f). Abilities that themselves query
@@ -288,6 +349,7 @@ def manaAbilityDefOfActivated (g : Game) (o : GameObject) (i : Nat)
       isExhaust := ab.isExhaust
       isBoast := ab.isBoast
       sourceAbility := some ab
+      hasUnmodeledCostItem := manaAbilityCostHasUnmodeledItems ab.cost
     }
     if ab.isModal then
       let rawModes := ab.allModes
@@ -376,11 +438,11 @@ def ManaAbilityDef.isPlainTap (d : ManaAbilityDef) : Bool :=
       ab.cost.items.all fun
         | .tapSelf | .mana _ => true
         | _ => false
-  d.tap && onlyTapOrMana && !d.fromHand && !d.fromGraveyard &&
+  d.tap && onlyTapOrMana && !d.hasUnmodeledCostItem && !d.fromHand && !d.fromGraveyard &&
     !d.removesSource && !d.hasExtraInteractiveCost &&
     !d.removeStoryCounter && !d.removeIndestructibleCounter && !d.putStunCounterOnSource &&
     d.picks.isEmpty && d.modeChoices.isEmpty && d.extraEffect?.isNone &&
-    !d.cost.includesManaPayment && d.payLife == 0 && d.damageYou == 0 &&
+    !d.cost.includesManaPayment && !d.cost.containsX && d.payLife == 0 && d.damageYou == 0 &&
     d.turnLimit?.isNone && d.lifetimeLimit?.isNone &&
     !d.isExhaust && !d.isPowerUp && !d.isBoast
 
@@ -392,11 +454,12 @@ def isPlainTapManaAbilityDef (g : Game) (p : PlayerId) (o : GameObject) (d : Man
       ab.cost.items.all fun
         | .tapSelf | .mana _ => true
         | _ => false
-  d.tap && onlyTapOrMana && !d.fromHand && !d.fromGraveyard &&
+  let effCost := g.manaAbilityEffectiveCost p o d
+  d.tap && onlyTapOrMana && !d.hasUnmodeledCostItem && !d.fromHand && !d.fromGraveyard &&
     !d.removesSource && !d.hasExtraInteractiveCost &&
     !d.removeStoryCounter && !d.removeIndestructibleCounter && !d.putStunCounterOnSource &&
     d.picks.isEmpty && d.modeChoices.isEmpty && d.extraEffect?.isNone &&
-    !(g.manaAbilityEffectiveCost p o d).includesManaPayment && d.payLife == 0 && d.damageYou == 0 &&
+    !effCost.includesManaPayment && !effCost.containsX && d.payLife == 0 && d.damageYou == 0 &&
     d.turnLimit?.isNone && d.lifetimeLimit?.isNone &&
     !d.isExhaust && !d.isPowerUp && !d.isBoast
 
@@ -440,7 +503,9 @@ def manaAbilityDefUsable (g : Game) (p : PlayerId) (o : GameObject) (d : ManaAbi
       g.canPayExileManaSymbols p o.id col? minSyms pred
         (excludedIds := if d.exileSelfFromGraveyard then #[o.id] else #[])
     | none => true
-  g.manaAbilitySourceZoneOk p o d &&
+  !d.hasUnmodeledCostItem &&
+    !(g.manaAbilityEffectiveCost p o d).containsX &&
+    g.manaAbilitySourceZoneOk p o d &&
     !turnLimitHit &&
     !lifetimeLimitHit &&
     !(d.isBoast && !g.declaredAsAttackerThisTurn o.id) &&
@@ -1038,6 +1103,8 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   let some o := g.findObject? id | throw "no such object"
   let oname := g.name o
   let some d := (g.manaAbilityDefs o)[idx]? | throw s!"{oname} has no such mana ability"
+  if d.hasUnmodeledCostItem then
+    throw s!"{oname}'s ability has a cost that can't be paid"
   if d.fromHand && d.fromGraveyard then
     throw s!"{oname}'s ability has conflicting hand and graveyard activation zones"
   if (d.fromHand || d.fromGraveyard) && d.sourceAbility.any (·.needsBattlefieldSource) then
@@ -1291,6 +1358,8 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
       throw s!"Exile cards from your graveyard with at least {minSyms} matching mana symbols to activate {oname}"
   let pl := g.player p
   let effCost := g.manaAbilityEffectiveCost p o d
+  if effCost.containsX then
+    throw s!"{pl.name} cannot pay {effCost}"
   let abSpend := ManaSpend.forAbility (g.types o) (g.supertypes o) (g.subtypes o)
   let spentUnits? ←
     if effCost.includesManaPayment then
@@ -1386,10 +1455,11 @@ false. Prefers non-empty outputs, abilities spendable on `prop?` (or
 `g.proposedSpell`), unrestricted abilities (or higher yield when `prop?` is
 active), higher mana yield, plain `{T}` costs, and earlier indices. -/
 def manaAbilityIndexFor (g : Game) (o : GameObject) (mana : ManaType) (plainOnly : Bool := true)
-    (prop? : Option ProposedSpell := none) : Option Nat :=
+    (prop? : Option ProposedSpell := none) (spend : ManaSpend := {}) : Option Nat :=
   let p := (g.controllerOf o).getD o.owner
   let defs := g.manaAbilityDefs o
   let activeProp? := prop? <|> g.proposedSpell
+  let hasSpendContext := activeProp?.isSome || spend != ({} : ManaSpend)
   let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   let abSpend := ManaSpend.forAbility (g.types o) (g.supertypes o) (g.subtypes o)
   let rankBetter
@@ -1416,11 +1486,12 @@ def manaAbilityIndexFor (g : Game) (o : GameObject) (mana : ManaType) (plainOnly
             !d.tap ||
               (!o.status.tapped &&
                 !(g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p)))
+          let effCost := g.manaAbilityEffectiveCost p o d
           let costOk :=
-            plainOnly ||
-              let effCost := g.manaAbilityEffectiveCost p o d
-              !effCost.includesManaPayment ||
-                ((g.player p).manaPool.payUnits? effCost abSpend).isSome
+            !effCost.containsX &&
+              (plainOnly ||
+                !effCost.includesManaPayment ||
+                ((g.player p).manaPool.payUnits? effCost abSpend).isSome)
           let propOk :=
             match activeProp? with
             | none => true
@@ -1446,11 +1517,11 @@ def manaAbilityIndexFor (g : Game) (o : GameObject) (mana : ManaType) (plainOnly
             let spendable :=
               match activeProp? with
               | some prop => g.restrictionAllowsProposed d.restriction prop
-              | none => true
+              | none => if hasSpendContext then d.restriction.all (·.allows spend) else true
             let unrestricted := d.restriction.isNone
             let yld := added.size
             let key :=
-              (nonEmpty, spendable, (if activeProp?.isSome then yld else 0),
+              (nonEmpty, spendable, (if hasSpendContext then yld else 0),
                 unrestricted, yld, isPlain)
             match best? with
             | none => best? := some (i, key)
@@ -1505,7 +1576,7 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
                 o.status.indestructibleCounters ≤ 1 then
               throw s!"{oname}'s indestructible counter is needed for the proposed ability"
         let effCost := g.manaAbilityEffectiveCost p o d
-        if effCost.includesManaPayment then
+        if effCost.includesManaPayment || effCost.containsX then
           throw s!"{(g.player p).name} cannot pay {effCost}"
       if defs.any (fun d =>
           d.sourceAbility.any (·.condition? == some ActivatedAbility.condEnteredThisTurnOrControlBasicLand) &&
@@ -1519,8 +1590,8 @@ def tapForMana (g : Game) (p : PlayerId) (id : ObjectId) (mana : ManaType) : Exc
 /-- Base mana types `o`'s plain `{T}` mana ability itself adds when tapped for
 `mana` (excluding `.mountainExtraRed` triggered `{R}`). -/
 def baseManaTypesFromTap (g : Game) (o : GameObject) (mana : ManaType)
-    (prop? : Option ProposedSpell := none) : Array ManaType :=
-  match g.manaAbilityIndexFor o mana (plainOnly := true) (prop? := prop?) with
+    (prop? : Option ProposedSpell := none) (spend : ManaSpend := {}) : Array ManaType :=
+  match g.manaAbilityIndexFor o mana (plainOnly := true) (prop? := prop?) (spend := spend) with
   | some i =>
     match (g.manaAbilityDefs o)[i]? with
     | some d => (d.output.withType mana).getD #[]
@@ -1551,28 +1622,28 @@ def extraMountainRedUnitsFromTap (g : Game) (o : GameObject) (baseAdded : Array 
 (including mixed-type `.fixed` outputs such as `{U}{R}` and `.mountainExtraRed`
 extra `{R}`, CR 106.1 / 605.3b / 605.4a). -/
 def manaTypesFromTap (g : Game) (o : GameObject) (mana : ManaType)
-    (prop? : Option ProposedSpell := none) : Array ManaType :=
-  let base := g.baseManaTypesFromTap o mana (prop? := prop?)
+    (prop? : Option ProposedSpell := none) (spend : ManaSpend := {}) : Array ManaType :=
+  let base := g.baseManaTypesFromTap o mana (prop? := prop?) (spend := spend)
   base ++ g.extraMountainRedFromTap o base
 
 /-- Mana count `o` adds when tapped for `mana` with a plain `{T}` ability. -/
 def manaFromTap (g : Game) (o : GameObject) (mana : ManaType)
-    (prop? : Option ProposedSpell := none) : Nat :=
-  (g.manaTypesFromTap o mana (prop? := prop?)).size
+    (prop? : Option ProposedSpell := none) (spend : ManaSpend := {}) : Nat :=
+  (g.manaTypesFromTap o mana (prop? := prop?) (spend := spend)).size
 
 /-- Restriction on the base mana `o` adds when tapped for `mana` with a plain
 `{T}` ability. -/
 def tapRestrictionOf (g : Game) (o : GameObject) (mana : ManaType)
-    (prop? : Option ProposedSpell := none) : Option ManaSpendRestriction :=
-  match g.manaAbilityIndexFor o mana (plainOnly := true) (prop? := prop?) with
+    (prop? : Option ProposedSpell := none) (spend : ManaSpend := {}) : Option ManaSpendRestriction :=
+  match g.manaAbilityIndexFor o mana (plainOnly := true) (prop? := prop?) (spend := spend) with
   | some i => (g.manaAbilityDefs o)[i]?.bind (·.restriction)
   | none => none
 
 /-- Spell riders on the base mana `o` adds when tapped for `mana` with a plain
 `{T}` ability (CR 106.6 / 106.12). -/
 def tapRidersOf (g : Game) (o : GameObject) (mana : ManaType)
-    (prop? : Option ProposedSpell := none) : Array SpellRiderSpec :=
-  match g.manaAbilityIndexFor o mana (plainOnly := true) (prop? := prop?) with
+    (prop? : Option ProposedSpell := none) (spend : ManaSpend := {}) : Array SpellRiderSpec :=
+  match g.manaAbilityIndexFor o mana (plainOnly := true) (prop? := prop?) (spend := spend) with
   | some i => ((g.manaAbilityDefs o)[i]?.map (·.riders)).getD #[]
   | none => #[]
 
@@ -1581,10 +1652,10 @@ ability restriction and riders only to `baseManaTypesFromTap` and leaving
 `extraMountainRedUnitsFromTap` unrestricted with per-entry source attribution
 (CR 106.1 / 106.6 / 605.4a). -/
 def addTapManaToPool (g : Game) (pool : ManaPool) (o : GameObject) (mana : ManaType)
-    (prop? : Option ProposedSpell := none) : ManaPool :=
-  let base := g.baseManaTypesFromTap o mana (prop? := prop?)
-  let r := g.tapRestrictionOf o mana (prop? := prop?)
-  let riders := g.tapRidersOf o mana (prop? := prop?)
+    (prop? : Option ProposedSpell := none) (spend : ManaSpend := {}) : ManaPool :=
+  let base := g.baseManaTypesFromTap o mana (prop? := prop?) (spend := spend)
+  let r := g.tapRestrictionOf o mana (prop? := prop?) (spend := spend)
+  let riders := g.tapRidersOf o mana (prop? := prop?) (spend := spend)
   let extra := g.extraMountainRedUnitsFromTap o base
   let isTreasure := g.hasSubtype o .treasure
   (addRestrictedMana pool base r riders (source := some o.id) (fromTreasure := isTreasure)).addUnits
@@ -1618,38 +1689,19 @@ def TapManaChoice.applyToPool (ch : TapManaChoice) (pool : ManaPool) : ManaPool 
     (source := ch.source) (fromTreasure := ch.fromTreasure)).addUnits ch.extraRed
 
 /-- Distinct plain `{T}` mana activation choices for `(o, types)` toward `cost`,
-including mixed-color `.combination ts n` tuples (with zero-requirement colors
-collapsed to avoid combinatorial blow-up). -/
+enumerating every usable plain `{T}` ability on `o` (preserving distinct outputs,
+restrictions, and riders across multi-ability permanents) as well as mixed-color
+`.combination ts n` tuples (with zero-requirement colors collapsed to avoid
+combinatorial blow-up). -/
 def tapChoicesForSource (g : Game) (o : GameObject) (types : Array ManaType)
     (cost : ManaCost) (dedupSingleTypes : Array ManaType → Array ManaType := id)
-    (prop? : Option ProposedSpell := none) : Array TapManaChoice :=
+    (prop? : Option ProposedSpell := none) (spend : ManaSpend := {}) : Array TapManaChoice :=
   let p := (g.controllerOf o).getD o.owner
   let defs := g.manaAbilityDefs o
   let activeProp? := prop? <|> g.proposedSpell
+  let hasSpendContext := activeProp?.isSome || spend != ({} : ManaSpend)
   let sinceIdx := (g.targetProposalCheckpoint?.map (·.eventsSize)).getD g.events.size
   let isTreasure := g.hasSubtype o .treasure
-  let singleTs := dedupSingleTypes types
-  let singleChoices : Array TapManaChoice :=
-    singleTs.filterMap fun t =>
-      match g.manaAbilityIndexFor o t (plainOnly := true) (prop? := prop?) with
-      | none => none
-      | some i =>
-        match defs[i]? with
-        | none => none
-        | some d =>
-          let base := (d.output.withType t).getD #[]
-          if base.isEmpty then none
-          else
-            some {
-              abilityIdx := i
-              baseAdded := base
-              extraRed := g.extraMountainRedUnitsFromTap o base
-              restriction := d.restriction
-              riders := d.riders
-              source := some o.id
-              fromTreasure := isTreasure
-              singleTapType? := some t
-            }
   let tapPrereqOk : Bool :=
     !o.status.tapped &&
       !(g.hasSummoningSickness o && !(g.isCreature o && g.activatesAsThoughHaste p)) &&
@@ -1659,23 +1711,81 @@ def tapChoicesForSource (g : Game) (o : GameObject) (types : Array ManaType)
          !((prop.tapSource && prop.sourceId == some o.id &&
              !g.sourceTappedForCost o.id (some prop.spellId) sinceIdx) ||
            prop.teamworkCreatures.contains o.id))
-  if !tapPrereqOk then singleChoices
+  if !tapPrereqOk then #[]
   else Id.run do
-    let mut out := singleChoices
+    let mut out : Array TapManaChoice := #[]
+    let mut singleTapCache : Array (ManaType × Option Nat) := #[]
+    let getSingleTapIdx (t : ManaType) (cache : Array (ManaType × Option Nat)) :
+        Option Nat × Array (ManaType × Option Nat) :=
+      match cache.find? (·.1 == t) with
+      | some (_, idx?) => (idx?, cache)
+      | none =>
+        let idx? := g.manaAbilityIndexFor o t (plainOnly := true) (prop? := activeProp?)
+        (idx?, cache.push (t, idx?))
+    let pushChoice (abilityIdx : Nat) (tup : Array ManaType) (d : ManaAbilityDef)
+        (singleCands : Array ManaType) (curOut : Array TapManaChoice)
+        (cache : Array (ManaType × Option Nat)) :
+        Array TapManaChoice × Array (ManaType × Option Nat) :=
+      if tup.isEmpty then (curOut, cache)
+      else
+        let extra := g.extraMountainRedUnitsFromTap o tup
+        let dup :=
+          curOut.any (fun ch =>
+            ch.baseAdded == tup && ch.extraRed == extra &&
+              ch.restriction == d.restriction && ch.riders == d.riders)
+        if dup then (curOut, cache)
+        else
+          let (resolvedSingle?, nextCache) := Id.run do
+            let mut c := cache
+            let mut found? : Option ManaType := none
+            for t in singleCands do
+              if found?.isNone then
+                let (idx?, c') := getSingleTapIdx t c
+                c := c'
+                if idx? == some abilityIdx && d.output.withType t == some tup then
+                  found? := some t
+            return (found?, c)
+          let ch : TapManaChoice := {
+            abilityIdx := abilityIdx
+            baseAdded := tup
+            extraRed := extra
+            restriction := d.restriction
+            riders := d.riders
+            source := some o.id
+            fromTreasure := isTreasure
+            singleTapType? := resolvedSingle?
+          }
+          (curOut.push ch, nextCache)
     for i in [0 : defs.size] do
       let d := defs[i]!
       if g.isPlainTapManaAbilityDef p o d && g.manaAbilityDefUsable p o d then
-        if let .combination comboTs n := d.output then
-          if n ≥ 2 then
-            let extraSample := g.extraMountainRedFromTap o #[comboTs[0]?.getD .colorless]
-            let spendOk :=
-              match activeProp? with
-              | none => true
-              | some prop =>
-                g.restrictionAllowsProposed d.restriction prop ||
-                  (!extraSample.isEmpty && g.restrictionAllowsProposed none prop)
-            if spendOk then
-              let allowedTs := comboTs.filter types.contains
+        let extraSample := g.extraMountainRedFromTap o #[.colorless]
+        let spendOk : Bool :=
+          match activeProp? with
+          | some prop =>
+            g.restrictionAllowsProposed d.restriction prop ||
+              (!extraSample.isEmpty && g.restrictionAllowsProposed none prop)
+          | none =>
+            if hasSpendContext then
+              (d.restriction.map (·.allows spend)).getD true || !extraSample.isEmpty
+            else true
+        if spendOk then
+          match d.output with
+          | .fixed m =>
+            if !m.isEmpty && m.any types.contains then
+              let cands := types.filter m.contains
+              let (out', c') := pushChoice i m d cands out singleTapCache
+              out := out'
+              singleTapCache := c'
+          | .combination comboTs n =>
+            let allowedTs := types.filter comboTs.contains
+            let dedupTs := dedupSingleTypes allowedTs
+            for t in dedupTs do
+              if let some tup := d.output.withType t then
+                let (out', c') := pushChoice i tup d #[t] out singleTapCache
+                out := out'
+                singleTapCache := c'
+            if n ≥ 2 then
               let collapsedTs : Array ManaType := Id.run do
                 let mut acc : Array ManaType := #[]
                 let mut seenZero : Bool := false
@@ -1692,20 +1802,18 @@ def tapChoicesForSource (g : Game) (o : GameObject) (types : Array ManaType)
                     acc := acc.push t
                 return acc
               for tup in ManaOutput.multisetChoices collapsedTs n do
-                if !tup.isEmpty then
-                  let alreadySingle :=
-                    out.any (fun ch => ch.baseAdded == tup && ch.restriction == d.restriction && ch.riders == d.riders)
-                  if !alreadySingle then
-                    out := out.push {
-                      abilityIdx := i
-                      baseAdded := tup
-                      extraRed := g.extraMountainRedUnitsFromTap o tup
-                      restriction := d.restriction
-                      riders := d.riders
-                      source := some o.id
-                      fromTreasure := isTreasure
-                      singleTapType? := none
-                    }
+                let (out', c') := pushChoice i tup d #[] out singleTapCache
+                out := out'
+                singleTapCache := c'
+          | _ =>
+            let prodTs := d.output.producibleTypes
+            let allowedTs := types.filter prodTs.contains
+            let dedupTs := dedupSingleTypes allowedTs
+            for t in dedupTs do
+              if let some tup := d.output.withType t then
+                let (out', c') := pushChoice i tup d #[t] out singleTapCache
+                out := out'
+                singleTapCache := c'
     return out
 
 end Game

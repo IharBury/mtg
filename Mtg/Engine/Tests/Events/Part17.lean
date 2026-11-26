@@ -277,7 +277,8 @@ private def replayOk51i1 (gs : Array Game) : Bool :=
        gAfterChooseMode.pendingReplacement.isNone &&
        gAfterChooseMode.outerPendingReplacements.isEmpty &&
        !gAfterManaAct.anyContinuationGrantsPriority &&
-       gAfterManaAct.anyContinuationSettlesControlFlow)
+       !gAfterManaAct.anyContinuationSettlesControlFlow &&
+       gAfterManaAct.anyPostPromptContinuationSettlesControlFlow)
 
   mustHold51i1 "1a.priorityAndConcedeProbes" item1aOk &&
   mustHold51i1 "1b.settlesControlFlowGuards" item1bOk &&

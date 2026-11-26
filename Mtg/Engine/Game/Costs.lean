@@ -95,10 +95,24 @@ private def evalSpellCostMods (g : Game) (card : GameObject) (face : CardDef) (c
   let spellView := EvalExpr.spellFaceView g card face caster mv
   let selfEnv : EvalEnv :=
     { controller := caster, sourceId := some card.id, chosenX := card.chosenX.getD 0 }
-  let tcs := g.evalLayer3 card
+  let isFaceDown := face.name == "" || (card.zone != .exile && card.status.faceDown)
+  let spellObj : GameObject :=
+    { card with
+      printed := face
+      zone := .stack
+      controller := some caster
+      status := { card.status with faceDown := isFaceDown } }
+  let tcs := g.evalLayer3 spellObj
+  let faceKws :=
+    if isFaceDown then #[]
+    else if tcs.isEmpty then face.keywords
+    else HasTextChange.applyTextChanges tcs face.keywords
   let faceStatics :=
-    if tcs.isEmpty then face.staticAbilities
-    else HasTextChange.applyTextChanges tcs face.staticAbilities
+    if isFaceDown then #[]
+    else
+      (if tcs.isEmpty then face.staticAbilities
+       else HasTextChange.applyTextChanges tcs face.staticAbilities) ++
+      (KeywordAbility.expandAll faceKws).staticAbilities
   let extractAmt (env : EvalEnv) : CostModification → Option Nat
     | .reduceGeneric amt => if !wantIncrease && !amt.mentionsTarget then some (EvalExpr.evalValue g env amt).toNat else none
     | .increaseGeneric amt => if wantIncrease && !amt.mentionsTarget then some (EvalExpr.evalValue g env amt).toNat else none
@@ -145,20 +159,13 @@ def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
     | none => start
     | some x => start.substituteX x
   let statRed := evalSpellCostMods g cardForCaster face caster false
-  let affRed :=
-    match face.affinityForSubtype with
-    | some t =>
-      let tcs := g.evalLayer3 card
-      let effT := if tcs.isEmpty then t else HasTextChange.applyTextChanges tcs t
-      g.countSubtype caster effT
-    | none => 0
   let (faceTypes, faceSups, _) := g.faceCdaCharacteristics cardForCaster face
   let thisTurnLess :=
     ((g.typeSpellCostLessThisTurn caster).foldl (fun acc (ty, n) =>
       if faceTypes.contains ty then acc + n else acc) 0) +
     ((g.supertypeSpellCostLessThisTurn caster).foldl (fun acc (s, n) =>
       if faceSups.contains s then acc + n else acc) 0)
-  start.reduceGeneric (statRed + affRed + thisTurnLess)
+  start.reduceGeneric (statRed + thisTurnLess)
 
 /-- Mana to pay for `face` after alternative costs and pre-target reductions
 (CR 118.7 / 118.9a,c / 601.2f). `withoutManaCost` and a reduction that removes
@@ -179,12 +186,14 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
          | some c => g.playPermissionFor? c card (face? := some face)
          | none => g.bestActivePlayPermission? card (face? := some face))
   let caster := card.controller.getD ((effPerm.map (·.player)).getD card.owner)
+  let cardForCaster :=
+    if card.controller.isSome then card else { card with controller := some caster }
   let hasAnyMana : Bool :=
     match effPerm with
     | some perm => perm.anyMana
     | none => useImplicitPermissions && card.zone == .exile && g.mayCastExiledBySource caster card
   -- Cost-increasing static abilities (Thalia, etc., CR 601.2f).
-  let tax := evalSpellCostMods g card face caster true
+  let tax := evalSpellCostMods g cardForCaster face caster true
   let increase := if tax == 0 then increase else increase.addCost (ManaCost.ofGeneric tax)
   let inGy := match card.zone with | .graveyard _ => true | _ => false
   let hasFb := face.flashback.isSome || g.flashbackUntilEot card
@@ -200,7 +209,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   let start := g.playCostStart card face flashback
   let afterIncrease := start.addCost increase
   let afterEquip := g.applyCastCostReductions card face afterIncrease (caster? := some caster)
-  let (faceTypes, _, faceCols) := g.faceCdaCharacteristics card face
+  let (faceTypes, _, faceCols) := g.faceCdaCharacteristics cardForCaster face
   let freeRG :=
     !usedAltCost &&
       match g.pendingFreeRGCreature with
@@ -229,7 +238,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
           afterEquip.asAnyMana
         else afterEquip
   let mv := g.actualCastManaValue card face
-  let spellView := EvalExpr.spellFaceView g card face caster mv
+  let spellView := EvalExpr.spellFaceView g cardForCaster face caster mv
   -- Omnipresence / free-cast-from-hand rule-modifying static abilities (CR 118.9a,c).
   let omnipresent :=
     !usedAltCost && !freeRG &&

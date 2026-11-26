@@ -521,18 +521,167 @@ def spendAnyUnit? (p : ManaPool) (spend : ManaSpend := {}) :
 def spendAny? (p : ManaPool) (spend : ManaSpend := {}) : Option ManaPool :=
   (p.spendAnyUnit? spend).map Prod.fst
 
-/-- Pay a mana cost, requiring colored/colorless symbols first, then generic
-(CR 202), returning the updated pool and the `ManaUnit`s spent. -/
+private structure ColorCounts where
+  w : Nat := 0
+  u : Nat := 0
+  b : Nat := 0
+  r : Nat := 0
+  g : Nat := 0
+
+private def ColorCounts.get (cc : ColorCounts) : Color → Nat
+  | .white => cc.w
+  | .blue => cc.u
+  | .black => cc.b
+  | .red => cc.r
+  | .green => cc.g
+
+private def ColorCounts.sub (cc : ColorCounts) (c : Color) (n : Nat) : ColorCounts :=
+  match c with
+  | .white => { cc with w := cc.w - n }
+  | .blue => { cc with u := cc.u - n }
+  | .black => { cc with b := cc.b - n }
+  | .red => { cc with r := cc.r - n }
+  | .green => { cc with g := cc.g - n }
+
+private def usableColorCounts (p : ManaPool) (spend : ManaSpend) : ColorCounts × Nat :=
+  let w := p.usable (.colored .white) spend
+  let u := p.usable (.colored .blue) spend
+  let b := p.usable (.colored .black) spend
+  let r := p.usable (.colored .red) spend
+  let g := p.usable (.colored .green) spend
+  let c := p.usable .colorless spend
+  ({ w, u, b, r, g }, w + u + b + r + g + c)
+
+private def groupFlexibleSymbols (cost : ManaCost) :
+    Array (Color × Nat) × Array (Color × Color × Nat) × Nat := Id.run do
+  let mut twobrids : Array (Color × Nat) := #[]
+  let mut hybrids : Array (Color × Color × Nat) := #[]
+  let mut genericNeed : Nat := 0
+  for s in cost.symbols do
+    match s with
+    | .twobrid c =>
+      match twobrids.findIdx? (fun (c', _) => c' == c) with
+      | some i =>
+        let (_, k) := twobrids[i]!
+        twobrids := twobrids.set! i (c, k + 1)
+      | none => twobrids := twobrids.push (c, 1)
+    | .hybrid a b =>
+      if a != b then
+        match hybrids.findIdx? (fun (a', b', _) => a' == a && b' == b) with
+        | some i =>
+          let (_, _, k) := hybrids[i]!
+          hybrids := hybrids.set! i (a, b, k + 1)
+        | none => hybrids := hybrids.push (a, b, 1)
+    | .generic n => genericNeed := genericNeed + n
+    | _ => pure ()
+  return (twobrids, hybrids, genericNeed)
+
+private def solveHybridsPay (hybrids : List (Color × Color × Nat))
+    (cc : ColorCounts) : Option (List Nat) :=
+  match hybrids with
+  | [] => some []
+  | (a, b, k) :: rest =>
+    let availA := cc.get a
+    let availB := cc.get b
+    if availA + availB < k then none
+    else
+      let maxA := Nat.min k availA
+      let minA := k - Nat.min k availB
+      let rec tryA (ka : Nat) : Option (List Nat) :=
+        let kb := k - ka
+        let cc' := (cc.sub a ka).sub b kb
+        match solveHybridsPay rest cc' with
+        | some restA => some (ka :: restA)
+        | none =>
+          if ka > minA then tryA (ka - 1) else none
+      tryA maxA
+
+private def solveTwobridsPay (twobrids : List (Color × Nat))
+    (hybrids : List (Color × Color × Nat)) (totalHybrids : Nat)
+    (cc : ColorCounts) (totalRem : Nat) (genericNeed : Nat) :
+    Option (List Nat × List Nat × Nat) :=
+  match twobrids with
+  | [] =>
+    if totalRem < totalHybrids + genericNeed then none
+    else
+      (solveHybridsPay hybrids cc).map fun hybAs => ([], hybAs, genericNeed)
+  | (c, k) :: rest =>
+    let restMinUnits := rest.foldl (fun acc (_, rk) => acc + rk) 0
+    if totalRem < k + restMinUnits + totalHybrids + genericNeed then none
+    else
+      let maxJ := Nat.min k (cc.get c)
+      let minTotalNeeded := 2 * k + restMinUnits + totalHybrids + genericNeed
+      let minJ := if totalRem ≥ minTotalNeeded then 0 else minTotalNeeded - totalRem
+      if minJ > maxJ then none
+      else
+        let rec tryJ (j : Nat) : Option (List Nat × List Nat × Nat) :=
+          let genericAdded := 2 * (k - j)
+          match solveTwobridsPay rest hybrids totalHybrids (cc.sub c j) (totalRem - j)
+              (genericNeed + genericAdded) with
+          | some (restJs, hybAs, finalGen) => some (j :: restJs, hybAs, finalGen)
+          | none =>
+            if j > minJ then tryJ (j - 1) else none
+        tryJ maxJ
+
+private def solveHybridsCover (hybrids : List (Color × Color × Nat))
+    (cc : ColorCounts) (paidSoFar : Nat) (remCap : Nat) (best : Nat) : Nat :=
+  if paidSoFar + remCap ≤ best then best
+  else
+    match hybrids with
+    | [] => Nat.max best paidSoFar
+    | (a, b, k) :: rest =>
+      let availA := cc.get a
+      let availB := cc.get b
+      let m := Nat.min k (availA + availB)
+      let restCap := remCap - k
+      if m == 0 then
+        solveHybridsCover rest cc paidSoFar restCap best
+      else
+        let maxA := Nat.min m availA
+        let minA := m - Nat.min m availB
+        Id.run do
+          let mut curBest := best
+          for off in [0 : maxA - minA + 1] do
+            if paidSoFar + remCap ≤ curBest then break
+            let ka := maxA - off
+            let kb := m - ka
+            let cc' := (cc.sub a ka).sub b kb
+            curBest := solveHybridsCover rest cc' (paidSoFar + m) restCap curBest
+          return curBest
+
+private def solveTwobridsCover (twobrids : List (Color × Nat))
+    (hybrids : List (Color × Color × Nat)) (totalHybrids : Nat)
+    (cc : ColorCounts) (totalRem : Nat) (paidSoFar : Nat) (genericNeed : Nat)
+    (maxPossible : Nat) (best : Nat) : Nat :=
+  if best ≥ maxPossible then best
+  else
+    match twobrids with
+    | [] =>
+      let maxH := solveHybridsCover hybrids cc 0 totalHybrids 0
+      let extra := Nat.min totalRem (maxH + genericNeed)
+      Nat.max best (paidSoFar + extra)
+    | (c, k) :: rest =>
+      let maxJ := Nat.min k (cc.get c)
+      Id.run do
+        let mut curBest := best
+        for off in [0 : maxJ + 1] do
+          if curBest ≥ maxPossible then break
+          let j := maxJ - off
+          let genericAdded := 2 * (k - j)
+          curBest :=
+            solveTwobridsCover rest hybrids totalHybrids (cc.sub c j) (totalRem - j)
+              (paidSoFar + 2 * j) (genericNeed + genericAdded) maxPossible curBest
+        return curBest
+
+/-- Pay a mana cost, paying fixed colored/colorless symbols first, then
+backtracking over hybrid/twobrid symbols, then paying generic mana (CR 107.4e / 202),
+returning the updated pool and the `ManaUnit`s spent. -/
 def payUnits? (p : ManaPool) (cost : ManaCost) (spend : ManaSpend := {}) :
     Option (ManaPool × Array ManaUnit) :=
   Id.run do
     let mut pool := p
     let mut units : Array ManaUnit := #[]
-    let mut unpaidTwobrid : Nat := 0
-    -- Specific symbols first so leftover mana of other types can pay generic
-    -- (e.g. `{U}×1 {R}×1` pays `{1}{U}`). Printed order would spend `{U}` on
-    -- `{1}` via `spendAny?` and then fail the `{U}`.
-    -- `{2/C}` prefers one mana of that color, then two mana of any type.
+    -- Pass 1: fixed colored/colorless symbols (including degenerate `{c/c}` hybrids).
     for s in cost.symbols do
       match s with
       | .colored c =>
@@ -544,99 +693,106 @@ def payUnits? (p : ManaPool) (cost : ManaCost) (spend : ManaSpend := {}) :
         | some (p', u) => pool := p'; units := units.push u
         | none => return none
       | .hybrid a b =>
-        match pool.spendOneUnit? (.colored a) spend with
-        | some (p', u) => pool := p'; units := units.push u
-        | none =>
-          match pool.spendOneUnit? (.colored b) spend with
+        if a == b then
+          match pool.spendOneUnit? (.colored a) spend with
           | some (p', u) => pool := p'; units := units.push u
           | none => return none
-      | .twobrid c =>
-        match pool.spendOneUnit? (.colored c) spend with
-        | some (p', u) => pool := p'; units := units.push u
-        | none => unpaidTwobrid := unpaidTwobrid + 1
-      | .generic _ | .x => pure () -- CR 107.3g: unpaid `{X}` is 0
-    for _ in [0:unpaidTwobrid] do
-      for _ in [0:2] do
-        match pool.spendAnyUnit? spend with
-        | some (p', u) => pool := p'; units := units.push u
+      | .twobrid _ | .generic _ | .x => pure () -- CR 107.3g: unpaid `{X}` is 0
+    -- Pass 2: backtrack over `.twobrid` and `.hybrid` symbols before `.generic`.
+    let (twobrids, hybrids, baseGeneric) := groupFlexibleSymbols cost
+    let finalGeneric ←
+      if twobrids.isEmpty && hybrids.isEmpty then
+        pure baseGeneric
+      else
+        let (cc, totalRem) := usableColorCounts pool spend
+        let totalHybrids := hybrids.foldl (fun acc (_, _, k) => acc + k) 0
+        match solveTwobridsPay twobrids.toList hybrids.toList totalHybrids cc totalRem baseGeneric with
         | none => return none
-    for s in cost.symbols do
-      match s with
-      | .generic n =>
-        for _ in [0:n] do
-          match pool.spendAnyUnit? spend with
-          | some (p', u) => pool := p'; units := units.push u
-          | none => return none
-      | _ => pure ()
+        | some (twobridJs, hybridAs, genNeed) =>
+          let mut tbRem := twobridJs.toArray
+          let mut hybARem := hybridAs.toArray
+          let mut hybBRem :=
+            (List.zip hybrids.toList hybridAs).toArray.map fun ((_, _, k), ka) => k - ka
+          for s in cost.symbols do
+            match s with
+            | .twobrid c =>
+              if let some i := twobrids.findIdx? (fun (c', _) => c' == c) then
+                if tbRem[i]! > 0 then
+                  tbRem := tbRem.set! i (tbRem[i]! - 1)
+                  match pool.spendOneUnit? (.colored c) spend with
+                  | some (p', u) => pool := p'; units := units.push u
+                  | none => return none
+            | .hybrid a b =>
+              if a != b then
+                if let some i := hybrids.findIdx? (fun (a', b', _) => a' == a && b' == b) then
+                  if hybARem[i]! > 0 then
+                    hybARem := hybARem.set! i (hybARem[i]! - 1)
+                    match pool.spendOneUnit? (.colored a) spend with
+                    | some (p', u) => pool := p'; units := units.push u
+                    | none => return none
+                  else if hybBRem[i]! > 0 then
+                    hybBRem := hybBRem.set! i (hybBRem[i]! - 1)
+                    match pool.spendOneUnit? (.colored b) spend with
+                    | some (p', u) => pool := p'; units := units.push u
+                    | none => return none
+                  else
+                    return none
+            | _ => pure ()
+          pure genNeed
+    -- Pass 3: generic mana (including twobrid `{2}` payments).
+    for _ in [0:finalGeneric] do
+      match pool.spendAnyUnit? spend with
+      | some (p', u) => pool := p'; units := units.push u
+      | none => return none
     return some (pool, units)
 
-/-- Pay a mana cost, requiring colored/colorless symbols first, then generic
-(CR 202 / 106.6). -/
+/-- Pay a mana cost, requiring colored/colorless symbols first, then hybrid/twobrid,
+then generic (CR 107.4e / 202 / 106.6). -/
 def pay? (p : ManaPool) (cost : ManaCost) (spend : ManaSpend := {}) : Option ManaPool :=
   (p.payUnits? cost spend).map Prod.fst
 
 def canPay (p : ManaPool) (cost : ManaCost) (spend : ManaSpend := {}) : Bool :=
   (p.pay? cost spend).isSome
 
-/-- How much of `cost` this pool can cover, in mana (CR 202.3). Unpayable
-symbols are skipped so leftover generic-capable mana still counts. -/
+/-- How much of `cost` this pool can cover, in mana (CR 202.3). Fixed
+colored/colorless symbols are covered first, then hybrid/twobrid symbols are
+matched via backtracking before generic slots. -/
 def coveredMana (p : ManaPool) (cost : ManaCost) (spend : ManaSpend := {}) : Nat :=
   Id.run do
     let mut pool := p
-    let mut paid := 0
-    let mut unpaidTwobrid : Nat := 0
-    -- Match `pay?`: cover colored/colorless/hybrid first so leftover mana
-    -- still counts toward generic.
+    let mut fixedPaid := 0
+    -- Pass 1: cover fixed colored/colorless symbols first.
     for s in cost.symbols do
       match s with
       | .colored c =>
         match pool.spendOne? (.colored c) spend with
         | some p' =>
           pool := p'
-          paid := paid + 1
+          fixedPaid := fixedPaid + 1
         | none => pure ()
       | .colorless =>
         match pool.spendOne? .colorless spend with
         | some p' =>
           pool := p'
-          paid := paid + 1
+          fixedPaid := fixedPaid + 1
         | none => pure ()
       | .hybrid a b =>
-        match pool.spendOne? (.colored a) spend with
-        | some p' =>
-          pool := p'
-          paid := paid + 1
-        | none =>
-          match pool.spendOne? (.colored b) spend with
+        if a == b then
+          match pool.spendOne? (.colored a) spend with
           | some p' =>
             pool := p'
-            paid := paid + 1
+            fixedPaid := fixedPaid + 1
           | none => pure ()
-      | .twobrid c =>
-        match pool.spendOne? (.colored c) spend with
-        | some p' =>
-          pool := p'
-          paid := paid + 2
-        | none => unpaidTwobrid := unpaidTwobrid + 1
-      | .generic _ | .x => pure ()
-    for _ in [0:unpaidTwobrid] do
-      for _ in [0:2] do
-        match pool.spendAny? spend with
-        | some p' =>
-          pool := p'
-          paid := paid + 1
-        | none => pure ()
-    for s in cost.symbols do
-      match s with
-      | .generic n =>
-        for _ in [0:n] do
-          match pool.spendAny? spend with
-          | some p' =>
-            pool := p'
-            paid := paid + 1
-          | none => pure ()
-      | _ => pure ()
-    return paid
+      | .twobrid _ | .generic _ | .x => pure ()
+    -- Pass 2: backtrack over `.twobrid` and `.hybrid` symbols before `.generic`.
+    let (twobrids, hybrids, baseGeneric) := groupFlexibleSymbols cost
+    let (cc, totalRem) := usableColorCounts pool spend
+    if twobrids.isEmpty && hybrids.isEmpty then
+      return fixedPaid + Nat.min totalRem baseGeneric
+    else
+      let totalHybrids := hybrids.foldl (fun acc (_, _, k) => acc + k) 0
+      return solveTwobridsCover twobrids.toList hybrids.toList totalHybrids
+        cc totalRem fixedPaid baseGeneric cost.manaValue fixedPaid
 
 /-- One `{C}×n` fragment, plus optional restriction labels. -/
 def poolPart (letter : String) (free elf inst : Nat) (hero := 0) (villain := 0)
@@ -756,6 +912,22 @@ theorem empty_isEmpty : ManaPool.empty.isEmpty = true := rfl
   let creatureAb := ManaSpend.forAbility (sourceTypes := #[.creature])
   p.creatureGreen == 2 && (p.pay? (ManaCost.ofGeneric 2)).isNone &&
     (p.pay? (ManaCost.ofGeneric 2) creatureAb).isSome
+#guard
+  let cost : ManaCost := { symbols := #[.hybrid .black .green, .colored .black] }
+  let p := ManaPool.empty.add (.colored .black) 1 |>.add (.colored .green) 1
+  (p.payUnits? cost).isSome && p.coveredMana cost == 2
+#guard
+  let cost : ManaCost := { symbols := #[.hybrid .white .blue, .hybrid .white .black] }
+  let p := ManaPool.empty.add (.colored .white) 1 |>.add (.colored .blue) 1
+  (p.payUnits? cost).isSome && p.coveredMana cost == 2
+#guard
+  let cost : ManaCost := { symbols := #[.twobrid .white, .colored .white] }
+  let p := ManaPool.empty.add (.colored .white) 1 |>.add .colorless 2
+  (p.payUnits? cost).isSome && p.coveredMana cost == 3
+#guard
+  let cost : ManaCost := { symbols := #[.twobrid .white, .hybrid .white .blue] }
+  let p := ManaPool.empty.add (.colored .white) 1 |>.add .colorless 2
+  (p.payUnits? cost).isSome && p.coveredMana cost == 3
 
 end ManaPool
 

@@ -48,6 +48,8 @@ def playLand (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game := d
     throw (g.playZoneError p card)
   if !g.isLand card then
     throw s!"{g.name card} is not a land"
+  if !g.mayPlayLand p card then
+    throw (g.playLandZoneError p card)
   let g := g.finishPlayLand p id
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement (.receivePriority p)
@@ -165,7 +167,8 @@ def minManaUnitsForCost (cost : ManaCost) : Nat :=
 and restriction to a single representative, avoiding exponential branching on
 any-color sources (CR 106.1 / 605). -/
 def dedupZeroReqManaTypes (g : Game) (src : GameObject) (types : Array ManaType)
-    (cost : ManaCost) (prop? : Option ProposedSpell := none) : Array ManaType :=
+    (cost : ManaCost) (prop? : Option ProposedSpell := none)
+    (spend : ManaSpend := {}) : Array ManaType :=
   if types.size ≤ 1 then types
   else Id.run do
     let mut out : Array ManaType := #[]
@@ -173,10 +176,10 @@ def dedupZeroReqManaTypes (g : Game) (src : GameObject) (types : Array ManaType)
     for t in types do
       match t with
       | .colored c =>
-        let base := g.baseManaTypesFromTap src t (prop? := prop?)
+        let base := g.baseManaTypesFromTap src t (prop? := prop?) (spend := spend)
         let extra := g.extraMountainRedFromTap src base
         if cost.symbolsIncludingColor c == 0 && base == #[t] then
-          let rn := (g.tapRestrictionOf src t (prop? := prop?), extra.size)
+          let rn := (g.tapRestrictionOf src t (prop? := prop?) (spend := spend), extra.size)
           if !seenZero.contains rn then
             seenZero := seenZero.push rn
             out := out.push t
@@ -195,8 +198,9 @@ def canPayFromSources (g : Game) (pool : ManaPool) (cost : ManaCost)
   let srcArr := sources.toArray.filterMap fun (src, types) =>
     let choices :=
       g.tapChoicesForSource src types cost
-        (dedupSingleTypes := fun ts => dedupZeroReqManaTypes g src ts cost prop?)
+        (dedupSingleTypes := fun ts => dedupZeroReqManaTypes g src ts cost prop? spend)
         (prop? := prop?)
+        (spend := spend)
     if choices.isEmpty then none
     else
       let maxOut := choices.foldl (fun m (ch : TapManaChoice) => max m ch.totalSize) 0
@@ -232,7 +236,8 @@ private def zeroOutputManaAbilityChangesState (o : GameObject) (d : ManaAbilityD
     d.removeStoryCounter || d.removeIndestructibleCounter || d.putStunCounterOnSource ||
     !d.picks.isEmpty || d.crewPower?.isSome || d.exileManaSymbols?.isSome ||
     d.extraEffect?.isSome || d.modeChoices.any (·.output?.isNone) ||
-    effCost.includesManaPayment || d.turnLimit?.isSome || d.lifetimeLimit?.isSome ||
+    effCost.includesManaPayment || effCost.containsX || d.hasUnmodeledCostItem ||
+    d.turnLimit?.isSome || d.lifetimeLimit?.isSome ||
     d.isBoast || d.isExhaust || d.isPowerUp ||
     (d.removeAnyNumberPlusOne && o.status.plusOnePlusOne > 0)
 
@@ -353,16 +358,12 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
             costPicksWithSacrificeOther (costPicksOf ab)
               (prop.needsSacrificeOther || ab.cost.sacrificeAnotherCreatureOrArtifact)
           let zemoOk :=
-            prop.choiceCostPaid || ab.cost.exileManaSymbols?.isNone ||
-              (let col :=
-                 match (g.findObject? sid).map g.evalLayer3 with
-                 | some tcs => TextChange.applyColor tcs .black
-                 | none => .black
-               let remGy :=
-                 (g.player p).graveyard.filter (fun id =>
-                   !removedIds.contains id &&
-                     (g.findObject? id).any (fun o => isDiscardableCard o && (g.colors o).contains col))
-               g.canPayZemoBoast p remGy col)
+            prop.choiceCostPaid ||
+              match ab.cost.exileManaSymbols? with
+              | none => true
+              | some (col?, minSyms, pred) =>
+                g.canPayExileManaSymbols p sid col? minSyms pred
+                  (excludedIds := removedIds ++ (if ab.cost.exileSourceFromGraveyard then #[sid] else #[]))
           let crewOrPicksOk :=
             if !prop.choiceCostPaid then
               match ab.cost.crewPower? with
@@ -558,8 +559,9 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
             else
               let choices :=
                 g.tapChoicesForSource s ts effCost
-                  (dedupSingleTypes := fun xs => dedupZeroReqManaTypes g s xs effCost none)
+                  (dedupSingleTypes := fun xs => dedupZeroReqManaTypes g s xs effCost none spendEff)
                   (prop? := none)
+                  (spend := spendEff)
               let rec tryChoices : List TapManaChoice → Bool
                 | [] => false
                 | ch :: chs =>
@@ -590,7 +592,39 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
     if !prop.cost.includesManaPayment then false
     else
       let spend := g.proposedManaSpend prop
-      let otherManaCosts : Array (GameObject × ManaCost) :=
+      let canChainTo (o : GameObject) (d : ManaAbilityDef) (o2 : GameObject) (d2 : ManaAbilityDef) : Bool :=
+        let lifeOk :=
+          d.payLife == 0 || d2.payLife == 0 || g.canPayLife p (prop.payLife + d.payLife + d2.payLife)
+        if !lifeOk then false
+        else if o2.id != o.id then true
+        else
+          let sameIdx := d.activatedIdx.isSome && d.activatedIdx == d2.activatedIdx
+          let turnLimitOk : Bool :=
+            if !sameIdx then true
+            else
+              match d2.turnLimit?, d2.activatedIdx with
+              | some lim, some i => g.abilityActivationsThisTurn o.id i (isBoast := d2.isBoast) + 1 < lim
+              | some lim, none => g.activationsThisTurn o.id + 1 < lim
+              | none, _ => true
+          let lifetimeLimitOk : Bool :=
+            if !sameIdx then true
+            else
+              match d2.lifetimeLimit?, d2.activatedIdx with
+              | some lim, some i =>
+                let effLim := if d2.isPowerUp then g.powerUpActivationLimit p else lim
+                g.abilityActivationsSinceEntered o.id i (isPowerUp := d2.isPowerUp) (isExhaust := d2.isExhaust) + 1 < effLim
+              | some _, none =>
+                !(d2.isExhaust && g.exhaustUsed o.id) &&
+                  !(d2.isPowerUp &&
+                    Nat.max (g.powerUpActivations o.id) (if g.powerUpUsed o.id then 1 else 0) + 1 ≥
+                      g.powerUpActivationLimit p)
+              | none, _ => true
+          !d.removesSource &&
+            !(d.tap && d2.tap) &&
+            !(d.removeStoryCounter && d2.removeStoryCounter && o.status.story ≤ 1) &&
+            !(d.removeIndestructibleCounter && d2.removeIndestructibleCounter && o.status.indestructibleCounters ≤ 1) &&
+            turnLimitOk && lifetimeLimitOk
+      let otherManaCosts : Array (GameObject × ManaAbilityDef × ManaCost) :=
         manaObjs.foldl (fun acc o2 =>
           (g.manaAbilityDefs o2).foldl (fun acc d2 =>
             let eff2 := g.manaAbilityEffectiveCost p o2 d2
@@ -600,7 +634,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                   (!o2.status.tapped &&
                     !(g.hasSummoningSickness o2 && !(g.isCreature o2 && g.activatesAsThoughHaste p)))) &&
                 respectsPropReservations o2 d2 then
-              acc.push (o2, eff2)
+              acc.push (o2, d2, eff2)
             else acc) acc) #[]
       manaObjs.any fun o =>
         (g.manaAbilityDefs o).any fun d =>
@@ -620,7 +654,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                     | .colored c =>
                       let req :=
                         prop.cost.symbolsIncludingColor c > 0 ||
-                          otherManaCosts.any (fun (o2, c2) => o2.id != o.id && c2.symbolsIncludingColor c > 0)
+                          otherManaCosts.any (fun (o2, d2, c2) => canChainTo o d o2 d2 && c2.symbolsIncludingColor c > 0)
                       if !req then
                         if !seenZero then
                           seenZero := true
@@ -634,8 +668,8 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                 let simPool :=
                   addRestrictedMana (addRestrictedMana ManaPool.empty added restr riders) extra .none
                 simPool.coveredMana prop.cost spend > 0 ||
-                  otherManaCosts.any (fun (o2, eff2) =>
-                    o2.id != o.id &&
+                  otherManaCosts.any (fun (o2, d2, eff2) =>
+                    canChainTo o d o2 d2 &&
                       simPool.coveredMana eff2
                         (ManaSpend.forAbility (g.types o2) (g.supertypes o2) (g.subtypes o2)) > 0))
 
