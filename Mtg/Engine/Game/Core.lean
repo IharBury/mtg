@@ -19034,59 +19034,58 @@ for `emitExpiredPlayFromExileLogs` placement:
 - `.restorePending .none false _ _ none` is a transparent no-op;
 - `.restorePending .none true _ _ none` pops and immediately walks the next unpopped outer
   on the same frame (`outers[nextOut - 1]`) ahead of any suffix in the parent `.seq`;
-- `.receivePriority _` / `.finishResolutionChoice` on `topFi` stops walking the current tree
-  (skipping any suffix after it in `.seq`) and sets `sawTopPriority := true` so remaining
-  unpopped outers on `topFi` still drain before stopping prior to lower frames;
+- `.receivePriority _` / `.finishResolutionChoice` stops walking the current tree (and any
+  enclosing `.restorePending .none true` suffix) and returns `hitPrio := true` so remaining
+  unpopped outers on the same frame still drain before stopping prior to lower frames;
 - any other defer-boundary leaf (including all 14 proposal-pause `.restorePending` payloads
   and all non-priority CR 733.1 proposal-reversing leaves) halts the walk immediately. -/
-private def walkPfeSlot (topFi fi : Nat) (outers : Array PendingReplacement)
+private def walkPfeSlot (fi : Nat) (outers : Array PendingReplacement)
     (oi? : Option Nat) (pr : PendingReplacement) (nextOuter : Nat)
-    (lastNonBoundary? : Option (Nat × Option Nat × Nat)) (sawTopPriority : Bool) :
+    (lastNonBoundary? : Option (Nat × Option Nat × Nat)) :
     Nat → Nat × Option (Nat × Option Nat × Nat) × Bool × Bool
-  | 0 => (nextOuter, lastNonBoundary?, true, sawTopPriority)
+  | 0 => (nextOuter, lastNonBoundary?, true, false)
   | fuel' + 1 =>
     let rec go (sub : PendingReplacement) (leafBase nextOut : Nat)
         (lastNb? : Option (Nat × Option Nat × Nat))
-        (stopped sawTopPrio stopTree : Bool) :
+        (stopped hitPrio stopTree : Bool) :
         Nat × Nat × Option (Nat × Option Nat × Nat) × Bool × Bool × Bool :=
       if stopped || stopTree then
-        (leafBase + countPfeLeaves sub, nextOut, lastNb?, stopped, sawTopPrio, stopTree)
+        (leafBase + countPfeLeaves sub, nextOut, lastNb?, stopped, hitPrio, stopTree)
       else
         match sub with
         | .seq a b =>
-          let (baseA, nextOutA, lastNbA, stoppedA, sawTopA, stopTreeA) :=
-            go a leafBase nextOut lastNb? false sawTopPrio false
-          go b baseA nextOutA lastNbA stoppedA sawTopA stopTreeA
+          let (baseA, nextOutA, lastNbA, stoppedA, hitPrioA, stopTreeA) :=
+            go a leafBase nextOut lastNb? false hitPrio false
+          go b baseA nextOutA lastNbA stoppedA hitPrioA stopTreeA
         | .restorePending .none false _ _ none =>
-          (leafBase + 1, nextOut, lastNb?, false, sawTopPrio, false)
+          (leafBase + 1, nextOut, lastNb?, false, hitPrio, false)
         | .restorePending .none true _ _ none =>
           if nextOut > 0 then
             let poppedOi := nextOut - 1
             match outers[poppedOi]? with
             | some poppedPr =>
-              let (nextOut', lastNb', stopped', sawTop') :=
-                walkPfeSlot topFi fi outers (some poppedOi) poppedPr poppedOi
-                  lastNb? sawTopPrio fuel'
-              (leafBase + 1, nextOut', lastNb', stopped', sawTop', sawTop')
+              let (nextOut', lastNb', stopped', hitPrio') :=
+                walkPfeSlot fi outers (some poppedOi) poppedPr poppedOi
+                  lastNb? fuel'
+              (leafBase + 1, nextOut', lastNb', stopped', hitPrio || hitPrio', stopped' || hitPrio')
             | none =>
-              (leafBase + 1, poppedOi, lastNb?, false, sawTopPrio, false)
+              (leafBase + 1, poppedOi, lastNb?, false, hitPrio, false)
           else
-            (leafBase + 1, nextOut, lastNb?, false, sawTopPrio, false)
+            (leafBase + 1, nextOut, lastNb?, false, hitPrio, false)
         | leaf =>
-          let isBareTopPrio : Bool :=
-            fi == topFi &&
-              match leaf with
-              | .receivePriority _ | .finishResolutionChoice => true
-              | _ => false
-          if isBareTopPrio then
+          let isBarePrio : Bool :=
+            match leaf with
+            | .receivePriority _ | .finishResolutionChoice => true
+            | _ => false
+          if isBarePrio then
             (leafBase + 1, nextOut, lastNb?, false, true, true)
           else if leaf.isPlayFromExileDeferBoundaryLeaf then
-            (leafBase + 1, nextOut, lastNb?, true, sawTopPrio, true)
+            (leafBase + 1, nextOut, lastNb?, true, hitPrio, true)
           else
-            (leafBase + 1, nextOut, some (fi, oi?, leafBase), false, sawTopPrio, false)
-    let (_, nextOutEnd, lastNbEnd, stoppedEnd, sawTopEnd, _) :=
-      go pr 0 nextOuter lastNonBoundary? false sawTopPriority false
-    (nextOutEnd, lastNbEnd, stoppedEnd, sawTopEnd)
+            (leafBase + 1, nextOut, some (fi, oi?, leafBase), false, hitPrio, false)
+    let (_, nextOutEnd, lastNbEnd, stoppedEnd, hitPrioEnd, _) :=
+      go pr 0 nextOuter lastNonBoundary? false false false
+    (nextOutEnd, lastNbEnd, stoppedEnd, hitPrioEnd)
 
 /-- Emit deferred `"{name} can no longer be played from exile"` logs once all
 simultaneously expiring continuous effects in a transition starting at `pre`
@@ -19154,36 +19153,35 @@ def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
     let targetUpdate? : Option (Nat × Option Nat × PendingReplacement) := Id.run do
       let nFrames := gOut.continuations.size
       if nFrames == 0 then return none
-      let topFi := nFrames - 1
       let mut lastNonBoundary? : Option (Nat × Option Nat × Nat) := none
       let mut stopped := false
-      let mut sawTopPriority := false
+      let mut sawFramePriority := false
       for step in [0:nFrames] do
-        let fi := nFrames - 1 - step
-        if stopped || (sawTopPriority && fi != topFi) then
+        if stopped || sawFramePriority then
           break
+        let fi := nFrames - 1 - step
         let fr := gOut.continuations[fi]!
         let outers := fr.outerPendingReplacements
         let mut nextOuter := outers.size
         let popFuel := outers.size + 2
         if let some pr := fr.pendingReplacement then
-          let (no', lnb', st', stp') :=
-            walkPfeSlot topFi fi outers none pr nextOuter lastNonBoundary? sawTopPriority popFuel
+          let (no', lnb', st', hitPrio') :=
+            walkPfeSlot fi outers none pr nextOuter lastNonBoundary? popFuel
           nextOuter := no'
           lastNonBoundary? := lnb'
           stopped := st'
-          sawTopPriority := stp'
+          sawFramePriority := sawFramePriority || hitPrio'
         while !stopped && nextOuter > 0 do
           let oi := nextOuter - 1
           nextOuter := oi
           match outers[oi]? with
           | some opr =>
-            let (no', lnb', st', stp') :=
-              walkPfeSlot topFi fi outers (some oi) opr nextOuter lastNonBoundary? sawTopPriority popFuel
+            let (no', lnb', st', hitPrio') :=
+              walkPfeSlot fi outers (some oi) opr nextOuter lastNonBoundary? popFuel
             nextOuter := no'
             lastNonBoundary? := lnb'
             stopped := st'
-            sawTopPriority := stp'
+            sawFramePriority := sawFramePriority || hitPrio'
           | none => pure ()
       match lastNonBoundary? with
       | some (tFi, tOi?, leafIdx) =>

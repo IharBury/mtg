@@ -650,6 +650,55 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
       }
     ]
   let gTwoPopsSuffix1 := emitExpiredPlayFromExileLogs gEmb2Two gTwoPopsSuffix0 preIdxEmbTwo
+  -- (g) PR #712 round-4 regressions (top-frame priority drain over an outer containing a
+  --     transparent `.restorePending .none true` followed by non-boundary suffix `"MID"`):
+  --     deferred id must land after `"MID"`, leaving `"INNER"` and lower frames untouched!
+  let gPrioDrainPopSuffix0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        pendingReplacement := some (.logMessage "LOWER_FRAME")
+      },
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.logMessage "INNER",
+          .seq (.restorePending .none true none #[] none) (.logMessage "MID")]
+        pendingReplacement := some .finishResolutionChoice
+      }
+    ]
+  let gPrioDrainPopSuffix1 := emitExpiredPlayFromExileLogs gEmb2Two gPrioDrainPopSuffix0 preIdxEmbTwo
+  let gSeqFinishDrainPopSuffix0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.logMessage "INNER",
+          .seq (.restorePending .none true none #[] none) (.logMessage "MID")]
+        pendingReplacement := some (.seq (.logMessage "MOVE") .finishResolutionChoice)
+      }
+    ]
+  let gSeqFinishDrainPopSuffix1 := emitExpiredPlayFromExileLogs gEmb2Two gSeqFinishDrainPopSuffix0 preIdxEmbTwo
+  let gPrioDrainPopHitPrio0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.logMessage "BOTTOM", .finishResolutionChoice,
+          .seq (.restorePending .none true none #[] none) (.logMessage "AFTER_POP")]
+        pendingReplacement := some .finishResolutionChoice
+      }
+    ]
+  let gPrioDrainPopHitPrio1 := emitExpiredPlayFromExileLogs gEmb2Two gPrioDrainPopHitPrio0 preIdxEmbTwo
+  let gEmptyTopPrioFrame0 :=
+    gEmbDeferredTwo.changes #[
+      .proposedSpell (some dummyProp),
+      .pushContinuationFrame {
+        pendingReplacement := some (.logMessage "F0_LOWER")
+      },
+      .pushContinuationFrame {
+        outerPendingReplacements := #[.logMessage "F1_OUTER"]
+        pendingReplacement := some .finishResolutionChoice
+      },
+      .pushContinuationFrame {}
+    ]
+  let gEmptyTopPrioFrame1 := emitExpiredPlayFromExileLogs gEmb2Two gEmptyTopPrioFrame0 preIdxEmbTwo
   let boundaryStopOk :=
     gBound1.outerPendingReplacements[0]? == some (.logMessage "LATER") &&
     (gBound1.outerPendingReplacements[1]?.any (·.containsDeferredPlayFromExile exCardId)) &&
@@ -694,7 +743,23 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
      | _ => false) &&
     !(gTwoPopsSuffix1.pendingReplacement.any (·.containsDeferredPlayFromExile exCardId)) &&
     (gTwoPopsSuffix1.outerPendingReplacements[1]?.any (·.containsDeferredPlayFromExile exCardId)) &&
-    gTwoPopsSuffix1.outerPendingReplacements[0]? == some (.finishTurnFaceUp p0 srcAId false)
+    gTwoPopsSuffix1.outerPendingReplacements[0]? == some (.finishTurnFaceUp p0 srcAId false) &&
+    gPrioDrainPopSuffix1.outerPendingReplacements[0]? == some (.logMessage "INNER") &&
+    (match (gPrioDrainPopSuffix1.outerPendingReplacements[1]? : Option PendingReplacement) with
+     | some (.seq (.restorePending .none true none #[] none) (.seq (.logMessage "MID") d)) =>
+       d.containsDeferredPlayFromExile exCardId
+     | _ => false) &&
+    gPrioDrainPopSuffix1.continuations[0]!.pendingReplacement == some (.logMessage "LOWER_FRAME") &&
+    gSeqFinishDrainPopSuffix1.outerPendingReplacements[0]? == some (.logMessage "INNER") &&
+    (match (gSeqFinishDrainPopSuffix1.outerPendingReplacements[1]? : Option PendingReplacement) with
+     | some (.seq (.restorePending .none true none #[] none) (.seq (.logMessage "MID") d)) =>
+       d.containsDeferredPlayFromExile exCardId
+     | _ => false) &&
+    (gPrioDrainPopHitPrio1.outerPendingReplacements[0]?.any (·.containsDeferredPlayFromExile exCardId)) &&
+    gPrioDrainPopHitPrio1.outerPendingReplacements[2]? ==
+      some (.seq (.restorePending .none true none #[] none) (.logMessage "AFTER_POP")) &&
+    (gEmptyTopPrioFrame1.continuations[1]!.outerPendingReplacements[0]?.any (·.containsDeferredPlayFromExile exCardId)) &&
+    gEmptyTopPrioFrame1.continuations[0]!.pendingReplacement == some (.logMessage "F0_LOWER")
 
   -- 2a(ii). `hasPlayFromExileLoggedInSlice` unbatched multi-event + interleaved `.engine`/`.life`
   --         and bipartite `resolveSaturated` (two overlapping `.playFromExile` expirations on two
@@ -832,7 +897,8 @@ private def replayOk58i2 (gs : Array Game) : Bool :=
     (replayOk58i2 #[gEmbDeferred, gEmbEmitted, gBound1, gRestNoRev1, gRestPopNoRev1,
       gRestPopRev1, gRestPauseRev1, gBarePrioTop1, gBareRecvTop1, gRestPopSeq1,
       gTwoPops1, gClosePopSeq1, gClosePopBare1, gPopThenFinish1, gClosePopThenFinish1,
-      gTwoPopsSuffix1, gSlice3, gCtrl1,
+      gTwoPopsSuffix1, gPrioDrainPopSuffix1, gSeqFinishDrainPopSuffix1,
+      gPrioDrainPopHitPrio1, gEmptyTopPrioFrame1, gSlice3, gCtrl1,
       gLeave1, gSbaAfter, gUntapDone, gCtrOp1, gDiscLoop1, gMillLoop1])
 
 end Phase58Item2EventAlignment
