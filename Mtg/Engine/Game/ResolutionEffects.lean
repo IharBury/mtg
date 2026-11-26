@@ -132,6 +132,8 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
       let tcs := g.evalLayer3 o
       if o.zone != .library p then
         some s!"{g.name o} is no longer among the cards you looked at"
+      else if !isCastableObject o then
+        some s!"{g.name o} can't be cast"
       else if g.isLand o then
         some "A land cannot be cast"
       else if g.spellNameForbidden bc.name then
@@ -202,9 +204,7 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
           let g := g.logMsg s!"{(g.player p).name} puts {name} onto the battlefield"
           g.afterPermanentEnters entered
         else g
-    return match outerCont? with
-      | some outer => g.chainPendingReplacement outer
-      | none => g
+    return g.reattachOuterCont outerCont?
   | _ => throw "Not time to put an artifact from your hand"
 
 /-- Mill opponents without returning a reflexive-trigger flag, deferring across
@@ -256,7 +256,8 @@ def finishExileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId)
 /-- Exile `o` until `source` leaves the battlefield, linking the new exile id
 and storing the exiling one-shot `EventCause` for the return (CR 610.3). -/
 def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObject)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   let fallbackCtrl :=
     (sourceId.bind g.findObject?).bind (fun src => (g.controllerOf src).orElse (fun _ => some src.owner))
   let (g, linkCause) :=
@@ -264,6 +265,7 @@ def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObje
     | some c => (g, c)
     | none => g.allocDelayedCause fallbackCtrl sourceId
   let (g, _) := g.move o.id .exile none (cause := some linkCause)
+    (deferPlayFromExileLogs := deferPlayFromExileLogs)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement (.finishPostStep (.finishExileUntilSourceLeaves sourceId o.id))
   else
@@ -673,7 +675,7 @@ exile batch has closed. -/
 def finishExileTopMayCastUpToOffer (g : Game) (caster : PlayerId)
     (ids : Array ObjectId) (casts : Nat) : Game :=
   let spells := ids.filter (fun id =>
-    (g.findObject? id).any (fun o => o.zone == .exile && !g.isLand o))
+    (g.findObject? id).any (fun o => o.zone == .exile && isCastableObject o && !g.isLand o))
   if spells.isEmpty || casts == 0 then g
   else g.offerExileCasts caster spells casts
 
@@ -1030,7 +1032,7 @@ def copyStackAbility (g : Game) (src : GameObject) (controller : PlayerId) : Gam
 
 /-- Reveal `p`'s hand (Cloak and Dagger; MSH 132 / 225). -/
 def revealHand (g : Game) (p : PlayerId) (recordEvent : Bool := true) : Game :=
-  let hand := (g.player p).hand
+  let hand := g.discardableHandIds p
   let g :=
     if recordEvent && !hand.isEmpty then
       g.record (GameEvent.revealed g.turnNumber p hand
@@ -1169,6 +1171,7 @@ def finishVisionQuest (g : Game) (p : PlayerId) (id? : Option ObjectId)
     match g.findObject? id with
     | some o =>
       if (o.zone == .library p || o.zone == .graveyard p) &&
+          isDiscardableCard o &&
           g.isArtifact o && g.isCreature o &&
           g.objectManaValue o ≤ x then
         let (g, newId) := g.putOntoBattlefield id p
@@ -1197,7 +1200,7 @@ def beginVisionQuest (g : Game) (p : PlayerId) (x : Nat) : Game :=
   if !g.stillInGame p then g
   else
     let ok (o : GameObject) : Bool :=
-      g.isArtifact o && g.isCreature o && g.objectManaValue o ≤ x
+      isDiscardableCard o && g.isArtifact o && g.isCreature o && g.objectManaValue o ≤ x
     let lib := (g.player p).library.filter (fun id => (g.findObject? id).any ok)
     let gy := (g.player p).graveyard.filter (fun id => (g.findObject? id).any ok)
     if lib.isEmpty && gy.isEmpty then

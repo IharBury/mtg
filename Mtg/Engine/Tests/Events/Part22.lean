@@ -77,8 +77,9 @@ private def replayOk56i1 (gs : Array Game) : Bool :=
     !(PendingReplacement.finishConcede false none none none false #[] none).isPurePriorityGrantLeaf &&
     !(PendingReplacement.concedePlayersLoop #[p1] false false false none none none false #[]).isPurePriorityGrantLeaf &&
     (PendingReplacement.receivePriority p0).isPurePriorityGrantLeaf &&
-    PendingReplacement.afterWardResolved.isPurePriorityGrantLeaf &&
-    (PendingReplacement.beginStepCont .precombatMain).isPurePriorityGrantLeaf
+    !PendingReplacement.afterWardResolved.isPurePriorityGrantLeaf &&
+    !(PendingReplacement.beginStepCont .precombatMain).isPurePriorityGrantLeaf &&
+    (PendingReplacement.finishPostStep (.beginStepBody .upkeep)).isPurePriorityGrantLeaf
   -- Right-nested `.seq` tail inserts BEFORE the FIRST pure priority grant:
   let rightNested : PendingReplacement :=
     .seq (.gainLife p0 1 (some testCause)) (.seq (.receivePriority p1) (.receivePriority p2))

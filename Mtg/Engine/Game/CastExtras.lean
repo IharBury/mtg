@@ -300,7 +300,8 @@ def finishExileUntilNextEndStep (g : Game) (ctrl : PlayerId) (fromId : ObjectId)
 
 /-- Exile `o` and return it at the beginning of the next end step. -/
 def exileUntilNextEndStep (g : Game) (o : GameObject)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   let curCtrl := g.controllerOf o
   let (g, cause) :=
     match cause with
@@ -308,6 +309,7 @@ def exileUntilNextEndStep (g : Game) (o : GameObject)
     | none => g.allocDelayedCause curCtrl
   let ctrl := curCtrl.getD o.owner
   let (g, _) := g.move o.id .exile none (cause := some cause)
+    (deferPlayFromExileLogs := deferPlayFromExileLogs)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
       (.finishPostStep (.finishExileUntilNextEndStep ctrl o.id cause))
@@ -342,9 +344,7 @@ def putLandFromHandTapped (g : Game) (p : PlayerId) (id : ObjectId) :
         g.chainPendingReplacement (.finishPutLandFromHand id)
       else
         g.finishPutLandFromHand id
-    return match outerCont? with
-      | some outer => g.chainPendingReplacement outer
-      | none => g
+    return g.reattachOuterCont outerCont?
   | _ => throw "Not time to put a land from hand onto the battlefield"
 
 end Game

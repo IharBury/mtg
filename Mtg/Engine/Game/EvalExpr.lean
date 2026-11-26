@@ -115,10 +115,7 @@ def resolveObjectView? (g : Game) (env : EvalEnv) (oid : ObjectId) : Option Obje
   | none =>
     match env.lkiOf? oid with
     | some eo => some (.lki eo)
-    | none =>
-      match g.lastKnownBefore? oid with
-      | some eo => some (.lki eo)
-      | none => (st.lastKnownBefore? oid).map ObjectView.lki
+    | none => (st.lastKnownBefore? oid).map ObjectView.lki
 
 /-- Resolve an `ObjectRef` to its `ObjectId?` and/or `ObjectView?`. -/
 def resolveRefViews (g : Game) (env : EvalEnv) (ref : ObjectRef) : Array ObjectView :=
@@ -632,7 +629,7 @@ partial def evalPlayer (g : Game) (env : EvalEnv) (expr : PlayerExpr) : Array Pl
       | .ownerOfSubject =>
         (resolveRefViews g env .triggerSubject).foldl (fun acc v => pushUnique acc v.owner) #[]
       | .giftOpponent =>
-        match env.sourceId.bind (GameEvent.giftPromisedTo? g.events) with
+        match env.sourceId.bind (GameEvent.giftPromisedTo? st.events) with
         | some p => if st.stillInGame p then #[p] else #[]
         | none =>
           match st.proposedSpell.bind (·.giftTo) with
@@ -862,15 +859,15 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
         !myName.isEmpty && myName == oName
   | .wasCast =>
     match v.id? with
-    | some oid => GameEvent.wasCast g.events oid (viewIsCopy st v)
+    | some oid => GameEvent.wasCast st.events oid (viewIsCopy st v)
     | none => false
   | .castFrom zk =>
     match v.id? with
-    | some oid => objectCastFrom g.events oid zk (viewIsCopy st v)
+    | some oid => objectCastFrom st.events oid zk (viewIsCopy st v)
     | none => false
   | .enteredThisTurn =>
     match v.id? with
-    | some oid => GameEvent.objectEntered g.events st.turnNumber oid
+    | some oid => GameEvent.objectEntered st.events st.turnNumber oid
     | none => false
   | .attackedThisTurn =>
     match v.id? with
@@ -896,7 +893,7 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
           | .player p => (evalPlayerFilter g env pf).contains p
           | .permanent eo | .battle eo => evalObjectPred g env (.lki eo) f.pred
       if thisTurnOnly then
-        g.events.any fun e =>
+        st.events.any fun e =>
           e.turn == st.turnNumber &&
             match e.change with
             | .rules (.damage (.dealt pkts)) =>
@@ -905,7 +902,7 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
                   (!combatOnly || pkt.combat) && recMatches pkt.recipient
             | _ => false
       else
-        g.events.foldl (fun dealt e =>
+        st.events.foldl (fun dealt e =>
           match e.change with
           | .rules (.zone (.moved _ after _ .battlefield ..)) =>
             if after.id == some oid then false else dealt
@@ -925,7 +922,7 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
       match v.id? with
       | none => false
       | some oid =>
-        g.events.any fun e =>
+        st.events.any fun e =>
           e.turn == st.turnNumber &&
             match e.change with
             | .rules (.damage (.dealt pkts)) =>
@@ -940,7 +937,7 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
     | none => false
     | some oid =>
       let allowedPlayers? := byPlayer?.map (evalPlayerFilter g env)
-      g.events.any fun e =>
+      st.events.any fun e =>
         e.turn == st.turnNumber &&
           e.countersPutInEvent.any fun (eo, kind, n, actor?) =>
             eo.id == some oid && n > 0 &&
@@ -958,7 +955,7 @@ partial def evalObjectPred (g : Game) (env : EvalEnv) (v : ObjectView) (pred : O
     match v.id? with
     | none => false
     | some oid =>
-      g.events.any fun e =>
+      st.events.any fun e =>
         e.turn == st.turnNumber &&
           match e.change with
           | .rules (.zone (.moved _ after .battlefield (.graveyard _) _ _ _ _)) =>
@@ -1108,8 +1105,8 @@ partial def evalObjects (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Array O
       match env.sourceId with
       | none => #[]
       | some sid =>
-        let spellId := GameEvent.stackSpellIdOf g.events sid
-        let ids : Array ObjectId := g.events.foldl (fun acc e =>
+        let spellId := GameEvent.stackSpellIdOf st.events sid
+        let ids : Array ObjectId := st.events.foldl (fun acc e =>
           match e.cause?, e.change with
           | some (.costPayment _ _ (some forObj)), .rules (.zone (.moved before after ..)) =>
             if forObj == sid || forObj == spellId then
@@ -1232,7 +1229,7 @@ partial def evalValue (g : Game) (env : EvalEnv) (expr : ValueExpr) : Int :=
         | .this => env.sourceId
         | _ => none
     match oid? with
-    | some oid => Int.ofNat (manaUnitsSpentOn g.events oid).size
+    | some oid => Int.ofNat (manaUnitsSpentOn st.events oid).size
     | none => 0
   | .stepMetric m v =>
     match env.stepOutcome? v with
@@ -1261,41 +1258,42 @@ def evalObjectView? (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Option Obje
 def evalObjectId? (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Option ObjectId :=
   (evalObjectView? g env expr).bind ObjectView.id?
 
-/-- Evaluate a `CastContextPred` against `g.events` (CR 400.7d / 707.10). -/
+/-- Evaluate a `CastContextPred` against `boardState g env` (CR 400.7d / 707.10). -/
 def evalCastPred (g : Game) (env : EvalEnv) (pred : CastContextPred) : Bool :=
+  let st := boardState g env
   let evalObj (ref : ObjectRef) (f : ObjectId → Bool) : Bool :=
     (resolveRefIds g env ref).any f
   match pred with
   | .wasKicked ref =>
     evalObj ref fun oid =>
-      GameEvent.wasKicked g.events oid ||
-        (match g.proposedSpell with
+      GameEvent.wasKicked st.events oid ||
+        (match st.proposedSpell with
          | some prop => prop.spellId == oid && prop.kicked
          | none => false)
   | .giftPromised ref =>
     evalObj ref fun oid =>
-      GameEvent.giftPromised g.events oid ||
-        (match g.proposedSpell with
+      GameEvent.giftPromised st.events oid ||
+        (match st.proposedSpell with
          | some prop => prop.spellId == oid && prop.giftTo.isSome
          | none => false)
-  | .impendingPaid ref => evalObj ref (GameEvent.castForImpending g.events)
+  | .impendingPaid ref => evalObj ref (GameEvent.castForImpending st.events)
   | .teamworkPaid ref =>
     evalObj ref fun oid =>
-      GameEvent.teamwork g.events oid ||
-        (match g.proposedSpell with
+      GameEvent.teamwork st.events oid ||
+        (match st.proposedSpell with
          | some prop => prop.spellId == oid && prop.teamworkPaid
          | none => false)
-  | .sneakPaid ref => evalObj ref fun oid => (GameEvent.sneakAttackTarget? g.events oid).isSome
+  | .sneakPaid ref => evalObj ref fun oid => (GameEvent.sneakAttackTarget? st.events oid).isSome
   | .castFrom zk ref =>
     (resolveRefViews g env ref).any fun v =>
       match v.id? with
-      | some oid => objectCastFrom g.events oid zk (viewIsCopy (boardState g env) v)
+      | some oid => objectCastFrom st.events oid zk (viewIsCopy st v)
       | none => false
   | .manaSpentMatches mp ref =>
     evalObj ref fun oid =>
-      let units := manaUnitsSpentOn g.events oid
+      let units := manaUnitsSpentOn st.events oid
       match mp with
-      | .fromTreasure => g.wasCast oid && GameEvent.treasureManaSpentOn g.events (GameEvent.stackSpellIdOf g.events oid)
+      | .fromTreasure => st.wasCast oid && GameEvent.treasureManaSpentOn st.events (GameEvent.stackSpellIdOf st.events oid)
       | .fromSource =>
         match env.sourceId with
         | some sid => units.any (·.source == some sid)
@@ -1608,72 +1606,104 @@ Layer-3 text changes, CR 604.3 / 613.3 CDAs (`.setTypes`, `.setColors`, `.setPT`
 `.allCreatureTypes`), and computed `manaValue` (CR 601.2f / 613.1c–e). -/
 def spellFaceView (g : Game) (card : GameObject) (face : CardDef) (caster : PlayerId)
     (manaValue : Nat) : ObjectView :=
-  let tcs := g.evalLayer3 card
-  let rawSubs :=
-    (CardSubtype.ofSubtypes face.subtypes).map fun s =>
-      if tcs.isEmpty then s else HasTextChange.applyTextChanges tcs s
-  let sas :=
-    if tcs.isEmpty then face.staticAbilities
-    else HasTextChange.applyTextChanges tcs face.staticAbilities
-  let kws :=
-    if tcs.isEmpty then face.keywords
-    else HasTextChange.applyTextChanges tcs face.keywords
-  let (cdaTypes, cdaSubs0, cdaSups) :=
-    sas.foldl (fun (ts, subs, sups) ab =>
-      match ab with
-      | .characteristicDefining (.setTypes tm) => tm.apply ts subs sups
-      | _ => (ts, subs, sups)) (face.types, rawSubs, face.supertypes)
-  let isChangeling := face.hasSimpleKeyword .changeling ||
-    sas.any fun | .characteristicDefining .allCreatureTypes => true | _ => false
-  let subs0 :=
-    if isChangeling && (cdaTypes.contains .creature || cdaTypes.contains .kindred) then
-      CardSubtype.allCreatureSubtypes.foldl
-        (fun acc s => if acc.contains s then acc else acc.push s) cdaSubs0
-    else cdaSubs0
-  let subs :=
-    if cdaTypes.contains .creature || cdaTypes.contains .kindred then subs0
-    else subs0.filter CardSubtype.isNoncreature
-  let cdaColors :=
-    sas.foldl (fun cols ab =>
-      match ab with
-      | .characteristicDefining (.setColors cs) => cs
-      | _ => cols) face.colors
-  let selfEnv : EvalEnv :=
-    { controller := caster
-      sourceId := if card.id == noSourceSentinelId then none else some card.id }
-  let (cdaP, cdaT) :=
-    sas.foldl (fun (pw, tg) ab =>
-      match ab with
-      | .characteristicDefining (.setPT p? t?) =>
-        let pw' := match p? with | some v => some (evalValue g selfEnv v) | none => pw
-        let tg' := match t? with | some v => some (evalValue g selfEnv v) | none => tg
-        (pw', tg')
-      | _ => (pw, tg)) (face.powerValue, face.toughnessValue)
-  .lki {
-    id := some card.id
-    controller := some caster
-    owner := card.owner
-    name := face.name
-    colors := cdaColors
-    manaValue := manaValue
-    supertypes := cdaSups
-    types := cdaTypes
-    subtypes := subs
-    power := cdaP
-    toughness := cdaT
-    loyalty := face.loyalty.map Int.toNat
-    keywords := kws
-    toxic := KeywordAbility.toxicTotal kws
-    staticAbilities := sas
-    zone := card.zone
-    token := face.isToken
-    isCopy := card.isCopy
-    isCommander := card.isCommander
-    changeling := isChangeling
-    printed := some face
-    copiable := some face
-    chosenX := card.chosenX
-  }
+  let isFaceDown := face.name == "" || (card.zone != .exile && card.status.faceDown)
+  let spellObj : GameObject :=
+    { card with
+      printed := face
+      zone := .stack
+      controller := some caster
+      status := { card.status with faceDown := isFaceDown } }
+  let effColors := g.colors spellObj
+  if isFaceDown then
+    .lki {
+      id := some card.id
+      controller := some caster
+      owner := card.owner
+      name := ""
+      colors := effColors
+      manaValue := manaValue
+      supertypes := #[]
+      types := #[.creature]
+      subtypes := #[]
+      power := some 2
+      toughness := some 2
+      loyalty := none
+      keywords := #[]
+      toxic := 0
+      staticAbilities := #[]
+      zone := card.zone
+      faceDown := true
+      token := face.isToken
+      isCopy := card.isCopy
+      isCommander := card.isCommander
+      changeling := false
+      printed := some face
+      copiable := some face
+      chosenX := card.chosenX
+    }
+  else
+    let tcs := g.evalLayer3 card
+    let rawSubs :=
+      (CardSubtype.ofSubtypes face.subtypes).map fun s =>
+        if tcs.isEmpty then s else HasTextChange.applyTextChanges tcs s
+    let sas :=
+      if tcs.isEmpty then face.staticAbilities
+      else HasTextChange.applyTextChanges tcs face.staticAbilities
+    let kws :=
+      if tcs.isEmpty then face.keywords
+      else HasTextChange.applyTextChanges tcs face.keywords
+    let (cdaTypes, cdaSubs0, cdaSups) :=
+      sas.foldl (fun (ts, subs, sups) ab =>
+        match ab with
+        | .characteristicDefining (.setTypes tm) => tm.apply ts subs sups
+        | _ => (ts, subs, sups)) (face.types, rawSubs, face.supertypes)
+    let isChangeling := face.hasSimpleKeyword .changeling ||
+      sas.any fun | .characteristicDefining .allCreatureTypes => true | _ => false
+    let subs0 :=
+      if isChangeling && (cdaTypes.contains .creature || cdaTypes.contains .kindred) then
+        CardSubtype.allCreatureSubtypes.foldl
+          (fun acc s => if acc.contains s then acc else acc.push s) cdaSubs0
+      else cdaSubs0
+    let subs :=
+      if cdaTypes.contains .creature || cdaTypes.contains .kindred then subs0
+      else subs0.filter CardSubtype.isNoncreature
+    let selfEnv : EvalEnv :=
+      { controller := caster
+        sourceId := if card.id == noSourceSentinelId then none else some card.id }
+    let (cdaP, cdaT) :=
+      sas.foldl (fun (pw, tg) ab =>
+        match ab with
+        | .characteristicDefining (.setPT p? t?) =>
+          let pw' := match p? with | some v => some (evalValue g selfEnv v) | none => pw
+          let tg' := match t? with | some v => some (evalValue g selfEnv v) | none => tg
+          (pw', tg')
+        | _ => (pw, tg)) (face.powerValue, face.toughnessValue)
+    .lki {
+      id := some card.id
+      controller := some caster
+      owner := card.owner
+      name := face.name
+      colors := effColors
+      manaValue := manaValue
+      supertypes := cdaSups
+      types := cdaTypes
+      subtypes := subs
+      power := cdaP
+      toughness := cdaT
+      loyalty := face.loyalty.map Int.toNat
+      keywords := kws
+      toxic := KeywordAbility.toxicTotal kws
+      staticAbilities := sas
+      zone := card.zone
+      faceDown := false
+      token := face.isToken
+      isCopy := card.isCopy
+      isCommander := card.isCommander
+      changeling := isChangeling
+      printed := some face
+      copiable := some face
+      chosenX := card.chosenX
+    }
 
 end EvalExpr
 

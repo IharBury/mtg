@@ -14,12 +14,13 @@ namespace Game
 /-- Move `id` to `to`'s hand and log the return if it actually arrives in
 `to`'s hand, deferring the log across `Pending.chooseReplacement`. -/
 def returnToHand (g : Game) (id : ObjectId) (to : PlayerId)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none) (deferPlayFromExileLogs : Bool := false) : Game :=
   match g.findObject? id with
   | none => g
   | some o =>
     let name := g.name o
     let (g, _) := g.move id (.hand to) none (verb := some .returnToHand) (cause := cause)
+      (deferPlayFromExileLogs := deferPlayFromExileLogs)
     if let .chooseReplacement .. := g.pending then
       g.chainPendingReplacement (.finishPostStep (.logReturnedToHand id to name))
     else if (g.followMovedToZone? id (· == .hand to)).isSome then
@@ -135,18 +136,23 @@ private def evalSpellCostMods (g : Game) (card : GameObject) (face : CardDef) (c
 /-- Apply cost reductions to `start` (CR 118.7 / 601.2f). Increases such as
 kicker must already be included in `start`. -/
 def applyCastCostReductions (g : Game) (card : GameObject) (face : CardDef)
-    (start : ManaCost) : ManaCost :=
-  let caster := card.controller.getD card.owner
+    (start : ManaCost) (caster? : Option PlayerId := none) : ManaCost :=
+  let caster := caster?.getD (card.controller.getD card.owner)
+  let cardForCaster :=
+    if card.controller.isSome then card else { card with controller := some caster }
   let start :=
     match card.chosenX with
     | none => start
     | some x => start.substituteX x
-  let statRed := evalSpellCostMods g card face caster false
+  let statRed := evalSpellCostMods g cardForCaster face caster false
   let affRed :=
     match face.affinityForSubtype with
-    | some t => g.countSubtype caster t
+    | some t =>
+      let tcs := g.evalLayer3 card
+      let effT := if tcs.isEmpty then t else HasTextChange.applyTextChanges tcs t
+      g.countSubtype caster effT
     | none => 0
-  let (faceTypes, faceSups, _) := g.faceCdaCharacteristics card face
+  let (faceTypes, faceSups, _) := g.faceCdaCharacteristics cardForCaster face
   let thisTurnLess :=
     ((g.typeSpellCostLessThisTurn caster).foldl (fun acc (ty, n) =>
       if faceTypes.contains ty then acc + n else acc) 0) +
@@ -193,7 +199,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
     explicitAltCost || usedFlashback || usedPermAlt || usedMorph || usedSubstitutedAlt
   let start := g.playCostStart card face flashback
   let afterIncrease := start.addCost increase
-  let afterEquip := g.applyCastCostReductions card face afterIncrease
+  let afterEquip := g.applyCastCostReductions card face afterIncrease (caster? := some caster)
   let (faceTypes, _, faceCols) := g.faceCdaCharacteristics card face
   let freeRG :=
     !usedAltCost &&
@@ -205,6 +211,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   let cost :=
     if freeRG then
       let c := g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+        (caster? := some caster)
       if hasAnyMana then c.asAnyMana else c
     else
       match effPerm with
@@ -212,6 +219,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
         if (perm.withoutManaCost || perm.payLifeEqualManaValue) &&
             !(explicitAltCost || usedFlashback || usedMorph || usedSubstitutedAlt) then
           let c := g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+            (caster? := some caster)
           if perm.anyMana then c.asAnyMana else c
         else if perm.anyMana then afterEquip.asAnyMana
         else afterEquip
@@ -240,6 +248,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   let cost :=
     if omnipresent then
       let c := g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+        (caster? := some caster)
       if hasAnyMana then c.asAnyMana else c
     else cost
   -- Self free alternative cost (e.g. Flawless Maneuver: if you control a commander, CR 118.9a).
@@ -259,6 +268,7 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   let cost :=
     if freeSelf then
       let c := g.applyCastCostReductions card face (ManaCost.empty.addCost increase)
+        (caster? := some caster)
       if hasAnyMana then c.asAnyMana else c
     else cost
   ManaCost.afterReduction face.manaCost cost

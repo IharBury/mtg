@@ -2398,3 +2398,178 @@ remaining `spellManaSpentInterest` AST nodes. -/
      !hasUniqueManaPayment gAst3Prop &&
      !hasUniqueManaPayment gAst4Prop)
 
+/- Phase 57 Item 4b: `Demo.hasUniqueManaPayment` empty-initial-`pool` laundering on the
+`| none =>` branch, `manaAbilityDefCanChangeOutcome` / pool-covered `extraEffect?` &
+modal `m.output? = none` modes, unprojected `CostItem` rejection in `isPlainTap` /
+`isPlainTapManaAbilityDef`, and `spellManaSpentInterest` traversal of `g.activeEffects`
+(CR 106.6 / 601.2f-g / 605.1a / 605.3a-b). -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := afterDraw
+  let cause57 : EventCause := .oneShotEffect (some ⟨1⟩) none (some p0)
+
+  -- 1. Empty-initial-`pool` laundering on `| none =>` branch:
+  --    Empty pool + plain `{R}` land with `.cantBeCountered` rider + `{R}: Add {G}` filter
+  --    + plain Island casting `{1}{U}` instant: paying via filter drops `.cantBeCountered`!
+  let cbcRedLandDef : CardDef := {
+    name := "P57 Check9 CbcRedLand"
+    types := #[.land]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.sequence #[(.colored .red, .const 1)])
+        (riders := #[.cantBeCountered])
+    ]
+  }
+  let filterRtoG57Def : CardDef := {
+    name := "P57 Check9 FilterRtoG"
+    types := #[.artifact]
+    activatedAbilities := #[
+      ActivatedAbility.manaAbility (.sequence #[(.colored .green, .const 1)])
+        (CostSpec.ofMana { symbols := #[.colored .red] })
+    ]
+  }
+  let oneUSpellDef : CardDef := {
+    name := "P57 Check9 OneUSpell"
+    manaCost := { symbols := #[.generic 1, .colored .blue] }
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let gEmptyLaunder0 :=
+    insertObject
+      (addPermanent
+        (addPermanent (addPermanent gMain cbcRedLandDef p0 p0) filterRtoG57Def p0 p0)
+        island p0 p0)
+      oneUSpellDef p0 (.hand p0)
+  let gEmptyLaunderProp := mustApply gEmptyLaunder0 p0 (.cast (gEmptyLaunder0.player p0).hand.back!)
+
+  -- 2. `manaAbilityDefCanChangeOutcome` & `hasUniqueManaPayment` with `extraEffect?`
+  --    and modal `m.output? = none` non-mana modes on the `| some (_, spent0) =>` branch:
+  let extraEffManaDef : CardDef := {
+    name := "P57 Check9 ExtraEffMana"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.tapSelf]
+      effect := { body := .seq #[Instruction.addSimpleMana #[.colored .green],
+        .life (.gain .you (.const 1))] }
+    }]
+  }
+  let modalNonManaDef : CardDef := {
+    name := "P57 Check9 ModalNonMana"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.tapSelf]
+      effect := { body := .chooseModes {
+        modes := #[
+          { body := Instruction.addSimpleMana #[.colored .green] },
+          { body := .life (.gain .you (.const 1)) }
+        ]
+      } }
+    }]
+  }
+  let gSpell57Def : CardDef := {
+    name := "P57 Check9 GSpell"
+    manaCost := { symbols := #[.colored .green] }
+    types := #[.instant]
+    spellAbility := some { effect := Effect.gainLife 1 }
+  }
+  let trWatch57Def : CardDef := {
+    name := "P57 Check9 TrWatch"
+    types := #[.enchantment]
+    triggeredAbilities := #[
+      TriggeredAbility.mkTrigger
+        (.castSpell .you .anyObject none (some .fromTreasure)) (Effect.gainLife 1)
+    ]
+  }
+  -- (a) With `anyOutcomeMatters == true` AND pool already paying `{G}`:
+  let gExtraMatters0 :=
+    (insertObject (addPermanent (addPermanent gMain trWatch57Def p0 p0) extraEffManaDef p0 p0)
+      gSpell57Def p0 (.hand p0)).record
+      (GameEvent.manaAdded gMain.turnNumber p0 #[{ mana := .colored .green }])
+  let gExtraMattersProp := mustApply gExtraMatters0 p0 (.cast (gExtraMatters0.player p0).hand.back!)
+  let gModalMatters0 :=
+    (insertObject (addPermanent (addPermanent gMain trWatch57Def p0 p0) modalNonManaDef p0 p0)
+      gSpell57Def p0 (.hand p0)).record
+      (GameEvent.manaAdded gMain.turnNumber p0 #[{ mana := .colored .green }])
+  let gModalMattersProp := mustApply gModalMatters0 p0 (.cast (gModalMatters0.player p0).hand.back!)
+  -- (b) Even with `!anyOutcomeMatters` and pool already paying `{G}`, state-changing
+  --     `extraEffect?` / non-mana modal mana abilities still prevent false auto-pay:
+  let gExtraPlain0 :=
+    (insertObject (addPermanent gMain extraEffManaDef p0 p0) gSpell57Def p0 (.hand p0)).record
+      (GameEvent.manaAdded gMain.turnNumber p0 #[{ mana := .colored .green }])
+  let gExtraPlainProp := mustApply gExtraPlain0 p0 (.cast (gExtraPlain0.player p0).hand.back!)
+  let gModalPlain0 :=
+    (insertObject (addPermanent gMain modalNonManaDef p0 p0) gSpell57Def p0 (.hand p0)).record
+      (GameEvent.manaAdded gMain.turnNumber p0 #[{ mana := .colored .green }])
+  let gModalPlainProp := mustApply gModalPlain0 p0 (.cast (gModalPlain0.player p0).hand.back!)
+  -- Direct `manaAbilityDefCanChangeOutcome` unit check for both definitions:
+  let extraObj := (gExtraMattersProp.permanentsOf p0).find? (·.name == extraEffManaDef.name) |>.get!
+  let extraDef := (gExtraMattersProp.manaAbilityDefs extraObj)[0]!
+  let modalObj := (gModalMattersProp.permanentsOf p0).find? (·.name == modalNonManaDef.name) |>.get!
+  let modalDef := (gModalMattersProp.manaAbilityDefs modalObj)[0]!
+  let extraCanChange :=
+    match gExtraMattersProp.proposedSpell with
+    | some prop =>
+      manaAbilityDefCanChangeOutcome gExtraMattersProp (gExtraMattersProp.proposedManaSpend prop)
+        prop extraObj extraDef {}
+    | none => false
+  let modalCanChange :=
+    match gModalMattersProp.proposedSpell with
+    | some prop =>
+      manaAbilityDefCanChangeOutcome gModalMattersProp (gModalMattersProp.proposedManaSpend prop)
+        prop modalObj modalDef {}
+    | none => false
+
+  -- 3. Unprojected `CostItem`s (`.putCounters`, `.untapSelf`) rejected by `isPlainTap` /
+  --    `isPlainTapManaAbilityDef`:
+  let unprojCostManaDef : CardDef := {
+    name := "P57 Check9 UnprojCostMana"
+    types := #[.artifact]
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.tapSelf, .putCounters (.const 1) .charge .self]
+      effect := Effect.addMana #[.colored .green]
+    }]
+  }
+  let gUnproj0 := insertObject (addPermanent gMain unprojCostManaDef p0 p0) gSpell57Def p0 (.hand p0)
+  let unprojObj := (gUnproj0.permanentsOf p0).find? (·.name == unprojCostManaDef.name) |>.get!
+  let unprojDef := (gUnproj0.manaAbilityDefs unprojObj)[0]!
+  let gUnprojProp := mustApply gUnproj0 p0 (.cast (gUnproj0.player p0).hand.back!)
+
+  -- 4. `spellManaSpentInterest` traverses active `.layered _ (.abilities add _) d` in `g.activeEffects`
+  --    even when NO matching permanent is on the battlefield yet:
+  let gActEff0 :=
+    ((insertObject (addPermanent gMain Catalog.treasureToken p0 p0) gSpell57Def p0 (.hand p0)).createEffect
+      (.layered (.creaturesControlledBy p0)
+        (.abilities {
+          triggeredAbilities := #[
+            TriggeredAbility.mkTrigger
+              (.castSpell .you .anyObject none (some .fromTreasure)) (Effect.gainLife 1)
+          ]
+        } .none)
+        .untilEndOfTurn)
+      (cause := some cause57)).record
+      (GameEvent.manaAdded gMain.turnNumber p0 #[{ mana := .colored .green }])
+  let gActEffProp := mustApply gActEff0 p0 (.cast (gActEff0.player p0).hand.back!)
+  let actEffInterestOk :=
+    match gActEffProp.proposedSpell with
+    | some prop => (spellManaSpentInterest gActEffProp (gActEffProp.proposedManaSpend prop) (some prop)).fromTreasure
+    | none => false
+
+  mustHoldCheck9 "p57_emptyPoolLaundering"
+    ((gEmptyLaunderProp.player p0).manaPool.units.isEmpty &&
+     !hasUniqueManaPayment gEmptyLaunderProp) &&
+  mustHoldCheck9 "p57_extraEffectAndModalNonMana"
+    (extraDef.extraEffect?.isSome &&
+     modalDef.modeChoices.any (·.output?.isNone) &&
+     extraCanChange && modalCanChange &&
+     !hasUniqueManaPayment gExtraMattersProp &&
+     !hasUniqueManaPayment gModalMattersProp &&
+     !hasUniqueManaPayment gExtraPlainProp &&
+     !hasUniqueManaPayment gModalPlainProp) &&
+  mustHoldCheck9 "p57_unprojectedCostNotPlainTap"
+    (!unprojDef.isPlainTap &&
+     !gUnproj0.isPlainTapManaAbilityDef p0 unprojObj unprojDef &&
+     !hasUniqueManaPayment gUnprojProp) &&
+  mustHoldCheck9 "p57_activeEffectsSpellManaInterest"
+    (actEffInterestOk &&
+     !hasUniqueManaPayment gActEffProp)
+
+

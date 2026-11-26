@@ -39,7 +39,10 @@ def theRingAbilityCount (g : Game) (p : PlayerId) : Nat :=
 
 /-- Whether `o` is `p`'s Ring-bearer (CR 701.54a / 701.54e). -/
 def isRingBearer (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  o.isOnBattlefield && (g.player p).ringBearerId == some o.id && g.controlledBy o p
+  if o.isLkiSnapshot then
+    (o.lkiLayer6.map (·.ringBearer)).getD false && o.controller == some p
+  else
+    o.isOnBattlefield && (g.player p).ringBearerId == some o.id && g.controlledBy o p
 
 /-- Whether `o` is any player's Ring-bearer (CR 701.54a). -/
 def isAnyRingBearer (g : Game) (o : GameObject) : Bool :=

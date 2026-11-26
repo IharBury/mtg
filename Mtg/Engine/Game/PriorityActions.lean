@@ -70,7 +70,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
       if willReverse then g
       else
         match localOuter? with
-        | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+        | some outer => g.chainProposalOuterCont prop.caster outer
         | none => g
     return if !willReverse && (callerShouldResume || (!g.over && g.pending == .none && localOuter?.isSome)) then
       g.resumeAfterBecomeCast

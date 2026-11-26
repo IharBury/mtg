@@ -282,9 +282,7 @@ def haveVillainConnive (g : Game) (p : PlayerId) : Except String Game := do
           (cause := some (.oneShotEffect none (some sourceId) (some p))))
       else g
     let g := g.applyConnive p (some villainId)
-    return match outerCont? with
-      | some outer => g.chainPendingReplacement outer
-      | none => g
+    return g.reattachOuterCont outerCont?
   | _ => throw "Not time to have a Villain connive"
 
 /-- After paying an optional sacrifice-artifact-or-discard cost, draw `n` cards
@@ -360,7 +358,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
             if willReverse then g
             else
               match outerCont? with
-              | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+              | some outer => g.chainProposalOuterCont prop.caster outer (openCont := openCont)
               | none => g
           pure (g, !willReverse && (shouldRes || (!g.over && g.pending == .none && outerCont?.isSome)))
         else
@@ -377,7 +375,8 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
               let nowPaused := match g.pending with | .chooseReplacement .. => true | _ => false
               match outerCont? with
               | some outer =>
-                let g := g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+                let g := g.chainProposalOuterCont prop.caster outer
+                  (grantPriority := !isResCast) (openCont := openCont)
                 pure (g, !g.over && g.pending == .none)
               | none =>
                 if isResCast then
@@ -409,7 +408,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
               if didRev then g
               else
                 match outerCont? with
-                | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+                | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
                 | none => g
             pure (g, !didRev && !g.over && g.pending == .none &&
               (outerCont?.isSome || g.pendingReplacement.isSome))
@@ -423,19 +422,27 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
             (hadOpenContinuation := some openCont)
           let g :=
             match outerCont? with
-            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
+            | some outer => g.chainProposalOuterCont p outer (openCont := openCont)
             | none => g
           pure (g, !g.over && g.pending == .none && (outerCont?.isSome || g.pendingReplacement.isSome))
         | none =>
-          let g :=
-            match outerCont? with
-            | some outer => g.chainPendingReplacement outer.ensureEndsWithFinishResolutionChoice
-            | none =>
-              if !paused && !g.over && g.pending == .none &&
-                  g.pendingReplacement.isNone && g.currentInterpWait?.isNone then
-                g.receivePriority (g.priorityInstead p)
-              else g
-          pure (g, !g.over && g.pending == .none && outerCont?.isSome)
+          match outerCont? with
+          | some outer =>
+            let g := g.chainProposalOuterCont p outer (openCont := openCont)
+            pure (g, !g.over && g.pending == .none)
+          | none =>
+            if !paused && !g.over && g.pending == .none then
+              let prio := if openCont then g.activePlayer else p
+              if g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
+                  g.currentInterpWait?.isSome then
+                let g := g.chainFinishChoicePreservingPriority prio
+                if !g.over && g.pending == .none then
+                  if g.pendingReplacement.isSome then pure (g, true)
+                  else pure (g.resumePendingReplacementFwd .finishResolutionChoice, false)
+                else pure (g, false)
+              else
+                pure (g.receivePriority (g.priorityInstead prio), false)
+            else pure (g, false)
     return if callerShouldResume then g.resumeAfterBecomeCastFwd else g
   | .chooseSacrificeCreature q chosen remaining =>
     if q != p then
@@ -446,9 +453,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let outerCont? := g.pendingReplacement
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := g.beginSacrificeCreatures remaining (chosen.push id)
-    return match outerCont? with
-      | some outer => g.chainPendingReplacement outer
-      | none => g
+    return g.reattachOuterCont outerCont?
   | .sacrificeCreature q =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"
@@ -459,9 +464,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
     let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac}"
-    return match outerCont? with
-      | some outer => g.chainPendingReplacement outer
-      | none => g
+    return g.reattachOuterCont outerCont?
   | .maySacrificeAnotherBolg q bolgId =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice"
@@ -478,9 +481,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
         (cause := bolgCause)
       if let .chooseReplacement .. := g.pending then g
       else g.change (.pending .none)
-    return match outerCont? with
-      | some outer => g.chainPendingReplacement outer
-      | none => g
+    return g.reattachOuterCont outerCont?
   | .payWard q spellId cost chosen =>
     if p != q then
       throw s!"Only {(g.player q).name} may sacrifice for ward"
@@ -505,10 +506,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
         let g := (g.change (.pending .none)).sacrificeToGraveyard sac
           s!"{(g.player p).name} sacrifices {g.name sac} (ward)"
           (cause := some (.costPayment .ward p (some spellId)))
-        let g :=
-          match outerCont? with
-          | some outer => g.chainPendingReplacement outer
-          | none => g
+        let g := g.reattachOuterCont outerCont?
         return g.afterWardResolved
       else
         let preBf := g.battlefield
@@ -520,10 +518,7 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
           g.sacrificePermanentsLoop (chosen'.map ((p, ·)))
             (preBattlefield := some preBf)
             (cause := some wardCause)
-        let g :=
-          match outerCont? with
-          | some outer => g.chainPendingReplacement outer
-          | none => g
+        let g := g.reattachOuterCont outerCont?
         return g.afterWardResolved
     | _ =>
       throw "Not time to sacrifice a permanent"
@@ -538,16 +533,15 @@ def sacrificeForActivation (g : Game) (p : PlayerId) (id : ObjectId) : Except St
     let g := (g.change (.pending .none)).sacrificeToGraveyard sac
       s!"{(g.player p).name} sacrifices {g.name sac}"
     let g := g.finishSacArtifactOrDiscardDraw p n
-    return match outerCont? with
-      | some outer => g.chainPendingReplacement outer
-      | none => g
+    return g.reattachOuterCont outerCont?
   | _ => throw "Not time to sacrifice a permanent"
 
 /-- `p` discards `id` from their hand (CR 701.9 / 614.6). With `atRandom`, a
 leading `"discards a card at random"` line is logged too. Logs only once the card
 arrives in its owner's graveyard (CR 614.6 / 701.9a). -/
 def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option PlayerId := none)
-    (cause : Option EventCause := none) (atRandom : Bool := false) :
+    (cause : Option EventCause := none) (atRandom : Bool := false)
+    (deferPlayFromExileLogs : Bool := false) :
     Game :=
   match g.findObject? id with
   | none => g
@@ -562,6 +556,7 @@ def discardFromHand (g : Game) (p : PlayerId) (id : ObjectId) (chooser : Option 
       let randomMsg := s!"{(g.player p).name} discards a card at random"
       let (g, _) := g.move id (.graveyard owner) none (verb := some .discard)
         (actor := some p) (cause := cause)
+        (deferPlayFromExileLogs := deferPlayFromExileLogs)
       if let .chooseReplacement .. := g.pending then
         let g :=
           if atRandom then

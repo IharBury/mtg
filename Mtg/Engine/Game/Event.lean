@@ -303,7 +303,9 @@ inductive PlayerRule where
   | assignCombatDamageEqualToughness
   | pendingFreeRGCreature
   | controlsPlayer (controlled : PlayerId) (onNextTurn : Bool := false)
-deriving DecidableEq, Repr, Inhabited, BEq
+  | protectionFrom (quality : ProtectionQuality) (sourceId? : Option ObjectId := none)
+      (controller? : Option PlayerId := none)
+deriving Repr, Inhabited, BEq
 
 /-- Continuous rule or restriction effect affecting game rules or objects (CR 611.2c / 613.11). -/
 inductive GameRule where
@@ -1132,10 +1134,13 @@ inductive PostStep where
       (sourceId : Option ObjectId) (sagaChapter : Option Nat)
       (ab? : Option TriggeredAbility) (alreadyResolved : Bool)
   | untapStepAfterPhaseIn
+  | returnToHandLoop (remainingIds : Array ObjectId) (cause : Option EventCause := none)
+      (fromEventIdx? : Option Nat := none)
 deriving Inhabited, BEq
 
 /-- Stage of `StateBasedActions.finishSbaSweep` across `Pending.chooseReplacement` pauses. -/
 inductive SbaSweepStage where
+  | counterAnnihilation (startIdx : Nat)
   | dyingCreatures
   | planeswalkersAndLegend
   | finalChapterSagas
@@ -1308,6 +1313,7 @@ inductive InterpCont where
   /-- Remaining objects in a multi-object zone move loop. -/
   | afterMoveLoop (remainingIds : Array ObjectId) (dest : DestZoneSpec)
       (verb : ZoneVerb) (mods : MoveMods) (cause : EventCause)
+      (fromEventIdx? : Option Nat := none)
   /-- Remaining permanents in a multi-permanent damage loop with aggregated lifelink. -/
   | afterDamagePermanentsLoop (remainingIds : Array ObjectId) (amt : Nat) (srcName : String)
       (srcSnap? : Option EventObject) (oppOnlyCtrl? : Option PlayerId)
@@ -1570,6 +1576,7 @@ inductive PendingReplacement where
       (logMsgAfter : Option String := none)
       (preBattlefield : Option (Array GameObject) := none)
       (cause : Option EventCause := none)
+      (fromEventIdx? : Option Nat := none)
   | sacrificePermanentsLoop (remaining : Array (PlayerId × ObjectId))
       (preBattlefield : Option (Array GameObject) := none)
       (cause : Option EventCause := none)
@@ -1601,6 +1608,7 @@ inductive PendingReplacement where
       (logCard : Option String := none) (freshCount : Option Nat := none)
   | exilePermanentsLoop (remainingIds : Array ObjectId) (logExile : Bool := true)
       (cause : Option EventCause := none) (logCard : Option (ObjectId × String) := none)
+      (fromEventIdx? : Option Nat := none)
   | flickerLoop (remainingIds : Array ObjectId)
       (exiledPreIds : Array ObjectId := #[])
       (enteredFromIds : Array ObjectId := #[])
@@ -1608,6 +1616,7 @@ inductive PendingReplacement where
       (stage : FlickerStage := .exileBatch) (tapped : Bool := false) (onlyLandTapped : Bool := false)
       (clearExileFields : Bool := false) (cause : Option EventCause := none)
       (preBattlefield : Option (Array GameObject) := none)
+      (fromEventIdx? : Option Nat := none)
   | finishMillChooseForHand (p : PlayerId) (preIds : Array ObjectId)
       (types : Array CardType) (matchedPreIds : Array ObjectId)
       (max : Nat) (mustOne : Bool) (allMatches : Bool := false)
@@ -1875,7 +1884,19 @@ without altering prompts, priority, or control flow) that is transparent to
 trailing priority-grant checks. -/
 def PendingReplacement.isPurePostLog : PendingReplacement → Bool
   | .finishPostStep (.logExpiredPlayFromExile ..)
-  | .logMessage _ => true
+  | .logMessage _
+  | .logPutCounterDelta ..
+  | .finishPostStep (.logDiscardIfInGraveyard ..)
+  | .finishPostStep (.logExiledIfInExile ..)
+  | .finishPostStep (.logReturnedToHand ..)
+  | .finishPostStep (.logPutsIntoHand ..)
+  | .finishPostStep (.logPutOnOwnerLibrary ..)
+  | .finishPostStep (.logIfCountersIncreased ..)
+  | .finishPostStep (.finishMoveToOwnerGraveyardLog ..)
+  | .finishPostStep (.logDiscardedCount ..)
+  | .finishPostStep (.logGiftTreasureGiven ..)
+  | .finishPostStep (.logCreatedTokensSummary ..)
+  | .finishPostStep (.logDelayedBirdSoldiersCreated ..) => true
   | .seq a b => a.isPurePostLog && b.isPurePostLog
   | _ => false
 
@@ -2007,13 +2028,11 @@ board/cleanup/concede mutations that could expire or exile sources) before
 which deferred `.logExpiredPlayFromExile` post-steps should be inserted so
 expiry logs emit before `PriorityEvent.received` (CR 117.3 / 611.2). -/
 def PendingReplacement.isPurePriorityGrantLeaf : PendingReplacement → Bool
-  | .receivePriority _ | .afterWardResolved
-  | .finishPostStep .startNextTurnAndBegin
-  | .finishPostStep .endTurnAfterCleanupStepEnded => true
-  | .beginStepCont st
-  | .finishPostStep (.beginStepBody st)
-  | .finishPostStep (.beginStepAfterPhaseBegan st) =>
-    stepAlwaysGrantsPriority st && st != .cleanup
+  | .receivePriority _ => true
+  | .finishPostStep (.beginStepBody st) =>
+    match st with
+    | .upkeep | .beginningOfCombat | .endOfCombat | .postcombatMain | .end => true
+    | _ => false
   | _ => false
 
 /-- Whether every leaf in `pr` is either a pure priority-grant leaf or a pure
@@ -2059,6 +2078,70 @@ def PendingReplacement.insertBeforeTrailingPriorityGrant
       .seq a (b.insertBeforeTrailingPriorityGrant postStep)
   | leaf =>
     if leaf.isPurePriorityGrantLeaf then .seq postStep leaf
+    else .seq leaf postStep
+
+/-- Whether `pr` is a boundary leaf (priority grant, mutating-then-priority
+completion, turn/cleanup/concede/leave/proposal completion, or proposal-reversing
+`.restorePending`) ahead of which deferred `.logExpiredPlayFromExile` post-steps
+must be placed so expiry logs emit before `PriorityEvent.received` and are never
+dropped by CR 733.1 proposal reversal (CR 117.3 / 611.2 / 733.1). -/
+def PendingReplacement.isPlayFromExileDeferBoundaryLeaf : PendingReplacement → Bool
+  | .receivePriority _
+  | .finishResolutionChoice
+  | .afterWardResolved
+  | .restorePending ..
+  | .finishCleanupAfterClearEot
+  | .beginTurnAfterStartExpiry
+  | .finishConcede ..
+  | .concedePlayersLoop ..
+  | .leavePlayersWhoLost ..
+  | .beginStepCont _
+  | .finishPostStep (.beginStepBody _)
+  | .finishPostStep (.beginStepAfterPhaseBegan _)
+  | .finishPostStep .startNextTurnAndBegin
+  | .finishPostStep .endTurnAfterCleanupStepEnded
+  | .finishPostStep .cleanupStepAfterDiscard
+  | .finishPostStep (.postSbaCleanup _)
+  | .finishPostStep .afterTriggerTargetsChosen
+  | .finishPostCast ..
+  | .finishBecomeCast ..
+  | .finishProposedSpellCosts ..
+  | .completeActivation ..
+  | .finishBecomeActivated ..
+  | .finishPostLoyaltyActivated ..
+  | .finishTurnFaceUp ..
+  | .finishActivateManaAbilityPicks ..
+  | .finishActivateManaAbilityPostSac ..
+  | .runPostCastCleanup .. => true
+  | _ => false
+
+/-- Whether `pr` contains any play-from-exile defer boundary leaf. -/
+def PendingReplacement.containsPlayFromExileDeferBoundary : PendingReplacement → Bool
+  | .seq a b =>
+    a.containsPlayFromExileDeferBoundary || b.containsPlayFromExileDeferBoundary
+  | leaf => leaf.isPlayFromExileDeferBoundaryLeaf
+
+/-- Whether the leftmost leaf of `pr` is a play-from-exile defer boundary leaf. -/
+def PendingReplacement.startsWithPlayFromExileDeferBoundary : PendingReplacement → Bool
+  | .seq a _ => a.startsWithPlayFromExileDeferBoundary
+  | leaf => leaf.isPlayFromExileDeferBoundaryLeaf
+
+/-- Insert `postStep` immediately before the first play-from-exile defer boundary
+leaf in `pr`, or at the end of `pr` when `pr` contains no boundary leaf. -/
+def PendingReplacement.insertBeforeFirstDeferBoundary
+    (pr postStep : PendingReplacement) : PendingReplacement :=
+  match pr with
+  | .seq a b =>
+    if a.containsPlayFromExileDeferBoundary then
+      .seq (a.insertBeforeFirstDeferBoundary postStep) b
+    else if b.startsWithPlayFromExileDeferBoundary then
+      .seq (.seq a postStep) b
+    else if b.containsPlayFromExileDeferBoundary then
+      .seq a (b.insertBeforeFirstDeferBoundary postStep)
+    else
+      .seq (.seq a b) postStep
+  | leaf =>
+    if leaf.isPlayFromExileDeferBoundaryLeaf then .seq postStep leaf
     else .seq leaf postStep
 
 /-- Ensure a `PendingReplacement` continuation ends with a priority grant
@@ -2965,7 +3048,10 @@ private def matchesZoneEndpoint (listener : PlayerId) (isTeammate : PlayerId →
   | .combatRole .attacking => o.attacking
   | .combatRole .blocking => o.blocking
   | .combatRole _ => true
-  | .hasDesignation _ => true
+  | .hasDesignation .prepared => o.prepared
+  | .hasDesignation .harnessed => o.harnessed
+  | .hasDesignation .goaded => o.goaded
+  | .hasDesignation .ringBearer => o.ringBearer
   | .counterCount k? op (.const n) =>
     let cnt := match k? with | some k => o.counters.count k | none => o.counters.foldl (fun a (_, c) => a + c) 0
     op.eval (Int.ofNat cnt) n

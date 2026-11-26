@@ -62,7 +62,8 @@ def expireEffectsByDuration (g : Game) (pred : EffectId → EffectDuration → B
     else
       g.endControlEffectsSimultaneously ctrlEids (cause := cause)
         (preState? := some pre) (extraSkipIds := skipIds)
-        (deferPlayFromExileLogs := true)
+        (deferPlayFromExileLogs := true) (fromEventIdx? := some fromIdx)
+        (deferOnPause := false)
         (preExpire := fun g0 =>
           let g1 :=
             g0.restoreCopiesWhere
@@ -207,6 +208,8 @@ def clearTurnActivations (g : Game) : Game :=
             | .playerRule p (.typeSpellCostLess _ _) .untilEndOfTurn
             | .playerRule p (.supertypeSpellCostLess _ _) .untilEndOfTurn
             | .playerRule p .lifeLocked .untilEndOfTurn
+            | .playerRule p .protectionFromEverything .untilEndOfTurn
+            | .playerRule p (.protectionFrom _ _ _) .untilEndOfTurn
             | .playerRule p (.controlsPlayer _ false) .untilEndOfTurn => p == pl.id
             | _ => false) (cause := cause)
       let expiredDt := g.delayedTriggers.filter (fun dt =>
@@ -282,6 +285,7 @@ def clearEOT (g : Game) : Game :=
             | _ => false
         g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds) (deferPlayFromExileLogs := true)
+          (fromEventIdx? := some fromIdx) (deferOnPause := false)
           (preExpire := fun g0 =>
             let g0 :=
               g0.restoreCopiesWhere
@@ -432,8 +436,13 @@ def expireUntilTurnCommandEffects (g : Game) (p : PlayerId) (includeTeammates : 
     g0.activeEffects.foldl (fun acc (eid, e) =>
       match e with
       | .layered _ (.copy ..) _ | .layered _ (.control _) _
-      | .playerRule _ .protectionFromEverything _
       | .playerRule _ .lifeCantChange _ => acc
+      | .playerRule q .protectionFromEverything (.untilNextTurnOf q') =>
+        if q == q' then acc
+        else if matchesTurnOf q' then
+          acc.expireEffectById eid (cause := cause) (reconcileControl := false)
+            (preState? := some pre)
+        else acc
       | .permission _ (.playFromExile oid perm) (.untilNextTurnOf q) =>
         if perm.fromAdventure || perm.whileExiled || !matchesTurnOf q then acc
         else expirePlayFromExileEffect pre acc eid oid cause (reconcileControl := false)
@@ -453,7 +462,8 @@ def expireUntilTurnCommandEffects (g : Game) (p : PlayerId) (includeTeammates : 
       g.endControlEffectsSimultaneously ctrlEids (cause := cause)
         (extraSkipIds := effSkipIds)
         (preExpire := expireNonControl) (preState? := some pre)
-        (deferPlayFromExileLogs := true)
+        (deferPlayFromExileLogs := true) (fromEventIdx? := some fromIdx)
+        (deferOnPause := deferLogs)
   if deferLogs then g else emitExpiredPlayFromExileLogs pre g fromIdx
 
 /-- Expire effects that last until `p`'s next turn (CR 800.4m) and clear
@@ -542,7 +552,8 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
         g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds)
           (preExpire := expireNonControl) (preState? := some pre)
-          (deferPlayFromExileLogs := true)
+          (deferPlayFromExileLogs := true) (fromEventIdx? := some fromIdx)
+          (deferOnPause := false)
     let g := targets.foldl (fun acc t =>
       acc.expirePlayPermissions t (cause := cause) (preState? := some pre) (deferLogs := true)) g
     let g := g.expireMatching (fun
@@ -554,6 +565,8 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
       | .playerRule q .cantCastSpells .untilEndOfTurn
       | .playerRule q .nextSpellCantBeCountered .untilEndOfTurn
       | .playerRule q .lifeLocked .untilEndOfTurn
+      | .playerRule q .protectionFromEverything .untilEndOfTurn
+      | .playerRule q (.protectionFrom _ _ _) .untilEndOfTurn
       | .playerRule q (.typeSpellCostLess _ _) .untilEndOfTurn
       | .playerRule q (.supertypeSpellCostLess _ _) .untilEndOfTurn => matchesDeparted q
       | .playerRule q (.controlsPlayer them false) .untilEndOfTurn =>
@@ -794,13 +807,21 @@ def expireTurnStartProtectionAndLife (g : Game) (p : PlayerId) : Game :=
   let teamSeats := g.teamMembers p
   teamSeats.foldl (fun g q =>
     let hadLife := g.activeEffects.any (fun (_, s) => s == .lifeCantChange q)
-    let hadProt := g.activeEffects.any (fun (_, s) => s == .protectionFromEverything q)
+    let hadProtAll := g.activeEffects.any (fun (_, s) => s == .protectionFromEverything q)
+    let isSelfProt (s : ContinuousEffectSpec) : Bool :=
+      match s with
+      | .playerRule r (.protectionFrom _ _ _) (.untilNextTurnOf r') => r == q && r' == q
+      | _ => false
+    let hadProtOther := g.activeEffects.any (fun (_, s) => isSelfProt s)
+    let hadProt := hadProtAll || hadProtOther
     if hadProt || hadLife then
-      let g := if hadProt then g.expireAll (.protectionFromEverything q) (cause := cause) else g
+      let g := if hadProtAll then g.expireAll (.protectionFromEverything q) (cause := cause) else g
+      let g := if hadProtOther then g.expireMatching isSelfProt (cause := cause) else g
       let g := if hadLife then g.expireAll (.lifeCantChange q) (cause := cause) else g
       g.logMsg
         (if hadProt && hadLife then s!"{(g.player q).name}'s protection and life lock end"
-         else if hadProt then s!"{(g.player q).name}'s protection from everything ends"
+         else if hadProtAll then s!"{(g.player q).name}'s protection from everything ends"
+         else if hadProtOther then s!"{(g.player q).name}'s protection ends"
          else s!"{(g.player q).name}'s life total can change again")
     else g) g
 
@@ -847,7 +868,8 @@ def beginTurnStartExpiryPrefix (g : Game) : Game :=
         let fromIdx := preTurnExp.events.size
         let g := g.endControlEffectsSimultaneously ctrlEids (cause := cause)
           (extraSkipIds := skipIds) (preState? := some preTurnExp)
-          (deferPlayFromExileLogs := true)
+          (deferPlayFromExileLogs := true) (fromEventIdx? := some fromIdx)
+          (deferOnPause := false)
           (preExpire := fun g0 =>
             let g0 :=
               g0.restoreCopiesWhere
@@ -1239,7 +1261,10 @@ partial def beginTurnAfterStartExpiry (g : Game) : Game :=
       g.isSharedTurnFirstSeat &&
         (g.teamMembers p).any (fun q =>
           g.activeEffects.any (fun (_, s) =>
-            s == .lifeCantChange q || s == .protectionFromEverything q))
+            s == .lifeCantChange q || s == .protectionFromEverything q ||
+              (match s with
+               | .playerRule r (.protectionFrom _ _ _) (.untilNextTurnOf r') => r == q && r' == q
+               | _ => false)))
     let g :=
       if needDeferred then
         g.withBatch none (fun g => g.expireTurnStartProtectionAndLife p)

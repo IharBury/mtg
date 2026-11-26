@@ -47,7 +47,7 @@ def damageSourceFromSnapshot (g : Game) (eo : EventObject) : GameObject :=
   match eo.id.bind g.findLiveSourceObject? with
   | some live => live
   | none =>
-    damageSourceObjectFromLki eo (prepared := eo.id.any g.wasPreparedAtDeparture)
+    damageSourceObjectFromLki eo (prepared := eo.id.map g.wasPreparedAtDeparture)
 
 /-- Optional wrapper around `damageSourceFromSnapshot`. -/
 def damageSourceObjFromSnapshot? (g : Game) (source : Option EventObject) : Option GameObject :=
@@ -193,10 +193,7 @@ def replaceDamage (g : Game) (n : Int)
         shieldRemoveCause := g.wrapReplacedCause sid curCause (g.controllerOf o)
         curCause := shieldRemoveCause
   let effSrc? : Option GameObject :=
-    src?.orElse (fun _ =>
-      srcEvent?.map (fun eo =>
-        Game.damageSourceObjectFromLki eo
-          (prepared := eo.id.any g.wasPreparedAtDeparture)))
+    src?.orElse (fun _ => g.damageSourceObjFromSnapshot? srcEvent?)
   let mut fuel := 32
   while fuel > 0 do
     fuel := fuel - 1
@@ -288,6 +285,19 @@ def replaceDamage (g : Game) (n : Int)
                 affectedPlayer := pid
                 kind := .protectionFromEverythingPlayer pid
               })
+          for (_, eff) in g.activeEffects do
+            match eff with
+            | .playerRule p (.protectionFrom q srcId? ctrl?) d =>
+              if p == pid && g.durationActive d &&
+                  g.playerProtectionRuleMatches pid q srcId? ctrl? effSrc? then
+                items := items.push (.prevention {
+                  id := { kind := .protectionPreventDamage, grantor := srcId?, player := some pid }
+                  source := srcId?
+                  controller := ctrl?.orElse (fun _ => some pid)
+                  affectedPlayer := pid
+                  kind := .protectionFromEverythingPlayer pid
+                })
+            | _ => pure ()
         for (_, eff) in g.activeEffects do
           match eff with
           | .prevention spec d =>
@@ -379,10 +389,10 @@ def replaceDamage (g : Game) (n : Int)
           if g.durationActive d then
             match spec.kind with
             | .addNoncombatDamage sid bonus =>
-              if !combat && (sid.isNone || src?.any (fun s => some s.id == sid)) && bonus > 0 then
+              if !combat && (sid.isNone || effSrc?.any (fun s => some s.id == sid)) && bonus > 0 then
                 items := items.push (.replacement { spec with affectedPlayer := affected })
             | .multiplyDamage sid _ =>
-              if sid.isNone || src?.any (fun s => some s.id == sid) then
+              if sid.isNone || effSrc?.any (fun s => some s.id == sid) then
                 items := items.push (.replacement { spec with affectedPlayer := affected })
             | _ => pure ()
         | _ => pure ()
@@ -777,8 +787,9 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
             if dealtAmt > 0 && !prevented then g.gainLife c dealtAmt.toNat (cause := some dmgCause) else g
           | none => g
   | none =>
-    let srcSnap := sourceSnap.map g.refreshOrKeepDamageSnapshot |>.getD default
-    let rep := g.replaceDamage n (srcEvent? := some srcSnap) (recipientPerm? := some o) (cause := cause)
+    let srcEvent? := sourceSnap.map g.refreshOrKeepDamageSnapshot
+    let srcSnap := srcEvent?.getD default
+    let rep := g.replaceDamage n (srcEvent? := srcEvent?) (recipientPerm? := some o) (cause := cause)
     match rep.choice? with
     | some (chooser, choices) =>
       g.promptChooseReplacement chooser choices
@@ -843,14 +854,12 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
         rep.preventedAmount prevCause)
     else g
   let effSrc? : Option GameObject :=
-    source.orElse (fun _ =>
-      srcSnap.map (fun eo =>
-        Game.damageSourceObjectFromLki eo
-          (prepared := eo.id.any g.wasPreparedAtDeparture)))
+    source.orElse (fun _ => g.damageSourceObjFromSnapshot? srcSnap)
   if rep.prevented && preventable && g.protectionFromEverything pid &&
       !(source.any (fun src => (g.preventDamageGrantedBy src).any g.grantorStillInPlay)) then
     (recordPlayerPrevented g).logMsg s!"damage to {pl.name} is prevented (protection from everything)"
-  else if rep.prevented && preventable && g.playerProtectedFromStatic pid effSrc? &&
+  else if rep.prevented && preventable &&
+      (g.playerProtectedFromStatic pid effSrc? || g.playerProtectedFromRule pid effSrc?) &&
       !(source.any (fun src => (g.preventDamageGrantedBy src).any g.grantorStillInPlay)) then
     (recordPlayerPrevented g).logMsg s!"damage to {pl.name} is prevented (protection)"
   else if (rep.prevented || rep.amount == 0) && source.isSome then

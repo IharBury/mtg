@@ -681,7 +681,8 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           g.logMsg s!"{g.nameWithToken (g.object! newId)} enters with {weaverBonus} additional +1/+1 counter(s)"
         else g
       let g := reconcileControlAfterTransitionFwd preMove g (cause := some baseHappenedCause)
-        (deferPlayFromExileLogs := true)
+        (deferPlayFromExileLogs := true) (fromEventIdx? := some moveExpFromIdx)
+        (deferOnPause := deferPlayFromExileLogs)
       let g :=
         if deferPlayFromExileLogs then g
         else emitExpiredPlayFromExileLogs preMove g moveExpFromIdx
@@ -982,7 +983,8 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
     (enterMods : Array EnterMod := #[])
     (preBattlefield : Option (Array GameObject) := none)
     (verb : Option ZoneVerb := none) (actor : Option PlayerId := none)
-    (cause : Option EventCause := none) : Game × ObjectId :=
+    (cause : Option EventCause := none)
+    (deferPlayFromExileLogs : Bool := false) : Game × ObjectId :=
   if !g.stillInGame controller then
     let name := g.name (g.object! id)
     (g.logMsg s!"{name} remains in its current zone (CR 800.4b)", id)
@@ -998,6 +1000,7 @@ def putOntoBattlefield (g : Game) (id : ObjectId) (controller : PlayerId)
       (enterMods := enterMods)
       (preBattlefield := preBattlefield)
       (verb := verb) (actor := actor) (cause := cause)
+      (deferPlayFromExileLogs := deferPlayFromExileLogs)
 
 /-- Complete the post-move permission and log step of `counterStackSpell` once
 any CR 616.1 replacement choice on the stack-leave move has resolved. -/
