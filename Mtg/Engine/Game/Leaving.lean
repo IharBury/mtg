@@ -2610,7 +2610,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
       else if players' != players then
         (g, .resolutionChoice q (.blackGatePlayer oid players'))
       else (g, pending)
-    | .mayCastCards ids withoutPaying exileInstead =>
+    | .mayCastCards ids withoutPaying exileInstead maxMv? =>
       if q == p then
         let g := if clearProp.isEmpty then g else g.changes clearProp
         let g := declineInterpChoice (clearPending g)
@@ -2621,7 +2621,7 @@ def redirectPendingAfterLeave (g : Game) (p : PlayerId)
                     let g := declineInterpChoice (clearPending g)
           (g, .none)
         else if ids' != ids then
-          (g, .resolutionChoice q (.mayCastCards ids' withoutPaying exileInstead))
+          (g, .resolutionChoice q (.mayCastCards ids' withoutPaying exileInstead maxMv?))
         else (g, pending)
     | .mayChangeSpellTarget spellId index staged =>
       if q == p then

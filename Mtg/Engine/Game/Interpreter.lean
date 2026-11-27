@@ -2592,7 +2592,7 @@ private def execPlayer (g : Game) (ctx : InterpCtx) (op : PlayerOp) :
           let hitName := ((g1.findObject? hitId).map g1.name).getD "a card"
           let discoverVar : VarId := ⟨996⟩
           let g := g1.change (.bindStepOutcome discoverVar { objects := #[hitId], movedCount := 1, succeeded := true })
-          let g := g.beginResolutionChoice p (.mayCastCards #[hitId] true false)
+          let g := g.beginResolutionChoice p (.mayCastCards #[hitId] true false (some n))
             s!"{(g.player p).name} discovers {n} ({hitName}): may cast without paying its mana cost or put into hand"
           let fallbackToHand : Instruction :=
             .moveZone (.stepObjects discoverVar) (.hand .owner) .put {}
@@ -2784,7 +2784,7 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
             if eligible.isEmpty then g else g.offerExileCasts ctx.controller eligible k
           else if eligible.isEmpty then g
           else
-            g.beginResolutionChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead)
+            g.beginResolutionChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead maxMv?)
               s!"{(g.player ctx.controller).name} may cast a spell without paying its mana cost"
         | none =>
           match objsExpr with
@@ -2798,12 +2798,12 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
           | _ =>
             if eligible.isEmpty then g
             else
-              g.beginResolutionChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead)
+              g.beginResolutionChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead maxMv?)
                 s!"{(g.player ctx.controller).name} may cast a spell without paying its mana cost"
       else
         if eligible.isEmpty then g
         else
-          g.beginResolutionChoice ctx.controller (.mayCastCards eligible false permSpec.exileOnResolveInstead)
+          g.beginResolutionChoice ctx.controller (.mayCastCards eligible false permSpec.exileOnResolveInstead maxMv?)
             s!"{(g.player ctx.controller).name} may cast a spell"
     else if !permSpec.freeCast && permSpec.anyManaColor && !permSpec.landsAllowed &&
         eligible.size <= 1 && permSpec.duration == .untilEndOfTurn then
@@ -2820,7 +2820,7 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
         let g := eligible.foldl (fun g id =>
           g.createEffect (.playPermission id perm (turnEnds := turnEnds) (d := dur)) (cause := some cause)) g
         if permSpec.freeCast && !eligible.isEmpty then
-          g.beginResolutionChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead)
+          g.beginResolutionChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead maxMv?)
             s!"{(g.player ctx.controller).name} may cast a spell without paying its mana cost"
         else g
 

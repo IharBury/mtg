@@ -2464,7 +2464,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
   -- Trigger is STILL on the stack while `p0` is prompted to cast from `p0`'s milled bucket:
   let bucket0Id :=
     match gUrTrigRes.pending with
-    | .resolutionChoice q (.mayCastCards ids true false) => if q == p0 && ids.size == 1 then ids[0]! else ⟨0⟩
+    | .resolutionChoice q (.mayCastCards ids true false _) => if q == p0 && ids.size == 1 then ids[0]! else ⟨0⟩
     | _ => ⟨0⟩
   let triggerOnStackDuringBucket0 :=
     bucket0Id != ⟨0⟩ && !gUrTrigRes.stack.isEmpty && gUrTrigRes.resolvingAbility.isSome
@@ -2472,7 +2472,7 @@ def replayOk26i2 (gs : Array Game) : Bool :=
   let gAfterBucket0 := mustApply gUrTrigRes p0 (.cast bucket0Id)
   let bucket1Id :=
     match gAfterBucket0.pending with
-    | .resolutionChoice q (.mayCastCards ids true false) => if q == p0 && ids.size == 1 then ids[0]! else ⟨0⟩
+    | .resolutionChoice q (.mayCastCards ids true false _) => if q == p0 && ids.size == 1 then ids[0]! else ⟨0⟩
     | _ => ⟨0⟩
   let triggerStillOnStackDuringBucket1 :=
     bucket1Id != ⟨0⟩ && gAfterBucket0.stack.size == 2 && gAfterBucket0.resolvingAbility.isSome

@@ -138,6 +138,8 @@ structure ProposedSpell where
   /-- Whether this activation's initial `.crew` or `.zemoBoast` choice has already
   been paid (including `Crew 0`, CR 602.2b / 702.122a / 702.142). -/
   choiceCostPaid : Bool := false
+  /-- Upper bound on the resulting spell's mana value (CR 701.57a / 702.85a). -/
+  maxCastManaValue? : Option Nat := none
 deriving Repr, Inhabited, BEq
 
 end Mtg.Engine

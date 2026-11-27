@@ -5,14 +5,14 @@ import Mtg.Engine.Card.Cost
 
 Layer-2 parameterized keyword abilities and keyword counters:
 
-- `SimpleKeyword` (29 unit constructors, CR 702)
+- `SimpleKeyword` (31 unit constructors, CR 702)
 - `GiftKind` (CR 702.174d–i), `QualityFilter` (CR 702.11d),
   `ProtectionQuality` (CR 702.16)
-- `KeywordAbility` (17 constructors: `.simple` + 16 parameterized keywords)
+- `KeywordAbility` (18 constructors: `.simple` + 17 parameterized keywords)
 - `CounterKind.grantedKeyword?` covering all 15 CR 122.1b keyword counters
 - Functorial Layer 3 `HasTextChange`, canonical `ToOracle`, and multiplicity-
-  preserving array helpers for cumulative keywords (CR 702.21b / 702.83b /
-  702.85 / 702.101b / 702.108b / 702.116b / 702.164b).
+  preserving array helpers for cumulative keywords (CR 702.21b / 702.44d /
+  702.83b / 702.85 / 702.101b / 702.108b / 702.116b / 702.164b).
 
 Non-keyword `"can't be blocked"` (CR 509.1b) is not a CR 702 keyword and lives
 on `StaticAbility.cantBeBlocked` / Layer 6 continuous effects.
@@ -20,7 +20,7 @@ on `StaticAbility.cantBeBlocked` / Layer 6 continuous effects.
 
 namespace Mtg.Engine
 
-/-- Parameter-free CR 702 keyword abilities (29 unit constructors). -/
+/-- Parameter-free CR 702 keyword abilities (31 unit constructors). -/
 inductive SimpleKeyword where
   /-- CR 702.9 -/
   | flying
@@ -168,9 +168,9 @@ def ofName? (s : String) : Option SimpleKeyword :=
   | _ => none
 
 /-- True when multiple instances of `kw` trigger or apply separately
-(CR 702.83b / 702.85 / 702.101b / 702.108b / 702.116b). -/
+(CR 702.44d / 702.83b / 702.85 / 702.101b / 702.108b / 702.116b). -/
 def isCumulative : SimpleKeyword → Bool
-  | .prowess | .cascade | .exalted | .myriad | .extort => true
+  | .sunburst | .prowess | .cascade | .exalted | .myriad | .extort => true
   | _ => false
 
 /-- Matching Layer-1 `KeywordTag` for `ObjectPred.hasKeyword`. -/
@@ -334,11 +334,11 @@ instance : ToOracle ProtectionQuality := ⟨toOraclePhrase⟩
 
 end ProtectionQuality
 
-/-- Unified, parameterized CR 702 keyword ability (17 constructors: `.simple` +
-16 parameterized keywords). Stored as `Array KeywordAbility` on `CardDef`,
+/-- Unified, parameterized CR 702 keyword ability (18 constructors: `.simple` +
+17 parameterized keywords). Stored as `Array KeywordAbility` on `CardDef`,
 `CustomTokenSpec`, `CopyModification`, and Layer 6 `AbilitySet`. -/
 inductive KeywordAbility where
-  /-- One of the 29 parameter-free CR 702 keywords. -/
+  /-- One of the 31 parameter-free CR 702 keywords. -/
   | simple (kw : SimpleKeyword)
   /-- Hexproof or hexproof from `[quality]` (CR 702.11 / 702.11d). -/
   | hexproof (from? : Option QualityFilter := none)
@@ -452,8 +452,8 @@ def snowLandwalk : KeywordAbility :=
   .landwalk (.all #[.hasType .land, .hasSupertype .snow])
 
 /-- True when multiple instances of `kw` are cumulative and must retain
-multiplicity (CR 702.21b / 702.41b / 702.83b / 702.85 / 702.101b / 702.108b /
-702.116b / 702.164b). -/
+multiplicity (CR 702.21b / 702.41b / 702.44d / 702.83b / 702.85 / 702.101b /
+702.108b / 702.116b / 702.164b). -/
 def isCumulative : KeywordAbility → Bool
   | .simple s => s.isCumulative
   | .ward _ | .toxic _ | .affinity _ => true

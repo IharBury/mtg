@@ -405,6 +405,11 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       | throw "The spell or ability left the stack"
     if !g.sourceStillPayable prop then
       return (← g.reverseProposedSpell? (resumeContinuation := true))
+    if prop.kind == .spell then
+      if let some mx := prop.maxCastManaValue? then
+        let stackFace := g.baseCard (g.object! prop.spellId)
+        if (stackFace.manaCost.substituteX x).manaValue > mx then
+          throw s!"The resulting spell's mana value can't exceed {mx} (CR 701.57a)"
     let g := g.record (GameEvent.announced g.turnNumber prop.spellId (x := some x))
     if prop.loyaltyX then
       let some src := prop.sourceId.bind g.findObject?

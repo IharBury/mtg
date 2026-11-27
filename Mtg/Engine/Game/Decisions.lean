@@ -9591,7 +9591,8 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
       else
         return g
     else
-      if !(g0.stillInGame prop.caster && (g0.findObject? prop.spellId).any (·.zone == .stack)) then
+      if !(g0.stillInGame prop.caster && (g0.findObject? prop.spellId).any (fun sp =>
+          sp.zone == .stack && prop.maxCastManaValue?.all (fun mx => g0.objectManaValue sp ≤ mx))) then
         return (← g.reverseProposedSpell? (resumeContinuation := true)
           (followedByFinishChoice := followedByFinishChoice)
           (followedByExplicitPriority? := followedByExplicitPriority?))
@@ -9734,7 +9735,8 @@ ignored. The permission does not last after this ability finishes.
 An Aura still announces a target to enchant (CR 601.2c / 303.4). -/
 partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
     (ignoreTiming := true) (withoutManaCost := true)
-    (exileInstantSorceryInstead := false) (callerCheckpoint := false) : Game :=
+    (exileInstantSorceryInstead := false) (callerCheckpoint := false)
+    (maxManaValue? : Option Nat := none) : Game :=
   let clearCkpt (g : Game) : Game :=
     if g.proposalCheckpoint.isSome then g.change .clearProposalCheckpoint else g
   match g.findObject? id with
@@ -9783,6 +9785,8 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
       (clearCkpt g).logMsg "During combat, players can't cast spells (Yuriko, Blade of the Mighty)"
     else if g.opponentsCantCastOnActiveTurn p then
       (clearCkpt g).logMsg "Opponents can't cast spells during that player's turn"
+    else if !canMorph && maxManaValue?.any (fun mx => g.actualCastManaValue o rawFace > mx) then
+      (clearCkpt g).logMsg s!"{rawFace.name}'s mana value exceeds {maxManaValue?.getD 0} (CR 701.57a)"
     else if !canMorph && g.spellNameForbidden rawFace.name then
       (clearCkpt g).logMsg s!"Spells named {rawFace.name} can't be cast"
     else if !canMorph && !g.graveyardCastThresholdMet p o.id rawFace then
@@ -9858,6 +9862,7 @@ partial def castAsPartOfResolution (g : Game) (p : PlayerId) (id : ObjectId)
           alternativeCost := altCostUsed
           resolutionCast := true
           resolutionIgnoreTiming := ignoreTiming
+          maxCastManaValue? := maxManaValue?
         }
 
 /-- Resume any deferred `PendingReplacement` (such as `.finishResolutionChoice`) queued

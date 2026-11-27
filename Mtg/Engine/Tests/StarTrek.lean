@@ -228,6 +228,53 @@ def trkDiscoverCastFree : Game :=
 #guard trkDiscoverCastFree.battlefield.any (·.name == "Gray Ogre")
 #guard trkDiscoverCastFree.objects.any (fun o => o.name == "Forest" && o.zone == .library ⟨0⟩)
 
+/-- CR 701.57a / 107.3b: Discovering an `{X}` spell (*Khaaaaaaaaaaaannn!* `{X}{R}`)
+casts it with `X = 0` (never opening `.chooseX`, resulting spell MV 1 ≤ 5). -/
+def trkDiscoverXSpellPrompt : Game :=
+  let g := emptyLibrary trkMain ⟨0⟩
+  let g := addPermanent g grizzlyBears ⟨1⟩ ⟨1⟩
+  let g := insertObject g khaaaaaaaaaaaannn ⟨0⟩ (.library ⟨0⟩) none
+  let g := insertObject g ussDiscoveryAtBlackAlert ⟨0⟩ (.hand ⟨0⟩) none
+  let g := withGreenMana g ⟨0⟩ 5
+  let disc := (g.objects.find? (fun o => o.name == "U.S.S. Discovery, at Black Alert")).get!
+  let g := mustApply g ⟨0⟩ (.cast disc.id)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth (passBoth g)
+
+#guard
+  let hit := (trkDiscoverXSpellPrompt.objects.find? (fun o => o.name == "Khaaaaaaaaaaaannn!" && o.zone == .exile)).get!
+  let bear := namedPermanent trkDiscoverXSpellPrompt "Grizzly Bears"
+  let gCast := mustApply trkDiscoverXSpellPrompt ⟨0⟩ (.cast hit.id)
+  let noXPrompt := match gCast.pending with | .chooseTargets _ => true | _ => false
+  let gTargeted := mustApply gCast ⟨0⟩ (.target (.permanent bear.id))
+  let gStack := if gTargeted.pending == .activateManaAbilities ⟨0⟩ then mustApply gTargeted ⟨0⟩ .pay else gTargeted
+  let onStack := gStack.stack.find? (fun e => (gStack.findObject? e.objectId).any (·.name == "Khaaaaaaaaaaaannn!"))
+  let mvOk := onStack.any (fun e => (gStack.findObject? e.objectId).any (fun sp => gStack.objectManaValue sp == 1))
+  let gRes := passBoth gStack
+  noXPrompt && mvOk && (namedPermanent gRes "Grizzly Bears").status.damage == 0
+
+/- CR 701.57a: `.mayCastCards` with `maxManaValue? := some 2` rejects casting a
+MV 3 card, and `announceX` under `maxCastManaValue? := some 2` rejects any `X`
+making the resulting spell's mana value exceed 2 (`{X}{R}` allows `X = 1`, rejects `X = 2`). -/
+#guard
+  let g := insertObject trkMain grayOgre ⟨0⟩ .exile none
+  let ogre := (g.objects.find? (fun o => o.name == "Gray Ogre" && o.zone == .exile)).get!
+  let gPrompt := g.beginResolutionChoice ⟨0⟩ (.mayCastCards #[ogre.id] true false (some 2)) "discover 2"
+  let castRejected := !(gPrompt.apply ⟨0⟩ (.cast ogre.id)).isOk
+  let defaultDeclines :=
+    match Game.defaultChoiceAction gPrompt ⟨0⟩ (.mayCastCards #[ogre.id] true false (some 2)) with
+    | .decline => true
+    | _ => false
+  -- Also verify `announceX` enforces `ProposedSpell.maxCastManaValue? = some 2` on `{X}{R}`:
+  let gX := addPermanent trkMain grizzlyBears ⟨1⟩ ⟨1⟩
+  let gX := insertObject gX khaaaaaaaaaaaannn ⟨0⟩ .exile none
+  let khan := (gX.objects.find? (fun o => o.name == "Khaaaaaaaaaaaannn!" && o.zone == .exile)).get!
+  let gX := gX.addMana ⟨0⟩ (.colored .red) 3
+  let gXProp := gX.castAsPartOfResolution ⟨0⟩ khan.id (withoutManaCost := false) (maxManaValue? := some 2)
+  let xTooHigh := !(gXProp.apply ⟨0⟩ (.chooseX 2)).isOk
+  let xLegal := (gXProp.apply ⟨0⟩ (.chooseX 1)).isOk
+  castRejected && defaultDeclines && xTooHigh && xLegal
+
 /-! ### 6. Sunburst (CR 702.44) -/
 
 /-- *Engineered Explosives* cast for X = 2 with {W}{U} enters with 2 charge counters;
@@ -252,6 +299,52 @@ def trkSunburstOneColor : Game :=
 
 #guard (namedPermanent trkSunburstTwoColors "Engineered Explosives").status.charge == 2
 #guard (namedPermanent trkSunburstOneColor "Engineered Explosives").status.charge == 1
+
+/-- CR 702.44a: Layer 4 type-changing effects (e.g. making a noncreature artifact
+a creature during your turn) are ignored when Sunburst chooses +1/+1 counters vs.
+charge counters. -/
+def trkSunburstIgnoresLayer4 : Game :=
+  let animatedSunburst : CardDef := {
+    engineeredExplosives with
+    name := "Animated Sunburst Relic"
+    staticAbilities := #[
+      .continuous (some .isYourTurn) { zones := .battlefield, pred := .sameAs .this }
+        (.all #[.modifyTypes { mode := .add, types := #[.creature] },
+                .setBasePT (some (.const 3)) (some (.const 3))])
+    ]
+  }
+  let g := insertObject trkMain animatedSunburst ⟨0⟩ (.hand ⟨0⟩) none
+  let g := (g.addMana ⟨0⟩ (.colored .white) 1).addMana ⟨0⟩ (.colored .blue) 1
+  let ee := (g.objects.find? (fun o => o.name == "Animated Sunburst Relic")).get!
+  let g := mustApply g ⟨0⟩ (.cast ee.id)
+  let g := mustApply g ⟨0⟩ (.chooseX 2)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard
+  let ee := namedPermanent trkSunburstIgnoresLayer4 "Animated Sunburst Relic"
+  trkSunburstIgnoresLayer4.isCreature ee && ee.status.charge == 2 && ee.status.plusOnePlusOne == 0
+
+/-- CR 702.44d: Multiple instances of Sunburst each work separately. -/
+def trkSunburstTwoInstances : Game :=
+  let grantSunburst : CardDef := {
+    name := "Sunburst Amplifier"
+    types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none { zones := .battlefield, pred := .all #[.hasType .artifact, .controlledBy .you] }
+        (.grantKeywords #[.simple .sunburst])
+    ]
+  }
+  let g := addPermanent trkMain grantSunburst ⟨0⟩ ⟨0⟩
+  let g := insertObject g engineeredExplosives ⟨0⟩ (.hand ⟨0⟩) none
+  let g := (g.addMana ⟨0⟩ (.colored .white) 1).addMana ⟨0⟩ (.colored .blue) 1
+  let ee := (g.objects.find? (fun o => o.name == "Engineered Explosives")).get!
+  let g := mustApply g ⟨0⟩ (.cast ee.id)
+  let g := mustApply g ⟨0⟩ (.chooseX 2)
+  let g := mustApply g ⟨0⟩ .pay
+  passBoth g
+
+#guard (namedPermanent trkSunburstTwoInstances "Engineered Explosives").status.charge == 4
 
 /-! ### 7. Strange new worlds (distinct land names) & Species 8472 -/
 

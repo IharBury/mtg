@@ -610,7 +610,7 @@ def canActivateManaAbility (g : Game) (p : PlayerId) : Bool :=
     | .resolutionChoice q (.mayPayManaForReflexive ..)
     | .resolutionChoice q (.mayPaySymbolsThen ..)
     | .resolutionChoice q (.ultronMayPay ..) => q == p
-    | .resolutionChoice q (.mayCastCards _ withoutPaying _) => q == p && !withoutPaying
+    | .resolutionChoice q (.mayCastCards _ withoutPaying _ _) => q == p && !withoutPaying
     | .resolutionChoice q (.mayCastFromGraveyard _) => q == p
     | .mayCastExiledElseDamage q .. => q == p
     | .declareAttackers =>

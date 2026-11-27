@@ -2190,7 +2190,7 @@ private def resolutionChoiceAnyObjId (fc : ResolutionChoice) (pred : ObjectId �
   | .sacrificeNontokenEach _ ids
   | .orderLibraryBottom ids
   | .mayCastFromGraveyard ids
-  | .mayCastCards ids _ _
+  | .mayCastCards ids _ _ _
   | .mayCastInstantSorceryFromHand ids
   | .mayCastUpToFromExile ids _
   | .hydeRemoveCounter ids
@@ -14144,9 +14144,12 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
           affectedPlayer := ctrl
           kind := .entersWithCountersSelf cur.id .lore 1
         }
-      -- CR 702.44a: Sunburst — enters with a +1/+1 counter (if creature) or charge counter (if noncreature)
-      -- for each color of mana spent to cast it.
-      if bc.hasSimpleKeyword .sunburst || board.hasKeyword curBf (· == .simple .sunburst) then
+      -- CR 702.44a / 702.44d: Sunburst — each instance works separately, using
+      -- copiable creature-ness (ignoring Layer 4 type-changing effects) to choose
+      -- +1/+1 counters vs. charge counters for each color of mana spent to cast it.
+      let sunburstCount : Nat :=
+        KeywordAbility.countSimple (board.currentKeywords curBf) .sunburst
+      if sunburstCount > 0 then
         let units :=
           match originStackId? with
           | some stackId => staticManaUnitsSpentOn g.events stackId
@@ -14156,13 +14159,13 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
           | .colored c => if acc.contains c then acc else acc.push c
           | .colorless => acc) (#[] : Array Color)
         if !cols.isEmpty then
-          let k : CounterKind := if board.isCreature curBf then .plusOnePlusOne else .charge
+          let k : CounterKind := if bc.isCreature then .plusOnePlusOne else .charge
           specs := specs.push {
             id := { kind := .sunburstCounters, object := some cur.id }
             source := some cur.id
             controller := some ctrl
             affectedPlayer := ctrl
-            kind := .entersWithCountersSelf cur.id k cols.size
+            kind := .entersWithCountersSelf cur.id k (cols.size * sunburstCount)
           }
     -- 616.1c / 614.12: optional copy-as-enters (`Cursed Mirror`, `Dominion Saboteur`, etc.)
     for sp in flatSelfReps do

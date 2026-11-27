@@ -1756,7 +1756,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
         g.runPostStep (.loseLifeForMilledManaValue p tops cause?)
     return g.finishResolutionChoice
   | .palantirMayDraw .., _ => throw "Have that player draw (accept), or decline"
-  | .mayCastCards eligible withoutPaying exileInstead, .objects #[id] =>
+  | .mayCastCards eligible withoutPaying exileInstead maxMv?, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
     if g.cantCastSpellsThisTurn p then
       throw "You can't cast spells this turn (CR 101.2)"
@@ -1783,6 +1783,9 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     if !isCastableObject o || (g.isLand o && !canMorph) then
       throw s!"{g.name o} can't be cast this way"
     if !canMorph then
+      if let some mx := maxMv? then
+        if g.actualCastManaValue o rawFace > mx then
+          throw s!"{rawFace.name}'s mana value exceeds {mx} (CR 701.57a)"
       if g.spellNameForbidden rawFace.name then
         throw s!"Spells named {rawFace.name} can't be cast"
       if let some err := g.castRestrictionError? p o.id rawFace then
@@ -1809,10 +1812,11 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     let g := g.change (.pending .none)
     let g' := g.castAsPartOfResolution p id (withoutManaCost := withoutPaying)
       (exileInstantSorceryInstead := exileInstead) (callerCheckpoint := true)
+      (maxManaValue? := maxMv?)
     return if g'.pending == .none then g'.finishResolutionChoice else g'
-  | .mayCastCards _ _ _, .decline =>
+  | .mayCastCards _ _ _ _, .decline =>
     return (g.logMsg s!"{(g.player p).name} declines to cast a spell").finishResolutionChoice
-  | .mayCastCards _ _ _, _ => throw "Choose a spell to cast, or decline"
+  | .mayCastCards _ _ _ _, _ => throw "Choose a spell to cast, or decline"
   | .mayCastFromGraveyard eligible, .objects #[id] =>
     if !eligible.contains id then throw "That card can't be cast this way"
     if g.cantCastSpellsThisTurn p then
@@ -2298,7 +2302,7 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
   | .daredevilMayExile _ => .decline
   | .exploreMayGraveyard _ => .decline
   | .mayChangeSpellTarget .. => .decline
-  | .mayCastCards eligible withoutPaying _ =>
+  | .mayCastCards eligible withoutPaying _ maxMv? =>
     if g.cantCastSpellsThisTurn p || g.splitSecondOnStack || g.combatLocksNonManaAbilities ||
         g.opponentsCantCastOnActiveTurn p then
       .decline
@@ -2332,7 +2336,8 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
                rawPerm.any (fun pm =>
                  pm.withoutManaCost || pm.payLifeEqualManaValue || pm.prepareSource.isSome)
            let frontOk :=
-             hasTargets o rawFace &&
+             maxMv?.all (fun mx => g.actualCastManaValue o rawFace ≤ mx) &&
+               hasTargets o rawFace &&
                (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
                g.canPaySpellCostFromSources p o
                  (g.playManaCost { o with controller := some p } rawFace

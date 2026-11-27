@@ -27,7 +27,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
     | .mayCastExiledElseDamage .. => g.castExiledAsAbilityResolves p id
     | .resolutionChoice _ (.castCopiesFree ..) => g.castFreeCopy p id
     | .resolutionChoice _ (.mayCastFromGraveyard _) => g.answerResolutionChoice p (.objects #[id])
-    | .resolutionChoice _ (.mayCastCards _ _ _) => g.answerResolutionChoice p (.objects #[id])
+    | .resolutionChoice _ (.mayCastCards _ _ _ _) => g.answerResolutionChoice p (.objects #[id])
     | _ => g.castSpell p id
   | .castAdventure id => g.castSpell p id true
   | .castWithSneak id attackerId => g.castSpell p id (sneakAttacker := some attackerId)
