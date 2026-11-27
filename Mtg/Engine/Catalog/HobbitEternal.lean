@@ -8,6 +8,9 @@ Oracle characteristics for cards from Magic: The Gathering | The Hobbit
 Eternal (HOC). Each card is defined by its full printed text.
 `hobbitEternalCards` lists every unique card in the set,
 including reprints that also appear in other sets.
+
+Source: Gatherer set `HOC` (https://gatherer.wizards.com/sets/HOC).
+When Scryfall does not match Gatherer, Gatherer is authoritative.
 -/
 
 namespace Mtg.Engine.Catalog

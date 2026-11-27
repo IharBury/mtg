@@ -9,8 +9,12 @@ import Mtg.Engine.Catalog
 # Marvel Super Heroes catalog (MSH, 2026)
 
 Official *Magic: The Gathering | Marvel Super Heroes* set: 276 draft-legal
-cards (collector numbers 1–276) plus the five basic lands printed in the set.
-Each card is its full printed text from Scryfall (`set:msh unique:cards`).
+cards (collector numbers 1–276) plus the five basic lands printed in the set
+(281 unique cards, plus the five standalone back faces of transforming cards for
+286 unique Gatherer face names).
+
+Source: Gatherer set `MSH` (https://gatherer.wizards.com/sets/MSH).
+When Scryfall does not match Gatherer, Gatherer is authoritative.
 -/
 
 namespace Mtg.Engine.Catalog
@@ -1316,8 +1320,7 @@ def blazingCrescendo : CardDef :=
     "Blazing Crescendo",
     "{1}{R}",
     "Instant",
-    "Target creature gets +3/+1 until end of turn.",
-    "Exile the top card of your library. Until the end of your next turn, you may play that card.",
+    "Target creature gets +3/+1 until end of turn. Exile the top card of your library. Until the end of your next turn, you may play that card.",
   ]
 
 def crimsonOperative : CardDef :=

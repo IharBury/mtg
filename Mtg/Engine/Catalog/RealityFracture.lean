@@ -9,7 +9,8 @@ Oracle characteristics for every card in Magic: The Gathering | Reality Fracture
 modeled: no card keeps a line as printed text. Empower Jace, prepare spells,
 convoke, and `{2/C}` hybrid mana are modeled.
 
-Source: Scryfall set `fra`.
+Source: Gatherer set `FRA` (https://gatherer.wizards.com/sets/FRA).
+When Scryfall does not match Gatherer, Gatherer is authoritative.
 -/
 
 namespace Mtg.Engine.Catalog
@@ -746,8 +747,7 @@ def realityFractureBlazingCrescendo : CardDef :=
     "Blazing Crescendo",
     "{1}{R}",
     "Instant",
-    "Target creature gets +3/+1 until end of turn.",
-    "Exile the top card of your library. Until the end of your next turn, you may play that card."
+    "Target creature gets +3/+1 until end of turn. Exile the top card of your library. Until the end of your next turn, you may play that card."
   ]
 
 def chandrasEmberling : CardDef :=
