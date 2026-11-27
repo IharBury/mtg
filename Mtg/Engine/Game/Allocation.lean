@@ -217,7 +217,7 @@ def applyEntersWith (g : Game) (o : GameObject) : Game :=
   let g := g.ensurePreparedCopy (g.object! id)
   g.enterWithHope (g.object! id)
 
-/-- As a Saga enters, put a lore counter on it (CR 714.3a). The lore counter(s)
+/-- As a Saga enters, put a lore counter on it (CR 715.3a). The lore counter(s)
 are placed in `entersWith` during the zone change, so we log the lore
 counter(s) on `o`. -/
 def addLoreAsSagaEnters (g : Game) (o : GameObject) : Game :=

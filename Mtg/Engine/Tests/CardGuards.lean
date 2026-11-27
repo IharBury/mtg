@@ -1739,7 +1739,7 @@ end CardDef
 
 -- Phase 5: Compositional `parseManaSpec` / `parseManaProductionSpec` /
 -- `parseManaAbilityLine`, CR 605.1a all 4 criteria, `HasTextChange`, and
--- `ToOracle` round-trips (anchored to 25 September 2026 CR).
+-- `ToOracle` round-trips (anchored to 6 November 2026 CR).
 
 -- All 4 `ManaSpec` ctors & all 6 `ManaPoolPalette` ctors, including novel combinations.
 #guard Parser.parseManaSpec "{G}" == some (.fixed #[.colored .green])
@@ -1844,7 +1844,7 @@ end CardDef
 #guard Parser.parseManaAbilityLine "Whenever a land enters, add {G}." == none
 #guard Parser.parseManaAbilityLine "{T}: Add {G}. Draw a card." == none
 
--- CR 605.1a (25 September 2026) all 4 criteria on `ActivatedAbility.isManaAbility`:
+-- CR 605.1a (6 November 2026) all 4 criteria on `ActivatedAbility.isManaAbility`:
 #guard (ActivatedAbility.manaSimple (.colored .green)).isManaAbility
 #guard (ActivatedAbility.intrinsicBasicLandMana .red).isManaAbility
 -- Fails criterion 1 (requires target).
@@ -2097,7 +2097,7 @@ end CardDef
   let ab := TriggeredAbility.onAttackWithElvesScry 1
   (HasTextChange.applyTextChanges tcs ab).pattern == .youAttackWithSubtype .goblin
 
--- Phase 7: Unified Saga chapters as `TriggeredAbility` with `.counterThreshold .lore` (CR 714.2b/d).
+-- Phase 7: Unified Saga chapters as `TriggeredAbility` with `.counterThreshold .lore` (CR 715.2b/d).
 #guard
   let sagaCard : CardDef := {
     name := "Test Saga"

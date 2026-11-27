@@ -289,7 +289,7 @@ def exilePlayManaCost (g : Game) (o : GameObject) : String :=
     else
       toString mc
 
-/-- Who may play `o` from exile, if anyone (CR 701.18 / 715.3d), including
+/-- Who may play `o` from exile, if anyone (CR 701.18 / 716.3d), including
 when the permission replaces the mana cost with `{0}`. -/
 def exilePlayPermissionClause (g : Game) (o : GameObject) : String :=
   let perms := g.activePlayPermissions o

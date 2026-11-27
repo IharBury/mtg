@@ -289,7 +289,7 @@ def enforcersBoard : Game :=
     handSize g me == before + 1
 /- A land can't pay it, voluntary declining is rejected once mana has been paid
 while a legal sacrifice exists (CR 602.2b), and if no legal sacrifice remains
-declining reverses the unpayable activation and returns the mana (CR 733.1). -/
+declining reverses the unpayable activation and returns the mana (CR 734.1). -/
 #guard
   let g := addPermanent enforcersBoard forest me me
   let g := activateNamed g "Kingpin's Enforcers" "Draw"

@@ -122,7 +122,7 @@ def cratermakerTargeted : Game :=
   mentions s "chooses Grizzly Bears as a target (CR 601.2c)")
 #guard cratermakerTargeted.log.any (fun s => mentions s "may activate mana abilities (CR 601.2g)")
 
--- Paying without mana reverses the activation (CR 602.2 / 733.1).
+-- Paying without mana reverses the activation (CR 602.2 / 734.1).
 def reversedCratermaker : Game :=
   mustApply cratermakerTargeted ⟨0⟩ .pay
 

@@ -2571,13 +2571,13 @@ private def replayOk38i1 (gs : Array Game) : Bool :=
     gOverReversed.proposalCheckpoint.isNone &&
     (gOverReversed.permanentsOf p0).any (·.name == bear.name)
 
-  -- 1d. Mid-`.continueCheckpointReplay` 3rd-player departure CR 104.2a / CR 725.4 / CR 800.4c invariants:
+  -- 1d. Mid-`.continueCheckpointReplay` 3rd-player departure CR 104.2a / CR 726.4 / CR 800.4c invariants:
   --     (i) 5-player game (`p0..p4`, `activePlayer := p3`): `p2` is monarch and controls `p0`-owned,
   --         `p3`-defaultControlled `midOrph` via `.whileSourceOnBattlefield midAltar.id`. `p1` concedes (`B1`),
   --         then `p2` concedes (`B2`, making `activePlayer` `p3` monarch and expiring `.control p2` onto `p3`),
   --         which aborts `p0`'s proposal on `midAltar` and pauses `.continueCheckpointReplay` on `B1`'s CR 610.3
   --         return (`mRidA`/`mRidB`) BEFORE `B2` replays. During that pause, **3rd player `p3` concedes**!
-  --         When `p0` answers `mRidA`, `B2` replays: `becameMonarch p3` redirects to `p4` (`nextLiving p3`, CR 725.4)
+  --         When `p0` answers `mRidA`, `B2` replays: `becameMonarch p3` redirects to `p4` (`nextLiving p3`, CR 726.4)
   --         and `midOrph` (now lacking any living controller) is exiled via `orphanExiles` (CR 800.4c)!
   --     (ii) 4-player game (`p0..p3`): same mid-`.continueCheckpointReplay` pause after `p1` (`B1`) + `p2` (`B2`),
   --          then **3rd player `p3` concedes during the pause**; when `p0` answers `mRidA`, replaying `B2` leaves

@@ -837,4 +837,188 @@ private def testColossus : CardDef := {
   (g2.resolveTokenPrinted? maxPowerCopySpec (controller := p0)).isNone &&
   pausedOk && chosenOk && atkTieOk
 
+/-! ### 4. CR 2026-11-06 Regression Tests (Rules metadata, 208.3, 707.2, 701.27e/j, 712.11b/12a, 201.4f) -/
+
+#guard Rules.effectiveDate == "2026-11-06"
+#guard Rules.publicationStamp == "20261106"
+#guard Rules.sourceUrl == "https://media.wizards.com/2026/downloads/MagicCompRules%2020261106.txt"
+
+-- CR 208.3 & CR 707.2: off-battlefield noncreature objects with top-level printed P/T
+-- (e.g. a Vehicle card in a graveyard) have that P/T, whereas noncreature cards without
+-- top-level printed P/T (e.g. a Spacecraft without printed P/T outside its abilities) do not;
+-- LKI `.defense` reads `eo.copiable` (CR 707.2) and masks face-down permanents.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let g0 := afterDraw
+  let testSpacecraft : CardDef := {
+    name := "Test Spacecraft"
+    manaCost := ManaCost.ofGeneric 3
+    types := #[.artifact]
+    subtypes := #["Spacecraft"]
+  }
+  let testBattle : CardDef := {
+    name := "Test Siege"
+    manaCost := ManaCost.ofGeneric 3
+    types := #[.battle]
+    subtypes := #["Siege"]
+    defense := some 5
+  }
+  let g1 := insertObject g0 testVehicle p0 (.graveyard p0)
+  let gyVehId := (g1.player p0).graveyard.back!
+  let gyVehLive := (EvalExpr.resolveObjectView? g1 { controller := p0 } gyVehId).get!
+  let gyVehSnap : EventObject := g1.snapshot (g1.findObject? gyVehId).get!
+  let g2 := insertObject g1 testSpacecraft p0 (.graveyard p0)
+  let gyShipId := (g2.player p0).graveyard.back!
+  let gyShipLive := (EvalExpr.resolveObjectView? g2 { controller := p0 } gyShipId).get!
+  let gyShipSnap : EventObject := g2.snapshot (g2.findObject? gyShipId).get!
+  let g3 := addPermanent g2 testSpacecraft p0 p0
+  let bfShip := lastPermanent g3
+  let copyBattleSnap : EventObject := {
+    g3.snapshot bfShip with
+    printed := some testSpacecraft
+    copiable := some testBattle
+  }
+  let faceDownBattleSnap : EventObject := {
+    copyBattleSnap with
+    faceDown := true
+  }
+  -- Off-battlefield Vehicle has printed 4/4 (CR 208.3)
+  EvalExpr.viewStat? g1 gyVehLive .power == some 4 &&
+  EvalExpr.viewStat? g1 gyVehLive .toughness == some 4 &&
+  EvalExpr.viewStat? g1 (.lki gyVehSnap) .power == some 4 &&
+  EvalExpr.viewStat? g1 (.lki gyVehSnap) .toughness == some 4 &&
+  -- Off-battlefield Spacecraft without top-level printed P/T has no P/T (CR 208.3)
+  (EvalExpr.viewStat? g2 gyShipLive .power).isNone &&
+  (EvalExpr.viewStat? g2 gyShipLive .toughness).isNone &&
+  (EvalExpr.viewStat? g2 (.lki gyShipSnap) .power).isNone &&
+  (EvalExpr.viewStat? g2 (.lki gyShipSnap) .toughness).isNone &&
+  -- Copiable defense is preserved in LKI (CR 707.2) and masked when face down
+  EvalExpr.viewStat? g3 (.lki copyBattleSnap) .defense == some 5 &&
+  (EvalExpr.viewStat? g3 (.lki faceDownBattleSnap) .defense).isNone
+
+-- CR 701.27e / 701.27j / 712.11b / 712.12a: DFC instant/sorcery face guards on
+-- transforming and entering the battlefield, and face-down transform guard.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let g0 := afterDraw
+  let sorceryBack : CardDef := {
+    name := "Back Sorcery"
+    types := #[.sorcery]
+  }
+  let creatureFront : CardDef := {
+    name := "Front Creature"
+    manaCost := ManaCost.ofGeneric 2
+    types := #[.creature]
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
+    otherFace := some sorceryBack
+  }
+  let creatureBack : CardDef := {
+    name := "Back Creature"
+    types := #[.creature]
+    power := some (.fixed 3)
+    toughness := some (.fixed 3)
+  }
+  let instantFrontMdfc : CardDef := {
+    name := "Front Instant"
+    manaCost := ManaCost.ofGeneric 1
+    types := #[.instant]
+    otherFace := some creatureBack
+  }
+  let twoFaceCreature : CardDef := {
+    name := "Two-Face Creature"
+    manaCost := ManaCost.ofGeneric 2
+    types := #[.creature]
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
+    otherFace := some creatureBack
+  }
+  -- 1. CR 701.27e: transforming into an instant/sorcery back face does nothing
+  let gT1 := addPermanent g0 creatureFront p0 p0
+  let frontId := (lastPermanent gT1).id
+  let gT2 := gT1.transformPermanent p0 (some frontId)
+  let t1Ok :=
+    (gT2.findObject? frontId).any fun o =>
+      gT2.name o == "Front Creature" && !o.status.transformed
+  -- 2. CR 712.12a: face-down DFC cannot transform
+  let gFd1 := insertObject g0 twoFaceCreature p0 .battlefield (controller := some p0)
+    (status := { faceDown := true })
+  let fdId := (lastPermanent gFd1).id
+  let gFd2 := gFd1.transformPermanent p0 (some fdId)
+  let fdOk :=
+    (gFd2.findObject? fdId).any fun o =>
+      o.status.faceDown && !o.status.transformed
+  -- 3. CR 712.11b: DFC with sorcery back face put onto battlefield transformed from exile stays in exile
+  let gEx1 := insertObject g0 creatureFront p0 .exile
+  let exId := (gEx1.objects.back!).id
+  let (gEx2, _) := gEx1.putOntoBattlefield exId p0 (nightBack := true)
+  let exOk :=
+    (gEx2.findObject? exId).any (·.zone == .exile) &&
+    !gEx2.battlefield.any (fun o => gEx2.name o == "Front Creature" || gEx2.name o == "Back Sorcery")
+  -- 4. CR 701.27j / 712.11b: DFC spell with sorcery back face entering transformed from stack goes to graveyard
+  let gSt1 := insertObject g0 creatureFront p0 .stack (controller := some p0)
+  let stId := (gSt1.objects.back!).id
+  let (gSt2, gyId) := gSt1.putOntoBattlefield stId p0 (nightBack := true)
+  let stOk :=
+    (gSt2.findObject? gyId).any (·.zone == .graveyard p0) &&
+    !gSt2.battlefield.any (fun o => gSt2.name o == "Front Creature" || gSt2.name o == "Back Sorcery")
+  -- 5. CR 712.11b: MDFC with instant front face stays in graveyard when put front-face-up,
+  --    but enters legally when put onto the battlefield transformed (creature back face up).
+  let gMd1 := insertObject g0 instantFrontMdfc p0 (.graveyard p0)
+  let mdId := (gMd1.player p0).graveyard.back!
+  let (gMdStay, _) := gMd1.putOntoBattlefield mdId p0
+  let (gMdBack, enteredId) := gMd1.putOntoBattlefield mdId p0 (nightBack := true)
+  let mdfcOk :=
+    (gMdStay.findObject? mdId).any (·.zone == .graveyard p0) &&
+    (gMdBack.findObject? enteredId).any (fun o => o.isOnBattlefield && gMdBack.name o == "Back Creature")
+  -- 6. CR 701.27j / 704.5e: copy of a DFC spell with a sorcery back face entering
+  --    transformed goes to its owner's graveyard first (recording the stack→graveyard
+  --    zone change), then ceases to exist when SBAs run (CR 704.5e).
+  let (gCp1, copyId?) := gSt1.copyStackSpellWithId (gSt1.object! stId) p0
+  let copyId := copyId?.getD ⟨0⟩
+  let (gCp2, gyCopyId) := gCp1.putOntoBattlefield copyId p0 (nightBack := true)
+  let copyMovedEvent :=
+    gCp2.events.any fun e =>
+      match e with
+      | .rules _ (.zone (.moved before after .stack (.graveyard owner) _ _ _ _)) _ _ =>
+        before.id == some copyId && before.isCopy &&
+        after.id == some gyCopyId && after.isCopy && owner == p0
+      | _ => false
+  let gCp3 := gCp2.checkSBA
+  let copyCeasedEvent :=
+    gCp3.events.any fun e =>
+      match e with
+      | .rules _ (.zone (.ceasedToExist obj)) (.stateBased .copyOutsideStackOrBf) _ =>
+        obj.id == some gyCopyId && obj.isCopy
+      | _ => false
+  let stCopyOk :=
+    copyId?.isSome &&
+    (gCp2.findObject? gyCopyId).any (fun o => o.zone == .graveyard p0 && o.isCopy) &&
+    !gCp2.battlefield.any (fun o => gCp2.name o == "Front Creature" || gCp2.name o == "Back Sorcery") &&
+    copyMovedEvent &&
+    (gCp3.findObject? gyCopyId).isNone &&
+    copyCeasedEvent
+  t1Ok && fdOk && exOk && stOk && mdfcOk && stCopyOk
+
+-- CR 201.4f: alternative names of adventurer (CR 716) and preparation (CR 723) cards are valid card names.
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let advCard : CardDef := {
+    name := "Test Adventurer"
+    types := #[.creature]
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
+    subFaces := #[{ kind := .adventure, name := "Test Adventure Spell", types := #[.instant] }]
+  }
+  let prepCard : CardDef := {
+    name := "Test Prepared Mage"
+    types := #[.creature]
+    power := some (.fixed 2)
+    toughness := some (.fixed 2)
+    subFaces := #[{ kind := .prepare, name := "Test Prepare Spell", types := #[.sorcery] }]
+  }
+  let g := insertObject (insertObject afterDraw advCard p0 (.hand p0)) prepCard p0 (.hand p0)
+  g.isNonlandCardName "Test Adventure Spell" &&
+  g.isNonlandCardName "Test Prepare Spell"
+
 end Mtg.Engine.Tests.EvalExprSuite

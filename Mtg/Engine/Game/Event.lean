@@ -92,7 +92,7 @@ inductive ReplacementKind where
   | entersAsCopyCreatureUntilEot (object targetId : ObjectId)
   /-- CR 616.1c / 614.1c / 614.12: Decline optional enter-as-copy. -/
   | declineEntersAsCopy (object : ObjectId)
-  /-- CR 616.1d / 702.145b / 712.14: Causes `object` to enter the battlefield with its back face up. -/
+  /-- CR 616.1d / 702.145b / 712.11: Causes `object` to enter the battlefield with its back face up. -/
   | entersBackFaceUp (object : Option ObjectId)
   /-- CR 303.4f–g / 614.12: Attach non-cast Aura `object` to `hostId` as it enters. -/
   | asEntersAttachAura (object hostId : ObjectId)
@@ -598,7 +598,7 @@ the battlefield (CR 611.2b / 613.1b / 702.26f). -/
 @[inline] def pendingFreeRGCreatureThisTurn (player : PlayerId) : ContinuousEffectSpec :=
   .playerRule player .pendingFreeRGCreature .untilEndOfTurn
 
-/-- `controller` controls `controlled` during their turn (CR 611.2, 723). -/
+/-- `controller` controls `controlled` during their turn (CR 611.2, 724). -/
 @[inline] def playerControl (controller controlled : PlayerId) (onNextTurn : Bool := false) : ContinuousEffectSpec :=
   .playerRule controller (.controlsPlayer controlled onNextTurn)
     (if onNextTurn then .indefinite else .untilEndOfTurn)
@@ -645,7 +645,7 @@ inductive PermanentEvent where
   | untapped (object : EventObject)                                          -- 701.26b
   | phasedOut (object : EventObject) (indirectly : Bool := false)            -- 702.26b / 702.26g
   | phasedIn (object : EventObject) (indirectly : Bool := false)             -- 702.26c / 702.26g
-  | transformed (object : EventObject) (nowBackFace : Bool)                  -- 701.27a / 712.18
+  | transformed (object : EventObject) (nowBackFace : Bool)                  -- 701.27a / 712.15
   | turnedFaceUp (object : EventObject)                                      -- 116.2b / 708.8
   | turnedFaceDown (object : EventObject)                                    -- 708.2
   | counters
@@ -728,7 +728,7 @@ inductive LossReason where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Player-level actions that don't mutate a single object's zone, status, life,
-or damage (CR 104, 106.4, 500.5, 701.4, 701.20–25, 701.34, 701.54, 702.131, 725, 800.4a). -/
+or damage (CR 104, 106.4, 500.5, 701.4, 701.20–25, 701.34, 701.54, 702.131, 726, 800.4a). -/
 inductive PlayerEvent where
   /-- `player` added `units` of mana to their mana pool (CR 106.4). -/
   | manaAdded (player : PlayerId) (units : Array ManaUnit)
@@ -772,7 +772,7 @@ inductive PlayerEvent where
   | optionalOnceActed (player : PlayerId) (source : ObjectId)
   /-- `player` attempted to draw a card from an empty library (CR 121.4 / 704.5b). -/
   | drawFromEmptyAttempted (player : PlayerId)
-  /-- `player` became the monarch (CR 725). -/
+  /-- `player` became the monarch (CR 726). -/
   | becameMonarch (player : PlayerId) (previous : Option PlayerId := none)
   /-- `player` gained lasting designation `d` (CR 702.131). -/
   | gainedDesignation (player : PlayerId) (d : PlayerDesignation)
@@ -792,7 +792,7 @@ inductive TurnEvent where
   | stepEnded (step : Step)
   | phaseEnded (phase : Phase)
   | turnEnded (player : PlayerId)
-  | dayNightChanged (night : Bool)                                -- 731.2 (non-goal today)
+  | dayNightChanged (night : Bool)                                -- 732.2 (non-goal today)
   | extraTurnAdded (player : PlayerId) (after : TurnRef := .current) -- 500.7
   | extraPhaseAdded (phase : Phase) (afterPhase : PhaseRef := .current) -- 500.8
   | extraStepAdded (step : Step) (anchor : StepAnchor)            -- 500.9
@@ -1232,7 +1232,7 @@ inductive PostCastCleanup where
 deriving Repr, Inhabited, BEq
 
 /-- Action boundary marker within a proposal slice so `reverseToProposalCheckpoint?`
-can reverse or retain discrete mana abilities and cost actions as whole CR 733.1
+can reverse or retain discrete mana abilities and cost actions as whole CR 734.1
 actions. -/
 inductive ProposalActionKind where
   | manaAbility (source : Option ObjectId := none)
@@ -1877,7 +1877,7 @@ inductive EngineChange where
   | pushStack (e : StackEntry)
   | popStack
   | stackEntry (objectId : ObjectId) (c : StackEntryChange)
-  /-- Update or checkpoint the proposed spell or ability (CR 601.2 / 602.2 / 733.1). -/
+  /-- Update or checkpoint the proposed spell or ability (CR 601.2 / 602.2 / 734.1). -/
   | proposedSpell (v : Option ProposedSpell)
   | proposal (c : ProposalChange)
   | proposalChanges (cs : Array ProposalChange)
@@ -2172,8 +2172,8 @@ completion, turn/step/resolution/cleanup/concede/leave/proposal completion,
 SBA check, random/prompt-opening continuation, non-batch `.continueInterpreter`,
 or proposal-reversing `.restorePending`) ahead of which deferred
 `.logExpiredPlayFromExile` post-steps must be placed so expiry logs emit before
-`PriorityEvent.received` / prompts and are never dropped by CR 733.1 proposal
-reversal (CR 117.3 / 611.2 / 733.1). -/
+`PriorityEvent.received` / prompts and are never dropped by CR 734.1 proposal
+reversal (CR 117.3 / 611.2 / 734.1). -/
 def PendingReplacement.isPlayFromExileDeferBoundaryLeaf : PendingReplacement → Bool
   | .restorePending .none false _ _ none => false
   | .continueInterpreter st => !st.isPureBatchLoopCont
@@ -2827,7 +2827,7 @@ def phasedIn (turn : Nat) (object : EventObject) (indirectly : Bool := false)
     (cause : EventCause) : GameEvent :=
   rules turn (.permanent (.phasedIn object indirectly)) cause
 
-/-- `object` transformed (CR 701.27a / 712.18). -/
+/-- `object` transformed (CR 701.27a / 712.15). -/
 def transformed (turn : Nat) (object : EventObject) (nowBackFace : Bool)
     (cause : EventCause) : GameEvent :=
   rules turn (.permanent (.transformed object nowBackFace)) cause
@@ -2885,7 +2885,7 @@ def shuffled (turn : Nat) (libraryOwner : PlayerId) (newOrder : Array ObjectId)
   rules turn (.player (.shuffled libraryOwner newOrder))
     (cause.getD (.oneShotEffect none none (some libraryOwner)))
 
-/-- `player` became the monarch (CR 725). -/
+/-- `player` became the monarch (CR 726). -/
 def becameMonarch (turn : Nat) (player : PlayerId) (previous : Option PlayerId := none)
     (cause : Option EventCause := none) : GameEvent :=
   rules turn (.player (.becameMonarch player previous))

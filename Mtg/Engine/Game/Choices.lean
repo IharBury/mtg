@@ -733,7 +733,7 @@ partial def createPermanentCopyTokens (g : Game) (controller : PlayerId) (templa
     else g
 
 /-- Whether the source of a proposed activated ability or face-up action can
-still pay its source-bound costs (CR 602.2b / 606.3–606.4 / 702.37e / 733.1). -/
+still pay its source-bound costs (CR 602.2b / 606.3–606.4 / 702.37e / 734.1). -/
 def sourceStillPayable (g : Game) (prop : ProposedSpell) : Bool :=
   match prop.sourceId with
   | none =>

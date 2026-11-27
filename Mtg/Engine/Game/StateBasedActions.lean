@@ -326,7 +326,7 @@ def finishSbaSweep (g : Game) (moves : Array SbaGraveyardMove)
       | none => pure ()
   if stage != .illegalAttachments then
     -- Saga with lore at or past its final chapter and no chapter on the
-    -- stack captured at start of pass is sacrificed (CR 714.4 / 704.5s).
+    -- stack captured at start of pass is sacrificed (CR 715.4 / 704.5s).
     let sagaList : Array SbaGraveyardMove :=
       if stage == .finalChapterSagas then moves else sagaMoves
     for i in [0:sagaList.size] do
@@ -1028,7 +1028,7 @@ partial def checkSBACounted (g : Game)
                   !g.sagaChapterPending o.id then
                 some {
                   objectId := o.id
-                  reason := s!"{g.name o} is sacrificed (CR 714.4)"
+                  reason := s!"{g.name o} is sacrificed (CR 715.4)"
                   verb := some .sacrifice
                   actor := some ctrl
                   sba := .sagaFinalChapter

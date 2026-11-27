@@ -308,7 +308,7 @@ private def replayOk29i1 (gs : Array Game) : Bool :=
 --    inside `playerLeavesGameCore`), `redirectPendingAfterLeave` stack-object retarget cleanup
 --    when `q != p`, and `.crew` / `.zemoBoastExile` / `.chooseTeamworkCreatures` revalidation
 --    across `.restorePending`, `checkReversal`, `decline`, `pickTeamworkCreatures`, `Game.applyIdle`,
---    and `Agent.choose` (CR 601.2b,h / 602.2b / 616.1 / 702.122a / 702.142a / 733.1 / 800.4a).
+--    and `Agent.choose` (CR 601.2b,h / 602.2b / 616.1 / 702.122a / 702.142a / 734.1 / 800.4a).
 #guard
   let p0 : PlayerId := ⟨0⟩
   let p1 : PlayerId := ⟨1⟩
@@ -3355,7 +3355,7 @@ private def replayOk34i3 (gs : Array Game) : Bool :=
     (gChooseXAfterP1Leave.findObject? p1SrcAbObj.id).isNone &&
     !(gChooseXAfterP1Leave.object! p0Bear.id).status.tapped &&
     !p1SrcAbCeasedOnP1Leave &&
-    gChooseXAfterP1Leave.log.any (·.contains "the activation is reversed (CR 602.2 / 733.1)") &&
+    gChooseXAfterP1Leave.log.any (·.contains "the activation is reversed (CR 602.2 / 734.1)") &&
     gChooseXWithOuterAfterLeave.proposedSpell.isNone &&
     gChooseXWithOuterAfterLeave.proposalCheckpoint.isNone &&
     (gChooseXWithOuterAfterLeave.player p0).life == (gBase.player p0).life + 2 &&

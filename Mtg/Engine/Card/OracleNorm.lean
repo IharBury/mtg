@@ -61,17 +61,18 @@ meaning, so Oracle parsing ignores it. Comparison is case-insensitive.
 may use U+2019 instead.
 -/
 def abilityWords : List String := [
-  "adamant", "addendum", "alliance", "battalion", "bloodrush", "celebration",
-  "channel", "chroma", "cohort", "constellation", "converge",
+  "adamant", "addendum", "alliance", "battalion", "battlefront", "bloodrush",
+  "celebration", "channel", "chroma", "cohort", "constellation", "converge",
   "council's dilemma", "coven", "delirium", "descend 4", "descend 8",
-  "disappear", "domain", "eerie", "eminence", "enrage", "exhaust", "fateful hour",
-  "fathomless descent", "ferocious", "flurry", "formidable", "grandeur",
-  "hellbent", "heroic", "imprint", "infusion", "inspired", "join forces",
-  "kinship", "landfall", "lieutenant", "magecraft", "metalcraft", "morbid",
-  "opus", "pack tactics", "paradox", "parley", "radiance", "raid", "rally",
-  "renew", "repartee", "revolt", "secret council", "spell mastery", "strive",
-  "survival", "sweep", "tempting offer", "threshold", "undergrowth", "valiant",
-  "vivid", "void", "will of the council"
+  "disappear", "domain", "eerie", "eminence", "enrage", "fateful hour",
+  "fathomless descent", "federation", "ferocious", "flurry", "formidable",
+  "grandeur", "hellbent", "heroic", "imprint", "infusion", "inspired",
+  "join forces", "kinship", "landfall", "lieutenant", "magecraft", "metalcraft",
+  "morbid", "opus", "pack tactics", "paradox", "parley", "radiance", "raid",
+  "rally", "renew", "repartee", "revolt", "rulebreaker", "secret council",
+  "seek out", "spell mastery", "strange new worlds", "strive", "survival",
+  "sweep", "tempting offer", "threshold", "undergrowth", "valiant", "vivid",
+  "void", "will of the council"
 ]
 
 private def foldApos (c : Char) : Char :=
@@ -555,7 +556,7 @@ def splitKeywordWardLine (s : String) : List String :=
 
 -- CR 207.2c: every ability word is ignored, in any case, wherever it labels
 -- an ability. A word that merely shares letters with an ability word is not.
-#guard abilityWords.length == 62
+#guard abilityWords.length == 66
 #guard abilityWords.head? == some "adamant"
 #guard abilityWords.getLast? == some "will of the council"
 #guard abilityWords.all fun w =>
@@ -565,6 +566,11 @@ def splitKeywordWardLine (s : String) : List String :=
 #guard abilityWords.all fun w =>
   normalizeUnit "Card" s!"{w} — Whenever a land you control enters, draw a card." ==
     normalizeUnit "Card" "Whenever a land you control enters, draw a card."
+#guard stripAbilityWords "Battlefront — Draw a card." == "Draw a card."
+#guard stripAbilityWords "Federation — Draw a card." == "Draw a card."
+#guard stripAbilityWords "Rulebreaker — Draw a card." == "Draw a card."
+#guard stripAbilityWords "Seek out — Draw a card." == "Draw a card."
+#guard stripAbilityWords "Strange new worlds — Draw a card." == "Draw a card."
 #guard stripAbilityWords
     ("Council" ++ String.ofList [Char.ofNat 0x2019] ++
       "s Dilemma — Starting with you, each player votes.") ==
@@ -589,6 +595,8 @@ def splitKeywordWardLine (s : String) : List String :=
 #guard stripAbilityWords "• Pack Tactics — Draw a card." == "• Draw a card."
 #guard stripAbilityWords "afraid — draw a card." == "afraid — draw a card."
 #guard stripAbilityWords "Boast — {1}: Draw a card." == "Boast — {1}: Draw a card."
+#guard stripAbilityWords "Exhaust — {4}{G}: Draw a card." ==
+  "Exhaust — {4}{G}: Draw a card."
 #guard stripAbilityWords "Power-up — {4}{W}: Draw a card." ==
   "Power-up — {4}{W}: Draw a card."
 #guard stripAbilityWord "Boast — {1}: Draw a card." == "{1}: Draw a card."

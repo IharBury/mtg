@@ -2,7 +2,7 @@ import Mtg.Engine.Card.Effect
 import Mtg.Engine.Card.Trigger
 
 /-!
-# Saga-chapter effect constructors (CR 714.2)
+# Saga-chapter effect constructors (CR 715.2)
 
 All 23 Saga chapter effects lowered directly onto unified `Instruction` values.
 -/
@@ -107,7 +107,7 @@ def chapterSearchBasicPlainsExileGainLife (max life : Nat) : Effect :=
       Instruction.gainLifeFixed life
     ] }
 
-/-- Chapter: `"put a card exiled with this Saga into its owner's hand"` (CR 607.2a / 714.4). -/
+/-- Chapter: `"put a card exiled with this Saga into its owner's hand"` (CR 607.2a / 715.4). -/
 def chapterReturnLinkedExileToHand : Effect :=
   { body := .moveZone (.linkedExile .this) (.hand .owner) .put {
       choice? := some { chooser := .controller, count := .exact (.const 1) }

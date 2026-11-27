@@ -992,7 +992,7 @@ def thranduilTappedForCopiedGreen : Game :=
     (namedPermanent thranduilTappedForCopiedGreen "Thranduil, the Elvenking").status.tapped
 
 /-!
-# Supported Saga cards (CR 714)
+# Supported Saga cards (CR 715)
 
 Catalog Sagas store structured chapter `Effect`s. Entering a Saga puts a lore
 counter on it and the matching chapter goes on the stack.
@@ -1067,7 +1067,7 @@ def burnChapterIV : Game :=
 #guard
   !burnChapterIV.battlefield.any (fun o => o.name == "Burn, Burn, Tree and Fern") &&
     (burnChapterIV.player ⟨0⟩).manaPool.get (.colored .red) == 2 &&
-    burnChapterIV.log.any (fun s => mentions s "CR 714.4")
+    burnChapterIV.log.any (fun s => mentions s "CR 715.4")
 
 def valleyChapterI : Game :=
   let g := addToLibraryTop afterDraw forest ⟨0⟩
@@ -1193,7 +1193,7 @@ def roadsChapterIV : Game :=
 #guard
   !roadsChapterIV.battlefield.any (fun o => o.name == "Roads Go Ever, Ever On") &&
     (roadsChapterIV.delayedTriggers.filter (fun dt => dt.controller == ⟨0⟩ && dt.kind == .attackPumpPerPlains)).size == 1 &&
-    roadsChapterIV.log.any (fun s => mentions s "CR 714.4")
+    roadsChapterIV.log.any (fun s => mentions s "CR 715.4")
 
 def roadsAttackPump : Game :=
   let g := addPermanent roadsChapterIV llanowarElves ⟨0⟩ ⟨0⟩
@@ -1255,7 +1255,7 @@ def mountainKingPlusOne : Game :=
   !mountainKingPlusOne.battlefield.any (fun o =>
     o.name == "The Mountain-king's Return") &&
     (namedPermanent mountainKingPlusOne "Llanowar Elves").status.plusOnePlusOne == 1 &&
-    mountainKingPlusOne.log.any (fun s => mentions s "CR 714.4")
+    mountainKingPlusOne.log.any (fun s => mentions s "CR 715.4")
 
 /-- A later first-main lore counter advances a Saga that entered this turn. -/
 def loreAfterFirstMain : Game :=

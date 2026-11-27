@@ -6,7 +6,7 @@ import Mtg.Engine.Card.Primitives
 Layer-0 evaluated mana types (`ManaType`, `ManaOutput`) and pure compositional
 mana spending restrictions (`ManaObjectPred`, `ManaAbilityPred`,
 `SpellRiderSpec`, `ManaSpend`, `ManaSpendRestriction`), anchored to the
-25 September 2026 Comprehensive Rules (CR 106.1, 106.6, 106.12, 605).
+6 November 2026 Comprehensive Rules (CR 106.1, 106.6, 106.12, 605).
 
 Kept below `Mtg.Engine.Mana` (and below `Mtg.Engine.Card.Expr`) so `ManaPool`
 cost payment (`canPay` / `pay?`) stays pure, `Game`-free, and strictly acyclic

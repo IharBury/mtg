@@ -176,7 +176,7 @@ def resolveAuraSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :
   | _ => toGraveyard g
 
 /-- Resolve an Adventure: apply its effect, then exile the card and grant
-permission to cast the permanent (CR 715.3d). A copy of an Adventure spell was
+permission to cast the permanent (CR 716.3d). A copy of an Adventure spell was
 not cast as an Adventure and ceases to exist instead (CR 704.5e / 707.10). -/
 def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : Game :=
   if obj.isCopy then
@@ -200,10 +200,10 @@ def resolveAdventureSpell (g : Game) (entry : StackEntry) (obj : GameObject) : G
               fromAdventure := true })
             (cause := finishCause)
           g.logMsg
-            s!"{g.name o} is exiled. {(g.player entry.controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
+            s!"{g.name o} is exiled. {(g.player entry.controller).name} may cast it for as long as it remains exiled (CR 716.3d)"
       | none => g
 
-/-- Complete the post-`ceaseToExist` CR 608.2n / 714.4 step of `.ability` resolution
+/-- Complete the post-`ceaseToExist` CR 608.2n / 715.4 step of `.ability` resolution
 (either immediately in `finishOneResolution` or after a `sbaPaused` replacement
 choice finishes via `PostStep.finishAbilityResolution`). -/
 def finishAbilityResolutionTail (g : Game) (snap : EventObject) (controller : PlayerId)

@@ -7,7 +7,7 @@ import Mtg.Engine.Catalog.RealityFractureCommander
 
 Comprehensive gameplay `#guard` regression suite for unified activated and mana
 abilities (see `docs/card-and-ability-model.md` and `docs/game-evaluation.md`,
-anchored to the 25 September 2026 CR):
+anchored to the 6 November 2026 CR):
 1. CR 305.6 intrinsic basic-land mana synthesis (including Layer 3 text change
    `Mountain → Island`, Yavimaya-style Layer 4 `.addDedup` preserving rules text,
    and non-land basic-subtype negative check).
@@ -192,7 +192,7 @@ private def passBothPlayers (g : Game) : Game :=
   (g1.activatedAbilitiesOf o).isEmpty && (g1.manaAbilityDefs o).isEmpty &&
     (g1.manaAbilitiesOf o).isEmpty
 
-/-! ### 3. CR 605.1a All Four Criteria at Runtime (25 September 2026) -/
+/-! ### 3. CR 605.1a All Four Criteria at Runtime (6 November 2026) -/
 
 -- (a) Criterion 1: Targeted mana-producing ability is NOT a mana ability; uses stack & resolves.
 #guard
@@ -250,7 +250,7 @@ private def passBothPlayers (g : Game) : Game :=
     (gRes.object! pw.id).status.loyaltyCounters == 4 &&
     !(gRes.apply p0 (.activate pw.id 0)).isOk
 
--- (c) Criterion 4 (25 September 2026 CR 605.1a): Library-moving mana ability
+-- (c) Criterion 4 (6 November 2026 CR 605.1a): Library-moving mana ability
 -- (`{T}: Add {G}. Draw a card.`) is NOT a mana ability; uses stack & resolves both parts.
 -- Likewise, an exile-from-library cost fails criterion 4 via cost.
 #guard

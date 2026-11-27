@@ -117,7 +117,7 @@ until end of turn (CR 602 / 611.2a / 122 / 509.1b / 118.3b), and graveyard
 activations that return the card to the battlefield tapped or to hand
 (CR 404 / 602), including only if you control a legendary creature,
 adventurer cards including casting an Adventure and later the permanent
-(CR 715), playing exiled creature cards with mana of any type
+(CR 716), playing exiled creature cards with mana of any type
 (CR 118.14 / 400.7), cost reductions if a creature died this turn or if the
 target was dealt damage this turn (CR 118.7 / 601.2f), additional costs that
 sacrifice an artifact or creature, discard a card, or pay extra generic mana (announced at
@@ -126,10 +126,10 @@ typecycling from hand (CR 702.29: discard this card, search for a land type,
 put it into your hand, then shuffle),
 combat (CR 506–510, including combat damage assignment under
 CR 510.1c–d, deathtouch as lethal for trample, CR 702.2c / 702.19b, and lifelink,
-CR 702.15b), Saga lore counters and chapter abilities (CR 714), cleanup
+CR 702.15b), Saga lore counters and chapter abilities (CR 715), cleanup
 (CR 514.1–3), and the state-based actions we implement
 (CR 704.5, including deathtouch, CR 704.5h, the legend rule, CR 704.5j,
-and sacrificing a Saga after its final chapter, CR 714.4),
+and sacrificing a Saga after its final chapter, CR 715.4),
 and a player leaving a multiplayer game (CR 800.4 and 800.4a–p).
 
 This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
@@ -174,7 +174,7 @@ This module re-exports the `Mtg.Engine.Game.*` files, one per abstraction:
 - `ResolutionEffects`: Named resolution effects
 - `ModeledTriggers`: Modeled trigger resolution
 - `CastExtras`: Optional costs, cascade, and the Ring
-- `Interpreter`: Unified `Instruction` & `stepEnv` interpreter (CR 608 / 614.6 / 714.2)
+- `Interpreter`: Unified `Instruction` & `stepEnv` interpreter (CR 608 / 614.6 / 715.2)
 - `TriggeredAbilities`: Triggered-ability resolution (CR 603)
 - `SpellResolution`: Spell resolution (CR 608)
 - `Combat`: Combat (CR 506–510)

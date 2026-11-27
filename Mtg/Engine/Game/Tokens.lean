@@ -117,6 +117,9 @@ def createOneToken (g : Game) (controller : PlayerId) (printed : CardDef)
       if etb.stayInOriginNoAuraHost then
         (g.logMsg s!"{g.name obj} token can't be attached legally and isn't created (CR 303.4f)",
          noTokenCreated controller printed)
+      else if etb.stayInOriginInstantOrSorceryDfc then
+        (g.logMsg s!"{g.name obj} token can't enter with an instant or sorcery face up and isn't created (CR 111.5 / 701.27j)",
+         noTokenCreated controller printed)
       else
       -- CR 508.4a,c: a token that enters the battlefield as a noncreature (or whose
       -- entering controller cannot legally attack `resolvedAttackTarget`) enters not attacking.

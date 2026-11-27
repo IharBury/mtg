@@ -102,7 +102,7 @@ private def replayOk46i1 (gs : Array Game) : Bool :=
   -- `p0` proposes `cp1Obj`: `pendingFreeCopies` now holds `(p0, #[cp2Obj.id], 0, 0)` while `p0` is at `.chooseAdditionalCost p0`:
   let gFreeCpProposed := mustApply gFreeCpPrompt p0 (.cast cp1Obj.id)
   let gFreeCpAfterP2 := mustApply gFreeCpProposed p2 .concede
-  -- Choose to pay `{2}` with empty mana pool, then click `.pay` -> CR 733.1 reverses back to `.castCopiesFree` with `cp2Obj` intact!
+  -- Choose to pay `{2}` with empty mana pool, then click `.pay` -> CR 734.1 reverses back to `.castCopiesFree` with `cp2Obj` intact!
   let gFreeCpReversed := mustApply (mustApply gFreeCpAfterP2 p0 (.chooseAdditionalCost true)) p0 .pay
   -- Conversely, if `p0` has `{2}` mana and completes casting `cp1Obj`, `finishPostCast` ceases uncastable `cp2Obj`:
   let gFreeCpPayable := gFreeCpAfterP2.addMana p0 .colorless 2
@@ -1108,7 +1108,7 @@ private def mustStepAgent46 (g : Game) (p : PlayerId) : Game :=
   let gGobAbPaid := mustApply (mustApply gGobMana p0 (.activate gobPermId 0)) p0 .pay
   -- Spend `.subtypeSpellOrSource .goblin` mana to cast `gobPermanentDef` spell!
   let gGobSpellPaid := mustApply (mustApply gGobMana p0 (.cast gobHandId)) p0 .pay
-  -- Non-Goblin ability cannot pay `{1}` with `.subtypeSpellOrSource .goblin` mana (CR 733.1 reverses):
+  -- Non-Goblin ability cannot pay `{1}` with `.subtypeSpellOrSource .goblin` mana (CR 734.1 reverses):
   let gNonGobAbProp := mustApply gGobMana p0 (.activate plainRelicId 0)
   let gNonGobAbRev := mustApply gNonGobAbProp p0 .pay
   let nonGobAbRejected :=

@@ -6,16 +6,16 @@ open Mtg.Engine
 open Mtg.Engine.Catalog
 open Mtg.Engine.Tests
 
-/- Phase 12: CR 733.1 illegal-proposal reversal integrity, `Game.replayEvents`
+/- Phase 12: CR 734.1 illegal-proposal reversal integrity, `Game.replayEvents`
 fidelity from `({} : Game)`, `.exchangeControl` batch/cause & CR 701.12a–b,
 second combat-damage step `TurnEvent`s (CR 510.4 / 702.7b / 500.9), Path of
 Ancestry scry via `ManaUnit.source`, `matchTriggers` cast / target / Ward
 triggers (CR 702.85a / 702.21a / 109.2), and `entersTappedUnlessPayLife` in the
 unified CR 614.12 / 616.1 ETB replacement pipeline. -/
 #guard
-  -- 1. CR 733.1 proposal reversal: zero phantom events/triggers, intact `followMoved`,
+  -- 1. CR 734.1 proposal reversal: zero phantom events/triggers, intact `followMoved`,
   --    top-of-library exemption, `.crew` / `.zemoBoastExile` retraction, Chandra refund,
-  --    and CR 733.1 library-visibility irreversibility guard.
+  --    and CR 734.1 library-visibility irreversibility guard.
   let tapWatcherDef : CardDef := {
     name := "Phase12 Tap Watcher"
     types := #[.enchantment]
@@ -69,7 +69,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     gRev.nextObjectId == gPropBase0.nextObjectId &&
     gRev.nextBatchId == gPropBase0.nextBatchId &&
     Game.replayEvents gRev.events == gRev
-  -- Top-of-library cast (Elven Chorus) reverses cleanly (`toZone == .stack` is exempted by CR 733.1)
+  -- Top-of-library cast (Elven Chorus) reverses cleanly (`toZone == .stack` is exempted by CR 734.1)
   let chorusDef : CardDef := {
     name := "Phase12 Chorus"
     types := #[.enchantment]
@@ -163,7 +163,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     (gChandraRev.object! boltExId).zone == .exile &&
     gChandraRev.followMoved boltExId == boltExId &&
     Game.replayEvents gChandraRev.events == gChandraRev
-  -- CR 733.1–733.2 library-event preservation: reversing an illegal cast still
+  -- CR 734.1–734.2 library-event preservation: reversing an illegal cast still
   -- reverses the spell and restores priority, undoing hand reveals while
   -- keeping mill, library shuffle, and library-card reveal events.
   let handCardId := (gProposed.player me).hand[0]!
@@ -196,7 +196,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
       match e.change with
       | .rules (.player (.revealed ..)) => true
       | _ => false)
-  -- Chronological zone-at-reveal checks (CR 733.1):
+  -- Chronological zone-at-reveal checks (CR 734.1):
   -- (i) Graveyard reveal of a card that is only *later* put into a library (even
   --     reusing the same `ObjectId` so `g.objects` ends with it in `.library`) is undone.
   let gPropGy0 := insertObject gPropBase0 bear me (.graveyard me)
@@ -830,7 +830,7 @@ unified CR 614.12 / 616.1 ETB replacement pipeline. -/
     triggersAllOk &&
     blackGateAllOk
 
-/- Phase 13: CR 733.1 action-level mana-ability / library irreversibility &
+/- Phase 13: CR 734.1 action-level mana-ability / library irreversibility &
 `ProposalCheckpoint` batch-pause replay parity, mid-resolution cast reversal
 continuations & deferred `PostCastCleanup`, interactive CR 614.1c / 614.12
 as-enters choices without `StatusChange`, pausing `replaceUntap` / Saga
@@ -842,7 +842,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
 #guard
   let opp : PlayerId := ⟨1⟩
 
-  -- 1. CR 733.1 action-level mana-ability / library irreversibility &
+  -- 1. CR 734.1 action-level mana-ability / library irreversibility &
   --    `ProposalCheckpoint` batch-pause replay parity.
   let dorkDef : CardDef := {
     name := "Phase13 Mana Dork"
@@ -879,7 +879,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
   let gActD2 := mustApply gActD1 me (.tapForMana dork2Id (.colored .green))
   -- Simulate a discrete `.manaAbility (some filterId)` action that spends dork1's mana,
   -- taps `filterId`, adds `{R}{W}`, AND reveals/mills a library card inside the same action:
-  -- CR 733.1 keeps the whole `filterId` mana ability AND upstream `dork1` (whose mana fed it),
+  -- CR 734.1 keeps the whole `filterId` mana ability AND upstream `dork1` (whose mana fed it),
   -- while reversing unrelated `dork2` and returning `bigSpellH` to hand.
   let gActRev :=
     let g := gActD2.change (.beginProposalAction (.manaAbility (some filterId)))
@@ -1005,7 +1005,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     (gLookCast.player me).library[0]? == some (gLookCast.followMoved drawLibId) &&
     Game.replayEvents gLookCast.events == gLookCast
   -- Branch 2: reversing the paused proposal returns `remLibId` to `.library` and restores the
-  -- CR 733.1 checkpoint taken while `Pending.mayCastFromLooked` was still open (Phase 24 item
+  -- CR 734.1 checkpoint taken while `Pending.mayCastFromLooked` was still open (Phase 24 item
   -- 2): nothing is bottomed and the choice is offered again.
   let gLookRev :=
     let g1 := gLookPaused.reverseProposedSpell
@@ -1700,7 +1700,7 @@ departed-source `lastKnownBefore?` LKI + Step 4 audits. -/
     let cid := (g.player me).library.back!
     let g := mkSeqFrame g 3
     (g.beginMayCastFromLooked me 1 5, cid)
-  -- CR 601.2b–c / 733.1 (Phase 24 item 2): a looked-at card with no legal target or no
+  -- CR 601.2b–c / 734.1 (Phase 24 item 2): a looked-at card with no legal target or no
   -- choosable mode is rejected up front by `mayCastFromLookedError`; the choice stays open
   -- and declining it finishes the ability.
   let rejectsNoTarget (g : Game) (cid : ObjectId) : Bool :=
@@ -2258,13 +2258,13 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     mustHold "reviewRound5ContOk" reviewRound5ContOk
 
 /- Phase 14 isolation & replay tests:
-   1. Paused `withProposalAction` / `activateManaAbility` CR 733.1 bracketing.
+   1. Paused `withProposalAction` / `activateManaAbility` CR 734.1 bracketing.
    2. Multi-step `payCostPickItems` `chooseReplacement` chaining & loyalty `+N`
       activation cost replacement (CR 118.11).
    3. Irreversible `lookedAt`, `searched`, and `drawFromEmptyAttempted` during
-      CR 733.1 proposal reversal (plus SBA empty-library loss).
+      CR 734.1 proposal reversal (plus SBA empty-library loss).
    4. Face-down morph `turnFaceUp` (`ProposalKind.turnFaceUp`, priority/control
-      gates, CR 733.1 reversal, post-turn-face-up SBA) & mid-resolution `{X}`
+      gates, CR 734.1 reversal, post-turn-face-up SBA) & mid-resolution `{X}`
       `castExiledAsAbilityResolves` (`resolutionCast := true`).
    5. Single-writer `entersWith` without duplicate post-entry counter events,
       Cursed Mirror EOT `isCopy == false`, `PendingReplacement.move` `attachedTo`
@@ -2305,7 +2305,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
       | .engine .endProposalAction => d - 1
       | _ => d) 0
 
-  -- 1. Paused `activateManaAbility` CR 733.1 bracketing (pain land + damage choice + reversal).
+  -- 1. Paused `activateManaAbility` CR 734.1 bracketing (pain land + damage choice + reversal).
   let rgSpellDef : CardDef := {
     name := "Phase14 RG Spell"
     manaCost := ⟨#[.colored .red, .colored .green]⟩
@@ -2388,7 +2388,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     [gPickP1, gPickP2, gPickDone, gLoyaltyPlus].all (fun g =>
       Game.replayEvents g.events == g && allRulesEventsClassified g)
 
-  -- 3. Irreversible `lookedAt`, `searched`, and `drawFromEmptyAttempted` across CR 733.1 reversal.
+  -- 3. Irreversible `lookedAt`, `searched`, and `drawFromEmptyAttempted` across CR 734.1 reversal.
   let (gIrrevKeep, gEmptyDrawSba, libPeekId) :=
     let g0 := insertObject afterDraw rgSpellDef me (.hand me)
     let spId := (g0.player me).hand.back!
@@ -2873,7 +2873,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
       CR 616.1 `chooseReplacement` loops, plus `mayThen` replacement pause safety.
    2. CR 117.3c standalone mana-ability SBAs & non-active `pendingPriority`
       retention across SBA/trigger prompts.
-   3. CR 601.2b/f/h teamwork tap ordering (untapped until 601.2h, CR 733.1
+   3. CR 601.2b/f/h teamwork tap ordering (untapped until 601.2h, CR 734.1
       reversal if tapped for mana during 601.2g) & paid `.mayCastCards` /
       `.mayCastFromGraveyard` CR 601.2g mana-ability unlock.
    4. CR 603.3b shared-source distinct trigger ordering (index-based
@@ -3045,7 +3045,7 @@ follow-ups (Path of Ancestry scry, `pendingMayCastFromExile`, and
     let g4 := mustApply g3 me (.target (.permanent ogreId))
     -- At CR 601.2b (`g3`) and CR 601.2c (`g4`), `dorkId` is STILL untapped on the battlefield,
     -- yet `tapForMana` rejects tapping `dorkId` because it is already chosen for teamwork!
-    -- With 0 `{W}`, `.pay` reverses the proposal via CR 733.1 (`hsId` back in hand, `dorkId` untapped);
+    -- With 0 `{W}`, `.pay` reverses the proposal via CR 734.1 (`hsId` back in hand, `dorkId` untapped);
     -- with `{W}` in pool, `.pay` taps `dorkId` at CR 601.2h!
     let tapDorkRejected :=
       match g4.applyAction me (.tapForMana dorkId (.colored .white)) with

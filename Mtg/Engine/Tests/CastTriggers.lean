@@ -370,7 +370,7 @@ def guttersnipeLethal : Game :=
 #guard guttersnipeLethal.log.any (fun s => mentions s "Chandra wins the game")
 #guard guttersnipeLethal.stack.size == 1
 
--- A sorcery Adventure is an instant-or-sorcery spell (CR 715.3b / 601.2i).
+-- A sorcery Adventure is an instant-or-sorcery spell (CR 716.3b / 601.2i).
 def paidSpewWithGuttersnipe : Game :=
   let g := addPermanent smaugSetup guttersnipe ⟨0⟩ ⟨0⟩
   let g := mustApply g ⟨0⟩

@@ -13,7 +13,7 @@ effects, and who controls, sees, or decides for whom
 
 namespace Mtg.Engine
 
-/-- Pre-proposal game checkpoint for CR 733.1 reversal, paired with the length
+/-- Pre-proposal game checkpoint for CR 734.1 reversal, paired with the length
 of `Game.events` immediately before the proposal began so speculative proposal
 and mana-ability events can be truncated cleanly. -/
 structure ProposalCheckpoint where
@@ -110,7 +110,7 @@ structure Game where
   /-- Spell or ability proposed and waiting for mana abilities / payment
   (CR 601.2f–h / 602.2b). -/
   proposedSpell : Option ProposedSpell := none
-  /-- Pre-proposal checkpoint captured before a spell or ability proposal begins (CR 733.1). -/
+  /-- Pre-proposal checkpoint captured before a spell or ability proposal begins (CR 734.1). -/
   proposalCheckpoint : Option ProposalCheckpoint := none
   /-- Outer proposal checkpoints saved while a nested cast-during-resolution proposal is active. -/
   outerProposalCheckpoints : Array ProposalCheckpoint := #[]
@@ -138,7 +138,7 @@ structure Game where
   /-- Exiled `ObjectId`s linked via CR 610.3 “until ~ leaves” waiting to return
   once the enclosing departure batch closes. -/
   queuedLinkedExile : Array ObjectId := #[]
-  /-- It is night (CR 731 / 702.145). Used by Nick Fury / daybound (MSH 191). -/
+  /-- It is night (CR 732 / 702.145). Used by Nick Fury / daybound (MSH 191). -/
   isNight : Bool := false
   /-- Stack of mid-resolution continuation frames (CR 608.2). Top of stack
   is `continuations.back?.getD {}`. -/
@@ -817,7 +817,7 @@ def applyZoneEvent (g : Game) (e : ZoneEvent) : Game :=
       let g := g.stripFromZoneList id object.zone
       { g with objects := g.objects.filter (fun o => o.id != id) }
 
-/-- Apply a `PlayerEvent` to `g` (CR 104, 106.4, 500.5, 701.4, 701.20–25, 701.34, 701.54, 702.131, 725, 800.4a). -/
+/-- Apply a `PlayerEvent` to `g` (CR 104, 106.4, 500.5, 701.4, 701.20–25, 701.34, 701.54, 702.131, 726, 800.4a). -/
 def applyPlayerEvent (g : Game) (e : PlayerEvent) : Game :=
   match e with
   | .manaAdded p units =>
@@ -1611,7 +1611,7 @@ def hasTurnBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
 
 /-- Whether another shared turn has begun (`TurnEvent.turnBegan _ _`) in `g.events`
 after the first new shared turn of `p` (and `p`'s Two-Headed Giant teammate, CR 805.4 /
-805.8 / 810.2) that began since continuous effect `eid` was created (CR 723.1: "during
+805.8 / 810.2) that began since continuous effect `eid` was created (CR 724.1: "during
 their next turn" lasts until the beginning of the next turn). -/
 def hasTurnAfterBegunSince (g : Game) (eid : EffectId) (p : PlayerId) : Bool :=
   g.events.foldl (fun (seats, seatsExtra, seenCreate, seenTeamTurn, seenAfter) ev =>
@@ -3931,7 +3931,7 @@ def applyDelayedTriggerEvent (g : Game) (e : DelayedTriggerEvent) : Game :=
     | some idx => { g with delayedTriggers := g.delayedTriggers.eraseIdx! idx }
     | none => g
 
-/-- Capture a CR 733.1 pre-proposal checkpoint at event index `eventsSize`. -/
+/-- Capture a CR 734.1 pre-proposal checkpoint at event index `eventsSize`. -/
 def captureProposalCheckpoint (g : Game) (eventsSize : Nat) : ProposalCheckpoint :=
   { eventsSize
     players := g.players
@@ -3988,7 +3988,7 @@ def continuationsHaveSuppressedReplay (frames : Array ContinuationFrame) : Bool 
     f.pendingReplacement.any (·.hasSuppressedCheckpointReplay) ||
       f.outerPendingReplacements.any (·.hasSuppressedCheckpointReplay)
 
-/-- Restore `g` from `ckpt`, truncating `g.events` back to `ckpt.eventsSize` (CR 733.1). -/
+/-- Restore `g` from `ckpt`, truncating `g.events` back to `ckpt.eventsSize` (CR 734.1). -/
 def restoreProposalCheckpoint (g : Game) (ckpt : ProposalCheckpoint) : Game :=
   { players := ckpt.players
     objects := ckpt.objects
@@ -4043,7 +4043,7 @@ def restoreProposalCheckpoint (g : Game) (ckpt : ProposalCheckpoint) : Game :=
     suppressInteractiveReplay := continuationsHaveSuppressedReplay ckpt.continuations }
 
 /-- Players who have left the game since `ckpt` was captured (`pl.leftTheGame` now,
-not at `ckpt`), deduplicated and merged with `extra` (CR 733.1 / 800.4a). -/
+not at `ckpt`), deduplicated and merged with `extra` (CR 734.1 / 800.4a). -/
 def playersDepartedSinceCheckpoint (g : Game) (ckpt : ProposalCheckpoint)
     (extra : Array PlayerId := #[]) : Array PlayerId :=
   let since := g.players.foldl (fun acc pl =>
@@ -4057,7 +4057,7 @@ def playersDepartedSinceCheckpoint (g : Game) (ckpt : ProposalCheckpoint)
 remained unconsumed across `ckpt.eventsSize .. g.events.size`, tracking
 temporary cost/mana outer-continuation stashes, `outerPendingReplacements`
 bundles, and `Leaving.playerLeavesGameCore`'s pre-`leftGame` header / popped
-outer bundle (CR 733.1 / 800.4a). -/
+outer bundle (CR 734.1 / 800.4a). -/
 def ckptPendingReplacementUntouchedBeforeLeave (g : Game) (ckpt : ProposalCheckpoint)
     (_allDeparted : Array PlayerId)
     (poppedOuter? : Option PendingReplacement := none) : Bool :=
@@ -6888,7 +6888,8 @@ private def evalStaticStat? (g : Game) (ptOf? : Option (GameObject → Int × In
     (o : GameObject) (sk : StatKind) : Option Int :=
   match sk with
   | .power =>
-    if !g.isCreature o then none
+    let hasStat := g.isCreature o || (o.zone != .battlefield && (g.baseCard o).power.isSome)
+    if !hasStat then none
     else if o.isLkiSnapshot then o.printed.powerValue
     else match ptOf? with
       | some f => some (f o).1
@@ -6896,7 +6897,8 @@ private def evalStaticStat? (g : Game) (ptOf? : Option (GameObject → Int × In
         let bc := g.baseCard o
         some (if o.status.faceDown && o.isOnBattlefield then 2 else bc.powerValue.getD 0)
   | .toughness =>
-    if !g.isCreature o then none
+    let hasStat := g.isCreature o || (o.zone != .battlefield && (g.baseCard o).toughness.isSome)
+    if !hasStat then none
     else if o.isLkiSnapshot then o.printed.toughnessValue
     else match ptOf? with
       | some f => some (f o).2
@@ -11320,7 +11322,7 @@ def triggeredAbilities (g : Game) (o : GameObject) : Array TriggeredAbility :=
     (g.evalLayer6Fast o).triggers
 
 /-- Greatest chapter number among the Layer-6 chapter abilities currently on `o`
-(CR 714.2d / 613.1f). Returns `0` when `o` has no chapter abilities (including
+(CR 715.2d / 613.1f). Returns `0` when `o` has no chapter abilities (including
 after Layer-6 ability removal or while face down). -/
 def finalChapterNumber (g : Game) (o : GameObject) : Nat :=
   TriggeredAbility.finalChapterNumberOf (g.triggeredAbilities o)
@@ -11929,7 +11931,7 @@ def countOpponentArtifacts (g : Game) (controller : PlayerId) : Nat :=
     g.isArtifact o && (g.controllerOf o).any (g.isLivingOpponentOf controller ·)) |>.size
 
 /-- Active player-controlling effect controlling `whose` (latest wins, CR 613.7 /
-723.5; in Two-Headed Giant, controlling a player also controls their teammate,
+724.5; in Two-Headed Giant, controlling a player also controls their teammate,
 CR 810 / MSH 236). -/
 def controllingPlayerOf? (g : Game) (whose : PlayerId) : Option PlayerId :=
   g.activeEffects.foldl (fun acc (eid, s) =>
@@ -11977,11 +11979,11 @@ def canLookAtSideboard (_g : Game) (viewer whose : PlayerId) : Bool :=
   viewer == whose
 
 /-- You cannot have a player you're controlling choose a card from
-outside the game (CR 723.5b; MSH 349). -/
+outside the game (CR 724.5b; MSH 349). -/
 def canChooseOutsideGame (_g : Game) (actor whose : PlayerId) : Bool :=
   actor == whose
 
-/-- Tournament-rule decisions stay with the actual player (CR 723.5; MSH 350). -/
+/-- Tournament-rule decisions stay with the actual player (CR 724.5; MSH 350). -/
 def canMakeTournamentDecision (_g : Game) (actor whose : PlayerId) : Bool :=
   actor == whose
 
@@ -13611,6 +13613,10 @@ structure EtbReplacementResult where
   /-- True when a non-cast Aura could not legally enchant any object on the
   battlefield and therefore stays in its origin zone (CR 303.4f–g). -/
   stayInOriginNoAuraHost : Bool := false
+  /-- True when a double-faced card (or copy of one) would enter the battlefield
+  with an instant or sorcery face up and therefore stays in its origin zone or
+  goes to its owner's graveyard from the stack (CR 701.27j / 712.11b). -/
+  stayInOriginInstantOrSorceryDfc : Bool := false
 
 /-- Run the CR 616.1a–g replacement loop for `candidate` about to enter the
 battlefield (CR 614.1c / 614.12 / 614.15 / 616.1):
@@ -13664,6 +13670,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
   let mut weaverBonus : Nat := 0
   let mut tempCopy : Option (CardDef × CardDef) := none
   let mut stayInOriginNoAuraHost : Bool := false
+  let mut stayInOriginInstantOrSorceryDfc : Bool := false
   let mut fuel := 32
   while fuel > 0 do
     fuel := fuel - 1
@@ -13962,7 +13969,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
               kind := .declineEntersAsCopy cur.id
             }
       | _ => pure ()
-    -- 616.1d: intrinsic daybound / back-face-up replacement (CR 702.145b / 712.14)
+    -- 616.1d: intrinsic daybound / back-face-up replacement (CR 702.145b / 712.11)
     if !cur.status.transformed && (board.unmaskedCopiableValues curBf).otherFace.isSome &&
         (forceBackFace || (!leavingPlay && retains && bc.daybound && board.isNight)) then
       specs := specs.push {
@@ -14010,11 +14017,21 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
               specs := specs.push { spec with affectedPlayer := ctrl }
           | _ => pure ()
       | _ => pure ()
+    -- CR 701.27j / 712.11b: a double-faced card (or copy of a double-faced card)
+    -- cannot enter the battlefield with an instant or sorcery face up.
+    if !cur.status.faceDown && cur.printed.otherFace.isSome &&
+        cur.printed.types.any CardType.isInstantOrSorcery then
+      let pendingCtrlCopyFace :=
+        specs.any (fun s => !curApplied.contains s.id && s.tier.rank < ReplacementTier.auraHost.rank)
+      if !pendingCtrlCopyFace then
+        stayInOriginInstantOrSorceryDfc := true
+        specs := #[]
+        fuel := 0
     -- CR 303.4f–g,i: non-cast Aura (or untargeted Aura spell / copy) entering
     -- `.battlefield` must attach to an object it can legally enchant (or remain in
     -- its origin zone / go to graveyard / cease to exist if none exists).
-    if nonCastBattlefield && !cur.status.faceDown && cur.attachedTo.isNone &&
-        board.isAura curBf then
+    if !stayInOriginInstantOrSorceryDfc && nonCastBattlefield && !cur.status.faceDown &&
+        cur.attachedTo.isNone && board.isAura curBf then
       let pendingCtrlCopyFace :=
         specs.any (fun s => !curApplied.contains s.id && s.tier.rank < ReplacementTier.auraHost.rank)
       let hostDecided :=
@@ -14156,7 +14173,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
         | _ => pure ()
   -- CR 616.1g / 122.6: evaluate contained counter-putting replacements once per
   -- `CounterKind` on the combined entering counter bag after CR 616.1a–f.
-  if choice?.isNone && !stayInOriginNoAuraHost && !rawCounters.isEmpty then
+  if choice?.isNone && !stayInOriginNoAuraHost && !stayInOriginInstantOrSorceryDfc && !rawCounters.isEmpty then
     let effCtrl := cur.controller.getD cur.owner
     let enterTarget : GameObject :=
       { cur with zone := .battlefield, controller := some effCtrl, defaultController := some effCtrl }
@@ -14196,6 +14213,7 @@ def applyEtbReplacements (g : Game) (candidate : GameObject)
     choice? := choice?
     tempCopyUntilEot := tempCopy
     stayInOriginNoAuraHost := stayInOriginNoAuraHost
+    stayInOriginInstantOrSorceryDfc := stayInOriginInstantOrSorceryDfc
   }
 
 /-- Whether `blocker`'s static abilities currently allow it to be declared as
@@ -14376,7 +14394,7 @@ def canBlock (g : Game) (blocker attacker : GameObject) : Bool :=
   !(g.cantBeBlockedExceptByHasteUntilEot attacker && !g.hasHaste blocker)
 
 /-- True when `id` is the source of a chapter ability waiting or on the stack
-(CR 714.4). -/
+(CR 715.4). -/
 def sagaChapterPending (g : Game) (id : ObjectId) : Bool :=
   let waiting :=
     g.waitingTriggers.any (fun wt =>
@@ -15178,7 +15196,7 @@ and spell countered (CR 603.6a/c / 603.10a,e / 701.6 / 701.9 / 701.21 / 702.29a)
 
 /-- Pattern family 2: permanent state changes — tap/untap, phase-out, unattach,
 control-lost, and counter placement including Saga chapters and plan thresholds
-(CR 122.6 / 603.2e / 603.10b–d / 714.2b). -/
+(CR 122.6 / 603.2e / 603.10b–d / 715.2b). -/
 @[noinline] private def matchPermanentStatePattern (pre : GameSnapshot) (post : Game)
     (batch : Array GameEvent) (board : Game) (src : GameObject) (srcCtrl : PlayerId)
     (ab : TriggeredAbility) (pat : TriggerPattern)
@@ -15816,7 +15834,7 @@ CR 603.2d `extraTriggerCopies`, and Windcrag Siege Mardu attack doubling. -/
     (w ++ Array.replicate copies wt, fs)
 
 /-- Built-in keyword, rule, reflexive, and delayed triggers that are not printed
-entries in `CardDef.triggeredAbilities` (Monarch CR 725, Ward CR 702.21,
+entries in `CardDef.triggeredAbilities` (Monarch CR 726, Ward CR 702.21,
 Cascade CR 702.85, Extort CR 702.101, Photon Blast Barrage copy-self, Bolg
 reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
 @[noinline] private def matchBuiltinAndDelayedTriggers (pre : GameSnapshot) (post : Game)
@@ -15838,7 +15856,7 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
               (cause := some stackObj) (causeController := some actor) (w := w) (fs := fs)) (w, fs)
         else (w, fs)
       | none => (w, fs)) (w, fs)
-  -- Inherent monarch combat-damage trigger (CR 725.2–3 / 113.8 / 800.4a,d).
+  -- Inherent monarch combat-damage trigger (CR 726.2–3 / 113.8 / 800.4a,d).
   if mask.hasDamage then
     if let some monarchPl := post.players.find? (fun pl => pl.isMonarch && post.stillInGame pl.id) then
       let attackers : Array (Option GameObject × Option ObjectId × PlayerId) :=
@@ -15937,7 +15955,7 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
               | _ => pure ()
       | .end =>
         if post.isSharedTurnFinalSeat then
-          -- Inherent monarch end-step draw trigger (CR 725.2 / 113.8 / 805.4).
+          -- Inherent monarch end-step draw trigger (CR 726.2 / 113.8 / 805.4).
           if let some monarchPl := post.players.find? (fun pl => pl.isMonarch && post.stillInGame pl.id) then
             if post.isOnActiveTeam monarchPl.id then
               let src : GameObject :=
@@ -16248,7 +16266,7 @@ private structure TriggerDedupState where
 deriving Inhabited
 
 /-- Match all triggered abilities over a committed batch of simultaneous rules
-events (CR 603.2 / 603.2c / 603.10 / 603.10a–f / 700.1 / 714.2b). Look-back
+events (CR 603.2 / 603.2c / 603.10 / 603.10a–f / 700.1 / 715.2b). Look-back
 disjuncts (`TriggerPattern.usesLookBack`) consult `pre`; all other disjuncts
 consult `post` (CR 603.10). -/
 def matchTriggers (pre : GameSnapshot) (post : Game)
@@ -16840,7 +16858,7 @@ def withBatchCore (g : Game) (cause : Option EventCause := none) (f : Game → G
 
 /-- Bracket a single mana ability or cost action executed during a spell/ability
 proposal with `EngineChange.beginProposalAction` / `endProposalAction` so
-`reverseToProposalCheckpoint?` reverses or retains the entire action as a unit (CR 733.1). -/
+`reverseToProposalCheckpoint?` reverses or retains the entire action as a unit (CR 734.1). -/
 def withProposalAction (g : Game) (kind : ProposalActionKind) (f : Game → Game) : Game :=
   if g.proposalCheckpoint.isNone then f g
   else
@@ -16915,7 +16933,7 @@ opaque drainPendingContinuationsFwd (g : Game) : Game := g
 
 /-- Drain `g.pendingReplacement` locally while `!g.over && g.pending == .none &&
 g.afterRandom == .none`, without touching `triggerSequenceRest` or
-`outerPendingReplacements` (CR 603.2c / 616.1 / 733.1). -/
+`outerPendingReplacements` (CR 603.2c / 616.1 / 734.1). -/
 partial def drainLocalPendingReplacement (g : Game) : Game :=
   if g.over || g.pending != .none || g.afterRandom != .none then g
   else
@@ -17290,7 +17308,7 @@ draining local non-paused `pendingReplacement` continuations immediately after
 each `runBatch` and stopping only when `Pending.chooseReplacement` or
 `Pending.chooseLegend` opens, chaining any remaining slice via
 `PendingReplacement.continueCheckpointReplay` (CR 603.2c / 610.3 / 616.1 /
-733.1–733.2 / 800.4a). -/
+734.1–734.2 / 800.4a). -/
 @[noinline] private def replayKeptStreamStepEvent
     (fullKeptStream : Array (Bool × GameEvent))
     (revMap : Array (ObjectId × ObjectId))
@@ -17957,13 +17975,13 @@ each `runBatch` and stopping only when `Pending.chooseReplacement` or
         (gCur.record ev, liveMap, effRev, matIds)
   stepEvent fullIdx fromAction st ev
 
-/-- Shared core for CR 733.1 / 733.2 kept-stream replay (`restoreProposalCheckpointWith`
+/-- Shared core for CR 734.1 / 734.2 kept-stream replay (`restoreProposalCheckpointWith`
 and `PendingReplacement.continueCheckpointReplay`). Replays `remainingStream`,
 draining local non-paused `pendingReplacement` continuations immediately after
 each `runBatch` and stopping only when `Pending.chooseReplacement` or
 `Pending.chooseLegend` opens, chaining any remaining slice via
 `PendingReplacement.continueCheckpointReplay` (CR 603.2c / 610.3 / 616.1 /
-733.1–733.2 / 800.4a). -/
+734.1–734.2 / 800.4a). -/
 def replayKeptStreamCore (g : Game)
     (remainingStream fullKeptStream : Array (Bool × GameEvent))
     (revMap : Array (ObjectId × ObjectId))
@@ -18098,19 +18116,19 @@ private inductive ProposalSliceUnit where
   | action (idx : Nat) (kind : ProposalActionKind) (events : Array GameEvent)
   | standalone (idx : Nat) (event : GameEvent)
 
-/-- Restore `g` to its saved `proposalCheckpoint`, then reapply whole CR 733.1
+/-- Restore `g` to its saved `proposalCheckpoint`, then reapply whole CR 734.1
 irreversible mana abilities and cost actions from the undone proposal slice
 (actions that moved cards to a library, moved cards from a library to any zone
 other than `.stack`, shuffled a library, revealed cards from a library, or
 reordered library cards via scry/surveil, plus upstream mana abilities whose
 FIFO mana paid for an unreversed mana ability), as well as any unbracketed
-irreversible library events (CR 733.1–733.2). -/
+irreversible library events (CR 734.1–734.2). -/
 def reverseToProposalCheckpointCore? (g : Game)
     (runBatch : Game → (Game → Game) → Game := fun g0 f => g0.withBatchCore none f)
     (flushLinked : Game → Game := id) :
     Except String Game := do
   let some ckpt := g.proposalCheckpoint
-    | throw "No proposal checkpoint to reverse (CR 733.1)"
+    | throw "No proposal checkpoint to reverse (CR 734.1)"
   pure <| Id.run do
   let slice := g.events.extract (min ckpt.eventsSize g.events.size) g.events.size
   let isLibZone : Zone → Bool
@@ -18126,7 +18144,7 @@ def reverseToProposalCheckpointCore? (g : Game)
   --    events, keeping mid-proposal player departures outside `depth > 0` `.action`
   --    brackets so a concession during a paused cost/mana replacement prompt stays
   --    irreversible without retaining the proposer's unfinished cost action
-  --    (CR 104.3a / 610.3 / 733.1 / 800.4a).
+  --    (CR 104.3a / 610.3 / 734.1 / 800.4a).
   let firstDepIdx? : Option Nat := slice.findIdx? fun ev =>
     match ev with
     | .rules _ (.player (.lost ..)) _ _
@@ -19550,7 +19568,7 @@ for `emitExpiredPlayFromExileLogs` placement:
   enclosing `.restorePending .none true` suffix) and returns `hitPrio := true` so remaining
   unpopped outers on the same frame still drain before stopping prior to lower frames;
 - any other defer-boundary leaf (including all 14 proposal-pause `.restorePending` payloads
-  and all non-priority CR 733.1 proposal-reversing leaves) halts the walk immediately. -/
+  and all non-priority CR 734.1 proposal-reversing leaves) halts the walk immediately. -/
 private def walkPfeSlot (fi : Nat) (outers : Array PendingReplacement)
     (oi? : Option Nat) (pr : PendingReplacement) (nextOuter : Nat)
     (lastNonBoundary? : Option (Nat × Option Nat × Nat)) :
@@ -19624,7 +19642,7 @@ yet exiled a `mayCastExiledBySource` source, across any frame of
 deferred via `.finishPostStep (.logExpiredPlayFromExile _ _)`, placed in
 execution order immediately ahead of any priority-granting, mutating-then-priority,
 or proposal-reversing boundary leaf so expiry logs emit before
-`PriorityEvent.received` and are never dropped on CR 733.1 proposal reversal. -/
+`PriorityEvent.received` and are never dropped on CR 734.1 proposal reversal. -/
 def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
   if !g.hasExpiredPlayFromExileEventSince fromEventIdx then g
   else

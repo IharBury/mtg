@@ -11,7 +11,7 @@ import Mtg.Engine.Card.TriggerPattern
 Unifies all MTG ability categories (CR 113.3a–d), tokens (CR 111 / 707.9),
 emblems (CR 114), continuous modifications (CR 611 / 613), replacements
 (CR 614–615), and one-shot `Instruction`s (CR 608) into a single stratified
-`mutual` block anchored to the 25 September 2026 Comprehensive Rules:
+`mutual` block anchored to the 6 November 2026 Comprehensive Rules:
 
 - Every `inductive` in this module stays at `≤ 20` constructors (`< 9%` of the
   Lean 4 C runtime `LeanMaxCtorTag = 243` ceiling).
@@ -123,7 +123,7 @@ instance : HasTextChange StaticSubject where
       | .matching f => .matching (HasTextChange.applyTextChanges tcs f)
 
 /-- Rule-modifying static abilities affecting players (CR 104 / 119.7–8 / 305.2 /
-402.3 / 601.2 / 602.5 / 702.11c / 702.16j / 702.131b / 723; 14 constructors). -/
+402.3 / 601.2 / 602.5 / 702.11c / 702.16j / 702.131b / 724; 14 constructors). -/
 inductive StaticPlayerRule where
   /-- Maximum hand size: `none` = no maximum hand size; `some n` = `n` (CR 402.3). -/
   | maxHandSize (who : PlayerFilter := .you) (limit? : Option Nat)
@@ -151,7 +151,7 @@ inductive StaticPlayerRule where
   | forbidAbilityActivation (who : PlayerFilter) (tag : ActivationMechanicTag)
   /-- Static designation check (e.g. permanent Ascend CR 702.131b / Storied). -/
   | gainDesignation (who : PlayerFilter := .you) (designation : PlayerDesignation)
-  /-- CR 723: you control matching player(s) during their next turn. -/
+  /-- CR 724: you control matching player(s) during their next turn. -/
   | controlPlayer (who : PlayerFilter)
 deriving Repr, Inhabited, BEq
 
@@ -476,7 +476,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 
 /-! ### 3. Predefined Tokens & One-Shot Instruction Sub-Families (Every Enum ≤ 16 Ctors) -/
 
-/-- Predefined tokens defined directly by CR 111.10a–x (25 September 2026; 10 constructors). -/
+/-- Predefined tokens defined directly by CR 111.10a–x (6 November 2026; 10 constructors). -/
 inductive PredefinedToken where
   /-- CR 111.10a: Colorless Treasure artifact token. -/
   | treasure
@@ -999,7 +999,7 @@ instance : HasTextChange ResolutionChoiceKind where
       | .keyword ks => .keyword (HasTextChange.applyTextChanges tcs ks)
       | other => other
 
-/-- Player actions aligned with `RulesEvent.player` (CR 106 / 121 / 701 / 725;
+/-- Player actions aligned with `RulesEvent.player` (CR 106 / 121 / 701 / 726;
 16 constructors). -/
 inductive PlayerOp where
   | drawCards (who : PlayerExpr) (amount : ValueExpr)
@@ -1029,7 +1029,7 @@ def setPlayerDesignation (who : PlayerExpr) (d : PlayerDesignation)
     (condition? : Option Condition := none) : PlayerOp :=
   .setStatus who (.designation d) condition?
 
-/-- Smart constructor for becoming the monarch (CR 725). -/
+/-- Smart constructor for becoming the monarch (CR 726). -/
 def becomeMonarch (who : PlayerExpr := .you) : PlayerOp :=
   .setStatus who .monarch none
 
@@ -1299,7 +1299,7 @@ structure ActivatedAbility where
   costReductions : Array ActivationCostReduction := #[]
   tag? : Option ActivationMechanicTag := none
 
-/-- Unified triggered ability (CR 113.3c / 603 / 605.1b / 700.1 / 714.2b,d).
+/-- Unified triggered ability (CR 113.3c / 603 / 605.1b / 700.1 / 715.2b,d).
 Multiple modes (`Instruction.chooseModes`) live directly in `effect.body`. -/
 structure TriggeredAbility where
   word : TriggerWord := .whenever

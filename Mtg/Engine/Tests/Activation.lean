@@ -83,7 +83,7 @@ def tapNextMana (g : Game) (p : PlayerId) : Game :=
     | none => panic! "expected a mana type"
     | some t => mustApply g p (.tapForMana src.id t)
 
-/-- Paying without enough mana reverses the activation (CR 602.2 / 733.1). -/
+/-- Paying without enough mana reverses the activation (CR 602.2 / 734.1). -/
 def reversedBauble : Game :=
   mustApply proposedBauble ⟨0⟩ .pay
 

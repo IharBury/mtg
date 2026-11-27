@@ -4,7 +4,7 @@ import Mtg.Engine.Card.KeywordExpand
 # Card definitions (CR 108, 109.3, section 2)
 
 Printed Oracle characteristics: `PrintedStat` (CR 208.1–2), `DeckLimit`
-(CR 100.2a), `SubFaceKind` / `SubFace` (CR 715 Adventure & Prepare sub-faces),
+(CR 100.2a), `SubFaceKind` / `SubFace` (CR 716 Adventure & CR 723 Prepare sub-faces),
 and the slim 21-field `CardDef` with structural `BEq` and canonical `ToOracle` /
 `renderFullOracle` printing.
 -/
@@ -77,16 +77,16 @@ instance : ToOracle DeckLimit where
 
 end DeckLimit
 
-/-- Discriminator for secondary castable sub-faces stored in `CardDef.subFaces`. -/
+/-- Discriminator for secondary sub-faces stored in `CardDef.subFaces`. -/
 inductive SubFaceKind where
-  /-- CR 715 Adventure sub-face (`//ADV//`). -/
+  /-- CR 716 Adventure sub-face (`//ADV//`). -/
   | adventure
-  /-- Reality Fracture Prepare spell sub-face (`//PREP//`). -/
+  /-- CR 723 Preparation card prepare-spell sub-face (`//PREP//`). -/
   | prepare
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-- Alternative characteristics of a card's secondary sub-face (CR 715 Adventure
-or Prepare spell), unified with `SpellAbility` and `StaticAbility`. -/
+/-- Alternative characteristics of a card's secondary sub-face (CR 716 Adventure
+or CR 723 prepare spell), unified with `SpellAbility` and `StaticAbility`. -/
 structure SubFace where
   kind : SubFaceKind
   name : String
@@ -102,7 +102,7 @@ deriving Repr, Inhabited, BEq
 
 /-- Printed (Oracle) characteristics of a card — slim 21-field representation
 (12 CR 201–212 characteristics, `keywords` CR 702, 4 CR 113.3a–d ability
-containers, and 4 CR 100.2a / 111.1 / 712 / 715 structural fields). -/
+containers, and 4 CR 100.2a / 111.1 / 712 / 716 / 723 structural fields). -/
 structure CardDef where
   name : String
   manaCost : ManaCost := ManaCost.empty
@@ -143,7 +143,7 @@ structure CardDef where
   and loyalty abilities (CR 606.2). Basic-land intrinsic mana abilities are
   synthesized from Layer 4 basic land types per CR 305.6. -/
   activatedAbilities : Array ActivatedAbility := #[]
-  /-- Triggered abilities (CR 603), including Saga chapter abilities (CR 714.2)
+  /-- Triggered abilities (CR 603), including Saga chapter abilities (CR 715.2)
   and modal triggered abilities (carrying their modes in `effect.body` via
   `Instruction.chooseModes`). -/
   triggeredAbilities : Array TriggeredAbility := #[]
@@ -151,7 +151,7 @@ structure CardDef where
   staticAbilities : Array StaticAbility := #[]
   /-- Back face of a double-faced card (CR 712). -/
   otherFace : Option CardDef := none
-  /-- Secondary castable sub-faces such as Adventure (CR 715) and Prepare. -/
+  /-- Secondary sub-faces such as Adventure (CR 716) and prepare spells (CR 723). -/
   subFaces : Array SubFace := #[]
   /-- Constructed-play deck-limit override (CR 100.2a). -/
   deckLimitOverride : Option DeckLimit := none
@@ -389,11 +389,11 @@ def withSubFace (c : CardDef) (sf : SubFace) : CardDef :=
   | some i => { c with subFaces := c.subFaces.set! i sf }
   | none => { c with subFaces := c.subFaces.push sf }
 
-/-- Adventure sub-face on `c`, if any (CR 715). -/
+/-- Adventure sub-face on `c`, if any (CR 716). -/
 def adventure (c : CardDef) : Option SubFace :=
   c.subFaces.find? (·.kind == .adventure)
 
-/-- Prepare sub-face on `c`, if any. -/
+/-- Prepare sub-face on `c`, if any (CR 723). -/
 def prepareFace (c : CardDef) : Option SubFace :=
   c.subFaces.find? (·.kind == .prepare)
 
@@ -524,7 +524,7 @@ def hasCastKind (c : CardDef) (k : SpellCastKind) : Bool :=
 def hasModeCastKind (c : CardDef) (k : SpellCastKind) : Bool :=
   c.modes.any (fun e => e.castKind == k)
 
-/-- True when this card has an Adventure (CR 715). -/
+/-- True when this card has an Adventure (CR 716). -/
 def hasAdventure (c : CardDef) : Bool :=
   c.adventure.isSome
 
@@ -943,15 +943,15 @@ def isWorthy (c : CardDef) : Bool :=
 def hasEquipWorthy (c : CardDef) : Bool :=
   c.allActivatedAbilities.any (·.isEquipWorthy)
 
-/-- True when this face has any printed Saga chapter triggered abilities (CR 714.2). -/
+/-- True when this face has any printed Saga chapter triggered abilities (CR 715.2). -/
 def hasSagaChapters (c : CardDef) : Bool :=
   c.triggeredAbilities.any (·.isSagaChapter)
 
-/-- Printed Saga chapter triggered abilities on this face (CR 714.2). -/
+/-- Printed Saga chapter triggered abilities on this face (CR 715.2). -/
 def sagaChapters (c : CardDef) : Array TriggeredAbility :=
   c.triggeredAbilities.filter (·.isSagaChapter)
 
-/-- Printed final chapter number across this face's chapter abilities (CR 714.2d). -/
+/-- Printed final chapter number across this face's chapter abilities (CR 715.2d). -/
 def finalChapterNumber (c : CardDef) : Nat :=
   TriggeredAbility.finalChapterNumberOf c.triggeredAbilities
 
@@ -1053,8 +1053,8 @@ def withAdditionalCost (a : SubFace) (cost : AdditionalCostSpec) : SubFace :=
 def empowerPlaneswalkerAmount? (a : SubFace) : Option Nat :=
   a.spellEffect.bind (fun e => CardDef.extractEmpowerAmount e.body)
 
-/-- Characteristics used while this card is on the stack as an Adventure or Prepare
-spell (CR 715.3b). -/
+/-- Alternative spell characteristics for an Adventure on the stack (CR 716.3b)
+or the copy created when a preparation permanent becomes prepared (CR 723.3c). -/
 def toCardDef (a : SubFace) : CardDef := {
   name := a.name
   manaCost := a.manaCost

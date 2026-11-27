@@ -193,7 +193,7 @@ private def replayOk52i1 (gs : Array Game) : Bool :=
   -- (3) `hasAvailableDiscardForProposed` matches runtime `finishProposedSpellCosts .finalize` after `paySneak`:
   --     an owned card returned to hand by `paySneak` opens `.discardForAdditionalCost`, whereas both an owned token
   --     (not a card under CR 108.2b / 111.8) and an opponent-owned attacker leave `p0` with no discardable card and
-  --     reverse under CR 733.1:
+  --     reverse under CR 734.1:
   let tokBearDef : CardDef := { bear with name := "P52i1 TokBear", isToken := true, keywords := #[Keyword.haste] }
   let mkSneakDiscardProbe (atkDef : CardDef) (atkOwner : PlayerId) : Game :=
     let g := addPermanent (insertObject (emptyHand g4 p0) zeroInstDef p0 (.hand p0)) atkDef atkOwner p0

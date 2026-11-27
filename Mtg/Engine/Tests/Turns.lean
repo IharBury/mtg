@@ -263,7 +263,7 @@ def paidBolt : Game :=
 #guard !paidBolt.stack.isEmpty
 #guard paidBolt.log.any (fun s => mentions s "casts Lightning Bolt")
 
-/-- Paying without enough mana reverses the cast (CR 601.2 / 733.1). -/
+/-- Paying without enough mana reverses the cast (CR 601.2 / 734.1). -/
 def reversedBolt : Game :=
   mustApply targetedBolt ⟨0⟩ .pay
 

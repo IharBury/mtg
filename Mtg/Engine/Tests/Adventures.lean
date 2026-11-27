@@ -17,7 +17,7 @@ namespace Mtg.Engine.Tests
 open Mtg.Engine
 open Mtg.Engine.Catalog
 
-/- Smaug, the Great Calamity // Spew Flame (CR 715). -/
+/- Smaug, the Great Calamity // Spew Flame (CR 716). -/
 
 /-- Smaug in hand, an opposing creature, and enough mana for either face. -/
 def smaugSetup : Game :=
@@ -107,13 +107,13 @@ def exiledSmaug (g : Game) : GameObject :=
 #guard !resolvedSpewFlame.canCastAdventure ⟨0⟩ (exiledSmaug resolvedSpewFlame)
 #guard resolvedSpewFlame.adventureExileForbidsRecast (exiledSmaug resolvedSpewFlame)
 
--- The CR 715.3d permission does not allow recasting as an Adventure.
+-- The CR 716.3d permission does not allow recasting as an Adventure.
 #guard
   match resolvedSpewFlame.castSpell ⟨0⟩ (exiledSmaug resolvedSpewFlame).id true with
   | .error msg => mentions msg "may not cast that card as an Adventure"
   | .ok _ => false
 
-/-- Permission lasts past the end of the caster's next turn (CR 715.3d). -/
+/-- Permission lasts past the end of the caster's next turn (CR 716.3d). -/
 def smaugPermissionLater : Game :=
   let g := skipTo resolvedSpewFlame .end 80
   let g := passBoth g
@@ -126,7 +126,7 @@ def smaugPermissionLater : Game :=
 #guard !smaugPermissionLater.log.any (fun s =>
   mentions s "can no longer be played from exile")
 
-/-- Cast Smaug from exile as the creature (CR 715.3d). -/
+/-- Cast Smaug from exile as the creature (CR 716.3d). -/
 def smaugFromExileSetup : Game :=
   withRedMana resolvedSpewFlame ⟨0⟩ 7
 
@@ -218,7 +218,7 @@ def agentSmaugCreatureOnly : Game :=
     (agentSmaugCreatureOnly.object! id).name == "Smaug, the Great Calamity"
   | _ => false
 
-/- Beorn, Reluctant Host // Till and Tend (CR 715, 305.2b). -/
+/- Beorn, Reluctant Host // Till and Tend (CR 716, 305.2b). -/
 
 /-- Beorn in hand with enough mana for Till and Tend. -/
 def beornSetup : Game :=
@@ -288,7 +288,7 @@ def exiledBeorn (g : Game) : GameObject :=
 #guard !resolvedTillAndTend.canCastAdventure ⟨0⟩ (exiledBeorn resolvedTillAndTend)
 #guard resolvedTillAndTend.adventureExileForbidsRecast (exiledBeorn resolvedTillAndTend)
 
--- The CR 715.3d permission does not allow recasting as an Adventure.
+-- The CR 716.3d permission does not allow recasting as an Adventure.
 #guard
   match resolvedTillAndTend.castSpell ⟨0⟩ (exiledBeorn resolvedTillAndTend).id true with
   | .error msg => mentions msg "may not cast that card as an Adventure"
@@ -331,7 +331,7 @@ def afterSecondForestForBeorn : Game :=
   | .error msg => mentions msg "Can't play a land now"
   | .ok _ => false
 
-/-- Permission lasts past the end of the caster's next turn (CR 715.3d);
+/-- Permission lasts past the end of the caster's next turn (CR 716.3d);
 the extra land play does not. -/
 def beornPermissionLater : Game :=
   let g := skipTo resolvedTillAndTend .end 80
@@ -346,7 +346,7 @@ def beornPermissionLater : Game :=
 #guard beornPermissionLater.loggedLandsPlayed ⟨0⟩ == 0
 #guard beornPermissionLater.landPlaysAllowed ⟨0⟩ == 1
 
-/-- Cast Beorn from exile as the creature (CR 715.3d). -/
+/-- Cast Beorn from exile as the creature (CR 716.3d). -/
 def beornFromExileSetup : Game :=
   withGreenMana resolvedTillAndTend ⟨0⟩ 5
 
@@ -437,7 +437,7 @@ def agentBeornCreatureOnly : Game :=
     (agentBeornCreatureOnly.object! id).name == "Beorn, Reluctant Host"
   | _ => false
 
-/-- A sorcery Adventure is an instant-or-sorcery spell (CR 715.3b / 601.2i). -/
+/-- A sorcery Adventure is an instant-or-sorcery spell (CR 716.3b / 601.2i). -/
 def paidTillWithGuttersnipe : Game :=
   let g := addPermanent beornSetup guttersnipe ⟨0⟩ ⟨0⟩
   let g := mustApply g ⟨0⟩

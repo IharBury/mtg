@@ -840,7 +840,7 @@ shield, indestructible, Saga first lore counter, and impending time counters)
 and enters-tapped status are part of `ZoneEvent.moved.after` and `entersWith`
 with zero post-entry counter or tap events, and `GameEvent.countersPut` includes
 both `PermanentEvent.counters` and `ZoneEvent.moved.entersWith` (CR 122.6 /
-306.5b / 614.1c / 614.12 / 714.3a). -/
+306.5b / 614.1c / 614.12 / 715.3a). -/
 #guard
   let tapPlusCreature : CardDef :=
     { bear with
@@ -1163,9 +1163,9 @@ and `storeCombatAssignments` records `DamageEvent.combatAssigned` under
 /- Phase 3: linked-exile returns preserve the exiling one-shot `EventCause`
 (CR 610.3); Loki's pending-copy `effectUpdated` uses the move's `happenedCause`;
 permanent, Aura, and Adventure spells finish resolving with `.gameRule` causes
-(CR 608.3 / 303.4h / 715.3d); and declined crew / boast activations cease with
+(CR 608.3 / 303.4h / 716.3d); and declined crew / boast activations cease with
 `.gameRule .reversedActivation` without logging `GameEvent.activated`, while
-accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
+accepted boast exiles use `.costPayment .exile` (CR 602.2b / 734.1). -/
 #guard
   let g0 := quiet (addPermanent (addPermanent afterDraw bear me me) hero me me)
   let b := (g0.battlefield.filter (·.name == bear.name))[0]!
@@ -1269,9 +1269,9 @@ accepted boast exiles use `.costPayment .exile` (CR 602.2b / 733.1). -/
 /- Phase 3: `GameEvent.activated`, loyalty counter costs, and loyalty activation
 triggers only fire when activation cost payment completes (`becomeActivated`,
 CR 602.2b / 606.4), so reversing a proposed activation before cost payment
-finishes (CR 733.1) leaves no `activated` event, loyalty counter cost event, or
+finishes (CR 734.1) leaves no `activated` event, loyalty counter cost event, or
 waiting triggers; `.transformIncubator` records `PermanentEvent.transformed`
-under a `.oneShotEffect` cause (CR 701.27f / 111.10i); and spell/ability
+under a `.oneShotEffect` cause (CR 701.27g / 111.10i); and spell/ability
 `phaseOut` records `PermanentEvent.phasedOut` under the resolving `.oneShotEffect`
 cause without emitting spurious `ContinuousEffectEvent.expired` records for
 printed static abilities (CR 702.26b / 702.26f). -/

@@ -250,7 +250,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
 
 -- 4. CR 101.2 `cantCastSpellsThisTurn`, flash/`canCast` parity (`ignoreTiming`, `castOnlyIfGraveyardAtLeast`),
 --    CR 601.2b,f,h caster-identity Thalia & `announceAdditionalCost` reduction order, *Countersculpt* behold
---    deferred to 601.2h, Morph / Impending `applyKickerToProposed` (no Thalia tax, `anyMana`), and CR 602.2b / 733.1 non-cancellation.
+--    deferred to 601.2h, Morph / Impending `applyKickerToProposed` (no Thalia tax, `anyMana`), and CR 602.2b / 734.1 non-cancellation.
 #guard
   -- 4a. CR 101.2 `cantCastSpellsThisTurn` blocks `canCast`, `castSpell`, `castFreeCopy`, and `castExiledAsAbilityResolves`.
   let freeShock21 : CardDef := { shock with name := "Phase21 Free Shock", manaCost := ManaCost.empty }
@@ -368,7 +368,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     gMorphProp.proposedSpell.map (·.cost) == some (ManaCost.ofGeneric 3) &&
     gImpAnyProp.proposedSpell.map (·.cost) == some (ManaCost.ofGeneric 2)
 
-  -- 4e. CR 602.2b / 733.1 partial-payment non-cancellation: once `{1}` mana is paid on `{1}, Sacrifice another creature:`, `.decline` is blocked while a creature exists!
+  -- 4e. CR 602.2b / 734.1 partial-payment non-cancellation: once `{1}` mana is paid on `{1}, Sacrifice another creature:`, `.decline` is blocked while a creature exists!
   let sacAbDef21 : CardDef := {
     name := "Phase21 Altar"
     types := #[.artifact]
@@ -520,7 +520,7 @@ def mkTwoHeadedGiant21 (seed : UInt64 := 221) : Game :=
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
 -- 6. Two-Headed Giant CR 810.8d 15-poison team SBA, CR 805.10d–e / 810.7 shared team blocking &
---    `legalBlockerCount`, CR 500.4 / 514.2 / 723.1 / 805.4 / 810.2 mid-shared-turn `playerControl` &
+--    `legalBlockerCount`, CR 500.4 / 514.2 / 724.1 / 805.4 / 810.2 mid-shared-turn `playerControl` &
 --    `.untilNextTurnOf` expiry & 2HG opponent filters, and simultaneous `withBatch` invariants.
 #guard
   -- 6a. CR 810.8d: 10 + 4 = 14 poison survives in 2HG, whereas 10 + 5 = 15 loses!
@@ -1023,7 +1023,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   mustHold22 "4.replay" ([gSeq0, gSeq1, gSeq2, gMoveGyReplaced, gSurvReplaced, gSacPow0].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
--- 5. `finishProposedSpellCosts` `outerCont?` preservation, CR 733.1 post-prior-cost reversal
+-- 5. `finishProposedSpellCosts` `outerCont?` preservation, CR 734.1 post-prior-cost reversal
 --    (`paySneak` returning the caster's only creature before `additionalCostSacrificeCreature`),
 --    and `Action.decline` reversal on `.sacrificePermanent` / `.discardForAdditionalCost` only
 --    when zero legal choices remain.
@@ -1057,7 +1057,7 @@ def mustHold22 (label : String) (ok : Bool) : Bool :=
   --         (Phase 52: `validateFrontFaceCast` excludes `sneakAttacker` from `mandatorySacrificeError?`);
   --     (ii) when a second creature is present at proposal time but leaves before `.pay`, `paySneak`
   --         returns the attacker to hand leaving 0 creatures to sacrifice, so `.finalize` reverses
-  --         the entire proposed spell per CR 733.1 (attacker back on `.battlefield`, sneak spell in `.hand`!):
+  --         the entire proposed spell per CR 734.1 (attacker back on `.battlefield`, sneak spell in `.hand`!):
   let sneakSacCreature22 : CardDef := {
     bear with
     name := "Phase22 Sneak Sac"
@@ -2392,7 +2392,7 @@ def freeDraw24i2 : CardDef := {
   spellAbility := some { effect := { body := Instruction.drawFixed 1 } }
 }
 
-/-- A creature with a `{2}` sorcery Adventure (CR 715.2). -/
+/-- A creature with a `{2}` sorcery Adventure (CR 716.2). -/
 def adventurer24i2 : CardDef := {
   bear with
   name := "P24i2 Adventurer"
@@ -2516,7 +2516,7 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   mustHold24i2 "1d.restrictionFlagsOk" restrictionFlagsOk &&
   mustHold24i2 "1.replay" (replayOk24i2 #[gFbProp, gFbCast, gFbMoved, gBbProp, gBbCast, gBbMoved])
 
--- 2. CR 601.2b–c / 702.33a,d,g / 733.1 target-replacing Kicker (*Galadriel's Dismissal*).
+-- 2. CR 601.2b–c / 702.33a,d,g / 734.1 target-replacing Kicker (*Galadriel's Dismissal*).
 #guard
   -- With no creature anywhere only the kicked "target player" is legal: the spell may still be
   -- proposed; kicking proceeds to player targets, declining the kicker reverses the proposal.
@@ -2545,7 +2545,7 @@ def noFlashbackExile24i2 (g : Game) : Bool :=
   mustHold24i2 "2.kickerOk" kickerOk &&
   mustHold24i2 "2.replay" (replayOk24i2 #[gGdProp, gGdKick, gGdTgt, gGdPaid, gGdNoKick])
 
--- 3. CR 601.3e / 715.3a–b Adventure library-top & life payment, and CR 608.2d / 733.1
+-- 3. CR 601.3e / 716.3a–b Adventure library-top & life payment, and CR 608.2d / 734.1
 --    *Cosmic Cube* `Pending.mayCastFromLooked` legality & checkpoint.
 #guard
   -- 3a. A creature-only library-top permission can't cast the (sorcery) Adventure half:

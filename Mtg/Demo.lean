@@ -116,7 +116,7 @@ Decklists:
 https://magic.wizards.com/en/news/announcements/the-hobbit-welcome-decks
 
 The engine follows the Magic: The Gathering Comprehensive Rules
-effective 25 September 2026.
+effective 6 November 2026.
 
 At the start of a game, one player is chosen to decide who takes the
 first turn (CR 103.1). `--decides NAME` names that player; the default
@@ -486,7 +486,7 @@ def helpInteractive (controlAll : Bool := false)
   mode <n>             Choose a mode for a modal spell or ability (CR 601.2b / 700.2)
   x <n>                Choose a value for X (CR 107.3a / 601.2b)
   cast <id>            Begin casting a spell (CR 601.2a)
-  cast <id> adventure  Cast an adventurer card as its Adventure (CR 715.3)
+  cast <id> adventure  Cast an adventurer card as its Adventure (CR 716.3)
   cast <id> sneak <attacker>  Cast for the sneak cost, returning that unblocked attacker to hand
   target <id|name|opponent> [n] ...  Announce every target of one “target” word together (CR 601.2c); n is damage when dividing (CR 601.2d)
   scry                 Finish scrying; keep looked-at cards on top
@@ -1039,7 +1039,7 @@ def applyX (g : Game) (p : PlayerId) (tokens : List String) : Except String Game
 
 def castUsage : String := "usage: cast <id> [adventure]"
 
-/-- Begin casting the named spell (CR 601.2a), or its Adventure (CR 715.3).
+/-- Begin casting the named spell (CR 601.2a), or its Adventure (CR 716.3).
 Targets are announced later with `target` (CR 601.2c). -/
 def applyCast (g : Game) (p : PlayerId) (tokens : List String) : Except String Game := do
   match commandTokens tokens with

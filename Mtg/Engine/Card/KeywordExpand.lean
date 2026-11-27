@@ -9,7 +9,7 @@ Pure projection `KeywordAbility.expand : KeywordAbility → ExpandedKeyword`
 translating every CR 702 keyword ability directly into the unified Phase-8
 `ActivatedAbility`, `TriggeredAbility`, `StaticAbility`, `SpecialActionSpec`,
 `AdditionalCostSpec`, `AlternativeCostSpec`, and `Instruction` AST anchored to
-the 25 September 2026 Comprehensive Rules:
+the 6 November 2026 Comprehensive Rules:
 
 - Intrinsic `ActivatedAbility`s: Equip (CR 702.6a), Cycling / Typecycling
   (CR 702.29a,e), Crew (CR 702.122a).

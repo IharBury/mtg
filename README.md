@@ -5,9 +5,9 @@ A [Lean 4](https://lean-lang.org/) rules engine for
 [Lake](https://github.com/leanprover/lean4/tree/master/src/lake).
 
 The engine follows the *Magic: The Gathering* Comprehensive Rules **effective
-25 September 2026**. The official text is published by Wizards of the Coast at:
+6 November 2026**. The official text is published by Wizards of the Coast at:
 
-<https://media.wizards.com/2026/downloads/MagicCompRules%2020260925.txt>
+<https://media.wizards.com/2026/downloads/MagicCompRules%2020261106.txt>
 
 ## Prerequisites
 
@@ -127,7 +127,7 @@ player view. With `--interactive`, that player is the first named player; with
 
 ## Architecture documentation
 
-- [`docs/architecture.md`](docs/architecture.md) — system overview, Comprehensive Rules (25 September 2026) mapping, Lake plugin hierarchy, Lean 4 build invariants, verification gates, and non-goals
+- [`docs/architecture.md`](docs/architecture.md) — system overview, Comprehensive Rules (6 November 2026) mapping, Lake plugin hierarchy, Lean 4 build invariants, verification gates, and non-goals
 - [`docs/card-and-ability-model.md`](docs/card-and-ability-model.md) — layered `Mtg.Engine.Card` AST (`Primitives`, `Expr`, `Targeting`, `Cost`, `ManaSpec`, `TokenSpec`, `Instruction`, CR 113.3 abilities, `KeywordAbility`, and 21-field `CardDef`)
 - [`docs/oracle-parser.md`](docs/oracle-parser.md) — five-stage compositional Oracle parser (`Mtg/Engine/Card/Parser/*`), recursive quoted-ability parsing, discourse/anaphora binding, canonical `ToOracle` rendering, and 981-card round-trip verification
 - [`docs/game-evaluation.md`](docs/game-evaluation.md) — runtime evaluation in `Mtg.Engine.Game` (`EvalExpr` & LKI, CR 613 layers, targeting legality, resumable `Instruction` interpreter & `stepEnv`, two-pass trigger matching, and mana/cost/replacement/Demo/Agent integration)
@@ -214,12 +214,12 @@ The first slice of the engine models the two-player game:
   sacrifice a creature, a target opponent sacrifice a creature, or each
   opponent discard a card, and lasting type-changing animations (a permanent that becomes
   a Bear creature with power and toughness equal to lands you control)
-- Saga enchantments (CR 714): lore counters as a Saga enters and as the first
+- Saga enchantments (CR 715): lore counters as a Saga enters and as the first
   main phase begins, chapter abilities on the stack with the catalog effects
   (damage, destroy, mana, tutor, landfall, pumps, discard, amass, life drain,
   hexproof and damage prevention while the Saga remains, draw, linked exile,
   delayed blink, Treasure-into-Dragon, recruit, and graveyard return), and
-  sacrificing a Saga after its final chapter leaves the stack (CR 714.4)
+  sacrificing a Saga after its final chapter leaves the stack (CR 715.4)
 - planeswalkers: entering with loyalty (CR 306.5b), loyalty abilities once
   per turn at sorcery speed with loyalty costs including −X (CR 606), abilities
   granted to planeswalkers you control, attacking planeswalkers (CR 506.3 /
