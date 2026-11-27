@@ -265,11 +265,21 @@ least one card was placed (CR 401.4 / 616.1). -/
 def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
     (log : String := "") (cause : Option EventCause := none)
     (placedCount : Nat := 0)
-    (prevMoved : Option (ObjectId × Zone) := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
+    (prevMoved : Option (ObjectId × Zone) := none)
+    (fromEventIdx? : Option Nat := none) : Game :=
+  let isPaused (g : Game) : Bool :=
+    match g.pending with
+    | .chooseReplacement .. | .chooseLegend .. => true
+    | _ => false
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  if isPaused g then
     g.chainPendingReplacement
-      (.finishPostStep (.moveIdsInOrderLoop ids dest log cause placedCount prevMoved))
+      (.finishPostStep (.moveIdsInOrderLoop ids dest log cause placedCount prevMoved (some loopFromIdx)))
   else
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let placedCount :=
     match prevMoved with
     | some (prevId, z) =>
@@ -279,6 +289,7 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
   if match dest with
     | .library p | .hand p | .graveyard p | .outside p => !g.stillInGame p
     | _ => false then
+    let g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
     if !log.isEmpty && placedCount > 0 then g.logMsg log else g
   else
   match dest with
@@ -288,6 +299,7 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
       let mut placed := placedCount
       for i in [0:ids.size] do
         if !g.stillInGame p then
+          g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
           if !log.isEmpty && placed > 0 then
             g := g.logMsg log
           return g
@@ -297,14 +309,16 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
           if placed == 0 then .bottom
           else .fromTop (libSize - Nat.min placed libSize)
         let (g', _) := g.move id dest none (libraryPosition := some pos) (cause := cause)
+          (deferPlayFromExileLogs := true)
         g := g'
-        if let .chooseReplacement .. := g.pending then
+        if isPaused g then
           let rem := ids.extract (i + 1) ids.size
           g := g.chainPendingReplacement
-            (.finishPostStep (.moveIdsInOrderLoop rem dest log cause placed (some (id, .library p))))
+            (.finishPostStep (.moveIdsInOrderLoop rem dest log cause placed (some (id, .library p)) (some loopFromIdx)))
           return g
         if (g.followMovedToZone? id (· == .library p)).isSome then
           placed := placed + 1
+      g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
       if !log.isEmpty && (placed > 0 || (ids.isEmpty && prevMoved.isNone)) then
         g := g.logMsg log
       return g
@@ -316,20 +330,21 @@ def moveIdsInOrderLoop (g : Game) (ids : Array ObjectId) (dest : Zone)
         if match dest with
           | .hand p | .graveyard p | .outside p => !g.stillInGame p
           | _ => false then
+          g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
           if !log.isEmpty && placed > 0 then
             g := g.logMsg log
           return g
         let id := ids[i]!
-        let (g', _) := g.move id dest none (cause := cause)
+        let (g', _) := g.move id dest none (cause := cause) (deferPlayFromExileLogs := true)
         g := g'
-        if let .chooseReplacement .. := g.pending then
+        if isPaused g then
           let rem := ids.extract (i + 1) ids.size
-          if !rem.isEmpty || !log.isEmpty then
-            g := g.chainPendingReplacement
-              (.finishPostStep (.moveIdsInOrderLoop rem dest log cause placed (some (id, dest))))
+          g := g.chainPendingReplacement
+            (.finishPostStep (.moveIdsInOrderLoop rem dest log cause placed (some (id, dest)) (some loopFromIdx)))
           return g
         if (g.followMovedToZone? id (· == dest)).isSome then
           placed := placed + 1
+      g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
       if !log.isEmpty && (placed > 0 || (ids.isEmpty && prevMoved.isNone)) then
         g := g.logMsg log
       return g

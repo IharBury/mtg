@@ -853,10 +853,11 @@ partial def checkSBACounted (g : Game)
     -- the player keeps one copy (CR 704.5j). Narrow or drop a stale prompt
     -- before `g.sbaPaused` returns `(g, false)` or `withBatchReturn` opens a batch.
     let sbaFromIdx0 := fromEventIdx?.getD g.events.size
-    let preSba0 :=
+    let gEntrySba := g
+    let mkPreSba0 : Unit → Game := fun () =>
       match fromEventIdx? with
-      | some idx => g.mkHistoricalGameAt idx
-      | none => g
+      | some idx => gEntrySba.mkHistoricalGameAt idx
+      | none => gEntrySba
     let (g, returnEarly, clearedInvalidLegend) := g.normalizePendingLegendChoice
     if returnEarly || g.sbaPaused then (g, false)
     else
@@ -949,9 +950,10 @@ partial def checkSBACounted (g : Game)
       match effFromIdx? with
       | some idx => min idx sbaFromIdx0
       | none => sbaFromIdx0
-    let preSba :=
-      if effSbaFromIdx < sbaFromIdx0 then g.mkHistoricalGameAt effSbaFromIdx
-      else preSba0
+    let gForPreSba := g
+    let mkPreSba : Unit → Game := fun () =>
+      if effSbaFromIdx < sbaFromIdx0 then gForPreSba.mkHistoricalGameAt effSbaFromIdx
+      else mkPreSba0 ()
     let pfeFromIdx? : Option Nat :=
       if deferPlayFromExileLogs then effFromIdx? else some effSbaFromIdx
     let (g, (changed, _paused)) := g.withBatchReturn none fun g => Id.run do
@@ -1129,7 +1131,7 @@ partial def checkSBACounted (g : Game)
           (forceLeave := peeledLeave) (fromIdx? := pfeFromIdx?)
         let g :=
           if !deferPlayFromExileLogs && deferRestore && !g.over then
-            emitExpiredPlayFromExileLogs preSba g effSbaFromIdx
+            emitExpiredPlayFromExileLogsLazy mkPreSba g effSbaFromIdx
           else g
         (g, true)
       | _ =>
@@ -1150,7 +1152,7 @@ partial def checkSBACounted (g : Game)
           else (g, false)
         let g :=
           if !deferPlayFromExileLogs && !chainedOwner && !g.over then
-            emitExpiredPlayFromExileLogs preSba g effSbaFromIdx
+            emitExpiredPlayFromExileLogsLazy mkPreSba g effSbaFromIdx
           else g
         (g, changed || clearedInvalidLegend)
     let g :=
@@ -1177,10 +1179,11 @@ partial def checkSBACountedWithLeavesCoreWithIdx (g : Game)
   if g.over then (g, false, none, false, departedIn, none, fromEventIdx?)
   else
   let sbaFromIdx0 := fromEventIdx?.getD g.events.size
-  let preSba0 :=
+  let gEntrySba := g
+  let mkPreSba0 : Unit → Game := fun () =>
     match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | some idx => gEntrySba.mkHistoricalGameAt idx
+    | none => gEntrySba
   let (g, popOuterIn, outerAfterIn?) :=
     if outerAfterIn?.isSome && (deferRestore || savedIn.isSome || popOuterIn || rewindProposalIn.isSome) then
       let (gf, pof) := combineOuterContinuations g popOuterIn outerAfterIn? false
@@ -1299,9 +1302,10 @@ partial def checkSBACountedWithLeavesCoreWithIdx (g : Game)
     match carriedFromIdx? with
     | some idx => min idx sbaFromIdx0
     | none => sbaFromIdx0
-  let preSba :=
-    if effFromIdx < sbaFromIdx0 then g.mkHistoricalGameAt effFromIdx
-    else preSba0
+  let gForPreSba := g
+  let mkPreSba : Unit → Game := fun () =>
+    if effFromIdx < sbaFromIdx0 then gForPreSba.mkHistoricalGameAt effFromIdx
+    else mkPreSba0 ()
   let pfeIdxOpt : Option Nat := if deferPlayFromExileLogs then none else some effFromIdx
   let carriedOutIdx? : Option Nat := mergeFromEventIdx carriedFromIdx? fromEventIdx?
   let (reenterAfterRewind?, outerAfter?) :
@@ -1406,13 +1410,13 @@ partial def checkSBACountedWithLeavesCoreWithIdx (g : Game)
         else
           let g :=
             if deferPlayFromExileLogs || g.over then g
-            else emitExpiredPlayFromExileLogs preSba g effFromIdx
+            else emitExpiredPlayFromExileLogsLazy mkPreSba g effFromIdx
           (g.restoreSavedPostLeave saved? popOuter
              (departed := departed) (rewindProposal := rewindProposal),
            didAny, none, false, departed, none, outerAfter?, true, carriedOutIdx?)
   let gOut :=
     if handledPfeLogs || deferPlayFromExileLogs || gOut.over then gOut
-    else emitExpiredPlayFromExileLogs preSba gOut effFromIdx
+    else emitExpiredPlayFromExileLogsLazy mkPreSba gOut effFromIdx
   let gOut :=
     if gOut.over then gOut
     else

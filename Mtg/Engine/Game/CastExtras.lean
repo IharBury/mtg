@@ -86,45 +86,57 @@ def givePromisedGift (g : Game) (to : PlayerId) : Game :=
 /-- Pause-safe loop for `resolveCascade` (CR 702.85a / 616.1). -/
 partial def resolveCascadeLoop (g : Game) (p : PlayerId) (maxMv : Nat)
     (cause : EventCause) (exiled : Array ObjectId := #[])
-    (pendingFromId : Option ObjectId := none) : Game :=
+    (pendingFromId : Option ObjectId := none)
+    (fromEventIdx? : Option Nat := none) : Game :=
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let finishPfe (g : Game) : Game :=
+    if fromEventIdx?.isSome || g.events.size > loopFromIdx then
+      emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    else g
   match pendingFromId with
   | some fid =>
-    if let .chooseReplacement .. := g.pending then
+    if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
       g.chainPendingReplacement
-        (.finishPostStep (.resolveCascadeLoop p maxMv cause exiled (some fid)))
-    else if !g.stillInGame p then g
+        (.finishPostStep (.resolveCascadeLoop p maxMv cause exiled (some fid) (some loopFromIdx)))
+    else if !g.stillInGame p then finishPfe g
     else
       match g.followMovedToZone? fid (· == .exile) with
       | some card =>
         let exiled := exiled.push card.id
         if !g.isLand card && g.objectManaValue card < maxMv then
           let g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
+          let g := finishPfe g
           let others := exiled.filter (· != card.id)
           g.beginResolutionChoice p (.mayCastCascade card.id others)
             s!"{(g.player p).name} may cast {g.name card} without paying its mana cost (cascade)"
         else
-          g.resolveCascadeLoop p maxMv cause exiled none
+          g.resolveCascadeLoop p maxMv cause exiled none (some loopFromIdx)
       | none =>
-        g.resolveCascadeLoop p maxMv cause exiled none
+        g.resolveCascadeLoop p maxMv cause exiled none (some loopFromIdx)
   | none =>
-    if let .chooseReplacement .. := g.pending then
+    if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
       g.chainPendingReplacement
-        (.finishPostStep (.resolveCascadeLoop p maxMv cause exiled none))
-    else if !g.stillInGame p then g
+        (.finishPostStep (.resolveCascadeLoop p maxMv cause exiled none (some loopFromIdx)))
+    else if !g.stillInGame p then finishPfe g
     else
       match (g.player p).library.back? with
       | none =>
         let g := g.logMsg s!"{(g.player p).name} exiles cards for cascade (less than {maxMv})"
+        let g := finishPfe g
         g.requestOrderInto exiled (.library p)
           s!"No cheaper nonland card was exiled; {(g.player p).name} puts the exiled cards on the bottom of their library in a random order"
           (cause := some cause)
       | some id =>
-        let (g, _) := g.move id .exile none (cause := some cause)
-        if let .chooseReplacement .. := g.pending then
+        let (g, _) := g.move id .exile none (cause := some cause) (deferPlayFromExileLogs := true)
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
           g.chainPendingReplacement
-            (.finishPostStep (.resolveCascadeLoop p maxMv cause exiled (some id)))
+            (.finishPostStep (.resolveCascadeLoop p maxMv cause exiled (some id) (some loopFromIdx)))
         else
-          g.resolveCascadeLoop p maxMv cause exiled (some id)
+          g.resolveCascadeLoop p maxMv cause exiled (some id) (some loopFromIdx)
 
 /-- Cascade (CR 702.85a): exile from the top until a nonland card with mana
 value less than `maxMv`. The player may cast it without paying its mana

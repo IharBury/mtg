@@ -2111,7 +2111,7 @@ private partial def canPaySpellCostWithConvokeImprovise (g : Game) (p : PlayerId
     let hasConvoke :=
       KeywordAbility.hasConvoke face.keywords ||
         KeywordAbility.hasConvoke (g.currentKeywords stackDummy)
-    let hasImprovise := g.spellHasImprovise face p
+    let hasImprovise := g.spellHasImprovise face p (spellObj? := some stackDummy)
     if !hasConvoke && !hasImprovise then false
     else
       let manaSrcIds : Array ObjectId := (g.manaSources p).map (·.1.id)
@@ -2319,42 +2319,43 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
             att.status.attacking && !att.status.blocked
       else #[]
     let canCast := playable.any (fun o =>
-      let face := { g.baseCard o with keywords := g.currentKeywords o }
+      let rawFace := g.baseCard o
+      let kwFace := { rawFace with keywords := g.currentKeywords o }
       let casterObj := { o with controller := some p }
       let frontOk :=
         g.canCastFrontFace p o &&
-          (let targetRed := maxSpellTargetGenericReduction g p o face
+          (let targetRed := maxSpellTargetGenericReduction g p o rawFace
            let payOk (cost : ManaCost) (perm? : Option PlayPermission := none) : Bool :=
-             canPaySpellCostWithConvokeImprovise g p o face (cost.reduceGeneric targetRed)
+             canPaySpellCostWithConvokeImprovise g p o rawFace (cost.reduceGeneric targetRed)
                (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind) &&
-               canPayAnnouncedAdditionalForPriority g p o face targetRed (origPerm := perm?)
+               canPayAnnouncedAdditionalForPriority g p o rawFace targetRed (origPerm := perm?)
                  (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind)
            if o.zone == .exile then
              let perms := g.playPermissionsFor p o
              let nullPerm : Option PlayPermission :=
                if g.mayCastExiledBySource p o then some { player := p, anyMana := true } else none
              perms.any (fun pm =>
-               (pm.ignoreTiming || g.timingAllowsCast p face (card? := some o)) &&
+               (pm.ignoreTiming || g.timingAllowsCast p rawFace (card? := some o)) &&
                  (!pm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o)) &&
-                 payOk (g.playManaCost casterObj face (origPerm := some pm)
+                 payOk (g.playManaCost casterObj rawFace (origPerm := some pm)
                    (useImplicitPermissions := false)) (some pm)) ||
                ((perms.isEmpty || g.mayCastExiledBySource p o) &&
-                 g.timingAllowsCast p face (card? := some o) &&
-                 payOk (g.playManaCost casterObj face (origPerm := nullPerm)
+                 g.timingAllowsCast p rawFace (card? := some o) &&
+                 payOk (g.playManaCost casterObj rawFace (origPerm := nullPerm)
                    (useImplicitPermissions := false)) nullPerm)
            else
-             payOk (g.playManaCost casterObj face (useImplicitPermissions := false)))
+             payOk (g.playManaCost casterObj rawFace (useImplicitPermissions := false)))
       let sneakOk :=
         if unblockedAttackers.isEmpty || g.splitSecondOnStack || g.combatLocksNonManaAbilities ||
             g.opponentsCantCastOnActiveTurn p || g.cantCastSpellsThisTurn p then
           false
         else
-          match face.sneakCost with
+          match kwFace.sneakCost with
           | none => false
           | some sc =>
             let fromGy := o.zone == .graveyard o.owner
-            let isFb := fromGy && (face.flashback.isSome || g.flashbackUntilEot o)
-            if isFb || !g.mayPlay p o || !g.graveyardCastThresholdMet p o.id face then false
+            let isFb := fromGy && (kwFace.flashback.isSome || g.flashbackUntilEot o)
+            if isFb || !g.mayPlay p o || !g.graveyardCastThresholdMet p o.id rawFace then false
             else
               let sneakPerms : Array (Option PlayPermission) :=
                 if o.zone == .exile then
@@ -2369,10 +2370,10 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
                   else if base.isEmpty && (g.playPermissionsFor p o).isEmpty then #[none]
                   else base
                 else #[none]
-              let sneakFace := { face with manaCost := sc }
+              let sneakFace := { rawFace with manaCost := sc }
               unblockedAttackers.any fun att =>
                 sneakPerms.any fun perm? =>
-                  (g.validateFrontFaceCast p o face
+                  (g.validateFrontFaceCast p o rawFace
                     (sneakCost := some sc) (sneakAttacker := some att.id)
                     (origPermOverride := perm?)).isOk &&
                     let gSneak := g.probeAfterSneakReturn p o.id att.id
@@ -2387,14 +2388,14 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
                         (origPerm := perm?) (explicitAltCost := true) (flashback := some false)
                         (fromHand := o.zone == .hand p) (castFromZone := some o.zone.kind)
       let morphOk :=
-        let bc := g.baseCard o
         let preparedBlocksMorph :=
           o.zone == .exile &&
-            ((g.playPermissionFor? p o (face? := some face)).bind (·.prepareSource)).isSome &&
+            ((g.playPermissionFor? p o (face? := some rawFace)).bind (·.prepareSource)).isSome &&
             g.canCastFrontFace p o
-        bc.kicker.isNone && !preparedBlocksMorph && g.canCastMorphFaceDown p o &&
+        kwFace.kicker.isNone && !preparedBlocksMorph && g.canCastMorphFaceDown p o &&
           let morphObj :=
             { o with
+              id := noSourceSentinelId
               controller := some p
               printed := morphSpellFace
               adventurerCard := none
@@ -2402,7 +2403,7 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
           let targetRed := maxSpellTargetGenericReduction g p morphObj morphSpellFace
           let payMorph (perm? : Option PlayPermission) : Bool :=
             let cost :=
-              (g.playManaCost casterObj morphSpellFace
+              (g.playManaCost morphObj morphSpellFace
                 (origPerm := perm?) (flashback := some false)
                 (explicitAltCost := true) (useImplicitPermissions := false)).reduceGeneric targetRed
             canPaySpellCostWithConvokeImprovise g p morphObj morphSpellFace cost
@@ -2421,15 +2422,15 @@ def hasGameStatePriorityAction (g : Game) (p : PlayerId) : Bool :=
           else
             payMorph none
       let impendingOk :=
-        match face.morph, face.impending, face.kicker with
+        match kwFace.morph, kwFace.impending, kwFace.kicker with
         | none, some (_, alt), none =>
           let fromGraveyard := o.zone == .graveyard o.owner
-          let isFlashbackCast := fromGraveyard && (face.flashback.isSome || g.flashbackUntilEot o)
+          let isFlashbackCast := fromGraveyard && (kwFace.flashback.isSome || g.flashbackUntilEot o)
           let preparedBlocksImpending :=
             o.zone == .exile &&
-              ((g.playPermissionFor? p o (face? := some face)).bind (·.prepareSource)).isSome
+              ((g.playPermissionFor? p o (face? := some rawFace)).bind (·.prepareSource)).isSome
           !isFlashbackCast && !preparedBlocksImpending && g.canCastFrontFace p o &&
-            let impFace := { face with manaCost := alt }
+            let impFace := { rawFace with manaCost := alt }
             let targetRed := maxSpellTargetGenericReduction g p o impFace
             let payImpending (perm? : Option PlayPermission) : Bool :=
               let cost :=
@@ -3613,7 +3614,7 @@ def manaAbilityDefCanChangeOutcome (g : Game) (spend : ManaSpend)
       let isAnc := srcId?.any g.isAncestrySourceId
       let hasHybridOrTwobridDisplace :=
         prop.cost.symbols.any fun
-          | .hybrid a _ => prodTypes.contains (.colored a)
+          | .hybrid a b => prodTypes.contains (.colored a) || prodTypes.contains (.colored b)
           | .twobrid c => prodTypes.contains (.colored c)
           | _ => false
       let canDisplaceRiderTier :=
@@ -3930,7 +3931,9 @@ private partial def canExtraPlainSourcesChangeOutcome (g : Game) (initPool : Man
           cost.symbols.any (fun | .twobrid _ => true | _ => false) &&
           cost.symbols.any (fun
             | .twobrid c => greedyPass (fun ch => choiceHasColor ch c)
-            | .hybrid a _ => greedyPass (fun ch => choiceHasColor ch a)
+            | .hybrid a b =>
+              greedyPass (fun ch => choiceHasColor ch a) ||
+                greedyPass (fun ch => choiceHasColor ch b)
             | _ => false)) ||
         interest.riders.any (fun r =>
           if outcome0.explicitRiders.contains r then
@@ -4182,7 +4185,7 @@ def hasUniqueManaPayment (g : Game) : Bool :=
           | none => false
           | some spell =>
             let hasConvoke := KeywordAbility.hasConvoke (g.currentKeywords spell)
-            let hasImprovise := g.spellHasImprovise (g.baseCard spell) p
+            let hasImprovise := g.spellHasImprovise (g.baseCard spell) p (spellObj? := some spell)
             (hasConvoke || hasImprovise) &&
               (g.permanentsOf p).any (fun o =>
                 !o.status.tapped && !prop.teamworkCreatures.contains o.id &&

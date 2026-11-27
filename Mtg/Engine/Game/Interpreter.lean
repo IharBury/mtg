@@ -303,6 +303,7 @@ private def resolvePlayPerm (g : Game) (env : EvalEnv) (spec : GrantPlayPermSpec
     anyMana := spec.anyManaColor
     requireSubtype := reqSub?
     ignoreTiming := spec.freeCast
+    landsAllowed := spec.landsAllowed
   }
   (perm, dur)
 
@@ -312,6 +313,8 @@ private def grantPlayPermToMoved (g : Game) (env : EvalEnv) (fromId : ObjectId)
   | none => g
   | some moved =>
     if !g.stillInGame env.controller then g
+    else if !(!g.isLand moved || spec.landsAllowed) ||
+        !spec.filter?.all (EvalExpr.evalObjectPred g env (.live moved)) then g
     else if spec.asFlashback then
       g.createEffect (.flashbackUntilEot moved.id) (cause := some cause)
     else
@@ -586,7 +589,8 @@ private def moveOneObject (g : Game) (env : EvalEnv) (ctx : InterpCtx) (o : Game
         let dstP := resolveDestPlayer g env o under
         if dstP == o.owner then
           (g.flickerPermanents #[o.id] (logText := s!"{oName} is exiled, then returned to the battlefield")
-            (tapped := tapped) (cause := some cause), none)
+            (tapped := tapped) (cause := some cause)
+            (deferPlayFromExileLogs := deferPlayFromExileLogs), none)
         else
           let (g, _) := g.move o.id .exile none (cause := some cause)
             (deferPlayFromExileLogs := deferPlayFromExileLogs)
@@ -739,12 +743,16 @@ private partial def execMoveLoopStep (g : Game) (env : EvalEnv) (ctx : InterpCtx
 
 private def finishCopyAndCastCopies (g : Game) (env : EvalEnv) (ctx : InterpCtx)
     (exiledIds : Array ObjectId) (gp : GrantPlayPermSpec) (cause : EventCause) : Game :=
+  let maxMv? := gp.maxTotalManaValue?.map (fun v => (EvalExpr.evalValue g env v).toNat)
   let (g, copies) := g.withBatchReturn (some cause) fun g =>
     exiledIds.foldl (fun (acc : Game × Array ObjectId) id =>
       let (g, cs) := acc
       match g.findObject? id with
       | some card =>
-        if card.zone != .exile || card.printed.isToken then (g, cs)
+        if card.zone != .exile || card.printed.isToken || !isCastableObject card ||
+            (g.isLand card && !gp.landsAllowed) ||
+            !gp.filter?.all (EvalExpr.evalObjectPred g env (.live card)) ||
+            !maxMv?.all (fun m => g.objectManaValue card ≤ m) then (g, cs)
         else
           let base := g.copiableValues card
           let copyId : ObjectId := ⟨g.nextObjectId⟩
@@ -762,7 +770,8 @@ private def finishCopyAndCastCopies (g : Game) (env : EvalEnv) (ctx : InterpCtx)
           let g := g.record (GameEvent.created g.turnNumber ctx.controller (g.snapshot copyObj) (cause := cause))
           let g := g.createEffect (.playPermission copyId {
             player := ctx.controller, whileExiled := true,
-            withoutManaCost := gp.freeCast, ignoreTiming := true }) (cause := some cause)
+            withoutManaCost := gp.freeCast, ignoreTiming := true,
+            landsAllowed := gp.landsAllowed }) (cause := some cause)
           (g, cs.push copyId)
       | none => (g, cs)) (g, #[])
   if copies.isEmpty then g
@@ -821,7 +830,11 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
   | .topOfLibrary whoExpr countExpr, .graveyard, .mill =>
     let n := (EvalExpr.evalValue g env countExpr).toNat
     let pids := EvalExpr.evalPlayer g env whoExpr
-    (pids.foldl (fun g p => g.mill p n (cause := some cause)) g, #[])
+    let g' :=
+      if pids.isEmpty then g
+      else if pids.size == 1 then g.mill pids[0]! n (cause := some cause)
+      else g.millOpponentsOnly pids n (cause := some cause)
+    (g', #[])
   | _, _, _ =>
     -- Handle interactive `MoveMods.choice?` (sacrifice/discard/put-from-hand/keep-destroy-rest)
     match mods.choice? with
@@ -1192,6 +1205,26 @@ private def interpKeywordCounterSpecs : Array ((Game → GameObject → Bool) ×
   (Game.hasVigilance, .vigilance)
 ]
 
+private def putMovedCountersStep (g : Game) (ctx : InterpCtx) (targetId : ObjectId)
+    (bag : Array (CounterKind × Nat)) (cause : EventCause) : Game := Id.run do
+  let mut g := g
+  for j in [0:bag.size] do
+    let (k, cnt) := bag[j]!
+    if cnt > 0 then
+      if k == .plusOnePlusOne then
+        if let some liveCur := g.findObject? targetId then
+          if liveCur.isOnBattlefield then
+            g := g.addPlusOnePlusOneTo liveCur cnt (byPlayer := some ctx.controller) (cause := some cause)
+      else if (g.findObject? targetId).any (·.isOnBattlefield) then
+        g := g.putCountersDeferredLog targetId k cnt (some ctx.controller) .isPutOn (cause := some cause)
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+        let remBag := bag.extract (j + 1) bag.size
+        if !remBag.isEmpty then
+          g := g.chainPendingReplacement (.continueInterpreter {
+            ctx, queue := #[], stack := #[.afterMoveCountersPut targetId remBag cause] })
+        return g
+  return g
+
 private def execCounterOpStep (g : Game) (ctx : InterpCtx)
     (ids : Array ObjectId) (mode : CounterModifyMode)
     (cause : EventCause) (fromEventIdx? : Option Nat := none) : Game := Id.run do
@@ -1247,32 +1280,26 @@ private def execCounterOpStep (g : Game) (ctx : InterpCtx)
         | .moveAll fromExpr kind? =>
           if let some src := (resolveLiveObjects g env fromExpr)[0]? then
             if src.isOnBattlefield && src.status.hasCounters then
-              let bag := src.status.toCounterBag.filter fun (k, _) => kind?.all (· == k)
+              let bag := src.status.toCounterBag.filter fun (k, cnt) => cnt > 0 && kind?.all (· == k)
               if !bag.isEmpty then
                 g := g.recordRemoveCountersMulti src.id bag (cause := some cause)
                   (deferPlayFromExileLogs := true)
-                if !g.sbaPaused then
-                  for (k, cnt) in bag do
-                    if cnt > 0 && !g.sbaPaused &&
-                        (match g.pending with | .chooseReplacement .. => false | _ => true) then
-                      if k == .plusOnePlusOne then
-                        if let some liveCur := g.findObject? cur.id then
-                          if liveCur.isOnBattlefield then
-                            g := g.addPlusOnePlusOneTo liveCur cnt (byPlayer := some ctx.controller) (cause := some cause)
-                      else if (g.findObject? cur.id).any (·.isOnBattlefield) then
-                        g := g.putCountersDeferredLog cur.id k cnt (some ctx.controller) .isPutOn (cause := some cause)
+                if g.sbaPaused then
+                  g := g.chainPendingReplacement (.continueInterpreter {
+                    ctx, queue := #[], stack := #[.afterMoveCountersPut cur.id bag cause] })
+                else
+                  g := putMovedCountersStep g ctx cur.id bag cause
         | .moveOne fromExpr kind =>
           if let some src := (resolveLiveObjects g env fromExpr)[0]? then
             if src.isOnBattlefield && src.status.counters.count kind > 0 then
               g := g.recordRemoveCounters src.id kind 1 (cause := some cause)
                 (deferPlayFromExileLogs := true)
-              if !g.sbaPaused then
-                if kind == .plusOnePlusOne then
-                  if let some liveCur := g.findObject? cur.id then
-                    if liveCur.isOnBattlefield then
-                      g := g.addPlusOnePlusOneTo liveCur 1 (byPlayer := some ctx.controller) (cause := some cause)
-                else if (g.findObject? cur.id).any (·.isOnBattlefield) then
-                  g := g.putCountersDeferredLog cur.id kind 1 (some ctx.controller) .isPutOn (cause := some cause)
+              let bag := #[(kind, 1)]
+              if g.sbaPaused then
+                g := g.chainPendingReplacement (.continueInterpreter {
+                  ctx, queue := #[], stack := #[.afterMoveCountersPut cur.id bag cause] })
+              else
+                g := putMovedCountersStep g ctx cur.id bag cause
         | .copyFromLki fromExpr =>
           let bag? : Option CounterBag :=
             if fromExpr == .triggerSubject then
@@ -1359,24 +1386,26 @@ private def execPermanent (g : Game) (ctx : InterpCtx) (op : PermanentOp) : Game
         if pick.isEmpty then g
         else
           g.withBatch (some cause) fun g =>
-            pick.foldl (fun g o =>
-              match g.findObject? o.id with
-              | some cur =>
-                if !cur.isOnBattlefield then g
-                else if tapped then g.becomeTapped cur (cause := some cause)
-                else g.untapPermanentLogged cur (sourceId := ctx.sourceId)
-              | none => g) g
+            if tapped then
+              pick.foldl (fun g o =>
+                match g.findObject? o.id with
+                | some cur => if cur.isOnBattlefield then g.becomeTapped cur (cause := some cause) else g
+                | none => g) g
+            else
+              g.untapPermanentsLoop (pick.map (·.id)) (cause := some cause) (logged := true)
+                (sourceId := ctx.sourceId)
     | none =>
       if live.isEmpty then g
       else
         g.withBatch (some cause) fun g =>
-          live.foldl (fun g o =>
-            match g.findObject? o.id with
-            | some cur =>
-              if !cur.isOnBattlefield then g
-              else if tapped then g.becomeTapped cur (cause := some cause)
-              else g.untapPermanentLogged cur (sourceId := ctx.sourceId)
-            | none => g) g
+          if tapped then
+            live.foldl (fun g o =>
+              match g.findObject? o.id with
+              | some cur => if cur.isOnBattlefield then g.becomeTapped cur (cause := some cause) else g
+              | none => g) g
+          else
+            g.untapPermanentsLoop (live.map (·.id)) (cause := some cause) (logged := true)
+              (sourceId := ctx.sourceId)
   | .modifyCounters mode objs choice? =>
     let live := (resolveLiveObjects g env objs).filter (·.isOnBattlefield)
     match choice?, mode with
@@ -1496,12 +1525,14 @@ private def dealDamagePermanentsStep (g : Game) (ctx : InterpCtx)
         g := g.dealDamageFrom srcName o (Int.ofNat amt)
           (source := srcObj?) (sourceSnap := srcSnap?)
           (cause := some cause) (suppressLifelink := true)
-        if let .chooseReplacement .. := g.pending then
+          (deferPlayFromExileLogs := true)
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           g := g.chainPendingReplacement (.continueInterpreter {
             ctx, queue := #[],
             stack := #[.afterDamagePermanentsLoop rem amt srcName srcSnap? oppOnlyCtrl? startEventIdx cause] })
           return g
+  g := emitExpiredPlayFromExileLogs (g.mkHistoricalGameAt startEventIdx) g startEventIdx
   return g.applyAggregatedLifelinkSince startEventIdx (cause := some cause)
 
 private def dealDividedDamageStep (g : Game) (ctx : InterpCtx)
@@ -1524,17 +1555,19 @@ private def dealDividedDamageStep (g : Game) (ctx : InterpCtx)
             g := g.dealDamageFrom srcName o (Int.ofNat n)
               (source := srcObj?) (sourceSnap := srcSnap?)
               (cause := some cause) (suppressLifelink := true)
+              (deferPlayFromExileLogs := true)
       | .player pid =>
         if g.stillInGame pid then
           g := g.dealDamageToPlayer pid n (source := srcObj?) (sourceSnap := srcSnap?)
             (cause := some cause) (suppressLifelink := true)
       | .card _ => pure ()
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
         let rem := remaining.extract (i + 1) remaining.size
         g := g.chainPendingReplacement (.continueInterpreter {
           ctx, queue := #[],
           stack := #[.afterDividedDamageLoop rem srcName srcSnap? startEventIdx cause] })
         return g
+  g := emitExpiredPlayFromExileLogs (g.mkHistoricalGameAt startEventIdx) g startEventIdx
   return g.applyAggregatedLifelinkSince startEventIdx (cause := some cause)
 
 private def execDamage (g : Game) (ctx : InterpCtx) (op : DamageOp) : Game × Option StepOutcome :=
@@ -1946,10 +1979,10 @@ private def execInspectLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
                   | .shuffleIntoLibrary => g.shuffleThen p .none
                   | .graveyard =>
                     g.withBatch (some cause) fun g =>
-                      rest.foldl (fun g id => (g.move id (.graveyard p) none (cause := some cause)).1) g
+                      g.moveCardsToGraveyardLoop rest (cause := some cause)
                   | .exile =>
                     g.withBatch (some cause) fun g =>
-                      rest.foldl (fun g id => (g.move id .exile none (cause := some cause)).1) g
+                      g.exileCardsLoop rest (cause := some cause)
                   | .leaveInPlace => g
                 (g, none, #[])
             | .battlefield _ =>
@@ -1983,10 +2016,10 @@ private def execInspectLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
                   | .shuffleIntoLibrary => g.shuffleThen p .none
                   | .graveyard =>
                     g.withBatch (some cause) fun g =>
-                      rest.foldl (fun g id => (g.move id (.graveyard p) none (cause := some cause)).1) g
+                      g.moveCardsToGraveyardLoop rest (cause := some cause)
                   | .exile =>
                     g.withBatch (some cause) fun g =>
-                      rest.foldl (fun g id => (g.move id .exile none (cause := some cause)).1) g
+                      g.exileCardsLoop rest (cause := some cause)
                   | .leaveInPlace => g
                 (g, none, #[])
             | _ =>
@@ -2521,7 +2554,7 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
           permSpec.filter?.all (EvalExpr.evalObjectPred g env (.live o)) &&
           maxMv?.all (fun m => g.objectManaValue o ≤ m)
     if permSpec.asFlashback then
-      ids.foldl (fun g id =>
+      eligible.foldl (fun g id =>
         match g.findObject? id with
         | some o =>
           if !isDiscardableCard o then g
@@ -2531,7 +2564,7 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
         | none => g) g
     else if permSpec.copyAndCast then
       let (g, copies) := g.withBatchReturn (some cause) fun g =>
-        ids.foldl (fun (acc : Game × Array ObjectId) id =>
+        eligible.foldl (fun (acc : Game × Array ObjectId) id =>
           let (g, cs) := acc
           match g.findObject? id with
           | some card =>
@@ -2553,7 +2586,8 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
               let g := g.record (GameEvent.created g.turnNumber ctx.controller (g.snapshot copyObj) (cause := cause))
               let g := g.createEffect (.playPermission copyId {
                 player := ctx.controller, whileExiled := true,
-                withoutManaCost := permSpec.freeCast, ignoreTiming := true }) (cause := some cause)
+                withoutManaCost := permSpec.freeCast, ignoreTiming := true,
+                landsAllowed := permSpec.landsAllowed }) (cause := some cause)
               (g, cs.push copyId)
           | none => (g, cs)) (g, #[])
       if copies.isEmpty then g
@@ -2622,6 +2656,36 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
 
 /-! ### Action Family 9: `installEffect` -/
 
+private partial def resolveFromStepPred (env : EvalEnv) : ObjectPred → ObjectPred
+  | .hasSubtype (.fromStep sv) =>
+    match (env.stepOutcome? sv).bind (·.chosenSubtype?) with
+    | some sub => .hasSubtype (.literal sub)
+    | none => .hasSubtype (.fromStep sv)
+  | .statParity k (.fromStep sv) =>
+    match (env.stepOutcome? sv).bind (·.chosenParity?) with
+    | some wantOdd => .statParity k (if wantOdd then .odd else .even)
+    | none => .statParity k (.fromStep sv)
+  | .all ps => .all (ps.map (resolveFromStepPred env))
+  | .any ps => .any (ps.map (resolveFromStepPred env))
+  | .not p => .not (resolveFromStepPred env p)
+  | p => p
+
+private def resolveFromStepProtectionQuality (env : EvalEnv) : ProtectionQuality → ProtectionQuality
+  | .subtype (.fromStep sv) =>
+    match (env.stepOutcome? sv).bind (·.chosenSubtype?) with
+    | some sub => .subtype (.literal sub)
+    | none => .subtype (.fromStep sv)
+  | .quality pred => .quality (resolveFromStepPred env pred)
+  | q => q
+
+private def resolveFromStepQualityFilter (env : EvalEnv) : QualityFilter → QualityFilter
+  | .subtype (.fromStep sv) =>
+    match (env.stepOutcome? sv).bind (·.chosenSubtype?) with
+    | some sub => .subtype (.literal sub)
+    | none => .subtype (.fromStep sv)
+  | .objectPred pred => .objectPred (resolveFromStepPred env pred)
+  | q => q
+
 private partial def applyContinuousModToObj (g : Game) (env : EvalEnv) (ctx : InterpCtx)
     (o : GameObject) (dur : EffectDuration) (mod : ContinuousModification)
     (cause : EventCause) : Game :=
@@ -2663,6 +2727,10 @@ private partial def applyContinuousModToObj (g : Game) (env : EvalEnv) (ctx : In
       (g.createEffect (.layered (.objects #[o.id]) (.ptSet pw tw) dur) (cause := some cause)).logMsg
         s!"{g.name o} has base power and toughness {pw}/{tw}"
   | .grantKeywords ks =>
+    let ks := ks.map fun
+      | .protection q => .protection (resolveFromStepProtectionQuality env q)
+      | .hexproof (some q) => .hexproof (some (resolveFromStepQualityFilter env q))
+      | k => k
     let srcObj? : Option GameObject :=
       (ctx.sourceId.bind g.damageSourceById?).orElse (fun _ =>
         ctx.sourceSnapshot.map Game.damageSourceObjectFromLki)
@@ -2673,7 +2741,9 @@ private partial def applyContinuousModToObj (g : Game) (env : EvalEnv) (ctx : In
         ks.filter fun
           | .protection .chosenCardType
           | .protection (.color .chosenOnSource)
-          | .protection (.subtype .chosenOnSource) => false
+          | .protection (.subtype .chosenOnSource)
+          | .hexproof (some (.color .chosenOnSource))
+          | .hexproof (some (.subtype .chosenOnSource)) => false
           | _ => true
     if effKs.isEmpty then g
     else
@@ -2702,16 +2772,19 @@ private partial def applyContinuousModToObj (g : Game) (env : EvalEnv) (ctx : In
         | none => g
       else g
     let g := g.createEffect (.layered (.objects #[o.id])
-      (.types tm.mode tm.types tm.subtypes tm.supertypes tm.removeTypes) dur) (cause := some cause)
+      (.types tm.mode tm.types tm.subtypes tm.supertypes
+        tm.removeTypes tm.removeSubtypes tm.removeSupertypes) dur) (cause := some cause)
     if tm.types.contains .creature && !tm.subtypes.isEmpty then
       let subStr := String.intercalate " " (tm.subtypes.toList.map CardSubtype.englishName)
       g.logMsg s!"{g.name o} becomes a {subStr} creature"
     else g
   | .addAllCreatureTypes =>
-    g.createEffect (.layered (.objects #[o.id]) (.abilities { keywords := #[.simple .changeling] } .none) dur)
+    g.createEffect (.layered (.objects #[o.id])
+      (.types .addDedup #[] CardSubtype.allCreatureSubtypes #[]) dur)
       (cause := some cause)
   | .modifyColors cm =>
-    g.createEffect (.layered (.objects #[o.id]) (.colors cm.mode cm.colors) dur) (cause := some cause)
+    g.createEffect (.layered (.objects #[o.id])
+      (.colors cm.mode cm.colors cm.removeColors) dur) (cause := some cause)
   | .grantActivated abs =>
     if dur == .untilEndOfTurn && abs.any (fun a =>
         a.cost == CostSpec.tapOnly &&
@@ -2819,13 +2892,7 @@ private partial def applyRuleMod (g : Game) (env : EvalEnv) (ctx : InterpCtx)
         (g.createEffect (.playerRule p r dur) (cause := some cause)).logMsg
           s!"{(g.player p).name}'s life total can't change") g
     | .protectionFrom who q =>
-      let resolvedQ : ProtectionQuality :=
-        match q with
-        | .subtype (.fromStep sv) =>
-          match (env.stepOutcome? sv).bind (·.chosenSubtype?) with
-          | some sub => .subtype (.literal sub)
-          | none => q
-        | _ => q
+      let resolvedQ := resolveFromStepProtectionQuality env q
       (EvalExpr.evalPlayerFilter g env who).foldl (fun g p =>
         let eff :=
           if resolvedQ == .everything then
@@ -2840,6 +2907,23 @@ private partial def applyRuleMod (g : Game) (env : EvalEnv) (ctx : InterpCtx)
           | _ => ""
         (g.createEffect eff (cause := some cause)).logMsg
           s!"{(g.player p).name} has protection from {resolvedQ.toOraclePhrase {}}{durText}") g
+    | .hexproof who q? =>
+      let resolvedQ? := q?.map (resolveFromStepQualityFilter env)
+      (EvalExpr.evalPlayerFilter g env who).foldl (fun g p =>
+        let eff :=
+          ContinuousEffectSpec.playerRule p (.hexproof resolvedQ? env.sourceId (some ctx.controller)) dur
+        let qualText :=
+          match resolvedQ? with
+          | none => ""
+          | some q => s!" from {q.toOraclePhrase {}}"
+        let durText :=
+          match dur with
+          | .untilEndOfTurn => " until end of turn"
+          | .untilNextTurnOf q' =>
+            if q' == p then " until their next turn" else " until that player's next turn"
+          | _ => ""
+        (g.createEffect eff (cause := some cause)).logMsg
+          s!"{(g.player p).name} has hexproof{qualText}{durText}") g
     | .forbidAbilityActivation _ .powerUp =>
       g.createEffect (.gameRule .powerUpsForbidden dur) (cause := some cause)
     | .controlPlayer who =>
@@ -3194,6 +3278,10 @@ private partial def hasNthResolutionCheck : Instruction → Bool
   | .ifCond cond t e => condHasNth cond || hasNthResolutionCheck t || hasNthResolutionCheck e
   | .seq ss => ss.any hasNthResolutionCheck
   | .bind _ s b => hasNthResolutionCheck s || hasNthResolutionCheck b
+  | .optional _ _ onYes onNo _ => hasNthResolutionCheck onYes || hasNthResolutionCheck onNo
+  | .unlessPays _ _ ifUnpaid => hasNthResolutionCheck ifUnpaid
+  | .chooseModes spec => spec.modes.any (fun e => hasNthResolutionCheck e.body)
+  | .forEach _ _ body => hasNthResolutionCheck body
   | _ => false
 where
   condHasNth : Condition → Bool
@@ -3437,6 +3525,12 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
           else
             g := g.withBatch (some cause) fun g =>
               execCounterOpStep g ctx remainingIds mode cause fromEventIdx?
+        | .afterMoveCountersPut targetId remainingCounters cause =>
+          if g.currentBatch.isSome then
+            g := putMovedCountersStep g ctx targetId remainingCounters cause
+          else
+            g := g.withBatch (some cause) fun g =>
+              putMovedCountersStep g ctx targetId remainingCounters cause
         | .afterCopyAndCastExileLoop remainingIds exiledIds gp cause pendingFrom? fromEventIdx? =>
           let env := interpEnv g ctx
           let (g1, finalXs) :=
@@ -3642,7 +3736,7 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
             | some card =>
               let targets := resolveLiveObjects g env (.target 0)
               g := g.withBatch none fun g =>
-                let perm : PlayPermission := { player := ctx.controller, whileExiled := true }
+                let perm : PlayPermission := { player := ctx.controller, whileExiled := true, landsAllowed := false }
                 let g := (g.createEffect (.playPermission card.id perm)).logMsg
                   s!"{(g.player ctx.controller).name} may cast {g.name card} for as long as it remains exiled"
                 targets.foldl (fun g land =>

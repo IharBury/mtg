@@ -170,10 +170,10 @@ def symbolsIncludingColor (cost : ManaCost) (c : Color) : Nat :=
 def colors (cost : ManaCost) : ColorSet :=
   cost.symbols.foldl (fun acc s => acc.union s.colorContribution) ColorSet.empty
 
-/-- If `original` required mana and `result` has no symbols, the payable cost
+/-- If `original` had a mana cost and `result` has no symbols, the payable cost
 is `{0}` rather than an empty (unpayable) cost (CR 107.4d / 118.7 / 202.1b). -/
 def afterReduction (original result : ManaCost) : ManaCost :=
-  if original.includesManaPayment && result.symbols.isEmpty then zero else result
+  if !original.symbols.isEmpty && result.symbols.isEmpty then zero else result
 
 /-- Total generic mana in this cost. -/
 def genericCount (cost : ManaCost) : Nat :=
@@ -576,47 +576,146 @@ private def groupFlexibleSymbols (cost : ManaCost) :
     | _ => pure ()
   return (twobrids, hybrids, genericNeed)
 
+private def spendPriorityTier (u : ManaUnit) (spend : ManaSpend) : Option Nat :=
+  match u.restriction with
+  | some r =>
+    if !r.allows spend then none
+    else if r.isNarrow then some 0
+    else some 1
+  | none =>
+    if spend.spell && !u.riders.isEmpty then some 2
+    else if u.fromTreasure then some 3
+    else if u.riders.isEmpty then some 4
+    else some 5
+
+private structure ColorTiers where
+  w : Array Nat := #[]
+  u : Array Nat := #[]
+  b : Array Nat := #[]
+  r : Array Nat := #[]
+  g : Array Nat := #[]
+
+private def ColorTiers.get (ct : ColorTiers) : Color → Array Nat
+  | .white => ct.w
+  | .blue => ct.u
+  | .black => ct.b
+  | .red => ct.r
+  | .green => ct.g
+
+private def ColorTiers.sub (ct : ColorTiers) (c : Color) (n : Nat) : ColorTiers :=
+  let drop (arr : Array Nat) := arr.extract n arr.size
+  match c with
+  | .white => { ct with w := drop ct.w }
+  | .blue => { ct with u := drop ct.u }
+  | .black => { ct with b := drop ct.b }
+  | .red => { ct with r := drop ct.r }
+  | .green => { ct with g := drop ct.g }
+
+private def usableColorTiers (p : ManaPool) (spend : ManaSpend) : ColorTiers × Nat := Id.run do
+  let mut w : Array Nat := #[]
+  let mut u : Array Nat := #[]
+  let mut b : Array Nat := #[]
+  let mut r : Array Nat := #[]
+  let mut g : Array Nat := #[]
+  let mut cCount : Nat := 0
+  for unit in p.units do
+    if let some tier := spendPriorityTier unit spend then
+      match unit.mana with
+      | .colored .white => w := w.push tier
+      | .colored .blue => u := u.push tier
+      | .colored .black => b := b.push tier
+      | .colored .red => r := r.push tier
+      | .colored .green => g := g.push tier
+      | .colorless => cCount := cCount + 1
+  let ct : ColorTiers := {
+    w := w.qsort (· < ·)
+    u := u.qsort (· < ·)
+    b := b.qsort (· < ·)
+    r := r.qsort (· < ·)
+    g := g.qsort (· < ·)
+  }
+  return (ct, ct.w.size + ct.u.size + ct.b.size + ct.r.size + ct.g.size + cCount)
+
+private def hybridTierScore (tiersA tiersB : Array Nat) (ka kb : Nat) :
+    Nat × Nat × Nat × Nat × Nat × Nat := Id.run do
+  let mut c0 := 0; let mut c1 := 0; let mut c2 := 0; let mut c3 := 0; let mut c4 := 0
+  for i in [0 : ka] do
+    match tiersA[i]! with
+    | 0 => c0 := c0 + 1
+    | 1 => c1 := c1 + 1
+    | 2 => c2 := c2 + 1
+    | 3 => c3 := c3 + 1
+    | 4 => c4 := c4 + 1
+    | _ => pure ()
+  for i in [0 : kb] do
+    match tiersB[i]! with
+    | 0 => c0 := c0 + 1
+    | 1 => c1 := c1 + 1
+    | 2 => c2 := c2 + 1
+    | 3 => c3 := c3 + 1
+    | 4 => c4 := c4 + 1
+    | _ => pure ()
+  return (c0, c1, c2, c3, c4, ka)
+
+private def hybridScoreGt (x y : Nat × Nat × Nat × Nat × Nat × Nat) : Bool :=
+  let (x0, x1, x2, x3, x4, x5) := x
+  let (y0, y1, y2, y3, y4, y5) := y
+  if x0 != y0 then x0 > y0
+  else if x1 != y1 then x1 > y1
+  else if x2 != y2 then x2 > y2
+  else if x3 != y3 then x3 > y3
+  else if x4 != y4 then x4 > y4
+  else x5 > y5
+
 private def solveHybridsPay (hybrids : List (Color × Color × Nat))
-    (cc : ColorCounts) : Option (List Nat) :=
+    (ct : ColorTiers) : Option (List Nat) :=
   match hybrids with
   | [] => some []
   | (a, b, k) :: rest =>
-    let availA := cc.get a
-    let availB := cc.get b
+    let tiersA := ct.get a
+    let tiersB := ct.get b
+    let availA := tiersA.size
+    let availB := tiersB.size
     if availA + availB < k then none
     else
       let maxA := Nat.min k availA
       let minA := k - Nat.min k availB
-      let rec tryA (ka : Nat) : Option (List Nat) :=
-        let kb := k - ka
-        let cc' := (cc.sub a ka).sub b kb
-        match solveHybridsPay rest cc' with
-        | some restA => some (ka :: restA)
-        | none =>
-          if ka > minA then tryA (ka - 1) else none
-      tryA maxA
+      let candidates : Array Nat := Id.run do
+        let mut arr : Array Nat := #[]
+        for off in [0 : maxA - minA + 1] do
+          arr := arr.push (maxA - off)
+        return arr.qsort fun ka1 ka2 =>
+          hybridScoreGt (hybridTierScore tiersA tiersB ka1 (k - ka1))
+            (hybridTierScore tiersA tiersB ka2 (k - ka2))
+      Id.run do
+        for ka in candidates do
+          let kb := k - ka
+          let ct' := (ct.sub a ka).sub b kb
+          if let some restA := solveHybridsPay rest ct' then
+            return some (ka :: restA)
+        return none
 
 private def solveTwobridsPay (twobrids : List (Color × Nat))
     (hybrids : List (Color × Color × Nat)) (totalHybrids : Nat)
-    (cc : ColorCounts) (totalRem : Nat) (genericNeed : Nat) :
+    (ct : ColorTiers) (totalRem : Nat) (genericNeed : Nat) :
     Option (List Nat × List Nat × Nat) :=
   match twobrids with
   | [] =>
     if totalRem < totalHybrids + genericNeed then none
     else
-      (solveHybridsPay hybrids cc).map fun hybAs => ([], hybAs, genericNeed)
+      (solveHybridsPay hybrids ct).map fun hybAs => ([], hybAs, genericNeed)
   | (c, k) :: rest =>
     let restMinUnits := rest.foldl (fun acc (_, rk) => acc + rk) 0
     if totalRem < k + restMinUnits + totalHybrids + genericNeed then none
     else
-      let maxJ := Nat.min k (cc.get c)
+      let maxJ := Nat.min k (ct.get c).size
       let minTotalNeeded := 2 * k + restMinUnits + totalHybrids + genericNeed
       let minJ := if totalRem ≥ minTotalNeeded then 0 else minTotalNeeded - totalRem
       if minJ > maxJ then none
       else
         let rec tryJ (j : Nat) : Option (List Nat × List Nat × Nat) :=
           let genericAdded := 2 * (k - j)
-          match solveTwobridsPay rest hybrids totalHybrids (cc.sub c j) (totalRem - j)
+          match solveTwobridsPay rest hybrids totalHybrids (ct.sub c j) (totalRem - j)
               (genericNeed + genericAdded) with
           | some (restJs, hybAs, finalGen) => some (j :: restJs, hybAs, finalGen)
           | none =>
@@ -704,9 +803,9 @@ def payUnits? (p : ManaPool) (cost : ManaCost) (spend : ManaSpend := {}) :
       if twobrids.isEmpty && hybrids.isEmpty then
         pure baseGeneric
       else
-        let (cc, totalRem) := usableColorCounts pool spend
+        let (ct, totalRem) := usableColorTiers pool spend
         let totalHybrids := hybrids.foldl (fun acc (_, _, k) => acc + k) 0
-        match solveTwobridsPay twobrids.toList hybrids.toList totalHybrids cc totalRem baseGeneric with
+        match solveTwobridsPay twobrids.toList hybrids.toList totalHybrids ct totalRem baseGeneric with
         | none => return none
         | some (twobridJs, hybridAs, genNeed) =>
           let mut tbRem := twobridJs.toArray

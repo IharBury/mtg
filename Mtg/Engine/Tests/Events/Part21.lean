@@ -256,7 +256,8 @@ private def replayOk55i2 (gs : Array Game) : Bool :=
   let eidA := gExGrp1.activeEffects[gExGrp1.activeEffects.size - 2]!.1
   let eidB := gExGrp1.activeEffects[gExGrp1.activeEffects.size - 1]!.1
   let gExGrp2 :=
-    ((gExGrp1.expireEffectById eidA (cause := some testCause)).expireEffectById eidB (cause := some testCause))
+    ((gExGrp1.expireEffectById eidA (cause := some testCause) (deferPlayFromExileLogs := true)).expireEffectById eidB
+        (cause := some testCause) (deferPlayFromExileLogs := true))
       |>.logMsg bearExpMsg
       |>.logMsg bearExpMsg
   -- Re-calling `emitExpiredPlayFromExileLogs` over the already-logged `[0..)` slice adds 0 duplicates:
@@ -266,7 +267,7 @@ private def replayOk55i2 (gs : Array Game) : Bool :=
     gExGrp2.createEffect (.permission (some p0) (.playFromExile idC { player := p0 }) .untilEndOfTurn)
       (cause := some testCause)
   let eidC := gExGrp3.activeEffects.back!.1
-  let gExGrp4Raw := gExGrp3.expireEffectById eidC (cause := some testCause)
+  let gExGrp4Raw := gExGrp3.expireEffectById eidC (cause := some testCause) (deferPlayFromExileLogs := true)
   let gExGrp4 := gExGrp3.emitExpiredPlayFromExileLogs gExGrp4Raw sliceStart
   -- Second expiry of `idA` after `sliceStart2` must NOT be suppressed by pre-`sliceStart2` log:
   let sliceStart2 := gExGrp4.events.size
@@ -274,7 +275,7 @@ private def replayOk55i2 (gs : Array Game) : Bool :=
     gExGrp4.createEffect (.permission (some p0) (.playFromExile idA { player := p0 }) .untilEndOfTurn)
       (cause := some testCause)
   let eidA2 := gExReact1.activeEffects.back!.1
-  let gExReact2Raw := gExReact1.expireEffectById eidA2 (cause := some testCause)
+  let gExReact2Raw := gExReact1.expireEffectById eidA2 (cause := some testCause) (deferPlayFromExileLogs := true)
   let gExReact2 := gExReact1.emitExpiredPlayFromExileLogs gExReact2Raw sliceStart2
   let hasLoggedDedupOk :=
     countBearExpLogs gExGrp2 == 2 &&

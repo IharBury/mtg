@@ -35,10 +35,13 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
     card?.getD
       { id := noSourceSentinelId, owner := p, controller := some p, zone := .hand p,
         printed := face, status := if face.name == "" then { faceDown := true } else {} }
-  let tcs := match card? with | some c => g.evalLayer3 c | none => #[]
-  let faceStatics :=
-    if tcs.isEmpty then face.staticAbilities
-    else HasTextChange.applyTextChanges tcs face.staticAbilities
+  let spellObj : GameObject :=
+    { dummy with
+      zone := .stack
+      controller := some p
+      printed := face
+      status := { dummy.status with faceDown := (face.name == "") } }
+  let faceStatics := g.staticAbilities spellObj
   let selfEnv : EvalEnv := { controller := p, sourceId := card?.map (·.id) }
   let hasSelfFlash :=
     faceStatics.any fun ab =>
@@ -76,12 +79,6 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
         !g.over && g.stack.isEmpty &&
           g.step.isMainPhase && g.activePlayer == p && g.priority == p
       else g.asSorcery? p
-  let spellObj : GameObject :=
-    { dummy with
-      zone := .stack
-      controller := some p
-      printed := face
-      status := { dummy.status with faceDown := (face.name == "") } }
   let (faceTypes, _, _) := g.faceCdaCharacteristics spellObj face
   let faceHasSorcerySpeed :=
     !faceTypes.contains .instant && !faceTypes.contains .land &&
@@ -144,10 +141,16 @@ def castOnlyIfGraveyardAtLeast? (face : CardDef) : Option Nat :=
 /-- Whether every `StaticPlayRule.castRestriction` on `face` is satisfied for `p` casting `cardId`
 (CR 601.2 / 101.2; Ruling 852). -/
 def graveyardCastThresholdMet (g : Game) (p : PlayerId) (cardId : ObjectId) (face : CardDef) : Bool :=
-  let tcs := (g.findObject? cardId).map g.evalLayer3 |>.getD #[]
   let faceStatics :=
-    if tcs.isEmpty then face.staticAbilities
-    else HasTextChange.applyTextChanges tcs face.staticAbilities
+    match g.findObject? cardId with
+    | some o =>
+      g.staticAbilities
+        { o with
+          zone := .stack
+          controller := some p
+          printed := face
+          status := { o.status with faceDown := (face.name == "") } }
+    | none => face.staticAbilities
   let env : EvalEnv := { controller := p, sourceId := some cardId }
   faceStatics.all fun ab =>
     match ab with
@@ -213,13 +216,13 @@ def morphSpellFace : CardDef :=
 
 /-- Whether `p` may begin to cast `o` face down via Morph (CR 702.37a,c / 708.2). -/
 def canCastMorphFaceDown (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  let bc := { g.baseCard o with keywords := g.currentKeywords o }
+  let kwFace := { g.baseCard o with keywords := g.currentKeywords o }
   let fromGraveyard := o.zone == .graveyard o.owner
   let perms := g.playPermissionsFor p o
   let cleanPerms :=
     perms.filter fun pm =>
       !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone
-  bc.morph.isSome && !fromGraveyard &&
+  kwFace.morph.isSome && !fromGraveyard &&
     !g.splitSecondOnStack && !g.combatLocksNonManaAbilities &&
     !g.opponentsCantCastOnActiveTurn p && !g.spellNameForbidden "" &&
     !g.cantCastSpellsThisTurn p &&
@@ -232,39 +235,40 @@ def canCastMorphFaceDown (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
 
 /-- Whether `p` may begin to cast `o` using its front-face characteristics (CR 601.3). -/
 def canCastFrontFace (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
-  let bc := { g.baseCard o with keywords := g.currentKeywords o }
+  let rawFace := g.baseCard o
+  let kwFace := { rawFace with keywords := g.currentKeywords o }
   let fromGraveyard := o.zone == .graveyard o.owner
   let hadFlashbackPerm := fromGraveyard && g.flashbackUntilEot o
-  let isFlashbackCast := fromGraveyard && (bc.flashback.isSome || hadFlashbackPerm)
+  let isFlashbackCast := fromGraveyard && (kwFace.flashback.isSome || hadFlashbackPerm)
   let perms := g.playPermissionsFor p o
   !g.isLand o && !g.splitSecondOnStack && !g.combatLocksNonManaAbilities &&
   !g.opponentsCantCastOnActiveTurn p && !g.spellNameForbidden (g.name o) &&
   !g.cantCastSpellsThisTurn p &&
   (o.zone != .library p || g.isCreature o) &&
   g.mayPlay p o &&
-  g.graveyardCastThresholdMet p o.id bc &&
+  g.graveyardCastThresholdMet p o.id rawFace &&
   (if perms.isEmpty then
-    g.timingAllowsCast p bc (card? := some o)
+    g.timingAllowsCast p rawFace (card? := some o)
    else
     perms.any (fun perm =>
-      (perm.ignoreTiming || g.timingAllowsCast p bc (card? := some o)) &&
+      (perm.ignoreTiming || g.timingAllowsCast p rawFace (card? := some o)) &&
         (!perm.payLifeEqualManaValue || g.canPayLife p (g.objectManaValue o))) ||
-      (g.mayCastExiledBySource p o && g.timingAllowsCast p bc (card? := some o))) &&
-  (g.mandatorySacrificeError? p o.id bc).isNone &&
-  (!(isFlashbackCast && bc.flashbackDiscard) || (g.discardableHandIds p).any (· != o.id)) &&
+      (g.mayCastExiledBySource p o && g.timingAllowsCast p rawFace (card? := some o))) &&
+  (g.mandatorySacrificeError? p o.id rawFace).isNone &&
+  (!(isFlashbackCast && kwFace.flashbackDiscard) || (g.discardableHandIds p).any (· != o.id)) &&
   -- Untargeted permanents, and untargeted instants/sorceries with a modeled
   -- effect (e.g. Night's Whisper), may be proposed (CR 601.3).
-  if isModalSpellFace bc then
+  if isModalSpellFace rawFace then
     let tcs := g.evalLayer3 o
-    (effectiveSpellModes bc).any (fun e =>
+    (effectiveSpellModes rawFace).any (fun e =>
       let m := if tcs.isEmpty then e else TextChange.applyEffect tcs e
       g.spellModeIsChoosable p m (some o.id)) ||
-      isReturnUpToTwoGyModal bc || bc.allowsZeroTargets
-  else if bc.requiresTarget then
+      isReturnUpToTwoGyModal rawFace || rawFace.allowsZeroTargets
+  else if rawFace.requiresTarget then
     -- CR 601.2b–c / 702.33d,g: a target-replacing kicker may be chosen, so legal kicked
     -- targets (Galadriel's Dismissal's player) suffice when no unkicked target is legal.
-    bc.allowsZeroTargets || g.castFaceHasLegalTarget p bc (g.evalLayer3 o) (some o.id)
-  else bc.isPermanentCard || bc.spellEffect.isSome || isModalSpellFace bc
+    rawFace.allowsZeroTargets || g.castFaceHasLegalTarget p rawFace (g.evalLayer3 o) (some o.id)
+  else rawFace.isPermanentCard || rawFace.spellEffect.isSome || isModalSpellFace rawFace
 
 /-- Whether `p` may begin to cast `o` (CR 601.3 / 702.37a). Having enough mana
 in the pool is not required; mana abilities are activated at CR 601.2g. Additional
@@ -346,11 +350,8 @@ def canPayAnnouncedAdditionalFromSources (g : Game) (p : PlayerId) (o : GameObje
     (faceOverride? : Option CardDef := none)
     (castFromZone : Option ZoneKind := none) : Bool :=
   let rawBc := g.baseCard o
-  let bc :=
-    faceOverride?.getD
-      (if o.printed.adventure.any (fun adv => adv.name == rawBc.name) then rawBc
-       else { rawBc with keywords := g.currentKeywords o })
-  match g.additionalChoiceCostFor? o bc with
+  let rawFace := faceOverride?.getD rawBc
+  match g.additionalChoiceCostFor? o rawFace with
   | none => true
   | some branches =>
     let env : EvalEnv := { controller := p, sourceId := some o.id }
@@ -368,7 +369,7 @@ def canPayAnnouncedAdditionalFromSources (g : Game) (p : PlayerId) (o : GameObje
                 status := { o.status with faceDown := false } }
             | none => o
           g.canPaySpellCostFromSources p payObj
-            (g.playManaCost { o with controller := some p } bc m
+            (g.playManaCost { o with controller := some p } rawFace m
               (origPerm := origPerm) (flashback := flashback)
               (explicitAltCost := explicitAltCost)
               (useImplicitPermissions := useImplicitPermissions))
@@ -409,22 +410,22 @@ the prepared front-face copy rather than opening Morph `{3}`). -/
 def canCastAndPayMorphFaceDown (g : Game) (p : PlayerId) (o : GameObject)
     (excludeIds : Array ObjectId := #[]) : Bool :=
   let bc := g.baseCard o
-  let face := { bc with keywords := g.currentKeywords o }
+  let kwFace := { bc with keywords := g.currentKeywords o }
   let preparedBlocksMorph :=
     o.zone == .exile &&
-      ((g.playPermissionFor? p o (face? := some face)).bind (·.prepareSource)).isSome &&
+      ((g.playPermissionFor? p o (face? := some bc)).bind (·.prepareSource)).isSome &&
       g.canCastFrontFace p o
-  bc.kicker.isNone && !preparedBlocksMorph && g.canCastMorphFaceDown p o &&
-    let casterObj := { o with controller := some p }
+  kwFace.kicker.isNone && !preparedBlocksMorph && g.canCastMorphFaceDown p o &&
     let morphObj :=
       { o with
+        id := noSourceSentinelId
         controller := some p
         printed := morphSpellFace
         adventurerCard := none
         status := { o.status with faceDown := true } }
     let payMorph (perm? : Option PlayPermission) : Bool :=
       let cost :=
-        g.playManaCost casterObj morphSpellFace
+        g.playManaCost morphObj morphSpellFace
           (origPerm := perm?) (flashback := some false)
           (explicitAltCost := true) (useImplicitPermissions := false)
       g.canPaySpellCostFromSources p morphObj cost
@@ -449,17 +450,17 @@ and Flashback precedence in `CastSpell`. -/
 def canCastAndPayImpending (g : Game) (p : PlayerId) (o : GameObject)
     (excludeIds : Array ObjectId := #[]) : Bool :=
   let bc := g.baseCard o
-  let face := { bc with keywords := g.currentKeywords o }
-  match face.morph, face.impending, face.kicker with
+  let kwFace := { bc with keywords := g.currentKeywords o }
+  match kwFace.morph, kwFace.impending, kwFace.kicker with
   | none, some (_, alt), none =>
     let fromGraveyard := o.zone == .graveyard o.owner
-    let isFlashbackCast := fromGraveyard && (face.flashback.isSome || g.flashbackUntilEot o)
+    let isFlashbackCast := fromGraveyard && (kwFace.flashback.isSome || g.flashbackUntilEot o)
     let preparedBlocksImpending :=
       o.zone == .exile &&
-        ((g.playPermissionFor? p o (face? := some face)).bind (·.prepareSource)).isSome
+        ((g.playPermissionFor? p o (face? := some bc)).bind (·.prepareSource)).isSome
     !isFlashbackCast && !preparedBlocksImpending && g.canCastFrontFace p o &&
       let casterObj := { o with controller := some p }
-      let impFace := { face with manaCost := alt }
+      let impFace := { bc with manaCost := alt }
       let payImpending (perm? : Option PlayPermission) : Bool :=
         let cost :=
           g.playManaCost casterObj impFace
@@ -517,7 +518,7 @@ def paidResolutionOrigPerm? (g : Game) (p : PlayerId) (o : GameObject)
       face?.any (fun fc =>
         (g.baseCard o).adventure.any (fun adv =>
           adv.toCardDef == fc || (adv.name == fc.name && fc.name != (g.baseCard o).name)))
-  let defaultFace := { g.baseCard o with keywords := g.currentKeywords o }
+  let defaultFace := g.baseCard o
   let f :=
     match face? with
     | some fc => if !isAdv && fc == g.baseCard o then defaultFace else fc
@@ -632,10 +633,11 @@ def proposalCanChooseImpending (g : Game) (prop : ProposedSpell) : Bool :=
   match g.findObject? prop.spellId with
   | none => false
   | some spell =>
-    let face := { g.baseCard spell with keywords := g.currentKeywords spell }
-    match face.impending, face.kicker with
+    let rawFace := g.baseCard spell
+    let kwFace := { rawFace with keywords := g.currentKeywords spell }
+    match kwFace.impending, kwFace.kicker with
     | some (_, alt), none =>
-      (g.proposalAltCleanPerm? prop { face with manaCost := alt }).isSome
+      (g.proposalAltCleanPerm? prop { rawFace with manaCost := alt }).isSome
     | _, _ => false
 
 
@@ -746,12 +748,12 @@ def choiceHelpsPay (pool : ManaPool) (ch : TapManaChoice)
 /-- Whether tapping `src` for `t` covers more of `cost` than the current pool. -/
 def typeHelpsPay (g : Game) (p : PlayerId) (src : GameObject) (t : ManaType)
     (cost : ManaCost) (spend : ManaSpend := {}) (prop? : Option ProposedSpell := none) : Bool :=
-  let amount := g.manaFromTap src t (prop? := prop?)
+  let amount := g.manaFromTap src t (prop? := prop?) (spend := spend)
   if amount == 0 then false
   else
     let pool := (g.player p).manaPool
     let covered (pool : ManaPool) := pool.coveredMana cost spend
-    covered (g.poolAfterTap pool src t (prop? := prop?)) > covered pool
+    covered (g.poolAfterTap pool src t (prop? := prop?) (spend := spend)) > covered pool
 
 /-- Select the best `TapManaChoice` among `choices` for `pool` and `cost`:
 prefer single-type `.tapForMana` choices when viable, otherwise mixed-color
@@ -1392,6 +1394,12 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
         g.change (.priority prio)
       else g
     if followedByFinishChoice && !g.sbaPaused then
+      let g :=
+        if g.pending == .none && g.continuations.isEmpty &&
+            g.pendingReplacement.isNone && g.outerPendingReplacements.isEmpty &&
+            g.currentInterpWait?.isNone && g.pendingPriority.isNone then
+          stashPendingPrio g
+        else g
       return (g, true)
     else if (resumeContinuation || (doReconcileDep && g.pending == .none && g.afterRandom == .none)) &&
         (!g.continuations.isEmpty || g.pendingReplacement.isSome) then

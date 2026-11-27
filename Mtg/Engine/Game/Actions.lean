@@ -272,12 +272,14 @@ def apply (g : Game) (p : PlayerId) (a : Action) : Except String Game := do
   let beforeWaiting := g.waitingTriggers.size
   let g ← g.applyAction p a
   let g :=
-    if g.pending == .none &&
-        (g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty) && !g.over then
+    if g.pending == .none && g.afterRandom == .none &&
+        (g.pendingReplacement.isSome || !g.outerPendingReplacements.isEmpty ||
+          g.currentInterpWait?.isSome) && !g.over then
       g.drainPendingContinuations
     else g
   let g :=
-    if g.pending == .none && g.waitingTriggers.size > beforeWaiting && !g.over then
+    if g.pending == .none && g.afterRandom == .none && g.currentInterpWait?.isNone &&
+        g.waitingTriggers.size > beforeWaiting && !g.over then
       g.receivePriority g.priority
     else g
   return g
@@ -297,23 +299,7 @@ def returnOwnedCreaturesScheduleBirds (g : Game) (p : PlayerId)
     let srcId := g.currentResolvingContext?.bind Prod.fst
     let (g, cause) := g.allocDelayedCause (some p) srcId
     g.withBatch (some cause) fun g =>
-      let (g, count) := eligible.foldl (fun (g, count) id =>
-        match g.findObject? id with
-        | some o =>
-          if o.isOnBattlefield && g.isCreature o && o.owner == p then
-            let name := g.name o
-            let (g, _) := g.move o.id (.hand o.owner) none (cause := some cause)
-            if (g.followMovedToZone? o.id (· == .hand o.owner)).isSome then
-              (g.logMsg s!"{name} is returned to {(g.player o.owner).name}'s hand", count + 1)
-            else (g, count)
-          else (g, count)
-        | none => (g, count)) (g, 0)
-      if count > 0 then
-        let src := srcId.bind g.damageSourceById?
-        (g.registerDelayedTrigger
-          { controller := p, source := src, kind := .eaglesBirds count, cause }).logMsg
-          s!"At the beginning of the next upkeep, {count} Bird Soldier token(s) will be created"
-      else g
+      g.returnOwnedCreaturesLoop p eligible cause srcId
 
 /-- Choose up to two creatures (they are not targets) and destroy the rest
 (Mount Doom). Shroud and hexproof do not stop the choice. -/

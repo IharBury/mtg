@@ -51,39 +51,35 @@ def discardBackOrDecline (g : Game) (p : PlayerId) : Option Action :=
   | some id => some (.discard id)
   | none => some .decline
 
-/-- Pay `cost` from the pool if possible; otherwise tap the first usable mana source. -/
+/-- Pay `cost` from the pool if possible; otherwise tap the best usable mana source
+that preserves payability of `cost` (including colored, hybrid, and `.combination`
+multi-mana abilities), or decline if `cost` cannot be paid. -/
 def payManaOrTapFirstSource (g : Game) (p : PlayerId) (cost : ManaCost) : Option Action :=
-  if (g.player p).manaPool.canPay cost then
+  let pool := (g.player p).manaPool
+  if pool.canPay cost then
     some .payGeneric
   else
-    let usable (r : Option ManaSpendRestriction) : Bool :=
-      match r with
-      | none => true
-      | some u => u.allows {}
-    let usableYield (src : GameObject) (t : ManaType) : Nat :=
-      let base := g.baseManaTypesFromTap src t
-      let extra := g.extraMountainRedFromTap src base
-      (if usable (g.tapRestrictionOf src t) then base.size else 0) +
-        (if usable none then extra.size else 0)
-    let usableSources := (g.manaSources p).filterMap fun (src, types) =>
-      let best? :=
-        types.foldl (fun (acc? : Option (ManaType × Nat)) t =>
-          let y := usableYield src t
-          if y == 0 then acc?
-          else
-            match acc? with
-            | none => some (t, y)
-            | some (_, bestY) => if y > bestY then some (t, y) else acc?) none
-      best?.map (fun (t, _) => (src, t))
-    let totalPool :=
-      usableSources.foldl
-        (fun pool (src, t) => g.addTapManaToPool pool src t)
-        (g.player p).manaPool
-    if !totalPool.canPay cost then
+    let sources := g.manaSources p
+    if !g.canPayFromSources pool cost sources.toList {} then
       some .decline
     else
-      match usableSources[0]? with
-      | some (src, t) => some (.tapForMana src.id t)
+      let pick? : Option (GameObject × TapManaChoice) :=
+        sources.foldl (fun acc (src, types) =>
+          let others := (sources.filter (fun (o, _) => o.id != src.id)).toList
+          match g.preferredManaChoice p src types cost others {} with
+          | none => acc
+          | some ch =>
+            match acc with
+            | none => some (src, ch)
+            | some (bestSrc, bestCh) =>
+              if g.betterManaTap src ch.primaryType bestSrc bestCh.primaryType then
+                some (src, ch)
+              else acc) none
+      match pick? with
+      | some (src, ch) =>
+        match ch.singleTapType? with
+        | some t => some (.tapForMana src.id t)
+        | none => some (.activateManaAbility src.id ch.abilityIdx ch.baseAdded #[])
       | none => some .decline
 
 /-- Pay `{n}` from the pool if possible; otherwise tap the first mana source. -/
@@ -591,8 +587,9 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                 zone := prop.original.zone
                 exiledBy := prop.original.exiledBy
                 controller := some p }
-            let face := { g.baseCard spell with keywords := g.currentKeywords spell }
-            if (face.morph.isSome || face.impending.isSome) && face.kicker.isNone then
+            let rawFace := g.baseCard spell
+            let kwFace := { rawFace with keywords := g.currentKeywords spell }
+            if (kwFace.morph.isSome || kwFace.impending.isSome) && kwFace.kicker.isNone then
               let gSneak := g.probeAfterUnpaidSneak prop
               let spellSacOk :=
                 !prop.needsSacrificeOther ||
@@ -607,14 +604,14 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                     (g.player p).hand.any (fun id =>
                       (g.findObject? id).any (fun card => isDiscardableCard card && g.hasSubtype card st))
               let frontAdditionalOk :=
-                if face.morph.isSome then
+                if kwFace.morph.isSome then
                   g.canPayAnnouncedAdditionalFromSources p preSpell
                     (origPerm := prop.origPerm)
                     (explicitAltCost := prop.sneakAttacker.isSome)
                     (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
                     (useImplicitPermissions := false)
                     (fromHand := prop.original.zone == .hand p)
-                    (faceOverride? := some face)
+                    (faceOverride? := some rawFace)
                     (castFromZone := some prop.original.zone.kind)
                 else
                   spellSacOk && spellDiscardOk && spellBeholdOk
@@ -670,9 +667,9 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       match ids.reverse.find? (fun id =>
         (g.mayCastFromLookedError p ids maxMv id).isNone &&
           (g.findObject? id).any (fun o =>
-            let face := { g.baseCard o with keywords := g.currentKeywords o }
+            let rawFace := g.baseCard o
             g.canPaySpellCostFromSources p o
-              (g.playManaCost { o with controller := some p } face
+              (g.playManaCost { o with controller := some p } rawFace
                 (origPerm := origPerm) (flashback := some false) (useImplicitPermissions := false))
               (fromHand := false) &&
               g.canPayAnnouncedAdditionalFromSources p o
@@ -705,9 +702,10 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
       | .ok gCast =>
         let affordable :=
           (g.findObject? cardId).any (fun o =>
-            let face := { g.baseCard o with keywords := g.currentKeywords o }
+            let rawFace := g.baseCard o
+            let kwFace := { rawFace with keywords := g.currentKeywords o }
             let origPerm : Option PlayPermission :=
-              some ((g.paidResolutionOrigPerm? p o (face? := some face)).getD
+              some ((g.paidResolutionOrigPerm? p o (face? := some rawFace)).getD
                 { player := p, ignoreTiming := true })
             let frontLegal :=
               match gCast.pending with
@@ -717,18 +715,19 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
               frontLegal &&
                 (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
                 g.canPaySpellCostFromSources p o
-                  (g.playManaCost { o with controller := some p } face
+                  (g.playManaCost { o with controller := some p } rawFace
                     (origPerm := origPerm) (flashback := some false)
                     (useImplicitPermissions := false)) &&
                 g.canPayAnnouncedAdditionalFromSources p o (origPerm := origPerm)
                   (flashback := some false) (useImplicitPermissions := false)
             let morphOk :=
-              face.morph.isSome && face.kicker.isNone &&
+              kwFace.morph.isSome && kwFace.kicker.isNone &&
                 (match gCast.pending with
                  | .chooseKicker _ => (gCast.apply actor (.announceKicker true)).isOk
                  | _ => false) &&
                 (let morphObj :=
                    { o with
+                     id := noSourceSentinelId
                      controller := some p
                      printed := morphSpellFace
                      adventurerCard := none
@@ -737,14 +736,14 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                    origPerm.filter fun pm =>
                      !pm.withoutManaCost && !pm.payLifeEqualManaValue && pm.prepareSource.isNone
                  let morphCost :=
-                   g.playManaCost { o with controller := some p } morphSpellFace
+                   g.playManaCost morphObj morphSpellFace
                      (origPerm := morphPerm) (flashback := some false)
                      (explicitAltCost := true) (useImplicitPermissions := false)
                  g.canPaySpellCostFromSources p morphObj morphCost (fromHand := false))
             let impendingOk :=
-              match face.morph, face.impending, face.kicker with
+              match kwFace.morph, kwFace.impending, kwFace.kicker with
               | none, some (_, alt), none =>
-                let impFace := { face with manaCost := alt }
+                let impFace := { rawFace with manaCost := alt }
                 match gCast.proposedSpell.bind (gCast.proposalAltCleanPerm? · impFace) with
                 | none => false
                 | some impPerm =>
@@ -868,7 +867,7 @@ where
         (fun acc (src, types) =>
           acc +
             types.foldl (fun best t =>
-              let base := g.baseManaTypesFromTap src t (prop? := prop?)
+              let base := g.baseManaTypesFromTap src t (prop? := prop?) (spend := spend)
               let extra := g.extraMountainRedFromTap src base
               max best (base.size + extra.size)) 0)
         pool.total
@@ -1030,11 +1029,11 @@ where
       -- Don't typecycle a card you can currently afford to cast.
       !(ab.isFromHand &&
         ((g.canCastFrontFace p o &&
-          let face := { g.baseCard o with keywords := g.currentKeywords o }
-          let perm? := g.playPermissionFor? p o (face? := some face)
+          let rawFace := g.baseCard o
+          let perm? := g.playPermissionFor? p o (face? := some rawFace)
           (!perm?.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
           g.canPaySpellCostFromSources p o
-            (g.playManaCost { o with controller := some p } face
+            (g.playManaCost { o with controller := some p } rawFace
               (origPerm := perm?) (useImplicitPermissions := false)) &&
           g.canPayAnnouncedAdditionalFromSources p o
             (origPerm := perm?) (useImplicitPermissions := false)) ||
@@ -1082,13 +1081,13 @@ where
         | some b => if score perm >= score b then some perm else some b) none
     let candidates := g.handObjects p ++ g.exiledPlayable p
     let playable := candidates.filter (fun o =>
-      let face := { g.baseCard o with keywords := g.currentKeywords o }
+      let rawFace := g.baseCard o
       let mv := g.objectManaValue o
-      let perm? := selectBestPerm o face mv
+      let perm? := selectBestPerm o rawFace mv
       g.canCastFrontFace p o &&
         (!perm?.any (·.payLifeEqualManaValue) || g.canPayLife p mv) &&
         g.canPaySpellCostFromSources p o
-          (g.playManaCost { o with controller := some p } face
+          (g.playManaCost { o with controller := some p } rawFace
             (origPerm := perm?) (useImplicitPermissions := false)) &&
         g.canPayAnnouncedAdditionalFromSources p o (origPerm := perm?)
           (useImplicitPermissions := false))

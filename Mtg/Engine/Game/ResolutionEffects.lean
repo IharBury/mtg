@@ -210,12 +210,26 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
 /-- Mill opponents without returning a reflexive-trigger flag, deferring across
 any open `Pending.chooseReplacement` pause. -/
 def millOpponentsOnly (g : Game) (opponents : Array PlayerId) (n : Nat)
-    (cause : Option EventCause := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
-    g.chainPendingReplacement (.finishPostStep (.millOpponentsOnly opponents n cause))
+    (cause : Option EventCause := none)
+    (fromEventIdx? : Option Nat := none) : Game :=
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+    g.chainPendingReplacement (.finishPostStep (.millOpponentsOnly opponents n cause (some loopFromIdx)))
   else
-    g.withBatch cause fun g =>
-      opponents.foldl (fun acc pid => acc.mill pid n (cause := cause)) g
+    let preLoop :=
+      match fromEventIdx? with
+      | some idx => g.mkHistoricalGameAt idx
+      | none => g
+    g.withBatch cause fun g => Id.run do
+      let mut g := g
+      for i in [0:opponents.size] do
+        let pid := opponents[i]!
+        g := g.mill pid n (cause := cause) (deferPlayFromExileLogs := true)
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+          let rem := opponents.extract (i + 1) opponents.size
+          return g.chainPendingReplacement
+            (.finishPostStep (.millOpponentsOnly rem n cause (some loopFromIdx)))
+      return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Put +1/+1 and lifelink until end of turn on a creature (Bard the Bowman). -/
 def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
@@ -657,10 +671,16 @@ offering up to `casts` free spell casts once all moves complete. -/
 def exileTopMayCastUpToLoop (g : Game) (fromPlayer caster : PlayerId)
     (remaining casts : Nat) (cause? : Option EventCause)
     (accIds : Array ObjectId := #[])
-    (pendingFromId : Option ObjectId := none) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
+    (pendingFromId : Option ObjectId := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     return g.chainPendingReplacement
-      (.finishPostStep (.exileTopMayCastUpToLoop fromPlayer caster remaining casts cause? accIds pendingFromId))
+      (.finishPostStep (.exileTopMayCastUpToLoop fromPlayer caster remaining casts cause? accIds pendingFromId (some loopFromIdx)))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let mut g := g
   let mut ids := accIds
   if let some fid := pendingFromId then
@@ -668,26 +688,26 @@ def exileTopMayCastUpToLoop (g : Game) (fromPlayer caster : PlayerId)
       ids := ids.push moved.id
       g := g.logMsg s!"{(g.player fromPlayer).name} exiles {g.name moved}"
   if !g.stillInGame fromPlayer then
-    return g
+    return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
   for i in [0:remaining] do
     if !g.stillInGame fromPlayer then
-      return g
+      return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
     let pl := g.player fromPlayer
     if pl.library.isEmpty then
       g := g.logMsg s!"{pl.name} has no cards in their library to exile"
     else
       let top := pl.library.back!
       let name := g.name (g.object! top)
-      let (g', _) := g.move top .exile none (cause := cause?)
+      let (g', _) := g.move top .exile none (cause := cause?) (deferPlayFromExileLogs := true)
       g := g'
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
         let rem := remaining - (i + 1)
         return g.chainPendingReplacement
-          (.finishPostStep (.exileTopMayCastUpToLoop fromPlayer caster rem casts cause? ids (some top)))
+          (.finishPostStep (.exileTopMayCastUpToLoop fromPlayer caster rem casts cause? ids (some top) (some loopFromIdx)))
       if let some moved := g.followMovedToZone? top (· == .exile) then
         ids := ids.push moved.id
         g := g.logMsg s!"{pl.name} exiles {name}"
-  return g
+  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Offer up to `casts` free casts from `ids` after `exileTopMayCastUpTo`'s
 exile batch has closed. -/
@@ -958,7 +978,7 @@ def returnFromGyTappedAttackingFinality (g : Game) (controller : PlayerId)
   match g.findObject? cardId with
   | none => g.logMsg "The target is no longer in the graveyard"
   | some o =>
-    if !(g.isCreature o && o.zone == .graveyard controller) then
+    if !(isDiscardableCard o && g.isCreature o && o.zone == .graveyard controller) then
       g.logMsg "The target is no longer a creature card in your graveyard"
     else
       let options :=

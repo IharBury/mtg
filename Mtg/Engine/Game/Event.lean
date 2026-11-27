@@ -305,6 +305,8 @@ inductive PlayerRule where
   | controlsPlayer (controlled : PlayerId) (onNextTurn : Bool := false)
   | protectionFrom (quality : ProtectionQuality) (sourceId? : Option ObjectId := none)
       (controller? : Option PlayerId := none)
+  | hexproof (from? : Option QualityFilter := none) (sourceId? : Option ObjectId := none)
+      (controller? : Option PlayerId := none)
 deriving Repr, Inhabited, BEq
 
 /-- Continuous rule or restriction effect affecting game rules or objects (CR 611.2c / 613.11). -/
@@ -1027,6 +1029,7 @@ inductive PostStep where
   | closeDiscardBatchStep
   | finishSurveilHandMove (p : PlayerId) (fromId : ObjectId) (cardName : String)
       (remainingGy : Array ObjectId) (cause : Option EventCause)
+      (fromEventIdx? : Option Nat := none)
   | logPutsIntoHand (revealer : PlayerId) (fromId : ObjectId) (cardName : String)
   | logInfluenceThenScryTwo (sourceId : ObjectId) (beforeInfluence : Nat)
   | logCreatedTokensSummary (controller : PlayerId) (startEventIdx : Nat)
@@ -1051,11 +1054,13 @@ inductive PostStep where
   | beginStepAfterPhaseBegan (st : Step)
   | beginStepBody (st : Step)
   | exileZemoBoastCards (p : PlayerId) (abilityId : ObjectId) (remainingIds : Array ObjectId)
+      (fromEventIdx? : Option Nat := none)
   | grantAdventureExilePermission (controller : PlayerId) (cardId : ObjectId)
       (cause : Option EventCause)
   | exileSearchedLinkedLoop (p : PlayerId) (remainingIds : Array ObjectId)
       (sourceId : Option ObjectId) (cause : Option EventCause)
       (pendingFromId : Option ObjectId := none)
+      (fromEventIdx? : Option Nat := none)
   | grantPlayUntilEndOfNextTurn (p : PlayerId) (cardId : ObjectId) (cause : Option EventCause)
   | finishExileUntilSourceLeaves (sourceId : Option ObjectId) (fromId : ObjectId)
   | finishExileForLeaveTrigger (sourceId : Option ObjectId) (fromId : ObjectId)
@@ -1064,9 +1069,11 @@ inductive PostStep where
       (fromEventIdx? : Option Nat := none)
   | exileTopPlayIfYouControlSubtypeLoop (p : PlayerId) (subtype : CardSubtype)
       (remaining : Nat) (cause : Option EventCause) (movedId : Option ObjectId := none)
+      (fromEventIdx? : Option Nat := none)
   | exileTopMayCastUpToLoop (fromPlayer caster : PlayerId) (remaining casts : Nat)
       (cause : Option EventCause) (exiled : Array ObjectId)
       (pendingFromId : Option ObjectId := none)
+      (fromEventIdx? : Option Nat := none)
   | offerMayCastUpToFromExile (caster : PlayerId) (preIds : Array ObjectId) (casts : Nat)
   | finishExileUntilNextEndStep (controller : PlayerId) (fromId : ObjectId) (cause : EventCause)
   | logDiscardedCount (p : PlayerId) (preDiscards : Nat)
@@ -1074,9 +1081,11 @@ inductive PostStep where
   | logDelayedBirdSoldiersCreated (controller : PlayerId) (startEventIdx : Nat)
   | resolveCascadeLoop (p : PlayerId) (maxMv : Nat) (cause : EventCause)
       (exiled : Array ObjectId := #[]) (pendingFromId : Option ObjectId := none)
+      (fromEventIdx? : Option Nat := none)
   | exileUntilInstantOrSorceryLoop (victim controller : PlayerId) (castTheCard : Bool)
       (cause : Option EventCause) (others : Array ObjectId := #[])
       (pendingFromId : Option ObjectId := none)
+      (fromEventIdx? : Option Nat := none)
   | finishGrimaDirectCast (controller victim : PlayerId) (fromId : ObjectId)
       (others : Array ObjectId) (cause : Option EventCause)
   | exileFromRevealedHandAfterMove (p victim : PlayerId) (fromId : ObjectId)
@@ -1096,8 +1105,10 @@ inductive PostStep where
   | moveIdsInOrderLoop (ids : Array ObjectId) (dest : Zone) (log : String)
       (cause : Option EventCause) (placedCount : Nat := 0)
       (prevMoved : Option (ObjectId × Zone) := none)
+      (fromEventIdx? : Option Nat := none)
   | incrementPlanSource (controller : PlayerId) (sourceId : Option ObjectId)
   | millOpponentsOnly (opponents : Array PlayerId) (n : Nat) (cause : Option EventCause)
+      (fromEventIdx? : Option Nat := none)
   | conniveTricksterTarget (caster : PlayerId) (connive : Option ObjectId)
       (sourceId : Option ObjectId)
   | topOrBottomDamageFollowup (fromId : ObjectId) (owner : PlayerId) (cardName : String)
@@ -1141,6 +1152,18 @@ inductive PostStep where
   | untapStepAfterPhaseIn
   | returnToHandLoop (remainingIds : Array ObjectId) (cause : Option EventCause := none)
       (fromEventIdx? : Option Nat := none)
+  | returnOwnedCreaturesLoop (p : PlayerId) (remainingIds : Array ObjectId)
+      (cause : EventCause) (srcId : Option ObjectId) (returnedCount : Nat := 0)
+      (pendingCard : Option (ObjectId × PlayerId × String) := none)
+      (fromEventIdx? : Option Nat := none)
+  | placeSearchedHandLoop (p : PlayerId) (remainingIds : Array ObjectId)
+      (cause : Option EventCause := none)
+      (pendingCard : Option (ObjectId × String) := none)
+      (fromEventIdx? : Option Nat := none)
+  | applyRiddlesToHandLoop (p : PlayerId) (remainingHand : Array ObjectId)
+      (toGy : Array ObjectId) (fromEventIdx? : Option Nat := none)
+  | exileCardsLoop (remainingIds : Array ObjectId) (cause : Option EventCause := none)
+      (fromEventIdx? : Option Nat := none)
 deriving Inhabited, BEq
 
 /-- Stage of `StateBasedActions.finishSbaSweep` across `Pending.chooseReplacement` pauses. -/
@@ -1156,6 +1179,7 @@ deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Stage of `ActivationCosts.finishActivationExtraCosts` across `Pending.chooseReplacement` pauses. -/
 inductive ActivationExtraCostStage where
+  | removeCounters
   | stunAndSacrifice
   | sacrificeAndExile
   | exileOnly
@@ -1338,6 +1362,10 @@ inductive InterpCont where
       (gp : GrantPlayPermSpec) (cause : EventCause)
       (pendingFrom? : Option (ObjectId × String) := none)
       (fromEventIdx? : Option Nat := none)
+  /-- Put remaining moved counters onto `targetId` after a `.moveAll`/`.moveOne`
+  removal or placement paused on CR 800.4c / 616.1 (CR 122.5). -/
+  | afterMoveCountersPut (targetId : ObjectId) (remainingCounters : Array (CounterKind × Nat))
+      (cause : EventCause)
 deriving Repr, Inhabited, BEq
 
 /-- Complete resumable state of the unified `Instruction` interpreter. -/
@@ -1362,15 +1390,19 @@ inductive PendingReplacement where
   | dealDamageFrom (sourceName : String) (source : Option EventObject) (targetId : ObjectId)
       (n : Nat) (deathtouch : Bool)
       (cause : Option EventCause) (suppressLifelink : Bool := false)
+      (deferPlayFromExileLogs : Bool := false)
   | dealFightDamage (sourceId targetId : ObjectId) (cause : Option EventCause)
       (amount : Option Nat := none)
   | dealDamageToPermanent (targetId : ObjectId) (n : Nat)
       (source : Option EventObject)
       (cause : Option EventCause) (suppressLifelink : Bool := false)
+      (deferPlayFromExileLogs : Bool := false)
   | markDamageOn (targetId : ObjectId) (n : Nat) (msg : String)
       (deathtouch : Bool) (source : Option EventObject) (combat : Bool)
       (unpreventable : Bool) (cause : Option EventCause)
-  | dealAssignedCombatDamage (startIdx : Nat := 0)
+      (deferPlayFromExileLogs : Bool := false)
+      (skipReplace : Bool := false)
+  | dealAssignedCombatDamage (startIdx : Nat := 0) (fromEventIdx? : Option Nat := none)
   | gainLife (p : PlayerId) (n : Nat) (cause : Option EventCause)
   | addPlusOnePlusOneTo (targetId : ObjectId) (n : Nat) (entersWith : Bool)
       (byPlayer : Option PlayerId) (cause : Option EventCause)
@@ -1463,6 +1495,7 @@ inductive PendingReplacement where
       (deferPlayFromExileLogs : Bool := false)
   | untapPermanent (targetId : ObjectId) (duringUntapStep : Bool := false)
       (logUntap : Bool := true) (cause : Option EventCause := none)
+      (deferPlayFromExileLogs : Bool := false)
   | untapStepPermanents (ids : Array ObjectId) (fromEventIdx? : Option Nat := none)
   | addLoreCounters (sagaId : ObjectId) (n : Nat) (cause : Option EventCause)
   | addLoreAfterDrawStep (sagaIds : Array ObjectId)
@@ -1504,6 +1537,11 @@ inductive PendingReplacement where
       (forObject : Option ObjectId) (sacrificeSource exileSource : Bool)
       (stage : ActivationExtraCostStage := .sacrificeAndExile)
       (sinceIdx : Nat := 0)
+      (removeIndestructible : Bool := false)
+      (removePlusOnes : Option Nat := none)
+      (loyaltyDelta : Option Int := none)
+      (putStun : Bool := false)
+      (fromEventIdx? : Option Nat := none)
   | finishPostLoyaltyActivated (caster : PlayerId) (sourceName : String)
       (sourceId : Option ObjectId) (activation : Option ActivatedAbility)
       (abilityId : Option ObjectId)
@@ -1518,6 +1556,9 @@ inductive PendingReplacement where
       (riders : Array SpellRiderSpec := #[])
       (exileFromZone? : Option ZoneKind := none) (discardSelf : Bool := false)
       (exileSymIds : Array ObjectId := #[]) (extraEffect? : Option Effect := none)
+      (removeIndestructible : Bool := false) (removePlusOnesCount : Nat := 0)
+      (crewIds : Array ObjectId := #[]) (putStunOnSource : Bool := false)
+      (fromEventIdx? : Option Nat := none)
   | finishActivateManaAbilityPostSac (p : PlayerId) (id : ObjectId) (oname : String)
       (srcSnap : EventObject) (mana : Array ManaType) (tap : Bool)
       (activatedIdx : Option Nat) (restriction : Option ManaSpendRestriction)
@@ -1546,12 +1587,15 @@ inductive PendingReplacement where
       (cause : Option EventCause)
       (entered : Array (ObjectId × String) := #[])
       (preBattlefield : Option (Array GameObject) := none)
+      (fromEventIdx? : Option Nat := none)
   | finishSearchAfterPlace (p : PlayerId) (fromId : Option ObjectId)
       (dest : SearchDest) (after : Option Instruction) (fromLibrary : Bool)
       (handRest : Array ObjectId := #[]) (cause : Option EventCause := none)
   | surveilMoveLoop (p : PlayerId) (remainingGy : Array ObjectId) (cause : Option EventCause)
+      (fromEventIdx? : Option Nat := none)
   | finishSurveilPostMove (p : PlayerId) (card : GameObject) (fromId : ObjectId)
       (remainingGy : Array ObjectId) (cause : Option EventCause)
+      (fromEventIdx? : Option Nat := none)
   | finishLibraryLook
   | requestOrderInto (ids : Array ObjectId) (dest : Zone) (log : String)
       (cause : Option EventCause)
@@ -1625,10 +1669,13 @@ inductive PendingReplacement where
       (fromEventIdx? : Option Nat := none)
   | untapPermanentsLoop (remainingIds : Array ObjectId)
       (cause : Option EventCause := none)
+      (logged : Bool := false) (sourceId : Option ObjectId := none)
+      (fromEventIdx? : Option Nat := none)
   | millCardsLoop (p : PlayerId) (remainingIds : Array ObjectId)
       (emptyTail : Bool := false) (cause : Option EventCause := none)
       (logCard : Option String := none) (freshCount : Option Nat := none)
       (fromEventIdx? : Option Nat := none)
+      (deferPlayFromExileLogs : Bool := false)
   | exilePermanentsLoop (remainingIds : Array ObjectId) (logExile : Bool := true)
       (cause : Option EventCause := none) (logCard : Option (ObjectId × String) := none)
       (fromEventIdx? : Option Nat := none)
@@ -1640,6 +1687,7 @@ inductive PendingReplacement where
       (clearExileFields : Bool := false) (cause : Option EventCause := none)
       (preBattlefield : Option (Array GameObject) := none)
       (fromEventIdx? : Option Nat := none)
+      (deferPlayFromExileLogs : Bool := false)
   | finishMillChooseForHand (p : PlayerId) (preIds : Array ObjectId)
       (types : Array CardType) (matchedPreIds : Array ObjectId)
       (max : Nat) (mustOne : Bool) (allMatches : Bool := false)
@@ -1670,6 +1718,7 @@ inductive PendingReplacement where
       (fromEventIdx? : Option Nat := none)
   | placeSearchedGraveyardLoop (ids : Array ObjectId) (cause : Option EventCause := none)
       (pendingLog : Option (ObjectId × PlayerId × String) := none)
+      (fromEventIdx? : Option Nat := none)
   | finishConcede (wasIdlePriority : Bool) (savedPendingPrio : Option PlayerId)
       (wasAssigningCombatDamage : Option Bool := none)
       (savedPending : Option Pending := none) (popOuter : Bool := false)
@@ -2103,13 +2152,32 @@ def PendingReplacement.insertBeforeTrailingPriorityGrant
     if leaf.isPurePriorityGrantLeaf then .seq postStep leaf
     else .seq leaf postStep
 
+/-- Whether `st` is a single pure batch-loop continuation (no queued instructions
+and no prompt/priority/random-opening continuation on `stack`), rather than an
+arbitrary interpreter resumption. -/
+def InterpState.isPureBatchLoopCont (st : InterpState) : Bool :=
+  st.queue.isEmpty &&
+    match st.stack.toList with
+    | [.afterMoveLoop ..]
+    | [.afterDamagePermanentsLoop ..]
+    | [.afterDividedDamageLoop ..]
+    | [.afterCounterOpLoop ..]
+    | [.afterMoveCountersPut ..]
+    | [.logIfCountersIncreased ..]
+    | [.applyAggregatedLifelink ..] => true
+    | _ => false
+
 /-- Whether `pr` is a boundary leaf (priority grant, mutating-then-priority
-completion, turn/cleanup/concede/leave/proposal completion, or proposal-reversing
-`.restorePending`) ahead of which deferred `.logExpiredPlayFromExile` post-steps
-must be placed so expiry logs emit before `PriorityEvent.received` and are never
-dropped by CR 733.1 proposal reversal (CR 117.3 / 611.2 / 733.1). -/
+completion, turn/step/resolution/cleanup/concede/leave/proposal completion,
+SBA check, random/prompt-opening continuation, non-batch `.continueInterpreter`,
+or proposal-reversing `.restorePending`) ahead of which deferred
+`.logExpiredPlayFromExile` post-steps must be placed so expiry logs emit before
+`PriorityEvent.received` / prompts and are never dropped by CR 733.1 proposal
+reversal (CR 117.3 / 611.2 / 733.1). -/
 def PendingReplacement.isPlayFromExileDeferBoundaryLeaf : PendingReplacement → Bool
   | .restorePending .none false _ _ none => false
+  | .continueInterpreter st => !st.isPureBatchLoopCont
+  | .checkSBA _
   | .receivePriority _
   | .finishResolutionChoice
   | .afterWardResolved
@@ -2121,6 +2189,20 @@ def PendingReplacement.isPlayFromExileDeferBoundaryLeaf : PendingReplacement →
   | .concedePlayersLoop ..
   | .leavePlayersWhoLost ..
   | .beginStepCont _
+  | .finishBeginOnBattlefield ..
+  | .shuffleThen ..
+  | .finishMillChooseForHand ..
+  | .finishBeginRecruit ..
+  | .finishDrawThenBeginDiscard ..
+  | .finishConniveDraws ..
+  | .finishChooseDiscardCard ..
+  | .finishDiscardForDrawMay ..
+  | .finishSacArtifactOrDiscardDraw ..
+  | .finishRecruitDiscard ..
+  | .requestOrderInto ..
+  | .finishProliferateTarget ..
+  | .continueSpellModes ..
+  | .runModalManaEffect ..
   | .finishPostStep (.beginStepBody _)
   | .finishPostStep (.beginStepAfterPhaseBegan _)
   | .finishPostStep .startNextTurnAndBegin
@@ -2129,6 +2211,23 @@ def PendingReplacement.isPlayFromExileDeferBoundaryLeaf : PendingReplacement →
   | .finishPostStep .cleanupStepAfterDiscard
   | .finishPostStep (.postSbaCleanup _)
   | .finishPostStep .afterTriggerTargetsChosen
+  | .finishPostStep (.continueOpeningBegin _)
+  | .finishPostStep .recordUntapStepEnded
+  | .finishPostStep .untapStepAfterPhaseIn
+  | .finishPostStep (.finishAbilityResolution ..)
+  | .finishPostStep (.shuffleThenGainLife ..)
+  | .finishPostStep (.runAfterRandom _)
+  | .finishPostStep (.offerMayCastUpToFromExile ..)
+  | .finishPostStep (.resolveCascadeLoop ..)
+  | .finishPostStep (.exileUntilInstantOrSorceryLoop ..)
+  | .finishPostStep (.beginDiscardCardsStep ..)
+  | .finishPostStep (.continueAfterDiscardStep ..)
+  | .finishPostStep (.wheelOfferNext ..)
+  | .finishPostStep (.continueDiscardTwo ..)
+  | .finishPostStep (.searchLibraryPlaneswalker ..)
+  | .finishPostStep (.searchLibrarySphinx ..)
+  | .finishPostStep (.nickFuryMayTransformOrBottom ..)
+  | .finishPostStep (.logInfluenceThenScryTwo ..)
   | .finishPostStep (.resumeProposalCostAfterLeave ..)
   | .finishPostStep (.resumeChooseModeAfterLeave ..)
   | .finishPostStep (.resumeChooseTargetsAfterLeave ..)
@@ -3814,7 +3913,7 @@ def resolutions (events : Array GameEvent) (turn : Nat) (p : PlayerId)
     else
       match e.change with
       | .rules (.stackObject (.resolved obj nth sId ab?)) =>
-        let ctrlMatch := (obj.controller.getD obj.owner) == p
+        let ctrlMatch := sourceId.isSome || (obj.controller.getD obj.owner) == p
         let srcMatch :=
           match sourceId with
           | some sid => sId == some sid

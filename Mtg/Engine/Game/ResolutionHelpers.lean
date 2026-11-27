@@ -133,12 +133,13 @@ def putOnOwnerLibrary (g : Game) (o : GameObject) (top : Bool) : Game :=
 /-- Untap permanent `o` during resolution, respecting replacement pauses and
 "can't become untapped" restrictions (CR 701.26). -/
 def untapPermanentLogged (g : Game) (o : GameObject)
-    (sourceId : Option ObjectId := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
+    (sourceId : Option ObjectId := none)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     let baseCause :=
       g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
         (defaultCause := .turnBased .untapAll)
-    g.chainPendingReplacement (.untapPermanent o.id false true (some baseCause))
+    g.chainPendingReplacement (.untapPermanent o.id false true (some baseCause) deferPlayFromExileLogs)
   else if g.hostCantBecomeUntapped o then
     g.logMsg s!"{g.name o} can't become untapped"
   else if !o.status.tapped then
@@ -147,7 +148,7 @@ def untapPermanentLogged (g : Game) (o : GameObject)
     let baseCause :=
       g.resolveOptionalCause none (fallbackSrc := sourceId) (fallbackCtrl := g.controllerOf o)
         (defaultCause := .turnBased .untapAll)
-    g.untapPermanent o (cause := some baseCause)
+    g.untapPermanent o (cause := some baseCause) (deferPlayFromExileLogs := deferPlayFromExileLogs)
 
 /-- Make `o` lose indestructible until end of turn. -/
 def loseIndestructibleUntilEot (g : Game) (o : GameObject) : Game :=
@@ -199,27 +200,29 @@ on `Pending.chooseReplacement` (CR 701.17 / 616.1). -/
 def millCardsLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
     (emptyTail : Bool := false) (cause : Option EventCause := none)
     (logCard : Option String := none) (freshCount : Option Nat := none)
-    (fromEventIdx? : Option Nat := none) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
+    (fromEventIdx? : Option Nat := none)
+    (deferPlayFromExileLogs : Bool := false) : Game := Id.run do
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     return g.chainPendingReplacement
-      (.millCardsLoop p remainingIds emptyTail cause logCard freshCount fromEventIdx?)
+      (.millCardsLoop p remainingIds emptyTail cause logCard freshCount (some loopFromIdx) deferPlayFromExileLogs)
   let preLoop :=
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
     | none => g
-  let loopFromIdx := fromEventIdx?.getD g.events.size
   let mut g := g
   if let some name := logCard then
     g := g.logMsg s!"{(g.player p).name} mills {name}"
   if !g.stillInGame p then
-    return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    return if deferPlayFromExileLogs then g else emitExpiredPlayFromExileLogs preLoop g loopFromIdx
   let mut ids := remainingIds
   let mut tail := emptyTail
   if let some n := freshCount then
     let pl := g.player p
     if n > 0 && pl.library.isEmpty then
-      return (emitExpiredPlayFromExileLogs preLoop g loopFromIdx).logMsg
-        s!"{pl.name} mills nothing (empty library)"
+      if !deferPlayFromExileLogs then
+        g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+      return g.logMsg s!"{pl.name} mills nothing (empty library)"
     let count := min n pl.library.size
     ids := (pl.library.extract (pl.library.size - count) pl.library.size).reverse
     tail := count < n
@@ -232,19 +235,21 @@ def millCardsLoop (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
         let (g', _) := g.move top (.graveyard p) none (verb := some .mill) (actor := some p)
           (cause := cause) (deferPlayFromExileLogs := true)
         g := g'
-        if let .chooseReplacement .. := g.pending then
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
           let rem := ids.extract (i + 1) ids.size
           return g.chainPendingReplacement
-            (.millCardsLoop p rem tail cause (some name) none (some loopFromIdx))
+            (.millCardsLoop p rem tail cause (some name) none (some loopFromIdx) deferPlayFromExileLogs)
         g := g.logMsg s!"{(g.player p).name} mills {name}"
     | none => pure ()
-  g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  if !deferPlayFromExileLogs then
+    g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
   if tail then
     g := g.logMsg s!"{(g.player p).name} mills nothing (empty library)"
   return g
 
 /-- Put the top `n` cards of `p`'s library into their graveyard (CR 701.17). -/
-def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none) : Game :=
+def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   if !g.stillInGame p then g
   else
     let defaultCause :=
@@ -252,9 +257,9 @@ def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none)
         if n == 0 || (g.player p).library.isEmpty then none
         else g.currentResolvingContext?.map fun (src, ctrl) =>
           .oneShotEffect none src (ctrl.orElse (fun _ => some p)))
-    if let .chooseReplacement .. := g.pending then
+    if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
       if n == 0 then g
-      else g.chainPendingReplacement (.millCardsLoop p #[] false defaultCause none (some n))
+      else g.chainPendingReplacement (.millCardsLoop p #[] false defaultCause none (some n) none deferPlayFromExileLogs)
     else
       g.withBatch defaultCause fun g =>
         let pl := g.player p
@@ -264,6 +269,7 @@ def mill (g : Game) (p : PlayerId) (n : Nat) (cause : Option EventCause := none)
           let count := min n pl.library.size
           let tops := (pl.library.extract (pl.library.size - count) pl.library.size).reverse
           g.millCardsLoop p tops (emptyTail := count < n) (cause := defaultCause)
+            (deferPlayFromExileLogs := deferPlayFromExileLogs)
 
 /-- Move up to `maxLeft` public cards from `remainingIds` into `p`'s hand inside
 an open or standalone batch, pausing on `Pending.chooseReplacement` and logging
@@ -364,11 +370,15 @@ def dealDamageToEachCreatureMatchingIds (g : Game) (remainingIds : Array ObjectI
     (cause : Option EventCause := none)
     (startEventIdx : Option Nat := none)
     (suppressLifelink : Bool := false) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
-    return g.chainPendingReplacement
-      (.dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens onlyOpponentsOf source cause startEventIdx suppressLifelink)
-  let mut g := g
   let sIdx := startEventIdx.getD g.events.size
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+    return g.chainPendingReplacement
+      (.dealDamageToEachCreatureMatching remainingIds n onlyNonSubtype exceptControllerTokens onlyOpponentsOf source cause (some sIdx) suppressLifelink)
+  let preLoop :=
+    match startEventIdx with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let mut g := g
   let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
   for i in [0:remainingIds.size] do
     let id := remainingIds[i]!
@@ -378,14 +388,15 @@ def dealDamageToEachCreatureMatchingIds (g : Game) (remainingIds : Array ObjectI
           (onlyNonSubtype.all (fun s => !g.hasSubtype o s)) &&
           (exceptControllerTokens.all (fun p => !(o.printed.isToken && g.controlledBy o p))) &&
           (onlyOpponentsOf.all (fun p => (g.controllerOf o).any (g.isLivingOpponentOf p ·))) then
-        g := g.dealDamageToPermanent o n (source := source) (cause := c) (suppressLifelink := true)
-        if let .chooseReplacement .. := g.pending then
+        g := g.dealDamageToPermanent o n (source := source) (cause := c)
+          (suppressLifelink := true) (deferPlayFromExileLogs := true)
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
           let rem := remainingIds.extract (i + 1) remainingIds.size
-          if !rem.isEmpty || !suppressLifelink then
-            g := g.chainPendingReplacement
-              (.dealDamageToEachCreatureMatching rem n onlyNonSubtype exceptControllerTokens onlyOpponentsOf source c (some sIdx) suppressLifelink)
+          g := g.chainPendingReplacement
+            (.dealDamageToEachCreatureMatching rem n onlyNonSubtype exceptControllerTokens onlyOpponentsOf source c (some sIdx) suppressLifelink)
           return g
     | none => pure ()
+  g := emitExpiredPlayFromExileLogs preLoop g sIdx
   if !suppressLifelink then
     g := g.applyAggregatedLifelinkSince sIdx (cause := c)
   return g
@@ -600,7 +611,8 @@ private def flickerReturnBatchLoop (g : Game) (remainingIds : Array ObjectId)
     (logText : String) (tapped : Bool) (onlyLandTapped : Bool)
     (clearExileFields : Bool) (cause : Option EventCause)
     (preBattlefield : Option (Array GameObject) := none)
-    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+    (fromEventIdx? : Option Nat := none)
+    (deferPlayFromExileLogs : Bool := false) : Game := Id.run do
   let preLoop :=
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
@@ -620,20 +632,21 @@ private def flickerReturnBatchLoop (g : Game) (remainingIds : Array ObjectId)
           (tapped := enterTapped) (preBattlefield := some preBf) (cause := cause)
           (deferPlayFromExileLogs := true)
         g := g'
-        if let .chooseReplacement .. := g.pending then
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           g := g.chainPendingReplacement
-            (.flickerLoop rem exiledPreIds enteredFromIds logText .returnBatch tapped onlyLandTapped clearExileFields cause (some preBf) (some loopFromIdx))
+            (.flickerLoop rem exiledPreIds enteredFromIds logText .returnBatch tapped onlyLandTapped clearExileFields cause (some preBf) (some loopFromIdx) deferPlayFromExileLogs)
           return g
     | none => pure ()
-  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  return if deferPlayFromExileLogs then g else emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Start-return-batch stage of `flickerPermanents`: after the exile batch closes,
 return all nontoken exiled cards simultaneously in a second batch
 (CR 111.8 / 400.7 / 603.6a). -/
 private def flickerStartReturnBatch (g : Game) (exiledPreIds : Array ObjectId)
     (logText : String) (tapped : Bool) (onlyLandTapped : Bool)
-    (clearExileFields : Bool) (cause : Option EventCause) : Game :=
+    (clearExileFields : Bool) (cause : Option EventCause)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   let exiledObjs := exiledPreIds.filterMap (fun id => g.followMovedToZone? id (· == .exile))
   let g :=
     exiledObjs.foldl (fun acc o =>
@@ -645,9 +658,10 @@ private def flickerStartReturnBatch (g : Game) (exiledPreIds : Array ObjectId)
     let g := g.withBatch cause fun g =>
       g.flickerReturnBatchLoop returnableIds exiledPreIds returnableIds logText
         tapped onlyLandTapped clearExileFields cause (some preBf)
-    if let .chooseReplacement .. := g.pending then
+        (deferPlayFromExileLogs := deferPlayFromExileLogs)
+    if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
       g.chainPendingReplacement
-        (.flickerLoop #[] exiledPreIds returnableIds logText .postReturn tapped onlyLandTapped clearExileFields cause (some preBf))
+        (.flickerLoop #[] exiledPreIds returnableIds logText .postReturn tapped onlyLandTapped clearExileFields cause (some preBf) none deferPlayFromExileLogs)
     else
       g.flickerPostReturn returnableIds logText
 
@@ -657,7 +671,8 @@ private def flickerExileBatchLoop (g : Game) (remainingIds : Array ObjectId)
     (exiledPreIds : Array ObjectId) (logText : String) (tapped : Bool)
     (onlyLandTapped : Bool) (clearExileFields : Bool)
     (cause : Option EventCause)
-    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+    (fromEventIdx? : Option Nat := none)
+    (deferPlayFromExileLogs : Bool := false) : Game := Id.run do
   let preLoop :=
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
@@ -671,13 +686,13 @@ private def flickerExileBatchLoop (g : Game) (remainingIds : Array ObjectId)
       if o.zone != .exile then
         let (g', _) := g.move id .exile none (cause := cause) (deferPlayFromExileLogs := true)
         g := g'
-        if let .chooseReplacement .. := g.pending then
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
           let rem := remainingIds.extract (i + 1) remainingIds.size
           g := g.chainPendingReplacement
-            (.flickerLoop rem exiledPreIds #[] logText .exileBatch tapped onlyLandTapped clearExileFields cause none (some loopFromIdx))
+            (.flickerLoop rem exiledPreIds #[] logText .exileBatch tapped onlyLandTapped clearExileFields cause none (some loopFromIdx) deferPlayFromExileLogs)
           return g
     | none => pure ()
-  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  return if deferPlayFromExileLogs then g else emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Exile all permanents in `targetIds` in one simultaneous batch, then return
 all exiled nontoken cards to the battlefield under their owners' control in a
@@ -685,7 +700,8 @@ second simultaneous batch (CR 111.8 / 400.7 / 603.6a / 616.1). -/
 def flickerPermanents (g : Game) (targetIds : Array ObjectId)
     (logText : String := "is exiled, then returned to the battlefield")
     (tapped : Bool := false) (onlyLandTapped : Bool := false)
-    (clearExileFields : Bool := false) (cause : Option EventCause := none) : Game :=
+    (clearExileFields : Bool := false) (cause : Option EventCause := none)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   if targetIds.isEmpty then g
   else
     let (g, cause) : Game × Option EventCause :=
@@ -697,17 +713,19 @@ def flickerPermanents (g : Game) (targetIds : Array ObjectId)
           let (g, c) := g.allocDelayedCause ctrl src
           (g, some c)
         | none => (g, none)
-    if let .chooseReplacement .. := g.pending then
+    if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
       g.chainPendingReplacement
-        (.flickerLoop targetIds targetIds #[] logText .beforeExileBatch tapped onlyLandTapped clearExileFields cause)
+        (.flickerLoop targetIds targetIds #[] logText .beforeExileBatch tapped onlyLandTapped clearExileFields cause none none deferPlayFromExileLogs)
     else
       let g := g.withBatch cause fun g =>
         g.flickerExileBatchLoop targetIds targetIds logText tapped onlyLandTapped clearExileFields cause
-      if let .chooseReplacement .. := g.pending then
+          (deferPlayFromExileLogs := deferPlayFromExileLogs)
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
         g.chainPendingReplacement
-          (.flickerLoop #[] targetIds #[] logText .startReturnBatch tapped onlyLandTapped clearExileFields cause)
+          (.flickerLoop #[] targetIds #[] logText .startReturnBatch tapped onlyLandTapped clearExileFields cause none none deferPlayFromExileLogs)
       else
         g.flickerStartReturnBatch targetIds logText tapped onlyLandTapped clearExileFields cause
+          (deferPlayFromExileLogs := deferPlayFromExileLogs)
 
 /-- Resume a paused `PendingReplacement.flickerLoop` stage. -/
 def resumeFlickerLoop (g : Game) (remainingIds : Array ObjectId)
@@ -717,19 +735,24 @@ def resumeFlickerLoop (g : Game) (remainingIds : Array ObjectId)
     (stage : FlickerStage := .exileBatch) (tapped : Bool := false) (onlyLandTapped : Bool := false)
     (clearExileFields : Bool := false) (cause : Option EventCause := none)
     (preBattlefield : Option (Array GameObject) := none)
-    (fromEventIdx? : Option Nat := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
+    (fromEventIdx? : Option Nat := none)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     g.chainPendingReplacement
-      (.flickerLoop remainingIds exiledPreIds enteredFromIds logText stage tapped onlyLandTapped clearExileFields cause preBattlefield fromEventIdx?)
+      (.flickerLoop remainingIds exiledPreIds enteredFromIds logText stage tapped onlyLandTapped clearExileFields cause preBattlefield fromEventIdx? deferPlayFromExileLogs)
   else
     match stage with
-    | .exileBatch => g.flickerExileBatchLoop remainingIds exiledPreIds logText tapped onlyLandTapped clearExileFields cause fromEventIdx?
-    | .startReturnBatch => g.flickerStartReturnBatch exiledPreIds logText tapped onlyLandTapped clearExileFields cause
-    | .returnBatch => g.flickerReturnBatchLoop remainingIds exiledPreIds enteredFromIds logText tapped onlyLandTapped clearExileFields cause preBattlefield fromEventIdx?
+    | .exileBatch =>
+      g.flickerExileBatchLoop remainingIds exiledPreIds logText tapped onlyLandTapped clearExileFields cause fromEventIdx? deferPlayFromExileLogs
+    | .startReturnBatch =>
+      g.flickerStartReturnBatch exiledPreIds logText tapped onlyLandTapped clearExileFields cause deferPlayFromExileLogs
+    | .returnBatch =>
+      g.flickerReturnBatchLoop remainingIds exiledPreIds enteredFromIds logText tapped onlyLandTapped clearExileFields cause preBattlefield fromEventIdx? deferPlayFromExileLogs
     | .postReturn => g.flickerPostReturn enteredFromIds logText
     | .beforeExileBatch =>
       g.flickerPermanents remainingIds (logText := logText) (tapped := tapped)
         (onlyLandTapped := onlyLandTapped) (clearExileFields := clearExileFields) (cause := cause)
+        (deferPlayFromExileLogs := deferPlayFromExileLogs)
 
 /-! ### Reveal, Choice, Proliferate, and Transform Helpers -/
 
@@ -1064,14 +1087,19 @@ partial def damageUpToOneAndPlayerLoop (g : Game) (controller : PlayerId)
     (srcName : String) (sourceId : Option ObjectId)
     (cause? : Option EventCause)
     (startEventIdx : Option Nat := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  let sIdx := startEventIdx.getD g.events.size
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     g.chainPendingReplacement
-      (.finishPostStep (.damageUpToOneAndPlayerLoop controller spec remaining n srcName sourceId cause? startEventIdx))
+      (.finishPostStep (.damageUpToOneAndPlayerLoop controller spec remaining n srcName sourceId cause? (some sIdx)))
   else
-    let sIdx := startEventIdx.getD g.events.size
+    let preLoop :=
+      match startEventIdx with
+      | some idx => g.mkHistoricalGameAt idx
+      | none => g
     let c := cause?.orElse (fun _ => g.currentBatch.bind (·.2))
     match remaining[0]? with
     | none =>
+      let g := emitExpiredPlayFromExileLogs preLoop g sIdx
       g.applyAggregatedLifelinkSince sIdx (cause := c)
     | some (i, t) =>
       let rest := remaining.extract 1 remaining.size
@@ -1084,7 +1112,7 @@ partial def damageUpToOneAndPlayerLoop (g : Game) (controller : PlayerId)
             match g.findObject? id with
             | some o =>
               g.dealDamageFrom srcName o n (source := src?) (cause := c)
-                (suppressLifelink := true)
+                (suppressLifelink := true) (deferPlayFromExileLogs := true)
             | none => g
           else g.illegalAbilityTarget t
         | Target.player pid =>
@@ -1093,7 +1121,7 @@ partial def damageUpToOneAndPlayerLoop (g : Game) (controller : PlayerId)
               (suppressLifelink := true)
           else g.illegalAbilityTarget t
         | _ => g
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
         g.chainPendingReplacement
           (.finishPostStep (.damageUpToOneAndPlayerLoop controller spec rest n srcName sourceId c (some sIdx)))
       else

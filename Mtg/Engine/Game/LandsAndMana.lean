@@ -148,8 +148,8 @@ def manaSourcesForProposed (g : Game) (p : PlayerId) (prop : ProposedSpell) :
 /-- Pool after tapping `src` for `t`, including spending restrictions (and
 leaving `.mountainExtraRed` extra `{R}` unrestricted). -/
 def poolAfterTap (g : Game) (pool : ManaPool) (src : GameObject) (t : ManaType)
-    (prop? : Option ProposedSpell := none) : ManaPool :=
-  g.addTapManaToPool pool src t (prop? := prop?)
+    (prop? : Option ProposedSpell := none) (spend : ManaSpend := {}) : ManaPool :=
+  g.addTapManaToPool pool src t (prop? := prop?) (spend := spend)
 
 /-- Minimum number of mana units needed to pay `cost` (1 per colored,
 colorless, hybrid, or twobrid symbol, plus generic; `{X}` is 0). -/
@@ -296,7 +296,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
           if prop.kind == .activatedAbility &&
               (prop.discardSource ||
                 prop.activation.any (fun a =>
-                  a.cost.discardSource || a.cost.exileSourceFromHand || a.isFromGraveyard)) then
+                  a.cost.discardSource || a.cost.exileSourceFromHand || a.isFromHand || a.isFromGraveyard)) then
             #[sid]
           else #[]
         | none => #[]
@@ -374,7 +374,8 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                   (discardOrExileHandSource := discSrc)
                   (preTappedIds := propTapReservedIds ++ tappedIds)
                   (used := removedIds)
-                  (sacReservedIds := propBfSacReservedIds)).isSome
+                  (sacReservedIds := propBfSacReservedIds)
+                  (excludeSelf := crewExcludesSelf ab.cost)).isSome
               | none =>
                 allPicks.isEmpty ||
                   g.costPicksPayable p (some sid) allPicks
@@ -444,7 +445,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
       else
         let cands :=
           (g.creaturesControlledBy p).filter fun c =>
-            c.id != o.id && !c.status.tapped &&
+            (!(d.crewExcludesSelf || d.tap) || c.id != o.id) && !c.status.tapped &&
               !propTapReservedIds.contains c.id && !extraEffTapped.contains c.id
         let okAfterCrew (picked : Array ObjectId) : Bool :=
           existsValidDPicks o d d.picks.toList #[] picked #[] (extraEffTapped ++ picked)
@@ -488,6 +489,10 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeIndestructibleCounter) &&
           !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .indestructible) sinceIdx &&
           o.status.indestructibleCounters ≤ 1)) &&
+      (!d.removeAnyNumberPlusOne ||
+        !(prop.sourceId == some o.id && prop.removePlusOneX &&
+          !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .plusOnePlusOne) sinceIdx &&
+          o.status.plusOnePlusOne ≤ ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0)) &&
       d.exileManaSymbols?.all (fun (col?, minSyms, pred) =>
         g.canPayExileManaSymbols p o.id col? minSyms pred
           (excludedIds := propRemoveReservedIds ++ (if d.exileSelfFromGraveyard then #[o.id] else #[]))) &&

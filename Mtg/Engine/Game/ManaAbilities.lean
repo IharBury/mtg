@@ -11,6 +11,14 @@ the mana immediately, without using the stack (CR 605.3b).
 namespace Mtg.Engine
 namespace Game
 
+/-- Forward reference to `Decisions.anyPostPromptContinuationSettlesControlFlow` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_any_post_prompt_continuation_settles_control_flow"]
+private opaque anyPostPromptContinuationSettlesControlFlowFwd (g : Game) : Bool := false
+
+/-- Forward reference to `Decisions.hasPostPromptImplicitPendingPriorityContinuation` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_has_post_prompt_implicit_pending_priority_continuation"]
+private opaque hasPostPromptImplicitPendingPriorityContinuationFwd (g : Game) : Bool := false
+
 /-- Extra lifetime power-up activations granted by Wonder Man (MSH). -/
 def grantsExtraPowerUp (g : Game) (o : GameObject) : Bool :=
   let env : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
@@ -143,6 +151,7 @@ structure ManaAbilityDef where
   removeAnyNumberPlusOne : Bool := false
   putStunCounterOnSource : Bool := false
   crewPower? : Option Nat := none
+  crewExcludesSelf : Bool := true
   exileManaSymbols? : Option (Option Color × Nat × ObjectPred) := none
   /-- Costs paid with objects the player chooses (Bolg's Company). -/
   picks : Array CostPick := #[]
@@ -336,6 +345,7 @@ def manaAbilityDefOfActivated (g : Game) (o : GameObject) (i : Nat)
       removeAnyNumberPlusOne := ab.cost.removeAnyNumberPlusOne
       putStunCounterOnSource := ab.cost.putStunCounterOnSource
       crewPower? := ab.cost.crewPower?
+      crewExcludesSelf := crewExcludesSelf ab.cost
       exileManaSymbols? := ab.cost.exileManaSymbols?
       picks :=
         costPicksOf ab ++
@@ -491,7 +501,8 @@ def manaAbilityDefUsable (g : Game) (p : PlayerId) (o : GameObject) (d : ManaAbi
       o.isOnBattlefield &&
         (g.firstPayableCrewSelection? p o.id n d.picks
           (tapSource := d.tap) (sacrificeOrExileSource := sacOrExileBf)
-          (discardOrExileHandSource := discOrExileHand)).isSome
+          (discardOrExileHandSource := discOrExileHand)
+          (excludeSelf := d.crewExcludesSelf)).isSome
     | none =>
       d.picks.isEmpty ||
         g.costPicksPayable p (some o.id) d.picks
@@ -807,21 +818,26 @@ def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (
           if g.outerPendingReplacements.isEmpty &&
               g.currentInterpWait?.isNone then
             g := g.chainPendingReplacement (.receivePriority prio)
-          else if !g.anyContinuationSettlesControlFlowFwd then
+          else if !(if g.sbaPaused then g.anyContinuationSettlesControlFlowFwd
+              else anyPostPromptContinuationSettlesControlFlowFwd g) then
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishResolutionChoice
-          else if g.hasImplicitPendingPriorityContinuationFwd && g.pendingPriority != some prio then
+          else if (if g.sbaPaused then g.hasImplicitPendingPriorityContinuationFwd
+              else hasPostPromptImplicitPendingPriorityContinuationFwd g) && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
         else if !g.outerPendingReplacements.isEmpty ||
             g.currentInterpWait?.isSome then
-          if !g.anyContinuationSettlesControlFlowFwd then
+          if !(if g.sbaPaused then g.anyContinuationSettlesControlFlowFwd
+              else anyPostPromptContinuationSettlesControlFlowFwd g) then
             if g.pendingPriority != some prio then
               g := g.change (.pendingPriority (some prio))
             g := g.chainPendingReplacement .finishResolutionChoice
-          else if g.hasImplicitPendingPriorityContinuationFwd && g.pendingPriority != some prio then
+          else if (if g.sbaPaused then g.hasImplicitPendingPriorityContinuationFwd
+              else hasPostPromptImplicitPendingPriorityContinuationFwd g) && g.pendingPriority != some prio then
             g := g.change (.pendingPriority (some prio))
-        else if g.hasImplicitPendingPriorityContinuationFwd && g.pendingPriority != some prio then
+        else if (if g.sbaPaused then g.hasImplicitPendingPriorityContinuationFwd
+            else hasPostPromptImplicitPendingPriorityContinuationFwd g) && g.pendingPriority != some prio then
           g := g.change (.pendingPriority (some prio))
     else
       g := g.chainPendingReplacement (.restorePending prevPending false none allDeparted none)
@@ -861,6 +877,9 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
     (riders : Array SpellRiderSpec := #[])
     (exileFromZone? : Option ZoneKind := none) (discardSelf : Bool := false)
     (exileSymIds : Array ObjectId := #[]) (extraEffect? : Option Effect := none)
+    (removeIndestructible : Bool := false) (removePlusOnesCount : Nat := 0)
+    (crewIds : Array ObjectId := #[]) (putStunOnSource : Bool := false)
+    (fromEventIdx? : Option Nat := none)
     (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game × Bool := Id.run do
   let abortNow (g0 : Game) : Game × Bool :=
     abortDepartedManaAbilityContCore g0 p prevPending
@@ -873,6 +892,7 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
     let tapPrePaid := manaSourceTapPaidSinceCkpt g p id
     let srcPayable : Bool :=
       let needTap := tap && !tapPrePaid
+      let needBfCounter := removeIndestructible || removePlusOnesCount > 0 || putStunOnSource
       if discOrExileHand then
         match g.findObject? id with
         | some cur => cur.zone == .hand cur.owner && cur.owner == p && isDiscardableCard cur
@@ -881,14 +901,23 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
         match g.findObject? id with
         | some cur => cur.zone == .graveyard cur.owner && cur.owner == p && isDiscardableCard cur
         | none => false
-      else if !needTap && !sacOrExileSelf then true
+      else if !needTap && !sacOrExileSelf && !needBfCounter then true
       else
         match g.findObject? id with
         | some cur =>
-          cur.isOnBattlefield && g.controlledBy cur p && (!needTap || !cur.status.tapped)
+          cur.isOnBattlefield && g.controlledBy cur p &&
+            (!needTap || !cur.status.tapped) &&
+            (!removeIndestructible || cur.status.indestructibleCounters > 0) &&
+            cur.status.plusOnePlusOne ≥ removePlusOnesCount
         | none => false
     if !srcPayable then
       return abortNow g
+    for cid in crewIds do
+      match g.findObject? cid with
+      | some co =>
+        if !co.isOnBattlefield || !g.controlledBy co p || co.status.tapped then
+          return abortNow g
+      | none => return abortNow g
     let mut checkRest := costIds
     for pick in picks do
       let slice := checkRest.extract 0 pick.count
@@ -912,6 +941,71 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
           return abortNow g
       | none => return abortNow g
   let mut g := g
+  let hasPreExileSymWork :=
+    removeIndestructible || removePlusOnesCount > 0 || !crewIds.isEmpty || putStunOnSource || !picks.isEmpty
+  let counterFromIdx := fromEventIdx?.getD g.events.size
+  let preCounters :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  if removeIndestructible then
+    match g.findObject? id with
+    | some curSrc =>
+      if !curSrc.isOnBattlefield || !g.controlledBy curSrc p || curSrc.status.indestructibleCounters == 0 then
+        return abortNow g
+      let srcName := g.name curSrc
+      g := g.recordRemoveCounters id .indestructible 1 (byPlayer := some p)
+        (cause := some (.costPayment .removeCounters p (some id))) (deferPlayFromExileLogs := true)
+      g := g.logMsg s!"{srcName} loses an indestructible counter"
+      if g.sbaPaused then
+        g := g.chainPendingReplacement
+          (.finishActivateManaAbilityPicks p id oname mana picks costIds tap sacrificeSelf
+            activatedIdx restriction damageYou isMountain prevPending
+            exileSelf powerUp exhaust riders exileFromZone? discardSelf exileSymIds extraEffect?
+            false removePlusOnesCount crewIds putStunOnSource (some counterFromIdx))
+        return (g, false)
+    | none => return abortNow g
+  if removePlusOnesCount > 0 then
+    match g.findObject? id with
+    | some curSrc =>
+      if !curSrc.isOnBattlefield || !g.controlledBy curSrc p || curSrc.status.plusOnePlusOne < removePlusOnesCount then
+        return abortNow g
+      let srcName := g.name curSrc
+      g := g.recordRemoveCounters id .plusOnePlusOne removePlusOnesCount (byPlayer := some p)
+        (cause := some (.costPayment .removeCounters p (some id))) (deferPlayFromExileLogs := true)
+      g := g.logMsg s!"{(g.player p).name} removes {removePlusOnesCount} +1/+1 counters from {srcName}"
+      if g.sbaPaused then
+        g := g.chainPendingReplacement
+          (.finishActivateManaAbilityPicks p id oname mana picks costIds tap sacrificeSelf
+            activatedIdx restriction damageYou isMountain prevPending
+            exileSelf powerUp exhaust riders exileFromZone? discardSelf exileSymIds extraEffect?
+            false 0 crewIds putStunOnSource (some counterFromIdx))
+        return (g, false)
+    | none => return abortNow g
+  if fromEventIdx?.isSome && hasPreExileSymWork then
+    g := emitExpiredPlayFromExileLogs preCounters g counterFromIdx
+  for cid in crewIds do
+    match g.findObject? cid with
+    | some curCrew =>
+      if !curCrew.isOnBattlefield || !g.controlledBy curCrew p || curCrew.status.tapped then
+        return abortNow g
+      g := g.becomeTapped curCrew (cause := some (.costPayment .tap p (some id)))
+      g := g.logMsg s!"{(g.player p).name} taps {g.name curCrew} for {oname}"
+    | none => return abortNow g
+  if putStunOnSource then
+    match g.findObject? id with
+    | some curSrc =>
+      if !curSrc.isOnBattlefield || !g.controlledBy curSrc p then
+        return abortNow g
+      g := g.putCountersDeferredLog id .stun 1 (some p) (.playerPutsOn p)
+        (cause := some (.costPayment .putCounters p (some id)))
+      if let .chooseReplacement .. := g.pending then
+        g := g.chainPendingReplacement
+          (.finishActivateManaAbilityPicks p id oname mana picks costIds tap sacrificeSelf
+            activatedIdx restriction damageYou isMountain prevPending
+            exileSelf powerUp exhaust riders exileFromZone? discardSelf exileSymIds extraEffect?)
+        return (g, false)
+    | none => return abortNow g
   let mut rest := costIds
   for i in [0:picks.size] do
     if g.over || !g.stillInGame p then
@@ -932,7 +1026,7 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
           return abortNow g
     let isBfSacPick : Bool :=
       match pick with
-      | .tapUntappedCreature | .tapTwoUntappedArtifacts
+      | .tapUntappedCreature | .tapTwoUntappedArtifacts | .custom (.tapObjects ..)
       | .exileAnotherCreatureCardFromGraveyard => false
       | _ => true
     if tap && !sacOrExileSelf && isBfSacPick && slice.contains id then
@@ -950,6 +1044,14 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
       return (g, false)
     if !pickPaid then
       return abortNow g
+  let symFromIdx? : Option Nat :=
+    if hasPreExileSymWork then none else fromEventIdx?
+  let symFromIdx := symFromIdx?.getD g.events.size
+  let preSyms :=
+    match symFromIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let needSymEmit := !exileSymIds.isEmpty || symFromIdx?.isSome
   for j in [0:exileSymIds.size] do
     if g.over || !g.stillInGame p then
       return abortNow g
@@ -959,19 +1061,23 @@ private def finishActivateManaAbilityPicksCore (g : Game) (p : PlayerId) (id : O
       if card.zone != .graveyard p || !isDiscardableCard card then
         return abortNow g
       let msg := s!"{(g.player p).name} exiles {g.name card} from their graveyard"
-      g := (g.move cid .exile none (cause := some (.costPayment .exile p (some id)))).1
-      if let .chooseReplacement .. := g.pending then
+      g := (g.move cid .exile none (cause := some (.costPayment .exile p (some id)))
+        (deferPlayFromExileLogs := true)).1
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
         let remSyms := exileSymIds.extract (j + 1) exileSymIds.size
         g := g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile cid msg))
         g := g.chainPendingReplacement
           (.finishActivateManaAbilityPicks p id oname mana #[] #[] tap sacrificeSelf
             activatedIdx restriction damageYou isMountain prevPending
-            exileSelf powerUp exhaust riders exileFromZone? discardSelf remSyms extraEffect?)
+            exileSelf powerUp exhaust riders exileFromZone? discardSelf remSyms extraEffect?
+            false 0 #[] false (some symFromIdx))
         return (g, false)
       if (g.followMovedToZone? cid (· == .exile)).isSome then
         g := g.logMsg msg
     | none =>
       return abortNow g
+  if needSymEmit then
+    g := emitExpiredPlayFromExileLogs preSyms g symFromIdx
   if g.over || !g.stillInGame p then
     return abortNow g
   let tapAlreadyPaid := manaSourceTapPaidSinceCkpt g p id
@@ -1085,12 +1191,17 @@ def finishActivateManaAbilityPicks (g : Game) (p : PlayerId) (id : ObjectId) (on
     (riders : Array SpellRiderSpec := #[])
     (exileFromZone? : Option ZoneKind := none) (discardSelf : Bool := false)
     (exileSymIds : Array ObjectId := #[]) (extraEffect? : Option Effect := none)
+    (removeIndestructible : Bool := false) (removePlusOnesCount : Nat := 0)
+    (crewIds : Array ObjectId := #[]) (putStunOnSource : Bool := false)
+    (fromEventIdx? : Option Nat := none)
     (wasPaused : Bool := true) (hasFollowingSeq : Bool := false) : Game :=
   (finishActivateManaAbilityPicksCore g p id oname mana picks costIds tap sacrificeSelf
     activatedIdx restriction damageYou isMountain prevPending
     (exileSelf := exileSelf) (powerUp := powerUp) (exhaust := exhaust) (riders := riders)
     (exileFromZone? := exileFromZone?) (discardSelf := discardSelf)
     (exileSymIds := exileSymIds) (extraEffect? := extraEffect?)
+    (removeIndestructible := removeIndestructible) (removePlusOnesCount := removePlusOnesCount)
+    (crewIds := crewIds) (putStunOnSource := putStunOnSource) (fromEventIdx? := fromEventIdx?)
     (wasPaused := wasPaused) (hasFollowingSeq := hasFollowingSeq)).1
 
 /-- Activate mana ability `idx` of `id` (CR 605.3), adding `mana`, paying
@@ -1294,8 +1405,10 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
   let mut checkRest := pickIds
   for pick in d.picks do
     let slice := checkRest.extract 0 pick.count
-    let isTapPick := pick == .tapUntappedCreature || pick == .tapTwoUntappedArtifacts
-    let isNonBfPick := isTapPick || pick == .exileAnotherCreatureCardFromGraveyard
+    let isTapPick :=
+      match pick with
+      | .tapUntappedCreature | .tapTwoUntappedArtifacts | .custom (.tapObjects ..) => true
+      | _ => false
     for cid in slice do
       let some co := g.findObject? cid | throw "no such object"
       if !g.costPickAllows p (some id) pick co
@@ -1308,11 +1421,17 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
               !g.sourceTappedForCost cid (some prop.spellId) sinceIdx) ||
               prop.teamworkCreatures.contains cid) then
           throw s!"{g.name co} is already reserved to tap for the proposed spell or ability"
-        if !isNonBfPick && co.isOnBattlefield &&
+        if !isTapPick && co.isOnBattlefield &&
             ((prop.sourceId == some cid && g.proposedNeedsBattlefieldSource prop sinceIdx) ||
               prop.teamworkCreatures.contains cid ||
               (prop.sneakAttacker == some cid && !g.sneakPaid prop.spellId)) then
           throw s!"{g.name co} is needed on the battlefield for the proposed spell or ability"
+        if !isTapPick && !co.isOnBattlefield && prop.sourceId == some cid &&
+            prop.kind == .activatedAbility &&
+            (prop.discardSource ||
+              prop.activation.any (fun a =>
+                a.cost.discardSource || a.cost.exileSourceFromHand || a.isFromHand || a.isFromGraveyard)) then
+          throw s!"{g.name co} is needed for the proposed ability"
     checkRest := checkRest.extract pick.count checkRest.size
   let (crewIds, exileSymIds) ←
     match d.crewPower?, d.exileManaSymbols? with
@@ -1333,7 +1452,7 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     let mut crewPow : Nat := 0
     for cid in crewIds do
       let some co := g.findObject? cid | throw "no such object"
-      if cid == id || !co.isOnBattlefield || !g.controlledBy co p ||
+      if ((d.crewExcludesSelf || d.tap) && cid == id) || !co.isOnBattlefield || !g.controlledBy co p ||
           !g.isCreature co || co.status.tapped then
         throw s!"{g.name co} can't be tapped to pay {oname}'s crew cost"
       if let some prop := g.proposedSpell then
@@ -1394,27 +1513,63 @@ def activateManaAbility (g : Game) (p : PlayerId) (id : ObjectId) (idx : Nat)
     g := g.record (GameEvent.manaSpent g.turnNumber p spentUnits (some id)
       (cause := some (.costPayment .mana p (some id))))
   g ← g.payLifeCost p d.payLife (forObject := some id)
+  let preCounters := g
+  let costFromIdx := g.events.size
+  let mut removedAnyCounter := false
+  let remPlusOnes := if d.removeAnyNumberPlusOne then removePlusOnesCount else 0
   if d.removeStoryCounter then
     let some curSrc := g.findObject? id | throw s!"{oname} is no longer on the battlefield"
     if !curSrc.isOnBattlefield || !g.controlledBy curSrc p || curSrc.status.story == 0 then
       throw s!"{oname} doesn't have a story counter to remove"
     let srcName := g.name curSrc
     g := g.recordRemoveCounters id .story 1 (byPlayer := some p)
-      (cause := some (.costPayment .removeCounters p (some id)))
+      (cause := some (.costPayment .removeCounters p (some id))) (deferPlayFromExileLogs := true)
     g := g.logMsg s!"{(g.player p).name} removes a story counter from {srcName}"
+    removedAnyCounter := true
+    if g.sbaPaused then
+      g := g.chainPendingReplacement
+        (.finishActivateManaAbilityPicks p id oname mana d.picks pickIds d.tap d.sacrificeSelf
+          d.activatedIdx effRestriction effDamageYou isMountain prevPending
+          d.exileSelf d.isPowerUp d.isExhaust effRiders d.exileFromZone? d.discardSelf exileSymIds effExtraEffect?
+          d.removeIndestructibleCounter remPlusOnes crewIds d.putStunCounterOnSource (some costFromIdx))
+      if let some outer := outerCont? then
+        g := g.chainPendingReplacement outer
+      return g
   if d.removeIndestructibleCounter then
     let some curSrc := g.findObject? id | throw s!"{oname} is no longer on the battlefield"
     if !curSrc.isOnBattlefield || !g.controlledBy curSrc p || curSrc.status.indestructibleCounters == 0 then
       throw s!"{oname} doesn't have an indestructible counter to remove"
-    g ← g.payRemoveIndestructibleCounter curSrc (some id)
+    g ← g.payRemoveIndestructibleCounter curSrc (some id) (deferPlayFromExileLogs := true)
+    removedAnyCounter := true
+    if g.sbaPaused then
+      g := g.chainPendingReplacement
+        (.finishActivateManaAbilityPicks p id oname mana d.picks pickIds d.tap d.sacrificeSelf
+          d.activatedIdx effRestriction effDamageYou isMountain prevPending
+          d.exileSelf d.isPowerUp d.isExhaust effRiders d.exileFromZone? d.discardSelf exileSymIds effExtraEffect?
+          false remPlusOnes crewIds d.putStunCounterOnSource (some costFromIdx))
+      if let some outer := outerCont? then
+        g := g.chainPendingReplacement outer
+      return g
   if d.removeAnyNumberPlusOne && removePlusOnesCount > 0 then
     let some curSrc := g.findObject? id | throw s!"{oname} is no longer on the battlefield"
     if !curSrc.isOnBattlefield || !g.controlledBy curSrc p || curSrc.status.plusOnePlusOne < removePlusOnesCount then
       throw s!"{oname} doesn't have {removePlusOnesCount} +1/+1 counters"
     let srcName := g.name curSrc
     g := g.recordRemoveCounters id .plusOnePlusOne removePlusOnesCount (byPlayer := some p)
-      (cause := some (.costPayment .removeCounters p (some id)))
+      (cause := some (.costPayment .removeCounters p (some id))) (deferPlayFromExileLogs := true)
     g := g.logMsg s!"{(g.player p).name} removes {removePlusOnesCount} +1/+1 counters from {srcName}"
+    removedAnyCounter := true
+    if g.sbaPaused then
+      g := g.chainPendingReplacement
+        (.finishActivateManaAbilityPicks p id oname mana d.picks pickIds d.tap d.sacrificeSelf
+          d.activatedIdx effRestriction effDamageYou isMountain prevPending
+          d.exileSelf d.isPowerUp d.isExhaust effRiders d.exileFromZone? d.discardSelf exileSymIds effExtraEffect?
+          false 0 crewIds d.putStunCounterOnSource (some costFromIdx))
+      if let some outer := outerCont? then
+        g := g.chainPendingReplacement outer
+      return g
+  if removedAnyCounter then
+    g := emitExpiredPlayFromExileLogs preCounters g costFromIdx
   for cid in crewIds do
     let some curCrew := g.findObject? cid | throw "no such object"
     if !curCrew.isOnBattlefield || !g.controlledBy curCrew p || curCrew.status.tapped then

@@ -26,7 +26,8 @@ private opaque canTapForPlainManaFwd (g : Game) (p : PlayerId) (o : GameObject) 
 
 /-- Remove an indestructible counter as a cost (ruling 357). -/
 def payRemoveIndestructibleCounter (g : Game) (o : GameObject)
-    (forObject : Option ObjectId := none) : Except String Game := do
+    (forObject : Option ObjectId := none)
+    (deferPlayFromExileLogs : Bool := false) : Except String Game := do
   if o.status.indestructibleCounters == 0 then
     throw s!"{g.name o} has no indestructible counter"
   let oName := g.name o
@@ -34,6 +35,7 @@ def payRemoveIndestructibleCounter (g : Game) (o : GameObject)
   let p := ctrl.getD o.owner
   let g := g.recordRemoveCounters o.id .indestructible 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
     (cause := some (.costPayment .removeCounters p forObject))
+    (deferPlayFromExileLogs := deferPlayFromExileLogs)
   return g.logMsg s!"{oName} loses an indestructible counter"
 
 /-- Pay `n` life as a cost (CR 118.3b / 119.4 / 119.8). Payment of life is not damage. -/
@@ -365,9 +367,20 @@ def costPicksWithSacrificeOther (picks : Array CostPick) (needsSacrificeOther : 
     Array CostPick :=
   if needsSacrificeOther then picks.push .sacrificeAnotherCreatureOrArtifact else picks
 
-/-- Find a subset of untapped creatures `p` controls other than `vehicleId` with
-total power at least `crewN` whose tapping still leaves `allPicks` payable
-(CR 118.10 / 602.2b / 702.122a). -/
+/-- Whether a `.tapObjects (.totalPowerAtLeast ..)` cost item excludes the
+source permanent itself (`.otherThan .this`, CR 702.122a). -/
+def crewExcludesSelf (c : CostSpec) : Bool :=
+  c.items.any fun
+    | .tapObjects (.totalPowerAtLeast _) pred =>
+      match pred with
+      | .all ps => ps.contains (.otherThan .this)
+      | .otherThan .this => true
+      | _ => false
+    | _ => false
+
+/-- Find a subset of untapped creatures `p` controls (excluding `vehicleId` when
+`excludeSelf || tapSource`) with total power at least `crewN` whose tapping
+still leaves `allPicks` payable (CR 118.10 / 602.2b / 702.122a). -/
 partial def firstPayableCrewSelection? (g : Game) (p : PlayerId) (vehicleId : ObjectId)
     (crewN : Nat) (allPicks : Array CostPick)
     (tapSource : Bool := false)
@@ -377,12 +390,14 @@ partial def firstPayableCrewSelection? (g : Game) (p : PlayerId) (vehicleId : Ob
     (disjointFromAllPicks : Bool := false)
     (preTappedIds : Array ObjectId := #[])
     (used : Array ObjectId := #[])
-    (sacReservedIds : Array ObjectId := #[]) : Option (Array ObjectId) :=
+    (sacReservedIds : Array ObjectId := #[])
+    (excludeSelf : Bool := true) : Option (Array ObjectId) :=
+  let exclSelf := excludeSelf || tapSource
   let cands :=
     (orderedCands?.getD
-      ((g.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped))).filter
+      ((g.creaturesControlledBy p).filter (fun c => (!exclSelf || c.id != vehicleId) && !c.status.tapped))).filter
       (fun c =>
-        c.id != vehicleId && !c.status.tapped &&
+        (!exclSelf || c.id != vehicleId) && !c.status.tapped &&
           !used.contains c.id && !preTappedIds.contains c.id)
   let okAfterCrew (picked : Array ObjectId) : Bool :=
     if allPicks.isEmpty then true
@@ -688,32 +703,78 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
               if curSrc.status.tapped then return abortMissingSource g
               g := g.becomeTapped curSrc (cause := some (.costPayment .tap p forObj))
             if let some a := effAb? then
+              let preCounters := g
+              let costFromIdx := g.events.size
+              let mut removedAnyCounter := false
+              let needIndestRem :=
+                a.cost.removeIndestructibleCounter &&
+                  !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .indestructible) sinceIdx
+              let needPlusRem? : Option Nat :=
+                if a.cost.removeAnyNumberPlusOne &&
+                    !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .plusOnePlusOne) sinceIdx then
+                  some effRemovePlusOnes
+                else none
+              let loyDelta? := a.cost.netLoyaltyDelta effX
+              let needStun :=
+                a.cost.putStunCounterOnSource &&
+                  !g.sourceCounterCostPaidFor sid forObj .putCounters (some .stun) sinceIdx
               if a.cost.removeStoryCounter &&
                   !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .story) sinceIdx then
                 let some curSrc := requireLiveSource g sid | return abortMissingSource g
                 if curSrc.status.story == 0 then return abortMissingSource g
                 let srcName := g.name curSrc
                 g := g.recordRemoveCounters sid .story 1 (byPlayer := some p)
-                  (cause := some (.costPayment .removeCounters p forObj))
+                  (cause := some (.costPayment .removeCounters p forObj)) (deferPlayFromExileLogs := true)
                 g := g.logMsg s!"{(g.player p).name} removes a story counter from {srcName}"
-              if a.cost.removeIndestructibleCounter &&
-                  !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .indestructible) sinceIdx then
+                removedAnyCounter := true
+                if g.sbaPaused then
+                  g := g.chainPendingReplacement
+                    (.finishActivationExtraCosts p sid forObj false false .removeCounters sinceIdx
+                      needIndestRem needPlusRem? loyDelta? needStun (some costFromIdx))
+                  g := g.chainPendingReplacement
+                    (.payCostPickItems p abilityId sourceId pick ids)
+                  return match outer? with
+                    | some outer => g.chainPendingReplacement outer
+                    | none => g
+              if needIndestRem then
                 let some curSrc := requireLiveSource g sid | return abortMissingSource g
                 if curSrc.status.indestructibleCounters == 0 then return abortMissingSource g
-                g := (← g.payRemoveIndestructibleCounter curSrc forObj)
-              if a.cost.removeAnyNumberPlusOne &&
-                  !g.sourceCounterCostPaidFor sid forObj .removeCounters (some .plusOnePlusOne) sinceIdx then
+                g := (← g.payRemoveIndestructibleCounter curSrc forObj (deferPlayFromExileLogs := true))
+                removedAnyCounter := true
+                if g.sbaPaused then
+                  g := g.chainPendingReplacement
+                    (.finishActivationExtraCosts p sid forObj false false .removeCounters sinceIdx
+                      false needPlusRem? loyDelta? needStun (some costFromIdx))
+                  g := g.chainPendingReplacement
+                    (.payCostPickItems p abilityId sourceId pick ids)
+                  return match outer? with
+                    | some outer => g.chainPendingReplacement outer
+                    | none => g
+              if needPlusRem?.isSome then
                 let some curSrc := requireLiveSource g sid | return abortMissingSource g
                 if curSrc.status.plusOnePlusOne < effRemovePlusOnes then return abortMissingSource g
                 let srcName := g.name curSrc
                 let g' :=
                   if effRemovePlusOnes > 0 then
                     g.recordRemoveCounters sid .plusOnePlusOne effRemovePlusOnes (byPlayer := some p)
-                      (cause := some (.costPayment .removeCounters p forObj))
+                      (cause := some (.costPayment .removeCounters p forObj)) (deferPlayFromExileLogs := true)
                   else g
                 g := g'.logMsg
                   s!"{(g.player p).name} removes {effRemovePlusOnes} +1/+1 counters from {srcName}"
-              if let some k := a.cost.netLoyaltyDelta effX then
+                if effRemovePlusOnes > 0 then
+                  removedAnyCounter := true
+                if g.sbaPaused then
+                  g := g.chainPendingReplacement
+                    (.finishActivationExtraCosts p sid forObj false false .removeCounters sinceIdx
+                      false none loyDelta? needStun (some costFromIdx))
+                  g := g.chainPendingReplacement
+                    (.payCostPickItems p abilityId sourceId pick ids)
+                  return match outer? with
+                    | some outer => g.chainPendingReplacement outer
+                    | none => g
+              if removedAnyCounter then
+                g := emitExpiredPlayFromExileLogs preCounters g costFromIdx
+              if let some k := loyDelta? then
                 let loyaltyAlreadyPaid :=
                   g.proposedSpell.any (·.loyaltyPaid) ||
                     g.sourceCounterCostPaidFor sid forObj .loyalty (some .loyalty) sinceIdx
@@ -754,17 +815,23 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
     | none => g
 
 /-- Finish the remaining steps of `payActivationExtraCosts` after an earlier
-counter or sacrifice step paused on `Pending.chooseReplacement`. -/
+counter or sacrifice step paused on `Pending.chooseReplacement` or `sbaPaused`. -/
 def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
     (forObject : Option ObjectId) (sacrificeSource exileSource : Bool)
     (stage : ActivationExtraCostStage := .sacrificeAndExile)
     (sinceIdx : Nat := 0)
+    (removeIndestructible : Bool := false)
+    (removePlusOnes : Option Nat := none)
+    (loyaltyDelta : Option Int := none)
+    (putStun : Bool := false)
+    (fromEventIdx? : Option Nat := none)
     (outerToRestore? : Option PendingReplacement := none)
     (followedByFinishChoice : Bool := false)
     (followedByExplicitPriority? : Option PlayerId := none) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     return g.chainPendingReplacement
-      (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx)
+      (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource stage sinceIdx
+        removeIndestructible removePlusOnes loyaltyDelta putStun fromEventIdx?)
   let abortOrNoop (g0 : Game) : Game :=
     if !g0.hasActiveManaProposalCheckpoint && g0.proposedSpell.isSome then
       let g1 :=
@@ -778,7 +845,79 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   if g.over || !g.stillInGame p then
     return abortOrNoop g
   let mut g := g
-  if stage == .stunAndSacrifice then
+  if stage == .removeCounters then
+    let costFromIdx := fromEventIdx?.getD g.events.size
+    let preCounters :=
+      match fromEventIdx? with
+      | some idx => g.mkHistoricalGameAt idx
+      | none => g
+    if removeIndestructible &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .indestructible) sinceIdx then
+      match g.findObject? sourceId with
+      | some src =>
+        if !src.isOnBattlefield || !g.controlledBy src p || src.status.indestructibleCounters == 0 then
+          return abortOrNoop g
+        let srcName := g.name src
+        g := g.recordRemoveCounters sourceId .indestructible 1 (byPlayer := some p)
+          (cause := some (.costPayment .removeCounters p forObject)) (deferPlayFromExileLogs := true)
+        g := g.logMsg s!"{srcName} loses an indestructible counter"
+        if g.sbaPaused then
+          return g.chainPendingReplacement
+            (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
+              .removeCounters sinceIdx false removePlusOnes loyaltyDelta putStun (some costFromIdx))
+      | none =>
+        return abortOrNoop g
+    if g.over || !g.stillInGame p then
+      return abortOrNoop g
+    if let some cnt := removePlusOnes then
+      if !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .plusOnePlusOne) sinceIdx then
+        match g.findObject? sourceId with
+        | some src =>
+          if !src.isOnBattlefield || !g.controlledBy src p || src.status.plusOnePlusOne < cnt then
+            return abortOrNoop g
+          let srcName := g.name src
+          if cnt > 0 then
+            g := g.recordRemoveCounters sourceId .plusOnePlusOne cnt (byPlayer := some p)
+              (cause := some (.costPayment .removeCounters p forObject)) (deferPlayFromExileLogs := true)
+          g := g.logMsg s!"{(g.player p).name} removes {cnt} +1/+1 counters from {srcName}"
+          if g.sbaPaused then
+            return g.chainPendingReplacement
+              (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
+                .removeCounters sinceIdx false none loyaltyDelta putStun (some costFromIdx))
+        | none =>
+          return abortOrNoop g
+    g := emitExpiredPlayFromExileLogs preCounters g costFromIdx
+    if g.over || !g.stillInGame p then
+      return abortOrNoop g
+    if let some k := loyaltyDelta then
+      let loyaltyAlreadyPaid :=
+        g.proposedSpell.any (·.loyaltyPaid) ||
+          g.sourceCounterCostPaidFor sourceId forObject .loyalty (some .loyalty) sinceIdx
+      if !loyaltyAlreadyPaid then
+        match g.findObject? sourceId with
+        | some src =>
+          if !src.isOnBattlefield || !g.controlledBy src p ||
+              g.loyaltyActivatedThisTurn src.id ||
+              (k < 0 && (src.status.loyaltyCounters : Int) < -k) then
+            return abortOrNoop g
+          g := g.payLoyaltyDelta p src k (forObject := forObject)
+          if let .chooseReplacement .. := g.pending then
+            let needsStun :=
+              putStun && !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx
+            if needsStun then
+              g := g.chainPendingReplacement
+                (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
+                  .stunAndSacrifice sinceIdx)
+            else if sacrificeSource || exileSource then
+              g := g.chainPendingReplacement
+                (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
+                  .sacrificeAndExile sinceIdx)
+            return g
+        | none =>
+          return abortOrNoop g
+  if g.over || !g.stillInGame p then
+    return abortOrNoop g
+  if stage == .stunAndSacrifice || (stage == .removeCounters && putStun) then
     if !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx then
       match g.findObject? sourceId with
       | some src =>
@@ -796,7 +935,7 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
         return abortOrNoop g
   if g.over || !g.stillInGame p then
     return abortOrNoop g
-  if (stage == .stunAndSacrifice || stage == .sacrificeAndExile) && sacrificeSource then
+  if (stage == .removeCounters || stage == .stunAndSacrifice || stage == .sacrificeAndExile) && sacrificeSource then
     match g.findObject? sourceId with
     | some src =>
       if !src.isOnBattlefield || !g.controlledBy src p then
@@ -1019,32 +1158,72 @@ def payActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   g := (← g.payLifeCost p payLife (forObject := forObject))
   match ab with
   | some a =>
+    let preCounters := g
+    let costFromIdx := g.events.size
+    let mut removedAnyCounter := false
+    let needIndestRem :=
+      a.cost.removeIndestructibleCounter &&
+        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .indestructible) sinceIdx
+    let needPlusRem? : Option Nat :=
+      if a.cost.removeAnyNumberPlusOne &&
+          !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .plusOnePlusOne) sinceIdx then
+        some removePlusOnes
+      else none
+    let loyDelta? := a.cost.netLoyaltyDelta chosenX
+    let needStun :=
+      a.cost.putStunCounterOnSource &&
+        !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx
     if a.cost.removeStoryCounter &&
         !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .story) sinceIdx then
       let some curSrc := requireLiveSource g | return abortMissingSource g
       if curSrc.status.story == 0 then return abortMissingSource g
       let srcName := g.name curSrc
       g := g.recordRemoveCounters sourceId .story 1 (byPlayer := some p)
-        (cause := some (.costPayment .removeCounters p forObject))
+        (cause := some (.costPayment .removeCounters p forObject)) (deferPlayFromExileLogs := true)
       g := g.logMsg s!"{(g.player p).name} removes a story counter from {srcName}"
-    if a.cost.removeIndestructibleCounter &&
-        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .indestructible) sinceIdx then
+      removedAnyCounter := true
+      if g.sbaPaused then
+        g := g.chainPendingReplacement
+          (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
+            .removeCounters sinceIdx needIndestRem needPlusRem? loyDelta? needStun (some costFromIdx))
+        if let some outer := outer? then
+          g := g.chainPendingReplacement outer
+        return g
+    if needIndestRem then
       let some curSrc := requireLiveSource g | return abortMissingSource g
       if curSrc.status.indestructibleCounters == 0 then return abortMissingSource g
-      g := (← g.payRemoveIndestructibleCounter curSrc forObject)
-    if a.cost.removeAnyNumberPlusOne &&
-        !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .plusOnePlusOne) sinceIdx then
+      g := (← g.payRemoveIndestructibleCounter curSrc forObject (deferPlayFromExileLogs := true))
+      removedAnyCounter := true
+      if g.sbaPaused then
+        g := g.chainPendingReplacement
+          (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
+            .removeCounters sinceIdx false needPlusRem? loyDelta? needStun (some costFromIdx))
+        if let some outer := outer? then
+          g := g.chainPendingReplacement outer
+        return g
+    if needPlusRem?.isSome then
       let some curSrc := requireLiveSource g | return abortMissingSource g
       if curSrc.status.plusOnePlusOne < removePlusOnes then return abortMissingSource g
       let srcName := g.name curSrc
       let g' :=
         if removePlusOnes > 0 then
           g.recordRemoveCounters sourceId .plusOnePlusOne removePlusOnes (byPlayer := some p)
-            (cause := some (.costPayment .removeCounters p forObject))
+            (cause := some (.costPayment .removeCounters p forObject)) (deferPlayFromExileLogs := true)
         else g
       g := g'.logMsg
         s!"{(g.player p).name} removes {removePlusOnes} +1/+1 counters from {srcName}"
-    if let some k := a.cost.netLoyaltyDelta chosenX then
+      if removePlusOnes > 0 then
+        removedAnyCounter := true
+      if g.sbaPaused then
+        g := g.chainPendingReplacement
+          (.finishActivationExtraCosts p sourceId forObject sacrificeSource exileSource
+            .removeCounters sinceIdx false none loyDelta? needStun (some costFromIdx))
+        if let some outer := outer? then
+          g := g.chainPendingReplacement outer
+        return g
+    if removedAnyCounter then
+      g := emitExpiredPlayFromExileLogs preCounters g costFromIdx
+    if let some k := loyDelta? then
       let loyaltyAlreadyPaid :=
         g.proposedSpell.any (·.loyaltyPaid) ||
           g.sourceCounterCostPaidFor sourceId forObject .loyalty (some .loyalty) sinceIdx

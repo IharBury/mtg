@@ -291,13 +291,16 @@ def replaceDamage (g : Game) (n : Int)
             | .playerRule p (.protectionFrom q srcId? ctrl?) d =>
               if p == pid && q != .everything && g.durationActive d &&
                   g.playerProtectionRuleMatches pid q srcId? ctrl? effSrc? then
-                items := items.push (.prevention {
-                  id := { kind := .protectionPreventDamage, grantor := srcId?, player := some pid }
-                  source := srcId?
-                  controller := ctrl?.orElse (fun _ => some pid)
-                  affectedPlayer := pid
-                  kind := .protectionFromEverythingPlayer pid
-                })
+                let rid : ReplacementId :=
+                  { kind := .protectionPreventDamage, grantor := srcId?, player := some pid }
+                if !items.any (fun it => it.replacementId == rid) then
+                  items := items.push (.prevention {
+                    id := rid
+                    source := srcId?
+                    controller := ctrl?.orElse (fun _ => some pid)
+                    affectedPlayer := pid
+                    kind := .protectionFromEverythingPlayer pid
+                  })
             | _ => pure ()
         for (_, eff) in g.activeEffects do
           match eff with
@@ -448,26 +451,32 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     (replaced : Option DamageReplacementResult := none)
     (applied : Array ReplacementId := #[])
     (consumeOrder : Bool := true)
-    (cause : Option EventCause := none) : Game :=
+    (cause : Option EventCause := none)
+    (deferPlayFromExileLogs : Bool := false)
+    (skipReplace : Bool := false) : Game :=
   let srcSnap :=
     (source.map g.refreshOrKeepDamageSnapshot)
       |>.orElse (fun _ => sourceObj.map g.snapshotDamageSource)
       |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
-  if replaced.isNone && (match g.pending with | .chooseReplacement .. => true | _ => false) then
+  if !skipReplace && replaced.isNone && (match g.pending with | .chooseReplacement .. => true | _ => false) then
     g.chainPendingReplacement
-      (.markDamageOn o.id n.toNat msg deathtouch srcSnap combat unpreventable cause)
+      (.markDamageOn o.id n.toNat msg deathtouch srcSnap combat unpreventable cause deferPlayFromExileLogs skipReplace)
+  else if !o.isOnBattlefield then g
   else
   let src? :=
     sourceObj.orElse (fun _ => g.damageSourceObjFromSnapshot? srcSnap)
       |>.orElse (fun _ => g.resolvingMovedDamageSource?)
   let rep :=
-    replaced.getD
-      (g.replaceDamage n (src? := src?) (srcEvent? := srcSnap) (recipientPerm? := some o)
-        (combat := combat) (unpreventable := unpreventable) (applied := applied) (cause := cause))
+    if skipReplace then
+      { amount := n, cause := cause }
+    else
+      replaced.getD
+        (g.replaceDamage n (src? := src?) (srcEvent? := srcSnap) (recipientPerm? := some o)
+          (combat := combat) (unpreventable := unpreventable) (applied := applied) (cause := cause))
   match rep.choice? with
   | some (chooser, choices) =>
     g.promptChooseReplacement chooser choices
-      (.markDamageOn o.id n.toNat msg deathtouch srcSnap combat unpreventable cause)
+      (.markDamageOn o.id n.toNat msg deathtouch srcSnap combat unpreventable cause deferPlayFromExileLogs skipReplace)
   | none =>
   let g := if consumeOrder then g.consumeReplacementOrder rep.applied else g
   let srcEvent : EventObject :=
@@ -515,31 +524,45 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
           rep.preventedAmount shieldCause)
       else g
     let g := g.recordRemoveCounters o.id .shield 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
-      (cause := some shieldCause)
+      (cause := some shieldCause) (deferPlayFromExileLogs := deferPlayFromExileLogs)
     g.logMsg s!"A shield counter is removed from {oName} instead of damage"
   else if n > 0 && rep.shieldRemoved && unpreventable then
     let g := g.recordRemoveCounters o.id .shield 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
-      (cause := some shieldCause)
+      (cause := some shieldCause) (deferPlayFromExileLogs := deferPlayFromExileLogs)
     let g := g.logMsg s!"A shield counter is removed from {oName} (unpreventable damage)"
-    let marked := g.object! o.id
     let amt := rep.amount.toNat
-    let g :=
+    if g.sbaPaused then
       if amt > 0 then
-        let happened := GameEvent.damaged g.turnNumber srcEvent (g.snapshot marked) amt combat (cause := dmgCause)
-        let g := g.record happened
-        let g :=
-          if g.isCreature marked then
-            g.record (GameEvent.damageMarked g.turnNumber marked.id amt (cause := dmgCause))
-          else g
-        let cur := g.object! o.id
-        if g.isPlaneswalker cur then
-          let lose := min amt (cur.status.counterCount .loyalty)
-          if lose > 0 then
-            g.recordRemoveCounters cur.id .loyalty lose (noActor := true) (cause := some dmgCause)
-          else g
-        else g
+        g.chainPendingReplacement
+          (.markDamageOn o.id amt msg deathtouch srcSnap combat unpreventable (some dmgCause)
+            deferPlayFromExileLogs true)
       else g
-    if amt > 0 && !msg.isEmpty then g.logMsg msg else g
+    else
+      match g.findObject? o.id with
+      | some marked =>
+        if marked.isOnBattlefield then
+          let g :=
+            if amt > 0 then
+              let happened := GameEvent.damaged g.turnNumber srcEvent (g.snapshot marked) amt combat (cause := dmgCause)
+              let g := g.record happened
+              let g :=
+                if g.isCreature marked then
+                  g.record (GameEvent.damageMarked g.turnNumber marked.id amt (cause := dmgCause))
+                else g
+              match g.findObject? o.id with
+              | some cur =>
+                if cur.isOnBattlefield && g.isPlaneswalker cur then
+                  let lose := min amt (cur.status.counterCount .loyalty)
+                  if lose > 0 then
+                    g.recordRemoveCounters cur.id .loyalty lose (noActor := true) (cause := some dmgCause)
+                      (deferPlayFromExileLogs := deferPlayFromExileLogs)
+                  else g
+                else g
+              | none => g
+            else g
+          if amt > 0 && !msg.isEmpty then g.logMsg msg else g
+        else g
+      | none => g
   else
   -- CR 120.3c / 120.3e: damage dealt to a creature is marked on it; damage
   -- dealt to a planeswalker removes up to its remaining loyalty counters.
@@ -553,13 +576,16 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         if g.isCreature o then
           g.record (GameEvent.damageMarked g.turnNumber o.id amt (cause := dmgCause))
         else g
-      let cur := g.object! o.id
-      if g.isPlaneswalker cur then
-        let lose := min amt (cur.status.counterCount .loyalty)
-        if lose > 0 then
-          g.recordRemoveCounters cur.id .loyalty lose (noActor := true) (cause := some dmgCause)
+      match g.findObject? o.id with
+      | some cur =>
+        if cur.isOnBattlefield && g.isPlaneswalker cur then
+          let lose := min amt (cur.status.counterCount .loyalty)
+          if lose > 0 then
+            g.recordRemoveCounters cur.id .loyalty lose (noActor := true) (cause := some dmgCause)
+              (deferPlayFromExileLogs := deferPlayFromExileLogs)
+          else g
         else g
-      else g
+      | none => g
     else g
   if amt > 0 && !msg.isEmpty then g.logMsg msg else g
 
@@ -650,12 +676,13 @@ def gainLife (g : Game) (p : PlayerId) (n : Nat)
 def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
     (source : Option EventObject := none)
     (cause : Option EventCause := none)
-    (suppressLifelink : Bool := false) : Game :=
+    (suppressLifelink : Bool := false)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   let srcEvent? :=
     (source.map g.refreshOrKeepDamageSnapshot).orElse (fun _ => g.resolvingDamageSourceEvent?)
   if let .chooseReplacement .. := g.pending then
     g.chainPendingReplacement
-      (.dealDamageToPermanent o.id n.toNat srcEvent? cause suppressLifelink)
+      (.dealDamageToPermanent o.id n.toNat srcEvent? cause suppressLifelink deferPlayFromExileLogs)
   else
   let srcObj? :=
     (g.damageSourceObjFromSnapshot? srcEvent?).orElse (fun _ => g.resolvingMovedDamageSource?)
@@ -665,7 +692,7 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
   match rep.choice? with
   | some (chooser, choices) =>
     g.promptChooseReplacement chooser choices
-      (.dealDamageToPermanent o.id n.toNat srcEvent? cause suppressLifelink)
+      (.dealDamageToPermanent o.id n.toNat srcEvent? cause suppressLifelink deferPlayFromExileLogs)
   | none =>
     let g := g.consumeReplacementOrder rep.applied
     let dealtAmt := rep.amount
@@ -681,6 +708,7 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
     let g :=
       g.markDamageOn o n s!"{g.name o} is dealt {dealtAmt} damage"
         (source := srcEvent?) (sourceObj := srcObj?) (replaced := some rep) (cause := cause)
+        (deferPlayFromExileLogs := deferPlayFromExileLogs)
     if suppressLifelink then g
     else
       let dmgCause :=
@@ -703,7 +731,8 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     (deathtouch := false) (source : Option GameObject := none)
     (sourceSnap : Option EventObject := none)
     (cause : Option EventCause := none)
-    (suppressLifelink : Bool := false) : Game :=
+    (suppressLifelink : Bool := false)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   let resolvedSrc? :=
     source.orElse (fun _ => g.damageSourceObjFromSnapshot? sourceSnap)
       |>.orElse (fun _ => g.resolvingMovedDamageSource?)
@@ -712,7 +741,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
       (sourceSnap.map g.refreshOrKeepDamageSnapshot)
         |>.orElse (fun _ => resolvedSrc?.map g.snapshotDamageSource)
     g.chainPendingReplacement
-      (.dealDamageFrom sourceName srcEvent? o.id n.toNat deathtouch cause suppressLifelink)
+      (.dealDamageFrom sourceName srcEvent? o.id n.toNat deathtouch cause suppressLifelink deferPlayFromExileLogs)
   else
   match resolvedSrc? with
   | some src =>
@@ -724,7 +753,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     match rep.choice? with
     | some (chooser, choices) =>
       g.promptChooseReplacement chooser choices
-        (.dealDamageFrom sourceName (some srcSnap) o.id n.toNat deathtouch cause suppressLifelink)
+        (.dealDamageFrom sourceName (some srcSnap) o.id n.toNat deathtouch cause suppressLifelink deferPlayFromExileLogs)
     | none =>
       let g := g.consumeReplacementOrder rep.applied
       if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
@@ -773,6 +802,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
           g.markDamageOn o n s!"{sourceName} deals {dealtAmt} damage to {g.name o}"
             (deathtouch || hasDt) (source := some srcEvent)
             (sourceObj := liveSrc?.orElse (fun _ => some src)) (replaced := some rep) (cause := rep.cause)
+            (deferPlayFromExileLogs := deferPlayFromExileLogs)
         if suppressLifelink then g
         else
           let dmgCause :=
@@ -792,7 +822,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
     match rep.choice? with
     | some (chooser, choices) =>
       g.promptChooseReplacement chooser choices
-        (.dealDamageFrom sourceName srcEvent? o.id n.toNat deathtouch cause suppressLifelink)
+        (.dealDamageFrom sourceName srcEvent? o.id n.toNat deathtouch cause suppressLifelink deferPlayFromExileLogs)
     | none =>
       let g := g.consumeReplacementOrder rep.applied
       if rep.prevented && !rep.shieldRemoved && !g.preventsAllDamageTo o then
@@ -810,6 +840,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
         let dealtAmt := rep.amount
         g.markDamageOn o n s!"{sourceName} deals {dealtAmt} damage to {g.name o}" deathtouch
           (source := srcEvent?) (replaced := some rep) (consumeOrder := false) (cause := rep.cause)
+          (deferPlayFromExileLogs := deferPlayFromExileLogs)
 
 /-- Deal `n` damage to a player and log the resulting life total (CR 120). -/
 def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)

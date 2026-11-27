@@ -25,11 +25,11 @@ private def expirePlayFromExileEffect (pre g : Game) (eid : EffectId) (_oid : Ob
     (deferLogs : Bool := false) : Game :=
   if deferLogs then
     g.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)
-      (preState? := some pre)
+      (preState? := some pre) (deferPlayFromExileLogs := true)
   else
     let fromIdx := g.events.size
     let g := g.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)
-      (preState? := some pre)
+      (preState? := some pre) (deferPlayFromExileLogs := true)
     emitExpiredPlayFromExileLogs pre g fromIdx
 
 /-- Expire every active continuous effect whose duration satisfies `pred`,
@@ -209,6 +209,7 @@ def clearTurnActivations (g : Game) : Game :=
             | .playerRule p .lifeLocked .untilEndOfTurn
             | .playerRule p .protectionFromEverything .untilEndOfTurn
             | .playerRule p (.protectionFrom _ _ _) .untilEndOfTurn
+            | .playerRule p (.hexproof _ _ _) .untilEndOfTurn
             | .playerRule p (.controlsPlayer _ false) .untilEndOfTurn => p == pl.id
             | _ => false) (cause := cause)
       let expiredDt := g.delayedTriggers.filter (fun dt =>
@@ -446,15 +447,17 @@ def expireUntilTurnCommandEffects (g : Game) (p : PlayerId) (includeTeammates : 
         (skipLogIds := effSkipIds) (deferPlayFromExileLogs := true)
     g0.activeEffects.foldl (fun acc (eid, e) =>
       match e with
-      | .layered _ (.copy ..) _ | .layered _ (.control _) _
-      | .playerRule _ .lifeCantChange _ => acc
+      | .layered _ (.copy ..) _ | .layered _ (.control _) _ => acc
+      | .playerRule q .lifeCantChange (.untilNextTurnOf q')
       | .playerRule q .protectionFromEverything (.untilNextTurnOf q')
-      | .playerRule q (.protectionFrom _ _ _) (.untilNextTurnOf q') =>
+      | .playerRule q (.protectionFrom _ _ _) (.untilNextTurnOf q')
+      | .playerRule q (.hexproof _ _ _) (.untilNextTurnOf q') =>
         if q == q' then acc
         else if matchesTurnOf q' then
           acc.expireEffectById eid (cause := cause) (reconcileControl := false)
             (preState? := some pre) (deferPlayFromExileLogs := true)
         else acc
+      | .playerRule _ .lifeCantChange _ => acc
       | .permission _ (.playFromExile oid perm) (.untilNextTurnOf q) =>
         if perm.fromAdventure || perm.whileExiled || !matchesTurnOf q then acc
         else expirePlayFromExileEffect pre acc eid oid cause (reconcileControl := false)
@@ -556,6 +559,10 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
               match s with
               | .playerRule r (.protectionFrom _ _ _) (.untilNextTurnOf r') => r == t && r' == t
               | _ => false
+            let isSelfHex (s : ContinuousEffectSpec) : Bool :=
+              match s with
+              | .playerRule r (.hexproof _ _ _) (.untilNextTurnOf r') => r == t && r' == t
+              | _ => false
             let acc :=
               if acc.hasActiveEffect (.protectionFromEverything t) then
                 acc.expireMatching (· == .protectionFromEverything t) (cause := cause)
@@ -571,6 +578,12 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
                   (deferPlayFromExileLogs := true)
                   |>.logMsg
                     s!"{(acc.player t).name}'s protection ends (CR 800.4m)"
+              else acc
+            let acc :=
+              if acc.activeEffects.any (fun (_, s) => isSelfHex s) then
+                acc.expireMatching isSelfHex (cause := cause)
+                  (reconcileControl := false) (preState? := some pre)
+                  (deferPlayFromExileLogs := true)
               else acc
             acc.expireMatching (· == .lifeCantChange t) (cause := cause)
               (reconcileControl := false) (preState? := some pre)
@@ -592,6 +605,7 @@ def expireUntilNextTurnEffects (g : Game) (p : PlayerId) : Game :=
       | .playerRule q .lifeLocked .untilEndOfTurn
       | .playerRule q .protectionFromEverything .untilEndOfTurn
       | .playerRule q (.protectionFrom _ _ _) .untilEndOfTurn
+      | .playerRule q (.hexproof _ _ _) .untilEndOfTurn
       | .playerRule q (.typeSpellCostLess _ _) .untilEndOfTurn
       | .playerRule q (.supertypeSpellCostLess _ _) .untilEndOfTurn => matchesDeparted q
       | .playerRule q (.controlsPlayer them false) .untilEndOfTurn =>
@@ -668,7 +682,7 @@ when removing a stun counter opens a CR 800.4c pause. -/
 def untapStepPermanents (g : Game) (ids : Array ObjectId)
     (fromEventIdx? : Option Nat := none) : Game :=
   if ids.isEmpty && fromEventIdx?.isNone then g
-  else if let .chooseReplacement .. := g.pending then
+  else if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     g.chainPendingReplacement (.untapStepPermanents ids fromEventIdx?)
   else
   let preLoop :=
@@ -853,8 +867,14 @@ def expireTurnStartProtectionAndLife (g : Game) (p : PlayerId) : Game :=
       match s with
       | .playerRule r (.protectionFrom _ _ _) (.untilNextTurnOf r') => r == q && r' == q
       | _ => false
+    let isSelfHex (s : ContinuousEffectSpec) : Bool :=
+      match s with
+      | .playerRule r (.hexproof _ _ _) (.untilNextTurnOf r') => r == q && r' == q
+      | _ => false
     let hadProtOther := g.activeEffects.any (fun (_, s) => isSelfProt s)
+    let hadHex := g.activeEffects.any (fun (_, s) => isSelfHex s)
     let hadProt := hadProtAll || hadProtOther
+    let g := if hadHex then g.expireMatching isSelfHex (cause := cause) else g
     if hadProt || hadLife then
       let g := if hadProtAll then g.expireAll (.protectionFromEverything q) (cause := cause) else g
       let g := if hadProtOther then g.expireMatching isSelfProt (cause := cause) else g
@@ -1303,7 +1323,8 @@ partial def beginTurnAfterStartExpiry (g : Game) : Game :=
           g.activeEffects.any (fun (_, s) =>
             s == .lifeCantChange q || s == .protectionFromEverything q ||
               (match s with
-               | .playerRule r (.protectionFrom _ _ _) (.untilNextTurnOf r') => r == q && r' == q
+               | .playerRule r (.protectionFrom _ _ _) (.untilNextTurnOf r')
+               | .playerRule r (.hexproof _ _ _) (.untilNextTurnOf r') => r == q && r' == q
                | _ => false)))
     let g :=
       if needDeferred then

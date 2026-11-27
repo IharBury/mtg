@@ -53,31 +53,63 @@ def placeSearched (g : Game) (p : PlayerId) (id : ObjectId) (tapped : Bool)
     else
       (g.finishPlaceSearched p id name tapped cause, some newId)
 
+/-- Reveal `ids` and put them into `p`'s hand sequentially inside an open batch,
+pausing across `Pending.chooseReplacement` / `sbaPaused` and emitting expired
+`.playFromExile` logs once at batch exit. -/
+def placeSearchedHandLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
+    (cause : Option EventCause := none)
+    (pendingCard : Option (ObjectId × String) := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+    return g.chainPendingReplacement
+      (.finishPostStep (.placeSearchedHandLoop p ids cause pendingCard (some loopFromIdx)))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
+  let mut g := g
+  if let some (fromId, name) := pendingCard then
+    if (g.followMovedToZone? fromId (· == .hand p)).isSome then
+      g := g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
+  for i in [0:ids.size] do
+    let id := ids[i]!
+    match g.findObject? id with
+    | none => pure ()
+    | some o =>
+      let name := g.name o
+      let revCause := some (cause.getD (g.resolvingOrRuleCause p))
+      g := g.record (GameEvent.revealed g.turnNumber p #[id] (cause := revCause))
+      let (g', _) := g.move id (.hand p) none (cause := cause) (deferPlayFromExileLogs := true)
+      g := g'
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+        let rem := ids.extract (i + 1) ids.size
+        return g.chainPendingReplacement
+          (.finishPostStep (.placeSearchedHandLoop p rem cause (some (id, name)) (some loopFromIdx)))
+      if (g.followMovedToZone? id (· == .hand p)).isSome then
+        g := g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
+  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+
 /-- Reveal `id` and put it into `p`'s hand. -/
 def placeSearchedHand (g : Game) (p : PlayerId) (id : ObjectId)
     (cause : Option EventCause := none) : Game :=
-  match g.findObject? id with
-  | none => g
-  | some o =>
-    let name := g.name o
-    let revCause := some (cause.getD (g.resolvingOrRuleCause p))
-    let g := g.record (GameEvent.revealed g.turnNumber p #[id] (cause := revCause))
-    let (g, _) := g.move id (.hand p) none (cause := cause)
-    let msg := s!"{(g.player p).name} reveals {name} and puts it into their hand"
-    if let .chooseReplacement .. := g.pending then
-      g.chainPendingReplacement (.logMessage msg)
-    else if (g.followMovedToZone? id (· == .hand p)).isSome then
-      g.logMsg msg
-    else g
+  g.placeSearchedHandLoop p #[id] (cause := cause)
 
 /-- Put `ids` into their owners' graveyards sequentially inside an open batch,
 deferring each `"is put into ...'s graveyard"` log across `Pending.chooseReplacement`
 and emitting it only if the card actually arrived in `.graveyard owner`. -/
 def placeSearchedGraveyardLoop (g : Game) (ids : Array ObjectId)
     (cause : Option EventCause := none)
-    (pendingLog : Option (ObjectId × PlayerId × String) := none) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
-    return g.chainPendingReplacement (.placeSearchedGraveyardLoop ids cause pendingLog)
+    (pendingLog : Option (ObjectId × PlayerId × String) := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+    return g.chainPendingReplacement
+      (.placeSearchedGraveyardLoop ids cause pendingLog (some loopFromIdx))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let mut g := g
   if let some (fromId, owner, name) := pendingLog then
     if (g.followMovedToZone? fromId (· == .graveyard owner)).isSome then
@@ -89,25 +121,31 @@ def placeSearchedGraveyardLoop (g : Game) (ids : Array ObjectId)
     | some o =>
       let name := g.name o
       let owner := o.owner
-      let (g', _) := g.move id (.graveyard owner) none (cause := cause)
+      let (g', _) := g.move id (.graveyard owner) none (cause := cause) (deferPlayFromExileLogs := true)
       g := g'
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
         let rem := ids.extract (i + 1) ids.size
         return g.chainPendingReplacement
-          (.placeSearchedGraveyardLoop rem cause (some (id, owner, name)))
+          (.placeSearchedGraveyardLoop rem cause (some (id, owner, name)) (some loopFromIdx))
       if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
         g := g.logMsg s!"{name} is put into {(g.player owner).name}'s graveyard"
-  return g
+  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Exile `ids` sequentially inside an open batch and link each card that
 arrives in `.exile` to `source`'s CR 607.2a `leaveTriggerExile` list, pausing
 across `Pending.chooseReplacement` via `.exileSearchedLinkedLoop`. -/
 def exileSearchedLinkedLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (source : Option ObjectId) (cause : Option EventCause := none)
-    (pendingFromId : Option ObjectId := none) : Game := Id.run do
-  if let .chooseReplacement .. := g.pending then
+    (pendingFromId : Option ObjectId := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     return g.chainPendingReplacement
-      (.finishPostStep (.exileSearchedLinkedLoop p ids source cause pendingFromId))
+      (.finishPostStep (.exileSearchedLinkedLoop p ids source cause pendingFromId (some loopFromIdx)))
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let mut g := g
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
@@ -127,17 +165,17 @@ def exileSearchedLinkedLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
           match g.currentResolvingContext? with
           | some _ => g.allocDelayedCause (some p) source
           | none => (g, .gameRule .spellCast)
-      let (g2, _) := g1.move id .exile none (cause := some linkCause)
+      let (g2, _) := g1.move id .exile none (cause := some linkCause) (deferPlayFromExileLogs := true)
       g := g2
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
         let rem := ids.extract (i + 1) ids.size
         return g.chainPendingReplacement
-          (.finishPostStep (.exileSearchedLinkedLoop p rem source (some linkCause) (some id)))
+          (.finishPostStep (.exileSearchedLinkedLoop p rem source (some linkCause) (some id) (some loopFromIdx)))
       if let some moved := g.followMovedToZone? id (· == .exile) then
         if let some src := source.bind g.findObject? then
           g := g.changeObject src.id (.pushLeaveTriggerExile moved.id)
         g := g.logMsg s!"{(g.player p).name} exiles {name}"
-  return g
+  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Exile `id` and link the exiled card to `source` via CR 607.2a `leaveTriggerExile`. -/
 def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
@@ -210,7 +248,13 @@ post-entry checks and share a single arrival `BatchId`), then run
 def placeSearchedBatchCore (g : Game) (p : PlayerId) (remainingIds : Array ObjectId)
     (tapped : Bool) (cause : Option EventCause := none)
     (entered : Array (ObjectId × String) := #[])
-    (preBattlefield : Option (Array GameObject) := none) : Game := Id.run do
+    (preBattlefield : Option (Array GameObject) := none)
+    (fromEventIdx? : Option Nat := none) : Game := Id.run do
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  let preLoop :=
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => g
   let preBf := preBattlefield.getD g.battlefield
   let mut g := g
   let mut entered := entered
@@ -221,23 +265,22 @@ def placeSearchedBatchCore (g : Game) (p : PlayerId) (remainingIds : Array Objec
     | some o =>
       let name := g.name o
       let (g', _) := g.putOntoBattlefield id p (tapped := tapped)
-        (preBattlefield := some preBf) (cause := cause)
+        (preBattlefield := some preBf) (cause := cause) (deferPlayFromExileLogs := true)
       g := g'
       entered := entered.push (id, name)
-      if g.pending != .none then
+      if g.sbaPaused || g.pending != .none then
         let rem := remainingIds.extract (i + 1) remainingIds.size
         return g.chainPendingReplacement
-          (.placeSearchedBatch p rem tapped cause entered (some preBf))
+          (.placeSearchedBatch p rem tapped cause entered (some preBf) (some loopFromIdx))
   for i in [0:entered.size] do
     let (fromId, name) := entered[i]!
     g := g.finishPlaceSearched p fromId name tapped cause
-    if g.pending != .none then
+    if g.sbaPaused || g.pending != .none then
       let remEntered := entered.extract (i + 1) entered.size
-      if !remEntered.isEmpty then
-        g := g.chainPendingReplacement
-          (.placeSearchedBatch p #[] tapped cause remEntered (some preBf))
+      g := g.chainPendingReplacement
+        (.placeSearchedBatch p #[] tapped cause remEntered (some preBf) (some loopFromIdx))
       return g
-  return g
+  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Place each searched card in `ids` onto the battlefield simultaneously in a
 single `withBatch`, chaining `.placeSearchedBatch` if an earlier placement or
@@ -245,12 +288,13 @@ untap replacement pauses on `Pending.chooseReplacement`. -/
 def placeSearchedBatch (g : Game) (p : PlayerId) (ids : Array ObjectId) (tapped : Bool)
     (cause : Option EventCause := none)
     (entered : Array (ObjectId × String) := #[])
-    (preBattlefield : Option (Array GameObject) := none) : Game :=
+    (preBattlefield : Option (Array GameObject) := none)
+    (fromEventIdx? : Option Nat := none) : Game :=
   if preBattlefield.isSome then
-    g.placeSearchedBatchCore p ids tapped cause entered preBattlefield
+    g.placeSearchedBatchCore p ids tapped cause entered preBattlefield fromEventIdx?
   else
     g.withBatch cause fun g =>
-      g.placeSearchedBatchCore p ids tapped cause entered (some g.battlefield)
+      g.placeSearchedBatchCore p ids tapped cause entered (some g.battlefield) fromEventIdx?
 
 /-- Finish the post-`placeSearched` steps (moving remaining cards to hand,
 shuffling, behold-untap, or waiting `+1/+1` counter) of `finishLibrarySearch`. -/
@@ -264,7 +308,7 @@ def finishSearchAfterPlace (g : Game) (p : PlayerId) (fromId : Option ObjectId)
     let g :=
       if handRest.isEmpty then g
       else g.withBatch cause fun g =>
-        handRest.foldl (fun g id => g.placeSearchedHand p id (cause := cause)) g
+        g.placeSearchedHandLoop p handRest (cause := cause)
     g.shuffleSearch p after
   | .battlefieldTappedBeholdUntap subtype =>
     match fromId.bind (fun fid => g.followMovedToZone? fid (· == .battlefield)) with
@@ -303,13 +347,13 @@ def finishLibrarySearch (g : Game) (p : PlayerId) (ids : Array ObjectId)
       let (g, cause) := allocSearchStepCause g
       let g := g.record (GameEvent.searched g.turnNumber p p ids (cause := some cause))
       let g := g.withBatch (some cause) fun g =>
-        ids.foldl (fun g id => g.placeSearchedHand p id (cause := some cause)) g
+        g.placeSearchedHandLoop p ids (cause := some cause)
       g.shuffleSearch p after
     | .handThenDiscardRandom =>
       let (g, cause) := allocSearchStepCause g
       let g := g.record (GameEvent.searched g.turnNumber p p ids (cause := some cause))
       let g := g.withBatch (some cause) fun g =>
-        ids.foldl (fun g id => g.placeSearchedHand p id (cause := some cause)) g
+        g.placeSearchedHandLoop p ids (cause := some cause)
       g.shuffleThen p (.discardRandom p)
     | .graveyard =>
       let (g, cause) := allocSearchStepCause g

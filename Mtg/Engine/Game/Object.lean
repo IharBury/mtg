@@ -64,6 +64,9 @@ structure PlayPermission where
   prepareSource : Option ObjectId := none
   /-- Cast by paying life equal to mana value instead of the mana cost. -/
   payLifeEqualManaValue : Bool := false
+  /-- Whether playing a land is permitted (CR 305.9: "You may play" allows lands,
+  "You may cast" sets this to `false`). -/
+  landsAllowed : Bool := true
 deriving Repr, Inhabited, BEq
 
 /-- Frozen Layer-6 ability-retention and evaluated ability/count snapshot carried

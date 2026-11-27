@@ -255,10 +255,13 @@ private def prePhaseOutLkiCtrl? (pre : Game) (preObj : GameObject)
       |>.orElse (fun _ => some fallback)
 
 private def interpWaitEmitsPfe (idx : Nat) (w : InterpState) : Bool :=
-  w.stack.any fun
-    | .afterMoveLoop _ _ _ _ _ (some fi)
-    | .afterCounterOpLoop _ _ _ (some fi)
-    | .afterCopyAndCastExileLoop _ _ _ _ _ (some fi) => fi ≤ idx
+  w.queue.isEmpty &&
+    match w.stack.back? with
+    | some (.afterMoveLoop _ _ _ _ _ (some fi))
+    | some (.afterCounterOpLoop _ _ _ (some fi))
+    | some (.afterCopyAndCastExileLoop _ _ _ _ _ (some fi))
+    | some (.afterDamagePermanentsLoop _ _ _ _ _ fi _)
+    | some (.afterDividedDamageLoop _ _ _ fi _) => fi ≤ idx
     | _ => false
 
 /-- Returns `(emitsBeforeBoundary, hitBoundary)` for whether `pr` emits
@@ -273,23 +276,49 @@ private def contEmitsPfeBeforeBoundary (idx : Nat) : PendingReplacement → Bool
   | .leavePlayersWhoLost _ _ _ _ (some fi)
   | .finishConcede _ _ _ _ _ _ _ (some fi)
   | .concedePlayersLoop _ _ _ _ _ _ _ _ _ _ (some fi)
-  | .payCostPickItems _ _ _ _ _ (some fi) =>
+  | .payCostPickItems _ _ _ _ _ (some fi)
+  | .finishActivationExtraCosts _ _ _ _ _ _ _ _ _ _ _ (some fi)
+  | .finishActivateManaAbilityPicks _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (some fi)
+  | .finishPostStep (.resolveCascadeLoop _ _ _ _ _ (some fi))
+  | .finishPostStep (.exileUntilInstantOrSorceryLoop _ _ _ _ _ _ (some fi))
+  | .checkSBA (some fi) =>
     (fi ≤ idx, fi > idx)
-  | .continueInterpreter w => (interpWaitEmitsPfe idx w, false)
+  | .continueInterpreter w =>
+    if interpWaitEmitsPfe idx w then (true, false)
+    else (false, !w.isPureBatchLoopCont)
   | .endControlExileLoop _ _ _ _ (some fi) false
   | .moveSimultaneousToGraveyard _ _ _ false (some fi)
   | .moveCardsToGraveyardLoop _ _ (some fi)
   | .sacrificePermanentsLoop _ _ _ _ _ (some fi)
   | .destroyPermanentsLoop _ _ _ _ _ _ _ (some fi)
   | .exilePermanentsLoop _ _ _ _ (some fi)
-  | .flickerLoop _ _ _ _ _ _ _ _ _ _ (some fi)
+  | .flickerLoop _ _ _ _ _ _ _ _ _ _ (some fi) false
   | .untapStepPermanents _ (some fi)
-  | .millCardsLoop _ _ _ _ _ _ (some fi)
+  | .untapPermanentsLoop _ _ _ _ (some fi)
+  | .millCardsLoop _ _ _ _ _ _ (some fi) false
   | .putToBattlefieldLoop _ _ _ _ _ _ _ _ _ _ _ (some fi)
   | .finishLinkedExileMove _ _ _ _ (some fi)
   | .returnLinkedExileLoop _ _ _ _ _ (some fi)
   | .commitEnteringAttackItems _ _ _ _ _ (some fi)
   | .finishEnteringAttackCards _ _ (some fi)
+  | .dealAssignedCombatDamage _ (some fi)
+  | .dealDamageToEachCreatureMatching _ _ _ _ _ _ _ (some fi) _
+  | .placeSearchedBatch _ _ _ _ _ _ (some fi)
+  | .placeSearchedGraveyardLoop _ _ _ (some fi)
+  | .surveilMoveLoop _ _ _ (some fi)
+  | .finishSurveilPostMove _ _ _ _ _ (some fi)
+  | .finishPostStep (.finishSurveilHandMove _ _ _ _ _ (some fi))
+  | .finishPostStep (.damageUpToOneAndPlayerLoop _ _ _ _ _ _ _ (some fi))
+  | .finishPostStep (.exileZemoBoastCards _ _ _ (some fi))
+  | .finishPostStep (.exileSearchedLinkedLoop _ _ _ _ _ (some fi))
+  | .finishPostStep (.exileTopPlayIfYouControlSubtypeLoop _ _ _ _ _ (some fi))
+  | .finishPostStep (.exileTopMayCastUpToLoop _ _ _ _ _ _ _ (some fi))
+  | .finishPostStep (.moveIdsInOrderLoop _ _ _ _ _ _ (some fi))
+  | .finishPostStep (.millOpponentsOnly _ _ _ (some fi))
+  | .finishPostStep (.returnOwnedCreaturesLoop _ _ _ _ _ _ (some fi))
+  | .finishPostStep (.placeSearchedHandLoop _ _ _ _ (some fi))
+  | .finishPostStep (.applyRiddlesToHandLoop _ _ _ (some fi))
+  | .finishPostStep (.exileCardsLoop _ _ (some fi))
   | .finishPostStep (.returnToHandLoop _ _ (some fi))
   | .finishPostStep (.discardCleanupIds _ _ _ (some fi))
   | .finishPostStep (.discardHandIdsLoop _ _ _ _ (some fi))
@@ -298,8 +327,7 @@ private def contEmitsPfeBeforeBoundary (idx : Nat) : PendingReplacement → Bool
   | .finishPostStep (.movePublicCardsToHandLoop _ _ _ _ _ _ _ (some fi))
   | .finishPostStep (.exileOpponentLibrariesLoop _ _ _ _ _ (some fi))
   | .finishPostStep (.revealPutCreaturesStep _ _ _ _ _ (some fi))
-  | .finishPostStep (.exileTopForPlayLoop _ _ _ _ _ _ (some fi))
-  | .checkSBA (some fi) => (fi ≤ idx, false)
+  | .finishPostStep (.exileTopForPlayLoop _ _ _ _ _ _ (some fi)) => (fi ≤ idx, false)
   | pr => (false, pr.startsWithPlayFromExileDeferBoundary)
 
 /-- Whether an already-queued continuation that executes after the paused
@@ -324,15 +352,25 @@ private def hasQueuedPfeEmitterAfter (g : Game) (afterHere? : Option PendingRepl
         let (em, hit) := contEmitsPfeBeforeBoundary idx pr
         if em then return true
         if hit then return false
+    if frame.afterRandom != .none then
+      return false
+    let interpBlockedByDeferredExile :=
+      g.proposedSpell.isNone &&
+        (frame.pendingMayCastFromExile.isSome || frame.pendingFreeCopies.isSome)
     if let some w := frame.interpWait? then
-      if interpWaitEmitsPfe idx w then
-        return true
+      if !interpBlockedByDeferredExile then
+        if interpWaitEmitsPfe idx w then
+          return true
+        return false
     for oOff in [0:frame.outerPendingReplacements.size] do
       let oi := frame.outerPendingReplacements.size - 1 - oOff
       let outer := frame.outerPendingReplacements[oi]!
       let (em, hit) := contEmitsPfeBeforeBoundary idx outer
       if em then return true
       if hit then return false
+    if frame.resolutionFinish.isSome || frame.pendingMayCastFromExile.isSome ||
+        frame.pendingFreeCopies.isSome || frame.interpWait?.isSome then
+      return false
   return false
 
 /-- Exile each `(oid, logLine, prevCtrl)` in `remaining` sequentially (CR 800.4a /
@@ -356,10 +394,11 @@ def runEndControlExileLoop (g : Game)
     g.chainPendingReplacement
       (.endControlExileLoop remaining cause pendingLog extraSkipIds (some loopFromIdx) pauseDefer)
   else
-    let preLoop :=
+    let gEntryLoop := g
+    let mkPreLoop : Unit → Game := fun () =>
       match fromEventIdx? with
-      | some idx => if idx < g.events.size then g.mkHistoricalGameAt idx else g
-      | none => g
+      | some idx => if idx < gEntryLoop.events.size then gEntryLoop.mkHistoricalGameAt idx else gEntryLoop
+      | none => gEntryLoop
     let priorCont? := g.pendingReplacement
     let g := if priorCont?.isSome then g.change (.pendingReplacement none) else g
     let runLoop (g : Game) : Game := Id.run do
@@ -407,7 +446,7 @@ def runEndControlExileLoop (g : Game)
       | some prior => g.chainPendingReplacement prior
       | none => g
     if deferPlayFromExileLogs || pausedSelf then g
-    else emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    else emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
 
 private def inActiveEndControlExile (oid : ObjectId) : PendingReplacement → Bool
   | .endControlExileLoop remaining _ pendingLog _ _ _ =>
@@ -4511,10 +4550,11 @@ def leavePlayersWhoLost (g : Game)
     (departedIn : Array PlayerId := #[])
     (rewindProposalIn : Option Bool := none)
     (fromEventIdx? : Option Nat := none) : Game :=
-  let pre :=
+  let gEntry := g
+  let mkPre : Unit → Game := fun () =>
     match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | some idx => gEntry.mkHistoricalGameAt idx
+    | none => gEntry
   let fromIdx := fromEventIdx?.getD g.events.size
   let (g, saved?, popOuter, departed, rewindProposal) :=
     g.leavePlayersWhoLostCore savedIn popOuterIn departedIn rewindProposalIn
@@ -4525,9 +4565,9 @@ def leavePlayersWhoLost (g : Game)
       g.chainPendingReplacement
         (.leavePlayersWhoLost saved? popOuter departed rewindProposal (some fromIdx))
     else if g.over then g
-    else emitExpiredPlayFromExileLogs pre g fromIdx
+    else emitExpiredPlayFromExileLogsLazy mkPre g fromIdx
   else
-    let g := if g.over then g else emitExpiredPlayFromExileLogs pre g fromIdx
+    let g := if g.over then g else emitExpiredPlayFromExileLogsLazy mkPre g fromIdx
     g.restoreSavedPostLeave saved? popOuter (departed := departed) (rewindProposal := rewindProposal)
 
 def emptyManaPools (g : Game) : Game :=
