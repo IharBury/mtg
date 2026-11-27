@@ -279,7 +279,8 @@ def expand : KeywordAbility → ExpandedKeyword
           body := .forEach (.eachPlayer { relation := .opponent, pred := .not .isDefendingPlayer }) ⟨0⟩
             (Instruction.may .you none
               (.create (.tokens .you (.const 1) (.copyOf .this #[])
-                { tapped := true, attacking := true, delayedAction? := some .exileAtEndOfCombat }))) } }] }
+                { tapped := true, attacking := true, attackingPlayer? := some (.stepPlayers ⟨0⟩),
+                  delayedAction? := some .exileAtEndOfCombat }))) } }] }
   -- CR 702.93a: Undying (CR 603.4 intervening-if: no +1/+1 counters)
   | .simple .undying =>
     { triggeredAbilities := #[{

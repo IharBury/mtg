@@ -28,10 +28,20 @@ def finishProposedSpell (g : Game) : Except String Game := do
   if prop.needsDiscardCard && (gSneak.discardableHandIds prop.caster).isEmpty then
     return (← g.reverseProposedSpell? (resumeContinuation := true))
   if prop.teamworkPaid && !prop.teamworkCreatures.isEmpty then
-    let teamworkOk := prop.teamworkCreatures.all fun id =>
-      (g.findObject? id).any fun o =>
-        o.isOnBattlefield && g.isCreature o && g.controlledBy o prop.caster && !o.status.tapped
-    if !teamworkOk then
+    let need? :=
+      ((g.findObject? prop.spellId).bind fun sp =>
+        ({ g.baseCard sp with keywords := g.proposedSpellKeywords prop sp }).teamwork)
+      |>.orElse fun () => (g.baseCard prop.original).teamwork
+    let (teamworkOk, totalPower) := prop.teamworkCreatures.foldl (init := (true, (0 : Int)))
+      fun (ok, acc) id =>
+        match g.findObject? id with
+        | some o =>
+          if o.isOnBattlefield && g.isCreature o && g.controlledBy o prop.caster && !o.status.tapped then
+            (ok, acc + g.power o)
+          else (false, acc)
+        | none => (false, acc)
+    let powerOk := need?.all fun need => totalPower ≥ (need : Int)
+    if !teamworkOk || !powerOk then
       return (← g.reverseProposedSpell? (resumeContinuation := true))
   if let some quality := prop.needsBehold then
     let hasPerm := (g.permanentsOf prop.caster).any (fun o => g.hasSubtype o quality)

@@ -625,7 +625,7 @@ for any active `.modifyLifeGain` replacement effects. Gaining 0 life does
 nothing (CR 119.9). -/
 def gainLife (g : Game) (p : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement (.gainLife p n cause)
   else if !g.stillInGame p then g
   else
@@ -711,7 +711,7 @@ def dealDamageToPermanent (g : Game) (o : GameObject) (n : Int)
     (deferPlayFromExileLogs : Bool := false) : Game :=
   let srcEvent? :=
     (source.map g.refreshOrKeepDamageSnapshot).orElse (fun _ => g.resolvingDamageSourceEvent?)
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement
       (.dealDamageToPermanent o.id n.toNat srcEvent? cause suppressLifelink deferPlayFromExileLogs)
   else
@@ -767,7 +767,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
   let resolvedSrc? :=
     source.orElse (fun _ => g.damageSourceObjFromSnapshot? sourceSnap)
       |>.orElse (fun _ => g.resolvingMovedDamageSource?)
-  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+  if g.sbaPaused then
     let srcEvent? :=
       (sourceSnap.map g.refreshOrKeepDamageSnapshot)
         |>.orElse (fun _ => resolvedSrc?.map g.snapshotDamageSource)
@@ -887,7 +887,7 @@ def dealDamageToPlayer (g : Game) (pid : PlayerId) (n : Int)
       |>.orElse (fun _ => source.map g.snapshotDamageSource)
       |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
   let pl := g.player pid
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement
       (.dealDamageToPlayer pid n.toNat srcSnap (!preventable) cause suppressLifelink)
   else if !g.stillInGame pid then g
@@ -1033,7 +1033,7 @@ def dealDamageToPlayers (g : Game) (players : Array PlayerId) (n : Int)
     (sourceSnap.map g.refreshOrKeepDamageSnapshot)
       |>.orElse (fun _ => source.map g.snapshotDamageSource)
       |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement
       (.dealDamageToPlayers players n.toNat srcSnap cause startEventIdx suppressLifelink)
   else
@@ -1046,7 +1046,7 @@ def dealDamageToPlayers (g : Game) (players : Array PlayerId) (n : Int)
       if g.stillInGame pid then
         g := g.dealDamageToPlayer pid n (source := source) (sourceSnap := srcSnap)
           (cause := c) (suppressLifelink := true)
-        if let .chooseReplacement .. := g.pending then
+        if g.sbaPaused then
           let rem := players.extract (i + 1) players.size
           if !rem.isEmpty || !suppressLifelink then
             g := g.chainPendingReplacement
@@ -1091,7 +1091,7 @@ damage event to itself (CR 701.14c); otherwise both creatures' powers are
 snapshotted upfront before dealing either side's damage / lifelink (CR 701.14a). -/
 def fightCreatures (g : Game) (src dest : GameObject)
     (cause : Option EventCause := none) : Game :=
-  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+  if g.sbaPaused then
     g.chainPendingReplacement (.finishPostStep (.fightCreatures src.id dest.id cause))
   else if !src.isOnBattlefield || !dest.isOnBattlefield || !g.isCreature src || !g.isCreature dest then
     g
@@ -1113,7 +1113,7 @@ def fightCreatures (g : Game) (src dest : GameObject)
       let destAmt := (g.power dest).toNat
       let g := g.dealFightDamage src dest (cause := c) (amount := some srcAmt)
         (deferPlayFromExileLogs := true)
-      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+      if g.sbaPaused then
         g.chainPendingReplacement (.dealFightDamage dest.id src.id c (some destAmt) false (some fightFromIdx))
       else
         let g :=
@@ -1124,7 +1124,7 @@ def fightCreatures (g : Game) (src dest : GameObject)
                 (deferPlayFromExileLogs := true)
             else g
           | _, _ => g
-        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+        if g.sbaPaused then
           g.chainPendingReplacement (.finishPostStep (.emitExpiredPlayFromExileFrom fightFromIdx))
         else
           emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt fightFromIdx) g fightFromIdx
@@ -1133,7 +1133,7 @@ def fightCreatures (g : Game) (src dest : GameObject)
 (CR 119.3). Loss of life is not damage (CR 119.3 / 120.3). -/
 def loseLife (g : Game) (p : PlayerId) (n : Nat)
     (cause : Option EventCause := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     if n == 0 then g else g.chainPendingReplacement (.loseLifeAfterDraw p n cause)
   else if n == 0 || !g.stillInGame p then g
   else
@@ -1150,7 +1150,7 @@ greater than `p`'s current life total, `p` gains the difference via `gainLife`;
 if less, `p` loses the difference. -/
 def setLife (g : Game) (p : PlayerId) (life : Int) (msg : String)
     (cause : Option EventCause := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement (.setLife p life msg cause)
   else if !g.stillInGame p then g
   else
@@ -1159,7 +1159,7 @@ def setLife (g : Game) (p : PlayerId) (life : Int) (msg : String)
       g.logMsg msg
     else if life > pl.life then
       let g := g.gainLife p (life - pl.life).toNat (cause := cause)
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         g.chainPendingReplacement (.logMessage msg)
       else
         g.logMsg msg
@@ -1207,12 +1207,12 @@ def drawThenLoseLife (g : Game) (p : PlayerId) (cards life : Nat) : Game :=
       | _ =>
         let (g, c) := g.allocDelayedCause (some p)
         (g, some c)
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     let g := g.chainPendingReplacement (.draw p cards sharedCause?)
     g.chainPendingReplacement (.loseLifeAfterDraw p life sharedCause?)
   else
     let g := g.draw p cards (cause := sharedCause?)
-    if let .chooseReplacement .. := g.pending then
+    if g.sbaPaused then
       g.chainPendingReplacement (.loseLifeAfterDraw p life sharedCause?)
     else
       g.loseLife p life (cause := sharedCause?)
@@ -1276,12 +1276,19 @@ def damageDealtToPermanentSince (g : Game) (oid : ObjectId) (startIdx : Nat) : N
         | .player _ => pure ()
   return total
 
-/-- Lethal damage threshold of `o` before dealing damage (CR 120.4a; ruling 790):
-remaining toughness for a creature, loyalty for a planeswalker, and the greater
-of the two when it is both. -/
-def lethalDamageThreshold (g : Game) (o : GameObject) : Nat :=
+/-- Lethal damage threshold of `o` before dealing damage (CR 120.4a / 702.2c;
+ruling 790): remaining toughness for a creature (0 if already dealt deathtouch
+damage since the last SBA check, or capped at 1 when the incoming damage source
+has deathtouch), loyalty for a planeswalker, and the greater of the two when it
+is both. -/
+def lethalDamageThreshold (g : Game) (o : GameObject) (deathtouch : Bool := false) : Nat :=
   let creatureLethal :=
-    if g.isCreature o then (g.toughness o - o.status.damage).toNat else 0
+    if g.isCreature o then
+      if g.deathtouchDealtSinceLastSba o.id then 0
+      else
+        let rem := (g.toughness o - o.status.damage).toNat
+        if deathtouch then Nat.min rem 1 else rem
+    else 0
   let loyalty := if g.isPlaneswalker o then o.status.loyaltyCounters else 0
   Nat.max creatureLethal loyalty
 

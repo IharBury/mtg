@@ -64,10 +64,11 @@ def placeSearchedHandLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
   if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     return g.chainPendingReplacement
       (.finishPostStep (.placeSearchedHandLoop p ids cause pendingCard (some loopFromIdx)))
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let mut g := g
   if let some (fromId, name) := pendingCard then
     if (g.followMovedToZone? fromId (· == .hand p)).isSome then
@@ -82,13 +83,13 @@ def placeSearchedHandLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
       g := g.record (GameEvent.revealed g.turnNumber p #[id] (cause := revCause))
       let (g', _) := g.move id (.hand p) none (cause := cause) (deferPlayFromExileLogs := true)
       g := g'
-      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+      if g.sbaPaused then
         let rem := ids.extract (i + 1) ids.size
         return g.chainPendingReplacement
           (.finishPostStep (.placeSearchedHandLoop p rem cause (some (id, name)) (some loopFromIdx)))
       if (g.followMovedToZone? id (· == .hand p)).isSome then
         g := g.logMsg s!"{(g.player p).name} reveals {name} and puts it into their hand"
-  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
 
 /-- Reveal `id` and put it into `p`'s hand. -/
 def placeSearchedHand (g : Game) (p : PlayerId) (id : ObjectId)
@@ -103,13 +104,14 @@ def placeSearchedGraveyardLoop (g : Game) (ids : Array ObjectId)
     (pendingLog : Option (ObjectId × PlayerId × String) := none)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+  if g.sbaPaused then
     return g.chainPendingReplacement
       (.placeSearchedGraveyardLoop ids cause pendingLog (some loopFromIdx))
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let mut g := g
   if let some (fromId, owner, name) := pendingLog then
     if (g.followMovedToZone? fromId (· == .graveyard owner)).isSome then
@@ -123,13 +125,13 @@ def placeSearchedGraveyardLoop (g : Game) (ids : Array ObjectId)
       let owner := o.owner
       let (g', _) := g.move id (.graveyard owner) none (cause := cause) (deferPlayFromExileLogs := true)
       g := g'
-      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+      if g.sbaPaused then
         let rem := ids.extract (i + 1) ids.size
         return g.chainPendingReplacement
           (.placeSearchedGraveyardLoop rem cause (some (id, owner, name)) (some loopFromIdx))
       if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
         g := g.logMsg s!"{name} is put into {(g.player owner).name}'s graveyard"
-  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
 
 /-- Exile `ids` sequentially inside an open batch and link each card that
 arrives in `.exile` to `source`'s CR 607.2a `leaveTriggerExile` list, pausing
@@ -139,13 +141,14 @@ def exileSearchedLinkedLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
     (pendingFromId : Option ObjectId := none)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+  if g.sbaPaused then
     return g.chainPendingReplacement
       (.finishPostStep (.exileSearchedLinkedLoop p ids source cause pendingFromId (some loopFromIdx)))
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let mut g := g
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
@@ -167,7 +170,7 @@ def exileSearchedLinkedLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
           | none => (g, .gameRule .spellCast)
       let (g2, _) := g1.move id .exile none (cause := some linkCause) (deferPlayFromExileLogs := true)
       g := g2
-      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+      if g.sbaPaused then
         let rem := ids.extract (i + 1) ids.size
         return g.chainPendingReplacement
           (.finishPostStep (.exileSearchedLinkedLoop p rem source (some linkCause) (some id) (some loopFromIdx)))
@@ -175,7 +178,7 @@ def exileSearchedLinkedLoop (g : Game) (p : PlayerId) (ids : Array ObjectId)
         if let some src := source.bind g.findObject? then
           g := g.changeObject src.id (.pushLeaveTriggerExile moved.id)
         g := g.logMsg s!"{(g.player p).name} exiles {name}"
-  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
 
 /-- Exile `id` and link the exiled card to `source` via CR 607.2a `leaveTriggerExile`. -/
 def exileSearchedLinked (g : Game) (p : PlayerId) (id : ObjectId)
@@ -251,10 +254,11 @@ def placeSearchedBatchCore (g : Game) (p : PlayerId) (remainingIds : Array Objec
     (preBattlefield : Option (Array GameObject) := none)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let preBf := preBattlefield.getD g.battlefield
   let mut g := g
   let mut entered := entered
@@ -280,7 +284,7 @@ def placeSearchedBatchCore (g : Game) (p : PlayerId) (remainingIds : Array Objec
       g := g.chainPendingReplacement
         (.placeSearchedBatch p #[] tapped cause remEntered (some preBf) (some loopFromIdx))
       return g
-  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
 
 /-- Place each searched card in `ids` onto the battlefield simultaneously in a
 single `withBatch`, chaining `.placeSearchedBatch` if an earlier placement or

@@ -56,7 +56,7 @@ private def replayOk60i1 (gs : Array Game) : Bool :=
 
   -- 1b. `hasNestedManaAbilityPostStep` recognizes `.endProposalAction true` + `.restorePending`
   --     (and outer-delegated nested mana post-steps), and `advanceProbeOnResumeCore` detects
-  --     nested-checkpoint reversal so `.seq` drops its trailing step on CR 733.1 reversal!
+  --     nested-checkpoint reversal so `.seq` drops its trailing step on CR 734.1 reversal!
   let nonActSpell : CardDef := {
     name := "P60i1 NonActInstant"
     manaCost := ManaCost.ofColor .blue

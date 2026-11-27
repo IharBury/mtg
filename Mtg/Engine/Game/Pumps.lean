@@ -266,10 +266,11 @@ def untapPermanentsLoop (g : Game) (ids : Array ObjectId)
   if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     return g.chainPendingReplacement
       (.untapPermanentsLoop ids cause logged sourceId (some loopFromIdx))
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let mut g := g
   for i in [0:ids.size] do
     let id := ids[i]!
@@ -288,13 +289,13 @@ def untapPermanentsLoop (g : Game) (ids : Array ObjectId)
             g := g.untapPermanent o (cause := some baseCause) (deferPlayFromExileLogs := true)
         else
           g := g.untapPermanent o (cause := cause) (deferPlayFromExileLogs := true)
-        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+        if g.sbaPaused then
           let rem := ids.extract (i + 1) ids.size
           g := g.chainPendingReplacement
             (.untapPermanentsLoop rem cause logged sourceId (some loopFromIdx))
           return g
     | none => pure ()
-  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
 
 /-- Timestamp-ordered maximum hand size (CR 613.7a; MSH 184 / 376). `none` is "no maximum". -/
 def effectiveMaxHandSize (g : Game) (p : PlayerId) : Option Nat :=

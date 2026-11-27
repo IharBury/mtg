@@ -592,12 +592,12 @@ or defer via `PendingReplacement.logPutCounterDelta` when
 def putCountersDeferredLog (g : Game) (oid : ObjectId) (kind : CounterKind)
     (n : Nat) (byPlayer : Option PlayerId) (logKind : PutCounterLog)
     (cause : Option EventCause := none) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement (.putCountersDeferredLog oid kind n byPlayer logKind cause)
   else
     let before := ((g.findObject? oid).map (·.status.counterCount kind)).getD 0
     let g := g.recordPutCounters oid kind n (byPlayer := byPlayer) (cause := cause)
-    if let .chooseReplacement .. := g.pending then
+    if g.sbaPaused then
       g.chainPendingReplacement (.logPutCounterDelta oid kind before logKind)
     else
       g.logPutCounterDelta oid kind before logKind
