@@ -203,8 +203,9 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                   controller := some p
                   chosenX := some x }
               let baseFace := g.baseCard spell
+              let kwFace := { baseFace with keywords := g.proposedSpellKeywords prop spell }
               let face :=
-                match prop.sneakAttacker, baseFace.sneakCost with
+                match prop.sneakAttacker, kwFace.sneakCost with
                 | some _, some sc => { baseFace with manaCost := sc }
                 | _, _ => baseFace
               let upcomingAddGen : Nat :=
@@ -219,7 +220,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                   | none => 0
               let extraCost :=
                 let baseExtra := ManaCost.ofGeneric (prop.additionalGeneric + upcomingAddGen)
-                match if prop.kicked then baseFace.kicker else none with
+                match if prop.kicked then kwFace.kicker else none with
                 | some k => k.addCost baseExtra
                 | none => baseExtra
               g.playManaCost preSpell face extraCost
@@ -399,8 +400,12 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                 match crewN?, sid? with
                 | some n, some sid =>
                   let manaSrcs := g.manaSources p
+                  let exclSelf :=
+                    (prop.activation.map (fun a => crewExcludesSelf a.cost)).getD true
+                  let filterExclSelf := exclSelf || prop.tapSource
                   let cands :=
-                    ((g.creaturesControlledBy p).filter (fun c => c.id != sid && !c.status.tapped)).qsort
+                    ((g.creaturesControlledBy p).filter (fun c =>
+                      (!filterExclSelf || c.id != sid) && !c.status.tapped)).qsort
                       (fun a b =>
                         let aNonMana := !manaSrcs.any (·.1.id == a.id)
                         let bNonMana := !manaSrcs.any (·.1.id == b.id)
@@ -411,7 +416,8 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                         (sacrificeOrExileSource := sacSrc)
                         (discardOrExileHandSource := discSrc)
                         (orderedCands? := some cands)
-                        (disjointFromAllPicks := false) with
+                        (disjointFromAllPicks := false)
+                        (excludeSelf := exclSelf) with
                     | some picked => evalForCrew picked none
                     | none => none
                   if initBest? == some upperX then initBest?
@@ -588,7 +594,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                 exiledBy := prop.original.exiledBy
                 controller := some p }
             let rawFace := g.baseCard spell
-            let kwFace := { rawFace with keywords := g.currentKeywords spell }
+            let kwFace := { rawFace with keywords := g.proposedSpellKeywords prop spell }
             if (kwFace.morph.isSome || kwFace.impending.isSome) && kwFace.kicker.isNone then
               let gSneak := g.probeAfterUnpaidSneak prop
               let spellSacOk :=
@@ -983,8 +989,11 @@ where
           match ab.cost.crewPower? with
           | some n =>
             let manaSrcs := g.manaSources p
+            let exclSelf := crewExcludesSelf ab.cost
+            let filterExclSelf := exclSelf || ab.cost.tap
             let cands :=
-              ((g.creaturesControlledBy p).filter (fun c => c.id != o.id && !c.status.tapped)).qsort
+              ((g.creaturesControlledBy p).filter (fun c =>
+                (!filterExclSelf || c.id != o.id) && !c.status.tapped)).qsort
                 (fun a b =>
                   let aNonMana := !manaSrcs.any (·.1.id == a.id)
                   let bNonMana := !manaSrcs.any (·.1.id == b.id)
@@ -995,7 +1004,8 @@ where
                   (sacrificeOrExileSource := sacSrc)
                   (discardOrExileHandSource := discSrc)
                   (orderedCands? := some cands)
-                  (disjointFromAllPicks := false) with
+                  (disjointFromAllPicks := false)
+                  (excludeSelf := exclSelf) with
               | some picked => checkWithCrew picked
               | none => false
             if fastOk then true

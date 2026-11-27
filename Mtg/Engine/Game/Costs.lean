@@ -64,7 +64,8 @@ def playCostStart (g : Game) (card : GameObject) (face : CardDef)
     (flashback : Option Bool := none) : ManaCost :=
   let inGy := match card.zone with | .graveyard _ => true | _ => false
   if flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id) then
-    face.flashback.getD face.manaCost
+    let kwFace := { face with keywords := g.currentKeywords card }
+    kwFace.flashback.getD face.manaCost
   else face.manaCost
 
 /-- Actual spell mana value of `card` cast as `face` (CR 118.9c / 202.3e / 702.37c). -/
@@ -187,9 +188,12 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
   let tax := evalSpellCostMods g cardForCaster face caster true
   let increase := if tax == 0 then increase else increase.addCost (ManaCost.ofGeneric tax)
   let inGy := match card.zone with | .graveyard _ => true | _ => false
-  let hasFb := face.flashback.isSome || g.flashbackUntilEot card
+  let kwFlashback? := ({ face with keywords := g.currentKeywords card }).flashback
+  let hasPlayableFb :=
+    kwFlashback?.any (fun mc => !mc.symbols.isEmpty) ||
+      (g.flashbackUntilEot card && !face.manaCost.symbols.isEmpty)
   let usedFlashback :=
-    hasFb && flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id)
+    hasPlayableFb && flashback.getD (inGy || GameEvent.castWithFlashback g.events card.id)
   let usedPermAlt := effPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
   let printedMc? := g.actualPrintedManaCost? card face
   let usedMorph := printedMc?.isNone
@@ -275,11 +279,12 @@ def playManaCost (g : Game) (card : GameObject) (face : CardDef)
         (caster? := some caster)
       if hasAnyMana then c.asAnyMana else c
     else cost
-  let origCost :=
-    if face.manaCost.symbols.isEmpty && (usedAltCost || freeRG || omnipresent || freeSelf) then
-      ManaCost.zero
-    else face.manaCost
-  ManaCost.afterReduction origCost cost
+  let hasPlayableAlt := usedAltCost || freeRG || omnipresent || freeSelf
+  if face.manaCost.symbols.isEmpty && !hasPlayableAlt then
+    ManaCost.empty
+  else
+    let origCost := if face.manaCost.symbols.isEmpty then ManaCost.zero else face.manaCost
+    ManaCost.afterReduction origCost cost
 
 /-- True when `face` has a mana cost that would not be paid to play `card`. -/
 def playsWithoutPayingManaCost (g : Game) (card : GameObject)

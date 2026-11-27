@@ -618,12 +618,25 @@ def proposalAltCleanPerm? (g : Game) (prop : ProposedSpell) (altFace : CardDef) 
               | some b => if rank q >= rank b then some q else some b) none
           some best
 
+/-- Keywords of a proposed spell evaluated across both its live `.stack` object
+and its origin-zone `preSpell` view (`prop.original.zone`), so origin-zone Layer-6
+grants (e.g. Morph/Impending/Sneak/Kicker granted in hand or exile) remain visible
+during CR 601.2b announcements (CR 601.2b / 613.1f). -/
+def proposedSpellKeywords (g : Game) (prop : ProposedSpell) (spell : GameObject) :
+    Array KeywordAbility :=
+  let preSpell := { spell with
+    id := prop.original.id
+    zone := prop.original.zone
+    exiledBy := prop.original.exiledBy
+    controller := some prop.caster }
+  KeywordAbility.merge (g.currentKeywords spell) (g.currentKeywords preSpell)
+
 /-- Whether `prop` may legally offer choosing Morph at CR 601.2b (CR 118.9a / 702.37a). -/
 def proposalCanChooseMorph (g : Game) (prop : ProposedSpell) : Bool :=
   match g.findObject? prop.spellId with
   | none => false
   | some spell =>
-    let face := { g.baseCard spell with keywords := g.currentKeywords spell }
+    let face := { g.baseCard spell with keywords := g.proposedSpellKeywords prop spell }
     face.morph.isSome && face.kicker.isNone &&
       prop.original.zone != .graveyard prop.original.owner &&
       !g.spellNameForbidden "" &&
@@ -635,7 +648,7 @@ def proposalCanChooseImpending (g : Game) (prop : ProposedSpell) : Bool :=
   | none => false
   | some spell =>
     let rawFace := g.baseCard spell
-    let kwFace := { rawFace with keywords := g.currentKeywords spell }
+    let kwFace := { rawFace with keywords := g.proposedSpellKeywords prop spell }
     match kwFace.impending, kwFace.kicker with
     | some (_, alt), none =>
       (g.proposalAltCleanPerm? prop { rawFace with manaCost := alt }).isSome
@@ -909,6 +922,7 @@ def tapPreservesPostManaCosts (g : Game) (p : PlayerId) (prop : ProposedSpell)
           match crewN? with
           | some n =>
             (g.firstPayableCrewSelection? p sid n allPicks
+              (excludeSelf := crewExcludesSelf ab.cost)
               (tapSource := prop.tapSource)
               (sacrificeOrExileSource := sacSrc)
               (discardOrExileHandSource := discSrc)
@@ -1357,6 +1371,12 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       return (g.receivePriority prio, false)
     if followedByFinishChoice && g.sbaPaused then
       let g :=
+        if g.pendingPriority.isNone &&
+            (!g.anyPostPromptContinuationSettlesControlFlowFwd ||
+              g.hasPostPromptImplicitPendingPriorityContinuationFwd) then
+          stashPendingPrio g
+        else g
+      let g :=
         if let some cur := g.pendingReplacement then
           let next := cur.ensureEndsWithFinishResolutionChoice
           if next == cur then g else g.change (.pendingReplacement (some next))
@@ -1368,13 +1388,13 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       if g.sbaPaused then
         let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
         let g :=
-          if g.pendingReplacement.any (·.endsWithPriorityGrant) then
-            if g.pendingReplacement.any g.continuationUsesImplicitPendingPriorityFwd then
+          if g.anyPostPromptContinuationGrantsPriorityFwd then
+            if g.hasPostPromptImplicitPendingPriorityContinuationFwd then
               stashPendingPrio g
             else g
           else
             let g :=
-              if g.pendingReplacement.any g.continuationUsesImplicitPendingPriorityFwd then
+              if g.hasPostPromptImplicitPendingPriorityContinuationFwd then
                 stashPendingPrio g
               else g
             g.chainPendingReplacement (.receivePriority prio)

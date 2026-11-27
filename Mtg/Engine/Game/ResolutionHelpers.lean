@@ -1097,14 +1097,10 @@ partial def damageUpToOneAndPlayerLoop (g : Game) (controller : PlayerId)
     g.chainPendingReplacement
       (.finishPostStep (.damageUpToOneAndPlayerLoop controller spec remaining n srcName sourceId cause? (some sIdx)))
   else
-    let preLoop :=
-      match startEventIdx with
-      | some idx => g.mkHistoricalGameAt idx
-      | none => g
     let c := cause?.orElse (fun _ => g.currentBatch.bind (·.2))
     match remaining[0]? with
     | none =>
-      let g := emitExpiredPlayFromExileLogs preLoop g sIdx
+      let g := emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt sIdx) g sIdx
       g.applyAggregatedLifelinkSince sIdx (cause := c)
     | some (i, t) =>
       let rest := remaining.extract 1 remaining.size

@@ -1164,6 +1164,10 @@ inductive PostStep where
       (toGy : Array ObjectId) (fromEventIdx? : Option Nat := none)
   | exileCardsLoop (remainingIds : Array ObjectId) (cause : Option EventCause := none)
       (fromEventIdx? : Option Nat := none)
+  | finishInspectLibraryRest (p : PlayerId) (restSpec : RestPlacement)
+      (rest : Array ObjectId) (cause : EventCause)
+  | fightCreatures (srcId destId : ObjectId) (cause : Option EventCause := none)
+  | emitExpiredPlayFromExileFrom (fromEventIdx : Nat)
 deriving Inhabited, BEq
 
 /-- Stage of `StateBasedActions.finishSbaSweep` across `Pending.chooseReplacement` pauses. -/
@@ -1366,6 +1370,12 @@ inductive InterpCont where
   removal or placement paused on CR 800.4c / 616.1 (CR 122.5). -/
   | afterMoveCountersPut (targetId : ObjectId) (remainingCounters : Array (CounterKind × Nat))
       (cause : EventCause)
+  /-- Remaining targets in a mixed-recipient or `trackExcess` damage loop with
+  pause-safe batch deferral, excess-damage accumulation, and aggregated lifelink. -/
+  | afterMixedDamageLoop (remaining : Array (Target × Nat)) (srcName : String)
+      (srcSnap? : Option EventObject) (startEventIdx : Nat) (cause : EventCause)
+      (trackExcess : Bool := false) (accumExcess : Nat := 0)
+      (pendingExcess? : Option (ObjectId × Nat × Nat) := none)
 deriving Repr, Inhabited, BEq
 
 /-- Complete resumable state of the unified `Instruction` interpreter. -/
@@ -1393,6 +1403,8 @@ inductive PendingReplacement where
       (deferPlayFromExileLogs : Bool := false)
   | dealFightDamage (sourceId targetId : ObjectId) (cause : Option EventCause)
       (amount : Option Nat := none)
+      (deferPlayFromExileLogs : Bool := false)
+      (fromEventIdx? : Option Nat := none)
   | dealDamageToPermanent (targetId : ObjectId) (n : Nat)
       (source : Option EventObject)
       (cause : Option EventCause) (suppressLifelink : Bool := false)
@@ -1402,6 +1414,7 @@ inductive PendingReplacement where
       (unpreventable : Bool) (cause : Option EventCause)
       (deferPlayFromExileLogs : Bool := false)
       (skipReplace : Bool := false)
+      (fromEventIdx? : Option Nat := none)
   | dealAssignedCombatDamage (startIdx : Nat := 0) (fromEventIdx? : Option Nat := none)
   | gainLife (p : PlayerId) (n : Nat) (cause : Option EventCause)
   | addPlusOnePlusOneTo (targetId : ObjectId) (n : Nat) (entersWith : Bool)
@@ -1559,6 +1572,7 @@ inductive PendingReplacement where
       (removeIndestructible : Bool := false) (removePlusOnesCount : Nat := 0)
       (crewIds : Array ObjectId := #[]) (putStunOnSource : Bool := false)
       (fromEventIdx? : Option Nat := none)
+      (crewPower? : Option Nat := none)
   | finishActivateManaAbilityPostSac (p : PlayerId) (id : ObjectId) (oname : String)
       (srcSnap : EventObject) (mana : Array ManaType) (tap : Bool)
       (activatedIdx : Option Nat) (restriction : Option ManaSpendRestriction)
@@ -2161,6 +2175,7 @@ def InterpState.isPureBatchLoopCont (st : InterpState) : Bool :=
     | [.afterMoveLoop ..]
     | [.afterDamagePermanentsLoop ..]
     | [.afterDividedDamageLoop ..]
+    | [.afterMixedDamageLoop ..]
     | [.afterCounterOpLoop ..]
     | [.afterMoveCountersPut ..]
     | [.logIfCountersIncreased ..]
@@ -2191,6 +2206,10 @@ def PendingReplacement.isPlayFromExileDeferBoundaryLeaf : PendingReplacement →
   | .beginStepCont _
   | .finishBeginOnBattlefield ..
   | .shuffleThen ..
+  | .connive ..
+  | .continueConnives ..
+  | .createAndMarkTokensAttacking ..
+  | .finishSearchAfterPlace ..
   | .finishMillChooseForHand ..
   | .finishBeginRecruit ..
   | .finishDrawThenBeginDiscard ..
@@ -2228,6 +2247,9 @@ def PendingReplacement.isPlayFromExileDeferBoundaryLeaf : PendingReplacement →
   | .finishPostStep (.searchLibrarySphinx ..)
   | .finishPostStep (.nickFuryMayTransformOrBottom ..)
   | .finishPostStep (.logInfluenceThenScryTwo ..)
+  | .finishPostStep (.conniveTricksterTarget ..)
+  | .finishPostStep (.finishGrimaDirectCast ..)
+  | .finishPostStep (.finishInspectLibraryRest ..)
   | .finishPostStep (.resumeProposalCostAfterLeave ..)
   | .finishPostStep (.resumeChooseModeAfterLeave ..)
   | .finishPostStep (.resumeChooseTargetsAfterLeave ..)

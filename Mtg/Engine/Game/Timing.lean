@@ -164,7 +164,8 @@ def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p && isDiscardableCard o &&
-    ((g.baseCard o).flashback.isSome || g.flashbackUntilEot o ||
+    (({ g.baseCard o with keywords := g.currentKeywords o }).flashback.isSome ||
+      g.flashbackUntilEot o ||
       (g.isLand o && g.controlsPlayLandsFromGraveyard p))
 
 /-- True when `p` controls a permanent that lets them look at the library top. -/
@@ -213,7 +214,8 @@ def controlsPlayLandsFromTop (g : Game) (p : PlayerId) : Bool :=
 def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .library p &&
     (g.player p).library.back? == some o.id &&
-    (((g.isCreature o || (g.baseCard o).morph.isSome) && g.controlsCastCreaturesFromTop p) ||
+    (((g.isCreature o || ({ g.baseCard o with keywords := g.currentKeywords o }).morph.isSome) &&
+        g.controlsCastCreaturesFromTop p) ||
       (g.isLand o && g.controlsPlayLandsFromTop p))
 
 /-- Whether `p` may play `o` as a land from exile under a non-cast-only permission (CR 305.9). -/

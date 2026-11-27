@@ -256,7 +256,7 @@ def putToBattlefieldLoop (g : Game) (controller : PlayerId)
     match g.findObject? id with
     | none => pure ()
     | some o =>
-      if onlyFoodArtifact && o.zone != .graveyard o.owner then
+      if onlyFoodArtifact && (o.zone != .graveyard o.owner || !isDiscardableCard o) then
         pure ()
       else
         let ctrl := if useCardOwner then o.owner else controller
@@ -498,30 +498,38 @@ def applyRiddlesToHandLoop (g : Game) (p : PlayerId)
     (remainingHand toGy : Array ObjectId)
     (fromEventIdx? : Option Nat := none) : Game :=
   if remainingHand.isEmpty && fromEventIdx?.isNone then
-    g.withBatch none fun g =>
-      g.moveCardsToGraveyardLoop toGy
-  else
-    let loopFromIdx := fromEventIdx?.getD g.events.size
-    if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
-      g.chainPendingReplacement
-        (.finishPostStep (.applyRiddlesToHandLoop p remainingHand toGy (some loopFromIdx)))
+    if toGy.isEmpty then g
+    else if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+      g.chainPendingReplacement (.finishPostStep (.applyRiddlesToHandLoop p #[] toGy none))
     else
-      let preLoop :=
-        match fromEventIdx? with
-        | some idx => g.mkHistoricalGameAt idx
-        | none => g
-      let (g1, paused) := g.withBatchReturn none fun g => Id.run do
-        let mut g := g
-        for i in [0:remainingHand.size] do
-          let id := remainingHand[i]!
-          g := (g.move id (.hand p) none (deferPlayFromExileLogs := true)).1
-          if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
-            let rem := remainingHand.extract (i + 1) remainingHand.size
-            return (g.chainPendingReplacement
-              (.finishPostStep (.applyRiddlesToHandLoop p rem toGy (some loopFromIdx))), true)
-        g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
-        return (g, false)
-      if paused then g1
+      g.withBatch none fun g =>
+        g.moveCardsToGraveyardLoop toGy
+  else if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+    g.chainPendingReplacement
+      (.finishPostStep (.applyRiddlesToHandLoop p remainingHand toGy fromEventIdx?))
+  else
+    let runHand (g : Game) : Game × Bool := Id.run do
+      let mut g := g
+      let startIdx := fromEventIdx?.getD g.events.size
+      for i in [0:remainingHand.size] do
+        let id := remainingHand[i]!
+        g := (g.move id (.hand p) none (deferPlayFromExileLogs := true)).1
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+          let rem := remainingHand.extract (i + 1) remainingHand.size
+          return (g.chainPendingReplacement
+            (.finishPostStep (.applyRiddlesToHandLoop p rem #[] (some startIdx))), true)
+      g := emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt startIdx) g startIdx
+      return (g, false)
+    match fromEventIdx? with
+    | some _ =>
+      let (g1, paused) := runHand g
+      if paused || toGy.isEmpty then g1
+      else g1.withBatch none fun g => g.moveCardsToGraveyardLoop toGy
+    | none =>
+      let (g1, paused) := g.withBatchReturn none fun g => runHand g
+      if toGy.isEmpty then g1
+      else if paused then
+        g1.chainPendingReplacement (.finishPostStep (.applyRiddlesToHandLoop p #[] toGy none))
       else
         g1.withBatch none fun g =>
           g.moveCardsToGraveyardLoop toGy
@@ -537,10 +545,6 @@ def exileCardsLoop (g : Game) (ids : Array ObjectId)
     g.chainPendingReplacement (.finishPostStep (.exileCardsLoop ids cause fromEventIdx?))
   else
     Id.run do
-      let preLoop :=
-        match fromEventIdx? with
-        | some idx => g.mkHistoricalGameAt idx
-        | none => g
       let loopFromIdx := fromEventIdx?.getD g.events.size
       let mut g := g
       for i in [0:ids.size] do
@@ -553,7 +557,7 @@ def exileCardsLoop (g : Game) (ids : Array ObjectId)
             g := g.chainPendingReplacement
               (.finishPostStep (.exileCardsLoop rem cause (some loopFromIdx)))
             return g
-      return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+      return emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt loopFromIdx) g loopFromIdx
 
 /-- Put one Riddles pile into `p`'s hand and the other into the graveyard.
 The face-down pile is not revealed when it is the one that goes to hand. -/

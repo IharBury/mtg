@@ -165,8 +165,9 @@ def announceAdditionalCost (g : Game) (p : PlayerId) (payGeneric : Bool) :
     let some spell := g.findObject? prop.spellId
       | throw "The spell left the stack"
     let baseFace := g.baseCard spell
+    let kwFace := { baseFace with keywords := g.proposedSpellKeywords prop spell }
     let costFace :=
-      match prop.sneakAttacker, baseFace.sneakCost with
+      match prop.sneakAttacker, kwFace.sneakCost with
       | some _, some sc => { baseFace with manaCost := sc }
       | _, _ => baseFace
     let preSpell := { spell with

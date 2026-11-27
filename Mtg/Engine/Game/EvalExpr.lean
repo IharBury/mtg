@@ -350,7 +350,7 @@ def viewManaCost (st : Game) : ObjectView → ManaCost
     if o.isOnBattlefield && o.status.faceDown then ManaCost.empty
     else (st.copiableValues o).manaCost
   | .lki eo =>
-    if eo.faceDown then ManaCost.empty
+    if eo.faceDown && (eo.zone == .battlefield || eo.zone == .stack) then ManaCost.empty
     else ((eo.copiable.orElse (fun _ => eo.printed)).map (·.manaCost)).getD ManaCost.empty
 
 /-- Whether `v` currently has keyword `kw` (Layer 6 for live objects, snapshot for LKI;
@@ -372,8 +372,9 @@ def viewHasKeyword (st : Game) (v : ObjectView) (kw : KeywordTag) : Bool :=
   | .lki eo =>
     if KeywordAbility.hasTag eo.keywords kw then true
     else
-      let retains := eo.retainsPrintedAbilities.getD (!eo.faceDown)
-      let bc? := if eo.faceDown then none else eo.copiable.orElse (fun _ => eo.printed)
+      let masked := eo.faceDown && (eo.zone == .battlefield || eo.zone == .stack)
+      let retains := eo.retainsPrintedAbilities.getD (!masked)
+      let bc? := if masked then none else eo.copiable.orElse (fun _ => eo.printed)
       match kw with
       | .changeling => eo.changeling
       | .toxic => eo.toxic > 0
@@ -447,9 +448,11 @@ def evalPlayerMetricSingle (g : Game) (env : EvalEnv) (m : PlayerMetric) (p : Pl
   let pl := st.player p
   match m with
   | .life => pl.life
-  | .handSize => Int.ofNat pl.hand.size
+  | .handSize =>
+    Int.ofNat (pl.hand.filter (fun id => (st.findObject? id).any Game.isDiscardableCard)).size
   | .librarySize => Int.ofNat pl.library.size
-  | .graveyardSize => Int.ofNat pl.graveyard.size
+  | .graveyardSize =>
+    Int.ofNat (pl.graveyard.filter (fun id => (st.findObject? id).any Game.isDiscardableCard)).size
   | .landsPlayedThisTurn => Int.ofNat (GameEvent.landsPlayed st.events st.turnNumber p)
   | .spellsCastThisTurn => Int.ofNat (GameEvent.spellsCast st.events st.turnNumber p)
   | .cardsDrawnThisTurn => Int.ofNat (GameEvent.draws st.events st.turnNumber p)
@@ -1060,11 +1063,13 @@ partial def evalObjects (g : Game) (env : EvalEnv) (expr : ObjectExpr) : Array O
         | .hand =>
           for p in owners do
             for oid in (st.player p).hand do
-              if let some o := st.findObject? oid then acc := acc.push (.live o)
+              if let some o := st.findObject? oid then
+                if Game.isDiscardableCard o then acc := acc.push (.live o)
         | .graveyard =>
           for p in owners do
             for oid in (st.player p).graveyard do
-              if let some o := st.findObject? oid then acc := acc.push (.live o)
+              if let some o := st.findObject? oid then
+                if Game.isDiscardableCard o then acc := acc.push (.live o)
         | .outside =>
           for p in owners do
             for o in st.objects do

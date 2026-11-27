@@ -645,6 +645,7 @@ def payCostPick (g : Game) (p : PlayerId) (abilityId sourceId : Option ObjectId)
   let isBfSacPick : Bool :=
     match pick with
     | .tapUntappedCreature | .tapTwoUntappedArtifacts
+    | .custom (.tapObjects ..)
     | .exileAnotherCreatureCardFromGraveyard => false
     | _ => true
   if !sacrificeOrExileSource && isBfSacPick then

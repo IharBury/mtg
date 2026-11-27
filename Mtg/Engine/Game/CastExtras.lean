@@ -89,13 +89,9 @@ partial def resolveCascadeLoop (g : Game) (p : PlayerId) (maxMv : Nat)
     (pendingFromId : Option ObjectId := none)
     (fromEventIdx? : Option Nat := none) : Game :=
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  let preLoop :=
-    match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
   let finishPfe (g : Game) : Game :=
     if fromEventIdx?.isSome || g.events.size > loopFromIdx then
-      emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+      emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt loopFromIdx) g loopFromIdx
     else g
   match pendingFromId with
   | some fid =>
@@ -153,16 +149,17 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
   if prop.kicked && kick then
     throw "The kicker ability doesn't let you pay a kicker cost more than once"
   let some spell := g.findObject? prop.spellId | throw "The spell left the stack"
-  let face := { g.baseCard spell with keywords := g.currentKeywords spell }
+  let rawFace := g.baseCard spell
+  let kwFace := { rawFace with keywords := g.proposedSpellKeywords prop spell }
   if !kick then
-    if prop.sneakAttacker.isNone && face.morph.isSome && face.kicker.isNone then
+    if prop.sneakAttacker.isNone && kwFace.morph.isSome && kwFace.kicker.isNone then
       let effPerm :=
         if prop.resolutionCast then
           some { (prop.origPerm.getD { player := prop.caster }) with
             ignoreTiming :=
               prop.resolutionIgnoreTiming || prop.origPerm.any (·.ignoreTiming) }
         else prop.origPerm
-      g.validateFrontFaceCast prop.caster prop.original face
+      g.validateFrontFaceCast prop.caster prop.original rawFace
         (origPermOverride := effPerm)
         (excludeIdOverride := some prop.spellId)
     return g.changeProposals #[.kicked false, .kickerAnnounced true]
@@ -172,7 +169,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
     exiledBy := prop.original.exiledBy
     controller := some prop.caster }
   let extraGen := ManaCost.ofGeneric prop.additionalGeneric
-  match face.morph, face.impending, face.kicker with
+  match kwFace.morph, kwFace.impending, kwFace.kicker with
   | some _, _, none =>
     if g.spellNameForbidden "" then
       throw "Nameless spells can't be cast"
@@ -194,8 +191,14 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
           throw "You can't apply more than one alternative cost to a spell (CR 118.9a)"
         throw "Morph can be cast face down only when you could cast a creature spell (CR 702.37a)"
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.morph]))
+    let morphObj : GameObject :=
+      { preSpell with
+        id := noSourceSentinelId
+        printed := morphSpellFace
+        adventurerCard := none
+        status := { preSpell.status with faceDown := true } }
     let cost :=
-      g.playManaCost preSpell morphSpellFace extraGen
+      g.playManaCost morphObj morphSpellFace extraGen
         (origPerm := morphPerm)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
         (explicitAltCost := true)
@@ -209,7 +212,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
         (prop.origPerm.bind (·.prepareSource)).isSome ||
         g.isForcedWithoutManaCostProposal prop then
       throw "You can't apply more than one alternative cost to a spell (CR 118.9a)"
-    let impFace : CardDef := { face with manaCost := alt }
+    let impFace : CardDef := { rawFace with manaCost := alt }
     let some impPerm := g.proposalAltCleanPerm? prop impFace
       | do
         let allExilePerms := g.playPermissionsFor prop.caster preSpell
@@ -219,7 +222,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
         let hasNullSummoner := preSpell.zone == .exile && g.mayCastExiledBySource prop.caster preSpell
         if !allExilePerms.isEmpty && contClean.isEmpty && !prop.resolutionCast && !hasNullSummoner then
           throw "You can't apply more than one alternative cost to a spell (CR 118.9a)"
-        throw s!"{face.name} has sorcery speed"
+        throw s!"{rawFace.name} has sorcery speed"
     let g := g.record (GameEvent.announced g.turnNumber spell.id (costs := #[.impending n]))
     let cost :=
       g.playManaCost preSpell impFace extraGen
@@ -240,7 +243,7 @@ def applyKickerToProposed (g : Game) (kick : Bool) : Except String Game := do
           some { player := prop.caster, withoutManaCost := true }
         else none)
     let cost :=
-      g.playManaCost preSpell face (kicker.addCost extraGen)
+      g.playManaCost preSpell rawFace (kicker.addCost extraGen)
         (origPerm := effPerm)
         (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
         (explicitAltCost := prop.sneakAttacker.isSome)

@@ -499,22 +499,18 @@ def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
   if let .chooseReplacement .. := g.pending then
     return g.chainPendingReplacement
       (.finishPostStep (.exileTopForPlayLoop fromPlayer caster remaining mayCastStyle cause? pendingFromId fromEventIdx?))
-  let preLoop :=
-    match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
   let loopFromIdx := fromEventIdx?.getD g.events.size
   let mut g := g
   if let some fid := pendingFromId then
     if let some moved := g.followMovedToZone? fid (· == .exile) then
       if g.stillInGame caster then
-        g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
+        g := g.createEffect (.playPermission moved.id { player := caster, landsAllowed := !mayCastStyle }) (cause := cause?)
       g := g.logMsg (fmtMsg g (g.player fromPlayer).name (g.name moved))
   if !g.stillInGame fromPlayer || !g.stillInGame caster then
-    return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    return emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt loopFromIdx) g loopFromIdx
   for i in [0:remaining] do
     if !g.stillInGame fromPlayer || !g.stillInGame caster then
-      return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+      return emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt loopFromIdx) g loopFromIdx
     let pl := g.player fromPlayer
     if pl.library.isEmpty then
       g := g.logMsg s!"{pl.name} has no cards in their library to exile"
@@ -529,9 +525,9 @@ def exileTopForPlayLoop (g : Game) (fromPlayer caster : PlayerId)
           (.finishPostStep (.exileTopForPlayLoop fromPlayer caster rem mayCastStyle cause? (some top) (some loopFromIdx)))
       if let some moved := g.followMovedToZone? top (· == .exile) then
         if g.stillInGame caster then
-          g := g.createEffect (.playPermission moved.id { player := caster }) (cause := cause?)
+          g := g.createEffect (.playPermission moved.id { player := caster, landsAllowed := !mayCastStyle }) (cause := cause?)
         g := g.logMsg (fmtMsg g pl.name cardName)
-  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  return emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt loopFromIdx) g loopFromIdx
 
 /-- Exile the top `n` cards of `fromPlayer`'s library. `caster` may play
 them this turn. `logAfter ownerName cardName` is the per-card message. -/

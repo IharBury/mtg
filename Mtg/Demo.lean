@@ -4209,11 +4209,11 @@ def hasUniqueManaPayment (g : Game) : Bool :=
           let handManaObjs :=
             (g.player p).hand.filterMap fun id =>
               (g.findObject? id).bind fun o =>
-                if !(g.baseCard o).allActivatedAbilities.isEmpty then some o else none
+                if !(g.activatedAbilitiesOf o).isEmpty then some o else none
           let gyManaObjs :=
             (g.player p).graveyard.filterMap fun id =>
               (g.findObject? id).bind fun o =>
-                if !(g.baseCard o).allActivatedAbilities.isEmpty then some o else none
+                if !(g.activatedAbilitiesOf o).isEmpty then some o else none
           let manaObjs := g.permanentsOf p ++ handManaObjs ++ gyManaObjs
           let tapReady (o : GameObject) (d : ManaAbilityDef) : Bool :=
             !d.tap ||
