@@ -255,11 +255,11 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
   let handManaObjs :=
     (g.player p).hand.filterMap fun id =>
       (g.findObject? id).bind fun o =>
-        if !(g.baseCard o).allActivatedAbilities.isEmpty then some o else none
+        if !(g.activatedAbilitiesOf o).isEmpty then some o else none
   let gyManaObjs :=
     (g.player p).graveyard.filterMap fun id =>
       (g.findObject? id).bind fun o =>
-        if !(g.baseCard o).allActivatedAbilities.isEmpty then some o else none
+        if !(g.activatedAbilitiesOf o).isEmpty then some o else none
   let manaObjs := perms ++ handManaObjs ++ gyManaObjs
   let plainManaSrcs := g.manaSources p
   let propTapReservedIds : Array ObjectId :=
@@ -471,6 +471,16 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
                   searchCrew (idx + 1) curPow picked
           termination_by cands.size - idx
           searchCrew 0 0 #[]
+  let effectiveDefForProp (o : GameObject) (d : ManaAbilityDef) : ManaAbilityDef :=
+    match prop? with
+    | some prop =>
+      if d.removeAnyNumberPlusOne &&
+          prop.sourceId == some o.id && prop.removePlusOneX &&
+          !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .plusOnePlusOne) sinceIdx &&
+          o.status.plusOnePlusOne ≤ ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0 then
+        g.manaAbilityDefAtZeroPlusOnes p o d
+      else d
+    | none => d
   let respectsPropReservations (o : GameObject) (d : ManaAbilityDef) : Bool :=
     match prop? with
     | none => true
@@ -489,10 +499,6 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         !(prop.sourceId == some o.id && prop.activation.any (·.cost.removeIndestructibleCounter) &&
           !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .indestructible) sinceIdx &&
           o.status.indestructibleCounters ≤ 1)) &&
-      (!d.removeAnyNumberPlusOne ||
-        !(prop.sourceId == some o.id && prop.removePlusOneX &&
-          !g.sourceCounterCostPaidFor o.id (some prop.spellId) .removeCounters (some .plusOnePlusOne) sinceIdx &&
-          o.status.plusOnePlusOne ≤ ((g.findObject? prop.spellId).bind (·.chosenX)).getD 0)) &&
       d.exileManaSymbols?.all (fun (col?, minSyms, pred) =>
         g.canPayExileManaSymbols p o.id col? minSyms pred
           (excludedIds := propRemoveReservedIds ++ (if d.exileSelfFromGraveyard then #[o.id] else #[]))) &&
@@ -581,6 +587,7 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
         (!(g.player p).manaPool.units.isEmpty || canPayEffCost o d effCost) &&
         manaAbilityAllowsZeroOutput d)
   let usableAbilityOn (o : GameObject) (d : ManaAbilityDef) (requireNonPlain : Bool) : Bool :=
+    let d := effectiveDefForProp o d
     let effCost := g.manaAbilityEffectiveCost p o d
     (!requireNonPlain || !g.isPlainTapManaAbilityDef p o d) &&
       g.manaAbilityDefUsable p o d &&
@@ -631,7 +638,8 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
             turnLimitOk && lifetimeLimitOk
       let otherManaCosts : Array (GameObject × ManaAbilityDef × ManaCost) :=
         manaObjs.foldl (fun acc o2 =>
-          (g.manaAbilityDefs o2).foldl (fun acc d2 =>
+          (g.manaAbilityDefs o2).foldl (fun acc d2Raw =>
+            let d2 := effectiveDefForProp o2 d2Raw
             let eff2 := g.manaAbilityEffectiveCost p o2 d2
             if eff2.includesManaPayment && g.manaAbilityDefUsable p o2 d2 &&
                 hasProducibleChoice o2 d2 eff2 &&
@@ -642,7 +650,8 @@ def hasUsableNonPlainManaAbility (g : Game) (p : PlayerId)
               acc.push (o2, d2, eff2)
             else acc) acc) #[]
       manaObjs.any fun o =>
-        (g.manaAbilityDefs o).any fun d =>
+        (g.manaAbilityDefs o).any fun dRaw =>
+          let d := effectiveDefForProp o dRaw
           let effCost := g.manaAbilityEffectiveCost p o d
           let poolSpendLaunder :=
             includePoolSpending && effCost.includesManaPayment &&

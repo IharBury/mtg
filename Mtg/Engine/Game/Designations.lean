@@ -66,9 +66,11 @@ def setRingBearer (g : Game) (p : PlayerId) (chosen : Option ObjectId)
         else
           match g.findObject? oldId with
           | some oldObj =>
-            g.record (GameEvent.designation g.turnNumber (g.snapshot oldObj) .ringBearer false (cause := effCause))
+            let snap := { g.snapshot oldObj with controller := some p, ringBearer := true }
+            g.record (GameEvent.designation g.turnNumber snap .ringBearer false (cause := effCause))
           | none =>
-            let snap := (g.lastKnownBefore? oldId).getD { id := some oldId }
+            let snap := { (g.lastKnownBefore? oldId).getD { id := some oldId } with
+              controller := some p, ringBearer := true }
             g.record (GameEvent.designation g.turnNumber snap .ringBearer false (cause := effCause))
       | none => g
     match chosen with

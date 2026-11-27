@@ -1987,6 +1987,8 @@ private def specAnyObjId (spec : ContinuousEffectSpec) (pred : ObjectId → Bool
     (prospectivePred : ObjectId → Bool := pred) : Bool :=
   (match spec with
    | .layered (.objects ids) _ _ => checkValidObjIds pred ids
+   | .playerRule _ (.protectionFrom _ srcId? _) _
+   | .playerRule _ (.hexproof _ srcId? _) _ => checkValidOptObjId pred srcId?
    | .permission _ (.playFromExile id perm) _ =>
      checkValidObjId pred id || checkValidOptObjId pred perm.prepareSource
    | .permission _ (.flashback id) _ => checkValidObjId pred id
@@ -2018,6 +2020,8 @@ private def delayedKindAnyObjId (pred : ObjectId → Bool) : DelayedTriggerKind 
   | .endStepReturn oid
   | .endStepExile oid
   | .endStepSacrifice oid
+  | .endOfCombatExile oid
+  | .endOfCombatSacrifice oid
   | .endStepGraveReturn oid _ => checkValidObjId pred oid
   | .lokiCopyNextInstantSorceryThisTurn sid _ => checkValidOptObjId pred sid
   | _ => false
@@ -2100,8 +2104,9 @@ private def interpContAnyObjId (k : InterpCont) (pred : ObjectId → Bool)
   | .afterRevealUntil _ rest _ dack c =>
     checkValidObjIds pred rest || checkValidObjIds pred dack ||
       eventCauseAnyObjId c pred prospectivePred etbCostProspective?
-  | .afterDistinctSearchMove _ rem c
-  | .afterMoveLoop rem _ _ _ c =>
+  | .afterDistinctSearchMove _ rem c =>
+    checkValidObjIds pred rem || eventCauseAnyObjId c pred prospectivePred etbCostProspective?
+  | .afterMoveLoop rem _ _ _ c _ =>
     checkValidObjIds pred rem || eventCauseAnyObjId c pred prospectivePred etbCostProspective?
   | .afterMillOfferPermanentOrGainLife _ preIds _
   | .worldsCollectPlayers _ _ preIds => checkValidObjIds pred preIds
@@ -2113,12 +2118,18 @@ private def interpContAnyObjId (k : InterpCont) (pred : ObjectId → Bool)
   | .afterDividedDamageLoop rem _ src? _ c =>
     rem.any (fun (_, t, _) => targetAnyObjId pred t) || src?.any (eventObjAnyObjId pred) ||
       eventCauseAnyObjId c pred prospectivePred etbCostProspective?
+  | .afterMixedDamageLoop rem _ src? _ c _ _ pe? =>
+    rem.any (fun (t, _) => targetAnyObjId pred t) || src?.any (eventObjAnyObjId pred) ||
+      pe?.any (fun (oid, _, _) => checkValidObjId pred oid) ||
+      eventCauseAnyObjId c pred prospectivePred etbCostProspective?
   | .afterCounterOpLoop rem _ c _ =>
     checkValidObjIds pred rem || eventCauseAnyObjId c pred prospectivePred etbCostProspective?
   | .afterCopyAndCastExileLoop rem ex _ c pf? _ =>
     checkValidObjIds pred rem || checkValidObjIds pred ex ||
       pf?.any (fun (id, _) => checkValidObjId pred id) ||
       eventCauseAnyObjId c pred prospectivePred etbCostProspective?
+  | .afterMoveCountersPut tid _ c =>
+    checkValidObjId pred tid || eventCauseAnyObjId c pred prospectivePred etbCostProspective?
   | _ => false
 
 private def interpStateAnyObjId (st : InterpState) (pred : ObjectId → Bool)
@@ -2393,6 +2404,11 @@ private def postStepAnyObjId (st : PostStep) (pred : ObjectId → Bool)
       pc.any (fun (id, _) => checkValidObjId pred id)
   | .applyRiddlesToHandLoop _ rem toGy _ =>
     checkValidObjIds pred rem || checkValidObjIds pred toGy
+  | .finishInspectLibraryRest _ _ rest c =>
+    checkValidObjIds pred rest || eventCauseAnyObjId c pred prospectivePred etbCostProspective?
+  | .fightCreatures sid tid c =>
+    checkValidObjId pred sid || checkValidObjId pred tid ||
+      c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .finishAbilityResolution snap _ sid _ _ _ =>
     eventObjAnyObjId pred snap || checkValidOptObjId pred sid
   | _ => false
@@ -2412,11 +2428,11 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
   | .dealDamageFrom _ src tid _ _ c _ _ =>
     src.any (eventObjAnyObjId pred) || checkValidObjId pred tid ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
-  | .dealFightDamage sid tid c _ =>
+  | .dealFightDamage sid tid c _ _ _ =>
     checkValidObjId pred sid || checkValidObjId pred tid ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .dealDamageToPermanent tid _ src c _ _
-  | .markDamageOn tid _ _ _ src _ _ c _ _ =>
+  | .markDamageOn tid _ _ _ src _ _ c _ _ _ =>
     checkValidObjId pred tid || src.any (eventObjAnyObjId pred) ||
       c.any (eventCauseAnyObjId · pred prospectivePred etbCostProspective?)
   | .gainLife _ _ c
@@ -2515,7 +2531,7 @@ private partial def pendingReplacementAnyObjId (pr : PendingReplacement)
     checkValidOptObjId pred aid || checkValidOptObjId pred sid || checkValidObjIds pred rem
   | .finishActivationExtraCosts _ sid fo .. =>
     checkValidObjId pred sid || checkValidOptObjId pred fo
-  | .finishActivateManaAbilityPicks _ id _ _ _ rem _ _ _ _ _ _ prevP _ _ _ _ _ _ exileSymIds _ _ _ crewIds _ _ =>
+  | .finishActivateManaAbilityPicks _ id _ _ _ rem _ _ _ _ _ _ prevP _ _ _ _ _ _ exileSymIds _ _ _ crewIds _ _ _ =>
     checkValidObjId pred id || checkValidObjIds pred rem || checkValidObjIds pred exileSymIds ||
       checkValidObjIds pred crewIds ||
       pendingAnyObjId prevP pred prospectivePred etbCostProspective?
@@ -5463,7 +5479,7 @@ def isCreature (g : Game) (o : GameObject) : Bool :=
 @[export mtg_game_gy_creature_cards]
 def gyCreatureCards (g : Game) (p : PlayerId) : Nat :=
   (g.player p).graveyard.filter (fun id =>
-    (g.findObject? id).any (fun c => g.isCreature c)) |>.size
+    (g.findObject? id).any (fun c => isDiscardableCard c && g.isCreature c)) |>.size
 
 def isArtifact (g : Game) (o : GameObject) : Bool :=
   g.hasType o .artifact
@@ -6435,9 +6451,11 @@ private def evalStaticPlayerMetricSingle (g : Game) (m : PlayerMetric) (p : Play
   let pl := g.player p
   match m with
   | .life => pl.life
-  | .handSize => Int.ofNat pl.hand.size
+  | .handSize =>
+    Int.ofNat (pl.hand.filter (fun id => (g.findObject? id).any isDiscardableCard)).size
   | .librarySize => Int.ofNat pl.library.size
-  | .graveyardSize => Int.ofNat pl.graveyard.size
+  | .graveyardSize =>
+    Int.ofNat (pl.graveyard.filter (fun id => (g.findObject? id).any isDiscardableCard)).size
   | .landsPlayedThisTurn => Int.ofNat (GameEvent.landsPlayed g.events g.turnNumber p)
   | .spellsCastThisTurn => Int.ofNat (GameEvent.spellsCast g.events g.turnNumber p)
   | .cardsDrawnThisTurn => Int.ofNat (GameEvent.draws g.events g.turnNumber p)
@@ -6923,7 +6941,7 @@ def lkiEventObjectAsGameObject (eo : EventObject) (prepared : Option Bool := non
       adjustTokenCardDef eo.token
         { name := "", types := #[.creature], power := some (.fixed 2), toughness := some (.fixed 2) }
     else
-      let rawCard := (if !eo.faceDown then eo.copiable else none).getD eo.toCardDef
+      let rawCard := (if !isFaceDownMasked then eo.copiable else none).getD eo.toCardDef
       adjustTokenCardDef eo.token rawCard
   let kws := if eo.changeling then KeywordAbility.merge eo.keywords #[Keyword.changeling] else eo.keywords
   let kws := if eo.toxic > 0 && KeywordAbility.toxicTotal kws == 0 then kws.push (.toxic eo.toxic) else kws
@@ -6936,7 +6954,7 @@ def lkiEventObjectAsGameObject (eo : EventObject) (prepared : Option Bool := non
         else bcMc.manaValue
       if bcMv == eo.manaValue then bcMc
       else ManaCost.ofGeneric eo.manaValue
-  let retains := eo.retainsPrintedAbilities.getD (!eo.faceDown)
+  let retains := eo.retainsPrintedAbilities.getD (!isFaceDownMasked)
   let activated : Array ActivatedAbility :=
     match eo.activatedAbilities with
     | some abs => abs
@@ -6976,7 +6994,9 @@ def lkiEventObjectAsGameObject (eo : EventObject) (prepared : Option Bool := non
       transformed := eo.transformed
       prepared := prepared.getD eo.prepared
       harnessed := eo.harnessed
-      goaded := eo.goaded
+      goaded := eo.goaded || !eo.goadedBy.isEmpty
+      goadedBy := eo.goadedBy
+      goadedUntilNextTurnOf := eo.goadedUntilNextTurnOf
       chosenOdd := eo.chosenOdd
       chosenCreatureType := eo.chosenCreatureType
       chosenColor := eo.chosenColor
@@ -7651,13 +7671,13 @@ private partial def evalStaticObjsCore (g : Game) (src : GameObject) (srcCtrl : 
           for p in owners do
             for oid in (g.player p).graveyard do
               if let some o := g.findObject? oid then
-                if g.evalStaticPredCore src srcCtrl o pred colorOf ok ptOf? kwOf? triggerSubject? hasKwExtra? eventIdx? then
+                if isDiscardableCard o && g.evalStaticPredCore src srcCtrl o pred colorOf ok ptOf? kwOf? triggerSubject? hasKwExtra? eventIdx? then
                   out := out.push o
         | .hand =>
           for p in owners do
             for oid in (g.player p).hand do
               if let some o := g.findObject? oid then
-                if g.evalStaticPredCore src srcCtrl o pred colorOf ok ptOf? kwOf? triggerSubject? hasKwExtra? eventIdx? then
+                if isDiscardableCard o && g.evalStaticPredCore src srcCtrl o pred colorOf ok ptOf? kwOf? triggerSubject? hasKwExtra? eventIdx? then
                   out := out.push o
         | .library =>
           for p in owners do
@@ -8495,7 +8515,7 @@ private def extractContinuousL6 (g : Game) (src : GameObject) (srcCtrl : PlayerI
                 addWards := acc.addWards ++ KeywordAbility.wardCosts effKs
                 addProwess := if kwOnly then acc.addProwess else acc.addProwess + KeywordAbility.prowessCount effKs }
           | .grantStatic sas =>
-            if kwOnly || sas.isEmpty then acc
+            if sas.isEmpty then acc
             else { acc with addStatics := acc.addStatics ++ sas }
           | .grantTriggered trs =>
             if kwOnly || trs.isEmpty then acc
@@ -8743,7 +8763,11 @@ private def evalStaticsFast (g : Game) (needTs : Bool)
     let hasPeerOrEmb :=
       !isStackAbilityObj x &&
         g.hasPeerOrEmblemStaticLayer6 x staticGrantsOrStripsStatic (some hasCopy)
-    if !hasEff && !hasRelevantAtt && !hasPeerOrEmb then
+    let hasOwnGrantOrStrip :=
+      x.isOnBattlefield && !isFaceDownMasked x && !strippedByL4 &&
+        (let xBc0 := if hasCopy then g.baseCard x else x.printed
+         !xBc0.staticAbilities.isEmpty && xBc0.staticAbilities.any staticGrantsOrStripsStatic)
+    if !hasEff && !hasRelevantAtt && !hasPeerOrEmb && !hasOwnGrantOrStrip then
       if isFaceDownMasked x || strippedByL4 then (#[], false)
       else
         let (xBc, xBaseTs) := if needTs then g.baseCardWithTs x else (g.baseCard x, (0, 0))
@@ -8814,6 +8838,45 @@ private def evalStaticsFast (g : Game) (needTs : Bool)
               g.durationActive d &&
                 add.staticAbilities.any (staticDirectlyOrTransitivelyMatches staticGrantsOrStripsStatic 3)
             | _ => false)
+      let rec pushFast : Nat → Array FastStaticEntry → (Nat × Nat) →
+          AbilityRemoval → Array StaticAbility → Bool → Option Nat →
+          Array FastStaticEntry
+        | depth, raw, ts, rem, addStatics, requiresRetainsBase, requiresGrantedIdx? =>
+          let selfDeltas : Array Layer6Delta :=
+            match depth with
+            | 0 => #[]
+            | _ + 1 =>
+              if !x.isOnBattlefield || addStatics.isEmpty then #[]
+              else
+                addStatics.filterMap fun ab =>
+                  if staticGrantsOrStripsStatic ab then
+                    match g.extractContinuousL6 x xCtrl x ab false (some peerKwOf) (some peerHasKwExtra) with
+                    | some dl =>
+                      if dl.kwDepCheck?.all (fun f => f initL6St) &&
+                          (dl.rem == .all || !dl.addStatics.isEmpty) then
+                        some dl
+                      else none
+                    | none => none
+                  else none
+          let grantIdx := raw.size
+          let grantTs := maxTs xObjTs ts
+          let hasSelf := !selfDeltas.isEmpty
+          let raw := raw.push {
+            idx := grantIdx
+            ts := ts
+            rem := rem
+            add := addStatics.map (·, grantTs)
+            requiresRetainsBase := requiresRetainsBase
+            requiresGrantedIdx? := requiresGrantedIdx?
+            setsGrantedIdx := hasSelf
+          }
+          match depth with
+          | 0 => raw
+          | depth' + 1 =>
+            if hasSelf then
+              selfDeltas.foldl (fun acc dl =>
+                pushFast depth' acc ts dl.rem dl.addStatics false (some grantIdx)) raw
+            else raw
       Id.run do
         let mut raw : Array FastStaticEntry := #[]
         if x.isOnBattlefield && !initStatics.isEmpty then
@@ -8822,13 +8885,7 @@ private def evalStaticsFast (g : Game) (needTs : Bool)
               if let some d := g.extractContinuousL6 x xCtrl x ab false (some peerKwOf) (some peerHasKwExtra) then
                 if d.kwDepCheck?.all (fun f => f initL6St) &&
                     (d.rem == .all || !d.addStatics.isEmpty) then
-                  raw := raw.push {
-                    idx := raw.size
-                    ts := abTs
-                    rem := d.rem
-                    add := d.addStatics.map (·, maxTs xObjTs abTs)
-                    requiresRetainsBase := true
-                  }
+                  raw := pushFast 3 raw abTs d.rem d.addStatics true none
         if x.isOnBattlefield && (hasRelevantAtt || hasPeerOrEmb || hasGrantedPeerL6Static) then
           for src in g.objects do
             if src.isOnBattlefield && src.id != x.id then
@@ -8844,13 +8901,7 @@ private def evalStaticsFast (g : Game) (needTs : Bool)
                     if let some d := g.extractContinuousL6 src attCtrl x ab false (some peerKwOf) (some peerHasKwExtra) then
                       if d.kwDepCheck?.all (fun f => f initL6St) &&
                           (d.rem == .all || !d.addStatics.isEmpty) then
-                        let entryTs := maxTs attTs abTs
-                        raw := raw.push {
-                          idx := raw.size
-                          ts := entryTs
-                          rem := d.rem
-                          add := d.addStatics.map (·, maxTs xObjTs entryTs)
-                        }
+                        raw := pushFast 3 raw (maxTs attTs abTs) d.rem d.addStatics false none
               else if hasGrantedPeerL6Static ||
                   (!src.status.faceDown && !srcBc.staticAbilities.isEmpty &&
                     srcBc.staticAbilities.any (fun ab => !isAttachedHostStatic ab && staticGrantsOrStripsStatic ab)) then
@@ -8860,12 +8911,7 @@ private def evalStaticsFast (g : Game) (needTs : Bool)
                   if let some d := g.extractContinuousL6 src srcCtrl x ab false (some peerKwOf) (some peerHasKwExtra) then
                     if d.kwDepCheck?.all (fun f => f initL6St) &&
                         (d.rem == .all || !d.addStatics.isEmpty) then
-                      raw := raw.push {
-                        idx := raw.size
-                        ts := abTs
-                        rem := d.rem
-                        add := d.addStatics.map (·, maxTs xObjTs abTs)
-                      }
+                      raw := pushFast 3 raw abTs d.rem d.addStatics false none
             else if src.zone == .command && !src.printed.staticAbilities.isEmpty &&
                 (if hasCopy then g.baseCard src else src.printed).types.isEmpty &&
                 src.printed.staticAbilities.any staticGrantsOrStripsStatic then
@@ -8875,12 +8921,7 @@ private def evalStaticsFast (g : Game) (needTs : Bool)
                 if let some d := g.extractContinuousL6 src embCtrl x ab false (some peerKwOf) (some peerHasKwExtra) then
                   if d.kwDepCheck?.all (fun f => f initL6St) &&
                       (d.rem == .all || !d.addStatics.isEmpty) then
-                    raw := raw.push {
-                      idx := raw.size
-                      ts := embTs
-                      rem := d.rem
-                      add := d.addStatics.map (·, maxTs xObjTs embTs)
-                    }
+                    raw := pushFast 3 raw embTs d.rem d.addStatics false none
         else if !x.isOnBattlefield && !isStackAbilityObj x && (hasPeerOrEmb || hasGrantedPeerL6Static) then
           let zk := x.zone.kind
           for src in g.objects do
@@ -8896,12 +8937,7 @@ private def evalStaticsFast (g : Game) (needTs : Bool)
                     if let some d := g.extractContinuousL6 src srcCtrl x ab false (some peerKwOf) (some peerHasKwExtra) then
                       if d.kwDepCheck?.all (fun f => f initL6St) &&
                           (d.rem == .all || !d.addStatics.isEmpty) then
-                        raw := raw.push {
-                          idx := raw.size
-                          ts := abTs
-                          rem := d.rem
-                          add := d.addStatics.map (·, maxTs xObjTs abTs)
-                        }
+                        raw := pushFast 3 raw abTs d.rem d.addStatics false none
             else if src.zone == .command && !src.printed.staticAbilities.isEmpty &&
                 (if hasCopy then g.baseCard src else src.printed).types.isEmpty &&
                 src.printed.staticAbilities.any (fun ab => staticMayAffectZone zk ab && staticGrantsOrStripsStatic ab) then
@@ -8912,12 +8948,7 @@ private def evalStaticsFast (g : Game) (needTs : Bool)
                   if let some d := g.extractContinuousL6 src embCtrl x ab false (some peerKwOf) (some peerHasKwExtra) then
                     if d.kwDepCheck?.all (fun f => f initL6St) &&
                         (d.rem == .all || !d.addStatics.isEmpty) then
-                      raw := raw.push {
-                        idx := raw.size
-                        ts := embTs
-                        rem := d.rem
-                        add := d.addStatics.map (·, maxTs xObjTs embTs)
-                      }
+                      raw := pushFast 3 raw embTs d.rem d.addStatics false none
         for pos in [0:g.activeEffects.size] do
           let (eid, s) := g.activeEffects[pos]!
           match s with
@@ -8925,29 +8956,7 @@ private def evalStaticsFast (g : Game) (needTs : Bool)
             if scopeOk sc && g.durationActive d && g.effectPhasingAllows x eid sc d &&
                 (rem == .all || !add.staticAbilities.isEmpty) then
               let effTs := g.effectTimestamp eid pos
-              let grantTs := maxTs xObjTs effTs
-              let grantIdx := raw.size
-              let hasSelfStaticDeltas := x.isOnBattlefield && !add.staticAbilities.isEmpty
-              raw := raw.push {
-                idx := grantIdx
-                ts := effTs
-                rem := rem
-                add := add.staticAbilities.map (·, grantTs)
-                setsGrantedIdx := hasSelfStaticDeltas
-              }
-              if hasSelfStaticDeltas then
-                for ab in add.staticAbilities do
-                  if staticGrantsOrStripsStatic ab then
-                    if let some dl := g.extractContinuousL6 x xCtrl x ab false (some peerKwOf) (some peerHasKwExtra) then
-                      if dl.kwDepCheck?.all (fun f => f initL6St) &&
-                          (dl.rem == .all || !dl.addStatics.isEmpty) then
-                        raw := raw.push {
-                          idx := raw.size
-                          ts := effTs
-                          rem := dl.rem
-                          add := dl.addStatics.map (·, grantTs)
-                          requiresGrantedIdx? := some grantIdx
-                        }
+              raw := pushFast 3 raw effTs rem add.staticAbilities false none
           | _ => pure ()
         let sorted := raw.qsort fun a b =>
           if a.ts.1 != b.ts.1 then a.ts.1 < b.ts.1
@@ -9201,29 +9210,58 @@ private def evalLayer6Aux (g : Game) (needStaticsTs kwOnly : Bool) : Nat → Gam
           manaGrants := pushUniqMana base.manaGrants e.addMana
           lanternGrant := base.lanternGrant || e.addLantern
           colorlessGrant := base.colorlessGrant || e.addColorlessGrant }
+    let rec pushDeltaAux : Nat → Array (L6TsSource × Layer6UnifiedEntry) →
+        L6TsSource → Layer6Delta → ObjectScope → Bool → Option Nat →
+        Array (L6TsSource × Layer6UnifiedEntry)
+      | depth, pending, tsSrc, d, sc, requiresRetainsBase, requiresGrantedIdx? =>
+        let grantedDeltas : Array Layer6Delta :=
+          match depth with
+          | 0 => #[]
+          | _ + 1 =>
+            if !o.isOnBattlefield || d.addStatics.isEmpty then #[]
+            else
+              d.addStatics.filterMap fun ab =>
+                g.extractContinuousL6 o oCtrl o ab kwOnly (some peerKwOf) (some peerHasKwExtra)
+        let hasSelf := !grantedDeltas.isEmpty
+        let hasDirect :=
+          d.rem != .none || !d.addKw.isEmpty || (!kwOnly && !d.addStatics.isEmpty) ||
+            !d.addTriggers.isEmpty || !d.addActivated.isEmpty || !d.addWards.isEmpty ||
+            d.addProwess > 0 || !d.addMana.isEmpty || d.addLantern
+        if !hasDirect && !hasSelf then pending
+        else
+          let gi := pending.size
+          let pending := pending.push (tsSrc, {
+            idx := gi
+            scope := sc
+            kwDepCheck? := d.kwDepCheck?
+            requiresRetainsBase := requiresRetainsBase
+            requiresGrantedIdx? := requiresGrantedIdx?
+            setsGrantedIdx := hasSelf
+            rem := d.rem
+            addKw := d.addKw
+            addStaticsRaw := if !kwOnly && needStaticsTs then d.addStatics else #[]
+            addStatics :=
+              if kwOnly || needStaticsTs || d.addStatics.isEmpty then #[]
+              else d.addStatics.map (·, (0, 0))
+            addTriggers := d.addTriggers
+            addActivated := d.addActivated
+            addWards := d.addWards
+            addProwess := d.addProwess
+            addMana := d.addMana
+            addLantern := d.addLantern
+          })
+          match depth with
+          | 0 => pending
+          | depth' + 1 =>
+            if hasSelf then
+              grantedDeltas.foldl (fun p dl =>
+                pushDeltaAux depth' p tsSrc dl (.objects #[o.id]) false (some gi)) pending
+            else pending
     let pushDelta (pending : Array (L6TsSource × Layer6UnifiedEntry)) (tsSrc : L6TsSource)
         (d : Layer6Delta) (sc : ObjectScope := .objects #[o.id])
         (requiresRetainsBase : Bool := false) (requiresGrantedIdx? : Option Nat := none) :
         Array (L6TsSource × Layer6UnifiedEntry) :=
-      pending.push (tsSrc, {
-        idx := pending.size
-        scope := sc
-        kwDepCheck? := d.kwDepCheck?
-        requiresRetainsBase := requiresRetainsBase
-        requiresGrantedIdx? := requiresGrantedIdx?
-        rem := d.rem
-        addKw := d.addKw
-        addStaticsRaw := if needStaticsTs then d.addStatics else #[]
-        addStatics :=
-          if needStaticsTs || d.addStatics.isEmpty then #[]
-          else d.addStatics.map (·, (0, 0))
-        addTriggers := d.addTriggers
-        addActivated := d.addActivated
-        addWards := d.addWards
-        addProwess := d.addProwess
-        addMana := d.addMana
-        addLantern := d.addLantern
-      })
+      pushDeltaAux 3 pending tsSrc d sc requiresRetainsBase requiresGrantedIdx?
     Id.run do
       let mut pending : Array (L6TsSource × Layer6UnifiedEntry) := #[]
       -- 0. Own printed self statics gated on `retainsBase` in CR 613.7 / 613.8 order.
@@ -10009,7 +10047,7 @@ private def perObjApplyReversePreSnap (st : PerObjHistState) (eo : EventObject) 
   let pr0 := if st.tr != prevTr then swapCardFace st.pr else st.pr
   { z := eo.zone
     ph := eo.zone == .battlefield && eo.phasedOut
-    fd := eo.zone == .battlefield && eo.faceDown
+    fd := (eo.zone == .battlefield || eo.zone == .stack) && eo.faceDown
     prep := if eo.zone != .battlefield then false else st.prep
     dc :=
       if eo.zone == .battlefield then
@@ -10025,7 +10063,7 @@ private def perObjApplyReverseCeased (st : PerObjHistState) (eo : EventObject)
   let pr0 := if st.tr != prevTr then swapCardFace st.pr else st.pr
   { z := eo.zone
     ph := eo.zone == .battlefield && eo.phasedOut
-    fd := eo.zone == .battlefield && eo.faceDown
+    fd := (eo.zone == .battlefield || eo.zone == .stack) && eo.faceDown
     prep := prepVal
     dc :=
       if eo.zone == .battlefield then
@@ -10054,7 +10092,7 @@ private def perObjApplyReverseMovedBefore (st : PerObjHistState) (before : Event
   let pr0 := if st.tr != prevTr then swapCardFace st.pr else st.pr
   { z := fromZ
     ph := fromZ == .battlefield && before.phasedOut
-    fd := fromZ == .battlefield && before.faceDown
+    fd := (fromZ == .battlefield || fromZ == .stack) && before.faceDown
     prep := prepVal
     dc :=
       if fromZ == .battlefield then
@@ -10102,6 +10140,8 @@ private def synthEventObjForMat (obj : GameObject) : EventObject :=
     prepared := obj.status.prepared
     harnessed := obj.status.harnessed
     goaded := obj.status.goaded || !obj.status.goadedBy.isEmpty
+    goadedBy := obj.status.goadedBy
+    goadedUntilNextTurnOf := obj.status.goadedUntilNextTurnOf
     chosenOdd := obj.status.chosenOdd
     chosenCreatureType := obj.status.chosenCreatureType
     chosenColor := obj.status.chosenColor
@@ -10133,7 +10173,10 @@ private def histUpdateObjEntryFromSnap (cur : HistObjEntry) (z : Zone)
     rc? := some eo.controller
     tap? := some (z == .battlefield && eo.tapped)
     harn? := some (z == .battlefield && eo.harnessed)
-    goad? := some (z == .battlefield && eo.goaded, #[], #[]) }
+    goad? :=
+      if z == .battlefield then
+        some (eo.goaded || !eo.goadedBy.isEmpty, eo.goadedBy, eo.goadedUntilNextTurnOf)
+      else some (false, #[], #[]) }
 
 private def histClearDepartedObjEntry (cur : HistObjEntry)
     (eo? : Option EventObject := none) : HistObjEntry :=
@@ -10194,21 +10237,29 @@ private def histClearDepartedObjEntry (cur : HistObjEntry)
   | .rules (.permanent (.designation eo (.goaded byP untilNext) gained)) =>
     if let some pid := eo.id then
       gs := gs.updateObj pid fun cur =>
-        let (_, gBy, gUntil) := cur.goad?.getD (eo.goaded, #[], #[])
-        if gained then
-          let gBy' := if !eo.goaded then gBy.filter (· != byP) else gBy
-          let gUntil' := if !eo.goaded then gUntil.filter (· != byP) else gUntil
-          { cur with goad? := some (eo.goaded || !gBy'.isEmpty, gBy', gUntil') }
+        if !eo.goadedBy.isEmpty || !eo.goaded then
+          { cur with
+            goad? := some (eo.goaded || !eo.goadedBy.isEmpty, eo.goadedBy, eo.goadedUntilNextTurnOf) }
         else
-          let gBy' := if gBy.contains byP then gBy else gBy.push byP
-          let gUntil' := if untilNext && !gUntil.contains byP then gUntil.push byP else gUntil
-          { cur with goad? := some (true, gBy', gUntil') }
+          -- Fallback for synthetic `EventObject`s constructed with `goaded := true` and empty `goadedBy`.
+          let (_, gBy, gUntil) := cur.goad?.getD (true, #[], #[])
+          if gained then
+            let gBy' := if gBy.size > 1 then gBy.filter (· != byP) else gBy
+            let gUntil' := if untilNext && gBy.size > 1 then gUntil.filter (· != byP) else gUntil
+            { cur with goad? := some (!gBy'.isEmpty, gBy', gUntil') }
+          else
+            let gBy' := if gBy.contains byP then gBy else gBy.push byP
+            let gUntil' := if untilNext && !gUntil.contains byP then gUntil.push byP else gUntil
+            { cur with goad? := some (true, gBy', gUntil') }
   | .rules (.permanent (.designation eo .ringBearer gained)) =>
     if let some pid := eo.id then
       if gained then
-        gs := { gs with
-          ringBearers := gs.ringBearers.map fun (q, rb) =>
-            if rb == some pid then (q, none) else (q, rb) }
+        if !eo.ringBearer then
+          gs := { gs with
+            ringBearers := gs.ringBearers.map fun (q, rb) =>
+              if rb == some pid then (q, none) else (q, rb) }
+        else if let some c := eo.controller then
+          gs := { gs with ringBearers := setHistPlOptObj gs.ringBearers c (some pid) }
       else if let some c := eo.controller then
         gs := { gs with ringBearers := setHistPlOptObj gs.ringBearers c (some pid) }
   | .rules (.permanent (.tapped eo _)) =>
@@ -10308,8 +10359,25 @@ private def histClearDepartedObjEntry (cur : HistObjEntry)
     else if !nonInitMatIds.contains obj.id then
       nonInitMatIds := nonInitMatIds.push obj.id
   | .rules (.player (.ringTempted p bearer _)) =>
-    if bearer.isSome then
-      gs := { gs with ringBearers := setHistPlOptObj gs.ringBearers p none }
+    if let some b := bearer then
+      let evBatch := (g.events[idx]?).bind (·.batch)
+      let hasPairedDesig := Id.run do
+        let mut j := idx
+        while j > 0 do
+          j := j - 1
+          match g.events[j]? with
+          | none => break
+          | some pe =>
+            if pe.batch != evBatch then break
+            match pe.change with
+            | .rules (.permanent (.designation eo .ringBearer true)) =>
+              if eo.id == some b then return true
+            | .engine (.logMsg _) => pure ()
+            | _ => break
+        return false
+      if !hasPairedDesig then
+        if ((gs.ringBearers.find? (·.1 == p)).bind Prod.snd) == some b then
+          gs := { gs with ringBearers := setHistPlOptObj gs.ringBearers p none }
   | .rules (.player (.becameMonarch p prev?)) =>
     let m1 := setHistPlFlag gs.monarchs p false
     let m2 :=
@@ -10673,7 +10741,7 @@ private def perObjApplyForwardMat (obj : GameObject) : PerObjHistState :=
           controller :=
             eo.controller.orElse fun _ =>
               match eo.zone with
-              | .battlefield | .stack => some c
+              | .battlefield | .stack | .command => some c
               | _ => none }
       let newEidPrep :=
         eo.zone == .battlefield && !eo.faceDown &&
@@ -10896,7 +10964,10 @@ private def buildMissingHistObjs (g : Game) (gs : HistGlobalState)
             let harnessed := z == .battlefield && (ent.harn?.getD (info?.any (·.harnessed)))
             let (goaded, goadedBy, goadedUntil) :=
               if z == .battlefield then
-                ent.goad?.getD (info?.any (·.goaded), #[], #[])
+                ent.goad?.getD
+                  (info?.any (fun eo => eo.goaded || !eo.goadedBy.isEmpty),
+                   (info?.map (·.goadedBy)).getD #[],
+                   (info?.map (·.goadedUntilNextTurnOf)).getD #[])
               else (false, #[], #[])
             let allowChosen := z == .battlefield && !fd
             some (applyHistTrackedCounters g csMap evLen
@@ -11360,13 +11431,21 @@ def ironFistTapGrants (g : Game) (o : GameObject) : Nat :=
 def wardCostsOn (g : Game) (o : GameObject) : Array CostSpec :=
   if o.isLkiSnapshot then
     (o.lkiLayer6.map (·.wardCosts)).getD #[]
-  else if !o.isOnBattlefield && !g.hasAnyStaticLayer6Effect &&
-      !(!isStackAbilityObj o && g.hasPeerOrEmblemStaticLayer6 o staticAffectsKeywords) &&
-      (g.baseCard o).staticAbilities.isEmpty then
-    if isFaceDownMasked o then #[]
-    else KeywordAbility.wardCosts (g.currentKeywords o)
   else
-    (g.evalLayer6Fast o).wards
+    let hasWardEff := g.activeEffects.any fun (_, s) =>
+      match s with
+      | .layered _ (.abilities add rem) d =>
+        g.durationActive d &&
+          (rem == .all || !add.staticAbilities.isEmpty ||
+            !(KeywordAbility.wardCosts add.keywords).isEmpty)
+      | _ => false
+    if !o.isOnBattlefield && !hasWardEff &&
+        !(!isStackAbilityObj o && g.hasPeerOrEmblemStaticLayer6 o staticAffectsKeywords) &&
+        (g.baseCard o).staticAbilities.isEmpty then
+      if isFaceDownMasked o then #[]
+      else KeywordAbility.wardCosts (g.currentKeywords o)
+    else
+      (g.evalLayer6Fast o).wards
 
 
 private def hasAnyManaGrantSource (g : Game) : Bool :=
@@ -11442,11 +11521,13 @@ def activatedAbilitiesOf (g : Game) (o : GameObject) : Array ActivatedAbility :=
         (g.evalLayer6Fast o).activated
     else
       let morphAb : Array ActivatedAbility :=
-        match (g.unmaskedCopiableValues o).morphCost? with
-        | some cost =>
-          #[{ effect := { body := .permanent (.turnFaceUp .this) }
-              cost := cost }]
-        | none => #[]
+        if o.isOnBattlefield then
+          match (g.unmaskedCopiableValues o).morphCost? with
+          | some cost =>
+            #[{ effect := { body := .permanent (.turnFaceUp .this) }
+                cost := cost }]
+          | none => #[]
+        else #[]
       morphAb ++ (g.evalLayer6Fast o).activated
   if raw.any (fun ab => ab.effect == Effect.attachToTargetCreatureYouControl &&
       (ab.equipSubtype?.isSome || ab.isEquipWorthy)) then
@@ -12421,7 +12502,8 @@ private partial def evalLayer7bAux (g : Game) (visited : Array (ObjectId × (Int
     else
       let (bc, baseTs) := g.baseCardWithTs o
       let youP := g.you o
-      let handP : Int := Int.ofNat (g.player youP).hand.size
+      let handP : Int :=
+        Int.ofNat ((g.player youP).hand.filter (fun id => (g.findObject? id).any isDiscardableCard)).size
       let l6 := g.evalLayer6 o
       let hasPrintedPtCda :=
         l6.retainsBase && bc.staticAbilities.any StaticAbility.isPTDefiningCDA
@@ -13231,10 +13313,7 @@ private def coreSorceryTimingOk (g : Game) (p : PlayerId) (o : GameObject) (face
       zone := .stack
       controller := some p
       status := { o.status with faceDown := (face.name == "") } }
-  let oTcs := g.evalLayer3 spellObj
-  let faceStatics :=
-    if oTcs.isEmpty then face.staticAbilities
-    else face.staticAbilities.map (TextChange.applyStaticAbility oTcs)
+  let faceStatics := g.staticAbilities spellObj
   let countPrevMatching (srcObj : GameObject) (srcCtrl : PlayerId) (spellPred : ObjectPred) : Nat :=
     match spellPred with
     | .anyObject => g.loggedSpellsCast p
@@ -14675,6 +14754,8 @@ def snapshot (g : Game) (o : GameObject) : EventObject :=
     prepared := o.status.prepared
     harnessed := o.status.harnessed
     goaded := o.status.goaded || !o.status.goadedBy.isEmpty
+    goadedBy := o.status.goadedBy
+    goadedUntilNextTurnOf := o.status.goadedUntilNextTurnOf
     ringBearer :=
       if o.isLkiSnapshot then (o.lkiLayer6.map (·.ringBearer)).getD false
       else o.isOnBattlefield &&
@@ -15989,6 +16070,23 @@ reflexive sacrifice CR 603.12, and `post.delayedTriggers` CR 603.7). -/
                     pattern := .stepEachEndStep, eventCause := some dt.cause,
                     delayedTrigger := some (dt.kind, dt.cause), checked := true }
               | _ => pure ()
+      | .endOfCombat =>
+        for dt in post.delayedTriggers do
+          if post.stillInGame dt.controller then
+            match dt.kind with
+            | .endOfCombatExile oid | .endOfCombatSacrifice oid =>
+              let obj? := post.findObject? oid
+              let src := (dt.source.orElse (fun _ => obj?)).getD
+                { printed := { name := "Delayed Trigger", types := #[] }
+                  id := noSourceSentinelId, owner := dt.controller,
+                  controller := some dt.controller, zone := .exile }
+              let pat : TriggerPattern := .stepBegins .endOfCombat (.player .any)
+              let ab : TriggeredAbility := TriggeredAbility.mkTrigger pat { body := .noop }
+              waiting := waiting.push
+                { controller := dt.controller, source := src, ability := ab,
+                  pattern := pat, eventCause := some dt.cause,
+                  delayedTrigger := some (dt.kind, dt.cause), checked := true }
+            | _ => pure ()
       | _ => pure ()
     | .rules (.combat (.attackersDeclared activePlayer decls)) =>
       let attackers := (decls.filterMap (·.1.id)).filterMap post.findObject?
@@ -16464,14 +16562,16 @@ def closeBatch (g : Game) (pre : GameSnapshot) (batchId : BatchId)
         | some rid =>
           match g.findObject? rid with
           | none =>
-            let snap := (g.lastKnownBefore? rid).getD { id := some rid }
+            let snap := { (g.lastKnownBefore? rid).getD { id := some rid } with
+              controller := some pl.id, ringBearer := true }
             pushInBatch g (GameEvent.designation g.turnNumber snap .ringBearer false
               (cause := .gameRule .staticAbility))
           | some o =>
             if o.isBattlefieldObject && g.controlledBy o pl.id then g
             else
-              pushInBatch g (GameEvent.designation g.turnNumber (g.snapshot o) .ringBearer false
-                (cause := .gameRule .staticAbility))) g
+              pushInBatch g (GameEvent.designation g.turnNumber
+                { g.snapshot o with controller := some pl.id, ringBearer := true }
+                .ringBearer false (cause := .gameRule .staticAbility))) g
     let wts :=
       (matchTriggers pre g batchEvents).filter (fun wt =>
         g.stillInGame wt.controller)
@@ -16893,7 +16993,8 @@ opaque runPostCastCleanupFwd (g : Game) : Game := g
 /-- Forward reference to `Decisions.resumePendingReplacement` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_resume_pending_replacement"]
 opaque resumePendingReplacementFwd (g : Game) (pr : PendingReplacement)
-    (followedByFinishChoice : Bool := false) : Game := g
+    (followedByFinishChoice : Bool := false)
+    (followedByExplicitPriority? : Option PlayerId := none) : Game := g
 
 /-- Forward reference to `Movement.flushQueuedLinkedExile` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_flush_queued_linked_exile"]
@@ -16911,9 +17012,17 @@ opaque finishAndGrantPriorityFwd (g : Game) (prio : PlayerId) : Game := g
 @[extern "mtg_game_any_continuation_grants_priority"]
 opaque anyContinuationGrantsPriorityFwd (g : Game) : Bool := false
 
+/-- Forward reference to `Decisions.anyPostPromptContinuationGrantsPriority` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_any_post_prompt_continuation_grants_priority"]
+opaque anyPostPromptContinuationGrantsPriorityFwd (g : Game) : Bool := false
+
 /-- Forward reference to `Decisions.anyContinuationSettlesControlFlow` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_any_continuation_settles_control_flow"]
 opaque anyContinuationSettlesControlFlowFwd (g : Game) : Bool := false
+
+/-- Forward reference to `Decisions.anyPostPromptContinuationSettlesControlFlow` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_any_post_prompt_continuation_settles_control_flow"]
+opaque anyPostPromptContinuationSettlesControlFlowFwd (g : Game) : Bool := false
 
 /-- Forward reference to `Decisions.hasImplicitPriorityContinuation` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_has_implicit_priority_continuation"]
@@ -16922,6 +17031,10 @@ opaque hasImplicitPriorityContinuationFwd (g : Game) : Bool := false
 /-- Forward reference to `Decisions.hasImplicitPendingPriorityContinuation` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_has_implicit_pending_priority_continuation"]
 opaque hasImplicitPendingPriorityContinuationFwd (g : Game) : Bool := false
+
+/-- Forward reference to `Decisions.hasPostPromptImplicitPendingPriorityContinuation` (resolved at link time via `@[export]`). -/
+@[extern "mtg_game_has_post_prompt_implicit_pending_priority_continuation"]
+opaque hasPostPromptImplicitPendingPriorityContinuationFwd (g : Game) : Bool := false
 
 /-- Forward reference to `Decisions.continuationUsesImplicitPendingPriorityExport` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_continuation_uses_implicit_pending_priority"]
@@ -17172,6 +17285,8 @@ private def remapProposalDelayedKind (ro : ObjectId → ObjectId) :
   | .endStepReturn oid => .endStepReturn (ro oid)
   | .endStepExile oid => .endStepExile (ro oid)
   | .endStepSacrifice oid => .endStepSacrifice (ro oid)
+  | .endOfCombatExile oid => .endOfCombatExile (ro oid)
+  | .endOfCombatSacrifice oid => .endOfCombatSacrifice (ro oid)
   | .endStepGraveReturn oid c => .endStepGraveReturn (ro oid) c
   | .lokiCopyNextInstantSorceryThisTurn sid fp =>
     .lokiCopyNextInstantSorceryThisTurn (sid.map ro) fp
@@ -17229,11 +17344,17 @@ private def remapProposalInterpCont (ro : ObjectId → ObjectId) (re : EffectId 
   | .afterDividedDamageLoop rem nm src? idx c =>
     .afterDividedDamageLoop (rem.map (fun (si, t, n) => (si, remapProposalTarget ro t, n))) nm
       (src?.map (remapProposalEventObj ro)) idx (remapProposalCause ro re c)
+  | .afterMixedDamageLoop rem nm src? idx c te acc pe? =>
+    .afterMixedDamageLoop (rem.map (fun (t, n) => (remapProposalTarget ro t, n))) nm
+      (src?.map (remapProposalEventObj ro)) idx (remapProposalCause ro re c) te acc
+      (pe?.map (fun (oid, lethal, pIdx) => (ro oid, lethal, pIdx)))
   | .afterCounterOpLoop rem mode c fi? =>
     .afterCounterOpLoop (rem.map ro) mode (remapProposalCause ro re c) fi?
   | .afterCopyAndCastExileLoop rem ex gp c pf? fi? =>
     .afterCopyAndCastExileLoop (rem.map ro) (ex.map ro) gp (remapProposalCause ro re c)
       (pf?.map (fun (id, nm) => (ro id, nm))) fi?
+  | .afterMoveCountersPut tid rem c =>
+    .afterMoveCountersPut (ro tid) rem (remapProposalCause ro re c)
   | k => k
 
 private def remapProposalInterpState (ro : ObjectId → ObjectId) (re : EffectId → EffectId)
@@ -19112,7 +19233,8 @@ private def hasPlayFromExileLoggedInSlice (g : Game) (oid : ObjectId)
       | .afterCounterOpLoop _ _ _ (some fi)
       | .afterCopyAndCastExileLoop _ _ _ _ _ (some fi)
       | .afterDamagePermanentsLoop _ _ _ _ _ fi _
-      | .afterDividedDamageLoop _ _ _ fi _ => fi ≤ expIdx
+      | .afterDividedDamageLoop _ _ _ fi _
+      | .afterMixedDamageLoop _ _ _ fi _ _ _ _ => fi ≤ expIdx
       | _ => false
   let rec contHasFromIdxAtMost (expIdx : Nat) : PendingReplacement → Bool
     | .seq a b => contHasFromIdxAtMost expIdx a || contHasFromIdxAtMost expIdx b
@@ -19131,7 +19253,9 @@ private def hasPlayFromExileLoggedInSlice (g : Game) (oid : ObjectId)
     | .untapPermanentsLoop _ _ _ _ (some fi)
     | .payCostPickItems _ _ _ _ _ (some fi)
     | .finishActivationExtraCosts _ _ _ _ _ _ _ _ _ _ _ (some fi)
-    | .finishActivateManaAbilityPicks _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (some fi)
+    | .finishActivateManaAbilityPicks _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (some fi) _
+    | .dealFightDamage _ _ _ _ false (some fi)
+    | .markDamageOn _ _ _ _ _ _ _ _ false _ (some fi)
     | .millCardsLoop _ _ _ _ _ _ (some fi) false
     | .putToBattlefieldLoop _ _ _ _ _ _ _ _ _ _ _ (some fi)
     | .finishLinkedExileMove _ _ _ _ (some fi)
@@ -19167,6 +19291,7 @@ private def hasPlayFromExileLoggedInSlice (g : Game) (oid : ObjectId)
     | .finishPostStep (.exileOpponentLibrariesLoop _ _ _ _ _ (some fi))
     | .finishPostStep (.revealPutCreaturesStep _ _ _ _ _ (some fi))
     | .finishPostStep (.exileTopForPlayLoop _ _ _ _ _ _ (some fi))
+    | .finishPostStep (.emitExpiredPlayFromExileFrom fi)
     | .checkSBA (some fi) => fi ≤ expIdx
     | _ => false
   let frameQueues (x : ObjectId) (expIdx : Nat) (f : ContinuationFrame) : Bool :=
@@ -19700,6 +19825,9 @@ def emitExpiredPlayFromExileLogs (pre g : Game) (fromEventIdx : Nat) : Game :=
           break
         let fi := nFrames - 1 - step
         let fr := gOut.continuations[fi]!
+        if step > 0 && fr.afterRandom != .none then
+          stopped := true
+          break
         let interpActive : Bool :=
           fr.interpWait?.isSome &&
             !(gOut.proposedSpell.isNone && (fr.pendingMayCastFromExile.isSome || fr.pendingFreeCopies.isSome))
@@ -20046,7 +20174,7 @@ def expireMatching (g : Game) (pred : ContinuousEffect → Bool)
   let gAfter :=
     matching.foldl (fun acc (eid, _) =>
       acc.expireEffectById eid (cause := cause) (reconcileControl := reconcileControl)
-        (preState? := preState?) (suppressEmblemLog := suppressEmblemLog)
+        (preState? := some pre) (suppressEmblemLog := suppressEmblemLog)
         (suppressReturnLog := suppressReturnLog) (skipLogIds := skipLogIds)
         (deferPlayFromExileLogs := true)) g
   if deferPlayFromExileLogs then gAfter

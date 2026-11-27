@@ -223,7 +223,7 @@ def untapPermanent (g : Game) (o : GameObject)
     (duringUntapStep : Bool := false) (logUntap : Bool := true)
     (cause : Option EventCause := none)
     (deferPlayFromExileLogs : Bool := false) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement (.untapPermanent o.id duringUntapStep logUntap cause deferPlayFromExileLogs)
   else if !o.isOnBattlefield || !o.status.tapped || g.hostCantBecomeUntapped o then g
   else

@@ -386,6 +386,10 @@ inductive DelayedTriggerKind where
   | endStepExile (objectId : ObjectId)
   /-- Sacrifice `objectId` at the beginning of the next end step. -/
   | endStepSacrifice (objectId : ObjectId)
+  /-- Exile `objectId` from the battlefield at the beginning of the end of combat step (CR 702.116a). -/
+  | endOfCombatExile (objectId : ObjectId)
+  /-- Sacrifice `objectId` at the beginning of the end of combat step (CR 702.147a / 511.2). -/
+  | endOfCombatSacrifice (objectId : ObjectId)
   /-- Return `objectId` from its owner's graveyard to the battlefield under `underController`'s control at the beginning of the next end step. -/
   | endStepGraveReturn (objectId : ObjectId) (underController : PlayerId)
   /-- Reveal creature cards from `controller`'s library for `count` exiled creatures at the beginning of the next end step (Synthetic Destiny). -/
@@ -486,8 +490,10 @@ structure EventObject where
   transformed     : Bool                 := false
   prepared        : Bool                 := false
   harnessed       : Bool                 := false
-  goaded          : Bool                 := false
-  ringBearer      : Bool                 := false
+  goaded                : Bool                 := false
+  goadedBy              : Array PlayerId       := #[]
+  goadedUntilNextTurnOf : Array PlayerId       := #[]
+  ringBearer            : Bool                 := false
   attachedTo      : Option ObjectId      := none
   counters        : CounterBag           := #[]
   token              : Bool                        := false

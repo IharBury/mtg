@@ -276,7 +276,7 @@ def expand : KeywordAbility → ExpandedKeyword
         word := .whenever
         pattern := .attacks (.sameAs .this)
         effect := {
-          body := .forEach (.eachPlayer .opponent) ⟨0⟩
+          body := .forEach (.eachPlayer { relation := .opponent, pred := .not .isDefendingPlayer }) ⟨0⟩
             (Instruction.may .you none
               (.create (.tokens .you (.const 1) (.copyOf .this #[])
                 { tapped := true, attacking := true, delayedAction? := some .exileAtEndOfCombat }))) } }] }

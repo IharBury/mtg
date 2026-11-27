@@ -636,8 +636,8 @@ private def usableColorTiers (p : ManaPool) (spend : ManaSpend) : ColorTiers × 
   }
   return (ct, ct.w.size + ct.u.size + ct.b.size + ct.r.size + ct.g.size + cCount)
 
-private def hybridTierScore (tiersA tiersB : Array Nat) (ka kb : Nat) :
-    Nat × Nat × Nat × Nat × Nat × Nat := Id.run do
+private def hybridTierCounts (tiersA tiersB : Array Nat) (ka kb : Nat) :
+    Nat × Nat × Nat × Nat × Nat := Id.run do
   let mut c0 := 0; let mut c1 := 0; let mut c2 := 0; let mut c3 := 0; let mut c4 := 0
   for i in [0 : ka] do
     match tiersA[i]! with
@@ -655,7 +655,25 @@ private def hybridTierScore (tiersA tiersB : Array Nat) (ka kb : Nat) :
     | 3 => c3 := c3 + 1
     | 4 => c4 := c4 + 1
     | _ => pure ()
-  return (c0, c1, c2, c3, c4, ka)
+  return (c0, c1, c2, c3, c4)
+
+private def addHybridTierCounts (x y : Nat × Nat × Nat × Nat × Nat) :
+    Nat × Nat × Nat × Nat × Nat :=
+  (x.1 + y.1, x.2.1 + y.2.1, x.2.2.1 + y.2.2.1, x.2.2.2.1 + y.2.2.2.1, x.2.2.2.2 + y.2.2.2.2)
+
+private def hybridTierCountsGt (x y : Nat × Nat × Nat × Nat × Nat) : Bool :=
+  let (x0, x1, x2, x3, x4) := x
+  let (y0, y1, y2, y3, y4) := y
+  if x0 != y0 then x0 > y0
+  else if x1 != y1 then x1 > y1
+  else if x2 != y2 then x2 > y2
+  else if x3 != y3 then x3 > y3
+  else x4 > y4
+
+private def hybridTierScore (tiersA tiersB : Array Nat) (ka kb : Nat) :
+    Nat × Nat × Nat × Nat × Nat × Nat :=
+  let (c0, c1, c2, c3, c4) := hybridTierCounts tiersA tiersB ka kb
+  (c0, c1, c2, c3, c4, ka)
 
 private def hybridScoreGt (x y : Nat × Nat × Nat × Nat × Nat × Nat) : Bool :=
   let (x0, x1, x2, x3, x4, x5) := x
@@ -667,10 +685,10 @@ private def hybridScoreGt (x y : Nat × Nat × Nat × Nat × Nat × Nat) : Bool 
   else if x4 != y4 then x4 > y4
   else x5 > y5
 
-private def solveHybridsPay (hybrids : List (Color × Color × Nat))
-    (ct : ColorTiers) : Option (List Nat) :=
+private def solveHybridsPayAux (hybrids : List (Color × Color × Nat))
+    (ct : ColorTiers) : Option (List Nat × (Nat × Nat × Nat × Nat × Nat)) :=
   match hybrids with
-  | [] => some []
+  | [] => some ([], (0, 0, 0, 0, 0))
   | (a, b, k) :: rest =>
     let tiersA := ct.get a
     let tiersB := ct.get b
@@ -688,12 +706,22 @@ private def solveHybridsPay (hybrids : List (Color × Color × Nat))
           hybridScoreGt (hybridTierScore tiersA tiersB ka1 (k - ka1))
             (hybridTierScore tiersA tiersB ka2 (k - ka2))
       Id.run do
+        let mut best? : Option (List Nat × (Nat × Nat × Nat × Nat × Nat)) := none
         for ka in candidates do
           let kb := k - ka
           let ct' := (ct.sub a ka).sub b kb
-          if let some restA := solveHybridsPay rest ct' then
-            return some (ka :: restA)
-        return none
+          if let some (restA, restCounts) := solveHybridsPayAux rest ct' then
+            let tot := addHybridTierCounts (hybridTierCounts tiersA tiersB ka kb) restCounts
+            match best? with
+            | none => best? := some (ka :: restA, tot)
+            | some (_, bestTot) =>
+              if hybridTierCountsGt tot bestTot then
+                best? := some (ka :: restA, tot)
+        return best?
+
+private def solveHybridsPay (hybrids : List (Color × Color × Nat))
+    (ct : ColorTiers) : Option (List Nat) :=
+  (solveHybridsPayAux hybrids ct).map Prod.fst
 
 private def solveTwobridsPay (twobrids : List (Color × Nat))
     (hybrids : List (Color × Color × Nat)) (totalHybrids : Nat)

@@ -74,8 +74,9 @@ def changeControl (g : Game) (o : GameObject) (p : PlayerId)
       match g.controllerOf o with
       | some oldCtrl =>
         if oldCtrl != p && (g.player oldCtrl).ringBearerId == some o.id then
-          g.record (GameEvent.designation g.turnNumber (g.snapshot o) .ringBearer false
-            (cause := cause.getD (.gameRule .staticAbility)))
+          g.record (GameEvent.designation g.turnNumber
+            { g.snapshot o with controller := some oldCtrl, ringBearer := true }
+            .ringBearer false (cause := cause.getD (.gameRule .staticAbility)))
         else g
       | none => g
     g.createEffect (.control o.id p untilEot turnEndsLeft untilSourceLeaves) (cause := cause)
@@ -261,7 +262,8 @@ private def interpWaitEmitsPfe (idx : Nat) (w : InterpState) : Bool :=
     | some (.afterCounterOpLoop _ _ _ (some fi))
     | some (.afterCopyAndCastExileLoop _ _ _ _ _ (some fi))
     | some (.afterDamagePermanentsLoop _ _ _ _ _ fi _)
-    | some (.afterDividedDamageLoop _ _ _ fi _) => fi ≤ idx
+    | some (.afterDividedDamageLoop _ _ _ fi _)
+    | some (.afterMixedDamageLoop _ _ _ fi _ _ _ _) => fi ≤ idx
     | _ => false
 
 /-- Returns `(emitsBeforeBoundary, hitBoundary)` for whether `pr` emits
@@ -278,7 +280,7 @@ private def contEmitsPfeBeforeBoundary (idx : Nat) : PendingReplacement → Bool
   | .concedePlayersLoop _ _ _ _ _ _ _ _ _ _ (some fi)
   | .payCostPickItems _ _ _ _ _ (some fi)
   | .finishActivationExtraCosts _ _ _ _ _ _ _ _ _ _ _ (some fi)
-  | .finishActivateManaAbilityPicks _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (some fi)
+  | .finishActivateManaAbilityPicks _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ (some fi) _
   | .finishPostStep (.resolveCascadeLoop _ _ _ _ _ (some fi))
   | .finishPostStep (.exileUntilInstantOrSorceryLoop _ _ _ _ _ _ (some fi))
   | .checkSBA (some fi) =>
@@ -286,6 +288,8 @@ private def contEmitsPfeBeforeBoundary (idx : Nat) : PendingReplacement → Bool
   | .continueInterpreter w =>
     if interpWaitEmitsPfe idx w then (true, false)
     else (false, !w.isPureBatchLoopCont)
+  | .dealFightDamage _ _ _ _ false (some fi)
+  | .markDamageOn _ _ _ _ _ _ _ _ false _ (some fi)
   | .endControlExileLoop _ _ _ _ (some fi) false
   | .moveSimultaneousToGraveyard _ _ _ false (some fi)
   | .moveCardsToGraveyardLoop _ _ (some fi)
@@ -327,7 +331,8 @@ private def contEmitsPfeBeforeBoundary (idx : Nat) : PendingReplacement → Bool
   | .finishPostStep (.movePublicCardsToHandLoop _ _ _ _ _ _ _ (some fi))
   | .finishPostStep (.exileOpponentLibrariesLoop _ _ _ _ _ (some fi))
   | .finishPostStep (.revealPutCreaturesStep _ _ _ _ _ (some fi))
-  | .finishPostStep (.exileTopForPlayLoop _ _ _ _ _ _ (some fi)) => (fi ≤ idx, false)
+  | .finishPostStep (.exileTopForPlayLoop _ _ _ _ _ _ (some fi))
+  | .finishPostStep (.emitExpiredPlayFromExileFrom fi) => (fi ≤ idx, false)
   | pr => (false, pr.startsWithPlayFromExileDeferBoundary)
 
 /-- Whether an already-queued continuation that executes after the paused
@@ -345,9 +350,11 @@ private def hasQueuedPfeEmitterAfter (g : Game) (afterHere? : Option PendingRepl
   for off in [0:g.continuations.size] do
     let fi := g.continuations.size - 1 - off
     let frame := g.continuations[fi]!
-    -- On the top frame (`off == 0`), `frame.pendingReplacement` runs BEFORE our newly
-    -- chained continuation (or was popped into `afterHere?`), so only check lower frames.
+    -- On lower frames (`off > 0`), `drainPendingContinuations` halts on
+    -- `afterRandom != .none` before inspecting `frame.pendingReplacement`.
     if off > 0 then
+      if frame.afterRandom != .none then
+        return false
       if let some pr := frame.pendingReplacement then
         let (em, hit) := contEmitsPfeBeforeBoundary idx pr
         if em then return true
@@ -503,8 +510,9 @@ def endControlEffectById (g : Game) (eid : EffectId)
               match prevCtrl with
               | some prev =>
                 if curCtrl != prevCtrl && (acc.player prev).ringBearerId == some oid then
-                  acc.record (GameEvent.designation acc.turnNumber (acc.snapshot cur) .ringBearer false
-                    (cause := cause.getD (.gameRule .staticAbility)))
+                  acc.record (GameEvent.designation acc.turnNumber
+                    { acc.snapshot cur with controller := some prev, ringBearer := true }
+                    .ringBearer false (cause := cause.getD (.gameRule .staticAbility)))
                 else acc
               | none => acc
             if othersRemain then
@@ -550,8 +558,9 @@ def reconcileControlAfterTransition (pre post : Game)
             match prev? with
             | some prev =>
               if acc.controllerOf cur != some prev && (acc.player prev).ringBearerId == some cur.id then
-                acc.record (GameEvent.designation acc.turnNumber (acc.snapshot cur) .ringBearer false
-                  (cause := cause.getD (.gameRule .staticAbility)))
+                acc.record (GameEvent.designation acc.turnNumber
+                  { acc.snapshot cur with controller := some prev, ringBearer := true }
+                  .ringBearer false (cause := cause.getD (.gameRule .staticAbility)))
               else acc
             | none => acc
         | _, _ => acc) post
@@ -699,8 +708,9 @@ def endControlEffectsSimultaneously (g : Game) (eids : Array EffectId)
             match prevCtrl with
             | some prev =>
               if curCtrl != prevCtrl && (acc.player prev).ringBearerId == some oid then
-                acc.record (GameEvent.designation acc.turnNumber (acc.snapshot cur) .ringBearer false
-                  (cause := cause.getD (.gameRule .staticAbility)))
+                acc.record (GameEvent.designation acc.turnNumber
+                  { acc.snapshot cur with controller := some prev, ringBearer := true }
+                  .ringBearer false (cause := cause.getD (.gameRule .staticAbility)))
               else acc
             | none => acc
           if othersRemain then
@@ -732,8 +742,9 @@ def endControlEffectsSimultaneously (g : Game) (eids : Array EffectId)
             match pre.controllerOf preObj with
             | some prev =>
               if acc.controllerOf cur != some prev && (acc.player prev).ringBearerId == some cur.id then
-                acc.record (GameEvent.designation acc.turnNumber (acc.snapshot cur) .ringBearer false
-                  (cause := cause.getD (.gameRule .staticAbility)))
+                acc.record (GameEvent.designation acc.turnNumber
+                  { acc.snapshot cur with controller := some prev, ringBearer := true }
+                  .ringBearer false (cause := cause.getD (.gameRule .staticAbility)))
               else acc
             | none => acc
         | _, _ => acc) g
@@ -1230,8 +1241,9 @@ def objectLeavesTheGame (g : Game) (o : GameObject) (_leavingPlayer : PlayerId)
                   | some prev =>
                     if acc.controllerOf cur != some prev &&
                         (acc.player prev).ringBearerId == some cur.id then
-                      acc.record (GameEvent.designation acc.turnNumber (acc.snapshot cur) .ringBearer false
-                        (cause := .gameRule .playerLeftGame))
+                      acc.record (GameEvent.designation acc.turnNumber
+                        { acc.snapshot cur with controller := some prev, ringBearer := true }
+                        .ringBearer false (cause := .gameRule .playerLeftGame))
                     else acc
                   | none => acc
               | none => acc) post

@@ -129,6 +129,26 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
         g.sacrificeToGraveyard o s!"{g.name o} is sacrificed" (cause := some cause)
       else g
     | none => g
+  | .endOfCombatExile id =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        let msg := s!"{g.name o} is exiled (end of combat)"
+        let (g', _) := g.move id .exile none (cause := some cause)
+        if let .chooseReplacement .. := g'.pending then
+          g'.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id msg))
+        else if (g'.followMovedToZone? id (· == .exile)).isSome then
+          g'.logMsg msg
+        else g'
+      else g
+    | none => g
+  | .endOfCombatSacrifice id =>
+    match g.findObject? id with
+    | some o =>
+      if o.isOnBattlefield then
+        g.sacrificeToGraveyard o s!"{g.name o} is sacrificed (end of combat)" (cause := some cause)
+      else g
+    | none => g
   | .endStepGraveReturn id who =>
     match g.findObject? id with
     | some o =>

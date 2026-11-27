@@ -2835,6 +2835,100 @@ color immunity in `Demo`/`Agent`. -/
   mustHoldCheck9 "p59_improviseDemo" improviseDemoOk &&
   mustHoldCheck9 "p59_morphColorImmune" morphColorImmuneOk
 
+/- Phase 60: Layer-6 hand/graveyard mana abilities in `Demo`, non-mana `crewExcludesSelf`
+in `Agent`/`Demo`, `PlayPermission.landsAllowed := true` with `anyManaColor := true`, and
+origin-zone Layer-6 Morph + Layer-6 Sneak in `Agent`. -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let gMain := emptyHand afterDraw p0
+  let cause60 : EventCause := .oneShotEffect (some ⟨1⟩) none (some p0)
+
+  -- 1. Layer-6 granted hand/graveyard mana abilities detected by `Demo.hasGameStatePriorityAction`:
+  let handManaGrant60 : CardDef := {
+    name := "P60 Check9 HandManaGrant", types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none { zones := { zones := #[.hand], owner := .ofPlayer .you }, pred := .hasType .creature }
+        (.grantActivated #[{
+          cost := CostSpec.ofItems #[.exile (.exact 1) .yourHand .self]
+          effect := Effect.addMana #[.colored .red]
+        }])
+    ]
+  }
+  let gyManaGrant60 : CardDef := {
+    name := "P60 Check9 GyManaGrant", types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none { zones := { zones := #[.graveyard], owner := .ofPlayer .you }, pred := .hasType .creature }
+        (.grantActivated #[{
+          cost := CostSpec.ofItems #[.exile (.exact 1) .yourGraveyard .self]
+          effect := Effect.addMana #[.colored .black]
+        }])
+    ]
+  }
+  let plainVanilla60 : CardDef := creature "P60 Check9 Vanilla" (ManaCost.ofGeneric 9) #["Bear"] 2 2
+  let gHandMana60 := insertObject (addPermanent gMain handManaGrant60 p0 p0) plainVanilla60 p0 (.hand p0)
+  let gGyMana60 := insertObject (addPermanent gMain gyManaGrant60 p0 p0) plainVanilla60 p0 (.graveyard p0)
+  let handGyManaDemoOk :=
+    hasGameStatePriorityAction gHandMana60 p0 &&
+    hasGameStatePriorityAction gGyMana60 p0
+
+  -- 2. Non-mana `crewExcludesSelf`: a creature whose `.tapObjects (.totalPowerAtLeast 2)` cost
+  --    does NOT specify `.otherThan .this` is activatable by `Agent` using itself!
+  let selfCrew60 : CardDef := {
+    creature "P60 Check9 SelfCrew" ManaCost.zero #["Bear"] 2 2 with
+    activatedAbilities := #[{
+      cost := CostSpec.ofItems #[.tapObjects (.totalPowerAtLeast (.const 2)) (.all #[.hasType .creature, .tapped false, .controlledBy .you])]
+      effect := Effect.gainLife 2
+    }]
+  }
+  let gSelfCrew60 := addPermanent gMain selfCrew60 p0 p0
+  let selfCrewId60 := (gSelfCrew60.permanentsOf p0).find? (·.name == selfCrew60.name) |>.get!.id
+  let selfCrewAgentOk :=
+    hasGameStatePriorityAction gSelfCrew60 p0 &&
+    (match Agent.choose gSelfCrew60 p0 with
+     | some (.activate sid 0) => sid == selfCrewId60
+     | _ => false)
+
+  -- 3. `PlayPermission.landsAllowed := true` with `anyManaColor := true` preserves `playLand` in Demo & Agent:
+  let gExLand60 := insertObject gMain forest p0 .exile
+  let gExLandPerm60 :=
+    gExLand60.applyUnified p0
+      { body := .stack (.mayCastOrPlay (.inZones { zones := #[.exile], owner := .any } .anyObject)
+          { duration := .untilEndOfTurn, anyManaColor := true, landsAllowed := true, freeCast := false }) } #[]
+  let landsAllowedAnyManaOk :=
+    hasGameStatePriorityAction gExLandPerm60 p0 &&
+    (match Agent.choose gExLandPerm60 p0 with
+     | some (.playLand _) => true
+     | _ => false)
+
+  -- 4. Origin-zone Layer-6 Morph in `Agent` `.chooseKicker`:
+  let morphExLord60 : CardDef := {
+    name := "P60 Check9 MorphExLord", types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none { zones := { zones := #[.exile], owner := .ofPlayer .you }, pred := .hasType .creature }
+        (.grantKeywords #[.morph (CostSpec.ofItems #[.mana (ManaCost.ofGeneric 2)])])
+    ]
+  }
+  let gMorphEx60 :=
+    (insertObject (addPermanent gMain morphExLord60 p0 p0) plainVanilla60 p0 .exile).record
+      (GameEvent.manaAdded gMain.turnNumber p0
+        #[{ mana := .colorless }, { mana := .colorless }, { mana := .colorless }])
+  let morphExId60 := (gMorphEx60.objects.find? (fun o => o.zone == .exile && o.name == plainVanilla60.name)).get!.id
+  let gMorphExPerm60 :=
+    gMorphEx60.createEffect
+      (.permission (some p0) (.playFromExile morphExId60 { player := p0 }) .untilEndOfTurn)
+      (cause := some cause60)
+  let gMorphExProp60 := mustApply gMorphExPerm60 p0 (.cast morphExId60)
+  let agentOriginMorphOk :=
+    gMorphExProp60.pending == .chooseKicker p0 &&
+    (match Agent.choose gMorphExProp60 p0 with
+     | some (.announceKicker true) => true
+     | _ => false)
+
+  mustHoldCheck9 "p60_handGyManaDemo" handGyManaDemoOk &&
+  mustHoldCheck9 "p60_selfCrewAgent" selfCrewAgentOk &&
+  mustHoldCheck9 "p60_landsAllowedAnyMana" landsAllowedAnyManaOk &&
+  mustHoldCheck9 "p60_agentOriginMorph" agentOriginMorphOk
+
 
 
 

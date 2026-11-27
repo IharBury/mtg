@@ -81,7 +81,13 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
     throw s!"{face.name} requires a target"
   if let some err := g.mandatorySacrificeError? p card.id face then
     throw err
-  let origPerm : Option PlayPermission := some { player := p, withoutManaCost := true }
+  let perms := g.playPermissionsFor p card
+  let isFree := perms.isEmpty || perms.any (·.withoutManaCost)
+  let origPerm : Option PlayPermission :=
+    if isFree then some { player := p, withoutManaCost := true }
+    else
+      some ((g.paidResolutionOrigPerm? p card (face? := some face)).getD
+        { player := p, ignoreTiming := true })
   let rest := ids.filter (· != id)
   let g := g.change .saveProposalCheckpoint
   let g :=
@@ -95,18 +101,25 @@ def castFreeCopy (g : Game) (p : PlayerId) (id : ObjectId) : Except String Game 
   if !(g.findObject? newId).any (·.zone == .stack) then
     throw s!"{face.name} cannot be moved to the stack"
   let g := g.putStackEntry p newId
-  let g := g.record (GameEvent.proposed g.turnNumber newId p card.zone (.alternative "free copy"))
+  let way : CastWay := if isFree then .alternative "free copy" else .normal
+  let g := g.record (GameEvent.proposed g.turnNumber newId p card.zone way)
   let g := g.changes #[.pending .none, .pendingFreeCopies (some (p, rest, budget - mv, castsLeft - 1))]
-  let g := g.logMsg s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
+  let g := g.logMsg
+    (if isFree then
+      s!"{(g.player p).name} casts a copy of {face.name} without paying its mana cost"
+     else
+      s!"{(g.player p).name} casts a copy of {face.name}")
   let cost := g.playManaCost { card with controller := some p } face
     (origPerm := origPerm) (flashback := some false)
     (explicitAltCost := false) (useImplicitPermissions := false)
   let needsSacrifice := (g.mandatorySacrificeFilterFor? card face).isSome
+  let altCostUsed :=
+    isFree || origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
   let prop : ProposedSpell := {
     caster := p, cost, spellId := newId, original := card
     originalSnapshot := origSnap, origPerm
     needsSacrificeOther := needsSacrifice
-    alternativeCost := true, resolutionCast := true }
+    alternativeCost := altCostUsed, resolutionCast := true }
   let g' := g.beginResolutionCastTargets p prop
   return if g'.pending == .none && (g'.findObject? newId).any (·.zone == .stack) then
     g'.finishResolutionChoice
@@ -331,12 +344,12 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       return (g.logMsg "There aren't five cards named Sphinx's Approach to exile").finishResolutionChoice
     let g := g.withBatch none fun g =>
       g.exileCardsLoop toExile
-    let g := g.logMsg s!"{(g.player p).name} exiles five cards named Sphinx's Approach"
+    let exileLog := s!"{(g.player p).name} exiles five cards named Sphinx's Approach"
     let g :=
       if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
-        g.chainPendingReplacement (.finishPostStep (.searchLibrarySphinx p))
+        g.chainPendingReplacement (.seq (.logMessage exileLog) (.finishPostStep (.searchLibrarySphinx p)))
       else
-        g.runPostStep (.searchLibrarySphinx p)
+        (g.logMsg exileLog).runPostStep (.searchLibrarySphinx p)
     return g.finishResolutionChoice
   | .sphinxsApproach _, .decline => return g.finishResolutionChoice
   | .sphinxsApproach _, _ => throw "Answer accept or decline"
@@ -474,10 +487,16 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
   | .allianceMode sourceId available, .mode idx =>
     if !available.contains idx then throw "That Alliance mode has already been chosen this turn"
     return (g.applyAllianceMode sourceId idx).finishResolutionChoice
+  | .allianceMode _ available, .decline =>
+    if available.isEmpty then return g.finishResolutionChoice
+    else throw "Choose an Alliance mode"
   | .allianceMode .., _ => throw "Choose an Alliance mode"
   | .gollumMode sourceId available, .mode idx =>
     if !available.contains idx then throw "That mode has already been chosen"
     return (g.applyGollumMode sourceId idx).finishResolutionChoice
+  | .gollumMode _ available, .decline =>
+    if available.isEmpty then return g.finishResolutionChoice
+    else throw "Choose a mode"
   | .gollumMode .., _ => throw "Choose a mode"
   | .triggerModes objId remaining chosen, .mode idx =>
     let some obj := g.findObject? objId | return g.finishResolutionChoice
@@ -577,6 +596,9 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       else g
     let g := g.logMsg s!"{(g.player p).name} chooses mode {idx + 1}"
     return g.finishResolutionChoice
+  | .stackTriggerUnusedMode _ _ available _, .decline =>
+    if available.isEmpty then return g.finishResolutionChoice
+    else throw "Choose an unused mode"
   | .stackTriggerUnusedMode .., _ => throw "Choose an unused mode"
   | .stackHydeMode objId, .mode idx =>
     if idx > 1 then throw "Choose mode 0 or 1 (CR 700.2)"
@@ -658,9 +680,13 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
           else pr.originalSnapshot.name
         | none => "Vehicle"
     if ids.toList.eraseDups.length != ids.size then throw "Choose each creature once"
+    let exclSelf :=
+      ((prop?.bind (·.activation)).map (fun a => crewExcludesSelf a.cost)).getD true ||
+        prop?.any (·.tapSource)
     let crew ← ids.mapM (fun id => do
       let some c := g.findObject? id | throw "no such object"
-      if !c.isOnBattlefield || !g.isCreature c || !g.controlledBy c p || c.status.tapped || id == vehicleId then
+      if !c.isOnBattlefield || !g.isCreature c || !g.controlledBy c p || c.status.tapped ||
+          (exclSelf && id == vehicleId) then
         throw s!"{g.name c} can't crew {vName}"
       pure c)
     let total := crew.foldl (fun acc c => acc + (g.power c).toNat) 0
@@ -738,8 +764,11 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
         else g
       return g.resumeAfterBecomeCast
   | .crew _ vehicleId n, .decline =>
+    let exclSelf :=
+      ((gPre.proposedSpell.bind (·.activation)).map (fun a => crewExcludesSelf a.cost)).getD true ||
+        gPre.proposedSpell.any (·.tapSource)
     let totalAvail :=
-      ((gPre.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).foldl
+      ((gPre.creaturesControlledBy p).filter (fun c => (!exclSelf || c.id != vehicleId) && !c.status.tapped)).foldl
         (fun acc c => acc + (gPre.power c).toNat) 0
     if totalAvail < n || !gPre.proposalCostPromptStillPayable p gPre.pending then
       gPre.reverseProposedSpell? (resumeContinuation := true)
@@ -1272,6 +1301,12 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       (cause := cause)).finishResolutionChoice
   | .mayCastGrima .., _ => throw "Cast it (accept), or decline"
   | .mayCastCopy copyId, .accept =>
+    let isFree :=
+      match gPre.findObject? copyId with
+      | some o =>
+        let perms := gPre.playPermissionsFor p o
+        perms.isEmpty || perms.any (·.withoutManaCost)
+      | none => true
     let g := gPre.change .saveProposalCheckpoint
     let g :=
       if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
@@ -1283,7 +1318,7 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
       .postCastCleanup (some (.copyCeaseToExist copyId)),
       .pending .none
     ]
-    let g := g.castAsPartOfResolution p copyId (callerCheckpoint := true)
+    let g := g.castAsPartOfResolution p copyId (callerCheckpoint := true) (withoutManaCost := isFree)
     if g.pending != .none then
       return g
     else if g.proposedSpell.isNone && g.postCastCleanup.isSome then
@@ -1519,6 +1554,9 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
   | .visionMode sourceId available, .mode m =>
     if !available.contains m then throw "That mode was already chosen this turn"
     return (g.applyVisionMode p sourceId m).finishResolutionChoice
+  | .visionMode _ available, .decline =>
+    if available.isEmpty then return g.finishResolutionChoice
+    else throw "Choose a mode that hasn't been chosen this turn"
   | .visionMode .., _ => throw "Choose a mode that hasn't been chosen this turn"
   | .moonstoneMayExile cardId, .accept =>
     match g.findObject? cardId with
@@ -1727,8 +1765,15 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     let some o := g.findObject? id | throw "no such object"
     let rawFace := g.baseCard o
     let kwFace := { rawFace with keywords := g.currentKeywords o }
+    let rawPerm :=
+      if withoutPaying then none
+      else g.paidResolutionOrigPerm? p o (face? := some rawFace)
+    let forcedPerm :=
+      withoutPaying ||
+        rawPerm.any (fun pm =>
+          pm.withoutManaCost || pm.payLifeEqualManaValue || pm.prepareSource.isSome)
     let canMorph :=
-      !withoutPaying && kwFace.morph.isSome && kwFace.kicker.isNone &&
+      !forcedPerm && kwFace.morph.isSome && kwFace.kicker.isNone &&
         o.zone != .graveyard o.owner &&
         !g.spellNameForbidden ""
     if !isCastableObject o || (g.isLand o && !canMorph) then
@@ -1892,7 +1937,8 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     match purpose with
     | .toHand true =>
       if !ids.isEmpty then throw "Choose one card"
-    | .amassArmy .. => throw "Choose an Army"
+    | .amassArmy .. =>
+      if !ids.isEmpty then throw "Choose an Army"
     | _ => pure ()
     let cause := g.stashedCause.orElse (fun _ => ids[0]?.bind g.lastMoveCauseOf?)
     let g := if g.stashedCause.isSome then g.change (.stashedCause none) else g
@@ -1938,6 +1984,9 @@ def answerResolutionChoice (g : Game) (p : PlayerId) (answer : ChoiceAnswer) : E
     | none =>
       let g := g.commitEnteringAttackItems chosen' cause
       return g.finishResolutionChoice
+  | .chooseTokenCopyObject ids .., .decline =>
+    if ids.isEmpty then return g.finishResolutionChoice
+    else throw "Choose one of the tied objects to copy"
   | .chooseTokenCopyObject ids mods count tapped attacking attackingTarget extraCounters cause sourceId, ans =>
     let chosen? : Option ObjectId :=
       match ans with
@@ -2081,14 +2130,19 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
         ((g.proposedSpell.bind (·.activation)).map costPicksOf |>.getD #[])
         (g.proposedSpell.any (·.needsSacrificeOther))
     let manaSrcs := g.manaSources p
-    let cands := ((g.creaturesControlledBy p).filter (fun c => c.id != vehicleId && !c.status.tapped)).qsort
+    let exclSelf :=
+      ((g.proposedSpell.bind (·.activation)).map (fun a => crewExcludesSelf a.cost)).getD true
+    let filterExclSelf := exclSelf || tapSrc
+    let cands := ((g.creaturesControlledBy p).filter (fun c =>
+      (!filterExclSelf || c.id != vehicleId) && !c.status.tapped)).qsort
       (fun a b =>
         let aNonMana := !manaSrcs.any (·.1.id == a.id)
         let bNonMana := !manaSrcs.any (·.1.id == b.id)
         if aNonMana != bNonMana then aNonMana else g.power a > g.power b)
     match g.firstPayableCrewSelection? p vehicleId n allPicks
         (tapSource := tapSrc) (sacrificeOrExileSource := sacSrc)
-        (discardOrExileHandSource := discSrc) (orderedCands? := some cands) with
+        (discardOrExileHandSource := discSrc) (orderedCands? := some cands)
+        (excludeSelf := exclSelf) with
     | some picked => .choosePermanents picked
     | none => .decline
   | .costPicks sourceId picks _ =>
@@ -2160,8 +2214,8 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
   | .blackGatePlayer _ _ => .chooseMode 0
   | .sacrificeNontokenEach .. =>
     .choosePermanents (((g.creaturesControlledBy p).filter (!·.printed.isToken)).map (·.id) |>.extract 0 1)
-  | .mayPayManaForReflexive cost _ _ _ =>
-    if (g.player p).manaPool.canPay { symbols := cost } then .accept else .decline
+  | .mayPayManaForReflexive cost maxTimes _ _ =>
+    if maxTimes > 0 && (g.player p).manaPool.canPay { symbols := cost } then .accept else .decline
   | .mayTapSourceThen _ sourceId =>
     if (g.findObject? sourceId).any (fun o => o.isOnBattlefield && !o.status.tapped) then .accept
     else .decline
@@ -2263,11 +2317,16 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
           isCastableObject o &&
           (let rawFace := g.baseCard o
            let kwFace := { rawFace with keywords := g.currentKeywords o }
+           let rawPerm :=
+             if withoutPaying then none
+             else g.paidResolutionOrigPerm? p o (face? := some rawFace)
            let origPerm : Option PlayPermission :=
              if withoutPaying then some { player := p, withoutManaCost := true, ignoreTiming := true }
-             else
-               some ((g.paidResolutionOrigPerm? p o (face? := some rawFace)).getD
-                 { player := p, ignoreTiming := true })
+             else some (rawPerm.getD { player := p, ignoreTiming := true })
+           let forcedPerm :=
+             withoutPaying ||
+               rawPerm.any (fun pm =>
+                 pm.withoutManaCost || pm.payLifeEqualManaValue || pm.prepareSource.isSome)
            let frontOk :=
              hasTargets o rawFace &&
                (!origPerm.any (·.payLifeEqualManaValue) || g.canPayLife p (g.objectManaValue o)) &&
@@ -2280,7 +2339,7 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
                  (flashback := some false) (useImplicitPermissions := false)
                  (fromHand := o.zone == .hand p)
            let morphOk :=
-             !withoutPaying && kwFace.morph.isSome && kwFace.kicker.isNone &&
+             !forcedPerm && kwFace.morph.isSome && kwFace.kicker.isNone &&
                o.zone != .graveyard o.owner && !g.spellNameForbidden "" &&
                (let morphObj :=
                   { o with
@@ -2300,7 +2359,7 @@ def defaultChoiceAction (g : Game) (p : PlayerId) (choice : ResolutionChoice) : 
                     (explicitAltCost := true) (useImplicitPermissions := false)
                 g.canPaySpellCostFromSources p morphObj morphCost (fromHand := o.zone == .hand p))
            let impendingOk :=
-             !withoutPaying &&
+             !forcedPerm &&
                match kwFace.morph, kwFace.impending, kwFace.kicker with
                | none, some (_, alt), none =>
                  hasTargets o rawFace &&

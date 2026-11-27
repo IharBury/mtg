@@ -31,6 +31,10 @@ namespace Game
 their outcome back to suspended `InterpCont` frames. -/
 def interpChoiceVar : VarId := ⟨999⟩
 
+/-- Reserved `stepEnv` slot used by paused `trackExcess` damage loops to hand
+their accumulated excess damage back to the enclosing `.bindClose` frame. -/
+def interpExcessDamageVar : VarId := ⟨998⟩
+
 /-! ### CR 614.6 Event-Slice `StepOutcome` Summarization -/
 
 private def pushUniq {α : Type} [BEq α] (xs : Array α) (x : α) : Array α :=
@@ -312,7 +316,7 @@ private def grantPlayPermToMoved (g : Game) (env : EvalEnv) (fromId : ObjectId)
   match g.followMovedToZone? fromId (· == .exile) with
   | none => g
   | some moved =>
-    if !g.stillInGame env.controller then g
+    if !g.stillInGame env.controller || !isCastableObject moved then g
     else if !(!g.isLand moved || spec.landsAllowed) ||
         !spec.filter?.all (EvalExpr.evalObjectPred g env (.live moved)) then g
     else if spec.asFlashback then
@@ -491,8 +495,10 @@ private def applyAfterTokensEnter (g : Game) (env : EvalEnv) (ctx : InterpCtx)
           match mods.delayedAction? with
           | some .sacrificeAtEndStep | some (.sacrificeAtEndStepUnless _) =>
             g.registerDelayedTrigger { controller := p, source := some tok, kind := .endStepSacrifice tid, cause }
-          | some .exileAtEndStep | some .exileAtEndOfCombat =>
+          | some .exileAtEndStep =>
             g.registerDelayedTrigger { controller := p, source := some tok, kind := .endStepExile tid, cause }
+          | some .exileAtEndOfCombat =>
+            g.registerDelayedTrigger { controller := p, source := some tok, kind := .endOfCombatExile tid, cause }
           | none => g
         let prompted :=
           match g.findObject? tid with
@@ -779,12 +785,18 @@ private def finishCopyAndCastCopies (g : Game) (env : EvalEnv) (ctx : InterpCtx)
     let copyId := copies[0]!
     let copyName := (g.findObject? copyId).map g.name |>.getD "the card"
     g.beginResolutionChoice ctx.controller (.mayCastCopy copyId)
-      s!"{(g.player ctx.controller).name} may cast the copy of {copyName} without paying its mana cost"
+      (if gp.freeCast then
+        s!"{(g.player ctx.controller).name} may cast the copy of {copyName} without paying its mana cost"
+       else
+        s!"{(g.player ctx.controller).name} may cast the copy of {copyName}")
   else
     let maxMv := gp.maxTotalManaValue?.map (fun v => (EvalExpr.evalValue g env v).toNat) |>.getD 1000
     let maxCasts := gp.maxCasts?.getD copies.size
     g.beginResolutionChoice ctx.controller (.castCopiesFree copies maxMv maxCasts)
-      s!"{(g.player ctx.controller).name} may cast copies without paying their mana costs"
+      (if gp.freeCast then
+        s!"{(g.player ctx.controller).name} may cast copies without paying their mana costs"
+       else
+        s!"{(g.player ctx.controller).name} may cast copies")
 
 private def execCopyAndCastExileOnly (g : Game) (ctx : InterpCtx)
     (remainingIds : Array ObjectId) (exiledIds : Array ObjectId)
@@ -1532,7 +1544,7 @@ private def dealDamagePermanentsStep (g : Game) (ctx : InterpCtx)
             ctx, queue := #[],
             stack := #[.afterDamagePermanentsLoop rem amt srcName srcSnap? oppOnlyCtrl? startEventIdx cause] })
           return g
-  g := emitExpiredPlayFromExileLogs (g.mkHistoricalGameAt startEventIdx) g startEventIdx
+  g := emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt startEventIdx) g startEventIdx
   return g.applyAggregatedLifelinkSince startEventIdx (cause := some cause)
 
 private def dealDividedDamageStep (g : Game) (ctx : InterpCtx)
@@ -1567,8 +1579,57 @@ private def dealDividedDamageStep (g : Game) (ctx : InterpCtx)
           ctx, queue := #[],
           stack := #[.afterDividedDamageLoop rem srcName srcSnap? startEventIdx cause] })
         return g
-  g := emitExpiredPlayFromExileLogs (g.mkHistoricalGameAt startEventIdx) g startEventIdx
+  g := emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt startEventIdx) g startEventIdx
   return g.applyAggregatedLifelinkSince startEventIdx (cause := some cause)
+
+private def dealMixedDamageStep (g : Game) (ctx : InterpCtx)
+    (remaining : Array (Target × Nat)) (srcName : String)
+    (srcSnap? : Option EventObject) (startEventIdx : Nat) (cause : EventCause)
+    (trackExcess : Bool := false) (accumExcess : Nat := 0)
+    (pendingExcess? : Option (ObjectId × Nat × Nat) := none)
+    (writeExcessVar : Bool := false) : Game × Nat := Id.run do
+  let mut g := g
+  let mut ex := accumExcess
+  if trackExcess then
+    if let some (oid, lethal, pIdx) := pendingExcess? then
+      let dealt := g.damageDealtToPermanentSince oid pIdx
+      ex := ex + (dealt - lethal)
+  let srcObj? := srcSnap?.map g.damageSourceFromSnapshot
+  for i in [0:remaining.size] do
+    let (r, n) := remaining[i]!
+    if n > 0 then
+      let mut curPendingExcess? : Option (ObjectId × Nat × Nat) := none
+      match r with
+      | .permanent oid =>
+        if let some o := g.findObject? oid then
+          if o.isOnBattlefield then
+            let lethal := if trackExcess then g.lethalDamageThreshold o else 0
+            let pIdx := g.events.size
+            g := g.dealDamageFrom srcName o (Int.ofNat n)
+              (source := srcObj?) (sourceSnap := srcSnap?) (cause := some cause)
+              (suppressLifelink := true) (deferPlayFromExileLogs := true)
+            if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+              curPendingExcess? := if trackExcess then some (oid, lethal, pIdx) else none
+            else if trackExcess then
+              let dealt := g.damageDealtToPermanentSince oid pIdx
+              ex := ex + (dealt - lethal)
+      | .player pid =>
+        if g.stillInGame pid then
+          g := g.dealDamageToPlayer pid n (source := srcObj?) (sourceSnap := srcSnap?)
+            (cause := some cause) (suppressLifelink := true)
+      | .card _ => pure ()
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+        let rem := remaining.extract (i + 1) remaining.size
+        g := g.chainPendingReplacement (.continueInterpreter {
+          ctx, queue := #[],
+          stack := #[.afterMixedDamageLoop rem srcName srcSnap? startEventIdx cause
+            trackExcess ex curPendingExcess?] })
+        return (g, ex)
+  g := emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt startEventIdx) g startEventIdx
+  g := g.applyAggregatedLifelinkSince startEventIdx (cause := some cause)
+  if trackExcess && writeExcessVar && ex > 0 then
+    g := g.change (.bindStepOutcome interpExcessDamageVar { excessDamage := ex })
+  return (g, ex)
 
 private def execDamage (g : Game) (ctx : InterpCtx) (op : DamageOp) : Game × Option StepOutcome :=
   let env := interpEnv g ctx
@@ -1603,34 +1664,6 @@ private def execDamage (g : Game) (ctx : InterpCtx) (op : DamageOp) : Game × Op
         | some (.lki eo) => some eo
         | none => srcObj?.map g.snapshotDamageSource
       let srcName := (srcObj?.map g.name).orElse (fun _ => srcSnap?.map (·.name)) |>.getD "The source"
-      let dealOne (g : Game) (t : Target) (n : Nat) (evCause : EventCause := cause) : Game × Nat :=
-        if n == 0 then (g, 0)
-        else
-          match t with
-          | .permanent oid =>
-            match g.findObject? oid with
-            | some o =>
-              if !o.isOnBattlefield then (g, 0)
-              else
-                let lethal := if flags.trackExcess then g.lethalDamageThreshold o else 0
-                let pIdx := g.events.size
-                let g := g.dealDamageFrom srcName o (Int.ofNat n)
-                  (source := srcObj?) (sourceSnap := srcSnap?) (cause := some evCause)
-                  (suppressLifelink := true)
-                let excess :=
-                  if flags.trackExcess then
-                    let dealt := g.damageDealtToPermanentSince oid pIdx
-                    dealt - lethal
-                  else 0
-                (g, excess)
-            | none => (g, 0)
-          | .player pid =>
-            if !g.stillInGame pid then (g, 0)
-            else
-              let g := g.dealDamageToPlayer pid n (source := srcObj?) (sourceSnap := srcSnap?)
-                (cause := some evCause) (suppressLifelink := true)
-              (g, 0)
-          | .card _ => (g, 0)
       let blockingSelfNeedsSource :=
         match recExpr with
         | .objects (.inZones .battlefield (.all #[.hasType .creature, .combatRole (.blockingObject .this)])) => true
@@ -1688,22 +1721,11 @@ private def execDamage (g : Game) (ctx : InterpCtx) (op : DamageOp) : Game × Op
               if ctx.oneShotEffectId.raw != 0 then (g, cause)
               else g.allocDelayedCause (some ctx.controller) ctx.sourceId
             let startIdx := g.events.size
-            let (g, _) := g.withBatchReturn (some batchCause) fun g =>
-              Id.run do
-                let mut g := g
-                for r in recipients do
-                  let (g', _) := dealOne g r amt batchCause
-                  g := g'
-                if g.pending == .none then
-                  g := g.applyAggregatedLifelinkSince startIdx (cause := some batchCause)
-                return (g, 0)
-            let g :=
-              if let .chooseReplacement .. := g.pending then
-                g.chainPendingReplacement (.continueInterpreter {
-                  ctx, queue := #[], stack := #[.applyAggregatedLifelink startIdx batchCause] })
-              else g
+            let items := recipients.map (·, amt)
+            let g := g.withBatch (some batchCause) fun g =>
+              (dealMixedDamageStep g ctx items srcName srcSnap? startIdx batchCause).1
             (g, none)
-      else if let .chooseReplacement .. := g.pending then
+      else if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
         (g.chainPendingReplacement (.continueInterpreter {
           ctx, queue := #[.damage op], stack := #[] }), none)
       else if flags.divided && !flags.trackExcess then
@@ -1731,33 +1753,25 @@ private def execDamage (g : Game) (ctx : InterpCtx) (op : DamageOp) : Game × Op
       else
         let startIdx := g.events.size
         let div := g.resolvingDivision
-        let (g, totalExcess) := g.withBatchReturn (some cause) fun g =>
-          Id.run do
-            let mut g := g
-            let mut ex : Nat := 0
-            if flags.divided && !ctx.targets.isEmpty then
-              for i in [0:ctx.targets.size] do
-                let r := ctx.targets[i]!
-                if recipients.contains r then
-                  let n := if i < div.size then div[i]! else amt
-                  let (g', e1) := dealOne g r n
-                  g := g'
-                  ex := ex + e1
-            else
-              for i in [0:recipients.size] do
-                let r := recipients[i]!
-                let n := if flags.divided && i < div.size then div[i]! else amt
-                let (g', e1) := dealOne g r n
-                g := g'
-                ex := ex + e1
-            return (g, ex)
-        let g :=
-          if let .chooseReplacement .. := g.pending then
-            g.chainPendingReplacement (.continueInterpreter {
-              ctx, queue := #[], stack := #[.applyAggregatedLifelink startIdx cause] })
+        let items : Array (Target × Nat) := Id.run do
+          let mut out : Array (Target × Nat) := #[]
+          if flags.divided && !ctx.targets.isEmpty then
+            for i in [0:ctx.targets.size] do
+              let r := ctx.targets[i]!
+              if recipients.contains r then
+                let n := if i < div.size then div[i]! else amt
+                out := out.push (r, n)
           else
-            g.applyAggregatedLifelinkSince startIdx (cause := some cause)
-        if flags.trackExcess then
+            for i in [0:recipients.size] do
+              let r := recipients[i]!
+              let n := if flags.divided && i < div.size then div[i]! else amt
+              out := out.push (r, n)
+          return out
+        let (g, totalExcess) := g.withBatchReturn (some cause) fun g =>
+          dealMixedDamageStep g ctx items srcName srcSnap? startIdx cause
+            (trackExcess := flags.trackExcess)
+        if flags.trackExcess &&
+            !(g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false)) then
           (g, some { excessDamage := totalExcess })
         else (g, none)
   | .fight aExpr bExpr oneWay =>
@@ -1912,6 +1926,22 @@ private def distinctSearchMoveStep (g : Game) (ctx : InterpCtx) (controller : Pl
     | none => pure ()
   return g
 
+/-- Place the remaining `rest` cards from `execInspectLibrary` after the chosen-cards
+move batch has closed, opening a fresh batch for `.graveyard`/`.exile` (CR 608.2c / 616.1). -/
+def finishInspectLibraryRest (g : Game) (p : PlayerId) (restSpec : RestPlacement)
+    (rest : Array ObjectId) (cause : EventCause) : Game :=
+  match restSpec with
+  | .bottomRandom => g.putRestOnBottomRandom p rest (cause := some cause)
+  | .bottomAnyOrder => g.offerBottomAnyOrder p rest (cause := some cause)
+  | .shuffleIntoLibrary => g.shuffleThen p .none
+  | .graveyard =>
+    g.withBatch (some cause) fun g =>
+      g.moveCardsToGraveyardLoop rest (cause := some cause)
+  | .exile =>
+    g.withBatch (some cause) fun g =>
+      g.exileCardsLoop rest (cause := some cause)
+  | .leaveInPlace => g
+
 private def execInspectLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
     (spec : InspectLibrarySpec) (cause : EventCause) :
     Game × Option StepOutcome × Array InterpCont :=
@@ -1970,20 +2000,15 @@ private def execInspectLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
               else
                 let chosen := eligible.extract 0 (min hi eligible.size)
                 let rest := looked.filter (!chosen.contains ·)
-                let g := g.withBatch (some cause) fun g =>
-                  execMoveLoopStep g env ctx chosen dest .put mods cause
+                let (g, paused) := g.withBatchReturn (some cause) fun g =>
+                  let g := execMoveLoopStep g env ctx chosen dest .put mods cause
+                  (g, g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false))
                 let g :=
-                  match spec.rest with
-                  | .bottomRandom => g.putRestOnBottomRandom p rest (cause := some cause)
-                  | .bottomAnyOrder => g.offerBottomAnyOrder p rest (cause := some cause)
-                  | .shuffleIntoLibrary => g.shuffleThen p .none
-                  | .graveyard =>
-                    g.withBatch (some cause) fun g =>
-                      g.moveCardsToGraveyardLoop rest (cause := some cause)
-                  | .exile =>
-                    g.withBatch (some cause) fun g =>
-                      g.exileCardsLoop rest (cause := some cause)
-                  | .leaveInPlace => g
+                  if spec.rest == .leaveInPlace then g
+                  else if paused then
+                    g.chainPendingReplacement (.finishPostStep (.finishInspectLibraryRest p spec.rest rest cause))
+                  else
+                    g.finishInspectLibraryRest p spec.rest rest cause
                 (g, none, #[])
             | .battlefield _ =>
               if mods.tapped && spec.rest == .shuffleIntoLibrary && hi ≥ 100 then
@@ -2007,32 +2032,28 @@ private def execInspectLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
               else
                 let chosen := eligible.extract 0 (min hi eligible.size)
                 let rest := looked.filter (!chosen.contains ·)
-                let g := g.withBatch (some cause) fun g =>
-                  execMoveLoopStep g env ctx chosen dest .put mods cause
+                let (g, paused) := g.withBatchReturn (some cause) fun g =>
+                  let g := execMoveLoopStep g env ctx chosen dest .put mods cause
+                  (g, g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false))
                 let g :=
-                  match spec.rest with
-                  | .bottomRandom => g.putRestOnBottomRandom p rest (cause := some cause)
-                  | .bottomAnyOrder => g.offerBottomAnyOrder p rest (cause := some cause)
-                  | .shuffleIntoLibrary => g.shuffleThen p .none
-                  | .graveyard =>
-                    g.withBatch (some cause) fun g =>
-                      g.moveCardsToGraveyardLoop rest (cause := some cause)
-                  | .exile =>
-                    g.withBatch (some cause) fun g =>
-                      g.exileCardsLoop rest (cause := some cause)
-                  | .leaveInPlace => g
+                  if spec.rest == .leaveInPlace then g
+                  else if paused then
+                    g.chainPendingReplacement (.finishPostStep (.finishInspectLibraryRest p spec.rest rest cause))
+                  else
+                    g.finishInspectLibraryRest p spec.rest rest cause
                 (g, none, #[])
             | _ =>
               let chosen := eligible.extract 0 (min hi eligible.size)
               let rest := looked.filter (!chosen.contains ·)
-              let g := g.withBatch (some cause) fun g =>
-                execMoveLoopStep g env ctx chosen dest .put mods cause
+              let (g, paused) := g.withBatchReturn (some cause) fun g =>
+                let g := execMoveLoopStep g env ctx chosen dest .put mods cause
+                (g, g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false))
               let g :=
-                match spec.rest with
-                | .bottomRandom => g.putRestOnBottomRandom p rest (cause := some cause)
-                | .bottomAnyOrder => g.offerBottomAnyOrder p rest (cause := some cause)
-                | .shuffleIntoLibrary => g.shuffleThen p .none
-                | _ => g
+                if spec.rest == .leaveInPlace then g
+                else if paused then
+                  g.chainPendingReplacement (.finishPostStep (.finishInspectLibraryRest p spec.rest rest cause))
+                else
+                  g.finishInspectLibraryRest p spec.rest rest cause
               (g, none, #[])
         | .splitIntoPiles splitterExpr _ _ _ _ _ =>
           if splitterExpr == .you then
@@ -2595,12 +2616,18 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
         let copyId := copies[0]!
         let copyName := (g.findObject? copyId).map g.name |>.getD "the card"
         g.beginResolutionChoice ctx.controller (.mayCastCopy copyId)
-          s!"{(g.player ctx.controller).name} may cast the copy of {copyName} without paying its mana cost"
+          (if permSpec.freeCast then
+            s!"{(g.player ctx.controller).name} may cast the copy of {copyName} without paying its mana cost"
+           else
+            s!"{(g.player ctx.controller).name} may cast the copy of {copyName}")
       else
         let maxMv := maxMv?.getD 1000
         let maxCasts := permSpec.maxCasts?.getD copies.size
         g.beginResolutionChoice ctx.controller (.castCopiesFree copies maxMv maxCasts)
-          s!"{(g.player ctx.controller).name} may cast copies without paying their mana costs"
+          (if permSpec.freeCast then
+            s!"{(g.player ctx.controller).name} may cast copies without paying their mana costs"
+           else
+            s!"{(g.player ctx.controller).name} may cast copies")
     else if permSpec.castNow then
       if !permSpec.freeCast && permSpec.exileOnResolveInstead then
         if eligible.isEmpty then
@@ -2636,7 +2663,8 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
         else
           g.beginResolutionChoice ctx.controller (.mayCastCards eligible false permSpec.exileOnResolveInstead)
             s!"{(g.player ctx.controller).name} may cast a spell"
-    else if !permSpec.freeCast && permSpec.anyManaColor then
+    else if !permSpec.freeCast && permSpec.anyManaColor && !permSpec.landsAllowed &&
+        eligible.size <= 1 && permSpec.duration == .untilEndOfTurn then
       g.grantWidowCast ctx.controller eligible[0]? (cause := some cause)
     else
       if ids.isEmpty then g
@@ -3151,6 +3179,41 @@ private def execInstallEffect (g : Game) (ctx : InterpCtx) (op : InstallEffectOp
         (g.createEffect (.layered (.objects #[sid]) (.abilities { triggeredAbilities := #[trigAb] } .none) dur)
           (cause := some cause)).logMsg s!"{g.effectSourceName ctx.sourceId} gains a triggered ability"
       | none => g
+    | .stepBegins .endOfCombat _ =>
+      match spec.effect.body with
+      | .moveZone objsExpr .graveyard .sacrifice _ =>
+        let ids := resolveObjectIds g env objsExpr
+        ids.foldl (fun acc oid =>
+          let obj? := acc.findObject? oid
+          acc.registerDelayedTrigger {
+            controller := ctx.controller, source := obj?.orElse (fun _ => src),
+            kind := .endOfCombatSacrifice oid, cause, stepEnv,
+            instruction? := some spec.effect.body }) g
+      | .moveZone objsExpr .exile .exile _ =>
+        let ids := resolveObjectIds g env objsExpr
+        ids.foldl (fun acc oid =>
+          let obj? := acc.findObject? oid
+          acc.registerDelayedTrigger {
+            controller := ctx.controller, source := obj?.orElse (fun _ => src),
+            kind := .endOfCombatExile oid, cause, stepEnv,
+            instruction? := some spec.effect.body }) g
+      | _ =>
+        let trigAb : TriggeredAbility := {
+          word := .when
+          pattern := spec.pattern
+          grouping := spec.grouping
+          interveningIf? := spec.interveningIf?
+          effect := spec.effect
+        }
+        let effectCard : CardDef := {
+          name := s!"{g.effectSourceName ctx.sourceId} effect", types := #[]
+          triggeredAbilities := #[trigAb]
+        }
+        let untilTurnOf :=
+          match spec.duration with
+          | .untilNextTurnOf _ => some ctx.controller
+          | _ => none
+        g.createCommandObject ctx.controller effectCard (untilTurnOf := untilTurnOf)
     | _ =>
       -- Generic delayed trigger materialized as a temporary command-zone object
       let trigAb : TriggeredAbility := {
@@ -3351,7 +3414,16 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
         | .seqRest rest =>
           queue := rest
         | .bindClose v startEventIdx stepEffectId body override? =>
-          let outcome := g.summarizeStepOutcome startEventIdx stepEffectId override?
+          let pendingExcess :=
+            (g.currentStepEnv.find? (·.1 == interpExcessDamageVar)).map (·.2.excessDamage) |>.getD 0
+          let effOverride? :=
+            if pendingExcess > 0 then
+              let base := override?.getD {}
+              some { base with excessDamage := max base.excessDamage pendingExcess }
+            else override?
+          if pendingExcess > 0 then
+            g := g.change (.stepEnv (g.currentStepEnv.filter (·.1 != interpExcessDamageVar)))
+          let outcome := g.summarizeStepOutcome startEventIdx stepEffectId effOverride?
           g := g.change (.bindStepOutcome v outcome)
           let shareCause : Bool :=
             match body with
@@ -3519,6 +3591,9 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
           g := dealDamagePermanentsStep g ctx remainingIds amt srcName srcSnap? oppOnlyCtrl? startEventIdx cause
         | .afterDividedDamageLoop remaining srcName srcSnap? startEventIdx cause =>
           g := dealDividedDamageStep g ctx remaining srcName srcSnap? startEventIdx cause
+        | .afterMixedDamageLoop remaining srcName srcSnap? startEventIdx cause trackExcess accumExcess pendingExcess? =>
+          g := (dealMixedDamageStep g ctx remaining srcName srcSnap? startEventIdx cause
+            trackExcess accumExcess pendingExcess? (writeExcessVar := true)).1
         | .afterCounterOpLoop remainingIds mode cause fromEventIdx? =>
           if g.currentBatch.isSome then
             g := execCounterOpStep g ctx remainingIds mode cause fromEventIdx?
@@ -3796,9 +3871,14 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 .noop =>
               if v == v' && !perm.landsAllowed && !perm.freeCast && !perm.copyAndCast && !perm.asFlashback then
                 let dmg := (EvalExpr.evalValue g env amtExpr).toNat
+                let maxMv? := perm.maxTotalManaValue?.map (fun e => (EvalExpr.evalValue g env e).toNat)
                 let exiledNonland? := (resolveObjectIds g env objsExpr).findSome? fun cid =>
                   match g.findObject? cid with
-                  | some o => if o.zone == .exile && isCastableObject o && !g.isLand o then some o else none
+                  | some o =>
+                    if o.zone == .exile && isCastableObject o && !g.isLand o &&
+                        perm.filter?.all (EvalExpr.evalObjectPred g env (.live o)) &&
+                        maxMv?.all (fun mx => g.objectManaValue o ≤ mx) then some o
+                    else none
                   | none => none
                 let g1 :=
                   match exiledNonland? with

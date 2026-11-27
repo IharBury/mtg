@@ -138,7 +138,7 @@ Four keyword-specific `CostKind` tags (`convoke`, `ward`, `teamwork`, `cycle`) a
 
 ## Layer 3: Unified One-Shot `Instruction` AST & `Effect`
 
-[`Instruction`](../Mtg/Engine/Card/Ability.lean#L1257-L1278) has **18 top-level constructors**—10 action wrappers aligned with the 12 [`RulesEvent`](../Mtg/Engine/Game/Event.lean#L898-L923) families plus 8 compositional combinators:
+[`Instruction`](../Mtg/Engine/Card/Ability.lean#L1257-L1278) has **18 top-level constructors**—10 action wrappers aligned with the 12 [`RulesEvent`](../Mtg/Engine/Game/Event.lean#L902-L927) families plus 8 compositional combinators:
 
 | `RulesEvent` Family | `Instruction` Constructor & Sub-Family | Coverage |
 | :--- | :--- | :--- |

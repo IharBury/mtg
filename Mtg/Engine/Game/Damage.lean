@@ -453,15 +453,27 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     (consumeOrder : Bool := true)
     (cause : Option EventCause := none)
     (deferPlayFromExileLogs : Bool := false)
-    (skipReplace : Bool := false) : Game :=
+    (skipReplace : Bool := false)
+    (fromEventIdx? : Option Nat := none) : Game :=
   let srcSnap :=
     (source.map g.refreshOrKeepDamageSnapshot)
       |>.orElse (fun _ => sourceObj.map g.snapshotDamageSource)
       |>.orElse (fun _ => g.resolvingDamageSourceEvent?)
-  if !skipReplace && replaced.isNone && (match g.pending with | .chooseReplacement .. => true | _ => false) then
+  let finishDeferred (g : Game) : Game :=
+    match fromEventIdx? with
+    | some idx =>
+      if !deferPlayFromExileLogs then
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+          g.chainPendingReplacement (.finishPostStep (.emitExpiredPlayFromExileFrom idx))
+        else emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt idx) g idx
+      else g
+    | none => g
+  if !skipReplace && replaced.isNone &&
+      (g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false)) then
     g.chainPendingReplacement
-      (.markDamageOn o.id n.toNat msg deathtouch srcSnap combat unpreventable cause deferPlayFromExileLogs skipReplace)
-  else if !o.isOnBattlefield then g
+      (.markDamageOn o.id n.toNat msg deathtouch srcSnap combat unpreventable cause
+        deferPlayFromExileLogs skipReplace fromEventIdx?)
+  else if !o.isOnBattlefield then finishDeferred g
   else
   let src? :=
     sourceObj.orElse (fun _ => g.damageSourceObjFromSnapshot? srcSnap)
@@ -476,7 +488,8 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   match rep.choice? with
   | some (chooser, choices) =>
     g.promptChooseReplacement chooser choices
-      (.markDamageOn o.id n.toNat msg deathtouch srcSnap combat unpreventable cause deferPlayFromExileLogs skipReplace)
+      (.markDamageOn o.id n.toNat msg deathtouch srcSnap combat unpreventable cause
+        deferPlayFromExileLogs skipReplace fromEventIdx?)
   | none =>
   let g := if consumeOrder then g.consumeReplacementOrder rep.applied else g
   let srcEvent : EventObject :=
@@ -491,7 +504,7 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
         g.record (GameEvent.damagePrevented g.turnNumber srcEvent (.permanent (g.snapshot o))
           rep.preventedAmount prevCause)
       else g
-    g.logMsg s!"Damage that would be dealt to {g.name o} is prevented"
+    finishDeferred (g.logMsg s!"Damage that would be dealt to {g.name o} is prevented")
   else
   let cause := rep.cause
   let defaultCause :=
@@ -499,9 +512,9 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
       if n <= 0 then none
       else g.currentResolvingContext?.map fun (src, ctrl) => .oneShotEffect none src ctrl)
   g.withBatch defaultCause fun g =>
-  let healsOther :=
-    let oEnv : EvalEnv := { controller := (g.controllerOf o).getD o.owner, sourceId := some o.id }
-    (g.staticAbilities o).any fun ab =>
+  let hasHealsOther (g : Game) (target : GameObject) : Bool :=
+    let oEnv : EvalEnv := { controller := (g.controllerOf target).getD target.owner, sourceId := some target.id }
+    (g.staticAbilities target).any fun ab =>
       ab.anyReplacement fun cond? sp =>
         match sp with
         | .healOtherDamageWhenDealt .self => cond?.all (EvalExpr.evalCondition g oEnv)
@@ -510,10 +523,6 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
     g.resolveOptionalCause cause (fallbackSrc := srcEvent.id) (fallbackCtrl := src?.bind g.controllerOf)
   let shieldCause :=
     g.resolveOptionalCause rep.shieldRemoveCause (fallbackCtrl := g.controllerOf o)
-  let g :=
-    if healsOther && n > 0 && !rep.prevented && !(rep.shieldRemoved && !unpreventable) && rep.amount > 0 then
-      g.record (GameEvent.damageMarkedCleared g.turnNumber #[o.id] (cause := dmgCause))
-    else g
   let o := g.findObject? o.id |>.getD o
   let oName := g.name o
   let ctrl := g.controllerOf o
@@ -524,45 +533,60 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
           rep.preventedAmount shieldCause)
       else g
     let g := g.recordRemoveCounters o.id .shield 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
-      (cause := some shieldCause) (deferPlayFromExileLogs := deferPlayFromExileLogs)
-    g.logMsg s!"A shield counter is removed from {oName} instead of damage"
+      (cause := some shieldCause) (deferPlayFromExileLogs := deferPlayFromExileLogs || fromEventIdx?.isSome)
+    finishDeferred (g.logMsg s!"A shield counter is removed from {oName} instead of damage")
   else if n > 0 && rep.shieldRemoved && unpreventable then
+    let hitFromIdx := fromEventIdx?.getD g.events.size
+    let ownHitDefer := !deferPlayFromExileLogs
     let g := g.recordRemoveCounters o.id .shield 1 (byPlayer := ctrl) (noActor := ctrl.isNone)
-      (cause := some shieldCause) (deferPlayFromExileLogs := deferPlayFromExileLogs)
+      (cause := some shieldCause) (deferPlayFromExileLogs := true)
     let g := g.logMsg s!"A shield counter is removed from {oName} (unpreventable damage)"
     let amt := rep.amount.toNat
     if g.sbaPaused then
       if amt > 0 then
         g.chainPendingReplacement
           (.markDamageOn o.id amt msg deathtouch srcSnap combat unpreventable (some dmgCause)
-            deferPlayFromExileLogs true)
+            deferPlayFromExileLogs true (if ownHitDefer then some hitFromIdx else fromEventIdx?))
+      else if ownHitDefer then
+        g.chainPendingReplacement (.finishPostStep (.emitExpiredPlayFromExileFrom hitFromIdx))
       else g
     else
-      match g.findObject? o.id with
-      | some marked =>
-        if marked.isOnBattlefield then
-          let g :=
-            if amt > 0 then
-              let happened := GameEvent.damaged g.turnNumber srcEvent (g.snapshot marked) amt combat (cause := dmgCause)
-              let g := g.record happened
-              let g :=
-                if g.isCreature marked then
-                  g.record (GameEvent.damageMarked g.turnNumber marked.id amt (cause := dmgCause))
-                else g
-              match g.findObject? o.id with
-              | some cur =>
-                if cur.isOnBattlefield && g.isPlaneswalker cur then
-                  let lose := min amt (cur.status.counterCount .loyalty)
-                  if lose > 0 then
-                    g.recordRemoveCounters cur.id .loyalty lose (noActor := true) (cause := some dmgCause)
-                      (deferPlayFromExileLogs := deferPlayFromExileLogs)
+      let g :=
+        match g.findObject? o.id with
+        | some marked =>
+          if marked.isOnBattlefield then
+            let g :=
+              if amt > 0 then
+                let g :=
+                  if hasHealsOther g marked then
+                    g.record (GameEvent.damageMarkedCleared g.turnNumber #[marked.id] (cause := dmgCause))
                   else g
-                else g
-              | none => g
-            else g
-          if amt > 0 && !msg.isEmpty then g.logMsg msg else g
-        else g
-      | none => g
+                let marked := g.findObject? marked.id |>.getD marked
+                let happened := GameEvent.damaged g.turnNumber srcEvent (g.snapshot marked) amt combat (cause := dmgCause)
+                let g := g.record happened
+                let g :=
+                  if g.isCreature marked then
+                    g.record (GameEvent.damageMarked g.turnNumber marked.id amt (cause := dmgCause))
+                  else g
+                match g.findObject? o.id with
+                | some cur =>
+                  if cur.isOnBattlefield && g.isPlaneswalker cur then
+                    let lose := min amt (cur.status.counterCount .loyalty)
+                    if lose > 0 then
+                      g.recordRemoveCounters cur.id .loyalty lose (noActor := true) (cause := some dmgCause)
+                        (deferPlayFromExileLogs := true)
+                    else g
+                  else g
+                | none => g
+              else g
+            if amt > 0 && !msg.isEmpty then g.logMsg msg else g
+          else g
+        | none => g
+      if ownHitDefer then
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+          g.chainPendingReplacement (.finishPostStep (.emitExpiredPlayFromExileFrom hitFromIdx))
+        else emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt hitFromIdx) g hitFromIdx
+      else g
   else
   -- CR 120.3c / 120.3e: damage dealt to a creature is marked on it; damage
   -- dealt to a planeswalker removes up to its remaining loyalty counters.
@@ -570,6 +594,11 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
   let amt := n.toNat
   let g :=
     if n > 0 then
+      let g :=
+        if hasHealsOther g o then
+          g.record (GameEvent.damageMarkedCleared g.turnNumber #[o.id] (cause := dmgCause))
+        else g
+      let o := g.findObject? o.id |>.getD o
       let happened := GameEvent.damaged g.turnNumber srcEvent (g.snapshot o) amt combat (cause := dmgCause)
       let g := g.record happened
       let g :=
@@ -582,12 +611,13 @@ def markDamageOn (g : Game) (o : GameObject) (n : Int) (msg : String)
           let lose := min amt (cur.status.counterCount .loyalty)
           if lose > 0 then
             g.recordRemoveCounters cur.id .loyalty lose (noActor := true) (cause := some dmgCause)
-              (deferPlayFromExileLogs := deferPlayFromExileLogs)
+              (deferPlayFromExileLogs := deferPlayFromExileLogs || fromEventIdx?.isSome)
           else g
         else g
       | none => g
     else g
-  if amt > 0 && !msg.isEmpty then g.logMsg msg else g
+  let g := if amt > 0 && !msg.isEmpty then g.logMsg msg else g
+  finishDeferred g
 
 /-- Increase `p`'s life total (CR 119.3), running the CR 616.1 replacement loop
 for any active `.modifyLifeGain` replacement effects. Gaining 0 life does
@@ -736,7 +766,7 @@ def dealDamageFrom (g : Game) (sourceName : String) (o : GameObject) (n : Int)
   let resolvedSrc? :=
     source.orElse (fun _ => g.damageSourceObjFromSnapshot? sourceSnap)
       |>.orElse (fun _ => g.resolvingMovedDamageSource?)
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
     let srcEvent? :=
       (sourceSnap.map g.refreshOrKeepDamageSnapshot)
         |>.orElse (fun _ => resolvedSrc?.map g.snapshotDamageSource)
@@ -1048,9 +1078,11 @@ def dealDamageToEachOpponent (g : Game) (controller : PlayerId) (n : Int)
 /-- Deal this creature's power (or pre-snapshotted `amount`) as damage to `dest` (one side of a fight). -/
 def dealFightDamage (g : Game) (src dest : GameObject)
     (cause : Option EventCause := none)
-    (amount : Option Nat := none) : Game :=
+    (amount : Option Nat := none)
+    (deferPlayFromExileLogs : Bool := false) : Game :=
   let amt : Int := Int.ofNat (amount.getD (g.power src).toNat)
   g.dealDamageFrom (g.name src) dest amt (source := some src) (cause := cause)
+    (deferPlayFromExileLogs := deferPlayFromExileLogs)
 
 /-- Both sides of a fight deal damage simultaneously (CR 701.14a–c): if a
 creature fights itself (`src.id == dest.id`), it deals a single `2 * power`
@@ -1058,7 +1090,9 @@ damage event to itself (CR 701.14c); otherwise both creatures' powers are
 snapshotted upfront before dealing either side's damage / lifelink (CR 701.14a). -/
 def fightCreatures (g : Game) (src dest : GameObject)
     (cause : Option EventCause := none) : Game :=
-  if !src.isOnBattlefield || !dest.isOnBattlefield || !g.isCreature src || !g.isCreature dest then
+  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+    g.chainPendingReplacement (.finishPostStep (.fightCreatures src.id dest.id cause))
+  else if !src.isOnBattlefield || !dest.isOnBattlefield || !g.isCreature src || !g.isCreature dest then
     g
   else
     let defaultCause :=
@@ -1069,6 +1103,7 @@ def fightCreatures (g : Game) (src dest : GameObject)
             (ctrl.orElse (fun _ => g.controllerOf src)))
     g.withBatch defaultCause fun g =>
     let c := cause.orElse (fun _ => g.currentBatch.bind (·.2))
+    let fightFromIdx := g.events.size
     if src.id == dest.id then
       let selfAmt := 2 * (g.power src).toNat
       g.dealFightDamage src src (cause := c) (amount := some selfAmt)
@@ -1076,15 +1111,22 @@ def fightCreatures (g : Game) (src dest : GameObject)
       let srcAmt := (g.power src).toNat
       let destAmt := (g.power dest).toNat
       let g := g.dealFightDamage src dest (cause := c) (amount := some srcAmt)
-      if let .chooseReplacement .. := g.pending then
-        g.chainPendingReplacement (.dealFightDamage dest.id src.id c (some destAmt))
+        (deferPlayFromExileLogs := true)
+      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+        g.chainPendingReplacement (.dealFightDamage dest.id src.id c (some destAmt) false (some fightFromIdx))
       else
-        match g.findObject? dest.id, g.findObject? src.id with
-        | some dest, some src =>
-          if dest.isOnBattlefield && src.isOnBattlefield && g.isCreature dest && g.isCreature src then
-            g.dealFightDamage dest src (cause := c) (amount := some destAmt)
-          else g
-        | _, _ => g
+        let g :=
+          match g.findObject? dest.id, g.findObject? src.id with
+          | some dest, some src =>
+            if dest.isOnBattlefield && src.isOnBattlefield && g.isCreature dest && g.isCreature src then
+              g.dealFightDamage dest src (cause := c) (amount := some destAmt)
+                (deferPlayFromExileLogs := true)
+            else g
+          | _, _ => g
+        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+          g.chainPendingReplacement (.finishPostStep (.emitExpiredPlayFromExileFrom fightFromIdx))
+        else
+          emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt fightFromIdx) g fightFromIdx
 
 /-- Decrease `p`'s life total (CR 119.3). Losing 0 life does nothing
 (CR 119.3). Loss of life is not damage (CR 119.3 / 120.3). -/

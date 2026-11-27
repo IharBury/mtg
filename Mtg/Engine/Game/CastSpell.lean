@@ -401,8 +401,9 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
           exiledBy := prop.original.exiledBy
           controller := some p }
         let baseFace := g.baseCard spell
+        let kwFace := { baseFace with keywords := g.proposedSpellKeywords prop spell }
         let face :=
-          match prop.sneakAttacker, baseFace.sneakCost with
+          match prop.sneakAttacker, kwFace.sneakCost with
           | some _, some sc => { baseFace with manaCost := sc }
           | _, _ => baseFace
         g.playManaCost preSpell face (ManaCost.ofGeneric prop.additionalGeneric)

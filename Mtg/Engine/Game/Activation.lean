@@ -37,7 +37,8 @@ def canPayActivationNonManaCost (g : Game) (p : PlayerId) (o : GameObject) (ab :
         (g.firstPayableCrewSelection? p o.id n allPicks
           (tapSource := ab.cost.tap)
           (sacrificeOrExileSource := sacOrExileSrc)
-          (discardOrExileHandSource := discOrExileHandSrc)).isSome
+          (discardOrExileHandSource := discOrExileHandSrc)
+          (excludeSelf := crewExcludesSelf ab.cost)).isSome
     | none =>
       allPicks.isEmpty ||
         g.costPicksPayable p (some o.id) allPicks
