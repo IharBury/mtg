@@ -53,7 +53,7 @@ flowchart TD
 - **Symbolic library positions, conditions, and durations**:
   - [`LibraryPosSpec`](../Mtg/Engine/Card/Expr.lean#L740-L746) (`.top`, `.bottom`, `.bottomRandom`, `.fromTop ValueExpr`, `.shuffledIn`).
   - [`Condition`](../Mtg/Engine/Card/Expr.lean#L781-L797) (15 ctors: `.cmp`, `.exists`, `.forAll`, `.allShare`, `.playerPred`, `.castPred` over 8-ctor [`CastContextPred`](../Mtg/Engine/Card/Expr.lean#L501-L510), `.turnHistory` over 7-ctor [`EventHistoryPred`](../Mtg/Engine/Card/Expr.lean#L770-L778) + 16-ctor [`EventPattern`](../Mtg/Engine/Card/Expr.lean#L750-L767), `.stepSucceeded`, `.duringStep`, `.duringPhase`, `.isYourTurn`, `.isNight`, `.all`, `.any`, `.not`).
-  - [`DurationExpr`](../Mtg/Engine/Card/Expr.lean#L801-L814) (12 ctors, 1-to-1 with runtime [`EffectDuration`](../Mtg/Engine/Game/Event.lean#L212-L236): `.untilEndOfTurn`, `.untilEndOfCombat`, `.untilEndOfStepOrPhase`, `.untilStepOrPhase`, `.untilNextTurnOf`, `.untilEndOfNextTurnOf`, `.whileOnBattlefield`, `.untilLeavesBattlefield`, `.whileHasCounter`, `.whileInZone`, `.whileTapped`, `.indefinite`).
+  - [`DurationExpr`](../Mtg/Engine/Card/Expr.lean#L801-L814) (12 ctors, 1-to-1 with runtime [`EffectDuration`](../Mtg/Engine/Game/Event.lean#L212-L238): `.untilEndOfTurn`, `.untilEndOfCombat`, `.untilEndOfStepOrPhase`, `.untilStepOrPhase`, `.untilNextTurnOf`, `.untilEndOfNextTurnOf`, `.whileOnBattlefield`, `.untilLeavesBattlefield`, `.whileHasCounter`, `.whileInZone`, `.whileTapped`, `.indefinite`).
 - **Canonical printing**: [`PrintCtx`](../Mtg/Engine/Card/Expr.lean#L1365-L1372) and [`ToOracle`](../Mtg/Engine/Card/Expr.lean#L1375-L1376) provide context-aware Oracle rendering across every AST layer.
 
 ---
@@ -97,7 +97,7 @@ Oracle wording renders canonically via [`TargetSlot.renderOracle`](../Mtg/Engine
 
 ### Costs (`Card/Cost.lean`)
 
-[`CostSpec`](../Mtg/Engine/Card/Cost.lean#L198-L201) (`items : Array CostItem`, `bindVar? : Option VarId`) unifies activation, ward, additional, alternative, and resolution-time optional/`unlessPays` costs (CR 118). Its 16-constructor [`CostItem`](../Mtg/Engine/Card/Cost.lean#L159-L194) syntax maps onto [`CostKind`](../Mtg/Engine/Card/Primitives.lean#L152-L176) (23 event-cause tags) via [`CostItem.costKind?`](../Mtg/Engine/Card/Cost.lean#L259):
+[`CostSpec`](../Mtg/Engine/Card/Cost.lean#L198-L200) (`items : Array CostItem`, `bindVar? : Option VarId`) unifies activation, ward, additional, alternative, and resolution-time optional/`unlessPays` costs (CR 118). Its 16-constructor [`CostItem`](../Mtg/Engine/Card/Cost.lean#L159-L193) syntax maps onto [`CostKind`](../Mtg/Engine/Card/Primitives.lean#L152-L176) (23 event-cause tags) via [`CostItem.costKind?`](../Mtg/Engine/Card/Cost.lean#L259):
 
 | `CostItem` Constructor (16) | `CostKind` Emission | Notes |
 | :--- | :--- | :--- |
@@ -198,7 +198,7 @@ Key predicates and helpers in [`ActivatedAbility.lean`](../Mtg/Engine/Card/Activ
 
 [`TriggerPattern.lean`](../Mtg/Engine/Card/TriggerPattern.lean) defines:
 - 27-constructor [`TriggerPattern`](../Mtg/Engine/Card/TriggerPattern.lean#L253-L327) aligned with `RulesEvent`, plus [`BatchGrouping`](../Mtg/Engine/Card/TriggerPattern.lean#L89-L101) (5 ctors: `.perOccurrence` CR 603.2c, `.oncePerBatch` / `.perPlayerInBatch` / `.perSourceInBatch` CR 700.1, and `.counterThreshold` for CR 715.2b Saga chapters), [`TriggerLimit`](../Mtg/Engine/Card/TriggerPattern.lean#L104-L113), and [`PlayerActionTrigger`](../Mtg/Engine/Card/TriggerPattern.lean#L210-L219).
-- [`usesLookBack`](../Mtg/Engine/Card/TriggerPattern.lean#L346-L361): structural CR 603.10a–f look-back predicate.
+- [`usesLookBack`](../Mtg/Engine/Card/TriggerPattern.lean#L346-L360): structural CR 603.10a–f look-back predicate.
 - [`flattenDisjuncts`](../Mtg/Engine/Card/TriggerPattern.lean#L397-L401): distributes outer CR 603.2 `.whenCond` clauses across `.or` disjuncts so each disjunct independently chooses `pre` vs. `post`.
 - [`TriggeredAbility.isManaAbility`](../Mtg/Engine/Card/Trigger.lean#L236) (CR 605.1b) and [`TriggeredAbility.chapterNumbers?`](../Mtg/Engine/Card/Trigger.lean#L243) (CR 715.2b/d).
 
