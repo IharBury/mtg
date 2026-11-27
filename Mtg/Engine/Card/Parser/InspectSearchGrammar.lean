@@ -204,9 +204,26 @@ partial def parseObjWithCtx (ctx : DiscourseCtx) (raw : String) :
       if let some (aObj, ctx1) := parseObjWithCtx ctx aStr then
         if let some (bObj, ctx2) := parseObjWithCtx ctx1 bStr then
           return some (.diff aObj bObj, ctx2)
-  -- Explicit linked exile (`"a card exiled with this permanent"`, `"cards exiled with this permanent"`)
-  if l.contains "exiled with this" then
-    return some (.linkedExile .this, ctx)
+  -- Explicit linked exile (`"a card exiled with this permanent"`, `"a creature card exiled with it"`, `"cards exiled with this permanent"`)
+  if !l.contains " matching " && (l.contains "exiled with this" || l.endsWith "exiled with it") then
+    let pre? := (pSplitFirstCI? s " exiled with ").map Prod.fst
+    match pre? with
+    | some pre =>
+      let pl := pLower pre
+      if pl == "a card" || pl == "cards" || pl == "the card" || pl == "the cards" || pl == "all cards" || pl == "card" then
+        return some (.linkedExile .this, ctx)
+      else if let some np := parseNounPhrase pre then
+        let cleanedPred :=
+          match np.filter.pred with
+          | .all ps =>
+            let kept := ps.filter (· != .isKind .card)
+            match kept.toList with | [] => .anyObject | [p] => p | _ => .all kept
+          | .isKind .card => .anyObject
+          | p => p
+        if cleanedPred == .anyObject then return some (.linkedExile .this, ctx)
+        else return some (.filter (.linkedExile .this) cleanedPred, ctx)
+      else return some (.linkedExile .this, ctx)
+    | none => return some (.linkedExile .this, ctx)
   -- Bare `"target"` (canonical `Expr.toOracle` rendering of `.target 0`)
   if l == "target" then
     return some (.target (ctx.lastTargetSlot?.getD 0), ctx)
@@ -229,6 +246,8 @@ partial def parseObjWithCtx (ctx : DiscourseCtx) (raw : String) :
   -- `"the sacrificed creature"` / `"the exiled card(s) ..."` / `"each chosen <noun>"`
   if l == "the exiled card" && ctx.isTrigger && ctx.lastActionVar?.isNone then
     return some (.linkedExile .this, ctx)
+  if l == "all permanent cards exiled this way" || l == "permanent cards exiled this way" then
+    return some (.filter (.stepObjects (ctx.lastActionVar?.getD ⟨0⟩)) (.isKind .permanentCard), ctx)
   if l == "the sacrificed creature" || l == "the sacrificed permanent" || l == "the sacrificed artifact" ||
       l == "the exiled cards that weren't cast this way" || l == "cards exiled this way" ||
       l == "all cards exiled this way" then
@@ -248,12 +267,14 @@ partial def parseObjWithCtx (ctx : DiscourseCtx) (raw : String) :
     | some np, some excNp =>
       return some (.inZones np.filter.zones (.all #[np.filter.pred, .not excNp.filter.pred]), ctx)
     | _, _ => pure ()
-  -- `"<base> matching <pred>"` (`"those cards matching ..."`, `"this permanent matching ..."`, `"that permanent matching ..."`, `"enchanted or equipped permanent matching ..."`, `"target matching ..."`)
+  -- `"<base> matching <pred>"` (`"those cards matching ..."`, `"this permanent matching ..."`, `"a card exiled with this permanent matching ..."`, etc.)
   if let some (baseStr, predStr) := pSplitFirstCI? s " matching " then
     let bLow := pLower baseStr
     let baseObj? : Option ObjectExpr :=
       if bLow == "those cards" || bLow == "those objects" then
         some (match ctx.lastActionVar? with | some v => .stepObjects v | none => ctx.lastSubject?.getD .triggerSubject)
+      else if bLow == "a card exiled with this permanent" || bLow == "cards exiled with this permanent" then
+        some (.linkedExile .this)
       else if DiscourseCtx.isSelfPhrase bLow then some .this
       else if bLow == "target" then some (.target (ctx.lastTargetSlot?.getD 0))
       else ctx.resolveObjectAnaphor? baseStr
@@ -411,7 +432,9 @@ def parseRecipientWithCtx (ctx : DiscourseCtx) (raw : String) :
     return some (.players pe, ctx')
   -- Object recipient (`"each creature"`, `"each attacking creature"`, `"it"`, `"this creature"`, ...)
   if let some (oe, ctx') := parseObjWithCtx ctx s then
-    return some (.objects oe, ctx')
+    match oe with
+    | .target idx => return some (.targetSlot idx, ctx')
+    | _ => return some (.objects oe, ctx')
   return none
 
 /-! ### `DestZoneSpec`, `MoveMods`, `MoveChoiceSpec` & `GrantPlayPermSpec` Parsers -/
@@ -573,6 +596,9 @@ def parseGrantPlayPermClause? (ctx : DiscourseCtx) (raw : String) :
   let mut maxTotalMv? : Option ValueExpr := none
   let mut cond? : Option Condition := none
   let mut filter? : Option ObjectPred := none
+  let mut beneficiary? : Option PlayerExpr := none
+  let mut extraGenericCost : Nat := 0
+  let mut ctxWork := ctx
 
   -- Peel `" (with flashback)"` / `" with flashback"`
   if let some b := (pDropSuffixCI? s " (with flashback)").orElse (fun _ => pDropSuffixCI? s " with flashback") then
@@ -588,8 +614,9 @@ def parseGrantPlayPermClause? (ctx : DiscourseCtx) (raw : String) :
     dur := .untilEndOfTurn; hasDur := true; s := r
   else if let some r := (pDropPrefixCI? s "for as long as it remains exiled, ").orElse
       (fun _ => (pDropPrefixCI? s "for as long as they remain exiled, ").orElse
-        (fun _ => pDropPrefixCI? s "for as long as this permanent remains exiled, ")) then
-    dur := .indefinite; hasDur := true; s := r
+        (fun _ => (pDropPrefixCI? s "for as long as that card remains exiled, ").orElse
+          (fun _ => pDropPrefixCI? s "for as long as this permanent remains exiled, "))) then
+    dur := .whileInZone .this .exile; hasDur := true; s := r
 
   -- Peel `", and mana of any type can be spent to cast ..."`
   if let some (b, _) := (pSplitFirstCI? s ", and mana of any type can be spent").orElse
@@ -640,12 +667,22 @@ def parseGrantPlayPermClause? (ctx : DiscourseCtx) (raw : String) :
   if let some b := pDropSuffixCI? s " now" then
     castNow := true; s := b
 
-  -- Peel `"you may play "` vs `"you may cast "`
+  -- Peel `"<who> may play "` / `"<who> may cast "` (including `"you may play/cast"`)
   let mut objRaw := ""
   if let some r := pDropPrefixCI? s "you may play " then
     allowLands := true; objRaw := r
   else if let some r := pDropPrefixCI? s "you may cast " then
     objRaw := r
+  else if let some (whoStr, r) := pSplitFirstCI? s " may play " then
+    if let some (who, c1) := parsePlayerWithCtx ctxWork whoStr then
+      allowLands := true; objRaw := r; ctxWork := { c1 with lastPlayer? := if who != .you then some who else c1.lastPlayer? }
+      if who != .you then beneficiary? := some who
+    else return none
+  else if let some (whoStr, r) := pSplitFirstCI? s " may cast " then
+    if let some (who, c1) := parsePlayerWithCtx ctxWork whoStr then
+      objRaw := r; ctxWork := { c1 with lastPlayer? := if who != .you then some who else c1.lastPlayer? }
+      if who != .you then beneficiary? := some who
+    else return none
   else
     return none
 
@@ -708,8 +745,8 @@ def parseGrantPlayPermClause? (ctx : DiscourseCtx) (raw : String) :
   if lObj == "a card that player milled this way" || lObj == "a card that player exiled this way" ||
       lObj == "a card they milled this way" || lObj == "a card they exiled this way" then
     maxCasts? := maxCasts?.orElse (fun _ => some 1)
-    let v := ctx.lastActionVar?.getD ⟨0⟩
-    let ownerP := ctx.lastPlayer?.getD (.triggerPlayer .actor)
+    let v := ctxWork.lastActionVar?.getD ⟨0⟩
+    let ownerP := ctxWork.lastPlayer?.getD (.triggerPlayer .actor)
     let filtObj : ObjectExpr := .filter (.stepObjects v) (.ownedBy (.ofExpr ownerP))
     return some (filtObj, {
       duration := dur
@@ -725,26 +762,28 @@ def parseGrantPlayPermClause? (ctx : DiscourseCtx) (raw : String) :
       maxTotalManaValue? := maxTotalMv?
       condition? := cond?
       filter? := filter?
-    }, ctx)
+      extraGenericCost := extraGenericCost
+      beneficiary? := beneficiary?
+    }, ctxWork)
   let some (obj0, ctx') :=
-    (match parseObjWithCtx ctx objRaw with
+    (match parseObjWithCtx ctxWork objRaw with
     | some res => some res
     | none =>
       if lObj == "the copy" || lObj == "that copy" || lObj == "the copies" || lObj == "those copies" ||
           lObj == "cards exiled this way" || lObj == "a card exiled this way" then
-        some (ctx.lastActionVar?.map ObjectExpr.stepObjects |>.getD (if ctx.slots.isEmpty then .costPaidObjects else .triggerSubject), ctx)
+        some (ctxWork.lastActionVar?.map ObjectExpr.stepObjects |>.getD (if ctxWork.slots.isEmpty then .costPaidObjects else .triggerSubject), ctxWork)
       else if lObj == "this card" || lObj == "this permanent" then
-        some (.this, ctx)
+        some (.this, ctxWork)
       else if lObj.startsWith "the exiled " || lObj.startsWith "that " || lObj.startsWith "those " then
         let base :=
-          match ctx.lastActionVar? with
+          match ctxWork.lastActionVar? with
           | some v => ObjectExpr.stepObjects v
-          | none => ctx.lastSubject?.getD .triggerSubject
-        some (base, ctx)
+          | none => ctxWork.lastSubject?.getD .triggerSubject
+        some (base, ctxWork)
       else none)
     | return none
   let obj : ObjectExpr :=
-    match lObj, obj0, ctx.lastRevealUntilPred? with
+    match lObj, obj0, ctxWork.lastRevealUntilPred? with
     | "that card", .stepObjects v, some pred => .filter (.stepObjects v) pred
     | _, _, _ => obj0
 
@@ -762,6 +801,8 @@ def parseGrantPlayPermClause? (ctx : DiscourseCtx) (raw : String) :
     maxTotalManaValue? := maxTotalMv?
     condition? := cond?
     filter?
+    extraGenericCost
+    beneficiary?
   }, ctx')
 
 /-! ### `SearchLibrarySpec` Parser (CR 701.23) -/
@@ -789,14 +830,30 @@ def parseSearchLibrarySeq? (ctx : DiscourseCtx) (sents : Array String) (idx : Na
   let some (zonesRaw, restFor) := pSplitFirstCI? afterSearch " for " | return none
   let some (zones, ctx2) := parseZoneSetWithCtx ctx1 zonesRaw | return none
 
-  -- Separate `"<count> <filter> card(s) [with different names]"` from `, reveal ... / , put ... / and put ...`
+  -- Separate `"<count> <filter> card(s) [with different names]"` from `, reveal ... / , put ... / , exile ... / and put ...`
+  -- Try explicit action separators first so comma-separated lists like `"an Aura, Equipment, or Spacecraft card, reveal it..."` stay intact (`Federation Resupply`).
   let (specPart, afterSpec) :=
-    match pSplitFirstCI? restFor ", " with
-    | some (a, b) => (a, b)
+    match pSplitFirstCI? restFor ", reveal " with
+    | some (a, b) => (a, "reveal " ++ b)
     | none =>
-      match pSplitFirstCI? restFor " and put " with
+      match pSplitFirstCI? restFor ", put " with
       | some (a, b) => (a, "put " ++ b)
-      | none => (restFor, "")
+      | none =>
+        match pSplitFirstCI? restFor ", exile " with
+        | some (a, b) => (a, "exile " ++ b)
+        | none =>
+          match pSplitFirstCI? restFor ", shuffle" with
+          | some (a, b) => (a, "shuffle" ++ b)
+          | none =>
+            match pSplitFirstCI? restFor ", then " with
+            | some (a, b) => (a, "then " ++ b)
+            | none =>
+              match pSplitFirstCI? restFor ", " with
+              | some (a, b) => (a, b)
+              | none =>
+                match pSplitFirstCI? restFor " and put " with
+                | some (a, b) => (a, "put " ++ b)
+                | none => (restFor, "")
 
   let mut specCore := pClean specPart
   let mut gc? : Option GroupTargetConstraint := none
@@ -808,8 +865,10 @@ def parseSearchLibrarySeq? (ctx : DiscourseCtx) (sents : Array String) (idx : Na
   -- Parse count (`up to N`, `up to X`, `up to that many/much`, `a/an`, `N`)
   let (count, filterRaw0) : ExprCountRange × String :=
     if let some r := pDropPrefixCI? specCore "up to " then
-      if let some r2 := (pDropPrefixCI? r "that many ").orElse (fun _ => pDropPrefixCI? r "that much ") then
-        (.upTo .eventAmount, r2)
+      if let some r2 := (pDropPrefixCI? r "that many ").orElse
+          (fun _ => (pDropPrefixCI? r "that much ").orElse
+            (fun _ => pDropPrefixCI? r "the number of cards moved this way ")) then
+        (.upTo (ctx2.resolveStepMetric? "that many" |>.getD .eventAmount), r2)
       else if let some (vStr, rest) := pSplitFirstCI? r " basic land" then
         let v := (ctx2.resolveStepMetric? vStr).orElse (fun _ => parseCountVal? vStr) |>.getD (.const 1)
         (.upTo v, ("basic land " ++ rest).trimAscii.copy)
@@ -1055,17 +1114,22 @@ def parseInspectLibrarySeq? (ctx : DiscourseCtx) (sents : Array String) (idx : N
       match pSplitFirstCI? r0 " and separate them into " with
       | some (a, b) => (a, some b)
       | none => (r0, none)
-    if let some (cntPart, libPart) := (pSplitFirstCI? r " cards of ").orElse
-        (fun _ => pSplitFirstCI? r " card of ") then
-      let cnt :=
+    let (rNoWhere, topWhereX?) : String × Option ValueExpr :=
+      match pSplitFirstCI? r ", where x is " with
+      | some (a, b) => (a, parseValueExpr b)
+      | none => (r, none)
+    if let some (cntPart, libPart) := (pSplitFirstCI? rNoWhere " cards of ").orElse
+        (fun _ => pSplitFirstCI? rNoWhere " card of ") then
+      let cnt0 :=
         if cntPart.isEmpty then .const 1
         else (parseCountVal? cntPart).getD (.const 1)
+      let cnt := match topWhereX?, cnt0 with | some wv, .chosenX => wv | _, v => v
       let whoRaw := (pDropSuffixCI? libPart " library").getD libPart
       if let some (who, c1) := parsePossessivePlayerWithCtx ctx whoRaw then
         src? := some (.topCards who cnt rev)
         inlinePiles? := sepPart?
         ctx1 := c1
-    else if let some libPart := pDropPrefixCI? r "card of " then
+    else if let some libPart := pDropPrefixCI? rNoWhere "card of " then
       let whoRaw := (pDropSuffixCI? libPart " library").getD libPart
       if let some (who, c1) := parsePossessivePlayerWithCtx ctx whoRaw then
         src? := some (.topCards who (.const 1) rev)
@@ -1246,9 +1310,9 @@ def parseInspectLibrarySeq? (ctx : DiscourseCtx) (sents : Array String) (idx : N
       | some (a, b) =>
         if (pLower b).contains "mana value" then (a, true) else (s1, false)
       | none => (s1, false)
-    -- Split optional inline rest placement (`" and the rest ..."`, `", then shuffle the rest ..."`, `", then shuffle"`)
+    -- Split optional inline rest placement (`" and the rest ..."`, `" and the other ..."`, `", then shuffle the rest ..."`, `", then shuffle"`)
     let (s, extraRest?) : String × Option RestPlacement :=
-      match pSplitFirstCI? s1b " and the rest " with
+      match (pSplitFirstCI? s1b " and the rest ").orElse (fun _ => pSplitFirstCI? s1b " and the other ") with
       | some (a, b) => (a, parseRestPlacement? ("put the rest " ++ b))
       | none =>
         match pSplitFirstCI? s1b ", then shuffle the rest" with
@@ -1264,12 +1328,21 @@ def parseInspectLibrarySeq? (ctx : DiscourseCtx) (sents : Array String) (idx : N
         if let some (d, m0, c2) := parseDestZoneWithMods? c dStr then
           let m := if (pLower tail).contains "goaded" then { m0 with goaded := true } else m0
           return some (.distributeEachOpponent d m, extraRest?, loseMvLife, c2)
-    -- `"Put all of them <dest>"` / `"Put all [creature] cards revealed this way <dest>"` / `"Put that card <dest>"` / `"Put those creature cards <dest>"`
+    -- Filtered `"Put all <pred> revealed this way <dest>"` (e.g. `Branching Timeline`: `"Put all permanent cards revealed this way onto the battlefield tapped"`)
+    if let some rAllRev := pDropPrefixCI? s "put all " then
+      if let some (predPart, destPart) := pSplitFirstCI? rAllRev " revealed this way " then
+        let pLow := pLower predPart
+        if pLow != "cards" && pLow != "card" && !pLow.contains "creature" then
+          if let some np := parseNounPhrase predPart then
+            if let some (d, m, c2) := parseDestZoneWithMods? c destPart then
+              return some (.takeMatching np.filter.pred .anyNumber d m false false, extraRest?, loseMvLife, c2)
+    -- `"Put all of them <dest>"` / `"Put all [creature] cards revealed this way <dest>"` / `"Put that card <dest>"` / `"Put those creature/land cards <dest>"`
     let moveAllRest? : Option String :=
       (pDropPrefixCI? s "put all of them ").orElse fun _ =>
       (pDropPrefixCI? s "put all revealed cards ").orElse fun _ =>
       (pDropPrefixCI? s "put that card ").orElse fun _ =>
       (pDropPrefixCI? s "put those creature cards ").orElse fun _ =>
+      (pDropPrefixCI? s "put those land cards ").orElse fun _ =>
       (match pDropPrefixCI? s "put all " with
       | some r =>
         match pSplitFirstCI? r " revealed this way " with
@@ -1279,7 +1352,7 @@ def parseInspectLibrarySeq? (ctx : DiscourseCtx) (sents : Array String) (idx : N
     if let some r := moveAllRest? then
       if let some (d, m, c2) := parseDestZoneWithMods? c r then
         return some (.moveAll d m, extraRest?, loseMvLife, c2)
-    -- `"You may reveal <pred> card from among them and put it <dest>"` / `"[Reveal it and ]put <count> <pred> card(s) from among them/the milled cards/those cards [at random] <dest>"`
+    -- `"You may reveal <pred> card from among them and put it <dest>"` / `"[Reveal it and ]put <count> <pred> card(s) from among them/of them/the milled cards/those cards [at random] <dest>"`
     let mut revTaken := false
     let mut atRand := false
     let mut isMay := false
@@ -1320,7 +1393,8 @@ def parseInspectLibrarySeq? (ctx : DiscourseCtx) (sents : Array String) (idx : N
       let fromSplit? :=
         (pSplitFirstCI? r " from among them").orElse fun _ =>
         (pSplitFirstCI? r " from among the milled cards").orElse fun _ =>
-        pSplitFirstCI? r " from among those cards"
+        (pSplitFirstCI? r " from among those cards").orElse fun _ =>
+        pSplitFirstCI? r " of them"
       if let some (whatPart0, destPart0) := fromSplit? then
         let mut whatPart := whatPart0
         let mut destPart := destPart0.trimAscii.copy
@@ -1330,6 +1404,7 @@ def parseInspectLibrarySeq? (ctx : DiscourseCtx) (sents : Array String) (idx : N
           atRand := true; whatPart := "a " ++ w
         let (cnt0, fRaw0) : ExprCountRange × String :=
           if let some rAll := pDropPrefixCI? whatPart "all " then (.anyNumber, rAll)
+          else if let some nv := parseCountVal? whatPart then (.exact nv, "")
           else (parseExprCountRange? whatPart).getD (.upTo (.const 1), whatPart)
         let cnt := if isMay then match cnt0 with | .exact v => .upTo v | other => other else cnt0
         let mut fRaw := fRaw0
@@ -1551,8 +1626,9 @@ partial def parseContinuousModAtom? (qp : QuotedAbilityParsers) (ctx : Discourse
     if let some kws := parseKeywordList? lRest then
       return some (.loseKeywords kws, ctx)
   -- `"becomes a copy of <obj>[ until end of turn][, except <mods>]"`
-  if let some cRest := (pDropPrefixCI? s "becomes a copy of ").orElse
-      (fun _ => pDropPrefixCI? s "become copies of ") then
+  if let some cRest := (pDropPrefixCI? s "becomes a copy of ").orElse fun _ =>
+      (pDropPrefixCI? s "become copies of ").orElse fun _ =>
+      pDropPrefixCI? s "become a copy of " then
     let (refStr0, excStr?) :=
       match pSplitFirstCI? cRest ", except " with
       | some (a, b) => (a, some b)

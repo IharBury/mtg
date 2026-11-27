@@ -110,6 +110,9 @@ structure ProposedSpell where
   /-- The spell is cast for its sneak cost; this unblocked attacker returns
   to hand as the cost is paid (MSH sneak). -/
   sneakAttacker : Option ObjectId := none
+  /-- The spell is cast for its beam me up cost; this creature returns to its
+  owner's hand as the cost is paid (CR 702.196a). -/
+  beamMeUpCreature : Option ObjectId := none
   /-- Cast for an alternative cost such as "without paying its mana cost" (CR 118.9a). -/
   alternativeCost : Bool := false
   /-- Cast as part of a resolving spell or ability (CR 608.2g). -/
@@ -135,6 +138,8 @@ structure ProposedSpell where
   /-- Whether this activation's initial `.crew` or `.zemoBoast` choice has already
   been paid (including `Crew 0`, CR 602.2b / 702.122a / 702.142). -/
   choiceCostPaid : Bool := false
+  /-- Upper bound on the resulting spell's mana value (CR 701.57a / 702.85a). -/
+  maxCastManaValue? : Option Nat := none
 deriving Repr, Inhabited, BEq
 
 end Mtg.Engine

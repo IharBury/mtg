@@ -52,6 +52,11 @@ private def parseDurOrDefault (raw : String) : Option DurationExpr :=
 private def peelTrailingDuration (raw : String) (ctx? : Option DiscourseCtx := none) : String × Option DurationExpr := Id.run do
   let s := pClean raw
   let candidates : Array (String × DurationExpr) := #[
+    (" for as long as this permanent remains tapped", .whileTapped .this),
+    (" for as long as this creature remains tapped", .whileTapped .this),
+    (" for as long as this artifact remains tapped", .whileTapped .this),
+    (" for as long as it remains tapped", .whileTapped .this),
+    (" for as long as this remains tapped", .whileTapped .this),
     (" for as long as this permanent remains on the battlefield", .whileOnBattlefield .this),
     (" for as long as this creature remains on the battlefield", .whileOnBattlefield .this),
     (" for as long as this saga remains on the battlefield", .whileOnBattlefield .this),
@@ -153,12 +158,26 @@ partial def parseInstrCondition? (raw : String) (cardName : String := "") (ctx? 
   if l.contains "excess damage was dealt" && l.contains "this way" then
     let v := ctx.lastActionVar?.getD ⟨0⟩
     return some (.cmp .gt (.stepMetric .excessDamage v) (.const 0))
-  -- `"you sacrificed a <pred> this way"` (`Garruk, Veiled Butcher`)
+  if l == "they do" || l == "that player does" || l == "that opponent does" then
+    let v := ctx.lastActionVar?.getD ⟨0⟩
+    return some (.stepSucceeded v)
+  -- `"you draw <N> or more cards this way"` / `"the number of cards moved this way is <N> or greater"` (`Sarek, Federation Ambassador`)
+  if let some drawRest := pDropPrefixCI? s "you draw " then
+    if let some nStr := pDropSuffixCI? drawRest " or more cards this way" then
+      if let some n := parseNatWord? nStr then
+        let v := ctx.lastActionVar?.getD ⟨0⟩
+        return some (.cmp .ge (.stepMetric .movedCount v) (.const (Int.ofNat n)))
+  if let some movedRest := pDropPrefixCI? s "the number of cards moved this way is " then
+    if let some nStr := (pDropSuffixCI? movedRest " or greater").orElse (fun _ => pDropSuffixCI? movedRest " or more") then
+      if let some n := parseNatWord? nStr then
+        let v := ctx.lastActionVar?.getD ⟨0⟩
+        return some (.cmp .ge (.stepMetric .movedCount v) (.const (Int.ofNat n)))
+  -- `"you sacrificed a <pred> this way"` (`Garruk, Veiled Butcher`, `Gowron`)
   if let some sacRest := pDropPrefixCI? s "you sacrificed " then
     if let some whatStr := pDropSuffixCI? sacRest " this way" then
       if let some np := parseNounPhrase whatStr then
-        let v := ctx.lastActionVar?.getD ⟨0⟩
-        return some (.exists (.filter (.stepObjects v) np.filter.pred))
+        let obj := match ctx.lastActionVar? with | some v => ObjectExpr.stepObjects v | none => .costPaidObjects
+        return some (.exists (.filter obj np.filter.pred))
   -- `"you put a <pred> into your graveyard this way"` (`Chandra, Chill of Compliance`, `Enlightened Confidant`)
   if let some putRest := pDropPrefixCI? s "you put " then
     if let some whatStr := pDropSuffixCI? putRest " into your graveyard this way" then
@@ -304,6 +323,9 @@ partial def parseValueWithCtx (ctx : DiscourseCtx) (raw : String) : Option Value
     match parseValueWithCtx ctx a, parseValueWithCtx ctx b with
     | some va, some vb => return some (.binary .add va vb)
     | _, _ => pure ()
+  if l == "that much" && ctx.lastActionWasLife then
+    if let some v := ctx.lastActionVar? then
+      return some (.stepMetric .lifeChanged v)
   if let some sm := ctx.resolveStepMetric? s then
     return some sm
   if l == "x" then return some .chosenX
@@ -313,11 +335,17 @@ partial def parseValueWithCtx (ctx : DiscourseCtx) (raw : String) : Option Value
     match ctx.lastActionVar? with
     | some v => return some (.stepMetric .sumPower v)
     | none => pure ()
+  let statObjFor (isThatRef : Bool) : ObjectExpr :=
+    if isThatRef && ctx.isTrigger && !ctx.isSelfTrigger && !ctx.attachedHostCtx &&
+        (ctx.lastSubject?.isNone || ctx.lastSubject? == some .this) then
+      .triggerSubject
+    else
+      ctx.lastSubject?.getD (if ctx.isTrigger then .triggerSubject else .this)
   if l == "its power" || l == "that creature's power" || l == "that permanent's power" ||
       l == "that card's power" || l == "target's power" then
     let obj :=
       if l == "target's power" then .target (ctx.lastTargetSlot?.getD 0)
-      else ctx.lastSubject?.getD (if ctx.isTrigger then .triggerSubject else .this)
+      else statObjFor (l != "its power")
     return some (.objectStat .power obj)
   if l == "target's loyalty" || l == "its loyalty" then
     let obj :=
@@ -331,14 +359,14 @@ partial def parseValueWithCtx (ctx : DiscourseCtx) (raw : String) : Option Value
   if l == "the sacrificed creature's power" || l == "those exiled cards's power" then
     return some (.objectStat .power .costPaidObjects)
   if l == "twice its power" || l == "twice that creature's power" then
-    let obj := ctx.lastSubject?.getD (if ctx.isTrigger then .triggerSubject else .this)
+    let obj := statObjFor (l != "twice its power")
     return some (.binary .mul (.const 2) (.objectStat .power obj))
   if l == "its toughness" || l == "that creature's toughness" || l == "that permanent's toughness" then
-    let obj := ctx.lastSubject?.getD (if ctx.isTrigger then .triggerSubject else .this)
+    let obj := statObjFor (l != "its toughness")
     return some (.objectStat .toughness obj)
   if l == "its mana value" || l == "that creature's mana value" || l == "that spell's mana value" ||
       l == "that card's mana value" || l == "that object's mana value" then
-    let obj := ctx.lastSubject?.getD (if ctx.isTrigger then .triggerSubject else .this)
+    let obj := statObjFor (l != "its mana value")
     return some (.objectStat .manaValue obj)
   if l == "the amount of mana spent to cast that spell" ||
       l == "the amount of mana spent to cast that object" then
@@ -432,6 +460,8 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
     return some (Instruction.recruit .you, true, ctx)
   if low == "investigate" then
     return some (Instruction.createTokensFixed .clue 1 .you, true, ctx)
+  if low == "investigate twice" then
+    return some (Instruction.createTokensFixed .clue 2 .you, true, ctx)
   if let some invWho := pDropSuffixCI? norm " investigates" then
     if let some (who, ctx1) := parsePlayerWithCtx ctx invWho then
       return some (Instruction.createTokensFixed .clue 1 who, true, ctx1)
@@ -449,6 +479,8 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
     return some (.player (.becomeMonarch .you), false, ctx)
   if low == "you win the game" then
     return some (.player (.setStatus .you .winGame), false, ctx)
+  if low == "you lose the game" then
+    return some (.player (.setStatus .you .loseGame), false, ctx)
   if low == "you get the city's blessing" || low == "you get the city's blessing for the rest of the game" then
     return some (.player (.setPlayerDesignation .you .citysBlessing), false, ctx)
   if low == "you get enduring story" || low == "you get enduring story for the rest of the game" then
@@ -483,12 +515,19 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
     if let some v := parseValueWithCtx ctx incRest then
       return some (.create (.tokens .you (.const 1) (.predefined .incubator) { counters := #[(.plusOnePlusOne, v)] }), true, ctx)
   if let some dblRest := pDropPrefixCI? norm "double " then
+    if pLower dblRest == "your life total" then
+      return some (.life (.gain .you (.playerMetric .life .you)), true, ctx)
     let (dblCore, dur?) := peelTrailingDuration dblRest (some ctx)
     if let some objStr0 := (pDropSuffixCI? dblCore "'s power and toughness").orElse
         (fun _ => pDropSuffixCI? dblCore " power and toughness") then
       let objStr := if pLower objStr0 == "its" then "it" else objStr0
       if let some (obj, ctx1) := parseObjWithCtx ctx objStr then
         return some (.installEffect (.applyContinuous (dur?.getD .untilEndOfTurn) obj (.modifyPT (.objectStat .power obj) (.objectStat .toughness obj))), false, ctx1)
+    if let some objStr0 := (pDropSuffixCI? dblCore "'s power").orElse
+        (fun _ => pDropSuffixCI? dblCore " power") then
+      let objStr := if pLower objStr0 == "its" then "it" else objStr0
+      if let some (obj, ctx1) := parseObjWithCtx ctx objStr then
+        return some (.installEffect (.applyContinuous (dur?.getD .untilEndOfTurn) obj (.modifyPT (.objectStat .power obj) (.const 0))), false, ctx1)
 
   -- One-shot spell cost/cant-be-countered rules (`The next ... spell(s) you cast ...`, `<pred> spells you cast this turn cost {N} less to cast`)
   let stripSpellKind (p : ObjectPred) : ObjectPred :=
@@ -540,6 +579,10 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
           return some (.player (.drawCards .you (.binary .max (.const 0) (.binary .sub (.const 10) (.playerMetric .handSize .you)))), true, ctx)
         if let some v := parseValueWithCtx ctx eqStr then
           return some (.player (.drawCards .you v), true, ctx)
+      -- `"draw a card for every <N> ..."` (`Sarek, Federation Ambassador`)
+      if let some everyStr := pDropPrefixCI? rest "a card for every " then
+        if let some v := parseValueExpr ("for every " ++ everyStr) then
+          return some (.player (.drawCards .you v), true, ctx)
       -- `"draw a card for each <X>"` (including `"for each color among ..."`, `"for each card you've discarded this turn"`, `"for each Human tapped this way"`)
       if let some eachStr := pDropPrefixCI? rest "a card for each " then
         let eLow := pLower eachStr
@@ -576,7 +619,7 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
           let isBindable := match v with | .const 1 | .stepMetric _ _ => false | _ => true
           return some (.player (.drawCards .you v), isBindable, ctxD)
 
-  -- 3. `"Scry N"` / `"Surveil N"` / `"Proliferate ..."` / `"Amass ..."` / `"Empower ..."`
+  -- 3. `"Scry N"` / `"Surveil N"` / `"Proliferate ..."` / `"Amass ..."` / `"Empower ..."` / `"Discover N"`
   if lead == "scry" then
     if let some nStr := pDropPrefixCI? norm "scry " then
       if let some v := parseValueWithCtx ctx nStr then
@@ -585,6 +628,10 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
     if let some nStr := pDropPrefixCI? norm "surveil " then
       if let some v := parseValueWithCtx ctx nStr then
         return some (.player (.surveil .you v), true, ctx)
+  if lead == "discover" then
+    if let some nStr := pDropPrefixCI? norm "discover " then
+      if let some v := parseValueWithCtx ctx nStr then
+        return some (.player (.discover .you v), true, ctx)
   if lead == "proliferate" then
     if let some rest := pDropPrefixCI? norm "proliferate " then
       if let some (cntStr, tgtStr?) :=
@@ -615,8 +662,11 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
         | some sub, some amt => return some (.player (.empowerPlaneswalker sub amt), true, ctx)
         | _, _ => pure ()
 
-  -- 4. `"Create <count> <TokenDesc> [for each <X>]"` (and `"create <A> or [create] <B>"`)
+  -- 4. `"Create <count> <TokenDesc> [for each <X>]"` (and `"create <A> or [create] <B>"` and `"create a copy of <card>"`)
   if lead == "create" then
+    if let some copyObjStr := pDropPrefixCI? norm "create a copy of " then
+      if let some (obj, ctx1) := parseObjWithCtx ctx copyObjStr then
+        return some (.stack (.copyStackObject obj (.const 1) false), true, ctx1)
     if let some (lhsC, rhsC) := pSplitFirstCI? norm " or create " then
       match parseAtomicInstr qp ctx lhsC, parseAtomicInstr qp ctx ("create " ++ rhsC) with
       | some (i1, _, c1), some (i2, _, _) =>
@@ -649,6 +699,8 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
             if (pLower eachStr).contains "of that type" then
               let v := c.lastActionVar?.getD ⟨0⟩
               ValueExpr.aggregate .count .one (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you, .hasSubtype (.fromStep v)]))
+            else if pLower eachStr == "dilemma you've faced this turn" || pLower eachStr == "dilemma you faced this turn" then
+              ValueExpr.playerMetric .dilemmasFacedThisTurn .you
             else if (pLower eachStr).endsWith " this way" then
               match c.lastActionVar? with | some v => .stepMetric .movedCount v | none => .eventAmount
             else if let some np := parseNounPhrase eachStr then
@@ -750,12 +802,30 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
            (pDropSuffixCI? objRaw " from a graveyard").orElse fun _ =>
            pDropSuffixCI? objRaw " from its owner's graveyard") |>.getD objRaw
         else objRaw
-      -- `"exile <choice> [(reveal first)] from <pool>"` (`Null Summoner`, `Sphinx's Approach`)
+      -- `"exile <choice> [(reveal first)] from <pool>"` (`Null Summoner`, `Sphinx's Approach`, `Zero`)
       if let some (chPart0, poolPart) := pSplitFirstCI? objRawClean " from " then
         let (rev, chPart) :=
           match pDropSuffixCI? chPart0 " (reveal first)" with
           | some x => (true, x)
           | none => (false, chPart0)
+        if pLower poolPart == "it" then
+          if let some who := ctx.lastPlayer? then
+            let whatClean := ((pDropPrefixCI? chPart "a ").orElse fun _ => pDropPrefixCI? chPart "an ") |>.getD chPart
+            let pred : ObjectPred :=
+              if pLower whatClean == "card" then .anyObject
+              else (parseNounPhrase whatClean).map (·.filter.pred) |>.getD .anyObject
+            let ch : MoveChoiceSpec := { chooser := .controller, count := .exact (.const 1), revealFirst := rev }
+            return some (.moveZone (.inZones (.handOf who) pred) .exile .exile { choice? := some ch, exileUntilSourceLeaves := untilLeaves, enterFaceDown := faceDown, linkToSource := linkedSrc }, true, ctx)
+        if let some handWhoRaw := pDropSuffixCI? poolPart " hand" then
+          if let some (who, ctx1) := parsePossessivePlayerWithCtx ctx handWhoRaw then
+            if let some (cntR, whatRest) := parseExprCountRange? chPart then
+              let wLow := pLower whatRest
+              let pred : ObjectPred :=
+                if wLow.isEmpty || wLow == "card" || wLow == "cards" then .isKind .card
+                else (parseNounPhrase whatRest).map (·.filter.pred) |>.getD .anyObject
+              let handZones : ZoneSetSpec := if who == .you then .yourHand else .handOf who
+              let ch : MoveChoiceSpec := { chooser := .controller, count := cntR, revealFirst := rev }
+              return some (.moveZone (.inZones handZones pred) .exile .exile { choice? := some ch, exileUntilSourceLeaves := untilLeaves, enterFaceDown := faceDown, linkToSource := linkedSrc }, true, ctx1)
         if rev || pLower chPart == "a" || pLower chPart == "an" || (parseCountVal? chPart).isSome then
           if let some (poolObj, ctx1) := parseObjWithCtx ctx poolPart then
             let cntR := (parseExprCountRange? (chPart ++ " card")).map Prod.fst |>.getD (.exact (.const 1))
@@ -773,9 +843,10 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
       ] do
         if let some (objPart0, tailPart0) := pSplitFirstCI? rest sep then
           let (tailPart, delayedEndStep) :=
-            match pDropSuffixCI? tailPart0 " at the beginning of the next end step" with
-            | some a => (a, true)
-            | none => (tailPart0, false)
+            if pLower tailPart0 == "at the beginning of the next end step" then ("", true)
+            else match pDropSuffixCI? tailPart0 " at the beginning of the next end step" with
+              | some a => (a, true)
+              | none => (tailPart0, false)
           let objPart :=
             if (pLower objPart0).startsWith "that card from " || (pLower objPart0).startsWith "it from " ||
                 (pLower objPart0).startsWith "this card from " || (pLower objPart0).startsWith "this permanent from " then
@@ -783,8 +854,30 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
                pDropSuffixCI? objPart0 " from a graveyard") |>.getD objPart0
             else objPart0
           let destFull := (sep.trimAscii.copy ++ " " ++ tailPart).trimAscii.copy
-          if let some (obj, ctx1) := parseObjWithCtx ctx objPart then
-            if let some (dest0, mods, ctx2) := parseDestZoneWithMods? ctx1 destFull then
+          -- Explicit choice round-trip: `"return a from <pool> to ..."`
+          let explicitChoice? : Option (ObjectExpr × MoveChoiceSpec × DiscourseCtx) :=
+            match pSplitFirstCI? objPart " from " with
+            | some (chS, poolS) =>
+              if pLower chS == "a" || pLower chS == "an" || (parseCountVal? chS).isSome then
+                (parseObjWithCtx ctx poolS).map fun (poolObj, c1) =>
+                  let cntR := (parseExprCountRange? (chS ++ " card")).map Prod.fst |>.getD (.exact (.const 1))
+                  (poolObj, { chooser := .controller, count := cntR }, c1)
+              else none
+            | none => none
+          let parsedObj? : Option (ObjectExpr × Option MoveChoiceSpec × DiscourseCtx) :=
+            match explicitChoice? with
+            | some (o, ch, c1) => some (o, some ch, c1)
+            | none =>
+              (parseObjWithCtx ctx objPart).map fun (o, c1) =>
+                let opLow := pLower objPart
+                let isIndefPool := !opLow.contains "target " && (opLow.startsWith "a " || opLow.startsWith "an ") &&
+                  (match o with | .inZones _ _ => true | _ => false)
+                let ch? : Option MoveChoiceSpec :=
+                  if isIndefPool then some { chooser := .controller, count := .exact (.const 1) } else none
+                (o, ch?, c1)
+          if let some (obj, ch?, ctx1) := parsedObj? then
+            if let some (dest0, mods0, ctx2) := parseDestZoneWithMods? ctx1 destFull then
+              let mods := match ch? with | some ch => { mods0 with choice? := some ch } | none => mods0
               let (dest, verb) : DestZoneSpec × ZoneVerb :=
                 match dest0 with
                 | .hand .controller =>
@@ -795,7 +888,7 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
               let moveI := Instruction.moveZone obj dest verb mods
               if delayedEndStep then
                 let dt : DelayedTriggerSpec := {
-                  pattern := .stepBegins .end (.player .any)
+                  pattern := .stepEachEndStep
                   duration := .untilEndOfTurn
                   oneShot := true
                   effect := { targets := .none, body := moveI }
@@ -860,7 +953,7 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
             if let some (kind, _) := CounterKind.ofPrefix ((pWords kCore).toList.map pLower) then
               if let some (obj, ctx1) := parseObjWithCtx ctx o1 then
                 if let some amt := parseValueWithCtx ctx1 vStr then
-                  return some (.permanent (.modifyCounters (.put kind amt) obj), true, ctx1)
+                  return some (.permanent (.modifyCounters (.put kind amt) obj), true, { ctx1 with lastCounterKind? := some kind })
         if let some (o1Part, secondPart) := pSplitFirstCI? onRest0 " and " then
           if (pLower secondPart).contains " counter on " || (pLower secondPart).contains " counters on " then
             match parseAtomicInstr qp ctx ("put " ++ ctrPart0 ++ " on " ++ o1Part) with
@@ -923,7 +1016,11 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
                         (ValueExpr.aggregate .count .one (.inZones np.filter.zones np.filter.pred), ctx1)
                       else ((parseValueWithCtx ctx1 eachStr).getD (.const 1), ctx1)
                 (if baseCnt == .const 1 then mult else .binary .mul baseCnt mult, cMult)
-            return some (.permanent (.modifyCounters (.put kind finalCnt) obj), true, ctxOut)
+            let lastSubj' :=
+              match obj with
+              | .this | .target _ | .attachedHost => some obj
+              | _ => ctxOut.lastSubject?
+            return some (.permanent (.modifyCounters (.put kind finalCnt) obj), true, { ctxOut with lastCounterKind? := some kind, lastSubject? := lastSubj' })
         if let some srcRaw := pDropPrefixCI? ctrPart0 "counters matching " then
           let srcStr := (pDropSuffixCI? srcRaw "'s counters").getD srcRaw
           match parseObjWithCtx ctx srcStr, parseObjWithCtx ctx onRest with
@@ -1014,8 +1111,18 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
                 else mods0
               return some (.moveZone obj dest .put mods, true, ctx2)
 
-  -- 9. `"Remove <count|all> [<kind>] counter(s) from [choice among] <obj>"` / `"Move ..."` / `"Double ... counters ..."`
+  -- 9. `"Remove <count|all> [<kind>] counter(s) from [choice among] <obj>"` / `"Move ..."` / `"Double ... counters ..."` / `"Distribute ..."`
+  if lead == "distribute" then
+    if let some rest := pDropPrefixCI? norm "distribute " then
+      if let some (ctrPart, amongPart) := pSplitFirstCI? rest " among " then
+        if let some (k, amt) := parseCounterSpec? ctrPart then
+          if let some slot := parseTargetSlot amongPart then
+            let (_, ctx1) := ctx.pushTargetSlot { slot with division? := some (.counters k, amt) }
+            return some (.permanent (.modifyCounters (.distribute k amt) .allTargets), true, ctx1)
   if lead == "remove" then
+    if low == "remove those counters" then
+      let host := ctx.lastSubject?.getD .this
+      return some (.permanent (.modifyCounters (.remove ctx.lastCounterKind? .anyNumber) host), false, { ctx with lastSubject? := some host })
     if let some rest := pDropPrefixCI? norm "remove " then
       if let some (ctrPart, fromPart0) := pSplitFirstCI? rest " from " then
         let (ch?, fromPart) : Option MoveChoiceSpec × String :=
@@ -1092,7 +1199,20 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
           let kind? := if kCore.isEmpty then none else (CounterKind.ofPrefix ((pWords kCore).toList.map pLower)).map Prod.fst
           return some (.permanent (.modifyCounters (.double kind?) obj), false, ctx1)
 
-  -- 10. `"Tap ..."`, `"Untap ..."`, `"Attach ..."`, `"Transform ..."`, `"Turn ... face up"`, `"Goad ..."`, `"Harness ..."`
+  -- 10. `"Tap ..."`, `"Untap ..."`, `"Attach ..."`, `"Transform ..."`, `"Turn ... face up"`, `"Goad ..."`, `"Harness ..."`, `"Assimilate ..."`
+  if lead == "assimilate" then
+    if let some rest := pDropPrefixCI? norm "assimilate " then
+      if let some (chPart, poolPart) := pSplitFirstCI? rest " among " then
+        if let some (poolObj, ctx1) := parseObjWithCtx ctx poolPart then
+          let cntR := (parseExprCountRange? (chPart ++ " card")).map Prod.fst |>.getD (.exact (.const 1))
+          let ch : MoveChoiceSpec := { chooser := .controller, count := cntR }
+          return some (.permanent (.assimilate poolObj (some ch)), true, ctx1)
+      let rl := pLower rest
+      let isIndef := !rl.contains "target " && (rl.startsWith "a " || rl.startsWith "an ")
+      if let some (obj, ctx1) := parseObjWithCtx ctx rest then
+        let ch? : Option MoveChoiceSpec :=
+          if isIndef then some { chooser := .controller, count := .exact (.const 1) } else none
+        return some (.permanent (.assimilate obj ch?), true, ctx1)
   if lead == "tap" then
     if let some rest := pDropPrefixCI? norm "tap " then
       if let some anyRest0 := pDropPrefixCI? rest "any number of " then
@@ -1103,7 +1223,7 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
       if let some (obj, ctx1) := parseObjWithCtx ctx rest then
         let ctx2 :=
           match obj with
-          | .attachedHost | .target _ | .triggerSubject => { ctx1 with lastSubject? := some obj }
+          | .attachedHost | .target _ | .triggerSubject | .allTargets => { ctx1 with lastSubject? := some obj }
           | _ => ctx1
         return some (Instruction.tap obj, false, ctx2)
   if lead == "untap" then
@@ -1155,15 +1275,38 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
 
   -- 11. `"Sacrifice ..."`, `"Discard ..."`, `"Mill ..."`, `"Shuffle ... into ..."`
   if lead == "sacrifice" then
-    if let some rest := pDropPrefixCI? norm "sacrifice " then
+    if let some rest0 := pDropPrefixCI? norm "sacrifice " then
+      let (rest, delEndStep?) : String × Option TriggerPattern :=
+        match pDropSuffixCI? rest0 " at the beginning of your next end step" with
+        | some a => (a, some (.stepBegins .end (.player .you)))
+        | none =>
+          match pDropSuffixCI? rest0 " at the beginning of the next end step" with
+          | some a => (a, some (.stepBegins .end (.player .any)))
+          | none => (rest0, none)
+      let wrapSac (sacI : Instruction) (cOut : DiscourseCtx) : Instruction × Bool × DiscourseCtx :=
+        match delEndStep? with
+        | some pat =>
+          let dt : DelayedTriggerSpec := {
+            pattern := pat
+            duration := .untilEndOfTurn
+            oneShot := true
+            effect := { targets := .none, body := sacI }
+          }
+          (.installEffect (.createDelayedTrigger dt), false, cOut)
+        | none => (sacI, true, cOut)
+      if let some anyRest := pDropPrefixCI? rest "any number of " then
+        if let some np := parseNounPhrase anyRest then
+          let pool := ObjectExpr.inZones np.filter.zones np.filter.pred
+          let ch : MoveChoiceSpec := { chooser := .player .you, count := .anyNumber, filter? := some np.filter.pred }
+          return some (wrapSac (.moveZone pool .graveyard .sacrifice { choice? := some ch }) ctx)
       if let some (obj, ctx1) := parseObjWithCtx ctx rest then
         let ctx2 := if obj == .this then { ctx1 with lastSubject? := some .this } else ctx1
-        return some (.moveZone obj .graveyard .sacrifice {}, true, ctx2)
+        return some (wrapSac (.moveZone obj .graveyard .sacrifice {}) ctx2)
       let restClean := (pDropPrefixCI? rest "a ").orElse (fun _ => pDropPrefixCI? rest "an ") |>.getD rest
       if let some np := parseNounPhrase restClean then
         let pool := ObjectExpr.inZones .battlefield (.all #[np.filter.pred, .controlledBy .you])
         let ch : MoveChoiceSpec := { chooser := .player .you, count := .exact (.const 1), filter? := some np.filter.pred }
-        return some (.moveZone pool .graveyard .sacrifice { choice? := some ch }, true, ctx)
+        return some (wrapSac (.moveZone pool .graveyard .sacrifice { choice? := some ch }) ctx)
   if lead == "discard" then
     if let some rest := pDropPrefixCI? norm "discard " then
       if pLower rest == "your hand" || pLower rest == "their hand" then
@@ -1200,7 +1343,12 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
         if let some (obj, ctx1) := parseObjWithCtx ctx objStr then
           return some (.moveZone obj (.library .owner .shuffledIn false) .shuffleIntoLibrary {}, true, ctx1)
 
-  -- 12. `"Counter ..."`, `"Copy ..."`, `"Choose ..."`, `"Gain ..."`, `"Exchange ..."`, `"Lose ..."`, `"Take an extra turn..."`, `"Prevent ..."`
+  -- 12. `"Counter ..."`, `"Copy ..."`, `"Choose ..."`, `"Gain ..."`, `"Exchange ..."`, `"Lose ..."`, `"Take an extra turn..."`, `"Prevent ..."`, `"Look ..."`
+  if lead == "look" then
+    if let some rest := pDropPrefixCI? norm "look at " then
+      if let some whoRaw := pDropSuffixCI? rest " hand" then
+        if let some (who, ctx1) := parsePossessivePlayerWithCtx ctx whoRaw then
+          return some (.player (.reveal who (.inZones (.handOf who) .anyObject)), false, { ctx1 with lastPlayer? := some who })
   if lead == "counter" then
     if let some rest := pDropPrefixCI? norm "counter " then
       if let some (obj, ctx1) := parseObjWithCtx ctx rest then
@@ -1252,7 +1400,8 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
     if let some ctrlRest := pDropPrefixCI? norm "gain control of " then
       let (objStr, dur?) := peelTrailingDuration ctrlRest (some ctx)
       if let some (obj, ctx1) := parseObjWithCtx ctx objStr then
-        return some (.installEffect (.applyContinuous (dur?.getD .indefinite) obj (.gainControl .you)), false, ctx1)
+        let ctx2 := { ctx1 with lastSubject? := some obj, lastPlayer? := ctx1.lastPlayer?.orElse (fun _ => some (.controllerOf obj)) }
+        return some (.installEffect (.applyContinuous (dur?.getD .indefinite) obj (.gainControl .you)), false, ctx2)
     if let some rest := pDropPrefixCI? norm "gain " then
       if let some nStr := pDropSuffixCI? rest " life" then
         if let some v := parseValueWithCtx ctx nStr then
@@ -1288,6 +1437,12 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
     if let some rest := pDropPrefixCI? norm "prevent all combat damage that would be dealt this turn" then
       let _ := rest
       return some (.installEffect (.applyReplacement .untilEndOfTurn (.preventDamage (.matching { zones := .battlefield, pred := .hasType .creature }) none)), false, ctx)
+    if let some rest := pDropPrefixCI? norm "prevent all damage that would be dealt to " then
+      let (whoStr, dur?) := peelTrailingDuration rest (some ctx)
+      let pf : PlayerFilter :=
+        if pLower whoStr == "you" then .you
+        else (parsePlayerFilter? whoStr).getD .you
+      return some (.installEffect (.applyReplacement (dur?.getD .untilEndOfTurn) (.preventDamageToPlayer pf none)), false, ctx)
     if let some rest := pDropPrefixCI? norm "prevent all damage that would be dealt by " then
       let (subjStr, dur?) := peelTrailingDuration rest (some ctx)
       let (subj, ctxOut) : StaticSubject × DiscourseCtx :=
@@ -1319,6 +1474,15 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
   if lead == "you" then
     if let some rest := pDropPrefixCI? norm "you create " then
       if let some res := parseAtomicInstr qp ctx ("create " ++ rest) then
+        return some res
+    if let some rest := pDropPrefixCI? norm "you put " then
+      if let some res := parseAtomicInstr qp ctx ("put " ++ rest) then
+        return some res
+    if let some rest := pDropPrefixCI? norm "you surveil " then
+      if let some res := parseAtomicInstr qp ctx ("surveil " ++ rest) then
+        return some res
+    if let some rest := pDropPrefixCI? norm "you scry " then
+      if let some res := parseAtomicInstr qp ctx ("scry " ++ rest) then
         return some res
     if let some rest := pDropPrefixCI? norm "you gain " then
       if let some (lifePart, eachPart) := pSplitFirstCI? rest " life for each " then
@@ -1363,6 +1527,9 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
     if let some rest := pDropPrefixCI? norm "you mill " then
       if let some res := parseAtomicInstr qp ctx ("mill " ++ rest) then
         return some res
+    if let some rest := pDropPrefixCI? norm "you sacrifice " then
+      if let some res := parseAtomicInstr qp ctx ("sacrifice " ++ rest) then
+        return some res
     if let some rest := pDropPrefixCI? norm "you draw " then
       if let some nStr := (pDropSuffixCI? rest " cards").orElse (fun _ => pDropSuffixCI? rest " card") then
         if let some v := parseValueWithCtx ctx nStr then
@@ -1397,9 +1564,13 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
       let (qStr, dur?) := peelTrailingDuration rest (some ctx)
       if let some q := parseProtectionQuality? qStr then
         return some (.installEffect (.applyRule (dur?.getD .untilEndOfTurn) (.player (.protectionFrom .you q))), false, ctx)
-    if let some rest := pDropPrefixCI? norm "you have hexproof" then
+    if let some rest := (pDropPrefixCI? norm "you have hexproof").orElse
+        (fun _ => pDropPrefixCI? norm "you gain hexproof") then
       let (_, dur?) := peelTrailingDuration rest (some ctx)
       return some (.installEffect (.applyRule (dur?.getD .untilEndOfTurn) (.player (.hexproof .you none))), false, ctx)
+    if let some rest := pDropPrefixCI? norm "you have no maximum hand size" then
+      let (_, dur?) := peelTrailingDuration ("x " ++ rest) (some ctx)
+      return some (.installEffect (.applyRule (dur?.getD .untilEndOfTurn) (.player (.maxHandSize .you none))), false, ctx)
     -- `"you may have <obj> <base-verb action>"` (`The Sensational She-Hulk`, `Baron Strucker`)
     if let some haveRest := pDropPrefixCI? norm "you may have " then
       let normalizedHave :=
@@ -1415,6 +1586,12 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
       if let some (condDur, bodyStr) := pSplitFirstCI? afterLong ", " then
         let (_, dur?) := peelTrailingDuration ("x for as long as " ++ condDur) (some ctx)
         if let some dur := dur? then
+          -- `"for as long as <this> remains tapped, if a triggered ability of <obj> triggers, that ability triggers an additional time"` (`Lwaxana Troi`)
+          if let some trRest := pDropPrefixCI? bodyStr "if a triggered ability of " then
+            if let some (objStr, _) := pSplitFirstCI? trRest " triggers, that ability triggers an additional time" then
+              if let some (obj, ctx1) := parseObjWithCtx ctx objStr then
+                let objRef : ObjectRef := match obj with | .target i => .target i | .this => .this | .stepObjects v => .stepVar v | .attachedHost => .attachedHost | _ => .triggerSubject
+                return some (.installEffect (.applyRule dur (.trigger (.extraTrigger { zones := .battlefield, pred := .sameAs objRef } 1 none))), false, ctx1)
           let rec patchDurF : Instruction → Instruction
             | .installEffect (.applyContinuous _ o cm) => .installEffect (.applyContinuous dur o cm)
             | .installEffect (.applyRule _ r) => .installEffect (.applyRule dur r)
@@ -1439,6 +1616,10 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
         ctxNextTurn?.orElse fun _ => parseDurOrDefault durStr
       if let some dur := dur? then
         let bLow := pLower bodyStr
+        -- Temporary replacement effect (`Brad Boimler`: `"until end of turn, if one or more counters would be put on ..."`)
+        if bLow.startsWith "if " then
+          if let some (.replacement none repl) := qp.parseStatic bodyStr ctx.cardName then
+            return some (.installEffect (.applyReplacement dur repl), false, ctx)
         -- `"Until <dur>, whenever/when <event>, <effect>"` (`Jace, Reality Sculptor`, `Garruk, Curse Breaker`, `Molten Tide`)
         if bLow.startsWith "whenever " || bLow.startsWith "when " then
           if let some tr := qp.parseTriggered bodyStr ctx.cardName then
@@ -1493,6 +1674,19 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
           .you (some (.all #[.hasSubtype (.literal sub), .hasType .planeswalker]))))), false, ctx)
 
   -- 15. Subject-verb clauses:
+  -- 15a0. `"<slot0> each deal damage equal to their power to <rec>"` (`Common Goal`)
+  if let some (srcStr, tail) := pSplitFirstCI? norm " each deal " then
+    if let some afterEq := pDropPrefixCI? tail "damage equal to their power to " then
+      if let some slot0 := parseTargetSlot srcStr then
+        let (idx0, ctx1) := ctx.pushTargetSlot slot0
+        if let some (recObj, ctx2) := parseObjWithCtx ctx1 afterEq then
+          let (v, ctx3) := ctx2.allocLoopVar
+          let dealI := Instruction.damage (.fight (.stepObjects v) recObj true)
+          return some (.forEach (.eachObject (.target idx0)) v dealI, true, ctx3)
+        if let some (rec, ctx2) := parseRecipientWithCtx ctx1 afterEq then
+          let (v, ctx3) := ctx2.allocLoopVar
+          let dealI := Instruction.damage (.deal (.stepObjects v) rec (.objectStat .power (.stepObjects v)))
+          return some (.forEach (.eachObject (.target idx0)) v dealI, true, ctx3)
   -- 15a. `"<src> deals <amt> damage [divided as you choose among ...] to <recipient> [and <amt2> damage to <rec2>]"`
   if let some (srcStr, tail) := pSplitFirstCI? norm " deals " then
     if let some (firstDmg, secondDmg) := pSplitFirstCI? tail " and " then
@@ -1573,12 +1767,17 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
     if let some (obj, ctx1) := parseObjWithCtx ctx connObjStr then
       return some (.player (.connive obj), true, ctx1)
 
-  -- 15c. Owner library placement & shuffle (`"The owner of <obj> puts it ..."`, `"<obj>'s owner puts/shuffles ..."`, `"<who> puts/exiles ..."`)
+  -- 15c. Owner library placement & shuffle (`"The owner of <obj> puts it ..."`, `"The owners of <obj> shuffle them into their libraries"`, `"<obj>'s owner puts/shuffles ..."`, `"<who> puts/exiles ..."`)
   let extractLibDest (restOwn : String) : Option String :=
     (pSplitFirstCI? restOwn " into ").map (fun (_, r) => "into " ++ r)
       |>.orElse fun _ => (pSplitFirstCI? restOwn " second from the top").map (fun (_, r) => ("second from the top " ++ r).trimAscii.copy)
       |>.orElse fun _ => (pSplitFirstCI? restOwn " third from the top").map (fun (_, r) => ("third from the top " ++ r).trimAscii.copy)
       |>.orElse fun _ => (pSplitFirstCI? restOwn " on ").map (fun (_, r) => "on " ++ r)
+  if let some afterTheOwns := pDropPrefixCI? norm "the owners of " then
+    if let some (objRaw, shufTail) := pSplitFirstCI? afterTheOwns " shuffle " then
+      if (pLower shufTail).contains " into their librar" then
+        if let some (obj, ctx1) := parseObjWithCtx ctx objRaw then
+          return some (.moveZone obj (.library .owner .shuffledIn false) .shuffleIntoLibrary {}, true, ctx1)
   if let some afterTheOwn := pDropPrefixCI? norm "the owner of " then
     if let some (objRaw, restOwn) := pSplitFirstCI? afterTheOwn " puts " then
       if let some libDest := extractLibDest restOwn then
@@ -1636,12 +1835,12 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
   if let some (whoStr, tail) := (pSplitFirstCI? norm " reveals ").orElse (fun _ => pSplitFirstCI? norm " reveal ") then
     if let some (who, ctx1) := parsePlayerWithCtx ctx whoStr then
       if pLower tail == "their hand" || pLower tail == "his or her hand" then
-        return some (.player (.reveal who (.inZones (.handOf who) .anyObject)), false, ctx1)
+        return some (.player (.reveal who (.inZones (.handOf who) .anyObject)), false, { ctx1 with lastPlayer? := some who })
       if let some eqPart := pDropPrefixCI? tail "a number of cards from their hand equal to " then
         if let some cnt := parseValueWithCtx ctx1 eqPart then
-          return some (.player (.reveal who (.inZones (.handOf who) .anyObject) (some (.exact cnt))), true, ctx1)
+          return some (.player (.reveal who (.inZones (.handOf who) .anyObject) (some (.exact cnt))), true, { ctx1 with lastPlayer? := some who })
       if let some (obj, ctx2) := parseObjWithCtx ctx1 tail then
-        return some (.player (.reveal who obj), false, ctx2)
+        return some (.player (.reveal who obj), false, { ctx2 with lastPlayer? := some who })
   if let some (whoStr, tail) := (pSplitFirstCI? norm " each draw ").orElse
       (fun _ => (pSplitFirstCI? norm " each draws ").orElse (fun _ => pSplitFirstCI? norm " draws ")) then
     if let some nStr := (pDropSuffixCI? tail " cards").orElse (fun _ => pDropSuffixCI? tail " card") then
@@ -1670,6 +1869,11 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
         if let some v := parseValueWithCtx ctx1 nStr then
           return some (Instruction.mill v who, true, ctx1)
   if let some (whoStr, tail) := pSplitFirstCI? norm " gains " then
+    if let some ctrlRest := pDropPrefixCI? tail "control of " then
+      let (objStr, dur?) := peelTrailingDuration ctrlRest (some ctx)
+      if let some (who, ctx1) := parsePlayerWithCtx ctx whoStr then
+        if let some (obj, ctx2) := parseObjWithCtx ctx1 objStr then
+          return some (.installEffect (.applyContinuous (dur?.getD .indefinite) obj (.gainControl who)), true, ctx2)
     if let some eqPart := pDropPrefixCI? tail "life equal to " then
       if let some (who, ctx1) := parsePlayerWithCtx ctx whoStr then
         if let some v := parseValueWithCtx ctx1 eqPart then
@@ -1678,7 +1882,7 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
       if let some (who, ctx1) := parsePlayerWithCtx ctx whoStr then
         if let some v := parseValueWithCtx ctx1 nStr then
           return some (.life (.gain who v), true, ctx1)
-  if let some (whoStr, tail) := pSplitFirstCI? norm " loses " then
+  if let some (whoStr, tail) := (pSplitFirstCI? norm " loses ").orElse (fun _ => pSplitFirstCI? norm " lose ") then
     if let some eqPart := pDropPrefixCI? tail "life equal to " then
       if let some (who, ctx1) := parsePlayerWithCtx ctx whoStr then
         match who with
@@ -1770,7 +1974,14 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
     if let some v := parseValueWithCtx ctx valStr then
       return some (.life (.set .you v), false, ctx)
 
-  -- 15e. `"<player> can't cast <pred> spells [dur]"` / `"<creatures> assign combat damage equal to toughness if greater [dur]"` / `"<creatures> can't attack you or <sub/pw> [dur] unless <who> pays <cost>"`
+  -- 15e. `"<player> can't attack [dur]"` / `"<player> can't cast <pred> spells [dur]"` / `"<creatures> assign combat damage equal to toughness if greater [dur]"` / `"<creatures> can't attack you or <sub/pw> [dur] unless <who> pays <cost>"`
+  if let some (whoStr, tail) := pSplitFirstCI? norm " can't attack" then
+    let (core, dur?) := peelTrailingDuration ("x " ++ tail) (some ctx)
+    if pClean core == "x" then
+      let wl := pLower whoStr
+      if wl == "they" || wl == "that player" || wl == "that opponent" || wl == "target player" || wl == "target opponent" || wl == "the active player" then
+        if let some (who, ctx1) := parsePlayerWithCtx ctx whoStr then
+          return some (.installEffect (.applyRule (dur?.getD .untilEndOfTurn) (.player (.cantAttack { relation := .anyPlayer, pred := .matchesExpr who }))), false, ctx1)
   if let some (whoStr, tail) := pSplitFirstCI? norm " can't cast " then
     let (core, dur?) := peelTrailingDuration tail (some ctx)
     if let some pStr := (pDropSuffixCI? core " spells").orElse (fun _ => pDropSuffixCI? core " spell") then
@@ -1861,7 +2072,7 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
       if pts.length == 2 then
         match parseCountVal? pts[0]!, parseCountVal? pts[1]! with
         | some pv, some tv =>
-          return some (.installEffect (.applyContinuous (durPt?.getD .untilEndOfTurn) obj (.setBasePT (some pv) (some tv))), false, ctx1)
+          return some (.installEffect (.applyContinuous (durPt?.getD .indefinite) obj (.setBasePT (some pv) (some tv))), false, ctx1)
         | _, _ => pure ()
 
   -- 15i. Continuous modification on `<obj> <ContinuousMod> [dur]` (expanding `"they're "` / `"it's "`)
@@ -1882,7 +2093,14 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
     " becomes ", " become ", " has ", " have ", " can't ", " is ", " are "
   ] do
     if let some (objStr, modTail) := pSplitFirstCI? coreNoDur vSep then
-      if let some (obj, ctx1) := parseObjWithCtx ctx objStr then
+      let resolvedObj? : Option (ObjectExpr × DiscourseCtx) :=
+        if pLower objStr == "that nonland card" then
+          match ctx.lastActionVar?, ctx.lastRevealUntilPred? with
+          | some v, some pred => some (.filter (.stepObjects v) pred, ctx)
+          | some v, none => some (.filter (.stepObjects v) (.not (.hasType .land)), ctx)
+          | _, _ => parseObjWithCtx ctx objStr
+        else parseObjWithCtx ctx objStr
+      if let some (obj, ctx1) := resolvedObj? then
         let verb := vSep.trimAscii.copy
         if let some (cm, ctx2) := parseContinuousMod? qp ctx1 (verb ++ " " ++ modTail) then
           let dur :=
@@ -1892,7 +2110,11 @@ partial def parseAtomicInstr (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (r
               let ml := pLower modTail
               if ml.contains "until end of turn" || ml.contains "this turn" then .untilEndOfTurn
               else match cm with | .modifyPT _ _ => .untilEndOfTurn | _ => .indefinite
-          return some (.installEffect (.applyContinuous dur obj cm), false, ctx2)
+          let lastSubj' :=
+            match obj with
+            | .target _ | .attachedHost | .this | .triggerSubject | .allTargets => some obj
+            | _ => ctx2.lastSubject?
+          return some (.installEffect (.applyContinuous dur obj cm), false, { ctx2 with lastSubject? := lastSubj' })
 
   return none
 
@@ -1912,8 +2134,11 @@ partial def parseSingleClause (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (
     return parseSingleClause qp ctx rest
 
   -- Scoped multi-step sequence joined by `"; "` (inside `ifCond` / `optional` / `Otherwise`)
-  if s0.contains ';' && !(pLower s0).startsWith "if " && !(pLower s0).startsWith "for each " &&
-      !(pLower s0).startsWith "when you do, " && !(pLower s0).startsWith "if you do, " then
+  let s0LowSemi := pLower s0
+  if s0.contains ';' && !s0LowSemi.startsWith "if " && !s0LowSemi.startsWith "for each " &&
+      !s0LowSemi.startsWith "when you do, " && !s0LowSemi.startsWith "if you do, " &&
+      !s0LowSemi.startsWith "until end of turn, when" && !s0LowSemi.startsWith "until end of turn, at " &&
+      !s0LowSemi.startsWith "at the beginning of " then
     let semiParts := (s0.splitOn ";").map pClean |>.filter (!·.isEmpty)
     if semiParts.length >= 2 then
       let mut sSteps : Array (Option VarId × Instruction) := #[]
@@ -1949,7 +2174,7 @@ partial def parseSingleClause (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (
           (xStr.replace "target opponent's" "that player's", { c2 with lastPlayer? := some (.target idx) })
         else (xStr, ctx1)
       if let some xVal := parseValueWithCtx ctxVal xStrEff then
-        return some (substInstrX xVal instr, bindable, ctxVal)
+        return some (substInstrX xVal instr, bindable, { ctxVal with boundX? := some xVal })
 
   -- Keep `"Put <obj> on top of its owner's library, then shuffle"` atomic (`Gandalf`, `Living Library`)
   if (pLower s0).startsWith "put " && (pLower s0).endsWith "library, then shuffle" then
@@ -2049,14 +2274,29 @@ partial def parseSingleClause (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (
                   else slot.domain
                 let newSlot : TargetSlot := { slot with domain := normDom, forEach? := some pfFilter }
                 let slots' := ctxT.slots.set! slotsBefore newSlot
-                return some (replaceTargetSlot bodyT, bT, { ctxT with slots := slots' })
+                let lastSubj' := if ctxT.lastSubject? == some (.target slotsBefore) then some .allTargets else ctxT.lastSubject?
+                return some (replaceTargetSlot bodyT, bT, { ctxT with slots := slots', lastSubject? := lastSubj' })
       let (v, ctx1) := ctx.allocLoopVar
       if let some (pf, iterCtx) :=
-          (match parsePlayerFilter? iterStr0 |>.orElse (fun _ => parsePlayerFilter? iterStr) with
+          (if pLower iterStr0 == "of them" || pLower iterStr0 == "each target" then
+             let subj := ctx.lastSubject?.getD .allTargets
+             some (ForEachSpec.eachObject subj, { ctx1 with lastSubject? := some (.stepObjects v) })
+           else match parsePlayerFilter? iterStr0 |>.orElse (fun _ => parsePlayerFilter? iterStr) with
            | some pf => some (ForEachSpec.eachPlayer pf, { ctx1 with lastPlayer? := some (.stepPlayers v) })
            | none =>
              match parseObjWithCtx ctx1 iterStr0 with
-             | some (oe, c2) => some (ForEachSpec.eachObject oe, { c2 with lastSubject? := some (.stepObjects v) })
+             | some (oe, c2) =>
+               let oeNorm :=
+                 match oe with
+                 | .allTargets =>
+                   -- Preserve `.target idx` when iterating a single multi-target slot (`Common Goal`)
+                   if c2.slots.size == 1 && (pLower iterStr0).contains "target " then
+                     match c2.slots[0]!.count with
+                     | .between _ _ => ObjectExpr.target 0
+                     | _ => oe
+                   else oe
+                 | _ => oe
+               some (ForEachSpec.eachObject oeNorm, { c2 with lastSubject? := some (.stepObjects v) })
              | none =>
                if pLower iterStr0 == "target" then some (.eachTargetSlot, ctx1)
                else none) then
@@ -2069,12 +2309,15 @@ partial def parseSingleClause (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (
             return some (.forEach pf v body, false, { ctx2 with lastActionVar? := ctx.lastActionVar? })
           return some (.forEach pf v body, true, ctx2)
 
-  -- `", then "` sequential split (also handling `", then searches ..."` inheriting subject player!)
+  -- `", then "` sequential split (also handling `", then searches/discards/draws/loses/gains/sacrifices/mills/exiles ..."` inheriting subject player!)
   if let some (lhs, rhs0) := pSplitFirstCI? s0 ", then " then
     if let some (i1, b1, ctx1) := parseSingleClause qp ctx lhs then
       let (v1?, ctxMid) := if b1 then let (v, c) := ctx1.allocVar; (some v, c) else (none, ctx1)
+      let rl := pLower rhs0
       let rhs :=
-        if (pLower rhs0).startsWith "searches " then
+        if rl.startsWith "searches " || rl.startsWith "discards " || rl.startsWith "draws " ||
+            rl.startsWith "loses " || rl.startsWith "gains " || rl.startsWith "sacrifices " ||
+            rl.startsWith "mills " || rl.startsWith "exiles " then
           "that player " ++ rhs0
         else rhs0
       if let some (i2Raw, b2, ctx2) := parseSingleClause qp ctxMid rhs then
@@ -2100,7 +2343,7 @@ partial def parseSingleClause (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (
           | none, _ => ctx2
         return some (combined, b2, ctxOut)
 
-  -- `"<action> unless <player> pays <cost>"` (CR 118.12a)
+  -- `"<action> unless <player> pays <cost>"` (CR 118.12a) and `"<action> unless <cond>"` (`Anthropological Mission`, `Seven of Nine`)
   if let some (actStr, unlessTail) := pSplitFirstCI? s0 " unless " then
     if let some (payerStr, costStr) := pSplitFirstCI? unlessTail " pays " then
       if let some (act, b1, ctx1) := parseSingleClause qp ctx actStr then
@@ -2108,22 +2351,31 @@ partial def parseSingleClause (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (
           let costNorm := replaceCardNameOutsideQuotes costStr ctx.cardName "this permanent"
           if let some cost := parseCostSpec costNorm then
             return some (.unlessPays payer cost act, b1, ctx2)
+    if !((pLower actStr).startsWith "discard " && (pLower unlessTail).startsWith "you discard ") then
+      if let some cond := parseInstrCondition? unlessTail ctx.cardName (some ctx) then
+        if let some (act, b1, ctx1) := parseSingleClause qp ctx actStr then
+          return some (.ifCond (.not cond) act .noop, b1, ctx1)
 
   -- `"If <cond>, <then>"` (trying both first and last `, ` for comma-containing conditions like `"noncreature, nonland card"`)
   if let some ifRest := pDropPrefixCI? s0 "if " then
     for split? in #[pSplitFirstCI? ifRest ", ", pSplitLastCI? ifRest ", "] do
       if let some (condStr, thenStr) := split? then
         if let some cond := parseInstrCondition? condStr ctx.cardName (some ctx) then
-          if let some (tInstr, tb, ctx1) := parseSingleClause qp ctx thenStr then
+          let condCtx :=
+            match cond with
+            | .cmp _ (.counterCount (some k) _) _ => { ctx with lastCounterKind? := some k }
+            | _ => ctx
+          if let some (tInstr, tb, ctx1) := parseSingleClause qp condCtx thenStr then
             return some (.ifCond cond tInstr .noop, tb, ctx1)
 
   -- Delayed triggers (`When you next ...`, `Until end of turn, when/whenever/at ...`, `Whenever ... this turn, ...`, `At the beginning of the next ...`)
   let low0 := pLower s0
   if low0.startsWith "when you next " || low0.startsWith "until end of turn, when" ||
       low0.startsWith "until end of turn, at " || low0.startsWith "at the beginning of the next " ||
+      low0.startsWith "at the beginning of your next " ||
       low0.startsWith "at the beginning of each " ||
       ((low0.startsWith "whenever " || low0.startsWith "when ") && (low0.contains " until " || low0.contains " this turn,")) then
-    let (dur, trigStr, oneShot) : DurationExpr × String × Bool :=
+    let (dur, trigStr0, oneShot) : DurationExpr × String × Bool :=
       if let some r := pDropPrefixCI? s0 "until end of turn, " then
         (.untilEndOfTurn, r, false)
       else if let some r := pDropPrefixCI? s0 "when you next " then
@@ -2137,13 +2389,35 @@ partial def parseSingleClause (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (
       else if low0.contains " for the rest of the game," then
         (.indefinite, s0.replace " for the rest of the game" "", false)
       else (.untilEndOfTurn, s0, true)
+    -- Bind `"when it "` / `"whenever it "` / `"when that creature "` / `"whenever that creature "` to `ctx.lastSubject?` (`A Good Day to Die`, `The Inner Light`, `Dr. Leonard "Bones" McCoy`)
+    let (trigStr, boundSubj?) : String × Option ObjectRef :=
+      match ctx.lastSubject? with
+      | some (.target i) =>
+        let ref : ObjectRef := .target i
+        if let some r := pDropPrefixCI? trigStr0 "when it " then ("when this permanent " ++ r, some ref)
+        else if let some r := pDropPrefixCI? trigStr0 "whenever it " then ("whenever this permanent " ++ r, some ref)
+        else if let some r := pDropPrefixCI? trigStr0 "when that creature " then ("when this permanent " ++ r, some ref)
+        else if let some r := pDropPrefixCI? trigStr0 "whenever that creature " then ("whenever this permanent " ++ r, some ref)
+        else if let some r := pDropPrefixCI? trigStr0 "when that permanent " then ("when this permanent " ++ r, some ref)
+        else if let some r := pDropPrefixCI? trigStr0 "whenever that permanent " then ("whenever this permanent " ++ r, some ref)
+        else (trigStr0, none)
+      | _ => (trigStr0, none)
+    let rec substPatSubj (subj : ObjectRef) : TriggerPattern → TriggerPattern
+      | .zoneChange (.sameAs .this) f t v c => .zoneChange (.sameAs subj) f t v c
+      | .damageDealt (.sameAs .this) rec co nc dy => .damageDealt (.sameAs subj) rec co nc dy
+      | .attacks (.sameAs .this) tgt al ma mp ck => .attacks (.sameAs subj) tgt al ma mp ck
+      | .becomesTapped (.sameAs .this) yt ft ck => .becomesTapped (.sameAs subj) yt ft ck
+      | .whenCond inner c => .whenCond (substPatSubj subj inner) c
+      | .or a b => .or (substPatSubj subj a) (substPatSubj subj b)
+      | other => other
     let hdrs := parseTriggerClauses trigStr ctx.cardName
     if let some hdr := hdrs[0]? then
+      let pat := match boundSubj? with | some subj => substPatSubj subj hdr.pattern | none => hdr.pattern
       let subCtx : DiscourseCtx := { cardName := ctx.cardName, isTrigger := true, lastSubject? := ctx.lastSubject?, lastActionVar? := ctx.lastActionVar?, nextVarIdx := ctx.nextVarIdx }
       if let some (effBody, _, subCtx') := parseSingleClause qp subCtx hdr.effectText then
         let eff : Effect := { targets := subCtx'.toTargetSpec, body := effBody }
         return some (.installEffect (.createDelayedTrigger {
-          pattern := hdr.pattern
+          pattern := pat
           grouping := hdr.grouping
           duration := dur
           oneShot
@@ -2249,7 +2523,8 @@ partial def parseSingleClause (qp : QuotedAbilityParsers) (ctx : DiscourseCtx) (
           match ctx1.lastPlayer? with
           | some _ => "that player " ++ b
           | none => b
-        else if bl.startsWith "can't " then "this permanent " ++ b
+        else if bl.startsWith "can't " then
+          (if ctx1.lastSubject?.isSome then "it " else "this permanent ") ++ b
         else b
       if let some (i2, b2, ctx2) := parseSingleClause qp ctx1 bCandidate then
         return some (flattenInstrSeq #[i1, i2], b1 || b2, ctx2)
@@ -2279,6 +2554,15 @@ private def parseModalHeader? (header : String) : Option ModalSpec := Id.run do
           altCountIf? := some (.playerPred .you (.controls { zones := .battlefield, pred := .hasSubtype (.literal sub) } (.const 1)), .const 1, .const 2)
           modes := #[]
         }
+  if let some (_, afterIf) := pSplitFirstCI? h "if " then
+    if let some (condStr, _) := pSplitFirstCI? afterIf ", choose one or more instead" then
+      if let some cond := parseCondition condStr then
+        return some {
+          minModes := .const 1
+          maxModes := .const 1
+          altCountIf? := some (cond, .const 1, .const 3)
+          modes := #[]
+        }
   if hl.contains "choose one that hasn't been chosen this turn" then
     return some { minModes := .const 1, maxModes := .const 1, unusedThisTurn := true, modes := #[] }
   if hl.contains "choose one that hasn't been chosen" then
@@ -2305,7 +2589,8 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
     (initTriggerPlayerRole? : Option PlayerExpr := none)
     (attachedHostCtx : Bool := false)
     (initLastActionVar? : Option VarId := none)
-    (isSpell : Bool := false) : Option Effect := Id.run do
+    (isSpell : Bool := false)
+    (initLastSubject? : Option ObjectExpr := none) : Option Effect := Id.run do
   let cleaned := (preprocessOracleLine raw).trimAscii.copy
   if cleaned.isEmpty then return none
 
@@ -2342,7 +2627,7 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
       let mut modes : Array Effect := #[]
       for mTxt in modeTexts do
         let mBody := (extractLeadingLabel mTxt).snd
-        let some mEff := parseCompositionalEffect qp mBody cardName isTrigger isSelfTrigger initLastPlayer? initTriggerPlayerRole? attachedHostCtx initLastActionVar? isSpell | return none
+        let some mEff := parseCompositionalEffect qp mBody cardName isTrigger isSelfTrigger initLastPlayer? initTriggerPlayerRole? attachedHostCtx initLastActionVar? isSpell initLastSubject? | return none
         modes := modes.push mEff
       return some { targets := .none, body := .chooseModes { baseSpec with modes } }
     | _ => return none
@@ -2358,6 +2643,7 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
     isSpell
     attachedHostCtx
     lastPlayer? := initLastPlayer?
+    lastSubject? := initLastSubject?
     triggerPlayerRole? := initTriggerPlayerRole?
     lastActionVar? := initLastActionVar?
     nextVarIdx :=
@@ -2372,10 +2658,11 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
     let sent := pClean sents[idx]!
     let sLow := pLower sent
 
-    -- 2a0. Standalone `"Exile <this spell>."` on instants/sorceries (`Worlds Within Worlds`, etc.)
+    -- 2a0. Standalone `"Exile <this spell>."` on instants/sorceries (`Worlds Within Worlds`, `The Needs of the Many`, `Infinite Diversity`)
     if isSpell then
       let selfExileNorm := pLower (replaceCardNameOutsideQuotes sent cardName "this spell")
-      if selfExileNorm == "exile this spell" || selfExileNorm == "exile this card" then
+      if selfExileNorm == "exile this spell" || selfExileNorm == "exile this card" ||
+          selfExileNorm == "until end of turn, if this spell would leave the stack, exile it instead" then
         steps := steps.push (none, .installEffect (.applyReplacement .untilEndOfTurn .exileOnLeaveStack))
         idx := idx + 1
         continue
@@ -2387,8 +2674,17 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
         idx := idx + 2
         continue
 
-    -- 2b. Multi-sentence `InspectLibrarySpec`
-    if let some (instr, consumed, ctx1) := parseInspectLibrarySeq? ctx sents idx then
+    -- 2b. Multi-sentence `InspectLibrarySpec` (also allow leading `"Then "` e.g. `Exploratory Mission`)
+    let inspRes? :=
+      (parseInspectLibrarySeq? ctx sents idx).orElse fun _ =>
+        match pDropPrefixCI? sent "then " with
+        | some rest => Id.run do
+          let mut fakeSents : Array String := #[rest]
+          for k in [idx + 1 : sents.size] do
+            fakeSents := fakeSents.push sents[k]!
+          return parseInspectLibrarySeq? ctx fakeSents 0
+        | none => none
+    if let some (instr, consumed, ctx1) := inspRes? then
       let (v, ctx2) := ctx1.allocVar
       let revPred? : Option ObjectPred :=
         match instr with
@@ -2451,8 +2747,10 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
             idx := idx + consumed
             continue
 
-    -- 2c1. `", then reveal cards ..."` / `", then look at ..."` spanning this sentence + following sentences (`Mass Polymorph`, `Nick Fury`)
-    if (sLow.contains ", then reveal cards from the top of " || sLow.contains ", then look at the top ") then
+    -- 2c1. `", then reveal/exile cards ..."` / `", then look at ..."` spanning this sentence + following sentences (`Mass Polymorph`, `Nick Fury`, `Q, Stacking the Deck`)
+    if (sLow.contains ", then reveal cards from the top of " ||
+        sLow.contains ", then exile cards from the top of " ||
+        sLow.contains ", then look at the top ") then
       if let some (lhsS, rhsS) := pSplitFirstCI? sent ", then " then
         if let some (i1, b1, ctx1) := parseSingleClause qp ctx lhsS then
           let (v1?, ctxMid) := if b1 then let (v, c) := ctx1.allocVar; (some v, c) else (none, ctx1)
@@ -2461,9 +2759,13 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
             fakeSents := fakeSents.push sents[k]!
           if let some (inspI, consumed, ctx2) := parseInspectLibrarySeq? ctxMid fakeSents 0 then
             let (v2, ctx3) := ctx2.allocVar
+            let revPred? : Option ObjectPred :=
+              match inspI with
+              | .player (.inspectLibrary { source := .revealUntil _ pred _ _, action := .none, .. }) => some pred
+              | _ => none
             steps := steps.push (v1?, i1)
             steps := steps.push (some v2, inspI)
-            ctx := ctx3
+            ctx := { ctx3 with lastRevealUntilPred? := revPred? }
             idx := idx + consumed
             continue
 
@@ -2485,6 +2787,90 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
       steps := steps.push (none, .permanent (.modifyCounters (.copyMissingKeywords srcObj) .this))
       idx := idx + 2
       continue
+
+    -- 2c4. 2-sentence `"Choose a counter on <obj>. Put another counter of that kind on it."` (`Dathon, His Heart Open`)
+    if let some objRaw := pDropPrefixCI? sent "choose a counter on " then
+      if idx + 1 < sents.size && pLower (pClean sents[idx + 1]!) == "put another counter of that kind on it" then
+        if let some (obj, ctx1) := parseObjWithCtx ctx objRaw then
+          steps := steps.push (none, .permanent (.modifyCounters .putAnotherOfChosen obj))
+          ctx := { ctx1 with lastSubject? := some obj }
+          idx := idx + 2
+          continue
+
+    -- 2c5. 2-sentence `"You may choose <card> from it. If you do, that player exiles that card, then draws a card."` (`Salt Vampire`)
+    if let some chooseRaw := pDropPrefixCI? sent "you may choose " then
+      if let some cardRaw := pDropSuffixCI? chooseRaw " from it" then
+        if idx + 1 < sents.size then
+          let s1 := pLower (pClean sents[idx + 1]!)
+          if s1 == "if you do, that player exiles that card, then draws a card" then
+            if let some who := ctx.lastPlayer? then
+              let whatClean := ((pDropPrefixCI? cardRaw "a ").orElse fun _ => pDropPrefixCI? cardRaw "an ") |>.getD cardRaw
+              let pred : ObjectPred :=
+                if pLower whatClean == "card" then .anyObject
+                else (parseNounPhrase whatClean).map (·.filter.pred) |>.getD .anyObject
+              let ch : MoveChoiceSpec := { chooser := .controller, count := .exact (.const 1) }
+              let body := Instruction.seq #[
+                .moveZone (.inZones (.handOf who) pred) .exile .exile { choice? := some ch },
+                .player (.drawCards who (.const 1))
+              ]
+              steps := steps.push (none, .optional .you none body .noop)
+              idx := idx + 2
+              continue
+
+    -- 2c6. 4-sentence two-sided face-down top-library exile + play-while-exiled (`Vulcan Mind-Meld`)
+    if sLow == "target opponent looks at the top card of your library, then exiles it face down" && idx + 3 < sents.size then
+      let s1 := pLower (pClean sents[idx + 1]!)
+      let s2 := pLower (pClean sents[idx + 2]!)
+      let s3 := pLower (pClean sents[idx + 3]!)
+      if s1.startsWith "you look at the top " && s1.endsWith " of their library, then exile them face down" &&
+          s2.startsWith "for each card exiled this way, the player who exiled it may play it for as long as it remains exiled" &&
+          s3.startsWith "mana of any type can be spent" then
+        let nStr0 := (pDropPrefixCI? s1 "you look at the top ").getD "two"
+        let nStr := (pSplitFirstCI? nStr0 " cards").map Prod.fst |>.getD "two"
+        let n : Nat := (parseNatWord? nStr).getD 2
+        let (slotIdx, ctx1) := ctx.pushTargetSlot { domain := .player .opponent }
+        let opp : PlayerExpr := .target slotIdx
+        let gp1 : GrantPlayPermSpec := {
+          duration := .whileInZone .this .exile, landsAllowed := true, anyManaColor := true, beneficiary? := some opp
+        }
+        let gp2 : GrantPlayPermSpec := {
+          duration := .whileInZone .this .exile, landsAllowed := true, anyManaColor := true
+        }
+        let (v1, ctx2) := ctx1.allocVar
+        let (v2, ctx3) := ctx2.allocVar
+        steps := steps.push (some v1, .moveZone (.topOfLibrary .you (.const 1)) .exile .exile { enterFaceDown := true, grantPlayPerm? := some gp1 })
+        steps := steps.push (some v2, .moveZone (.topOfLibrary opp (.const (Int.ofNat n))) .exile .exile { enterFaceDown := true, grantPlayPerm? := some gp2 })
+        ctx := { ctx3 with lastPlayer? := some opp }
+        idx := idx + 4
+        continue
+
+    -- 2c7. 3-sentence `"each opponent exiles the top X cards of their library, where X is <V>. For each opponent, choose a <pred> card that player owns exiled this way. You may play the chosen cards for as long as they remain exiled."` (`Ensign Pavel Chekov`)
+    if let some exTail := pDropPrefixCI? sent "each opponent exiles the top x cards of their library, where x is " then
+      if idx + 2 < sents.size then
+        let s1 := pClean sents[idx + 1]!
+        let s2 := pLower (pClean sents[idx + 2]!)
+        if let some choosePart := pDropPrefixCI? s1 "for each opponent, choose " then
+          if (pLower choosePart).contains " exiled this way" &&
+              s2.startsWith "you may play the chosen cards for as long as they remain exiled" then
+            if let some valX := parseValueWithCtx ctx exTail then
+              let predPart0 := (pSplitFirstCI? choosePart " that player owns").map Prod.fst |>.getD choosePart
+              let predClean := ((pDropPrefixCI? predPart0 "a ").orElse fun _ => pDropPrefixCI? predPart0 "an ") |>.getD predPart0
+              let predCore := (pDropSuffixCI? predClean " card").getD predClean
+              let filtPred? : Option ObjectPred :=
+                if pLower predCore == "card" then none
+                else (parseNounPhrase predCore).map (·.filter.pred)
+              let (vLoop, ctx1) := ctx.allocLoopVar
+              let gp : GrantPlayPermSpec := {
+                duration := .whileInZone .this .exile
+                landsAllowed := true
+                maxCasts? := some 1
+                filter? := filtPred?
+              }
+              steps := steps.push (none, .forEach (.eachPlayer .opponent) vLoop
+                (.moveZone (.topOfLibrary (.stepPlayers vLoop) valX) .exile .exile { grantPlayPerm? := some gp }))
+              ctx := ctx1
+              idx := idx + 3
+              continue
 
     -- 2d. `"<opponent> reveals [their hand / a number of cards from their hand equal to V]. You choose <card> from it/them. <who> discards/exiles that card."` (`Klaw`, `Null Summoner`, `Stinging Vitriol`)
     if (sLow.endsWith " reveals their hand" || sLow.contains " reveals a number of cards from their hand equal to ") && idx + 2 < sents.size then
@@ -2545,8 +2931,9 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
         idx := sents.size
         continue
 
-    -- 2d3. Multi-sentence delayed trigger (`"Until end of turn, at the beginning of ..."` OR `"At the beginning of the next end step, <inspect/multi-sent>"`)
+    -- 2d3. Multi-sentence delayed trigger (`"Until end of turn, at the beginning of ..."` OR `"At the beginning of the next end step / next combat this turn, <multi-sent>"`)
     if (sLow.startsWith "until end of turn, at the beginning of " ||
+        sLow.startsWith "at the beginning of the next combat this turn, " ||
         (sLow.startsWith "at the beginning of the next end step, " &&
           (sLow.contains "reveal cards " || sLow.contains "look at " || idx + 1 < sents.size))) then
       let trigStr := (pDropPrefixCI? sent "until end of turn, ").getD sent
@@ -2556,7 +2943,7 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
         for k in [idx + 1 : sents.size] do
           bodySents := bodySents.push (pClean sents[k]!)
         let bodyJoined := String.intercalate ". " bodySents.toList
-        if let some bodyEff := parseCompositionalEffect qp bodyJoined cardName true false none none false ctx.lastActionVar? then
+        if let some bodyEff := parseCompositionalEffect qp bodyJoined cardName true false none none false ctx.lastActionVar? false ctx.lastSubject? then
           let isOneShot := sLow.startsWith "at the beginning of the next " || sLow.startsWith "when you next "
           steps := steps.push (none, .installEffect (.createDelayedTrigger {
             pattern := hdr.pattern
@@ -2638,12 +3025,36 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
                 idx := idx + 1
                 continue
               | _ => pure ()
-      -- Form 1: `"<alt> instead if <cond>"` (`We Say Thee Nay!`)
+      let rec hasCastPred : Condition → Bool
+        | .castPred _ => true
+        | .all cs | .any cs => cs.attach.any fun ⟨c, _⟩ => hasCastPred c
+        | .not c => hasCastPred c
+        | _ => false
+      let applyInsteadStep (cond : Condition) (altBody : Instruction) (altTargets : TargetSpec)
+          (steps : Array (Option VarId × Instruction)) (ctx : DiscourseCtx) :
+          Array (Option VarId × Instruction) × DiscourseCtx :=
+        let ctx' :=
+          if ctx.slots.size == 1 && altTargets.slots.size == 1 &&
+              ctx.slots[0]!.domain != altTargets.slots[0]!.domain then
+            { ctx with slots := ctx.slots.set! 0 { ctx.slots[0]! with altDomainIf? := some (cond, altTargets.slots[0]!.domain) } }
+          else ctx
+        if steps.size > 1 && !hasCastPred cond then
+          let (v?, lastInstr) := steps[steps.size - 1]!
+          (steps.set! (steps.size - 1) (v?, .ifCond cond altBody lastInstr), ctx')
+        else
+          (#[(none, .ifCond cond altBody (assembleBoundSteps steps))], ctx')
+      -- Form 1: `"<alt> instead if <cond>"` (`We Say Thee Nay!`, `Vengeance Mission`)
       if let some (altPart, condPart) := pSplitFirstCI? sent " instead if " then
         if let some cond := parseInstrCondition? condPart cardName (some ctx) then
-          if let some altEff := parseCompositionalEffect qp altPart cardName isTrigger then
-            let prevBody := assembleBoundSteps steps
-            steps := #[(none, .ifCond cond altEff.body prevBody)]
+          let altRes? : Option (Instruction × TargetSpec) :=
+            if !(pLower altPart).contains "target " then
+              (parseSingleClause qp { ctx with lastActionVar? := none } altPart).map fun (i, _, _) => (i, .none)
+            else
+              (parseCompositionalEffect qp altPart cardName isTrigger).map fun e => (e.body, e.targets)
+          if let some (altBody, altTargets) := altRes? then
+            let (steps', ctx') := applyInsteadStep cond altBody altTargets steps ctx
+            steps := steps'
+            ctx := ctx'
             idx := idx + 1
             continue
       -- Form 2: `"If <cond>, [also | <subj> also] <bonus>"` (`Moment of Glory`, `Repulsor Blast`, `Team Tactics`)
@@ -2661,19 +3072,22 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
                 ctx := ctx2
                 idx := idx + 1
                 continue
-      -- Form 3: `"If <cond>, instead <alt>"` (`Cruel Alliance`)
+      -- Form 3: `"If <cond>, instead <alt>"` (`Cruel Alliance`, `Support Mission`)
       if let some ifRest := pDropPrefixCI? sent "if " then
         if let some (condStr, insteadBody) := pSplitFirstCI? ifRest ", instead " then
           if let some cond := parseInstrCondition? condStr cardName (some ctx) then
-            if let some altEff := parseCompositionalEffect qp insteadBody cardName isTrigger then
-              let prevBody := assembleBoundSteps steps
-              if ctx.slots.size == 1 && altEff.targets.slots.size == 1 &&
-                  ctx.slots[0]!.domain != altEff.targets.slots[0]!.domain then
-                ctx := { ctx with slots := ctx.slots.set! 0 { ctx.slots[0]! with altDomainIf? := some (cond, altEff.targets.slots[0]!.domain) } }
-              steps := #[(none, .ifCond cond altEff.body prevBody)]
+            let altRes? : Option (Instruction × TargetSpec) :=
+              if !(pLower insteadBody).contains "target " then
+                (parseSingleClause qp { ctx with lastActionVar? := none } insteadBody).map fun (i, _, _) => (i, .none)
+              else
+                (parseCompositionalEffect qp insteadBody cardName isTrigger).map fun e => (e.body, e.targets)
+            if let some (altBody, altTargets) := altRes? then
+              let (steps', ctx') := applyInsteadStep cond altBody altTargets steps ctx
+              steps := steps'
+              ctx := ctx'
               idx := idx + 1
               continue
-      -- Form 4: `"If <cond>, <s1>. <s2>... instead."`
+      -- Form 4: `"If <cond>, <s1>. <s2>... instead."` (`Conquest Mission`, ...)
       if let some ifRest := pDropPrefixCI? sent "if " then
         let mut insteadIdx? : Option Nat := none
         for k in [idx : sents.size] do
@@ -2694,18 +3108,26 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
                 let lastRaw := pClean sents[endK]!
                 thenSents := thenSents.push ((pDropSuffixCI? lastRaw " instead").getD lastRaw)
               let thenJoined := String.intercalate ". " thenSents.toList
+              -- Special case: `"create <N> of those tokens"` copying the immediately preceding token spec (`Conquest Mission`)
+              let thoseTokensAlt? : Option (Instruction × TargetSpec) :=
+                if thenSents.size == 1 then
+                  match pDropPrefixCI? thenJoined "create ", steps[steps.size - 1]!.2 with
+                  | some cRest, .create (.tokens w _ sp mods) =>
+                    match pDropSuffixCI? cRest " of those tokens" with
+                    | some nStr => (parseCountVal? nStr).map fun nv => (.create (.tokens w nv sp mods), .none)
+                    | none => none
+                  | _, _ => none
+                else none
               let altBodyAndTargets? : Option (Instruction × TargetSpec) :=
-                if thenSents.size == 1 && !(pLower thenJoined).contains "target " then
-                  (parseSingleClause qp { ctx with lastActionVar? := none } thenJoined).map fun (i, _, _) => (i, .none)
-                else
-                  (parseCompositionalEffect qp thenJoined cardName isTrigger).map fun e => (e.body, e.targets)
+                thoseTokensAlt?.orElse fun _ =>
+                  if thenSents.size == 1 && !(pLower thenJoined).contains "target " then
+                    (parseSingleClause qp { ctx with lastActionVar? := none } thenJoined).map fun (i, _, _) => (i, .none)
+                  else
+                    (parseCompositionalEffect qp thenJoined cardName isTrigger).map fun e => (e.body, e.targets)
               if let some (altBody, altTargets) := altBodyAndTargets? then
-                let prevSteps := steps
-                let prevBody := assembleBoundSteps prevSteps
-                if ctx.slots.size == 1 && altTargets.slots.size == 1 &&
-                    ctx.slots[0]!.domain != altTargets.slots[0]!.domain then
-                  ctx := { ctx with slots := ctx.slots.set! 0 { ctx.slots[0]! with altDomainIf? := some (cond, altTargets.slots[0]!.domain) } }
-                steps := #[(none, .ifCond cond altBody prevBody)]
+                let (steps', ctx') := applyInsteadStep cond altBody altTargets steps ctx
+                steps := steps'
+                ctx := ctx'
                 idx := endK + 1
                 continue
 
@@ -2840,19 +3262,26 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
         else if let some (_, afterIfDont) := (pSplitFirstCI? nxt " don't, ").orElse (fun _ => pSplitFirstCI? nxt " doesn't, ") then
           if (pLower nxt).startsWith "if " then
             if let some (who, ctx1) := parsePlayerWithCtx ctx whoStr then
+              let refersToTarget :=
+                match ctx.lastSubject? with
+                | some (.target _) =>
+                  let ml := pLower mayAct
+                  ml == "exile it" || ml == "sacrifice it" || ml.startsWith "exile that " || ml.startsWith "sacrifice that "
+                | _ => false
               let costNorm := replaceCardNameOutsideQuotes ((pDropPrefixCI? mayAct "pay ").getD mayAct) cardName "this permanent"
-              if let some cost := parseCostSpec costNorm then
-                if let some (onNo, _, ctx2) := parseSingleClause qp { ctx1 with lastPlayer? := some who } afterIfDont then
-                  let instr :=
-                    if (pLower mayAct).startsWith "pay " then
-                      Instruction.unlessPays who cost onNo
-                    else
-                      Instruction.optional who (some cost) .noop onNo
-                  steps := steps.push (none, instr)
-                  ctx := ctx2
-                  idx := idx + 2
-                  continue
-              -- Non-cost optional (`Palantír of Orthanc`: `"Then target opponent may have you draw a card. If that player doesn't, you mill X cards..."`)
+              if !refersToTarget then
+                if let some cost := parseCostSpec costNorm then
+                  if let some (onNo, _, ctx2) := parseSingleClause qp { ctx1 with lastPlayer? := some who } afterIfDont then
+                    let instr :=
+                      if (pLower mayAct).startsWith "pay " then
+                        Instruction.unlessPays who cost onNo
+                      else
+                        Instruction.optional who (some cost) .noop onNo
+                    steps := steps.push (none, instr)
+                    ctx := ctx2
+                    idx := idx + 2
+                    continue
+              -- Non-cost optional (`Palantír of Orthanc`, `Brazen Bluff`)
               if let some (actInstr, _, ctx2) := parseSingleClause qp { ctx1 with lastPlayer? := some who } mayAct then
                 if let some (onNo, _, ctx3) := parseSingleClause qp ctx2 afterIfDont then
                   steps := steps.push (none, .optional who none actInstr onNo)
@@ -3077,8 +3506,52 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
         continue
       | _ => pure ()
 
+    -- `"A spell cast this way costs {N} more to cast."` (`Zero, Incorporeal Sensate`)
+    if let some costTail := pDropPrefixCI? sent "a spell cast this way costs " then
+      if let some manaStr := pDropSuffixCI? costTail " more to cast" then
+        if let some mc := parseManaCost? manaStr then
+          let extraGen := match mc.symbols.toList with | [.generic n] => n | _ => 0
+          if extraGen > 0 && !steps.isEmpty then
+            let (v?, prev) := steps[steps.size - 1]!
+            let patchGpp (gpp : GrantPlayPermSpec) : GrantPlayPermSpec :=
+              { gpp with extraGenericCost := gpp.extraGenericCost + extraGen }
+            let patched? : Option Instruction :=
+              match prev with
+              | .stack (.mayCastOrPlay o gpp) => some (.stack (.mayCastOrPlay o (patchGpp gpp)))
+              | .moveZone obj .exile .exile mods =>
+                mods.grantPlayPerm?.map fun gpp => .moveZone obj .exile .exile { mods with grantPlayPerm? := some (patchGpp gpp) }
+              | .optional w none (.moveZone obj .exile .exile mods) .noop =>
+                mods.grantPlayPerm?.map fun gpp => .optional w none (.moveZone obj .exile .exile { mods with grantPlayPerm? := some (patchGpp gpp) }) .noop
+              | .forEach it fv (.moveZone obj .exile .exile mods) =>
+                mods.grantPlayPerm?.map fun gpp => .forEach it fv (.moveZone obj .exile .exile { mods with grantPlayPerm? := some (patchGpp gpp) })
+              | _ => none
+            if let some pInstr := patched? then
+              steps := steps.set! (steps.size - 1) (v?, pInstr)
+              idx := idx + 1
+              continue
+
+    -- `"If you can't, <fallback>."` / `"If not (you do), <fallback>."` (`Temporal Conqueror`, `Borg Cube`)
+    if !steps.isEmpty then
+      let cantRest? := (pDropPrefixCI? sent "if you can't, ").orElse fun _ => pDropPrefixCI? sent "if not (you do), "
+      if let some fbStr := cantRest? then
+        let (prevV?, prevInstr) := steps[steps.size - 1]!
+        let (vBind, ctxA, needPatch) :=
+          match prevV? with
+          | some v => (v, ctx, false)
+          | none =>
+            let (v, c) := ctx.allocVar
+            (v, c, true)
+        if let some (fbInstr, fbBind, ctx1) := parseSingleClause qp ctxA fbStr then
+          if needPatch then
+            steps := steps.set! (steps.size - 1) (some vBind, prevInstr)
+          let (vFb?, ctx2) := if fbBind then let (v, c) := ctx1.allocVar; (some v, c) else (none, ctx1)
+          steps := steps.push (vFb?, .ifCond (.not (.stepSucceeded vBind)) fbInstr .noop)
+          ctx := ctx2
+          idx := idx + 1
+          continue
+
     -- `"It gains <kws>[ until end of turn]."` / `"They gain <kws>[ until end of turn]."`
-    -- folding into `EnterMods.grantKeywordsUntilEot` on immediately preceding `CreateOp.tokens` (`Venser`, `Windcrag Siege`)
+    -- folding into `EnterMods.grantKeywordsUntilEot` on immediately preceding `CreateOp.tokens` (including inside `forEach`, `Dominion Infiltration`)
     if !steps.isEmpty then
       let kwGrantTail? : Option String :=
         (pDropPrefixCI? sent "they gain ").orElse fun _ =>
@@ -3094,14 +3567,20 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
             steps := steps.set! (steps.size - 1) (v?, .create (.tokens w c sp { m with grantKeywordsUntilEot := m.grantKeywordsUntilEot ++ kws }))
             idx := idx + 1
             continue
+          | .forEach it fv (.create (.tokens w c sp m)) =>
+            steps := steps.set! (steps.size - 1) (v?, .forEach it fv (.create (.tokens w c sp { m with grantKeywordsUntilEot := m.grantKeywordsUntilEot ++ kws })))
+            idx := idx + 1
+            continue
           | _ => pure ()
 
-    -- `"Sacrifice/Exile it/them at the beginning of the next end step / end of combat"`
-    -- AND `"At the beginning of the next end step, sacrifice/exile it/them"` (`Venser, Fervent Forger`, `Vindictive Triumph`)
+    -- `"Sacrifice/Exile it/them/those tokens at the beginning of the next end step / end of combat"`
+    -- AND `"At the beginning of the next end step, sacrifice/exile it/them"` (`Venser, Fervent Forger`, `Vindictive Triumph`, `Dominion Infiltration`)
     if (sLow.startsWith "sacrifice it at the beginning of the next end step" ||
         sLow.startsWith "sacrifice them at the beginning of the next end step" ||
+        sLow.startsWith "sacrifice those tokens at the beginning of the next end step" ||
         sLow.startsWith "exile it at the beginning of the next end step" ||
         sLow.startsWith "exile them at the beginning of the next end step" ||
+        sLow.startsWith "exile those tokens at the beginning of the next end step" ||
         sLow == "at the beginning of the next end step, sacrifice it" ||
         sLow == "at the beginning of the next end step, sacrifice them" ||
         sLow == "at the beginning of the next end step, exile it" ||
@@ -3123,6 +3602,10 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
             steps := steps.set! j (v?, .create (.tokens w c sp { m with delayedAction? := some da }))
             patched := true
             break
+          | .forEach it fv (.create (.tokens w c sp m)) =>
+            steps := steps.set! j (v?, .forEach it fv (.create (.tokens w c sp { m with delayedAction? := some da })))
+            patched := true
+            break
           | _ => pure ()
         if patched then
           idx := idx + 1
@@ -3130,7 +3613,7 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
         -- Also allow `"Exile it at the beginning of the next end step."` as delayed trigger (`Vindictive Triumph`)
         let obj := ctx.lastSubject?.getD (.target (ctx.lastTargetSlot?.getD 0))
         steps := steps.push (none, .installEffect (.createDelayedTrigger {
-          pattern := .stepBegins .end (.player .any)
+          pattern := .stepEachEndStep
           duration := .untilEndOfTurn
           oneShot := true
           effect := { targets := .none, body := .moveZone obj .exile .exile {} }
@@ -3215,20 +3698,44 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
       | _ => pure ()
 
     -- Trailing play-permission sentence (`"Until ..., you may play/cast it/that card/those cards..."`)
-    -- folding into `MoveMods.grantPlayPerm?` on immediately preceding `.moveZone _ .exile .exile` when final sentence
-    let isNearEnd :=
-      idx + 1 == sents.size ||
-      (idx + 2 == sents.size && (pLower sents[idx + 1]!).contains "pay life equal to its mana value")
-    if isNearEnd && !steps.isEmpty then
+    -- folding into `MoveMods.grantPlayPerm?` on immediately preceding exile `MoveZone` (including inside `optional` or `forEach`)
+    let nextBlocksFold :=
+      idx + 1 < sents.size &&
+      let ns := pLower (pClean sents[idx + 1]!)
+      ns.startsWith "if you don't, " || ns.startsWith "if not (you do), " || ns.startsWith "put the rest " || ns.startsWith "shuffle the rest "
+    if !nextBlocksFold && !steps.isEmpty then
       let (v?, prev) := steps[steps.size - 1]!
+      let normHandOwner (obj : ObjectExpr) (gpp : GrantPlayPermSpec) : GrantPlayPermSpec :=
+        match obj, gpp.beneficiary? with
+        | .inZones { zones := #[.hand], owner := .ofPlayer handOwner } _, some (.ownerOf _) =>
+          { gpp with beneficiary? := if handOwner == .you then none else some handOwner }
+        | _, _ => gpp
       match prev, v? with
       | .moveZone obj .exile .exile mods, some prevV =>
         if mods.grantPlayPerm?.isNone then
-          if let some (playObj, gpp, _) := parseGrantPlayPermClause? ctx sent then
+          if let some (playObj, gpp0, ctx1) := parseGrantPlayPermClause? ctx sent then
             if playObj == .stepObjects prevV || playObj == obj then
+              let gpp := normHandOwner obj gpp0
               steps := steps.set! (steps.size - 1) (v?, .moveZone obj .exile .exile { mods with grantPlayPerm? := some gpp })
+              ctx := ctx1
               idx := idx + 1
               continue
+      | .optional w none (.moveZone obj .exile .exile mods) .noop, _ =>
+        if mods.grantPlayPerm?.isNone then
+          if let some (_, gpp0, ctx1) := parseGrantPlayPermClause? ctx sent then
+            let gpp := normHandOwner obj gpp0
+            steps := steps.set! (steps.size - 1) (v?, .optional w none (.moveZone obj .exile .exile { mods with grantPlayPerm? := some gpp }) .noop)
+            ctx := ctx1
+            idx := idx + 1
+            continue
+      | .forEach it fv (.moveZone obj .exile .exile mods), _ =>
+        if mods.grantPlayPerm?.isNone then
+          if let some (_, gpp0, ctx1) := parseGrantPlayPermClause? ctx sent then
+            let gpp := normHandOwner obj gpp0
+            steps := steps.set! (steps.size - 1) (v?, .forEach it fv (.moveZone obj .exile .exile { mods with grantPlayPerm? := some gpp }))
+            ctx := ctx1
+            idx := idx + 1
+            continue
       | _, _ => pure ()
 
     -- 2l0. `"Copy those [exiled] cards. You may cast ..."` -> `copyAndCast := true` (`Baron Helmut Zemo`, `Uldaros Theorix`)
@@ -3259,10 +3766,29 @@ partial def parseCompositionalEffect (qp : QuotedAbilityParsers) (raw : String)
 
     -- 2l. Standard single-sentence clause
     match parseSingleClause qp ctx sent with
-    | some (instr, bindable, ctx1) =>
+    | some (instr0, bindable, ctx1) =>
+      -- If preceded by explicit `.stack (.copyStackObject ..)`, don't double-copy (`Infinite Diversity`)
+      let instr1 :=
+        match steps.back?, instr0 with
+        | some (_, .stack (.copyStackObject ..)), .stack (.mayCastOrPlay o gpp) =>
+          if gpp.copyAndCast then .stack (.mayCastOrPlay o { gpp with copyAndCast := false, castNow := true })
+          else instr0
+        | _, _ => instr0
+      let instr :=
+        match ctx.boundX? with
+        | some xv => substInstrX xv instr1
+        | none => instr1
       let (v?, ctx2) := if bindable then let (v, c) := ctx1.allocVar; (some v, c) else (none, ctx1)
+      let wasLife :=
+        match instr with
+        | .life _ | .forEach _ _ (.life _) => true
+        | _ => false
+      let ctrKind? :=
+        match instr with
+        | .permanent (.modifyCounters (.put k _) _ _) => some k
+        | _ => ctx2.lastCounterKind?
       steps := steps.push (v?, instr)
-      ctx := ctx2
+      ctx := { ctx2 with lastActionWasLife := wasLife, lastCounterKind? := ctrKind? }
       idx := idx + 1
     | none => return none
 

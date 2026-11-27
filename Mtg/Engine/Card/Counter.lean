@@ -48,6 +48,8 @@ inductive CounterKind where
   | exalted
   | hexproof
   | poison
+  | peace
+  | promotion
 deriving Repr, Inhabited, BEq, DecidableEq
 
 namespace CounterKind
@@ -88,6 +90,8 @@ def oracleName : CounterKind → String
   | .exalted => "exalted"
   | .hexproof => "hexproof"
   | .poison => "poison"
+  | .peace => "peace"
+  | .promotion => "promotion"
 
 /-- Every counter kind, in constructor order. -/
 def all : List CounterKind := [
@@ -95,7 +99,7 @@ def all : List CounterKind := [
   .finality, .plan, .burden, .quest, .invasion, .influence, .trample,
   .indestructible, .lifelink, .hone, .shadow, .lore, .story, .time, .haste,
   .vigilance, .flying, .menace, .reach, .deathtouch, .firstStrike, .doubleStrike,
-  .decayed, .exalted, .hexproof, .poison
+  .decayed, .exalted, .hexproof, .poison, .peace, .promotion
 ]
 
 private def words (s : String) : List String :=

@@ -59,7 +59,7 @@ private def enchantedPermanentFilter : ObjectFilter :=
 private def parseStaticScope? (raw : String) (cardName : String) : Option ObjectFilter :=
   let s := pClean (replaceCardNameOutsideQuotes raw cardName "this permanent")
   let l := pLower s
-  if DiscourseCtx.isSelfPhrase l || l == "this" then
+  if DiscourseCtx.isSelfPhrase l || l == "this" || l == "it" then
     some { zones := .battlefield, pred := .sameAs .this }
   else if l == "equipped creature" then
     some equippedCreatureFilter
@@ -172,6 +172,7 @@ private def inferActiveZonesFromCost (cost : CostSpec) (rawCost : String) : Arra
   else
     let hasGraveyardSelfExile := cost.items.any fun
       | .exile _ zs .self _ => zs.zones.contains .graveyard
+      | .putOnLibrary _ zs .self _ => zs.zones.contains .graveyard
       | _ => false
     let hasHandSelfDiscard := cost.items.any fun
       | .discard _ .self => true
@@ -215,13 +216,23 @@ private def peelActivatedRestrictions (sents : Array String) (cardName : String)
     else if l == "activate only if this card is in your graveyard" ||
         l == "activate only from your graveyard" then
       r := { r with extraZones? := some #[.graveyard] }
+    else if l == "activate only if this card is exiled" ||
+        l == "activate only from exile" then
+      r := { r with extraZones? := some #[.exile] }
+    else if l == "activate only during your turn and only if this card is exiled" ||
+        l == "activate only during your turn and only if this permanent is exiled" then
+      r := { r with condition? := some .isYourTurn, extraZones? := some #[.exile] }
     else if let some condStr := pDropPrefixCI? s "activate only if " then
       if let some c := parseStaticCondExtra? condStr cardName then
         r := { r with condition? := some c }
       else
         kept := kept.push s0
     else if let some redRest := pDropPrefixCI? s "this ability costs " then
-      if let some (amtPart, eachPart) := pSplitFirstCI? redRest " less to activate for each " then
+      if let some valStr := pDropPrefixCI? redRest "{x} less to activate, where x is " then
+        if let some v := parseValueExpr valStr then
+          r := { r with costReductions := r.costReductions.push { amount := v } }
+        else kept := kept.push s0
+      else if let some (amtPart, eachPart) := pSplitFirstCI? redRest " less to activate for each " then
         let perN :=
           match parseManaCost? amtPart with
           | some mc => mc.genericCount
@@ -270,10 +281,64 @@ partial def mkQuotedParsers (_ : Unit := ()) : QuotedAbilityParsers := {
 }
 
 /-- Stage-4c compositional parser for `StaticAbility` lines (CR 113.3d / 604 / 613 / 614–616),
-including recursive quoted granted abilities (`have "..."`), copy replacements, and
-token/death replacements. -/
+including recursive quoted granted abilities (`have "..."`), CR 722.2 Station striations,
+copy replacements, and token/death replacements. -/
 partial def parseStaticAbilityComp (raw : String) (cardName : String := "") :
     Option (Array StaticAbility) := Id.run do
+  -- 0. CR 722.2 Station striation (`N+ | [P/T] <abilities>[\n<more abilities>]`)
+  let rawTrim := raw.trimAscii.copy
+  let digits := (rawTrim.takeWhile Char.isDigit).copy
+  if !digits.isEmpty && ((rawTrim.drop digits.length).copy.startsWith "+ |") then
+    let n := digits.toNat!
+    if n > 0 then
+      let afterBar := ((rawTrim.drop (digits.length + 3)).copy).trimAscii.copy
+      let rawLines := afterBar.splitOn "\n" |>.map (fun l => (preprocessOracleLine l).trimAscii.copy) |>.filter (!·.isEmpty)
+      let mut mods : Array ContinuousModification := #[]
+      let mut abLines : List String := rawLines
+      -- Optional `[P/T]` header on the first line (CR 722.2c: becomes an artifact creature with base P/T)
+      match rawLines with
+      | first :: rest =>
+        if first.startsWith "[" then
+          match first.splitOn "]" with
+          | ptInner :: tailParts =>
+            let ptStr := (ptInner.drop 1).copy.trimAscii.copy
+            let tailStr := (String.intercalate "]" tailParts).trimAscii.copy
+            match ptStr.splitOn "/" with
+            | [pStr, tStr] =>
+              match parseNatWord? pStr.trimAscii.copy, parseNatWord? tStr.trimAscii.copy with
+              | some pv, some tv =>
+                mods := mods.push (.modifyTypes { mode := .add, types := #[.creature] })
+                mods := mods.push (.setBasePT (some (.const (Int.ofNat pv))) (some (.const (Int.ofNat tv))))
+                abLines := if tailStr.isEmpty then rest else tailStr :: rest
+              | _, _ => return none
+            | _ => return none
+          | _ => return none
+      | [] => pure ()
+      for abLine in abLines do
+        let (_, abBody) := extractLeadingLabel abLine
+        let abLow := pLower abBody
+        if !hasTopLevelColon abBody && !abBody.contains '"' then
+          if let some kws := parseKeywordLine abBody then
+            if !kws.isEmpty then
+              mods := mods.push (.grantKeywords kws)
+              continue
+        if hasTopLevelColon abBody then
+          match parseActivatedAbilityComp abLine cardName with
+          | some ab => mods := mods.push (.grantActivated #[ab]); continue
+          | none => return none
+        if abLow.startsWith "when " || abLow.startsWith "whenever " || abLow.startsWith "at " then
+          match parseTriggeredAbilityComp abLine cardName with
+          | some trs => mods := mods.push (.grantTriggered trs); continue
+          | none => return none
+        match parseStaticAbilityComp abLine cardName with
+        | some sas => mods := mods.push (.grantStatic sas); continue
+        | none => return none
+      if !mods.isEmpty then
+        let combined := if mods.size == 1 then mods[0]! else .all mods
+        let cond : Condition := .cmp .ge (.counterCount (some .charge) .this) (.const (Int.ofNat n))
+        return some #[.continuous (some cond) StaticAbility.scopeSelf combined]
+      return none
+
   let pre := (preprocessOracleLine raw).trimAscii.copy
   if pre.isEmpty then return none
   let (lbl?, body0) := extractLeadingLabel pre
@@ -307,7 +372,14 @@ partial def parseStaticAbilityComp (raw : String) (cardName : String := "") :
   let (cond?, body1) := peelStaticCond norm cardName
   let bLow := pLower body1
 
-  -- 3a. CDAs (`This power is equal to ...`, `Tarmogoyf` power+toughness CDA)
+  -- 3a. CDAs (`This power is equal to ...`, `power and toughness are each equal to ...`, `Tarmogoyf` power+toughness CDA)
+  if bLow.startsWith "this permanent's power and toughness are each equal to " ||
+      bLow.startsWith "this creature's power and toughness are each equal to " then
+    let valStr :=
+      ((pDropPrefixCI? body1 "this permanent's power and toughness are each equal to ").orElse fun _ =>
+        pDropPrefixCI? body1 "this creature's power and toughness are each equal to ") |>.getD ""
+    if let some v := parseValueExpr valStr then
+      return some #[.characteristicDefining (.setPT (some v) (some v))]
   if bLow.startsWith "this power is equal to " || bLow.startsWith "this permanent's power is equal to " ||
       bLow.startsWith "this permanent's base power is equal to " || bLow.startsWith "this creature's base power is equal to " then
     let valStr :=
@@ -429,11 +501,17 @@ partial def parseStaticAbilityComp (raw : String) (cardName : String := "") :
       return some #[.ruleModifying cond? (.combat (.cantBlock subj none))]
   if let some (subjStr, tail) := pSplitFirstCI? body1 " doesn't untap during " then
     if let some subj := parseRuleSubject? subjStr then
+      let hasNoBeam := (pLower tail).contains " and can't be beamed up"
+      let tailClean := (pSplitFirstCI? tail " and can't be beamed up").map Prod.fst |>.getD tail
       let uCond? : Option Condition :=
-        match pSplitFirstCI? tail " unless " with
+        match pSplitFirstCI? tailClean " unless " with
         | some (_, cStr) => parseStaticCondExtra? cStr cardName
         | none => none
-      return some #[.ruleModifying cond? (.game (.doesntUntapDuringUntapStep subj uCond?))]
+      let untapRule : RuleModification := .game (.doesntUntapDuringUntapStep subj uCond?)
+      if hasNoBeam then
+        return some #[.ruleModifying cond? (.all #[untapRule, .game (.cantBeBeamedUp subj)])]
+      else
+        return some #[.ruleModifying cond? untapRule]
 
   -- 3e. Cost modifiers (`Equip abilities ...`, `Power-up abilities ...`, `Instant and sorcery spells ...`, `you may pay {0} rather than pay the equip cost...`)
   if bLow == "you may pay {0} rather than pay the equip cost of the first equip ability you activate each turn" then
@@ -477,7 +555,9 @@ partial def parseStaticAbilityComp (raw : String) (cardName : String := "") :
   if bLow.startsWith "as " && bLow.contains " enters, choose mardu or jeskai" then
     return some #[StaticAbility.asEntersChooseNamedAnchors #["Mardu", "Jeskai"]]
   if low.startsWith "as " && low.contains " enters, you may have it become a copy of " then
-    if let some (_, afterCopy) := pSplitFirstCI? norm " become a copy of " then
+    if let some (_, afterCopy0) := pSplitFirstCI? norm " become a copy of " then
+      let copyCtrs := (pLower afterCopy0).contains "same number and kinds of counters"
+      let afterCopy := (afterCopy0.splitOn ".").headD afterCopy0 |>.trimAscii.copy
       let (refAndDur, excStr?) :=
         match pSplitFirstCI? afterCopy ", except " with
         | some (a, b) => (a, some b)
@@ -493,7 +573,7 @@ partial def parseStaticAbilityComp (raw : String) (cardName : String := "") :
           | none => some #[]
           | some ex => parseCopyModifications? qp ex cardName
         if let some copyMods := copyMods? then
-          return some #[.replacement none (.asEntersMayCopy np.filter (dur?.getD .indefinite) copyMods)]
+          return some #[.replacement none (.asEntersMayCopy np.filter (dur?.getD .indefinite) copyMods copyCtrs)]
   if let some ifRest := pDropPrefixCI? norm "if " then
     if let some (scopeStr, afterDie) := pSplitFirstCI? ifRest " would die, exile it instead" then
       if let some np := parseNounPhrase scopeStr then
@@ -508,6 +588,10 @@ partial def parseStaticAbilityComp (raw : String) (cardName : String := "") :
           | none => none
         return some #[.replacement none (.exileInsteadOfDying np.filter bonusTok?)]
   if let some ifRest := pDropPrefixCI? norm "if one or more " then
+    if let some afterCtrl := pDropPrefixCI? ifRest "tokens would be created under your control, that many " then
+      if let some replStr := pDropSuffixCI? afterCtrl " are created instead" then
+        if let some (tok, _, _) := parseTokenDesc? qp { cardName } replStr parseObjWithCtx then
+          return some #[.replacement none (.replaceTokens .you .anyObject tok)]
     if let some (fromStr, afterCtrl) := pSplitFirstCI? ifRest " tokens would be created under your control, that many " then
       if let some replStr := pDropSuffixCI? afterCtrl " are created instead" then
         if let some np := parseNounPhrase fromStr then
@@ -568,10 +652,20 @@ partial def parseStaticAbilityComp (raw : String) (cardName : String := "") :
     | .applyRule (.combat (.cantBeBlocked .self)) => .grantStatic #[StaticAbility.cantBeBlocked]
     | .all ms => .all (ms.attach.map fun ⟨m, _⟩ => normStaticCm m)
     | other => other
+  let (bodyMain, staticBoundX?) : String × Option ValueExpr :=
+    match pSplitLastCI? body1 ", where x is " with
+    | some (mainPart, valStr) =>
+      match parseValueExpr valStr with
+      | some v => (mainPart, some v)
+      | none => (body1, none)
+    | none => (body1, none)
   for sep in #[" gets ", " get ", " has ", " have ", " loses ", " lose ", " is ", " are "] do
-    if let some (scopeStr, modRest) := pSplitFirstCI? body1 sep then
+    if let some (scopeStr, modRest) := pSplitFirstCI? bodyMain sep then
       if let some scope := parseStaticScope? scopeStr cardName then
-        if let some (cm, _) := parseContinuousMod? qp { cardName } (sep.trimAscii.copy ++ " " ++ modRest) then
+        if let some (cm0, _) := parseContinuousMod? qp { cardName, boundX? := staticBoundX? } (sep.trimAscii.copy ++ " " ++ modRest) then
+          let cm := match staticBoundX? with
+            | some v => substXContinuousMod v cm0
+            | none => cm0
           return some #[.continuous cond? scope (normStaticCm cm)]
 
   -- 3k. `SubGrammars.parseNovelStaticAbilityLine`
@@ -764,10 +858,21 @@ partial def parseTriggeredAbilityComp (raw : String) (cardName : String := "") :
     | .or l r => (triggerPlayerRoleOf l).orElse fun _ => triggerPlayerRoleOf r
     | _ => none
 
+  let rec condMentionsThis : Condition → Bool
+    | .exists (.filter .this _) => true
+    | .forAll (.filter .this _) _ => true
+    | .forAll .this _ => true
+    | .not c => condMentionsThis c
+    | .all cs | .any cs => cs.attach.any fun ⟨c, _⟩ => condMentionsThis c
+    | _ => false
   let mut out : Array TriggeredAbility := #[]
   for hdr in hdrs do
     let trigRole? := triggerPlayerRoleOf hdr.pattern
-    let some eff0 := parseCompositionalEffect qp hdr.effectText cardName true (isSelfTriggerPattern hdr.pattern) none trigRole? (isAttachedHostTriggerPattern hdr.pattern) | return none
+    let initSubj? : Option ObjectExpr :=
+      match hdr.interveningIf? with
+      | some c => if condMentionsThis c then some .this else none
+      | none => none
+    let some eff0 := parseCompositionalEffect qp hdr.effectText cardName true (isSelfTriggerPattern hdr.pattern) none trigRole? (isAttachedHostTriggerPattern hdr.pattern) none false initSubj? | return none
     let mut zones := hdr.activeZones
     let mut interv? := hdr.interveningIf?
     let mut eff := eff0

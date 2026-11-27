@@ -5,14 +5,14 @@ import Mtg.Engine.Card.Cost
 
 Layer-2 parameterized keyword abilities and keyword counters:
 
-- `SimpleKeyword` (29 unit constructors, CR 702)
+- `SimpleKeyword` (31 unit constructors, CR 702)
 - `GiftKind` (CR 702.174d–i), `QualityFilter` (CR 702.11d),
   `ProtectionQuality` (CR 702.16)
-- `KeywordAbility` (17 constructors: `.simple` + 16 parameterized keywords)
+- `KeywordAbility` (18 constructors: `.simple` + 17 parameterized keywords)
 - `CounterKind.grantedKeyword?` covering all 15 CR 122.1b keyword counters
 - Functorial Layer 3 `HasTextChange`, canonical `ToOracle`, and multiplicity-
-  preserving array helpers for cumulative keywords (CR 702.21b / 702.83b /
-  702.85 / 702.101b / 702.108b / 702.116b / 702.164b).
+  preserving array helpers for cumulative keywords (CR 702.21b / 702.44d /
+  702.83b / 702.85 / 702.101b / 702.108b / 702.116b / 702.164b).
 
 Non-keyword `"can't be blocked"` (CR 509.1b) is not a CR 702 keyword and lives
 on `StaticAbility.cantBeBlocked` / Layer 6 continuous effects.
@@ -20,7 +20,7 @@ on `StaticAbility.cantBeBlocked` / Layer 6 continuous effects.
 
 namespace Mtg.Engine
 
-/-- Parameter-free CR 702 keyword abilities (29 unit constructors). -/
+/-- Parameter-free CR 702 keyword abilities (31 unit constructors). -/
 inductive SimpleKeyword where
   /-- CR 702.9 -/
   | flying
@@ -80,6 +80,10 @@ inductive SimpleKeyword where
   | undying
   /-- CR 702.101 -/
   | extort
+  /-- CR 702.184 -/
+  | station
+  /-- CR 702.44 -/
+  | sunburst
 deriving DecidableEq, Repr, Inhabited, BEq
 
 namespace SimpleKeyword
@@ -115,6 +119,8 @@ def oracleName : SimpleKeyword → String
   | .myriad => "myriad"
   | .undying => "undying"
   | .extort => "extort"
+  | .station => "station"
+  | .sunburst => "sunburst"
 
 /-- Every `SimpleKeyword` in canonical display order. -/
 def all : List SimpleKeyword := [
@@ -122,7 +128,7 @@ def all : List SimpleKeyword := [
   .trample, .deathtouch, .decayed, .defender, .exalted, .lifelink,
   .firstStrike, .doubleStrike, .storied, .prowess, .ascend, .shadow,
   .changeling, .splitSecond, .convoke, .improvise, .daybound, .nightbound,
-  .cascade, .myriad, .undying, .extort
+  .cascade, .myriad, .undying, .extort, .station, .sunburst
 ]
 
 /-- Parse a case-insensitive Oracle name into a `SimpleKeyword`. -/
@@ -157,12 +163,14 @@ def ofName? (s : String) : Option SimpleKeyword :=
   | "myriad" => some .myriad
   | "undying" => some .undying
   | "extort" => some .extort
+  | "station" => some .station
+  | "sunburst" => some .sunburst
   | _ => none
 
 /-- True when multiple instances of `kw` trigger or apply separately
-(CR 702.83b / 702.85 / 702.101b / 702.108b / 702.116b). -/
+(CR 702.44d / 702.83b / 702.85 / 702.101b / 702.108b / 702.116b). -/
 def isCumulative : SimpleKeyword → Bool
-  | .prowess | .cascade | .exalted | .myriad | .extort => true
+  | .sunburst | .prowess | .cascade | .exalted | .myriad | .extort => true
   | _ => false
 
 /-- Matching Layer-1 `KeywordTag` for `ObjectPred.hasKeyword`. -/
@@ -196,6 +204,8 @@ def toTag : SimpleKeyword → KeywordTag
   | .myriad => .myriad
   | .undying => .undying
   | .extort => .extort
+  | .station => .station
+  | .sunburst => .sunburst
 
 instance : ToString SimpleKeyword := ⟨oracleName⟩
 instance : ToOracle SimpleKeyword := ⟨fun ctx kw =>
@@ -324,11 +334,11 @@ instance : ToOracle ProtectionQuality := ⟨toOraclePhrase⟩
 
 end ProtectionQuality
 
-/-- Unified, parameterized CR 702 keyword ability (17 constructors: `.simple` +
-16 parameterized keywords). Stored as `Array KeywordAbility` on `CardDef`,
+/-- Unified, parameterized CR 702 keyword ability (18 constructors: `.simple` +
+17 parameterized keywords). Stored as `Array KeywordAbility` on `CardDef`,
 `CustomTokenSpec`, `CopyModification`, and Layer 6 `AbilitySet`. -/
 inductive KeywordAbility where
-  /-- One of the 29 parameter-free CR 702 keywords. -/
+  /-- One of the 31 parameter-free CR 702 keywords. -/
   | simple (kw : SimpleKeyword)
   /-- Hexproof or hexproof from `[quality]` (CR 702.11 / 702.11d). -/
   | hexproof (from? : Option QualityFilter := none)
@@ -362,6 +372,8 @@ inductive KeywordAbility where
   | crew (power : Nat)
   /-- Teamwork `count` (CR 702.194). -/
   | teamwork (count : Nat)
+  /-- Beam me up `[cost]` (CR 702.196). -/
+  | beamMeUp (cost : CostSpec)
 deriving Repr, Inhabited, BEq
 
 instance : HasTextChange KeywordAbility where
@@ -389,6 +401,7 @@ instance : HasTextChange KeywordAbility where
       | .sneak cost => .sneak (HasTextChange.applyTextChanges tcs cost)
       | .crew n => .crew n
       | .teamwork n => .teamwork n
+      | .beamMeUp cost => .beamMeUp (HasTextChange.applyTextChanges tcs cost)
 
 /-- All 15 CR 122.1b keyword counters mapped to the `KeywordAbility` they grant
 in Layer 6 (CR 613.1f / 613.7c). -/
@@ -439,8 +452,8 @@ def snowLandwalk : KeywordAbility :=
   .landwalk (.all #[.hasType .land, .hasSupertype .snow])
 
 /-- True when multiple instances of `kw` are cumulative and must retain
-multiplicity (CR 702.21b / 702.41b / 702.83b / 702.85 / 702.101b / 702.108b /
-702.116b / 702.164b). -/
+multiplicity (CR 702.21b / 702.41b / 702.44d / 702.83b / 702.85 / 702.101b /
+702.108b / 702.116b / 702.164b). -/
 def isCumulative : KeywordAbility → Bool
   | .simple s => s.isCumulative
   | .ward _ | .toxic _ | .affinity _ => true
@@ -525,12 +538,15 @@ def toOracleStr (ctx : PrintCtx) (kw : KeywordAbility) : String :=
     | .sneak cost => s!"sneak {cost.toNotation}"
     | .crew n => s!"crew {n}"
     | .teamwork n => s!"teamwork {n}"
+    | .beamMeUp cost =>
+      if cost.isManaOnly && !cost.isEmpty then s!"beam me up {cost.manaCost}"
+      else s!"beam me up—{cost.toNotation}."
   if ctx.capitalize then capitalizeAscii raw else raw
 
 instance : ToOracle KeywordAbility := ⟨toOracleStr⟩
 instance : ToString KeywordAbility := ⟨toOracleStr { capitalize := false }⟩
 
-/-- Parse a single lowercase/mixed-case inline keyword name (all 29 `SimpleKeyword`s,
+/-- Parse a single lowercase/mixed-case inline keyword name (all `SimpleKeyword`s,
 bare `hexproof`, or `<land-subtype>walk` / `nonbasic landwalk` / `legendary landwalk` /
 `snow landwalk`). -/
 def ofSimpleName? (s : String) : Option KeywordAbility :=
@@ -575,6 +591,7 @@ def matchesTag (kw : KeywordAbility) (tag : KeywordTag) : Bool :=
   | .sneak _, .param .sneak => true
   | .crew _, .param .crew => true
   | .teamwork _, .param .teamwork => true
+  | .beamMeUp _, .param .beamMeUp => true
   | _, _ => false
 
 /-- Extract the ward `CostSpec`, if `kw` is `.ward`. -/
@@ -615,20 +632,23 @@ def displayOrder : KeywordAbility → Nat
   | .simple .myriad => 28
   | .simple .undying => 29
   | .simple .extort => 30
-  | .ward _ => 31
-  | .protection _ => 32
-  | .toxic _ => 33
-  | .affinity _ => 34
-  | .equip _ _ => 35
-  | .cycling _ _ => 36
-  | .kicker _ => 37
-  | .gift _ => 38
-  | .flashback _ => 39
-  | .morph _ => 40
-  | .impending _ _ => 41
-  | .sneak _ => 42
-  | .crew _ => 43
-  | .teamwork _ => 44
+  | .simple .station => 31
+  | .simple .sunburst => 32
+  | .ward _ => 33
+  | .protection _ => 34
+  | .toxic _ => 35
+  | .affinity _ => 36
+  | .equip _ _ => 37
+  | .cycling _ _ => 38
+  | .kicker _ => 39
+  | .gift _ => 40
+  | .flashback _ => 41
+  | .morph _ => 42
+  | .impending _ _ => 43
+  | .sneak _ => 44
+  | .crew _ => 45
+  | .teamwork _ => 46
+  | .beamMeUp _ => 47
 
 /-- Append `k` to `ks`, retaining multiplicity when `k.isCumulative` and
 deduplicating otherwise. -/
@@ -687,6 +707,8 @@ def countSimple (ks : Array KeywordAbility) (s : SimpleKeyword) : Nat :=
 @[inline] def hasProwess (ks : Array KeywordAbility) : Bool := hasSimple ks .prowess
 @[inline] def hasCascade (ks : Array KeywordAbility) : Bool := hasSimple ks .cascade
 @[inline] def hasExtort (ks : Array KeywordAbility) : Bool := hasSimple ks .extort
+@[inline] def hasStation (ks : Array KeywordAbility) : Bool := hasSimple ks .station
+@[inline] def hasSunburst (ks : Array KeywordAbility) : Bool := hasSimple ks .sunburst
 
 /-- True when `ks` grants unconditional hexproof (CR 702.11). -/
 def hasHexproof (ks : Array KeywordAbility) : Bool :=

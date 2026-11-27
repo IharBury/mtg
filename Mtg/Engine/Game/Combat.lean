@@ -62,6 +62,8 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
       let o := g.object! id
       if !g.canAttack o then
         throw s!"{g.name o} cannot attack"
+      if ids.size == 1 && g.hasCantAttackAlone o then
+        throw s!"{g.name o} can't attack alone"
       let want :=
         match each[i]? with
         | some (some d) => some d
@@ -88,6 +90,8 @@ def declareAttackers (g : Game) (p : PlayerId) (ids : Array ObjectId)
         match pw? with
         | some pw => pure ((g.controllerOf pw).getD pw.owner)
         | none => g.resolveAttackDestination p want
+      if g.playerCantAttackTarget p dest then
+        throw s!"{(g.player p).name} can't attack {(g.player dest).name}"
       if pw?.isNone && g.hasFlying o && g.leftoverFlyingRestriction dest then
         throw s!"{g.name o} can't attack {(g.player dest).name}"
       if !o.status.goadedBy.isEmpty then

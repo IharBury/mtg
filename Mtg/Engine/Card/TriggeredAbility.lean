@@ -284,7 +284,18 @@ private partial def instrTriggerPhrase (e : Effect) (body : Instruction) (noun :
           | [a, b] => s!"a {a} or {b} card"
           | xs => s!"a {String.intercalate " or " xs} card"
         s!"look at the top {n.toNat} cards of your library. You may reveal {joined} from among them and put it into your hand. {restOnBottomRandomPhrase}"
-      | none => "look at the top cards of your library"
+      | none =>
+        let rawP := toOracleStr pred { capitalize := false }
+        let pS := if rawP.endsWith " card" then (rawP.dropEnd 5).copy else rawP
+        let restS := match spec.rest with
+          | .bottomRandom => restOnBottomRandomPhrase
+          | .bottomAnyOrder => "Put the rest on the bottom of your library in any order"
+          | .graveyard => "Put the rest into your graveyard"
+          | .exile => "Exile the rest"
+          | .shuffleIntoLibrary => "Shuffle the rest into your library"
+          | .leaveInPlace => ""
+        let tail := if restS.isEmpty then "" else s!". {restS}"
+        s!"look at the top {n.toNat} cards of your library. You may reveal {indefinite pS} {pS} card from among them and put it into your hand{tail}"
     | .topCards .you (.const n) true, .takeMatching (.hasType .creature) (.exact (.const 1)) (.battlefield .controller) _ false true =>
       s!"reveal the top {n.toNat} cards of your library. Put a random creature card from among them onto the battlefield. {restOnBottomRandomPhrase}"
     | .millCards .you (.const n), .takeMatching (.hasSubtype (.literal sub)) .anyNumber (.hand .controller) _ _ _ =>
@@ -367,6 +378,9 @@ private partial def instrTriggerPhrase (e : Effect) (body : Instruction) (noun :
     s!"double {instrObjNoun noun obj}'s power and toughness until end of turn"
   | .installEffect (.applyContinuous .untilEndOfTurn (.target 0) (.modifyPT (.objectStat .power .this) (.const 0))) =>
     s!"{noun} gets +X/+0 until end of turn, where X is this creature's power"
+  | .installEffect (.applyContinuous .untilEndOfTurn obj (.modifyPT (.objectStat .power obj2) (.const 0))) =>
+    if obj == obj2 then s!"double {instrObjNoun noun obj}'s power until end of turn"
+    else Instruction.toOracleWith { capitalize := false } e.targets body
   | .installEffect (.applyContinuous .untilEndOfTurn (.target 0) (.modifyPT (.aggregate .count .one (.inZones .battlefield (.all #[.hasSubtype (.literal .plains), .controlledBy _]))) _)) =>
     "target creature you control gets +1/+1 until end of turn for each Plains you control"
   | .installEffect (.applyContinuous .untilEndOfTurn .this (.modifyPT .eventAmount .eventAmount)) =>
@@ -404,10 +418,14 @@ private partial def instrTriggerPhrase (e : Effect) (body : Instruction) (noun :
     s!"{noun} mills {n.toNat} cards"
   | .moveZone (.topOfLibrary (.triggerPlayer .actor) .eventAmount) .graveyard .mill _ =>
     "that player mills that many cards"
-  | .moveZone (.topOfLibrary .you (.const 1)) .exile .exile { grantPlayPerm? := some _, .. } =>
-    s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
-  | .moveZone (.target 0) .exile .exile { grantPlayPerm? := some _, .. } =>
-    s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
+  | .moveZone (.topOfLibrary .you (.const 1)) .exile .exile { grantPlayPerm? := some gp, .. } =>
+    if gp == { duration := .untilEndOfNextTurnOf .you, landsAllowed := true } then
+      s!"exile the top card of your library. {playThatCardUntilNextTurnPhrase}"
+    else Instruction.toOracleWith { capitalize := false } e.targets body
+  | .moveZone (.target 0) .exile .exile { grantPlayPerm? := some gp, .. } =>
+    if gp == { duration := .untilEndOfNextTurnOf .you, landsAllowed := true } then
+      s!"exile {noun}. {playThatCardUntilNextTurnPhrase}"
+    else Instruction.toOracleWith { capitalize := false } e.targets body
   | .moveZone (.target 0) .exile .exile { exileUntilSourceLeaves := true, .. } =>
     if e.allowsZeroTargets then
       s!"you may exile {noun} until this leaves the battlefield"
@@ -675,12 +693,17 @@ def toNotation (ab : TriggeredAbility) : String :=
           let txt := if txt.endsWith "." then txt else s!"{txt}."
           s!"• {txt}"
         let hdr :=
-          if spec.minModes == ValueExpr.const 0 && spec.maxModes == ValueExpr.chosenX then "choose up to X"
-          else if spec.minModes == ValueExpr.const 0 && spec.maxModes == ValueExpr.eventAmount then "choose up to that many"
-          else if spec.minModes == ValueExpr.const 2 && spec.maxModes == ValueExpr.const 2 then "choose two"
-          else if spec.unusedThisTurn then "choose one that hasn't been chosen this turn"
-          else if spec.unusedEver then "choose one that hasn't been chosen"
-          else "choose one"
+          match spec.altCountIf? with
+          | some (cond, .const 1, .const n) =>
+            if n >= 3 then s!"choose one. If {toOracleStr cond { capitalize := false }}, choose one or more instead"
+            else s!"choose one. If {toOracleStr cond { capitalize := false }}, you may choose two instead"
+          | _ =>
+            if spec.minModes == ValueExpr.const 0 && spec.maxModes == ValueExpr.chosenX then "choose up to X"
+            else if spec.minModes == ValueExpr.const 0 && spec.maxModes == ValueExpr.eventAmount then "choose up to that many"
+            else if spec.minModes == ValueExpr.const 2 && spec.maxModes == ValueExpr.const 2 then "choose two"
+            else if spec.unusedThisTurn then "choose one that hasn't been chosen this turn"
+            else if spec.unusedEver then "choose one that hasn't been chosen"
+            else "choose one"
         s!"{eventPrefix ab}{interveningClause ab}, {hdr} — {" ".intercalate modeTexts}{once}"
     | _ =>
       let modeTexts := ab.modeEffects.toList.map fun m =>

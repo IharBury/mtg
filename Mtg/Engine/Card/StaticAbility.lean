@@ -1214,6 +1214,17 @@ def anyRule (ab : StaticAbility) (p : Option Condition → RuleModification → 
 def isScopeSelf (sc : ObjectFilter) : Bool :=
   sc == scopeSelf
 
+/-- Extract `(threshold, mod)` if `ab` is a CR 722.2 Station symbol static ability
+(`As long as this permanent has N or more charge counters on it, ...`). -/
+def stationStriation? : StaticAbility → Option (Nat × ContinuousModification)
+  | .continuous (some (.cmp .ge (.counterCount (some .charge) .this) (.const n))) sc mod =>
+    if sc == scopeSelf && n > 0 then some (n.toNat, mod) else none
+  | _ => none
+
+/-- True when `ab` is a CR 722.2 Station symbol static ability (`N+ | ...`). -/
+def isStationStriation (ab : StaticAbility) : Bool :=
+  ab.stationStriation?.isSome
+
 /-- True when `scope` is the canonical equipped-creature filter. -/
 def isScopeEquippedCreature (sc : ObjectFilter) : Bool :=
   sc == scopeEquippedCreature
@@ -1500,10 +1511,22 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
         | .player (.cantLoseGame { relation := .you, pred := .any }) => "You can't lose the game."
         | .player (.cantLoseGame pf) =>
           s!"{toOracleStr pf { ctx with capitalize := true }} can't lose the game."
+        | .player (.dontLoseForZeroLife { relation := .you, pred := .any }) =>
+          "You don't lose the game for having 0 or less life."
+        | .player (.dontLoseForZeroLife pf) =>
+          s!"{toOracleStr pf { ctx with capitalize := true }} don't lose the game for having 0 or less life."
         | .player (.cantWinGame { relation := .opponent, pred := .any }) =>
           "Your opponents can't win the game."
         | .player (.cantWinGame pf) =>
           s!"{toOracleStr pf { ctx with plural := true, capitalize := true }} can't win the game."
+        | .player (.cantSacrifice { relation := .you, pred := .any } pred) =>
+          s!"You can't sacrifice {toOracleStr pred { ctx with plural := true, capitalize := false }}."
+        | .player (.cantSacrifice pf pred) =>
+          s!"{toOracleStr pf { ctx with plural := true, capitalize := true }} can't sacrifice {toOracleStr pred { ctx with plural := true, capitalize := false }}."
+        | .player (.cantAttack { relation := .you, pred := .any }) =>
+          "You can't attack."
+        | .player (.cantAttack pf) =>
+          s!"{toOracleStr pf { ctx with capitalize := true }} can't attack."
         | .player (.hexproof { relation := .you, pred := .any } none) => "You have hexproof."
         | .player (.hexproof pf none) =>
           s!"{toOracleStr pf { ctx with capitalize := true }} have hexproof."
@@ -1543,29 +1566,71 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
           s!"You control {toOracleStr who { ctx with capitalize := false }}."
         | .play (.lookAtTopOfLibrary _) =>
           "You may look at the top card of your library any time."
-        | .play (.mayPlayFrom _ .library (.hasType .creature) false false false false) =>
+        | .play (.mayPlayFrom _ .library (.hasType .creature) false false false false false none none false) =>
           "You may cast creature spells from the top of your library."
-        | .play (.mayPlayFrom _ .library (.hasType .land) true false false false) =>
+        | .play (.mayPlayFrom _ .library (.hasType .land) true false false false false none none false) =>
           "You may play lands from the top of your library."
-        | .play (.mayPlayFrom _ .graveyard (.hasType .land) true false false false) =>
+        | .play (.mayPlayFrom _ .graveyard (.hasType .land) true false false false false none none false) =>
           "You may play lands from your graveyard."
-        | .play (.mayPlayFrom _ .exile _ false true true false) =>
+        | .play (.mayPlayFrom _ .exile _ false true true false false none none false) =>
           "You may cast the exiled card, and mana of any type can be spent to cast that spell."
-        | .play (.mayPlayFrom _ .hand (.stat .manaValue .le (.aggregate .count .one (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])))) false false false true) =>
+        | .play (.mayPlayFrom _ .hand (.stat .manaValue .le (.aggregate .count .one (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you])))) false false false true false none none false) =>
           "You may cast spells with mana value less than or equal to the number of creatures you control from your hand without paying their mana costs."
-        | .play (.mayPlayFrom _ z pred lands _ anyC free) =>
+        | .play (.mayPlayFrom _ .graveyard .anyObject false false false false false none none true) =>
+          "Each card in your graveyard has beam me up. The beam me up cost is equal to that spell's mana cost."
+        | .play (.mayPlayFrom _ z (.sameAs .this) lands _ anyC free once z2? enterCtr? _) =>
           let verb := if lands then "play" else "cast"
-          let what := if pred == .anyObject then (if lands then "lands" else "spells")
-                      else toOracleStr pred { ctx with plural := true, capitalize := false }
-          let fromS := match z with
+          let zonePhrase (zk : ZoneKind) : String := match zk with
             | .library => "the top of your library"
             | .graveyard => "your graveyard"
             | .hand => "your hand"
             | .exile => "exile"
-            | _ => z.englishName
-          let freeS := if free then " without paying their mana costs" else ""
-          let anyS := if anyC then ", and mana of any type can be spent to cast them" else ""
-          s!"You may {verb} {what} from {fromS}{freeS}{anyS}."
+            | .outside => "outside the game"
+            | _ => zk.englishName
+          let fromS := match z2? with
+            | some z2 => s!"{zonePhrase z} or from {zonePhrase z2}"
+            | none => zonePhrase z
+          let oncePfx := if once then "Once during each of your turns, you" else "You"
+          let freeS := if free then " without paying its mana cost" else ""
+          let anyS := if anyC then ", and mana of any type can be spent to cast it" else ""
+          let ctrS := match enterCtr? with
+            | some k => s!" If you do, it enters with {k.countersPhrase 1} on it."
+            | none => ""
+          s!"{oncePfx} may {verb} this card from {fromS}{freeS}{anyS}.{ctrS}"
+        | .play (.mayPlayFrom _ z pred lands _ anyC free once z2? enterCtr? asBeam) =>
+          if asBeam then
+            let what := if pred == .anyObject then "each card" else s!"each {toOracleStr pred { ctx with plural := false, capitalize := false }} card"
+            s!"{capitalizeAscii what} in your graveyard has beam me up. The beam me up cost is equal to that spell's mana cost."
+          else
+            let verb := if lands then "play" else "cast"
+            let what :=
+              if once then
+                if pred == .anyObject then (if lands then "a card" else "a spell")
+                else if pred == .isKind .permanentCard then "a permanent card"
+                else
+                  let pS := toOracleStr pred { ctx with plural := false, capitalize := false }
+                  let noun := if lands then (if pS.contains "card" then pS else s!"{pS} card") else if pS.endsWith " spell" then pS else s!"{pS} spell"
+                  s!"{indefinite noun} {noun}"
+              else
+                if pred == .anyObject then (if lands then "lands" else "spells")
+                else toOracleStr pred { ctx with plural := true, capitalize := false }
+            let zonePhrase (zk : ZoneKind) : String := match zk with
+              | .library => "the top of your library"
+              | .graveyard => "your graveyard"
+              | .hand => "your hand"
+              | .exile => "exile"
+              | .outside => "outside the game"
+              | _ => zk.englishName
+            let fromS := match z2? with
+              | some z2 => s!"{zonePhrase z} or from {zonePhrase z2}"
+              | none => zonePhrase z
+            let oncePfx := if once then "Once during each of your turns, you" else "You"
+            let freeS := if free then " without paying their mana costs" else ""
+            let anyS := if anyC then ", and mana of any type can be spent to cast them" else ""
+            let ctrS := match enterCtr? with
+              | some k => s!" If you cast a spell this way, it enters with {k.countersPhrase 1} on it."
+              | none => ""
+            s!"{oncePfx} may {verb} {what} from {fromS}{freeS}{anyS}.{ctrS}"
         | .play (.castAsThoughFlash _ _ true _) =>
           "You may cast this spell as though it had flash."
         | .play (.castAsThoughFlash _ (.hasType .creature) false (some 1)) =>
@@ -1590,6 +1655,9 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
         | .combat (.cantAttack s) =>
           let (subj, _) := renderSubjectPhrase ctx s
           s!"{subj} can't attack."
+        | .combat (.cantAttackAlone s) =>
+          let (subj, _) := renderSubjectPhrase ctx s
+          s!"{subj} can't attack alone."
         | .combat (.cantAttackUnless s c) =>
           let (subj, _) := renderSubjectPhrase ctx s
           s!"{subj} can't attack unless {renderConditionClause ctx c}."
@@ -1647,7 +1715,14 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
           s!"{capitalizeAscii subj} assign combat damage equal to their toughness rather than their power."
         | .combat (.assignNegativePowerAsPositive _) =>
           "If this creature's power is negative, it assigns combat damage as though its power were positive."
-        | .trigger (.extraTrigger sc _) =>
+        | .trigger (.extraTrigger sc _ (some (.gainedLife _))) =>
+          let noun := toOracleStr sc { ctx with plural := false, capitalize := false }
+          s!"If you gaining life causes a triggered ability of {indefinite noun} {noun} to trigger, that ability triggers an additional time."
+        | .trigger (.extraTrigger sc _ (some ev)) =>
+          let noun := toOracleStr sc { ctx with plural := false, capitalize := false }
+          let evS := toOracleStr (Condition.turnHistory (.eventOccurredThisTurn .you ev)) { ctx with capitalize := false }
+          s!"If {evS} causes a triggered ability of {indefinite noun} {noun} to trigger, that ability triggers an additional time."
+        | .trigger (.extraTrigger sc _ none) =>
           if sc == scopeEquippedCreature then
             "If a triggered ability of equipped creature triggers, that ability triggers an additional time."
           else
@@ -1683,9 +1758,33 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
           let (subj, pl) := renderSubjectPhrase ctx s
           let verb := if pl then "don't" else "doesn't"
           s!"{subj} {verb} untap during your untap step unless {renderConditionClause ctx c}."
+        | .game (.mayChooseNotToUntap s) =>
+          let (subj, _) := renderSubjectPhrase ctx s
+          s!"You may choose not to untap {subj.toLower} during your untap step."
         | .game (.cantBecomeUntapped s) =>
           let (subj, _) := renderSubjectPhrase ctx s
           s!"{subj} can't become untapped."
+        | .game (.cantBeBeamedUp s) =>
+          let (subj, _) := renderSubjectPhrase ctx s
+          s!"{subj} can't be beamed up."
+        | .game (.cantPhaseIn sc) =>
+          if sc.pred == .anyObject then "Permanents can't phase in."
+          else
+            let (subj, _) := renderScopeSubject ctx sc
+            s!"{capitalizeAscii subj} can't phase in."
+        | .game (.cantBeTargetedBy s srcPred ctrl abOnly) =>
+          let (subj, _) := renderSubjectPhrase ctx s
+          let kS := if abOnly then "abilities" else "spells or abilities"
+          let srcS := match srcPred with
+            | .hasType t => s!"{t.oracleWord} sources"
+            | .hasColor (.literal c) => s!"{c.englishName} sources"
+            | p => s!"{toOracleStr p { ctx with plural := false, capitalize := false }} sources"
+          let ctrlS := match ctrl with
+            | .opponent => " your opponents control"
+            | .you => " you control"
+            | .any => ""
+            | pf => s!" {toOracleStr pf { ctx with capitalize := false }} control"
+          s!"{subj} can't be the target of {kS} from {srcS}{ctrlS}."
         | .game (.lockNonManaDuringPhase ph _) =>
           s!"During {ph.englishName}, players can't cast spells or activate abilities that aren't mana abilities."
         | .game (.planeswalkersSurviveZeroLoyalty sc) =>
@@ -1702,7 +1801,15 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
         | .costMod _ _ _ =>
           "Spells and abilities cost different mana."
         | .all _ => ""
-      String.intercalate " " (flat.toList.map renderOne)
+      match flat.toList with
+      | [.game (.doesntUntapDuringUntapStep s none), .game (.cantBeBeamedUp s')] =>
+        if s == s' then
+          let (subj, pl) := renderSubjectPhrase ctx s
+          let verb := if pl then "don't" else "doesn't"
+          let poss := if s == .self then "your" else "its controller's"
+          s!"{subj} {verb} untap during {poss} untap step and can't be beamed up."
+        else String.intercalate " " (flat.toList.map renderOne)
+      | _ => String.intercalate " " (flat.toList.map renderOne)
   match cond? with
   | none => body
   | some .isYourTurn =>
@@ -1713,6 +1820,11 @@ private def renderRuleMod (ctx : PrintCtx) (cond? : Option Condition) (rule : Ru
         | [] => ""
         | c :: cs => String.ofList (c.toLower :: cs)
       s!"During your turn, {lowBody}"
+  | some (.all #[.isYourTurn, .any #[.duringPhase .precombatMain, .duringPhase .postcombatMain]]) =>
+    let lowBody := match body.toList with
+      | [] => ""
+      | c :: cs => String.ofList (c.toLower :: cs)
+    s!"During your main phase, {lowBody}"
   | some c =>
     match rule with
     | .play (.castAsThoughFlash _ _ true _) =>
@@ -1831,6 +1943,12 @@ private def renderReplacementOne (ctx : PrintCtx) : StaticReplacementSpec → St
       s!"As this land enters, you may behold {indefinite sub.englishName} {sub}. If you don't, this land enters tapped."
     | _ =>
       s!"As this permanent enters, you may pay {cost.toNotation}. If you don't, it enters tapped."
+  | .entersUntapped sc =>
+    let (subj, _) := renderScopeSubject ctx sc
+    s!"{capitalizeAscii subj} enter untapped."
+  | .entersTappedAndAttacking sc =>
+    let noun := toOracleStr sc { ctx with plural := false, capitalize := false }
+    s!"If {indefinite noun} {noun} would enter, instead it enters tapped and attacking."
   | .entersWithCounters .self .plusOnePlusOne .chosenX false =>
     "This enters with X +1/+1 counters on it."
   | .entersWithCounters .self .hope (.aggregate .count .one (.inZones .battlefield (.all #[.hasType .creature, .controlledBy .you]))) false =>
@@ -1844,6 +1962,12 @@ private def renderReplacementOne (ctx : PrintCtx) : StaticReplacementSpec → St
   | .entersWithCounters (.matching sc) .plusOnePlusOne (.objectStat .toughness .this) true =>
     let (subj, _) := renderScopeSubject ctx sc
     s!"{capitalizeAscii subj} enter with a number of additional +1/+1 counters on them equal to this creature's toughness."
+  | .entersWithCounters (.matching sc) k (.const 1) true =>
+    let (subj, _) := renderScopeSubject ctx sc
+    s!"{capitalizeAscii subj} enter with an additional {k.oracleName} counter on them."
+  | .entersWithCounters (.matching sc) k (.const n) true =>
+    let (subj, _) := renderScopeSubject ctx sc
+    s!"{capitalizeAscii subj} enter with {englishNumber n.toNat} additional {k.oracleName} counters on them."
   | .entersWithCounters (.matching sc) k amt add =>
     let (subj, _) := renderScopeSubject ctx sc
     let addS := if add then "additional " else ""
@@ -1855,9 +1979,11 @@ private def renderReplacementOne (ctx : PrintCtx) : StaticReplacementSpec → St
   | .asEntersChoose .cardType => "As this creature enters, choose a card type."
   | .asEntersChoose .nonlandCardName => "As this creature enters, choose a nonland card name."
   | .asEntersChoose .oddOrEven => "As this permanent enters, choose odd or even."
+  | .asEntersChoose (.numberRange lo hi) =>
+    s!"As this permanent enters, choose a number between {lo} and {hi}."
   | .asEntersChoose (.namedAnchors opts) =>
     s!"As this enchantment enters, choose {String.intercalate " or " opts.toList}."
-  | .asEntersMayCopy _ .untilEndOfTurn mods =>
+  | .asEntersMayCopy _ .untilEndOfTurn mods _ =>
     let hasHaste := mods.any fun
       | .addKeywords ks => KeywordAbility.hasHaste ks
       | _ => false
@@ -1865,13 +1991,23 @@ private def renderReplacementOne (ctx : PrintCtx) : StaticReplacementSpec → St
       "As this artifact enters, you may have it become a copy of any creature on the battlefield until end of turn, except it has haste."
     else
       "As this permanent enters, you may have it become a copy of any creature on the battlefield until end of turn."
-  | .asEntersMayCopy f _ _ =>
-    s!"As this permanent enters, you may have it become a copy of {toOracleStr f { ctx with plural := false, capitalize := false }}."
+  | .asEntersMayCopy f _ mods copyCounters =>
+    let modParts := mods.toList.filterMap CopyModification.toOraclePhrase?
+    let excS := if modParts.isEmpty then "" else s!", except {String.intercalate ", " modParts}"
+    let ccS :=
+      if copyCounters then
+        " If you do, it enters with additional counters on it equal to the same number and kinds of counters the copied permanent has on it."
+      else ""
+    s!"As this permanent enters, you may have it become a copy of {toOracleStr f { ctx with plural := false, capitalize := false }}{excS}.{ccS}"
   | .exileInsteadOfDying sc none =>
     s!"If {indefinite (toOracleStr sc { ctx with plural := false, capitalize := false })} {toOracleStr sc { ctx with plural := false, capitalize := false }} would die, exile it instead."
   | .exileInsteadOfDying sc (some tok) =>
     let noun := toOracleStr sc { ctx with plural := false, capitalize := false }
     s!"If {indefinite noun} {noun} would die, exile it instead. When you do, {TokenSpec.createPhrase tok 1}."
+  | .saveFromDestroyRemoveCounters sc k =>
+    let noun := toOracleStr sc { ctx with plural := false, capitalize := false }
+    let art := if noun.startsWith "another " then "" else s!"{indefinite noun} "
+    s!"If {art}{noun} would be destroyed, instead remove all {k.oracleName} counters from it and all damage already dealt to it is healed."
   | .multiplyTokens _ 2 =>
     "If one or more tokens would be created under your control, twice that many of those tokens are created instead."
   | .multiplyTokens _ n =>
@@ -1880,6 +2016,8 @@ private def renderReplacementOne (ctx : PrintCtx) : StaticReplacementSpec → St
     "If you would create a Food token, create a Treasure token in addition."
   | .extraTokenWith _ pred tok n =>
     s!"If you would create a {toOracleStr pred { ctx with plural := false, capitalize := false }} token, also {TokenSpec.createPhrase tok n}."
+  | .replaceTokens _ (.all #[]) tok =>
+    s!"If one or more tokens would be created under your control, that many {tok.pluralNoun} are created instead."
   | .replaceTokens _ (.hasType .artifact) tok =>
     s!"If one or more artifact tokens would be created under your control, that many {tok.pluralNoun} are created instead."
   | .replaceTokens _ pred tok =>
@@ -1890,13 +2028,22 @@ private def renderReplacementOne (ctx : PrintCtx) : StaticReplacementSpec → St
     s!"If you would draw a card, draw {englishNumber n} cards instead."
   | .extraDrawOnConnive _ _ _ =>
     "If a creature you control would connive, instead you draw a card, then that creature connives."
-  | .modifyCountersPut _ (some .plusOnePlusOne) none 1 =>
+  | .modifyCountersPut _ (some .plusOnePlusOne) none 1 1 =>
     "If one or more +1/+1 counters would be put on a creature you control, that many plus one +1/+1 counters are put on it instead."
-  | .modifyCountersPut _ none (some { relation := .you, pred := .any }) 1 =>
+  | .modifyCountersPut _ none (some { relation := .you, pred := .any }) 1 1 =>
     "If you would put one or more counters on a permanent you control, put that many plus one of each of those kinds of counters on that permanent instead."
-  | .modifyCountersPut sc k? _ n =>
+  | .modifyCountersPut sc k? bp? add mult =>
+    let noun := toOracleStr sc { ctx with plural := false, capitalize := false }
+    let art := if noun.startsWith "another " then "" else s!"{indefinite noun} "
     let kS := match k? with | some k => s!"{k.oracleName} " | none => ""
-    s!"If one or more {kS}counters would be put on {toOracleStr sc { ctx with plural := false, capitalize := false }}, put that many plus {englishNumber n} instead."
+    if mult > 1 && add == 0 then
+      let eachS := if k?.isSome then s!"{kS}counters" else "of each of those kinds of counters"
+      if bp?.isSome then
+        s!"If you would put one or more {kS}counters on {art}{noun}, put {timesPhrase mult} that many {eachS} on it instead."
+      else
+        s!"If one or more {kS}counters would be put on {art}{noun}, put {timesPhrase mult} that many {eachS} on it instead."
+    else
+      s!"If one or more {kS}counters would be put on {art}{noun}, put that many plus {englishNumber add} instead."
   | .preventDamage .self none => "Prevent all damage that would be dealt to this."
   | .preventDamage .self (some v) =>
     s!"Prevent {toOracleStr v { ctx with capitalize := false }} of the damage that would be dealt to this."
@@ -1904,6 +2051,12 @@ private def renderReplacementOne (ctx : PrintCtx) : StaticReplacementSpec → St
     s!"Prevent all damage that would be dealt to {toOracleStr sc { ctx with plural := true, capitalize := false }}."
   | .preventDamage (.matching sc) (some v) =>
     s!"Prevent {toOracleStr v { ctx with capitalize := false }} of the damage that would be dealt to {toOracleStr sc { ctx with plural := true, capitalize := false }}."
+  | .preventDamageToPlayer pf none =>
+    let whoS := if pf == .you then "you" else toOracleStr pf { ctx with capitalize := false }
+    s!"Prevent all damage that would be dealt to {whoS}."
+  | .preventDamageToPlayer pf (some v) =>
+    let whoS := if pf == .you then "you" else toOracleStr pf { ctx with capitalize := false }
+    s!"Prevent the next {toOracleStr v { ctx with capitalize := false }} damage that would be dealt to {whoS}."
   | .modifyDamage sc false .any 2 (.const 0) =>
     if sc == scopeEquippedCreature then "Double all damage equipped creature would deal."
     else s!"Double all damage {toOracleStr sc { ctx with plural := false, capitalize := false }} would deal."
@@ -1927,21 +2080,79 @@ private def renderReplacementOne (ctx : PrintCtx) : StaticReplacementSpec → St
 
 private def renderReplacement (ctx : PrintCtx) (cond? : Option Condition)
     (spec : StaticReplacementSpec) : String :=
-  let flat := spec.flatten
-  let body :=
-    if flat == #[.entersTapped .self none, .asEntersChoose .color] then
-      "This land enters tapped. As it enters, choose a color."
-    else
-      String.intercalate " " (flat.toList.map (renderReplacementOne ctx))
-  match cond? with
-  | none => body
-  | some c =>
-    let lowBody := match body.toList with
-      | [] => ""
-      | ch :: cs => String.ofList (ch.toLower :: cs)
-    s!"As long as {renderConditionClause ctx c}, {lowBody}"
+  match cond?, spec with
+  | some c, .entersTappedAndAttacking sc =>
+    let noun := toOracleStr sc { ctx with plural := false, capitalize := false }
+    s!"If {indefinite noun} {noun} would enter while {renderConditionClause ctx c}, instead it enters tapped and attacking."
+  | _, _ =>
+    let flat := spec.flatten
+    let body :=
+      if flat == #[.entersTapped .self none, .asEntersChoose .color] then
+        "This land enters tapped. As it enters, choose a color."
+      else
+        String.intercalate " " (flat.toList.map (renderReplacementOne ctx))
+    match cond? with
+    | none => body
+    | some c =>
+      let lowBody := match body.toList with
+        | [] => ""
+        | ch :: cs => String.ofList (ch.toLower :: cs)
+      s!"As long as {renderConditionClause ctx c}, {lowBody}"
 
-private def renderContinuous (ctx : PrintCtx) (cond? : Option Condition)
+private def renderEnchant (ctx : PrintCtx) (slot : TargetSlot) : String :=
+  match slot.domain with
+  | .object _ (.any #[.hasType .artifact, .all #[.not (.hasSubtype (.literal .aura)), .hasType .enchantment]])
+  | .object _ (.any #[.hasType .artifact, .all #[.hasType .enchantment, .not (.hasSubtype (.literal .aura))]]) =>
+    "Enchant artifact or non-Aura enchantment"
+  | .object _ (.all #[.hasType .creature, .controlledBy { relation := .you, pred := .any }]) =>
+    "Enchant creature you control"
+  | .object zs pred =>
+    s!"Enchant {toOracleStr ({ zones := zs, pred } : ObjectFilter) { ctx with plural := false, capitalize := false }}"
+  | .player pf =>
+    s!"Enchant {toOracleStr pf { ctx with plural := false, capitalize := false }}"
+  | other => s!"Enchant {toOracleStr other { ctx with capitalize := false }}"
+
+mutual
+
+private partial def renderContinuous (ctx : PrintCtx) (cond? : Option Condition)
+    (sc : ObjectFilter) (mod : ContinuousModification) : String :=
+  -- CR 722.2: Station striation (`N+ | [P/T] <abilities>`)
+  match cond? with
+  | some (.cmp .ge (.counterCount (some .charge) .this) (.const n)) =>
+    if sc == scopeSelf && n > 0 then
+      let flat := mod.flatten
+      let ptPart? : Option String :=
+        flat.findSome? fun
+          | .setBasePT (some (.const p)) (some (.const t)) => some s!"[{p}/{t}]"
+          | _ => none
+      let abLines : List String := Id.run do
+        let mut out : List String := []
+        for m in flat do
+          match m with
+          | .modifyTypes _ | .setBasePT _ _ => pure ()
+          | .grantKeywords ks =>
+            if !ks.isEmpty then
+              out := out ++ (KeywordAbility.renderOracleLines ks)
+          | .grantActivated abs =>
+            for ab in abs do out := out ++ [ab.toOracle ctx]
+          | .grantTriggered trs =>
+            for tr in trs do out := out ++ [tr.toNotation]
+          | .grantStatic sas =>
+            for sa in sas do out := out ++ [renderStatic ctx sa]
+          | _ => pure ()
+        return out
+      let pfx := match ptPart? with
+        | some pt => s!"{n.toNat}+ | {pt}"
+        | none => s!"{n.toNat}+ |"
+      match abLines with
+      | [] => pfx
+      | first :: rest =>
+        let head := s!"{pfx} {first}"
+        String.intercalate "\n" (head :: rest)
+    else renderContinuousRegular ctx cond? sc mod
+  | _ => renderContinuousRegular ctx cond? sc mod
+
+private partial def renderContinuousRegular (ctx : PrintCtx) (cond? : Option Condition)
     (sc : ObjectFilter) (mod : ContinuousModification) : String :=
   let flat := mod.flatten
   let kwOnlyMod := !flat.isEmpty && flat.all fun | .grantKeywords _ => true | _ => false
@@ -2012,9 +2223,9 @@ private def renderContinuous (ctx : PrintCtx) (cond? : Option Condition)
             let word := if n == 1 then "one creature" else s!"{englishNumber n} creatures"
             out := out ++ [s!"{haveVerb} \"No more than {word} can attack this planeswalker each combat.\""]
           | other =>
-            -- Non-recursive rendering of granted statics (kept flat for C-code size)
-            let _ := other
-            out := out ++ [s!"{haveVerb} a static ability"]
+            let q := renderStatic ctx other
+            let qDot := if q.endsWith "." then q else q ++ "."
+            out := out ++ [s!"{haveVerb} \"{qDot}\""]
       | .copyActivatedFrom src =>
         match src.pred with
         | .all #[.isCard, .hasSubtype (.literal sub)] =>
@@ -2044,12 +2255,20 @@ private def renderContinuous (ctx : PrintCtx) (cond? : Option Condition)
         let names := Color.all.filter cm.colors.contains |>.map Color.englishName
         let desc := if names.isEmpty then "colorless" else String.intercalate " and " names
         out := out ++ [s!"{isVerb} {desc}"]
-      | .applyRule (.all #[.combat (.cantAttack .self), .combat (.cantBlock .self)]) =>
+      | .applyRule (.all #[.combat (.cantAttack .self), .combat (.cantBlock .self none)]) =>
         out := out ++ ["can't attack or block"]
+      | .applyRule (.combat (.cantAttack .self)) =>
+        out := out ++ ["can't attack"]
+      | .applyRule (.combat (.cantAttackAlone .self)) =>
+        out := out ++ ["can't attack alone"]
+      | .applyRule (.combat (.cantBlock .self none)) =>
+        out := out ++ ["can't block"]
       | .applyRule (.game (.doesntUntapDuringUntapStep .self none)) =>
         out := out ++ ["doesn't untap during its controller's untap step"]
       | .applyRule (.game (.cantBecomeUntapped .self)) =>
         out := out ++ ["can't become untapped"]
+      | .applyRule (.game (.cantBeBeamedUp .self)) =>
+        out := out ++ ["can't be beamed up"]
       | .applyRule (.player (.hexproof _ none)) => pure ()
       | .applyRule (.player (.protectionFrom _ _)) => pure ()
       | .applyRule r =>
@@ -2109,21 +2328,7 @@ private def renderContinuous (ctx : PrintCtx) (cond? : Option Condition)
         | ch :: cs => String.ofList (ch.toLower :: cs)
       s!"As long as {renderConditionClause ctx c}, {lowBody}"
 
-private def renderEnchant (ctx : PrintCtx) (slot : TargetSlot) : String :=
-  match slot.domain with
-  | .object _ (.any #[.hasType .artifact, .all #[.not (.hasSubtype (.literal .aura)), .hasType .enchantment]])
-  | .object _ (.any #[.hasType .artifact, .all #[.hasType .enchantment, .not (.hasSubtype (.literal .aura))]]) =>
-    "Enchant artifact or non-Aura enchantment"
-  | .object _ (.all #[.hasType .creature, .controlledBy { relation := .you, pred := .any }]) =>
-    "Enchant creature you control"
-  | .object zs pred =>
-    s!"Enchant {toOracleStr ({ zones := zs, pred } : ObjectFilter) { ctx with plural := false, capitalize := false }}"
-  | .player pf =>
-    s!"Enchant {toOracleStr pf { ctx with plural := false, capitalize := false }}"
-  | other => s!"Enchant {toOracleStr other { ctx with capitalize := false }}"
-
-/-- Canonical Oracle rendering of a `StaticAbility` (CR 604). -/
-def toOracle (ctx : PrintCtx) (ab : StaticAbility) : String :=
+private partial def renderStatic (ctx : PrintCtx) (ab : StaticAbility) : String :=
   match ab with
   | .characteristicDefining cda => renderCda ctx cda
   | .continuous cond? sc mod => renderContinuous ctx cond? sc mod
@@ -2131,6 +2336,12 @@ def toOracle (ctx : PrintCtx) (ab : StaticAbility) : String :=
   | .costModifier cond? tgt mod => renderCostMod ctx cond? tgt mod
   | .replacement cond? spec => renderReplacement ctx cond? spec
   | .enchantRestriction slot => renderEnchant ctx slot
+
+end
+
+/-- Canonical Oracle rendering of a `StaticAbility` (CR 604). -/
+def toOracle (ctx : PrintCtx) (ab : StaticAbility) : String :=
+  renderStatic ctx ab
 
 /-- Oracle-style reminder string for `ab`. -/
 def toNotation (ab : StaticAbility) : String :=

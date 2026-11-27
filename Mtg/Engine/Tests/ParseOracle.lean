@@ -1142,11 +1142,14 @@ private def roundTripsOracleCard (raw : String) : Bool :=
       | none => false
   | .error _ => false
 
--- Phase 11: Full 981-card catalog structural `BEq CardDef` round-trip verification
--- (explicitly including `Catalog.realityFractureCommanderCards` and all 5 supported sets).
-#guard supportedCatalogCards.size == 981
+-- Phase 11: Full 1,292-card catalog structural `BEq CardDef` round-trip verification
+-- (explicitly including `Catalog.realityFractureCommanderCards`, `Catalog.starTrekCards`, and all 6 supported sets).
+#guard supportedCatalogCards.size == 1292
 #guard !Catalog.realityFractureCommanderCards.isEmpty &&
   Catalog.realityFractureCommanderCards.all fun c =>
+    (parseOracleCard (renderFullOracle c)).toOption == some c
+#guard Catalog.starTrekCards.size == 311 &&
+  Catalog.starTrekCards.all fun c =>
     (parseOracleCard (renderFullOracle c)).toOption == some c
 #guard supportedCatalogCards.all fun c =>
   (parseOracleCard (renderFullOracle c)).toOption == some c

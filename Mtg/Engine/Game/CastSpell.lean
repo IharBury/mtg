@@ -53,7 +53,8 @@ def enterProposalWindow (g : Game) (p : PlayerId) (pl : Player) (prop : Proposed
     g.logMsg s!"{pl.name} may activate mana abilities (CR 601.2g)"
 
 def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := false)
-    (sneakAttacker : Option ObjectId := none) : Except String Game := do
+    (sneakAttacker : Option ObjectId := none)
+    (beamMeUpCreature : Option ObjectId := none) : Except String Game := do
   if !g.hasPriority p then
     throw "You don't have priority"
   if g.cantCastSpellsThisTurn p then
@@ -92,6 +93,21 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
           att.status.attacking && !att.status.blocked) then
         throw s!"{g.name att} is not an unblocked attacker you control"
       pure (some c)
+  let beamMeUpCost ← match beamMeUpCreature with
+    | none => pure none
+    | some cid =>
+      if card.zone != .graveyard p then
+        throw "Beam me up can only be paid from your graveyard (CR 702.196a)"
+      if !(rawFace.types.contains .instant || rawFace.types.contains .sorcery) then
+        throw s!"{rawFace.name} must be an instant or sorcery to cast with beam me up (CR 702.196a)"
+      let some bmuSpec := g.effectiveBeamMeUpCost? p card
+        | throw s!"{rawFace.name} has no beam me up cost"
+      let some crea := g.findObject? cid | throw "no such object"
+      if !(crea.isOnBattlefield && g.isCreature crea && g.controlledBy crea p) then
+        throw s!"{g.name crea} is not a creature you control"
+      if g.cantBeBeamedUp crea then
+        throw s!"{g.name crea} can't be beamed up (CR 702.196b)"
+      pure (some bmuSpec.mana)
   let allPerms :=
     g.playPermissionsFor p card ++
       (if card.zone == .exile && g.mayCastExiledBySource p card then
@@ -147,10 +163,13 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     | none => throw "The prepared permanent is gone"
   | none => pure ()
   let fromGraveyard := card.zone == .graveyard card.owner
-  let hadFlashbackPerm := fromGraveyard && g.flashbackUntilEot card
-  let isFlashbackCast := fromGraveyard && (kwFace.flashback.isSome || hadFlashbackPerm)
-  if sneakCost.isSome &&
-      (isFlashbackCast ||
+  let hadFlashbackPerm := fromGraveyard && beamMeUpCost.isNone && g.flashbackUntilEot card
+  let isFlashbackCast := fromGraveyard && beamMeUpCost.isNone && (kwFace.flashback.isSome || hadFlashbackPerm)
+  if fromGraveyard && !isFlashbackCast && beamMeUpCost.isNone &&
+      !g.controlsStaticPlayFromZone p card .graveyard then
+    throw s!"Cast {rawFace.name} from your graveyard with its beam me up cost (CR 702.196a)"
+  if (sneakCost.isSome || beamMeUpCost.isSome) &&
+      ((sneakCost.isSome && beamMeUpCost.isSome) || isFlashbackCast ||
         (origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue) &&
           !g.mayCastExiledBySource p card)) then
     throw "You can't apply more than one alternative cost to a spell (CR 118.9a)"
@@ -163,7 +182,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let morphPermOk :=
     allPerms.isEmpty || !cleanPerms.isEmpty || g.mayCastExiledBySource p card
   let morphCandidateOk :=
-    !asAdventure && sneakCost.isNone && !isFlashbackCast && morphPermOk &&
+    !asAdventure && sneakCost.isNone && beamMeUpCost.isNone && !isFlashbackCast && morphPermOk &&
       kwFace.morph.isSome && kwFace.kicker.isNone &&
       !fromGraveyard && g.canCastMorphFaceDown p card
   let origPerm :=
@@ -177,7 +196,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
         | some b => if rankPerm pm >= rankPerm b then some pm else some b) none
     else origPerm
   let altCost :=
-    sneakCost.isSome || isFlashbackCast ||
+    sneakCost.isSome || beamMeUpCost.isSome || isFlashbackCast ||
       origPerm.any (fun pm => pm.withoutManaCost || pm.payLifeEqualManaValue)
   let hasMorphChoice :=
     morphCandidateOk && (origPerm.bind (·.prepareSource)).isNone
@@ -209,12 +228,16 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   -- the stack (rulings 824 / 874).
   let casterCard := { original with controller := some p }
   let cost :=
-    match sneakCost with
-    | some c => g.playManaCost casterCard { rawFace with manaCost := c }
+    match sneakCost, beamMeUpCost with
+    | some c, _ => g.playManaCost casterCard { rawFace with manaCost := c }
         (origPerm := origPerm)
         (flashback := some isFlashbackCast) (explicitAltCost := true)
         (useImplicitPermissions := false)
-    | none => g.playManaCost casterCard rawFace
+    | _, some c => g.playManaCost casterCard { rawFace with manaCost := c }
+        (origPerm := origPerm)
+        (flashback := some false) (explicitAltCost := true)
+        (useImplicitPermissions := false)
+    | none, none => g.playManaCost casterCard rawFace
         (origPerm := origPerm)
         (flashback := some isFlashbackCast) (explicitAltCost := false)
         (useImplicitPermissions := false)
@@ -238,6 +261,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     if (origPerm.bind (·.prepareSource)).isSome then .alternative "prepare"
     else if asAdventure then .alternative "adventure"
     else if sneakAttacker.isSome then .alternative "sneak"
+    else if beamMeUpCreature.isSome then .alternative "beam me up"
     else if isFlashbackCast then .alternative "flashback"
     else if origPerm.isSome then .alternative "permission"
     else .normal
@@ -252,7 +276,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     match kwFace.impending, kwFace.kicker with
     | some (_, alt), none =>
       let impFace := { rawFace with manaCost := alt }
-      !asAdventure && sneakCost.isNone && !isFlashbackCast &&
+      !asAdventure && sneakCost.isNone && beamMeUpCost.isNone && !isFlashbackCast &&
         (origPerm.bind (·.prepareSource)).isNone &&
         (if !allPerms.isEmpty then
           cleanPerms.any (fun pm => pm.ignoreTiming || g.timingAllowsCast p impFace (excludeStackId := some newId) (card? := some spellObj))
@@ -281,7 +305,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   if !needsMode && !needsTarget && !cost.includesManaPayment && !cost.containsX &&
       lifeInstead == 0 && !needsSacrifice && !needsFlashbackDiscard &&
       !needsAdditionalCostChoice && !needsKicker && !needsGift && !needsTeamwork &&
-      sneakAttacker.isNone then
+      sneakAttacker.isNone && beamMeUpCreature.isNone then
     return (g.becomeCast p spellObj).resumeAfterBecomeCast
   let prop : ProposedSpell := {
     caster := p
@@ -294,6 +318,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     needsDiscardCard := needsFlashbackDiscard
     payLife := lifeInstead
     sneakAttacker
+    beamMeUpCreature
     alternativeCost := altCost
   }
   let g := g.logMsg s!"{pl.name} begins casting {rawFace.name}"
@@ -323,6 +348,7 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       if !g.modeIsChoosable p chosen prop.sourceId (stackSelfId := some prop.spellId) then
         throw "That mode requires a target (CR 700.2a)"
       let g := g.record (GameEvent.announced g.turnNumber prop.spellId (modes := #[mode]))
+      let g := g.record (GameEvent.facedDilemma g.turnNumber p (source? := prop.sourceId))
       let g := g.changeObject prop.spellId (.abilityEffect (some chosen))
       let nextOverride :=
         if chosen.targetSpec != rawChosen.targetSpec then some chosen.targetSpec else none
@@ -351,6 +377,8 @@ def announceMode (g : Game) (p : PlayerId) (mode : Nat) : Except String Game := 
       if chosen.contains mode then
         throw "That mode was already chosen (CR 700.2)"
       let g := if chosen.isEmpty then g.setProposedMode mode else g.addProposedExtraMode mode
+      -- CR 700.17: facing a dilemma occurs once per modal spell/ability when one or more modes are chosen.
+      let g := if chosen.isEmpty then g.record (GameEvent.facedDilemma g.turnNumber p (source? := some spell.id)) else g
       let g := g.logMsg
         s!"{(g.player p).name} chooses mode {mode + 1} ({effect.toNotation}) (CR 601.2b)"
       let chosen := chosen.push mode
@@ -377,6 +405,11 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       | throw "The spell or ability left the stack"
     if !g.sourceStillPayable prop then
       return (← g.reverseProposedSpell? (resumeContinuation := true))
+    if prop.kind == .spell then
+      if let some mx := prop.maxCastManaValue? then
+        let stackFace := g.baseCard (g.object! prop.spellId)
+        if (stackFace.manaCost.substituteX x).manaValue > mx then
+          throw s!"The resulting spell's mana value can't exceed {mx} (CR 701.57a)"
     let g := g.record (GameEvent.announced g.turnNumber prop.spellId (x := some x))
     if prop.loyaltyX then
       let some src := prop.sourceId.bind g.findObject?
@@ -403,13 +436,14 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
         let baseFace := g.baseCard spell
         let kwFace := { baseFace with keywords := g.proposedSpellKeywords prop spell }
         let face :=
-          match prop.sneakAttacker, kwFace.sneakCost with
-          | some _, some sc => { baseFace with manaCost := sc }
-          | _, _ => baseFace
+          match prop.sneakAttacker, kwFace.sneakCost, prop.beamMeUpCreature, g.effectiveBeamMeUpCost? p prop.original with
+          | some _, some sc, _, _ => { baseFace with manaCost := sc }
+          | _, _, some _, some bmu => { baseFace with manaCost := bmu.mana }
+          | _, _, _, _ => baseFace
         g.playManaCost preSpell face (ManaCost.ofGeneric prop.additionalGeneric)
           (origPerm := prop.origPerm)
           (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
-          (explicitAltCost := prop.sneakAttacker.isSome)
+          (explicitAltCost := prop.sneakAttacker.isSome || prop.beamMeUpCreature.isSome)
           (useImplicitPermissions := false)
       | _, _, _ => prop.cost.substituteX x
     let extraChanges : Array ProposalChange :=

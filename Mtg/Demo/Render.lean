@@ -929,7 +929,7 @@ def header (g : Game) (viewer : Option PlayerId := none) : String :=
           "may put the revealed card into your graveyard (accept), or decline"
         | .mayChangeSpellTarget .. =>
           "may choose a new target for the spell: choose <id>, or decline to keep it"
-        | .mayCastCards eligible withoutPaying exileInstead =>
+        | .mayCastCards eligible withoutPaying exileInstead _ =>
           let pay := if withoutPaying then "without paying" else "paying its cost"
           let exile := if exileInstead then ", exiling an instant or sorcery instead" else ""
           s!"may cast one of {eligible.size} card(s) {pay}{exile}: cast <id>, or decline"

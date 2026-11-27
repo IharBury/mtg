@@ -254,6 +254,7 @@ partial def movesToOrFromLibrary : Instruction → Bool
   | .player (.searchLibrary spec) => spec.zones.zones.contains .library
   | .player (.explore _) => true
   | .player (.connive _) => true
+  | .player (.discover _ _) => true
   | .seq steps => steps.any movesToOrFromLibrary
   | .bind _ s c => movesToOrFromLibrary s || movesToOrFromLibrary c
   | .ifCond _ t e => movesToOrFromLibrary t || movesToOrFromLibrary e
@@ -292,7 +293,8 @@ partial def mentionsTarget : Instruction → Bool
   | .damage (.fight a b _) => objMentionsTarget a || objMentionsTarget b
   | .permanent (.setTapped o _ _) | .permanent (.modifyCounters _ o _)
   | .permanent (.transform o) | .permanent (.turnFaceUp o)
-  | .permanent (.phaseOut o _) | .permanent (.setDesignation o _ _) => objMentionsTarget o
+  | .permanent (.phaseOut o _) | .permanent (.setDesignation o _ _)
+  | .permanent (.assimilate o _) => objMentionsTarget o
   | .permanent (.attach a b _) => objMentionsTarget a || objMentionsTarget b
   | .life (.gain w _) | .life (.lose w _) | .life (.set w _) => playerMentionsTarget w
   | .stack (.counterStack o _ _) | .stack (.copyStackObject o _ _)
@@ -374,6 +376,12 @@ private partial def printObjRef (ctx : PrintCtx) (targets : TargetSpec) (o : Obj
     String.intercalate " and " (xs.toList.map fun x => printObjRef ctx targets x anaphor0)
   | .diff a b =>
     s!"{printObjRef ctx targets a anaphor0} other than {printObjRef ctx targets b anaphor0}"
+  | .inZones { zones := #[.hand], owner := .ofPlayer (.target i) } pred =>
+    let pS := toOracleStr pred { ctx with capitalize := false }
+    let whoS := if anaphor0.contains i then "that player's" else s!"{printSlotRef targets i "target player"}'s"
+    if pred == .anyObject then s!"card in {whoS} hand"
+    else if pS.endsWith " card" then s!"{pS} in {whoS} hand"
+    else s!"{pS} card in {whoS} hand"
   | o => toOracleStr o { ctx with capitalize := false }
 
 private def printEachObj (ctx : PrintCtx) (targets : TargetSpec) (o : ObjectExpr)
@@ -425,6 +433,7 @@ private def printObjectMetric : ObjectMetric → String
   | .counterCount none => "counters"
   | .counterCount (some k) => s!"{k.oracleName} counters"
   | .colorCount => "colors"
+  | .name => "names"
 
 private def printExprCount (ctx : PrintCtx) : ExprCountRange → String
   | .exact v =>
@@ -471,8 +480,8 @@ private def printDestZone (ctx : PrintCtx) (targets : TargetSpec) (dest : DestZo
       | .fromTop v => s!"{printVal ctx v} from the top of {ownerP} library"
       | .shuffledIn => s!"into {ownerP} library, then shuffle"
 
-private def printGrantPlayPerm (ctx : PrintCtx) (objStr : String)
-    (perm : GrantPlayPermSpec) : String :=
+private def printGrantPlayPerm (ctx : PrintCtx) (targets : TargetSpec) (objStr : String)
+    (perm : GrantPlayPermSpec) (anaphor0 : Array Nat := #[]) : String :=
   let durS := toOracleStr perm.duration { ctx with capitalize := false }
   let verb := if perm.landsAllowed then "play" else "cast"
   let noun :=
@@ -490,7 +499,10 @@ private def printGrantPlayPerm (ctx : PrintCtx) (objStr : String)
   let payS :=
     if perm.freeCast then " without paying their mana costs"
     else if perm.payLifeInsteadOfMana then " by paying life equal to their mana value rather than paying their mana cost"
-    else if perm.anyManaColor then ", and mana of any type can be spent to cast them"
+    else if perm.anyManaColor || perm.anyManaType then ", and mana of any type can be spent to cast them"
+    else ""
+  let taxS :=
+    if perm.extraGenericCost > 0 then s!". A spell cast this way costs \{{perm.extraGenericCost}} more to cast"
     else ""
   let fbS := if perm.asFlashback then " (with flashback)" else ""
   let copyPfx := if perm.copyAndCast then s!"copy {objStr}. " else ""
@@ -500,7 +512,11 @@ private def printGrantPlayPerm (ctx : PrintCtx) (objStr : String)
     match perm.condition? with
     | some c => s!" if {toOracleStr c { ctx with capitalize := false }}"
     | none => ""
-  s!"{copyPfx}you may {verb} {countS}{noun}{mvS}{nowS}{payS}{fbS}{condS}{exS}"
+  let whoS :=
+    match perm.beneficiary? with
+    | some p => printPlayerRef ctx targets p anaphor0
+    | none => "you"
+  s!"{copyPfx}{whoS} may {verb} {countS}{noun}{mvS}{nowS}{payS}{fbS}{condS}{taxS}{exS}"
 
 private def printTypeSetMod (m : TypeSetMod) : String :=
   let sups := m.supertypes.toList.map Supertype.englishName
@@ -512,7 +528,8 @@ private def printTypeSetMod (m : TypeSetMod) : String :=
   | .set => words
   | .setAndKeepNoncreatureSubtypes => s!"{words} (loses other creature types)"
 
-private def printMoveSuffix (ctx : PrintCtx) (targets : TargetSpec) (mods : MoveMods) : String := Id.run do
+private def printMoveSuffix (ctx : PrintCtx) (targets : TargetSpec) (mods : MoveMods)
+    (anaphor0 : Array Nat := #[]) : String := Id.run do
   let mut parts : List String := []
   if mods.tapped then parts := parts ++ ["tapped"]
   if mods.attacking then parts := parts ++ ["and attacking"]
@@ -548,7 +565,7 @@ private def printMoveSuffix (ctx : PrintCtx) (targets : TargetSpec) (mods : Move
         s!". If it is {toOracleStr cond { ctx with capitalize := false }}, return it {printDestZone ctx targets (.battlefield u)}{if tap then " tapped" else ""}, then exile it at the beginning of the next end step"
     parts := parts ++ [drS]
   if let some gp := mods.grantPlayPerm? then
-    parts := parts ++ [s!". {capitalizeAscii (printGrantPlayPerm ctx "those cards" gp)}"]
+    parts := parts ++ [s!". {capitalizeAscii (printGrantPlayPerm ctx targets "those cards" gp anaphor0)}"]
   if mods.shuffleAfter then
     parts := parts ++ [", then shuffle"]
   if parts.isEmpty then ""
@@ -588,7 +605,7 @@ private def printMoveZone (ctx : PrintCtx) (targets : TargetSpec)
     (objs : ObjectExpr) (dest : DestZoneSpec) (verb : ZoneVerb) (mods : MoveMods)
     (anaphor0 : Array Nat := #[]) : String :=
   let subj := printObjRef ctx targets objs anaphor0
-  let sfx := printMoveSuffix ctx targets mods
+  let sfx := printMoveSuffix ctx targets mods anaphor0
   let base :=
     match verb, dest with
     | .destroy, .graveyard =>
@@ -782,7 +799,12 @@ private def printRuleMod (ctx : PrintCtx) (targets : TargetSpec)
     | .additionalLands w n => s!"{pRef w} may play {englishNumber n} additional land(s)"
     | .cantGainLife w => s!"{pRef w} can't gain life"
     | .cantLoseGame w => s!"{pRef w} can't lose the game"
+    | .dontLoseForZeroLife w => s!"{pRef w} don't lose the game for having 0 or less life"
     | .cantWinGame w => s!"{pRef w} can't win the game"
+    | .cantSacrifice w pred => s!"{pRef w} can't sacrifice {toOracleStr pred { ctx with plural := true, capitalize := false }}"
+    | .cantAttack w => s!"{pRef w} can't attack"
+    | .hexproof .you none => "you have hexproof"
+    | .hexproof .you (some q) => s!"you have hexproof from {toOracleStr q { ctx with capitalize := false }}"
     | .hexproof w none => s!"{pRef w} has hexproof"
     | .hexproof w (some q) => s!"{pRef w} has hexproof from {toOracleStr q { ctx with capitalize := false }}"
     | .protectionFrom w q => s!"{pRef w} has protection from {toOracleStr q { ctx with capitalize := false }}"
@@ -795,12 +817,14 @@ private def printRuleMod (ctx : PrintCtx) (targets : TargetSpec)
       let tagS := match tag with
         | .powerUp => "power-up" | .exhaust => "exhaust" | .boast => "boast"
         | .equip _ => "equip" | .cycling _ => "cycling" | .crew _ => "crew"
+        | .station => "station"
       s!"activate {tagS} abilities of {toOracleStr sc { ctx with capitalize := false }} {n} additional time(s)"
     | .lifeTotalCantChange w => s!"{pRef w}'s life total can't change"
     | .forbidAbilityActivation w tag =>
       let tagS := match tag with
         | .powerUp => "power-up" | .exhaust => "exhaust" | .boast => "boast"
         | .equip _ => "equip" | .cycling _ => "cycling" | .crew _ => "crew"
+        | .station => "station"
       s!"{pRef w} can't activate {tagS} abilities"
     | .gainDesignation .you .citysBlessing => "you get the city's blessing"
     | .gainDesignation .you .enduringStory => "you get enduring story"
@@ -809,8 +833,16 @@ private def printRuleMod (ctx : PrintCtx) (targets : TargetSpec)
   | .play r =>
     match r with
     | .lookAtTopOfLibrary _ => "you may look at the top card of your library any time"
-    | .mayPlayFrom _ z p lands linked anyC free =>
-      s!"you may {if lands then "play" else "cast"} {toOracleStr p { ctx with capitalize := false }} from {z.englishName}{if linked then " exiled with this" else ""}{if anyC then " using mana of any type" else ""}{if free then " without paying their mana costs" else ""}"
+    | .mayPlayFrom _ .graveyard (.hasType .land) true false false false false none none false =>
+      "you may play lands from your graveyard"
+    | .mayPlayFrom _ z p lands linked anyC free once z2? enterCtr? asBeam =>
+      if asBeam then
+        "each card in your graveyard has beam me up"
+      else
+        let zS := match z2? with | some z2 => s!"{z.englishName} or {z2.englishName}" | none => z.englishName
+        let onceS := if once then "once during each of your turns, " else ""
+        let ctrS := match enterCtr? with | some k => s!" (enters with {k.countersPhrase 1})" | none => ""
+        s!"{onceS}you may {if lands then "play" else "cast"} {toOracleStr p { ctx with capitalize := false }} from {zS}{if linked then " exiled with this" else ""}{if anyC then " using mana of any type" else ""}{if free then " without paying their mana costs" else ""}{ctrS}"
     | .castAsThoughFlash _ p ts nth =>
       let nthS := match nth with | some n => s!" (nth={n})" | none => ""
       if ts then "you may cast this spell as though it had flash"
@@ -828,6 +860,7 @@ private def printRuleMod (ctx : PrintCtx) (targets : TargetSpec)
       | .matching f => toOracleStr f { ctx with plural := true, capitalize := false }
     match r with
     | .cantAttack s => s!"{subjStr s} can't attack"
+    | .cantAttackAlone s => s!"{subjStr s} can't attack alone"
     | .cantAttackUnless s c => s!"{subjStr s} can't attack unless {toOracleStr c { ctx with capitalize := false }}"
     | .attackTax ap _ cs => s!"{toOracleStr ap { ctx with capitalize := false }} creatures can't attack you unless their controller pays {cs.toNotation}"
     | .attackPlaneswalkerTax ap pp cs => s!"{toOracleStr ap { ctx with capitalize := false }} can't attack {toOracleStr pp { ctx with capitalize := false }} unless their controller pays {cs.toNotation}"
@@ -848,7 +881,12 @@ private def printRuleMod (ctx : PrintCtx) (targets : TargetSpec)
     | .assignNegativePowerAsPositive s => s!"{subjStr s} assigns negative power as positive"
   | .trigger r =>
     match r with
-    | .extraTrigger sc n => s!"triggered abilities of {toOracleStr sc { ctx with plural := true, capitalize := false }} trigger {n} additional time(s)"
+    | .extraTrigger sc n _ =>
+      match sc.pred with
+      | .sameAs (.target i) =>
+        s!"if a triggered ability of {printObjRef ctx targets (.target i) anaphor0} triggers, that ability triggers {if n == 1 then "an additional time" else s!"{englishNumber n} additional times"}"
+      | _ =>
+        s!"triggered abilities of {toOracleStr sc { ctx with plural := true, capitalize := false }} trigger {n} additional time(s)"
     | .suppressEnteringTriggers sc => s!"{toOracleStr sc { ctx with plural := true, capitalize := false }} entering don't cause abilities to trigger"
   | .game r =>
     let subjStr : StaticSubject → String
@@ -857,7 +895,24 @@ private def printRuleMod (ctx : PrintCtx) (targets : TargetSpec)
     match r with
     | .doesntUntapDuringUntapStep s none => s!"{subjStr s} doesn't untap during its controller's untap step"
     | .doesntUntapDuringUntapStep s (some c) => s!"{subjStr s} doesn't untap unless {toOracleStr c { ctx with capitalize := false }}"
+    | .mayChooseNotToUntap s => s!"you may choose not to untap {subjStr s} during your untap step"
     | .cantBecomeUntapped s => s!"{subjStr s} can't become untapped"
+    | .cantBeBeamedUp s => s!"{subjStr s} can't be beamed up"
+    | .cantPhaseIn sc =>
+      if sc.pred == .anyObject then "permanents can't phase in"
+      else s!"{toOracleStr sc { ctx with plural := true, capitalize := false }} can't phase in"
+    | .cantBeTargetedBy s srcPred ctrl abOnly =>
+      let kS := if abOnly then "abilities" else "spells or abilities"
+      let srcS := match srcPred with
+        | .hasType t => s!"{t.oracleWord} sources"
+        | .hasColor (.literal c) => s!"{c.englishName} sources"
+        | p => s!"{toOracleStr p { ctx with plural := false, capitalize := false }} sources"
+      let ctrlS := match ctrl with
+        | .opponent => " your opponents control"
+        | .you => " you control"
+        | .any => ""
+        | pf => s!" {toOracleStr pf { ctx with capitalize := false }} control"
+      s!"{subjStr s} can't be the target of {kS} from {srcS}{ctrlS}"
     | .lockNonManaDuringPhase ph w => s!"during {ph.englishName}, {toOracleStr w { ctx with capitalize := false }} can't cast spells or activate non-mana abilities"
     | .planeswalkersSurviveZeroLoyalty sc => s!"{toOracleStr sc { ctx with plural := true, capitalize := false }} don't die for having 0 loyalty"
     | .cantHaveCountersPutOn sc none => s!"{toOracleStr sc { ctx with plural := true, capitalize := false }} can't have counters put on them"
@@ -902,27 +957,37 @@ private def printReplSpec (ctx : PrintCtx) (targets : TargetSpec) : StaticReplac
     let sStr := match s with | .self => ctx.selfRef | .matching f => toOracleStr f { ctx with capitalize := false }
     s!"{sStr} enters tapped unless {toOracleStr c { ctx with capitalize := false }}"
   | .entersTappedUnlessPay cs => s!"{ctx.selfRef} enters tapped unless you pay {cs.toNotation}"
+  | .entersUntapped sc => s!"{toOracleStr sc { ctx with plural := true, capitalize := false }} enter untapped"
+  | .entersTappedAndAttacking sc => s!"{toOracleStr sc { ctx with plural := true, capitalize := false }} enter tapped and attacking"
   | .entersWithCounters s k v add =>
     let sStr := match s with | .self => ctx.selfRef | .matching f => toOracleStr f { ctx with capitalize := false }
     let cnt := match printCountInt v with | some n => k.countersPhrase n | none => s!"{printVal ctx v} {k.oracleName} counters"
     s!"{sStr} enters with {if add then "additional " else ""}{cnt} on it"
   | .entersWithDesignation tag => s!"{ctx.selfRef} enters {reprStr tag}"
   | .asEntersChoose kind => s!"as {ctx.selfRef} enters, choose {reprStr kind}"
-  | .asEntersMayCopy f _ _ => s!"as {ctx.selfRef} enters, you may have it enter as a copy of {toOracleStr f { ctx with capitalize := false }}"
+  | .asEntersMayCopy f _ _ _ => s!"as {ctx.selfRef} enters, you may have it enter as a copy of {toOracleStr f { ctx with capitalize := false }}"
   | .exileInsteadOfDying sc bonus? =>
     let bS := match bonus? with | some tok => s!" and {tok.createPhrase 1}" | none => ""
     if sc == { zones := .battlefield, pred := .sameAs (.target 0) } then
       s!"if that creature would die this turn, exile it instead{bS}"
     else
       s!"if {toOracleStr sc { ctx with capitalize := false }} would die, exile it instead{bS}"
+  | .saveFromDestroyRemoveCounters sc k =>
+    s!"if {toOracleStr sc { ctx with capitalize := false }} would be destroyed, instead remove all {k.oracleName} counters from it and all damage already dealt to it is healed"
   | .multiplyTokens _ factor => s!"if one or more tokens would be created under your control, {factor} times that many are created instead"
   | .extraTokenWith _ pred tok cnt => s!"when creating {toOracleStr pred { ctx with capitalize := false }} tokens, also {tok.createPhrase cnt}"
   | .replaceTokens _ fromP repl => s!"replace {toOracleStr fromP { ctx with capitalize := false }} tokens with {repl.oracleNoun}"
   | .extraDraw _ n exc => s!"draw {n} cards instead{if exc then " except first draw step" else ""}"
   | .extraDrawOnConnive _ sc n => s!"when {toOracleStr sc { ctx with capitalize := false }} connives, draw {n} extra card(s)"
-  | .modifyCountersPut sc k? _ add =>
+  | .modifyCountersPut sc k? _ add mult =>
     let kS := match k? with | some k => s!"{k.oracleName} " | none => ""
-    s!"put {add} additional {kS}counter(s) on {toOracleStr sc { ctx with capitalize := false }}"
+    let scS := toOracleStr sc { ctx with plural := false, capitalize := false }
+    if mult > 1 && add == 0 then
+      s!"if one or more {kS}counters would be put on {indefinite scS} {scS}, put {timesPhrase mult} that many instead"
+    else if k?.isNone && add == 1 && mult == 1 then
+      s!"if one or more counters would be put on {indefinite scS} {scS}, that many plus one of each of those kinds of counters are put on it instead"
+    else
+      s!"if one or more {kS}counters would be put on {indefinite scS} {scS}, put that many plus {englishNumber add} instead"
   | .preventDamage s none =>
     let sStr :=
       match s with
@@ -937,6 +1002,12 @@ private def printReplSpec (ctx : PrintCtx) (targets : TargetSpec) : StaticReplac
       | .matching { pred := .sameAs (.target i), .. } => printObjRef ctx targets (.target i)
       | .matching f => toOracleStr f { ctx with capitalize := false }
     s!"prevent the next {printVal ctx amt} damage that would be dealt to {sStr}"
+  | .preventDamageToPlayer w none =>
+    let wS := if w == .you then "you" else toOracleStr w { ctx with capitalize := false }
+    s!"prevent all damage that would be dealt to {wS}"
+  | .preventDamageToPlayer w (some amt) =>
+    let wS := if w == .you then "you" else toOracleStr w { ctx with capitalize := false }
+    s!"prevent the next {printVal ctx amt} damage that would be dealt to {wS}"
   | .modifyDamage sc noncombat _ mult add =>
     s!"{if noncombat then "noncombat " else ""}damage from {toOracleStr sc { ctx with capitalize := false }} is multiplied by {mult} plus {printVal ctx add}"
   | .healOtherDamageWhenDealt _ => "prevent damage and gain that much life"
@@ -981,12 +1052,20 @@ private def printInspectLibrary (ctx : PrintCtx) (targets : TargetSpec) (spec : 
   let actS :=
     match spec.action with
     | .takeMatching pred cnt dest mods rev rand =>
-      let rawP := toOracleStr pred { ctx with capitalize := false }
-      let pS := if rawP.endsWith " card" then (rawP.dropEnd 5).copy else rawP
       let revS := if rev then "reveal it and " else ""
       let randS := if rand then " at random" else ""
       let sfx := printMoveSuffix ctx targets mods
-      s!"{revS}put {printExprCount ctx cnt} {pS} card(s) from among them{randS} {printDestZone ctx targets dest}{sfx}"
+      let whatS :=
+        if pred == .all #[] || pred == .isKind .card then
+          s!"{printExprCount ctx cnt} card(s)"
+        else
+          let rawP := toOracleStr pred { ctx with capitalize := false }
+          let pS := if rawP.endsWith " card" then (rawP.dropEnd 5).copy else rawP
+          if pS.contains " permanent card" || pS.contains " card " then
+            s!"{printExprCount ctx cnt} {pS}"
+          else
+            s!"{printExprCount ctx cnt} {pS} card(s)"
+      s!"{revS}put {whatS} from among them{randS} {printDestZone ctx targets dest}{sfx}"
     | .splitIntoPiles sp ch n d1 d2 drawOpt? =>
       let drawS := match drawOpt? with | some k => s!" (or draw {k})" | none => ""
       let pilesS :=
@@ -1127,11 +1206,23 @@ private def printDividedAmong (maxTargets : Nat) : String :=
 
 private def ruleModMentionedSlots : RuleModification → Array Nat
   | .player (.maxHandSize w _) | .player (.additionalLands w _) | .player (.cantGainLife w)
-  | .player (.cantLoseGame w) | .player (.cantWinGame w) | .player (.hexproof w _)
+  | .player (.cantLoseGame w) | .player (.dontLoseForZeroLife w) | .player (.cantWinGame w)
+  | .player (.cantSacrifice w _) | .player (.cantAttack w) | .player (.hexproof w _)
   | .player (.protectionFrom w _) | .player (.cantCastSpells w _)
   | .player (.lifeTotalCantChange w) | .player (.forbidAbilityActivation w _)
   | .player (.gainDesignation w _) | .player (.controlPlayer w) =>
     predMentionedSlots.playerPredMentionedSlots w.pred
+  | .trigger (.extraTrigger sc _ _) => predMentionedSlots sc.pred
+  | _ => #[]
+
+private partial def trigPatMentionedSlots : TriggerPattern → Array Nat
+  | .zoneChange p _ _ _ _ | .sacrifice _ p | .becomesTapped p _ _ _ | .becomesUntapped p
+  | .phasesOut p | .becomesUnattached p _ | .controlLost p _ | .putCounters _ _ p
+  | .attacks p _ _ _ _ _ | .blocks p | .becomesBlocked p | .damageDealt p _ _ _ _
+  | .castSpell _ p _ _ _ _ _ | .activateAbility _ p _ | .spellCountered p
+  | .stackObjectResolves p _ | .abilityTriggers p => predMentionedSlots p
+  | .whenCond inner _ => trigPatMentionedSlots inner
+  | .or a b => mergeSlots (trigPatMentionedSlots a) (trigPatMentionedSlots b)
   | _ => #[]
 
 private partial def instrMentionedSlots : Instruction → Array Nat
@@ -1140,10 +1231,14 @@ private partial def instrMentionedSlots : Instruction → Array Nat
     let chSlots := match mods.choice? with
       | some ch => match ch.chooser with | .player p => playerMentionedSlots p | _ => #[]
       | none => #[]
-    mergeSlots base chSlots
+    let gpSlots := match mods.grantPlayPerm?.bind (·.beneficiary?) with
+      | some p => playerMentionedSlots p
+      | none => #[]
+    mergeSlots (mergeSlots base chSlots) gpSlots
   | .permanent (.setTapped o _ _) | .permanent (.modifyCounters _ o _)
   | .permanent (.transform o) | .permanent (.turnFaceUp o)
-  | .permanent (.phaseOut o _) | .permanent (.setDesignation o _ _) => objMentionedSlots o
+  | .permanent (.phaseOut o _) | .permanent (.setDesignation o _ _)
+  | .permanent (.assimilate o _) => objMentionedSlots o
   | .permanent (.attach a b _) => mergeSlots (objMentionedSlots a) (objMentionedSlots b)
   | .damage (.deal s to amt _) =>
     let base := objMentionedSlots s
@@ -1157,7 +1252,7 @@ private partial def instrMentionedSlots : Instruction → Array Nat
   | .damage (.fight a b _) => mergeSlots (objMentionedSlots a) (objMentionedSlots b)
   | .life (.gain p _) | .life (.lose p _) | .life (.set p _) => playerMentionedSlots p
   | .player (.drawCards p _) | .player (.scry p _) | .player (.surveil p _)
-  | .player (.shuffle p) | .player (.setStatus p _ _) => playerMentionedSlots p
+  | .player (.shuffle p) | .player (.discover p _) | .player (.setStatus p _ _) => playerMentionedSlots p
   | .player (.searchLibrary spec) =>
     let zSlots := match spec.zones.owner with | .ofPlayer p => playerMentionedSlots p | _ => #[]
     mergeSlots (playerMentionedSlots spec.searcher) zSlots
@@ -1167,9 +1262,14 @@ private partial def instrMentionedSlots : Instruction → Array Nat
     let refSlots := match spec with | .copyOf ref _ => objMentionedSlots ref | _ => #[]
     mergeSlots (playerMentionedSlots p) refSlots
   | .stack (.counterStack o _ _) | .stack (.copyStackObject o _ _)
-  | .stack (.chooseNewTargets o _) | .stack (.mayCastOrPlay o _) => objMentionedSlots o
+  | .stack (.chooseNewTargets o _) => objMentionedSlots o
+  | .stack (.mayCastOrPlay o gp) =>
+    let gpSlots := match gp.beneficiary? with | some p => playerMentionedSlots p | none => #[]
+    mergeSlots (objMentionedSlots o) gpSlots
   | .installEffect (.applyContinuous _ aff _) => objMentionedSlots aff
   | .installEffect (.applyRule _ r) => ruleModMentionedSlots r
+  | .installEffect (.createDelayedTrigger spec) =>
+    mergeSlots (trigPatMentionedSlots spec.pattern) (instrMentionedSlots spec.effect.body)
   | .seq steps => steps.foldl (fun acc s => mergeSlots acc (instrMentionedSlots s)) #[]
   | .bind _ s c => mergeSlots (instrMentionedSlots s) (instrMentionedSlots c)
   | .ifCond _ t e => mergeSlots (instrMentionedSlots t) (instrMentionedSlots e)
@@ -1303,7 +1403,7 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
   | .optional who cost? onYes onNo maxTimes =>
     let choosePfx :=
       match who with
-      | .ownerOf (.target 0) =>
+      | .ownerOf (.target 0) | .controllerOf (.target 0) =>
         if anaphor0.contains 0 then ""
         else s!"choose {printSlotRef targets 0 "target permanent"}. "
       | _ => ""
@@ -1400,6 +1500,11 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
       | some (.playerPred .you (.controls { zones := .battlefield, pred := .hasSubtype (.literal sub) } (.const 1)), _, _)
       | some (.exists (.inZones { zones := #[.battlefield], .. } (.all #[.hasSubtype (.literal sub), .controlledBy _])), _, _) =>
         s!"Choose one. If you control a {sub}, you may choose two instead —"
+      | some (cond, .const 1, .const n) =>
+        if n >= 3 then
+          s!"Choose one. If {toOracleStr cond { ctx with capitalize := false }}, choose one or more instead —"
+        else
+          s!"Choose one. If {toOracleStr cond { ctx with capitalize := false }}, you may choose two instead —"
       | some (cond, _, .const 2) =>
         s!"Choose one. If {toOracleStr cond { ctx with capitalize := false }}, you may choose two instead —"
       | _ =>
@@ -1465,6 +1570,10 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
           s!"Creatures you control get {signedStat p}/{signedStat t} and have {KeywordAbility.joinedAnd ks}."
         | .continuous _ _ (.modifyPT (.const p) (.const t)) =>
           s!"Creatures you control get {signedStat p}/{signedStat t}."
+        | .ruleModifying none r =>
+          s!"{capitalizeAscii (printRuleMod ctx targets none r)}."
+        | .replacement none spec =>
+          s!"{capitalizeAscii (printReplSpec ctx targets spec)}."
         | _ => "static ability") ++
       (emb.triggeredAbilities.toList.map fun ab =>
         s!"{toOracleStr ab.pattern { ctx with capitalize := true }}, {toOracleWith { ctx with capitalize := false } ab.effect.targets ab.effect.body}.") ++
@@ -1487,7 +1596,7 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
       match mode with
       | .put k v =>
         match v with
-        | .aggregate .count .one (.inZones _ (.all #[.hasType .creature, .controlledBy { relation := .anyPlayer, pred := .matchesExpr (.target i) }])) =>
+        | .aggregate .count .one (.inZones _ (.all #[.hasType .creature, .controlledBy { relation := _, pred := .matchesExpr (.target i) }])) =>
           s!"put {k.countersPhrase 1} on {subj} for each creature {printPlayerRef ctx targets (.target i) anaphor0} controls"
         | _ =>
           let cntS :=
@@ -1495,6 +1604,12 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
             | some n => k.countersPhrase n
             | none => s!"{printVal ctx v} {k.oracleName} counters"
           s!"put {cntS} on {subj}"
+      | .distribute k v =>
+        let cntS :=
+          match printCountInt v with
+          | some n => k.countersPhrase n
+          | none => s!"{printVal ctx v} {k.oracleName} counters"
+        s!"distribute {cntS} among {printObjRef ctx targets objs anaphor0}"
       | .remove k? c =>
         let kindS := match k? with | some k => s!"{k.oracleName} " | none => ""
         s!"remove {printExprCount ctx c} {kindS}counter(s) from {subj}"
@@ -1510,6 +1625,8 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
       | .double k? =>
         let kindS := match k? with | some k => s!"{k.oracleName} " | none => ""
         s!"double the number of {kindS}counters on {subj}"
+      | .putAnotherOfChosen =>
+        s!"choose a counter on {subj}. Put another counter of that kind on it"
     applyCap ctx base
   | .permanent (.attach a b chooseFromPool) =>
     let aS := printObjRef ctx targets a anaphor0
@@ -1535,6 +1652,11 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
       | .harnessed, false => s!"unharness {subj}"
       | .goaded, _ => s!"goad {subj}"
       | .ringBearer, _ => s!"{subj} becomes your Ring-bearer"
+    applyCap ctx base
+  | .permanent (.assimilate objs ch?) =>
+    let base := match ch? with
+      | some ch => s!"assimilate {printMoveChoice ctx targets ch} among {printObjRef ctx targets objs anaphor0}"
+      | none => s!"assimilate {printObjRef ctx targets objs anaphor0}"
     applyCap ctx base
   | .damage (.deal src to amt flags) =>
     let possOf (obj : ObjectExpr) : String :=
@@ -1577,18 +1699,26 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
       else s!"{aS} fights {bS}"
     applyCap ctx base
   | .life (.gain who amt) =>
-    let amtS := printVal ctx amt
+    let lifePhrase :=
+      match amt with
+      | .stepMetric .lifeChanged _ => "that much life"
+      | .const _ | .chosenX | .eventAmount => s!"{printVal ctx amt} life"
+      | _ => s!"life equal to {printVal ctx amt}"
     let base :=
       match who with
-      | .you => s!"you gain {amtS} life"
-      | p => s!"{printPlayerRef ctx targets p anaphor0} gains {amtS} life"
+      | .you => s!"you gain {lifePhrase}"
+      | p => s!"{printPlayerRef ctx targets p anaphor0} gains {lifePhrase}"
     applyCap ctx base
   | .life (.lose who amt) =>
-    let amtS := printVal ctx amt
+    let lifePhrase :=
+      match amt with
+      | .stepMetric .lifeChanged _ => "that much life"
+      | .const _ | .chosenX | .eventAmount | .counterCount _ _ => s!"{printVal ctx amt} life"
+      | _ => s!"life equal to {printVal ctx amt}"
     let base :=
       match who with
-      | .you => s!"you lose {amtS} life"
-      | p => s!"{printPlayerRef ctx targets p anaphor0} loses {amtS} life"
+      | .you => s!"you lose {lifePhrase}"
+      | p => s!"{printPlayerRef ctx targets p anaphor0} loses {lifePhrase}"
     applyCap ctx base
   | .life (.set who amt) =>
     let amtS := printVal ctx amt
@@ -1628,10 +1758,22 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
   | .player (.searchLibrary spec) =>
     printSearchLibrary ctx targets spec anaphor0
   | .player (.reveal who objs cnt?) =>
-    let cntS := match cnt? with | some c => s!"{printExprCount ctx c} of " | none => ""
-    let base := match who with
-      | .you => s!"reveal {cntS}{printObjRef ctx targets objs anaphor0}"
-      | p => s!"{printPlayerRef ctx targets p anaphor0} reveals {cntS}{printObjRef ctx targets objs anaphor0}"
+    let base :=
+      match objs, cnt? with
+      | .inZones { zones := #[.hand], owner := .ofPlayer who' } .anyObject, none =>
+        if who == who' then
+          match who with
+          | .you => "reveal your hand"
+          | p => s!"{printPlayerRef ctx targets p anaphor0} reveals their hand"
+        else
+          match who with
+          | .you => s!"reveal {printObjRef ctx targets objs anaphor0}"
+          | p => s!"{printPlayerRef ctx targets p anaphor0} reveals {printObjRef ctx targets objs anaphor0}"
+      | _, _ =>
+        let cntS := match cnt? with | some c => s!"{printExprCount ctx c} of " | none => ""
+        match who with
+        | .you => s!"reveal {cntS}{printObjRef ctx targets objs anaphor0}"
+        | p => s!"{printPlayerRef ctx targets p anaphor0} reveals {cntS}{printObjRef ctx targets objs anaphor0}"
     applyCap ctx base
   | .player (.shuffle who) =>
     let base := match who with
@@ -1658,6 +1800,11 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
     applyCap ctx s!"{printObjRef ctx targets objs anaphor0} connives"
   | .player (.empowerPlaneswalker sub amt) =>
     applyCap ctx s!"empower {sub.englishName} {printVal ctx amt}"
+  | .player (.discover who amt) =>
+    let base := match who with
+      | .you => s!"discover {printVal ctx amt}"
+      | p => s!"{printPlayerRef ctx targets p anaphor0} discovers {printVal ctx amt}"
+    applyCap ctx base
   | .player (.setStatus who kind cond?) =>
     let condPfx := match cond? with
       | some c => s!"if {toOracleStr c { ctx with capitalize := false }}, "
@@ -1667,6 +1814,7 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
       match kind with
       | .monarch => s!"{condPfx}{whoS} {if who == .you then "become" else "becomes"} the monarch"
       | .winGame => s!"{condPfx}{whoS} {if who == .you then "win" else "wins"} the game"
+      | .loseGame => s!"{condPfx}{whoS} {if who == .you then "lose" else "loses"} the game"
       | .designation .citysBlessing => s!"{condPfx}{whoS} {if who == .you then "get" else "gets"} the city's blessing for the rest of the game"
       | .designation .enduringStory => s!"{condPfx}{whoS} {if who == .you then "get" else "gets"} enduring story for the rest of the game"
     applyCap ctx base
@@ -1698,14 +1846,14 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
     let cntS := match printCountInt copies with
       | some 1 => ""
       | some n => s!" {englishNumber n} times"
-      | none => s!" {printVal ctx copies} times"
+      | none => s!" X times, where X is {printVal ctx copies}"
     let retS := if mayRetarget then ". You may choose new targets for the copy" else ""
     applyCap ctx s!"copy {subj}{cntS}{retS}"
   | .stack (.chooseNewTargets objs opt) =>
     let mayS := if opt then "you may " else ""
     applyCap ctx s!"{mayS}choose new targets for {printObjRef ctx targets objs anaphor0}"
   | .stack (.mayCastOrPlay objs perm) =>
-    applyCap ctx (printGrantPlayPerm ctx (printObjRef ctx targets objs anaphor0) perm)
+    applyCap ctx (printGrantPlayPerm ctx targets (printObjRef ctx targets objs anaphor0) perm anaphor0)
   | .installEffect (.applyContinuous dur aff mod) =>
     let isPlural := match aff with | .inZones _ _ | .union _ => true | _ => false
     let subj :=
@@ -1725,8 +1873,19 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
       | .grantKeywords ks => s!"{vGain} {KeywordAbility.joinedAnd ks}"
       | .loseKeywords ks => s!"{vLose} {KeywordAbility.joinedAnd ks}"
       | .grantActivated abs =>
-        let parts := abs.toList.map fun ab =>
-          s!"\"{ab.cost.toNotation}: {toOracleWith { ctx with capitalize := true } ab.effect.targets ab.effect.body}.\""
+        let parts := abs.toList.map fun ab => Id.run do
+          let mut extra : List String := []
+          if ab.timing == .sorcery then extra := extra ++ ["Activate only as a sorcery."]
+          if ab.condition? == some .isYourTurn && ab.activeZones == #[.exile] then
+            extra := extra ++ ["Activate only during your turn and only if this card is exiled."]
+          else
+            if ab.condition? == some .isYourTurn then extra := extra ++ ["Activate only during your turn."]
+            if ab.activeZones == #[.exile] then extra := extra ++ ["Activate only if this card is exiled."]
+          if ab.turnLimit? == some 1 then extra := extra ++ ["Activate only once each turn."]
+          let bodyS := toOracleWith { ctx with capitalize := true } ab.effect.targets ab.effect.body
+          let bodyDot := if bodyS.endsWith "." then bodyS else s!"{bodyS}."
+          let tail := if extra.isEmpty then "" else " " ++ String.intercalate " " extra
+          return s!"\"{ab.cost.toNotation}: {bodyDot}{tail}\""
         s!"{vGain} {String.intercalate " and " parts}"
       | .grantTriggered trs =>
         let parts := trs.toList.map fun ab =>
@@ -1744,10 +1903,19 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
           | .continuous (some .isYourTurn) _ (.grantKeywords ks) =>
             s!"\"During your turn, this creature has {KeywordAbility.joinedAnd ks}.\""
           | .continuous none _ (.modifyPT p t) =>
-            if p == t then s!"\"This creature gets +{printVal ctx p}/+{printVal ctx t}.\""
-            else s!"\"This creature gets +{printVal ctx p}/+{printVal ctx t}.\""
+            s!"\"This creature gets +{printVal ctx p}/+{printVal ctx t}.\""
           | .continuous (some c) _ (.grantKeywords ks) =>
             s!"\"As long as {toOracleStr c { ctx with capitalize := false }}, this creature has {KeywordAbility.joinedAnd ks}.\""
+          | .ruleModifying none (.player (.additionalLands { relation := .you, pred := .any } 1)) =>
+            "\"You may play an additional land on each of your turns.\""
+          | .ruleModifying none (.player (.additionalLands { relation := .you, pred := .any } n)) =>
+            s!"\"You may play {englishNumber n} additional lands on each of your turns.\""
+          | .ruleModifying none r =>
+            s!"\"{capitalizeAscii (printRuleMod ctx targets none r)}.\""
+          | .ruleModifying (some c) r =>
+            s!"\"As long as {toOracleStr c { ctx with capitalize := false }}, {printRuleMod ctx targets none r}.\""
+          | .replacement none spec =>
+            s!"\"{capitalizeAscii (printReplSpec ctx targets spec)}.\""
           | _ => "\"static ability\""
         let parts := sas.toList.map renderGrantedStatic
         s!"{vGain} {String.intercalate " and " parts}"
@@ -1773,10 +1941,15 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
         let modParts := mods.toList.filterMap CopyModification.toOraclePhrase?
         let mS := if modParts.isEmpty then "" else s!", except {String.intercalate ", " modParts}"
         s!"{vBecome} a copy of {printObjRef ctx targets src anaphor0}{mS}"
+      | .applyRule (.combat (.cantBeBlocked .self)) => "can't be blocked"
+      | .applyRule (.combat (.cantBlock .self none)) => "can't block"
       | .applyRule r => printRuleMod ctx targets (some dur) r
       | .all ms => String.intercalate " and " (ms.toList.map renderMod)
     let base :=
       match dur, mod with
+      | _, .modifyPT (.objectStat .power pObj) (.const 0) =>
+        if pObj == aff then s!"double {subj}'s power{durSp}"
+        else s!"{subj} {renderMod mod}{durSp}"
       | .untilEndOfTurn, .all ms =>
         match ms.toList with
         | .modifyTypes tm :: .setBasePT (some p) (some t) :: rest =>
@@ -1810,38 +1983,74 @@ partial def toOracleWith (ctx : PrintCtx) (targets : TargetSpec) (i : Instructio
       | .untilEndOfNextTurnOf p => s!"until the end of {printPossessivePlayer ctx targets p seenAfterRule} next turn"
       | _ => toOracleStr dur { ctx with capitalize := false }
     let base :=
-      if durS.isEmpty || rS.contains durS || (dur == .untilEndOfTurn && rS.contains "this turn") ||
-          (match rule with | .player (.controlPlayer ..) => true | _ => false) then rS
-      else s!"{rS} {durS}"
+      match dur with
+      | .whileTapped _ => s!"{durS}, {rS}"
+      | _ =>
+        if durS.isEmpty || rS.contains durS || (dur == .untilEndOfTurn && rS.contains "this turn") ||
+            (match rule with | .player (.controlPlayer ..) => true | _ => false) then rS
+        else s!"{rS} {durS}"
     applyCap ctx base
   | .installEffect (.applyReplacement dur spec) =>
     let sS := printReplSpec ctx targets spec
     let durS := toOracleStr dur { ctx with capitalize := false }
     let base :=
       if durS.isEmpty || sS.contains durS || (dur == .untilEndOfTurn && sS.contains "this turn") then sS
+      else if dur == .untilEndOfTurn && sS.startsWith "if " then s!"until end of turn, {sS}"
       else s!"{sS} {durS}"
     applyCap ctx base
   | .installEffect (.createDelayedTrigger spec) =>
+    let patSlots := trigPatMentionedSlots spec.pattern
+    let choosePfx :=
+      if patSlots.contains 0 && !anaphor0.contains 0 && !targets.isEmpty then
+        s!"choose {printSlotRef targets 0 "target creature"}. "
+      else ""
+    let anaphEff := if choosePfx.isEmpty then anaphor0 else mergeSlots anaphor0 #[0]
     let clauseS := spec.pattern.renderClause { ctx with capitalize := false } spec.grouping
     let patS := s!"{spec.pattern.defaultWord.toOracleStr} {clauseS}"
     let durS := toOracleStr spec.duration { ctx with capitalize := false }
     let effTargets := if spec.effect.targets.isEmpty then targets else spec.effect.targets
-    let effAnaphor := if spec.effect.targets.isEmpty then anaphor0 else #[]
-    let effS := toOracleWith { ctx with capitalize := false } effTargets spec.effect.body effAnaphor
+    let effAnaphor := if spec.effect.targets.isEmpty then anaphEff else #[]
+    let rec renderDel (tgts : TargetSpec) (instr : Instruction) (seen : Array Nat) : String :=
+      match instr with
+      | .seq xs =>
+        if xs.size >= 2 then
+          let parts : List String := Id.run do
+            let mut out : List String := []
+            let mut s := seen
+            for st in xs do
+              let str := renderDel tgts st s
+              if !str.isEmpty then out := out ++ [str]
+              s := mergeSlots s (instrMentionedSlots st)
+            return out
+          String.intercalate "; " parts
+        else if xs.size == 1 then renderDel tgts xs[0]! seen
+        else ""
+      | .bind _ st c =>
+        let a := renderDel tgts st seen
+        let s1 := mergeSlots seen (instrMentionedSlots st)
+        let b := renderDel tgts c s1
+        if a.isEmpty then b else if b.isEmpty then a else s!"{a}; {b}"
+      | _ => toOracleWith { ctx with capitalize := false } tgts instr seen
+    let effS := renderDel effTargets spec.effect.body effAnaphor
     let base :=
       if spec.oneShot && clauseS.startsWith "you " then
         let dur := if spec.duration == .untilEndOfTurn then " this turn"
                    else if durS.isEmpty then "" else s!" {durS}"
         s!"when you next {clauseS.drop 4}{dur}, {effS}"
-      else if spec.oneShot && spec.pattern == .stepBegins .end (.player .any) then
+      else if spec.oneShot && spec.pattern == .stepEachEndStep then
         s!"at the beginning of the next end step, {effS}"
-      else if spec.oneShot && spec.pattern == .stepBegins .upkeep (.player .any) then
+      else if spec.oneShot && spec.pattern == .stepYourEndStep then
+        s!"at the beginning of your next end step, {effS}"
+      else if spec.oneShot && spec.pattern == .stepEachBeginCombat then
+        s!"at the beginning of the next combat this turn, {effS}"
+      else if spec.oneShot && spec.pattern == .stepEachUpkeep then
         s!"at the beginning of the next upkeep, {effS}"
       else if spec.duration == .untilEndOfTurn then
         s!"until end of turn, {patS}, {effS}"
       else if durS.isEmpty then s!"{patS}, {effS}"
       else s!"{patS} {durS}, {effS}"
-    applyCap ctx base
+    let fullBase := if choosePfx.isEmpty then base else s!"{choosePfx}{capitalizeAscii base}"
+    applyCap ctx fullBase
   | .queueReflexiveTrigger ab =>
     let rec renderRefl (tgts : TargetSpec) (instr : Instruction) (seen : Array Nat) : String :=
       match instr with

@@ -257,6 +257,18 @@ def flashbackDiscard (c : CardDef) : Bool :=
   | some cs => cs.items.any fun | .discard _ _ => true | _ => false
   | none => false
 
+/-- Printed Beam me up `CostSpec`, if any (CR 702.196). -/
+def beamMeUpCost? (c : CardDef) : Option CostSpec :=
+  c.keywords.findSome? fun | .beamMeUp cost => some cost | _ => none
+
+/-- True when `c` has Station (CR 702.184). -/
+def hasStation (c : CardDef) : Bool :=
+  KeywordAbility.hasStation c.keywords
+
+/-- True when `c` has Sunburst (CR 702.44). -/
+def hasSunburst (c : CardDef) : Bool :=
+  KeywordAbility.hasSunburst c.keywords
+
 /-- Printed Crew power threshold, if any (CR 702.122). -/
 def crew (c : CardDef) : Option Nat :=
   c.keywords.findSome? fun | .crew n => some n | _ => none
@@ -622,11 +634,20 @@ def modalHeader (ms : ModalSpec) : String :=
   | some (.playerPred .you (.controls { zones := .battlefield, pred := .hasSubtype (.literal sub) } (.const 1)), _, _)
   | some (.exists (.inZones { zones := #[.battlefield], .. } (.all #[.hasSubtype (.literal sub), .controlledBy _])), _, _) =>
     s!"Choose one. If you control a {sub}, you may choose two instead —"
+  | some (cond, .const 1, .const n) =>
+    if n >= 3 then
+      s!"Choose one. If {ToOracle.toOracle { capitalize := false } cond}, choose one or more instead —"
+    else
+      s!"Choose one. If {ToOracle.toOracle { capitalize := false } cond}, you may choose two instead —"
   | some (cond, _, .const 2) =>
     s!"Choose one. If {ToOracle.toOracle { capitalize := false } cond}, you may choose two instead —"
   | _ =>
-    if ms.minModes == .const 1 && ms.maxModes == .const 2 then
+    if ms.unusedThisTurn then "Choose one that hasn't been chosen this turn —"
+    else if ms.unusedEver then "Choose one that hasn't been chosen —"
+    else if ms.minModes == .const 1 && ms.maxModes == .const 2 then
       "Choose one or both —"
+    else if ms.minModes == .const 2 && ms.maxModes == .const 2 then
+      "Choose two —"
     else
       "Choose one —"
 
@@ -702,8 +723,9 @@ def prepareLines (c : CardDef) : List String :=
 
 /-- Canonical rules-text ability lines for this face (basic-land reminders, deck
 limit, additional costs, activated abilities, static abilities, triggered
-abilities, and spell ability). Activated bare-cycling abilities duplicated by
-`KeywordAbility.cycling none _` are deduplicated when `dedupCycling` is true. -/
+abilities, station striations, and spell ability). Activated bare-cycling
+abilities duplicated by `KeywordAbility.cycling none _` are deduplicated when
+`dedupCycling` is true. -/
 def abilityOracleLines (c : CardDef) (dedupCycling : Bool := false) : List String :=
   let hasCyclingKw := c.keywords.any fun | .cycling none _ => true | _ => false
   let acts :=
@@ -711,12 +733,15 @@ def abilityOracleLines (c : CardDef) (dedupCycling : Bool := false) : List Strin
       c.activatedAbilities.filter fun ab =>
         !(ab.isCycling && ab.effect.body == Instruction.drawFixed 1)
     else c.activatedAbilities
+  let regularStatics := c.staticAbilities.filter (!·.isStationStriation)
+  let stationStatics := c.staticAbilities.filter (·.isStationStriation)
   c.basicLandReminderLines ++
   c.deckLimitLines ++
   c.additionalCostLines ++
   acts.toList.map (ActivatedAbility.toOracle {}) ++
-  c.staticAbilities.toList.map StaticAbility.toNotation ++
+  regularStatics.toList.map StaticAbility.toNotation ++
   c.triggeredAbilities.toList.map triggeredNotation ++
+  stationStatics.toList.map StaticAbility.toNotation ++
   c.spellLines
 
 /-- Modeled ability lines for display and leftover checks. Keyword-only lines are

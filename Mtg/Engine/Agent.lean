@@ -205,9 +205,10 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
               let baseFace := g.baseCard spell
               let kwFace := { baseFace with keywords := g.proposedSpellKeywords prop spell }
               let face :=
-                match prop.sneakAttacker, kwFace.sneakCost with
-                | some _, some sc => { baseFace with manaCost := sc }
-                | _, _ => baseFace
+                match prop.sneakAttacker, kwFace.sneakCost, prop.beamMeUpCreature, g.effectiveBeamMeUpCost? p prop.original with
+                | some _, some sc, _, _ => { baseFace with manaCost := sc }
+                | _, _, some _, some bc => { baseFace with manaCost := bc.mana }
+                | _, _, _, _ => baseFace
               let upcomingAddGen : Nat :=
                 if !baseFace.announcesAdditionalCost ||
                     prop.additionalGeneric > 0 || prop.needsBehold.isSome ||
@@ -226,7 +227,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
               g.playManaCost preSpell face extraCost
                 (origPerm := prop.origPerm)
                 (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
-                (explicitAltCost := prop.sneakAttacker.isSome)
+                (explicitAltCost := prop.sneakAttacker.isSome || prop.beamMeUpCreature.isSome)
                 (useImplicitPermissions := false)
           | _, _, _ => prop.cost.substituteX x
         let xForExtraExcl (extraExcl : Array ObjectId) : Nat :=
@@ -299,7 +300,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                     | none => #[.sacrificeAnotherCreatureOrArtifact]
                 let discPick : Array CostPick :=
                   if willDiscCard then #[.discardACard] else #[]
-                (some prop.spellId, sacPick ++ discPick, false, false, prop.sneakAttacker.toArray, none)
+                (some prop.spellId, sacPick ++ discPick, false, false, prop.sneakAttacker.toArray ++ prop.beamMeUpCreature.toArray, none)
               | .turnFaceUp =>
                 let picks :=
                   (if prop.needsSacrificeOther then #[.sacrificeAnotherCreatureOrArtifact] else #[]) ++
@@ -613,7 +614,7 @@ def choose (g : Game) (actor : PlayerId) : Option Action :=
                 if kwFace.morph.isSome then
                   g.canPayAnnouncedAdditionalFromSources p preSpell
                     (origPerm := prop.origPerm)
-                    (explicitAltCost := prop.sneakAttacker.isSome)
+                    (explicitAltCost := prop.sneakAttacker.isSome || prop.beamMeUpCreature.isSome)
                     (flashback := some (GameEvent.castWithFlashback g.events prop.spellId))
                     (useImplicitPermissions := false)
                     (fromHand := prop.original.zone == .hand p)

@@ -41,10 +41,13 @@ private def hasUniqueNames (cards : Array CardDef) : Bool :=
     mshCards.size == 286 &&
     realityFractureCards.size == 285 &&
     realityFractureCommanderCards.size == 87 &&
+    starTrekCards.size == 311 &&
     [hobbitCards, hobbitEternalCards, mshCards, realityFractureCards,
-      realityFractureCommanderCards].all hasUniqueNames &&
+      realityFractureCommanderCards, starTrekCards].all hasUniqueNames &&
     ["Brave Brawler", "Jennifer Walters", "The Sensational She-Hulk",
       "Stature, Size Shifter", "Academic Ascent", "Blossom-Blessed Angel",
-      "Jace's Machinations"].all names.contains
+      "Jace's Machinations", "U.S.S. Enterprise-D, Galaxy-Class",
+      "Federation Resupply", "Captain Benjamin Sisko",
+      "All Good Things . . .", "Hit It!"].all names.contains
 
 end Mtg.Engine.Tests

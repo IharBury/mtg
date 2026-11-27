@@ -251,6 +251,7 @@ def untapPermanent (g : Game) (o : GameObject)
           g.logMsg s!"A stun counter is removed from {oName} instead of untapping it (CR 122.1d)"
         else
           let g := g.record untap
+          let g := g.expireWhileTappedEffects o.id (cause := some defaultCause)
           if logUntap then g.logMsg s!"{g.name o} untaps" else g
 
 /-- Untap each permanent in `ids` sequentially inside an open or standalone

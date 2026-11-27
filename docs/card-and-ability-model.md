@@ -20,7 +20,7 @@ flowchart TD
 ```
 
 - **Layer-0 mana split**: Evaluated runtime mana types ([`ManaTypes.lean`](../Mtg/Engine/Card/ManaTypes.lean)) sit strictly **below** [`Mtg/Engine/Mana.lean`](../Mtg/Engine/Mana.lean), keeping `ManaPool.canPay` / `ManaPool.pay?` pure and acyclic. Symbolic mana production specs ([`ManaSpec.lean`](../Mtg/Engine/Card/ManaSpec.lean)) sit **above** [`Expr.lean`](../Mtg/Engine/Card/Expr.lean).
-- **Constructor budget**: All **135** `inductive` types under `Mtg/Engine/Card/` stay `< 40` constructors (vs. Lean 4's `LeanMaxCtorTag = 243`); every inductive in [`Ability.lean`](../Mtg/Engine/Card/Ability.lean) is `≤ 20` constructors.
+- **Constructor budget**: All **135** `inductive` types under `Mtg/Engine/Card/` stay `< 40` constructors (vs. Lean 4's `LeanMaxCtorTag = 243`); every inductive in [`Ability.lean`](../Mtg/Engine/Card/Ability.lean) is `≤ 24` constructors.
 
 ---
 
@@ -30,9 +30,9 @@ flowchart TD
 - **Shared CR value enums ([`Primitives.lean`](../Mtg/Engine/Card/Primitives.lean))**:
   - [`ZoneKind`](../Mtg/Engine/Card/Primitives.lean#L19-L38) (owner-parametric counterpart of `Zone`: `.library`, `.hand`, `.battlefield`, `.graveyard`, `.stack`, `.exile`, `.command`, `.ante`, `.outside`) and [`ZoneVerb`](../Mtg/Engine/Card/Primitives.lean#L97-L111) (`.cast`, `.draw`, `.discard`, `.mill`, `.sacrifice`, `.destroy`, `.exile`, `.counter`, `.resolve`, `.put`, `.returnToHand`, `.shuffleIntoLibrary`, `.playLand`).
   - [`LibraryPosition`](../Mtg/Engine/Card/Primitives.lean#L114-L119) (concrete `.top`, `.bottom`, `.fromTop`, `.shuffledIn`), [`PermanentDesignationTag`](../Mtg/Engine/Card/Primitives.lean#L123-L128) / [`PermanentDesignation`](../Mtg/Engine/Card/Primitives.lean#L131-L136) (`.ringBearer`, `.goaded`, `.prepared`, `.harnessed`), and [`PlayerDesignation`](../Mtg/Engine/Card/Primitives.lean#L146-L149) (`.citysBlessing`, `.enduringStory`).
-  - [`CostKind`](../Mtg/Engine/Card/Primitives.lean#L152-L175) (22 cost-payment cause tags), [`ReplacementTier`](../Mtg/Engine/Card/Primitives.lean#L179-L192), [`SetOrAdd`](../Mtg/Engine/Card/Primitives.lean#L205-L214), basic-land helpers [`CardSubtype.basicLandManaColor?`](../Mtg/Engine/Card/Primitives.lean#L230-L236) / [`CardSubtype.isBasicLandType`](../Mtg/Engine/Card/Primitives.lean#L239-L240) (CR 305.6–7), and compositional Layer 4/5 modifiers [`TypeSetMod`](../Mtg/Engine/Card/Primitives.lean#L243-L251) (implementing CR 305.7 / 205.3m land-only subtype replacement in `TypeSetMod.apply`) and [`ColorSetMod`](../Mtg/Engine/Card/Primitives.lean#L305-L309).
-- **Functorial Layer 3 text changes**: [`TextChange`](../Mtg/Engine/Card/Primitives.lean#L325-L328) and the [`HasTextChange`](../Mtg/Engine/Card/Primitives.lean#L333-L334) typeclass (`applyTextChanges : Array TextChange → α → α`) thread uniformly through Layer 0 primitives, `ManaTypes`, `ManaSpec`, `Expr`, `Targeting`, `Cost`, `Keywords`, `KeywordExpand`, `TriggerPattern`, all 16 types of the [`Ability.lean`](../Mtg/Engine/Card/Ability.lean#L1412-L1651) mutual block, and [`SpellAbility`](../Mtg/Engine/Card/Ability.lean#L1663-L1668).
-- **Counters ([`Counter.lean`](../Mtg/Engine/Card/Counter.lean))**: [`CounterKind`](../Mtg/Engine/Card/Counter.lean#L17-L51) (33 constructors, covering all **15** CR 122.1b keyword counters alongside `+1/+1`, `-1/-1`, loyalty, lore, stun, shield, time, defense, etc.) and [`CounterBag`](../Mtg/Engine/Card/Counter.lean#L167) (`Array (CounterKind × Nat)`).
+  - [`CostKind`](../Mtg/Engine/Card/Primitives.lean#L152-L176) (23 cost-payment cause tags), [`ReplacementTier`](../Mtg/Engine/Card/Primitives.lean#L180-L193), [`SetOrAdd`](../Mtg/Engine/Card/Primitives.lean#L206-L215), basic-land helpers [`CardSubtype.basicLandManaColor?`](../Mtg/Engine/Card/Primitives.lean#L231-L237) / [`CardSubtype.isBasicLandType`](../Mtg/Engine/Card/Primitives.lean#L240-L241) (CR 305.6–7), and compositional Layer 4/5 modifiers [`TypeSetMod`](../Mtg/Engine/Card/Primitives.lean#L244-L252) (implementing CR 305.7 / 205.3m land-only subtype replacement in `TypeSetMod.apply`) and [`ColorSetMod`](../Mtg/Engine/Card/Primitives.lean#L306-L310).
+- **Functorial Layer 3 text changes**: [`TextChange`](../Mtg/Engine/Card/Primitives.lean#L326-L329) and the [`HasTextChange`](../Mtg/Engine/Card/Primitives.lean#L334-L335) typeclass (`applyTextChanges : Array TextChange → α → α`) thread uniformly through Layer 0 primitives, `ManaTypes`, `ManaSpec`, `Expr`, `Targeting`, `Cost`, `Keywords`, `KeywordExpand`, `TriggerPattern`, all 16 types of the [`Ability.lean`](../Mtg/Engine/Card/Ability.lean#L1477-L1723) mutual block, and [`SpellAbility`](../Mtg/Engine/Card/Ability.lean#L1735-L1740).
+- **Counters ([`Counter.lean`](../Mtg/Engine/Card/Counter.lean))**: [`CounterKind`](../Mtg/Engine/Card/Counter.lean#L17-L53) (35 constructors, covering all **15** CR 122.1b keyword counters alongside `+1/+1`, `-1/-1`, loyalty, lore, stun, shield, time, defense, peace, promotion, etc.) and [`CounterBag`](../Mtg/Engine/Card/Counter.lean#L171) (`Array (CounterKind × Nat)`).
 - **Evaluated mana types ([`ManaTypes.lean`](../Mtg/Engine/Card/ManaTypes.lean))**: [`ManaType`](../Mtg/Engine/Card/ManaTypes.lean#L20-L23), [`ManaOutput`](../Mtg/Engine/Card/ManaTypes.lean#L43-L54), [`SpellRiderSpec`](../Mtg/Engine/Card/ManaTypes.lean#L152-L159) (`.cantBeCountered`, `.gainsHaste`, `.entersWithPlusOneCounters`), [`ManaObjectPred`](../Mtg/Engine/Card/ManaTypes.lean#L185-L193), [`ManaAbilityPred`](../Mtg/Engine/Card/ManaTypes.lean#L344-L347), [`ManaSpend`](../Mtg/Engine/Card/ManaTypes.lean#L278-L297), and 5-constructor [`ManaSpendRestriction`](../Mtg/Engine/Card/ManaTypes.lean#L373-L385) (`onlyForSpells`, `onlyForAbilities`, `onlyForSpellsOrAbilities`, `cantSpendOnSpells`, `notFromZone`), stored directly on [`ManaUnit`](../Mtg/Engine/Mana.lean#L323) (`restriction` and `riders`).
 
 ---
@@ -42,19 +42,19 @@ flowchart TD
 [`Expr.lean`](../Mtg/Engine/Card/Expr.lean) defines a pure, side-effect-free query language shared across targeting, costs, static abilities, trigger patterns, conditions, and one-shot instructions.
 
 - **Lexical slots & scalar operators**: [`VarId`](../Mtg/Engine/Card/Expr.lean#L31-L33) identifies an earlier bound step's post-replacement outcome (CR 608.2c / 614.6); `CmpOp` (`eq`, `ne`, `lt`, `le`, `gt`, `ge`), `ArithOp` (`add`, `sub`, `mul`, `divFloor`, `max`, `min`), and `AggOp` (`count`, `sum`, `max`, `min`, `countDistinct`) compose numeric queries.
-- **12-way mutual core (`Expr.lean` L515–678)** with single-tuple `BEq`/`Repr` projections ([`#L696-L720`](../Mtg/Engine/Card/Expr.lean#L696-L720)):
-  - **[`PlayerFilter`](../Mtg/Engine/Card/Expr.lean#L518-L520), [`PlayerPred`](../Mtg/Engine/Card/Expr.lean#L523-L536) (13 ctors), & [`PlayerExpr`](../Mtg/Engine/Card/Expr.lean#L539-L550) (11 ctors)**: `.you`, `.activePlayer`, `.defendingPlayer`, `.monarch` (CR 726), `.target`, `.controllerOf`, `.ownerOf`, `.triggerPlayer` (8 roles incl. `giftOpponent`), `.stepPlayers`, `.matching` (relation × `PlayerPred`, including `.isSeat` for expanded `forEach?` slots, `.thatPlayer` for anaphoric references, and `.matchesExpr`), and `.chosenBy`.
-  - **[`ObjectPred`](../Mtg/Engine/Card/Expr.lean#L589-L634) (39 ctors), [`ObjectFilter`](../Mtg/Engine/Card/Expr.lean#L637-L639), & [`ObjectExpr`](../Mtg/Engine/Card/Expr.lean#L642-L657) (15 ctors)**:
-    - *Characteristics (CR 109.3 / 613)*: `.all`, `.any`, `.not`, `.hasType`, `.hasSupertype`, `.hasSubtype` (literal, `.chosenOnSource`, `.fromStep`), `.hasColor` (literal, `.chosenOnSource`, `.commanderIdentity`), `.colorCount`, `.named`, `.hasKeyword` (35-ctor [`KeywordTag`](../Mtg/Engine/Card/Expr.lean#L301-L337) with 11 parameterized keywords grouped under [`ParamKeywordTag`](../Mtg/Engine/Card/Expr.lean#L269-L281)), `.stat`, `.statParity`.
-    - *Status & identity*: `.isToken`, `.isFaceDown`, `.isCopy`, `.isCommander`, `.isKind` (3-ctor [`ObjectCategory`](../Mtg/Engine/Card/Expr.lean#L506-L513): `.card` CR 108.2/111.6, `.permanentCard` CR 110.4a/111.6, `.spell` CR 112.1), `.tapped`, `.phasedOut`, `.combatRole`, `.hasDesignation`, `.counterCount`, `.chosenAnchorIs`.
-    - *Relations & event/cast history*: `.sameAs`, `.otherThan`, `.controlledBy`, `.ownedBy`, `.attachedTo`, `.hasAttachment`, `.targets`, `.shares`, `.wasCast`, `.castFrom`, `.enteredThisTurn`, `.attackedThisTurn`, `.dealtDamageThisTurn` (with `thisTurnOnly` and 4-ctor [`RecipientFilter`](../Mtg/Engine/Card/Expr.lean#L570-L574)), `.wasDealtDamageThisTurn`, `.receivedCounterThisTurn`, `.putIntoGraveyardFromBattlefieldThisTurn`.
+- **12-way mutual core (`Expr.lean` L530–694)** with single-tuple `BEq`/`Repr` projections ([`#L712-L736`](../Mtg/Engine/Card/Expr.lean#L712-L736)):
+  - **[`PlayerFilter`](../Mtg/Engine/Card/Expr.lean#L533-L535), [`PlayerPred`](../Mtg/Engine/Card/Expr.lean#L538-L551) (13 ctors), & [`PlayerExpr`](../Mtg/Engine/Card/Expr.lean#L554-L565) (11 ctors)**: `.you`, `.activePlayer`, `.defendingPlayer`, `.monarch` (CR 726), `.target`, `.controllerOf`, `.ownerOf`, `.triggerPlayer` (8 roles incl. `giftOpponent`), `.stepPlayers`, `.matching` (relation × `PlayerPred`, including `.isSeat` for expanded `forEach?` slots, `.thatPlayer` for anaphoric references, and `.matchesExpr`), and `.chosenBy`.
+  - **[`ObjectPred`](../Mtg/Engine/Card/Expr.lean#L604-L649) (39 ctors), [`ObjectFilter`](../Mtg/Engine/Card/Expr.lean#L652-L654), & [`ObjectExpr`](../Mtg/Engine/Card/Expr.lean#L657-L672) (15 ctors)**:
+    - *Characteristics (CR 109.3 / 613)*: `.all`, `.any`, `.not`, `.hasType`, `.hasSupertype`, `.hasSubtype` (literal, `.chosenOnSource`, `.fromStep`), `.hasColor` (literal, `.chosenOnSource`, `.commanderIdentity`), `.colorCount`, `.named`, `.hasKeyword` (37-ctor [`KeywordTag`](../Mtg/Engine/Card/Expr.lean#L308-L346) with 12 parameterized keywords grouped under [`ParamKeywordTag`](../Mtg/Engine/Card/Expr.lean#L274-L287)), `.stat`, `.statParity`.
+    - *Status & identity*: `.isToken`, `.isFaceDown`, `.isCopy`, `.isCommander`, `.isKind` (3-ctor [`ObjectCategory`](../Mtg/Engine/Card/Expr.lean#L521-L528): `.card` CR 108.2/111.6, `.permanentCard` CR 110.4a/111.6, `.spell` CR 112.1), `.tapped`, `.phasedOut`, `.combatRole`, `.hasDesignation`, `.counterCount`, `.chosenAnchorIs`.
+    - *Relations & event/cast history*: `.sameAs`, `.otherThan`, `.controlledBy`, `.ownedBy`, `.attachedTo`, `.hasAttachment`, `.targets`, `.shares`, `.wasCast`, `.castFrom`, `.enteredThisTurn`, `.attackedThisTurn`, `.dealtDamageThisTurn` (with `thisTurnOnly` and 4-ctor [`RecipientFilter`](../Mtg/Engine/Card/Expr.lean#L585-L589)), `.wasDealtDamageThisTurn`, `.receivedCounterThisTurn`, `.putIntoGraveyardFromBattlefieldThisTurn`.
     - *`ObjectExpr` sets*: `.this`, `.target`, `.allTargets`, `.attachedHost`, `.triggerSubject`, `.targetsOf`, `.stepObjects`, `.linkedExile`, `.costPaidObjects`, `.inZones`, `.topOfLibrary`, `.extremum`, `.filter`, `.union`, `.diff`.
-  - **[`ValueExpr`](../Mtg/Engine/Card/Expr.lean#L660-L676) (16 ctors)**: `.const`, `.chosenX`, `.eventAmount`, `.objectStat`, `.counterCount`, `.aggregate` (incl. `countDistinct`), `.basicLandTypeCount` (Domain), `.cardTypeCount` (Delirium), `.subtypeCount`, `.colorCountAmong`, `.playerMetric` (16-ctor [`PlayerMetric`](../Mtg/Engine/Card/Expr.lean#L160-L177)), `.maxControlled`, `.manaSymbols`, `.manaSpent`, `.stepMetric` (`movedCount`, `createdCount`, `damageDealt`, `excessDamage`, `lifeChanged`, `countersChanged`, `sumPower`, `chosenNumber`), `.binary`.
+  - **[`ValueExpr`](../Mtg/Engine/Card/Expr.lean#L675-L692) (17 ctors)**: `.const`, `.chosenX`, `.eventAmount`, `.objectStat`, `.counterCount`, `.aggregate` (incl. `countDistinct`), `.basicLandTypeCount` (Domain), `.cardTypeCount` (Delirium), `.subtypeCount`, `.colorCountAmong`, `.playerMetric` (19-ctor [`PlayerMetric`](../Mtg/Engine/Card/Expr.lean#L161-L181)), `.maxControlled`, `.manaSymbols`, `.manaSpent`, `.stepMetric` (`movedCount`, `createdCount`, `damageDealt`, `excessDamage`, `lifeChanged`, `countersChanged`, `sumPower`, `chosenNumber`), `.chosenNumberOnSource`, `.binary`.
 - **Symbolic library positions, conditions, and durations**:
-  - [`LibraryPosSpec`](../Mtg/Engine/Card/Expr.lean#L724-L730) (`.top`, `.bottom`, `.bottomRandom`, `.fromTop ValueExpr`, `.shuffledIn`).
-  - [`Condition`](../Mtg/Engine/Card/Expr.lean#L763-L778) (14 ctors: `.cmp`, `.exists`, `.forAll`, `.playerPred`, `.castPred` over 7-ctor [`CastContextPred`](../Mtg/Engine/Card/Expr.lean#L487-L495), `.turnHistory` over 7-ctor [`EventHistoryPred`](../Mtg/Engine/Card/Expr.lean#L752-L760) + 14-ctor [`EventPattern`](../Mtg/Engine/Card/Expr.lean#L734-L749), `.stepSucceeded`, `.duringStep`, `.duringPhase`, `.isYourTurn`, `.isNight`, `.all`, `.any`, `.not`).
-  - [`DurationExpr`](../Mtg/Engine/Card/Expr.lean#L782-L794) (11 ctors, 1-to-1 with runtime [`EffectDuration`](../Mtg/Engine/Game/Event.lean#L202-L226): `.untilEndOfTurn`, `.untilEndOfCombat`, `.untilEndOfStepOrPhase`, `.untilStepOrPhase`, `.untilNextTurnOf`, `.untilEndOfNextTurnOf`, `.whileOnBattlefield`, `.untilLeavesBattlefield`, `.whileHasCounter`, `.whileInZone`, `.indefinite`).
-- **Canonical printing**: [`PrintCtx`](../Mtg/Engine/Card/Expr.lean#L1340-L1347) and [`ToOracle`](../Mtg/Engine/Card/Expr.lean#L1350-L1351) provide context-aware Oracle rendering across every AST layer.
+  - [`LibraryPosSpec`](../Mtg/Engine/Card/Expr.lean#L740-L746) (`.top`, `.bottom`, `.bottomRandom`, `.fromTop ValueExpr`, `.shuffledIn`).
+  - [`Condition`](../Mtg/Engine/Card/Expr.lean#L781-L797) (15 ctors: `.cmp`, `.exists`, `.forAll`, `.allShare`, `.playerPred`, `.castPred` over 8-ctor [`CastContextPred`](../Mtg/Engine/Card/Expr.lean#L501-L510), `.turnHistory` over 7-ctor [`EventHistoryPred`](../Mtg/Engine/Card/Expr.lean#L770-L778) + 16-ctor [`EventPattern`](../Mtg/Engine/Card/Expr.lean#L750-L767), `.stepSucceeded`, `.duringStep`, `.duringPhase`, `.isYourTurn`, `.isNight`, `.all`, `.any`, `.not`).
+  - [`DurationExpr`](../Mtg/Engine/Card/Expr.lean#L801-L814) (12 ctors, 1-to-1 with runtime [`EffectDuration`](../Mtg/Engine/Game/Event.lean#L212-L238): `.untilEndOfTurn`, `.untilEndOfCombat`, `.untilEndOfStepOrPhase`, `.untilStepOrPhase`, `.untilNextTurnOf`, `.untilEndOfNextTurnOf`, `.whileOnBattlefield`, `.untilLeavesBattlefield`, `.whileHasCounter`, `.whileInZone`, `.whileTapped`, `.indefinite`).
+- **Canonical printing**: [`PrintCtx`](../Mtg/Engine/Card/Expr.lean#L1365-L1372) and [`ToOracle`](../Mtg/Engine/Card/Expr.lean#L1375-L1376) provide context-aware Oracle rendering across every AST layer.
 
 ---
 
@@ -62,7 +62,7 @@ flowchart TD
 
 ### Targeting (`Card/Targeting.lean`)
 
-Every instance of the word `"target"` in Oracle text corresponds to one [`TargetSlot`](../Mtg/Engine/Card/Targeting.lean#L147-L159) (CR 115.1). Every targeting AST inductive in [`Targeting.lean`](../Mtg/Engine/Card/Targeting.lean) has `≤ 5` constructors (`TargetPreference` has 6):
+Every instance of the word `"target"` in Oracle text corresponds to one [`TargetSlot`](../Mtg/Engine/Card/Targeting.lean#L151-L163) (CR 115.1). Every targeting AST inductive in [`Targeting.lean`](../Mtg/Engine/Card/Targeting.lean) has `≤ 5` constructors (`TargetPreference` has 6):
 
 ```lean
 inductive DivisionKind where
@@ -93,16 +93,16 @@ structure TargetSpec where
   crossSlotConstraints : Array CrossSlotConstraint := #[]      -- .distinct or .group across slots
 ```
 
-Oracle wording renders canonically via [`TargetSlot.renderOracle`](../Mtg/Engine/Card/Targeting.lean#L462), `ToOracle TargetSpec`, and [`TargetSpec.announcedPosNoun`](../Mtg/Engine/Card/Targeting.lean#L786) (zero stored noun strings).
+Oracle wording renders canonically via [`TargetSlot.renderOracle`](../Mtg/Engine/Card/Targeting.lean#L466), `ToOracle TargetSpec`, and [`TargetSpec.announcedPosNoun`](../Mtg/Engine/Card/Targeting.lean#L791) (zero stored noun strings).
 
 ### Costs (`Card/Cost.lean`)
 
-[`CostSpec`](../Mtg/Engine/Card/Cost.lean#L195-L197) (`items : Array CostItem`, `bindVar? : Option VarId`) unifies activation, ward, additional, alternative, and resolution-time optional/`unlessPays` costs (CR 118). Its 15-constructor [`CostItem`](../Mtg/Engine/Card/Cost.lean#L159-L190) syntax maps onto [`CostKind`](../Mtg/Engine/Card/Primitives.lean#L152-L175) (22 event-cause tags) via [`CostItem.costKind?`](../Mtg/Engine/Card/Cost.lean#L253):
+[`CostSpec`](../Mtg/Engine/Card/Cost.lean#L198-L200) (`items : Array CostItem`, `bindVar? : Option VarId`) unifies activation, ward, additional, alternative, and resolution-time optional/`unlessPays` costs (CR 118). Its 16-constructor [`CostItem`](../Mtg/Engine/Card/Cost.lean#L159-L193) syntax maps onto [`CostKind`](../Mtg/Engine/Card/Primitives.lean#L152-L176) (23 event-cause tags) via [`CostItem.costKind?`](../Mtg/Engine/Card/Cost.lean#L259):
 
-| `CostItem` Constructor (15) | `CostKind` Emission | Notes |
+| `CostItem` Constructor (16) | `CostKind` Emission | Notes |
 | :--- | :--- | :--- |
 | `.mana ManaCost` | `.mana` | Standard mana cost |
-| `.loyalty LoyaltySymbol` | `.loyalty` | 5-ctor [`LoyaltySymbol`](../Mtg/Engine/Card/Cost.lean#L27-L33); [`CostSpec.netLoyaltyDelta`](../Mtg/Engine/Card/Cost.lean#L563) combines multi-loyalty costs per CR 606.5 |
+| `.loyalty LoyaltySymbol` | `.loyalty` | 5-ctor [`LoyaltySymbol`](../Mtg/Engine/Card/Cost.lean#L27-L33); [`CostSpec.netLoyaltyDelta`](../Mtg/Engine/Card/Cost.lean#L588) combines multi-loyalty costs per CR 606.5 |
 | `.tapSelf` / `.untapSelf` | `.tap` / `.untap` | CR 701.26 |
 | `.tapObjects count filter` | `.tap` | Covers `.count`, `.anyNumber`, `.totalPowerAtLeast` (Crew CR 702.122, Teamwork CR 702.194) |
 | `.payLife ValueExpr` | `.life` | CR 119.4 |
@@ -111,12 +111,13 @@ Oracle wording renders canonically via [`TargetSlot.renderOracle`](../Mtg/Engine
 | `.exile count zones what isCollectEvidence` | `.collectEvidence` / `.exile` | Supports `totalManaValueAtLeast` (CR 701.59) and `totalManaSymbolsAtLeast` |
 | `.removeCounters count kind? fromObj` | `.removeCounters` | Any or specific `CounterKind` |
 | `.putCounters count kind target` | `.putCounters` | 3-ctor `CounterCostTarget` (`.self`, `.filter`, `.payer`) |
-| `.returnToHand count what` | `.returnToHand` | Returns to owner's hand (e.g. Sneak CR 702.190a) |
+| `.returnToHand count what` | `.returnToHand` | Returns to owner's hand (e.g. Sneak CR 702.190a, Beam me up CR 702.196a) |
+| `.putOnLibrary count zones what pos` | `.putOnLibrary` | Puts a card/permanent on library (e.g. bottom of owner's library) |
 | `.behold CardSubtype` | `.behold` | CR 701.4 |
 | `.waterbend ValueExpr` | `.waterbend` | CR 701.67 |
 | `.or choices` | *(chosen branch)* | CR 118.8 / 601.2b disjunctive cost choice (`costKind? = none`) |
 
-Four keyword-specific `CostKind` tags (`convoke`, `ward`, `teamwork`, `cycle`) are emitted by their respective keyword payment pipelines, and four (`delve`, `emerge`, `casualty`, `bargain`) are reserved in `Primitives.lean`. [`AdditionalCostSpec`](../Mtg/Engine/Card/Cost.lean#L777-L782) and [`AlternativeCostSpec`](../Mtg/Engine/Card/Cost.lean#L811-L820) wrap `CostSpec` for spell casting and keyword expansion.
+Four keyword-specific `CostKind` tags (`convoke`, `ward`, `teamwork`, `cycle`) are emitted by their respective keyword payment pipelines, and four (`delve`, `emerge`, `casualty`, `bargain`) are reserved in `Primitives.lean`. [`AdditionalCostSpec`](../Mtg/Engine/Card/Cost.lean#L809-L814) and [`AlternativeCostSpec`](../Mtg/Engine/Card/Cost.lean#L843-L852) wrap `CostSpec` for spell casting and keyword expansion.
 
 ### Symbolic Mana Production (`Card/ManaSpec.lean`)
 
@@ -128,48 +129,48 @@ Four keyword-specific `CostKind` tags (`convoke`, `ward`, `teamwork`, `cycle`) a
 
 ### Tokens (`Card/Ability.lean` & `Card/Token.lean`)
 
-[`TokenSpec`](../Mtg/Engine/Card/Ability.lean#L1175-L1178) unifies all token creation across spells, activated abilities, triggered abilities, and Saga chapters (with helper constructors and `ToOracle` in [`Token.lean`](../Mtg/Engine/Card/Token.lean)):
+[`TokenSpec`](../Mtg/Engine/Card/Ability.lean#L1236-L1239) unifies all token creation across spells, activated abilities, triggered abilities, and Saga chapters (with helper constructors and `ToOracle` in [`Token.lean`](../Mtg/Engine/Card/Token.lean)):
 
-- `.predefined PredefinedToken` ([`Ability.lean#L480`](../Mtg/Engine/Card/Ability.lean#L480)): CR 111.10a–x predefined tokens (`.treasure`, `.food`, `.clue`, `.incubator` with back face *"Phyrexian Token"*, `.map`, `.junk`, `.lander`, `.mutagen`, `.vibranium`, `.heartwood`).
-- `.custom CustomTokenSpec` ([`#L1148-L1159`](../Mtg/Engine/Card/Ability.lean#L1148-L1159)): dynamic `ValueExpr` power/toughness, `Array KeywordAbility`, `Array GrantedAbility`, and `useCardNameShorthand` for CR 111.11 card-named tokens.
-- `.copyOf (ref : ObjectExpr) (mods : Array CopyModification)` ([`#L1162-L1172`](../Mtg/Engine/Card/Ability.lean#L1162-L1172)): 10-constructor `CopyModification` covering CR 707.9 overrides (including P/T override stripping P/T-setting CDAs per CR 707.9d, added supertypes/types/subtypes/colors/keywords/abilities, creature-subtype replacement, and removed supertypes).
+- `.predefined PredefinedToken` ([`Ability.lean#L521`](../Mtg/Engine/Card/Ability.lean#L521)): CR 111.10a–x predefined tokens (`.treasure`, `.food`, `.clue`, `.incubator` with back face *"Phyrexian Token"*, `.map`, `.junk`, `.lander`, `.mutagen`, `.vibranium`, `.heartwood`).
+- `.custom CustomTokenSpec` ([`#L1209-L1220`](../Mtg/Engine/Card/Ability.lean#L1209-L1220)): dynamic `ValueExpr` power/toughness, `Array KeywordAbility`, `Array GrantedAbility`, and `useCardNameShorthand` for CR 111.11 card-named tokens.
+- `.copyOf (ref : ObjectExpr) (mods : Array CopyModification)` ([`#L1223-L1233`](../Mtg/Engine/Card/Ability.lean#L1223-L1233)): 10-constructor `CopyModification` covering CR 707.9 overrides (including P/T override stripping P/T-setting CDAs per CR 707.9d, added supertypes/types/subtypes/colors/keywords/abilities, creature-subtype replacement, and removed supertypes).
 
 ---
 
 ## Layer 3: Unified One-Shot `Instruction` AST & `Effect`
 
-[`Instruction`](../Mtg/Engine/Card/Ability.lean#L1257-L1278) has **18 top-level constructors**—10 action wrappers aligned with the 12 [`RulesEvent`](../Mtg/Engine/Game/Event.lean#L902-L927) families plus 8 compositional combinators:
+[`Instruction`](../Mtg/Engine/Card/Ability.lean#L1322-L1343) has **18 top-level constructors**—10 action wrappers aligned with the 12 [`RulesEvent`](../Mtg/Engine/Game/Event.lean#L918-L943) families plus 8 compositional combinators:
 
 | `RulesEvent` Family | `Instruction` Constructor & Sub-Family | Coverage |
 | :--- | :--- | :--- |
 | `ZoneEvent.moved` | `.moveZone objs dest verb mods` | Destroy, exile (incl. CR 610.3 `.exileUntilLeaves`), sacrifice, bounce, reanimate, put onto battlefield (tapped/attacking/attached/with counters), library placement, discard, mill. |
 | `ZoneEvent.created` | `.create op` (`CreateOp`: `.tokens`, `.emblem`) | Token batches and command-zone emblems (`ZoneEvent.ceasedToExist` is SBA-only, CR 704.5d–e). |
-| `PermanentEvent` | `.permanent op` (7-ctor `PermanentOp`: `.setTapped`, `.modifyCounters`, `.attach`, `.transform`, `.turnFaceUp`, `.phaseOut`, `.setDesignation`) | Tap/untap, counter modification (incl. `copyMissingKeywords`), attachment, transform, face-up, phase out, designations. |
+| `PermanentEvent` | `.permanent op` (8-ctor `PermanentOp`: `.setTapped`, `.modifyCounters`, `.attach`, `.transform`, `.turnFaceUp`, `.phaseOut`, `.setDesignation`, `.assimilate`) | Tap/untap, counter modification (incl. `copyMissingKeywords`, `distribute`, `putAnotherOfChosen`), attachment, transform, face-up, phase out, designations, and Assimilate (CR 701.72). |
 | `DamageEvent` | `.damage op` (`DamageOp`: `.deal`, `.fight`) | Targeted, mass, divided, excess-tracked, and scaled damage; two-way fight and one-way bite. |
 | `LifeEvent` | `.life op` (`LifeOp`: `.gain`, `.lose`, `.set`) | Life gain, life loss, drain, and life-total setting. |
-| `PlayerEvent` | `.player op` (16-ctor [`PlayerOp`](../Mtg/Engine/Card/Ability.lean#L1004-L1023): `.drawCards`, `.scry`, `.surveil`, `.inspectLibrary`, `.searchLibrary`, `.reveal`, `.shuffle`, `.addMana`, `.proliferate`, `.temptWithRing`, `.explore`, `.amass`, `.connive`, `.empowerPlaneswalker`, `.setStatus`, `.choose`) | Declarative library inspection/partitioning, tutors, mana production, keyword actions (CR 701.44 Explore, 701.34 Proliferate, etc.), Monarch (CR 726), and win-game (CR 104.2b). |
+| `PlayerEvent` | `.player op` (17-ctor [`PlayerOp`](../Mtg/Engine/Card/Ability.lean#L1062-L1082): `.drawCards`, `.scry`, `.surveil`, `.inspectLibrary`, `.searchLibrary`, `.reveal`, `.shuffle`, `.addMana`, `.proliferate`, `.temptWithRing`, `.explore`, `.amass`, `.connive`, `.empowerPlaneswalker`, `.discover`, `.setStatus`, `.choose`) | Declarative library inspection/partitioning, tutors, mana production, keyword actions (CR 701.44 Explore, 701.34 Proliferate, 701.57 Discover, etc.), Monarch (CR 726), and win/lose-game (CR 104.2). |
 | `TurnEvent` | `.turn op` (3-ctor `TurnOp`: `.extraTurn`, `.extraPhase`, `.extraStep`) | Extra turns, extra combat phases, extra steps. |
 | `StackObjectEvent` / `CastEvent` | `.stack op` (4-ctor `StackOp`: `.counterStack`, `.copyStackObject`, `.chooseNewTargets`, `.mayCastOrPlay`) | Counterspells (incl. exile/free-cast follow-ups), stack copies, retargeting, and mid-resolution/impulse casts (`GrantPlayPermSpec`). |
 | `ContinuousEffectEvent` / `DelayedTriggerEvent` | `.installEffect op` (4-ctor `InstallEffectOp`: `.applyContinuous`, `.applyRule`, `.applyReplacement`, `.createDelayedTrigger`) | Timed/indefinite continuous effects, player/game rules (incl. turn control CR 724), temporary replacements/preventions, and delayed triggers (CR 603.7). |
 | `TriggerQueueEvent` | `.queueReflexiveTrigger whenDone` | `"When you do"` reflexive triggers (CR 603.12). |
-| **Combinators (8)** | `.noop`, `.seq`, `.bind var step cont`, `.ifCond`, `.optional who cost? onYes onNo maxTimes`, `.unlessPays`, `.chooseModes spec`, `.forEach iter var body` | Sequencing, CR 608.2c/614.6 lexical binding over post-replacement `RulesEvent` slices, branching, CR 118.12/118.12a resolution-time costs, unified [`ModalSpec`](../Mtg/Engine/Card/Ability.lean#L1236-L1244) modes (incl. `altCountIf?` and `unusedEver`), and APNAP iteration. |
+| **Combinators (8)** | `.noop`, `.seq`, `.bind var step cont`, `.ifCond`, `.optional who cost? onYes onNo maxTimes`, `.unlessPays`, `.chooseModes spec`, `.forEach iter var body` | Sequencing, CR 608.2c/614.6 lexical binding over post-replacement `RulesEvent` slices, branching, CR 118.12/118.12a resolution-time costs, unified [`ModalSpec`](../Mtg/Engine/Card/Ability.lean#L1301-L1309) modes (incl. `altCountIf?` and `unusedEver`), and APNAP iteration. |
 
 *(Turn-based `CombatEvent` has no standalone `Instruction` wrapper; one-shot `"put onto the battlefield attacking"` lives on `MoveMods` and fight/bite lives on `DamageOp.fight`.)*
 
-[`Effect`](../Mtg/Engine/Card/Ability.lean#L1283-L1286) carries **exact 2 fields** (`targets : TargetSpec` and `body : Instruction`). All derived queries in [`Effect.lean`](../Mtg/Engine/Card/Effect.lean) are computed purely from those two fields:
-- [`Effect.targetPreference`](../Mtg/Engine/Card/Effect.lean#L1962) & [`Effect.isPreferredDefaultMode`](../Mtg/Engine/Card/Effect.lean#L1977)
-- [`Effect.classifyForAgent`](../Mtg/Engine/Card/Effect.lean#L2028) (`SpellCastKind` in [`SpellResolution.lean`](../Mtg/Engine/Card/SpellResolution.lean#L12-L35)) & [`Effect.classifyAbilityForAgent`](../Mtg/Engine/Card/Effect.lean#L2138)
-- [`Effect.doesNothingAsTrigger`](../Mtg/Engine/Card/Effect.lean#L1940), [`Effect.usesCostPaidObjects`](../Mtg/Engine/Card/Effect.lean#L2208), and canonical [`Effect.toOracle`](../Mtg/Engine/Card/Effect.lean#L2163)
+[`Effect`](../Mtg/Engine/Card/Ability.lean#L1348-L1351) carries **exact 2 fields** (`targets : TargetSpec` and `body : Instruction`). All derived queries in [`Effect.lean`](../Mtg/Engine/Card/Effect.lean) are computed purely from those two fields:
+- [`Effect.targetPreference`](../Mtg/Engine/Card/Effect.lean#L2171) & [`Effect.isPreferredDefaultMode`](../Mtg/Engine/Card/Effect.lean#L2186)
+- [`Effect.classifyForAgent`](../Mtg/Engine/Card/Effect.lean#L2237) (`SpellCastKind` in [`SpellResolution.lean`](../Mtg/Engine/Card/SpellResolution.lean#L12-L35)) & [`Effect.classifyAbilityForAgent`](../Mtg/Engine/Card/Effect.lean#L2347)
+- [`Effect.doesNothingAsTrigger`](../Mtg/Engine/Card/Effect.lean#L2149), [`Effect.usesCostPaidObjects`](../Mtg/Engine/Card/Effect.lean#L2417), and canonical [`Effect.toOracle`](../Mtg/Engine/Card/Effect.lean#L2080)
 
 ---
 
 ## Layer 4: CR 113.3 Four-Category Abilities, Keywords, and 21-Field `CardDef`
 
-To support granted abilities (`"Creatures you control have '{T}: ...'"`), token abilities, emblems, and reflexive triggers without well-founded recursion blowup, [`Ability.lean`](../Mtg/Engine/Card/Ability.lean#L1137-L1343) groups **16 mutually recursive types** (`GrantedAbility`, `CustomTokenSpec`, `CopyModification`, `TokenSpec`, `StaticReplacementSpec`, `EmblemSpec`, `CreateOp`, `DelayedTriggerSpec`, `ModalSpec`, `InstallEffectOp`, `Instruction`, `Effect`, `ActivatedAbility`, `TriggeredAbility`, `ContinuousModification`, `StaticAbility`) into one `mutual` block with single-tuple `BEq`/`Repr` projections ([`#L1376-L1408`](../Mtg/Engine/Card/Ability.lean#L1376-L1408)) and mutual `HasTextChange` instances ([`#L1412-L1651`](../Mtg/Engine/Card/Ability.lean#L1412-L1651)).
+To support granted abilities (`"Creatures you control have '{T}: ...'"`), token abilities, emblems, and reflexive triggers without well-founded recursion blowup, [`Ability.lean`](../Mtg/Engine/Card/Ability.lean#L1202-L1408) groups **16 mutually recursive types** (`GrantedAbility`, `CustomTokenSpec`, `CopyModification`, `TokenSpec`, `StaticReplacementSpec`, `EmblemSpec`, `CreateOp`, `DelayedTriggerSpec`, `ModalSpec`, `InstallEffectOp`, `Instruction`, `Effect`, `ActivatedAbility`, `TriggeredAbility`, `ContinuousModification`, `StaticAbility`) into one `mutual` block with single-tuple `BEq`/`Repr` projections ([`#L1441-L1473`](../Mtg/Engine/Card/Ability.lean#L1441-L1473)) and mutual `HasTextChange` instances ([`#L1477-L1723`](../Mtg/Engine/Card/Ability.lean#L1477-L1723)).
 
 ### 1. `SpellAbility` (CR 113.3a)
 
-[`SpellAbility`](../Mtg/Engine/Card/Ability.lean#L1658-L1661) carries **2 fields**:
+[`SpellAbility`](../Mtg/Engine/Card/Ability.lean#L1730-L1733) carries **2 fields**:
 
 ```lean
 structure SpellAbility where
@@ -182,28 +183,28 @@ Spell-casting restrictions and cost modifiers live canonically on `StaticAbility
 
 ### 2. `ActivatedAbility` (CR 113.3b / 602 / 605.1a / 606.2–6)
 
-[`ActivatedAbility`](../Mtg/Engine/Card/Ability.lean#L1291-L1300) unifies stack activated abilities, CR 605.1a mana abilities (`PlayerOp.addMana` inside `effect.body`), CR 606.2 loyalty abilities, and CR 305.6 intrinsic basic-land mana abilities using 9 fields: `cost`, `effect`, `timing` ([`ActivationTiming`](../Mtg/Engine/Card/Ability.lean#L35-L43)), `activeZones`, `turnLimit?`, `lifetimeLimit?`, `condition?`, `costReductions` ([`ActivationCostReduction`](../Mtg/Engine/Card/Ability.lean#L73-L76)), and `tag?` ([`ActivationMechanicTag`](../Mtg/Engine/Card/Ability.lean#L48-L61)).
+[`ActivatedAbility`](../Mtg/Engine/Card/Ability.lean#L1356-L1365) unifies stack activated abilities, CR 605.1a mana abilities (`PlayerOp.addMana` inside `effect.body`), CR 606.2 loyalty abilities, and CR 305.6 intrinsic basic-land mana abilities using 9 fields: `cost`, `effect`, `timing` ([`ActivationTiming`](../Mtg/Engine/Card/Ability.lean#L35-L43)), `activeZones`, `turnLimit?`, `lifetimeLimit?`, `condition?`, `costReductions` ([`ActivationCostReduction`](../Mtg/Engine/Card/Ability.lean#L75-L78)), and `tag?` ([`ActivationMechanicTag`](../Mtg/Engine/Card/Ability.lean#L48-L63)).
 
 Key predicates and helpers in [`ActivatedAbility.lean`](../Mtg/Engine/Card/ActivatedAbility.lean):
 - [`isLoyaltyAbility`](../Mtg/Engine/Card/ActivatedAbility.lean#L143): detects CR 606.2 loyalty symbols in `cost`.
 - [`isCycling`](../Mtg/Engine/Card/ActivatedAbility.lean#L179): identifies cycling/typecycling abilities expanded from `KeywordAbility.cycling`.
-- [`isManaAbility`](../Mtg/Engine/Card/ActivatedAbility.lean#L225): enforces all **four CR 605.1a criteria** across every mode of `effect` (not a loyalty ability, no targets, could add mana, and neither cost nor effect moves cards to/from a library).
-- [`intrinsicBasicLandMana`](../Mtg/Engine/Card/ActivatedAbility.lean#L252): synthesizes `{T}: Add {M}` for CR 305.6 basic land subtypes.
-- [`toOracle`](../Mtg/Engine/Card/ActivatedAbility.lean#L356): canonical Oracle rendering.
+- [`isManaAbility`](../Mtg/Engine/Card/ActivatedAbility.lean#L228): enforces all **four CR 605.1a criteria** across every mode of `effect` (not a loyalty ability, no targets, could add mana, and neither cost nor effect moves cards to/from a library).
+- [`intrinsicBasicLandMana`](../Mtg/Engine/Card/ActivatedAbility.lean#L255): synthesizes `{T}: Add {M}` for CR 305.6 basic land subtypes.
+- [`toOracle`](../Mtg/Engine/Card/ActivatedAbility.lean#L375): canonical Oracle rendering.
 
 ### 3. `TriggeredAbility` & `TriggerPattern` (CR 113.3c / 603 / 605.1b / 715)
 
-[`TriggeredAbility`](../Mtg/Engine/Card/Ability.lean#L1304-L1311) carries 7 fields: `word`, `pattern`, `grouping`, `interveningIf? : Option Condition` (CR 603.4), `activeZones`, `limit`, and `effect : Effect` (carrying modal branches inside `Instruction.chooseModes`, accessed via [`TriggeredAbility.modalSpec?`](../Mtg/Engine/Card/Trigger.lean#L140) / [`modeEffects`](../Mtg/Engine/Card/Trigger.lean#L144)).
+[`TriggeredAbility`](../Mtg/Engine/Card/Ability.lean#L1369-L1376) carries 7 fields: `word`, `pattern`, `grouping`, `interveningIf? : Option Condition` (CR 603.4), `activeZones`, `limit`, and `effect : Effect` (carrying modal branches inside `Instruction.chooseModes`, accessed via [`TriggeredAbility.modalSpec?`](../Mtg/Engine/Card/Trigger.lean#L140) / [`modeEffects`](../Mtg/Engine/Card/Trigger.lean#L144)).
 
 [`TriggerPattern.lean`](../Mtg/Engine/Card/TriggerPattern.lean) defines:
-- 27-constructor [`TriggerPattern`](../Mtg/Engine/Card/TriggerPattern.lean#L252-L326) aligned with `RulesEvent`, plus [`BatchGrouping`](../Mtg/Engine/Card/TriggerPattern.lean#L89-L101) (5 ctors: `.perOccurrence` CR 603.2c, `.oncePerBatch` / `.perPlayerInBatch` / `.perSourceInBatch` CR 700.1, and `.counterThreshold` for CR 715.2b Saga chapters), [`TriggerLimit`](../Mtg/Engine/Card/TriggerPattern.lean#L104-L113), and [`PlayerActionTrigger`](../Mtg/Engine/Card/TriggerPattern.lean#L210-L218).
-- [`usesLookBack`](../Mtg/Engine/Card/TriggerPattern.lean#L345-L359): structural CR 603.10a–f look-back predicate.
-- [`flattenDisjuncts`](../Mtg/Engine/Card/TriggerPattern.lean#L396-L400): distributes outer CR 603.2 `.whenCond` clauses across `.or` disjuncts so each disjunct independently chooses `pre` vs. `post`.
+- 27-constructor [`TriggerPattern`](../Mtg/Engine/Card/TriggerPattern.lean#L253-L327) aligned with `RulesEvent`, plus [`BatchGrouping`](../Mtg/Engine/Card/TriggerPattern.lean#L89-L101) (5 ctors: `.perOccurrence` CR 603.2c, `.oncePerBatch` / `.perPlayerInBatch` / `.perSourceInBatch` CR 700.1, and `.counterThreshold` for CR 715.2b Saga chapters), [`TriggerLimit`](../Mtg/Engine/Card/TriggerPattern.lean#L104-L113), and [`PlayerActionTrigger`](../Mtg/Engine/Card/TriggerPattern.lean#L210-L219).
+- [`usesLookBack`](../Mtg/Engine/Card/TriggerPattern.lean#L346-L360): structural CR 603.10a–f look-back predicate.
+- [`flattenDisjuncts`](../Mtg/Engine/Card/TriggerPattern.lean#L397-L401): distributes outer CR 603.2 `.whenCond` clauses across `.or` disjuncts so each disjunct independently chooses `pre` vs. `post`.
 - [`TriggeredAbility.isManaAbility`](../Mtg/Engine/Card/Trigger.lean#L236) (CR 605.1b) and [`TriggeredAbility.chapterNumbers?`](../Mtg/Engine/Card/Trigger.lean#L243) (CR 715.2b/d).
 
 ### 4. Stratified `StaticAbility` (CR 113.3d / 604 / 613 / 614–616)
 
-[`StaticAbility`](../Mtg/Engine/Card/Ability.lean#L1335-L1341) has **6 CR-stratified constructors**, each backed by domain-stratified supporting enums (`≤ 20` constructors each):
+[`StaticAbility`](../Mtg/Engine/Card/Ability.lean#L1400-L1406) has **6 CR-stratified constructors**, each backed by domain-stratified supporting enums (`≤ 24` constructors each):
 
 ```lean
 inductive StaticAbility where
@@ -215,14 +216,14 @@ inductive StaticAbility where
   | enchantRestriction (filter : TargetSlot)
 ```
 
-Supporting types in [`Ability.lean`](../Mtg/Engine/Card/Ability.lean) include `CdaSpec`, 17-ctor [`ContinuousModification`](../Mtg/Engine/Card/Ability.lean#L1314-L1331), `RuleModification` (over 14-ctor `StaticPlayerRule`, `StaticPlayRule`, 16-ctor `StaticCombatRule`, `StaticTriggerRule`, and `StaticGameRule`), `CostTargetSpec` / `CostModification`, and 20-ctor [`StaticReplacementSpec`](../Mtg/Engine/Card/Ability.lean#L1181-L1212), with smart constructors and canonical `ToOracle` in [`StaticAbility.lean`](../Mtg/Engine/Card/StaticAbility.lean).
+Supporting types in [`Ability.lean`](../Mtg/Engine/Card/Ability.lean) include `CdaSpec`, 17-ctor [`ContinuousModification`](../Mtg/Engine/Card/Ability.lean#L1379-L1396), `RuleModification` (over 17-ctor `StaticPlayerRule`, `StaticPlayRule`, 17-ctor `StaticCombatRule`, `StaticTriggerRule`, and `StaticGameRule`), `CostTargetSpec` / `CostModification`, and 24-ctor [`StaticReplacementSpec`](../Mtg/Engine/Card/Ability.lean#L1242-L1277), with smart constructors and canonical `ToOracle` in [`StaticAbility.lean`](../Mtg/Engine/Card/StaticAbility.lean).
 
 ### 5. Parameterized `KeywordAbility` & Pure Expansion (CR 702)
 
-[`Keywords.lean`](../Mtg/Engine/Card/Keywords.lean) models CR 702 keywords as `Array KeywordAbility` (preserving multiplicity for cumulative keywords like Prowess, Cascade, Exalted, Ward, Toxic, and Affinity):
-- [`SimpleKeyword`](../Mtg/Engine/Card/Keywords.lean#L24-L83) (29 unit constructors) and [`KeywordAbility`](../Mtg/Engine/Card/Keywords.lean#L330-L365) (17 constructors: `.simple` + 16 parameterized constructors: `hexproof`, `ward`, `protection`, `landwalk`, `toxic`, `affinity`, `equip`, `cycling`, `kicker`, `gift`, `flashback`, `morph`, `impending`, `sneak`, `crew`, `teamwork`).
-- [`CounterKind.grantedKeyword?`](../Mtg/Engine/Card/Keywords.lean#L395-L411) maps all **15** CR 122.1b keyword counters to their corresponding `KeywordAbility`.
-- Pure [`KeywordAbility.expand`](../Mtg/Engine/Card/KeywordExpand.lean#L227-L375) (CR 702.1) lowers any keyword directly into [`ExpandedKeyword`](../Mtg/Engine/Card/KeywordExpand.lean#L55-L63): `activatedAbilities`, `triggeredAbilities`, `staticAbilities`, `specialActions` ([`SpecialActionSpec`](../Mtg/Engine/Card/KeywordExpand.lean#L42-L46) for CR 116.2b Morph), `additionalCosts`, `alternativeCosts`, and `spellInstructions`.
+[`Keywords.lean`](../Mtg/Engine/Card/Keywords.lean) models CR 702 keywords as `Array KeywordAbility` (preserving multiplicity for cumulative keywords like Sunburst, Prowess, Cascade, Exalted, Ward, Toxic, and Affinity):
+- [`SimpleKeyword`](../Mtg/Engine/Card/Keywords.lean#L24-L87) (31 unit constructors, including `station` CR 702.184 and `sunburst` CR 702.44) and [`KeywordAbility`](../Mtg/Engine/Card/Keywords.lean#L340-L377) (18 constructors: `.simple` + 17 parameterized constructors: `hexproof`, `ward`, `protection`, `landwalk`, `toxic`, `affinity`, `equip`, `cycling`, `kicker`, `gift`, `flashback`, `morph`, `impending`, `sneak`, `crew`, `teamwork`, `beamMeUp` CR 702.196).
+- [`CounterKind.grantedKeyword?`](../Mtg/Engine/Card/Keywords.lean#L408-L424) maps all **15** CR 122.1b keyword counters to their corresponding `KeywordAbility`.
+- Pure [`KeywordAbility.expand`](../Mtg/Engine/Card/KeywordExpand.lean#L227-L386) (CR 702.1) lowers any keyword directly into [`ExpandedKeyword`](../Mtg/Engine/Card/KeywordExpand.lean#L55-L63): `activatedAbilities`, `triggeredAbilities`, `staticAbilities`, `specialActions` ([`SpecialActionSpec`](../Mtg/Engine/Card/KeywordExpand.lean#L42-L46) for CR 116.2b Morph), `additionalCosts`, `alternativeCosts`, and `spellInstructions`.
 
 ### 6. Slim 21-Field `CardDef`, `PrintedStat`, `DeckLimit`, and `SubFace`
 
@@ -277,4 +278,4 @@ structure CardDef where
   deckLimitOverride : Option DeckLimit := none
 ```
 
-[`CardDef.faceModellingError?`](../Mtg/Engine/Card/CardDef.lean#L966) validates parsed card faces (including triggered-ability active zones, modal arity, and non-trivial trigger effects via `Effect.doesNothingAsTrigger`), [`CardDef.allActivatedAbilities`](../Mtg/Engine/Card/CardDef.lean#L205) combines printed and keyword-expanded activated abilities (such as `Equip` and `Cycling`), and [`beqCardDef`](../Mtg/Engine/Card/CardDef.lean#L161-L187) provides structural `BEq CardDef`.
+[`CardDef.faceModellingError?`](../Mtg/Engine/Card/CardDef.lean#L999) validates parsed card faces (including triggered-ability active zones, modal arity, and non-trivial trigger effects via `Effect.doesNothingAsTrigger`), [`CardDef.allActivatedAbilities`](../Mtg/Engine/Card/CardDef.lean#L205) combines printed and keyword-expanded activated abilities (such as `Equip` and `Cycling`), and [`beqCardDef`](../Mtg/Engine/Card/CardDef.lean#L161-L187) provides structural `BEq CardDef`.

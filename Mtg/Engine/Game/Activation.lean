@@ -23,7 +23,8 @@ def canPayActivationNonManaCost (g : Game) (p : PlayerId) (o : GameObject) (ab :
   let handOk :=
     (!ab.cost.exileSourceFromHand || (o.zone == .hand o.owner && isDiscardableCard o)) &&
       (!ab.cost.discardSource || (o.zone == .hand o.owner && isDiscardableCard o))
-  let bfOk := !ab.cost.exileSourceFromBattlefield || o.isOnBattlefield
+  let bfOk := (!ab.cost.exileSourceFromBattlefield || o.isOnBattlefield) &&
+    (!ab.cost.sacrificeSource || !g.cantSacrificeObject p o)
   let zemoOk :=
     ab.cost.exileManaSymbols?.isNone ||
       (o.isOnBattlefield &&

@@ -102,4 +102,5 @@ keep working.
 - `TriggeredAbilities`: Phase 7 unified `TriggerPattern` & pattern-driven `matchTriggers`, CR 603.10a–f look-back & `.or` two-pass deduplication, CR 603.4 `interveningIf?` vs. CR 603.2 `.whenCond`, CR 605.1b triggered mana abilities, CR 700.1 `BatchGrouping`, CR 715.2b/d dynamic Layer-6 Saga chapters, per-trigger modal choices (`Instruction.chooseModes`), Path of Ancestry via `triggeredAbilities`, and `CardDef.modellingError?` trigger validation
 - `Interpreter`: Phase 8 unified `Instruction` AST, lexical `ContinuationFrame.stepEnv` (CR 608.2c / 614.6) across non-commuting CR 616.1 replacements, excess damage, compositional Recruit, CR 701.44a/c & CR 400.3 Explore, folded Empower Jace, unified `ModalSpec` & Layer-3 `HasTextChange`, `GrantedAbility` tokens, and Stage-4 `Parser.parseInstructionEffect`
 - `Events`: the game event log, conditions read from it, and trigger and replacement matching
+- `StarTrek`: Star Trek (TRK) Station/Spacecraft, Beam me up, facing a dilemma, Assimilate, Discover, Sunburst, strange new worlds, and TRK static/replacement rules
 -/

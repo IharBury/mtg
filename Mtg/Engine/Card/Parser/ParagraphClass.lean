@@ -30,8 +30,16 @@ open Mtg.Engine.OracleNorm
 
 /-! ### Paragraph Grouping & Modal Bullet Reassembly -/
 
+/-- True when `line` starts with a CR 722.2 Station striation prefix `<N>+ |` (e.g. `8+ | [3/4] Flying`). -/
+def isStationStriationHeader (line : String) : Bool :=
+  let s := line.trimAscii.copy
+  let digits := (s.takeWhile Char.isDigit).copy
+  !digits.isEmpty && ((s.drop digits.length).copy.startsWith "+ |")
+
 /-- Reassemble raw rules lines into logical paragraphs by attaching `• ...` modal
-bullet lines to their preceding modal header line and skipping blank/pure-reminder lines. -/
+bullet lines to their preceding modal header line, attaching trailing lines inside
+a CR 722.2 Station striation (`8+ | [3/4] Flying\nWhenever ...`) to the striation,
+and skipping blank/pure-reminder lines. -/
 def groupRulesParagraphs (lines : List String) : Array String := Id.run do
   let mut out : Array String := #[]
   for raw in lines do
@@ -51,6 +59,9 @@ def groupRulesParagraphs (lines : List String) : Array String := Id.run do
         let stripped := (pre.drop 1).trimAscii.copy
         if !stripped.isEmpty then
           out := out.push stripped
+    else if !out.isEmpty && isStationStriationHeader out[out.size - 1]! &&
+        !isStationStriationHeader pre then
+      out := out.set! (out.size - 1) (out[out.size - 1]! ++ "\n" ++ pre)
     else
       out := out.push pre
   return out
@@ -163,6 +174,14 @@ def parseRulesCompositional (base : CardDef) (rules : List String) : Except Stri
         c := { c with triggeredAbilities := c.triggeredAbilities ++ trs }
         continue
       | none => return .error s!"unrecognized chapter on {c.name}: {pre}"
+
+    -- 4b. CR 722.2 Station striation (`N+ | [P/T] <abilities>`)
+    if isStationStriationHeader pre then
+      match parseStaticAbilityComp pre c.name with
+      | some sas =>
+        c := { c with staticAbilities := c.staticAbilities ++ sas }
+        continue
+      | none => return .error s!"unrecognized Oracle line on {c.name}: {pre}"
 
     -- 5. Equip-with-cost-reduction (`"Equip {3}. This ability costs ..."`)
     if bLow.startsWith "equip " && !hasTopLevelColon body && body.contains '.' then

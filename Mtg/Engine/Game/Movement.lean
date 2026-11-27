@@ -159,6 +159,15 @@ def replaceZoneMove (g : Game) (old : GameObject) (beforeSnap : EventObject)
           controller := oldCtrl
           affectedPlayer := affected
           kind := .exileInsteadOfStackLeave (some old.id) }, none, false)
+    -- CR 702.196a: beam me up exiles the spell instead of putting it anywhere else when leaving the stack.
+    let hasBeamMeUp := GameEvent.beamMeUpPaid g.events old.id
+    if proposed.watches .wouldLeaveStack && hasBeamMeUp && !old.isCopy && curDest != .exile then
+      specs := specs.push (
+        { id := { kind := .beamMeUpExile, object := some old.id }
+          source := some old.id
+          controller := oldCtrl
+          affectedPlayer := affected
+          kind := .exileInsteadOfStackLeave (some old.id) }, none, false)
     -- Bilbo, Thief in the Night: instant/sorcery cast this way is exiled instead of going to graveyard.
     if proposed.watches .wouldEnterGraveyardFromStack && g.exileInstantSorceryInstead old &&
         g.isInstantOrSorcery old && !old.isCopy then
@@ -447,6 +456,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
               (cause := curCause)
               (nonCastBattlefield := old.zone != .stack || attachedTo.isNone)
               (preBattlefield := preBattlefield)
+              (originStackId? := if old.zone == .stack then some old.id else none)
           let postImpendingNotCreature :=
             preImpendingNotCreature && ((!quietMove && etb.choice?.isSome) || etb.entersWith.count .time > 0)
           (etb.candidate, etb.entersWith, etb.weaverBonus, postImpendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot, (etb.stayInOriginNoAuraHost, etb.stayInOriginInstantOrSorceryDfc))

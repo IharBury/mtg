@@ -169,7 +169,7 @@ private def isRulesEmDashPrefix (head : String) : Bool :=
     low.contains "choose up to" || low.contains "choose both"
   let isKeywordDash :=
     low == "ward" || low == "flashback" || low == "equip" || low == "cycling" ||
-    low == "kicker" || low == "morph" || low == "sneak" ||
+    low == "kicker" || low == "morph" || low == "sneak" || low == "beam me up" ||
     low.startsWith "equip " || low.endsWith "cycling" || low.startsWith "impending "
   isRoman || isModalHeader || isKeywordDash
 
@@ -205,8 +205,14 @@ def extractLeadingLabel (s : String) : Option MechanicLabel × String := Id.run 
     let stripped := stripAbilityWord s
     if stripped != s then
       return (none, stripAbilityWords stripped)
+    let headLow := lowerAscii head
     let headWords := head.splitOn " " |>.filter (!·.isEmpty)
-    if headWords.length <= 5 && !head.contains ',' && !head.contains '{' &&
+    let startsLikeRulesClause :=
+      headLow.startsWith "when " || headLow.startsWith "whenever " || headLow.startsWith "at " ||
+      headLow.startsWith "if " || headLow.startsWith "as " || headLow.startsWith "during " ||
+      headLow.startsWith "for " || headLow.startsWith "choose " || headLow.startsWith "while " ||
+      headLow.startsWith "until " || headLow.startsWith "each " || headLow.startsWith "you "
+    if headWords.length <= 6 && !head.contains '{' && !startsLikeRulesClause &&
         (head.front?.map Char.isUpper |>.getD false) then
       return (none, stripAbilityWords rest)
     return (none, stripAbilityWords s)
@@ -272,7 +278,10 @@ def splitTopLevelSentences (s : String) : Array String := Id.run do
       let curStr := String.ofList cur.toList
       let isHonorific :=
         curStr == "Ms" || curStr == "Mr" || curStr == "Dr" ||
-        curStr.endsWith " Ms" || curStr.endsWith " Mr" || curStr.endsWith " Dr"
+        curStr == "Lt" || curStr == "Cmdr" || curStr == "U.S.S" || curStr == "H.M.S" ||
+        curStr.endsWith " Ms" || curStr.endsWith " Mr" || curStr.endsWith " Dr" ||
+        curStr.endsWith " Lt" || curStr.endsWith " Cmdr" ||
+        curStr.endsWith " U.S.S" || curStr.endsWith " H.M.S"
       let isAcronymMidSentence :=
         if cur.size >= 2 && cur[cur.size - 1]!.isUpper && cur[cur.size - 2]! == '.' then
           let j := Id.run do
@@ -334,9 +343,11 @@ def splitFirstQuoted (s : String) : Option (String × String × String) := Id.ru
 
 /-- CR 201.5c shortened card-name aliases: always includes full `cardName`, and
 only includes a shortened prefix before `", "` (e.g. `"Gandalf, Friend of the Shire"`
-→ `"Gandalf"`), `" of "` (e.g. `"Bolg of the North"` → `"Bolg"`), or `" the "`
-(e.g. `"Smaug the Magnificent"` → `"Smaug"`). Never splits plain multi-word titles
-like `"Treasure Vault"`, `"Shark Typhoon"`, `"Hero in Training"`, or `"Robot Domination"`. -/
+→ `"Gandalf"`), `" of "` (e.g. `"Bolg of the North"` → `"Bolg"`), `" the "`
+(e.g. `"Smaug the Magnificent"` → `"Smaug"`), or `<Title> <Surname>` (e.g.
+`"Captain James T. Kirk"` → `"Captain Kirk"`, `"Dr. Leonard \"Bones\" McCoy"` →
+`"Dr. McCoy"`). Never splits plain multi-word titles like `"Treasure Vault"`,
+`"Shark Typhoon"`, `"Hero in Training"`, or `"Robot Domination"`. -/
 private def safeShortAlias? (cardName : String) : Option String :=
   let cn := cardName.trimAscii.copy
   if cn.isEmpty then none
@@ -357,6 +368,20 @@ private def safeShortAlias? (cardName : String) : Option String :=
               if a.length >= 3 && (a.front?.map Char.isUpper |>.getD false) &&
                   al != "enchanted" && al != "equipped" && al != "the" && al != "a" && al != "an" then
                 some a.trimAscii.copy
+              else none
+            | title :: _ :: rest =>
+              let titles : Array String := #[
+                "Captain", "Commander", "Dr.", "Ensign", "Lieutenant",
+                "Admiral", "General", "Mr.", "Ms."
+              ]
+              if titles.contains title then
+                match rest.getLast? with
+                | some last =>
+                  let lastClean := last.trimAscii.copy
+                  if !lastClean.isEmpty && (lastClean.front?.map Char.isUpper |>.getD false) then
+                    some s!"{title} {lastClean}"
+                  else none
+                | none => none
               else none
             | _ => none
     match short? with

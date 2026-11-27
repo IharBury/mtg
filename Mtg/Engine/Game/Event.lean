@@ -82,6 +82,14 @@ inductive ReplacementKind where
   | asEntersChooseCardType (object : ObjectId) (cardType : CardType)
   /-- CR 616.1e / 614.1c / 614.12: Choose `anchor` as `object` enters. -/
   | asEntersChooseAnchor (object : ObjectId) (anchor : String)
+  /-- CR 616.1e / 614.1c / 614.12: Choose number `n` as `object` enters. -/
+  | asEntersChooseNumber (object : ObjectId) (n : Int)
+  /-- CR 616.1e / 614.1c: Causes `object` to enter untapped. -/
+  | entersUntapped (object : Option ObjectId)
+  /-- CR 616.1e / 614.1c: Causes `object` to enter tapped and attacking. -/
+  | entersTappedAndAttacking (object : Option ObjectId)
+  /-- CR 616.1e / 614.1a: Removes a `kind` counter from `object` instead of destroying it. -/
+  | saveFromDestroyRemoveCounters (object : ObjectId) (kind : CounterKind)
   /-- CR 616.1e / 614.1c / 614.12: Intrinsic enters-with-counters replacement on `object`. -/
   | entersWithCountersSelf (object : ObjectId) (kind : CounterKind) (amount : Nat)
   /-- CR 616.1b: Modifies under whose control `object` enters the battlefield. -/
@@ -156,6 +164,8 @@ inductive PreventionKind where
   | protectionPreventDamage (protectedObject : ObjectId) (damageSource : ObjectId)
   /-- CR 702.16j: Protection from everything on `player` prevents all damage to `player`. -/
   | protectionFromEverythingPlayer (player : PlayerId)
+  /-- CR 615: Prevent all damage that would be dealt to `player`. -/
+  | preventAllDamageToPlayer (player : PlayerId)
   /-- CR 122.1c: Shield counter on `object` prevents damage that would be dealt to it and removes a shield counter. -/
   | shieldCounterPreventDamage (object : ObjectId)
 deriving Repr, Inhabited, BEq
@@ -214,6 +224,8 @@ inductive EffectDuration where
   | untilEndOfNextTurnOf (p : PlayerId)
   /-- Lasts for as long as `src` remains on the battlefield (CR 611.2b / 702.26f). -/
   | whileSourceOnBattlefield (src : ObjectId)
+  /-- Lasts for as long as `src` remains tapped on the battlefield (CR 611.2b). -/
+  | whileTapped (src : ObjectId)
   /-- Lasts until `src` leaves the battlefield (CR 611.2a / 702.26d). Unlike
   `.whileSourceOnBattlefield`, phasing `src` out does not end or suppress it. -/
   | untilSourceLeaves (src : ObjectId)
@@ -230,7 +242,7 @@ duration whose affected set is locked in when created (CR 611.2b–c / 702.26b,d
 def EffectDuration.isTimedResolvingDuration : EffectDuration → Bool
   | .untilEndOfTurn | .untilEndOfCombat | .untilEndOfStepOrPhase _ | .untilStepOrPhase _
   | .untilNextTurnOf _ | .untilEndOfNextTurnOf _ | .untilSourceLeaves _ => true
-  | .whileSourceOnBattlefield _ | .whileSourceHasCounter _ _ | .whileInZone _ _
+  | .whileSourceOnBattlefield _ | .whileTapped _ | .whileSourceHasCounter _ _ | .whileInZone _ _
   | .indefinite => false
 
 /-- Closed-data scope of a layered continuous effect (CR 611.2c / 611.3). -/
@@ -300,6 +312,7 @@ inductive PlayerRule where
   | mountainExtraRed (n : Nat := 1)
   | nextSpellCantBeCountered
   | cantAttackJaces (jaceController : PlayerId)
+  | cantAttackPlayer (target : Option PlayerId := none)
   | assignCombatDamageEqualToughness
   | pendingFreeRGCreature
   | controlsPlayer (controlled : PlayerId) (onNextTurn : Bool := false)
@@ -776,6 +789,8 @@ inductive PlayerEvent where
   | becameMonarch (player : PlayerId) (previous : Option PlayerId := none)
   /-- `player` gained lasting designation `d` (CR 702.131). -/
   | gainedDesignation (player : PlayerId) (d : PlayerDesignation)
+  /-- `player` faced a dilemma by choosing modes for a modal spell or ability (CR 700.17). -/
+  | facedDilemma (player : PlayerId)
   /-- `player` lost the game (CR 104.3 / 704.5a–c). -/
   | lost (player : PlayerId) (reason : LossReason := .lifeZeroOrLess)
   /-- `player` left the game (CR 104.5 / 800.4a). -/
@@ -815,6 +830,7 @@ inductive AdditionalCostChoice where
   | discard (discarded : ObjectId)
   | impending (timeCounters : Nat)
   | sneak (returned : ObjectId) (attackTarget : Option AttackTarget := none)
+  | beamMeUp (returned : ObjectId)
   | genericMana (amount : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
@@ -2964,6 +2980,12 @@ def optionalOnceActed (turn : Nat) (player : PlayerId) (source : ObjectId)
   rules turn (.player (.optionalOnceActed player source))
     (cause.getD (.oneShotEffect none (some source) (some player)))
 
+/-- `player` faced a dilemma (CR 700.17). -/
+def facedDilemma (turn : Nat) (player : PlayerId) (source? : Option ObjectId := none)
+    (cause : Option EventCause := none) : GameEvent :=
+  rules turn (.player (.facedDilemma player))
+    (cause.getD (.oneShotEffect none source? (some player)))
+
 /-- `player` attempted to draw a card from an empty library (CR 121.4 / 704.5b). -/
 def drawFromEmptyAttempted (turn : Nat) (player : PlayerId)
     (cause : Option EventCause := none) : GameEvent :=
@@ -3535,6 +3557,7 @@ partial def matchesTriggerPattern (e : GameEvent) (listener : PlayerId)
         | .ringTempted p _ _, .playerAction who .ringTempts => playerMatches who p
         | .ringTempted p (some _) _, .playerAction who .chooseRingBearer => playerMatches who p
         | .manaAdded p units, .playerAction who .manaAdded => !units.isEmpty && playerMatches who p
+        | .facedDilemma p, .playerAction who .faceDilemma => playerMatches who p
         | .lost p _, .playerAction who .losesGame => playerMatches who p
         | _, _ => false
       | .stackObject se =>
@@ -3616,6 +3639,29 @@ def spellsCast (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
       match e.change with
       | .rules (.cast (.spellCast _ q _)) => if q == p then n + 1 else n
       | _ => n) 0
+
+/-- Spells `p` cast across the entire game. -/
+def spellsCastThisGame (events : Array GameEvent) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    match e.change with
+    | .rules (.cast (.spellCast _ q _)) => if q == p then n + 1 else n
+    | _ => n) 0
+
+/-- Number of times `p` faced a dilemma on `turn` (CR 700.17). -/
+def dilemmasFaced (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    if e.turn != turn then n
+    else
+      match e.change with
+      | .rules (.player (.facedDilemma q)) => if q == p then n + 1 else n
+      | _ => n) 0
+
+/-- Number of extra turns `p` has begun this game (CR 500.7). -/
+def extraTurnsBegunThisGame (events : Array GameEvent) (p : PlayerId) : Nat :=
+  events.foldl (fun n e =>
+    match e.change with
+    | .rules (.turn (.turnBegan q true)) => if q == p then n + 1 else n
+    | _ => n) 0
 
 /-- `p` scried at least one card on `turn`. -/
 def scried (events : Array GameEvent) (turn : Nat) (p : PlayerId) : Bool :=
@@ -4217,6 +4263,19 @@ def sneakAttackTarget? (events : Array GameEvent) (spell : ObjectId) : Option (O
         costs.findSome? (fun | .sneak _ atk => some atk | _ => none)
       else none
     | _ => none
+
+/-- `spell` was cast for its beam me up cost (or copied from a beam-me-up spell, CR 702.196a / 707.10). -/
+def beamMeUpPaid (events : Array GameEvent) (spell : ObjectId) : Bool :=
+  let sid := stackSpellIdOf events spell
+  let root := rootCopiedSpellId events spell
+  events.any fun e =>
+    match e.change with
+    | .rules (.cast (.announced obj _ _ costs)) =>
+      (obj == spell || obj == sid || obj == root) &&
+        costs.any (fun | .beamMeUp _ => true | _ => false)
+    | .rules (.cast (.proposed obj _ _ (.alternative "beam me up"))) =>
+      obj == spell || obj == sid || obj == root
+    | _ => false
 
 /-- Value of X announced for `id` (or the spell `id` resolved/moved/copied from, CR 107.3a / 400.7d / 707.10). -/
 def chosenXOf? (events : Array GameEvent) (id : ObjectId) : Option Nat :=

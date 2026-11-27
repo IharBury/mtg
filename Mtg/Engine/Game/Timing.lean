@@ -158,15 +158,56 @@ def controlsPlayLandsFromGraveyard (g : Game) (p : PlayerId) : Bool :=
       ab.anyRule fun cond? r =>
         cond?.all (EvalExpr.evalCondition g env) &&
           match r with
-          | .play (.mayPlayFrom who .graveyard (.hasType .land) true false _ _) =>
-            EvalExpr.matchesPlayerFilter g env who p
+          | .play (.mayPlayFrom who z pred true false _ _ _ z2? _ false) =>
+            (z == .graveyard || z2? == some .graveyard) &&
+              (pred == .hasType .land || pred == .anyObject) &&
+              EvalExpr.matchesPlayerFilter g env who p
           | _ => false
+
+/-- True when `p` controls a permanent with a static `.mayPlayFrom` allowing `p` to
+play or cast `o` from zone `zk` (CR 601.3 / 305.1). -/
+def controlsStaticPlayFromZone (g : Game) (p : PlayerId) (o : GameObject) (zk : ZoneKind) : Bool :=
+  (g.permanentsOf p).any fun src =>
+    let env : EvalEnv := { controller := p, sourceId := some src.id }
+    (g.staticAbilities src).any fun ab =>
+      ab.anyRule fun cond? r =>
+        cond?.all (EvalExpr.evalCondition g env) &&
+          match r with
+          | .play (.mayPlayFrom who z pred landsAllowed false _ _ _ z2? _ false) =>
+            (z == zk || z2? == some zk) &&
+              EvalExpr.matchesPlayerFilter g env who p &&
+              (!g.isLand o || landsAllowed) &&
+              EvalExpr.evalObjectPred g env (.live o) pred
+          | _ => false
+
+/-- Beam me up cost granted to `o` in `p`'s graveyard, either printed on `o` or
+granted by a static `.mayPlayFrom ... (grantBeamMeUp := true)` (CR 702.196a). -/
+def effectiveBeamMeUpCost? (g : Game) (p : PlayerId) (o : GameObject) : Option CostSpec :=
+  match (g.baseCard o).beamMeUpCost? with
+  | some c => some c
+  | none =>
+    if o.zone != .graveyard p || !g.isInstantOrSorcery o then none
+    else
+      let granted := (g.permanentsOf p).any fun src =>
+        let env : EvalEnv := { controller := p, sourceId := some src.id }
+        (g.staticAbilities src).any fun ab =>
+          ab.anyRule fun cond? r =>
+            cond?.all (EvalExpr.evalCondition g env) &&
+              match r with
+              | .play (.mayPlayFrom who z pred _ false _ _ _ z2? _ true) =>
+                (z == .graveyard || z2? == some .graveyard) &&
+                  EvalExpr.matchesPlayerFilter g env who p &&
+                  EvalExpr.evalObjectPred g env (.live o) pred
+              | _ => false
+      if granted then some (CostSpec.ofMana (g.baseCard o).manaCost) else none
 
 def mayPlayFromGraveyard (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .graveyard p && o.owner == p && isDiscardableCard o &&
     (({ g.baseCard o with keywords := g.currentKeywords o }).flashback.isSome ||
       g.flashbackUntilEot o ||
-      (g.isLand o && g.controlsPlayLandsFromGraveyard p))
+      (g.effectiveBeamMeUpCost? p o).isSome ||
+      (g.isLand o && g.controlsPlayLandsFromGraveyard p) ||
+      g.controlsStaticPlayFromZone p o .graveyard)
 
 /-- True when `p` controls a permanent that lets them look at the library top. -/
 def controlsLookAtTop (g : Game) (p : PlayerId) : Bool :=
@@ -194,7 +235,7 @@ def controlsCastCreaturesFromTop (g : Game) (p : PlayerId) : Bool :=
       ab.anyRule fun cond? r =>
         cond?.all (EvalExpr.evalCondition g env) &&
           match r with
-          | .play (.mayPlayFrom who .library (.hasType .creature) false false _ _) =>
+          | .play (.mayPlayFrom who .library (.hasType .creature) false false _ _ _ _ _ _) =>
             EvalExpr.matchesPlayerFilter g env who p
           | _ => false
 
@@ -207,7 +248,7 @@ def controlsPlayLandsFromTop (g : Game) (p : PlayerId) : Bool :=
       ab.anyRule fun cond? r =>
         cond?.all (EvalExpr.evalCondition g env) &&
           match r with
-          | .play (.mayPlayFrom who .library (.hasType .land) true false _ _) =>
+          | .play (.mayPlayFrom who .library (.hasType .land) true false _ _ _ _ _ _) =>
             EvalExpr.matchesPlayerFilter g env who p
           | _ => false
 
@@ -216,7 +257,8 @@ def mayPlayFromLibraryTop (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     (g.player p).library.back? == some o.id &&
     (((g.isCreature o || ({ g.baseCard o with keywords := g.currentKeywords o }).morph.isSome) &&
         g.controlsCastCreaturesFromTop p) ||
-      (g.isLand o && g.controlsPlayLandsFromTop p))
+      (g.isLand o && g.controlsPlayLandsFromTop p) ||
+      g.controlsStaticPlayFromZone p o .library)
 
 /-- Whether `p` may play `o` as a land from exile under a non-cast-only permission (CR 305.9). -/
 def mayPlayLandFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=

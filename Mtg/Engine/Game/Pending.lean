@@ -468,8 +468,10 @@ inductive ResolutionChoice where
   | mayCastFromGraveyard (eligible : Array ObjectId)
   /-- You may cast one of these cards. `withoutPaying` skips the mana cost.
   An instant or sorcery is exiled instead of going to the graveyard when
-  `exileInstead` is set. -/
+  `exileInstead` is set. When `maxManaValue?` is `some n`, the resulting spell's
+  mana value must be `≤ n` (CR 701.57a). -/
   | mayCastCards (eligible : Array ObjectId) (withoutPaying exileInstead : Bool)
+      (maxManaValue? : Option Nat := none)
   /-- Search: choose up to `count` of `eligible` (or none, CR 701.23b), send
   them to `dest`, shuffle, then do `after`. `kind` is the logged card phrase. -/
   | searchLibrary (eligible : Array ObjectId) (count : Nat) (dest : SearchDest)

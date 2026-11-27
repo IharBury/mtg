@@ -9,12 +9,12 @@ Comprehensive Rules:
 
 - `LoyaltySymbol` (CR 107.7 / 606.2 / 606.4–6)
 - `CostCountSpec`, `SelfOrFilter`, `DiscardCostTarget`, `CounterCostTarget`
-- `CostItem` (15 constructors, lowering to `EventCause.costPayment` + `CostKind`)
+- `CostItem` (16 constructors, lowering to `EventCause.costPayment` + `CostKind`)
 - `CostSpec` (items + optional `bindVar? : Option VarId` for step outcomes)
 - `AdditionalCostSpec` and `AlternativeCostSpec` (CR 118.8 / 118.9)
 - Functorial Layer 3 `HasTextChange` and canonical `ToOracle` / `ToString`
 
-Every `inductive` in this module stays at ≤ 15 constructors (`< 7%` of the
+Every `inductive` in this module stays at ≤ 16 constructors (`< 7%` of the
 Lean 4 C runtime `LeanMaxCtorTag = 243` ceiling).
 -/
 
@@ -154,7 +154,7 @@ instance : HasTextChange CounterCostTarget where
 
 mutual
 
-/-- One atomic or choice-combinator item inside a `CostSpec` (CR 118, 15 constructors).
+/-- One atomic or choice-combinator item inside a `CostSpec` (CR 118, 16 constructors).
 Lowers during payment to `EventCause.costPayment` + `RulesEvent`. -/
 inductive CostItem where
   /-- Mana cost (CR 118.3 / 202.1). -/
@@ -180,8 +180,11 @@ inductive CostItem where
   | removeCounters (count : CostCountSpec) (kind? : Option CounterKind) (fromObj : SelfOrFilter)
   /-- Put counters on this permanent, matching permanent(s), or the paying player (e.g. stun / poison; CR 122.1). -/
   | putCounters (count : ValueExpr) (kind : CounterKind) (target : CounterCostTarget := .self)
-  /-- Return permanent(s) to their owners' hands (e.g. Sneak CR 702.190a). -/
+  /-- Return permanent(s) to their owners' hands (e.g. Sneak CR 702.190a / Beam me up CR 702.196a). -/
   | returnToHand (count : CostCountSpec) (what : SelfOrFilter)
+  /-- Put this card or card(s) from `zones` on the top or bottom of a library (CR 401). -/
+  | putOnLibrary (count : CostCountSpec) (zones : ZoneSetSpec) (what : SelfOrFilter)
+      (pos : LibraryPosition := .bottom)
   /-- Behold a permanent/card of `subtype` (CR 701.4). -/
   | behold (subtype : CardSubtype)
   /-- Waterbend `{amount}` (CR 701.67). -/
@@ -230,6 +233,9 @@ private partial def applyTcCostItem (tcs : Array TextChange) : CostItem → Cost
     .putCounters (HasTextChange.applyTextChanges tcs cnt) k (HasTextChange.applyTextChanges tcs t)
   | .returnToHand cnt w =>
     .returnToHand (HasTextChange.applyTextChanges tcs cnt) (HasTextChange.applyTextChanges tcs w)
+  | .putOnLibrary cnt z w pos =>
+    .putOnLibrary (HasTextChange.applyTextChanges tcs cnt) (HasTextChange.applyTextChanges tcs z)
+      (HasTextChange.applyTextChanges tcs w) pos
   | .behold s => .behold (HasTextChange.applyTextChanges tcs s)
   | .waterbend amt => .waterbend (HasTextChange.applyTextChanges tcs amt)
   | .or cs => .or (cs.map (applyTcCostSpec tcs))
@@ -264,6 +270,7 @@ def costKind? : CostItem → Option CostKind
   | .removeCounters _ _ _ => some .removeCounters
   | .putCounters _ _ _ => some .putCounters
   | .returnToHand _ _ => some .returnToHand
+  | .putOnLibrary _ _ _ _ => some .putOnLibrary
   | .behold _ => some .behold
   | .waterbend _ => some .waterbend
   | .or _ => none
@@ -271,6 +278,7 @@ def costKind? : CostItem → Option CostKind
 /-- True when paying this item moves an object to or from a library (CR 605.1a). -/
 partial def movesToOrFromLibrary : CostItem → Bool
   | .exile _ zones _ _ => zones.zones.contains .library
+  | .putOnLibrary _ _ _ _ => true
   | .or cs => cs.any (fun c => c.items.any movesToOrFromLibrary)
   | _ => false
 
@@ -453,6 +461,23 @@ partial def renderCostItem (ctx : PrintCtx) (item : CostItem) : String :=
     | .returnToHand _ .self => "return this permanent to its owner's hand"
     | .returnToHand cnt (.filter pred) =>
       s!"return {renderCountedNoun cnt pred false ctx} to its owner's hand"
+    | .putOnLibrary cnt zones what pos =>
+      let posStr :=
+        match pos with
+        | .top => "on top of its owner's library"
+        | .bottom => "on the bottom of its owner's library"
+        | .fromTop k => s!"{k} from the top of its owner's library"
+        | .shuffledIn => "shuffled into its owner's library"
+      let fromStr :=
+        if zones.zones == #[.graveyard] then " from your graveyard"
+        else if zones.zones == #[.hand] then " from your hand"
+        else if zones.zones == #[.exile] then " from exile"
+        else ""
+      let subjStr :=
+        match what with
+        | .self => if zones.zones == #[ZoneKind.battlefield] then "this permanent" else "this card"
+        | .filter pred => renderCountedNoun cnt pred (zones.zones != #[ZoneKind.battlefield]) ctx
+      s!"put {subjStr}{fromStr} {posStr}"
     | .behold sub => s!"behold {indefinite sub.englishName} {sub.englishName}"
     | .waterbend (.const n) => s!"waterbend \{{n}}"
     | .waterbend e => s!"waterbend {ToOracle.toOracle { ctx with capitalize := false } e}"
@@ -769,6 +794,13 @@ creature you control to its owner's hand (CR 702.190a). -/
 def sneakFullCost (base : CostSpec) : CostSpec :=
   base.append (ofItem (.returnToHand (.exact 1) (.filter (.all #[
     .hasType .creature, .combatRole .unblocked, .controlledBy .you
+  ]))))
+
+/-- Beam me up alternative cost: pay `cost` and return a creature you control
+to its owner's hand (CR 702.196a). -/
+def beamMeUpFullCost (base : CostSpec) : CostSpec :=
+  base.append (ofItem (.returnToHand (.exact 1) (.filter (.all #[
+    .hasType .creature, .controlledBy .you
   ]))))
 
 end CostSpec

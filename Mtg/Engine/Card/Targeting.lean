@@ -24,13 +24,15 @@ namespace CountRange
 /-- Minimum number of targets required for this `"target"` word (CR 601.2c). -/
 def minCount : CountRange → Nat
   | .exact n => n
+  | .exactX => 0
   | .upTo _ => 0
   | .between lo _ => lo
   | .anyNumber => 0
 
-/-- Upper bound on targets for this `"target"` word (`none` for `"any number of"`). -/
+/-- Upper bound on targets for this `"target"` word (`none` for `"any number of"` or `X`). -/
 def maxCount? : CountRange → Option Nat
   | .exact n => some n
+  | .exactX => none
   | .upTo n => some n
   | .between _ hi => some hi
   | .anyNumber => none
@@ -53,6 +55,7 @@ def ofBounds (minN maxN : Nat) : CountRange :=
 /-- Whether this count renders its noun phrase in plural form. -/
 def isPlural : CountRange → Bool
   | .exact n => n != 1
+  | .exactX => true
   | .upTo n => n != 1
   | .between _ hi => hi != 1
   | .anyNumber => true
@@ -64,6 +67,7 @@ private def countWord (n : Nat) : String :=
 def quantifierPrefix : CountRange → String
   | .exact 1 => ""
   | .exact n => countWord n
+  | .exactX => "X"
   | .upTo n => s!"up to {countWord n}"
   | .between lo hi =>
     if hi == lo + 1 then s!"{countWord lo} or {countWord hi}"
@@ -641,6 +645,7 @@ def targetCount (ts : TargetSpec) : Nat :=
   | [s] =>
     match s.count with
     | .exact n => n
+    | .exactX => 1
     | .upTo n => n
     | .between lo _ => lo
     | .anyNumber => 1

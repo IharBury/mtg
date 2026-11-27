@@ -12,6 +12,8 @@ Cards from Magic: The Gathering | The Hobbit (HOB) live in
 in `Mtg.Engine.Catalog.MarvelSuperHeroes`. Cards from Reality Fracture (FRA)
 live in `Mtg.Engine.Catalog.RealityFracture`. Cards from Reality Fracture
 Commander (FRC) live in `Mtg.Engine.Catalog.RealityFractureCommander`.
+Cards from Magic: The Gathering | Star Trek (TRK) live in
+`Mtg.Engine.Catalog.StarTrek`.
 Catalog Oracle text follows official Gatherer Oracle text; when Scryfall does
 not match Gatherer, Gatherer is authoritative.
 Decklists that use them live in `Mtg.Demo`.
