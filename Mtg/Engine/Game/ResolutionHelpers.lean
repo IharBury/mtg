@@ -1032,23 +1032,28 @@ def transformPermanent (g : Game) (controller : PlayerId) (sourceId : Option Obj
   g.withSourceOnBattlefield sourceId fun g o =>
     if g.cantTransform o then
       g.logMsg s!"{g.name o} can't transform (entered back face up at night)"
+    else if o.status.faceDown then
+      g.logMsg s!"{g.name o} can't transform while face down (CR 712.12a)"
     else
       match (g.baseCard o).otherFace with
       | none => g.logMsg s!"{g.name o} has no other face"
       | some face =>
-        let oldName := g.name o
-        let batchCause :=
-          cause.orElse (fun _ =>
-            g.currentResolvingContext?.map fun (s, c) =>
-              .oneShotEffect none (s.orElse (fun _ => some o.id)) (c.orElse (fun _ => some controller)))
-        g.withBatch batchCause fun g =>
-          let fallback := batchCause.getD (.gameRule .spellCast)
-          let pre := g
-          let g := g.record
-            (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
-              (cause := fallback))
-          let g := g.logMsg s!"{oldName} transforms into {face.name}"
-          reconcileControlAfterTransition pre g (cause := some fallback)
+        if face.types.any CardType.isInstantOrSorcery then
+          g.logMsg s!"{g.name o} can't transform into an instant or sorcery face (CR 701.27e)"
+        else
+          let oldName := g.name o
+          let batchCause :=
+            cause.orElse (fun _ =>
+              g.currentResolvingContext?.map fun (s, c) =>
+                .oneShotEffect none (s.orElse (fun _ => some o.id)) (c.orElse (fun _ => some controller)))
+          g.withBatch batchCause fun g =>
+            let fallback := batchCause.getD (.gameRule .spellCast)
+            let pre := g
+            let g := g.record
+              (GameEvent.transformed g.turnNumber (g.snapshot o) (!o.status.transformed)
+                (cause := fallback))
+            let g := g.logMsg s!"{oldName} transforms into {face.name}"
+            reconcileControlAfterTransition pre g (cause := some fallback)
 
 /-- Cards `p` owns outside the game. -/
 def outsideCards (g : Game) (p : PlayerId) : Array GameObject :=

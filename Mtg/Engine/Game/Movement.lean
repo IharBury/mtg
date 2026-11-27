@@ -331,7 +331,7 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         else rawBeforeSnap
       let buildArrival (g : Game) (targetZone : Zone) (asOf : Nat)
           (applied : Array ReplacementId := #[]) (curCause : Option EventCause := cause) :
-          GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) × Option (CardDef × CardDef) × Bool :=
+          GameObject × CounterBag × Nat × Bool × Bool × Array ReplacementId × Option EventCause × Option (PlayerId × Array ReplacementId) × Option (CardDef × CardDef) × (Bool × Bool) :=
         let newId : ObjectId := ⟨g.nextObjectId⟩
         let ts := g.timestamp + 1
         let leavingPlay :=
@@ -449,9 +449,9 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
               (preBattlefield := preBattlefield)
           let postImpendingNotCreature :=
             preImpendingNotCreature && ((!quietMove && etb.choice?.isSome) || etb.entersWith.count .time > 0)
-          (etb.candidate, etb.entersWith, etb.weaverBonus, postImpendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot, etb.stayInOriginNoAuraHost)
+          (etb.candidate, etb.entersWith, etb.weaverBonus, postImpendingNotCreature, faceDown, etb.applied, etb.cause, etb.choice?, etb.tempCopyUntilEot, (etb.stayInOriginNoAuraHost, etb.stayInOriginInstantOrSorceryDfc))
         else
-          (candidate, #[], 0, preImpendingNotCreature, faceDown, applied, curCause, none, none, false)
+          (candidate, #[], 0, preImpendingNotCreature, faceDown, applied, curCause, none, none, (false, false))
       -- Run the CR 616.1 replacement loop for leaving/destination replacements (CR 614.6).
       let origDest := dest
       let moveRep :=
@@ -459,11 +459,11 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
           (libraryPosition := libraryPosition) (preBattlefield := preBattlefield)
           (cause := cause) (lkiController? := lkiController?)
       let dest := moveRep.dest
-      let (preCheckArrivalChoice?, preCheckStayNoAuraHost, preCheckAllApplied) :=
+      let (preCheckArrivalChoice?, preCheckStayNoAuraHost, preCheckStayInstantSorceryDfc, preCheckAllApplied) :=
         if (quietMove || moveRep.choice?.isNone) && dest == .battlefield then
-          let (_, _, _, _, _, app, _, ch?, _, stayNoHost) := buildArrival g dest g.timestamp moveRep.applied moveRep.cause
-          (ch?, stayNoHost, app)
-        else (none, false, moveRep.applied)
+          let (_, _, _, _, _, app, _, ch?, _, (stayNoHost, stayInstSorcDfc)) := buildArrival g dest g.timestamp moveRep.applied moveRep.cause
+          (ch?, stayNoHost, stayInstSorcDfc, app)
+        else (none, false, false, moveRep.applied)
       match (if quietMove then none else moveRep.choice?.orElse (fun _ => preCheckArrivalChoice?)) with
       | some (chooser, choices) =>
         let faceDown := faceDown?.getD (origDest == .battlefield && old.zone == .stack && old.status.faceDown)
@@ -476,7 +476,31 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
             lkiController? skipUnattachIds deferPlayFromExileLogs),
          (id, none, false))
       | none =>
-      if preCheckStayNoAuraHost then
+      if preCheckStayInstantSorceryDfc then
+        let g := g.consumeReplacementOrder preCheckAllApplied
+        let oldName := g.name old
+        if old.zone == .stack then
+          if old.isCopy then
+            (g.ceaseToExist old.id (cause := some (.stateBased .copyOutsideStackOrBf))
+              |>.logMsg s!"{oldName} ceases to exist (instant or sorcery face can't enter the battlefield; CR 701.27j / 704.5e)",
+             (old.id, none, false))
+          else
+            let (g', gyId) :=
+              g.move old.id (.graveyard old.owner) none (verb := verb) (actor := actor)
+                (cause := cause) (suppressInteractive := suppressInteractive)
+            let msg := s!"{oldName} goes to the graveyard (instant or sorcery face can't enter the battlefield; CR 701.27j / 712.11b)"
+            if let .chooseReplacement .. := g'.pending then
+              (g'.chainPendingReplacement
+                  (.finishPostStep (.logDiscardIfInGraveyard old.id old.owner msg)),
+                (gyId, none, false))
+            else if (g'.followMovedToZone? old.id (· == .graveyard old.owner)).isSome then
+              (g'.logMsg msg, (gyId, none, false))
+            else
+              (g', (gyId, none, false))
+        else
+          (g.logMsg s!"{oldName} remains in its current zone (instant or sorcery face can't enter the battlefield; CR 712.11b)",
+           (id, none, false))
+      else if preCheckStayNoAuraHost then
         let g := g.consumeReplacementOrder preCheckAllApplied
         let oldName := g.name old
         if old.zone == .stack then
@@ -885,7 +909,7 @@ def withBatchM {ε : Type} (g : Game) (cause : Option EventCause := none)
     (f : Game → Except ε Game) : Except ε Game :=
   (g.withBatchExcept cause fun g0 => do return (← f g0, ())).map Prod.fst
 
-/-- Reverse to the saved CR 733.1–733.2 proposal checkpoint, re-running batches
+/-- Reverse to the saved CR 734.1–734.2 proposal checkpoint, re-running batches
 and flushing any CR 610.3 `linkedExile` returns from kept irreversible moves. -/
 def reverseToProposalCheckpoint? (g : Game) : Except String Game :=
   let wasOver := g.over || g.suppressInteractiveReplay
@@ -1216,7 +1240,7 @@ def moveCardsToGraveyardLoop (g : Game) (ids : Array ObjectId)
       return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
 
 /-- Read-only board projection after returning a Sneak attacker (`attackerId`,
-CR 702.190 / 733.1) to its owner's hand without opening interactive choices,
+CR 702.190 / 734.1) to its owner's hand without opening interactive choices,
 capturing `linkedExile` returns, `.whileSourceOnBattlefield` control expiry, and
 the returned attacker entering its owner's hand. -/
 def probeAfterSneakReturn (g : Game) (caster : PlayerId) (spellId : ObjectId)
@@ -1246,7 +1270,7 @@ def probeAfterSneakReturn (g : Game) (caster : PlayerId) (spellId : ObjectId)
       gAfter
 
 /-- Read-only board projection after paying an unpaid Sneak attacker return
-(`prop.sneakAttacker`, CR 702.190 / 733.1) without opening interactive choices. -/
+(`prop.sneakAttacker`, CR 702.190 / 734.1) without opening interactive choices. -/
 def probeAfterUnpaidSneak (g : Game) (prop : ProposedSpell)
     (includeSneak : Bool := true) : Game :=
   if !includeSneak || g.sneakPaid prop.spellId then g

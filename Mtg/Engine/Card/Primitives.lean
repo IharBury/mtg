@@ -6,7 +6,7 @@ import Mtg.Engine.Turn
 /-!
 # Shared CR Primitives (Layer 0)
 
-Canonical value-level Comprehensive Rules (effective 25 September 2026) enums
+Canonical value-level Comprehensive Rules (effective 6 November 2026) enums
 and algebraic primitives shared by `Mtg.Engine.Card` and `Mtg.Engine.Game`.
 Keeping these types in `Mtg.Engine.Card` lets ability ASTs align directly with
 `RulesEvent`, `EventCause`, and CR 613 layer evaluation while keeping
@@ -131,8 +131,8 @@ deriving DecidableEq, Repr, Inhabited, BEq
 inductive PermanentDesignation where
   | ringBearer                                                  -- CR 701.54a
   | goaded (byPlayer : PlayerId) (untilNextTurn : Bool := true) -- CR 701.15b
-  | prepared                                                    -- set mechanic
-  | harnessed                                                   -- set mechanic
+  | prepared                                                    -- CR 723
+  | harnessed                                                   -- CR 701.64
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Project a concrete `PermanentDesignation` to its parameter-free `PermanentDesignationTag`. -/

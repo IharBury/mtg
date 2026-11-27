@@ -146,7 +146,7 @@ def popEmptyTopContinuationFrames (g : Game) : Game := Id.run do
 
 /-- Whether a proposal-cost `Pending` prompt for `caster` still belongs to an
 active `g.proposedSpell` of `caster` and still has enough live candidates to be
-payable (CR 601.2f–h / 602.2b / 733.1 / 800.4a). -/
+payable (CR 601.2f–h / 602.2b / 734.1 / 800.4a). -/
 @[export mtg_game_proposal_cost_prompt_still_payable]
 def proposalCostPromptStillPayable (g : Game) (caster : PlayerId) (p : Pending) : Bool :=
   !g.over && g.stillInGame caster &&
@@ -6925,7 +6925,7 @@ private partial def hasNestedManaAbilityPostStep : PendingReplacement → Bool
 
 /-- Whether `curPr` (or a continuation delegated by `.leavePlayersWhoLost` /
 `.restorePending` without `rewindProposal`) can legally reverse an active
-proposal under CR 733.1. -/
+proposal under CR 734.1. -/
 private partial def stepCanReverseProposal (origPr : PendingReplacement) (gCur : Game)
     (outerDepth : Nat) (curPr : PendingReplacement) (fuel : Nat := 16) : Bool × Game × Nat :=
   if fuel == 0 then (false, gCur, outerDepth)
@@ -8582,7 +8582,7 @@ partial def runPostStep (g : Game) (step : PostStep)
         g.logMsg s!"{g.name o} is exiled"
       else
         (g.createEffect (.playPermission o.id { player := controller, fromAdventure := true }) (cause := cause))
-          |>.logMsg s!"{g.name o} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled (CR 715.3d)"
+          |>.logMsg s!"{g.name o} is exiled. {(g.player controller).name} may cast it for as long as it remains exiled (CR 716.3d)"
     | none => g
   | .exileSearchedLinkedLoop p remainingIds sourceId cause pendingFromId fromEventIdx? =>
     g.exileSearchedLinkedLoop p remainingIds sourceId cause pendingFromId
@@ -8750,7 +8750,7 @@ partial def runPostStep (g : Game) (step : PostStep)
     g.finishAbilityResolutionTail snap controller sourceId sagaChapter ab? alreadyResolved
 
 /-- Ask `prop.caster` to choose what pays the first of `picks` (reversing under
-CR 733.1 if `cands.size < pick.count`), or finish the activation when none remain. -/
+CR 734.1 if `cands.size < pick.count`), or finish the activation when none remain. -/
 partial def continueCostPicks (g : Game) (prop : ProposedSpell) (picks : Array CostPick)
     (paid : Bool) (hadOuterReplacement : Bool := false)
     (hadOpenContinuation : Option Bool := none) :
@@ -9044,7 +9044,7 @@ partial def finishRecruitDiscard (g : Game) (p : PlayerId) (isLand : Bool) : Gam
   else (g.createToken p humanSoldierToken).1
 
 /-- Tap the creatures announced for teamwork at CR 601.2h (CR 702.194 / 601.2h).
-Fails with `.error` (triggering CR 733.1 proposal reversal at the caller) if any
+Fails with `.error` (triggering CR 734.1 proposal reversal at the caller) if any
 announced creature is no longer an untapped creature on the battlefield under
 `prop.caster`'s control. -/
 partial def tapTeamworkCreaturesForProposed (g : Game) (prop : ProposedSpell) :
@@ -9064,7 +9064,7 @@ partial def tapTeamworkCreaturesForProposed (g : Game) (prop : ProposedSpell) :
     return g.logMsg s!"{(g.player prop.caster).name} pays a teamwork cost"
 
 /-- Pay a deferred additional-cost behold (`CostItem.behold`) at CR
-601.2h (CR 701.4 / 601.2h). Fails with `.error` (triggering CR 733.1 proposal
+601.2h (CR 701.4 / 601.2h). Fails with `.error` (triggering CR 734.1 proposal
 reversal at the caller) if `prop.caster` no longer controls or holds a card of
 the required subtype. -/
 partial def payBeholdForProposed (g : Game) (prop : ProposedSpell) :
@@ -9085,9 +9085,9 @@ partial def payBeholdForProposed (g : Game) (prop : ProposedSpell) :
       return g.beholdQuality prop.caster quality (cause := some cause)
 
 /-- Reverse a proposed spell or activated ability to its pre-proposal checkpoint,
-preserving CR 733.1 irreversible library actions, running any deferred post-cast
+preserving CR 734.1 irreversible library actions, running any deferred post-cast
 cleanup, and resuming an active continuation via `finishResolutionChoice` when
-`resumeContinuation == true` (CR 601.2 / 602.2 / 733.1–733.2). -/
+`resumeContinuation == true` (CR 601.2 / 602.2 / 734.1–734.2). -/
 @[export mtg_game_reverse_proposed_spell_except]
 partial def reverseProposedSpell? (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none)
@@ -9128,7 +9128,7 @@ partial def reverseProposedSpell (g : Game) (resumeContinuation : Bool := false)
 /-- Execute the sequential non-mana spell cost stages (`ProposedSpellCostStage`:
 `.teamwork` → `.behold` → `.sneak` → `.finalize`), pausing across
 `Pending.chooseReplacement` and preserving any enclosing `pendingReplacement`
-continuation without shadowing or duplicating it (CR 601.2h / 616.1 / 733.1). -/
+continuation without shadowing or duplicating it (CR 601.2h / 616.1 / 734.1). -/
 partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
     (grantPriority hadOuterReplacement openCont : Bool)
     (followedByFinishChoice : Bool := false)
@@ -9305,7 +9305,7 @@ partial def finishProposedSpellCosts (g : Game) (stage : ProposedSpellCostStage)
 /-- Announce `{X}`, modes, additional/optional costs, and targets of a spell
 cast while an ability resolves (CR 601.2b–c), then finish casting it. A spell
 that needs a target but has none can't be cast and returns to where it was
-(CR 601.2c / 733.1). -/
+(CR 601.2c / 734.1). -/
 partial def beginResolutionCastTargets (g : Game) (p : PlayerId) (prop : ProposedSpell) :
     Game :=
   let prop := { prop with resolutionCast := true }
@@ -9573,7 +9573,7 @@ partial def chooseCastFromLooked (g : Game) (p : PlayerId) (castId : Option Obje
       match g.mayCastFromLookedError p ids maxMv id with
       | some err => throw err
       | none =>
-        -- CR 733.1 / 601.2: checkpoint while the Cosmic Cube choice is still pending, so
+        -- CR 734.1 / 601.2: checkpoint while the Cosmic Cube choice is still pending, so
         -- reversing an illegal proposal restores `mayCastFromLooked` (cards still on top,
         -- no continuation frame or bottoming cleanup yet).
         let g := g.change .saveProposalCheckpoint
@@ -9657,7 +9657,7 @@ partial def afterTriggerTargetsChosen (g : Game) : Game :=
             receivePriority g prio false
 
 /-- Start paying the proposed activation's costs that need chosen objects,
-reversing it if they can't be paid (CR 601.2h / 733.1). -/
+reversing it if they can't be paid (CR 601.2h / 734.1). -/
 partial def beginActivationPayment (g : Game) (prop : ProposedSpell) : Except String Game := do
   if g.over || !g.stillInGame prop.caster ||
       (prop.sourceId != some prop.spellId && !(g.findObject? prop.spellId).any (·.zone == .stack)) ||
@@ -9775,7 +9775,7 @@ partial def afterAdditionalCostAnnounced (g : Game) : Game :=
       (g.change (.pending (.chooseTeamwork p))).logMsg
         s!"{(g.player p).name} may pay a teamwork cost (CR 702.194)"
     else if g.proposedNeedsTarget prop then
-      -- CR 601.2c / 702.33d,g / 733.1: the targets announced now are those of the spell as
+      -- CR 601.2c / 702.33d,g / 734.1: the targets announced now are those of the spell as
       -- proposed (kicked or not). A target-replacing kicker may have been the only route to
       -- a legal target; declining it (or kicking with no kicked target) leaves no legal
       -- choice, so the proposal is reversed for every cast, not only resolution casts.

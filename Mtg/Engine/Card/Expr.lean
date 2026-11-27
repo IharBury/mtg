@@ -9,7 +9,7 @@ import Mtg.Engine.Card.Counter
 
 Pure, side-effect-free expression ASTs evaluated over `(Game, EvalEnv)` (and
 `GameSnapshot` / `EventObject` for CR 603.10 / 608.2h last-known information),
-anchored to the 25 September 2026 Comprehensive Rules:
+anchored to the 6 November 2026 Comprehensive Rules:
 
 - `VarId`, `CmpOp`, `ArithOp`, `AggOp`, `LibraryPosSpec`
 - `PlayerFilter` / `PlayerPred` / `PlayerExpr` (11 constructors)

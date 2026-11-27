@@ -72,7 +72,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     if bc.adventure.isNone then
       throw s!"{g.name card} has no Adventure"
     if g.adventureExileForbidsRecast card (some p) then
-      throw "You may not cast that card as an Adventure this way (CR 715.3d)"
+      throw "You may not cast that card as an Adventure this way (CR 716.3d)"
   let rawFace :=
     match asAdventure, bc.adventure with
     | true, some adv => adv.toCardDef
@@ -185,7 +185,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
     g.validateFrontFaceCast p card rawFace (sneakCost := sneakCost) (sneakAttacker := sneakAttacker) (origPermOverride := origPerm)
   -- CR 601.2a: propose the spell by moving it onto the stack. Modes and
   -- additional costs are announced at CR 601.2b, targets at CR 601.2c; mana
-  -- is not required yet (CR 601.2g). CR 715.3: an adventurer card may be
+  -- is not required yet (CR 601.2g). CR 716.3: an adventurer card may be
   -- cast as its Adventure.
   let needsSacrifice := (g.mandatorySacrificeFilterFor? card rawFace).isSome
   let original := card
@@ -267,7 +267,7 @@ def castSpell (g : Game) (p : PlayerId) (id : ObjectId) (asAdventure : Bool := f
   let needsFlashbackDiscard := isFlashbackCast && kwFace.flashbackDiscard
   if needsFlashbackDiscard && (g.discardableHandIds p).isEmpty then
     throw s!"{rawFace.name}'s flashback cost requires discarding a card"
-  -- CR 118.9 / 202.3 / 715.3a–b: "pay life equal to its mana value" (Inside Information)
+  -- CR 118.9 / 202.3 / 716.3a–b: "pay life equal to its mana value" (Inside Information)
   -- reads the spell on the stack, so an Adventure pays its Adventure's mana value.
   let lifeInstead :=
     match origPerm with

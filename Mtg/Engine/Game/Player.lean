@@ -55,7 +55,7 @@ structure Player where
   sideboard : Array CardDef := #[]
   /-- Two-Headed Giant teammate (MSH 57 / 236). -/
   teammate : Option PlayerId := none
-  /-- This player is the monarch (CR 725). -/
+  /-- This player is the monarch (CR 726). -/
   isMonarch : Bool := false
   /-- Creature types of this player's commander, for Path of Ancestry. -/
   commanderCreatureTypes : Array CardSubtype := #[]
@@ -113,7 +113,7 @@ inductive Action where
   | activateManaAbility (id : ObjectId) (idx : Nat) (mana : Array ManaType)
       (costIds : Array ObjectId := #[])
   | cast (id : ObjectId)
-  /-- Cast this adventurer card as its Adventure (CR 715.3). -/
+  /-- Cast this adventurer card as its Adventure (CR 716.3). -/
   | castAdventure (id : ObjectId)
   /-- Cast this card for its sneak cost, returning the unblocked attacker
   `attackerId` you control to hand as part of the cost (MSH sneak). -/

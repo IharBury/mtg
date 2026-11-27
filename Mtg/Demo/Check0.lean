@@ -95,7 +95,7 @@ def parsedTwoAmountsSameSource : Bool :=
 
 #guard ((helpInteractive false).splitOn "mode <n>").length > 1
 
-#guard ((helpInteractive false).splitOn "CR 715.3").length > 1
+#guard ((helpInteractive false).splitOn "CR 716.3").length > 1
 
 #guard ((helpInteractive false).splitOn "CR 103.1").length > 1
 

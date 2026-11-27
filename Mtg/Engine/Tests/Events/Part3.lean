@@ -30,7 +30,7 @@ open Mtg.Engine.Tests
       protection against ability sources.
    6. CR 704.3 / 704.8 SBA pre-704.5q counter-annihilation LKI & single-batch
       `Pending.chooseLegend` keeping Pass 1 open through `finishSbaSweep` (tokens
-      704.5d, Sagas 714.4, Auras 704.5m, Equipment 704.5n).
+      704.5d, Sagas 715.4, Auras 704.5m, Equipment 704.5n).
    7. CR 111.8 token-flicker prohibition & simultaneous two-batch multi-target
       flicker.
    8. CR 603.10 `.creatureCardsPutIntoYourGy` (`after.creature && !after.token`)
@@ -863,10 +863,10 @@ private def mustHold16 (label : String) (ok : Bool) : Bool :=
 
 end Phase16EventAlignment
 
-/-! ### Phase 17 Event Alignment Isolation Tests (CR 500.4–5 / 514.3 / 603.3c–d / 603.4 / 608.2a–c / 608.3b–c,f / 610.3 / 611.2a / 704.3 / 704.5d–e,j / 707.10 / 707.12 / 733.1 / 800.4)
+/-! ### Phase 17 Event Alignment Isolation Tests (CR 500.4–5 / 514.3 / 603.3c–d / 603.4 / 608.2a–c / 608.3b–c,f / 610.3 / 611.2a / 704.3 / 704.5d–e,j / 707.10 / 707.12 / 734.1 / 800.4)
 
 1. Nested-batch `currentBatch` replay & shared `EffectId` fidelity across `Pending.chooseReplacement`.
-2. CR 733.1 `reverseToProposalCheckpoint?` filtering of `.waitingTriggers` and `DelayedTriggerEvent.consumed`.
+2. CR 734.1 `reverseToProposalCheckpoint?` filtering of `.waitingTriggers` and `DelayedTriggerEvent.consumed`.
 3. Pause-safe continuations (`putShadowCounter`, `applyPut` `.asArtifact`, `untapUnblockable`, `finishPlaceSearched`, `factOrFictionGyLoop`, `castFreeCopy`, `pass`/`concede` `consecutivePasses` & `pendingPriority`) and `0`-counter log parity.
 4. CR 603.3c–d modal trigger stack announcement (`chooseUpToXModes`, `stackHydeMode`, `oneUnused` / `oneUnusedThisTurn`), mandatory target removal (`putQueuedTrigger`), CR 707.10 stack-copy mode preservation, and CR 113.7a LKI resolution.
 5. CR 603.4 / 608.2a intervening-`"if"` & trigger checks (`gingerbrute`, `obAngel`, `tamiyoStun`, `windcragSiege`, `copySelfNonlegendary`).
@@ -948,7 +948,7 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
   mustHold17 "1.replay" ([gOuterPaused, gNestedPaused, gNestedResumed].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
--- 2. CR 733.1 `reverseToProposalCheckpoint?` filtering of `.waitingTriggers` & `DelayedTriggerEvent.consumed`.
+-- 2. CR 734.1 `reverseToProposalCheckpoint?` filtering of `.waitingTriggers` & `DelayedTriggerEvent.consumed`.
 #guard
   let deathWatcherAb : TriggeredAbility :=
     TriggeredAbility.mkTrigger .creatureYouControlDies
@@ -1870,16 +1870,16 @@ private def mustHold17 (label : String) (ok : Bool) : Bool :=
 
 end Phase17EventAlignment
 
-/-! ### Phase 18 Event Alignment Isolation Tests (CR 111.8 / 115.3 / 115.7d / 303.4f–g / 500.4 / 506.5 / 509.1g / 514.2 / 603.2d / 603.3c–d / 603.4 / 603.12 / 608.2b,h / 610.3 / 611.2a–b / 614.12 / 700.2 / 701.54 / 702.26b,d,f / 707.2 / 707.10c / 723.5 / 725.4 / 733.1 / 800.4)
+/-! ### Phase 18 Event Alignment Isolation Tests (CR 111.8 / 115.3 / 115.7d / 303.4f–g / 500.4 / 506.5 / 509.1g / 514.2 / 603.2d / 603.3c–d / 603.4 / 603.12 / 608.2b,h / 610.3 / 611.2a–b / 614.12 / 700.2 / 701.54 / 702.26b,d,f / 707.2 / 707.10c / 724.5 / 726.4 / 734.1 / 800.4)
 
 1. Nested-batch `currentBatch` cause isolation, 0-event pause replay parity, and single-writer `PermanentEvent.designation _ .ringBearer false` on zone departure & `ceasedToExist`.
 2. `outerPendingReplacements` / `endsWithPriorityGrant` priority deferral, `runLinkedExileBatch` Pass 2, `shuffleSourceIntoLibrary` replacement pause-safety, and reflexive-sacrifice pause-safety.
-3. CR 733.1 `.crew` & `.zemoBoastExile` proposal reversal / `.costAction` batching, and `reverseToProposalCheckpoint?` scaffolding, interleaved-engine batch grouping, `.lookedAt` filtering, & `queuedLinkedExile` flush.
+3. CR 734.1 `.crew` & `.zemoBoastExile` proposal reversal / `.costAction` batching, and `reverseToProposalCheckpoint?` scaffolding, interleaved-engine batch grouping, `.lookedAt` filtering, & `queuedLinkedExile` flush.
 4. CR 603.2d / 603.3c–d sequential multi-copy modal trigger announcement, mandatory `count`-mode removal (`noLegalMode`), `tapOrUntapNonland` & `hawkeyeModes` stack-placement announcement, and `combineTriggerModes` `allowsZeroTargets` / `maxTargets`.
 5. CR 506.5 `attacksAlonePlus2Indestructible` declared-attacker check, CR 603.4 / 608.2h `evalTriggerCond` LKI fallback, CR 702.26b `attachedEquipmentAtResolution` phased-out `0`, and CR 707.2 `.copySelfNonlegendary` `eo.copiable`.
 6. CR 707.10c / 115.3 / 115.7d `.copyCauseSpell` & `.venserSpell` retargeting, cross-slot `[A, B] -> [B, A]` swaps (`.twoPlayers` & `.twoNonlandsSharingType` revert), and CR 608.2b multi-target per-slot legality.
 7. CR 303.4f–g / 111.8 Aura entry & token-copy non-return, pre-batch host snapshots, and two-pass `createPermanentCopyTokens` simultaneous batching.
-8. CR 800.4 / 725.4 / 509.1g / 723.5 multiplayer combat-damage departure safety, empty `defendingPlayers` blocker-skip, monarch succession, third-party leave prompt revalidation, blocker-retention, and `playerControl`.
+8. CR 800.4 / 726.4 / 509.1g / 724.5 multiplayer combat-damage departure safety, empty `defendingPlayers` blocker-skip, monarch succession, third-party leave prompt revalidation, blocker-retention, and `playerControl`.
 9. CR 500.4 `beginTurn` turn-start expiry, CR 611.2a–b / 702.26f `durationActive` & counter/zone expiry, CR 800.4c,i,m phased-out control-expiry exile & departed-player `PlayerRule` / `.untilEndOfNextTurnOf` expiry, and CR 614.12 Arwen `preBfOk`. -/
 section Phase18EventAlignment
 
@@ -2104,7 +2104,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   mustHold18 "2.replay" ([gOutPaused, gOutDone, gNewerOuterPaused, gNewerOuterDone, gInnerGrantsPaused, gLk2, gShDone, gSacChosen, gSacAfterRep].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
--- 3. CR 733.1 `.crew` / `.zemoBoastExile` & `reverseToProposalCheckpoint?` batch/linkedExile/lookedAt fidelity.
+-- 3. CR 734.1 `.crew` / `.zemoBoastExile` & `reverseToProposalCheckpoint?` batch/linkedExile/lookedAt fidelity.
 #guard
   let boat18 : CardDef := {
     name := "Phase18 Skiff"
@@ -2572,7 +2572,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
   mustHold18 "7.replay" ([gAuFizzled, gAuTokEmpty, gTkChecked, gTwoPass].all (fun g =>
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
--- 8. CR 800.4 / 725.4 / 509.1g / 723.5 multiplayer combat, monarch, prompt-revalidation, blocker-retention, & `playerControl`.
+-- 8. CR 800.4 / 726.4 / 509.1g / 724.5 multiplayer combat, monarch, prompt-revalidation, blocker-retention, & `playerControl`.
 #guard
   let g3Base : Game := mkThreePlayer18 28
   -- 8a. `dealAssignedCombatDamage` survives a blocker's controller conceding during `Pending.assignCombatDamage _ false`!
@@ -2614,7 +2614,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     gDbStep.pending == .none &&
     gDbStep.blockersQueue.isEmpty
 
-  -- 8c. CR 725.4 monarch succession on departure:
+  -- 8c. CR 726.4 monarch succession on departure:
   -- (i) `⟨0⟩` active, `⟨1⟩` monarch -> `⟨1⟩` concedes => `⟨0⟩` (`activePlayer`) becomes monarch!
   let gMonA : Game := (g3Base.becomeMonarch ⟨1⟩).concede ⟨1⟩
   -- (ii) `⟨0⟩` active AND monarch -> `⟨0⟩` concedes => `⟨1⟩` (`nextLiving ⟨0⟩`) becomes monarch!
@@ -2666,7 +2666,7 @@ private def mkThreePlayer18 (seed : UInt64 := 18) : Game :=
     (gBrExiled.creaturesBlockedBy blkObj).isEmpty &&
     (gBrExiled.blockersOf brAtk).isEmpty
 
-  -- 8f. CR 723.5 `playerControl`: `⟨0⟩` controlling `⟨1⟩` makes `⟨1⟩`'s priority/choice decisions, while only `⟨1⟩` (`rawActor`) may concede `⟨1⟩`!
+  -- 8f. CR 724.5 `playerControl`: `⟨0⟩` controlling `⟨1⟩` makes `⟨1⟩`'s priority/choice decisions, while only `⟨1⟩` (`rawActor`) may concede `⟨1⟩`!
   let gPc0 : Game := (g3Base.createEffect (.playerControl ⟨0⟩ ⟨1⟩ false) (cause := some testCause)).change (.priority ⟨1⟩)
   let controlledActorOk : Bool :=
     gPc0.actor == some ⟨0⟩ &&
@@ -3472,7 +3472,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
 -- 8. CR 701.15b goad & `leftoverFlyingRestriction`, CR 508.8 combat step-skip fidelity,
---    CR 810 Two-Headed Giant Hexproof/Ward, CR 723.1 `playerControl` window/expiry, & `hasActiveEffect` `durationActive`.
+--    CR 810 Two-Headed Giant Hexproof/Ward, CR 724.1 `playerControl` window/expiry, & `hasActiveEffect` `durationActive`.
 #guard
   -- 8a. CR 701.15b goad non-goader player attacks & `leftoverFlyingRestriction`:
   --     in a 3-player game (`⟨0⟩` active, `⟨1⟩` goader with planeswalker `pw1`, `⟨2⟩` other opponent),
@@ -3564,7 +3564,7 @@ def mkTwoHeadedGiant19 (seed : UInt64 := 219) : Game :=
     g2hOppCast.pending == .none &&
     g2hOppCast.stack.size == 2
 
-  -- 8d. CR 723.1 `playerControl` (`onNextTurn == true` vs `false`) & `Core.hasActiveEffect` `durationActive`!
+  -- 8d. CR 724.1 `playerControl` (`onNextTurn == true` vs `false`) & `Core.hasActiveEffect` `durationActive`!
   let gPcNext0 : Game := afterDraw.createEffect (.playerControl me opp19 true) (cause := some testCause)
   let gPcNextOpp : Game := gPcNext0.startNextTurnAndBegin
   let gPcNextAfter : Game := gPcNextOpp.startNextTurnAndBegin
@@ -3637,7 +3637,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
 
 -- 1. Unified CR 303.4f–g,i `.asEntersAttachAura` across multi-card (`returnLinkedExile`),
 --    token (`createToken`), CR 616.1c–d (`entersAsCopy` / `entersBackFaceUp`) Aura entries,
---    and Adventure spell copies (`obj.isCopy` ceasing to exist on `.stack` without `.playPermission`, CR 704.5e / 707.10 / 715.3d).
+--    and Adventure spell copies (`obj.isCopy` ceasing to exist on `.stack` without `.playPermission`, CR 704.5e / 707.10 / 716.3d).
 #guard
   let testAura20 : CardDef := aura "Phase20 Aura" (ManaCost.ofColor .green) "Enchant creature"
   let auraTokenDef20 : CardDef := { testAura20 with name := "Phase20 Aura Token", isToken := true }
@@ -3713,7 +3713,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     (gBackZeroDone.object! backGyId).zone == .graveyard me &&
     !gBackZeroDone.battlefield.any (·.name == "Phase20 Aura")
 
-  -- 1d. Adventure spell copy (`obj.isCopy == true`) resolving ceases to exist on `.stack` without `.playPermission` (CR 704.5e / 707.10 / 715.3d)!
+  -- 1d. Adventure spell copy (`obj.isCopy == true`) resolving ceases to exist on `.stack` without `.playPermission` (CR 704.5e / 707.10 / 716.3d)!
   let advSpellFace : SubFace := {
     kind := .adventure
     name := "Phase20 Adv Instant"
@@ -4250,7 +4250,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     Game.replayEvents g.events == g && allRulesEventsClassified g))
 
 -- 8. CR 810 Two-Headed Giant win/loss/teammate & CR 800.4i departed-opponent queries,
---    CR 723.1 / 810.5 `playerControl` & self-control limits, and batched `createEffects` / multi-effect helpers.
+--    CR 724.1 / 810.5 `playerControl` & self-control limits, and batched `createEffects` / multi-effect helpers.
 #guard
   -- 8a. CR 810 Two-Headed Giant:
   --     - Opponent's `opponentsCantWin := true` blocks `.winTheGame` on `⟨0⟩`'s team;
@@ -4292,7 +4292,7 @@ def mkTwoHeadedGiant20 (seed : UInt64 := 220) : Game :=
     gDepDmg1.hasFlying (gDepDmg1.object! flierId) &&
     gDepDmg1.hasHaste (gDepDmg1.object! flierId)
 
-  -- 8b. CR 723.1 / 805.4 / 810.2,5 2HG shared-turn `playerControl` expiry, departed-teammate skip,
+  -- 8b. CR 724.1 / 805.4 / 810.2,5 2HG shared-turn `playerControl` expiry, departed-teammate skip,
   --     extra-turn single-turn expiry, & self-control limits (`canChooseOutsideGame`, `canMakeTournamentDecision`)!
   let g2hCtrl0 : Game := mkTwoHeadedGiant20 802
   let g2hCtrl1 : Game :=

@@ -6,7 +6,7 @@ import Mtg.Engine.Card.Expr
 
 Card-level declarative mana-production specifications (`ManaPoolPalette`,
 `ManaSpec`) parameterized over the Layer-1 expression algebra (`ValueExpr`,
-`ObjectExpr`, `PlayerExpr`), anchored to the 25 September 2026 Comprehensive
+`ObjectExpr`, `PlayerExpr`), anchored to the 6 November 2026 Comprehensive
 Rules (CR 106.1, 106.6, 106.7, 605).
 
 Layer-0 evaluated mana types (`ManaType`, `ManaOutput`, `ManaObjectPred`,

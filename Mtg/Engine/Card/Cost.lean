@@ -4,7 +4,7 @@ import Mtg.Engine.Card.Expr
 # Compositional Cost Specifications (Layer 2 — CR 118, 601.2b/f/h, 602.2b, 606.2–6)
 
 Unified, compositional `CostSpec` / `CostItem` AST for activation, additional,
-alternative, trigger-payment, and ward costs, anchored to the 25 September 2026
+alternative, trigger-payment, and ward costs, anchored to the 6 November 2026
 Comprehensive Rules:
 
 - `LoyaltySymbol` (CR 107.7 / 606.2 / 606.4–6)

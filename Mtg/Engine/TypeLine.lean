@@ -156,10 +156,10 @@ inductive SubtypeClass where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 def artifactTypes : List String := [
-  "Attraction", "Blood", "Bobblehead", "Book", "Clue", "Contraption",
-  "Equipment", "Food", "Fortification", "Gold", "Heartwood", "Incubator",
-  "Infinity", "Junk", "Lander", "Map", "Mutagen", "Powerstone",
-  "Spacecraft", "Stone", "Treasure", "Vehicle", "Vibranium"
+  "Attraction", "Blood", "Bobblehead", "Book", "Clue", "Communicator",
+  "Contraption", "Equipment", "Food", "Fortification", "Gold", "Heartwood",
+  "Incubator", "Infinity", "Junk", "Lander", "Map", "Mutagen",
+  "Powerstone", "Spacecraft", "Stone", "Treasure", "Vehicle", "Vibranium"
 ]
 
 def enchantmentTypes : List String := [
@@ -175,20 +175,21 @@ def landTypes : List String := [
 ]
 
 def planeswalkerTypes : List String := [
-  "Ajani", "Aminatou", "Angrath", "Arlinn", "Ashiok", "Bahamut",
-  "Basri", "Bolas", "Calix", "Chandra", "Comet", "Dack",
-  "Dakkon", "Daretti", "Davriel", "Dellian", "Dihada", "Domri",
-  "Dovin", "Ellywick", "Elminster", "Elspeth", "Estrid", "Freyalise",
-  "Garruk", "Gideon", "Grist", "Guff", "Huatli", "Jace",
-  "Jared", "Jaya", "Jeska", "Kaito", "Karn", "Kasmina",
-  "Kaya", "Kiora", "Koth", "Liliana", "Lolth", "Lukka",
-  "Minsc", "Mordenkainen", "Nahiri", "Narset", "Niko", "Nissa",
-  "Nixilis", "Oko", "Quintorius", "Ral", "Rowan", "Saheeli",
-  "Samut", "Sarkhan", "Serra", "Sivitri", "Sorin", "Szat",
-  "Tamiyo", "Tasha", "Teferi", "Teyo", "Tezzeret", "Tibalt",
+  "Ajani", "Aminatou", "Angrath", "Arlinn", "Arzakon", "Ashiok",
+  "Bahamut", "Basri", "Bolas", "Calix", "Chandra", "Comet",
+  "Dack", "Dakkon", "Daretti", "Davriel", "Dellian", "Dihada",
+  "Domri", "Dovin", "Dyfed", "Ellywick", "Elminster", "Elspeth",
+  "Estrid", "Feroz", "Freyalise", "Garruk", "Gideon", "Greensleeves",
+  "Grist", "Guff", "Huatli", "Jace", "Jared", "Jaya",
+  "Jeska", "Kaito", "Karn", "Kasmina", "Kaya", "Kiora",
+  "Koth", "Liliana", "Lolth", "Lukka", "Minsc", "Mordenkainen",
+  "Nahiri", "Narset", "Niko", "Nissa", "Nixilis", "Oko",
+  "Quintorius", "Ral", "Rowan", "Saheeli", "Samut", "Sarkhan",
+  "Serra", "Sifa", "Sivitri", "Sorin", "Szat", "Tamiyo",
+  "Tasha", "Teferi", "Teyo", "Tezzeret", "Thomil", "Tibalt",
   "Tyvar", "Ugin", "Urza", "Venser", "Vivien", "Vraska",
-  "Vronos", "Will", "Windgrace", "Wrenn", "Xenagos", "Yanggu",
-  "Yanling", "Zariel"
+  "Vronos", "Will", "Windgrace", "Worzel", "Wrenn", "Xenagos",
+  "Yanggu", "Yanling", "Zariel"
 ]
 
 def spellTypes : List String := [
@@ -196,60 +197,68 @@ def spellTypes : List String := [
 ]
 
 def creatureTypes : List String := [
-  "Time Lord", "Advisor", "Aetherborn", "Alien", "Ally", "Angel",
-  "Antelope", "Ape", "Archer", "Archon", "Armadillo", "Army",
-  "Artificer", "Assassin", "Assembly-Worker", "Astartes", "Atog", "Aurochs",
-  "Avatar", "Azra", "Badger", "Balloon", "Barbarian", "Bard",
-  "Basilisk", "Bat", "Bear", "Beast", "Beaver", "Beeble",
-  "Beholder", "Berserker", "Bird", "Bison", "Blinkmoth", "Boar",
-  "Bringer", "Brushwagg", "Camarid", "Camel", "Capybara", "Caribou",
-  "Carrier", "Cat", "Centaur", "Child", "Chimera", "Citizen",
-  "Cleric", "Clown", "Cockatrice", "Construct", "Coward", "Coyote",
-  "Crab", "Crocodile", "C'tan", "Custodes", "Cyberman", "Cyclops",
-  "Dalek", "Dauthi", "Demigod", "Demon", "Deserter", "Detective",
-  "Devil", "Dinosaur", "Djinn", "Doctor", "Dog", "Dragon",
-  "Drake", "Dreadnought", "Drix", "Drone", "Druid", "Dryad",
-  "Dwarf", "Echidna", "Efreet", "Egg", "Elder", "Eldrazi",
-  "Elemental", "Elephant", "Elf", "Elk", "Employee", "Eternal",
-  "Eye", "Faerie", "Ferret", "Fish", "Flagbearer", "Fox",
-  "Fractal", "Frog", "Fungus", "Gamer", "Gamma", "Gargoyle",
-  "Germ", "Giant", "Giraffe", "Gith", "Glimmer", "Gnoll",
-  "Gnome", "Goat", "Goblin", "God", "Golem", "Gorgon",
-  "Graveborn", "Gremlin", "Griffin", "Guest", "Hag", "Halfling",
-  "Hamster", "Harpy", "Hedgehog", "Hellion", "Hero", "Hippo",
-  "Hippogriff", "Homarid", "Homunculus", "Horror", "Horse", "Human",
-  "Hydra", "Hyena", "Illusion", "Imp", "Incarnation", "Inhuman",
-  "Inkling", "Inquisitor", "Insect", "Jackal", "Jellyfish", "Juggernaut",
-  "Kangaroo", "Kavu", "Kirin", "Kithkin", "Knight", "Kobold",
-  "Kor", "Kraken", "Kree", "Llama", "Lamia", "Lammasu",
-  "Leech", "Lemur", "Leviathan", "Lhurgoyf", "Licid", "Lizard",
-  "Lobster", "Manticore", "Masticore", "Mercenary", "Merfolk", "Metathran",
-  "Minion", "Minotaur", "Mite", "Mole", "Monger", "Mongoose",
-  "Monk", "Monkey", "Moogle", "Moonfolk", "Mount", "Mouse",
-  "Mutant", "Myr", "Mystic", "Nautilus", "Necron", "Nephilim",
-  "Nightmare", "Nightstalker", "Ninja", "Noble", "Noggle", "Nomad",
-  "Nymph", "Octopus", "Ogre", "Ooze", "Orb", "Orc",
-  "Orgg", "Otter", "Ouphe", "Ox", "Oyster", "Pangolin",
-  "Peasant", "Pegasus", "Pentavite", "Performer", "Pest", "Phelddagrif",
-  "Phoenix", "Phyrexian", "Pilot", "Pincher", "Pirate", "Plant",
-  "Platypus", "Porcupine", "Possum", "Praetor", "Primarch", "Prism",
-  "Processor", "Qu", "Rabbit", "Raccoon", "Ranger", "Rat",
+  "Time Lord", "Advisor", "Aenar", "Aetherborn", "Alien", "Ally",
+  "Andorian", "Android", "Angel", "Antelope", "Ape", "Archer",
+  "Archon", "Armadillo", "Army", "Artificer", "Assassin", "Assembly-Worker",
+  "Astartes", "Atog", "Aurochs", "Avatar", "Azra", "Badger",
+  "Bajoran", "Balloon", "Barbarian", "Bard", "Basilisk", "Bat",
+  "Bear", "Beast", "Beaver", "Beeble", "Beholder", "Berserker",
+  "Betazoid", "Bird", "Bison", "Blinkmoth", "Boar", "Bolian",
+  "Borg", "Brikar", "Bringer", "Brushwagg", "Caitian", "Camarid",
+  "Camel", "Capybara", "Cardassian", "Caribou", "Carrier", "Cat",
+  "Centaur", "Child", "Chimera", "Citizen", "Cleric", "Clown",
+  "Cockatrice", "Construct", "Coward", "Coyote", "Crab", "Crocodile",
+  "C'tan", "Custodes", "Cyberman", "Cyclops", "Dalek", "Dauthi",
+  "Demigod", "Demon", "Denobulan", "Deserter", "Detective", "Devil",
+  "Dinosaur", "Djinn", "Doctor", "Dog", "Dragon", "Drake",
+  "Dreadnought", "Drix", "Drone", "Druid", "Dryad", "Dwarf",
+  "Echidna", "Edosian", "Efreet", "Egg", "El-Aurian", "Elder",
+  "Eldrazi", "Elemental", "Elephant", "Elf", "Elk", "Employee",
+  "Eternal", "Excalbian", "Eye", "Faerie", "Ferengi", "Ferret",
+  "Fish", "Flagbearer", "Fox", "Fractal", "Frog", "Fungus",
+  "Gamer", "Gamma", "Gargoyle", "Germ", "Giant", "Giraffe",
+  "Gith", "Glimmer", "Gnoll", "Gnome", "Goat", "Goblin",
+  "God", "Golem", "Gorgon", "Gorn", "Graveborn", "Gremlin",
+  "Griffin", "Guest", "Hag", "Halfling", "Hamster", "Harpy",
+  "Hedgehog", "Hellion", "Hero", "Hippo", "Hippogriff", "Hirogen",
+  "Homarid", "Homunculus", "Horror", "Horse", "Human", "Hydra",
+  "Hyena", "Illusion", "Illyrian", "Imp", "Incarnation", "Inhuman",
+  "Inkling", "Inquisitor", "Insect", "Jackal", "Jellyfish", "Jem'Hadar",
+  "Juggernaut", "Kangaroo", "Kavu", "Kelpien", "Kirin", "Kithkin",
+  "Klingon", "Knight", "Kobold", "Kor", "Kraken", "Kree",
+  "Kwejian", "Llama", "Lamia", "Lammasu", "Lanthanite", "Leech",
+  "Lemur", "Leviathan", "Lhurgoyf", "Licid", "Lizard", "Lobster",
+  "Manticore", "Masticore", "Medusan", "Melkotian", "Mercenary", "Merfolk",
+  "Metathran", "Minion", "Minotaur", "Mite", "Mole", "Monger",
+  "Mongoose", "Monk", "Monkey", "Moogle", "Moonfolk", "Mount",
+  "Mouse", "Mutant", "Myr", "Mystic", "Na'kuhl", "Nautilus",
+  "Necron", "Nephilim", "Nightmare", "Nightstalker", "Ninja", "Noble",
+  "Noggle", "Nomad", "Nymph", "Ocampa", "Octopus", "Officer",
+  "Ogre", "Ooze", "Orb", "Orc", "Orgg", "Orion",
+  "Otter", "Ouphe", "Ox", "Oyster", "Pangolin", "Peasant",
+  "Pegasus", "Pentavite", "Performer", "Pest", "Phelddagrif", "Phoenix",
+  "Phyrexian", "Pilot", "Pincher", "Pirate", "Plant", "Platypus",
+  "Porcupine", "Possum", "Praetor", "Primarch", "Prism", "Processor",
+  "Q", "Qu", "Rabbit", "Raccoon", "Ranger", "Rat",
   "Rebel", "Reflection", "Rhino", "Rigger", "Robot", "Rogue",
-  "Sable", "Salamander", "Samurai", "Sand", "Saproling", "Satyr",
-  "Scarecrow", "Scientist", "Scion", "Scorpion", "Scout", "Sculpture",
-  "Seal", "Serf", "Serpent", "Servo", "Shade", "Shaman",
-  "Shapeshifter", "Shark", "Sheep", "Shi'ar", "Siren", "Skeleton",
-  "Skrull", "Skunk", "Slith", "Sliver", "Sloth", "Slug",
-  "Snail", "Snake", "Soldier", "Soltari", "Sorcerer", "Spawn",
-  "Specter", "Spellshaper", "Sphinx", "Spider", "Spike", "Spirit",
-  "Splinter", "Sponge", "Spy", "Squid", "Squirrel", "Starfish",
-  "Surrakar", "Survivor", "Symbiote", "Synth", "Tentacle", "Tetravite",
-  "Thalakos", "Thopter", "Thrull", "Tiefling", "Toy", "Treefolk",
-  "Trilobite", "Triskelavite", "Troll", "Turtle", "Tyranid", "Unicorn",
-  "Utrom", "Vampire", "Varmint", "Vedalken", "Villain", "Volver",
+  "Romulan", "Sable", "Salamander", "Samurai", "Sand", "Saproling",
+  "Satyr", "Scarecrow", "Scientist", "Scion", "Scorpion", "Scout",
+  "Sculpture", "Seal", "Serf", "Serpent", "Servo", "Shade",
+  "Shaman", "Shapeshifter", "Shark", "Sheep", "Shi'ar", "Siren",
+  "Skeleton", "Skrull", "Skunk", "Slith", "Sliver", "Sloth",
+  "Slug", "Snail", "Snake", "Soldier", "Soltari", "Sorcerer",
+  "Spawn", "Specter", "Spellshaper", "Sphinx", "Spider", "Spike",
+  "Spirit", "Splinter", "Sponge", "Spy", "Squid", "Squirrel",
+  "Starfish", "Surrakar", "Survivor", "Symbiote", "Synth", "Talaxian",
+  "Talosian", "Tamarian", "Tellarite", "Tentacle", "Tetravite", "Thalakos",
+  "Tholian", "Thopter", "Thrull", "Tiefling", "Tosk", "Toy",
+  "Treefolk", "Tribble", "Trill", "Trilobite", "Triskelavite", "Troll",
+  "Turtle", "Tyranid", "Unicorn", "Utrom", "Vampire", "Varmint",
+  "Vau-N'Akat", "Vedalken", "Villain", "Volver", "Vorta", "Vulcan",
   "Wall", "Walrus", "Warlock", "Warrior", "Weasel", "Weird",
   "Werewolf", "Whale", "Wizard", "Wolf", "Wolverine", "Wombat",
-  "Worm", "Wraith", "Wurm", "Yeti", "Zombie", "Zubera",
+  "Worm", "Wraith", "Wurm", "Xindi", "Yeti", "Zombie",
+  "Zubera"
 ]
 
 def planarTypes : List String := [
@@ -284,6 +293,7 @@ inductive CardSubtype where
   | bobblehead
   | book
   | clue
+  | communicator
   | contraption
   | equipment
   | food
@@ -336,6 +346,7 @@ inductive CardSubtype where
   | aminatou
   | angrath
   | arlinn
+  | arzakon
   | ashiok
   | bahamut
   | basri
@@ -351,13 +362,16 @@ inductive CardSubtype where
   | dihada
   | domri
   | dovin
+  | dyfed
   | ellywick
   | elminster
   | elspeth
   | estrid
+  | feroz
   | freyalise
   | garruk
   | gideon
+  | greensleeves
   | grist
   | guff
   | huatli
@@ -389,6 +403,7 @@ inductive CardSubtype where
   | samut
   | sarkhan
   | serra
+  | sifa
   | sivitri
   | sorin
   | szat
@@ -397,6 +412,7 @@ inductive CardSubtype where
   | teferi
   | teyo
   | tezzeret
+  | thomil
   | tibalt
   | tyvar
   | ugin
@@ -407,6 +423,7 @@ inductive CardSubtype where
   | vronos
   | will
   | windgrace
+  | worzel
   | wrenn
   | xenagos
   | yanggu
@@ -419,9 +436,12 @@ inductive CardSubtype where
   | trap
   | timeLord
   | advisor
+  | aenar
   | aetherborn
   | alien
   | ally
+  | andorian
+  | android
   | angel
   | antelope
   | ape
@@ -438,6 +458,7 @@ inductive CardSubtype where
   | avatar
   | azra
   | badger
+  | bajoran
   | balloon
   | barbarian
   | bard
@@ -449,15 +470,21 @@ inductive CardSubtype where
   | beeble
   | beholder
   | berserker
+  | betazoid
   | bird
   | bison
   | blinkmoth
   | boar
+  | bolian
+  | borg
+  | brikar
   | bringer
   | brushwagg
+  | caitian
   | camarid
   | camel
   | capybara
+  | cardassian
   | caribou
   | carrier
   | cat
@@ -481,6 +508,7 @@ inductive CardSubtype where
   | dauthi
   | demigod
   | demon
+  | denobulan
   | deserter
   | detective
   | devil
@@ -497,8 +525,10 @@ inductive CardSubtype where
   | dryad
   | dwarf
   | echidna
+  | edosian
   | efreet
   | egg
+  | elAurian
   | elder
   | eldrazi
   | elemental
@@ -507,8 +537,10 @@ inductive CardSubtype where
   | elk
   | employee
   | eternal
+  | excalbian
   | eye
   | faerie
+  | ferengi
   | ferret
   | fish
   | flagbearer
@@ -531,6 +563,7 @@ inductive CardSubtype where
   | god
   | golem
   | gorgon
+  | gorn
   | graveborn
   | gremlin
   | griffin
@@ -544,6 +577,7 @@ inductive CardSubtype where
   | hero
   | hippo
   | hippogriff
+  | hirogen
   | homarid
   | homunculus
   | horror
@@ -552,6 +586,7 @@ inductive CardSubtype where
   | hydra
   | hyena
   | illusion
+  | illyrian
   | imp
   | incarnation
   | inhuman
@@ -560,19 +595,24 @@ inductive CardSubtype where
   | insect
   | jackal
   | jellyfish
+  | jemHadar
   | juggernaut
   | kangaroo
   | kavu
+  | kelpien
   | kirin
   | kithkin
+  | klingon
   | knight
   | kobold
   | kor
   | kraken
   | kree
+  | kwejian
   | llama
   | lamia
   | lammasu
+  | lanthanite
   | leech
   | lemur
   | leviathan
@@ -582,6 +622,8 @@ inductive CardSubtype where
   | lobster
   | manticore
   | masticore
+  | medusan
+  | melkotian
   | mercenary
   | merfolk
   | metathran
@@ -600,6 +642,7 @@ inductive CardSubtype where
   | mutant
   | myr
   | mystic
+  | nakuhl
   | nautilus
   | necron
   | nephilim
@@ -610,12 +653,15 @@ inductive CardSubtype where
   | noggle
   | nomad
   | nymph
+  | ocampa
   | octopus
+  | officer
   | ogre
   | ooze
   | orb
   | orc
   | orgg
+  | orion
   | otter
   | ouphe
   | ox
@@ -640,6 +686,7 @@ inductive CardSubtype where
   | primarch
   | prism
   | processor
+  | q
   | qu
   | rabbit
   | raccoon
@@ -651,6 +698,7 @@ inductive CardSubtype where
   | rigger
   | robot
   | rogue
+  | romulan
   | sable
   | salamander
   | samurai
@@ -703,14 +751,22 @@ inductive CardSubtype where
   | survivor
   | symbiote
   | synth
+  | talaxian
+  | talosian
+  | tamarian
+  | tellarite
   | tentacle
   | tetravite
   | thalakos
+  | tholian
   | thopter
   | thrull
   | tiefling
+  | tosk
   | toy
   | treefolk
+  | tribble
+  | trill
   | trilobite
   | triskelavite
   | troll
@@ -720,9 +776,12 @@ inductive CardSubtype where
   | utrom
   | vampire
   | varmint
+  | vauNakat
   | vedalken
   | villain
   | volver
+  | vorta
+  | vulcan
   | wall
   | walrus
   | warlock
@@ -738,6 +797,7 @@ inductive CardSubtype where
   | worm
   | wraith
   | wurm
+  | xindi
   | yeti
   | zombie
   | zubera
@@ -1198,17 +1258,17 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard formatTypeLine #[] #[.instant] #[] == "Instant"
 
 
-#guard artifactTypes.length == 23
+#guard artifactTypes.length == 24
 #guard enchantmentTypes.length == 13
 #guard landTypes.length == 17
-#guard planeswalkerTypes.length == 80
+#guard planeswalkerTypes.length == 87
 #guard spellTypes.length == 5
-#guard creatureTypes.length == 324
+#guard creatureTypes.length == 367
 #guard planarTypes.length == 82
 #guard dungeonTypes == ["Undercity"]
 #guard battleTypes == ["Siege"]
 #guard basicLandTypes.all fun s => landTypes.any (· == s)
-#guard subtypeEntries.length == 545
+#guard subtypeEntries.length == 596
 #guard subtypeClashes == []
 #guard subtypeEntries.all fun e =>
   ofOracle? e.name == some e.name &&
@@ -1260,7 +1320,7 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard splitPrintedSubtypes #[.creature] "C\u2019tan" == #["C'tan"]
 #guard splitPrintedSubtypes #[.creature] "Shi'ar" == #["Shi'ar"]
 
-#guard CardSubtype.all.length == 545
+#guard CardSubtype.all.length == 596
 #guard CardSubtype.all.all fun s =>
   let expected := (subtypeKeyStripped s.englishName).replace " " "" |>.replace "-" ""
   let actual := ((reprStr s).splitOn ".").getLast! |>.replace "«" "" |>.replace "»" "" |>.map Char.toLower
@@ -1282,5 +1342,20 @@ def formatTypeLine (supertypes : Array Supertype) (types : Array CardType)
 #guard CardSubtype.timeLord.isCreatureType
 #guard !CardSubtype.timeLord.isNoncreature
 #guard CardSubtype.equipment.isNoncreature
+#guard CardSubtype.ofOracle? "Communicator" == some .communicator
+#guard CardSubtype.communicator.isNoncreature
+#guard CardSubtype.ofOracle? "Greensleeves" == some .greensleeves
+#guard CardSubtype.greensleeves.isNoncreature
+#guard CardSubtype.ofOracle? "Arzakon" == some .arzakon
+#guard CardSubtype.ofOracle? "Borg" == some .borg
+#guard CardSubtype.borg.isCreatureType
+#guard CardSubtype.ofOracle? "Jem'Hadar" == some .jemHadar
+#guard CardSubtype.ofOracle? "jemhadar" == some .jemHadar
+#guard CardSubtype.ofOracle? "Na’kuhl" == some .nakuhl
+#guard CardSubtype.ofOracle? "Vau-N'Akat" == some .vauNakat
+#guard CardSubtype.ofOracle? "El-Aurian" == some .elAurian
+#guard CardSubtype.ofOracle? "Q" == some .q
+#guard CardSubtype.ofOracle? "Officer" == some .officer
+#guard CardSubtype.ofOracle? "Vulcan" == some .vulcan
 
 end Mtg.Engine

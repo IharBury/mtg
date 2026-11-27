@@ -92,7 +92,7 @@ def _root_.Mtg.Engine.ActivatedAbility.needsBattlefieldSource (ab : ActivatedAbi
     ab.cost.exileSourceFromBattlefield || ab.cost.crewPower?.isSome ||
     ab.cost.exileManaSymbols?.isSome
 
-/-- Mana abilities (CR 605.1a, 25 September 2026): an activated ability is a
+/-- Mana abilities (CR 605.1a, 6 November 2026): an activated ability is a
 mana ability iff it satisfies all four CR 605.1a criteria (`ab.isManaAbility`). -/
 def isManaActivation (ab : ActivatedAbility) : Bool :=
   ab.isManaAbility
@@ -125,7 +125,7 @@ def landPlaysAllowed (g : Game) (p : PlayerId) : Nat :=
 def canPlayLand (g : Game) (p : PlayerId) : Bool :=
   g.asSorcery? p && g.loggedLandsPlayed p < g.landPlaysAllowed p
 
-/-- Whether `p` may play `o` from exile under a granted permission (CR 701.18 / 715.3d). -/
+/-- Whether `p` may play `o` from exile under a granted permission (CR 701.18 / 716.3d). -/
 def mayPlayFromExile (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   o.zone == .exile &&
   match g.playPermissionFor? p o with

@@ -176,7 +176,7 @@ private def applyActionFor (g : Game) (p : PlayerId) : Action → Except String 
   | .chooseReplacement id => g.chooseReplacement p id
 
 /-- Seat whose turn, priority, or pending prompt is currently active, before
-mapping through `playerControl` (CR 723.5). -/
+mapping through `playerControl` (CR 724.5). -/
 def rawActor (g : Game) : Option PlayerId :=
   if g.over then none
   else
@@ -239,7 +239,7 @@ def rawActor (g : Game) : Option PlayerId :=
     | .none =>
       if g.playersReceivePriority then some g.priority else none
 
-/-- Who must act next, accounting for player-control effects (CR 723.5)? -/
+/-- Who must act next, accounting for player-control effects (CR 724.5)? -/
 def actor (g : Game) : Option PlayerId :=
   g.rawActor.map fun whose =>
     match g.controllingPlayerOf? whose with
@@ -247,7 +247,7 @@ def actor (g : Game) : Option PlayerId :=
     | none => whose
 
 /-- Dispatch `action` for `caller`, routing decisions for any controlled player
-through `decidesFor` (CR 723.5) while keeping `.concede` on `caller` (CR 723.5b). -/
+through `decidesFor` (CR 724.5) while keeping `.concede` on `caller` (CR 724.5b). -/
 def applyAction (g : Game) (caller : PlayerId) (action : Action) : Except String Game := do
   match action with
   | .concede => return g.concede caller
@@ -261,7 +261,7 @@ def applyAction (g : Game) (caller : PlayerId) (action : Action) : Except String
         else
           match g.controllingPlayerOf? whose with
           | some ctrl =>
-            throw s!"{(g.player ctrl).name} controls {(g.player whose).name} and makes their choices (CR 723.5)"
+            throw s!"{(g.player ctrl).name} controls {(g.player whose).name} and makes their choices (CR 724.5)"
           | none => pure caller
       | none => pure caller
     applyActionFor g p action

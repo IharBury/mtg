@@ -3,7 +3,7 @@ import Mtg.Engine.Game.Status
 /-!
 # Game objects (CR 109)
 
-`PlayPermission` (playing cards from exile, CR 701.18 / 715.3d),
+`PlayPermission` (playing cards from exile, CR 701.18 / 716.3d),
 `GameObject` — an object in the game with printed characteristics, status,
 and stack metadata — `CreatureCombatAssignment` (CR 510.1),
 current-characteristic helpers, and `WaitingTrigger` snapshots of
@@ -37,13 +37,13 @@ structure StepOutcome where
   succeeded : Bool := false
 deriving Repr, Inhabited, BEq
 
-/-- Permission to play a card from exile (CR 701.18 / 715.3d).
+/-- Permission to play a card from exile (CR 701.18 / 716.3d).
 Duration (`untilEndOfTurn`, `untilEndOfNextTurnOf`, or `whileInZone`) is stored
 on the enclosing `ContinuousEffectSpec.permission`. -/
 structure PlayPermission where
   /-- The player who may play the card. -/
   player : PlayerId
-  /-- CR 715.3d permission from resolving an Adventure: lasts while the card
+  /-- CR 716.3d permission from resolving an Adventure: lasts while the card
   remains exiled, and the card cannot be recast as an Adventure this way. -/
   fromAdventure : Bool := false
   /-- Permission lasts while the card remains exiled (e.g. Shadow of the Enemy). -/
@@ -104,7 +104,7 @@ structure GameObject where
   /-- Object this Aura or Equipment is attached to (CR 303.4 / 301.5). -/
   attachedTo : Option ObjectId := none
   /-- Normal characteristics of an adventurer card, set while the spell is on
-  the stack as an Adventure (CR 715.3b). -/
+  the stack as an Adventure (CR 716.3b). -/
   adventurerCard : Option CardDef := none
   /-- Cards this permanent exiled that return when it leaves (CR 610.3). -/
   linkedExile : Array ObjectId := #[]
@@ -182,13 +182,13 @@ def isOnBattlefield (o : GameObject) : Bool :=
 def isBattlefieldObject (o : GameObject) : Bool :=
   o.zone == .battlefield
 
-/-- True while this spell is on the stack as an Adventure (CR 715.3b). -/
+/-- True while this spell is on the stack as an Adventure (CR 716.3b). -/
 def isAdventureSpell (o : GameObject) : Bool :=
   o.adventurerCard.isSome
 
 end GameObject
 
-/-- A game rule that causes an event directly (CR 103.5, 303.4h, 304.2, 307.2, 602.2b, 603.3, 603.3c, 608.3, 700.2b, 701.3d, 702.176, 715.3d, 733.1, 800.4a). -/
+/-- A game rule that causes an event directly (CR 103.5, 303.4h, 304.2, 307.2, 602.2b, 603.3, 603.3c, 608.3, 700.2b, 701.3d, 702.176, 716.3d, 734.1, 800.4a). -/
 inductive GameRuleKind where
   | openingHandDraw
   | mulligan
@@ -215,7 +215,7 @@ inductive TurnBasedAction where
   | dayNightCheck       -- 502.2 / 703.4b
   | untapAll            -- 502.3 / 703.4c
   | drawStepDraw        -- 504.1 / 703.4d
-  | sagaLoreOnMain      -- 714.3c / 703.4f
+  | sagaLoreOnMain      -- 715.3c / 703.4f
   | chooseDefendingPlayer -- 507.1 / 703.4h
   | declareAttackers    -- 508.1 / 703.4i
   | declareBlockers     -- 509.1 / 703.4j
@@ -247,7 +247,7 @@ inductive StateBasedAction where
   | illegalCreatureAttachment        -- 704.5p
   | counterAnnihilation -- 704.5q (+1/+1 and -1/-1)
   | counterLimit        -- 704.5r
-  | sagaFinalChapter    -- 704.5s / 714.4
+  | sagaFinalChapter    -- 704.5s / 715.4
   | dungeonCompleted    -- 704.5t
   | spaceSculptor       -- 704.5u
   | zeroDefenseBattle   -- 704.5w / 310.8
@@ -288,12 +288,12 @@ inductive ReplacementEffectKind where
   | entersWithIndestructibleCounter      -- 616.1e / 614.1c / 614.12
   | entersWithShield                     -- 616.1e / 614.1c / 614.12
   | entersWithHopePerCreature            -- 616.1e / 614.1c / 614.12
-  | entersWithSagaLore                   -- 714.3a / 616.1e / 614.1c / 614.12
+  | entersWithSagaLore                   -- 715.3a / 616.1e / 614.1c / 614.12
   | entersUnderControl                   -- 616.1b
   | entersAsCopy                         -- 616.1c / 707.5
   | entersAsCopyCreatureUntilEot (targetId : ObjectId) -- 616.1c / 614.1c / 614.12
   | declineEntersAsCopy                  -- 616.1c / 614.1c / 614.12
-  | entersBackFaceUp                     -- 616.1d / 702.145b / 712.14
+  | entersBackFaceUp                     -- 616.1d / 702.145b / 712.11
   | asEntersAttachAura (hostId : ObjectId) -- 303.4f–g / 614.12
   | entersWithExtraCounters              -- 616.1e
   | othersEnterWithPlusOneEqualToughness -- 616.1e (Arwen, Weaver of Hope)

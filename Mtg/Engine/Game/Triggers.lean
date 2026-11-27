@@ -4,7 +4,7 @@ import Mtg.Engine.Game.Targeting
 # Triggered abilities onto the stack (CR 603.3)
 
 Putting triggered abilities on the stack, intervening-if conditions
-(CR 603.4), extra trigger copies, Saga lore counters (CR 714.3a / 714.3c),
+(CR 603.4), extra trigger copies, Saga lore counters (CR 715.3a / 715.3c),
 battlefield folds, `becomeTapped` (CR 603.2e), activated- and mana-ability
 lookups, waiting-trigger batches stacked in APNAP order (CR 603.3b), and
 `receivePriority`.
@@ -319,7 +319,7 @@ def putQueuedTrigger (g : Game) (controller : PlayerId) (source : GameObject)
 
 /-- Add `n` lore counters via `replaceCountersPutChoice`, including Doc Samson's
 +1 replacement (CR 614.1a / MSH 517), emitting a single `n'`-counter `.lore`
-`PermanentEvent.counters` (CR 714.2b), pausing for CR 616.1 choice when
+`PermanentEvent.counters` (CR 715.2b), pausing for CR 616.1 choice when
 competing counter replacements tie, and preserving `EventCause.replaced`. -/
 def addLoreCounters (g : Game) (saga : GameObject) (n : Nat)
     (cause : Option EventCause := some (.turnBased .sagaLoreOnMain)) : Game :=
@@ -382,7 +382,7 @@ def addLoreCounters (g : Game) (saga : GameObject) (n : Nat)
   | none => g
 
 /-- Put one lore counter on `saga` and queue the matching chapter abilities
-(CR 714.2). -/
+(CR 715.2). -/
 def addOneLoreCounter (g : Game) (saga : GameObject) : Game :=
   g.addLoreCounters saga 1
 
@@ -408,7 +408,7 @@ def addLoreAfterDrawStepIds (g : Game) (sagaIds : Array ObjectId) : Game :=
     return g
 
 /-- After the draw step / as first main begins, add a lore counter to each
-Saga the active player controls simultaneously in one batch (CR 613.1d,f / 703.4f / 714.3c). -/
+Saga the active player controls simultaneously in one batch (CR 613.1d,f / 703.4f / 715.3c). -/
 def addLoreAfterDrawStep (g : Game) : Game :=
   let sagaIds := ((g.permanentsOf g.activePlayer).filter (fun o =>
     g.hasSubtype o .saga && g.finalChapterNumber o > 0)).map (·.id)

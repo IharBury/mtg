@@ -253,7 +253,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
   mustHold24i4 "2.activeTeamDuringYourTurnOk" activeTeamDuringYourTurnOk &&
   mustHold24i4 "2.replay" (replayOk24i4 #[gKw, gTrig1, gTap2, gJaceMate, gJacePrompt, gJaceOpp])
 
--- 3. CR 102.3 / 103.1a / 723.5 / 800.4a,m / 805.3 / 805.8 / 805.10a / 810.2 / 810.8a / 810.11:
+-- 3. CR 102.3 / 103.1a / 724.5 / 800.4a,m / 805.3 / 805.8 / 805.10a / 810.2 / 810.8a / 810.11:
 --    Starting team first seat (`Start.startWithRng`), CR 805.8 shared team extra turns,
 --    all 6 `matchesTrigger` `opp` arms, player-control edge cases, and `3+`-seat team win logs.
 #guard
@@ -488,7 +488,7 @@ def mkThreePlayer24i4 (seed : UInt64 := 245) : Game :=
   mustHold24i4 "4d.beforePwMovesOk" beforePwMovesOk &&
   mustHold24i4 "4.replay" (replayOk24i4 #[gLostLeg1, gAnnih1, gAnnihKept, gZeroGrant1, gZeroBoxPass1, gZeroBoxAll, gPwGrant1])
 
--- 5. CR 613.1d,f / 703.4f / 704.5s / 714.2d / 714.3c / 714.4:
+-- 5. CR 613.1d,f / 703.4f / 704.5s / 715.2d / 715.3c / 715.4:
 --    Layer 4 (`g.hasSubtype o .saga`) and Layer 6 (`g.retainsPrintedAbilities o`) Saga checks across
 --    `StateBasedActions.checkSBACounted`, `Triggers.addLoreAfterDrawStep`, `Core.loreAmongSagas`, and `Entering.finishOneResolution`.
 #guard
@@ -1027,7 +1027,7 @@ def replayOk25i2 (gs : Array Game) : Bool :=
     gExLifeProp, gExLifeRejected, gLowResProp, gLowRejected
   ])
 
--- 3. CR 733.1 proposal-checkpoint ordering & upfront `mayCast*` checks:
+-- 3. CR 734.1 proposal-checkpoint ordering & upfront `mayCast*` checks:
 --    - reversing an unpayable/targetless Cascade cast restores `Pending.resolutionChoice p0 (.mayCastCascade ...)`
 --      with `postCastCleanup == none` and card still in `.exile`;
 --    - `defaultChoiceAction` declines uncastable Cascade hits cleanly;
@@ -1586,7 +1586,7 @@ def mkSixSeatThreeTeams25i4 (seed : UInt64 := 2540) : Game :=
   | .ok g => (keepOpeningHands g 40).advanceStep
   | .error e => panic! e
 
--- 1. CR 725.2 / 725.4 / 113.8 / 800.4a,d / 805.4, 805.4a (Rulings 937, 938, 940):
+-- 1. CR 726.2 / 726.4 / 113.8 / 800.4a,d / 805.4, 805.4a (Rulings 937, 938, 940):
 --    Inherent sourceless monarch end-step draw & combat-damage triggers + 2HG succession.
 #guard
   -- 1a. 2HG monarch end-step draw fires once on the shared turn's final seat (`⟨1⟩`),
@@ -1652,7 +1652,7 @@ def mkSixSeatThreeTeams25i4 (seed : UInt64 := 2540) : Game :=
 
   -- Lethal combat damage: `⟨0⟩` is at 2 life on `⟨2⟩`'s turn; `⟨1⟩`'s bear deals 2 combat damage to `⟨0⟩`.
   -- `⟨0⟩`'s monarch trigger is removed when `⟨0⟩` loses/leaves (CR 800.4a,d), so active player `⟨2⟩`
-  -- inherits the monarchy via CR 725.4 and `⟨1⟩` never steals it from a dead trigger!
+  -- inherits the monarchy via CR 726.4 and `⟨1⟩` never steals it from a dead trigger!
   let g3Lethal0 := ((g3Bears.startNextTurnCore false).startNextTurnCore false).loseLife ⟨0⟩ 18 (cause := some testCause)
   let g3LethalHit := g3Lethal0.withBatch (some combatCause) fun g =>
     let g := g.record (GameEvent.damagedPlayer g.turnNumber
@@ -1667,7 +1667,7 @@ def mkSixSeatThreeTeams25i4 (seed : UInt64 := 2540) : Game :=
     (g3LethalAfter.player ⟨2⟩).isMonarch &&
     !(g3LethalAfter.player ⟨1⟩).isMonarch
 
-  -- 1c. CR 725.4 2HG succession: when active player `⟨0⟩` has already departed on Seat `⟨0⟩`
+  -- 1c. CR 726.4 2HG succession: when active player `⟨0⟩` has already departed on Seat `⟨0⟩`
   --     while teammate `⟨1⟩`'s seat has not yet begun (`!isSharedTurnFinalSeat`), an opponent
   --     monarch `⟨4⟩` leaving passes monarchy to `⟨1⟩` (`nextLiving activePlayer`), whereas on
   --     final Seat `⟨1⟩` (`isSharedTurnFinalSeat`), `⟨1⟩` leaving passes monarchy to `⟨2⟩`:
@@ -1986,7 +1986,7 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
     | .engine .endProposalAction => d - 1
     | _ => d) 0
 
--- 1. CR 104.3a / 610.3 / 733.1 / 800.4a:
+-- 1. CR 104.3a / 610.3 / 734.1 / 800.4a:
 --    Mid-proposal player departure inside a paused `depth > 0` `.action` bracket is partitioned
 --    outside the cost action and preserved across `reverseToProposalCheckpointCore?`, remapping
 --    `ZoneEvent.ceasedToExist` and CR 800.4a `ZoneEvent.moved` onto `ckpt` object IDs.
@@ -2049,7 +2049,7 @@ def openProposalActionDepth26i1 (g : Game) : Nat :=
     match gAfterConcede.pending with
     | .chooseReplacement q cs => mustApply gAfterConcede q (.chooseReplacement cs[0]!)
     | _ => gAfterConcede
-  -- Insufficient mana (`{R}{R}` vs `{R}{G}{G}`) reverses the proposal via CR 733.1:
+  -- Insufficient mana (`{R}{R}` vs `{R}{G}{G}`) reverses the proposal via CR 734.1:
   let gRev := mustApply gResumed p0 .pay
   let ckptDepartureOk :=
     openProposalActionDepth26i1 gPaused == 1 &&
@@ -3094,7 +3094,7 @@ private def replayOk26i3 (gs : Array Game) : Bool :=
 
 end Phase26Item3EventAlignment
 
-/-! ### Phase 26 Item 4: `recordRemoveCounters` routing (6 sites), CR 725.2–3 per-creature /
+/-! ### Phase 26 Item 4: `recordRemoveCounters` routing (6 sites), CR 726.2–3 per-creature /
 resolution-controller / idempotent monarch triggers, CR 805.3–7 2HG APNAP / shared-step /
 combat triggers, layer-resolved battlefield `g.name`, and dead-scaffolding retirement -/
 section Phase26Item4EventAlignment
@@ -3249,7 +3249,7 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
   mustHold26i4 "1.replay"
     (replayOk26i4 #[gPwNoSrc1, gPwWithSrc1, gInd1, gStory1, gPlusNoop, gPlus1, gLoy1])
 
--- 2. CR 603.2c,e / 608.2h / 725.2–3 (Rulings 935, 940):
+-- 2. CR 603.2c,e / 608.2h / 726.2–3 (Rulings 935, 940):
 --    Per-creature monarch combat-damage triggers, resolution-time battlefield controller
 --    with LKI fallback, and idempotent `.monarch` resolution when `heir` is already monarch.
 #guard
@@ -3274,7 +3274,7 @@ private def mkTwoHeadedGiant26i4 (seed : UInt64 := 2641) (startingSeat : Nat := 
     gHit.waitingTriggers[1]!.causeId == some b2 &&
     gHit.waitingTriggers.all (fun w => w.causeController == some p1)
 
-  -- 2a. Idempotent resolution when `p1` still controls both creatures (CR 725.3):
+  -- 2a. Idempotent resolution when `p1` still controls both creatures (CR 726.3):
   let gPrio := gHit.receivePriority p0
   let gStacked := mustApply gPrio p0 (.stackTriggers #[0, 1])
   let sIdemp := gStacked.events.size
@@ -3551,7 +3551,7 @@ private def mustHold27i1 (label : String) (ok : Bool) : Bool :=
 private def replayOk27i1 (gs : Array Game) : Bool :=
   gs.all (fun g => Game.replayEvents g.events == g && allRulesEventsClassified g)
 
--- 1. CR 104.3a / 610.3 / 704.3 / 733.1 / 800.4a:
+-- 1. CR 104.3a / 610.3 / 704.3 / 734.1 / 800.4a:
 --    Non-replacement `inDepSpan` preservation of CR 800.4a control-loss exiles, CR 610.3
 --    linked-exile returns, post-departure SBAs, and `depReplacementPending` cost payments
 --    across `reverseToProposalCheckpointCore?`, plus `cleanupRemappedLeavingId` continuous-effect

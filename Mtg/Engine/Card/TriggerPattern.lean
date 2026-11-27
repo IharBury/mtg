@@ -1,7 +1,7 @@
 import Mtg.Engine.Card.Expr
 
 /-!
-# Unified trigger patterns and batch groupings (CR 603 / 605.1b / 700.1 / 714.2b)
+# Unified trigger patterns and batch groupings (CR 603 / 605.1b / 700.1 / 715.2b)
 
 Declarative trigger matching over `RulesEvent` families using the Layer-1
 expression algebra (`ObjectPred`, `PlayerFilter`, `RecipientFilter`,
@@ -9,7 +9,7 @@ expression algebra (`ObjectPred`, `PlayerFilter`, `RecipientFilter`,
 
 Includes:
 - `TriggerWord` (`.when` / `.whenever` / `.at`, CR 603.1);
-- `BatchGrouping` (CR 603.2c / 700.1 / 714.2b counter thresholds);
+- `BatchGrouping` (CR 603.2c / 700.1 / 715.2b counter thresholds);
 - `TriggerLimit` (CR 603.2h per-turn caps);
 - `TriggerPattern` (27 constructors, `< 40`), with structural:
   - `usesLookBack` (exact CR 603.10a–f look-back classification),
@@ -17,12 +17,12 @@ Includes:
   - `isAnotherAbilityTriggering` (CR 603.3b part 2),
   - functorial `HasTextChange`, and canonical `ToOracle`;
 - Roman numeral chapter helpers (`parseRomanNumeral`, `parseChapterNumbers`,
-  `romanNumeral`, `formatChapterRoman`, CR 714.2).
+  `romanNumeral`, `formatChapterRoman`, CR 715.2).
 -/
 
 namespace Mtg.Engine
 
-/-! ## Roman numeral helpers for Saga chapters (CR 714.2) -/
+/-! ## Roman numeral helpers for Saga chapters (CR 715.2) -/
 
 /-- Parse one Roman chapter numeral (`I`–`X`). Returns `0` when unrecognized. -/
 def parseRomanNumeral (s : String) : Nat :=
@@ -57,7 +57,7 @@ def romanNumeral (n : Nat) : String :=
         n := n - v
     return acc
 
-/-- Format a chapter number list as `"I"` or `"II, III"` (CR 714.2). -/
+/-- Format a chapter number list as `"I"` or `"II, III"` (CR 715.2). -/
 def formatChapterRoman (ns : Array Nat) : String :=
   String.intercalate ", " (ns.toList.map romanNumeral)
 
@@ -85,7 +85,7 @@ instance : ToOracle TriggerWord where
     if ctx.capitalize then s else s.map Char.toLower
 
 /-- How a triggered ability batches simultaneous occurrences in a rules-event
-batch (CR 603.2c / 700.1 / 714.2b). -/
+batch (CR 603.2c / 700.1 / 715.2b). -/
 inductive BatchGrouping where
   /-- Triggers once per matching event occurrence (CR 603.2c). -/
   | perOccurrence
@@ -95,7 +95,7 @@ inductive BatchGrouping where
   | perPlayerInBatch
   /-- Triggers once per distinct matching source/object in the batch (CR 603.2c). -/
   | perSourceInBatch
-  /-- CR 714.2b counter-threshold trigger (Sagas / Plans): fires for each `n ∈ chapters`
+  /-- CR 715.2b counter-threshold trigger (Sagas / Plans): fires for each `n ∈ chapters`
   such that the permanent had `< n` `kind` counters before the event and `≥ n` after. -/
   | counterThreshold (kind : CounterKind) (chapters : Array Nat)
 deriving Repr, Inhabited, BEq
@@ -275,7 +275,7 @@ inductive TriggerPattern where
   | becomesUnattached (attachment : ObjectPred) (fromHost : ObjectPred := .anyObject)
   /-- A player loses control of a permanent (CR 603.10d). -/
   | controlLost (subject : ObjectPred) (formerController : PlayerFilter := .you)
-  /-- One or more counters are put on a matching permanent (CR 122.6 / 714.2b). -/
+  /-- One or more counters are put on a matching permanent (CR 122.6 / 715.2b). -/
   | putCounters (putter? : Option PlayerFilter) (counterKind? : Option CounterKind)
       (subject : ObjectPred)
   /-- One or more matching creatures are declared as attackers (CR 508.3). -/

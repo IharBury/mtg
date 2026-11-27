@@ -4,7 +4,7 @@ import Mtg.Engine.Game.TriggeredAbilities
 # Spell resolution (CR 608)
 
 Aura spells attaching as they resolve (CR 303.4), Adventure spells going
-to exile (CR 715.3d), and `resolveTop` for the top of the stack.
+to exile (CR 716.3d), and `resolveTop` for the top of the stack.
 -/
 
 namespace Mtg.Engine

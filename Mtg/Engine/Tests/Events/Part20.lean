@@ -827,7 +827,7 @@ private def replayOk54i4 (gs : Array Game) : Bool :=
     | .ok _ => false
   let tokNonPlainManaOk := !gTokInHand0.hasUsableNonPlainManaAbility p0
   let tokDiscardIdsEmpty := (gTokInHand0.discardableHandIds p0).isEmpty
-  -- Sneak + discard-or-pay-{2} spell with ONLY a token attacker -> choosing discard reverses under CR 733.1 (no free cast!):
+  -- Sneak + discard-or-pay-{2} spell with ONLY a token attacker -> choosing discard reverses under CR 734.1 (no free cast!):
   let gSnkTok0 :=
     let g := addPermanent (insertObject gBase discSpellDef p0 (.hand p0)) tokBearDef p0 p0
     let atkId := (g.permanentsOf p0)[0]!.id
@@ -841,7 +841,7 @@ private def replayOk54i4 (gs : Array Game) : Bool :=
     | .error _ => true
     | .ok _ => false
   -- Even if `needsDiscardCard` is already set on a Sneak proposal, `.finishProposedSpellCosts .sneak`
-  -- bounces the token and reverses under CR 733.1 (no `.discardForAdditionalCost` prompt, no free cast!):
+  -- bounces the token and reverses under CR 734.1 (no `.discardForAdditionalCost` prompt, no free cast!):
   let gSnkTokRev :=
     let prop := gSnkTokPrompt.proposedSpell.get!
     let gForced := gSnkTokPrompt.changes #[.pending .none, .proposedSpell (some { prop with needsDiscardCard := true })]

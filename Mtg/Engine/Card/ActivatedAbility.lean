@@ -209,14 +209,14 @@ def hasTargetCostReduction (ab : ActivatedAbility) : Bool :=
 def isOnceEachTurn (ab : ActivatedAbility) : Bool :=
   ab.turnLimit? == some 1
 
-/-! ### CR 605.1a Mana Ability Classification (25 September 2026) -/
+/-! ### CR 605.1a Mana Ability Classification (6 November 2026) -/
 
 /-- True when resolving any mode of this ability could add mana to a player's
 mana pool (CR 605.1a). -/
 def couldAddMana (ab : ActivatedAbility) : Bool :=
   ab.allModes.any Effect.couldAddMana
 
-/-- CR 605.1a (25 September 2026): an activated ability is a mana ability iff:
+/-- CR 605.1a (6 November 2026): an activated ability is a mana ability iff:
 1. it does not require a target;
 2. it could add mana to a player's mana pool when it resolves;
 3. it is not a loyalty ability; AND

@@ -2,12 +2,12 @@ import Mtg.Engine.Card.CardDef
 import Mtg.Engine.Card.OracleNorm
 
 /-!
-# Stage-1 Oracle Card Frame Splitter (CR 201–212, 712, 714, 715)
+# Stage-1 Oracle Card Frame Splitter (CR 201–212, 712, 715, 716)
 
 Splits raw printed card text into structured `CardFrame` / `FaceFrame` /
 `SubFaceFrame` headers and unparsed rules lines:
 - `//` double-faced card back face (CR 712),
-- `//ADV//` Adventure and `//PREP//` Prepare sub-faces (CR 715),
+- `//ADV//` Adventure and `//PREP//` Prepare sub-faces (CR 716),
 - Name & mana cost (`{W}`, `{2/W}`, `{W/U}`, `{X}`, `{C}`),
 - Type line (CR 205),
 - Printed power/toughness into `PrintedStat` (CR 208.1–2a),
@@ -15,7 +15,7 @@ Splits raw printed card text into structured `CardFrame` / `FaceFrame` /
 - Planeswalker loyalty (CR 209.1), Battle defense (CR 210.1), and Vanguard
   hand/life modifiers (CR 211.1 / 212.1),
 - Loyalty ability headers `[+N]:` / `−N:` / `[0]:` / `[-X]:` (CR 209.2 / 107.7)
-  and Saga chapter headers `I, II — ...` (CR 714.2).
+  and Saga chapter headers `I, II — ...` (CR 715.2).
 -/
 
 namespace Mtg.Engine.Parser
@@ -306,7 +306,7 @@ def splitMarked (mark : String) (lines : List String) : List String × Option (L
       else go (line :: acc) rest
   go [] lines
 
-/-- Pull an Adventure block out of the rules lines (CR 715). -/
+/-- Pull an Adventure block out of the rules lines (CR 716). -/
 def splitAdventure (lines : List String) : List String × Option (List String) :=
   splitMarked "//ADV//" lines
 
@@ -317,7 +317,7 @@ def splitPrepare (lines : List String) : List String × Option (List String) :=
 def romanToken (s : String) : Bool :=
   s.all (fun c => c == 'I' || c == 'V' || c == 'X' || c == ',')
 
-/-- `I — Scry 2.` or `II, III — …` (CR 714.2). -/
+/-- `I — Scry 2.` or `II, III — …` (CR 715.2). -/
 def parseChapterHeader (line : String) : Option (String × String) :=
   let line := line.trimAscii.copy
   let parts :=
@@ -593,7 +593,7 @@ def parseLoyaltyAbilityLine (line : String) : Option (LoyaltySymbol × String) :
         else (loyaltySymbolOf sign isX n).map fun sym => (sym, effect)
       else none
 
-/-- Parsed header and unparsed rules lines of an Adventure / Prepare sub-face (CR 715). -/
+/-- Parsed header and unparsed rules lines of an Adventure / Prepare sub-face (CR 716). -/
 structure SubFaceFrame where
   kind : SubFaceKind
   base : CardDef

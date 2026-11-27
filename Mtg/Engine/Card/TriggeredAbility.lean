@@ -57,7 +57,7 @@ def impendingEndStep : TriggeredAbility :=
     (.permanent (.modifyCounters (.remove (some .time) (.exact (.const 1))) .this))
     (interveningIf? := some condImpendingPaidWithTimeCounter)
 
-/-- Build a Saga chapter triggered ability (CR 714.2b). -/
+/-- Build a Saga chapter triggered ability (CR 715.2b). -/
 def sagaChapters (chapters : Array Nat) (e : Effect) : TriggeredAbility :=
   { word := .when
     pattern := TriggerPattern.putCountersOnSelf .lore

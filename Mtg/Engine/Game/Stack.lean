@@ -7,7 +7,7 @@ import Mtg.Engine.Game.Object
 `ProposalKind` / `ProposedSpell`, the snapshot of a spell or activated
 ability whose total cost is being determined and paid
 (CR 601.2f–h / 602.2b), kept so an illegal proposal can be reversed
-(CR 733.1).
+(CR 734.1).
 -/
 
 namespace Mtg.Engine
@@ -56,7 +56,7 @@ inductive ProposalKind where
 deriving DecidableEq, Repr, Inhabited, BEq
 
 /-- Snapshot of a spell or activated ability whose total cost is being paid
-(CR 601.2f–h / 602.2b). Used to reverse an illegal action (CR 733.1). -/
+(CR 601.2f–h / 602.2b). Used to reverse an illegal action (CR 734.1). -/
 structure ProposedSpell where
   caster : PlayerId
   cost : ManaCost

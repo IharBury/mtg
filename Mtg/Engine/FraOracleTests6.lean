@@ -127,7 +127,7 @@ def winterConvoked : Game := mustApply winterProposed ⟨0⟩ (.choosePermanents
 #guard (fraRuling 867).comment.contains "even one you haven't controlled continuously"
 #guard (fraRuling 869).comment.contains "Convoke doesn't change a spell's mana cost or mana value"
 
-/- A reversed cast untaps the convoking creatures (CR 733.1). -/
+/- A reversed cast untaps the convoking creatures (CR 734.1). -/
 #guard
   let p := winterConvoked.proposedSpell.get!
   let g := winterConvoked.changeProposal (.cost (p.cost.addGeneric 9))

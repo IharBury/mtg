@@ -4042,7 +4042,7 @@ private partial def parseAtomicTriggerEvent? (clause : String) (cardName : Strin
       let pred : ObjectPred := .all #[.hasType .creature, .shares .creatureType (.inZones allZones (.all #[.isCommander, .ownedBy .you]))]
       return some (.castSpell .you pred (manaSpent? := some .fromSource), .perOccurrence, .unlimited, #[.battlefield])
 
-  -- `"the <ordinal> <counter> counter is put on <subj>"` (Plan / counter-threshold triggers, CR 714.2b)
+  -- `"the <ordinal> <counter> counter is put on <subj>"` (Plan / counter-threshold triggers, CR 715.2b)
   if let some restThe := dropPrefixCI? s "the " then
     if let some (ordCtr, onSubj) := splitFirstCI? restThe " counter is put on " then
       let ws := splitWords ordCtr

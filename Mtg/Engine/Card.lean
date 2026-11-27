@@ -75,7 +75,7 @@ This module re-exports the `Mtg.Engine.Card.*` files, one per abstraction:
 - `ActivatedAbility` / `StaticAbility`: printed ability helpers (CR 602 / 604).
 - `TriggerPattern` / `Trigger`: unified trigger event patterns, batch
   groupings, turn limits, CR 603.10a–f look-back, CR 605.1b triggered mana
-  ability classification, and Saga chapter triggers (CR 603 / 714.2).
+  ability classification, and Saga chapter triggers (CR 603 / 715.2).
 - `TriggeredAbility`: core triggered-ability constructors, `HasTargeting`, and
   canonical `ToOracle` rendering (test-only named builder tables live under
   `Mtg.Engine.Tests.Builders`).

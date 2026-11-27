@@ -3,7 +3,7 @@ import Mtg.Engine.Catalog
 import Mtg.Engine.Fixture
 
 /-!
-# Saga chapters as unified `Instruction` `Effect`s (CR 714.2)
+# Saga chapters as unified `Instruction` `Effect`s (CR 715.2)
 
 Each Saga chapter ability carries a unified `Instruction` body executed
 directly by `Game/Interpreter.lean`.

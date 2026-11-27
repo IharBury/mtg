@@ -224,7 +224,7 @@ def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target 
 /-- Whether `c` may be proposed kicked with legal targets even when none of its unkicked
 targets are legal: kicker may be chosen at CR 601.2b, and the kicked effect then announces
 its own targets at CR 601.2c (CR 702.33d,g). Choosing not to kick afterwards with no legal
-unkicked target reverses the proposal (CR 733.1). -/
+unkicked target reverses the proposal (CR 734.1). -/
 def kickedFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef)
     (tcs : Array TextChange := #[]) (sourceId : Option ObjectId := none) : Bool :=
   match c.kicker, c.spellEffect with

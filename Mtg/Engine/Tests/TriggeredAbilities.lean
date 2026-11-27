@@ -9,7 +9,7 @@ import Mtg.Engine.Catalog.RealityFractureCommander
 
 Comprehensive gameplay `#guard` regression suite for `TriggerPattern` and
 pattern-driven trigger matching (see `docs/card-and-ability-model.md` and
-`docs/game-evaluation.md`, anchored to the 25 September 2026 CR):
+`docs/game-evaluation.md`, anchored to the 6 November 2026 CR):
 1. Pattern-driven `Core.matchTriggers` across zone changes, combat, damage/life,
    casts, counters, steps, player actions, and novel parsed triggered abilities.
 2. Exact CR 603.10a–f look-back (`pre`) vs. non-look-back (`post`), including
@@ -20,7 +20,7 @@ pattern-driven trigger matching (see `docs/card-and-ability-model.md` and
 4. CR 605.1b triggered mana ability classification (`TriggeredAbility.isManaAbility`).
 5. CR 700.1 `BatchGrouping` (`perOccurrence`, `oncePerBatch`, `perPlayerInBatch`,
    `perSourceInBatch`).
-6. CR 714.2b/d/4 & 704.5s dynamic Layer-6 Saga chapter grants and removals
+6. CR 715.2b/d/4 & 704.5s dynamic Layer-6 Saga chapter grants and removals
    updating `Game.finalChapterNumber`, `addLoreAfterDrawStep`, chapter triggers,
    and SBA sacrifice.
 7. Two distinct modal triggers on one card with independent `ModalSpec` modes.
@@ -372,7 +372,7 @@ private def addToZone (g : Game) (card : CardDef) (owner : PlayerId) (z : Zone)
     dmgTrigs.any (fun wt => wt.causeId == some idB && wt.lastKnownPower == some 7)
   dieGroupingOk && discGroupingOk && dmgGroupingOk
 
-/-! ### 6. CR 714.2b/d/4 & 704.5s Dynamic Layer-6 Saga chapters -/
+/-! ### 6. CR 715.2b/d/4 & 704.5s Dynamic Layer-6 Saga chapters -/
 
 -- Granting a Chapter III ability in Layer 6 dynamically raises `Game.finalChapterNumber`
 -- from 2 → 3, prevents CR 704.5s SBA sacrifice at 2 lore counters, allows

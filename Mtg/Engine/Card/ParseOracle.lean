@@ -3,7 +3,7 @@ import Mtg.Engine.Card.OracleNorm
 import Mtg.Engine.Card.Parser.ParagraphClass
 
 /-!
-# Parsing a full Oracle card (CR 108, 113.3, 201–212, 712, 714, 715)
+# Parsing a full Oracle card (CR 108, 113.3, 201–212, 712, 715, 716)
 
 `parseOracleCard` parses one card's full printed Oracle text — name, mana cost,
 type line, power and toughness, loyalty/defense/vanguard modifiers, sub-faces,

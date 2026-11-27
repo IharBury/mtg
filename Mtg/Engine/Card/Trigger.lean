@@ -3,10 +3,10 @@ import Mtg.Engine.Card.Effect
 import Mtg.Engine.Card.TriggerPattern
 
 /-!
-# Unified triggered abilities (CR 113.3c / 603 / 605.1b / 700.1 / 714.2b,d)
+# Unified triggered abilities (CR 113.3c / 603 / 605.1b / 700.1 / 715.2b,d)
 
 Helpers, reusable CR 603.4 condition constructors, modal inspection, structural
-CR 605.1b `isManaAbility`, and CR 714.2b/d Saga chapter helpers for the unified
+CR 605.1b `isManaAbility`, and CR 715.2b/d Saga chapter helpers for the unified
 `TriggeredAbility` defined in `Mtg/Engine/Card/Ability.lean`.
 -/
 
@@ -239,17 +239,17 @@ def isManaAbility (ab : TriggeredAbility) : Bool :=
     ab.pattern.triggersOnActivatedManaAbilityOrManaAdded &&
     effs.any (fun e => e.couldAddMana)
 
-/-- Chapter numbers if this triggered ability is a Saga chapter ability (CR 714.2b). -/
+/-- Chapter numbers if this triggered ability is a Saga chapter ability (CR 715.2b). -/
 def chapterNumbers? (ab : TriggeredAbility) : Option (Array Nat) :=
   match ab.grouping with
   | .counterThreshold .lore chapters => if chapters.isEmpty then none else some chapters
   | _ => none
 
-/-- True when this triggered ability is a Saga chapter ability (CR 714.2). -/
+/-- True when this triggered ability is a Saga chapter ability (CR 715.2). -/
 def isSagaChapter (ab : TriggeredAbility) : Bool :=
   ab.chapterNumbers?.isSome
 
-/-- Greatest chapter number across an array of triggered abilities (CR 714.2d). -/
+/-- Greatest chapter number across an array of triggered abilities (CR 715.2d). -/
 def finalChapterNumberOf (abs : Array TriggeredAbility) : Nat :=
   abs.foldl (fun acc ab =>
     match ab.chapterNumbers? with

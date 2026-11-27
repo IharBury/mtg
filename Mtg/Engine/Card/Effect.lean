@@ -1924,7 +1924,7 @@ def modalSpec? (e : Effect) : Option ModalSpec :=
 def couldAddMana (e : Effect) : Bool :=
   e.body.couldAddMana
 
-/-- True when resolving `e` moves a card to or from a library (CR 605.1a, 25 Sep 2026). -/
+/-- True when resolving `e` moves a card to or from a library (CR 605.1a, 6 Nov 2026). -/
 def movesToOrFromLibrary (e : Effect) : Bool :=
   e.body.movesToOrFromLibrary
 

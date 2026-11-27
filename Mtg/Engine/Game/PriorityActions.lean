@@ -82,7 +82,7 @@ def finishProposedSpell (g : Game) : Except String Game := do
   g.finishProposedSpellCosts .teamwork (!prop.resolutionCast) false openCont
 
 /-- Pay the proposed spell or ability (CR 601.2h / 602.2b). If the cost
-cannot be paid, the action is reversed (CR 733.1). -/
+cannot be paid, the action is reversed (CR 734.1). -/
 def pay (g : Game) (p : PlayerId) : Except String Game := do
   match g.pending with
   | .activateManaAbilities caster =>
@@ -137,7 +137,7 @@ def additionalCostChoosesGeneric (g : Game) (p : PlayerId) (prop : ProposedSpell
     | none => !hasSacChoice
     | some branches =>
       let behold? := branches.findSome? fun cs =>
-        cs.items.findSome? fun | .behold q => some q | _ => none
+        cs.items.findSome? fun | .behold sub => some sub | _ => none
       let hasDiscard := branches.any fun cs =>
         cs.items.any fun | .discard .. => true | _ => false
       match behold? with

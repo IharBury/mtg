@@ -299,15 +299,36 @@ def viewCounterCount (v : ObjectView) (kind? : Option CounterKind) : Nat :=
   | none => bag.foldl (fun acc (_, n) => acc + n) 0
 
 /-- Numeric stat of `v`, returning `none` when `v` does not have that
-characteristic (CR 208.3 / 209.2 / 210.2). Only creatures have power and
-toughness (CR 208.3), even when a noncreature has a printed P/T box (e.g. an
-uncrewed Vehicle or a permanent that lost the creature type in Layer 4). -/
+characteristic (CR 208.3 / 209.2 / 210.2 / 707.2). On the battlefield, only
+creatures have power and toughness (CR 208.3), even when a noncreature permanent
+has a printed P/T box (e.g. an uncrewed Vehicle or a permanent that lost the
+creature type in Layer 4). Off the battlefield, a noncreature object has power
+or toughness only if it has a power and toughness printed on it that isn't part
+of any of its abilities (CR 208.3). -/
 def viewStat? (st : Game) (v : ObjectView) (kind : StatKind) : Option Int :=
   match v, kind with
-  | .live o, .power => if st.isCreature o then some (st.power o) else none
-  | .lki eo, .power => if eo.hasType .creature then eo.power else none
-  | .live o, .toughness => if st.isCreature o then some (st.toughness o) else none
-  | .lki eo, .toughness => if eo.hasType .creature then eo.toughness else none
+  | .live o, .power =>
+    if st.isCreature o then some (st.power o)
+    else if o.zone != .battlefield && (st.baseCard o).power.isSome then some (st.power o)
+    else none
+  | .lki eo, .power =>
+    if eo.hasType .creature then eo.power
+    else if eo.zone != .battlefield &&
+        !(eo.faceDown && eo.zone == .stack) &&
+        ((eo.copiable.orElse (fun _ => eo.printed)).bind (·.power)).isSome then
+      eo.power.orElse (fun _ => (eo.copiable.orElse (fun _ => eo.printed)).bind (·.powerValue))
+    else none
+  | .live o, .toughness =>
+    if st.isCreature o then some (st.toughness o)
+    else if o.zone != .battlefield && (st.baseCard o).toughness.isSome then some (st.toughness o)
+    else none
+  | .lki eo, .toughness =>
+    if eo.hasType .creature then eo.toughness
+    else if eo.zone != .battlefield &&
+        !(eo.faceDown && eo.zone == .stack) &&
+        ((eo.copiable.orElse (fun _ => eo.printed)).bind (·.toughness)).isSome then
+      eo.toughness.orElse (fun _ => (eo.copiable.orElse (fun _ => eo.printed)).bind (·.toughnessValue))
+    else none
   | .live o, .manaValue => some (Int.ofNat (st.objectManaValue o))
   | .lki eo, .manaValue => some (Int.ofNat eo.manaValue)
   | .live o, .loyalty =>
@@ -319,7 +340,9 @@ def viewStat? (st : Game) (v : ObjectView) (kind : StatKind) : Option Int :=
       some (Int.ofNat (eo.counters.count .loyalty))
     else eo.loyalty.map Int.ofNat
   | .live o, .defense => ((st.baseCard o).defense).map Int.ofNat
-  | .lki eo, .defense => (eo.printed.bind (·.defense)).map Int.ofNat
+  | .lki eo, .defense =>
+    if eo.faceDown && (eo.zone == .battlefield || eo.zone == .stack) then none
+    else ((eo.copiable.orElse (fun _ => eo.printed)).bind (·.defense)).map Int.ofNat
 
 /-- Mana cost of `v` for devotion / mana-symbol counting (CR 202.1 / 700.5 / 708.2a). -/
 def viewManaCost (st : Game) : ObjectView → ManaCost

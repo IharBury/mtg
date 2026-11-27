@@ -862,7 +862,7 @@ def triggerPlanFinishReturnInstants : Effect :=
           }
         })) }
 
-/-- Plan finish: sacrifice this; when you do, you control target opponent during their next turn (CR 723). -/
+/-- Plan finish: sacrifice this; when you do, you control target opponent during their next turn (CR 724). -/
 def triggerPlanFinishControlOpponent : Effect :=
   { body := .bind ⟨0⟩ (Instruction.sacrifice .this)
       (Instruction.ifThen (.stepSucceeded ⟨0⟩)

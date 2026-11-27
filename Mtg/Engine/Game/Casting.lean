@@ -5,7 +5,7 @@ import Mtg.Engine.Game.Costs
 
 Cast timing (flash, sorcery speed), castability from each zone,
 restrictions on proposed spells, choosing mana sources for a proposal,
-paying costs, reversing an illegal proposal (CR 733.1), ward
+paying costs, reversing an illegal proposal (CR 734.1), ward
 (CR 702.21), locking in targets, and becoming cast or activated.
 -/
 
@@ -88,8 +88,9 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
     sorceryOk else true)
 
 /-- Every card face the game knows: each object's card, its other face,
-Adventure, and prepare spell, and each sideboard card. A prepare spell's name
-is judged by its own characteristics (ruling 745). -/
+Adventure (CR 716), and prepare spell (CR 723), and each sideboard card.
+Alternative names of adventurer and preparation cards are judged by their
+alternative characteristics (CR 201.4f; ruling 745). -/
 def knownCardFaces (g : Game) : Array CardDef :=
   let faces (c : CardDef) : Array CardDef :=
     #[c] ++ c.otherFace.toArray ++ (c.adventure.map (·.toCardDef)).toArray ++
@@ -97,7 +98,7 @@ def knownCardFaces (g : Game) : Array CardDef :=
   let fromObjects := g.objects.foldl (fun acc o => acc ++ faces o.printed) #[]
   g.players.foldl (fun acc pl => pl.sideboard.foldl (fun acc c => acc ++ faces c) acc) fromObjects
 
-/-- Whether `name` is the name of a nonland card (CR 201.4a). -/
+/-- Whether `name` is the name of a nonland card (CR 201.4a, 201.4f). -/
 def isNonlandCardName (g : Game) (name : String) : Bool :=
   g.knownCardFaces.any (fun c => c.name == name && !c.isLand)
 
@@ -488,7 +489,7 @@ def canCastAndPayImpending (g : Game) (p : PlayerId) (o : GameObject)
           (hasNullSummoner && g.timingAllowsCast p impFace (card? := some o) && payImpending nullPerm)
   | _, _, _ => false
 
-/-- True when the CR 715.3d exile permission forbids recasting as an Adventure. -/
+/-- True when the CR 716.3d exile permission forbids recasting as an Adventure. -/
 def adventureExileForbidsRecast (g : Game) (o : GameObject)
     (player? : Option PlayerId := none) : Bool :=
   match player? with
@@ -651,7 +652,7 @@ def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : 
     (origPermOverride : Option PlayPermission := none)
     (excludeIdOverride : Option ObjectId := none) : Except String Unit := do
   let checkId := excludeIdOverride.getD card.id
-  -- CR 601.3e / 715.3a: an Adventure is cast with only its alternative (Instant /
+  -- CR 601.3e / 716.3a: an Adventure is cast with only its alternative (Instant /
   -- Sorcery) characteristics, so a creature-only top-of-library permission (Elven Chorus)
   -- can't cast it.
   if card.zone == .library p && !face.isCreature then
@@ -692,7 +693,7 @@ def validateFrontFaceCast (g : Game) (p : PlayerId) (card : GameObject) (face : 
   if let some err := gSac.mandatorySacrificeError? p checkId face then
     throw err
 
-/-- Whether `p` may begin to cast `o` as an Adventure (CR 715.3). -/
+/-- Whether `p` may begin to cast `o` as an Adventure (CR 716.3). -/
 def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
   match (g.baseCard o).adventure with
   | none => false
@@ -709,7 +710,7 @@ def canCastAdventure (g : Game) (p : PlayerId) (o : GameObject) : Bool :=
     !g.spellNameForbidden face.name &&
     !g.cantCastSpellsThisTurn p &&
     !g.adventureExileForbidsRecast o (some p) &&
-    -- CR 601.3e / 715.3a: the Adventure's own (Instant / Sorcery) characteristics decide
+    -- CR 601.3e / 716.3a: the Adventure's own (Instant / Sorcery) characteristics decide
     -- whether a creature-only library-top permission applies.
     (o.zone != .library p || face.isCreature) &&
     g.mayPlay p o &&
@@ -1169,10 +1170,10 @@ def runPostCastCleanup (g : Game) : Game :=
             s!"{(g.player caster).name} puts the rest on the bottom of their library in a random order"
           g.requestOrderInto unchosen (.library caster) msg
 
-/-- Core proposal reversal: restores `proposalCheckpoint`, reapplies CR 733.1
+/-- Core proposal reversal: restores `proposalCheckpoint`, reapplies CR 734.1
 irreversible library actions, runs deferred `postCastCleanup`, and reports
 whether `Decisions.finishResolutionChoice` should resume an active continuation
-(CR 601.2 / 602.2 / 733.1–733.2). -/
+(CR 601.2 / 602.2 / 734.1–734.2). -/
 def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
     (extraLog : Option String := none)
     (alwaysGrantPriority : Bool := false)
@@ -1236,9 +1237,9 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       else #[]
     let reversed :=
       match prop.kind with
-      | .spell => "the casting is reversed (CR 601.2 / 733.1)"
-      | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
-      | .turnFaceUp => "turning it face up is reversed (CR 116.2b / 702.37e / 733.1)"
+      | .spell => "the casting is reversed (CR 601.2 / 734.1)"
+      | .activatedAbility => "the activation is reversed (CR 602.2 / 734.1)"
+      | .turnFaceUp => "turning it face up is reversed (CR 116.2b / 702.37e / 734.1)"
     let wasSuppressed := g.suppressInteractiveReplay
     let g ← g.reverseToProposalCheckpoint?
     let quiet := wasSuppressed || g.suppressInteractiveReplay

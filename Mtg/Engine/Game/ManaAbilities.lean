@@ -748,7 +748,7 @@ private def manaSourceTapPaidSinceCkpt (g : Game) (p : PlayerId) (id : ObjectId)
       | _ => false
 
 /-- Finish the post-sacrifice steps (`abilityActivated`, `manaAdded`, pain-land
-damage, modal/extra non-mana effect, Mountain extra mana, and CR 733.1 / priority
+damage, modal/extra non-mana effect, Mountain extra mana, and CR 734.1 / priority
 cleanup) of a mana ability. -/
 def finishActivateManaAbilityPostSac (g : Game) (p : PlayerId) (id : ObjectId) (oname : String)
     (srcSnap : EventObject) (mana : Array ManaType) (tap : Bool)

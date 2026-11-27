@@ -1046,7 +1046,7 @@ def discardOneStillOne : Bool :=
 
 #guard discardOneStillOne
 
-/- CR 725.2 / Ruling 938: Inherent monarch end-step trigger is sourceless and draws for that monarch even if monarchy changes before resolution. -/
+/- CR 726.2 / Ruling 938: Inherent monarch end-step trigger is sourceless and draws for that monarch even if monarchy changes before resolution. -/
 #guard
   let g0 := afterDraw.becomeMonarch ⟨0⟩
   let hand0 := (g0.player ⟨0⟩).hand.size

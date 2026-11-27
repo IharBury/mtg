@@ -145,7 +145,7 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
       else if g.isAura o && !bc.allowsZeroTargets &&
           (g.legalAuraTargets p bc (some o.id)).isEmpty then
         some s!"{g.name o} requires a target to enchant"
-      -- CR 601.2b–c / 115.1 / 733.1: a spell that can't announce a legal target (kicked
+      -- CR 601.2b–c / 115.1 / 734.1: a spell that can't announce a legal target (kicked
       -- or not) or a choosable mode can't be cast from among the looked-at cards.
       else if isModalSpellFace bc &&
           !(effectiveSpellModes bc).any (fun e =>

@@ -11,7 +11,7 @@ import Mtg.Engine.Card.Parser.AbilityGrammar
 Classifies and parses every rules paragraph of a card face or sub-face using
 Stages 1–5 exclusively (zero prototype tables, zero legacy fallback matchers):
 1. CR 100.2a `DeckLimit` (`"A deck can have any number of / up to N cards named ..."`).
-2. CR 714.2b Saga chapter headers (`I, II — ...`).
+2. CR 715.2b Saga chapter headers (`I, II — ...`).
 3. CR 606 loyalty & CR 602 / 605.1a activated abilities (unquoted top-level `:`,
    plus Equip-with-cost-reduction).
 4. CR 603 triggered abilities (`When` / `Whenever` / `At` after optional mechanic/ability word).
@@ -156,7 +156,7 @@ def parseRulesCompositional (base : CardDef) (rules : List String) : Except Stri
         c := appendAdditionalCost c ac
         continue
 
-    -- 4. CR 714.2b Saga chapter line (`"I — ..."`, `"I, II — ..."`)
+    -- 4. CR 715.2b Saga chapter line (`"I — ..."`, `"I, II — ..."`)
     if (parseChapterHeader pre).isSome then
       match parseTriggeredAbilityComp pre c.name with
       | some trs =>

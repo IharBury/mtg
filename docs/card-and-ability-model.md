@@ -43,7 +43,7 @@ flowchart TD
 
 - **Lexical slots & scalar operators**: [`VarId`](../Mtg/Engine/Card/Expr.lean#L31-L33) identifies an earlier bound step's post-replacement outcome (CR 608.2c / 614.6); `CmpOp` (`eq`, `ne`, `lt`, `le`, `gt`, `ge`), `ArithOp` (`add`, `sub`, `mul`, `divFloor`, `max`, `min`), and `AggOp` (`count`, `sum`, `max`, `min`, `countDistinct`) compose numeric queries.
 - **12-way mutual core (`Expr.lean` L515–678)** with single-tuple `BEq`/`Repr` projections ([`#L696-L720`](../Mtg/Engine/Card/Expr.lean#L696-L720)):
-  - **[`PlayerFilter`](../Mtg/Engine/Card/Expr.lean#L518-L520), [`PlayerPred`](../Mtg/Engine/Card/Expr.lean#L523-L536) (13 ctors), & [`PlayerExpr`](../Mtg/Engine/Card/Expr.lean#L539-L550) (11 ctors)**: `.you`, `.activePlayer`, `.defendingPlayer`, `.monarch` (CR 725), `.target`, `.controllerOf`, `.ownerOf`, `.triggerPlayer` (8 roles incl. `giftOpponent`), `.stepPlayers`, `.matching` (relation × `PlayerPred`, including `.isSeat` for expanded `forEach?` slots, `.thatPlayer` for anaphoric references, and `.matchesExpr`), and `.chosenBy`.
+  - **[`PlayerFilter`](../Mtg/Engine/Card/Expr.lean#L518-L520), [`PlayerPred`](../Mtg/Engine/Card/Expr.lean#L523-L536) (13 ctors), & [`PlayerExpr`](../Mtg/Engine/Card/Expr.lean#L539-L550) (11 ctors)**: `.you`, `.activePlayer`, `.defendingPlayer`, `.monarch` (CR 726), `.target`, `.controllerOf`, `.ownerOf`, `.triggerPlayer` (8 roles incl. `giftOpponent`), `.stepPlayers`, `.matching` (relation × `PlayerPred`, including `.isSeat` for expanded `forEach?` slots, `.thatPlayer` for anaphoric references, and `.matchesExpr`), and `.chosenBy`.
   - **[`ObjectPred`](../Mtg/Engine/Card/Expr.lean#L589-L634) (39 ctors), [`ObjectFilter`](../Mtg/Engine/Card/Expr.lean#L637-L639), & [`ObjectExpr`](../Mtg/Engine/Card/Expr.lean#L642-L657) (15 ctors)**:
     - *Characteristics (CR 109.3 / 613)*: `.all`, `.any`, `.not`, `.hasType`, `.hasSupertype`, `.hasSubtype` (literal, `.chosenOnSource`, `.fromStep`), `.hasColor` (literal, `.chosenOnSource`, `.commanderIdentity`), `.colorCount`, `.named`, `.hasKeyword` (35-ctor [`KeywordTag`](../Mtg/Engine/Card/Expr.lean#L301-L337) with 11 parameterized keywords grouped under [`ParamKeywordTag`](../Mtg/Engine/Card/Expr.lean#L269-L281)), `.stat`, `.statParity`.
     - *Status & identity*: `.isToken`, `.isFaceDown`, `.isCopy`, `.isCommander`, `.isKind` (3-ctor [`ObjectCategory`](../Mtg/Engine/Card/Expr.lean#L506-L513): `.card` CR 108.2/111.6, `.permanentCard` CR 110.4a/111.6, `.spell` CR 112.1), `.tapped`, `.phasedOut`, `.combatRole`, `.hasDesignation`, `.counterCount`, `.chosenAnchorIs`.
@@ -147,10 +147,10 @@ Four keyword-specific `CostKind` tags (`convoke`, `ward`, `teamwork`, `cycle`) a
 | `PermanentEvent` | `.permanent op` (7-ctor `PermanentOp`: `.setTapped`, `.modifyCounters`, `.attach`, `.transform`, `.turnFaceUp`, `.phaseOut`, `.setDesignation`) | Tap/untap, counter modification (incl. `copyMissingKeywords`), attachment, transform, face-up, phase out, designations. |
 | `DamageEvent` | `.damage op` (`DamageOp`: `.deal`, `.fight`) | Targeted, mass, divided, excess-tracked, and scaled damage; two-way fight and one-way bite. |
 | `LifeEvent` | `.life op` (`LifeOp`: `.gain`, `.lose`, `.set`) | Life gain, life loss, drain, and life-total setting. |
-| `PlayerEvent` | `.player op` (16-ctor [`PlayerOp`](../Mtg/Engine/Card/Ability.lean#L1004-L1023): `.drawCards`, `.scry`, `.surveil`, `.inspectLibrary`, `.searchLibrary`, `.reveal`, `.shuffle`, `.addMana`, `.proliferate`, `.temptWithRing`, `.explore`, `.amass`, `.connive`, `.empowerPlaneswalker`, `.setStatus`, `.choose`) | Declarative library inspection/partitioning, tutors, mana production, keyword actions (CR 701.44 Explore, 701.34 Proliferate, etc.), Monarch (CR 725), and win-game (CR 104.2b). |
+| `PlayerEvent` | `.player op` (16-ctor [`PlayerOp`](../Mtg/Engine/Card/Ability.lean#L1004-L1023): `.drawCards`, `.scry`, `.surveil`, `.inspectLibrary`, `.searchLibrary`, `.reveal`, `.shuffle`, `.addMana`, `.proliferate`, `.temptWithRing`, `.explore`, `.amass`, `.connive`, `.empowerPlaneswalker`, `.setStatus`, `.choose`) | Declarative library inspection/partitioning, tutors, mana production, keyword actions (CR 701.44 Explore, 701.34 Proliferate, etc.), Monarch (CR 726), and win-game (CR 104.2b). |
 | `TurnEvent` | `.turn op` (3-ctor `TurnOp`: `.extraTurn`, `.extraPhase`, `.extraStep`) | Extra turns, extra combat phases, extra steps. |
 | `StackObjectEvent` / `CastEvent` | `.stack op` (4-ctor `StackOp`: `.counterStack`, `.copyStackObject`, `.chooseNewTargets`, `.mayCastOrPlay`) | Counterspells (incl. exile/free-cast follow-ups), stack copies, retargeting, and mid-resolution/impulse casts (`GrantPlayPermSpec`). |
-| `ContinuousEffectEvent` / `DelayedTriggerEvent` | `.installEffect op` (4-ctor `InstallEffectOp`: `.applyContinuous`, `.applyRule`, `.applyReplacement`, `.createDelayedTrigger`) | Timed/indefinite continuous effects, player/game rules (incl. turn control CR 723), temporary replacements/preventions, and delayed triggers (CR 603.7). |
+| `ContinuousEffectEvent` / `DelayedTriggerEvent` | `.installEffect op` (4-ctor `InstallEffectOp`: `.applyContinuous`, `.applyRule`, `.applyReplacement`, `.createDelayedTrigger`) | Timed/indefinite continuous effects, player/game rules (incl. turn control CR 724), temporary replacements/preventions, and delayed triggers (CR 603.7). |
 | `TriggerQueueEvent` | `.queueReflexiveTrigger whenDone` | `"When you do"` reflexive triggers (CR 603.12). |
 | **Combinators (8)** | `.noop`, `.seq`, `.bind var step cont`, `.ifCond`, `.optional who cost? onYes onNo maxTimes`, `.unlessPays`, `.chooseModes spec`, `.forEach iter var body` | Sequencing, CR 608.2c/614.6 lexical binding over post-replacement `RulesEvent` slices, branching, CR 118.12/118.12a resolution-time costs, unified [`ModalSpec`](../Mtg/Engine/Card/Ability.lean#L1236-L1244) modes (incl. `altCountIf?` and `unusedEver`), and APNAP iteration. |
 
@@ -191,15 +191,15 @@ Key predicates and helpers in [`ActivatedAbility.lean`](../Mtg/Engine/Card/Activ
 - [`intrinsicBasicLandMana`](../Mtg/Engine/Card/ActivatedAbility.lean#L252): synthesizes `{T}: Add {M}` for CR 305.6 basic land subtypes.
 - [`toOracle`](../Mtg/Engine/Card/ActivatedAbility.lean#L356): canonical Oracle rendering.
 
-### 3. `TriggeredAbility` & `TriggerPattern` (CR 113.3c / 603 / 605.1b / 714)
+### 3. `TriggeredAbility` & `TriggerPattern` (CR 113.3c / 603 / 605.1b / 715)
 
 [`TriggeredAbility`](../Mtg/Engine/Card/Ability.lean#L1304-L1311) carries 7 fields: `word`, `pattern`, `grouping`, `interveningIf? : Option Condition` (CR 603.4), `activeZones`, `limit`, and `effect : Effect` (carrying modal branches inside `Instruction.chooseModes`, accessed via [`TriggeredAbility.modalSpec?`](../Mtg/Engine/Card/Trigger.lean#L140) / [`modeEffects`](../Mtg/Engine/Card/Trigger.lean#L144)).
 
 [`TriggerPattern.lean`](../Mtg/Engine/Card/TriggerPattern.lean) defines:
-- 27-constructor [`TriggerPattern`](../Mtg/Engine/Card/TriggerPattern.lean#L252-L326) aligned with `RulesEvent`, plus [`BatchGrouping`](../Mtg/Engine/Card/TriggerPattern.lean#L89-L101) (5 ctors: `.perOccurrence` CR 603.2c, `.oncePerBatch` / `.perPlayerInBatch` / `.perSourceInBatch` CR 700.1, and `.counterThreshold` for CR 714.2b Saga chapters), [`TriggerLimit`](../Mtg/Engine/Card/TriggerPattern.lean#L104-L113), and [`PlayerActionTrigger`](../Mtg/Engine/Card/TriggerPattern.lean#L210-L218).
+- 27-constructor [`TriggerPattern`](../Mtg/Engine/Card/TriggerPattern.lean#L252-L326) aligned with `RulesEvent`, plus [`BatchGrouping`](../Mtg/Engine/Card/TriggerPattern.lean#L89-L101) (5 ctors: `.perOccurrence` CR 603.2c, `.oncePerBatch` / `.perPlayerInBatch` / `.perSourceInBatch` CR 700.1, and `.counterThreshold` for CR 715.2b Saga chapters), [`TriggerLimit`](../Mtg/Engine/Card/TriggerPattern.lean#L104-L113), and [`PlayerActionTrigger`](../Mtg/Engine/Card/TriggerPattern.lean#L210-L218).
 - [`usesLookBack`](../Mtg/Engine/Card/TriggerPattern.lean#L345-L359): structural CR 603.10a–f look-back predicate.
 - [`flattenDisjuncts`](../Mtg/Engine/Card/TriggerPattern.lean#L396-L400): distributes outer CR 603.2 `.whenCond` clauses across `.or` disjuncts so each disjunct independently chooses `pre` vs. `post`.
-- [`TriggeredAbility.isManaAbility`](../Mtg/Engine/Card/Trigger.lean#L236) (CR 605.1b) and [`TriggeredAbility.chapterNumbers?`](../Mtg/Engine/Card/Trigger.lean#L243) (CR 714.2b/d).
+- [`TriggeredAbility.isManaAbility`](../Mtg/Engine/Card/Trigger.lean#L236) (CR 605.1b) and [`TriggeredAbility.chapterNumbers?`](../Mtg/Engine/Card/Trigger.lean#L243) (CR 715.2b/d).
 
 ### 4. Stratified `StaticAbility` (CR 113.3d / 604 / 613 / 614–616)
 
@@ -238,7 +238,7 @@ inductive DeckLimit where
   | maxCopies (n : Nat)      -- CR 100.2a
 
 inductive SubFaceKind where
-  | adventure                -- CR 715
+  | adventure                -- CR 716
   | prepare                  -- Prepare spell sub-face
 
 structure SubFace where

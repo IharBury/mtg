@@ -23,7 +23,7 @@ Ties the recursive `QuotedAbilityParsers` knot across:
 - `parseActivatedAbilityComp` (CR 113.3b / 602 / 605.1a / 606): loyalty, mana,
   `Power-up` / `Exhaust` / `Boast` mechanic labels, Equip-with-cost-reduction,
   zone inference (hand/graveyard/battlefield), and trailing activation restrictions.
-- `parseTriggeredAbilityComp` (CR 113.3c / 603 / 714.2b): Saga chapters,
+- `parseTriggeredAbilityComp` (CR 113.3c / 603 / 715.2b): Saga chapters,
   em-dash mechanic labels (`Mardu`, `Jeskai`, `Eminence`, `Threshold`, `Corrupted`),
   all trigger headers, modal triggers, and one-shot effect bodies.
 -/
@@ -694,7 +694,7 @@ partial def parseActivatedAbilityComp (raw : String) (cardName : String := "") :
     tag?
   }
 
-/-- Stage-4c compositional parser for `TriggeredAbility` lines (CR 113.3c / 603 / 714.2b),
+/-- Stage-4c compositional parser for `TriggeredAbility` lines (CR 113.3c / 603 / 715.2b),
 including Saga chapters (`I, II — ...`), mechanic labels (`Mardu —`, `Jeskai —`, `Eminence —`),
 all trigger headers via `parseTriggerClauses`, and compositional effect bodies. -/
 partial def parseTriggeredAbilityComp (raw : String) (cardName : String := "") :
@@ -703,7 +703,7 @@ partial def parseTriggeredAbilityComp (raw : String) (cardName : String := "") :
   if pre.isEmpty then return none
   let qp := mkQuotedParsers ()
 
-  -- 1. Saga chapter lines (`"I — ..."`, `"I, II — ..."`, `"III — ..."`) (CR 714.2b)
+  -- 1. Saga chapter lines (`"I — ..."`, `"I, II — ..."`, `"III — ..."`) (CR 715.2b)
   if let some (roman, body) := parseChapterHeader pre then
     let (_, bodyClean) := extractLeadingLabel body
     if let some eff := parseCompositionalEffect qp bodyClean cardName true then

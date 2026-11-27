@@ -193,12 +193,12 @@ def forest : CardDef :=
     (activatedAbilities := activatedAbilities)
     (adventure := adventure)
 
-/-- A catalog Saga chapter `TriggeredAbility` with parsed Roman numerals (CR 714.2). -/
+/-- A catalog Saga chapter `TriggeredAbility` with parsed Roman numerals (CR 715.2). -/
 def chapter (roman _effect : String) (e : Effect) : TriggeredAbility :=
   TriggeredAbility.sagaChapters (parseChapterNumbers roman) e
 
-/-- A Saga enchantment (CR 714). Final chapter is the greatest chapter number
-across `chapters` (CR 714.2d). -/
+/-- A Saga enchantment (CR 715). Final chapter is the greatest chapter number
+across `chapters` (CR 715.2d). -/
 @[irreducible, noinline] def saga (name : String) (manaCost : ManaCost) (oracleText : String)
     (_sacrificeAfter : String) (chapters : Array TriggeredAbility) : CardDef :=
   enchantment name manaCost oracleText
@@ -489,7 +489,7 @@ def typecyclingAbility (landType : String) (mana : ManaCost := ManaCost.ofGeneri
     (tag? := some (.cycling (some landType)))
     (discardSource := true)
 
-/-- Adventure characteristics used while the card is a spell (CR 715.2). -/
+/-- Adventure characteristics used while the card is a spell (CR 716.2). -/
 def adventure (name : String) (manaCost : ManaCost) (_oracleText : String)
     (spellEffect : Effect) (cardType : CardType := .sorcery)
     (additionalCosts : Array AdditionalCostSpec := #[]) : SubFace := {

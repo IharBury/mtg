@@ -767,10 +767,10 @@ def endControlEffectsSimultaneously (g : Game) (eids : Array EffectId)
   else g
 
 /-- Reconcile game-over finality, departed Layer 2 `.control` effects, departed
-CR 723 `.controlsPlayer` effects (ended under CR 800.4a), departed non-card
+CR 724 `.controlsPlayer` effects (ended under CR 800.4a), departed non-card
 `.stack` / `.command` objects, and unqueued CR 800.4c orphan battlefield
 permanents after checkpoint replay completes on either synchronous or resumed
-paths (CR 104.2a / 506.4 / 701.54a / 723 / 800.4a,c). -/
+paths (CR 104.2a / 506.4 / 701.54a / 724 / 800.4a,c). -/
 @[export mtg_game_reconcile_post_replay_departures]
 def reconcilePostReplayDepartures (g : Game) (suppressInteractive : Bool := false) : Game :=
   let g := (g.decideGameIfFinished).getD g
@@ -1269,7 +1269,7 @@ private def findPausedCloseBatchFor? (target : BatchId) : PendingReplacement →
 
 /-- Split `pr` into `(throughClose, afterClose?)` right after `.closeBatch target _`
 (including an immediately following `.finishLinkedExileMove _` if present), or
-`none` if `pr` contains no `.closeBatch target _` (CR 616.1 / 733.1 / 800.4a). -/
+`none` if `pr` contains no `.closeBatch target _` (CR 616.1 / 734.1 / 800.4a). -/
 def splitAfterCloseBatchFor? (target : BatchId) :
     PendingReplacement → Option (PendingReplacement × Option PendingReplacement)
   | .closeBatch b s =>
@@ -1797,7 +1797,7 @@ checkpoint inside an enclosing spell/ability proposal
 (`!g.outerProposalCheckpoints.isEmpty` and `g.events` after
 `current.eventsSize` has an unclosed
 `EngineChange.beginProposalAction (.manaAbility _)` with no
-`EngineChange.proposedSpell (some _)`) (CR 601.2 / 602.2 / 605.3 / 733.1). -/
+`EngineChange.proposedSpell (some _)`) (CR 601.2 / 602.2 / 605.3 / 734.1). -/
 def isNestedManaProposalCheckpoint (g : Game) : Bool :=
   if g.outerProposalCheckpoints.isEmpty then false
   else
@@ -1840,7 +1840,7 @@ def hasActiveManaProposalCheckpoint (g : Game) : Bool :=
 /-- If `g.proposalCheckpoint` is a nested mana-ability checkpoint inside an
 enclosing spell/ability proposal, pop that nested mana checkpoint once via
 `EngineChange.clearProposalCheckpoint` so the caller reads and reverses the
-enclosing spell checkpoint (CR 601.2 / 602.2 / 605.3 / 733.1). -/
+enclosing spell checkpoint (CR 601.2 / 602.2 / 605.3 / 734.1). -/
 def popNestedManaProposalCheckpoint (g : Game) : Game :=
   if g.isNestedManaProposalCheckpoint then g.change .clearProposalCheckpoint else g
 
@@ -3306,7 +3306,7 @@ def openBatchAwaitedPausePrompt (g : Game) : Bool :=
 /-- Roll back an active proposal aborted by a player's departure using
 `reverseToProposalCheckpoint?`, the reversal log, and `runPostCastCleanup`
 without granting priority or resuming continuations early (CR 601.2 / 602.2 /
-733.1 / 800.4a). -/
+734.1 / 800.4a). -/
 def rewindAbortedProposalOnLeave (g : Game)
     (departed : Array PlayerId := #[])
     (pushedOuterCont? : Option PendingReplacement := none)
@@ -3375,9 +3375,9 @@ def rewindAbortedProposalOnLeave (g : Game)
       let name := (g.player prop.caster).name
       let reversed :=
         match prop.kind with
-        | .spell => "the casting is reversed (CR 601.2 / 733.1)"
-        | .activatedAbility => "the activation is reversed (CR 602.2 / 733.1)"
-        | .turnFaceUp => "turning it face up is reversed (CR 116.2b / 702.37e / 733.1)"
+        | .spell => "the casting is reversed (CR 601.2 / 734.1)"
+        | .activatedAbility => "the activation is reversed (CR 602.2 / 734.1)"
+        | .turnFaceUp => "turning it face up is reversed (CR 116.2b / 702.37e / 734.1)"
       let g := g.logMsg s!"{name} cannot pay {prop.cost}; {reversed}"
       let g :=
         if g.over || wasSuppressed || g.suppressInteractiveReplay then g
@@ -3525,7 +3525,7 @@ def stashPostRewindPending (g : Game)
 
 /-- Apply a deferred aborted-proposal rewind once a departure's replacement
 pause finishes, preserving any outer continuation on `g.outerPendingReplacements`
-and chaining any restored post-cast cleanup prompt with `saved?` (CR 733.1 / 800.4a). -/
+and chaining any restored post-cast cleanup prompt with `saved?` (CR 734.1 / 800.4a). -/
 def applyDeferredProposalRewind (g : Game)
     (saved? : Option Pending) (popOuter : Bool)
     (departed : Array PlayerId)
@@ -3549,7 +3549,7 @@ def applyDeferredProposalRewind (g : Game)
 pause prompt was already dismissed (`!g.sbaPaused && g.pending == .none` and
 `saved?.all g.batchPausePromptGoneOrInvalid`), run the prefix of the continuation
 through `.closeBatch curBid _` so `curBid` closes cleanly before any deferred
-proposal rewind or post-departure SBA pass runs (CR 616.1 / 704.5j / 733.1 /
+proposal rewind or post-departure SBA pass runs (CR 616.1 / 704.5j / 734.1 /
 800.4a). -/
 def flushDismissedPausedBatch (g : Game) (saved? : Option Pending) (popOuter : Bool)
     (hasDeferredRewind : Bool := false)
@@ -3723,7 +3723,7 @@ def playerLeavesGameCore (g : Game) (p : PlayerId)
             else if !g.isSharedTurnFinalSeat then g.nextLiving g.activePlayer
             else g.nextLiving p
           (g.record (GameEvent.becameMonarch g.turnNumber heir (some p) (cause := cause))).logMsg
-            s!"{(g.player heir).name} becomes the monarch (CR 725.4)"
+            s!"{(g.player heir).name} becomes the monarch (CR 726.4)"
         else g
       let ctrlEids :=
         g.activeEffects.filterMap fun (eid, e) =>

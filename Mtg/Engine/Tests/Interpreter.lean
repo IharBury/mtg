@@ -9,7 +9,7 @@ import Mtg.Engine.Catalog.RealityFractureCommander
 
 Comprehensive gameplay `#guard` regression suite for the unified `Instruction`
 AST and resumable interpreter (see `docs/card-and-ability-model.md` and
-`docs/game-evaluation.md`, anchored to the 25 September 2026 CR):
+`docs/game-evaluation.md`, anchored to the 6 November 2026 CR):
 1. `ContinuationFrame.stepEnv` across `Instruction.bind`, including CR 614.6
    prevented/replaced/doubled events and CR 616.1 `Pending.chooseReplacement`
    pause & resume.
