@@ -299,7 +299,7 @@ def viewCounterCount (v : ObjectView) (kind? : Option CounterKind) : Nat :=
   | none => bag.foldl (fun acc (_, n) => acc + n) 0
 
 /-- Numeric stat of `v`, returning `none` when `v` does not have that
-characteristic (CR 208.3 / 209.2 / 210.2 / 707.2). On the battlefield, only
+characteristic (CR 208.3 / 209.1 / 210.1 / 707.2). On the battlefield, only
 creatures have power and toughness (CR 208.3), even when a noncreature permanent
 has a printed P/T box (e.g. an uncrewed Vehicle or a permanent that lost the
 creature type in Layer 4). Off the battlefield, a noncreature object has power

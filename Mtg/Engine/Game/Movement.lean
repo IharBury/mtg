@@ -480,23 +480,20 @@ partial def move (g : Game) (id : ObjectId) (dest : Zone)
         let g := g.consumeReplacementOrder preCheckAllApplied
         let oldName := g.name old
         if old.zone == .stack then
-          if old.isCopy then
-            (g.ceaseToExist old.id (cause := some (.stateBased .copyOutsideStackOrBf))
-              |>.logMsg s!"{oldName} ceases to exist (instant or sorcery face can't enter the battlefield; CR 701.27j / 704.5e)",
-             (old.id, none, false))
+          -- CR 701.27j / 712.11b: both card spells and spell copies move to their
+          -- owner's graveyard first; a copy then ceases to exist via SBA (CR 704.5e).
+          let (g', gyId) :=
+            g.move old.id (.graveyard old.owner) none (verb := verb) (actor := actor)
+              (cause := cause) (suppressInteractive := suppressInteractive)
+          let msg := s!"{oldName} goes to the graveyard (instant or sorcery face can't enter the battlefield; CR 701.27j / 712.11b)"
+          if let .chooseReplacement .. := g'.pending then
+            (g'.chainPendingReplacement
+                (.finishPostStep (.logDiscardIfInGraveyard old.id old.owner msg)),
+              (gyId, none, false))
+          else if (g'.followMovedToZone? old.id (· == .graveyard old.owner)).isSome then
+            (g'.logMsg msg, (gyId, none, false))
           else
-            let (g', gyId) :=
-              g.move old.id (.graveyard old.owner) none (verb := verb) (actor := actor)
-                (cause := cause) (suppressInteractive := suppressInteractive)
-            let msg := s!"{oldName} goes to the graveyard (instant or sorcery face can't enter the battlefield; CR 701.27j / 712.11b)"
-            if let .chooseReplacement .. := g'.pending then
-              (g'.chainPendingReplacement
-                  (.finishPostStep (.logDiscardIfInGraveyard old.id old.owner msg)),
-                (gyId, none, false))
-            else if (g'.followMovedToZone? old.id (· == .graveyard old.owner)).isSome then
-              (g'.logMsg msg, (gyId, none, false))
-            else
-              (g', (gyId, none, false))
+            (g', (gyId, none, false))
         else
           (g.logMsg s!"{oldName} remains in its current zone (instant or sorcery face can't enter the battlefield; CR 712.11b)",
            (id, none, false))

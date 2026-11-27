@@ -239,7 +239,7 @@ inductive DeckLimit where
 
 inductive SubFaceKind where
   | adventure                -- CR 716
-  | prepare                  -- Prepare spell sub-face
+  | prepare                  -- CR 723 prepare spell sub-face
 
 structure SubFace where
   kind : SubFaceKind

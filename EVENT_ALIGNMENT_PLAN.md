@@ -3,7 +3,7 @@
 > **This document is a plan only.** It changes no engine code. It was written
 > against the `history` branch at `47f7225` (merge of PR #561) and the
 > *Magic: The Gathering* Comprehensive Rules **effective 25 September 2026**
-> (`MagicCompRules 20260925.txt`, the edition named in [`README.md`](README.md)).
+> (`MagicCompRules 20260925.txt`, the edition in effect when this plan was written).
 
 ## 0. Scope, citation policy, and non-goals
 

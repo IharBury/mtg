@@ -2,12 +2,12 @@ import Mtg.Engine.Card.CardDef
 import Mtg.Engine.Card.OracleNorm
 
 /-!
-# Stage-1 Oracle Card Frame Splitter (CR 201–212, 712, 715, 716)
+# Stage-1 Oracle Card Frame Splitter (CR 201–212, 712, 715, 716, 723)
 
 Splits raw printed card text into structured `CardFrame` / `FaceFrame` /
 `SubFaceFrame` headers and unparsed rules lines:
 - `//` double-faced card back face (CR 712),
-- `//ADV//` Adventure and `//PREP//` Prepare sub-faces (CR 716),
+- `//ADV//` Adventure (CR 716) and `//PREP//` Prepare (CR 723) sub-faces,
 - Name & mana cost (`{W}`, `{2/W}`, `{W/U}`, `{X}`, `{C}`),
 - Type line (CR 205),
 - Printed power/toughness into `PrintedStat` (CR 208.1–2a),
@@ -310,7 +310,7 @@ def splitMarked (mark : String) (lines : List String) : List String × Option (L
 def splitAdventure (lines : List String) : List String × Option (List String) :=
   splitMarked "//ADV//" lines
 
-/-- Pull a prepare-spell block out of the rules lines. -/
+/-- Pull a prepare-spell block out of the rules lines (CR 723). -/
 def splitPrepare (lines : List String) : List String × Option (List String) :=
   splitMarked "//PREP//" lines
 
@@ -593,7 +593,7 @@ def parseLoyaltyAbilityLine (line : String) : Option (LoyaltySymbol × String) :
         else (loyaltySymbolOf sign isX n).map fun sym => (sym, effect)
       else none
 
-/-- Parsed header and unparsed rules lines of an Adventure / Prepare sub-face (CR 716). -/
+/-- Parsed header and unparsed rules lines of an Adventure (CR 716) or Prepare (CR 723) sub-face. -/
 structure SubFaceFrame where
   kind : SubFaceKind
   base : CardDef

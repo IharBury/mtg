@@ -1029,7 +1029,7 @@ private def roundTripsOracleCard (raw : String) : Bool :=
   empowerOk && bothOk && teamworkOk && subtypeOk
 
 -- Phase 10: Slim 21-field `CardDef`, `PrintedStat` (CR 208.1-2), `DeckLimit` (CR 100.2a),
--- unified `SubFace` (CR 716 Adventure / Prepare), `SpellAbility` functorial `HasTextChange`,
+-- unified `SubFace` (CR 716 Adventure / CR 723 Prepare), `SpellAbility` functorial `HasTextChange`,
 -- structural `BEq CardDef`, pure `Effect.targetPreference`, and canonical `ToOracle` regressions.
 #guard
   let statOk :=

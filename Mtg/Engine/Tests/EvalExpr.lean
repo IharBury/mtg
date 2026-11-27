@@ -971,7 +971,34 @@ private def testColossus : CardDef := {
   let mdfcOk :=
     (gMdStay.findObject? mdId).any (·.zone == .graveyard p0) &&
     (gMdBack.findObject? enteredId).any (fun o => o.isOnBattlefield && gMdBack.name o == "Back Creature")
-  t1Ok && fdOk && exOk && stOk && mdfcOk
+  -- 6. CR 701.27j / 704.5e: copy of a DFC spell with a sorcery back face entering
+  --    transformed goes to its owner's graveyard first (recording the stack→graveyard
+  --    zone change), then ceases to exist when SBAs run (CR 704.5e).
+  let (gCp1, copyId?) := gSt1.copyStackSpellWithId (gSt1.object! stId) p0
+  let copyId := copyId?.getD ⟨0⟩
+  let (gCp2, gyCopyId) := gCp1.putOntoBattlefield copyId p0 (nightBack := true)
+  let copyMovedEvent :=
+    gCp2.events.any fun e =>
+      match e with
+      | .rules _ (.zone (.moved before after .stack (.graveyard owner) _ _ _ _)) _ _ =>
+        before.id == some copyId && before.isCopy &&
+        after.id == some gyCopyId && after.isCopy && owner == p0
+      | _ => false
+  let gCp3 := gCp2.checkSBA
+  let copyCeasedEvent :=
+    gCp3.events.any fun e =>
+      match e with
+      | .rules _ (.zone (.ceasedToExist obj)) (.stateBased .copyOutsideStackOrBf) _ =>
+        obj.id == some gyCopyId && obj.isCopy
+      | _ => false
+  let stCopyOk :=
+    copyId?.isSome &&
+    (gCp2.findObject? gyCopyId).any (fun o => o.zone == .graveyard p0 && o.isCopy) &&
+    !gCp2.battlefield.any (fun o => gCp2.name o == "Front Creature" || gCp2.name o == "Back Sorcery") &&
+    copyMovedEvent &&
+    (gCp3.findObject? gyCopyId).isNone &&
+    copyCeasedEvent
+  t1Ok && fdOk && exOk && stOk && mdfcOk && stCopyOk
 
 -- CR 201.4f: alternative names of adventurer (CR 716) and preparation (CR 723) cards are valid card names.
 #guard
