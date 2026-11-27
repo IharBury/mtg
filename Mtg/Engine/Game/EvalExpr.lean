@@ -389,7 +389,7 @@ def viewHasDesignation (st : Game) (v : ObjectView) (tag : PermanentDesignationT
   | .live o, .ringBearer => st.isAnyRingBearer o
   | .lki eo, .ringBearer => eo.ringBearer
   | .live o, .goaded => o.status.goaded || !o.status.goadedBy.isEmpty
-  | .lki eo, .goaded => eo.goaded
+  | .lki eo, .goaded => eo.goaded || !eo.goadedBy.isEmpty
   | .live o, .prepared => o.status.prepared
   | .lki eo, .prepared =>
     match if eo.copiable.isSome then none else eo.id.bind st.wasPreparedAtDeparture? with

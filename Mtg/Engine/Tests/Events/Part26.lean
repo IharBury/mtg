@@ -609,13 +609,24 @@ private def replayOk60i3 (gs : Array Game) : Bool :=
   let fdIdx := gStackFd1.events.size
   let gStackFd2 := gStackFd1.record (GameEvent.turnedFaceUp gStackFd1.turnNumber (gStackFd1.snapshot (gStackFd1.object! stFdId)) (cause := testCause))
   let gHistFd := gStackFd2.mkHistoricalGameAt fdIdx
-  -- Multi-player goad reversal:
+  -- Multi-player & same-player repeated goad reversal (including pre-log goad & `untilNext` flips):
   let gGoad0 := addPermanent g3 bear p0 p0
   let goadId := (gGoad0.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
-  let gGoad1 := gGoad0.record (GameEvent.designation gGoad0.turnNumber (gGoad0.snapshot (gGoad0.object! goadId)) (.goaded p1) true testCause)
-  let goadMidIdx := gGoad1.events.size
-  let gGoad2 := gGoad1.record (GameEvent.designation gGoad1.turnNumber (gGoad1.snapshot (gGoad1.object! goadId)) (.goaded p2) true testCause)
-  let gHistGoad := gGoad2.mkHistoricalGameAt goadMidIdx
+  let gGoad1 := gGoad0.record (GameEvent.designation gGoad0.turnNumber (gGoad0.snapshot (gGoad0.object! goadId)) (.goaded p1 true) true testCause)
+  let goad1Idx := gGoad1.events.size
+  let gGoad1Dup := gGoad1.record (GameEvent.designation gGoad1.turnNumber (gGoad1.snapshot (gGoad1.object! goadId)) (.goaded p1 true) true testCause)
+  let goad1DupIdx := gGoad1Dup.events.size
+  let gGoad1Perm := gGoad1Dup.record (GameEvent.designation gGoad1Dup.turnNumber (gGoad1Dup.snapshot (gGoad1Dup.object! goadId)) (.goaded p1 false) true testCause)
+  let goad1PermIdx := gGoad1Perm.events.size
+  let gGoad2 := gGoad1Perm.record (GameEvent.designation gGoad1Perm.turnNumber (gGoad1Perm.snapshot (gGoad1Perm.object! goadId)) (.goaded p2 true) true testCause)
+  let gHistGoad1 := gGoad1Dup.mkHistoricalGameAt goad1Idx
+  let gHistGoadDup := gGoad1Perm.mkHistoricalGameAt goad1DupIdx
+  let gHistGoadPerm := gGoad2.mkHistoricalGameAt goad1PermIdx
+  -- Pre-log goaded creature receiving a second goad from the same player `p1` (tests reverse-only inverse at idx 0):
+  let gPreGoad0 : Game := { gGoad1 with events := #[] }
+  let gPreGoadSame :=
+    gPreGoad0.record (GameEvent.designation gPreGoad0.turnNumber (gPreGoad0.snapshot (gPreGoad0.object! goadId)) (.goaded p1 false) true testCause)
+  let gHistPreGoad := gPreGoadSame.mkHistoricalGameAt 0
   -- Ring-bearer re-choice + control change + `.ringTempted`:
   let gRing0 := addPermanent g0 bear p0 p0
   let ringId := (gRing0.permanentsOf p0).find? (·.name == bear.name) |>.get!.id
@@ -642,7 +653,18 @@ private def replayOk60i3 (gs : Array Game) : Bool :=
   let histLkiOk :=
     (gHistFd.object! stFdId).status.faceDown &&
     gHistFd.name (gHistFd.object! stFdId) == "" &&
-    (gHistGoad.object! goadId).status.goadedBy == #[p1] &&
+    (gHistGoad1.object! goadId).status.goaded &&
+    (gHistGoad1.object! goadId).status.goadedBy == #[p1] &&
+    (gHistGoad1.object! goadId).status.goadedUntilNextTurnOf == #[p1] &&
+    (gHistGoadDup.object! goadId).status.goaded &&
+    (gHistGoadDup.object! goadId).status.goadedBy == #[p1] &&
+    (gHistGoadDup.object! goadId).status.goadedUntilNextTurnOf == #[p1] &&
+    (gHistGoadPerm.object! goadId).status.goaded &&
+    (gHistGoadPerm.object! goadId).status.goadedBy == #[p1] &&
+    (gHistGoadPerm.object! goadId).status.goadedUntilNextTurnOf == #[] &&
+    (gHistPreGoad.object! goadId).status.goaded &&
+    (gHistPreGoad.object! goadId).status.goadedBy == #[p1] &&
+    (gHistPreGoad.object! goadId).status.goadedUntilNextTurnOf == #[p1] &&
     (gHistRing1.player p0).ringBearerId == some ringId &&
     (gHistRing2.player p0).ringBearerId == some ringId &&
     (gHistEmb.object! embId).controller == some p0

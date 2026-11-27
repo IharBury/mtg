@@ -490,8 +490,10 @@ structure EventObject where
   transformed     : Bool                 := false
   prepared        : Bool                 := false
   harnessed       : Bool                 := false
-  goaded          : Bool                 := false
-  ringBearer      : Bool                 := false
+  goaded                : Bool                 := false
+  goadedBy              : Array PlayerId       := #[]
+  goadedUntilNextTurnOf : Array PlayerId       := #[]
+  ringBearer            : Bool                 := false
   attachedTo      : Option ObjectId      := none
   counters        : CounterBag           := #[]
   token              : Bool                        := false

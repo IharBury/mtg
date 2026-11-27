@@ -6994,7 +6994,9 @@ def lkiEventObjectAsGameObject (eo : EventObject) (prepared : Option Bool := non
       transformed := eo.transformed
       prepared := prepared.getD eo.prepared
       harnessed := eo.harnessed
-      goaded := eo.goaded
+      goaded := eo.goaded || !eo.goadedBy.isEmpty
+      goadedBy := eo.goadedBy
+      goadedUntilNextTurnOf := eo.goadedUntilNextTurnOf
       chosenOdd := eo.chosenOdd
       chosenCreatureType := eo.chosenCreatureType
       chosenColor := eo.chosenColor
@@ -10138,6 +10140,8 @@ private def synthEventObjForMat (obj : GameObject) : EventObject :=
     prepared := obj.status.prepared
     harnessed := obj.status.harnessed
     goaded := obj.status.goaded || !obj.status.goadedBy.isEmpty
+    goadedBy := obj.status.goadedBy
+    goadedUntilNextTurnOf := obj.status.goadedUntilNextTurnOf
     chosenOdd := obj.status.chosenOdd
     chosenCreatureType := obj.status.chosenCreatureType
     chosenColor := obj.status.chosenColor
@@ -10169,7 +10173,10 @@ private def histUpdateObjEntryFromSnap (cur : HistObjEntry) (z : Zone)
     rc? := some eo.controller
     tap? := some (z == .battlefield && eo.tapped)
     harn? := some (z == .battlefield && eo.harnessed)
-    goad? := some (z == .battlefield && eo.goaded, #[], #[]) }
+    goad? :=
+      if z == .battlefield then
+        some (eo.goaded || !eo.goadedBy.isEmpty, eo.goadedBy, eo.goadedUntilNextTurnOf)
+      else some (false, #[], #[]) }
 
 private def histClearDepartedObjEntry (cur : HistObjEntry)
     (eo? : Option EventObject := none) : HistObjEntry :=
@@ -10230,18 +10237,20 @@ private def histClearDepartedObjEntry (cur : HistObjEntry)
   | .rules (.permanent (.designation eo (.goaded byP untilNext) gained)) =>
     if let some pid := eo.id then
       gs := gs.updateObj pid fun cur =>
-        let (_, gBy, gUntil) := cur.goad?.getD (eo.goaded, #[], #[])
-        if gained then
-          if !eo.goaded then
-            { cur with goad? := some (false, #[], #[]) }
-          else
-            let gBy' := gBy.filter (· != byP)
-            let gUntil' := gUntil.filter (· != byP)
-            { cur with goad? := some (true, gBy', gUntil') }
+        if !eo.goadedBy.isEmpty || !eo.goaded then
+          { cur with
+            goad? := some (eo.goaded || !eo.goadedBy.isEmpty, eo.goadedBy, eo.goadedUntilNextTurnOf) }
         else
-          let gBy' := if gBy.contains byP then gBy else gBy.push byP
-          let gUntil' := if untilNext && !gUntil.contains byP then gUntil.push byP else gUntil
-          { cur with goad? := some (true, gBy', gUntil') }
+          -- Fallback for synthetic `EventObject`s constructed with `goaded := true` and empty `goadedBy`.
+          let (_, gBy, gUntil) := cur.goad?.getD (true, #[], #[])
+          if gained then
+            let gBy' := if gBy.size > 1 then gBy.filter (· != byP) else gBy
+            let gUntil' := if untilNext && gBy.size > 1 then gUntil.filter (· != byP) else gUntil
+            { cur with goad? := some (!gBy'.isEmpty, gBy', gUntil') }
+          else
+            let gBy' := if gBy.contains byP then gBy else gBy.push byP
+            let gUntil' := if untilNext && !gUntil.contains byP then gUntil.push byP else gUntil
+            { cur with goad? := some (true, gBy', gUntil') }
   | .rules (.permanent (.designation eo .ringBearer gained)) =>
     if let some pid := eo.id then
       if gained then
@@ -10955,7 +10964,10 @@ private def buildMissingHistObjs (g : Game) (gs : HistGlobalState)
             let harnessed := z == .battlefield && (ent.harn?.getD (info?.any (·.harnessed)))
             let (goaded, goadedBy, goadedUntil) :=
               if z == .battlefield then
-                ent.goad?.getD (info?.any (·.goaded), #[], #[])
+                ent.goad?.getD
+                  (info?.any (fun eo => eo.goaded || !eo.goadedBy.isEmpty),
+                   (info?.map (·.goadedBy)).getD #[],
+                   (info?.map (·.goadedUntilNextTurnOf)).getD #[])
               else (false, #[], #[])
             let allowChosen := z == .battlefield && !fd
             some (applyHistTrackedCounters g csMap evLen
@@ -14742,6 +14754,8 @@ def snapshot (g : Game) (o : GameObject) : EventObject :=
     prepared := o.status.prepared
     harnessed := o.status.harnessed
     goaded := o.status.goaded || !o.status.goadedBy.isEmpty
+    goadedBy := o.status.goadedBy
+    goadedUntilNextTurnOf := o.status.goadedUntilNextTurnOf
     ringBearer :=
       if o.isLkiSnapshot then (o.lkiLayer6.map (·.ringBearer)).getD false
       else o.isOnBattlefield &&

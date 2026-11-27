@@ -3205,7 +3205,7 @@ private def matchesZoneEndpoint (listener : PlayerId) (isTeammate : PlayerId →
   | .combatRole _ => true
   | .hasDesignation .prepared => o.prepared
   | .hasDesignation .harnessed => o.harnessed
-  | .hasDesignation .goaded => o.goaded
+  | .hasDesignation .goaded => o.goaded || !o.goadedBy.isEmpty
   | .hasDesignation .ringBearer => o.ringBearer
   | .counterCount k? op (.const n) =>
     let cnt := match k? with | some k => o.counters.count k | none => o.counters.foldl (fun a (_, c) => a + c) 0
