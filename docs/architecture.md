@@ -68,7 +68,7 @@ Every type, parser production, and runtime rule follows the **6 November 2026** 
 | `Mtg.Engine.Catalog` | `false` *(interpreted)* | — | 8 catalog modules (`Catalog.lean` + 6 set catalogs + `Supported.lean`). Kept un-precompiled so downstream `lake` jobs do not reload a shared initializer that re-parses all 1,292 cards; `parseOracleCard!` itself executes at native `-O1` speed via the `Mtg.Engine.Card` plugin. |
 | `Mtg.Engine.Game` | `true` | `-O0` *(library override)* | `Game.lean`, `Game/*` (54 files, 81,299 lines), `Deck`, `Rng`, `Rules`. Overridden to `-O0` ([`lakefile.toml#L37-L44`](../lakefile.toml#L37-L44)) because `Mtg.Engine.Game` emits tens of megabytes of generated C (`Core.c`, `Event.c`, `Decisions.c`, `ResolutionChoices.c`) on the serial critical path, cutting C compilation ~10× (~4 min saved on CI) while keeping `Mtg.Engine.Card` at `-O1`. |
 | `Mtg.Engine.Fixture` | `true` | `-O1 -mllvm -regalloc=fast` | Reusable opening hands and prebuilt test game states, loaded once by downstream `#guard` suites. |
-| `Mtg.Engine` | `false` | — | Top-level library tying together `Agent`, `OracleData`, `OracleRulings`, `Tests.lean`, `Tests/*` (105 files, including `Tests/Builders/`, `Tests/CardGuards.lean`, `Tests/CatalogHobbitGuards.lean`, and `Tests/StarTrek.lean`), and oracle ruling test modules. Neither `Card/`, `Game/`, nor `Catalog/` imports `Tests/`. |
+| `Mtg.Engine` | `false` | — | Top-level library tying together `Agent`, `OracleData`, `OracleRulings`, `Tests.lean`, `Tests/*` (114 files, including `Tests/Builders/`, `Tests/CardGuards.lean`, `Tests/CatalogHobbitGuards.lean`, and `Tests/StarTrek.lean`), and oracle ruling test modules. Neither `Card/`, `Game/`, nor `Catalog/` imports `Tests/`. |
 | `MtgDemo` / `mtg-demo` | `false` | — | Console demo, text renderer (`Mtg/Demo/Render.lean`), Welcome Decks, deck-list parser, and 534 render `#guard`s (`Mtg/Demo/RenderTests.lean`). |
 | `oracle-roundtrip` | — | — | [`Mtg/OracleRoundtrip.lean`](../Mtg/OracleRoundtrip.lean) executable verifying smoke parses and structural `BEq CardDef` round-trips across all 1,292 catalog cards. |
 
@@ -94,7 +94,7 @@ Every change is verified against three gates:
    LEAN_ABORT_ON_PANIC=1 bash scripts/ci-lake-build.sh --wfail
    ```
    [`scripts/ci-lake-build.sh`](../scripts/ci-lake-build.sh) fails on any warning (`--wfail`) and aborts or rejects any runtime `PANIC at` diagnostic—including cached replays—covering all start-of-line `#guard` assertions across `Mtg/`:
-   - `Mtg/Engine/Tests/*` (105 files, incl. `StarTrek.lean`)
+   - `Mtg/Engine/Tests/*` (114 files, incl. `StarTrek.lean`)
    - Top-level test modules imported via the [`OracleRulings.lean`](../Mtg/Engine/OracleRulings.lean) facade (21 test modules)—comprising the ruling suites (`OracleRulingTests.lean`, `MshOracleTests*.lean`, `FraOracleTests*.lean`, `FrcOracleTests.lean`, checking the **1,057**-entry [`uniqueOracleRulingCount`](../Mtg/Engine/OracleData.lean#L3229) table in `OracleData.lean`) alongside the card and model test modules (`FraCardTests*.lean`, `CatalogModelTests.lean`)
    - `Mtg/Demo/Check0.lean`–`Check9.lean`
    - `Mtg/Demo/RenderTests.lean`

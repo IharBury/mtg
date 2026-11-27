@@ -9,12 +9,12 @@ Comprehensive Rules:
 
 - `LoyaltySymbol` (CR 107.7 / 606.2 / 606.4–6)
 - `CostCountSpec`, `SelfOrFilter`, `DiscardCostTarget`, `CounterCostTarget`
-- `CostItem` (15 constructors, lowering to `EventCause.costPayment` + `CostKind`)
+- `CostItem` (16 constructors, lowering to `EventCause.costPayment` + `CostKind`)
 - `CostSpec` (items + optional `bindVar? : Option VarId` for step outcomes)
 - `AdditionalCostSpec` and `AlternativeCostSpec` (CR 118.8 / 118.9)
 - Functorial Layer 3 `HasTextChange` and canonical `ToOracle` / `ToString`
 
-Every `inductive` in this module stays at ≤ 15 constructors (`< 7%` of the
+Every `inductive` in this module stays at ≤ 16 constructors (`< 7%` of the
 Lean 4 C runtime `LeanMaxCtorTag = 243` ceiling).
 -/
 
@@ -154,7 +154,7 @@ instance : HasTextChange CounterCostTarget where
 
 mutual
 
-/-- One atomic or choice-combinator item inside a `CostSpec` (CR 118, 15 constructors).
+/-- One atomic or choice-combinator item inside a `CostSpec` (CR 118, 16 constructors).
 Lowers during payment to `EventCause.costPayment` + `RulesEvent`. -/
 inductive CostItem where
   /-- Mana cost (CR 118.3 / 202.1). -/

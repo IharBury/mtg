@@ -13,7 +13,7 @@ emblems (CR 114), continuous modifications (CR 611 / 613), replacements
 (CR 614–615), and one-shot `Instruction`s (CR 608) into a single stratified
 `mutual` block anchored to the 6 November 2026 Comprehensive Rules:
 
-- Every `inductive` in this module stays at `≤ 20` constructors (`< 9%` of the
+- Every `inductive` in this module stays at `≤ 24` constructors (`< 10%` of the
   Lean 4 C runtime `LeanMaxCtorTag = 243` ceiling).
 - Zero card-named or set-named constructors.
 - Single-tuple derived `BEq` / `Repr` across the 16-type mutual block.
@@ -24,7 +24,7 @@ emblems (CR 114), continuous modifications (CR 611 / 613), replacements
   `damage`, `life`, `player`, `turn`, `stack`, `installEffect`,
   `queueReflexiveTrigger`) and 8 combinators (`noop`, `seq`, `bind`, `ifCond`,
   `optional`, `unlessPays`, `chooseModes`, `forEach`), with every sub-family
-  enum at `≤ 16` constructors.
+  enum at `≤ 17` constructors.
 -/
 
 namespace Mtg.Engine
@@ -515,7 +515,7 @@ inductive AsEntersChoiceKind where
   | numberRange (lo hi : Nat)
 deriving DecidableEq, Repr, Inhabited, BEq
 
-/-! ### 3. Predefined Tokens & One-Shot Instruction Sub-Families (Every Enum ≤ 16 Ctors) -/
+/-! ### 3. Predefined Tokens & One-Shot Instruction Sub-Families (Every Enum ≤ 17 Ctors) -/
 
 /-- Predefined tokens defined directly by CR 111.10a–x (6 November 2026; 10 constructors). -/
 inductive PredefinedToken where

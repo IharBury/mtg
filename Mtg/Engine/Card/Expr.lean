@@ -13,10 +13,10 @@ anchored to the 6 November 2026 Comprehensive Rules:
 
 - `VarId`, `CmpOp`, `ArithOp`, `AggOp`, `LibraryPosSpec`
 - `PlayerFilter` / `PlayerPred` / `PlayerExpr` (11 constructors)
-- `ObjectPred` (37 constructors) / `ObjectFilter` / `ObjectExpr` (10 constructors)
-- `ValueExpr` (13 constructors)
-- `Condition` (14 constructors)
-- `DurationExpr` (11 constructors, 1-to-1 with `EffectDuration`)
+- `ObjectPred` (39 constructors) / `ObjectFilter` / `ObjectExpr` (15 constructors)
+- `ValueExpr` (17 constructors)
+- `Condition` (15 constructors)
+- `DurationExpr` (12 constructors, 1-to-1 with `EffectDuration`)
 - `HasTextChange` functorial Layer 3 instances (CR 612.2 / 613.1c)
 - `PrintCtx` and `ToOracle` canonical Oracle printers
 
@@ -600,7 +600,7 @@ structure ZoneSetSpec where
   owner : ZoneOwnerSpec
 
 /-- Pure predicate over an object's Layer 1–7d characteristics, status, relations,
-and turn/cast history (37 constructors, < 40 tag budget). -/
+and turn/cast history (39 constructors, < 40 tag budget). -/
 inductive ObjectPred where
   -- Boolean combinators (3)
   | all (preds : Array ObjectPred)
@@ -636,7 +636,7 @@ inductive ObjectPred where
   | hasAttachment (filter : ObjectFilter)
   | targets (target : ObjectOrPlayerExpr)
   | shares (char : SharedCharacteristic) (withObj : ObjectExpr)
-  -- Event & cast history (CR 400.7d) (7)
+  -- Event & cast history (CR 400.7d) (9)
   | wasCast
   | castFrom (zone : ZoneKind)
   | enteredThisTurn
@@ -671,7 +671,7 @@ inductive ObjectExpr where
   | union (exprs : Array ObjectExpr)
   | diff (lhs rhs : ObjectExpr)
 
-/-- Pure integer-valued expression (CR 107 / 608.2h; 16 constructors). -/
+/-- Pure integer-valued expression (CR 107 / 608.2h; 17 constructors). -/
 inductive ValueExpr where
   | const (n : Int)
   | chosenX
