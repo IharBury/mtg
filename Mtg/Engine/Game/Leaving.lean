@@ -394,10 +394,11 @@ def runEndControlExileLoop (g : Game)
     g.chainPendingReplacement
       (.endControlExileLoop remaining cause pendingLog extraSkipIds (some loopFromIdx) pauseDefer)
   else
-    let preLoop :=
+    let gEntryLoop := g
+    let mkPreLoop : Unit → Game := fun () =>
       match fromEventIdx? with
-      | some idx => if idx < g.events.size then g.mkHistoricalGameAt idx else g
-      | none => g
+      | some idx => if idx < gEntryLoop.events.size then gEntryLoop.mkHistoricalGameAt idx else gEntryLoop
+      | none => gEntryLoop
     let priorCont? := g.pendingReplacement
     let g := if priorCont?.isSome then g.change (.pendingReplacement none) else g
     let runLoop (g : Game) : Game := Id.run do
@@ -445,7 +446,7 @@ def runEndControlExileLoop (g : Game)
       | some prior => g.chainPendingReplacement prior
       | none => g
     if deferPlayFromExileLogs || pausedSelf then g
-    else emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    else emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
 
 private def inActiveEndControlExile (oid : ObjectId) : PendingReplacement → Bool
   | .endControlExileLoop remaining _ pendingLog _ _ _ =>
@@ -4549,10 +4550,11 @@ def leavePlayersWhoLost (g : Game)
     (departedIn : Array PlayerId := #[])
     (rewindProposalIn : Option Bool := none)
     (fromEventIdx? : Option Nat := none) : Game :=
-  let pre :=
+  let gEntry := g
+  let mkPre : Unit → Game := fun () =>
     match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | some idx => gEntry.mkHistoricalGameAt idx
+    | none => gEntry
   let fromIdx := fromEventIdx?.getD g.events.size
   let (g, saved?, popOuter, departed, rewindProposal) :=
     g.leavePlayersWhoLostCore savedIn popOuterIn departedIn rewindProposalIn
@@ -4563,9 +4565,9 @@ def leavePlayersWhoLost (g : Game)
       g.chainPendingReplacement
         (.leavePlayersWhoLost saved? popOuter departed rewindProposal (some fromIdx))
     else if g.over then g
-    else emitExpiredPlayFromExileLogs pre g fromIdx
+    else emitExpiredPlayFromExileLogsLazy mkPre g fromIdx
   else
-    let g := if g.over then g else emitExpiredPlayFromExileLogs pre g fromIdx
+    let g := if g.over then g else emitExpiredPlayFromExileLogsLazy mkPre g fromIdx
     g.restoreSavedPostLeave saved? popOuter (departed := departed) (rewindProposal := rewindProposal)
 
 def emptyManaPools (g : Game) : Game :=

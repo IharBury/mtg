@@ -19,10 +19,11 @@ def exileZemoBoastCards (g : Game) (p : PlayerId) (abilityId : ObjectId)
     (remainingIds : Array ObjectId) (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let cause := some (EventCause.costPayment .exile p (some abilityId))
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  let preLoop :=
+  let gEntry := g
+  let mkPreLoop : Unit → Game := fun () =>
     match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | some idx => gEntry.mkHistoricalGameAt idx
+    | none => gEntry
   let mut g := g
   if g.sbaPaused then
     return g.chainPendingReplacement
@@ -39,7 +40,7 @@ def exileZemoBoastCards (g : Game) (p : PlayerId) (abilityId : ObjectId)
           (.finishPostStep (.exileZemoBoastCards p abilityId rem (some loopFromIdx)))
         return g
   if !remainingIds.isEmpty || fromEventIdx?.isSome then
-    g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
   return g
 
 /-- Return each remaining owned creature in `remainingIds` to its owner's hand
@@ -53,10 +54,11 @@ def returnOwnedCreaturesLoop (g : Game) (p : PlayerId)
     (pendingCard : Option (ObjectId × PlayerId × String) := none)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  let preLoop :=
+  let gEntry := g
+  let mkPreLoop : Unit → Game := fun () =>
     match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | some idx => gEntry.mkHistoricalGameAt idx
+    | none => gEntry
   let mut g := g
   let mut count := returnedCount
   if g.sbaPaused then
@@ -87,7 +89,7 @@ def returnOwnedCreaturesLoop (g : Game) (p : PlayerId)
           count := count + 1
     | none => pure ()
   if !remainingIds.isEmpty || pendingCard.isSome || fromEventIdx?.isSome then
-    g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
   if count > 0 then
     let src := srcId.bind g.damageSourceById?
     g := (g.registerDelayedTrigger
@@ -6601,10 +6603,11 @@ partial def finishConcedePriority (g : Game) (wasIdlePriority : Bool)
     (rewindProposal : Option Bool := none)
     (fromEventIdx? : Option Nat := none) : Game :=
   let finishFromIdx := fromEventIdx?.getD g.events.size
-  let preFinish :=
+  let gEntryFinish := g
+  let mkPreFinish0 : Unit → Game := fun () =>
     match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | some idx => gEntryFinish.mkHistoricalGameAt idx
+    | none => gEntryFinish
   let g := g.popEmptyContinuationFrames
   let (g, popOuter) :=
     if runSba && !g.over then (g, popOuter)
@@ -6629,16 +6632,17 @@ partial def finishConcedePriority (g : Game) (wasIdlePriority : Bool)
     match sbaFromIdx? with
     | some idx => min finishFromIdx idx
     | none => finishFromIdx
-  let preFinish :=
-    if effFinishFromIdx < finishFromIdx then g.mkHistoricalGameAt effFinishFromIdx
-    else preFinish
+  let gForPreFinish := g
+  let mkPreFinish : Unit → Game := fun () =>
+    if effFinishFromIdx < finishFromIdx then gForPreFinish.mkHistoricalGameAt effFinishFromIdx
+    else mkPreFinish0 ()
   if g.over then g.completeActiveResolutions
   else if g.sbaPaused then
     g.chainPendingReplacement
       (.finishConcede wasIdlePriority savedPendingPrio wasAssigningCombatDamage
         savedPending popOuter departed rewindProposal (some effFinishFromIdx))
   else
-    let g := emitExpiredPlayFromExileLogs preFinish g effFinishFromIdx
+    let g := emitExpiredPlayFromExileLogsLazy mkPreFinish g effFinishFromIdx
     let g :=
       match savedPending with
       | some sp =>
@@ -6710,10 +6714,11 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
   if g.over then
     return g.completeActiveResolutions
   let concedeFromIdx := fromEventIdx?.getD g.events.size
-  let preConcede :=
+  let gEntryConcede := g
+  let mkPreConcede : Unit → Game := fun () =>
     match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | some idx => gEntryConcede.mkHistoricalGameAt idx
+    | none => gEntryConcede
   let mut g := g
   let mut saved? := savedIn
   let mut popOuter := popOuterIn
@@ -6813,7 +6818,7 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
                 savedPendingPrio wasAssigningCombatDamage saved? popOuter departed rewindProposal
                 (some concedeFromIdx))
           else
-            return emitExpiredPlayFromExileLogs preConcede g concedeFromIdx
+            return emitExpiredPlayFromExileLogsLazy mkPreConcede g concedeFromIdx
       | _ => pure ()
   let (gf, pof) := g.flushDismissedPausedBatch saved? popOuter (hasDeferredRewind := rewindProposal.isSome)
   g := gf
@@ -6836,7 +6841,7 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
         (.concedePlayersLoop #[] true midResolutionOrBatch wasIdlePriority
           savedPendingPrio wasAssigningCombatDamage saved? popOuter departed rewindProposal
           (some concedeFromIdx))
-    g := emitExpiredPlayFromExileLogs preConcede g concedeFromIdx
+    g := emitExpiredPlayFromExileLogsLazy mkPreConcede g concedeFromIdx
     g :=
       match saved? with
       | some sp =>
@@ -6872,9 +6877,9 @@ partial def concedePlayersLoop (g : Game) (remaining : Array PlayerId)
             savedPendingPrio wasAssigningCombatDamage saved? popOuter departed rewindProposal
             (some concedeFromIdx))
       else
-        return emitExpiredPlayFromExileLogs preConcede g concedeFromIdx
+        return emitExpiredPlayFromExileLogsLazy mkPreConcede g concedeFromIdx
     else
-      g := emitExpiredPlayFromExileLogs preConcede g concedeFromIdx
+      g := emitExpiredPlayFromExileLogsLazy mkPreConcede g concedeFromIdx
       g :=
         match saved? with
         | some sp =>
@@ -8836,18 +8841,19 @@ partial def finishLibraryLook (g : Game) : Game :=
 partial def surveilMoveLoop (g : Game) (p : PlayerId) (remainingGy : Array ObjectId)
     (cause : Option EventCause) (fromEventIdx? : Option Nat := none) : Game :=
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  let preLoop :=
+  let gEntry := g
+  let mkPreLoop : Unit → Game := fun () =>
     match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | some idx => gEntry.mkHistoricalGameAt idx
+    | none => gEntry
   if g.sbaPaused then
     g.chainPendingReplacement (.surveilMoveLoop p remainingGy cause (some loopFromIdx))
   else if !g.stillInGame p then
-    if fromEventIdx?.isSome then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
+    if fromEventIdx?.isSome then emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx else g
   else
     match remainingGy[0]? with
     | none =>
-      if fromEventIdx?.isSome then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
+      if fromEventIdx?.isSome then emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx else g
     | some id =>
       let rest := remainingGy.extract 1 remainingGy.size
       match g.findObject? id with
@@ -8866,10 +8872,11 @@ partial def finishSurveilPostMove (g : Game) (p : PlayerId) (card : GameObject)
     (fromId : ObjectId) (remainingGy : Array ObjectId) (cause : Option EventCause)
     (fromEventIdx? : Option Nat := none) : Game :=
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  let preLoop :=
+  let gEntry := g
+  let mkPreLoop : Unit → Game := fun () =>
     match fromEventIdx? with
-    | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | some idx => gEntry.mkHistoricalGameAt idx
+    | none => gEntry
   if g.sbaPaused then
     g.chainPendingReplacement
       (.finishSurveilPostMove p card fromId remainingGy cause (some loopFromIdx))
@@ -8880,7 +8887,7 @@ partial def finishSurveilPostMove (g : Game) (p : PlayerId) (card : GameObject)
     | some gyObj =>
       let g := g.logMsg s!"{(g.player p).name} puts {g.name card} into their graveyard (surveil)"
       if !g.stillInGame p then
-        emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+        emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
       else
         let returnToHand : Bool :=
           match g.surveilReturnMvAtMost with
