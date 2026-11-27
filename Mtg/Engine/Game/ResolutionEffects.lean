@@ -143,7 +143,7 @@ def mayCastFromLookedError (g : Game) (p : PlayerId) (ids : Array ObjectId)
       else if (g.objectManaValue o : Int) > maxMv then
         some s!"{g.name o}'s mana value is greater than the greatest power among attacking creatures you control"
       else if g.isAura o && !bc.allowsZeroTargets &&
-          (g.legalAuraTargets p bc (some o.id)).isEmpty then
+          (g.legalAuraTargets p bc (some o.id) tcs).isEmpty then
         some s!"{g.name o} requires a target to enchant"
       -- CR 601.2b–c / 115.1 / 734.1: a spell that can't announce a legal target (kicked
       -- or not) or a choosable mode can't be cast from among the looked-at cards.
@@ -195,7 +195,7 @@ def choosePutArtifactFromHand (g : Game) (p : PlayerId) (cardId : ObjectId) :
     let g := g.change (.pending .none)
     let (g, newId) := g.putOntoBattlefield cardId p
     let g :=
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         g.chainPendingReplacement
           (.finishPostStep (.putArtifactOntoBattlefield p cardId hostId))
       else
@@ -213,23 +213,24 @@ def millOpponentsOnly (g : Game) (opponents : Array PlayerId) (n : Nat)
     (cause : Option EventCause := none)
     (fromEventIdx? : Option Nat := none) : Game :=
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+  if g.sbaPaused then
     g.chainPendingReplacement (.finishPostStep (.millOpponentsOnly opponents n cause (some loopFromIdx)))
   else
-    let preLoop :=
+    let preLoopStart := g
+    let mkPreLoop : Unit → Game := fun _ =>
       match fromEventIdx? with
       | some idx => g.mkHistoricalGameAt idx
-      | none => g
+      | none => preLoopStart
     g.withBatch cause fun g => Id.run do
       let mut g := g
       for i in [0:opponents.size] do
         let pid := opponents[i]!
         g := g.mill pid n (cause := cause) (deferPlayFromExileLogs := true)
-        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+        if g.sbaPaused then
           let rem := opponents.extract (i + 1) opponents.size
           return g.chainPendingReplacement
             (.finishPostStep (.millOpponentsOnly rem n cause (some loopFromIdx)))
-      return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+      return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
 
 /-- Put +1/+1 and lifelink until end of turn on a creature (Bard the Bowman). -/
 def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
@@ -243,7 +244,7 @@ def applyBardBowman (g : Game) (targetId : ObjectId) : Game :=
         .oneShotEffect none src ctrl
       g.withBatch cause fun g =>
         let g := g.addPlusOnePlusOneTo o 1 (cause := cause)
-        if let .chooseReplacement .. := g.pending then
+        if g.sbaPaused then
           g.chainPendingReplacement
             (.finishPostStep (.grantLifelinkUntilEot o.id (g.currentBatch.bind (·.2))))
         else if let some cur := g.findObject? o.id then
@@ -280,7 +281,7 @@ def exileUntilSourceLeaves (g : Game) (sourceId : Option ObjectId) (o : GameObje
     | none => g.allocDelayedCause fallbackCtrl sourceId
   let (g, _) := g.move o.id .exile none (cause := some linkCause)
     (deferPlayFromExileLogs := deferPlayFromExileLogs)
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement (.finishPostStep (.finishExileUntilSourceLeaves sourceId o.id))
   else
     g.finishExileUntilSourceLeaves sourceId o.id
@@ -303,7 +304,7 @@ does not return automatically when the source leaves. -/
 def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject)
     (cause : Option EventCause := none) : Game :=
   let (g, _) := g.move o.id .exile none (cause := cause)
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement (.finishPostStep (.finishExileForLeaveTrigger sourceId o.id))
   else
     g.finishExileForLeaveTrigger sourceId o.id
@@ -311,7 +312,7 @@ def exileForLeaveTrigger (g : Game) (sourceId : Option ObjectId) (o : GameObject
 /-- Return each exiled id in `remainingIds` simultaneously in two passes
 (moving all cards to their destination zones before running `afterPermanentEnters`,
 checking Aura attachment against pre-batch `preBattlefield` per CR 303.4f),
-pausing on `Pending.chooseReplacement`. -/
+pausing on `Pending.chooseReplacement` or `sbaPaused`. -/
 def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
     (cause : Option EventCause := none)
     (enteredFromIds : Array ObjectId := #[])
@@ -320,14 +321,15 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let deferPfe := remainingIds.size > 1 || fromEventIdx?.isSome
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     return g.chainPendingReplacement
       (.returnLinkedExileLoop remainingIds cause enteredFromIds preBattlefield pendingLog
         (if deferPfe then some loopFromIdx else none))
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let preBf := preBattlefield.getD g.battlefield
   let mut g := g
   if let some (fromId, dest) := pendingLog then
@@ -347,7 +349,7 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
         match o.returnToZone with
         | some (.hand p) =>
           let (g', _) := g.move id (.hand p) none (cause := cause) (deferPlayFromExileLogs := deferPfe)
-          if let .chooseReplacement .. := g'.pending then
+          if g'.sbaPaused then
             let rem := remainingIds.extract (i + 1) remainingIds.size
             return g'.chainPendingReplacement
               (.returnLinkedExileLoop rem cause entered (some preBf) (some (id, .hand p))
@@ -358,7 +360,7 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
             g := g'
         | some (.graveyard p) =>
           let (g', _) := g.move id (.graveyard p) none (cause := cause) (deferPlayFromExileLogs := deferPfe)
-          if let .chooseReplacement .. := g'.pending then
+          if g'.sbaPaused then
             let rem := remainingIds.extract (i + 1) remainingIds.size
             return g'.chainPendingReplacement
               (.returnLinkedExileLoop rem cause entered (some preBf) (some (id, .graveyard p))
@@ -372,13 +374,13 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
             (preBattlefield := some preBf) (cause := cause) (deferPlayFromExileLogs := deferPfe)
           g := g'
           entered := entered.push id
-          if let .chooseReplacement .. := g.pending then
+          if g.sbaPaused then
             let rem := remainingIds.extract (i + 1) remainingIds.size
             return g.chainPendingReplacement
               (.returnLinkedExileLoop rem cause entered (some preBf) none
                 (if deferPfe then some loopFromIdx else none))
   if deferPfe then
-    g := emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
   for j in [0:entered.size] do
     let fromId := entered[j]!
     if let some enteredObj := g.followMovedToZone? fromId (· == .battlefield) then
@@ -388,7 +390,7 @@ def returnLinkedExileLoop (g : Game) (remainingIds : Array ObjectId)
       else
         g := g.logMsg s!"{g.name enteredObj} returns to the battlefield"
       g := g.afterPermanentEnters (g.object! enteredObj.id)
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         let remEntered := entered.extract (j + 1) entered.size
         if !remEntered.isEmpty then
           g := g.chainPendingReplacement
@@ -670,13 +672,14 @@ def exileTopMayCastUpToLoop (g : Game) (fromPlayer caster : PlayerId)
     (pendingFromId : Option ObjectId := none)
     (fromEventIdx? : Option Nat := none) : Game := Id.run do
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+  if g.sbaPaused then
     return g.chainPendingReplacement
       (.finishPostStep (.exileTopMayCastUpToLoop fromPlayer caster remaining casts cause? accIds pendingFromId (some loopFromIdx)))
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let mut g := g
   let mut ids := accIds
   if let some fid := pendingFromId then
@@ -684,10 +687,10 @@ def exileTopMayCastUpToLoop (g : Game) (fromPlayer caster : PlayerId)
       ids := ids.push moved.id
       g := g.logMsg s!"{(g.player fromPlayer).name} exiles {g.name moved}"
   if !g.stillInGame fromPlayer then
-    return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+    return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
   for i in [0:remaining] do
     if !g.stillInGame fromPlayer then
-      return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+      return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
     let pl := g.player fromPlayer
     if pl.library.isEmpty then
       g := g.logMsg s!"{pl.name} has no cards in their library to exile"
@@ -696,14 +699,14 @@ def exileTopMayCastUpToLoop (g : Game) (fromPlayer caster : PlayerId)
       let name := g.name (g.object! top)
       let (g', _) := g.move top .exile none (cause := cause?) (deferPlayFromExileLogs := true)
       g := g'
-      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+      if g.sbaPaused then
         let rem := remaining - (i + 1)
         return g.chainPendingReplacement
           (.finishPostStep (.exileTopMayCastUpToLoop fromPlayer caster rem casts cause? ids (some top) (some loopFromIdx)))
       if let some moved := g.followMovedToZone? top (· == .exile) then
         ids := ids.push moved.id
         g := g.logMsg s!"{pl.name} exiles {name}"
-  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
 
 /-- Offer up to `casts` free casts from `ids` after `exileTopMayCastUpTo`'s
 exile batch has closed. -/
@@ -728,7 +731,7 @@ def exileTopMayCastUpTo (g : Game) (fromPlayer caster : PlayerId) (n casts : Nat
     (lib.extract (lib.size - k) lib.size).reverse
   let g := g0.withBatch cause? fun g =>
     g.exileTopMayCastUpToLoop fromPlayer caster n casts cause?
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement
       (.finishPostStep (.offerMayCastUpToFromExile caster preIds casts))
   else
@@ -774,7 +777,7 @@ def finishEnteringAttackCard (g : Game) (newId : ObjectId)
       match mods with
       | m :: rest =>
         let g := g.applyEnterMod effectController newId m (cause := cause)
-        if let .chooseReplacement .. := g.pending then
+        if g.sbaPaused then
           g.chainPendingReplacement
             (.finishEnteringAttackCard (some newId) effectController cardName rest logKind cause)
         else
@@ -805,7 +808,7 @@ partial def finishEnteringAttackCards (g : Game)
     (fromEventIdx? : Option Nat := none) : Game :=
   let g :=
     match fromEventIdx? with
-    | some idx => emitExpiredPlayFromExileLogs (g.mkHistoricalGameAt idx) g idx
+    | some idx => emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt idx) g idx
     | none => g
   match postEntries[0]? with
   | none => g

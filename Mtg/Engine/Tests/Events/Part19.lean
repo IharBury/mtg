@@ -588,10 +588,10 @@ private def replayOk53i1 (gs : Array Game) : Bool :=
        gMorphPropPrefixSelfRun.priority == p2 &&
        gMorphPropPrefixSelf.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p2 &&
        gMorphPropPrefixOtherFaceUpRun.pending == .none &&
-       gMorphPropPrefixOtherFaceUpRun.priority == p0 &&
+       gMorphPropPrefixOtherFaceUpRun.priority == p2 &&
        gMorphPropPrefixOtherFaceUp.continuationGrantsPriority false (.finishProposedSpellCosts .finalize true false false) &&
-       gMorphPropPrefixOtherFaceUp.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == none &&
-       gMorphPropPrefixOtherFaceUp.firstPriorityGrantRecipient? false (.finishProposedSpellCosts .finalize true false false) == some none &&
+       gMorphPropPrefixOtherFaceUp.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p2 &&
+       gMorphPropPrefixOtherFaceUp.firstPriorityGrantRecipient? false (.finishProposedSpellCosts .finalize true false false) == some (some p2) &&
        gMorphPropOtherFaceUpThenRecvRun.pending == .none &&
        gMorphPropOtherFaceUpThenRecvRun.priority == p2 &&
        gMorphPropOtherFaceUpThenRecv.priorityRecipientOfContinuation? false (.finishProposedSpellCosts .finalize true false false) == some p2 &&

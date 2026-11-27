@@ -1131,7 +1131,7 @@ inductive PostStep where
       (top : Bool) (damage : Nat) (sourceId : Option ObjectId)
   | gainLifePlayer (p : PlayerId) (amount : Nat) (cause : Option EventCause := none)
   | drawCardsPlayer (p : PlayerId) (amount : Nat) (cause : Option EventCause := none)
-  | sheHulkAfterDamage (p : PlayerId) (startIdx : Nat)
+  | sheHulkAfterDamage (p : PlayerId) (startIdx : Nat) (sourceId : Option ObjectId := none)
   | damageUpToOneAndPlayerLoop (controller : PlayerId) (kind : TargetSpec)
       (remaining : Array (Nat × Target)) (n : Nat) (srcName : String)
       (sourceId : Option ObjectId) (cause : Option EventCause)
@@ -1392,6 +1392,24 @@ inductive InterpCont where
       (srcSnap? : Option EventObject) (startEventIdx : Nat) (cause : EventCause)
       (trackExcess : Bool := false) (accumExcess : Nat := 0)
       (pendingExcess? : Option (ObjectId × Nat × Nat) := none)
+  /-- Create and offer copies from `origIds` that arrived in exile after the
+  exile batch has closed (CR 608.2c / 616.1 / 707.12). -/
+  | afterCopyAndCastCopies (origIds : Array ObjectId) (gp : GrantPlayPermSpec) (cause : EventCause)
+  /-- Return `fromId` from exile to the battlefield under `dstP`'s control after
+  the exile step of an immediate return or return-then-exile-at-end-step paused
+  on CR 616.1 replacement. -/
+  | afterExileImmediateReturn (dstP : PlayerId) (fromId : ObjectId) (tapped : Bool)
+      (mods : MoveMods) (exileAtEndStep : Bool) (cause : EventCause)
+  /-- Finish enter mods, optional end-step exile delayed trigger, and ETB triggers
+  after `putOntoBattlefield` in an immediate return paused on CR 616.1 replacement. -/
+  | afterReturnImmediate (fromId : ObjectId) (mods : MoveMods) (exileAtEndStep : Bool)
+      (cause : EventCause)
+  /-- Resume `execInspectLibrary` `.revealUntil` (`exileWhileRevealing := true`)
+  after a CR 616.1 replacement pause without prematurely closing `.bindClose`. -/
+  | afterRevealUntilExileLoop (p : PlayerId) (matchPred : ObjectPred) (limit : Nat)
+      (hits : Array ObjectId) (cause : EventCause)
+      (pendingTop? : Option ObjectId := none)
+      (fromEventIdx? : Option Nat := none)
 deriving Repr, Inhabited, BEq
 
 /-- Complete resumable state of the unified `Instruction` interpreter. -/
@@ -1986,6 +2004,7 @@ without altering prompts, priority, or control flow) that is transparent to
 trailing priority-grant checks. -/
 def PendingReplacement.isPurePostLog : PendingReplacement → Bool
   | .finishPostStep (.logExpiredPlayFromExile ..)
+  | .finishPostStep (.emitExpiredPlayFromExileFrom ..)
   | .logMessage _
   | .logPutCounterDelta ..
   | .finishPostStep (.logDiscardIfInGraveyard ..)
@@ -2193,6 +2212,7 @@ def InterpState.isPureBatchLoopCont (st : InterpState) : Bool :=
     | [.afterDividedDamageLoop ..]
     | [.afterMixedDamageLoop ..]
     | [.afterCounterOpLoop ..]
+    | [.afterCopyAndCastExileLoop ..]
     | [.afterMoveCountersPut ..]
     | [.logIfCountersIncreased ..]
     | [.applyAggregatedLifelink ..] => true
@@ -2224,6 +2244,8 @@ def PendingReplacement.isPlayFromExileDeferBoundaryLeaf : PendingReplacement →
   | .shuffleThen ..
   | .connive ..
   | .continueConnives ..
+  | .amass ..
+  | .createKindTokens ..
   | .createAndMarkTokensAttacking ..
   | .finishSearchAfterPlace ..
   | .finishMillChooseForHand ..
@@ -2258,6 +2280,10 @@ def PendingReplacement.isPlayFromExileDeferBoundaryLeaf : PendingReplacement →
   | .finishPostStep (.beginDiscardCardsStep ..)
   | .finishPostStep (.continueAfterDiscardStep ..)
   | .finishPostStep (.wheelOfferNext ..)
+  | .finishPostStep (.wheelDrawThenOfferNext ..)
+  | .finishPostStep (.enteredBattlefieldPutRestBottomRandom ..)
+  | .finishPostStep (.putRestOnBottomRandom ..)
+  | .finishPostStep (.putOntoBattlefieldHasteAtFour _ _ _ true)
   | .finishPostStep (.continueDiscardTwo ..)
   | .finishPostStep (.searchLibraryPlaneswalker ..)
   | .finishPostStep (.searchLibrarySphinx ..)

@@ -80,9 +80,15 @@ def timingAllowsCast (g : Game) (p : PlayerId) (face : CardDef)
           g.step.isMainPhase && g.activePlayer == p && g.priority == p
       else g.asSorcery? p
   let (faceTypes, _, _) := g.faceCdaCharacteristics spellObj face
+  let originHasFlash :=
+    match card? with
+    | some card =>
+      face.name != "" && face.name == (g.baseCard card).name &&
+        KeywordAbility.hasFlash (g.currentKeywords card)
+    | none => false
   let faceHasSorcerySpeed :=
     !faceTypes.contains .instant && !faceTypes.contains .land &&
-      !KeywordAbility.hasFlash (g.currentKeywords spellObj)
+      !KeywordAbility.hasFlash (g.currentKeywords spellObj) && !originHasFlash
   prioOk &&
   (if faceHasSorcerySpeed && !hasSelfFlash && !hasPeerFlash then
     sorceryOk else true)
@@ -206,7 +212,7 @@ def castFaceHasLegalTarget (g : Game) (p : PlayerId) (c : CardDef)
         let e' := if tcs.isEmpty then e else TextChange.applyEffect tcs e
         !e'.requiresTarget || e'.allowsZeroTargets || g.effectHasEnoughTargets p e' sourceId
       | none =>
-        if c.isAura then c.allowsZeroTargets || !(g.legalAuraTargets p c sourceId).isEmpty
+        if c.isAura then c.allowsZeroTargets || !(g.legalAuraTargets p c sourceId tcs).isEmpty
         else !(g.legalTargetsForFace p c none tcs sourceId).isEmpty
   unkickedOk || g.kickedFaceHasLegalTarget p c tcs sourceId
 
@@ -1193,9 +1199,10 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
     (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false)
     (followedByFinishChoice : Bool := false)
-    (followedByExplicitPriority? : Option PlayerId := none) : Except String (Game × Bool) := do
+    (followedByExplicitPriority? : Option PlayerId := none)
+    (suppressPriorityGrant : Bool := false) : Except String (Game × Bool × Bool) := do
   match g.proposedSpell with
-  | none => return (g, false)
+  | none => return (g, false, false)
   | some prop =>
     let g := g.popNestedManaProposalCheckpoint
     let name := (g.player prop.caster).name
@@ -1360,7 +1367,7 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
                 g := g.change .popContinuationFrame
           return g
     if quiet || g.suppressInteractiveReplay then
-      return (g, false)
+      return (g, false, false)
     let explicitPrio? : Option PlayerId :=
       if followedByFinishChoice then none else followedByExplicitPriority?
     let prio := g.priorityInstead (explicitPrio?.getD prop.caster)
@@ -1368,22 +1375,18 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
       if g.pendingPriority == some prio then g
       else g.change (.pendingPriority (some prio))
     if g.over then
-      return (g.receivePriority prio, false)
+      return (if suppressPriorityGrant then g else g.receivePriority prio, false, false)
     if followedByFinishChoice && g.sbaPaused then
+      let postSettles := g.anyPostPromptContinuationSettlesControlFlowFwd
       let g :=
-        if g.pendingPriority.isNone &&
-            (!g.anyPostPromptContinuationSettlesControlFlowFwd ||
-              g.hasPostPromptImplicitPendingPriorityContinuationFwd) then
+        if !prop.resolutionCast && g.pendingPriority.isNone &&
+            (!postSettles || g.hasPostPromptImplicitPendingPriorityContinuationFwd) then
           stashPendingPrio g
         else g
       let g :=
-        if let some cur := g.pendingReplacement then
-          let next := cur.ensureEndsWithFinishResolutionChoice
-          if next == cur then g else g.change (.pendingReplacement (some next))
-        else
-          let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
-          g.change (.pendingReplacement (some .finishResolutionChoice))
-      return (g, false)
+        if postSettles then g
+        else g.chainPendingReplacement .finishResolutionChoice
+      return (g, false, false)
     if explicitPrio?.isSome then
       if g.sbaPaused then
         let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
@@ -1398,39 +1401,49 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
                 stashPendingPrio g
               else g
             g.chainPendingReplacement (.receivePriority prio)
-        return (g, false)
+        return (g, false, false)
       else if g.pending != .none || g.afterRandom != .none then
-        return (stashPendingPrio g, false)
+        return (stashPendingPrio g, false, false)
       else if !g.continuations.isEmpty || g.pendingReplacement.isSome ||
           g.currentInterpWait?.isSome then
-        return (g, true)
+        return (g, true, false)
       else if !g.over && g.triggerNeedingTargets.isSome then
         let g := stashPendingPrio g
-        return (if alwaysGrantPriority then g else g.promptTriggerTargetsIfNeeded, false)
+        return (if alwaysGrantPriority then g else g.promptTriggerTargetsIfNeeded, false, false)
       else
-        return (g.receivePriority prio, false)
+        return (if suppressPriorityGrant then g else g.receivePriority prio, false, false)
     let g :=
-      if g.pending == .none && g.continuations.isEmpty && !followedByFinishChoice &&
-          g.priority != prio then
+      if !suppressPriorityGrant && g.pending == .none && g.continuations.isEmpty &&
+          !followedByFinishChoice && g.priority != prio then
         g.change (.priority prio)
       else g
     if followedByFinishChoice && !g.sbaPaused then
       let g :=
-        if g.pending == .none && g.continuations.isEmpty &&
-            g.pendingReplacement.isNone && g.outerPendingReplacements.isEmpty &&
-            g.currentInterpWait?.isNone && g.pendingPriority.isNone then
-          stashPendingPrio g
+        if !prop.resolutionCast && g.pendingPriority.isNone then
+          let hasOpenPrompt := g.pending != .none || g.afterRandom != .none
+          let settles :=
+            if hasOpenPrompt then g.anyPostPromptContinuationSettlesControlFlowFwd
+            else g.anyContinuationSettlesControlFlowFwd
+          let usesImplicit :=
+            if hasOpenPrompt then g.hasPostPromptImplicitPendingPriorityContinuationFwd
+            else g.hasImplicitPendingPriorityContinuationFwd
+          if !settles || usesImplicit then stashPendingPrio g else g
         else g
-      return (g, true)
+      return (g, true, false)
     else if (resumeContinuation || (doReconcileDep && g.pending == .none && g.afterRandom == .none)) &&
         (!g.continuations.isEmpty || g.pendingReplacement.isSome) then
-      return (g, true)
+      return (g, true, false)
     else if g.pending == .none && g.continuations.isEmpty then
-      if alwaysGrantPriority then
+      let needsIdlePrio :=
+        alwaysGrantPriority || g.waitingTriggers.size > baseTriggers ||
+          hasUnreversedActions || (!g.over && g.triggerNeedingTargets.isSome)
+      if suppressPriorityGrant then
+        return (g, false, needsIdlePrio)
+      else if alwaysGrantPriority then
         if !g.over && g.triggerNeedingTargets.isSome then
-          return (stashPendingPrio g, false)
+          return (stashPendingPrio g, false, false)
         else
-          return (g.receivePriority prio, false)
+          return (g.receivePriority prio, false, false)
       else
         let g :=
           if g.waitingTriggers.size > baseTriggers || hasUnreversedActions then
@@ -1441,9 +1454,9 @@ def reverseProposedSpellCore? (g : Game) (resumeContinuation : Bool := false)
               g.triggerNeedingTargets.isSome then
             (stashPendingPrio g).promptTriggerTargetsIfNeeded
           else g
-        return (g, false)
+        return (g, false, false)
     else
-      return (g, false)
+      return (g, false, false)
 
 @[extern "mtg_game_drain_pending_continuations"]
 private opaque drainPendingContinuations (g : Game) : Game := g
@@ -1453,7 +1466,8 @@ private opaque reverseProposedSpell (g : Game) (resumeContinuation : Bool := fal
     (extraLog : Option String := none) (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false)
     (followedByFinishChoice : Bool := false)
-    (followedByExplicitPriority? : Option PlayerId := none) : Game := g
+    (followedByExplicitPriority? : Option PlayerId := none)
+    (suppressPriorityGrant : Bool := false) : Game := g
 
 @[extern "mtg_game_proposal_cost_prompt_still_payable"]
 opaque proposalCostPromptStillPayableFwd (g : Game) (caster : PlayerId) (p : Pending) : Bool := false
@@ -1463,7 +1477,8 @@ opaque reverseProposedSpellExceptFwd (g : Game) (resumeContinuation : Bool := fa
     (extraLog : Option String := none) (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false)
     (followedByFinishChoice : Bool := false)
-    (followedByExplicitPriority? : Option PlayerId := none) :
+    (followedByExplicitPriority? : Option PlayerId := none)
+    (suppressPriorityGrant : Bool := false) :
     Except String Game := .ok g
 
 @[extern "mtg_game_resume_after_become_cast"]
@@ -1757,7 +1772,6 @@ def lockInTargetCostReduction (g : Game) : Game :=
     match g.findObject? prop.spellId with
     | none => g
     | some spell =>
-      let face := g.baseCard spell
       match (g.stackEntry? spell.id).bind (fun e => e.targets[0]?) with
       | some (Target.permanent oid) =>
         match g.findObject? oid with
@@ -1767,10 +1781,7 @@ def lockInTargetCostReduction (g : Game) : Game :=
           let nSpellTarget : Nat :=
             if !isSpell then 0
             else
-              let tcs := g.evalLayer3 spell
-              let faceStatics :=
-                if tcs.isEmpty then face.staticAbilities
-                else HasTextChange.applyTextChanges tcs face.staticAbilities
+              let faceStatics := g.staticAbilities spell
               let spellEnv : EvalEnv :=
                 { controller := prop.caster
                   sourceId := some spell.id

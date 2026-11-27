@@ -685,6 +685,7 @@ private def mapMoveModsVars (env : List (VarId × VarId)) (m : MoveMods) : MoveM
 
 private def mapEnterModsVars (env : List (VarId × VarId)) (m : EnterMods) : EnterMods :=
   { m with
+    attackingPlayer? := m.attackingPlayer?.map (mapValVars.mapPlVars env)
     attachTo? := m.attachTo?.map (mapValVars.mapObjVars env)
     counters := m.counters.map fun (k, v) => (k, mapValVars env v)
     delayedAction? := m.delayedAction?.map fun

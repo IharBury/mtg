@@ -320,9 +320,12 @@ private def grantPlayPermToMoved (g : Game) (env : EvalEnv) (fromId : ObjectId)
   | none => g
   | some moved =>
     let (perm0, dur0) := resolvePlayPerm g env spec
-    if !g.stillInGame perm0.player || !isCastableObject moved then g
+    let maxMv? := spec.maxTotalManaValue?.map (fun v => (EvalExpr.evalValue g env v).toNat)
+    if !g.stillInGame perm0.player ||
+        (if spec.asFlashback then !isDiscardableCard moved else !isCastableObject moved) then g
     else if !(!g.isLand moved || spec.landsAllowed) ||
-        !spec.filter?.all (EvalExpr.evalObjectPred g env (.live moved)) then g
+        !spec.filter?.all (EvalExpr.evalObjectPred g env (.live moved)) ||
+        !maxMv?.all (fun m => g.objectManaValue moved ≤ m) then g
     else if spec.asFlashback then
       g.createEffect (.flashbackUntilEot moved.id) (cause := some cause)
     else
@@ -459,12 +462,44 @@ private def finishExileReturnBriefly (g : Game) (ctx : InterpCtx) (dstP : Player
     let g := g.logMsg s!"{cardName} is exiled"
     if returnable then
       let (g, _) := g.putOntoBattlefield moved.id dstP (tapped := true) (cause := some cause)
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         g.chainPendingReplacement (.continueInterpreter {
           ctx, queue := #[], stack := #[.afterReturnTappedEndStepExile dstP moved.id cardName cause] })
       else
         finishReturnTappedEndStepExile g ctx dstP moved.id cardName cause
     else g
+
+private def finishReturnImmediate (g : Game) (ctx : InterpCtx) (fromId : ObjectId)
+    (mods : MoveMods) (exileAtEndStep : Bool) (cause : EventCause) : Game :=
+  match g.followMovedToZone? fromId (· == .battlefield) with
+  | none => g
+  | some entered =>
+    if entered.isOnBattlefield then
+      let env := interpEnv g ctx
+      let g := applyEnterModsToMoved g env ctx entered.id mods cause
+      let g :=
+        if exileAtEndStep then
+          let src := (ctx.sourceId.bind g.findObject?).orElse (fun _ => g.findObject? entered.id)
+          g.registerDelayedTrigger { controller := ctx.controller, source := src, kind := .endStepExile entered.id, cause }
+        else g
+      match g.findObject? entered.id with
+      | some ent => if ent.isOnBattlefield then g.afterPermanentEnters ent else g
+      | none => g
+    else g
+
+private def finishExileImmediateReturn (g : Game) (ctx : InterpCtx) (dstP : PlayerId)
+    (fromId : ObjectId) (tapped : Bool) (mods : MoveMods) (exileAtEndStep : Bool)
+    (cause : EventCause) (deferPlayFromExileLogs : Bool := false) : Game :=
+  match g.followMovedToZone? fromId (· == .exile) with
+  | none => g
+  | some moved =>
+    let (g, _) := g.putOntoBattlefield moved.id dstP (tapped := tapped) (cause := some cause)
+      (deferPlayFromExileLogs := deferPlayFromExileLogs)
+    if g.sbaPaused then
+      g.chainPendingReplacement (.continueInterpreter {
+        ctx, queue := #[], stack := #[.afterReturnImmediate moved.id mods exileAtEndStep cause] })
+    else
+      finishReturnImmediate g ctx moved.id mods exileAtEndStep cause
 
 private def applyAfterTokensEnter (g : Game) (env : EvalEnv) (ctx : InterpCtx)
     (startEventIdx : Nat) (p : PlayerId) (mods : EnterMods) (cause : EventCause) : Game :=
@@ -597,21 +632,19 @@ private def moveOneObject (g : Game) (env : EvalEnv) (ctx : InterpCtx) (o : Game
       | some (.immediately tapped under) =>
         let dstP := resolveDestPlayer g env o under
         if dstP == o.owner then
-          (g.flickerPermanents #[o.id] (logText := s!"{oName} is exiled, then returned to the battlefield")
+          (g.flickerPermanents #[o.id] (logText := "is exiled, then returned to the battlefield")
             (tapped := tapped) (cause := some cause)
             (deferPlayFromExileLogs := deferPlayFromExileLogs), none)
         else
           let (g, _) := g.move o.id .exile none (cause := some cause)
             (deferPlayFromExileLogs := deferPlayFromExileLogs)
-          match g.followMovedToZone? o.id (· == .exile) with
-          | some moved =>
-            let (g, newId) := g.putOntoBattlefield moved.id dstP (tapped := tapped) (cause := some cause)
-              (deferPlayFromExileLogs := deferPlayFromExileLogs)
-            let g := applyEnterModsToMoved g env ctx newId mods cause
-            if let some ent := g.findObject? newId then
-              (if ent.isOnBattlefield then g.afterPermanentEnters ent else g, none)
-            else (g, none)
-          | none => (g, none)
+          if g.sbaPaused then
+            (g.chainPendingReplacement (.continueInterpreter {
+              ctx, queue := #[],
+              stack := #[.afterExileImmediateReturn dstP o.id tapped mods false cause] }), none)
+          else
+            (finishExileImmediateReturn g ctx dstP o.id tapped mods false cause
+              (deferPlayFromExileLogs := deferPlayFromExileLogs), none)
       | some (.atNextEndStep _ _) =>
         (g.exileUntilNextEndStep o (cause := some cause)
           (deferPlayFromExileLogs := deferPlayFromExileLogs), none)
@@ -619,23 +652,19 @@ private def moveOneObject (g : Game) (env : EvalEnv) (ctx : InterpCtx) (o : Game
         let dstP := resolveDestPlayer g env o under
         let (g, _) := g.move o.id .exile none (cause := some cause)
           (deferPlayFromExileLogs := deferPlayFromExileLogs)
-        match g.followMovedToZone? o.id (· == .exile) with
-        | some moved =>
-          let (g, newId) := g.putOntoBattlefield moved.id dstP (tapped := tapped) (cause := some cause)
-            (deferPlayFromExileLogs := deferPlayFromExileLogs)
-          let g := applyEnterModsToMoved g env ctx newId mods cause
-          let src := (ctx.sourceId.bind g.findObject?).orElse (fun _ => g.findObject? newId)
-          let g := g.registerDelayedTrigger { controller := ctx.controller, source := src, kind := .endStepExile newId, cause }
-          if let some ent := g.findObject? newId then
-            (if ent.isOnBattlefield then g.afterPermanentEnters ent else g, none)
-          else (g, none)
-        | none => (g, none)
+        if g.sbaPaused then
+          (g.chainPendingReplacement (.continueInterpreter {
+            ctx, queue := #[],
+            stack := #[.afterExileImmediateReturn dstP o.id tapped mods true cause] }), none)
+        else
+          (finishExileImmediateReturn g ctx dstP o.id tapped mods true cause
+            (deferPlayFromExileLogs := deferPlayFromExileLogs), none)
       | some (.returnIfThenExileAtEndStep pred _tapped under) =>
         let ok := EvalExpr.evalObjectPred g env (.live o) pred
         let dstP := resolveDestPlayer g env o under
         let (g, _) := g.move o.id .exile none (cause := some cause)
           (deferPlayFromExileLogs := deferPlayFromExileLogs)
-        if let .chooseReplacement .. := g.pending then
+        if g.sbaPaused then
           (g.chainPendingReplacement (.continueInterpreter {
             ctx, queue := #[], stack := #[.afterExileReturnBriefly dstP o.id oName ok cause] }), none)
         else
@@ -689,7 +718,7 @@ private def moveOneObject (g : Game) (env : EvalEnv) (ctx : InterpCtx) (o : Game
         (onlyFoodArtifact := mods.enterAsPredefined? == some .food)
         (enterMods := enterMods) (cause := some cause)
         (deferPlayFromExileLogs := deferPlayFromExileLogs)
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         (g.chainPendingReplacement (.continueInterpreter {
           ctx, queue := #[], stack := #[.afterPutToBattlefield o.id fromGyOrExile mods cause] }), none)
       else
@@ -729,10 +758,11 @@ private partial def execMoveLoopStep (g : Game) (env : EvalEnv) (ctx : InterpCtx
     (cause : EventCause) (fromEventIdx? : Option Nat := none) : Game := Id.run do
   if ids.isEmpty && fromEventIdx?.isNone then
     return g
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let loopFromIdx := fromEventIdx?.getD g.events.size
   let mut g := g
   for i in [0:ids.size] do
@@ -743,23 +773,29 @@ private partial def execMoveLoopStep (g : Game) (env : EvalEnv) (ctx : InterpCtx
       let (g1, _) := moveOneObject g env ctx cur dest verb mods cause
         (deferPlayFromExileLogs := true)
       g := g1
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         let rem := ids.extract (i + 1) ids.size
         g := g.chainPendingReplacement (.continueInterpreter {
           ctx, queue := #[], stack := #[.afterMoveLoop rem dest verb mods cause (some loopFromIdx)] })
         return g
-  return emitExpiredPlayFromExileLogs preLoop g loopFromIdx
+  return emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
 
 private def finishCopyAndCastCopies (g : Game) (env : EvalEnv) (ctx : InterpCtx)
     (exiledIds : Array ObjectId) (gp : GrantPlayPermSpec) (cause : EventCause) : Game :=
+  if gp.maxCasts? == some 0 then g
+  else
   let maxMv? := gp.maxTotalManaValue?.map (fun v => (EvalExpr.evalValue g env v).toNat)
+  let forcedPerm := gp.freeCast || gp.payLifeInsteadOfMana
   let (g, copies) := g.withBatchReturn (some cause) fun g =>
     exiledIds.foldl (fun (acc : Game × Array ObjectId) id =>
       let (g, cs) := acc
       match g.findObject? id with
       | some card =>
+        let canMorph :=
+          ({ g.baseCard card with keywords := g.currentKeywords card }).morph.isSome &&
+            !forcedPerm && !g.spellNameForbidden ""
         if card.zone != .exile || card.printed.isToken || !isCastableObject card ||
-            (g.isLand card && !gp.landsAllowed) ||
+            (g.isLand card && !canMorph) ||
             !gp.filter?.all (EvalExpr.evalObjectPred g env (.live card)) ||
             !maxMv?.all (fun m => g.objectManaValue card ≤ m) then (g, cs)
         else
@@ -778,9 +814,14 @@ private def finishCopyAndCastCopies (g : Game) (env : EvalEnv) (ctx : InterpCtx)
           }
           let g := g.record (GameEvent.created g.turnNumber ctx.controller (g.snapshot copyObj) (cause := cause))
           let g := g.createEffect (.playPermission copyId {
-            player := ctx.controller, whileExiled := true,
-            withoutManaCost := gp.freeCast, ignoreTiming := true,
-            landsAllowed := gp.landsAllowed }) (cause := some cause)
+            player := ctx.controller
+            whileExiled := true
+            withoutManaCost := gp.freeCast
+            payLifeEqualManaValue := gp.payLifeInsteadOfMana
+            anyMana := gp.anyManaColor || gp.anyManaType
+            ignoreTiming := true
+            landsAllowed := false
+            extraGenericCost := gp.extraGenericCost }) (cause := some cause)
           (g, cs.push copyId)
       | none => (g, cs)) (g, #[])
   if copies.isEmpty then g
@@ -806,10 +847,11 @@ private def execCopyAndCastExileOnly (g : Game) (ctx : InterpCtx)
     (gp : GrantPlayPermSpec) (cause : EventCause)
     (pendingFrom? : Option (ObjectId × String) := none)
     (fromEventIdx? : Option Nat := none) : Game × Array ObjectId := Id.run do
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let loopFromIdx := fromEventIdx?.getD g.events.size
   let mut g := g
   let mut xs := exiledIds
@@ -825,7 +867,7 @@ private def execCopyAndCastExileOnly (g : Game) (ctx : InterpCtx)
       let oName := g.name cur
       let (g1, _) := g.move cur.id .exile none (cause := some cause) (deferPlayFromExileLogs := true)
       g := g1
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         let rem := remainingIds.extract (i + 1) remainingIds.size
         g := g.chainPendingReplacement (.continueInterpreter {
           ctx, queue := #[],
@@ -834,7 +876,7 @@ private def execCopyAndCastExileOnly (g : Game) (ctx : InterpCtx)
       if let some moved := g.followMovedToZone? cur.id (· == .exile) then
         g := g.logMsg s!"{oName} is exiled"
         xs := xs.push moved.id
-  return (emitExpiredPlayFromExileLogs preLoop g loopFromIdx, xs)
+  return (emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx, xs)
 
 private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest : DestZoneSpec)
     (verb : ZoneVerb) (mods : MoveMods) : Game × Array InterpCont :=
@@ -1120,11 +1162,23 @@ private def execMoveZone (g : Game) (ctx : InterpCtx) (objs : ObjectExpr) (dest 
       else if dest == .exile && mods.grantPlayPerm?.any (·.copyAndCast) then
         match mods.grantPlayPerm? with
         | some gp =>
+          let origIds := targets.map (·.id)
           let (g, exiledIds) := g.withBatchReturn (some cause) fun g =>
-            execCopyAndCastExileOnly g ctx (targets.map (·.id)) #[] gp cause
-          if let .chooseReplacement .. := g.pending then (g, #[])
+            execCopyAndCastExileOnly g ctx origIds #[] gp cause
+          if g.sbaPaused then
+            (g.chainPendingReplacement (.continueInterpreter {
+              ctx, queue := #[], stack := #[.afterCopyAndCastCopies origIds gp cause] }), #[])
           else (finishCopyAndCastCopies g env ctx exiledIds gp cause, #[])
         | none => (g, #[])
+      else if dest == .exile && !mods.exileUntilSourceLeaves &&
+          (match mods.delayedReturn? with
+           | some (.immediately _ under) =>
+             targets.all (fun o => resolveDestPlayer g env o under == o.owner)
+           | _ => false) then
+        let tapped := match mods.delayedReturn? with | some (.immediately t _) => t | _ => false
+        (g.flickerPermanents (targets.map (·.id))
+          (logText := "is exiled, then returned to the battlefield")
+          (tapped := tapped) (cause := some cause), #[])
       else if targets.size == 1 then
         let o := targets[0]!
         match dest with
@@ -1175,16 +1229,84 @@ private def execCreate (g : Game) (ctx : InterpCtx) (op : CreateOp) : Game × Ar
         if !g.stillInGame p then (g, cs)
         else
           let startIdx := g.events.size
-          let g :=
-            if mods.tapped || mods.attacking then
-              g.createKindTokens p spec n (tapped := mods.tapped) (attacking := mods.attacking)
-                (cause := some cause) (copyEnv := copyEnv) (x := ctx.chosenX)
-                (extraCounters := extraCounters)
-            else
-              let g := g.makeTokenSpecBatched p spec n ctx.chosenX extraCounters (some cause) copyEnv
-              if spec == .clue && n == 1 then g.logMsg s!"{(g.player p).name} investigates" else g
+          let (g, requeued) : Game × Bool :=
+            match mods.attacking, mods.attackingPlayer? with
+            | true, some atkPExpr =>
+              let opp? := (EvalExpr.evalPlayer g env atkPExpr)[0]?
+              let oppTargets : Array AttackTarget :=
+                match opp? with
+                | some opp =>
+                  if g.step.phase != .combat || !g.isOnActiveTeam p || !g.isLivingOpponentOf p opp then #[]
+                  else
+                    let permTargets : Array AttackTarget :=
+                      g.battlefield.filterMap fun o =>
+                        if !g.controlledBy o opp then none
+                        else if g.isPlaneswalker o then
+                          if g.cantAttackJace p o then none
+                          else some (.planeswalker o.id)
+                        else none
+                    #[.player opp] ++ permTargets
+                | none => #[]
+              if oppTargets.size ≤ 1 then
+                (g.createKindTokens p spec n (tapped := mods.tapped)
+                  (attacking := oppTargets.size == 1) (attackingTarget := oppTargets[0]?)
+                  (cause := some cause) (copyEnv := copyEnv) (x := ctx.chosenX)
+                  (extraCounters := extraCounters), false)
+              else
+                let envWithX := if ctx.chosenX > 0 then { copyEnv with chosenX := ctx.chosenX } else copyEnv
+                match g.resolveTokenPrinted? spec ctx.chosenX envWithX (controller := p) with
+                | none =>
+                  ((g.change (.recentTokenIds #[])).logMsg "no token is created (CR 111.5 / 111.12)", false)
+                | some rawPrinted =>
+                  let (batches, applied, choice?) := g.replaceTokenCreationChoice {
+                    controller := p
+                    printed := rawPrinted
+                    count := n
+                    tapped := mods.tapped
+                    attacking := true
+                    extraCounters := extraCounters
+                    cause := some cause
+                  }
+                  match choice? with
+                  | some (chooser, choices) =>
+                    let outerCont? := g.pendingReplacement
+                    let g := if outerCont?.isSome then g.change (.pendingReplacement none) else g
+                    let g := g.promptChooseReplacement chooser choices (.continueInterpreter {
+                      ctx, queue := #[.create (.tokens whoExpr (.const (Int.ofNat n)) spec mods)], stack := #[] })
+                    let g :=
+                      match outerCont? with
+                      | some outer => g.chainPendingReplacement outer
+                      | none => g
+                    (g, true)
+                  | none =>
+                    let g := g.consumeReplacementOrder applied
+                    let expanded : Array ProposedTokenBatch := batches.foldl (fun acc b =>
+                      Id.run do
+                        let mut acc := acc
+                        for _ in [0:b.count] do
+                          acc := acc.push { b with count := 1 }
+                        return acc) #[]
+                    if expanded.isEmpty then
+                      (g.change (.recentTokenIds #[]), false)
+                    else
+                      let g := if g.continuations.isEmpty then g.change (.pushContinuationFrame {}) else g
+                      let g := g.change (.stagedAttackTokenBatches expanded)
+                      let items := expanded.map fun b =>
+                        let isCreature := g.isCreature (g.tokenBatchProbe b.controller b.printed)
+                        let opts := if isCreature then oppTargets else #[]
+                        let itemKind := (tokenSpecOfCardDef? b.printed).getD spec
+                        EnteringAttackItem.token b.controller itemKind b.tapped opts (some b.printed.name)
+                      (g.promptEnteringAttackItems items (cause := some cause), false)
+            | _, _ =>
+              if mods.tapped || mods.attacking then
+                (g.createKindTokens p spec n (tapped := mods.tapped) (attacking := mods.attacking)
+                  (cause := some cause) (copyEnv := copyEnv) (x := ctx.chosenX)
+                  (extraCounters := extraCounters), false)
+              else
+                let g := g.makeTokenSpecBatched p spec n ctx.chosenX extraCounters (some cause) copyEnv
+                (if spec == .clue && n == 1 then g.logMsg s!"{(g.player p).name} investigates" else g, false)
           if g.pending != .none then
-            let cs := if hasPostMods then cs.push (.afterTokensEnter startIdx p mods cause) else cs
+            let cs := if hasPostMods && !requeued then cs.push (.afterTokensEnter startIdx p mods cause) else cs
             (g, cs)
           else
             (applyAfterTokensEnter g env ctx startIdx p mods cause, cs)) (g, #[])
@@ -1251,10 +1373,11 @@ private def execCounterOpStep (g : Game) (ctx : InterpCtx)
     | .remove .. | .moveAll .. | .moveOne .. => true
     | _ => false
   let deferPfe := modeHasRemoval || fromEventIdx?.isSome
-  let preLoop :=
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
     match fromEventIdx? with
     | some idx => g.mkHistoricalGameAt idx
-    | none => g
+    | none => preLoopStart
   let loopFromIdx := fromEventIdx?.getD g.events.size
   let mut g := g
   for i in [0:ids.size] do
@@ -1336,7 +1459,7 @@ private def execCounterOpStep (g : Game) (ctx : InterpCtx)
               else if !(g.findObject? cur.id).any (·.isOnBattlefield) then g
               else g.recordPutCounters cur.id k cnt (byPlayer := some ctx.controller) (cause := some cause)) g
             let msg := s!"Counters are put on {dstName}"
-            if let .chooseReplacement .. := g.pending then
+            if g.sbaPaused then
               g := g.chainPendingReplacement (.continueInterpreter {
                 ctx, queue := #[], stack := #[.logIfCountersIncreased cur.id dstBefore msg] })
             else
@@ -1386,14 +1509,14 @@ private def execCounterOpStep (g : Game) (ctx : InterpCtx)
               g := g.addPlusOnePlusOneTo cur share (byPlayer := some ctx.controller) (cause := some cause)
             else
               g := g.putCountersDeferredLog cur.id kind share (some ctx.controller) .isPutOn (cause := some cause)
-        if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+        if g.sbaPaused then
           let rem := ids.extract (i + 1) ids.size
           if !rem.isEmpty || deferPfe then
             g := g.chainPendingReplacement (.continueInterpreter {
               ctx, queue := #[],
               stack := #[.afterCounterOpLoop rem mode cause (if deferPfe then some loopFromIdx else none)] })
           return g
-  return if deferPfe then emitExpiredPlayFromExileLogs preLoop g loopFromIdx else g
+  return if deferPfe then emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx else g
 
 private def execPermanent (g : Game) (ctx : InterpCtx) (op : PermanentOp) : Game :=
   let env := interpEnv g ctx
@@ -1661,7 +1784,7 @@ private def dealMixedDamageStep (g : Game) (ctx : InterpCtx)
     (srcSnap? : Option EventObject) (startEventIdx : Nat) (cause : EventCause)
     (trackExcess : Bool := false) (accumExcess : Nat := 0)
     (pendingExcess? : Option (ObjectId × Nat × Nat) := none)
-    (writeExcessVar : Bool := false) : Game × Nat := Id.run do
+    (writeExcessVar : Bool := false) : Game × Nat × Bool := Id.run do
   let mut g := g
   let mut ex := accumExcess
   if trackExcess then
@@ -1669,6 +1792,10 @@ private def dealMixedDamageStep (g : Game) (ctx : InterpCtx)
       let dealt := g.damageDealtToPermanentSince oid pIdx
       ex := ex + (dealt - lethal)
   let srcObj? := srcSnap?.map g.damageSourceFromSnapshot
+  let srcHasDeathtouch : Bool :=
+    match srcSnap?.bind (fun eo => eo.id.bind g.findLiveSourceObject?) with
+    | some liveSrc => g.hasDeathtouch liveSrc
+    | none => srcSnap?.any (·.hasDeathtouch)
   for i in [0:remaining.size] do
     let (r, n) := remaining[i]!
     if n > 0 then
@@ -1677,12 +1804,12 @@ private def dealMixedDamageStep (g : Game) (ctx : InterpCtx)
       | .permanent oid =>
         if let some o := g.findObject? oid then
           if o.isOnBattlefield then
-            let lethal := if trackExcess then g.lethalDamageThreshold o else 0
+            let lethal := if trackExcess then g.lethalDamageThreshold o (deathtouch := srcHasDeathtouch) else 0
             let pIdx := g.events.size
             g := g.dealDamageFrom srcName o (Int.ofNat n)
               (source := srcObj?) (sourceSnap := srcSnap?) (cause := some cause)
               (suppressLifelink := true) (deferPlayFromExileLogs := true)
-            if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+            if g.sbaPaused then
               curPendingExcess? := if trackExcess then some (oid, lethal, pIdx) else none
             else if trackExcess then
               let dealt := g.damageDealtToPermanentSince oid pIdx
@@ -1692,18 +1819,18 @@ private def dealMixedDamageStep (g : Game) (ctx : InterpCtx)
           g := g.dealDamageToPlayer pid n (source := srcObj?) (sourceSnap := srcSnap?)
             (cause := some cause) (suppressLifelink := true)
       | .card _ => pure ()
-      if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+      if g.sbaPaused then
         let rem := remaining.extract (i + 1) remaining.size
         g := g.chainPendingReplacement (.continueInterpreter {
           ctx, queue := #[],
           stack := #[.afterMixedDamageLoop rem srcName srcSnap? startEventIdx cause
             trackExcess ex curPendingExcess?] })
-        return (g, ex)
+        return (g, ex, true)
   g := emitExpiredPlayFromExileLogsLazy (fun _ => g.mkHistoricalGameAt startEventIdx) g startEventIdx
   g := g.applyAggregatedLifelinkSince startEventIdx (cause := some cause)
   if trackExcess && writeExcessVar && ex > 0 then
     g := g.change (.bindStepOutcome interpExcessDamageVar { excessDamage := ex })
-  return (g, ex)
+  return (g, ex, false)
 
 private def execDamage (g : Game) (ctx : InterpCtx) (op : DamageOp) : Game × Option StepOutcome :=
   let env := interpEnv g ctx
@@ -1799,7 +1926,7 @@ private def execDamage (g : Game) (ctx : InterpCtx) (op : DamageOp) : Game × Op
             let g := g.withBatch (some batchCause) fun g =>
               (dealMixedDamageStep g ctx items srcName srcSnap? startIdx batchCause).1
             (g, none)
-      else if g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false) then
+      else if g.sbaPaused then
         (g.chainPendingReplacement (.continueInterpreter {
           ctx, queue := #[.damage op], stack := #[] }), none)
       else if flags.divided && !flags.trackExcess then
@@ -1841,11 +1968,12 @@ private def execDamage (g : Game) (ctx : InterpCtx) (op : DamageOp) : Game × Op
               let n := if flags.divided && i < div.size then div[i]! else amt
               out := out.push (r, n)
           return out
-        let (g, totalExcess) := g.withBatchReturn (some cause) fun g =>
-          dealMixedDamageStep g ctx items srcName srcSnap? startIdx cause
-            (trackExcess := flags.trackExcess)
-        if flags.trackExcess &&
-            !(g.sbaPaused || (match g.pending with | .chooseReplacement .. => true | _ => false)) then
+        let (g, (totalExcess, pausedInLoop)) := g.withBatchReturn (some cause) fun g =>
+          let (g', ex, paused) :=
+            dealMixedDamageStep g ctx items srcName srcSnap? startIdx cause
+              (trackExcess := flags.trackExcess)
+          (g', (ex, paused))
+        if flags.trackExcess && !pausedInLoop then
           (g, some { excessDamage := totalExcess })
         else (g, none)
   | .fight aExpr bExpr oneWay =>
@@ -2016,6 +2144,45 @@ def finishInspectLibraryRest (g : Game) (p : PlayerId) (restSpec : RestPlacement
       g.exileCardsLoop rest (cause := some cause)
   | .leaveInPlace => g
 
+private def execRevealUntilExileLoop (g : Game) (ctx : InterpCtx)
+    (p : PlayerId) (matchPred : ObjectPred) (limit : Nat) (hits : Array ObjectId)
+    (cause : EventCause) (pendingTop? : Option ObjectId := none)
+    (fromEventIdx? : Option Nat := none) :
+    Game × Option StepOutcome × Option InterpCont := Id.run do
+  let preLoopStart := g
+  let mkPreLoop : Unit → Game := fun _ =>
+    match fromEventIdx? with
+    | some idx => g.mkHistoricalGameAt idx
+    | none => preLoopStart
+  let loopFromIdx := fromEventIdx?.getD g.events.size
+  let mut g := g
+  let mut hits := hits
+  if let some prevTop := pendingTop? then
+    let env := interpEnv g ctx
+    match g.followMovedToZone? prevTop (· == .exile) with
+    | some moved =>
+      g := g.logMsg s!"{(g.player p).name} exiles {g.name moved}"
+      if EvalExpr.evalObjectPred g env (.live moved) matchPred then
+        hits := hits.push moved.id
+    | none => pure ()
+  while hits.size < limit && g.stillInGame p && !(g.player p).library.isEmpty do
+    let top := (g.player p).library.back!
+    let (g', _) := g.move top .exile none (cause := some cause) (deferPlayFromExileLogs := true)
+    g := g'
+    if g.sbaPaused then
+      return (g, none, some (.afterRevealUntilExileLoop p matchPred limit hits cause (some top) (some loopFromIdx)))
+    let env := interpEnv g ctx
+    match g.followMovedToZone? top (· == .exile) with
+    | some moved =>
+      g := g.logMsg s!"{(g.player p).name} exiles {g.name moved}"
+      if EvalExpr.evalObjectPred g env (.live moved) matchPred then
+        hits := hits.push moved.id
+    | none =>
+      if (g.player p).library.back? == some top then
+        break
+  g := emitExpiredPlayFromExileLogsLazy mkPreLoop g loopFromIdx
+  return (g, some { objects := hits, movedCount := hits.size, succeeded := !hits.isEmpty }, none)
+
 private def execInspectLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
     (spec : InspectLibrarySpec) (cause : EventCause) :
     Game × Option StepOutcome × Array InterpCont :=
@@ -2169,23 +2336,9 @@ private def execInspectLibrary (g : Game) (env : EvalEnv) (ctx : InterpCtx)
     let limit := (EvalExpr.evalValue g env countExpr).toNat
     if !g.stillInGame p || limit == 0 then (g, some { objects := #[], succeeded := false }, #[])
     else if exileWhileRevealing then
-      let (g, hits) := Id.run do
-        let mut g := g
-        let mut hits : Array ObjectId := #[]
-        while hits.size < limit && g.stillInGame p && !(g.player p).library.isEmpty do
-          let top := (g.player p).library.back!
-          let (g', _) := g.move top .exile none (cause := some cause)
-          g := g'
-          if let .chooseReplacement .. := g.pending then
-            return (g, hits)
-          match g.followMovedToZone? top (· == .exile) with
-          | some moved =>
-            g := g.logMsg s!"{(g.player p).name} exiles {g.name moved}"
-            if EvalExpr.evalObjectPred g env (.live moved) matchPred then
-              hits := hits.push moved.id
-          | none => pure ()
-        return (g, hits)
-      (g, some { objects := hits, movedCount := hits.size, succeeded := !hits.isEmpty }, #[])
+      let (g, ov?, nextCont?) :=
+        execRevealUntilExileLoop g ctx p matchPred limit #[] cause
+      (g, ov?, nextCont?.toArray)
     else
       let (g, effCause) :=
         match cause with
@@ -2710,10 +2863,14 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
   | .mayCastOrPlay objsExpr permSpec =>
     let ids := resolveObjectIds g env objsExpr
     let maxMv? := permSpec.maxTotalManaValue?.map (fun v => (EvalExpr.evalValue g env v).toNat)
+    let forcedCopyPerm := permSpec.freeCast || permSpec.payLifeInsteadOfMana
+    let canMorphObj (o : GameObject) : Bool :=
+      ({ g.baseCard o with keywords := g.currentKeywords o }).morph.isSome &&
+        !forcedCopyPerm && !g.spellNameForbidden ""
     let eligible := ids.filter fun id =>
       (g.findObject? id).any fun o =>
         isCastableObject o &&
-          (!g.isLand o || permSpec.landsAllowed) &&
+          (!g.isLand o || permSpec.landsAllowed || canMorphObj o) &&
           permSpec.filter?.all (EvalExpr.evalObjectPred g env (.live o)) &&
           maxMv?.all (fun m => g.objectManaValue o ≤ m)
     if permSpec.asFlashback then
@@ -2726,12 +2883,21 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
               s!"{g.name o} gains flashback until end of turn"
         | none => g) g
     else if permSpec.copyAndCast then
+      if permSpec.maxCasts? == some 0 then g
+      else
+      let copyEligible := ids.filter fun id =>
+        (g.findObject? id).any fun o =>
+          isCastableObject o &&
+            (!g.isLand o || canMorphObj o) &&
+            permSpec.filter?.all (EvalExpr.evalObjectPred g env (.live o)) &&
+            maxMv?.all (fun m => g.objectManaValue o ≤ m)
       let (g, copies) := g.withBatchReturn (some cause) fun g =>
-        eligible.foldl (fun (acc : Game × Array ObjectId) id =>
+        copyEligible.foldl (fun (acc : Game × Array ObjectId) id =>
           let (g, cs) := acc
           match g.findObject? id with
           | some card =>
-            if card.zone != .exile || card.printed.isToken then (g, cs)
+            if card.zone != .exile || card.printed.isToken ||
+                (g.isLand card && !canMorphObj card) then (g, cs)
             else
               let base := g.copiableValues card
               let copyId : ObjectId := ⟨g.nextObjectId⟩
@@ -2748,9 +2914,14 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
               }
               let g := g.record (GameEvent.created g.turnNumber ctx.controller (g.snapshot copyObj) (cause := cause))
               let g := g.createEffect (.playPermission copyId {
-                player := ctx.controller, whileExiled := true,
-                withoutManaCost := permSpec.freeCast, ignoreTiming := true,
-                landsAllowed := permSpec.landsAllowed }) (cause := some cause)
+                player := ctx.controller
+                whileExiled := true
+                withoutManaCost := permSpec.freeCast
+                payLifeEqualManaValue := permSpec.payLifeInsteadOfMana
+                anyMana := permSpec.anyManaColor || permSpec.anyManaType
+                ignoreTiming := true
+                landsAllowed := false
+                extraGenericCost := permSpec.extraGenericCost }) (cause := some cause)
               (g, cs.push copyId)
           | none => (g, cs)) (g, #[])
       if copies.isEmpty then g
@@ -2771,7 +2942,8 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
            else
             s!"{(g.player ctx.controller).name} may cast copies")
     else if permSpec.castNow then
-      if !permSpec.freeCast && permSpec.exileOnResolveInstead then
+      if permSpec.maxCasts? == some 0 then g
+      else if !permSpec.freeCast && permSpec.exileOnResolveInstead then
         if eligible.isEmpty then
           g.logMsg s!"{(g.player ctx.controller).name} has no artifact, instant, or sorcery card in their graveyard to cast"
         else
@@ -2805,7 +2977,8 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
         else
           g.beginResolutionChoice ctx.controller (.mayCastCards eligible false permSpec.exileOnResolveInstead maxMv?)
             s!"{(g.player ctx.controller).name} may cast a spell"
-    else if !permSpec.freeCast && permSpec.anyManaColor && !permSpec.landsAllowed &&
+    else if !permSpec.freeCast && !permSpec.payLifeInsteadOfMana && permSpec.condition?.isNone &&
+        permSpec.extraGenericCost == 0 && permSpec.anyManaColor && !permSpec.landsAllowed &&
         eligible.size <= 1 && permSpec.duration == .untilEndOfTurn then
       g.grantWidowCast ctx.controller eligible[0]? (cause := some cause)
     else
@@ -2819,7 +2992,7 @@ private def execStack (g : Game) (ctx : InterpCtx) (op : StackOp) : Game :=
           | _ => 1
         let g := eligible.foldl (fun g id =>
           g.createEffect (.playPermission id perm (turnEnds := turnEnds) (d := dur)) (cause := some cause)) g
-        if permSpec.freeCast && !eligible.isEmpty then
+        if permSpec.freeCast && permSpec.maxCasts? != some 0 && !eligible.isEmpty then
           g.beginResolutionChoice ctx.controller (.mayCastCards eligible true permSpec.exileOnResolveInstead maxMv?)
             s!"{(g.player ctx.controller).name} may cast a spell without paying its mana cost"
         else g
@@ -3768,16 +3941,33 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
             g := g.withBatch (some cause) fun g =>
               putMovedCountersStep g ctx targetId remainingCounters cause
         | .afterCopyAndCastExileLoop remainingIds exiledIds gp cause pendingFrom? fromEventIdx? =>
-          let env := interpEnv g ctx
-          let (g1, finalXs) :=
+          let (g1, _) :=
             if g.currentBatch.isSome then
               execCopyAndCastExileOnly g ctx remainingIds exiledIds gp cause pendingFrom? fromEventIdx?
             else
               g.withBatchReturn (some cause) fun g =>
                 execCopyAndCastExileOnly g ctx remainingIds exiledIds gp cause pendingFrom? fromEventIdx?
-          g :=
-            if let .chooseReplacement .. := g1.pending then g1
-            else finishCopyAndCastCopies g1 env ctx finalXs gp cause
+          g := g1
+        | .afterCopyAndCastCopies origIds gp cause =>
+          let env := interpEnv g ctx
+          let exiledIds := origIds.filterMap fun oid =>
+            (g.followMovedToZone? oid (· == .exile)).map (·.id)
+          g := finishCopyAndCastCopies g env ctx exiledIds gp cause
+        | .afterExileImmediateReturn dstP fromId tapped mods exileAtEndStep cause =>
+          g := finishExileImmediateReturn g ctx dstP fromId tapped mods exileAtEndStep cause
+        | .afterReturnImmediate fromId mods exileAtEndStep cause =>
+          g := finishReturnImmediate g ctx fromId mods exileAtEndStep cause
+        | .afterRevealUntilExileLoop p matchPred limit hits cause pendingTop? fromEventIdx? =>
+          let (g1, ov?, nextCont?) :=
+            execRevealUntilExileLoop g ctx p matchPred limit hits cause pendingTop? fromEventIdx?
+          g := g1
+          if let some ov := ov? then
+            if let some (.bindClose v sIdx eid body _) := stack.back? then
+              stack := stack.pop.push (.bindClose v sIdx eid body (some ov))
+          if let some cont := nextCont? then
+            stack := stack.push cont
+            if g.sbaPaused then
+              return g.chainPendingReplacement (.continueInterpreter { ctx, queue, stack })
     | some instr =>
       let restQueue := queue.extract 1 queue.size
       queue := restQueue
@@ -4018,9 +4208,9 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
           let pendingBefore := g.pending
           let randomBefore := g.afterRandom
           let cause := interpCause g ctx
-          if (match g.pending, step with
-              | .chooseReplacement .., .player (.inspectLibrary { source := .revealUntil _ _ _ true, .. }) => true
-              | _, _ => false) then
+          if g.sbaPaused && (match step with
+              | .player (.inspectLibrary { source := .revealUntil _ _ _ true, .. }) => true
+              | _ => false) then
             if !queue.isEmpty then stack := stack.push (.seqRest queue)
             g := g.chainPendingReplacement (.continueInterpreter { ctx, queue := #[.bind v step body], stack })
             return g
@@ -4030,13 +4220,17 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               .ifCond (.not (.stepSucceeded v'))
                 (.damage (.deal .this (.players (.matching .opponent .any)) amtExpr _))
                 .noop =>
-              if v == v' && !perm.landsAllowed && !perm.freeCast && !perm.copyAndCast && !perm.asFlashback then
+              if v == v' && !perm.landsAllowed && !perm.freeCast && !perm.payLifeInsteadOfMana &&
+                  !perm.copyAndCast && !perm.asFlashback then
                 let dmg := (EvalExpr.evalValue g env amtExpr).toNat
                 let maxMv? := perm.maxTotalManaValue?.map (fun e => (EvalExpr.evalValue g env e).toNat)
                 let exiledNonland? := (resolveObjectIds g env objsExpr).findSome? fun cid =>
                   match g.findObject? cid with
                   | some o =>
-                    if o.zone == .exile && isCastableObject o && !g.isLand o &&
+                    let canMorph :=
+                      ({ g.baseCard o with keywords := g.currentKeywords o }).morph.isSome &&
+                        !g.spellNameForbidden ""
+                    if o.zone == .exile && isCastableObject o && (!g.isLand o || canMorph) &&
                         perm.filter?.all (EvalExpr.evalObjectPred g env (.live o)) &&
                         maxMv?.all (fun mx => g.objectManaValue o ≤ mx) then some o
                     else none
@@ -5044,28 +5238,8 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               let n := (EvalExpr.evalValue g env countExpr).toNat
               if n > 0 then
                 let cause := interpCause g ctx
-                let (g1, rest) := g.withBatchCoreReturn (some cause) fun g => Id.run do
-                  let mut g := g
-                  let mut rest : Array ObjectId := #[]
-                  for i in [:live.size] do
-                    let o := live[i]!
-                    if let some cur := g.findObject? o.id then
-                      if cur.isOnBattlefield then
-                        g :=
-                          if kind == .plusOnePlusOne then
-                            g.addPlusOnePlusOneTo cur n (byPlayer := some ctx.controller) (cause := some cause)
-                          else
-                            g.putCountersDeferredLog cur.id kind n (some ctx.controller) .isPutOn (cause := some cause)
-                        if g.pending != pendingBefore && g.pending != .none then
-                          rest := (live.extract (i + 1) live.size).map (·.id)
-                          break
-                  return (g, rest)
-                g := g1
-                if !rest.isEmpty then
-                  if !queue.isEmpty then stack := stack.push (.seqRest queue)
-                  queue := #[]
-                  stack := stack.push (.forEachObjectRest ⟨997⟩ rest
-                    (.permanent (.modifyCounters (.put kind (.const (Int.ofNat n))) (.stepObjects ⟨997⟩) none)))
+                g := g.withBatch (some cause) fun g =>
+                  execCounterOpStep g ctx (live.map (·.id)) (.put kind (.const (Int.ofNat n))) cause
             else
               g := execPermanent g ctx op
           | _ =>
@@ -5111,9 +5285,13 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
                 if let some (.bindClose v sIdx eid body _) := stack.back? then
                   stack := stack.pop.push (.bindClose v sIdx eid body (some ov))
               if !conts.isEmpty then
+                let pushAboveBind := conts.any fun
+                  | .afterRevealUntilExileLoop .. => true
+                  | _ => false
                 match stack.back? with
                 | some (bc@(.bindClose ..)) =>
-                  stack := (stack.pop ++ conts).push bc
+                  if pushAboveBind then stack := stack ++ conts
+                  else stack := (stack.pop ++ conts).push bc
                 | _ =>
                   if !queue.isEmpty then stack := stack.push (.seqRest queue)
                   queue := #[]
@@ -5125,9 +5303,13 @@ partial def resumeInterpreter (g : Game) (st : InterpState) : Game := Id.run do
               if let some (.bindClose v sIdx eid body _) := stack.back? then
                 stack := stack.pop.push (.bindClose v sIdx eid body (some ov))
             if !conts.isEmpty then
+              let pushAboveBind := conts.any fun
+                | .afterRevealUntilExileLoop .. => true
+                | _ => false
               match stack.back? with
               | some (bc@(.bindClose ..)) =>
-                stack := (stack.pop ++ conts).push bc
+                if pushAboveBind then stack := stack ++ conts
+                else stack := (stack.pop ++ conts).push bc
               | _ =>
                 if !queue.isEmpty then stack := stack.push (.seqRest queue)
                 queue := #[]
@@ -5187,6 +5369,12 @@ def runInstruction (g : Game) (ctx : InterpCtx) (instr : Instruction) : Game :=
         else (g, ctx)
       g.resumeInterpreter { ctx, queue := #[instr], stack := #[] }
 
+private def hasQueuedContinueInterp (pr : PendingReplacement) : Bool :=
+  match pr with
+  | .continueInterpreter .. => true
+  | .seq a b => hasQueuedContinueInterp a || hasQueuedContinueInterp b
+  | _ => false
+
 /-- Resume any suspended interpreter continuation stored in `ContinuationFrame.interpWait?`
 once `g.pending == .none`. -/
 def resumeInterpWaitIfReady (g : Game) : Game :=
@@ -5196,7 +5384,17 @@ def resumeInterpWaitIfReady (g : Game) : Game :=
     | none => g
     | some st =>
       let g := g.change (.interpWait? none)
-      g.withContinuationFrame fun g => g.resumeInterpreter st
+      let onlyStepEnvFrame :=
+        g.continuations.size == 1 &&
+        { g.topFrame with stepEnv := #[] } == {} &&
+        !g.topFrame.stepEnv.isEmpty
+      let g := g.withContinuationFrame fun g => g.resumeInterpreter st
+      if onlyStepEnvFrame && g.pending == .none && g.afterRandom == .none &&
+          !g.pendingReplacement.any hasQueuedContinueInterp &&
+          !g.outerPendingReplacements.any hasQueuedContinueInterp &&
+          g.continuations.size == 1 && { g.topFrame with stepEnv := #[] } == {} then
+        g.change .popContinuationFrame
+      else g
 
 /-! ### Unified Public Effect Entrypoints (Spells, Activated, Saga chapters, Triggers) -/
 

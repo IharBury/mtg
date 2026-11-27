@@ -97,7 +97,7 @@ def destroyPermanent (g : Game) (o : GameObject)
     (preBattlefield : Option (Array GameObject) := none)
     (reason : Option String := none)
     (deferPlayFromExileLogs : Bool := false) : Game :=
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     g.chainPendingReplacement (.destroyPermanent o.id cause preBattlefield reason deferPlayFromExileLogs)
   else
   let (checkG, checkO) := g.preBatchDestroyCheck o

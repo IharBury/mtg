@@ -22,15 +22,18 @@ def legalEffectTargets (g : Game) (caster : PlayerId) (effect : Effect)
 
 /-- What an Aura spell targets (CR 303.4a): reads any `StaticAbility.enchantRestriction`
 slot, defaulting to `"Enchant creature"`. -/
-def auraTargetSpec (aura : CardDef) : TargetSpec :=
-  match aura.staticAbilities.findSome? StaticAbility.enchantRestriction? with
+def auraTargetSpec (aura : CardDef) (tcs : Array TextChange := #[]) : TargetSpec :=
+  let sas :=
+    if tcs.isEmpty then aura.staticAbilities
+    else aura.staticAbilities.map (TextChange.applyStaticAbility tcs)
+  match sas.findSome? StaticAbility.enchantRestriction? with
   | some slot => { slots := #[slot] }
   | none => .creature
 
 /-- Legal targets for an Aura spell with “Enchant creature” (CR 303.4). -/
 def legalAuraTargets (g : Game) (caster : PlayerId) (aura : CardDef)
-    (sourceId : Option ObjectId := none) : Array Target :=
-  g.legalTargetsForSpec caster (auraTargetSpec aura) sourceId
+    (sourceId : Option ObjectId := none) (tcs : Array TextChange := #[]) : Array Target :=
+  g.legalTargetsForSpec caster (auraTargetSpec aura tcs) sourceId
 
 /-- Chosen mode of `o` if it is a modal spell on the stack (CR 700.2). -/
 def chosenModeOf (g : Game) (o : GameObject) : Option Nat :=
@@ -215,7 +218,7 @@ def legalTargetsForFace (g : Game) (p : PlayerId) (c : CardDef)
       else c.spellEffect
     match effect with
     | some e => g.legalEffectTargets p (evalEff e) sourceId
-    | none => if c.isAura then g.legalAuraTargets p c sourceId else #[]
+    | none => if c.isAura then g.legalAuraTargets p c sourceId tcs else #[]
 
 /-- Legal targets for beginning to cast `o`, or for the chosen mode (CR 115.1, 303.4, 601.2c). -/
 def legalSpellTargets (g : Game) (p : PlayerId) (o : GameObject) : Array Target :=
@@ -315,7 +318,7 @@ def targetSpecOf (g : Game) (obj : GameObject) : TargetSpec :=
         match g.currentSpellEffect obj with
         | some e => e.targets
         | none =>
-          if g.isAura obj then auraTargetSpec (g.baseCard obj)
+          if g.isAura obj then auraTargetSpec (g.baseCard obj) tcs
           else .none
   match g.proposedSpell with
   | some prop =>
@@ -343,7 +346,7 @@ def targetPreferenceOf (g : Game) (obj : GameObject) : TargetPreference :=
         | some e => e.targetPreference
         | none =>
           if g.isAura obj then
-            let s := auraTargetSpec (g.baseCard obj)
+            let s := auraTargetSpec (g.baseCard obj) tcs
             if s == .creature || s == .creatureYouControl then .own
             else s.defaultPreference
           else .own

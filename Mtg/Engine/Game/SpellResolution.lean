@@ -72,7 +72,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
     if n > 0 && g.stillInGame controller then
       let startEventIdx := g.events.size
       let g := g.createKindTokens controller .birdSoldier n (cause := some cause)
-      if let .chooseReplacement .. := g.pending then
+      if g.sbaPaused then
         g.chainPendingReplacement (.finishPostStep (.logDelayedBirdSoldiersCreated controller startEventIdx))
       else
         let created := (g.tokensCreatedSince startEventIdx).size
@@ -94,7 +94,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
         else
           let isLand := g.isLand o
           let (g', _) := g.putOntoBattlefield id owner (cause := some cause)
-          if let .chooseReplacement .. := g'.pending then
+          if g'.sbaPaused then
             g'.chainPendingReplacement (.finishPostStep (.returnedBattlefieldEndStep id isLand))
           else
             match g'.followMovedToZone? id (· == .battlefield) with
@@ -115,7 +115,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
       if o.isOnBattlefield then
         let msg := s!"{g.name o} is exiled (beginning of end step)"
         let (g', _) := g.move id .exile none (cause := some cause)
-        if let .chooseReplacement .. := g'.pending then
+        if g'.sbaPaused then
           g'.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id msg))
         else if (g'.followMovedToZone? id (· == .exile)).isSome then
           g'.logMsg msg
@@ -125,7 +125,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
   | .endStepSacrifice id =>
     match g.findObject? id with
     | some o =>
-      if o.isOnBattlefield then
+      if o.isOnBattlefield && g.controlledBy o controller then
         g.sacrificeToGraveyard o s!"{g.name o} is sacrificed" (cause := some cause)
       else g
     | none => g
@@ -135,7 +135,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
       if o.isOnBattlefield then
         let msg := s!"{g.name o} is exiled (end of combat)"
         let (g', _) := g.move id .exile none (cause := some cause)
-        if let .chooseReplacement .. := g'.pending then
+        if g'.sbaPaused then
           g'.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id msg))
         else if (g'.followMovedToZone? id (· == .exile)).isSome then
           g'.logMsg msg
@@ -145,7 +145,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
   | .endOfCombatSacrifice id =>
     match g.findObject? id with
     | some o =>
-      if o.isOnBattlefield then
+      if o.isOnBattlefield && g.controlledBy o controller then
         g.sacrificeToGraveyard o s!"{g.name o} is sacrificed (end of combat)" (cause := some cause)
       else g
     | none => g
@@ -155,7 +155,7 @@ def resolveDelayedTrigger (g : Game) (controller : PlayerId) (kind : DelayedTrig
       if o.zone == .graveyard o.owner && g.stillInGame who then
         let isLand := g.isLand o
         let (g', _) := g.putOntoBattlefield id who (cause := some cause)
-        if let .chooseReplacement .. := g'.pending then
+        if g'.sbaPaused then
           g'.chainPendingReplacement (.finishPostStep (.returnedToBattlefield id isLand))
         else
           match g'.followMovedToZone? id (· == .battlefield) with

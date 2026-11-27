@@ -18,7 +18,8 @@ private opaque reverseProposedSpellFwd (g : Game) (resumeContinuation : Bool := 
     (alwaysGrantPriority : Bool := false)
     (skipDepartureReconcile : Bool := false)
     (followedByFinishChoice : Bool := false)
-    (followedByExplicitPriority? : Option PlayerId := none) : Game := g
+    (followedByExplicitPriority? : Option PlayerId := none)
+    (suppressPriorityGrant : Bool := false) : Game := g
 
 /-- Forward reference to `ManaAbilities.canTapForPlainMana` (resolved at link time via `@[export]`). -/
 @[extern "mtg_game_can_tap_for_plain_mana"]
@@ -454,16 +455,17 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
     (fromEventIdx? : Option Nat := none) : Game × Bool :=
   let deferPfe := ids.size > 1 || fromEventIdx?.isSome
   let loopFromIdx := fromEventIdx?.getD g.events.size
-  if let .chooseReplacement .. := g.pending then
+  if g.sbaPaused then
     (g.chainPendingReplacement
       (.payCostPickItems p abilityId sourceId pick ids (if deferPfe then some loopFromIdx else none)), true)
   else
-    let preLoop :=
+    let preLoopStart := g
+    let mkPreLoop : Unit → Game := fun _ =>
       match fromEventIdx? with
       | some idx => g.mkHistoricalGameAt idx
-      | none => g
+      | none => preLoopStart
     let finishDeferredPfe (g0 : Game) : Game :=
-      if deferPfe then emitExpiredPlayFromExileLogs preLoop g0 loopFromIdx else g0
+      if deferPfe then emitExpiredPlayFromExileLogsLazy mkPreLoop g0 loopFromIdx else g0
     let abortOrNoop (g0 : Game) : Game :=
       if !g0.hasActiveManaProposalCheckpoint && g0.proposedSpell.isSome then
         let g1 :=
@@ -521,7 +523,7 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
                 else s!"{name} exiles {g.name o}"
               g := (g.move id .exile none (cause := some (.costPayment .exile p forObj))
                 (deferPlayFromExileLogs := deferPfe)).1
-              if let .chooseReplacement .. := g.pending then
+              if g.sbaPaused then
                 g := g.chainPendingReplacement (.finishPostStep (.logExiledIfInExile id msg))
               else if (g.followMovedToZone? id (· == .exile)).isSome then
                 g := g.logMsg msg
@@ -543,7 +545,7 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
                   (cause := some (.costPayment .sacrifice p forObj))
                   (deferPlayFromExileLogs := deferPfe)
                 if records then
-                  if let .chooseReplacement .. := g.pending then
+                  if g.sbaPaused then
                     g := g.chainPendingReplacement
                       (.finishPostStep (.recordCostSacrificedPower abilityId id pw))
                   else if !(g.findObject? id).any (·.isOnBattlefield) then
@@ -558,12 +560,12 @@ def payCostPickItemsChecked (g : Game) (p : PlayerId) (abilityId sourceId : Opti
                   (deferPlayFromExileLogs := deferPfe)).1
                 -- CR 614.6 / 701.9a: log the discard only once the card reaches
                 -- its owner's graveyard.
-                if let .chooseReplacement .. := g.pending then
+                if g.sbaPaused then
                   g := g.chainPendingReplacement
                     (.finishPostStep (.logDiscardIfInGraveyard id owner msg))
                 else if (g.followMovedToZone? id (· == .graveyard owner)).isSome then
                   g := g.logMsg msg
-            if let .chooseReplacement .. := g.pending then
+            if g.sbaPaused then
               let rem := ids.extract (i + 1) ids.size
               if !rem.isEmpty || deferPfe then
                 g := g.chainPendingReplacement
@@ -870,10 +872,11 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
   let mut g := g
   if stage == .removeCounters then
     let costFromIdx := fromEventIdx?.getD g.events.size
-    let preCounters :=
+    let preCountersStart := g
+    let mkPreCounters : Unit → Game := fun _ =>
       match fromEventIdx? with
       | some idx => g.mkHistoricalGameAt idx
-      | none => g
+      | none => preCountersStart
     if removeIndestructible &&
         !g.sourceCounterCostPaidFor sourceId forObject .removeCounters (some .indestructible) sinceIdx then
       match g.findObject? sourceId with
@@ -909,7 +912,7 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
                 .removeCounters sinceIdx false none loyaltyDelta putStun (some costFromIdx))
         | none =>
           return abortOrNoop g
-    g := emitExpiredPlayFromExileLogs preCounters g costFromIdx
+    g := emitExpiredPlayFromExileLogsLazy mkPreCounters g costFromIdx
     if g.over || !g.stillInGame p then
       return abortOrNoop g
     if let some k := loyaltyDelta then
@@ -924,7 +927,7 @@ def finishActivationExtraCosts (g : Game) (p : PlayerId) (sourceId : ObjectId)
               (k < 0 && (src.status.loyaltyCounters : Int) < -k) then
             return abortOrNoop g
           g := g.payLoyaltyDelta p src k (forObject := forObject)
-          if let .chooseReplacement .. := g.pending then
+          if g.sbaPaused then
             let needsStun :=
               putStun && !g.sourceCounterCostPaidFor sourceId forObject .putCounters (some .stun) sinceIdx
             if needsStun then

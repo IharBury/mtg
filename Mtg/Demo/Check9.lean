@@ -2930,5 +2930,123 @@ origin-zone Layer-6 Morph + Layer-6 Sneak in `Agent`. -/
   mustHoldCheck9 "p60_agentOriginMorph" agentOriginMorphOk
 
 
+/- Phase 61: Origin-zone Layer-6 Flash in `Demo`/`Agent`, Aura Layer-3 `TextChange`
+in `Demo`/`Agent`, Myriad 3-player planeswalker choice via `Agent`, `ResolutionChoices`
+empty-option default action safety, and `flashbackUntilEot` + `freeSelf` CR 118.9a. -/
+#guard
+  let p0 : PlayerId := ⟨0⟩
+  let p1 : PlayerId := ⟨1⟩
+  let p2 : PlayerId := ⟨2⟩
+  let gMain := emptyHand afterDraw p0
+  let cause61 : EventCause := .oneShotEffect (some ⟨1⟩) none (some p0)
 
+  -- 1. Origin-zone Layer-6 Flash allows casting a creature during upkeep in Demo & Agent:
+  let handFlashLord61 : CardDef := {
+    name := "P61 Check9 HandFlashLord", types := #[.enchantment]
+    staticAbilities := #[
+      .continuous none { zones := { zones := #[.hand], owner := .ofPlayer .you }, pred := .hasType .creature }
+        (.grantKeywords #[Keyword.flash])
+    ]
+  }
+  let zeroBear61 : CardDef := creature "P61 Check9 ZeroBear" ManaCost.zero #["Bear"] 2 2
+  let gFlashUpkeep61 :=
+    (insertObject (addPermanent gMain handFlashLord61 p0 p0) zeroBear61 p0 (.hand p0)).record
+      (GameEvent.stepBegan gMain.turnNumber .upkeep)
+  let flashHandId61 := (gFlashUpkeep61.player p0).hand.back!
+  let originFlashDemoOk :=
+    hasGameStatePriorityAction gFlashUpkeep61 p0 &&
+    (match Agent.choose gFlashUpkeep61 p0 with
+     | some (.cast id) => id == flashHandId61
+     | _ => false)
 
+  -- 2. Aura Layer-3 `TextChange` ("Goblin" -> "Bear") recognized by Demo & Agent:
+  let gobAura61 : CardDef := {
+    name := "P61 Check9 GobAura", manaCost := ManaCost.zero
+    types := #[.enchantment], subtypes := #["Aura"]
+    staticAbilities := #[.enchantRestriction { domain := .object .battlefield (.hasSubtype (.literal .goblin)) }]
+  }
+  let gAura61Base := addPermanent (insertObject gMain gobAura61 p0 (.hand p0)) grizzlyBears p0 p0
+  let auraId61 := (gAura61Base.player p0).hand.back!
+  let gAura61Tc :=
+    gAura61Base.createEffect
+      (.layered (.objects #[auraId61]) (.text (.replaceCreatureType .goblin .bear)) .indefinite)
+      (cause := some cause61)
+  let auraTcDemoOk :=
+    !hasGameStatePriorityAction gAura61Base p0 &&
+    hasGameStatePriorityAction gAura61Tc p0 &&
+    (match Agent.choose gAura61Tc p0 with
+     | some (.cast id) => id == auraId61
+     | _ => false)
+
+  -- 3. Myriad 3-player non-defending opponent planeswalker choice via Agent:
+  let myriad61 : CardDef := {
+    creature "P61 Check9 Myriad" ManaCost.zero #["Scout"] 2 2 with
+    keywords := #[Keyword.myriad]
+  }
+  let pw61 : CardDef := { name := "P61 Check9 Walker", types := #[.planeswalker], loyalty := some 4 }
+  let gMyr3Raw :=
+    addPermanent
+      (addPermanent (gMain.change (.addPlayer { id := p2, name := "Liliana" })) myriad61 p0 p0)
+      pw61 p2 p2
+  let pwId61 := (gMyr3Raw.permanentsOf p2).find? (·.name == pw61.name) |>.get!.id
+  let gMyr3 := gMyr3Raw.recordPutCounters pwId61 .loyalty 4 (some p2) (cause := some cause61)
+  let myrId61 := (gMyr3.permanentsOf p0).find? (·.name == myriad61.name) |>.get!.id
+  let gMyrAtk61 := mustApply (gMyr3.beginStep .declareAttackers) p0 (.declareAttackers #[myrId61] (some p1))
+  let gMyrMay61 := mustApply (mustApply (mustApply gMyrAtk61 p0 .pass) p1 .pass) p2 .pass
+  let gMyrPrompt61 := mustApply gMyrMay61 p0 .accept
+  let gMyrAgentDone :=
+    match Agent.choose gMyrPrompt61 p0 with
+    | some act => mustApply gMyrPrompt61 p0 act
+    | none => gMyrPrompt61
+  let myrToks61 := (gMyrAgentDone.permanentsOf p0).filter (·.printed.isToken)
+  let myriadAgentOk :=
+    (match gMyrPrompt61.pending with | .resolutionChoice _ (.chooseEnteringAttackTarget ..) => true | _ => false) &&
+    gMyrAgentDone.pending == .none &&
+    myrToks61.size == 1 &&
+    myrToks61[0]!.status.attacking &&
+    (match myrToks61[0]!.status.attackingTarget with
+     | some (.player q) => q == p2
+     | some (.planeswalker pwId) => (gMyrAgentDone.findObject? pwId).any (gMyrAgentDone.controlledBy · p2)
+     | _ => false)
+
+  -- 4. `ResolutionChoices` empty-option default/Agent actions decline & resolve cleanly:
+  let staleId61 : ObjectId := ⟨99981⟩
+  let emptyChoices61 : Array ResolutionChoice := #[
+    .palisadeCreatureType #[],
+    .blackGatePlayer staleId61 #[],
+    .chooseEnteringAttackTarget #[] #[] none,
+    .extrapolatePick p0 #[staleId61],
+    .mayRevealToHand #[staleId61] #[staleId61] false
+  ]
+  let emptyAgentOk :=
+    emptyChoices61.all fun ch =>
+      let gP := gMain.change (.pending (.resolutionChoice p0 ch))
+      match Agent.choose gP p0 with
+      | some act =>
+        match gP.apply p0 act with
+        | .ok gDone => gDone.pending == .none
+        | .error _ => false
+      | none => false
+
+  -- 5. `flashbackUntilEot` + `freeSelf` does NOT make an unpayable graveyard spell free in Demo:
+  let freeSelfFb61 : CardDef := {
+    name := "P61 Check9 FreeSelfFb", manaCost := ManaCost.ofGenericAndColor 2 .white
+    types := #[.instant]
+    staticAbilities := #[.costModifier none .thisSpell .alternativeFree]
+    spellAbility := some { effect := Effect.gainLife 2 }
+  }
+  let gFb61Base := insertObject gMain freeSelfFb61 p0 (.graveyard p0)
+  let fbId61 := (gFb61Base.player p0).graveyard.back!
+  let gFb61 := gFb61Base.createEffect (ContinuousEffectSpec.flashbackUntilEot fbId61) (cause := some cause61)
+  let gFb61Mana :=
+    gFb61.record (GameEvent.manaAdded gMain.turnNumber p0
+      #[{ mana := .colorless }, { mana := .colorless }, { mana := .colored .white }])
+  let fbFreeSelfDemoOk :=
+    !hasGameStatePriorityAction gFb61 p0 &&
+    hasGameStatePriorityAction gFb61Mana p0
+
+  mustHoldCheck9 "p61_originFlashDemo" originFlashDemoOk &&
+  mustHoldCheck9 "p61_auraTcDemo" auraTcDemoOk &&
+  mustHoldCheck9 "p61_myriadAgent" myriadAgentOk &&
+  mustHoldCheck9 "p61_emptyAgent" emptyAgentOk &&
+  mustHoldCheck9 "p61_fbFreeSelfDemo" fbFreeSelfDemoOk

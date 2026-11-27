@@ -475,6 +475,7 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
       else
         let spell := g.object! prop.spellId
         let face := g.baseCard spell
+        let kwFace := { face with keywords := g.proposedSpellKeywords prop spell }
         let modal := isModalSpellFace face
         let needsTarget :=
           !modal &&
@@ -483,9 +484,9 @@ def announceX (g : Game) (p : PlayerId) (x : Nat) : Except String Game := do
           needsTarget "CR 601.2b / 700.2"
           (needsAdditionalCost := face.announcesAdditionalCost)
           (needsKicker := !prop.kickerAnnounced &&
-            (face.kicker.isSome || g.proposalCanChooseMorph prop || g.proposalCanChooseImpending prop))
-          (needsGift := face.hasGift)
-          (needsTeamwork := face.teamwork.isSome)
+            (kwFace.kicker.isSome || g.proposalCanChooseMorph prop || g.proposalCanChooseImpending prop))
+          (needsGift := kwFace.hasGift)
+          (needsTeamwork := kwFace.teamwork.isSome)
     | .turnFaceUp =>
       throw "Not time to choose X (CR 601.2b)"
   | _ => throw "Not time to choose X (CR 601.2b)"

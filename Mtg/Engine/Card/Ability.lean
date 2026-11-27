@@ -766,6 +766,7 @@ instance : HasTextChange DelayedTokenAction where
 structure EnterMods where
   tapped : Bool := false
   attacking : Bool := false
+  attackingPlayer? : Option PlayerExpr := none
   goaded : Bool := false
   attachTo? : Option ObjectExpr := none
   counters : Array (CounterKind × ValueExpr) := #[]
